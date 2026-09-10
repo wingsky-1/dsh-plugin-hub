@@ -1,11 +1,11 @@
 /**
  * dsh-notifier — pipeline/interface.ts：推送管线域唯一对外引用面。
  *
- * PR2（T2-1）：本域从「纯函数提炼」升级为「裁决/投递工厂」——createAdjudicator
- * 承载 current() 单刻快照（B-2）与 enabled→确认→免打扰→路由→播放决议全链；
+ * 本域为「裁决/投递工厂」——createAdjudicator 承载 current() 单刻快照与
+ * enabled→确认→免打扰→路由→播放决议全链；
  * createDeliverer 承载单频道 fail-soft 投递与终态上报（DeliverDeps 注入，内置
- * 频道播放经 play 值传递、不持快照引用——D23）。域间依赖全部经注入面显式化
- * （pipeline 对 sdk/config 仅 type+值按 §4 图；sdk 经 createAdjudicator/
+ * 频道播放经 play 值传递、不持快照引用）。域间依赖全部经注入面显式化
+ * （pipeline 对 sdk/config 仅 type+值；sdk 经 createAdjudicator/
  * createDeliverer + 结果类型消费本域）。
  */
 import type { NotifyConfig, SoundId, SoundSetting } from "../config/interface.ts";
@@ -40,8 +40,8 @@ export interface ChannelPoolEntry {
   dispatch?: BrowserDispatchSpec | SystemDispatchSpec;
 }
 
-/** 裁决通过的投递通知（title/body 为渲染文本；统一时点（B-1）在编排层按
- *  携带的 sanitizeContent 开关脱敏后进入落史/投递——T2-3 前为渲染时态）。 */
+/** 裁决通过的投递通知（title/body 为渲染文本；统一时点在编排层按
+ *  携带的 sanitizeContent 开关脱敏后进入落史/投递）。 */
 export interface AdjudicatedNotice {
   kind: string;
   title: string;
@@ -52,14 +52,14 @@ export interface AdjudicatedNotice {
   targets: ResolvedTarget[];
   /** stale = kindRoutes 指向已删频道（记 skipped）。 */
   stale: string[];
-  /** 脱敏开关（B-4，随裁决快照解析：快照缺键 → undefined 容错为 true）。 */
+  /** 脱敏开关（随裁决快照解析：快照缺键 → undefined 容错为 true）。 */
   sanitizeContent: boolean;
 }
 
 /** 仅裁决层三值；merged 属事件源级轨道（不并入）。 */
 export type SuppressReason = "disabled" | "kind-pending" | "quiet";
 
-/** 裁决结果分叉（suppressed 携带渲染文本 + 脱敏开关；形状契约 §5）。 */
+/** 裁决结果分叉（suppressed 携带渲染文本 + 脱敏开关；形状契约）。 */
 export type AdjudicateResult =
   | { decision: "suppressed"; reason: SuppressReason; kind: string; title: string; body: string; ts: number; sanitizeContent: boolean }
   | { decision: "deliver"; notice: AdjudicatedNotice };
@@ -76,7 +76,7 @@ export interface AdjudicateOptions {
   onlyChannel?: string;
 }
 
-/** createAdjudicator 注入面（current() 单刻快照：每次裁决恰好调用 1 次，B-2）。 */
+/** createAdjudicator 注入面（current() 单刻快照：每次裁决恰好调用 1 次）。 */
 export interface AdjudicateDeps {
   /** 当前生效配置读取器（单刻快照；派生闭包一律经快照取值，不得自行调用）。 */
   current(): NotifyConfig;
@@ -97,7 +97,7 @@ export interface DeliverPayload {
   severity?: NotifySeverity;
 }
 
-/** createDeliverer 注入面（play 值传递 target.dispatch，不持快照引用——D23）。 */
+/** createDeliverer 注入面（play 值传递 target.dispatch，不持快照引用）。 */
 export interface DeliverDeps {
   /** 频道投递终态落盘（status 文件；错误文本已由调用方脱敏）。 */
   recordStatus(channelId: string, status: "ok" | "failed", error?: string): void;

@@ -2,12 +2,12 @@
  * dsh-notifier — 审批/完成/错误事件通知（宿主端）。
  *
  * 本文件只做装配：apply + 事件订阅 + 生命周期清理；唯一允许 import 全部域
- * interface.ts 的汇聚点（§3 门面纪律）。职责划分按目标目录树：
+ * interface.ts 的汇聚点（门面纪律）。职责划分按目标目录树：
  * - config/      配置契约/归一化/校验/脱敏/路径/免打扰/settings 接线/桥/迁移
  * - text/        文案单表/脱敏/格式化/系统命令构造（纯函数）
  * - channels/    内置与配置驱动频道（browser/system/bark/webhook/outbound）
  * - server/      SSE 枢纽/系统通知通道/HTTP 路由
- * - pipeline/    裁决与投递纯函数（PR1 机械提炼；PR2 行为重构）
+ * - pipeline/    裁决与投递工厂（current() 单刻快照 + 单频道 fail-soft）
  * - sdk/         通知中心 service（对外 ABI 实现）
  * - events/      事件处理器/完成聚合/会话读取
  * - stores/      历史 jsonl / 投递状态存储
@@ -104,7 +104,7 @@ export {
   WEBHOOK_MIN_TIMEOUT_SEC,
   WEBHOOK_MAX_TIMEOUT_SEC,
 } from "./channels/interface.ts";
-// PR2（D23）：浏览器通知帧纯构造（播放层经 DeliverDeps.play 消费；有意新增导出）
+// 浏览器通知帧纯构造（播放层经 DeliverDeps.play 消费；有意新增导出）
 export { buildBrowserFrame } from "./channels/interface.ts";
 export type { MigrationOutcome } from "./config/interface.ts";
 export {
@@ -153,7 +153,7 @@ export { writeJson, readBody, errorMessage } from "../../../shared/host-utils.js
 
 function resolveStorePaths(config: NotifierApplyConfig) {
   const statusPath = typeof config.statusFile === "string" ? config.statusFile : statusFile();
-  // R-6/D22 选项 A：seq 计数器随 status 文件同目录（statusFile 覆盖时测试经
+  // seq 计数器随 status 文件同目录（statusFile 覆盖时测试经
   // mkdtemp 隔离；未覆盖时 dirname(statusPath)=DSH_HOME，本公式即 seqFile()）。
   const seqPath = join(dirname(statusPath), basename(seqFile()));
   return {
@@ -195,10 +195,10 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
 
   const { toastScript, historyPath, statusPath, seqPath } = resolveStorePaths(config);
 
-  // R-6/D22 选项 A：seq 计数器持久化注入（服务端重启续计数，客户端零改动）。
+  // seq 计数器持久化注入（服务端重启续计数，客户端零改动）。
   // 缺文件 = 首启静默回退 0；损坏 = warn + 回退 0（宁可归零不可卡死续计数面）。
   // 写面为同步 tmp+rename 原子写——createSseHub 的 dispose 同步落盘依赖此同步性
-  // （正常停止零丢失；kill -9 崩溃窗口 ≤ 500ms 防抖窗口，R-6 已登记）。
+  // （正常停止零丢失；kill -9 崩溃窗口 ≤ 500ms 防抖窗口）。
   function loadSeq(): number {
     try {
       const parsed = JSON.parse(readFileSync(seqPath, "utf8")) as unknown;
@@ -243,10 +243,10 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   const outboundChannels = createOutboundChannelResolver(() => currentConfig().channels);
   const emitSent = createSentEmitter(ctx);
 
-  // PR2（D23）：内置频道实例经装配层创建（实例只承载 id+capabilities 入投递池），
+  // 内置频道实例经装配层创建（实例只承载 id+capabilities 入投递池），
   // 播放决议随裁决快照解析并经 DeliverDeps.play 值传递——browser→SSE 帧、
   // system→system.notify（spec.pop/spec.sound；notify resolve false → throw →
-  // 终态 failed，对照落位前的 dispatchSystem 语义，B4）。
+  // 终态 failed，对照落位前的 dispatchSystem 语义）。
   const browserChannel = createBrowserChannel({ sse });
   const systemChannel = createSystemChannel({ system });
 
@@ -318,7 +318,7 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   ];
 
   const routes = buildRoutes({
-    // 配置域面全部走 ConfigPort 契约（settings-bridge 唯一实现；L8-2 后路由面
+    // 配置域面全部走 ConfigPort 契约（settings-bridge 唯一实现；路由面
     // 不再单独持 setConfirm，kinds 确认与 PUT 写面共用同一 CAS 语义）。
     resolve: settingsBridge.resolve,
     readUser: settingsBridge.readUser,

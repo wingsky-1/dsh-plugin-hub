@@ -1,18 +1,18 @@
-// @ts-nocheck
+// @ts-nocheck（e2e/集成面类型化技术债：桩对象密集，暂不参与 test/tsconfig 编译）
 /**
- * dsh-notifier — e2e：outbound 真 resolver 全链投递基线（PR0 红测先行 3）。
+ * dsh-notifier — e2e：outbound 真 resolver 全链投递基线（红测先行）。
  *
  * 现状 outbound.ts 有效分支（enabled:true bark 实例化 + barkGates 限流门复用）
- * 零覆盖（T3-9：resolver 在 apply 链上「空跑」，所有测试 channels 恒空/disabled）。
+ * 零覆盖（resolver 在 apply 链上「空跑」，所有测试 channels 恒空/disabled）。
  * 本文件经完整 apply 链（index.ts → createOutboundChannelResolver → createBarkChannel
- * → fetch）锁定基线；PR2 重试/并发门上移框架时是行为对等的判别网。
+ * → fetch）锁定基线；重试/并发门上移框架时是行为对等的判别网。
  *
- * 假网络纪律（S3-23 加固姿态）：fetch mock 白名单外一律拒绝（throw），绝不
+ * 假网络纪律：fetch mock 白名单外一律拒绝（throw），绝不
  * fail-open 转真实网络——白名单外请求即测试 bug（与 unit-webhook/service-contract
- * 的「白名单+白名单外 fail-open」旧形态区分；旧形态低危面在 PR0 本文件内不再复用）。
+ * 的「白名单+白名单外 fail-open」旧形态区分；旧形态低危面在本文件内不再复用）。
  *
- * 内置 browser/system 全关：只让 bark 进入投递集合（避免真实系统 spawn——T3-3；
- * spawn 链直测由红测先行 1 单独处理）。
+ * 内置 browser/system 全关：只让 bark 进入投递集合（避免真实系统 spawn；
+ * spawn 链直测由 system-notifier 单测文件处理）。
  */
 import { join } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -82,7 +82,7 @@ function makeBarkOnlyNotifier(channels, tag) {
 }
 
 try {
-  // E-OUT-1：enabled:true bark 经 apply 全链投递成功（HTTP 2xx + code 200 双查）
+  // enabled:true bark 经 apply 全链投递成功（HTTP 2xx + code 200 双查）
   {
     const mock = installFetchMock((_url, init) => resOk(init));
     try {
@@ -110,7 +110,7 @@ try {
     }
   }
 
-  // E-OUT-2：4xx 确定失败 → 不重试（1 次 fetch）+ 异步终态 failed 落 status
+  // 4xx 确定失败 → 不重试（1 次 fetch）+ 异步终态 failed 落 status
   {
     const mock = installFetchMock(() => res4xx());
     try {
@@ -133,7 +133,7 @@ try {
     }
   }
 
-  // E-OUT-3：5xx 重试链（B-3 框架重试，对等现状 bark sendWithRetry ×2）——
+  // 5xx 重试链（框架重试，对等现状 bark sendWithRetry ×2）——
   // 503×2 后 200 → 总尝试 3 次 + 终态 ok；退避 1s/2s 真实发生（行为验证非 sleep hack）
   {
     const mock = installFetchMock((_url, init) => (mock.calls.length < 3 ? res503() : resOk(init)));

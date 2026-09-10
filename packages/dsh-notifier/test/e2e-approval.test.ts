@@ -1,10 +1,10 @@
-// @ts-nocheck
+// @ts-nocheck（e2e/集成面类型化技术债：桩对象密集，暂不参与 test/tsconfig 编译）
 /**
  * dsh-notifier — e2e：审批请求通知（approval/request waterfall）。
  *
  * 覆盖：五个事件监听器注册面；审批通知（工具中文名/任务标题/申请理由/
  * 行动建议，不短路、不暴露会话 id）；无标题降级；next 抛错原样传播；
- * notifyAsk=false 不通知；免打扰紧急例外 allowKinds（M4）。
+ * notifyAsk=false 不通知；免打扰紧急例外 allowKinds。
  */
 import { join } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -66,9 +66,9 @@ try {
     assert.equal(infos.length, 0, "notifyAsk=false 不通知");
   }
 
-  // M4 免打扰紧急例外：allowKinds 中的 kind 在免打扰时段仍通知
+  // 免打扰紧急例外：allowKinds 中的 kind 在免打扰时段仍通知
   {
-    // 窗口围绕当前时间动态构造（±2 分钟）：#181 —— 写死 "00:00"/"23:59" 假设
+    // 窗口围绕当前时间动态构造（±2 分钟）——写死 "00:00"/"23:59" 假设
     // 全天覆盖，但实现是半开区间 [start, end)，23:59 这一分钟不命中，UTC 边缘必炸；
     // now 邻近 00:00 时 start > end，天然走实现的跨午夜分支（quiet-hours.ts）。
     const hhmm = (offsetMinutes) => {

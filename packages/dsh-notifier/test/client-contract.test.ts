@@ -1,21 +1,49 @@
-// @ts-nocheck
 /**
  * dsh-notifier — e2e：客户端契约与两端路由一致性。
  *
  * 覆盖：assertClientSourceContract / assertClientProductContract（共享
  * smoke-lib，与 contract-check 同源）；lib/client.js 中出现的路由字面量
- * 与宿主 ROUTES 常量双向一致；issue #76 客户端清理契约（B1-B6 移除侧边栏
+ * 与宿主 ROUTES 常量双向一致； 客户端清理契约（B1-B6 移除侧边栏
  * 入口/浮层/角标、C 组通知半区保留——SSE/租约/看门狗/音频解锁仍存在且不
  * 依赖任何插件 DOM）。
  */
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import type { Context as VmContext } from "node:vm";
 import { fileURLToPath } from "node:url";
 import { assert } from "./helpers.ts";
 import { assertClientProductContract, assertClientSourceContract } from "../../../test/smoke-lib.ts";
 import { ROUTES } from "../lib/index.js";
 
 const pkgDir = fileURLToPath(new URL("..", import.meta.url));
+
+// ---- vm 沙箱执行真实产物的类型面（纯类型声明，无运行时副作用）----
+/** 产物 factory 的 require stub（React 由构建期 external 注入，其余 spec 报错）。 */
+type ClientRequire = (spec: string) => unknown;
+/** load 注入的 handoff（产物 id + factory）。 */
+type ModuleHandoff = { id: string; factory: ClientFactory };
+/** 产物模块导出面（apply 由 factory 装配）。 */
+interface ClientModule {
+  apply: ClientApply;
+}
+/** fake ctx 最小面：服务读取面 get + 订阅面 effect。 */
+type ClientTestCtx = {
+  get(name: string): unknown;
+  effect(fn: () => () => void): () => void;
+};
+/** apply 及其挂载的模块级纯函数（签名对齐 src/client/index.tsx 装配段）。 */
+type ClientApply = ((ctx: ClientTestCtx) => void) & {
+  diffSettingsPayload(view: Record<string, unknown>, baseline: Record<string, unknown> | null): Record<string, unknown>;
+  stripChannelEmpties(channel: unknown): unknown;
+  assignChannelFields(target: Record<string, unknown>, part: Record<string, unknown>): Record<string, unknown>;
+  domainPayload(diff: Record<string, unknown>, entry: string): Record<string, unknown>;
+  rebaseSettings(local: Record<string, unknown>, remote: Record<string, unknown>): Record<string, unknown>;
+  createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolean; end(): string | null };
+  clampMaxConnections(value: number | undefined): number | undefined;
+};
+type ClientFactory = (require: ClientRequire) => ClientModule;
+// factory 槽初值统一写 `null as ClientFactory | null`：TS 会把裸 null 的流程类型收窄成
+// null，令后续 `assert.ok(槽 !== null)` 守卫把槽推成 never（槽读点必须可调用）。
 
 {
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
@@ -28,7 +56,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   for (const route of expected) assert.ok(literals.includes(route), `client 缺少路由: ${route}`);
 }
 
-// ---- issue #76：客户端清理契约（B1-B6 / C 组）----
+// ---- ：客户端清理契约（B1-B6 / C 组）----
 {
   const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
@@ -50,11 +78,11 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   }
   // C6：SSE 启动不依赖任何插件 DOM（apply 直接 startEvents，无 mount 等待）
   assert.ok(src.includes("startEvents()"), "C6：apply 直接启动 SSE（不依赖侧边栏挂载）");
-  // 独立 tab 挂载经 slots（官方设置页 settings.section 插槽，issue #366 M1；
+  // 独立 tab 挂载经 slots（官方设置页 settings.section 插槽， ；
   // 参照 provider-usage「用量统计」tab，不双注册 plugin.item 卡片）
   assert.ok(src.includes("settings.section"), "A 组：设置注册到官方设置页独立 tab 插槽");
   assert.ok(!src.includes('inject("settings.plugin.item"'), "A 组：不双注册 plugin.item 卡片（评审 B P0）");
-  // i18n 接入哨兵（issue #348）：NS / register / bind / slots locale 参数 / 双语字典进产物
+  // i18n 接入哨兵：NS / register / bind / slots locale 参数 / 双语字典进产物
   assert.ok(client.includes('"notifier"'), "i18n 命名空间 NS 进产物");
   assert.ok(client.includes("locale.register"), "locale.register（字典注册）进产物");
   assert.ok(client.includes("locale.bind"), "locale.bind（t 装配）进产物");
@@ -62,7 +90,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(client.includes("Approval pending") && client.includes("evtAsk"), "en/zh 双语字典进产物");
 }
 
-// ---- issue #402：设置页 UI/UX 打磨（折叠 / 双 tab / 去 title / label thunk / 就近保存）----
+// ---- ：设置页 UI/UX 打磨（折叠 / 双 tab / 去 title / label thunk / 就近保存）----
 {
   const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
@@ -73,7 +101,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(src.includes('label: () => t("tabLabel")'), "#402：notifier settings.section label 为 thunk（切语言跟随）");
   assert.ok(!src.includes('label: t("tabLabel")'), "#402：不再注册求值快照 label");
   // 第 1 条：频道卡 details 折叠形态（key 含 enabled —— 非受控 + key remount）
-  // #584 分片 a：createElement → TSX 纯语法迁移，源码锚点随形态演进（语义不变：
+  // createElement → TSX 纯语法迁移，源码锚点随形态演进（语义不变：
   // 仍断言「频道卡为 details 可折叠」，JSX 内联 details 即目标形态）
   assert.ok(src.includes("<details"), "#402：频道卡为 details 可折叠（TSX 形态）");
   assert.ok(src.includes('failBadge('), "#402：投递失败徽标上提卡头（收起可见）");
@@ -84,20 +112,20 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   // 第 4 条：设置卡 title/副标题移除（源码与字典两侧）
   assert.ok(!src.includes("settingsName") && !src.includes("settingsDescription"), "#402：设置卡 title/副标题渲染已删");
   assert.ok(!locales.includes("settingsName:") && !locales.includes("settingsDescription:"), "#402：locales 字典 settingsName/settingsDescription 已删");
-  // 第 2 条配套：术语统一（「通知频道」/「选择频道」，消除与旧「投递频道」混用）
-  assert.ok(locales.includes('secChannels: "通知频道"') && locales.includes('routePick: "选择频道"'), "#402：tab 术语统一为「通知频道」");
+  // 第 2 条配套：术语统一（「通知频道」，消除与旧「投递频道」混用；死键 routePick 已随本次清理删除）
+  assert.ok(locales.includes('secChannels: "通知频道"') && !locales.includes('"投递频道"'), "#402：tab 术语统一为「通知频道」且无旧「投递频道」残留");
 }
 
-// ---- issue #418：设置面板布局收敛（去重复保存 / 权限入浏览器卡 / 动作并入历史区）----
+// ---- ：设置面板布局收敛（去重复保存 / 权限入浏览器卡 / 动作并入历史区）----
 {
   const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
 
   // 1. 频道 tab 去就近保存：单一保存入口（foot），且源码/产物/样式三处无 dn-ch-saveRow
-  //    ——#418 移除的是「双份全量保存」的旧行（dn-ch-saveRow）；#405 后按方案定稿
-  //    引入的域保存行 class 为 dn-ch-domainSave（仅提交 channels 键，语义 ≠ 全量），
-  //    属 #418 原文预留的「域级拆分后按域重排按钮位置」兑现，不构成该回归。
+  // —— 移除的是「双份全量保存」的旧行（dn-ch-saveRow）； 后按方案定稿
+  // 引入的域保存行 class 为 dn-ch-domainSave（仅提交 channels 键，语义 ≠ 全量），
+  // 属 原文预留的「域级拆分后按域重排按钮位置」兑现，不构成该回归。
   assert.ok(!src.includes("dn-ch-saveRow"), "#418：旧就近保存行 class 未回归");
   assert.ok(!client.includes("dn-ch-saveRow"), "#418：产物无旧就近保存 class");
   assert.ok(!src.includes("tabSave"), "#418：tabSave 变量未回归");
@@ -115,7 +143,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(!locales.includes("secActions:"), "#418：locales 字典已删 secActions 键");
 }
 
-// ---- issue #421：免打扰豁免扩至全部内置事件（候选 6 项 + 跟随已启用 + 恢复默认）----
+// ---- ：免打扰豁免扩至全部内置事件（候选 6 项 + 跟随已启用 + 恢复默认）----
 {
   const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
@@ -140,7 +168,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(!locales.includes("allowAsk:") && !locales.includes("allowQuestion:") && !locales.includes("allowError:"), "#421：旧 allowXxx 豁免 label 键已删");
 }
 
-// ---- issue #508：通知中心 UI/UX 现代化（三 tab / switch / chips / 脏状态栏 / webhook 卡）----
+// ---- ：通知中心 UI/UX 现代化（三 tab / switch / chips / 脏状态栏 / webhook 卡）----
 {
   const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
@@ -151,7 +179,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(src.includes('t("secHistory")'), "#508：通知记录 tab 引用 secHistory 分区标题");
   assert.ok(locales.includes('secHistory: "通知记录"') && locales.includes('secHistory: "History"'), "#508：secHistory 文案双语");
   // 2. switch 无障碍：原生 checkbox 改 switch 开关，无内联文本必须靠 aria-label 提供可访问名
-  // #584 分片 a：createElement → TSX 迁移，源码锚点随语法形态演进（aria-label 可访问名语义不变）
+  // createElement → TSX 迁移，源码锚点随语法形态演进（aria-label 可访问名语义不变）
   assert.ok(src.includes('className="dn-switch"') && src.includes("aria-label="), "#508：switch 开关依赖 aria-label 可访问名（TSX 形态）");
   assert.ok(client.includes("dn-switch-track"), "#508：dn-switch-track 开关轨道 class 进产物");
   // 3. 路由 chips：直点切换 + aria-pressed 开/关态 + 状态标签 + stale 虚线 chip
@@ -163,33 +191,33 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(src.includes("dn-dirty") && src.includes("discardChanges"), "#508：脏状态保存栏（dn-dirty + discardChanges）");
   assert.ok(locales.includes("dirtySome:") && locales.includes("discardChanges:"), "#508：脏状态/放弃更改文案键双语存在");
   // 6. webhook 频道卡：预设常量 + 认证字段区 + 添加入口；双语键平衡由 tsc 编译期
-  //    锁（Record<NotifierLocaleKey, string>），此处只断言关键键出现一次以上（中英各一）
+  // 锁（Record<NotifierLocaleKey, string>），此处只断言关键键出现一次以上（中英各一）
   assert.ok(src.includes("webhookCard") && src.includes("WEBHOOK_PRESETS") && src.includes("dn-authFields"), "#508：webhook 频道卡（webhookCard/WEBHOOK_PRESETS/dn-authFields）");
   assert.ok(locales.split("chAddWebhook:").length > 2, "#508：chAddWebhook 文案键在 locales 出现一次以上（中英双语各一）");
   // 7. 频道卡头类型图标（iconEl → dn-ch-icon）
   assert.ok(client.includes("dn-ch-icon"), "#508：频道卡头类型图标 class 进产物");
   // 8. 负向断言：旧 checkbox 豁免 label class 已移除——用引号闭合精确串防误伤
-  //    dn-set-allowDim/allowHint/allows/allowActions（它们仍是 #421 有效锚点）
+  // dn-set-allowDim/allowHint/allows/allowActions（它们仍是 有效锚点）
   assert.ok(!src.includes('className: "dn-set-allow"'), "#508：旧 checkbox 豁免 label class dn-set-allow 已移除");
   assert.ok(!src.includes('"bark:" + String(ch.id)'), "#508：channelId 前缀 hardcode 已收敛为 channelIdFor");
 }
 
-// lib/toast.ps1 发布物完整性（issue #238）：必须带 UTF-8 BOM 且与源文件逐字节一致。
+// lib/toast.ps1 发布物完整性：必须带 UTF-8 BOM 且与源文件逐字节一致。
 // pwsh 7 在 CI 上解析通过抓不住 5.1 的 ANSI 码页问题，字节级断言是唯一机器兜底；
 // 构建期 copyClientResources 已强制补写，此处防回归（编辑器去 BOM / 复制链变更）。
 {
-  const stripBom = (buf) => (buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf ? buf.subarray(3) : buf);
+  const stripBom = (buf: Buffer) => (buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf ? buf.subarray(3) : buf);
   const libBuf = readFileSync(new URL("../lib/toast.ps1", import.meta.url));
   assert.ok(libBuf[0] === 0xef && libBuf[1] === 0xbb && libBuf[2] === 0xbf, "lib/toast.ps1 必须带 UTF-8 BOM（PS 5.1 按 ANSI 解码无 BOM 文件）");
   const srcBuf = readFileSync(new URL("../src/toast.ps1", import.meta.url));
   assert.deepEqual(stripBom(libBuf), stripBom(srcBuf), "lib/toast.ps1 剥离 BOM 后应与 src 源文件逐字节一致");
 }
 
-// ---- issue #469：visibilitychange 匿名监听无卸载 → 具名 handler + disposer 移除 ----
+// ---- ：visibilitychange 匿名监听无卸载 → 具名 handler + disposer 移除 ----
 // 分三层：① 源码级成对哨兵（注册/移除同现、订阅取消函数保存——防回归，源码名稳定）；
 // ② 产物级负向哨兵（匿名注册形态绝迹——esbuild 会把 apply 内具名函数重命名，
-//    产物文本不断言具体名字，只断不变量）；③ vm 沙箱执行真实产物 lib/client.js，
-//    事件计数级断言验收语义（apply→dispose→重复 apply 全程至多一份监听）。
+// 产物文本不断言具体名字，只断不变量）；③ vm 沙箱执行真实产物 lib/client.js，
+// 事件计数级断言验收语义（apply→dispose→重复 apply 全程至多一份监听）。
 {
   const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const client = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
@@ -211,7 +239,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(src.includes("unsubLocale()"),
     "#469：disposer 调用 locale 取消函数");
   // - unsubLocale 守卫对齐 undefined 形态（P1-2：防官方 locale.subscribe 返回
-  //   null 时 null 初始化守卫失效——provider-usage/mcp-manager 同款范式）
+  // null 时 null 初始化守卫失效——provider-usage/mcp-manager 同款范式）
   assert.ok(src.includes("var unsubLocale: (() => void) | undefined;"),
     "#469 P1-2：unsubLocale 声明为 undefined 形态（非 null 初始化）");
   assert.ok(src.includes("if (unsubLocale !== undefined) {"),
@@ -244,7 +272,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
     "#469 P1-2：产物 disposer unsubLocale 守卫为 undefined 形态");
 }
 
-// ---- issue #469 ② vm 沙箱执行真实产物：事件计数级验收 ----
+// ---- ② vm 沙箱执行真实产物：事件计数级验收 ----
 {
   const PKG = "@wingsky-1/dsh-notifier";
   const clientCode = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
@@ -252,14 +280,14 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   // 最小 document stub：对 add/removeEventListener 记账；其余惰性 no-op。
   // listenerCounts 按事件类型计数（remove 才减）——浏览器语义近似，足以断言
   // 「重复 apply 后仅一份」「disposer 后归零」且不依赖真 DOM。
-  const byType = new Map(); // type -> Set<fn>
+  const byType = new Map<string, Set<() => void>>(); // type -> Set<fn>
   const listeners = {
-    addEventListener(type, fn) {
+    addEventListener(type: string, fn: () => void) {
       let s = byType.get(type);
       if (!s) { s = new Set(); byType.set(type, s); }
       s.add(fn);
     },
-    removeEventListener(type, fn) {
+    removeEventListener(type: string, fn: () => void) {
       const s = byType.get(type);
       if (s) s.delete(fn);
     },
@@ -276,10 +304,10 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
     title: "",
     hidden: false,
     getElementById() { return null; }, // injectStyle：无旧 style → 新建
-    createElement(tag) {
+    createElement(tag: string) {
       if (tag === "style") return styleEl;
       // 其它标签（banner 等）惰性 no-op
-      return { appendChild() {}, remove() {}, set textContent(_v) {}, style: {}, dataset: {} };
+      return { appendChild() {}, remove() {}, set textContent(_v: string) {}, style: {}, dataset: {} };
     },
     head: { appendChild() {} },
     body: { appendChild() {} },
@@ -288,16 +316,19 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   // 实例列表供测试手动投递 notify 帧（驱动 flashTitle 降级链）。
   let sourceCount = 0;
   let closeCount = 0;
-  const sources = [];
+  const sources: Array<{ onmessage: ((ev: { data: string }) => void) | null }> = [];
   class EventSourceStub {
+    declare onmessage: ((ev: { data: string }) => void) | null;
+    declare onerror: (() => void) | null;
+    declare onopen: (() => void) | null;
     constructor() { sourceCount += 1; this.onmessage = null; this.onerror = null; this.onopen = null; sources.push(this); }
     close() { closeCount += 1; }
   }
   const fakeReact = { createElement: () => ({}) };
   const warnings = [];
-  const storage = new Map();
-  const sandbox = {
-    console: { ...console, warn: (...a) => warnings.push(a.join(" ")) },
+  const storage = new Map<string, string>();
+  const sandbox: VmContext = {
+    console: { ...console, warn: (...a: unknown[]) => warnings.push(a.join(" ")) },
     Symbol, Object, Array, JSON, Math, Date, Promise,
     setTimeout, clearTimeout,
     EventSource: EventSourceStub,
@@ -305,51 +336,51 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
     fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
     document: documentStub,
     localStorage: {
-      getItem: (k) => (storage.has(k) ? storage.get(k) : null),
-      setItem: (k, v) => storage.set(k, String(v)),
-      removeItem: (k) => storage.delete(k),
+      getItem: (k: string) => (storage.has(k) ? storage.get(k) : null),
+      setItem: (k: string, v: string) => storage.set(k, String(v)),
+      removeItem: (k: string) => storage.delete(k),
     },
   };
   sandbox.window = sandbox;
   sandbox.window.__ModuleLoader__ = {
-    load(handoff) {
+    load(handoff: ModuleHandoff) {
       if (handoff.id !== PKG) throw new Error(`unexpected load id: ${handoff.id}`);
       loadedFactory = handoff.factory;
     },
   };
-  let loadedFactory = null;
+  let loadedFactory: ClientFactory | null = null as ClientFactory | null;
   vm.createContext(sandbox);
   vm.runInContext(clientCode, sandbox);
   assert.ok(loadedFactory !== null, "#469：产物 load 已注册 factory");
 
   // materialize（同 client-contract-lib）：factory(require stub) → module.exports
-  const requireStub = (spec) => {
+  const requireStub = (spec: string) => {
     if (spec === "react") return fakeReact;
     throw new Error(`unexpected require: ${spec}`);
   };
-  const mod = loadedFactory(requireStub);
+  const mod = loadedFactory!(requireStub);
   assert.equal(typeof mod.apply, "function", "#469：materialize 后 exports.apply 为函数");
 
   // 卸载-重挂序列（宿主生命周期：旧实例 disposer 先于新 apply）：
   // apply1 → 监听 1；dispose1 → 0；apply2 → 1（重复 apply 后仅一份）；dispose2 → 0。
   // 监听注册/移除与 apply/disposer 严格配对，任意时刻至多一份。
-  const disposers = [];
+  const disposers: Array<() => void> = [];
   // locale 服务记账：subscribe 返回取消函数，调用计数 +1；重绑回调被调用计数。
   let localeSubscribes = 0;
   let localeUnsubs = 0;
-  const makeLocale = () => ({
+  const makeLocale = (): { register(): void; bind(): () => string; getSnapshot(): Record<string, unknown>; subscribe(): () => void } => ({
     register() {},
     bind() { return () => ""; },
     getSnapshot() { return {}; },
     subscribe() { localeSubscribes += 1; return () => { localeUnsubs += 1; }; },
   });
-  const makeCtx = (opts = {}) => ({
-    get(name) {
+  const makeCtx = (opts: { locale?: ReturnType<typeof makeLocale> } = {}) => ({
+    get(name: string) {
       if (name === "locale" && opts.locale) return opts.locale;
       // 无 locale/slots 服务：字典注册/tab 挂载跳过（通知半区照常）
       return undefined;
     },
-    effect(fn) {
+    effect(fn: () => () => void) {
       const d = fn();
       disposers.push(d);
       return d;
@@ -360,7 +391,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   mod.apply(makeCtx({ locale: makeLocale() }));
   assert.equal(visCount(), 1, "#469：首次 apply 后 visibilitychange 监听一份");
   assert.equal(localeSubscribes, 1, "#469：首次 apply 建立一条 locale 订阅");
-  disposers.shift()();
+  disposers.shift()!();
   assert.equal(visCount(), 0, "#469：disposer 卸载后监听归零");
   assert.equal(localeUnsubs, 1, "#469：disposer 卸载取消 locale 订阅");
 
@@ -390,11 +421,11 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   documentStub.title = "原始标题";
   assert.ok(typeof activeSource.onmessage === "function",
     "#469 P1-1：当前 SSE 实例已接 onmessage（可投递通知帧）");
-  activeSource.onmessage({ data: JSON.stringify({ type: "notify", kind: "done", title: "T", message: "m", seq: 1 }) });
+  activeSource.onmessage!({ data: JSON.stringify({ type: "notify", kind: "done", title: "T", message: "m", seq: 1 }) });
   assert.ok(documentStub.title.startsWith("🔔"),
     "#469 P1-1：hidden 帧驱动 flashTitle 后标题为闪烁态（实际 " + documentStub.title + "）");
   // 卸载当前实例 → 监听归零 + 标题恢复（disposer restoreTitle）
-  disposers.shift()();
+  disposers.shift()!();
   assert.equal(visCount(), 0, "#469：disposer 卸载后 visibilitychange 监听归零");
   assert.equal(localeUnsubs, 2, "#469：两次实例的 locale 订阅全部取消");
   assert.equal(documentStub.title, "原始标题",
@@ -405,13 +436,13 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.equal(documentStub.title, "原始标题", "#469 P1-1：disposer 二次调用标题不复发闪烁");
 }
 
-// ---- issue #470 复核 P1-2：client diffSettingsPayload 真实产物直测 ----
+// ---- 复核 P1-2：client diffSettingsPayload 真实产物直测 ----
 // 用 vm materialize 出的 mod.apply.diffSettingsPayload（apply 挂载的模块级纯函数）
 // 验证「真链」：以 GET effective（含未知键）为基线 → 只改已知键 → diff 不含
 // 未知键 →（PUT 行为在 routes.test.ts 全链断言）。不再允许测试手写近似 diff。
 {
   const clientCode = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
-  const sandbox = {
+  const sandbox: VmContext = {
     console: { ...console, warn: () => {} },
     Symbol, Object, Array, JSON, Math, Date, Promise,
     setTimeout, clearTimeout,
@@ -429,20 +460,20 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
     window: {},
   };
   sandbox.window = sandbox;
-  let loadedFactory = null;
-  sandbox.window.__ModuleLoader__ = { load(handoff) { loadedFactory = handoff.factory; } };
+  let loadedFactory: ClientFactory | null = null as ClientFactory | null;
+  sandbox.window.__ModuleLoader__ = { load(handoff: ModuleHandoff) { loadedFactory = handoff.factory; } };
   vm.createContext(sandbox);
   vm.runInContext(clientCode, sandbox);
   assert.ok(loadedFactory !== null, "#470 P1-2：产物 load 已注册 factory");
   const fakeReactForDiff = { createElement: () => ({}) };
-  const mod = loadedFactory((spec) => {
+  const mod = loadedFactory!((spec: string) => {
     if (spec === "react") return fakeReactForDiff;
     throw new Error(`unexpected require: ${spec}`);
   });
   assert.equal(typeof mod.apply, "function", "#470 P1-2：materialize 后 exports.apply 为函数");
   // 挂载赋值在 apply 函数体首行——先跑一次 apply（最小 ctx）才可读属性；
   // 随后立即 disposer 卸载（停 SSE/监听，防句柄残留）。
-  const disposers2 = [];
+  const disposers2: Array<() => void> = [];
   mod.apply({
     get() { return undefined; },
     effect(fn) { const d = fn(); disposers2.push(d); return d; },
@@ -472,7 +503,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   // baseline 为 null（加载未完成）→ 空 payload（不误存）
   assert.deepEqual(JSON.parse(JSON.stringify(diffFn(settingsView, null))), {}, "#470 P1-2：baseline null → 空 payload");
 
-  // ---- issue #614：channels 提交面空串可选字段剥除（真产物直测）----
+  // ---- ：channels 提交面空串可选字段剥除（真产物直测）----
 
   // 存量 0.2.2 空串残留形态：UI 改 enabled 一字段 → 整组提交被 strip 成合法形态
   // （否则 token:"" 等残留随组提交 → 服务端 400，UI 无法解锁修复）
@@ -504,7 +535,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   junkEdited.channels[1] = "y";
   assert.equal(JSON.stringify(diffFn(junkEdited, junk).channels), JSON.stringify([null, "y"]), "#614：非对象成员原样透传不炸");
 
-  // #614 纯函数直测：assignChannelFields（空串/undefined 删键）与 stripChannelEmpties
+  // 纯函数直测：assignChannelFields（空串/undefined 删键）与 stripChannelEmpties
   const assignFn = mod.apply.assignChannelFields;
   const stripFn = mod.apply.stripChannelEmpties;
   assert.equal(typeof assignFn, "function", "#614：apply 挂载 assignChannelFields");
@@ -521,15 +552,15 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.equal(stripFn(null), null, "#614：strip 非对象输入原样返回");
 }
 
-// ---- issue #405 PR2/PR3：客户端保存模型演进源码级契约锚点 ----
+// ---- ：客户端保存模型演进源码级契约锚点 ----
 {
   const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
 
-  // PR3：confirmOne 同步服务端 revision（修「确认 kind 后同窗口保存必 409」版本链断点）
+  // confirmOne 同步服务端 revision（修「确认 kind 后同窗口保存必 409」版本链断点）
   assert.ok(src.includes("freshRevision"), "#405：confirmOne 读取响应新 revision");
   assert.ok(src.includes("metaRef.current = nextMeta"), "#405：confirmOne 同步 metaRef.revision");
-  // PR2：频道域保存行（新 class，非 #418 回归的 dn-ch-saveRow）+ 域入口
+  // 频道域保存行（新 class，非 回归的 dn-ch-saveRow）+ 域入口
   assert.ok(src.includes('className="dn-ch-domainSave"'), "#405：频道 tab 域保存行 class（TSX 形态）");
   assert.ok(src.includes('saveFor("channels")'), "#405：域保存走 channels 入口");
   assert.ok(src.includes('saveFor("all")'), "#405：foot 保存走 all 入口");
@@ -538,14 +569,14 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(locales.includes("saveChannels:"), "#405：域保存按钮文案进 zh/en 字典");
 }
 
-// ---- issue #405 PR1：client createSaveGuard（保存串行）真实产物直测 ----
+// ---- ：client createSaveGuard（保存串行）真实产物直测 ----
 // 同一时刻仅一个在途保存（tryBegin 在途返回 false 不占用）；在途期间的再次点击
 // 记 pending，由 end() 返回 true 通知调用方补发一次；end 幂等释放、无 pending 时
 // 返回 false（不产生补发风暴）。guard 是模块级纯工厂（无 React 依赖），经
 // apply 挂载面直测——「测试即产品实现」。
 {
   const clientCode = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
-  const sandbox = {
+  const sandbox: VmContext = {
     console: { ...console, warn: () => {} },
     Symbol, Object, Array, JSON, Math, Date, Promise,
     setTimeout, clearTimeout,
@@ -563,16 +594,16 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
     window: {},
   };
   sandbox.window = sandbox;
-  let loadedFactory = null;
-  sandbox.window.__ModuleLoader__ = { load(handoff) { loadedFactory = handoff.factory; } };
+  let loadedFactory: ClientFactory | null = null as ClientFactory | null;
+  sandbox.window.__ModuleLoader__ = { load(handoff: ModuleHandoff) { loadedFactory = handoff.factory; } };
   vm.createContext(sandbox);
   vm.runInContext(clientCode, sandbox);
   assert.ok(loadedFactory !== null, "#405：产物 load 已注册 factory");
-  const mod = loadedFactory((spec) => {
+  const mod = loadedFactory!((spec: string) => {
     if (spec === "react") return { createElement: () => ({}) };
     throw new Error(`unexpected require: ${spec}`);
   });
-  const disposers3 = [];
+  const disposers3: Array<() => void> = [];
   mod.apply({
     get() { return undefined; },
     effect(fn) { const d = fn(); disposers3.push(d); return d; },
@@ -601,7 +632,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
     "#405：无本地变更 → rebase 结果即远端最新"
   );
 
-  // domainPayload：域过滤语义（#405 PR2）——channels 域只提 channels 键；
+  // domainPayload：域过滤语义——channels 域只提 channels 键；
   // all 原样；未知入口空对象
   assert.deepEqual(
     JSON.parse(JSON.stringify(domainFn({ channels: [1], notifyAsk: false, quietHours: {} }, "channels"))),
@@ -658,7 +689,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.equal(g4.end(), null, "#405：清空后再 end 返回 null");
 }
 
-// ---- issue #527：未启用频道/事件 chips 置灰禁点（通知事件路由 + 免打扰豁免）----
+// ---- ：未启用频道/事件 chips 置灰禁点（通知事件路由 + 免打扰豁免）----
 {
   const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
@@ -683,7 +714,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   assert.ok(css.includes("dn-route-chip.is-off"), "#527：is-off 置灰样式进 CSS");
 }
 
-// ---- issue #640/#641：每通道声音 UI（帧级 sound / 三态 / 声音行 / 试听 / 弃写锚）----
+// ---- /：每通道声音 UI（帧级 sound / 三态 / 声音行 / 试听 / 弃写锚）----
 {
   const src = readFileSync(new URL("../src/client/index.tsx", import.meta.url), "utf8");
   const locales = readFileSync(new URL("../src/client/locales.ts", import.meta.url), "utf8");
@@ -724,13 +755,13 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   console.log("#640/#641 客户端声音 UI 契约锚点: OK");
 }
 
-// ---- issue #640/#641：vm 沙箱真链——帧级 sound 驱动自播/静音（C1/C4 行为层）----
+// ---- /：vm 沙箱真链——帧级 sound 驱动自播/静音（C1/C4 行为层）----
 {
   const clientCode = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
-  const byType = new Map();
+  const byType = new Map<string, Set<() => void>>();
   const listeners = {
-    addEventListener(type, fn) { let s = byType.get(type); if (!s) { s = new Set(); byType.set(type, s); } s.add(fn); },
-    removeEventListener(type, fn) { const s = byType.get(type); if (s) s.delete(fn); },
+    addEventListener(type: string, fn: () => void) { let s = byType.get(type); if (!s) { s = new Set(); byType.set(type, s); } s.add(fn); },
+    removeEventListener(type: string, fn: () => void) { const s = byType.get(type); if (s) s.delete(fn); },
   };
   const documentStub = {
     ...listeners,
@@ -744,30 +775,35 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   };
   let sourceCount = 0;
   let notifCount = 0;
-  let notifSilent = [];
-  const sources = [];
-  class EventSourceStub { constructor() { sourceCount += 1; this.onmessage = null; this.onerror = null; sources.push(this); } close() {} }
-  const sandbox = {
+  let notifSilent: boolean[] = [];
+  const sources: Array<{ onmessage: ((ev: { data: string }) => void) | null }> = [];
+  class EventSourceStub {
+    declare onmessage: ((ev: { data: string }) => void) | null;
+    declare onerror: (() => void) | null;
+    constructor() { sourceCount += 1; this.onmessage = null; this.onerror = null; sources.push(this); }
+    close() {}
+  }
+  const sandbox: VmContext = {
     console: { ...console, warn: () => {} },
     Symbol, Object, Array, JSON, Math, Date, Promise,
     setTimeout, clearTimeout,
     EventSource: EventSourceStub,
-    Notification: Object.assign(function (title, opts) { notifCount += 1; notifSilent.push(opts.silent === true); this.close = () => {}; }, { permission: "granted" }),
+    Notification: Object.assign(function (this: { close: () => void }, title: string, opts: { silent?: boolean }) { notifCount += 1; notifSilent.push(opts.silent === true); this.close = () => {}; }, { permission: "granted" }),
     fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
     document: documentStub,
-    localStorage: { getItem: (k) => null, setItem: () => {}, removeItem: () => {} },
+    localStorage: { getItem: (k: string) => null, setItem: () => {}, removeItem: () => {} },
   };
   sandbox.window = sandbox;
   sandbox.isSecureContext = true;
-  let loadedFactory = null;
-  sandbox.window.__ModuleLoader__ = { load(handoff) { loadedFactory = handoff.factory; } };
+  let loadedFactory: ClientFactory | null = null as ClientFactory | null;
+  sandbox.window.__ModuleLoader__ = { load(handoff: ModuleHandoff) { loadedFactory = handoff.factory; } };
   vm.createContext(sandbox);
   vm.runInContext(clientCode, sandbox);
-  const mod = loadedFactory((spec) => {
+  const mod = loadedFactory!((spec: string) => {
     if (spec === "react") return { createElement: () => ({}) };
     throw new Error(`unexpected require: ${spec}`);
   });
-  const disposers = [];
+  const disposers: Array<() => void> = [];
   mod.apply({
     get() { return undefined; },
     effect(fn) { const d = fn(); disposers.push(d); return d; },
@@ -776,7 +812,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   // AudioContext stub：沙箱 window.AudioContext 缺失 → unlockAudio 静默失败 → playTone
   // 空转（沙箱无音频）；此处只验证「帧级 sound 不弹 + silent 标记」决策面。
   let seq = 0;
-  const deliver = (payload) => { seq += 1; activeSource.onmessage({ data: JSON.stringify({ type: "notify", seq, ...payload }) }); };
+  const deliver = (payload: Record<string, unknown>) => { seq += 1; activeSource.onmessage!({ data: JSON.stringify({ type: "notify", seq, ...payload }) }); };
   // 弹窗帧 + sound silent：仍弹实体（silent=true），不自播（沙箱无声无妨）
   deliver({ kind: "done", title: "T", message: "m", sound: { mode: "silent", tone: undefined } });
   assert.equal(notifCount, 1, "#640：silent 帧仍弹系统通知实体");
@@ -797,10 +833,10 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 // 且 mode 为 selfplay 时即使 tone undefined 也播默认旋律（旧 playChime 双音）。
 {
   const clientCode = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
-  const byType = new Map();
+  const byType = new Map<string, Set<() => void>>();
   const listeners = {
-    addEventListener(type, fn) { let s = byType.get(type); if (!s) { s = new Set(); byType.set(type, s); } s.add(fn); },
-    removeEventListener(type, fn) { const s = byType.get(type); if (s) s.delete(fn); },
+    addEventListener(type: string, fn: () => void) { let s = byType.get(type); if (!s) { s = new Set(); byType.set(type, s); } s.add(fn); },
+    removeEventListener(type: string, fn: () => void) { const s = byType.get(type); if (s) s.delete(fn); },
   };
   const documentStub = {
     ...listeners,
@@ -808,17 +844,19 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
     title: "",
     hidden: false,
     getElementById: () => null,
-    createElement: (tag) => {
+    createElement: (tag: string) => {
       if (tag === "style") return { id: "", textContent: "", dataset: {}, remove() {} };
       return { appendChild() {}, remove() {}, style: {}, dataset: {} };
     },
     head: { appendChild() {} },
     body: { appendChild() {} },
   };
-  const sources = [];
+  const sources: Array<{ onmessage: ((ev: { data: string }) => void) | null }> = [];
   let oscStarts = 0;
   // AudioContext stub：解锁后 running；振荡器 start() 计数（真实自播证据）
   class AudioCtxStub {
+    declare state: string;
+    declare currentTime: number;
     constructor() { this.state = "suspended"; this.currentTime = 0; }
     resume() { this.state = "running"; }
     createBuffer() { return {}; }
@@ -826,12 +864,17 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
     createOscillator() { return { type: "", frequency: { value: 0 }, connect() {}, start() { oscStarts += 1; }, stop() {} }; }
     createGain() { return { gain: { setValueAtTime() {}, exponentialRampToValueAtTime() {} }, connect() {} }; }
   }
-  const sandbox = {
+  const sandbox: VmContext = {
     console: { ...console, warn: () => {} },
     Symbol, Object, Array, JSON, Math, Date, Promise,
     setTimeout, clearTimeout,
-    EventSource: class { constructor() { this.onmessage = null; this.onerror = null; sources.push(this); } close() {} },
-    Notification: Object.assign(function () { this.close = () => {}; }, { permission: "granted" }),
+    EventSource: class {
+      declare onmessage: ((ev: { data: string }) => void) | null;
+      declare onerror: (() => void) | null;
+      constructor() { this.onmessage = null; this.onerror = null; sources.push(this); }
+      close() {}
+    },
+    Notification: Object.assign(function (this: { close: () => void }) { this.close = () => {}; }, { permission: "granted" }),
     AudioContext: AudioCtxStub,
     webkitAudioContext: undefined,
     fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
@@ -840,15 +883,15 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   };
   sandbox.window = sandbox;
   sandbox.isSecureContext = true;
-  let loadedFactory = null;
-  sandbox.window.__ModuleLoader__ = { load(handoff) { loadedFactory = handoff.factory; } };
+  let loadedFactory: ClientFactory | null = null as ClientFactory | null;
+  sandbox.window.__ModuleLoader__ = { load(handoff: ModuleHandoff) { loadedFactory = handoff.factory; } };
   vm.createContext(sandbox);
   vm.runInContext(clientCode, sandbox);
-  const mod = loadedFactory((spec) => {
+  const mod = loadedFactory!((spec: string) => {
     if (spec === "react") return { createElement: () => ({}) };
     throw new Error(`unexpected require: ${spec}`);
   });
-  const disposers = [];
+  const disposers: Array<() => void> = [];
   mod.apply({
     get() { return undefined; },
     effect(fn) { const d = fn(); disposers.push(d); return d; },
@@ -857,7 +900,7 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   // 先模拟用户手势解锁（首次点击 unlockAudio）
   for (const fn of byType.get("click") || []) fn();
   let seq = 0;
-  const deliver = (payload) => { seq += 1; activeSource.onmessage({ data: JSON.stringify({ type: "notify", seq, ...payload }) }); };
+  const deliver = (payload: Record<string, unknown>) => { seq += 1; activeSource.onmessage!({ data: JSON.stringify({ type: "notify", seq, ...payload }) }); };
   // 页面 visible + 连发两个只响不弹帧（selfplay 新帧 + 旧服务端 system 残留帧）：
   // 不弹实体（playOnly 豁免可见性）+ 至少一次默认旋律自播（1.5s 节流合并连发为
   // 一次播放属预期；旧 bug 形态两帧皆 0 播 → 断言失败即抓住断链）
@@ -870,13 +913,13 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   console.log("P1-1 vm playOnly 帧自播（振荡器计数）回归: OK");
 }
 
-// ---- S3-12/N-23：maxConnections 清空守卫（clampMaxConnections 真产物直测）----
+// ---- ：maxConnections 清空守卫（clampMaxConnections 真产物直测）----
 // 空串 → undefined → diff 键被 JSON 序列化丢弃 → 不提交保持原值；非空值软
 // clamp（1-1024，服务端写面 min=1，0 会 400——唯一有 400 风险的顶层数值键）。
 // 模块级纯函数经 apply 挂载面直测（与 diffSettingsPayload 同先例）。
 {
   const clientCode = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
-  const sandbox = {
+  const sandbox: VmContext = {
     console: { ...console, warn: () => {} },
     Symbol, Object, Array, JSON, Math, Date, Promise,
     setTimeout, clearTimeout,
@@ -894,16 +937,16 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
     window: {},
   };
   sandbox.window = sandbox;
-  let loadedFactory = null;
-  sandbox.window.__ModuleLoader__ = { load(handoff) { loadedFactory = handoff.factory; } };
+  let loadedFactory: ClientFactory | null = null as ClientFactory | null;
+  sandbox.window.__ModuleLoader__ = { load(handoff: ModuleHandoff) { loadedFactory = handoff.factory; } };
   vm.createContext(sandbox);
   vm.runInContext(clientCode, sandbox);
   assert.ok(loadedFactory !== null, "S3-12：产物 load 已注册 factory");
-  const mod = loadedFactory((spec) => {
+  const mod = loadedFactory!((spec: string) => {
     if (spec === "react") return { createElement: () => ({}) };
     throw new Error(`unexpected require: ${spec}`);
   });
-  const disposers = [];
+  const disposers: Array<() => void> = [];
   mod.apply({
     get() { return undefined; },
     effect(fn) { const d = fn(); disposers.push(d); return d; },

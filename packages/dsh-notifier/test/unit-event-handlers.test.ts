@@ -1,17 +1,20 @@
-// @ts-nocheck
 /**
- * dsh-notifier — unit：event-handlers 核心判定直测（PR0 红测先行 4）。
+ * dsh-notifier — unit：event-handlers 核心判定直测（红测先行）。
  *
  * 现状 resolveTurnEvidence（push 优先/快照兜底/stale 冻结/rememberedTurn）是
  * 模块私有函数（event-handlers.ts），行为只有 e2e 黑盒覆盖——失败定位只能靠
- * 黑盒（T3-3 补充项）。PR0 导出并锁定判定矩阵基线；PR2 adjudicate 拆分时是
+ * 黑盒。本文件导出并锁定判定矩阵基线；adjudicate 拆分时是
  * 行为对等判别网。
  */
 import assert from "node:assert/strict";
 import { resolveTurnEvidence } from "../src/events/interface.ts";
+import type { AgentState } from "../src/events/interface.ts";
 import { agentWithTitle } from "./helpers.ts";
 
-function run(agent, state, streamEnds = new Map()) {
+type EvidenceAgent = ReturnType<typeof agentWithTitle>;
+type EventStreamEnds = Parameters<typeof resolveTurnEvidence>[2];
+
+function run(agent: EvidenceAgent, state: AgentState, streamEnds: EventStreamEnds = new Map()) {
   return resolveTurnEvidence(agent, state, streamEnds);
 }
 
@@ -20,9 +23,9 @@ function run(agent, state, streamEnds = new Map()) {
   const agent = agentWithTitle("a1", "任务X", { turnEnd: 5 });
   const state = { runningSeen: false, startedAt: 0, runningBaseline: { turn: 3, kind: "completed" } };
   const ev = run(agent, state, new Map([["a1", { turn: 6, kind: "completed" }]]));
-  assert.equal(ev.pushed.turn, 6, "push 条目取回");
+  assert.equal(ev.pushed!.turn, 6, "push 条目取回");
   assert.equal(ev.evidenceSource, "push", "证据源 = push");
-  assert.equal(ev.best.turn, 6, "best = push（胜过快照 5）");
+  assert.equal(ev.best!.turn, 6, "best = push（胜过快照 5）");
   assert.equal(ev.hasNewEnd, true, "push turn6 > 记忆 undefined → 新 closure");
   assert.equal(ev.snapshot, undefined, "push 命中时不读快照（快照仅兜底，防御侧零 IO）");
   console.log("1 resolveTurnEvidence push 优先: OK");
@@ -35,7 +38,7 @@ function run(agent, state, streamEnds = new Map()) {
   const ev = run(agent, state);
   assert.equal(ev.pushed, undefined, "无 push");
   assert.equal(ev.evidenceSource, "快照兜底", "证据源 = 快照兜底");
-  assert.equal(ev.best.turn, 4, "best = 快照 turn4");
+  assert.equal(ev.best!.turn, 4, "best = 快照 turn4");
   assert.equal(ev.hasNewEnd, true, "快照 turn4 > 记忆 undefined → 新 closure");
   console.log("2 resolveTurnEvidence 快照兜底: OK");
 }
@@ -48,7 +51,7 @@ function run(agent, state, streamEnds = new Map()) {
   assert.equal(ev.evidenceSource, "快照冻结", "证据源 = 快照冻结");
   assert.equal(ev.best, undefined, "best 为空（陈旧快照不推进）");
   assert.equal(ev.hasNewEnd, false, "不当作新 closure");
-  assert.equal(ev.snapshot.turn, 3, "snapshot 保留供日志");
+  assert.equal(ev.snapshot!.turn, 3, "snapshot 保留供日志");
   console.log("3 resolveTurnEvidence stale 冻结: OK");
 }
 
@@ -67,7 +70,7 @@ function run(agent, state, streamEnds = new Map()) {
 
 // ---- 5：无证据（pushed 与快照皆无 → 保守静默） ----
 {
-  const agent = agentWithTitle("a5"); // 无 turn/end 事件
+  const agent = agentWithTitle("a5", undefined); // 无 turn/end 事件
   const ev = run(agent, { runningSeen: false, startedAt: 0 });
   assert.equal(ev.best, undefined, "best 为空");
   assert.equal(ev.evidenceSource, "无", "证据源 = 无");

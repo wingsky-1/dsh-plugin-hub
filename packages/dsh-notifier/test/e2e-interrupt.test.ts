@@ -1,11 +1,11 @@
-// @ts-nocheck
+// @ts-nocheck（e2e/集成面类型化技术债：桩对象密集，暂不参与 test/tsconfig 编译）
 /**
  * dsh-notifier — e2e：中断抑制与完成判定白名单。
  *
  * 覆盖：用户停止生成/中断（turn/end reason aborted）固定静默；
- * S1 本轮无新 turn/end closure 宁可静默；失败（error）/阻塞（blocked）/
+ * 本轮无新 turn/end closure 宁可静默；失败（error）/阻塞（blocked）/
  * 截断（max-tokens）/未知 kind 不误报「任务完成」；中断与失败后新一轮
- * 正常恢复通知；issue #290 阶段二 C-1/D-2：重载后首次 idle + abort-early
+ * 正常恢复通知；重载后首次 idle + abort-early
  * 陈旧快照经 runningBaseline 冻结静默（不把旧证据当新轮完成）。
  *
  * 时序约定（helpers.turnPair / agentWithTitle 联用）：「本轮完成」用例区分
@@ -31,7 +31,7 @@ try {
   status({ agent: int1.idle, status: "idle" });
   assert.equal(infos.length, 0, "中断（turn/end aborted）不通知完成");
 
-  // S1：abort 早于本轮 turn/start 落盘——本轮无新 turn/end，读到的还是
+  // 本轮无新 turn/end：abort 早于本轮 turn/start 落盘，读到的还是
   // 上一次的 completed → 必须静默（不能误报完成）。
   // 首轮为真实完成时序（running 无 closure → idle turn=1 completed 通知）。
   const s1First = turnPair("s1-1", "任务S1", {}, { turn: 1 });
@@ -106,7 +106,7 @@ try {
   status({ agent: uk1.idle, status: "idle" });
   assert.equal(infos.length, 3, "未知 kind 不通知完成");
 
-  // ── issue #290 阶段二 C-1：重载后首次 idle + abort-early 变体 ──
+  // ── 重载后首次 idle + abort-early 变体 ──
   // 独立实例模拟插件重载（新 fiber 状态机记忆为空）。重载后 agent 跑了一轮
   // 但 abort 早于本轮 turn/start 落盘：running 基线捕获上一轮 turn=1 completed，
   // idle 时快照仍 turn=1（≤ 基线）→ 冻结静默，不把旧证据当新轮完成。

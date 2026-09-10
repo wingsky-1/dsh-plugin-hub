@@ -1,10 +1,10 @@
-// @ts-nocheck
+
 /**
- * dsh-notifier — unit：settings-bridge 工厂直测（L1 层内，S3-29 补盲）。
+ * dsh-notifier — unit：settings-bridge 工厂直测（L1 层内直测补盲）。
  *
- * 覆盖 N-5（requirements §7.3）：createSettingsBridge 的 attach/降级语义与
+ * 覆盖 createSettingsBridge 工厂直测：attach/降级语义与
  * confirmKindToConfig CAS 重试 ≤2（SETTINGS_CONFLICT 重读重试、耗尽 reject、
- * SETTINGS_UNAVAILABLE 直拒）。工厂在包导出面内，但按 §11.2-1 纪律直测本域
+ * SETTINGS_UNAVAILABLE 直拒）。工厂在包导出面内，但直测本域
  * interface.ts（Node strip-types 原生执行）。
  */
 import { mkdtempSync, rmSync } from "node:fs";
@@ -15,7 +15,7 @@ import { createSettingsBridge } from "../src/config/interface.ts";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-unit-bridge-"));
 try {
-  // ── N-5a：attach 态——readUser/writable 生效 + confirmKindToConfig 写 allowKinds ──
+  // ── attach 态——readUser/writable 生效 + confirmKindToConfig 写 allowKinds ──
   {
     const fakeSettings = makeFakeSettings({ base: {} });
     const { ctx } = makeFakeCtx({});
@@ -29,10 +29,11 @@ try {
     const after = bridge.readUser().user;
     assert.ok(Array.isArray(after.allowKinds) && after.allowKinds.includes("ext:alpha"), "确认写入 allowKinds");
     await bridge.confirmKindToConfig("ext:alpha", false);
-    assert.ok(!bridge.readUser().user.allowKinds.includes("ext:alpha"), "撤销确认从 allowKinds 删除");
+    const revoked = bridge.readUser().user as { allowKinds?: string[] };
+    assert.ok(!(revoked.allowKinds ?? []).includes("ext:alpha"), "撤销确认从 allowKinds 删除");
   }
 
-  // ── N-5b：CAS 冲突重试 ≤2——首次冲突重读后成功 ──
+  // ── CAS 冲突重试 ≤2——首次冲突重读后成功 ──
   {
     const fakeSettings = makeFakeSettings({ base: {} });
     const { ctx } = makeFakeCtx({});
@@ -53,10 +54,11 @@ try {
     const calls = fakeSettings.getUpdateCalls().filter((c) => c.via === "service");
     assert.equal(conflictCalls, 1, "第一次 update 触发 SETTINGS_CONFLICT");
     assert.ok(calls.length >= 1, `冲突后重读重试并成功写入（成功 update ${calls.length} 次）`);
-    assert.ok(bridge.readUser().user.allowKinds.includes("ext:beta"), "重试成功后确认态落盘");
+    const persisted = bridge.readUser().user as { allowKinds?: string[] };
+    assert.ok((persisted.allowKinds ?? []).includes("ext:beta"), "重试成功后确认态落盘");
   }
 
-  // ── N-5c：CAS 冲突耗尽（恒冲突）→ reject SETTINGS_CONFLICT（尝试 = 1 + 重试上限 2）──
+  // ── CAS 冲突耗尽（恒冲突）→ reject SETTINGS_CONFLICT（尝试 = 1 + 重试上限 2）──
   {
     const fakeSettings = makeFakeSettings({ base: {} });
     const { ctx } = makeFakeCtx({});
@@ -73,11 +75,11 @@ try {
     } catch (err) {
       rejected = err;
     }
-    assert.ok(rejected && rejected.code === "SETTINGS_CONFLICT", "冲突耗尽后 reject SETTINGS_CONFLICT");
+    assert.ok(rejected !== null && (rejected as { code?: string }).code === "SETTINGS_CONFLICT", "冲突耗尽后 reject SETTINGS_CONFLICT");
     assert.equal(conflictCalls, 3, "CAS 尝试 = 首次 + 重试 ≤2 = 3 次后放弃");
   }
 
-  // ── N-5d：未 attach（settings 服务缺失）→ 降级语义 ──
+  // ── 未 attach（settings 服务缺失）→ 降级语义 ──
   {
     const { ctx } = makeFakeCtx({}); // 未 provide settings
     const bridge = createSettingsBridge(ctx, { configFile: join(work, "d.json") });
@@ -89,10 +91,10 @@ try {
     } catch (err) {
       rejected = err;
     }
-    assert.ok(rejected && rejected.code === "SETTINGS_UNAVAILABLE", "未 attach update 直拒 SETTINGS_UNAVAILABLE");
+    assert.ok(rejected !== null && (rejected as { code?: string }).code === "SETTINGS_UNAVAILABLE", "未 attach update 直拒 SETTINGS_UNAVAILABLE");
   }
 
-  // ── N-5e：entry 归一化（getCurrent/getSource 反映组合层配置）──
+  // ── entry 归一化（getCurrent/getSource 反映组合层配置）──
   {
     const { ctx } = makeFakeCtx({});
     const bridge = createSettingsBridge(ctx, { maxConnections: 99, notifyTurnEnd: true });

@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-notifier — unit：配置契约（normalizeConfig / DEFAULT_CONFIG）与免打扰判定
  * （parseHHMM / isInQuietHours）。
@@ -12,18 +11,22 @@ import { homedir, tmpdir } from "node:os";
 import { mkdtempSync, rmSync } from "node:fs";
 import { assert } from "./helpers.ts";
 import { normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, configFile, historyFile, statusFile, toastScriptPath, normalizeBarkBaseUrl, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, validateSettings, sanitizeSettings, sanitizePatchSettings, QUIET_ALLOW_KINDS, SOUND_IDS, isSoundSetting, resolveSoundSetting } from "../lib/index.js";
-// seqFile 是域内路径函数（R-6/D22 选项 A 装配用），不进包导出面——src 直连（同
+// seqFile 是域内路径函数（装配用），不进包导出面——src 直连（同
 // unit-server-sse-bus 直测 src/interface 姿态；包导出面快照契约零 diff）。
 import { seqFile } from "../src/config/interface.ts";
+import type { BarkChannelConfig, NotifyConfig } from "../src/config/interface.ts";
+
+/** resolveSoundSetting 的真实输入域：存量 user 层两新键可缺（undefined）、旧键可为历史残留值。 */
+type SoundConfigInput = Pick<NotifyConfig, "browserSound" | "systemSound" | "notifySound">;
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-unit-config-"));
 try {
   const DEFAULT_CONFIG_UNTOUCHED = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
 
-  // 路径契约（config.ts 导出，#510）：三路径 DSH_HOME 感知——默认形态（无
+    // 路径契约（config.ts 导出）：三路径 DSH_HOME 感知——默认形态（无
   // DSH_HOME）与旧版逐字节一致；设 DSH_HOME 时读写面都落隔离 home（隔离验证
-  // 不读/不写真实 ~/.dsh）。configFile 是存量自建 json 的迁移源路径（issue #76
-  // 后配置走官方 settings 存储，configFile 不再读写，仅迁移读取/改名），迁移源
+    // 不读/不写真实 ~/.dsh）。configFile 是存量自建 json 的迁移源路径（迁移后
+    // 配置走官方 settings 存储，configFile 不再读写，仅迁移读取/改名），迁移源
   // 语义不变、仅 base 解析随 DSH_HOME；historyFile / toast 脚本路径默认形态不变。
   assert.equal(configFile(), join(homedir(), ".dsh", "dsh-notifier.json"), "默认形态：迁移源路径 ~/.dsh/dsh-notifier.json");
   assert.equal(historyFile(), join(homedir(), ".dsh", "dsh-notifier-history.jsonl"), "默认形态：历史路径 ~/.dsh/dsh-notifier-history.jsonl");
@@ -51,8 +54,8 @@ try {
   assert.equal(DEFAULT_CONFIG.browserNotify, true, "默认浏览器通知开启");
   assert.equal(DEFAULT_CONFIG.notifySound, true, "默认提示音开启");
 
-  // ===== #640/#641：每通道独立声音配置（A1-A5）=====
-  // A1：SOUND_IDS 定稿集合（ding/bell/chime/pop，无 default/complete）+ 默认两键 true
+    // ===== 每通道独立声音配置 =====
+    // SOUND_IDS 定稿集合（ding/bell/chime/pop，无 default/complete）+ 默认两键 true
   assert.deepEqual([...SOUND_IDS], ["ding", "bell", "chime", "pop"], "A1：SOUND_IDS 定稿 4 音色（无 default/complete）");
   assert.equal(DEFAULT_CONFIG.browserSound, true, "A1：browserSound 默认 true（跟随系统）");
   assert.equal(DEFAULT_CONFIG.systemSound, true, "A1：systemSound 默认 true（跟随系统）");
@@ -63,32 +66,32 @@ try {
   for (const bad of ["default", "complete", "loud", "", 1, null, { a: 1 }]) {
     assert.equal(isSoundSetting(bad), false, `A2：isSoundSetting(${JSON.stringify(bad)}) 非法`);
   }
-  // A2：SETTING_VALIDATORS 含两新键——合法值通过、非法值 400（首个非法键 + hint）
+    // SETTING_VALIDATORS 含两新键——合法值通过、非法值 400（首个非法键 + hint）
   assert.equal(validateSettings({ browserSound: "ding" }), null, "A2：browserSound 音色合法");
   assert.equal(validateSettings({ systemSound: false }), null, "A2：systemSound false 合法");
   assert.equal(validateSettings({ browserSound: "default" })?.key, "browserSound", "A2：非白名单音色拒绝（首个非法键）");
   assert.equal(validateSettings({ systemSound: "complete" })?.key, "systemSound", "A2：systemSound 非白名单拒绝");
   assert.equal(validateSettings({ browserSound: "<script>" })?.key, "browserSound", "A2：browserSound 任意字符串拒绝");
   assert.ok(String(validateSettings({ browserSound: 1 })?.hint).includes("ding/bell/chime/pop"), "A2：hint 含音色白名单提示");
-  // A3：normalize 专用分支——合法值归一化；非法字符串不回默认且**不透传**
+    // normalize 专用分支——合法值归一化；非法字符串不回默认且**不透传**
   assert.equal(normalizeConfig({ browserSound: "ding" }).browserSound, "ding", "A3：browserSound 音色归一化");
   assert.equal(normalizeConfig({ systemSound: "pop", browserSound: false }).systemSound, "pop", "A3：systemSound 音色归一化");
   assert.equal(normalizeConfig({ systemSound: "pop", browserSound: false }).browserSound, false, "A3：两键独立归一化");
   assert.equal(normalizeConfig({ browserSound: "<script>" }).browserSound, true, "A3：非法值丢弃回默认（回落 default true）");
-  const evilSound = normalizeConfig({ browserSound: "<script>", systemSound: "ding", other: 1 }) as Record<string, unknown>;
+  const evilSound = normalizeConfig({ browserSound: "<script>", systemSound: "ding", other: 1 }) as unknown as Record<string, unknown>;
   assert.equal(Object.prototype.hasOwnProperty.call(evilSound, "<script>"), false, "A3：不透传（无 <script> 键）");
   assert.equal(Object.prototype.hasOwnProperty.call(evilSound, "browserSound"), true, "A3：browserSound 键恒存在（默认兜底）");
   assert.equal(normalizeConfig({ browserSound: "<script>" }).systemSound, true, "A3：非法值不跨键污染");
-  // A4：resolveSoundSetting 四形态回落（两新键齐 / 单新键 / 仅旧键 / 全缺）
+    // resolveSoundSetting 四形态回落（两新键齐 / 单新键 / 仅旧键 / 全缺）
   assert.equal(resolveSoundSetting({ browserSound: "ding", systemSound: "pop", notifySound: false }, "browser"), "ding", "A4：新键优先（browser）");
   assert.equal(resolveSoundSetting({ browserSound: "ding", systemSound: "pop", notifySound: false }, "system"), "pop", "A4：新键优先（system）");
-  assert.equal(resolveSoundSetting({ browserSound: false, systemSound: undefined, notifySound: true }, "browser"), false, "A4：显式 false 不再回落（写面权威）");
-  assert.equal(resolveSoundSetting({ browserSound: undefined, systemSound: true, notifySound: false }, "system"), true, "A4：system 显式 true 不回落旧键");
-  assert.equal(resolveSoundSetting({ browserSound: undefined, systemSound: undefined, notifySound: false }, "browser"), false, "A4：仅旧键 → 回落 notifySound");
-  assert.equal(resolveSoundSetting({ browserSound: undefined, systemSound: undefined, notifySound: "ding" }, "system"), "ding", "A4：仅旧键回落沿用（含旧值形态）");
-  assert.equal(resolveSoundSetting({ browserSound: undefined, systemSound: undefined, notifySound: undefined }, "browser"), true, "A4：全缺 → true（跟随系统默认）");
-  assert.equal(resolveSoundSetting({ browserSound: undefined, systemSound: undefined, notifySound: undefined }, "system"), true, "A4：全缺 → true（system）");
-  // normalize 后镜像恒含两新键（P0-3 等价映射：仅旧键表态时映射为新键，防
+  assert.equal(resolveSoundSetting({ browserSound: false, systemSound: undefined, notifySound: true } as unknown as SoundConfigInput, "browser"), false, "A4：显式 false 不再回落（写面权威）");
+  assert.equal(resolveSoundSetting({ browserSound: undefined, systemSound: true, notifySound: false } as unknown as SoundConfigInput, "system"), true, "A4：system 显式 true 不回落旧键");
+  assert.equal(resolveSoundSetting({ browserSound: undefined, systemSound: undefined, notifySound: false } as unknown as SoundConfigInput, "browser"), false, "A4：仅旧键 → 回落 notifySound");
+  assert.equal(resolveSoundSetting({ browserSound: undefined, systemSound: undefined, notifySound: "ding" } as unknown as SoundConfigInput, "system"), "ding", "A4：仅旧键回落沿用（含旧值形态）");
+  assert.equal(resolveSoundSetting({ browserSound: undefined, systemSound: undefined, notifySound: undefined } as unknown as SoundConfigInput, "browser"), true, "A4：全缺 → true（跟随系统默认）");
+  assert.equal(resolveSoundSetting({ browserSound: undefined, systemSound: undefined, notifySound: undefined } as unknown as SoundConfigInput, "system"), true, "A4：全缺 → true（system）");
+    // normalize 后镜像恒含两新键（等价映射：仅旧键表态时映射为新键，防
   // 「用户曾关声音升级后复活」；两键互不干扰，供 resolveSoundSetting 消费）
   const normSound = normalizeConfig({ notifySound: false });
   assert.equal(normSound.browserSound, false, "读面：仅旧键 false → 等价映射 browserSound=false（不复活成有声）");
@@ -100,7 +103,7 @@ try {
   assert.equal(merged.notifyTaskDone, true);
   assert.equal(merged.quietHours.enabled, true);
   assert.equal(merged.quietHours.start, "23:30");
-  assert.equal(merged.bogus, 1, "未知键透传保留（防降级丢键）");
+  assert.equal((merged as unknown as { bogus?: number }).bogus, 1, "未知键透传保留（防降级丢键）");
   assert.equal(normalizeConfig({ quietHours: { start: "25:00" } }).quietHours.start, "22:00", "非法 HH:MM(25:00) 丢弃回默认");
   assert.equal(normalizeConfig({ quietHours: { start: "9:30" } }).quietHours.start, "22:00", "非两位 HH:MM 丢弃");
   assert.equal(normalizeConfig({ notifyAsk: "yes" }).notifyAsk, true, "非布尔丢弃");
@@ -108,7 +111,7 @@ try {
   assert.equal(normalizeConfig({ notifyWhenVisible: "x" }).notifyWhenVisible, false, "非布尔丢弃");
   assert.equal(normalizeConfig({ notifyQuestion: false }).notifyQuestion, false, "提问通知可配置");
   assert.equal(normalizeConfig({ notifyQuestion: "x" }).notifyQuestion, true, "非布尔丢弃回默认");
-  // B-4：sanitizeContent 契约键——默认 true、可关、非布尔丢弃回默认、写面校验
+    // sanitizeContent 契约键——默认 true、可关、非布尔丢弃回默认、写面校验
   assert.equal(DEFAULT_CONFIG.sanitizeContent, true, "B-4：sanitizeContent 默认 true（统一脱敏开启）");
   assert.equal(normalizeConfig({ sanitizeContent: false }).sanitizeContent, false, "B-4：sanitizeContent=false 明文可配置");
   assert.equal(normalizeConfig({ sanitizeContent: "x" }).sanitizeContent, true, "B-4：非布尔丢弃回默认 true");
@@ -135,14 +138,14 @@ try {
   assert.equal(isInQuietHours(new Date(2026, 0, 1, 9, 0), { enabled: true, start: "09:00", end: "17:00" }), true, "同日内");
   assert.equal(isInQuietHours(new Date(2026, 0, 1, 8, 0), { enabled: true, start: "09:00", end: "17:00" }), false);
 
-  // #421：QUIET_ALLOW_KINDS 扩至全部 6 个内置事件（豁免候选全量）
+    // QUIET_ALLOW_KINDS 扩至全部 6 个内置事件（豁免候选全量）
   assert.deepEqual([...QUIET_ALLOW_KINDS], ["ask", "question", "done", "subagent-done", "error", "turn-end"], "#421：QUIET_ALLOW_KINDS 覆盖全部内置事件 kind");
 
-  // M4 配置归一化：askRemindMin / quietHours.allowKinds
+    // 配置归一化：askRemindMin / quietHours.allowKinds
   assert.equal(normalizeConfig({ askRemindMin: 3 }).askRemindMin, 3, "审批提醒分钟可配");
   assert.equal(normalizeConfig({ askRemindMin: 0 }).askRemindMin, 0, "0=关闭审批提醒");
   assert.equal(normalizeConfig({ askRemindMin: "x" }).askRemindMin, DEFAULT_CONFIG.askRemindMin, "非法提醒分钟回默认 5");
-  // #421：quietHours.allowKinds 放开白名单（全部内置事件可豁免）——未知 kind 项保留、
+    // quietHours.allowKinds 放开白名单（全部内置事件可豁免）——未知 kind 项保留、
   // 空串/超长项过滤、去重
   assert.deepEqual(normalizeConfig({ quietHours: { allowKinds: ["ask", "done", "error"] } }).quietHours.allowKinds, ["ask", "done", "error"], "放开后 done 等全部内置事件可豁免");
   assert.deepEqual(normalizeConfig({ quietHours: { allowKinds: ["ask", "bogus", "error"] } }).quietHours.allowKinds, ["ask", "bogus", "error"], "放开后未知 kind 保留（豁免仅 includes 匹配）");
@@ -157,7 +160,7 @@ try {
   assert.equal(normalizeConfig({ historyMaxAgeDays: 30 }).historyMaxAgeDays, 30, "按天清理可配");
   assert.equal(normalizeConfig({ historyMaxAgeDays: 0 }).historyMaxAgeDays, 0, "按天清理 0=关");
 
-  // #330 SSE 连接上限：默认 16，范围 1~1024，非法值丢弃回默认；未知键透传排除表不吞它
+    // SSE 连接上限：默认 16，范围 1~1024，非法值丢弃回默认；未知键透传排除表不吞它
   assert.equal(DEFAULT_CONFIG.maxConnections, 16, "maxConnections 默认 16");
   assert.equal(normalizeConfig(undefined).maxConnections, 16, "无输入回默认 16");
   assert.equal(normalizeConfig({ maxConnections: 8 }).maxConnections, 8, "上限可配");
@@ -167,9 +170,9 @@ try {
   assert.equal(normalizeConfig({ maxConnections: 1025 }).maxConnections, DEFAULT_CONFIG.maxConnections, "超上界 1024 非法回默认");
   assert.equal(normalizeConfig({ maxConnections: 16.6 }).maxConnections, 17, "小数取整");
   assert.equal(normalizeConfig({ maxConnections: "8" }).maxConnections, DEFAULT_CONFIG.maxConnections, "字符串非法回默认");
-  assert.equal(normalizeConfig({ maxConnections: 4, bogus: 1 }).bogus, 1, "未知键仍透传（排除表不吞其他键）");
+  assert.equal((normalizeConfig({ maxConnections: 4, bogus: 1 }) as unknown as { bogus?: number }).bogus, 1, "未知键仍透传（排除表不吞其他键）");
 
-  // ===== M2：channels / kindRoutes / allowKinds 三键（issue #366）=====
+    // ===== channels / kindRoutes / allowKinds 三键 =====
   assert.deepEqual(DEFAULT_CONFIG.channels, [], "channels 默认空");
   assert.deepEqual(DEFAULT_CONFIG.kindRoutes, {}, "kindRoutes 默认空");
   assert.deepEqual(DEFAULT_CONFIG.allowKinds, [], "allowKinds 默认空");
@@ -188,12 +191,12 @@ try {
   const okCh = { id: "phone", type: "bark", baseUrl: "https://api.day.app", deviceKey: "realKey123", enabled: false, sound: "minuet", group: "dsh" };
   const mergedCh = normalizeConfig({ channels: [okCh, { id: "bad id", type: "bark", baseUrl: "https://h", deviceKey: "k", enabled: true }, "junk", null] });
   assert.equal(mergedCh.channels.length, 1, "非法实例丢弃，合法实例保留");
-  assert.equal(mergedCh.channels[0].baseUrl, "https://api.day.app");
-  assert.equal(mergedCh.channels[0].sound, "minuet", "可选参数保留");
+  assert.equal((mergedCh.channels[0] as BarkChannelConfig).baseUrl, "https://api.day.app");
+  assert.equal((mergedCh.channels[0] as BarkChannelConfig).sound, "minuet", "可选参数保留");
   const dupCh = normalizeConfig({ channels: [{ id: "a1", type: "bark", baseUrl: "https://h", deviceKey: "k1", enabled: true }, { id: "a1", type: "bark", baseUrl: "https://h", deviceKey: "k2", enabled: false }] });
   assert.equal(dupCh.channels.length, 1, "重复 id 去重");
-  assert.equal(dupCh.channels[0].deviceKey, "k1", "重复 id 首个胜出");
-  const opaqueCh = normalizeConfig({ channels: [{ id: "a1", type: "bark", baseUrl: "https://h", deviceKey: "k", enabled: true, volume: "0.7", device_key: "evil", ciphertext: "x" }] }).channels[0] as Record<string, unknown>;
+  assert.equal((dupCh.channels[0] as BarkChannelConfig).deviceKey, "k1", "重复 id 首个胜出");
+  const opaqueCh = normalizeConfig({ channels: [{ id: "a1", type: "bark", baseUrl: "https://h", deviceKey: "k", enabled: true, volume: "0.7", device_key: "evil", ciphertext: "x" }] }).channels[0] as unknown as Record<string, unknown>;
   assert.equal(opaqueCh.volume, "0.7", "未知 string 参数透传（Bark 前向兼容）");
   assert.equal("device_key" in opaqueCh, false, "保留键 device_key 剔除");
   assert.equal("ciphertext" in opaqueCh, false, "保留键 ciphertext 剔除");
@@ -207,30 +210,30 @@ try {
   assert.equal("badKind" in mergedRoutes.kindRoutes, false, "非数组值丢弃");
   assert.equal("empty" in mergedRoutes.kindRoutes, false, "空数组丢弃");
   assert.deepEqual(normalizeConfig({ allowKinds: ["idle-archive:due", "", "x".repeat(65), "idle-archive:due"] }).allowKinds, ["idle-archive:due"], "allowKinds 去重与长度过滤");
-  // #427：allowKinds 128 项上限——normalize 截断（>128 保留前 128 项）
+    // allowKinds 128 项上限——normalize 截断（>128 保留前 128 项）
   const overCap = Array.from({ length: 130 }, (_, i) => "kind-" + i);
   assert.equal(normalizeConfig({ allowKinds: overCap }).allowKinds.length, 128, "顶层 allowKinds 超 128 项截断到 128");
-  assert.equal(normalizeConfig({ quietHours: { allowKinds: overCap } }).quietHours.allowKinds.length, 128, "quietHours.allowKinds 超 128 项截断到 128");
+  assert.equal((normalizeConfig({ quietHours: { allowKinds: overCap } }).quietHours.allowKinds ?? []).length, 128, "quietHours.allowKinds 超 128 项截断到 128");
 
   // 透传排除表同步：三键非法值不得以原样透传覆盖归一化结果（L144 坑回归）
   const opaque = normalizeConfig({ channels: "junk", kindRoutes: 5, allowKinds: true, bogus: 1 });
   assert.deepEqual(opaque.channels, [], "channels 非法回默认且不透传");
   assert.deepEqual(opaque.kindRoutes, {}, "kindRoutes 非法回默认且不透传");
   assert.deepEqual(opaque.allowKinds, [], "allowKinds 非法回默认且不透传");
-  assert.equal(opaque.bogus, 1, "其他未知键仍透传");
+  assert.equal((opaque as unknown as { bogus?: number }).bogus, 1, "其他未知键仍透传");
 
-  // #470 复核 P0（读面纵深）：normalizeConfig 透传剔除原型链成员自有键——
+    // 读面纵深：normalizeConfig 透传剔除原型链成员自有键——
   // 存量 user 层若含 JSON.parse 注入的 constructor/__proto__ 等键，不得脏写
   // 运行时镜像、不得改原型
   const readEvil = JSON.parse('{"constructor":1,"toString":2,"hasOwnProperty":3,"valueOf":4,"__proto__":{"polluted":1},"futureRead":9,"notifyAsk":true}');
   const readOut = normalizeConfig(readEvil);
   assert.equal(readOut.notifyAsk, true, "读面：已知键正常归一化");
-  assert.equal(readOut.futureRead, 9, "读面：普通未知键仍透传");
+  assert.equal((readOut as unknown as { futureRead?: number }).futureRead, 9, "读面：普通未知键仍透传");
   assert.equal(Object.prototype.hasOwnProperty.call(readOut, "constructor"), false, "读面：constructor 剔除不透传（非自有键）");
   assert.equal(Object.prototype.hasOwnProperty.call(readOut, "toString"), false, "读面：toString 剔除不透传（非自有键）");
   assert.equal(Object.getPrototypeOf(readOut), Object.prototype, "读面：normalizeConfig 输出原型未被污染");
 
-  // ===== M2：凭据脱敏与掩码回填（评审 P0-1/P0-2）=====
+    // ===== 凭据脱敏与掩码回填 =====
   const withSecret = { channels: [{ id: "phone", type: "bark", baseUrl: "https://api.day.app", deviceKey: "realKey123", enabled: true }], notifyAsk: true };
   const redacted = redactConfigView(withSecret);
   assert.equal(redacted.channels[0].deviceKey, SECRET_MASK, "deviceKey 掩码");
@@ -238,7 +241,7 @@ try {
   assert.equal(redacted.notifyAsk, true, "其余字段原样");
   assert.deepEqual(redactConfigView({ a: 1 }), { a: 1 }, "无 channels 输入原样");
   assert.equal(redactConfigView(undefined), null, "null 输入兜底");
-  // #470 qa 复核发现 2：redactConfigView 特殊键剔除的函数级直测——用
+    // redactConfigView 特殊键剔除的函数级直测——用
   // defineProperty 造**自有** constructor/__proto__ 键（JSON.stringify 会丢弃
   // undefined 值但不会丢自有键；此处刻意让 stringify 保留它们，证明剔除是
   // redactConfigView 自身逻辑而非序列化副效应）
@@ -251,7 +254,7 @@ try {
   assert.equal(Object.prototype.hasOwnProperty.call(evilOut, "constructor"), false, "读出口：constructor 自有键剔除");
   assert.equal(Object.prototype.hasOwnProperty.call(evilOut, "__proto__"), false, "读出口：__proto__ 自有键剔除");
   assert.equal(Object.prototype.hasOwnProperty.call(evilOut, "toString"), false, "读出口：toString 自有键剔除");
-  assert.equal(Object.prototype.polluted, undefined, "读出口：无全局原型污染");
+  assert.equal((Object.prototype as { polluted?: unknown }).polluted, undefined, "读出口：无全局原型污染");
 
   const userChs = [{ id: "phone", deviceKey: "realKey123" }, { id: "pad", deviceKey: "padKey456" }];
   const unmasked = unmaskChannels(
@@ -260,9 +263,9 @@ try {
   );
   assert.ok(unmasked.ok, "回填成功");
   if (unmasked.ok) {
-    assert.equal(unmasked.channels[0].deviceKey, "padKey456", "乱序掩码按 id 对齐回填（防下标串凭据）");
-    assert.equal(unmasked.channels[1].deviceKey, "realKey123", "乱序掩码按 id 对齐回填 2");
-    assert.equal(unmasked.channels[2].deviceKey, "freshKey", "新实例非掩码 key 保留");
+    assert.equal((unmasked.channels[0] as { deviceKey: string }).deviceKey, "padKey456", "乱序掩码按 id 对齐回填（防下标串凭据）");
+    assert.equal((unmasked.channels[1] as { deviceKey: string }).deviceKey, "realKey123", "乱序掩码按 id 对齐回填 2");
+    assert.equal((unmasked.channels[2] as { deviceKey: string }).deviceKey, "freshKey", "新实例非掩码 key 保留");
   }
   assert.ok(!unmaskChannels([{ id: "brand-new", deviceKey: SECRET_MASK }], userChs).ok, "新实例带掩码拒绝");
   assert.ok(!unmaskChannels([{ id: "brand-new", deviceKey: SECRET_MASK }], []).ok, "user 层空时新实例掩码拒绝");
@@ -279,15 +282,15 @@ try {
 
   // levels（kind→level 稀疏映射矩阵）：归一化保留合法 / 丢弃非法值 / 剔原型键 / 不进透传
   const lvCh = { ...okCh, levels: { question: "timeSensitive", error: "active", "subagent-done": "active" } };
-  const mergedLv = normalizeConfig({ channels: [lvCh] }).channels[0] as Record<string, unknown>;
+  const mergedLv = normalizeConfig({ channels: [lvCh] }).channels[0] as unknown as Record<string, unknown>;
   assert.deepEqual(mergedLv.levels, { question: "timeSensitive", error: "active", "subagent-done": "active" }, "合法 levels 归一化保留");
-  const badLv = normalizeConfig({ channels: [{ ...okCh, levels: { question: "timeSensitive", bogus: "urgent", "": "active", x: "x".repeat(65) } }] }).channels[0] as Record<string, unknown>;
+  const badLv = normalizeConfig({ channels: [{ ...okCh, levels: { question: "timeSensitive", bogus: "urgent", "": "active", x: "x".repeat(65) } }] }).channels[0] as unknown as Record<string, unknown>;
   assert.deepEqual(badLv.levels, { question: "timeSensitive" }, "非法值/空键/超长键丢弃");
-  const protoLv = normalizeConfig({ channels: [{ ...okCh, levels: JSON.parse('{"__proto__":"critical","constructor":"active","prototype":"passive","question":"active"}') }] }).channels[0] as Record<string, unknown>;
+  const protoLv = normalizeConfig({ channels: [{ ...okCh, levels: JSON.parse('{"__proto__":"critical","constructor":"active","prototype":"passive","question":"active"}') }] }).channels[0] as unknown as Record<string, unknown>;
   assert.deepEqual(protoLv.levels, { question: "active" }, "原型污染类键剔除");
-  const noLv = normalizeConfig({ channels: [{ ...okCh, levels: {} }] }).channels[0] as Record<string, unknown>;
+  const noLv = normalizeConfig({ channels: [{ ...okCh, levels: {} }] }).channels[0] as unknown as Record<string, unknown>;
   assert.equal("levels" in noLv, false, "空对象 levels 归一化为缺省");
-  const opaqueLv = normalizeConfig({ channels: [{ ...okCh, levels: { question: "active" }, volume: "0.7" }] }).channels[0] as Record<string, unknown>;
+  const opaqueLv = normalizeConfig({ channels: [{ ...okCh, levels: { question: "active" }, volume: "0.7" }] }).channels[0] as unknown as Record<string, unknown>;
   assert.equal(opaqueLv.volume, "0.7", "levels 键不干扰未知参数透传");
   // levels 写入校验（严格口径：任一项非法整组 400）
   assert.equal(validateSettings({ channels: [lvCh] }), null, "合法 levels 通过");
@@ -300,11 +303,11 @@ try {
   assert.equal(validateSettings({ kindRoutes: { error: [] } })?.key, "kindRoutes", "空数组 kindRoutes 拒绝");
   assert.equal(validateSettings({ allowKinds: ["a:b"] }), null, "合法 allowKinds 通过");
   assert.equal(validateSettings({ allowKinds: [42] })?.key, "allowKinds", "非字符串 allowKinds 拒绝");
-  // #421：quietHours.allowKinds 写入校验放开（与顶层 allowKinds 同口径：非空字符串 ≤64、≤128）
+    // quietHours.allowKinds 写入校验放开（与顶层 allowKinds 同口径：非空字符串 ≤64、≤128）
   assert.equal(validateSettings({ quietHours: { enabled: true, allowKinds: ["ask", "done", "turn-end"] } }), null, "放开后全部内置事件可写入豁免");
   assert.equal(validateSettings({ quietHours: { allowKinds: [42] } })?.key, "quietHours", "quietHours.allowKinds 非字符串拒绝（整组 400）");
   assert.equal(validateSettings({ quietHours: { allowKinds: [""] } })?.key, "quietHours", "quietHours.allowKinds 空串拒绝");
-  // #427：allowKinds 128 项上限——写入校验 >128 拒绝、恰好 128 通过（isAllowKinds / isConfirmedKinds 同口径）
+    // allowKinds 128 项上限——写入校验 >128 拒绝、恰好 128 通过（isAllowKinds / isConfirmedKinds 同口径）
   const capPlus1 = Array.from({ length: 129 }, (_, i) => "k" + i);
   assert.equal(validateSettings({ allowKinds: capPlus1 })?.key, "allowKinds", "顶层 allowKinds 超 128 项拒绝");
   assert.equal(validateSettings({ quietHours: { allowKinds: capPlus1 } })?.key, "quietHours", "quietHours.allowKinds 超 128 项拒绝（整组 400）");
@@ -315,7 +318,7 @@ try {
   assert.ok(sanitizedCh && Array.isArray(sanitizedCh.channels) && sanitizedCh.channels.length === 1, "sanitizeSettings channels 往返");
   assert.deepEqual(sanitizeSettings({ futureKey: 1 }), {}, "entry 白名单通道：未来键仍丢弃（组合层装配专用，#470 双通道拆分）");
 
-  // ===== #470：sanitizePatchSettings（PUT/迁移透传通道）=====
+    // ===== sanitizePatchSettings（PUT/迁移透传通道）=====
   assert.deepEqual(sanitizePatchSettings({ futureKey: 1 }), { futureKey: 1 }, "透传通道：纯未知键原样保留");
   assert.deepEqual(sanitizePatchSettings({ notifyAsk: false, futureKey: { a: 1 } }), { notifyAsk: false, futureKey: { a: 1 } }, "透传通道：已知+未知混合双保留");
   assert.deepEqual(sanitizePatchSettings({}), {}, "透传通道：空 patch 空对象（调用方按 400 语义处理）");
@@ -328,18 +331,18 @@ try {
   assert.deepEqual(nestedOut, nested, "透传通道：任意 JSON 值原样并入");
   assert.equal(sanitizePatchSettings(null), null, "透传通道：非对象 → null");
   assert.deepEqual(sanitizePatchSettings({ notifyTaskDone: true }), { notifyTaskDone: true }, "透传通道：纯已知键与 entry 白名单同结果");
-  assert.equal(sanitizePatchSettings({ channels: [{ ...okCh, volume: "0.7" }] }).channels[0].volume, "0.7", "透传通道：channels 内未知 string/number 参数保留（Bark 前向兼容不变）");
-  // #470 复核 P0：数组 patch 不得被当对象透传成数字索引脏键 → null（调用方 400）
+  assert.equal((sanitizePatchSettings({ channels: [{ ...okCh, volume: "0.7" }] }) as unknown as { channels: Array<Record<string, unknown>> }).channels[0].volume, "0.7", "透传通道：channels 内未知 string/number 参数保留（Bark 前向兼容不变）");
+    // 数组 patch 不得被当对象透传成数字索引脏键 → null（调用方 400）
   assert.equal(sanitizePatchSettings([1, 2]), null, "透传通道：数组 patch → null（拒绝，不写脏 user 层）");
   assert.equal(sanitizePatchSettings([]), null, "透传通道：空数组 → null");
-  // #470 复核 P0：原型链成员键经 JSON.parse 成为自有键 → 剔除不写入、不触发原型校验器
+    // 原型链成员键经 JSON.parse 成为自有键 → 剔除不写入、不触发原型校验器
   const protoEvil = JSON.parse('{"__proto__":{"polluted":1},"constructor":1,"prototype":2,"toString":3,"hasOwnProperty":4,"valueOf":5,"futureKey":7}');
   const protoEvilOut = sanitizePatchSettings(protoEvil);
   assert.deepEqual(protoEvilOut, { futureKey: 7 }, "透传通道：原型链成员键剔除、未知键仍透传");
   assert.equal(Object.getPrototypeOf(protoEvilOut), Object.prototype, "透传通道：__proto__ 不改变 out 原型（无原型污染）");
   const protoKnownEvil = JSON.parse('{"notifyAsk":false,"__proto__":{"polluted":1},"constructor":1}');
   assert.deepEqual(sanitizePatchSettings(protoKnownEvil), { notifyAsk: false }, "透传通道：原型键与已知键混合 → 只留已知键");
-  // #470 qa 复核发现 1：null 值语义分层——未知键 null 透传保留（与读面一致），
+    // null 值语义分层——未知键 null 透传保留（与读面一致），
   // 已知键 null 沿用既有跳过语义（视同未提交）
   assert.deepEqual(sanitizePatchSettings({ nullFuture: null, notifyAsk: null }), { nullFuture: null }, "透传通道：未知键 null 透传保留、已知键 null 跳过");
   assert.deepEqual(sanitizePatchSettings({ notifyAsk: null }), {}, "透传通道：纯已知键 null patch 净化后空对象（调用方按 400 处理）");
@@ -347,7 +350,7 @@ try {
   // 读面 normalizeConfig 本就透传 null（与写面闭合）
   const nullRead = normalizeConfig({ nullFuture: null });
   assert.equal(Object.prototype.hasOwnProperty.call(nullRead, "nullFuture"), true, "读面：未知键 null 透传保留");
-  assert.equal(nullRead.nullFuture, null, "读面：未知键 null 值原样");
+  assert.equal((nullRead as unknown as { nullFuture?: null }).nullFuture, null, "读面：未知键 null 值原样");
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

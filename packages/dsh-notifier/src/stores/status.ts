@@ -1,5 +1,5 @@
 /**
- * dsh-notifier — 频道投递状态落盘（M2，issue #366）。
+ * dsh-notifier — 频道投递状态落盘。
  *
  * 职责：per-channel 最近一次投递终态（ok/failed + 错误摘要 + 连续失败计数）
  * 的内存镜像与持久化。与历史 jsonl 互补——事件流的实时性由 wingsky-notify/sent

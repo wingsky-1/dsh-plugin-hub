@@ -1,28 +1,28 @@
 /**
  * dsh-notifier — 浏览器端（自包含）。
  *
- * 行为（issue #76）：
- * - 在「设置」面板注册独立 tab「通知中心」（settings.section 插槽，issue #366
- *   M1：参照 provider-usage「用量统计」tab；不做 plugin.item 双插槽重复展示）
- *   ——侧边栏「通知」入口/浮层/角标/拖拽全部移除（B1-B6）；
- * - 通知半区（C1-C9）保留并与 DOM 解耦：SSE /events 订阅 + 60s 看门狗 +
+ * 行为：
+ * - 在「设置」面板注册独立 tab「通知中心」（settings.section 插槽：参照
+ *   provider-usage「用量统计」tab；不做 plugin.item 双插槽重复展示）
+ *   ——侧边栏「通知」入口/浮层/角标/拖拽全部移除；
+ * - 通知半区保留并与 DOM 解耦：SSE /events 订阅 + 60s 看门狗 +
  *   visibilitychange 重建 + 多标签租约 + 音频手势解锁，不依赖任何插件 DOM；
- * - 历史记录最近 10 条收进卡片（D1-D2）；卡片动作区含清理记录（两段式确认）/
- *   请求权限/发送测试通知（A6-A7）；三端降级文案迁入卡片（A5/A8）；
+ * - 历史记录最近 10 条收进卡片；卡片动作区含清理记录（两段式确认）/
+ *   请求权限/发送测试通知；三端降级文案迁入卡片；
  * - 配置读取走 GET /config 包装体 {ok,user,revision,effective,writable}，保存走
- *   PUT {patch, expectedRevision}（基线 diff 只提变更键，F3/A4）。
+ *   PUT {patch, expectedRevision}（基线 diff 只提变更键，防组合层默认值回写覆盖）。
  */
 // 浏览器半区干净模块：只导出 apply/inject；React 由构建期 external 注入（经 factory
 // 注入的 require("react") 解析，dsh web 不暴露全局 React）。契约外壳（IIFE/load/
 // Symbol.toStringTag 装配）由 scripts/build/build-client.ts 统一生成——源码不写任何 loader。
 // 样式：独立 style.css（见同目录），build-client 的 .css text-loader 构建期内联为字符串
 import STYLE from "./style.css";
-// 样式注入收敛 shared/client/ensure-style.js（issue #477）：本包只补
+// 样式注入收敛 shared/client/ensure-style.js：本包只补
 // { id, cssText, version } 实参；STYLE_ID/CSS_VERSION 常量保留为调用实参来源，
 // disposer（getElementById(STYLE_ID)）沿用常量。
 import { ensureStyle } from "../../../../shared/client/ensure-style.js";
 import * as React from "react";
-// i18n（issue #348）：复用官方 dsh-client-locale——zh/en 双语字典，LocaleNamespaceMap
+// i18n：复用官方 dsh-client-locale——zh/en 双语字典，LocaleNamespaceMap
 // 声明合并进官方 ui-slots 类型面；仅 import type（编译期擦除，无运行时依赖）。
 import { zh, en, type NotifierLocaleKey } from "./locales.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
@@ -41,8 +41,8 @@ declare module "@deepseek-ai/dsh-client-ui-slots" {
 const NS = "notifier";
 
 /**
- * 基线 diff 纯函数（issue #470 复核 P1-2）：返回 settings 相对 baseLine 中
- * **值不同**的键集合（增量 patch，只提交变更键——A4 防组合层 base 被默认值
+ * 基线 diff 纯函数：返回 settings 相对 baseLine 中
+ * **值不同**的键集合（增量 patch，只提交变更键——防组合层 base 被默认值
  * 回写覆盖）。深比较用 JSON.stringify（值同序同即视为未变，UI 编辑对象字段
  * 时键序稳定）。settings 中不存在于 baseLine 的新增键（diff 语义下的新增）
  * 与值不同的既有键都会被提交；baseLine 中已删除的键不提交删除（增量 merge
@@ -60,7 +60,7 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
     if (!Object.prototype.hasOwnProperty.call(settings, key)) continue;
     var cur = settings[key];
     var base = baseLine[key];
-    // #614：channels 整组提交前对实例做空串可选字段剥除——存量配置（0.2.2 保存
+    // channels 整组提交前对实例做空串可选字段剥除——存量配置（0.2.2 保存
     // 失败前/手改 yaml/旧版本）可能残留 token:"" 等空串形态，UI 编辑任一字段都会
     // 触发整组提交把残留一起带走 → 400 死锁。剥除与读面 normalize（空串按未配置
     // 剥除）同语义，纯读不改草稿，用户后续输入仍经 assignChannelFields 正常写。
@@ -72,13 +72,13 @@ function diffSettingsPayload(settings: Record<string, any>, baseLine: Record<str
 }
 
 /**
- * 单个频道实例的空串可选字段剥除（issue #614）：对实例浅拷贝后删除值为空串的
+ * 单个频道实例的空串可选字段剥除：对实例浅拷贝后删除值为空串的
  * 可选字段。必填字段（id/type/url/baseUrl/deviceKey/enabled/auth）不在清单内——
  * 它们缺失/为空由服务端写面校验 400（语义正确：必填不允许空）。只处理 string
  * 值，number/boolean/对象字段不触碰；非对象输入原样返回（防御数组/null）。
  * 模块级纯函数（apply 挂载 + vm 直测），对齐 diffSettingsPayload 先例。
  */
-/** 空串即「未配置」的可选 string 字段清单（bark/webhook 实例合集，#614）。
+/** 空串即「未配置」的可选 string 字段清单（bark/webhook 实例合集）。
  *  必填键（id/type/url/baseUrl/deviceKey/enabled/auth）不在清单内——为空由服务端
  *  写面校验 400 拦截（必填不允许空，语义正确）；非 string 值（number/boolean/
  *  levels 对象）不触碰。 */
@@ -95,7 +95,7 @@ function stripChannelEmpties(ch: unknown): unknown {
 }
 
 /**
- * 409 冲突「保留我的修改并覆盖」的 rebase 纯函数（issue #405 PR2b）：
+ * 409 冲突「保留我的修改并覆盖」的 rebase 纯函数：
  * 以服务端最新 effective 为基底，把本地变更键的值覆盖上去（键级 last-write-wins，
  * 与 JSON Merge Patch / Firebase per-key merge 同语义）——本地变更键集合由调用方
  * 在用户触发「覆盖」动作时实时重算（非 409 时刻快照，横幅期间的新编辑不丢）。
@@ -109,7 +109,7 @@ function rebaseSettings(localChanges: Record<string, any>, remoteEffective: Reco
 }
 
 /**
- * 按保存入口从全量 diff 中取子集（issue #405 PR2 域保存）：
+ * 按保存入口从全量 diff 中取子集（域保存）：
  * - entry "all"：原样返回（foot 全量保存）；
  * - entry "channels"：仅保留 channels 键（频道域保存——事件/参数半成品草稿不
  *   随频道域保存提交）；
@@ -126,11 +126,11 @@ function domainPayload(diff: Record<string, any>, entry: string): Record<string,
 }
 
 /**
- * 频道实例字段合并（issue #614）：part 中**空串/undefined 值从 target 删除该键**，
+ * 频道实例字段合并：part 中**空串/undefined 值从 target 删除该键**，
  * 其余浅覆盖。空串在服务端写面校验中是「非法值」而非「未配置」——token/username/
  * password/headerValue 要求非空（length > 0）、headerName 过头名正则、name 要求
  * 非空，读面 normalize 却把空串剥除（等价未配置）。若把清空输入回写成 "" 提交，
- * 实例会带着空串残留被整组 400（「填了又删空」死锁，#614 必现根因之一）——空串
+ * 实例会带着空串残留被整组 400（「填了又删空」死锁的必现根因之一）——空串
  * 删键后提交面与读面同语义（键不存在 = 未配置）。单点收敛在 chPatch（bark/webhook
  * 实例所有字段写回共用此函数）。模块级纯函数（apply 挂载 + vm 直测），
  * 对齐 diffSettingsPayload 先例。
@@ -146,12 +146,12 @@ function assignChannelFields(target: Record<string, any>, part: Record<string, a
 }
 
 /**
- * 保存串行 guard（issue #405 要素 2）：同一时刻仅一个在途保存请求。
+ * 保存串行 guard：同一时刻仅一个在途保存请求。
  * exhaustMap + trailing 语义——在途期间再点保存不丢弃意图：记 pending（含
  * 入口标识），由调用方在本次在途结束（end）后按同一入口补发一次（补发是完整
  * 保存，是否仍有脏由调用方 saveFor() 的 diff 空检查兜底，天然不循环）。
  *
- * 为什么 pending 记入口而非布尔：#405 PR2 有两个保存入口——foot 全量（"all"）
+ * 为什么 pending 记入口而非布尔：有两个保存入口——foot 全量（"all"）
  * 与频道 tab 域保存（"channels"），语义不同。在途期间被拒的入口必须原样补发：
  * 若「保存频道」被拒却补发全量，会把事件 tab 的半成品草稿一并提交。同一次在途
  * 多次点击不同入口时记最后一次意图（end 只返回一个入口，天然不风暴）。
@@ -190,7 +190,7 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
 }
 
 /**
- * maxConnections 软钳制（S3-12/P2-4）：空串经 numInput 归一为 undefined → 不落
+ * maxConnections 软钳制：空串经 numInput 归一为 undefined → 不落
  * diff（保持原值）；非空值 clamp 到 1-1024 ——服务端写面 min=1（0 会 400，清空
  * 输入即死锁的唯一顶层数值键）。非有限值（NaN 防御）同样归 undefined 不提交。
  * 模块级纯函数（apply 挂载 + vm 直测），对齐 diffSettingsPayload 先例。
@@ -219,11 +219,11 @@ function clampMaxConnections(value: number | undefined): number | undefined {
    *  模块，两处由各自测试锁定；定稿口径 ding/bell/chime/pop）。 */
   var SOUND_IDS: readonly string[] = ["ding", "bell", "chime", "pop"];
   /** 宿主平台（/health platform 拉取；服务端运行机器 OS——系统通道提示据此，
-   *  防浏览器 OS 与宿主 OS 混淆（C7）。null = 未拉取/失败）。 */
+   *  防浏览器 OS 与宿主 OS 混淆。null = 未拉取/失败）。 */
   var hostPlatform: string | null = null;
   var STYLE_ID = "dsh-notifier-style";
-  // 合并 #418/#421/#426/#508 后统一 bump（保证新样式重注入；508-1 > 426-1）
-  // #640/#641：声音行/三态/试听样式加入 → 527-1 → 640-1
+  // 每次样式契约变更后 bump（版本号单调递增，保证 ensureStyle 判定为新版本并重注入）
+  // 声音行/三态/试听样式加入时再次 bump。
   var CSS_VERSION = "640-1";
   // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
   var NOTIFY_ICON =
@@ -264,7 +264,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
   };
 
   /**
-   * kind → 展示强度（severity）css 修饰符（#508 M1：事件行/历史行色点）。
+   * kind → 展示强度（severity）css 修饰符（事件行/历史行色点）。
    * 与服务端 service.ts KIND_SEVERITY 同源复制（客户端不 import 宿主端模块——
    * 干净模块边界），两处由各自测试锁定；新增 kind 时同步维护。
    */
@@ -279,7 +279,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
   };
 
   /**
-   * 频道实例 → 路由 id（#508 复核 4②：channelId 前缀单点化）。
+   * 频道实例 → 路由 id（channelId 前缀单点化）。
    * 旧实现 "bark:"+id 三处硬编码（service resolveRoutes / 宿主 outboundChannels /
    * 客户端 routeToggle），webhook 频道引入后统一为 `type:id`——本 helper 为客户端
    * 单一事实源，宿主端同名单独维护（跨端无共享模块，注释互指）。
@@ -289,8 +289,8 @@ function clampMaxConnections(value: number | undefined): number | undefined {
   }
 
   /**
-   * webhook 频道预设（#508 M2，拍板 r3）：选择预设填充认证方式与消息模板；URL 不自动
-   * 覆盖（避免丢用户已填内容——对抗评审 P1-11 的「仅空值填充」变体：URL 只在为空时
+   * webhook 频道预设：选择预设填充认证方式与消息模板；URL 不自动
+   * 覆盖（避免丢用户已填内容——「仅空值填充」的变体：URL 只在为空时
    * 由用户填写，模板/认证随预设走且可再改）。模板渲染契约见 channel-webhook.ts：
    * 文本占位符 JSON-aware 转义、{{ts}} 数字直出、{{priority}} 频道感知映射。
    */
@@ -310,7 +310,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
   };
 
   /**
-   * 频道类型图标（#508 拍板 ⑤ 保留；内联 SVG 零外部资源）。
+   * 频道类型图标（设计上刻意保留；内联 SVG 零外部资源）。
    * browser=地球 / system=显示器 / webhook=闪电 / 其余（bark）=铃铛。
    */
   function iconEl(channelType: string) {
@@ -442,8 +442,8 @@ function clampMaxConnections(value: number | undefined): number | undefined {
   }
 
   var lastChimeAt = 0;
-  /** 统一播放节流（1.5s）：覆盖全部自播路径（通知音 + 只响不弹 + 试听由
-   *  playToneForce 绕过——用户手势直接试听不受节流限制）。防通知风暴叠播。 */
+  /** 统一播放节流（1.5s）：覆盖全部自播路径（通知音 + 只响不弹）；试听走
+   *  playPreview 不经本门——用户手势直接试听不受节流限制。防通知风暴叠播。 */
   function playGate(): boolean {
     var now = Date.now();
     if (now - lastChimeAt < 1500) return false;
@@ -462,7 +462,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       else if (tone === "bell") notes = [{ freq: 880, at: 0, dur: 0.5 }];
       else if (tone === "chime") notes = [{ freq: 660, at: 0, dur: 0.3 }, { freq: 880, at: 0.15, dur: 0.3 }, { freq: 1320, at: 0.3, dur: 0.5 }];
       else if (tone === "pop") notes = [{ freq: 392, at: 0, dur: 0.12, type: "triangle" }];
-      else notes = [{ freq: 880, at: 0, dur: 0.16 }, { freq: 660, at: 0.16, dur: 0.22 }]; // 默认（旧 playChime 双音）
+      else notes = [{ freq: 880, at: 0, dur: 0.16 }, { freq: 660, at: 0.16, dur: 0.22 }]; // 默认双音
       for (var i = 0; i < notes.length; i += 1) {
         var n = notes[i];
         var osc = audioCtx.createOscillator();
@@ -491,11 +491,6 @@ function clampMaxConnections(value: number | undefined): number | undefined {
     } catch (error) {
       // 忽略
     }
-  }
-
-  /** 旧双音实现保留名（通知降级路径已并入 playTone，此函数供历史锚点/兜底）。 */
-  function playChime() {
-    playTone(undefined);
   }
 
   var savedTitle: any = null;
@@ -532,7 +527,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
 
   /** 页面内横幅（非安全上下文降级通道；点击聚焦，8 秒自动消失，最多叠 3 条）。
    *  kind 可含任意字符（动态 kind 注册），旧实现把 kind 拼进 CSS 属性选择器，
-   *  异常字符（引号/反斜杠）会让 querySelector 抛错 → 整帧静默丢弃（S3-17）。
+   *  异常字符（引号/反斜杠）会让 querySelector 抛错 → 整帧静默丢弃。
    *  改遍历比对 dataset.kind（去重 + 计数同语义，不构造选择器）。 */
   function showBanner(kind: any, title: any, message: any) {
     var banners = Array.prototype.slice.call(document.querySelectorAll(".dn-banner"));
@@ -562,7 +557,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
   }
 
   /**
-   * 通知展示总入口（#640/#641：声音策略为帧级权威，取代布尔快照）：
+   * 通知展示总入口（声音策略为帧级权威，取代布尔快照）：
    * @param opts.sound 服务端解析的声音策略 {mode, tone}——
    *   silent（静音）/ system（跟随系统默认，交给 OS）/ selfplay（页内自播，系统弹窗 silent 防双响）；
    *   缺省（旧服务端无 sound 字段）回落 runtimeConfig 快照语义（notifySound !== false）。
@@ -579,13 +574,13 @@ function clampMaxConnections(value: number | undefined): number | undefined {
     var silent = frame.mode === "silent" || selfPlay;
     var tone = typeof frame.tone === "string" ? frame.tone : undefined;
     // 只响不弹 + mode:"system"（旧服务端/升级窗口残留帧）：无弹窗实体 = OS 不会
-    // 发声，归一为自播默认旋律（复核 P1-1 防御侧——服务端已改为编 selfplay，
+    // 发声，归一为自播默认旋律（服务端已改为下发 selfplay，
     // 此处兜底旧帧防「0 弹 0 播纯静默」）
     if (opts.playOnly === true && frame.mode === "system") {
       selfPlay = true;
       silent = true;
     }
-    // 多标签去重：弹实体与只响不弹自播一律先过主标签租约（C2/P0-1），副标签静默
+    // 多标签去重：弹实体与只响不弹自播一律先过主标签租约，副标签静默
     if (!claimMaster()) return;
     if (!opts.playOnly && systemNotificationUsable()) {
       try {
@@ -625,13 +620,13 @@ function clampMaxConnections(value: number | undefined): number | undefined {
     }
     // 页面聚焦时不提醒（用户在界面中）；除非配置了「页面可见时也弹」。
     if (document.visibilityState !== "hidden" && !(runtimeConfig && runtimeConfig.notifyWhenVisible === true)) {
-      // 只响不弹（playOnly）不依赖可见性——它不打扰界面，纯声音提醒（C4）
+      // 只响不弹（playOnly）不依赖可见性——它不打扰界面，纯声音提醒
       if (payload.playOnly !== true) return;
     }
     showNotification(payload.kind, payload.title, payload.message, { sound: payload.sound, playOnly: payload.playOnly === true });
   }
 
-  // ------------------------------------------------------------ SSE 半区（C1-C9）
+  // ------------------------------------------------------------ SSE 半区
 
   // 当前 SSE 句柄（visibilitychange 回前台重建时引用；卸载时置 null）
   var eventsHandle: { close: () => void; reconnect: () => void } | null = null;
@@ -745,15 +740,15 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       });
   }
 
-  /** 拉取频道投递状态（M2：per-channel 最近投递终态）。
-   *  失败向上抛（S3-16：调用方决定保留旧态而非清空状态行）。 */
+  /** 拉取频道投递状态（per-channel 最近投递终态）。
+   *  失败向上抛（调用方决定保留旧态而非清空状态行）。 */
   function fetchStatus(): Promise<any> {
     return fetch(ROUTES.status, { headers: { accept: "application/json" } })
       .then(function (r: any) { return r.json(); })
       .then(function (data: any) { return (data && data.channels) || {}; });
   }
 
-  /** 拉取动态 kind 清单（M2：注册表 + 确认态）。 */
+  /** 拉取动态 kind 清单（注册表 + 确认态）。 */
   function fetchKinds(): Promise<any[]> {
     return fetch(ROUTES.kinds, { headers: { accept: "application/json" } })
       .then(function (r: any) { return r.json(); })
@@ -761,7 +756,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       .catch(function () { return []; });
   }
 
-  /** 动态 kind 确认（M2：POST /kinds {kind, confirmed}）。 */
+  /** 动态 kind 确认（POST /kinds {kind, confirmed}）。 */
   function postKind(kind: string, confirmed: boolean): Promise<any> {
     return fetch(ROUTES.kinds, {
       method: "POST",
@@ -775,7 +770,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
     });
   }
 
-  /** 测试通知（M2：channelId 可选——per-channel 测试，收敛到 service 管线）。 */
+  /** 测试通知（channelId 可选——per-channel 测试，收敛到 service 管线）。 */
   function sendTestReq(channelId?: string): Promise<any> {
     return fetch(ROUTES.test, {
       method: "POST",
@@ -791,7 +786,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
 
   /**
    * 设置面板独立 tab「通知中心」（settings.section 插槽渲染的 React 卡片）。
-   * M2 重设计（issue #366）：频道卡分区（browser/system/bark×n，状态灯 + per-channel
+   * 重设计：频道卡分区（browser/system/bark×n，状态灯 + per-channel
    * 测试）+ 事件路由复选组（kindRoutes 单源双向编辑）+ 动态 kind 确认清单 +
    * 高级参数折叠；字段全量 + 基线 diff 只提变更键 + 历史最近 10 条 + 动作区 +
    * 三端降级文案。保存走 PUT {patch, expectedRevision}（乐观并发，冲突提示刷新）。
@@ -816,47 +811,47 @@ function clampMaxConnections(value: number | undefined): number | undefined {
     var clearArmed = useState(false);
     var clearArmedValue = clearArmed[0];
     var setClearArmed = clearArmed[1];
-    // M2：频道投递状态（/status channels map，键=bark:<id>）/ 动态 kind 清单（/kinds）
+    // 频道投递状态（/status channels map，键=bark:<id>）/ 动态 kind 清单（/kinds）
     var statusDraft = useState({} as Record<string, any>);
     var statusMap = statusDraft[0];
     var setStatusMap = statusDraft[1];
     var kindsDraft = useState([] as any[]);
     var kindsList = kindsDraft[0];
     var setKindsList = kindsDraft[1];
-    // M2：频道删除两段确认（实例 id）。#508 M1：路由编辑展开行（openRoute）随 chips
+    // 频道删除两段确认（实例 id）。路由编辑展开行（openRoute）随 chips
     // 直点形态移除——chips 无展开层，routeToggle 直接落草稿。
     var delArmedDraft = useState(null as string | null);
     var delArmedId = delArmedDraft[0];
     var setDelArmedId = delArmedDraft[1];
-    // M2 levels：每个频道「待添加映射」草稿（kind + level；按频道 id 键控）
+    // levels：每个频道「待添加映射」草稿（kind + level；按频道 id 键控）
     var levelsNewDraft = useState({} as Record<string, { kind: string; level: string }>);
     var levelsNew = levelsNewDraft[0];
     var setLevelsNew = levelsNewDraft[1];
-    // #508 M1：卡内三 tab（通知事件 / 通知频道 / 通知记录——历史独立成 tab，r4 样本）。
+    // 卡内三 tab（通知事件 / 通知频道 / 通知记录——历史独立成 tab）。
     // 切 tab 仅条件拼接 children——全部表单/瞬态 state 都在本组件顶层，切换零丢失。
     var activeTabDraft = useState("events" as "events" | "channels" | "history");
     var activeTab = activeTabDraft[0];
     var setActiveTab = activeTabDraft[1];
-    // #418：浏览器通知权限状态行在频道卡内——Notification.permission 非 React state，
+    // 浏览器通知权限状态行在频道卡内——Notification.permission 非 React state，
     // 请求权限完成后 bump 一次触发重渲染刷新状态行文案/隐藏按钮。
     var permTickDraft = useState(0);
     var permTick = permTickDraft[0];
     var setPermTick = permTickDraft[1];
-    // #508 M2：webhook 凭据字段显隐态（键 = <channelId>:<field>；纯瞬态，不入配置、
+    // webhook 凭据字段显隐态（键 = <channelId>:<field>；纯瞬态，不入配置、
     // 不影响基线 diff——掩码值本身不回显，显隐只影响「正在输入的新值」可见性）。
     var revealDraft = useState({} as Record<string, boolean>);
     var revealMap = revealDraft[0];
     var setRevealMap = revealDraft[1];
-    // 加载基线（A4）：保存时只提交与基线不同的键（增量 diff），未改动的键不提交。
+    // 加载基线：保存时只提交与基线不同的键（增量 diff），未改动的键不提交。
     // 用 useRef 持久化：组件每次渲染局部变量会重置为 null，导致 save() 闭包里读不到
     // 基线而永远判定「无变化」。
     var baselineRef = ReactHooks.useRef(null as Record<string, any> | null);
-    // #405：settings / meta（revision）ref 收口——异步回调（保存成功 / trailing 补发）
+    // settings / meta（revision）ref 收口——异步回调（保存成功 / trailing 补发）
     // 一律读 ref 而非渲染闭包值，杜绝「连点第二个 PUT 带旧 revision」「补发漏提交在途
     // 新编辑」两类陈旧闭包问题。settingsRef 由 patch（唯一写入口）在 updater 内同步。
     var settingsRef = ReactHooks.useRef(null as Record<string, any> | null);
     var metaRef = ReactHooks.useRef(null as any);
-    // #405：保存串行 guard（模块级纯工厂）——同一时刻仅一个在途 PUT。
+    // 保存串行 guard（模块级纯工厂）——同一时刻仅一个在途 PUT。
     var saveGuardRef = ReactHooks.useRef(null as ReturnType<typeof createSaveGuard> | null);
     if (saveGuardRef.current === null) saveGuardRef.current = createSaveGuard();
     var saveGuard = saveGuardRef.current;
@@ -864,7 +859,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
     var savingDraft = useState(false);
     var saving = savingDraft[0];
     var setSaving = savingDraft[1];
-    // #405 PR2b：409 冲突横幅态。null=无冲突；非 null={ entry, latest }——
+    // 409 冲突横幅态。null=无冲突；非 null={ entry, latest }——
     // latest 为冲突时拉取的服务端最新 {effective, revision}（「加载最新/覆盖」动作
     // 的数据源）。横幅期间用户可继续编辑（非模态），动作触发时实时重算本地变更。
     var conflictDraft = useState(null as null | { entry: string; latest: any });
@@ -883,7 +878,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       fetchStatus().then(function (map: any) {
         if (alive.value) setStatusMap(map);
       }).catch(function () {
-        // S3-16：拉取失败保留已加载状态行（不清空——旧实现 catch → {} 会把
+        // 拉取失败保留已加载状态行（不清空——旧实现 catch → {} 会把
         // 已展示的最近投递终态抹掉，瞬时网络抖动即丢信息）
       });
     }
@@ -926,7 +921,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       return <li className="dn-set-card">{t("settingsLoading")}</li>;
     }
 
-    /** settings 唯一写入口（#405 ref 收口）：updater 内同步 settingsRef——
+    /** settings 唯一写入口（ref 收口）：updater 内同步 settingsRef——
      *  为什么在 updater 内写（而非 useEffect latest 模式）：useEffect 是 passive
      *  effect（paint 后异步），可能与网络宏任务回调（保存成功 / trailing 补发）
      *  乱序；updater 内写在 state 计算的同一闭包同一时刻完成，时序零窗口。React
@@ -944,7 +939,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       setSaved("");
     }
 
-    /** 整体替换 settings（#405 PR2b）：已知完整 next 时同步写 settingsRef 再
+    /** 整体替换 settings：已知完整 next 时同步写 settingsRef 再
      *  setState——调用方（loadCard / 冲突恢复 rebase / 静默刷新）随后可能立即
      *  读 ref（如覆盖重提 saveFor），不能等 updater 异步执行。事件级增量编辑
      *  仍走 patch（updater 内写 ref，天然与 state 计算同步）。 */
@@ -954,22 +949,22 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       setSaved("");
     }
 
-    /** 基线 diff：只提交与加载基线不同的键（A4，防组合层 base 被默认值回写覆盖）。
-     *  逻辑收敛在模块级纯函数 diffSettingsPayload（#470 复核 P1-2，供测试直测）。
-     *  #405：读 settingsRef（非渲染闭包 settings）——trailing 补发在 .then 回调里
+    /** 基线 diff：只提交与加载基线不同的键（防组合层 base 被默认值回写覆盖）。
+     *  逻辑收敛在模块级纯函数 diffSettingsPayload（供测试直测）。
+     *  读 settingsRef（非渲染闭包 settings）——trailing 补发在 .then 回调里
      *  触发，必须取最新草稿；渲染期调用时 ref 与 state 同值，无行为差异。 */
     function diffPayload(): Record<string, any> {
       return diffSettingsPayload(settingsRef.current || settings, baselineRef.current);
     }
 
-    /** 409 冲突恢复（#405 PR2b）：拉最新 → 无脏静默刷新 / 有脏弹双动作横幅。 */
+    /** 409 冲突恢复：拉最新 → 无脏静默刷新 / 有脏弹双动作横幅。 */
     function handleConflict(entry: string) {
       fetchConfig()
         .then(function (v: any) {
           if (!v) return;
           var latest = { effective: (v && v.effective) || {}, revision: v && v.revision, user: (v && v.user) || {} };
           // 本地已无该入口脏（用户在 409 往返间撤销/放弃）→ 静默切到最新（兑现
-          // issue 要点 4「自动重拉重新渲染」的安全路径，不打扰）。
+          // 「自动重拉重新渲染」的安全路径，不打扰）。
           if (Object.keys(diffPayloadFor(entry)).length === 0) {
             applyLatestQuiet(latest);
             return;
@@ -978,8 +973,8 @@ function clampMaxConnections(value: number | undefined): number | undefined {
           setSaved(""); // 冲突横幅自带标题（conflictTitle/conflictChannels），foot 提示区清空防重复
         })
         .catch(function () {
-          // 拉最新失败：保留原错误提示（saveFailConflict），不弹横幅
-          setSaved(t("saveFailConflict", { msg: "" }), true);
+          // 拉最新失败：不弹横幅（缺最新 revision 时弹会误导），只提示可重试
+          setSaved(t("conflictReloadFail"), true);
         });
     }
 
@@ -996,8 +991,8 @@ function clampMaxConnections(value: number | undefined): number | undefined {
     }
 
     /** 提交 PUT 并处理响应（save 的内核；guard 占用与释放由 saveFor 负责）。
-     *  #405 PR2b：409 不再只提示文案——转 handleConflict 进入双动作恢复流程。
-     *  #405 实测补强（浏览器验证发现）：fetch 在极端环境（连接池耗尽/服务端静默
+     *  409 不再只提示文案——转 handleConflict 进入双动作恢复流程。
+     *  实测补强（浏览器验证发现）：fetch 在极端环境（连接池耗尽/服务端静默
      *  挂起）可能永不 settle → finally 永不执行 → 按钮永久「保存中」。加 15s
      *  AbortController 超时兜底：超时中断请求（服务端写入与否未知，UI 必须恢复），
      *  释放 guard 并提示重试。 */
@@ -1014,7 +1009,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
         return r.json().then(function (body: any) {
           if (!r.ok) {
             var err = (body && body.error) || {};
-            // 挂 code 供 catch 按契约分流（#405 PR3 复核）：409 判定优先
+            // 挂 code 供 catch 按契约分流：409 判定优先
             // err.code === "SETTINGS_CONFLICT"，不再依赖错误文案中文匹配
             // （文案是本地化/可改的，code 是契约字段）。文案保留进 message。
             var throwErr = new Error(err.error || err.details || err.code || ("HTTP " + r.status)) as Error & { code?: string };
@@ -1024,7 +1019,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
           return body;
         });
       }).then(function (body: any) {
-        // #405 事务性基线推进（评审 P0-2 落实）：只并入本次 PUT 实际提交的 payload
+        // 事务性基线推进：只并入本次 PUT 实际提交的 payload
         // 键——若并入点击后的 settings 全量，在途期间的编辑会被固化为基线而丢失；
         // 键级并入后，在途新编辑（非 payload 键）仍在 diff 中，由 trailing 补发提交。
         baselineRef.current = Object.assign({}, baselineRef.current || {}, payload);
@@ -1041,7 +1036,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
         setTimeout(function () { setSaved(""); }, 2200);
       }).catch(function (e: any) {
         var msg = (e && e.message) || e;
-        // 409 判定：code 契约优先，中文文案仅作旧服务端回退（#405 PR3 复核）
+        // 409 判定：code 契约优先，中文文案仅作旧服务端回退
         if ((e && e.code === "SETTINGS_CONFLICT") || String(msg).indexOf("版本冲突") >= 0) {
           // 版本冲突：进入双动作恢复（不再仅提示手动关闭重开）
           handleConflict(entry);
@@ -1061,13 +1056,13 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       return chain;
     }
 
-    /** 从全量 diff 中按入口过滤出本次要提交的键（#405 PR2 域保存；
+    /** 从全量 diff 中按入口过滤出本次要提交的键（域保存；
      *  纯逻辑收敛在模块级 domainPayload，供测试直测）。 */
     function diffPayloadFor(entry: string): Record<string, any> {
       return domainPayload(diffPayload(), entry);
     }
 
-    /** 保存（#405 串行 guard 接入，入口参数化）：同一时刻仅一个在途 PUT——
+    /** 保存（串行 guard 接入，入口参数化）：同一时刻仅一个在途 PUT——
      *  - entry："all"（foot 全量）/ "channels"（频道 tab 域保存，只提 channels 键）；
      *  - 在途期间再次点击（任意入口）：guard 记 pending=该入口并立即返回；
      *    本次在途结束（finally 释放 guard）后按被拒入口原样补发（trailing）——
@@ -1131,19 +1126,21 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       saveFor(entry, true);
     }
 
-    /** #508 M1：放弃更改——草稿回写加载基线（编辑态/运行时镜像同步还原）。
-     *  #405：经 patch 统一写入口（settingsRef 同步）；按钮在 saving 期间禁用
-     *  （foot 渲染处），消除「在途成功回调覆盖放弃后基线」的竞态。 */
+    /** 放弃更改——草稿回写加载基线（编辑态/运行时镜像同步还原）。
+     *  经 patch 统一写入口（settingsRef 同步）；按钮在 saving 期间禁用
+     *  （foot 渲染处），消除「在途成功回调覆盖放弃后基线」的竞态。
+     *  放弃即退出冲突语境：409 横幅一并关闭（否则横幅会指向已被丢弃的草稿）。 */
     function discardChanges() {
       if (baselineRef.current) {
         commitSettings(Object.assign({}, baselineRef.current));
         runtimeConfig = baselineRef.current;
       }
+      setConflict(null);
       setSaved("");
       toast(t("discardOk"));
     }
 
-    /** 发送测试通知（M2：channelId 可选——per-channel 测试；完成后刷新状态行）。 */
+    /** 发送测试通知（channelId 可选——per-channel 测试；完成后刷新状态行）。 */
     function sendTest(channelId?: string) {
       sendTestReq(channelId)
         .then(function (data: any) {
@@ -1155,10 +1152,10 @@ function clampMaxConnections(value: number | undefined): number | undefined {
         });
     }
 
-    // ---- M2 频道编辑（settings.channels 不可变操作；deviceKey 掩码语义见服务端）----
+    // ---- 频道编辑（settings.channels 不可变操作；deviceKey 掩码语义见服务端）----
 
     /** 更新第 idx 个频道实例（字段经 assignChannelFields 合并——空串/undefined
-     *  删键，#614；函数式基于最新 channels，防后写覆盖）。 */
+     *  删键；函数式基于最新 channels，防后写覆盖）。 */
     function chPatch(idx: number, part: Record<string, any>) {
       patch(function (prev: any) {
         var list = (prev.channels || []).slice();
@@ -1192,8 +1189,8 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       });
     }
 
-    /** 新增频道实例（#508 M2：kind = "bark" | "webhook"）——自动分配未占用的 id
-     *  （bark-1… / webhook-1…），默认禁用（出站授权显式授予）。#614：可选认证/
+    /** 新增频道实例（kind = "bark" | "webhook"）——自动分配未占用的 id
+     *  （bark-1… / webhook-1…），默认禁用（出站授权显式授予）。可选认证/
      *  凭据/模板字段一律**不预置键**——空串形态会被服务端写面校验整组 400（token/
      *  username/password/headerValue 要求非空、headerName 过头名正则），未填写 =
      *  键不存在；输入清空经 assignChannelFields 同步删键。url/baseUrl 为必填占位，
@@ -1228,7 +1225,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       setDelArmedId(null);
     }
 
-    // ---- M2 路由（kindRoutes 单源；事件行与频道卡双向编辑同一份配置）----
+    // ---- 路由（kindRoutes 单源；事件行与频道卡双向编辑同一份配置）----
 
     /** 当前 kind 的路由数组（undefined = 跟随默认广播）。 */
     function routeOf(kind: string): string[] | undefined {
@@ -1248,7 +1245,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
 
     /** 当前「跟随默认」投递面（路由 id 列表）：内置频道看开关、实例频道看 enabled。
      *  chips 点亮态（无条目时）与首次切换物化的快照都以本函数为准——所见即所得。
-     *  实例频道 id 经 channelIdFor（type:id）生成，bark/webhook 通用（#508 复核 4②）。 */
+     *  实例频道 id 经 channelIdFor（type:id）生成，bark/webhook 通用。 */
     function defaultRouteIds(prev: any): string[] {
       var ids: string[] = [];
       if (prev.browserNotify === true) ids.push("browser");
@@ -1261,7 +1258,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
 
     /** 路由候选（含停用频道——保留显示以呈现「已配置但未启用」；未启用者置灰
      *  禁点——投递面 = 启用频道 ∩ 路由，未启用频道即使点亮也不投递，假点亮误导。
-     *  enabled 标志供 chips 置灰/title 提示（#527）；已勾选未启用频道不自动清除，
+     *  enabled 标志供 chips 置灰/title 提示；已勾选未启用频道不自动清除，
      *  用户启用后即恢复有效）。 */
     function routeOptions(prev: any): Array<{ id: string; label: string; enabled: boolean }> {
       var inst = (prev.channels || []).map(function (c: any) {
@@ -1274,10 +1271,10 @@ function clampMaxConnections(value: number | undefined): number | undefined {
     }
 
     /**
-     * 路由 chips 单点切换（#508 M1：chips 直点形态，设计样本 r4；函数式基于最新
+     * 路由 chips 单点切换（chips 直点形态；函数式基于最新
      * kindRoutes/channels 计算，防同帧勾选后写覆盖）。
      *
-     * 语义（r4 拍板，替代旧「undefined=全选快照」歧义）：
+     * 语义（替代旧「undefined=全选快照」歧义）：
      * - kindRoutes 无条目 = 跟随默认（投递到全部当前启用频道，随启停动态变化）；
      * - 任一 chip 切换即把当前默认投递面物化为显式快照（冻结），此后启停变化需显式维护；
      * - 清空（全灭）= 删除条目恢复跟随默认（与旧实现「空数组即 delete」一致）。
@@ -1296,7 +1293,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
     }
 
     /** 动态 kind 确认（POST /kinds；完成后刷新清单并提示）。
-     *  #405 PR3（评审 P1-2）：响应体带新 revision → 同步 metaRef/setMeta——服务端
+     *  响应体带新 revision → 同步 metaRef/setMeta——服务端
      *  确认写入已推进 revision，若不同步，同一窗口随后保存会带过期 revision 必 409
      *  （无并发的纯版本链断点，比连点更高频）。 */
     function confirmOne(kind: string, confirmed: boolean) {
@@ -1337,7 +1334,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
         });
     }
 
-    /** #508 M1：频道卡体行（cap + 控件 + 可选 hint；CSS dn-ch-row/dn-ch-cap/dn-ch-ctl）。 */
+    /** 频道卡体行（cap + 控件 + 可选 hint；CSS dn-ch-row/dn-ch-cap/dn-ch-ctl）。 */
     function chRow(cap: string, control: any, hint?: string) {
       return (
         <div className="dn-ch-row">
@@ -1348,7 +1345,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       );
     }
 
-    /** #508 M1：折叠区行（cap + 控件；CSS dn-adv-row）。 */
+    /** 折叠区行（cap + 控件；CSS dn-adv-row）。 */
     function advRow(cap: string, control: any) {
       return (
         <div className="dn-adv-row">
@@ -1358,7 +1355,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       );
     }
 
-    /** #508 M1：switch 开关底层（track 40×22 + 透明 input 覆盖 44×32 触控区；
+    /** switch 开关底层（track 40×22 + 透明 input 覆盖 44×32 触控区；
      *  aria-label 提供可访问名——switch 无内联文本，WCAG 4.1.2）。 */
     function switchToggle(checked: boolean, onChange: (v: boolean) => void, ariaLabel: string) {
       return (
@@ -1375,7 +1372,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
     }
 
     /** 顶层布尔设置键的 switch（switchToggle 的设置键薄封装）。
-     *  #405：统一走 patch 写入口（settingsRef 同步），不再裸 setSettings。 */
+     *  统一走 patch 写入口（settingsRef 同步），不再裸 setSettings。 */
     function switchControl(key: string, ariaLabel: string) {
       return switchToggle(settings[key] === true, function (v: boolean) {
         patch(function (prev: any) {
@@ -1417,7 +1414,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
     }
 
-    /** 频道状态摘要（#508 M1：上提卡头 statusDot + statusTxt；完整错误经 title 提示）。 */
+    /** 频道状态摘要（上提卡头 statusDot + statusTxt；完整错误经 title 提示）。 */
     function statusText(channelKey: string): string {
       var st = statusMap[channelKey];
       if (!st || !st.lastTs) return t("chNeverSent");
@@ -1439,7 +1436,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       );
     }
 
-    /** 投递失败徽标（#402 第 1 条）：最近投递失败时上提至卡头 summary 行，收起态仍可见。 */
+    /** 投递失败徽标：最近投递失败时上提至卡头 summary 行，收起态仍可见。 */
     function failBadge(channelKey: string) {
       var st = statusMap[channelKey];
       if (!st || !st.lastTs || st.lastStatus !== "failed") return null;
@@ -1451,7 +1448,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
     }
 
     /**
-     * 浏览器通知权限状态行（#418：从全局降级区移入「浏览器通知」频道卡）。
+     * 浏览器通知权限状态行（从全局降级区移入「浏览器通知」频道卡）。
      * 三态文案 + 未授权时的「请求通知权限」按钮（手势内请求，完成后刷新状态）；
      * 非安全上下文/无 Notification API 时返回 null（对应降级文案仍在全局 notes）。
      */
@@ -1485,16 +1482,16 @@ function clampMaxConnections(value: number | undefined): number | undefined {
 
     /**
      * 内置频道卡（browser/system）：开关 + 行为参数 + 状态行 + per-channel 测试。
-     * #402 第 1 条：整卡 details 可折叠——非受控 + key remount 形态（key 含 enabled，
+     * 整卡 details 可折叠——非受控 + key remount 形态（key 含 enabled，
      * open 仅 mount 生效），未启用默认收起、启用默认展开；手动开合完全交 DOM，
      * 无受控时序坑；启停切换重挂载重置折叠态（预期行为）。summary 内 enable
      * checkbox 依赖 HTML 规范豁免（点击 interactive content 不触发 summary 激活）。
      */
     /**
-     * 内置频道卡（#508 M1 r4 形态 + #640/#641 三态与声音行）：
+     * 内置频道卡（三态与声音行）：
      * 卡头 = 类型图标 + 名称 + 类型徽标 + 状态点/摘要 + 启用 switch；卡体 =
      * 行为参数 + 声音行（开关 + 音色下拉 + ▶试听）+（浏览器）权限状态行 + 测试按钮。
-     * 三态（C3）：弹窗开 = onEdge（启用）；弹窗关+声音开 = sound（仅声音/半启用，
+     * 三态：弹窗开 = onEdge（启用）；弹窗关+声音开 = sound（仅声音/半启用，
      * 卡体展开提示「只响不弹」）；弹窗+声音全关 = off（未启用）。open = on || soundOn。
      */
     function builtinCard(cfgKey: string, soundKey: string, label: string, channelId: string) {
@@ -1535,9 +1532,9 @@ function clampMaxConnections(value: number | undefined): number | undefined {
             {on === false && soundOn
               ? <div className="dn-set-note-inline dn-soundOnly">{t("chSoundOnlyNote")}</div>
               : null}
-            {/* #418：浏览器通知权限状态行归入浏览器频道卡（权限授权入口同卡就近可达） */}
+            {/* 浏览器通知权限状态行归入浏览器频道卡（权限授权入口同卡就近可达） */}
             {channelId === "browser" ? browserPermLine() : null}
-            {/* C7：系统卡平台提示（/health platform 消费；宿主 OS 与浏览器 OS 可异机） */}
+            {/* 系统卡平台提示（/health platform 消费；宿主 OS 与浏览器 OS 可异机） */}
             {channelId === "system" ? systemPlatformHint() : null}
             <div className="dn-ch-actions">{testBtn(channelId)}</div>
           </div>
@@ -1545,7 +1542,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       );
     }
 
-    /** 平台提示行（C7/E2）：宿主平台差异说明——Windows SoundPlayer 语义、macOS
+    /** 平台提示行：宿主平台差异说明——Windows SoundPlayer 语义、macOS
      *  NSSound、Linux 自播；/health 拉取失败/未知平台回落通用说明。 */
     function systemPlatformHint() {
       var text: string;
@@ -1566,7 +1563,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
 
     /** 单通道声音行：开关（false/true 切换）+ 展开音色下拉 + ▶试听。
      *  开关语义：off=false（静音）；on=true（跟随系统默认）；on 后选择音色 =
-     *  SoundId（显式音色）。交互全部显式 unlockAudio 兜底（C5：autoplay 策略下
+     *  SoundId（显式音色）。交互全部显式 unlockAudio 兜底（autoplay 策略下
      *  纯后台页面自播需此前任意手势解锁；试听点击本身即手势）。 */
     function soundRow(soundKey: string, channelLabel: string) {
       var soundVal = settings[soundKey];
@@ -1615,9 +1612,9 @@ function clampMaxConnections(value: number | undefined): number | undefined {
     }
 
     /**
-     * Bark 实例卡（#508 M1 r4 形态）：卡头 = 图标 + 名称 + 类型徽标 + 状态点/摘要 +
+     * Bark 实例卡：卡头 = 图标 + 名称 + 类型徽标 + 状态点/摘要 +
      * 失败徽标 + 启用 switch；卡体 = 基本行 + 高级参数折叠（含 levels 矩阵）+ 测试/删除。
-     * #402 第 1 条：整卡 details 可折叠（非受控 + key remount），未启用默认收起。
+     * 整卡 details 可折叠（非受控 + key remount），未启用默认收起。
      */
     function barkCard(ch: any, idx: number) {
       var channelKey = channelIdFor(ch);
@@ -1756,8 +1753,8 @@ function clampMaxConnections(value: number | undefined): number | undefined {
     }
 
     /**
-     * Webhook 实例卡（#508 M2 新增频道位，安卓经 ntfy / Gotify / 自建网关推送；默认停用）。
-     * 卡头同 Bark r4 形态；卡体：预设（填充认证/模板，URL 不覆盖）/ 名称 / 目标 URL /
+     * Webhook 实例卡（新增频道位，安卓经 ntfy / Gotify / 自建网关推送；默认停用）。
+     * 卡头同 Bark 实例卡形态；卡体：预设（填充认证/模板，URL 不覆盖）/ 名称 / 目标 URL /
      * 认证（none|bearer|basic|header，动态字段凭据掩码）/ 投递超时（1-60s clamp）/
      * JSON 模板编辑器（占位符 chips 光标处插入）。渲染契约见 channel-webhook.ts。
      */
@@ -1883,7 +1880,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
                 onChange={function (e: any) {
                   var p = WEBHOOK_PRESETS[e.target.value];
                   if (!p) return;
-                  // #508 M2：preset 落配置（{{priority}} 频道感知映射的依据）；认证与模板随预设填充，URL 不覆盖（防丢已填内容）
+                  // preset 落配置（{{priority}} 频道感知映射的依据）；认证与模板随预设填充，URL 不覆盖（防丢已填内容）
                   whPatch({ preset: e.target.value, auth: p.auth, template: p.template });
                 }}
               >
@@ -1947,7 +1944,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
     }
 
     /**
-     * 事件/动态 kind 行的路由区（#508 M1 chips 直点形态，设计样本 r4）：
+     * 事件/动态 kind 行的路由区（chips 直点形态）：
      * 候选 chips（点亮态真实反映投递面：无条目=defaultRouteIds，有条目=显式快照）
      * + stale 残留 chip（虚线删除线，title 说明）+ 状态标签（跟随默认 / 自定义·N·恢复默认）。
      * 状态标签 custom 态可点击恢复跟随默认；全灭由 routeToggle 自动恢复默认并 toast 反馈
@@ -1965,7 +1962,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       });
       var chips = options.map(function (o) {
         var on = litSet[o.id] === true;
-        // 未启用频道：置灰禁点（#527）——投递面 = 启用频道 ∩ 路由，停用频道点亮
+        // 未启用频道：置灰禁点——投递面 = 启用频道 ∩ 路由，停用频道点亮
         // 也不投递（假点亮）；title 说明「启用后可用」。已勾选未启用项保留勾选
         // 显示（不自动改用户配置），用户启用频道后该 chip 恢复可点/生效。
         return (
@@ -2007,7 +2004,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       );
     }
 
-    // 事件区（#508 M1 r4 形态）：内置事件卡（sev 色点 + kind 码 + switch + 路由 chips）
+    // 事件区：内置事件卡（sev 色点 + kind 码 + switch + 路由 chips）
     var eventChildren: any[] = [];
     EVENT_KEYS.forEach(function (kv) {
       var key = kv[0], labelKey = kv[1];
@@ -2026,7 +2023,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       ));
     });
     // 动态 kind（插件提议的通知类型）：待确认 = 允许/拒绝 + 路由提示；已允许 = 同款
-    // 路由 chips（r4 拍板：动态 kind 也支持配置投递频道——kindRoutes 天然支持动态
+    // 路由 chips（动态 kind 也支持配置投递频道——kindRoutes 天然支持动态
     // kind id 作 key，与服务端 resolveRoutes 的 kind 无关路由解析一致）。
     var kindRows: any[] = kindsList.map(function (k: any) {
       var nameText = k.label && k.label !== k.id ? k.label : k.id;
@@ -2093,7 +2090,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       </div>
     ));
 
-    // 合并去重折叠区（#508 M1：统一 dn-ch-adv 折叠形态 + dn-adv-row 行）
+    // 合并去重折叠区（统一 dn-ch-adv 折叠形态 + dn-adv-row 行）
     var dedupFold = (
       <details className="dn-ch-adv dn-sec-adv" key="adv-params">
         <summary>{t("secDedup")}</summary>
@@ -2136,7 +2133,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
               aria-label={t("maxConnections")}
               value={settings.maxConnections}
               onChange={function (e: any) {
-                // S3-12：空串→undefined→diff 键被序列化丢弃→不提交保持原值；
+                // 空串→undefined→diff 键被序列化丢弃→不提交保持原值；
                 // 非空软 clamp（1-1024）防 0→400 保存死锁（服务端 normalize 仍权威）
                 patch({ maxConnections: clampMaxConnections(e.target.value === "" ? undefined : Number(e.target.value)) });
               }}
@@ -2165,9 +2162,9 @@ function clampMaxConnections(value: number | undefined): number | undefined {
     function allowResetDefault() {
       setAllowKinds(["ask", "question", "error"]);
     }
-    // 免打扰豁免候选（issue #421：扩至全部 6 个内置事件 kind，label 复用事件文案
+    // 免打扰豁免候选（覆盖全部 6 个内置事件 kind，label 复用事件文案
     // KIND_KEYS 字典；由 EVENT_KEYS + EVENT_KIND_MAP 派生，不新建平行表。
-    // #508 M1：chips 直点形态——未启用事件弱化沿用 dn-set-allowDim 锚点，勾选态保留照常
+    // chips 直点形态——未启用事件弱化沿用 dn-set-allowDim 锚点，勾选态保留照常
     // 写入（服务端判定只看 quietHours.allowKinds.includes(kind)，不看开关）。
     var quietAllowChoices = EVENT_KEYS.map(function (kv) {
       var notifyKey = kv[0];
@@ -2177,7 +2174,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
     });
     var allowChips = quietAllowChoices.map(function (c) {
       var checked = allows.indexOf(c.kind) !== -1;
-      // 未启用事件：置灰禁点（#527）——事件开关关闭则不产生通知，豁免勾选无意义；
+      // 未启用事件：置灰禁点——事件开关关闭则不产生通知，豁免勾选无意义；
       // 保留已勾选显示（不自动改配置），启用事件后恢复可点。禁点用原生 disabled。
       return (
         <button
@@ -2196,7 +2193,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
         >{t(c.labelKey)}{c.enabled ? null : <span className="dn-set-allowHint">{t("allowDisabledHint")}</span>}</button>
       );
     });
-    // 免打扰卡（#508 M1 r4 形态：开关 + 时段 + 豁免 chips + 快捷按钮）
+    // 免打扰卡（开关 + 时段 + 豁免 chips + 快捷按钮）
     var dndCard = (
       <div className="dn-dnd" key="dnd">
         <div className="dn-dnd-head">
@@ -2239,7 +2236,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       </div>
     );
 
-    // 三端降级文案（A5/A8；#418：浏览器通知权限状态行已移入「浏览器通知」频道卡，
+    // 三端降级文案（浏览器通知权限状态行已移入「浏览器通知」频道卡，
     // 这里只保留服务不可用 / 非安全上下文 / 平台不支持三条全局降级说明）
     var degradation: any[] = [];
     if (metaValue && metaValue.writable === false) {
@@ -2265,8 +2262,8 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       ));
     }
 
-    // 通知记录 tab（#508 M1：历史独立成 tab；#418：清理/发送测试/刷新并排工具行；
-    // 动作区 A6/A7；请求权限按钮随权限状态行一起归入「浏览器通知」频道卡）
+    // 通知记录 tab（历史独立成 tab；清理/发送测试/刷新并排工具行；
+    // 请求权限按钮随权限状态行一起归入「浏览器通知」频道卡）
     var historyPane = (
       <div key="history">
         <div className="dn-set-historyTools">
@@ -2312,12 +2309,12 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       </div>
     );
 
-    // ---- #508 M1：卡内三 tab（通知事件 / 通知频道 / 通知记录）----
+    // ---- 卡内三 tab（通知事件 / 通知频道 / 通知记录）----
 
     // 待确认动态 kind 计数（「通知事件」tab 徽标——确认流是安全设计，不可被 tab 埋没）
     var pendingKinds = kindsList.filter(function (k: any) { return !k.confirmed; }).length;
 
-    // tab 栏：三个普通 button（不引入 role=tablist 管理成本——#402 决策延续）
+    // tab 栏：三个普通 button（不引入 role=tablist 管理成本）
     var tabbar = (
       <div className="dn-set-tabs">
         <button
@@ -2343,16 +2340,16 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       </div>
     );
 
-    // 事件 tab 内容（#508：历史移出，事件页聚焦事件路由与确认流）
+    // 事件 tab 内容（历史移出，事件页聚焦事件路由与确认流）
     var eventsPane = [
       eventChildren,
       dedupFold,
       dndCard,
     ];
     // 频道 tab 内容：频道卡组（内置 + Bark + Webhook）+ 添加按钮 + 域保存行。
-    // #405 PR2 域保存（方案定稿形态 B）：频道 tab 底部「保存频道」只提交 channels
-    // 键——与 foot 全量保存语义不同（域 vs 全量），不构成 #418 移除的「双份全量
-    // 保存」视觉重复；#418 原文预留「域级拆分后按域重排按钮位置」，本行兑现。
+    // 域保存：频道 tab 底部「保存频道」只提交 channels
+    // 键——与 foot 全量保存语义不同（域 vs 全量），不构成此前移除的「双份全量
+    // 保存」视觉重复；当初预留的「域级拆分后按域重排按钮位置」由本行兑现。
     var channelsDomainSave = (
       <div className="dn-ch-domainSave" key="ch-domain-save">
         <span className="dn-ch-domainSaveHint">{t("channelsDomainHint")}</span>
@@ -2369,9 +2366,9 @@ function clampMaxConnections(value: number | undefined): number | undefined {
       channelsDomainSave,
     ];
 
-    // #402 第 4 条：去掉设置卡 title/副标题；顶部直接是 tab 栏。
-    // #508 M1：底部保存栏 = 脏状态指示（diffSettingsPayload 键数）+ 放弃更改 + 保存。
-    // #405 PR2：foot 显示全量脏计数（含频道域）；「保存频道」按钮的域脏态不做单独
+    // 去掉设置卡 title/副标题；顶部直接是 tab 栏。
+    // 底部保存栏 = 脏状态指示（diffSettingsPayload 键数）+ 放弃更改 + 保存。
+    // foot 显示全量脏计数（含频道域）；「保存频道」按钮的域脏态不做单独
     // 计数——无频道域脏时点击走空 diff 的「未修改」提示（与 foot 保存同交互语义）。
     var dirtyCount = Object.keys(diffPayload()).length;
     return (
@@ -2380,7 +2377,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
         <div className="dn-set-body">
           {activeTab === "events" ? eventsPane : activeTab === "channels" ? channelsPane : historyPane}
           <div className="dn-set-notes">{degradation}</div>
-          {/* #405 PR2b：409 冲突双动作横幅（非模态：横幅期间可继续编辑；动作触发时
+          {/* 409 冲突双动作横幅（非模态：横幅期间可继续编辑；动作触发时
               实时重算本地变更）。「忽略」= 关闭横幅、草稿保留原样。 */}
           {conflict
             ? (
@@ -2403,7 +2400,7 @@ function clampMaxConnections(value: number | undefined): number | undefined {
                 ? <span className="dn-dirty">{t("dirtySome", { n: dirtyCount })}</span>
                 : null}
             <span className="dn-spacer" />
-            {/* #405：保存中（guard 在途）禁用「放弃更改」与「保存」——防提交窗口内矛盾操作
+            {/* 保存中（guard 在途）禁用「放弃更改」与「保存」——防提交窗口内矛盾操作
                 （放弃被在途成功回调覆盖基线）与连点重复 PUT；按钮文案切换「保存中…」。 */}
             <button type="button" className="dn-set-btn dn-set-btnSmall" disabled={saving} onClick={discardChanges}>{t("discardChanges")}</button>
             <button type="button" className="dn-set-save" disabled={saving} onClick={function () { saveFor("all"); }}>{saving ? t("saving") : t("save")}</button>
@@ -2416,10 +2413,10 @@ function clampMaxConnections(value: number | undefined): number | undefined {
   // ------------------------------------------------------------ 装配
 
 export function apply(ctx: any) {
-    // 测试直测挂载面（#470 复核 P1-2 / #405）：diffSettingsPayload 与
+    // 测试直测挂载面：diffSettingsPayload 与
     // createSaveGuard 是模块级纯函数，经 apply 暴露给 smoke 测试引用——
-    // 保证「测试即产品实现」而非手写近似。#614 新增 assignChannelFields /
-    // stripChannelEmpties（频道实例字段合并与空串剥除）。
+    // 保证「测试即产品实现」而非手写近似。assignChannelFields /
+    // stripChannelEmpties（频道实例字段合并与空串剥除）同样挂载。
     (apply as any).diffSettingsPayload = diffSettingsPayload;
     (apply as any).createSaveGuard = createSaveGuard;
     (apply as any).domainPayload = domainPayload;
@@ -2430,9 +2427,9 @@ export function apply(ctx: any) {
     try {
       ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
 
-      // i18n（issue #348）：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
+      // i18n：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
       var locale: any = ctx.get("locale");
-      // #469：订阅取消函数供 disposer 卸载调用（守卫对齐 T4 provider-usage/
+      // 订阅取消函数供 disposer 卸载调用（守卫对齐 provider-usage/
       // mcp-manager 的 undefined 形态——不预设 subscribe 返回 null，防其返回
       // null 时 null 初始化遮蔽导致守卫失效），防重复 apply 后旧订阅持续重绑
       // 已停用实例。
@@ -2451,11 +2448,11 @@ export function apply(ctx: any) {
         }
       }
 
-      // 通知半区（SSE / 浏览器通知）：不依赖任何插件 DOM（C6），直接启动
+      // 通知半区（SSE / 浏览器通知）：不依赖任何插件 DOM，直接启动
       var disposeEvents: { close: () => void; reconnect: () => void } | null = startEvents();
       // 页面重新可见时：还原标题 + 强制重建 SSE（iOS 后台挂起后连接可能已失效，
       // 重建自动带 since 补拉，避免断线窗口漏通知）。
-      // #469：具名 handler 在 apply 内注册、disposer 移除（对齐 mcp-manager
+      // 具名 handler 在 apply 内注册、disposer 移除（对齐 mcp-manager
       // onVisible 范式）——匿名模块体注册无卸载路径，重复 apply/热更会累积
       // 旧监听、可能操作已置 null 的 SSE 句柄。
       function onVisibilityChange() {
@@ -2471,7 +2468,7 @@ export function apply(ctx: any) {
       }).catch(function () {
         // 失败静默（卡片打开时再拉）
       });
-      // 宿主平台预取（C7）：/health platform 驱动系统卡平台提示（系统通道弹在
+      // 宿主平台预取：/health platform 驱动系统卡平台提示（系统通道弹在
       // 宿主机器，浏览器 OS 与宿主 OS 可异机——不要拿 navigator.platform 猜）
       fetch(ROUTES.health, { headers: { accept: "application/json" } }).then(function (r: any) {
         return r.json().then(function (body: any) {
@@ -2487,16 +2484,16 @@ export function apply(ctx: any) {
         document.removeEventListener("click", onFirstClick);
       }, { capture: true });
 
-      // 设置面板独立 tab「通知中心」（settings.section，issue #366 M1）。
+      // 设置面板独立 tab「通知中心」（settings.section）。
       // 参照 dsh-provider-usage「用量统计」tab 的接线（slots.inject + register，
       // 独立顶层页）；label 为导航显示文本。旧运行时若不声明该插槽，inject
       // 回调不执行 → tab 不挂载、通知半区照常工作（与 provider-usage 同语义，
-      // 不做 plugin.item 双插槽重复展示——评审 B P0）。
+      // 不做 plugin.item 双插槽重复展示）。
       var slots = ctx.get("slots");
       if (slots && typeof slots.inject === "function") {
         slots.inject("settings.section", function () {
           return slots.register(
-            // label 传 thunk（#402 第 5 条）：宿主 nav rows 每次读取经 resolveSlotLabel
+            // label 传 thunk：宿主 nav rows 每次读取经 resolveSlotLabel
             // 求值 + shell 订阅 locale 重渲染，切语言即跟随（注册期求值字符串快照是旧行为）。
             // t 为本模块 var 活绑定（apply 内 locale.subscribe 回调重绑），thunk 保持最小
             // t(key) 形态、不包任何可能抛错的逻辑（thunk 抛错会炸宿主 nav 渲染）。
@@ -2514,9 +2511,9 @@ export function apply(ctx: any) {
       ctx.effect(function () {
         return function () {
           document.removeEventListener("visibilitychange", onVisibilityChange);
-          // #469 P1-1：标题恢复（restoreTitle）原本只由 visibilitychange 回前台
+          // 标题恢复（restoreTitle）原本只由 visibilitychange 回前台
           // 触发；disposer 摘除监听后该路径关闭，若残留 flashTitle 的 savedTitle
-          // 缓存则标题永久卡死（评审复现：hidden 帧 → 卸载 → 标题不恢复）。
+          // 缓存则标题永久卡死（复现路径：hidden 帧 → 卸载 → 标题不恢复）。
           // 故卸载时主动恢复一次标题并清缓存。
           restoreTitle();
           if (unsubLocale !== undefined) {
@@ -2546,5 +2543,5 @@ export function apply(ctx: any) {
 
 // ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块，React externals）----
 // 设置卡片是 React 组件（settings.section 独立 tab 插槽由宿主 React 渲染）；通知半区
-// 不依赖任何 DOM（C6），slot 缺失时照常工作。
+// 不依赖任何 DOM，slot 缺失时照常工作。
 export const inject: string[] = ["slots", "locale"];

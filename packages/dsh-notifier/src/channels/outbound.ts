@@ -5,7 +5,7 @@ import { createWebhookChannel } from "./webhook.ts";
 
 /**
  * 创建配置驱动的出站频道解析器（bark + webhook）。
- * 重试/并发门已上移框架 pipeline/deliver（B-3），装配层不再持有限流门状态。
+ * 重试/并发门已上移框架 pipeline/deliver，装配层不再持有限流门状态。
  */
 export function createOutboundChannelResolver(
   getChannels: () => ChannelConfig[] | undefined,

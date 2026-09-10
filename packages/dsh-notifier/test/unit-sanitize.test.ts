@@ -1,9 +1,8 @@
-// @ts-nocheck
 /**
  * dsh-notifier — unit：错误文本脱敏（sanitizeErrorText）与通知统一脱敏入口
- * （sanitizeNoticeContent，B-1/B-4）。
+ * （sanitizeNoticeContent）。
  *
- * 覆盖：路径/令牌/密钥打码 + 截断；issue #6 扩展（GitHub PAT / PEM 私钥 /
+ * 覆盖：路径/令牌/密钥打码 + 截断；脱敏扩展（GitHub PAT / PEM 私钥 /
  * 连接串凭据 / 邮箱）；规则顺序硬约束回归；FP 证伪回归（已删规则的误伤
  * 形态必须保持原样）；性能护栏（防灾难性回溯）；PEM 限窗/赋值分隔符/amqps
  * 评审修复回归；sanitizeNoticeContent 与 sanitizeErrorText 同源输出一致、
@@ -11,7 +10,7 @@
  */
 import { assert } from "./helpers.ts";
 import { sanitizeErrorText } from "../lib/index.js";
-// sanitizeNoticeContent 不进包导出面（P1-2：消费方经 SDK send 中心兜底）——
+// sanitizeNoticeContent 不进包导出面（消费方经 SDK send 中心兜底）——
 // 测试经 src 域内路径 import（同 unit-config seqFile 直连 src 姿态）。
 import { sanitizeNoticeContent } from "../src/text/interface.ts";
 
@@ -23,7 +22,7 @@ assert.equal(sanitizeErrorText("错".repeat(500)).length, 300, "截断 300");
 assert.equal(sanitizeErrorText("普通错误"), "普通错误", "普通文本原样");
 assert.equal(sanitizeErrorText("x".repeat(40)), "<token>", "长重复字符按令牌打码");
 
-// 推送前修复（P1）：脱敏漏网补充——JWT / AKIA 前缀 / /root 路径
+// 脱敏漏网补充（推送前修复）：JWT / AKIA 前缀 / /root 路径
 assert.equal(
   sanitizeErrorText("Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"),
   "Authorization=<redacted> <token>",
@@ -35,7 +34,7 @@ assert.ok(!sanitizeErrorText("open /etc/passwd denied").includes("/etc"), "/etc 
 // 防误伤：普通含下划线/连字符的英文单词不应被 JWT/AKIA 规则误打码
 assert.equal(sanitizeErrorText("the-key_is-here and also_fine"), "the-key_is-here and also_fine", "普通文本不被 JWT 规则误伤");
 
-// ---- issue #6 脱敏扩展：GitHub PAT / PEM 私钥 / 连接串凭据 / 邮箱 ----
+// ---- 脱敏扩展：GitHub PAT / PEM 私钥 / 连接串凭据 / 邮箱 ----
 // GitHub PAT classic（ghp/gho/ghu/ghs/ghr + 恰 36 位字母数字）
 const patCore36 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 assert.equal(sanitizeErrorText(`token ghp_${patCore36} end`), "token <token> end", "GitHub PAT classic 打码");
@@ -103,13 +102,13 @@ assert.equal(
   "mysql://<redacted>@db.example.com down",
   "DSN 与邮箱规则顺序回归"
 );
-// 尖括号引用形态（issue #30）：双断言放行 <user@host>，不再整体漏网
+// 尖括号引用形态：双断言放行 <user@host>，不再整体漏网
 assert.equal(
   sanitizeErrorText("From: John <john.doe@corp.example.com> signed"),
   "From: John <<email>> signed",
   "尖括号包裹的真实邮箱正常打码"
 );
-// 占位符不被二次破坏（issue #30）：裸 <redacted>@真实域名 形态必须原样保留
+// 占位符不被二次破坏：裸 <redacted>@真实域名 形态必须原样保留
 assert.equal(
   sanitizeErrorText("<redacted>@db.example.com down"),
   "<redacted>@db.example.com down",
@@ -175,7 +174,7 @@ assert.equal(sanitizeErrorText("order 1234567890123456 paid"), "order 1234567890
   );
 }
 
-// 密钥赋值规则：分隔符 [=:] 必须显式——自然语言不得误伤（评审 P1 回归）
+// 密钥赋值规则：分隔符 [=:] 必须显式——自然语言不得误伤（评审回归）
 assert.equal(sanitizeErrorText("auth failed: token expired"), "auth failed: token expired", "自然语言 token expired 不误伤");
 assert.equal(sanitizeErrorText("request rejected: invalid token provided"), "request rejected: invalid token provided", "invalid token provided 不误伤");
 assert.equal(sanitizeErrorText("password policy requires changes"), "password policy requires changes", "password policy 不误伤");
@@ -185,11 +184,11 @@ assert.equal(sanitizeErrorText("token: abc123"), "token=<redacted>", "显式冒�
 assert.equal(sanitizeErrorText('password = "s3cr3t"'), 'password=<redacted>"', "等号带空格+引号赋值仍打码（收尾引号残留为已知形态）");
 assert.ok(!sanitizeErrorText("api_key=sk-live-9f8e7d6c5b4a").includes("sk-live"), "api_key= 赋值仍打码");
 
-// amqps 连接串凭据：scheme 保留、凭据整体掩蔽（评审 P2 回归，不再半脱敏）
+// amqps 连接串凭据：scheme 保留、凭据整体掩蔽（评审回归，不再半脱敏）
 assert.equal(sanitizeErrorText("amqps://guest:guest@rabbit.local/vhost"), "amqps://<redacted>@rabbit.local/vhost", "amqps 连接串整体掩蔽");
 assert.equal(sanitizeErrorText("AMQPS://u:p@h/v"), "AMQPS://<redacted>@h/v", "amqps 大写 scheme 掩蔽");
 
-// ---- sanitizeNoticeContent（B-1 统一脱敏入口；P1-2 不进包导出面）----
+// ---- sanitizeNoticeContent（统一脱敏入口；不进包导出面）----
 
 // 同源输出一致：title 走 sanitizeErrorText(title,64)、body 走同一规则表（不截断）
 {
@@ -201,7 +200,7 @@ assert.equal(sanitizeErrorText("AMQPS://u:p@h/v"), "AMQPS://<redacted>@h/v", "am
   assert.ok(!safe.body.includes("admin@"), "body 邮箱打码");
 }
 
-// enabled=false：标题与正文原样 String 返回（B-4 明文）
+// enabled=false：标题与正文原样 String 返回（明文）
 {
   const withSecret = { title: "任务", body: "password=s3cr3t 联系 admin@corp.example.com" };
   const plain = sanitizeNoticeContent(withSecret, false);

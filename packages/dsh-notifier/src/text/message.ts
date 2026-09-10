@@ -3,7 +3,7 @@
  *
  * NOTIFY_KINDS 是内置事件 kind → 标题/正文模板的单一事实源（isBuiltinKind
  * 判定与 /test 收敛都依赖此表）；KIND_SEVERITY 是 kind → 展示强度静态映射
- * （M1：与 NOTIFY_KINDS 同域，消除 severity 归属环）。全部无状态：smoke
+ * （与 NOTIFY_KINDS 同域，消除 severity 归属环）。全部无状态：smoke
  * 可直接断言输出形态。设计遵循业界通知惯例：标题即结论、正文结论先行、
  * 用用户可读的任务名（不暴露内部 session id）、末尾给行动建议。
  */
@@ -100,11 +100,12 @@ export const KIND_SEVERITY: Readonly<Record<string, NotifySeverity>> = {
 };
 
 /**
- * 通知文案单表（kind → {title, message}），收敛 TITLES 与 switch 双映射。
+ * 通知文案单表（kind → {title, message}）：全部文案集中于此，杜绝「表 + switch
+ * 分支」双份维护导致的漂移。
  * 时间由系统通知呈现，正文不重复时间戳。
  */
 export const NOTIFY_KINDS: Record<string, { title: string; message: (detail: NotifyDetail) => string }> = {
-  // test：M2 起纳入 service 管线（/test 收敛，isBuiltinKind 由此表判定）——
+  // test：纳入 service 管线（/test 收敛，isBuiltinKind 由此表判定）——
   // 之前 test 直连 sse/system 不经管线，收敛后缺条目会被误判动态 kind 抑制。
   test: {
     title: "DSH：测试通知",

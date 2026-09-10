@@ -1,28 +1,28 @@
 /**
- * dsh-notifier — 存量自建配置一次性迁移（issue #76，E1-E7/R1；#468 逐字段补齐）。
+ * dsh-notifier — 存量自建配置一次性迁移（逐字段缺失补齐）。
  *
  * 旧版配置位于 `~/.dsh/dsh-notifier.json`（自建读写链路，现已废弃）；本模块
  * 在 settings 命名空间 attach 后（installNotifierSettings 的 onScope 内）把
  * 存量配置一次性迁入官方 settings user 层，rename-first marker 幂等。
  *
- * 分流（R1）：
+ * 分流：
  * - 合法 json：改名 `.migrated.bak`（即 `dsh-notifier.json.migrated.bak`）后
- *   sanitize 过滤（#470 起走 sanitizePatchSettings 透传通道：未知键保留补写，
+ *   sanitize 过滤（走 sanitizePatchSettings 透传通道：未知键保留补写，
  *   装配键剔除），再经 owner scope.update **逐字段缺失补齐**写入
- *   （#468：不是无脑全量覆盖——只补写 user 层尚缺失的键）；
+ *   （不是无脑全量覆盖——只补写 user 层尚缺失的键）；
  * - 损坏/非对象/无任何键：只改名 `.corrupted.bak` 标记，不写入（防把 schema
  *   默认值固化进 user 层、压制后续默认值演进）；
  * - 中断态：`.migrated.bak` 存在而 json 不存在 → 从 bak 重放
  *   （解析 → sanitize → 逐字段缺失补齐）——迁移是否「已完成」不再以
- *   「user 层任意键存在」为标志（#468：部分写入中断会漏掉剩余 legacy 字段），
- *   而是逐字段比对 user 层缺失键后补写，全部已齐才幂等跳过（E2 断言
+ *   「user 层任意键存在」为标志（部分写入中断会漏掉剩余 legacy 字段），
+ *   而是逐字段比对 user 层缺失键后补写，全部已齐才幂等跳过（断言
  *   「不重复写入」）；
- * - 写入失败：回滚改名（bak 还原为 json）并 warn，下次启动重试（E6）。
+ * - 写入失败：回滚改名（bak 还原为 json）并 warn，下次启动重试。
  *
- * 冲突策略（#468，用户改值优先；字段粒度 = 顶层配置键，sanitize 透传通道）：
+ * 冲突策略（用户改值优先；字段粒度 = 顶层配置键，sanitize 透传通道）：
  * - 迁移只补写 user 层**缺失**的键（sanitize 结果 ∩ bak 显式键 − user 层
  *   已存在的键）；用户已改/已存在的字段一律不被迁移覆盖，与 PUT /config
- *   之后重启不再被迁移抢回的语义一致（E2 依赖的幂等判定本来就是「user 层
+ *   之后重启不再被迁移抢回的语义一致（幂等判定本来就是「user 层
  *   已有值 = 不重复写入」）；
  * - user 层键以**任何形态存在**（含空对象/仅部分嵌套子键）即视为用户已接管
  *   该字段**整组**（含其嵌套子键）——迁移不补写其嵌套子键。原因：sanitize
@@ -37,11 +37,11 @@
  * - 若用户确实想要 bak 里的旧值，官方 settings 是唯一事实源——迁移不写
  *   用户键，bak 原样保留可手动核对。
  *
- * 无有效键判据（#470 P2-1）：legacy 含**未知键**不再是「无有效键」——透传
+ * 无有效键判据：legacy 含**未知键**不再是「无有效键」——透传
  * 通道下未知键会补写进 user 层（升级不丢未来键）；仅「无任何键 / 非法 JSON /
  * 非对象」才走 corrupted 只标记不写入。
  *
- * 并发说明（#468 P1-3）：迁移 update 不传 expectedRevision——官方 update 是
+ * 并发说明：迁移 update 不传 expectedRevision——官方 update 是
  * 串行写队列 + merge over 最新 user section，迁移与用户 PUT 并发时各自 merge，
  * 迁移不会用旧快照覆盖用户新值；但「写入前 readUser 幂等判定」存在 TOCTOU
  * 窗口：极端并发下可能对同一缺失键多补一次（update 内不含该键才补）。补写
@@ -67,7 +67,7 @@ export interface MigrationOutcome {
   rolledBack: boolean;
   /** 损坏/空 JSON：仅改名 corrupted 标记、不写入。 */
   skippedCorrupt: boolean;
-  /** 迁移已完成（user 层已有值）：幂等跳过（E2）。 */
+  /** 迁移已完成（user 层已有值）：幂等跳过。 */
   skippedIdempotent: boolean;
   /** 本次是否为中断态重放（.migrated.bak 存在且 json 不存在）。 */
   resumed: boolean;
@@ -78,14 +78,14 @@ export interface MigrateDeps {
   /** 增量 merge patch 进 settings user 层。 */
   update(patch: object): Promise<void>;
   /**
-   * settings user 层该命名空间当前值（迁移完成判定 = 逐字段比对依据，#468）。
+   * settings user 层该命名空间当前值（迁移完成判定 = 逐字段比对依据）。
    * 返回空对象 = 尚无该命名空间的 user 值。
    */
   readUser(): Record<string, unknown>;
 }
 
 /**
- * #640/#641（D2）：legacy json 迁移时补写每通道声音键（仅此源路径——settings
+ * legacy json 迁移时补写每通道声音键（仅此源路径——settings
  * user 层存量不迁，靠 resolveSoundSetting 读面回落 + 首次 UI 保存固化）。
  * 补写值 = 用户层 notifySound 存在（用户已表态，如曾 PUT 改过）取用户值；
  * 否则取 legacy 显式 notifySound（升级前全局声音选择保留为两通道初始值）；
@@ -105,7 +105,7 @@ function addLegacySoundKeys(sanitized: Record<string, unknown>, user: Record<str
 }
 
 /**
- * 从 sanitize 白名单结果中挑出 user 层尚缺失的键（#468 冲突策略：只补缺失键，
+ * 从 sanitize 白名单结果中挑出 user 层尚缺失的键（冲突策略：只补缺失键，
  * 用户已改/已存在的键不被迁移覆盖）。字段粒度 = **顶层配置键**（sanitize 白名单）；
  * user 层键以任何形态存在（含空对象/部分嵌套子键）即视为用户已接管该字段整组，
  * 迁移不补写其嵌套子键。顶层标量键的键存在性判定与官方 mergeLayers 对顶层键的
@@ -131,7 +131,7 @@ function hasBakOnly(legacyPath: string, suffix: string): boolean {
   return !existsSync(legacyPath) && existsSync(legacyPath + suffix);
 }
 
-/** rename，Windows 目标已存在先 unlink 旧目标（R1(c)）。 */
+/** rename，Windows 目标已存在先 unlink 旧目标。 */
 function renameOver(previous: string, next: string): void {
   if (existsSync(next)) unlinkSync(next);
   renameSync(previous, next);
@@ -140,20 +140,20 @@ function renameOver(previous: string, next: string): void {
 /**
  * 存量 dsh-notifier.json 一次性迁移到官方 settings 命名空间。
  *
- * 时序（issue #76 R1；#468 补写语义）：
+ * 时序（逐字段缺失补齐）：
  * 0. 损坏标记态（只有 `.corrupted.bak`）→ 幂等跳过；
  * 1. json 不存在：
  *    - 无 migrated bak → 稳态，幂等返回；
  *    - migrated bak 存在 → 解析 bak：损坏/无有效键 → 标记跳过；合法 →
- *      逐字段缺失补齐（user 层缺失键才 update），全部已齐 → 幂等跳过（E2）；
+ *      逐字段缺失补齐（user 层缺失键才 update），全部已齐 → 幂等跳过；
  * 2. json 存在：读 + 解析；损坏/非对象/无有效键 → 改名 `.corrupted.bak`
- *    （只标记不写入，E4）；
+ *    （只标记不写入）；
  * 3. 合法 → 先改名 `.migrated.bak`（rename-first marker，改名成功即视为
  *    已处理）→ sanitize 过滤 → 逐字段缺失补齐写入（只写 user 层缺失的键）；
- * 4. 写入失败 → 回滚改名（bak 还原为 json）并 warn，下次启动重试（E6）。
+ * 4. 写入失败 → 回滚改名（bak 还原为 json）并 warn，下次启动重试。
  *
  * 必须在 settings 服务 attach 后调用（onScope 内），且先于一切 enabled 判定
- * （禁用用户跨版本升级同样完成迁移，E7）。
+ * （禁用用户跨版本升级同样完成迁移）。
  */
 export async function migrateLegacyConfig(legacyPath: string, deps: MigrateDeps, logger?: { warn?: (...a: unknown[]) => void }): Promise<MigrationOutcome> {
   const migratedBak = legacyPath + MIGRATED_BAK_SUFFIX;
@@ -169,10 +169,10 @@ export async function migrateLegacyConfig(legacyPath: string, deps: MigrateDeps,
     if (!existsSync(migratedBak)) {
       return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, skippedIdempotent: true, resumed: false };
     }
-    // 中断态：从 bak 重放「解析 → sanitize → 逐字段缺失补齐」（#468）。
+    // 中断态：从 bak 重放「解析 → sanitize → 逐字段缺失补齐」。
     // 迁移完成判定不再用「user 层任意键存在」——部分写入中断后剩余 legacy
     // 字段会永久漏迁；改为逐字段比对：user 层缺失的键补写，全部已齐才幂等
-    // 跳过（E2「不重复写入」语义保持）。
+    // 跳过（「不重复写入」语义保持）。
     let parsed: unknown;
     try {
       parsed = JSON.parse(readFileSync(migratedBak, "utf8"));
@@ -188,7 +188,7 @@ export async function migrateLegacyConfig(legacyPath: string, deps: MigrateDeps,
     const user = deps.readUser();
     const patch = diffMissingKeys(addLegacySoundKeys(sanitized, user), user);
     if (Object.keys(patch).length === 0) {
-      // 全部字段已迁齐（含用户改值后重启——见冲突策略）：幂等跳过（E2）
+      // 全部字段已迁齐（含用户改值后重启——见冲突策略）：幂等跳过
       return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, skippedIdempotent: true, resumed: false };
     }
     try {
@@ -206,7 +206,7 @@ export async function migrateLegacyConfig(legacyPath: string, deps: MigrateDeps,
   try {
     parsed = JSON.parse(readFileSync(legacyPath, "utf8"));
   } catch {
-    // 损坏：只改名 corrupted 标记，不写入（E4）
+    // 损坏：只改名 corrupted 标记，不写入
     try {
       renameOver(legacyPath, corruptedBak);
       logger?.warn?.(`dsh-notifier: 存量 ${legacyPath.split(/[\\/]/).pop()} 不是合法 JSON — 改名 ${CORRUPTED_BAK_SUFFIX} 标记，不写入设置`);
@@ -235,7 +235,7 @@ export async function migrateLegacyConfig(legacyPath: string, deps: MigrateDeps,
     return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, skippedIdempotent: false, resumed: false };
   }
 
-  // 3. 合法：rename-first marker 后逐字段缺失补齐写入（#468——正常迁移与
+  // 3. 合法：rename-first marker 后逐字段缺失补齐写入（正常迁移与
   //    中断重放同一补齐语义：不覆盖用户已改/已存在的键，见文件头冲突策略；
   //    首迁 user 层为空 → patch = 全量 sanitized 键集，与改造前行为一致）
   try {

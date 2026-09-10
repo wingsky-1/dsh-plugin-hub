@@ -2,7 +2,7 @@
  * dsh-notifier — 配置域：读取面归一化（零 node 依赖）。
  *
  * normalizeConfig 是「磁盘/settings 输入 → 运行时镜像」的唯一读面权威：
- * 已知键归一化 + 默认值兜底 + 未知键透传保留 + 原型污染键剔除（#470 P0）。
+ * 已知键归一化 + 默认值兜底 + 未知键透传保留 + 原型污染键剔除。
  * isWebhookHeaderName 也放本文件：它是 normalize 与写校验共用的频道形状原语
  * （放 validators 会与 normalizeWebhookChannel 成同目录循环依赖）。
  */
@@ -18,10 +18,10 @@ import {
 import type { BarkChannelConfig, BarkLevel, ChannelConfig, NotifyConfig, WebhookChannelConfig } from "./config.ts";
 import { parseHHMM } from "./quiet-hours.ts";
 
-// ---------------------------------------------------------------- 频道/路由/确认归一化（M2）
+// ---------------------------------------------------------------- 频道/路由/确认归一化
 
 /**
- * Bark baseUrl 规范化：URL 可解析 + scheme 限 http/https（SSRF 姿态，评审 P0-3）
+ * Bark baseUrl 规范化：URL 可解析 + scheme 限 http/https（SSRF 姿态）
  * + 拒绝带凭据 URL（user:pass@host）+ 丢弃 query/hash → 返回 origin+path（去尾斜杠）。
  * 非法返回 null（读取归一化口径：丢弃该实例；写入口径由 isBarkChannels 整组 400）。
  */
@@ -61,7 +61,7 @@ export function normalizeBarkLevels(v: unknown): Record<string, BarkLevel> | und
 
 /**
  * 单个 Bark 实例归一化：形状/类型不对返回 null（读取时丢弃）。
- * 已知可选参数按类型过滤；未知 string/number 键透传（保留键剔除，评审 P1）；
+ * 已知可选参数按类型过滤；未知 string/number 键透传（保留键剔除）；
  * 同实例内 id 必须匹配 BARK_ID_PATTERN（掩码回填与 kindRoutes 的稳定对齐键）。
  */
 function normalizeBarkChannel(v: unknown): BarkChannelConfig | null {
@@ -104,14 +104,14 @@ function normalizeBarkChannel(v: unknown): BarkChannelConfig | null {
 const WEBHOOK_HEADER_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9-]{0,63}$/;
 const WEBHOOK_HEADER_DENYLIST: readonly string[] = ["content-type", "content-length", "host", "cookie", "authorization"];
 
-/** 头名校验（#508 M2；normalize 与写校验共用，channels/webhook 复用拒非法头名）。 */
+/** 头名校验（normalize 与写校验共用，channels/webhook 复用拒非法头名）。 */
 export function isWebhookHeaderName(v: unknown): boolean {
   if (typeof v !== "string" || !WEBHOOK_HEADER_NAME_PATTERN.test(v)) return false;
   return !(WEBHOOK_HEADER_DENYLIST as readonly string[]).includes(v.toLowerCase());
 }
 
 /**
- * 单个 webhook 实例归一化（#508 M2）：形状/类型不对返回 null（读取时丢弃）。
+ * 单个 webhook 实例归一化：形状/类型不对返回 null（读取时丢弃）。
  * URL 复用 normalizeBarkBaseUrl（http/https、拒绝凭据、去 query/hash——凭据走
  * 请求头不落 URL）；timeoutSec 权威 clamp 1-60；凭据字段长度限 512；
  * 未知 string/number 键透传（保留键剔除，同 bark 口径）。
@@ -154,7 +154,7 @@ function normalizeWebhookChannel(v: unknown): WebhookChannelConfig | null {
 }
 
 /**
- * 频道实例数组归一化（#508 M2 分派版）：按实例 type 分派 bark/webhook 专属
+ * 频道实例数组归一化（分派版）：按实例 type 分派 bark/webhook 专属
  * normalizer，跨类型按 id 去重（首个胜出）；上限 16 实例。未知 type 走 bark
  * 口径（normalizeBarkChannel 对 type!=="bark" 返回 null → 丢弃，前向兼容旧行为）。
  */
@@ -215,12 +215,12 @@ export function normalizeConfig(input: unknown): NotifyConfig {
   for (const key of CONFIG_KEYS) {
     if (typeof src[key] === "boolean") base[key] = src[key];
   }
-  // #640/#641：声音设置专用分支——SoundSetting 非纯布尔，走不进 CONFIG_KEYS
-  // 布尔循环；这里与下方「已归一化键排除表」成对出现（P1-1 修订），否则字符串
+  // 声音设置专用分支——SoundSetting 非纯布尔，走不进 CONFIG_KEYS
+  // 布尔循环；这里与下方「已归一化键排除表」成对出现，否则字符串
   // 音色会走未知键透传绕过校验（读面丢弃非法值回默认 true，不抛不炸）。
   if (isSoundSetting(src.browserSound)) base.browserSound = src.browserSound;
   if (isSoundSetting(src.systemSound)) base.systemSound = src.systemSound;
-  // 存量表态等价映射（P0-3 收敛的读面回落前提）：旧版只有 notifySound 显式时，
+  // 存量表态等价映射（读面回落前提）：旧版只有 notifySound 显式时，
   // 若新键未显式给出（JSON 显式 undefined 不可能，undefined = 未给），把旧键值
   // 等价映射为新键——normalize 后 cfg 新键恒存在，resolveSoundSetting 直读即可；
   // 否则用户曾关声音（user.notifySound=false）会在升级后因新键默认 true 复活成
@@ -252,20 +252,20 @@ export function normalizeConfig(input: unknown): NotifyConfig {
     // 避免「配置保存成功但免打扰永不生效」的静默失败
     if (typeof qh.start === "string" && /^\d{2}:\d{2}$/u.test(qh.start) && parseHHMM(qh.start) >= 0) base.quietHours.start = qh.start;
     if (typeof qh.end === "string" && /^\d{2}:\d{2}$/u.test(qh.end) && parseHHMM(qh.end) >= 0) base.quietHours.end = qh.end;
-    // 免打扰豁免 kind（issue #421：放开白名单——不再按 QUIET_ALLOW_KINDS 过滤未知
+    // 免打扰豁免 kind（放开白名单——不再按 QUIET_ALLOW_KINDS 过滤未知
     // 项，与顶层 allowKinds 同款 normalizeAllowKinds 边界：非空、≤64 字符、去重、≤128 项。
     // 豁免判定仅 includes 匹配，语义由 UI 引导，服务端不约束 kind 集合）
     if (Array.isArray(qh.allowKinds)) {
       base.quietHours.allowKinds = normalizeAllowKinds(qh.allowKinds);
     }
   }
-  // M2 三键：推送频道实例 / kind 稀疏路由 / 动态 kind 确认清单（#508 M2：channels 按类型分派）
+  // 三键：推送频道实例 / kind 稀疏路由 / 动态 kind 确认清单（channels 按类型分派）
   if (Array.isArray(src.channels)) base.channels = normalizeChannels(src.channels);
   if (typeof src.kindRoutes === "object" && src.kindRoutes !== null) base.kindRoutes = normalizeKindRoutes(src.kindRoutes);
   if (Array.isArray(src.allowKinds)) base.allowKinds = normalizeAllowKinds(src.allowKinds);
   // 未知键透传：白名单之外的键原样保留（此插件在旧版本运行或手改配置时会
   // 出现未来版本/第三方键），避免「降级丢键」——只归一化你认识的键。
-  // #470 复核 P0：原型链污染/特殊成员键（__proto__/constructor/toString 等）
+  // 原型链污染/特殊成员键（__proto__/constructor/toString 等）
   // 一律剔除——JSON.parse 能让它们成为自有键，透传会脏写运行时镜像或改原型。
   const out = base as NotifyConfig & Record<string, unknown>;
   for (const key of Object.keys(src)) {
@@ -275,8 +275,8 @@ export function normalizeConfig(input: unknown): NotifyConfig {
     // 已归一化过的键不再透传（否则非法值会以原样覆盖归一化结果）
     if (key === "quietHours" || key === "errorMergeWindowMs" || key === "askRemindMin" || key === "doneMergeWindowMs" || key === "historyMaxAgeDays" || key === "maxConnections") continue;
     if (key === "channels" || key === "kindRoutes" || key === "allowKinds") continue;
-    // #640/#641：browserSound/systemSound 属已归一化键（SoundSetting 白名单），
-    // 非法字符串（如 "<script>"）不得经未知键透传覆盖归一化结果（P1-1/四同步）
+    // browserSound/systemSound 属已归一化键（SoundSetting 白名单），
+    // 非法字符串（如 "<script>"）不得经未知键透传覆盖归一化结果
     if (key === "browserSound" || key === "systemSound") continue;
     out[key] = src[key];
   }

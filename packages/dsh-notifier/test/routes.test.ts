@@ -1,19 +1,19 @@
-// @ts-nocheck
+// @ts-nocheck（e2e/集成面类型化技术债：桩对象密集，暂不参与 test/tsconfig 编译）
 /**
  * dsh-notifier — e2e：HTTP 路由（config / events SSE / health / test / history）。
  *
- * 覆盖（issue #76 新契约）：
- * - 五条路由注册面；403 loopback 围栏与 405 方法白名单（J1/J2）；
- * - config GET：包装体 {ok, user, revision, effective, writable}（F1/A3）
+ * 覆盖：
+ * - 五条路由注册面；403 loopback 围栏与 405 方法白名单；
+ * - config GET：包装体 {ok, user, revision, effective, writable}
  *   与 user 层/revision 反映；
- * - config PUT：{patch, expectedRevision} → 增量写入 settings user 层（F2/A2）；
- *   A4 基线 diff（仅提交变更键 → service.update 只收到该 patch）；
- *   F4 expectedRevision 可选（缺省不校验）；G1 409 版本冲突 / G2 503
- *   settings-unavailable / G3 写入异常 500 不含原文 / G4 首个非法键 400 + hint；
- * - PUT 容错：非法 JSON 400、超大 body 不挂起（J3/J4）；
- * - events SSE：connected 首帧（C1）、kind=test 广播、seq、?since 回放（C7）；
- * - history：落盘轮询（D4）/DELETE 清空（D7）/historyMaxAgeDays 按天清理（D5）
- *   /200 滚动上限（D6）；免打扰拦截 suppressed:quiet（D3）。
+ * - config PUT：{patch, expectedRevision} → 增量写入 settings user 层；
+ *   基线 diff（仅提交变更键 → service.update 只收到该 patch）；
+ *   expectedRevision 可选（缺省不校验）；409 版本冲突 / 503
+ *   settings-unavailable / 写入异常 500 不含原文 / 首个非法键 400 + hint；
+ * - PUT 容错：非法 JSON 400、超大 body 不挂起；
+ * - events SSE：connected 首帧、kind=test 广播、seq、?since 回放；
+ * - history：落盘轮询 / DELETE 清空 / historyMaxAgeDays 按天清理 /
+ *   200 条滚动上限；免打扰拦截 suppressed:quiet。
  */
 import { join } from "node:path";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -22,7 +22,7 @@ import { assert, makeNotifier, fakeReq, makeRes, waitForHistory, turnPair, quiet
 import { ROUTES } from "../lib/index.js";
 
 /** 轮询 /status 直到某频道终态 == expected（异步终态断言防 flake：spawn 完成
- *  走事件循环，固定 sleep 会偶发竞态——见 docs/DEVELOPMENT.md §5）。 */
+ *  走事件循环，固定 sleep 会偶发竞态——见 docs/DEVELOPMENT.md 的防 flake 纪律）。 */
 async function pollStatus(route, channelId, expected, timeoutMs = 2000) {
   const start = Date.now();
   for (;;) {
@@ -43,7 +43,7 @@ const work = mkdtempSync(join(tmpdir(), "dnotify-routes-"));
 let mainNotifier;
 try {
   // 独立 history 文件：隔离其他测试块的 fire-and-forget 异步写盘，
-  // 避免跨 apply 实例对同一 history.jsonl 的 read-modify-write 竞态把 test 挤出末尾（issue #17）。
+    // 避免跨 apply 实例对同一 history.jsonl 的 read-modify-write 竞态把 test 挤出末尾。
   mainNotifier = makeNotifier(work, { historyFile: join(work, "history-route.jsonl") });
   const { routes, settings } = mainNotifier;
   const configRoute = routes.find((r) => r.path === ROUTES.config);
@@ -55,15 +55,15 @@ try {
   const kindsRoute = routes.find((r) => r.path === ROUTES.kinds);
   assert.ok(configRoute && eventsRoute && healthRoute && testRoute && historyRoute && statusRoute && kindsRoute, "七条路由已注册（M2 增 status/kinds）");
 
-  // #472 收敛锚定：sseData 收敛 shared/host-utils.js 后 notifier 导出面不变——
+    // 收敛锚定：sseData 收敛 shared/host-utils.js 后 notifier 导出面不变——
   // lib/index.js 不得新增 sseData 导出（现状从不导出，防未来误加导出面漂移）。
   {
     const lib = await import("../lib/index.js");
     assert.ok(!("sseData" in lib), "lib/index.js 不得可见 sseData（notifier 从不导出该符号）");
   }
 
-  // 403（J1）——含 M2 新路由（围栏必项，评审缺口项）
-  // #473 批 1（B1-4）：403 body 文案断言（守卫收敛后逐字节锁定）
+    // 403——含新路由（围栏必项，评审缺口项）
+    // 403 body 文案断言（守卫收敛后逐字节锁定）
   for (const route of [configRoute, eventsRoute, healthRoute, testRoute, historyRoute, statusRoute, kindsRoute]) {
     const { rec, res } = makeRes();
     await route.handler(fakeReq({ socket: { remoteAddress: "10.0.0.2" } }), res);
@@ -71,7 +71,7 @@ try {
     assert.equal(JSON.parse(rec.text).error, "forbidden: loopback-only", "403 body 围栏文案");
   }
 
-  // 405（J2）：test 路由仅 POST；history 路由 GET/DELETE；health 仅 GET；status 仅 GET；kinds 仅 GET/POST
+    // 405：test 路由仅 POST；history 路由 GET/DELETE；health 仅 GET；status 仅 GET；kinds 仅 GET/POST
   {
     const { rec, res } = makeRes();
     await testRoute.handler(fakeReq({}), res);
@@ -79,12 +79,12 @@ try {
     const { rec: rec2, res: res2 } = makeRes();
     await historyRoute.handler(fakeReq({ method: "POST" }), res2);
     assert.equal(rec2.status, 405);
-    // #473 批 1（B1-3）：history（GET/DELETE 白名单）POST → 405 + error 文案
+        // history（GET/DELETE 白名单）POST → 405 + error 文案
     assert.equal(JSON.parse(rec2.text).error, "method not allowed: POST", "history POST 405 body 文案");
     const { rec: rec3, res: res3 } = makeRes();
     await healthRoute.handler(fakeReq({ method: "DELETE" }), res3);
     assert.equal(rec3.status, 405);
-    // #473 批 1（B1-4）：单方法端点 405 body 文案断言
+        // 单方法端点 405 body 文案断言
     assert.equal(JSON.parse(rec3.text).error, "method not allowed: DELETE", "health DELETE 405 body 文案");
     const { rec: rec4, res: res4 } = makeRes();
     await statusRoute.handler(fakeReq({ method: "POST" }), res4);
@@ -92,16 +92,16 @@ try {
     const { rec: rec5, res: res5 } = makeRes();
     await kindsRoute.handler(fakeReq({ method: "DELETE" }), res5);
     assert.equal(rec5.status, 405);
-    // #473 批 1（B1-3）：kinds（GET/POST 白名单）DELETE → 405 + error 文案
+        // kinds（GET/POST 白名单）DELETE → 405 + error 文案
     assert.equal(JSON.parse(rec5.text).error, "method not allowed: DELETE", "kinds DELETE 405 body 文案");
-    // #473 批 1（B1-3）：config（GET/PUT 白名单）补非法方法锚 DELETE → 405 + error 文案
+        // config（GET/PUT 白名单）补非法方法锚 DELETE → 405 + error 文案
     const { rec: rec6, res: res6 } = makeRes();
     await configRoute.handler(fakeReq({ method: "DELETE" }), res6);
     assert.equal(rec6.status, 405);
     assert.equal(JSON.parse(rec6.text).error, "method not allowed: DELETE", "config DELETE 405 body 文案");
   }
 
-  // health：配置摘要与 sseConnections（#640/#641：platform + browserSound/systemSound）
+    // health：配置摘要与 sseConnections（platform + browserSound/systemSound）
   {
     const { rec, res } = makeRes();
     await healthRoute.handler(fakeReq({}), res);
@@ -118,7 +118,7 @@ try {
     assert.equal(typeof body.sseConnections, "number");
   }
 
-  // config GET：包装体 {ok, user, revision, effective, writable}（F1/A3）
+    // config GET：包装体 {ok, user, revision, effective, writable}
   {
     const { rec, res } = makeRes();
     await configRoute.handler(fakeReq({}), res);
@@ -131,7 +131,7 @@ try {
     assert.equal(body.writable, true, "settings 可用时 writable=true");
   }
 
-  // config PUT：{patch, expectedRevision} → settings user 层增量写入（F2/A2）
+    // config PUT：{patch, expectedRevision} → settings user 层增量写入
   {
     function bodyReq(payload) {
       const text = JSON.stringify(payload);
@@ -167,7 +167,7 @@ try {
     assert.equal(getBody.effective.quietHours.start, "22:00", "未提交的键保留 schema 默认");
   }
 
-  // A4 基线 diff：PUT 仅含变更键 → service.update 只收到该 patch（不整表覆盖）
+    // 基线 diff：PUT 仅含变更键 → service.update 只收到该 patch（不整表覆盖）
   {
     const calls = settings.getUpdateCalls();
     const lastCall = calls[calls.length - 1];
@@ -175,7 +175,7 @@ try {
     assert.deepEqual(lastCall.patch, { notifyAsk: false }, "service.update 只收到变更键（增量 patch，非整表）");
   }
 
-  // ===== #470：未知键透传保留（前向兼容）——PUT /config 行为 =====
+    // ===== 未知键透传保留（前向兼容）——PUT /config 行为 =====
   {
     function bodyReq(payload) {
       const text = JSON.stringify(payload);
@@ -200,7 +200,7 @@ try {
     );
     const cfgR = nfRoutes.find((r) => r.path === ROUTES.config);
 
-    // (1) #470 验收 2：存量 user 层未知键在保存已知键后不丢（读写闭合）
+        // (1) 存量 user 层未知键在保存已知键后不丢（读写闭合）
     {
       const put = makeRes();
       await cfgR.handler(bodyReq({ patch: { notifyAsk: false } }), put.res);
@@ -210,7 +210,7 @@ try {
       assert.equal(after.futureKey, "keepme", "存量未知键不被已知键保存清除");
     }
 
-    // (2) #470 验收 3：PUT 携带顶层未知键 → 200 透传写入（GET 往返深等）；
+        // (2) PUT 携带顶层未知键 → 200 透传写入（GET 往返深等）；
     //     纯未知键 patch 200（不再落入「至少一个有效键」400）
     {
       const put = makeRes();
@@ -231,7 +231,7 @@ try {
       await cfgR.handler(bodyReq({ patch: { pureFuture: 1 } }), put2.res);
       assert.equal(put2.rec.status, 200, "纯未知键 patch 200 透传（不再 400）");
       assert.equal(nfSettings.getUser().pureFuture, 1, "纯未知键写入 user 层");
-      // #470 qa 复核：未知键 null 值透传（PUT {nullFuture:null} → 200，GET 可读回）
+            // 未知键 null 值透传（PUT {nullFuture:null} → 200，GET 可读回）
       const putNull = makeRes();
       await cfgR.handler(bodyReq({ patch: { nullFuture: null } }), putNull.res);
       assert.equal(putNull.rec.status, 200, "纯未知键 null patch 200 透传");
@@ -245,7 +245,7 @@ try {
       assert.equal(Object.prototype.hasOwnProperty.call(getNullBody.effective, "nullFuture"), true, "GET effective 读回 nullFuture");
     }
 
-    // (3) #470 验收 3 边界：空 patch {} → 仍 400（无变更可写）
+        // (3) 边界：空 patch {} → 仍 400（无变更可写）
     {
       const put = makeRes();
       await cfgR.handler(bodyReq({ patch: {} }), put.res);
@@ -254,7 +254,7 @@ try {
       assert.match(body.error.error, /配置校验失败/, "空 patch 400 带配置校验失败");
     }
 
-    // (4) #470 验收 4：PUT 透传排除装配键名——configFile/toastScript/historyFile/
+        // (4) PUT 透传排除装配键名——configFile/toastScript/historyFile/
     //     statusFile/enabled 被剔除（不入 user 层）；组合层 entry 白名单语义不变
     {
       const put = makeRes();
@@ -272,7 +272,7 @@ try {
       assert.equal(nfSettings.getUser().notifyQuestion, false, "已知键生效");
     }
 
-    // (5) #470 验收 5：已知键非法值仍 400 + hint；未知键存在不改变校验结果
+        // (5) 已知键非法值仍 400 + hint；未知键存在不改变校验结果
     {
       const put = makeRes();
       await cfgR.handler(bodyReq({ patch: { notifyAsk: "yes", futureKey3: 1 } }), put.res);
@@ -283,7 +283,7 @@ try {
       assert.ok(!("futureKey3" in nfSettings.getUser()), "被拒 patch 的未知键不写入");
     }
 
-    // (6) #470 验收 6：user 层旧脏键不被自动清洗——透传键升为已知键后提交脏值
+        // (6) user 层旧脏键不被自动清洗——透传键升为已知键后提交脏值
     //     400 + hint；保存其他键不触发 400（脏键留 user 层，读面归一化兜底）
     {
       // 模拟 vN 未知键 futureFlag 已透传进 user 层、vN+1 升级为已知键（脏值 true 是
@@ -302,7 +302,7 @@ try {
       assert.match(b2.error.error, /notifyAsk/, "400 指明脏已知键");
     }
 
-    // (7) #470 验收 8（链路模拟）：GET effective（含未知键）→ 改已知键 →
+        // (7) 链路模拟：GET effective（含未知键）→ 改已知键 →
     //     diffPayload 不含未知键 → PUT → GET 未知键保留（client 只提交变更键）
     {
       // 预置未知键 + 已知键，读 GET effective 作为 UI 基线（client loadCard 语义）
@@ -317,7 +317,7 @@ try {
       settingsView.notifyTaskDone = false;
       // diffPayload 只提交与基线不同的键——逻辑与 src/client/index.ts
       // diffSettingsPayload 完全一致（无夹带守卫；真函数另有 client-contract
-      // #470 P1-2 产物直测，此处模拟同语义 diff 走 HTTP 整链）
+            // 产物直测，此处模拟同语义 diff 走 HTTP 整链）
       const payload = {};
       for (const key in settingsView) {
         if (!Object.prototype.hasOwnProperty.call(settingsView, key)) continue;
@@ -344,7 +344,7 @@ try {
     nfDispose();
   }
 
-  // (8) #470 验收 4（entry 白名单回归）：组合层装配键 configFile/enabled 不进
+    // (8) entry 白名单回归：组合层装配键 configFile/enabled 不进
   //     settings user 层（makeNotifier 的 entry 经 sanitizeSettings 白名单过滤，
   //     base 层承载已知配置键、装配键被丢弃——不混入 user 层，也不进 GET user）
   {
@@ -368,7 +368,7 @@ try {
     enDispose();
   }
 
-  // (9) #470 复核 P0/P1 路由级回归：数组 patch 拒绝（不写脏数字键）；
+    // (9) 路由级回归：数组 patch 拒绝（不写脏数字键）；
   //     原型链成员键（constructor/hasOwnProperty/__proto__…）不触发 500、
   //     不脏写 user 层（既有 JSON.parse 注入形态）
   {
@@ -432,7 +432,7 @@ try {
     pfDispose();
   }
 
-  // (10) #470 复核 P2 采纳：GET user/effective 不含特殊键（constructor/prototype/
+    // (10) GET user/effective 不含特殊键（constructor/prototype/
   //      __proto__/toString/hasOwnProperty/valueOf）契约扫描——即使存量 user 层
   //      被外部手改注入特殊键（模拟 setUser 预置），读出口也不泄露（normalize 剔除）
   {
@@ -460,7 +460,7 @@ try {
     gfDispose();
   }
 
-  // F4 expectedRevision 缺省：无冲突检测（不带 revision 的 PUT 成功）
+    // expectedRevision 缺省：无冲突检测（不带 revision 的 PUT 成功）
   {
     function bodyReq(payload) {
       const text = JSON.stringify(payload);
@@ -482,7 +482,7 @@ try {
     assert.equal(rec.status, 200, "缺省 expectedRevision 的 PUT 成功");
   }
 
-  // D19（L8-5）：expectedRevision 非非负整数 → 400 显式拒（不再静默忽略）；
+    // expectedRevision 非非负整数 → 400 显式拒（不再静默忽略）；
   // null 同省略 → 200（独立实例，避免污染主实例 revision 链）
   {
     function bodyReq(payload) {
@@ -516,7 +516,7 @@ try {
     d19Dispose();
   }
 
-  // ===== M2：Bark channels 凭据脱敏与掩码回填（issue #366，评审 P0-1/P0-2）=====
+    // ===== Bark channels 凭据脱敏与掩码回填 =====
   {
     function bodyReq(payload) {
       const text = JSON.stringify(payload);
@@ -595,7 +595,7 @@ try {
     assert.equal(JSON.parse(put7.rec.text).error.error, "配置校验失败: channels", "400 指明 channels 键");
   }
 
-  // ===== #508 M2：webhook 频道写入/凭据掩码泛化（凭据只走请求头不落 URL）=====
+    // ===== webhook 频道写入/凭据掩码泛化（凭据只走请求头不落 URL）=====
   {
     function bodyReq(payload) {
       const text = JSON.stringify(payload);
@@ -639,13 +639,13 @@ try {
     assert.equal(putW3.rec.status, 400, "新 webhook 实例带掩码 400 拒绝");
     assert.ok(JSON.parse(putW3.rec.text).error.hint.includes("掩码"), "400 hint 指引真实 token");
 
-    // #614：客户端修复后「空白起步」形态回归——chAdd 不预置可选键，用户填 url/token
+        // 客户端修复后「空白起步」形态回归——chAdd 不预置可选键，用户填 url/token
     // 后提交（无任何空串键）→ 200；此前该形态必 400（保存失败: channels）
     const putW4 = makeRes();
     await configRoute.handler(bodyReq({ patch: { channels: [{ id: "webhook-2", type: "webhook", url: "https://ntfy.sh/dsh-z", enabled: false, auth: "bearer", token: WH_SECRET, preset: "ntfy", timeoutSec: 10 }] } }), putW4.res);
     assert.equal(putW4.rec.status, 200, "#614：无空串键形态（客户端 strip 产物）PUT 成功");
 
-    // #614：存量「空串残留」payload 仍 400（写面契约锁定——空串 ≠ 未配置，
+        // 存量「空串残留」payload 仍 400（写面契约锁定——空串 ≠ 未配置，
     // 语义由客户端 assignChannelFields/stripChannelEmpties 剥除承接，服务端不放宽）
     const putW5 = makeRes();
     await configRoute.handler(bodyReq({ patch: { channels: [{ id: "webhook-3", type: "webhook", url: "https://ntfy.sh/dsh-b", enabled: false, auth: "bearer", token: "tk614", username: "", password: "", headerName: "", headerValue: "" }] } }), putW5.res);
@@ -653,7 +653,7 @@ try {
     assert.equal(JSON.parse(putW5.rec.text).error.error, "配置校验失败: channels", "#614：报错键仍为 channels");
   }
 
-  // ===== M2：/test 收敛 service 管线 + /status + /kinds（issue #366）=====
+    // ===== /test 收敛 service 管线 + /status + /kinds =====
   {
     function postReq(payload) {
       const text = JSON.stringify(payload);
@@ -687,8 +687,8 @@ try {
     assert.ok(Array.isArray(t1Body.results), "收敛后响应含受理 results");
     assert.ok(t1Body.results.some((x) => x.channelId === "browser" && x.status === "ok"), "test kind 走 service 管线投递");
 
-    // 投递终态落盘：browser 同步终态即时可见；system 为异步终态（#640/#641
-    // SystemNotifier.notify 返回 Promise——spawn 完成走事件循环）→ 轮询等待
+        // 投递终态落盘：browser 同步终态即时可见；system 为异步终态
+        // （SystemNotifier.notify 返回 Promise——spawn 完成走事件循环）→ 轮询等待
     const st2 = makeRes();
     await statusRoute.handler(fakeReq({}), st2.res);
     const st2Body = JSON.parse(st2.rec.text);
@@ -719,12 +719,12 @@ try {
     assert.equal(k5.rec.status, 200, "确认成功");
     assert.equal(JSON.parse(k5.rec.text).kinds.find((k) => k.id === "e2e:due").confirmed, true, "响应内确认态即时可见");
     assert.deepEqual(settings.getUser().allowKinds, ["e2e:due"], "确认态持久化到配置 allowKinds（重启保持）");
-    // 确认后 send 放行（M1 的 suppressed 解除）
+        // 确认后 send 放行（suppressed 解除）
     const send1 = await notifier.send({ source: "e2e", kind: "e2e:due", severity: "info", body: "到期提醒" });
     assert.ok(send1.some((x) => x.status === "ok"), "确认后动态 kind 正常投递");
   }
 
-  // ===== #405 PR3：kinds 确认 CAS 循环（read-modify-write + 冲突重试 + 兜底）=====
+    // ===== kinds 确认 CAS 循环（read-modify-write + 冲突重试 + 兜底）=====
   {
     function postReq(payload) {
       const text = JSON.stringify(payload);
@@ -781,7 +781,7 @@ try {
       settings.service.update = origUpdate;
     }
 
-    // 3. CAS 耗尽 → handler 兜底 409（评审 P1-1：rejection 不冒泡成宿主未处理）
+        // 3. CAS 耗尽 → handler 兜底 409（rejection 不冒泡成宿主未处理）
     notifier.registerKind({ id: "e2e:cas3", label: "CAS 3" });
     settings.service.update = async (ns, patch, expectedRevision) => {
       // 每次 update 前都空写推进 revision → 调用方持有的 revision 恒过期 → 3 次重试耗尽
@@ -799,7 +799,7 @@ try {
       settings.service.update = origUpdate;
     }
 
-    // 4. base 层 allowKinds 回退（评审 P0-1）：user 层未接管（无 allowKinds 键）时，
+        // 4. base 层 allowKinds 回退：user 层未接管（无 allowKinds 键）时，
     //    确认写入不得以空集整键覆盖组合层 base 配置的豁免项
     {
       const baseInst = makeNotifier(work, { allowKinds: ["base:k0"], historyFile: join(work, "history-kinds-base.jsonl") });
@@ -819,7 +819,7 @@ try {
     }
   }
 
-  // config PUT 容错：非法 JSON → 400；超大 body → 不挂起、无未处理拒绝（J3/J4）
+    // config PUT 容错：非法 JSON → 400；超大 body → 不挂起、无未处理拒绝
   {
     function rawBodyReq(text) {
       return {
@@ -843,7 +843,7 @@ try {
     assert.equal(rec2.status, 0, "超大 body：连接被 destroy、handler 无响应但不挂起不抛错");
   }
 
-  // G4 首个非法键 hint → 400（quietHours.start=25:00）
+    // 首个非法键 hint → 400（quietHours.start=25:00）
   {
     function bodyReq(payload) {
       const text = JSON.stringify(payload);
@@ -869,7 +869,7 @@ try {
     assert.ok(body.error.hint, "400 带 hint（合法范围描述）");
   }
 
-  // #640/#641 A2：新声音键写入校验——合法值 200、非法值 400 + 音色白名单 hint
+    // 新声音键写入校验——合法值 200、非法值 400 + 音色白名单 hint
   {
     function bodyReq(payload) {
       const text = JSON.stringify(payload);
@@ -906,7 +906,7 @@ try {
     assert.equal(eff.systemSound, false, "合法 systemSound 写入 user 层");
   }
 
-  // G1：SETTINGS_CONFLICT → 409 固定文案（expectedRevision 过期 → service.update 抛冲突）
+    // SETTINGS_CONFLICT → 409 固定文案（expectedRevision 过期 → service.update 抛冲突）
   {
     function bodyReq(payload) {
       const text = JSON.stringify(payload);
@@ -940,7 +940,7 @@ try {
     assert.match(body.error.error, /版本冲突/, "409 固定文案「版本冲突」");
   }
 
-  // G2：settings 服务缺失（未 attach）→ PUT 503 settings-unavailable
+    // settings 服务缺失（未 attach）→ PUT 503 settings-unavailable
   {
     const { apply } = await import("../lib/index.js");
     const { makeFakeCtx } = await import("./helpers.ts");
@@ -968,7 +968,7 @@ try {
     assert.match(body.error.error, /设置服务不可用/, "503 固定文案「设置服务不可用」");
   }
 
-  // G3：写入异常原文只进服务端日志 → 500 收敛固定文案（不含底层异常原文）
+    // 写入异常原文只进服务端日志 → 500 收敛固定文案（不含底层异常原文）
   {
     const { apply } = await import("../lib/index.js");
     const { makeFakeCtx } = await import("./helpers.ts");
@@ -1007,7 +1007,7 @@ try {
     assert.ok(warns.some((w) => w.includes("secret-internal-path")), "异常原文进服务端日志");
   }
 
-  // #405 PR3 复核：settings 服务缺失（未 attach）→ POST /kinds 503（与 PUT /config
+    // settings 服务缺失（未 attach）→ POST /kinds 503（与 PUT /config
   // 服务缺失语义一致，非笼统 500——对抗评审发现的行为回归锁死）
   {
     const { apply } = await import("../lib/index.js");
@@ -1040,7 +1040,7 @@ try {
     assert.equal(JSON.parse(rec.text).error.code, "settings-unavailable", "503 带 code=settings-unavailable");
   }
 
-  // events SSE（C1）
+    // events SSE
   {
     const { rec, res } = makeRes();
     await eventsRoute.handler(fakeReq({}), res);
@@ -1063,8 +1063,8 @@ try {
     assert.match(rec1.text, /"seq":\d+/, "通知帧带递增 seq");
   }
 
-  // events ?since 回放（独立上下文，seq 从 1 起）：断线补拉不丢尾部事件（C7）
-  // PR2 R-6（D22 选项 A）：seq 持久化后本文件各实例共享 work 目录的 seq 文件，
+    // events ?since 回放（独立上下文，seq 从 1 起）：断线补拉不丢尾部事件
+    // seq 持久化后本文件各实例共享 work 目录的 seq 文件，
   // 先清复位保证「本块独立、seq 从 1 起」语义不变（其余块无绝对 seq 断言不受影响）
   {
     rmSync(join(work, "notifier-seq.json"), { force: true });
@@ -1091,7 +1091,7 @@ try {
     notifier2.dispose();
   }
 
-  // #330 SSE 连接生命周期：上限淘汰最老 / close+error 幂等清理 /
+    // SSE 连接生命周期：上限淘汰最老 / close+error 幂等清理 /
   // write-false 背压不误杀 / 写失败连续 3 次判死 / 配置改小实时生效（下次注册收缩）。
   // 每个场景独立 makeNotifier 实例（隔离连接表，防跨块串扰）。
   {
@@ -1099,7 +1099,7 @@ try {
     function sseRes(opts = {}) {
       const listeners = {};
       const state = { destroyed: false, writes: 0, destroyCalls: 0 };
-      // presetDestroyed：模拟「对端已断但 close 事件漏发」的残留连接（P2-6 兜底分支用）
+            // presetDestroyed：模拟「对端已断但 close 事件漏发」的残留连接（兜底分支用）
       if (opts.presetDestroyed) state.destroyed = true;
       return {
         state,
@@ -1119,7 +1119,7 @@ try {
         },
         destroy() {
           state.destroyed = true;
-          state.destroyCalls += 1; // 调用计数：区分幂等 evict 与重复销毁（P2-4）
+          state.destroyCalls += 1; // 调用计数：区分幂等 evict 与重复销毁
         },
         get destroyed() {
           return state.destroyed;
@@ -1130,7 +1130,7 @@ try {
     }
     /** 独立实例路由查找（每次全新连接表）。 */
     async function freshRoutes(mark, maxConnections) {
-      // issue #76 后配置走 settings 命名空间（configFile 仅作迁移源）：maxConnections
+            // 配置走 settings 命名空间（configFile 仅作迁移源）：maxConnections
       // 直接经组合层 entry 注入（sanitizeSettings 白名单 → 命名空间 base 层）。
       const out = await makeNotifier(work, { maxConnections, historyFile: join(work, `sse-${mark}.jsonl`) });
       const near = (p) => out.routes.find((r) => r.path === p);
@@ -1156,7 +1156,7 @@ try {
       assert.equal(r2.state.destroyed, false, "较新连接保留");
       assert.equal(r3.state.destroyed, false, "最新连接保留");
       assert.equal(r1.state.destroyCalls, 1, "淘汰只销毁一次（evict 幂等）");
-      dispose(); // 停心跳，防 30s unref 定时器残留（P2-5）
+      dispose(); // 停心跳，防 30s unref 定时器残留
     }
 
     // (b) close/error 幂等清理：多次触发只移除一次
@@ -1209,7 +1209,7 @@ try {
       await ev.handler(fakeReq({}), r2);
       await ev.handler(fakeReq({}), r3);
       assert.equal(await connCount(he), 3, "默认上限 16 下注册 3 条不淘汰");
-      // PUT {patch:{maxConnections:2}} → settings user 层（#76 新契约 F2/A2）
+            // PUT {patch:{maxConnections:2}} → settings user 层
       const text = JSON.stringify({ patch: { maxConnections: 2 } });
       const putReq = {
         method: "PUT",
@@ -1251,7 +1251,7 @@ try {
     }
   }
 
-  // N-22（C3-1，D22 选项 A）：服务端重启后 seq 续计数——已打开页面重连不丢帧。
+    // 服务端重启后 seq 续计数——已打开页面重连不丢帧。
   // 独立子目录隔离 seq 文件（防与其余实例共用 work/notifier-seq.json 的多写者
   // 串扰——生产单实例单进程无此问题，测试多实例需各归其位）。
   {
@@ -1277,7 +1277,7 @@ try {
     n2.dispose();
   }
 
-  // TDD④ L3 级联：seq 文件损坏/缺文件 → 回退 0（损坏 warn + 首帧 seq=1；缺文件
+    // 级联场景：seq 文件损坏/缺文件 → 回退 0（损坏 warn + 首帧 seq=1；缺文件
   // = 首启静默无 warn）
   {
     const n22bDir = join(work, "n22b");
@@ -1308,7 +1308,7 @@ try {
     n4.dispose();
   }
 
-  // N-23 服务端侧不变锁：maxConnections:0 → 400（S3-12 修复在客户端 clamp；
+    // 服务端侧不变锁：maxConnections:0 → 400（客户端 clamp 是唯一守卫；
   // 服务端写面校验现状正确勿动——防未来"顺手放宽"回归）
   {
     const n23 = makeNotifier(work, { historyFile: join(work, "history-n23.jsonl") });
@@ -1332,7 +1332,7 @@ try {
     n23.dispose();
   }
 
-  // history：测试通知已落盘，GET 可查（独立 history 文件，无跨块串扰）（D4）
+    // history：测试通知已落盘，GET 可查（独立 history 文件，无跨块串扰）
   {
     // appendHistory 是 fire-and-forget；轮询直到落盘，不再依赖固定 sleep 的时序假设
     const records = await waitForHistory(historyRoute, (rs) => rs.length >= 1 && rs[rs.length - 1]?.kind === "test");
@@ -1355,7 +1355,7 @@ try {
     assert.ok(testCount >= concurrent, `并发写不丢记录（test 记录 ${testCount} ≥ ${concurrent}）`);
   }
 
-  // history：DELETE 清空（D7）+ historyMaxAgeDays 按天清理（D5）（独立上下文）
+    // history：DELETE 清空 + historyMaxAgeDays 按天清理（独立上下文）
   {
     const hfile = join(work, "history-clean.jsonl");
     const { routes, dispose: disposeClean } = makeNotifier(work, { historyFile: hfile, historyMaxAgeDays: 7 });
@@ -1378,18 +1378,18 @@ try {
     const { rec: recEmpty, res: resEmpty } = makeRes();
     await h.handler(fakeReq({}), resEmpty);
     assert.equal(JSON.parse(recEmpty.text).records.length, 0, "清空后 GET 为空");
-    disposeClean(); // 停心跳（P2-5）
+    disposeClean(); // 停心跳
   }
 
-  // D3：被免打扰拦截（suppressed: "quiet"）的记录在历史中标记（独立上下文）
+    // 被免打扰拦截（suppressed: "quiet"）的记录在历史中标记（独立上下文）
   {
-    // #181 动态窗口：写死 "00:00"/"23:59" 在半开区间镜下 23:59 这一分钟不命中
+        // 动态窗口：写死 "00:00"/"23:59" 在半开区间镜下 23:59 这一分钟不命中
     // （UTC 边缘必炸，run 33282203798 同源隐患）；围绕当前时间 ±2 分钟恒命中。
     const qhAll = quietWindowNow();
     const { routes, listeners } = makeNotifier(work, { quietHours: { ...qhAll, allowKinds: ["ask"] }, historyFile: join(work, "history-quiet.jsonl") });
     const h = routes.find((r) => r.path === ROUTES.history);
     const status = listeners.get("agent/status")[0];
-    // #290 阶段二两态时序：running=上一轮（首轮无 closure），idle=本轮 turn 1 completed
+        // 两态时序：running=上一轮（首轮无 closure），idle=本轮 turn 1 completed
     const pair = turnPair("q-1", "免打扰完成", {}, { turn: 1 });
     status({ agent: pair.running, status: "running" });
     status({ agent: pair.idle, status: "idle" });
@@ -1397,7 +1397,7 @@ try {
     assert.ok(records.some((e) => e.kind === "done" && e.suppressed === "quiet"), "免打扰拦截记录带 suppressed:quiet 标记");
   }
 
-  // D6：200 条滚动上限（独立上下文，预置 210 条 → 读取只保留最近 200）
+    // 200 条滚动上限（独立上下文，预置 210 条 → 读取只保留最近 200）
   {
     const hfile = join(work, "history-limit.jsonl");
     const lines = Array.from({ length: 210 }, (_, i) => JSON.stringify({ ts: Date.now() + i, kind: "test", title: "t", message: `m${i}` })).join("\n") + "\n";
@@ -1410,7 +1410,7 @@ try {
     assert.ok(records.length <= 200, "滚动上限 200：读取最多 200 条");
     assert.equal(records[records.length - 1].message, "m209", "保留的是最新记录");
   }
-  // P2-4（#436 复核 P1-1 同根因）：settings 服务消失 → 回落 current 与初始形态
+    // settings 服务消失 → 回落 current 与初始形态
   // 一致（same-shape）。entry 只给 maxConnections（缺 notifySound/askRemindMin 等
   // 默认键）：回落若不经 normalizeConfig 会退回裸 entry（notifySound=true →
   // undefined、askRemindMin 缺失）——与初始 normalizeConfig(entry) 形态不对称。
@@ -1460,6 +1460,6 @@ try {
     assert.deepEqual(after, before, "回落 current 与初始形态 same-shape（同键同值、默认值兜底一致）");
   }
 } finally {
-  mainNotifier.dispose(); // 停心跳（P2-5：30s unref 定时器不在测试进程存活期残留）
+  mainNotifier.dispose(); // 停心跳（30s unref 定时器不在测试进程存活期残留）
   rmSync(work, { recursive: true, force: true });
 }

@@ -1,14 +1,14 @@
 /**
- * dsh-notifier — 内置 system 频道（D23：投递池实例，播放经 play 注入）。
+ * dsh-notifier — 内置 system 频道（投递池实例，播放经 play 注入）。
  *
- * PR2 播放决议随裁决快照解析并经 DeliverDeps.play(target, payload) 值传递——
+ * 播放决议随裁决快照解析并经 DeliverDeps.play(target, payload) 值传递——
  * system.notify(spec.pop, spec.sound, ...) 的调用在 index.ts 装配处（对照落位
- * 移前的 dispatchSystem：notify resolve false → throw → 终态 failed，B4）。
+ * 移前的 dispatchSystem：notify resolve false → throw → 终态 failed）。
  * 本实例仅供投递池（id + capabilities），send 已退役（误触响亮失败，防静默丢
  * 通知）。对 server 域只 import type SystemNotifier（值不跨域）。
  */
 import type { SystemNotifier } from "../server/interface.ts";
-import { BUILTIN_CHANNELS } from "../sdk/interface.ts";
+import { BUILTIN_CHANNELS } from "../config/interface.ts";
 import type { NotifyChannel } from "../sdk/interface.ts";
 
 /**

@@ -11,7 +11,7 @@ import type { SoundId, SoundSetting } from "../config/interface.ts";
 /** 自播目标音色（"default" = true 语义的跟随系统默认音；SoundId = 显式内置音色）。 */
 export type SystemTone = SoundId | "default";
 
-// ---------------------------------------------------------------- 音色平台映射（#640/#641）
+// ---------------------------------------------------------------- 音色平台映射
 
 /**
  * macOS 系统内置声音名（osascript `sound name` 取值；/System/Library/Sounds 下
@@ -45,7 +45,7 @@ export const LINUX_DEFAULT_TONE_FILE = "message-new-instant.oga";
 
 /**
  * Windows 系统媒体 wav 白名单候选（C:\Windows\Media；Windows 10/11 出厂自带，
- * 缺失静默）。宿主 SoundPlayer 播放（弹窗开 + SoundId 与只响不弹同范式，P0-2）。
+ * 缺失静默）。宿主 SoundPlayer 播放（弹窗开 + SoundId 与只响不弹同范式）。
  */
 export const WIN_TONE_FILES: Readonly<Record<SoundId, readonly string[]>> = {
   ding: ["Windows Ding.wav"],
@@ -125,10 +125,10 @@ function joinTonePath(platform: string, file: string): string {
 
 /**
  * 构造系统通知命令参数（纯函数，smoke 可直接断言参数形态）。
- * 声音语义（#640/#641）：silent = sound===false || selfPlay（应用自播时系统通知
+ * 声音语义：silent = sound===false || selfPlay（应用自播时系统通知
  * 静音/suppress-sound 防双响——spec 中 suppress-sound 的设计本意）。
  * - win32：spawn powershell -File toast.ps1 -Payload <base64>。标题/正文/silent
- *   打包为 base64(UTF-8 JSON) 单 token 传递（issue #238）——PS 5.1 的 -File 模式
+ *   打包为 base64(UTF-8 JSON) 单 token 传递——PS 5.1 的 -File 模式
  *   对 `-Name=Value` 等号形式不做命名参数绑定，空格形式的裸 dash token 又会被
  *   误认成下一个参数名；base64 字母表 [A-Za-z0-9+/=] 永不出现在 token 首、无空格
  *   无引号，彻底脱离命令行 tokenizer 的歧义面，依旧零 shell 拼接面。

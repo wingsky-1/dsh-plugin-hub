@@ -2,9 +2,9 @@
  * dsh-notifier — sdk/interface.ts：SDK 契约域唯一对外引用面。
  *
  * 本域是包对外 ABI（'wingsky.notifier' 服务 + 消息模型 + Channel SPI）的
- * 类型与工厂收口：类型物理定义在本文件（§3-2：本域独有、需面外的类型在
+ * 类型与工厂收口：类型物理定义在本文件（本域独有、需面外的类型在
  * interface.ts 定义），工厂/常量从 service.ts re-export；非本域原创类型
- * （NotifyConfig/NotifyDetail/SseHub 等）一律 import type 自依赖域（P2-11）。
+ * （NotifyConfig/NotifyDetail/SseHub 等）一律 import type 自依赖域。
  * 消费方（其他 hub 插件）与装配层（index.ts）都从这里引用（verify-dir-imports
  * 静态强制）。
  */
@@ -25,7 +25,7 @@ export interface NotifyRequest {
   /** kind：内置七 kind 或经 registerKind 注册的动态 kind（'<source-short>:<id>'）。 */
   kind: string;
   severity: NotifySeverity;
-  /** 正文（调用方负责脱敏，中心兜底截断）。 */
+  /** 正文（中心统一脱敏——受 sanitizeContent 开关控制；超长按频道 maxBodyLen 截断）。 */
   body: string;
   title?: string;
   /** 频道专有透传（MVP 仅 string 值、白名单字段见 config）。 */
@@ -57,26 +57,26 @@ export interface KindRegistration {
 export interface ChannelCapabilities {
   /** 标题最大码点数；>0 时按此截断为独立标题；<=0 为「宽限截断」——按
    *  maxBodyLen 截断但标题仍独立呈现（titleMaxLen<=0 的「并入正文」旧注释
-   *  与实现失真，见 L8-1；并入语义已改由 mergeTitleIntoBody 显式接管）。 */
+   *  与实现失真；并入语义已改由 mergeTitleIntoBody 显式接管）。 */
   titleMaxLen: number;
   /** 正文最大码点数（超长按此截断）。 */
   maxBodyLen: number;
   /**
-   * 显式声明「标题并入正文」（L8-1/S3-1 修复，取代 titleMaxLen<=0 的隐式
+   * 显式声明「标题并入正文」（取代 titleMaxLen<=0 的隐式
    * 并入语义）：true 时框架把标题拼入正文（非空 title 以 `${title}\n${body}`
    * 形态），title 位传空串、拼入后按 maxBodyLen 码点截断（长度权威 = 正文
    * 截断，不再按 titleMaxLen 单独截断）。缺省/undefined = 不并入，标题独立
    * 呈现——现状四个内置/出站频道均未声明，行为零变化。
    */
   mergeTitleIntoBody?: boolean;
-  /** 框架重试声明（B-3 上移）：缺省 = 不重试（webhook 零重试锁定）。 */
+  /** 框架重试声明：缺省 = 不重试（webhook 零重试锁定）。 */
   retry?: { maxRetries: number; backoffMs?: number };
-  /** 框架并发门声明（B-3 上移）：在途超限排队；缺省 = 无门。 */
+  /** 框架并发门声明：在途超限排队；缺省 = 无门。 */
   maxInflight?: number;
 }
 
 /**
- * 可重试错误协议（B-3）：投递失败由 framework 依据本标注决策重试
+ * 可重试错误协议：投递失败由 framework 依据本标注决策重试
  * （retryable=false 确定失败不重试；网络/超时/5xx → true）。缺省（未标注）
  * 视同可重试——仅对声明了 retry 的 channel 生效。
  */
@@ -127,7 +127,7 @@ export interface NotifierServiceInternal extends NotifierService {
 
 /** createNotifierService 的注入面（全部由 index.ts 装配层提供）。 */
 export interface NotifierServiceDeps {
-  /** 当前生效配置（settings 解析值；裁决时单刻快照——每次通知恰好读取 1 次，B-2）。 */
+  /** 当前生效配置（settings 解析值；裁决时单刻快照——每次通知恰好读取 1 次）。 */
   current(): NotifyConfig;
   /** 总开关（组合层 enabled；false 时 send 一律 skipped）。 */
   enabled(): boolean;
@@ -135,9 +135,9 @@ export interface NotifierServiceDeps {
   history: HistoryStore;
   /** 日志出口。 */
   logger: { warn: (m: string) => void; info: (m: string) => void };
-  /** 配置驱动的出站频道（M2：bark 实例；enabled 过滤后返回，随裁决快照同步并入池）。 */
+  /** 配置驱动的出站频道（bark 实例；enabled 过滤后返回，随裁决快照同步并入池）。 */
   outboundChannels(): Array<{ id: string; channel: NotifyChannel }>;
-  /** 内置频道实例（browser/system；id + capabilities 入投递池，播放经 play 注入——D23）。 */
+  /** 内置频道实例（browser/system；id + capabilities 入投递池，播放经 play 注入）。 */
   builtinChannels: Array<{ id: string; channel: NotifyChannel }>;
   /** 频道投递终态落盘（status 文件；错误文本已由调用方脱敏）。 */
   recordStatus(channelId: string, status: "ok" | "failed", error?: string): void;
@@ -146,7 +146,7 @@ export interface NotifierServiceDeps {
   /** 动态 kind 确认写入（持久化到配置 allowKinds；fire-and-forget）。 */
   setConfirm(kind: string, confirmed: boolean): void;
   /** 内置频道播放执行（裁决时快照解析的 spec 随 target 值传递——browser→
-   *  sse.broadcast(buildBrowserFrame(...))、system→system.notify(...)；D23）。 */
+   *  sse.broadcast(buildBrowserFrame(...))、system→system.notify(...)）。 */
   play(target: ResolvedTarget, payload: DeliverPayload): void | Promise<void>;
 }
 
@@ -166,11 +166,9 @@ export interface NotifySentEvent {
   ts: number;
 }
 
-/** 内置频道 id。 */
-export const BUILTIN_CHANNELS = {
-  browser: "browser",
-  system: "system",
-} as const;
+// 内置频道 id 的物理定义在 config 域（最底层）：sdk 只 re-export 保持包导出面，
+// pipeline/channels 也从 config 取，避免 pipeline 值依赖 sdk 形成值环。
+export { BUILTIN_CHANNELS } from "../config/interface.ts";
 
 // 便捷访问与实现工厂（实现同目录 service.ts，本文件收口对外面）
 export { createNotifierService, getNotifierService } from "./service.ts";

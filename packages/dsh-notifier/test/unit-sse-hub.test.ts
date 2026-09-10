@@ -1,25 +1,25 @@
-// @ts-nocheck
 /**
- * dsh-notifier — unit：shared/sse-hub.js 共享 SSE 枢纽（#515 主动回收）。
+ * dsh-notifier — unit：shared/sse-hub.js 共享 SSE 枢纽（主动回收）。
  *
- * 覆盖（#515 方案 P0 的核心行为，独立于包装配直接测共享层）：
- * - 上限淘汰：超限收敛 + 最老被 destroy（对齐 #330 既有语义，抽取零漂移）
+ * 覆盖（主动回收方案的核心行为，独立于包装配直接测共享层）：
+ * - 上限淘汰：超限收敛 + 最老被 destroy（对齐既有语义，抽取零漂移）
  * - close/error 幂等清理（多次触发只 evict 一次）
  * - 背压不误杀：write 返回 false 不立即清（对齐既有用例 (c) 锁定语义）
  * - stalled 超窗回收：write false 持续超 stalledTimeoutMs → 心跳 evict
  * - 抛错 failStreak≥3 判死（对齐原版语义）
  * - maxAge 轮换：超 maxAgeMs 且空闲 → evict；活跃连接（lastWriteAt 刷新）不误杀
  * - evictStats 原因计数 / connHealth 观测字段
- * - B12 红测：dispose 统一停心跳 + destroy 全部连接（#664 阶段 5）
+ * - 红测：dispose 统一停心跳 + destroy 全部连接
  *
  * 直接 import 共享源（不经 lib 产物）：本文件测的是 shared 层模块本身。
  */
 import assert from "node:assert/strict";
+import type { ServerResponse } from "node:http";
 import { createSseHub } from "../../../shared/sse-hub.js";
 
 let pass = 0;
 let fail = 0;
-function ok(cond, name) {
+function ok(cond: boolean, name: string): void {
   if (cond) {
     pass += 1;
   } else {
@@ -28,12 +28,32 @@ function ok(cond, name) {
   }
 }
 
+/** fake res 的可配置行为。 */
+interface FakeSseResOptions {
+  presetDestroyed?: boolean;
+  throwAfter?: number;
+  falseAfter?: number;
+}
+
+/** fake res 观测面（hub 只消费 ServerResponse 子集 + close/error 监听）。 */
+interface FakeSseRes {
+  state: { destroyed: boolean; writes: number; destroyCalls: number };
+  writeHead(): void;
+  write(): boolean;
+  on(evt: string, cb: () => void): FakeSseRes;
+  emit(evt: string): void;
+  destroy(): void;
+  readonly destroyed: boolean;
+  writableEnded: boolean;
+  socket: { setKeepAlive(): void };
+}
+
 /** 可触发 close/error、可配置 write 行为的 fake res（对齐 routes.test.ts sseRes 桩）。 */
-function sseRes(opts = {}) {
-  const listeners = {};
+function sseRes(opts: FakeSseResOptions = {}): FakeSseRes & ServerResponse {
+  const listeners: Record<string, Array<() => void>> = {};
   const state = { destroyed: false, writes: 0, destroyCalls: 0 };
   if (opts.presetDestroyed) state.destroyed = true;
-  return {
+  const res: FakeSseRes = {
     state,
     writeHead() {},
     write() {
@@ -59,12 +79,13 @@ function sseRes(opts = {}) {
     writableEnded: false,
     socket: { setKeepAlive() {} },
   };
+  return res as unknown as FakeSseRes & ServerResponse;
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** 轮询直到谓词成立（替代固定 sleep：心跳 evict 是异步回调，轮询比等固定毫秒稳）。 */
-async function pollUntil(predicate, timeoutMs = 2000) {
+async function pollUntil(predicate: () => boolean, timeoutMs = 2000): Promise<boolean> {
   const start = Date.now();
   for (;;) {
     if (predicate()) return true;
@@ -74,7 +95,7 @@ async function pollUntil(predicate, timeoutMs = 2000) {
 }
 
 /** 轮询「安静期」：谓词持续成立达 quietMs 视为确认（负向断言——验证某事不发生）。 */
-async function pollUntilQuiet(predicate, quietMs, timeoutMs = 2000) {
+async function pollUntilQuiet(predicate: () => boolean, quietMs: number, timeoutMs = 2000): Promise<boolean> {
   const start = Date.now();
   let quiet = 0;
   for (;;) {
@@ -86,7 +107,7 @@ async function pollUntilQuiet(predicate, quietMs, timeoutMs = 2000) {
   }
 }
 
-// ---- (a) 上限淘汰最老（对齐 #330 既有语义，抽取零漂移） ----
+// ---- (a) 上限淘汰最老（对齐既有语义，抽取零漂移） ----
 {
   const hub = createSseHub({ getMaxConnections: () => 2, heartbeatMs: 60_000 });
   try {
@@ -136,7 +157,7 @@ async function pollUntilQuiet(predicate, quietMs, timeoutMs = 2000) {
   }
 }
 
-// ---- (d) stalled 超窗回收：write false 持续超窗 → 心跳 evict（#515 核心新增） ----
+// ---- (d) stalled 超窗回收：write false 持续超窗 → 心跳 evict（核心新增） ----
 {
   const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 20, stalledTimeoutMs: 50 });
   try {
@@ -171,7 +192,7 @@ async function pollUntilQuiet(predicate, quietMs, timeoutMs = 2000) {
   }
 }
 
-// ---- (f) maxAge 轮换：超 maxAgeMs 且空闲 → evict（#515 核心新增） ----
+// ---- (f) maxAge 轮换：超 maxAgeMs 且空闲 → evict（核心新增） ----
 {
   const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 20, maxAgeMs: 40, idleTimeoutMs: 15 });
   try {
@@ -220,7 +241,7 @@ async function pollUntilQuiet(predicate, quietMs, timeoutMs = 2000) {
   }
 }
 
-// ---- (h) connHealth 观测字段（#515 P0-1：先量化再调参） ----
+// ---- (h) connHealth 观测字段（先量化再调参） ----
 {
   const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
   try {
@@ -254,7 +275,7 @@ async function pollUntilQuiet(predicate, quietMs, timeoutMs = 2000) {
   }
 }
 
-// ---- (j) B12 红测：dispose 统一停心跳 + destroy 全部连接 ----
+// ---- (j) 红测：dispose 统一停心跳 + destroy 全部连接 ----
 // 现状：dispose() 只清心跳定时器不 destroy 连接（注释/实现不符——mcp-manager
 // apply-runtime 注释承诺「hub.dispose() 统一停心跳 + destroy 全部连接」）；
 // 修复：dispose 遍历连接表全部 evict（destroy）。红测断言 dispose 后连接被销毁。

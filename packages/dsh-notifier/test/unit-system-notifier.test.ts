@@ -1,26 +1,39 @@
-// @ts-nocheck
 /**
- * dsh-notifier — unit：system-notifier spawn 链直测（PR0 红测先行 1）。
+ * dsh-notifier — unit：system-notifier spawn 链直测（红测先行）。
  *
  * 现状 server.ts 系统通知真 spawn 链（runCommand/deliverOnce/8s 杀进程/1s 节流/
- * 只响不弹自播失败终态）零断言（T3-3：e2e 里真 spawn 在 CI 上 ENOENT→warn 静默，
+ * 只响不弹自播失败终态）零断言（e2e 里真 spawn 在 CI 上 ENOENT→warn 静默，
  * service-contract 用 fakeSystem 整体替换绕过）。本文件经 createSystemNotifier 的
  * 注入面（execFileImpl/spawnImpl/killTimeoutMs——行为无关注入，缺省语义不变）
- * 锁定基线；PR2 渠道 SPI 化时是行为对等判别网。
+ * 锁定基线；渠道 SPI 化时是行为对等判别网。
  *
  * 假进程纪律：spawn 返回 fake child（EventEmitter + stderr.on + kill），测试手动
- * 触发 exit 决议；不产生任何真实子进程（消除 T3-3 的 130-200 次 execFile/次运行）。
+ * 触发 exit 决议；不产生任何真实子进程（消除 e2e 真 spawn 的 130-200 次 execFile/次运行）。
  */
 import { EventEmitter } from "node:events";
 import assert from "node:assert/strict";
 import { createSystemNotifier } from "../src/server/interface.ts";
 
+/** 注入面真实类型（与 src 的 options 签名同源，避免各写一份重复声明）。 */
+type SpawnImpl = NonNullable<Parameters<typeof createSystemNotifier>[0]["spawnImpl"]>;
+type ExecFileImpl = NonNullable<Parameters<typeof createSystemNotifier>[0]["execFileImpl"]>;
+
+/** fake child：EventEmitter + stderr 订阅捕获 + kill 记录（测试手动 emit exit 决议）。 */
+interface FakeChild extends EventEmitter {
+  stderr: { on(event: string, cb: (chunk: Buffer) => void): void };
+  kill(): void;
+  _bin: string;
+  _argv: string[];
+  _killed: boolean;
+  _stderrCb?: (chunk: Buffer) => void;
+}
+
 /** fake spawn：记录调用；child 挂起由测试手动 exit 决议；kill 触发微任务 exit(null)。 */
 function makeFakeSpawn() {
-  const calls = [];
-  const children = [];
-  function spawnImpl(bin, argv) {
-    const child = new EventEmitter();
+  const calls: Array<{ bin: string; argv: string[] }> = [];
+  const children: FakeChild[] = [];
+  function spawnImpl(bin: string, argv: string[]): FakeChild {
+    const child = new EventEmitter() as FakeChild;
     child.stderr = { on: (_ev, cb) => { child._stderrCb = cb; } };
     child.kill = () => {
       child._killed = true;
@@ -36,8 +49,11 @@ function makeFakeSpawn() {
   return { spawnImpl, calls, children };
 }
 
+/** fake execFile 探测签名（探测回调只关心 error）。 */
+type FakeExecImpl = (bin: string, argv: string[], opts: { timeout?: number }, cb: (error: Error | null) => void) => void;
+
 /** fake execFile 探测：同步回调（notify-send / pw-play / paplay 三路可配成败）。 */
-function makeFakeExec({ notifySendErr = false, selfPlayErr = false } = {}) {
+function makeFakeExec({ notifySendErr = false, selfPlayErr = false }: { notifySendErr?: boolean; selfPlayErr?: boolean } = {}): FakeExecImpl {
   return (bin, _argv, _opts, cb) => {
     if (bin === "notify-send") cb(notifySendErr ? new Error("ENOENT") : null);
     else if (bin === "pw-play") cb(selfPlayErr ? new Error("ENOENT") : null);
@@ -46,14 +62,20 @@ function makeFakeExec({ notifySendErr = false, selfPlayErr = false } = {}) {
   };
 }
 
-function makeNotifier(opts = {}) {
+/** makeNotifier 注入选项（exec 三路探测成败 + kill 超时）。 */
+interface FakeNotifierOptions {
+  killTimeoutMs?: number;
+  exec?: { notifySendErr?: boolean; selfPlayErr?: boolean };
+}
+
+function makeNotifier(opts: FakeNotifierOptions = {}) {
   const spawn = makeFakeSpawn();
-  const warns = [];
+  const warns: string[] = [];
   const system = createSystemNotifier({
     toastScript: "/tmp/fake-toast.ps1",
     warn: (m) => warns.push(m),
-    execFileImpl: makeFakeExec(opts.exec ?? {}),
-    spawnImpl: spawn.spawnImpl,
+    execFileImpl: makeFakeExec(opts.exec ?? {}) as unknown as ExecFileImpl,
+    spawnImpl: spawn.spawnImpl as unknown as SpawnImpl,
     killTimeoutMs: opts.killTimeoutMs ?? 8000,
   });
   return { system, spawn, warns };

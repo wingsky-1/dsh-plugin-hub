@@ -1,18 +1,18 @@
-// @ts-nocheck
+// @ts-nocheck（e2e/集成面类型化技术债：桩对象密集，暂不参与 test/tsconfig 编译）
 /**
- * dsh-notifier — e2e：存量配置迁移（issue #76 E1-E7 / R1；#468 逐字段补齐）。
+ * dsh-notifier — e2e：存量配置迁移（逐字段补齐）。
  *
  * 覆盖：
- * - E1 旧 json 存在 → 一次性迁移至官方 settings user 层，原文改名 .migrated.bak；
- * - E2 迁移幂等：二次启动 .bak 存在且 json 不存在且 user 层有值 → 跳过（不重复写入）；
- * - E3 中断态重放：.migrated.bak 存在且 json 不存在且 user 层为空 → 重放写入；
- * - E4 损坏/非对象/无有效键 → 改名 .corrupted.bak，不写入；
- * - E5 Windows rename 目标已存在 → 先 unlink 旧 bak 再 rename；
- * - E6 迁移写入失败 → 回滚改名（json 还原）+ warn，不阻塞启动；
- * - E7 迁移前置于 enabled 判定（禁用态也迁移，路由/命名空间照常注册）；
- * - E8 migrateLegacyConfig outcome 精确断言（#468 起迁移完成判定 = 逐字段缺失
+ * - 旧 json 存在 → 一次性迁移至官方 settings user 层，原文改名 .migrated.bak；
+ * - 迁移幂等：二次启动 .bak 存在且 json 不存在且 user 层有值 → 跳过（不重复写入）；
+ * - 中断态重放：.migrated.bak 存在且 json 不存在且 user 层为空 → 重放写入；
+ * - 损坏/非对象/无有效键 → 改名 .corrupted.bak，不写入；
+ * - Windows rename 目标已存在 → 先 unlink 旧 bak 再 rename；
+ * - 迁移写入失败 → 回滚改名（json 还原）+ warn，不阻塞启动；
+ * - 迁移前置于 enabled 判定（禁用态也迁移，路由/命名空间照常注册）；
+ * - migrateLegacyConfig outcome 精确断言（迁移完成判定 = 逐字段缺失
  *   补齐，不再是「user 层任意键存在」整体跳过）；
- * - E9 #468 回归：中断部分写入后重跑补齐剩余字段；用户改值不被迁移覆盖
+ * - 回归用例：中断部分写入后重跑补齐剩余字段；用户改值不被迁移覆盖
  *   （冲突策略：只补写 user 层缺失的键，用户已改/已存在的键不被覆盖）。
  */
 import { join } from "node:path";
@@ -47,7 +47,7 @@ async function pollUntilQuiet(predicate, quietMs = 80, timeoutMs = 1000) {
   }
 }
 try {
-  // E1：旧 json 存在 → 迁移 + 改名 .migrated.bak
+    // 旧 json 存在 → 迁移 + 改名 .migrated.bak
   {
     const legacy = join(work, "e1-dsh-notifier.json");
     writeFileSync(legacy, JSON.stringify({ notifyAsk: false, quietHours: { enabled: true, start: "23:00", end: "07:00" } }));
@@ -62,7 +62,7 @@ try {
     assert.ok(!existsSync(legacy), "E1：原 json 已改名（不再作为自建配置读取）");
   }
 
-  // E2：迁移幂等——同一 settings 文档再次 apply（.bak 存在且 json 不存在且
+    // 迁移幂等——同一 settings 文档再次 apply（.bak 存在且 json 不存在且
   // user 层有值）→ 不重复写入
   {
     const legacy = join(work, "e2-dsh-notifier.json");
@@ -87,7 +87,7 @@ try {
     assert.equal(shared.getUser().notifyAsk, false, "E2：user 层保留首次迁移结果");
   }
 
-  // E3：中断态重放——.migrated.bak 存在且 json 不存在且 user 层为空 → 重放写入
+    // 中断态重放——.migrated.bak 存在且 json 不存在且 user 层为空 → 重放写入
   {
     const legacy = join(work, "e3-dsh-notifier.json");
     const bak = legacy + ".migrated.bak";
@@ -97,7 +97,7 @@ try {
     assert.equal(settings.getUser().notifyTaskDone, false, "E3：中断态从 bak 重放写入 settings");
   }
 
-  // E4：损坏 json → 改名 .corrupted.bak，不写入
+    // 损坏 json → 改名 .corrupted.bak，不写入
   {
     const legacy = join(work, "e4-dsh-notifier.json");
     writeFileSync(legacy, "{ not json !!!");
@@ -121,7 +121,7 @@ try {
     assert.ok(existsSync(legacy + ".corrupted.bak"), "E4b：非对象 json 改名 .corrupted.bak");
   }
 
-  // E5：Windows rename 目标已存在 → 先 unlink 旧 bak 再 rename（.migrated.bak 已存在）
+    // Windows rename 目标已存在 → 先 unlink 旧 bak 再 rename（.migrated.bak 已存在）
   {
     const legacy = join(work, "e5-dsh-notifier.json");
     const bak = legacy + ".migrated.bak";
@@ -134,7 +134,7 @@ try {
     assert.ok(newBak.includes("notifyAsk"), "E5：新 bak 内容为本次迁移（旧 bak 已被 unlink 替换）");
   }
 
-  // E6：迁移写入失败 → 回滚改名 + warn，不阻塞启动
+    // 迁移写入失败 → 回滚改名 + warn，不阻塞启动
   {
     const legacy = join(work, "e6-dsh-notifier.json");
     writeFileSync(legacy, JSON.stringify({ notifyAsk: true }));
@@ -165,7 +165,7 @@ try {
     assert.ok(routes.length >= 5, "E6：迁移失败不阻塞路由注册");
   }
 
-  // E7：enabled=false 禁用态仍迁移（H2/H3 前置）——禁用态 apply 仍注册路由 + 迁移照常
+    // enabled=false 禁用态仍迁移——禁用态 apply 仍注册路由 + 迁移照常
   {
     const legacy = join(work, "e7-dsh-notifier.json");
     writeFileSync(legacy, JSON.stringify({ notifyTaskError: false }));
@@ -179,11 +179,11 @@ try {
     assert.equal(fakeSettings.getUser().notifyTaskError, false, "E7：禁用态仍迁移旧配置");
   }
 
-  // E8：migrateLegacyConfig outcome 精确断言（直测，对照 stryker 幸存名单——
+    // migrateLegacyConfig outcome 精确断言（直测，对照 stryker 幸存名单——
   // 布尔结果字段翻转/逻辑运算符/条件分支的存活变异体由 outcome 深比较杀灭）
   {
     const dir = mkdtempSync(join(tmpdir(), "dnotify-migrate-outcome-"));
-    // 直测注入面（#468 起 readUser）：user 层当前值可预置（模拟部分写入/用户改值）
+        // 直测注入面（readUser）：user 层当前值可预置（模拟部分写入/用户改值）
     const deps = (user = {}, failUpdate = false) => {
       const updates = [];
       return {
@@ -191,7 +191,7 @@ try {
         readUser: () => user,
         async update(patch) {
           if (failUpdate) throw new Error("io boom");
-          // #468 P1-4：锁死「只补缺失键」语义——update 提交的每个键在写入前
+                    // 锁死「只补缺失键」语义——update 提交的每个键在写入前
           // 必须不存在于 user 层（防未来实现改成快照全量/覆盖写导致漏报）
           for (const key of Object.keys(patch)) {
             assert.equal(key in user, false, `E9：update 不得提交 user 层已存在的键 ${key}`);
@@ -220,7 +220,7 @@ try {
       assert.deepEqual(out, CORRUPT_ONLY, "E8：损坏标记态 → skippedCorrupt+skippedIdempotent");
       assert.equal(d.updates.length, 0, "E8：损坏标记态不写入");
     }
-    // migrated.bak 存在 + user 层全量有值（含 #640/#641 声音新键）→ 幂等跳过（E2）
+        // migrated.bak 存在 + user 层全量有值（含声音新键）→ 幂等跳过
     {
       const d = deps({ notifyAsk: false, notifySound: true, browserSound: true, systemSound: true });
       const legacy = join(dir, "bak-user.json");
@@ -229,7 +229,7 @@ try {
       assert.deepEqual(out, IDLE, "E8：bak 存在 + user 已全量（含声音新键）→ 幂等跳过");
       assert.equal(d.updates.length, 0, "E8：幂等跳过不写入");
     }
-    // #640/#641 D2：bak 只含旧键 notifySound → 补写 browserSound/systemSound = 同值
+        // bak 只含旧键 notifySound → 补写 browserSound/systemSound = 同值
     // （legacy 源路径专属——user 层已有新键不覆盖由 diffMissingKeys 兜底）
     {
       const d = deps({ notifyAsk: false, notifySound: true });
@@ -257,7 +257,7 @@ try {
       assert.deepEqual(out, { performed: false, migrated: false, rolledBack: false, skippedCorrupt: true, skippedIdempotent: false, resumed: true }, "E8：中断态 bak 损坏 → 标记跳过");
       assert.equal(d.updates.length, 0, "E8：损坏 bak 不写入");
     }
-    // 中断态重放：bak 仅含未知键 → #470 P2-1 透传补写（不再是「无有效键」，
+        // 中断态重放：bak 仅含未知键 → 透传补写（不再是「无有效键」，
     // 升级不丢 legacy 未来键），skippedCorrupt=false
     {
       const d = deps();
@@ -280,7 +280,7 @@ try {
       assert.equal(out.skippedCorrupt, true, "E8：无键重放标记 corrupted");
       assert.equal(d.updates.length, 0, "E8：无键不写入");
     }
-    // 损坏 json：只标记 .corrupted.bak，不写入（E4）
+        // 损坏 json：只标记 .corrupted.bak，不写入
     {
       const d = deps();
       const legacy = join(dir, "broken.json");
@@ -300,7 +300,7 @@ try {
       assert.equal(out.skippedCorrupt, true, "E8：非对象 json 标记 corrupted");
       assert.equal(d.updates.length, 0, "E8：非对象 json 不写入");
     }
-    // 合法 json → renamed-first 后写入，outcome migrated+performed（E1）
+        // 合法 json → renamed-first 后写入，outcome migrated+performed
     {
       const d = deps();
       const legacy = join(dir, "valid.json");
@@ -311,7 +311,7 @@ try {
       assert.ok(!existsSync(legacy), "E8：原 json 已改名");
       assert.deepEqual(d.updates[0], { notifyAsk: false, quietHours: { enabled: true, start: "23:00", end: "07:00" } }, "E8：写入键集 = sanitize 白名单");
     }
-    // 写入失败 → 回滚改名（E6）：json 还原 + rolledBack
+        // 写入失败 → 回滚改名：json 还原 + rolledBack
     {
       const d = deps({}, true);
       const legacy = join(dir, "rollback.json");
@@ -321,7 +321,7 @@ try {
       assert.ok(existsSync(legacy), "E8：回滚后原 json 还原");
       assert.ok(!existsSync(legacy + MIGRATED_BAK_SUFFIX), "E8：回滚后 migrated.bak 已还原为 json");
     }
-    // #468 E9a：json 迁移部分写入中断（user 层只落了部分键）→ 重跑补齐剩余字段
+        // json 迁移部分写入中断（user 层只落了部分键）→ 重跑补齐剩余字段
     {
       const d = deps({ notifyAsk: false }); // 上次迁移只写进 notifyAsk 就被打断
       const legacy = join(dir, "partial.json");
@@ -330,7 +330,7 @@ try {
       assert.deepEqual(out, { performed: true, migrated: true, rolledBack: false, skippedCorrupt: false, skippedIdempotent: false, resumed: false }, "E9a：部分写入中断后重跑 → 继续迁移");
       assert.deepEqual(d.updates, [{ notifySound: true, browserSound: true, systemSound: true, quietHours: { enabled: true, start: "23:00", end: "07:00" } }], "E9a：只补写 user 层缺失字段（已写 notifyAsk 不重写；D2 补声音新键）");
     }
-    // #468 E9b：中断态（bak-only）部分写入 → 重跑补齐，全部齐后再跑幂等跳过
+        // 中断态（bak-only）部分写入 → 重跑补齐，全部齐后再跑幂等跳过
     {
       const d = deps({ notifyAsk: false }); // 上次重放只写进 notifyAsk 就被打断
       const legacy = join(dir, "resume-partial.json");
@@ -343,7 +343,7 @@ try {
       assert.deepEqual(out2, { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, skippedIdempotent: true, resumed: false }, "E9b：补齐后再次运行 → 幂等跳过");
       assert.equal(d.updates.length, 1, "E9b：幂等运行不重复写入");
     }
-    // #468 E9c：用户改值不被迁移覆盖（冲突策略：只补 user 层缺失键）
+        // 用户改值不被迁移覆盖（冲突策略：只补 user 层缺失键）
     // 中断态：bak 里 notifyAsk=false，用户已改为 true 且已保存 notifySound——
     // 两条都存在 → 幂等跳过；只缺 quietHours → 只补 quietHours，不动用户值
     {
@@ -352,13 +352,13 @@ try {
       writeFileSync(legacy + MIGRATED_BAK_SUFFIX, JSON.stringify({ notifyAsk: false, notifySound: true, quietHours: { enabled: false, start: "22:00", end: "08:00" } }));
       const out = await migrateLegacyConfig(legacy, d);
       assert.equal(out.migrated, true, "E9c：缺 quietHours/新声音键 → 迁移补齐");
-      // D2：用户层 notifySound=false 已表态（用户曾关声音）→ 补写新键取**用户值**
+            // 用户层 notifySound=false 已表态（用户曾关声音）→ 补写新键取**用户值**
       // false（不因 legacy 的 true 复活成突然有声）
       assert.deepEqual(d.updates, [{ browserSound: false, systemSound: false, quietHours: { enabled: false, start: "22:00", end: "08:00" } }], "E9c：补缺失键（D2 新键 = 用户 notifySound 值 false）");
       assert.equal(d.readUser().notifyAsk, true, "E9c：用户改过的 notifyAsk 不被迁移覆盖");
       assert.equal(d.readUser().notifySound, false, "E9c：用户已存在的 notifySound 不被迁移覆盖");
     }
-    // #468 E9d：json 正常迁移 + user 键全量已存在（经 PUT /config 保存过）→
+        // json 正常迁移 + user 键全量已存在（经 PUT /config 保存过）→
     // 改名后幂等跳过，不重复写入、不覆盖用户值
     {
       const d = deps({ notifyAsk: true }); // 用户已把该键改成 true
@@ -369,7 +369,7 @@ try {
       assert.equal(d.updates.length, 0, "E9d：不重复写入");
       assert.equal(d.readUser().notifyAsk, true, "E9d：用户改值不被迁移覆盖");
     }
-    // #468 E9e：冲突策略字段粒度 = 顶层配置键——user 层 quietHours 以部分子键
+        // 冲突策略字段粒度 = 顶层配置键——user 层 quietHours 以部分子键
     // 形态存在（用户只 PUT 过子键 start）即视为用户已接管整组：不补写嵌套
     // 子键（bak 的 enabled/end 不覆盖不补），迁移只补顶层缺失键 notifySound
     {
@@ -381,8 +381,8 @@ try {
       assert.deepEqual(d.updates, [{ notifySound: true, browserSound: true, systemSound: true }], "E9e：不补写 quietHours 嵌套子键（仅顶层缺失键，含 D2 声音新键）");
       assert.deepEqual(d.readUser().quietHours, { start: "07:00" }, "E9e：用户部分子键保持原样（不被 bak 子键覆盖）");
     }
-    // #470 E9f：json 正常迁移含未知键 → user 层缺失则补写透传保留；
-    // 已存在（用户改过/已存在）→ 不覆盖（#468 不变）
+        // json 正常迁移含未知键 → user 层缺失则补写透传保留；
+        // 已存在（用户改过/已存在）→ 不覆盖（语义不变）
     {
       const d = deps({ notifyAsk: true, futureKey: "user-value" }); // user 层已存在 futureKey
       const legacy = join(dir, "future-mix.json");
@@ -394,7 +394,7 @@ try {
       assert.equal(d.readUser().notifyAsk, true, "E9f：用户已改 notifyAsk 不被覆盖（#468 不变）");
       assert.ok(!("configFile" in d.readUser()), "E9f：装配键 configFile 不入 user 层");
     }
-    // #470 E9g：纯未知键 legacy json（user 层空）→ 透传补写迁移（不再判无有效键 corrupt）
+        // 纯未知键 legacy json（user 层空）→ 透传补写迁移（不再判无有效键 corrupt）
     {
       const d = deps();
       const legacy = join(dir, "future-only.json");
@@ -403,7 +403,7 @@ try {
       assert.equal(out.migrated, true, "E9g：纯未知键 legacy 不再判无有效键 → 透传迁移");
       assert.deepEqual(d.updates, [{ futureKey: 1, bogus: "x" }], "E9g：未知键原样补写");
     }
-    // #470 E9h：legacy json 仅含装配键 → 净化后无任何可写键 → 只标记 corrupted 不写入
+        // legacy json 仅含装配键 → 净化后无任何可写键 → 只标记 corrupted 不写入
     {
       const d = deps();
       const legacy = join(dir, "assembly-only.json");
@@ -413,7 +413,7 @@ try {
       assert.equal(out.skippedCorrupt, true, "E9h：仅装配键 legacy 标记 corrupted");
       assert.equal(d.updates.length, 0, "E9h：仅装配键不写入");
     }
-    // #470 复核 P1-1：legacy 含原型链成员键（__proto__/constructor/toString 等
+        // legacy 含原型链成员键（__proto__/constructor/toString 等
     // 经 JSON.parse 的自有键）→ 不抛异常、不整体迁移崩、正常键照常补写；
     // legacy 为数组 → 视为非对象（无键）标记 corrupted 不写入
     {
@@ -445,7 +445,7 @@ try {
       assert.equal(out.skippedCorrupt, true, "E9j：数组 legacy 标记 corrupted");
       assert.equal(d.updates.length, 0, "E9j：数组 legacy 不写入");
     }
-    // #470 qa 复核：legacy 未知键 null 值透传补写（与 PUT 同净化通道一致）
+        // legacy 未知键 null 值透传补写（与 PUT 同净化通道一致）
     {
       const d = deps();
       const legacy = join(dir, "null-future.json");

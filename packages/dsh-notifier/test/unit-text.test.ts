@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-notifier — unit：通知文案与系统命令构造纯函数。
  *
@@ -6,8 +5,10 @@
  * 未知原样）、sessionTitleOf（标题提取/截断/容错）、buildSystemCommand
  * （Windows/macOS/Linux 参数形态）、isLoopbackRequest 围栏判定。
  */
+import type { IncomingMessage } from "node:http";
+import type { Agent } from "@deepseek-ai/dsh-agent";
 import { assert, fakeReq } from "./helpers.ts";
-import { formatDuration, prettyToolName, sessionTitleOf, buildSystemCommand, buildSoundCommand, MAC_SOUND_NAMES, toneFileCandidates, isLoopbackRequest } from "../lib/index.js";
+import { type SystemTone, formatDuration, prettyToolName, sessionTitleOf, buildSystemCommand, buildSoundCommand, MAC_SOUND_NAMES, toneFileCandidates, isLoopbackRequest } from "../lib/index.js";
 
 assert.equal(formatDuration(45000), "45 秒");
 assert.equal(formatDuration(135000), "2 分 15 秒");
@@ -23,10 +24,10 @@ assert.equal(prettyToolName("mcp__srv__a__b"), 'MCP 服务器 "srv" 的工具 "a
 assert.equal(prettyToolName(undefined), "?");
 
 // buildSystemCommand：Windows/macOS/Linux 参数形态（smoke 断言 spawn 参数）
-// Windows（issue #238）：固定前缀 + 单一 base64 payload token；前缀用 deepEqual
+// Windows：固定前缀 + 单一 base64 payload token；前缀用 deepEqual
 // 全序列快照（includes 片段断言抓不住多余/错位 token）。
 const decodePayload = (argv: string[]) => JSON.parse(Buffer.from(argv[argv.length - 1], "base64").toString("utf8"));
-const winArgs = buildSystemCommand("win32", "标题", "内容 -x", { sound: false, toastScript: "t.ps1" });
+const winArgs = buildSystemCommand("win32", "标题", "内容 -x", { sound: false, toastScript: "t.ps1" })!;
 assert.equal(winArgs[winArgs.length - 2], "-Payload", "payload 参数名成对出现在末尾");
 assert.deepEqual(
   winArgs.slice(0, -2),
@@ -41,30 +42,30 @@ for (const c of [
   { title: '说"话', message: "line\nbreak", silent: false, sound: true },
   { title: "🚀任务完成", message: "🎉🎉🎉", silent: true, sound: false },
 ]) {
-  const a = buildSystemCommand("win32", c.title, c.message, { sound: c.sound, toastScript: "t.ps1" });
+  const a = buildSystemCommand("win32", c.title, c.message, { sound: c.sound, toastScript: "t.ps1" })!;
   assert.match(a[a.length - 1], /^[A-Za-z0-9+/=]+$/, "边界值下 payload 仍是纯 base64 token");
   assert.deepEqual(decodePayload(a), { title: c.title, message: c.message, silent: c.silent }, "边界值 round-trip 无损");
 }
-// #640/#641：Windows 声音三态 × toast payload——false→silent、true→不 silent、
+// Windows 声音三态 × toast payload——false→silent、true→不 silent、
 // SoundId+自播→silent（P0-2：应用自播时 toast 静音防双响）
-const winTrue = buildSystemCommand("win32", "t", "m", { sound: true, toastScript: "t.ps1" });
+const winTrue = buildSystemCommand("win32", "t", "m", { sound: true, toastScript: "t.ps1" })!;
 assert.equal(decodePayload(winTrue).silent, false, "B1：win32 sound:true → toast 不 silent（默认系统音）");
-const winTone = buildSystemCommand("win32", "t", "m", { sound: "ding", selfPlay: true, toastScript: "t.ps1" });
+const winTone = buildSystemCommand("win32", "t", "m", { sound: "ding", selfPlay: true, toastScript: "t.ps1" })!;
 assert.equal(decodePayload(winTone).silent, true, "B1：win32 SoundId+自播 → toast silent（防双响）");
 assert.equal(buildSystemCommand("win32", "t", "m", { sound: "ding", toastScript: "t.ps1" }) !== null, true, "win32 SoundId 命令仍构造（自播由 SystemNotifier 按平台能力另发）");
 
-const macArgs = buildSystemCommand("darwin", "标题", '说"话', { sound: true, toastScript: "t.ps1" });
+const macArgs = buildSystemCommand("darwin", "标题", '说"话', { sound: true, toastScript: "t.ps1" })!;
 assert.equal(macArgs[0], "osascript");
 assert.match(macArgs.join(" "), /display notification/);
 assert.ok(macArgs.join(" ").includes('sound name "Glass"'), "B1：darwin sound:true 带 Glass 提示音（现状保留）");
 assert.ok(!macArgs.join(" ").includes('说话"'), "消息内引号被转义");
 // B1：darwin 三态——false 无 sound；SoundId → MAC_SOUND_NAMES 映射名
-const macSilent = buildSystemCommand("darwin", "t", "m", { sound: false, toastScript: "t.ps1" });
+const macSilent = buildSystemCommand("darwin", "t", "m", { sound: false, toastScript: "t.ps1" })!;
 assert.ok(!macSilent.join(" ").includes("sound name"), "B1：darwin sound:false 无 sound");
 assert.ok(macSilent.join(" ").includes('display notification "m"'), "B1：darwin 静音仍弹通知实体");
 assert.equal(MAC_SOUND_NAMES.ding, "Glass", "B1：ding→Glass 映射");
-assert.ok(buildSystemCommand("darwin", "t", "m", { sound: "pop", toastScript: "t.ps1" }).join(" ").includes(`sound name "${MAC_SOUND_NAMES.pop}"`), "B1：darwin SoundId → 映射名");
-const macSelf = buildSystemCommand("darwin", "t", "m", { sound: "ding", selfPlay: true, toastScript: "t.ps1" });
+assert.ok(buildSystemCommand("darwin", "t", "m", { sound: "pop", toastScript: "t.ps1" })!.join(" ").includes(`sound name "${MAC_SOUND_NAMES.pop}"`), "B1：darwin SoundId → 映射名");
+const macSelf = buildSystemCommand("darwin", "t", "m", { sound: "ding", selfPlay: true, toastScript: "t.ps1" })!;
 assert.ok(!macSelf.join(" ").includes("sound name"), "B1：darwin 自播时通知静音（防双响）");
 
 // B1：Linux——不可用 null；false 与 true/SoundId 均带 suppress-sound hint；参数形态
@@ -91,7 +92,7 @@ assert.deepEqual(
   ["afplay", "/System/Library/Sounds/Pop.aiff"],
   "B2：darwin pop → afplay 系统声音文件（无需播放器探测）"
 );
-const winSound = buildSoundCommand("win32", "ding", undefined);
+const winSound = buildSoundCommand("win32", "ding", undefined)!;
 assert.equal(winSound[0], "powershell", "B2：win32 SoundPlayer 走 powershell");
 assert.ok(!winSound[winSound.length - 1].includes(";"), "B2：win32 路径独立 argv 元素（无命令拼接面）");
 assert.ok(winSound[winSound.length - 1].endsWith("Windows Ding.wav"), "B2：win32 ding → 白名单 wav 路径");
@@ -102,7 +103,7 @@ const winDefault = buildSoundCommand("win32", "default", undefined);
 assert.ok(winDefault !== null && winDefault[winDefault.length - 1].endsWith("Windows Notify System Generic.wav"), "B2：win32 default → 默认通知音候选 wav");
 // 映射表锁定：freedesktop 事件文件在 sound-theme-freedesktop 基线包内确定存在
 // （ding→message-new-instant、bell→bell、chime→complete、pop→message）
-for (const [tone, file] of [["ding", "message-new-instant.oga"], ["bell", "bell.oga"], ["chime", "complete.oga"], ["pop", "message.oga"]]) {
+for (const [tone, file] of [["ding", "message-new-instant.oga"], ["bell", "bell.oga"], ["chime", "complete.oga"], ["pop", "message.oga"]] as Array<[SystemTone, string]>) {
   assert.equal(toneFileCandidates("linux", tone)[0], file, `B2：linux ${tone} 事件文件确定存在（基线包）`);
 }
 
@@ -111,34 +112,34 @@ for (const [tone, file] of [["ding", "message-new-instant.oga"], ["bell", "bell.
 const titledAgent = {
   id: "session-1",
   session: { snapshotEvents: () => [{ type: "other", data: {} }, { type: "session/title", data: { title: "优化 notifier 插件" } }] },
-};
+} as unknown as Agent;
 assert.equal(sessionTitleOf(titledAgent), "优化 notifier 插件", "取最后一个标题事件");
-assert.equal(sessionTitleOf({ id: "session-1", session: { snapshotEvents: () => [] } }), undefined, "无标题事件返回 undefined");
-assert.equal(sessionTitleOf({ id: "session-1", session: { snapshotEvents: () => "bad" } }), undefined, "snapshotEvents 返回非数组容错");
-assert.equal(sessionTitleOf({ id: "session-1" }), undefined, "无 session 返回 undefined");
+assert.equal(sessionTitleOf({ id: "session-1", session: { snapshotEvents: () => [] } } as unknown as Agent), undefined, "无标题事件返回 undefined");
+assert.equal(sessionTitleOf({ id: "session-1", session: { snapshotEvents: () => "bad" } } as unknown as Agent), undefined, "snapshotEvents 返回非数组容错");
+assert.equal(sessionTitleOf({ id: "session-1" } as unknown as Agent), undefined, "无 session 返回 undefined");
 assert.equal(sessionTitleOf(undefined), undefined, "无 agent 返回 undefined");
 // 迁移回归：snapshotEvents 方法缺失（旧宿主形态/未挂方法）不得抛错，静默返回 undefined
-assert.equal(sessionTitleOf({ id: "session-1", session: {} }), undefined, "session 无 snapshotEvents 方法返回 undefined");
+assert.equal(sessionTitleOf({ id: "session-1", session: {} } as unknown as Agent), undefined, "session 无 snapshotEvents 方法返回 undefined");
 assert.equal(
-  sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: "优".repeat(80) } }] } }),
+  sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: "优".repeat(80) } }] } } as unknown as Agent),
   "优".repeat(40),
   "标题截断 40 字符"
 );
 
-// sessionTitleOf 仅截断 40 字符、不再脱敏（B-1/P1-4：脱敏统一到 sendKind 渲染后
+// sessionTitleOf 仅截断 40 字符、不再脱敏（/P1-4：脱敏统一到 sendKind 渲染后
 // 单点承接，此层截断仅为展示语义；敏感片段明文透传是统一时点下的预期行为）
 assert.equal(
-  sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: `修复 ${"a".repeat(48)} 泄漏` } }] } }),
+  sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: `修复 ${"a".repeat(48)} 泄漏` } }] } } as unknown as Agent),
   `修复 ${"a".repeat(37)}`,
   "长标题仅 40 字符截断（脱敏已移交 sendKind 统一时点）"
 );
 assert.equal(
-  sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: `修复 ${"f".repeat(30)} 泄漏` } }] } }),
+  sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: `修复 ${"f".repeat(30)} 泄漏` } }] } } as unknown as Agent),
   `修复 ${"f".repeat(30)} 泄漏`,
   "≤40 字符标题原样透传（无打码）"
 );
 assert.equal(
-  sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: "联系 admin@corp.example.com 处理部署" } }] } }),
+  sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: "联系 admin@corp.example.com 处理部署" } }] } } as unknown as Agent),
   "联系 admin@corp.example.com 处理部署",
   "邮箱明文透传（脱敏移交统一时点）"
 );
@@ -149,5 +150,5 @@ assert.equal(
 );
 
 // loopback 围栏：回环放行、非回环拒绝
-assert.equal(isLoopbackRequest(fakeReq()), true);
-assert.equal(isLoopbackRequest(fakeReq({ socket: { remoteAddress: "10.0.0.2" } })), false);
+assert.equal(isLoopbackRequest(fakeReq() as unknown as IncomingMessage), true);
+assert.equal(isLoopbackRequest(fakeReq({ socket: { remoteAddress: "10.0.0.2" } }) as unknown as IncomingMessage), false);
