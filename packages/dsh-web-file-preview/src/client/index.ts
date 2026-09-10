@@ -26,6 +26,7 @@ import { createState, type FilePreviewState } from "./state.ts";
 import { finalizeSession, onKeyDown, syncFullscreenState } from "./preview.ts";
 import { onClickCapture } from "./intercept.ts";
 import { wrapOpenPath } from "./wrapper.ts";
+import { installPresentOpenRedirect } from "./present-open-redirect.ts";
 import { watchMermaidTheme, watchMermaidAnchorSafety } from "./mermaid.ts";
 import { isFullscreenActive } from "./fullscreen-math.ts";
 import { bindLocale } from "../../../../shared/client/i18n.js";
@@ -83,6 +84,9 @@ export function apply(ctx: any): void {
     try { (window as any).__DSH_CWD_SESSIONS__ = ctx ? ctx.sessions : undefined; } catch { /* 兼容 */ }
     // A：openPath 调用点收口。
     const restoreOpenPath = wrapOpenPath(ctx, state);
+    // #698：0.1.5 起把「用默认应用打开」改走官方右侧栏预览（旧版 dsh 无
+    // sidebarRight 服务时不激活，见文件尾 inject 声明）。
+    const restorePresentOpenRedirect = installPresentOpenRedirect(ctx);
     // issue #104：系统明暗切换时对已渲染 mermaid 图就地重渲染（v11 无 setTheme，
     // re-initialize 路线，见 mermaid.ts）；解绑进同一 disposer，卸载无残留监听。
     const unwatchMermaidTheme = watchMermaidTheme(state);
@@ -105,6 +109,7 @@ export function apply(ctx: any): void {
       document.removeEventListener("keydown", onKeyDown);
       finalizeSession(state, "unmount");
       restoreOpenPath();
+      restorePresentOpenRedirect();
       // #477：样式注入收敛 shared/client/ensure-style.js（幂等键 dsh-web-file-preview-style），
       // 卸载按 id 摘除（旧 data-attr 标记随迁移退役）。
       const style = document.getElementById("dsh-web-file-preview-style");
@@ -118,7 +123,8 @@ export function apply(ctx: any): void {
 
 // ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块，第三方内联）----
 // 需要 sessions 服务以跟随当前会话（cwd 用于拼预览 URL）；locale 用于字典注册与 t 装配；
-// remote（+ remote.session 深层）用于 openWorkspacePath 调用点收口包装（wrapper.ts）——
+// remote（+ remote.session 深层）用于 openWorkspacePath 调用点收口包装（wrapper.ts）；
+// sidebarRight 用于把「打开文件」改写成官方右侧栏预览（present-open-redirect.ts）——
 // 客户端注入代理按本数组校验 ctx 属性访问，漏声明即抛 "without inject"（#486-fix，
-// provider-usage #383 同款面）。
-export const inject: string[] = ["sessions", "locale", "remote", "remote.session"];
+// provider-usage #383 同款面）；旧版 dsh 没有 sidebarRight，该数组不满足即整体不激活。
+export const inject: string[] = ["sessions", "locale", "remote", "remote.session", "sidebarRight"];

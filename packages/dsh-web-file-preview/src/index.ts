@@ -109,4 +109,11 @@ export { contentDispositionOf } from "./routes.ts";
 // issue #630：二进制占位卡纯函数（大小格式化/下载 URL；DOM-free，客户端组件
 // client/binary-card.ts 依赖 DOM 不经 index 透出——防 style.css 拉进宿主 bundle）。
 export { formatBytes, downloadUrlOf } from "./binary-info.ts";
+// issue #698：「打开文件」→ 官方右侧栏预览的重定向纯逻辑（DOM-free，客户端装配经
+// src/client/present-open-redirect.ts 引用，此处透出供 smoke/单测直测）。
+export {
+  PRESENT_OPEN_PATH, PENDING_TTL_MS, isOpenRequest, sessionIdOf,
+  fileAddressFor, looksLikeFilePath, usablePending,
+} from "./present-open.ts";
+export type { PendingEntry } from "./present-open.ts";
 

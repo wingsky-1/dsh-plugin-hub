@@ -36,7 +36,10 @@ import "./unit-routes.test.ts";
 import "./unit-serve-tokens.test.ts";
 import "./unit-basename-fallback.test.ts";
 import "./unit-git.test.ts";
+// issue #698：「打开文件」→ 官方侧栏预览的重定向（纯逻辑 golden + 产物级 vm 夹具）。
+import "./unit-present-open.test.ts";
 import "./client-style.test.ts";
+import "./client-present-redirect.test.ts";
 
 const pkgDir = fileURLToPath(new URL("..", import.meta.url));
 
