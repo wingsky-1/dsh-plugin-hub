@@ -23,7 +23,7 @@ import * as React from "react";
 
 import { createState, type McpState, type UiActions } from "./core/state.ts";
 import { api } from "./core/api.ts";
-import { refresh, switchTab, close, showPanel } from "./float/panel.ts";
+import { refresh, switchTab, close, showPanel, disposePanel } from "./float/panel.ts";
 import { resetForm, beginEdit } from "./float/quick-add.ts";
 import { toggleFloat, mountFloat, renderFloatPanel } from "./float/float.ts";
 import { bindSession, rebindSession } from "./core/session.ts";
@@ -152,13 +152,30 @@ export function apply(ctx: any): void {
         watchdog = undefined;
       }
       if (pollTimer !== undefined) return;
+      let pollTicks = 0;
       const tick = () => {
         pollTimer = setTimeout(() => {
           void refresh(state, actions).catch(() => {});
+          // C2 恢复探测：SSE 降级轮询是兜底不是永久退役——每 5 个轮询周期
+          // （50s）尝试重建 EventSource，成功即退出轮询（页面失联自愈）。
+          pollTicks += 1;
+          if (pollTicks % 5 === 0) tryResumeEvents();
           tick();
         }, 10_000);
       };
       tick();
+    };
+    // C2：轮询期恢复探测入口——清轮询链、放开 eventsRetired 闸门、重置失败
+    // 计数后重建 SSE；连接失败会经 onerror 计数回落到 startPolling（轮询链
+    // 由 tick 闭包重建，eventsRetired 被置回 true，不形成双链）。
+    const tryResumeEvents = () => {
+      if (pollTimer !== undefined) {
+        clearTimeout(pollTimer);
+        pollTimer = undefined;
+      }
+      eventsRetired = false;
+      esFailures = 0;
+      connectEvents();
     };
     // 关旧连接：所有重建路径共用此入口——覆盖 source 引用不 close 会逐步
     // 耗尽浏览器同源并发连接、其余请求全部 pending（dsh-notifier 0.1.8 同款
@@ -314,6 +331,8 @@ export function apply(ctx: any): void {
       window.removeEventListener("pageshow", onPageShow);
       if (unsubLocale !== undefined) unsubLocale();
       for (const dispose of disposers.splice(0)) dispose();
+      // C4：卸载配对移除 Escape keydown 监听（先摘 document 级监听再删 DOM）。
+      disposePanel(state);
       if (state.overlay !== undefined && state.overlay.parentElement !== null) state.overlay.remove();
       // 重置全部模块级状态，但保留 mcpUiConfig（原始 dispose 不重置它，避免
       // HMR 重复 apply 期间浮窗位置瞬态跳回默认再被 api(API.config) 拉回）。
