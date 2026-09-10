@@ -37,6 +37,14 @@ pnpm typecheck    # 全仓类型检查
 > （去 esbuild 内联 vendor 段与 `__` 运行时垫片后仅计自写函数），已接入 observe.yml
 > 夜间硬校验（`self-cov.mjs --check`，strict=true）；threshold=60 为当前硬阈值，
 > 80% 为阶段二目标。
+>
+> **两个覆盖口径并存**：`pnpm cov` 是 CI 判分口径（从 lib 产物采集，self-written
+> 派生依赖产物形态）；`pnpm cov:src` 是开发者/评审口径，经 lib→src resolve hook
+> 从 src 采集真实覆盖率（实测 `All files` 61.61% → 93.02%、`events/event-handlers.ts`
+> 27.24% → 96.91%、`server/routes.ts` 46.72% → 92.28%）。后者**不参与 CI 判分**：
+> 换成 src 口径后 self-cov 解析不到产物形态，逐包报 `self-written 函数覆盖 0%`
+> 而全区判红（已实测），且「覆盖率经源码镜像」属 refactor-plan §6 移出的仓库级项。
+> 细节见 `scripts/gate/cov.mjs` 头注释。
 
 ### 变异测试与增量链路（#178 / #187）
 
