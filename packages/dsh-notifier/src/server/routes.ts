@@ -9,7 +9,7 @@
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { errorMessage, guardLoopbackMethod, readBody, sseData, writeJson } from "../../../../shared/host-utils.js";
 import { redactConfigView, sanitizePatchSettings, unmaskChannels, validateSettings } from "../config/interface.ts";
-import type { NotifyConfig } from "../config/interface.ts";
+import type { ConfigPort, NotifyConfig } from "../config/interface.ts";
 import type { HistoryStore } from "../stores/interface.ts";
 import type { SseHub, SystemNotifier } from "./interface.ts";
 
@@ -24,16 +24,11 @@ export const ROUTES = {
   kinds: "/api/dsh-notifier/kinds",
 };
 
-/** buildRoutes 的依赖注入面（全部由 index.ts 装配层提供）。 */
-export interface RouteDeps {
-  /** 当前生效配置（schemastery 解析值，含默认值兜底；GET /config 的 effective）。 */
-  resolve(): NotifyConfig;
-  /** settings user 层原始节与 revision（describe({redactSecrets:true}) 读取）。 */
-  readUser(): { user: Record<string, unknown>; revision?: number };
-  /** settings 服务是否可用（决定 PUT 是否可写：writable:false → 503）。 */
-  writable(): boolean;
-  /** 增量 merge patch 进 settings user 层（乐观并发经 expectedRevision）。 */
-  update(patch: object, expectedRevision?: number): Promise<void>;
+/**
+ * buildRoutes 的依赖注入面（index.ts 装配）。配置域部分 = ConfigPort 契约——
+ * L8-2 起 setConfirm 移除，kind 确认写一律走 confirmKind（CAS 重试 ≤2）。
+ */
+export interface RouteDeps extends ConfigPort {
   /** 日志出口。 */
   logger: { warn: (message: string) => void; info: (message: string) => void };
   /** SSE 推送枢纽。 */
@@ -48,8 +43,6 @@ export interface RouteDeps {
   statusReader(): Promise<Record<string, unknown>>;
   /** 动态 kind 清单（GET /kinds；含确认态）。 */
   listKinds(): Array<{ id: string; label: string; confirmed: boolean }>;
-  /** 动态 kind 确认写入（POST /kinds；持久化到配置 allowKinds）。 */
-  setConfirm(kind: string, confirmed: boolean): Promise<void>;
 }
 
 /** applyConfigPatch 的结果。 */
@@ -75,8 +68,19 @@ export async function applyConfigPatch(deps: RouteDeps, payload: unknown): Promi
     patch?: unknown;
     expectedRevision?: unknown;
   };
+  // D19（L8-5）：expectedRevision 仅接受「省略/null → undefined 透传」或「非负
+  // 整数」；其余形态（字符串/小数/负数）显式 400，不再静默忽略。
+  if (
+    body.expectedRevision !== undefined &&
+    body.expectedRevision !== null &&
+    !(typeof body.expectedRevision === "number" && Number.isInteger(body.expectedRevision) && body.expectedRevision >= 0)
+  ) {
+    return { ok: false, status: 400, code: "invalid", response: { error: "配置校验失败: expectedRevision", hint: "expectedRevision 必须为非负整数或省略" } };
+  }
   const expectedRevision =
-    typeof body.expectedRevision === "number" && Number.isInteger(body.expectedRevision) ? body.expectedRevision : undefined;
+    typeof body.expectedRevision === "number" && Number.isInteger(body.expectedRevision) && body.expectedRevision >= 0
+      ? body.expectedRevision
+      : undefined;
   const rawPatch = body.patch;
   // 掩码回填先于校验（评审 P0-2）：channels 实例的 deviceKey 整值等于掩码时按
   // id 对齐回填 user 层原值；新实例（user 层无同 id）带掩码 → 400 拒绝。
@@ -133,7 +137,7 @@ export async function applyConfigPatch(deps: RouteDeps, payload: unknown): Promi
  * @returns WebRoute 数组（调用方逐条 register，收集 disposer）。
  */
 export function buildRoutes(deps: RouteDeps): WebRoute[] {
-  const { resolve, readUser, writable, update, logger, sse, history, sendTest, statusReader, listKinds, setConfirm } = deps;
+  const { resolve, readUser, writable, update, confirmKind, logger, sse, history, sendTest, statusReader, listKinds } = deps;
 
   const configRoute: WebRoute = {
     kind: "exact",
@@ -363,12 +367,12 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
           writeJson(res, 404, { ok: false, error: { code: "not-found", details: `未注册的动态 kind: ${kind}` } });
           return;
         }
-        // #405 PR3：setConfirm 现为 CAS 循环（可抛 SETTINGS_CONFLICT 耗尽 / 服务
-        // 缺失 rejection）——handler 必须兜底（评审 P1-1），防 rejection 冒泡成
+        // #405 PR3：confirmKind 现为 CAS 循环（可抛 SETTINGS_CONFLICT 耗尽 /
+        // 服务缺失 rejection）——handler 必须兜底（评审 P1-1），防 rejection 冒泡成
         // 宿主行为未定义；200 响应体带新 revision（向后兼容新增字段）供客户端
         // confirmOne 同步 meta——修「确认 kind 后同窗口保存必 409」的版本链断点。
         try {
-          await setConfirm(kind, confirmed);
+          await confirmKind(kind, confirmed);
         } catch (error) {
           const code = (error as { code?: unknown })?.code;
           if (code === "SETTINGS_CONFLICT") {
@@ -405,8 +409,15 @@ export function buildRoutes(deps: RouteDeps): WebRoute[] {
         return;
       }
       if (req.method === "DELETE") {
-        const removed = await history.clear();
-        writeJson(res, 200, { ok: true, removed });
+        // L8-6：clear 失败（删除/写回异常向上抛）收敛 500 固定文案、原因只进
+        // 服务端日志（对照 PUT /config 500 语义），不再恒 200。
+        try {
+          const removed = await history.clear();
+          writeJson(res, 200, { ok: true, removed });
+        } catch (error) {
+          logger.warn(`dsh-notifier: 历史清空失败 — ${errorMessage(error)}`);
+          writeJson(res, 500, { ok: false, error: { error: "历史清空失败，请查看服务端日志" } });
+        }
         return;
       }
       writeJson(res, 405, { error: `method not allowed: ${req.method}` });

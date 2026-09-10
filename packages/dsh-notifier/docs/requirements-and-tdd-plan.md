@@ -247,6 +247,7 @@
 | B-7 | KIND_SEVERITY 移 text/ 域 | 无运行时变化 | 导出面 re-export 保持（index.ts:131），仅文件归属迁移 |
 | B-8 | 单刻快照行为（B2）的事件源级补充：错误合并窗口/聚合窗口不受快照影响 | 保持 | 事件层状态机（errorMerge/agentStates/batch）沿用现状语义，不随重构改动 |
 | B-9 | send() 动态 kind 与 sendKind 统一过裁决（enabled→免打扰→路由） | 行为变更（D24） | 现状动态 kind 路径绕过 enabled/免打扰（sdk/service.ts:165-197）；统一后 enabled=false/免打扰期间动态 kind 从「照常投递」变「skipped」——先红测锁定现状再改，登记用例 N-25 |
+| B-10 | expectedRevision 非整数从静默忽略 → 显式拒 400（D19 拍板） | 行为变更 | 现状 applyConfigPatch 对非整数 expectedRevision 静默置 undefined；D19 裁定显式拒 400（「配置校验失败: expectedRevision」，hint 注明须为非负整数或省略）；客户端现状不传非整数、实际零影响——L8-5 修复随 PR2 T2-4 落地，用例 N-16 锁定 |
 
 ### 6.3 迁移计划（三 PR，见 architecture-redesign.md §10）
 

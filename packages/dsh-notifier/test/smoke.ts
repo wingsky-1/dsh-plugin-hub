@@ -42,6 +42,8 @@ await import("./unit-webhook.test.ts");
 await import("./unit-stores.test.ts");
 // PR1 L1 补测：settings-bridge CAS 直测（attach/降级/冲突重试 ≤2）
 await import("./unit-settings-bridge.test.ts");
+// PR2 T2-4（N-16/D19/L8-6）：ConfigPort 降级语义契约 + 路由错误映射直测
+await import("./unit-config-port.test.ts");
 // PR1 L1 补测：完成风暴聚合直测（首条即时/窗口聚合/kind 切换/dispose）
 await import("./unit-aggregate.test.ts");
 

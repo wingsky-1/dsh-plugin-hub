@@ -482,6 +482,40 @@ try {
     assert.equal(rec.status, 200, "缺省 expectedRevision 的 PUT 成功");
   }
 
+  // D19（L8-5）：expectedRevision 非非负整数 → 400 显式拒（不再静默忽略）；
+  // null 同省略 → 200（独立实例，避免污染主实例 revision 链）
+  {
+    function bodyReq(payload) {
+      const text = JSON.stringify(payload);
+      return {
+        method: "PUT",
+        url: "/",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+        on(event, cb) {
+          if (event === "data") setTimeout(() => cb(Buffer.from(text)), 0);
+          else if (event === "end") setTimeout(cb, 1);
+          return this;
+        },
+        destroy() {},
+      };
+    }
+    const { routes: d19Routes, dispose: d19Dispose } = makeNotifier(work, { historyFile: join(work, "history-d19.jsonl") });
+    const cfgD19 = d19Routes.find((r) => r.path === ROUTES.config);
+    for (const bad of ["abc", 1.5, -1]) {
+      const put = makeRes();
+      await cfgD19.handler(bodyReq({ patch: { notifyAsk: false }, expectedRevision: bad }), put.res);
+      assert.equal(put.rec.status, 400, `expectedRevision=${JSON.stringify(bad)} → 400`);
+      const body = JSON.parse(put.rec.text);
+      assert.match(body.error.error, /expectedRevision/, "400 指明 expectedRevision 键");
+      assert.match(body.error.hint, /非负整数/, "400 hint 说明必须为非负整数或省略");
+    }
+    const putNull = makeRes();
+    await cfgD19.handler(bodyReq({ patch: { notifyAsk: false }, expectedRevision: null }), putNull.res);
+    assert.equal(putNull.rec.status, 200, "null expectedRevision 同省略 → 200");
+    d19Dispose();
+  }
+
   // ===== M2：Bark channels 凭据脱敏与掩码回填（issue #366，评审 P0-1/P0-2）=====
   {
     function bodyReq(payload) {

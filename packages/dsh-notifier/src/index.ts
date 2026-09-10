@@ -318,10 +318,13 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   ];
 
   const routes = buildRoutes({
-    resolve: currentConfig,
+    // 配置域面全部走 ConfigPort 契约（settings-bridge 唯一实现；L8-2 后路由面
+    // 不再单独持 setConfirm，kinds 确认与 PUT 写面共用同一 CAS 语义）。
+    resolve: settingsBridge.resolve,
     readUser: settingsBridge.readUser,
-    writable: settingsBridge.isWritable,
-    update: settingsBridge.updateConfig,
+    writable: settingsBridge.writable,
+    update: settingsBridge.update,
+    confirmKind: settingsBridge.confirmKind,
     logger: ctx.logger,
     sse,
     system,
@@ -330,7 +333,6 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
       notifierService.sendKind("test", {}, { bypassQuiet: true, onlyChannel: channelId }),
     statusReader: () => statusStore.read(),
     listKinds: () => notifierService.listKinds(),
-    setConfirm: settingsBridge.confirmKindToConfig,
   });
 
   const disposeRoutes = ctx.effect(

@@ -40,6 +40,6 @@ export { QUIET_ALLOW_KINDS, isInQuietHours, parseHHMM } from "./quiet-hours.ts";
 export type { QuietHoursConfig } from "./quiet-hours.ts";
 export { SETTINGS_NS, installNotifierSettings, warnLog } from "./settings.ts";
 export { createSettingsBridge } from "./settings-bridge.ts";
-export type { SettingsBridge } from "./settings-bridge.ts";
+export type { ConfigPort, SettingsBridge } from "./settings-bridge.ts";
 export { CORRUPTED_BAK_SUFFIX, MIGRATED_BAK_SUFFIX, migrateLegacyConfig } from "./migrate.ts";
 export type { MigrateDeps, MigrationOutcome } from "./migrate.ts";
