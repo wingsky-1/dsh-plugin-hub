@@ -46,7 +46,7 @@ import { ROUTES, buildRoutes, createSseHub, createSystemNotifier } from "./serve
 import { BUILTIN_CHANNELS, createNotifierService } from "./sdk/interface.ts";
 import type { NotifierServiceInternal, NotifySentEvent } from "./sdk/interface.ts";
 import type { BrowserDispatchSpec, DeliverPayload, ResolvedTarget, SystemDispatchSpec } from "./pipeline/interface.ts";
-import { buildBrowserFrame, createBarkChannel, createBarkGate, createBrowserChannel, createOutboundChannelResolver, createSystemChannel, createWebhookChannel } from "./channels/interface.ts";
+import { buildBrowserFrame, createBarkChannel, createBrowserChannel, createOutboundChannelResolver, createSystemChannel, createWebhookChannel } from "./channels/interface.ts";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "notifier";
@@ -91,11 +91,8 @@ export { createStatusStore } from "./stores/interface.ts";
 export type { StatusStore, ChannelStatusEntry } from "./stores/interface.ts";
 export {
   createBarkChannel,
-  createBarkGate,
   SEVERITY_LEVEL,
   BARK_TIMEOUT_MS,
-  BARK_RETRIES,
-  BARK_MAX_INFLIGHT,
 } from "./channels/interface.ts";
 export {
   createWebhookChannel,

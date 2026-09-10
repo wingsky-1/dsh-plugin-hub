@@ -8,7 +8,7 @@
  * 其余目标走 channel.send。重试/并发门等框架能力随 T2-2 在本域上移（B-3）。
  */
 import { sanitizeErrorText } from "../text/interface.ts";
-import type { NotifyResult } from "../sdk/interface.ts";
+import type { NotifyChannel, NotifyResult, RetryableError } from "../sdk/interface.ts";
 import type { AdjudicatedNotice, DeliverDeps, DeliverPayload, Deliverer, ResolvedTarget } from "./interface.ts";
 
 /** 统一码点截断（中文场景按码点，不按 UTF-16 code unit）。 */
@@ -25,6 +25,80 @@ export function truncateCodePoints(s: string, max: number): string {
 export function createDeliverer(deps: DeliverDeps): Deliverer {
   const { recordStatus, emitSent, appendHistory, play } = deps;
 
+  // B-3：门表生命周期 = 本工厂实例闭包，按 channelId（type:id）键控、跨配置
+  // 变更延续（对等现状 outbound.ts:13-22 的 barkGates Map 语义）。
+  const gates = new Map<string, { inflight: number; queue: Array<() => void> }>();
+
+  function gateFor(channelId: string) {
+    let gate = gates.get(channelId);
+    if (!gate) {
+      gate = { inflight: 0, queue: [] };
+      gates.set(channelId, gate);
+    }
+    return gate;
+  }
+
+  /** 经并发门的投递（在途 ≥ maxInflight 排队，无上限队列；缺省 = 无门）。 */
+  function withGate(channelId: string, maxInflight: number | undefined, run: () => Promise<void>): Promise<void> {
+    if (maxInflight === undefined) return run();
+    const gate = gateFor(channelId);
+    return new Promise<void>((resolve, reject) => {
+      const start = () => {
+        gate.inflight += 1;
+        run().then(
+          (value) => {
+            gate.inflight -= 1;
+            const next = gate.queue.shift();
+            if (next) next();
+            resolve(value);
+          },
+          (error) => {
+            gate.inflight -= 1;
+            const next = gate.queue.shift();
+            if (next) next();
+            reject(error);
+          },
+        );
+      };
+      if (gate.inflight >= maxInflight) gate.queue.push(start);
+      else start();
+    });
+  }
+
+  /**
+   * 框架重试（B-3）：按 channel.capabilities.retry 声明 + RetryableError 协议
+   * 决策——retryable:false 确定失败立即终态；网络/5xx（true）或未标注按
+   * backoffMs × attempt 线性退避（缺省 backoffMs=1000）。
+   */
+  async function sendWithRetry(channel: NotifyChannel, payload: DeliverPayload): Promise<void> {
+    const retry = channel.capabilities.retry;
+    const maxRetries = retry?.maxRetries ?? 0;
+    const backoffMs = retry?.backoffMs ?? 1000;
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      try {
+        const outcome = channel.send(payload);
+        if (outcome && typeof (outcome as Promise<void>).then === "function") await (outcome as Promise<void>);
+        return;
+      } catch (error) {
+        lastError = error;
+        if ((error as RetryableError).retryable === false) throw error;
+        if (attempt < maxRetries) await new Promise<void>((resolve) => setTimeout(resolve, backoffMs * (attempt + 1)));
+      }
+    }
+    throw lastError;
+  }
+
+  /** 单目标投递入口：dispatch 目标经 play；channel.send 目标在声明了
+   *  retry/maxInflight 时经框架重试+并发门（B-3），否则直通 channel.send
+   *  （零重试无门，保留 send 返回 undefined 的同步终态语义）。 */
+  function deliverOutcome(target: ResolvedTarget, payload: DeliverPayload): void | Promise<void> {
+    if (target.dispatch !== undefined) return play(target, payload);
+    const caps = target.channel.capabilities;
+    if (caps.retry === undefined && caps.maxInflight === undefined) return target.channel.send(payload);
+    return withGate(target.id, caps.maxInflight, () => sendWithRetry(target.channel, payload));
+  }
+
   function deliverOne(target: ResolvedTarget, notice: AdjudicatedNotice): NotifyResult {
     const { id, channel, dispatch } = target;
     const finalizeError = (err: unknown): string => sanitizeErrorText(err instanceof Error ? err.message : String(err), 300);
@@ -32,7 +106,9 @@ export function createDeliverer(deps: DeliverDeps): Deliverer {
       const safeTitle = truncateCodePoints(String(notice.title), channel.capabilities.titleMaxLen > 0 ? channel.capabilities.titleMaxLen : channel.capabilities.maxBodyLen);
       const safeBody = truncateCodePoints(String(notice.body), channel.capabilities.maxBodyLen);
       const payload: DeliverPayload = { title: safeTitle, body: safeBody, kind: notice.kind, ts: notice.ts, severity: notice.severity };
-      const outcome = dispatch !== undefined ? play(target, payload) : channel.send(payload);
+      // dispatch 目标（内置频道）经 play 值传递——不经门不经重试（实时推送不
+      // 被慢出站拖住，现状语义）；channel.send 目标经框架重试 + 并发门（B-3）。
+      const outcome = deliverOutcome(target, payload);
       const emitOk = () => {
         try {
           recordStatus(id, "ok");

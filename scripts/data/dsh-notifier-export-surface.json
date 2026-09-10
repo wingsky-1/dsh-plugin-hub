@@ -10,15 +10,7 @@
       "isType": false
     },
     {
-      "name": "BARK_MAX_INFLIGHT",
-      "isType": false
-    },
-    {
       "name": "BARK_RESERVED_KEYS",
-      "isType": false
-    },
-    {
-      "name": "BARK_RETRIES",
       "isType": false
     },
     {
@@ -258,10 +250,6 @@
       "isType": false
     },
     {
-      "name": "createBarkGate",
-      "isType": false
-    },
-    {
       "name": "createEventHandlers",
       "isType": false
     },
@@ -419,9 +407,7 @@
     "export declare class NotifierSettingsBridge implements SettingsBridge { entry: Record<string, unknown>; private current; private source; private attachedService; private attachedScope; constructor(ctx: Context, config?: NotifierApplyConfig); getCurrent: () => NotifyConfig; getSource: () => NotifyConfig; isWritable: () => boolean; getScope: () => OwnerScopeLike | undefined; getService: () => SettingsServiceLike | undefined; readUser: () => { user: Record<string, unknown>; revision?: number; }; updateConfig: (patch: object, expectedRevision?: number) => Promise<void>; confirmKindToConfig: (kind: string, confirmed: boolean) => Promise<void>; }",
     "export declare const ASSEMBLY_SETTING_KEYS: readonly [\"configFile\", \"toastScript\", \"historyFile\", \"statusFile\", \"enabled\"];",
     "export declare const BARK_ID_PATTERN: RegExp;",
-    "export declare const BARK_MAX_INFLIGHT = 2;",
     "export declare const BARK_RESERVED_KEYS: readonly string[];",
-    "export declare const BARK_RETRIES = 2;",
     "export declare const BARK_TIMEOUT_MS = 10000;",
     "export declare const BUILTIN_CHANNELS: { readonly browser: \"browser\"; readonly system: \"system\"; };",
     "export declare const CHANNEL_SECRET_FIELDS: Record<string, readonly string[]>;",
@@ -464,8 +450,7 @@
     "export declare function buildSystemCommand(platform: string, title: string, message: string, options: { sound: SoundSetting; selfPlay?: boolean; notifySendAvailable?: boolean; toastScript: string; }",
     "export declare function configFile(): string;",
     "export declare function createAdjudicator(deps: AdjudicateDeps): (opts: AdjudicateOptions) => AdjudicateResult;",
-    "export declare function createBarkChannel(cfg: BarkChannelConfig, gate: BarkGate): NotifyChannel;",
-    "export declare function createBarkGate(): BarkGate;",
+    "export declare function createBarkChannel(cfg: BarkChannelConfig): NotifyChannel;",
     "export declare function createBrowserChannel(options: { sse: SseHub; }",
     "export declare function createDeliverer(deps: DeliverDeps): Deliverer;",
     "export declare function createDoneBatcher(options: DoneBatcherOptions): DoneBatcher;",

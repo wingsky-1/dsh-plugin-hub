@@ -4,15 +4,16 @@
  *
  * 层间稳定性：域间经 pipeline/interface.ts 的交互契约——AdjudicateDeps
  * （current() 单刻快照恰好 1 次 / isKindConfirmed 收 (kind, snapshot) / 派生
- * 闭包不读 current）与 DeliverDeps（recordStatus/emitSent/appendHistory/play
- * 调用序列与参数 / fail-soft / 终态不持快照引用）。按 §11.2-1/2：只 import 本域
- * interface.ts + deps fake，不 import 其他域实现。
+ * 闭包不读 current）与 DeliverDeps（调用序列与参数 / fail-soft / 终态不持
+ * 快照引用）。按 §11.2-1/2：只 import 本域 interface.ts + deps fake。
  *
  * 本文件为标准红测判别：createAdjudicator/createDeliverer 工厂落地前 import
- * 即红（改前红），工厂落地 + 单刻快照后全绿（改后绿）。
+ * 即红（改前红），工厂落地 + 单刻快照后全绿（改后绿）。T2-2 起追加 N-9
+ * （框架重试/并发门上移，B-3）与 N-13（bark 单次投递 + retryable 标注）直测。
  */
 import assert from "node:assert/strict";
 import { createAdjudicator, createDeliverer } from "../src/pipeline/interface.ts";
+import { createBarkChannel } from "../src/channels/interface.ts";
 
 /** 轮询直到谓词成立（替代固定 sleep：异步终态经 promise 微任务决议）。 */
 async function pollUntil(predicate, timeoutMs = 2000) {
@@ -63,8 +64,7 @@ function quietWindowNow() {
 // ================================================================ N-14 AdjudicateDeps 注入面契约
 
 {
-  // 录制型 fake deps：current() 计数 + isKindConfirmed/allChannels 捕获快照引用，
-  // 断言「单刻快照恰好 1 次」与「快照引用贯穿派生读面（不二次读 current）」。
+  // 录制型 fake：断言「单刻快照恰好 1 次」+「快照引用贯穿派生读面」
   const cfg = baseCfg({ kindRoutes: { ready: ["browser"] } });
   let currentCalls = 0;
   let lastSnapshot = null;
@@ -98,17 +98,13 @@ function quietWindowNow() {
   assert.equal(poolSnapshots[0], cfg, "N-14：allChannels 收到同一快照对象（派生闭包不自行读 current）");
   assert.equal(out.notice.targets.length, 1, "N-14：目标随池解析");
   assert.equal(out.notice.targets[0].dispatch.sound.mode, "system", "N-14：播放决议随池条目携带（裁决时快照解析）");
-  console.log("N-14a 单刻快照（current 恰好 1 次 + 快照贯穿派生闭包）: OK");
-
   // 跨次不缓存：第二次裁决重新取快照（再 +1）
   adjudicate({ kind: "ready", title: "T", body: "B", ts: 2 });
   assert.equal(currentCalls, 2, "N-14：跨次不缓存——第二次裁决重新调 current() 恰好 1 次");
-  console.log("N-14b 跨次不缓存（第二次重新取快照）: OK");
 }
 
 {
-  // 抑制分支形状：disabled（enabled=false）→ suppressed disabled；未确认 →
-  // kind-pending；免打扰 → quiet；三者均不触达 allChannels。
+  // 抑制分支形状：disabled/未确认/免打扰 三态均不触达 allChannels
   let currentCalls = 0;
   let poolCalls = 0;
   const cfg = baseCfg({ quietHours: quietWindowNow() });
@@ -161,14 +157,12 @@ function quietWindowNow() {
   assert.equal(r4.decision, "deliver", "N-14：bypassQuiet 跳过免打扰");
   assert.equal(r4.notice.targets[0].id, "bark:phone", "N-14：onlyChannel 命中单频道");
   assert.equal(poolCalls, 0, "N-14：onlyChannel 用例的池经注入闭包解析（快照单一）");
-  console.log("N-14c suppressed 三态形状 + bypassQuiet/onlyChannel: OK");
 }
 
 // ================================================================ N-15 DeliverDeps 注入面契约
 
 {
-  // 调用序列契约：stale skipped 先 → 带 dispatch 目标经 play、其余经 channel.send →
-  // appendHistory 恰好 1 次；play/终态上报载荷为截断后副本（不持原对象引用）。
+  // 调用序列：stale skipped 先 → play/channel.send 分流 → appendHistory 恰好 1 次
   const recordStatusCalls = [];
   const emitSentCalls = [];
   const historyCalls = [];
@@ -219,19 +213,15 @@ function quietWindowNow() {
   assert.equal(bark.sent.length, 1, "N-15：无 dispatch 目标走 channel.send");
   assert.equal(bark.sent[0].title, "超长标题超长标题超长", "N-15：channel.send 载荷标题按频道能力截断（10 码点）");
   assert.equal(bark.sent[0].body, "超长正文".repeat(5), "N-15：channel.send 载荷正文截断（20 码点）");
-
   // 终态：同步完成 → recordStatus ok + sent ok（两频道各一条）
   assert.equal(recordStatusCalls.filter((s) => s.status === "ok").length, 2, "N-15：同步终态 ok 落 status");
   assert.equal(emitSentCalls.filter((e) => e.status === "ok").length, 2, "N-15：同步终态 ok 发 sent 事件");
   assert.equal(historyCalls.length, 1, "N-15：appendHistory 每次投递恰好 1 次（通知级，非频道级）");
   assert.deepEqual(historyCalls[0], { ts: 42, kind: "demo", title: longTitle, message: longBody }, "N-15：历史记录字段 = 通知级原始（未按频道截断，与现状 jsonl 契约一致）");
-  console.log("N-15a 调用序列（play/channel.send/终态/落史）: OK");
 }
 
 {
-  // fail-soft + 异步终态 + 终态不持快照引用：
-  // play 返回挂起 promise → 终态待决议；reject → recordStatus failed（不牵连其他频道/不抛）；
-  // 投递后改写 notice 不影响已记录的终态载荷（值传递语义）。
+  // fail-soft + 异步终态：reject → failed 不牵连其他频道；终态为值拷贝（不持快照引用）
   const recordStatusCalls = [];
   const emitSentCalls = [];
   const historyCalls = [];
@@ -273,7 +263,135 @@ function quietWindowNow() {
   notice.body = "改写";
   assert.equal(emitSentCalls.find((e) => e.channelId === "bark:ok").message, "B", "N-15：终态载荷为值拷贝（改 notice 不影响既有终态）");
   assert.equal(historyCalls[0].message, "B", "N-15：历史为值拷贝");
-  console.log("N-15b fail-soft + 异步终态 + 值传递: OK");
+}
+
+// ================================================================ N-9 框架重试/并发门（B-3 上移直测）
+// 重试与门由 createDeliverer 承载（对等现状 bark sendWithRetry/sendWithGate），
+// 判据 = channel.capabilities.retry/maxInflight + RetryableError（false 不重试）。
+
+function deliverDeps(recordStatusCalls = []) {
+  return {
+    recordStatus: (channelId, status, error) => recordStatusCalls.push({ channelId, status, error }),
+    emitSent: () => undefined,
+    appendHistory: () => undefined,
+    play: () => undefined,
+  };
+}
+
+function retryableErr(message, retryable) {
+  const e = new Error(message);
+  e.retryable = retryable;
+  return e;
+}
+
+function mkNotice(ts, channel) {
+  return { kind: "demo", title: "T", body: "B", ts, targets: [{ id: "bark:phone", channel }], stale: [] };
+}
+
+{
+  // N-9a：4xx（retryable:false）不重试 → 1 次调用 + 终态 failed；受理与终态解耦
+  let attempts = 0;
+  const channel = {
+    name: "bark:phone",
+    capabilities: { titleMaxLen: 64, maxBodyLen: 256, retry: { maxRetries: 2, backoffMs: 0 } },
+    send() {
+      attempts += 1;
+      return Promise.reject(retryableErr("bark HTTP 400: bad request", false));
+    },
+  };
+  const recordStatusCalls = [];
+  const deliver = createDeliverer(deliverDeps(recordStatusCalls));
+  const results = deliver(mkNotice(1, channel));
+  assert.equal(results[0].status, "ok", "N-9a：受理与终态解耦（铁律 1）");
+  await pollUntil(() => recordStatusCalls.some((s) => s.channelId === "bark:phone"));
+  assert.equal(attempts, 1, "N-9a：retryable:false 不重试");
+  assert.equal(recordStatusCalls[0].status, "failed", "N-9a：4xx → 终态 failed");
+}
+
+{
+  // N-9b：5xx（retryable:true）重试 ×2 后成功 + 线性退避 1s/2s（替换 setTimeout
+  // 记录延时并立即执行，零真实等待）→ 终态 ok
+  const delays = [];
+  const origTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = (fn, ms) => {
+    delays.push(ms);
+    fn();
+    return 0;
+  };
+  let attempts = 0;
+  const channel = {
+    name: "bark:phone",
+    capabilities: { titleMaxLen: 64, maxBodyLen: 256, retry: { maxRetries: 2, backoffMs: 1000 } },
+    send() {
+      attempts += 1;
+      if (attempts < 3) return Promise.reject(retryableErr(`bark 5xx (${attempts})`, true));
+      return Promise.resolve();
+    },
+  };
+  const recordStatusCalls = [];
+  const deliver = createDeliverer(deliverDeps(recordStatusCalls));
+  try {
+    deliver(mkNotice(1, channel));
+    for (let i = 0; i < 30; i += 1) await Promise.resolve(); // 推满替换窗口内微任务链
+  } finally {
+    globalThis.setTimeout = origTimeout;
+  }
+  assert.equal(attempts, 3, "N-9b：重试 ×2（1 + 2）");
+  assert.deepEqual(delays, [1000, 2000], "N-9b：线性退避 1s/2s（backoffMs 基数）");
+  await pollUntil(() => recordStatusCalls.some((s) => s.channelId === "bark:phone"));
+  assert.equal(recordStatusCalls[0].status, "ok", "N-9b：重试后成功 → 终态 ok");
+}
+
+{
+  // N-9c/d：maxInflight 超限排队 + 门跨配置变更延续——在途≥2 时第 3 个排队
+  // （含「同 channelId 换新 channel 实例」仍排队：门表按 channelId 键控于
+  // createDeliverer 闭包，对等现状 outbound.ts:13-22 的 barkGates Map 语义）
+  const pendings = [];
+  let calls = 0;
+  const makeChannel = () => ({
+    name: "bark:phone",
+    capabilities: { titleMaxLen: 64, maxBodyLen: 256, maxInflight: 2 },
+    send() {
+      calls += 1;
+      return new Promise((resolve) => pendings.push(resolve));
+    },
+  });
+  const deliver = createDeliverer(deliverDeps());
+  const channelA = makeChannel();
+  deliver(mkNotice(1, channelA));
+  deliver(mkNotice(2, channelA));
+  deliver(mkNotice(3, makeChannel())); // 同 id 新实例（模拟配置变更后频道重建）
+  assert.equal(calls, 2, "N-9c/d：在途 2 时第 3 个排队（跨实例延续）");
+  pendings[0]();
+  await pollUntil(() => calls === 3);
+}
+
+// ================================================================ N-13 bark 单次投递 + retryable 标注（B-3）
+{
+  const origFetch = globalThis.fetch;
+  try {
+    const ch = createBarkChannel({ id: "p", type: "bark", baseUrl: "https://h", deviceKey: "SECRETKEY22", enabled: true });
+    assert.deepEqual(ch.capabilities.retry, { maxRetries: 2, backoffMs: 1000 }, "N-13：bark retry 契约（框架据此重试 ×2、退避 1s 基数）");
+    assert.equal(ch.capabilities.maxInflight, 2, "N-13：bark maxInflight=2（框架门上移用）");
+    let fetchCalls = 0;
+    const expectRetryable = async (respond, want) => {
+      fetchCalls = 0;
+      globalThis.fetch = async () => {
+        fetchCalls += 1;
+        return respond();
+      };
+      let lastErr = null;
+      await ch.send({ title: "T", body: "B", kind: "test", ts: 1 }).catch((e) => { lastErr = e; });
+      assert.equal(fetchCalls, 1, "N-13：channel 单次投递（重试是框架职责）");
+      assert.equal(lastErr.retryable, want, `N-13：retryable=${want}`);
+    };
+    await expectRetryable(() => ({ ok: false, status: 400, text: async () => "bad" }), false); // 4xx 确定失败
+    await expectRetryable(() => { throw new TypeError("fetch failed"); }, true); // 网络错误
+    await expectRetryable(() => ({ ok: false, status: 503, text: async () => "unavailable" }), true); // 5xx
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+  console.log("N-13 bark 单次投递 + retryable 标注: OK");
 }
 
 console.log("dsh-notifier pipeline 注入面契约（N-14/N-15）: OK");

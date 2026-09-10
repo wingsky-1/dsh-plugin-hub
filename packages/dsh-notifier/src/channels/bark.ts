@@ -5,11 +5,10 @@
  * `POST {baseUrl}/push` + JSON body（device_key 走 body 不落 URL——反代 access
  * log 默认只记 URL 与 header，正文不落日志；已实测本地 bark-server 200）。
  *
- * 可靠性（设计终稿 §四 + 评审 P1 修订）：
- * - 10s 硬超时（AbortSignal.timeout）；
- * - 重试 ×2 仅针对网络错误/超时/5xx（幂等重试面）；4xx 是确定失败不重试；
- * - 实例级在途并发 ≤2（BarkGate 按 cfg.id 键控，跨配置变更延续）——内置
- *   频道（browser/system）不经此门，防止慢出站拖住实时推送（评审 P1）；
+ * 可靠性（B-3 上移后）：
+ * - 10s 硬超时（AbortSignal.timeout）——超时归属 channel 侧，不动；
+ * - 重试/并发门已上移框架 pipeline/deliver（capabilities.retry/maxInflight
+ *   声明 + RetryableError 错误标注）；channel 只保留单次投递；
  * - 成功判定双查：HTTP 2xx + 响应体 code===200（部分反代会 200 包错误页）；
  * - 错误出口统一脱敏：device key 字面替换 → sanitizeErrorText 通用表——
  *   已实测 bark-server 4xx 响应体会回显 key 原文（评审 P0-4）。
@@ -19,7 +18,7 @@
  */
 import { SECRET_MASK } from "../config/interface.ts";
 import type { BarkChannelConfig, BarkLevel } from "../config/interface.ts";
-import type { NotifyChannel, NotifySeverity } from "../sdk/interface.ts";
+import type { NotifyChannel, NotifySeverity, RetryableError } from "../sdk/interface.ts";
 import { sanitizeErrorText } from "../text/interface.ts";
 
 /** severity → Bark level 静态映射（契约测试锁定；critical 需苹果特批故不映射）。 */
@@ -30,29 +29,20 @@ export const SEVERITY_LEVEL: Readonly<Record<NotifySeverity, BarkLevel>> = {
   info: "passive",
 };
 
-/** 单次推送硬超时（毫秒；设计终稿 §四）。 */
+/** 单次推送硬超时（毫秒；超时归属 channel 侧，B-3 不动）。 */
 export const BARK_TIMEOUT_MS = 10_000;
-/** 网络错误/5xx 重试次数（总尝试 = 1 + BARK_RETRIES）。 */
-export const BARK_RETRIES = 2;
-/** 实例级在途并发上限（评审 P1：per-channel 限流，内置频道豁免）。 */
-export const BARK_MAX_INFLIGHT = 2;
 
-/** Bark 实例级在途限流门（按 cfg.id 键控存于装配层，跨配置变更延续）。 */
-export interface BarkGate {
-  inflight: number;
-  queue: Array<() => void>;
-}
-
-export function createBarkGate(): BarkGate {
-  return { inflight: 0, queue: [] };
-}
-
-/** 4xx 类确定失败（不参与重试）。 */
-class BarkHttpError extends Error {
+/**
+ * 4xx 确定失败（retryable:false）；5xx 可重试（retryable:true）——
+ * 错误协议标注供框架 deliver 决策（B-3）。
+ */
+class BarkHttpError extends Error implements RetryableError {
   readonly status: number;
+  readonly retryable: boolean;
   constructor(status: number, detail: string) {
     super(`bark HTTP ${status}${detail ? `: ${detail}` : ""}`);
     this.status = status;
+    this.retryable = status >= 500;
   }
 }
 
@@ -62,16 +52,17 @@ const BARK_KNOWN_TOP_KEYS: readonly string[] = ["id", "name", "type", "baseUrl",
 /**
  * Bark 频道实例工厂。
  * @param cfg 实例配置（normalizeConfig 已归一化）。
- * @param gate 实例级限流门（同 id 复用同一实例；装配层持有）。
  * @returns NotifyChannel——send() 返回在途 promise（resolve=终态成功 /
- *   reject=终态失败，错误已脱敏），调用方据此记录 status；send 本身不抛同步错。
+ *   reject=终态失败，错误已脱敏且按 RetryableError 协议标注），调用方据此记录
+ *   status；send 本身不抛同步错。重试/并发门由框架 deliver 依 capabilities 承载
+ *   （B-3），本实例只做单次投递。
  */
-export function createBarkChannel(cfg: BarkChannelConfig, gate: BarkGate): NotifyChannel {
+export function createBarkChannel(cfg: BarkChannelConfig): NotifyChannel {
   // 错误出口脱敏：先按 device key 字面替换（key 多为 22 位 base62，通用规则表
   // 覆盖不到），再过 sanitizeErrorText 有序表 + 截断（评审 P0-4 收口）。
   const scrub = (text: string): string => sanitizeErrorText(String(text).split(cfg.deviceKey).join(SECRET_MASK), 300);
 
-  /** 单次 POST（不含重试）。非 2xx 抛 BarkHttpError；2xx 但 body code!==200 视为失败。 */
+  /** 单次 POST（重试归框架）。非 2xx 抛 BarkHttpError；2xx 但 body code!==200 视为失败。 */
   async function postOnce(payload: string): Promise<void> {
     let res: Response;
     try {
@@ -82,8 +73,10 @@ export function createBarkChannel(cfg: BarkChannelConfig, gate: BarkGate): Notif
         signal: AbortSignal.timeout(BARK_TIMEOUT_MS),
       });
     } catch (error) {
-      // fetch 层失败（网络/超时/DNS）：统一为可重试错误
-      throw new Error(`bark 请求失败: ${error instanceof Error ? error.message : String(error)}`);
+      // fetch 层失败（网络/超时/DNS）：可重试（协议标注 true，框架据此重试）
+      const err = new Error(`bark 请求失败: ${error instanceof Error ? error.message : String(error)}`) as RetryableError;
+      err.retryable = true;
+      throw err;
     }
     if (!res.ok) {
       let detail = "";
@@ -98,7 +91,10 @@ export function createBarkChannel(cfg: BarkChannelConfig, gate: BarkGate): Notif
     try {
       const body = (await res.json()) as { code?: unknown; message?: unknown };
       if (body && typeof body === "object" && "code" in body && body.code !== 200) {
-        throw new Error(`bark code ${String(body.code)}: ${scrub(String(body.message ?? ""))}`);
+        // body code 非 200：服务端业务拒绝，对等现状可重试面（幂等 POST）
+        const err = new Error(`bark code ${String(body.code)}: ${scrub(String(body.message ?? ""))}`) as RetryableError;
+        err.retryable = true;
+        throw err;
       }
     } catch (error) {
       if (error instanceof SyntaxError) return; // 非 JSON 响应：HTTP 2xx 已足够
@@ -106,43 +102,17 @@ export function createBarkChannel(cfg: BarkChannelConfig, gate: BarkGate): Notif
     }
   }
 
-  /** 带重试的单条投递：网络/超时/5xx 重试 ×2；4xx 立即失败。 */
-  async function sendWithRetry(payload: string): Promise<void> {
-    let lastError: unknown;
-    for (let attempt = 0; attempt <= BARK_RETRIES; attempt += 1) {
-      try {
-        await postOnce(payload);
-        return;
-      } catch (error) {
-        lastError = error;
-        if (error instanceof BarkHttpError && error.status >= 400 && error.status < 500) throw error;
-        // 网络错误/超时/5xx：退避后重试（1s/2s 线性退避，简单够用）
-        if (attempt < BARK_RETRIES) await new Promise<void>((r) => setTimeout(r, 1000 * (attempt + 1)));
-      }
-    }
-    throw lastError;
-  }
-
-  /** 经限流门的投递（在途 ≥2 时排队）。 */
-  async function sendWithGate(payload: string): Promise<void> {
-    if (gate.inflight >= BARK_MAX_INFLIGHT) {
-      await new Promise<void>((resolve) => gate.queue.push(resolve));
-    }
-    gate.inflight += 1;
-    try {
-      return await sendWithRetry(payload);
-    } finally {
-      gate.inflight -= 1;
-      const next = gate.queue.shift();
-      if (next) next();
-    }
-  }
-
   return {
     name: `bark:${cfg.id}`,
     // capabilities：Bark 无硬性服务端限制，取合理客户端体验值（标题一行约 64
-    // 码点；正文 4096 码点兜底截断）。框架层 truncateCodePoints 统一执行。
-    capabilities: { titleMaxLen: 64, maxBodyLen: 4096 },
+    // 码点；正文 4096 码点兜底截断）。retry/maxInflight 供框架 deliver 上移
+    // 使用（B-3，对等现状 sendWithRetry ×2/在途 ≤2 排队）。
+    capabilities: {
+      titleMaxLen: 64,
+      maxBodyLen: 4096,
+      retry: { maxRetries: 2, backoffMs: 1000 },
+      maxInflight: 2,
+    },
     send(payload) {
       // 组装 body：必填三键 + 紧急度（levels[kind] > level > severity 映射）+ 可选参数 + 透传键
       const body: Record<string, unknown> = {
@@ -162,9 +132,9 @@ export function createBarkChannel(cfg: BarkChannelConfig, gate: BarkGate): Notif
         if ((BARK_KNOWN_TOP_KEYS as readonly string[]).includes(key)) continue;
         body[key] = value;
       }
-      // fire-and-forget 语义由调用方（service dispatch）决定是否等待——本方法
-      // 返回在途 promise 且不抛同步错（排队与重试都在 promise 内）。
-      return sendWithGate(JSON.stringify(body));
+      // fire-and-forget 语义由调用方（service dispatch）决定是否等待——返回
+      // 在途 promise 且不抛同步错（重试与排队已在框架 deliver 的 promise 内）。
+      return postOnce(JSON.stringify(body));
     },
   };
 }

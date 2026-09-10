@@ -51,12 +51,25 @@ export interface KindRegistration {
 
 // ---------------------------------------------------------------- Channel SPI
 
-/** 频道能力声明（框架据此做降级：标题并入 / 超长截断）。 */
+/** 频道能力声明（框架据此做降级：标题并入 / 超长截断 / 重试 / 并发门）。 */
 export interface ChannelCapabilities {
   /** 标题最大码点数；<=0 表示不支持标题（并入正文）。 */
   titleMaxLen: number;
   /** 正文最大码点数（超长按此截断）。 */
   maxBodyLen: number;
+  /** 框架重试声明（B-3 上移）：缺省 = 不重试（webhook 零重试锁定）。 */
+  retry?: { maxRetries: number; backoffMs?: number };
+  /** 框架并发门声明（B-3 上移）：在途超限排队；缺省 = 无门。 */
+  maxInflight?: number;
+}
+
+/**
+ * 可重试错误协议（B-3）：投递失败由 framework 依据本标注决策重试
+ * （retryable=false 确定失败不重试；网络/超时/5xx → true）。缺省（未标注）
+ * 视同可重试——仅对声明了 retry 的 channel 生效。
+ */
+export interface RetryableError extends Error {
+  retryable?: boolean;
 }
 
 /** 频道最小实现契约。 */

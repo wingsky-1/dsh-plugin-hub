@@ -7,12 +7,9 @@
  * pipeline/sdk 域（verify-dir-imports 静态强制）。
  */
 export {
-  BARK_MAX_INFLIGHT,
-  BARK_RETRIES,
   BARK_TIMEOUT_MS,
   SEVERITY_LEVEL,
   createBarkChannel,
-  createBarkGate,
 } from "./bark.ts";
 export {
   SEVERITY_GOTIFY_PRIORITY,
