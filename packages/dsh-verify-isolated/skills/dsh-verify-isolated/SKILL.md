@@ -208,6 +208,10 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" quit --state "$DSH_HOME/browser.st
 - **显式回环 + 遥测禁用**：隔离实例一律 `--host 127.0.0.1`（当前 dsh 默认即回环，
   显式写死防上游默认变更）+ `DSH_TELEMETRY_DISABLED=1`（测试数据不外发遥测）；
   一键脚本已内置，手动拉起时也必须带上。
+- **非回环访问形态不在隔离默认内**：脚本固定显式回环绑定，故隔离验证只覆盖回环
+  访问形态。要验证局域网/移动端访问形态，dsh 0.1.5 起可自行用官方
+  `--trusted-host <authority>` 声明受信 authority；该形态下**被测插件自身路由的
+  鉴权与围栏行为需自行确认**，不要假定与回环形态一致。
 - **锚定 dsh 版本**：验证特定 dsh 版本的生态时用 `--dsh <path>` 指定入口，默认
   PATH 中的 `dsh` 会让验证结果随环境漂移、不可复现。
 - **不复制真实凭据**：隔离环境使用临时 `DSH_HOME`，不携带 `~/.dsh` 下的真实凭据、
@@ -303,6 +307,8 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" wait   --state "$STATE" --selector
 # 截图（整页或元素）与 console 捕获
 node "$SKILL_BASE/scripts/browser-driver.mjs" screenshot --state "$STATE" --url http://127.0.0.1:<端口> --path shot.png
 node "$SKILL_BASE/scripts/browser-driver.mjs" console   --state "$STATE" --url http://127.0.0.1:<端口> --wait-ms 2000
+# 视口档位（设备模拟；任一页面命令通用，详见 §6.4）
+node "$SKILL_BASE/scripts/browser-driver.mjs" snapshot --state "$STATE" --url http://127.0.0.1:<端口> --width 375 --height 667
 ```
 
 ### 6.3 核验改动
@@ -314,10 +320,70 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" console   --state "$STATE" --url h
 3. **检查 Console**：`console` 命令捕获 `console.error`、未捕获异常、插件相关的
    `console.warn` 消息。挂载失败只应 `console.warn` 不应 throw。
 4. **双主题验证**：切换明/暗主题确认颜色引用正确，无硬编码固定色值。
-5. **窄屏验证**：`eval` 设置视口（如 `window.resizeTo(768,1024)`）后核验 pad
-   （768×1024）和 phone（375×667）尺寸下的响应式布局。
+5. **窄屏/响应式验证**：按 §6.4 的视口档位逐档设定后核验 pad（768×1024）与 phone
+   （375×667）布局。**不要用 `window.resizeTo`**——它高度不生效，理由见 §6.4。
 
-### 6.4 防 flake 纪律
+### 6.4 设备视口与几何验证
+
+响应式/窄屏改动必须**逐档设定视口**后核验。不要用 `window.resizeTo`：它只能改窗口
+宽度，高度不生效（实测 `resizeTo(768,1024)` 后 `innerHeight` 仍是默认值，pad/phone
+档的第二维根本无法验证），同一条 `eval` 表达式内也读不到改动结果。
+
+改用设备模拟 flag——**任一页面命令**（snapshot / click / eval / fill / wait /
+screenshot / console）均可携带，命令内生效、结束即清除，命令之间互不影响：
+`--width N` `--height N` `--dpr N`（设备像素比，默认 1）`--mobile`（见下方边界）。
+只给一维时另一维取当前视口值。
+
+**基线档（不带任何设备 flag）**：先记录默认视口（`--browser` 的 headless 内核通常为
+800x600）作为对照基准；逐档改视口之后，再用一条**不带 flag** 的命令回读——数值回到
+基线，即证明「命令结束即清除」成立、没有残留污染后续命令。这条回读既是残留自检，
+也是判定窄屏档是否**真的**生效的基准（否则无法区分「窄屏生效」与「参数没起作用」）：
+
+```bash
+STATE="$DSH_HOME/browser.state"
+# 基线档：不带设备 flag
+node "$SKILL_BASE/scripts/browser-driver.mjs" eval --state "$STATE" --expression "innerWidth+'x'+innerHeight"
+# 改档后回读：应回到基线值（否则说明有残留）
+node "$SKILL_BASE/scripts/browser-driver.mjs" eval --state "$STATE" --expression "innerWidth+'x'+innerHeight"
+```
+
+```bash
+# 两档视口各采一次证据（phone / pad）
+node "$SKILL_BASE/scripts/browser-driver.mjs" screenshot --state "$STATE" --url http://127.0.0.1:<端口> --width 375 --height 667 --path phone.png
+node "$SKILL_BASE/scripts/browser-driver.mjs" screenshot --state "$STATE" --url http://127.0.0.1:<端口> --width 768 --height 1024 --path pad.png
+# 高 DPI：元素截图（--selector）按 --dpr 输出物理像素（375x667 档 + --dpr 2 → 750x1334）；
+# 整页截图（不带 --selector）固定输出 CSS 像素尺寸，不随 --dpr 放大
+node "$SKILL_BASE/scripts/browser-driver.mjs" screenshot --state "$STATE" --url http://127.0.0.1:<端口> --width 375 --height 667 --dpr 2 --selector "<css>" --path phone@2x.png
+# 自证视口生效（不要把「设了参数」当成「布局已按该档渲染」）
+node "$SKILL_BASE/scripts/browser-driver.mjs" eval --state "$STATE" --width 375 --height 667 \
+  --expression "innerWidth+'x'+innerHeight+' mq='+matchMedia('(max-width: 640px)').matches"
+```
+
+每档至少断言四项（用 `eval` 或 `snapshot --selector` 返回的 `rect`）：
+
+| 断言 | 表达式模板 | 判据 |
+|------|-----------|------|
+| 视口生效 | `innerWidth+'x'+innerHeight` | 等于设定档位 |
+| 无横向溢出 | `document.documentElement.scrollWidth <= innerWidth + 1` | true（+1 容差防亚像素） |
+| 关键元素在视口内 | `snapshot --selector <css>` 的 `rect` | `x >= 0 && x + rect.width <= innerWidth`，纵向可滚动到 |
+| 落点复核 | 改视口前后各取一次 `rect` | 位移方向与幅度符合预期（如锚定侧边的元素随视口收窄内移） |
+
+`position: fixed` 元素最容易在窄屏失效：除落点外，还要滚动到页面底部确认它仍可达、
+不被安全区或软键盘遮住。
+
+**能力边界（不要越界承诺）**：
+
+- `--mobile` 启用移动 layout viewport 语义：页面无 `<meta name="viewport">` 时
+  `innerWidth` **不再等于**设定宽度（实测 375 档会读回约 981）。要精确命中 CSS 断点
+  请保持 mobile 关闭；只有需要复现真机 layout viewport 行为时才加 `--mobile`。
+- **触控、软键盘、真实 UA、旋转、`dvh`/安全区不在本 skill 能力面内**：headless 内核
+  无法完整模拟（`maxTouchPoints` 可设，但 `ontouchstart` 不生效）。涉及触控手势、
+  软键盘弹出/收起、`visualViewport` 跟随的改动**必须真机验证**，不得以 headless
+  结果代替。
+- 视口模拟只覆盖布局维度；改视口的命令结束后状态即清除，不要把某一档的结论套用到
+  其它档。
+
+### 6.5 防 flake 纪律
 
 浏览器自动化验证**不得使用固定时间等待**（如 `setTimeout(resolve, 300)`），
 必须采用轮询等待机制：
@@ -328,7 +394,7 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" console   --state "$STATE" --url h
 - 等待网络请求完成：轮询页面状态标志（如 `eval --expression "document.readyState"`）
   而非固定延时。
 
-### 6.5 截图采集
+### 6.6 截图采集
 
 - 截图只截插件 UI 本身（`screenshot --selector` 元素截图），不带浏览器整窗，
   避免泄露本机环境（文件路径、IP 地址、其他标签页）。
@@ -345,6 +411,9 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" console   --state "$STATE" --url h
 - [ ] 若验证涉及插件持久化文件：已核对插件 DSH_HOME 感知（不感知按 §5.1 第 5 项处置）
 - [ ] 若做并行验证：四重隔离自检清单（§5.1）逐项通过，各任务浏览器 state 独立
 - [ ] 插件 UI 在隔离环境渲染正常（双主题 + 窄屏如适用）
+- [ ] 响应式/窄屏改动已按 §6.4 逐档设定视口核验（未用 `resizeTo`），四项断言
+      （视口生效/无横向溢出/元素在视口内/落点）逐档通过
+- [ ] 触控、软键盘、真机 UA 相关项已明确标注「仍需真机验证」或已真机复核
 - [ ] Console 无未处理错误（挂载失败仅 warn）
 - [ ] 截图已采集并按仓库规范归档（如适用）
 - [ ] 隔离实例已停止、浏览器实例已清理（`browser.state` 不再存在）、临时
