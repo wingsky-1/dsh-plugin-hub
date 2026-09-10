@@ -1,12 +1,14 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-mcp-manager/src/supervisor.ts",
-    "packages/dsh-mcp-manager/src/middleware-state.ts",
-    "packages/dsh-mcp-manager/src/store.ts",
+    "packages/dsh-mcp-manager/src/connection/runtime/supervisor.ts",
+    "packages/dsh-mcp-manager/src/connection/runtime/reconnect.ts",
+    "packages/dsh-mcp-manager/src/config/store/**/*.ts",
+    "packages/dsh-mcp-manager/src/stats/**/*.ts",
     "!packages/dsh-mcp-manager/src/client/**",
-    "!packages/dsh-mcp-manager/src/types.ts",
-    "!packages/dsh-mcp-manager/src/service.ts"
+    "!packages/dsh-mcp-manager/src/types/**",
+    "!packages/dsh-mcp-manager/src/integration/**",
+    "!packages/dsh-mcp-manager/src/placement-math.ts"
   ],
   "testRunner": "tap",
   "mutator": {
@@ -59,5 +61,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-supervisor.json",
-  "_comment": "#342 二期：src 级文件组功能命名段（supervisor）——supervisor+middleware-state+store（#664 阶段4：scope.ts 迁入 src/workspace/ 域，新文件阶段 1–5 不纳入 mutate 清单，C4 明示变异盲区；阶段 6 迁移时重画）；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "_comment": "#664 阶段6重画：supervisor——连接监督器（runtime/supervisor+reconnect）+状态持久化（config/store，原 middleware-state/store 迁入）+统计（stats）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
 }

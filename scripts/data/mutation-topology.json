@@ -102,81 +102,87 @@
                 "entry": {
                     "mutate": [
                         "packages/dsh-mcp-manager/src/index.ts",
-                        "packages/dsh-mcp-manager/src/normalize.ts",
-                        "packages/dsh-mcp-manager/src/import.ts"
+                        "packages/dsh-mcp-manager/src/workspace/**/*.ts",
+                        "packages/dsh-mcp-manager/src/config/model/**/*.ts"
                     ],
                     "excludes": [
                         "!packages/dsh-mcp-manager/src/client/**",
-                        "!packages/dsh-mcp-manager/src/types.ts",
-                        "!packages/dsh-mcp-manager/src/service.ts"
+                        "!packages/dsh-mcp-manager/src/types/**",
+                        "!packages/dsh-mcp-manager/src/integration/**",
+                        "!packages/dsh-mcp-manager/src/placement-math.ts"
                     ],
-                    "comment": "#342 二期：功能命名段（entry）——index+normalize+import（入口/归一化/导入域，28s）；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#664 阶段6重画：entry——index+workspace（工作空间路由域）+config/model（归一化/导入/schema）；阶段1–5变异盲区（workspace/新文件）在本阶段随集中搬移一并纳入重画（v3 C4/C-DIR）；types/integration（type-only）与 placement-math.ts（shared 薄转发）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
                 },
                 "manager": {
                     "mutate": [
-                        "packages/dsh-mcp-manager/src/manager.ts"
+                        "packages/dsh-mcp-manager/src/connection/orchestrator/**/*.ts"
                     ],
                     "excludes": [
                         "!packages/dsh-mcp-manager/src/client/**",
-                        "!packages/dsh-mcp-manager/src/types.ts",
-                        "!packages/dsh-mcp-manager/src/service.ts"
+                        "!packages/dsh-mcp-manager/src/types/**",
+                        "!packages/dsh-mcp-manager/src/integration/**",
+                        "!packages/dsh-mcp-manager/src/placement-math.ts"
                     ],
-                    "comment": "#342 二期：功能命名段（manager）——manager.ts 单文件（742 行，134s 全量，per-mutant 成本主导的物理极限，维持现状）；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#664 阶段6重画：manager——connection/orchestrator（McpManager 类主体+展示投影 tool-names，原 manager.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
                 },
                 "middleware": {
                     "mutate": [
-                        "packages/dsh-mcp-manager/src/middleware.ts",
-                        "packages/dsh-mcp-manager/src/middleware-utils.ts",
-                        "packages/dsh-mcp-manager/src/middleware-const.ts"
+                        "packages/dsh-mcp-manager/src/connection/runtime/middleware.ts",
+                        "packages/dsh-mcp-manager/src/connection/runtime/limits.ts",
+                        "packages/dsh-mcp-manager/src/inject/**/*.ts",
+                        "packages/dsh-mcp-manager/src/pipeline/authorize.ts"
                     ],
                     "excludes": [
                         "!packages/dsh-mcp-manager/src/client/**",
-                        "!packages/dsh-mcp-manager/src/types.ts",
-                        "!packages/dsh-mcp-manager/src/service.ts"
+                        "!packages/dsh-mcp-manager/src/types/**",
+                        "!packages/dsh-mcp-manager/src/integration/**",
+                        "!packages/dsh-mcp-manager/src/placement-math.ts"
                     ],
-                    "comment": "#342 二期：src 级文件组功能命名段（middleware）——middleware+middleware-utils+middleware-const；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#664 阶段6重画：middleware——中间层池（runtime/middleware）+limits（原 middleware-const）+工具注册面（inject/）+策略裁决族（pipeline/authorize，原 middleware-utils 并入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
                 },
                 "routes": {
                     "mutate": [
-                        "packages/dsh-mcp-manager/src/middleware-register.ts",
-                        "packages/dsh-mcp-manager/src/routes.ts"
+                        "packages/dsh-mcp-manager/src/api/**/*.ts"
                     ],
                     "excludes": [
                         "!packages/dsh-mcp-manager/src/client/**",
-                        "!packages/dsh-mcp-manager/src/types.ts",
-                        "!packages/dsh-mcp-manager/src/service.ts"
+                        "!packages/dsh-mcp-manager/src/types/**",
+                        "!packages/dsh-mcp-manager/src/integration/**",
+                        "!packages/dsh-mcp-manager/src/placement-math.ts"
                     ],
-                    "comment": "#342 二期：src 级文件组功能命名段（routes）——middleware-register+routes；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
-                },
-                "runtime": {
-                    "mutate": [
-                        "packages/dsh-mcp-manager/src/catalog.ts",
-                        "packages/dsh-mcp-manager/src/apply.ts",
-                        "packages/dsh-mcp-manager/src/transport.ts",
-                        "shared/placement-math.js",
-                        "packages/dsh-mcp-manager/src/config-schema.ts",
-                        "packages/dsh-mcp-manager/src/protocol.ts",
-                        "packages/dsh-mcp-manager/src/middleware-types.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-mcp-manager/src/client/**",
-                        "!packages/dsh-mcp-manager/src/types.ts",
-                        "!packages/dsh-mcp-manager/src/service.ts"
-                    ],
-                    "comment": "#342 二期：src 级文件组功能命名段（runtime）——catalog+apply+transport+shared/placement-math+config-schema+protocol+middleware-types（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析，测试经 lib/index.js→src re-export 链执行 shared 真源码）；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#664 阶段6重画：routes——api 层（routes 装配/端点控制器/查询辅助，原 routes*.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
                 },
                 "supervisor": {
                     "mutate": [
-                        "packages/dsh-mcp-manager/src/supervisor.ts",
-                        "packages/dsh-mcp-manager/src/middleware-state.ts",
-                        "packages/dsh-mcp-manager/src/store.ts"
+                        "packages/dsh-mcp-manager/src/connection/runtime/supervisor.ts",
+                        "packages/dsh-mcp-manager/src/connection/runtime/reconnect.ts",
+                        "packages/dsh-mcp-manager/src/config/store/**/*.ts",
+                        "packages/dsh-mcp-manager/src/stats/**/*.ts"
                     ],
                     "excludes": [
                         "!packages/dsh-mcp-manager/src/client/**",
-                        "!packages/dsh-mcp-manager/src/types.ts",
-                        "!packages/dsh-mcp-manager/src/service.ts"
+                        "!packages/dsh-mcp-manager/src/types/**",
+                        "!packages/dsh-mcp-manager/src/integration/**",
+                        "!packages/dsh-mcp-manager/src/placement-math.ts"
                     ],
-                    "comment": "#342 二期：src 级文件组功能命名段（supervisor）——supervisor+middleware-state+store（#664 阶段4：scope.ts 迁入 src/workspace/ 域，新文件阶段 1–5 不纳入 mutate 清单，C4 明示变异盲区；阶段 6 迁移时重画）；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#664 阶段6重画：supervisor——连接监督器（runtime/supervisor+reconnect）+状态持久化（config/store，原 middleware-state/store 迁入）+统计（stats）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
+                },
+                "runtime": {
+                    "mutate": [
+                        "packages/dsh-mcp-manager/src/bootstrap/**/*.ts",
+                        "packages/dsh-mcp-manager/src/connection/runtime/transport.ts",
+                        "packages/dsh-mcp-manager/src/connection/runtime/protocol.ts",
+                        "shared/placement-math.js",
+                        "packages/dsh-mcp-manager/src/pipeline/**/*.ts",
+                        "packages/dsh-mcp-manager/src/catalog/**/*.ts"
+                    ],
+                    "excludes": [
+                        "!packages/dsh-mcp-manager/src/client/**",
+                        "!packages/dsh-mcp-manager/src/types/**",
+                        "!packages/dsh-mcp-manager/src/integration/**",
+                        "!packages/dsh-mcp-manager/src/placement-math.ts"
+                    ],
+                    "comment": "#664 阶段6重画：runtime——组合根（bootstrap/，原 apply*.ts 迁入）+transport/protocol+shared/placement-math（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析）+pipeline（执行管道域，阶段1–5变异盲区随迁纳入）+catalog（目录域，原 catalog.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
                 }
             }
         },

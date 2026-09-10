@@ -5,7 +5,7 @@
  * 标记为 deprecated，保留引用兼容。v2 新契约（UsageStatsAdapter）为推荐标准。
  * 下一主要版本删除 v1 类型。
  *
- * #215 注入面（additive）：FetchContext/PanelInput 新增 optional `utils` 字段——
+ * 注入面（additive）：FetchContext/PanelInput 新增 optional `utils` 字段——
  * 宿主注入的适配器共享工具（图表/转义/日界等，见 charts.ts）。mjs 鸭子类型下
  * 字段可选，适配器 `const U = input.utils` 后优先消费，缺失时回退文件内私有副本。
  */

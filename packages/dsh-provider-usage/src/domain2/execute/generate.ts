@@ -1,15 +1,15 @@
 /**
- * dsh-provider-usage/report — 报告生成（#503 M3，方案 §八 v1.2 定稿 ctx.llm.stream 路线）。
+ * dsh-provider-usage/report — 报告生成（ctx.llm.stream 路线）。
  *
  * - 零凭据、零独立网络出口：模型调用经宿主 llm 服务（ctx.llm.stream），
  *   凭据由 dsh 既有 provider 配置持有，本插件不接触（README 安全模型同步口径）；
  * - 生成消耗不入统计：llm.stream 不派发 session/event → 不进用量记账
- *   （方案 §八4，单测显式断言该前提），token 消耗单独记录在报告元数据（报告页可见）；
+ *   （单测显式断言该前提），token 消耗单独记录在报告元数据（报告页可见）；
  * - 无会话副作用：一击式流式调用，不创建 agent/会话、无工具面（tools 不传）；
  * - provider/model 空串 = 跟随默认：dsh-llm 服务面无「默认 provider」API
  *   （仅 listProviders/listModels/stream），按注册序首个 provider/model 解析
  *   （单 provider 部署即默认；多 provider 建议在报告配置显式选择），解析结果写入元数据；
- * - 失败语义（方案 §八6）：流式异常 → ok:false 元数据（错误短句可读），不抛——
+ * - 失败语义：流式异常 → ok:false 元数据（错误短句可读），不抛——
  *   幂等重试由调度层决定（onDue 抛错才不推进 lastRun，见接线层约定）；
  * - 官方类型层仅 import type（仓库契约门禁「@deepseek-ai/* 仅类型导入」）：
  *   prompt 消息自拼 Message 字面量（与官方 createUserMessage 产物同形——
@@ -45,7 +45,7 @@ export interface ReportTokenUsage {
   cacheWriteTokens: number | null;
 }
 
-/** 报告 hero 摘要（#532：meta.json 落盘 + 详情页年报 hero 数据源；纯数值投影）。 */
+/** 报告 hero 摘要（meta.json 落盘 + 详情页年报 hero 数据源；纯数值投影）。 */
 export interface ReportMetaSummary {
   total: number | null;
   calls: number;
@@ -74,9 +74,9 @@ export interface ReportMeta {
   error?: string;
   /** 生成消耗 token（流携带 usage chunk 时记录；不入用量统计）。 */
   tokens?: ReportTokenUsage;
-  /** #532：当期无任何用量（calls=0）→ 未调模型、未落盘（调度侧正常推进 lastRun 防重试死循环）。 */
+  /** 当期无任何用量（calls=0）→ 未调模型、未落盘（调度侧正常推进 lastRun 防重试死循环）。 */
   noData?: boolean;
-  /** #532：当期 hero 摘要（成功生成时随 meta 落盘；旧报告无此字段，详情页不渲染 hero）。 */
+  /** 当期 hero 摘要（成功生成时随 meta 落盘；旧报告无此字段，详情页不渲染 hero）。 */
   summary?: ReportMetaSummary;
 }
 
@@ -109,7 +109,7 @@ export interface GenerateReportOptions {
 
 /**
  * 报告统计快照（注入 {stats} 的 JSON 形状；方案 §2.3「当期聚合统计」）。
- * #633 分片 b C3：注入面 = 聚合数值 + 目录 basename（剥控制字符 + 截断），不含
+ * 注入面 = 聚合数值 + 目录 basename（剥控制字符 + 截断），不含
  * 会话明细与完整路径。
  */
 export interface ReportStatsSnapshot {
@@ -134,26 +134,26 @@ export interface ReportStatsSnapshot {
   byProvider: Array<{ provider: string; model: string | null; calls: number; total: number | null }>;
   /** 上一同等长度窗口的指标总量（环比基准；接线层经 windowSummary 取得）。 */
   prevTotal: number | null;
-  /** 按目录聚合（calls 降序，口径与 byProvider 一致；#633 分片 a 数据面——未识别桶
-   * dir=TREND_UNIDENTIFIED；dir 键为脱敏出口形态的 basename 或未识别桶键（#633
-   * 分片 b C2：basename 化 + 剥控制字符 + 截断 80，无路径分隔符）；旧数据
+  /** 按目录聚合（calls 降序，口径与 byProvider 一致；未识别桶
+   * dir=TREND_UNIDENTIFIED；dir 键为脱敏出口形态的 basename 或未识别桶键（basename
+   * 化 + 剥控制字符 + 截断 80，无路径分隔符）；旧数据
    * 无 dir 事实 → 空数组，不补造）。 */
   byDirectory: Array<{ dir: string; calls: number; total: number | null }>;
-  // ---------------------------------------------------------------- #662 时段维度
+  // ---------------------------------------------------------------- 时段维度
   // 数据面 = day×hour 聚合行（hourRows，落盘即定型）；覆盖度守卫：coveredDays 为
   // 窗口内有 hour 事实（calls>0）的天数，**coveredDays < windowDays 时三个时段字段
   // 整体置 null**（升级期部分天缺小时事实时提示词整段降级，杜绝「1/7 天代表整周」）。
   /** 窗口内按钟点聚合（24 项 hour 0..23 全量；无数据钟点 calls=0/total=null，
    * 零 usage 语义——调用独立计数、token 记 null；覆盖不足时整体 null）。 */
   byHour: Array<{ hour: number; calls: number; total: number | null }> | null;
-  /** 预分四时段（凌晨 0-5 / 上午 6-11 / 下午 12-17 / 晚间 18-23；#662 口径由代码
+  /** 预分四时段（凌晨 0-5 / 上午 6-11 / 下午 12-17 / 晚间 18-23；口径由代码
    * 锁定，防弱模型自行归纳编造；无数据档 total=null；覆盖不足时整体 null）。 */
   byPeriod: Array<{ period: string; calls: number; total: number | null }> | null;
   /** 最活跃钟点（byHour 内 total 判峰、并列取最早；全 null → null；覆盖不足时 null）。 */
   peakHour: { hour: number; calls: number; total: number | null } | null;
   /** 窗口内有 hour 事实的天数（覆盖度守卫：< windowDays 时上三个字段整体 null）。 */
   coveredDays: number;
-  // ---------------------------------------------------------------- #532 年报派生维度
+  // ---------------------------------------------------------------- 年报派生维度
   // 全部为快照内单遍派生的聚合数值，注入面收敛承诺不变（仍无路径/会话明细）。
   /** 峰值日（byDay 内 total 最大的一天；空窗口 null）。 */
   peakDay: { day: string; total: number | null } | null;
@@ -283,7 +283,7 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
 
 /**
  * 报告统计快照（纯计算）：从 tracker.buckets() 快照聚合窗口内数据。
- * 注入面收敛（方案 §八7；#633 分片 b C3 口径）：只含聚合数值与目录 basename
+ * 注入面收敛：只含聚合数值与目录 basename
  * （剥控制字符 + 截断 80——byDirectory 出口 basename 化，无路径分隔符），
  * 不含会话明细与完整路径——sanitizePaths 配置约束未来注入面扩展。
  */
@@ -294,12 +294,12 @@ export function buildStatsSnapshot(input: {
   /** tracker.buckets() 快照（day 升序；day×provider×model×cell）。 */
   buckets: Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell }> }>;
   /**
-   * 目录维度日汇总行快照（#633 分片 a：store.readAggDayShard 产物 filter kind:"dir"，
-   * 可选；缺省 = 旧数据无目录事实，不补造桶（A2「旧格式零变化」口径）。
+   * 目录维度日汇总行快照（store.readAggDayShard 产物 filter kind:"dir"，
+   * 可选；缺省 = 旧数据无目录事实，不补造桶（旧格式零变化口径）。
    */
   dirRows?: TrendDirRow[];
   /**
-   * 小时维度日汇总行快照（#662：trend.hourRows() 产物，可选；缺省/旧数据无 hour
+   * 小时维度日汇总行快照（trend.hourRows() 产物，可选；缺省/旧数据无 hour
    * 事实 → byHour/byPeriod/peakHour 依覆盖度守卫整体置 null（coveredDays=0）。
    */
   hourRows?: TrendHourRow[];
@@ -344,7 +344,7 @@ export function buildStatsSnapshot(input: {
   }
   const byProvider = [...byKey.values()].sort((a, b) => b.calls - a.calls);
 
-  // ---- #633 分片 a：目录维度聚合（dir 行 → byDirectory，口径与 byProvider 一致）----
+  // ---- 目录维度聚合（dir 行 → byDirectory，口径与 byProvider 一致）----
   // 同 dir 键跨日 null-aware 累加；窗口过滤与 buckets 同口径（day 字典序闭区间）。
   const byDir = new Map<string, { dir: string; calls: number; total: number | null }>();
   for (const row of input.dirRows ?? []) {
@@ -359,23 +359,23 @@ export function buildStatsSnapshot(input: {
   }
   const byDirectory = [...byDir.values()].sort((a, b) => b.calls - a.calls);
 
-  // ---- #532 年报派生维度（快照内单遍 O(n)，全部聚合数值，注入面收敛不变） ----
+  // ---- 年报派生维度（快照内单遍 O(n)，全部聚合数值，注入面收敛不变） ----
   // 注入文本防御：provider/model 名为 adapter/上游可影响文本，进快照前截断 80 字符
   // 并剥离控制字符（prompt 注入面收紧；快照数值维度不受影响）。
   const safeName = (name: string): string =>
     name.length > 80 ? name.slice(0, 80) : name;
   for (const row of byProvider) {
-    // 剥 C0 + DEL + C1（0x80–0x9F），与数据层 sanitizeDirName（trend/types.ts 权威定义）同口径
+    // 剥 C0 + DEL + C1（0x80–0x9F），与数据层 sanitizeDirName（collect/types.ts 权威定义）同口径
     row.provider = safeName(row.provider.replace(/[\u0000-\u001f\u007f-\u009f]/g, ""));
     if (row.model !== null) row.model = safeName(row.model.replace(/[\u0000-\u001f\u007f-\u009f]/g, ""));
   }
-  // #633 分片 b C2：目录名出口统一 basename 化 + 剥控制字符 + 截断 80（沿用
+  // 目录名出口统一 basename 化 + 剥控制字符 + 截断 80（沿用
   // provider/model 的 safeName 防御模式；collector.dirOf 落盘前已 sanitizeDirName，
   // 但伪造分片行的 dir 键不受信（isValidDirKey 只查长度）——出口处 basename 化
-  // 锁死「无路径分隔符」承诺，与 C2 逐出口断言对齐）。剥/切后为空串的伪键
+  // 锁死「无路径分隔符」承诺，与逐出口断言对齐）。剥/切后为空串的伪键
   // 归并进未识别桶键（防模板渲染空标签）。
   for (const row of byDirectory) {
-    // 剥 C0 + DEL + C1，与数据层 sanitizeDirName 同口径（C1 段补齐，复核 P1-2）
+    // 剥 C0 + DEL + C1，与数据层 sanitizeDirName 同口径
     const c = row.dir.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
     const cut = Math.max(c.lastIndexOf("/"), c.lastIndexOf("\\"));
     const base = cut >= 0 ? c.slice(cut + 1) : c;
@@ -415,12 +415,12 @@ export function buildStatsSnapshot(input: {
     byWeekday[dow === 0 ? 6 : dow - 1] += d.total ?? 0;
   }
 
-  // ---- #662 时段维度（hourRows → byHour[24]/byPeriod[4]/peakHour + coveredDays 守卫）----
+  // ---- 时段维度（hourRows → byHour[24]/byPeriod[4]/peakHour + coveredDays 守卫）----
   // 窗口过滤与 buckets 同口径（day 字典序闭区间）；同钟点跨日 null-aware 累加（计数
   // 独立，token 记 null——零 usage 语义）。覆盖度守卫：coveredDays = 窗口内有 hour
   // 事实（calls/turns/toolCalls 任一 > 0）的天数；coveredDays < windowDays（升级期
   // 部分天缺 hour 行）→ 三个时段字段整体置 null（提示词整段降级，杜绝「局部天代表
-  // 全窗口」的误导叙事；评审 P0-4）。
+  // 全窗口」的误导叙事）。
   const hourCells = new Map<number, { calls: number; total: number | null }>();
   const covered = new Set<string>();
   for (const row of input.hourRows ?? []) {
@@ -495,7 +495,7 @@ function windowDayCount(startDay: string, endDay: string): number {
 }
 
 /**
- * 预分四时段档位（#662：报告时段叙事口径由代码锁定，防弱模型自行归纳 24 档编造）。
+ * 预分四时段档位（报告时段叙事口径由代码锁定，防弱模型自行归纳 24 档编造）。
  * 边界闭区间（from..to 均含）：凌晨 0-5 / 上午 6-11 / 下午 12-17 / 晚间 18-23。
  * 档名即为提示词可原样引用的 byPeriod.period 字段值（口径变更须同步提示词红线注释）。
  */

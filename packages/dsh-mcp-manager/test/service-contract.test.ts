@@ -142,7 +142,7 @@ const pkgDir = join(dirname(fileURLToPath(import.meta.url)), "..");
  * 内大括号干扰对象边界。
  */
 function extractProvidedServiceMethods(): Array<{ name: string; paramCount: number; optionalCount: number }> {
-  const src = readFileSync(join(pkgDir, "src", "apply-services.ts"), "utf8");
+  const src = readFileSync(join(pkgDir, "src", "bootstrap", "apply-services.ts"), "utf8");
   // 锚定首个 `provide("mcpManager", {` marker（非 AST——测试刻意不做解析级双真源，
   // 方法名存在性 + 参数个数即可抓「删方法/改参数量」）。当前 apply.ts 全文件仅此
   // 一处该形态调用，indexOf 首个命中即目标；若未来 apply.ts 出现多处 provide

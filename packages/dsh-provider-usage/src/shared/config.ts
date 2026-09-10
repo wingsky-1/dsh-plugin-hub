@@ -1,7 +1,7 @@
 /**
  * dsh-provider-usage — 配置归一化（单一职责：默认值 / schemastery schema / normalizeConfig）。
  *
- * #276 方案 A 阶段 3 拆分：自 index.ts 抽离，导出面由 index.ts 转发 re-export
+ * 自 index.ts 抽离，导出面由 index.ts 转发 re-export
  * 保持不变（外部消费者仍从 lib/index.js 导入）。
  */
 
@@ -16,19 +16,19 @@ export const DEFAULT_CONFIG = {
   apiKey: "",
   historyDir: "",
   warmupIntervalMs: 300000,
-  // #198 H1：由 60000 下调至 30000——峰谷徽标倒计时跨时段边界的展示翻转延迟
+  // 由 60000 下调至 30000——峰谷徽标倒计时跨时段边界的展示翻转延迟
   // = 宿主缓存 + 客户端轮询（60s）+ 渲染余量，缓存减半使端到端 ≤95s 可达。
   cacheDurationMs: 30000,
-  // #206 配套：2s→5s——commandcode 等三请求并行适配器在远端慢时 2s 频繁超时；
-  // safeFetchData 为 Promise.race+Abort 纯异步超时，不阻塞主进程（#120 起超时会
+  // 2s→5s——commandcode 等三请求并行适配器在远端慢时 2s 频繁超时；
+  // safeFetchData 为 Promise.race+Abort 纯异步超时，不阻塞主进程（超时会
   // 经合并信号真正 abort 底层 fetch）；
-  // #120 后取数锁为 per-provider 粒度，排队仅发生在同一 provider 内部，
+  // 取数锁为 per-provider 粒度，排队仅发生在同一 provider 内部，
   // 最坏 n×5s 只限单 provider 的并发请求，跨 provider 完全并行。
   fetchTimeoutMs: 5000,
   autoReload: true,
   maxAgeDays: 30,
   maxSizeMB: 20,
-  // #503 会话用量趋势：聚合分片保留天数（日切压实后按天留存，明细仅当日）
+  // 会话用量趋势：聚合分片保留天数（日切压实后按天留存，明细仅当日）
   trendRetentionDays: 180,
 };
 
@@ -86,15 +86,15 @@ export function normalizeConfig(input: unknown): NormalizedConfig {
   if (typeof cfg.historyDir === "string") base.historyDir = cfg.historyDir;
   if (Number.isFinite(cfg.warmupIntervalMs)) base.warmupIntervalMs = Math.max(60000, cfg.warmupIntervalMs as number);
   if (Number.isFinite(cfg.cacheDurationMs)) base.cacheDurationMs = Math.max(5000, cfg.cacheDurationMs as number);
-  // fetchTimeoutMs 固定 5s（不开放配置）：远端慢时 2s 频繁超时（#206 配套）
+  // fetchTimeoutMs 固定 5s（不开放配置）：远端慢时 2s 频繁超时
   if (typeof cfg.autoReload === "boolean") base.autoReload = cfg.autoReload;
-  // #184：maxAgeDays 仅接受正整数——<=0 会令 maybePrune 下界落在未来（历史被全量清理）、
+  // maxAgeDays 仅接受正整数——<=0 会令 maybePrune 下界落在未来（历史被全量清理）、
   // 面板查询区间 start>end 永空；非正整数一律视为非法回落默认值，上界 365 维持既有 clamp
   if (Number.isInteger(cfg.maxAgeDays) && (cfg.maxAgeDays as number) > 0) {
     base.maxAgeDays = Math.min(365, cfg.maxAgeDays as number);
   }
   if (Number.isFinite(cfg.maxSizeMB)) base.maxSizeMB = Math.min(500, cfg.maxSizeMB as number);
-  // #503：trend 聚合保留天数——仅正整数（上界 3650≈10 年），非法回落默认 180
+  // trend 聚合保留天数——仅正整数（上界 3650≈10 年），非法回落默认 180
   if (Number.isInteger(cfg.trendRetentionDays) && (cfg.trendRetentionDays as number) > 0) {
     base.trendRetentionDays = Math.min(3650, cfg.trendRetentionDays as number);
   }

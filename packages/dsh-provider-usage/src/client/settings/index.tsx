@@ -1,8 +1,8 @@
 /**
- * dsh-provider-usage — 设置页根组件（#532 多 tab 化，样式基准 = 通知中心 #508）。
+ * dsh-provider-usage — 设置页根组件（多 tab 化，样式基准 = 通知中心）。
  *
  * 形态：整页一张大卡（dou-set-card）+ 顶部五分段器 tab（趋势/报告/用量/适配器/悬浮窗），
- * 与通知中心 #508 同语言（普通 button，不引入 role=tablist——#402 决策延续）。
+ * 与通知中心同语言（普通 button，不引入 role=tablist）。
  * 五个区块一对一迁移、行为不变。
  *
  * 挂载策略：keep-mounted + CSS 显隐（pane wrapper 加 hidden 属性）——
@@ -16,9 +16,9 @@ import { STATS_URL, ADAPTERS_URL, SELECT_URL, INSPECT_URL, ADD_URL, fetchTimeout
 import { splitProviderList } from "../../shared/client-logic.ts";
 import type { ProviderListItem } from "../../shared/client-logic.ts";
 import { t } from "../../../../../shared/client/i18n.js";
-// #503：设置页顶部「使用趋势」区块（三维切换 + 堆叠柱状 + 汇总卡）
+// 设置页顶部「使用趋势」区块（三维切换 + 堆叠柱状 + 汇总卡）
 import { TrendSection } from "../trend.tsx";
-// #503 M3：设置页「用量报告」区块（配置卡片 + 手动生成 + 历史列表）
+// 设置页「用量报告」区块（配置卡片 + 手动生成 + 历史列表）
 import { ReportSection } from "../report.tsx";
 import { UsageSection } from "./usage.tsx";
 import type { StatsView } from "./usage.tsx";
@@ -168,9 +168,9 @@ export function SettingsPage(): React.ReactElement {
 
   return (
     <div className="dou-set-card" style={{ maxWidth: 560 }}>
-      {/* 分段器：普通 button（#402 决策延续：不用 tablist）。role 用 group——
+      {/* 分段器：普通 button（不用 tablist）。role 用 group——
           不可用 navigation：宿主设置弹窗的移动端适配规则带 :not(:has([role=navigation]))
-          排除条件（#543 实测，选择器无引号形态；命中即整弹窗退回桌面 row 布局，
+          排除条件（选择器无引号形态；命中即整弹窗退回桌面 row 布局，
           手机上内容区被压至 ~106px）。 */}
       <div className="dou-set-tabs" role="group" aria-label={t("settingsNavLabel")}>
         {TABS.map((item) => (

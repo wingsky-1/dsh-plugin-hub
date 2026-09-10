@@ -54,7 +54,7 @@ export interface V2PipelineContext {
    * 错误帧绝不以 fresh 身份进历史，故 last 即最后一条成功帧；不传则维持空 data 占位行为。
    */
   history?: Pick<HistoryStore, "last">;
-  /** 共享图表工具注入（缺省回退 ADAPTER_UTILS；#215 注入面）。 */
+  /** 共享图表工具注入（缺省回退 ADAPTER_UTILS）。 */
   utils?: import("../../shared/interface.ts").AdapterUtils;
 }
 
@@ -66,7 +66,7 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
   const { adapter, provider } = ctx;
   const fetchedAt = Date.now();
 
-  // fail-fast（issue #120）：管道内部组装断言——组装前提非法时不发起任何取数，
+  // fail-fast：管道内部组装断言——组装前提非法时不发起任何取数，
   // 直接产出既有 error 帧（stale + error），不让请求悬挂。这是管线自身的防御性
   // 检查，不是对用户适配器的契约行为约束（不改 FetchContext 契约、不新增配置项）。
   if (!(Number.isFinite(ctx.timeoutMs) && ctx.timeoutMs > 0)) {
@@ -83,7 +83,7 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
   }
 
   // 1. 组装 fetchData 入参（signal 由下方 safeFetchData 以合并信号注入，此处不预置；
-  //    #215 注入面：utils 一律强制注入 ADAPTER_UTILS——内置 mjs 与用户 mjs 均可消费共享图表工具）
+  //    utils 一律强制注入 ADAPTER_UTILS——内置 mjs 与用户 mjs 均可消费共享图表工具）
   const fetchCtx: FetchContext = {
     apiEndpoint: ctx.config.apiEndpoint ?? '',
     staticPath: ctx.staticPath,
@@ -96,7 +96,7 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
   };
 
   // 2. safeFetchData（5s 固定超时 + 序列化 + 错误隔离）。
-  // issue #120 P0 接线：闭包接收合并信号（超时兜底 × ctx.signal 外部信号，手动级联合流）
+  // 闭包接收合并信号（超时兜底 × ctx.signal 外部信号，手动级联合流）
   // 并放进 adapter.fetchData 入参——适配器把 ctx.signal 透传给底层 fetch 即获得真取消能力
   // （deepseek-official 直传 fetch、opencode-go 监听 signal 均立即受益）；
   // 0 参 fetchData 忽略入参不受影响。
@@ -106,7 +106,7 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
   }, ctx.timeoutMs, ctx.signal);
 
   if (fetched.error !== undefined) {
-    // #198 A 组：取数失败仍产出 stale 胶囊 + status:'stale' + error；
+    // 取数失败仍产出 stale 胶囊 + status:'stale' + error；
     // 不带 rawData → 上层不落盘历史（错误帧绝不以 fresh 身份进历史）。
     // 带值降级：注入 history 时读取最后一条成功数据喂给 formatCapsule——
     // 数值部分始终渲染最后成功值（避免健康值跌成 "--"），数据来源状态交给
@@ -183,7 +183,7 @@ export async function runV2PanelPipeline(opts: {
     range,
     truncated: false,
     esc,
-    // #215 注入面：面板侧同注入共享图表工具（formatPanel 内 `const U = input.utils`）
+    // 面板侧同注入共享图表工具（formatPanel 内 `const U = input.utils`）
     utils: ADAPTER_UTILS,
   };
   const formatted = await safeFormat(() => adapter.formatPanel(panelInput), 'formatPanel', timeoutMs);
@@ -191,9 +191,9 @@ export async function runV2PanelPipeline(opts: {
   return { panelHtml: sanitizeHtml(formatted.html ?? '') };
 }
 
-// ------------------------------------------------------------------ #105① /history 渲染缓存（纯函数层）
+// ------------------------------------------------------------------ /history 渲染缓存（纯函数层）
 
-/** 面板渲染缓存兜底 TTL：编译期常量，定界 [60s, 120s]（issue #105 正文①节）。
+/** 面板渲染缓存兜底 TTL：编译期常量，定界 [60s, 120s]。
  *  仅作兜底而非主失效机制——主失效是 append 落盘全清；取区间中值 90s。 */
 export const PANEL_CACHE_TTL_MS = 90000;
 

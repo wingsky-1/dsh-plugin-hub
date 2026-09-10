@@ -10,7 +10,7 @@
  * 对用户 fetchData 的调用包装：强制超时（管线注入固定 5s）+ 信号合流下发 +
  * 序列化校验 + 错误隔离。
  *
- * 信号合流（issue #120 P0）：内部 AbortController 承担超时兜底；可选外部信号经
+ * 信号合流：内部 AbortController 承担超时兜底；可选外部信号经
  * **手动级联监听**并入同一 controller（不用 AbortSignal.any——engines node>=20
  * 全系兼容），合并后的 signal 经 fn(signal) 下发给用户 fetchData。适配器把它
  * 透传给底层 fetch 的 RequestInit.signal 即可在超时/外部取消时真正中断请求，
@@ -52,7 +52,7 @@ export async function safeFetchData(
     // 合并信号下发给用户 fetchData：超时兜底与外部取消共用同一 signal，
     // 底层 fetch 收到 abort 后中断真实请求（超时文案稳定为「fetchData 超时」）
     const userP = Promise.resolve().then(() => fn(controller.signal));
-    // #120 接线配套：信号透传后，超时/外部取消判负的用户 promise 会随后收到
+    // 信号透传后，超时/外部取消判负的用户 promise 会随后收到
     // abort 拒绝——挂一个空 catch 防 unhandled rejection（错误仍经下方 catch 上报）
     userP.catch(() => {});
     const raw = await Promise.race([

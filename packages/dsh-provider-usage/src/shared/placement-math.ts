@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage — 胶囊定位/层级/断点纯函数薄 facade（#128 → #378 抽取）。
+ * dsh-provider-usage — 胶囊定位/层级/断点纯函数薄 facade。
  *
  * 实现上移 shared/placement-math.js（插件家族共享层，纯核心零依赖）；本文件
  * 保留包级常量 DEFAULT_Z_INDEX_BASE（对应 CSS 默认 z-index:40）与
@@ -30,8 +30,8 @@ export {
 export type { FloatBreakpoint, ViewportPoint, RectLike } from "../../../../shared/placement-math.js";
 
 /**
- * 面板内子浮层层级派生纯函数（#128 重开：主面板与胶囊 computed z-index 一律取
- * 配置 zIndexBase，不再派生 +30——维护者 2026-08-28 要求）；本函数仅作为面板内
+ * 面板内子浮层层级派生纯函数（主面板与胶囊 computed z-index 一律取
+ * 配置 zIndexBase，不再派生 +30）；本函数仅作为面板内
  * 次级层（设置卡片等）的派生扩展点，不占用 zIndexBase 预算。包装注入包级默认
  * （shared 参数化版 panelZIndexFor(base, dflt)），对外签名保持 (base) 不变。
  */

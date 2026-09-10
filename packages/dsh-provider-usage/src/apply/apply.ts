@@ -16,7 +16,7 @@
  * - GET /api/dsh-provider-usage/report-models 报告模型候选
  * - GET /api/dsh-provider-usage/reports  报告历史索引
  * - GET /api/dsh-provider-usage/reports/detail  报告详情
- * - POST /api/dsh-provider-usage/reports/generate  手动生成报告（#625：立即返回 202+taskId）
+ * - POST /api/dsh-provider-usage/reports/generate  手动生成报告（立即返回 202+taskId）
  * - GET /api/dsh-provider-usage/reports/generate/status  生成任务状态轮询
  */
 
@@ -215,8 +215,8 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     // dsh-gate:allow-homedir #517 展示层脱敏：把诊断文本中的 home 前缀折叠为 ~，不产生读写面
     s.split(dshHome()).join("~/.dsh").split(homedir()).join("~");
 
-  // #670 阶段三 B：域2每层错误面（aggregate/schedule/execute）——装配层组合根创建，
-  // 经各对象既有 warn 诊断出口接线（层代码零改动，避免与 aggregator 拆分任务 A 冲突）；
+  // 域2每层错误面（aggregate/schedule/execute）——装配层组合根创建，
+  // 经各对象既有 warn 诊断出口接线（层代码零改动）；
   // health per-layer 段经 UiRoutesContext 注入 routes/ui.ts 读取。
   const layerErrors = makeLayerErrorSurface();
 
@@ -295,14 +295,14 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   const trend = await TrendTracker.start({
     root: join(historyRoot, "trend"),
     retentionDays: config.trendRetentionDays,
-    // #670 阶段三 B：aggregate 层错误面接线——压实失败/刷盘失败/归属异常等
+    // aggregate 层错误面接线——压实失败/刷盘失败/归属异常等
     // 趋势层运行时错误全部汇聚到 TrendTracker 的 warn 诊断出口，此处同时上报。
     warn: (msg) => {
       const safe = sanitizeDiagnostic(msg);
       layerErrors.record("aggregate", safe);
       console.warn(`[dsh-provider-usage] trend: ${safe}`);
     },
-    // #633 A1：目录归属主源 = 官方 store 的会话创建元数据（SessionHeader.cwd）。
+    // 目录归属主源 = 官方 store 的会话创建元数据（SessionHeader.cwd）。
     // SessionId 为官方品牌类型（string & BRAND），裸 string 经 get 参数位断言桥接
     // （官方品牌桥接须 import type @deepseek-ai/dsh-brand——catalog 已锁 0.1.2-rc.1，
     // 但本包 package.json 未声明该 peer，pnpm 严格隔离下类型不可达；引入须先过
@@ -321,16 +321,16 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   trendDisposers.push(ctx.on("session/flush", () => trend.flushNow()));
   trendDisposers.push(ctx.on("session/disposed", (session) => trend.handleDisposed(session)));
 
-  // D8 阶段二：reportCfg 双源收口为 ReportConfigService（内存权威 + 串行写链，
-  // 并发 POST 不交错 lost-update）；执行器移入 E4 工厂（executor.ts），装配只留接线。
+  // reportCfg 双源收口为 ReportConfigService（内存权威 + 串行写链，
+  // 并发 POST 不交错 lost-update）；执行器移入工厂（executor.ts），装配只留接线。
   const reportCfgService = new ReportConfigService({
     root: historyRoot,
     initial: await readReportConfig(historyRoot),
     onUpdate: (cfg) => reportScheduler.updateConfig(cfg),
   });
 
-  // #625/#626：任务队列 = 定时 tick 与手动「立即生成」的单一执行入口。
-  // 执行器职责（幂等下沉/生成/lastRun 推进/失败不推进/脱敏）在 E4 工厂契约内固化，
+  // 任务队列 = 定时 tick 与手动「立即生成」的单一执行入口。
+  // 执行器职责（幂等下沉/生成/lastRun 推进/失败不推进/脱敏）在工厂契约内固化，
   // 队列只负责串行单飞与去重（tasks.ts）。
   const reportQueue = new ReportTaskQueue({
     executor: makeDueReportExecutor({
@@ -340,7 +340,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
       historyRoot,
       sanitizeDiagnostic,
     }),
-    // #670 阶段三 B：execute 层错误面接线——任务执行失败（含 executor 脱敏后错误）
+    // execute 层错误面接线——任务执行失败（含 executor 脱敏后错误）
     // 经队列 warn 出口汇聚于此。
     warn: (msg) => {
       const safe = sanitizeDiagnostic(msg);
@@ -352,12 +352,12 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   const reportScheduler = ReportScheduler.start({
     root: historyRoot,
     config: reportCfgService.get(),
-    // #625：tick 只提交任务（非阻塞，队列去重吸收同窗口堆积），不再等待生成
+    // tick 只提交任务（非阻塞，队列去重吸收同窗口堆积），不再等待生成
     onDue: (due) => {
       reportQueue.submit(due);
       return Promise.resolve();
     },
-    // #670 阶段三 B：schedule 层错误面接线——tick 异常/提交失败经调度器
+    // schedule 层错误面接线——tick 异常/提交失败经调度器
     // warn 出口汇聚于此。
     warn: (msg) => {
       const safe = sanitizeDiagnostic(msg);
@@ -416,7 +416,7 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
         historyRoot,
         reportQueue,
         reportCfgService,
-        // D8：目录候选清单收敛为注入查询面（makeListDirs 工厂，apply 零隐藏可变状态）
+        // 目录候选清单收敛为注入查询面（makeListDirs 工厂，apply 零隐藏可变状态）
         listDirs: makeListDirs(trend),
       },
     ),

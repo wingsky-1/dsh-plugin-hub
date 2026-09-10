@@ -64,7 +64,7 @@ export class HotReloadableAdapter {
   private timer: ReturnType<typeof setInterval> | null = null;
   private lastStamp: FileStamp | null = null;
   private readonly onReload: (info: { ok: boolean; error?: string }) => void;
-  // 显式字段（#276 方案 A：构造器参数属性非可擦除语法，Node strip-only 模式
+  // 显式字段（构造器参数属性非可擦除语法，Node strip-only 模式
   // 无法加载插桩 src；改显式声明 + 构造函数体内赋值，语义零变化）
   private readonly file: string;
   private readonly intervalMs: number;

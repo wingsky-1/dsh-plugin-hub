@@ -8,7 +8,7 @@
  *   降采样（≤300 点）、x 轴时间刻度（含手机字号补偿语义）
  * - 色板与观察周期沿用旧 CHART_SERIES（主题变量 + 浅色回退，明暗自适应）
  *
- * #215 mjs 化：本文件为 .mjs 权威实现（供 adapter-guide 引导 agent 参照编写）。
+ * 本文件为 .mjs 权威实现（供 adapter-guide 引导 agent 参照编写）。
  * 图表与日界函数一律经注入的 `input.utils`（PanelInput.utils / FetchContext.utils）
  * 消费（宿主管线强制注入 ADAPTER_UTILS，见 pipeline/v2.ts）；无注入时回退文件内
  * 私有兜底副本。以下为自 charts.ts 收编的同源函数（mjs 无法 import 编译后 charts）：
@@ -289,9 +289,9 @@ function escFallback(s) {
 }
 
 /**
- * miniChartSvgMarkup 兼容导出（#150 测试导入面保留）：等同于图表工具集注入版的
+ * miniChartSvgMarkup 兼容导出（测试导入面保留）：等同于图表工具集注入版的
  * miniAreaSvg（resetsAt 支持 ISO 字符串 / epochMs）。新代码请使用注入的
- * `input.utils.miniAreaSvg`（#215）；本导出仅维持 index re-export 面不破。
+ * `input.utils.miniAreaSvg`；本导出仅维持 index re-export 面不破。
  */
 export function miniChartSvgMarkup(opts) {
   const { samples, color, lo, hi, resetsAt, resetPeriodMs, dateOnly } = opts;
@@ -422,7 +422,7 @@ export const openCodeGoAdapter = {
 
   formatPanel(input) {
     const e = input.esc || escFallback;
-    // #215 注入面：图表函数优先消费注入 utils，缺失回退文件内兜底副本
+    // 图表函数优先消费注入 utils，缺失回退文件内兜底副本
     const U = input.utils || {};
     const miniArea = U.miniAreaSvg || miniAreaSvgFallback;
     const niceDomain = U.niceDomain || niceDomainFallback;

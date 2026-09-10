@@ -1,15 +1,15 @@
 /**
- * dsh-provider-usage/report — 用量报告配置（#503 M3；#532 per-period 提示词）。
+ * dsh-provider-usage/report — 用量报告配置。
  *
  * 存储：historyRoot/reports/config.json（0600，tmp+rename 原子写，ui-config.ts 同款模式）。
- * 配置面（方案 §2.3 / §八 v1.2 定稿 + #532 修订）：
+ * 配置面：
  * - 周期与时间：日/周/月各独立开关与时刻；周起点（1=周一 ISO / 0=周日）；
  * - 模型：从 dsh 已注册适配器路由选择 provider/model（空串 = 跟随 dsh 默认 provider）；
  *   凭据由 dsh 既有 provider 配置持有，插件零凭据（ctx.llm 调用，无独立出口）；
  * - 提示词：三周期各自独立模板（prompts{daily,weekly,monthly}），{stats} 占位注入
  *   当期聚合统计 JSON（聚合数值，注入面收敛）。旧版单一 promptTemplate 读取时自动
  *   迁移：=== 旧默认 → 升级为三份新默认；自定义过 → 三周期均以该文本起始（不丢文本）；
- * - sanitizePaths：#532 移除（v1 注入面无路径，死开关——normalize 兼容读旧文件但
+ * - sanitizePaths：已移除（v1 注入面无路径，死开关——normalize 兼容读旧文件但
  *   不再输出该字段，UI 同步去掉勾选）；
  * - 推送：可选经 dsh-notifier 渠道（kind 动态注册）。
  */
@@ -26,7 +26,7 @@ export interface ReportPeriodConfig {
   time: string;
 }
 
-/** 单周期提示词模板表（#532：三周期各自独立模板与默认文案）。 */
+/** 单周期提示词模板表（三周期各自独立模板与默认文案）。 */
 export interface ReportPrompts {
   daily: string;
   weekly: string;
@@ -47,10 +47,10 @@ export interface ReportConfig {
   sanitizePaths: boolean;
   /** 生成完成后经 dsh-notifier 推送摘要（缺省关闭；中心不在时不推送）。 */
   push: { enabled: boolean };
-  /** #532：三周期独立提示词（嵌套字段——不得平铺：键名 daily/weekly/monthly 与周期配置同名）。 */
+  /** 三周期独立提示词（嵌套字段——不得平铺：键名 daily/weekly/monthly 与周期配置同名）。 */
   prompts: ReportPrompts;
   /**
-   * 报告目录范围（#633 分片 b B4）：空数组 = 全部目录（默认）；非空 = 只统计所选
+   * 报告目录范围：空数组 = 全部目录（默认）；非空 = 只统计所选
    * 目录（basename 净化值或未识别桶键）。与 provider/model 范围字段同级同构：
    * 字符串数组白名单、长度截断、非法回退默认空数组。
    */
@@ -66,7 +66,7 @@ export const LEGACY_PROMPT_TEMPLATE = [
   "{stats}",
 ].join("\n");
 
-/** v0.3.x 旧版三周期默认提示词（#544 年报化初版单段，包含“当日/今天”、“本周”、“本月”；迁移判定基准，文本勿改动）。 */
+/** v0.3.x 旧版三周期默认提示词（年报化初版单段，包含“当日/今天”、“本周”、“本月”；迁移判定基准，文本勿改动）。 */
 export const LEGACY_DAILY_PROMPT_V1 = [
   "你是「AI 用量年报」主笔。{stats} 注入的是用户当日的用量统计 JSON。",
   "请用第二人称写一段 80–150 字的中文日报，像音乐 App 年报里的「单日一页」：有画面、有温度，但每个数字都来自 JSON。字数宁取中段，避免顶格。",
@@ -135,7 +135,7 @@ export const LEGACY_MONTHLY_PROMPT_V2 = [
 ].join("\n");
 
 /**
- * #633 分片 b：旧版（无目录观察）三周期默认模板——迁移判定基准，文本勿改动。
+ * 旧版（无目录观察）三周期默认模板——迁移判定基准，文本勿改动。
  * 存量配置的 prompts 某键严格等于此文本（= 用户从未自定义该周期）→ 读时自动
  * 升级为含目录观察的新默认；自定义文本（含自定义目录句）不丢不覆盖。
  */
@@ -199,8 +199,8 @@ export const LEGACY_MONTHLY_PROMPT_V3 = [
   "- 事实基准：日期与星期一律以 JSON 为准，不要按本地时区推断，也不要质疑 JSON 里的月份边界。时间尺度以「上个月」为准。数据稀疏的月份收窄叙事、平实收笔，不堆砌抒情。",
 ].join("\n");
 
-// #544 默认提示词（三周期统一年报叙事风格：中文轻量语义块 + 数据物理隔离 + 约束原子化）。
-// 评审定稿（风格 + 工程双维度对抗评审）：核心纪律——
+// 默认提示词（三周期统一年报叙事风格：中文轻量语义块 + 数据物理隔离 + 约束原子化）。
+// 核心纪律——
 // 1) 全局 null 降级：字段为 null/缺失即跳过，绝不输出 null/0/NaN，也不当 0 处理
 //    （单次生成无重试，弱模型遇 null 高频原样写出或当 0 编造）；
 // 2) 推算边界：除占比与倍数外不得推算；占比分母口径 = totals.total（非 null 且 > 0），
@@ -210,15 +210,15 @@ export const LEGACY_MONTHLY_PROMPT_V3 = [
 // 5) 渲染白名单 ##/-/**：日报禁 ##、全部禁编号列表与代码围栏（弱模型高频自发输出）；
 // 6) 「示例仅示意」防逐字照搬；月报反煽情红线 + 超字先砍修饰句；
 // 7) 统一“上一个周期”时间尺度：日报=昨天、周报=上周、月报=上个月。
-// #633 分片 b 追加纪律：目录红线——目录名只可原样引用 byDirectory 的 dir 字段
+// 目录红线：目录名只可原样引用 byDirectory 的 dir 字段
 //（项目名/basename 形态），绝不展开为路径、绝不解读目录内容；占比分母口径不变。
-// #662 追加纪律（时段）：时段与钟点只可原样引用 byHour/byPeriod/peakHour 字段
+// 追加纪律（时段）：时段与钟点只可原样引用 byHour/byPeriod/peakHour 字段
 //（档名或 hour 数字）；绝不把时段与行为/场景/情绪关联（如「凌晨还在写代码」的
 //「写代码」不在 JSON，属编造）；绝不与 byDirectory 交叉关联（byPeriod 为全量口径、
 // byDirectory 可被目录范围过滤缩面，两口径不可混算占比）。
 
 /**
- * #662：旧版（无时段观察）三周期默认模板——迁移判定基准，文本勿改动。
+ * 旧版（无时段观察）三周期默认模板——迁移判定基准，文本勿改动。
  * 存量配置的 prompts 某键严格等于此文本（= 用户从未自定义该周期）→ 读时自动
  * 升级为含时段观察的新默认；自定义文本（含自定义时段句）不丢不覆盖。
  */
@@ -384,7 +384,7 @@ export const DEFAULT_REPORT_CONFIG: ReportConfig = {
   sanitizePaths: true,
   push: { enabled: false },
   prompts: DEFAULT_PROMPTS,
-  directories: [], // #633 分片 b B4：默认「全部目录」
+  directories: [], // 默认「全部目录」
 };
 
 /** HH:MM 解析（非法返回 null；notifier quiet-hours 同款严格性）。 */
@@ -399,7 +399,7 @@ export function parseHHMM(v: unknown): { h: number; m: number } | null {
 }
 
 /**
- * 归一化报告目录范围（#633 分片 b B4，与 provider/model 范围字段同构）：
+ * 归一化报告目录范围（与 provider/model 范围字段同构）：
  * - 显式 all（"all" / ["all"]）= 全部目录 → 空数组；
  * - 字符串数组：逐项非空字符串、剥控制字符、basename 化（出口同 C2 脱敏口径）、
  *   超长项跳过（与数据层 isValidDirKey 的 TREND_DIR_MAX 同口径——截断会造出永远
@@ -412,7 +412,7 @@ export function normalizeReportDirectories(raw: unknown): string[] {
   const out = new Set<string>();
   for (const item of raw) {
     if (typeof item !== "string") continue;
-    // 剥 C0 + DEL + C1，与数据层 sanitizeDirName（trend/types.ts 权威定义）同口径（复核 P1-2）
+    // 剥 C0 + DEL + C1，与数据层 sanitizeDirName（collect/types.ts 权威定义）同口径
     const c = item.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
     const cut = Math.max(c.lastIndexOf("/"), c.lastIndexOf("\\"));
     const base = cut >= 0 ? c.slice(cut + 1) : c;
@@ -441,7 +441,7 @@ function normalizePrompt(raw: unknown, dflt: string, legacyTemplates?: string[])
 }
 
 /**
- * 旧单模板 → 三周期迁移（#532）：
+ * 旧单模板 → 三周期迁移：
  * - 旧值 === 旧默认模板（用户从未自定义）→ 升级为三份新默认（拿得到年报体验）；
  * - 旧值为自定义文本 → 三周期均以该文本起始（用户文本不丢，自行按周期微调）。
  */
@@ -470,7 +470,7 @@ export function normalizeReportConfig(raw: unknown): ReportConfig {
   const dom = typeof monthlySrc.dayOfMonth === "number" && Number.isInteger(monthlySrc.dayOfMonth) && monthlySrc.dayOfMonth >= 1 && monthlySrc.dayOfMonth <= 28
     ? monthlySrc.dayOfMonth
     : d.monthly.dayOfMonth;
-  // #532 prompts：新格式 prompts{daily,weekly,monthly} 优先；否则从旧 promptTemplate 迁移
+  // prompts：新格式 prompts{daily,weekly,monthly} 优先；否则从旧 promptTemplate 迁移
   const promptsSrc = (typeof src.prompts === "object" && src.prompts !== null ? src.prompts : null) as Record<string, unknown> | null;
   const prompts: ReportPrompts = promptsSrc !== null
     ? {
@@ -493,13 +493,13 @@ export function normalizeReportConfig(raw: unknown): ReportConfig {
     model: typeof src.model === "string" && src.model.length <= 256 ? src.model : d.model,
     // promptTemplate 保留 = 月报模板镜像（旧消费方/外部读者兼容；写侧同步回填）
     promptTemplate: prompts.monthly,
-    // sanitizePaths 已移除（#532）：恒输出 true 兼容旧读取方；新字段不再接受配置
+    // sanitizePaths 已移除：恒输出 true 兼容旧读取方；新字段不再接受配置
     sanitizePaths: true,
     push: { enabled: typeof pushSrc.enabled === "boolean" ? pushSrc.enabled : d.push.enabled },
-    // #532：prompts 为嵌套字段（不得平铺——daily/weekly/monthly 键名与周期配置同名，
+    // prompts 为嵌套字段（不得平铺——daily/weekly/monthly 键名与周期配置同名，
     // 平铺会覆盖周期配置；曾实测把 cfg.weekly 覆盖成模板字符串，调度全 NaN）
     prompts,
-    // #633 分片 b B4：报告目录范围（空数组 = 全部目录）
+    // 报告目录范围（空数组 = 全部目录）
     directories: normalizeReportDirectories(src.directories),
   };
 }
@@ -515,8 +515,8 @@ export function reportConfigFile(root: string): string {
   return `${root}/reports/config.json`;
 }
 
-// ---------------------------------------------------------------- 持久化读写（#503 M3 接线追加）
-// 仅追加：读侧缺失/损坏回退默认归一化，写侧 tmp+rename 原子写 0600（ui-config.ts 同款模式）。
+// ---------------------------------------------------------------- 持久化读写
+// 读侧缺失/损坏回退默认归一化，写侧 tmp+rename 原子写 0600（ui-config.ts 同款模式）。
 
 /** 读取报告配置（文件缺失/损坏回退默认；读后一律经 normalizeReportConfig 归一化）。 */
 export async function readReportConfig(root: string): Promise<ReportConfig> {

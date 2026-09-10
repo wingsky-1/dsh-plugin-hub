@@ -10,6 +10,7 @@
  * - 抛错 failStreak≥3 判死（对齐原版语义）
  * - maxAge 轮换：超 maxAgeMs 且空闲 → evict；活跃连接（lastWriteAt 刷新）不误杀
  * - evictStats 原因计数 / connHealth 观测字段
+ * - B12 红测：dispose 统一停心跳 + destroy 全部连接（#664 阶段 5）
  *
  * 直接 import 共享源（不经 lib 产物）：本文件测的是 shared 层模块本身。
  */
@@ -251,6 +252,23 @@ async function pollUntilQuiet(predicate, quietMs, timeoutMs = 2000) {
   } finally {
     hub.dispose();
   }
+}
+
+// ---- (j) B12 红测：dispose 统一停心跳 + destroy 全部连接 ----
+// 现状：dispose() 只清心跳定时器不 destroy 连接（注释/实现不符——mcp-manager
+// apply-runtime 注释承诺「hub.dispose() 统一停心跳 + destroy 全部连接」）；
+// 修复：dispose 遍历连接表全部 evict（destroy）。红测断言 dispose 后连接被销毁。
+{
+  const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
+  const r1 = sseRes();
+  const r2 = sseRes();
+  hub.register(r1);
+  hub.register(r2);
+  ok(hub.size() === 2, "注册 2 条连接");
+  hub.dispose();
+  ok(r1.state.destroyed === true, "B12：dispose 后 r1 被 destroy（现状只停心跳 → 红测）");
+  ok(r2.state.destroyed === true, "B12：dispose 后 r2 被 destroy（现状只停心跳 → 红测）");
+  ok(hub.size() === 0, "B12：dispose 后连接表清空");
 }
 
 console.log(`  ok   unit-sse-hub: 共享 SSE 枢纽（#515 主动回收）${pass} 断言通过`);

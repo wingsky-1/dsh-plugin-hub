@@ -1,7 +1,7 @@
 /**
  * dsh-provider-usage — 用量报告路由（配置读写、模型发现、历史索引、详情、手动生成）。
  *
- * #625 手动生成异步化：POST /reports/generate 立即返回 202 {taskId}（幂等短路时
+ * 手动生成异步化：POST /reports/generate 立即返回 202 {taskId}（幂等短路时
  * 200 {meta, reused:true}），客户端经 GET /reports/generate/status 轮询；生成在
  * ReportTaskQueue 内串行执行，HTTP 响应与 LLM 耗时解耦。
  */
@@ -29,10 +29,10 @@ export interface ReportRoutesContext {
   ctx: Context;
   historyRoot: string;
   reportQueue: ReportTaskQueue;
-  /** D8：reportCfg 双源收口（get 读内存权威；update 串行写盘+内存+scheduler 热更）。 */
+  /** reportCfg 双源收口（get 读内存权威；update 串行写盘+内存+scheduler 热更）。 */
   reportCfgService: ReportConfigService;
   /**
-   * 目录候选清单（#633 分片 b2 B4）：GET /report-config 附带 dirs（trend.dirTotals
+   * 目录候选清单：GET /report-config 附带 dirs（trend.dirTotals
    * 全留存窗口聚合，含未识别桶），设置页目录范围多选的数据源。可选——测试/无趋势
    * 数据场景缺省返回空数组（多选控件降级为「仅全部」+ 已保存值回显）。
    */
@@ -86,7 +86,7 @@ export async function handleReportConfig(
     } catch {
       // 回落空数组
     }
-    // #633 分片 b2 B4：目录候选（calls 降序全留存聚合，含未识别桶键）；异常不连坐
+    // 目录候选（calls 降序全留存聚合，含未识别桶键）；异常不连坐
     // 配置读取（清单失败 → 空数组，多选控件降级，配置本身照常返回）。
     let dirs: Array<{ dir: string }> = [];
     try {
@@ -106,12 +106,12 @@ export async function handleReportConfig(
 
   const normalized = normalizeReportConfig(body);
   const currentCfg = context.reportCfgService.get();
-  // #629 P2：preset 写 lastRun 走单一临界区（写前重读），不与任务执行器推进互踩字段；
+  // preset 写 lastRun 走单一临界区（写前重读），不与任务执行器推进互踩字段；
   // readLastRun 仅作 changed 预判（乐观跳过无变化时的写盘），真实快照在临界区内重读。
   const preset = presetLastRunForNewlyEnabled(currentCfg, normalized, Date.now(), await readLastRun(historyRoot));
   if (preset.changed) await updateLastRun(historyRoot, (cur) => presetLastRunForNewlyEnabled(currentCfg, normalized, Date.now(), cur).lastRun);
   try {
-    // D8：写盘 + 内存权威 + scheduler 热更由 ReportConfigService 串行收口（并发 POST 不交错）
+    // 写盘 + 内存权威 + scheduler 热更由 ReportConfigService 串行收口（并发 POST 不交错）
     await context.reportCfgService.update(normalized);
   } catch {
     return writeJson(res, 500, { error: "persist-failed" });
@@ -225,13 +225,13 @@ export async function handleReportGenerate(
   if (typeof period !== "string" || !isReportPeriodValid(period)) {
     return writeJson(res, 400, { error: "invalid-period" });
   }
-  // #626：force 必须严格 === true 才生效（防御 "force":"false" 等字符串形态）
+  // force 必须严格 === true 才生效（防御 "force":"false" 等字符串形态）
   const force = body.force === true;
 
   // 手动生成恒定锚定已闭环的上一完整周期（日报=昨天全天，消灭凌晨漂移；不检查 enabled）
   const due = previousClosedWindow(period as ReportPeriod, reportCfgService.get(), Date.now());
 
-  // #626 幂等短路：窗口已有成功报告且非强制重生成 → 直接复用，不产生新任务
+  // 幂等短路：窗口已有成功报告且非强制重生成 → 直接复用，不产生新任务
   if (!force) {
     const existing = (await readReportIndex(historyRoot)).find(
       (m) => m.period === due.period && m.key === due.key && m.ok === true,
@@ -261,7 +261,7 @@ export async function handleReportStatus(
     ok: true,
     status: task.status,
     ...(task.status === "done" && task.meta !== undefined ? { meta: task.meta } : {}),
-    // #629 P2：executor 侧幂等短路复用时透出 reused，客户端轮询路径与 200 直接复用路径提示对称
+    // executor 侧幂等短路复用时透出 reused，客户端轮询路径与 200 直接复用路径提示对称
     ...(task.status === "done" && task.reused === true ? { reused: true } : {}),
     ...(task.status === "failed" ? { error: task.error ?? "生成失败" } : {}),
   });

@@ -12,7 +12,7 @@ declare const __DSH_ROUTES__: Record<string, string> | undefined;
 export const STATS_URL = __DSH_ROUTES__?.stats ?? "/api/dsh-provider-usage/stats";
 export const HISTORY_URL = __DSH_ROUTES__?.history ?? "/api/dsh-provider-usage/history";
 export const HEALTH_URL = __DSH_ROUTES__?.health ?? "/api/dsh-provider-usage/health";
-/** 会话用量趋势（#503 M2）。 */
+/** 会话用量趋势。 */
 export const TREND_URL = __DSH_ROUTES__?.trend ?? "/api/dsh-provider-usage/trend";
 /** @deprecated v1 适配器管理路由（设置面板兼容保留；宿主可能未注册，调用方需容错）。 */
 export const ADAPTERS_URL = __DSH_ROUTES__?.adapters ?? "/api/dsh-provider-usage/adapters.json";
@@ -24,15 +24,15 @@ export const INSPECT_URL = __DSH_ROUTES__?.inspect ?? "/api/dsh-provider-usage/a
 export const ADD_URL = __DSH_ROUTES__?.add ?? "/api/dsh-provider-usage/adapters/add";
 export const UI_CONFIG_URL = __DSH_ROUTES__?.uiConfig ?? "/api/dsh-provider-usage/ui-config";
 export const EVENTS_URL = __DSH_ROUTES__?.events ?? "/api/dsh-provider-usage/events";
-/** 报告生成任务状态轮询（#625：生成异步化，POST generate 返回 taskId 后轮询此接口）。 */
+/** 报告生成任务状态轮询（生成异步化，POST generate 返回 taskId 后轮询此接口）。 */
 export const REPORT_GENERATE_STATUS_URL =
   __DSH_ROUTES__?.reportGenerateStatus ?? "/api/dsh-provider-usage/reports/generate/status";
 
-/** 客户端 fetch 默认超时毫秒（#268；与 dsh-mcp-manager api() 的 #111 先例对齐取 10s）。 */
+/** 客户端 fetch 默认超时毫秒（与 dsh-mcp-manager api() 先例对齐取 10s）。 */
 export const CLIENT_FETCH_TIMEOUT_MS = 10_000;
 
 /**
- * 客户端 fetch 封装：带默认超时兜底（#268 修复点）。
+ * 客户端 fetch 封装：带默认超时兜底。
  *
  * 两层超时的分工（勿混淆）：
  * - 宿主端 fetchData 的 fetchTimeoutMs（固定 5s）：管「服务端 → 远端 provider API」
@@ -46,7 +46,7 @@ export const CLIENT_FETCH_TIMEOUT_MS = 10_000;
  * 导致取数被误杀，故不可低于宿主端上限。
  *
  * init.signal 存在时不启用超时兜底（调用方信号优先，避免双取消竞争；
- * 与 dsh-mcp-manager api() 的 #111 先例同款语义）。timeoutMs 仅测试注入使用，
+ * 与 dsh-mcp-manager api() 先例同款语义）。timeoutMs 仅测试注入使用，
  * 生产调用点一律走默认值。
  */
 export function fetchTimeout(
@@ -107,7 +107,7 @@ export interface ModelSelectionProjectionLike {
 }
 
 /**
- * 会话行投影值（#383：0.1.2 客户端 list 快照行 SessionSummary.projectionValues——
+ * 会话行投影值（0.1.2 客户端 list 快照行 SessionSummary.projectionValues——
  * 对象层把 per-session ProjectionValueStore.values() 拍平挂回行，键=投影键）。
  * 注意与 wire session.list 原始行的 `projections: {asOfSeq, values}` baseline block
  * 形状区分：store 行只有拍平的 projectionValues，不存在 projections 字段。
@@ -140,7 +140,7 @@ export interface SessionListRowLike {
    */
   parentId?: string;
   parentSessionId?: string;
-  /** per-session 投影值 map（0.1.2 list 行 SessionSummary.projectionValues；键=投影键，#383）。 */
+  /** per-session 投影值 map（0.1.2 list 行 SessionSummary.projectionValues；键=投影键）。 */
   projectionValues?: SessionRowProjectionValuesLike;
 }
 
@@ -163,7 +163,7 @@ export function currentSessionId(sessions: SessionsServiceLike | undefined): str
   return undefined;
 }
 
-// ---------------------------------------------------------------- 会话祖先链上溯（issue #69 方案 A）
+// ---------------------------------------------------------------- 会话祖先链上溯
 
 /** 上溯链深度封顶：链上最多探测的会话数（自身 + 至多 N-1 代祖先），防环与异常长链。 */
 export const MAX_ANCESTRY_DEPTH = 3;
@@ -177,7 +177,7 @@ function parentSessionIdOf(row: SessionListRowLike | undefined): string | undefi
 /**
  * 从 startId 沿 sessions.list 快照 byId 行的 parentId 逐级上溯，产出待探测会话 id 链。
  * 封顶 MAX_ANCESTRY_DEPTH（可调），visited 集合防环；快照缺失/断链即停。
- * 设计原则（#69）：不做「是不是子代理」的正向分类——ordinary 会话无 parentId，链长即为 1。
+ * 设计原则：不做「是不是子代理」的正向分类——ordinary 会话无 parentId，链长即为 1。
  */
 export function sessionAncestryChain(
   sessions: SessionsServiceLike | undefined,
@@ -200,7 +200,7 @@ export function sessionAncestryChain(
 }
 
 /**
- * 从会话行读取 per-session modelSelection 投影的 provider（0.1.2 投影面，#383 修正）：
+ * 从会话行读取 per-session modelSelection 投影的 provider（0.1.2 投影面）：
  * 读 list 快照行拍平的 projectionValues.modelSelection，**next 优先**（= 当前选择/待确认
  * 意图，宿主 view 语义 next = pending ?? lastUsed）——会话内切模型只更新 pending 的
  * next，lastUsed 要等真正发起请求才随动，读 lastUsed 优先会造成「切模型不跟随」；
@@ -213,12 +213,12 @@ function providerFromProjection(row: SessionListRowLike | undefined): string | u
   return typeof sel?.provider === "string" && sel.provider.length > 0 ? sel.provider : undefined;
 }
 
-/** modelCatalog 兜底缓存 TTL（#419）：与宿主 stats 缓存同量级（30s）。
+/** modelCatalog 兜底缓存 TTL：与宿主 stats 缓存同量级（30s）。
  *  全链投影缺失时兜底 RPC 从「跟随快照帧频率」收敛为「每 TTL 一次」。 */
 export const CATALOG_CACHE_TTL_MS = 30_000;
 
 /**
- * 全局目录 default.provider 读取器（#419 抽象）：返回 undefined = 不可用/失败。
+ * 全局目录 default.provider 读取器：返回 undefined = 不可用/失败。
  * 默认实现读 remote.session.modelCatalog（RemoteResult 解包）；调用方可注入带缓存的
  * 实现（makeCatalogCache），对齐官方 dsh-client-ui-model-selection 的 catalog 消费
  * 语义（ready 命中 + inflight 共享 + 显式失效，从不裸调）。
@@ -241,7 +241,7 @@ export async function defaultCatalogLoader(remote: RemoteLike | undefined): Prom
 }
 
 /**
- * 官方 catalog 同款缓存工厂（#419）：ready 命中 + inflight 并发共享 +
+ * 官方 catalog 同款缓存工厂：ready 命中 + inflight 并发共享 +
  * 失败不缓存（下次重试）+ 显式 reset 失效。默认 TTL 见 CATALOG_CACHE_TTL_MS。
  * 与官方 dsh-client-ui-model-selection 的 Catalog.load() 三防护等价
  * （store ready 命中 / inflight 共享 / 仅 miss 时打 RPC）。
@@ -275,11 +275,11 @@ export function makeCatalogCache(
 }
 
 /**
- * 解析当前展示会话的 provider（issue #69 方案 A+B 检测半区，0.1.2 适配）：
+ * 解析当前展示会话的 provider（检测半区，0.1.2 适配）：
  * 主判据 = 沿 parentId 上溯链（封顶 3、防环），逐会话读 per-session modelSelection 投影
  * （lastUsed/next 的 provider），首个非空者胜——与旧 models() 按会话查询语义等价；
  * 全链投影缺失 → 兜底读全局目录 default.provider（默认裸调 modelCatalog；
- * #419：客户端可注入缓存版 loader，避免跟随快照帧频率裸打 RPC）。
+ * 客户端可注入缓存版 loader，避免跟随快照帧频率裸打 RPC）。
  * 全链失败返回 undefined，兜底语义由 decideProviderAfterDetect 决定
  * （保持上次检测 / 回落默认）。
  */
@@ -304,7 +304,7 @@ export async function resolveProviderFromSession(
   return undefined;
 }
 
-// ---------------------------------------------------------------- 检测兜底决策（issue #69 方案 B）
+// ---------------------------------------------------------------- 检测兜底决策
 
 /** 无任何成功检测时的回落 provider（内置默认；仅在「从未检测成功」时使用）。 */
 export const FALLBACK_PROVIDER = "opencode-go";
@@ -331,7 +331,7 @@ export interface DetectDecision {
 }
 
 /**
- * 检测结果决策（纯函数，issue #69 方案 B）：
+ * 检测结果决策（纯函数）：
  * - 解析成功 → 采用；
  * - 无任何会话 → 维持原回落行为（回归防护，不算未知态）；
  * - 有会话但全链失败 → 保持上次检测结果并标注未识别；仅当从未成功检测过才回落默认。
@@ -376,11 +376,11 @@ export interface UiPlacementConfig {
   offsetX: number;
   offsetY: number;
   panelOffsetY: number;
-  /** 层级基准（clamp 1-9000；胶囊与点击后弹出的主面板 computed z-index 均取该配置值，#128 重开）。 */
+  /** 层级基准（clamp 1-9000；胶囊与点击后弹出的主面板 computed z-index 均取该配置值）。 */
   zIndexBase: number;
 }
 
-/** 默认胶囊位置配置（offsetY=48 为 #116 跨包避让契约：位于 MCP 浮窗正下方，不可回退）。 */
+/** 默认胶囊位置配置（offsetY=48 为跨包避让契约：位于 MCP 浮窗正下方，不可回退）。 */
 export const DEFAULT_CLIENT_UI_CONFIG: UiPlacementConfig = {
   placement: "top-right",
   offsetX: 0,

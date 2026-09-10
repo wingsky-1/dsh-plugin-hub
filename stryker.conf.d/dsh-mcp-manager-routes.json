@@ -1,11 +1,11 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-mcp-manager/src/middleware-register.ts",
-    "packages/dsh-mcp-manager/src/routes.ts",
+    "packages/dsh-mcp-manager/src/api/**/*.ts",
     "!packages/dsh-mcp-manager/src/client/**",
-    "!packages/dsh-mcp-manager/src/types.ts",
-    "!packages/dsh-mcp-manager/src/service.ts"
+    "!packages/dsh-mcp-manager/src/types/**",
+    "!packages/dsh-mcp-manager/src/integration/**",
+    "!packages/dsh-mcp-manager/src/placement-math.ts"
   ],
   "testRunner": "tap",
   "mutator": {
@@ -58,5 +58,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-routes.json",
-  "_comment": "#342 二期：src 级文件组功能命名段（routes）——middleware-register+routes；types.ts / service.ts（type-only）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "_comment": "#664 阶段6重画：routes——api 层（routes 装配/端点控制器/查询辅助，原 routes*.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
 }

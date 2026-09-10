@@ -1,10 +1,10 @@
 /**
- * dsh-provider-usage/report — 报告生成任务队列（#625/#626）。
+ * dsh-provider-usage/report — 报告生成任务队列。
  *
  * 形态（方案定稿）：手动「立即生成」与定时 tick 共用的单一执行入口。
  * - 串行单飞：任务经 promise 链依次执行（等价于既有 reportMutex 语义），
  *   但「提交」与「执行」解耦——HTTP 只等入队，不等 LLM；
- * - 入队去重：#625 P0——同 (period,key) 已有 queued/running 任务时返回同一
+ * - 入队去重：同 (period,key) 已有 queued/running 任务时返回同一
  *   taskId，杜绝 tick 每 60s 提交与手动并发把同窗口任务堆成串行重复生成；
  * - 幂等下沉：本队列不判幂等——执行器（apply 层注入）负责「执行前重查 index，
  *   已有成功记录且非 force → 直接复用」，路由层另有前置短路，双保险；
@@ -40,7 +40,7 @@ export interface ReportTask {
   updatedAt: number;
   /** done 后携带生成 meta（reused 时亦携带既有记录）。 */
   meta?: ReportMeta;
-  /** #629 P2：done 且 meta 来自幂等短路复用（非新生成）时为 true——status 响应透传，客户端对称提示「已复用」。 */
+  /** done 且 meta 来自幂等短路复用（非新生成）时为 true——status 响应透传，客户端对称提示「已复用」。 */
   reused?: boolean;
   /** failed 时携带脱敏错误信息。 */
   error?: string;
@@ -86,7 +86,7 @@ export class ReportTaskQueue {
    * 提交任务（非阻塞，立即返回 taskId）。
    * 同 (period,key) 已有 queued/running 任务 → 返回既有 taskId（去重）；
    * 新提交 force=true 且既有任务 force=false → 升级既有任务 force（重新生成
-   * 语义不因去重丢失，#626）。
+   * 语义不因去重丢失）。
    */
   submit(input: ReportTaskInput): { taskId: string; existing: boolean } {
     for (const t of this.tasks.values()) {
