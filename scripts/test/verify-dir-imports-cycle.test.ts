@@ -3,14 +3,16 @@
 'use strict'
 
 /**
- * verify-dir-imports 规则 5（域级值依赖环）回归测试。
+ * verify-dir-imports 规则 5（跨模块值依赖环）回归测试。
  *
  * 为什么存在：规则 5 是 interface.ts 门面纪律「域依赖单向」的机器化兜底，
- * 而现实包当前全部无环——真实包跑 PASS 无法证明判红有效（假绿风险）。本测试
- * 用隔离 fixture 根注入 fixture 包，正反两向断言：跨目录**值**边成环判红并
+ * 而现实包当前并不全无环——真实包跑 PASS 无法证明判红有效（假绿风险）。本测试
+ * 用隔离 fixture 根注入 fixture 包，正反两向断言：跨模块**值**边成环判红并
  * 报出环路径；仅 **type-only** 边成环放行（编译期擦除，sdk ⇄ pipeline 的
  * type 边是刻意保留的）。
  *
+ * S0（#690）起环计数走单调基线：无基线时 fail-closed（环 > 0 即刻判红），
+ * 有基线时上升才红。本测试覆盖无基线路径；环路径明细由 `--graph` 报告。
  * fixture 经 VERIFY_DIR_IMPORTS_ROOT 指向 mkdtemp 隔离目录，不在仓库内造包
  * 目录（产物零污染纪律）。
  */
@@ -37,15 +39,15 @@ function makeFixtureRoot(files) {
 }
 
 /** 对 fixture 根跑脚本，返回 { status, out }。 */
-function runOn(root) {
-  const r = spawnSync(process.execPath, [SCRIPT, '--package', 'fixture-pkg'], {
-    env: { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root },
-    encoding: 'utf8',
-  })
+function runOn(root, args = []) {
+  const env = { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root }
+  // 外部若设了基线路径，会与 fixture 自己的基线串味（残留风险），显式清掉。
+  delete env.VERIFY_DIR_IMPORTS_BASELINE
+  const r = spawnSync(process.execPath, [SCRIPT, '--package', 'fixture-pkg', ...args], { env, encoding: 'utf8' })
   return { status: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}` }
 }
 
-test('规则 5：跨目录值 import 成环 → 判红并报出环路径', () => {
+test('规则 5：跨模块值 import 成环 → 判红，环路径经 --graph 报出', () => {
   const root = makeFixtureRoot({
     'a/impl.ts': 'export const A = 1;\n',
     'a/interface.ts': 'export { A } from "./impl.ts";\nexport { B } from "../b/interface.ts";\n',
@@ -55,8 +57,17 @@ test('规则 5：跨目录值 import 成环 → 判红并报出环路径', () =>
   try {
     const { status, out } = runOn(root)
     assert.equal(status, 1, `值环应判红（exit=1），实际 ${status}：\n${out}`)
-    assert.match(out, /域级值依赖环/, '输出应点名「域级值依赖环」')
-    assert.match(out, /a → b → a|b → a → b/, `输出应含环路径：\n${out}`)
+    assert.match(out, /无基线 fail-closed：叶子模块级值环 1 个/, `应点名「叶子模块级值环」：\n${out}`)
+    const graphed = runOn(root, ['--graph'])
+    assert.equal(graphed.status, 1, `--graph 仍须执行门禁判定（值环判红）：\n${graphed.out}`)
+    // 环路径断言必须切到**门禁口径**叶子段内：顶层域历史对照段会打印同样的短名
+    // 路径（a → b → a），对全文断言会被它满足——实测过的假绿形态。
+    const afterLeafHeader = graphed.out.split('叶子模块级值环（门禁口径，只许降不许升）：')[1] ?? ''
+    assert.match(
+      afterLeafHeader.split('文件级值环')[0],
+      /a → b → a|b → a → b/,
+      `叶子模块级段应含环路径：\n${graphed.out}`,
+    )
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -74,7 +85,7 @@ test('规则 5：仅 type-only 边成环 → 放行（编译期擦除，不入�
   try {
     const { status, out } = runOn(root)
     assert.equal(status, 0, `type-only 环应放行（exit=0），实际 ${status}：\n${out}`)
-    assert.match(out, /环 0 个/, `summary 应报告 0 环：\n${out}`)
+    assert.match(out, /模块级值环 0 个/, `summary 应报告 0 环：\n${out}`)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
