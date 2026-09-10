@@ -71,6 +71,7 @@ flowchart LR
 - `dsh-plugins-all` 是聚合包：dependencies 拉齐全部子包 + 聚合 cordis patch
   （`scripts/aggregate.ts` 自动生成，禁止手改）。
 
+<a id="通用机制"></a><a id="user-content-通用机制"></a>
 ## 通用机制
 
 所有插件遵循仓库级共享约定（单一事实源在 `shared/` 与 [docs/DEVELOPMENT.md](../DEVELOPMENT.md)）：
