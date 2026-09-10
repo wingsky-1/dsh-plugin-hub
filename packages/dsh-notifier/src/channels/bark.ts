@@ -1,19 +1,19 @@
 /**
- * dsh-notifier — Bark 推送频道（M2，issue #366）。
+ * dsh-notifier — Bark 推送频道。
  *
  * 职责：BarkChannelConfig → NotifyChannel 适配。发送走 Bark API V2 标准形态
  * `POST {baseUrl}/push` + JSON body（device_key 走 body 不落 URL——反代 access
  * log 默认只记 URL 与 header，正文不落日志；已实测本地 bark-server 200）。
  *
- * 可靠性（B-3 上移后）：
+ * 可靠性（重试/并发门上移框架后）：
  * - 10s 硬超时（AbortSignal.timeout）——超时归属 channel 侧，不动；
  * - 重试/并发门已上移框架 pipeline/deliver（capabilities.retry/maxInflight
  *   声明 + RetryableError 错误标注）；channel 只保留单次投递；
  * - 成功判定双查：HTTP 2xx + 响应体 code===200（部分反代会 200 包错误页）；
  * - 错误出口统一脱敏：device key 字面替换 → sanitizeErrorText 通用表——
- *   已实测 bark-server 4xx 响应体会回显 key 原文（评审 P0-4）。
+ *   已实测 bark-server 4xx 响应体会回显 key 原文。
  *
- * level 映射（评审 P0-2 契约）：severity → Bark level 单点映射（SEVERITY_LEVEL）；
+ * level 映射（契约）：severity → Bark level 单点映射（SEVERITY_LEVEL）；
  * 实例配置显式 level 覆盖映射；severity 缺省且无显式配置时不携带 level。
  */
 import { SECRET_MASK } from "../config/interface.ts";
@@ -29,12 +29,12 @@ export const SEVERITY_LEVEL: Readonly<Record<NotifySeverity, BarkLevel>> = {
   info: "passive",
 };
 
-/** 单次推送硬超时（毫秒；超时归属 channel 侧，B-3 不动）。 */
+/** 单次推送硬超时（毫秒；超时归属 channel 侧，不在框架上移范围内）。 */
 export const BARK_TIMEOUT_MS = 10_000;
 
 /**
  * 4xx 确定失败（retryable:false）；5xx 可重试（retryable:true）——
- * 错误协议标注供框架 deliver 决策（B-3）。
+ * 错误协议标注供框架 deliver 决策。
  */
 class BarkHttpError extends Error implements RetryableError {
   readonly status: number;
@@ -54,12 +54,12 @@ const BARK_KNOWN_TOP_KEYS: readonly string[] = ["id", "name", "type", "baseUrl",
  * @param cfg 实例配置（normalizeConfig 已归一化）。
  * @returns NotifyChannel——send() 返回在途 promise（resolve=终态成功 /
  *   reject=终态失败，错误已脱敏且按 RetryableError 协议标注），调用方据此记录
- *   status；send 本身不抛同步错。重试/并发门由框架 deliver 依 capabilities 承载
- *   （B-3），本实例只做单次投递。
+ *   status；send 本身不抛同步错。重试/并发门由框架 deliver 依 capabilities 承载，
+ *   本实例只做单次投递。
  */
 export function createBarkChannel(cfg: BarkChannelConfig): NotifyChannel {
   // 错误出口脱敏：先按 device key 字面替换（key 多为 22 位 base62，通用规则表
-  // 覆盖不到），再过 sanitizeErrorText 有序表 + 截断（评审 P0-4 收口）。
+  // 覆盖不到），再过 sanitizeErrorText 有序表 + 截断。
   const scrub = (text: string): string => sanitizeErrorText(String(text).split(cfg.deviceKey).join(SECRET_MASK), 300);
 
   /** 单次 POST（重试归框架）。非 2xx 抛 BarkHttpError；2xx 但 body code!==200 视为失败。 */
@@ -87,7 +87,7 @@ export function createBarkChannel(cfg: BarkChannelConfig): NotifyChannel {
       }
       throw new BarkHttpError(res.status, scrub(detail));
     }
-    // 成功判定双查（评审 P1）：HTTP 2xx + body code===200；无 body/非 JSON 保守放行
+    // 成功判定双查：HTTP 2xx + body code===200；无 body/非 JSON 保守放行
     try {
       const body = (await res.json()) as { code?: unknown; message?: unknown };
       if (body && typeof body === "object" && "code" in body && body.code !== 200) {
@@ -106,7 +106,7 @@ export function createBarkChannel(cfg: BarkChannelConfig): NotifyChannel {
     name: `bark:${cfg.id}`,
     // capabilities：Bark 无硬性服务端限制，取合理客户端体验值（标题一行约 64
     // 码点；正文 4096 码点兜底截断）。retry/maxInflight 供框架 deliver 上移
-    // 使用（B-3，对等现状 sendWithRetry ×2/在途 ≤2 排队）。
+    // 使用（对等上移前的 sendWithRetry ×2/在途 ≤2 排队）。
     capabilities: {
       titleMaxLen: 64,
       maxBodyLen: 4096,

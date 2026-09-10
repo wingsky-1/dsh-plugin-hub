@@ -425,3 +425,50 @@
 | R-9 | fetch mock 白名单外 fail-open（T3-5） | 测试假网络面 | PR0/PR2 白名单外拒绝加固（S3-23） |
 | R-10 | 客户端浏览器实测盲区（音频解锁/多标签租约竞争/横幅视觉/600 帧丢弃频率） | 静态梳理不可达的行为缺陷 | 重构完成后 dsh-verify-isolated 隔离实测一轮（并入「整体重构后审视」清单，用户 G 指令） |
 | R-11 | issue #669 方案评审未加 approved 即动工 | 红线流程风险 | 本方案经用户在环批准实施；issue 评论更新状态邀请维护者评审（needs-proposal-review） |
+
+### 7.10 PR3 实施记录（注释清理 + 门禁 + 类型面收尾；#669）
+
+| 项 | 产出 | 状态 |
+|---|---|---|
+| §9 注释清理 | src 全量清除外部 issue 号与会话/阶段/决策/缺陷内部编号（PR0-PR3、T*-*、S3-*、B-*、D*、M*、N-*、R-*、L8-*、P*-*、G*/Q*/E*/H*/r* 等），保留 why 与领域不变量名（「铁律 1」）；§9 点名的三条失真注释复核：titleMaxLen 语义与重试口径已随 PR2 落地为准（deliver.ts 宽限截断 + channels 重试声明），两处残留失真（`NotifyRequest.body` 的「调用方负责脱敏」、`text/message.ts` 的「TITLES 双映射」）已改写 | ✅ |
+| locales 死键（S3-11） | 13 个零引用键删除（zh/en 双删，`NotifierLocaleKey` 编译期锁平衡 173/173）；`routePick` 删除并同步 client-contract 哨兵 | ✅ |
+| 客户端 C3-2（S3-14） | `discardChanges` 补 `setConflict(null)`：放弃更改即退出冲突语境，409 横幅不再指向已丢弃的草稿 | ✅ |
+| 客户端 C3-7（S3-19） | 冲突恢复拉最新失败改用专键 `conflictReloadFail`（原复用 `saveFailConflict` 且传空 msg，文案错位）；「请关闭本卡片重新打开后重试」过时指引一并移除 | ✅ |
+| stale 文案（D20/S3-15） | `routeStaleTitle` 中英改「投递时自动跳过（残留条目不会自动移除）」——原「保存后清理」无实现 | ✅ |
+| S3-13 | `playChime` 死函数删除；`playToneForce` 虚构引用改为真实 `playPreview` | ✅ |
+| import 门禁 + 环路检测（N-1/R-8） | verify-dir-imports 新增规则 5「域级值依赖图无环」（三色 DFS；type-only 边不入图——sdk⇄pipeline 的 type 边刻意保留）；两模式硬执行；新增 `VERIFY_DIR_IMPORTS_ROOT` 注入以支持隔离 fixture；`scripts/test/verify-dir-imports-cycle.test.ts` 正反两向断言（值环判红报路径 / type 环放行） | ✅ |
+| 环修复（规则 5 落地即抓到的结构退化） | `BUILTIN_CHANNELS` 物理定义从 sdk/interface.ts 下沉到 config/config.ts（频道标识与 CHANNEL_KEYS 同族，config 为最底层域），sdk/channels/pipeline 三处改从 config 取，sdk/interface.ts 仅 re-export 保持包导出面。域级值边 12→10（channels→sdk、pipeline→sdk 两条值边消除），环 0 | ✅ |
+| 类型面接线（S3-24/N-3） | test/tsconfig.json 加 `rewriteRelativeImportExtensions`（否则 src 侧 `.ts` 扩展名导入全量 TS5097）；service-contract-wiring 的 SUITES 接入 dsh-notifier；15 个契约/单元测试文件去 @ts-nocheck，契约面 502 个错误清零（全量基线 1104） | ✅（分层口径见 D25） |
+| 消费方类型编译用例（L0-③） | 新增 `test/consumer-types.test.ts`：以外部消费方视角只 import 包导出面，用 `Equal/Expect` 类型级断言锁死 SDK ABI（7 方法签名）、ChannelCapabilities 5 字段、RouteDeps 结构化字面量、PatchResult 联合与常量面；含 2 条 `@ts-expect-error` 负向断言（指令本身受检）；运行时断言仅作「用例未被绕开」护栏 | ✅ |
+| src 类型面修复（接线抓到） | `sanitizeNoticeContent` 的 `enabled` 由 `boolean` 放宽为 `boolean | undefined`——实现按 `enabled === false` 判定（缺省视同开启），原类型面无法表达该容错契约，测试曾被迫用 `undefined as unknown as boolean` 桥接 | ✅ |
+| 文档 | 本记录 + §7.11 类型面债务登记 + §7.12 遗留 backlog | ✅ |
+
+**决策**：
+
+- **D25（PR3 类型面范围，用户拍板）**：类型面接线采**分层**口径——契约/单元测试（15 文件）去 @ts-nocheck 并真实参与 tsc 编译；e2e/集成面（12 文件，含 helpers/smoke）保留文件级 @ts-nocheck 并在首行注明技术债，全量去除按 §7.11 T-6 走 follow-up。理由：e2e 面桩对象密集（fake ctx/fetch/子进程/vm 沙箱），修复量占全量错误六成以上而类型收益低（真实信号由契约面承载）。
+- **D26（注释清理口径，用户拍板）**：外部 issue 号与内部过程编号一并清理；保留领域不变量名（「铁律 1」）；断言消息等运行时字符串不动（改它属数据变更）。
+- **D27（S3-8/S3-10 归属，用户拍板）**：跨窗口同步（S3-8）与历史徽标（S3-10）登记 backlog，不在 PR3 实施（见 §7.12）。
+
+### 7.11 PR3 类型面债务登记（接线实证所得，未在本 PR 修）
+
+| 编号 | 位置 | 现象 | 建议 |
+|---|---|---|---|
+| T-1 | src/config/normalize.ts（`normalizeConfig` 返回 `NotifyConfig`） | 声明为闭集类型，实现却透传未知键（含 null）——测试断言 `merged.bogus`/`futureRead`/`nullFuture` 被迫 10 处 cast | 返回 `NotifyConfig & Record<string, unknown>` 或独立归一化类型 |
+| T-2 | src/config/validators.ts（`sanitizePatchSettings` 返回 `Partial<NotifyConfig> \| null`） | 契约是「未知键透传保留」，返回类型无法表达；src/server/routes.ts 自己回 cast | 返回 `Record<string, unknown> \| null` |
+| T-3 | src/config/redact.ts（`redactConfigView<T>(value: T): T`） | 声称恒等 T→T，`undefined` 实返 null（潜伏型：assert.equal 接 unknown 故未报错） | 返回类型 `T \| null` 或显式重载 |
+| T-4 | src/config/redact.ts（`unmaskChannels` 成功分支 `channels: unknown[]`） | 丢元素类型，每个消费者各写一份 cast（含 src 内部） | 补元素类型或泛型化 |
+| T-5 | src/server/system-notifier.ts（`spawnImpl?: typeof spawn` / `execFileImpl?: typeof execFile`） | node 重载签名，fake 桩无法结构化满足，只能 `as unknown as` | 注入面放宽为最小函数签名 |
+| T-6 | test/ 12 个 e2e/集成面文件 | 文件级 @ts-nocheck（D25 分层口径）；helpers.ts 是全量最大阻塞点（84 错误） | follow-up：helpers 先行类型化，再逐文件收口 |
+| T-7 | src/config/interface.ts（`NotifyConfig.sanitizeContent` 为必填 boolean） | 消费点按 `!== false` 容错「缺键」（adjudicate/event-handlers 均如此），类型面无法表达缺省形态——契约测试只能 `as unknown as NotifyConfig` 构造 | 二选一：注释与契约改为「undefined 容错」措辞，或让类型可表达缺省 |
+| T-8 | src/client/index.tsx（`apply` 的测试直测挂载面 `(apply as any).diffSettingsPayload = …`） | 客户端测试挂载面（diffSettingsPayload/createSaveGuard/assignChannelFields/stripChannelEmpties/clampMaxConnections）无类型声明，vm 直测文件只能各自复制 hook 类型，src 改签名时测试不报错 | 导出 ClientTestHooks interface 或给 apply 挂显式类型 |
+
+T-1~T-5 涉及公共导出类型签名（T-1/T-2/T-4/T-5）或潜伏语义（T-3），按仓库红线「公共 API 行为变更先评审」的口径单列 follow-up，不在 PR3 内改动；T-7 属类型面与注释措辞的张力，同批处理。
+
+### 7.12 遗留 backlog（非 PR3 范围）
+
+| 编号 | 项 | 来源 | 处置 |
+|---|---|---|---|
+| S3-8 | P1-3 跨窗口无 storage/broadcast 同步（409 被动恢复） | §7.2 | 登记 backlog（D27） |
+| S3-10 | P2-1 历史徽标缺 kind-pending/merged | §7.2 | 登记 backlog（D27） |
+| S3-18 | C3-6 writable=false 保存按钮未禁用 | D21 | 保持 backlog |
+| — | 600 帧窗口 shift 静默丢失（不重启、离线超 600 帧） | R-6 登记 | 保持 backlog |

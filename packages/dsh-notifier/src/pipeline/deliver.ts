@@ -1,11 +1,11 @@
 /**
- * dsh-notifier — 推送管线域：投递编排（PR2 工厂化，T2-1）。
+ * dsh-notifier — 推送管线域：投递编排（工厂闭包：门表与终态上报在实例内）。
  *
  * createDeliverer 封装码点截断 + 单频道 fail-soft 投递 + 终态上报 + 通知级落史：
  * 受理同步返回（铁律 1），终态经 recordStatus/sent 异步可见；错误出口统一
  * sanitizeErrorText。带 dispatch 的目标（内置频道）经 deps.play(target, payload)
- * 值传递播放——spec 在裁决时快照解析、随 target 携带，本域不持快照引用（D23）；
- * 其余目标走 channel.send。重试/并发门等框架能力随 T2-2 在本域上移（B-3）。
+ * 值传递播放——spec 在裁决时快照解析、随 target 携带，本域不持快照引用；
+ * 其余目标走 channel.send。重试/并发门等框架能力在本域承载。
  */
 import { sanitizeErrorText } from "../text/interface.ts";
 import type { NotifyChannel, NotifyResult, RetryableError } from "../sdk/interface.ts";
@@ -25,8 +25,8 @@ export function truncateCodePoints(s: string, max: number): string {
 export function createDeliverer(deps: DeliverDeps): Deliverer {
   const { recordStatus, emitSent, appendHistory, play } = deps;
 
-  // B-3：门表生命周期 = 本工厂实例闭包，按 channelId（type:id）键控、跨配置
-  // 变更延续（对等现状 outbound.ts:13-22 的 barkGates Map 语义）。
+  // 门表生命周期 = 本工厂实例闭包，按 channelId（type:id）键控、跨配置
+  // 变更延续（与限流门从装配层上移前的语义对等）。
   const gates = new Map<string, { inflight: number; queue: Array<() => void> }>();
 
   function gateFor(channelId: string) {
@@ -66,7 +66,7 @@ export function createDeliverer(deps: DeliverDeps): Deliverer {
   }
 
   /**
-   * 框架重试（B-3）：按 channel.capabilities.retry 声明 + RetryableError 协议
+   * 框架重试：按 channel.capabilities.retry 声明 + RetryableError 协议
    * 决策——retryable:false 确定失败立即终态；网络/5xx（true）或未标注按
    * backoffMs × attempt 线性退避（缺省 backoffMs=1000）。
    */
@@ -90,7 +90,7 @@ export function createDeliverer(deps: DeliverDeps): Deliverer {
   }
 
   /** 单目标投递入口：dispatch 目标经 play；channel.send 目标在声明了
-   *  retry/maxInflight 时经框架重试+并发门（B-3），否则直通 channel.send
+   *  retry/maxInflight 时经框架重试+并发门，否则直通 channel.send
    *  （零重试无门，保留 send 返回 undefined 的同步终态语义）。 */
   function deliverOutcome(target: ResolvedTarget, payload: DeliverPayload): void | Promise<void> {
     if (target.dispatch !== undefined) return play(target, payload);
@@ -105,9 +105,9 @@ export function createDeliverer(deps: DeliverDeps): Deliverer {
     try {
       const rawTitle = String(notice.title);
       const rawBody = String(notice.body);
-      // mergeTitleIntoBody（L8-1）：标题拼入正文、title 位传空串，拼入后长度
+      // mergeTitleIntoBody：标题拼入正文、title 位传空串，拼入后长度
       // 权威 = maxBodyLen（不再按 titleMaxLen 单独截断）；空 title 不产生多余
-      // 换行。titleMaxLen<=0 且未声明 mergeTitleIntoBody：保留 T2-1/T2-2 现状
+      // 换行。titleMaxLen<=0 且未声明 mergeTitleIntoBody：保留现状
       // 宽限截断行为不变（隐式并入已废弃，显式字段接管——见 sdk/interface.ts）。
       let safeTitle: string;
       let safeBody: string;
@@ -120,7 +120,7 @@ export function createDeliverer(deps: DeliverDeps): Deliverer {
       }
       const payload: DeliverPayload = { title: safeTitle, body: safeBody, kind: notice.kind, ts: notice.ts, severity: notice.severity };
       // dispatch 目标（内置频道）经 play 值传递——不经门不经重试（实时推送不
-      // 被慢出站拖住，现状语义）；channel.send 目标经框架重试 + 并发门（B-3）。
+      // 被慢出站拖住，现状语义）；channel.send 目标经框架重试 + 并发门。
       const outcome = deliverOutcome(target, payload);
       const emitOk = () => {
         try {

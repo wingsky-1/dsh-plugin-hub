@@ -16,7 +16,7 @@ export interface QuietHoursConfig {
 }
 
 /**
- * 免打扰豁免可选 kind（issue #421：扩至全部内置事件，支持选择「所有已启用的事件通知」）。
+ * 免打扰豁免可选 kind（扩至全部内置事件，支持选择「所有已启用的事件通知」）。
  * 与客户端 EVENT_KEYS 的事件 kind 集合一致（ask/question/done/subagent-done/error/turn-end）；
  * 默认豁免保持 ask/question/error（高频阻塞型——卡着的任务需要叫醒），done 类有
  * doneMergeWindowMs 聚合防刷屏治理、不默认豁免（避免升级后默认行为漂移）。

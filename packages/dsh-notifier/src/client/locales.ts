@@ -1,5 +1,5 @@
 /**
- * dsh-notifier — 客户端文案字典（issue #348：复用官方 dsh-client-locale）。
+ * dsh-notifier — 客户端文案字典（复用官方 dsh-client-locale）。
  *
  * 双语平衡：`zh` 为 key 源；`en` 必须覆盖全部 key（编译期锁平衡）。
  * 不进字典：console 日志、宿主端错误消息（跨端契约原文匹配「版本冲突」保持）、
@@ -21,7 +21,7 @@ export const zh = {
   chBrowserNotify: "浏览器通知",
   chWhenVisible: "页面可见时也弹",
   chSound: "声音",
-  // #640/#641：每通道声音行与三态
+  // 每通道声音行与三态
   chStateOn: "启用",
   chStateSound: "仅声音",
   chStateOff: "已停用",
@@ -54,10 +54,10 @@ export const zh = {
   loadFail: "设置加载失败：{msg}{hint}",
   unchanged: "未修改",
   savedOk: "已保存",
-  saveFailConflict: "保存失败：{msg}（请关闭本卡片重新打开后重试）",
+  conflictReloadFail: "冲突恢复失败：未能拉取最新配置，请重试保存",
   saveFail: "保存失败：{msg}",
   saveTimeout: "保存超时：网络请求未在 15 秒内完成，请重试",
-  // #405 PR2b：409 冲突双动作横幅
+  // 409 冲突双动作横幅
   conflictTitle: "配置已在其他窗口被修改：",
   conflictChannels: "频道配置已在其他窗口被修改：",
   conflictLoadLatest: "加载最新（放弃我的修改）",
@@ -79,7 +79,7 @@ export const zh = {
   dndStart: "开始时间",
   dndEnd: "结束时间",
   dndStillLabel: "免打扰仍提醒",
-  // 免打扰豁免候选（issue #421）：label 复用事件文案（KIND_KEYS），另加未启用提示与快捷项
+  // 免打扰豁免候选：label 复用事件文案（KIND_KEYS），另加未启用提示与快捷项
   allowDisabledHint: "事件未启用",
   allowFollowEnabled: "跟随已启用事件",
   allowResetDefault: "恢复默认（审批/提问/出错）",
@@ -101,20 +101,17 @@ export const zh = {
   historyTitle: "通知记录（最近 10 条）",
   historyEmpty: "暂无通知记录（点「发送测试通知」可生成一条）",
   historySuppressed: "免打扰拦截未发出",
-  // 分区/tab（#402 第 4 条：设置卡 title/副标题已移除；secEvents/secChannels 现为
+  // 分区/tab（设置卡 title/副标题已移除；secEvents/secChannels 现为
   // 卡内双 tab 文案，术语统一为「通知频道」）
   secEvents: "通知事件",
   secChannels: "通知频道",
   secDedup: "合并/去重",
-  secDnd: "免打扰时段",
   tabLabel: "通知中心",
   save: "保存",
   saving: "保存中…",
   saveChannels: "保存频道",
   channelsDomainHint: "仅保存频道改动，不影响事件/参数等未保存修改",
-  // ===== M2 频道卡（issue #366）=====
-  chEnabled: "启用",
-  chDisabled: "未启用",
+  // ===== 频道卡 =====
   chTest: "发送测试",
   chLastOk: "最近投递成功",
   chLastFail: "最近投递失败",
@@ -139,36 +136,26 @@ export const zh = {
   chBarkLevel: "默认紧急度 level",
   chBarkLevelHint: "实例级紧急度（缺省按事件强度自动映射）；下方「按类型紧急度映射」命中时优先于本项",
   chLevelAuto: "按事件强度自动映射",
-  // ===== M2 levels（kind→level 稀疏映射矩阵）=====
-  chLevelsMap: "按类型紧急度映射",
+  // ===== levels（kind→level 稀疏映射矩阵）=====
   chLevelsHint: "按事件类型指定 Bark 紧急度，优先于「默认紧急度」与自动映射；未配置的类型走默认",
-  chLevelsKind: "事件类型",
   chLevelsKindPlaceholder: "如 question",
   chLevelsAdd: "添加映射",
   chLevelsRemove: "移除",
   chLevelsEmpty: "未配置按类型映射（全部事件走默认紧急度）",
   chLevelsUnknown: "未知事件类型（可能不生效，请确认拼写）",
-  chStatusTitle: "投递状态",
-  // ===== M2 路由复选组 =====
-  routeAllDefault: "全部频道（默认）",
-  routeCustomize: "自定义",
-  routeFollowDefault: "跟随默认",
-  routeStaleHint: "含已删除频道，投递时自动跳过",
-  routePick: "选择频道",
-  // ===== M2 动态 kind 确认 =====
+  // ===== 路由复选组 =====
+  // ===== 动态 kind 确认 =====
   kindsTitle: "通知类型",
   kindsHint: "其他插件注册的通知类型需你确认后才会投递",
-  kindPending: "待确认",
-  kindAllowed: "已允许",
   kindAllow: "允许",
   kindDeny: "拒绝",
   kindsEmpty: "没有待处理的通知类型",
-  // ===== M2 保存/测试反馈 =====
+  // ===== 保存/测试反馈 =====
   testChannelOk: "测试已受理（投递结果见频道状态行）",
   kindConfirmOk: "已更新通知类型确认状态",
   kindConfirmFail: "确认失败：{msg}",
   chNewBarkName: "Bark 推送",
-  // ===== #508 M1：三 tab / switch / 路由 chips / 脏状态保存栏 =====
+  // ===== 三 tab / switch / 路由 chips / 脏状态保存栏 =====
   secHistory: "通知记录",
   evtSwitch: "事件开关：{name}",
   chToggleOn: "启用频道：",
@@ -181,16 +168,16 @@ export const zh = {
   routeCustomState: "自定义 · {n} 频道 · 恢复默认",
   routeCustomStateTitle: "已自定义路由（冻结快照）；点击恢复跟随默认",
   routeStaleChip: "已删除",
-  routeStaleTitle: "该频道已删除，路由条目残留；投递时自动跳过，保存后清理",
+  routeStaleTitle: "该频道已删除，路由条目残留；投递时自动跳过（残留条目不会自动移除）",
   routeDisabledHint: "频道未启用：先在上方「通知频道」启用后才能配置投递",
   dirtySome: "有 {n} 处未保存修改",
   discardChanges: "放弃更改",
   discardOk: "已放弃未保存修改",
   secretShow: "显示",
   secretHide: "隐藏",
-  // ===== #508 M1：动态 kind 路由（r4 拍板） =====
+  // ===== 动态 kind 路由 =====
   kindRouteHint: "允许后可像内置事件一样配置投递频道",
-  // ===== #508 M2：webhook 频道（安卓推送） =====
+  // ===== webhook 频道（安卓推送） =====
   chAddWebhook: "添加 Webhook（安卓 / 自建）",
   chNewWebhookName: "Webhook 推送",
   whPreset: "预设",
@@ -264,10 +251,10 @@ export const en: Record<NotifierLocaleKey, string> = {
   loadFail: "Failed to load settings: {msg}{hint}",
   unchanged: "No changes",
   savedOk: "Saved",
-  saveFailConflict: "Save failed: {msg} (close and reopen this card, then retry)",
+  conflictReloadFail: "Conflict recovery failed: could not fetch the latest config — retry saving",
   saveFail: "Save failed: {msg}",
   saveTimeout: "Save timed out: request did not complete within 15s, please retry",
-  // #405 PR2b：409 conflict resolution banner
+  // 409 conflict resolution banner
   conflictTitle: "Configuration was changed in another window:",
   conflictChannels: "Channel configuration was changed in another window:",
   conflictLoadLatest: "Load latest (discard my changes)",
@@ -308,14 +295,11 @@ export const en: Record<NotifierLocaleKey, string> = {
   secEvents: "Events",
   secChannels: "Channels",
   secDedup: "Merge / dedup",
-  secDnd: "Do-not-disturb",
   tabLabel: "Notification center",
   save: "Save",
   saving: "Saving…",
   saveChannels: "Save channels",
   channelsDomainHint: "Saves channel changes only; other unsaved edits stay untouched",
-  chEnabled: "Enabled",
-  chDisabled: "Disabled",
   chTest: "Send test",
   chLastOk: "Last delivery OK",
   chLastFail: "Last delivery failed",
@@ -340,24 +324,14 @@ export const en: Record<NotifierLocaleKey, string> = {
   chBarkLevel: "Default level",
   chBarkLevelHint: "Instance-level urgency (auto-mapped from event severity when unset); a matching row in \"Per-type level map\" below wins over this",
   chLevelAuto: "Auto-map from event severity",
-  chLevelsMap: "Per-type level map",
   chLevelsHint: "Set a Bark urgency per event type; takes precedence over the default level and auto-mapping. Types without a row use the default",
-  chLevelsKind: "Event type",
   chLevelsKindPlaceholder: "e.g. question",
   chLevelsAdd: "Add mapping",
   chLevelsRemove: "Remove",
   chLevelsEmpty: "No per-type mapping (all events use the default level)",
   chLevelsUnknown: "Unknown event type (may not take effect — check the spelling)",
-  chStatusTitle: "Delivery status",
-  routeAllDefault: "All channels (default)",
-  routeCustomize: "Custom",
-  routeFollowDefault: "Follow default",
-  routeStaleHint: "Contains deleted channels — skipped at delivery",
-  routePick: "Pick channels",
   kindsTitle: "Notification types",
   kindsHint: "Types registered by other plugins are delivered only after your confirmation",
-  kindPending: "Pending",
-  kindAllowed: "Allowed",
   kindAllow: "Allow",
   kindDeny: "Deny",
   kindsEmpty: "No notification types to review",
@@ -365,7 +339,7 @@ export const en: Record<NotifierLocaleKey, string> = {
   kindConfirmOk: "Notification type confirmation updated",
   kindConfirmFail: "Confirmation failed: {msg}",
   chNewBarkName: "Bark push",
-  // ===== #508 M1 =====
+  // ===== tabs / switch / routing chips / dirty-save bar =====
   secHistory: "History",
   evtSwitch: "Event toggle: {name}",
   chToggleOn: "Enable channel: ",
@@ -378,16 +352,16 @@ export const en: Record<NotifierLocaleKey, string> = {
   routeCustomState: "Custom · {n} channels · reset",
   routeCustomStateTitle: "Route customized (frozen snapshot); click to reset to default",
   routeStaleChip: "deleted",
-  routeStaleTitle: "This channel was deleted but its route entry remains; skipped at delivery, cleaned up on save",
+  routeStaleTitle: "This channel was deleted but its route entry remains; skipped at delivery (the stale entry is not removed automatically)",
   routeDisabledHint: "Channel not enabled: enable it under Notify channels first to configure delivery",
   dirtySome: "{n} unsaved change(s)",
   discardChanges: "Discard changes",
   discardOk: "Unsaved changes discarded",
   secretShow: "Show",
   secretHide: "Hide",
-  // ===== #508 M1 =====
+  // ===== dynamic kind routes =====
   kindRouteHint: "Once allowed, delivery channels can be configured like built-in events",
-  // ===== #508 M2 =====
+  // ===== webhook channel (Android push) =====
   chAddWebhook: "Add Webhook (Android / custom)",
   chNewWebhookName: "Webhook push",
   whPreset: "Preset",

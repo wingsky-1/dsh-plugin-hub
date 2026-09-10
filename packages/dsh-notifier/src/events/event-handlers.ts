@@ -65,7 +65,7 @@ function formatEvidenceSource(pushed: unknown, snapshot: unknown, stale: boolean
 
 /**
  * 解析并裁决单次 idle 的 turn 证据（push 优先、快照兜底、stale 冻结）。
- * 导出供直测（PR0 红测先行 4：判定矩阵基线；重构 adjudicate 拆分时的行为判别网）。
+ * 导出供直测（判定矩阵基线；重构 adjudicate 拆分时的行为判别网）。
  */
 export function resolveTurnEvidence(
   agent: any,
@@ -138,8 +138,8 @@ function tryMergeError(
 ): boolean {
   const prev = mergeMs > 0 ? errorMerge.get(key) : undefined;
   if (prev !== undefined && now - prev.since < mergeMs) {
-    // B-1：merged 落史是全仓唯一不经 sendKind 的历史写入点，落史前按开关单独
-    // 清洗（P1-3：先打码后截断——「（合并）+摘要」120 语义显式保留）。
+    // merged 落史是全仓唯一不经 sendKind 的历史写入点，落史前按开关单独
+    // 清洗（先打码后截断——「（合并）+摘要」120 语义显式保留）。
     const safeMessage = sanitizeNoticeContent({ title: "DSH：任务出错", body: rawMessage }, sanitizeContent).body;
     prev.count += 1;
     prev.since = now;
@@ -178,7 +178,7 @@ export class NotifierEventHandlers implements EventHandlers {
     const askDetail = () => ({
       tool: req?.toolName as string | undefined,
       taskTitle: sessionTitleOf(req?.agent),
-      // B-1：事件层不再预清洗——reason 进 sendKind 渲染后统一脱敏
+      // 事件层不再预清洗——reason 进 sendKind 渲染后统一脱敏
       reason: req?.reason ? String(req.reason) : undefined,
     });
     try {
@@ -235,7 +235,7 @@ export class NotifierEventHandlers implements EventHandlers {
           this.deps.notify("question", {
             tool: "ask_user_question",
             taskTitle: sessionTitleOf((request as { agent?: Agent } | null | undefined)?.agent),
-            // B-1：事件层不再预清洗——question 进 sendKind 渲染后统一脱敏
+            // 事件层不再预清洗——question 进 sendKind 渲染后统一脱敏
             question: first && (first as { question?: unknown }).question
               ? String((first as { question?: unknown }).question)
               : undefined,
@@ -341,7 +341,7 @@ export class NotifierEventHandlers implements EventHandlers {
       const agentId = payload?.agent?.id;
       const key = agentId ?? "?";
       const now = Date.now();
-      // B-1：事件层不再预清洗——原始错误文本进 sendKind 渲染后统一脱敏；
+      // 事件层不再预清洗——原始错误文本进 sendKind 渲染后统一脱敏；
       // merged 落史在 tryMergeError 内按开关单独清洗（唯一不经 sendKind 的点）。
       const rawMessage = payload?.error instanceof Error ? payload.error.message : errorMessage(payload?.error);
       const mergeMs = current.errorMergeWindowMs;

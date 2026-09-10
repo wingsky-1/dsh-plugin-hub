@@ -1,12 +1,12 @@
 /**
- * dsh-notifier — Webhook 推送频道（#508 M2，issue #505 方向一）。
+ * dsh-notifier — Webhook 推送频道。
  *
  * 职责：WebhookChannelConfig → NotifyChannel 适配。安卓侧经 ntfy / Gotify /
  * 自建推送网关补齐 Bark（iOS）未覆盖的推送通道。POST JSON 到 cfg.url，
  * 凭据一律走请求头（bearer→Authorization: Bearer、basic→Authorization: Basic、
  * header→自定义头），不拼 URL（不落访问日志，与 bark 的 device_key 走 body 同姿态）。
  *
- * 模板渲染（JSON-aware 两步法，评审 P0 防注入）：
+ * 模板渲染（JSON-aware 两步法防注入）：
  * 1. 文本层：仅替换 raw 型占位符 {{ts}}（数字直出，允许以裸值形态出现在模板中，
  *    使 JSON.parse 可行）；其余占位符不动；
  * 2. JSON.parse 模板（失败 = 该频道投递失败落记录，不影响其他频道）；
@@ -15,21 +15,21 @@
  *    出字符串注入额外字段）；
  * 4. JSON.stringify 输出。
  *
- * {{priority}} 频道感知映射（拍板 ④）：按 cfg.preset 选择映射表——
+ * {{priority}} 频道感知映射：按 cfg.preset 选择映射表——
  * ntfy：info→default / success→low / warning→high / failure→urgent（字符串）；
  * gotify：info/success→3 / warning→7 / failure→9（1-10 整数，字符串形态直出）；
  * custom：severity 原文直出（网关自定义处理）。{{severity}} 恒为原文直出。
  *
- * 可靠性（拍板 ②）：投递超时可配 1-60s（默认 10，normalize 权威 clamp）；
+ * 可靠性：投递超时可配 1-60s（默认 10，normalize 权威 clamp）；
  * 失败不自动重试（终态落 status/历史，可重发测试验证）；4xx/5xx/网络错误统一
- * 失败终态。错误出口统一脱敏：凭据字面替换 → sanitizeErrorText（同 bark P0-4）。
+ * 失败终态。错误出口统一脱敏：凭据字面替换 → sanitizeErrorText（同 bark 频道）。
  */
 import { SECRET_MASK, isWebhookHeaderName } from "../config/interface.ts";
 import type { WebhookChannelConfig, WebhookPreset } from "../config/interface.ts";
 import type { NotifyChannel, NotifySeverity } from "../sdk/interface.ts";
 import { sanitizeErrorText } from "../text/interface.ts";
 
-/** severity → ntfy priority 静态映射（拍板 ④；契约测试锁定）。 */
+/** severity → ntfy priority 静态映射（契约测试锁定）。 */
 export const SEVERITY_NTFY_PRIORITY: Readonly<Record<NotifySeverity, string>> = {
   failure: "urgent",
   warning: "high",
@@ -37,7 +37,7 @@ export const SEVERITY_NTFY_PRIORITY: Readonly<Record<NotifySeverity, string>> = 
   info: "default",
 };
 
-/** severity → Gotify priority（1-10 整数；拍板 r3：info/success→3、warning→7、failure→9）。 */
+/** severity → Gotify priority（1-10 整数：info/success→3、warning→7、failure→9）。 */
 export const SEVERITY_GOTIFY_PRIORITY: Readonly<Record<NotifySeverity, number>> = {
   failure: 9,
   warning: 7,
@@ -45,7 +45,7 @@ export const SEVERITY_GOTIFY_PRIORITY: Readonly<Record<NotifySeverity, number>> 
   info: 3,
 };
 
-/** 超时边界（秒）与缺省（拍板 ②：1-60，默认 10；normalize 权威 clamp，此处兜底）。 */
+/** 超时边界（秒）与缺省（1-60，默认 10；normalize 权威 clamp，此处兜底）。 */
 export const WEBHOOK_DEFAULT_TIMEOUT_SEC = 10;
 export const WEBHOOK_MIN_TIMEOUT_SEC = 1;
 export const WEBHOOK_MAX_TIMEOUT_SEC = 60;
@@ -114,13 +114,13 @@ export function renderWebhookBody(template: string, preset: WebhookPreset, vars:
 }
 
 /**
- * Webhook 频道实例工厂（#508 M2）。
+ * Webhook 频道实例工厂。
  * @param cfg 实例配置（normalizeConfig 已归一化；url 已去 query/hash、timeoutSec 已 clamp）。
  * @returns NotifyChannel——send() 返回在途 promise（resolve=终态成功 / reject=终态
  *   失败，错误已脱敏）；渲染失败在 send 内捕获转为 reject（同步抛错面不外泄）。
  */
 export function createWebhookChannel(cfg: WebhookChannelConfig): NotifyChannel {
-  // 错误出口脱敏：凭据字面替换 → sanitizeErrorText 有序表 + 截断（同 bark 评审 P0-4）
+  // 错误出口脱敏：凭据字面替换 → sanitizeErrorText 有序表 + 截断（同 bark 频道）
   const secrets = [cfg.token, cfg.password, cfg.headerValue].filter((s): s is string => typeof s === "string" && s.length > 0);
   const scrub = (text: string): string => {
     let out = String(text);

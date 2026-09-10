@@ -3,13 +3,13 @@ import { errorMessage } from "../../../../shared/host-utils.js";
 import { normalizeConfig } from "./normalize.ts";
 import { sanitizeSettings } from "./validators.ts";
 import { configFile } from "./paths.ts";
-import type { NotifierApplyConfig, NotifyConfig } from "./config.ts";
+import type { NotifierEntryConfig, NotifyConfig } from "./config.ts";
 import { SETTINGS_NS, installNotifierSettings } from "./settings.ts";
 import type { OwnerScopeLike, SettingsServiceLike } from "./settings.ts";
 import { migrateLegacyConfig } from "./migrate.ts";
 
 /**
- * 配置域对 API/判定层的正式接口（settings-bridge 实现；L8-2：路由面与 sdk
+ * 配置域对 API/判定层的正式接口（settings-bridge 实现；路由面与 sdk
  * 注入面引用同一 confirmKind 实现，本文件是唯一 CAS 语义落点）。
  */
 export interface ConfigPort {
@@ -49,7 +49,7 @@ export class NotifierSettingsBridge implements SettingsBridge {
   private attachedService: SettingsServiceLike | undefined;
   private attachedScope: OwnerScopeLike | undefined;
 
-  constructor(ctx: Context, config: NotifierApplyConfig = {}) {
+  constructor(ctx: Context, config: NotifierEntryConfig = {}) {
     const entry = (sanitizeSettings(config) ?? {}) as Record<string, unknown>;
     const storeFile = typeof config.configFile === "string" ? config.configFile : configFile();
     this.entry = entry;
@@ -155,6 +155,6 @@ export class NotifierSettingsBridge implements SettingsBridge {
 /**
  * 创建并装配 settings 状态镜像与官方命名空间桥接。
  */
-export function createSettingsBridge(ctx: Context, config: NotifierApplyConfig = {}): SettingsBridge {
+export function createSettingsBridge(ctx: Context, config: NotifierEntryConfig = {}): SettingsBridge {
   return new NotifierSettingsBridge(ctx, config);
 }

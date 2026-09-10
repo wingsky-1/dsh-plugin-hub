@@ -1,15 +1,14 @@
 /**
- * dsh-notifier — 推送管线域：裁决（PR2 工厂化 + current() 单刻快照，B-2）。
+ * dsh-notifier — 推送管线域：裁决（工厂化 + current() 单刻快照）。
  *
  * createAdjudicator 每次裁决取局部单刻快照（deps.current() 恰好一次），快照
  * 贯穿 enabled → 确认 → 免打扰 → 路由 → 播放决议解析——裁决与投递之间改配置
- * 不影响本次投递（B-2 行为变更，N-18 锁定）。播放决议随投递池条目携带
+ * 不影响本次投递（有意行为变更，测试锁定）。播放决议随投递池条目携带
  * （deps.allChannels 在快照上解析内置频道启用条件与 spec，调用方经注入面提供）。
  * isBuiltinKind 保留导出供 sdk registerKind 防冒认。
  */
-import { isInQuietHours } from "../config/interface.ts";
+import { BUILTIN_CHANNELS, isInQuietHours } from "../config/interface.ts";
 import type { NotifyConfig } from "../config/interface.ts";
-import { BUILTIN_CHANNELS } from "../sdk/interface.ts";
 import { NOTIFY_KINDS } from "../text/interface.ts";
 import type { AdjudicateDeps, AdjudicateOptions, AdjudicateResult, AdjudicatedNotice, ChannelPoolEntry } from "./interface.ts";
 
@@ -21,7 +20,7 @@ export function isBuiltinKind(kind: string): boolean {
 /**
  * 动态 kind 是否获用户确认（确认态持久化在配置 allowKinds；未注册/未确认 → 抑制）。
  * @param kindRegistry 动态 kind 注册表（id → label；createNotifierService 持有）。
- * @param snapshot 裁决单刻快照（确认态读面——PR2 起不再实时读取 current）。
+ * @param snapshot 裁决单刻快照（确认态读面——不再实时读取 current）。
  */
 export function isKindConfirmed(kind: string, kindRegistry: Map<string, { label: string }>, snapshot: NotifyConfig): boolean {
   if (isBuiltinKind(kind)) return true;
@@ -31,7 +30,7 @@ export function isKindConfirmed(kind: string, kindRegistry: Map<string, { label:
 }
 
 /**
- * 路由解析（§4.6）：实际投递集合 = 启用频道池 ∩ (kindRoutes[kind] ?? '*')。
+ * 路由解析：实际投递集合 = 启用频道池 ∩ (kindRoutes[kind] ?? '*')。
  * 缺省（无条目）= 广播全部启用频道；稀疏条目命中才投递；条目里指向已删除
  * 频道（配置 channels 中不存在）的 id 记入 stale（skipped + warn，不影响其他）。
  * onlyChannel（per-channel 测试）直接命中单频道并绕过路由。
@@ -68,12 +67,12 @@ export function resolveRoutes(args: {
  */
 export function createAdjudicator(deps: AdjudicateDeps): (opts: AdjudicateOptions) => AdjudicateResult {
   return function adjudicate(opts: AdjudicateOptions): AdjudicateResult {
-    // B-2：单刻快照——本次裁决全部读面（确认态/免打扰/路由/播放决议）共用此
+    // 单刻快照——本次裁决全部读面（确认态/免打扰/路由/播放决议）共用此
     // 对象；后续任何配置变更不影响本次判定结果（派生闭包只经快照取值）。
     const snapshot = deps.current();
     const { kind, title, body, severity, ts, bypassQuiet, onlyChannel } = opts;
-    // B-4：脱敏开关随快照解析并随结果携带（快照缺键 → undefined 容错为 true），
-    // 编排层据其统一脱敏——不开第二次 current()（B-2 单刻契约）。
+    // 脱敏开关随快照解析并随结果携带（快照缺键 → undefined 容错为 true），
+    // 编排层据其统一脱敏——不开第二次 current()（单刻契约）。
     const sanitizeContent = snapshot.sanitizeContent !== false;
 
     if (deps.enabled() === false) {

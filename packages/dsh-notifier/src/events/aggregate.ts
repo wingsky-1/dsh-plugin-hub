@@ -1,5 +1,5 @@
 /**
- * dsh-notifier — 完成风暴聚合批处理器（M0 纯搬移自 index.ts 装配层）。
+ * dsh-notifier — 完成风暴聚合批处理器（自 index.ts 装配层纯搬移）。
  *
  * 职责：把「完成通知风暴聚合」（done / subagent-done）从 index.ts 装配层
  * 原样搬移为独立模块——行为零变化，仅注入面显式化：

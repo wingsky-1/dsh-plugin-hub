@@ -3,7 +3,7 @@
  *
  * 职责：插件在官方 settings 服务中的命名空间（SETTINGS_NS）、minimal 类型面
  * （OwnerScopeLike / SettingsServiceLike / NotifierSettingsHooks）与挂载函数
- * installNotifierSettings。issue #436 起不再包内复刻接线——实现统一转发
+ * installNotifierSettings。不再包内复刻接线——实现统一转发
  * shared/installSettingsNamespace（单一事实源），hooks 依次透传 onScope /
  * setSource / onChange；onScope 供存量迁移与乐观并发（经 service.update）。
  *
@@ -13,7 +13,7 @@
  * 为什么不用 schemastery 构造 schema：notifier 无该依赖；官方 register 对
  * schema 的最小调用面是「callable（resolve 时直接调用）+ toJSON（describe
  * 序列化）+ 无 secret 的平铺形态（redact walk 走 default 原样返回）」，这里以
- * 零依赖函数形态 createNotifierSchema 等值覆盖（与 #436 前一致）。
+ * 零依赖函数形态 createNotifierSchema 等值覆盖（接线收敛前后对外语义一致）。
  */
 import type { Context } from "@deepseek-ai/cordis";
 import { installSettingsNamespace } from "../../../../shared/settings-namespace.js";
@@ -76,8 +76,8 @@ function createNotifierSchema(): unknown {
 
 /**
  * 注册插件自有 settings 命名空间并把 owner scope 交给调用方。
- * 薄包装（#436）：转发 shared/installSettingsNamespace——setSource / onChange /
- * onScope 依次透传，降级与卸载回落语义统一由 shared 承担。对外签名与 #436 前
+ * 薄包装：转发 shared/installSettingsNamespace——setSource / onChange /
+ * onScope 依次透传，降级与卸载回落语义统一由 shared 承担。对外签名与收敛前
  * 保持一致：ctx / entry（组合层配置的通知字段，经 sanitizeSettings 白名单过滤
  * 后传入，作为命名空间的 base 层；无有效键则为空 base）/ hooks。
  *

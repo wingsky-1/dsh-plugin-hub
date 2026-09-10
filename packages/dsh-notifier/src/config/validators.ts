@@ -1,5 +1,5 @@
 /**
- * dsh-notifier — 配置域：写入校验（H6）。
+ * dsh-notifier — 配置域：写入校验。
  *
  * PUT /config 与存量迁移共用的「已知键 → 校验器」表；任一已知键非法即整体
  * 拒绝（400 + hint / 迁移仅标记不写入），不再静默丢弃回默认。与 lan-proxy
@@ -24,12 +24,12 @@ function isNonNegNumber(max: number): (v: unknown) => boolean {
   return (v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= max;
 }
 
-/** SSE 连接上限校验（1-1024 的整数，与 normalizeConfig 范围一致；#334）。 */
+/** SSE 连接上限校验（1-1024 的整数，与 normalizeConfig 范围一致）。 */
 function isConnLimit(v: unknown): boolean {
   return typeof v === "number" && Number.isFinite(v) && Number.isInteger(v) && v >= 1 && v <= 1024;
 }
 
-/** 免打扰豁免整组写入校验（issue #421：放开白名单为「非空字符串 ≤64 字符、≤128 项」，
+/** 免打扰豁免整组写入校验（放开白名单为「非空字符串 ≤64 字符、≤128 项」，
  *  与顶层 allowKinds 的 isConfirmedKinds 同口径——避免「手改配置能生效、UI 保存却 400」
  *  的读写分裂；未知 kind 项合法保留（豁免判定仅 includes 匹配，不做语义约束）。 */
 function isAllowKinds(v: unknown): boolean {
@@ -96,7 +96,7 @@ function isBarkChannel(v: unknown): boolean {
 }
 
 /** channels 整组写入校验（≤16 实例 + id 不得重复——重复会让掩码回填/路由对齐歧义）。
- *  #508 M2：按实例 type 分派 bark/webhook 严格校验，id 跨类型去重。 */
+ *  按实例 type 分派 bark/webhook 严格校验，id 跨类型去重。 */
 function isBarkChannels(v: unknown): boolean {
   if (!Array.isArray(v) || v.length > 16) return false;
   const seen = new Set<string>();
@@ -142,7 +142,7 @@ function isWebhookChannel(v: unknown): boolean {
   return true;
 }
 
-/** channels 整组写入校验（#508 M2 混合版）：按实例 type 分派严格校验，id 跨类型去重。 */
+/** channels 整组写入校验（混合版）：按实例 type 分派严格校验，id 跨类型去重。 */
 function isChannels(v: unknown): boolean {
   if (!Array.isArray(v) || v.length > 16) return false;
   const seen = new Set<string>();
@@ -242,10 +242,10 @@ export interface SettingInvalid {
 
 /**
  * 校验提交的配置（写入前，不净化）：返回首个非法键与其合法范围，全部合法
- * 返回 null（H6：非法值 400 拒绝 + hint，不再静默丢弃回默认）。遍历顺序
+ * 返回 null（非法值 400 拒绝 + hint，不再静默丢弃回默认）。遍历顺序
  * 与 sanitizeSettings 一致（SETTING_VALIDATORS 键序）。导出供 smoke 单测。
  * 非对象/数组 payload 命中 key="(payload)" 分支（400 + 「patch 必须是对象」，
- * #470 复核 P1-4：文案与 README 边界声明逐句一致）。
+ * 文案与 README 边界声明逐句一致）。
  */
 export function validateSettings(raw: unknown): SettingInvalid | null {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
@@ -264,7 +264,7 @@ export function validateSettings(raw: unknown): SettingInvalid | null {
 
 /**
  * 净化组合层 entry 配置（apply 装配通道专用）：白名单语义不变——只取已知
- * 配置键，装配键/未知键一律丢弃（现状 index.ts:140 行为保留，#470 P1-3
+ * 配置键，装配键/未知键一律丢弃（白名单语义与改造前一致；
  * 双通道拆分后本函数不再服务 PUT / 迁移）。
  */
 export function sanitizeSettings(raw: unknown): Partial<NotifyConfig> | null {
@@ -281,15 +281,15 @@ export function sanitizeSettings(raw: unknown): Partial<NotifyConfig> | null {
 }
 
 /**
- * 净化 PUT /config 与存量迁移的增量 patch（透传通道，#470）：已知键按
+ * 净化 PUT /config 与存量迁移的增量 patch（透传通道）：已知键按
  * validateSettings 同口径校验（任一非法 → 整体拒绝返回 null）；**未知键原样
  * 透传保留**（前向兼容——GET 读得到的未来/第三方键 PUT 回得去，迁移不丢
- * legacy 未来键；任意 JSON 值含 null——与读面 normalizeConfig 透传口径一致，
- * #470 qa 复核发现 2），但组合层装配键名（ASSEMBLY_SETTING_KEYS）一律剔除
+ * legacy 未来键；任意 JSON 值含 null——与读面 normalizeConfig 透传口径一致），
+ * 但组合层装配键名（ASSEMBLY_SETTING_KEYS）一律剔除
  * （静默，与 Bark 保留键同口径）。返回对象非空即代表有可写键；纯未知键 patch
  * 透传后同样非空（区别于空 patch {} → 空对象由调用方按 400 处理）。
  *
- * 安全边界（#470 复核 P0）：patch 必须为**普通对象**（数组直接返回 null——
+ * 安全边界：patch 必须为**普通对象**（数组直接返回 null——
  * 数组会被 Object.keys 当对象把数字索引透传成 "0":"1" 式脏键）；原型链成员
  * 键（constructor/prototype/toString/hasOwnProperty/valueOf/__proto__）一律
  * 剔除不写入——查表前用 hasOwn 判自有键防误触原型链校验器（抛 TypeError 致

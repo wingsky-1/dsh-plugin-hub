@@ -1,16 +1,16 @@
 /**
  * dsh-notifier — 配置域：类型 + 默认值 + 装配键锁（零 node 依赖）。
  *
- * 配置模型（NotifyConfig）由官方 settings 命名空间承载（issue #76）：
+ * 配置模型（NotifyConfig）由官方 settings 命名空间承载：
  * 默认值、白名单净化与「首个非法键 + hint」校验收敛在 validators/normalize；
  * 本文件只持有类型、默认值、声音回落、频道保留键与组合层装配键的编译期契约。
  * 读取来源为命名空间解析值（scope.get()），提交面（PUT /config / 存量迁移）
  * 经 validateSettings / sanitizeSettings 校验——非法值 400 拒绝 + hint，
- * 不再静默丢弃回默认（H6）。
+ * 不再静默丢弃回默认。
  */
 import type { QuietHoursConfig } from "./quiet-hours.ts";
 
-// ---------------------------------------------------------------- 频道实例（M2）
+// ---------------------------------------------------------------- 频道实例
 
 /** Bark 紧急度级别（Bark API V2 level 枚举；config 契约单点，channels/bark 复用）。 */
 export type BarkLevel = "active" | "timeSensitive" | "passive" | "critical";
@@ -48,7 +48,7 @@ export interface BarkChannelConfig {
 export const BARK_RESERVED_KEYS: readonly string[] = ["device_key", "device_keys", "ciphertext"];
 
 /**
- * webhook 实例内不允许经透传写入的保留键（#508 M2）：凭据类 snake_case 别名
+ * webhook 实例内不允许经透传写入的保留键：凭据类 snake_case 别名
  * 一律剔除——合法凭据只能走已知 secret 字段（token/password/headerValue，经掩码
  * 收口），防配置绕过 secret 规则（与 BARK_RESERVED_KEYS 同语义）。
  */
@@ -58,12 +58,12 @@ export const WEBHOOK_RESERVED_KEYS: readonly string[] = ["auth_token", "access_t
 export const BARK_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,31}$/;
 
 /**
- * Webhook 推送频道实例（#508 M2：安卓经 ntfy / Gotify / 自建推送网关；默认停用，
+ * Webhook 推送频道实例（安卓经 ntfy / Gotify / 自建推送网关；默认停用，
  * 出站授权须用户显式授予）。凭据一律走请求头（bearer/basic/header），不拼 URL。
  */
 export type WebhookAuth = "none" | "bearer" | "basic" | "header";
 
-/** webhook 预设（#508 拍板 r3：{{priority}} 频道感知映射的依据）。 */
+/** webhook 预设（{{priority}} 频道感知映射的依据）。 */
 export type WebhookPreset = "ntfy" | "gotify" | "custom";
 
 export interface WebhookChannelConfig {
@@ -96,7 +96,7 @@ export interface WebhookChannelConfig {
   timeoutSec?: number;
 }
 
-/** 频道实例联合（#508 M2：bark | webhook；未来类型扩此联合 + 分派三处）。 */
+/** 频道实例联合（bark | webhook；未来类型扩此联合 + 分派三处）。 */
 export type ChannelConfig = BarkChannelConfig | WebhookChannelConfig;
 
 /** 通知配置（内存单一事实源，与落盘 JSON 同构）。 */
@@ -113,7 +113,7 @@ export interface NotifyConfig {
   notifyWhenVisible: boolean;
   /**
    * 系统通知是否带提示音（false = silent，静默弹出）。
-   * @deprecated 只读兼容别名（#640/#641）：新 UI 不再写本键；读取由
+   * @deprecated 只读兼容别名：新 UI 不再写本键；读取由
    * resolveSoundSetting 回落消费（缺 browserSound/systemSound 时沿用旧值）。
    * 存量 user 层可能残留本键（settings 层不迁移、首次 UI 保存后由新键取代）。
    */
@@ -133,13 +133,13 @@ export interface NotifyConfig {
   /** SSE 连接表上限（同机同时在线的服务端未释放句柄数；超限淘汰最老连接，
    *  防半开幽灵连接只增不减耗尽资源）。 */
   maxConnections: number;
-  /** 配置驱动的推送频道实例（#508 M2：bark | webhook；启用后才参与投递，见 sdk/service）。 */
+  /** 配置驱动的推送频道实例（bark | webhook；启用后才参与投递，见 sdk/service）。 */
   channels: ChannelConfig[];
-  /** kind→channelId[] 稀疏路由覆盖（缺省=广播全部启用频道；见设计终稿 §4.6）。 */
+  /** kind→channelId[] 稀疏路由覆盖（缺省=广播全部启用频道）。 */
   kindRoutes: Record<string, string[]>;
-  /** 已确认的动态 kind 清单（用户确认后落盘，重启保持；M1 内存态缺陷修复）。 */
+  /** 已确认的动态 kind 清单（用户确认后落盘，重启保持）。 */
   allowKinds: string[];
-  /** 通知/历史统一脱敏开关（B-4，默认 true）。UI 开关首版不做——仅契约键，
+  /** 通知/历史统一脱敏开关（默认 true）。UI 开关首版不做——仅契约键，
    *  手改配置或 API（PUT /config / 迁移）可用；false = 通知与历史均明文。 */
   sanitizeContent: boolean;
 }
@@ -147,12 +147,12 @@ export interface NotifyConfig {
 /**
  * 布尔配置键联合（normalizeConfig 白名单与客户端渲染依赖它）。
  * browserSound/systemSound 类型为 SoundSetting（boolean|SoundId），其 boolean
- * 形态仍需走 CONFIG_KEYS 循环（#640/#641；门禁 N2 以默认字面量布尔推导），
+ * 形态仍需走 CONFIG_KEYS 循环（默认字面量布尔参与联合推导），
  * SoundId 字符串形态由声音专用分支归一化——联合推导把 SoundSetting 纳入。
  */
 type BooleanKeys = { [K in keyof NotifyConfig]: NotifyConfig[K] extends boolean | SoundSetting ? K : never }[keyof NotifyConfig];
 
-// ---------------------------------------------------------------- 声音设置（#640/#641）
+// ---------------------------------------------------------------- 声音设置
 
 /**
  * 内置音色 id（全平台语义一致的 SoundId 白名单；定稿口径 ding/bell/chime/pop，
@@ -181,10 +181,10 @@ export function isSoundSetting(v: unknown): v is SoundSetting {
 }
 
 /**
- * 单一回落纯函数（评审 P0-3 收敛）：通道声音设置的读面权威。
+ * 单一回落纯函数：通道声音设置的读面权威。
  * 缺该通道键（undefined）→ 回落全局旧别名 notifySound → 再缺省 true（跟随系统）；
  * 显式写入（含 false）后两通道互不影响。normalize 后配置恒含两键（DEFAULT_CONFIG
- * 兜底），但存量 user 层可能只有 notifySound（settings 层存量不迁，#640/#641 读面
+ * 兜底），但存量 user 层可能只有 notifySound（settings 层存量不迁，读面
  * 回落）——本函数是唯一回落点，消费方不得自行叠加回落逻辑。
  */
 export function resolveSoundSetting(cfg: Pick<NotifyConfig, "browserSound" | "systemSound" | "notifySound">, channel: SoundChannel): SoundSetting {
@@ -195,7 +195,7 @@ export function resolveSoundSetting(cfg: Pick<NotifyConfig, "browserSound" | "sy
   return true;
 }
 
-/** apply 接收的配置（enabled / 路径覆盖；路径不覆盖时默认落 DSH_HOME，未设时 ~/.dsh，#510）。 */
+/** apply 接收的配置（enabled / 路径覆盖；路径不覆盖时默认落 DSH_HOME，未设时 ~/.dsh）。 */
 export interface NotifierApplyConfig {
   enabled?: boolean;
   configFile?: string;
@@ -206,16 +206,25 @@ export interface NotifierApplyConfig {
 }
 
 /**
+ * settings 桥接接收的配置面：装配键 + **组合层通知配置 entry**（NotifyConfig
+ * 子集）。cordis 组合层可直接给通知字段（如 maxConnections），这些键经
+ * sanitizeSettings 过滤后作为命名空间 base 层参与归一化；装配键（configFile 等）
+ * 由调用方另行消费。两族键不重叠，故交叉类型无冲突。不经 config/interface.ts
+ * 外放——它只服务本域内的桥接实现面。
+ */
+export type NotifierEntryConfig = NotifierApplyConfig & Partial<NotifyConfig>;
+
+/**
  * 组合层装配键名（sanitizePatchSettings 透传通道的保留键排除表，单一事实源）：
  * 这些键是 cordis 组合层 / apply 入口的装配键（开关与路径覆盖），不属于
  * settings user 层的配置契约——PUT /config 与存量迁移提交同名键时一律剔除，
  * 防 user 层被无意义装配键污染，也杜绝未来某版本误把 user 层 configFile 等当
- * 配置来源（#470 P1-3：PUT 透传不能成为绕过 entry 白名单的路径；新增装配键
+ * 配置来源（PUT 透传不能成为绕过 entry 白名单的路径；新增装配键
  * 只加 NotifierApplyConfig 不加本表 → 下方编译期断言直接报错）。
  */
 export const ASSEMBLY_SETTING_KEYS = ["configFile", "toastScript", "historyFile", "statusFile", "enabled"] as const;
 
-// 编译期契约锁（#470 复核 P1-3）：ASSEMBLY_SETTING_KEYS 必须与
+// 编译期契约锁：ASSEMBLY_SETTING_KEYS 必须与
 // NotifierApplyConfig 键集**双向完全一致**——任一方向漏/多都让赋值类型错误。
 type AssemblyKey = (typeof ASSEMBLY_SETTING_KEYS)[number];
 type ApplyConfigKey = keyof NotifierApplyConfig;
@@ -242,7 +251,7 @@ export const DEFAULT_CONFIG: NotifyConfig = {
   notifySound: true,
   /** 浏览器通道声音默认 true = 跟随系统默认（浏览器通知不 silent，不自播）。 */
   browserSound: true,
-  /** 系统通道声音默认 true = 跟随系统默认（Linux 特例：默认事件音自播，#640）。 */
+  /** 系统通道声音默认 true = 跟随系统默认（Linux 特例：默认事件音自播）。 */
   systemSound: true,
   quietHours: { enabled: false, start: "22:00", end: "08:00" },
   /** 同类错误合并窗口（毫秒）：窗口内后续错误不再单独通知，累计到下次一并提示。 */
@@ -263,9 +272,21 @@ export const DEFAULT_CONFIG: NotifyConfig = {
   kindRoutes: {},
   /** 动态 kind 确认清单默认空。 */
   allowKinds: [],
-  /** 通知/历史统一脱敏默认开启（B-4；false = 通知与历史均明文）。 */
+  /** 通知/历史统一脱敏默认开启（false = 通知与历史均明文）。 */
   sanitizeContent: true,
 };
+
+/**
+ * 内置频道 id（SDK ABI 常量）：browser/system 两个内置频道的稳定标识，
+ * 路由条目以 `type:id` 形态引用它们。物理归属配置域——频道标识与
+ * CHANNEL_KEYS/ChannelConfig 同族，且本域是最底层：pipeline/channels/sdk 三处
+ * 消费它时都不会引入新的跨域值依赖（曾因定义在 sdk 域而让 pipeline 值依赖 sdk，
+ * 形成 sdk ⇄ pipeline 值环）。
+ */
+export const BUILTIN_CHANNELS = {
+  browser: "browser",
+  system: "system",
+} as const;
 
 /**
  * 布尔配置键（单一事实源：normalizeConfig 白名单与客户端渲染依赖它）。
@@ -276,7 +297,7 @@ export const DEFAULT_CONFIG: NotifyConfig = {
 export const CONFIG_KEYS: readonly BooleanKeys[] = ["notifyAsk", "notifyQuestion", "notifyTaskDone", "notifySubagentDone", "notifyTaskError", "notifyTurnEnd", "systemNotify", "browserNotify", "notifyWhenVisible", "notifySound", "browserSound", "systemSound", "sanitizeContent"];
 
 /**
- * 原型链污染/特殊成员键名（读透传与写通道共用保留键，#470 复核 P0）：这些键
+ * 原型链污染/特殊成员键名（读透传与写通道共用保留键）：这些键
  * 经 JSON.parse 可成为**自有键**，但作为未知键透传会误触 Object.prototype
  * 成员——constructor/prototype/toString/hasOwnProperty/valueOf 被原样写进
  * user 层/运行时镜像属脏写，__proto__ 赋值还会改对象原型（原型污染）。config

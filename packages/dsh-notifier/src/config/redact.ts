@@ -1,5 +1,5 @@
 /**
- * dsh-notifier — 配置域：凭据脱敏与掩码回填（M2 评审 P0-1/P0-2）。
+ * dsh-notifier — 配置域：凭据脱敏与掩码回填。
  *
  * 安全模块定位：SECRET_MASK / CHANNEL_SECRET_FIELDS 是本域 secret 字段语义的
  * 单一事实源——redactConfigView（读出口）按清单掩码、unmaskChannels（写入口）
@@ -13,7 +13,7 @@ import { PROTOTYPE_POLLUTION_KEYS } from "./config.ts";
 export const SECRET_MASK = "********";
 
 /**
- * 各频道类型的 secret 字段清单（#508 M2 掩码泛化单一事实源）：redactConfigView
+ * 各频道类型的 secret 字段清单（掩码泛化单一事实源）：redactConfigView
  * 按此清单掩码、unmaskChannels 按此清单回填——新增频道类型的 secret 字段只改本表。
  * 未知类型回落 ["deviceKey"]（兼容第三方贡献频道沿用 bark 掩码语义）。
  */
@@ -23,13 +23,13 @@ export const CHANNEL_SECRET_FIELDS: Record<string, readonly string[]> = {
 };
 
 /**
- * 配置读取面统一脱敏出口（单一收口，评审 P0-1）：深拷贝后把 channels[].secret
- * 字段（#508 M2 泛化：按 CHANNEL_SECRET_FIELDS[type] 清单遍历——bark→deviceKey、
+ * 配置读取面统一脱敏出口（单一收口）：深拷贝后把 channels[].secret
+ * 字段（泛化：按 CHANNEL_SECRET_FIELDS[type] 清单遍历——bark→deviceKey、
  * webhook→token/password/headerValue；未知类型回落 deviceKey）掩码为 SECRET_MASK。
  * GET /config 的 user 与 effective、PUT 成功响应的 user 一律经此函数输出——调用方
  * 不得绕过（契约测试深度扫描锁死）。
  *
- * #470 复核 P0/P2：读出口同时剔除原型链/特殊成员自有键（constructor/prototype/
+ * 读出口同时剔除原型链/特殊成员自有键（constructor/prototype/
  * toString/hasOwnProperty/valueOf/__proto__ 等）——settings user 层原始节可能被
  * 手改 yaml 注入这类键，读出口一律不暴露（与写通道剔除口径一致，防 UI/脚本
  * 看到并回写脏键）。
@@ -57,9 +57,9 @@ export function redactConfigView<T>(value: T): T {
 }
 
 /**
- * 掩码回填（PUT /config 保存通道，评审 P0-2）：patch 实例的 secret 字段整值等于
+ * 掩码回填（PUT /config 保存通道）：patch 实例的 secret 字段整值等于
  * SECRET_MASK 时按 **id 对齐**回填 user 层原值（严禁按下标——数组序变会把 A 的
- * key 回填进 B，造成凭据串实例）。#508 M2 泛化：按 CHANNEL_SECRET_FIELDS[type]
+ * key 回填进 B，造成凭据串实例）。泛化：按 CHANNEL_SECRET_FIELDS[type]
  * 清单逐字段回填（webhook 的 token/password/headerValue 与 bark 的 deviceKey 同语义）。
  * 必须先于 validateSettings/sanitizeSettings 执行（掩码不是合法 secret 值语义，
  * 未回填会被 400 拦死）。

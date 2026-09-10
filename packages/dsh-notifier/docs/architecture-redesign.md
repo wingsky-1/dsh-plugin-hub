@@ -30,10 +30,12 @@ src/
   index.ts                 # 装配层（唯一允许 import 全部域 interface.ts）+ 包导出面（re-export 段分节注释）
   service.d.ts             # cordis 声明合并：只 re-export sdk/interface.ts 的类型
   config/                  # 配置域（契约 + 桥两段）
-    interface.ts           # NotifyConfig/ChannelConfig/SoundSetting… + ConfigPort（含 confirmKind + 降级语义）
+    interface.ts           # NotifyConfig/ChannelConfig/SoundSetting… + BUILTIN_CHANNELS（内置频道 id，
+                           #   物理归属本域：最底层且与 CHANNEL_KEYS 同族——pipeline/channels/sdk 消费它
+                           #   不引入值依赖环）+ ConfigPort（含 confirmKind + 降级语义）
                            # + normalize/validate/sanitize/redact/unmask + createSettingsBridge/installNotifierSettings/
                            #   migrateLegacyConfig/SETTINGS_NS/路径函数 re-export
-    config.ts              # 类型 + 默认值 + CONFIG_KEYS/ASSEMBLY 锁（零 node 依赖）
+    config.ts              # 类型 + 默认值 + BUILTIN_CHANNELS + CONFIG_KEYS/ASSEMBLY 锁（零 node 依赖）
     normalize.ts           # normalizeConfig + 频道/kindRoutes/allowKinds/声音归一化（零 node 依赖）
     validators.ts          # SETTING_VALIDATORS/HINTS + 各 is* 严格校验（零 node 依赖）
     redact.ts              # redactConfigView / unmaskChannels / SECRET_MASK / CHANNEL_SECRET_FIELDS
@@ -70,7 +72,8 @@ src/
   sdk/                     # SDK 契约域（对外 ABI + 服务实现）
     interface.ts           # NotifyRequest/NotifyResult/KindRegistration/NotifyChannel/ChannelCapabilities/
                            #   NotifierService/NotifierServiceInternal/NotifySentEvent/NotifierServiceDeps/
-                           #   NotifySeverity/BUILTIN_CHANNELS + createNotifierService/getNotifierService
+                           #   NotifySeverity + createNotifierService/getNotifierService
+                           #   （BUILTIN_CHANNELS 仅在此 re-export 自 config 域以维持包导出面）
     service.ts             # createNotifierService 实现：注册表 + send/sendKind 编排（渲染→裁决→脱敏→投递/落史）
   events/                  # 事件监听域
     interface.ts           # EventHandlers/EventHandlersDeps/DoneBatcher + createEventHandlers/createDoneBatcher

@@ -1,20 +1,20 @@
-/* dsh-notifier — 客户端样式（独立 .css 文件，issue #76 设置卡片）。
+/* dsh-notifier — 客户端样式（独立 .css 文件，设置卡片）。
  *
  * 由 build-client 的 .css text-loader 构建期内联进 client.js（产物仍自包含单文件、
- * 零运行时依赖、无独立网络请求）。ensureStyle（shared/client/ensure-style.js，issue #477 收敛）
+ * 零运行时依赖、无独立网络请求）。ensureStyle（shared/client/ensure-style.js 收敛）
  * 注入 <style id=dsh-notifier-style>。前缀 dn-（防与 shell 冲突）；颜色一律走
  * --dsw-alias-* 主题变量 + 浅色回退（暗色等价由宿主主题变量保证，不自带暗色块）。
  *
- * #508 M1 重写（v0.2.2 方向一，设计事实源 docs/dsh-notifier-uiux-v022-sample.html r4）：
+ * 设置卡重写（v0.2.2 方向一，设计事实源 docs/dsh-notifier-uiux-v022-sample.html）：
  * - 三 tab 分段器（通知事件 / 通知频道 / 通知记录）；
  * - 事件行卡（severity 色点 + kind 码 + switch + 路由 chips 直点切换 + 状态标签）；
  * - switch 开关（track 40×22，透明 input 覆盖 44×32 触控区，aria-label 由 JSX 提供）；
  * - 动态 kind 行（确认后同款路由 chips）；
  * - 频道卡（类型图标 + 状态点/失败徽标卡头 + switch）；
- * - webhook 频道（#508 M2：预设 / 认证动态字段 / 模板编辑器 / 超时）；
+ * - webhook 频道（预设 / 认证动态字段 / 模板编辑器 / 超时）；
  * - 底部脏状态保存栏。
- * 契约锚点保留：dn-set-tabs/dn-set-tabActive/dn-set-tabBadge（#402）、dn-ch-perm（#418）、
- * dn-set-historyTools（#418）、dn-set-allowDim/dn-set-allowActions（#421）。
+ * 契约锚点保留：dn-set-tabs/dn-set-tabActive/dn-set-tabBadge、dn-ch-perm、
+ * dn-set-historyTools、dn-set-allowDim/dn-set-allowActions。
  * 本文件只保留「设置卡片」与「通知展示（横幅/toast）」两类样式。
  */
 
@@ -31,7 +31,7 @@
 }
 .dn-set-card .dn-set-body { padding: 14px; }
 
-/* --- 三 tab 分段器（普通 button 形态，不引入 role=tablist——与 #402 决策一致） --- */
+/* --- 三 tab 分段器（普通 button 形态，不引入 role=tablist） --- */
 .dn-set-card .dn-set-tabs {
   display: flex;
   gap: 4px;
@@ -205,7 +205,7 @@
   font-weight: 600;
 }
 .dn-set-card .dn-route-chip.is-on::before { background: var(--dsw-alias-state-info-primary, #2f6fed); }
-/* 未启用频道 chip（#527）：置灰禁点——停用频道不在投递面内，点亮也不投递 */
+/* 未启用频道 chip：置灰禁点——停用频道不在投递面内，点亮也不投递 */
 .dn-set-card .dn-route-chip.is-off,
 .dn-set-card .dn-route-chip.is-off.is-on {
   opacity: 0.45;
@@ -319,7 +319,7 @@
   .dn-set-card .dn-set-btn:hover,
   .dn-set-card .dn-set-save:hover { opacity: 0.9; }
 }
-/* #405：保存中（guard 在途）禁用态——保存/放弃按钮置灰不可点，hover 不响应 */
+/* 保存中（guard 在途）禁用态——保存/放弃按钮置灰不可点，hover 不响应 */
 .dn-set-card .dn-set-btn:disabled,
 .dn-set-card .dn-set-save:disabled {
   opacity: 0.45;
@@ -330,7 +330,7 @@
   .dn-set-card .dn-set-save:disabled:hover { opacity: 0.45; }
 }
 
-/* #405 PR2：频道 tab 域保存行（仅提交 channels 键，与 foot 全量语义不同） */
+/* 频道 tab 域保存行（仅提交 channels 键，与 foot 全量语义不同） */
 .dn-set-card .dn-ch-domainSave {
   display: flex;
   align-items: center;
@@ -348,7 +348,7 @@
 }
 .dn-set-card .dn-ch-domainSave .dn-set-save { min-height: 32px; }
 
-/* #405 PR2b：409 冲突双动作横幅（非模态，foot 上方） */
+/* 409 冲突双动作横幅（非模态，foot 上方） */
 .dn-set-card .dn-conflict {
   display: flex;
   align-items: center;
@@ -396,14 +396,14 @@
   font-size: 12px;
 }
 .dn-set-card .dn-dnd-cap { color: var(--dsw-alias-label-secondary, #5f6672); }
-/* #421：豁免候选 chips 容器 + 未启用事件弱化（勾选态保留照常写入） */
+/* 豁免候选 chips 容器 + 未启用事件弱化（勾选态保留照常写入） */
 .dn-set-card .dn-set-allows { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .dn-set-card .dn-set-allowDim {
   opacity: 0.55;
   color: var(--dsw-alias-label-tertiary, #6d7480);
 }
 .dn-set-card .dn-set-allowHint { font-size: 10px; color: var(--dsw-alias-label-tertiary, #6d7480); }
-/* #421：快捷按钮行（跟随已启用 / 恢复默认） */
+/* 快捷按钮行（跟随已启用 / 恢复默认） */
 .dn-set-card .dn-set-allowActions {
   display: flex;
   gap: 8px;
@@ -499,7 +499,7 @@
   gap: 10px;
   padding: 10px 14px;
   min-height: 48px;
-  flex-wrap: wrap; /* 390px 下允许换行，开关不被挤出（#508 评审 P0-19） */
+  flex-wrap: wrap; /* 390px 下允许换行，开关不被挤出 */
 }
 .dn-set-card .dn-ch-card > summary::-webkit-details-marker { display: none; }
 .dn-set-card .dn-ch-card > summary::after {
@@ -514,7 +514,7 @@
   flex: none;
 }
 .dn-set-card .dn-ch-card[open] > summary::after { transform: rotate(225deg); }
-/* 频道类型图标（#508 拍板 ⑤：保留） */
+/* 频道类型图标（设计上刻意保留） */
 .dn-ch-icon {
   width: 30px;
   height: 30px;
@@ -603,7 +603,7 @@
 }
 .dn-set-card .dn-ch-permText { line-height: 1.5; }
 .dn-set-card .dn-ch-onEdge { border-left: 3px solid var(--dsw-alias-state-success-primary, #0f9d6e); }
-/* #640/#641：三态——启用（绿边）/ 仅声音（琥珀边）/ 停用（灰） */
+/* 三态——启用（绿边）/ 仅声音（琥珀边）/ 停用（灰） */
 .dn-set-card .dn-ch-card.dn-ch-sound { border-left: 3px solid var(--dsw-alias-state-warning-primary, #d97706); }
 .dn-set-card .dn-ch-card.dn-ch-off > summary { opacity: 0.75; }
 .dn-set-card .dn-ch-stateTxt {
@@ -622,7 +622,7 @@
 .dn-set-card .dn-soundOnly { color: var(--dsw-alias-state-warning-primary, #d97706); }
 .dn-set-card .dn-tonePreview { flex: none; }
 .dn-set-card .dn-ch-add { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
-/* #402：最近投递失败徽标（上提卡头 summary 行，收起态可见） */
+/* 最近投递失败徽标（上提卡头 summary 行，收起态可见） */
 .dn-set-card .dn-ch-failBadge {
   font-size: 10px;
   border-radius: 8px;
@@ -637,7 +637,7 @@
   white-space: nowrap;
 }
 
-/* secret 掩码输入 + 显隐（#508：webhook 凭据字段） */
+/* secret 掩码输入 + 显隐（webhook 凭据字段） */
 .dn-secret { display: inline-flex; align-items: center; gap: 6px; flex: 1 1 180px; min-width: 0; }
 .dn-secret .dn-set-inputText { flex: 1 1 auto; font-family: ui-monospace, monospace; letter-spacing: 0.08em; }
 .dn-set-card .dn-secret-reveal {
@@ -715,7 +715,7 @@
 .dn-set-card .dn-levels-add .dn-set-inputText { flex: 1 1 150px; min-width: 90px; }
 .dn-set-card .dn-levels-add .dn-set-select { flex: 1 1 110px; min-width: 90px; }
 
-/* --- 通知记录 tab（#418 锚点 class 沿用：工具行/列表/条目） --- */
+/* --- 通知记录 tab（锚点 class 沿用：工具行/列表/条目） --- */
 .dn-set-card .dn-set-historyTools {
   display: flex;
   align-items: center;
@@ -809,7 +809,7 @@
   padding-left: 8px;
 }
 
-/* 窄屏（phone / pad 竖屏，A9）：行可换行、不溢出；关键操作保持可达 */
+/* 窄屏（phone / pad 竖屏）：行可换行、不溢出；关键操作保持可达 */
 @media (max-width: 480px) {
   .dn-set-card .dn-set-body { padding: 12px 10px; }
   .dn-set-card .dn-set-tabs { padding: 8px 10px; }
@@ -825,7 +825,7 @@
   .dn-set-card .dn-ch-failBadge { max-width: 140px; }
 }
 
-/* ============ 通知展示（横幅 / toast，issue #76 保留） ============ */
+/* ============ 通知展示（横幅 / toast） ============ */
 
 .dn-toast {
   position: fixed;

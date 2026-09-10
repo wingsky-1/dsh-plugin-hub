@@ -1,14 +1,13 @@
 /**
  * dsh-notifier — SDK 契约域：通知中心核心服务实现（'wingsky.notifier'）。
  *
- * PR2（T2-1）：判定/投递上移至 pipeline 工厂——createAdjudicator 单刻快照
- * （B-2：每次通知 current() 恰好 1 次，裁决/播放决议同快照）、createDeliverer
+ * 判定/投递上移至 pipeline 工厂——createAdjudicator 单刻快照
+ * （每次通知 current() 恰好 1 次，裁决/播放决议同快照）、createDeliverer
  * fail-soft 投递（DeliverDeps 注入，终态/落史/play 全经 deps）；内置频道经
- * index.ts 注入（builtinChannels + play，sdk→channels 值边消除——D23）；
- * send() 动态 kind 与 sendKind 统一过裁决全链（enabled→确认→免打扰→路由，
- * B-9/D24）。
+ * index.ts 注入（builtinChannels + play，sdk→channels 值边消除）；
+ * send() 动态 kind 与 sendKind 统一过裁决全链（enabled→确认→免打扰→路由）。
  *
- * 兼容红线（§8）：SSE 帧契约、历史 jsonl、免打扰/suppressed/多标签租约
+ * 兼容红线：SSE 帧契约、历史 jsonl、免打扰/suppressed/多标签租约
  * 全部保持——本模块只做管线收敛，不改出口语义。
  */
 import { resolveSoundSetting } from "../config/interface.ts";
@@ -32,8 +31,7 @@ import type {
 
 /** browser 帧级 sound 编码（BrowserDispatchSpec.sound；与 SSE 帧契约同源：
  *  false → silent；pop=true：true → system、SoundId → selfplay+tone；pop=false
- *  （只响不弹）：无 OS 通知实体可发声，true 也编码 selfplay（客户端默认旋律，
- *  P1-1 复核——编码需随 pop 决议，否则 system 模式会让客户端既不弹也不播）。 */
+ *  （只响不弹）：无 OS 通知实体可发声，true 也编码 selfplay（客户端默认旋律，编码需随 pop 决议，否则 system 模式会让客户端既不弹也不播）。 */
 function encodeBrowserSound(sound: NotifyConfig["browserSound"], pop: boolean): { mode: "silent" | "system" | "selfplay"; tone?: SoundId } {
   if (sound === false) return { mode: "silent", tone: undefined };
   if (sound === true) return pop ? { mode: "system", tone: undefined } : { mode: "selfplay", tone: undefined };
@@ -48,12 +46,12 @@ function encodeBrowserSound(sound: NotifyConfig["browserSound"], pop: boolean): 
  *   也落 suppressed 历史）→ 逐频道 fail-soft 投递 → 历史落盘 → 返回受理结果。
  *
  * 内置频道经 index.ts 装配：实例入投递池（builtinChannels），播放决议随裁决
- * 快照解析并经 play 值传递（browser→SSE 帧 / system→notify，D23）。
+ * 快照解析并经 play 值传递（browser→SSE 帧 / system→notify）。
  */
 export function createNotifierService(deps: NotifierServiceDeps): NotifierServiceInternal {
   const { current, enabled, history, logger, outboundChannels, builtinChannels, recordStatus, emitSent, setConfirm, play } = deps;
 
-  /** 动态 kind 注册表（id → label；确认态持久化在配置 allowKinds——M2 修复 M1 内存态重启丢失）。 */
+  /** 动态 kind 注册表（id → label；确认态持久化在配置 allowKinds——重启后不丢失）。 */
   const kindRegistry = new Map<string, { label: string }>();
   /** 插件贡献频道注册表（name → channel；默认未启用，MVP 仅存表）。 */
   const channelRegistry = new Map<string, NotifyChannel>();
@@ -68,9 +66,9 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
   }
 
   /**
-   * 投递池解析（裁决时随快照调用——B-2 单刻语义：启用条件与播放决议全部基于
+   * 投递池解析（裁决时随快照调用——单刻语义：启用条件与播放决议全部基于
    * 传入快照，派生闭包不得自行读 current）。内置频道按「弹窗开关 || 声音非静音」
-   * 进入（#640/#641：弹窗关 + 声音开 → 只响不弹投递）；出站频道 enabled 过滤
+   * 进入（弹窗关 + 声音开 → 只响不弹投递）；出站频道 enabled 过滤
    * 由装配层保证。
    */
   function allChannels(snapshot: NotifyConfig): ChannelPoolEntry[] {
@@ -109,10 +107,10 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
   });
 
   /**
-   * 裁决结果 → 受理结果（suppressed：disabled 不落史（D15）/kind-pending、quiet
+   * 裁决结果 → 受理结果（suppressed：disabled 不落史/kind-pending、quiet
    * 落史 + skipped；deliver：stale warn + 全链投递 + 落史）。
-   * B-1/B-4：统一脱敏时点 = 渲染完成后、任何落史/投递前——裁决结果已携带快照
-   * 解析的 sanitizeContent 开关（B-2 单刻契约：此处不得二次调用 current()），
+   * 统一脱敏时点 = 渲染完成后、任何落史/投递前——裁决结果已携带快照
+   * 解析的 sanitizeContent 开关（单刻契约：此处不得二次调用 current()），
    * 本函数按开关对结果文本统一脱敏一次后落入历史/投递。
    */
   function handleDecision(decision: AdjudicateResult): NotifyResult[] {
@@ -140,9 +138,9 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
 
   /**
    * 统一通知管线（kind 形态，等价搬移前的 notify）。外部 send() 与内置事件源
-   * 都经它收敛（评审 #1）——send() 动态 kind 自 B-9 起同样过裁决全链。
-   * B-1：渲染文本原样进裁决（其结果携带脱敏开关），统一脱敏在其后
-   * handleDecision 内按开关执行——本函数不再自行读 current()（B-2 单刻契约）。
+   * 都经它收敛——send() 动态 kind 同样过裁决全链。
+   * 渲染文本原样进裁决（其结果携带脱敏开关），统一脱敏在其后
+   * handleDecision 内按开关执行——本函数不再自行读 current()（单刻契约）。
    * @returns 受理结果数组（投递终态经历史落盘与 wingsky-notify/sent 事件可见）。
    */
   function sendKind(kind: string, detail: NotifyDetail = {}, opts?: { bypassQuiet?: boolean; onlyChannel?: string }): NotifyResult[] {
@@ -179,7 +177,7 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
 
     confirmKind(kind: string, confirmed: boolean) {
       if (!kindRegistry.has(kind)) return;
-      // 确认态持久化到配置 allowKinds（M2：修复 M1 内存态重启丢失）；fire-and-forget
+      // 确认态持久化到配置 allowKinds（重启后不丢失）；fire-and-forget
       setConfirm(kind, confirmed);
     },
 
@@ -195,7 +193,7 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
     },
 
     async send(req: NotifyRequest) {
-      // 形状守卫（评审 #4 纪律）：不匹配转结构化结果，不抛异常
+      // 形状守卫：不匹配转结构化结果，不抛异常
       if (typeof req !== "object" || req === null) {
         return [{ channelId: "*", status: "failed", error: "invalid request shape" }];
       }
@@ -207,10 +205,10 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
       if (isBuiltinKind(kind)) {
         return sendKind(kind, { message: req.body });
       }
-      // 动态 kind：与 sendKind 统一过裁决全链（B-9/D24——enabled/免打扰不再绕过；
-      // title/body 直通不经 NOTIFY_KINDS 文案模板，severity 直通）；B-4 中心
-      // 兜底：动态 kind body 从「调用方负责脱敏」变「send 统一脱敏」（B-4，
-      // 开关由裁决结果携带，本分支不自行读 current()）。
+      // 动态 kind：与 sendKind 统一过裁决全链（enabled/免打扰不再绕过；
+      // title/body 直通不经 NOTIFY_KINDS 文案模板，severity 直通）；中心
+      // 兜底：动态 kind body 从「调用方负责脱敏」变「send 统一脱敏」（开关由
+      // 裁决结果携带，本分支不自行读 current()）。
       const ts = Date.now();
       const title = req.title ?? "DSH 通知";
       const body = String(req.body ?? "");

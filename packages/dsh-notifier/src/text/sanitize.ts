@@ -2,7 +2,7 @@
  * dsh-notifier — 文本域：通知文本脱敏（安全模块，纯函数）。
  *
  * 安全定位：通知正文/标题进入通知与历史前必须经本文件脱敏（「文本可能内嵌
- * 命令回显/路径/凭据片段」的外泄面收敛到可读摘要）；B-1 统一时点 = 渲染后、
+ * 命令回显/路径/凭据片段」的外泄面收敛到可读摘要）；统一时点 = 渲染后、
  * 任何落史/投递前（sanitizeNoticeContent 单点），出口级 scrub（频道凭据等）
  * 是独立固定出口、不并入本文件。
  * SANITIZE_RULES 有序表是顺序敏感的安全数据——顺序硬约束与已证伪清单的
@@ -58,7 +58,7 @@ const SANITIZE_RULES: ReadonlyArray<readonly [RegExp, string]> = [
   // 邮箱（严格版：域名首标签须字母开头，排除 image@2x.png / pkg@1.2.3 误伤）→ <email>
   // 双负向后行断言：① 词字符——防止从占位符/单词中间起配；② 字面 <redacted
   // ——防止把 DSN 掩码占位符 <redacted>@host 再误判为邮箱产生 <<email>>。
-  // 不整体排除 <：否则尖括号引用形态 <user@host> 整体漏网明文泄漏（issue #30）；
+  // 不整体排除 <：否则尖括号引用形态 <user@host> 整体漏网明文泄漏；
   // 占位符顺序约束由断言②单独保住。
   [/(?<![A-Za-z0-9._%+-])(?<!<redacted)[A-Za-z0-9._%+-]+@[A-Za-z][A-Za-z0-9.-]*\.[A-Za-z]{2,}/gu, "<email>"],
 ];
@@ -85,17 +85,21 @@ export function sanitizeErrorText(text: unknown, maxLen = 300): string {
 }
 
 /**
- * 通知脱敏统一入口（B-1：渲染完成后、任何落史/投递前调用一次，供 sendKind /
+ * 通知脱敏统一入口（渲染完成后、任何落史/投递前调用一次，供 sendKind /
  * send 两入口复用；suppressed/merged 落史与投递三路径全部消费其结果）。
  * enabled=false（sanitizeContent=false）时标题与正文均原样 String 返回——
- * 通知与历史均明文（B-4）。
+ * 通知与历史均明文；缺省/undefined 视同开启（开关容错：旧配置或未接线调用方
+ * 不因缺键而静默明文，故参数类型含 undefined）。
  * title 走 sanitizeErrorText 显式短上限 64（模板拼接产物的展示语义上限；
  * 沿用既有 UTF-16 单元截断，码点安全切分留待复核）；body 只打码不截断——
  * 长度权威唯一 = 投递频道的 capabilities.maxBodyLen（deliver 视频道截断），
  * 此处截断会造成历史明文超长片段与双截断交错。
  * @returns { title, body } 均脱敏（enabled=false 时原样）后的字符串。
  */
-export function sanitizeNoticeContent(notice: { title: unknown; body: unknown }, enabled: boolean): { title: string; body: string } {
+export function sanitizeNoticeContent(
+  notice: { title: unknown; body: unknown },
+  enabled: boolean | undefined,
+): { title: string; body: string } {
   if (enabled === false) {
     return { title: String(notice.title), body: String(notice.body) };
   }

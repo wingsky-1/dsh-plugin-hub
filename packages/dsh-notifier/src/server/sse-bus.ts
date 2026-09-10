@@ -2,7 +2,7 @@
  * dsh-notifier — 服务器侧逻辑：SSE 枢纽业务包装。
  *
  * 连接管理（register/size/dispose/心跳/stalled+maxAge 回收）委托共享 hub
- * （shared/sse-hub.js，#515）；本包装在共享 hub 之上叠加 notifier 业务广播：
+ * （shared/sse-hub.js）；本包装在共享 hub 之上叠加 notifier 业务广播：
  * broadcast(payload) 附加递增 seq、入 600 条滚动缓冲（断线回放独立于 /history
  * 截断），framesSince(since) 供 events 路由 ?since 补拉。
  */
@@ -43,9 +43,9 @@ export interface SseHub {
  * @param options.stalledTimeoutMs stalled 回收窗口（默认 90s；测试注入短值）。
  * @param options.maxAgeMs maxAge 轮换上限（默认 120min；0 = 关闭轮换）。
  * @param options.idleTimeoutMs maxAge 轮换空闲门槛（默认 15min）。
- * @param options.loadSeq seq 续计数注入面（R-6/D22 选项 A；缺省 = 内存模式，
+ * @param options.loadSeq seq 续计数注入面（缺省 = 内存模式，
  *   重启归零——旧行为；装配层传入持久化读取）。
- * @param options.saveSeq seq 落盘注入面（R-6/D22 选项 A；broadcast 后防抖调用，
+ * @param options.saveSeq seq 落盘注入面（broadcast 后防抖调用，
  *   dispose 同步落盘；缺省 = 不持久化）。
  * @param options.seqFlushMs seq 落盘防抖窗口（默认 500ms；测试注入短窗防固定 sleep）。
  */
@@ -72,7 +72,7 @@ export function createSseHub(options: {
   /** SSE 已派发帧的滚动缓冲（断线回补用；上限 RECENT_LIMIT，独立于 /history 的
    *  200 条截断，避免补拉时尾部事件被截掉）。 */
   const RECENT_LIMIT = 600;
-  // R-6/D22 选项 A：启动时从注入面续计数（seq 单调性不变量：≥0 整数，非法回退 0）。
+  // 启动时从注入面续计数（seq 单调性不变量：≥0 整数，非法回退 0）。
   const loadedSeq = options.loadSeq === undefined ? 0 : options.loadSeq();
   let notifySeq = Number.isFinite(loadedSeq) && Number.isInteger(loadedSeq) && loadedSeq >= 0 ? loadedSeq : 0;
   const recentFrames: Array<Record<string, unknown> & { seq: number }> = [];
@@ -114,7 +114,7 @@ export function createSseHub(options: {
       return recentFrames.filter((frame) => frame.seq > since);
     },
     /** 停止心跳定时器 + 同步补写防抖窗口内未落盘的 seq（正常停止零丢失；
-     *  崩溃窗口即 ≤防抖窗口，需求 §7.7 R-6 登记）。 */
+     *  崩溃窗口即 ≤防抖窗口）。 */
     dispose: () => {
       hub.dispose();
       if (seqTimer !== null) {

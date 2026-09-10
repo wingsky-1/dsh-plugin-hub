@@ -1,7 +1,7 @@
 /**
- * dsh-notifier — 内置 browser 频道（D23：帧构造纯函数 + 投递池实例）。
+ * dsh-notifier — 内置 browser 频道（帧构造纯函数 + 投递池实例）。
  *
- * PR2 播放决议从「投递时刻实时读 current」上移至裁决时快照解析（B-2）：本文件
+ * 播放决议从「投递时刻实时读 current」上移至裁决时快照解析：本文件
  * 只保留两件事——纯帧构造 buildBrowserFrame(payload, spec)（index.ts 装配的
  * DeliverDeps.play 调用）与可入投递池的 NotifyChannel 实例（id + capabilities；
  * send 已退役——播放经 play 值传递，误触即响亮失败暴露接线缺陷而非静默丢通知）。
@@ -9,7 +9,7 @@
  */
 import type { SseHub } from "../server/interface.ts";
 import type { BrowserDispatchSpec } from "../pipeline/interface.ts";
-import { BUILTIN_CHANNELS } from "../sdk/interface.ts";
+import { BUILTIN_CHANNELS } from "../config/interface.ts";
 import type { NotifyChannel, NotifySeverity } from "../sdk/interface.ts";
 
 /**
