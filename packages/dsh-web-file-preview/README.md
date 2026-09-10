@@ -84,7 +84,7 @@ pnpm build && pnpm test                 # 仓库内：构建 + smoke（含地址
 插件不改官方源码、不注册官方扩展点，但**读取**以下官方契约；官方改版时这些点是唯一的失效面：
 
 - `/api/present.open` 的路径、`POST` 方法与 `action` 查询参数（`reveal` 依赖 `action=reveal` 区分）；
-- presented 卡片的 `[data-presented-file]` 标记、卡片覆盖按钮与正文提及的 `title` 属性（路径来源）；官方 CSS Modules 类名是构建期哈希，不可依赖；
+- presented 卡片的 `[data-presented-file]` 标记与其内 `button[title]`（卡片路径来源）、助手回复正文里的 `code > button[title]` 提及；官方 CSS Modules 类名是构建期哈希，不可依赖（官方该按钮的 `fileMention` 类名即哈希形态，不能作选择器）；
 - `dsh-resource://file/session/<id>/<path>` 地址语法与 `fileAddressFor` 的 cwd 折叠语义。
 
 任一点失效时的行为是**降级放行**：收口不生效，点击退回官方原生打开（可感知，不会静默损坏数据）。
@@ -100,7 +100,8 @@ pnpm build && pnpm test                 # 仓库内：构建 + smoke（含地址
 
 - **依赖官方 DOM 标记**：路径采集依赖 `[data-presented-file]` 与 `title`。官方改版后若标记变化，收口会降级为放行原生打开（见「兼容性」）。
 - **pending 窗口**：路径在「点击卡片/提及」时采集，随后该次「用默认应用打开」使用它。极少见的情形（如键盘直接唤起菜单、或长时间停留后点击）可能采集不到，此时同样降级放行。
-- **每次点击后需重启生效**：与所有 dsh 客户端插件一致，插件产物只在 `dsh web` 启动时组合。
+- **路径形态过滤**：采集只接受「含路径分隔符」或「带扩展名的裸文件名」两种形态；无扩展名的裸名（如仓库根的 `Makefile`）不采集，该次点击按未采集处理（降级放行原生）。
+- **安装 / 升级后需重启一次**：插件产物只在 `dsh web` 启动时组合；运行期每次「打开」点击即时生效，无需重启。
 
 ## 落幕判据
 

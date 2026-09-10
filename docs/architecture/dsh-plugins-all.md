@@ -82,8 +82,6 @@ dsh plugin --profile web add @wingsky-1/dsh-notifier
   使用前务必阅读其 README 安全说明（不可信网段关闭）；
 - `mcp-manager` 会启动 MCP 服务器子进程（stdio）并执行其命令——仅配置可信服务器，
   子进程继承宿主权限；
-- `web-file-preview` 经代理暴露时 loopback 围栏可被穿透（局域网任意设备可读白名单文件）
-  ——请在可信内网部署；
 - `notifier` 在 Windows 通过 PowerShell WinRT 弹系统通知（本机桌面）；
 - `provider-usage` 用户适配器代码 = 宿主完整 Node 权限——仅加载可信本地 mjs。
 

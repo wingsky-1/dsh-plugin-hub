@@ -84,7 +84,7 @@ The address builder is kept in lockstep with the official `fileAddressFor` from 
 The plugin does not modify official sources and does not register official extension points, but it **reads** the following official contracts; they are the only failure surface when dsh changes:
 
 - the `/api/present.open` path, its `POST` method and its `action` query parameter (`reveal` relies on `action=reveal` to stay distinguishable);
-- the `[data-presented-file]` marker on presented cards plus the `title` attribute on the card's overlay button and on inline mentions (the path source); official CSS Modules class names are build-time hashes and must not be relied on;
+- the `[data-presented-file]` marker with its inner `button[title]` (card path source), and `code > button[title]` mentions in the assistant response; official CSS Modules class names are build-time hashes and must not be relied on (the official `fileMention` class name is such a hash);
 - the `dsh-resource://file/session/<id>/<path>` address grammar and `fileAddressFor`'s cwd-folding semantics.
 
 When any of them changes the behavior is a **graceful pass-through**: the takeover stops applying and the click falls back to the official native open (observable, never silent data corruption).
@@ -100,7 +100,8 @@ When any of them changes the behavior is a **graceful pass-through**: the takeov
 
 - **Depends on official DOM markers**: path collection relies on `[data-presented-file]` and `title`. If a future dsh release changes those markers, the takeover degrades to a pass-through (see "Compatibility").
 - **Pending window**: the path is collected when the card or mention is clicked and consumed by the following "open with the default application". Rare flows (keyboard-invoked menu, or clicking long after the menu opened) may collect nothing, which also degrades to a pass-through.
-- **One restart per install**: as with every dsh browser plugin, the artifact is composed when `dsh web` starts.
+- **Path-shape filter**: collection accepts only "contains a separator" or "bare filename with an extension"; a bare extension-less name (such as a repository-root `Makefile`) is not collected, and that click degrades to a pass-through.
+- **One restart per install/upgrade**: the artifact is composed when `dsh web` starts; every runtime "open" click takes effect immediately, with no restart needed.
 
 ## Retirement criteria
 

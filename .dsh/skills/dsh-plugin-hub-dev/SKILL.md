@@ -47,7 +47,7 @@ IIFE 工厂、Symbol.toStringTag 装配、**load id === 包名** define 注入�
 |---|---|---|
 | 零依赖 wrapper | 干净模块、无 bare import | esbuild iife + 生成外壳 |
 | React externals | `import * as React from "react"` | 干净模块 cjs 内联进 factory，React 由 loader `require("react")` 注入（无全局 React）；需 `react-shim.d.ts` + peer react optional |
-| 第三方内联 | `dsh.client.inlineBareImports: true` | bare import（dompurify/diff2html/marked/highlight…）由 esbuild 内联进 client.js，仍自包含零依赖；web-file-preview 走这条 |
+| 第三方内联 | `dsh.client.inlineBareImports: true` | bare import（dompurify/glob/marked…）由 esbuild 内联进 client.js，仍自包含零依赖；dsh-mcp-manager 走这条 |
 
 ⚠️ 默认「bare import = 宿主注入 external（React）」与 `inlineBareImports` 互斥，按包
 二选一。
@@ -75,7 +75,7 @@ IIFE 工厂、Symbol.toStringTag 装配、**load id === 包名** define 注入�
 
 - 客户端专属模块（md/code/renderer 等）、`style.css`、`react-shim.d.ts`、`css.d.ts`
   归位 `src/client/`；宿主模块留 `src/` 根。
-- **宿主与客户端共享**的模块（如 web-file-preview 的 `grouping.ts`）留 `src/` 根，
+- **宿主与客户端共享**的模块（如双端共用的后缀表 / 契约常量）留 `src/` 根，
   客户端经 `../grouping.js` 引用——不要把共享模块搬进 src/client/。
 
 ## 5. 门禁与阶段提交（改动提交前全跑，在仓库根执行）

@@ -200,11 +200,7 @@ importers:
 
   packages/dsh-verify-isolated: {}
 
-  packages/dsh-web-file-preview:
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: 'catalog:'
-        version: 4.0.2
+  packages/dsh-web-file-preview: {}
 
 packages:
 

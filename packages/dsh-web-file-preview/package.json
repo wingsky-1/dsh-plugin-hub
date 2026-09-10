@@ -27,7 +27,8 @@
     },
     "client": {
       "inject": [
-        "@deepseek-ai/dsh-client-connection"
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
       ],
       "platform": "web"
     }
@@ -62,9 +63,6 @@
   "author": "wingsky-1",
   "publishConfig": {
     "access": "public"
-  },
-  "devDependencies": {
-    "@deepseek-ai/cordis": "catalog:"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "catalog:"

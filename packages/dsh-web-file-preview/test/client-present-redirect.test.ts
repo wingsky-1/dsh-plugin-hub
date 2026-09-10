@@ -158,6 +158,15 @@ function mentionFor(path) {
   await call("/api/present.open?sessionId=s1&seq=3&index=0", { method: "POST" });
   assert.equal(handle.fetchCalls.length, before + 1, "#698：openResource 抛错时显式重放原生请求");
 
-  for (const d of disposers.splice(0)) d();
-  assert.equal(fetchOf(), handle.originalFetch, "#698：disposer 后按身份还原 fetch");
+  // 重复 apply（HMR / 二次挂载）：包装叠加在旧包装之上，收口仍须生效。
+  handle.mod.apply(ctx);
+  assert.notEqual(fetchOf(), handle.originalFetch, "#698：重复 apply 后仍处于包装态");
+  ctx.sidebarRight.openResource = (address) => { opened.push(address); };
+  click(cardFor("/w/twice.md"));
+  await call("/api/present.open?sessionId=s1&seq=9&index=0", { method: "POST" });
+  assert.equal(opened.at(-1), "dsh-resource://file/session/s1/twice.md", "#698：重复 apply 后收口仍生效");
+
+  // 身份比对还原是分层的：按注册逆序卸载才能逐层摘除（顺序敏感是已知取舍，见装配注释）。
+  for (const d of disposers.splice(0).reverse()) d();
+  assert.equal(fetchOf(), handle.originalFetch, "#698：逐层逆序卸载后按身份还原 fetch");
 }
