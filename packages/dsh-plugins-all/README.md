@@ -54,7 +54,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计胶囊（v2 适配器框架：内置 DeepSeek 官方与 OpenCode Go，自写 mjs 接入任意数据源） |
 | `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS；Brotli/gzip 与 WebSocket 双压缩 + WS 半开探活 + 启动令牌自动注入） |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP；项目级/全局两级配置，项目级经中间层收敛为 4 个原子工具） |
-| `@wingsky-1/dsh-web-file-preview` | 对话文件链接 web 端预览（图片 / Markdown（Mermaid）/ 代码高亮 / 文本 / Diff / HTML 沙箱 + 路径兜底搜索） |
+| `@wingsky-1/dsh-web-file-preview` | 把对话内「用默认应用打开」的文件请求改写成官方右侧栏预览 |
 | `@wingsky-1/dsh-verify-isolated` | 插件开发隔离验证 skill（DSH_HOME / profile / 端口 / 浏览器实例四重隔离 + 自带浏览器驱动） |
 
 <details>

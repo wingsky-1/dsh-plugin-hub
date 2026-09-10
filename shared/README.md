@@ -11,15 +11,15 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
 
 | 文件 | 端 | 内容 | 消费方（登记快照） |
 |------|----|------|------|
-| `loopback.js` | 宿主 | `isLoopbackRequest` 安全围栏（路由 loopback 校验单一事实源） | lan-proxy / mcp-manager / notifier / provider-usage / web-file-preview |
-| `host-utils.js` | 宿主 | `writeJson` / `errorMessage` / `readBody`（限长显式化）/ `readJsonBody`（宽松版）/ `sseData`（SSE data 帧序列化 `data: <json>\n\n`；undefined / 含 `\n` payload 行为对齐三包历史、非承诺契约；`sseData` 消费方：mcp-manager / notifier / provider-usage）/ `guardLoopbackMethod`（loopback+方法白名单守卫；403 先于 405 为守卫自身执行顺序，仅适用于套守卫端点） | lan-proxy / mcp-manager / notifier / provider-usage / web-file-preview |
+| `loopback.js` | 宿主 | `isLoopbackRequest` 安全围栏（路由 loopback 校验单一事实源） | lan-proxy / mcp-manager / notifier / provider-usage |
+| `host-utils.js` | 宿主 | `writeJson` / `errorMessage` / `readBody`（限长显式化）/ `readJsonBody`（宽松版）/ `sseData`（SSE data 帧序列化 `data: <json>\n\n`；undefined / 含 `\n` payload 行为对齐三包历史、非承诺契约；`sseData` 消费方：mcp-manager / notifier / provider-usage）/ `guardLoopbackMethod`（loopback+方法白名单守卫；403 先于 405 为守卫自身执行顺序，仅适用于套守卫端点） | lan-proxy / mcp-manager / notifier / provider-usage |
 | `frontmatter.js` | 宿主 | `parseFrontmatter` / `parseFrontmatterAll` / `setFrontmatterField` / `parseYamlBool` | 历史：commands-files / skill-explorer 同源复制统一；现生产消费已退役（verify-isolated 测试仍引用） |
 | `settings-namespace.js` | 宿主 | `installSettingsNamespace`（settings 服务面注入） | lan-proxy / mcp-manager / notifier / provider-usage |
 | `dsh-home.js` | 宿主 | `dshHome`（DSH home 解析单一事实源，#517：`DSH_HOME` 非空白原样采用、未设置或空白回落 `~/.dsh`——空白视同未设置对齐官方 `dsh-home-paths#resolveDshHome`；不 resolve/不展开 `~`，默认形态路径逐字节不变。豁免口径（非 dsh 生态凭据不跟随）与落盘纪律条款见 DEVELOPMENT.md §1，由 PR #523 承载） | lan-proxy / mcp-manager / notifier / provider-usage |
 | `mcp-manager-service.d.ts` | 宿主 | MCP 管理器服务契约类型面（消费方只走公开入口） | mcp-manager |
 | `placement-math.js` | 双端 | 浮窗/胶囊定位/层级/断点纯函数（#128 → #378 抽取，含 `panelTopForAnchor` 与参数化 `panelZIndexFor(base, dflt)`） | mcp-manager / provider-usage |
-| `client/i18n.js` | 客户 | 共享 `t` 活绑定 + `bindLocale`（#348 → #378 抽取；未装配回落 key 本体） | mcp-manager / provider-usage / web-file-preview |
-| `client/ensure-style.js` | 客户 | 参数化 `ensureStyle({ id, cssText, version? })`（#477 收敛；按 id 幂等 / head 缺失静默 no-op 不抛 / version 变化重建 / 返回 disposer） | notifier / lan-proxy / provider-usage / web-file-preview / mcp-manager |
+| `client/i18n.js` | 客户 | 共享 `t` 活绑定 + `bindLocale`（#348 → #378 抽取；未装配回落 key 本体） | mcp-manager / provider-usage |
+| `client/ensure-style.js` | 客户 | 参数化 `ensureStyle({ id, cssText, version? })`（#477 收敛；按 id 幂等 / head 缺失静默 no-op 不抛 / version 变化重建 / 返回 disposer） | notifier / lan-proxy / provider-usage / mcp-manager |
 
 > 消费方登记为快照，新增共享模块必须同步登记消费者与行为契约（准入规则 6）。
 
