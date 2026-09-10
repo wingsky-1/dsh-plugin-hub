@@ -18,6 +18,9 @@ import { renderPill, renderFloatPanel } from "./float.ts";
 /** 模块级单飞去重句柄（invalidate 单飞：同一时刻只有一个 in-flight 拉取）。 */
 let inflight: Promise<boolean> | undefined;
 
+/** C4：Escape keydown 清理回调登记（WeakMap 避免污染 McpState 接口）。 */
+const keydownCleanups = new WeakMap<McpState, () => void>();
+
 /**
  * 刷新服务器列表与浮窗摘要（单飞：in-flight 复用；#111 变更点驱动）。
  * 返回 true=成功；false=失败（调用方按退避重试）。
@@ -112,11 +115,29 @@ export function showPanel(state: McpState, actions: UiActions): void {
     state.overlay.appendChild(state.card);
     document.body.appendChild(state.overlay);
 
-    document.addEventListener("keydown", (event) => {
+    // C4 keydown 泄漏修复：Escape 监听改具名函数并经 WeakMap 登记清理
+    // 回调（disposePanel 配对 removeEventListener）——匿名监听器在 HMR/重复
+    // apply 下无移除路径，会随每次 apply 累积。
+    const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && state.open) close(state);
-    });
+    };
+    document.addEventListener("keydown", onKeyDown);
+    keydownCleanups.set(state, () => document.removeEventListener("keydown", onKeyDown));
   }
   state.open = true;
   state.overlay.hidden = false;
+  // C10：面板打开主动刷新（refresh 单飞去重，与 switchTab 的空列表刷新重叠无害）——
+  // 中间层热切换 reconcile 无变化不发 summary 帧时，面板旧数据会与新 middlewareMode
+  // 短期错配；打开即拉最新数据消除该窗口。
+  void refresh(state, actions);
   switchTab(state, actions, "servers");
+}
+
+/** C4：卸载配对清理（index.ts effect disposer 调用）——移除 Escape keydown 监听。 */
+export function disposePanel(state: McpState): void {
+  const cleanup = keydownCleanups.get(state);
+  if (cleanup !== undefined) {
+    cleanup();
+    keydownCleanups.delete(state);
+  }
 }
