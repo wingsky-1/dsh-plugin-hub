@@ -209,15 +209,13 @@ test('fail-closed：语法损坏文件（TS 不可解析）→ exit 1 且指明�
   assert.match(r.stderr, /解析失败（fail-closed，一律判红）/)
 })
 
-test('本仓真实快照：7 处合法豁免全部识别 → exit 0 且台账一致', () => {
+test('本仓真实快照：3 处合法豁免全部识别 → exit 0 且台账一致', () => {
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: 'utf8' })
   assert.equal(r.status, 0, r.stderr)
-  assert.match(r.stdout, /合法豁免 7 处/)
+  assert.match(r.stdout, /合法豁免 3 处/)
   for (const f of [
     'packages/dsh-provider-usage/src/apply/apply.ts',
     'packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts',
     'packages/dsh-provider-usage/src/domain1/registry/provider-config.ts',
-    'packages/dsh-web-file-preview/src/git.ts',
-    'packages/dsh-web-file-preview/src/routes.ts',
   ]) assert.ok(r.stdout.includes(f), `${f} 应在合法豁免台账中`)
 })
