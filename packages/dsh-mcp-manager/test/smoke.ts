@@ -98,6 +98,14 @@ import "./unit-call-stats.test.ts";
 import "./unit-pipeline.test.ts";
 // 工作空间路由域（#664 阶段 4：makeResolveRoot 路由 + B3 红测）
 import "./unit-workspace.test.ts";
+// 三通道不对称收敛（#664 阶段 8）：catalog/store/supervisor/transport 四个文件
+// 此前只在 stryker 管线执行（本地 pnpm test 从不跑，漏检窗口）；均为轻量
+// mock/纯函数断言（无真实子进程、无固定 sleep），纳入 smoke 补齐配置域/目录域/
+// 重连状态机/传输协议桩的动态断言面，时长代价可控。
+import "./unit-catalog.test.ts";
+import "./unit-store.test.ts";
+import "./unit-supervisor.test.ts";
+import "./unit-transport.test.ts";
 
 const failures = [];
 const check = (label, fn) => {
@@ -766,6 +774,14 @@ const main = async () => {
       clientSrc.slice(renderStart, renderStart + 2000).includes('.get("stopped").push'),
       "servers 渲染未知状态塞入 stopped 分组（不丢卡）",
     );
+  });
+  check("C11 编辑改 name/scope 迁移式保存：POST 新条目 + DELETE 旧条目（宿主 PATCH 不支持改名/scope）", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    // C11（阶段 8 落地，依赖阶段 7 C1 修复后 PATCH 分支可达）：saveForm 检测
+    // name 或 scope 变化 → 迁移分支（先 POST 后 DELETE），避免新 scope 查旧
+    // name 404。
+    assert.ok(clientSrc.includes("migrated"), "迁移分支检测变量 migrated 进产物");
+    assert.ok(clientSrc.includes("state.editing.scope"), "DELETE 旧条目用旧 scope 进产物");
   });
 
   console.log("SSE 半开连接防护（#268：服务端心跳 + 客户端 watchdog + 回前台重建）");

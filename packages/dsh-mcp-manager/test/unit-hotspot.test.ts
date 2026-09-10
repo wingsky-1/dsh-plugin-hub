@@ -109,7 +109,6 @@ import { join } from "node:path";
   try {
     let disposer = null;
     let watchCb = null;
-    let onChangeCalls = 0;
 
     const ctx = {
       fiber: { state: "active" },
@@ -144,24 +143,17 @@ import { join } from "node:path";
 
     // 验证 disposer 存在且被调用
     assert.ok(disposer !== null, "effect disposer 已注册");
-    // 卸载时 isUnloading 为 false → 触发回落
-    disposer();
+    // 验证 watch 回调已接线（settings-namespace 最终会经 scope.watch 传包装回调）
+    assert.ok(watchCb !== null, "scope.watch 已注册（settings 装配面）");
 
-    // 验证 watch 回调
-    assert.ok(watchCb !== null, "scope.watch 已注册");
-    // 非卸载状态下 watch → onChange
-    ctx.fiber.state = "active";
-    watchCb();
-
-    // 验证 isUnloading 短路：fiber 处于卸载状态时 disposer 不触发回落
-    const before = onChangeCalls;
+    // 哑断言清理（#664 阶段 8）：isUnloading 短路（unloading/disposed 态
+    // watch/disposer 不触发 onChange）由 shared/settings-namespace.js 自身
+    // 单测覆盖——此处保留卸载路径执行冒烟（不抛）。
     ctx.fiber.state = "unloading";
     disposer();
     ctx.fiber.state = "disposed";
-    if (watchCb) watchCb();
-    // 不验证具体值，只确保不抛
-
-    console.log("  ok   unit-hotspot: 通过 apply 覆盖 bundled isUnloading");
+    watchCb();
+    assert.ok(true, "卸载态 disposer/watch 执行不抛");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -265,6 +257,7 @@ import { join } from "node:path";
   const { apply } = await import("../lib/index.js");
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-ui2-"));
   try {
+    let registerCalled = false;
     const ctx = {
       fiber: { state: "active" },
       logger: { warn: () => {}, info: () => {}, error: () => {} },
@@ -276,7 +269,10 @@ import { join } from "node:path";
           cb({
             settings: {
               update: function(ns, patch) { return Promise.resolve(); },
-              register: () => ({ get: () => ({}), watch: () => {} }),
+              register: () => {
+                registerCalled = true;
+                return { get: () => ({}), watch: () => {} };
+              },
             },
             effect: () => () => {},
           });
@@ -288,8 +284,9 @@ import { join } from "node:path";
     };
 
     await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });
-    // 验证 apply 完成且 settings 注入路径已执行
-    console.log("  ok   unit-hotspot: apply uiUpdate settings 注入覆盖");
+    // 哑断言清理（#664 阶段 8）：假 ok 输出改真实断言——settings 命名空间
+    // 注册（installSettingsNamespace 经 inject(["settings"]) 调 register）。
+    assert.ok(registerCalled, "settings 命名空间注册（inject settings 装配面）");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
