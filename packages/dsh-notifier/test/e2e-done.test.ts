@@ -103,7 +103,9 @@ try {
     assert.equal(infos.length, 1);
     error({ agent: { id: "session-1" }, turn: 1, step: 2, error: new Error("e2") });
     assert.equal(infos.length, 1, "窗口内合并");
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    // 等 20ms 错误合并窗口过期：负向等待无法正向轮询（后续写入会重置窗口），
+    // 故固定等待但留足余量（原 30ms 余量仅 10ms，CI 慢机实测漏窗口 → flake）
+    await new Promise((resolve) => setTimeout(resolve, 200));
     error({ agent: { id: "session-1" }, turn: 1, step: 3, error: new Error("e3") });
     assert.equal(infos.length, 2, "窗口过期后恢复通知");
     assert.match(infos[1], /另有 1 条同类错误/, "窗口过期后的通知携带合并计数");

@@ -87,7 +87,11 @@ try {
     const warns: string[] = [];
     const store = createHistoryStore({ file, maxAgeDays: () => 0, warn: (m) => warns.push(m) });
     store.append({ ts: 1, kind: "done", title: "t", message: "m" });
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    // 轮询等写链的失败回调落地：固定 sleep 在 CI 慢机会在 warn 到达前断言（防 flake 纪律）
+    const warnDeadline = Date.now() + 2000;
+    while (warns.length === 0 && Date.now() < warnDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
     assert.equal(warns.length, 1, "写入失败仅 warn（不阻塞通知主流程）");
     assert.ok(warns[0].includes("历史记录写入失败"), "warn 带失败上下文");
   }
