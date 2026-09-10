@@ -2,7 +2,7 @@
 /**
  * verify-isolated.mjs — 隔离环境浏览器验证一键脚本（dsh-verify-isolated 插件包
  * 配套，随本 skill 分发）。原 `verify-isolated.sh`（bash + 内嵌 node -e）整体
- * 重写为纯 node 实现（#517 C8，需 Node >= 22），**不保留 shim**：skill 随包整体
+ * 重写为纯 node 实现（需 Node >= 22），**不保留 shim**：skill 随包整体
  * 发布，不存在新旧错配。升级路径：`bash .../verify-isolated.sh ...` →
  * `node .../verify-isolated.mjs ...`，参数与输出文案逐行对齐。
  *
@@ -21,12 +21,12 @@
  * 用法：
  *   node verify-isolated.mjs [--dsh <path>] [--port <port>] [--browser] [--keep]
  *                            [--no-build] [--evidence-dir <dir>] [--audit]
- *                            [--audit-extra-dirs <dir>] [--json]
- *                            [-- <pkg-path>...]
+ *                            [--audit-extra-dirs <dir>] [--no-skip-onboarding]
+ *                            [--json] [-- <pkg-path>...]
  *   --dsh <path>       指定 dsh 入口（默认 PATH 中的 dsh）。隔离实测必须锚定目标
- *                      dsh 版本——PATH 里碰巧存在的版本会让验证结果不可复现（#376 H1）。
+ *                      dsh 版本——PATH 里碰巧存在的版本会让验证结果不可复现。
  *   --port <port>      默认 3456；--port 0 自动探测真实空闲端口并打印（修复打印 0）。
- *                      探测块贴近 dsh 启动，防 EADDRINUSE 窗口（#481 P2-1）。
+ *                      探测块贴近 dsh 启动，防 EADDRINUSE 窗口。
  *   --browser          额外启动独立浏览器实例（browser-driver.mjs）：独立
  *                      user-data-dir + 自选空闲调试端口 + headless，实例信息写入
  *                      $ISOLATED_HOME/browser.state（与 DSH_HOME 同生命周期）。
@@ -47,10 +47,14 @@
  *                      额外审计目录（可重复）：相对路径基于 cwd 绝对化；局限
  *                      ——审计只扫 $ISOLATED_HOME 子树 + 本选项指定目录，**不扫
  *                      真实 home**（插件写真实 ~/.dsh 的数据面不在判定面内）。
+ *   --no-skip-onboarding
+ *                      不预置首启弹窗跳过（默认预置 settings.yaml 的
+ *                      ui-onboarding.welcomeNoticeVersion，使「内测声明」默认
+ *                      不弹）。要验证 onboarding 弹窗本身时用它保留原生首启态。
  *   --json             stdout 只出最终 verdict JSON（人类文案全部走 stderr）。
  *   --                 之后为要挂载的本地插件路径（相对路径基于当前 cwd 解析；
  *                      npm 包名 / git URL 原样透传，见 lib/verify-core.mjs
- *                      resolvePkgArg——C11 语义内建）。
+ *                      resolvePkgArg）。
  *   --help             显示本帮助。
  *
  * 退出码契约（显式表，smoke 锁定）：
@@ -89,7 +93,7 @@
  * checkSymlinkEscape / runAudit）外的新增/删除/修改 + 越界 symlink；
  * symlink 快照 lstat 不跟随，「t0 已存在且目标未变的外部 symlink（link:
  * 挂载点）合法不报」，「新增或目标变化且 resolve 后在**所在扫描根**外的
- * 报『越界 symlink』（防插件经 symlink 写回主 checkout）。时序：t0 基线
+ * 报『越界 symlink』（防插件经 symlink 写到隔离环境之外）。时序：t0 基线
  * 在**就绪断言成功之后**（dsh web 首启自建的 profiles/node_modules/** 官方
  * bundle link 与顶层 .credentials.yaml/storages/** 启动写面进基线——语义为
  * 「就绪后运行期写面审计」；verdict 中间态在其后写入，先扫后写 + 白名单
@@ -98,6 +102,20 @@
  * verdict JSON（audit 字段，--json 错误对象恒带 audit 字段与 verdict 对齐）。
  * 不阻断退出（审计异常仅警告，退出码契约不变）。就绪前退出/超时路径
  * auditBaseline 为 null → 审计跳过不报。
+ *
+ * 首启弹窗默认跳过（--no-skip-onboarding 关闭）：全新 DSH_HOME 的首屏是两个
+ * **阻断式**弹窗（「内测声明」→「添加 API Key」），二者都把 #root 置为 inert，
+ * 页面上的一切点击静默失效。内测声明由 settings.yaml 的
+ * ui-onboarding.welcomeNoticeVersion 与客户端常量精确相等决定，故启动前预置该
+ * 值即默认不弹——常量按 dsh 版本现取（lib/onboarding.mjs），取不到就只警告并
+ * 交给 browser-driver 导航后兜底，绝不用硬编码值伪造「已跳过」。「添加 API Key」
+ * 无法预置消除（其「稍后配置」只在当前页面生命周期内有效），由 browser-driver
+ * 在导航后自动点击跳过。弹窗成因、复现与对照见 SKILL.md 的硬前提（§3.2）。
+ *
+ * 访问 URL 与令牌：GUI 带鉴权，裸端口只得到 401 文本页，浏览器命令必须使用
+ * dsh 启动打印的带令牌 URL。脚本解析该行并：打印供直接使用、写入 browser.state
+ * 的 dshWebUrl（0o600，供 browser-driver 的 `--url state` 取用）；verdict 里只
+ * 记不含令牌的 web.url——verdict 会经 --json 进入 CI 日志，令牌不进日志。
  */
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import {
@@ -108,8 +126,11 @@ import { randomBytes } from "node:crypto";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import {
-  EXIT, findFreePort, jsonOut, pidAlive, readDshPort, resolvePkgArg, waitPidExit,
+  EXIT, findFreePort, jsonOut, pidAlive, readDshPort, readDshUrl, resolvePkgArg, waitPidExit,
 } from "./lib/verify-core.mjs";
+import {
+  findWelcomeNoticeVersion, welcomeSettingsDocument,
+} from "./lib/onboarding.mjs";
 import {
   isInside, runAudit, scanSnapshot, SKIP_DEEP, WHITELIST_V,
 } from "./lib/audit.mjs";
@@ -118,9 +139,10 @@ const SCRIPT_DIR = import.meta.dirname; // Node >= 22 全程可用
 const DRIVER = join(SCRIPT_DIR, "browser-driver.mjs");
 const DEFAULT_PORT = 3456;
 const READY_TIMEOUT_MS = 15000;
+const URL_WAIT_MS = 5000; // 访问 URL 行晚于 HTTP 就绪的等待上限（见 9b 注释）
 const LOG_TAIL_LIMIT = 4096; // 防背压：收集缓冲限长（browser-driver stderrBuf 先例）
 
-const USAGE = `用法: node verify-isolated.mjs [--dsh <path>] [--port <port>] [--browser] [--keep] [--no-build] [--evidence-dir <dir>] [--audit] [--audit-extra-dirs <dir>] [--json] [-- <pkg-path>...]
+const USAGE = `用法: node verify-isolated.mjs [--dsh <path>] [--port <port>] [--browser] [--keep] [--no-build] [--evidence-dir <dir>] [--audit] [--audit-extra-dirs <dir>] [--no-skip-onboarding] [--json] [-- <pkg-path>...]
 
 选项：
   --dsh <path>         指定 dsh 入口（默认 PATH 中的 dsh；隔离实测必须锚定版本，防 PATH 漂移）
@@ -132,12 +154,17 @@ const USAGE = `用法: node verify-isolated.mjs [--dsh <path>] [--port <port>] [
   --audit              隔离审计：对比隔离 DSH_HOME 写面与预置白名单，白名单外变化报「可疑」，不阻断退出
   --audit-extra-dirs <dir>
                       额外审计目录（可重复；相对路径基于 cwd 绝对化；局限：不扫真实 home）
+  --no-skip-onboarding 不预置首启弹窗跳过（默认预置 settings.yaml 的内测声明版本，使其默认不弹）
   --json               stdout 只出最终 verdict JSON（人类文案走 stderr）
   --                   之后为要挂载的本地插件路径（相对路径基于 cwd 绝对化；npm 包名 / git URL 原样透传）
   --help               显示本帮助
 
 环境要求：Node >= 22（同 browser-driver）。
-退出码：0 正常 / 1 启动或就绪失败 / 2 参数错误 / 130 SIGINT / 143 SIGTERM。`;
+退出码：0 正常 / 1 启动或就绪失败 / 2 参数错误 / 130 SIGINT / 143 SIGTERM。
+
+访问 URL：dsh web 的 GUI 带鉴权，裸端口只得到 401 文本页。脚本启动后打印带令牌的
+访问 URL，并把它写入 browser.state 的 dshWebUrl（0o600）——browser-driver 页面命令
+用 \`--url state\` 取用即可；verdict 只记不含令牌的 web.url。`;
 
 // --- 全局运行态（cleanup / verdict / 信号多路共享） ---
 let flags = null;
@@ -157,16 +184,19 @@ let dshWebPort = 0; // 传给 dsh 的有效端口（--port 0 时为探测值）
 let browserPort = null;
 let readyOk = false;
 let readyIso = null;
-let childExitBeforeReady = null; // 就绪前 dsh 退出记录（P1 修复：#517 C8 复核）
+let childExitBeforeReady = null; // 就绪前 dsh 退出记录
 let exiting = null; // { code: number, signal: string|null } 退出请求
 let settling = false;
 let errorPayload = null; // --json 错误路径已输出的错误对象（settle 不再重复出 JSON）
 let auditBaseline = null; // B4：t0 基线快照 [{ root, snapshot }]（--audit 时）
 let auditResult = null; // B4：settle 审计输出（--audit 时；并入 verdict/audit.json）
 let auditExtraDirsAbs = []; // B4：绝对化后的 --audit-extra-dirs（settle 审计与 verdict 共用）
+let onboardingPreset = null; // 首启弹窗预置结果（--no-skip-onboarding 时为 disabled）
+let webUrl = null; // 带令牌的访问 URL（仅落 browser.state / 打印，不进 verdict）
+let webUrlBare = null; // 不含令牌的访问 URL（进 verdict，防 --json 日志泄漏令牌）
 
 // 人类文案输出：--json 时走 stderr（stdout 只出最终 JSON），普通模式走 stdout
-//（SKILL.md §5.1 自检清单依赖 `profile=verify_<随机>` / `DSH_HOME=…` 等可读行）。
+//（SKILL.md §4 自检清单依赖 `profile=verify_<随机>` / `DSH_HOME=…` 等可读行）。
 function out(msg) {
   (jsonMode ? process.stderr : process.stdout).write(msg + "\n");
 }
@@ -200,7 +230,7 @@ function parseCli(argv) {
   const f = {
     dsh: null, port: DEFAULT_PORT, browser: false, keep: false,
     noBuild: false, evidenceDir: null, audit: false, auditExtraDirs: [],
-    json: jsonMode, help: false,
+    skipOnboarding: true, json: jsonMode, help: false,
   };
   const pkgs = [];
   const bad = (msg) => { throw new CliError(msg, EXIT.USAGE); };
@@ -234,6 +264,7 @@ function parseCli(argv) {
         case "evidence-dir": f.evidenceDir = inline ?? val(i, "--evidence-dir"); if (inline === null) i++; break;
         case "audit": f.audit = true; break;
         case "audit-extra-dirs": f.auditExtraDirs.push(inline ?? val(i, "--audit-extra-dirs")); if (inline === null) i++; break;
+        case "no-skip-onboarding": f.skipOnboarding = false; break;
         case "json": {
           // --json=<v> 显式布尔（true/false），非法值参数错误
           if (inline !== null) {
@@ -256,7 +287,7 @@ function parseCli(argv) {
   return { flags: f, pkgs };
 }
 
-// --- dsh 入口校验与版本锚定（#376 H1） ---
+// --- dsh 入口校验与版本锚定 ---
 function checkExecutable(p) {
   try {
     const st = statSync(p);
@@ -353,6 +384,10 @@ function makeVerdict(mut) {
     ready: readyOk,
     readyAt: readyIso,
     evidenceDir: evidenceDir,
+    // 访问 URL 恒去令牌：verdict 会经 --json 进 CI 日志，令牌真值只落
+    // browser.state.dshWebUrl 与 dsh.log（均 0o600），tokenSource 指明去哪取。
+    web: { url: webUrlBare, tokenSource: webUrl ? "browser.state.dshWebUrl" : null },
+    onboarding: onboardingPreset,
     audit: auditResult, // B4：--audit 时 settle 审计结果；否则 null（--json 终态含同字段）
     cleanup: "running", // 中间态；终态由 writeVerdictTerminal 覆写为 done/kept
     ...mut,
@@ -377,7 +412,7 @@ function writeVerdictTerminal() {
   writeVerdict({ ok: done, ready: readyOk, readyAt: readyIso, cleanup: flags?.keep ? "kept" : "done" });
 }
 
-// --- 插件处理（C11 内建归一化 + 构建 / --no-build 校验 / add） ---
+// --- 插件处理（参数归一化 + 构建 / --no-build 校验 / add） ---
 function newestMtime(dir) {
   let m = 0;
   const walk = (d) => {
@@ -401,7 +436,7 @@ function hasBuildScript(pkgAbs) {
 
 function setupPlugins(pkgs) {
   if (pkgs.length === 0) return;
-  // 1. 归一化全部参数（C11 语义内建）：path → 绝对路径；spec → 原样透传
+  // 1. 归一化全部参数：path → 绝对路径；spec → 原样透传
   const items = pkgs.map(resolvePkgArg);
   for (const it of items) {
     const label = it.kind === "path" ? it.abs : it.input;
@@ -420,7 +455,7 @@ function setupPlugins(pkgs) {
           EXIT.USAGE,
         );
       }
-      // 陈旧警告（#376 L2）：src 比产物新 → 提示可能验证到旧版本
+      // 陈旧警告：src 比产物新 → 提示可能验证到旧版本
       const src = join(it.abs, "src");
       const s = existsSync(src) ? newestMtime(src) : 0;
       const p = Math.max(...prods.map(newestMtime));
@@ -442,7 +477,7 @@ function setupPlugins(pkgs) {
       out(`跳过构建（无 build 脚本）: ${it.abs}`);
     }
   }
-  // 2. add 统一用归一化结果（相对路径已在 dsh 侧被当 git URL，C11）
+  // 2. add 统一用归一化结果（相对路径已在 dsh 侧被当 git URL）
   const addArgs = items.map((it) => (it.kind === "path" ? it.abs : it.input));
   const add = runDsh(["plugin", "--profile", profile, "add", ...addArgs], true);
   if (add.status !== 0) {
@@ -453,7 +488,32 @@ function setupPlugins(pkgs) {
   }
 }
 
-// --- 就绪断言（#376 M2）：轮询 HTTP 可达 + 进程存活核对 ---
+// --- 首启弹窗默认跳过：预置 settings.yaml 的内测声明版本（见头部注释） ---
+// 预置失败不阻断启动：跳过失效只意味着首屏多一个弹窗（browser-driver 导航后仍会
+// 兜底），而把「dsh 改了客户端常量形态」升级成启动失败，会让验证在无关变更上停摆。
+function presetWelcomeNotice() {
+  const settingsPath = join(isolatedHome, "settings.yaml");
+  const found = findWelcomeNoticeVersion(dshAbs);
+  if (!found) {
+    outWarn("警告: 未能从 dsh 产物提取内测声明版本（布局或客户端常量变化？）——首启「内测声明」弹窗保留，由 browser-driver 导航后兜底跳过");
+    return { skip: true, source: "unavailable", version: null, settingsFile: settingsPath };
+  }
+  if (existsSync(settingsPath)) {
+    outWarn(`警告: ${settingsPath} 已存在，跳过预置（不覆盖既有设置文档）`);
+    return { skip: true, source: "existing", version: found.version, settingsFile: settingsPath };
+  }
+  try {
+    // 0o600：设置文档含用户偏好，与 verdict/browser.state/dsh.log 同级保护
+    writeFileSync(settingsPath, welcomeSettingsDocument(found.version), { mode: 0o600 });
+  } catch (e) {
+    outWarn(`警告: 首启弹窗预置写入失败（${e.message}）——首启「内测声明」弹窗保留，由 browser-driver 兜底跳过`);
+    return { skip: true, source: "write-failed", version: found.version, settingsFile: settingsPath, error: e.message };
+  }
+  out(`首启弹窗预置: 内测声明版本 ${found.version} → ${settingsPath}（--no-skip-onboarding 可关闭）`);
+  return { skip: true, source: "preset", version: found.version, clientFile: found.file, settingsFile: settingsPath };
+}
+
+// --- 就绪断言：轮询 HTTP 可达 + 进程存活核对 ---
 // 2xx-4xx 就绪（GUI 带鉴权，实测 401 即就绪）、5xx/拒绝继续等、
 // AbortSignal.timeout 1.5s、15s 超时、进程退出立即判失败。
 async function waitReady(port, pid) {
@@ -483,7 +543,7 @@ async function settle() {
   settling = true;
   try {
     // 1. kill dsh：与 bash trap 对齐，先 SIGTERM 优雅终止（5s 窗口），SIGKILL
-    //    仅作二次兜底（评审 P2-9：避免活体 dsh 被直接 SIGKILL 跳过清理钩子）
+    //    仅作二次兜底（避免活体 dsh 被直接 SIGKILL 跳过清理钩子）
     if (dshChild) {
       await waitPidExit(dshChild.pid, 5000);
       if (pidAlive(dshChild.pid)) killDsh(dshChild, "SIGTERM");
@@ -592,7 +652,7 @@ async function main() {
   const { flags: f, pkgs } = parseCli(process.argv.slice(2));
   flags = f;
   jsonMode = f.json;
-  // --json 时 USAGE 走 stderr（stdout 只出 JSON 的约束对 --help 同样生效，P2-8）
+  // --json 时 USAGE 走 stderr（stdout 只出 JSON 的约束对 --help 同样生效）
   if (f.help) {
     (jsonMode ? process.stderr : process.stdout).write(USAGE + "\n");
     process.exit(EXIT.OK);
@@ -646,7 +706,7 @@ async function main() {
     }
   }
   // dsh.log 含隔离实例访问 token（dsh web URL 行）——与 verdict/browser.state
-  // 一致 0o600 初始化（仅本用户可读，防同机其他用户窥探；P2-3）。
+  // 一致 0o600 初始化（仅本用户可读，防同机其他用户窥探）。
   try { writeFileSync(dshLogPath, "", { mode: 0o600 }); } catch {}
   // B7：证据目录默认 $ISOLATED_HOME/evidence/；显式 --evidence-dir 外部化时建
   // <dir>/evidence-<profile>/ 子目录（recursive 幂等，绝不动外部目录本体）
@@ -655,6 +715,12 @@ async function main() {
     : join(isolatedHome, "evidence");
   mkdirSync(evidenceDir, { recursive: true });
   out(`证据目录: ${evidenceDir}`);
+
+  // 1b. 首启弹窗默认跳过：预置内测声明版本，否则首屏是一张 inert 的阻断弹窗，
+  //     验证开始前必须先手工点掉（且刷新后重现）。--no-skip-onboarding 保留原生态。
+  onboardingPreset = f.skipOnboarding
+    ? presetWelcomeNotice()
+    : { skip: false, source: "disabled", version: null, settingsFile: join(isolatedHome, "settings.yaml") };
 
   // 2. 初始化独立 profile（显式 plugin list；失败 fail loudly 给可操作错误）
   const init = runDsh(["plugin", "--profile", profile, "list"], true);
@@ -672,7 +738,7 @@ async function main() {
   }
   writeFileSync(profilePkg, JSON.stringify(pj, null, 2));
 
-  // 4. 挂载本地插件（C11 归一化 + 构建 / --no-build 校验 + add）
+  // 4. 挂载本地插件（参数归一化 + 构建 / --no-build 校验 + add）
   setupPlugins(pkgs);
 
   // 5. 启动独立浏览器实例（--browser）：实例信息写入 browser.state。
@@ -696,7 +762,7 @@ async function main() {
     out(`浏览器实例就绪: state=${browserState}（操作命令见 browser-driver.mjs --help）`);
   }
 
-  // 6. 修复 --port 0：贴近 dsh 启动探测真实空闲端口再传给 dsh（#481 P2-1）
+  // 6. 修复 --port 0：贴近 dsh 启动探测真实空闲端口再传给 dsh
   dshWebPort = f.port;
   if (f.port === 0) {
     dshWebPort = await findFreePort();
@@ -749,7 +815,7 @@ async function main() {
   // EADDRINUSE / 插件加载失败 / 就绪前净退出）时若直接 requestExit 透传，
   // settle 会在微任务内抢先 process.exit，使下方 waitReady 的 dead 检测与
   // CliError 诊断整段不可达：stderr 空（无可操作诊断）且 dsh exit 0（就绪前
-  // 净退出）会静默假成功、非契约码（如 3）穿透契约表（#517 C8 复核 P1 复现）。
+  // 净退出）会静默假成功、非契约码（如 3）穿透契约表。
   // 故就绪前退出只记录，让 waitReady 的 pidAlive 检测返回 dead → 统一走
   // CliError(EXIT.FAIL) 路径（有诊断文案 + 契约退出码 1）。
   // **就绪后**：信号退出归一为 130/143，其余 dsh 异常退出码原样透传
@@ -763,7 +829,7 @@ async function main() {
 
   // 9. 就绪断言（轮询 HTTP + 进程存活核对，15s 超时可操作错误）。
   //    dead/timeout 诊断内联 logTail 尾部（内存滚动缓冲，非 --keep 时 dsh.log
-  //    随 ISOLATED_HOME 删除——引用文件路径用户按提示查看时已不存在，P2-4）。
+  //    随 ISOLATED_HOME 删除——引用文件路径用户按提示查看时已不存在）。
   const verdictPort = dshWebPort;
   const ready = await waitReady(verdictPort, dshChild.pid);
   if (ready === "dead") {
@@ -790,7 +856,7 @@ async function main() {
   readyOk = true;
   readyIso = new Date().toISOString();
   // 端口实际绑定三通道收口：parsed → asserted（就绪断言端口）→ probed。
-  // **无条件**以 dsh.log 全文重解析 parsed（P2-6：chunk 截断可能已 latch 错误
+  // **无条件**以 dsh.log 全文重解析 parsed（chunk 截断可能已 latch 错误
   // 端口——readDshPort 行完整性校验已防截断，此处双保险覆盖任何早到解析；
   // 无匹配则落 asserted/probed）。
   try {
@@ -802,6 +868,32 @@ async function main() {
     portSource = flags.port === 0 ? "probed" : "asserted";
   }
   out(`就绪断言通过: http://127.0.0.1:${actualPort} 已可达（pid=${dshChild.pid}）`);
+
+  // 9b. 访问 URL 与令牌：GUI 带鉴权，浏览器命令必须用带令牌的 URL（裸端口只得到
+  //     401 文本页）。令牌只从 dsh 打印行取真值，只落 0o600 的 browser.state 与
+  //     dsh.log，verdict 记去令牌形态——verdict 会经 --json 进 CI 日志。
+  webUrlBare = `http://127.0.0.1:${actualPort}/`;
+  // dsh 打印 URL 行的时刻晚于 HTTP 就绪（与端口 parsed 通道同源的既有实证），
+  // 就绪即读会稳定落空——那会把「必须带令牌」的引导降级成一句无用警告。
+  const urlDeadline = Date.now() + URL_WAIT_MS;
+  for (;;) {
+    try { webUrl = readDshUrl(readFileSync(dshLogPath, "utf8")); } catch {}
+    if (webUrl || Date.now() >= urlDeadline) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  if (!webUrl) {
+    outWarn(`警告: 未从 dsh 输出解析到带令牌的访问 URL（dsh.log 行格式变化？）——浏览器命令请自行从 ${dshLogPath} 取 URL`);
+  } else {
+    out(`访问 URL（含访问令牌，GUI 鉴权必需）: ${webUrl}`);
+  }
+  if (f.browser && existsSync(browserState)) {
+    try {
+      const st = JSON.parse(readFileSync(browserState, "utf8"));
+      if (webUrl) st.dshWebUrl = webUrl;
+      writeFileSync(browserState, JSON.stringify(st, null, 2));
+      if (webUrl) out("浏览器命令: 用 `--url state` 取该带令牌 URL（示例见 SKILL.md §3.1）");
+    } catch { /* state 解析失败不阻断启动 */ }
+  }
 
   // B4：t0 基线快照（--audit）——位置在**就绪断言成功之后**、verdict 中间态
   // 写入之前。语义为「**就绪后运行期写面审计**」：dsh web **首启**才自建的

@@ -1,5 +1,5 @@
 /**
- * audit.mjs — 隔离审计核心（#517 B4：隔离审计白名单版）纯函数层。
+ * audit.mjs — 隔离审计核心（隔离审计白名单版）纯函数层。
  *
  * 供 verify-isolated.mjs 的 `--audit` 集成调用：t0 基线快照（dsh **就绪断言
  * 之后**——dsh 启动期自身写面与官方 bundle link 进基线，语义为「就绪后运行期
@@ -8,7 +8,7 @@
  * （lstat 不读文件内容），smoke 用 mkdtemp fixture 直接断言正反例行为
  * （见 test/smoke.ts）。
  *
- * ## 口径（#517 评论 B4 方案，实现注释说明）
+ * ## 口径（实现注释说明）
  *
  * 1. **范围硬绑定扫描根**：只扫传入的 root（$ISOLATED_HOME 子树 +
  *    --audit-extra-dirs 指定的额外目录），不扫真实 home——文档写明局限。
@@ -16,13 +16,13 @@
  *    symlink 只记录 linkTarget 不读目标内容（安全）；profile node_modules
  *    全 `link:` symlink 是挂载机制本身，**t0 已存在且目标未变的外部 symlink
  *    （link: 挂载点）合法不报**；t1 时**新增的**或**目标变化**且 resolve 后
- *    在**所在扫描根**外的 symlink 报「越界 symlink」（防插件经 symlink 写回
- *    主 checkout；extra dir 内部的 symlink 以其自身为越界基准）。防逃逸
+ *    在**所在扫描根**外的 symlink 报「越界 symlink」（防插件经 symlink 写到
+ *    隔离环境之外的用户数据或仓库；extra dir 内部的 symlink 以其自身为越界基准）。防逃逸
  *    优先于白名单忽略——白名单目录（profiles/** 等）内新增越界 symlink
  *    同样报可疑。
  * 3. **判定面 = 白名单模式外的新增/删除/修改**（路径级，不读内容）；
  *    白名单内变化忽略（dsh 重写 settings 是常态）。未知顶层路径 → 可疑。
- * 4. **首跑学习**（#517 方案：学习仅交叉校验 dsh 版本写面漂移）本模块不做
+ * 4. **首跑学习**（学习仅交叉校验 dsh 版本写面漂移）本模块不做
  *    判定源——判定面只有预置白名单，版本化 `WHITELIST_V` 随 skill 分发、
  *    smoke 断言存在。
  * 5. **browser-profile/** 整树白名单 + 跳过深扫**：chromium user-data-dir
@@ -36,7 +36,7 @@ import { lstatSync, readdirSync, readlinkSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 /** 白名单版本（预置模式数组版本化；smoke 断言存在与格式）。 */
-export const WHITELIST_V = "v2";
+export const WHITELIST_V = "v3";
 
 /**
  * 预置白名单模式数组（判定面）：命中模式 = 预期写面，变化忽略；未命中 =
@@ -46,11 +46,13 @@ export const WHITELIST_V = "v2";
  *     下的任何文件都算可疑，贴合「未知顶层路径→可疑」）；
  *   - 其余：顶层精确文件名。
  *
- * dsh 自身写面分工（S1 修复，#540 复核）：
+ * dsh 自身写面分工：
  *   - **静态白名单**覆盖 dsh 固定写面：`.credentials.yaml`（首启凭据文件，
- *     就绪后初始化竞态窗口内落盘）与 `storages/**`（官方存储：workspace/
- *     settings 等，退出清理时也写）——无论何时写都是预期写面，不随 dsh
- *     版本漂移的顶层形态进白名单；
+ *     就绪后初始化竞态窗口内落盘）、`settings.yaml`（官方设置文档：首启弹窗
+ *     跳过会预置它，此后验证期间改动任何设置也由 dsh 自己重写——两种写入都是
+ *     预期写面，与 `.credentials.yaml` 同类）与 `storages/**`（官方存储：
+ *     workspace/settings 等，退出清理时也写）——无论何时写都是预期写面，不随
+ *     dsh 版本漂移的顶层形态进白名单；
  *   - **t0 动态基线**覆盖随 dsh 版本漂移的面：profiles/node_modules/** 官方
  *     bundle link（指向真实 dsh 安装目录、越界但 t0 已存在未变 → 合法挂载点
  *     不报），由 verify-isolated.mjs 在就绪断言后扫描进基线（见该文件 B4
@@ -62,6 +64,7 @@ export const WHITELIST = Object.freeze([
   "*.jsonl",
   "*.log",
   ".credentials.yaml",
+  "settings.yaml",
   "browser.state",
   "browser-profile/**",
   "evidence/**",
