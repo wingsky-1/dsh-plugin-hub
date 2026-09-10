@@ -12,6 +12,10 @@
  *      存在性用 --strict-en 强制（根 README.en.md 同样适用，见检查 6）。
  *   6. 根 README.en.md（若存在）纳入与包级相同的 relLinks 相对链接检查
  *      （#474 R3：根 en 的相对链接断了要红）。
+ *   9. 文件内 #fragment 锚点必须可解析（#693）：GitHub 会给**所有**标题 id 加
+ *      `user-content-` 前缀（显式 <a id> 一并改写），故裸 slug href 会静默失效
+ *      （实测 #0-构建总览 / #1-宿主端srcindexts规范 / #通用机制 三处皆断）。
+ *      判定：显式 id 字面命中，或按 GitHub slug 规则推出的 user-content-<slug> 命中。
  *   8. 文档内反引号包裹的 `pnpm <script>` 必须真实存在于根 package.json（#693：
  *      防文档写出不存在的门禁命令——human/agent 都会照抄不存在的命令）。
  *   7. Agent 规则文档（根/包级 AGENTS.md、.dsh/skills/**、agents/**）的相对链接（含裸路径）
@@ -132,6 +136,60 @@ function checkAgentDocs(): number {
   return docs.length
 }
 
+/** GitHub 标题 slug 规则（实测口径）：小写、去反引号与标点、空格转 -、保留中日韩。 */
+function ghSlug(heading: string): string {
+  return heading
+    .trim()
+    .toLowerCase()
+    .replace(/[`*_~]/g, "")
+    .replace(/[^\p{L}\p{N}\s-]/gu, "")
+    .replace(/\s+/g, "-")
+}
+
+/** 可命中的锚点 id：显式 id 字面 + 标题 slug（GitHub 会统一加 user-content- 前缀）。 */
+function anchorIds(md: string): Set<string> {
+  const ids = new Set<string>()
+  for (const m of md.matchAll(/\bid="([^"]+)"/g)) ids.add(m[1]!)
+  for (const m of md.matchAll(/^#{1,6}\s+(.+?)\s*$/gm)) ids.add("user-content-" + ghSlug(m[1]!))
+  return ids
+}
+
+/** 校验文件内 #fragment 引用（#693）：命中显式 id 或 GitHub slug 推导 id 才算有效。 */
+function checkAnchorRefs(): number {
+  const files = walkDocFiles(AGENT_ROOT, [])
+    .concat([join(AGENT_ROOT, "README.md"), join(AGENT_ROOT, "README.en.md")])
+    .filter((f) => existsSync(f))
+    .sort()
+  let refs = 0
+  for (const f of files) {
+    const md = readFileSync(f, "utf8")
+    const rel = relative(AGENT_ROOT, f)
+    const selfIds = anchorIds(md)
+    const linkTargets = [
+      ...md.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g),        // 行内 [t](target)
+      ...md.matchAll(/^\s*\[[^\]]+\]:\s*(\S+)/gm),          // 引用式 [t]: target
+      ...md.matchAll(/<a\s[^>]*href="([^"]+)"/g),              // HTML <a href="...">
+    ].map((m) => m[1]!)
+    for (const target of linkTargets) {
+      if (/^https?:|^mailto:/.test(target)) continue
+      const hashAt = target.indexOf("#")
+      if (hashAt < 0) continue
+      const frag = target.slice(hashAt + 1)
+      if (frag === "") continue
+      refs++
+      const rawPath = target.slice(0, hashAt)
+      const targetFile = rawPath === "" ? f : join(dirname(f), decodeURIComponent(rawPath))
+      if (rawPath !== "" && !existsSync(targetFile)) continue // 文件缺失归 7 号检查
+      const ids = rawPath === "" ? selfIds : anchorIds(readFileSync(targetFile, "utf8"))
+      if (!ids.has(frag)) {
+        const where = rawPath === "" ? "本文件" : relative(AGENT_ROOT, targetFile)
+        failures.push(`${rel}: 锚点 #${frag} 在 ${where} 中不存在`)
+      }
+    }
+  }
+  return refs
+}
+
 function checkPkg(pkgDir: string): string | undefined {
   const name = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')).name
   const readme = join(pkgDir, 'README.md')
@@ -183,6 +241,7 @@ if (existsSync(rootEn)) {
 
 const agentDocs = checkAgentDocs()
 checkAgentCommands()
+checkAnchorRefs()
 
 const ok = failures.length === 0
 console.log(`verify-docs：检查 ${checked} 个包 + 根 README + ${agentDocs} 个 agent 规则文档`)

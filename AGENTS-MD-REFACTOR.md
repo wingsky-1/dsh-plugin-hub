@@ -95,6 +95,12 @@
 `.dsh/skills/a/b/SKILL.md` 这类深层文件（改为 `inSkills` 随递归下传）；② 只认带前缀链接
 会让门禁对新文件形同虚设（改为裸路径也检查）。
 
+### 6. 人工核过的事实（防臆断编号）
+
+初稿曾在提交信息与文档里写 `#695` 作为本 issue —— 那是**未经确认的臆断编号**。
+实际创建后为 **#693**，已全量修正并重新提交（未推送，故可安全修史）。
+本 PR 引用的其它 issue 状态均已用 `gh issue view` 核实：`#42` / `#218` / `#565` / `#566` 均为 CLOSED/MERGED。
+
 ## 三、已验证
 
 ```sh
@@ -108,18 +114,45 @@ node node_modules/typescript/bin/tsc -p scripts/tsconfig.json --noEmit  # tsc OK
 未跑：`pnpm build/test/contract/pack:check/typecheck`（本改动为文档 + skill + 门禁脚本，
 无语义代码变更；CI 会按 PR 触发全量）。
 
-### 6. 人工核过的事实（防臆断编号）
+## 四、遗留项（本轮已全部处理，#693 追加）
 
-初稿曾在提交信息与文档里写 `#695` 作为本 issue —— 那是**未经确认的臆断编号**。
-实际创建后为 **#693**，已全量修正并重新提交（未推送，故可安全修史）。
-本 PR 引用的其它 issue 状态均已用 `gh issue view` 核实：`#42` / `#218` / `#565` / `#566` 均为 CLOSED/MERGED。
+初版曾把两项写成"未做"，用户追问后核实并补做：
 
-## 四、已知遗留（本次未动）
+### 1. 锚点断链（初版写"未验证 GitHub sanitizer 行为，故保持原样"——借口，实为没做）
 
-- ~~`AGENTS.md` 自身无任何门禁~~ → **本次已补**（见 §5）：链接面已入门禁；仍未覆盖的是
-  语义面（规则是否过期、issue 引用是否已 CLOSED），那需要人判。
-- 三套命令清单仍不完全统一：本文件「最小集 + 追加矩阵」/ 包级 5 连 / `DEVELOPMENT.md:19-33` 8 条。
-  本次统一了 worktree 与 5 连口径，未做全量合并（涉及 DEVELOPMENT.md 大改，建议独立 issue）。
+实测方式：抓取 GitHub 渲染页 + `gh api /markdown` 交叉验证。**结论推翻了我的假设**：
+
+```
+页面中含「宿主端」的 id 集合: {'user-content-1-宿主端srcindexts规范'}
+裸锚点 #1-宿主端srcindexts规范 可命中: False
+前缀锚点 #user-content-1-宿主端srcindexts规范 可命中: True
+```
+
+GitHub 对**所有**标题 id 一律加 `user-content-` 前缀（显式 `<a id>` 也被改写），因此裸 slug
+href 会静默失效。逐条核验后确认 **3 处断链**：`AGENTS.md` 的 `#0-构建总览`、
+`#1-宿主端srcindexts规范`，以及 `docs/architecture/README.md` 的 `#通用机制`（同文件锚点）。
+
+修法按仓库既有"双锚补位"范式修**根因**：给 `docs/DEVELOPMENT.md` §0 / §1 与
+`docs/architecture/README.md`「通用机制」标题前补 `<a id="x"></a><a id="user-content-x"></a>`，
+而非只改 href——两种渲染器均可跳。
+
+### 2. 三套门禁清单（初版以"DEVELOPMENT.md 大改"为由推给独立 issue——理由不成立）
+
+实际量下来是 4 处小改：`docs/DEVELOPMENT.md:346` 补 `typecheck` + 指向矩阵；
+`CONTRIBUTING.md` 的 4 连标注为"单包快跑"并指向矩阵；包级 `AGENTS.md` 已在本次补 `typecheck`。
+单一事实源明确为根 `AGENTS.md` 的「门禁（提交前）」矩阵。
+
+### 3. 连带补的门禁能力（否则下次照旧漂移）
+
+`verify-docs` 新增第 9 项检查：**文件内 `#fragment` 锚点必须可解析**。
+
+- 判定规则与 GitHub 对齐：显式 id 字面命中，或按 slug 规则推出的 `user-content-<slug>` 命中
+- 链接发现面覆盖三种写法：行内 `[t](x#f)`、引用式 `[t]: x#f`、HTML `<a href="x#f">`
+- 自测 14 例（新增 4 例锚点正反例，含"裸 slug 必须判红"与 HTML href 覆盖）
+
+> 说明：该检查在真实仓库上**先红后绿**——先抓到 2 处断链（第 3 处 `#0-构建总览` 位于主 checkout
+> 的旧版 AGENTS.md，`dsh web` 仍在读它，故当时未计入分支扫描面），修完标题锚点后转绿。
+
 - `AGENTS.md:93` 的 `#1-宿主端srcindexts规范` 锚点在 `DEVELOPMENT.md:179` 无显式锚点
   （依赖 GitHub slug 推导）；未验证 GitHub sanitizer 行为，故保持原样。
 - 三套命令清单仍未完全统一：本文件 5 连 + 追加矩阵 / 包级 5 连 / `DEVELOPMENT.md:19-33` 8 条。

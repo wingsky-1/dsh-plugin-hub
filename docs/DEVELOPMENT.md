@@ -5,6 +5,7 @@
 > `packages/dsh-*` 的开发与维护。构建/契约/发布脚本见 `scripts/`；仓库级硬性规则见根
 > [AGENTS.md](../AGENTS.md)，发版执行规程见 [.dsh/skills/dsh-plugin-release/SKILL.md](../.dsh/skills/dsh-plugin-release/SKILL.md)。
 
+<a id="0-构建总览"></a><a id="user-content-0-构建总览"></a>
 ## 0. 构建总览
 
 每个插件包 = 独立 npm 包（`@wingsky-1/dsh-*`），发布物自包含（第三方依赖构建期内联）。
@@ -176,6 +177,7 @@ contract-check 禁止运行时值导入）。原自建类型层 `types/dsh.d.ts`
 SessionHeader.origin / Agent.session），并同步根 README「版本适配」与 release notes
 锚定声明。
 
+<a id="1-宿主端srcindexts规范"></a><a id="user-content-1-宿主端srcindexts规范"></a>
 ## 1. 宿主端（`src/index.ts`）规范
 
 - **单入口**：`src/index.ts` export 一个 cordis service；需要给客户端传路由时
@@ -341,8 +343,9 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
     自动枚举会退回「目录即事实源」的 fail-open 老路；
   - schema 加载/校验逻辑只有一份：`scripts/lib/plugins-manifest-lib.ts`（纯函数，
     入口脚本只喂数据），测试见 `scripts/test/plugins-manifest.test.ts`。
-- **新增/修改客户端后**：`pnpm build && pnpm test && pnpm contract && pnpm pack:check`
-  全绿再提交。
+- **新增/修改客户端后**：`pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck`
+  全绿再提交（完整门禁清单与「改动类型 → 追加门禁」对照表见根
+  [AGENTS.md 门禁矩阵](../AGENTS.md)，本处是最小集）。
 
 <a id="5-smoke-测试防-flake-纪律"></a><a id="user-content-5-smoke-测试防-flake-纪律"></a>
 ## 5. Smoke 测试防 flake 纪律

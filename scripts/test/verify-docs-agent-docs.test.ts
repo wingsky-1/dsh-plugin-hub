@@ -87,16 +87,17 @@ test('反例：相对文件与相对仓库根都不存在才判红（GitHub 裸�
   assert.equal(run(dir).status, 1)
 })
 
-test('不误报：锚点 / 绝对 URL / 正则示例文本都不算链接', () => {
+test('不误报：绝对 URL 与正则示例文本都不算链接；锚点有目标即通过', () => {
   const dir = fixture({
     agentFiles: {
       'AGENTS.md': [
+        '<a id="top"></a>',
         '见 [节](docs/DEVELOPMENT.md#sec) · [外](https://example.com/a.md) · [锚](#top)',
         '',
         '锁版形如 `@deepseek-ai/[a-z0-9-]+|cordis|schemastery` 的写法。',
         '',
       ].join('\n'),
-      'docs/DEVELOPMENT.md': '# dev\n',
+      'docs/DEVELOPMENT.md': '<a id="sec"></a>\n## sec\n',
     },
   })
   const r = run(dir)
@@ -134,4 +135,51 @@ test('命令存在性：docs/ 下的引用同样被校验（门禁命令最常�
   const r = run(dir)
   assert.equal(r.status, 1)
   assert.match(r.stderr, /GUIDE\.md: 引用了不存在的 pnpm 命令 nope:cmd/)
+})
+
+test('锚点：裸 slug href 判红——GitHub 会给标题 id 加 user-content- 前缀（#693 实测）', () => {
+  // 这正是 AGENTS.md #0-构建总览 / #1-宿主端srcindexts规范 三处断链的成因
+  const dir = fixture({
+    agentFiles: { 'AGENTS.md': '见 [§1](docs/DEVELOPMENT.md#1-宿主端规范)。\n', 'docs/DEVELOPMENT.md': '## 1. 宿主端规范\n' },
+  })
+  const r = run(dir)
+  assert.equal(r.status, 1)
+  assert.match(r.stderr, /锚点 #1-宿主端规范 在 docs\/DEVELOPMENT\.md 中不存在/)
+})
+
+test('锚点：显式双锚（含 user-content- 形态）可解析 → 通过', () => {
+  const dir = fixture({
+    agentFiles: {
+      'AGENTS.md': '见 [§1](docs/DEVELOPMENT.md#1-宿主端规范) 与 [§5](docs/DEVELOPMENT.md#user-content-5-smoke)。\n',
+      'docs/DEVELOPMENT.md':
+        '<a id="1-宿主端规范"></a><a id="user-content-1-宿主端规范"></a>\n## 1. 宿主端规范\n\n' +
+        '<a id="5-smoke"></a><a id="user-content-5-smoke"></a>\n## 5. Smoke\n',
+    },
+  })
+  const r = run(dir)
+  assert.equal(r.status, 0, r.stderr)
+})
+
+test('锚点：标题 slug 推导（user-content-<slug>）也算有效', () => {
+  const dir = fixture({
+    agentFiles: {
+      'AGENTS.md': '见 [机制](docs/A.md#user-content-通用机制)。\n',
+      'docs/A.md': '## 通用机制\n',
+    },
+  })
+  const r = run(dir)
+  assert.equal(r.status, 0, r.stderr)
+})
+
+test('锚点：同文件锚点（含 HTML href 写法）同样被校验', () => {
+  const broken = fixture({ agentFiles: { 'docs/A.md': '见 [x](#不存在)。\n' } })
+  const r1 = run(broken)
+  assert.equal(r1.status, 1)
+  assert.match(r1.stderr, /锚点 #不存在 在\s*本文件\s*中不存在/)
+
+  const htmlBroken = fixture({ agentFiles: { 'docs/A.md': '<a href="#也没有">看</a>\n' } })
+  assert.equal(run(htmlBroken).status, 1, 'HTML href 形态必须纳入发现面')
+
+  const ok = fixture({ agentFiles: { 'docs/A.md': '<a id="通用机制"></a>\n## 通用机制\n\n见 [x](#通用机制)。\n' } })
+  assert.equal(run(ok).status, 0)
 })
