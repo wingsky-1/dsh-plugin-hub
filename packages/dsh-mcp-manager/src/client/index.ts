@@ -260,7 +260,9 @@ export function apply(ctx: any): void {
           // 宿主重启/热重载/网络抖动会主动断开旧连接，浏览器随即自动重连
           // （readyState 回到 CONNECTING）——这种瞬时断连不是失败，不累计。
           // 只有连接真正关闭（如路由 404）才计数，3 次后放弃 SSE 改轮询；
-          // 未达阈值时 CLOSED 后浏览器不再自动重连，交 watchdog 受控重建兜底。
+          // 未达阈值时 CLOSED 后浏览器不再自动重连，交 watchdog 受控重建兜底
+          // （C9 设计内空窗：单次 CLOSED 到 watchdog 重建最长约 65s 无推送帧，
+          // 属设计内容忍——watchdog 比 SSE 自动重连更快收敛半开，可靠性优先）。
           if (es !== undefined && es.readyState === EventSource.CLOSED) {
             esFailures += 1;
             if (esFailures >= 3) {
