@@ -12,42 +12,34 @@
  * 双轨迁移：middleware 配置为 "off"（默认直呼）/ "project"（项目级走中间层，
  * 全局 mcp__ 直呼）/ "all"（全部走中间层）。
  *
- * 职责拆分（#286 附加）：本文件保留连接池核心（McpMiddleware 类）并汇聚
- * 转发全部公共符号——常量（middleware-const）、纯函数与目录检索
- * （middleware-utils）、状态持久化（middleware-state）、工具注册
- * （middleware-register）、类型（middleware-types）；index.ts / manager.ts
- * 的 import 与 re-export 面保持不变。
+ * 阶段 6 集中搬移：本文件归 connection/runtime/（中间层池），仅保留
+ * McpMiddleware 类；原汇聚转发块删除（v3 §二：汇聚只留 src/index.ts）。
  */
 
 import { mkdir, readFile, rename, writeFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ServerConfig } from "./types/interface.ts";
+import type { ServerConfig } from "../../types/interface.ts";
 import type { ToolDefinition, ToolOutputDefinition } from "@deepseek-ai/dsh-tools";
 import { MCPClient } from "./protocol.ts";
-import { defaultCallResultFallbackText, projectCallToolResult, withTimeout, msgOf, createRedactor, normalizeArguments } from "./pipeline/interface.ts";
-import { resolveReconnect } from "./connection/interface.ts";
+import { defaultCallResultFallbackText, projectCallToolResult, withTimeout, msgOf, createRedactor, normalizeArguments } from "../../pipeline/interface.ts";
+import { resolveReconnect } from "../interface.ts";
 import { createTransport } from "./transport.ts";
 import {
   CONNECT_TIMEOUT_MS,
   DISCOVERY_TIMEOUT_MS,
   CALL_TIMEOUT_MS,
   CATALOG_TTL_MS,
-} from "./middleware-const.ts";
+} from "./limits.ts";
 import {
   parseFullServerName,
   normalizeToolName,
   fullServerName,
   bareServerName,
   MIDDLEWARE_GLOBAL_ROOT,
-} from "./workspace/interface.ts";
-import {
-  policyAllows,
-  policyDenialReason,
-  isToolDenied,
-  toolDisabledReason,
-} from "./middleware-utils.ts";
-import { isCatalogFresh, boundCatalogTools } from "./catalog/interface.ts";
+} from "../../workspace/interface.ts";
+import { policyAllows, policyDenialReason, isToolDenied, toolDisabledReason } from "../../pipeline/interface.ts";
+import { isCatalogFresh, boundCatalogTools } from "../../catalog/interface.ts";
 import type {
   MiddlewareHost,
   ProjectUnit,
@@ -55,7 +47,7 @@ import type {
   ConnectionEntry,
   CatalogTool,
   DisabledToolsMap,
-} from "./types/interface.ts";
+} from "../../types/interface.ts";
 
 
 
@@ -700,65 +692,3 @@ export class McpMiddleware {
     this.units.clear();
   }
 }
-
-// ------------------------------------------------------------ 汇聚转发
-// 导出面与拆分前完全一致（index.ts / manager.ts / smoke 验收契约）。
-
-// 常量与模式归一化
-export {
-  CONNECT_TIMEOUT_MS,
-  DISCOVERY_TIMEOUT_MS,
-  CALL_TIMEOUT_MS,
-  CATALOG_TTL_MS,
-  CATALOG_LRU_MAX,
-  MAX_TOOLS_PER_SERVER,
-  MAX_BYTES_PER_TOOL,
-  MAX_TOTAL_CATALOG_BYTES,
-  LIST_DEFAULT_TOOLS_PER_SERVER,
-  LIST_MAX_TOOLS_PER_SERVER,
-} from "./middleware-const.ts";
-// 模式归一化归 workspace 域（阶段 4 迁出，经 workspace/interface.ts）
-export { normalizeMiddlewareMode } from "./workspace/interface.ts";
-// 纯函数与目录检索（pipeline 域函数经 pipeline/interface.ts 转发；
-// workspace 域命名/全名类经 workspace/interface.ts 转发；
-// catalog 域检索族自 middleware-utils.ts 迁出经 catalog/interface.ts 转发；
-// 策略裁决与禁用表解析留在 middleware-utils.ts）
-export { withTimeout, normalizeArguments, msgOf, createRedactor, globMatch } from "./pipeline/interface.ts";
-export { fullServerName, parseFullServerName, normalizeToolName, bareServerName, MIDDLEWARE_GLOBAL_ROOT } from "./workspace/interface.ts";
-export {
-  isCatalogFresh,
-  boundCatalogTools,
-  scoreTool,
-  searchCatalog,
-  searchCatalogMulti,
-  listCatalog,
-  findToolDetail,
-} from "./catalog/interface.ts";
-export {
-  policyAllows,
-  policyDenialReason,
-  isToolDenied,
-  toolDisabledReason,
-  parseDisabledTools,
-} from "./middleware-utils.ts";
-// 状态持久化
-export { userStateFile, loadUserState, saveUserState, catalogCacheFileFor, readCatalogServerFromDisk, loadDisabledTools, saveDisabledTools } from "./config/store/interface.ts";
-// 工具注册
-export { registerMiddlewareTools, registerDirectMcpGuard } from "./middleware-register.ts";
-// 类型
-export type {
-  MiddlewareMode,
-  MiddlewarePolicy,
-  ProjectUnit,
-  ConnectionEntry,
-  CatalogServer,
-  CatalogTool,
-  SearchHit,
-  ListToolEntry,
-  ListServerEntry,
-  ListCatalogResult,
-  ToolDetail,
-  MiddlewareHost,
-  DisabledToolsMap,
-} from "./types/interface.ts";
-

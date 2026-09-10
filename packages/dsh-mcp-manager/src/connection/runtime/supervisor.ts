@@ -11,28 +11,18 @@
 import { createHash } from "node:crypto";
 import { createTransport } from "./transport.ts";
 import type { StdioTransport, HttpTransport } from "./transport.ts";
-import { SCOPE_GLOBAL, SCOPE_PROJECT } from "./workspace/interface.ts";
+import { SCOPE_GLOBAL, SCOPE_PROJECT } from "../../workspace/interface.ts";
 import { MCPClient } from "./protocol.ts";
-import { defaultCallResultFallbackText, projectCallToolResult, createRedactor, msgOf } from "./pipeline/interface.ts";
-import { RECONNECT_DEFAULTS, resolveReconnect, type ReconnectPolicy } from "./connection/interface.ts";
-import type { McpStatsCollector } from "./stats/interface.ts";
-import type { ServerConfig } from "./types/interface.ts";
+import { defaultCallResultFallbackText, projectCallToolResult, createRedactor, msgOf } from "../../pipeline/interface.ts";
+import { RECONNECT_DEFAULTS, resolveReconnect, type ReconnectPolicy } from "../interface.ts";
+import type { McpStatsCollector } from "../../stats/interface.ts";
+import type { ServerConfig, ManagerLite } from "../../types/interface.ts";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 // 官方工具定义类型（仅 import type，编译期擦除；contract-check 禁止运行时值导入）。
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 
 /** McpManager 最小面（supervisor 使用；避免 index↔supervisor 循环 import）。
  * tools 面取官方 Context，register 入参为官方 ToolDefinition。 */
-export interface ManagerLite {
-  ctx: Pick<Context, "tools">;
-  logger: LoggerService;
-  enhancement: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number };
-  emitStatus(): void;
-  recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown }>): Promise<void>;
-  /** 行为扩展（#664 阶段 2）：调用统计最小面，supervisor 直呼路径埋点。 */
-  stats?: Pick<McpStatsCollector, "isEnabled" | "recordCall">;
-}
-
 // --------------------------------------------------------- 工具命名 / 截断
 
 /** 默认单次工具调用超时（毫秒）。下探自 60s：死工具（服务器已断线但工具未注销）

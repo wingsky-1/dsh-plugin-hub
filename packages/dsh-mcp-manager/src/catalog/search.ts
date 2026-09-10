@@ -13,7 +13,7 @@ import {
   MAX_BYTES_PER_TOOL,
   MAX_TOOLS_PER_SERVER,
   MAX_TOTAL_CATALOG_BYTES,
-} from "../middleware-const.ts";
+} from "../connection/interface.ts";
 import { fullServerName, parseFullServerName, bareServerName, MIDDLEWARE_GLOBAL_ROOT, normalizeToolName } from "../workspace/interface.ts";
 import type {
   CatalogServer,

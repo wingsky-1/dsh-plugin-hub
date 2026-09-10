@@ -8,6 +8,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { ServerConfig } from "../types/interface.ts";
+import type { SupervisorLite } from "../types/interface.ts";
 import type { CatalogMessage } from "./injection.ts";
 
 /** 目录条目。 */
@@ -18,12 +19,9 @@ export interface CatalogEntry {
   scope?: string;
 }
 
-/** supervisor 最小面（manager.supervisors 的条目）。 */
-export interface SupervisorLite {
-  server: ServerConfig;
-  /** 服务器归属（global/project）；目录条目携带用于调用引导（#228）。 */
-  scope?: string;
-}
+/** supervisor 最小面（manager.supervisors 的条目；类型收敛于 types/host-faces.ts，此处 re-export）。 */
+export type { SupervisorLite } from "../types/interface.ts";
+
 
 /** 目录缓存（连接成功时持久化的工具描述摘要）。 */
 export type CatalogCache = Map<string, { summary: string }>;

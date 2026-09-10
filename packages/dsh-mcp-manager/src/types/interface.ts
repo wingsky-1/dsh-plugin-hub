@@ -22,5 +22,5 @@ export type {
   ListServerEntry,
   ToolDetail,
   ListCatalogResult,
-  MiddlewareHost,
 } from "./middleware-types.ts";
+export type { ManagerLite, RoutesManager, MiddlewareHost, SupervisorLite } from "./host-faces.ts";

@@ -13,5 +13,6 @@ export {
   readCatalogServerFromDisk,
   loadDisabledTools,
   saveDisabledTools,
+  parseDisabledTools,
 } from "./middleware-state.ts";
 export type { PersistedCatalogServer } from "./middleware-state.ts";

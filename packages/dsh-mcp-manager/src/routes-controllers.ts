@@ -26,7 +26,7 @@ import {
 } from "./workspace/interface.ts";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { RoutesManager } from "./routes.ts";
+import type { RoutesManager } from "./types/interface.ts";
 import { queryParam } from "./routes-helpers.ts";
 
 /** 控制器共享 helpers（原 makeRoutes 闭包三件套，提升为显式参数）。 */

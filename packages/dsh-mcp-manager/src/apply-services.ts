@@ -12,7 +12,7 @@
  */
 
 import type { Context } from "@deepseek-ai/cordis";
-import type { McpManager } from "./manager.ts";
+import type { McpManager } from "./connection/interface.ts";
 import type { McpServerSummary } from "../../../shared/mcp-manager-service.js";
 
 /**
