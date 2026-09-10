@@ -48,7 +48,7 @@ interface AdapterEntry {
 }
 
 /**
- * 热更新替换结果（#212）。
+ * 热更新替换结果。
  * ok=false 时旧条目**原样保留**（冲突预检先行，不做先删后注册），detail 供 health/日志如实呈现。
  */
 export type ReplaceFileResult =
@@ -246,7 +246,7 @@ export function makeAdapterRegistry(opts: { diag?: (m: string) => void; sanitize
   }
 
   /**
-   * 热更新原子替换某文件注册的全部候选（#212）：
+   * 热更新原子替换某文件注册的全部候选：
    * - 冲突预检：新版 name 与**其他来源**已注册名重复 → 拒绝且不动旧条目（修复改名撞名静默丢失）；
    * - enabled 保持：替换只更新代码不改写启用关系——本文件旧条目在其认领 provider 上
    *   原本是启用者的，替换后新条目沿用；原本停用的不得变回启用；新增认领的 provider 不自动启用。

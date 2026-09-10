@@ -1,7 +1,7 @@
 /**
- * dsh-provider-usage — apply/ 装配层目录门面（#670 D9/C 梯队）。
+ * dsh-provider-usage — apply/ 装配层目录门面。
  *
- * 目录化约定（#670 D9）：目录外（domain2/domain1/shared）引用 apply/ 一律经本
+ * 目录化约定：目录外（domain2/domain1/shared）引用 apply/ 一律经本
  * 文件消费。apply/ 是装配层组合根（特权目录），对外面 = apply() 主函数、
  * inject 与 lib 导出面——但 lib 入口仍是 apply/index.ts（bundle-host 锚点，
  * 经 lib/index.js 对外），本文件只服务「目录外源码引用」这一场景。

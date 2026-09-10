@@ -81,7 +81,7 @@ export declare function classifyIntervalDs(
   b: SamplePoint,
 ): { type: "unavailable" | "gap" | "disturbed" | "clean"; drop: number; topup: number; grantDelta: number };
 
-/** 单日柱悬浮文案纯函数（#592 从 dailyBarsSvg 拆出）。运行时导出，声明面补齐以保持 lib re-export 完整。 */
+/** 单日柱悬浮文案纯函数（从 dailyBarsSvg 拆出）。运行时导出，声明面补齐以保持 lib re-export 完整。 */
 export declare function dailyBarTitle(r: DayRecord, i: number, total: number): string;
 
 /**

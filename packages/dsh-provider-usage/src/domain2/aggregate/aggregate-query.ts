@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage/trend — 查询投影纯函数（D2 aggregator 拆分的纯函数层之二，#670 阶段三）。
+ * dsh-provider-usage/trend — 查询投影纯函数。
  *
  * 为什么独立成模块：趋势查询面（序列/堆叠/窗口摘要/目录投影）的计算与
  * TrendAggregator 的状态容器解耦——本模块全部函数以 days/dirDays/rows 显式传参，
@@ -7,7 +7,7 @@
  * 主类保留状态容器与需要 this 的 IO/记账方法，查询方法变成薄壳委托。
  * 依赖方向无环：aggregate-query → types / charts / aggregate-rows；aggregator → 三者。
  *
- * 守恒边界（R8 不变量4，unit-trend-ledger.test.ts 对账口径）：dirRows() 输出 = 目录桶
+ * 守恒边界（对账口径见 unit-trend-ledger.test.ts）：dirRows() 输出 = 目录桶
  * 快照 + 每日残差投影（归 TREND_UNIDENTIFIED）；无 dir 键的旧格式行只进聚合面不进
  * 目录面——目录维度守恒以「有 dir 事实」为界。小时面（buildHourRows）不做残差投影
  * （detail/counter 行必有 time，旧分片缺小时是物理缺失，报告侧 coveredDays 守卫降级）。
@@ -58,7 +58,7 @@ export interface TrendWindowSummary {
   top: { provider: string; model: string | null; value: number } | null;
   /** 上一同等窗口指标总量（环比基准；无数据 null）。 */
   prevTotal: number | null;
-  /** 上一窗口数据是否完整（起点早于数据起点 = false；false 时环比不可比，#503 M2.1）。 */
+  /** 上一窗口数据是否完整（起点早于数据起点 = false；false 时环比不可比）。 */
   prevComplete: boolean;
 }
 
@@ -216,7 +216,7 @@ export function buildStackedSeries(
   now: number,
 ): { series: TrendStackPoint[]; providers: Array<{ provider: string; model: string | null }> } {
   const keys = granKeysFor(n, gran, now);
-  // 桶日区间一次算全（评审 P1-2：原实现对每桶在 days 日循环内重复调 granRange）
+  // 桶日区间一次算全（原实现对每桶在 days 日循环内重复调 granRange）
   const ranges = new Map(keys.map((k) => [k, granRangeForKey(k, gran)] as const));
   const series: TrendStackPoint[] = keys.map((key) => {
     const partsMap = new Map<string, TrendStackPart>();
@@ -252,7 +252,7 @@ export function buildStackedSeries(
 }
 
 /**
- * 堆叠柱序列（目录维度；#633 分片 b B1 数据接口）。语义与 seriesStacked 同构：
+ * 堆叠柱序列（目录维度）。语义与 seriesStacked 同构：
  * 每时间桶按目录拆段；dirs 为图例并集（窗口内出现过的目录段，含未识别桶）。
  * dir 过滤可选（单目录形态——未识别桶键同为合法过滤值）。
  */
@@ -266,8 +266,8 @@ export function buildDirStackedSeries(
 ): { series: TrendStackPoint[]; dirs: Array<{ dir: string }> } {
   const keys = granKeysFor(n, gran, now);
   const ranges = new Map(keys.map((k) => [k, granRangeForKey(k, gran)] as const));
-  // 复核 P1-3：行快照提出桶循环（原实现每桶 this.dirRows() 全量快照，O(桶×行)
-  // 单请求重复；对齐 seriesStacked 的 P1-2 先例——range 一次算全 + 快照单次
+  // 行快照提出桶循环（原实现每桶 this.dirRows() 全量快照，O(桶×行)
+  // 单请求重复；与 seriesStacked 同策略——range 一次算全 + 快照单次
   // 取用，桶循环内只做窗口过滤消费）。
   const series: TrendStackPoint[] = keys.map((key) => {
     const partsMap = new Map<string, TrendStackPart>();
@@ -295,7 +295,7 @@ export function buildDirStackedSeries(
 /**
  * 窗口摘要（当前 n 桶 + 上一同等窗口环比基准）。
  * @param stackSeries 可选传入路由已算好的堆叠序列（n/gran/metric/provider 必须与本
- *   调用一致）——复用峰值/Top 遍历，消除单请求双算（评审 P1-2）；缺省时内部自算。
+ *   调用一致）——复用峰值/Top 遍历，消除单请求双算；缺省时内部自算。
  */
 export function buildWindowSummary(
   days: Map<string, Map<string, Map<string | null, TrendCell>>>,
@@ -325,7 +325,7 @@ export function buildWindowSummary(
   let peakKey: string | null = null;
   let peakVal = -1;
   let top: { provider: string; model: string | null; value: number } | null = null;
-  // 复用路由已算的 stack 序列（评审 P1-2：消除单请求双算；缺省自算保持独立可用）
+  // 复用路由已算的 stack 序列（消除单请求双算；缺省自算保持独立可用）
   const series = stackSeries ?? buildStackedSeries(days, n, gran, metric, provider, false, now).series;
   for (const point of series) {
     if (point.total !== null && point.total > peakVal) {
@@ -352,13 +352,13 @@ export function buildWindowSummary(
     peakKey,
     top,
     prevTotal: rangeValueOf(days, prevRange, metric, provider),
-    // 上一窗口起点早于数据起点（内存最早日，即留存/起算边缘）→ 基准不完整，环比不可比（#503 M2.1）
+    // 上一窗口起点早于数据起点（内存最早日，即留存/起算边缘）→ 基准不完整，环比不可比
     prevComplete: prevRange.start >= (firstDayKeyOf(days) ?? "9999-12-31"),
   };
 }
 
 /**
- * 窗口摘要（目录维度；#633 分片 b B1 数据接口）。curRange/prevRange 语义与
+ * 窗口摘要（目录维度）。curRange/prevRange 语义与
  * windowSummary 完全同构：当前窗口总量/调用数/峰值桶/目录 top 段 + 上一窗口环比。
  * prevComplete 语义对齐：prev 窗口起点早于**目录面数据起点**（dirRows 最早日；
  * 残差投影后该起点等于聚合面数据起点，故与 windowSummary 同值）→ 不可比。
@@ -403,7 +403,7 @@ export function buildDirWindowSummary(
     }
   }
   let firstDirDay: string | null = null;
-  // 复核 P1-3：单遍遍历（原实现 3 次全量遍历 rows——最早日 + 当前窗口 + 上一
+  // 单遍遍历（原实现 3 次全量遍历 rows——最早日 + 当前窗口 + 上一
   // 窗口各一遍；窗口区间互斥，同遍累加语义不变）。
   for (const row of rows) {
     if (firstDirDay === null || row.day < firstDirDay) firstDirDay = row.day;
@@ -432,7 +432,7 @@ export function buildDirWindowSummary(
 }
 
 /**
- * 目录窗口总量表（#633 分片 b B4 目录范围口径影响 + B1 目录分布数据源）：
+ * 目录窗口总量表（目录范围口径影响 + 目录分布数据源）：
  * 给定日区间内按目录聚合 calls 与 metric 总量（calls 降序）。
  */
 export function buildDirTotals(
@@ -456,18 +456,18 @@ export function buildDirTotals(
 }
 
 /**
- * 全量目录日桶快照（day 升序；#633 分片 b 报告快照与统计目录分布数据源）。
+ * 全量目录日桶快照（day 升序；报告快照与统计目录分布数据源）。
  *
- * 权威口径（复核 P1-1）：dirDays 单源快照——apply 平行累加 + rebuild 双分支读回
+ * 权威口径：dirDays 单源快照——apply 平行累加 + rebuild 双分支读回
  * 已覆盖全部 dir 事实，不再折算 pending 行（旧折算侧与 dirDays 并存时双算：
  * 同事实重建 → 2×；互补事实 → 按键去重丢数；实测同日重启续 apply input 17 → 7）。
  *
- * 残差投影（本次修复，取代「重建时补造」）：目录面 = dirDays 快照 + 每日残差。
+ * 残差投影（取代「重建时补造」）：目录面 = dirDays 快照 + 每日残差。
  * 残差(day) = 该日聚合面（cells，全量事实）− 该日 dirDays 合计（有目录归属的事实），
  * 非零则投影为一条 `{day, dir: TREND_UNIDENTIFIED}` 行——语义即「该日无目录信息的
  * 数据」。这样两个查询面的日总量恒等（目录面 = 聚合面），且**不会双算**：
  *
- * - 旧分片（#633 之前的 agg 行，无 kind:"dir" 行）：cells 有值、dirDays 空 → 残差
+ * - 旧分片（无 kind:"dir" 行的 agg 行）：cells 有值、dirDays 空 → 残差
  *   = 全量 → 历史柱恢复且不丢数（此前 dir 面历史全 null，实测差 20 倍）；
  * - 新分片（agg + dir 并存，同一批事实的两个投影）：cells 含 agg 行、dirDays 含 dir 行
  *   → 残差 ≈ 0（同一事实相减相消）→ 不补造、不双算；故**禁止**在 rebuild 里对
@@ -597,7 +597,7 @@ export function buildDirRows(
 }
 
 /**
- * 全量小时日桶快照（day 升序、hour 升序；#662 报告快照 byHour/byPeriod/peakHour/
+ * 全量小时日桶快照（day 升序、hour 升序；报告快照 byHour/byPeriod/peakHour/
  * coveredDays 数据源）。
  * 权威口径（对齐 dirRows 单源约定）：hourDays 单源快照——apply 平行累加 + rebuild
  * 双分支读回已覆盖全部 hour 事实，不折算 pending（防双算）；**不做残差投影**

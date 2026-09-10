@@ -11,7 +11,7 @@
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { dshHome as dshHomeBase } from "../../../../../shared/dsh-home.js";
-// issue #87：~ 展开复用成熟开源实现 untildify（与 dsh-web-file-preview 同源同版，
+// ~ 展开复用成熟开源实现 untildify（与 dsh-web-file-preview 同源同版，
 // devDependency + 构建期 esbuild 内联，发布物零运行时依赖）。
 // 行为边界：仅展开开头的 `~`；`~user/...` 形态不展开、原样返回（旧手写实现把
 // ~user 误展开到当前用户 home 的权宜语义一并移除——UI placeholder 只承诺 ~/.dsh/...）。
@@ -19,7 +19,7 @@ import untildify from "untildify";
 
 /**
  * 插件 home 目录（host 文件逻辑归属区 ~/.dsh/plugins/provider-usage）。
- * 渐进退役 facade：base 缺省语义由 shared/dsh-home.js 单一事实源承载（#517），
+ * 渐进退役 facade：base 缺省语义由 shared/dsh-home.js 单一事实源承载，
  * 公开签名不变——参数化供调用方在非全局 env 场景（如路由入参校验）复用。
  * @param base - DSH_HOME 根（缺省读 env，空串视同未设置，回落 ~/.dsh）。
  */
@@ -28,11 +28,11 @@ export function pluginHome(base = dshHomeBase()): string {
 }
 
 /**
- * `~` 前缀展开（issue #87 单一事实源：resolvePath 与 resolveAddAdapterFile 共用，
+ * `~` 前缀展开（单一事实源：resolvePath 与 resolveAddAdapterFile 共用，
  * 保证「UI 承诺支持 ~ 路径」与校验行为一致）。
  */
 export function expandHomePath(p: string): string {
-  // dsh-gate:allow-homedir #87 用户路径 ~ 前缀展开（untildify 业界标准实现，目标由用户指定）
+  // dsh-gate:allow-homedir 用户路径 ~ 前缀展开（untildify 业界标准实现，目标由用户指定）
   return untildify(p);
 }
 
@@ -45,7 +45,7 @@ export function resolvePath(p: string): string | undefined {
   if (typeof p !== "string" || p.trim() === "") return undefined;
   const trimmed = p.trim();
 
-  // 1. ~ 展开与绝对路径判定（expandHomePath 统一处理，issue #87）
+  // 1. ~ 展开与绝对路径判定（expandHomePath 统一处理）
   const expandedHome = expandHomePath(trimmed);
   let expanded: string;
   if (expandedHome !== trimmed) {

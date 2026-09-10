@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage/report — 触发调度纯函数（#503 M3）。
+ * dsh-provider-usage/report — 触发调度纯函数。
  *
  * 语义（单一模型，三期统一）：
  * - 每期有「锚点触发时刻」：daily=当日 HH:MM（覆盖昨日全天）；weekly=周起点日 HH:MM（覆盖紧邻的前 7 天）；
@@ -98,7 +98,7 @@ export function candidateWindow(period: ReportPeriod, cfg: ReportConfig, now: nu
   return { period, key, startDay: dayKey(start.getTime()), endDay: dayKey(end.getTime()) };
 }
 
-/** last-run.json schema 版本（#624：v2 = daily 候选键语义统一为「已闭环窗口」）。 */
+/** last-run.json schema 版本（v2 = daily 候选键语义统一为「已闭环窗口」）。 */
 export const LAST_RUN_SCHEMA = 2;
 
 /** 迁移/推导输入：index.jsonl 单条记录的最小字段（鸭子类型，避免与 runner 循环依赖）。 */
@@ -111,7 +111,7 @@ export interface LastRunRecord {
 }
 
 /**
- * 「窗口已闭环」判定：#624 口径——生成时刻所在本地日 > 窗口结束日。
+ * 「窗口已闭环」判定：生成时刻所在本地日 > 窗口结束日。
  * 纯字符串日期序（dayKey(generatedAt) > endDay），与 addDays/dayKey 同源构造：
  * - 旧语义 daily「当天」记录（发起日 = endDay 当天）恒不闭环（窗口未走完）；
  * - 新语义 daily「昨天」记录（发起日 = endDay+1）恒闭环；
@@ -124,7 +124,7 @@ export function isClosedWindowRecord(r: LastRunRecord): boolean {
 }
 
 /**
- * 由 index.jsonl 事实推导 lastRun（#624 迁移 + 长期一致性口径）：
+ * 由 index.jsonl 事实推导 lastRun（迁移 + 长期一致性口径）：
  * 「lastRun = 各期最新已闭环窗口的键」——与读侧投影同构：index 是事实日志，
  * lastRun 是投影，任何时刻可重算（幂等、可重放、自动修复旧语义污染键）。
  * - 有闭环记录 → 取最晚键（已扣期语义不变：候选键 <= lastRun 即跳过）；
@@ -147,7 +147,7 @@ export function deriveLastRun(records: LastRunRecord[]): Partial<Record<ReportPe
 /**
  * schema 已新（>=2）时的温和校准：仅「该期 index 存在已闭环记录」才把 lastRun
  * 对齐到最新闭环键（修旧语义污染/遮蔽事故的滞后与超前），否则保留原值——
- * 保护 #531「首次启用预置扣期」键（preset 键在 index 中天然无对应记录，
+ * 保护「首次启用预置扣期」键（preset 键在 index 中天然无对应记录，
  * 全量重算会删掉它导致首次启用被立即补跑）。
  */
 export function alignLastRun(
@@ -214,7 +214,7 @@ export function pendingReports(cfg: ReportConfig, now: number, lastRun: Partial<
 }
 
 /**
- * #531：首次启用周期的扣期预置（保存配置时调用，纯函数便于单测）。
+ * 首次启用周期的扣期预置（保存配置时调用，纯函数便于单测）。
  *
  * pendingReports 对 lastRun 缺失视为「补跑到期」——「停机跨锚点补跑」的既定语义；
  * 但「首次启用」不该立即生成最近窗口（用户预期：从下一个触发时刻开始）。故保存

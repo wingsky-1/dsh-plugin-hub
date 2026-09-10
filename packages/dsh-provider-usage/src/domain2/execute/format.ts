@@ -1,7 +1,7 @@
 /**
- * dsh-provider-usage/report — 年报正文渲染管线（#532，escape-then-transform）。
+ * dsh-provider-usage/report — 年报正文渲染管线（escape-then-transform）。
  *
- * 安全模型（评审定稿）：先转义、后引入标签——
+ * 安全模型：先转义、后引入标签——
  * 1. escHtml 全文转义：此后任何注入 HTML 均为实体文本，字面 `<` 不可能再现；
  * 2. 按行分类：行首 `## ` → <h3>；行首 `- ` 连续行组包 <ul>/<li>；非空普通行 → <p>；
  * 3. 行内 `**x**` → <strong>（仅单行内匹配，跨行未闭合回退字面显示）。
@@ -20,7 +20,7 @@ function inlineBold(line: string): string {
   return line.replace(BOLD_RE, "<strong>$1</strong>");
 }
 
-/** 标题行：行首 `## `（`###` 及更深不匹配——评审明令只支持一档标题，其余字面）。 */
+/** 标题行：行首 `## `（`###` 及更深不匹配——只支持一档标题，其余字面）。 */
 const H3_RE = /^##\s+/;
 /** 列表项行：行首 `- `。 */
 const LI_RE = /^-\s+/;

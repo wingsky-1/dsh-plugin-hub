@@ -1,7 +1,7 @@
 /**
  * dsh-provider-usage — 胶囊位置 UI 配置（纯函数 + 持久化文件读写）。
  *
- * #276 方案 A 阶段 3 拆分：自 index.ts 抽离，导出面由 index.ts 转发 re-export
+ * 自 index.ts 抽离，导出面由 index.ts 转发 re-export
  * 保持不变（外部消费者仍从 lib/index.js 导入）。
  */
 
@@ -19,13 +19,13 @@ export interface UiPlacementConfig {
   offsetY: number;
   /** 面板相对胶囊下缘的垂直间距 px。 */
   panelOffsetY: number;
-  /** 层级基准（clamp 1–9000；胶囊与点击后弹出的主面板 computed z-index 均取该配置值，#128 重开）。 */
+  /** 层级基准（clamp 1–9000；胶囊与点击后弹出的主面板 computed z-index 均取该配置值）。 */
   zIndexBase: number;
 }
 
 /** 默认胶囊/面板位置：右上角、右侧对齐（offsetX=0 贴容器右缘）；offsetY=48 让
  *  胶囊默认位于 dsh-mcp-manager 浮窗（默认 top-right、offsetY=8、高约 26px）下方，
- *  保证两胶囊默认互不重叠（issue #116，去避让后以固定默认值错开；跨包避让契约，
+ *  保证两胶囊默认互不重叠（去避让后以固定默认值错开；跨包避让契约，
  *  不可回退——见两包 README 与 docs/DEVELOPMENT.md「浮窗移动端适配约定」）。 */
 export const DEFAULT_UI_CONFIG: UiPlacementConfig = {
   placement: "top-right",
@@ -52,13 +52,13 @@ export function normalizeUiConfig(raw: unknown): UiPlacementConfig {
     offsetX: clamp(src.offsetX, DEFAULT_UI_CONFIG.offsetX),
     offsetY: clamp(src.offsetY, DEFAULT_UI_CONFIG.offsetY),
     panelOffsetY: clamp(src.panelOffsetY, DEFAULT_UI_CONFIG.panelOffsetY),
-    // #128：层级基准 clamp 到 [1,9000]，非法回退默认（与 mcp-manager 同构语义）。
+    // 层级基准 clamp 到 [1,9000]，非法回退默认（与 mcp-manager 同构语义）。
     zIndexBase: clampZIndexBase(src.zIndexBase, DEFAULT_UI_CONFIG.zIndexBase),
   };
 }
 
 /** 面板垂直定位纯函数（供 smoke 断言翻转分支；clamp 到视口内，不溢出）。
- *  #378 抽取：实现上移 shared/placement-math.js，此处 re-export 保持 index.ts
+ *  实现上移 shared/placement-math.js，此处 re-export 保持 index.ts
  *  导出链不变（实现见 shared 模块与两包 placement-math 薄 facade）。 */
 export { panelTopForAnchor } from "../../../../shared/placement-math.js";
 

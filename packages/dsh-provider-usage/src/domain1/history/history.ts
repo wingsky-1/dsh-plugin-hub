@@ -50,7 +50,7 @@ export class HistoryStore {
     return join(this.dirOf(provider, name), `${day}.jsonl`);
   }
 
-  /** 追加一条（O(1) appendFile；#105②：prune 已移出热路径改独立定时器）。 */
+  /** 追加一条（O(1) appendFile；prune 已移出热路径改独立定时器）。 */
   async append(provider: string, name: string, entry: HistoryEntry): Promise<void> {
     const file = this.fileOf(provider, name, entry.time);
     await mkdir(this.dirOf(provider, name), { recursive: true });
@@ -64,7 +64,7 @@ export class HistoryStore {
     try {
       raw = await readFile(file, "utf8");
     } catch {
-      // #105②：ENOENT 容错——prune 在 existsSync 与 readFile 之间删掉过期文件时
+      // ENOENT 容错——prune 在 existsSync 与 readFile 之间删掉过期文件时
       // 返回空而非抛异常（此前会导致 /history 路由 500 崩溃路径）。
       return [];
     }
@@ -176,7 +176,7 @@ export class HistoryStore {
   }
 
   /**
-   * 全树留存清理（#105②：独立定时器调用，替代 append 热路径内联）。
+   * 全树留存清理（独立定时器调用，替代 append 热路径内联）。
    *
    * 扫描 root 下全部 provider/name 目录，对每目录执行 retention 清理
    * （删过期日文件 + 超限时从最旧删）。**语义锁死：只按 retention 规则删除
@@ -195,7 +195,7 @@ export class HistoryStore {
     }
     for (const provider of providers) {
       if (provider.startsWith(".") || provider === "legacy-v3.bak") continue;
-      // #503：trend 目录（会话用量趋势明细/聚合分片）不归 HistoryStore 的 maxAgeDays/
+      // trend 目录（会话用量趋势明细/聚合分片）不归 HistoryStore 的 maxAgeDays/
       // maxSizeMB 管——其留存周期独立为 trendRetentionDays（默认 180 天），由
       // TrendTracker.prune() 按自身 cutoff 清理。trend 分片文件名 YYYY-MM-DD.jsonl
       // 恰好命中下方 Date.parse 日期启发，漏排会被 30 天默认 retention 静默误删。

@@ -1,11 +1,11 @@
 /**
  * dsh-provider-usage — 客户端行为纯函数（设置页提供商列表拆分，v2 精简版）。
  *
- * 定位（issue #28）：不持有 DOM/模块状态；输入全部经参数注入，
+ * 定位：不持有 DOM/模块状态；输入全部经参数注入，
  * smoke 经 lib/index.js 做行为级断言，client bundle 由 esbuild 内联同一实现。
  */
 
-// ------------------------------------------------------------------ 设置页·提供商列表（issue #38 维护者意图修正）
+// ------------------------------------------------------------------ 设置页·提供商列表
 
 /** 提供商列表拆分的输入（全部来自 adapters.json 响应）。 */
 export interface ProviderListInput {
@@ -56,7 +56,7 @@ export function splitProviderList(input: ProviderListInput): { main: ProviderLis
 }
 
 /** 折叠态徽标文案（适配器级语义：显示「已启用: <adapter-name>」或「未启用适配器」）。
- *  i18n（issue #348）：传 t 时走字典（badgeEnabled/badgeOff）；缺省保持中文原文
+ *  i18n：传 t 时走字典（badgeEnabled/badgeOff）；缺省保持中文原文
  *  （共享模块零 client 依赖，宿主 bundle 不引入字典；兼容既有调用方与测试）。 */
 export function providerBadgeText(
   item: Pick<ProviderListItem, "enabledId">,

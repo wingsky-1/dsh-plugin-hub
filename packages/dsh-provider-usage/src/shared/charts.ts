@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage — 适配器共享图表/转义/日界工具库（issue #215 方案 a 落地）。
+ * dsh-provider-usage — 适配器共享图表/转义/日界工具库。
  *
  * 背景：图表渲染能力此前在 opencode-go.ts 与 deepseek-official.ts 中重复实现且语义
  * 不一（降采样 opencode 取区间最大、deepseek 取区间起点）。本文件收编为单一实现，
@@ -12,11 +12,11 @@
  * 收编范围（用户已认可抽取面）：
  * - 自 opencode-go.ts：fmtAxisTime / axisLabelWidthPx / niceStep / niceDomain /
  *   fmtPctTick / timeTickStep / timeTicks / trendOf / resetTicks / downsample
- *   （统一 peak 语义=区间取最大，issue 诉求②）/ smoothPath / miniChartSvgMarkup
+ *   （统一 peak 语义=区间取最大）/ smoothPath / miniChartSvgMarkup
  *   → 更名 miniAreaSvg 并参数化（resetsAt 类型放宽）；
  * - 自 deepseek-official.ts：dayKey / lastNDayKeys / fin / h（escHtml）/ ea（escAttr）。
- * 明确不下沉（用户拍板）：getJson；dailyBarsSvg/balanceSvg 柱图化（DS 业务耦合，
- * 记入 issue #215 评论作后续候选）；aggregateDaily/classifyIntervalDs/峰谷徽标等业务逻辑。
+ * 明确不下沉：getJson；dailyBarsSvg/balanceSvg 柱图化（DS 业务耦合，
+ * 留作后续候选）；aggregateDaily/classifyIntervalDs/峰谷徽标等业务逻辑。
  *
  * 使用约定：本文件不 import contracts.ts（避免环）；契约侧仅 import type。
  */
@@ -210,7 +210,7 @@ export function trendOf(pcts: Array<number | null>): { delta: number; up: boolea
   return { delta: Math.round(d * 10) / 10, up: d > 0.05, down: d < -0.05 };
 }
 
-/** 降采样（统一 peak 语义：区间取最大值；末点恒保留——issue #215 诉求②，deepseek 旧 first 语义作废）。 */
+/** 降采样（统一 peak 语义：区间取最大值；末点恒保留——deepseek 旧 first 语义作废）。 */
 export function downsample(points: Array<{ x: number; y: number }>, maxPoints: number): Array<{ x: number; y: number }> {
   if (points.length <= maxPoints) return points;
   const step = points.length / maxPoints;
@@ -321,7 +321,7 @@ export function miniAreaSvg(opts: {
 // ------------------------------------------------------------------ 注入面
 
 /**
- * 适配器共享工具集（issue #215 方案 a 的注入面）。
+ * 适配器共享工具集（注入面）。
  * 宿主端经 FetchContext.utils / PanelInput.utils 注入；mjs 鸭子类型下字段可选，
  * 适配器内 `const U = input.utils` 后优先消费，缺失时回退文件内私有副本/兜底。
  */

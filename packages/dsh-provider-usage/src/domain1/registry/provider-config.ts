@@ -67,14 +67,14 @@ function opencodeKeyFromAuth(text: string | undefined): string | undefined {
 }
 
 /** .credentials.yaml 文件路径（DSH 官方凭据文档，dsh-credentials-local 同源：
- *  base 语义由 shared/dsh-home.js 承载，#517 收敛）。 */
+ *  base 语义由 shared/dsh-home.js 承载）。 */
 export function credentialsFile(dshHome?: string): string {
   return join(dshHome ?? dshHomeShared(), ".credentials.yaml");
 }
 
 /** auth.json 文件路径。 */
 export function opencodeAuthFile(): string {
-  // dsh-gate:allow-homedir #525 opencode 外部凭据：DSH_HOME 域之外的第三方工具自身写面
+  // dsh-gate:allow-homedir opencode 外部凭据：DSH_HOME 域之外的第三方工具自身写面
   return join(homedir(), ".local", "share", "opencode", "auth.json");
 }
 

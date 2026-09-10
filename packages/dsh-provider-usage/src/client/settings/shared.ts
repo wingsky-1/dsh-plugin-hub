@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage — 设置页共享片段（#532 拆分自 settings.ts）。
+ * dsh-provider-usage — 设置页共享片段（拆分自 settings.ts）。
  *
  * 仅样式常量与微工具；组件各自独立文件。文案一律经 locales 字典。
  */

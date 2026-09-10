@@ -21,7 +21,7 @@
  *   + 工具（TIME_LIMIT）卡条件渲染（currentValue/usage 条形示意）；
  * - capsule stale 带值降级分支：有数据正常渲染 + 缓存尾注（见 formatCapsule）。
  *
- * #215 mjs 化：本文件为 .mjs 权威实现；图表走注入的 `input.utils`（宿主管线强制注入
+ * 本文件为 .mjs 权威实现；图表走注入的 `input.utils`（宿主管线强制注入
  * ADAPTER_UTILS），无注入回退文件内兜底副本；toNumber/clampPct/toEpochMs/pctOfLimit/
  * getJson（含业务码校验）留在文件内。
  */
@@ -346,7 +346,7 @@ export const zaiCodingCnAdapter = {
 
   formatPanel(input) {
     const e = input.esc || escFallback;
-    // #215 注入面：图表函数优先消费注入 utils，缺失回退文件内兜底副本
+    // 图表函数优先消费注入 utils，缺失回退文件内兜底副本
     const U = input.utils || {};
     const miniArea = U.miniAreaSvg || miniAreaSvgFallback;
     if (!Array.isArray(input.entries) || input.entries.length === 0) return "<p>暂无历史数据</p>";

@@ -1,7 +1,7 @@
 /**
- * dsh-provider-usage/report — 报告配置服务（阶段二 D8：reportCfg 闭包双源收口）。
+ * dsh-provider-usage/report — 报告配置服务（reportCfg 双源收口）。
  *
- * 内存权威 + 串行写链（复用 updateLastRun 的 per-root promise 链模式，#629 教训）：
+ * 内存权威 + 串行写链（复用 updateLastRun 的 per-root promise 链模式）：
  * 并发 POST report-config 的「写盘 + 内存 + scheduler 热更」不再交错（原 apply 闭包
  * setReportCfg/writeReportConfig 无串行化，与 lastRun 曾有 lost-update 同类）。
  * 磁盘读（GET/启动）仍以文件为权威——进程外修改可见；写路径统一走 update() 串行。

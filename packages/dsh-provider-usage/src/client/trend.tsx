@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage — 设置面板「使用趋势」区块（#503 M2 / M2.1 视图改版）。
+ * dsh-provider-usage — 设置面板「使用趋势」区块。
  *
  * M2.1（本版）相对 M2 的变化（方案 r2：docs/proposals/provider-usage-trend-view-redesign.md）：
  * - 范围档位：粒度旁迷你分段器，选项按「粒度 × retentionDays」生成（响应回传
@@ -18,7 +18,7 @@
  * - 图例点选显隐：纯前端重渲染；Y 域保持全量（隐藏主导段时与汇总卡不脱钩）；
  *   tooltip 合计只算可见段并标注；月视图 X 轴 YY-MM（修复 M2 slice(5) 丢年份）；
  * - 形态/范围选择为会话内内存态（不做 localStorage 持久化，与设置页 tab 状态
- *   既有评审决策一致：宿主 shell 的路由事实源不可被插件页假设）。
+ *   一致：宿主 shell 的路由事实源不可被插件页假设）。
  *
  * 视觉沿用 M2：网格线 --dsw-alias-border-l2、轴文字 --dsw-alias-label-tertiary、
  * 9~9.5px、SVG viewBox 自适应。配色零新增自建调色板（M2 注释约定不变）。
@@ -49,7 +49,7 @@ import { t } from "../../../../shared/client/i18n.js";
 
 // ---------------------------------------------------------------- 类型
 
-/** /trend 响应（宿主端聚合；#503 M2.1 增 n/retentionDays/summary.prevComplete）。 */
+/** /trend 响应（宿主端聚合；增 n/retentionDays/summary.prevComplete）。 */
 interface TrendResponse {
   ok: boolean;
   granularity: "day" | "week" | "month";
@@ -62,9 +62,9 @@ interface TrendResponse {
   retentionDays: number;
   series: Array<{ key: string; total: number | null; parts: Array<{ provider: string; model: string | null; value: number | null }> }>;
   providers: Array<{ provider: string; model: string | null }>;
-  /** 目录图例（#633 分片 b：目录面携带，含未识别桶；provider 面 = 空数组）。 */
+  /** 目录图例（目录面携带，含未识别桶；provider 面 = 空数组）。 */
   dirs?: Array<{ dir?: string | null }>;
-  /** #633 分片 b2：byDir=1 全目录面回显（客户端哨兵：分布区/下拉数据源判定）。 */
+  /** byDir=1 全目录面回显（客户端哨兵：分布区/下拉数据源判定）。 */
   byDir?: boolean;
   summary: {
     total: number | null;
@@ -138,7 +138,7 @@ function SummaryCard(props: { label: string; value: string; delta?: string | nul
   );
 }
 
-/** 分段器（#543 哨兵惯例：role=group + aria-pressed）。 */
+/** 分段器（哨兵惯例：role=group + aria-pressed）。 */
 function SegGroup(props: { label: string; items: Array<[string, string]>; value: string; mini?: boolean; onPick: (v: string) => void }): React.ReactElement {
   const { label, items, value, mini, onPick } = props;
   return (
@@ -167,7 +167,7 @@ export function TrendSection(): React.ReactElement {
   const [metric, setMetric] = React.useState("total");
   const [provider, setProvider] = React.useState("");
   const [byModel, setByModel] = React.useState(false);
-  // #633 分片 b2（B1）：目录维度筛选（"" = 全部目录 → byDir=1 全目录拆段面；
+  // 目录维度筛选（"" = 全部目录 → byDir=1 全目录拆段面；
   // 具体目录键 → dir=<键> 过滤面；未识别桶键同为合法过滤值）。
   const [dirFilter, setDirFilter] = React.useState("");
   const [hidden, setHidden] = React.useState<ReadonlySet<string>>(new Set());
@@ -185,7 +185,7 @@ export function TrendSection(): React.ReactElement {
     let alive = true;
     setFailed(false);
     setLoading(true);
-    // #633 复核闸 P0：参数构造封装为纯函数 trendRequestParams——目录过滤面
+    // 参数构造封装为纯函数 trendRequestParams——目录过滤面
     // （dir=<键>）、全目录拆段面（byDir=1）、纯 provider 面（零目录参数）三态互斥，
     // 杜绝「provider × 目录」交叉面请求（目录面无 provider 数据，交叉必空）。
     const params = trendRequestParams(gran, metric, effectiveRange, provider, byModel, dirFilter, effectiveRange);
@@ -211,12 +211,12 @@ export function TrendSection(): React.ReactElement {
   const hasData = data !== null && data.series.some((p) => p.total !== null);
   const summary = data?.summary ?? null;
 
-  // #633 分片 b2（B1）：目录维度生效判定——目录过滤请求（dirFilter 非空）、宿主
-  // 目录面回显（byDir=1 / dirs 图例非空）。请求三态互斥（P0）后 provider 面响应
+  // 目录维度生效判定——目录过滤请求（dirFilter 非空）、宿主
+  // 目录面回显（byDir=1 / dirs 图例非空）。请求三态互斥后 provider 面响应
   // 不再携带 byDir/dirs，dirMode 仅在目录维度真实生效时为真（viewSeries 归一、
   // 汇总卡/图例/tooltip 的目录分支据此分面）。
   const dirMode = data !== null && (data.byDir === true || dirFilter !== "" || (data.dirs?.length ?? 0) > 0);
-  // 目录面归一（B3 客户端防御）：parts[].provider（承载目录键）统一经 dirStackId
+  // 目录面归一（客户端防御）：parts[].provider（承载目录键）统一经 dirStackId
   // ——非字符串/空值归未识别桶，后续 stackOrder/renderBars/tooltip/图例零特殊分支，
   // 异常值不进 id 集合（杜绝空标签与控制字符渲染）。
   const viewSeries = React.useMemo(() => {
@@ -265,7 +265,7 @@ export function TrendSection(): React.ReactElement {
   }, [viewSeries, data, hidden, stackOrder, retentionDays]);
 
   // Y 域 = 每桶全量段合计 point.total（堆叠视觉高度的口径；hidden 不缩轴，与汇总卡
-  // 「峰值」同源——评审 P1-5）。#589 修复：原按单段最大值推域，多段桶堆叠顶溢出轴顶。
+  // 「峰值」同源）。原按单段最大值推域，多段桶堆叠顶溢出轴顶。
   const ticks = React.useMemo(() => trendYTicks(viewSeries).ticks, [viewSeries]);
 
   // 图表事件委托：pointerdown 全输入（触屏可用），pointermove 仅鼠标（防触屏滑动误触发）。
@@ -348,7 +348,7 @@ export function TrendSection(): React.ReactElement {
           onChange={(e: unknown) => {
             const value = (e as { target: { value: string } }).target.value;
             setProvider(value);
-            setDirFilter(""); // 两维互斥联动（P0）：选适配器即退出目录面
+            setDirFilter(""); // 两维互斥联动：选适配器即退出目录面
             if (value === "") setByModel(false);
             setHidden(new Set());
             setTip(null);
@@ -360,9 +360,9 @@ export function TrendSection(): React.ReactElement {
             <option key={p.provider + "/" + (p.model ?? "")} value={p.provider}>{p.provider}</option>
           ))}
         </select>
-        {/* #633 分片 b2（B1）：目录筛选下拉——「全部目录」（byDir 全目录拆段面）+
+        {/* 目录筛选下拉——「全部目录」（byDir 全目录拆段面）+
             各目录 + 未识别桶（dirs 数据源；与既有 metric/adapter 控件同级同风格 select）。
-            可见性 = shouldShowDirSelect（未选适配器恒可见；P0①修复：旧渲染条件 dirMode
+            可见性 = shouldShowDirSelect（未选适配器恒可见；旧渲染条件 dirMode
             恒真致下拉仅加载瞬间闪现不可达）。选目录即清适配器（两维互斥联动），
             交叉面在请求参数层已被 trendRequestParams 杜绝。 */}
         {shouldShowDirSelect(provider) ? (
@@ -372,7 +372,7 @@ export function TrendSection(): React.ReactElement {
             aria-label={t("trendDirLabel")}
             onChange={(e: unknown) => {
               setDirFilter((e as { target: { value: string } }).target.value);
-              setProvider(""); // 两维互斥联动（P0）：选目录即退回「全部适配器」
+              setProvider(""); // 两维互斥联动：选目录即退回「全部适配器」
               setHidden(new Set());
               setTip(null);
             }}
@@ -380,7 +380,7 @@ export function TrendSection(): React.ReactElement {
             <option value="">{t("trendDirAll")}</option>
             {(data?.dirs ?? []).map((d) => {
               const key = dirStackId(d.dir);
-              // 未识别桶恒为「未识别」有标签条目（B2）；异常空值归未识别不渲染空标签（B3）
+              // 未识别桶恒为「未识别」有标签条目；异常空值归未识别不渲染空标签
               return <option key={key} value={key}>{dirDisplayLabel(key)}</option>;
             })}
           </select>
@@ -420,14 +420,14 @@ export function TrendSection(): React.ReactElement {
           <SummaryCard label={t("trendCardAvg")} value={avg === null ? "-" : fmtCompact(avg)} hint={`${activeBuckets} ${granLabel(gran)}`} />
           <SummaryCard label={t("trendCardCalls")} value={fmtCompact(summary.calls)} hint={hiddenCount > 0 ? t("trendHiddenParts", { k: String(hiddenCount) }) : null} />
           <SummaryCard label={`${t("trendCardPeak")} · ${summary.peakKey === null ? "-" : fmtBucketHuman(summary.peakKey, gran)}`} value={peakVal === null ? "-" : fmtCompact(peakVal)} />
-          {/* P2：目录面 Top 汇总卡用目录面标签（trendCardTopDir），与 dirDisplayLabel
+          {/* 目录面 Top 汇总卡用目录面标签（trendCardTopDir），与 dirDisplayLabel
               消费同面；adapter 面沿用「Top 适配器」不变 */}
           <SummaryCard label={dirMode ? t("trendCardTopDir") : t("trendCardTop")} value={summary.top === null ? "-" : dirMode ? dirDisplayLabel(summary.top.provider) : summary.top.provider} />
         </div>
       ) : null}
-      {/* 图例（窗口总量降序；点选显隐，M2.1）。#633 分片 b2：目录面图例条目经
-          dirDisplayLabel——未识别桶恒为「未识别」并 title 注明口径（B2），异常值
-          不渲染空标签（B3）；具名目录 title 同源净化标签（P2：原键含控制字符
+      {/* 图例（窗口总量降序；点选显隐）。目录面图例条目经
+          dirDisplayLabel——未识别桶恒为「未识别」并 title 注明口径，异常值
+          不渲染空标签；具名目录 title 同源净化标签（原键含控制字符
           残留可能，可见文本与 title 统一走 dirDisplayLabel）。 */}
       {hasData && data !== null && stackOrder.length > 0 ? (
         <div
@@ -438,7 +438,7 @@ export function TrendSection(): React.ReactElement {
             const off = hidden.has(id);
             // 目录面段 id = 目录键本身（dirStackId 归一后）；provider 面 id 原样展示
             const label = dirMode ? dirDisplayLabel(id) : id;
-            // P2：目录面 title 与可见文本同源净化（未识别=口径注释；具名=净化标签）
+            // 目录面 title 与可见文本同源净化（未识别=口径注释；具名=净化标签）
             const title = dirMode
               ? dirNeedsScopeNote(id) ? t("trendDirUnidentifiedNote") : dirDisplayLabel(id)
               : undefined;
@@ -512,7 +512,7 @@ export function TrendSection(): React.ReactElement {
           <div>{t("trendEmptyHint")}</div>
         </div>
       )}
-      {/* 起算提示（常驻，防误读为全量统计）：有起算日给出具体日期 + 留存天数（M2.1） */}
+      {/* 起算提示（常驻，防误读为全量统计）：有起算日给出具体日期 + 留存天数 */}
       <p
         className="dou-trend-mountHint"
         style={{ fontSize: 11, color: "var(--dsw-alias-label-tertiary,#9aa0ab)", margin: "8px 0 0" }}
@@ -586,9 +586,9 @@ function renderTip(bar: RenderBar, point: NonNullable<TrendResponse>["series"][n
         : rows.map((p, i) => {
             const id = partId(p.provider, p.model, byModel);
             const off = hidden.has(id);
-            // 目录面：未识别桶恒「未识别」+ 口径注释（B2）；异常值归未识别（B3）
+            // 目录面：未识别桶恒「未识别」+ 口径注释；异常值归未识别
             const label = dirMode ? dirDisplayLabel(p.provider) : id;
-            // P2：目录面 title 同源净化（未识别=口径注释；具名=净化标签，省略号
+            // 目录面 title 同源净化（未识别=口径注释；具名=净化标签，省略号
             // 截断时悬停可读全名）；provider 面不携带 title（原状）
             const title = dirMode
               ? dirNeedsScopeNote(p.provider) ? t("trendDirUnidentifiedNote") : dirDisplayLabel(p.provider)

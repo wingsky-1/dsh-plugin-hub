@@ -1,7 +1,7 @@
 /**
- * dsh-provider-usage — domain1/pipeline/ 取数管道对外门面（C3）。
+ * dsh-provider-usage — domain1/pipeline/ 取数管道对外门面。
  *
- * StatsService 深封装（#670 D7 裁定）：本面只暴露「读 + 失效」操作——
+ * StatsService 深封装：本面只暴露「读 + 失效」操作——
  * getPanelResult/getStats/cacheSize/purgeAllCaches 等受控方法；不暴露
  * cache/panelCache 等可变缓存内部（写路径全部经上述方法收敛）。装配层构造
  * 入口经 StatsServiceCtor（组合根特权，完整实现仅在 apply 可见），路由/域2

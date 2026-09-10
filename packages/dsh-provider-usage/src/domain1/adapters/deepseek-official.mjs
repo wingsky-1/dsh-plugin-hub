@@ -1,12 +1,12 @@
 /**
  * dsh-provider-usage — 内置 DeepSeek 官方余额适配器（v2 契约；源自 user-file 原型，
- * issue #198；v2.3 起记账口径为区间记账法，与原型分叉——原型后续同步）。
+ * v2.3 起记账口径为区间记账法，与原型分叉——原型后续同步）。
  *
- * #215 mjs 化：本文件为 .mjs 权威实现。图表与日界函数优先消费注入的
+ * 本文件为 .mjs 权威实现。图表与日界函数优先消费注入的
  * `input.utils`（PanelInput.utils；宿主管线强制注入 ADAPTER_UTILS，见 pipeline/v2.ts）：
  * - dayKey / lastNDayKeys / h（escHtml）/ ea（escAttr）→ 优先 U.dayKey/U.lastNDayKeys/
  *   U.escHtml/U.escAttr（文件内保留私有副本兜底，注释「与 charts.ts 同源需同步」）；
- * - balanceSvg / dailyBarsSvg 仍留文件内（DS 业务强耦合，柱图化候选记入 issue #215）。
+ * - balanceSvg / dailyBarsSvg 仍留文件内（DS 业务强耦合）。
  * 其余逻辑（区间记账 classifyIntervalDs/aggregateDaily/layerDaily/B2 断轴 balanceSvg/
  * toppedUpIn 汇总/峰谷徽标）保持与 v2.3 完全一致，零改动。
  *
@@ -323,7 +323,7 @@ function layerDaily(sum) {
  *   隔夜消费不丢失（旧基线法会整段掉落）；
  * - 冷启动自然成立：当日只要有 ≥1 个完整区间即出数，不再依赖跨日基线兜底；
  * - truncated 参数保留签名兼容；新口径按区间记账，截断不再导致首日整日不计。
- * - 第 4 参 utils 可选（#215 注入面）：dayKey 优先消费注入实现，缺失回退文件内副本。
+ * - 第 4 参 utils 可选：dayKey 优先消费注入实现，缺失回退文件内副本。
  */
 export function aggregateDaily(pts, keys, _truncated, utils) {
   const dayKey = (utils && typeof utils.dayKey === "function") ? utils.dayKey : dayKeyFallback;
@@ -439,7 +439,7 @@ function renderDailyUsageCard(pts, truncated, e, now, utils) {
 }
 
 /** 柱形几何：双向域 [lo, hi]、基线 y=0 实线；消耗蓝柱向上、净增绿柱向下、异常 0 高。 */
-/** 单日柱悬浮文案（#592 从 dailyBarsSvg 拆出的纯函数）：六态分层 + 净增/消耗
+/** 单日柱悬浮文案（从 dailyBarsSvg 拆出的纯函数）：六态分层 + 净增/消耗
  *  双口径 + 附注括注；i/total 供「今日」判定。gap/unavailable 两态为防御分支
  *  （现聚合器不产出该状态），直接单测覆盖。 */
 export function dailyBarTitle(r, i, total) {
@@ -663,7 +663,7 @@ function balanceSvg(values, e, ea) {
  */
 function formatPanelImpl(input) {
   const e = input.esc || hFallback;
-  // #215 注入面：日界/转义优先消费注入 utils，缺失回退文件内兜底副本
+  // 日界/转义优先消费注入 utils，缺失回退文件内兜底副本
   const utils = input.utils || {};
   const dayKey = utils.dayKey || dayKeyFallback;
   const ea = utils.escAttr || eaFallback;

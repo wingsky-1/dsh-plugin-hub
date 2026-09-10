@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage — 设置页「用量可视化」分区（#532 拆分自 settings.ts，行为不变）。
+ * dsh-provider-usage — 设置页「用量可视化」分区（拆分自 settings.ts，行为不变）。
  *
  * 各启用 provider 的状态点 + 胶囊内容（宿主端渲染 HTML），设置页 tab「用量」窗格。
  */

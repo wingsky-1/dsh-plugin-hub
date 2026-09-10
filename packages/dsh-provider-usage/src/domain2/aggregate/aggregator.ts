@@ -1,12 +1,12 @@
 /**
- * dsh-provider-usage/trend — 内存聚合主类（#503 M1；D2 拆分后 #670 阶段三）。
+ * dsh-provider-usage/trend — 内存聚合主类。
  *
  * 两级聚合（方案定稿）：
  * - cells：day×provider(×model) 桶，apply 时实时累加（含未压实的历史日）；
  * - pending：当日 per-step 明细/计数行（未压实窗口），支撑今日按小时/按会话细分
  *   与日切压实的落盘素材；日切时压实为 day×provider(×model) 聚合行并丢弃明细。
  *
- * #662 小时维度（hourDays）：day→hour(0-23)→cell 桶，与 dirDays 同模式——apply
+ * 小时维度（hourDays）：day→hour(0-23)→cell 桶，与 dirDays 同模式——apply
  * 平行累加（hourOfDay 现算自事件 time）、rebuild 双分支读回（hour 行直接入桶 +
  * 当日明细/计数行折算入桶）、retokenCell 第三面修正、pruneDays 联动删除；
  * 不设残差投影（detail/counter 行必有 time、无缺键事实；旧分片缺小时是物理缺失，
@@ -20,8 +20,8 @@
  * null 语义：桶内 token 求和 null-aware（无任何有效数字保持 null）；
  * 调用/轮次/工具计数独立累加，与 token 有无无关。
  *
- * D2 拆分（#670 阶段三）：本文件只保留状态容器（days/dirDays/hourDays/pending）与
- * 需要访问状态的方法——apply/rebuild/rollupSnapshot/consume/prune 等 IO 与状态操作；
+ * 本文件只保留状态容器（days/dirDays/hourDays/pending）与需要访问状态的方法——
+ * apply/rebuild/rollupSnapshot/consume/prune 等 IO 与状态操作；
  * 压实转换纯函数迁至 aggregate-rows.ts，查询投影纯函数迁至 aggregate-query.ts
  * （二者均参数显式传入、不接触 this，防「拆文件 = 共享 this」坏味道；公开导出面
  * 经本文件尾部 re-export 保持可达，目录化后消费方走 aggregate/interface.ts）。
@@ -81,19 +81,19 @@ export class TrendAggregator {
   /** day → provider → model(null 允许) → cell。 */
   private days = new Map<string, Map<string, Map<string | null, TrendCell>>>();
   /**
-   * #633 A3：day → dir → cell（目录维度日汇总内存态）。
-   * 生命周期与 days 同步（复核 P1-1 统一口径）：apply 实时累加 → rebuild 的
+   * day → dir → cell（目录维度日汇总内存态）。
+   * 生命周期与 days 同步：apply 实时累加 → rebuild 的
    * dir 汇总行与明细/计数行（有 dir 键者）双向读回 → 压实消费不删（与
    * cells 同策略，跨天后目录查询面历史柱不失——dirRows 纯内存无分片回读）
    * → prune 同步收缩（pruneDays 联动删除）。
-   * 权威口径（复核 P1-1）：dirDays 是目录维度的唯一事实源——apply 平行累加 +
+   * 权威口径：dirDays 是目录维度的唯一事实源——apply 平行累加 +
    * rebuild 双分支读回已覆盖全部 dir 事实，dirRows() 只做快照不再折算 pending
    * （单源无重无漏：同事实并存时折算会 2×，互补事实并存时按键去重会丢）。
    */
   private dirDays = new Map<string, Map<string, TrendCell>>();
   /**
-   * #662：day → hour(0-23) → cell（小时维度日汇总内存态）。
-   * 生命周期与 days/dirDays 同步（复核 P1-1 统一口径）：apply 实时累加 → rebuild
+   * day → hour(0-23) → cell（小时维度日汇总内存态）。
+   * 生命周期与 days/dirDays 同步：apply 实时累加 → rebuild
    * 双分支读回（hour 行 mergeCell + 当日明细/计数行折算）→ 压实消费不删（与
    * cells/dirDays 同策略，跨天后小时面历史不丢——hourRows 纯内存无分片回读）
    * → prune 同步收缩（pruneDays 联动删除）。
@@ -137,8 +137,8 @@ export class TrendAggregator {
   private applyCall(r: TrendCallRecord): void {
     const day = dayKey(r.time);
     this.addCall(this.cellOf(day, r.provider, r.model), r.tokens);
-    this.addCall(this.dirCellOf(day, r.dir), r.tokens); // #633 A3：目录维度平行累加（同 record 不二次 emit）
-    this.addCall(this.hourCellOf(day, hourOfDay(r.time)), r.tokens); // #662：小时维度平行累加（hourOfDay 与 dayKey 同源，日界一致）
+    this.addCall(this.dirCellOf(day, r.dir), r.tokens); // 目录维度平行累加（同 record 不二次 emit）
+    this.addCall(this.hourCellOf(day, hourOfDay(r.time)), r.tokens); // 小时维度平行累加（hourOfDay 与 dayKey 同源，日界一致）
     const row: TrendDetailRow = {
       v: TREND_ROW_VERSION,
       kind: "detail",
@@ -150,7 +150,7 @@ export class TrendAggregator {
       retry: r.retry,
       provider: r.provider,
       model: r.model,
-      dir: r.dir, // #633 A1：目录归属落盘（collector.dirOf 已保证 sanitize 后 basename 或未识别桶，不重复净化）
+      dir: r.dir, // 目录归属落盘（collector.dirOf 已保证 sanitize 后 basename 或未识别桶，不重复净化）
       input: r.tokens?.input ?? null,
       output: r.tokens?.output ?? null,
       cacheRead: r.tokens?.cacheRead ?? null,
@@ -185,7 +185,7 @@ export class TrendAggregator {
 
   /**
    * 明细行 token 变更的 cell 增量修正。
-   * 复核 P1-1：cells 与 dirDays 双面同步修正——dirDays 单源化后（dirRows 只读
+   * cells 与 dirDays 双面同步修正——dirDays 单源化后（dirRows 只读
    * 快照、不再折算 pending），applyCorrect 的行值变更必须同步回目录桶，否则
    * 目录查询面与 cells/落盘行漂移（修正前折算侧取 pending 行新值掩盖了漂移，
    * 单源化后漂移会固化）。两桶增量一致（同 sub 差值），null-aware。
@@ -209,7 +209,7 @@ export class TrendAggregator {
       dirCell.cacheRead = sumToken(dirCell.cacheRead, deltas.cacheRead);
       dirCell.cacheWrite = sumToken(dirCell.cacheWrite, deltas.cacheWrite);
     }
-    // #662：小时面第三面修正——applyCorrect 的行值变更必须同步回小时桶（dirDays
+    // 小时面第三面修正——applyCorrect 的行值变更必须同步回小时桶（dirDays
     // 单源化后折算侧不再兜底；hourOfDay 与 apply 时同源现算，桶键一致）。
     const hourCell = this.hourCellOf(row.day, hourOfDay(row.time));
     hourCell.input = sumToken(hourCell.input, deltas.input);
@@ -227,8 +227,8 @@ export class TrendAggregator {
   private applyCounter(r: TrendCounterRecord): void {
     const day = dayKey(r.time);
     this.addCounter(this.cellOf(day, r.provider, r.model), r.turns, r.toolCalls);
-    this.addCounter(this.dirCellOf(day, r.dir), r.turns, r.toolCalls); // #633 A3：目录维度平行累加
-    this.addCounter(this.hourCellOf(day, hourOfDay(r.time)), r.turns, r.toolCalls); // #662：小时维度平行累加
+    this.addCounter(this.dirCellOf(day, r.dir), r.turns, r.toolCalls); // 目录维度平行累加
+    this.addCounter(this.hourCellOf(day, hourOfDay(r.time)), r.turns, r.toolCalls); // 小时维度平行累加
     const row: TrendCounterRow = {
       v: TREND_ROW_VERSION,
       kind: "counter",
@@ -237,7 +237,7 @@ export class TrendAggregator {
       session: r.session,
       provider: r.provider,
       model: r.model,
-      dir: r.dir, // #633 A1：目录归属落盘（同 detail 行约定）
+      dir: r.dir, // 目录归属落盘（同 detail 行约定）
       turns: r.turns,
       toolCalls: r.toolCalls,
     };
@@ -258,13 +258,13 @@ export class TrendAggregator {
         mergeCell(cell, row);
         continue;
       }
-      // #633 A3：dir 汇总行重建 → 只进目录维度桶（cells 累加只发生在事件路径与
+      // dir 汇总行重建 → 只进目录维度桶（cells 累加只发生在事件路径与
       // detail/counter 行重建，防双重计数）
       if (row.kind === "dir") {
         mergeCell(this.dirCellOf(row.day, row.dir), row);
         continue;
       }
-      // #662：hour 汇总行重建 → 只进小时维度桶（同 dir 行：防双重计数、不进 pending）
+      // hour 汇总行重建 → 只进小时维度桶（同 dir 行：防双重计数、不进 pending）
       if (row.kind === "hour") {
         mergeCell(this.hourCellOf(row.day, row.hour), row);
         continue;
@@ -276,7 +276,7 @@ export class TrendAggregator {
           cacheRead: row.cacheRead,
           cacheWrite: row.cacheWrite,
         });
-        // 复核 P1-1：明细行 rebuild 双面入账（与 cells 同策略）——dirDays 是目录
+        // 明细行 rebuild 双面入账（与 cells 同策略）——dirDays 是目录
         // 维度唯一事实源（dirRows 纯快照不折算 pending），重建明细行的 dir 事实
         // 必须在此落桶，否则重启后目录查询面丢「分片明细形态存在、dirDays 缺失」
         // 的事实（自愈/当日重建两条路径同病；实测 Day0 input 10 → 7）。
@@ -288,7 +288,7 @@ export class TrendAggregator {
             cacheWrite: row.cacheWrite,
           });
         }
-        // #662：明细行 rebuild 第三面入账——hourDays 是小时维度唯一事实源，
+        // 明细行 rebuild 第三面入账——hourDays 是小时维度唯一事实源，
         // 重建明细行的 hour 事实必须在此落桶（hourOfDay 与 apply 同源现算；
         // 已落盘 hour 行由上方 hour 分支直接入桶，两条路径不重叠）。
         this.addCall(this.hourCellOf(row.day, hourOfDay(row.time)), {
@@ -299,11 +299,11 @@ export class TrendAggregator {
         });
       } else {
         this.addCounter(this.cellOf(row.day, row.provider, row.model), row.turns, row.toolCalls);
-        // 复核 P1-1：计数行 rebuild 同上（turns/toolCalls 平行落 dir 桶）。
+        // 计数行 rebuild 同上（turns/toolCalls 平行落 dir 桶）。
         if (row.dir !== undefined) {
           this.addCounter(this.dirCellOf(row.day, row.dir), row.turns, row.toolCalls);
         }
-        // #662：计数行 rebuild 第三面入账（同 detail 行分支）。
+        // 计数行 rebuild 第三面入账（同 detail 行分支）。
         this.addCounter(this.hourCellOf(row.day, hourOfDay(row.time)), row.turns, row.toolCalls);
       }
       this.pending.push({ row, persisted: persistedRows });
@@ -347,7 +347,7 @@ export class TrendAggregator {
   }
 
   /**
-   * 全量目录日桶快照（day 升序；#633 分片 b 报告快照与统计目录分布数据源）。
+   * 全量目录日桶快照（day 升序；报告快照与统计目录分布数据源）。
    * 委托 buildDirRows——权威口径（dirDays 单源 + 每日残差归未识别）见 buildDirRows 注释。
    */
   dirRows(): TrendDirRow[] {
@@ -355,7 +355,7 @@ export class TrendAggregator {
   }
 
   /**
-   * 全量小时日桶快照（day 升序、hour 升序；#662 报告快照数据源）。
+   * 全量小时日桶快照（day 升序、hour 升序；报告快照数据源）。
    * 委托 buildHourRows——hourDays 单源快照、不做残差投影（口径见 buildHourRows 注释）。
    */
   hourRows(): TrendHourRow[] {
@@ -363,7 +363,7 @@ export class TrendAggregator {
   }
 
   /**
-   * 堆叠柱序列（目录维度；#633 分片 b B1 数据接口）。语义与 seriesStacked 同构：
+   * 堆叠柱序列（目录维度）。语义与 seriesStacked 同构：
    * 每时间桶按目录拆段；dirs 为图例并集（窗口内出现过的目录段，含未识别桶）。
    * dir 过滤可选（单目录形态——未识别桶键同为合法过滤值）。
    */
@@ -378,7 +378,7 @@ export class TrendAggregator {
   }
 
   /**
-   * 窗口摘要（目录维度；#633 分片 b B1 数据接口）。curRange/prevRange 语义与
+   * 窗口摘要（目录维度）。curRange/prevRange 语义与
    * windowSummary 完全同构：当前窗口总量/调用数/峰值桶/目录 top 段 + 上一窗口环比。
    * prevComplete 语义对齐：prev 窗口起点早于**目录面数据起点**（dirRows 最早日；
    * 残差投影后该起点等于聚合面数据起点，故与 windowSummary 同值）→ 不可比。
@@ -395,7 +395,7 @@ export class TrendAggregator {
   }
 
   /**
-   * 目录窗口总量表（#633 分片 b B4 目录范围口径影响 + B1 目录分布数据源）：
+   * 目录窗口总量表（目录范围口径影响 + 目录分布数据源）：
    * 给定日区间内按目录聚合 calls 与 metric 总量（calls 降序）。
    */
   dirTotals(
@@ -407,7 +407,7 @@ export class TrendAggregator {
   }
 
   /**
-   * 给定日的目录维度折算行（读侧投影；#633 A4）。
+   * 给定日的目录维度折算行（读侧投影）。
    * 实现委托 {@link rollupSnapshot}——与压实路径共用同一份折算逻辑，保证「读侧
    * 看到的行」与「压实写入的行」永远同源（单一事实源，防两套实现漂移）。
    */
@@ -416,7 +416,7 @@ export class TrendAggregator {
   }
 
   /**
-   * 压实快照（#654）：一次遍历同时产出「该日 pending 行的身份快照」与「同源折算的
+   * 压实快照：一次遍历同时产出「该日 pending 行的身份快照」与「同源折算的
    * agg / dir 行」。
    *
    * 为什么必须同源：压实是「折算 → 落盘 → 消费」三段式，中间隔着若干 await。若消费
@@ -425,7 +425,7 @@ export class TrendAggregator {
    * 与 aggRows/dirRows 出自同一批行，调用方持久化成功后只消费 consumed——新到达的行
    * 留待下一轮压实。
    *
-   * 折算口径与 #633 A4 一致：dir 键缺失的行只进 agg 行（目录维度为加性可选键，
+   * 折算口径与读侧投影一致：dir 键缺失的行只进 agg 行（目录维度为加性可选键，
    * 缺键 = 无 dir 事实可折叠，不在折算侧补造）。cells/dirDays 不动（apply 时已累加，
    * 压实只做落盘形态转换，绝不二次累加）。
    */
@@ -433,7 +433,7 @@ export class TrendAggregator {
     const consumed: PendingEntry[] = [];
     const aggByKey = new Map<string, TrendAggRow>();
     const dirByKey = new Map<string, TrendDirRow>();
-    // #662：小时档同源折算——key 为本地时区钟点（hourOfDay 现算自行 time，与
+    // 小时档同源折算——key 为本地时区钟点（hourOfDay 现算自行 time，与
     // apply/rebuild 同源；「落盘即定型」的生成点唯一 helper）。
     const hourByKey = new Map<number, TrendHourRow>();
     for (const p of this.pending) {
@@ -485,11 +485,11 @@ export class TrendAggregator {
   }
 
   /**
-   * 按身份消费 pending 行（压实 IO 全部成功后调用；#654）。
+   * 按身份消费 pending 行（压实 IO 全部成功后调用）。
    * 只删除传入快照（{@link rollupSnapshot} 的 consumed）内的 entry——await 期间新到达
    * 的同日行不在快照内，保留到下一轮压实。空数组为 no-op，重复 entry 幂等。
    *
-   * cells/dirDays 不动（压实只做落盘形态转换，绝不二次累加）。复核 P1-1：dirDays 亦
+   * cells/dirDays 不动（压实只做落盘形态转换，绝不二次累加）。dirDays 亦
    * 不随消费联动删除——目录查询面（dirRows 纯内存快照）无分片回读，删桶 = 跨天历史
    * 柱全 null；压实事实已固化在 dir 分片 + dirDays，只随 pruneDays 收缩。
    */
@@ -501,7 +501,7 @@ export class TrendAggregator {
 
   /**
    * 按日键消费 pending 行（兼容面）。
-   * @deprecated #654：按日键删除会在压实 await 窗口内连带删除新到达的同日行（丢行），
+   * @deprecated 按日键删除会在压实 await 窗口内连带删除新到达的同日行（丢行），
    * 不再用于压实路径。新代码请用 {@link rollupSnapshot} + {@link consume}（按身份消费）；
    * 本方法保留仅为不破坏已发布的公开面，实现已委托为「按日取快照后按身份消费」。
    */
@@ -512,7 +512,7 @@ export class TrendAggregator {
 
   /**
    * 裁剪内存日桶（prune 同步收缩，长期运行不重启时 days 有界；cells 随桶整体丢弃）。
-   * #633 复核 M1：dirDays 联动删除（与压实消费对称，生命周期与 days 一致；
+   * dirDays 联动删除（与压实消费对称，生命周期与 days 一致；
    * 独立遍历不依赖 days 键集，纯 dir 日桶（无 agg 行的防御形态）也能清）。
    */
   pruneDays(beforeDay: string): number {
@@ -526,7 +526,7 @@ export class TrendAggregator {
     for (const day of [...this.dirDays.keys()]) {
       if (day < beforeDay) this.dirDays.delete(day);
     }
-    // #662：hourDays 与 days/dirDays 生命周期同步（独立遍历，防纯 hour 日桶残留）
+    // hourDays 与 days/dirDays 生命周期同步（独立遍历，防纯 hour 日桶残留）
     for (const day of [...this.hourDays.keys()]) {
       if (day < beforeDay) this.hourDays.delete(day);
     }
@@ -537,7 +537,7 @@ export class TrendAggregator {
    * 日切压实（一步式）：折叠为聚合行返回并从 pending 移除。
    * 仅供启动自愈等「无并发 IO 失败窗口」的同步场景使用；flush 压实路径一律走
    * rollupSnapshot + consume 两步式（IO 失败内存行保留，防丢数）。
-   * #633 A4：返回混存行——agg 行在前、dir 行在后（writeAggDay 写入约定）。
+   * 返回混存行——agg 行在前、dir 行在后（writeAggDay 写入约定）。
    * today 参数保留（与调用方注入时钟同源的语义锚点；消费已不依赖日键，见 consume）。
    */
   rollupDay(day: string, today: string): Array<TrendAggRow | TrendDirRow | TrendHourRow> {
@@ -554,7 +554,7 @@ export class TrendAggregator {
 
   // ---------------------------------------------------------------- 查询
 
-  /** 全量桶快照（day 升序；M2 路由与堆叠柱状的数据源）。 */
+  /** 全量桶快照（day 升序；路由与堆叠柱状的数据源）。 */
   buckets(): Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell }> }> {
     const out: Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell }> }> = [];
     for (const day of [...this.days.keys()].sort()) {
@@ -648,7 +648,7 @@ export class TrendAggregator {
     return cell;
   }
 
-  /** dir 维度日桶定位（仿 cellOf；day → dir → cell，缺桶逐级补建；#633 A3）。 */
+  /** dir 维度日桶定位（仿 cellOf；day → dir → cell，缺桶逐级补建）。 */
   private dirCellOf(day: string, dir: string): TrendCell {
     let dirs = this.dirDays.get(day);
     if (dirs === undefined) {
@@ -663,7 +663,7 @@ export class TrendAggregator {
     return cell;
   }
 
-  /** hour 维度日桶定位（仿 cellOf/dirCellOf；day → hour(0-23) → cell，缺桶逐级补建；#662）。 */
+  /** hour 维度日桶定位（仿 cellOf/dirCellOf；day → hour(0-23) → cell，缺桶逐级补建）。 */
   private hourCellOf(day: string, hour: number): TrendCell {
     let hours = this.hourDays.get(day);
     if (hours === undefined) {
@@ -681,7 +681,7 @@ export class TrendAggregator {
 
 // ---------------------------------------------------------------- 纯函数 re-export（公开面兼容）
 
-// 以下符号原定义于本文件，D2 拆分迁至 aggregate-rows.ts / aggregate-query.ts 后经此处
+// 以下符号迁至 aggregate-rows.ts / aggregate-query.ts 后经此处
 // re-export——保持 import "aggregator.ts" 的路径可达（目录化后目录外消费方走
 // aggregate/interface.ts，本 re-export 为既有路径兼容面，不重复导出）。
 export {

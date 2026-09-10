@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage — 设置页「悬浮胶囊」分区（#532 拆分自 settings.ts，行为不变）。
+ * dsh-provider-usage — 设置页「悬浮胶囊」分区（拆分自 settings.ts，行为不变）。
  *
  * 锚点 + 偏移输入，保存即热更新（宿主落盘 + 客户端轮询收敛）。设置页 tab「悬浮窗」窗格。
  */
@@ -50,7 +50,7 @@ export function UiSection(): React.ReactElement | null {
     setSaving(false);
   };
 
-  // 层级基准与偏移量分开钳制：层级 1-9000（#128），偏移维持 0-2000。
+  // 层级基准与偏移量分开钳制：层级 1-9000，偏移维持 0-2000。
   const numInput = (key: "offsetX" | "offsetY" | "panelOffsetY" | "zIndexBase", label: string, min = 0, max = 2000): React.ReactNode =>
     <label style={{ marginRight: 12, whiteSpace: "nowrap" }}>
       {label}
@@ -82,7 +82,7 @@ export function UiSection(): React.ReactElement | null {
           ))}
         </select>
       </div>
-      {/* #543 窄屏兜底：四个数字输入行允许换行（约 350px 内容宽度下 nowrap 横排会溢出） */}
+      {/* 窄屏兜底：四个数字输入行允许换行（约 350px 内容宽度下 nowrap 横排会溢出） */}
       <div style={{ marginBottom: 8, display: "flex", flexWrap: "wrap", rowGap: 6 }}>
         {numInput("offsetX", t("offsetX"))}
         {numInput("offsetY", t("offsetY"))}

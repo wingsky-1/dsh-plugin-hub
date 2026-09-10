@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage — 客户端文案字典（issue #348：复用官方 dsh-client-locale）。
+ * dsh-provider-usage — 客户端文案字典（复用官方 dsh-client-locale）。
  *
  * 双语平衡：`zh` 为 key 源；`en` 必须覆盖全部 key（编译期锁平衡）。
  * 动态数据用 `{name}` 占位模板，渲染期由 t 插值。
@@ -30,7 +30,7 @@ export const zh = {
   loading: "加载中…",
   ariaPill: "用量统计",
   settingsTab: "用量统计",
-  // 设置页：五分段器 tab（#532）
+  // 设置页：五分段器 tab
   settingsNavLabel: "用量统计设置分区",
   pageTabTrend: "趋势",
   pageTabReport: "报告",
@@ -112,7 +112,7 @@ export const zh = {
   noProvHint: "未发现已配置的提供商（adapters.json 不可达或模型配置页尚未配置提供商）。可复制引导指令，让 Agent 帮你接入数据源并创建适配器。",
   customProvTitle: "自定义提供商",
   customProvHint: "以下 providers 未出现在 dsh 模型配置页（模型暂选不到该提供商，先登记适配器；在模型页补建后即可选用），不计入上方数量。",
-  // 设置页：使用趋势（#503 M2）
+  // 设置页：使用趋势
   trendTitle: "使用趋势",
   trendGranularity: "粒度",
   trendGranDay: "日",
@@ -132,13 +132,13 @@ export const zh = {
   trendCardCalls: "调用次数",
   trendCardPeak: "峰值桶",
   trendCardTop: "Top 适配器",
-  trendCardTopDir: "Top 目录", // #633 P2：目录面 Top 汇总卡标签（与 trendCardTop 同风格对称）
+  trendCardTopDir: "Top 目录", // 目录面 Top 汇总卡标签（与 trendCardTop 同风格对称）
   trendFetchFail: "趋势数据获取失败",
   trendEmptyTitle: "暂无趋势数据",
   trendEmptyHint: "会话产生用量后，这里会展示近期的使用趋势。",
   trendMountedHint: "统计自插件挂载时点起算，早于该时点的会话不计入",
   trendMountedHintDay: "统计自 {day}（插件挂载时点）起算，早于该时点的会话不计入",
-  // 设置页：使用趋势（#503 M2.1 视图改版）
+  // 设置页：使用趋势（视图改版）
   trendRangeLabel: "范围",
   trendRangeDayUnit: "{n} 天",
   trendRangeWeekUnit: "{n} 周",
@@ -159,12 +159,12 @@ export const zh = {
   trendRetained: "留存 {days} 天",
   trendCardAvg: "日均",
   trendViewVisible: "可见段",
-  // 设置页：使用趋势目录维度（#633 分片 b2 B1/B2/B3）
+  // 设置页：使用趋势目录维度
   trendDirLabel: "目录",
   trendDirAll: "全部目录",
   trendDirUnidentified: "未识别",
   trendDirUnidentifiedNote: "无目录信息的会话",
-  // 设置页：用量报告（#503 M3）
+  // 设置页：用量报告
   reportTitle: "用量报告",
   reportPeriodDaily: "日报",
   reportPeriodWeekly: "周报",
@@ -182,7 +182,7 @@ export const zh = {
   reportModelDefault: "跟随默认（首个已注册模型）",
   reportModelKept: "{v}（当前配置值，不在列表中）",
   reportModelFallback: "模型列表拉取失败或为空，已降级为手动填写。",
-  // #633 分片 b2 B4：报告目录范围多选
+  // 报告目录范围多选
   reportDirectories: "目录范围",
   reportDirectoriesAll: "全部目录",
   reportDirectoriesSelectAll: "全选",
@@ -208,9 +208,9 @@ export const zh = {
   reportGenerate: "立即生成",
   reportGenerating: "生成中…",
   reportGenerateFail: "生成失败：{msg}",
-  // #625：轮询超时正向提示（任务可能仍在后台生成，不报失败）
+  // 轮询超时正向提示（任务可能仍在后台生成，不报失败）
   reportStillGenerating: "仍在后台生成，稍后刷新列表查看",
-  // #626：幂等复用提示 + 强制重新生成勾选
+  // 幂等复用提示 + 强制重新生成勾选
   reportReused: "该窗口已有报告，已复用现有结果（勾选「重新生成」可覆盖）",
   reportForceRegen: "重新生成（覆盖）",
   reportHistory: "报告历史",
@@ -246,7 +246,7 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   loading: "Loading…",
   ariaPill: "Usage statistics",
   settingsTab: "Usage statistics",
-  // Settings page: five-tab segmenter (#532)
+  // Settings page: five-tab segmenter
   settingsNavLabel: "Usage statistics sections",
   pageTabTrend: "Trend",
   pageTabReport: "Report",
@@ -322,7 +322,7 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   noProvHint: "No configured provider found (adapters.json unreachable or none configured on the model page). Copy the guide prompt and let an agent wire up a data source.",
   customProvTitle: "Custom providers",
   customProvHint: "These providers are absent from the dsh model page (not selectable yet — register the adapter first; they count separately from the list above).",
-  // 设置页：使用趋势（#503 M2）
+  // 设置页：使用趋势
   trendTitle: "Usage trend",
   trendGranularity: "Granularity",
   trendGranDay: "Day",
@@ -342,13 +342,13 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   trendCardCalls: "Calls",
   trendCardPeak: "Peak bucket",
   trendCardTop: "Top adapter",
-  trendCardTopDir: "Top directory", // #633 P2: directory-face top summary card label (mirrors trendCardTop)
+  trendCardTopDir: "Top directory", // directory-face top summary card label (mirrors trendCardTop)
   trendFetchFail: "Failed to load trend data",
   trendEmptyTitle: "No trend data yet",
   trendEmptyHint: "Trends for recent usage will appear here once sessions produce usage.",
   trendMountedHint: "Counting since the plugin mount time; sessions before that point are not included",
   trendMountedHintDay: "Counting since {day} (plugin mount time); sessions before that point are not included",
-  // Settings: usage trend (#503 M2.1 redesign)
+  // Settings: usage trend
   trendRangeLabel: "Range",
   trendRangeDayUnit: "{n}d",
   trendRangeWeekUnit: "{n}w",
@@ -369,12 +369,12 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   trendRetained: "{days}-day retention",
   trendCardAvg: "Daily avg",
   trendViewVisible: "visible",
-  // Settings: usage trend — directory dimension (#633 shard b2 B1/B2/B3)
+  // Settings: usage trend — directory dimension
   trendDirLabel: "Directory",
   trendDirAll: "All directories",
   trendDirUnidentified: "Unidentified",
   trendDirUnidentifiedNote: "Sessions without directory info",
-  // 设置页：用量报告（#503 M3）
+  // 设置页：用量报告
   reportTitle: "Usage reports",
   reportPeriodDaily: "Daily",
   reportPeriodWeekly: "Weekly",
@@ -392,7 +392,7 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   reportModelDefault: "Follow default (first registered model)",
   reportModelKept: "{v} (current value, not in list)",
   reportModelFallback: "Model list unavailable or empty — falling back to manual input.",
-  // #633 shard b2 B4: report directory scope multi-select
+  // report directory scope multi-select
   reportDirectories: "Directory scope",
   reportDirectoriesAll: "All directories",
   reportDirectoriesSelectAll: "Select all",

@@ -1,7 +1,7 @@
 /**
- * dsh-provider-usage — shared/ 共享底座对外门面（C1 契约/工具层）。
+ * dsh-provider-usage — shared/ 共享底座对外门面（契约/工具层）。
  *
- * 目录化约定（#670 D9）：目录外（apply/domain1/domain2/client）一律经本文件消费；
+ * 目录化约定：目录外（apply/domain1/domain2/client）一律经本文件消费；
  * 目录内实现文件互引保持直接相对 import。最小面 = 逐个命名导出实际被消费的
  * 「类型 + 函数」，禁 `export * from` 整文件 re-export。
  *

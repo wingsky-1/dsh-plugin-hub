@@ -1,5 +1,5 @@
 /**
- * dsh-provider-usage/trend — 事件折叠状态机（#503 M1）。
+ * dsh-provider-usage/trend — 事件折叠状态机。
  *
  * 纯逻辑模块：吃官方 SessionEvent 流，产出定稿记录（call/correct/counter），
  * 不碰 IO、不持时钟（now 可注入）。热路径纪律：handler 顶部先按 event.type /
@@ -34,7 +34,7 @@ export const TREND_FOLD_TTL_MS = 10 * 60 * 1000;
 /** 会话状态（定稿记忆/归属）整体 TTL（长于 fold TTL，防乱序迟到 message 双算）。 */
 export const TREND_SESSION_TTL_MS = 60 * 60 * 1000;
 /**
- * done 定稿记忆上限（键数，P2-3）：超过后按 Map 插入序淘汰最旧键。
+ * done 定稿记忆上限（键数）：超过后按 Map 插入序淘汰最旧键。
  * done 不按 turn 清（保留定稿记忆防乱序迟到 message 双算），本上限是唯一收缩路径，
  * 防长命会话无界增长。
  */
@@ -52,7 +52,7 @@ export interface TrendCallRecord {
   /** 归属 model（未识别/缺失时 null）。 */
   model: string | null;
   /**
-   * 目录归属（#633 A1：cwd 经 sanitizeDirName 归一化的 basename；
+   * 目录归属（cwd 经 sanitizeDirName 归一化的 basename；
    * store 无 session / header.cwd 缺失 / 获取抛错时为 TREND_UNIDENTIFIED——
    * 不静默丢弃，沿用 provider 维度未识别桶约定）。
    */
@@ -77,7 +77,7 @@ export interface TrendCounterRecord {
   session: string;
   provider: string;
   model: string | null;
-  /** 目录归属（同 TrendCallRecord.dir；#633 A1）。 */
+  /** 目录归属（同 TrendCallRecord.dir）。 */
   dir: string;
   turns: 0 | 1;
   toolCalls: 0 | 1;
@@ -92,10 +92,10 @@ export type TrendEmit =
 interface SessionFoldState {
   attribution: TrendAttribution | null;
   /**
-   * 目录归属缓存（#633 A1）：值三态——string = 已解析（净化 basename 或
+   * 目录归属缓存：值三态——string = 已解析（净化 basename 或
    * TREND_UNIDENTIFIED）；null = 已查询但 store 无该 session / cwd 缺失 / 抛错
    * （缓存未识别结果，防同 session 重复查询）；undefined = 尚未查询。
-   * 同 session 生命周期内至多发起一次 store.get（A1 硬性约束；TTL 回收随会话状态）。
+   * 同 session 生命周期内至多发起一次 store.get（TTL 回收随会话状态）。
    */
   dir: string | null | undefined;
   /** 进行中 fold 缓冲，key = `${turn}:${step}`。 */
@@ -108,7 +108,7 @@ interface SessionFoldState {
   headerSeen: boolean;
   /**
    * 已定稿 fold 记忆（turn/end 丢弃的是未定稿缓冲，不是定稿记忆；防乱序迟到 message 双算）。
-   * 值 = 该键最后一次定稿的 retry（fold 被 TTL 清后，迟到校正据此取真实 retry，P2-3）；
+   * 值 = 该键最后一次定稿的 retry（fold 被 TTL 清后，迟到校正据此取真实 retry）；
    * 上限 TREND_DONE_MAX 按插入序淘汰最旧键（长命会话防无界增长）。
    */
   done: Map<string, number>;
@@ -123,10 +123,10 @@ export interface TrendCollectorOptions {
   now?: () => number;
   /** 定稿记录出口（aggregator.apply*）。 */
   emit: (e: TrendEmit) => void;
-  /** 归属异常告警出口（P2-6：主源与 message.source 副源不一致等；只告警不纠数）。 */
+  /** 归属异常告警出口（主源与 message.source 副源不一致等；只告警不纠数）。 */
   onAnomaly?: (msg: string) => void;
   /**
-   * 目录归属解析器（#633 A1，可选）：输入 session id，返回 cwd 原始值或 undefined。
+   * 目录归属解析器（可选）：输入 session id，返回 cwd 原始值或 undefined。
    * 接入 ctx.sessions.get(id)?.header.cwd（官方类型层）；抛错由本模块捕获归未识别。
    * 缺省 = 不接 store（纯离线/测试），目录恒归未识别桶。
    */
@@ -134,7 +134,7 @@ export interface TrendCollectorOptions {
 }
 
 /**
- * done 定稿记忆写入（P2-3）：超上限按 Map 插入序淘汰最旧键（done.set 对已存键
+ * done 定稿记忆写入：超上限按 Map 插入序淘汰最旧键（done.set 对已存键
  * 不重置插入序，淘汰目标恒为最早写入且未被复写的键）。失败路径不写 done——
  * 只有真实定稿才进记忆。
  */
@@ -201,7 +201,7 @@ export class TrendCollector {
   }
 
   /**
-   * 目录归属解析（#633 A1）：per-session 惰性单查——首次需要归属时经 resolveCwd
+   * 目录归属解析：per-session 惰性单查——首次需要归属时经 resolveCwd
    * 查一次（结果缓存进会话状态，后续定稿直接命中缓存）；store 无该 session /
    * cwd 缺失 / sanitize 失败 / resolveCwd 抛错 → 缓存 null（未识别），同样只查一次。
    */
@@ -306,7 +306,7 @@ export class TrendCollector {
     const tokens = parseTokens(d.chunk?.usage);
     let fold = state.folds.get(key);
     if (fold === undefined) {
-      // #655：fold 可能已被 fold TTL 或 turn/end 清理，而定稿记忆 done 仍在（未被
+      // fold 可能已被 fold TTL 或 turn/end 清理，而定稿记忆 done 仍在（未被
       // TREND_DONE_MAX 淘汰）。与 onMessage 的已定稿分支对称：无新 header = 同一调用的
       // 重复/更新块 → 只校正 token、不重记调用；有新 header = 重试 → retry 从记忆值递增
       // （不回落为 1 造成重号）。
@@ -354,7 +354,7 @@ export class TrendCollector {
     const turn = typeof d.turn === "number" && Number.isFinite(d.turn) ? d.turn : null;
     const step = typeof d.step === "number" && Number.isFinite(d.step) ? d.step : null;
     if (turn === null || step === null) return;
-    // 副源归属（P2-6）：归属缺失时用 message.source（kind:"model"）补齐；主源在场
+    // 副源归属：归属缺失时用 message.source（kind:"model"）补齐；主源在场
     // 但与副源解析结果不一致（provider 或 model 不同）时仅告警不覆盖——主源 header
     // 是记账归属的权威，message.source 仅为缺失时的补齐副源。
     const src = d.message?.source as Record<string, unknown> | undefined;
@@ -375,7 +375,7 @@ export class TrendCollector {
     const tokens = parseTokens(d.usage);
     if ((fold !== undefined && fold.finalized) || state.done.has(key)) {
       // 已定稿（fold 在场或已成记忆）→ 仅校正不重记。
-      // retry 取值（P2-3）：fold 在场取 fold.retry；fold 被 TTL 清后从 done 记忆取
+      // retry 取值：fold 在场取 fold.retry；fold 被 TTL 清后从 done 记忆取
       // 真实 retry（防迟到校正错改 retry=1 行）；两者皆缺兜底 1。
       if (tokens !== null) {
         const retry = fold?.retry ?? state.done.get(key) ?? 1;
@@ -384,7 +384,7 @@ export class TrendCollector {
       return;
     }
     // 未定稿/缺失 → 补记（usage 缺失：调用照计、token 记 null）；时间取事件 time（非单调容忍）
-    // headerSeen 对称重置（P2-2）：与 usage 定稿路径对称——header 后 message 补记定稿
+    // headerSeen 对称重置：与 usage 定稿路径对称——header 后 message 补记定稿
     // 若仍留 headerSeen=true，同 fold 键迟到 usage chunk 会被误判为新调用（retry+1 重记）双算。
     const retry = fold !== undefined ? fold.retry : 1;
     if (fold !== undefined) {
@@ -424,7 +424,7 @@ export class TrendCollector {
         if (key.startsWith(prefix)) state.folds.delete(key);
       }
     }
-    // counter 记账时间取事件 time（P2-1：防时钟回拨时 counter 落错日桶），非有限数回落 now
+    // counter 记账时间取事件 time（防时钟回拨时 counter 落错日桶），非有限数回落 now
     const time = typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
     const { provider, model } = this.providerOf(state);
     const dir = this.dirOf(state, session);
