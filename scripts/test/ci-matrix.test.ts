@@ -25,10 +25,11 @@ test('ci-matrix: 场景 a - 正常命中单一 active 包 (via FILTER_OUTPUTS)',
   assert.deepEqual(res.hitPackages, ['dsh-notifier']);
   assert.deepEqual(res.mutationPackages, ['dsh-notifier']);
   assert.equal(res.hasMutations, 'true');
-  assert.equal(res.mutationCombos.length, 4);
+  // T2-7：dsh-notifier 变异 4 段 → 按域重划 8 段（S3-30/N-24；combos 字母序展开）
+  assert.equal(res.mutationCombos.length, 8);
   assert.deepEqual(
     res.mutationCombos.map((c) => c.seg),
-    ['config', 'history', 'message', 'server']
+    ['channels', 'config', 'events', 'pipeline', 'sdk', 'server', 'stores', 'text']
   );
 });
 
@@ -182,10 +183,14 @@ test('ci-matrix: 场景 d - 变异段展开正确性 (单配置与多段配置)'
   });
   assert.deepEqual(resMulti.mutationPackages, ['dsh-notifier', 'dsh-web-file-preview']);
   assert.deepEqual(resMulti.mutationCombos, [
+    { package: 'dsh-notifier', seg: 'channels' },
     { package: 'dsh-notifier', seg: 'config' },
-    { package: 'dsh-notifier', seg: 'history' },
-    { package: 'dsh-notifier', seg: 'message' },
+    { package: 'dsh-notifier', seg: 'events' },
+    { package: 'dsh-notifier', seg: 'pipeline' },
+    { package: 'dsh-notifier', seg: 'sdk' },
     { package: 'dsh-notifier', seg: 'server' },
+    { package: 'dsh-notifier', seg: 'stores' },
+    { package: 'dsh-notifier', seg: 'text' },
     { package: 'dsh-web-file-preview', seg: '0' },
   ]);
 });
@@ -298,7 +303,7 @@ test('ci-matrix: 场景 f - GITHUB_OUTPUT 写入契约', () => {
     assert.equal(record.hasMutations, 'true');
     assert.deepEqual(JSON.parse(record.allPackages), EXPECTED_ALL);
     const combos = JSON.parse(record.mutationCombos);
-    assert.equal(combos.length, 4);
+    assert.equal(combos.length, 8);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

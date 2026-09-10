@@ -173,7 +173,8 @@ context filter checks」）。取舍如下（issue #290）：
   "maxConnections": 16,
   "channels": [],
   "kindRoutes": {},
-  "allowKinds": []
+  "allowKinds": [],
+  "sanitizeContent": true
 }
 ```
 
@@ -283,11 +284,13 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 （内置频道不受限）；成功判定双查 HTTP 2xx + 响应体 `code===200`。
 投递终态（成功/失败 + 脱敏错误摘要）落盘 DSH_HOME 下的 `dsh-notifier-status.json`
 （默认 `~/.dsh`）并经
-`wingsky-notify/sent` 事件广播（cordis Events），设置页频道卡状态行实时可见。
+`wingsky-notify/sent` 事件广播（cordis Events），设置页频道卡状态行在卡片加载
+与发送测试后刷新（无轮询，D20 口径）。
 
-> 通知历史 jsonl、频道投递状态 json 与旧版迁移源 json 的落盘/读取路径均感知
-> `DSH_HOME`（#510）：未设置时为 `~/.dsh`，设置后随隔离 home 走——隔离环境
-> （多实例 / 测试沙箱 / dsh-verify-isolated）读写面不触碰真实 `~/.dsh`。
+> 通知历史 jsonl、频道投递状态 json、SSE seq 计数文件（`notifier-seq.json`）与
+> 旧版迁移源 json 的落盘/读取路径均感知 `DSH_HOME`（#510）：未设置时为 `~/.dsh`，
+> 设置后随隔离 home 走——隔离环境（多实例 / 测试沙箱 / dsh-verify-isolated）
+> 读写面不触碰真实 `~/.dsh`。
 
 `kindRoutes`：kind → channelId[] 稀疏路由（如 `{ "error": ["browser", "system", "bark:phone"] }`）；
 未声明条目的 kind 广播全部启用频道；设置页事件区可双向编辑（与频道卡共享同一份配置）。
@@ -365,16 +368,17 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 ## 安全与边界
 
 - 通知文本只含任务标题/工具名/申请理由等元信息，**不含工具参数**（防敏感信息外泄）
-- **错误通知文本经脱敏**：进入通知与历史前按有序规则表打码再截断 300 字符，降低错误消息内嵌命令回显、路径与凭据片段的外泄面。覆盖类别与占位符：
+- **通知统一脱敏（B-1）**：`sanitizeContent` 默认 `true`——通知正文与标题经有序规则表打码（渲染完成后、任何落史/投递前统一处理一次），**通知、历史（含 suppressed 落史与错误合并落史）与投递全部覆盖**；`false` = 通知与历史均明文（手改配置或 API 可用，首版无 UI 开关）。覆盖类别与占位符：
   - 用户路径（`/home` `/Users` `/root` `/etc` `C:\Users`）→ `<path>`
   - PEM 私钥块（含只有 BEGIN 头的截断形态）→ `<private-key>`
   - 数据库/消息队列连接串凭据（postgres/mysql/mongodb/redis/amqps 等，scheme 保留；密码含 `<>`/引号等 URL 应编码字符时不脱敏，属已知局限）→ `scheme://<redacted>@host`
   - 各类令牌：JWT、AWS AKIA、GitHub PAT（classic 与 fine-grained）、≥24 位 hex / ≥32 位 base64 长串 → `<token>`
   - 密钥字段赋值（`password=`/`token=`/`api_key=`…，须带显式 `=`/`:` 分隔符）→ `键名=<redacted>`
   - 邮箱 → `<email>`
-  - **审批理由与提问文本**同样经脱敏（120 字符截断）——这两类文本最常内嵌命令回显与凭据片段
+  - **审批理由与提问文本同样经统一入口脱敏**——这两类文本最常内嵌命令回显与凭据片段；正文不截断、长度由投递频道上限截断
   - **已知取舍（不修正则）**：40 位 git commit SHA 与「≥24 位 hex 密钥」同形不可区分，会被通用长串规则打码为 `<token>`（如 `HEAD detached at abc0123…` → `HEAD detached at <token>`），损失错误消息的可查性。接受误伤换取密钥覆盖面：SHA 场景白名单不可靠（40 hex 与真密钥无法凭形态区分），故仅在此记录为已知行为
   - 已证伪不收录（高频误伤）：IPv4（UA 版本号同形）、手机号（订单号同形）、信用卡（13 位毫秒时间戳 100% 命中）
+- **固定出口 scrub 不受 `sanitizeContent` 开关影响**（凭据掩码/错误摘要属出口安全护栏，任何开关下恒生效）：Bark device key 字面 scrub 与 webhook 凭据 scrub（4xx 响应体会回显凭据原文，错误文本先按凭据字面替换再过通用脱敏表）、投递错误摘要（`finalizeError` 截断脱敏）、server 错误固定文案（底层原因只进服务端日志）、`redactConfigView` 配置视图掩码（`********`）
 - 系统通知失败静默（仅日志），不影响主流程；原生二进制缺失/不可执行（ENOENT 等）
   会被 `error` 事件接住，**绝不冒泡成 unhandled error 把宿主进程打挂**（见 issue #1）
 - **两个通道到达的机器不同（别混淆）**：

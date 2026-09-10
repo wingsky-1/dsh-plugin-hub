@@ -194,13 +194,22 @@
                 "packages/dsh-notifier/test/e2e-done.test.ts",
                 "packages/dsh-notifier/test/e2e-edge.test.ts",
                 "packages/dsh-notifier/test/e2e-interrupt.test.ts",
+                "packages/dsh-notifier/test/e2e-outbound.test.ts",
                 "packages/dsh-notifier/test/e2e-question-turn.test.ts",
                 "packages/dsh-notifier/test/migration.test.ts",
                 "packages/dsh-notifier/test/routes.test.ts",
+                "packages/dsh-notifier/test/unit-aggregate.test.ts",
+                "packages/dsh-notifier/test/unit-config-port.test.ts",
                 "packages/dsh-notifier/test/unit-config.test.ts",
+                "packages/dsh-notifier/test/unit-event-handlers.test.ts",
+                "packages/dsh-notifier/test/unit-pipeline-contract.test.ts",
                 "packages/dsh-notifier/test/unit-sanitize.test.ts",
-                "packages/dsh-notifier/test/unit-text.test.ts",
+                "packages/dsh-notifier/test/unit-server-sse-bus.test.ts",
+                "packages/dsh-notifier/test/unit-settings-bridge.test.ts",
                 "packages/dsh-notifier/test/unit-sse-hub.test.ts",
+                "packages/dsh-notifier/test/unit-stores.test.ts",
+                "packages/dsh-notifier/test/unit-system-notifier.test.ts",
+                "packages/dsh-notifier/test/unit-text.test.ts",
                 "packages/dsh-notifier/test/unit-webhook.test.ts",
                 "packages/dsh-notifier/test/service-contract.test.ts",
                 "packages/dsh-notifier/test/client-contract.test.ts",
@@ -215,49 +224,101 @@
                         "packages/dsh-notifier/src/config/paths.ts",
                         "packages/dsh-notifier/src/config/redact.ts",
                         "packages/dsh-notifier/src/config/settings.ts",
-                        "packages/dsh-notifier/src/config/validators.ts"
+                        "packages/dsh-notifier/src/config/validators.ts",
+                        "packages/dsh-notifier/src/config/quiet-hours.ts",
+                        "packages/dsh-notifier/src/config/settings-bridge.ts"
                     ],
                     "excludes": [
+                        "!packages/dsh-notifier/src/**/interface.ts",
                         "!packages/dsh-notifier/src/client/**"
                     ],
-                    "comment": "#669 PR1：配置域实现（config/normalize/validators/redact/paths/settings/migrate；settings-bridge/quiet-hours 保持原段归属），路径随目录树搬家同步；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#669 PR2 T2-7 按域重划：config——配置域全 9 实现（config/migrate/normalize/paths/redact/settings/validators/quiet-hours/settings-bridge；settings-bridge/quiet-hours 自 PR1 盲区并入，S3-30 修复）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
                 },
-                "history": {
-                    "mutate": [
-                        "packages/dsh-notifier/src/stores/history.ts",
-                        "packages/dsh-notifier/src/config/quiet-hours.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-notifier/src/client/**"
-                    ],
-                    "comment": "#669 PR1：stores/history + config/quiet-hours（原 history/quiet-hours 段映射新路径）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
-                },
-                "message": {
+                "text": {
                     "mutate": [
                         "packages/dsh-notifier/src/text/message.ts",
                         "packages/dsh-notifier/src/text/sanitize.ts",
                         "packages/dsh-notifier/src/text/system-commands.ts"
                     ],
                     "excludes": [
+                        "!packages/dsh-notifier/src/**/interface.ts",
                         "!packages/dsh-notifier/src/client/**"
                     ],
-                    "comment": "#669 PR1：message.ts 拆三文件（message/sanitize/system-commands）后段边界重定（S3-32 物理极限注释失效）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#669 PR2 T2-7 按域重划：text——文案域（message/sanitize/system-commands，PR1 message 段按域更名）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                },
+                "pipeline": {
+                    "mutate": [
+                        "packages/dsh-notifier/src/pipeline/adjudicate.ts",
+                        "packages/dsh-notifier/src/pipeline/deliver.ts"
+                    ],
+                    "excludes": [
+                        "!packages/dsh-notifier/src/**/interface.ts",
+                        "!packages/dsh-notifier/src/client/**"
+                    ],
+                    "comment": "#669 PR2 T2-7 按域重划：pipeline——核心状态机裁决/投递（adjudicate/deliver，T2-1 工厂化后入面，N-24 落地）；testFiles 含 unit-pipeline-contract（N-14/N-15 注入面契约杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                },
+                "events": {
+                    "mutate": [
+                        "packages/dsh-notifier/src/events/event-handlers.ts",
+                        "packages/dsh-notifier/src/events/aggregate.ts",
+                        "packages/dsh-notifier/src/events/agent-session.ts"
+                    ],
+                    "excludes": [
+                        "!packages/dsh-notifier/src/**/interface.ts",
+                        "!packages/dsh-notifier/src/client/**"
+                    ],
+                    "comment": "#669 PR2 T2-7 按域重划：events——核心状态机事件面（event-handlers/aggregate/agent-session，S3-30 修复入面）；testFiles 含 unit-event-handlers/unit-aggregate（N-6/N-7 直测杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                },
+                "channels": {
+                    "mutate": [
+                        "packages/dsh-notifier/src/channels/bark.ts",
+                        "packages/dsh-notifier/src/channels/browser.ts",
+                        "packages/dsh-notifier/src/channels/system.ts",
+                        "packages/dsh-notifier/src/channels/webhook.ts",
+                        "packages/dsh-notifier/src/channels/outbound.ts"
+                    ],
+                    "excludes": [
+                        "!packages/dsh-notifier/src/**/interface.ts",
+                        "!packages/dsh-notifier/src/client/**"
+                    ],
+                    "comment": "#669 PR2 T2-7 按域重划：channels——频道域（bark/browser/system/webhook/outbound，S3-30 盲区修复）；testFiles 含 unit-webhook/e2e-outbound（N-10/N-13/B-3 杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                },
+                "stores": {
+                    "mutate": [
+                        "packages/dsh-notifier/src/stores/history.ts",
+                        "packages/dsh-notifier/src/stores/status.ts"
+                    ],
+                    "excludes": [
+                        "!packages/dsh-notifier/src/**/interface.ts",
+                        "!packages/dsh-notifier/src/client/**"
+                    ],
+                    "comment": "#669 PR2 T2-7 按域重划：stores——存储域（history/status，PR1 history 段收窄，quiet-hours 归 config）；testFiles 含 unit-stores（N-4 直测杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
                 },
                 "server": {
                     "mutate": [
-                        "packages/dsh-notifier/src/index.ts",
                         "packages/dsh-notifier/src/server/routes.ts",
                         "packages/dsh-notifier/src/server/sse-bus.ts",
                         "packages/dsh-notifier/src/server/system-notifier.ts"
                     ],
                     "excludes": [
+                        "!packages/dsh-notifier/src/**/interface.ts",
                         "!packages/dsh-notifier/src/client/**"
                     ],
-                    "comment": "#669 PR1：index + server 域三文件（routes/sse-bus/system-notifier）路径随目录树搬家同步；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#669 PR2 T2-7 按域重划：server——服务域（routes/sse-bus/system-notifier；index.ts 装配层移出归 sdk 段）；testFiles 含 unit-server-sse-bus/unit-system-notifier（N-11/N-12 注入面直测杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                },
+                "sdk": {
+                    "mutate": [
+                        "packages/dsh-notifier/src/sdk/service.ts",
+                        "packages/dsh-notifier/src/index.ts"
+                    ],
+                    "excludes": [
+                        "!packages/dsh-notifier/src/**/interface.ts",
+                        "!packages/dsh-notifier/src/client/**"
+                    ],
+                    "comment": "#669 PR2 T2-7 按域重划：sdk——服务装配面（sdk/service.ts + 根 index.ts 并入：装配层归服务面，独立 assembly 段单文件且 re-export 过半可杀性低，并入 sdk 均衡段规模；service.d.ts 非 src TS 不入面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
                 }
             }
-        },
-        "dsh-provider-usage": {
+        },"dsh-provider-usage": {
             "concurrency": 16,
             "timeoutMS": 60000,
             "testFiles": [

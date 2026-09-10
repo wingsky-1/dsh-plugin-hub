@@ -246,6 +246,8 @@
 | B-6 | registerChannel 定位文档化：配置层注册面 | 保持 ABI | D11：行为不变（仍不接线投递），语义从「注册频道待启用」改述为「配置层注册面」 |
 | B-7 | KIND_SEVERITY 移 text/ 域 | 无运行时变化 | 导出面 re-export 保持（index.ts:131），仅文件归属迁移 |
 | B-8 | 单刻快照行为（B2）的事件源级补充：错误合并窗口/聚合窗口不受快照影响 | 保持 | 事件层状态机（errorMerge/agentStates/batch）沿用现状语义，不随重构改动 |
+| B-9 | send() 动态 kind 与 sendKind 统一过裁决（enabled→免打扰→路由） | 行为变更（D24） | 现状动态 kind 路径绕过 enabled/免打扰（sdk/service.ts:165-197）；统一后 enabled=false/免打扰期间动态 kind 从「照常投递」变「skipped」——先红测锁定现状再改，登记用例 N-25 |
+| B-10 | expectedRevision 非整数从静默忽略 → 显式拒 400（D19 拍板） | 行为变更 | 现状 applyConfigPatch 对非整数 expectedRevision 静默置 undefined；D19 裁定显式拒 400（「配置校验失败: expectedRevision」，hint 注明须为非负整数或省略）；客户端现状不传非整数、实际零影响——L8-5 修复随 PR2 T2-4 落地，用例 N-16 锁定 |
 
 ### 6.3 迁移计划（三 PR，见 architecture-redesign.md §10）
 
@@ -257,8 +259,9 @@
 
 - `scripts/data/mutation-topology.json` dsh-notifier 段 mutate 路径（config/migrate/settings/history/quiet-hours/message/index/server）随搬家全部更新；
 - 「message.ts 单文件 145s 物理极限维持」注释因 message 拆三文件失效——text/ 段边界重定（message/sanitize/system-commands）；
-- 新增文件（adjudicate/deliver/sanitize/sse-bus/system-notifier/browser/system + 各 interface.ts）入变异面决策：建议核心状态机 adjudicate/deliver/event-handlers 纳入，interface.ts 纯 re-export 不入；**PR1 决策落地 = 暂不入面**（PR1 纯机械搬动零行为变更；PR2 按域重划段 S3-30/N-24 时纳入核心状态机，interface.ts 一律不入）；
+- 新增文件（adjudicate/deliver/sanitize/sse-bus/system-notifier/browser/system + 各 interface.ts）入变异面决策：建议核心状态机 adjudicate/deliver/event-handlers 纳入，interface.ts 纯 re-export 不入；**PR1 决策落地 = 暂不入面**（PR1 纯机械搬动零行为变更）；**PR2 T2-7 决策落地 = 按域重划段（S3-30/N-24）时纳入核心状态机**——8 域段全量实现入面（config/text/pipeline/events/channels/stores/server/sdk + 根 index.ts 并入 sdk），interface.ts 一律不入；
 - `mutation-lib-to-src-loader.mjs` 已支持 `lib/sub/module.js → src/sub/module.ts` 子目录映射（已核实）——搬家后变异 hook 零改动；
+- **PR2 T2-7 变异分段重划（S3-30/N-24 落地）**：dsh-notifier mutate 4 段（config/history/message/server）→ 8 域段（config/text/pipeline/events/channels/stores/server/sdk）；核心状态机 pipeline（adjudicate/deliver）+ events（event-handlers/aggregate/agent-session）入面，settings-bridge/quiet-hours/status/outbound 等 PR1 盲区全部入面；index.ts 装配层并入 sdk 段（独立 assembly 段单文件且 re-export 过半可杀性低，并入均衡段规模）；excludes 统一 `!src/**/interface.ts` + `!src/client/**`；testFiles 15 → 24（补 e2e-outbound/unit-aggregate/unit-config-port/unit-event-handlers/unit-pipeline-contract/unit-server-sse-bus/unit-settings-bridge/unit-stores/unit-system-notifier，real-context 保持剔除）；
 - 测试全量 import `../lib/index.js`（§3:196）——导出面不变时零改动；坏处是 9 个 interface.ts 无变异面（纯 re-export 合理）。
 
 ## 7. S3 缺陷总清单与测试分层映射（§3 交叉验证定稿）
@@ -287,7 +290,7 @@
 | S3-4 | L8-4 registerChannel 悬空→**D11 已裁定配置层注册面** | service.ts:467-470 | 文档化（行为保持） |
 | S3-5 | L8-5 expectedRevision 非整数静默忽略 | server.ts:387-388 | PR2（显式拒 400 或文档化） |
 | S3-6 | L8-6 history DELETE / test 无错误映射 | server.ts:716-719 | PR2 |
-| S3-7 | P1-2 频道状态行无轮询（README:286「实时可见」口径弱于实现） | index.tsx:865-869/:900/:1131 | PR2 补轮询或改文档口径 |
+| S3-7 | P1-2 频道状态行无轮询（README:286「实时可见」口径弱于实现） | index.tsx:865-869/:900/:1131 | PR2（D20 已定改 README 口径，T2-6 落地） |
 | S3-8 | P1-3 跨窗口无 storage/broadcast 同步（409 被动恢复） | index.tsx:985/:1025-1028 | PR2/PR3（中低） |
 | S3-9 | P1-4 + C3-1（高）补拉 600 帧窗口有限；**服务端重启 seq 归零→已打开页面永久静默** | server.ts:99-121 / index.tsx:674-677 | **PR2 必做**：seq 回退检测或服务端 baseSeq + TDD「重启后重连不丢帧」 |
 | S3-10 | P2-1 历史徽标缺 kind-pending/merged | index.tsx:2277-2279 | PR2/PR3 |
@@ -295,9 +298,9 @@
 | S3-12 | P2-4 顶层 5 数值字段无钳制；maxConnections 清空→0→400 | index.tsx:2082-2120 + config.ts:558 | PR2（whTimeout 同款 clamp） |
 | S3-13 | P2-5 playToneForce 注释虚构 + playChime 死函数 | index.tsx:434-435/:486-488 | PR3 |
 | S3-14 | C3-2 放弃更改不清 409 横幅 | index.tsx:1117-1124 vs :2361-2374 | PR3 |
-| S3-15 | C3-3 routeStaleTitle「保存后清理」文案无实现（stale 永久残留） | locales.ts:184/:380 + index.tsx:1963-1971 | PR3（文档或实现二选一） |
-| S3-16 | C3-4 fetchStatus 失败清空已加载状态行 | index.tsx:732-737/:865-869 | PR2/PR3 |
-| S3-17 | C3-5 showBanner kind 未转义 CSS 选择器（异常 kind 致帧静默丢弃） | index.tsx:524 | PR2/PR3 |
+| S3-15 | C3-3 routeStaleTitle「保存后清理」文案无实现（stale 永久残留） | locales.ts:184/:380 + index.tsx:1963-1971 | PR3（D20 已定：改文案口径「stale 已跳过」，C3-3 归位改口径） |
+| S3-16 | C3-4 fetchStatus 失败清空已加载状态行 | index.tsx:732-737/:865-869 | PR2（T2-6 顺手落地：拉取失败保留旧态） |
+| S3-17 | C3-5 showBanner kind 未转义 CSS 选择器（异常 kind 致帧静默丢弃） | index.tsx:524 | PR2（T2-6 顺手落地：遍历比对 dataset，不构造选择器） |
 | S3-18 | C3-6 writable=false 保存按钮未禁用 | index.tsx:2385 | PR2/PR3 |
 | S3-19 | C3-7 saveFailConflict msg 空串 + 过时指引 | index.tsx:962 / locales.ts:57/:267 | PR3 |
 | S3-20 | T3-1 固定 sleep 16 处（含 migration 4×30ms 负向观察窗、e2e-done 30ms、waitMergeWindow 3.2s） | 全清单见 §7.1 | 基建（PR1/PR2 替换轮询/注入短窗） |
@@ -310,7 +313,7 @@
 | S3-27 | T3-9 outbound 有效分支零覆盖（enabled:true bark 全链投递/gate 复用无基线） | outbound.ts:13-29 | PR2 红测先行 3 |
 | S3-28 | T3-10 waitMergeWindow 3.2s×6≈19.2s 固定等待 | helpers.ts:374 | 基建（PR1/PR2 短窗注入） |
 | S3-29 | 工厂级直测缺失：history/status/settings-bridge/outbound/aggregate/event-handlers 零直测 | §3 审计 + 子代理 grep | L1 补测（PR1/PR2） |
-| S3-30 | 核心状态机无变异面（service/event-handlers/aggregate/channel-*/outbound/settings-bridge/status 不在 mutate 4 段） | mutation-topology:196-238 | PR2 变异分段 |
+| S3-30 | 核心状态机无变异面（service/event-handlers/aggregate/channel-*/outbound/settings-bridge/status 不在 mutate 4 段） | mutation-topology:196-238 | ✅ 已修（PR2 T2-7 按域重划 8 段，核心状态机 pipeline/events 全量入面，盲区文件并入对应域段） |
 | S3-31 | stryker testFiles 9 清单缺口（7 文件不在：含 e2e-interrupt/unit-sse-hub/unit-webhook 等） | mutation-topology:184-194 | PR1 变异配置更新 |
 | S3-32 | message.ts 单文件变异段 145s「物理极限」（拆三文件后失效） | mutation-topology:219-227 | PR1 段边界重定 |
 
@@ -322,7 +325,7 @@
 | L1 层内单元 | unit-config / unit-text / unit-sanitize / unit-sse-hub（shared 层）/ unit-webhook（渲染+scrub 面） | N-4 stores 直测（history/status 写队列原子写，PR1）；N-5 settings-bridge CAS 直测（PR1）；N-6 aggregate 直测（PR1）；N-7 event-handlers 判定直测（adjudicate 拆分时导出核心函数，PR2）；N-8 pipeline/adjudicate 裁决矩阵直测（PR2）；N-9 pipeline/deliver 截断·重试门·fail-soft 直测（deps fake，PR2）；N-10 outbound 装配直测（PR2）；N-11 server/system-notifier spawn 注入直测（节流/8s 杀进程/失败终态，PR2）；N-12 server/sse-bus 600 帧边界直测（PR2）；N-13 channels/bark 单次投递+retryable 标记直测（PR2） |
 | L2 interface 契约 | service-contract（ABI 面）/ unit-webhook（SPI 面）/ client-contract（两端契约） | N-14 AdjudicateDeps 注入面契约（PR2）；N-15 DeliverDeps 注入面契约（PR2）；N-16 ConfigPort 降级语义契约（readUser 未 attach/writable=false，PR2） |
 | L3 集成（user case） | e2e-approval / e2e-done / e2e-interrupt / e2e-question-turn / e2e-edge / routes / migration / real-context / client-style | N-17 B-1 脱敏全链路（suppressed/merged 落史也脱敏，PR2）；N-18 B-2 投递决议快照化（裁决→投递间改配置，PR2）；N-19 B-3 重试/门框架化全链（enabled:true bark，PR2）；N-20 B-4 sanitizeContent 开关链路（默认 true 脱敏 + false 明文，PR2）；N-21 B-5 disabled 不落史保持（PR2）；N-22 C3-1 seq 回退恢复（PR2）；N-23 S3-12 maxConnections 清空守卫（PR2） |
-| 变异分层 | 4 段→按域重划（配置/text/pipeline/events/channels/stores/server/sdk） | N-24 pipeline/events 段纳入变异面（PR2）；message 段重定（PR1）；testFiles 补 7 文件（PR1） |
+| 变异分层 | 8 域段已落地（配置/text/pipeline/events/channels/stores/server/sdk；PR2 T2-7） | N-24 pipeline/events 段纳入变异面 ✅ 已落地（PR2 T2-7）；message 段重定（PR1）；testFiles 补 7 文件（PR1）+ 再补 9 文件（PR2 T2-7，15→24） |
 
 ### 7.4 user case 集成场景矩阵（骨架；F 编号 → 场景 → 现有 → 新增）
 
@@ -350,7 +353,7 @@
 | **PR0 测试基建 + 红测先行**（D17） | flake 修复（16 处固定 sleep → 轮询/短窗注入，含 migration 4×30ms 负向观察窗、waitMergeWindow 3.2s→注入短窗，S3-20/S3-28）；红测基线 8 条在现状代码建立（S3-21/22/27 + B-2 快照化基线 + event-handlers 判定直测 + sse-bus 600 帧 + 类型面接线前置 + 静态契约同步 S3-25/S3-26）；fetch mock 白名单外拒绝加固（S3-23） | S3-20/21/22/23/25/26/27/28 | 纯测试基建 + 轻微行为无关注入改造（spawn 依赖注入，理由在 PR 描述）；全门禁全绿；spawn 行为可注入直测（§7.8 实施记录） |
 | **PR1 机械搬家+门面+变异更新** | 16 平铺→目录树；interface.ts 落地；导出面快照；stryker/mutation 路径更新 + testFiles 补 7 文件 + message 段重定（S3-31/S3-32）；L1 补测 N-4/N-5/N-6（stores/settings-bridge/aggregate 直测） | S3-29(部分)/31/32 | 零行为变更；导出面快照 diff = 基线；变异配置随行（D16）；build/test/contract/typecheck/pack:check 全绿 |
 | **PR2 行为重构** | adjudicate/deliver 拆分 + current() 快照 + 播放决议快照化（B-2）；重试/门上移（B-3）；脱敏统一时点 + sanitizeContent（B-1/B-4）；ConfigPort/RouteDeps（S3-2/5/6）；SPI mergeTitleIntoBody（S3-1）；客户端 P1-2/P2-4/C3-1（S3-7/9/12）；变异分段（S3-30）；L1/L2 新增 N-7~N-16、L3 N-17~N-23 | S3-1/2/5/6/7/9/12/16/17/18/30 | 每步对齐规则矩阵；行为变更用例红测先行；全门禁全绿 |
-| **PR3 注释清理+门禁+类型面** | 失真注释清单（§9/S3-13）；locales 13 死键（S3-11）；C3-2/C3-3/C3-7（S3-14/15/19，D21）；类型面接线最终化（S3-24）；import 门禁+环路检测脚本（N-1）；消费方类型编译用例；stale 文案口径修正（D20） | S3-11/13/14/15/19/24 | lint 落地；wiring 接线后类型编译全绿 |
+| **PR3 注释清理+门禁+类型面** | 失真注释清单（§9/S3-13）；locales 13 死键（S3-11）；C3-2/C3-7（S3-14/19，D21）+ C3-3 改口径（D20）；类型面接线最终化（S3-24）；import 门禁+环路检测脚本（N-1）；消费方类型编译用例；stale 文案口径修正（D20） | S3-11/13/14/15/19/24 | lint 落地；wiring 接线后类型编译全绿 |
 
 ### 7.6 红测先行基线（PR0 主体，PR2 动工前必须补的测试基线）
 
@@ -402,7 +405,10 @@
 - **D18**：L8-3 NotifyRequest.data 保留声明、注明「MVP 未启用」（ABI 零破坏）。
 - **D19**：L8-5 expectedRevision 非整数显式拒绝（400），消除静默忽略（客户端现状不传非整数，实际零影响，登记行为变更）。
 - **D20**：客户端口径诚实化——S3-7 频道状态行改 README 口径（「加载/测试后刷新」）；S3-15 stale 路由文案改「stale 已跳过」；均不做功能增强。
-- **D21**：客户端低优先级修复取舍——PR3 只做 C3-2（409 横幅残留）与 C3-7（错误文案）；C3-3/4/5/6 登记 backlog 延迟。
+- **D21**：客户端低优先级修复取舍——PR3 只做 C3-2（409 横幅残留）与 C3-7（错误文案）；C3-3/4/5/6 登记 backlog 延迟。（**PR2 T2-6 复核**：C3-4（S3-16 fetchStatus 失败清空状态行）与 C3-5（S3-17 showBanner kind 未转义选择器）成本极低（≤5 行），随 T2-6 顺手落地——不推翻 D21 的 backlog 决定，属「有余量顺手做」；C3-3 由 D20 裁定改口径；C3-6（S3-18 writable=false 保存按钮未禁用）保持 backlog。）
+- **D22（PR2 动工前，R-6 mini 决策，用户拍板）**：S3-9 seq 归零修复选**选项 A 服务端持久化**——seq 计数器持久化（复用 stores/status.ts 写队列+tmp+rename 原子写范式，500ms 防抖 + dispose 同步落盘）；客户端零改动、D9 帧契约/客户端 ABI 零破坏、旧客户端免升级同步受益。选项 B（客户端回退检测）结构性否决：重启后 k>lastSeq 时数值比较检测不到（情形 2）+ 多标签页丢帧不一致。备选 A'（epoch 广播）不采纳（需客户端+服务端同步升级）。TDD 5 用例 + N-22 锁定（见评审记录）。
+- **D23（PR2 动工前，T2-1 播放决议消费链路，用户拍板）**：采纳**DeliverDeps 增 play(target, payload) 注入**（index.ts 装配：browser→sse.broadcast(buildBrowserFrame(payload,spec))、system→system.notify(spec.pop,spec.sound,…)）——spec 值传递、共享实例零状态、并发安全、ABI/导出面不动；内置频道工厂签名收敛为 createBrowserChannel({sse})/createSystemChannel({system})（去 current，消除 sdk→channels 值边）。
+- **D24（PR2 动工前，T2-1 send 动态 kind 统一，用户拍板）**：send() 动态 kind 路径与 sendKind 统一过裁决（enabled→免打扰→路由），登记行为变更 **B-9**；现状绕过 enabled/免打扰的行为（sdk/service.ts:165-197）先红测锁定再改。
 
 **隐患登记表（R-x，重构全过程风险与缓解）**：
 
@@ -413,7 +419,7 @@
 | R-3 | PR2 行为重构回归（8 项行为变更叠加） | 行为漂移难定位 | 红测先行基线（PR0）+ 每步对齐规则矩阵（B-G/C-G/D6/D7）；变更分 commit |
 | R-4 | 类型面零校验期间导出面漂移无编译期捕获 | 消费方静默断裂 | PR0 接线前置 + PR3 去 @ts-nocheck 最终化；PR1 导出面快照 diff 兜底 |
 | R-5 | 测试套件不自足（worktree 无 lib/，须先 pnpm build） | CI/本地跑测失败误判 | 每 PR 门禁首步 build；PR0 起在 worktree 常态构建 |
-| R-6 | C3-1 seq 归零修复的两个实现（服务端 baseSeq vs 客户端回退检测）各有副作用 | 选型不当引入新问题 | PR2 动工前出 mini 决策（服务端 baseSeq 需持久化/重启延续；客户端回退检测要处理合法回退边界），TDD 用例锁定 |
+| R-6 | C3-1 seq 归零修复选型（服务端 baseSeq vs 客户端回退检测） | 选型不当引入新问题 | **D22 已拍板选项 A（服务端持久化）**；TDD 5 用例 + N-22 锁定（PR2 T2-6 落地全绿）；崩溃窗口锁定：kill -9 最多丢最近 **≤500ms 防抖窗口**内广播的帧（dispose 同步落盘，正常停止零丢失）；**600 帧窗口 shift 静默丢失**（不重启、离线超 600 帧才发生）**不在 R-6 覆盖**——PR2 内点名登记 backlog，防误判 S3-9 全修复 |
 | R-7 | PR0 的 spawn 依赖注入改造属「为重构而做」的 src 改动 | 违背「PR0 纯测试」表述 | PR0 PR 描述明示理由 + 行为不变断言（现状行为逐项锁定） |
 | R-8 | interface.ts 门面纪律腐化（域内互引/绕过门面） | 依赖图失真、重构目标落空 | PR3 落地 import 门禁脚本 + 环路检测；文档纪律 §3 |
 | R-9 | fetch mock 白名单外 fail-open（T3-5） | 测试假网络面 | PR0/PR2 白名单外拒绝加固（S3-23） |

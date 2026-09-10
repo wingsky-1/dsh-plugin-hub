@@ -1,7 +1,7 @@
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { errorMessage } from "../../../../shared/host-utils.js";
 import type { NotifyConfig } from "../config/interface.ts";
-import { sanitizeErrorText } from "../text/interface.ts";
+import { sanitizeNoticeContent } from "../text/interface.ts";
 import type { NotifyDetail } from "../text/interface.ts";
 import { isSubagentOf, lastTurnEndOf, sessionTitleOf } from "./agent-session.ts";
 import type { SubagentOwnership } from "./agent-session.ts";
@@ -105,7 +105,7 @@ function logIdleSkipped(
 
 function dispatchUnmergedError(
   payload: any,
-  sanitized: string,
+  rawMessage: string,
   key: string,
   now: number,
   prev: ErrorMergeEntry | undefined,
@@ -115,7 +115,7 @@ function dispatchUnmergedError(
   const mergedCount = prev !== undefined ? prev.count : 0;
   const mergedErrors = prev !== undefined ? prev.lastMessages : [];
   const notified = deps.notify("error", {
-    message: sanitized,
+    message: rawMessage,
     taskTitle: sessionTitleOf(payload?.agent),
     turn: typeof payload?.turn === "number" ? payload.turn : undefined,
     step: typeof payload?.step === "number" ? payload.step : undefined,
@@ -130,22 +130,26 @@ function dispatchUnmergedError(
 function tryMergeError(
   errorMerge: Map<string, ErrorMergeEntry>,
   key: string,
-  sanitized: string,
+  rawMessage: string,
   mergeMs: number,
   now: number,
   appendHistory: EventHandlersDeps["appendHistory"],
+  sanitizeContent: boolean,
 ): boolean {
   const prev = mergeMs > 0 ? errorMerge.get(key) : undefined;
   if (prev !== undefined && now - prev.since < mergeMs) {
+    // B-1：merged 落史是全仓唯一不经 sendKind 的历史写入点，落史前按开关单独
+    // 清洗（P1-3：先打码后截断——「（合并）+摘要」120 语义显式保留）。
+    const safeMessage = sanitizeNoticeContent({ title: "DSH：任务出错", body: rawMessage }, sanitizeContent).body;
     prev.count += 1;
     prev.since = now;
-    prev.lastMessages.push(sanitized.slice(0, 80));
+    prev.lastMessages.push(safeMessage.slice(0, 80));
     if (prev.lastMessages.length > 2) prev.lastMessages.shift();
     appendHistory({
       ts: now,
       kind: "error",
       title: "DSH：任务出错",
-      message: `（合并）${sanitized.slice(0, 120)}`,
+      message: `（合并）${safeMessage.slice(0, 120)}`,
       suppressed: "merged",
     });
     return true;
@@ -174,7 +178,8 @@ export class NotifierEventHandlers implements EventHandlers {
     const askDetail = () => ({
       tool: req?.toolName as string | undefined,
       taskTitle: sessionTitleOf(req?.agent),
-      reason: req?.reason ? sanitizeErrorText(req.reason, 120) : undefined,
+      // B-1：事件层不再预清洗——reason 进 sendKind 渲染后统一脱敏
+      reason: req?.reason ? String(req.reason) : undefined,
     });
     try {
       this.deps.notify("ask", askDetail());
@@ -230,8 +235,9 @@ export class NotifierEventHandlers implements EventHandlers {
           this.deps.notify("question", {
             tool: "ask_user_question",
             taskTitle: sessionTitleOf((request as { agent?: Agent } | null | undefined)?.agent),
+            // B-1：事件层不再预清洗——question 进 sendKind 渲染后统一脱敏
             question: first && (first as { question?: unknown }).question
-              ? sanitizeErrorText((first as { question?: unknown }).question, 120)
+              ? String((first as { question?: unknown }).question)
               : undefined,
           });
         }
@@ -335,16 +341,17 @@ export class NotifierEventHandlers implements EventHandlers {
       const agentId = payload?.agent?.id;
       const key = agentId ?? "?";
       const now = Date.now();
+      // B-1：事件层不再预清洗——原始错误文本进 sendKind 渲染后统一脱敏；
+      // merged 落史在 tryMergeError 内按开关单独清洗（唯一不经 sendKind 的点）。
       const rawMessage = payload?.error instanceof Error ? payload.error.message : errorMessage(payload?.error);
-      const sanitized = sanitizeErrorText(rawMessage);
       const mergeMs = current.errorMergeWindowMs;
 
-      if (tryMergeError(this.errorMerge, key, sanitized, mergeMs, now, this.deps.appendHistory)) {
+      if (tryMergeError(this.errorMerge, key, rawMessage, mergeMs, now, this.deps.appendHistory, current.sanitizeContent !== false)) {
         return;
       }
 
       const prev = mergeMs > 0 ? this.errorMerge.get(key) : undefined;
-      dispatchUnmergedError(payload, sanitized, key, now, prev, this.deps, this.errorMerge);
+      dispatchUnmergedError(payload, rawMessage, key, now, prev, this.deps, this.errorMerge);
     } catch (error) {
       this.deps.logger.warn(`dsh-notifier: agent/error 处理失败: ${errorMessage(error)}`);
     }

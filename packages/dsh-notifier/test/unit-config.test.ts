@@ -12,6 +12,9 @@ import { homedir, tmpdir } from "node:os";
 import { mkdtempSync, rmSync } from "node:fs";
 import { assert } from "./helpers.ts";
 import { normalizeConfig, parseHHMM, isInQuietHours, DEFAULT_CONFIG, configFile, historyFile, statusFile, toastScriptPath, normalizeBarkBaseUrl, redactConfigView, unmaskChannels, SECRET_MASK, BARK_ID_PATTERN, validateSettings, sanitizeSettings, sanitizePatchSettings, QUIET_ALLOW_KINDS, SOUND_IDS, isSoundSetting, resolveSoundSetting } from "../lib/index.js";
+// seqFile 是域内路径函数（R-6/D22 选项 A 装配用），不进包导出面——src 直连（同
+// unit-server-sse-bus 直测 src/interface 姿态；包导出面快照契约零 diff）。
+import { seqFile } from "../src/config/interface.ts";
 
 const work = mkdtempSync(join(tmpdir(), "dnotify-unit-config-"));
 try {
@@ -25,6 +28,7 @@ try {
   assert.equal(configFile(), join(homedir(), ".dsh", "dsh-notifier.json"), "默认形态：迁移源路径 ~/.dsh/dsh-notifier.json");
   assert.equal(historyFile(), join(homedir(), ".dsh", "dsh-notifier-history.jsonl"), "默认形态：历史路径 ~/.dsh/dsh-notifier-history.jsonl");
   assert.equal(statusFile(), join(homedir(), ".dsh", "dsh-notifier-status.json"), "默认形态：状态路径 ~/.dsh/dsh-notifier-status.json");
+  assert.equal(seqFile(), join(homedir(), ".dsh", "notifier-seq.json"), "默认形态：seq 计数路径 ~/.dsh/notifier-seq.json（与 statusFile 同目录，R-6/D22）");
   assert.ok(toastScriptPath().endsWith("toast.ps1"), "toast 脚本路径固定到 toast.ps1（src 插桩形态下随加载源解析到 src/）");
   const dshHomeIso = mkdtempSync(join(tmpdir(), "dnotify-dsh-home-"));
   process.env.DSH_HOME = dshHomeIso;
@@ -32,6 +36,7 @@ try {
     assert.equal(configFile(), join(dshHomeIso, "dsh-notifier.json"), "#510：迁移源随 DSH_HOME（隔离 home 的旧配置才被迁移）");
     assert.equal(historyFile(), join(dshHomeIso, "dsh-notifier-history.jsonl"), "#510：历史读/写面随 DSH_HOME");
     assert.equal(statusFile(), join(dshHomeIso, "dsh-notifier-status.json"), "#510：状态写面随 DSH_HOME");
+    assert.equal(seqFile(), join(dshHomeIso, "notifier-seq.json"), "#510：seq 计数读写面随 DSH_HOME");
   } finally {
     delete process.env.DSH_HOME;
     rmSync(dshHomeIso, { recursive: true, force: true });
@@ -103,6 +108,13 @@ try {
   assert.equal(normalizeConfig({ notifyWhenVisible: "x" }).notifyWhenVisible, false, "非布尔丢弃");
   assert.equal(normalizeConfig({ notifyQuestion: false }).notifyQuestion, false, "提问通知可配置");
   assert.equal(normalizeConfig({ notifyQuestion: "x" }).notifyQuestion, true, "非布尔丢弃回默认");
+  // B-4：sanitizeContent 契约键——默认 true、可关、非布尔丢弃回默认、写面校验
+  assert.equal(DEFAULT_CONFIG.sanitizeContent, true, "B-4：sanitizeContent 默认 true（统一脱敏开启）");
+  assert.equal(normalizeConfig({ sanitizeContent: false }).sanitizeContent, false, "B-4：sanitizeContent=false 明文可配置");
+  assert.equal(normalizeConfig({ sanitizeContent: "x" }).sanitizeContent, true, "B-4：非布尔丢弃回默认 true");
+  assert.equal(validateSettings({ sanitizeContent: false }), null, "B-4：sanitizeContent false 合法");
+  assert.equal(validateSettings({ sanitizeContent: "yes" })?.key, "sanitizeContent", "B-4：非布尔拒绝（首个非法键）");
+  assert.ok(String(validateSettings({ sanitizeContent: "yes" })?.hint).includes("布尔"), "B-4：hint 含布尔范围描述");
   assert.equal(DEFAULT_CONFIG_UNTOUCHED.quietHours.enabled, false, "normalizeConfig 不污染默认配置");
   assert.equal(normalizeConfig({ errorMergeWindowMs: 5000 }).errorMergeWindowMs, 5000, "合并窗口可配置");
   assert.equal(normalizeConfig({ errorMergeWindowMs: -1 }).errorMergeWindowMs, DEFAULT_CONFIG.errorMergeWindowMs, "非法窗口丢弃");

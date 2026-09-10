@@ -102,8 +102,9 @@ renamed `.corrupted.bak` without being written). The self-maintained read/write 
 is retired.
 
 > The storage/read paths of the notification history jsonl, the per-channel delivery
-> status json (`dsh-notifier-status.json`), and the legacy migration source json all
-> respect `DSH_HOME` (#510): they resolve to `~/.dsh` when the variable is unset and
+> status json (`dsh-notifier-status.json`), the SSE seq counter file
+> (`notifier-seq.json`), and the legacy migration source json all respect `DSH_HOME`
+> (#510): they resolve to `~/.dsh` when the variable is unset and
 > follow the isolated home when set — isolated environments (multi-instance / test
 > sandboxes / dsh-verify-isolated) never touch the real `~/.dsh`.
 
@@ -175,7 +176,8 @@ Example values (defaults):
   "askRemindMin": 5,
   "doneMergeWindowMs": 3000,
   "historyMaxAgeDays": 0,
-  "maxConnections": 16
+  "maxConnections": 16,
+  "sanitizeContent": true
 }
 ```
 
@@ -352,16 +354,17 @@ be able to resolve these official packages (skipping type checking is unaffected
 ## Security & boundaries
 
 - Notification text only contains metadata such as task title / tool name / request reason — **never tool parameters** (prevents sensitive info leakage)
-- **Error notification text is redacted**: masked via an ordered rule table and truncated to 300 chars before entering notifications and history, reducing the exposure surface of embedded command echo, paths, and credential fragments. Covered categories and placeholders:
+- **Unified notification redaction (B-1)**: `sanitizeContent` defaults to `true` — notification body and title are masked via the ordered rule table (processed once, after rendering and before any history write / delivery), covering **notifications, history (including suppressed and error-merged entries) and delivery**; `false` = both notifications and history stay plaintext (hand-edited config or API only; no UI switch in this release). Covered categories and placeholders:
   - User paths (`/home` `/Users` `/root` `/etc` `C:\Users`) → `<path>`
   - PEM private key blocks (including truncated forms with only the BEGIN header) → `<private-key>`
   - Database / message-queue connection-string credentials (postgres/mysql/mongodb/redis/amqps etc., scheme preserved; not redacted when the password contains URL-reserved chars like `<>`/quotes — known limitation) → `scheme://<redacted>@host`
   - Tokens: JWT, AWS AKIA, GitHub PAT (classic and fine-grained), ≥24-char hex / ≥32-char base64 runs → `<token>`
   - Secret field assignments (`password=`/`token=`/`api_key=`…; an explicit `=`/`:` separator is required) → `key=<redacted>`
   - Email addresses → `<email>`
-  - **Approval reasons and question texts** are redacted too (truncated to 120 chars) — these most often embed command echo and credential fragments
+  - **Approval reasons and question texts** go through the same unified entry — these most often embed command echo and credential fragments; the body is not truncated here (the per-channel capability cap applies at delivery)
   - **Known trade-off (rule intentionally unchanged)**: 40-char git commit SHAs are indistinguishable from "≥24-char hex secrets" and get masked to `<token>` by the generic long-run rule (e.g. `HEAD detached at abc0123…` → `HEAD detached at <token>`), losing the lookup value of error messages. The false positive is accepted in exchange for secret coverage: a SHA-scenario whitelist would be unreliable (40-hex cannot be told apart from real secrets by shape), so this is documented as known behavior only
   - Proven false-positive-prone, deliberately not covered: IPv4 (same shape as UA version numbers), phone numbers (same shape as order IDs), credit cards (13-digit millisecond timestamps match at 100%)
+- **Fixed-exit scrubbing is not affected by the `sanitizeContent` switch** (credential masking / error summaries are exit safety guardrails that always apply): Bark device-key literal scrub and webhook credential scrub (4xx response bodies can echo credentials; error text first replaces credential literals, then runs the generic redaction table), delivery error summaries (`finalizeError` truncated redaction), fixed server error wording (underlying causes only go to server logs), and `redactConfigView` config-view masking (`********`)
 - System notification failures are silent (logs only), and do not affect the main flow; a missing / non-executable native binary (ENOENT etc.) is caught by the `error` event and **never bubbles up as an unhandled error that crashes the host process** (see issue #1)
 - **The two channels are delivered to different machines (don't confuse them)**:
   - **Browser notifications** are pushed to **the browser client you are actually using** (your Mac / phone both count), and pop a native notification via the browser's Notification API; they require permission and by default only pop when the page is hidden (the settings card can enable "also when visible"). No matter which machine dsh web runs on, as long as browser notifications are allowed you receive them on your own Mac.

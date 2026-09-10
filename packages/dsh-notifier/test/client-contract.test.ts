@@ -869,3 +869,71 @@ const pkgDir = fileURLToPath(new URL("..", import.meta.url));
   for (const d of disposers.splice(0)) d();
   console.log("P1-1 vm playOnly 帧自播（振荡器计数）回归: OK");
 }
+
+// ---- S3-12/N-23：maxConnections 清空守卫（clampMaxConnections 真产物直测）----
+// 空串 → undefined → diff 键被 JSON 序列化丢弃 → 不提交保持原值；非空值软
+// clamp（1-1024，服务端写面 min=1，0 会 400——唯一有 400 风险的顶层数值键）。
+// 模块级纯函数经 apply 挂载面直测（与 diffSettingsPayload 同先例）。
+{
+  const clientCode = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+  const sandbox = {
+    console: { ...console, warn: () => {} },
+    Symbol, Object, Array, JSON, Math, Date, Promise,
+    setTimeout, clearTimeout,
+    EventSource: function () {},
+    Notification: function () {},
+    fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
+    document: {
+      visibilityState: "visible", title: "", hidden: false,
+      addEventListener() {}, removeEventListener() {},
+      getElementById: () => null,
+      createElement: () => ({ appendChild() {}, remove() {}, style: {}, dataset: {} }),
+      head: { appendChild() {} }, body: { appendChild() {} },
+    },
+    localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    window: {},
+  };
+  sandbox.window = sandbox;
+  let loadedFactory = null;
+  sandbox.window.__ModuleLoader__ = { load(handoff) { loadedFactory = handoff.factory; } };
+  vm.createContext(sandbox);
+  vm.runInContext(clientCode, sandbox);
+  assert.ok(loadedFactory !== null, "S3-12：产物 load 已注册 factory");
+  const mod = loadedFactory((spec) => {
+    if (spec === "react") return { createElement: () => ({}) };
+    throw new Error(`unexpected require: ${spec}`);
+  });
+  const disposers = [];
+  mod.apply({
+    get() { return undefined; },
+    effect(fn) { const d = fn(); disposers.push(d); return d; },
+  });
+  const clampFn = mod.apply.clampMaxConnections;
+  const diffFn = mod.apply.diffSettingsPayload;
+  assert.equal(typeof clampFn, "function", "S3-12：apply 挂载 clampMaxConnections 纯函数");
+  for (const d of disposers.splice(0)) d();
+
+  // 直接值断言：空/非有限 → undefined（不提交）；0/-5 钳到 1；2000 钳到 1024；
+  // 1-1024 内四舍五入整数（与 whTimeout clamp 同款 round 语义）
+  assert.equal(clampFn(undefined), undefined, "S3-12：undefined → undefined（空串形态不提交）");
+  assert.equal(clampFn(NaN), undefined, "S3-12：NaN → undefined（type=number 防御）");
+  assert.equal(clampFn(0), 1, "S3-12：0 → clamp 1（防 400 死锁）");
+  assert.equal(clampFn(-5), 1, "S3-12：-5 → clamp 1");
+  assert.equal(clampFn(2000), 1024, "S3-12：2000 → clamp 1024");
+  assert.equal(clampFn(16.4), 16, "S3-12：16.4 → round 16");
+  assert.equal(clampFn(16.5), 17, "S3-12：16.5 → round 17");
+  assert.equal(clampFn(16), 16, "S3-12：16 在界内原样");
+
+  // diff 语义：清空输入（undefined）→ diff 不含 maxConnections 键（PUT 不提交
+  // → 服务端保持原值）；输入 0 → clamp 后 diff 含 1（合法提交，不再 400）
+  const baseline = { maxConnections: 16, notifyTaskDone: true };
+  const cleared = JSON.parse(JSON.stringify(baseline));
+  cleared.maxConnections = undefined;
+  const clearedPayload = JSON.parse(JSON.stringify(diffFn(cleared, baseline)));
+  assert.ok(!("maxConnections" in clearedPayload), "S3-12：清空 maxConnections → diff 不含该键（保持原值）");
+  const clampedView = JSON.parse(JSON.stringify(baseline));
+  clampedView.maxConnections = 0; // type=number 输入 0 的原始形态
+  const clampedPayload = JSON.parse(JSON.stringify(diffFn({ ...clampedView, maxConnections: clampFn(0) }, baseline)));
+  assert.equal(clampedPayload.maxConnections, 1, "S3-12：输入 0 → clamp 后 diff 提交 1（服务端 200）");
+  console.log("S3-12/N-23 clampMaxConnections 真产物直测: OK");
+}

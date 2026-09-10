@@ -9,7 +9,7 @@
  * 静态强制）。
  */
 import type { NotifyConfig } from "../config/interface.ts";
-import type { SseHub, SystemNotifier } from "../server/interface.ts";
+import type { DeliverPayload, ResolvedTarget } from "../pipeline/interface.ts";
 import type { HistoryStore } from "../stores/interface.ts";
 import type { NotifyDetail } from "../text/interface.ts";
 
@@ -51,12 +51,37 @@ export interface KindRegistration {
 
 // ---------------------------------------------------------------- Channel SPI
 
-/** 频道能力声明（框架据此做降级：标题并入 / 超长截断）。 */
+/**
+ * 频道能力声明（框架据此做降级：标题并入 / 超长截断 / 重试 / 并发门）。
+ */
 export interface ChannelCapabilities {
-  /** 标题最大码点数；<=0 表示不支持标题（并入正文）。 */
+  /** 标题最大码点数；>0 时按此截断为独立标题；<=0 为「宽限截断」——按
+   *  maxBodyLen 截断但标题仍独立呈现（titleMaxLen<=0 的「并入正文」旧注释
+   *  与实现失真，见 L8-1；并入语义已改由 mergeTitleIntoBody 显式接管）。 */
   titleMaxLen: number;
   /** 正文最大码点数（超长按此截断）。 */
   maxBodyLen: number;
+  /**
+   * 显式声明「标题并入正文」（L8-1/S3-1 修复，取代 titleMaxLen<=0 的隐式
+   * 并入语义）：true 时框架把标题拼入正文（非空 title 以 `${title}\n${body}`
+   * 形态），title 位传空串、拼入后按 maxBodyLen 码点截断（长度权威 = 正文
+   * 截断，不再按 titleMaxLen 单独截断）。缺省/undefined = 不并入，标题独立
+   * 呈现——现状四个内置/出站频道均未声明，行为零变化。
+   */
+  mergeTitleIntoBody?: boolean;
+  /** 框架重试声明（B-3 上移）：缺省 = 不重试（webhook 零重试锁定）。 */
+  retry?: { maxRetries: number; backoffMs?: number };
+  /** 框架并发门声明（B-3 上移）：在途超限排队；缺省 = 无门。 */
+  maxInflight?: number;
+}
+
+/**
+ * 可重试错误协议（B-3）：投递失败由 framework 依据本标注决策重试
+ * （retryable=false 确定失败不重试；网络/超时/5xx → true）。缺省（未标注）
+ * 视同可重试——仅对声明了 retry 的 channel 生效。
+ */
+export interface RetryableError extends Error {
+  retryable?: boolean;
 }
 
 /** 频道最小实现契约。 */
@@ -102,26 +127,27 @@ export interface NotifierServiceInternal extends NotifierService {
 
 /** createNotifierService 的注入面（全部由 index.ts 装配层提供）。 */
 export interface NotifierServiceDeps {
-  /** 当前生效配置（settings 解析值；dispatch 时实时读取）。 */
+  /** 当前生效配置（settings 解析值；裁决时单刻快照——每次通知恰好读取 1 次，B-2）。 */
   current(): NotifyConfig;
   /** 总开关（组合层 enabled；false 时 send 一律 skipped）。 */
   enabled(): boolean;
-  /** SSE 推送枢纽（browser 频道）。 */
-  sse: SseHub;
-  /** 系统通知通道。 */
-  system: SystemNotifier;
   /** 历史存储（落盘 fire-and-forget）。 */
   history: HistoryStore;
   /** 日志出口。 */
   logger: { warn: (m: string) => void; info: (m: string) => void };
-  /** 配置驱动的出站频道（M2：bark 实例；enabled 过滤后返回，每次 dispatch 现取）。 */
+  /** 配置驱动的出站频道（M2：bark 实例；enabled 过滤后返回，随裁决快照同步并入池）。 */
   outboundChannels(): Array<{ id: string; channel: NotifyChannel }>;
+  /** 内置频道实例（browser/system；id + capabilities 入投递池，播放经 play 注入——D23）。 */
+  builtinChannels: Array<{ id: string; channel: NotifyChannel }>;
   /** 频道投递终态落盘（status 文件；错误文本已由调用方脱敏）。 */
   recordStatus(channelId: string, status: "ok" | "failed", error?: string): void;
   /** 投递终态事件（'wingsky-notify/sent'；装配层 try/catch 包裹，缺服务静默跳过）。 */
   emitSent(payload: NotifySentEvent): void;
   /** 动态 kind 确认写入（持久化到配置 allowKinds；fire-and-forget）。 */
   setConfirm(kind: string, confirmed: boolean): void;
+  /** 内置频道播放执行（裁决时快照解析的 spec 随 target 值传递——browser→
+   *  sse.broadcast(buildBrowserFrame(...))、system→system.notify(...)；D23）。 */
+  play(target: ResolvedTarget, payload: DeliverPayload): void | Promise<void>;
 }
 
 /** 投递终态事件负载（'wingsky-notify/sent'；旁观插件订阅面，铁律 1 的事件半边）。 */

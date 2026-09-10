@@ -11,7 +11,9 @@
  * - fail-soft 逐频道投递：单频道抛错不牵连
  */
 import assert from "node:assert/strict";
-import { createNotifierService, KIND_SEVERITY, BUILTIN_CHANNELS, createBarkChannel, createBarkGate, SEVERITY_LEVEL } from "../lib/index.js";
+import { createNotifierService, KIND_SEVERITY, BUILTIN_CHANNELS, createBarkChannel, SEVERITY_LEVEL, buildBrowserFrame } from "../lib/index.js";
+import { createBrowserChannel, createSystemChannel } from "../src/channels/interface.ts";
+import { quietWindowNow } from "./helpers.ts";
 
 // ---------------------------------------------------------------- fake deps
 
@@ -112,14 +114,20 @@ function makeService(cfgOverrides = {}, hooks = {}) {
   const sentEvents = [];
   /** 确认写入收集（M2：confirmKind 走配置）。 */
   const confirmCalls = [];
+  // PR2（D23）：内置频道经 index.ts 装配面注入——实例只承载 id+capabilities，
+  // 播放决议经 DeliverDeps.play 值传递（browser→buildBrowserFrame、system→notify）
+  const browserChannel = createBrowserChannel({ sse });
+  const systemChannel = createSystemChannel({ system });
   const service = createNotifierService({
     current: hooks.current ?? (() => cfg),
     enabled,
-    sse,
-    system,
     history,
     logger,
     outboundChannels: hooks.outboundChannels ?? (() => []),
+    builtinChannels: [
+      { id: BUILTIN_CHANNELS.browser, channel: browserChannel },
+      { id: BUILTIN_CHANNELS.system, channel: systemChannel },
+    ],
     recordStatus: (channelId, status, error) => {
       terminalStates.push({ channelId, status, error });
       if (hooks.recordStatus) hooks.recordStatus(channelId, status, error);
@@ -136,6 +144,17 @@ function makeService(cfgOverrides = {}, hooks = {}) {
       else allowed.delete(kind);
       cfg.allowKinds = [...allowed];
       if (hooks.setConfirm) hooks.setConfirm(kind, confirmed);
+    },
+    play: (target, payload) => {
+      if (target.id === BUILTIN_CHANNELS.system) {
+        return system.notify(target.dispatch.pop, target.dispatch.sound, payload.title, payload.body).then((ok) => {
+          if (!ok) throw new Error("system notification failed (self-play or command error)");
+        });
+      }
+      if (target.id === BUILTIN_CHANNELS.browser) {
+        sse.broadcast(buildBrowserFrame(payload, target.dispatch));
+      }
+      return undefined;
     },
   });
   return { service, sse, system, history, terminalStates, sentEvents, confirmCalls };
@@ -234,27 +253,106 @@ function makeService(cfgOverrides = {}, hooks = {}) {
 }
 
 {
-  // B-2 基线（PR0 红测先行 2）：每次 sendKind 使用当时的 current() 配置——裁决
-  // 集合与分派参数同刻一致、热更即时生效（现状结构：单次 sendKind 内 current()
-  // 读取 ≥2 次——allChannels 集合判定 + dispatchBrowser/System 播放决议）。
-  // PR2 current() 单刻快照化后：读取次数断言将更新为「裁决时一次快照」，
-  // 分派参数断言保留（投递仍按快照决议）——本用例是行为判别基线。
+  // B-2 快照化（PR2 红测先行 2 判别更新）：每次 sendKind 恰好读取 current() 1 次
+  // （单刻快照，B-2 行为变更）；裁决（enabled/确认/免打扰/路由）与播放决议全部
+  // 基于该快照解析——裁决与投递之间改配置不影响本次投递（N-18 另锁）。T2-3
+  // 起脱敏开关也经该快照解析并随裁决结果携带（不引入第二次 current()）。
   let reads = 0;
   let cfg = defaultCfg({ browserNotify: true, browserSound: true, systemNotify: true, systemSound: true });
   const sys = fakeSystem();
   const { service, sse } = makeService({}, { current: () => { reads += 1; return cfg; }, system: sys });
   service.sendKind("test", {}, { bypassQuiet: true });
-  const firstReads = reads;
-  assert.ok(firstReads >= 2, "B-2 基线：单次 sendKind 内 current() 读取 ≥2 次（PR2 快照化后此断言更新）");
+  assert.equal(reads, 1, "B-2：单次 sendKind 内 current() 恰好 1 次（单刻快照）");
   const frame1 = sse.frames[sse.frames.length - 1];
-  assert.equal(frame1.sound.mode, "system", "B-2：browserSound=true → system 模式帧（读当时配置）");
-  // 配置热更 → 下次 sendKind 必须用新版本（不缓存旧配置）
+  assert.equal(frame1.sound.mode, "system", "B-2：browserSound=true → system 模式帧（快照内解析）");
+  // 配置热更 → 下次 sendKind 重新取快照（跨次不缓存）且用新版本
   cfg = defaultCfg({ browserNotify: true, browserSound: false, systemNotify: true, systemSound: true });
   service.sendKind("test", {}, { bypassQuiet: true });
+  assert.equal(reads, 2, "B-2：第二次 sendKind 重新读取 current（跨次不缓存）");
   const frame2 = sse.frames[sse.frames.length - 1];
   assert.equal(frame2.sound.mode, "silent", "B-2：browserSound=false → silent 模式帧（热更即时生效）");
-  assert.ok(reads > firstReads, "B-2：第二次 sendKind 重新读取 current（不缓存）");
-  console.log("B-2 基线 裁决/分派同刻配置一致性: OK");
+  console.log("B-2 单刻快照（恰好 1 次 + 跨次不缓存）: OK");
+}
+
+{
+  // N-18（B-2 快照化 L3）：裁决→投递间改配置不影响本次投递——current 首次返回
+  // cfg1、之后返回 cfg2（模拟裁决后配置即被改写）；本次投递的集合判定与播放
+  // 决议必须全部来自裁决时刻的 cfg1 快照，不得混入 cfg2。
+  let calls = 0;
+  const cfg1 = defaultCfg({ browserNotify: true, browserSound: "chime", systemNotify: true, systemSound: true });
+  const cfg2 = defaultCfg({ browserNotify: true, browserSound: false, systemNotify: false, systemSound: false });
+  const sys = fakeSystem();
+  const { service, sse } = makeService({}, {
+    current: () => { calls += 1; return calls === 1 ? cfg1 : cfg2; },
+    system: sys,
+  });
+  const r = service.sendKind("test", {}, { bypassQuiet: true });
+  assert.equal(calls, 1, "N-18：裁决恰好读取 1 次快照（无二次读取）");
+  const frame = sse.frames[sse.frames.length - 1];
+  assert.deepEqual(frame.sound, { mode: "selfplay", tone: "chime" }, "N-18：播放决议来自裁决时刻快照（cfg1 的 chime），未被 cfg2 改写");
+  assert.ok(r.some((x) => x.channelId === "system" && x.status === "ok"), "N-18：system 仍按 cfg1 快照投递（cfg2 关掉 system 不影响本次）");
+  console.log("N-18 裁决→投递间改配置不影响本次投递: OK");
+}
+
+{
+  // N-25（B-9 统一裁决 L3）：send() 动态 kind 与 sendKind 统一过裁决全链——
+  // enabled=false / 免打扰期间动态 kind 从「照常投递」变 skipped（B-9 登记；
+  // 现状 sdk/service.ts:165-197 绕过 enabled 与免打扰，先红测锁定再改）。
+  const { service: svcA, sse: sseA, history: histA } = makeService({}, { enabled: () => false });
+  svcA.registerKind({ id: "demo:off", label: "OFF" });
+  svcA.confirmKind("demo:off", true);
+  const rA = await svcA.send({ source: "@example/demo", kind: "demo:off", severity: "info", body: "y" });
+  assert.equal(rA[0].status, "skipped");
+  assert.equal(rA[0].error, "enabled=false");
+  assert.equal(sseA.frames.length, 0, "N-25：enabled=false 动态 kind 不触达任何频道");
+  assert.ok(!histA.entries.some((e) => e.kind === "demo:off"), "N-25：disabled 不落史（D15 保持）");
+  // 免打扰期间（动态 kind 未豁免）
+  const { service: svcB, sse: sseB, history: histB } = makeService({ quietHours: quietWindowNow() });
+  svcB.registerKind({ id: "demo:q", label: "Q" });
+  svcB.confirmKind("demo:q", true);
+  const rB = await svcB.send({ source: "@example/demo", kind: "demo:q", severity: "info", body: "z" });
+  assert.equal(rB[0].status, "skipped");
+  assert.equal(rB[0].error, "quiet");
+  assert.equal(sseB.frames.length, 0, "N-25：免打扰期间动态 kind 不触达");
+  assert.ok(histB.entries.some((e) => e.kind === "demo:q" && e.suppressed === "quiet"), "N-25：免打扰 suppressed 落史");
+  console.log("N-25 动态 kind 统一过裁决（enabled/免打扰 → skipped）: OK");
+}
+
+{
+  // P1-3（生命周期条款）：两个并发 sendKind 不串快照——current 按调用序返回不同
+  // 配置，各自的裁决/投递必须用各自快照，互不污染；第一次的异步终态在第二次
+  // 之后决议，仍按第一次的快照决议与载荷上报。
+  let calls = 0;
+  const cfgA = defaultCfg({ browserNotify: false, browserSound: false, systemNotify: true, systemSound: "ding" });
+  const cfgB = defaultCfg({ browserNotify: false, browserSound: false, systemNotify: true, systemSound: "bell" });
+  const deferred = [];
+  const sys = {
+    notify(pop, tone, title, message) {
+      return new Promise((resolve) => deferred.push({ resolve, pop, tone, title, message }));
+    },
+  };
+  const { service, terminalStates, sentEvents } = makeService(
+    { browserNotify: false, browserSound: false, systemNotify: true, systemSound: true },
+    { current: () => { calls += 1; return calls === 1 ? cfgA : cfgB; }, system: sys },
+  );
+  service.sendKind("test", {}, { bypassQuiet: true }); // 第一次：快照 = cfgA
+  service.sendKind("test", {}, { bypassQuiet: true }); // 第二次：快照 = cfgB（第一次终态未决议）
+  assert.equal(calls, 2, "P1-3：两次 sendKind 各取一次快照");
+  assert.deepEqual(
+    { pop: deferred[0].pop, tone: deferred[0].tone },
+    { pop: true, tone: "ding" },
+    "P1-3：第一次投递按 cfgA 快照决议（tone=ding）",
+  );
+  assert.deepEqual(
+    { pop: deferred[1].pop, tone: deferred[1].tone },
+    { pop: true, tone: "bell" },
+    "P1-3：第二次投递按 cfgB 快照决议（tone=bell，不串）",
+  );
+  deferred[0].resolve(true);
+  await pollUntil(() => terminalStates.some((s) => s.channelId === "system"));
+  const ev = sentEvents.find((e) => e.channelId === "system");
+  assert.ok(ev && ev.status === "ok" && ev.message.includes("通知链路工作正常"), "P1-3：第一次终态按自身载荷上报（不受第二次影响）");
+  console.log("P1-3 并发 sendKind 不串快照: OK");
 }
 
 {
@@ -396,7 +494,7 @@ function fakeOutbound(id, mode = "sync") {
     assert.equal(SEVERITY_LEVEL.info, "passive");
 
     const cfg = { id: "phone", type: "bark", baseUrl: "http://127.0.0.1:40280", deviceKey: "SECRETKEY22", enabled: true, sound: "minuet", group: "dsh", volume: "0.8" };
-    const ch = createBarkChannel(cfg, createBarkGate());
+    const ch = createBarkChannel(cfg);
     const p = ch.send({ title: "T", body: "B", kind: "error", ts: 123, severity: "failure" });
     assert.ok(p && typeof p.then === "function", "send 返回在途 promise");
     await p;
@@ -411,12 +509,12 @@ function fakeOutbound(id, mode = "sync") {
     assert.equal(body.volume, "0.8", "未知参数透传（Bark 前向兼容）");
     await ch.send({ title: "T", body: "B", kind: "test", ts: 1, severity: "info" });
     assert.equal(JSON.parse(calls[1].init.body).level, "passive", "info → passive");
-    const ch2 = createBarkChannel({ ...cfg, level: "critical" }, createBarkGate());
+    const ch2 = createBarkChannel({ ...cfg, level: "critical" });
     await ch2.send({ title: "T", body: "B", kind: "error", ts: 2, severity: "failure" });
     assert.equal(JSON.parse(calls[2].init.body).level, "critical", "显式 level 覆盖映射");
 
     // levels（kind→level 稀疏映射矩阵）：优先级 levels[kind] > level > severity 映射
-    const ch3 = createBarkChannel({ ...cfg, level: "critical", levels: { error: "timeSensitive", question: "active" } }, createBarkGate());
+    const ch3 = createBarkChannel({ ...cfg, level: "critical", levels: { error: "timeSensitive", question: "active" } });
     await ch3.send({ title: "T", body: "B", kind: "error", ts: 3, severity: "failure" });
     assert.equal(JSON.parse(calls[3].init.body).level, "timeSensitive", "levels[kind] 优先于实例级 level");
     await ch3.send({ title: "T", body: "B", kind: "question", ts: 4, severity: "info" });
@@ -427,11 +525,11 @@ function fakeOutbound(id, mode = "sync") {
     // severity 缺失 + levels 命中 → 有 level；severity 缺失 + levels 未命中 → body 无 level
     await ch3.send({ title: "T", body: "B", kind: "question", ts: 6 });
     assert.equal(JSON.parse(calls[6].init.body).level, "active", "severity 缺失 + levels 命中仍出 level");
-    const ch4 = createBarkChannel(cfg, createBarkGate());
+    const ch4 = createBarkChannel(cfg);
     await ch4.send({ title: "T", body: "B", kind: "question", ts: 7 });
     assert.equal("level" in JSON.parse(calls[7].init.body), false, "severity 缺失且无覆盖 → body 无 level");
     // 动态 kind 键（含特殊字符）作 levels 键正常命中
-    const ch5 = createBarkChannel({ ...cfg, levels: { "idle-archive:due": "timeSensitive" } }, createBarkGate());
+    const ch5 = createBarkChannel({ ...cfg, levels: { "idle-archive:due": "timeSensitive" } });
     await ch5.send({ title: "T", body: "B", kind: "idle-archive:due", ts: 8, severity: "info" });
     assert.equal(JSON.parse(calls[8].init.body).level, "timeSensitive", "动态 kind 键命中");
   } finally {
@@ -441,7 +539,9 @@ function fakeOutbound(id, mode = "sync") {
 }
 
 {
-  // 失败路径：4xx 不重试且错误脱敏；5xx 重试 ×2 后成功
+  // 失败路径（B-3 上移后）：channel 单次投递 + 错误协议标注——4xx 确定失败
+  // （retryable:false）且脱敏；5xx 可重试（retryable:true）。重试 ×2 与退避
+  // 由框架 deliver 承载，直测见 unit-pipeline-contract（N-9b）与 e2e-outbound。
   const origFetch = globalThis.fetch;
   try {
     let n = 0;
@@ -450,26 +550,27 @@ function fakeOutbound(id, mode = "sync") {
       n += 1;
       return { ok: false, status: 400, json: async () => ({}), text: async () => "failed to get [SECRETKEY22] device token from database" };
     };
-    const ch = createBarkChannel({ id: "p", type: "bark", baseUrl: "https://h", deviceKey: "SECRETKEY22", enabled: true }, createBarkGate());
-    let errText = "";
-    await ch.send({ title: "T", body: "B", kind: "test", ts: 1 }).catch((e) => { errText = e.message; });
+    const ch = createBarkChannel({ id: "p", type: "bark", baseUrl: "https://h", deviceKey: "SECRETKEY22", enabled: true });
+    let lastErr = null;
+    await ch.send({ title: "T", body: "B", kind: "test", ts: 1 }).catch((e) => { lastErr = e; });
     assert.equal(n, 1, "4xx 确定失败不重试");
-    assert.ok(errText.includes("device token"), "错误含响应摘要");
-    assert.ok(!errText.includes("SECRETKEY22"), "错误文本无 device key 明文（评审 P0-4）");
+    assert.ok(lastErr.message.includes("device token"), "错误含响应摘要");
+    assert.ok(!lastErr.message.includes("SECRETKEY22"), "错误文本无 device key 明文（评审 P0-4）");
+    assert.equal(lastErr.retryable, false, "4xx → retryable:false（框架据此不重试）");
 
     let attempts = 0;
     globalThis.fetch = async (url) => {
       if (!String(url).startsWith("https://h/")) return origFetch(url);
       attempts += 1;
-      if (attempts <= 2) return { ok: false, status: 503, json: async () => ({}), text: async () => "" };
-      return { ok: true, status: 200, json: async () => ({ code: 200 }), text: async () => "" };
+      return { ok: false, status: 503, json: async () => ({}), text: async () => "" };
     };
-    await ch.send({ title: "T", body: "B", kind: "test", ts: 2 });
-    assert.equal(attempts, 3, "5xx 重试 ×2（1+2=3 次尝试）后成功");
+    await ch.send({ title: "T", body: "B", kind: "test", ts: 2 }).catch((e) => { lastErr = e; });
+    assert.equal(attempts, 1, "5xx 单次投递即失败（channel 不重试，重试是框架职责）");
+    assert.equal(lastErr.retryable, true, "5xx → retryable:true（框架据此重试）");
   } finally {
     globalThis.fetch = origFetch;
   }
-  console.log("⑥b bark 4xx 不重试+脱敏 / 5xx 重试: OK");
+  console.log("⑥b bark 4xx 不重试+脱敏 / 5xx retryable 标注: OK");
 }
 
 // ---------------------------------------------------------------- ⑦ 路由解析三条契约

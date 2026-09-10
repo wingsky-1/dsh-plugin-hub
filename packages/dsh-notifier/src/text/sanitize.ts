@@ -1,8 +1,10 @@
 /**
- * dsh-notifier — 文本域：错误文本脱敏（安全模块，纯函数）。
+ * dsh-notifier — 文本域：通知文本脱敏（安全模块，纯函数）。
  *
- * 安全定位：agent/error、审批理由、提问文本进入通知与历史前必须经本文件
- * 脱敏（「文本可能内嵌命令回显/路径/凭据片段」的外泄面收敛到可读摘要）。
+ * 安全定位：通知正文/标题进入通知与历史前必须经本文件脱敏（「文本可能内嵌
+ * 命令回显/路径/凭据片段」的外泄面收敛到可读摘要）；B-1 统一时点 = 渲染后、
+ * 任何落史/投递前（sanitizeNoticeContent 单点），出口级 scrub（频道凭据等）
+ * 是独立固定出口、不并入本文件。
  * SANITIZE_RULES 有序表是顺序敏感的安全数据——顺序硬约束与已证伪清单的
  * why 注释整体保留（改动前必读），任何新增规则不得破坏既有顺序语义。
  */
@@ -61,6 +63,16 @@ const SANITIZE_RULES: ReadonlyArray<readonly [RegExp, string]> = [
   [/(?<![A-Za-z0-9._%+-])(?<!<redacted)[A-Za-z0-9._%+-]+@[A-Za-z][A-Za-z0-9.-]*\.[A-Za-z]{2,}/gu, "<email>"],
 ];
 
+/** SANITIZE_RULES 有序表循环——sanitizeErrorText 与 sanitizeNoticeContent 的
+ *  唯一实现（两条出口脱敏结果同源，测试锁同样本输出一致）。 */
+function sanitizeRules(text: string): string {
+  let s = text;
+  for (const [pattern, replacement] of SANITIZE_RULES) {
+    s = s.replace(pattern, replacement);
+  }
+  return s;
+}
+
 /**
  * 错误文本脱敏：按 SANITIZE_RULES 有序表掩蔽常见敏感特征（用户路径、私钥、
  * 连接串凭据、各类令牌、密钥赋值、邮箱），再截断。
@@ -69,9 +81,23 @@ const SANITIZE_RULES: ReadonlyArray<readonly [RegExp, string]> = [
  * @returns 脱敏并截断（默认 300 字符）后的错误文本。
  */
 export function sanitizeErrorText(text: unknown, maxLen = 300): string {
-  let s = String(text);
-  for (const [pattern, replacement] of SANITIZE_RULES) {
-    s = s.replace(pattern, replacement);
+  return sanitizeRules(String(text)).slice(0, maxLen);
+}
+
+/**
+ * 通知脱敏统一入口（B-1：渲染完成后、任何落史/投递前调用一次，供 sendKind /
+ * send 两入口复用；suppressed/merged 落史与投递三路径全部消费其结果）。
+ * enabled=false（sanitizeContent=false）时标题与正文均原样 String 返回——
+ * 通知与历史均明文（B-4）。
+ * title 走 sanitizeErrorText 显式短上限 64（模板拼接产物的展示语义上限；
+ * 沿用既有 UTF-16 单元截断，码点安全切分留待复核）；body 只打码不截断——
+ * 长度权威唯一 = 投递频道的 capabilities.maxBodyLen（deliver 视频道截断），
+ * 此处截断会造成历史明文超长片段与双截断交错。
+ * @returns { title, body } 均脱敏（enabled=false 时原样）后的字符串。
+ */
+export function sanitizeNoticeContent(notice: { title: unknown; body: unknown }, enabled: boolean): { title: string; body: string } {
+  if (enabled === false) {
+    return { title: String(notice.title), body: String(notice.body) };
   }
-  return s.slice(0, maxLen);
+  return { title: sanitizeErrorText(notice.title, 64), body: sanitizeRules(String(notice.body)) };
 }

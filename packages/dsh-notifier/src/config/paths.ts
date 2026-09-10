@@ -37,6 +37,13 @@ export function statusFile() {
   return join(dshHome(), "dsh-notifier-status.json");
 }
 
+/** SSE seq 计数器持久化文件路径（R-6/D22 选项 A：服务端重启续计数；与
+ *  statusFile 同目录同命名风格；DSH_HOME 感知，#510 同纪律——隔离 home 的
+ *  seq 文件不被真实 ~/.dsh 污染）。 */
+export function seqFile() {
+  return join(dshHome(), "notifier-seq.json");
+}
+
 /** toast 脚本路径（本插件 lib 下）。 */
 export function toastScriptPath() {
   return join(dirname(fileURLToPath(import.meta.url)), "toast.ps1");

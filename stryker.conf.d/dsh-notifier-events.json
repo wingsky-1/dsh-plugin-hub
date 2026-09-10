@@ -1,9 +1,9 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-notifier/src/server/routes.ts",
-    "packages/dsh-notifier/src/server/sse-bus.ts",
-    "packages/dsh-notifier/src/server/system-notifier.ts",
+    "packages/dsh-notifier/src/events/event-handlers.ts",
+    "packages/dsh-notifier/src/events/aggregate.ts",
+    "packages/dsh-notifier/src/events/agent-session.ts",
     "!packages/dsh-notifier/src/**/interface.ts",
     "!packages/dsh-notifier/src/client/**"
   ],
@@ -65,9 +65,9 @@
     ]
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-notifier-server.json"
+    "fileName": "coverage/mutation/dsh-notifier-events.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-notifier-server.json",
-  "_comment": "#669 PR2 T2-7 按域重划：server——服务域（routes/sse-bus/system-notifier；index.ts 装配层移出归 sdk 段）；testFiles 含 unit-server-sse-bus/unit-system-notifier（N-11/N-12 注入面直测杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "incrementalFile": "coverage/mutation/incremental-notifier-events.json",
+  "_comment": "#669 PR2 T2-7 按域重划：events——核心状态机事件面（event-handlers/aggregate/agent-session，S3-30 修复入面）；testFiles 含 unit-event-handlers/unit-aggregate（N-6/N-7 直测杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }

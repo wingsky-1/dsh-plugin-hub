@@ -10,15 +10,7 @@
       "isType": false
     },
     {
-      "name": "BARK_MAX_INFLIGHT",
-      "isType": false
-    },
-    {
       "name": "BARK_RESERVED_KEYS",
-      "isType": false
-    },
-    {
-      "name": "BARK_RETRIES",
       "isType": false
     },
     {
@@ -238,6 +230,10 @@
       "isType": false
     },
     {
+      "name": "buildBrowserFrame",
+      "isType": false
+    },
+    {
       "name": "buildSoundCommand",
       "isType": false
     },
@@ -251,10 +247,6 @@
     },
     {
       "name": "createBarkChannel",
-      "isType": false
-    },
-    {
-      "name": "createBarkGate",
       "isType": false
     },
     {
@@ -415,9 +407,7 @@
     "export declare class NotifierSettingsBridge implements SettingsBridge { entry: Record<string, unknown>; private current; private source; private attachedService; private attachedScope; constructor(ctx: Context, config?: NotifierApplyConfig); getCurrent: () => NotifyConfig; getSource: () => NotifyConfig; isWritable: () => boolean; getScope: () => OwnerScopeLike | undefined; getService: () => SettingsServiceLike | undefined; readUser: () => { user: Record<string, unknown>; revision?: number; }; updateConfig: (patch: object, expectedRevision?: number) => Promise<void>; confirmKindToConfig: (kind: string, confirmed: boolean) => Promise<void>; }",
     "export declare const ASSEMBLY_SETTING_KEYS: readonly [\"configFile\", \"toastScript\", \"historyFile\", \"statusFile\", \"enabled\"];",
     "export declare const BARK_ID_PATTERN: RegExp;",
-    "export declare const BARK_MAX_INFLIGHT = 2;",
     "export declare const BARK_RESERVED_KEYS: readonly string[];",
-    "export declare const BARK_RETRIES = 2;",
     "export declare const BARK_TIMEOUT_MS = 10000;",
     "export declare const BUILTIN_CHANNELS: { readonly browser: \"browser\"; readonly system: \"system\"; };",
     "export declare const CHANNEL_SECRET_FIELDS: Record<string, readonly string[]>;",
@@ -431,6 +421,7 @@
     "export declare const MAC_SOUND_NAMES: Readonly<Record<SoundId, string>>;",
     "export declare const MIGRATED_BAK_SUFFIX = \".migrated.bak\";",
     "export declare const NOTIFY_KINDS: Record<string, { title: string; message: (detail: NotifyDetail) => string; }",
+    "export declare const PROTOTYPE_POLLUTION_KEYS: readonly string[];",
     "export declare const QUIET_ALLOW_KINDS: readonly [\"ask\", \"question\", \"done\", \"subagent-done\", \"error\", \"turn-end\"];",
     "export declare const ROUTES: { config: string; events: string; health: string; test: string; history: string; status: string; kinds: string; };",
     "export declare const SECRET_MASK = \"********\";",
@@ -453,27 +444,33 @@
     "export declare function apply(ctx: Context, config?: NotifierApplyConfig): void;",
     "export declare function apply(ctx: any): void;",
     "export declare function applyConfigPatch(deps: RouteDeps, payload: unknown): Promise<PatchResult>;",
+    "export declare function buildBrowserFrame(payload: { title: string; body: string; kind: string; ts: number; severity?: NotifySeverity; }",
     "export declare function buildRoutes(deps: RouteDeps): WebRoute[];",
     "export declare function buildSoundCommand(platform: string, tone: SystemTone, player: string | undefined): string[] | null;",
     "export declare function buildSystemCommand(platform: string, title: string, message: string, options: { sound: SoundSetting; selfPlay?: boolean; notifySendAvailable?: boolean; toastScript: string; }",
     "export declare function configFile(): string;",
-    "export declare function createBarkChannel(cfg: BarkChannelConfig, gate: BarkGate): NotifyChannel;",
-    "export declare function createBarkGate(): BarkGate;",
+    "export declare function createAdjudicator(deps: AdjudicateDeps): (opts: AdjudicateOptions) => AdjudicateResult;",
+    "export declare function createBarkChannel(cfg: BarkChannelConfig): NotifyChannel;",
+    "export declare function createBrowserChannel(options: { sse: SseHub; }",
+    "export declare function createDeliverer(deps: DeliverDeps): Deliverer;",
     "export declare function createDoneBatcher(options: DoneBatcherOptions): DoneBatcher;",
     "export declare function createEventHandlers(deps: EventHandlersDeps): EventHandlers;",
     "export declare function createHistoryStore(options: { file: string; maxAgeDays: () => number; warn: (message: string) => void; }",
     "export declare function createNotifierService(deps: NotifierServiceDeps): NotifierServiceInternal;",
     "export declare function createOutboundChannelResolver(getChannels: () => ChannelConfig[] | undefined): () => Array<{ id: string; channel: NotifyChannel; }",
     "export declare function createSettingsBridge(ctx: Context, config?: NotifierApplyConfig): SettingsBridge;",
-    "export declare function createSseHub(options: { getMaxConnections: () => number; heartbeatMs?: number; stalledTimeoutMs?: number; maxAgeMs?: number; idleTimeoutMs?: number; }",
+    "export declare function createSseHub(options: { getMaxConnections: () => number; heartbeatMs?: number; stalledTimeoutMs?: number; maxAgeMs?: number; idleTimeoutMs?: number; loadSeq?: () => number; saveSeq?: (seq: number) => void; seqFlushMs?: number; }",
     "export declare function createStatusStore(options: { file: string; warn: (message: string) => void; }",
+    "export declare function createSystemChannel(options: { system: SystemNotifier; }",
     "export declare function createSystemNotifier(options: { toastScript: string; warn: (message: string) => void; execFileImpl?: typeof execFile; spawnImpl?: typeof spawn; killTimeoutMs?: number; }",
     "export declare function createWebhookChannel(cfg: WebhookChannelConfig): NotifyChannel;",
     "export declare function formatDuration(ms: number): string;",
     "export declare function getNotifierService(ctx: unknown): NotifierService | undefined;",
     "export declare function historyFile(): string;",
     "export declare function installNotifierSettings(ctx: Context, entry: Record<string, unknown>, hooks: NotifierSettingsHooks): void;",
+    "export declare function isBuiltinKind(kind: string): boolean;",
     "export declare function isInQuietHours(now: Date, quietHours: QuietHoursConfig | undefined): boolean;",
+    "export declare function isKindConfirmed(kind: string, kindRegistry: Map<string, { label: string; }",
     "export declare function isSoundSetting(v: unknown): v is SoundSetting;",
     "export declare function isSubagentOf(agent: Agent | undefined, ownership?: SubagentOwnership): boolean;",
     "export declare function isWebhookHeaderName(v: unknown): boolean;",
@@ -487,15 +484,18 @@
     "export declare function priorityFor(preset: WebhookPreset, severity: NotifySeverity | undefined): string;",
     "export declare function redactConfigView<T>(value: T): T;",
     "export declare function renderWebhookBody(template: string, preset: WebhookPreset, vars: WebhookRenderVars): string;",
+    "export declare function resolveRoutes(args: { kind: string; onlyChannel?: string; pool: ChannelPoolEntry[]; snapshot: NotifyConfig; }",
     "export declare function resolveSoundSetting(cfg: Pick<NotifyConfig, \"browserSound\" | \"systemSound\" | \"notifySound\">, channel: SoundChannel): SoundSetting;",
     "export declare function resolveTurnEvidence(agent: any, state: AgentState, eventStreamEnds: Map<string, { turn: number; kind: string; }",
     "export declare function sanitizeErrorText(text: unknown, maxLen?: number): string;",
     "export declare function sanitizePatchSettings(raw: unknown): Partial<NotifyConfig> | null;",
     "export declare function sanitizeSettings(raw: unknown): Partial<NotifyConfig> | null;",
+    "export declare function seqFile(): string;",
     "export declare function sessionTitleOf(agent: Agent | undefined): string | undefined;",
     "export declare function statusFile(): string;",
     "export declare function toastScriptPath(): string;",
     "export declare function toneFileCandidates(platform: string, tone: SystemTone): readonly string[];",
+    "export declare function truncateCodePoints(s: string, max: number): string;",
     "export declare function unmaskChannels(patchChannels: unknown, userChannels: unknown): { ok: true; channels: unknown[]; }",
     "export declare function validateSettings(raw: unknown): SettingInvalid | null;"
   ]

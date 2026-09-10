@@ -16,7 +16,7 @@
  *   /200 滚动上限（D6）；免打扰拦截 suppressed:quiet（D3）。
  */
 import { join } from "node:path";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { assert, makeNotifier, fakeReq, makeRes, waitForHistory, turnPair, quietWindowNow } from "./helpers.ts";
 import { ROUTES } from "../lib/index.js";
@@ -480,6 +480,40 @@ try {
     const { rec, res } = makeRes();
     await configRoute.handler(bodyReq({ patch: { notifyQuestion: false } }), res);
     assert.equal(rec.status, 200, "缺省 expectedRevision 的 PUT 成功");
+  }
+
+  // D19（L8-5）：expectedRevision 非非负整数 → 400 显式拒（不再静默忽略）；
+  // null 同省略 → 200（独立实例，避免污染主实例 revision 链）
+  {
+    function bodyReq(payload) {
+      const text = JSON.stringify(payload);
+      return {
+        method: "PUT",
+        url: "/",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+        on(event, cb) {
+          if (event === "data") setTimeout(() => cb(Buffer.from(text)), 0);
+          else if (event === "end") setTimeout(cb, 1);
+          return this;
+        },
+        destroy() {},
+      };
+    }
+    const { routes: d19Routes, dispose: d19Dispose } = makeNotifier(work, { historyFile: join(work, "history-d19.jsonl") });
+    const cfgD19 = d19Routes.find((r) => r.path === ROUTES.config);
+    for (const bad of ["abc", 1.5, -1]) {
+      const put = makeRes();
+      await cfgD19.handler(bodyReq({ patch: { notifyAsk: false }, expectedRevision: bad }), put.res);
+      assert.equal(put.rec.status, 400, `expectedRevision=${JSON.stringify(bad)} → 400`);
+      const body = JSON.parse(put.rec.text);
+      assert.match(body.error.error, /expectedRevision/, "400 指明 expectedRevision 键");
+      assert.match(body.error.hint, /非负整数/, "400 hint 说明必须为非负整数或省略");
+    }
+    const putNull = makeRes();
+    await cfgD19.handler(bodyReq({ patch: { notifyAsk: false }, expectedRevision: null }), putNull.res);
+    assert.equal(putNull.rec.status, 200, "null expectedRevision 同省略 → 200");
+    d19Dispose();
   }
 
   // ===== M2：Bark channels 凭据脱敏与掩码回填（issue #366，评审 P0-1/P0-2）=====
@@ -1030,7 +1064,10 @@ try {
   }
 
   // events ?since 回放（独立上下文，seq 从 1 起）：断线补拉不丢尾部事件（C7）
+  // PR2 R-6（D22 选项 A）：seq 持久化后本文件各实例共享 work 目录的 seq 文件，
+  // 先清复位保证「本块独立、seq 从 1 起」语义不变（其余块无绝对 seq 断言不受影响）
   {
+    rmSync(join(work, "notifier-seq.json"), { force: true });
     const notifier2 = makeNotifier(work, { historyFile: join(work, "history-since.jsonl") });
     const { routes: routes2 } = notifier2;
     const eventsRoute2 = routes2.find((r) => r.path === ROUTES.events);
@@ -1212,6 +1249,87 @@ try {
       assert.equal(r.state.destroyCalls, 1, "兜底 evict 只销毁一次");
       dispose();
     }
+  }
+
+  // N-22（C3-1，D22 选项 A）：服务端重启后 seq 续计数——已打开页面重连不丢帧。
+  // 独立子目录隔离 seq 文件（防与其余实例共用 work/notifier-seq.json 的多写者
+  // 串扰——生产单实例单进程无此问题，测试多实例需各归其位）。
+  {
+    const n22Dir = join(work, "n22");
+    mkdirSync(n22Dir, { recursive: true });
+    const shared = { historyFile: join(n22Dir, "history.jsonl"), statusFile: join(n22Dir, "status.json") };
+    // hub1：5 条测试通知广播（seq 1..5）
+    const n1 = makeNotifier(work, shared);
+    const test1 = n1.routes.find((r) => r.path === ROUTES.test);
+    for (let i = 0; i < 5; i += 1) {
+      await test1.handler(fakeReq({ method: "POST" }), makeRes().res);
+    }
+    n1.dispose(); // 正常停止：dispose 同步落盘 seq=5（零丢失）
+    // hub2 重启：loadSeq=5 → 新广播 seq=6（> 已打开页面 lastSeq=5，客户端
+    // 判重 data.seq <= lastSeq 不丢弃；修复前重启归零 → seq=1 → 永久静默）
+    const n2 = makeNotifier(work, shared);
+    const events2 = n2.routes.find((r) => r.path === ROUTES.events);
+    const test2 = n2.routes.find((r) => r.path === ROUTES.test);
+    const { rec, res } = makeRes();
+    await events2.handler(fakeReq({ url: "/api/dsh-notifier/events?since=5" }), res);
+    await test2.handler(fakeReq({ method: "POST" }), makeRes().res);
+    assert.match(rec.text, /"seq":6/, "N-22：重启后新广播帧 seq=6（续计数，lastSeq=5 的页面不丢帧）");
+    n2.dispose();
+  }
+
+  // TDD④ L3 级联：seq 文件损坏/缺文件 → 回退 0（损坏 warn + 首帧 seq=1；缺文件
+  // = 首启静默无 warn）
+  {
+    const n22bDir = join(work, "n22b");
+    mkdirSync(n22bDir, { recursive: true });
+    const shared = { historyFile: join(n22bDir, "history.jsonl"), statusFile: join(n22bDir, "status.json") };
+    writeFileSync(join(n22bDir, "notifier-seq.json"), "{corrupt", "utf8");
+    const warns = [];
+    const n3 = makeNotifier(work, shared, { logger: { warn: (m) => warns.push(m), info: () => {} } });
+    const events3 = n3.routes.find((r) => r.path === ROUTES.events);
+    const test3 = n3.routes.find((r) => r.path === ROUTES.test);
+    const { rec, res } = makeRes();
+    await events3.handler(fakeReq({}), res);
+    await test3.handler(fakeReq({ method: "POST" }), makeRes().res);
+    assert.match(rec.text, /"seq":1/, "TDD④：seq 文件损坏 → 回退 0（首帧 seq=1）");
+    assert.ok(warns.some((w) => w.includes("seq")), "TDD④：损坏回退有 warn 日志");
+    n3.dispose();
+    // 缺文件（首启）：静默回退 0，不 warn
+    rmSync(join(n22bDir, "notifier-seq.json"), { force: true });
+    const warns4 = [];
+    const n4 = makeNotifier(work, shared, { logger: { warn: (m) => warns4.push(m), info: () => {} } });
+    const events4 = n4.routes.find((r) => r.path === ROUTES.events);
+    const test4 = n4.routes.find((r) => r.path === ROUTES.test);
+    const { rec: rec4, res: res4 } = makeRes();
+    await events4.handler(fakeReq({}), res4);
+    await test4.handler(fakeReq({ method: "POST" }), makeRes().res);
+    assert.match(rec4.text, /"seq":1/, "TDD④：seq 文件缺失（首启）→ 从 0 起");
+    assert.ok(!warns4.some((w) => w.includes("seq")), "TDD④：缺文件不 warn（首启正常路径）");
+    n4.dispose();
+  }
+
+  // N-23 服务端侧不变锁：maxConnections:0 → 400（S3-12 修复在客户端 clamp；
+  // 服务端写面校验现状正确勿动——防未来"顺手放宽"回归）
+  {
+    const n23 = makeNotifier(work, { historyFile: join(work, "history-n23.jsonl") });
+    const cfgN23 = n23.routes.find((r) => r.path === ROUTES.config);
+    const text = JSON.stringify({ patch: { maxConnections: 0 } });
+    const { rec, res } = makeRes();
+    await cfgN23.handler({
+      method: "PUT",
+      url: "/",
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
+      on(event, cb) {
+        if (event === "data") setTimeout(() => cb(Buffer.from(text)), 0);
+        else if (event === "end") setTimeout(cb, 1);
+        return this;
+      },
+      destroy() {},
+    }, res);
+    assert.equal(rec.status, 400, "N-23：maxConnections:0 → 400（服务端写面校验不变，客户端 clamp 是唯一守卫）");
+    assert.ok(JSON.parse(rec.text).error.hint.includes("1-1024"), "N-23：400 hint 提示 1-1024 范围");
+    n23.dispose();
   }
 
   // history：测试通知已落盘，GET 可查（独立 history 文件，无跨块串扰）（D4）

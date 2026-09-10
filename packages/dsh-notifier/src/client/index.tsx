@@ -189,6 +189,17 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
   };
 }
 
+/**
+ * maxConnections 软钳制（S3-12/P2-4）：空串经 numInput 归一为 undefined → 不落
+ * diff（保持原值）；非空值 clamp 到 1-1024 ——服务端写面 min=1（0 会 400，清空
+ * 输入即死锁的唯一顶层数值键）。非有限值（NaN 防御）同样归 undefined 不提交。
+ * 模块级纯函数（apply 挂载 + vm 直测），对齐 diffSettingsPayload 先例。
+ */
+function clampMaxConnections(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  return Math.min(1024, Math.max(1, Math.round(value)));
+}
+
   /** i18n 翻译函数（apply 时由 ctx.locale.bind(NS) 装配；未装配回落 key 本体，行为零变化）。 */
   var t: any = function (key: string, params?: any) {
     if (params === undefined) return key;
@@ -519,11 +530,17 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     return node;
   }
 
-  /** 页面内横幅（非安全上下文降级通道；点击聚焦，8 秒自动消失，最多叠 3 条）。 */
+  /** 页面内横幅（非安全上下文降级通道；点击聚焦，8 秒自动消失，最多叠 3 条）。
+   *  kind 可含任意字符（动态 kind 注册），旧实现把 kind 拼进 CSS 属性选择器，
+   *  异常字符（引号/反斜杠）会让 querySelector 抛错 → 整帧静默丢弃（S3-17）。
+   *  改遍历比对 dataset.kind（去重 + 计数同语义，不构造选择器）。 */
   function showBanner(kind: any, title: any, message: any) {
-    var existing = document.querySelector('.dn-banner[data-kind="' + kind + '"]');
-    if (existing) existing.remove();
-    var banners = document.querySelectorAll(".dn-banner");
+    var banners = Array.prototype.slice.call(document.querySelectorAll(".dn-banner"));
+    for (var i = banners.length - 1; i >= 0; i -= 1) {
+      if (banners[i].dataset && banners[i].dataset.kind === String(kind)) {
+        banners.splice(i, 1)[0].remove();
+      }
+    }
     while (banners.length >= 3) banners[0].remove();
     var banner = el("div", {
       class: "dn-banner",
@@ -728,12 +745,12 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
       });
   }
 
-  /** 拉取频道投递状态（M2：per-channel 最近投递终态）。 */
+  /** 拉取频道投递状态（M2：per-channel 最近投递终态）。
+   *  失败向上抛（S3-16：调用方决定保留旧态而非清空状态行）。 */
   function fetchStatus(): Promise<any> {
     return fetch(ROUTES.status, { headers: { accept: "application/json" } })
       .then(function (r: any) { return r.json(); })
-      .then(function (data: any) { return (data && data.channels) || {}; })
-      .catch(function () { return {}; });
+      .then(function (data: any) { return (data && data.channels) || {}; });
   }
 
   /** 拉取动态 kind 清单（M2：注册表 + 确认态）。 */
@@ -865,6 +882,9 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
     function loadStatus(alive: { value: boolean }) {
       fetchStatus().then(function (map: any) {
         if (alive.value) setStatusMap(map);
+      }).catch(function () {
+        // S3-16：拉取失败保留已加载状态行（不清空——旧实现 catch → {} 会把
+        // 已展示的最近投递终态抹掉，瞬时网络抖动即丢信息）
       });
     }
 
@@ -2115,7 +2135,11 @@ function createSaveGuard(): { tryBegin(entry: string): boolean; isBusy(): boolea
               type="number" min={1} max={1024} step={1} className="dn-set-input dn-set-numInput"
               aria-label={t("maxConnections")}
               value={settings.maxConnections}
-              onChange={function (e: any) { patch({ maxConnections: Number(e.target.value) }); }}
+              onChange={function (e: any) {
+                // S3-12：空串→undefined→diff 键被序列化丢弃→不提交保持原值；
+                // 非空软 clamp（1-1024）防 0→400 保存死锁（服务端 normalize 仍权威）
+                patch({ maxConnections: clampMaxConnections(e.target.value === "" ? undefined : Number(e.target.value)) });
+              }}
             />
           ))}
         </div>
@@ -2402,6 +2426,7 @@ export function apply(ctx: any) {
     (apply as any).rebaseSettings = rebaseSettings;
     (apply as any).assignChannelFields = assignChannelFields;
     (apply as any).stripChannelEmpties = stripChannelEmpties;
+    (apply as any).clampMaxConnections = clampMaxConnections;
     try {
       ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
 

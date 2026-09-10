@@ -4,6 +4,7 @@
     "packages/dsh-notifier/src/text/message.ts",
     "packages/dsh-notifier/src/text/sanitize.ts",
     "packages/dsh-notifier/src/text/system-commands.ts",
+    "!packages/dsh-notifier/src/**/interface.ts",
     "!packages/dsh-notifier/src/client/**"
   ],
   "testRunner": "tap",
@@ -41,13 +42,22 @@
       "packages/dsh-notifier/test/e2e-done.test.ts",
       "packages/dsh-notifier/test/e2e-edge.test.ts",
       "packages/dsh-notifier/test/e2e-interrupt.test.ts",
+      "packages/dsh-notifier/test/e2e-outbound.test.ts",
       "packages/dsh-notifier/test/e2e-question-turn.test.ts",
       "packages/dsh-notifier/test/migration.test.ts",
       "packages/dsh-notifier/test/routes.test.ts",
+      "packages/dsh-notifier/test/unit-aggregate.test.ts",
+      "packages/dsh-notifier/test/unit-config-port.test.ts",
       "packages/dsh-notifier/test/unit-config.test.ts",
+      "packages/dsh-notifier/test/unit-event-handlers.test.ts",
+      "packages/dsh-notifier/test/unit-pipeline-contract.test.ts",
       "packages/dsh-notifier/test/unit-sanitize.test.ts",
-      "packages/dsh-notifier/test/unit-text.test.ts",
+      "packages/dsh-notifier/test/unit-server-sse-bus.test.ts",
+      "packages/dsh-notifier/test/unit-settings-bridge.test.ts",
       "packages/dsh-notifier/test/unit-sse-hub.test.ts",
+      "packages/dsh-notifier/test/unit-stores.test.ts",
+      "packages/dsh-notifier/test/unit-system-notifier.test.ts",
+      "packages/dsh-notifier/test/unit-text.test.ts",
       "packages/dsh-notifier/test/unit-webhook.test.ts",
       "packages/dsh-notifier/test/service-contract.test.ts",
       "packages/dsh-notifier/test/client-contract.test.ts",
@@ -55,9 +65,9 @@
     ]
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-notifier-message.json"
+    "fileName": "coverage/mutation/dsh-notifier-text.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-notifier-message.json",
-  "_comment": "#669 PR1：message.ts 拆三文件（message/sanitize/system-commands）后段边界重定（S3-32 物理极限注释失效）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "incrementalFile": "coverage/mutation/incremental-notifier-text.json",
+  "_comment": "#669 PR2 T2-7 按域重划：text——文案域（message/sanitize/system-commands，PR1 message 段按域更名）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }
