@@ -1,13 +1,13 @@
 /**
  * verify-core.mjs — verify-isolated.mjs 的共享基础工具（零依赖，纯 Node 内置）。
  *
- * #517 C8 抽取：poll / findFreePort / jsonOut / 退出码常量给
+ * 抽取：poll / findFreePort / jsonOut / 退出码常量给
  * verify-isolated.mjs 复用（browser-driver.mjs 的 main/parseArgs/out/poll
  * 模式；fail 由 verify-isolated.mjs 内聚为 json 感知的 errorPayload 路径，
  * 本模块不导出死函数），另内建两段纯函数语义：
  *   - readDshPort：B6 verdict 端口实际绑定双通道之 parsed 通道（解析 dsh.log）；
- *   - resolvePkgArg：C11 插件参数归一化（相对路径绝对化 / 包规格透传），随 C8
- *     内建，不依赖 C11 的 resolve-pkg-paths.mjs 文件。
+ *   - resolvePkgArg：插件参数归一化（相对路径绝对化 / 包规格透传），内建，
+ *     不依赖独立文件。
  * browser-driver.mjs 保持独立 CLI 不动、不 import 本模块。
  */
 import { existsSync } from "node:fs";
@@ -75,8 +75,8 @@ export function jsonOut(obj, pretty = false) {
 //（0.1.2-rc.1 实测确认，注入 web-app bundle 后约 2s 内输出）；verdict 的
 // port.actual 三通道第一优先解析它。不匹配返回 null，由调用方回退
 // 就绪断言端口（asserted）/ 探测端口（probed）。
-// 行完整性（P2-6）：端口号后必须紧跟 `/` 或 `?`（真实 URL 形态），防 chunk
-// 截断 latch（如 chunk 尾部 `:34` 被当作完整端口锁定）；范围校验（P2-7）：
+// 行完整性：端口号后必须紧跟 `/` 或 `?`（真实 URL 形态），防 chunk
+// 截断 latch（如 chunk 尾部 `:34` 被当作完整端口锁定）；范围校验：
 // 1-65535 之外视为无匹配。
 export function readDshPort(text) {
   const m = /dsh web:\s*http:\/\/\S*?:(\d+)(?=\/|\?)/.exec(text || "");
@@ -85,17 +85,31 @@ export function readDshPort(text) {
   return p >= 1 && p <= 65535 ? p : null;
 }
 
-// --- C11 内建：插件参数归一化（原 resolve-pkg-paths.mjs 语义随 C8 内建） ---
+// --- 访问 URL 解析（GUI 鉴权令牌的唯一来源） ---
+// dsh web 的 GUI 带鉴权：不带令牌访问只得到 401 文本页，浏览器命令也拿不到界面。
+// 带令牌的完整 URL 只出现在 dsh 启动打印的这一行（同一行已由 readDshPort 解析
+// 端口），故整行取出而非「已知端口 + 猜令牌」。令牌是访问凭据：真值只落 0o600 的
+// browser.state / dsh.log，回显与 verdict 一律去令牌（防 CI 日志与 PR 证据归档）。
+// 完整性校验：必须是 host 之后带路径/查询的绝对 URL——截断的半个令牌比没有令牌更
+// 难排查（表现为 401 而非缺参数），故 shape 不符即返回 null 走可操作错误路径。
+export function readDshUrl(text) {
+  const m = /dsh web:\s*(https?:\/\/\S+)/.exec(text || "");
+  if (!m) return null;
+  const url = m[1].replace(/[.,;]+$/, "");
+  return /^https?:\/\/[^\s/]+\/\S*$/.test(url) ? url : null;
+}
+
+// --- 插件参数归一化 ---
 // dsh plugin add 同时接受本地路径 / npm 包名 / git URL 三种形态；相对路径必须
 // 基于当前 cwd 绝对化（dsh 会把非绝对路径当 git URL 解析、报 `Repository not
-// found` 迷惑错误，#517 C11），包规格（@scope/name、name@version、git URL）
+// found` 迷惑错误），包规格（@scope/name、name@version、git URL）
 // 原样透传。判定顺序敏感：
 //   1. 形态类路径（`.` `..` `/` `~` 开头）→ 绝对化；
 //   2. cwd 下存在该路径（目录或文件）→ 绝对化；
 //   3. 其余 → 视为包规格，原样透传。
 const PATH_LIKE = /^(\.{1,2}\/|\.{1,2}$|\/|~)/;
 // Windows 盘符绝对路径（C:\、C:/）不以 / 或 ~ 开头，PATH_LIKE 感知不到会误落
-// existsSync 分支：不存在的绝对路径被当成包规格透传（#517 C11 语义破坏）。
+// existsSync 分支：不存在的绝对路径被当成包规格透传。
 const WIN32_DRIVE_LIKE = /^[A-Za-z]:[\\/]/;
 
 function isPathLike(p) {

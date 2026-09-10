@@ -11,7 +11,7 @@
  *   静默失效，尺寸残留污染后续命令（实测：新 session 里 clear 后仍读回设定值）。
  * - `touch` / `UserAgent` override 是纯 session 级的，断开即失效，无法跨命令生效；
  *   模拟能力也不完整（maxTouchPoints 可设，但 ontouchstart 不生效）。故不提供，
- *   触控与真机差异写入 SKILL.md 能力边界，避免给出虚假安全感。
+ *   触控与真机差异写入 references/viewport-geometry.md 能力边界，避免给出虚假安全感。
  *
  * 因此设备模拟不做成「独立粘性命令」，而是每条页面命令都可携带的公共 flag：
  * 命令内应用、命令结束前清除，命令之间互不影响。

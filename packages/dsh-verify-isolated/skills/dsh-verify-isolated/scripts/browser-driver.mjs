@@ -13,6 +13,15 @@
  * 页面命令（snapshot / click / eval / fill / wait / screenshot / console）可携带设备
  * 模拟 flag（--width / --height / --dpr / --mobile）：命令内应用、结束前清除，命令
  * 之间互不影响——不做成粘性状态的原因见 lib/emulation.mjs 头部（CDP 会话语义）。
+ *
+ * 导航命令（snapshot / click / wait / screenshot / console）的 `--url` 接受保留值
+ * `state`：改用 state 文件里 verify-isolated.mjs 写入的带令牌 URL（GUI 带鉴权，
+ * 裸端口只得到 401）。省略 `--url` 仍是**不导航**——自动导航会抹掉上一条命令的
+ * 页面状态，多步交互验证（点一下再读结果）就断了。
+ *
+ * 导航后自动跳过 dsh web 首启弹窗（--no-auto-dismiss 关闭）：内测声明与 API Key
+ * 弹窗把应用根置为 inert，若不跳过，页面命令的点击全部静默失效；成因与预置策略见
+ * lib/onboarding.mjs 头部。
  */
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
@@ -21,10 +30,16 @@ import { delimiter, join } from "node:path";
 import { createServer } from "node:net";
 import { get } from "node:http";
 import { buildDeviceMetrics, parseEmulationFlags } from "./lib/emulation.mjs";
+import {
+  MAX_OVERLAY_ROUNDS, buildOverlayProbeExpression, redactToken,
+} from "./lib/onboarding.mjs";
 
 // --- 基础工具 ---
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** 首启弹窗等待窗口（弹窗异步挂载，探一次会漏检；见 settleOverlays）。 */
+const OVERLAY_WAIT_MS = 1500;
 
 async function poll(fn, timeoutMs, intervalMs = 200) {
   const deadline = Date.now() + timeoutMs;
@@ -278,7 +293,7 @@ async function cmdLaunch(flags) {
     wsUrl: version.webSocketDebuggerUrl,
     launchedAt: new Date().toISOString(),
   };
-  // 0o600：state 含调试 wsUrl/pid 等敏感信息，仅限本用户可读（PR #481 P3-3）
+  // 0o600：state 含调试 wsUrl/pid 等敏感信息，仅限本用户可读
   writeFileSync(statePath, JSON.stringify(state, null, 2), { mode: 0o600 });
   out(flags, { ok: true, ...state, stateFile: statePath });
 }
@@ -360,6 +375,98 @@ async function navigateIfGiven(wsUrl, url, timeoutMs = 15000) {
   await poll(async () => (await evalRaw(wsUrl, "document.readyState")) === "complete", timeoutMs, 200);
 }
 
+/**
+ * 解析导航目标：`--url state` 取 state 里的带令牌 URL（GUI 带鉴权，裸端口只会得到
+ * 401 文本页），其余原样。state 缺字段时给出可操作错误，而不是静默导航到一张空页。
+ * @returns 目标 URL；未给 `--url` 时 null（不导航）。
+ */
+function resolveTargetUrl(flags, st) {
+  const raw = flag(flags, "url", null);
+  if (raw === null || raw !== "state") return raw;
+  const url = st?.dshWebUrl;
+  if (!url) {
+    fail("--url state 需要 state 文件里存在 dshWebUrl（由 verify-isolated.mjs 写入）；手动拉起的 dsh web 请直接传带令牌的完整 URL");
+  }
+  return url;
+}
+
+/**
+ * 导航后一次性收尾：跳过首启弹窗 + 鉴权误用诊断。
+ *
+ * 弹窗由 React 在页面加载后异步挂载（实测晚于 readyState=complete，且时机会在
+ * 数百毫秒内波动），故按窗口轮询而不是探一次就下结论——漏检的代价不是「少一次
+ * 提示」，而是后续点击落在 inert 根上静默失效、验证结论假绿。等待窗口默认为
+ * OVERLAY_WAIT_MS，`--overlay-wait 0` 可退回单次探测（快，但可能漏检）。
+ *
+ * 两级弹窗（内测声明 → API Key）会无缝衔接：前一个卸载与后一个置位 inert 可能
+ * 落在同一帧，故**不能**用「等 inert 解除」判断弹窗已清空（必然超时误报），而是
+ * 直接推进到下一轮窗口轮询——没有下一个弹窗时，该轮窗口自然以「无弹窗」收尾。
+ *
+ * 识别不到跳过按钮时**不点**：弹窗内可能并列「保存并继续」这类有副作用的按钮，
+ * 点错会把验证流程变成一次误操作；此时只上报 blocked 交调用方处置。
+ */
+async function settleOverlays(wsUrl, flags) {
+  const result = { dismissed: [], authRequired: false, blocked: null };
+  const auto = !flags.has("no-auto-dismiss");
+  const waitMs = Math.max(0, Number(flag(flags, "overlay-wait", String(OVERLAY_WAIT_MS))) || 0);
+  const expr = buildOverlayProbeExpression({ click: auto });
+  for (let round = 0; round < MAX_OVERLAY_ROUNDS; round++) {
+    // 上一轮点过的弹窗需要一点时间卸载，否则本轮窗口会重复命中同一按钮
+    if (round > 0) await sleep(250);
+    let probe = null;
+    let seen = false;
+    const deadline = Date.now() + waitMs;
+    for (;;) {
+      try { probe = await evalRaw(wsUrl, expr); } catch { return result; }
+      if (!probe) return result;
+      if (probe.authRequired) result.authRequired = true;
+      if (probe.blocked) { seen = true; break; }
+      if (Date.now() >= deadline) break;
+      await sleep(150);
+    }
+    if (!seen) return result;
+    if (!probe.dismissed) { result.blocked = { reason: probe.reason, buttons: probe.buttons ?? [] }; return result; }
+    result.dismissed.push(probe.clicked);
+  }
+  return result;
+}
+
+/**
+ * 导航 + 导航后收尾，导航命令的统一入口。
+ * @returns `{ url, overlay }`；未给 `--url` 时 url 与 overlay 均为 null（保持
+ * 「省略即不导航」语义——自动导航会抹掉上一条命令的页面状态）。
+ */
+async function goto(wsUrl, flags, st) {
+  const url = resolveTargetUrl(flags, st);
+  if (url === null) return { url: null, overlay: null };
+  await navigateIfGiven(wsUrl, url);
+  const overlay = await settleOverlays(wsUrl, flags);
+  reportOverlay(overlay);
+  return { url, overlay };
+}
+
+/** 把导航后的异常状态报成可操作警告（stderr，不污染 stdout 的 JSON 契约）。 */
+function reportOverlay(overlay) {
+  if (!overlay) return;
+  if (overlay.authRequired) {
+    process.stderr.write("警告: 页面返回 dsh web 鉴权拒绝（缺访问令牌）——用 --url state 取 state 里的带令牌 URL；裸端口只会得到 401 文本页\n");
+  }
+  if (overlay.blocked) {
+    const detail = overlay.blocked.buttons.length ? `: ${overlay.blocked.buttons.join(" / ")}` : "";
+    process.stderr.write(`警告: 首启弹窗未跳过（${overlay.blocked.reason}${detail}）——应用根仍为 inert，随后点击不会生效\n`);
+  }
+}
+
+/** 输出附加字段：只在真的发生时出现，未命中的命令输出契约不变。 */
+function overlayFields(overlay) {
+  if (!overlay) return {};
+  const f = {};
+  if (overlay.dismissed.length) f.dismissed = overlay.dismissed;
+  if (overlay.authRequired) f.authRequired = true;
+  if (overlay.blocked) f.onboardingBlocked = overlay.blocked;
+  return f;
+}
+
 function selExpr(selector, extra) {
   return `(() => {
     const el = document.querySelector(${JSON.stringify(selector)});
@@ -370,7 +477,7 @@ function selExpr(selector, extra) {
 
 async function waitSelector(wsUrl, selector, timeoutMs) {
   // selExpr 未命中返回 { found:false }（对象恒 truthy），poll 必须显式判 found===true，
-  // 否则等待会立即「成功」（假绿，PR #481 P1-1）
+  // 否则等待会立即「成功」（假绿）
   const found = await poll(async () => {
     try { return (await evalRaw(wsUrl, selExpr(selector))).found === true; }
     catch { return false; }
@@ -427,10 +534,9 @@ async function withPageEmulation(flags, run) {
 }
 
 async function cmdSnapshot(flags) {
-  const url = flag(flags, "url", null);
   const selector = flag(flags, "selector", null);
   await withPageEmulation(flags, async ({ st, page }) => {
-    await navigateIfGiven(page.webSocketDebuggerUrl, url);
+    const nav = await goto(page.webSocketDebuggerUrl, flags, st);
     const title = await evalRaw(page.webSocketDebuggerUrl, "document.title");
     const readyState = await evalRaw(page.webSocketDebuggerUrl, "document.readyState");
     const pageUrl = await evalRaw(page.webSocketDebuggerUrl, "location.href");
@@ -444,23 +550,29 @@ async function cmdSnapshot(flags) {
       bodyText = (await evalRaw(page.webSocketDebuggerUrl, "document.body ? document.body.innerText.slice(0, 2000) : ''") || "");
     }
     const pages = (await httpJson(`http://127.0.0.1:${st.port}/json/list`) || []).filter((t) => t.type === "page");
-    out(flags, { ok: true, title, url: pageUrl, readyState, tabCount: pages.length, bodyText, element });
+    out(flags, {
+      ok: true, title, url: redactToken(pageUrl), readyState, tabCount: pages.length, bodyText, element,
+      ...overlayFields(nav.overlay),
+    });
   });
 }
 
 async function cmdClick(flags) {
-  const url = flag(flags, "url", null);
   const selector = flag(flags, "selector", null);
   const timeoutMs = Number(flag(flags, "timeout", "10000"));
   if (!selector) fail("click 需要 --selector");
-  await withPageEmulation(flags, async ({ page }) => {
-    await navigateIfGiven(page.webSocketDebuggerUrl, url);
+  await withPageEmulation(flags, async ({ st, page }) => {
+    const nav = await goto(page.webSocketDebuggerUrl, flags, st);
     await waitSelector(page.webSocketDebuggerUrl, selector, timeoutMs);
     const clicked = await evalRaw(page.webSocketDebuggerUrl, selExpr(selector, `
       el.scrollIntoView({ block: "center" });
       el.click();
       return { found: true, clicked: true, tag: el.tagName };`));
-    out(flags, { ok: true, selector, clicked, url: url || undefined });
+    out(flags, {
+      ok: true, selector, clicked,
+      url: nav.url ? redactToken(nav.url) : undefined,
+      ...overlayFields(nav.overlay),
+    });
   });
 }
 
@@ -499,31 +611,29 @@ async function cmdFill(flags) {
 }
 
 async function cmdWait(flags) {
-  const url = flag(flags, "url", null);
   const selector = flag(flags, "selector", null);
   const timeoutMs = Number(flag(flags, "timeout", "10000"));
   if (!selector) fail("wait 需要 --selector");
-  await withPageEmulation(flags, async ({ page }) => {
+  await withPageEmulation(flags, async ({ st, page }) => {
     const started = Date.now();
-    await navigateIfGiven(page.webSocketDebuggerUrl, url);
+    const nav = await goto(page.webSocketDebuggerUrl, flags, st);
     await waitSelector(page.webSocketDebuggerUrl, selector, timeoutMs);
-    out(flags, { ok: true, selector, waitedMs: Date.now() - started });
+    out(flags, { ok: true, selector, waitedMs: Date.now() - started, ...overlayFields(nav.overlay) });
   });
 }
 
 async function cmdScreenshot(flags) {
-  const url = flag(flags, "url", null);
   const selector = flag(flags, "selector", null);
   const outPath = flag(flags, "path", `screenshot-${Date.now()}.png`);
-  await withPageEmulation(flags, async ({ page }) => {
-    await navigateIfGiven(page.webSocketDebuggerUrl, url);
+  await withPageEmulation(flags, async ({ st, page }) => {
+    const nav = await goto(page.webSocketDebuggerUrl, flags, st);
     let clip = undefined;
     if (selector) {
       await waitSelector(page.webSocketDebuggerUrl, selector, 10000);
       clip = await evalRaw(page.webSocketDebuggerUrl, selExpr(selector, `
         const r = el.getBoundingClientRect();
         // getBoundingClientRect 是 viewport 坐标；captureBeyondViewport 下 CDP 按文档
-        // 坐标解释 clip，须加 scrollX/scrollY 转换，否则页面滚动后截空白（PR #481 P1-2）
+        // 坐标解释 clip，须加 scrollX/scrollY 转换，否则页面滚动后截空白
         return { found: true, x: r.x + window.scrollX, y: r.y + window.scrollY, width: r.width, height: r.height, dpr: window.devicePixelRatio || 1 };`));
       if (!clip || !clip.found) throw new Error(`截图元素未找到: ${selector}`);
       clip = { x: clip.x, y: clip.y, width: clip.width, height: clip.height, scale: clip.dpr };
@@ -533,14 +643,17 @@ async function cmdScreenshot(flags) {
     });
     writeFileSync(outPath, Buffer.from(shot.data, "base64"));
     const dims = clip ? { width: clip.width, height: clip.height } : null;
-    out(flags, { ok: true, path: outPath, bytes: Buffer.byteLength(shot.data, "base64"), clip: dims, url: url || undefined });
+    out(flags, {
+      ok: true, path: outPath, bytes: Buffer.byteLength(shot.data, "base64"), clip: dims,
+      url: nav.url ? redactToken(nav.url) : undefined,
+      ...overlayFields(nav.overlay),
+    });
   });
 }
 
 async function cmdConsole(flags) {
-  const url = flag(flags, "url", null);
   const waitMs = Number(flag(flags, "wait-ms", "2500"));
-  await withPageEmulation(flags, async ({ page }) => {
+  await withPageEmulation(flags, async ({ st, page }) => {
     const messages = [];
     const collect = (ev) => {
       if (!ev.data || typeof ev.data !== "string") return;
@@ -561,20 +674,24 @@ async function cmdConsole(flags) {
     // domain enable 是会话级状态：须在事件收集的长连接上启用，短连接 enable 不生效
     await rpcRaw(ws, "Runtime.enable", {});
     await rpcRaw(ws, "Log.enable", {});
+    let overlay = null;
     try {
-      if (url) {
-        await rpcRaw(ws, "Page.navigate", { url });
-        await poll(async () => {
-          try { return (await rpcRaw(ws, "Runtime.evaluate", { expression: "document.readyState", returnByValue: true })).result.value === "complete"; }
-          catch { return false; }
-        }, 15000, 200);
-      } else {
-        await rpcRaw(ws, "Page.reload", {});
-      }
+      // console 无 --url 时重载当前页（也算一次导航），故两条分支都等就绪后再收尾：
+      // 未就绪时探针读不到弹窗，会错过 inert 这一最关键的事实。
+      const readyExpr = "document.readyState";
+      const target = resolveTargetUrl(flags, st);
+      if (target) await rpcRaw(ws, "Page.navigate", { url: target });
+      else await rpcRaw(ws, "Page.reload", {});
+      await poll(async () => {
+        try { return (await rpcRaw(ws, "Runtime.evaluate", { expression: readyExpr, returnByValue: true })).result.value === "complete"; }
+        catch { return false; }
+      }, 15000, 200);
+      overlay = await settleOverlays(page.webSocketDebuggerUrl, flags);
+      reportOverlay(overlay);
     } catch {}
     await sleep(waitMs);
     ws.close();
-    out(flags, { ok: true, messages, capturedMs: waitMs });
+    out(flags, { ok: true, messages, capturedMs: waitMs, ...overlayFields(overlay) });
   });
 }
 
@@ -620,19 +737,29 @@ const USAGE_HEAD = `用法: node browser-driver.mjs <command> [--flag value]... 
 
 const USAGE_COMMANDS = `  launch      启动独立浏览器实例并写入 state（--state <path> [--port N] [--user-data-dir <path>] [--chrome <path>]）
   quit        优雅关闭实例并清理（--state <path>）
-  snapshot    页面快照（[--url <url>] [--selector <css>] [--index N]）
-  click       点击元素（--selector <css> [--url <url>] [--timeout ms] [--index N]）
+  snapshot    页面快照（[--url <url|state>] [--selector <css>] [--index N]）
+  click       点击元素（--selector <css> [--url <url|state>] [--timeout ms] [--index N]）
   eval        执行 JS（--expression <js> [--index N]）
   fill        填充表单（--selector <css> --value <v> [--timeout ms] [--index N]）
-  wait        等待选择器（--selector <css> [--url <url>] [--timeout ms] [--index N]）
-  screenshot  截图（[--url <url>] [--selector <css>] [--path <png>] [--index N]）
-  console     捕获 console/异常（[--url <url>] [--wait-ms N] [--index N]）`;
+  wait        等待选择器（--selector <css> [--url <url|state>] [--timeout ms] [--index N]）
+  screenshot  截图（[--url <url|state>] [--selector <css>] [--path <png>] [--index N]）
+  console     捕获 console/异常（[--url <url|state>] [--wait-ms N] [--index N]）`;
 
 const USAGE_COMMON = `通用：--state <path> 指定实例 state 文件（多会话并行必须各自独立）；
+导航与鉴权（snapshot / click / wait / screenshot / console）：--url <url> 显式 URL；
+  --url state 取 state 里 verify-isolated.mjs 写入的 dshWebUrl（带访问令牌——dsh web
+  GUI 带鉴权，裸端口只会得到 401 文本页）；省略 --url 即**不导航**（console 例外：
+  重载当前页），保留上一条命令的页面状态供多步交互验证。
+  命中 401 文本页时输出 authRequired 并在 stderr 给出可操作警告；回显 URL 恒去令牌。
+首启弹窗（导航后自动跳过）：dsh web 的「内测声明」「添加 API Key」弹窗把应用根置为
+  inert，不跳过则点击静默失效。命中跳过文案（Continue / Configure later / 继续 /
+  稍后配置）时自动点击，输出 dismissed 记录所点按钮；识别不到跳过按钮时**不猜**，
+  仅输出 onboardingBlocked。--no-auto-dismiss 关闭自动跳过（保留弹窗原状，只探测）。
+  弹窗异步挂载，故按 --overlay-wait <ms>（默认 1500）窗口轮询；设 0 退回单次探测。
 设备模拟（页面命令通用）：--width N --height N [--dpr N] [--mobile]
   逐档设定视口验证响应式布局；命令内生效、结束即清除，命令之间互不影响。
   单给一维时另一维取当前视口值。--mobile 启用移动 layout viewport 语义（页面无
-  viewport meta 时 innerWidth 不再等于设定宽度）；触控/真机差异见 SKILL.md 能力边界。
+  viewport meta 时 innerWidth 不再等于设定宽度）；触控/真机差异见 references/viewport-geometry.md 能力边界。
 内核探测：DSH_VERIFY_CHROME env > ms-playwright 缓存 > PATH > 平台常见路径，全缺 fail-fast。
 环境要求：Node >= 22（页面操作依赖内置全局 WebSocket）；Chromium 系内核。
 详情见本文件头部注释。`;
