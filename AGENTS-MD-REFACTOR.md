@@ -83,7 +83,11 @@
 - 过滤文档中的正则示例文本（如 `@deepseek-ai/[a-z0-9-]+`），避免误报。
 - 新增 `--root` 注入（仅覆盖 agent 面；包/根 README 面固定判真实仓库）。
 
-配套测试 `scripts/test/verify-docs-agent-docs.test.ts`（7 例）：正例（裸路径有效）／反例
+**命令存在性校验**：文档里反引号包裹的 `pnpm <script>` 必须真实存在于根 `package.json`
+（实测 60 个文档面 md、31 处命令引用，0 误报）。这条直接对着评审指出的「编造命令」失效模式——
+本 PR 制作过程中我自己就差点把 `test:src-tests` 写成不存在的名字，故做成永久门禁而非一次性检查。
+
+配套测试 `scripts/test/verify-docs-agent-docs.test.ts`（10 例）：正例（裸路径有效）／反例
 （根、包级、深层 SKILL.md 三类失效）／不误报（锚点、绝对 URL、正则示例）／**覆盖面自锁**
 （真实仓库必须扫到 ≥20 个 agent 文档，防 walk 条件被改窄成空转）。
 

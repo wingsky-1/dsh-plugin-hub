@@ -110,3 +110,28 @@ test('覆盖面自锁：真实仓库上 agent 规则文档数 > 0（防 walk 条
   assert.ok(m, `输出缺少 agent 规则文档计数：${r.stdout}`)
   assert.ok(Number(m[1]) >= 20, `真实仓库应扫到 ≥20 个 agent 规则文档，实际 ${m[1]}——walk 条件疑似被改窄`)
 })
+
+test('命令存在性：文档里写不存在的 pnpm 命令 → exit 1 且点名（#693）', () => {
+  // 防「文档写出不存在的门禁命令」——human 与 agent 都会照抄。
+  const dir = fixture({ agentFiles: { 'AGENTS.md': '跑 `pnpm gate:does-not-exist` 即可。\n' } })
+  const r = run(dir)
+  assert.equal(r.status, 1)
+  assert.match(r.stderr, /引用了不存在的 pnpm 命令 gate:does-not-exist/)
+})
+
+test('命令存在性：真实命令与 pnpm 自带子命令都不误报', () => {
+  const dir = fixture({
+    agentFiles: {
+      'AGENTS.md': '跑 `pnpm build`；安装用 `pnpm install`；发版用 `pnpm publish`；`pnpm test:scripts` 亦真。\n',
+    },
+  })
+  const r = run(dir)
+  assert.equal(r.status, 0, r.stderr)
+})
+
+test('命令存在性：docs/ 下的引用同样被校验（门禁命令最常写在这里）', () => {
+  const dir = fixture({ agentFiles: { 'docs/GUIDE.md': '见 `pnpm nope:cmd`。\n' } })
+  const r = run(dir)
+  assert.equal(r.status, 1)
+  assert.match(r.stderr, /GUIDE\.md: 引用了不存在的 pnpm 命令 nope:cmd/)
+})

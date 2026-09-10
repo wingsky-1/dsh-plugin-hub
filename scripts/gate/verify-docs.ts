@@ -12,6 +12,8 @@
  *      存在性用 --strict-en 强制（根 README.en.md 同样适用，见检查 6）。
  *   6. 根 README.en.md（若存在）纳入与包级相同的 relLinks 相对链接检查
  *      （#474 R3：根 en 的相对链接断了要红）。
+ *   8. 文档内反引号包裹的 `pnpm <script>` 必须真实存在于根 package.json（#693：
+ *      防文档写出不存在的门禁命令——human/agent 都会照抄不存在的命令）。
  *   7. Agent 规则文档（根/包级 AGENTS.md、.dsh/skills/**、agents/**）的相对链接（含裸路径）
  *      目标存在（#693：这类文件此前完全在门禁面之外，过期规则得以长期存活）。
  *
@@ -85,6 +87,40 @@ function checkAgentLink(baseFile: string, target: string): boolean {
   return existsSync(join(dirname(baseFile), rel)) || existsSync(join(AGENT_ROOT, rel))
 }
 
+/** 文档面（比 agent 面更宽，含 docs/）：用于命令引用校验。 */
+function walkDocFiles(dir: string, out: string[]): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === "node_modules" || entry.name === ".git") continue
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) walkDocFiles(full, out)
+    else if (entry.name.endsWith(".md") && !full.includes("release-notes")) out.push(full)
+  }
+  return out
+}
+
+/** npm/pnpm 自带子命令，不是仓库脚本，不做存在性校验。 */
+const NPM_BUILTIN = new Set([
+  "install", "i", "ci", "add", "remove", "why", "exec", "dlx", "run", "publish",
+  "pack", "update", "list", "ls", "outdated", "audit", "config", "init", "link",
+  "prune", "store", "licenses",
+])
+
+/** 校验文档里反引号包裹的 `pnpm <script>`：命令不存在即判红（#693）。 */
+function checkAgentCommands(): number {
+  const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { scripts?: Record<string, string> }
+  const known = new Set(Object.keys(pkg.scripts ?? {}))
+  const docs = walkDocFiles(AGENT_ROOT, []).sort()
+  for (const f of docs) {
+    const rel = relative(AGENT_ROOT, f)
+    for (const m of readFileSync(f, "utf8").matchAll(/[`]{1,3}pnpm ([a-z][a-z:-]*)/g)) {
+      const cmd = m[1]!
+      if (NPM_BUILTIN.has(cmd) || known.has(cmd)) continue
+      failures.push(`${rel}: 引用了不存在的 pnpm 命令 ${cmd}`)
+    }
+  }
+  return docs.length
+}
+
 function checkAgentDocs(): number {
   const docs = walkAgentDocs(AGENT_ROOT, []).filter((f) => f.endsWith(".md")).sort()
   for (const f of docs) {
@@ -146,6 +182,7 @@ if (existsSync(rootEn)) {
 }
 
 const agentDocs = checkAgentDocs()
+checkAgentCommands()
 
 const ok = failures.length === 0
 console.log(`verify-docs：检查 ${checked} 个包 + 根 README + ${agentDocs} 个 agent 规则文档`)
