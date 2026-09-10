@@ -360,7 +360,7 @@
 | C8 checkbox 折叠态丢失 | ✅成立 | 体验项 |
 | C9 SSE 65s 空窗 | ✅成立 | 设计内，文档化 |
 | C10 面板不主动刷新 | ✅成立 | showPanel 补 refresh |
-| C11 编辑改 scope | ❌误报 | PATCH 分支不可达（C1 升格后 saveForm 恒走 POST），删除或标记 |
+| C11 编辑改 scope | ⚠️修正·时序标注 | 阶段 7 C1 修复（fillForm 不再清空 editingName）后 **PATCH 分支可达**，C11 现象恢复成立：编辑改 scope 后 PATCH 用新 scope 查旧 name → 400 not found 无引导；标注为**阶段 8 可修**（届时按新 scope 语义处理 PATCH 定位），阶段 7 仅记录 |
 | C12–C15 | ✅成立 | 按原文 |
 
 ### 8.2 测试审计补充（评审核实）
