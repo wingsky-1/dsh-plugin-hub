@@ -82,8 +82,8 @@
     "untildify": "^6.0.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/dsh-host-webserver": "0.1.2-rc.1"
+    "@deepseek-ai/cordis": "catalog:",
+    "@deepseek-ai/dsh-host-webserver": "catalog:"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
