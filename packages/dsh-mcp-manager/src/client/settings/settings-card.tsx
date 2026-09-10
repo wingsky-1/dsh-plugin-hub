@@ -7,9 +7,9 @@
  */
 
 import * as React from "react";
-import { API } from "./constants.ts";
-import { api } from "./dom.ts";
-import { t } from "../../../../shared/client/i18n.js";
+import { API } from "../core/constants.ts";
+import { api } from "../core/api.ts";
+import { t } from "../../../../../shared/client/i18n.js";
 
 /**
  * 设置页插件卡（settings.plugin.item）：浮窗位置 / 偏移编辑区。
@@ -25,6 +25,9 @@ export function SettingsCard() {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null) as any;
+  // C5：成功提示消失定时器登记 ref，卸载清理——匿名 setTimeout 在组件卸载
+  // （HMR/设置页关闭）后仍 setState 触发 React 告警与潜在泄漏。
+  const msgTimer = React.useRef(undefined);
 
   useEffect(() => {
     let live = true;
@@ -36,6 +39,10 @@ export function SettingsCard() {
     }).catch(() => {});
     return () => {
       live = false;
+      if (msgTimer.current !== undefined) {
+        clearTimeout(msgTimer.current);
+        msgTimer.current = undefined;
+      }
     };
   }, []);
 
@@ -74,7 +81,11 @@ export function SettingsCard() {
         body: JSON.stringify(payload),
       });
       setMsg({ ok: true, text: t("settingsSavedOk") });
-      setTimeout(() => setMsg(null), 2400);
+      if (msgTimer.current !== undefined) clearTimeout(msgTimer.current);
+      msgTimer.current = setTimeout(() => {
+        msgTimer.current = undefined;
+        setMsg(null);
+      }, 2400);
     } catch (e) {
       setMsg({ ok: false, text: t("saveFail", { msg: e instanceof Error ? e.message : String(e) }) });
     }

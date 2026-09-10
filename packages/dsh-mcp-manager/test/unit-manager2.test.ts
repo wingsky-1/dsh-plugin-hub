@@ -264,7 +264,7 @@ const quietServer = (name, extra = {}) => ({ name, transport: "stdio", command: 
 {
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mgr2a-"));
   try {
-    const { manager } = makeManager(dir);
+    const { manager, log } = makeManager(dir);
     assert.deepEqual(manager.uiConfig(), { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 });
 
     // 写不可用抛错。
@@ -307,7 +307,7 @@ const quietServer = (name, extra = {}) => ({ name, transport: "stdio", command: 
     const meta = new Map([["t1", { description: "desc-a" }]]);
     await manager.recordCatalogTools("srv", meta);
     assert.equal(manager.catalogCache.get("srv").summary, "desc-a");
-    assert.ok(existsSync(manager.catalogCachePath) === false || true);
+    // 落盘断言统一在下块（此处 catalogCachePath 仍是损坏文件路径，存在性无判别力）。
     // 恢复一个真实可写路径，用新摘要验证落盘。
     manager.catalogCachePath = join(dir, "cache.json");
     await manager.recordCatalogTools("srv", new Map([["t1", { description: "desc-b" }]]));
@@ -320,8 +320,9 @@ const quietServer = (name, extra = {}) => ({ name, transport: "stdio", command: 
     // 写入失败 warn（路径是目录制造 rename 失败）。
     mkdirSync(join(dir, "dir-as-file"), { recursive: true });
     manager.catalogCachePath = join(dir, "dir-as-file");
+    const warnBefore = log.warn.length;
     await manager.recordCatalogTools("other", new Map([["x", { description: "y" }]]));
-    assert.ok(manager.logWarnCount === undefined, "");
+    assert.ok(log.warn.length > warnBefore, "写入失败触发 logger.warn");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

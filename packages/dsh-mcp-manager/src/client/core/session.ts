@@ -5,7 +5,7 @@
  * 跨模块动作（refresh）经 actions 注入，不直接引用 panel 模块。
  */
 
-import { api } from "./dom.ts";
+import { api } from "./api.ts";
 import type { McpState, UiActions } from "./state.ts";
 
 /**

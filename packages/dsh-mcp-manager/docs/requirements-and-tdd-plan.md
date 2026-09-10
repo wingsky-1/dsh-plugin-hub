@@ -360,7 +360,7 @@
 | C8 checkbox 折叠态丢失 | ✅成立 | 体验项 |
 | C9 SSE 65s 空窗 | ✅成立 | 设计内，文档化 |
 | C10 面板不主动刷新 | ✅成立 | showPanel 补 refresh |
-| C11 编辑改 scope | ❌误报 | PATCH 分支不可达（C1 升格后 saveForm 恒走 POST），删除或标记 |
+| C11 编辑改 scope | ✅已修复（阶段 8） | 阶段 7 C1 修复后 PATCH 分支可达、现象恢复成立；阶段 8 落地为**客户端迁移式保存**：saveForm 检测 name/scope 变化 → 先 POST 新条目再 DELETE 旧条目（宿主 PATCH 按 (scope,name) 定位且强制沿用定位名，不支持改名/改 scope；任何失败即中止保留原条目，避免半迁移脏数据） |
 | C12–C15 | ✅成立 | 按原文 |
 
 ### 8.2 测试审计补充（评审核实）

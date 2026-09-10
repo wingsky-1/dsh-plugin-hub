@@ -98,6 +98,14 @@ import "./unit-call-stats.test.ts";
 import "./unit-pipeline.test.ts";
 // 工作空间路由域（#664 阶段 4：makeResolveRoot 路由 + B3 红测）
 import "./unit-workspace.test.ts";
+// 三通道不对称收敛（#664 阶段 8）：catalog/store/supervisor/transport 四个文件
+// 此前只在 stryker 管线执行（本地 pnpm test 从不跑，漏检窗口）；均为轻量
+// mock/纯函数断言（无真实子进程、无固定 sleep），纳入 smoke 补齐配置域/目录域/
+// 重连状态机/传输协议桩的动态断言面，时长代价可控。
+import "./unit-catalog.test.ts";
+import "./unit-store.test.ts";
+import "./unit-supervisor.test.ts";
+import "./unit-transport.test.ts";
 
 const failures = [];
 const check = (label, fn) => {
@@ -694,6 +702,86 @@ const main = async () => {
     // 样式文件末尾规则应整体出现在 client.js 产物中（text-loader 原样内联）。
     assert.ok(clientSrc.includes(probe.slice(0, 40)), "style.css 尾部规则已内联进 client.js");
     assert.ok(!clientSrc.includes('rel="stylesheet"'), "无独立样式表请求");
+  });
+
+  // ---- 阶段 7 C 类修复哨兵断言（先红后绿：断言先行，修复随 commit 转绿）----
+  console.log("阶段 7 C 类修复：客户端产物/样式哨兵断言");
+  check("C1 编辑保存链路修复：fillForm 不再清空 editingName（PATCH 分支可达）+ enabled 回填", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    // 链路修复：fillForm 函数体（到 saveForm 为止）不得再调用会清空 editingName 的 resetForm。
+    const fillFormStart = clientSrc.indexOf("function fillForm");
+    const saveFormStart = clientSrc.indexOf("function saveForm");
+    assert.ok(fillFormStart >= 0 && saveFormStart > fillFormStart, "产物含 fillForm/saveForm 标识符");
+    assert.ok(
+      !clientSrc.slice(fillFormStart, saveFormStart).includes("resetForm("),
+      "fillForm 内不再调用 resetForm（清空 editingName 的链路修复）",
+    );
+    // enabled 回填：编辑 enabled:false 服务器时表单 checkbox 不得被强制勾选（C1 附带回填）。
+    assert.ok(clientSrc.includes("fill.enabled"), "enabled 回填进产物（formEnabled.checked = fill.enabled !== false）");
+  });
+  check("C2 SSE 轮询探测恢复：eventsRetired 后周期性探测重连（非永久轮询）", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    assert.ok(clientSrc.includes("tryResumeEvents"), "轮询恢复探测入口 tryResumeEvents 进产物");
+    assert.match(clientSrc, /pollTicks\s*%/, "轮询计数周期性触发探测（pollTicks % N）");
+  });
+  check("C3 超长名溢出防护：服务器名/工具名 CSS overflow-wrap", () => {
+    const css = readFileSync(new URL("../src/client/style.css", import.meta.url), "utf8");
+    assert.match(css, /\.dm-server \.dm-name\{[^}]*overflow-wrap:anywhere/, "管理面板服务器名 overflow-wrap");
+    assert.match(css, /\.dm-float-tool,\.dm-tool\{[^}]*overflow-wrap:anywhere/, "浮窗工具 checkbox 名 overflow-wrap");
+  });
+  check("C4 keydown 泄漏修复：Escape 监听具名 + 卸载配对移除", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    assert.ok(clientSrc.includes('addEventListener("keydown", onKeyDown)'), "keydown 监听具名 onKeyDown 进产物");
+    assert.ok(clientSrc.includes('removeEventListener("keydown", onKeyDown)'), "配对 removeEventListener 进产物");
+  });
+  check("C5 设置卡成功提示 setTimeout 清理（卸载不 setState）", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    assert.ok(clientSrc.includes("msgTimer"), "msgTimer ref 进产物");
+    assert.match(clientSrc, /clearTimeout\(msgTimer\.current\)/, "卸载/重复保存前清理 msgTimer");
+  });
+  check("C6 tool-disable 全名形态：projectRoot 缺失防御性不提交非法 @/name", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    assert.ok(clientSrc.includes("toolDisableServerKey"), "tool-disable 全名拼装 helper 进产物");
+    // esbuild 保留模板串形态：helper 返回 `@@global/${server.name}`。
+    assert.ok(clientSrc.includes("`@@global/${server.name}`"), "global 形态 @@global/<name> 进产物（helper 模板串）");
+  });
+  check("C7 浮窗操作带 cwd：float connect/enable/disable 与 servers 对齐（#412 自愈）", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    // esbuild 保留模板串形态：float `&scope=${server.scope}${cwdQuery}`；servers `${scopeQuery}${cwdQuery}`。
+    assert.ok(clientSrc.includes("${server.scope}${cwdQuery}"), "float 操作 URL 拼接 cwdQuery 进产物");
+    assert.ok(clientSrc.includes("${scopeQuery}${cwdQuery}"), "servers disconnect/disable 补齐 cwdQuery 进产物");
+  });
+  check("C8 checkbox 折叠态保留：details 按 server 记录并恢复 open", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    assert.ok(clientSrc.includes("openTools"), "渲染前记录展开的折叠组（openTools）进产物");
+    assert.match(clientSrc, /details\.open\s*=/, "重建后恢复 details.open 进产物");
+  });
+  check("C10 showPanel 主动刷新：面板打开即拉最新数据（中间层热切换错配）", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    const showStart = clientSrc.indexOf("function showPanel");
+    assert.ok(showStart >= 0, "showPanel 标识符在产物中");
+    // 修复前 showPanel 内仅头部刷新按钮 onclick 有一次 refresh；修复后打开动作
+    // 主动补一次 → ≥2 次（断言区分于 onclick 单次，防误绿）。
+    const showBody = clientSrc.slice(showStart, showStart + 2500);
+    const refreshCount = (showBody.match(/refresh\(state, actions\)/g) ?? []).length;
+    assert.ok(refreshCount >= 2, "showPanel 内 refresh 出现≥2 次（onclick + 打开主动刷新）");
+  });
+  check("C13 未知状态按 stopped 投影：servers 列表不静默丢卡（与 float 一致）", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    const renderStart = clientSrc.indexOf("function renderServers");
+    assert.ok(renderStart >= 0, "renderServers 标识符在产物中");
+    assert.ok(
+      clientSrc.slice(renderStart, renderStart + 2000).includes('.get("stopped").push'),
+      "servers 渲染未知状态塞入 stopped 分组（不丢卡）",
+    );
+  });
+  check("C11 编辑改 name/scope 迁移式保存：POST 新条目 + DELETE 旧条目（宿主 PATCH 不支持改名/scope）", () => {
+    const clientSrc = readFileSync(new URL("../lib/client.js", import.meta.url), "utf8");
+    // C11（阶段 8 落地，依赖阶段 7 C1 修复后 PATCH 分支可达）：saveForm 检测
+    // name 或 scope 变化 → 迁移分支（先 POST 后 DELETE），避免新 scope 查旧
+    // name 404。
+    assert.ok(clientSrc.includes("migrated"), "迁移分支检测变量 migrated 进产物");
+    assert.ok(clientSrc.includes("state.editing.scope"), "DELETE 旧条目用旧 scope 进产物");
   });
 
   console.log("SSE 半开连接防护（#268：服务端心跳 + 客户端 watchdog + 回前台重建）");
