@@ -2,8 +2,8 @@
 
 > 覆盖**宿主端 / 客户端**两类代码的写法与构建契约，以及我们统一后的客户端形态
 > （干净模块 + 独立 CSS + `src/client/` 目录 + 第三方内联）。适用于本公开仓库
-> `packages/dsh-*` 的开发与维护。构建/契约/发布脚本见 `scripts/`；仓库级硬性规则
-> （全局约定 / 发布纪律）见根 [AGENTS.md](../AGENTS.md)。
+> `packages/dsh-*` 的开发与维护。构建/契约/发布脚本见 `scripts/`；仓库级硬性规则见根
+> [AGENTS.md](../AGENTS.md)，发版执行规程见 [.dsh/skills/dsh-plugin-release/SKILL.md](../.dsh/skills/dsh-plugin-release/SKILL.md)。
 
 ## 0. 构建总览
 

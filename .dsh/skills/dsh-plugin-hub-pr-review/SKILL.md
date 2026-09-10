@@ -83,9 +83,11 @@ S6 三桶分诊。混合时先统一严重度标尺（见 S3 模板），避免�
    ```sh
    # 取 PR head（无需知道分支名；在仓库工作树内执行，或用 git -C <仓库根>）
    git fetch origin pull/<N>/head
-   # 建 worktree（建在仓库同级目录 ../，不污染仓库自身工作树）
-   git worktree add ../dsh-hub-task-<n> FETCH_HEAD
+   git worktree list                     # 建/删/复用路径前必查
+   git worktree add /mnt/ssd/worktree/dsh-plugin-hub-task-<n> FETCH_HEAD
    ```
+
+   路径一律 `/mnt/ssd/worktree/<仓库名>-<分支名>`，不建在仓库内部、`/tmp` 或家目录。
    - **禁止** `fetch origin pull/<N>/head:<branch>` 写法——会建本地分支；
      若已建，收尾清理清单须含 `git branch -D <branch>`。
    - **依赖策略**：worktree 内先**直接试跑门禁**（本仓构建脚本自包含，
@@ -93,11 +95,11 @@ S6 三桶分诊。混合时先统一严重度标尺（见 S3 模板），避免�
      复现脚本按 S4 三档选档，仅第二档需要先 build。
    - 主 clone 若恰好已检出该分支也可直接只读审（先 `git status -sb` 确认），
      但门禁与复现仍建议在 worktree 做，避免污染主 clone 的未跟踪文件。
-   - **评审收尾清理**：`git worktree remove ../dsh-hub-task-<n>`
+   - **评审收尾清理**：`git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n>`
      （有未跟踪产物时加 `--force` 前先确认无价值文件）；
      需要留证据时先把复现脚本/输出拷到 /tmp 等仓库外目录再清（见 S4 落盘约定）。
-4. **读规范基线**：仓库根 `AGENTS.md`（门禁命令、全局约定、提交规范、测试纪律、
-   发布纪律）；目标包的 `README.md` + `package.json`。
+4. **读规范基线**：仓库根 `AGENTS.md`（权威顺序、硬约束、门禁命令、测试纪律、
+   仓库约定）；发版相关另读 `.dsh/skills/dsh-plugin-release/SKILL.md`。
    **仓库惯例先行核对**：flag「版本号未 bump / release-notes 缺失 / 提交不规范」
    前，先 `git log -- <path>` 核对该仓惯例，防止假阳性发现混入报告
    （如版本号由独立 release 提交统一处理是惯例而非缺陷）。
@@ -274,8 +276,8 @@ merge commit 中书面承诺的后续动作：
 - **只读评审**：S0-S5 零写操作（DSH 配置、远端均不动；worktree 内只跑门禁与
   复现脚本，不提交、不 push）；复现脚本落盘到约定的评审交付目录，不留痕于主 clone。
 - **worktree 收尾**：评审交付后 `git worktree remove` 清理（见 S0 第 3 步），
-  若误建了本地分支一并 `git branch -D`；不在仓库同级目录残留
-  `dsh-hub-task-<n>` 目录。
+  若误建了本地分支一并 `git branch -D`；不在 `/mnt/ssd/worktree` 残留
+  `dsh-plugin-hub-task-<n>` 目录（清理后 `git worktree prune`）。
 - **不关闭/重启 dsh web 进程**；门禁实跑用后台 job，等待期做独立佐证。
 - **全中文**报告与评论；代码/专名保留原文。
 - **对账闭环**：PR body 的每条声明（测试清单、兼容性承诺、门禁声明）
