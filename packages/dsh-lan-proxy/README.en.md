@@ -72,8 +72,8 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `wsBridgeEnabled` | `true` | WebSocket bridge master switch (issue #552): `true` = all WS upgrades go through "termination + bridge" (keep-alive base: auto-answers upstream Pings + half-open probes); `false` = TCP byte passthrough (explicitly drops keep-alive and compression — mobile backgrounding can be killed by upstream heartbeat and cause frequent reconnect loops, see "WebSocket Bridge & Compression") |
 | `wsCompressEnabled` | `true` | Whether to apply compressed bridging to WebSockets matching `wsCompressPaths` (compression only; does not affect bridge keep-alive) |
 | `wsCompressPaths` | `/api/remote.mux` | Path allowlist participating in WebSocket compression (empty = bridged without compression, keep-alive unaffected) |
-| `httpCompressEnabled` | `true` | Master switch for HTTP response compression (Brotli/gzip negotiation, merged from dsh-gzip) |
-| `httpCompressLevel` | `1` | Compression preset 0..3: `0` default / `1` low (gzip 1 / br 2, fastest) · `2` medium (gzip 5 / br 5, balanced) / `3` high (gzip 9 / br 9, best ratio) — effective for **both** gzip and Brotli; legacy integer values 4..9 are migrated to 3 automatically |
+| `httpCompressEnabled` | `true` | Master switch for HTTP response compression (the forwarding layer negotiates gzip/Brotli for compressible responses; Brotli's effective condition is documented in "HTTP Response Compression", merged from dsh-gzip) |
+| `httpCompressLevel` | `1` | Compression preset 0..3: `0` default / `1` low (gzip 1 / br 2, fastest) · `2` medium (gzip 5 / br 5, balanced) / `3` high (gzip 9 / br 9, best ratio) — the gzip and Brotli parameters are both passed down; legacy integer values 4..9 are migrated to 3 automatically |
 
 GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes apply hot).
 
@@ -138,14 +138,31 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
   battle-tested [compression](https://www.npmjs.com/package/compression) middleware
   (inlined at build time): for requests served through
   this plugin, compressible responses (JSON / text) from `/api` (RPC), `/plugins`
-  (client bundles), and static assets/index.html negotiate compression automatically — Brotli when the client's Accept-Encoding includes br, gzip fallback otherwise; SSE
+  (client bundles), and static assets/index.html negotiate compression automatically; SSE
   (text/event-stream), zip exports, already-encoded responses, HEAD, Range requests,
   and responses under 1KB pass through untouched.
+- **When Brotli actually applies (measured)**: dsh's own web server already ships gzip
+  compression (`compression: gzip`) and negotiates gzip only. Two cases therefore exist on
+  this path:
+
+  | Client `Accept-Encoding` | Upstream | Final response through this plugin |
+  |---|---|---|
+  | `br, gzip` (mainstream browsers) | gzip | gzip (already encoded, this layer defers instead of re-compressing) |
+  | `gzip` | gzip | gzip (same) |
+  | `br` (br only) | raw | **br** |
+
+  In other words, this layer's Brotli applies only when the upstream left the response
+  uncompressed and the client declared br alone. Mainstream browsers declare gzip as well,
+  so what arrives is the upstream gzip and the **extra Brotli ratio is not realized** on
+  this path; that case is still far better than no compression (the same response measured
+  322900 → 5065 bytes). The two layers never double-compress.
 - Benefit: large JSON responses such as session history (4~13MB uncompressed) often hit
   the browser RPC 30s timeout over remote/slow links ("history load failed"); after compression
   they are ~1.2MB — measured in an isolated environment at ~36s down to ~3s.
 - The middleware sits on the forwarder's own listener chain and does not modify dsh web
-  or any other plugin's runtime behavior; set `httpCompressEnabled: false` to turn it off.
+  or any other plugin's runtime behavior; set `httpCompressEnabled: false` to turn this
+  layer's compression off (when the client also accepts gzip, the upstream's own gzip still
+  compresses such responses, so the switch does not change their on-wire size).
   Note: traffic that reaches the loopback web directly (local browser on `127.0.0.1:3080`,
   not through this plugin) is outside the compression surface — loopback links do not
   need compression.

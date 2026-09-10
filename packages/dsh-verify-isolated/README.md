@@ -27,8 +27,11 @@ dsh plugin --profile web add @wingsky-1/dsh-verify-isolated
   raw CDP 零依赖（仅 Node ≥22 内置全局 WebSocket），launch 独立 chromium
   （临时 user-data-dir + 自选空闲调试端口 + headless），原子操作 CLI
   （snapshot / click / eval / fill / wait / screenshot / console / quit），
-  统一 `--json` 输出，实例信息写入 `browser.state`；三平台内核探测链
-  （`DSH_VERIFY_CHROME` env → ms-playwright 缓存 → PATH → 平台常见路径），
+  统一 `--json` 输出，实例信息写入 `browser.state`；**设备模拟**：页面命令通用
+  `--width / --height / --dpr / --mobile` 逐档设定视口验证响应式布局——命令内生效、
+  结束即清除，命令之间互不影响（不做粘性状态的原因见 `scripts/lib/emulation.mjs`：
+  CDP 的 Emulation 状态按 session 归属，跨连接清除会静默失效并残留）；三平台内核
+  探测链（`DSH_VERIFY_CHROME` env → ms-playwright 缓存 → PATH → 平台常见路径），
   全缺失 fail-fast 打印安装指引；
 - **最小启动依赖**：profile bundles 含 `@deepseek-ai/dsh-base` +
   `@deepseek-ai/dsh-web-app`（内置 bundle 按名从 dsh 安装目录解析，不走 npm）；
@@ -61,6 +64,7 @@ skills/dsh-verify-isolated/
   scripts/verify-isolated.mjs     # 一键隔离验证脚本（node，--dsh / --browser / --port 0 / --keep / --no-build / --evidence-dir / --audit / --audit-extra-dirs / --json）
   scripts/lib/verify-core.mjs     # 共享基础工具（退出码常量/poll/findFreePort/端口解析/C11 归一化）
   scripts/lib/audit.mjs           # B4 隔离审计纯函数（scanSnapshot/diffAgainstWhitelist/checkSymlinkEscape/runAudit + 版本化白名单 WHITELIST_V）
+  scripts/lib/emulation.mjs       # 设备模拟参数纯函数（parseEmulationFlags / buildDeviceMetrics；CDP 会话语义依据）
   scripts/browser-driver.mjs      # 自带独立浏览器驱动（raw CDP 零依赖，--json 原子操作 CLI）
 cordis.patch.yml                  # 复用官方 dsh-skill-filesystem + bundledSkillDir
 lib/index.js                      # 宿主门禁出口（name + 空 apply）
@@ -99,6 +103,9 @@ WebSocket，更低版本会在连接时报错提示升级）：
 node "$SKILL_BASE/scripts/browser-driver.mjs" snapshot --state "$DSH_HOME/browser.state" --url http://127.0.0.1:<端口>
 node "$SKILL_BASE/scripts/browser-driver.mjs" click --state "$DSH_HOME/browser.state" --selector "button.start"
 node "$SKILL_BASE/scripts/browser-driver.mjs" screenshot --state "$DSH_HOME/browser.state" --path shot.png
+# 设备模拟（页面命令通用）：逐档视口验证响应式布局；命令内生效、结束即清除
+node "$SKILL_BASE/scripts/browser-driver.mjs" screenshot --state "$DSH_HOME/browser.state" --url http://127.0.0.1:<端口> --width 375 --height 667 --path phone.png
+node "$SKILL_BASE/scripts/browser-driver.mjs" eval --state "$DSH_HOME/browser.state" --width 375 --height 667 --expression "innerWidth+'x'+innerHeight"
 ```
 
 ## 安全模型
@@ -106,6 +113,9 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" screenshot --state "$DSH_HOME/brow
 - 隔离环境不携带真实凭据（临时 `DSH_HOME` 无 `~/.dsh` 数据）；
 - 隔离 `dsh web` 显式回环绑定（`--host 127.0.0.1`，仅本机可连）并显式禁用遥测
   （`DSH_TELEMETRY_DISABLED=1`，测试数据不外发）；
+- 隔离验证只覆盖**回环访问形态**（脚本固定 `--host 127.0.0.1`）。要验证局域网/
+  移动端访问形态，需自行用官方 `--trusted-host <authority>` 拉起，并自行确认被测
+  插件在该形态下的鉴权与围栏行为；
 - 不关闭/重启运行中的主 `dsh web` 进程（独立端口）；
 - 浏览器实例只绑定回环调试端口（`--remote-debugging-address=127.0.0.1`），
   仅本机可连；

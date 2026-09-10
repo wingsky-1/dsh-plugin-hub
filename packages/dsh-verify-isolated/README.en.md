@@ -32,9 +32,14 @@ built-in skill and becomes available to all sessions in the profile (check with
   raw CDP, zero dependencies (only Node ≥22's built-in global WebSocket), launches an
   independent chromium (temp user-data-dir + a free debug port of its choosing + headless),
   atomic-operation CLI (snapshot / click / eval / fill / wait / screenshot / console /
-  quit), uniform `--json` output, instance info written to `browser.state`; a
-  three-platform kernel detection chain (`DSH_VERIFY_CHROME` env → ms-playwright cache →
-  PATH → common platform paths), fail-fast with install guidance when all are missing;
+  quit), uniform `--json` output, instance info written to `browser.state`; **device
+  emulation**: page commands accept `--width / --height / --dpr / --mobile` to verify
+  responsive layouts viewport by viewport — applied within the command and cleared before
+  it exits, so commands never affect each other (why it is not sticky state, see
+  `scripts/lib/emulation.mjs`: CDP's Emulation state is per session, so clearing across
+  connections silently fails and leaks the size); a three-platform kernel detection chain
+  (`DSH_VERIFY_CHROME` env → ms-playwright cache → PATH → common platform paths), fail-fast
+  with install guidance when all are missing;
 - **Minimal startup dependencies**: profile bundles contain `@deepseek-ai/dsh-base` +
   `@deepseek-ai/dsh-web-app` (built-in bundles are resolved by name from the dsh install
   directory, not via npm);
@@ -78,6 +83,7 @@ skills/dsh-verify-isolated/
   scripts/verify-isolated.mjs     # one-shot isolated verification script (Node, --dsh / --browser / --port 0 / --keep / --no-build / --evidence-dir / --audit / --audit-extra-dirs / --json)
   scripts/lib/verify-core.mjs     # shared base utilities (exit-code constants/poll/findFreePort/port parsing/C11 normalization)
   scripts/lib/audit.mjs           # B4 isolated-audit pure functions (scanSnapshot/diffAgainstWhitelist/checkSymlinkEscape/runAudit + versioned whitelist WHITELIST_V)
+  scripts/lib/emulation.mjs       # device-emulation pure functions (parseEmulationFlags / buildDeviceMetrics; CDP session semantics)
   scripts/browser-driver.mjs      # self-contained browser driver (raw CDP, zero deps, --json atomic CLI)
 cordis.patch.yml                  # reuses official dsh-skill-filesystem + bundledSkillDir
 lib/index.js                      # host gate export (name + empty apply)
@@ -123,6 +129,10 @@ prompt for an upgrade):
 node "$SKILL_BASE/scripts/browser-driver.mjs" snapshot --state "$DSH_HOME/browser.state" --url http://127.0.0.1:<port>
 node "$SKILL_BASE/scripts/browser-driver.mjs" click --state "$DSH_HOME/browser.state" --selector "button.start"
 node "$SKILL_BASE/scripts/browser-driver.mjs" screenshot --state "$DSH_HOME/browser.state" --path shot.png
+# device emulation (available on every page command): verify responsive layouts
+# viewport by viewport; applied within the command and cleared when it exits
+node "$SKILL_BASE/scripts/browser-driver.mjs" screenshot --state "$DSH_HOME/browser.state" --url http://127.0.0.1:<port> --width 375 --height 667 --path phone.png
+node "$SKILL_BASE/scripts/browser-driver.mjs" eval --state "$DSH_HOME/browser.state" --width 375 --height 667 --expression "innerWidth+'x'+innerHeight"
 ```
 
 ## Security model
@@ -132,6 +142,10 @@ node "$SKILL_BASE/scripts/browser-driver.mjs" screenshot --state "$DSH_HOME/brow
 - The isolated `dsh web` binds explicitly to loopback (`--host 127.0.0.1`, reachable
   from this machine only) and explicitly disables telemetry
   (`DSH_TELEMETRY_DISABLED=1`, no test data leaves the machine);
+- Isolated verification covers the **loopback access shape** only (the script pins
+  `--host 127.0.0.1`). To verify LAN/mobile access, start it yourself with the official
+  `--trusted-host <authority>` and confirm the plugin under test authenticates as expected
+  in that shape;
 - It never stops/restarts the running main `dsh web` process (dedicated port);
 - The browser instance binds only to a loopback debug port
   (`--remote-debugging-address=127.0.0.1`), reachable from this machine only;

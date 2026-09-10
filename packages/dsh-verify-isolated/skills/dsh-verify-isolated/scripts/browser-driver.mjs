@@ -9,6 +9,10 @@
  *
  * 命令/参数契约以 `--help` 输出为准（launch / quit / snapshot / click / eval / fill /
  * wait / screenshot / console，统一 --json 输出）。内核探测链见 detectChrome()。
+ *
+ * 页面命令（snapshot / click / eval / fill / wait / screenshot / console）可携带设备
+ * 模拟 flag（--width / --height / --dpr / --mobile）：命令内应用、结束前清除，命令
+ * 之间互不影响——不做成粘性状态的原因见 lib/emulation.mjs 头部（CDP 会话语义）。
  */
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
@@ -16,6 +20,7 @@ import { homedir, platform, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { createServer } from "node:net";
 import { get } from "node:http";
+import { buildDeviceMetrics, parseEmulationFlags } from "./lib/emulation.mjs";
 
 // --- 基础工具 ---
 
@@ -373,156 +378,204 @@ async function waitSelector(wsUrl, selector, timeoutMs) {
   if (!found) throw new Error(`等待选择器超时（${timeoutMs}ms）: ${selector}`);
 }
 
-async function cmdSnapshot(flags) {
+// --- 设备模拟（视口）---
+
+async function readViewport(ws) {
+  const r = await rpcRaw(ws, "Runtime.evaluate", {
+    expression: "JSON.stringify({ width: innerWidth, height: innerHeight, dpr: devicePixelRatio })",
+    returnByValue: true,
+  });
+  return JSON.parse(r.result.value);
+}
+
+/**
+ * 在设备模拟条件下执行页面操作；`run` 收到 `{ st, page }`（state 与页面 target）。
+ * `--state` / `--index` 与设备 flag 一样由本函数统一取参，页面命令不再各自重复。
+ *
+ * set / clear 必须走同一条长连接：CDP 的 Emulation 状态按 session 归属，跨连接清除
+ * 会静默失效并把尺寸残留给后续命令（依据见 lib/emulation.mjs 头部）。无设备 flag
+ * 时不建连接，保持零开销。
+ */
+async function withPageEmulation(flags, run) {
+  // 先解析再连浏览器：参数错误应优先于环境错误报出。
+  const parsed = parseEmulationFlags((name) => flags.get(name));
   const statePath = flag(flags, "state", "browser.state");
   const { st, page } = await connectPage(statePath, Number(flag(flags, "index", "0")));
-  const url = flag(flags, "url", null);
-  await navigateIfGiven(page.webSocketDebuggerUrl, url);
-  const title = await evalRaw(page.webSocketDebuggerUrl, "document.title");
-  const readyState = await evalRaw(page.webSocketDebuggerUrl, "document.readyState");
-  const pageUrl = await evalRaw(page.webSocketDebuggerUrl, "location.href");
-  const selector = flag(flags, "selector", null);
-  let bodyText = null;
-  let element = null;
-  if (selector) {
-    element = await evalRaw(page.webSocketDebuggerUrl, selExpr(selector, `
-      const r = el.getBoundingClientRect();
-      return { found: true, tag: el.tagName, text: (el.innerText || el.textContent || "").slice(0, 2000), rect: { x: r.x, y: r.y, width: r.width, height: r.height } };`));
-  } else {
-    bodyText = (await evalRaw(page.webSocketDebuggerUrl, "document.body ? document.body.innerText.slice(0, 2000) : ''") || "");
+  if (!parsed.active) return run({ st, page });
+  const emuWs = await openRawWs(page.webSocketDebuggerUrl, () => {});
+  let baseline = null;
+  try {
+    baseline = await readViewport(emuWs);
+    await rpcRaw(emuWs, "Emulation.setDeviceMetricsOverride", buildDeviceMetrics(parsed, baseline));
+    return await run({ st, page });
+  } finally {
+    // 清理必须可自证：残留会静默污染后续命令，而跨连接 clear 本就不生效，
+    // 故在设置它的这条连接上清除并回读核对；失败只警告不改变命令成败语义。
+    try {
+      await rpcRaw(emuWs, "Emulation.clearDeviceMetricsOverride", {});
+      const restored = await readViewport(emuWs);
+      const drifted = baseline && (restored.width !== baseline.width
+        || restored.height !== baseline.height || restored.dpr !== baseline.dpr);
+      if (drifted) {
+        process.stderr.write(`警告: 设备模拟清理后视口未复原（${restored.width}x${restored.height}@${restored.dpr}，期望 ${baseline.width}x${baseline.height}@${baseline.dpr}）——后续命令可能受残留影响，必要时 quit 重建实例\n`);
+      }
+    } catch (e) {
+      process.stderr.write(`警告: 设备模拟清理失败（${e.message}）——视口状态可能残留，必要时 quit 重建实例\n`);
+    }
+    try { emuWs.close(); } catch {}
   }
-  const pages = (await httpJson(`http://127.0.0.1:${st.port}/json/list`) || []).filter((t) => t.type === "page");
-  out(flags, { ok: true, title, url: pageUrl, readyState, tabCount: pages.length, bodyText, element });
+}
+
+async function cmdSnapshot(flags) {
+  const url = flag(flags, "url", null);
+  const selector = flag(flags, "selector", null);
+  await withPageEmulation(flags, async ({ st, page }) => {
+    await navigateIfGiven(page.webSocketDebuggerUrl, url);
+    const title = await evalRaw(page.webSocketDebuggerUrl, "document.title");
+    const readyState = await evalRaw(page.webSocketDebuggerUrl, "document.readyState");
+    const pageUrl = await evalRaw(page.webSocketDebuggerUrl, "location.href");
+    let bodyText = null;
+    let element = null;
+    if (selector) {
+      element = await evalRaw(page.webSocketDebuggerUrl, selExpr(selector, `
+        const r = el.getBoundingClientRect();
+        return { found: true, tag: el.tagName, text: (el.innerText || el.textContent || "").slice(0, 2000), rect: { x: r.x, y: r.y, width: r.width, height: r.height } };`));
+    } else {
+      bodyText = (await evalRaw(page.webSocketDebuggerUrl, "document.body ? document.body.innerText.slice(0, 2000) : ''") || "");
+    }
+    const pages = (await httpJson(`http://127.0.0.1:${st.port}/json/list`) || []).filter((t) => t.type === "page");
+    out(flags, { ok: true, title, url: pageUrl, readyState, tabCount: pages.length, bodyText, element });
+  });
 }
 
 async function cmdClick(flags) {
-  const statePath = flag(flags, "state", "browser.state");
-  const { page } = await connectPage(statePath, Number(flag(flags, "index", "0")));
   const url = flag(flags, "url", null);
   const selector = flag(flags, "selector", null);
   const timeoutMs = Number(flag(flags, "timeout", "10000"));
   if (!selector) fail("click 需要 --selector");
-  await navigateIfGiven(page.webSocketDebuggerUrl, url);
-  await waitSelector(page.webSocketDebuggerUrl, selector, timeoutMs);
-  const clicked = await evalRaw(page.webSocketDebuggerUrl, selExpr(selector, `
-    el.scrollIntoView({ block: "center" });
-    el.click();
-    return { found: true, clicked: true, tag: el.tagName };`));
-  out(flags, { ok: true, selector, clicked, url: url || undefined });
+  await withPageEmulation(flags, async ({ page }) => {
+    await navigateIfGiven(page.webSocketDebuggerUrl, url);
+    await waitSelector(page.webSocketDebuggerUrl, selector, timeoutMs);
+    const clicked = await evalRaw(page.webSocketDebuggerUrl, selExpr(selector, `
+      el.scrollIntoView({ block: "center" });
+      el.click();
+      return { found: true, clicked: true, tag: el.tagName };`));
+    out(flags, { ok: true, selector, clicked, url: url || undefined });
+  });
 }
 
 async function cmdEval(flags) {
-  const statePath = flag(flags, "state", "browser.state");
-  const { page } = await connectPage(statePath, Number(flag(flags, "index", "0")));
   const expression = flag(flags, "expression", null);
   if (!expression) fail("eval 需要 --expression");
-  const value = await evalRaw(page.webSocketDebuggerUrl, expression);
-  out(flags, { ok: true, value });
+  await withPageEmulation(flags, async ({ page }) => {
+    const value = await evalRaw(page.webSocketDebuggerUrl, expression);
+    out(flags, { ok: true, value });
+  });
 }
 
 async function cmdFill(flags) {
-  const statePath = flag(flags, "state", "browser.state");
-  const { page } = await connectPage(statePath, Number(flag(flags, "index", "0")));
   const selector = flag(flags, "selector", null);
   const value = flag(flags, "value", "");
   const timeoutMs = Number(flag(flags, "timeout", "10000"));
   if (!selector) fail("fill 需要 --selector");
-  await waitSelector(page.webSocketDebuggerUrl, selector, timeoutMs);
-  const filled = await evalRaw(page.webSocketDebuggerUrl, `(() => {
-    const el = document.querySelector(${JSON.stringify(selector)});
-    if (!el) return { found: false };
-    const tag = el.tagName.toLowerCase();
-    if (tag === "select") {
-      el.value = ${JSON.stringify(value)};
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-    } else {
-      el.value = ${JSON.stringify(value)};
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-    }
-    return { found: true, tag, value: el.value };
-  })()`);
-  out(flags, { ok: true, selector, value, filled });
+  await withPageEmulation(flags, async ({ page }) => {
+    await waitSelector(page.webSocketDebuggerUrl, selector, timeoutMs);
+    const filled = await evalRaw(page.webSocketDebuggerUrl, `(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return { found: false };
+      const tag = el.tagName.toLowerCase();
+      if (tag === "select") {
+        el.value = ${JSON.stringify(value)};
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      } else {
+        el.value = ${JSON.stringify(value)};
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      return { found: true, tag, value: el.value };
+    })()`);
+    out(flags, { ok: true, selector, value, filled });
+  });
 }
 
 async function cmdWait(flags) {
-  const statePath = flag(flags, "state", "browser.state");
-  const { page } = await connectPage(statePath, Number(flag(flags, "index", "0")));
   const url = flag(flags, "url", null);
   const selector = flag(flags, "selector", null);
   const timeoutMs = Number(flag(flags, "timeout", "10000"));
   if (!selector) fail("wait 需要 --selector");
-  const started = Date.now();
-  await navigateIfGiven(page.webSocketDebuggerUrl, url);
-  await waitSelector(page.webSocketDebuggerUrl, selector, timeoutMs);
-  out(flags, { ok: true, selector, waitedMs: Date.now() - started });
+  await withPageEmulation(flags, async ({ page }) => {
+    const started = Date.now();
+    await navigateIfGiven(page.webSocketDebuggerUrl, url);
+    await waitSelector(page.webSocketDebuggerUrl, selector, timeoutMs);
+    out(flags, { ok: true, selector, waitedMs: Date.now() - started });
+  });
 }
 
 async function cmdScreenshot(flags) {
-  const statePath = flag(flags, "state", "browser.state");
-  const { st, page } = await connectPage(statePath, Number(flag(flags, "index", "0")));
   const url = flag(flags, "url", null);
   const selector = flag(flags, "selector", null);
   const outPath = flag(flags, "path", `screenshot-${Date.now()}.png`);
-  await navigateIfGiven(page.webSocketDebuggerUrl, url);
-  let clip = undefined;
-  if (selector) {
-    await waitSelector(page.webSocketDebuggerUrl, selector, 10000);
-    clip = await evalRaw(page.webSocketDebuggerUrl, selExpr(selector, `
-      const r = el.getBoundingClientRect();
-      // getBoundingClientRect 是 viewport 坐标；captureBeyondViewport 下 CDP 按文档
-      // 坐标解释 clip，须加 scrollX/scrollY 转换，否则页面滚动后截空白（PR #481 P1-2）
-      return { found: true, x: r.x + window.scrollX, y: r.y + window.scrollY, width: r.width, height: r.height, dpr: window.devicePixelRatio || 1 };`));
-    if (!clip || !clip.found) throw new Error(`截图元素未找到: ${selector}`);
-    clip = { x: clip.x, y: clip.y, width: clip.width, height: clip.height, scale: clip.dpr };
-  }
-  const shot = await rpc(page.webSocketDebuggerUrl, "Page.captureScreenshot", {
-    format: "png", captureBeyondViewport: true, fromSurface: true, clip,
+  await withPageEmulation(flags, async ({ page }) => {
+    await navigateIfGiven(page.webSocketDebuggerUrl, url);
+    let clip = undefined;
+    if (selector) {
+      await waitSelector(page.webSocketDebuggerUrl, selector, 10000);
+      clip = await evalRaw(page.webSocketDebuggerUrl, selExpr(selector, `
+        const r = el.getBoundingClientRect();
+        // getBoundingClientRect 是 viewport 坐标；captureBeyondViewport 下 CDP 按文档
+        // 坐标解释 clip，须加 scrollX/scrollY 转换，否则页面滚动后截空白（PR #481 P1-2）
+        return { found: true, x: r.x + window.scrollX, y: r.y + window.scrollY, width: r.width, height: r.height, dpr: window.devicePixelRatio || 1 };`));
+      if (!clip || !clip.found) throw new Error(`截图元素未找到: ${selector}`);
+      clip = { x: clip.x, y: clip.y, width: clip.width, height: clip.height, scale: clip.dpr };
+    }
+    const shot = await rpc(page.webSocketDebuggerUrl, "Page.captureScreenshot", {
+      format: "png", captureBeyondViewport: true, fromSurface: true, clip,
+    });
+    writeFileSync(outPath, Buffer.from(shot.data, "base64"));
+    const dims = clip ? { width: clip.width, height: clip.height } : null;
+    out(flags, { ok: true, path: outPath, bytes: Buffer.byteLength(shot.data, "base64"), clip: dims, url: url || undefined });
   });
-  writeFileSync(outPath, Buffer.from(shot.data, "base64"));
-  const dims = clip ? { width: clip.width, height: clip.height } : null;
-  out(flags, { ok: true, path: outPath, bytes: Buffer.byteLength(shot.data, "base64"), clip: dims, url: url || undefined });
 }
 
 async function cmdConsole(flags) {
-  const statePath = flag(flags, "state", "browser.state");
-  const { page } = await connectPage(statePath, Number(flag(flags, "index", "0")));
   const url = flag(flags, "url", null);
   const waitMs = Number(flag(flags, "wait-ms", "2500"));
-  const messages = [];
-  const collect = (ev) => {
-    if (!ev.data || typeof ev.data !== "string") return;
-    let m; try { m = JSON.parse(ev.data); } catch { return; }
-    if (!m || m.id) return;
-    if (m.method === "Runtime.consoleAPICalled") {
-      const args = (m.params.args || []).map((a) => a.value ?? a.description ?? a.type);
-      messages.push({ type: m.params.type, text: args.join(" "), url: m.params.url || null, line: m.params.lineNumber ?? null });
-    } else if (m.method === "Runtime.exceptionThrown") {
-      const d = m.params.exceptionDetails || {};
-      messages.push({ type: "exception", text: d.exception?.description || d.text || "未捕获异常", url: d.url || null, line: d.lineNumber ?? null });
-    } else if (m.method === "Log.entryAdded") {
-      const e = m.params.entry || {};
-      messages.push({ type: "log", level: e.level, text: e.text, url: e.url || null, line: e.lineNumber ?? null });
-    }
-  };
-  const ws = await openRawWs(page.webSocketDebuggerUrl, collect);
-  // domain enable 是会话级状态：须在事件收集的长连接上启用，短连接 enable 不生效
-  await rpcRaw(ws, "Runtime.enable", {});
-  await rpcRaw(ws, "Log.enable", {});
-  try {
-    if (url) {
-      await rpcRaw(ws, "Page.navigate", { url });
-      await poll(async () => {
-        try { return (await rpcRaw(ws, "Runtime.evaluate", { expression: "document.readyState", returnByValue: true })).result.value === "complete"; }
-        catch { return false; }
-      }, 15000, 200);
-    } else {
-      await rpcRaw(ws, "Page.reload", {});
-    }
-  } catch {}
-  await sleep(waitMs);
-  ws.close();
-  out(flags, { ok: true, messages, capturedMs: waitMs });
+  await withPageEmulation(flags, async ({ page }) => {
+    const messages = [];
+    const collect = (ev) => {
+      if (!ev.data || typeof ev.data !== "string") return;
+      let m; try { m = JSON.parse(ev.data); } catch { return; }
+      if (!m || m.id) return;
+      if (m.method === "Runtime.consoleAPICalled") {
+        const args = (m.params.args || []).map((a) => a.value ?? a.description ?? a.type);
+        messages.push({ type: m.params.type, text: args.join(" "), url: m.params.url || null, line: m.params.lineNumber ?? null });
+      } else if (m.method === "Runtime.exceptionThrown") {
+        const d = m.params.exceptionDetails || {};
+        messages.push({ type: "exception", text: d.exception?.description || d.text || "未捕获异常", url: d.url || null, line: d.lineNumber ?? null });
+      } else if (m.method === "Log.entryAdded") {
+        const e = m.params.entry || {};
+        messages.push({ type: "log", level: e.level, text: e.text, url: e.url || null, line: e.lineNumber ?? null });
+      }
+    };
+    const ws = await openRawWs(page.webSocketDebuggerUrl, collect);
+    // domain enable 是会话级状态：须在事件收集的长连接上启用，短连接 enable 不生效
+    await rpcRaw(ws, "Runtime.enable", {});
+    await rpcRaw(ws, "Log.enable", {});
+    try {
+      if (url) {
+        await rpcRaw(ws, "Page.navigate", { url });
+        await poll(async () => {
+          try { return (await rpcRaw(ws, "Runtime.evaluate", { expression: "document.readyState", returnByValue: true })).result.value === "complete"; }
+          catch { return false; }
+        }, 15000, 200);
+      } else {
+        await rpcRaw(ws, "Page.reload", {});
+      }
+    } catch {}
+    await sleep(waitMs);
+    ws.close();
+    out(flags, { ok: true, messages, capturedMs: waitMs });
+  });
 }
 
 // console 专用：原始 WebSocket 会话（长连接收事件）
@@ -559,10 +612,13 @@ rpcRaw.nextId = 0;
 
 // --- 入口 ---
 
-const USAGE = `用法: node browser-driver.mjs <command> [--flag value]... [--json] [--pretty]
+// 命令清单与通用段分开：`--help <command>` 是实际查参入口，必须一并带上通用段，
+// 否则设备模拟 flag 只在全局 help 可见，与文件头「契约以 --help 输出为准」的自述不符。
+const USAGE_HEAD = `用法: node browser-driver.mjs <command> [--flag value]... [--json] [--pretty]
 
-命令：
-  launch      启动独立浏览器实例并写入 state（--state <path> [--port N] [--user-data-dir <path>] [--chrome <path>]）
+命令：`;
+
+const USAGE_COMMANDS = `  launch      启动独立浏览器实例并写入 state（--state <path> [--port N] [--user-data-dir <path>] [--chrome <path>]）
   quit        优雅关闭实例并清理（--state <path>）
   snapshot    页面快照（[--url <url>] [--selector <css>] [--index N]）
   click       点击元素（--selector <css> [--url <url>] [--timeout ms] [--index N]）
@@ -570,17 +626,23 @@ const USAGE = `用法: node browser-driver.mjs <command> [--flag value]... [--js
   fill        填充表单（--selector <css> --value <v> [--timeout ms] [--index N]）
   wait        等待选择器（--selector <css> [--url <url>] [--timeout ms] [--index N]）
   screenshot  截图（[--url <url>] [--selector <css>] [--path <png>] [--index N]）
-  console     捕获 console/异常（[--url <url>] [--wait-ms N] [--index N]）
+  console     捕获 console/异常（[--url <url>] [--wait-ms N] [--index N]）`;
 
-通用：--state <path> 指定实例 state 文件（多会话并行必须各自独立）；
+const USAGE_COMMON = `通用：--state <path> 指定实例 state 文件（多会话并行必须各自独立）；
+设备模拟（页面命令通用）：--width N --height N [--dpr N] [--mobile]
+  逐档设定视口验证响应式布局；命令内生效、结束即清除，命令之间互不影响。
+  单给一维时另一维取当前视口值。--mobile 启用移动 layout viewport 语义（页面无
+  viewport meta 时 innerWidth 不再等于设定宽度）；触控/真机差异见 SKILL.md 能力边界。
 内核探测：DSH_VERIFY_CHROME env > ms-playwright 缓存 > PATH > 平台常见路径，全缺 fail-fast。
 环境要求：Node >= 22（页面操作依赖内置全局 WebSocket）；Chromium 系内核。
 详情见本文件头部注释。`;
 
+const USAGE = `${USAGE_HEAD}\n${USAGE_COMMANDS}\n\n${USAGE_COMMON}`;
+
 function printHelp(cmd) {
   if (!cmd) { process.stdout.write(USAGE + "\n"); return; }
-  const lines = USAGE.split("\n").filter((l) => l.includes(cmd) || l.startsWith("用法") || l.startsWith("命令"));
-  process.stdout.write(lines.join("\n") + "\n");
+  const lines = USAGE_COMMANDS.split("\n").filter((l) => l.includes(cmd));
+  process.stdout.write([USAGE_HEAD, ...lines, "", USAGE_COMMON].join("\n") + "\n");
 }
 
 async function main() {
