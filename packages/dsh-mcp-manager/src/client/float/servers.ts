@@ -7,8 +7,9 @@
  */
 
 import { el } from "../core/dom.ts";
-import { api } from "../core/api.ts";
-import { STATUS_ORDER, STATUS_TEXT } from "../core/constants.ts";
+import { api, toolDisableServerKey, cwdQueryOf } from "../core/api.ts";
+import { STATUS_ORDER } from "../core/constants.ts";
+import { tStatus } from "../core/i18n.ts";
 import { t } from "../../../../../shared/client/i18n.js";
 import type { McpState, UiActions } from "../core/state.ts";
 
@@ -39,11 +40,19 @@ function toolCheckbox(server: any, tool: string, disabled: boolean, state: McpSt
   const label = el("label", { class: "dm-tool" });
   const input = el("input", { type: "checkbox", checked: disabled });
   input.addEventListener("change", () => {
+    // C6：全名形态经 toolDisableServerKey 归一，projectRoot 缺失时跳过提交
+    // （防御非法 @/name，与浮窗 toolCheckbox 同口径）。
+    const serverKey = toolDisableServerKey(server, state);
+    if (serverKey === undefined) {
+      input.checked = !input.checked;
+      console.warn("[dsh-mcp-manager] projectRoot 缺失，跳过 tool-disable（非法 @/name 防御）");
+      return;
+    }
     void api(state.API.toolDisable, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        server: `@${server.scope === "global" ? "@global" : state.projectRoot ?? ""}/${server.name}`,
+        server: serverKey,
         tool,
         disabled: input.checked,
       }),
@@ -59,7 +68,7 @@ function toolCheckbox(server: any, tool: string, disabled: boolean, state: McpSt
 }
 
 /** 渲染单台服务器卡片。 */
-export function renderServer(server: any, state: McpState, actions: UiActions, opts: { tools: boolean } = { tools: true }): any {
+export function renderServer(server: any, state: McpState, actions: UiActions, opts: { tools: boolean; openTools?: Set<string> } = { tools: true }): any {
   const article = el("article", { class: "dm-server" });
   const header = el("header");
   header.appendChild(el("span", { class: "dm-name", text: server.name }));
@@ -68,7 +77,7 @@ export function renderServer(server: any, state: McpState, actions: UiActions, o
     text: server.transport === "streamable-http" ? "HTTP" : "stdio",
   }));
   header.appendChild(el("span", { class: "dm-badge", text: server.scope === "project" ? t("badgeScopeProject") : t("badgeScopeGlobal") }));
-  const statusBadge = el("span", { class: `dm-badge dm-st-${server.status}`, text: STATUS_TEXT[server.status] !== undefined ? t(STATUS_TEXT[server.status]) : server.status });
+  const statusBadge = el("span", { class: `dm-badge dm-st-${server.status}`, text: tStatus(server.status) });
   header.appendChild(statusBadge);
   const toolCount = Array.isArray(server.tools) ? server.tools.length : 0;
   header.appendChild(el("span", { class: "dm-count", text: t("toolsCountPlain", { n: toolCount }) }));
@@ -80,7 +89,8 @@ export function renderServer(server: any, state: McpState, actions: UiActions, o
   }
 
   if (toolCount > 0 && opts.tools) {
-    const details = el("details", { class: "dm-tools" });
+    const details = el("details", { class: "dm-tools", dataset: { dmServer: server.name } });
+    if (opts.openTools?.has(server.name) === true) details.open = true;
     details.appendChild(el("summary", { text: t("toolsCount", { n: toolCount }) }));
     const list = el("ul");
     const disabledSet = new Set(Array.isArray(server.disabledTools) ? server.disabledTools : []);
@@ -90,7 +100,8 @@ export function renderServer(server: any, state: McpState, actions: UiActions, o
     details.appendChild(list);
     article.appendChild(details);
   } else if (toolCount > 0 && !opts.tools) {
-    const details = el("details", { class: "dm-tools" });
+    const details = el("details", { class: "dm-tools", dataset: { dmServer: server.name } });
+    if (opts.openTools?.has(server.name) === true) details.open = true;
     details.appendChild(el("summary", { text: t("toolsCount", { n: toolCount }) }));
     const list = el("ul");
     for (const tool of server.tools) list.appendChild(el("li", { text: tool }));
@@ -105,10 +116,11 @@ export function renderServer(server: any, state: McpState, actions: UiActions, o
   // maybeSession 需 cwd 才能恢复会话（否则 middleware connect(scope=project) 抛
   // "no active project session"）。带上当前会话 cwd，宿主 setSession 幂等短路，
   // 正常时零副作用。
-  const cwdQuery = typeof state.currentCwd === "string" && state.currentCwd !== "" ? `&cwd=${encodeURIComponent(state.currentCwd)}` : "";
+  const cwdQuery = cwdQueryOf(state);
   if (server.status === "connected") {
     actionsEl.appendChild(actionButton(t("disconnect"), async () => {
-      await api(`${state.API.disconnect}?name=${encodeURIComponent(server.name)}${scopeQuery}`, { method: "POST" });
+      // C7：disconnect 同样带 cwd（#412 场景浮窗/面板操作自愈，与 connect 对齐）。
+      await api(`${state.API.disconnect}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`, { method: "POST" });
       await actions.refresh();
     }));
     actionsEl.appendChild(actionButton(t("reconnect"), async () => {
@@ -134,7 +146,8 @@ export function renderServer(server: any, state: McpState, actions: UiActions, o
   // 禁用开关：非 disabled 状态可一键禁用（宿主断开并注销工具）
   if (server.status !== "disabled") {
     actionsEl.appendChild(actionButton(t("disable"), async () => {
-      await api(`${state.API.servers}?name=${encodeURIComponent(server.name)}${scopeQuery}`, {
+      // C7：disable 同样带 cwd（与 disconnect 对齐，#412 自愈）。
+      await api(`${state.API.servers}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ enabled: false }),
@@ -159,6 +172,13 @@ export function renderServer(server: any, state: McpState, actions: UiActions, o
  * project 模式：全局组显示服务器但无工具 checkbox（提示切 all 模式可管理全局工具）。 */
 export function renderServers(state: McpState, actions: UiActions): void {
   if (state.bodyEl === undefined) return;
+  // C8：checkbox 操作后 actions.refresh 全量重建会丢 <details> 折叠态——渲染
+  // 前收集当前展开的工具组（按 server 名），重建后恢复（连续禁用 N 个工具
+  // 免反复展开）。
+  const openTools = new Set<string>();
+  for (const d of state.bodyEl.querySelectorAll("details.dm-tools")) {
+    if (d.open && d.dataset.dmServer !== undefined) openTools.add(d.dataset.dmServer);
+  }
   state.bodyEl.textContent = "";
   if (state.servers.length === 0) {
     state.bodyEl.appendChild(el("div", { class: "dm-status", text: t("serversEmpty") }));
@@ -174,13 +194,23 @@ export function renderServers(state: McpState, actions: UiActions): void {
     title.appendChild(document.createTextNode(scope === "project" ? t("groupProject") : t("groupGlobal")));
     title.appendChild(el("span", { class: "dm-count", text: `${list.length}` }));
     section.appendChild(title);
+    // 各自内部再按状态分组（状态序：运行中 → 连接中 → 重连中 → 未连接 → 已停用 → 失败）。
+    // C13 未知状态策略：与浮窗统一口径——未知状态按 stopped 投影、不丢卡
+    // （修复前 filter(status===key) 会静默丢弃未知状态服务器）。
+    const byStatus = new Map<string, any[]>();
+    for (const group of STATUS_ORDER) byStatus.set(group.key, []);
+    for (const server of list) {
+      const bucket = byStatus.get(server.status);
+      if (bucket !== undefined) bucket.push(server);
+      else if (byStatus.has("stopped")) byStatus.get("stopped")!.push(server);
+    }
     for (const group of STATUS_ORDER) {
-      const grouped = list.filter((server: any) => server.status === group.key);
-      if (grouped.length === 0) continue;
+      const bucket = byStatus.get(group.key) ?? [];
+      if (bucket.length === 0) continue;
       const sub = el("div", { class: "dm-subgroup" });
-      sub.appendChild(el("h4", { class: "dm-subgroup-title", text: t("statusGroupCount", { status: t(group.titleKey), n: grouped.length }) }));
-      for (const server of grouped.sort((a: any, b: any) => a.name.localeCompare(b.name))) {
-        sub.appendChild(renderServer(server, state, actions, { tools: toolsEnabled(scope) }));
+      sub.appendChild(el("h4", { class: "dm-subgroup-title", text: t("statusGroupCount", { status: t(group.titleKey), n: bucket.length }) }));
+      for (const server of [...bucket].sort((a: any, b: any) => a.name.localeCompare(b.name))) {
+        sub.appendChild(renderServer(server, state, actions, { tools: toolsEnabled(scope), openTools }));
       }
       section.appendChild(sub);
     }

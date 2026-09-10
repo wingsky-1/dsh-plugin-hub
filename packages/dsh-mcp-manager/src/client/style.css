@@ -60,7 +60,7 @@
 .dm-count{font-weight:400;color:var(--dsw-alias-label-secondary,#8a8f9c);margin-left:2px;font-size:11px}
 .dm-server{border:1px solid var(--dsw-alias-border-l1,#e5e7eb);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:var(--dsw-alias-bg-base,#fff)}
 .dm-server header{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.dm-server .dm-name{font-weight:600;font-size:13px;color:var(--dsw-alias-label-primary,#111827);font-family:ui-monospace,Consolas,monospace}
+.dm-server .dm-name{font-weight:600;font-size:13px;color:var(--dsw-alias-label-primary,#111827);font-family:ui-monospace,Consolas,monospace;overflow-wrap:anywhere;word-break:break-word}
 .dm-badge{font-size:10px;padding:1px 7px;border-radius:99px;background:var(--dsw-alias-bg-layer-2,#f1f2f5);color:var(--dsw-alias-label-secondary,#525866);border:1px solid var(--dsw-alias-border-l2,#e2e4ea)}
 .dm-badge.dm-http{background:var(--dsw-alias-state-business-secondary,#eef2ff);color:var(--dsw-alias-state-business-primary,#4353a3);border-color:var(--dsw-alias-state-business-tertiary,#dde3f8)}
 .dm-badge.dm-stdio{background:var(--dsw-alias-bg-layer-2,#f5f0ff);color:var(--dsw-alias-label-secondary,#6d4bb8);border-color:var(--dsw-alias-border-l2,#e6dcf8)}
@@ -139,7 +139,7 @@
 .dm-float-tools{margin:4px 0 0 16px}
 .dm-float-tools summary{font-size:11px;color:var(--dsw-alias-label-secondary,#525866);cursor:pointer;user-select:none}
 .dm-float-tool-list{display:flex;flex-direction:column;gap:2px;margin:4px 0 0;max-height:140px;overflow:auto}
-.dm-float-tool,.dm-tool{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dsw-alias-label-primary,#3a3f4b);font-family:ui-monospace,Consolas,monospace;cursor:pointer;line-height:1.6}
+.dm-float-tool,.dm-tool{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--dsw-alias-label-primary,#3a3f4b);font-family:ui-monospace,Consolas,monospace;cursor:pointer;line-height:1.6;overflow-wrap:anywhere;word-break:break-word;min-width:0;max-width:100%}
 /* 自绘 checkbox：勾选（禁用）显示红色 ×，与「勾选 = 禁用」语义一致（#401）。 */
 .dm-float-tool input,.dm-tool input{width:13px;height:13px;margin:0;flex:none;appearance:none;-webkit-appearance:none;border:1px solid var(--dsw-alias-border-l2,#c3c8d2);border-radius:3px;background:var(--dsw-alias-bg-base,#fff);cursor:pointer;position:relative;box-sizing:border-box}
 .dm-float-tool input:checked,.dm-tool input:checked{border-color:var(--dsw-alias-state-error-primary,#b42318);background:var(--dsw-alias-state-error-secondary,#fef2f2)}
