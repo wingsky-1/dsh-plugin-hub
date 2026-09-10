@@ -111,7 +111,9 @@ pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck
   临时目录，不纳入发布包，**用完即弃**）。涉及界面行为的改动实测后将截图归档至
   `packages/dsh-<name>/docs/archive/<issue号>-<行为描述>.png`（headless element
   screenshot 只截插件 UI 本身、不带浏览器整窗；各包 files 白名单不含 `docs/`，
-  截图不入发布物 tarball），并在 PR 正文贴图引用该路径、issue 评论回链 PR。
+  截图不入发布物 tarball），并在 PR 正文贴图引用该路径、issue 评论回链 PR。正文嵌图
+  手段（`gh --attach` / commit-pin raw URL / 网页拖拽）与破图陷阱见
+  [dsh-plugin-hub-pr-review/references/pr-images.md](../dsh-plugin-hub-pr-review/references/pr-images.md)。
 - P0/P1 断言必须实测并标证据类型（curl / playwright / smoke）；检核表见
   [dsh-plugin-review/references/verify-checklist.md](../dsh-plugin-review/references/verify-checklist.md)。
 - 新配置键**四同步**：normalize 白名单 / 透传排除表 + 客户端渲染 + smoke 断言 +

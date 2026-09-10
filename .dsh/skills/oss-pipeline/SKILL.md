@@ -151,7 +151,10 @@ merge --auto --squash → 清理。保留 loop/building 单标签便于在途识
    断言**（judge 判据并入 qa 角色，不设独立 judge）。截图归档至
    `packages/dsh-<name>/docs/archive/<issue号>-<行为描述>.png`（element screenshot
    只截插件 UI 本身；`docs/` 不入发布物 tarball），PR 正文贴图引用路径、
-   issue 评论回链 PR（双向引用）。纯宿主逻辑且 hardener 断言已覆盖者豁免实测部分，
+   issue 评论回链 PR（双向引用）；正文嵌图手段（`gh --attach` / commit-pin raw URL /
+   网页拖拽）见
+   [dsh-plugin-hub-pr-review/references/pr-images.md](../dsh-plugin-hub-pr-review/references/pr-images.md)。
+   纯宿主逻辑且 hardener 断言已覆盖者豁免实测部分，
    但逐条断言不可豁免。断言分工明文：coder 在 PR 正文产出全量断言表；
    **全部 [硬性] 条目由 qa subagent 独立复跑复核**（上下文隔离于 coder）；仅当
    qa 通道不可用时允许主控复核替代，且须在 PR 正文记录选择理由。豁免判据统一为
