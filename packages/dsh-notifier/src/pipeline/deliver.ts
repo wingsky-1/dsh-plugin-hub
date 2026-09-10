@@ -103,8 +103,21 @@ export function createDeliverer(deps: DeliverDeps): Deliverer {
     const { id, channel, dispatch } = target;
     const finalizeError = (err: unknown): string => sanitizeErrorText(err instanceof Error ? err.message : String(err), 300);
     try {
-      const safeTitle = truncateCodePoints(String(notice.title), channel.capabilities.titleMaxLen > 0 ? channel.capabilities.titleMaxLen : channel.capabilities.maxBodyLen);
-      const safeBody = truncateCodePoints(String(notice.body), channel.capabilities.maxBodyLen);
+      const rawTitle = String(notice.title);
+      const rawBody = String(notice.body);
+      // mergeTitleIntoBody（L8-1）：标题拼入正文、title 位传空串，拼入后长度
+      // 权威 = maxBodyLen（不再按 titleMaxLen 单独截断）；空 title 不产生多余
+      // 换行。titleMaxLen<=0 且未声明 mergeTitleIntoBody：保留 T2-1/T2-2 现状
+      // 宽限截断行为不变（隐式并入已废弃，显式字段接管——见 sdk/interface.ts）。
+      let safeTitle: string;
+      let safeBody: string;
+      if (channel.capabilities.mergeTitleIntoBody === true) {
+        safeTitle = "";
+        safeBody = truncateCodePoints(rawTitle ? `${rawTitle}\n${rawBody}` : rawBody, channel.capabilities.maxBodyLen);
+      } else {
+        safeTitle = truncateCodePoints(rawTitle, channel.capabilities.titleMaxLen > 0 ? channel.capabilities.titleMaxLen : channel.capabilities.maxBodyLen);
+        safeBody = truncateCodePoints(rawBody, channel.capabilities.maxBodyLen);
+      }
       const payload: DeliverPayload = { title: safeTitle, body: safeBody, kind: notice.kind, ts: notice.ts, severity: notice.severity };
       // dispatch 目标（内置频道）经 play 值传递——不经门不经重试（实时推送不
       // 被慢出站拖住，现状语义）；channel.send 目标经框架重试 + 并发门（B-3）。

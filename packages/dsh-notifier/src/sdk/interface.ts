@@ -51,12 +51,24 @@ export interface KindRegistration {
 
 // ---------------------------------------------------------------- Channel SPI
 
-/** 频道能力声明（框架据此做降级：标题并入 / 超长截断 / 重试 / 并发门）。 */
+/**
+ * 频道能力声明（框架据此做降级：标题并入 / 超长截断 / 重试 / 并发门）。
+ */
 export interface ChannelCapabilities {
-  /** 标题最大码点数；<=0 表示不支持标题（并入正文）。 */
+  /** 标题最大码点数；>0 时按此截断为独立标题；<=0 为「宽限截断」——按
+   *  maxBodyLen 截断但标题仍独立呈现（titleMaxLen<=0 的「并入正文」旧注释
+   *  与实现失真，见 L8-1；并入语义已改由 mergeTitleIntoBody 显式接管）。 */
   titleMaxLen: number;
   /** 正文最大码点数（超长按此截断）。 */
   maxBodyLen: number;
+  /**
+   * 显式声明「标题并入正文」（L8-1/S3-1 修复，取代 titleMaxLen<=0 的隐式
+   * 并入语义）：true 时框架把标题拼入正文（非空 title 以 `${title}\n${body}`
+   * 形态），title 位传空串、拼入后按 maxBodyLen 码点截断（长度权威 = 正文
+   * 截断，不再按 titleMaxLen 单独截断）。缺省/undefined = 不并入，标题独立
+   * 呈现——现状四个内置/出站频道均未声明，行为零变化。
+   */
+  mergeTitleIntoBody?: boolean;
   /** 框架重试声明（B-3 上移）：缺省 = 不重试（webhook 零重试锁定）。 */
   retry?: { maxRetries: number; backoffMs?: number };
   /** 框架并发门声明（B-3 上移）：在途超限排队；缺省 = 无门。 */

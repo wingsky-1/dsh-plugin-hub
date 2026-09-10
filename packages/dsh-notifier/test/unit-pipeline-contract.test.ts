@@ -278,6 +278,46 @@ function quietWindowNow() {
   assert.equal(historyCalls[0].message, "B", "N-15：历史为值拷贝");
 }
 
+{
+  // N-15 追加（L8-1）：mergeTitleIntoBody 显式声明 → 标题拼入正文。
+  // 红测判别：T2-1 结构无此字段与拼入逻辑——fake 频道声明 true 时框架仍走独立
+  // 标题分支（字段 undefined 不回退拼入），title 空串断言改前红；实现后绿。
+  const merged = fakeChannel("merged", { titleMaxLen: 6, maxBodyLen: 12, mergeTitleIntoBody: true });
+  const capped = fakeChannel("capped", { titleMaxLen: 64, maxBodyLen: 4, mergeTitleIntoBody: true });
+  const separate = fakeChannel("separate", { titleMaxLen: 4, maxBodyLen: 64, mergeTitleIntoBody: false });
+  const deliver = createDeliverer({
+    recordStatus: () => undefined,
+    emitSent: () => undefined,
+    appendHistory: () => undefined,
+    play: () => undefined,
+  });
+  const noticeFor = (title, body, ts) => ({
+    kind: "demo", title, body, ts,
+    targets: [
+      { id: "merged", channel: merged },
+      { id: "capped", channel: capped },
+      { id: "separate", channel: separate },
+    ],
+    stale: [],
+    sanitizeContent: true,
+  });
+
+  deliver(noticeFor("标题", "正文", 9));
+  assert.equal(merged.sent[0].title, "", "L8-1：mergeTitleIntoBody=true → title 位空串（不传独立标题）");
+  assert.equal(merged.sent[0].body, "标题\n正文", "L8-1：标题拼入正文（`${title}\\n${body}` 形态）");
+  assert.equal(capped.sent[0].title, "", "L8-1：拼入频道 title 位恒空串（长度权威 = body 截断）");
+  assert.equal(capped.sent[0].body, "标题\n正", "L8-1：拼入后仍按 maxBodyLen 截断（4 码点），不再按 titleMaxLen 单独截断");
+
+  // 空 title：不产生多余换行（纯 body）
+  deliver(noticeFor("", "纯正文", 10));
+  assert.equal(merged.sent[1].title, "", "L8-1：空 title 位仍空串");
+  assert.equal(merged.sent[1].body, "纯正文", "L8-1：空 title 拼入后无多余换行");
+
+  // mergeTitleIntoBody=false/undefined → 独立标题现状（显式 false 与缺省同语义）
+  assert.equal(separate.sent[0].title, "标题", "L8-1：false → 独立标题现状（不并入正文）");
+  assert.equal(separate.sent[0].body, "正文", "L8-1：false → 正文不拼入标题");
+}
+
 // ================================================================ N-9 框架重试/并发门（B-3 上移直测）
 // 重试与门由 createDeliverer 承载（对等现状 bark sendWithRetry/sendWithGate），
 // 判据 = channel.capabilities.retry/maxInflight + RetryableError（false 不重试）。
