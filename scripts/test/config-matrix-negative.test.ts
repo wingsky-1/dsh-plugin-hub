@@ -93,7 +93,7 @@ test('正对照：纯副本不改动矩阵 pass', () => {
     const r = runConfigMatrix(root)
     assert.equal(r.pass, true, '真实文件副本矩阵应绿（存量 17/19 无洞）')
     assert.ok(r.lines.some((l) => l.includes('lan-proxy 17 键')), 'lan-proxy 摘要含 17 键计数')
-    assert.ok(r.lines.some((l) => l.includes('notifier 21 键')), 'notifier 摘要含 21 键计数')
+    assert.ok(r.lines.some((l) => l.includes('notifier 22 键')), 'notifier 摘要含 22 键计数（T2-3 sanitizeContent 加键）')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
