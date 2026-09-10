@@ -1,6 +1,8 @@
 import type { Context } from "@deepseek-ai/cordis";
-import { errorMessage } from "../../../shared/host-utils.js";
-import { configFile, normalizeConfig, sanitizeSettings } from "./config.ts";
+import { errorMessage } from "../../../../shared/host-utils.js";
+import { normalizeConfig } from "./normalize.ts";
+import { sanitizeSettings } from "./validators.ts";
+import { configFile } from "./paths.ts";
 import type { NotifierApplyConfig, NotifyConfig } from "./config.ts";
 import { SETTINGS_NS, installNotifierSettings } from "./settings.ts";
 import type { OwnerScopeLike, SettingsServiceLike } from "./settings.ts";

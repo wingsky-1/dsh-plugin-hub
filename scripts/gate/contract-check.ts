@@ -160,9 +160,10 @@ console.log(failed === 0 ? '客户端契约：全部通过' : `客户端契约�
 }
 // D10（issue #664）：目录 interface.ts 门面静态检查——跨目录引用只能走目标目录
 // interface.ts；适用包白名单缺省 dsh-mcp-manager（#664 重构包），client/ 豁免
-// （index.ts 契约锚点）。独立脚本可单独跑；接入本门禁防约束漂移。
+// （index.ts 契约锚点）。PR1（#669）起显式纳入 dsh-notifier（目录树重构包）。
+// 独立脚本可单独跑；接入本门禁防约束漂移。
 {
-  const dirGate = spawnSync(process.execPath, [join(ROOT, 'scripts/gate/verify-dir-imports.mjs')], { encoding: 'utf8' })
+  const dirGate = spawnSync(process.execPath, [join(ROOT, 'scripts/gate/verify-dir-imports.mjs'), '--package', 'dsh-mcp-manager', '--package', 'dsh-notifier'], { encoding: 'utf8' })
   for (const line of (dirGate.stdout ?? '').split('\n')) if (line.trim() !== '') console.log(line)
   if (dirGate.status !== 0) {
     console.log(`verify-dir-imports | FAIL exit=${dirGate.status}`)
@@ -181,6 +182,17 @@ console.log(failed === 0 ? '客户端契约：全部通过' : `客户端契约�
   for (const line of (providerDirGate.stdout ?? '').split('\n')) if (line.trim() !== '') console.log(line)
   if (providerDirGate.status !== 0) {
     console.log(`verify-dir-imports(provider-usage) | FAIL exit=${providerDirGate.status}`)
+    failed++
+  }
+}
+// M6（#669 PR1）：包导出面快照——tsc --declaration 产物与入库基线零 diff
+// （符号集 + 导出符号定义块），重构期导出面漂移（增删改符号/定义改写）判红。
+// 基线变更须显式 --snapshot 更新并随 PR 提交（脚本同目录 verify-dir-imports）。
+{
+  const surfaceGate = spawnSync(process.execPath, [join(ROOT, 'scripts/gate/export-surface-snapshot.mjs'), '--package', 'dsh-notifier'], { encoding: 'utf8' })
+  for (const line of (surfaceGate.stdout ?? '').split('\n')) if (line.trim() !== '') console.log(line)
+  if (surfaceGate.status !== 0) {
+    console.log(`export-surface-snapshot | FAIL exit=${surfaceGate.status}`)
     failed++
   }
 }

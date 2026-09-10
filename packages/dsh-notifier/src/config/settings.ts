@@ -16,11 +16,11 @@
  * 零依赖函数形态 createNotifierSchema 等值覆盖（与 #436 前一致）。
  */
 import type { Context } from "@deepseek-ai/cordis";
-import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
-import { normalizeConfig } from "./config.ts";
+import { installSettingsNamespace } from "../../../../shared/settings-namespace.js";
+import { normalizeConfig } from "./normalize.ts";
 import type { NotifyConfig } from "./config.ts";
 
-export { warnLog } from "../../../shared/settings-namespace.js";
+export { warnLog } from "../../../../shared/settings-namespace.js";
 
 /** 本插件在官方 settings 服务中的命名空间。 */
 export const SETTINGS_NS = "dsh-notifier";

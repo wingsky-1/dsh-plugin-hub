@@ -24,10 +24,10 @@
  * 失败不自动重试（终态落 status/历史，可重发测试验证）；4xx/5xx/网络错误统一
  * 失败终态。错误出口统一脱敏：凭据字面替换 → sanitizeErrorText（同 bark P0-4）。
  */
-import { SECRET_MASK, isWebhookHeaderName } from "./config.ts";
-import type { WebhookChannelConfig, WebhookPreset } from "./config.ts";
-import type { NotifyChannel, NotifySeverity } from "./service.ts";
-import { sanitizeErrorText } from "./message.ts";
+import { SECRET_MASK, isWebhookHeaderName } from "../config/interface.ts";
+import type { WebhookChannelConfig, WebhookPreset } from "../config/interface.ts";
+import type { NotifyChannel, NotifySeverity } from "../sdk/interface.ts";
+import { sanitizeErrorText } from "../text/interface.ts";
 
 /** severity → ntfy priority 静态映射（拍板 ④；契约测试锁定）。 */
 export const SEVERITY_NTFY_PRIORITY: Readonly<Record<NotifySeverity, string>> = {

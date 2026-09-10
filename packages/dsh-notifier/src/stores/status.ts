@@ -12,7 +12,7 @@
  */
 import { readFile, writeFile, rename } from "node:fs/promises";
 import { readFileSync } from "node:fs";
-import { errorMessage } from "../../../shared/host-utils.js";
+import { errorMessage } from "../../../../shared/host-utils.js";
 
 /** 单频道投递状态条目。 */
 export interface ChannelStatusEntry {

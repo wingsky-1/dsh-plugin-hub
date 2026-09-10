@@ -38,6 +38,12 @@ await import("./unit-server-sse-bus.test.ts");
 await import("./unit-system-notifier.test.ts");
 // #508 M2：webhook 频道（渲染/注入防护/认证头/掩码泛化/配置契约）
 await import("./unit-webhook.test.ts");
+// PR1 L1 补测（S3-29 工厂级直测盲区）：存储域（history/status 写队列原子写）
+await import("./unit-stores.test.ts");
+// PR1 L1 补测：settings-bridge CAS 直测（attach/降级/冲突重试 ≤2）
+await import("./unit-settings-bridge.test.ts");
+// PR1 L1 补测：完成风暴聚合直测（首条即时/窗口聚合/kind 切换/dispose）
+await import("./unit-aggregate.test.ts");
 
 // e2e：fake ctx + apply
 await import("./e2e-approval.test.ts");

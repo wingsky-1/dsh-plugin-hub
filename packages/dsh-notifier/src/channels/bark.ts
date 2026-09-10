@@ -17,10 +17,10 @@
  * level 映射（评审 P0-2 契约）：severity → Bark level 单点映射（SEVERITY_LEVEL）；
  * 实例配置显式 level 覆盖映射；severity 缺省且无显式配置时不携带 level。
  */
-import { SECRET_MASK } from "./config.ts";
-import type { BarkChannelConfig, BarkLevel } from "./config.ts";
-import type { NotifyChannel, NotifySeverity } from "./service.ts";
-import { sanitizeErrorText } from "./message.ts";
+import { SECRET_MASK } from "../config/interface.ts";
+import type { BarkChannelConfig, BarkLevel } from "../config/interface.ts";
+import type { NotifyChannel, NotifySeverity } from "../sdk/interface.ts";
+import { sanitizeErrorText } from "../text/interface.ts";
 
 /** severity → Bark level 静态映射（契约测试锁定；critical 需苹果特批故不映射）。 */
 export const SEVERITY_LEVEL: Readonly<Record<NotifySeverity, BarkLevel>> = {

@@ -49,8 +49,8 @@
  * 不做乐观并发。
  */
 import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
-import { errorMessage } from "../../../shared/host-utils.js";
-import { sanitizePatchSettings } from "./config.ts";
+import { errorMessage } from "../../../../shared/host-utils.js";
+import { sanitizePatchSettings } from "./validators.ts";
 
 /** 已迁移备份文件名后缀（幂等标记：存在且 user 层有值 = 已处理）。 */
 export const MIGRATED_BAK_SUFFIX = ".migrated.bak";
