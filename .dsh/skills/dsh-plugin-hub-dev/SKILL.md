@@ -121,5 +121,5 @@ pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck
 ## 8. 相关
 
 - 权威详细版：本仓库 [docs/DEVELOPMENT.md](../../../docs/DEVELOPMENT.md)。
-- 发布纪律：仓库根 [AGENTS.md](../../../AGENTS.md)「发布纪律」节 +
-  [CONTRIBUTING.md](../../../CONTRIBUTING.md)。
+- 发布纪律：`.dsh/skills/dsh-plugin-release/SKILL.md`（tag 触发链路 / release notes
+  双锚跳转导航）+ [CONTRIBUTING.md](../../../CONTRIBUTING.md)。

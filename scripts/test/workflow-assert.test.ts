@@ -184,9 +184,10 @@ test('observe.yml: 夜间调度 + 双硬门禁执行点 + issues 写权限', () 
 })
 
 test('#220: docs 与 AGENTS.md 不在 ci.yml global 过滤面——文档 PR 不触发变异切片', () => {
-  // gate/build/release 脚本均不消费 docs/ 与 AGENTS.md 内容；release-notes 校验
-  // 仅在 release.yml。若未来新增消费 docs/AGENTS.md/README 等的门禁脚本，
-  // 须把对应路径加回 global 组并同步本断言
+  // #693 起 verify-docs（scripts/gate/）**确实消费** AGENTS.md、.dsh/skills 与 docs/
+  // 的链接与命令引用——旧理由「gate 脚本均不消费其内容」已不成立。排除面仍然安全
+  // 的真正依据是：消费方本体在 scripts/**/agents/** 面内，故「改文档不触发全量、
+  // 改脚本才触发」的语义成立。下面第三条断言把该互斥关系锁死，防后人只改一半。
   const filterBlock = CI.slice(CI.indexOf('filters: |'), CI.indexOf("dsh-notifier:"))
   assert.ok(!/^.*-\s'docs\/\*\*'/m.test(filterBlock),
     "docs/** 不得出现在 global 过滤组——纯文档 PR 不应触发全量切片")
@@ -194,6 +195,9 @@ test('#220: docs 与 AGENTS.md 不在 ci.yml global 过滤面——文档 PR 不
     "AGENTS.md 不得出现在 global 过滤组——改根级纯文档不应触发全量切片")
   assert.ok(CI.includes('# docs/** 与 AGENTS.md 刻意不在 global 面'),
     '过滤面旁必须保留理由注释（防后人「好心」加回）')
+  assert.ok(/^.*-\s'scripts\/\*\*'/m.test(filterBlock),
+    "scripts/** 必须在 global 过滤组——消费 AGENTS.md/docs 的门禁脚本（如 verify-docs）" +
+    '改了就触发全量，这是排除 docs/AGENTS.md 成立的前提（#693）')
 })
 
 test('#322: 每个带 stryker 配置的包在 path-filter 均有段配置通配映射（防回归）', () => {

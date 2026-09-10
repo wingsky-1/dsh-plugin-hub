@@ -27,6 +27,9 @@ pnpm --filter @wingsky-1/<插件> build && pnpm --filter @wingsky-1/<插件> tes
 node scripts/gate/contract-check.ts && node scripts/gate/pack-check.ts
 ```
 
+  这是**单包快跑**（可选最小集）；仓库完整的门禁清单与「改动类型 → 追加门禁」对照表
+  以 [AGENTS.md 门禁矩阵](AGENTS.md) 为单一事实源，提交前请按其跑全。
+
 4. 推分支 → 开 PR（描述动机 + 改动 + 验证结果）
 5. CI 全绿后 review → squash merge
 

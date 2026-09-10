@@ -58,7 +58,7 @@ issue #110 起不再使用自建 config.json）。
 ## 验证（提交前全跑）
 
 ```sh
-pnpm build && pnpm test && pnpm contract && pnpm pack:check
+pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck
 ```
 
 ## 提交
