@@ -108,6 +108,13 @@ try {
   assert.equal(normalizeConfig({ notifyWhenVisible: "x" }).notifyWhenVisible, false, "非布尔丢弃");
   assert.equal(normalizeConfig({ notifyQuestion: false }).notifyQuestion, false, "提问通知可配置");
   assert.equal(normalizeConfig({ notifyQuestion: "x" }).notifyQuestion, true, "非布尔丢弃回默认");
+  // B-4：sanitizeContent 契约键——默认 true、可关、非布尔丢弃回默认、写面校验
+  assert.equal(DEFAULT_CONFIG.sanitizeContent, true, "B-4：sanitizeContent 默认 true（统一脱敏开启）");
+  assert.equal(normalizeConfig({ sanitizeContent: false }).sanitizeContent, false, "B-4：sanitizeContent=false 明文可配置");
+  assert.equal(normalizeConfig({ sanitizeContent: "x" }).sanitizeContent, true, "B-4：非布尔丢弃回默认 true");
+  assert.equal(validateSettings({ sanitizeContent: false }), null, "B-4：sanitizeContent false 合法");
+  assert.equal(validateSettings({ sanitizeContent: "yes" })?.key, "sanitizeContent", "B-4：非布尔拒绝（首个非法键）");
+  assert.ok(String(validateSettings({ sanitizeContent: "yes" })?.hint).includes("布尔"), "B-4：hint 含布尔范围描述");
   assert.equal(DEFAULT_CONFIG_UNTOUCHED.quietHours.enabled, false, "normalizeConfig 不污染默认配置");
   assert.equal(normalizeConfig({ errorMergeWindowMs: 5000 }).errorMergeWindowMs, 5000, "合并窗口可配置");
   assert.equal(normalizeConfig({ errorMergeWindowMs: -1 }).errorMergeWindowMs, DEFAULT_CONFIG.errorMergeWindowMs, "非法窗口丢弃");

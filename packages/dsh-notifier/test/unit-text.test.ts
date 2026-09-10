@@ -125,25 +125,27 @@ assert.equal(
   "标题截断 40 字符"
 );
 
-// sessionTitleOf 接入脱敏链（issue #30）：标题源自会话内容，进入通知与历史前
-// 敏感片段必须打码；正常标题不含敏感特征、脱敏后原样透传保持可读
-assert.ok(
-  !sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: `修复 ${"a".repeat(48)} 泄漏` } }] } })!.includes("aaaa"),
-  "标题中长 hex 密钥片段被打码为 <token>"
+// sessionTitleOf 仅截断 40 字符、不再脱敏（B-1/P1-4：脱敏统一到 sendKind 渲染后
+// 单点承接，此层截断仅为展示语义；敏感片段明文透传是统一时点下的预期行为）
+assert.equal(
+  sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: `修复 ${"a".repeat(48)} 泄漏` } }] } }),
+  `修复 ${"a".repeat(37)}`,
+  "长标题仅 40 字符截断（脱敏已移交 sendKind 统一时点）"
 );
 assert.equal(
   sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: `修复 ${"f".repeat(30)} 泄漏` } }] } }),
-  "修复 <token> 泄漏",
-  "≥24 位 hex 长串在标题中打码"
+  `修复 ${"f".repeat(30)} 泄漏`,
+  "≤40 字符标题原样透传（无打码）"
 );
-assert.ok(
-  !sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: "联系 admin@corp.example.com 处理部署" } }] } })!.includes("admin@"),
-  "标题中邮箱地址被打码为 <email>"
+assert.equal(
+  sessionTitleOf({ session: { snapshotEvents: () => [{ type: "session/title", data: { title: "联系 admin@corp.example.com 处理部署" } }] } }),
+  "联系 admin@corp.example.com 处理部署",
+  "邮箱明文透传（脱敏移交统一时点）"
 );
 assert.equal(
   sessionTitleOf(titledAgent),
   "优化 notifier 插件",
-  "正常标题脱敏后原样透传（可读性不受影响）"
+  "正常标题原样透传（可读性不受影响）"
 );
 
 // loopback 围栏：回环放行、非回环拒绝

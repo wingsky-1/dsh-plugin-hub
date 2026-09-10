@@ -98,6 +98,7 @@ function quietWindowNow() {
   assert.equal(poolSnapshots[0], cfg, "N-14：allChannels 收到同一快照对象（派生闭包不自行读 current）");
   assert.equal(out.notice.targets.length, 1, "N-14：目标随池解析");
   assert.equal(out.notice.targets[0].dispatch.sound.mode, "system", "N-14：播放决议随池条目携带（裁决时快照解析）");
+  assert.equal(out.notice.sanitizeContent, true, "N-14：裁决结果携带脱敏开关（快照缺键 → undefined 容错为 true，B-4）");
   // 跨次不缓存：第二次裁决重新取快照（再 +1）
   adjudicate({ kind: "ready", title: "T", body: "B", ts: 2 });
   assert.equal(currentCalls, 2, "N-14：跨次不缓存——第二次裁决重新调 current() 恰好 1 次");
@@ -124,7 +125,7 @@ function quietWindowNow() {
     isKindConfirmed: () => true,
   });
   const r1 = svcDisabled({ kind: "k", title: "T", body: "B", ts: 1 });
-  assert.deepEqual(r1, { decision: "suppressed", reason: "disabled", kind: "k", title: "T", body: "B", ts: 1 }, "N-14：enabled=false → suppressed disabled（形状契约）");
+  assert.deepEqual(r1, { decision: "suppressed", reason: "disabled", kind: "k", title: "T", body: "B", ts: 1, sanitizeContent: true }, "N-14：enabled=false → suppressed disabled（形状契约含脱敏开关，快照缺键→true）");
   assert.equal(poolCalls, 0, "N-14：suppressed 不解析投递池");
 
   const svcPending = createAdjudicator({
@@ -157,6 +158,16 @@ function quietWindowNow() {
   assert.equal(r4.decision, "deliver", "N-14：bypassQuiet 跳过免打扰");
   assert.equal(r4.notice.targets[0].id, "bark:phone", "N-14：onlyChannel 命中单频道");
   assert.equal(poolCalls, 0, "N-14：onlyChannel 用例的池经注入闭包解析（快照单一）");
+
+  // B-4：快照显式 sanitizeContent=false → 结果携带 false（编排层据此明文落史/投递）
+  const svcPlain = createAdjudicator({
+    ...baseDeps,
+    enabled: () => true,
+    isKindConfirmed: () => true,
+    current: () => ({ ...cfg, sanitizeContent: false }),
+  });
+  const r5 = svcPlain({ kind: "k", title: "T", body: "B", ts: 5, bypassQuiet: true });
+  assert.equal(r5.notice.sanitizeContent, false, "N-14：sanitizeContent=false 随裁决结果携带（B-4）");
 }
 
 // ================================================================ N-15 DeliverDeps 注入面契约
@@ -195,6 +206,7 @@ function quietWindowNow() {
     ts: 42,
     targets: [browserTarget, barkTarget],
     stale: ["bark:gone"],
+    sanitizeContent: true,
   };
   const results = deliver(notice);
 
@@ -245,6 +257,7 @@ function quietWindowNow() {
     ts: 7,
     targets: [failTarget, { id: "bark:ok", channel: okChannel }],
     stale: [],
+    sanitizeContent: true,
   };
   deliver(notice);
   // 异步目标未决议 → 其终态未上报；同步目标已 ok
@@ -285,7 +298,7 @@ function retryableErr(message, retryable) {
 }
 
 function mkNotice(ts, channel) {
-  return { kind: "demo", title: "T", body: "B", ts, targets: [{ id: "bark:phone", channel }], stale: [] };
+  return { kind: "demo", title: "T", body: "B", ts, targets: [{ id: "bark:phone", channel }], stale: [], sanitizeContent: true };
 }
 
 {

@@ -1,14 +1,19 @@
 // @ts-nocheck
 /**
- * dsh-notifier — unit：错误文本脱敏（sanitizeErrorText）。
+ * dsh-notifier — unit：错误文本脱敏（sanitizeErrorText）与通知统一脱敏入口
+ * （sanitizeNoticeContent，B-1/B-4）。
  *
  * 覆盖：路径/令牌/密钥打码 + 截断；issue #6 扩展（GitHub PAT / PEM 私钥 /
  * 连接串凭据 / 邮箱）；规则顺序硬约束回归；FP 证伪回归（已删规则的误伤
  * 形态必须保持原样）；性能护栏（防灾难性回溯）；PEM 限窗/赋值分隔符/amqps
- * 评审修复回归。
+ * 评审修复回归；sanitizeNoticeContent 与 sanitizeErrorText 同源输出一致、
+ * enabled=false 原样、undefined 开关容错、body 不截断、PEM eat-to-tail 锁定。
  */
 import { assert } from "./helpers.ts";
 import { sanitizeErrorText } from "../lib/index.js";
+// sanitizeNoticeContent 不进包导出面（P1-2：消费方经 SDK send 中心兜底）——
+// 测试经 src 域内路径 import（同 unit-config seqFile 直连 src 姿态）。
+import { sanitizeNoticeContent } from "../src/text/interface.ts";
 
 // 路径/令牌/密钥打码 + 截断
 assert.equal(sanitizeErrorText("failed /home/me/dev/x.yaml: EACCES"), "failed <path>: EACCES", "用户路径打码");
@@ -183,3 +188,46 @@ assert.ok(!sanitizeErrorText("api_key=sk-live-9f8e7d6c5b4a").includes("sk-live")
 // amqps 连接串凭据：scheme 保留、凭据整体掩蔽（评审 P2 回归，不再半脱敏）
 assert.equal(sanitizeErrorText("amqps://guest:guest@rabbit.local/vhost"), "amqps://<redacted>@rabbit.local/vhost", "amqps 连接串整体掩蔽");
 assert.equal(sanitizeErrorText("AMQPS://u:p@h/v"), "AMQPS://<redacted>@h/v", "amqps 大写 scheme 掩蔽");
+
+// ---- sanitizeNoticeContent（B-1 统一脱敏入口；P1-2 不进包导出面）----
+
+// 同源输出一致：title 走 sanitizeErrorText(title,64)、body 走同一规则表（不截断）
+{
+  const sample = { title: "任务 token: abc123 泄漏", body: "postgres://admin:s3cret@db.local down 联系 admin@corp.example.com" };
+  const safe = sanitizeNoticeContent(sample, true);
+  assert.equal(safe.title, sanitizeErrorText(sample.title, 64), "title 与 sanitizeErrorText(title,64) 输出一致（同一规则表同源）");
+  assert.equal(safe.body, sanitizeErrorText(sample.body, sample.body.length + 10), "body 与全长 sanitizeErrorText 输出一致（同一规则表，不截断）");
+  assert.ok(!safe.body.includes("s3cret"), "body 连接串凭据打码");
+  assert.ok(!safe.body.includes("admin@"), "body 邮箱打码");
+}
+
+// enabled=false：标题与正文原样 String 返回（B-4 明文）
+{
+  const withSecret = { title: "任务", body: "password=s3cr3t 联系 admin@corp.example.com" };
+  const plain = sanitizeNoticeContent(withSecret, false);
+  assert.equal(plain.title, "任务", "false 标题原样");
+  assert.equal(plain.body, withSecret.body, "false 正文原样（明文）");
+}
+
+// undefined 开关容错（调用方 `!== false` 语义：undefined → 按启用处理）
+{
+  const withToken = { title: "任务", body: "token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 end" };
+  const safe = sanitizeNoticeContent(withToken, undefined);
+  assert.ok(!safe.body.includes("ghp_"), "undefined 开关按启用处理（脱敏）");
+  assert.equal(safe.body, "token: <token> end", "undefined 开关打码结果与启用一致");
+}
+
+// body 不截断长文本（长度权威唯一 = deliver 的 capabilities.maxBodyLen）
+{
+  const longBody = "错".repeat(600) + " token: abc123";
+  const safe = sanitizeNoticeContent({ title: "任务", body: longBody }, true);
+  assert.equal(safe.body.length, 617, "body 不截断长文本（>600 字符全长保留，不应用 300 截断）");
+  assert.ok(safe.body.endsWith(" token=<redacted>"), "长文本尾部敏感特征仍打码");
+}
+
+// PEM eat-to-tail 不截断形态锁定（行尾 BEGIN 无 END，>300 字全长保留 + 整体打码）
+{
+  const body = "错".repeat(290) + "\n-----BEGIN PRIVATE KEY-----\nMIIEow";
+  const safe = sanitizeNoticeContent({ title: "t", body }, true);
+  assert.equal(safe.body, "错".repeat(290) + "\n<private-key>", "PEM eat-to-tail 不截断形态锁定（全长 >300 保留）");
+}

@@ -40,26 +40,28 @@ export interface ChannelPoolEntry {
   dispatch?: BrowserDispatchSpec | SystemDispatchSpec;
 }
 
-/** 裁决通过的投递通知（body 已脱敏——统一时点之后；T2-3 落地前为渲染时态，
- *  编排层保留单变换位）。 */
+/** 裁决通过的投递通知（title/body 为渲染文本；统一时点（B-1）在编排层按
+ *  携带的 sanitizeContent 开关脱敏后进入落史/投递——T2-3 前为渲染时态）。 */
 export interface AdjudicatedNotice {
   kind: string;
   title: string;
-  body: string; // 已脱敏（统一时点之后；T2-3 落地前为渲染时态）
+  body: string;
   severity?: NotifySeverity;
   /** ts = 裁决时刻。 */
   ts: number;
   targets: ResolvedTarget[];
   /** stale = kindRoutes 指向已删频道（记 skipped）。 */
   stale: string[];
+  /** 脱敏开关（B-4，随裁决快照解析：快照缺键 → undefined 容错为 true）。 */
+  sanitizeContent: boolean;
 }
 
 /** 仅裁决层三值；merged 属事件源级轨道（不并入）。 */
 export type SuppressReason = "disabled" | "kind-pending" | "quiet";
 
-/** 裁决结果分叉（suppressed 携带已脱敏文本——统一时点之后；形状契约 §5）。 */
+/** 裁决结果分叉（suppressed 携带渲染文本 + 脱敏开关；形状契约 §5）。 */
 export type AdjudicateResult =
-  | { decision: "suppressed"; reason: SuppressReason; kind: string; title: string; body: string; ts: number }
+  | { decision: "suppressed"; reason: SuppressReason; kind: string; title: string; body: string; ts: number; sanitizeContent: boolean }
   | { decision: "deliver"; notice: AdjudicatedNotice };
 
 /** 裁决输入（title/body 已渲染；ts = 裁决时刻）。 */

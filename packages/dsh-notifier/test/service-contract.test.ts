@@ -253,41 +253,41 @@ function makeService(cfgOverrides = {}, hooks = {}) {
 }
 
 {
-  // B-2 快照化（T2-3 判别更新）：每次 sendKind 读取 current() 2 次——①渲染后
-  // 统一脱敏开关（B-1/B-4，P1-5：undefined→true 容错），②裁决单刻快照
-  // （enabled/确认/免打扰/路由与播放决议全部基于该快照）；裁决与投递之间
-  // 改配置不影响本次投递（N-18 另锁）。
+  // B-2 快照化（PR2 红测先行 2 判别更新）：每次 sendKind 恰好读取 current() 1 次
+  // （单刻快照，B-2 行为变更）；裁决（enabled/确认/免打扰/路由）与播放决议全部
+  // 基于该快照解析——裁决与投递之间改配置不影响本次投递（N-18 另锁）。T2-3
+  // 起脱敏开关也经该快照解析并随裁决结果携带（不引入第二次 current()）。
   let reads = 0;
   let cfg = defaultCfg({ browserNotify: true, browserSound: true, systemNotify: true, systemSound: true });
   const sys = fakeSystem();
   const { service, sse } = makeService({}, { current: () => { reads += 1; return cfg; }, system: sys });
   service.sendKind("test", {}, { bypassQuiet: true });
-  assert.equal(reads, 2, "B-2：单次 sendKind 内 current() 2 次（脱敏开关读 + 裁决快照）");
+  assert.equal(reads, 1, "B-2：单次 sendKind 内 current() 恰好 1 次（单刻快照）");
   const frame1 = sse.frames[sse.frames.length - 1];
   assert.equal(frame1.sound.mode, "system", "B-2：browserSound=true → system 模式帧（快照内解析）");
   // 配置热更 → 下次 sendKind 重新取快照（跨次不缓存）且用新版本
   cfg = defaultCfg({ browserNotify: true, browserSound: false, systemNotify: true, systemSound: true });
   service.sendKind("test", {}, { bypassQuiet: true });
-  assert.equal(reads, 4, "B-2：第二次 sendKind 重新读取 current（跨次不缓存）");
+  assert.equal(reads, 2, "B-2：第二次 sendKind 重新读取 current（跨次不缓存）");
   const frame2 = sse.frames[sse.frames.length - 1];
   assert.equal(frame2.sound.mode, "silent", "B-2：browserSound=false → silent 模式帧（热更即时生效）");
-  console.log("B-2 单刻快照（开关读+快照共 2 次 + 跨次不缓存）: OK");
+  console.log("B-2 单刻快照（恰好 1 次 + 跨次不缓存）: OK");
 }
 
 {
-  // N-18（B-2 快照化 L3）：裁决→投递间改配置不影响本次投递——current 前 2 次
-  // （脱敏开关读 + 裁决快照）返回 cfg1、其后返回 cfg2（模拟裁决后配置即被改写）；
-  // 本次投递的集合判定与播放决议必须全部来自裁决时刻的 cfg1 快照，不得混入 cfg2。
+  // N-18（B-2 快照化 L3）：裁决→投递间改配置不影响本次投递——current 首次返回
+  // cfg1、之后返回 cfg2（模拟裁决后配置即被改写）；本次投递的集合判定与播放
+  // 决议必须全部来自裁决时刻的 cfg1 快照，不得混入 cfg2。
   let calls = 0;
   const cfg1 = defaultCfg({ browserNotify: true, browserSound: "chime", systemNotify: true, systemSound: true });
   const cfg2 = defaultCfg({ browserNotify: true, browserSound: false, systemNotify: false, systemSound: false });
   const sys = fakeSystem();
   const { service, sse } = makeService({}, {
-    current: () => { calls += 1; return calls <= 2 ? cfg1 : cfg2; },
+    current: () => { calls += 1; return calls === 1 ? cfg1 : cfg2; },
     system: sys,
   });
   const r = service.sendKind("test", {}, { bypassQuiet: true });
-  assert.equal(calls, 2, "N-18：裁决期 2 次读取（脱敏开关 + 快照），无后续读取");
+  assert.equal(calls, 1, "N-18：裁决恰好读取 1 次快照（无二次读取）");
   const frame = sse.frames[sse.frames.length - 1];
   assert.deepEqual(frame.sound, { mode: "selfplay", tone: "chime" }, "N-18：播放决议来自裁决时刻快照（cfg1 的 chime），未被 cfg2 改写");
   assert.ok(r.some((x) => x.channelId === "system" && x.status === "ok"), "N-18：system 仍按 cfg1 快照投递（cfg2 关掉 system 不影响本次）");
@@ -333,11 +333,11 @@ function makeService(cfgOverrides = {}, hooks = {}) {
   };
   const { service, terminalStates, sentEvents } = makeService(
     { browserNotify: false, browserSound: false, systemNotify: true, systemSound: true },
-    { current: () => { calls += 1; return calls <= 2 ? cfgA : cfgB; }, system: sys },
+    { current: () => { calls += 1; return calls === 1 ? cfgA : cfgB; }, system: sys },
   );
-  service.sendKind("test", {}, { bypassQuiet: true }); // 第一次：开关读+快照 = cfgA
-  service.sendKind("test", {}, { bypassQuiet: true }); // 第二次：开关读+快照 = cfgB（第一次终态未决议）
-  assert.equal(calls, 4, "P1-3：两次 sendKind 各 2 次读取（脱敏开关读 + 快照）");
+  service.sendKind("test", {}, { bypassQuiet: true }); // 第一次：快照 = cfgA
+  service.sendKind("test", {}, { bypassQuiet: true }); // 第二次：快照 = cfgB（第一次终态未决议）
+  assert.equal(calls, 2, "P1-3：两次 sendKind 各取一次快照");
   assert.deepEqual(
     { pop: deferred[0].pop, tone: deferred[0].tone },
     { pop: true, tone: "ding" },

@@ -139,6 +139,9 @@ export interface NotifyConfig {
   kindRoutes: Record<string, string[]>;
   /** 已确认的动态 kind 清单（用户确认后落盘，重启保持；M1 内存态缺陷修复）。 */
   allowKinds: string[];
+  /** 通知/历史统一脱敏开关（B-4，默认 true）。UI 开关首版不做——仅契约键，
+   *  手改配置或 API（PUT /config / 迁移）可用；false = 通知与历史均明文。 */
+  sanitizeContent: boolean;
 }
 
 /**
@@ -260,6 +263,8 @@ export const DEFAULT_CONFIG: NotifyConfig = {
   kindRoutes: {},
   /** 动态 kind 确认清单默认空。 */
   allowKinds: [],
+  /** 通知/历史统一脱敏默认开启（B-4；false = 通知与历史均明文）。 */
+  sanitizeContent: true,
 };
 
 /**
@@ -268,7 +273,7 @@ export const DEFAULT_CONFIG: NotifyConfig = {
  * 走 CONFIG_KEYS 循环；SoundId 字符串形态由 normalizeConfig 声音专用分支处理
  * （两处都要排除表同步排除——见 normalizeConfig）。
  */
-export const CONFIG_KEYS: readonly BooleanKeys[] = ["notifyAsk", "notifyQuestion", "notifyTaskDone", "notifySubagentDone", "notifyTaskError", "notifyTurnEnd", "systemNotify", "browserNotify", "notifyWhenVisible", "notifySound", "browserSound", "systemSound"];
+export const CONFIG_KEYS: readonly BooleanKeys[] = ["notifyAsk", "notifyQuestion", "notifyTaskDone", "notifySubagentDone", "notifyTaskError", "notifyTurnEnd", "systemNotify", "browserNotify", "notifyWhenVisible", "notifySound", "browserSound", "systemSound", "sanitizeContent"];
 
 /**
  * 原型链污染/特殊成员键名（读透传与写通道共用保留键，#470 复核 P0）：这些键

@@ -72,21 +72,24 @@ export function createAdjudicator(deps: AdjudicateDeps): (opts: AdjudicateOption
     // 对象；后续任何配置变更不影响本次判定结果（派生闭包只经快照取值）。
     const snapshot = deps.current();
     const { kind, title, body, severity, ts, bypassQuiet, onlyChannel } = opts;
+    // B-4：脱敏开关随快照解析并随结果携带（快照缺键 → undefined 容错为 true），
+    // 编排层据其统一脱敏——不开第二次 current()（B-2 单刻契约）。
+    const sanitizeContent = snapshot.sanitizeContent !== false;
 
     if (deps.enabled() === false) {
-      return { decision: "suppressed", reason: "disabled", kind, title, body, ts };
+      return { decision: "suppressed", reason: "disabled", kind, title, body, ts, sanitizeContent };
     }
     if (!deps.isKindConfirmed(kind, snapshot)) {
-      return { decision: "suppressed", reason: "kind-pending", kind, title, body, ts };
+      return { decision: "suppressed", reason: "kind-pending", kind, title, body, ts, sanitizeContent };
     }
     if (!bypassQuiet && isInQuietHours(new Date(), snapshot.quietHours)) {
       const allowed = snapshot.quietHours.allowKinds ?? [];
       if (!allowed.includes(kind)) {
-        return { decision: "suppressed", reason: "quiet", kind, title, body, ts };
+        return { decision: "suppressed", reason: "quiet", kind, title, body, ts, sanitizeContent };
       }
     }
     const { targets, stale } = resolveRoutes({ kind, onlyChannel, pool: deps.allChannels(snapshot), snapshot });
-    const notice: AdjudicatedNotice = { kind, title, body, severity, ts, targets, stale };
+    const notice: AdjudicatedNotice = { kind, title, body, severity, ts, targets, stale, sanitizeContent };
     return { decision: "deliver", notice };
   };
 }

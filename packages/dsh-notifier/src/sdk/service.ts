@@ -15,7 +15,7 @@ import { resolveSoundSetting } from "../config/interface.ts";
 import type { NotifyConfig, SoundId } from "../config/interface.ts";
 import { createAdjudicator, createDeliverer, isBuiltinKind, isKindConfirmed } from "../pipeline/interface.ts";
 import type { AdjudicateResult, ChannelPoolEntry } from "../pipeline/interface.ts";
-import { KIND_SEVERITY, NOTIFY_KINDS } from "../text/interface.ts";
+import { KIND_SEVERITY, NOTIFY_KINDS, sanitizeNoticeContent } from "../text/interface.ts";
 import type { NotifyDetail } from "../text/interface.ts";
 import { BUILTIN_CHANNELS } from "./interface.ts";
 import type {
@@ -111,31 +111,38 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
   /**
    * 裁决结果 → 受理结果（suppressed：disabled 不落史（D15）/kind-pending、quiet
    * 落史 + skipped；deliver：stale warn + 全链投递 + 落史）。
+   * B-1/B-4：统一脱敏时点 = 渲染完成后、任何落史/投递前——裁决结果已携带快照
+   * 解析的 sanitizeContent 开关（B-2 单刻契约：此处不得二次调用 current()），
+   * 本函数按开关对结果文本统一脱敏一次后落入历史/投递。
    */
-  function handleDecision(decision: AdjudicateResult, renderedMessage: string): NotifyResult[] {
+  function handleDecision(decision: AdjudicateResult): NotifyResult[] {
     if (decision.decision === "suppressed") {
-      const { kind, title, body, ts, reason } = decision;
+      const { kind, title, body, ts, reason, sanitizeContent } = decision;
       if (reason === "disabled") {
         return [{ channelId: "*", status: "skipped", error: "enabled=false" }];
       }
+      const safe = sanitizeNoticeContent({ title, body }, sanitizeContent);
       if (reason === "quiet") {
-        logger.info(`dsh-notifier: ${kind} 被免打扰拦截（未发出）：${renderedMessage.replace(/\n/g, " / ")}`);
+        logger.info(`dsh-notifier: ${kind} 被免打扰拦截（未发出）：${safe.body.replace(/\n/g, " / ")}`);
       }
-      appendHistory({ ts, kind, title, message: body, suppressed: reason });
+      appendHistory({ ts, kind, title: safe.title, message: safe.body, suppressed: reason });
       return [{ channelId: "*", status: "skipped", error: reason }];
     }
     const notice = decision.notice;
     for (const id of notice.stale) {
       logger.warn(`dsh-notifier: kindRoutes[${notice.kind}] 指向已删除频道 ${id}，记 skipped`);
     }
-    const results = deliver(notice);
-    logger.info(`dsh-notifier: ${notice.kind} ${notice.body.replace(/\n/g, " / ")}`);
+    const safe = sanitizeNoticeContent({ title: notice.title, body: notice.body }, notice.sanitizeContent);
+    const results = deliver({ ...notice, title: safe.title, body: safe.body });
+    logger.info(`dsh-notifier: ${notice.kind} ${safe.body.replace(/\n/g, " / ")}`);
     return results;
   }
 
   /**
    * 统一通知管线（kind 形态，等价搬移前的 notify）。外部 send() 与内置事件源
    * 都经它收敛（评审 #1）——send() 动态 kind 自 B-9 起同样过裁决全链。
+   * B-1：渲染文本原样进裁决（其结果携带脱敏开关），统一脱敏在其后
+   * handleDecision 内按开关执行——本函数不再自行读 current()（B-2 单刻契约）。
    * @returns 受理结果数组（投递终态经历史落盘与 wingsky-notify/sent 事件可见）。
    */
   function sendKind(kind: string, detail: NotifyDetail = {}, opts?: { bypassQuiet?: boolean; onlyChannel?: string }): NotifyResult[] {
@@ -152,7 +159,7 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
       bypassQuiet: opts?.bypassQuiet,
       onlyChannel: opts?.onlyChannel,
     });
-    return handleDecision(decision, message);
+    return handleDecision(decision);
   }
 
   const service: NotifierServiceInternal = {
@@ -201,12 +208,14 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
         return sendKind(kind, { message: req.body });
       }
       // 动态 kind：与 sendKind 统一过裁决全链（B-9/D24——enabled/免打扰不再绕过；
-      // title/body 直通不经 NOTIFY_KINDS 文案模板，severity 直通）
+      // title/body 直通不经 NOTIFY_KINDS 文案模板，severity 直通）；B-4 中心
+      // 兜底：动态 kind body 从「调用方负责脱敏」变「send 统一脱敏」（B-4，
+      // 开关由裁决结果携带，本分支不自行读 current()）。
       const ts = Date.now();
       const title = req.title ?? "DSH 通知";
       const body = String(req.body ?? "");
       const decision = adjudicate({ kind, title, body, severity: req.severity, ts });
-      return handleDecision(decision, body);
+      return handleDecision(decision);
     },
   };
 

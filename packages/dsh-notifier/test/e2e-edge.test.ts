@@ -361,6 +361,127 @@ try {
       rmSync(isoHome, { recursive: true, force: true });
     }
   }
+
+  // ── 14. N-17（B-1）：suppressed 落史（quiet / kind-pending）也脱敏 ──
+  {
+    // 内置 kind：免打扰拦截 → suppressed:quiet 历史，message 为已脱敏文本
+    const qhAll = quietWindowNow();
+    const infos = [];
+    const { listeners, routes } = await makeNotifier(work, {
+      errorMergeWindowMs: 60000,
+      quietHours: { ...qhAll, allowKinds: [] },
+      historyFile: join(work, "n17-quiet-hist.jsonl"),
+    }, {
+      logger: { warn: () => {}, info: (t) => infos.push(t) },
+    });
+    const error = listeners.get("agent/error")[0];
+    const historyRoute = routes.find((r) => r.path === ROUTES.history);
+    // 样本避免「占位符落截断窗口」形态（P2-7）：敏感特征短、位于正文中部
+    const sensitive = "postgres://admin:s3cret@db.local down 联系 admin@corp.example.com";
+    error({ agent: { id: "n17-q1" }, turn: 1, error: new Error(sensitive) });
+    const quietHist = await waitForHistory(historyRoute, (r) => r.some((e) => e.kind === "error" && e.suppressed === "quiet"));
+    const quietRecord = quietHist.find((e) => e.kind === "error" && e.suppressed === "quiet");
+    assert.ok(quietRecord, "免打扰拦截错误落 suppressed:quiet 历史");
+    assert.ok(quietRecord.message.includes("postgres://<redacted>@db.local"), "quiet 落史连接串凭据脱敏");
+    assert.ok(!quietRecord.message.includes("s3cret"), "quiet 落史不残留明文凭据");
+    assert.ok(!quietRecord.message.includes("admin@"), "quiet 落史邮箱脱敏（<email>）");
+
+    // 动态 kind（注册未确认）：send 直通 → suppressed:kind-pending 历史也脱敏
+    // （P2-5：动态 kind 判据为 kind-pending，与内置 kind 的 quiet 区分）
+    const { routes: routesDyn, ctx: ctxDyn } = await makeNotifier(work, { historyFile: join(work, "n17-pending-hist.jsonl") }, {
+      logger: { warn: () => {}, info: () => {} },
+    });
+    const dynHistoryRoute = routesDyn.find((r) => r.path === ROUTES.history);
+    const dynNotifier = ctxDyn.get("wingsky.notifier", false);
+    dynNotifier.registerKind({ id: "x:task", label: "动态任务" });
+    const dynBody = "token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 联系 admin@corp.example.com";
+    const r = await dynNotifier.send({ source: "e2e", kind: "x:task", severity: "info", body: dynBody });
+    assert.ok(r.some((x) => x.status === "skipped" && x.error === "kind-pending"), "未确认动态 kind 受理 skipped(kind-pending)");
+    const pendingHist = await waitForHistory(dynHistoryRoute, (rec) => rec.some((e) => e.suppressed === "kind-pending"));
+    const pendingRecord = pendingHist.find((e) => e.suppressed === "kind-pending");
+    assert.ok(pendingRecord, "动态 kind suppressed:kind-pending 落史");
+    assert.ok(pendingRecord.message.includes("<token>"), "kind-pending 落史令牌脱敏");
+    assert.ok(!pendingRecord.message.includes("ghp_"), "kind-pending 落史不残留明文令牌");
+    assert.ok(!pendingRecord.message.includes("admin@"), "kind-pending 落史邮箱脱敏");
+
+    // merged 落史（事件层直接 appendHistory，全仓唯一不经 sendKind 的历史写入点）
+    const { listeners: listenersM, routes: routesM } = await makeNotifier(work, {
+      errorMergeWindowMs: 60000,
+      historyFile: join(work, "n17-merged-hist.jsonl"),
+    }, {
+      logger: { warn: () => {}, info: () => {} },
+    });
+    const errorM = listenersM.get("agent/error")[0];
+    const historyRouteM = routesM.find((r) => r.path === ROUTES.history);
+    // 首条开窗投递（渲染路径落史），第二条窗口内合并（merged 落史）
+    errorM({ agent: { id: "n17-m1" }, turn: 1, error: new Error("首条 postgres://admin:s3cret@db.local") });
+    errorM({ agent: { id: "n17-m1" }, turn: 1, error: new Error("次条 联系 admin@corp.example.com") });
+    const mergedHist = await waitForHistory(historyRouteM, (rec) => rec.some((e) => e.suppressed === "merged"));
+    for (const rec of mergedHist.filter((e) => e.kind === "error")) {
+      assert.ok(!rec.message.includes("s3cret"), "merged 场景全部 error 落史不残留 DSN 明文");
+      assert.ok(!rec.message.includes("admin@"), "merged 场景全部 error 落史不残留邮箱明文");
+    }
+    const merged = mergedHist.find((e) => e.kind === "error" && e.suppressed === "merged");
+    assert.ok(merged, "窗口内合并落 suppressed:merged 历史");
+    assert.ok(merged.message.startsWith("（合并）"), "merged 摘要保留「（合并）+摘要」语义（P1-3）");
+    assert.ok(merged.message.includes("<email>"), "merged 摘要为打码形态");
+  }
+
+  // ── 15. N-20（B-4）：sanitizeContent 开关链路——默认 true 脱敏 / false 明文 ──
+  {
+    // 默认 true（两入口：事件层 error + send 动态 kind 直通）
+    const infos = [];
+    const { listeners, routes, ctx } = await makeNotifier(work, {
+      allowKinds: ["y:task"],
+      errorMergeWindowMs: 0,
+      historyFile: join(work, "n20-true-hist.jsonl"),
+    }, {
+      logger: { warn: () => {}, info: (t) => infos.push(t) },
+    });
+    const error = listeners.get("agent/error")[0];
+    const historyRoute = routes.find((r) => r.path === ROUTES.history);
+    const notifier = ctx.get("wingsky.notifier", false);
+    notifier.registerKind({ id: "y:task", label: "开关链路" });
+
+    // 入口一：事件层 error → 渲染后统一脱敏
+    error({ agent: { id: "n20-1" }, turn: 1, error: new Error("连接 postgres://admin:s3cret@db.local 失败") });
+    const errInfo = infos.filter((t) => /error/.test(t) && !t.includes("被免打扰拦截"))[0];
+    assert.ok(errInfo.includes("postgres://<redacted>@db.local"), "默认 true：事件层 error 通知脱敏");
+    assert.ok(!errInfo.includes("s3cret"), "默认 true：事件层 error 不残留明文凭据");
+    // 入口二：send 动态 kind 直通 → 中心兜底脱敏（B-4）
+    const dynBody = "任务 token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 end";
+    await notifier.send({ source: "e2e", kind: "y:task", severity: "info", body: dynBody });
+    const dynInfo = infos.filter((t) => /y:task/.test(t))[0];
+    assert.ok(dynInfo.includes("<token>"), "默认 true：send 动态 kind 通知脱敏");
+    assert.ok(!dynInfo.includes("ghp_"), "默认 true：send 动态 kind 不残留明文令牌");
+    const trueHist = await waitForHistory(historyRoute, (rec) => rec.some((e) => e.kind === "y:task" && !e.suppressed));
+    assert.ok(!trueHist.find((e) => e.kind === "y:task")!.message.includes("ghp_"), "默认 true：动态 kind 历史脱敏");
+
+    // false：通知与历史均明文
+    const infos2 = [];
+    const { listeners: listeners2, routes: routes2, ctx: ctx2 } = await makeNotifier(work, {
+      sanitizeContent: false,
+      allowKinds: ["y:task"],
+      errorMergeWindowMs: 0,
+      historyFile: join(work, "n20-false-hist.jsonl"),
+    }, {
+      logger: { warn: () => {}, info: (t) => infos2.push(t) },
+    });
+    const error2 = listeners2.get("agent/error")[0];
+    const historyRoute2 = routes2.find((r) => r.path === ROUTES.history);
+    const notifier2 = ctx2.get("wingsky.notifier", false);
+    notifier2.registerKind({ id: "y:task", label: "开关链路" });
+
+    error2({ agent: { id: "n20-2" }, turn: 1, error: new Error("错误 password=s3cr3t 明文可见") });
+    const errInfo2 = infos2.filter((t) => /error/.test(t) && !t.includes("被免打扰拦截"))[0];
+    assert.ok(errInfo2.includes("password=s3cr3t"), "false：事件层 error 通知明文");
+    const dynBody2 = "任务 联系 admin@corp.example.com 明文可见";
+    await notifier2.send({ source: "e2e", kind: "y:task", severity: "info", body: dynBody2 });
+    const dynInfo2 = infos2.filter((t) => /y:task/.test(t))[0];
+    assert.ok(dynInfo2.includes("admin@corp.example.com"), "false：send 动态 kind 通知明文");
+    const falseHist = await waitForHistory(historyRoute2, (rec) => rec.some((e) => e.kind === "y:task" && !e.suppressed));
+    assert.ok(falseHist.find((e) => e.kind === "y:task")!.message.includes("admin@corp.example.com"), "false：动态 kind 历史明文");
+  }
 } finally {
   rmSync(work, { recursive: true, force: true });
 }

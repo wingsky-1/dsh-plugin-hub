@@ -203,6 +203,7 @@ const SETTING_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   channels: isChannels,
   kindRoutes: isKindRoutes,
   allowKinds: isConfirmedKinds,
+  sanitizeContent: isBoolean,
 };
 
 /** 各配置键的合法范围描述（validateSettings 400 hint 用；与 SETTING_VALIDATORS 平行维护）。 */
@@ -228,6 +229,7 @@ const SETTING_HINTS: Record<string, string> = {
   channels: "需为频道实例数组（至多 16 实例、id 不重复，id 为 2-32 位小写字母/数字/连字符）：bark 实例 { id, type:'bark', baseUrl, deviceKey, enabled }（baseUrl 为无凭据的 http(s) 地址；可选 levels 为 { kind: 级别 } 映射，键至多 64 字符、至多 64 项，级别限 active/timeSensitive/passive/critical）；webhook 实例 { id, type:'webhook', url, enabled, auth?:'none'|'bearer'|'basic'|'header', token?/username?/password?/headerName?/headerValue?, preset?:'ntfy'|'gotify'|'custom', template?(JSON ≤8192), timeoutSec?(1-60) }（url 为无凭据无 query 的 http(s) 地址，凭据只走请求头）",
   kindRoutes: "需为 { kind: channelId[] } 对象（至多 64 个 kind，每项至多 16 个 channelId）",
   allowKinds: "需为非空字符串数组（至多 128 项，每项至多 64 字符）",
+  sanitizeContent: "需为布尔值（true=通知与历史统一脱敏，false=明文）",
 };
 
 /** validateSettings 的结果：null = 全部合法。 */

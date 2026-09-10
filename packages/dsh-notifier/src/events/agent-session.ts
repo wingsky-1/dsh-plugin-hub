@@ -3,12 +3,12 @@
  *
  * 事件层从 Agent 对象读取会话标题/turn 终态、判定子代理归属的最小结构子集：
  * 全部经官方类型层 import type（不引入运行时依赖），payload 跨宿主边界不受信，
- * 读取一律防御性收窄。sessionTitleOf 是全部 taskTitle 的唯一来源——在此单点
- * 接入脱敏即覆盖 NOTIFY_KINDS 全部模板拼接与历史落盘（issue #30）。
+ * 读取一律防御性收窄。sessionTitleOf 是全部 taskTitle 的唯一来源——B-1 后
+ * 脱敏统一到 sendKind 渲染后单点（此处仅截断），taskTitle 经模板拼接与历史
+ * 落盘仍全覆盖（issue #30 由统一时点承接）。
  */
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { TurnEndReason } from "@deepseek-ai/dsh-session/types";
-import { sanitizeErrorText } from "../text/interface.ts";
 
 /** turn/end reason.kind 的官方联合（TurnEndReasonMap；插件可经 declare module 扩展，
  * 运行时出现未知 kind 由调用方保守静默——见 agent/status 完成判定白名单）。 */
@@ -18,13 +18,12 @@ type TurnEndKind = TurnEndReason extends { kind: infer K } ? K : never;
  * 提取会话标题（用户可读的任务名，替代内部 session id）。
  * 数据源：agent.session.snapshotEvents() 中最后一个 session/title 事件（dsh-session-title
  * 官方插件维护，与 GUI 会话列表同源）。无标题（新会话/未生成）返回 undefined。
- * 标题源自会话内容、可携带敏感片段（凭据/路径/邮箱等），返回前经
- * sanitizeErrorText 脱敏再截断 40 字符（先打码后截断：避免长敏感串被腰斩成
- * 不满足规则阈值的残段漏网）；本函数是全部 taskTitle 的唯一来源，在此单点
- * 接入即覆盖 NOTIFY_KINDS 全部模板拼接与历史落盘（issue #30）。正常标题
- * 不含敏感特征、脱敏后原样透传，可读性不受影响。
+ * 仅截断 40 字符（展示语义：模板拼接/taskTitle 的标题行上限）；**不再脱敏**——
+ * B-1 统一时点后标题敏感片段由 sendKind 渲染后统一处理（本函数是全部 taskTitle
+ * 的唯一来源，脱敏统一到下游单点，避免此处截断先于打码造成「长敏感串被腰斩成
+ * 不满足规则阈值的残段漏网」的旧问题面；issue #30 的覆盖由 sendKind 承接）。
  * @param agent Agent 对象（事件 payload.agent）。
- * @returns 脱敏并截断 40 字符的标题。
+ * @returns 截断 40 字符的标题（未脱敏；sanitizeContent=false 时原样透传）。
  */
 export function sessionTitleOf(agent: Agent | undefined): string | undefined {
   try {
@@ -37,7 +36,7 @@ export function sessionTitleOf(agent: Agent | undefined): string | undefined {
       const ev = events[i] as { type: unknown; data?: { title?: unknown } } | undefined;
       if (ev?.type === "session/title" && typeof ev.data?.title === "string") {
         const title = ev.data.title.trim();
-        return title.length > 0 ? sanitizeErrorText(title, 40) : undefined;
+        return title.length > 0 ? title.slice(0, 40) : undefined;
       }
     }
   } catch {

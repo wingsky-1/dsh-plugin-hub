@@ -7,7 +7,7 @@
  */
 export { KIND_SEVERITY, NOTIFY_KINDS, formatDuration, prettyToolName } from "./message.ts";
 export type { NotifyDetail } from "./message.ts";
-export { sanitizeErrorText } from "./sanitize.ts";
+export { sanitizeErrorText, sanitizeNoticeContent } from "./sanitize.ts";
 export {
   LINUX_DEFAULT_TONE_FILE,
   LINUX_TONE_FILES,
