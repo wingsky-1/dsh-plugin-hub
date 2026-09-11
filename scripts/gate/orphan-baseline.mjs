@@ -169,14 +169,16 @@ if (action === 'push') {
     }
   }
 
-  // ref 不在广告里就是首夜，直接降级——不必为一个取不到的 ref 白跑一轮 fetch 重试。
-  // ref 存在才拉取；拉取失败说明基线确实在、只是取不到，交由 decideRestoreOutcome 判 fail。
+  // 只有「探针明确说广告里没有这条 ref」才跳过 fetch（为首夜白跑一轮注定失败的重试没有意义）。
+  // 探针结果不确定（unreachable）时仍要尝试 fetch：拉取成功说明基线确实在、能正常恢复，
+  // 不该因探针的假阴性把「可恢复」判成「判红」——decideRestoreOutcome 把 fetchOk 放在第一位。
   let fetched = false;
-  if (probeStatus === 'present') {
+  if (probeStatus !== 'absent') {
     for (let attempt = 1; attempt <= PROBE_ATTEMPTS; attempt++) {
       const res = runGit(
         ['fetch', '--depth=1', 'origin', `refs/heads/${BRANCH}`],
-        { ignoreError: true },
+        // 与探针一致：无 TTY 时不让 git 挂起等待凭据输入。
+        { ignoreError: true, env: { GIT_TERMINAL_PROMPT: '0' } },
       );
       if (res !== null) {
         fetched = true;

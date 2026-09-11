@@ -103,8 +103,10 @@ export function classifyRemoteProbe({ ok, code }) {
  * 避免同一操作两份实现长期分叉。
  *
  * 已知边界（必须诚实记录）：`absent` 只能证明「本次广告里没有这条 ref」，**不能**证明
- * 「服务端上不存在」——服务端可用 `uploadpack.hideRefs` 隐藏某条 ref，此时探针与真·首夜
- * 完全同形。因此写路径的真正保障不在探针，而在**推送侧不得删段**（见 #718 方案评论）。
+ * 「服务端上不存在」——服务端可用 `uploadpack.hideRefs` 隐藏某条 ref，此时与真·首夜完全同形，
+ * 本函数无从区分。这一支上唯一实际生效的防护是 workflow 层 `mutation-suites` 的 outcome 门控
+ * （依赖 restore 非零退出，见 observe-incremental.yml）；**代码里并不存在「推送侧拒绝空/缺段
+ * 快照」的保护**，补该保护已登记在 #718 的方案中（并集入档），尚未实施。
  */
 export function decideRestoreOutcome({ probeStatus, fetchOk }) {
   if (fetchOk) return { action: 'restore' }

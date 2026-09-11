@@ -37,6 +37,9 @@ const commitSha = process.env.COMMIT_SHA || execSync('git rev-parse HEAD', { enc
 const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || process.env.OBSERVE_PAT;
 const BRANCH = 'baseline/mutation';
 const MAX_BUFFER = 64 * 1024 * 1024; // 64MB
+const PROBE_ATTEMPTS = 3;
+// 与 orphan-baseline.mjs 共用同一退避口径（测试置 0 避免拖慢套件）。
+const RETRY_DELAY_MS = Number(process.env.ORPHAN_BASELINE_RETRY_DELAY_MS ?? 2000);
 
 function runCmd(cmd, args = [], options = {}) {
   return execFileSync(cmd, args, {
@@ -49,6 +52,38 @@ function runCmd(cmd, args = [], options = {}) {
 
 function runGh(args) {
   return runCmd('gh', args, { env: token ? { GH_TOKEN: token } : {} });
+}
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * 远端基线 ref 的三态探针——与 orphan-baseline.mjs 同一判据、同一重试规格。
+ * 两入口若各写一套，就会重演「同一操作两份实现」的老问题（#718 的成因之一）。
+ * `absent` 是确定结论，不再重试；只有环境故障才值得退避重试。
+ */
+function probeArchiveRef() {
+  for (let attempt = 1; attempt <= PROBE_ATTEMPTS; attempt++) {
+    try {
+      runCmd('git', ['ls-remote', '--exit-code', '--heads', 'origin', `refs/heads/${BRANCH}`], {
+        // 无 TTY 时凭据缺失会让 git 挂起等待输入，显式关掉交互提示。
+        env: { GIT_TERMINAL_PROMPT: '0' },
+      });
+      return 'present';
+    } catch (err) {
+      const status = classifyRemoteProbe({
+        ok: false,
+        code: typeof err.status === 'number' ? err.status : null,
+      });
+      if (status !== 'unreachable') return status;
+      if (attempt < PROBE_ATTEMPTS) {
+        console.warn(`[overlay-baseline] ls-remote 探测基线分支失败，第 ${attempt}/${PROBE_ATTEMPTS} 次重试...`);
+        sleepSync(RETRY_DELAY_MS);
+      }
+    }
+  }
+  return 'unreachable';
 }
 
 async function main() {
@@ -163,24 +198,13 @@ async function main() {
   try {
     // 5. 先恢复孤立分支的现存基线全量快照
     console.log(`[overlay-baseline] 恢复孤立分支 ${BRANCH} 现存基线...`);
+    // 探针必须声明在 try 之外：catch 要靠它区分「首夜」与「探针没能给出否定结论」。
+    // 上一版把声明放进 try、又在 catch 引用，命中即 ReferenceError——守卫成了死代码（#716 也是同一写法）。
+    const probeStatus = probeArchiveRef();
     try {
-      // 与 orphan-baseline.mjs 共用**同一个探针与同一套分类**（判据只允许一处实现）：
-      // `ls-remote --exit-code` 的 0 / 2 / 其它 分别是「广告里有这条 ref」/「广告里没有」/「环境故障」。
-      // 这里原本用 `gh api .../git/ref/heads/<branch>`，其失败被裸 catch 吞成「首夜」——
-      // 正是 2026-09-11 05:18 事故的原始形态；#716 只修了「探针成功但 fetch 失败」那一半。
-      let probeStatus = 'unreachable';
-      try {
-        runCmd('git', ['ls-remote', '--exit-code', '--heads', 'origin', `refs/heads/${BRANCH}`], {
-          env: { GIT_TERMINAL_PROMPT: '0' },
-        });
-        probeStatus = 'present';
-      } catch (probeErr) {
-        probeStatus = classifyRemoteProbe({
-          ok: false,
-          code: typeof probeErr.status === 'number' ? probeErr.status : null,
-        });
-      }
-      runCmd('git', ['fetch', '--depth=1', 'origin', `refs/heads/${BRANCH}`]);
+      runCmd('git', ['fetch', '--depth=1', 'origin', `refs/heads/${BRANCH}`], {
+        env: { GIT_TERMINAL_PROMPT: '0' },
+      });
       const treeOutput = runCmd('git', ['ls-tree', '-r', 'FETCH_HEAD']);
       for (const line of treeOutput.split('\n').filter(Boolean)) {
         const parts = line.split('\t');
@@ -194,9 +218,10 @@ async function main() {
     } catch (err) {
       // 只有「广告里确实没有这条 ref」才是首夜；探针没能给出否定结论时一律拒绝以空快照覆盖。
       if (probeStatus !== 'absent') {
-        console.error(
-          `[overlay-baseline] 无法确认孤立分支 ${BRANCH} 是否存在（探针结果 ${probeStatus}），拒绝以空快照覆盖（fail-loud）: ${err.message}`,
-        );
+        const why = probeStatus === 'present'
+          ? `孤立分支 ${BRANCH} 存在但恢复失败`
+          : `无法确认孤立分支 ${BRANCH} 是否存在（探针结果 ${probeStatus}）`;
+        console.error(`[overlay-baseline] ${why}，拒绝以空快照覆盖（fail-loud）: ${err.message}`);
         process.exit(1);
       }
       console.log(`[overlay-baseline] 孤立分支 ${BRANCH} 尚不存在（首夜），基于当前产物构建全新快照`);

@@ -51,8 +51,14 @@
 两处失败也改为 fail-loud——**「查不了」与「查不到（空数组）」是两件事**，后者仍是正常 no-op。
 
 **已知边界（不要误读为强保证）**：`absent` 只能证明「本次广告里没有这条 ref」，**不能**证明
-服务端上不存在——服务端可用 `uploadpack.hideRefs` 隐藏某条 ref，此时与真·首夜完全同形。
-写路径的真正保障不在探针，而在**推送侧不得删段**（见 #718 方案评论）。
+服务端上不存在——服务端可用 `uploadpack.hideRefs` 隐藏某条 ref，此时与真·首夜完全同形，
+客户端无从区分。这一支上**唯一实际生效**的防护是 workflow 层 `mutation-suites` 的 outcome
+门控（`observe-incremental.yml` 的 push 步骤要求它非 `skipped`，而它依赖 restore 非零退出）；
+**代码里没有「推送侧拒绝空/缺段快照」的保护**，补该保护已登记在 #718 的方案中（并集入档），尚未实施。
+
+**两条路径的有意差异**：orphan 侧在「远端树里有 blob 却无基线文件」时**拒绝继续**（fail-loud）；
+overlay 侧没有这个检查，而是由 `reconcileArchive` 以 `archiveGap` 判红、**仍照常推送**——
+因为 overlay 是差量覆盖，拒绝推送会让归档停在更旧的树上。两处语义不同是有意的，不要当作不一致。
 
 > 注：`.github/workflows/ci.yml`（「首夜/基线缺失时天然降级为全量变异，门禁语义不变仅变慢」等）
 > 与 `observe-incremental.yml` 的对应注释**尚未同步**。`.github/` 属红线，须在 issue 内取得
