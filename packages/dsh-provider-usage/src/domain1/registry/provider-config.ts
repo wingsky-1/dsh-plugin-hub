@@ -18,9 +18,8 @@
  */
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
-import { dshHome as dshHomeShared } from "../../../../../shared/dsh-home.js";
+import { dshHome as dshHomeShared, userHome } from "../../../../../shared/dsh-home.js";
 
 /** 插件配置提供的 apiEndpoint/apiKey（可选）。 */
 export interface ProviderConfigInput {
@@ -74,8 +73,9 @@ export function credentialsFile(dshHome?: string): string {
 
 /** auth.json 文件路径。 */
 export function opencodeAuthFile(): string {
-  // dsh-gate:allow-homedir #525 opencode 外部凭据：DSH_HOME 域之外的第三方工具自身写面
-  return join(homedir(), ".local", "share", "opencode", "auth.json");
+  // opencode 是 DSH_HOME 域外的第三方工具，凭据落点跟随用户 home（走共享接缝，
+  // 使测试可用 process.env.HOME 隔离——见 shared/dsh-home.js 的 userHome 注释）。
+  return join(userHome(), ".local", "share", "opencode", "auth.json");
 }
 
 /**
