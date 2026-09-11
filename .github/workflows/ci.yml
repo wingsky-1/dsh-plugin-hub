@@ -36,6 +36,7 @@ jobs:
       # 无取长度与管道能力，在 if 里对清单做取长判空或裸数组文本比较均脆弱；
       # 下游 if 一律用 needs.changes.outputs.hasMutations == 'true' 精确比较
       hasMutations: ${{ steps.pkgs.outputs.hasMutations }}
+      buildPackages: ${{ steps.pkgs.outputs.buildPackages }}
       # 全量门禁开关（#722 门禁分层）：PR 默认走增量——只跑命中包的构建/测试/产物闸；
       # 打 gate:full 标签才跑覆盖率 + 变异 + 全仓产物闸。策略只在这里计算一处，
       # 下游三个 job 的 if 与判定脚本共用它，避免「标签语义」散落在多处表达式里。
@@ -135,11 +136,14 @@ jobs:
           FILTER_OUTPUTS: ${{ toJson(steps.filter.outputs) }}
         run: node scripts/ci/ci-matrix.mjs
 
-  # ── 第 2 段：全包并行 build + lib artifact；smoke/typecheck 只对命中包切片 ──
-  # 设计说明（#85 评审 F1/F3 修订）：repo-gate 的全局门禁（contract/pack:check/
-  # verify:npmlayout/aggregate:check）断言**全部**插件包的 lib 产物，因此 build 与
-  # artifact 上传必须无条件覆盖全集；切片只作用于测试与类型检查，避免单包 PR
-  # 场景下未命中包缺产物而必红。
+  # ── 第 2 段：命中包并行 build + lib artifact + smoke/typecheck（#722 全切片）──
+  # 矩阵来源 = changes.buildPackages（命中包；空切片时为哨兵项）。为什么不是固定全集：
+  # 固定矩阵会让单包 PR 也拉起 7 个 check 实例（6 个全程 skip，纯耗 runner 分钟）；
+  # 为什么不是裸动态矩阵：GHA 对**零实例**动态矩阵实测回报 failure（实证 run
+  # 32802575298），会连坐 repo-gate 判定表的 build-test == success 判据，故空切片
+  # 用哨兵项占位（哨兵不匹配任何包，所有步骤的 contains(hitPackages, ...) 自然为假）。
+  # 全仓产物闸（contract/pack:check/verify:npmlayout）在 gate:full PR 与夜间 observe
+  # 落地，不再依赖本 job 的全集产物。
   build-test:
     name: Build / Test / Typecheck (${{ matrix.package }})
     needs: changes
@@ -147,14 +151,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package:
-          - dsh-notifier
-          - dsh-web-file-preview
-          - dsh-mcp-manager
-          - dsh-provider-usage
-          - dsh-lan-proxy
-          - dsh-verify-isolated
-          - dsh-plugins-all
+        package: ${{ fromJSON(needs.changes.outputs.buildPackages) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -172,8 +169,9 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
+        # 哨兵实例（空切片）不装依赖：条件与下方各步骤同源，避免在 YAML 里重复哨兵字面量
+        if: contains(fromJSON(needs.changes.outputs.hitPackages), matrix.package)
         run: pnpm install --frozen-lockfile
-
       # Build package：名称选择器 + ... 后缀按 workspace 拓扑先构建依赖（目录选择器
       # + ... 在 pnpm 11 不展开依赖，评审实测须用 @scope/name... 形态）。
       # #722 门禁分层：只构建**命中包**——repo-gate 的产物闸同步改为命中包切片，

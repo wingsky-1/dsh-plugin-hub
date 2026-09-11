@@ -118,20 +118,26 @@ test('ci.yml: filter 失败 fallback 全量切片（fail-closed 双闸）', () =
   assert.ok(/按全量处理/.test(CI), 'diff base 不可用时按全量处理（F4）')
 })
 
-test('ci.yml: build-test 矩阵恒全集（防零实例矩阵）且 build/artifact 仅命中包（#722 增量门禁）', () => {
+test('ci.yml: build-test 矩阵动态来自 buildPackages（哨兵防空实例）且各步骤仅命中包（#722）', () => {
   const bt = CI.slice(CI.indexOf('\n  build-test:'), CI.indexOf('\n  repo-gate:'))
-  for (const pkg of MATRIX_PACKAGES) {
-    assert.ok(bt.includes(`- ${pkg}\n`), `矩阵含 ${pkg}`)
+  // #722：矩阵改为动态（来源 changes.buildPackages）。空切片时由 ci-matrix.mjs 填哨兵项，
+  // 因为 GHA 对零实例动态矩阵实测回报 failure（实证 run 32802575298），会连坐判定表。
+  assert.ok(bt.includes('package: ${{ fromJSON(needs.changes.outputs.buildPackages) }}'),
+    'build-test 矩阵必须动态来自 changes.buildPackages')
+  assert.ok(!/^\s+- dsh-[a-z0-9-]+$/m.test(bt),
+    'build-test 不得再出现静态包名清单（清单 SSOT 已下沉 ci-matrix.mjs）')
+  // 全量包清单仍必须注入（gate:full 的产物齐备断言与快照消费都用它）
+  const computeBlock = CI.slice(CI.indexOf('Compute hit packages'), CI.indexOf('build-test:'))
+  assert.ok(computeBlock.includes('run: node scripts/ci/ci-matrix.mjs'),
+    'Compute hit packages 步骤已下沉至 ci-matrix.mjs')
+  // 切片条件必须覆盖 install（哨兵实例零消耗）与 build（未命中包不构建）
+  for (const stepName of ['Install dependencies', 'Build package', 'Smoke tests', 'Typecheck']) {
+    const idx = bt.indexOf(`- name: ${stepName}`)
+    assert.ok(idx > 0, `${stepName} 步骤在位`)
+    const block = bt.slice(idx, bt.indexOf('- name:', idx + 10))
+    assert.ok(block.includes('contains(fromJSON(needs.changes.outputs.hitPackages), matrix.package)'),
+      `${stepName} 必须按命中清单切片`)
   }
-  // 矩阵保持固定 7 实例：GHA 动态零实例矩阵实测回报 failure（实证 run 32802575298），
-  // 切片改由步骤级 if 表达，矩阵本身不得动态化
-  assert.ok(!bt.includes('matrix:\n        package: ${{ fromJSON'),
-    '矩阵不得动态化（零实例矩阵在 GHA 上回报 failure，会连坐 repo-gate 判定表）')
-  // #722：build 必须按命中清单切片——全仓产物由 gate:full 时的 repo-gate `pnpm build`
-  // 与命中包 artifact 共同保证，未命中包不再构建
-  const buildBlock = bt.slice(bt.indexOf('- name: Build package'), bt.indexOf('- name: Smoke tests'))
-  assert.ok(buildBlock.includes('contains(fromJSON(needs.changes.outputs.hitPackages), matrix.package)'),
-    'build 步骤必须按命中清单切片（#722 增量门禁）')
   // 上传必须与 build 同步切片：未命中包无产物，if-no-files-found: error 会直接红
   const uploadBlock = bt.slice(bt.indexOf('- name: Upload package outputs artifact'))
   assert.ok(uploadBlock.slice(0, 300).includes('contains(fromJSON(needs.changes.outputs.hitPackages), matrix.package)'),
@@ -139,8 +145,6 @@ test('ci.yml: build-test 矩阵恒全集（防零实例矩阵）且 build/artifa
   for (const stepName of ['Smoke tests', 'Typecheck']) {
     const idx = bt.indexOf(`- name: ${stepName}`)
     const block = bt.slice(idx, bt.indexOf('- name:', idx + 10))
-    assert.ok(block.includes('contains(fromJSON(needs.changes.outputs.hitPackages), matrix.package)'),
-      `${stepName} 步骤须按命中清单切片`)
     assert.ok(block.includes('--if-present'), `${stepName} 须 --if-present（聚合包无该脚本）`)
   }
 })
@@ -772,13 +776,16 @@ test('#217+#187: repo-gate-assert CLI 退出码转发（GitHub Actions 判红依
   assert.match(covFailRun.stderr, /coverage 失败连坐/, '连坐场景判词必须点名「coverage 失败连坐」，不得误报为门禁绕过')
 })
 
-test('#306+#586: ci.yml 静态包名出现处 == MATRIX_PACKAGES（防清单漂移，替代旧 #178 全包名断言）', () => {
-  // 动态化后 ci.yml 的静态包名只应出现在显式清单：build-test matrix。
-  // 切片分支已下沉至 ci-matrix.mjs 动态计算（#586），不再存在脆弱内联 for/case。
+test('#306+#586+#722: ci.yml 包名清单 SSOT 下沉——workflow 内不得再有静态包名矩阵', () => {
+  // 静态清单已彻底退役：build-test 矩阵来自 changes.buildPackages（ci-matrix.mjs 派生
+  // 自 plugins-manifest.json），故 ci.yml 里不应再出现包名逐行列举（防清单漂移）。
   const bt = CI.slice(CI.indexOf('\n  build-test:'), CI.indexOf('\n  repo-gate:'))
-  const matrixNames = [...bt.matchAll(/^\s*- (dsh-[a-z0-9-]+)\s*$/gm)].map((m) => m[1]).sort()
-  assert.deepEqual(matrixNames, [...MATRIX_PACKAGES].sort(),
-    `build-test matrix 包名与 MATRIX_PACKAGES 不一致：matrix=${matrixNames.join(',')} expected=${MATRIX_PACKAGES.join(',')}`)
+  const matrixNames = [...bt.matchAll(/^\s*- (dsh-[a-z0-9-]+)\s*$/gm)].map((m) => m[1])
+  assert.deepEqual(matrixNames, [],
+    `build-test 段不得再列举动包名（发现：${matrixNames.join(',')}）——清单 SSOT 在 ci-matrix.mjs`)
+  // buildPackages 必须是 changes 的声明输出并被矩阵消费
+  assert.ok(CI.includes('buildPackages: ${{ steps.pkgs.outputs.buildPackages }}'),
+    'changes outputs 必须声明 buildPackages')
   const computeBlock = CI.slice(CI.indexOf('Compute hit packages'), CI.indexOf('build-test:'))
   assert.ok(computeBlock.includes('run: node scripts/ci/ci-matrix.mjs'),
     'Compute hit packages 步骤已下沉至 ci-matrix.mjs')

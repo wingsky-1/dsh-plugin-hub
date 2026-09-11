@@ -23,6 +23,7 @@ test('ci-matrix: 场景 a - 正常命中单一 active 包 (via FILTER_OUTPUTS)',
 
   assert.deepEqual(res.allPackages, EXPECTED_ALL);
   assert.deepEqual(res.hitPackages, ['dsh-notifier']);
+  assert.deepEqual(res.buildPackages, ['dsh-notifier'], '#722：矩阵 = 命中包（有命中时）')
   assert.deepEqual(res.mutationPackages, ['dsh-notifier']);
   assert.equal(res.hasMutations, 'true');
   // T2-7：dsh-notifier 变异 4 段 → 按域重划 8 段（S3-30/N-24；combos 字母序展开）
@@ -31,6 +32,24 @@ test('ci-matrix: 场景 a - 正常命中单一 active 包 (via FILTER_OUTPUTS)',
     res.mutationCombos.map((c) => c.seg),
     ['channels', 'config', 'events', 'pipeline', 'sdk', 'server', 'stores', 'text']
   );
+});
+
+test('ci-matrix: 空切片 → buildPackages 用哨兵占位（防零实例动态矩阵回报 failure，#722）', () => {
+  const res = computeCiMatrix({
+    env: {
+      GLOBAL_HIT: 'false',
+      FILTER_OUTCOME: 'success',
+      BASE_SET: 'origin/main',
+      // 纯文档 PR：docs/**、AGENTS.md 刻意不在 global 面（#220），故全 false
+      FILTER_OUTPUTS: '{}',
+    },
+    rootDir: ROOT,
+  });
+
+  assert.deepEqual(res.hitPackages, [], '空切片');
+  assert.deepEqual(res.buildPackages, ['__no-hit-package__'],
+    'GHA 对零实例动态矩阵回报 failure（实证 run 32802575298），必须用哨兵项占位');
+  assert.equal(res.hasMutations, 'false');
 });
 
 test('ci-matrix: 场景 a - 正常命中单一 active 包 (via BASE_SET 空格分隔)', () => {
