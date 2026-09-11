@@ -11,198 +11,248 @@
  * - lifecycle：effect disposer（卸载回落 entry）与 watch 触发 onChange
  * - isUnloading：fiber.state ∈ {unloading, unloaded, disposed} → disposer 短路
  */
-import assert from "node:assert/strict";
+import { describe, expect, it } from "vitest";
 
 import { installSettingsNamespace } from "../../../../shared/settings-namespace.js";
 
-// ---- ctx.inject 不可用 ----
+describe("ctx.inject 不可用", () => {
+  it("ctx.inject 不可用应 warn", () => {
+    let warned = "";
+    installSettingsNamespace(
+      { logger: { warn: (m) => { warned = m; } } },
+      "test-ns",
+      {},
+      {},
+      { setSource: () => {}, onChange: () => {} },
+    );
+    expect(warned).toMatch(/ctx.inject 不可用/);
+  });
 
-{
-  let warned = "";
-  installSettingsNamespace(
-    { logger: { warn: (m) => { warned = m; } } },
-    "test-ns",
-    {},
-    {},
-    { setSource: () => {}, onChange: () => {} },
-  );
-  assert.match(warned, /ctx.inject 不可用/, "ctx.inject 不可用应 warn");
-}
+  it("logger 缺失不抛（极端降级）", () => {
+    expect(() => {
+      installSettingsNamespace({}, "test-ns", {}, {}, { setSource: () => {}, onChange: () => {} });
+    }).not.toThrow();
+  });
+});
 
-// logger 缺失不抛（极端降级）。
-{
-  installSettingsNamespace({}, "test-ns", {}, {}, { setSource: () => {}, onChange: () => {} });
-}
+describe("settings 服务缺失", () => {
+  it("settings 服务缺失应 warn", () => {
+    let warned = "";
+    const ctx = {
+      logger: { warn: (m) => { warned = m; } },
+      inject: (keys, cb) => {
+        if (Array.isArray(keys) && keys.includes("settings")) cb({});
+        return () => {};
+      },
+    };
+    installSettingsNamespace(ctx, "test-ns", {}, {}, { setSource: () => {}, onChange: () => {} });
+    expect(warned).toMatch(/缺少 register/);
+  });
+});
 
-// ---- settings 服务缺失 ----
+describe("settings.register 抛错", () => {
+  it("register 抛错应 warn", () => {
+    let warned = "";
+    const ctx = {
+      logger: { warn: (m) => { warned = m; } },
+      inject: (keys, cb) => {
+        if (Array.isArray(keys) && keys.includes("settings")) {
+          cb({ settings: { register: () => { throw new Error("duplicate ns"); } }, effect: () => () => {} });
+        }
+        return () => {};
+      },
+    };
+    installSettingsNamespace(ctx, "test-ns", {}, {}, { setSource: () => {}, onChange: () => {} });
+    expect(warned).toMatch(/register 失败/);
+  });
+});
 
-{
-  let warned = "";
-  const ctx = {
-    logger: { warn: (m) => { warned = m; } },
-    inject: (keys, cb) => {
-      if (Array.isArray(keys) && keys.includes("settings")) cb({});
-      return () => {};
-    },
+// 正常注册 + lifecycle（覆盖 isUnloading 两条路径）
+//
+// 原脚本块按顺序断言依赖同一份可变状态（setSource → watch → disposer）；
+// 每条断言改用一次独立装配的等价场景，避免用例间顺序耦合。
+function installActiveLifecycle() {
+  const state = {
+    sourceMode: "unset", // entry | scope
+    onChangeCount: 0,
+    watchCb: null,
+    disposer: null,
+    scope: null,
+    settings: null,
   };
-  installSettingsNamespace(ctx, "test-ns", {}, {}, { setSource: () => {}, onChange: () => {} });
-  assert.match(warned, /缺少 register/, "settings 服务缺失应 warn");
-}
-
-// ---- settings.register 抛错 ----
-
-{
-  let warned = "";
-  const ctx = {
-    logger: { warn: (m) => { warned = m; } },
-    inject: (keys, cb) => {
-      if (Array.isArray(keys) && keys.includes("settings")) {
-        cb({ settings: { register: () => { throw new Error("duplicate ns"); } }, effect: () => () => {} });
-      }
-      return () => {};
-    },
-  };
-  installSettingsNamespace(ctx, "test-ns", {}, {}, { setSource: () => {}, onChange: () => {} });
-  assert.match(warned, /register 失败/, "register 抛错应 warn");
-}
-
-// ---- 正常注册 + lifecycle（覆盖 isUnloading 两条路径） ----
-
-{
-  let sourceMode = "unset"; // entry | scope
-  let onChangeCount = 0;
-  let watchCb = null;
-  let disposer = null;
 
   const scope = {
     get: () => ({ from: "scope" }),
-    watch: (cb) => { watchCb = cb; },
+    watch: (cb) => { state.watchCb = cb; },
   };
+  state.scope = scope;
+
+  const settings = {
+    register: (ns, schema, opts) => scope,
+    effect: (fn) => {
+      state.disposer = fn();
+      return () => {};
+    },
+  };
+  state.settings = settings;
 
   // 注入器记录 disposer，便于后续手动触发。
   const ctx = {
     fiber: { state: "active" },
     logger: { warn: () => {} },
     inject: (keys, cb) => {
-      if (Array.isArray(keys) && keys.includes("settings")) {
-        cb({
-          settings: { register: (ns, schema, opts) => scope },
-          effect: (fn) => {
-            disposer = fn();
-            return () => {};
-          },
-        });
-      }
+      if (Array.isArray(keys) && keys.includes("settings")) cb({ settings, effect: settings.effect });
       return () => {};
     },
   };
 
   installSettingsNamespace(ctx, "test-ns", {}, { from: "entry" }, {
-    setSource: (fn) => { sourceMode = fn().from; },
-    onChange: () => { onChangeCount += 1; },
+    setSource: (fn) => { state.sourceMode = fn().from; },
+    onChange: () => { state.onChangeCount += 1; },
   });
-  assert.equal(sourceMode, "scope", "注册后 setSource 指向 scope.get()");
-  assert.equal(onChangeCount, 1, "注册完成 onChange 触发一次");
 
-  // scope.watch 回调 → onChange（ctx 非卸载）
-  assert.ok(watchCb !== null, "scope.watch 已注册");
-  ctx.fiber.state = "active";
-  watchCb();
-  assert.equal(onChangeCount, 2, "watch 变化触发 onChange");
-
-  // disposer：ctx 非卸载 → 回落 entry + onChange
-  ctx.fiber.state = "active";
-  disposer();
-  assert.equal(sourceMode, "entry", "卸载回落 entry");
-  assert.equal(onChangeCount, 3, "disposer 触发 onChange");
+  return state;
 }
 
-// ---- onScope（#436）：register 成功后、setSource 之前回调 ----
-// 说明：settings 服务缺失用例（上方 L37-50）hooks 不含 onScope，未对「缺失不
-// 触发」做独立断言——属不传 onScope 的兼容回归（既有 7 处隐式覆盖该分支）。
-
-{
-  let scopeSeen = null;
-  let serviceSeen = null;
-  const order = [];
-  const scope = {
-    get: () => ({ from: "scope" }),
-    watch: () => () => {},
-  };
-  const settings = { register: () => scope };
-  const ctx = {
-    logger: { warn: () => {} },
-    inject: (keys, cb) => {
-      if (Array.isArray(keys) && keys.includes("settings")) {
-        cb({ settings, effect: (fn) => { fn(); return () => {}; } });
-      }
-      return () => {};
-    },
-  };
-  installSettingsNamespace(ctx, "test-ns", {}, { from: "entry" }, {
-    setSource: () => { order.push("setSource"); },
-    onChange: () => {},
-    onScope: (s, svc) => {
-      scopeSeen = s;
-      serviceSeen = svc;
-      order.push("onScope");
-    },
+describe("正常注册 + lifecycle", () => {
+  it("注册后 setSource 指向 scope.get()", () => {
+    const state = installActiveLifecycle();
+    expect(state.sourceMode).toBe("scope");
   });
-  assert.equal(scopeSeen, scope, "onScope 收到 register 返回的 owner scope");
-  assert.equal(serviceSeen, settings, "onScope 收到 settings 服务");
-  assert.deepEqual(order, ["onScope", "setSource"], "onScope 先于 setSource 回调");
-}
 
-// ---- isUnloading 短路：fiber 处于卸载态时 disposer / watch 不动作 ----
-
-for (const state of ["unloading", "unloaded", "disposed"]) {
-  let sourceCalls = 0;
-  let onChangeCount = 0;
-  let watchCb = null;
-  let disposer = null;
-
-  const scope = {
-    get: () => ({ from: "scope" }),
-    watch: (cb) => { watchCb = cb; },
-  };
-
-  const ctx = {
-    fiber: { state },
-    logger: { warn: () => {} },
-    inject: (keys, cb) => {
-      if (Array.isArray(keys) && keys.includes("settings")) {
-        cb({
-          settings: { register: () => scope },
-          effect: (fn) => {
-            disposer = fn();
-            return () => {};
-          },
-        });
-      }
-      return () => {};
-    },
-  };
-
-  installSettingsNamespace(ctx, "test-ns", {}, { from: "entry" }, {
-    setSource: () => { sourceCalls += 1; },
-    onChange: () => { onChangeCount += 1; },
+  it("注册完成 onChange 触发一次", () => {
+    const state = installActiveLifecycle();
+    expect(state.onChangeCount).toBe(1);
   });
-  const before = onChangeCount;
-  disposer();
-  watchCb();
-  assert.equal(onChangeCount, before, `state=${state} 时 disposer/watch 均短路（不触发 onChange）`);
-}
 
-// ---- 总开关：fiber 非对象 / 无 fiber / 无 state 的容错 ----
+  it("scope.watch 已注册", () => {
+    const state = installActiveLifecycle();
+    expect(state.watchCb).not.toBeNull();
+  });
 
-{
-  let watchCb = null;
-  let disposer = null;
-  const scope = {
-    get: () => null,
-    watch: (cb) => { watchCb = cb; },
-  };
-  for (const fiber of [undefined, null, 42, {}]) {
+  it("watch 变化触发 onChange", () => {
+    const state = installActiveLifecycle();
+    state.watchCb();
+    expect(state.onChangeCount).toBe(2);
+  });
+
+  it("卸载回落 entry", () => {
+    const state = installActiveLifecycle();
+    state.disposer();
+    expect(state.sourceMode).toBe("entry");
+  });
+
+  it("disposer 触发 onChange", () => {
+    const state = installActiveLifecycle();
+    state.watchCb();
+    state.disposer();
+    expect(state.onChangeCount).toBe(3);
+  });
+});
+
+// onScope（#436）：register 成功后、setSource 之前回调 ----
+// 说明：settings 服务缺失用例（上方「settings 服务缺失」describe）hooks 不含
+// onScope，未对「缺失不触发」做独立断言——属不传 onScope 的兼容回归（既有 7 处
+// 隐式覆盖该分支）。
+describe("onScope（#436）：register 成功后、setSource 之前回调", () => {
+  function installWithOnScope() {
+    const state = { scopeSeen: null, serviceSeen: null, order: [], scope: null, settings: null };
+    const scope = {
+      get: () => ({ from: "scope" }),
+      watch: () => () => {},
+    };
+    const settings = { register: () => scope };
+    state.scope = scope;
+    state.settings = settings;
+    const ctx = {
+      logger: { warn: () => {} },
+      inject: (keys, cb) => {
+        if (Array.isArray(keys) && keys.includes("settings")) {
+          cb({ settings, effect: (fn) => { fn(); return () => {}; } });
+        }
+        return () => {};
+      },
+    };
+    installSettingsNamespace(ctx, "test-ns", {}, { from: "entry" }, {
+      setSource: () => { state.order.push("setSource"); },
+      onChange: () => {},
+      onScope: (s, svc) => {
+        state.scopeSeen = s;
+        state.serviceSeen = svc;
+        state.order.push("onScope");
+      },
+    });
+    return state;
+  }
+
+  it("onScope 收到 register 返回的 owner scope", () => {
+    const state = installWithOnScope();
+    expect(state.scopeSeen).toBe(state.scope);
+  });
+
+  it("onScope 收到 settings 服务", () => {
+    const state = installWithOnScope();
+    expect(state.serviceSeen).toBe(state.settings);
+  });
+
+  it("onScope 先于 setSource 回调", () => {
+    const state = installWithOnScope();
+    expect(state.order).toEqual(["onScope", "setSource"]);
+  });
+});
+
+// isUnloading 短路：fiber 处于卸载态时 disposer / watch 不动作 ----
+describe("isUnloading 短路：卸载态 disposer / watch 不动作", () => {
+  function installInState(state) {
+    const seen = { onChangeCount: 0, watchCb: null, disposer: null };
+    const scope = {
+      get: () => ({ from: "scope" }),
+      watch: (cb) => { seen.watchCb = cb; },
+    };
+    const ctx = {
+      fiber: { state },
+      logger: { warn: () => {} },
+      inject: (keys, cb) => {
+        if (Array.isArray(keys) && keys.includes("settings")) {
+          cb({
+            settings: { register: () => scope },
+            effect: (fn) => {
+              seen.disposer = fn();
+              return () => {};
+            },
+          });
+        }
+        return () => {};
+      },
+    };
+    installSettingsNamespace(ctx, "test-ns", {}, { from: "entry" }, {
+      setSource: () => {},
+      onChange: () => { seen.onChangeCount += 1; },
+    });
+    return seen;
+  }
+
+  it.each(["unloading", "unloaded", "disposed"])(
+    "state=%s 时 disposer/watch 均短路（不触发 onChange）",
+    (state) => {
+      const seen = installInState(state);
+      const before = seen.onChangeCount;
+      seen.disposer();
+      seen.watchCb();
+      expect(seen.onChangeCount).toBe(before);
+    },
+  );
+});
+
+// 总开关：fiber 非对象 / 无 fiber / 无 state 的容错 ----
+describe("总开关：fiber 非对象 / 无 fiber / 无 state 的容错", () => {
+  it.each([undefined, null, 42, {}])("fiber=%s 时注册与 unmount 皆不抛", (fiber) => {
+    let watchCb = null;
+    let disposer = null;
+    const scope = {
+      get: () => null,
+      watch: (cb) => { watchCb = cb; },
+    };
     const ctx = {
       fiber,
       logger: { warn: () => {} },
@@ -216,10 +266,10 @@ for (const state of ["unloading", "unloaded", "disposed"]) {
         return () => {};
       },
     };
-    installSettingsNamespace(ctx, "test-ns", {}, {}, { setSource: () => {}, onChange: () => {} });
-    if (disposer) disposer();
-    if (watchCb) watchCb();
-  }
-}
-
-console.log("  ok   unit-shared: installSettingsNamespace 全分支（含 isUnloading）");
+    expect(() => {
+      installSettingsNamespace(ctx, "test-ns", {}, {}, { setSource: () => {}, onChange: () => {} });
+      if (disposer) disposer();
+      if (watchCb) watchCb();
+    }).not.toThrow();
+  });
+});

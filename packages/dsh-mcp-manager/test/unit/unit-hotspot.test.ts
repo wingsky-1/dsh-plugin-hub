@@ -1,21 +1,40 @@
 // @ts-nocheck
 /**
- * dsh-mcp-manager — unit：通过 bundle 公共 API 覆盖剩余的未覆盖热点。
+ * dsh-mcp-manager — unit：通过公共 API 覆盖剩余的未覆盖热点。
  *
  * 方法：通过 makeRoutes 调用实际 route handler 覆盖 connect/disconnect/reconnect 路由；
- * 通过 apply 完整 settings 生命周期覆盖 bundled isUnloading。
+ * 通过 apply 完整 settings 生命周期覆盖 isUnloading。
  */
-import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 
-// ---- 路由 handlers：connect / disconnect / reconnect ----
+const {
+  apply,
+  makeRoutes,
+  ROUTES,
+  McpStore,
+  McpManager,
+  normalizeServer,
+} = await import("../../src/index.ts");
 
-{
-  const { makeRoutes, ROUTES, McpStore, McpManager, SCOPE_GLOBAL, normalizeServer } = await import("../../lib/index.js");
-  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-route-"));
-  try {
+let tempDirs = [];
+
+function makeTempDir(prefix) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  tempDirs = [];
+});
+
+describe("路由 handlers：connect / disconnect / reconnect", () => {
+  function makeRoutesFixture() {
+    const dir = makeTempDir("dsh-mcp-manager-route-");
     const store = new McpStore(join(dir, "mcp.json"));
     store.data = { version: 1, servers: [] };
     // 添加一个测试服务器（不真实连接，只验证路由 handler 可被调用）
@@ -23,10 +42,12 @@ import { join } from "node:path";
     const manager = new McpManager({ logger: { warn: () => {}, info: () => {}, error: () => {} } }, store);
 
     const routes = makeRoutes(manager);
-    const find = (path) => routes.find((r) => r.path === path);
+    return { routes, find: (path) => routes.find((r) => r.path === path) };
+  }
 
-    // 伪造 req/res
-    const fakeReq = (method, url, body) => ({
+  // 伪造 req/res
+  function fakeReq(method, url, body) {
+    return {
       method,
       url,
       socket: { remoteAddress: "127.0.0.1" },
@@ -34,57 +55,74 @@ import { join } from "node:path";
       async *[Symbol.asyncIterator]() {
         if (body !== undefined) yield Buffer.from(JSON.stringify(body));
       },
-    });
-    const fakeRes = () => {
-      const state = { status: 200, body: "", headers: {} };
-      return {
-        state,
-        writeHead: (s, h) => { state.status = s; if (h) state.headers = h; },
-        write: (chunk) => { state.body += chunk.toString(); },
-        end: (chunk) => { if (chunk) state.body += chunk.toString(); },
-        setHeader: () => {},
-        on: () => {},
-        destroy: () => {},
-      };
     };
+  }
 
-    // connect 路由：缺 name → 400
-    const res1 = fakeRes();
-    await find(ROUTES.connect).handler(fakeReq("POST", ROUTES.connect), res1);
-    assert.equal(res1.state.status, 400, "connect 缺 name → 400");
+  function fakeRes() {
+    const state = { status: 200, body: "", headers: {} };
+    return {
+      state,
+      writeHead: (s, h) => { state.status = s; if (h) state.headers = h; },
+      write: (chunk) => { state.body += chunk.toString(); },
+      end: (chunk) => { if (chunk) state.body += chunk.toString(); },
+      setHeader: () => {},
+      on: () => {},
+      destroy: () => {},
+    };
+  }
 
-    // connect 路由：合法 name → 200（不实际连接，仅验证 handler 不抛）
-    const res2 = fakeRes();
-    await find(ROUTES.connect).handler(fakeReq("POST", `${ROUTES.connect}?name=route-test`), res2);
-    assert.equal(res2.state.status, 200, "connect 合法 name → 200");
+  it("connect 缺 name → 400", async () => {
+    const { find } = makeRoutesFixture();
+    const res = fakeRes();
+    await find(ROUTES.connect).handler(fakeReq("POST", ROUTES.connect), res);
+    expect(res.state.status).toBe(400);
+  });
 
-    // disconnect 路由：缺 name → 400
-    const res3 = fakeRes();
-    await find(ROUTES.disconnect).handler(fakeReq("POST", ROUTES.disconnect), res3);
-    assert.equal(res3.state.status, 400, "disconnect 缺 name → 400");
+  it("connect 合法 name → 200", async () => {
+    const { find } = makeRoutesFixture();
+    const res = fakeRes();
+    await find(ROUTES.connect).handler(fakeReq("POST", `${ROUTES.connect}?name=route-test`), res);
+    expect(res.state.status).toBe(200);
+  });
 
-    // disconnect 路由：合法 name → 200
-    const res4 = fakeRes();
-    await find(ROUTES.disconnect).handler(fakeReq("POST", `${ROUTES.disconnect}?name=route-test`), res4);
-    assert.equal(res4.state.status, 200, "disconnect 合法 name → 200");
+  it("disconnect 缺 name → 400", async () => {
+    const { find } = makeRoutesFixture();
+    const res = fakeRes();
+    await find(ROUTES.disconnect).handler(fakeReq("POST", ROUTES.disconnect), res);
+    expect(res.state.status).toBe(400);
+  });
 
-    // reconnect 路由：缺 name → 400
-    const res5 = fakeRes();
-    await find(ROUTES.reconnect).handler(fakeReq("POST", ROUTES.reconnect), res5);
-    assert.equal(res5.state.status, 400, "reconnect 缺 name → 400");
+  it("disconnect 合法 name → 200", async () => {
+    const { find } = makeRoutesFixture();
+    const res = fakeRes();
+    await find(ROUTES.disconnect).handler(fakeReq("POST", `${ROUTES.disconnect}?name=route-test`), res);
+    expect(res.state.status).toBe(200);
+  });
 
-    // reconnect 路由：合法 name → 200
-    const res6 = fakeRes();
-    await find(ROUTES.reconnect).handler(fakeReq("POST", `${ROUTES.reconnect}?name=route-test`), res6);
-    assert.equal(res6.state.status, 200, "reconnect 合法 name → 200");
+  it("reconnect 缺 name → 400", async () => {
+    const { find } = makeRoutesFixture();
+    const res = fakeRes();
+    await find(ROUTES.reconnect).handler(fakeReq("POST", ROUTES.reconnect), res);
+    expect(res.state.status).toBe(400);
+  });
 
-    // 方法错 → 405
-    const res7 = fakeRes();
-    await find(ROUTES.connect).handler(fakeReq("GET", ROUTES.connect), res7);
-    assert.equal(res7.state.status, 405, "connect GET → 405");
+  it("reconnect 合法 name → 200", async () => {
+    const { find } = makeRoutesFixture();
+    const res = fakeRes();
+    await find(ROUTES.reconnect).handler(fakeReq("POST", `${ROUTES.reconnect}?name=route-test`), res);
+    expect(res.state.status).toBe(200);
+  });
 
-    // 非 loopback → 403（模拟外部 IP）
-    const res8 = fakeRes();
+  it("connect GET → 405", async () => {
+    const { find } = makeRoutesFixture();
+    const res = fakeRes();
+    await find(ROUTES.connect).handler(fakeReq("GET", ROUTES.connect), res);
+    expect(res.state.status).toBe(405);
+  });
+
+  it("connect 非 loopback → 403", async () => {
+    const { find } = makeRoutesFixture();
+    const res = fakeRes();
     const extReq = {
       method: "POST",
       url: ROUTES.connect,
@@ -92,23 +130,15 @@ import { join } from "node:path";
       headers: { host: "localhost:3080", origin: "http://external" },
       async *[Symbol.asyncIterator]() {},
     };
-    await find(ROUTES.connect).handler(extReq, res8);
-    assert.equal(res8.state.status, 403, "connect 非 loopback → 403");
+    await find(ROUTES.connect).handler(extReq, res);
+    expect(res.state.status).toBe(403);
+  });
+});
 
-    console.log("  ok   unit-hotspot: connect/disconnect/reconnect 路由 handler 覆盖");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-// ---- 通过 apply 完整 settings 生命周期覆盖 bundled isUnloading ----
-
-{
-  const { apply } = await import("../../lib/index.js");
-  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-bundled-"));
-  try {
-    let disposer = null;
-    let watchCb = null;
+describe("apply 完整 settings 生命周期（isUnloading 覆盖）", () => {
+  async function applyWithSettingsLifecycle() {
+    const dir = makeTempDir("dsh-mcp-manager-bundled-");
+    const refs = { disposer: null, watchCb: null };
 
     const ctx = {
       fiber: { state: "active" },
@@ -123,12 +153,12 @@ import { join } from "node:path";
               register: (ns, schema, opts) => {
                 return {
                   get: () => ({ ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } } }),
-                  watch: (cb) => { watchCb = cb; },
+                  watch: (cb) => { refs.watchCb = cb; },
                 };
               },
             },
             effect: (fn) => {
-              disposer = fn();
+              refs.disposer = fn();
               return () => {};
             },
           });
@@ -140,32 +170,37 @@ import { join } from "node:path";
     };
 
     await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });
-
-    // 验证 disposer 存在且被调用
-    assert.ok(disposer !== null, "effect disposer 已注册");
-    // 验证 watch 回调已接线（settings-namespace 最终会经 scope.watch 传包装回调）
-    assert.ok(watchCb !== null, "scope.watch 已注册（settings 装配面）");
-
-    // 哑断言清理（#664 阶段 8）：isUnloading 短路（unloading/disposed 态
-    // watch/disposer 不触发 onChange）由 shared/settings-namespace.js 自身
-    // 单测覆盖——此处保留卸载路径执行冒烟（不抛）。
-    ctx.fiber.state = "unloading";
-    disposer();
-    ctx.fiber.state = "disposed";
-    watchCb();
-    assert.ok(true, "卸载态 disposer/watch 执行不抛");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+    return { ctx, refs };
   }
-}
 
-// ---- 验证：apply 的 agent/pre-step 在 announceCatalog=true 时注册 ----
+  it("effect disposer 已注册", async () => {
+    const { refs } = await applyWithSettingsLifecycle();
+    expect(refs.disposer).not.toBeNull();
+  });
 
-{
-  const { apply } = await import("../../lib/index.js");
-  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-pre-"));
-  try {
-    let preHandler = null;
+  it("scope.watch 已注册（settings 装配面）", async () => {
+    const { refs } = await applyWithSettingsLifecycle();
+    expect(refs.watchCb).not.toBeNull();
+  });
+
+  // 哑断言清理（#664 阶段 8）：isUnloading 短路（unloading/disposed 态
+  // watch/disposer 不触发 onChange）由 shared/settings-namespace.js 自身
+  // 单测覆盖——此处保留卸载路径执行冒烟（不抛）。
+  it("卸载态 disposer/watch 执行不抛", async () => {
+    const { ctx, refs } = await applyWithSettingsLifecycle();
+    expect(() => {
+      ctx.fiber.state = "unloading";
+      refs.disposer();
+      ctx.fiber.state = "disposed";
+      refs.watchCb();
+    }).not.toThrow();
+  });
+});
+
+describe("apply 的 agent/pre-step 在 announceCatalog=true 时注册", () => {
+  async function applyWithPreStep() {
+    const dir = makeTempDir("dsh-mcp-manager-pre-");
+    const refs = { preHandler: null };
     const ctx = {
       fiber: { state: "active" },
       logger: { warn: () => {}, info: () => {}, error: () => {} },
@@ -184,36 +219,36 @@ import { join } from "node:path";
         return () => {};
       },
       on: (evt, handler) => {
-        if (evt === "agent/pre-step") preHandler = handler;
+        if (evt === "agent/pre-step") refs.preHandler = handler;
         return () => {};
       },
       effect: (fn) => { const d = fn(); return () => { d(); }; },
     };
 
     await apply(ctx, { enabled: true, announceCatalog: true, storePath: join(dir, "mcp.json") });
-    assert.ok(preHandler !== null, "pre-step handler 通过 apply 注册");
+    return refs;
+  }
 
+  it("pre-step handler 通过 apply 注册", async () => {
+    const refs = await applyWithPreStep();
+    expect(refs.preHandler).not.toBeNull();
+  });
+
+  it("pre-step reject 透传", async () => {
+    const refs = await applyWithPreStep();
     // 调用 handler: reject 透传
-    const rejectResult = await preHandler(
+    const rejectResult = await refs.preHandler(
       { agent: { session: { header: { cwd: "/tmp" } } }, messages: [], signal: { aborted: false, throwIfAborted: () => {} } },
       async () => ({ kind: "reject" }),
     );
-    assert.equal(rejectResult.kind, "reject");
+    expect(rejectResult.kind).toBe("reject");
+  });
+});
 
-    console.log("  ok   unit-hotspot: apply agent/pre-step handler 覆盖");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-// ---- 验证：apply 的 SSE broadcast 与 route disposer ----
-
-{
-  const { apply } = await import("../../lib/index.js");
-  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-broadcast-"));
-  try {
-    const written = [];
-    let effectDisposer = null;
+describe("apply 的 SSE broadcast 与 route disposer", () => {
+  async function applyWithBroadcast() {
+    const dir = makeTempDir("dsh-mcp-manager-broadcast-");
+    const refs = { effectDisposer: null };
 
     const ctx = {
       fiber: { state: "active" },
@@ -232,31 +267,34 @@ import { join } from "node:path";
       on: () => () => {},
       effect: (fn) => {
         const d = fn();
-        effectDisposer = () => { d(); };
+        refs.effectDisposer = () => { d(); };
         return () => {};
       },
     };
 
     await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });
-    assert.ok(effectDisposer !== null, "effect disposer 已注册");
-
-    // 触发 disposer（模拟卸载场景）
-    effectDisposer();
-    // 再次触发（幂等，不抛）
-    effectDisposer();
-
-    console.log("  ok   unit-hotspot: apply SSE broadcast / route disposer 覆盖");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+    return refs;
   }
-}
 
-// ---- 验证：apply 的 settings 注入（uiUpdate 写入路径） ----
+  it("effect disposer 已注册", async () => {
+    const refs = await applyWithBroadcast();
+    expect(refs.effectDisposer).not.toBeNull();
+  });
 
-{
-  const { apply } = await import("../../lib/index.js");
-  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-ui2-"));
-  try {
+  it("disposer 重复触发幂等（不抛）", async () => {
+    const refs = await applyWithBroadcast();
+    expect(() => {
+      // 触发 disposer（模拟卸载场景）
+      refs.effectDisposer();
+      // 再次触发（幂等，不抛）
+      refs.effectDisposer();
+    }).not.toThrow();
+  });
+});
+
+describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
+  it("settings 命名空间注册（inject settings 装配面）", async () => {
+    const dir = makeTempDir("dsh-mcp-manager-ui2-");
     let registerCalled = false;
     const ctx = {
       fiber: { state: "active" },
@@ -286,8 +324,6 @@ import { join } from "node:path";
     await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });
     // 哑断言清理（#664 阶段 8）：假 ok 输出改真实断言——settings 命名空间
     // 注册（installSettingsNamespace 经 inject(["settings"]) 调 register）。
-    assert.ok(registerCalled, "settings 命名空间注册（inject settings 装配面）");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
+    expect(registerCalled).toBeTruthy();
+  });
+});
