@@ -20,6 +20,11 @@ immediately and persisted, no restart needed), or set in the config file (read a
 startup); the server lists across both config tiers hot-reload without a restart
 (add/remove/toggle/edit).
 
+> **A historical session will not open after upgrading DSH to 0.1.5+**
+> (`unclassified message source`)? See
+> [Troubleshooting: a historical session will not open after upgrading (#723)](#723-repair),
+> one command recovers it.
+
 ## Core advantages
 
 - **Context cost under control**: project-level MCP is collapsed through the middleware
@@ -289,6 +294,7 @@ await ctx.mcpManager.registerServer({
   DSH's session-format v2-to-v3 migration gate (closed whitelist), which makes every session
   persisted before the upgrade unloadable — see the next section
 
+<a id="723-repair"></a>
 ## Troubleshooting: a historical session will not open after upgrading (#723)
 
 **Symptom**: after upgrading DSH to 0.1.5 or later, a historical session reports in the GUI:
