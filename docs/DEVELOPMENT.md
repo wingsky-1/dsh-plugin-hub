@@ -471,9 +471,10 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
   node scripts/gate/probe-handles.mjs [--only <子串>] [--timeout <ms>] [--grace <ms>] [--idle <ms>] [--json]
   ```
 
-  它在 per-file 隔离下逐文件运行并给出四态：`clean` / `leak`（测试跑完但句柄吊住进程）/
-  `hang`（测试本身没跑完）/ `fail`（含顺序依赖在隔离下暴露）。判定依据与已知局限见该脚本
-  头注释。
+  它在 per-file 隔离下逐文件运行并给出四态：`clean` / `leak`（对照组确认是残留句柄）/
+  `stall`（超时或静默且对照组也挂住，探针**无法**定性，需人工看 stdout）/ `fail`（含顺序依赖
+  在隔离下暴露）。判定依据与已知局限见该脚本头注释；探针应在**无并发测试**时运行，否则慢文件
+  可能被墙钟误判。
 
 ## 6. 多端兼容（三操作系统 + 三访问形态 + 明暗双主题）
 

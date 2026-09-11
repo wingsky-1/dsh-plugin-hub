@@ -53,11 +53,12 @@ import { RUN_TESTS_PATTERN, discoverTestPackages, expandGlob } from './test-surf
 const DEFAULT_ROOT = join(import.meta.dirname, '..', '..')
 
 /**
- * 单文件墙钟上限。为什么默认 6 分钟：最慢的 `dsh-mcp-manager/test/e2e/smoke.test.ts` 含 SDK
- * stdio 端到端，实测单跑 328s；上限低于它会把「慢」误判成 `hang`，而 hang 与慢的区分正是
- * 本探针要给出的信号，不能用会制造假阳性的默认值。
+ * 单文件墙钟上限。为什么默认 10 分钟：最慢的 `dsh-mcp-manager/test/e2e/smoke.test.ts`（SDK
+ * stdio 端到端）实测单跑 328s，而在**有并发负载**时对抗复核实测其超过 360s——上限若贴着 328s
+ * 留余量，负载下就会把「慢」误判成非 clean。故留约一倍余量。代价是真实泄漏文件要等更久才判红，
+ * 需要快扫时用 `--timeout` 收紧（收紧只会让它更容易判非 clean，不会伪造绿灯）。
  */
-const DEFAULT_TIMEOUT_MS = 6 * 60 * 1000
+const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000
 /** 汇总输出后允许的退出延迟。正常文件在汇总后 <100ms 内退出，给 2s 余量吸收调度抖动。 */
 const DEFAULT_GRACE_MS = 2000
 /**

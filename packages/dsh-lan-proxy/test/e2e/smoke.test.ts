@@ -240,6 +240,19 @@ const tls = ensureSelfSignedTls({ dir: certDir, extraSans: [LAN_HOST] });
 let proxy;
 
 // ── helpers ─────────────────────────────────────────────────────────────────
+/**
+ * 取一个当前空闲的端口（bind(0) 后立即释放）。
+ * 为什么需要：个别用例要断言「生效端口等于启动时传入的端口」，需要一个**确定且不写死**的值；
+ * 直接传 0 会让断言退化成「0 == 0」，失去验证意义。
+ */
+async function freePort() {
+  const probe = createServer();
+  await new Promise((r) => probe.listen(0, "127.0.0.1", r));
+  const chosen = probe.address().port;
+  await new Promise((r) => probe.close(r));
+  return chosen;
+}
+
 function getViaProxy(headers) {
   return new Promise((resolve, reject) => {
     const req = httpRequest({ hostname: "127.0.0.1", port: PROXY_PORT, path: "/hello", method: "GET", headers }, (res) => {
@@ -1222,7 +1235,7 @@ const main = async () => {
       },
       effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
     };
-    apply(ctx, { host: "127.0.0.1", port: 19991, httpsEnabled: false });
+    apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false });
     const cleanup = () => { for (const d of disposers.reverse()) { try { d(); } catch {} } };
     check("RPC 配置通道不再注册（自建通道移除）", () => assert.equal(rpcHandles.length, 0));
     const healthRoute = routes.filter((r) => r.path === ROUTES.health)[0];
@@ -1350,7 +1363,8 @@ const main = async () => {
       inject() {},
       effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
     };
-    apply(ctx, { host: "127.0.0.1", port: 19992, httpsEnabled: false });
+    const degradedPort = await freePort();
+    apply(ctx, { host: "127.0.0.1", port: degradedPort, httpsEnabled: false });
     const configRoute = routes.find((r) => r.path === ROUTES.config);
     check("降级态：health 与 config 路由仍注册（卡片可读）", () => {
       assert.ok(routes.find((r) => r.path === ROUTES.health));
@@ -1364,7 +1378,7 @@ const main = async () => {
       const payload = JSON.parse(chunks.join(""));
       assert.equal(status, 200);
       assert.equal(payload.writable, false);
-      assert.equal(payload.effective.port, 19992);
+      assert.equal(payload.effective.port, degradedPort);
     });
     for (const d of [...disposers].reverse()) { try { d(); } catch {} }
     process.env.DSH_HOME = prevHome;
@@ -1390,7 +1404,7 @@ const main = async () => {
       inject() {},
       effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
     };
-    apply(ctx, { host: "127.0.0.1", port: 19993, httpsEnabled: false });
+    apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false });
 
     const apiRoute = ws.prefixes.get("/api");
     check("webServer handler 不被触碰（压缩在转发层，非宿主端 patch）", () => {
@@ -1439,7 +1453,7 @@ const main = async () => {
       inject() {},
       effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
     };
-    apply(ctx, { host: "127.0.0.1", port: 19994, httpsEnabled: false, httpCompressEnabled: false });
+    apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false, httpCompressEnabled: false });
     check("关闭压缩：health mounted=false", () => {
       assert.equal(ws.prefixes.get("/api").handler, apiHandler, "webServer handler 原样");
       assert.ok(ws.exact.has(ROUTES.health), "health 路由仍注册（转发功能不受影响）");
@@ -1480,7 +1494,7 @@ const main = async () => {
       },
       effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
     };
-    apply(ctx, { host: "127.0.0.1", port: 19995, httpsEnabled: false });
+    apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false });
     const healthMounted = () => {
       const hRes = new FakeRes();
       ws.exact.get(ROUTES.health).handler(makeReq(), hRes);

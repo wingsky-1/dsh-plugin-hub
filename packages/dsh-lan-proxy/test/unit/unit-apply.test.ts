@@ -203,7 +203,9 @@ const { createServer } = await import("node:http");
   };
 
   const { apply } = await import("../../lib/index.js");
-  apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: true, printBanner: false, wsCompressEnabled: false, httpCompressEnabled: false });
+  // httpsPort 显式传 0：不传会落到产品默认值 3443 并**真实监听**（端口审计实测），
+  // 并发或残留进程下即 EADDRINUSE（#690 S2c 端口治理）。
+  apply(ctx, { host: "127.0.0.1", port: 0, httpsPort: 0, httpsEnabled: true, printBanner: false, wsCompressEnabled: false, httpCompressEnabled: false });
 
   await sleep(100);
 
