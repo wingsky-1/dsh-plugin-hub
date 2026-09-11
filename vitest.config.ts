@@ -17,7 +17,10 @@ export default defineConfig({
           environment: 'node',
           // 默认 5s 会误杀「实现预算本身就是 30s」的用例（超时兜底、挂起型子进程重连），
           // 故统一放宽；个别更长的用例仍可在文件内显式标注。
+          // hookTimeout 必须同步放宽：beforeAll 里的建 fixture / 起服务 / 迁移准备
+          // 常超过 vitest 默认的 10s，会以 hook 失败的形式假红。
           testTimeout: 60_000,
+          hookTimeout: 60_000,
         },
       },
       {
@@ -26,6 +29,7 @@ export default defineConfig({
           include: ['packages/*/test/integration/**/*.test.ts'],
           environment: 'node',
           testTimeout: 60_000,
+          hookTimeout: 60_000,
         },
       },
       {
