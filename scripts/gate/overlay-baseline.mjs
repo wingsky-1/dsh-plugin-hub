@@ -151,6 +151,8 @@ async function main() {
   const tmpWork = mkdtempSync(join(tmpdir(), 'dsh-overlay-'));
   const baselineDir = join(tmpWork, 'baseline');
   const artifactsDir = join(tmpWork, 'artifacts');
+  const carriedForward = []; // 旧基线里带过来的段文件（对账用：区分「本次覆盖」与「沿用旧版」）
+  const overlaid = []; // 本次真正写入的段文件
   mkdirSync(baselineDir, { recursive: true });
   mkdirSync(artifactsDir, { recursive: true });
 
@@ -158,6 +160,15 @@ async function main() {
     // 5. 先恢复孤立分支的现存基线全量快照
     console.log(`[overlay-baseline] 恢复孤立分支 ${BRANCH} 现存基线...`);
     try {
+      // 先确认远端 ref 是否存在：`git fetch` 失败既可能是「分支尚不存在」（首夜，正常降级），
+      // 也可能是网络/权限瞬时故障——后者若被当成空分支，会把沿用中的基线整批丢掉
+      // （实测 2026-09-11 05:18 的 overlay 就出现过一次，日志显示「尚不可达或为空」）。
+      let remoteRefExists = false;
+      try {
+        remoteRefExists = runGh(['api', `repos/${repo}/git/ref/heads/${BRANCH}`]).length > 0;
+      } catch {
+        remoteRefExists = false;
+      }
       runCmd('git', ['fetch', '--depth=1', 'origin', `refs/heads/${BRANCH}`]);
       const treeOutput = runCmd('git', ['ls-tree', '-r', 'FETCH_HEAD']);
       for (const line of treeOutput.split('\n').filter(Boolean)) {
@@ -169,8 +180,12 @@ async function main() {
           if (BASELINE_FILE_RE.test(fileName)) carriedForward.push(fileName);
         }
       }
-    } catch {
-      console.log(`[overlay-baseline] 孤立分支 ${BRANCH} 尚不可达或为空，将基于当前产物构建全新快照`);
+    } catch (err) {
+      if (remoteRefExists) {
+        console.error(`[overlay-baseline] 孤立分支 ${BRANCH} 存在但恢复失败（fail-loud，拒绝以空快照覆盖）: ${err.message}`);
+        process.exit(1);
+      }
+      console.log(`[overlay-baseline] 孤立分支 ${BRANCH} 尚不存在（首夜），基于当前产物构建全新快照`);
     }
 
     // 6. 逐个下载增量产物并覆盖同名基线
@@ -188,19 +203,32 @@ async function main() {
       }
 
       const files = readdirSync(downloadPath).filter((f) => /^incremental-.+\.json$/.test(f));
+      if (files.length === 0) {
+        // 下载成功但目录里没有预期文件名：说明 upload 的 path 约定与这里不一致（段名/命名漂移），
+        // 静默跳过会让该段永远没有基线，故显式点名。
+        console.warn(`[overlay-baseline] 产物 ${art.name} 内无 incremental-*.json（实际: ${readdirSync(downloadPath).join(', ') || '空目录'}）`);
+        continue;
+      }
       for (const f of files) {
         const src = join(downloadPath, f);
         const dst = join(baselineDir, f);
+        let content;
         try {
-          const content = readFileSync(src, 'utf8');
-          JSON.parse(content); // 严格校验合法 JSON
-          writeFileSync(dst, content);
-          overlayCount++;
-          overlaid.push(f);
-          console.log(`[overlay-baseline] 差量覆盖: ${f}`);
-        } catch {
-          console.warn(`[overlay-baseline] 文件 ${f} 损坏或非有效 JSON，拒绝覆盖`);
+          content = readFileSync(src, 'utf8');
+        } catch (readErr) {
+          console.warn(`[overlay-baseline] 文件 ${f} 读取失败，拒绝覆盖: ${readErr.message}`);
+          continue;
         }
+        try {
+          JSON.parse(content); // 严格校验合法 JSON
+        } catch (parseErr) {
+          console.warn(`[overlay-baseline] 文件 ${f} 非有效 JSON（大小 ${content.length}B），拒绝覆盖: ${parseErr.message}`);
+          continue;
+        }
+        writeFileSync(dst, content);
+        overlayCount++;
+        overlaid.push(f);
+        console.log(`[overlay-baseline] 差量覆盖: ${f}`);
       }
     }
 
