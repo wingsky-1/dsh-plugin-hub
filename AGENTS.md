@@ -67,6 +67,7 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
 | 最小集 | `pnpm gate:pr` | 开 PR 前：快线 + **命中包**的产物闸（`contract` / `pack:check` / `verify:npmlayout` 按 `--packages` 切片）+ 廉价全仓一致性闸（`stryker:check`、`aggregate:check`、`test:src-tests`、`gate:homedir`、`docs:check`、`test:scripts`、`lint`，均秒级且不依赖 lib 产物） |
 | 收尾 | `pnpm gate:full` | 全仓口径（= 夜间班次口径）：全仓 build/test/typecheck + 全仓产物闸 + 全部静态闸；改过构建链、包结构或发版前跑一遍 |
 | 全量 | CI 夜间班次（`observe.yml` / `observe-incremental.yml`） | 全仓产物闸 + 覆盖率 + 全量/增量变异与基线归档。本地不默认跑，需要时 `pnpm gate:full --with-coverage` |
+| 提交钩子 | `lefthook`（`pre-commit` / `commit-msg`） | 提交瞬间的最内层：`pre-commit` 只对本次 **staged 源文件**跑 lint、`commit-msg` 校验提交信息为 Conventional Commits。**不替代上面任何一层**——它不做 build / typecheck / 变异 / 覆盖率。钩子由 `pnpm install` 的 `prepare` 自动安装；跳过用 `git commit --no-verify`（仅限确认无害时） |
 
 | 改动类型 | 归属层 |
 |---|---|
