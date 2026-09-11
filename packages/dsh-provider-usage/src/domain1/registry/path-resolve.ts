@@ -10,9 +10,9 @@
  */
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { dshHome as dshHomeBase } from "../../../../../shared/dsh-home.js";
-// ~ 展开复用成熟开源实现 untildify（与 dsh-web-file-preview 同源同版，
-// devDependency + 构建期 esbuild 内联，发布物零运行时依赖）。
+import { dshHome as dshHomeBase, userHome } from "../../../../../shared/dsh-home.js";
+// ~ 展开复用成熟开源实现 untildify（devDependency + 构建期 esbuild 内联，
+// 发布物零运行时依赖）。
 // 行为边界：仅展开开头的 `~`；`~user/...` 形态不展开、原样返回（旧手写实现把
 // ~user 误展开到当前用户 home 的权宜语义一并移除——UI placeholder 只承诺 ~/.dsh/...）。
 import untildify from "untildify";
@@ -32,7 +32,12 @@ export function pluginHome(base = dshHomeBase()): string {
  * 保证「UI 承诺支持 ~ 路径」与校验行为一致）。
  */
 export function expandHomePath(p: string): string {
-  // dsh-gate:allow-homedir #87 用户路径 ~ 前缀展开（untildify 业界标准实现，目标由用户指定）
+  // 裸 `~` / `~/` 走共享接缝 userHome()：untildify 会把 os.homedir() 的首次结果
+  // 模块级固化，而 os.homedir() 读进程级 environ、在 worker_threads 下拿不到测试的
+  // process.env.HOME 隔离（见 shared/dsh-home.js 的 userHome 注释）。展开语义等价
+  // （同一取值次序），故行为不变而可测性恢复。
+  if (/^~(?=$|[/\\])/.test(p)) return userHome() + p.slice(1);
+  // dsh-gate:allow-homedir #87 其余形态（`~user` 等）交 untildify 透传，不读 home 值
   return untildify(p);
 }
 

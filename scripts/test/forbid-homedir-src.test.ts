@@ -152,10 +152,12 @@ test('F1：字符串字面量里的伪豁免注释不生效（真实注释词法
 })
 
 test('F2：WHITELIST 条目文件存在但本次零命中 → 报已腐烂（非死代码）', () => {
-  // 构造与真实 WHITELIST 相对路径同形的文件，但内容无任何 HOME API 命中
+  // 构造与真实 WHITELIST 相对路径同形的文件，但内容无任何 HOME API 命中。
+  // 路径须与 WHITELIST 现存条目一致：改用共享接缝后 #525/#517 两条已删除，
+  // 仅剩 path-resolve.ts（~user 透传）——例如此处锚定失效，说明条目又漂了。
   const dir = mkdtempSync(join(tmpdir(), 'forbid-homedir-rot-'))
-  mkdirSync(join(dir, 'packages/dsh-provider-usage/src/apply'), { recursive: true })
-  writeFileSync(join(dir, 'packages/dsh-provider-usage/src/apply/apply.ts'),
+  mkdirSync(join(dir, 'packages/dsh-provider-usage/src/domain1/registry'), { recursive: true })
+  writeFileSync(join(dir, 'packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts'),
     'export const clean = 1\n') // WHITELIST 含此文件，但零命中
   try {
     const r = spawnSync(process.execPath, [SCRIPT, '--root', dir], { encoding: 'utf8' })
@@ -209,13 +211,17 @@ test('fail-closed：语法损坏文件（TS 不可解析）→ exit 1 且指明�
   assert.match(r.stderr, /解析失败（fail-closed，一律判红）/)
 })
 
-test('本仓真实快照：3 处合法豁免全部识别 → exit 0 且台账一致', () => {
+test('本仓真实快照：1 处合法豁免全部识别 → exit 0 且台账一致', () => {
+  // #722 起 provider-config.ts 与 apply.ts 改走 shared/dsh-home.js 的 userHome 接缝，
+  // 两条 WHITELIST 条目随之腐烂删除（门禁净收紧）；仅剩 ~user 透传一处。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: 'utf8' })
   assert.equal(r.status, 0, r.stderr)
-  assert.match(r.stdout, /合法豁免 3 处/)
+  assert.match(r.stdout, /合法豁免 1 处/)
+  for (const f of [
+    'packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts',
+  ]) assert.ok(r.stdout.includes(f), `${f} 应在合法豁免台账中`)
   for (const f of [
     'packages/dsh-provider-usage/src/apply/apply.ts',
-    'packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts',
     'packages/dsh-provider-usage/src/domain1/registry/provider-config.ts',
-  ]) assert.ok(r.stdout.includes(f), `${f} 应在合法豁免台账中`)
+  ]) assert.ok(!r.stdout.includes(f), `${f} 已改走共享接缝，不应再出现在豁免台账中`)
 })

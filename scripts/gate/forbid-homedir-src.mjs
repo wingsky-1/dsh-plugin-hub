@@ -48,13 +48,10 @@ const ROOT = join(import.meta.dirname, "../..");
 /** 豁免清单（文件级，双源之二）。值 = 豁免理由（须含 issue 号）。 */
 const WHITELIST_V = 1;
 const WHITELIST = new Map([
-  // #525/#517：opencode 外部凭据路径——DSH_HOME 域之外的第三方工具自身写面
-  // （阶段四 #670 目录化：src/provider-config.ts → src/domain1/registry/provider-config.ts）
-  ["packages/dsh-provider-usage/src/domain1/registry/provider-config.ts", "#525 opencode 外部凭据"],
-  // #517：展示层脱敏（诊断文本把 home 前缀折叠为 ~），不产生读写面
-  // （阶段四 #670 目录化：src/apply.ts → src/apply/apply.ts）
-  ["packages/dsh-provider-usage/src/apply/apply.ts", "#517 展示层脱敏"],
-  // #87：用户输入 `~` 前缀展开（untildify 业界标准实现），目标由用户指定
+  // #87：用户输入 `~` 前缀展开的 `~user` 等形态透传（untildify），目标由用户指定。
+  // 裸 `~`/`~/` 分支自 #722 起走 shared/dsh-home.js 的 userHome() 接缝，不再直连
+  // HOME 来源 API——provider-config.ts（#525）与 apply.ts（#517）的两条豁免随之
+  // 腐烂删除，门禁净收紧（改回直连会重新判红）。
   // （阶段四 #670 目录化：src/path-resolve.ts → src/domain1/registry/path-resolve.ts）
   ["packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts", "#87 用户路径 ~ 展开"],
 ]);

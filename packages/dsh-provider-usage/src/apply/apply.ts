@@ -20,13 +20,12 @@
  * - GET /api/dsh-provider-usage/reports/generate/status  生成任务状态轮询
  */
 
-import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import type { ServerResponse } from "node:http";
 import type { Context } from "@deepseek-ai/cordis";
 import { sseData } from "../../../../shared/host-utils.js";
 import { installSettingsNamespace } from "../../../../shared/settings-namespace.js";
-import { dshHome } from "../../../../shared/dsh-home.js";
+import { dshHome, userHome } from "../../../../shared/dsh-home.js";
 import type { AdapterRegistry } from "../domain1/registry/interface.ts";
 import { makeAdapterRegistry } from "../domain1/registry/interface.ts";
 import { openCodeGoAdapter } from "../domain1/adapters/interface.ts";
@@ -212,8 +211,9 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   if (rawConfig.enabled === false) return;
   const config = normalizeConfig(rawConfig);
   const sanitizeDiagnostic = (s: string): string =>
-    // dsh-gate:allow-homedir #517 展示层脱敏：把诊断文本中的 home 前缀折叠为 ~，不产生读写面
-    s.split(dshHome()).join("~/.dsh").split(homedir()).join("~");
+    // 展示层脱敏：把诊断文本中的 home 前缀折叠为 ~，不产生读写面。用户 home 走共享
+    // 接缝（shared/dsh-home.js 的 userHome），与落盘路径的 DSH_HOME 同源同语义。
+    s.split(dshHome()).join("~/.dsh").split(userHome()).join("~");
 
   // 域2每层错误面（aggregate/schedule/execute）——装配层组合根创建，
   // 经各对象既有 warn 诊断出口接线（层代码零改动）；
