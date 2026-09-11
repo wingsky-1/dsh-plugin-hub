@@ -72,7 +72,7 @@ for (const p of pluginDirs) {
 
   checked++
   const code = readFileSync(clientPath, 'utf8')
-  const { ok, checks, error } = assertClientContract(pkg.name, code)
+  const { ok, checks, error, leaks } = assertClientContract(pkg.name, code)
   const allChecks = {
     ...checks,
     'dsh.client⇒exports["./client"]声明': clientExportOk,
@@ -82,6 +82,9 @@ for (const p of pluginDirs) {
   if (!okAll) failed++
   console.log(`${okAll ? 'PASS' : 'FAIL'} ${pkg.name} | ${Object.entries(allChecks).map(([k, v]) => `${k}=${v ? '✓' : '✗'}`).join(' ')}`)
   if (!okAll && error) console.log(`     执行错误: ${error.message}`)
+  // 宿主侧标识符泄漏单独列出：产物虽然「执行无异常」，但 node 全局在浏览器里会
+  // 直到运行时才炸，只有逐条打印才能定位是哪一个标识符进了产物。
+  if (leaks.length > 0) console.log(`     宿主侧标识符泄漏：${leaks.join('；')}`)
 }
 
 // 件数断言：凡 packages/dsh-* 目录都应被检查覆盖（防漏检）

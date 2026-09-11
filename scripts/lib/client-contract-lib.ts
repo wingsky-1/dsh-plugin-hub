@@ -24,6 +24,10 @@
  * node:vm 不是安全边界（沙箱可达宿主 Function），不得用于执行不可信/第三方代码。
  */
 import vm from 'node:vm'
+import { builtinModules } from 'node:module'
+
+/** Node 内置模块名（裸名与 `node:` 前缀两种写法都要认）。 */
+const NODE_BUILTIN_NAMES = new Set([...builtinModules, ...builtinModules.map((m) => `node:${m}`)])
 
 /** 浏览器全局 stub（最小可执行集；每包独立沙箱隔离）。 */
 export function makeBrowserSandbox(calls, factories) {
@@ -108,18 +112,76 @@ export function materialize(factory) {
 }
 
 /**
- * 客户端契约断言（执行产物后）。返回 { ok, checks, error }。
+ * 客户端产物禁止泄漏的宿主侧标识符（issue #690 S1）。
+ *
+ * 为什么需要单独一道：`node:` 前缀依赖已被 build-client 的 browser 平台硬失败拦住，
+ * 但**只含 node 全局**的宿主值（`process.env` / `__dirname` / `Buffer`）会构建全绿并
+ * 进入产物，直到浏览器运行时才 ReferenceError——门禁必须在产物层兜住。
+ * 清单集中在此一处，避免各门禁各写一份导致口径漂移。
+ *
+ * 为什么 process/Buffer 不带 `\.` 限定：`process["env"]`、`const B = Buffer;`、
+ * `globalThis.process` 这类写法会绕开带点的匹配（已实测漏报）。产物里出现这些
+ * 标识符必然来自宿主全局，故按 fail-closed 只匹配名字本身。
+ */
+const FORBIDDEN_CLIENT_TOKENS = [
+  ['node: 内置模块', /\bnode:[a-z]/],
+  ['process 全局', /\bprocess\b/],
+  ['__dirname', /\b__dirname\b/],
+  ['__filename', /\b__filename\b/],
+  ['Buffer 全局', /\bBuffer\b/],
+]
+
+/**
+ * external 外壳：`require("<bare>")` 是构建器对宿主提供依赖（react 等）的合法形态。
+ * 三条约束缺一不可：
+ *   - lookbehind 排除标识符前缀——`__require("fs")` 这类别名不该被当外壳放行；
+ *   - 排除以 `.` / `/` 开头的 specifier——相对与绝对路径是真实依赖，不是宿主注入；
+ *   - 捕获 specifier 供 node 内置名二次判定——裸名 `require("fs")` 同样是宿主依赖
+ *     泄漏，不能因为「是 bare」就放行（构建器把顶层 bare import 一律当 external，
+ *     `node:` 前缀会被 browser 平台拦下，裸名不会）。
+ */
+const EXTERNAL_REQUIRE_RE = /(?<![A-Za-z0-9_$])require\(\s*['"]([^.'"/][^'"]*)['"]\s*\)/g
+
+/** 剥离 external 外壳后仍出现的 `require(`（含 `__require(` 等别名）即判红。 */
+const REMAINING_REQUIRE_RE = /require\s*\(/g
+
+/** 扫描客户端产物的宿主侧标识符泄漏，返回可读违例清单（空数组 = 干净）。 */
+export function findClientLeaks(code) {
+  const leaks = []
+  for (const [label, re] of FORBIDDEN_CLIENT_TOKENS) {
+    // 每次新建带 g 的正则：清单里的字面量正则复用会残留 lastIndex，且非全局
+    // 匹配拿不到真实命中次数（违例文案会恒报「1 处」而误导排查）。
+    const hit = code.match(new RegExp(re.source, 'g'))
+    if (hit) leaks.push(`${label}（${hit.length} 处，如 ${JSON.stringify(hit[0])}）`)
+  }
+  const externals = []
+  const withoutExternal = code.replace(EXTERNAL_REQUIRE_RE, (_m, spec) => {
+    externals.push(spec)
+    return ''
+  })
+  const req = withoutExternal.match(REMAINING_REQUIRE_RE)
+  if (req) leaks.push(`require( 非 external 形态（${req.length} 处）`)
+  for (const spec of externals) {
+    if (NODE_BUILTIN_NAMES.has(spec)) leaks.push(`external 外壳引用了 node 内置模块 ${JSON.stringify(spec)}`)
+  }
+  return leaks
+}
+
+/**
+ * 客户端契约断言（执行产物后）。返回 { ok, checks, error, leaks }。
  * checks 键：执行无异常 / load恰好一次 / load id === 完整包名(含scope) /
  *           factories可被arrive解析 / materialize后exports.apply为函数 /
- *           materialize后exports.inject为数组。
+ *           materialize后exports.inject为数组 / 无宿主侧标识符泄漏。
  */
 export function assertClientContract(pkgName, code) {
   const { calls, factories, error } = executeClient(code)
+  const leaks = findClientLeaks(code)
   const checks = {
     '执行无异常': error === null,
     'load恰好一次': calls.length === 1,
     'load id === 完整包名(含scope)': calls.length === 1 && calls[0].id === pkgName,
     'factories可被arrive解析': factories.has(pkgName),
+    '无宿主侧标识符泄漏': leaks.length === 0,
   }
   let applyOk = false
   let injectOk = false
@@ -131,5 +193,5 @@ export function assertClientContract(pkgName, code) {
   }
   checks['materialize后exports.apply为函数'] = applyOk
   checks['materialize后exports.inject为数组'] = injectOk
-  return { ok: Object.values(checks).every(Boolean), checks, error }
+  return { ok: Object.values(checks).every(Boolean), checks, error, leaks }
 }
