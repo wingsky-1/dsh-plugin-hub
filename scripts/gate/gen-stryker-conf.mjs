@@ -63,8 +63,9 @@ function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef, testFiles
     mutator: {
       excludedMutations: sharedDefaults.excludedMutations,
     },
+    // runner 包名由 testRunner 派生，避免 SSOT（sharedDefaults.testRunner）与插件清单两处漂移。
     plugins: [
-      '@stryker-mutator/tap-runner',
+      `@stryker-mutator/${sharedDefaults.testRunner}-runner`,
     ],
     concurrency: pkgDef.concurrency ?? sharedDefaults.concurrency,
     timeoutMS: pkgDef.timeoutMS ?? sharedDefaults.timeoutMS,
@@ -73,10 +74,11 @@ function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef, testFiles
     coverageAnalysis: sharedDefaults.coverageAnalysis,
     tempDirName: sharedDefaults.tempDirName,
     cleanTempDir: sharedDefaults.cleanTempDir,
-    tap: {
-      nodeArgs: sharedDefaults.tapNodeArgs,
-      testFiles,
-    },
+    // vitest runner 自身没有 testFiles 选项，按段限定测试文件改走 Stryker 通用顶层 `testFiles`；
+    // `related` 固定 false：段的测试面由拓扑 SSOT 派生，不交给 vitest 的模块图推断（否则
+    // 「哪个段跑哪些测试」会随导入关系漂移，与确定性派生清单冲突）。
+    testFiles,
+    vitest: sharedDefaults.vitest,
     jsonReporter: {
       fileName: `coverage/mutation/${reportName}.json`,
     },

@@ -21,7 +21,7 @@
         "dsh-verify-isolated": "仅 test/e2e/smoke.test.ts（真实端口 + spawn 子进程的隔离环境冒烟），不进变异面；且 CI 的 ci-matrix 按「无变异配置」把该包排除出变异切片。源码覆盖断言（verify-dir-imports）尚未覆盖该包，属 #690 S6/S8 范围。"
     },
     "sharedDefaults": {
-        "testRunner": "tap",
+        "testRunner": "vitest",
         "concurrency": 16,
         "timeoutMS": 60000,
         "dryRunTimeoutMinutes": 5,
@@ -39,12 +39,10 @@
             "ObjectLiteral",
             "TemplateLiteral"
         ],
-        "tapNodeArgs": [
-            "-r",
-            "./scripts/test/mutation-tap-bridge.cjs",
-            "--import",
-            "./scripts/test/mutation-lib-to-src-hook.mjs"
-        ]
+        "vitest": {
+            "related": false,
+            "configFile": "vitest.config.ts"
+        }
     },
     "packages": {
         "dsh-lan-proxy": {

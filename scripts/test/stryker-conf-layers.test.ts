@@ -40,7 +40,7 @@ const TOPOLOGY = {
     mutationExcludeLayers: ['client', 'e2e'],
   },
   sharedDefaults: {
-    testRunner: 'tap',
+    testRunner: 'vitest',
     concurrency: 16,
     timeoutMS: 60000,
     dryRunTimeoutMinutes: 5,
@@ -49,7 +49,7 @@ const TOPOLOGY = {
     tempDirName: '.stryker-tmp',
     cleanTempDir: true,
     excludedMutations: [],
-    tapNodeArgs: ['-r', './scripts/test/mutation-tap-bridge.cjs', '--import', './scripts/test/mutation-lib-to-src-hook.mjs'],
+    vitest: { related: false, configFile: 'vitest.config.ts' },
   },
   packages: {
     [PKG]: {
@@ -248,8 +248,8 @@ test('T3 反证：从派生 conf 删掉一条登记条目 → --check 判红', (
     assert.equal(runGenerator(root, ['--check']).status, 0, '生成后应立即一致')
 
     const parsed = JSON.parse(readFileSync(conf, 'utf8'))
-    assert.ok(parsed.tap.testFiles.length >= 2, 'fixture 应有至少两条登记条目')
-    parsed.tap.testFiles = parsed.tap.testFiles.slice(1) // 删掉一条登记
+    assert.ok(parsed.testFiles.length >= 2, 'fixture 应有至少两条登记条目')
+    parsed.testFiles = parsed.testFiles.slice(1) // 删掉一条登记
     writeFileSync(conf, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8')
 
     const res = runGenerator(root, ['--check'])
@@ -283,7 +283,7 @@ test('P0-1 反证：import 派生模块不得写盘（否则 test:scripts 会静
     const before = readFileSync(conf, 'utf8')
     // 破坏派生结果，模拟「登记条目被删」
     const broken = JSON.parse(before)
-    broken.tap.testFiles = broken.tap.testFiles.slice(1)
+    broken.testFiles = broken.testFiles.slice(1)
     writeFileSync(conf, `${JSON.stringify(broken, null, 2)}\n`, 'utf8')
     assert.equal(runGenerator(root, ['--check']).status, 1, '破坏后 --check 应判红')
 

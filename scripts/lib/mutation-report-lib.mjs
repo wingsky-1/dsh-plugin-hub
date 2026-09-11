@@ -13,8 +13,10 @@ import { readFileSync } from 'node:fs';
  *   - StrykerJS 10 无 Skipped 状态——incremental 模式复用的 mutant 继承上次
  *     的原状态（Killed/Survived/Timeout/NoCoverage），报告恒为全量口径，
  *     分母不因增量复用而缩水；
- *   - 未捕获异常经 scripts/test/mutation-tap-bridge.cjs 转写 TAP not ok 计
- *     Killed（error=0 前提，#151），RuntimeError 不会以冻结形式逃过计杀；
+ *   - #722 前未捕获异常经 scripts/test/mutation-tap-bridge.cjs 转写 TAP not ok
+ *     计 Killed（error=0 前提，#151）；#722 起 runner 换为 vitest，该桥接退役，
+ *     未捕获异常改由 vitest runner 归入 errorsSet 并使该次运行判 Error（fail-loud，
+ *     不再以「冻结的 Killed」形态进入计分）；
  *   - covered 口径与仓库既有基线一致：分母不含 noCoverage。
  *
  * 返回 null = 报告不存在或不可解析（调用方自行区分文案）。

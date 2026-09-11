@@ -9,7 +9,7 @@
     "!packages/dsh-notifier/src/**/*.d.ts",
     "!packages/dsh-notifier/src/**/*.ps1"
   ],
-  "testRunner": "tap",
+  "testRunner": "vitest",
   "mutator": {
     "excludedMutations": [
       "StringLiteral",
@@ -19,7 +19,7 @@
     ]
   },
   "plugins": [
-    "@stryker-mutator/tap-runner"
+    "@stryker-mutator/vitest-runner"
   ],
   "concurrency": 16,
   "timeoutMS": 60000,
@@ -32,46 +32,42 @@
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
-  "tap": {
-    "nodeArgs": [
-      "-r",
-      "./scripts/test/mutation-tap-bridge.cjs",
-      "--import",
-      "./scripts/test/mutation-lib-to-src-hook.mjs"
-    ],
-    "testFiles": [
-      "packages/dsh-notifier/test/integration/consumer-types.test.ts",
-      "packages/dsh-notifier/test/integration/e2e-approval.test.ts",
-      "packages/dsh-notifier/test/integration/e2e-done-commit.test.ts",
-      "packages/dsh-notifier/test/integration/e2e-done-evidence.test.ts",
-      "packages/dsh-notifier/test/integration/e2e-done-status.test.ts",
-      "packages/dsh-notifier/test/integration/e2e-done-subagent.test.ts",
-      "packages/dsh-notifier/test/integration/e2e-edge.test.ts",
-      "packages/dsh-notifier/test/integration/e2e-interrupt.test.ts",
-      "packages/dsh-notifier/test/integration/e2e-outbound.test.ts",
-      "packages/dsh-notifier/test/integration/e2e-question-turn.test.ts",
-      "packages/dsh-notifier/test/integration/migration.test.ts",
-      "packages/dsh-notifier/test/integration/routes-config-secrets.test.ts",
-      "packages/dsh-notifier/test/integration/routes-config.test.ts",
-      "packages/dsh-notifier/test/integration/routes-events.test.ts",
-      "packages/dsh-notifier/test/integration/routes-guards.test.ts",
-      "packages/dsh-notifier/test/integration/routes-history.test.ts",
-      "packages/dsh-notifier/test/integration/routes-kinds.test.ts",
-      "packages/dsh-notifier/test/integration/service-contract.test.ts",
-      "packages/dsh-notifier/test/unit/unit-aggregate.test.ts",
-      "packages/dsh-notifier/test/unit/unit-config-port.test.ts",
-      "packages/dsh-notifier/test/unit/unit-config.test.ts",
-      "packages/dsh-notifier/test/unit/unit-event-handlers.test.ts",
-      "packages/dsh-notifier/test/unit/unit-pipeline-contract.test.ts",
-      "packages/dsh-notifier/test/unit/unit-sanitize.test.ts",
-      "packages/dsh-notifier/test/unit/unit-server-sse-bus.test.ts",
-      "packages/dsh-notifier/test/unit/unit-settings-bridge.test.ts",
-      "packages/dsh-notifier/test/unit/unit-sse-hub.test.ts",
-      "packages/dsh-notifier/test/unit/unit-stores.test.ts",
-      "packages/dsh-notifier/test/unit/unit-system-notifier.test.ts",
-      "packages/dsh-notifier/test/unit/unit-text.test.ts",
-      "packages/dsh-notifier/test/unit/unit-webhook.test.ts"
-    ]
+  "testFiles": [
+    "packages/dsh-notifier/test/integration/consumer-types.test.ts",
+    "packages/dsh-notifier/test/integration/e2e-approval.test.ts",
+    "packages/dsh-notifier/test/integration/e2e-done-commit.test.ts",
+    "packages/dsh-notifier/test/integration/e2e-done-evidence.test.ts",
+    "packages/dsh-notifier/test/integration/e2e-done-status.test.ts",
+    "packages/dsh-notifier/test/integration/e2e-done-subagent.test.ts",
+    "packages/dsh-notifier/test/integration/e2e-edge.test.ts",
+    "packages/dsh-notifier/test/integration/e2e-interrupt.test.ts",
+    "packages/dsh-notifier/test/integration/e2e-outbound.test.ts",
+    "packages/dsh-notifier/test/integration/e2e-question-turn.test.ts",
+    "packages/dsh-notifier/test/integration/migration.test.ts",
+    "packages/dsh-notifier/test/integration/routes-config-secrets.test.ts",
+    "packages/dsh-notifier/test/integration/routes-config.test.ts",
+    "packages/dsh-notifier/test/integration/routes-events.test.ts",
+    "packages/dsh-notifier/test/integration/routes-guards.test.ts",
+    "packages/dsh-notifier/test/integration/routes-history.test.ts",
+    "packages/dsh-notifier/test/integration/routes-kinds.test.ts",
+    "packages/dsh-notifier/test/integration/service-contract.test.ts",
+    "packages/dsh-notifier/test/unit/unit-aggregate.test.ts",
+    "packages/dsh-notifier/test/unit/unit-config-port.test.ts",
+    "packages/dsh-notifier/test/unit/unit-config.test.ts",
+    "packages/dsh-notifier/test/unit/unit-event-handlers.test.ts",
+    "packages/dsh-notifier/test/unit/unit-pipeline-contract.test.ts",
+    "packages/dsh-notifier/test/unit/unit-sanitize.test.ts",
+    "packages/dsh-notifier/test/unit/unit-server-sse-bus.test.ts",
+    "packages/dsh-notifier/test/unit/unit-settings-bridge.test.ts",
+    "packages/dsh-notifier/test/unit/unit-sse-hub.test.ts",
+    "packages/dsh-notifier/test/unit/unit-stores.test.ts",
+    "packages/dsh-notifier/test/unit/unit-system-notifier.test.ts",
+    "packages/dsh-notifier/test/unit/unit-text.test.ts",
+    "packages/dsh-notifier/test/unit/unit-webhook.test.ts"
+  ],
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-notifier-stores.json"

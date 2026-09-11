@@ -7,7 +7,7 @@
     "!packages/dsh-lan-proxy/src/client/**",
     "!packages/dsh-lan-proxy/src/types.ts"
   ],
-  "testRunner": "tap",
+  "testRunner": "vitest",
   "mutator": {
     "excludedMutations": [
       "StringLiteral",
@@ -17,7 +17,7 @@
     ]
   },
   "plugins": [
-    "@stryker-mutator/tap-runner"
+    "@stryker-mutator/vitest-runner"
   ],
   "concurrency": 16,
   "timeoutMS": 60000,
@@ -30,17 +30,13 @@
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
-  "tap": {
-    "nodeArgs": [
-      "-r",
-      "./scripts/test/mutation-tap-bridge.cjs",
-      "--import",
-      "./scripts/test/mutation-lib-to-src-hook.mjs"
-    ],
-    "testFiles": [
-      "packages/dsh-lan-proxy/test/unit/unit-apply.test.ts",
-      "packages/dsh-lan-proxy/test/unit/unit-proxy.test.ts"
-    ]
+  "testFiles": [
+    "packages/dsh-lan-proxy/test/unit/unit-apply.test.ts",
+    "packages/dsh-lan-proxy/test/unit/unit-proxy.test.ts"
+  ],
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-lan-proxy-4.json"

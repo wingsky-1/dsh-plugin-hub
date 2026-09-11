@@ -438,31 +438,37 @@ test('#276 方案 A: src 级 mutate 退役产物行号机制——ci/observe 两
   assert.strictEqual(ls.stdout.trim(), '', 'git ls-files stryker.config.json 应为空（根配置不得重新被版本库追踪，#439 防回归）')
 })
 
-test('#423: 变异测试单份维护——禁 *.src.test.ts 回潮 + lib→src hook 注入', () => {
+test('#423+#722: 变异测试单份维护——禁 *.src.test.ts 回潮 + 变异面测试直连 src', () => {
   assert.ok(CI.includes('Forbid legacy src tests'),
     'ci.yml repo-gate 必须含 Forbid legacy src tests 步骤（#423 防双份回潮）')
   assert.ok(CI.includes('run: node scripts/gate/forbid-src-tests.mjs'),
     'Forbid legacy src tests 必须调用 scripts/gate/forbid-src-tests.mjs')
   assert.ok(existsSync(join(ROOT, 'scripts/gate/forbid-src-tests.mjs')),
     'forbid-src-tests.mjs 脚本必须存在')
+  // #722 起 Stryker runner 由 tap 换为 vitest，变异面内的测试直接 import src/，
+  // lib→src 重定向 hook 不再参与变异链路。这两个文件保留是因为 scripts/gate/cov.mjs
+  // （cov:src）仍靠它把 lib 产物映射回源码——退役它必须与 cov.mjs 同批（阶段 3）。
   assert.ok(existsSync(join(ROOT, 'scripts/test/mutation-lib-to-src-hook.mjs')),
-    'mutation-lib-to-src-hook.mjs 必须存在（#423 方案 A 重定向入口）')
+    'mutation-lib-to-src-hook.mjs 必须存在（#423 方案 A；#722 后仅 cov:src 使用）')
   assert.ok(existsSync(join(ROOT, 'scripts/test/mutation-lib-to-src-loader.mjs')),
     'mutation-lib-to-src-loader.mjs 必须存在（#423 方案 A resolve hook）')
 
   const confDir = join(ROOT, 'stryker.conf.d')
   for (const f of readdirSync(confDir).filter((x) => x.endsWith('.json'))) {
     const conf = JSON.parse(readFileSync(join(confDir, f), 'utf8'))
-    const files = conf.tap?.testFiles ?? []
+    // #722：限定测试文件从 tap.testFiles 上移为 Stryker 通用顶层 testFiles。
+    const files = conf.testFiles ?? []
+    assert.ok(files.length > 0,
+      `${f} 的 testFiles 为空——按段限定测试文件的能力被架空（#722）`)
     for (const tf of files) {
       assert.ok(!tf.includes('.src.test.ts'),
         `${f} 的 testFiles 不得引用 *.src.test.ts（#423 方案 A：复用单份 *.test.ts）`)
+      // #722 的新保证：不再验「hook 是否注入」（机制），改为验「测试是否真的指向 src」（效果）。
+      // 若变异面内的测试 import lib/ 产物，变异就不会跑在源码上，这条直接判红。
+      const body = readFileSync(join(ROOT, tf), 'utf8')
+      assert.ok(!/["']\.\.\/(?:\.\.\/)*lib\//.test(body),
+        `${tf}（${f}）不得 import lib/——变异必须跑在源码上（#722）`)
     }
-    const nodeArgs = conf.tap?.nodeArgs ?? []
-    assert.ok(nodeArgs.includes('--import'),
-      `${f} 的 tap.nodeArgs 必须含 --import（注入 lib→src hook）`)
-    assert.ok(nodeArgs.includes('./scripts/test/mutation-lib-to-src-hook.mjs'),
-      `${f} 的 tap.nodeArgs 必须注入 mutation-lib-to-src-hook.mjs`)
   }
 })
 

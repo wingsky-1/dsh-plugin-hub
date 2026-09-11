@@ -54,10 +54,12 @@
 * **原理**：传统变异测试针对构建产物（`lib/index.js`），编译打包造成的代码混淆和行号位移会导致增量指纹极易失效，且每次测试都需前置全量 build。
 * **做法**：测试用例中保持正常的包入口引用（`import "../lib/index.js"`），但在 Stryker 运行时通过 Node `--import hook`（如 `mutation-lib-to-src-hook.mjs`）在模块解析（`nextResolve`）阶段动态将 `packages/<pkg>/lib/**` 重定向到 `packages/<pkg>/src/**.ts`。
 * **收益**：Mutant 指纹直接锚定在 `.ts` 源码 AST 上，源码局部修改绝不引发跨文件指纹漂移。
+* **#722 后的状态**：测试用例改为直接 `import "../src/**"`，重定向 hook 不再参与 Stryker 链路（`--import` 注入随之退役）；`mutation-lib-to-src-hook.mjs` 仅保留给 `scripts/gate/cov.mjs`（`cov:src`）使用。本节的「收益」由「测试直连源码」直接兑现，且不再依赖解析期改写。
 
 ### 3.2 注入 Node.js 编译缓存（Compile Cache）
 * **原理**：Stryker 的并发 Sandbox 在执行测试时，会反复拉起独立 Node 进程动态转译 TypeScript 源码。
-* **做法**：在测试运行器的 Bridge 脚本（如 `mutation-tap-bridge.cjs`）最头部注入：
+* **#722 后的状态（待重新评估）**：`mutation-tap-bridge.cjs` 已随 tap-runner 退役，本节的注入点随之消失。vitest runner 下 TS 由 Vite 转译而非 Node 动态转译，Node 编译缓存是否仍有同等收益**尚未实测**；下文 41% 为 tap-runner 时期的数据，不可直接外推到 vitest runner。
+* **当时的做法**：在测试运行器的 Bridge 脚本（如 `mutation-tap-bridge.cjs`）最头部注入：
   ```javascript
   // Node >= 24.12 支持
   try {
@@ -214,16 +216,13 @@ concurrency:
   ```json
   {
     "sharedDefaults": {
-      "testRunner": "tap",
+      "testRunner": "vitest",
       "concurrency": 16,
       "timeoutMS": 60000,
       "dryRunTimeoutMinutes": 5,
       "coverageAnalysis": "perTest",
       "excludedMutations": ["StringLiteral", "ArrayLiteral", "ObjectLiteral", "TemplateLiteral"],
-      "tapNodeArgs": [
-        "-r", "./scripts/test/mutation-tap-bridge.cjs",
-        "--import", "./scripts/test/mutation-lib-to-src-hook.mjs"
-      ]
+      "vitest": { "related": false, "configFile": "vitest.config.ts" }
     },
     "$testLayers": {
       "layers": {

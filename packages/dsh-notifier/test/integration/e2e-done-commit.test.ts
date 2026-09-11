@@ -141,8 +141,8 @@ describe("B-4：入队即提交（窗口内同 turn 再现 idle 不重复）", (
 // flush 时序：首条入队即提交（不依赖 flush 结果）——窗口到点正常 flush
 // 补发聚合条后，已提交 turn 不回退（再现 idle 不重复）。
 // （「flush 阶段 notify 抛错」路径为产品 setTimeout 异步回调的既有行为，
-// 触发会 uncaught、与 Stryker tap-bridge 冲突，故以「提交点先于 flush」
-// 的时序验证覆盖。）
+// 触发会 uncaught、使 Stryker 测试宿主判 Error（vitest runner 下 uncaught 计入
+// errorsSet），故以「提交点先于 flush」的时序验证覆盖。）
 describe("B-4：flush 补发聚合条且已提交 turn 不回退", () => {
   let infos: string[];
   let c: { windowed: number; flushed: number; afterRepeat: number };
