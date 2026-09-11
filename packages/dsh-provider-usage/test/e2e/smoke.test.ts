@@ -49,9 +49,31 @@ import {
   isPanelCacheStale,
   dayKey,
   TREND_DIR_MAX,
+  HotReloadableAdapter,
 } from "../../lib/index.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+// ---------------------------------------------------------------- 热更新确定性驱动
+//
+// DEVELOPMENT §5.2：e2e 不得以墙钟观察异步行为。热更新生效本由 2s 定时器轮询驱动，
+// e2e 里改用显式驱动：lib/index.js 与 apply 共用同一个 HotReloadableAdapter class 对象，
+// 原型打桩即可拿到 apply 内部创建的实例，`await pollOnce()` 返回时 reload 已完成
+// （registry 已原子切换、缓存已清），断言随即读取路由可见效果，零等待。
+const hotReloaders: HotReloadableAdapter[] = [];
+const __origHotReloadStart = HotReloadableAdapter.prototype.start;
+HotReloadableAdapter.prototype.start = async function (...args) {
+  const result = await __origHotReloadStart.apply(this, args);
+  hotReloaders.push(this);
+  return result;
+};
+
+/** 对已登记的被监视文件驱动一次轮询；传 file 时只驱动该文件（返回即热更新已落定）。 */
+async function driveHotReloads(file?: string): Promise<void> {
+  for (const hr of hotReloaders) {
+    if (file === undefined || hr.file === file) await hr.pollOnce();
+  }
+}
 
 // 全局隔离（红线）：apply 一律落在临时 DSH_HOME，绝不触碰真实 ~/.dsh
 process.env.DSH_HOME = mkdtempSync(join(tmpdir(), "dou-home-"));
@@ -718,16 +740,10 @@ export async function fetchData() { return { v: 2 }; }
 export function formatCapsule() { return "<span>v2</span>"; }
 export function formatPanel() { return "<p>p2</p>"; }
 `, "utf8");
-      // 轮询等待热更新生效（热更新轮询 2s；用轮询等待防 flake，上限 ~6s）
-      let hot = false;
-      let snap;
-      const deadline = Date.now() + 6000;
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 200));
-        snap = await readAdapters();
-        if (snap.host.some((a) => a.name === "manage-stats" && a.label === "管理测试二版")) { hot = true; break; }
-      }
-      obs.hotReloaded = hot;
+      // 确定性驱动一次轮询（add 已把该文件纳入监视）——返回即热更新落定，不观察墙钟
+      await driveHotReloads(goodFile);
+      const snap = await readAdapters();
+      obs.hotReloaded = snap.host.some((a) => a.name === "manage-stats" && a.label === "管理测试二版");
       obs.manageStatsStillEnabled = snap.host.find((a) => a.name === "manage-stats")?.enabled;
       const errors = await readHealth();
       obs.noFakeHotReloadError = !errors.some((e) => e.message.includes("热更新成功"));
@@ -925,15 +941,10 @@ export function formatCapsule() { return "<span>a2</span>"; }
 export function formatPanel() { return "<p>a2</p>"; }
 // v2 marker —— 内容长度变化保证 stamp 可检出
 `, "utf8");
-    let snap;
-    let hot = false;
-    const deadline = Date.now() + 6000;
-    while (Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 200));
-      snap = await readAdapters();
-      if (snap.host.some((a) => a.name === "p212-a" && a.label === "A v2")) { hot = true; break; }
-    }
-    hotReloadedWhileDisabled = hot;
+    // 确定性驱动一次轮询（该文件由 config.adapter 纳入监视）——返回即热更新落定
+    await driveHotReloads(aFile);
+    const snap = await readAdapters();
+    hotReloadedWhileDisabled = snap.host.some((a) => a.name === "p212-a" && a.label === "A v2");
     disabledStaysDisabled = snap.host.find((a) => a.name === "p212-a")?.enabled;
     providerHasNoEnabled = snap.enabled.p212;
     // 持久化：adapter-state.json 轮询等待落盘 null（scheduleWriteAdapterState 为异步串行链）
@@ -1030,16 +1041,10 @@ export function formatCapsule() { return "<span>x</span>"; }
 export function formatPanel() { return "<p>x</p>"; }
 // rename marker —— 内容长度变化保证 stamp 可检出
 `, "utf8");
-    // 轮询等待冲突报错出现（health errors 可见）
-    let conflictErr = null;
-    const deadline = Date.now() + 6000;
-    while (Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 200));
-      const p = await callHandler(healthRoute, fakeReq());
-      const found = (p?.errors ?? []).find((e) => e.kind === "load" && e.message.includes("热更新失败") && e.message.includes("u-two"));
-      if (found !== undefined) { conflictErr = found; break; }
-    }
-    conflictErrorVisible = conflictErr !== null;
+    // 确定性驱动一次轮询：改名撞名的冲突判定在 onReload 内同步登记到 registry
+    await driveHotReloads(f1);
+    const p = await callHandler(healthRoute, fakeReq());
+    conflictErrorVisible = (p?.errors ?? []).some((e) => e.kind === "load" && e.message.includes("热更新失败") && e.message.includes("u-two"));
     // 旧条目保留：one.mjs 仍以旧名 u-one 在候选列表，u-two 归属不变
     const meta = await callHandler(adaptersRoute, fakeReq());
     const oneEntry = meta.host.find((a) => a.file === "one.mjs");
@@ -2298,7 +2303,7 @@ describe("#105① S5：热更新挂点失效（AC#6）", () => {
     const w1 = await getHistory(historyRoute, "hr-prov", 7);
     beforeHotReloadRendersV1 = String(w1.panelHtml).includes('data-v="1"');
 
-    // 改写文件（size/mtime 双变）→ HotReloadableAdapter 轮询（2s）→ onReload ok → 挂点 clear
+    // 改写文件 → 确定性驱动轮询一次 → onReload ok → 挂点 clear
     writeFileSync(hrFile, `
 export const version = 2;
 export const name = "hr-spy";
@@ -2313,13 +2318,9 @@ export function formatPanel(input) {
 // v2 marker line —— 内容长度与 v1 不同，保证 stamp 变化可检出
 `, "utf8");
 
-    let w2 = null;
-    for (let i = 0; i < 24; i++) {
-      await new Promise((r) => setTimeout(r, 400));
-      const p = await getHistory(historyRoute, "hr-prov", 7);
-      if (String(p.panelHtml).includes('data-v="2"')) { w2 = p; break; }
-    }
-    hotReloadTookEffect = w2 !== null;
+    await driveHotReloads(hrFile);
+    const w2 = await getHistory(historyRoute, "hr-prov", 7);
+    hotReloadTookEffect = String(w2.panelHtml).includes('data-v="2"');
     newFormatPanelExecuted = globalThis.__SPY_HR >= 2;
 
     disposeAll(disposers);
@@ -2329,7 +2330,7 @@ export function formatPanel(input) {
     expect(beforeHotReloadRendersV1).toBeTruthy();
   });
 
-  it("热更新成功回调后旧缓存清除（轮询窗口内以新版代码渲染）", () => {
+  it("热更新成功回调后旧缓存清除（驱动一次轮询即以新版代码渲染）", () => {
     expect(hotReloadTookEffect).toBeTruthy();
   });
 

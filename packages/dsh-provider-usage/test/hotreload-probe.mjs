@@ -1,11 +1,12 @@
 /**
  * dsh-provider-usage — hot reload 场景子进程探针（unit-contract 的 hotreload 段专用）。
  *
- * 为什么必须是子进程：src 的 HotReloadableAdapter 用 `import(url + "?t=" + mtimeMs)`
- * 破 ESM 模块缓存，而 vitest 的 module runner 会按路径缓存 src 内发出的动态 import 并
- * 吞掉该查询——同一个 fixture 文件连续两次 import 时而拿到新版本、时而拿到缓存版本
- * （实测同一断言序列多次运行结果不一致）。原生 Node 的 ESM 缓存严格按完整 URL
- * （含查询串）区分，正是生产运行态的语义，故整段序列在子进程内回放，
+ * 为什么走子进程：本段回放的是**原生 Node** 的 ESM 语义（生产运行态），子进程把测试
+ * 运行器的模块图与缓存隔离在外。此处还兼有历史成因——旧版本戳 `import(url + "?t=" + mtimeMs)`
+ * 会被 vite 系运行器按 `/\bt=\d{13}&?\b/` 剥掉毫秒整数位，只剩亚毫秒小数位参与模块标识，
+ * 内核 coarse 时钟下同一 tick 的两次写入因此撞进同一模块缓存，同一断言序列时而拿到新版本、
+ * 时而拿到缓存版本（#722 实证）。版本戳现已改为 `?mtime=<mtimeMs>&size=<size>`
+ * （见 src/domain1/registry/hotreload.ts），vitest 内亦可直接驱动，子进程保留为原生语义护栏。
  * stdout 只输出一行 JSON 观测量供上层逐条断言。
  */
 import { mkdtempSync, writeFileSync, utimesSync, unlinkSync } from "node:fs";

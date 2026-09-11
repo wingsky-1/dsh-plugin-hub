@@ -1315,12 +1315,11 @@ describe("readStamp：不存在 null、存在取值", () => {
 });
 
 describe("hotreload：start 文件缺失失败回调；pollOnce 文件删除保留 current", () => {
-  // 该段必须走 Node 子进程（test/hotreload-probe.mjs）：src 用
-  // `import(url + "?t=" + mtimeMs)` 破 ESM 模块缓存，而 vitest 的 module runner 会按
-  // 路径缓存 src 内发出的动态 import 并吞掉该查询——同一 fixture 连续两次 import
-  // 时而拿到新版本、时而拿到缓存版本（实测多次运行结果不一致，属环境引入的 flake）。
-  // 原生 Node 的 ESM 缓存严格按含查询串的完整 URL 区分，与生产运行态一致，
-  // 故整段序列在子进程内回放，上层只逐条核对回传的观测量。
+  // 该段走 Node 子进程（test/hotreload-probe.mjs）：回放的是原生 Node 的 ESM 语义
+  // （生产运行态），与测试运行器的模块图隔离。历史上此处还用于规避旧版本戳
+  // `import(url + "?t=" + mtimeMs)` 被 vite 系运行器按 `/\bt=\d{13}&?\b/` 剥离毫秒整数位、
+  // 只剩亚毫秒小数位参与模块标识而撞进同一模块缓存的缺陷（#722 实证，版本戳现已改为
+  // `?mtime=<mtimeMs>&size=<size>`；确定性驱动覆盖见 test/unit/registry/unit-hotreload.test.ts）。
   let startedMissing, startedMissingError, eventsLength;
   let startedOk, currentAfterStart, polledOk, currentAfterPoll;
   let badReloadOk, badReloadError, delPollOk, currentAfterDelete;
