@@ -214,8 +214,8 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
 
 | 层 | 判据 | 进变异面 |
 |---|---|---|
-| `test/unit/**` | 单模块 / 纯逻辑 / fake 驱动 / `vm` 沙箱跑真实 `lib/client.js`、只做临时目录 I/O | 是 |
-| `test/integration/**` | in-process 真实组合根装配、真实 cordis Context、真实配置迁移、真实 http server（内核临时端口） | 是 |
+| `test/unit/**` | 单模块 / 纯逻辑 / fake 驱动、只做临时目录 I/O（允许为覆盖分支而短暂 bind 一个端口，如 lan-proxy 的 EADDRINUSE 用例） | 是 |
+| `test/integration/**` | 以真实 socket/真实组合根为被测对象：起真实 http server（内核临时端口）走完整转发链、真实 cordis Context、真实配置迁移 | 是 |
 | `test/client/**` | 断言对象是客户端**构建产物** `lib/client.js`——而 `mutate` 面本身排除 `src/client/**`，登记进 testFiles 只增加每个段的 dry run 成本、杀灭贡献为零 | 否 |
 | `test/e2e/**` | 真实监听端口 / spawn 子进程 / 真机系统调用的大 smoke | 否 |
 
