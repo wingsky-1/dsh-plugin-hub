@@ -36,24 +36,9 @@
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
-  "testFiles": [
-    "packages/dsh-mcp-manager/test/unit/unit-apply.test.ts",
-    "packages/dsh-mcp-manager/test/unit/unit-call-stats.test.ts",
-    "packages/dsh-mcp-manager/test/unit/unit-catalog.test.ts",
-    "packages/dsh-mcp-manager/test/unit/unit-hotspot.test.ts",
-    "packages/dsh-mcp-manager/test/unit/unit-manager.test.ts",
-    "packages/dsh-mcp-manager/test/unit/unit-manager2.test.ts",
-    "packages/dsh-mcp-manager/test/unit/unit-middleware.test.ts",
-    "packages/dsh-mcp-manager/test/unit/unit-pipeline.test.ts",
-    "packages/dsh-mcp-manager/test/unit/unit-routes-sse.test.ts",
-    "packages/dsh-mcp-manager/test/unit/unit-store.test.ts",
-    "packages/dsh-mcp-manager/test/unit/unit-supervisor.test.ts",
-    "packages/dsh-mcp-manager/test/unit/unit-transport.test.ts",
-    "packages/dsh-mcp-manager/test/unit/unit-workspace.test.ts"
-  ],
   "vitest": {
     "related": false,
-    "configFile": "vitest.config.ts"
+    "configFile": "vitest.stryker.d/dsh-mcp-manager.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-mcp-manager-runtime.json"

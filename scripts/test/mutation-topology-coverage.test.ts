@@ -80,7 +80,7 @@ test('F15 反证：段省略 excludes 时生成器注入默认值（fixture 最�
         sharedDefaults: {
           testRunner: 'vitest', concurrency: 1, timeoutMS: 1000, dryRunTimeoutMinutes: 5,
           reporters: ['progress'], coverageAnalysis: 'perTest', tempDirName: '.stryker-tmp',
-          cleanTempDir: true, excludedMutations: [], vitest: { related: false, configFile: 'vitest.config.ts' },
+          cleanTempDir: true, excludedMutations: [], vitest: { related: false },
         },
         packages: {
           [pkg]: {

@@ -30,13 +30,9 @@
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
-  "testFiles": [
-    "packages/dsh-lan-proxy/test/unit/unit-apply.test.ts",
-    "packages/dsh-lan-proxy/test/unit/unit-proxy.test.ts"
-  ],
   "vitest": {
     "related": false,
-    "configFile": "vitest.config.ts"
+    "configFile": "vitest.stryker.d/dsh-lan-proxy.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-lan-proxy-4.json"

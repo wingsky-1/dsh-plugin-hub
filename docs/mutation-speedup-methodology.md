@@ -35,10 +35,10 @@ provider-usage **400s**（n=49，频率与耗时双高）、lan-proxy 204s、mcp
 | 1 | 增量基线仓库内文件化（#204/#178） | 已落地 | 常态 mutation job 分钟级 → **20-38s 全程** | actions/cache 按 ref 隔离不可用；基线必须入 git |
 | 2 | concurrency 超订（notifier 先例 #159） | 已落地（16×3 包） | notifier **6m54s → 1m42s** | 仅等待主导型收益巨大；见 §4.2 分级评估法 |
 | 3 | provider-usage 4→8（#249）+ timeoutMS 60s→30s（#257） | 已落地 | 同机基准 4→8 提速 **42%**（771.9s→449.9s），score/killed 与独立全量逐项一致；CI 首跑无假阳性 | 收紧只减假阳性 killed，方向安全；升 16 待 CI 自然场景数据。注：30s 为 #257 当时的历史值，当前 conf 实际 timeoutMS=60000（勿误读） |
-| 4 | lan-proxy / idle-archive 维持 4 | 决策维持 | — | #147 端口互踩实证 / testFiles 含固定端口 smoke.test.ts（idle-archive 已退役 #397） |
+| 4 | lan-proxy / idle-archive 维持 4 | 决策维持 | — | #147 端口互踩实证 / 变异面含固定端口 smoke.test.ts（idle-archive 已退役 #397） |
 | 5 | mutate 段拆分 CI matrix（B） | **已落地（#257）→ 方案 A 落地后整体退役（#276）** | 段式矩阵真实 CI 实例化正常；wall-clock 数据待段式基线就绪后回收 | 三慢包 provider-usage×2 / lan-proxy×3 / mcp-manager×4；判分聚合去重键教训见 §4.6；计费分钟×N 为已知代价。方案 A 落地后 mutate 改为 src 级文件组分段（mcp-manager×3 / provider-usage×3 / lan-proxy×4），行号区间整套退役 |
 | 6 | 构建产物复用（build-all artifact，D） | **否决（维护者裁定）** | — | 收益模型失效：本仓为 PUBLIC，GitHub Actions 对公共仓库免费不限时长，「降计费分钟」不适用；剩余次要价值撑不起 ci.yml 改造面与红线流程。教训见 §4.7 |
-| 7 | testFiles 最小集裁剪（C） | 暂缓 | — | per-test 覆盖分析已做关联，剩余空间在大测试文件整体跳过，成本高收益不确定 |
+| 7 | 变异面最小集裁剪（C） | 暂缓 | — | per-test 覆盖分析已做关联，剩余空间在大测试文件整体跳过，成本高收益不确定 |
 | 8 | **方案 A：mutate 直指 src（#276）** | **已落地** | 见 §3.1 详细实测 | 依赖全仓 `.ts` 后缀相对 import + Node strip-types 加载插桩 src；开销与对策见 §4.8 |
 | 9 | Node compile cache（#276 配套） | 已落地（bridge 注入） | src 级全量 420s → 250s（-41%），判分分布不变 | Node ≥24.12 `module.enableCompileCache()`；失败的进程静默降级（try/catch 包裹） |
 | 10 | 大文件拆分（src 级分段前置） | 已落地 | mcp-manager index 1237→147 / middleware 1046→511 / provider-usage index 1122→73 / lan-proxy index 991→59（行数为拆分时点快照） | 分段粒度下限是整文件；拆文件让密度均匀、段可细切。维护收益 + CRAP 模块精度 |
@@ -83,11 +83,11 @@ provider-usage **400s**（n=49，频率与耗时双高）、lan-proxy 204s、mcp
 
 ### 4.2 并发超订分级评估法
 
-按 testFiles 的资源形态分三级：
+按变异面测试文件的资源形态分三级：
 
 - **可直升 16**：纯 unit、无端口绑定、无全局单例、非 CPU 密集（如 web-file-preview）；
 - **先 8 观察**：CPU 密集为主但无共享资源冲突（如 provider-usage——apiEndpoint 用 discard 端口、socket 为 mock 字面量）；达标后再升；
-- **维持低并发**：testFiles 存在真实固定端口监听（lan-proxy #147 实证 19998 互踩 → EADDRINUSE 假阳性 Killed）或固定端口 smoke 文件（idle-archive，包已退役 #397）。
+- **维持低并发**：变异面存在真实固定端口监听（lan-proxy #147 实证 19998 互踩 → EADDRINUSE 假阳性 Killed）或固定端口 smoke 文件（idle-archive，包已退役 #397）。
 
 ### 4.3 假阳性防护：timeout 计入 detected 的陷阱
 

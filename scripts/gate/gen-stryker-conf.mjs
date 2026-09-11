@@ -4,10 +4,14 @@
  *
  * 核心设计（单一事实源 SSOT + 确定性代码生成 + 登记完整性门禁）：
  * 1. 唯一事实源：scripts/data/mutation-topology.json 的 `$testLayers` 与各包 `testLayers`。
- * 2. 派生目标：stryker.conf.d/*.json（全部 31 份分段配置）。
- * 3. **测试面不写死**（#713 T2）：`tap.testFiles` 由层 glob 展开的真实文件清单派生。
- *    为什么不把 glob 直接写进 conf：#712 已 CI 实证 Stryker 沙箱对整包 glob 失败
- *    （`smoke.test.ts` 的 provide 方法面断言）且 mcp 5 个段 dry run 撞 5 分钟预算。
+ * 2. 派生目标：stryker.conf.d/*.json（全部 31 份分段配置）+ vitest.stryker.d/<pkg>.config.ts
+ *    （每包一份「变异面测试清单」的 vitest 配置）。
+ * 3. **测试面不再由 Stryker 的 `testFiles` 承载**（#722 方案 A 路径一）：该字段非空会让
+ *    core 把 static mutant 判成 runtime 激活（上游 #6144，未修），模块级变异体在模块加载
+ *    后永久漏判（实测 dsh-web-file-preview 80.49 → 0.00）。故段配置只声明 `vitest.configFile`
+ *    指向本包派生的 vitest 配置，测试面 = 该配置的 `include`（层 glob 展开后的显式清单）。
+ *    为什么不直接写 glob：Stryker 沙箱对整包 glob 失败（#712 实证）且 mcp 段 dry run
+ *    撞 5 分钟预算，故仍展开为显式文件清单。
  *
  * 本文件只做 argv 解析与写盘；纯函数在 scripts/gate/test-surface.mjs（被 import 无副作用，
  * 故测试可以直接 import 它而不会重写 stryker.conf.d/）。
@@ -27,7 +31,7 @@
  *
  * 环境变量 GEN_STRYKER_ROOT：仓库根覆盖（测试用临时 fixture 根，避免在仓库内造包目录）。
  */
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -41,7 +45,50 @@ const argv = process.argv.slice(2)
 const isCheckMode = argv.includes('--check')
 const isSyncMin = argv.includes('--sync-test-min')
 
-function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef, testFiles) {
+/** 派生 vitest 测试面配置的目录（与 stryker.conf.d 并列，同为生成物、入库受 --check 校验）。 */
+const VITEST_CONF_DIR = 'vitest.stryker.d'
+
+function vitestConfigPath(pkgName) {
+  return `${VITEST_CONF_DIR}/${pkgName}.config.ts`
+}
+
+/**
+ * 派生「该包变异面」的 vitest 配置（#722 方案 A 路径一）。
+ *
+ * 为什么要有这个载体：Stryker 的 `testFiles` 是**上游缺陷 #6144 的唯一触发条件**——
+ * 它非空时 core 把 static mutant 判成 runtime 激活，模块级变异体在模块加载后永久
+ * 漏判（实测 dsh-web-file-preview 从 80.49 掉到 0.00）。把「本次跑哪些测试文件」从
+ * Stryker conf 搬到 vitest 的 `include`，测试面逐字不变，而 mutantActivation 回到
+ * static。之所以选它而不是 `related: true`（模块图推断）：后者会把测试面变成"涌现"
+ * 属性，漏关联即静默少跑测试 → 静默漏判，且反转 #690/#713 的确定性派生契约。
+ *
+ * 单 project（unit + integration 两个层在本仓库同为 node 环境、60s 超时，合并等价）：
+ * runner 侧 `ctx.projects` 只用于 setupFiles/testNamePattern 注入与覆盖度合并，单
+ * project 与多 project 行为一致（#722 诊断已实测）。
+ */
+function deriveVitestConfig(pkgName, testFiles) {
+  const include = testFiles.map((f) => `      '${f}',`).join('\n')
+  return `// 生成物，勿手改：由 scripts/gate/gen-stryker-conf.mjs 从 mutation-topology.json 派生
+// （${pkgName} 的变异面测试清单）。改动请改拓扑后跑 pnpm stryker:gen。
+//
+// 为什么存在：Stryker 的 testFiles 会触发上游 #6144（static mutant 被当作 runtime
+// 激活 → 模块级变异体全部漏判），故测试面限定改由本文件的 include 承载。
+import { defineConfig } from 'vitest/config'
+
+export default defineConfig({
+  test: {
+    include: [
+${include}
+    ],
+    environment: 'node',
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
+  },
+})
+`
+}
+
+function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef) {
   const isSingle = segKey === '_single'
   const confFileName = isSingle ? `${pkgName}.json` : `${pkgName}-${segKey}.json`
   const reportName = isSingle ? pkgName : `${pkgName}-${segKey}`
@@ -74,11 +121,14 @@ function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef, testFiles
     coverageAnalysis: sharedDefaults.coverageAnalysis,
     tempDirName: sharedDefaults.tempDirName,
     cleanTempDir: sharedDefaults.cleanTempDir,
-    // vitest runner 自身没有 testFiles 选项，按段限定测试文件改走 Stryker 通用顶层 `testFiles`；
-    // `related` 固定 false：段的测试面由拓扑 SSOT 派生，不交给 vitest 的模块图推断（否则
-    // 「哪个段跑哪些测试」会随导入关系漂移，与确定性派生清单冲突）。
-    testFiles,
-    vitest: sharedDefaults.vitest,
+    // 测试面限定迁到 vitest 侧（#722 方案 A 路径一，见 deriveVitestConfig）：
+    // **conf 里不得再出现 `testFiles`**——只要它非空，core 的
+    // `mutantActivation: testFilter ? 'runtime' : 'static'` 就会把 static mutant
+    // 判成 runtime 激活（上游 #6144，未修），模块级变异体在模块加载后永久漏判。
+    // 等价表达 = 段专用 vitest config 的 `include`（本包拓扑投影的变异面清单），
+    // 故测试面与今天逐字相同、确定性不变。`related` 固定 false：不把「哪个段跑
+    // 哪些测试」交给 vitest 的模块图推断（否则随导入关系漂移，与派生清单冲突）。
+    vitest: { ...sharedDefaults.vitest, configFile: vitestConfigPath(pkgName) },
     jsonReporter: {
       fileName: `coverage/mutation/${reportName}.json`,
     },
@@ -129,13 +179,17 @@ function main() {
     }
   }
 
-  // ── 2. 派生全部配置文件 ──────────────────────────────────────────
+  // ── 2. 派生全部配置文件（stryker conf + 每包一份 vitest 测试面 config）──
   const derivedConfigs = new Map()
+  const derivedVitestConfigs = new Map()
   for (const [pkgName, pkgDef] of Object.entries(packages)) {
     const testFiles = projections.get(pkgName)?.testFiles ?? []
     for (const [segKey, segDef] of Object.entries(pkgDef.segments)) {
-      const { confFileName, content } = deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef, testFiles)
+      const { confFileName, content } = deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef)
       derivedConfigs.set(confFileName, content)
+    }
+    if (testFiles.length > 0) {
+      derivedVitestConfigs.set(vitestConfigPath(pkgName), deriveVitestConfig(pkgName, testFiles))
     }
   }
 
@@ -200,6 +254,36 @@ function main() {
       }
     }
 
+    // vitest 测试面配置：磁盘 ↔ 派生一致（生成物同样入库，故同样受严格比对）
+    const vitestDir = join(repoRoot, VITEST_CONF_DIR)
+    const diskVitest = existsSync(vitestDir)
+      ? readdirSync(vitestDir).filter((f) => f.endsWith('.config.ts')).map((f) => `${VITEST_CONF_DIR}/${f}`).sort()
+      : []
+    const derivedVitestNames = [...derivedVitestConfigs.keys()].sort()
+    for (const f of derivedVitestNames.filter((x) => !diskVitest.includes(x))) {
+      console.error(`[gen-stryker-conf] 磁盘缺少派生的 vitest 测试面配置: ${f}`)
+      hasError = true
+    }
+    for (const f of diskVitest.filter((x) => !derivedVitestNames.includes(x))) {
+      console.error(`[gen-stryker-conf] 磁盘存在未在拓扑中定义的游离 vitest 配置: ${f}`)
+      hasError = true
+    }
+    for (const [file, expectedContent] of derivedVitestConfigs.entries()) {
+      const filePath = join(repoRoot, file)
+      if (existsSync(filePath) && readFileSync(filePath, 'utf8') !== expectedContent) {
+        console.error(`[gen-stryker-conf] vitest 测试面配置与拓扑派生不一致: ${file} (请运行 pnpm stryker:gen 同步)`)
+        hasError = true
+      }
+    }
+    // conf 不得回退到 Stryker 顶层 testFiles：它是上游 #6144 的触发条件（static mutant
+    // 被判 runtime 激活 → 模块级变异体漏判）。派生内容比对已能拦住，此处显式点名以便定位。
+    for (const [file, content] of derivedConfigs.entries()) {
+      if (JSON.parse(content).testFiles !== undefined) {
+        console.error(`[gen-stryker-conf] ${file} 出现了 Stryker 顶层 testFiles —— 该字段会触发上游 #6144（#722 方案 A 已迁至 vitest include）`)
+        hasError = true
+      }
+    }
+
     if (hasError) {
       console.error('[gen-stryker-conf] --check 失败：配置文件 / 测试面登记 / --min 与单一事实源脱节')
       return 1
@@ -209,6 +293,7 @@ function main() {
     const skipNote = skipNames.length > 0 ? `；按 $noMutationPackages 不登记变异面：${skipNames.join(', ')}` : ''
     console.log(
       `[gen-stryker-conf] --check 通过：${derivedConfigs.size} 份配置与拓扑严格一致；`
+      + `${derivedVitestConfigs.size} 份 vitest 测试面配置（${VITEST_CONF_DIR}/）与拓扑严格一致；`
       + `${Object.keys(packages).length} 个包共 ${totalFiles} 个测试文件登记进变异面；`
       + `--min 与磁盘上 ${discovered.length} 个有测试的包全部同步${skipNote}`,
     )
@@ -221,7 +306,13 @@ function main() {
       writeFileSync(join(confDir, file), content, 'utf8')
       written++
     }
+    const vitestDir = join(repoRoot, VITEST_CONF_DIR)
+    mkdirSync(vitestDir, { recursive: true })
+    for (const [file, content] of derivedVitestConfigs.entries()) {
+      writeFileSync(join(repoRoot, file), content, 'utf8')
+    }
     console.log(`[gen-stryker-conf] 成功派生生成全部 ${written} 份 Stryker 配置文件至 stryker.conf.d/`)
+    console.log(`[gen-stryker-conf] 成功派生生成 ${derivedVitestConfigs.size} 份 vitest 测试面配置至 ${VITEST_CONF_DIR}/`)
     for (const [pkgName, p] of projections) {
       console.log(
         `[gen-stryker-conf]   ${pkgName}: runner 面 ${p.runFiles.length} 个测试文件，变异面 ${p.testFiles.length} 个`

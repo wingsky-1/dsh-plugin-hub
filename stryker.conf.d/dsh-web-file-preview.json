@@ -28,12 +28,9 @@
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
-  "testFiles": [
-    "packages/dsh-web-file-preview/test/unit/unit-present-open.test.ts"
-  ],
   "vitest": {
     "related": false,
-    "configFile": "vitest.config.ts"
+    "configFile": "vitest.stryker.d/dsh-web-file-preview.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-web-file-preview.json"

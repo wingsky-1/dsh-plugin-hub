@@ -438,7 +438,7 @@ test('#276 方案 A: src 级 mutate 退役产物行号机制——ci/observe 两
   assert.strictEqual(ls.stdout.trim(), '', 'git ls-files stryker.config.json 应为空（根配置不得重新被版本库追踪，#439 防回归）')
 })
 
-test('#423+#722: 变异测试单份维护——禁 *.src.test.ts 回潮 + 变异面测试直连 src', () => {
+test('#423+#722: 变异测试单份维护——禁 *.src.test.ts 回潮 + 变异面测试直连 src', async () => {
   assert.ok(CI.includes('Forbid legacy src tests'),
     'ci.yml repo-gate 必须含 Forbid legacy src tests 步骤（#423 防双份回潮）')
   assert.ok(CI.includes('run: node scripts/gate/forbid-src-tests.mjs'),
@@ -453,21 +453,40 @@ test('#423+#722: 变异测试单份维护——禁 *.src.test.ts 回潮 + 变异
   assert.ok(existsSync(join(ROOT, 'scripts/test/mutation-lib-to-src-loader.mjs')),
     'mutation-lib-to-src-loader.mjs 必须存在（#423 方案 A resolve hook）')
 
+  const topology = JSON.parse(readFileSync(join(ROOT, 'scripts/data/mutation-topology.json'), 'utf8'))
+  const { projectTestSurface } = await import('../gate/test-surface.mjs')
   const confDir = join(ROOT, 'stryker.conf.d')
-  for (const f of readdirSync(confDir).filter((x) => x.endsWith('.json'))) {
-    const conf = JSON.parse(readFileSync(join(confDir, f), 'utf8'))
-    // #722：限定测试文件从 tap.testFiles 上移为 Stryker 通用顶层 testFiles。
-    const files = conf.testFiles ?? []
-    assert.ok(files.length > 0,
-      `${f} 的 testFiles 为空——按段限定测试文件的能力被架空（#722）`)
-    for (const tf of files) {
+  const vitestConfDir = join(ROOT, 'vitest.stryker.d')
+  for (const pkgName of Object.keys(topology.packages)) {
+    // #722 方案 A 路径一：测试面由拓扑派生，落在该包专属的 vitest 配置 include 上；
+    // Stryker conf 里**不得**再出现 testFiles —— 它是上游 #6144（static mutant 被判
+    // runtime 激活 → 模块级变异体漏判）的唯一触发条件。
+    const projection = projectTestSurface(ROOT, topology, pkgName)
+    assert.deepEqual(projection.errors, [], `${pkgName} 测试面投影不应有错误：${projection.errors.join('; ')}`)
+    assert.ok(projection.testFiles.length > 0, `${pkgName} 变异面不得为空`)
+
+    const vitestConfPath = join(vitestConfDir, `${pkgName}.config.ts`)
+    assert.ok(existsSync(vitestConfPath), `${pkgName} 必须有派生的 vitest 测试面配置：${vitestConfPath}`)
+    const vitestConf = readFileSync(vitestConfPath, 'utf8')
+    for (const tf of projection.testFiles) {
+      assert.ok(vitestConf.includes(`'${tf}'`),
+        `${pkgName} 的 vitest 配置 include 必须逐条覆盖变异面文件：缺 ${tf}`)
       assert.ok(!tf.includes('.src.test.ts'),
-        `${f} 的 testFiles 不得引用 *.src.test.ts（#423 方案 A：复用单份 *.test.ts）`)
-      // #722 的新保证：不再验「hook 是否注入」（机制），改为验「测试是否真的指向 src」（效果）。
-      // 若变异面内的测试 import lib/ 产物，变异就不会跑在源码上，这条直接判红。
+        `${tf} 不得是 *.src.test.ts（#423 方案 A：复用单份 *.test.ts）`)
+      // 测试必须真的指向 src（效果判据）：import lib/ 产物会让变异跑在产物而非源码上
       const body = readFileSync(join(ROOT, tf), 'utf8')
       assert.ok(!/["']\.\.\/(?:\.\.\/)*lib\//.test(body),
-        `${tf}（${f}）不得 import lib/——变异必须跑在源码上（#722）`)
+        `${tf}（${pkgName}）不得 import lib/——变异必须跑在源码上（#722）`)
+    }
+    const expectedRel = `vitest.stryker.d/${pkgName}.config.ts`
+    const confFiles = readdirSync(confDir).filter((x) => x.endsWith('.json') && (x === `${pkgName}.json` || x.startsWith(`${pkgName}-`)))
+    assert.ok(confFiles.length > 0, `${pkgName} 应有段配置`)
+    for (const cf of confFiles) {
+      const conf = JSON.parse(readFileSync(join(confDir, cf), 'utf8'))
+      assert.equal(conf.testFiles, undefined,
+        `${cf} 不得再出现 Stryker 顶层 testFiles（触发上游 #6144：static mutant 被判 runtime 激活）`)
+      assert.equal(conf.vitest?.configFile, expectedRel,
+        `${cf} 的 vitest.configFile 必须指向本包派生的测试面配置（${expectedRel}）`)
     }
   }
 })

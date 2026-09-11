@@ -49,7 +49,7 @@ const TOPOLOGY = {
     tempDirName: '.stryker-tmp',
     cleanTempDir: true,
     excludedMutations: [],
-    vitest: { related: false, configFile: 'vitest.config.ts' },
+    vitest: { related: false },
   },
   packages: {
     [PKG]: {
@@ -241,20 +241,32 @@ test('T3③-回归：test 脚本换 runner 后 --min 契约不变（#722）', ()
   }
 })
 
-test('T3 反证：从派生 conf 删掉一条登记条目 → --check 判红', () => {
+test('T3 反证：从派生 conf / vitest 测试面配置删掉登记条目 → --check 判红', () => {
   const root = makeFixtureRoot()
   try {
     const conf = generate(root)
+    const vitestConf = join(root, 'vitest.stryker.d', `${PKG}.config.ts`)
     assert.equal(runGenerator(root, ['--check']).status, 0, '生成后应立即一致')
 
+    // (a) conf 侧：删掉一条 mutate 登记
     const parsed = JSON.parse(readFileSync(conf, 'utf8'))
-    assert.ok(parsed.testFiles.length >= 2, 'fixture 应有至少两条登记条目')
-    parsed.testFiles = parsed.testFiles.slice(1) // 删掉一条登记
+    assert.ok(parsed.mutate.length >= 1, 'fixture 应至少有一条 mutate 登记')
+    parsed.mutate = [...parsed.mutate, `!packages/${PKG}/src/ghost.ts`]
     writeFileSync(conf, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8')
+    const confRes = runGenerator(root, ['--check'])
+    assert.equal(confRes.status, 1, `conf 被改必须判红：\n${confRes.out}`)
+    assert.match(confRes.out, /内容与拓扑派生不一致/, '应点名 conf 与派生脱节')
 
-    const res = runGenerator(root, ['--check'])
-    assert.equal(res.status, 1, `删条目必须判红：\n${res.out}`)
-    assert.match(res.out, /内容与拓扑派生不一致/, '应点名 conf 与派生脱节')
+    // (b) vitest 测试面配置侧：删掉一条 include（#722 后测试面的承载物）
+    assert.equal(runGenerator(root).status, 0, '先恢复派生一致')
+    const vLines = readFileSync(vitestConf, 'utf8').split('\n')
+    const firstInclude = vLines.findIndex((l) => l.includes(`packages/${PKG}/test/`))
+    assert.ok(firstInclude > 0, 'vitest 配置应含变异面 include 条目')
+    vLines.splice(firstInclude, 1)
+    writeFileSync(vitestConf, vLines.join('\n'), 'utf8')
+    const vRes = runGenerator(root, ['--check'])
+    assert.equal(vRes.status, 1, `vitest 测试面配置被改必须判红：\n${vRes.out}`)
+    assert.match(vRes.out, /vitest 测试面配置与拓扑派生不一致/, '应点名 vitest 配置与派生脱节')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -274,17 +286,19 @@ test('T2 幂等：连续两次生成后 --check 仍绿（无静默漂移）', ()
   }
 })
 
-test('P0-1 反证：import 派生模块不得写盘（否则 test:scripts 会静默修好被破坏的 conf）', () => {
+test('P0-1 反证：import 派生模块不得写盘（否则 test:scripts 会静默修好被破坏的产物）', () => {
   // 假绿向量：若纯函数与带副作用的 CLI 同模块，测试一旦 import 它就会重写真实仓库的
-  // stryker.conf.d/*.json —— 「删掉登记条目 → 门禁判红」会在下次 test:scripts 后自动变绿。
+  // stryker.conf.d/*.json 与 vitest.stryker.d/*.config.ts ——「删掉登记条目 → 门禁判红」
+  // 会在下次 test:scripts 后自动变绿。
   const root = makeFixtureRoot()
   try {
-    const conf = generate(root)
-    const before = readFileSync(conf, 'utf8')
-    // 破坏派生结果，模拟「登记条目被删」
-    const broken = JSON.parse(before)
-    broken.testFiles = broken.testFiles.slice(1)
-    writeFileSync(conf, `${JSON.stringify(broken, null, 2)}\n`, 'utf8')
+    generate(root)
+    const vitestConf = join(root, 'vitest.stryker.d', `${PKG}.config.ts`)
+    // 破坏派生结果，模拟「测试面登记被删」
+    const broken = readFileSync(vitestConf, 'utf8').split('\n')
+    const firstInclude = broken.findIndex((l) => l.includes(`packages/${PKG}/test/`))
+    broken.splice(firstInclude, 1)
+    writeFileSync(vitestConf, broken.join('\n'), 'utf8')
     assert.equal(runGenerator(root, ['--check']).status, 1, '破坏后 --check 应判红')
 
     // import 纯模块（不是 CLI）：必须零输出、零写盘
@@ -294,7 +308,7 @@ test('P0-1 反证：import 派生模块不得写盘（否则 test:scripts 会静
     ], { encoding: 'utf8', env: { ...process.env, GEN_STRYKER_ROOT: root } })
     assert.equal(probe.status, 0, `import 应成功：${probe.stdout}${probe.stderr}`)
     assert.match(probe.stdout, /IMPORT-OK/, '纯模块 import 应无副作用')
-    assert.equal(readFileSync(conf, 'utf8'), `${JSON.stringify(broken, null, 2)}\n`, 'import 纯模块不得改写 conf')
+    assert.equal(readFileSync(vitestConf, 'utf8'), broken.join('\n'), 'import 纯模块不得改写 vitest 测试面配置')
     assert.equal(runGenerator(root, ['--check']).status, 1, 'import 之后 --check 仍须判红（未被静默修好）')
   } finally {
     rmSync(root, { recursive: true, force: true })

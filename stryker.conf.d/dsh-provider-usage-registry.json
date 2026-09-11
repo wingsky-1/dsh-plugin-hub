@@ -35,25 +35,9 @@
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
-  "testFiles": [
-    "packages/dsh-provider-usage/test/unit/adapters/unit-deepseek-official.test.ts",
-    "packages/dsh-provider-usage/test/unit/apply/unit-apply.test.ts",
-    "packages/dsh-provider-usage/test/unit/common/unit-errsurf.test.ts",
-    "packages/dsh-provider-usage/test/unit/history/unit-history.test.ts",
-    "packages/dsh-provider-usage/test/unit/pipeline/unit-signal-lock.test.ts",
-    "packages/dsh-provider-usage/test/unit/pipeline/unit-stats-service.test.ts",
-    "packages/dsh-provider-usage/test/unit/report/unit-report-executor.test.ts",
-    "packages/dsh-provider-usage/test/unit/report/unit-report.test.ts",
-    "packages/dsh-provider-usage/test/unit/routes/unit-routes.test.ts",
-    "packages/dsh-provider-usage/test/unit/shared/unit-config.test.ts",
-    "packages/dsh-provider-usage/test/unit/shared/unit-contract.test.ts",
-    "packages/dsh-provider-usage/test/unit/shared/unit-v1.test.ts",
-    "packages/dsh-provider-usage/test/unit/trend/unit-trend-ledger.test.ts",
-    "packages/dsh-provider-usage/test/unit/trend/unit-trend.test.ts"
-  ],
   "vitest": {
     "related": false,
-    "configFile": "vitest.config.ts"
+    "configFile": "vitest.stryker.d/dsh-provider-usage.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-provider-usage-registry.json"

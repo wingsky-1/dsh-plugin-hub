@@ -51,7 +51,7 @@ pnpm typecheck    # 全仓类型检查
 变异配置集中在 `stryker.conf.d/dsh-<pkg>.json`（未拆分包）与 `stryker.conf.d/dsh-<pkg>-<段名>.json`
 （拆分包，段名=功能域，如 `dsh-notifier-server.json`；除 dsh-lan-proxy（待迁移功能段名）外
 已弃用数字段号）。mutate 区间、
-testFiles、阈值口径与 `gauntlet.config.json` 三方一致，由 workflow-assert 自测锚定。增量链路：
+变异面测试清单、阈值口径与 `gauntlet.config.json` 三方一致，由 workflow-assert 自测锚定。增量链路：
 
 **全量分工总述**：PR 门管变更切片；夜间 observe 门管主干全量；发版前
 release.yml tag 管线跑全量门禁——全量只在这三处语义中的后两处真实执行。
@@ -218,7 +218,7 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
 |---|---|---|
 | `test/unit/**` | 单模块 / 纯逻辑 / fake 驱动、只做临时目录 I/O（允许为覆盖分支而短暂 bind 一个端口，如 lan-proxy 的 EADDRINUSE 用例） | 是 |
 | `test/integration/**` | 以真实 socket/真实组合根为被测对象：起真实 http server（内核临时端口）走完整转发链、真实 cordis Context、真实配置迁移 | 是 |
-| `test/client/**` | 断言对象是客户端**构建产物** `lib/client.js`——而 `mutate` 面本身排除 `src/client/**`，登记进 testFiles 只增加每个段的 dry run 成本、杀灭贡献为零 | 否 |
+| `test/client/**` | 断言对象是客户端**构建产物** `lib/client.js`——而 `mutate` 面本身排除 `src/client/**`，登记进变异面测试清单只增加每个段的 dry run 成本、杀灭贡献为零 | 否 |
 | `test/e2e/**` | 真实监听端口 / spawn 子进程 / 真机系统调用的大 smoke | 否 |
 
 支撑模块不入任何层：`test/helpers.ts`、`test/smoke-lib.ts`、`test/smoke-pure.ts`、
@@ -228,7 +228,10 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
 
 登记链路（唯一事实源 = `scripts/data/mutation-topology.json` 的 `$testLayers` 与各包 `testLayers`）：
 
-- `tap.testFiles` 由 `scripts/gate/gen-stryker-conf.mjs` **从层 glob 展开为真实文件清单**。
+- 变异面测试清单由 `scripts/gate/gen-stryker-conf.mjs` **从层 glob 展开为真实文件清单**，落在
+  每包一份的 `vitest.stryker.d/<pkg>.config.ts` 的 `include` 上（#722 方案 A 路径一）。
+  为什么不由 Stryker 的 `testFiles` 承载：该字段非空会让 core 把 static mutant 判成 runtime
+  激活（上游 #6144 未修），模块级变异体在模块加载后永久漏判（实测 80.49 → 0.00）。
   为什么不把 `**` 通配直接交给 Stryker：#712 已 CI 实证沙箱语义失败（`smoke.test.ts` 的
   provide 方法面断言）+ mcp 5 个段 dry run 撞 5 分钟预算；
 - `pnpm stryker:check` 是登记完整性门禁（实现见 `scripts/gate/test-surface.mjs`，纯函数、import 无副作用）：
@@ -243,7 +246,7 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   mcp 的 `unit/unit-shared.test.ts`（测的是 shared 层，不在本包 mutate 面内）、
   notifier 的 `integration/real-context.test.ts`（Stryker 沙箱内 dry run 失败，属 #712 记录的沙箱语义族）；
 - 变异面扩缩**在 PR 门禁里看不出来**（`incremental: true` 复用基线状态）。真信号来自 observe.yml
-  班次全量重建；PR 内的自证方式是「派生 testFiles ↔ 基线的集合对比 + 单段真跑 stryker 报告的
+  班次全量重建；PR 内的自证方式是「派生测试面 ↔ 基线的集合对比 + 单段真跑 stryker 报告的
   mutant 状态分布与基线一致」。
 
 ### 落盘路径必须感知 DSH_HOME（#510）

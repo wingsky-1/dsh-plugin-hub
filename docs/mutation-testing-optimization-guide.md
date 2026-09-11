@@ -222,7 +222,7 @@ concurrency:
       "dryRunTimeoutMinutes": 5,
       "coverageAnalysis": "perTest",
       "excludedMutations": ["StringLiteral", "ArrayLiteral", "ObjectLiteral", "TemplateLiteral"],
-      "vitest": { "related": false, "configFile": "vitest.config.ts" }
+      "vitest": { "related": false }   // configFile 由生成器按包派生为 vitest.stryker.d/<pkg>.config.ts（#722）
     },
     "$testLayers": {
       "layers": {
@@ -243,8 +243,9 @@ concurrency:
     }
   }
   ```
-* **一键代码生成工具**：`scripts/gate/gen-stryker-conf.mjs`（#690 S2b 起由「测试层 glob」派生
-  `tap.testFiles`，不再是包级手写数组——手写清单已经漂移过 5 个单元文件）
+* **一键代码生成工具**：`scripts/gate/gen-stryker-conf.mjs`（#690 S2b 起由「测试层 glob」派生变异面测试清单，不再是包级手写数组——手写清单已漂移过
+  5 个单元文件；#722 起该清单落在 `vitest.stryker.d/<pkg>.config.ts` 的 `include`，不再用
+  Stryker 的 `testFiles`）
   - `pnpm stryker:gen`：派生生成全部 `stryker.conf.d/*.json` 配置文件；
   - `node scripts/gate/gen-stryker-conf.mjs --sync-test-min`：把各包 `--min` 同步为实际测试文件数；
   - `pnpm stryker:check`：门禁校验三件事——磁盘文件与清单 100% 逐字一致、每个 `test/` 下
