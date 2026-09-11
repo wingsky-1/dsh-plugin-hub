@@ -225,11 +225,17 @@ concurrency:
         "--import", "./scripts/test/mutation-lib-to-src-hook.mjs"
       ]
     },
+    "$testLayers": {
+      "layers": {
+        "unit": "test/unit/**/*.test.ts",
+        "integration": "test/integration/**/*.test.ts"
+      },
+      "mutationLayers": ["unit", "integration"]
+    },
     "packages": {
       "dsh-provider-usage": {
         "concurrency": 16,
         "timeoutMS": 60000,
-        "testFiles": ["packages/dsh-provider-usage/test/unit/**/*.test.ts"],
         "segments": {
           "apply": { "mutate": ["packages/dsh-provider-usage/src/apply.ts"] },
           "contracts": { "mutate": ["packages/dsh-provider-usage/src/contracts.ts", "packages/dsh-provider-usage/src/core/guards.ts"] }
@@ -238,11 +244,19 @@ concurrency:
     }
   }
   ```
-* **一键代码生成工具**：`scripts/gate/gen-stryker-conf.mjs`
-  - `pnpm stryker:gen`：一秒派生生成全部 `stryker.conf.d/*.json` 配置文件；
-  - `pnpm stryker:check`：门禁校验磁盘文件与清单是否 100% 逐字一致。
+* **一键代码生成工具**：`scripts/gate/gen-stryker-conf.mjs`（#690 S2b 起由「测试层 glob」派生
+  `tap.testFiles`，不再是包级手写数组——手写清单已经漂移过 5 个单元文件）
+  - `pnpm stryker:gen`：派生生成全部 `stryker.conf.d/*.json` 配置文件；
+  - `node scripts/gate/gen-stryker-conf.mjs --sync-test-min`：把各包 `--min` 同步为实际测试文件数；
+  - `pnpm stryker:check`：门禁校验三件事——磁盘文件与清单 100% 逐字一致、每个 `test/` 下
+    `*.test.ts` 都有层归属、各包 `--min` == runner glob 实际文件数。
 * **全源文件覆盖强制断言（Anti-Silent-Drop）**：
-  门禁测试自动扫描全仓业务源码，断言：**每一个业务 `.ts` 源文件必须且只能存在于拓扑清单的某一个分段中**。只要新增业务代码却忘记配置变异分段，门禁直接报错阻断，从源头上消灭假高分！
+  `scripts/gate/verify-dir-imports.mjs` 扫描全仓业务源码，断言
+  **`packages/<pkg>/src` 下每个文件都落在 `∪mutate ∪ ∪excludes` 之内**（excludes 含段级
+  默认值与包级 `testLayers.coverageExcludes` 的存量登记，见 `scripts/gate/mutation-topology.mjs`）。
+  只要新增业务代码却忘记配置变异分段或显式登记排除，门禁直接报错阻断。
+  覆盖断言的存量缺口存在 `scripts/data/dir-imports-baseline.json` 的 `uncoveredSrcFiles`，
+  **只许减不许增**；#690 S2b 已把 24 个门面/声明/资源类存量清空为 0。
 
 ---
 
