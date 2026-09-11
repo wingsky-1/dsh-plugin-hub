@@ -15,7 +15,7 @@
  */
 
 import { writeJson, readJsonBody, guardLoopbackMethod } from "../../../../shared/host-utils.js";
-import { parseClaudeJson } from "../config/model/interface.ts";
+import { parseClaudeJson, normalizeCatalogInjectionMode } from "../config/model/interface.ts";
 import {
   SCOPE_PROJECT,
   normalizeScope,
@@ -60,7 +60,12 @@ export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers):
       // GET：只读 UI 配置 + 中间层模式（允许非 loopback，供远程页面读取非敏感的展示配置）。
       if (req.method === "GET") {
         try {
-          writeJson(res, 200, { ...manager.uiConfig(), middleware: manager.middlewareMode ?? "off" });
+          writeJson(res, 200, {
+            ...manager.uiConfig(),
+            middleware: manager.middlewareMode ?? "off",
+            // 目录注入时机：设置页「目录注入时机」下拉的回显来源。
+            catalogInjection: manager.catalogInjectionMode?.() ?? "auto",
+          });
         } catch (error) {
           helpers.handleError(res, error);
         }
@@ -100,6 +105,23 @@ export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers):
               await manager.uiUpdate({ middleware: normalizeMiddlewareMode(rec.middleware) });
             }
             writeJson(res, 200, { ...manager.uiConfig(), middleware: manager.middlewareMode ?? "off" });
+            return;
+          }
+          // 目录注入时机：目录注入时机（auto/once）——非法值显式 400（与 config-schema
+          // z.union 同源）；合法值先热生效（pre-step 每轮现读 settings），再落盘。
+          if (typeof rec.catalogInjection === "string") {
+            if (rec.catalogInjection !== "auto" && rec.catalogInjection !== "once") {
+              writeJson(res, 400, { error: `invalid catalog injection mode: ${rec.catalogInjection}` });
+              return;
+            }
+            if (typeof manager.uiUpdate === "function") {
+              await manager.uiUpdate({ catalogInjection: normalizeCatalogInjectionMode(rec.catalogInjection) });
+            }
+            writeJson(res, 200, {
+              ...manager.uiConfig(),
+              middleware: manager.middlewareMode ?? "off",
+              catalogInjection: manager.catalogInjectionMode?.() ?? "auto",
+            });
             return;
           }
           writeJson(res, 200, await manager.updateUiConfig(body));

@@ -33,6 +33,8 @@ export interface RoutesManager {
   refreshFromDisk(): Promise<void>;
   uiConfig(): ClientUiConfig;
   updateUiConfig(raw: unknown): Promise<ClientUiConfig>;
+  /** 目录注入时机（目录注入时机；settings 优先、启动解析值兜底；pre-step 每轮现读）。 */
+  catalogInjectionMode?(): string;
   summary(): Record<string, unknown>;
   add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>;
   update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>;

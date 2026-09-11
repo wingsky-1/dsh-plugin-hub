@@ -14,6 +14,22 @@ import type { ClientUiConfig, UiPlacementConfig } from "../../types/interface.ts
 /** 空 description 工具的条件拼接默认开启。 */
 export const DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS = true;
 
+/** 目录注入时机默认值（`auto` = 与升级前行为一致）。 */
+export const DEFAULT_CATALOG_INJECTION = "auto" as const;
+
+/**
+ * 目录注入时机（与 catalog/injection.ts 的 CatalogInjectionMode 同源语义）。
+ * 在 schema 域就地声明：类型经 catalog/**interface.ts** 门面引入会新增一条
+ * 跨域值边（dir-imports 单调基线只许降不许升），故两侧各自持有字面量类型，
+ * 由本文件的归一化函数保证取值收敛。
+ */
+export type CatalogInjectionMode = "auto" | "once";
+
+/** 归一化目录注入时机：非法值安全回退 `auto`（不改既有默认行为）。 */
+export function normalizeCatalogInjectionMode(raw: unknown): CatalogInjectionMode {
+  return raw === "once" ? "once" : "auto";
+}
+
 /** 默认浮窗 UI 配置（与升级前一致，无回归；层级基准引用 placement-math 单一事实源，
  *  DEFAULT_Z_INDEX_BASE=10 对应 CSS 默认 z-index:10）。 */
 export const DEFAULT_UI_CONFIG: UiPlacementConfig = {
@@ -96,6 +112,7 @@ export const Config: z<{
   announceToAgent: boolean;
   storePath: string;
   announceCatalog: boolean;
+  catalogInjection: CatalogInjectionMode;
   catalogMaxEntries: number;
   enhanceEmptyDescriptions: boolean;
   resultTruncateBytes: number;
@@ -111,6 +128,8 @@ export const Config: z<{
   announceToAgent: z.boolean().default(true).description("是否向 Agent 宣告插件（能力清单由 <available_mcp_servers> 承担）"),
   storePath: z.string().description("全局服务器配置路径，留空用默认 <DSH_HOME>/dsh-mcp.json").disabled(true),
   announceCatalog: z.boolean().default(DEFAULT_ANNOUNCE_CATALOG).description("是否注入 MCP 能力目录（<available_mcp_servers>）"),
+  catalogInjection: z.union([z.const("auto"), z.const("once")]).default(DEFAULT_CATALOG_INJECTION)
+    .description("目录注入时机：auto=服务器集合变化时刷新（默认）；once=只在会话开头注入一次，之后每轮都不再注入（省 token、省每轮重算）"),
   catalogMaxEntries: z.number().default(DEFAULT_CATALOG_MAX_ENTRIES).description("目录注入条目上限").disabled(true),
   enhanceEmptyDescriptions: z.boolean().default(DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS).description("空描述工具条件拼接自定义描述"),
   resultTruncateBytes: z.number().default(DEFAULT_RESULT_TRUNCATE_BYTES).description("工具结果截断字节数").disabled(true),

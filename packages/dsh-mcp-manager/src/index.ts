@@ -167,6 +167,8 @@ export {
   listCatalog,
   findToolDetail,
 } from "./catalog/interface.ts";
+// 目录注入时机（设置页 / 配置解析 / 单测共用同一归一化入口）
+export { normalizeCatalogInjectionMode } from "./config/model/interface.ts";
 // mcpServers JSON 导入 / 归一化（config/model）
 export { fromClaudeEntry, parseClaudeJson, SERVER_NAME_PATTERN, normalizeServer } from "./config/model/interface.ts";
 // 统计与 Debug

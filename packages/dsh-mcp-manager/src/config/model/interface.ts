@@ -9,9 +9,12 @@ export { SERVER_NAME_PATTERN, normalizeServer } from "./normalize.ts";
 export { fromClaudeEntry, parseClaudeJson } from "./import.ts";
 export {
   DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS,
+  DEFAULT_CATALOG_INJECTION,
+  normalizeCatalogInjectionMode,
   DEFAULT_UI_CONFIG,
   normalizeUiConfig,
   buildConfigUiPatch,
   panelTopForAnchor,
   Config,
 } from "./config-schema.ts";
+export type { CatalogInjectionMode } from "./config-schema.ts";

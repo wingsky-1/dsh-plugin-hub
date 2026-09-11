@@ -65,6 +65,8 @@ export class McpManager {
   catalogCache: CatalogCache;
   catalogCachePath: string;
   uiConfigSource: () => any;
+  /** 目录注入时机回落值（apply 端已归一化的字面量；settings 命名空间未设时用它，目录注入时机）。 */
+  catalogInjectionFallback: string;
   /** 设置命名空间写入 sink（apply 时经 ctx.inject(["settings"]) 注入；注入不到则写不可用）。 */
   uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>;
   /**
@@ -117,6 +119,7 @@ export class McpManager {
       catalogCachePathFor: (root) => self.catalogCachePathFor(root),
     });
     this.uiConfigSource = () => ({ position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
+    this.catalogInjectionFallback = "auto";
     this.middlewareMode = "off";
     this.middleware = undefined;
     this.userStatePath = userStateFile();
@@ -128,6 +131,19 @@ export class McpManager {
   /** 读取 settings 命名空间中的 MCP UI 配置（供 /api/dsh-mcp/config 返回）。 */
   uiConfig(): ClientUiConfig {
     return normalizeUiConfig(this.uiConfigSource());
+  }
+
+  /**
+   * 读取目录注入时机（目录注入时机 设置页「目录注入时机」）：settings 命名空间优先，
+   * 没有则回落 config 解析出的初值。做成每次调用求值（而非启动快照），
+   * 设置页保存后 pre-step 无需重启即按新模式判定。
+   */
+  catalogInjectionMode(): string {
+    const source = this.uiConfigSource?.();
+    const raw = typeof source === "object" && source !== null
+      ? (source as Record<string, unknown>).catalogInjection
+      : undefined;
+    return raw === "once" ? "once" : raw === "auto" ? "auto" : this.catalogInjectionFallback;
   }
 
   /**

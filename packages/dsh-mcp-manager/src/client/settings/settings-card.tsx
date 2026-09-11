@@ -22,6 +22,7 @@ export function SettingsCard() {
   const useEffect = React.useEffect;
   const [cfg, setCfg] = useState(null) as any;
   const [middleware, setMiddleware] = useState("project");
+  const [catalogInjection, setCatalogInjection] = useState("auto");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null) as any;
@@ -35,6 +36,7 @@ export function SettingsCard() {
       if (live && c !== null && typeof c === "object") {
         setCfg(c);
         if (typeof c.middleware === "string") setMiddleware(c.middleware);
+        if (c.catalogInjection === "once" || c.catalogInjection === "auto") setCatalogInjection(c.catalogInjection);
       }
     }).catch(() => {});
     return () => {
@@ -75,6 +77,7 @@ export function SettingsCard() {
     try {
       const payload: any = { ...cfg };
       if (middleware !== (cfg.middleware ?? "project")) payload.middleware = middleware;
+      if (catalogInjection !== (cfg.catalogInjection ?? "auto")) payload.catalogInjection = catalogInjection;
       await api(API.config, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -146,6 +149,18 @@ export function SettingsCard() {
               <option value="project">{t("modeProject")}</option>
               <option value="all">{t("modeAll")}</option>
               <option value="off">{t("modeOff")}</option>
+            </select>
+          </div>
+          <div className="dm-set-row">
+            <label htmlFor="dm-set-catalog-injection">{t("catalogInjectionLabel")}</label>
+            <select
+              id="dm-set-catalog-injection"
+              className="dm-set-input"
+              value={catalogInjection}
+              onChange={(e: any) => setCatalogInjection(e.target.value)}
+            >
+              <option value="auto">{t("catalogInjectionAuto")}</option>
+              <option value="once">{t("catalogInjectionOnce")}</option>
             </select>
           </div>
           <div className="dm-set-row">

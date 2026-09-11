@@ -22,6 +22,7 @@ import { loadDisabledTools } from "../config/store/interface.ts";
 import { makeMiddlewareHotSwitch } from "./apply-runtime.ts";
 import { normalizeMiddlewareMode, makeResolveRoot } from "../workspace/interface.ts";
 import { registerCatalogInjection, setupConfigWatchersAsync, setupRoutesAndBroadcast } from "./apply-runtime.ts";
+import type { CatalogInjectionMode } from "../config/model/interface.ts";
 import { provideMcpManagerService } from "./apply-services.ts";
 import {
   injectSettingsSink,
@@ -71,6 +72,8 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
     ? Math.floor(config?.resultTruncateBytes as number)
     : DEFAULT_TRUNCATE;
   manager.enhancement = { enhanceEmptyDescriptions, resultTruncateBytes };
+  // 目录注入时机：目录注入时机回落值（settings 命名空间未设时用它；pre-step 每次现读）。
+  manager.catalogInjectionFallback = options.catalogInjection;
 
   // 核心化服务（官方 storageDomain 模式）：对外暴露 ctx.mcpManager（apply-services）。
   provideMcpManagerService(ctx, manager);
@@ -129,7 +132,7 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
 async function assembleEnabledRuntime(
   ctx: Context,
   manager: McpManager,
-  options: { announceCatalog: boolean; announceToAgent: boolean; catalogMaxEntries: number; middlewarePolicy: Record<string, unknown>; middlewareModeRaw: string | undefined },
+  options: { announceCatalog: boolean; catalogInjection: CatalogInjectionMode; announceToAgent: boolean; catalogMaxEntries: number; middlewarePolicy: Record<string, unknown>; middlewareModeRaw: string | undefined },
   syncMiddlewareFromSettings: () => void,
 ): Promise<EnabledRuntimeDisposers> {
   // F3（#382）：中间层初始化提前到 startAll 之前（防「先建后停」竞态，详见
@@ -174,7 +177,7 @@ async function assembleEnabledRuntime(
 
   let disposeInjection = () => {};
   if (options.announceCatalog) {
-    disposeInjection = registerCatalogInjection(ctx, manager, options.catalogMaxEntries);
+    disposeInjection = registerCatalogInjection(ctx, manager, options.catalogMaxEntries, options.catalogInjection);
   }
 
   const disposeRoutes = ctx.effect(() => setupRoutesAndBroadcast(ctx, manager), "dsh-mcp-manager: routes");
