@@ -108,12 +108,11 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
 - 本地手动入口：`npx stryker run stryker.conf.d/dsh-<pkg>.json`（临时强制全量用
   官方 `--force` 参数，勿改配置文件）。
 - **测试单份维护（#423 方案 A）**：变异测试复用 `packages/*/test/*.test.ts`，
-  测试单份维护、变异自动覆盖。`*.test.ts` 仍 `import "../lib/index.js"`
-  （普通 `pnpm test`/smoke 测构建产物）；Stryker 宿主内经
-  `scripts/test/mutation-lib-to-src-hook.mjs`（`--import`）在 `nextResolve` 前把
-  `packages/<pkg>/lib/<relative-file>.(js|ts)` 重定向到**同包**
-  `packages/<pkg>/src/<relative-file>.ts`，支持任意层级的相对路径与 file URL，
-  并拒绝 shared、node_modules、client 产物、跨包与 `..` 越界。
+  测试单份维护、变异自动覆盖。**#722 起变异面（`unit/`、`integration/` 两层）内的
+  `*.test.ts` 直接 `import "../src/**"`**，变异与覆盖率都跑在源码上，不再需要解析期
+  重定向；`#423` 时代的 `scripts/test/mutation-lib-to-src-{hook,loader}.mjs` 已随
+  #722 阶段五退役（连同其最后的消费者 `scripts/gate/cov.mjs`）。`e2e/` 与 `client/`
+  层仍读 `lib/` 产物（前者跑真实 IO、后者测客户端契约），二者不在变异面内。
   仓库出现任何遗留 src 副本测试文件（含未跟踪）即 `scripts/gate/forbid-src-tests.mjs`
   判红（ci.yml repo-gate 步骤「Forbid legacy src tests」）。
 
@@ -495,16 +494,6 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 - **残留句柄在 `finally` 里回收**：测试自己起的 server / socket / 定时器 / watcher 必须在
   用例结束时关闭。per-file 隔离（每个测试文件独立环境）下，未回收的句柄会让**整个包**挂到
   runner 超时才判红，而不是只红那一个文件。
-- **分诊工具（只报告，不判红）**：排查挂起或评估隔离模式时，先逐文件分诊：
-
-  ```sh
-  node scripts/gate/probe-handles.mjs [--only <子串>] [--timeout <ms>] [--grace <ms>] [--idle <ms>] [--json]
-  ```
-
-  它在 per-file 隔离下逐文件运行并给出四态：`clean` / `leak`（对照组确认是残留句柄）/
-  `stall`（超时或静默且对照组也挂住，探针**无法**定性，需人工看 stdout）/ `fail`（含顺序依赖
-  在隔离下暴露）。判定依据与已知局限见该脚本头注释；探针应在**无并发测试**时运行，否则慢文件
-  可能被墙钟误判。
 
 ## 6. 多端兼容（三操作系统 + 三访问形态 + 明暗双主题）
 

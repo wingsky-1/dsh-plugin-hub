@@ -24,7 +24,6 @@
     "gate:pr": "node scripts/gate/local-gate.mjs --tier pr",
     "gate:full": "node scripts/gate/local-gate.mjs --tier full",
     "cov": "vitest run --coverage --project unit --project integration",
-    "cov:src": "node scripts/gate/cov.mjs",
     "crap": "node scripts/gate/crap-check.mjs"
   },
   "keywords": [

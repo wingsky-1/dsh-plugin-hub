@@ -89,7 +89,7 @@ test('F15 反证：段省略 excludes 时生成器注入默认值（fixture 最�
           },
         },
       }, null, 2)}\n`,
-      [`packages/${pkg}/package.json`]: `${JSON.stringify({ name: pkg, scripts: { test: 'node ../../scripts/gate/run-tests.mjs --min 1' } }, null, 2)}\n`,
+      [`packages/${pkg}/package.json`]: `${JSON.stringify({ name: pkg, scripts: { test: 'node ../../scripts/test/run-vitest.mjs --min 1' } }, null, 2)}\n`,
     }
     for (const [rel, content] of Object.entries(files)) {
       const abs = join(root, rel)

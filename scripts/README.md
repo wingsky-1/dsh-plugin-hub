@@ -47,7 +47,6 @@
 - `test/collect-licenses.test.ts` — collect-licenses 脚本自测。
 - `test/crap-check.test.ts` — crap-check 脚本自测（config.strict 单一开关；#722 起含「src 口径数据必须 fail-closed」用例）。
 - `test/threshold-monotonic.test.ts` — 阈值单调性自测（#722：vitest.config.ts 的 coverage.thresholds 提取、降线判红、缺块 fail-closed）。
-- `test/mutation-lib-to-src-hook.mjs` / `mutation-lib-to-src-loader.mjs` — #423 方案 A：Stryker 宿主将同包 `packages/<pkg>/lib/<relative-file>.(js|ts)` 重定向到 `src/<relative-file>.ts`；只处理相对/file URL，保留 packages 边界并排除 shared、node_modules、client 与路径穿越。
 
 ## data/（配置数据）
 

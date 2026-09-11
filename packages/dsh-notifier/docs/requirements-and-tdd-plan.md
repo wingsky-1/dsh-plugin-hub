@@ -193,7 +193,7 @@
 
 ## 3. 测试套件审计结论（覆盖全读 + 盲区交叉验证）
 
-- 运行模型：非 node:test；顶层 assert + try/finally；`test/**/*.test.ts` 经 scripts/gate/run-tests.mjs（逐文件 spawn `node --test --test-isolation=process --test-concurrency=1`，包内串行）执行（防 fetch mock 交错 #508；#690 S2 前由 smoke.ts 聚合入口承担）；测试主体 import `../lib/index.js` 产物；变异经 hook 重定向 src
+- 运行模型：非 node:test；顶层 assert + try/finally；`test/**/*.test.ts` 经自研 `run-tests.mjs`（#722 阶段五已退役，文件已从仓库删除；迁移前口径为逐文件 spawn `node --test --test-isolation=process --test-concurrency=1`，包内串行）执行（防 fetch mock 交错 #508；#690 S2 前由 smoke.ts 聚合入口承担）；测试主体 import `../lib/index.js` 产物；变异经 hook 重定向 src
 - 补充（#722 阶段一）：运行器已由 vitest 取代——包内 `pnpm test` = `scripts/test/run-vitest.mjs --min 35`，
   用例结构为 describe/it，断言库为 vitest expect；上文 runner 描述为迁移前的审计快照。
 - 断言强度：整体强（文案精确 match / 状态机中间态 / HTTP 逐字段 / 脱敏深等 / service.update 只收变更键）；哑断言仅 e2e-edge:210/224 两处 `assert.ok(true)`；无读私有字段；轮询为主（waitForHistory/pollUntil/pollStatus 20ms）

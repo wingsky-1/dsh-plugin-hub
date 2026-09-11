@@ -54,7 +54,7 @@
 * **原理**：传统变异测试针对构建产物（`lib/index.js`），编译打包造成的代码混淆和行号位移会导致增量指纹极易失效，且每次测试都需前置全量 build。
 * **做法**：测试用例中保持正常的包入口引用（`import "../lib/index.js"`），但在 Stryker 运行时通过 Node `--import hook`（如 `mutation-lib-to-src-hook.mjs`）在模块解析（`nextResolve`）阶段动态将 `packages/<pkg>/lib/**` 重定向到 `packages/<pkg>/src/**.ts`。
 * **收益**：Mutant 指纹直接锚定在 `.ts` 源码 AST 上，源码局部修改绝不引发跨文件指纹漂移。
-* **#722 后的状态**：测试用例改为直接 `import "../src/**"`，重定向 hook 不再参与 Stryker 链路（`--import` 注入随之退役）；`mutation-lib-to-src-hook.mjs` 仅保留给 `scripts/gate/cov.mjs`（`cov:src`）使用。本节的「收益」由「测试直连源码」直接兑现，且不再依赖解析期改写。
+* **#722 后的状态**：测试用例改为直接 `import "../src/**"`，重定向 hook 不再参与 Stryker 链路（`--import` 注入随之退役）。**阶段五已把 hook 两件套（`mutation-lib-to-src-hook.mjs` / `mutation-lib-to-src-loader.mjs`）与其最后的消费者 `scripts/gate/cov.mjs`（`cov:src`）一并删除**——覆盖率切到 vitest 的 src 口径后，解析期重定向不再有对象。本节的「收益」由「测试直连源码」直接兑现，且不再依赖解析期改写。
 
 ### 3.2 注入 Node.js 编译缓存（Compile Cache）
 * **原理**：Stryker 的并发 Sandbox 在执行测试时，会反复拉起独立 Node 进程动态转译 TypeScript 源码。
