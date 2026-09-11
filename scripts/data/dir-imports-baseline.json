@@ -2,6 +2,24 @@
   "$comment": "S0 门禁基线（#690）：每包每类计数只许降不许升；uncoveredSrcFiles 只许减不许增。由 verify-dir-imports.mjs --write-baseline 生成。",
   "version": 1,
   "packages": {
+    "dsh-mcp-manager": {
+      "modules": 14,
+      "scannedSrcFiles": 63,
+      "allSrcTsFiles": 78,
+      "interfaceFacades": 14,
+      "leafValueEdges": 34,
+      "leafModuleCycles": 4,
+      "fileValueEdges": 118,
+      "fileCycles": 4,
+      "crossModuleRefs": 139,
+      "raLegacy": 95,
+      "raLegacyValue": 53,
+      "raLegacyType": 42,
+      "implToOtherImpl": 0,
+      "missingInterface": 0,
+      "directImpl": 1,
+      "uncoveredSrcFiles": []
+    },
     "dsh-lan-proxy": {
       "modules": 0,
       "scannedSrcFiles": 8,
@@ -18,24 +36,6 @@
       "implToOtherImpl": 0,
       "missingInterface": 0,
       "directImpl": 0,
-      "uncoveredSrcFiles": []
-    },
-    "dsh-mcp-manager": {
-      "modules": 14,
-      "scannedSrcFiles": 63,
-      "allSrcTsFiles": 78,
-      "interfaceFacades": 14,
-      "leafValueEdges": 34,
-      "leafModuleCycles": 4,
-      "fileValueEdges": 117,
-      "fileCycles": 4,
-      "crossModuleRefs": 134,
-      "raLegacy": 91,
-      "raLegacyValue": 52,
-      "raLegacyType": 39,
-      "implToOtherImpl": 0,
-      "missingInterface": 0,
-      "directImpl": 1,
       "uncoveredSrcFiles": []
     },
     "dsh-notifier": {

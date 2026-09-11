@@ -1685,7 +1685,24 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
     const read = fakeRes();
     await find(ROUTES.config).handler(fakeReq("GET", ROUTES.config), read);
     const readBack = JSON.parse(read.state.body);
-    expect(readBack).toEqual({ position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60, zIndexBase: 10, middleware: "project" });
+    expect(readBack).toEqual({ position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60, zIndexBase: 10, middleware: "project", catalogInjection: "auto" });
+  });
+
+  it("config POST catalogInjection → 200 + GET 暴露该字段（目录注入时机 目录注入时机）", async () => {
+    const write = fakeRes();
+    await find(ROUTES.config).handler(fakeReq("POST", ROUTES.config, { catalogInjection: "once" }), write);
+    expect(write.state.status).toBe(200);
+    // fake manager 无 settings sink → 写不落盘，读回为当前值；断言字段始终存在。
+    const read = fakeRes();
+    await find(ROUTES.config).handler(fakeReq("GET", ROUTES.config), read);
+    const readBack = JSON.parse(read.state.body);
+    expect(["auto", "once"]).toContain(readBack.catalogInjection);
+  });
+
+  it("config POST catalogInjection 非法值 → 400（不静默回落）", async () => {
+    const bad = fakeRes();
+    await find(ROUTES.config).handler(fakeReq("POST", ROUTES.config, { catalogInjection: "always" }), bad);
+    expect(bad.state.status).toBe(400);
   });
 
   it("config POST middleware → 热切换 + 落盘（读回 middleware 变化）", async () => {
@@ -2120,6 +2137,59 @@ it("#389：settings 持久化 middleware → apply 后运行时同步", async ()
     await configRoute.handler(localReq("GET", ROUTES.config), read);
     const body = JSON.parse(read.state.body);
     expect(body.middleware, "settings 持久化 middleware 启动后同步（#389 重启恢复）").toBe("all");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// 目录注入时机经 apply 的真实 settings 链路落盘 + 读回（pre-step 每轮现读 settings，
+// 因此保存后无需重启 dsh web 即生效）。
+it("目录注入时机：config POST catalogInjection=once → 落盘并经 GET 读回 once", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-cat728-"));
+  let scopeValue = { ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } } };
+  const settingsStub = {
+    register(ns, schema, opts) {
+      return { get: () => ({ ...scopeValue }), watch: () => {} };
+    },
+    async write(ns, patch) {
+      scopeValue = { ...(scopeValue ?? {}), ...(patch ?? {}) };
+    },
+    update(ns, patch) {
+      if (!this || typeof this.write !== "function") {
+        throw new TypeError("settings.update 被以错误 this 调用");
+      }
+      return this.write(ns, patch);
+    },
+  };
+  const sctx = { settings: settingsStub, effect: (fn) => { const d = fn(); return () => {}; } };
+  const ctx = fakeCtx({
+    inject: (keys, cb) => {
+      if (Array.isArray(keys) && keys.includes("settings")) cb(sctx);
+      return () => {};
+    },
+  });
+  const localReq = (method, url, body) => ({
+    method,
+    url,
+    socket: { remoteAddress: "127.0.0.1" },
+    headers: { host: "localhost:3080", origin: "http://localhost:3080", "sec-fetch-site": "same-origin" },
+    async *[Symbol.asyncIterator]() {
+      if (body !== undefined) yield Buffer.from(JSON.stringify(body));
+    },
+  });
+  try {
+    await apply(ctx, { enabled: true, storePath: join(dir, "dsh-mcp.json") });
+    const configRoute = ctx.routes.find((route) => route.path === ROUTES.config);
+    const before = fakeRes();
+    await configRoute.handler(localReq("GET", ROUTES.config), before);
+    expect(JSON.parse(before.state.body).catalogInjection, "默认 auto").toBe("auto");
+    const write = fakeRes();
+    await configRoute.handler(localReq("POST", ROUTES.config, { catalogInjection: "once" }), write);
+    expect(write.state.status).toBe(200);
+    expect(scopeValue.catalogInjection, "落盘到 settings").toBe("once");
+    const read = fakeRes();
+    await configRoute.handler(localReq("GET", ROUTES.config), read);
+    expect(JSON.parse(read.state.body).catalogInjection, "读回 once（pre-step 即按新模式判定）").toBe("once");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2809,3 +2879,46 @@ describe("#362 补充 4：registerServer.toolDefinitions（调用方封装定义
   });
 });
 
+
+// 目录注入时机设置项：切到 once 后，pre-step 监听器必须
+// 一次都不再注入（这是用户要的"只在会话开头注入一次"），且不再走目录重算。
+it("目录注入时机：catalogInjection=once → pre-step 对已发布过目录的会话不再注入", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-once-"));
+  const ctx = fakeCtx();
+  try {
+    await apply(ctx, { enabled: true, announceCatalog: true, catalogInjection: "once", storePath: join(dir, "dsh-mcp.json") });
+    const preStep = ctx.listeners.get("agent/pre-step");
+    expect(preStep && preStep.length > 0, "pre-step 监听器已注册").toBeTruthy();
+    const listener = preStep[0];
+    // 会话历史里已有一条可见的目录消息 → once 应直接放行，不再注入。
+    const agent = {
+      session: {
+        header: { cwd: dir },
+        surface: { nodes: [1] },
+        events: [{ type: "user/message", seq: 1, data: { source: { kind: "mcp-catalog", entries: [{ name: "old" }] } } }],
+      },
+    };
+    const decision = { kind: "enter", messages: [{ id: "k1", role: "user", content: [] }] };
+    const out = await listener({ agent, messages: [], signal: { throwIfAborted: () => {} } }, async () => decision);
+    expect(out.messages.length, "once 下不再追加目录消息").toBe(1);
+    expect(out.messages[0].id).toBe("k1");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("目录注入时机：auto（默认）→ 历史为空时照常注入一次目录", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-auto-"));
+  const ctx = fakeCtx();
+  try {
+    await apply(ctx, { enabled: true, announceCatalog: true, storePath: join(dir, "dsh-mcp.json") });
+    const listener = ctx.listeners.get("agent/pre-step")[0];
+    const agent = { session: { header: { cwd: dir }, surface: { nodes: [] }, events: [] } };
+    const decision = { kind: "enter", messages: [] };
+    const out = await listener({ agent, messages: [], signal: { throwIfAborted: () => {} } }, async () => decision);
+    // 该项目无 MCP 配置 → 目录条目为空：不注入（既有语义），但决策对象原样返回。
+    expect(out.messages.length).toBe(0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -9,7 +9,8 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { installSettingsNamespace } from "../../../../shared/settings-namespace.js";
 import { DEFAULT_ANNOUNCE_CATALOG, DEFAULT_CATALOG_MAX_ENTRIES } from "../catalog/interface.ts";
-import { Config, DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS } from "../config/model/interface.ts";
+import { Config, DEFAULT_CATALOG_INJECTION, DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS, normalizeCatalogInjectionMode } from "../config/model/interface.ts";
+import type { CatalogInjectionMode } from "../config/model/interface.ts";
 import { DEFAULT_RESULT_TRUNCATE_BYTES } from "../connection/interface.ts";
 import { normalizeMiddlewareMode } from "../workspace/interface.ts";
 import type { McpManager } from "../connection/interface.ts";
@@ -22,6 +23,7 @@ export interface ApplyOptions {
   enabled: boolean;
   announceToAgent: boolean;
   announceCatalog: boolean;
+  catalogInjection: CatalogInjectionMode;
   catalogMaxEntries: number;
   middlewarePolicy: Record<string, unknown>;
   middlewareModeRaw: string | undefined;
@@ -46,6 +48,10 @@ export function resolveDebugConfig(config: Record<string, unknown> | undefined, 
 /** 解析全部布尔/数值/策略配置（兜底链引用具名常量，单一事实源）。 */
 export function resolveApplyOptions(config: Record<string, unknown> | undefined, settingsSource?: unknown): ApplyOptions {
   const announceCatalog = (config?.announceCatalog as boolean | undefined) ?? DEFAULT_ANNOUNCE_CATALOG;
+  // 目录注入时机：插件 Config 显式值优先，回落默认 auto（与升级前行为一致）。
+  const catalogInjection = config?.catalogInjection === undefined
+    ? DEFAULT_CATALOG_INJECTION
+    : normalizeCatalogInjectionMode(config.catalogInjection);
   const catalogMaxEntries = Number.isFinite(config?.catalogMaxEntries) && (config?.catalogMaxEntries as number) > 0
     ? Math.floor(config?.catalogMaxEntries as number)
     : DEFAULT_CATALOG_MAX_ENTRIES;
@@ -53,6 +59,7 @@ export function resolveApplyOptions(config: Record<string, unknown> | undefined,
     enabled: config?.enabled !== false,
     announceToAgent: config?.announceToAgent !== false,
     announceCatalog,
+    catalogInjection,
     catalogMaxEntries,
     middlewarePolicy: (config?.middlewarePolicy as Record<string, unknown> | undefined) ?? {},
     middlewareModeRaw: config?.middleware as string | undefined,

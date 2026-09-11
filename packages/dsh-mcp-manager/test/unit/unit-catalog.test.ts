@@ -28,6 +28,7 @@ const {
   catalogHistory,
   renderMcpCatalogUpdate,
   resolveCatalogInjection,
+  normalizeCatalogInjectionMode,
 } = await import("../../src/index.ts");
 
 describe("常量", () => {
@@ -574,5 +575,102 @@ describe("#723 catalogHistory 双形态识别", () => {
   it("他插件的 plugin 消息不得被误认", () => {
     expect(catalogHistory(agentOf([1], { kind: "plugin", plugin: "other", form: "snapshot", sections: [{ name: "mcp-catalog", text: body }] })))
       .toEqual({ published: false });
+  });
+});
+
+// 目录注入时机设置项 + 跨宿主版本事件源。
+// 回归背景：0.2.3 用 `session.snapshotEvents()` 读历史，而当前宿主只提供
+// `session.events`——该调用被可选链吞掉 → 历史恒空 → 去重失效 → 每轮 pre-step
+// 都注入一条完全相同的目录（实测同一会话 26 步注入 26 条）。
+describe("事件源跨宿主版本（#443 双线）", () => {
+  const entry = [{ name: "h1", text: "t" }];
+  const digest = digestCatalogEntries(entry);
+  const catalogEvent = (seq) => ({ type: "user/message", seq, data: { source: { kind: "mcp-catalog", entries: entry } } });
+
+  it("老宿主（只有 events getter，0.1.1-rc.x ~ 0.1.2-alpha.2）→ digest 命中（去重生效）", () => {
+    const agent = { session: { surface: { nodes: [7] }, events: [catalogEvent(7)] } };
+    expect(catalogHistory(agent)).toEqual({ visibleDigest: digest, published: true });
+  });
+
+  it("老宿主：目录被 compaction 遮蔽 → published 为真、无 digest（供 once 判定）", () => {
+    const agent = { session: { surface: { nodes: [] }, events: [catalogEvent(3)] } };
+    expect(catalogHistory(agent)).toEqual({ published: true });
+  });
+
+  it("新宿主（只有 snapshotEvents()）→ digest 命中（既有路径不回归）", () => {
+    const agent = { session: { surface: { nodes: [7] }, snapshotEvents: () => [catalogEvent(7)] } };
+    expect(catalogHistory(agent)).toEqual({ visibleDigest: digest, published: true });
+  });
+
+  it("两者都在 → snapshotEvents 优先（新宿主唯一合法路径）", () => {
+    const agent = {
+      session: {
+        surface: { nodes: [7] },
+        events: [],
+        snapshotEvents: () => [catalogEvent(7)],
+      },
+    };
+    expect(catalogHistory(agent)).toEqual({ visibleDigest: digest, published: true });
+  });
+
+  it("两者都缺 → 空历史（不抛）", () => {
+    expect(catalogHistory({ session: { surface: { nodes: [1] } } })).toEqual({ published: false });
+  });
+});
+
+describe("normalizeCatalogInjectionMode", () => {
+  it("once 原样返回", () => {
+    expect(normalizeCatalogInjectionMode("once")).toBe("once");
+  });
+
+  it("非法值 / undefined 回落 auto", () => {
+    expect(normalizeCatalogInjectionMode("always")).toBe("auto");
+    expect(normalizeCatalogInjectionMode(undefined)).toBe("auto");
+    expect(normalizeCatalogInjectionMode(42)).toBe("auto");
+  });
+});
+
+describe("resolveCatalogInjection：once 注入时机", () => {
+  const supervisors = () => new Map([["s", { server: { name: "s", description: "d" } }]]);
+  const catalogEvent = { type: "user/message", seq: 1, data: { source: { kind: "mcp-catalog", entries: [{ name: "old" }] } } };
+  // 老宿主形状（events getter）：与用户实测环境一致。
+  const publishedAgent = () => ({ session: { surface: { nodes: [] }, events: [catalogEvent] } });
+  const freshAgent = () => ({ session: { surface: { nodes: [] }, events: [] } });
+
+  it("已发布过目录 → 一次都不再注入（即使服务器集合变了）", () => {
+    const decision = { kind: "enter", messages: [{ id: "k1", role: "user", content: [] }] };
+    const out = resolveCatalogInjection(decision, [], supervisors(), 6, new Map(), publishedAgent(), "all", "once");
+    expect(out.messages.length).toBe(1);
+    expect(out.messages[0].id).toBe("k1");
+  });
+
+  it("本轮若已挂上目录消息则被撤销（幂等）", () => {
+    const stale = renderMcpCatalogMessage([{ name: "x" }]);
+    const decision = { kind: "enter", messages: [{ id: "k1", role: "user", content: [] }, stale] };
+    const out = resolveCatalogInjection(decision, [], supervisors(), 6, new Map(), publishedAgent(), "all", "once");
+    expect(out.messages.length).toBe(1);
+    expect(out.messages[0].id).toBe("k1");
+  });
+
+  it("从未发布 → 照常注入一次（会话首步）", () => {
+    const decision = { kind: "enter", messages: [] };
+    const out = resolveCatalogInjection(decision, [], supervisors(), 6, new Map(), freshAgent(), "all", "once");
+    expect(out.messages.length).toBe(1);
+    expect(out.messages[0].source.kind).toBe("plugin");
+  });
+
+  it("auto 下已发布且 digest 未变 → 不注入（既有语义不变）", () => {
+    const digestAgent = () => ({
+      session: {
+        surface: { nodes: [1] },
+        snapshotEvents: () => [{
+          type: "user/message",
+          seq: 1,
+          data: { source: { kind: "mcp-catalog", entries: composeCatalogEntries(supervisors(), 6, new Map()) } },
+        }],
+      },
+    });
+    const out = resolveCatalogInjection({ kind: "enter", messages: [] }, [], supervisors(), 6, new Map(), digestAgent(), "all", "auto");
+    expect(out.messages.length).toBe(0);
   });
 });

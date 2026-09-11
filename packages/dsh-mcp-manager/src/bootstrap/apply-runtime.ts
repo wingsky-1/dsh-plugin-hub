@@ -16,6 +16,8 @@ import type { Context } from "@deepseek-ai/cordis";
 import type { PreStepDecision } from "@deepseek-ai/dsh-agent";
 import type { CatalogCache, CatalogDecision, CatalogMessage, SupervisorLite, CatalogAgent } from "../catalog/interface.ts";
 import { resolveCatalogInjection } from "../catalog/interface.ts";
+import { normalizeCatalogInjectionMode } from "../config/model/interface.ts";
+import type { CatalogInjectionMode } from "../config/model/interface.ts";
 import { normalizeMiddlewareMode } from "../workspace/interface.ts";
 import type { McpManager } from "../connection/interface.ts";
 import { registerMiddlewareTools, registerDirectMcpGuard } from "../inject/interface.ts";
@@ -78,11 +80,14 @@ export function makeMiddlewareHotSwitch(
 /**
  * L1 能力目录注入（history-based 去重，仿 dsh-tool-skill catalog）：
  * 决策逻辑在 resolveCatalogInjection（纯函数，可单测）。
+ * @param injectionMode 启动时的注入时机（仅作兜底；运行期以 manager 现读值为准，
+ *   设置页改完无需重启即生效）。
  */
 export function registerCatalogInjection(
   ctx: Context,
   manager: McpManager,
   catalogMaxEntries: number,
+  injectionMode: CatalogInjectionMode = "auto",
 ): () => void {
   // 官方强类型 payload：PreStepDecision waterfall（{kind:'reject'}|{kind:'enter';messages}）。
   // 目录决策逻辑在纯函数 resolveCatalogInjection（自建 CatalogDecision 宽面，
@@ -90,6 +95,12 @@ export function registerCatalogInjection(
   return ctx.on("agent/pre-step", async ({ agent, messages, signal }, next) => {
     const decision = await next();
     signal.throwIfAborted();
+    // 目录注入时机：注入时机每次现读（settings 优先、启动解析值兜底），设置页改完即生效。
+    // once 的短路判定收口在 resolveCatalogInjection 内（catalog 域，避免本层新增
+    // 跨域值边；见 catalog/injection.ts 的 published 早退）。
+    const mode: CatalogInjectionMode = typeof manager.catalogInjectionMode === "function"
+      ? normalizeCatalogInjectionMode(manager.catalogInjectionMode())
+      : injectionMode;
     // 目录数据源按会话 cwd 计算（工作区缓存），不跟随 host 的"当前工作区"
     // 实时状态——切换工作区不改变本会话目录集合，MCP 没变化就不重复注入。
     const supervisors = await manager.catalogServersFor(agent?.session?.header?.cwd);
@@ -108,6 +119,7 @@ export function registerCatalogInjection(
       agent as unknown as CatalogAgent | undefined,
       // 热切换后目录文案按当前模式渲染（#362 设置页中间层模式下拉）。
       manager.middlewareMode,
+      mode,
     ) as unknown as PreStepDecision;
   });
 }
