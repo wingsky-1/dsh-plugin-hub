@@ -15,16 +15,15 @@
  *    service-contract-wiring.test.ts spawn tsc -p test/tsconfig.json）。
  * 2. 运行时：静态读取 apply.ts 源文本，提取 `ctx.provide("mcpManager", {...})`
  *    对象的方法名集合 + 参数个数/可选位，与契约清单比对（不多不少）——提供方
- *    删方法/改参数形状逃过 tsc 宽面签名时红。本文件由包内 `test/*.test.ts` glob 执行，
- *    随 `pnpm test` 运行（#690 S2 起不再由 smoke import 聚合）。
+ *    删方法/改参数形状逃过 tsc 宽面签名时红。
  *
  * 红线（#476）：不改 shared 契约层、不改两包 src——本文件只锁现状。
  * 无 @ts-nocheck：编译期断言必须真实参与类型检查。
  */
-import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
 // 提供方视角（与 src/service.ts 同款相对路径）：shared 类型面单一事实源。
 import type {
   McpManagerServerInput,
@@ -140,8 +139,16 @@ const pkgDir = fileURLToPath(new URL("../../", import.meta.url));
  * 故用源文本级静态提取（v2 方案「c 兜底」层级：方法名存在性 + 参数形状即可抓
  * 删方法/改参数量；不做 AST 级双真源）。括号配对跳过字符串与注释，防方法体
  * 内大括号干扰对象边界。
+ *
+ * 返回提取结果而非内部断言：锚定失败与配对失败由调用方用例分别断言（fail-loud
+ * 但保留每条断言的独立可见性）。
  */
-function extractProvidedServiceMethods(): Array<{ name: string; paramCount: number; optionalCount: number }> {
+function extractProvidedServiceMethods(): {
+  markerIndex: number;
+  bodyStart: number;
+  bodyEnd: number;
+  methods: Array<{ name: string; paramCount: number; optionalCount: number }>;
+} {
   const src = readFileSync(join(pkgDir, "src", "bootstrap", "apply-services.ts"), "utf8");
   // 锚定首个 `provide("mcpManager", {` marker（非 AST——测试刻意不做解析级双真源，
   // 方法名存在性 + 参数个数即可抓「删方法/改参数量」）。当前 apply.ts 全文件仅此
@@ -149,7 +156,9 @@ function extractProvidedServiceMethods(): Array<{ name: string; paramCount: numb
   // 调用或形态变化导致本提取失配，测试会红并提示人工更新（fail-loud，不静默）。
   const marker = 'provide("mcpManager", {';
   const markerIndex = src.indexOf(marker);
-  assert.ok(markerIndex >= 0, "apply-services.ts 应包含 ctx.provide(\"mcpManager\", {...}) 服务注入");
+  if (markerIndex < 0) {
+    return { markerIndex, bodyStart: -1, bodyEnd: -1, methods: [] };
+  }
 
   // 括号配对扫描：找到 provide 对象的完整区间（跳过字符串字面量与注释）。
   const skip = (s: string, i: number): number => {
@@ -213,7 +222,9 @@ function extractProvidedServiceMethods(): Array<{ name: string; paramCount: numb
     const next = skip(src, i);
     i = next > i ? next : i + 1;
   }
-  assert.ok(bodyStart >= 0 && bodyEnd > bodyStart, "provide 对象区间应可完整配对");
+  if (!(bodyStart >= 0 && bodyEnd > bodyStart)) {
+    return { markerIndex, bodyStart, bodyEnd, methods: [] };
+  }
   const body = src.slice(bodyStart, bodyEnd);
 
   const methods: Array<{ name: string; paramCount: number; optionalCount: number }> = [];
@@ -235,37 +246,43 @@ function extractProvidedServiceMethods(): Array<{ name: string; paramCount: numb
     if (params !== "") paramCount += 1;
     methods.push({ name: m[1], paramCount, optionalCount });
   }
-  return methods;
+  return { markerIndex, bodyStart, bodyEnd, methods };
 }
 
-// 顶层立即执行（不依赖 node:test runner——与同目录 unit-*.test.ts 的执行形态一致）。
-// 失败处理：打印 FAIL 后 **throw 原错误**（不置 exitCode 吞掉）——顶层抛错会让
-// 文件测试判 not ok、进程退出码非 0 真红（与 unit 文件同形态）。
-try {
-  const provided = extractProvidedServiceMethods();
-  const contractNames = CONTRACT_METHODS.map((x) => x.name);
-  const providedNames = provided.map((x) => x.name);
-  assert.deepEqual(
-    [...providedNames].sort(),
-    [...contractNames].sort(),
-    "apply.ts provide(\"mcpManager\") 方法名集合应与契约清单一致（不多不少）",
+describe("service-contract：apply.ts provide 方法面与契约清单一致", () => {
+  const extracted = extractProvidedServiceMethods();
+
+  it('apply-services.ts 应包含 ctx.provide("mcpManager", {...}) 服务注入', () => {
+    expect(extracted.markerIndex >= 0).toBe(true);
+  });
+
+  it("provide 对象区间应可完整配对", () => {
+    expect(extracted.bodyStart >= 0 && extracted.bodyEnd > extracted.bodyStart).toBe(true);
+  });
+
+  it('provide("mcpManager") 方法名集合应与契约清单一致（不多不少）', () => {
+    const contractNames = CONTRACT_METHODS.map((x) => x.name);
+    const providedNames = extracted.methods.map((x) => x.name);
+    expect([...providedNames].sort()).toEqual([...contractNames].sort());
+  });
+
+  it.each(CONTRACT_METHODS.map((x) => x.name))("provide 对象应含契约方法 %s", (name) => {
+    expect(extracted.methods.find((x) => x.name === name)).toBeTruthy();
+  });
+
+  it.each(CONTRACT_METHODS.map((x) => [x.name, x.paramCount]))(
+    "provide.%s 参数个数应与契约一致",
+    (name, paramCount) => {
+      const actual = extracted.methods.find((x) => x.name === name);
+      expect(actual?.paramCount).toBe(paramCount);
+    },
   );
-  for (const expected of CONTRACT_METHODS) {
-    const actual = provided.find((x) => x.name === expected.name);
-    assert.ok(actual, `provide 对象应含契约方法 ${expected.name}`);
-    assert.equal(
-      actual.paramCount,
-      expected.paramCount,
-      `provide.${expected.name} 参数个数应与契约一致（契约=${expected.paramCount}）`,
-    );
-    assert.equal(
-      actual.optionalCount,
-      expected.optionalCount,
-      `provide.${expected.name} 可选参数个数应与契约一致（契约=${expected.optionalCount}）`,
-    );
-  }
-  console.log("  ok   service-contract: apply.ts provide 方法面与契约清单一致（8 方法/参数形状）");
-} catch (error) {
-  console.error(`  FAIL service-contract: ${(error as Error).message}`);
-  throw error;
-}
+
+  it.each(CONTRACT_METHODS.map((x) => [x.name, x.optionalCount]))(
+    "provide.%s 可选参数个数应与契约一致",
+    (name, optionalCount) => {
+      const actual = extracted.methods.find((x) => x.name === name);
+      expect(actual?.optionalCount).toBe(optionalCount);
+    },
+  );
+});

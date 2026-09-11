@@ -8,244 +8,246 @@
  * - McpManager.connect：不存在抛错、已连接跳过、跨 scope 冲突抛错
  * - 边缘：projectStoreOrThrow 用于 project scope
  */
-import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { McpManager, McpStore, SCOPE_GLOBAL, SCOPE_PROJECT, normalizeServer } from "../../lib/index.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { McpManager, McpStore, SCOPE_PROJECT, normalizeServer } from "../../src/index.ts";
+
+const { apply } = await import("../../src/index.ts");
+
+let tempDirs = [];
+let managers = [];
+
+function makeTempDir(prefix) {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(async () => {
+  for (const manager of managers) {
+    try {
+      await manager.dispose();
+    } catch {
+      // 清理失败不掩盖用例结论
+    }
+  }
+  managers = [];
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  tempDirs = [];
+});
 
 /** 创建一个最小 mock store（临时文件，已加载）。 */
 function tempStore() {
-  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-unit-"));
+  const dir = makeTempDir("dsh-mcp-manager-unit-");
   const path = join(dir, "mcp.json");
   const store = new McpStore(path);
   store.data = { version: 1, servers: [] };
-  const cleanup = () => rmSync(dir, { recursive: true, force: true });
-  return { store, path, dir, cleanup };
+  return { store, path, dir };
 }
 
 /** 创建一个最小 McpManager（暂不 startAll，不连接真实服务器）。 */
 function makeManager(store) {
   const logger = { warn: () => {}, info: () => {}, error: () => {} };
   const ctx = { logger };
-  return new McpManager(ctx, store);
+  const manager = new McpManager(ctx, store);
+  managers.push(manager);
+  return manager;
 }
 
-// ---- McpManager.add ----
+function fixture() {
+  const { store, path } = tempStore();
+  return { store, path, manager: makeManager(store) };
+}
 
-{
-  const { store, cleanup } = tempStore();
-  try {
-    const manager = makeManager(store);
+/** 为 manager 挂上项目级 store（project scope 写入路径）。 */
+async function attachProjectStore(manager, prefix) {
+  const projDir = makeTempDir(prefix);
+  const projStore = new McpStore(join(projDir, ".dsh", "mcp.json"));
+  await projStore.load();
+  manager.projectStores.set(projDir, projStore);
+  manager.projectStore = projStore;
+  manager.projectRoot = projDir;
+  return { projDir, projStore };
+}
 
-    // 正常添加
+describe("McpManager.add", () => {
+  it("正常添加返回 server 名", async () => {
+    const { manager } = fixture();
     const server = await manager.add({ name: "srv-a", transport: "stdio", command: "echo" });
-    assert.equal(server.name, "srv-a");
-    assert.equal(server.enabled, true);
-    assert.equal(store.find("srv-a").name, "srv-a", "已落盘");
+    expect(server.name).toBe("srv-a");
+  });
 
-    // 重复名抛错
-    try {
-      await manager.add({ name: "srv-a", transport: "stdio", command: "echo" });
-      assert.fail("应抛错");
-    } catch (err) {
-      assert.match(err.message, /already exists/);
-    }
+  it("正常添加默认 enabled:true", async () => {
+    const { manager } = fixture();
+    const server = await manager.add({ name: "srv-a", transport: "stdio", command: "echo" });
+    expect(server.enabled).toBe(true);
+  });
 
-    // enabled:false 不报错（不 start，但落盘）
+  it("正常添加已落盘", async () => {
+    const { store, manager } = fixture();
+    await manager.add({ name: "srv-a", transport: "stdio", command: "echo" });
+    expect(store.find("srv-a").name).toBe("srv-a");
+  });
+
+  it("重复名抛错（already exists）", async () => {
+    const { manager } = fixture();
+    await manager.add({ name: "srv-a", transport: "stdio", command: "echo" });
+    await expect(manager.add({ name: "srv-a", transport: "stdio", command: "echo" })).rejects.toThrow(/already exists/);
+  });
+
+  it("enabled:false 不报错且返回 enabled:false", async () => {
+    const { manager } = fixture();
     const disabled = await manager.add({ name: "srv-off", transport: "stdio", command: "echo", enabled: false });
-    assert.equal(disabled.enabled, false);
-    assert.equal(store.find("srv-off").enabled, false);
+    expect(disabled.enabled).toBe(false);
+  });
 
-    // project scope 有 projectStore 时写入项目级
-    // 先构建 project store
-    const projDir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-proj-"));
-    try {
-      const projStore = new McpStore(join(projDir, ".dsh", "mcp.json"));
-      await projStore.load();
-      manager.projectStores.set(projDir, projStore);
-      manager.projectStore = projStore;
-      manager.projectRoot = projDir;
+  it("enabled:false 仍落盘", async () => {
+    const { store, manager } = fixture();
+    await manager.add({ name: "srv-off", transport: "stdio", command: "echo", enabled: false });
+    expect(store.find("srv-off").enabled).toBe(false);
+  });
 
-      const projServer = await manager.add({ name: "proj-srv", transport: "stdio", command: "echo" }, SCOPE_PROJECT);
-      assert.equal(projServer.name, "proj-srv");
-      assert.equal(projStore.find("proj-srv").name, "proj-srv");
-    } finally {
-      rmSync(projDir, { recursive: true, force: true });
-    }
+  it("project scope 有 projectStore 时写入项目级（返回值）", async () => {
+    const { manager } = fixture();
+    await attachProjectStore(manager, "dsh-mcp-manager-proj-");
+    const projServer = await manager.add({ name: "proj-srv", transport: "stdio", command: "echo" }, SCOPE_PROJECT);
+    expect(projServer.name).toBe("proj-srv");
+  });
 
-    cleanup();
-  } catch (err) {
-    cleanup();
-    throw err;
-  }
-}
+  it("project scope 有 projectStore 时写入项目级（项目 store 落盘）", async () => {
+    const { manager } = fixture();
+    const { projStore } = await attachProjectStore(manager, "dsh-mcp-manager-proj-");
+    await manager.add({ name: "proj-srv", transport: "stdio", command: "echo" }, SCOPE_PROJECT);
+    expect(projStore.find("proj-srv").name).toBe("proj-srv");
+  });
+});
 
-// ---- McpManager.update ----
-
-{
-  const { store, cleanup } = tempStore();
-  try {
-    const manager = makeManager(store);
+describe("McpManager.update", () => {
+  it("正常更新返回新 command", async () => {
+    const { manager } = fixture();
     await manager.add({ name: "upd", transport: "stdio", command: "echo" });
-
-    // 正常更新
     const updated = await manager.update("upd", { command: "cat" });
-    assert.equal(updated.command, "cat");
-    assert.equal(store.find("upd").command, "cat", "落盘更新");
+    expect(updated.command).toBe("cat");
+  });
 
-    // 不存在的名抛错
-    try {
-      await manager.update("nonexistent", { command: "x" });
-      assert.fail("应抛错");
-    } catch (err) {
-      assert.match(err.message, /not found/);
-    }
+  it("正常更新落盘", async () => {
+    const { store, manager } = fixture();
+    await manager.add({ name: "upd", transport: "stdio", command: "echo" });
+    await manager.update("upd", { command: "cat" });
+    expect(store.find("upd").command).toBe("cat");
+  });
 
-    // project scope 且 projectStore 存在时写入项目级
-    const projDir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-upd-"));
-    try {
-      const projStore = new McpStore(join(projDir, ".dsh", "mcp.json"));
-      await projStore.load();
-      projStore.upsert(normalizeServer({ name: "p-upd", transport: "stdio", command: "echo" }));
-      manager.projectStores.set(projDir, projStore);
-      manager.projectStore = projStore;
-      manager.projectRoot = projDir;
+  it("不存在的名抛错（not found）", async () => {
+    const { manager } = fixture();
+    await expect(manager.update("nonexistent", { command: "x" })).rejects.toThrow(/not found/);
+  });
 
-      const pUpdated = await manager.update("p-upd", { command: "cat" }, SCOPE_PROJECT);
-      assert.equal(pUpdated.command, "cat");
-    } finally {
-      rmSync(projDir, { recursive: true, force: true });
-    }
+  it("project scope 且 projectStore 存在时写入项目级", async () => {
+    const { manager } = fixture();
+    await manager.add({ name: "upd", transport: "stdio", command: "echo" });
+    const { projStore } = await attachProjectStore(manager, "dsh-mcp-manager-upd-");
+    projStore.upsert(normalizeServer({ name: "p-upd", transport: "stdio", command: "echo" }));
 
-    cleanup();
-  } catch (err) {
-    cleanup();
-    throw err;
-  }
-}
+    const pUpdated = await manager.update("p-upd", { command: "cat" }, SCOPE_PROJECT);
+    expect(pUpdated.command).toBe("cat");
+  });
+});
 
-// ---- McpManager.connect ----
-
-{
-  const { store, cleanup } = tempStore();
-  try {
-    const manager = makeManager(store);
+describe("McpManager.connect", () => {
+  it("不存在的名抛错（not found）", async () => {
+    const { manager } = fixture();
     await manager.add({ name: "conn", transport: "stdio", command: "echo" });
+    await expect(manager.connect("no-such")).rejects.toThrow(/not found/);
+  });
 
-    // 不存在抛错
-    try {
-      await manager.connect("no-such");
-      assert.fail("应抛错");
-    } catch (err) {
-      assert.match(err.message, /not found/);
-    }
-
+  it("supervisor 已登记", async () => {
+    const { manager } = fixture();
+    await manager.add({ name: "conn", transport: "stdio", command: "echo" });
     // 连接（smoke 已测 SDK 端到端，此处只验证方法不抛且 supervisor 已登记）
     await manager.connect("conn");
     const supervisor = manager.supervisors.get("conn");
-    assert.ok(supervisor !== undefined, "supervisor 已登记");
+    expect(supervisor).toBeDefined();
+  });
 
-    // 已连接时重复 connect 不抛（返回 early）
+  it("已连接时重复 connect 不抛（返回 early）", async () => {
+    const { manager } = fixture();
+    await manager.add({ name: "conn", transport: "stdio", command: "echo" });
     await manager.connect("conn");
+    await expect(manager.connect("conn")).resolves.toBeUndefined();
+  });
 
-    // project scope 没有 projectStore 抛错
-    try {
-      await manager.connect("nope", SCOPE_PROJECT);
-      assert.fail("应抛错");
-    } catch (err) {
-      assert.match(err.message, /no active project/);
-    }
+  it("project scope 没有 projectStore 抛错（no active project）", async () => {
+    const { manager } = fixture();
+    await manager.add({ name: "conn", transport: "stdio", command: "echo" });
+    await expect(manager.connect("nope", SCOPE_PROJECT)).rejects.toThrow(/no active project/);
+  });
+});
 
-    cleanup();
-  } catch (err) {
-    cleanup();
-    throw err;
-  }
-}
+// 通过 apply 间接覆盖 installSettingsNamespace 的降级分支
+describe("通过 apply 间接覆盖 installSettingsNamespace 降级分支", () => {
+  it("ctx.inject 不可用时静默降级（不抛）", async () => {
+    // 通过 fakeCtx 模拟 apply 的 settings 注入路径
+    // 覆盖 installSettingsNamespace 的 ctx.inject 不可用分支
+    const noInjectCtx = {
+      logger: { warn: () => {} },
+      // 没有 inject 方法
+      effect: () => () => {},
+      on: () => () => {},
+      tools: { register: () => () => {} },
+      webServer: { register: () => () => {} },
+      systemPrompt: { section: () => () => {} },
+    };
+    const dir = makeTempDir("dsh-mcp-manager-ni-");
+    await expect(apply(noInjectCtx, { enabled: false, storePath: join(dir, "mcp.json") })).resolves.toBeUndefined();
+  });
 
-// ---- 通过 apply 间接覆盖 installSettingsNamespace 和 isUnloading ----
+  it("settings.register 抛错时降级（不抛）", async () => {
+    // settings 服务存在但 register 抛错
+    const failSettingsCtx = {
+      logger: { warn: () => {} },
+      inject: (keys, cb) => {
+        if (Array.isArray(keys) && keys.includes("settings")) {
+          cb({
+            settings: {
+              register: () => { throw new Error("register failed"); },
+            },
+            effect: () => () => {},
+          });
+        }
+        return () => {};
+      },
+      effect: () => () => {},
+      on: () => () => {},
+      tools: { register: () => () => {} },
+      webServer: { register: () => () => {} },
+      systemPrompt: { section: () => () => {} },
+    };
+    const dir = makeTempDir("dsh-mcp-manager-sf-");
+    await expect(apply(failSettingsCtx, { enabled: false, storePath: join(dir, "mcp.json") })).resolves.toBeUndefined();
+  });
 
-{
-  // 通过 fakeCtx 模拟 apply 的 settings 注入路径
-  // 覆盖 installSettingsNamespace 的 ctx.inject 不可用分支
-  const noInjectCtx = {
-    logger: { warn: () => {} },
-    // 没有 inject 方法
-    effect: () => () => {},
-    on: () => () => {},
-    tools: { register: () => () => {} },
-    webServer: { register: () => () => {} },
-    systemPrompt: { section: () => () => {} },
-  };
-  // 不抛即可（ctx.inject 不可用时静默降级）
-  const { apply } = await import("../../lib/index.js");
-  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-ni-"));
-  try {
-    await apply(noInjectCtx, { enabled: false, storePath: join(dir, "mcp.json") });
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-// ---- 通过 apply 间接覆盖 installSettingsNamespace 的 settings.register 失败分支 ----
-
-{
-  // settings 服务存在但 register 抛错
-  const failSettingsCtx = {
-    logger: { warn: () => {} },
-    inject: (keys, cb) => {
-      if (Array.isArray(keys) && keys.includes("settings")) {
-        cb({
-          settings: {
-            register: () => { throw new Error("register failed"); },
-          },
-          effect: () => () => {},
-        });
-      }
-      return () => {};
-    },
-    effect: () => () => {},
-    on: () => () => {},
-    tools: { register: () => () => {} },
-    webServer: { register: () => () => {} },
-    systemPrompt: { section: () => () => {} },
-  };
-  const { apply } = await import("../../lib/index.js");
-  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-sf-"));
-  try {
-    await apply(failSettingsCtx, { enabled: false, storePath: join(dir, "mcp.json") });
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
-
-// ---- 通过 apply 间接覆盖 installSettingsNamespace 的 settings 缺少 register 分支 ----
-
-{
-  // settings 服务存在但 register 不是函数
-  const noRegCtx = {
-    logger: { warn: () => {} },
-    inject: (keys, cb) => {
-      if (Array.isArray(keys) && keys.includes("settings")) {
-        cb({
-          settings: {},
-          effect: () => () => {},
-        });
-      }
-      return () => {};
-    },
-    effect: () => () => {},
-    on: () => () => {},
-    tools: { register: () => () => {} },
-    webServer: { register: () => () => {} },
-    systemPrompt: { section: () => () => {} },
-  };
-  const { apply } = await import("../../lib/index.js");
-  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-nr-"));
-  try {
-    await apply(noRegCtx, { enabled: false, storePath: join(dir, "mcp.json") });
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
+  it("settings 缺少 register 时降级（不抛）", async () => {
+    // settings 服务存在但 register 不是函数
+    const noRegCtx = {
+      logger: { warn: () => {} },
+      inject: (keys, cb) => {
+        if (Array.isArray(keys) && keys.includes("settings")) {
+          cb({
+            settings: {},
+            effect: () => () => {},
+          });
+        }
+        return () => {};
+      },
+      effect: () => () => {},
+      on: () => () => {},
+      tools: { register: () => () => {} },
+      webServer: { register: () => () => {} },
+      systemPrompt: { section: () => () => {} },
+    };
+    const dir = makeTempDir("dsh-mcp-manager-nr-");
+    await expect(apply(noRegCtx, { enabled: false, storePath: join(dir, "mcp.json") })).resolves.toBeUndefined();
+  });
+});
