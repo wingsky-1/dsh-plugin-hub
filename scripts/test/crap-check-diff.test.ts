@@ -12,8 +12,6 @@ import {
   mapOldToNewLine,
   isFunctionTouched,
   findBaseFunction,
-  functionsOf,
-  complexityOf,
 } from '../gate/crap-check.mjs'
 
 const ROOT = join(import.meta.dirname, '../..')
@@ -23,16 +21,16 @@ const SCRIPT = join(ROOT, 'scripts/gate/crap-check.mjs')
 
 test('parseGitDiff: 正确解析 unified diff hunk 并提取变更行号集合', () => {
   const diffSample = `
-diff --git a/packages/fake/lib/index.js b/packages/fake/lib/index.js
+diff --git a/packages/fake/src/index.ts b/packages/fake/src/index.ts
 index 1111111..2222222 100644
---- a/packages/fake/lib/index.js
-+++ b/packages/fake/lib/index.js
+--- a/packages/fake/src/index.ts
++++ b/packages/fake/src/index.ts
 @@ -10,3 +10,5 @@
  funcA()
 `
   const diffMap = parseGitDiff(diffSample.trim())
-  assert.ok(diffMap.has('packages/fake/lib/index.js'))
-  const entry = diffMap.get('packages/fake/lib/index.js')
+  assert.ok(diffMap.has('packages/fake/src/index.ts'))
+  const entry = diffMap.get('packages/fake/src/index.ts')
   assert.equal(entry.hunks.length, 1)
   assert.deepEqual(entry.hunks[0], { oldStart: 10, oldCount: 3, newStart: 10, newCount: 5 })
   // newChangedLines: 10, 11, 12, 13, 14
@@ -121,7 +119,7 @@ function setupGitFixture() {
 
   mkdirSync(join(dir, 'scripts/data'), { recursive: true })
   mkdirSync(join(dir, 'coverage'), { recursive: true })
-  mkdirSync(join(dir, 'packages/fake/lib'), { recursive: true })
+  mkdirSync(join(dir, 'packages/fake/src'), { recursive: true })
 
   // 写入默认配置：threshold=16, strict=false
   writeFileSync(join(dir, 'scripts/data/gauntlet.config.json'), JSON.stringify({ crap: { threshold: 16, strict: false } }))
@@ -134,8 +132,8 @@ function setupGitFixture() {
 test('#592 crap-check --diff: 新增函数 CRAP 超标拦截（exit 1）', () => {
   const dir = setupGitFixture()
   try {
-    const pkgLib = join(dir, 'packages/fake/lib/index.js')
-    writeFileSync(pkgLib, 'function baseFunc() { return 1; }\nbaseFunc();\n')
+    const pkgSrc = join(dir, 'packages/fake/src/index.ts')
+    writeFileSync(pkgSrc, 'function baseFunc() { return 1; }\nbaseFunc();\n')
     execFileSync('git', ['add', '.'], { cwd: dir, stdio: 'pipe' })
     execFileSync('git', ['commit', '-m', 'initial commit'], { cwd: dir, stdio: 'pipe' })
 
@@ -151,9 +149,9 @@ function complexNew(a, b, c, d) {
   return 0;
 }
 `
-    writeFileSync(pkgLib, newCode)
+    writeFileSync(pkgSrc, newCode)
     writeFileSync(join(dir, 'coverage/coverage-final.json'), JSON.stringify({
-      [pkgLib]: {
+      [pkgSrc]: {
         fnMap: {
           '0': { loc: { start: { line: 1, column: 0 } } },
           '1': { loc: { start: { line: 4, column: 0 } } },
@@ -174,8 +172,8 @@ function complexNew(a, b, c, d) {
 test('#592 crap-check --diff: 新增函数 CRAP 合规放行（exit 0）', () => {
   const dir = setupGitFixture()
   try {
-    const pkgLib = join(dir, 'packages/fake/lib/index.js')
-    writeFileSync(pkgLib, 'function baseFunc() { return 1; }\nbaseFunc();\n')
+    const pkgSrc = join(dir, 'packages/fake/src/index.ts')
+    writeFileSync(pkgSrc, 'function baseFunc() { return 1; }\nbaseFunc();\n')
     execFileSync('git', ['add', '.'], { cwd: dir, stdio: 'pipe' })
     execFileSync('git', ['commit', '-m', 'initial commit'], { cwd: dir, stdio: 'pipe' })
 
@@ -188,9 +186,9 @@ function simpleNew(a) {
   return 0;
 }
 `
-    writeFileSync(pkgLib, newCode)
+    writeFileSync(pkgSrc, newCode)
     writeFileSync(join(dir, 'coverage/coverage-final.json'), JSON.stringify({
-      [pkgLib]: {
+      [pkgSrc]: {
         fnMap: {
           '0': { loc: { start: { line: 1, column: 0 } } },
           '1': { loc: { start: { line: 4, column: 0 } } },
@@ -210,7 +208,7 @@ function simpleNew(a) {
 test('#592 crap-check --diff: 修改存量超标函数导致复杂度恶化拦截（exit 1）', () => {
   const dir = setupGitFixture()
   try {
-    const pkgLib = join(dir, 'packages/fake/lib/index.js')
+    const pkgSrc = join(dir, 'packages/fake/src/index.ts')
     // base: 存量超标函数，复杂度 4，未覆盖，CRAP = 4^2 + 4 = 20 > 16
     const baseCode = `function legacyHeavy(a, b, c) {
   if (a) return 1;
@@ -220,7 +218,7 @@ test('#592 crap-check --diff: 修改存量超标函数导致复杂度恶化拦�
 }
 legacyHeavy();
 `
-    writeFileSync(pkgLib, baseCode)
+    writeFileSync(pkgSrc, baseCode)
     execFileSync('git', ['add', '.'], { cwd: dir, stdio: 'pipe' })
     execFileSync('git', ['commit', '-m', 'initial commit'], { cwd: dir, stdio: 'pipe' })
 
@@ -234,9 +232,9 @@ legacyHeavy();
 }
 legacyHeavy();
 `
-    writeFileSync(pkgLib, regressedCode)
+    writeFileSync(pkgSrc, regressedCode)
     writeFileSync(join(dir, 'coverage/coverage-final.json'), JSON.stringify({
-      [pkgLib]: {
+      [pkgSrc]: {
         fnMap: { '0': { loc: { start: { line: 1, column: 0 } } } },
         f: { '0': 0 }, // 未覆盖
       },
@@ -255,7 +253,7 @@ legacyHeavy();
 test('#592 crap-check --diff: 修改存量超标函数但复杂度降低/持平放行（exit 0）', () => {
   const dir = setupGitFixture()
   try {
-    const pkgLib = join(dir, 'packages/fake/lib/index.js')
+    const pkgSrc = join(dir, 'packages/fake/src/index.ts')
     // base: 存量超标函数，复杂度 5，未覆盖，CRAP = 5^2 + 5 = 30 > 16
     const baseCode = `function legacyHeavy(a, b, c, d) {
   if (a) return 1;
@@ -266,7 +264,7 @@ test('#592 crap-check --diff: 修改存量超标函数但复杂度降低/持平�
 }
 legacyHeavy();
 `
-    writeFileSync(pkgLib, baseCode)
+    writeFileSync(pkgSrc, baseCode)
     execFileSync('git', ['add', '.'], { cwd: dir, stdio: 'pipe' })
     execFileSync('git', ['commit', '-m', 'initial commit'], { cwd: dir, stdio: 'pipe' })
 
@@ -279,9 +277,9 @@ legacyHeavy();
 }
 legacyHeavy();
 `
-    writeFileSync(pkgLib, improvedCode)
+    writeFileSync(pkgSrc, improvedCode)
     writeFileSync(join(dir, 'coverage/coverage-final.json'), JSON.stringify({
-      [pkgLib]: {
+      [pkgSrc]: {
         fnMap: { '0': { loc: { start: { line: 1, column: 0 } } } },
         f: { '0': 0 },
       },
@@ -298,7 +296,7 @@ legacyHeavy();
 test('#592 crap-check --diff: 未触及的存量超标函数全部豁免报警（exit 0）', () => {
   const dir = setupGitFixture()
   try {
-    const pkgLib = join(dir, 'packages/fake/lib/index.js')
+    const pkgSrc = join(dir, 'packages/fake/src/index.ts')
     // base 包含一个严重超标的存量函数和一个普通函数
     const baseCode = `function untouchedHeavy(a, b, c, d, e) {
   if (a) return 1;
@@ -315,7 +313,7 @@ function touchedSmall(x) {
 untouchedHeavy();
 touchedSmall(1);
 `
-    writeFileSync(pkgLib, baseCode)
+    writeFileSync(pkgSrc, baseCode)
     execFileSync('git', ['add', '.'], { cwd: dir, stdio: 'pipe' })
     execFileSync('git', ['commit', '-m', 'initial commit'], { cwd: dir, stdio: 'pipe' })
 
@@ -336,9 +334,9 @@ function touchedSmall(x) {
 untouchedHeavy();
 touchedSmall(1);
 `
-    writeFileSync(pkgLib, newCode)
+    writeFileSync(pkgSrc, newCode)
     writeFileSync(join(dir, 'coverage/coverage-final.json'), JSON.stringify({
-      [pkgLib]: {
+      [pkgSrc]: {
         fnMap: {
           '0': { loc: { start: { line: 1, column: 0 } } },
           '1': { loc: { start: { line: 10, column: 0 } } },
@@ -367,7 +365,7 @@ test('#592 crap-check --diff: 无相关代码变更时放行（exit 0）', () =>
 
     const res = spawnSync(process.execPath, [SCRIPT, '--diff', 'HEAD'], { cwd: dir, encoding: 'utf8' })
     assert.equal(res.status, 0, `无相关变更必须 exit 0，实际输出：${res.stdout} ${res.stderr}`)
-    assert.match(res.stdout, /未检测到插件包编译产物/)
+    assert.match(res.stdout, /未检测到包 src 下的代码变更/)
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }

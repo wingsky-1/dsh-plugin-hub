@@ -81,6 +81,7 @@ function tierSteps(tier, { hitPackages, withCoverage }) {
     { label: 'test:src-tests（*.src.test.ts 禁现）', args: ['test:src-tests'] },
     { label: 'gate:homedir（src 禁直连 HOME）', args: ['gate:homedir'] },
     { label: 'docs:check（README/链接）', args: ['docs:check'] },
+    { label: 'lint（ESLint 复杂度门禁，阈值见 gauntlet.config.json）', args: ['lint'] },
   ]
   const prereqStep = {
     label: `build 编译面前置包（test:scripts 依赖：${PREREQ_PACKAGES.join(', ')}）`,
@@ -123,9 +124,10 @@ function tierSteps(tier, { hitPackages, withCoverage }) {
     scriptsSelfTest,
   ]
   if (withCoverage) {
-    // crap 不在此列（#722 阶段三）：其圈复杂度取自 lib 产物、覆盖率已切 src 口径，
-    // 入口自检 exit 2；src 口径重建归阶段 5，届时与 ESLint 复杂度规则同批接入。
     steps.push({ label: 'cov（vitest 覆盖率，unit + integration 直连 src）', args: ['cov'] })
+    // crap 于 #722 阶段五完成 src 口径重建（复杂度取自 ESLint 的 complexity 规则，覆盖率取自
+    // 同一份 src 口径产物），与 cov 同批恢复接入。
+    steps.push({ label: 'crap（CRAP 热点，strict 见 gauntlet.config.json）', args: ['crap'] })
   }
   return steps
 }

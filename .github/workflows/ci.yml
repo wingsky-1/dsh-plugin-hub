@@ -628,6 +628,9 @@ jobs:
       - name: Scripts self-test（维护脚本自测，含 workflow 结构静态断言）
         run: pnpm test:scripts
 
+      - name: Lint（ESLint 复杂度门禁；阈值唯一事实源 gauntlet.config.json 的 complexity 段）
+        run: pnpm lint
+
       - name: Forbid legacy src tests（#423：变异测试单份维护，*.src.test.ts 全仓禁现）
         run: node scripts/gate/forbid-src-tests.mjs
 

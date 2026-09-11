@@ -45,13 +45,24 @@
 - `test/run-vitest.mjs` — 包级 test 脚本的 vitest 包装：在 vitest 之上恢复 `--min <文件数>` fail-closed 判据（防 include 漂移的假绿）。
 - `test/build-client.test.ts` — build-client 脚本自测。
 - `test/collect-licenses.test.ts` — collect-licenses 脚本自测。
-- `test/crap-check.test.ts` — crap-check 脚本自测（config.strict 单一开关；#722 起含「src 口径数据必须 fail-closed」用例）。
+- `test/crap-check.test.ts` — crap-check 脚本自测（config.strict 单一开关；#722 阶段五起含「非 src 口径数据必须 fail-closed」用例）。
 - `test/threshold-monotonic.test.ts` — 阈值单调性自测（#722：vitest.config.ts 的 coverage.thresholds 提取、降线判红、缺块 fail-closed）。
 
 ## data/（配置数据）
 
 - `data/plugins-manifest.json` — 插件清单（某插件是否参与聚合/发布校验的唯一声明处）。
-- `data/gauntlet.config.json` — 变异与 CRAP 阈值唯一事实源（覆盖率阈值自 #722 阶段三起改由 `vitest.config.ts` 的 `coverage.thresholds` 承载）。
+- `data/gauntlet.config.json` — 变异 / CRAP / ESLint 复杂度阈值唯一事实源（覆盖率阈值自 #722 阶段三起改由 `vitest.config.ts` 的 `coverage.thresholds` 承载；`complexity` 段自 #722 阶段五起供 `tools/lint` 消费）。
+
+## tools/lint/（lint 工具链隔离包，非发布包）
+
+- 为什么不放 `packages/`：`typescript-eslint` 需要 TypeScript 的 compiler API，而仓根 `typescript` 是
+  tsgo 7.x（无 API，且根 `tsc` 由它提供、各包 build/typecheck 依赖它）。子包隔离让 lint 专用 TS 6 与
+  根 tsgo 共存；放在 `packages/` 之外还避免被插件清单 / 产物闸 / CI 矩阵误当插件包。
+- `lint/bin/lint.mjs` — `pnpm lint` 入口：固定以仓库根为 cwd（ESLint 的 basePath 与 lint-staged 传入
+  的路径据此同口径），默认 lint 面见脚本内 `DEFAULT_PATTERNS`。
+- `lint/eslint.config.js` — 扁平配置：`complexity` + `sonarjs/cognitive-complexity`；阈值读
+  `data/gauntlet.config.json` 的 `complexity` 段，不在配置里硬编码。
+- 上述前提由 `test/lint-toolchain.test.ts` 逐条钉死（根仍是 tsgo、子包有 compiler API、两版本共存）。
 
 ## 仓库根的派生生成物
 
