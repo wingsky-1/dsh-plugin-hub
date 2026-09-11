@@ -14,35 +14,32 @@
  *   GATE_VERDICT        needs.mutation-verdict.result（#217：聚合判分收尾 job）
  *   GATE_HAS_MUTATIONS  needs.changes.outputs.hasMutations（'true'/'false' 显式布尔）
  *   GATE_MUTATION_PKGS  needs.changes.outputs.mutationPackages（JSON 数组文本，恒为合法数组）
+ *   GATE_FULL_REQUESTED needs.changes.outputs.fullGate（'true'/'false'；#722 门禁分层开关）
  *
  * 判定表（fail-closed：任何未显式放行的组合一律红；维度：
- *   事件 × 切片(hasMutations) × coverage × 变异矩阵 × verdict）：
+ *   事件 × 全量开关(fullGate) × 切片(hasMutations) × coverage × 变异矩阵 × verdict）：
  *   1) changes != success → 红（一切切片判定的前提，#85 F2）；
- *   2) build-test != success → 红（全集构建是全局门禁的产物前提，评审 F1）；
+ *   2) build-test != success → 红（构建/测试切片是全局门禁的产物前提，评审 F1）；
  *   3) mutationPackages 解析失败 / 非数组、hasMutations 非 'true'/'false'、
- *      hasMutations 与切片非空性交叉矛盾 → 环境数据违约（exit 2，fail-closed）；
- *   4) pull_request 且 hasMutations='true'（该跑必须真跑）：
- *      - coverage 必须 success。failure/cancelled =「coverage 失败连坐」——
- *        c8 全仓 smoke 同级硬信号；矩阵与 coverage 平行不受连坐、会独立跑完，
- *        但聚合判分 verdict 因 if 要求 coverage success 而连带缺席，整体照红；
- *        skipped = 结构性违约（hasMutations=true 却缺席，if 契约被改坏）；
- *      - 变异矩阵不得 skipped（该维度与 coverage 平行，skipped = 门禁静默绕过，
- *        #187 堵语义漏洞；failure 容忍——实例级 stryker 非零退出由 verdict
- *        统一裁决，报告已 if: always() 下发）；
- *      - verdict 必须 success。skipped/failure/cancelled 一律红：skipped 点名
- *        「mutation 门禁绕过」，cancelled 点名「被取消（未完成判分）」，
- *        failure 点名「判分未通过」；
- *   5) pull_request 且 hasMutations='false'（空切片合法缺席）：coverage 只收
- *      skipped（普通 job if=false 语义确定）；变异矩阵与 verdict 收
- *      skipped/failure（GitHub 对零实例动态矩阵实测回报 failure 而非官方口径
- *      skipped，实证 run 32802575298；#217 后 if 含 hasMutations 使零实例形态
- *      理论上不再触发，宽容仅防御平台行为漂移）。success/cancelled 说明契约
- *      被破坏，照旧判红；
- *   6) 非 pull_request 事件（push / workflow_dispatch / 未来新增触发器）→
- *      coverage / 变异矩阵 / verdict 三者全部必须 skipped。这是 #187 触发面
- *      收敛不变量的 #217 扩展：主干覆盖与变异覆盖归 observe.yml 夜间全量、
- *      发版归 release.yml tag 管线；任一非 skipped 说明 ci.yml 中 if 的事件
- *      限制已被破坏，宁可显性红也不静默退化。
+ *      fullGate 非 'true'/'false'、hasMutations 与切片非空性交叉矛盾 → 环境数据违约
+ *      （exit 2，fail-closed）；
+ *   4) pull_request 且 fullGate='false'（#722 默认增量门禁）：coverage / 变异矩阵 /
+ *      verdict 三者必须**全部 skipped**。这是对称 fail-closed——默认 PR 是「该被跳过」
+ *      而不是「可以随便跑」：没打 gate:full 标签却跑了全量链路，说明 ci.yml 的 if 或
+ *      标签语义被改坏，同样判红（既防 CI 静默回到全量，也防矩阵在增量路径下空转）；
+ *   5) pull_request 且 fullGate='true'（gate:full 标签，语义与 #217 版完全一致）：
+ *      - hasMutations='true'：coverage 必须 success（failure/cancelled = 覆盖失败
+ *        连坐，skipped = if 契约被改坏）；变异矩阵不得 skipped（failure 容忍，由
+ *        verdict 统一裁决）；verdict 必须 success（skipped = 门禁绕过，cancelled =
+ *        未完成判分，failure = 判分未通过）；
+ *      - hasMutations='false'（空切片合法缺席）：coverage 只收 skipped；矩阵与
+ *        verdict 收 skipped/failure（GitHub 对零实例动态矩阵实测回报 failure 而非
+ *        官方口径 skipped，实证 run 32802575298，宽容仅防御平台行为漂移）；
+ *   6) 非 pull_request 事件（push / workflow_dispatch / 未来新增触发器）→ fullGate
+ *      必须为 'false'，且 coverage / 变异矩阵 / verdict 三者全部必须 skipped。这是
+ *      #187 触发面收敛不变量的 #217 扩展：主干覆盖与变异覆盖归 observe.yml 夜间全量、
+ *      发版归 release.yml tag 管线；任一非 skipped 说明 ci.yml 中 if 的事件限制已被
+ *      破坏，宁可显性红也不静默退化。
  *
  * 用法：node scripts/gate/repo-gate-assert.mjs   （无命令行参数，全部走 env）
  * 退出码：0 = 通过；1 = 门禁违约；2 = 环境/数据缺失错误（fail-closed）
@@ -60,6 +57,7 @@ import { pathToFileURL } from 'node:url';
  *   verdict: string,
  *   hasMutations: string,
  *   mutationPkgsJson: string,
+ *   fullRequested: string,
  * }} input
  * @returns {{ ok: boolean, code: 0 | 1 | 2, reason: string }}
  */
@@ -70,7 +68,8 @@ export function evaluateGate(input) {
   if (changes !== 'success') {
     return { ok: false, code: 1, reason: `changes 作业未成功（${changes}）—— fail-closed` };
   }
-  // build-test 恒全集构建（不受触发面收敛影响），任何实例失败/skipped 即红
+  // build-test 恒全集矩阵（#722 后矩阵仍固定 7 实例、未命中实例只跑 checkout+setup），
+  // 任何实例失败/skipped 即红
   if (buildTest !== 'success') {
     return { ok: false, code: 1, reason: `build-test 存在失败/skipped 实例（${buildTest}）—— fail-closed` };
   }
@@ -88,9 +87,28 @@ export function evaluateGate(input) {
   if (hasMutations !== 'true' && hasMutations !== 'false') {
     return { ok: false, code: 2, reason: `hasMutations 必须为 'true'/'false'（实际 "${hasMutations}"）—— 数据契约破坏` };
   }
+  if (input.fullRequested !== 'true' && input.fullRequested !== 'false') {
+    return { ok: false, code: 2, reason: `fullGate 必须为 'true'/'false'（实际 "${input.fullRequested}"）—— 数据契约破坏` };
+  }
   // 交叉校验：hasMutations 与切片清单非空性由 changes 同一函数推导，不一致即违约
   if ((hasMutations === 'true') !== (pkgs.length > 0)) {
     return { ok: false, code: 2, reason: `hasMutations=${hasMutations} 与切片长度 ${pkgs.length} 矛盾 —— 数据契约破坏` };
+  }
+
+  if (event === 'pull_request' && input.fullRequested === 'false') {
+    // ── #722 增量门禁路径：全量链路「该被跳过」而不是「可以随便跑」──
+    // 对称 fail-closed：出现任何非 skipped 结果，说明 ci.yml 的 if 或 gate:full
+    // 标签语义被改坏（默认 PR 不该实例化 coverage/变异矩阵）。
+    for (const [name, result] of [['coverage', coverage], ['mutation-gate', mutation], ['mutation-verdict', verdict]]) {
+      if (result !== 'skipped') {
+        return {
+          ok: false,
+          code: 1,
+          reason: `PR 未打 gate:full 标签，${name} 结果为 ${result}（期望 skipped）—— 增量门禁契约被破坏（ci.yml if 的 fullGate 条件疑似失效）`,
+        };
+      }
+    }
+    return { ok: true, code: 0, reason: `PR 增量门禁：命中包构建/测试/产物闸 + 廉价全仓静态闸通过（全量链路按 gate:full 标签缺席，符合预期）` };
   }
 
   if (event === 'pull_request') {
@@ -139,9 +157,17 @@ export function evaluateGate(input) {
     return { ok: true, code: 0, reason: 'PR 空切片：无变异对象包，覆盖/变异链合法缺席' };
   }
 
-  // 非 PR 事件：触发面收敛不变量（#187 + #217 扩展）——覆盖/变异三段全部只允许
-  // skipped（main 归夜间、发版归 release）；出现其他结果说明 ci.yml if 的事件
-  // 限制已失效，显性红防静默退化
+  // 非 PR 事件：触发面收敛不变量（#187 + #217 扩展）——fullGate 必须为 false
+  // （changes job 里非 PR 一律 false），且覆盖/变异三段全部只允许 skipped（main 归
+  // 夜间、发版归 release）；出现其他结果说明 ci.yml if 的事件限制已失效，显性红防
+  // 静默退化
+  if (input.fullRequested === 'true') {
+    return {
+      ok: false,
+      code: 1,
+      reason: `${event} 事件下 fullGate=true（期望 false）—— #187 触发面收敛不变量被破坏（全量门禁只允许在 PR 上按标签触发）`,
+    };
+  }
   for (const [name, result] of [['coverage', coverage], ['mutation-gate', mutation], ['mutation-verdict', verdict]]) {
     if (result !== 'skipped') {
       return {
@@ -166,11 +192,12 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
     verdict: env.GATE_VERDICT ?? '',
     hasMutations: env.GATE_HAS_MUTATIONS ?? '',
     mutationPkgsJson: env.GATE_MUTATION_PKGS ?? '',
+    fullRequested: env.GATE_FULL_REQUESTED ?? '',
   });
   console.log(`event=${env.GATE_EVENT}  changes=${env.GATE_CHANGES}  `
     + `build-test=${env.GATE_BUILD_TEST}  coverage=${env.GATE_COVERAGE}  `
     + `mutation-gate=${env.GATE_MUTATION}  verdict=${env.GATE_VERDICT}  `
-    + `hasMutations=${env.GATE_HAS_MUTATIONS}`);
+    + `hasMutations=${env.GATE_HAS_MUTATIONS}  fullGate=${env.GATE_FULL_REQUESTED}`);
   // 违约/环境错误走 ::error:: 注解（GitHub PR 页面可见，与旧内联断言同款）
   if (verdict.code === 0) {
     console.log(`判定：${verdict.reason}`);

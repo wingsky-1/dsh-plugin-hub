@@ -20,8 +20,12 @@ export {
   escapeCatalogText,
   findCatalogMessage,
   readCatalogEntries,
+  isCatalogSource,
+  resolveCatalogEntries,
+  CATALOG_SOURCE_PLUGIN,
+  CATALOG_SECTION_NAME,
 } from "./entries.ts";
-export type { CatalogEntry, SupervisorLite, CatalogCache } from "./entries.ts";
+export type { CatalogEntry, SupervisorLite, CatalogCache, CatalogSourceLike } from "./entries.ts";
 export { digestCatalogEntries } from "./digest.ts";
 export { catalogHistory } from "./history.ts";
 export type { CatalogHistoryResult, CatalogAgent } from "./history.ts";

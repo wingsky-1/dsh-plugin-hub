@@ -12,6 +12,19 @@ install them all at once as a single bundle, or pick individual plugins as neede
 - **Bundle package**: `@wingsky-1/dsh-plugins-all` — install everything in one shot
 - **Individual plugins**: `@wingsky-1/dsh-*` — install only what you need
 
+> **Upgraded DSH from a pre-0.1.5 version and a historical session will not open?**
+> Sessions failing with `cannot safely transform unclassified message source` were hit by the
+> host migration gate on the capability-catalog messages injected by early `dsh-mcp-manager`
+> builds (the artifact is intact — it simply cannot be read). **One command recovers them**:
+>
+> ```sh
+> node scripts/maintenance/repair-mcp-catalog-sessions.mjs          # dry run: list affected sessions
+> node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply  # apply (backup first), then restart dsh web
+> ```
+>
+> See [the repair guide](#mcp-catalog-upgrade-notice-and-repair) ·
+> [issue #723](https://github.com/wingsky-1/dsh-plugin-hub/issues/723)
+
 ## Core advantages
 
 - **Security built into the defaults**: minimal exposure surface and minimal credential
@@ -34,6 +47,43 @@ install them all at once as a single bundle, or pick individual plugins as neede
 - **Engineering-quality backing**: every plugin ships smoke assertions (route fences /
   client contracts), plus build contract + pack checks + full gates run in CI
 
+<a id="mcp-catalog-upgrade-notice-and-repair"></a>
+## Upgrade notice and repair: a historical session will not open (mcp-catalog)
+
+**Symptom**: after upgrading from a pre-0.1.5 DSH, some historical sessions report in the GUI:
+
+```
+历史加载失败：failed to observe session "session-…":
+cannot safely transform unclassified message source;
+source v0 artifact remains unchanged (raw log: …/session.jsonl.zstd)（gateway/internal）
+```
+
+and `session.v3.jsonl.zstd` never appears next to the original log — every attempt fails the same way.
+
+**Cause (the session is not corrupt)**: `dsh-mcp-manager` 0.2.x and earlier wrote the catalog
+injection message as `source.kind = "mcp-catalog"`, while DSH 0.1.5's session-format v2-to-v3
+migration validates surface `source.kind` against a **closed whitelist**; a self-invented value
+is refused and the artifact is (by host design) **preserved unchanged**. The v3 read path itself
+does not validate that field, so only sessions written before the upgrade by a host that ran this
+plugin with catalog injection are affected; new sessions after the upgrade are fine.
+
+**Repair**: current plugin versions use the host-registered generic source shape (no such message
+is produced any more). Artifacts already on disk are repaired in place by a one-off script that
+touches only source metadata, never the body or the event sequence:
+
+```sh
+# stop dsh web first: a log being written is not guaranteed safe to rewrite
+node scripts/maintenance/repair-mcp-catalog-sessions.mjs          # dry run: list affected sessions
+node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply  # apply: .bak-<timestamp> first, atomic write
+# restart dsh web and open the session
+```
+
+- Reads `<DSH_HOME>` by default (`--home <dir>` / `DSH_HOME` overrides it); `--session <id>` limits it to one session
+- Idempotent; self-checked writes (frame structure + per-line JSON + zero leftover legacy kinds); rollback = restore the `.bak-<timestamp>`
+- Never writes a v3 artifact: DSH still performs the migration itself
+- Details and evidence: [dsh-mcp-manager README](packages/dsh-mcp-manager/README.en.md#723-repair) and
+  [issue #723](https://github.com/wingsky-1/dsh-plugin-hub/issues/723)
+
 ## Version support (rc only)
 
 This plugin set only adapts to **rc (release-candidate) releases of DeepSeek Harness — alpha versions are not supported**.
@@ -54,7 +104,7 @@ This plugin set only adapts to **rc (release-candidate) releases of DeepSeek Har
 | `@wingsky-1/dsh-notifier` | Task-event notification center: 6 event kinds (ask / approval / completion / subagent completion / error / turn end), dual channels (browser Notification + host system toast) plus Bark/Webhook push channels (ntfy, Gotify, self-hosted gateways); quiet hours with urgent exceptions, approval-timeout re-reminders, completion-storm aggregation, notification text redaction | [README](packages/dsh-notifier/README.md) · [Architecture](docs/architecture/dsh-notifier.md) | Published |
 | `@wingsky-1/dsh-provider-usage` | Multi-provider usage stats framework (v2 adapter contract): persistent capsule + detail panel; DeepSeek official (interval-bookkeeping daily usage derivation + peak/valley countdown badge — works even without an official usage endpoint) and OpenCode Go built in; plug in any data source with a single mjs file, hot-swappable from the settings page; daily/weekly/monthly usage reports (generated via the host llm); API keys stay on the host, never reach the browser | [README](packages/dsh-provider-usage/README.md) · [Adapter guide](packages/dsh-provider-usage/docs/adapter-guide.md) · [Architecture](docs/architecture/dsh-provider-usage.md) | Published |
 | `@wingsky-1/dsh-lan-proxy` | Access the dsh web UI over LAN: HTTP/HTTPS/WS forwarding + TLS (self-signed / custom certs); dual compression for HTTP (Brotli/gzip adaptive) and WebSocket (permessage-deflate); WS half-open probing keeps mobile backgrounding from going stale; launch-token auto-injection lets LAN devices connect without fetching the token; DNS-rebinding protection + loopback target allowlist | [README](packages/dsh-lan-proxy/README.md) · [Architecture](docs/architecture/dsh-lan-proxy.md) | Published |
-| `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio / streamable-http): per-working-directory project/global config tiers; project-level MCP collapsed into 4 atomic tools via middleware by default (`middleware: all` folds in global servers, hot-switchable in the settings page); workspace isolation prevents cross-project interference; configs store `${ENV}` references only — no plaintext secrets on disk; runtime registration API for other plugins to inject MCP servers | [README](packages/dsh-mcp-manager/README.md) · [Architecture](docs/architecture/dsh-mcp-manager.md) | Published |
+| `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio / streamable-http): per-working-directory project/global config tiers; project-level MCP collapsed into 4 atomic tools via middleware by default (`middleware: all` folds in global servers, hot-switchable in the settings page); workspace isolation prevents cross-project interference; configs store `${ENV}` references only — no plaintext secrets on disk; runtime registration API for other plugins to inject MCP servers | [README](packages/dsh-mcp-manager/README.md) · [Architecture](docs/architecture/dsh-mcp-manager.md) · [Upgrade repair](#mcp-catalog-upgrade-notice-and-repair) | Published |
 | `@wingsky-1/dsh-web-file-preview` | Turns "open with the default application" file requests into the built-in right-Sidebar preview (intercepts `POST /api/present.open`, calls `ctx.sidebarRight.openResource`); registers no official extension points and modifies no official source | [README](packages/dsh-web-file-preview/README.md) · [Architecture](docs/architecture/dsh-web-file-preview.md) | Published |
 | `@wingsky-1/dsh-verify-isolated` | Isolated-environment browser verification skill for DSH plugin development: temp DSH_HOME + independent profile + independent port + independent browser instance (four-way isolation), one-command launch with automatic cleanup; bundled zero-dependency raw-CDP browser driver (snapshot / click / screenshot / eval), optional isolation audit | [README](packages/dsh-verify-isolated/README.md) · [Architecture](docs/architecture/dsh-verify-isolated.md) | Published |
 

@@ -23,6 +23,8 @@ const {
   escapeCatalogText,
   findCatalogMessage,
   readCatalogEntries,
+  isCatalogSource,
+  resolveCatalogEntries,
   catalogHistory,
   renderMcpCatalogUpdate,
   resolveCatalogInjection,
@@ -244,12 +246,12 @@ describe("renderMcpCatalogMessage / findCatalogMessage / readCatalogEntries", ()
     expect(makeMessage().id).toBeTruthy();
   });
 
-  it("message.source.kind 为 mcp-catalog", () => {
-    expect(makeMessage().source.kind).toBe("mcp-catalog");
-  });
-
-  it("message.source.form 为 catalog", () => {
-    expect(makeMessage().source.form).toBe("catalog");
+  it("#723 message.source 为宿主词表内的 plugin/snapshot 形态（自造 kind 会被迁移白名单拒绝）", () => {
+    const source = makeMessage().source;
+    expect(source.kind).toBe("plugin");
+    expect(source.plugin).toBe("@wingsky-1/dsh-mcp-manager");
+    expect(source.form).toBe("snapshot");
+    expect(isCatalogSource(source)).toBe(true);
   });
 
   it("文本含 <available_mcp_servers>", () => {
@@ -282,9 +284,9 @@ describe("renderMcpCatalogMessage / findCatalogMessage / readCatalogEntries", ()
     expect(findCatalogMessage([undefined, null])).toBeUndefined();
   });
 
-  it("readCatalogEntries 读回条目", () => {
+  it("#723 新形态走 resolveCatalogEntries 读回条目", () => {
     const message = makeMessage();
-    expect(readCatalogEntries(message.source)).toEqual([{ name: "m1", text: "t<1" }]);
+    expect(resolveCatalogEntries(message.source)).toEqual([{ name: "m1", text: "t<1" }]);
   });
 
   it("readCatalogEntries(undefined) undefined", () => {
@@ -516,5 +518,61 @@ describe("resolveCatalogInjection：六条路径", () => {
     const stale = renderMcpCatalogMessage([{ name: "stale" }]);
     const replaced = resolveCatalogInjection({ kind: "enter", messages: [plainMessage("k2"), stale] }, [], supervisors(), 6, new Map(), otherDigestAgent());
     expect(replaced.messages[1].id).not.toBe(stale.id);
+  });
+});
+
+// #723：目录 source 新旧两代双识别 —— 写入侧已改宿主通用形态，读取侧必须同时认旧形态
+// （升级前的会话），否则 digest 恒不等、每轮误判"目录已变"而重复注入修正帧。
+describe("#723 目录 source 双形态识别", () => {
+  it("resolveCatalogEntries 从快照正文单射还原条目（含反转义）", () => {
+    const message = renderMcpCatalogMessage([{ name: "m1", text: "t<1" }]);
+    expect(resolveCatalogEntries(message.source)).toEqual([{ name: "m1", text: "t<1" }]);
+  });
+
+  it("readCatalogEntries 仍读旧形态（跨版本兼容）", () => {
+    expect(readCatalogEntries({ kind: "mcp-catalog", form: "catalog", entries: [{ name: "m1", text: "t<1" }] }))
+      .toEqual([{ name: "m1", text: "t<1" }]);
+  });
+
+  it("resolveCatalogEntries 坏数据面一律 undefined", () => {
+    expect(resolveCatalogEntries(undefined)).toBeUndefined();
+    expect(resolveCatalogEntries({ kind: "user" })).toBeUndefined();
+    expect(resolveCatalogEntries({ kind: "plugin", plugin: "other-plugin", form: "snapshot", sections: [] })).toBeUndefined();
+    expect(resolveCatalogEntries({ kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager", form: "snapshot" })).toBeUndefined();
+    expect(resolveCatalogEntries({ kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager", form: "snapshot", sections: [{ name: "other", text: "x" }] })).toBeUndefined();
+  });
+});
+
+describe("#723 catalogHistory 双形态识别", () => {
+  const entries = [{ name: "s", text: "d" }];
+  const digest = digestCatalogEntries(entries);
+  const body = [
+    "<system-reminder>",
+    "<available_mcp_servers>",
+    "- `s`: d",
+    "</available_mcp_servers>",
+    "</system-reminder>",
+  ].join("\n");
+  const newSource = { kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager", form: "snapshot", sections: [{ name: "mcp-catalog", text: body }] };
+  const agentOf = (nodes, source) => ({
+    session: { surface: { nodes }, snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source } }] },
+  });
+
+  it("新形态可见 → digest 与条目口径一致", () => {
+    expect(catalogHistory(agentOf([1], newSource))).toEqual({ visibleDigest: digest, published: true });
+  });
+
+  it("新形态被 compaction 遮蔽 → published 但无 digest", () => {
+    expect(catalogHistory(agentOf([], newSource))).toEqual({ published: true });
+  });
+
+  it("旧形态仍被识别（同一 digest 口径）", () => {
+    expect(catalogHistory(agentOf([1], { kind: "mcp-catalog", form: "catalog", entries })))
+      .toEqual({ visibleDigest: digest, published: true });
+  });
+
+  it("他插件的 plugin 消息不得被误认", () => {
+    expect(catalogHistory(agentOf([1], { kind: "plugin", plugin: "other", form: "snapshot", sections: [{ name: "mcp-catalog", text: body }] })))
+      .toEqual({ published: false });
   });
 });

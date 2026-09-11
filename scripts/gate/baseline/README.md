@@ -32,3 +32,38 @@
 - **本地调试**：
   - 本地若需要远端基线辅助增量测试，可执行：
     `node scripts/gate/orphan-baseline.mjs restore`
+  - 注意：本地若没有可用的 `origin`（或远端不可达），该命令会**非零退出**，不再静默降级（见下节）。
+
+### 恢复与查询失败的三态语义（#718）
+
+`orphan-baseline.mjs restore` 与 `overlay-baseline.mjs` 的远端探针**共用同一判据**
+（`baseline-archive.mjs` 的 `classifyRemoteProbe` / `decideRestoreOutcome`），用
+`git ls-remote --exit-code` 的**退出码**分三态，不再用「stdout 是否为空」反推：
+
+| 探针结果 | 含义 | 动作 |
+|---|---|---|
+| `present`（exit 0） | 本次广告里有 `baseline/mutation` | 拉取；拉取失败 → **fail-loud** |
+| `absent`（exit 2） | 本次广告里没有该 ref | **唯一**允许降级为全量的情形（首夜，`::notice::`） |
+| `unreachable`（其它/无退出码） | 远端不可达 / 权限故障 / URL 不可解析 | 不跳过 fetch；拉取仍失败 → **fail-loud** |
+
+另有两条同类收紧：远端树里有 blob 却**无任何基线文件**（命名漂移）在写路径上判 fail-loud
+（继续会用本班产物覆盖这些未知文件）；overlay 的「查询关联 PR」「查询 Workflow Runs」
+两处失败也改为 fail-loud——**「查不了」与「查不到（空数组）」是两件事**，后者仍是正常 no-op。
+
+表里 `unreachable` 只决定「是否跳过 fetch」，不单独决定最终动作：`decideRestoreOutcome` 把
+`fetchOk` 放在第一位，所以**探针三连失败但 fetch 反而成功时，判为恢复而非判红**（探针假阴性
+被救回）；只有 fetch 也失败才 fail-loud。`absent` 是唯一的确定结论——它直接跳过 fetch 并降级。
+
+**已知边界（不要误读为强保证）**：`absent` 只能证明「本次广告里没有这条 ref」，**不能**证明
+服务端上不存在——服务端可用 `uploadpack.hideRefs` 隐藏某条 ref，此时与真·首夜完全同形，
+客户端无从区分。这一支上**唯一实际生效**的防护是 workflow 层 `mutation-suites` 的 outcome
+门控（`observe-incremental.yml` 的 push 步骤要求它非 `skipped`，而它依赖 restore 非零退出）；
+**代码里没有「推送侧拒绝空/缺段快照」的保护**，补该保护已登记在 #718 的方案中（并集入档），尚未实施。
+
+**两条路径的有意差异**：orphan 侧在「远端树里有 blob 却无基线文件」时**拒绝继续**（fail-loud）；
+overlay 侧没有这个检查，而是由 `reconcileArchive` 以 `archiveGap` 判红、**仍照常推送**——
+因为 overlay 是差量覆盖，拒绝推送会让归档停在更旧的树上。两处语义不同是有意的，不要当作不一致。
+
+> 注：`.github/workflows/ci.yml`（「首夜/基线缺失时天然降级为全量变异，门禁语义不变仅变慢」等）
+> 与 `observe-incremental.yml` 的对应注释**尚未同步**。`.github/` 属红线，须在 issue 内取得
+> 维护者 `approved` 后单独修改；在同步之前，以本节与脚本头部注释为准。

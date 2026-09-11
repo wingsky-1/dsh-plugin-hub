@@ -33,6 +33,20 @@ export const DEFAULT_ANNOUNCE_CATALOG = true;
 /** 能力目录最大条目数（防上下文膨胀）。 */
 export const DEFAULT_CATALOG_MAX_ENTRIES = 6;
 
+/**
+ * 能力目录消息的来源身份（#723）：`source.kind` 只能是宿主已登记的通用值
+ * `plugin`，本插件的身份由 `source.plugin` 承载。
+ *
+ * 为什么不再自造 `kind`：宿主 v2→v3 迁移对 surface 消息的 `source.kind` 有一份
+ * 封闭白名单（`dsh-session-format-v2-to-v3` 的 `SOURCE_KINDS`），自造值会让升级前
+ * 落盘的会话永久无法迁移（原件保留、每次加载同样失败）。官方上下文包
+ * （`dsh-time-context` / `dsh-tmux-context`）走的就是 `plugin` + 身份 + snapshot
+ * 形态，这里与之一致：形态由宿主校验，身份由本包判定。
+ */
+export const CATALOG_SOURCE_PLUGIN = "@wingsky-1/dsh-mcp-manager";
+/** 目录快照的段名（snapshot 形态下承载渲染后的目录正文）。 */
+export const CATALOG_SECTION_NAME = "mcp-catalog";
+
 /** 目录摘要总长上限（字符，含前缀与省略号）：目录注入 ≤6 条目，防远端工具描述
  * 堆叠稀释上下文；截断先于 escapeCatalogText 转义，防不可信输入注入超长文本。 */
 export const CATALOG_SUMMARY_MAX_CHARS = 240;
@@ -198,7 +212,12 @@ export function renderMcpCatalogMessage(entries: CatalogEntry[], mode?: string):
     id: randomUUID(),
     role: "user",
     content: [{ type: "text", text: lines }],
-    source: { kind: "mcp-catalog", form: "catalog", entries },
+    source: {
+      kind: "plugin",
+      plugin: CATALOG_SOURCE_PLUGIN,
+      form: "snapshot",
+      sections: [{ name: CATALOG_SECTION_NAME, text: lines }],
+    },
   };
 }
 
@@ -212,17 +231,91 @@ export function escapeCatalogText(value: unknown): string {
     .replace(/[\r\n]/gu, " ");
 }
 
-/** 从消息列表里定位既有的能力目录消息（source.kind 匹配）。 */
+/** 是否为本插件注入的能力目录消息（新旧两代 source 形态都认，#723 跨版本兼容）。 */
+export function isCatalogSource(source: { kind?: unknown; plugin?: unknown } | undefined): boolean {
+  if (source === undefined) return false;
+  if (source.kind === "mcp-catalog") return true;
+  return source.kind === "plugin" && source.plugin === CATALOG_SOURCE_PLUGIN;
+}
+
+/** 从消息列表里定位既有的能力目录消息（新旧两代 source 形态都认）。 */
 export function findCatalogMessage(messages: CatalogMessage[]): CatalogMessage | undefined {
   for (const message of messages) {
-    if (message?.source?.kind === "mcp-catalog") return message;
+    if (isCatalogSource(message?.source)) return message;
   }
   return undefined;
 }
 
 /**
- * 防御性读取目录 source 里的 entries（坏数据返回 undefined——按"不是本插件的目录"
- * 处理，绝不在 step 监听器里抛错，否则每轮都会失败）。
+ * 取回一条目录消息所发布的条目。
+ *
+ * 新旧两代形态（#723）：
+ * - 旧形态 `{ kind: "mcp-catalog", form: "catalog", entries }`：逐条还原条目，
+ *   digest 与升级前完全一致；
+ * - 新形态 `{ kind: "plugin", form: "snapshot", sections: [{ name, text }] }`：
+ *   从快照正文的 `<available_mcp_servers>` 块还原条目（格式化是单射的），使
+ *   digest 与 `composeCatalogEntries` 的条目 digest 同口径——否则每次启动都会
+ *   误判"目录已变"而注入一条修正帧。
+ *
+ * 坏数据返回 undefined（按"不是本插件的目录"处理）：本函数在 step 监听器里被调用，
+ * 抛错会让该会话每一轮都失败。
+ */
+export function resolveCatalogEntries(source: CatalogSourceLike | undefined): CatalogEntry[] | undefined {
+  if (!isCatalogSource(source)) return undefined;
+  if (source?.kind === "plugin") {
+    const sections = source.sections;
+    if (!Array.isArray(sections)) return undefined;
+    const section = sections.find(
+      (candidate) =>
+        typeof candidate === "object" &&
+        candidate !== null &&
+        (candidate as { name?: unknown }).name === CATALOG_SECTION_NAME &&
+        typeof (candidate as { text?: unknown }).text === "string",
+    ) as { text: string } | undefined;
+    if (section === undefined) return undefined;
+    return parseCatalogBody(section.text);
+  }
+  const entries = source?.entries;
+  if (!Array.isArray(entries)) return undefined;
+  const readable: CatalogEntry[] = [];
+  for (const entry of entries) {
+    if (typeof entry !== "object" || entry === null) return undefined;
+    const { name, text } = entry as { name?: unknown; text?: unknown };
+    if (typeof name !== "string" || name === "") return undefined;
+    readable.push({ name, text: typeof text === "string" ? text : undefined });
+  }
+  return readable;
+}
+
+/** 还原渲染时的反转义（escapeCatalogText 的逆；`&amp;` 最后解，避免二次解码）。 */
+function unescapeCatalogText(text: string): string {
+  return text.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+}
+
+/**
+ * 从目录快照正文解析条目：格式化是单射的（`- \`name\`` 或 `- \`name\`: text`），
+ * 解析失败按"不是本插件的目录"返回 undefined。
+ */
+function parseCatalogBody(body: string): CatalogEntry[] | undefined {
+  const lines = body.split("\n");
+  const start = lines.indexOf("<available_mcp_servers>");
+  if (start < 0) return undefined;
+  const end = lines.indexOf("</available_mcp_servers>", start + 1);
+  if (end < 0) return undefined;
+  const entries: CatalogEntry[] = [];
+  for (const line of lines.slice(start + 1, end)) {
+    const match = /^- `([^`]+)`(?:: (.*))?$/u.exec(line);
+    if (match === null) return undefined;
+    entries.push(match[2] === undefined ? { name: match[1] } : { name: match[1], text: unescapeCatalogText(match[2]) });
+  }
+  return entries;
+}
+
+/**
+ * 防御性读取目录 source 里的条目（坏数据返回 undefined）。
+ *
+ * 保留旧签名与旧语义（只读已发布形态的 `entries`）：它是包导出面与既有单测的契约，
+ * 新形态的读取走 {@link resolveCatalogEntries}。
  */
 export function readCatalogEntries(source: { entries?: unknown } | undefined): CatalogEntry[] | undefined {
   const entries = source?.entries;
@@ -235,6 +328,14 @@ export function readCatalogEntries(source: { entries?: unknown } | undefined): C
     readable.push({ name, text: typeof text === "string" ? text : undefined });
   }
   return readable;
+}
+
+/** 目录 source 最小面（新旧两代形态；判定见 {@link isCatalogSource}）。 */
+export interface CatalogSourceLike {
+  kind?: unknown;
+  plugin?: unknown;
+  entries?: unknown;
+  sections?: unknown;
 }
 
 /** 渲染"目录更新"消息（历史旧目录无法删除，新消息声明作废——与 tool-skill 同语义）。 */
