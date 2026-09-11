@@ -391,7 +391,12 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 3. **异步落盘用轮询替代固定 sleep**：断言持久化状态前必须 `poll-until` 满足条件再断言，
    严禁 `setTimeout(resolve, 50 / 300)` 这类「等够毫秒」的时序假设。参考 notifier 的
    `waitForHistory(route, predicate)` 辅助（轮询 GET 直到谓词成立，超时兜底返回当前态）。
-4. **fire-and-forget 写入禁止跨块断言顺序**：若写是 `void flush()` / 防抖定时器
+4. **测试文件禁止顶层悬挂 promise**：`node --test` 以「模块求值结束」判定文件测试通过，
+   悬挂的 `main().catch(...)` 会让体内断言在文件测试判定之后才跑——配合 runner 的收尾逻辑
+   会被整段吞掉（#690 S2 实测：注入必然失败的断言仍得 exit 0）。统一写法是顶层
+   `await main();`。唯一例外是经 `execFileSync` + 退出码/输出标记双重校验的 worker 脚本
+   （`test/*.worker.mjs`，不参与 `test/**/*.test.ts` glob）。
+5. **fire-and-forget 写入禁止跨块断言顺序**：若写是 `void flush()` / 防抖定时器
    （如 opencode-usage 的 `schedulePersist`、notifier 的 `appendHistory`），绝不能依赖
    「最后一条是 X」「条数 === N」等顺序敏感断言；必须**隔离文件 + 轮询**。理想情况：
    被测插件暴露 `await flushPersist()` 之类的可等待落盘钩子，测试直接 `await` 比轮询更稳。

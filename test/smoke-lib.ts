@@ -2,7 +2,7 @@
 'use strict'
 
 /**
- * smoke-lib — 共享 smoke 工具（各包 test/smoke.ts 复用，业务断言保留在各自文件）。
+ * smoke-lib — 共享 smoke 工具（各包 `test/*.test.ts` 复用，业务断言保留在各自文件）。
  *
  * 提供：
  *   - check(name, fn) / report(title)：断言注册 + 汇总 + 退出码（预留，供后续换用；

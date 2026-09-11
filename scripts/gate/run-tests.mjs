@@ -7,6 +7,11 @@
  * 两者都会让「绿灯」失去意义（docs/ARCHITECTURE-METHOD.md §8 假绿向量）。
  * 故本入口显式断言：**匹配到的测试文件数 >= 下限**、**无失败条目**、**退出码为 0**。
  *
+ * 为什么同时校验 `1..N` 与文件数（#712 二轮对抗复核 P1）：`--test-isolation=none` 下若
+ * glob **首个**文件存在永不落定的顶层 await，node 会静默输出 `1..0` 且 exit 0，**其余文件
+ * 一个都不执行**；只判 `undefined` 会把这种「0 条目」当合法值报全绿。故额外要求
+ * `1..N >= glob 文件数`（每个被匹配的文件至少要产出一个条目）。
+ *
  * 为什么下限按**文件数**而不是 TAP 的 `1..N`：`1..N` 是测试条目数，含文件内的
  * 子测试（用 node:test 的 test() 注册）——实测 dsh-provider-usage 19 个测试文件
  * 报 39 个条目，按条目设阈值会随子测试增减抖动。文件数由 glob 直接展开，
@@ -41,8 +46,13 @@ import { spawnSync } from 'node:child_process'
 import { globSync } from 'node:fs'
 
 const PATTERN = 'test/**/*.test.ts'
-/** 单包测试墙钟上限：CI 上最慢的包（dsh-mcp-manager 含 SDK stdio 端到端）约 6 分钟。 */
-const TIMEOUT_MS = 20 * 60 * 1000
+/**
+ * 单包测试墙钟上限：CI 上最慢的包（dsh-mcp-manager 含 SDK stdio 端到端）约 6 分钟。
+ * `RUN_TESTS_TIMEOUT_MS` 供门禁自测与本地调试收紧（调小只会更快判红，不能用来伪造绿灯）。
+ */
+const TIMEOUT_MS = Number(process.env.RUN_TESTS_TIMEOUT_MS) > 0
+  ? Number(process.env.RUN_TESTS_TIMEOUT_MS)
+  : 20 * 60 * 1000
 
 const argv = process.argv.slice(2)
 const minIdx = argv.indexOf('--min')
@@ -75,6 +85,11 @@ if (spawned.error?.code === 'ETIMEDOUT' || spawned.signal === 'SIGTERM') {
 }
 if (planned === undefined) {
   console.error('run-tests: 无法解析 TAP 计划数（1..N）—— 输出异常或进程被中断')
+  process.exit(1)
+}
+if (Number(planned) < files.length) {
+  console.error(`run-tests: TAP 计划数 ${planned} 少于 glob 文件数 ${files.length}`
+    + ' —— runner 提前结束或文件未被求值（零条目不得判绿）')
   process.exit(1)
 }
 if (failed > 0) {
