@@ -1,212 +1,140 @@
 #!/usr/bin/env node
 /**
- * 单函数 CRAP 检查（指导文档 5.0；移植自 gauntlet-demo/scripts/crap-check.mjs，
- * monorepo 适配：按 packages/<pkg>/lib 编译产物扫描——smoke 消费的就是它）。
+ * 单函数 CRAP 检查（#722 阶段五重建版，src 口径）。
  *
  *   CRAP = comp^2 * (1 - cov) + comp
  *
- * comp：acorn（ESTree）对 lib 编译产物的逐函数圈复杂度；
- * cov：istanbul 格式 coverage/coverage-final.json 中该函数的命中状态。
- * 先跑 `pnpm cov` 生成覆盖率，再运行本脚本。
+ * comp：ESLint 内置 `complexity` 规则对 `packages/<pkg>/src` 的逐函数圈复杂度。
+ *   **本脚本不实现第二份复杂度算法**——与 tools/lint 的复杂度门禁共用同一规则实现，
+ *   口径不存在长期漂移面（这是 #722 阶段五的单一事实源约定）。
+ * cov：`coverage/coverage-final.json`（vitest/istanbul 的 src 口径）中该函数的命中状态。
+ *   先跑 `pnpm cov` 生成覆盖率，再运行本脚本。
  *
- * 现状（#722 阶段三起）——本脚本处于 fail-closed 停用态：
- *   阶段三把覆盖率采集切到 vitest/istanbul 的 src 口径，而 comp 仍取自 lib 编译产物，
- *   两者行号不可比。此时按 lib 过滤会命中 0 个文件、以「0 个函数」的名义 exit 0
- *   （静默降级，#718 定性），故入口处加了数据源口径自检：不匹配即 exit 2 并说明原因。
- *   src 口径重建归 #722 阶段 5（与 ESLint 复杂度规则同批，届时可直接消费其 TS parser）。
- *   四个消费点（observe.yml / health-report.yml / local-gate.mjs / 本脚本自测）已同步摘除。
+ * 与旧实现的差别：旧版从 `packages/<pkg>/lib` 编译产物取复杂度，需要 esbuild 边界注释分段
+ * （foreignSegments）与垫片识别（shimRanges）来剔除内联 vendor；覆盖率切到 src 口径后两者行号
+ * 不可比。阶段五改为直接从源码取复杂度，src 无内联 vendor，分段逻辑整体退役。
  *
- * 圈复杂度决策点口径——已计入：if / for / for-of / for-in / while / do-while /
- *   case / catch / 三元（ConditionalExpression）/ && / || / ?? / optional chaining（?.）
- * 未计入：label 语句、正则字面量内部逻辑。同行多函数的覆盖判定取「任一命中即算命中」，
- *   该宽松处理使 CRAP 系统性偏低（方向性偏差，校准阈值时须知）。
- *
- * 噪音过滤：esbuild 内联的 node_modules 依赖段与 `__` 前缀垫片函数不计入统计
- *   （发布物自包含导致依赖代码进 bundle，但它们不是本仓自写代码）。
+ * 两处必须的 join 处理（阶段五实测）：
+ *   1. ESLint 把「类字段初始化器」也报为一个可计复杂度节点，而 istanbul 不计入 fnMap；
+ *      不过滤会让这类节点稳定匹配失败。
+ *   2. vitest/istanbul 在 TS 转译 + sourcemap 回映后存在 ±1 行偏移（ESLint 直接在原始
+ *      TS 上工作），故按行号 join 时允许 ±1 容差：实测精确匹配 98.75%、带容差 99.86%，
+ *      残余项判为「未覆盖」，方向偏保守。
  *
  * 模式说明：
- * 1. 全量模式（默认）：
- *    读取 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict。
- *    crap.strict=false：超阈热点 exit 0，仅落盘 coverage/crap-report.json（观察期）；
- *    crap.strict=true：超阈热点 exit 1。
- *
+ * 1. 全量模式（默认）：读 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict。
+ *    strict=false：超阈热点 exit 0，仅落盘 coverage/crap-report.json（观察期）；
+ *    strict=true：超阈热点 exit 1。
  * 2. 增量防劣化模式（--diff [base]）：
- *    对比 base（默认 origin/main，自适应 fallback）与当前工作区的改动：
- *    - 过滤只对本次改动触及的函数进行 CRAP 评估；
- *    - 新增函数：必须满足 CRAP <= threshold（默认 16）；
- *    - 修改的存量函数：若存量函数原本超标，修改后不得恶化（CRAP_new <= CRAP_base）；
- *    - 未触及的存量函数：全部豁免报警；
- *    - 存在新增超标或存量恶化时打印阻断日志并 exit 1；全部合规时 exit 0。
+ *    对比 base（默认 origin/main，自适应 fallback）与当前工作区在包 src 下的改动：
+ *    - 新增函数：CRAP <= threshold；
+ *    - 修改的存量函数：CRAP_new <= CRAP_base；
+ *    - 未触及的存量函数：全部豁免；
+ *    - 存在新增超标或存量恶化时 exit 1，否则 exit 0。
  */
 import { readFileSync, existsSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
-import * as acorn from 'acorn';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
 
-/** 圈复杂度 = 1 + 决策点数（口径见文件头注释）。 */
-export function complexityOf(fnNode) {
-  let count = 1;
-  function visit(node) {
-    if (!node || typeof node.type !== 'string') return;
-    if (node.type === 'IfStatement' || node.type === 'ForStatement'
-      || node.type === 'ForOfStatement' || node.type === 'WhileStatement'
-      || node.type === 'DoWhileStatement' || node.type === 'SwitchCase'
-      || node.type === 'CatchClause' || node.type === 'ConditionalExpression'
-      || node.type === 'ChainExpression') count++;
-    else if (node.type === 'LogicalExpression') count++;
-    for (const key of Object.keys(node)) {
-      const child = node[key];
-      if (Array.isArray(child)) child.forEach(visit);
-      else if (child && typeof child === 'object' && typeof child.type === 'string') visit(child);
-    }
-  }
-  if (fnNode.body) visit(fnNode.body);
-  return count;
+const SCRIPT_PATH = fileURLToPath(import.meta.url);
+const SCRIPT_DIR = dirname(SCRIPT_PATH);
+
+// 工具链来源：本脚本所属仓库的 tools/lint 隔离包（与「被评估的仓库」可能是两个位置——
+// 测试 fixture 用 cwd 指向临时目录，而 ESLint 工具链始终来自本脚本所在仓库）。
+const TOOLCHAIN_PKG = join(SCRIPT_DIR, '..', '..', 'tools', 'lint', 'package.json');
+
+/** 被评估文件的路径口径（仓库根相对 posix）。 */
+const SRC_RE = /(?:^|\/)packages\/[^/]+\/src\//;
+
+let toolchainCache = null;
+
+/**
+ * 从 tools/lint 隔离包解析 ESLint 工具链。
+ * 为什么不能从本文件所在目录解析：lint 工具链装在 tools/lint 下（typescript-eslint 需要带
+ * compiler API 的 TS 6，而仓根 typescript 是 tsgo），pnpm 严格布局下父目录解析不到子包依赖。
+ */
+async function loadToolchain() {
+  if (toolchainCache !== null) return toolchainCache;
+  const requireFromLint = createRequire(TOOLCHAIN_PKG);
+  const { Linter } = await import(pathToFileURL(requireFromLint.resolve('eslint')).href);
+  const tseslint = await import(pathToFileURL(requireFromLint.resolve('typescript-eslint')).href);
+  toolchainCache = { Linter, parser: tseslint.default.parser };
+  return toolchainCache;
+}
+
+/** 从 ESLint 诊断文本里取函数名（无名形态回退为空串）。 */
+function nameFromMessage(message) {
+  const m = /^(?:Function|Method|Getter|Setter|Constructor|Static block) '([^']+)'/.exec(message);
+  return m === null ? '' : m[1];
 }
 
 /**
- * 标记 esbuild 注入的模块边界注释，划分「本仓段 / 依赖段」：
- * 形如 `// ../../node_modules/.pnpm/...` 的注释开启依赖段，直到下一个路径注释。
+ * 单个文件的逐函数圈复杂度（ESLint `complexity` 规则，阈值 0 = 枚举全部函数）。
+ * 返回 { fns: [{ name, line, column, complexity }], parseError: string|null }。
  */
-export function foreignSegments(code) {
-  const segments = [];
-  let current = null;
-  let offset = 0;
-  for (const line of code.split('\n')) {
-    const m = /^\/\/ (\S+)\s*$/.exec(line);
-    // 只把包含 `/` 的注释作为模块边界（路径注释），过滤 `@__NO_SIDE_EFFECTS__` 等
-    // esbuild 内联注解——后者不关闭外层依赖段，避免依赖函数漏过滤。
-    if (m && m[1].includes('/')) {
-      if (current) segments.push({ start: current.start, end: offset, foreign: current.foreign });
-      current = { start: offset, foreign: m[1].includes('node_modules') };
-    }
-    offset += Buffer.byteLength(line, 'utf8') + 1;
-  }
-  if (current) segments.push({ start: current.start, end: offset, foreign: current.foreign });
-  return segments.filter((s) => s.foreign);
-}
-
-export function inForeign(offset, ranges) {
-  return ranges.some((r) => offset >= r.start && offset < r.end);
-}
-
-/**
- * 统计覆盖率数据的路径口径：lib（本脚本的圈复杂度来源）/ src（#722 阶段三起的采集口径）。
- *
- * 为什么需要它：复杂度与覆盖率必须同源才能按行号对齐。阶段三把覆盖率采集切到
- * vitest/istanbul 后分母只剩 src，而本脚本仍从 lib 产物算复杂度——此时按 lib 过滤
- * 会命中 0 个文件，脚本以「0 个函数」的名义 exit 0，属静默降级（#718 定性）。
- */
-export function coverageDataSource(coverage) {
-  let libCount = 0;
-  let srcCount = 0;
-  for (const file of Object.keys(coverage ?? {})) {
-    const norm = file.replace(/\\/g, '/');
-    if (/\/packages\/[^/]+\/lib\//.test(norm)) libCount += 1;
-    else if (/\/packages\/[^/]+\/src\//.test(norm)) srcCount += 1;
-  }
-  return { libCount, srcCount };
-}
-
-/** 数据源口径不匹配时的统一报错（fail-closed，防「0 个函数仍 exit 0」的静默降级）。 */
-function reportDataSourceMismatch(counts, mode = '') {
-  const tag = mode ? ` [${mode}]` : '';
-  console.error(`crap-check${tag}: 覆盖率数据里没有任何 packages/*/lib/ 条目（lib ${counts.libCount} / src ${counts.srcCount}）—— 数据源口径不匹配，fail-closed`);
-  console.error('  本脚本的圈复杂度取自 lib 编译产物，而 #722 阶段三起覆盖率只采集 src（vitest/istanbul），');
-  console.error('  两者行号不可比；继续运行会命中 0 个文件并以 exit 0 放行，属静默降级。');
-  console.error('  src 口径的 CRAP 重建归 #722 阶段 5（与 ESLint 复杂度规则同批，届时可用 TS parser）。');
-}
-
-/**
- * 收集垫片范围：esbuild 以 `var __xxx = (...) => ...` 形式定义的运行时辅助
- * （__async/__await/__generator 等），连同其函数体整体划为依赖段。
- */
-export function shimRanges(ast) {
-  const ranges = [];
-  function visit(node) {
-    if (!node || typeof node.type !== 'string') return;
-    if (node.type === 'VariableDeclarator'
-      && node.id?.type === 'Identifier' && /^__/.test(node.id.name)
-      && node.init && node.end != null && node.start != null) {
-      ranges.push({ start: node.start, end: node.end });
-    }
-    for (const key of Object.keys(node)) {
-      const child = node[key];
-      if (Array.isArray(child)) child.forEach(visit);
-      else if (child && typeof child === 'object' && typeof child.type === 'string') visit(child);
-    }
-  }
-  visit(ast);
-  return ranges;
-}
-
-/** 提取 AST 函数节点名或所在变量/属性名 */
-function getFunctionName(node, parent) {
-  if (node.id?.name) return node.id.name;
-  if (parent) {
-    if (parent.type === 'VariableDeclarator' && parent.id?.name) return parent.id.name;
-    if (parent.type === 'Property' || parent.type === 'MethodDefinition') {
-      if (parent.key?.type === 'Identifier') return parent.key.name;
-      if (parent.key?.type === 'Literal') return String(parent.key.value);
-    }
-    if (parent.type === 'AssignmentExpression') {
-      if (parent.left?.type === 'Identifier') return parent.left.name;
-      if (parent.left?.type === 'MemberExpression' && parent.left.property?.name) {
-        return parent.left.property.name;
-      }
-    }
-  }
-  return '';
-}
-
-/** 收集一个文件的全部本仓函数，返回 {comp, line, startLine, endLine, name} 列表（line 为 1-based 起始行）。 */
-export function functionsOf(code) {
-  // lib 宿主产物为 ESM，client 外壳为 IIFE：先按 module 解析，失败降级 script
-  let ast;
+export async function functionsOf(code, filename) {
+  const { Linter, parser } = await loadToolchain();
+  const isJs = /\.(js|mjs|cjs)$/.test(filename);
+  const linter = new Linter();
+  const config = [{
+    files: isJs ? ['**/*.{js,mjs,cjs}'] : ['**/*.{ts,tsx,mts,cts}'],
+    languageOptions: isJs
+      ? { ecmaVersion: 'latest', sourceType: 'module' }
+      : { parser, ecmaVersion: 'latest', sourceType: 'module' },
+    rules: { complexity: ['error', 0] },
+  }];
+  const verifyName = isJs ? 'x.mjs' : filename.endsWith('.tsx') ? 'x.tsx' : 'x.ts';
+  let messages;
   try {
-    ast = acorn.parse(code, { ecmaVersion: 'latest', sourceType: 'module', allowHashBang: true, locations: true });
-  } catch {
-    ast = acorn.parse(code, { ecmaVersion: 'latest', sourceType: 'script', allowHashBang: true, locations: true });
+    messages = linter.verify(code, config, { filename: verifyName });
+  } catch (error) {
+    return { fns: [], parseError: String(error.message).split('\n')[0] };
   }
-  const foreign = foreignSegments(code);
-  const shims = shimRanges(ast);
-  const out = [];
-  let skippedForeign = 0;
-  function visit(node, parent) {
-    if (!node || typeof node.type !== 'string') return;
-    const isFn = node.type === 'FunctionDeclaration' || node.type === 'FunctionExpression'
-      || node.type === 'ArrowFunctionExpression';
-    if (isFn && node.body) {
-      // 过滤 esbuild 垫片（__commonJS/__toESM/__async 等）与依赖段内函数
-      const isShim = (node.id?.name ?? '').startsWith('__');
-      if (isShim || inForeign(node.start, foreign) || inForeign(node.start, shims)) {
-        skippedForeign++;
-      } else {
-        const startLine = node.loc.start.line;
-        const endLine = node.loc.end.line;
-        const name = getFunctionName(node, parent);
-        out.push({
-          name,
-          comp: complexityOf(node),
-          line: startLine,
-          startLine,
-          endLine,
-        });
-      }
-    }
-    for (const key of Object.keys(node)) {
-      if (key === 'loc' || key === 'range') continue;
-      const child = node[key];
-      if (Array.isArray(child)) {
-        for (const c of child) visit(c, node);
-      } else if (child && typeof child === 'object' && typeof child.type === 'string') {
-        visit(child, node);
-      }
-    }
+  const fatal = messages.find((m) => m.fatal === true);
+  if (fatal !== undefined) {
+    return { fns: [], parseError: String(fatal.message).split('\n')[0] };
   }
-  visit(ast, null);
-  return { fns: out, skippedForeign };
+  const fns = [];
+  for (const m of messages) {
+    // 类字段初始化器不是函数（istanbul 的 fnMap 不含它），排除以保持两侧同口径。
+    if (/Class field initializer/.test(m.message)) continue;
+    const c = /complexity of (\d+)/.exec(m.message);
+    if (c === null) continue;
+    fns.push({ name: nameFromMessage(m.message), line: m.line, column: m.column, complexity: Number(c[1]) });
+  }
+  return { fns, parseError: null };
+}
+
+/** 单函数 CRAP 值。 */
+export function crapOf(comp, covered) {
+  return comp * comp * (covered ? 0 : 1) + comp;
+}
+
+/**
+ * 构建「起始行 → 是否被覆盖」索引（istanbul fnMap/f）。
+ * 同行多函数取「任一命中即算命中」——该放宽使 CRAP 系统性偏低（方向性偏差，校准阈值时须知）。
+ */
+export function coverageHitLines(fileCov) {
+  const hit = new Map();
+  for (const [id, fn] of Object.entries(fileCov?.fnMap ?? {})) {
+    const line = fn.decl?.start?.line ?? fn.loc?.start?.line ?? fn.line;
+    if (typeof line !== 'number') continue;
+    const covered = (fileCov.f?.[id] ?? 0) > 0;
+    hit.set(line, (hit.get(line) ?? false) || covered);
+  }
+  return hit;
+}
+
+/**
+ * 按起始行查覆盖状态，允许 ±1 行容差（istanbul 转译回映的固有偏移）。
+ */
+export function coveredAt(hitByLine, line) {
+  if (hitByLine.has(line)) return hitByLine.get(line);
+  if (hitByLine.has(line - 1)) return hitByLine.get(line - 1);
+  if (hitByLine.has(line + 1)) return hitByLine.get(line + 1);
+  return false;
 }
 
 /**
@@ -422,21 +350,21 @@ export function resolveBaseRef(base, cwd) {
 }
 
 /**
- * 规范化文件路径为相对于 repoRoot 的正斜杠路径。
+ * 补出函数结束行：ESLint 只报起始位置。用「下一个函数起始行 - 1」近似；
+ * 末个函数取大值，使纯删除 hunk 的插入点判定不因范围过窄而漏判。
  */
-function normalizeRelativePath(file, repoRoot) {
-  const normFile = file.replace(/\\/g, '/');
-  const normRoot = repoRoot.replace(/\\/g, '/');
-  if (normFile.startsWith(normRoot + '/')) {
-    return normFile.slice(normRoot.length + 1);
-  }
-  return normFile;
+function withRange(fns) {
+  return fns.map((fn, i) => ({
+    ...fn,
+    startLine: fn.line,
+    endLine: i + 1 < fns.length ? fns[i + 1].line - 1 : Number.MAX_SAFE_INTEGER,
+  }));
 }
 
 /**
- * 执行 --diff 增量防劣化评估
+ * 执行 --diff 增量防劣化评估。
  */
-export function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath }) {
+export async function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath }) {
   const baseRef = resolveBaseRef(baseArg, repoRoot);
   const diffRes = spawnSync('git', ['diff', '-U0', baseRef, '--'], {
     cwd: repoRoot,
@@ -450,13 +378,11 @@ export function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath }) {
   }
 
   const diffFiles = parseGitDiff(diffRes.stdout);
-  // 仅评估 packages/*/lib/ 目录下的改动文件
-  const relevantDiffFiles = Array.from(diffFiles.entries()).filter(([path]) =>
-    /\/packages\/[^/]+\/lib\//.test('/' + path.replace(/\\/g, '/'))
-  );
+  // 只评估包 src 下的改动（复杂度与覆盖率同口径）
+  const relevantDiffFiles = Array.from(diffFiles.entries()).filter(([path]) => SRC_RE.test(path.replace(/\\/g, '/')));
 
   if (relevantDiffFiles.length === 0) {
-    console.log(`crap-check [diff]: base=${baseRef}，未检测到插件包编译产物（packages/*/lib/）的代码变更，OK`);
+    console.log(`crap-check [diff]: base=${baseRef}，未检测到包 src 下的代码变更，OK`);
     return { exitCode: 0, passed: true, violations: [] };
   }
 
@@ -471,17 +397,9 @@ export function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath }) {
     console.warn('crap-check [diff]: 未检测到 coverage/coverage-final.json，默认按未覆盖（cov=0）评估');
   }
 
-  const counts = coverageDataSource(coverage);
-  if (counts.libCount === 0 && counts.srcCount > 0) {
-    reportDataSourceMismatch(counts, 'diff');
-    return { exitCode: 2, passed: false, violations: [] };
-  }
-
-  // 构建 coverage 索引：按 relativePath -> fileData
-  const coverageByRel = new Map();
+  const coverageByAbs = new Map();
   for (const [covFile, covData] of Object.entries(coverage)) {
-    const rel = normalizeRelativePath(covFile, repoRoot);
-    coverageByRel.set(rel, covData);
+    coverageByAbs.set(resolve(covFile), covData);
   }
 
   const violations = [];
@@ -493,7 +411,12 @@ export function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath }) {
     if (!existsSync(absPath)) continue;
 
     const currentCode = readFileSync(absPath, 'utf8');
-    const { fns: currentFns } = functionsOf(currentCode);
+    const current = await functionsOf(currentCode, absPath);
+    if (current.parseError !== null) {
+      console.error(`crap-check [diff]: ${relPath} 解析失败（${current.parseError}）—— fail-closed`);
+      return { exitCode: 2, passed: false, violations: [] };
+    }
+    const currentFns = withRange(current.fns);
 
     // 读取 base 提交中的老文件内容
     let baseFns = [];
@@ -504,21 +427,11 @@ export function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath }) {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
       if (showRes.status === 0) {
-        baseFns = functionsOf(showRes.stdout).fns;
+        baseFns = withRange((await functionsOf(showRes.stdout, absPath)).fns);
       }
     }
 
-    // 提取当前文件在 coverage 中的逐行命中状态
-    const fileCov = coverageByRel.get(relPath);
-    const hitByLine = new Map();
-    if (fileCov?.fnMap) {
-      for (const [id, fn] of Object.entries(fileCov.fnMap)) {
-        const line = fn.loc?.start?.line ?? fn.decl?.start?.line;
-        if (line == null) continue;
-        const hit = (fileCov.f?.[id] ?? 0) > 0;
-        hitByLine.set(line, (hitByLine.get(line) ?? false) || hit);
-      }
-    }
+    const hitByLine = coverageHitLines(coverageByAbs.get(absPath));
 
     for (const fn of currentFns) {
       if (!isFunctionTouched(fn, fileDiff)) {
@@ -527,56 +440,49 @@ export function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath }) {
       }
       touchedCount++;
 
-      const covered = hitByLine.get(fn.line) ?? false;
-      const crapNew = fn.comp * fn.comp * (covered ? 0 : 1) + fn.comp;
+      const covered = coveredAt(hitByLine, fn.line);
+      const crapNew = crapOf(fn.complexity, covered);
 
       if (crapNew <= threshold) {
-        // 合规放行
         compliantCount++;
         continue;
       }
 
-      // CRAP 超标，判定存量恶化或新增超标
       const baseFn = findBaseFunction(fn, baseFns, fileDiff.hunks);
 
       if (!baseFn) {
-        // 新增函数超标
         violations.push({
           type: 'NEW_EXCEEDED',
           file: relPath,
-          line: fn.startLine,
+          line: fn.line,
           name: fn.name || '<anonymous>',
-          comp: fn.comp,
+          comp: fn.complexity,
           covered,
           crap: crapNew,
           threshold,
         });
       } else {
-        // 修改的存量函数：计算 base CRAP
-        const crapBase = baseFn.comp * baseFn.comp * (covered ? 0 : 1) + baseFn.comp;
+        const crapBase = crapOf(baseFn.complexity, covered);
         if (crapNew > crapBase) {
-          // 恶化拦截
           violations.push({
             type: 'REGRESSION',
             file: relPath,
-            line: fn.startLine,
+            line: fn.line,
             name: fn.name || '<anonymous>',
-            compNew: fn.comp,
-            compBase: baseFn.comp,
+            compNew: fn.complexity,
+            compBase: baseFn.complexity,
             covered,
             crapNew,
             crapBase,
             threshold,
           });
         } else {
-          // 未恶化（重构降复杂度或持平），放行
           compliantCount++;
         }
       }
     }
   }
 
-  // 输出结果与报告
   if (violations.length > 0) {
     console.error(`crap-check [diff]: FAIL - 发现 ${violations.length} 处 CRAP 增量违规（base: ${baseRef}，阈值: ${threshold}）：`);
     for (const v of violations) {
@@ -594,55 +500,52 @@ export function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath }) {
 }
 
 /**
- * 执行默认的全量评估逻辑
+ * 执行默认的全量评估逻辑。
  */
-export function runFullCheck({ repoRoot, threshold, strict, coveragePath }) {
+export async function runFullCheck({ repoRoot, threshold, strict, coveragePath }) {
   if (!existsSync(coveragePath)) {
     console.error('crap-check: coverage/coverage-final.json 不存在，请先运行 pnpm cov');
     return { exitCode: 2, passed: false, hotspots: [] };
   }
 
   const coverage = JSON.parse(readFileSync(coveragePath, 'utf8'));
-
-  const counts = coverageDataSource(coverage);
-  if (counts.libCount === 0) {
-    reportDataSourceMismatch(counts);
-    return { exitCode: 2, passed: false, hotspots: [] };
-  }
+  const normRoot = repoRoot.replace(/\\/g, '/').replace(/\/$/, '');
 
   const hotspots = [];
   let totalFns = 0;
   let coveredFns = 0;
-  let skippedForeignTotal = 0;
+  let scannedFiles = 0;
+  let parseFailed = 0;
 
   for (const [file, data] of Object.entries(coverage)) {
-    // 包产物过滤对分隔符归一后匹配：coverage 键是 V8 原生路径（Windows 反斜杠），
-    // 按字面正斜杠匹配会在 Windows 上整批跳过报 0（Linux 不受影响）。
+    // 路径口径：只评估包 src（与 vitest coverage 的 include 同口径）。先对分隔符归一，
+    // 避免 Windows 反斜杠路径整批跳过而报 0。
     const normFile = file.replace(/\\/g, '/');
-    if (!/\/packages\/[^/]+\/lib\//.test(normFile)) continue;
-    const rel = existsSync(file) ? file : join(repoRoot, file);
-    if (!existsSync(rel)) continue;
-    const { fns, skippedForeign } = functionsOf(readFileSync(rel, 'utf8'));
-    skippedForeignTotal += skippedForeign;
+    if (!SRC_RE.test(normFile)) continue;
+    const absPath = resolve(file);
+    if (!existsSync(absPath)) continue;
+    scannedFiles++;
 
-    const hitByLine = new Map();
-    for (const [id, fn] of Object.entries(data.fnMap ?? {})) {
-      const line = fn.loc?.start?.line ?? fn.decl?.start?.line;
-      if (line == null) continue;
-      const hit = (data.f?.[id] ?? 0) > 0;
-      hitByLine.set(line, (hitByLine.get(line) ?? false) || hit);
+    const { fns, parseError } = await functionsOf(readFileSync(absPath, 'utf8'), absPath);
+    if (parseError !== null) {
+      parseFailed++;
+      console.warn(`crap-check: ${normFile} 解析失败，跳过（${parseError}）`);
+      continue;
     }
+
+    const hitByLine = coverageHitLines(data);
 
     for (const fn of fns) {
       totalFns++;
-      const covered = hitByLine.get(fn.line) ?? false;
+      const covered = coveredAt(hitByLine, fn.line);
       if (covered) coveredFns++;
-      const crap = fn.comp * fn.comp * (covered ? 0 : 1) + fn.comp;
+      const crap = crapOf(fn.complexity, covered);
       if (crap > threshold) {
         hotspots.push({
-          file: file.slice(repoRoot.length + 1),
+          file: normFile.startsWith(normRoot + '/') ? normFile.slice(normRoot.length + 1) : normFile,
           line: fn.line,
-          comp: fn.comp,
+          name: fn.name,
+          comp: fn.complexity,
           covered,
           crap,
         });
@@ -650,9 +553,16 @@ export function runFullCheck({ repoRoot, threshold, strict, coveragePath }) {
     }
   }
 
+  // 零函数 = 数据源口径不匹配，属静默降级（#718 定性），必须 fail-closed。
+  if (totalFns === 0) {
+    console.error(`crap-check: 在 coverage 数据里没有任何包 src 条目（扫描文件 ${scannedFiles}）——`);
+    console.error('  覆盖率数据源口径不匹配（期望 vitest/istanbul 的 src 口径）。请先运行 pnpm cov，再重试。');
+    return { exitCode: 2, passed: false, hotspots: [] };
+  }
+
   hotspots.sort((a, b) => b.crap - a.crap);
-  console.log(`crap-check: 本仓函数 ${totalFns} 个（已排除依赖/垫片 ${skippedForeignTotal} 个），`
-    + `已覆盖 ${coveredFns}（${totalFns ? Math.round((coveredFns / totalFns) * 100) : 0}%），阈值 ${threshold}`);
+  console.log(`crap-check: 本仓函数 ${totalFns} 个（${scannedFiles} 个 src 文件，解析失败 ${parseFailed} 个），`
+    + `已覆盖 ${coveredFns}（${Math.round((coveredFns / totalFns) * 100)}%），阈值 ${threshold}`);
 
   mkdirSync(join(repoRoot, 'coverage'), { recursive: true });
   writeFileSync(
@@ -663,7 +573,8 @@ export function runFullCheck({ repoRoot, threshold, strict, coveragePath }) {
       strict,
       totalFns,
       coveredFns,
-      skippedForeignTotal,
+      scannedFiles,
+      parseFailed,
       hotspots,
     }, null, 2),
   );
@@ -689,9 +600,9 @@ export function runFullCheck({ repoRoot, threshold, strict, coveragePath }) {
 }
 
 /**
- * 主入口解析与分发
+ * 主入口解析与分发。
  */
-export function runCrapCheck(argv = process.argv.slice(2), { shouldExit = true } = {}) {
+export async function runCrapCheck(argv = process.argv.slice(2), { shouldExit = true } = {}) {
   const repoRoot = process.cwd();
   const configPath = join(repoRoot, 'scripts', 'data', 'gauntlet.config.json');
   const config = existsSync(configPath) ? JSON.parse(readFileSync(configPath, 'utf8')) : {};
@@ -722,12 +633,9 @@ export function runCrapCheck(argv = process.argv.slice(2), { shouldExit = true }
     }
   }
 
-  let result;
-  if (isDiff) {
-    result = runDiffCheck({ repoRoot, threshold, baseArg, coveragePath });
-  } else {
-    result = runFullCheck({ repoRoot, threshold, strict, coveragePath });
-  }
+  const result = isDiff
+    ? await runDiffCheck({ repoRoot, threshold, baseArg, coveragePath })
+    : await runFullCheck({ repoRoot, threshold, strict, coveragePath });
 
   if (shouldExit && typeof result.exitCode === 'number') {
     process.exit(result.exitCode);
@@ -739,7 +647,7 @@ export function runCrapCheck(argv = process.argv.slice(2), { shouldExit = true }
 function isDirectExecution() {
   if (!process.argv[1]) return false;
   try {
-    const scriptPath = realpathSync(fileURLToPath(import.meta.url));
+    const scriptPath = realpathSync(SCRIPT_PATH);
     const execPath = realpathSync(process.argv[1]);
     return scriptPath === execPath;
   } catch {
@@ -748,5 +656,5 @@ function isDirectExecution() {
 }
 
 if (isDirectExecution()) {
-  runCrapCheck(process.argv.slice(2), { shouldExit: true });
+  await runCrapCheck(process.argv.slice(2), { shouldExit: true });
 }

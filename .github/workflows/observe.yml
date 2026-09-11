@@ -81,10 +81,10 @@ jobs:
       - name: Coverage（vitest coverage，阈值 coverage.thresholds 内 fail-closed）
         run: pnpm cov
 
-      # CRAP 自 #722 阶段三起处于 fail-closed 停用态（其圈复杂度取自 lib 产物，
-      # 而覆盖率已切 src 口径，行号不可比 → crap-check 入口自检 exit 2），故移除本
-      # 步骤而非保留一个恒红/恒空的执行点。src 口径重建归阶段 5（与 ESLint 复杂度
-      # 规则同批），届时重新接入本班次。crap-report.json 缺席时报告正文自动省略该段。
+      # CRAP 于 #722 阶段五完成 src 口径重建（复杂度取自 ESLint 的 complexity 规则，
+      # 覆盖率取自同一份 src 口径产物，两者行号可比），恢复接入本班次。
+      - name: CRAP（热点报告；strict 见 gauntlet.config.json 的 crap.strict）
+        run: pnpm crap
 
       - name: Resolve mutation suites（#276 方案 A + #433 全量班：每日一次全量）
         id: suite-plan

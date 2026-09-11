@@ -24,7 +24,8 @@
     "gate:pr": "node scripts/gate/local-gate.mjs --tier pr",
     "gate:full": "node scripts/gate/local-gate.mjs --tier full",
     "cov": "vitest run --coverage --project unit --project integration",
-    "crap": "node scripts/gate/crap-check.mjs"
+    "crap": "node scripts/gate/crap-check.mjs",
+    "lint": "node tools/lint/bin/lint.mjs"
   },
   "keywords": [
     "dsh",

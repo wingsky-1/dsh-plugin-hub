@@ -64,7 +64,7 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
 | 层 | 命令 | 用途与口径 |
 |---|---|---|
 | 快线 | `pnpm gate:changed` | 迭代中反复跑：只跑 diff 命中包的 build + test + typecheck。包面归属取自 `ci.yml` 的 paths-filter（**唯一事实源**，本地不重述路径规则）；命中全局面时自动升级为 `gate:pr`，解析失败一律回退全量（fail-closed） |
-| 最小集 | `pnpm gate:pr` | 开 PR 前：快线 + **命中包**的产物闸（`contract` / `pack:check` / `verify:npmlayout` 按 `--packages` 切片）+ 廉价全仓一致性闸（`stryker:check`、`aggregate:check`、`test:src-tests`、`gate:homedir`、`docs:check`、`test:scripts`，均秒级且不依赖 lib 产物） |
+| 最小集 | `pnpm gate:pr` | 开 PR 前：快线 + **命中包**的产物闸（`contract` / `pack:check` / `verify:npmlayout` 按 `--packages` 切片）+ 廉价全仓一致性闸（`stryker:check`、`aggregate:check`、`test:src-tests`、`gate:homedir`、`docs:check`、`test:scripts`、`lint`，均秒级且不依赖 lib 产物） |
 | 收尾 | `pnpm gate:full` | 全仓口径（= 夜间班次口径）：全仓 build/test/typecheck + 全仓产物闸 + 全部静态闸；改过构建链、包结构或发版前跑一遍 |
 | 全量 | CI 夜间班次（`observe.yml` / `observe-incremental.yml`） | 全仓产物闸 + 覆盖率 + 全量/增量变异与基线归档。本地不默认跑，需要时 `pnpm gate:full --with-coverage` |
 
@@ -75,6 +75,7 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
 | 改 `src/` 里 HOME 来源 API | `gate:pr` 起（含 `gate:homedir`） |
 | 改 `scripts/` / workflow | `gate:pr` 起（含 `test:scripts`）；改 `.github/` 属红线，先评审 |
 | 改 README、新增文档链接 | `gate:pr` 起（含 `docs:check`） |
+| 改任意手写源码（`packages/*/src`、`packages/*/test`、`shared/`、`scripts/`） | `gate:pr` 起（含 `lint`：ESLint 复杂度门禁，阈值见 `gauntlet.config.json` 的 `complexity` 段） |
 | 提交前最终一遍 | `pnpm gate:pr`；单包迭代用 `pnpm gate:changed` |
 
 - 分层**不减少检查，只改变时机**：PR 与本地都走增量（命中包），只有"必须全仓才能判定"的

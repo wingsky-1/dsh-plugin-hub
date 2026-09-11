@@ -41,9 +41,11 @@ jobs:
       - name: Coverage（vitest coverage，分母仅 src，阈值见 vitest.config.ts）
         run: pnpm cov
 
-      # CRAP 自 #722 阶段三起处于 fail-closed 停用态（圈复杂度取自 lib 产物、覆盖率已切
-      # src 口径，行号不可比 → crap-check 入口自检 exit 2），故移除本步骤；src 口径重建
-      # 归阶段 5。crap-report.json 缺席时报告正文自动省略该段（见 health-report-body.mjs）。
+      # CRAP 于 #722 阶段五完成 src 口径重建（复杂度取自 ESLint 的 complexity 规则，
+      # 覆盖率取自同一份 src 口径产物），恢复接入；crap-report.json 供报告正文消费
+      # （见 health-report-body.mjs）。
+      - name: CRAP（热点报告；strict 见 gauntlet.config.json 的 crap.strict）
+        run: pnpm crap
 
       - name: Generate report body
         run: node scripts/release/health-report-body.mjs > health-body.md

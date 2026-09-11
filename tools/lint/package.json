@@ -1,0 +1,14 @@
+{
+  "name": "@dsh-tools/lint",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "lint 工具链隔离包（#722 阶段五）。typescript-eslint 需要 TypeScript 的 compiler API，而根 typescript 是 tsgo 7.x（无 API，根 tsc 由它提供，不可替换）；pnpm 的子包隔离让 TS 6 与 TS 7 共存，根链路不受影响。非发布包。",
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.10.0",
+    "eslint-plugin-sonarjs": "4.2.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.0"
+  }
+}

@@ -407,6 +407,17 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
     自动枚举会退回「目录即事实源」的 fail-open 老路；
   - schema 加载/校验逻辑只有一份：`scripts/lib/plugins-manifest-lib.ts`（纯函数，
     入口脚本只喂数据），测试见 `scripts/test/plugins-manifest.test.ts`。
+- **复杂度门禁（#722 阶段五）**：`pnpm lint` = ESLint `complexity` + `sonarjs/cognitive-complexity`，
+  跑在 `packages/*/src`、`packages/*/test`、`shared`、`scripts` 的手写源码上（秒级）。
+  - **工具链隔离**：lint 工具链装在 `tools/lint`（刻意不在 `packages/` 下）——typescript-eslint
+    需要 TypeScript 的 compiler API，而仓根 `typescript` 是 tsgo 7.x（无 API，且根 `tsc` 由它
+    提供、各包 build/typecheck 依赖它）。pnpm 的子包隔离让 lint 专用的 TS 6 与根 tsgo 共存；
+    `scripts/test/lint-toolchain.test.ts` 逐条钉死该前提——隔离一旦被破坏，失败形态是
+    「lint 全绿但没在跑规则」或「build 悄悄换了编译器」，两者都不会自己报出来。
+  - **阈值唯一事实源**：`scripts/data/gauntlet.config.json` 的 `complexity` 段。起步值 =
+    全域实测最大值（cyclomatic 78 / cognitive 84），只拦新增劣化；收紧路线与目标见 issue #732。
+  - **与 CRAP 的关系**：`pnpm crap` 的圈复杂度**取自同一条 ESLint 规则**（`Linter` API + 阈值 0
+    枚举全部函数），不实现第二份算法——两者是同一事实源的消费方，不存在口径漂移面。
 - **新增/修改客户端后**：`pnpm gate:pr` 全绿再提交（= 命中包 build/test/typecheck + 命中包
   产物闸 + 廉价全仓一致性闸；迭代中用 `pnpm gate:changed`，全仓口径用 `pnpm gate:full`。
   分层口径与「改动类型 → 归属层」对照表见根 [AGENTS.md 门禁矩阵](../AGENTS.md)）。

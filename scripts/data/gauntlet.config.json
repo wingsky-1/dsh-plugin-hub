@@ -5,6 +5,15 @@
     "strict": false,
     "note": "#722 阶段三起 crap-check 处于 fail-closed 停用态：其圈复杂度取自 lib 编译产物，而覆盖率采集已切到 src 口径（vitest/istanbul），两者行号不可比，入口自检不匹配即 exit 2（不再以「0 个函数」静默归零）。src 口径重建归阶段 5，与 ESLint 复杂度规则同批。"
   },
+  "complexity": {
+    "note": "#722 阶段五：ESLint 复杂度门禁阈值（唯一事实源，由 tools/lint/eslint.config.js 消费）。起步值 = 全域实测最大值——锚定当前最坏函数，保证零存量命中、只拦新增劣化（量化表见 #732）；收紧路线与最终目标见 #732，target 仅记录目标值，门禁不读取。",
+    "cyclomatic": 78,
+    "cognitive": 84,
+    "target": {
+      "cyclomatic": 10,
+      "cognitive": 15
+    }
+  },
   "mutation": {
     "note": "观察期仅记录不卡点；阶段三按 #42 二期校准后接入 ci.yml 硬卡点。score 为 Stryker 报告口径（分母含 noCoverage），covered 为官方 mutationScore 口径（(killed+timeout)/(total-noCoverage)）。#151 起 tap-runner 的 RuntimeError 分类缺陷曾由 scripts/test/mutation-tap-bridge.cjs 修正（未捕获异常转写 TAP not ok），error=0，自动口径与此前人工换算口径一致；#722 起 runner 换为 @stryker-mutator/vitest-runner，该桥接随 tap-runner 一并退役，未捕获异常改由 vitest runner 归入 errorsSet 并判该次运行 Error。",
     "strict": true,
