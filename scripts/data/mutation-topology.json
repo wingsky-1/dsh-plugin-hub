@@ -198,6 +198,9 @@
                 "testMutationExemptions": {
                     "unit": {
                         "packages/dsh-mcp-manager/test/unit/unit-shared.test.ts": "被测对象是 workspace 根 shared/settings-namespace.ts（不在本包 mutate 面内），登记它零杀灭、只增加各段 dry run 执行面"
+                    },
+                    "integration": {
+                        "packages/dsh-mcp-manager/test/integration/service-contract.test.ts": "契约编译面用例：静态读取 src/bootstrap/apply-services.ts 的源文本比对 provide 方法集；在 Stryker 沙箱内被测源码已插桩，源文本断言必然失败（CI 实测 2026-09-11：Mutation gate (dsh-mcp-manager · runtime) dry run 报 apply.ts provide(\"mcpManager\") 方法名集合应与契约清单一致）。该用例的价值是类型/编译面与契约清单漂移，不产生变异杀灭，故不进变异面（随 pnpm test:scripts 的 service-contract-wiring 与 pnpm typecheck 生效）"
                     }
                 }
             }

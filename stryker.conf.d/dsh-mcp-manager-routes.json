@@ -39,7 +39,6 @@
       "./scripts/test/mutation-lib-to-src-hook.mjs"
     ],
     "testFiles": [
-      "packages/dsh-mcp-manager/test/integration/service-contract.test.ts",
       "packages/dsh-mcp-manager/test/unit/unit-apply.test.ts",
       "packages/dsh-mcp-manager/test/unit/unit-call-stats.test.ts",
       "packages/dsh-mcp-manager/test/unit/unit-catalog.test.ts",
