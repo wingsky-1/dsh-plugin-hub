@@ -12,8 +12,9 @@ console.error("EVAL-ORDER-TAG: CONTRACT");
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
 import { beforeAll, describe, expect, it } from "vitest";
-import { pollUntil } from "../../helpers.ts";
 import {
   safeSegment,
   sseData,
@@ -1314,74 +1315,32 @@ describe("readStamp：不存在 null、存在取值", () => {
 });
 
 describe("hotreload：start 文件缺失失败回调；pollOnce 文件删除保留 current", () => {
+  // 该段必须走 Node 子进程（test/hotreload-probe.mjs）：src 用
+  // `import(url + "?t=" + mtimeMs)` 破 ESM 模块缓存，而 vitest 的 module runner 会按
+  // 路径缓存 src 内发出的动态 import 并吞掉该查询——同一 fixture 连续两次 import
+  // 时而拿到新版本、时而拿到缓存版本（实测多次运行结果不一致，属环境引入的 flake）。
+  // 原生 Node 的 ESM 缓存严格按含查询串的完整 URL 区分，与生产运行态一致，
+  // 故整段序列在子进程内回放，上层只逐条核对回传的观测量。
   let startedMissing, startedMissingError, eventsLength;
   let startedOk, currentAfterStart, polledOk, currentAfterPoll;
   let badReloadOk, badReloadError, delPollOk, currentAfterDelete;
 
-  beforeAll(async () => {
-    const dir = mkdtempSync(join(tmpdir(), "dou-hr-cls-"));
-    const missing = join(dir, "missing.mjs");
-    const events: Array<{ ok: boolean; error?: string }> = [];
-    const hrMissing = new HotReloadableAdapter(missing, 60000, (i) => events.push(i));
-    const started = await hrMissing.start();
-    startedMissing = started;
-    startedMissingError = started.error;
-    eventsLength = events.length;
-
-    // 合法文件启动 + 变更后 pollOnce 原子切换 + 删除后保留旧版
-    const good = join(dir, "good.mjs");
-    writeFileSync(good, `
-export const version = ${ADAPTER_CONTRACT_VERSION};
-export const name = "hr-unit";
-export const providers = ["${OPENCODE_GO_PROVIDER}"];
-export async function fetchData() { return { v: 1 }; }
-export function formatCapsule() { return "<span>v1</span>"; }
-export function formatPanel() { return "<p>v1</p>"; }
-`, "utf8");
-    const hr = new HotReloadableAdapter(good, 60000);
-    const startedOkRes = await hr.start();
-    startedOk = startedOkRes;
-    currentAfterStart = hr.current !== null;
-    hr.stop(); // 停表后手动 poll
-
-    // 内容变更（mtime 变化）→ 重载。
-    // vite 的 SSR module runner 会在短窗口内按文件路径缓存 src 内发出的动态 import，
-    // 把生产用的 `?t=<mtime>` 破缓存查询吞掉；因此这里按「重写内容（stamp 必变）→
-    // pollOnce → 直到观察到 current 真的换新对象」的方式推进，超时未观察到即 fail-loud，
-    // 不让「缓存命中」被误当作「重载成功」。
-    const beforeV2 = hr.current;
-    let v2Attempt = 0;
-    const polled = await pollUntil(async () => {
-      writeFileSync(good, `
-export const version = ${ADAPTER_CONTRACT_VERSION};
-export const name = "hr-unit";
-export const providers = ["${OPENCODE_GO_PROVIDER}"];
-export async function fetchData() { return { v: 2 }; }
-export function formatCapsule() { return "<span>v2</span>"; }
-export function formatPanel() { return "<p>v2</p>"; }
-` + " ".repeat(v2Attempt++), "utf8");
-      const r = await hr.pollOnce();
-      return hr.current !== beforeV2 ? r : undefined;
-    }, 3000, 20);
-    polledOk = polled;
-    currentAfterPoll = hr.current !== null;
-
-    // 校验失败的替换内容 → reload 报错且 current 不动
-    let badAttempt = 0;
-    const badReload = await pollUntil(async () => {
-      writeFileSync(good, 'export const version = 1; export const name = "bad";' + " ".repeat(badAttempt++), "utf8");
-      const r = await hr.pollOnce();
-      return r.ok === false ? r : undefined;
-    }, 3000, 20);
-    badReloadOk = badReload;
-    badReloadError = badReload?.error;
-
-    // 文件删除 → 保留当前适配器不切换
-    const { unlinkSync } = await import("node:fs");
-    unlinkSync(good);
-    const delPoll = await hr.pollOnce();
-    delPollOk = delPoll;
-    currentAfterDelete = hr.current !== null;
+  beforeAll(() => {
+    const probe = fileURLToPath(new URL("../../hotreload-probe.mjs", import.meta.url));
+    const raw = execFileSync(process.execPath, [probe], { encoding: "utf8" });
+    const line = raw.trimEnd().split("\n").filter((l) => l.trimStart().startsWith("{")).pop();
+    const out = JSON.parse(line);
+    startedMissing = { ok: out.startedMissingOk };
+    startedMissingError = out.startedMissingError;
+    eventsLength = out.eventsLength;
+    startedOk = { ok: out.startedOk };
+    currentAfterStart = out.currentAfterStart;
+    polledOk = { ok: out.polledOk };
+    currentAfterPoll = out.currentAfterPoll;
+    badReloadOk = { ok: out.badReloadOk };
+    badReloadError = out.badReloadError;
+    delPollOk = { ok: out.delPollOk };
+    currentAfterDelete = out.currentAfterDelete;
   });
 
   it("start 文件缺失失败", () => {
