@@ -40,10 +40,14 @@
  *     target 侧同样不入模块表与依赖图。
  *   - 跨包 shared/ 共享层、lib/ 产物、node_modules、client/ 内部资源不在检查范围。
  *
- * 模式：
+ * 模式（#710 F11：措辞必须区分「有基线 / 无基线」两态，否则会误读成 --soft 也判红）：
  *   - 默认（hard）：规则违规经单调基线判定（实际 > 基线即 FAIL，exit 1）。
- *   - `--soft`：规则 1–3 违规只打印软报告标签，仍受基线约束；规则 4 两模式均硬执行。
- *   - 基线缺失或包未登记：fail-closed（违规即刻判红，不允许「无基线 = 放行」）。
+ *   - `--soft`：规则 1–3 违规只打印软报告标签，仍受基线约束；规则 4（虚导出）两模式均硬执行。
+ *   - **基线缺失或包未登记（fail-closed）**：
+ *       · hard 下规则 1/2 违规即刻 exit 1；
+ *       · soft 下规则 1/2 仍只进软报告（不判红）——fail-closed 只保证「无基线 = 不放行」，
+ *         不改变 soft 对规则 1–3 的软报告语义；
+ *       · 两种模式下规则 4（虚导出）、规则 5（值环）与源码全覆盖断言都硬执行。
  *
  * 适用包白名单：`--package <name>`（可多次）；缺省 = 仅 dsh-mcp-manager。
  * 用法：node scripts/gate/verify-dir-imports.mjs [--package <name>] [--soft] [--verbose]
@@ -53,6 +57,8 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+import { collectMutationSpecs } from './mutation-topology.mjs'
 
 // 仓库根；测试可用 VERIFY_DIR_IMPORTS_ROOT 注入临时 fixture 根，避免在仓库内
 // 造包目录（产物零污染纪律）。基线可用 VERIFY_DIR_IMPORTS_BASELINE 覆盖。
@@ -244,7 +250,12 @@ function collectInterfaceExports(file) {
   return out
 }
 
-/** 叶子模块表：递归全部含 interface.ts 的目录（顶层 client 子树整体豁免）。 */
+/**
+ * 叶子模块表：递归全部含 interface.ts 的目录（顶层 client 子树整体豁免）。
+ * 模块**必是目录**：`src/interface.ts` 这类根级同名文件不构成模块（它没有「对外引用面」
+ * 语义——根文件的引用在规则 3 下本就放行），故根级 interface.ts 的导出符号不存在性
+ * 也不进入规则 4 的检查对象（#710 F13 的显式声明）。
+ */
 function collectModules(srcDir) {
   const modules = new Map() // 绝对目录 → 模块 id（相对 src 的 posix 路径）
   const walk = (dir, depth) => {
@@ -288,20 +299,11 @@ function globToRegExp(pattern) {
   return new RegExp(`^${out}$`)
 }
 
-/** 从变异拓扑取本包的 mutate / excludes 清单（excludes 去 `!` 前缀后按 glob 匹配）。 */
-function collectMutationSpecs(topology, pkgName) {
-  const pkgDef = topology?.packages?.[pkgName]
-  if (pkgDef === undefined) return null
-  const mutate = []
-  const excludes = []
-  for (const seg of Object.values(pkgDef.segments ?? {})) {
-    for (const g of seg.mutate ?? []) mutate.push(g)
-    for (const g of seg.excludes ?? []) excludes.push(g.replace(/^!/, ''))
-  }
-  return { mutate, excludes }
-}
-
-/** 在值依赖图上跑三色 DFS，返回环集合（节点集合排序去重后作 key，值为一条环路径）。 */
+/**
+ * 在值依赖图上跑三色 DFS，返回**环集合**（不是环个数）：节点集合排序去重后作 key，
+ * 值为一条代表环路径。语义后果（#710 F16）：同一节点集合上的另一条同类路径不会让
+ * 计数变化——本指标衡量「哪些节点互相纠缠」，不衡量「有几条回路」，增量基线据此只许降不许升。
+ */
 function findCycles(edges) {
   const WHITE = 0
   const GRAY = 1
@@ -507,7 +509,10 @@ function analyzePackage(pkgName, topology) {
     topologyRegistered: specs !== null,
     metrics: {
       modules: modules.size,
-      srcTsFiles: allTsFiles.length,
+      // F14：两个口径必须自解释——scannedSrcFiles = 实际参与规则扫描的文件
+      // （已排除 client 子树与 .d.ts 声明面）；allSrcTsFiles = src 下全部 TS 文件。
+      scannedSrcFiles: files.length,
+      allSrcTsFiles: allTsFiles.length,
       interfaceFacades: 0, // 主流程按被引用面填充
       topValueEdges: edgeCount(topValueEdges),
       topModuleCycles: topCycles.size,
@@ -536,7 +541,8 @@ function analyzePackage(pkgName, topology) {
  */
 const COUNTED_METRICS = [
   'modules',
-  'srcTsFiles',
+  'scannedSrcFiles',
+  'allSrcTsFiles',
   'interfaceFacades',
   'leafValueEdges',
   'leafModuleCycles',
@@ -658,11 +664,11 @@ function renderGraph(analysis) {
     const inT = new Set(refs.filter((r) => r.toModule === id && r.fromModule && r.fromModule !== id && r.isType).map((r) => r.fromModule)).size
     lines.push(`  ${id.padEnd(26)} 扇出 ${outV}/${outT}  扇入 ${inV}/${inT}`)
   }
-  lines.push(`顶层域值环（历史对照口径，复刻修复粒度前算法）：${cycles.top.size} 个`)
+  lines.push(`顶层域值环（历史对照口径，复刻修复粒度前算法，按节点集合去重的环集合数）：${cycles.top.size} 个`)
   for (const c of cycles.top.values()) lines.push(`  ${c.join(' → ')}`)
-  lines.push(`叶子模块级值环（门禁口径，只许降不许升）：${cycles.leaf.size} 个`)
+  lines.push(`叶子模块级值环（门禁口径，按节点集合去重的环集合数，只许降不许升）：${cycles.leaf.size} 个`)
   for (const c of cycles.leaf.values()) lines.push(`  ${c.join(' → ')}`)
-  lines.push(`文件级值环（门禁口径）：${cycles.file.size} 个`)
+  lines.push(`文件级值环（门禁口径，按节点集合去重的环集合数）：${cycles.file.size} 个`)
   for (const c of cycles.file.values()) lines.push(`  ${c.join(' → ')}`)
   lines.push(`死声明（意图 - 事实）：${deadDeclarations.length} 条`)
   for (const d of deadDeclarations) lines.push(`  ${d}`)
@@ -677,7 +683,8 @@ function buildBaseline(analyses) {
     const m = a.metrics
     packages[a.package] = {
       modules: m.modules,
-      srcTsFiles: m.srcTsFiles,
+      scannedSrcFiles: m.scannedSrcFiles,
+      allSrcTsFiles: m.allSrcTsFiles,
       interfaceFacades: m.interfaceFacades,
       leafValueEdges: m.leafValueEdges,
       leafModuleCycles: m.leafModuleCycles,
@@ -738,7 +745,9 @@ for (const pkgName of applyPackages) {
   // 被跨模块引用解析到的 interface.ts（任意层级）→ 符号存在性检查对象
   const referencedInterfaces = new Set()
   for (const r of analysis.refs) {
-    if (r.targetFile === 'interface.ts' && r.fromModule !== r.toModule) referencedInterfaces.add(r.target)
+    // F12：判据是「目录不同」而不是「模块不同」。同模块内的子目录（a/sub/x.ts → ../interface.ts）
+    // 同样是在引用该门面的对外符号，按模块比较会把这一面整块漏掉（#710 F12 实测向量）。
+    if (r.targetFile === 'interface.ts' && dirname(r.fromFile) !== dirname(r.target)) referencedInterfaces.add(r.target)
   }
   for (const ifaceFile of referencedInterfaces) {
     for (const { exported, local, via } of collectInterfaceExports(ifaceFile)) {
@@ -812,7 +821,7 @@ for (const analysis of analyses) {
     `${pkgName}: 叶子模块 ${metrics.modules} 个、值边 ${metrics.leafValueEdges} 条、模块级值环 ${metrics.leafModuleCycles} 个、文件级值环 ${metrics.fileCycles} 个`,
   )
   summary.push(
-    `${pkgName}: ${metrics.srcTsFiles} 个 src TS 文件、${metrics.interfaceFacades} 个 interface.ts 符号面`,
+    `${pkgName}: src 下 ${metrics.allSrcTsFiles} 个 TS 文件，其中 ${metrics.scannedSrcFiles} 个参与规则扫描（排除 client 与 .d.ts）、${metrics.interfaceFacades} 个 interface.ts 符号面`,
   )
   // 历史对照口径（顶层域，复刻修复粒度前的算法）：仅作跨期可比，不进基线。
   summary.push(

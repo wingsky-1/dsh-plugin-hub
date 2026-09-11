@@ -41,6 +41,11 @@
  * 用法（在包目录内执行，cwd = 包根）：
  *   node ../../scripts/gate/run-tests.mjs --min <正整数>
  * 退出码：0 = 全部通过且文件数达标；1 = 有失败 / 零匹配 / 低于下限 / 汇总不可解析 / 超时。
+ *
+ * 与变异面的关系（#690 S2b）：本入口的 PATTERN 就是「runner 面」的定义，
+ * `pnpm stryker:check` 用它校验各包 `--min` 是否同步（不一致即判红，不会静默放宽），
+ * 而变异面由同一份拓扑的测试层派生（见 scripts/gate/gen-stryker-conf.mjs）。
+ * 测试文件的分层约定见 docs/DEVELOPMENT.md「测试分层与变异面登记」。
  */
 import { spawnSync } from 'node:child_process'
 import { globSync } from 'node:fs'

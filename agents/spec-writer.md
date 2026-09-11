@@ -22,7 +22,7 @@ coder（实现）、hardener（锁死）、qa（验收）都能量化对齐。�
 - **验收标准条目**（写回 issue 或 PR 描述）：
 
   ```text
-  [硬性] 非 loopback Origin 请求被宿主路由拒绝：curl 403，见 test/routes.test.ts 用例
+  [硬性] 非 loopback Origin 请求被宿主路由拒绝：curl 403，见 dsh-notifier `test/integration/routes.test.ts` 用例
   [量级] 列表接口 95 分位耗时 ≤ 200ms（取数时点：PR #123，2024-06-01 实测基线）
   ```
 

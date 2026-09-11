@@ -1,0 +1,682 @@
+/**
+ * dsh-notifier — 通知中心 service 契约测试。
+ *
+ * 直接构造 createNotifierService 的 deps（fake sse/system/history/logger），
+ * 聚焦 service 自身契约（不经完整 apply，速度快且隔离）：
+ * - 内置事件源 → severity 映射静态表（评审契约）
+ * - send() 受理语义：enabled=false / 非法形状 / 内置 kind 走文案管线
+ * - 动态 kind 待确认：未确认 → suppressed 落史；confirmKind 后放行
+ * - registerKind 防冒认（前缀为内置 kind 名拒绝；无 ':' 拒绝）
+ * - fail-soft 逐频道投递：单频道抛错不牵连
+ */
+import assert from "node:assert/strict";
+import { createNotifierService, KIND_SEVERITY, BUILTIN_CHANNELS, createBarkChannel, SEVERITY_LEVEL, buildBrowserFrame } from "../../lib/index.js";
+import { createBrowserChannel, createSystemChannel } from "../../src/channels/interface.ts";
+import type { BarkChannelConfig, NotifyConfig, SoundSetting } from "../../src/config/interface.ts";
+import type { BrowserDispatchSpec, DeliverPayload, SystemDispatchSpec } from "../../src/pipeline/interface.ts";
+import type { NotifyChannel, NotifyRequest, NotifySentEvent, RetryableError } from "../../src/sdk/interface.ts";
+import type { SseHub } from "../../src/server/interface.ts";
+import type { HistoryEntry } from "../../src/stores/interface.ts";
+import { quietWindowNow } from "../helpers.ts";
+
+// ---------------------------------------------------------------- fake deps
+
+/** 轮询直到谓词成立（替代固定 sleep：异步终态经 promise 微任务/定时器回调，轮询比等固定毫秒稳）。 */
+async function pollUntil(predicate: () => boolean, timeoutMs = 2000) {
+  const start = Date.now();
+  for (;;) {
+    if (predicate()) return true;
+    if (Date.now() - start > timeoutMs) return false;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+/** 收口 channel.send 的同步抛与异步 reject，返回投递错误（未失败即抛——断言前置的失败面）。 */
+async function sendFailure(outcome: void | Promise<void>): Promise<RetryableError> {
+  try {
+    await outcome;
+  } catch (error) {
+    return error as RetryableError;
+  }
+  throw new Error("预期投递失败，但 channel.send 成功");
+}
+
+/** fake SSE hub（记录 broadcast 帧）。 */
+function fakeSse() {
+  const frames: Array<Record<string, unknown>> = [];
+  return {
+    frames,
+    broadcast(payload: Record<string, unknown>): void {
+      frames.push(payload);
+    },
+    register(): void {},
+    framesSince(): Array<Record<string, unknown>> {
+      return [];
+    },
+    size: (): number => 0,
+    dispose(): void {},
+  };
+}
+
+/** fake system notifier 调用记录。 */
+interface FakeSystemCall {
+  pop: boolean;
+  tone: SoundSetting;
+  title: string;
+  message: string;
+}
+
+/** fake system notifier（记录调用；notify 返回 Promise 决议——异步终态）。 */
+function fakeSystem(opts: { failSoundOnly?: boolean } = {}) {
+  const calls: FakeSystemCall[] = [];
+  return {
+    calls,
+    async notify(pop: boolean, tone: SoundSetting, title: string, message: string): Promise<boolean> {
+      calls.push({ pop, tone, title, message });
+      if (opts.failSoundOnly && pop === false) return false; // 只响不弹自播失败
+      return true;
+    },
+  };
+}
+
+/** 注入的系统通知面（fakeSystem 与并发用例共用；play 只经 notify 自播投递决议）。 */
+type SystemLike = Pick<ReturnType<typeof fakeSystem>, "notify">;
+
+/** fake history（记录 append）。 */
+function fakeHistory() {
+  const entries: Array<Record<string, unknown>> = [];
+  return {
+    entries,
+    append(e: HistoryEntry): void {
+      entries.push({ ...e });
+    },
+    read: async (): Promise<Array<Record<string, unknown>>> => entries,
+    clear: async (): Promise<number> => {
+      entries.length = 0;
+      return 0;
+    },
+  };
+}
+
+/** 构造一个配置镜像（默认全开）。 */
+function defaultCfg(overrides: Partial<NotifyConfig> = {}): NotifyConfig {
+  return {
+    notifyAsk: true,
+    notifyQuestion: true,
+    notifyTaskDone: true,
+    notifySubagentDone: false,
+    notifyTaskError: true,
+    notifyTurnEnd: false,
+    systemNotify: true,
+    browserNotify: true,
+    notifyWhenVisible: false,
+    notifySound: true,
+    browserSound: true,
+    systemSound: true,
+    quietHours: { enabled: false, start: "22:00", end: "08:00" },
+    errorMergeWindowMs: 60000,
+    askRemindMin: 5,
+    doneMergeWindowMs: 3000,
+    historyMaxAgeDays: 0,
+    maxConnections: 16,
+    channels: [],
+    kindRoutes: {},
+    allowKinds: [],
+    sanitizeContent: true,
+    ...overrides,
+  };
+}
+
+/** makeService 的 deps 定制面（未指定项一律走默认 fake）。 */
+interface ServiceHooks {
+  system?: SystemLike;
+  current?: () => NotifyConfig;
+  outboundChannels?: () => Array<{ id: string; channel: NotifyChannel }>;
+  recordStatus?: (channelId: string, status: "ok" | "failed", error?: string) => void;
+  emitSent?: (payload: NotifySentEvent) => void;
+  setConfirm?: (kind: string, confirmed: boolean) => void;
+  enabled?: () => boolean;
+  warn?: (message: string) => void;
+  info?: (message: string) => void;
+}
+
+/** 完整 deps 装配。 */
+function makeService(cfgOverrides: Partial<NotifyConfig> = {}, hooks: ServiceHooks = {}) {
+  const sse = fakeSse();
+  const system = (hooks.system ?? fakeSystem()) as ReturnType<typeof fakeSystem>;
+  const history = fakeHistory();
+  const cfg = defaultCfg(cfgOverrides);
+  const logger = { warn: hooks.warn ?? (() => {}), info: hooks.info ?? (() => {}) };
+  const enabled = hooks.enabled ?? (() => true);
+  /** 投递终态收集（recordStatus/emitSent 断言用）。 */
+  const terminalStates: Array<{ channelId: string; status: "ok" | "failed"; error?: string }> = [];
+  const sentEvents: NotifySentEvent[] = [];
+  /** 确认写入收集（confirmKind 走配置）。 */
+  const confirmCalls: Array<{ kind: string; confirmed: boolean }> = [];
+  // 内置频道经 index.ts 装配面注入——实例只承载 id+capabilities，
+  // 播放决议经 DeliverDeps.play 值传递（browser→buildBrowserFrame、system→notify）
+  const browserChannel = createBrowserChannel({ sse: sse as unknown as SseHub });
+  const systemChannel = createSystemChannel({ system });
+  const service = createNotifierService({
+    current: hooks.current ?? (() => cfg),
+    enabled,
+    history,
+    logger,
+    outboundChannels: hooks.outboundChannels ?? (() => []),
+    builtinChannels: [
+      { id: BUILTIN_CHANNELS.browser, channel: browserChannel },
+      { id: BUILTIN_CHANNELS.system, channel: systemChannel },
+    ],
+    recordStatus: (channelId, status, error) => {
+      terminalStates.push({ channelId, status, error });
+      if (hooks.recordStatus) hooks.recordStatus(channelId, status, error);
+    },
+    emitSent: (payload) => {
+      sentEvents.push(payload);
+      if (hooks.emitSent) hooks.emitSent(payload);
+    },
+    setConfirm: (kind, confirmed) => {
+      confirmCalls.push({ kind, confirmed });
+      // 模拟配置写入生效（真实实现：settings update → watch → current 刷新）
+      const allowed = new Set(Array.isArray(cfg.allowKinds) ? cfg.allowKinds : []);
+      if (confirmed) allowed.add(kind);
+      else allowed.delete(kind);
+      cfg.allowKinds = [...allowed];
+      if (hooks.setConfirm) hooks.setConfirm(kind, confirmed);
+    },
+    play: (target, payload) => {
+      if (target.id === BUILTIN_CHANNELS.system) {
+        // 播放决议在裁决时快照解析并随 target 携带（内置频道 id 分派，spec 恒存在）
+        const spec = target.dispatch as SystemDispatchSpec;
+        return system.notify(spec.pop, spec.sound, payload.title, payload.body).then((ok) => {
+          if (!ok) throw new Error("system notification failed (self-play or command error)");
+        });
+      }
+      if (target.id === BUILTIN_CHANNELS.browser) {
+        sse.broadcast(buildBrowserFrame(payload, target.dispatch as BrowserDispatchSpec));
+      }
+      return undefined;
+    },
+  });
+  return { service, sse, system, history, terminalStates, sentEvents, confirmCalls };
+}
+
+// ---------------------------------------------------------------- ① severity 映射
+
+{
+  const title = "① severity 静态映射覆盖内置七 kind";
+  const expected = {
+    ask: "warning",
+    question: "info",
+    done: "success",
+    "subagent-done": "info",
+    error: "failure",
+    "turn-end": "info",
+    test: "info",
+  };
+  for (const [kind, severity] of Object.entries(expected)) {
+    assert.equal(KIND_SEVERITY[kind], severity, `${kind} → ${severity}`);
+  }
+  console.log(`${title}: OK（7 项）`);
+}
+
+// ---------------------------------------------------------------- ② send 受理语义
+
+{
+  // enabled=false → skipped
+  const { service } = makeService({}, { enabled: () => false });
+  const r = await service.send({ source: "test", kind: "done", severity: "info", body: "x" });
+  assert.equal(r[0].status, "skipped");
+  assert.equal(r[0].error, "enabled=false");
+  console.log("②a enabled=false → skipped: OK");
+}
+
+{
+  // 非法形状 → failed（不抛异常）
+  const { service } = makeService();
+  const r = await service.send(null as unknown as NotifyRequest);
+  assert.equal(r[0].status, "failed");
+  const r2 = await service.send({ source: "test", severity: "info", body: "x" } as unknown as NotifyRequest);
+  assert.equal(r2[0].status, "failed");
+  console.log("②b 非法形状 → failed（不抛）: OK");
+}
+
+{
+  // 内置 kind：经文案管线（NOTIFY_KINDS 模板）→ browser 收到帧 + 历史落盘
+  const { service, sse, history } = makeService();
+  const r = await service.send({ source: "test", kind: "done", severity: "info", body: "任务完成" });
+  assert.ok(r.some((x) => x.channelId === "browser" && x.status === "ok"));
+  // 内置 kind 走模板：消息含「已完成」而非 body 原样透传（评审保留文案模板）
+  const frame = sse.frames.find((f) => f.type === "notify" && f.kind === "done");
+  assert.ok(frame !== undefined, "browser 收到 done 帧");
+  assert.ok(typeof frame.message === "string" && frame.message.includes("已完成"), `模板产物：${frame.message}`);
+  assert.ok(history.entries.some((e) => e.kind === "done"));
+  console.log("②c 内置 kind 走文案管线 + 历史落盘: OK");
+}
+
+{
+  // SSE 帧附服务端解析的 sound 字段（browser 频道 send 处 resolveBrowserSound；
+  // 既有帧契约只加字段向后兼容——旧客户端无 sound 帧回落快照）
+  const { service, sse } = makeService({ browserSound: "chime" });
+  await service.send({ source: "test", kind: "done", severity: "info", body: "x" });
+  const frame = sse.frames.find((f) => f.type === "notify" && f.kind === "done") as Record<string, unknown>;
+  assert.deepEqual(frame.sound, { mode: "selfplay", tone: "chime" }, "B5：notify 帧含 sound 策略（SoundId → selfplay+tone）");
+  const { service: svc2, sse: sse2 } = makeService({ browserSound: true });
+  await svc2.send({ source: "test", kind: "done", severity: "info", body: "x" });
+  const frame2 = sse2.frames.find((f) => f.type === "notify" && f.kind === "done") as Record<string, unknown>;
+  assert.deepEqual(frame2.sound, { mode: "system", tone: undefined }, "B5：sound:true → system 模式");
+  const { service: svc3, sse: sse3 } = makeService({ browserSound: false });
+  await svc3.send({ source: "test", kind: "done", severity: "info", body: "x" });
+  const frame3 = sse3.frames.find((f) => f.type === "notify" && f.kind === "done") as Record<string, unknown>;
+  assert.deepEqual(frame3.sound, { mode: "silent", tone: undefined }, "B5：sound:false → silent 模式");
+  console.log("B5 SSE 帧 sound 字段（selfplay/system/silent 三态）: OK");
+}
+
+{
+  // 投递集合条件 = 弹窗开关 || 声音非静音——弹窗关+声音开仍投递（sound-only）；
+  // 弹窗关+声音关 → 静默不投递
+  const { service, sse, system } = makeService({ browserNotify: false, systemNotify: false, browserSound: "pop", systemSound: true });
+  const r = await service.send({ source: "test", kind: "done", severity: "info", body: "x" });
+  assert.ok(r.some((x) => x.channelId === "browser" && x.status === "ok"), "B6：browser 弹窗关+声音开仍投递（sound-only）");
+  assert.ok(r.some((x) => x.channelId === "system" && x.status === "ok"), "B6：system 弹窗关+声音开仍投递");
+  // browser sound-only 帧：playOnly 标记 + sound 模式（客户端只自播不弹实体）
+  const frame = sse.frames.find((f) => f.kind === "done") as Record<string, unknown>;
+  assert.equal(frame.playOnly, true, "B6：只响不弹帧带 playOnly 标记");
+  assert.deepEqual(frame.sound, { mode: "selfplay", tone: "pop" }, "B6：只响不弹帧 sound 为 SoundId 自播");
+  // system sound-only：notify(pop=false) 自播调用
+  assert.ok(system.calls.some((c) => c.pop === false && c.tone === true), "B6：system 只响不弹 → notify(pop=false, tone=true)");
+  // 全关 → 不投递
+  const { service: svc2, sse: sse2 } = makeService({ browserNotify: false, systemNotify: false, browserSound: false, systemSound: false });
+  const r2 = await svc2.send({ source: "test", kind: "done", severity: "info", body: "x" });
+  assert.ok(!r2.some((x) => x.channelId === "browser" || x.channelId === "system"), "B6：弹窗+声音全关 → 频道不进投递集合");
+  assert.equal(sse2.frames.length, 0, "B6：全关无 SSE 帧");
+  console.log("B6 投递集合条件（弹窗||声音）+ 只响不弹: OK");
+}
+
+{
+  // 快照化（红测先行判别更新）：每次 sendKind 恰好读取 current() 1 次
+  // （单刻快照，行为变更）；裁决（enabled/确认/免打扰/路由）与播放决议全部
+  // 基于该快照解析——裁决与投递之间改配置不影响本次投递（另有用例锁定）；脱敏开关
+  // 也经该快照解析并随裁决结果携带（不引入第二次 current()）。
+  let reads = 0;
+  let cfg = defaultCfg({ browserNotify: true, browserSound: true, systemNotify: true, systemSound: true });
+  const sys = fakeSystem();
+  const { service, sse } = makeService({}, { current: () => { reads += 1; return cfg; }, system: sys });
+  service.sendKind("test", {}, { bypassQuiet: true });
+  assert.equal(reads, 1, "B-2：单次 sendKind 内 current() 恰好 1 次（单刻快照）");
+  const frame1 = sse.frames[sse.frames.length - 1] as { sound: { mode: string } };
+  assert.equal(frame1.sound.mode, "system", "B-2：browserSound=true → system 模式帧（快照内解析）");
+  // 配置热更 → 下次 sendKind 重新取快照（跨次不缓存）且用新版本
+  cfg = defaultCfg({ browserNotify: true, browserSound: false, systemNotify: true, systemSound: true });
+  service.sendKind("test", {}, { bypassQuiet: true });
+  assert.equal(reads, 2, "B-2：第二次 sendKind 重新读取 current（跨次不缓存）");
+  const frame2 = sse.frames[sse.frames.length - 1] as { sound: { mode: string } };
+  assert.equal(frame2.sound.mode, "silent", "B-2：browserSound=false → silent 模式帧（热更即时生效）");
+  console.log("B-2 单刻快照（恰好 1 次 + 跨次不缓存）: OK");
+}
+
+{
+  // 快照化（服务契约面）：裁决→投递间改配置不影响本次投递——current 首次返回
+  // cfg1、之后返回 cfg2（模拟裁决后配置即被改写）；本次投递的集合判定与播放
+  // 决议必须全部来自裁决时刻的 cfg1 快照，不得混入 cfg2。
+  let calls = 0;
+  const cfg1 = defaultCfg({ browserNotify: true, browserSound: "chime", systemNotify: true, systemSound: true });
+  const cfg2 = defaultCfg({ browserNotify: true, browserSound: false, systemNotify: false, systemSound: false });
+  const sys = fakeSystem();
+  const { service, sse } = makeService({}, {
+    current: () => { calls += 1; return calls === 1 ? cfg1 : cfg2; },
+    system: sys,
+  });
+  const r = service.sendKind("test", {}, { bypassQuiet: true });
+  assert.equal(calls, 1, "N-18：裁决恰好读取 1 次快照（无二次读取）");
+  const frame = sse.frames[sse.frames.length - 1];
+  assert.deepEqual(frame.sound, { mode: "selfplay", tone: "chime" }, "N-18：播放决议来自裁决时刻快照（cfg1 的 chime），未被 cfg2 改写");
+  assert.ok(r.some((x) => x.channelId === "system" && x.status === "ok"), "N-18：system 仍按 cfg1 快照投递（cfg2 关掉 system 不影响本次）");
+  console.log("N-18 裁决→投递间改配置不影响本次投递: OK");
+}
+
+{
+  // send() 动态 kind 与 sendKind 统一过裁决全链——
+  // enabled=false / 免打扰期间动态 kind 从「照常投递」变 skipped（行为变更登记；
+  // 现状 sdk/service.ts:165-197 绕过 enabled 与免打扰，红测锁定后改）。
+  const { service: svcA, sse: sseA, history: histA } = makeService({}, { enabled: () => false });
+  svcA.registerKind({ id: "demo:off", label: "OFF" });
+  svcA.confirmKind("demo:off", true);
+  const rA = await svcA.send({ source: "@example/demo", kind: "demo:off", severity: "info", body: "y" });
+  assert.equal(rA[0].status, "skipped");
+  assert.equal(rA[0].error, "enabled=false");
+  assert.equal(sseA.frames.length, 0, "N-25：enabled=false 动态 kind 不触达任何频道");
+  assert.ok(!histA.entries.some((e) => e.kind === "demo:off"), "N-25：disabled 不落史（D15 保持）");
+  // 免打扰期间（动态 kind 未豁免）
+  const { service: svcB, sse: sseB, history: histB } = makeService({ quietHours: quietWindowNow() });
+  svcB.registerKind({ id: "demo:q", label: "Q" });
+  svcB.confirmKind("demo:q", true);
+  const rB = await svcB.send({ source: "@example/demo", kind: "demo:q", severity: "info", body: "z" });
+  assert.equal(rB[0].status, "skipped");
+  assert.equal(rB[0].error, "quiet");
+  assert.equal(sseB.frames.length, 0, "N-25：免打扰期间动态 kind 不触达");
+  assert.ok(histB.entries.some((e) => e.kind === "demo:q" && e.suppressed === "quiet"), "N-25：免打扰 suppressed 落史");
+  console.log("N-25 动态 kind 统一过裁决（enabled/免打扰 → skipped）: OK");
+}
+
+{
+  // 生命周期条款：两个并发 sendKind 不串快照——current 按调用序返回不同
+  // 配置，各自的裁决/投递必须用各自快照，互不污染；第一次的异步终态在第二次
+  // 之后决议，仍按第一次的快照决议与载荷上报。
+  let calls = 0;
+  const cfgA = defaultCfg({ browserNotify: false, browserSound: false, systemNotify: true, systemSound: "ding" });
+  const cfgB = defaultCfg({ browserNotify: false, browserSound: false, systemNotify: true, systemSound: "bell" });
+  const deferred: Array<{ resolve: (value: boolean) => void; pop: boolean; tone: SoundSetting; title: string; message: string }> = [];
+  const sys: SystemLike = {
+    notify(pop, tone, title, message) {
+      return new Promise<boolean>((resolve) => deferred.push({ resolve, pop, tone, title, message }));
+    },
+  };
+  const { service, terminalStates, sentEvents } = makeService(
+    { browserNotify: false, browserSound: false, systemNotify: true, systemSound: true },
+    { current: () => { calls += 1; return calls === 1 ? cfgA : cfgB; }, system: sys },
+  );
+  service.sendKind("test", {}, { bypassQuiet: true }); // 第一次：快照 = cfgA
+  service.sendKind("test", {}, { bypassQuiet: true }); // 第二次：快照 = cfgB（第一次终态未决议）
+  assert.equal(calls, 2, "P1-3：两次 sendKind 各取一次快照");
+  assert.deepEqual(
+    { pop: deferred[0].pop, tone: deferred[0].tone },
+    { pop: true, tone: "ding" },
+    "P1-3：第一次投递按 cfgA 快照决议（tone=ding）",
+  );
+  assert.deepEqual(
+    { pop: deferred[1].pop, tone: deferred[1].tone },
+    { pop: true, tone: "bell" },
+    "P1-3：第二次投递按 cfgB 快照决议（tone=bell，不串）",
+  );
+  deferred[0].resolve(true);
+  await pollUntil(() => terminalStates.some((s) => s.channelId === "system"));
+  const ev = sentEvents.find((e) => e.channelId === "system");
+  assert.ok(ev && ev.status === "ok" && ev.message.includes("通知链路工作正常"), "P1-3：第一次终态按自身载荷上报（不受第二次影响）");
+  console.log("P1-3 并发 sendKind 不串快照: OK");
+}
+
+{
+  // 复核：弹窗关 + browserSound=true（默认值）的 playOnly 帧必须编码为
+  // selfplay（tone undefined = 客户端默认旋律）——原 mode:"system" 会让客户端
+  // 既不弹也不播 → 纯静默误导（弹窗关 = 无 OS 通知实体 = OS 不会发声）
+  const { service, sse } = makeService({ browserNotify: false, systemNotify: false, browserSound: true, systemSound: false });
+  const r = await service.send({ source: "test", kind: "done", severity: "info", body: "x" });
+  assert.ok(r.some((x) => x.channelId === "browser" && x.status === "ok"), "P1-1：browser 弹窗关+true 仍投递（sound-only）");
+  const frame = sse.frames.find((f) => f.kind === "done") as Record<string, unknown>;
+  assert.equal(frame.playOnly, true, "P1-1：playOnly 帧标记");
+  assert.deepEqual(frame.sound, { mode: "selfplay", tone: undefined }, "P1-1：true → selfplay + tone undefined（默认旋律，非 system）");
+  console.log("P1-1 playOnly + browserSound:true → selfplay 帧编码: OK");
+}
+
+{
+  // 只响不弹自播失败 → 异步终态 failed（status + sent 事件诚实上报，
+  // 不做「静默成功」）；deliver promise 拒收路径
+  const sys = fakeSystem({ failSoundOnly: true });
+  const { service, terminalStates, sentEvents } = makeService(
+    { browserNotify: false, browserSound: false, systemNotify: false, systemSound: true },
+    { system: sys },
+  );
+  const r = service.sendKind("test", {}, { bypassQuiet: true });
+  assert.ok(r.some((x) => x.channelId === "system" && x.status === "ok"), "B4：受理仍 ok（铁律 1：受理与终态解耦）");
+  await pollUntil(() => terminalStates.some((s) => s.channelId === "system"));
+  const st = terminalStates.find((s) => s.channelId === "system");
+  assert.ok(st && st.status === "failed", "B4：只响不弹自播失败 → status failed");
+  const ev = sentEvents.find((e) => e.channelId === "system");
+  assert.ok(ev && ev.status === "failed", "B4：sent 事件带 failed 终态");
+  console.log("B4 只响不弹自播失败 → 异步终态 failed: OK");
+}
+
+// ---------------------------------------------------------------- ③ 动态 kind 待确认
+
+{
+  // 未确认 → suppressed 落史，零触达
+  const { service, sse, history } = makeService();
+  service.registerKind({ id: "demo:ready", label: "示例事务就绪" });
+  const r = await service.send({ source: "@example/demo-consumer", kind: "demo:ready", severity: "info", body: "3 个事务就绪" });
+  assert.equal(r[0].status, "skipped");
+  assert.equal(r[0].error, "kind-pending");
+  assert.equal(sse.frames.length, 0, "待确认 kind 不得触达频道");
+  assert.ok(history.entries.some((e) => e.suppressed === "kind-pending"));
+  console.log("③a 待确认 → suppressed 落史零触达: OK");
+}
+
+{
+  // confirmKind 后放行
+  const { service, sse } = makeService();
+  service.registerKind({ id: "demo:ready", label: "示例事务就绪" });
+  service.confirmKind("demo:ready", true);
+  const r = await service.send({ source: "@example/demo-consumer", kind: "demo:ready", severity: "info", body: "3 个事务就绪" });
+  assert.ok(r.some((x) => x.status === "ok"));
+  assert.ok(sse.frames.some((f) => f.kind === "demo:ready"));
+  console.log("③b confirmKind 后放行: OK");
+}
+
+{
+  // listKinds 反映确认态
+  const { service } = makeService();
+  service.registerKind({ id: "x:y", label: "Y" });
+  const before = service.listKinds();
+  assert.equal(before[0].confirmed, false);
+  service.confirmKind("x:y", true);
+  assert.equal(service.listKinds()[0].confirmed, true);
+  console.log("③c listKinds 反映确认态: OK");
+}
+
+// ---------------------------------------------------------------- ④ registerKind 防冒认
+
+{
+  const { service } = makeService();
+  // 无 ':' 前缀拒绝
+  service.registerKind({ id: "naked", label: "N" });
+  assert.equal(service.listKinds().length, 0);
+  // 前缀为内置 kind 名拒绝
+  service.registerKind({ id: "done:extra", label: "D" });
+  assert.equal(service.listKinds().length, 0);
+  // 合法动态 id 接受
+  service.registerKind({ id: "idle-archive:due", label: "D" });
+  assert.equal(service.listKinds().length, 1);
+  console.log("④ registerKind 防冒认: OK");
+}
+
+// ---------------------------------------------------------------- ⑤ fail-soft 逐频道
+
+{
+  // 关闭 browser 弹窗且声音也关、只留 system：dispatch 只走 system
+  const { service, sse } = makeService({ browserNotify: false, browserSound: false, systemNotify: true });
+  const r = await service.send({ source: "test", kind: "error", severity: "failure", body: "boom" });
+  assert.ok(r.some((x) => x.channelId === "system" && x.status === "ok"));
+  assert.ok(!r.some((x) => x.channelId === "browser"));
+  assert.equal(sse.frames.length, 0, "browser 弹窗与声音全关时不投递");
+  console.log("⑤ 频道开关路由生效（browser 全关 → 只走 system）: OK");
+}
+
+// ---------------------------------------------------------------- fake 出站频道
+
+/** fake 出站频道（bark 形态）：记录投递，可指定同步/异步终态。 */
+function fakeOutbound(id: string, mode: "sync" | "reject" = "sync") {
+  const sent: DeliverPayload[] = [];
+  return {
+    sent,
+    entry: {
+      id,
+      channel: {
+        name: id,
+        capabilities: { titleMaxLen: 64, maxBodyLen: 256 },
+        send(p: DeliverPayload): void | Promise<void> {
+          sent.push(p);
+          // 注意：凭据字面替换是 createBarkChannel 内部 scrub 的职责（⑥b 已验）；
+          // 本 fake 验证 deliver 层统一出口（sanitizeErrorText + status/sent 上报）。
+          if (mode === "reject") return Promise.reject(new Error("bark HTTP 400: device token lookup failed"));
+          return Promise.resolve();
+        },
+      },
+    },
+  };
+}
+
+// ---------------------------------------------------------------- ⑥ bark 频道契约
+
+{
+  // severity→level 映射 + payload 形态 + 成功判定双查 + 透传
+  const origFetch = globalThis.fetch;
+  /** 拦截到的 fetch 调用（init.body = Bark JSON 请求体，断言处 JSON.parse）。 */
+  const calls: Array<{ url: string | URL | Request; init: { body: string } }> = [];
+  try {
+    // URL 过滤：只拦截本块目标，避免污染/被污染（同进程其他在途 fetch 直通原始实现）
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (!String(url).startsWith("http://127.0.0.1:40280/")) return origFetch(url, init);
+      calls.push({ url, init: init as { body: string } });
+      return { ok: true, status: 200, json: async () => ({ code: 200, message: "success" }), text: async () => "" };
+    }) as unknown as typeof fetch;
+    // 映射表契约（评审锁定）
+    assert.equal(SEVERITY_LEVEL.failure, "timeSensitive");
+    assert.equal(SEVERITY_LEVEL.warning, "active");
+    assert.equal(SEVERITY_LEVEL.success, "active");
+    assert.equal(SEVERITY_LEVEL.info, "passive");
+
+    // volume 为 Bark 前向兼容的未知透传键（BarkChannelConfig 只声明已知可选参数）
+    const cfg: BarkChannelConfig & { volume: string } = { id: "phone", type: "bark", baseUrl: "http://127.0.0.1:40280", deviceKey: "SECRETKEY22", enabled: true, sound: "minuet", group: "dsh", volume: "0.8" };
+    const ch = createBarkChannel(cfg);
+    const p = ch.send({ title: "T", body: "B", kind: "error", ts: 123, severity: "failure" });
+    assert.ok(p && typeof p.then === "function", "send 返回在途 promise");
+    await p;
+    assert.equal(calls[0].url, "http://127.0.0.1:40280/push", "POST baseUrl+/push；device key 不在 URL");
+    const body = JSON.parse(calls[0].init.body);
+    assert.equal(body.device_key, "SECRETKEY22", "device_key 走 body");
+    assert.equal(body.title, "T");
+    assert.equal(body.body, "B");
+    assert.equal(body.level, "timeSensitive", "failure → timeSensitive");
+    assert.equal(body.sound, "minuet");
+    assert.equal(body.group, "dsh");
+    assert.equal(body.volume, "0.8", "未知参数透传（Bark 前向兼容）");
+    await ch.send({ title: "T", body: "B", kind: "test", ts: 1, severity: "info" });
+    assert.equal(JSON.parse(calls[1].init.body).level, "passive", "info → passive");
+    const ch2 = createBarkChannel({ ...cfg, level: "critical" });
+    await ch2.send({ title: "T", body: "B", kind: "error", ts: 2, severity: "failure" });
+    assert.equal(JSON.parse(calls[2].init.body).level, "critical", "显式 level 覆盖映射");
+
+    // levels（kind→level 稀疏映射矩阵）：优先级 levels[kind] > level > severity 映射
+    const ch3 = createBarkChannel({ ...cfg, level: "critical", levels: { error: "timeSensitive", question: "active" } });
+    await ch3.send({ title: "T", body: "B", kind: "error", ts: 3, severity: "failure" });
+    assert.equal(JSON.parse(calls[3].init.body).level, "timeSensitive", "levels[kind] 优先于实例级 level");
+    await ch3.send({ title: "T", body: "B", kind: "question", ts: 4, severity: "info" });
+    assert.equal(JSON.parse(calls[4].init.body).level, "active", "levels[kind] 命中（question→active）");
+    await ch3.send({ title: "T", body: "B", kind: "done", ts: 5, severity: "success" });
+    assert.equal(JSON.parse(calls[5].init.body).level, "critical", "levels 未命中 kind 回退实例级 level");
+    assert.equal("levels" in JSON.parse(calls[5].init.body), false, "levels 矩阵不进 Bark body（防配置泄漏 P0）");
+    // severity 缺失 + levels 命中 → 有 level；severity 缺失 + levels 未命中 → body 无 level
+    await ch3.send({ title: "T", body: "B", kind: "question", ts: 6 });
+    assert.equal(JSON.parse(calls[6].init.body).level, "active", "severity 缺失 + levels 命中仍出 level");
+    const ch4 = createBarkChannel(cfg);
+    await ch4.send({ title: "T", body: "B", kind: "question", ts: 7 });
+    assert.equal("level" in JSON.parse(calls[7].init.body), false, "severity 缺失且无覆盖 → body 无 level");
+    // 动态 kind 键（含特殊字符）作 levels 键正常命中
+    const ch5 = createBarkChannel({ ...cfg, levels: { "idle-archive:due": "timeSensitive" } });
+    await ch5.send({ title: "T", body: "B", kind: "idle-archive:due", ts: 8, severity: "info" });
+    assert.equal(JSON.parse(calls[8].init.body).level, "timeSensitive", "动态 kind 键命中");
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+  console.log("⑥ bark payload/level 映射/levels 矩阵/透传: OK");
+}
+
+{
+  // 失败路径（重试/并发门上移后）：channel 单次投递 + 错误协议标注——4xx 确定失败
+  // （retryable:false）且脱敏；5xx 可重试（retryable:true）。重试 ×2 与退避
+  // 由框架 deliver 承载，直测见 unit-pipeline-contract 与 e2e-outbound。
+  const origFetch = globalThis.fetch;
+  try {
+    let n = 0;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      if (!String(url).startsWith("https://h/")) return origFetch(url);
+      n += 1;
+      return { ok: false, status: 400, json: async () => ({}), text: async () => "failed to get [SECRETKEY22] device token from database" };
+    }) as unknown as typeof fetch;
+    const ch = createBarkChannel({ id: "p", type: "bark", baseUrl: "https://h", deviceKey: "SECRETKEY22", enabled: true });
+    let lastErr: RetryableError;
+    lastErr = await sendFailure(ch.send({ title: "T", body: "B", kind: "test", ts: 1 }));
+    assert.equal(n, 1, "4xx 确定失败不重试");
+    assert.ok(lastErr.message.includes("device token"), "错误含响应摘要");
+    assert.ok(!lastErr.message.includes("SECRETKEY22"), "错误文本无 device key 明文（评审 P0-4）");
+    assert.equal(lastErr.retryable, false, "4xx → retryable:false（框架据此不重试）");
+
+    let attempts = 0;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      if (!String(url).startsWith("https://h/")) return origFetch(url);
+      attempts += 1;
+      return { ok: false, status: 503, json: async () => ({}), text: async () => "" };
+    }) as unknown as typeof fetch;
+    lastErr = await sendFailure(ch.send({ title: "T", body: "B", kind: "test", ts: 2 }));
+    assert.equal(attempts, 1, "5xx 单次投递即失败（channel 不重试，重试是框架职责）");
+    assert.equal(lastErr.retryable, true, "5xx → retryable:true（框架据此重试）");
+  } finally {
+    globalThis.fetch = origFetch;
+  }
+  console.log("⑥b bark 4xx 不重试+脱敏 / 5xx retryable 标注: OK");
+}
+
+// ---------------------------------------------------------------- ⑦ 路由解析三条契约
+
+{
+  const phone = fakeOutbound("bark:phone");
+  const pad = fakeOutbound("bark:pad");
+  const chanCfg: BarkChannelConfig[] = [
+    { id: "phone", type: "bark", baseUrl: "https://h", deviceKey: "k1", enabled: true },
+    { id: "pad", type: "bark", baseUrl: "https://h", deviceKey: "k2", enabled: true },
+  ];
+  // 缺省广播：kindRoutes 无条目 → 内置 + 出站全收
+  const svc1 = makeService({ channels: chanCfg }, { outboundChannels: () => [phone.entry, pad.entry] });
+  const r1 = await svc1.service.send({ source: "t", kind: "error", severity: "failure", body: "x" });
+  assert.ok(r1.some((x) => x.channelId === "bark:phone" && x.status === "ok"), "缺省广播含出站频道");
+  assert.ok(r1.some((x) => x.channelId === "browser"), "缺省广播含内置频道");
+
+  // 稀疏命中：条目只列 bark:phone → 只投该频道
+  const svc2 = makeService({ channels: chanCfg, kindRoutes: { error: ["bark:phone"] } }, { outboundChannels: () => [phone.entry, pad.entry] });
+  const r2 = await svc2.service.send({ source: "t", kind: "error", severity: "failure", body: "x" });
+  assert.ok(r2.some((x) => x.channelId === "bark:phone" && x.status === "ok"));
+  assert.ok(!r2.some((x) => x.channelId === "browser"), "稀疏条目排除未列频道");
+  assert.ok(!r2.some((x) => x.channelId === "bark:pad"));
+
+  // 陈旧路由：指向已删除频道 → skipped，不影响其他目标
+  const svc3 = makeService({ channels: chanCfg, kindRoutes: { error: ["bark:gone", "bark:phone"] } }, { outboundChannels: () => [phone.entry] });
+  const r3 = await svc3.service.send({ source: "t", kind: "error", severity: "failure", body: "x" });
+  const staleEntry = r3.find((x) => x.channelId === "bark:gone");
+  assert.ok(staleEntry, "陈旧频道有独立受理条目");
+  assert.equal(staleEntry.status, "skipped");
+  assert.equal(staleEntry.error, "stale-route");
+  assert.ok(r3.some((x) => x.channelId === "bark:phone" && x.status === "ok"), "陈旧不影响其他目标");
+  console.log("⑦ 路由解析（缺省广播/稀疏命中/陈旧 skipped）: OK");
+}
+
+// ---------------------------------------------------------------- ⑧ per-channel 测试 + 终态上报
+
+{
+  const phone = fakeOutbound("bark:phone");
+  const bad = fakeOutbound("bark:bad", "reject");
+  const svc = makeService(
+    { channels: [{ id: "phone", type: "bark", baseUrl: "https://h", deviceKey: "k", enabled: true }] },
+    { outboundChannels: () => [phone.entry, bad.entry] },
+  );
+  // onlyChannel：单频道受理，内置频道排除
+  const r = svc.service.sendKind("test", {}, { bypassQuiet: true, onlyChannel: "bark:phone" });
+  assert.ok(r.some((x) => x.channelId === "bark:phone" && x.status === "ok"), "onlyChannel 命中单频道");
+  assert.ok(!r.some((x) => x.channelId === "browser"), "per-channel 测试排除其他频道");
+  // fake 频道终态经 promise 微任务回调——轮询到账再断言 status/sent
+  await pollUntil(() => svc.terminalStates.some((s) => s.channelId === "bark:phone"));
+  assert.ok(svc.terminalStates.some((s) => s.channelId === "bark:phone" && s.status === "ok"), "投递成功落 status");
+  assert.ok(svc.sentEvents.some((e) => e.channelId === "bark:phone" && e.status === "ok" && e.kind === "test"), "投递成功发 sent 事件");
+  // 异步终态失败：promise reject → status failed + 事件带脱敏错误
+  const r2 = await svc.service.send({ source: "t", kind: "error", severity: "failure", body: "x" });
+  assert.ok(r2.some((x) => x.channelId === "bark:bad" && x.status === "ok"), "受理与终态解耦（铁律 1）");
+  await pollUntil(() => svc.terminalStates.some((s) => s.channelId === "bark:bad"));
+  const badState = svc.terminalStates.find((s) => s.channelId === "bark:bad");
+  assert.ok(badState, "异步失败落 status");
+  assert.equal(badState.status, "failed");
+  assert.ok((badState.error as string).includes("device token"), "失败摘要含响应信息（过 deliver 层 sanitizeErrorText）");
+  const badEvent = svc.sentEvents.find((e) => e.channelId === "bark:bad");
+  assert.ok(badEvent && badEvent.status === "failed" && badEvent.error, "sent 事件带失败终态");
+  console.log("⑧ per-channel 测试 + 终态上报（status/sent）: OK");
+}
+
+console.log("dsh-notifier service contract: OK");

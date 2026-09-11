@@ -62,7 +62,7 @@ test('规则 5：跨模块值 import 成环 → 判红，环路径经 --graph �
     assert.equal(graphed.status, 1, `--graph 仍须执行门禁判定（值环判红）：\n${graphed.out}`)
     // 环路径断言必须切到**门禁口径**叶子段内：顶层域历史对照段会打印同样的短名
     // 路径（a → b → a），对全文断言会被它满足——实测过的假绿形态。
-    const afterLeafHeader = graphed.out.split('叶子模块级值环（门禁口径，只许降不许升）：')[1] ?? ''
+    const afterLeafHeader = graphed.out.split('叶子模块级值环（门禁口径，按节点集合去重的环集合数，只许降不许升）：')[1] ?? ''
     assert.match(
       afterLeafHeader.split('文件级值环')[0],
       /a → b → a|b → a → b/,

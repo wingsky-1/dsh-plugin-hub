@@ -4,7 +4,8 @@
   "packages": {
     "dsh-lan-proxy": {
       "modules": 0,
-      "srcTsFiles": 13,
+      "scannedSrcFiles": 8,
+      "allSrcTsFiles": 13,
       "interfaceFacades": 0,
       "leafValueEdges": 0,
       "leafModuleCycles": 0,
@@ -21,7 +22,8 @@
     },
     "dsh-mcp-manager": {
       "modules": 14,
-      "srcTsFiles": 78,
+      "scannedSrcFiles": 63,
+      "allSrcTsFiles": 78,
       "interfaceFacades": 14,
       "leafValueEdges": 34,
       "leafModuleCycles": 4,
@@ -34,14 +36,12 @@
       "implToOtherImpl": 0,
       "missingInterface": 0,
       "directImpl": 1,
-      "uncoveredSrcFiles": [
-        "packages/dsh-mcp-manager/src/connection/interface.ts",
-        "packages/dsh-mcp-manager/src/connection/runtime/interface.ts"
-      ]
+      "uncoveredSrcFiles": []
     },
     "dsh-notifier": {
       "modules": 8,
-      "srcTsFiles": 42,
+      "scannedSrcFiles": 37,
+      "allSrcTsFiles": 42,
       "interfaceFacades": 8,
       "leafValueEdges": 10,
       "leafModuleCycles": 0,
@@ -54,14 +54,12 @@
       "implToOtherImpl": 0,
       "missingInterface": 0,
       "directImpl": 0,
-      "uncoveredSrcFiles": [
-        "packages/dsh-notifier/src/service.d.ts",
-        "packages/dsh-notifier/src/toast.ps1"
-      ]
+      "uncoveredSrcFiles": []
     },
     "dsh-provider-usage": {
       "modules": 13,
-      "srcTsFiles": 69,
+      "scannedSrcFiles": 56,
+      "allSrcTsFiles": 69,
       "interfaceFacades": 13,
       "leafValueEdges": 35,
       "leafModuleCycles": 1,
@@ -74,32 +72,12 @@
       "implToOtherImpl": 1,
       "missingInterface": 0,
       "directImpl": 1,
-      "uncoveredSrcFiles": [
-        "packages/dsh-provider-usage/src/apply/interface.ts",
-        "packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.d.mts",
-        "packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.mjs",
-        "packages/dsh-provider-usage/src/domain1/adapters/interface.ts",
-        "packages/dsh-provider-usage/src/domain1/adapters/opencode-go.d.mts",
-        "packages/dsh-provider-usage/src/domain1/adapters/opencode-go.mjs",
-        "packages/dsh-provider-usage/src/domain1/adapters/zai-coding-cn.d.mts",
-        "packages/dsh-provider-usage/src/domain1/adapters/zai-coding-cn.mjs",
-        "packages/dsh-provider-usage/src/domain1/history/interface.ts",
-        "packages/dsh-provider-usage/src/domain1/pipeline/interface.ts",
-        "packages/dsh-provider-usage/src/domain1/registry/interface.ts",
-        "packages/dsh-provider-usage/src/domain1/routes/interface.ts",
-        "packages/dsh-provider-usage/src/domain2/aggregate/interface.ts",
-        "packages/dsh-provider-usage/src/domain2/collect/interface.ts",
-        "packages/dsh-provider-usage/src/domain2/common/interface.ts",
-        "packages/dsh-provider-usage/src/domain2/execute/interface.ts",
-        "packages/dsh-provider-usage/src/domain2/routes/interface.ts",
-        "packages/dsh-provider-usage/src/domain2/schedule/interface.ts",
-        "packages/dsh-provider-usage/src/shared/interface.ts",
-        "packages/dsh-provider-usage/src/shared/placement-math.ts"
-      ]
+      "uncoveredSrcFiles": []
     },
     "dsh-verify-isolated": {
       "modules": 0,
-      "srcTsFiles": 1,
+      "scannedSrcFiles": 1,
+      "allSrcTsFiles": 1,
       "interfaceFacades": 0,
       "leafValueEdges": 0,
       "leafModuleCycles": 0,
@@ -116,7 +94,8 @@
     },
     "dsh-web-file-preview": {
       "modules": 0,
-      "srcTsFiles": 4,
+      "scannedSrcFiles": 2,
+      "allSrcTsFiles": 4,
       "interfaceFacades": 0,
       "leafValueEdges": 0,
       "leafModuleCycles": 0,

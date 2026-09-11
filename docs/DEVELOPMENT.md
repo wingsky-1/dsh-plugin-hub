@@ -208,6 +208,37 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   `--min` 是**测试文件数**下限（glob 展开计数，不含 `test()` 子测试条目），用于封堵
   `node --test` 零匹配仍 exit 0 的假绿向量。
 
+### 测试分层与变异面登记（#690 S2b / #713 T1–T3）
+
+测试文件按**机制**分层，目录即分类源（不按文件名判断）：
+
+| 层 | 判据 | 进变异面 |
+|---|---|---|
+| `test/unit/**` | 单模块 / 纯逻辑 / fake 驱动 / `vm` 沙箱跑真实 `lib/client.js`、只做临时目录 I/O | 是 |
+| `test/integration/**` | in-process 真实组合根装配、真实 cordis Context、真实配置迁移、真实 http server（内核临时端口） | 是 |
+| `test/client/**` | 断言对象是客户端**构建产物** `lib/client.js`——而 `mutate` 面本身排除 `src/client/**`，登记进 testFiles 只增加每个段的 dry run 成本、杀灭贡献为零 | 否 |
+| `test/e2e/**` | 真实监听端口 / spawn 子进程 / 真机系统调用的大 smoke | 否 |
+
+支撑模块不入任何层：`test/helpers.ts`、`test/smoke-lib.ts`、`test/smoke-pure.ts`、
+`test/*.worker.mjs`（它们不是测试条目）。**判层按机制而非文件名**：notifier 的
+`e2e-*.test.ts` 用的是 in-process cordis Context + fake 驱动（不 listen、不 spawn），
+故归集成层并保留在变异面；反之 `smoke.test.ts`（真实端口/子进程）归 e2e 层。
+
+登记链路（唯一事实源 = `scripts/data/mutation-topology.json` 的 `$testLayers` 与各包 `testLayers`）：
+
+- `tap.testFiles` 由 `scripts/gate/gen-stryker-conf.mjs` **从层 glob 展开为真实文件清单**。
+  为什么不把 `**` 通配直接交给 Stryker：#712 已 CI 实证沙箱语义失败（`smoke.test.ts` 的
+  provide 方法面断言）+ mcp 5 个段 dry run 撞 5 分钟预算；
+- `pnpm stryker:check` 是登记完整性门禁：① 每个 `test/` 下的 `*.test.ts` 必须落入某一层 glob
+  或某条排除 glob——新增测试文件必须显式决定层归属，不能靠「没写进清单」逃逸；② 每条登记在磁盘上
+  真实存在；③ 各包 `package.json` 的 `--min` == runner glob 实际文件数；
+- 新增测试文件后的固定动作：放进对应层目录 → `node scripts/gate/gen-stryker-conf.mjs --sync-test-min`
+  → 提交。单元层与集成层**零手工登记**；`unitExemptions` 只用于「写了单元测试但刻意不进变异面」的
+  逐条裁决，必须写明理由（模型样例：mcp 的 `unit-shared.test.ts` 测的是 shared 层，不在本包 mutate 面内）；
+- 变异面扩缩**在 PR 门禁里看不出来**（`incremental: true` 复用基线状态）。真信号来自 observe.yml
+  班次全量重建；PR 内的自证方式是「派生 testFiles ↔ 基线的集合对比 + 单段真跑 stryker 报告的
+  mutant 状态分布与基线一致」。
+
 ### 落盘路径必须感知 DSH_HOME（#510）
 
 凡插件自行落盘或读取持久化文件（配置、历史、状态、缓存等），路径 base 一律
@@ -252,7 +283,7 @@ cordis `EventsService.dispatch` 对已注册监听器的过滤条件为
   的 listener ctx 直接放行**。第三方 bundle 插件经 `cordis.patch.yml` 平铺
   insert 挂载、ctx 无 `kScope` 标签时，agent 作用域事件默认可达，**无需**
   `{global:true}` 即可收到（该假设已由真实 cordis Context 契约用例固化——
-  见 dsh-notifier `test/real-context.test.ts`，宿主若收紧 untagged 放行语义，
+  见 dsh-notifier `test/integration/real-context.test.ts`，宿主若收紧 untagged 放行语义，
   用例先红而非静默漏检）。
 
 **第三方 bundle 插件接收 agent 作用域事件的推荐做法**：

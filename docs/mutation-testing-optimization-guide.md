@@ -229,7 +229,7 @@ concurrency:
       "dsh-provider-usage": {
         "concurrency": 16,
         "timeoutMS": 60000,
-        "testFiles": ["packages/dsh-provider-usage/test/unit-*.test.ts"],
+        "testFiles": ["packages/dsh-provider-usage/test/unit/**/*.test.ts"],
         "segments": {
           "apply": { "mutate": ["packages/dsh-provider-usage/src/apply.ts"] },
           "contracts": { "mutate": ["packages/dsh-provider-usage/src/contracts.ts", "packages/dsh-provider-usage/src/core/guards.ts"] }

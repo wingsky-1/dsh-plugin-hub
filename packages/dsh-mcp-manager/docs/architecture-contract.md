@@ -140,7 +140,7 @@
 
 | 静态面 | 现状 | 迁移动作 |
 |--------|------|---------|
-| test/service-contract.test.ts | L146 `readFileSync("src/apply-services.ts")` + L149 marker 扫描 | 同步扫描路径到新位置（bootstrap/apply-services.ts）；**阶段 1–5 该文件禁止薄转发/移动** |
+| test/integration/service-contract.test.ts | `readFileSync("src/bootstrap/apply-services.ts")` + marker 扫描 | 同步扫描路径到新位置（bootstrap/apply-services.ts）；**阶段 1–5 该文件禁止薄转发/移动** |
 | stryker.conf.d/dsh-mcp-manager-{manager,entry,supervisor,middleware,routes,runtime}.json | mutate=显式 src 文件清单 | 按新域一次性重画六段；gen-stryker-conf --check 保持 topology 三方一致 |
 | scripts/data/mutation-topology.json | 段模板数据源 + workflow-assert 锚定 | 同步段定义 |
 | observe 基线 | src 口径四班次重建；incremental 缓存覆盖 | 迁移后重建基线（covered 回落豁免，见 2.5） |
@@ -157,7 +157,7 @@
 
 ### 2.3 三条阶段不变式（阶段 1–5 全程）
 
-1. **apply-services.ts 禁止移动/薄转发**（test/service-contract.test.ts:146 硬编码
+1. **apply-services.ts 禁止移动/薄转发**（test/integration/service-contract.test.ts 硬编码
    `src/apply-services.ts` 静态扫描，动了必红）；
 2. **每阶段末全绿硬门**：`pnpm build && pnpm test && pnpm contract && pnpm pack:check &&
    pnpm typecheck` + `gen-stryker-conf --check` + 关键 smoke 断言清单；
