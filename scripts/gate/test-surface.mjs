@@ -11,7 +11,13 @@
 import { existsSync, globSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 
-/** runner 面（scripts/gate/run-tests.mjs 的 glob）：`--min` 与登记完整性判据 ③ 的唯一口径。 */
+/**
+ * runner 面 glob：`--min` 与登记完整性判据 ③ 的唯一口径。
+ *
+ * #722 起 runner 由 `run-tests.mjs` 换成 vitest，本模式不变——`vitest.config.ts` 的
+ * unit / integration / e2e / contract 四个 project 的 glob 并集恰好等于 `test/**` 下的
+ * `*.test.ts` 全集，故门禁口径无需跟随 runner 实现变动。
+ */
 export const RUN_TESTS_PATTERN = 'test/**/*.test.ts'
 
 /**
@@ -125,11 +131,18 @@ export function projectTestSurface(root, topologyDoc, pkgName) {
   return { testFiles, runFiles, layerFiles, excludedFiles: [...excluded].sort(), errors }
 }
 
-/** 读取包级 `--min`（与 runner glob 计数同步的唯一入口）。 */
+/**
+ * 读取包级 `--min`（与 runner glob 计数同步的唯一入口）。
+ *
+ * 契约只要求「test 脚本声明 `--min <n>`」，不绑定 runner 实现名。绑定实现名的代价已实测：
+ * #722 把 test 脚本切到 `run-vitest.mjs` 后本函数返回 null，判据 ③ 让全部已切换的包判红，
+ * 而配置与拓扑本身完全一致——即门禁在换 runner 时静默失效。写回侧的同款替换见
+ * `gen-stryker-conf.mjs` 的 `--sync-test-min`，两处必须保持同一契约。
+ */
 export function readTestMin(root, pkgName) {
   const pkgJsonPath = join(root, 'packages', pkgName, 'package.json')
   if (!existsSync(pkgJsonPath)) return { path: pkgJsonPath, min: null }
-  const m = readFileSync(pkgJsonPath, 'utf8').match(/"test"\s*:\s*"node [^"]*run-tests\.mjs --min (\d+)"/)
+  const m = readFileSync(pkgJsonPath, 'utf8').match(/"test"\s*:\s*"node [^"]*--min (\d+)"/)
   return { path: pkgJsonPath, min: m === null ? null : Number(m[1]) }
 }
 

@@ -215,6 +215,32 @@ test('T3③：--min == runner glob 实际文件数；脱节判红，--sync-test-
   }
 })
 
+test('T3③-回归：test 脚本换 runner 后 --min 契约不变（#722）', () => {
+  const root = makeFixtureRoot()
+  try {
+    // #722 把包级 test 脚本从 run-tests.mjs 换成 run-vitest.mjs。门禁只认「test 脚本声明
+    // `--min <n>`」这一契约，不认 runner 实现名——否则换 runner 会让判据 ③ 把全部已切换的
+    // 包误报为「--min 缺失」，而配置与拓扑其实完全一致（实测即此现象）。
+    const pkgJsonPath = join(root, `packages/${PKG}/package.json`)
+    writeFileSync(
+      pkgJsonPath,
+      `${JSON.stringify({ name: PKG, scripts: { test: 'node ../../scripts/test/run-vitest.mjs --min 6' } }, null, 2)}\n`,
+    )
+    generate(root)
+    assert.equal(runGenerator(root, ['--check']).status, 0, '换 runner 后 --min=6 仍应通过')
+
+    writeFileSync(join(root, `packages/${PKG}/test/unit/unit-c.test.ts`), '// c\n')
+    generate(root)
+    assert.equal(runGenerator(root, ['--check']).status, 1, '换 runner 后 --min 脱节仍必须判红')
+
+    assert.equal(runGenerator(root, ['--sync-test-min']).status, 0, '--sync-test-min 应能写回')
+    const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf8'))
+    assert.match(pkgJson.scripts.test, /run-vitest\.mjs --min 7/, 'runner 名应原样保留，仅 --min 被同步')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('T3 反证：从派生 conf 删掉一条登记条目 → --check 判红', () => {
   const root = makeFixtureRoot()
   try {

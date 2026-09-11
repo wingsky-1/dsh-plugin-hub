@@ -155,7 +155,8 @@ function main() {
       }
       const pkgJsonPath = join(repoRoot, 'packages', pkgName, 'package.json')
       const raw = readFileSync(pkgJsonPath, 'utf8')
-      writeFileSync(pkgJsonPath, raw.replace(/(run-tests\.mjs --min )\d+/, `$1${actual}`), 'utf8')
+      // 与 test-surface.mjs 的 readTestMin 共用同一契约：只锚 test 脚本里的 `--min <n>`，不绑 runner 名。
+      writeFileSync(pkgJsonPath, raw.replace(/("test"\s*:\s*"node [^"]*--min )\d+/, `$1${actual}`), 'utf8')
       console.log(`[gen-stryker-conf] ${pkgName} --min ${min} → ${actual}`)
       synced++
     }
