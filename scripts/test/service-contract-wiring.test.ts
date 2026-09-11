@@ -36,12 +36,12 @@ const SUITES = [
   {
     name: 'dsh-mcp-manager（提供方契约 + apply provide 方法面）',
     tsconfig: join(ROOT, 'packages', 'dsh-mcp-manager', 'test', 'tsconfig.json'),
-    expectFiles: ['service-contract.test.ts'],
+    expectFiles: [join('integration', 'service-contract.test.ts')],
   },
   {
     name: 'dsh-notifier（SDK 契约 + L1/L2 直测 + 消费方类型编译用例）',
     tsconfig: join(ROOT, 'packages', 'dsh-notifier', 'test', 'tsconfig.json'),
-    expectFiles: ['service-contract.test.ts', 'consumer-types.test.ts'],
+    expectFiles: [join('integration', 'service-contract.test.ts'), join('integration', 'consumer-types.test.ts')],
   },
 ]
 

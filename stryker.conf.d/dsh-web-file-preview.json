@@ -36,7 +36,7 @@
       "./scripts/test/mutation-lib-to-src-hook.mjs"
     ],
     "testFiles": [
-      "packages/dsh-web-file-preview/test/unit-present-open.test.ts"
+      "packages/dsh-web-file-preview/test/unit/unit-present-open.test.ts"
     ]
   },
   "jsonReporter": {

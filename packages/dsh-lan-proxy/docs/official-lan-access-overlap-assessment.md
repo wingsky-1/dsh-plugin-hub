@@ -261,8 +261,8 @@
    在这条链路上也拿不到 Brotli 的实际收益（4.1）。即便把 Host 信任整层交还官方，
    插件仍需保留代理层，复杂度不会下降。
 3. **重叠层的语义替换有净风险**。官方是「声明才放行」，本插件是「重写为回环 +
-   自守 IP 字面量」；两者都已通过各自测试（本包围栏用例见 `test/smoke.test.ts:404`
-   「DNS-name Host refused with 403」、`:410` HTTP/1.0 无 Host 拒绝）。为消除重复而
+   自守 IP 字面量」；两者都已通过各自测试（本包围栏用例见 `test/e2e/smoke.test.ts`
+   的「DNS-name Host refused with 403」与「HTTP/1.0 missing Host refused with 403」两条）。为消除重复而
    更换一层已验证的安全语义，收益是概念上的整洁，成本是重新验证与回归风险。
 
 ---
@@ -282,7 +282,7 @@
 
 ### 本次评估未覆盖、下次需补的验证项
 
-- **smoke 未覆盖 br 分支**：`test/smoke.test.ts:808-834` 的压缩用例全部只发
+- **smoke 未覆盖 br 分支**：`test/e2e/smoke.test.ts` 的压缩用例全部只发
   `accept-encoding: gzip`，没有任何断言走到 br 路径——这正是「br 优先」这一失实描述
   能长期存活的原因。建议后续补一条 br 用例锁定 4.1 的实测语义。
 - 强开 `0.0.0.0` 后 `resolveLanTrust` 的 LAN 字面量派生与打印 URL（LAN: 前缀）在真实

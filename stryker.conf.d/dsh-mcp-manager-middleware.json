@@ -8,7 +8,8 @@
     "!packages/dsh-mcp-manager/src/client/**",
     "!packages/dsh-mcp-manager/src/types/**",
     "!packages/dsh-mcp-manager/src/integration/**",
-    "!packages/dsh-mcp-manager/src/placement-math.ts"
+    "!packages/dsh-mcp-manager/src/placement-math.ts",
+    "!packages/dsh-mcp-manager/src/**/interface.ts"
   ],
   "testRunner": "tap",
   "mutator": {
@@ -41,19 +42,19 @@
       "./scripts/test/mutation-lib-to-src-hook.mjs"
     ],
     "testFiles": [
-      "packages/dsh-mcp-manager/test/unit-apply.test.ts",
-      "packages/dsh-mcp-manager/test/unit-catalog.test.ts",
-      "packages/dsh-mcp-manager/test/unit-hotspot.test.ts",
-      "packages/dsh-mcp-manager/test/unit-manager.test.ts",
-      "packages/dsh-mcp-manager/test/unit-manager2.test.ts",
-      "packages/dsh-mcp-manager/test/unit-middleware.test.ts",
-      "packages/dsh-mcp-manager/test/unit-routes-sse.test.ts",
-      "packages/dsh-mcp-manager/test/unit-store.test.ts",
-      "packages/dsh-mcp-manager/test/unit-supervisor.test.ts",
-      "packages/dsh-mcp-manager/test/unit-transport.test.ts",
-      "packages/dsh-mcp-manager/test/unit-call-stats.test.ts",
-      "packages/dsh-mcp-manager/test/unit-pipeline.test.ts",
-      "packages/dsh-mcp-manager/test/unit-workspace.test.ts"
+      "packages/dsh-mcp-manager/test/unit/unit-apply.test.ts",
+      "packages/dsh-mcp-manager/test/unit/unit-call-stats.test.ts",
+      "packages/dsh-mcp-manager/test/unit/unit-catalog.test.ts",
+      "packages/dsh-mcp-manager/test/unit/unit-hotspot.test.ts",
+      "packages/dsh-mcp-manager/test/unit/unit-manager.test.ts",
+      "packages/dsh-mcp-manager/test/unit/unit-manager2.test.ts",
+      "packages/dsh-mcp-manager/test/unit/unit-middleware.test.ts",
+      "packages/dsh-mcp-manager/test/unit/unit-pipeline.test.ts",
+      "packages/dsh-mcp-manager/test/unit/unit-routes-sse.test.ts",
+      "packages/dsh-mcp-manager/test/unit/unit-store.test.ts",
+      "packages/dsh-mcp-manager/test/unit/unit-supervisor.test.ts",
+      "packages/dsh-mcp-manager/test/unit/unit-transport.test.ts",
+      "packages/dsh-mcp-manager/test/unit/unit-workspace.test.ts"
     ]
   },
   "jsonReporter": {

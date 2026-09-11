@@ -41,11 +41,19 @@
  * 用法（在包目录内执行，cwd = 包根）：
  *   node ../../scripts/gate/run-tests.mjs --min <正整数>
  * 退出码：0 = 全部通过且文件数达标；1 = 有失败 / 零匹配 / 低于下限 / 汇总不可解析 / 超时。
+ *
+ * 与变异面的关系（#690 S2b）：本入口的 PATTERN 就是「runner 面」的定义，
+ * `pnpm stryker:check` 用它校验各包 `--min` 是否同步（不一致即判红，不会静默放宽），
+ * 而变异面由同一份拓扑的测试层派生（见 scripts/gate/gen-stryker-conf.mjs）。
+ * 测试文件的分层约定见 docs/DEVELOPMENT.md「测试分层与变异面登记」。
  */
 import { spawnSync } from 'node:child_process'
 import { globSync } from 'node:fs'
 
-const PATTERN = 'test/**/*.test.ts'
+import { RUN_TESTS_PATTERN } from './test-surface.mjs'
+
+// 与变异面登记门禁（gen-stryker-conf --check 的判据 ③）同源：不再各写一份字面量。
+const PATTERN = RUN_TESTS_PATTERN
 /**
  * 单包测试墙钟上限：CI 上最慢的包（dsh-mcp-manager 含 SDK stdio 端到端）约 6 分钟。
  * `RUN_TESTS_TIMEOUT_MS` 供门禁自测与本地调试收紧（调小只会更快判红，不能用来伪造绿灯）。

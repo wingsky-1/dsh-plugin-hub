@@ -236,7 +236,7 @@ test('--graph：依赖矩阵与扇入扇出报出叶子模块边', () => {
     assert.match(out, /a\s+-\s+V\s+\./, `a 行应指向 b：\n${out}`)
     assert.match(out, /c\s+\.\s+\.\s+-/, `c 行应无出边：\n${out}`)
     assert.match(out, /b\s+扇出 1\/0\s+扇入 1\/0/, `b 扇出/扇入应为 1/1：\n${out}`)
-    assert.match(out, /叶子模块级值环（门禁口径，只许降不许升）：0 个/, `应报 0 环：\n${out}`)
+    assert.match(out, /叶子模块级值环（门禁口径，按节点集合去重的环集合数，只许降不许升）：0 个/, `应报 0 环：\n${out}`)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -423,6 +423,45 @@ test('规则 4：export { default as A } from 不假报虚导出（F8）', () =>
   }
 })
 
+test('规则 4：同模块子目录引用 interface.ts 的虚导出仍判红（F12：判定按目录而非模块）', () => {
+  // 引用方 a/sub/x.ts 与 a/interface.ts 属**同一叶子模块**，但目录不同。
+  // 按模块比较会整块跳过该 interface.ts 的符号存在性检查（F12 的漏面），
+  // 按目录比较才与「interface.ts 是这一层唯一的对外符号面」的语义一致。
+  const root = makeFixtureRoot({
+    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/interface.ts`]: 'export { MISSING } from "./impl.ts";\n',
+    [`${SRC}/a/sub/x.ts`]: 'import { MISSING } from "../interface.ts";\nexport const X = MISSING;\n',
+  })
+  try {
+    const { status, out } = runOn(root)
+    assert.equal(status, 1, `同模块子目录的虚导出应判红，实际 ${status}：\n${out}`)
+    assert.match(out, /虚导出/, `应点名虚导出：\n${out}`)
+    assert.match(out, /a\/interface\.ts 导出符号 "MISSING"/, `应点名符号与文件：\n${out}`)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('模块定义：根级 src/interface.ts 不构成模块（F13：模块必是目录）', () => {
+  // 根级 interface.ts 没有「对外引用面」语义（根文件互引在规则 3 下放行），
+  // 故它既不入模块表，也不进规则 4 的符号存在性检查对象——显式固化该取值。
+  const root = makeFixtureRoot({
+    [`${SRC}/interface.ts`]: 'export const ROOT_FACADE = "src 根文件不是模块";\n',
+    [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
+    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
+    [`${SRC}/b/impl.ts`]: 'export const B = 2;\n',
+  })
+  try {
+    const { status, out } = runOn(root, ['--graph'])
+    assert.equal(status, 0, `根级 interface.ts 不得引入违规，实际 ${status}：\n${out}`)
+    assert.match(out, /叶子模块 2 个、值边 0 条/, `模块表应只含 a/ 与 b/：\n${out}`)
+    assert.doesNotMatch(out, /^  interface /m, `根级 interface.ts 不得成为模块行：\n${out}`)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('--write-baseline --package 不抹掉其他包条目（F9）', () => {
   const root = makeFixtureRoot({
     ...chainFixture(''),
@@ -511,8 +550,9 @@ test('全覆盖断言：非 .ts 孤儿（资源/声明类）同样判红，且�
   })
   try {
     assert.equal(runOn(root, ['--write-baseline']).status, 0)
-    // .ps1 不是 TS：srcTsFiles 不变，故本次判红只可能来自覆盖断言（把红因隔离出来，
-    // 否则新增 .ts 孤儿会同时抬高 srcTsFiles，断言被别的计数「代偿」成假绿）。
+    // .ps1 不是 TS：两个 TS 计数口径（#710 F14 拆分后的 scannedSrcFiles / allSrcTsFiles）
+    // 都不变，故本次判红只可能来自覆盖断言（把红因隔离出来，否则新增 .ts 孤儿会同时抬高
+    // 计数、断言被别的计数「代偿」成假绿）。
     writeFileSync(join(root, `${SRC}/a/toast.ps1`), 'Write-Host hi\n')
     const after = runOn(root)
     assert.equal(after.status, 1, `非 .ts 孤儿应判红，实际 ${after.status}：\n${after.out}`)
@@ -521,7 +561,8 @@ test('全覆盖断言：非 .ts 孤儿（资源/声明类）同样判红，且�
       /uncoveredSrcFiles: 新增未覆盖源文件 packages\/fixture-pkg\/src\/a\/toast\.ps1/,
       `应点名未覆盖文件：\n${after.out}`,
     )
-    assert.doesNotMatch(after.out, /srcTsFiles:/, `红因不得是 srcTsFiles：\n${after.out}`)
+    assert.doesNotMatch(after.out, /scannedSrcFiles:/, `红因不得是 scannedSrcFiles：\n${after.out}`)
+    assert.doesNotMatch(after.out, /allSrcTsFiles:/, `红因不得是 allSrcTsFiles：\n${after.out}`)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
