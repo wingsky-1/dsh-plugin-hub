@@ -5,7 +5,7 @@
  * 完全复刻官方 dsh-tool-skill 的 catalog 语义（根治重复注入）。
  */
 
-import { composeCatalogEntries, findCatalogMessage, readCatalogEntries, renderMcpCatalogMessage, renderMcpCatalogUpdate, DEFAULT_CATALOG_MAX_ENTRIES } from "./entries.ts";
+import { composeCatalogEntries, findCatalogMessage, resolveCatalogEntries, renderMcpCatalogMessage, renderMcpCatalogUpdate, DEFAULT_CATALOG_MAX_ENTRIES } from "./entries.ts";
 import type { CatalogCache, SupervisorLite } from "./entries.ts";
 import { digestCatalogEntries } from "./digest.ts";
 import { catalogHistory } from "./history.ts";
@@ -16,7 +16,7 @@ export interface CatalogMessage {
   id?: unknown;
   role?: string;
   content?: Array<{ type?: string; text?: string }>;
-  source?: { kind?: string; form?: unknown; entries?: unknown };
+  source?: { kind?: unknown; plugin?: unknown; form?: unknown; entries?: unknown; sections?: unknown };
 }
 
 /** pre-step 决策最小面。 */
@@ -63,7 +63,7 @@ export function resolveCatalogInjection(
     };
   }
   if (existing !== undefined) {
-    const existingEntries = readCatalogEntries(existing.source);
+    const existingEntries = resolveCatalogEntries(existing.source);
     if (existingEntries !== undefined && digestCatalogEntries(existingEntries) === digest) return decision;
   }
   if (!history.published && entries.length === 0) {

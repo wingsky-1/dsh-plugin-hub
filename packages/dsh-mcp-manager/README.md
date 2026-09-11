@@ -245,6 +245,46 @@ await ctx.mcpManager.registerServer({
   脱敏
 - **调用统计与 Debug 模式（Metadata-Only）**：默认关闭；若在 `~/.dsh/settings.yaml` 中配置 `dsh-mcp-manager.debug.callStats: true`，将把 MCP 调用指标（次数、成功/失败、平均与最大耗时）及渐进式披露漏斗（`ws_mcp_search` 搜索词频次、`ws_mcp_list` 与 `ws_mcp_detail` 查询分布）防抖原子持久化至 `<DSH_HOME>/mcp-stats.json`，且控制台输出单行 debug 跟踪；严格不持久化用户 arguments 与返回 content，杜绝代码与隐私泄漏
 - 能力目录注入含来源标注与"不代表当前连接状态"说明
+- **能力目录注入的消息来源形态**：`source` 用宿主已登记的通用形态
+  `{ kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager", form: "snapshot",
+  sections: [{ name: "mcp-catalog", text }] }`。自造 `source.kind` 会被 dsh
+  的 session format v2→v3 迁移闸门拒绝（白名单校验），导致升级前落盘的会话
+  永久无法加载——见下节
+
+## 故障修复：升级后历史会话打不开（#723）
+
+**症状**：升级 dsh 到 0.1.5 及以后，某个历史会话在 GUI 里报
+
+```
+历史加载失败：failed to observe session "session-…":
+cannot safely transform unclassified message source;
+source v0 artifact remains unchanged (raw log: …/session.jsonl.zstd)（gateway/internal）
+```
+
+且该会话目录下始终不出现 `session.v3.jsonl.zstd`。原因是 0.2.x 及更早版本把能力目录
+注入消息写成 `source.kind = "mcp-catalog"`，而 dsh 的 v2→v3 迁移对 surface 消息的
+`source.kind` 有一份封闭白名单，自造值不在其中，迁移被拒（产物按设计原样保留）。
+本版本起写入侧已改为宿主词表内的通用形态，**但升级前已落盘的旧产物需要一次性修复**。
+
+**修复（一次性，可重复执行）**：仓库内脚本把已落盘产物里的旧 source 就地改写成新形态；
+只动 source 元数据，正文与事件序列不变，改完仍由 dsh 自己完成迁移。
+
+```sh
+# 1) 预演：只列出受影响会话与处数，不改任何文件
+node scripts/maintenance/repair-mcp-catalog-sessions.mjs
+
+# 2) 确认无误后落盘（会自动生成 session.jsonl.zstd.bak-<时间戳> 备份）
+node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply
+
+# 3) 重启 dsh web，打开原会话
+```
+
+- 执行前**先停掉 dsh web**：正在写入的会话日志不保证可安全重写
+- 默认只读 `<DSH_HOME>`（可用 `--home <dir>` 或 `DSH_HOME` 覆盖）；`--session <id>`
+  可只处理一个会话
+- 幂等：已修复的产物不会再次命中；写后自检（帧结构 + 逐行 JSON + 零遗留旧 kind）
+- 回滚：用同名 `.bak-<时间戳>` 覆盖回 `session.jsonl.zstd` 即可
+- 脚本只处理 v0/v1/v2 产物（v3 会话无此问题）；**不产出** v3 文件
 
 ## 验证
 

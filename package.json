@@ -15,6 +15,7 @@
     "stryker:gen": "node scripts/gate/gen-stryker-conf.mjs",
     "stryker:check": "node scripts/gate/gen-stryker-conf.mjs --check",
     "test:scripts": "node --test scripts/test/*.test.ts",
+  "repair:mcp-catalog": "node scripts/maintenance/repair-mcp-catalog-sessions.mjs",
     "test:src-tests": "node scripts/gate/forbid-src-tests.mjs",
     "gate:homedir": "node scripts/gate/forbid-homedir-src.mjs",
     "docs:check": "node scripts/gate/verify-docs.ts --strict-en",

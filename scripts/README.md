@@ -20,6 +20,10 @@
 - `gate/crap-check.mjs` — 单函数 CRAP 复杂度检查（阈值唯一事实源 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict，观察期仅记录，翻期可置 true 判红）
 - `gate/forbid-src-tests.mjs` — #423 防双份回潮：扫 packages 下全部遗留 src 副本测试文件（含未跟踪），命中即 exit 1。
 
+## maintenance/（一次性维护脚本，按需手工执行）
+
+- `maintenance/repair-mcp-catalog-sessions.mjs` — #723 一次性修复：把 dsh-mcp-manager 0.2.x 及更早写入的旧目录 source（`kind: "mcp-catalog"`）改写成宿主词表内的通用形态，救回升级 dsh 后无法加载的历史会话（默认 dry-run，`--apply` 落盘并留 `.bak-<时间戳>` 备份）。根脚本别名：`pnpm repair:mcp-catalog`。
+
 ## lib/（纯共享库，只被 import，不被 `node` 直接调用）
 
 - `lib/client-contract-lib.ts` — 客户端契约断言（stub/执行实现同源唯一事实源）。
