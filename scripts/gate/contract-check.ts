@@ -19,9 +19,10 @@ import { spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { assertClientContract } from '../lib/client-contract-lib.ts'
-import { filterOutRetiredDirs, listPluginDirs, loadManifest } from '../lib/plugins-manifest-lib.ts'
+import { AGGREGATE_NAME, filterOutRetiredDirs, listPluginDirs, loadManifest } from '../lib/plugins-manifest-lib.ts'
 import { runConfigMatrix } from '../lib/config-matrix-gate.ts'
 import { checkCatalogPeers } from '../lib/catalog-peers-lib.ts'
+import { resolvePackageScopeOrExit } from '../lib/package-scope.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const packagesDir = join(ROOT, 'packages')
@@ -41,9 +42,22 @@ if (retiredDirs.length > 0) {
   console.warn(`[contract-check] 跳过已退役包残留目录: ${retiredDirs.join(', ')}（manifest.retired 已登记，请清理）`)
 }
 
+// #722 门禁分层：**产物级**断言（读 lib/client.js）按 --packages 切片——单包 PR 只需
+// 验命中包，全仓口径留夜间（observe.yml）与本地 gate:full。仓库级静态扫描（下方运行时
+// 导入禁线、config matrix、catalog peers）不依赖产物，保持全仓恒跑。
+// known 含聚合包：它不是宿主 bundle 包、不在本闸逐包循环内，出现在切片里不算未知包名
+// （否则全局面命中时假红），但会明示本闸不逐包检查它。
+const scoped = resolvePackageScopeOrExit(process.argv.slice(2), [...pluginDirs, AGGREGATE_NAME])
+const artifactDirs = scoped === null ? pluginDirs : pluginDirs.filter((p) => scoped.includes(p))
+if (scoped !== null) {
+  const notIterated = scoped.filter((p) => !pluginDirs.includes(p))
+  console.log(`[contract-check] 产物断言切片：${artifactDirs.length}/${pluginDirs.length} 包（--packages ${scoped.join(',') || '（空）'}）`
+    + (notIterated.length > 0 ? `；${notIterated.join(', ')} 不在本闸逐包检查范围` : ''))
+}
+
 let failed = 0
 let checked = 0
-for (const p of pluginDirs) {
+for (const p of artifactDirs) {
   const pkgDir = join(packagesDir, p)
   const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'))
   const clientPath = join(pkgDir, 'lib', 'client.js')
@@ -87,8 +101,8 @@ for (const p of pluginDirs) {
   if (leaks.length > 0) console.log(`     宿主侧标识符泄漏：${leaks.join('；')}`)
 }
 
-// 件数断言：凡 packages/dsh-* 目录都应被检查覆盖（防漏检）
-console.log(`\n检查覆盖：${checked}/${pluginDirs.length} 个客户端插件包（其余为纯宿主包或聚合包）`)
+// 件数断言：本次切片内每个 packages/dsh-* 目录都应被检查覆盖（防漏检）
+console.log(`\n检查覆盖：${checked}/${artifactDirs.length} 个客户端插件包（其余为纯宿主包或聚合包）${scoped === null ? '' : '（--packages 切片口径）'}`)
 if (checked === 0) {
   console.log('（当前无带客户端插件的包）')
 }

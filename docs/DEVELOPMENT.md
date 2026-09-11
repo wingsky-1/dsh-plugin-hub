@@ -394,9 +394,9 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
     自动枚举会退回「目录即事实源」的 fail-open 老路；
   - schema 加载/校验逻辑只有一份：`scripts/lib/plugins-manifest-lib.ts`（纯函数，
     入口脚本只喂数据），测试见 `scripts/test/plugins-manifest.test.ts`。
-- **新增/修改客户端后**：`pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck`
-  全绿再提交（完整门禁清单与「改动类型 → 追加门禁」对照表见根
-  [AGENTS.md 门禁矩阵](../AGENTS.md)，本处是最小集）。
+- **新增/修改客户端后**：`pnpm gate:pr` 全绿再提交（= 命中包 build/test/typecheck + 命中包
+  产物闸 + 廉价全仓一致性闸；迭代中用 `pnpm gate:changed`，全仓口径用 `pnpm gate:full`。
+  分层口径与「改动类型 → 归属层」对照表见根 [AGENTS.md 门禁矩阵](../AGENTS.md)）。
 
 <a id="5-smoke-测试防-flake-纪律"></a><a id="user-content-5-smoke-测试防-flake-纪律"></a>
 ## 5. Smoke 测试防 flake 纪律

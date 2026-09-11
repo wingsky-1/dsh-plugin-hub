@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url'
 import { executeClient } from '../lib/client-contract-lib.ts'
 import { extractInlinedPackages, readMermaidChunkRefs } from '../build/collect-licenses.ts'
 import { AGGREGATE_NAME, checkAggregateConsistency, filterOutRetiredDirs, listPluginDirs, loadManifest, warnUnknownEntries } from '../lib/plugins-manifest-lib.ts'
+import { resolvePackageScopeOrExit } from '../lib/package-scope.ts'
 import { assertSharedDtsNoExtras, assertSharedDtsPresent, listSharedDts } from '../lib/shared-dts-lib.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -56,12 +57,23 @@ const { kept: plugins, skipped: retiredDirs } = filterOutRetiredDirs(listPluginD
 if (retiredDirs.length > 0) {
   console.warn(`[pack-check] 跳过已退役包残留目录: ${retiredDirs.join(', ')}（manifest.retired 已登记，请清理）`)
 }
+// #722 门禁分层：**产物级**断言的切片（单包 PR 只需 pack 命中包；全仓口径留夜间）。
+// 目录集 == manifest 的一致性校验（上方）不依赖产物，保持全仓恒跑。
+// known 里含聚合包：它由 checkAggregateConsistency 覆盖、不在逐包 pack 循环内，
+// 出现在切片里不算未知包名（否则全局面命中时会假红），但会明示本闸不逐包检查它。
+const scoped = resolvePackageScopeOrExit(process.argv.slice(2), [...plugins, AGGREGATE_NAME])
+const targets = scoped === null ? plugins : plugins.filter((p) => scoped.includes(p))
+if (scoped !== null) {
+  const notIterated = scoped.filter((p) => !plugins.includes(p))
+  console.log(`[pack-check] 打包切片：${targets.length}/${plugins.length} 包（--packages ${scoped.join(',') || '（空）'}）`
+    + (notIterated.length > 0 ? `；${notIterated.join(', ')} 不在本闸逐包检查范围（聚合包一致性由 plugins-manifest 检查覆盖）` : ''))
+}
 // shared 声明副本期望清单（issue #461 L2）：仓库 shared/ 全部 .d.ts（递归含子目录）
 // 随包逐一断言——新增 shared 子目录/文件（如 client/i18n.d.ts）自动纳入，防漏打包静默
 const SHARED_DTS_EXPECTED = listSharedDts(ROOT)
 
 let failed = 0
-for (const p of plugins) {
+for (const p of targets) {
   const tmp = mkdtempSync(join(tmpdir(), 'dsh-pack-'))
   const name = JSON.parse(readFileSync(join(ROOT, 'packages', p, 'package.json'), 'utf8')).name
   try {
