@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * dsh-provider-usage — 纯函数 smoke（v2 契约重构版）。
  *
@@ -52,7 +53,7 @@ import {
   panelZIndexFor,
   composerDockedAtBottom,
   bottomAnchorEdge,
-} from "../lib/index.js";
+} from "../src/apply/index.ts";
 
 // ---------------------------------------------------------------- esc
 
