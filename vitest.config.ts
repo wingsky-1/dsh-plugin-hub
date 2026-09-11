@@ -15,6 +15,9 @@ export default defineConfig({
           name: 'unit',
           include: ['packages/*/test/unit/**/*.test.ts'],
           environment: 'node',
+          // 默认 5s 会误杀「实现预算本身就是 30s」的用例（超时兜底、挂起型子进程重连），
+          // 故统一放宽；个别更长的用例仍可在文件内显式标注。
+          testTimeout: 60_000,
         },
       },
       {
@@ -22,6 +25,7 @@ export default defineConfig({
           name: 'integration',
           include: ['packages/*/test/integration/**/*.test.ts'],
           environment: 'node',
+          testTimeout: 60_000,
         },
       },
       {
