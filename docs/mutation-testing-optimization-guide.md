@@ -54,10 +54,12 @@
 * **原理**：传统变异测试针对构建产物（`lib/index.js`），编译打包造成的代码混淆和行号位移会导致增量指纹极易失效，且每次测试都需前置全量 build。
 * **做法**：测试用例中保持正常的包入口引用（`import "../lib/index.js"`），但在 Stryker 运行时通过 Node `--import hook`（如 `mutation-lib-to-src-hook.mjs`）在模块解析（`nextResolve`）阶段动态将 `packages/<pkg>/lib/**` 重定向到 `packages/<pkg>/src/**.ts`。
 * **收益**：Mutant 指纹直接锚定在 `.ts` 源码 AST 上，源码局部修改绝不引发跨文件指纹漂移。
+* **#722 后的状态**：测试用例改为直接 `import "../src/**"`，重定向 hook 不再参与 Stryker 链路（`--import` 注入随之退役）；`mutation-lib-to-src-hook.mjs` 仅保留给 `scripts/gate/cov.mjs`（`cov:src`）使用。本节的「收益」由「测试直连源码」直接兑现，且不再依赖解析期改写。
 
 ### 3.2 注入 Node.js 编译缓存（Compile Cache）
 * **原理**：Stryker 的并发 Sandbox 在执行测试时，会反复拉起独立 Node 进程动态转译 TypeScript 源码。
-* **做法**：在测试运行器的 Bridge 脚本（如 `mutation-tap-bridge.cjs`）最头部注入：
+* **#722 后的结论（已评估，本注入不再需要）**：`mutation-tap-bridge.cjs` 已随 tap-runner 退役，本节的注入点随之消失。vitest runner 下 TS 由 Vite/esbuild 在进程内转译，不经过 Node 的模块编译缓存，本节的作用面（Node 动态转译）不复存在——本机 A/B 实测（同一 unit 文件经 vitest 运行 3 次取中位数：`NODE_DISABLE_COMPILE_CACHE=1` 1017ms vs `NODE_COMPILE_CACHE` 981ms）差异落在噪声内，**故无需在 vitest runner 上重建该注入**。下文 41% 为 tap-runner 时期的数据，仅供历史对照，不可外推。
+* **当时的做法**：在测试运行器的 Bridge 脚本（如 `mutation-tap-bridge.cjs`）最头部注入：
   ```javascript
   // Node >= 24.12 支持
   try {
@@ -214,16 +216,13 @@ concurrency:
   ```json
   {
     "sharedDefaults": {
-      "testRunner": "tap",
+      "testRunner": "vitest",
       "concurrency": 16,
       "timeoutMS": 60000,
       "dryRunTimeoutMinutes": 5,
       "coverageAnalysis": "perTest",
       "excludedMutations": ["StringLiteral", "ArrayLiteral", "ObjectLiteral", "TemplateLiteral"],
-      "tapNodeArgs": [
-        "-r", "./scripts/test/mutation-tap-bridge.cjs",
-        "--import", "./scripts/test/mutation-lib-to-src-hook.mjs"
-      ]
+      "vitest": { "related": false }   // configFile 由生成器按包派生为 vitest.stryker.d/<pkg>.config.ts（#722）
     },
     "$testLayers": {
       "layers": {
@@ -244,8 +243,9 @@ concurrency:
     }
   }
   ```
-* **一键代码生成工具**：`scripts/gate/gen-stryker-conf.mjs`（#690 S2b 起由「测试层 glob」派生
-  `tap.testFiles`，不再是包级手写数组——手写清单已经漂移过 5 个单元文件）
+* **一键代码生成工具**：`scripts/gate/gen-stryker-conf.mjs`（#690 S2b 起由「测试层 glob」派生变异面测试清单，不再是包级手写数组——手写清单已漂移过
+  5 个单元文件；#722 起该清单落在 `vitest.stryker.d/<pkg>.config.ts` 的 `include`，不再用
+  Stryker 的 `testFiles`）
   - `pnpm stryker:gen`：派生生成全部 `stryker.conf.d/*.json` 配置文件；
   - `node scripts/gate/gen-stryker-conf.mjs --sync-test-min`：把各包 `--min` 同步为实际测试文件数；
   - `pnpm stryker:check`：门禁校验三件事——磁盘文件与清单 100% 逐字一致、每个 `test/` 下

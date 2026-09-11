@@ -11,7 +11,7 @@
  * 触发 exit 决议；不产生任何真实子进程（消除 e2e 真 spawn 的 130-200 次 execFile/次运行）。
  */
 import { EventEmitter } from "node:events";
-import assert from "node:assert/strict";
+import { beforeEach, describe, expect, it } from "vitest";
 import { createSystemNotifier } from "../../src/server/interface.ts";
 
 /** 注入面真实类型（与 src 的 options 签名同源，避免各写一份重复声明）。 */
@@ -81,73 +81,114 @@ function makeNotifier(opts: FakeNotifierOptions = {}) {
   return { system, spawn, warns };
 }
 
-// ---- A：1s 节流吞掉重复投递（透传上次决议；不新增 spawn） ----
-{
-  const { system, spawn } = makeNotifier();
-  // 第一次投递：toast spawn 同步发生（selfPlay spawn 在其后 await 处挂起）
-  const p1 = system.notify(true, true, "t1", "m1");
-  const after1 = spawn.calls.length;
-  assert.ok(after1 >= 1, "A：首次投递同步 spawn toast");
-  // 节流窗口内第二次：同步分支吞掉，透传上次决议，不新增 spawn
-  const p2 = system.notify(true, true, "t2", "m2");
-  assert.equal(spawn.calls.length, after1, "A：1s 节流窗口内第二次投递不 spawn");
-  // 清理挂起子进程：toast exit 后 deliverOnce 微任务推进到自播 spawn，两轮补发
-  for (const child of spawn.children) child.emit("exit", 0);
-  await new Promise((r) => setTimeout(r, 0));
-  for (const child of spawn.children) child.emit("exit", 0);
-  await p1;
-  await p2;
-  console.log("A 系统通知 1s 节流: OK");
-}
+const tick = () => new Promise((r) => setTimeout(r, 0));
 
-// ---- B：killTimeoutMs 超时杀进程（弹窗场景被杀不翻转终态） ----
-{
-  const { system, spawn } = makeNotifier({ killTimeoutMs: 40 });
-  const p = system.notify(true, true, "t", "m");
-  const toast = spawn.children[0];
-  const deadline = Date.now() + 1500;
-  while (!toast._killed && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 10));
-  }
-  assert.ok(toast._killed, "B：超时后 child.kill 被调用（8s 兜底可注入短值）");
-  // toast 被 kill → exit(null) 决议；等 deliverOnce 推进到自播后补 exit 完成
-  await new Promise((r) => setTimeout(r, 0));
-  spawn.children[1]?.emit("exit", 0);
-  const result = await p;
-  assert.equal(result, true, "B：弹窗场景杀进程不翻转终态（toast 静默语义）");
-  console.log("B 系统通知超时杀进程（不翻转终态）: OK");
-}
+describe("A：1s 节流吞掉重复投递（透传上次决议；不新增 spawn）", () => {
+  let after1: number;
+  let afterSecond: number;
 
-// ---- C：toast 命令 exit 非 0 → 弹窗终态仍 true（失败静默、仅日志） ----
-{
-  const { system, spawn, warns } = makeNotifier();
-  const p = system.notify(true, true, "t", "m");
-  spawn.children[0].emit("exit", 1); // toast 失败
-  await new Promise((r) => setTimeout(r, 0)); // deliverOnce 推进到自播 spawn
-  spawn.children[1]?.emit("exit", 0); // 自播正常
-  const result = await p;
-  assert.equal(result, true, "C：toast spawn exit 1 不翻转弹窗终态（旧契约：失败静默仅日志）");
-  assert.ok(warns.some((w) => w.includes("退出码异常")), "C：exit 1 记 warn 日志");
-  console.log("C toast 失败静默不翻转终态: OK");
-}
+  beforeEach(async () => {
+    const { system, spawn } = makeNotifier();
+    // 第一次投递：toast spawn 同步发生（selfPlay spawn 在其后 await 处挂起）
+    const p1 = system.notify(true, true, "t1", "m1");
+    after1 = spawn.calls.length;
+    // 节流窗口内第二次：同步分支吞掉，透传上次决议，不新增 spawn
+    const p2 = system.notify(true, true, "t2", "m2");
+    afterSecond = spawn.calls.length;
+    // 清理挂起子进程：toast exit 后 deliverOnce 微任务推进到自播 spawn，两轮补发
+    for (const child of spawn.children) child.emit("exit", 0);
+    await tick();
+    for (const child of spawn.children) child.emit("exit", 0);
+    await p1;
+    await p2;
+  });
 
-// ---- D：只响不弹自播失败 → 终态 failed（resolve false，诚实上报） ----
-{
-  const { system, spawn } = makeNotifier();
-  const p = system.notify(false, "ding", "", "");
-  spawn.children[0].emit("exit", 1); // 自播命令失败
-  const result = await p;
-  assert.equal(result, false, "D：只响不弹自播失败 → resolve false（终态 failed，B4/P1-2）");
-  console.log("D 只响不弹自播失败 → failed 终态: OK");
-}
+  it("A：首次投递同步 spawn toast", () => {
+    expect(after1 >= 1).toBeTruthy();
+  });
 
-// ---- E（linux-only）：notify-send 探测不可用 → 弹窗静默跳过（argv null，零 spawn） ----
-if (process.platform === "linux") {
-  const { system, spawn } = makeNotifier({ exec: { notifySendErr: true, selfPlayErr: true } });
-  const result = await system.notify(true, true, "t", "m");
-  assert.equal(result, true, "E：探测不可用 → 弹窗静默跳过仍成功（旧语义：通道不可用≠失败）");
-  assert.equal(spawn.calls.length, 0, "E：探测不可用 → 零 spawn（argv null 路径）");
-  console.log("E 探测不可用静默跳过（linux）: OK");
-} else {
-  console.log("E 探测不可用（非 linux 跳过）: SKIP");
-}
+  it("A：1s 节流窗口内第二次投递不 spawn", () => {
+    expect(afterSecond).toBe(after1);
+  });
+});
+
+describe("B：killTimeoutMs 超时杀进程（弹窗场景被杀不翻转终态）", () => {
+  it("B：超时后 child.kill 被调用（8s 兜底可注入短值）", async () => {
+    const { system, spawn } = makeNotifier({ killTimeoutMs: 40 });
+    const p = system.notify(true, true, "t", "m");
+    const toast = spawn.children[0];
+    const deadline = Date.now() + 1500;
+    while (!toast._killed && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    // toast 被 kill → exit(null) 决议；等 deliverOnce 推进到自播后补 exit 完成
+    await tick();
+    spawn.children[1]?.emit("exit", 0);
+    await p;
+    expect(toast._killed).toBeTruthy();
+  });
+
+  it("B：弹窗场景杀进程不翻转终态（toast 静默语义）", async () => {
+    const { system, spawn } = makeNotifier({ killTimeoutMs: 40 });
+    const p = system.notify(true, true, "t", "m");
+    const toast = spawn.children[0];
+    const deadline = Date.now() + 1500;
+    while (!toast._killed && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    await tick();
+    spawn.children[1]?.emit("exit", 0);
+    expect(await p).toBe(true);
+  });
+});
+
+describe("C：toast 命令 exit 非 0 → 弹窗终态仍 true（失败静默、仅日志）", () => {
+  let result: boolean;
+  let warns: string[];
+
+  beforeEach(async () => {
+    const made = makeNotifier();
+    warns = made.warns;
+    const p = made.system.notify(true, true, "t", "m");
+    made.spawn.children[0].emit("exit", 1); // toast 失败
+    await tick(); // deliverOnce 推进到自播 spawn
+    made.spawn.children[1]?.emit("exit", 0); // 自播正常
+    result = await p;
+  });
+
+  it("C：toast spawn exit 1 不翻转弹窗终态（旧契约：失败静默仅日志）", () => {
+    expect(result).toBe(true);
+  });
+
+  it("C：exit 1 记 warn 日志", () => {
+    expect(warns.some((w) => w.includes("退出码异常"))).toBeTruthy();
+  });
+});
+
+describe("D：只响不弹自播失败 → 终态 failed（resolve false，诚实上报）", () => {
+  it("D：只响不弹自播失败 → resolve false（终态 failed，B4/P1-2）", async () => {
+    const { system, spawn } = makeNotifier();
+    const p = system.notify(false, "ding", "", "");
+    spawn.children[0].emit("exit", 1); // 自播命令失败
+    expect(await p).toBe(false);
+  });
+});
+
+describe.skipIf(process.platform !== "linux")("E（linux-only）：notify-send 探测不可用 → 弹窗静默跳过（argv null，零 spawn）", () => {
+  let result: boolean;
+  let spawn: ReturnType<typeof makeFakeSpawn>;
+
+  beforeEach(async () => {
+    const made = makeNotifier({ exec: { notifySendErr: true, selfPlayErr: true } });
+    spawn = made.spawn;
+    result = await made.system.notify(true, true, "t", "m");
+  });
+
+  it("E：探测不可用 → 弹窗静默跳过仍成功（旧语义：通道不可用≠失败）", () => {
+    expect(result).toBe(true);
+  });
+
+  it("E：探测不可用 → 零 spawn（argv null 路径）", () => {
+    expect(spawn.calls.length).toBe(0);
+  });
+});

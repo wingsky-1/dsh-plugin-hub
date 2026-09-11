@@ -11,7 +11,7 @@
  * pnpm test:scripts 无条件执行。文件内的运行时断言只是「用例没被绕开」的护栏，
  * 本文件的判据在编译期。
  */
-import assert from "node:assert/strict";
+import { describe, expect, it } from "vitest";
 import {
   BUILTIN_CHANNELS,
   DEFAULT_CONFIG,
@@ -19,7 +19,7 @@ import {
   ROUTES,
   apply,
   applyConfigPatch,
-} from "../../lib/index.js";
+} from "../../src/index.ts";
 import type {
   ChannelCapabilities,
   KindRegistration,
@@ -33,7 +33,7 @@ import type {
   NotifySeverity,
   PatchResult,
   RouteDeps,
-} from "../../lib/index.js";
+} from "../../src/index.ts";
 
 /** 双向类型相等（编译期判据：任一侧漂移即 false）。 */
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
@@ -85,13 +85,34 @@ void badSeverity;
 void badData;
 
 // ---- 运行时护栏：导出面确实可从包入口取到（判据在编译期，这里只防用例被绕开） ----
-assert.equal(BUILTIN_CHANNELS.browser, "browser", "内置频道 id 导出面稳定");
-assert.equal(BUILTIN_CHANNELS.system, "system", "内置频道 id 导出面稳定");
-assert.equal(KIND_SEVERITY.done, "success", "完成事件 severity 映射随包导出面可见");
-assert.equal(DEFAULT_CONFIG.sanitizeContent, true, "sanitizeContent 默认开启（安全默认）");
-assert.ok(
-  typeof ROUTES === "object" && ROUTES !== null && typeof ROUTES.health === "string" && Object.keys(ROUTES).length > 0,
-  "ROUTES 为客户端路由单一事实源（path map，含 /health 必项）",
-);
-assert.equal(typeof apply, "function", "apply 为宿主入口（消费方经 cordis patch 挂载）");
-assert.equal(typeof applyConfigPatch, "function", "applyConfigPatch 随包导出面可用");
+describe("运行时护栏：导出面确实可从包入口取到", () => {
+  it("内置频道 id 导出面稳定（browser）", () => {
+    expect(BUILTIN_CHANNELS.browser).toBe("browser");
+  });
+
+  it("内置频道 id 导出面稳定（system）", () => {
+    expect(BUILTIN_CHANNELS.system).toBe("system");
+  });
+
+  it("完成事件 severity 映射随包导出面可见", () => {
+    expect(KIND_SEVERITY.done).toBe("success");
+  });
+
+  it("sanitizeContent 默认开启（安全默认）", () => {
+    expect(DEFAULT_CONFIG.sanitizeContent).toBe(true);
+  });
+
+  it("ROUTES 为客户端路由单一事实源（path map，含 /health 必项）", () => {
+    expect(
+      typeof ROUTES === "object" && ROUTES !== null && typeof ROUTES.health === "string" && Object.keys(ROUTES).length > 0,
+    ).toBeTruthy();
+  });
+
+  it("apply 为宿主入口（消费方经 cordis patch 挂载）", () => {
+    expect(typeof apply).toBe("function");
+  });
+
+  it("applyConfigPatch 随包导出面可用", () => {
+    expect(typeof applyConfigPatch).toBe("function");
+  });
+});

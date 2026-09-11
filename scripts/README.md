@@ -19,6 +19,10 @@
 - `gate/aggregate.ts` — 聚合 `cordis.patch.yml` 生成 + 一致性校验（`--check` 供 CI）。
 - `gate/crap-check.mjs` — 单函数 CRAP 复杂度检查（阈值唯一事实源 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict，观察期仅记录，翻期可置 true 判红）
 - `gate/forbid-src-tests.mjs` — #423 防双份回潮：扫 packages 下全部遗留 src 副本测试文件（含未跟踪），命中即 exit 1。
+- `gate/local-gate.mjs` — 本地/PR 门禁分层入口（`pnpm gate:changed` / `gate:pr` / `gate:full`，#726）：
+  按改动类型选闸，PR 默认走增量口径，打 `gate:full` 标签才跑全量（覆盖率 + 变异 + 全仓产物闸）。
+- `gate/gen-stryker-conf.mjs` — 变异配置生成/校验：派生 `vitest.stryker.d/<pkg>.config.ts` 并同步各包 `--min`（`--check` 供门禁，`--sync-test-min` 改 `--min`）。
+- `gate/test-surface.mjs` / `gate/mutation-topology.mjs` — 测试分层与变异面登记校验（唯一事实源 `data/mutation-topology.json`）。
 
 ## maintenance/（一次性维护脚本，按需手工执行）
 
@@ -37,6 +41,7 @@
 
 ## test/（脚本自测，`pnpm test:scripts`）
 
+- `test/run-vitest.mjs` — 包级 test 脚本的 vitest 包装：在 vitest 之上恢复 `--min <文件数>` fail-closed 判据（防 include 漂移的假绿）。
 - `test/build-client.test.ts` — build-client 脚本自测。
 - `test/collect-licenses.test.ts` — collect-licenses 脚本自测。
 - `test/crap-check.test.ts` — crap-check 脚本自测（config.strict 单一开关）。
@@ -46,3 +51,9 @@
 
 - `data/plugins-manifest.json` — 插件清单（某插件是否参与聚合/发布校验的唯一声明处）。
 - `data/gauntlet.config.json` — CRAP 阈值唯一事实源。
+
+## 仓库根的派生生成物
+
+- `vitest.stryker.d/<pkg>.config.ts` — 每包一份的 Stryker vitest 配置（由 `gate/gen-stryker-conf.mjs` 生成，
+  勿手改；测试面写在它的 `include` 里，Stryker 侧不再用 `testFiles`）。
+- `stryker.conf.d/<pkg>-<segment>.json` — 各变异段配置（同源生成）。

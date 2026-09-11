@@ -78,9 +78,9 @@ test('F15 反证：段省略 excludes 时生成器注入默认值（fixture 最�
           mutationExcludeLayers: ['client', 'e2e'],
         },
         sharedDefaults: {
-          testRunner: 'tap', concurrency: 1, timeoutMS: 1000, dryRunTimeoutMinutes: 5,
+          testRunner: 'vitest', concurrency: 1, timeoutMS: 1000, dryRunTimeoutMinutes: 5,
           reporters: ['progress'], coverageAnalysis: 'perTest', tempDirName: '.stryker-tmp',
-          cleanTempDir: true, excludedMutations: [], tapNodeArgs: [],
+          cleanTempDir: true, excludedMutations: [], vitest: { related: false },
         },
         packages: {
           [pkg]: {

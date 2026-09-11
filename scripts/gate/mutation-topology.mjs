@@ -7,7 +7,7 @@
  * 于是「靠默认值覆盖的段」在覆盖断言里变成盲区。
  */
 
-/** runner 面（scripts/gate/run-tests.mjs 的 glob）：`--min` 与登记完整性判据 ③ 的唯一口径。 */
+// runner 面（test/**/*.test.ts，与 vitest include 同口径）：`--min` 与登记完整性判据 ③ 的唯一口径。
 export const RUN_TESTS_PATTERN = 'test/**/*.test.ts'
 
 /**

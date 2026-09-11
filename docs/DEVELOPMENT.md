@@ -51,7 +51,7 @@ pnpm typecheck    # 全仓类型检查
 变异配置集中在 `stryker.conf.d/dsh-<pkg>.json`（未拆分包）与 `stryker.conf.d/dsh-<pkg>-<段名>.json`
 （拆分包，段名=功能域，如 `dsh-notifier-server.json`；除 dsh-lan-proxy（待迁移功能段名）外
 已弃用数字段号）。mutate 区间、
-testFiles、阈值口径与 `gauntlet.config.json` 三方一致，由 workflow-assert 自测锚定。增量链路：
+变异面测试清单、阈值口径与 `gauntlet.config.json` 三方一致，由 workflow-assert 自测锚定。增量链路：
 
 **全量分工总述**：PR 门管变更切片；夜间 observe 门管主干全量；发版前
 release.yml tag 管线跑全量门禁——全量只在这三处语义中的后两处真实执行。
@@ -204,15 +204,17 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   `exports["./client"]`（`contract-check` 联动断言，缺则整包拒载）。**独立包与聚合包
   禁双装**（同 id 双装 loader 报 duplicate）；改独立包 patch 后必须
   `node scripts/gate/aggregate.ts` 重新生成聚合 patch。
-- **测试**：`pnpm test` 直跑（包内实现为 `node ../../scripts/gate/run-tests.mjs --min <N>`，
-  runner **逐文件 spawn** `node --test --test-isolation=process --test-concurrency=1 <file>`，
-  即每文件独立进程、包内严格串行；`--order lex|reverse|shuffle:<seed>` 可重排执行顺序，
-  用于验证「打乱文件列表结果不变」）；
-  测试文件直跑 TS 源码（node 原生 type stripping），但部分文件断言 `lib/` 产物
+- **测试**：`pnpm test` 直跑（包内实现为 `node ../../scripts/test/run-vitest.mjs --min <N>`）。
+  运行器由 vitest 承载：根 `vitest.config.ts` 按目录切四个 project（`test/unit` → `unit`、
+  `test/integration` → `integration`、`test/e2e` → `e2e`、`test/client` → `contract`），
+  每个测试文件独立环境（per-file 隔离），包级调用按 cwd 自动收窄到本包；
+  乱序验证用 `--sequence.shuffle` 透传。
+  测试文件直跑 TS 源码，但部分文件断言 `lib/` 产物
   （如客户端产物契约），故跑前仍需 `pnpm build`；必含 403/405 围栏用例 +
   客户端契约断言（`assertClientSourceContract` / `assertClientProductContract`）。
-  `--min` 是**测试文件数**下限（glob 展开计数），用于封堵 `node --test` 零匹配仍 exit 0
-  的假绿向量；单文件超时（默认 10 分钟）按**进程组**回收并**点名**判红。
+  `--min` 是**测试文件数**下限（vitest json reporter 的 `testResults` 计数），用于封堵
+  include 配置漂移导致部分文件漏收集的假绿向量；各包 `--min` 与实际文件数由
+  `node scripts/gate/gen-stryker-conf.mjs --check` 强制同步（判据 ③）。
 
 ### 测试分层与变异面登记（#690 S2b / #713 T1–T3）
 
@@ -222,7 +224,7 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
 |---|---|---|
 | `test/unit/**` | 单模块 / 纯逻辑 / fake 驱动、只做临时目录 I/O（允许为覆盖分支而短暂 bind 一个端口，如 lan-proxy 的 EADDRINUSE 用例） | 是 |
 | `test/integration/**` | 以真实 socket/真实组合根为被测对象：起真实 http server（内核临时端口）走完整转发链、真实 cordis Context、真实配置迁移 | 是 |
-| `test/client/**` | 断言对象是客户端**构建产物** `lib/client.js`——而 `mutate` 面本身排除 `src/client/**`，登记进 testFiles 只增加每个段的 dry run 成本、杀灭贡献为零 | 否 |
+| `test/client/**` | 断言对象是客户端**构建产物** `lib/client.js`——而 `mutate` 面本身排除 `src/client/**`，登记进变异面测试清单只增加每个段的 dry run 成本、杀灭贡献为零 | 否 |
 | `test/e2e/**` | 真实监听端口 / spawn 子进程 / 真机系统调用的大 smoke | 否 |
 
 支撑模块不入任何层：`test/helpers.ts`、`test/smoke-lib.ts`、`test/smoke-pure.ts`、
@@ -232,7 +234,10 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
 
 登记链路（唯一事实源 = `scripts/data/mutation-topology.json` 的 `$testLayers` 与各包 `testLayers`）：
 
-- `tap.testFiles` 由 `scripts/gate/gen-stryker-conf.mjs` **从层 glob 展开为真实文件清单**。
+- 变异面测试清单由 `scripts/gate/gen-stryker-conf.mjs` **从层 glob 展开为真实文件清单**，落在
+  每包一份的 `vitest.stryker.d/<pkg>.config.ts` 的 `include` 上（#722 方案 A 路径一）。
+  为什么不由 Stryker 的 `testFiles` 承载：该字段非空会让 core 把 static mutant 判成 runtime
+  激活（上游 #6144 未修），模块级变异体在模块加载后永久漏判（实测 80.49 → 0.00）。
   为什么不把 `**` 通配直接交给 Stryker：#712 已 CI 实证沙箱语义失败（`smoke.test.ts` 的
   provide 方法面断言）+ mcp 5 个段 dry run 撞 5 分钟预算；
 - `pnpm stryker:check` 是登记完整性门禁（实现见 `scripts/gate/test-surface.mjs`，纯函数、import 无副作用）：
@@ -247,7 +252,7 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   mcp 的 `unit/unit-shared.test.ts`（测的是 shared 层，不在本包 mutate 面内）、
   notifier 的 `integration/real-context.test.ts`（Stryker 沙箱内 dry run 失败，属 #712 记录的沙箱语义族）；
 - 变异面扩缩**在 PR 门禁里看不出来**（`incremental: true` 复用基线状态）。真信号来自 observe.yml
-  班次全量重建；PR 内的自证方式是「派生 testFiles ↔ 基线的集合对比 + 单段真跑 stryker 报告的
+  班次全量重建；PR 内的自证方式是「派生测试面 ↔ 基线的集合对比 + 单段真跑 stryker 报告的
   mutant 状态分布与基线一致」。
 
 ### 落盘路径必须感知 DSH_HOME（#510）
@@ -410,7 +415,7 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 - **无网络与零真实凭据**：smoke 测试全部无网络、无真实凭据，本地可直接离线运行。
 - **断言全覆盖**：新功能/修复必须带 smoke 断言（含路由 403/405 围栏用例、client 契约断言）。
 - **CI 稳定性门槛**：新增 / 修改测试文件后，本地在该包目录内连续跑 **≥10 次**确认无 flake
-  再提交，如 `cd packages/<pkg> && for i in $(seq 1 10); do node ../../scripts/gate/run-tests.mjs --min <N>; done`
+  再提交，如 `cd packages/<pkg> && for i in $(seq 1 10); do node ../../scripts/test/run-vitest.mjs --min <N>; done`
   （`--min` 取值见该包 `package.json` 的 test script）。
 
 ### 5.2 防 flake 核心原则
@@ -433,7 +438,14 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 3. **异步落盘用轮询替代固定 sleep**：断言持久化状态前必须 `poll-until` 满足条件再断言，
    严禁 `setTimeout(resolve, 50 / 300)` 这类「等够毫秒」的时序假设。参考 notifier 的
    `waitForHistory(route, predicate)` 辅助（轮询 GET 直到谓词成立，超时兜底返回当前态）。
-4. **测试文件禁止顶层悬挂 promise**：`node --test` 以「模块求值结束」判定文件测试通过，
+4. **e2e 不得以墙钟观察异步行为，必须驱动或注入**：等待异步动作生效（热更新、定时轮询、
+   防抖落盘）时，禁止用「轮询墙钟直到断言成立」代替确定性驱动——那只是把 flake 从
+   「窗口太小」换成「窗口随负载漂移」。#722 实证：provider-usage e2e 用 6s 窗口等 2s 热更新
+   轮询，单跑必绿、与包内其它文件并行必红，红的条目随负载漂移，窗口放大到 20s 亦然。
+   正解是语义下沉 unit 层、用公开驱动面确定性驱动（如 `HotReloadableAdapter.pollOnce()`），
+   e2e 只断言路由可见效果；需要越过内部接线拿实例时用原型打桩再驱动。
+   **不注入更短间隔**：间隔本身仍是墙钟，只是更快撞上同一问题。
+5. **测试文件禁止顶层悬挂 promise**：`node --test` 以「模块求值结束」判定文件测试通过，
    悬挂的 `main().catch(...)` 会让体内断言在文件测试判定之后才跑，被整段吞掉（#690 S2 实测：
    注入必然失败的断言仍得 exit 0）。统一写法是顶层 `await main();`。
    **#690 S2c 切默认 per-file 隔离后复查：本约定仍然必要，故保留**——实测把
@@ -443,7 +455,9 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
    fire-and-forget 的异步体（模块求值立即完成 → node 判通过）。唯一例外是经
    `execFileSync` + 退出码/输出标记双重校验的 worker 脚本
    （`test/*.worker.mjs`，不参与 `test/**/*.test.ts` glob）。
-5. **fire-and-forget 写入禁止跨块断言顺序**：若写是 `void flush()` / 防抖定时器
+   **#722 起测试载体换为 vitest 的 describe/it，文件级判定不再由「模块求值结束」决定，
+   本条前提随之消失**；保留为迁移期的实测记录。
+6. **fire-and-forget 写入禁止跨块断言顺序**：若写是 `void flush()` / 防抖定时器
    （如 opencode-usage 的 `schedulePersist`、notifier 的 `appendHistory`），绝不能依赖
    「最后一条是 X」「条数 === N」等顺序敏感断言；必须**隔离文件 + 轮询**。理想情况：
    被测插件暴露 `await flushPersist()` 之类的可等待落盘钩子，测试直接 `await` 比轮询更稳。
@@ -474,8 +488,8 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
   「端口被占 → 启动失败」的**负向用例仍然保留**：先 `listen(0)` 占位拿到端口，再让被测
   对象去绑同一端口——语义不变，只是不再写死端口号。
 - **残留句柄在 `finally` 里回收**：测试自己起的 server / socket / 定时器 / watcher 必须在
-  用例结束时关闭。`node --test` 的 per-file 隔离下，未回收的句柄会让**整个包**挂到 runner
-  超时才判红，而不是只红那一个文件。
+  用例结束时关闭。per-file 隔离（每个测试文件独立环境）下，未回收的句柄会让**整个包**挂到
+  runner 超时才判红，而不是只红那一个文件。
 - **分诊工具（只报告，不判红）**：排查挂起或评估隔离模式时，先逐文件分诊：
 
   ```sh

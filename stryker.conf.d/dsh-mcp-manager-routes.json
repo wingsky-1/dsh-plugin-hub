@@ -8,7 +8,7 @@
     "!packages/dsh-mcp-manager/src/placement-math.ts",
     "!packages/dsh-mcp-manager/src/**/interface.ts"
   ],
-  "testRunner": "tap",
+  "testRunner": "vitest",
   "mutator": {
     "excludedMutations": [
       "StringLiteral",
@@ -18,7 +18,7 @@
     ]
   },
   "plugins": [
-    "@stryker-mutator/tap-runner"
+    "@stryker-mutator/vitest-runner"
   ],
   "concurrency": 16,
   "timeoutMS": 60000,
@@ -31,28 +31,9 @@
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
-  "tap": {
-    "nodeArgs": [
-      "-r",
-      "./scripts/test/mutation-tap-bridge.cjs",
-      "--import",
-      "./scripts/test/mutation-lib-to-src-hook.mjs"
-    ],
-    "testFiles": [
-      "packages/dsh-mcp-manager/test/unit/unit-apply.test.ts",
-      "packages/dsh-mcp-manager/test/unit/unit-call-stats.test.ts",
-      "packages/dsh-mcp-manager/test/unit/unit-catalog.test.ts",
-      "packages/dsh-mcp-manager/test/unit/unit-hotspot.test.ts",
-      "packages/dsh-mcp-manager/test/unit/unit-manager.test.ts",
-      "packages/dsh-mcp-manager/test/unit/unit-manager2.test.ts",
-      "packages/dsh-mcp-manager/test/unit/unit-middleware.test.ts",
-      "packages/dsh-mcp-manager/test/unit/unit-pipeline.test.ts",
-      "packages/dsh-mcp-manager/test/unit/unit-routes-sse.test.ts",
-      "packages/dsh-mcp-manager/test/unit/unit-store.test.ts",
-      "packages/dsh-mcp-manager/test/unit/unit-supervisor.test.ts",
-      "packages/dsh-mcp-manager/test/unit/unit-transport.test.ts",
-      "packages/dsh-mcp-manager/test/unit/unit-workspace.test.ts"
-    ]
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.stryker.d/dsh-mcp-manager.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-mcp-manager-routes.json"

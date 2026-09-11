@@ -1,6 +1,6 @@
 {
     "$testLayers": {
-        "$comment": "测试分层与变异面登记的单一事实源（#690 S2b / #713 T1–T3）。runner 层 = test/**/*.test.ts 的全集（scripts/gate/run-tests.mjs 的 glob 即此口径）；mutation 层 = unit + integration（in-process，可进变异面）；exclude 层 = client（断言对象是构建产物 lib/client.js，而 mutate 面本身排除 src/client/**，登记进 testFiles 只会增加每个段的 dry run 成本、杀灭贡献为零）+ e2e（真实端口/子进程/真机系统调用）。support 不入任何层：test/helpers.ts、test/smoke-lib.ts、test/smoke-pure.ts、test/*.worker.mjs 是支撑模块，不是测试条目。unitExemptions 是单元层内「写了单元测试但刻意不进变异面」的逐条裁决（每条必须写明理由；gate 校验其非空且真实存在于 unit 层）。gate 判据：每个 test/**/*.test.ts 必须落入某一层的 glob 或某条排除 glob（无第三条路），故新增测试文件必须显式决定其层归属，不能靠「没写进清单」逃逸。",
+        "$comment": "测试分层与变异面登记的单一事实源（#690 S2b / #713 T1–T3）。runner 层 = test/**/*.test.ts 的全集（vitest include 的 glob 即此口径）；mutation 层 = unit + integration（in-process，可进变异面）；exclude 层 = client（断言对象是构建产物 lib/client.js，而 mutate 面本身排除 src/client/**，登记进变异面测试清单只会增加每个段的 dry run 成本、杀灭贡献为零）+ e2e（真实端口/子进程/真机系统调用）。support 不入任何层：test/helpers.ts、test/smoke-lib.ts、test/smoke-pure.ts、test/*.worker.mjs 是支撑模块，不是测试条目。unitExemptions 是单元层内「写了单元测试但刻意不进变异面」的逐条裁决（每条必须写明理由；gate 校验其非空且真实存在于 unit 层）。gate 判据：每个 test/**/*.test.ts 必须落入某一层的 glob 或某条排除 glob（无第三条路），故新增测试文件必须显式决定其层归属，不能靠「没写进清单」逃逸。",
         "layers": {
             "unit": "test/unit/**/*.test.ts",
             "integration": "test/integration/**/*.test.ts",
@@ -21,7 +21,7 @@
         "dsh-verify-isolated": "仅 test/e2e/smoke.test.ts（真实端口 + spawn 子进程的隔离环境冒烟），不进变异面；且 CI 的 ci-matrix 按「无变异配置」把该包排除出变异切片。源码覆盖断言（verify-dir-imports）尚未覆盖该包，属 #690 S6/S8 范围。"
     },
     "sharedDefaults": {
-        "testRunner": "tap",
+        "testRunner": "vitest",
         "concurrency": 16,
         "timeoutMS": 60000,
         "dryRunTimeoutMinutes": 5,
@@ -39,12 +39,9 @@
             "ObjectLiteral",
             "TemplateLiteral"
         ],
-        "tapNodeArgs": [
-            "-r",
-            "./scripts/test/mutation-tap-bridge.cjs",
-            "--import",
-            "./scripts/test/mutation-lib-to-src-hook.mjs"
-        ]
+        "vitest": {
+            "related": false
+        }
     },
     "packages": {
         "dsh-lan-proxy": {

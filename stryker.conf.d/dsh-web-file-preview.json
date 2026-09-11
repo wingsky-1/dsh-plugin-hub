@@ -5,7 +5,7 @@
     "!packages/dsh-web-file-preview/src/client/**",
     "!packages/dsh-web-file-preview/src/types.ts"
   ],
-  "testRunner": "tap",
+  "testRunner": "vitest",
   "mutator": {
     "excludedMutations": [
       "StringLiteral",
@@ -15,7 +15,7 @@
     ]
   },
   "plugins": [
-    "@stryker-mutator/tap-runner"
+    "@stryker-mutator/vitest-runner"
   ],
   "concurrency": 16,
   "timeoutMS": 60000,
@@ -28,16 +28,9 @@
   "coverageAnalysis": "perTest",
   "tempDirName": ".stryker-tmp",
   "cleanTempDir": true,
-  "tap": {
-    "nodeArgs": [
-      "-r",
-      "./scripts/test/mutation-tap-bridge.cjs",
-      "--import",
-      "./scripts/test/mutation-lib-to-src-hook.mjs"
-    ],
-    "testFiles": [
-      "packages/dsh-web-file-preview/test/unit/unit-present-open.test.ts"
-    ]
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.stryker.d/dsh-web-file-preview.config.ts"
   },
   "jsonReporter": {
     "fileName": "coverage/mutation/dsh-web-file-preview.json"

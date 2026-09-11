@@ -3,7 +3,11 @@
  *
  * 机制：
  * - 轮询 stat（默认 2s），对比 mtimeMs + size 检测文件变化（nodemon 同款，跨平台可靠）
- * - `import(pathToFileURL(file) + '?t=' + mtimeMs)` 绕 ESM 模块缓存
+ * - `import(pathToFileURL(file) + '?mtime=' + mtimeMs + '&size=' + size)` 绕 ESM 模块缓存。
+ *   参数名刻意避开 `t=`：vite 系模块运行器（vitest）会把 `?t=<13 位毫秒>` 当时间戳剥离
+ *   （`/\bt=\d{13}&?\b/`），只剩亚毫秒小数位参与模块标识；内核 coarse 时钟下同一 tick 的
+ *   两次写入小数位相同，剥离后 URL 撞成同一个模块 → 缓存命中 → 热更新静默加载旧版。
+ *   追加 size 同时覆盖「mtime 未变、内容长度已变」的重写。
  * - 新模块加载并校验通过后才替换引用（原子切换）；失败保留旧版
  * - 校验和（内容 hash）可选项：开启后每次变化先算 hash，文件被替换也能感知
  */
@@ -40,7 +44,7 @@ export async function loadAndValidateAdapter(
   stamp: FileStamp,
 ): Promise<{ adapter?: UsageStatsAdapter; error?: string }> {
   try {
-    const url = pathToFileURL(file).href + `?t=${stamp.mtimeMs}`;
+    const url = pathToFileURL(file).href + `?mtime=${stamp.mtimeMs}&size=${stamp.size}`;
     const mod = (await import(url)) as Record<string, unknown>;
     const candidate = (mod.default ?? mod) as unknown;
     if (!isUsageStatsAdapter(candidate)) {

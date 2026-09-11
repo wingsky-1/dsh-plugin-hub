@@ -10,239 +10,450 @@
  * - find / upsert（替换不追加）/ remove（未知名 no-op）
  * - fromClaudeEntry / parseClaudeJson：http/sse/stdio 全分支与错误路径
  */
-import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync, utimesSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 
-const { McpStore, fromClaudeEntry, parseClaudeJson } = await import("../../lib/index.js");
+const { McpStore, fromClaudeEntry, parseClaudeJson } = await import("../../src/index.ts");
+
+let tempDirs = [];
 
 function tempDir() {
-  return mkdtempSync(join(tmpdir(), "dsh-mcp-store-"));
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-store-"));
+  tempDirs.push(dir);
+  return dir;
 }
 
-// ---- 构造器初始态 ----
+afterEach(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  tempDirs = [];
+});
 
-{
-  const dir = tempDir();
-  try {
+describe("构造器初始态", () => {
+  it("初始 version 为 1", () => {
+    const store = new McpStore(join(tempDir(), "mcp.json"));
+    expect(store.data.version).toBe(1);
+  });
+
+  it("初始 servers 为空数组", () => {
+    const store = new McpStore(join(tempDir(), "mcp.json"));
+    expect(store.data.servers.length).toBe(0);
+  });
+
+  it("初始 mtimeMs 为 undefined", () => {
+    const store = new McpStore(join(tempDir(), "mcp.json"));
+    expect(store.mtimeMs).toBeUndefined();
+  });
+
+  it("无基线时 changedOnDisk 恒 false（即便文件存在）", async () => {
+    const dir = tempDir();
     const store = new McpStore(join(dir, "mcp.json"));
-    assert.equal(store.data.version, 1);
-    assert.equal(store.data.servers.length, 0);
-    assert.equal(store.mtimeMs, undefined);
-    // 无基线时 changedOnDisk 恒 false（即便文件存在）。
     writeFileSync(join(dir, "mcp.json"), "{}");
-    assert.equal(await store.changedOnDisk(), false);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-}
+    expect(await store.changedOnDisk()).toBe(false);
+  });
+});
 
-// ---- load：文件不存在 → 重置内存态 + 0 基线 ----
-
-{
-  const dir = tempDir();
-  try {
+describe("load：文件不存在 → 重置内存态 + 0 基线", () => {
+  async function loadMissing() {
+    const dir = tempDir();
     const store = new McpStore(join(dir, "missing.json"));
     store.data.servers.push({ name: "stale", transport: "stdio", command: "x" });
     await store.load();
-    assert.equal(store.data.servers.length, 0, "文件不存在应清空内存 servers");
-    assert.equal(store.mtimeMs, 0, "文件不存在建立 0 基线");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+    return store;
   }
-}
 
-// ---- load：正常读取 + mtime 基线 ----
+  it("文件不存在应清空内存 servers", async () => {
+    const store = await loadMissing();
+    expect(store.data.servers.length).toBe(0);
+  });
 
-{
-  const dir = tempDir();
-  const path = join(dir, "mcp.json");
-  writeFileSync(path, JSON.stringify({ version: 1, servers: [{ name: "a", transport: "stdio", command: "echo" }] }));
-  try {
+  it("文件不存在建立 0 基线", async () => {
+    const store = await loadMissing();
+    expect(store.mtimeMs).toBe(0);
+  });
+});
+
+describe("load：正常读取 + mtime 基线", () => {
+  async function loadedFixture() {
+    const dir = tempDir();
+    const path = join(dir, "mcp.json");
+    writeFileSync(path, JSON.stringify({ version: 1, servers: [{ name: "a", transport: "stdio", command: "echo" }] }));
     const store = new McpStore(path);
     await store.load();
-    assert.equal(store.data.servers.length, 1);
-    assert.equal(store.data.servers[0].name, "a");
-    assert.ok(typeof store.mtimeMs === "number" && store.mtimeMs > 0, "load 建立 mtime 基线");
-    assert.equal(await store.changedOnDisk(), false, "基线刚建立不应视为变更");
+    return { store, path };
+  }
 
-    // 外部修改 mtime → changed；reloadIfChanged 重读并返回 true。
+  /** 外部修改 mtime（并可选换内容）→ 制造磁盘变更。 */
+  async function afterExternalChange({ rewrite = false } = {}) {
+    const { store, path } = await loadedFixture();
     const future = Date.now() / 1000 + 10;
     utimesSync(path, future, future);
-    assert.equal(await store.changedOnDisk(), true);
-    writeFileSync(path, JSON.stringify({ version: 1, servers: [{ name: "b", transport: "stdio", command: "x" }] }));
-    utimesSync(path, future, future);
-    assert.equal(await store.reloadIfChanged(), true, "磁盘变更触发重读");
-    assert.equal(store.data.servers[0].name, "b");
-    assert.equal(await store.reloadIfChanged(), false, "基线同步后不再变更");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+    if (rewrite) {
+      writeFileSync(path, JSON.stringify({ version: 1, servers: [{ name: "b", transport: "stdio", command: "x" }] }));
+      utimesSync(path, future, future);
+    }
+    return { store, path };
   }
-}
 
-// ---- load：servers 非 Array → 不覆盖内存 servers ----
+  it("正常读取 servers 数", async () => {
+    const { store } = await loadedFixture();
+    expect(store.data.servers.length).toBe(1);
+  });
 
-{
-  const dir = tempDir();
-  const path = join(dir, "mcp.json");
-  writeFileSync(path, JSON.stringify({ version: 1, servers: "nope" }));
-  try {
+  it("正常读取 servers[0].name", async () => {
+    const { store } = await loadedFixture();
+    expect(store.data.servers[0].name).toBe("a");
+  });
+
+  it("load 建立 mtime 基线", async () => {
+    const { store } = await loadedFixture();
+    expect(typeof store.mtimeMs === "number" && store.mtimeMs > 0).toBeTruthy();
+  });
+
+  it("基线刚建立不应视为变更", async () => {
+    const { store } = await loadedFixture();
+    expect(await store.changedOnDisk()).toBe(false);
+  });
+
+  it("外部修改 mtime → changedOnDisk true", async () => {
+    const { store } = await afterExternalChange();
+    expect(await store.changedOnDisk()).toBe(true);
+  });
+
+  it("磁盘变更触发重读", async () => {
+    const { store } = await afterExternalChange({ rewrite: true });
+    expect(await store.reloadIfChanged()).toBe(true);
+  });
+
+  it("重读后内容为新值", async () => {
+    const { store } = await afterExternalChange({ rewrite: true });
+    await store.reloadIfChanged();
+    expect(store.data.servers[0].name).toBe("b");
+  });
+
+  it("基线同步后不再变更", async () => {
+    const { store } = await afterExternalChange({ rewrite: true });
+    await store.reloadIfChanged();
+    expect(await store.reloadIfChanged()).toBe(false);
+  });
+});
+
+describe("load：servers 非 Array → 不覆盖内存 servers", () => {
+  async function loadInvalidServers() {
+    const dir = tempDir();
+    const path = join(dir, "mcp.json");
+    writeFileSync(path, JSON.stringify({ version: 1, servers: "nope" }));
     const store = new McpStore(path);
     store.data.servers.push({ name: "keep", transport: "stdio", command: "x" });
     await store.load();
-    assert.equal(store.data.servers.length, 1, "非法 servers 应保留内存态");
-    assert.equal(store.data.servers[0].name, "keep");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+    return store;
   }
-}
 
-// ---- load：损坏 JSON → 保持内存态，仍推进基线 ----
+  it("非法 servers 应保留内存态", async () => {
+    const store = await loadInvalidServers();
+    expect(store.data.servers.length).toBe(1);
+  });
 
-{
-  const dir = tempDir();
-  const path = join(dir, "mcp.json");
-  writeFileSync(path, "{broken json!");
-  try {
+  it("保留的内存态内容不变", async () => {
+    const store = await loadInvalidServers();
+    expect(store.data.servers[0].name).toBe("keep");
+  });
+});
+
+describe("load：损坏 JSON → 保持内存态，仍推进基线", () => {
+  async function loadBroken() {
+    const dir = tempDir();
+    const path = join(dir, "mcp.json");
+    writeFileSync(path, "{broken json!");
     const store = new McpStore(path);
     store.data.servers.push({ name: "kept", transport: "stdio", command: "x" });
     await store.load();
-    assert.equal(store.data.servers.length, 1, "损坏存储保持内存态");
-    assert.ok(typeof store.mtimeMs === "number" && store.mtimeMs > 0, "仍推进基线避免反复重读");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+    return store;
   }
-}
 
-// ---- save：目录两层缺失 → recursive 创建；原子写 + 基线更新 ----
+  it("损坏存储保持内存态", async () => {
+    const store = await loadBroken();
+    expect(store.data.servers.length).toBe(1);
+  });
 
-{
-  const dir = tempDir();
-  const path = join(dir, "l1", "l2", "mcp.json");
-  try {
+  it("仍推进基线避免反复重读", async () => {
+    const store = await loadBroken();
+    expect(typeof store.mtimeMs === "number" && store.mtimeMs > 0).toBeTruthy();
+  });
+});
+
+describe("save：目录两层缺失 → recursive 创建；原子写 + 基线更新", () => {
+  async function savedFixture() {
+    const dir = tempDir();
+    const path = join(dir, "l1", "l2", "mcp.json");
     const store = new McpStore(path);
     store.upsert({ name: "s", transport: "stdio", command: "echo" });
     await store.save();
-    assert.ok(existsSync(path), "recursive mkdir 后写入成功");
-    assert.ok(JSON.parse(await (await import("node:fs/promises")).readFile(path, "utf8")).servers[0].name === "s");
-    assert.ok(store.mtimeMs > 0, "save 更新 mtime 基线");
-    assert.equal(await store.changedOnDisk(), false);
+    return { store, path };
+  }
 
+  it("recursive mkdir 后写入成功", async () => {
+    const { path } = await savedFixture();
+    expect(existsSync(path)).toBeTruthy();
+  });
+
+  it("写入内容为 upsert 的服务器", async () => {
+    const { path } = await savedFixture();
+    expect(JSON.parse(await readFile(path, "utf8")).servers[0].name).toBe("s");
+  });
+
+  it("save 更新 mtime 基线", async () => {
+    const { store } = await savedFixture();
+    expect(store.mtimeMs > 0).toBeTruthy();
+  });
+
+  it("save 后 changedOnDisk 为 false", async () => {
+    const { store } = await savedFixture();
+    expect(await store.changedOnDisk()).toBe(false);
+  });
+
+  it("文件删除视为变更", async () => {
+    const { store, path } = await savedFixture();
     // 文件被删除后 current=0 !== 基线 → 变更。
     rmSync(path);
-    assert.equal(await store.changedOnDisk(), true, "文件删除视为变更");
-    // 删除后 reload：文件不存在分支再次清空。
+    expect(await store.changedOnDisk()).toBe(true);
+  });
+
+  it("删除后 reloadIfChanged 返回 true", async () => {
+    const { store, path } = await savedFixture();
+    rmSync(path);
     store.data.servers.push({ name: "ghost", transport: "stdio", command: "x" });
-    assert.equal(await store.reloadIfChanged(), true);
-    assert.equal(store.data.servers.length, 0, "删除后重读清空配置");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+    expect(await store.reloadIfChanged()).toBe(true);
+  });
+
+  it("删除后重读清空配置", async () => {
+    const { store, path } = await savedFixture();
+    rmSync(path);
+    store.data.servers.push({ name: "ghost", transport: "stdio", command: "x" });
+    await store.reloadIfChanged();
+    expect(store.data.servers.length).toBe(0);
+  });
+});
+
+describe("find / upsert / remove", () => {
+  function crudFixture() {
+    const store = new McpStore(join(tempDir(), "mcp.json"));
+    return store;
   }
-}
 
-// ---- find / upsert / remove ----
-
-{
-  const dir = tempDir();
-  try {
-    const store = new McpStore(join(dir, "mcp.json"));
-    assert.equal(store.find("nope"), undefined);
+  function withServers() {
+    const store = crudFixture();
     store.upsert({ name: "a", transport: "stdio", command: "1" });
     store.upsert({ name: "b", transport: "stdio", command: "2" });
     store.upsert({ name: "a", transport: "stdio", command: "3" });
-    assert.equal(store.data.servers.length, 2, "upsert 已有名替换不追加");
-    assert.equal(store.find("a").command, "3");
-    assert.equal(store.find("b").command, "2");
-    store.remove("nope");
-    assert.equal(store.data.servers.length, 2, "remove 未知名 no-op");
-    store.remove("a");
-    assert.equal(store.data.servers.length, 1);
-    assert.equal(store.find("a"), undefined);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+    return store;
   }
-}
 
-// ---- fromClaudeEntry：http / sse / stdio 全分支 ----
+  it("find 未知名返回 undefined", () => {
+    const store = crudFixture();
+    expect(store.find("nope")).toBeUndefined();
+  });
 
-{
-  // type=http + url → streamable-http
-  const http = fromClaudeEntry("h", { type: "http", url: "http://localhost:9/x" });
-  assert.equal(http.transport, "streamable-http");
-  assert.equal(http.url, "http://localhost:9/x");
+  it("upsert 已有名替换不追加", () => {
+    const store = withServers();
+    expect(store.data.servers.length).toBe(2);
+  });
 
-  // type=sse 视为 http 族
-  const sse = fromClaudeEntry("e", { type: "sse", url: "http://s/" });
-  assert.equal(sse.transport, "streamable-http");
+  it("upsert 已有名替换为新值", () => {
+    const store = withServers();
+    expect(store.find("a").command).toBe("3");
+  });
 
-  // url 条目缺 url → 抛错
-  assert.throws(() => fromClaudeEntry("bad", { type: "http" }), /missing url/);
-  assert.throws(() => fromClaudeEntry("bad", { url: "" }), /missing url/);
+  it("upsert 其它名保持原值", () => {
+    const store = withServers();
+    expect(store.find("b").command).toBe("2");
+  });
 
-  // headers 合入；非对象 headers 忽略
-  const withHeaders = fromClaudeEntry("h2", { url: "http://h/", headers: { Authorization: "Bearer ${T}" }, env: { A: "1" } });
-  assert.deepEqual(withHeaders.headers, { Authorization: "Bearer ${T}" });
-  assert.deepEqual(withHeaders.sourceEnv, ["A"], "http 条目 env 记录来源 keys");
-  const noEnv = fromClaudeEntry("h3", { url: "http://h/", env: {} });
-  assert.equal(noEnv.sourceEnv, undefined, "空 env 不设 sourceEnv");
+  it("remove 未知名 no-op", () => {
+    const store = withServers();
+    store.remove("nope");
+    expect(store.data.servers.length).toBe(2);
+  });
 
-  // stdio：完整映射
-  const stdio = fromClaudeEntry("c", { command: "npx", args: ["-y", 42], cwd: "/w", env: { K: 1, N: null } });
-  assert.equal(stdio.transport, "stdio");
-  assert.equal(stdio.command, "npx");
-  assert.deepEqual(stdio.args, ["-y", "42"], "args map String");
-  assert.equal(stdio.cwd, "/w");
-  assert.deepEqual(stdio.env, { K: "1", N: "null" }, "env 值 String 化");
+  it("remove 已知名缩减列表", () => {
+    const store = withServers();
+    store.remove("a");
+    expect(store.data.servers.length).toBe(1);
+  });
 
-  // stdio：可选字段缺省
-  const bare = fromClaudeEntry("c2", { command: "x" });
-  assert.equal(bare.cwd, undefined);
-  assert.equal(bare.args, undefined);
-  assert.equal(bare.env, undefined);
-  const emptyCwd = fromClaudeEntry("c3", { command: "x", cwd: "" });
-  assert.equal(emptyCwd.cwd, undefined, "空 cwd 不设置");
-  const nonArrayArgs = fromClaudeEntry("c4", { command: "x", args: "not-array" });
-  assert.equal(nonArrayArgs.args, undefined, "非数组 args 忽略");
+  it("remove 后 find 返回 undefined", () => {
+    const store = withServers();
+    store.remove("a");
+    expect(store.find("a")).toBeUndefined();
+  });
+});
 
-  // 缺 command 且无 url → unsupported
-  assert.throws(() => fromClaudeEntry("bad2", {}), /unsupported entry/);
-  assert.throws(() => fromClaudeEntry("bad3", { command: "" }), /unsupported entry/);
-}
+describe("fromClaudeEntry：http / sse / stdio 全分支", () => {
+  it("type=http + url → streamable-http", () => {
+    const http = fromClaudeEntry("h", { type: "http", url: "http://localhost:9/x" });
+    expect(http.transport).toBe("streamable-http");
+  });
 
-// ---- parseClaudeJson：形状校验 ----
+  it("type=http 透传 url", () => {
+    const http = fromClaudeEntry("h", { type: "http", url: "http://localhost:9/x" });
+    expect(http.url).toBe("http://localhost:9/x");
+  });
 
-{
-  const list = parseClaudeJson('{"a":{"command":"x"},"b":{"url":"http://b/"}}');
-  assert.equal(list.length, 2);
-  assert.equal(list[0].name, "a");
-  assert.equal(list[1].transport, "streamable-http");
+  it("type=sse 视为 http 族", () => {
+    const sse = fromClaudeEntry("e", { type: "sse", url: "http://s/" });
+    expect(sse.transport).toBe("streamable-http");
+  });
 
-  assert.throws(() => parseClaudeJson("[1]"), /must be an object/);
-  assert.throws(() => parseClaudeJson("null"), /must be an object/);
-  assert.throws(() => parseClaudeJson('"s"'), /must be an object/);
-  assert.throws(() => parseClaudeJson('{"a":1}'), /entry must be an object/);
-  assert.throws(() => parseClaudeJson('{"a":null}'), /entry must be an object/);
-  assert.throws(() => parseClaudeJson("{oops"), SyntaxError);
-}
+  it("type=http 缺 url → 抛 missing url", () => {
+    expect(() => fromClaudeEntry("bad", { type: "http" })).toThrow(/missing url/);
+  });
 
-// ---- B17：save 失败时 tmp 残留必须清理（唯一 tmp 名 + 失败清理） ----
+  it("url 为空串 → 抛 missing url", () => {
+    expect(() => fromClaudeEntry("bad", { url: "" })).toThrow(/missing url/);
+  });
 
-{
-  const dir = tempDir();
-  try {
+  it("headers 合入条目", () => {
+    const withHeaders = fromClaudeEntry("h2", { url: "http://h/", headers: { Authorization: "Bearer ${T}" }, env: { A: "1" } });
+    expect(withHeaders.headers).toEqual({ Authorization: "Bearer ${T}" });
+  });
+
+  it("http 条目 env 记录来源 keys", () => {
+    const withHeaders = fromClaudeEntry("h2", { url: "http://h/", headers: { Authorization: "Bearer ${T}" }, env: { A: "1" } });
+    expect(withHeaders.sourceEnv).toEqual(["A"]);
+  });
+
+  it("空 env 不设 sourceEnv", () => {
+    const noEnv = fromClaudeEntry("h3", { url: "http://h/", env: {} });
+    expect(noEnv.sourceEnv).toBeUndefined();
+  });
+
+  it("stdio transport 映射", () => {
+    const stdio = fromClaudeEntry("c", { command: "npx", args: ["-y", 42], cwd: "/w", env: { K: 1, N: null } });
+    expect(stdio.transport).toBe("stdio");
+  });
+
+  it("stdio command 映射", () => {
+    const stdio = fromClaudeEntry("c", { command: "npx", args: ["-y", 42], cwd: "/w", env: { K: 1, N: null } });
+    expect(stdio.command).toBe("npx");
+  });
+
+  it("args map String", () => {
+    const stdio = fromClaudeEntry("c", { command: "npx", args: ["-y", 42], cwd: "/w", env: { K: 1, N: null } });
+    expect(stdio.args).toEqual(["-y", "42"]);
+  });
+
+  it("stdio cwd 映射", () => {
+    const stdio = fromClaudeEntry("c", { command: "npx", args: ["-y", 42], cwd: "/w", env: { K: 1, N: null } });
+    expect(stdio.cwd).toBe("/w");
+  });
+
+  it("env 值 String 化", () => {
+    const stdio = fromClaudeEntry("c", { command: "npx", args: ["-y", 42], cwd: "/w", env: { K: 1, N: null } });
+    expect(stdio.env).toEqual({ K: "1", N: "null" });
+  });
+
+  it("stdio 缺省 cwd 为 undefined", () => {
+    const bare = fromClaudeEntry("c2", { command: "x" });
+    expect(bare.cwd).toBeUndefined();
+  });
+
+  it("stdio 缺省 args 为 undefined", () => {
+    const bare = fromClaudeEntry("c2", { command: "x" });
+    expect(bare.args).toBeUndefined();
+  });
+
+  it("stdio 缺省 env 为 undefined", () => {
+    const bare = fromClaudeEntry("c2", { command: "x" });
+    expect(bare.env).toBeUndefined();
+  });
+
+  it("空 cwd 不设置", () => {
+    const emptyCwd = fromClaudeEntry("c3", { command: "x", cwd: "" });
+    expect(emptyCwd.cwd).toBeUndefined();
+  });
+
+  it("非数组 args 忽略", () => {
+    const nonArrayArgs = fromClaudeEntry("c4", { command: "x", args: "not-array" });
+    expect(nonArrayArgs.args).toBeUndefined();
+  });
+
+  it("空条目 → 抛 unsupported entry", () => {
+    expect(() => fromClaudeEntry("bad2", {})).toThrow(/unsupported entry/);
+  });
+
+  it("command 为空串 → 抛 unsupported entry", () => {
+    expect(() => fromClaudeEntry("bad3", { command: "" })).toThrow(/unsupported entry/);
+  });
+});
+
+describe("parseClaudeJson：形状校验", () => {
+  const valid = '{"a":{"command":"x"},"b":{"url":"http://b/"}}';
+
+  it("合法对象解析出两条条目", () => {
+    expect(parseClaudeJson(valid).length).toBe(2);
+  });
+
+  it("条目名保序", () => {
+    expect(parseClaudeJson(valid)[0].name).toBe("a");
+  });
+
+  it("url 条目映射为 streamable-http", () => {
+    expect(parseClaudeJson(valid)[1].transport).toBe("streamable-http");
+  });
+
+  it("数组顶层 → must be an object", () => {
+    expect(() => parseClaudeJson("[1]")).toThrow(/must be an object/);
+  });
+
+  it("null 顶层 → must be an object", () => {
+    expect(() => parseClaudeJson("null")).toThrow(/must be an object/);
+  });
+
+  it("字符串顶层 → must be an object", () => {
+    expect(() => parseClaudeJson('"s"')).toThrow(/must be an object/);
+  });
+
+  it("条目非对象 → entry must be an object", () => {
+    expect(() => parseClaudeJson('{"a":1}')).toThrow(/entry must be an object/);
+  });
+
+  it("条目为 null → entry must be an object", () => {
+    expect(() => parseClaudeJson('{"a":null}')).toThrow(/entry must be an object/);
+  });
+
+  it("坏 JSON → SyntaxError", () => {
+    expect(() => parseClaudeJson("{oops")).toThrow(SyntaxError);
+  });
+});
+
+// B17：save 失败时 tmp 残留必须清理（唯一 tmp 名 + 失败清理） ----
+describe("B17：save 失败时 tmp 残留必须清理", () => {
+  function victimFixture() {
+    const dir = tempDir();
     // rename 目标为已存在目录 → EISDIR，注入写入失败路径
     const victimPath = join(dir, "victim");
     mkdirSync(victimPath);
     const store = new McpStore(victimPath);
     store.data = { version: 1, servers: [{ name: "s1", transport: "stdio", command: "echo", enabled: true }] };
-
-    await assert.rejects(() => store.save(), /EISDIR|ENOTEMPTY|EEXIST|EPERM|ENOTDIR/, "save 失败应上抛");
-    assert.equal(existsSync(`${victimPath}.tmp`), false, "B17：save 失败后 tmp 残留应清理（现状固定名 tmp 残留）");
-    assert.equal(existsSync(`${victimPath}.tmp.`), false, "B17：pid 后缀残留同样不应存在");
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+    return { victimPath, store };
   }
-}
 
-console.log("  ok   unit-store: McpStore 全分支 + import 映射");
+  it("save 失败应上抛", async () => {
+    const { store } = victimFixture();
+    await expect(store.save()).rejects.toThrow(/EISDIR|ENOTEMPTY|EEXIST|EPERM|ENOTDIR/);
+  });
+
+  it("B17：save 失败后 tmp 残留应清理（现状固定名 tmp 残留）", async () => {
+    const { victimPath, store } = victimFixture();
+    await store.save().catch(() => {});
+    expect(existsSync(`${victimPath}.tmp`)).toBe(false);
+  });
+
+  it("B17：pid 后缀残留同样不应存在", async () => {
+    const { victimPath, store } = victimFixture();
+    await store.save().catch(() => {});
+    expect(existsSync(`${victimPath}.tmp.`)).toBe(false);
+  });
+});
