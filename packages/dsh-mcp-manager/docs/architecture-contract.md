@@ -213,7 +213,7 @@
   **变异面仍需登记** `mutation-topology.json` 的 `testFiles`：该清单是策展的单元级
   用例集，不随 glob 自动扩大——实测整包纳入 e2e/契约类会让 Stryker dry run 超时
   （dsh-mcp-manager 5 个段）或在沙箱内失败（`smoke.test.ts` 的 provide 方法面断言），
-  见 #690 S2 评审记录（防三通道不对称扩大，requirements-and-tdd-plan.md 8.3-P0④）。
+  见 #713（防三通道不对称扩大，requirements-and-tdd-plan.md 8.3-P0④）。
   各包 `package.json` 的 `--min <文件数下限>` 也须随新增文件同步上调：该下限只用于
   封堵零匹配/漏跑，不会自动跟随新增，忘记上调会让新文件落在保护面之外。
 
