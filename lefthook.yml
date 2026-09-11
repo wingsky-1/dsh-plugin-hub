@@ -1,0 +1,19 @@
+# 本地提交门禁（#722 阶段五）。
+#
+# 与分层门禁的分工——本文件**不替代**任何一层 gate：
+#   pre-commit       只对本次 staged 的源文件跑 lint（秒级），拦「提交进去就晚了」的问题
+#   commit-msg       校验提交信息符合 Conventional Commits
+#   pnpm gate:changed  迭代中：命中包的 build + test + typecheck
+#   pnpm gate:pr       开 PR 前：快线 + 命中包产物闸 + 廉价全仓一致性闸（含全仓 lint）
+#   pnpm gate:full     全仓口径（= 夜间班次口径）
+# 本文件刻意不做 build / typecheck / 变异 / 覆盖率——那些成本高，归上面的分层门禁。
+pre-commit:
+  parallel: true
+  jobs:
+    - name: lint-staged（仅本次 staged 的源文件）
+      run: pnpm exec lint-staged
+
+commit-msg:
+  jobs:
+    - name: commitlint（Conventional Commits）
+      run: pnpm exec commitlint --edit {1}

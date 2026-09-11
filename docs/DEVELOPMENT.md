@@ -418,6 +418,14 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
     全域实测最大值（cyclomatic 78 / cognitive 84），只拦新增劣化；收紧路线与目标见 issue #732。
   - **与 CRAP 的关系**：`pnpm crap` 的圈复杂度**取自同一条 ESLint 规则**（`Linter` API + 阈值 0
     枚举全部函数），不实现第二份算法——两者是同一事实源的消费方，不存在口径漂移面。
+- **本地提交门禁（#722 阶段五，lefthook）**：`pnpm install` 经 `prepare` 自动装钩子。
+  - `pre-commit`：`lint-staged` 只把**本次 staged 的源文件**交给 `tools/lint/bin/lint.mjs`，
+    秒级；复杂度超阈即拦下本次提交（staged 之外的存量超标函数不影响提交）。
+  - `commit-msg`：`commitlint` 校验 Conventional Commits（规则集用官方 `config-conventional`，
+    未做自定义放宽——实测与本仓既有提交实践兼容）。
+  - **职责边界**：钩子是「提交瞬间的最内层」，不做 build / typecheck / 变异 / 覆盖率，
+    **不替代** `gate:changed` / `gate:pr` / `gate:full`（分层口径见根
+    [AGENTS.md 门禁矩阵](../AGENTS.md)）。钩子配置见根 `lefthook.yml`。
 - **新增/修改客户端后**：`pnpm gate:pr` 全绿再提交（= 命中包 build/test/typecheck + 命中包
   产物闸 + 廉价全仓一致性闸；迭代中用 `pnpm gate:changed`，全仓口径用 `pnpm gate:full`。
   分层口径与「改动类型 → 归属层」对照表见根 [AGENTS.md 门禁矩阵](../AGENTS.md)）。

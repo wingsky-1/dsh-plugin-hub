@@ -29,6 +29,7 @@ catalog:
 
 allowBuilds:
   esbuild: true
+  lefthook: true
 
 # 供应链 minimumReleaseAge 策略的预备豁免清单：当前仓库未开启该策略，此列表暂为
 # 死配置；一旦全局启用 minimumReleaseAge（rc 包发布时间新、会超龄拦截），按此清单
