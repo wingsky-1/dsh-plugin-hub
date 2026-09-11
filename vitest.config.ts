@@ -12,19 +12,20 @@ export default defineConfig({
     projects: [
       {
         test: {
-          name: 'host',
-          include: ['packages/*/test/**/*.test.ts'],
-          exclude: ['**/node_modules/**', 'packages/*/test/client/**'],
+          name: 'unit',
+          include: ['packages/*/test/unit/**/*.test.ts'],
           environment: 'node',
         },
       },
       {
         test: {
-          name: 'client',
-          include: ['packages/*/test/client/**/*.test.{ts,tsx}'],
-          environment: 'happy-dom',
+          name: 'integration',
+          include: ['packages/*/test/integration/**/*.test.ts'],
+          environment: 'node',
         },
       },
+      // e2e / contract / client 三个 project 在后续阶段接入：
+      // e2e 需真实 IO 环境、contract 测 lib 产物、client 需 happy-dom（当前形态是 vm 读产物字符串）。
     ],
     coverage: {
       provider: 'istanbul',
