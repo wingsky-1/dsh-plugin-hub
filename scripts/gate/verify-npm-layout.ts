@@ -20,6 +20,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { executeClient } from '../lib/client-contract-lib.ts'
 import { AGGREGATE_NAME, filterOutRetiredDirs, listPluginDirs, loadManifest } from '../lib/plugins-manifest-lib.ts'
+import { resolvePackageScopeOrExit } from '../lib/package-scope.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
@@ -58,7 +59,17 @@ for (const p of allPackages) {
 }
 
 
-for (const p of plugins) {
+// #722 门禁分层：**解包级**断言（npm pack + 解包）按 --packages 切片——单包 PR 只需验
+// 命中包；全仓口径留夜间与本地 gate:full。上方的安装期脚本扫描是纯 package.json 读取，
+// 不依赖产物，保持全仓恒跑。
+const scoped = resolvePackageScopeOrExit(process.argv.slice(2), allPackages)
+const layoutTargets = scoped === null ? plugins : plugins.filter((p) => scoped.includes(p))
+if (scoped !== null) {
+  console.log(`[verify-npm-layout] 解包切片：${layoutTargets.length}/${plugins.length} 包（--packages ${scoped.join(',') || '（空）'}）`)
+}
+
+
+for (const p of layoutTargets) {
   const tmp = mkdtempSync(join(tmpdir(), 'dsh-npmlayout-'))
   const name = JSON.parse(readFileSync(join(ROOT, 'packages', p, 'package.json'), 'utf8')).name
   try {

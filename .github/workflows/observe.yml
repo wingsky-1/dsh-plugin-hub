@@ -60,6 +60,21 @@ jobs:
       - name: Build all
         run: pnpm build
 
+      # #722 门禁分层：PR 侧改为「命中包切片」后，全仓产物闸（contract / pack:check /
+      # verify:npmlayout）必须在这里落地——否则「全仓打包契约」在默认 PR 路径上无人检查，
+      # 只靠 gate:full 标签的 PR 属自觉行为。三个闸都需要全仓 lib 产物，故紧随 Build all。
+      - name: Client contract（全仓）
+        run: pnpm contract
+
+      - name: Pack check（全仓）
+        run: pnpm pack:check
+
+      - name: Npm layout（全仓）
+        run: pnpm verify:npmlayout
+
+      - name: Stryker config check（变异配置与拓扑 SSOT 一致）
+        run: pnpm stryker:check
+
       - name: Coverage（c8 采集）
         run: pnpm cov
 

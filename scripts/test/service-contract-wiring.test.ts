@@ -27,6 +27,8 @@ import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { PREREQ_PACKAGES } from './script-test-prereqs.mjs'
+
 const ROOT = join(import.meta.dirname, '..', '..')
 // tsc 真实 JS 入口（node_modules/.bin/tsc 是 shell shim，不能经 node 执行；
 // 用 typescript 包内的 bin 入口，node 直接加载）。
@@ -35,15 +37,29 @@ const TSC = join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc')
 const SUITES = [
   {
     name: 'dsh-mcp-manager（提供方契约 + apply provide 方法面）',
+    pkg: 'dsh-mcp-manager',
     tsconfig: join(ROOT, 'packages', 'dsh-mcp-manager', 'test', 'tsconfig.json'),
     expectFiles: [join('integration', 'service-contract.test.ts')],
   },
   {
     name: 'dsh-notifier（SDK 契约 + L1/L2 直测 + 消费方类型编译用例）',
+    pkg: 'dsh-notifier',
     tsconfig: join(ROOT, 'packages', 'dsh-notifier', 'test', 'tsconfig.json'),
     expectFiles: [join('integration', 'service-contract.test.ts'), join('integration', 'consumer-types.test.ts')],
   },
 ]
+
+test('#722: 编译面套件的前置包清单覆盖完整（防切片构建后假红）', () => {
+  // 本用例需要各包**声明产物**（lib/index.d.ts）；#722 门禁分层后 PR 默认只构建命中包，
+  // 故 CI/本地门禁按 script-test-prereqs.mjs 的清单补建。新增套件却忘记登记时会在此判红，
+  // 而不是在 CI 里表现为「tsc 找不到 ../../lib/index.js」的假红。
+  for (const suite of SUITES) {
+    assert.ok(
+      PREREQ_PACKAGES.includes(suite.pkg),
+      `套件「${suite.name}」的包 ${suite.pkg} 未登记进 scripts/test/script-test-prereqs.mjs 的 PREREQ_PACKAGES`,
+    )
+  }
+})
 
 test('service-contract 编译面接线：契约测试文件被 tsc 真实编译（#476）', () => {
   assert.ok(existsSync(TSC), `仓库 tsc 应存在（${TSC}）——pnpm install 后才有`)

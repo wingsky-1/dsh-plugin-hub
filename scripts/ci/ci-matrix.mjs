@@ -5,6 +5,12 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 /**
+ * 空切片时 build-test 矩阵的哨兵项（#722）：见 computeCiMatrix 内 buildPackages 注释。
+ * 取一个不可能成为包名的值，保证所有 `contains(hitPackages, matrix.package)` 条件为假。
+ */
+export const NO_HIT_PACKAGE = '__no-hit-package__';
+
+/**
  * 计算 CI 切片与变异矩阵
  * 100% 原生 Node.js 内置模块（node:fs, node:path, node:process），无任何外部依赖
  *
@@ -136,9 +142,17 @@ export function computeCiMatrix(options = {}) {
     return a.seg.localeCompare(b.seg);
   });
 
+  // buildPackages（#722）：build-test 矩阵的来源 = 命中包；空切片时用哨兵占位。
+  // 为什么需要哨兵：GHA 的**零实例动态矩阵**实测回报 failure（实证 run 32802575298），
+  // 而 repo-gate 的判定表要求 build-test == success —— 纯文档/meta PR 会因此假红。
+  // 哨兵实例不匹配任何包，所有步骤的 `contains(hitPackages, ...)` 条件自然为假，
+  // 只花一次 checkout+setup 就换来「动态矩阵 + 确定性 success」。
+  const buildPackages = hitPackages.length > 0 ? hitPackages : [NO_HIT_PACKAGE];
+
   return {
     allPackages,
     hitPackages,
+    buildPackages,
     mutationPackages,
     hasMutations,
     mutationCombos,
@@ -157,7 +171,7 @@ export function runCli(argv = process.argv, env = process.env) {
     process.exit(1);
   }
 
-  const { allPackages, hitPackages, mutationPackages, hasMutations, mutationCombos } = result;
+  const { allPackages, hitPackages, buildPackages, mutationPackages, hasMutations, mutationCombos } = result;
   const isJson = argv.includes('--json');
 
   if (isJson) {
@@ -165,6 +179,7 @@ export function runCli(argv = process.argv, env = process.env) {
   } else {
     console.log(`全量包清单（单一事实源）: ${JSON.stringify(allPackages)}`);
     console.log(`命中包（跑 smoke/typecheck 切片）: ${JSON.stringify(hitPackages)}`);
+    console.log(`build-test 矩阵（空切片时含哨兵）: ${JSON.stringify(buildPackages)}`);
     console.log(`变异包: ${JSON.stringify(mutationPackages)}`);
     console.log(`变异组合: ${JSON.stringify(mutationCombos)}`);
     console.log(`hasMutations: ${hasMutations}`);
@@ -175,6 +190,7 @@ export function runCli(argv = process.argv, env = process.env) {
       const lines = [
         `allPackages=${JSON.stringify(allPackages)}`,
         `hitPackages=${JSON.stringify(hitPackages)}`,
+        `buildPackages=${JSON.stringify(buildPackages)}`,
         `mutationPackages=${JSON.stringify(mutationPackages)}`,
         `hasMutations=${hasMutations}`,
         `mutationCombos=${JSON.stringify(mutationCombos)}`,

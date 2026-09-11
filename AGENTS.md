@@ -59,21 +59,27 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
   [agents/_protocol.md](agents/_protocol.md) 的凭据规范（结论 + 改动文件绝对路径 +
   实际命令与 exit code）；遇阻塞停下并在返回值写明原因，由主控决定升级。
 
-## 门禁（提交前）
+## 门禁（分层：快线 / 最小集 / 收尾全量）
 
-最小集：`pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck`
+| 层 | 命令 | 用途与口径 |
+|---|---|---|
+| 快线 | `pnpm gate:changed` | 迭代中反复跑：只跑 diff 命中包的 build + test + typecheck。包面归属取自 `ci.yml` 的 paths-filter（**唯一事实源**，本地不重述路径规则）；命中全局面时自动升级为 `gate:pr`，解析失败一律回退全量（fail-closed） |
+| 最小集 | `pnpm gate:pr` | 开 PR 前：快线 + **命中包**的产物闸（`contract` / `pack:check` / `verify:npmlayout` 按 `--packages` 切片）+ 廉价全仓一致性闸（`stryker:check`、`aggregate:check`、`test:src-tests`、`gate:homedir`、`docs:check`、`test:scripts`，均秒级且不依赖 lib 产物） |
+| 收尾 | `pnpm gate:full` | 全仓口径（= 夜间班次口径）：全仓 build/test/typecheck + 全仓产物闸 + 全部静态闸；改过构建链、包结构或发版前跑一遍 |
+| 全量 | CI 夜间班次（`observe.yml` / `observe-incremental.yml`） | 全仓产物闸 + 覆盖率 + CRAP + 全量/增量变异与基线归档。本地不默认跑，需要时 `pnpm gate:full --with-coverage` |
 
-| 改动类型 | 追加 |
+| 改动类型 | 归属层 |
 |---|---|
-| 新增 / 退役包、改 `cordis.patch.yml` | `pnpm aggregate:check && pnpm verify:npmlayout` |
-| 新增 `*.src.test.ts` | `pnpm test:src-tests` |
-| 改 `src/` 里 HOME 来源 API | `pnpm gate:homedir` |
-| 改 `scripts/` / workflow | `pnpm test:scripts` |
-| 改 README、新增文档链接 | `pnpm docs:check` |
-| 提交前最终一遍 | 上面全跑（CI 口径）；单包迭代用 `pnpm --filter @wingsky-1/<pkg> ...` |
+| 新增 / 退役包、改 `cordis.patch.yml` | `gate:full`（含全仓 `aggregate:check` + `verify:npmlayout`） |
+| 新增 `*.src.test.ts` | `gate:pr` 起（含 `test:src-tests`） |
+| 改 `src/` 里 HOME 来源 API | `gate:pr` 起（含 `gate:homedir`） |
+| 改 `scripts/` / workflow | `gate:pr` 起（含 `test:scripts`）；改 `.github/` 属红线，先评审 |
+| 改 README、新增文档链接 | `gate:pr` 起（含 `docs:check`） |
+| 提交前最终一遍 | `pnpm gate:pr`；单包迭代用 `pnpm gate:changed` |
 
-- 最小集**不等于** CI 全量：`test` 不含 `scripts/test`，`contract` 不含 `aggregate:check`，
-  锚点存在性不在任何门禁内。
+- 分层**不减少检查，只改变时机**：PR 与本地都走增量（命中包），只有"必须全仓才能判定"的
+  口径（全仓产物闸、全仓覆盖率分母、全量变异基线）留夜间；高风险改动打 `gate:full` 标签
+  在 PR 上补跑（方案见 #722）。
 - 结论里**逐条粘贴实际 exit code**；任一非 0 不得声称完成。
 - 新增 `homedir()` / `process.env.HOME` / `untildify()` 调用走**双源豁免**：`WHITELIST`
   条目（含 issue 号）+ 调用点紧邻 `// dsh-gate:allow-homedir #<issue> <理由>`，缺一判红
