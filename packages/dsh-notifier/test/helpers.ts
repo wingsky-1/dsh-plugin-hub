@@ -12,8 +12,7 @@
 import { join } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import assert from "node:assert/strict";
-import { apply } from "../lib/index.js";
-import { normalizeConfig, sanitizeSettings, SETTINGS_NS } from "../lib/index.js";
+import { apply, normalizeConfig, sanitizeSettings, SETTINGS_NS } from "../src/index.ts";
 
 /** loopback 合法请求构造（remoteAddress 可覆盖）。 */
 export function fakeReq(overrides = {}) {

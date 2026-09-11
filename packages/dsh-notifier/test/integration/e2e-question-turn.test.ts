@@ -9,96 +9,212 @@
 import { join } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { assert, makeNotifier } from "../helpers.ts";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { makeNotifier } from "../helpers.ts";
 
-const work = mkdtempSync(join(tmpdir(), "dnotify-e2e-question-"));
-try {
-  // 用户提问通知：包装 ctx.userQuestions.ask（internal/service 事件 + 热重载解包重包）
-  {
-    const infos = [];
-    let fakeService = null;
-    const { listeners } = await makeNotifier(work, { }, {
-      logger: { warn: () => {}, info: (t) => infos.push(t) },
-      get: (name) => (name === "userQuestions" ? fakeService : undefined),
-    });
+let work: string;
+beforeAll(() => {
+  work = mkdtempSync(join(tmpdir(), "dnotify-e2e-question-"));
+});
+afterAll(() => {
+  rmSync(work, { recursive: true, force: true });
+});
 
-    // 启动时 service 未注册 → 不包装；internal/service 事件到达后包装
-    const serviceHandler = listeners.get("internal/service")[0];
-    assert.ok(serviceHandler, "internal/service 监听器已注册");
-    // 依赖 this 的类方法风格：验证包装后 this 仍绑定 service 实例（bind 回归测试）
-    fakeService = {
-      marker: "svc-marker",
-      ask: async function (request) {
-        return { answers: [this.marker] };
-      },
-    };
-    serviceHandler("userQuestions", fakeService);
+const agentWithTitle = { id: "session-1", session: { snapshotEvents: () => [{ type: "session/title", data: { title: "提问测试" } }] } };
 
-    const agent = { id: "session-1", session: { snapshotEvents: () => [{ type: "session/title", data: { title: "提问测试" } }] } };
-    const result = await fakeService.ask({ agent, questions: [{ question: "今天吃了吗？" }] });
-    assert.deepEqual(result, { answers: ["svc-marker"] }, "包装不改变原 ask 返回值，且 this 正确绑定");
-    assert.ok(infos.some((t) => /question/.test(t)), "提问触发通知");
-    assert.ok(infos.some((t) => /任务「提问测试」需要你回答/.test(t)), "提问通知带任务标题");
-    assert.ok(infos.some((t) => /问题：今天吃了吗？/.test(t)), "提问通知带问题摘要");
-    assert.ok(infos.some((t) => !t.includes("session-1")), "提问通知不暴露会话 id");
+/**
+ * 提问包装夹具：makeNotifier（userQuestions 读取面经覆盖 get 注入）+ 注册 service。
+ * 每实例独立 history 文件（默认同路径会跨用例串写）。
+ */
+async function questionNotifier(tag: string, config: Record<string, unknown> = {}) {
+  const infos: string[] = [];
+  let fakeService: any = null;
+  const { listeners } = await makeNotifier(work, { historyFile: join(work, `history-q-${tag}.jsonl`), ...config }, {
+    logger: { warn: () => {}, info: (t) => infos.push(t) },
+    get: (name) => (name === "userQuestions" ? fakeService : undefined),
+  });
+  const serviceHandler = listeners.get("internal/service")[0];
+  return { infos, listeners, serviceHandler, getService: () => fakeService, setService: (s: any) => { fakeService = s; } };
+}
 
-    // 热重载安全：重复触发 internal/service 时解包重包（不叠层、不重复通知）
-    const askRef = fakeService.ask;
-    serviceHandler("userQuestions", fakeService);
-    assert.notEqual(fakeService.ask, askRef, "重复注册重新包装（解包旧包装）");
-    const infoCountBefore = infos.length;
-    const result2 = await fakeService.ask({ agent, questions: [{ question: "再问一次？" }] });
-    assert.deepEqual(result2, { answers: ["svc-marker"] }, "解包重包后 ask 返回值不变，this 绑定正确");
-    assert.equal(infos.length, infoCountBefore + 1, "解包重包不叠层，通知只发一次");
+/** 已包装的一次 ask（this 绑定回归用：ask 是依赖 this 的类方法风格）。 */
+function makeService() {
+  return {
+    marker: "svc-marker",
+    ask: async function () {
+      return { answers: [this.marker] };
+    },
+  };
+}
 
-    // notifyQuestion=false 不通知（用独立的 service 实例，避免闭包捕获上一实例的配置）
-    let fakeService2 = null;
-    const infos2 = [];
-    const { listeners: listeners2 } = await makeNotifier(work, { notifyQuestion: false, historyFile: join(work, "history-q2.jsonl") }, {
-      logger: { warn: () => {}, info: (t) => infos2.push(t) },
-      get: (name) => (name === "userQuestions" ? fakeService2 : undefined),
-    });
-    const serviceHandler2 = listeners2.get("internal/service")[0];
-    fakeService2 = { ask: async (request) => ({ answers: [] }) };
-    serviceHandler2("userQuestions", fakeService2);
-    await fakeService2.ask({ agent: { id: "session-2" }, questions: [{ question: "hi" }] });
-    assert.equal(infos2.length, 0, "notifyQuestion=false 不通知");
+describe("用户提问通知：启动时未注册 → internal/service 到达后包装 ask", () => {
+  it("internal/service 监听器已注册", async () => {
+    const f = await questionNotifier("a");
+    expect(f.serviceHandler).toBeTruthy();
+  });
+
+  it("包装不改变原 ask 返回值，且 this 正确绑定", async () => {
+    const f = await questionNotifier("a");
+    f.setService(makeService());
+    f.serviceHandler("userQuestions", f.getService());
+    const result = await f.getService().ask({ agent: agentWithTitle, questions: [{ question: "今天吃了吗？" }] });
+    expect(result).toEqual({ answers: ["svc-marker"] });
+  });
+
+  it("提问触发通知", async () => {
+    const f = await questionNotifier("a");
+    f.setService(makeService());
+    f.serviceHandler("userQuestions", f.getService());
+    await f.getService().ask({ agent: agentWithTitle, questions: [{ question: "今天吃了吗？" }] });
+    expect(f.infos.some((t) => /question/.test(t))).toBeTruthy();
+  });
+
+  it("提问通知带任务标题", async () => {
+    const f = await questionNotifier("a");
+    f.setService(makeService());
+    f.serviceHandler("userQuestions", f.getService());
+    await f.getService().ask({ agent: agentWithTitle, questions: [{ question: "今天吃了吗？" }] });
+    expect(f.infos.some((t) => /任务「提问测试」需要你回答/.test(t))).toBeTruthy();
+  });
+
+  it("提问通知带问题摘要", async () => {
+    const f = await questionNotifier("a");
+    f.setService(makeService());
+    f.serviceHandler("userQuestions", f.getService());
+    await f.getService().ask({ agent: agentWithTitle, questions: [{ question: "今天吃了吗？" }] });
+    expect(f.infos.some((t) => /问题：今天吃了吗？/.test(t))).toBeTruthy();
+  });
+
+  it("提问通知不暴露会话 id", async () => {
+    const f = await questionNotifier("a");
+    f.setService(makeService());
+    f.serviceHandler("userQuestions", f.getService());
+    await f.getService().ask({ agent: agentWithTitle, questions: [{ question: "今天吃了吗？" }] });
+    expect(f.infos.some((t) => !t.includes("session-1"))).toBeTruthy();
+  });
+});
+
+describe("用户提问通知：热重载安全（重复 internal/service 时解包重包）", () => {
+  /** 序列：注册 + 首次 ask → 重复注册（解包重包）→ 二次 ask。 */
+  async function rewrapped() {
+    const f = await questionNotifier("b");
+    f.setService(makeService());
+    f.serviceHandler("userQuestions", f.getService());
+    await f.getService().ask({ agent: agentWithTitle, questions: [{ question: "今天吃了吗？" }] });
+    const askRef = f.getService().ask;
+    f.serviceHandler("userQuestions", f.getService());
+    const rewrappedFlag = f.getService().ask !== askRef;
+    const infoCountBefore = f.infos.length;
+    const result2 = await f.getService().ask({ agent: agentWithTitle, questions: [{ question: "再问一次？" }] });
+    return { f, rewrappedFlag, infoCountBefore, result2 };
   }
 
-  // turn-stopping：默认不通知；serial 事件签名 cb(payload) 无 next——必须不抛错
-  // （该断言依赖默认配置实例 + 开启 notifyTurnEnd 的对照实例）
-  {
-    const infos = [];
-    const { listeners } = await makeNotifier(work, { historyFile: join(work, "history-t1.jsonl") }, { logger: { warn: () => {}, info: (t) => infos.push(t) } });
-    const turnStop = listeners.get("agent/turn-stopping")[0];
-    assert.ok(turnStop, "turn-stopping 监听器已注册");
+  it("重复注册重新包装（解包旧包装）", async () => {
+    expect((await rewrapped()).rewrappedFlag).toBe(true);
+  });
+
+  it("解包重包后 ask 返回值不变，this 绑定正确", async () => {
+    expect((await rewrapped()).result2).toEqual({ answers: ["svc-marker"] });
+  });
+
+  it("解包重包不叠层，通知只发一次", async () => {
+    const r = await rewrapped();
+    expect(r.f.infos.length).toBe(r.infoCountBefore + 1);
+  });
+});
+
+describe("用户提问通知：notifyQuestion=false 不通知", () => {
+  it("notifyQuestion=false 不通知", async () => {
+    // 用独立的 service 实例，避免闭包捕获上一实例的配置
+    const f = await questionNotifier("c", { notifyQuestion: false });
+    f.setService({ ask: async () => ({ answers: [] }) });
+    f.serviceHandler("userQuestions", f.getService());
+    await f.getService().ask({ agent: { id: "session-2" }, questions: [{ question: "hi" }] });
+    expect(f.infos.length).toBe(0);
+  });
+});
+
+/**
+ * turn-stopping 夹具：默认配置实例（notifyTurnEnd 缺省关） + agent/turn-stopping 监听器。
+ * config 覆盖 notifyTurnEnd 时得到对照实例。
+ */
+async function turnStopNotifier(tag: string, config: Record<string, unknown> = {}) {
+  const infos: string[] = [];
+  const { listeners } = await makeNotifier(work, { historyFile: join(work, `history-t-${tag}.jsonl`), ...config }, { logger: { warn: () => {}, info: (t) => infos.push(t) } });
+  return { infos, turnStop: listeners.get("agent/turn-stopping")[0] };
+}
+
+// turn-stopping：serial 事件签名 cb(payload) 无 next——必须不抛错
+describe("turn-stopping：默认不通知 + serial 事件无 next 不抛错", () => {
+  it("turn-stopping 监听器已注册", async () => {
+    expect((await turnStopNotifier("d")).turnStop).toBeTruthy();
+  });
+
+  it("serial 事件（无 next 参数）下监听器不抛错", async () => {
+    const f = await turnStopNotifier("d");
     let threw = false;
     try {
-      await turnStop({ agent: { id: "session-1" }, turn: 4 });
+      await f.turnStop({ agent: { id: "session-1" }, turn: 4 });
     } catch (error) {
       threw = true;
     }
-    assert.equal(threw, false, "serial 事件（无 next 参数）下监听器不抛错");
-    assert.equal(infos.length, 0, "turn-stopping 默认不通知");
+    expect(threw).toBe(false);
+  });
 
-    // 开启 notifyTurnEnd 后 turn-stopping 通知（配置经组合层 entry 生效）
-    const infosOn = [];
-    const { listeners: listenersOn } = await makeNotifier(work, { notifyTurnEnd: true, historyFile: join(work, "history-t2.jsonl") }, { logger: { warn: () => {}, info: (t) => infosOn.push(t) } });
-    const turnStopOn = listenersOn.get("agent/turn-stopping")[0];
-    const agentWithEvents = { id: "session-1", session: { snapshotEvents: () => [{ type: "session/title", data: { title: "优化 notifier 插件" } }] } };
-    await turnStopOn({ agent: agentWithEvents, turn: 4 });
-    assert.ok(infosOn.some((t) => /turn-end/.test(t)), "notifyTurnEnd 开启后 turn-stopping 触发通知");
-    assert.ok(infosOn.some((t) => /任务「优化 notifier 插件」第 4 轮工作已完成/.test(t)), "轮次完成通知带任务标题与轮次号");
-    assert.ok(infosOn.some((t) => !t.includes("session-1")), "轮次完成通知不暴露会话 id");
-    const countAfterFirst = infosOn.filter((t) => t.includes("turn-end")).length;
-    // 同轮重复 emit（模拟事件被反复触发/热重载叠加）不重复通知——防「日志一堆」
-    await turnStopOn({ agent: agentWithEvents, turn: 4 });
-    await turnStopOn({ agent: agentWithEvents, turn: 4 });
-    assert.equal(infosOn.filter((t) => t.includes("turn-end")).length, countAfterFirst, "同一 (agent,turn) 重复 turn-stopping 只通知一次");
-    // 新的一轮（turn 5）仍正常通知
-    await turnStopOn({ agent: agentWithEvents, turn: 5 });
-    assert.equal(infosOn.filter((t) => t.includes("turn-end")).length, countAfterFirst + 1, "新轮次仍正常通知");
+  it("turn-stopping 默认不通知", async () => {
+    const f = await turnStopNotifier("d");
+    await f.turnStop({ agent: { id: "session-1" }, turn: 4 });
+    expect(f.infos.length).toBe(0);
+  });
+});
+
+describe("turn-stopping：notifyTurnEnd 开启后通知（配置经组合层 entry 生效）", () => {
+  const agentWithEvents = { id: "session-1", session: { snapshotEvents: () => [{ type: "session/title", data: { title: "优化 notifier 插件" } }] } };
+
+  async function firstTurnNotified() {
+    const f = await turnStopNotifier("e", { notifyTurnEnd: true });
+    await f.turnStop({ agent: agentWithEvents, turn: 4 });
+    return f;
   }
-} finally {
-  rmSync(work, { recursive: true, force: true });
-}
+
+  it("notifyTurnEnd 开启后 turn-stopping 触发通知", async () => {
+    expect((await firstTurnNotified()).infos.some((t) => /turn-end/.test(t))).toBeTruthy();
+  });
+
+  it("轮次完成通知带任务标题与轮次号", async () => {
+    expect((await firstTurnNotified()).infos.some((t) => /任务「优化 notifier 插件」第 4 轮工作已完成/.test(t))).toBeTruthy();
+  });
+
+  it("轮次完成通知不暴露会话 id", async () => {
+    expect((await firstTurnNotified()).infos.some((t) => !t.includes("session-1"))).toBeTruthy();
+  });
+});
+
+describe("turn-stopping：同轮去重 + 新轮次正常通知", () => {
+  const agentWithEvents = { id: "session-1", session: { snapshotEvents: () => [{ type: "session/title", data: { title: "优化 notifier 插件" } }] } };
+
+  /** 序列：首轮 emit(4)（计基线）→ 同轮重复 emit ×2 → 新轮 emit(5)。 */
+  async function dedupRun() {
+    const f = await turnStopNotifier("f", { notifyTurnEnd: true });
+    await f.turnStop({ agent: agentWithEvents, turn: 4 });
+    const countAfterFirst = f.infos.filter((t) => t.includes("turn-end")).length;
+    // 同轮重复 emit（模拟事件被反复触发/热重载叠加）不重复通知——防「日志一堆」
+    await f.turnStop({ agent: agentWithEvents, turn: 4 });
+    await f.turnStop({ agent: agentWithEvents, turn: 4 });
+    const countAfterRepeat = f.infos.filter((t) => t.includes("turn-end")).length;
+    // 新的一轮（turn 5）仍正常通知
+    await f.turnStop({ agent: agentWithEvents, turn: 5 });
+    const countAfterNewTurn = f.infos.filter((t) => t.includes("turn-end")).length;
+    return { countAfterFirst, countAfterRepeat, countAfterNewTurn };
+  }
+
+  it("同一 (agent,turn) 重复 turn-stopping 只通知一次", async () => {
+    const r = await dedupRun();
+    expect(r.countAfterRepeat).toBe(r.countAfterFirst);
+  });
+
+  it("新轮次仍正常通知", async () => {
+    const r = await dedupRun();
+    expect(r.countAfterNewTurn).toBe(r.countAfterFirst + 1);
+  });
+});

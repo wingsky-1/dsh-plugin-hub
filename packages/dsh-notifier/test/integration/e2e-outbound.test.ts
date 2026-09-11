@@ -17,11 +17,19 @@
 import { join } from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import assert from "node:assert/strict";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { makeNotifier, fakeReq, makeRes } from "../helpers.ts";
-import { ROUTES } from "../../lib/index.js";
+import { ROUTES } from "../../src/index.ts";
 
-const work = mkdtempSync(join(tmpdir(), "dnotify-outbound-"));
+let work: string;
+let seq = 0;
+beforeAll(() => {
+  work = mkdtempSync(join(tmpdir(), "dnotify-outbound-"));
+});
+afterAll(() => {
+  rmSync(work, { recursive: true, force: true });
+});
+
 const BARK_BASE = "https://fake-bark-1.local";
 const BARK_PUSH = `${BARK_BASE}/push`;
 
@@ -32,7 +40,7 @@ function installFetchMock(handler) {
   globalThis.fetch = async (url, init = {}) => {
     if (typeof url === "string" && (url === BARK_PUSH || url === `${BARK_BASE}/push`)) {
       calls.push({ url, init });
-      return handler(url, init);
+      return handler(url, init, calls);
     }
     throw new Error(`fetch mock 白名单外请求（测试 bug 或真实外发）: ${url}`);
   };
@@ -81,80 +89,156 @@ function makeBarkOnlyNotifier(channels, tag) {
   });
 }
 
-try {
-  // enabled:true bark 经 apply 全链投递成功（HTTP 2xx + code 200 双查）
-  {
-    const mock = installFetchMock((_url, init) => resOk(init));
-    try {
-      const { routes } = await makeBarkOnlyNotifier([
-        { id: "phone", type: "bark", baseUrl: BARK_BASE, deviceKey: "device-key-9x8z", enabled: true },
-      ], "1");
-      const testRoute = routes.find((r) => r.path === ROUTES.test);
-      assert.ok(testRoute, "test 路由存在");
-      const { rec, res } = makeRes();
-      await testRoute.handler(fakeReq({ method: "POST" }), res);
-      const body = JSON.parse(rec.text);
-      assert.equal(body.ok, true, "test 路由受理");
-      assert.ok(body.results.some((x) => x.channelId === "bark:phone" && x.status === "ok"), "bark:phone 受理 ok");
-      assert.equal(mock.calls.length, 1, "bark POST 恰好 1 次（无重试路径）");
-      const call = mock.calls[0];
-      assert.equal(call.url, BARK_PUSH, "POST 目标 = baseUrl + /push（device_key 走 body 不落 URL）");
-      assert.equal(call.init.method, "POST", "POST 方法");
-      const payload = JSON.parse(call.init.body);
-      assert.equal(payload.device_key, "device-key-9x8z", "device_key 在 body");
-      assert.ok(payload.title && payload.body, "title/body 入 payload");
-      assert.equal(payload.body, "通知链路工作正常（此通知来自测试按钮）", "test 模板文案");
-      console.log("E-OUT-1 bark 全链投递成功（双查）: OK");
-    } finally {
-      mock.restore();
-    }
+/**
+ * 单用例夹具：装 fetch 白名单桩 + 建 bark-only notifier + 取 test/status 路由。
+ * 每次调用用全新 tag（独立 history/status 文件）——终态断言不读到上一用例的陈旧条目。
+ */
+async function withBark(handler, fn) {
+  const tag = `t${seq += 1}`;
+  const mock = installFetchMock(handler);
+  try {
+    const { routes } = await makeBarkOnlyNotifier([
+      { id: "phone", type: "bark", baseUrl: BARK_BASE, deviceKey: "device-key-9x8z", enabled: true },
+    ], tag);
+    const testRoute = routes.find((r) => r.path === ROUTES.test);
+    const statusRoute = routes.find((r) => r.path === ROUTES.status);
+    return await fn({ mock, testRoute, statusRoute });
+  } finally {
+    mock.restore();
   }
-
-  // 4xx 确定失败 → 不重试（1 次 fetch）+ 异步终态 failed 落 status
-  {
-    const mock = installFetchMock(() => res4xx());
-    try {
-      const { routes } = await makeBarkOnlyNotifier([
-        { id: "phone", type: "bark", baseUrl: BARK_BASE, deviceKey: "device-key-9x8z", enabled: true },
-      ], "2");
-      const testRoute = routes.find((r) => r.path === ROUTES.test);
-      const statusRoute = routes.find((r) => r.path === ROUTES.status);
-      const { rec, res } = makeRes();
-      await testRoute.handler(fakeReq({ method: "POST" }), res);
-      const body = JSON.parse(rec.text);
-      assert.ok(body.results.some((x) => x.channelId === "bark:phone" && x.status === "ok"), "4xx 受理仍 ok（铁律 1）");
-      const entry = await pollStatus(statusRoute, "bark:phone");
-      assert.ok(entry && entry.lastStatus === "failed", "4xx → 终态 failed 落 status");
-      assert.ok(entry.lastError && !entry.lastError.includes("device-key-9x8z"), "失败错误经脱敏（不含 device key 原文）");
-      assert.equal(mock.calls.length, 1, "4xx 不重试（仅 1 次 fetch）");
-      console.log("E-OUT-2 bark 4xx 不重试 + 终态 failed 脱敏: OK");
-    } finally {
-      mock.restore();
-    }
-  }
-
-  // 5xx 重试链（框架重试，对等现状 bark sendWithRetry ×2）——
-  // 503×2 后 200 → 总尝试 3 次 + 终态 ok；退避 1s/2s 真实发生（行为验证非 sleep hack）
-  {
-    const mock = installFetchMock((_url, init) => (mock.calls.length < 3 ? res503() : resOk(init)));
-    try {
-      const { routes } = await makeBarkOnlyNotifier([
-        { id: "phone", type: "bark", baseUrl: BARK_BASE, deviceKey: "device-key-9x8z", enabled: true },
-      ], "3");
-      const testRoute = routes.find((r) => r.path === ROUTES.test);
-      const statusRoute = routes.find((r) => r.path === ROUTES.status);
-      const { rec, res } = makeRes();
-      await testRoute.handler(fakeReq({ method: "POST" }), res);
-      const body = JSON.parse(rec.text);
-      assert.ok(body.results.some((x) => x.channelId === "bark:phone" && x.status === "ok"), "5xx 链受理仍 ok（铁律 1）");
-      const entry = await pollStatus(statusRoute, "bark:phone", 8000);
-      assert.ok(entry && entry.lastStatus === "ok", "5xx 重试后成功 → 终态 ok 落 status");
-      assert.equal(mock.calls.length, 3, "5xx 重试 ×2（1+2=3 次 fetch）");
-      console.log("E-OUT-3 bark 5xx 重试链（3 次 fetch + 终态 ok）: OK");
-    } finally {
-      mock.restore();
-    }
-  }
-} finally {
-  rmSync(work, { recursive: true, force: true });
 }
+
+/** POST /test 并回收响应体。 */
+async function postTest(testRoute) {
+  const { rec, res } = makeRes();
+  await testRoute.handler(fakeReq({ method: "POST" }), res);
+  return JSON.parse(rec.text);
+}
+
+describe("E-OUT-1 enabled:true bark 经 apply 全链投递成功（HTTP 2xx + code 200 双查）", () => {
+  it("test 路由存在", async () => {
+    await withBark((_url, init) => resOk(init), async ({ testRoute }) => {
+      expect(testRoute).toBeTruthy();
+    });
+  });
+
+  it("test 路由受理", async () => {
+    await withBark((_url, init) => resOk(init), async ({ testRoute }) => {
+      expect((await postTest(testRoute)).ok).toBe(true);
+    });
+  });
+
+  it("bark:phone 受理 ok", async () => {
+    await withBark((_url, init) => resOk(init), async ({ testRoute }) => {
+      const body = await postTest(testRoute);
+      expect(body.results.some((x) => x.channelId === "bark:phone" && x.status === "ok")).toBeTruthy();
+    });
+  });
+
+  it("bark POST 恰好 1 次（无重试路径）", async () => {
+    await withBark((_url, init) => resOk(init), async ({ mock, testRoute }) => {
+      await postTest(testRoute);
+      expect(mock.calls.length).toBe(1);
+    });
+  });
+
+  it("POST 目标 = baseUrl + /push（device_key 走 body 不落 URL）", async () => {
+    await withBark((_url, init) => resOk(init), async ({ mock, testRoute }) => {
+      await postTest(testRoute);
+      expect(mock.calls[0].url).toBe(BARK_PUSH);
+    });
+  });
+
+  it("POST 方法", async () => {
+    await withBark((_url, init) => resOk(init), async ({ mock, testRoute }) => {
+      await postTest(testRoute);
+      expect(mock.calls[0].init.method).toBe("POST");
+    });
+  });
+
+  it("device_key 在 body", async () => {
+    await withBark((_url, init) => resOk(init), async ({ mock, testRoute }) => {
+      await postTest(testRoute);
+      expect(JSON.parse(mock.calls[0].init.body).device_key).toBe("device-key-9x8z");
+    });
+  });
+
+  it("title/body 入 payload", async () => {
+    await withBark((_url, init) => resOk(init), async ({ mock, testRoute }) => {
+      await postTest(testRoute);
+      const payload = JSON.parse(mock.calls[0].init.body);
+      expect(payload.title && payload.body).toBeTruthy();
+    });
+  });
+
+  it("test 模板文案", async () => {
+    await withBark((_url, init) => resOk(init), async ({ mock, testRoute }) => {
+      await postTest(testRoute);
+      expect(JSON.parse(mock.calls[0].init.body).body).toBe("通知链路工作正常（此通知来自测试按钮）");
+    });
+  });
+});
+
+describe("E-OUT-2 4xx 确定失败 → 不重试（1 次 fetch）+ 异步终态 failed 落 status", () => {
+  it("4xx 受理仍 ok（铁律 1）", async () => {
+    await withBark(() => res4xx(), async ({ testRoute }) => {
+      const body = await postTest(testRoute);
+      expect(body.results.some((x) => x.channelId === "bark:phone" && x.status === "ok")).toBeTruthy();
+    });
+  });
+
+  it("4xx → 终态 failed 落 status", async () => {
+    await withBark(() => res4xx(), async ({ testRoute, statusRoute }) => {
+      await postTest(testRoute);
+      const entry = await pollStatus(statusRoute, "bark:phone");
+      expect(entry && entry.lastStatus === "failed").toBeTruthy();
+    });
+  });
+
+  it("失败错误经脱敏（不含 device key 原文）", async () => {
+    await withBark(() => res4xx(), async ({ testRoute, statusRoute }) => {
+      await postTest(testRoute);
+      const entry = await pollStatus(statusRoute, "bark:phone");
+      expect(entry.lastError && !entry.lastError.includes("device-key-9x8z")).toBeTruthy();
+    });
+  });
+
+  it("4xx 不重试（仅 1 次 fetch）", async () => {
+    await withBark(() => res4xx(), async ({ mock, testRoute, statusRoute }) => {
+      await postTest(testRoute);
+      await pollStatus(statusRoute, "bark:phone");
+      expect(mock.calls.length).toBe(1);
+    });
+  });
+});
+
+// 5xx 重试链（框架重试，对等现状 bark sendWithRetry ×2）——
+// 503×2 后 200 → 总尝试 3 次 + 终态 ok；退避 1s/2s 真实发生（行为验证非 sleep hack）
+describe("E-OUT-3 5xx 重试链（3 次 fetch + 终态 ok）", () => {
+  const retryHandler = (_url, init, calls) => (calls.length < 3 ? res503() : resOk(init));
+
+  it("5xx 链受理仍 ok（铁律 1）", async () => {
+    await withBark(retryHandler, async ({ testRoute, statusRoute }) => {
+      const body = await postTest(testRoute);
+      expect(body.results.some((x) => x.channelId === "bark:phone" && x.status === "ok")).toBeTruthy();
+      // 排水（非断言）：让重试链在桩存活期内跑完，避免恢复真 fetch 后外发
+      await pollStatus(statusRoute, "bark:phone", 8000);
+    });
+  });
+
+  it("5xx 重试后成功 → 终态 ok 落 status", async () => {
+    await withBark(retryHandler, async ({ testRoute, statusRoute }) => {
+      await postTest(testRoute);
+      const entry = await pollStatus(statusRoute, "bark:phone", 8000);
+      expect(entry && entry.lastStatus === "ok").toBeTruthy();
+    });
+  });
+
+  it("5xx 重试 ×2（1+2=3 次 fetch）", async () => {
+    await withBark(retryHandler, async ({ mock, testRoute, statusRoute }) => {
+      await postTest(testRoute);
+      await pollStatus(statusRoute, "bark:phone", 8000);
+      expect(mock.calls.length).toBe(3);
+    });
+  });
+});
