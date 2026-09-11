@@ -16,6 +16,7 @@ import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from
 console.error("EVAL-ORDER-TAG: CONFIG");
 import { join } from "node:path";
 import { tmpdir, homedir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { assert } from "../../helpers.ts";
 import {
   normalizeConfig,
@@ -36,16 +37,69 @@ import {
   readAdapterState,
   parseUserAdapters,
   resolveAddAdapterFile,
-  expandHomePath,
   resolveProviderConfig,
 } from "../../../lib/index.js";
 
+/**
+ * 在独立子进程内验证 ~ 展开并命中 HOME 内文件。
+ *
+ * untildify 对 homedir() 首调固化且不可重置：正向用例只有在「本进程首次调用发生在受控
+ * HOME 之后」时才可达。glob 化（#690 S2）后文件求值顺序不再可控（smoke.test.ts 可能先以
+ * 外部 HOME 固化），故用子进程取得干净的固化起点——子进程只加载本包产物，首调必然受控。
+ * 失败以退出码 3/4/5 区分（固化落点 / 展开落点 / 解析结果），不做静默降级。
+ */
+/**
+ * 子进程只继承 ESM loader 钩子（Stryker tap-runner 用 `--import` 注入 lib→src 重定向）：
+ * 不继承则子进程读到未变异的 lib 产物，被测路径的变异体会逃逸、拉低变异分。
+ * `-r/--require` 是 tap-runner 的覆盖率桥，与本探针无关，故不继承。
+ */
+function inheritedLoaderArgs(): string[] {
+  const FLAGS = new Set(["--import", "--loader", "--experimental-loader"]);
+  const out: string[] = [];
+  for (let i = 0; i < process.execArgv.length; i += 1) {
+    const arg = process.execArgv[i];
+    const flag = [...FLAGS].find((f) => arg === f || arg.startsWith(`${f}=`));
+    if (!flag) continue;
+    out.push(arg);
+    if (arg === flag && process.execArgv[i + 1] !== undefined) {
+      out.push(process.execArgv[i + 1]);
+      i += 1;
+    }
+  }
+  return out;
+}
+
+function assertTildeResolutionInChild(home: string): void {
+  const libUrl = new URL("../../../lib/index.js", import.meta.url).href;
+  const probe = "dou-tilde-probe.mjs";
+  const script = `
+const { expandHomePath, resolveAddAdapterFile } = await import(${JSON.stringify(libUrl)});
+const { writeFileSync } = await import("node:fs");
+const home = process.env.DSH_HOME;
+const frozen = expandHomePath("~");
+if (frozen !== home) { console.error("freeze=" + frozen); process.exit(3); }
+const target = expandHomePath("~/${probe}");
+if (!target.startsWith(home)) { console.error("target=" + target); process.exit(4); }
+writeFileSync(target, "export default {};", "utf8");
+const resolved = resolveAddAdapterFile("~/${probe}");
+if (resolved !== target) { console.error("resolved=" + resolved); process.exit(5); }
+`;
+  const child = spawnSync(process.execPath, [...inheritedLoaderArgs(), "--input-type=module", "-e", script], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      HOME: home,
+      DSH_HOME: home,
+      ...(process.platform === "win32" ? { USERPROFILE: home } : {}),
+    },
+  });
+  assert.equal(child.status, 0,
+    `~ 展开子进程探针失败（status=${child.status}）：${(child.stderr || child.stdout || "").trim()}`);
+}
+
 // ================================================================ #150 二阶段：resolveAddAdapterFile 路径校验矩阵
-// 注意位置：本块必须位于本模块求值的最前部（同步段）。resolveAddAdapterFile/
-// expandHomePath 内部的 untildify 对 homedir() 首调固化且不可重置，而含顶层
-// await 的兄弟模块（如 unit-apply 的 apply 用例经 resolvePath 触达）会在本文件
-// 的 await 让出窗口内插入执行——若固化被其以外部 HOME 抢先完成，~ 展开用例
-// 将不可达。同步段先于任何其他模块的插入执行，故在此显式完成受控固化。
+// 位置无关：本块断言全部不依赖「本文件先于兄弟文件求值」。唯一依赖 homedir 固化
+// 时机的 ~ 展开正向用例改由独立子进程执行（见 assertTildeResolutionInChild）。
 
 {
   // HOME/DSH_HOME 指向临时目录；~ 展开、绝对路径、目录拒绝都基于真实文件系统
@@ -58,13 +112,6 @@ import {
   process.env.HOME = home;
   if (process.platform === "win32") process.env.USERPROFILE = home;
   try {
-    // 显式受控固化：此后进程内 ~ 展开落点恒为本隔离目录。
-    // 若落点已指向别处（前置模块抢先固化），直接失败暴露，不做静默降级。
-    if (expandHomePath("~") !== home) {
-      assert.fail(
-        `untildify homedir 已被前置调用固化为 ${expandHomePath("~")}（期望 ${home}），~ 展开用例前提失效`,
-      );
-    }
     // 非字符串 / 空串 / NUL
     assert.equal(resolveAddAdapterFile(42), undefined, "非字符串拒绝");
     assert.equal(resolveAddAdapterFile(null), undefined, "null 拒绝");
@@ -85,23 +132,11 @@ import {
     // 目录路径拒绝（statSync.isFile false）
     assert.equal(resolveAddAdapterFile(home), undefined, "目录路径拒绝");
 
-    // ~ 展开路径（isAbsolute(trimmed) false → 相对分支命中 dshHome 基座）。
-    // untildify 对 homedir() 有模块级缓存（首次调用固化），~ 展开落点不随运行中
-    // HOME 设置变化，故以 expandHomePath("~") 的固化落点为基座构造探针文件，
-    // 并硬性要求落点位于本用例隔离目录内：若不满足，说明 untildify 已被前置
-    // 模块以外部 HOME 抢先固化、本用例可达性前提被破坏——直接失败暴露，
-    // 不允许静默退化为弱断言（二选一分支会让正向路径失去可达性）。
-    const tildeName = `dou-tilde-probe-${process.pid}.mjs`;
-    const expandedTarget = expandHomePath(`~/${tildeName}`);
-    if (!expandedTarget.startsWith(home)) {
-      assert.fail(
-        `untildify homedir 固化到外部 ${expandedTarget}（本用例隔离目录 ${home}），~ 展开用例不可达`,
-      );
-    }
-    writeFileSync(expandedTarget, "export default {};", "utf8");
-    assert.equal(resolveAddAdapterFile(`~/${tildeName}`), expandedTarget,
-      "~ 路径展开并命中 HOME 内文件");
-    // 负向用例与落点无关：未创建的同名探针必不存在
+    // ~ 展开正向用例（isAbsolute(trimmed) false → 相对分支命中 dshHome 基座）：
+    // untildify 对 homedir() 首调固化且进程内不可重置，父进程的固化落点取决于兄弟
+    // 文件的求值顺序；glob 化后顺序不可控，故放进独立子进程验证。
+    assertTildeResolutionInChild(home);
+    // 负向用例与固化落点无关：未创建的同名探针必不存在
     assert.equal(resolveAddAdapterFile("~/dou-no-such-probe.mjs"), undefined, "~ 路径文件不存在拒绝");
 
     // ~user 形态不展开（untildify 仅处理裸 ~ 前缀），解析失败拒绝。
@@ -155,7 +190,7 @@ assert.equal(normalizeConfig({ staticPath: "/v1/custom" }).staticPath, "/v1/cust
 // ---------------------------------------------------------------- resolveProviderConfig 全链
 
 // resolveProviderConfig 内部会访问 resolveApiKey → opencodeKeyFromAuth。
-// 注意：unit-*.test.ts 由 smoke.ts import，在 smoke.ts 模块体执行前运行
+// 注意：unit-*.test.ts 与 smoke.test.ts 同为 `test/**/*.test.ts` glob 下的平级文件（#690 S2）
 // （ESM import 先于 module body），此时 DSH_HOME 尚未指向隔离目录、真实环境
 // 的凭据链（~/.dsh/.credentials.yaml / 环境变量）仍可被读到。因此本文件内所有
 // resolveProviderConfig 用例自行隔离 DSH_HOME/HOME 并清理凭据环境变量，

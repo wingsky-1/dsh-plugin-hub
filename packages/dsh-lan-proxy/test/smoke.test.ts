@@ -12,7 +12,7 @@
 //   - HTTPS 监听（自签证书）与 HTTP 并存：https 请求 / wss 升级 / 重绑定防护
 //   - 自签证书生成幂等、有效期检查、SAN 编码
 //
-// 运行：node dsh-lan-proxy/test/smoke.mjs   （在仓库根目录下）
+// 运行：pnpm --filter @wingsky-1/dsh-lan-proxy test
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { gzipSync, gunzipSync } from "node:zlib";
@@ -34,12 +34,8 @@ import { apply, sanitizeSettings, validateSettings, ROUTES, pluginDir,
   ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT,
   isCompressible, resolveCompressionOptions } from "../lib/index.js";
 
-// 结构化单元测试（issue #82 批次 2：清零未覆盖 CRAP 超阈热点）。
-// 注意：单元测试在模块加载期执行（早于下方 main() 的集成区），
-// 全 localhost 随机端口 + 临时 DSH_HOME，无外网、无子进程。
-import "./unit-proxy.test.ts";
-import "./client-style.test.ts";
-import "./unit-apply.test.ts";
+// 结构化单元测试（issue #82 批次 2）由包内 `test/*.test.ts` glob 直接执行（#690 S2）；
+// 此处不再 import 聚合——聚合会让同一文件在同进程内被求值两遍。
 
 const UPSTREAM_PORT = 19090;
 const PROXY_PORT = 19091;
@@ -1679,7 +1675,6 @@ const main = async () => {
   console.log("\nall checks passed");
 };
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// 顶层 await：node --test 以「模块求值结束」判定文件测试通过，不等待悬挂的 promise，
+// 悬挂形态下断言失败会被吞成 exit 0（#690 S2 对抗评审实测）。
+await main();

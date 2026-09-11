@@ -193,7 +193,7 @@
 
 ## 3. 测试套件审计结论（覆盖全读 + 盲区交叉验证）
 
-- 运行模型：非 node:test；顶层 assert + try/finally；smoke.ts 串行 await import 聚合 16 个 .test.ts（防 fetch mock 交错 #508）；测试主体 import `../lib/index.js` 产物；变异经 hook 重定向 src
+- 运行模型：非 node:test；顶层 assert + try/finally；`test/**/*.test.ts` 经 scripts/gate/run-tests.mjs（`node --test --test-isolation=none`，同进程串行）执行（防 fetch mock 交错 #508；#690 S2 前由 smoke.ts 聚合入口承担）；测试主体 import `../lib/index.js` 产物；变异经 hook 重定向 src
 - 断言强度：整体强（文案精确 match / 状态机中间态 / HTTP 逐字段 / 脱敏深等 / service.update 只收变更键）；哑断言仅 e2e-edge:210/224 两处 `assert.ok(true)`；无读私有字段；轮询为主（waitForHistory/pollUntil/pollStatus 20ms）
 - 孤儿判定：**无孤儿**（16/16 在主入口）；7 个较新测试文件（unit-sse-hub/unit-webhook/real-context/service-contract/client-contract/client-style）**不在 stryker 9 文件清单**（登记裁剪，config _comment「测试全套跑」与事实不符）；被测 service.ts/event-handlers.ts/channel-*/aggregate/status/outbound/settings-bridge 亦不在 4 个 mutate 段（有意的段裁剪，但核心状态机无变异面）
 - 类型面盲区：dsh-notifier/test/tsconfig.json 无任何消费方（service-contract-wiring 只接 mcp-manager/codegraph）；测试全 @ts-nocheck → 类型面零编译校验

@@ -6,7 +6,7 @@
  * HotReloadableAdapter onReload 回调分支、dispose 清理全分支、
  * sseClients 清理、warmupTimer 清理。
  *
- * 此文件不重复 smoke.ts 已覆盖的 boot/enabled/fence 断言，仅专注
+ * 此文件不重复 smoke.test.ts 已覆盖的 boot/enabled/fence 断言，仅专注
  * 于 smoke 未到达的 apply 内部分支（#82 批次 3）。
  */
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
@@ -157,7 +157,7 @@ let savedHome;
 
 // ---------------------------------------------------------------- 4) inject 回调：ctx.inject 不可用（已覆盖/无需重复）
 
-// smoke.ts 已有的 apply 用 fake ctx 无 inject → installSettingsNamespace 走
+// smoke.test.ts 已有的 apply 用 fake ctx 无 inject → installSettingsNamespace 走
 // "ctx.inject 不可用" 分支。本文件不重复。
 
 // ---------------------------------------------------------------- 5) isUnloading 全分支通过 inject 回调覆盖

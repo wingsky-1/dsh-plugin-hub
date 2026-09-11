@@ -292,7 +292,7 @@ curl -s http://127.0.0.1:3080/api/dsh-mcp/health
 
 # Source is in src/; must build after changes
 pnpm --filter @wingsky-1/dsh-mcp-manager build
-node test/smoke.mjs
+pnpm --filter @wingsky-1/dsh-mcp-manager test
 ```
 
 ## Known Limitations

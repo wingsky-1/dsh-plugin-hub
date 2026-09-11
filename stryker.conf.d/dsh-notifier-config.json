@@ -44,7 +44,30 @@
       "./scripts/test/mutation-lib-to-src-hook.mjs"
     ],
     "testFiles": [
-      "packages/dsh-notifier/test/**/*.test.ts"
+      "packages/dsh-notifier/test/e2e-approval.test.ts",
+      "packages/dsh-notifier/test/e2e-done.test.ts",
+      "packages/dsh-notifier/test/e2e-edge.test.ts",
+      "packages/dsh-notifier/test/e2e-interrupt.test.ts",
+      "packages/dsh-notifier/test/e2e-outbound.test.ts",
+      "packages/dsh-notifier/test/e2e-question-turn.test.ts",
+      "packages/dsh-notifier/test/migration.test.ts",
+      "packages/dsh-notifier/test/routes.test.ts",
+      "packages/dsh-notifier/test/unit-aggregate.test.ts",
+      "packages/dsh-notifier/test/unit-config-port.test.ts",
+      "packages/dsh-notifier/test/unit-config.test.ts",
+      "packages/dsh-notifier/test/unit-event-handlers.test.ts",
+      "packages/dsh-notifier/test/unit-pipeline-contract.test.ts",
+      "packages/dsh-notifier/test/unit-sanitize.test.ts",
+      "packages/dsh-notifier/test/unit-server-sse-bus.test.ts",
+      "packages/dsh-notifier/test/unit-settings-bridge.test.ts",
+      "packages/dsh-notifier/test/unit-sse-hub.test.ts",
+      "packages/dsh-notifier/test/unit-stores.test.ts",
+      "packages/dsh-notifier/test/unit-system-notifier.test.ts",
+      "packages/dsh-notifier/test/unit-text.test.ts",
+      "packages/dsh-notifier/test/unit-webhook.test.ts",
+      "packages/dsh-notifier/test/service-contract.test.ts",
+      "packages/dsh-notifier/test/client-contract.test.ts",
+      "packages/dsh-notifier/test/client-style.test.ts"
     ]
   },
   "jsonReporter": {

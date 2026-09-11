@@ -201,8 +201,10 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   禁双装**（同 id 双装 loader 报 duplicate）；改独立包 patch 后必须
   `node scripts/gate/aggregate.ts` 重新生成聚合 patch。
 - **测试**：`pnpm test` 直跑（包内实现为 `node ../../scripts/gate/run-tests.mjs --min <N>`，
-  底层 runner 是 `node --test "test/**/*.test.ts"`），不依赖构建产物即测；必含 403/405
-  围栏用例 + 客户端契约断言（`assertClientSourceContract` / `assertClientProductContract`）。
+  底层 runner 是 `node --test "test/**/*.test.ts"`，`--test-isolation=none` 同进程串行）；
+  测试文件直跑 TS 源码（node 原生 type stripping），但部分文件断言 `lib/` 产物
+  （如客户端产物契约），故跑前仍需 `pnpm build`；必含 403/405 围栏用例 +
+  客户端契约断言（`assertClientSourceContract` / `assertClientProductContract`）。
   `--min` 是**测试文件数**下限（glob 展开计数，不含 `test()` 子测试条目），用于封堵
   `node --test` 零匹配仍 exit 0 的假绿向量。
 

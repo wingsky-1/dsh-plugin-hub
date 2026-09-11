@@ -451,7 +451,7 @@ const { createServer } = await import("node:http");
 }
 
 // ===== 变异加固块（round=3 CI 回归：迁移重放/路由面/校验分支断言进 tap 面） =====
-// 背景：smoke.ts 不在 stryker tap testFiles 内，其覆盖的行为在变异判定中全部
+// 背景：smoke.test.ts 不在 stryker tap testFiles 内，其覆盖的行为在变异判定中全部
 // 存活/noCov。本块把关键行为断言移植到 unit-apply（tap 面内），杀灭新代码
 // （resumeMigrateFromBak / migrateFileConfig / applyConfigPatch / buildConfigRoutes /
 // installLanProxySettings / warnLog）的存活 mutant。
