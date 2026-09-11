@@ -58,7 +58,6 @@
       "packages/dsh-provider-usage/test/unit/shared/unit-contract.test.ts",
       "packages/dsh-provider-usage/test/unit/shared/unit-v1.test.ts",
       "packages/dsh-provider-usage/test/unit/trend/unit-trend-ledger.test.ts",
-      "packages/dsh-provider-usage/test/unit/trend/unit-trend-view.test.ts",
       "packages/dsh-provider-usage/test/unit/trend/unit-trend.test.ts"
     ]
   },
