@@ -1,7 +1,7 @@
 # 变异测试提速方法论（#220 · #276 方案 A）
 
 > 状态：定稿（#276 方案 A 全量落地后最终更新）。
-> 数据口径：GitHub Actions ubuntu-latest（4 核），Stryker 10 + tap-runner，perTest 覆盖分析 + 仓库内增量基线。Node 24+。
+> 数据口径：GitHub Actions ubuntu-latest（4 核），Stryker 10 + tap-runner（#722 起 runner 已换 `@stryker-mutator/vitest-runner`，下文数据未在新 runner 上重测），perTest 覆盖分析 + 仓库内增量基线。Node 24+。
 
 ## 1. 背景与指标口径
 

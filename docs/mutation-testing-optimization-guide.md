@@ -58,7 +58,7 @@
 
 ### 3.2 注入 Node.js 编译缓存（Compile Cache）
 * **原理**：Stryker 的并发 Sandbox 在执行测试时，会反复拉起独立 Node 进程动态转译 TypeScript 源码。
-* **#722 后的状态（待重新评估）**：`mutation-tap-bridge.cjs` 已随 tap-runner 退役，本节的注入点随之消失。vitest runner 下 TS 由 Vite 转译而非 Node 动态转译，Node 编译缓存是否仍有同等收益**尚未实测**；下文 41% 为 tap-runner 时期的数据，不可直接外推到 vitest runner。
+* **#722 后的结论（已评估，本注入不再需要）**：`mutation-tap-bridge.cjs` 已随 tap-runner 退役，本节的注入点随之消失。vitest runner 下 TS 由 Vite/esbuild 在进程内转译，不经过 Node 的模块编译缓存，本节的作用面（Node 动态转译）不复存在——本机 A/B 实测（同一 unit 文件经 vitest 运行 3 次取中位数：`NODE_DISABLE_COMPILE_CACHE=1` 1017ms vs `NODE_COMPILE_CACHE` 981ms）差异落在噪声内，**故无需在 vitest runner 上重建该注入**。下文 41% 为 tap-runner 时期的数据，仅供历史对照，不可外推。
 * **当时的做法**：在测试运行器的 Bridge 脚本（如 `mutation-tap-bridge.cjs`）最头部注入：
   ```javascript
   // Node >= 24.12 支持

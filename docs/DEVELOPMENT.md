@@ -204,15 +204,17 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   `exports["./client"]`（`contract-check` 联动断言，缺则整包拒载）。**独立包与聚合包
   禁双装**（同 id 双装 loader 报 duplicate）；改独立包 patch 后必须
   `node scripts/gate/aggregate.ts` 重新生成聚合 patch。
-- **测试**：`pnpm test` 直跑（包内实现为 `node ../../scripts/gate/run-tests.mjs --min <N>`，
-  runner **逐文件 spawn** `node --test --test-isolation=process --test-concurrency=1 <file>`，
-  即每文件独立进程、包内严格串行；`--order lex|reverse|shuffle:<seed>` 可重排执行顺序，
-  用于验证「打乱文件列表结果不变」）；
-  测试文件直跑 TS 源码（node 原生 type stripping），但部分文件断言 `lib/` 产物
+- **测试**：`pnpm test` 直跑（包内实现为 `node ../../scripts/test/run-vitest.mjs --min <N>`）。
+  运行器由 vitest 承载：根 `vitest.config.ts` 按目录切四个 project（`test/unit` → `unit`、
+  `test/integration` → `integration`、`test/e2e` → `e2e`、`test/client` → `contract`），
+  每个测试文件独立环境（per-file 隔离），包级调用按 cwd 自动收窄到本包；
+  乱序验证用 `--sequence.shuffle` 透传。
+  测试文件直跑 TS 源码，但部分文件断言 `lib/` 产物
   （如客户端产物契约），故跑前仍需 `pnpm build`；必含 403/405 围栏用例 +
   客户端契约断言（`assertClientSourceContract` / `assertClientProductContract`）。
-  `--min` 是**测试文件数**下限（glob 展开计数），用于封堵 `node --test` 零匹配仍 exit 0
-  的假绿向量；单文件超时（默认 10 分钟）按**进程组**回收并**点名**判红。
+  `--min` 是**测试文件数**下限（vitest json reporter 的 `testResults` 计数），用于封堵
+  include 配置漂移导致部分文件漏收集的假绿向量；各包 `--min` 与实际文件数由
+  `node scripts/gate/gen-stryker-conf.mjs --check` 强制同步（判据 ③）。
 
 ### 测试分层与变异面登记（#690 S2b / #713 T1–T3）
 
@@ -413,7 +415,7 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 - **无网络与零真实凭据**：smoke 测试全部无网络、无真实凭据，本地可直接离线运行。
 - **断言全覆盖**：新功能/修复必须带 smoke 断言（含路由 403/405 围栏用例、client 契约断言）。
 - **CI 稳定性门槛**：新增 / 修改测试文件后，本地在该包目录内连续跑 **≥10 次**确认无 flake
-  再提交，如 `cd packages/<pkg> && for i in $(seq 1 10); do node ../../scripts/gate/run-tests.mjs --min <N>; done`
+  再提交，如 `cd packages/<pkg> && for i in $(seq 1 10); do node ../../scripts/test/run-vitest.mjs --min <N>; done`
   （`--min` 取值见该包 `package.json` 的 test script）。
 
 ### 5.2 防 flake 核心原则
@@ -436,7 +438,14 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 3. **异步落盘用轮询替代固定 sleep**：断言持久化状态前必须 `poll-until` 满足条件再断言，
    严禁 `setTimeout(resolve, 50 / 300)` 这类「等够毫秒」的时序假设。参考 notifier 的
    `waitForHistory(route, predicate)` 辅助（轮询 GET 直到谓词成立，超时兜底返回当前态）。
-4. **测试文件禁止顶层悬挂 promise**：`node --test` 以「模块求值结束」判定文件测试通过，
+4. **e2e 不得以墙钟观察异步行为，必须驱动或注入**：等待异步动作生效（热更新、定时轮询、
+   防抖落盘）时，禁止用「轮询墙钟直到断言成立」代替确定性驱动——那只是把 flake 从
+   「窗口太小」换成「窗口随负载漂移」。#722 实证：provider-usage e2e 用 6s 窗口等 2s 热更新
+   轮询，单跑必绿、与包内其它文件并行必红，红的条目随负载漂移，窗口放大到 20s 亦然。
+   正解是语义下沉 unit 层、用公开驱动面确定性驱动（如 `HotReloadableAdapter.pollOnce()`），
+   e2e 只断言路由可见效果；需要越过内部接线拿实例时用原型打桩再驱动。
+   **不注入更短间隔**：间隔本身仍是墙钟，只是更快撞上同一问题。
+5. **测试文件禁止顶层悬挂 promise**：`node --test` 以「模块求值结束」判定文件测试通过，
    悬挂的 `main().catch(...)` 会让体内断言在文件测试判定之后才跑，被整段吞掉（#690 S2 实测：
    注入必然失败的断言仍得 exit 0）。统一写法是顶层 `await main();`。
    **#690 S2c 切默认 per-file 隔离后复查：本约定仍然必要，故保留**——实测把
@@ -446,7 +455,9 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
    fire-and-forget 的异步体（模块求值立即完成 → node 判通过）。唯一例外是经
    `execFileSync` + 退出码/输出标记双重校验的 worker 脚本
    （`test/*.worker.mjs`，不参与 `test/**/*.test.ts` glob）。
-5. **fire-and-forget 写入禁止跨块断言顺序**：若写是 `void flush()` / 防抖定时器
+   **#722 起测试载体换为 vitest 的 describe/it，文件级判定不再由「模块求值结束」决定，
+   本条前提随之消失**；保留为迁移期的实测记录。
+6. **fire-and-forget 写入禁止跨块断言顺序**：若写是 `void flush()` / 防抖定时器
    （如 opencode-usage 的 `schedulePersist`、notifier 的 `appendHistory`），绝不能依赖
    「最后一条是 X」「条数 === N」等顺序敏感断言；必须**隔离文件 + 轮询**。理想情况：
    被测插件暴露 `await flushPersist()` 之类的可等待落盘钩子，测试直接 `await` 比轮询更稳。
@@ -477,8 +488,8 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
   「端口被占 → 启动失败」的**负向用例仍然保留**：先 `listen(0)` 占位拿到端口，再让被测
   对象去绑同一端口——语义不变，只是不再写死端口号。
 - **残留句柄在 `finally` 里回收**：测试自己起的 server / socket / 定时器 / watcher 必须在
-  用例结束时关闭。`node --test` 的 per-file 隔离下，未回收的句柄会让**整个包**挂到 runner
-  超时才判红，而不是只红那一个文件。
+  用例结束时关闭。per-file 隔离（每个测试文件独立环境）下，未回收的句柄会让**整个包**挂到
+  runner 超时才判红，而不是只红那一个文件。
 - **分诊工具（只报告，不判红）**：排查挂起或评估隔离模式时，先逐文件分诊：
 
   ```sh

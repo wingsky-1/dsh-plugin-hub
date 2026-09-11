@@ -292,6 +292,8 @@
 
 ### 7.1 运行模型与执行矩阵（关键不对称）
 - `pnpm test` = scripts/gate/run-tests.mjs（逐文件 spawn `node --test --test-isolation=process --test-concurrency=1`，包内串行）；smoke.test.ts 内联 check/checkAsync，其余 15 个单元/契约文件由 glob 直接执行（#690 S2 起不再由 smoke import 聚合）；断言 node:assert/strict（仅 unit-call-stats 用 node:test）。
+- **#722 阶段一起运行器已由 vitest 取代**：包内 `pnpm test` = `scripts/test/run-vitest.mjs --min 16`
+  （根 `vitest.config.ts` 四 project，用例结构为 describe/it）；本节的 runner 描述为迁移前的审计快照。
 - 被测 lib/ 产物；stryker 经 `--import scripts/test/mutation-lib-to-src-hook.mjs` ESM resolve hook 把 lib→src 重定向，同一份断言复用（#423）。
 - service-contract.test.ts 双层锁：编译期类型比对（tsc）+ 运行时静态扫描 apply-services 的 provide 方法面（手写括号配对，fail-loud）。
 - **三通道不对称**：

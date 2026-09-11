@@ -72,7 +72,7 @@ export function projectTestSurface(root, topologyDoc, pkgName) {
   }
   if (mutationLayers.length === 0) errors.push('$testLayers.mutationLayers 为空 —— 变异面为零')
 
-  // ① runner 面：glob 全集（与 run-tests.mjs 同口径）
+  // ① runner 面：glob 全集（与 vitest include 同口径）
   const runFiles = expandGlob(pkgDir, RUN_TESTS_PATTERN).map((p) => relPosix(root, p))
   if (runFiles.length === 0) errors.push('runner 面零命中 —— 包内没有 test/ 下的 *.test.ts')
 

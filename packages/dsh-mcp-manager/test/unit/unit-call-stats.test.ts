@@ -6,7 +6,7 @@
  * 不在任何 stryker testFiles、不在 mutation-topology.json——B2 未被发现的直接
  * 原因之一）。issue #664 阶段 1 改造为与其余 unit 一致的形态，并登记进
  * mutation-topology testFiles（#690 S2 起 smoke import 聚合已移除，单份断言服务
- * 包内 runner 与 stryker tap-runner）。
+ * 包内 runner 与 stryker vitest-runner）。
  *
  * 覆盖：
  * - 默认关闭：完全无 I/O、零写盘、快照零服务器
