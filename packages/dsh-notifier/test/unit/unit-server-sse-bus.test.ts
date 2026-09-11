@@ -10,21 +10,12 @@
  * 缓冲与 /history 的独立性：滚动缓冲（600 帧）独立于 history jsonl（200 条
  * 截断）——本文件只测缓冲本身；跨存储独立性由 routes ?since 用例覆盖。
  */
-import assert from "node:assert/strict";
 // src 直连（与 unit-sse-hub 直连 shared/sse-hub.js 同姿态）：server.ts 业务包装
 // 内联进 lib/index.js 无独立产物，且包导出面不含 createSseHub——src 是唯一入口。
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSseHub } from "../../src/server/interface.ts";
 
-let pass = 0;
-let fail = 0;
-function ok(cond: boolean, name: string) {
-  if (cond) {
-    pass += 1;
-  } else {
-    fail += 1;
-    console.log("FAIL:", name);
-  }
-}
+type Hub = ReturnType<typeof createSseHub>;
 
 /** 轮询直到谓词成立（替代固定 sleep：防抖落盘是定时器驱动的异步终态）。 */
 async function pollUntil(predicate: () => boolean, timeoutMs = 1000) {
@@ -36,140 +27,217 @@ async function pollUntil(predicate: () => boolean, timeoutMs = 1000) {
   }
 }
 
-// ---- (a) seq 递增 + framesSince 补拉 ----
-{
-  const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
-  try {
+describe("(a) seq 递增 + framesSince 补拉", () => {
+  let hub: Hub;
+
+  beforeEach(() => {
+    hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
     hub.broadcast({ type: "notify", kind: "done", title: "t1", message: "m1", ts: 1 });
     hub.broadcast({ type: "notify", kind: "done", title: "t2", message: "m2", ts: 2 });
-    ok(hub.size() === 0, "无连接时 broadcast 不建连（纯入缓冲）");
-    const since0 = hub.framesSince(0);
-    ok(since0.length === 2, "framesSince(0) 返回全部 2 帧");
-    ok(since0[0].seq === 1 && since0[1].seq === 2, "seq 从 1 递增");
-    ok(since0[1].kind === "done" && since0[1].title === "t2", "帧负载原样保留");
-    const since1 = hub.framesSince(1);
-    ok(since1.length === 1 && since1[0].seq === 2, "framesSince(1) 只回补 seq>1 的帧");
-    const since9 = hub.framesSince(9);
-    ok(since9.length === 0, "framesSince 超尾返回空");
-  } finally {
-    hub.dispose();
-  }
-}
+  });
+  afterEach(() => hub.dispose());
 
-// ---- (b) RECENT_LIMIT=600 滚动缓冲 shift 边界 ----
-{
-  const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
-  try {
+  it("无连接时 broadcast 不建连（纯入缓冲）", () => {
+    expect(hub.size()).toBe(0);
+  });
+
+  it("framesSince(0) 返回全部 2 帧", () => {
+    expect(hub.framesSince(0).length).toBe(2);
+  });
+
+  it("seq 从 1 递增", () => {
+    const since0 = hub.framesSince(0);
+    expect(since0[0].seq === 1 && since0[1].seq === 2).toBeTruthy();
+  });
+
+  it("帧负载原样保留", () => {
+    const since0 = hub.framesSince(0);
+    expect(since0[1].kind === "done" && since0[1].title === "t2").toBeTruthy();
+  });
+
+  it("framesSince(1) 只回补 seq>1 的帧", () => {
+    const since1 = hub.framesSince(1);
+    expect(since1.length === 1 && since1[0].seq === 2).toBeTruthy();
+  });
+
+  it("framesSince 超尾返回空", () => {
+    expect(hub.framesSince(9).length).toBe(0);
+  });
+});
+
+describe("(b) RECENT_LIMIT=600 滚动缓冲 shift 边界", () => {
+  let hub: Hub;
+
+  beforeEach(() => {
+    hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
     for (let i = 1; i <= 601; i += 1) hub.broadcast({ type: "notify", kind: "error", title: `t${i}`, message: "x", ts: i });
-    const frames = hub.framesSince(0);
-    ok(frames.length === 600, "超过 600 帧后缓冲只保留最近 600 帧");
-    ok(frames[0].seq === 2, "最旧帧被 shift（首帧 seq=2）");
-    ok(frames[599].seq === 601, "最新帧保留（seq=601）");
+  });
+  afterEach(() => hub.dispose());
+
+  it("超过 600 帧后缓冲只保留最近 600 帧", () => {
+    expect(hub.framesSince(0).length).toBe(600);
+  });
+
+  it("最旧帧被 shift（首帧 seq=2）", () => {
+    expect(hub.framesSince(0)[0].seq).toBe(2);
+  });
+
+  it("最新帧保留（seq=601）", () => {
+    expect(hub.framesSince(0)[599].seq).toBe(601);
+  });
+
+  it("seq=1 已出窗，补拉从 2 起（600 帧全保留）", () => {
     // 补拉窗口外的 seq 不再可回放（1 已被 shift 出缓冲；2..601 共 600 帧全部保留）
     const since1 = hub.framesSince(1);
-    ok(since1.length === 600 && since1[0].seq === 2, "seq=1 已出窗，补拉从 2 起（600 帧全保留）");
-  } finally {
-    hub.dispose();
-  }
-}
+    expect(since1.length === 600 && since1[0].seq === 2).toBeTruthy();
+  });
+});
 
-// ---- (c) 心跳/注册/上限淘汰委托共享 hub（转发面不丢） ----
-{
-  const hub = createSseHub({ getMaxConnections: () => 2, heartbeatMs: 60_000, stalledTimeoutMs: 90_000 });
-  try {
+describe("(c) 心跳/注册/上限淘汰委托共享 hub（转发面不丢）", () => {
+  let hub: Hub;
+
+  beforeEach(() => {
+    hub = createSseHub({ getMaxConnections: () => 2, heartbeatMs: 60_000, stalledTimeoutMs: 90_000 });
+  });
+  afterEach(() => hub.dispose());
+
+  it("register/size 转发共享 hub", () => {
     // register 面经共享 hub：仅验证转发存在性（连接管理行为由 unit-sse-hub 全覆盖）
-    ok(typeof hub.register === "function" && typeof hub.size === "function", "register/size 转发共享 hub");
-    ok(typeof hub.evictStats === "function" && typeof hub.connHealth === "function", "观测面转发");
-    ok(typeof hub.dispose === "function", "dispose 转发");
-  } finally {
-    hub.dispose();
-  }
-}
-
-// ---- (d) 构造时 loadSeq 续计数（缺省内存模式行为不变） ----
-{
-  const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000, loadSeq: () => 5, saveSeq: () => {}, seqFlushMs: 60_000 });
-  try {
-    hub.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
-    ok(hub.framesSince(0)[0].seq === 6, "loadSeq=5 续计数：首帧 seq=6");
-  } finally {
-    hub.dispose();
-  }
-  const hub0 = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
-  try {
-    hub0.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
-    ok(hub0.framesSince(0)[0].seq === 1, "缺省 loadSeq=0：首帧 seq=1（内存模式行为不变）");
-  } finally {
-    hub0.dispose();
-  }
-}
-
-// ---- (e) broadcast 防抖落盘 + dispose 同步落盘（正常停止零丢失） ----
-{
-  // 防抖合并：注入短窗（20ms），窗口内多次广播不立即写，到点只写最新 seq
-  const saves: number[] = [];
-  const hub = createSseHub({
-    getMaxConnections: () => 4, heartbeatMs: 60_000, saveSeq: (s) => saves.push(s), seqFlushMs: 20,
+    expect(typeof hub.register === "function" && typeof hub.size === "function").toBeTruthy();
   });
-  hub.broadcast({ type: "notify", kind: "done", title: "t1", message: "m", ts: 1 });
-  hub.broadcast({ type: "notify", kind: "done", title: "t2", message: "m", ts: 2 });
-  hub.broadcast({ type: "notify", kind: "done", title: "t3", message: "m", ts: 3 });
-  ok(saves.length === 0, "防抖窗口内不立即落盘");
-  await pollUntil(() => saves.length >= 1);
-  ok(saves.length === 1 && saves[0] === 3, "防抖合并：窗口内多次广播只写一次最新 seq（3）");
-  hub.dispose();
-  // 长窗（60s）+ 立即 dispose：防抖窗口内未落盘值同步补写（正常停止零丢失）
-  const saves2: number[] = [];
-  const hub2 = createSseHub({
-    getMaxConnections: () => 4, heartbeatMs: 60_000, saveSeq: (s) => saves2.push(s), seqFlushMs: 60_000,
-  });
-  hub2.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
-  hub2.dispose();
-  ok(saves2.length === 1 && saves2[0] === 1, "dispose 同步落盘：防抖窗口内未落盘的 seq 补写（零丢失）");
-  // 无 saveSeq（内存模式）：broadcast + dispose 不落盘不炸
-  const hub3 = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
-  hub3.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
-  hub3.dispose();
-  ok(true, "内存模式 broadcast+dispose 无 saveSeq 路径正常");
-}
 
-// ---- (f) 重启仿真 hub1→dispose→hub2(loadSeq 续计数) framesSince 返回 seq6 ----
-{
-  const saved: number[] = [];
-  const hub1 = createSseHub({
-    getMaxConnections: () => 4, heartbeatMs: 60_000, loadSeq: () => 0, saveSeq: (s) => saved.push(s), seqFlushMs: 60_000,
+  it("观测面转发", () => {
+    expect(typeof hub.evictStats === "function" && typeof hub.connHealth === "function").toBeTruthy();
   });
-  for (let i = 0; i < 5; i += 1) {
-    hub1.broadcast({ type: "notify", kind: "done", title: `t${i}`, message: "m", ts: i });
-  }
-  hub1.dispose();
-  ok(saved.length === 1 && saved[0] === 5, "hub1 dispose 落盘 seq=5");
-  const hub2 = createSseHub({
-    getMaxConnections: () => 4, heartbeatMs: 60_000,
-    loadSeq: () => (saved.length > 0 ? saved[saved.length - 1] : 0),
-    saveSeq: () => {}, seqFlushMs: 60_000,
-  });
-  try {
-    hub2.broadcast({ type: "notify", kind: "done", title: "t2", message: "m", ts: 99 });
-    const frames = hub2.framesSince(5);
-    ok(frames.length === 1 && frames[0].seq === 6, "重启后续计数：hub2 首帧 seq=6（客户端 lastSeq=5 重连不丢帧）");
-  } finally {
-    hub2.dispose();
-  }
-}
 
-// ---- (g) loadSeq 非法值（损坏/越界/非整数）→ 回退 0 ----
-{
-  for (const bad of [NaN, -5, 1.9, Infinity]) {
-    const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000, loadSeq: () => bad, saveSeq: () => {}, seqFlushMs: 60_000 });
+  it("dispose 转发", () => {
+    expect(typeof hub.dispose === "function").toBeTruthy();
+  });
+});
+
+describe("(d) 构造时 loadSeq 续计数（缺省内存模式行为不变）", () => {
+  it("loadSeq=5 续计数：首帧 seq=6", () => {
+    const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000, loadSeq: () => 5, saveSeq: () => {}, seqFlushMs: 60_000 });
     try {
       hub.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
-      ok(hub.framesSince(0)[0].seq === 1, `loadSeq 返回 ${bad} → 回退 0（首帧 seq=1）`);
+      expect(hub.framesSince(0)[0].seq).toBe(6);
     } finally {
       hub.dispose();
     }
-  }
-}
+  });
 
-console.log(`dsh-notifier server-sse-bus: ${pass} passed, ${fail} failed`);
-if (fail > 0) process.exitCode = 1;
+  it("缺省 loadSeq=0：首帧 seq=1（内存模式行为不变）", () => {
+    const hub0 = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
+    try {
+      hub0.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
+      expect(hub0.framesSince(0)[0].seq).toBe(1);
+    } finally {
+      hub0.dispose();
+    }
+  });
+});
+
+describe("(e) broadcast 防抖落盘 + dispose 同步落盘（正常停止零丢失）", () => {
+  it("防抖窗口内不立即落盘", () => {
+    // 防抖合并：注入短窗（20ms），窗口内多次广播不立即写，到点只写最新 seq
+    const saves: number[] = [];
+    const hub = createSseHub({
+      getMaxConnections: () => 4, heartbeatMs: 60_000, saveSeq: (s) => saves.push(s), seqFlushMs: 20,
+    });
+    try {
+      hub.broadcast({ type: "notify", kind: "done", title: "t1", message: "m", ts: 1 });
+      hub.broadcast({ type: "notify", kind: "done", title: "t2", message: "m", ts: 2 });
+      hub.broadcast({ type: "notify", kind: "done", title: "t3", message: "m", ts: 3 });
+      expect(saves.length).toBe(0);
+    } finally {
+      hub.dispose();
+    }
+  });
+
+  it("防抖合并：窗口内多次广播只写一次最新 seq（3）", async () => {
+    const saves: number[] = [];
+    const hub = createSseHub({
+      getMaxConnections: () => 4, heartbeatMs: 60_000, saveSeq: (s) => saves.push(s), seqFlushMs: 20,
+    });
+    try {
+      hub.broadcast({ type: "notify", kind: "done", title: "t1", message: "m", ts: 1 });
+      hub.broadcast({ type: "notify", kind: "done", title: "t2", message: "m", ts: 2 });
+      hub.broadcast({ type: "notify", kind: "done", title: "t3", message: "m", ts: 3 });
+      await pollUntil(() => saves.length >= 1);
+      expect(saves.length === 1 && saves[0] === 3).toBeTruthy();
+    } finally {
+      hub.dispose();
+    }
+  });
+
+  it("dispose 同步落盘：防抖窗口内未落盘的 seq 补写（零丢失）", () => {
+    // 长窗（60s）+ 立即 dispose：防抖窗口内未落盘值同步补写（正常停止零丢失）
+    const saves2: number[] = [];
+    const hub2 = createSseHub({
+      getMaxConnections: () => 4, heartbeatMs: 60_000, saveSeq: (s) => saves2.push(s), seqFlushMs: 60_000,
+    });
+    hub2.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
+    hub2.dispose();
+    expect(saves2.length === 1 && saves2[0] === 1).toBeTruthy();
+  });
+
+  it("内存模式 broadcast+dispose 无 saveSeq 路径正常", () => {
+    // 无 saveSeq（内存模式）：broadcast + dispose 不落盘不炸
+    const hub3 = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
+    expect(() => {
+      hub3.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
+      hub3.dispose();
+    }).not.toThrow();
+  });
+});
+
+describe("(f) 重启仿真 hub1→dispose→hub2(loadSeq 续计数) framesSince 返回 seq6", () => {
+  it("hub1 dispose 落盘 seq=5", () => {
+    const saved: number[] = [];
+    const hub1 = createSseHub({
+      getMaxConnections: () => 4, heartbeatMs: 60_000, loadSeq: () => 0, saveSeq: (s) => saved.push(s), seqFlushMs: 60_000,
+    });
+    for (let i = 0; i < 5; i += 1) {
+      hub1.broadcast({ type: "notify", kind: "done", title: `t${i}`, message: "m", ts: i });
+    }
+    hub1.dispose();
+    expect(saved.length === 1 && saved[0] === 5).toBeTruthy();
+  });
+
+  it("重启后续计数：hub2 首帧 seq=6（客户端 lastSeq=5 重连不丢帧）", () => {
+    const saved: number[] = [];
+    const hub1 = createSseHub({
+      getMaxConnections: () => 4, heartbeatMs: 60_000, loadSeq: () => 0, saveSeq: (s) => saved.push(s), seqFlushMs: 60_000,
+    });
+    for (let i = 0; i < 5; i += 1) {
+      hub1.broadcast({ type: "notify", kind: "done", title: `t${i}`, message: "m", ts: i });
+    }
+    hub1.dispose();
+    const hub2 = createSseHub({
+      getMaxConnections: () => 4, heartbeatMs: 60_000,
+      loadSeq: () => (saved.length > 0 ? saved[saved.length - 1] : 0),
+      saveSeq: () => {}, seqFlushMs: 60_000,
+    });
+    try {
+      hub2.broadcast({ type: "notify", kind: "done", title: "t2", message: "m", ts: 99 });
+      const frames = hub2.framesSince(5);
+      expect(frames.length === 1 && frames[0].seq === 6).toBeTruthy();
+    } finally {
+      hub2.dispose();
+    }
+  });
+});
+
+describe("(g) loadSeq 非法值（损坏/越界/非整数）→ 回退 0", () => {
+  for (const bad of [NaN, -5, 1.9, Infinity]) {
+    it(`loadSeq 返回 ${bad} → 回退 0（首帧 seq=1）`, () => {
+      const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000, loadSeq: () => bad, saveSeq: () => {}, seqFlushMs: 60_000 });
+      try {
+        hub.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
+        expect(hub.framesSince(0)[0].seq).toBe(1);
+      } finally {
+        hub.dispose();
+      }
+    });
+  }
+});

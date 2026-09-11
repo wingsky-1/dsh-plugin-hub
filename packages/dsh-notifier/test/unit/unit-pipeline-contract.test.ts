@@ -10,7 +10,7 @@
  * 即红（改前红），工厂落地 + 单刻快照后全绿（改后绿）。另追加框架重试/并发门上移
  * 与 bark 单次投递 + retryable 标注的直测。
  */
-import assert from "node:assert/strict";
+import { beforeEach, describe, expect, it } from "vitest";
 import { createAdjudicator, createDeliverer } from "../../src/pipeline/interface.ts";
 import { createBarkChannel } from "../../src/channels/interface.ts";
 import type { NotifyConfig } from "../../src/config/interface.ts";
@@ -108,19 +108,17 @@ function quietWindowNow() {
 
 // ================================================================ AdjudicateDeps 注入面契约
 
-{
-  // 录制型 fake：断言「单刻快照恰好 1 次」+「快照引用贯穿派生读面」
+/** 录制型 fake：断言「单刻快照恰好 1 次」+「快照引用贯穿派生读面」。 */
+function recordingAdjudicator() {
   const cfg = baseCfg({ kindRoutes: { ready: ["browser"] } });
-  let currentCalls = 0;
-  let lastSnapshot = null;
+  const state = { currentCalls: 0 };
   const seenKind: string[] = [];
   const seenSnapshots: NotifyConfig[] = [];
   const poolSnapshots: NotifyConfig[] = [];
   const browser: ChannelPoolEntry = { id: "browser", channel: fakeChannel("browser", { titleMaxLen: 64, maxBodyLen: 2048 }), dispatch: { pop: true, sound: { mode: "system", tone: undefined } } };
   const adjudicate = createAdjudicator({
     current: () => {
-      currentCalls += 1;
-      lastSnapshot = cfg;
+      state.currentCalls += 1;
       return cfg;
     },
     enabled: () => true,
@@ -134,91 +132,200 @@ function quietWindowNow() {
       return [browser];
     },
   });
-
-  const out = adjudicate({ kind: "ready", title: "T", body: "B", ts: 1 });
-  assert.equal(currentCalls, 1, "N-14：单次裁决 current() 恰好 1 次（单刻快照）");
-  assert.equal(out.decision, "deliver", "N-14：裁定 deliver");
-  assert.equal(seenKind[0], "ready", "N-14：isKindConfirmed 收到 kind");
-  assert.equal(seenSnapshots[0], cfg, "N-14：isKindConfirmed 收到 (kind, snapshot) 且快照为 single 对象");
-  assert.equal(poolSnapshots[0], cfg, "N-14：allChannels 收到同一快照对象（派生闭包不自行读 current）");
-  assert.equal(out.notice.targets.length, 1, "N-14：目标随池解析");
-  assert.equal((out.notice.targets[0].dispatch as BrowserDispatchSpec).sound.mode, "system", "N-14：播放决议随池条目携带（裁决时快照解析）");
-  assert.equal(out.notice.sanitizeContent, true, "N-14：裁决结果携带脱敏开关（快照缺键 → undefined 容错为 true，B-4）");
-  // 跨次不缓存：第二次裁决重新取快照（再 +1）
-  adjudicate({ kind: "ready", title: "T", body: "B", ts: 2 });
-  assert.equal(currentCalls, 2, "N-14：跨次不缓存——第二次裁决重新调 current() 恰好 1 次");
+  const raw = adjudicate({ kind: "ready", title: "T", body: "B", ts: 1 });
+  // 失败即抛：deliver 分支收窄（原脚本靠 node assert.equal 的 asserts 签名收窄）
+  if (raw.decision !== "deliver") throw new Error("预期 deliver 裁决结果");
+  const out: DeliveredResult = raw;
+  return { cfg, state, seenKind, seenSnapshots, poolSnapshots, adjudicate, out };
 }
 
-{
-  // 抑制分支形状：disabled/未确认/免打扰 三态均不触达 allChannels
-  let currentCalls = 0;
-  let poolCalls = 0;
+describe("AdjudicateDeps 注入面契约：单刻快照", () => {
+  let f: ReturnType<typeof recordingAdjudicator>;
+
+  beforeEach(() => {
+    f = recordingAdjudicator();
+  });
+
+  it("N-14：单次裁决 current() 恰好 1 次（单刻快照）", () => {
+    expect(f.state.currentCalls).toBe(1);
+  });
+
+  it("N-14：裁定 deliver", () => {
+    expect(f.out.decision).toBe("deliver");
+  });
+
+  it("N-14：isKindConfirmed 收到 kind", () => {
+    expect(f.seenKind[0]).toBe("ready");
+  });
+
+  it("N-14：isKindConfirmed 收到 (kind, snapshot) 且快照为 single 对象", () => {
+    expect(f.seenSnapshots[0]).toBe(f.cfg);
+  });
+
+  it("N-14：allChannels 收到同一快照对象（派生闭包不自行读 current）", () => {
+    expect(f.poolSnapshots[0]).toBe(f.cfg);
+  });
+
+  it("N-14：目标随池解析", () => {
+    expect(f.out.notice.targets.length).toBe(1);
+  });
+
+  it("N-14：播放决议随池条目携带（裁决时快照解析）", () => {
+    expect((f.out.notice.targets[0].dispatch as BrowserDispatchSpec).sound.mode).toBe("system");
+  });
+
+  it("N-14：裁决结果携带脱敏开关（快照缺键 → undefined 容错为 true，B-4）", () => {
+    expect(f.out.notice.sanitizeContent).toBe(true);
+  });
+
+  it("N-14：跨次不缓存——第二次裁决重新调 current() 恰好 1 次", () => {
+    // 跨次不缓存：第二次裁决重新取快照（再 +1）
+    f.adjudicate({ kind: "ready", title: "T", body: "B", ts: 2 });
+    expect(f.state.currentCalls).toBe(2);
+  });
+});
+
+/** 抑制分支共享 deps（current/allChannels 计数）。 */
+function suppressDeps() {
+  const state = { currentCalls: 0, poolCalls: 0 };
   const cfg = baseCfg({ quietHours: quietWindowNow() });
   const baseDeps: Pick<AdjudicateDeps, "current" | "allChannels"> = {
     current: () => {
-      currentCalls += 1;
+      state.currentCalls += 1;
       return cfg;
     },
     allChannels() {
-      poolCalls += 1;
+      state.poolCalls += 1;
       return [];
     },
   };
-  const svcDisabled = createAdjudicator({
-    ...baseDeps,
-    enabled: () => false,
-    isKindConfirmed: () => true,
-  });
-  const r1 = svcDisabled({ kind: "k", title: "T", body: "B", ts: 1 });
-  assert.deepEqual(r1, { decision: "suppressed", reason: "disabled", kind: "k", title: "T", body: "B", ts: 1, sanitizeContent: true }, "N-14：enabled=false → suppressed disabled（形状契约含脱敏开关，快照缺键→true）");
-  assert.equal(poolCalls, 0, "N-14：suppressed 不解析投递池");
-
-  const svcPending = createAdjudicator({
-    ...baseDeps,
-    enabled: () => true,
-    isKindConfirmed: () => false,
-  });
-  const r2 = svcPending({ kind: "k", title: "T", body: "B", ts: 2 });
-  assert.equal(r2.decision, "suppressed", "N-14：未确认 → suppressed");
-  assert.equal(r2.reason, "kind-pending", "N-14：未确认 → reason = kind-pending");
-  assert.equal(poolCalls, 0, "N-14：kind-pending 不解析投递池");
-
-  const svcQuiet = createAdjudicator({
-    ...baseDeps,
-    enabled: () => true,
-    isKindConfirmed: () => true,
-  });
-  const r3 = svcQuiet({ kind: "k", title: "T", body: "B", ts: 3 }) as SuppressedResult;
-  assert.equal(r3.reason, "quiet", "N-14：免打扰窗口内 → suppressed quiet");
-  assert.equal(poolCalls, 0, "N-14：quiet 不解析投递池");
-
-  // bypassQuiet 放行 + onlyChannel 命中
-  const svcBypass = createAdjudicator({
-    ...baseDeps,
-    enabled: () => true,
-    isKindConfirmed: () => true,
-    allChannels: (snapshot) => [{ id: "bark:phone", channel: fakeChannel("bark:phone") }],
-  });
-  const r4 = svcBypass({ kind: "k", title: "T", body: "B", ts: 4, bypassQuiet: true, onlyChannel: "bark:phone" });
-  assert.equal(r4.decision, "deliver", "N-14：bypassQuiet 跳过免打扰");
-  assert.equal(r4.notice.targets[0].id, "bark:phone", "N-14：onlyChannel 命中单频道");
-  assert.equal(poolCalls, 0, "N-14：onlyChannel 用例的池经注入闭包解析（快照单一）");
-
-  // 快照显式 sanitizeContent=false → 结果携带 false（编排层据此明文落史/投递）
-  const svcPlain = createAdjudicator({
-    ...baseDeps,
-    enabled: () => true,
-    isKindConfirmed: () => true,
-    current: () => ({ ...cfg, sanitizeContent: false }),
-  });
-  const r5 = svcPlain({ kind: "k", title: "T", body: "B", ts: 5, bypassQuiet: true }) as DeliveredResult;
-  assert.equal(r5.notice.sanitizeContent, false, "N-14：sanitizeContent=false 随裁决结果携带（B-4）");
+  return { state, cfg, baseDeps };
 }
+
+describe("抑制分支：enabled=false → suppressed disabled", () => {
+  let r1: AdjudicateResult;
+  let state: ReturnType<typeof suppressDeps>["state"];
+
+  beforeEach(() => {
+    const d = suppressDeps();
+    state = d.state;
+    const svcDisabled = createAdjudicator({
+      ...d.baseDeps,
+      enabled: () => false,
+      isKindConfirmed: () => true,
+    });
+    r1 = svcDisabled({ kind: "k", title: "T", body: "B", ts: 1 });
+  });
+
+  it("N-14：enabled=false → suppressed disabled（形状契约含脱敏开关，快照缺键→true）", () => {
+    expect(r1).toEqual({ decision: "suppressed", reason: "disabled", kind: "k", title: "T", body: "B", ts: 1, sanitizeContent: true });
+  });
+
+  it("N-14：suppressed 不解析投递池", () => {
+    expect(state.poolCalls).toBe(0);
+  });
+});
+
+describe("抑制分支：未确认 → suppressed kind-pending", () => {
+  let r2: SuppressedResult;
+  let state: ReturnType<typeof suppressDeps>["state"];
+
+  beforeEach(() => {
+    const d = suppressDeps();
+    state = d.state;
+    const svcPending = createAdjudicator({
+      ...d.baseDeps,
+      enabled: () => true,
+      isKindConfirmed: () => false,
+    });
+    r2 = svcPending({ kind: "k", title: "T", body: "B", ts: 2 }) as SuppressedResult;
+  });
+
+  it("N-14：未确认 → suppressed", () => {
+    expect(r2.decision).toBe("suppressed");
+  });
+
+  it("N-14：未确认 → reason = kind-pending", () => {
+    expect(r2.reason).toBe("kind-pending");
+  });
+
+  it("N-14：kind-pending 不解析投递池", () => {
+    expect(state.poolCalls).toBe(0);
+  });
+});
+
+describe("抑制分支：免打扰窗口内 → suppressed quiet", () => {
+  let r3: SuppressedResult;
+  let state: ReturnType<typeof suppressDeps>["state"];
+
+  beforeEach(() => {
+    const d = suppressDeps();
+    state = d.state;
+    const svcQuiet = createAdjudicator({
+      ...d.baseDeps,
+      enabled: () => true,
+      isKindConfirmed: () => true,
+    });
+    r3 = svcQuiet({ kind: "k", title: "T", body: "B", ts: 3 }) as SuppressedResult;
+  });
+
+  it("N-14：免打扰窗口内 → suppressed quiet", () => {
+    expect(r3.reason).toBe("quiet");
+  });
+
+  it("N-14：quiet 不解析投递池", () => {
+    expect(state.poolCalls).toBe(0);
+  });
+});
+
+describe("bypassQuiet 放行 + onlyChannel 命中单频道", () => {
+  let r4: DeliveredResult;
+  let state: ReturnType<typeof suppressDeps>["state"];
+
+  beforeEach(() => {
+    const d = suppressDeps();
+    state = d.state;
+    const svcBypass = createAdjudicator({
+      ...d.baseDeps,
+      enabled: () => true,
+      isKindConfirmed: () => true,
+      allChannels: () => [{ id: "bark:phone", channel: fakeChannel("bark:phone") }],
+    });
+    r4 = svcBypass({ kind: "k", title: "T", body: "B", ts: 4, bypassQuiet: true, onlyChannel: "bark:phone" }) as DeliveredResult;
+  });
+
+  it("N-14：bypassQuiet 跳过免打扰", () => {
+    expect(r4.decision).toBe("deliver");
+  });
+
+  it("N-14：onlyChannel 命中单频道", () => {
+    expect(r4.notice.targets[0].id).toBe("bark:phone");
+  });
+
+  it("N-14：onlyChannel 用例的池经注入闭包解析（快照单一）", () => {
+    expect(state.poolCalls).toBe(0);
+  });
+});
+
+describe("快照显式 sanitizeContent=false → 结果携带 false", () => {
+  it("N-14：sanitizeContent=false 随裁决结果携带（B-4）", () => {
+    // 编排层据此明文落史/投递
+    const d = suppressDeps();
+    const svcPlain = createAdjudicator({
+      ...d.baseDeps,
+      enabled: () => true,
+      isKindConfirmed: () => true,
+      current: () => ({ ...d.cfg, sanitizeContent: false }),
+    });
+    const r5 = svcPlain({ kind: "k", title: "T", body: "B", ts: 5, bypassQuiet: true }) as DeliveredResult;
+    expect(r5.notice.sanitizeContent).toBe(false);
+  });
+});
 
 // ================================================================ DeliverDeps 注入面契约
 
-{
-  // 调用序列：stale skipped 先 → play/channel.send 分流 → appendHistory 恰好 1 次
+/** 调用序列：stale skipped 先 → play/channel.send 分流 → appendHistory 恰好 1 次。 */
+function deliverSequence() {
   const recordStatusCalls: StatusCall[] = [];
   const emitSentCalls: NotifySentEvent[] = [];
   const historyCalls: HistoryCall[] = [];
@@ -254,31 +361,88 @@ function quietWindowNow() {
     sanitizeContent: true,
   };
   const results = deliver(notice);
-
-  assert.deepEqual(results[0], { channelId: "bark:gone", status: "skipped", error: "stale-route" }, "N-15：stale 条目 skipped 在先（结构与现状一致）");
-  assert.ok(results.some((r) => r.channelId === "browser" && r.status === "ok"), "N-15：browser 受理 ok");
-  assert.ok(results.some((r) => r.channelId === "bark:phone" && r.status === "ok"), "N-15：bark 受理 ok");
-
-  assert.equal(playCalls.length, 1, "N-15：play 仅对带 dispatch 的目标调用");
-  assert.equal(playCalls[0].target, browserTarget, "N-15：play 收到目标（含裁决时快照解析的 dispatch）");
-  assert.equal(playCalls[0].payload.title, "超长标题".repeat(16), "N-15：play 载荷标题按 browser 能力截断（64 码点）");
-  assert.equal(playCalls[0].payload.body, "超长正文".repeat(20), "N-15：play 载荷正文 80 码点 < 2048 未截断");
-  assert.equal(playCalls[0].payload.kind, "demo");
-  assert.equal(playCalls[0].payload.ts, 42);
-  assert.equal(playCalls[0].payload.severity, "info");
-
-  assert.equal(bark.sent.length, 1, "N-15：无 dispatch 目标走 channel.send");
-  assert.equal(bark.sent[0].title, "超长标题超长标题超长", "N-15：channel.send 载荷标题按频道能力截断（10 码点）");
-  assert.equal(bark.sent[0].body, "超长正文".repeat(5), "N-15：channel.send 载荷正文截断（20 码点）");
-  // 终态：同步完成 → recordStatus ok + sent ok（两频道各一条）
-  assert.equal(recordStatusCalls.filter((s) => s.status === "ok").length, 2, "N-15：同步终态 ok 落 status");
-  assert.equal(emitSentCalls.filter((e) => e.status === "ok").length, 2, "N-15：同步终态 ok 发 sent 事件");
-  assert.equal(historyCalls.length, 1, "N-15：appendHistory 每次投递恰好 1 次（通知级，非频道级）");
-  assert.deepEqual(historyCalls[0], { ts: 42, kind: "demo", title: longTitle, message: longBody }, "N-15：历史记录字段 = 通知级原始（未按频道截断，与现状 jsonl 契约一致）");
+  return { recordStatusCalls, emitSentCalls, historyCalls, playCalls, bark, browserTarget, notice, results, longTitle, longBody };
 }
 
-{
-  // fail-soft + 异步终态：reject → failed 不牵连其他频道；终态为值拷贝（不持快照引用）
+describe("DeliverDeps 注入面契约：调用序列与载荷截断", () => {
+  let s: ReturnType<typeof deliverSequence>;
+
+  beforeEach(() => {
+    s = deliverSequence();
+  });
+
+  it("N-15：stale 条目 skipped 在先（结构与现状一致）", () => {
+    expect(s.results[0]).toEqual({ channelId: "bark:gone", status: "skipped", error: "stale-route" });
+  });
+
+  it("N-15：browser 受理 ok", () => {
+    expect(s.results.some((r) => r.channelId === "browser" && r.status === "ok")).toBeTruthy();
+  });
+
+  it("N-15：bark 受理 ok", () => {
+    expect(s.results.some((r) => r.channelId === "bark:phone" && r.status === "ok")).toBeTruthy();
+  });
+
+  it("N-15：play 仅对带 dispatch 的目标调用", () => {
+    expect(s.playCalls.length).toBe(1);
+  });
+
+  it("N-15：play 收到目标（含裁决时快照解析的 dispatch）", () => {
+    expect(s.playCalls[0].target).toBe(s.browserTarget);
+  });
+
+  it("N-15：play 载荷标题按 browser 能力截断（64 码点）", () => {
+    expect(s.playCalls[0].payload.title).toBe("超长标题".repeat(16));
+  });
+
+  it("N-15：play 载荷正文 80 码点 < 2048 未截断", () => {
+    expect(s.playCalls[0].payload.body).toBe("超长正文".repeat(20));
+  });
+
+  it("N-15：play 载荷 kind 透传", () => {
+    expect(s.playCalls[0].payload.kind).toBe("demo");
+  });
+
+  it("N-15：play 载荷 ts 透传", () => {
+    expect(s.playCalls[0].payload.ts).toBe(42);
+  });
+
+  it("N-15：play 载荷 severity 透传", () => {
+    expect(s.playCalls[0].payload.severity).toBe("info");
+  });
+
+  it("N-15：无 dispatch 目标走 channel.send", () => {
+    expect(s.bark.sent.length).toBe(1);
+  });
+
+  it("N-15：channel.send 载荷标题按频道能力截断（10 码点）", () => {
+    expect(s.bark.sent[0].title).toBe("超长标题超长标题超长");
+  });
+
+  it("N-15：channel.send 载荷正文截断（20 码点）", () => {
+    expect(s.bark.sent[0].body).toBe("超长正文".repeat(5));
+  });
+
+  it("N-15：同步终态 ok 落 status", () => {
+    // 终态：同步完成 → recordStatus ok + sent ok（两频道各一条）
+    expect(s.recordStatusCalls.filter((x) => x.status === "ok").length).toBe(2);
+  });
+
+  it("N-15：同步终态 ok 发 sent 事件", () => {
+    expect(s.emitSentCalls.filter((e) => e.status === "ok").length).toBe(2);
+  });
+
+  it("N-15：appendHistory 每次投递恰好 1 次（通知级，非频道级）", () => {
+    expect(s.historyCalls.length).toBe(1);
+  });
+
+  it("N-15：历史记录字段 = 通知级原始（未按频道截断，与现状 jsonl 契约一致）", () => {
+    expect(s.historyCalls[0]).toEqual({ ts: 42, kind: "demo", title: s.longTitle, message: s.longBody });
+  });
+});
+
+/** fail-soft 异步终态夹具（不决议 / 决议由用例自行推进）。 */
+function failSoftFixture() {
   const recordStatusCalls: StatusCall[] = [];
   const emitSentCalls: NotifySentEvent[] = [];
   const historyCalls: HistoryCall[] = [];
@@ -305,37 +469,67 @@ function quietWindowNow() {
     sanitizeContent: true,
   };
   deliver(notice);
-  // 异步目标未决议 → 其终态未上报；同步目标已 ok
-  assert.ok(recordStatusCalls.some((s) => s.channelId === "bark:ok" && s.status === "ok"), "N-15：同步目标终态立即可见");
-  assert.ok(!recordStatusCalls.some((s) => s.channelId === "browser"), "N-15：异步目标终态待 promise 决议");
-
-  deferred[0].reject(new Error("system notification failed (self-play or command error)"));
-  await pollUntil(() => recordStatusCalls.some((s) => s.channelId === "browser"));
-  const st = recordStatusCalls.find((s) => s.channelId === "browser") as StatusCall;
-  assert.equal(st.status, "failed", "N-15：异步 reject → 终态 failed");
-  const ev = emitSentCalls.find((e) => e.channelId === "browser") as NotifySentEvent;
-  assert.equal(ev.status, "failed", "N-15：sent 事件带 failed 终态");
-
-  // 终态不持快照引用：改写 notice 后终态载荷仍是投递时刻截断值
-  notice.title = "改写";
-  notice.body = "改写";
-  assert.equal((emitSentCalls.find((e) => e.channelId === "bark:ok") as NotifySentEvent).message, "B", "N-15：终态载荷为值拷贝（改 notice 不影响既有终态）");
-  assert.equal(historyCalls[0].message, "B", "N-15：历史为值拷贝");
+  return { recordStatusCalls, emitSentCalls, historyCalls, deferred, notice };
 }
 
-{
-  // mergeTitleIntoBody 直测：显式声明 → 标题拼入正文。
+describe("fail-soft + 异步终态：受理与终态解耦", () => {
+  let f: ReturnType<typeof failSoftFixture>;
+
+  beforeEach(() => {
+    f = failSoftFixture();
+  });
+
+  it("N-15：同步目标终态立即可见", () => {
+    // 异步目标未决议 → 其终态未上报；同步目标已 ok
+    expect(f.recordStatusCalls.some((s) => s.channelId === "bark:ok" && s.status === "ok")).toBeTruthy();
+  });
+
+  it("N-15：异步目标终态待 promise 决议", () => {
+    expect(!f.recordStatusCalls.some((s) => s.channelId === "browser")).toBeTruthy();
+  });
+});
+
+describe("fail-soft + 异步终态：reject → failed 不牵连其他频道", () => {
+  let f: ReturnType<typeof failSoftFixture>;
+
+  beforeEach(async () => {
+    f = failSoftFixture();
+    f.deferred[0].reject(new Error("system notification failed (self-play or command error)"));
+    await pollUntil(() => f.recordStatusCalls.some((s) => s.channelId === "browser"));
+  });
+
+  it("N-15：异步 reject → 终态 failed", () => {
+    const st = f.recordStatusCalls.find((s) => s.channelId === "browser") as StatusCall;
+    expect(st.status).toBe("failed");
+  });
+
+  it("N-15：sent 事件带 failed 终态", () => {
+    const ev = f.emitSentCalls.find((e) => e.channelId === "browser") as NotifySentEvent;
+    expect(ev.status).toBe("failed");
+  });
+
+  it("N-15：终态载荷为值拷贝（改 notice 不影响既有终态）", () => {
+    // 终态不持快照引用：改写 notice 后终态载荷仍是投递时刻截断值
+    f.notice.title = "改写";
+    f.notice.body = "改写";
+    expect((f.emitSentCalls.find((e) => e.channelId === "bark:ok") as NotifySentEvent).message).toBe("B");
+  });
+
+  it("N-15：历史为值拷贝", () => {
+    f.notice.title = "改写";
+    f.notice.body = "改写";
+    expect(f.historyCalls[0].message).toBe("B");
+  });
+});
+
+describe("mergeTitleIntoBody 直测：显式声明 → 标题拼入正文", () => {
   // 红测判别：拆分前结构无此字段与拼入逻辑——fake 频道声明 true 时框架仍走独立
   // 标题分支（字段 undefined 不回退拼入），title 空串断言改前红；实现后绿。
-  const merged = fakeChannel("merged", { titleMaxLen: 6, maxBodyLen: 12, mergeTitleIntoBody: true });
-  const capped = fakeChannel("capped", { titleMaxLen: 64, maxBodyLen: 4, mergeTitleIntoBody: true });
-  const separate = fakeChannel("separate", { titleMaxLen: 4, maxBodyLen: 64, mergeTitleIntoBody: false });
-  const deliver = createDeliverer({
-    recordStatus: () => undefined,
-    emitSent: () => undefined,
-    appendHistory: () => undefined,
-    play: () => undefined,
-  });
+  let merged: ReturnType<typeof fakeChannel>;
+  let capped: ReturnType<typeof fakeChannel>;
+  let separate: ReturnType<typeof fakeChannel>;
+  let deliver: ReturnType<typeof createDeliverer>;
+
   const noticeFor = (title: string, body: string, ts: number): AdjudicatedNotice => ({
     kind: "demo", title, body, ts,
     targets: [
@@ -347,21 +541,55 @@ function quietWindowNow() {
     sanitizeContent: true,
   });
 
-  deliver(noticeFor("标题", "正文", 9));
-  assert.equal(merged.sent[0].title, "", "L8-1：mergeTitleIntoBody=true → title 位空串（不传独立标题）");
-  assert.equal(merged.sent[0].body, "标题\n正文", "L8-1：标题拼入正文（`${title}\\n${body}` 形态）");
-  assert.equal(capped.sent[0].title, "", "L8-1：拼入频道 title 位恒空串（长度权威 = body 截断）");
-  assert.equal(capped.sent[0].body, "标题\n正", "L8-1：拼入后仍按 maxBodyLen 截断（4 码点），不再按 titleMaxLen 单独截断");
+  beforeEach(() => {
+    merged = fakeChannel("merged", { titleMaxLen: 6, maxBodyLen: 12, mergeTitleIntoBody: true });
+    capped = fakeChannel("capped", { titleMaxLen: 64, maxBodyLen: 4, mergeTitleIntoBody: true });
+    separate = fakeChannel("separate", { titleMaxLen: 4, maxBodyLen: 64, mergeTitleIntoBody: false });
+    deliver = createDeliverer({
+      recordStatus: () => undefined,
+      emitSent: () => undefined,
+      appendHistory: () => undefined,
+      play: () => undefined,
+    });
+    deliver(noticeFor("标题", "正文", 9));
+  });
 
-  // 空 title：不产生多余换行（纯 body）
-  deliver(noticeFor("", "纯正文", 10));
-  assert.equal(merged.sent[1].title, "", "L8-1：空 title 位仍空串");
-  assert.equal(merged.sent[1].body, "纯正文", "L8-1：空 title 拼入后无多余换行");
+  it("L8-1：mergeTitleIntoBody=true → title 位空串（不传独立标题）", () => {
+    expect(merged.sent[0].title).toBe("");
+  });
 
-  // mergeTitleIntoBody=false/undefined → 独立标题现状（显式 false 与缺省同语义）
-  assert.equal(separate.sent[0].title, "标题", "L8-1：false → 独立标题现状（不并入正文）");
-  assert.equal(separate.sent[0].body, "正文", "L8-1：false → 正文不拼入标题");
-}
+  it("L8-1：标题拼入正文（`${title}\\n${body}` 形态）", () => {
+    expect(merged.sent[0].body).toBe("标题\n正文");
+  });
+
+  it("L8-1：拼入频道 title 位恒空串（长度权威 = body 截断）", () => {
+    expect(capped.sent[0].title).toBe("");
+  });
+
+  it("L8-1：拼入后仍按 maxBodyLen 截断（4 码点），不再按 titleMaxLen 单独截断", () => {
+    expect(capped.sent[0].body).toBe("标题\n正");
+  });
+
+  it("L8-1：空 title 位仍空串", () => {
+    // 空 title：不产生多余换行（纯 body）
+    deliver(noticeFor("", "纯正文", 10));
+    expect(merged.sent[1].title).toBe("");
+  });
+
+  it("L8-1：空 title 拼入后无多余换行", () => {
+    deliver(noticeFor("", "纯正文", 10));
+    expect(merged.sent[1].body).toBe("纯正文");
+  });
+
+  it("L8-1：false → 独立标题现状（不并入正文）", () => {
+    // mergeTitleIntoBody=false/undefined → 独立标题现状（显式 false 与缺省同语义）
+    expect(separate.sent[0].title).toBe("标题");
+  });
+
+  it("L8-1：false → 正文不拼入标题", () => {
+    expect(separate.sent[0].body).toBe("正文");
+  });
+});
 
 // ================================================================ 框架重试/并发门（上移直测）
 // 重试与门由 createDeliverer 承载（对等现状 bark sendWithRetry/sendWithGate），
@@ -386,29 +614,46 @@ function mkNotice(ts: number, channel: NotifyChannel): AdjudicatedNotice {
   return { kind: "demo", title: "T", body: "B", ts, targets: [{ id: "bark:phone", channel }], stale: [], sanitizeContent: true };
 }
 
-{
-  // 4xx（retryable:false）不重试 → 1 次调用 + 终态 failed；受理与终态解耦
-  let attempts = 0;
+/** 4xx（retryable:false）不重试夹具：1 次调用 + 终态 failed。 */
+function noRetryFixture() {
+  const state = { attempts: 0 };
   const channel = {
     name: "bark:phone",
     capabilities: { titleMaxLen: 64, maxBodyLen: 256, retry: { maxRetries: 2, backoffMs: 0 } },
     send() {
-      attempts += 1;
+      state.attempts += 1;
       return Promise.reject(retryableErr("bark HTTP 400: bad request", false));
     },
   };
   const recordStatusCalls: StatusCall[] = [];
   const deliver = createDeliverer(deliverDeps(recordStatusCalls));
   const results = deliver(mkNotice(1, channel));
-  assert.equal(results[0].status, "ok", "N-9a：受理与终态解耦（铁律 1）");
-  await pollUntil(() => recordStatusCalls.some((s) => s.channelId === "bark:phone"));
-  assert.equal(attempts, 1, "N-9a：retryable:false 不重试");
-  assert.equal(recordStatusCalls[0].status, "failed", "N-9a：4xx → 终态 failed");
+  return { state, recordStatusCalls, results };
 }
 
-{
-  // 5xx（retryable:true）重试 ×2 后成功 + 线性退避 1s/2s（替换 setTimeout
-  // 记录延时并立即执行，零真实等待）→ 终态 ok
+describe("框架重试：4xx（retryable:false）不重试", () => {
+  it("N-9a：受理与终态解耦（铁律 1）", () => {
+    expect(noRetryFixture().results[0].status).toBe("ok");
+  });
+
+  it("N-9a：retryable:false 不重试", async () => {
+    const f = noRetryFixture();
+    await pollUntil(() => f.recordStatusCalls.some((s) => s.channelId === "bark:phone"));
+    expect(f.state.attempts).toBe(1);
+  });
+
+  it("N-9a：4xx → 终态 failed", async () => {
+    const f = noRetryFixture();
+    await pollUntil(() => f.recordStatusCalls.some((s) => s.channelId === "bark:phone"));
+    expect(f.recordStatusCalls[0].status).toBe("failed");
+  });
+});
+
+/**
+ * 5xx（retryable:true）重试 ×2 后成功 + 线性退避 1s/2s 夹具：
+ * 替换 setTimeout 记录延时并立即执行（零真实等待），返回前恢复原 setTimeout。
+ */
+async function retryFixture(): Promise<{ attempts: number; delays: number[]; recordStatusCalls: StatusCall[] }> {
   const delays: number[] = [];
   const origTimeout = globalThis.setTimeout;
   globalThis.setTimeout = ((fn: () => void, ms: number) => {
@@ -416,13 +661,13 @@ function mkNotice(ts: number, channel: NotifyChannel): AdjudicatedNotice {
     fn();
     return 0;
   }) as unknown as typeof setTimeout;
-  let attempts = 0;
+  const state = { attempts: 0 };
   const channel = {
     name: "bark:phone",
     capabilities: { titleMaxLen: 64, maxBodyLen: 256, retry: { maxRetries: 2, backoffMs: 1000 } },
     send() {
-      attempts += 1;
-      if (attempts < 3) return Promise.reject(retryableErr(`bark 5xx (${attempts})`, true));
+      state.attempts += 1;
+      if (state.attempts < 3) return Promise.reject(retryableErr(`bark 5xx (${state.attempts})`, true));
       return Promise.resolve();
     },
   };
@@ -434,62 +679,101 @@ function mkNotice(ts: number, channel: NotifyChannel): AdjudicatedNotice {
   } finally {
     globalThis.setTimeout = origTimeout;
   }
-  assert.equal(attempts, 3, "N-9b：重试 ×2（1 + 2）");
-  assert.deepEqual(delays, [1000, 2000], "N-9b：线性退避 1s/2s（backoffMs 基数）");
-  await pollUntil(() => recordStatusCalls.some((s) => s.channelId === "bark:phone"));
-  assert.equal(recordStatusCalls[0].status, "ok", "N-9b：重试后成功 → 终态 ok");
+  return { attempts: state.attempts, delays, recordStatusCalls };
 }
 
-{
-  // maxInflight 超限排队 + 门跨配置变更延续——在途≥2 时第 3 个排队
-  // （含「同 channelId 换新 channel 实例」仍排队：门表按 channelId 键控于
-  // createDeliverer 闭包，对等现状 outbound.ts:13-22 的 barkGates Map 语义）
-  const pendings: Array<() => void> = [];
-  let calls = 0;
-  const makeChannel = () => ({
-    name: "bark:phone",
-    capabilities: { titleMaxLen: 64, maxBodyLen: 256, maxInflight: 2 },
-    send() {
-      calls += 1;
-      return new Promise<void>((resolve) => pendings.push(resolve));
-    },
+describe("框架重试：5xx（retryable:true）重试 ×2 后成功 + 线性退避", () => {
+  it("N-9b：重试 ×2（1 + 2）", async () => {
+    expect((await retryFixture()).attempts).toBe(3);
   });
-  const deliver = createDeliverer(deliverDeps());
-  const channelA = makeChannel();
-  deliver(mkNotice(1, channelA));
-  deliver(mkNotice(2, channelA));
-  deliver(mkNotice(3, makeChannel())); // 同 id 新实例（模拟配置变更后频道重建）
-  assert.equal(calls, 2, "N-9c/d：在途 2 时第 3 个排队（跨实例延续）");
-  pendings[0]();
-  await pollUntil(() => calls === 3);
-}
+
+  it("N-9b：线性退避 1s/2s（backoffMs 基数）", async () => {
+    expect((await retryFixture()).delays).toEqual([1000, 2000]);
+  });
+
+  it("N-9b：重试后成功 → 终态 ok", async () => {
+    const f = await retryFixture();
+    await pollUntil(() => f.recordStatusCalls.some((s) => s.channelId === "bark:phone"));
+    expect(f.recordStatusCalls[0].status).toBe("ok");
+  });
+});
+
+describe("框架并发门：maxInflight 超限排队 + 门跨配置变更延续", () => {
+  // 在途≥2 时第 3 个排队（含「同 channelId 换新 channel 实例」仍排队：门表按
+  // channelId 键控于 createDeliverer 闭包，对等现状 outbound.ts:13-22 的 barkGates Map 语义）
+  let calls: number;
+  let pendings: Array<() => void>;
+  let deliver: ReturnType<typeof createDeliverer>;
+
+  beforeEach(() => {
+    pendings = [];
+    calls = 0;
+    const makeChannel = () => ({
+      name: "bark:phone",
+      capabilities: { titleMaxLen: 64, maxBodyLen: 256, maxInflight: 2 },
+      send() {
+        calls += 1;
+        return new Promise<void>((resolve) => pendings.push(resolve));
+      },
+    });
+    deliver = createDeliverer(deliverDeps());
+    const channelA = makeChannel();
+    deliver(mkNotice(1, channelA));
+    deliver(mkNotice(2, channelA));
+    deliver(mkNotice(3, makeChannel())); // 同 id 新实例（模拟配置变更后频道重建）
+  });
+
+  it("N-9c/d：在途 2 时第 3 个排队（跨实例延续）", async () => {
+    expect(calls).toBe(2);
+    // 原块尾部排水（非断言）：放行在途项后排队项推进，避免悬挂 promise
+    pendings[0]();
+    await pollUntil(() => calls === 3);
+  });
+});
 
 // ================================================================ bark 单次投递 + retryable 标注
-{
+const barkChannel = () => createBarkChannel({ id: "p", type: "bark", baseUrl: "https://h", deviceKey: "SECRETKEY22", enabled: true });
+
+describe("bark 能力契约", () => {
+  it("N-13：bark retry 契约（框架据此重试 ×2、退避 1s 基数）", () => {
+    expect(barkChannel().capabilities.retry).toEqual({ maxRetries: 2, backoffMs: 1000 });
+  });
+
+  it("N-13：bark maxInflight=2（框架门上移用）", () => {
+    expect(barkChannel().capabilities.maxInflight).toBe(2);
+  });
+});
+
+/** 注入 fetch 桩发一次 bark send 并收口失败面（返回调用次数与投递错误）。 */
+async function barkFailure(response: () => unknown): Promise<{ fetchCalls: number; err: RetryableError }> {
   const origFetch = globalThis.fetch;
+  const state = { fetchCalls: 0 };
   try {
-    const ch = createBarkChannel({ id: "p", type: "bark", baseUrl: "https://h", deviceKey: "SECRETKEY22", enabled: true });
-    assert.deepEqual(ch.capabilities.retry, { maxRetries: 2, backoffMs: 1000 }, "N-13：bark retry 契约（框架据此重试 ×2、退避 1s 基数）");
-    assert.equal(ch.capabilities.maxInflight, 2, "N-13：bark maxInflight=2（框架门上移用）");
-    let fetchCalls = 0;
-    const expectRetryable = async (respond: () => unknown, want: boolean): Promise<void> => {
-      fetchCalls = 0;
-      globalThis.fetch = (async () => {
-        fetchCalls += 1;
-        return respond();
-      }) as unknown as typeof fetch;
-      let lastErr: RetryableError;
-      lastErr = await sendFailure(ch.send({ title: "T", body: "B", kind: "test", ts: 1 }));
-      assert.equal(fetchCalls, 1, "N-13：channel 单次投递（重试是框架职责）");
-      assert.equal(lastErr.retryable, want, `N-13：retryable=${want}`);
-    };
-    await expectRetryable(() => ({ ok: false, status: 400, text: async () => "bad" }), false); // 4xx 确定失败
-    await expectRetryable(() => { throw new TypeError("fetch failed"); }, true); // 网络错误
-    await expectRetryable(() => ({ ok: false, status: 503, text: async () => "unavailable" }), true); // 5xx
+    globalThis.fetch = (async () => {
+      state.fetchCalls += 1;
+      return response();
+    }) as unknown as typeof fetch;
+    const err = await sendFailure(barkChannel().send({ title: "T", body: "B", kind: "test", ts: 1 }));
+    return { fetchCalls: state.fetchCalls, err };
   } finally {
     globalThis.fetch = origFetch;
   }
-  console.log("N-13 bark 单次投递 + retryable 标注: OK");
 }
 
-console.log("dsh-notifier pipeline 注入面契约（N-14/N-15）: OK");
+describe("bark 单次投递 + retryable 标注", () => {
+  const cases: Array<{ label: string; response: () => unknown; want: boolean }> = [
+    { label: "4xx 确定失败", response: () => ({ ok: false, status: 400, text: async () => "bad" }), want: false },
+    { label: "网络错误", response: () => { throw new TypeError("fetch failed"); }, want: true },
+    { label: "5xx", response: () => ({ ok: false, status: 503, text: async () => "unavailable" }), want: true },
+  ];
+
+  for (const c of cases) {
+    it(`N-13：channel 单次投递（重试是框架职责）——${c.label}`, async () => {
+      expect((await barkFailure(c.response)).fetchCalls).toBe(1);
+    });
+
+    it(`N-13：retryable=${c.want}——${c.label}`, async () => {
+      expect((await barkFailure(c.response)).err.retryable).toBe(c.want);
+    });
+  }
+});

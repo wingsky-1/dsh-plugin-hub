@@ -13,20 +13,9 @@
  *
  * 直接 import 共享源（不经 lib 产物）：本文件测的是 shared 层模块本身。
  */
-import assert from "node:assert/strict";
 import type { ServerResponse } from "node:http";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSseHub } from "../../../../shared/sse-hub.js";
-
-let pass = 0;
-let fail = 0;
-function ok(cond: boolean, name: string): void {
-  if (cond) {
-    pass += 1;
-  } else {
-    fail += 1;
-    console.log("FAIL:", name);
-  }
-}
 
 /** fake res 的可配置行为。 */
 interface FakeSseResOptions {
@@ -82,7 +71,7 @@ function sseRes(opts: FakeSseResOptions = {}): FakeSseRes & ServerResponse {
   return res as unknown as FakeSseRes & ServerResponse;
 }
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+type Hub = ReturnType<typeof createSseHub>;
 
 /** 轮询直到谓词成立（替代固定 sleep：心跳 evict 是异步回调，轮询比等固定毫秒稳）。 */
 async function pollUntil(predicate: () => boolean, timeoutMs = 2000): Promise<boolean> {
@@ -107,193 +96,314 @@ async function pollUntilQuiet(predicate: () => boolean, quietMs: number, timeout
   }
 }
 
-// ---- (a) 上限淘汰最老（对齐既有语义，抽取零漂移） ----
-{
-  const hub = createSseHub({ getMaxConnections: () => 2, heartbeatMs: 60_000 });
-  try {
-    const r1 = sseRes();
-    const r2 = sseRes();
-    const r3 = sseRes();
+describe("(a) 上限淘汰最老（对齐既有语义，抽取零漂移）", () => {
+  let hub: Hub;
+  let r1: FakeSseRes & ServerResponse;
+  let r2: FakeSseRes & ServerResponse;
+  let r3: FakeSseRes & ServerResponse;
+
+  beforeEach(() => {
+    hub = createSseHub({ getMaxConnections: () => 2, heartbeatMs: 60_000 });
+    r1 = sseRes();
+    r2 = sseRes();
+    r3 = sseRes();
     hub.register(r1);
     hub.register(r2);
     hub.register(r3);
-    ok(hub.size() === 2, "上限 2，注册 3 收敛到 2");
-    ok(r1.state.destroyed === true, "最老 r1 被淘汰");
-    ok(r2.state.destroyed === false && r3.state.destroyed === false, "r2/r3 保留");
-    const stats = hub.evictStats();
-    ok(stats.limit === 1, "evict 原因计数 limit=1");
-  } finally {
-    hub.dispose();
-  }
-}
+  });
+  afterEach(() => hub.dispose());
 
-// ---- (b) close/error 幂等清理 ----
-{
-  const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
-  try {
-    const r = sseRes();
+  it("上限 2，注册 3 收敛到 2", () => {
+    expect(hub.size()).toBe(2);
+  });
+
+  it("最老 r1 被淘汰", () => {
+    expect(r1.state.destroyed).toBe(true);
+  });
+
+  it("r2/r3 保留", () => {
+    expect(r2.state.destroyed === false && r3.state.destroyed === false).toBeTruthy();
+  });
+
+  it("evict 原因计数 limit=1", () => {
+    expect(hub.evictStats().limit).toBe(1);
+  });
+});
+
+describe("(b) close/error 幂等清理", () => {
+  let hub: Hub;
+  let r: FakeSseRes & ServerResponse;
+
+  beforeEach(() => {
+    hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
+    r = sseRes();
     hub.register(r);
     r.emit("close");
     r.emit("error");
     r.emit("close");
-    ok(hub.size() === 0, "close/error 多次触发只移除一次");
-    ok(r.state.destroyCalls === 1, "destroy 幂等（只一次）");
-  } finally {
-    hub.dispose();
-  }
-}
+  });
+  afterEach(() => hub.dispose());
 
-// ---- (c) 背压不误杀：write 返回 false 不立即清（对齐既有用例锁定语义） ----
-{
-  const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000, stalledTimeoutMs: 90_000 });
-  try {
-    const r = sseRes({ falseAfter: 0 });
+  it("close/error 多次触发只移除一次", () => {
+    expect(hub.size()).toBe(0);
+  });
+
+  it("destroy 幂等（只一次）", () => {
+    expect(r.state.destroyCalls).toBe(1);
+  });
+});
+
+describe("(c) 背压不误杀：write 返回 false 不立即清（对齐既有用例锁定语义）", () => {
+  let hub: Hub;
+  let r: FakeSseRes & ServerResponse;
+
+  beforeEach(() => {
+    hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000, stalledTimeoutMs: 90_000 });
+    r = sseRes({ falseAfter: 0 });
     hub.register(r);
     for (let i = 0; i < 5; i += 1) hub.broadcast("data: x\n\n");
-    ok(hub.size() === 1, "5 次 write false 不立即清（背压不误杀）");
-    ok(r.state.destroyed === false, "背压连接未销毁");
-  } finally {
-    hub.dispose();
-  }
-}
+  });
+  afterEach(() => hub.dispose());
 
-// ---- (d) stalled 超窗回收：write false 持续超窗 → 心跳 evict（核心新增） ----
-{
-  const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 20, stalledTimeoutMs: 50 });
-  try {
-    const r = sseRes({ falseAfter: 0 });
+  it("5 次 write false 不立即清（背压不误杀）", () => {
+    expect(hub.size()).toBe(1);
+  });
+
+  it("背压连接未销毁", () => {
+    expect(r.state.destroyed).toBe(false);
+  });
+});
+
+describe("(d) stalled 超窗回收：write false 持续超窗 → 心跳 evict（核心新增）", () => {
+  let hub: Hub;
+  let r: FakeSseRes & ServerResponse;
+
+  beforeEach(() => {
+    hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 20, stalledTimeoutMs: 50 });
+    r = sseRes({ falseAfter: 0 });
     hub.register(r);
     hub.broadcast("data: x\n\n"); // write false → 置 stalledAt
-    ok(hub.size() === 1, "背压后仍在表（未超窗）");
-    await pollUntil(() => hub.size() === 0); // 心跳 evict 异步触发，轮询等回收
-    ok(hub.size() === 0, "stalled 超窗被心跳 evict");
-    ok(r.state.destroyed === true, "stalled 连接被 destroy");
-    const stats = hub.evictStats();
-    ok(stats.stalled === 1, "evict 原因计数 stalled=1");
-  } finally {
-    hub.dispose();
-  }
-}
+  });
+  afterEach(() => hub.dispose());
 
-// ---- (e) 抛错 failStreak≥3 判死（对齐原版语义） ----
-{
-  const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
-  try {
-    const r = sseRes({ throwAfter: 0 });
+  it("背压后仍在表（未超窗）", () => {
+    expect(hub.size()).toBe(1);
+  });
+
+  it("stalled 超窗被心跳 evict", async () => {
+    await pollUntil(() => hub.size() === 0); // 心跳 evict 异步触发，轮询等回收
+    expect(hub.size()).toBe(0);
+  });
+
+  it("stalled 连接被 destroy", async () => {
+    await pollUntil(() => hub.size() === 0);
+    expect(r.state.destroyed).toBe(true);
+  });
+
+  it("evict 原因计数 stalled=1", async () => {
+    await pollUntil(() => hub.size() === 0);
+    expect(hub.evictStats().stalled).toBe(1);
+  });
+});
+
+describe("(e) 抛错 failStreak≥3 判死（对齐原版语义）", () => {
+  let hub: Hub;
+  let r: FakeSseRes & ServerResponse;
+
+  beforeEach(() => {
+    hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
+    r = sseRes({ throwAfter: 0 });
     hub.register(r);
     hub.broadcast("data: x\n\n"); // 抛错 1
-    ok(hub.size() === 1, "1 次抛错不清除（防偶发误杀）");
+  });
+  afterEach(() => hub.dispose());
+
+  it("1 次抛错不清除（防偶发误杀）", () => {
+    expect(hub.size()).toBe(1);
+  });
+
+  it("连续 3 次抛错判死 evict", () => {
     hub.broadcast("data: x\n\n"); // 抛错 2
     hub.broadcast("data: x\n\n"); // 抛错 3 → evict
-    ok(hub.size() === 0, "连续 3 次抛错判死 evict");
-    ok(r.state.destroyed === true, "判死连接被销毁");
-  } finally {
-    hub.dispose();
-  }
-}
+    expect(hub.size()).toBe(0);
+  });
 
-// ---- (f) maxAge 轮换：超 maxAgeMs 且空闲 → evict（核心新增） ----
-{
-  const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 20, maxAgeMs: 40, idleTimeoutMs: 15 });
-  try {
-    const r = sseRes();
+  it("判死连接被销毁", () => {
+    hub.broadcast("data: x\n\n");
+    hub.broadcast("data: x\n\n");
+    expect(r.state.destroyed).toBe(true);
+  });
+});
+
+describe("(f) maxAge 轮换：超 maxAgeMs 且空闲 → evict（核心新增）", () => {
+  let hub: Hub;
+  let r: FakeSseRes & ServerResponse;
+
+  beforeEach(() => {
+    hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 20, maxAgeMs: 40, idleTimeoutMs: 15 });
+    r = sseRes();
     hub.register(r);
-    await pollUntil(() => hub.size() === 0); // maxAge 心跳轮换异步触发
-    ok(hub.size() === 0, "maxAge 超限且空闲被轮换 evict");
-    ok(r.state.destroyed === true, "maxAge 轮换 destroy");
-    const stats = hub.evictStats();
-    ok(stats.maxage === 1, "evict 原因计数 maxage=1");
-  } finally {
-    hub.dispose();
-  }
-}
+  });
+  afterEach(() => hub.dispose());
 
-// ---- (g) maxAge 不误杀活跃连接（广播刷新 lastWriteAt） ----
-{
-  const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 20, maxAgeMs: 40, idleTimeoutMs: 200 });
-  try {
-    const r = sseRes();
+  it("maxAge 超限且空闲被轮换 evict", async () => {
+    await pollUntil(() => hub.size() === 0); // maxAge 心跳轮换异步触发
+    expect(hub.size()).toBe(0);
+  });
+
+  it("maxAge 轮换 destroy", async () => {
+    await pollUntil(() => hub.size() === 0);
+    expect(r.state.destroyed).toBe(true);
+  });
+
+  it("evict 原因计数 maxage=1", async () => {
+    await pollUntil(() => hub.size() === 0);
+    expect(hub.evictStats().maxage).toBe(1);
+  });
+});
+
+describe("(g) maxAge 不误杀活跃连接（广播刷新 lastWriteAt）", () => {
+  let hub: Hub;
+  let r: FakeSseRes & ServerResponse;
+
+  beforeEach(() => {
+    hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 20, maxAgeMs: 40, idleTimeoutMs: 200 });
+    r = sseRes();
     hub.register(r);
     for (let i = 0; i < 8; i += 1) hub.broadcast("data: x\n\n");
+  });
+  afterEach(() => hub.dispose());
+
+  it("活跃连接不被 maxAge 轮换（lastWriteAt 刷新）", async () => {
     // 负向断言：活跃连接不得被 maxAge 轮换（lastWriteAt 刷新）——安静期确认
     await pollUntilQuiet(() => hub.size() === 1, 130);
-    ok(hub.size() === 1, "活跃连接不被 maxAge 轮换（lastWriteAt 刷新）");
-  } finally {
-    hub.dispose();
-  }
-}
+    expect(hub.size()).toBe(1);
+  });
+});
 
-// ---- (g2) maxAge 假活动陷阱回归：仅心跳写（无业务帧）不算活动，超 maxAge 仍轮换 ----
-{
-  const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 15, maxAgeMs: 60, idleTimeoutMs: 30 });
-  try {
-    const r = sseRes();
+describe("(g2) maxAge 假活动陷阱回归：仅心跳写（无业务帧）不算活动，超 maxAge 仍轮换", () => {
+  let hub: Hub;
+  let r: FakeSseRes & ServerResponse;
+
+  beforeEach(() => {
+    hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 15, maxAgeMs: 60, idleTimeoutMs: 30 });
+    r = sseRes();
     hub.register(r);
     // 不 broadcast，仅靠心跳写（activity=false，不刷 lastWriteAt）：
     // 若心跳被误算为活动，lastWriteAt 恒新鲜 → 永不轮换（bug）。
+  });
+  afterEach(() => hub.dispose());
+
+  it("仅心跳写的静默连接超 maxAge 被轮换（心跳不算活动）", async () => {
     await pollUntil(() => hub.size() === 0); // 静默连接超 maxAge+idle 被轮换
-    ok(hub.size() === 0, "仅心跳写的静默连接超 maxAge 被轮换（心跳不算活动）");
-    ok(r.state.destroyed === true, "假活动陷阱连接被 destroy");
-    const stats = hub.evictStats();
-    ok(stats.maxage === 1, "evict 原因计数 maxage=1");
-  } finally {
-    hub.dispose();
-  }
-}
+    expect(hub.size()).toBe(0);
+  });
 
-// ---- (h) connHealth 观测字段（先量化再调参） ----
-{
-  const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
-  try {
-    const r = sseRes({ falseAfter: 0 });
+  it("假活动陷阱连接被 destroy", async () => {
+    await pollUntil(() => hub.size() === 0);
+    expect(r.state.destroyed).toBe(true);
+  });
+
+  it("evict 原因计数 maxage=1", async () => {
+    await pollUntil(() => hub.size() === 0);
+    expect(hub.evictStats().maxage).toBe(1);
+  });
+});
+
+describe("(h) connHealth 观测字段（先量化再调参）", () => {
+  let hub: Hub;
+  let r: FakeSseRes & ServerResponse;
+
+  beforeEach(() => {
+    hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
+    r = sseRes({ falseAfter: 0 });
     hub.register(r);
+  });
+  afterEach(() => hub.dispose());
+
+  it("connHealth 返回 1 条", () => {
+    expect(hub.connHealth().length).toBe(1);
+  });
+
+  it("ageMs 存在", () => {
     const health = hub.connHealth();
-    ok(health.length === 1, "connHealth 返回 1 条");
-    ok(typeof health[0].ageMs === "number" && health[0].ageMs >= 0, "ageMs 存在");
-    ok(typeof health[0].lastWriteAgoMs === "number", "lastWriteAgoMs 存在");
-    ok(health[0].stalledMs === -1, "未 stalled 时 stalledMs=-1");
-    hub.broadcast("data: x\n\n"); // write false → stalled
-    const health2 = hub.connHealth();
-    ok(health2[0].stalledMs >= 0, "stalled 后 stalledMs>=0");
-  } finally {
-    hub.dispose();
-  }
-}
+    expect(typeof health[0].ageMs === "number" && health[0].ageMs >= 0).toBeTruthy();
+  });
 
-// ---- (i) destroyed/writableEnded 兜底（preset destroyed → 广播即 evict） ----
-{
-  const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
-  try {
-    const r = sseRes({ presetDestroyed: true });
+  it("lastWriteAgoMs 存在", () => {
+    expect(typeof hub.connHealth()[0].lastWriteAgoMs).toBe("number");
+  });
+
+  it("未 stalled 时 stalledMs=-1", () => {
+    expect(hub.connHealth()[0].stalledMs).toBe(-1);
+  });
+
+  it("stalled 后 stalledMs>=0", () => {
+    hub.broadcast("data: x\n\n"); // write false → stalled
+    expect(hub.connHealth()[0].stalledMs >= 0).toBeTruthy();
+  });
+});
+
+describe("(i) destroyed/writableEnded 兜底（preset destroyed → 广播即 evict）", () => {
+  let hub: Hub;
+  let r: FakeSseRes & ServerResponse;
+
+  beforeEach(() => {
+    hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
+    r = sseRes({ presetDestroyed: true });
     hub.register(r);
-    ok(hub.size() === 1, "preset destroyed 注册后仍在表（注册路径不预判）");
+  });
+  afterEach(() => hub.dispose());
+
+  it("preset destroyed 注册后仍在表（注册路径不预判）", () => {
+    expect(hub.size()).toBe(1);
+  });
+
+  it("广播命中 destroyed 兜底分支立即 evict", () => {
     hub.broadcast("data: x\n\n"); // writeFrame 命中 destroyed 兜底 → 立即 evict
-    ok(hub.size() === 0, "广播命中 destroyed 兜底分支立即 evict");
-    ok(r.state.destroyCalls === 1, "兜底 evict 只销毁一次");
-  } finally {
-    hub.dispose();
-  }
-}
+    expect(hub.size()).toBe(0);
+  });
+
+  it("兜底 evict 只销毁一次", () => {
+    hub.broadcast("data: x\n\n");
+    expect(r.state.destroyCalls).toBe(1);
+  });
+});
 
 // ---- (j) 红测：dispose 统一停心跳 + destroy 全部连接 ----
 // 现状：dispose() 只清心跳定时器不 destroy 连接（注释/实现不符——mcp-manager
 // apply-runtime 注释承诺「hub.dispose() 统一停心跳 + destroy 全部连接」）；
 // 修复：dispose 遍历连接表全部 evict（destroy）。红测断言 dispose 后连接被销毁。
-{
-  const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
-  const r1 = sseRes();
-  const r2 = sseRes();
-  hub.register(r1);
-  hub.register(r2);
-  ok(hub.size() === 2, "注册 2 条连接");
-  hub.dispose();
-  ok(r1.state.destroyed === true, "B12：dispose 后 r1 被 destroy（现状只停心跳 → 红测）");
-  ok(r2.state.destroyed === true, "B12：dispose 后 r2 被 destroy（现状只停心跳 → 红测）");
-  ok(hub.size() === 0, "B12：dispose 后连接表清空");
-}
+describe("(j) 红测：dispose 统一停心跳 + destroy 全部连接", () => {
+  let hub: Hub;
+  let r1: FakeSseRes & ServerResponse;
+  let r2: FakeSseRes & ServerResponse;
 
-console.log(`  ok   unit-sse-hub: 共享 SSE 枢纽（#515 主动回收）${pass} 断言通过`);
-if (fail > 0) {
-  console.log(`  FAIL unit-sse-hub: ${fail} 断言失败`);
-  process.exit(1);
-}
+  beforeEach(() => {
+    hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
+    r1 = sseRes();
+    r2 = sseRes();
+    hub.register(r1);
+    hub.register(r2);
+  });
+  afterEach(() => hub.dispose());
+
+  it("注册 2 条连接", () => {
+    expect(hub.size()).toBe(2);
+  });
+
+  it("B12：dispose 后 r1 被 destroy（现状只停心跳 → 红测）", () => {
+    hub.dispose();
+    expect(r1.state.destroyed).toBe(true);
+  });
+
+  it("B12：dispose 后 r2 被 destroy（现状只停心跳 → 红测）", () => {
+    hub.dispose();
+    expect(r2.state.destroyed).toBe(true);
+  });
+
+  it("B12：dispose 后连接表清空", () => {
+    hub.dispose();
+    expect(hub.size()).toBe(0);
+  });
+});
