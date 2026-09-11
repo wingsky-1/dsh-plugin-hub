@@ -735,6 +735,10 @@ describe("wsBridgeEnabled 三态路径选择（issue #552 解耦）", () => {
       });
       const { httpPort } = await proxy.listen();
       got = await openAndEcho(httpPort, "/api/remote.mux");
+      // 透传 socket 的销毁由 proxy 侧异步感知，openAndEcho 内的固定 sleep(100) 在高负载下
+      // 不足（Stryker 沙箱与多文件并发跑均实测偶发）。改为等到计数真正增长再取快照；
+      // 若 socket 始终没销毁，waitFor 超时后快照仍为 0、下面断言照旧判红——是去抖，不是放宽。
+      await waitFor(() => proxy.connStats().wsPassthroughDestroyed >= 1, 5000);
       cs = proxy.connStats();
       await proxy.close(); u.wss.close(); u.upServer.close();
     }, 30000);
@@ -766,6 +770,7 @@ describe("wsBridgeEnabled 三态路径选择（issue #552 解耦）", () => {
       });
       const { httpPort } = await proxy.listen();
       got = await openAndEcho(httpPort, "/api/other");
+      await waitFor(() => proxy.connStats().wsBridgeClosed >= 1, 5000);
       cs = proxy.connStats();
       await proxy.close(); u.wss.close(); u.upServer.close();
     }, 30000);
@@ -796,6 +801,10 @@ describe("wsBridgeEnabled 三态路径选择（issue #552 解耦）", () => {
       const { httpPort } = await proxy.listen();
       await openAndEcho(httpPort, "/api/remote.mux");   // 命中 → 桥接
       await openAndEcho(httpPort, "/api/other");        // 未命中 → 透传
+      await waitFor(
+        () => proxy.connStats().wsBridgeClosed >= 1 && proxy.connStats().wsPassthroughDestroyed >= 1,
+        5000,
+      );
       cs = proxy.connStats();
       await proxy.close(); u.wss.close(); u.upServer.close();
     }, 30000);
