@@ -25,6 +25,7 @@ import { tmpdir } from 'node:os';
 import {
   BASELINE_FILE_RE,
   GH_API_PER_PAGE,
+  classifyRemoteProbe,
   expectedBaselineFiles,
   mergeArtifactPage,
   mutationArtifacts,
@@ -163,14 +164,21 @@ async function main() {
     // 5. 先恢复孤立分支的现存基线全量快照
     console.log(`[overlay-baseline] 恢复孤立分支 ${BRANCH} 现存基线...`);
     try {
-      // 先确认远端 ref 是否存在：`git fetch` 失败既可能是「分支尚不存在」（首夜，正常降级），
-      // 也可能是网络/权限瞬时故障——后者若被当成空分支，会把沿用中的基线整批丢掉
-      // （实测 2026-09-11 05:18 的 overlay 就出现过一次，日志显示「尚不可达或为空」）。
-      let remoteRefExists = false;
+      // 与 orphan-baseline.mjs 共用**同一个探针与同一套分类**（判据只允许一处实现）：
+      // `ls-remote --exit-code` 的 0 / 2 / 其它 分别是「广告里有这条 ref」/「广告里没有」/「环境故障」。
+      // 这里原本用 `gh api .../git/ref/heads/<branch>`，其失败被裸 catch 吞成「首夜」——
+      // 正是 2026-09-11 05:18 事故的原始形态；#716 只修了「探针成功但 fetch 失败」那一半。
+      let probeStatus = 'unreachable';
       try {
-        remoteRefExists = runGh(['api', `repos/${repo}/git/ref/heads/${BRANCH}`]).length > 0;
-      } catch {
-        remoteRefExists = false;
+        runCmd('git', ['ls-remote', '--exit-code', '--heads', 'origin', `refs/heads/${BRANCH}`], {
+          env: { GIT_TERMINAL_PROMPT: '0' },
+        });
+        probeStatus = 'present';
+      } catch (probeErr) {
+        probeStatus = classifyRemoteProbe({
+          ok: false,
+          code: typeof probeErr.status === 'number' ? probeErr.status : null,
+        });
       }
       runCmd('git', ['fetch', '--depth=1', 'origin', `refs/heads/${BRANCH}`]);
       const treeOutput = runCmd('git', ['ls-tree', '-r', 'FETCH_HEAD']);
@@ -184,8 +192,11 @@ async function main() {
         }
       }
     } catch (err) {
-      if (remoteRefExists) {
-        console.error(`[overlay-baseline] 孤立分支 ${BRANCH} 存在但恢复失败（fail-loud，拒绝以空快照覆盖）: ${err.message}`);
+      // 只有「广告里确实没有这条 ref」才是首夜；探针没能给出否定结论时一律拒绝以空快照覆盖。
+      if (probeStatus !== 'absent') {
+        console.error(
+          `[overlay-baseline] 无法确认孤立分支 ${BRANCH} 是否存在（探针结果 ${probeStatus}），拒绝以空快照覆盖（fail-loud）: ${err.message}`,
+        );
         process.exit(1);
       }
       console.log(`[overlay-baseline] 孤立分支 ${BRANCH} 尚不存在（首夜），基于当前产物构建全新快照`);

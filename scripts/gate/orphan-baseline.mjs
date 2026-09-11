@@ -14,10 +14,11 @@
  *     - 强制推送到 refs/heads/baseline/mutation
  *
  *   node scripts/gate/orphan-baseline.mjs restore
- *     - 先 ls-remote 判「远端可不可达」与「ref 在不在」，再浅拉取（fetch --depth=1，带 3 次退避重试）
- *     - 将 incremental-*.json 与 manifest.json 恢复到 coverage/mutation/
- *     - 仅在「远端可达且 ref 不存在」时输出 notice 并以退出码 0 降级全量（首夜）；
- *       远端不可达、或 ref 存在但拉取失败，一律 fail-loud 退出（拒绝以空基线继续，见 #718）
+ *     - 探针 `ls-remote --exit-code` 判三态：广告里有该 ref / 广告里没有 / 环境故障（每态均带退避重试）
+ *     - 仅在「广告里没有该 ref」时输出 notice 并以退出码 0 降级全量（首夜）
+ *     - 远端不可达、或 ref 存在但拉取失败、或树里有 blob 却无任何基线文件，一律 fail-loud 退出
+ *       （拒绝以空基线继续——写路径上这意味着删段，见 #718）
+ *     - 取到后浅拉取（fetch --depth=1）并把 incremental-*.json 与 manifest.json 恢复到 coverage/mutation/
  */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -31,12 +32,15 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 
-import { decideRestoreOutcome } from './baseline-archive.mjs';
+import { classifyRemoteProbe, decideRestoreOutcome } from './baseline-archive.mjs';
 
 const action = process.argv[2];
 const BRANCH = 'baseline/mutation';
 const TARGET_DIR = join(process.cwd(), 'coverage', 'mutation');
 const MAX_BUFFER = 64 * 1024 * 1024; // 64MB，防止巨型基线 JSON 突破 Node 默认 1MB maxBuffer
+const PROBE_ATTEMPTS = 3;
+// 环境故障（远端不可达）可能瞬时，按与 fetch 同规格的退避重试；测试用 0 秒避免拖慢套件。
+const RETRY_DELAY_MS = Number(process.env.ORPHAN_BASELINE_RETRY_DELAY_MS ?? 2000);
 
 function runGit(args, options = {}) {
   const { input, env, ignoreError = false } = options;
@@ -52,6 +56,29 @@ function runGit(args, options = {}) {
     if (ignoreError) return null;
     const stderr = err.stderr ? String(err.stderr).trim() : '';
     throw new Error(`git ${args.join(' ')} failed: ${stderr || err.message}`);
+  }
+}
+
+/**
+ * 需要**退出码**的 git 调用：探针靠 exit 2 区分「无匹配 ref」与「环境故障」，
+ * 而 `ignoreError` 会把两者都压成 null，丢掉这个信息。
+ */
+function runGitProbe(args) {
+  try {
+    const stdout = execFileSync('git', args, {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      maxBuffer: MAX_BUFFER,
+      // 无 TTY 时凭据缺失会让 git 挂起等待输入，显式关掉交互提示。
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+    }).trim();
+    return { ok: true, code: 0, stdout };
+  } catch (err) {
+    return {
+      ok: false,
+      code: typeof err.status === 'number' ? err.status : null,
+      stdout: err.stdout ? String(err.stdout).trim() : '',
+    };
   }
 }
 
@@ -128,37 +155,44 @@ if (action === 'push') {
 } else if (action === 'restore') {
   mkdirSync(TARGET_DIR, { recursive: true });
 
-  // 先问「远端有没有这条 ref」，再 decide 怎么处置。判据不能只看 fetch 成不成功：
-  // 「取不到」与「不存在」是两件事，前者若被当成空分支，会把沿用中的基线整批丢掉。
-  const lsRemote = runGit(['ls-remote', '--heads', 'origin', `refs/heads/${BRANCH}`], {
-    ignoreError: true,
-  });
-
-  // 带有退避重试的 fetch 机制（抵御 Runner 网络突发抖动）
-  let fetched = false;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    const res = runGit(
-      ['fetch', '--depth=1', 'origin', `refs/heads/${BRANCH}`],
-      { ignoreError: true },
-    );
-    if (res !== null) {
-      fetched = true;
-      break;
-    }
-    if (attempt < 3) {
-      console.warn(`[orphan-baseline] Fetch 孤立分支失败，第 ${attempt}/3 次重试（等待 2s）...`);
-      sleep(2000);
+  // 探针：`--exit-code` 让 git 自己给出三态（0=广告里有这条 ref / 2=广告里没有 / 其它=环境故障）。
+  // 不能用「stdout 是否为空」反推「ref 不存在」——服务端隐藏 ref 时两者同形，见 decideRestoreOutcome。
+  // 环境故障可能瞬时，探针必须和 fetch 一样带退避重试：探针比它保护的操作更脆就本末倒置了。
+  let probeStatus = 'unreachable';
+  for (let attempt = 1; attempt <= PROBE_ATTEMPTS; attempt++) {
+    const res = runGitProbe(['ls-remote', '--exit-code', '--heads', 'origin', `refs/heads/${BRANCH}`]);
+    probeStatus = classifyRemoteProbe({ ok: res.ok, code: res.code });
+    if (probeStatus !== 'unreachable') break;
+    if (attempt < PROBE_ATTEMPTS) {
+      console.warn(`[orphan-baseline] ls-remote 探测基线分支失败，第 ${attempt}/${PROBE_ATTEMPTS} 次重试...`);
+      sleep(RETRY_DELAY_MS);
     }
   }
 
-  const outcome = decideRestoreOutcome({
-    remoteReachable: lsRemote !== null,
-    refExists: typeof lsRemote === 'string' && lsRemote.length > 0,
-    fetchOk: fetched,
-  });
+  // ref 不在广告里就是首夜，直接降级——不必为一个取不到的 ref 白跑一轮 fetch 重试。
+  // ref 存在才拉取；拉取失败说明基线确实在、只是取不到，交由 decideRestoreOutcome 判 fail。
+  let fetched = false;
+  if (probeStatus === 'present') {
+    for (let attempt = 1; attempt <= PROBE_ATTEMPTS; attempt++) {
+      const res = runGit(
+        ['fetch', '--depth=1', 'origin', `refs/heads/${BRANCH}`],
+        { ignoreError: true },
+      );
+      if (res !== null) {
+        fetched = true;
+        break;
+      }
+      if (attempt < PROBE_ATTEMPTS) {
+        console.warn(`[orphan-baseline] Fetch 孤立分支失败，第 ${attempt}/${PROBE_ATTEMPTS} 次重试...`);
+        sleep(RETRY_DELAY_MS);
+      }
+    }
+  }
+
+  const outcome = decideRestoreOutcome({ probeStatus, fetchOk: fetched });
 
   if (outcome.action === 'fail') {
-    console.error(`[orphan-baseline] ${outcome.reason}（fail-loud）`);
+    console.error(`[orphan-baseline] ${outcome.reason}（fail-loud，本次未执行变异测试）`);
     process.exit(1);
   }
   if (outcome.action === 'bootstrap') {
@@ -189,7 +223,12 @@ if (action === 'push') {
   if (restored > 0) {
     console.log(`[orphan-baseline] 成功恢复 ${restored} 份基线文件至 ${TARGET_DIR}`);
   } else {
-    console.log('::notice::孤立分支中未发现基线文件，本次安全降级为全量变异');
+    // 树里有 blob 却一个都不符合基线命名 = 归档形状漂移。写路径若继续，会用本班产物覆盖这些
+    // 未知文件，所以按 fail-loud 处理——与「树为空」（真·空归档，首夜语义）区分开。
+    console.error(
+      `[orphan-baseline] 远端树含 ${lines.length} 个条目但无任何基线文件（命名漂移？），拒绝继续（fail-loud）`,
+    );
+    process.exit(1);
   }
 
 } else {

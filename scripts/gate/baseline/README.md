@@ -32,3 +32,28 @@
 - **本地调试**：
   - 本地若需要远端基线辅助增量测试，可执行：
     `node scripts/gate/orphan-baseline.mjs restore`
+  - 注意：本地若没有可用的 `origin`（或远端不可达），该命令会**非零退出**，不再静默降级（见下节）。
+
+### 恢复与查询失败的三态语义（#718）
+
+`orphan-baseline.mjs restore` 与 `overlay-baseline.mjs` 的远端探针**共用同一判据**
+（`baseline-archive.mjs` 的 `classifyRemoteProbe` / `decideRestoreOutcome`），用
+`git ls-remote --exit-code` 的**退出码**分三态，不再用「stdout 是否为空」反推：
+
+| 探针结果 | 含义 | 动作 |
+|---|---|---|
+| `present`（exit 0） | 本次广告里有 `baseline/mutation` | 拉取；拉取失败 → **fail-loud** |
+| `absent`（exit 2） | 本次广告里没有该 ref | **唯一**允许降级为全量的情形（首夜，`::notice::`） |
+| `unreachable`（其它/无退出码） | 远端不可达 / 权限故障 / URL 不可解析 | **fail-loud**（无法判定基线是否存在） |
+
+另有两条同类收紧：远端树里有 blob 却**无任何基线文件**（命名漂移）在写路径上判 fail-loud
+（继续会用本班产物覆盖这些未知文件）；overlay 的「查询关联 PR」「查询 Workflow Runs」
+两处失败也改为 fail-loud——**「查不了」与「查不到（空数组）」是两件事**，后者仍是正常 no-op。
+
+**已知边界（不要误读为强保证）**：`absent` 只能证明「本次广告里没有这条 ref」，**不能**证明
+服务端上不存在——服务端可用 `uploadpack.hideRefs` 隐藏某条 ref，此时与真·首夜完全同形。
+写路径的真正保障不在探针，而在**推送侧不得删段**（见 #718 方案评论）。
+
+> 注：`.github/workflows/ci.yml`（「首夜/基线缺失时天然降级为全量变异，门禁语义不变仅变慢」等）
+> 与 `observe-incremental.yml` 的对应注释**尚未同步**。`.github/` 属红线，须在 issue 内取得
+> 维护者 `approved` 后单独修改；在同步之前，以本节与脚本头部注释为准。

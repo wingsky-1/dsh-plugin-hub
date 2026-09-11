@@ -77,25 +77,45 @@ export function reconcileArchive({ expected, overlaid, carriedForward }) {
 }
 
 /**
- * 恢复远端基线树的三态判定：`restore` / `bootstrap` / `fail`。
+ * 远端 ref 探针的三态分类（唯一判据，两个入口共用）。
+ *
+ * 用 `git ls-remote --exit-code --heads origin <ref>` 的退出码，而不是「stdout 是否为空」：
+ *   · 0 = 本次广告里**有**这条 ref；
+ *   · 2 = 本次广告里**没有**这条 ref（git 自己提供的语义，`--exit-code` 专为此设）；
+ *   · 其它（128 等）= 远端不可达 / 权限故障 / URL 不可解析 —— 属**环境故障**，可能瞬时，需重试。
+ * 「空 stdout」在这里不再承担判据职责，避免与「远端只广告了部分 ref」混淆。
+ */
+export function classifyRemoteProbe({ ok, code }) {
+  if (ok) return 'present'
+  if (code === 2) return 'absent'
+  return 'unreachable'
+}
+
+/**
+ * 恢复远端基线树的判定：`restore` / `bootstrap` / `fail`。
  *
  * 为什么不能只看「fetch 成不成功」：fetch 失败有两种完全相反的含义——
- *   · 远端可达但 ref 不存在 = 首夜，没有基线可恢复，降级为全量变异是正常的；
- *   · 远端不可达 / 权限故障 = 基线**可能存在但取不到**，此时若当成空分支继续，
- *     本班产物会被当成"全部内容"推回去，把沿用中的基线整批删掉。
- * 2026-09-11 05:18 的 overlay 就出现过后者（分支明明存在，日志却是"尚不可达或为空"），
- * 修复落在 overlay-baseline.mjs 一侧（#716）；本函数让 orphan-baseline.mjs 的 restore
- * 走同一判据，避免同一操作两份实现长期分叉。
+ *   · `absent` = 远端可达但这条 ref 不在广告里，没有基线可恢复，降级为全量变异是正常的（首夜）；
+ *   · `present` / `unreachable` = 基线**可能存在但取不到**，此时若当成空分支继续，本班产物会被
+ *     当成「全部内容」推回去，把沿用中的基线整批删掉。
+ * 2026-09-11 05:18 的 overlay 就出现过后者（分支明明存在，日志却是「尚不可达或为空」），
+ * 修复先落在 overlay-baseline.mjs（#716）；本函数让 orphan-baseline.mjs 走同一判据，
+ * 避免同一操作两份实现长期分叉。
  *
- * 判据因此是「远端可不可达 + ref 在不在」，而不是「fetch 有没有报错」。
+ * 已知边界（必须诚实记录）：`absent` 只能证明「本次广告里没有这条 ref」，**不能**证明
+ * 「服务端上不存在」——服务端可用 `uploadpack.hideRefs` 隐藏某条 ref，此时探针与真·首夜
+ * 完全同形。因此写路径的真正保障不在探针，而在**推送侧不得删段**（见 #718 方案评论）。
  */
-export function decideRestoreOutcome({ remoteReachable, refExists, fetchOk }) {
+export function decideRestoreOutcome({ probeStatus, fetchOk }) {
   if (fetchOk) return { action: 'restore' }
-  if (!remoteReachable) {
-    return { action: 'fail', reason: '远端不可达，无法判定是否存在基线（拒绝以空基线继续）' }
-  }
-  if (refExists) {
+  if (probeStatus === 'present') {
     return { action: 'fail', reason: '远端基线分支存在但拉取失败（拒绝以空基线覆盖）' }
   }
-  return { action: 'bootstrap', reason: '远端基线分支尚不存在，本次安全降级为全量变异' }
+  if (probeStatus === 'unreachable') {
+    return { action: 'fail', reason: '远端不可达，无法判定是否存在基线（拒绝以空基线继续）' }
+  }
+  if (probeStatus === 'absent') {
+    return { action: 'bootstrap', reason: '远端基线分支尚不存在，本次安全降级为全量变异' }
+  }
+  return { action: 'fail', reason: `未知的探针状态 ${String(probeStatus)}（拒绝以空基线继续）` }
 }

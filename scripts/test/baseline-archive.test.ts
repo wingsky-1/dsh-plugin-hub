@@ -21,6 +21,7 @@ import { join } from 'node:path'
 import {
   BASELINE_FILE_RE,
   GH_API_PER_PAGE,
+  classifyRemoteProbe,
   decideRestoreOutcome,
   expectedBaselineFiles,
   mergeArtifactPage,
@@ -178,23 +179,37 @@ test('脚本静态检查：两处 GitHub API 调用都显式带上分页参数',
   }
 })
 
+test('#718: 远端探针三态 —— 用退出码而不是「stdout 是否为空」', () => {
+  // git ls-remote --exit-code：0=广告里有该 ref；2=广告里没有；其它(128 等)=环境故障。
+  assert.equal(classifyRemoteProbe({ ok: true, code: 0 }), 'present')
+  assert.equal(classifyRemoteProbe({ ok: false, code: 2 }), 'absent')
+  assert.equal(classifyRemoteProbe({ ok: false, code: 128 }), 'unreachable')
+  // 拿不到退出码（信号终止等）一律按环境故障，不得当成「不存在」。
+  assert.equal(classifyRemoteProbe({ ok: false, code: null }), 'unreachable')
+})
+
 test('#718: restore 三态判定 —— 「取不到」与「不存在」必须走不同分支', () => {
-  // 拿到就把远端树恢复回来。
-  assert.equal(decideRestoreOutcome({ remoteReachable: true, refExists: true, fetchOk: true }).action, 'restore')
-  assert.equal(decideRestoreOutcome({ remoteReachable: true, refExists: false, fetchOk: true }).action, 'restore')
+  // 拿到就把远端树恢复回来（探针状态不再重要）。
+  assert.equal(decideRestoreOutcome({ probeStatus: 'present', fetchOk: true }).action, 'restore')
+  assert.equal(decideRestoreOutcome({ probeStatus: 'absent', fetchOk: true }).action, 'restore')
 
-  // 远端不可达 = 无法判定有没有基线 → fail-loud（这正是 2026-09-11 05:18 的形态）。
-  const unreachable = decideRestoreOutcome({ remoteReachable: false, refExists: false, fetchOk: false })
-  assert.equal(unreachable.action, 'fail', '远端不可达不得降级为首夜')
-  assert.ok(!unreachable.reason.includes('安全降级'), 'fail 分支不得复用降级文案')
-
-  // ref 存在但拉取失败 = 基线确实在、只是取不到 → fail-loud，绝不能被当成空分支。
-  const fetchFailed = decideRestoreOutcome({ remoteReachable: true, refExists: true, fetchOk: false })
-  assert.equal(fetchFailed.action, 'fail', 'ref 存在但拉取失败必须 fail-loud')
-  assert.notEqual(fetchFailed.reason, unreachable.reason, '两种 fail 原因应可区分，便于定位')
-
-  // 只有「远端可达且 ref 不存在」才是真正的首夜，允许降级为全量变异。
-  const bootstrap = decideRestoreOutcome({ remoteReachable: true, refExists: false, fetchOk: false })
+  // 探针说「广告里没有」才是首夜，允许降级为全量变异。
+  const bootstrap = decideRestoreOutcome({ probeStatus: 'absent', fetchOk: false })
   assert.equal(bootstrap.action, 'bootstrap')
   assert.ok(bootstrap.reason.includes('安全降级为全量变异'), '首夜文案保持既有约定')
+
+  // ref 确实在、只是取不到 → 数据故障，任何调用方都不得放宽（写路径上意味着删段）。
+  const fetchFailed = decideRestoreOutcome({ probeStatus: 'present', fetchOk: false })
+  assert.equal(fetchFailed.action, 'fail', 'ref 存在但拉取失败必须 fail-loud')
+
+  // 环境故障 → 无法判定，必须 fail-loud；这正是 2026-09-11 05:18 的形态。
+  const unreachable = decideRestoreOutcome({ probeStatus: 'unreachable', fetchOk: false })
+  assert.equal(unreachable.action, 'fail', '远端不可达不得降级为首夜')
+  assert.notEqual(fetchFailed.reason, unreachable.reason, '两种 fail 原因应可区分，便于定位')
+  for (const r of [fetchFailed, unreachable]) {
+    assert.ok(!r.reason.includes('安全降级'), 'fail 分支不得复用降级文案')
+  }
+
+  // 未知状态属于编程错误：宁可判红，也不能默默降级。
+  assert.equal(decideRestoreOutcome({ probeStatus: 'bogus', fetchOk: false }).action, 'fail')
 })
