@@ -11,7 +11,8 @@
  *   - 叶子粒度：同样三域「平铺」与「移入 src/server/」必须报出**相同**的模块数与
  *     值边数（旧实现下后者退化为 1 目录 / 0 值边但仍 PASS）；
  *   - deps.ts 判据：跨模块引用目标 deps.ts 放行、直引实现文件判红；
- *   - 单调基线：写入基线后人为把某计数调高必须 exit 1；
+ *   - 死声明判据（#733 M0a）：值面判死、类型面豁免；deps.ts 自身含值 import 硬判红；
+ *   - 单调基线：写入基线后人为把某计数调高必须 exit 1（#733 M0b 起分结构型 / 质量型）；
  *   - 全覆盖断言：新增未被 mutate/excludes 覆盖的 src 文件必须 exit 1。
  *
  * fixture 经 VERIFY_DIR_IMPORTS_ROOT 指向 mkdtemp 隔离目录（基线路径随根推导），
@@ -160,30 +161,81 @@ test('单调基线：写入基线后 PASS，人为把跨域引用计数调高即
   }
 })
 
-test('--graph 死声明：deps.ts 声明而本模块无事实边 → 报出，有事实边 → 不报', () => {
+test('--graph 死声明（#733 M0a）：deps.ts 只 import type 时不得报死声明（类型面豁免）', () => {
+  // 语义变化（相对 S0 原断言「deps.ts 声明而本模块无事实边 → 报出」）：原实现把
+  // deps.ts 的**类型边**也计入意图图，故该形态报 1 条死声明。M0a 改「值面判死、
+  // 类型面豁免」后恒为 0 条——修正目的即此：deps.ts 一旦落地（M1 的 F1 / #690 P1），
+  // 跨域类型引用会集中进 deps.ts，实现文件上的事实边随之消失，旧口径会把真声明
+  // 报成假死声明（已定位实例：sdk → stores 的唯一来源是 sdk/interface.ts 的
+  // import type { HistoryStore }，迁入 deps.ts 后 actual 变空）。
+  const root = makeFixtureRoot({
+    [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
+    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
+    [`${SRC}/b/impl.ts`]: 'export const B = 2;\n',
+    [`${SRC}/b/deps.ts`]: 'import type { A } from "../a/interface.ts";\nexport type BDep = A;\n',
+  })
+  try {
+    const { status, out } = runOn(root, ['--graph'])
+    assert.equal(status, 0, `类型面声明豁免后应 PASS，实际 ${status}：\n${out}`)
+    assert.match(out, /死声明（意图 - 事实，只计 deps\.ts 的值声明）：0 条/, `类型边不得报死声明：\n${out}`)
+    assert.match(out, /deps\.ts 值依赖声明（声明面混入值 import，硬判红）：0 条/, `类型边不得报值依赖：\n${out}`)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('--graph 死声明（#733 M0a）：值面判死——deps.ts 值边无佐证 → 报出，有佐证 → 不报', () => {
   const base = {
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
     [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
     [`${SRC}/b/impl.ts`]: 'export const B = 2;\n',
-    [`${SRC}/b/deps.ts`]: 'export type { A } from "../a/interface.ts";\n',
+    [`${SRC}/b/deps.ts`]: 'import { A } from "../a/interface.ts";\nexport const AFromA = A;\n',
   }
   const dead = makeFixtureRoot(base)
+  // 有事实边：佐证来自**非 deps.ts** 的本模块实现文件（deps.ts 自身不自证）。
   const alive = makeFixtureRoot({
     ...base,
     [`${SRC}/b/impl.ts`]: 'import { A } from "../a/interface.ts";\nexport const B = A;\n',
   })
   try {
     const d = runOn(dead, ['--graph'])
-    assert.equal(d.status, 0, `死声明 S0 只报告不判红，应 PASS：\n${d.out}`)
-    assert.match(d.out, /死声明（意图 - 事实）：1 条/, `声明无事实支撑应报死声明：\n${d.out}`)
-    assert.match(d.out, /b\/deps\.ts → a（意图有而事实无）/, `应点名死声明来源与目标：\n${d.out}`)
+    assert.match(d.out, /死声明（意图 - 事实，只计 deps\.ts 的值声明）：1 条/, `值声明无事实支撑应报死声明：\n${d.out}`)
+    assert.match(d.out, /b\/deps\.ts → a（值声明有而事实无）/, `应点名死声明来源与目标：\n${d.out}`)
     const a = runOn(alive, ['--graph'])
-    assert.equal(a.status, 0, `无误报时应 PASS：\n${a.out}`)
-    assert.match(a.out, /死声明（意图 - 事实）：0 条/, `有事实边时不得误报死声明：\n${a.out}`)
+    assert.match(a.out, /死声明（意图 - 事实，只计 deps\.ts 的值声明）：0 条/, `有事实边时不得误报死声明：\n${a.out}`)
   } finally {
     rmSync(dead, { recursive: true, force: true })
     rmSync(alive, { recursive: true, force: true })
+  }
+})
+
+test('deps.ts 值依赖判红（#733 M0a）：声明面混入值 import → exit 1 且提示清晰', () => {
+  const crossModule = makeFixtureRoot({
+    [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
+    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
+    [`${SRC}/b/impl.ts`]: 'export const B = 2;\n',
+    [`${SRC}/b/deps.ts`]: 'import { A } from "../a/interface.ts";\nexport type BDep = typeof A;\n',
+  })
+  // 同模块值 import 同样是「声明面混入值依赖」：deps.ts 只能声明形状，不得参与运行时。
+  const sameModule = makeFixtureRoot({
+    [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
+    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/deps.ts`]: 'import { A } from "./impl.ts";\nexport type ADep = typeof A;\n',
+  })
+  try {
+    const c = runOn(crossModule)
+    assert.equal(c.status, 1, `跨模块值 import 应硬判红，实际 ${c.status}：\n${c.out}`)
+    assert.match(c.out, /b\/deps\.ts 出现值 import "\.\.\/a\/interface\.ts"/, `应点名文件与 spec：\n${c.out}`)
+    assert.match(c.out, /deps\.ts 只能声明类型依赖/, `应给出修法提示：\n${c.out}`)
+    const s = runOn(sameModule)
+    assert.equal(s.status, 1, `同模块值 import 同样应判红，实际 ${s.status}：\n${s.out}`)
+    assert.match(s.out, /a\/deps\.ts 出现值 import "\.\/impl\.ts"/, `应点名同模块值 import：\n${s.out}`)
+  } finally {
+    rmSync(crossModule, { recursive: true, force: true })
+    rmSync(sameModule, { recursive: true, force: true })
   }
 })
 

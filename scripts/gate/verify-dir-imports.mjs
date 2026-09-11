@@ -35,6 +35,13 @@
  *     `gen-stryker-conf --check` 只比对「磁盘配置 ↔ 拓扑派生」，不会因新增源文件
  *     而变红，故新增未被度量覆盖的源文件必须由本断言兜住（存量登记在基线里）。
  *
+ * #733 M0 修正：
+ *   - **死声明口径改「值面判死、类型面豁免」**（M0a）：`deps.ts` 的类型边不进死声明
+ *     计算（类型声明本身即完整性），值边必须由本模块非 deps.ts 文件佐证；`deps.ts`
+ *     自身出现值 import 单独硬判红。
+ *   - **计数拆「结构型 / 质量型」**（M0b）：结构型随新增文件/目录合法上升，
+ *     `--write-baseline` 只更新结构型；质量型不得被自动放宽（保持旧基线值），上升仍判红。
+ *
  * 豁免：
  *   - `src/client/`（index.ts 为 build-client 契约锚点）：from 侧完全豁免；
  *     target 侧同样不入模块表与依赖图。
@@ -456,15 +463,27 @@ function analyzePackage(pkgName, topology) {
 
   // 死声明（意图 - 事实）：deps.ts 声明依赖某模块，而本模块 deps.ts **之外**的
   // 实现/门面文件并无对应事实边。deps.ts 自身的边属意图声明，不能自证为事实。
-  // S0 时 deps.ts 尚未落地，故一般为空；机制先建好，S5 落地后即自动生效。
+  //
+  // 口径（#733 M0a）：**值面判死、类型面豁免**。
+  //   - 类型边（import type / export type）是「本域对上依赖的形状声明」，声明本身
+  //     即完整性（供意图图对照），不构成可被判死的依赖承诺——跨域类型引用集中进
+  //     deps.ts 后事实边从实现文件消失，按旧口径会报假死声明（sdk → stores 的唯一
+  //     来源是 interface.ts 的 import type，迁入 deps.ts 后 actual 变空即误报）。
+  //   - 值边是「本域真的要取用的运行时能力」，必须由本模块非 deps.ts 文件佐证。
+  //   - 「改覆盖式」（把 deps.ts 自身的边并入 actual）会让 intended ⊆ actual 恒成立、
+  //     指标恒 0——空判，明确不采用。
   const deadDeclarations = []
+  const depsValueImports = []
   for (const [modDir, modId] of modules) {
     const depsFile = join(modDir, 'deps.ts')
     if (!existsSync(depsFile)) continue
     const intended = new Set()
     for (const r of refs) {
       if (r.fromFile !== depsFile) continue
+      // 声明面混入值依赖：不论目标模块（含同模块与 src 根），一律单独判红。
+      if (!r.isType) depsValueImports.push(r)
       if (r.toModule === null || r.toModule === modId) continue
+      if (r.isType) continue // 类型面豁免：声明即完整性，不参与死声明计算
       intended.add(r.toModule)
     }
     const actual = new Set()
@@ -474,7 +493,7 @@ function analyzePackage(pkgName, topology) {
       actual.add(r.toModule)
     }
     for (const target of intended) {
-      if (!actual.has(target)) deadDeclarations.push(`${modId}/deps.ts → ${target}（意图有而事实无）`)
+      if (!actual.has(target)) deadDeclarations.push(`${modId}/deps.ts → ${target}（值声明有而事实无）`)
     }
   }
 
@@ -504,6 +523,7 @@ function analyzePackage(pkgName, topology) {
     graphs: { topValueEdges, leafValueEdges, fileValueEdges },
     cycles: { top: topCycles, leaf: leafCycles, file: fileCycles },
     deadDeclarations,
+    depsValueImports,
     // 覆盖断言可判定性：包未登记拓扑时 uncoveredSrcFiles 恒为空，若不显式区分，
     // 「从拓扑里删掉一个包」就成了让覆盖断言消失的绕过路径（已复现的假绿向量）。
     topologyRegistered: specs !== null,
@@ -634,7 +654,7 @@ function renderZones(analysis) {
 
 /** 渲染 --graph 段：依赖矩阵 + 扇入扇出 + 模块级/文件级值环 + 死声明。 */
 function renderGraph(analysis) {
-  const { package: pkgName, moduleIds, graphs, cycles, deadDeclarations, refs } = analysis
+  const { package: pkgName, moduleIds, graphs, cycles, deadDeclarations, depsValueImports, refs } = analysis
   const lines = [`graph ${pkgName}（叶子粒度依赖图）`]
   const cellType = (from, to) => {
     const hasV = (graphs.leafValueEdges.get(from) ?? new Set()).has(to)
@@ -670,9 +690,11 @@ function renderGraph(analysis) {
   for (const c of cycles.leaf.values()) lines.push(`  ${c.join(' → ')}`)
   lines.push(`文件级值环（门禁口径，按节点集合去重的环集合数）：${cycles.file.size} 个`)
   for (const c of cycles.file.values()) lines.push(`  ${c.join(' → ')}`)
-  lines.push(`死声明（意图 - 事实）：${deadDeclarations.length} 条`)
+  lines.push(`死声明（意图 - 事实，只计 deps.ts 的值声明）：${deadDeclarations.length} 条`)
   for (const d of deadDeclarations) lines.push(`  ${d}`)
-  lines.push('（意图图 = 各模块 deps.ts；S0 阶段尚未落地，故死声明为空属预期）')
+  lines.push(`deps.ts 值依赖声明（声明面混入值 import，硬判红）：${depsValueImports.length} 条`)
+  for (const r of depsValueImports) lines.push(`  ${rel(analysis.srcDir, r.fromFile)} → import "${r.spec}"`)
+  lines.push('（意图图 = 各模块 deps.ts；类型边 import type/export type 是声明即完整性，豁免死声明判定）')
   return lines
 }
 
@@ -810,6 +832,15 @@ for (const analysis of analyses) {
   const { package: pkgName, metrics } = analysis
   const state = baseline === null ? { mode: 'absent', rises: [] } : compareWithBaseline(analysis, baseline)
   registerRuleViolations(analysis, state)
+  // deps.ts 是**依赖声明面**（本域对上依赖的形状），只能 import type / export type：
+  // 出现值 import 即声明面混入了运行时依赖，跨域运行时能力必须经组合根注入
+  // （ARCHITECTURE-METHOD §2「跨域运行时能力一律经 deps.ts 注入」），故硬判红且
+  // 不受单调基线与 soft 模式影响（有基线也红——它不是存量计数而是结构缺陷）。
+  for (const r of analysis.depsValueImports) {
+    failures.push(
+      `[${pkgName}] ${rel(analysis.srcDir, r.fromFile)} 出现值 import "${r.spec}"（deps.ts 只能声明类型依赖：改 import type / export type，运行时能力由组合根注入）`,
+    )
+  }
   if (!analysis.topologyRegistered && topology !== null) {
     failures.push(
       `[${pkgName}] 未在 scripts/data/mutation-topology.json 登记 —— 源码全覆盖断言无法判定（fail-closed：新增源文件会静默逃逸度量）`,
