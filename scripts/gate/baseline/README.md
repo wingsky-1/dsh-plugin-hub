@@ -44,11 +44,15 @@
 |---|---|---|
 | `present`（exit 0） | 本次广告里有 `baseline/mutation` | 拉取；拉取失败 → **fail-loud** |
 | `absent`（exit 2） | 本次广告里没有该 ref | **唯一**允许降级为全量的情形（首夜，`::notice::`） |
-| `unreachable`（其它/无退出码） | 远端不可达 / 权限故障 / URL 不可解析 | **fail-loud**（无法判定基线是否存在） |
+| `unreachable`（其它/无退出码） | 远端不可达 / 权限故障 / URL 不可解析 | 不跳过 fetch；拉取仍失败 → **fail-loud** |
 
 另有两条同类收紧：远端树里有 blob 却**无任何基线文件**（命名漂移）在写路径上判 fail-loud
 （继续会用本班产物覆盖这些未知文件）；overlay 的「查询关联 PR」「查询 Workflow Runs」
 两处失败也改为 fail-loud——**「查不了」与「查不到（空数组）」是两件事**，后者仍是正常 no-op。
+
+表里 `unreachable` 只决定「是否跳过 fetch」，不单独决定最终动作：`decideRestoreOutcome` 把
+`fetchOk` 放在第一位，所以**探针三连失败但 fetch 反而成功时，判为恢复而非判红**（探针假阴性
+被救回）；只有 fetch 也失败才 fail-loud。`absent` 是唯一的确定结论——它直接跳过 fetch 并降级。
 
 **已知边界（不要误读为强保证）**：`absent` 只能证明「本次广告里没有这条 ref」，**不能**证明
 服务端上不存在——服务端可用 `uploadpack.hideRefs` 隐藏某条 ref，此时与真·首夜完全同形，
