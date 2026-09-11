@@ -201,12 +201,14 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   禁双装**（同 id 双装 loader 报 duplicate）；改独立包 patch 后必须
   `node scripts/gate/aggregate.ts` 重新生成聚合 patch。
 - **测试**：`pnpm test` 直跑（包内实现为 `node ../../scripts/gate/run-tests.mjs --min <N>`，
-  底层 runner 是 `node --test "test/**/*.test.ts"`，`--test-isolation=none` 同进程串行）；
+  runner **逐文件 spawn** `node --test --test-isolation=process --test-concurrency=1 <file>`，
+  即每文件独立进程、包内严格串行；`--order lex|reverse|shuffle:<seed>` 可重排执行顺序，
+  用于验证「打乱文件列表结果不变」）；
   测试文件直跑 TS 源码（node 原生 type stripping），但部分文件断言 `lib/` 产物
   （如客户端产物契约），故跑前仍需 `pnpm build`；必含 403/405 围栏用例 +
   客户端契约断言（`assertClientSourceContract` / `assertClientProductContract`）。
-  `--min` 是**测试文件数**下限（glob 展开计数，不含 `test()` 子测试条目），用于封堵
-  `node --test` 零匹配仍 exit 0 的假绿向量。
+  `--min` 是**测试文件数**下限（glob 展开计数），用于封堵 `node --test` 零匹配仍 exit 0
+  的假绿向量；单文件超时（默认 10 分钟）按**进程组**回收并**点名**判红。
 
 ### 测试分层与变异面登记（#690 S2b / #713 T1–T3）
 
@@ -428,9 +430,14 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
    严禁 `setTimeout(resolve, 50 / 300)` 这类「等够毫秒」的时序假设。参考 notifier 的
    `waitForHistory(route, predicate)` 辅助（轮询 GET 直到谓词成立，超时兜底返回当前态）。
 4. **测试文件禁止顶层悬挂 promise**：`node --test` 以「模块求值结束」判定文件测试通过，
-   悬挂的 `main().catch(...)` 会让体内断言在文件测试判定之后才跑——配合 runner 的收尾逻辑
-   会被整段吞掉（#690 S2 实测：注入必然失败的断言仍得 exit 0）。统一写法是顶层
-   `await main();`。唯一例外是经 `execFileSync` + 退出码/输出标记双重校验的 worker 脚本
+   悬挂的 `main().catch(...)` 会让体内断言在文件测试判定之后才跑，被整段吞掉（#690 S2 实测：
+   注入必然失败的断言仍得 exit 0）。统一写法是顶层 `await main();`。
+   **#690 S2c 切默认 per-file 隔离后复查：本约定仍然必要，故保留**——实测把
+   `dsh-lan-proxy/test/e2e/smoke.test.ts` 的顶层 `await main();` 改回悬挂形态，per-file 与
+   `--test-isolation=none` 两种模式下都是 `pass 1 / fail 0` + exit 0（假绿）。原因是 per-file
+   隔离只封堵「顶层 unsettled await」（模块求值永不完成 → node 判 `not ok`），封不住
+   fire-and-forget 的异步体（模块求值立即完成 → node 判通过）。唯一例外是经
+   `execFileSync` + 退出码/输出标记双重校验的 worker 脚本
    （`test/*.worker.mjs`，不参与 `test/**/*.test.ts` glob）。
 5. **fire-and-forget 写入禁止跨块断言顺序**：若写是 `void flush()` / 防抖定时器
    （如 opencode-usage 的 `schedulePersist`、notifier 的 `appendHistory`），绝不能依赖

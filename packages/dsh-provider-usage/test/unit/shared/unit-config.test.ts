@@ -16,7 +16,6 @@ import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from
 console.error("EVAL-ORDER-TAG: CONFIG");
 import { join } from "node:path";
 import { tmpdir, homedir } from "node:os";
-import { spawnSync } from "node:child_process";
 import { assert } from "../../helpers.ts";
 import {
   normalizeConfig,
@@ -38,68 +37,11 @@ import {
   parseUserAdapters,
   resolveAddAdapterFile,
   resolveProviderConfig,
+  expandHomePath,
 } from "../../../lib/index.js";
 
-/**
- * 在独立子进程内验证 ~ 展开并命中 HOME 内文件。
- *
- * untildify 对 homedir() 首调固化且不可重置：正向用例只有在「本进程首次调用发生在受控
- * HOME 之后」时才可达。glob 化（#690 S2）后文件求值顺序不再可控（smoke.test.ts 可能先以
- * 外部 HOME 固化），故用子进程取得干净的固化起点——子进程只加载本包产物，首调必然受控。
- * 失败以退出码 3/4/5 区分（固化落点 / 展开落点 / 解析结果），不做静默降级。
- */
-/**
- * 子进程只继承 ESM loader 钩子（Stryker tap-runner 用 `--import` 注入 lib→src 重定向）：
- * 不继承则子进程读到未变异的 lib 产物，被测路径的变异体会逃逸、拉低变异分。
- * `-r/--require` 是 tap-runner 的覆盖率桥，与本探针无关，故不继承。
- */
-function inheritedLoaderArgs(): string[] {
-  const FLAGS = new Set(["--import", "--loader", "--experimental-loader"]);
-  const out: string[] = [];
-  for (let i = 0; i < process.execArgv.length; i += 1) {
-    const arg = process.execArgv[i];
-    const flag = [...FLAGS].find((f) => arg === f || arg.startsWith(`${f}=`));
-    if (!flag) continue;
-    out.push(arg);
-    if (arg === flag && process.execArgv[i + 1] !== undefined) {
-      out.push(process.execArgv[i + 1]);
-      i += 1;
-    }
-  }
-  return out;
-}
-
-function assertTildeResolutionInChild(home: string): void {
-  const libUrl = new URL("../../../lib/index.js", import.meta.url).href;
-  const probe = "dou-tilde-probe.mjs";
-  const script = `
-const { expandHomePath, resolveAddAdapterFile } = await import(${JSON.stringify(libUrl)});
-const { writeFileSync } = await import("node:fs");
-const home = process.env.DSH_HOME;
-const frozen = expandHomePath("~");
-if (frozen !== home) { console.error("freeze=" + frozen); process.exit(3); }
-const target = expandHomePath("~/${probe}");
-if (!target.startsWith(home)) { console.error("target=" + target); process.exit(4); }
-writeFileSync(target, "export default {};", "utf8");
-const resolved = resolveAddAdapterFile("~/${probe}");
-if (resolved !== target) { console.error("resolved=" + resolved); process.exit(5); }
-`;
-  const child = spawnSync(process.execPath, [...inheritedLoaderArgs(), "--input-type=module", "-e", script], {
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      HOME: home,
-      DSH_HOME: home,
-      ...(process.platform === "win32" ? { USERPROFILE: home } : {}),
-    },
-  });
-  assert.equal(child.status, 0,
-    `~ 展开子进程探针失败（status=${child.status}）：${(child.stderr || child.stdout || "").trim()}`);
-}
-
 // ================================================================ #150 二阶段：resolveAddAdapterFile 路径校验矩阵
-// 位置无关：本块断言全部不依赖「本文件先于兄弟文件求值」。唯一依赖 homedir 固化
-// 时机的 ~ 展开正向用例改由独立子进程执行（见 assertTildeResolutionInChild）。
+// 位置无关：本块断言全部不依赖「本文件先于兄弟文件求值」。
 
 {
   // HOME/DSH_HOME 指向临时目录；~ 展开、绝对路径、目录拒绝都基于真实文件系统
@@ -133,9 +75,15 @@ if (resolved !== target) { console.error("resolved=" + resolved); process.exit(5
     assert.equal(resolveAddAdapterFile(home), undefined, "目录路径拒绝");
 
     // ~ 展开正向用例（isAbsolute(trimmed) false → 相对分支命中 dshHome 基座）：
-    // untildify 对 homedir() 首调固化且进程内不可重置，父进程的固化落点取决于兄弟
-    // 文件的求值顺序；glob 化后顺序不可控，故放进独立子进程验证。
-    assertTildeResolutionInChild(home);
+    // untildify 对 homedir() 首调固化且进程内不可重置，但 per-file 隔离（#690 S2c）下每个
+    // 测试文件独占进程，兄弟文件不再影响本文件的固化落点；而本块在此之前已把 HOME/DSH_HOME
+    // 指向受控临时目录，故可直接在文件内断言——#712 的子进程过渡补丁已拆。
+    assert.equal(expandHomePath("~"), home, "~ 展开命中受控 HOME（固化落点正确）");
+    const tildeProbe = "dou-tilde-probe.mjs";
+    const tildeTarget = expandHomePath(`~/${tildeProbe}`);
+    assert.ok(tildeTarget.startsWith(home), `~ 展开应落在 HOME 内：${tildeTarget}`);
+    writeFileSync(tildeTarget, "export default {};", "utf8");
+    assert.equal(resolveAddAdapterFile(`~/${tildeProbe}`), tildeTarget, "~ 展开并命中 HOME 内文件");
     // 负向用例与固化落点无关：未创建的同名探针必不存在
     assert.equal(resolveAddAdapterFile("~/dou-no-such-probe.mjs"), undefined, "~ 路径文件不存在拒绝");
 
