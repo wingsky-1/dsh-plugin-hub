@@ -39,7 +39,7 @@
 import { copyFileSync, existsSync, openSync, closeSync, fsyncSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { constants as zlibConstants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 /** 插件身份：与 src/catalog/entries.ts 的 CATALOG_SOURCE_PLUGIN 同源（发布物内联，无法 import）。 */
