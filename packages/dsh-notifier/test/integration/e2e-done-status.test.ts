@@ -15,7 +15,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { makeNotifier, agentWithTitle, turnPair, waitMergeWindow } from "../helpers.ts";
 
 let work: string;
@@ -206,16 +206,25 @@ describe("错误合并窗口过期后通知并携带合并计数", () => {
     const error = listeners.get("agent/error")[0];
     c = { first: 0, merged: 0, expired: 0 };
 
-    error({ agent: { id: "session-1" }, turn: 1, step: 1, error: new Error("e1") });
-    c.first = infos.length;
-    error({ agent: { id: "session-1" }, turn: 1, step: 2, error: new Error("e2") });
-    c.merged = infos.length;
-    // 等 20ms 错误合并窗口过期：负向等待无法正向轮询（后续写入会重置窗口），
-    // 故固定等待但留足余量（原 30ms 余量仅 10ms，CI 慢机实测漏窗口 → flake）
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    error({ agent: { id: "session-1" }, turn: 1, step: 3, error: new Error("e3") });
-    c.expired = infos.length;
-    info1 = infos[1];
+    // 合并窗口按 Date.now() 判定：两条相邻事件之间一旦被调度抢占超过 20ms（全仓并行
+    // 负载下实测发生），窗口就被判过期、计数随负载漂移（#722 全仓连跑实测 4 条红）。
+    // 这里只伪造 Date 把窗口边界变成可显式推进的量；定时器仍走真实实现，
+    // 不放大窗口、不注入更短间隔（DEVELOPMENT §5.2-4）。
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+      error({ agent: { id: "session-1" }, turn: 1, step: 1, error: new Error("e1") });
+      c.first = infos.length;
+      error({ agent: { id: "session-1" }, turn: 1, step: 2, error: new Error("e2") });
+      c.merged = infos.length;
+      // 显式把系统时间推过 20ms 窗口（1s），第三条即走非合并分支
+      vi.setSystemTime(new Date("2026-01-01T00:00:01.000Z"));
+      error({ agent: { id: "session-1" }, turn: 1, step: 3, error: new Error("e3") });
+      c.expired = infos.length;
+      info1 = infos[1];
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("首条错误通知", () => {
