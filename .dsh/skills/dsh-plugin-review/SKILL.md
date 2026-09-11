@@ -34,7 +34,7 @@ S0 准备与基线 → S1 维度裁剪 → S2 并行子 Agent 评审 → S3 交�
    目标插件的 `README.md`/`package.json`/`cordis.patch.yml`；记录仓库门禁命令
    （hub 通用门禁：`pnpm build && pnpm test && pnpm contract && pnpm pack:check`）。
 2. **通读源码**：宿主端 `src/index.ts`、客户端 `src/client/index.ts`(+`style.css`)、
-   系统脚本（如 `toast.ps1`）、`test/smoke.ts`；**记录每个文件的绝对路径与行数**，
+   系统脚本（如 `toast.ps1`）、`test/**/*.test.ts`；**记录每个文件的绝对路径与行数**，
    供子 Agent prompt 引用（行号锚点必须指向真实路径）。
 3. **跑基线门禁**（只读、不改产物）：
    `pnpm typecheck`、`pnpm test`；`git status --short` 确认工作树干净。

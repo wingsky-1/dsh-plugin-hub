@@ -13,7 +13,7 @@
  *
  * #150 变异加固：原 unit-chart.test.ts（parseUsageResponse 双形状、
  * fetchOpenCodeGoV2 错误链、miniChartSvgMarkup 结构断言、formatCapsule/
- * formatPanel 三态与趋势分支）整体并入本文件——该文件此前未被 smoke.ts
+ * formatPanel 三态与趋势分支）整体并入本文件——该文件此前未被 smoke.test.ts
  * 与 stryker testFiles 任一通道收录，属死文件；并入后图表纯函数群
  * （timeTickStep/timeTicks/trendOf/resetTicks/downsample/smoothPath 经
  * 导出接口行为级断言）方才进入变异计量范围。

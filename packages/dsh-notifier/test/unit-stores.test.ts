@@ -6,7 +6,7 @@
  * 落盘/冷启动懒加载/错误摘要截断。工厂不在包导出面（导出面零 diff 约束），
  * 直测本域 interface.ts（Node strip-types 原生执行）。
  */
-import { readFileSync, mkdtempSync, rmSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assert } from "./helpers.ts";
@@ -47,15 +47,27 @@ try {
     assert.equal(leftovers.length, 0, "tmp+rename 原子写无残留临时文件");
   }
 
-  // ── 滚动上限（写超 HISTORY_LIMIT 后 read 只回最近上限）──
+  // ── 滚动上限（写侧与读侧都只保留最近 HISTORY_LIMIT 条）──
   {
     const file = join(work, "hist-2.jsonl");
+    // 预置 2*HISTORY_LIMIT 条，单次 append 即越过写侧截断阈值（lines.length > HISTORY_LIMIT*2）：
+    // 原写法连续 append 250 次只为命中外层读侧上限，250 次「全文件读-改-写-rename」的
+    // I/O 突发在 CI 上会累积超过 2s 轮询预算（实测两处独立 CI job 同时超时），且写侧
+    // 截断分支从未被触及。预置后写侧与读侧上限都由一次 append 决定性地验证。
+    const seeded = Array.from({ length: HISTORY_LIMIT * 2 }, (_, i) =>
+      JSON.stringify({ ts: i, kind: "done", title: "t", message: `m${i}` }));
+    writeFileSync(file, `${seeded.join("\n")}\n`, "utf8");
+
     const store = createHistoryStore({ file, maxAgeDays: () => 0, warn: () => {} });
-    for (let i = 0; i < HISTORY_LIMIT + 50; i += 1) store.append({ ts: i, kind: "done", title: `t`, message: `m${i}` });
-    await pollFile(file, (t) => t.trim().split("\n").filter(Boolean).length === HISTORY_LIMIT + 50);
+    store.append({ ts: 9999, kind: "done", title: "t", message: "fresh" });
+
+    const text = await pollFile(file, (t) => t.includes("fresh"));
+    assert.equal(text.trim().split("\n").filter(Boolean).length, HISTORY_LIMIT,
+      `写侧截断到最近 ${HISTORY_LIMIT} 条`);
     const records = await store.read();
     assert.equal(records.length, HISTORY_LIMIT, `read 只返回最近 ${HISTORY_LIMIT} 条`);
-    assert.equal(records[records.length - 1].message, `m${HISTORY_LIMIT + 49}`, "保留的是最新记录");
+    assert.equal(records[records.length - 1].message, "fresh", "保留的是最新记录");
+    assert.equal(records[0].message, `m${HISTORY_LIMIT + 1}`, "最旧记录已被挤出滚动窗口");
   }
 
   // ── 按天自动清理（maxAgeDays 实时读取器）──

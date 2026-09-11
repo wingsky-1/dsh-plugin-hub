@@ -415,7 +415,7 @@ curl -s http://127.0.0.1:3080/api/dsh-provider-usage/health
 
 # 源码在 src/，改后必须 build
 pnpm --filter @wingsky-1/dsh-provider-usage build
-node test/smoke.ts
+pnpm --filter @wingsky-1/dsh-provider-usage test
 ```
 
 ## License

@@ -5,8 +5,8 @@
  * 本文件原为 node:test 零执行孤儿（unit-call-stats.test.ts 不在 smoke import、
  * 不在任何 stryker testFiles、不在 mutation-topology.json——B2 未被发现的直接
  * 原因之一）。issue #664 阶段 1 改造为与其余 unit 一致的顶层自执行 + node:assert
- * 形态，并双登记接线（smoke.ts import + mutation-topology testFiles），
- * 单份断言同时服务 smoke 与 stryker tap-runner。
+ * 形态，并登记进 mutation-topology testFiles（#690 S2 起 smoke import 聚合已移除，
+ * 单份断言服务包内 runner 与 stryker tap-runner）。
  *
  * 覆盖：
  * - 默认关闭：完全无 I/O、零写盘、快照零服务器

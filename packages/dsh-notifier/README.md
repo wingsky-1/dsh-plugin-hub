@@ -415,7 +415,7 @@ curl -s http://127.0.0.1:3080/api/dsh-notifier/health
 
 # 源码在 src/，改后必须 build
 pnpm --filter @wingsky-1/dsh-notifier build
-node test/smoke.ts
+pnpm --filter @wingsky-1/dsh-notifier test
 ```
 
 ## License

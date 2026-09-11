@@ -15,8 +15,8 @@
  *    service-contract-wiring.test.ts spawn tsc -p test/tsconfig.json）。
  * 2. 运行时：静态读取 apply.ts 源文本，提取 `ctx.provide("mcpManager", {...})`
  *    对象的方法名集合 + 参数个数/可选位，与契约清单比对（不多不少）——提供方
- *    删方法/改参数形状逃过 tsc 宽面签名时红。本文件被 test/smoke.ts import，
- *    随 `pnpm test` 执行。
+ *    删方法/改参数形状逃过 tsc 宽面签名时红。本文件由包内 `test/*.test.ts` glob 执行，
+ *    随 `pnpm test` 运行（#690 S2 起不再由 smoke import 聚合）。
  *
  * 红线（#476）：不改 shared 契约层、不改两包 src——本文件只锁现状。
  * 无 @ts-nocheck：编译期断言必须真实参与类型检查。
@@ -238,12 +238,9 @@ function extractProvidedServiceMethods(): Array<{ name: string; paramCount: numb
   return methods;
 }
 
-// 顶层立即执行（被 smoke.ts import 即运行；不依赖 node:test runner——
-// 与同目录 unit-*.test.ts 的执行形态一致）。
-// 失败处理：打印 FAIL 后 **throw 原错误**（不置 exitCode 吞掉）——宿主
-// smoke.ts 成功路径末尾无条件 process.exit(0)（#218 防挂起），若此处只置
-// process.exitCode=1 会被 exit(0) 覆盖成假绿（复核闸 P0-1 实证）；顶层抛错
-// 会沿 import 链冒泡终止 smoke → 进程退出码非 0 真红（与 unit 文件同形态）。
+// 顶层立即执行（不依赖 node:test runner——与同目录 unit-*.test.ts 的执行形态一致）。
+// 失败处理：打印 FAIL 后 **throw 原错误**（不置 exitCode 吞掉）——顶层抛错会让
+// 文件测试判 not ok、进程退出码非 0 真红（与 unit 文件同形态）。
 try {
   const provided = extractProvidedServiceMethods();
   const contractNames = CONTRACT_METHODS.map((x) => x.name);

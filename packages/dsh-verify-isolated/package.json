@@ -6,7 +6,7 @@
   "main": "lib/index.js",
   "scripts": {
     "build": "node ../../scripts/build/clean-lib.ts && tsc -p tsconfig.json && node ../../scripts/build/bundle-host.ts .",
-    "test": "node test/smoke.ts",
+    "test": "node ../../scripts/gate/run-tests.mjs --min 1",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "exports": {

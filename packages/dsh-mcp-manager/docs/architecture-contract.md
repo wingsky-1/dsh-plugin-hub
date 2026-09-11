@@ -208,9 +208,14 @@
   显式排除项，不得移除差异面声明（C-ABT/D6）。
 - **T3**：防 flake 纪律（DEVELOPMENT.md §5）全量生效——mkdtempSync 隔离落盘、
   pollUntil/assertNoGrowth 替代固定 sleep；SSE 帧断言按帧序轮询而非计时。
-- **新测试文件双登记**：新 test/*.test.ts 必须同时登记 smoke.ts import 聚合与
-  mutation-topology.json testFiles（防三通道不对称扩大，见
-  requirements-and-tdd-plan.md 8.3-P0④）。
+- **新测试文件登记**（#690 S2 起）：**运行面零登记**——测试入口是 `test/**/*.test.ts`
+  glob，新文件放对目录即自动纳入 `pnpm test`（`smoke.ts` import 聚合入口已删除）。
+  **变异面仍需登记** `mutation-topology.json` 的 `testFiles`：该清单是策展的单元级
+  用例集，不随 glob 自动扩大——实测整包纳入 e2e/契约类会让 Stryker dry run 超时
+  （dsh-mcp-manager 5 个段）或在沙箱内失败（`smoke.test.ts` 的 provide 方法面断言），
+  见 #713（防三通道不对称扩大，requirements-and-tdd-plan.md 8.3-P0④）。
+  各包 `package.json` 的 `--min <文件数下限>` 也须随新增文件同步上调：该下限只用于
+  封堵零匹配/漏跑，不会自动跟随新增，忘记上调会让新文件落在保护面之外。
 
 ### 3.3 变异分层（阶段 6 重画 mutate 的依据）
 

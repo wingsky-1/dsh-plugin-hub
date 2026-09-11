@@ -179,7 +179,7 @@
 - 阶段 4：质量门禁闭环——pnpm cov/crap/mutation 达标；客户端隔离浏览器验证（UI 相关改动）；文档同步（README 修正 B15/B16 等文档滞后）。
 
 ### 4.5 风险与取舍
-- 测试框架：保留自建 runner（smoke.ts 聚合 + node assert）vs 迁移 node:test/vitest——迁移成本高、stryker hook 依赖单份断言，倾向保留现状 + 规范化组织；如迁移需单独决策。
+- 测试框架：保留自建 runner（smoke.test.ts 聚合 + node assert）vs 迁移 node:test/vitest——迁移成本高、stryker hook 依赖单份断言，倾向保留现状 + 规范化组织；如迁移需单独决策。
 - 重构范围控制：以 bug 修复 + 覆盖补全为主线，不做大范围重写（避免回归）；纯函数先行，状态机次之。
 - 与既有 gate 的兼容：新增测试必须能在 smoke 聚合内运行、stryker 可变异。
 
@@ -291,7 +291,7 @@
 ## 七、现有测试审计（子代理报告要点）
 
 ### 7.1 运行模型与执行矩阵（关键不对称）
-- `pnpm test` = `node test/smoke.ts`：内联 check/checkAsync + import 8 个顶层立即执行文件（service-contract / unit-shared / unit-manager / unit-apply / unit-hotspot / unit-middleware / unit-manager2 / unit-routes-sse）；断言 node:assert/strict（仅 unit-call-stats 用 node:test）。
+- `pnpm test` = scripts/gate/run-tests.mjs（`node --test --test-isolation=none` 跑 `test/**/*.test.ts`）；smoke.test.ts 内联 check/checkAsync，其余 15 个单元/契约文件由 glob 直接执行（#690 S2 起不再由 smoke import 聚合）；断言 node:assert/strict（仅 unit-call-stats 用 node:test）。
 - 被测 lib/ 产物；stryker 经 `--import scripts/test/mutation-lib-to-src-hook.mjs` ESM resolve hook 把 lib→src 重定向，同一份断言复用（#423）。
 - service-contract.test.ts 双层锁：编译期类型比对（tsc）+ 运行时静态扫描 apply-services 的 provide 方法面（手写括号配对，fail-loud）。
 - **三通道不对称**：
@@ -365,10 +365,10 @@
 
 ### 8.2 测试审计补充（评审核实）
 - 执行矩阵第四条不对称：service-contract/unit-shared 只在 smoke、catalog/store/supervisor/transport 只在 stryker、**交集仅 6 文件**。
-- unit-middleware L718–726 封装超时用例真实等待 **32s（CALL_TIMEOUT_MS+2000，非文档所写 30s）**；smoke.ts L2450 第 4 处固定 sleep 25ms。
+- unit-middleware L718–726 封装超时用例真实等待 **32s（CALL_TIMEOUT_MS+2000，非文档所写 30s）**；smoke.test.ts 第 4 处固定 sleep 25ms。
 - 质量基线：变异 58.74%（阈值 60）；「kill≥40 过 60%」经预算 **25 即够**（40 有安全余量）；「covered≥80%」非门禁（coverage 门禁是 selfWritten 60%），应注明「质量目标不卡 CI」。
 
 ### 8.3 TDD 方案修正（评审 P0/P1/P2）
-- **P0**：① 先修 C1 编辑链路再补 enabled 回填；② B8 修复补 raw/decoded 双形态 + supervisor 日志脱敏 + 安全语义变更红线流程；③ 阶段 0 输出规格决策表清零 6.3 全部「或规格化声明」行（B4/B6/B13/B14）；④ 新测试文件双登记（smoke.ts import + mutation-topology.json testFiles，防三通道不对称扩大）。
+- **P0**：① 先修 C1 编辑链路再补 enabled 回填；② B8 修复补 raw/decoded 双形态 + supervisor 日志脱敏 + 安全语义变更红线流程；③ 阶段 0 输出规格决策表清零 6.3 全部「或规格化声明」行（B4/B6/B13/B14）；④ 新测试文件双登记（原为 smoke.ts import + mutation-topology.json testFiles，防三通道不对称扩大）；#690 S2 起 smoke import 聚合已移除，运行面由 glob 自动纳入，仅余 mutation-topology.json testFiles 需登记。
 - **P1**：⑤ B10 修复需 searchCatalog 改签名；⑥ B5 修复复用 disconnect 语义（async 依赖 syncChain）；⑦ CALL_TIMEOUT_MS 注入化消 32s stryker 放大；⑧ B1 红测试改状态机断言点（勿整窗口轮询）+ _idleTimeout 改 resolveReconnect 纯函数断言；⑨ B18 扩为口径统一（closeHandler 计数 + toolCallTimeoutMs）；⑩ B17 唯一 tmp 名 + 失败清理。
 - **P2**：B19 合并口径、B12 dispose destroy、B20 热切换 emitStatus、B3 并入 runtime；哑断言清理（unit-apply/unit-hotspot/unit-manager2 L309/L323）；user-state 0600；客户端 C6/C7/C2/C8；B15/B16/README 文档同步提前到阶段 1。

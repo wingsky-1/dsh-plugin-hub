@@ -200,8 +200,13 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   `exports["./client"]`（`contract-check` 联动断言，缺则整包拒载）。**独立包与聚合包
   禁双装**（同 id 双装 loader 报 duplicate）；改独立包 patch 后必须
   `node scripts/gate/aggregate.ts` 重新生成聚合 patch。
-- **测试**：`test/smoke.ts` 直跑，必含 403/405 围栏用例 + 客户端契约断言
-  （`assertClientSourceContract` / `assertClientProductContract`）。
+- **测试**：`pnpm test` 直跑（包内实现为 `node ../../scripts/gate/run-tests.mjs --min <N>`，
+  底层 runner 是 `node --test "test/**/*.test.ts"`，`--test-isolation=none` 同进程串行）；
+  测试文件直跑 TS 源码（node 原生 type stripping），但部分文件断言 `lib/` 产物
+  （如客户端产物契约），故跑前仍需 `pnpm build`；必含 403/405 围栏用例 +
+  客户端契约断言（`assertClientSourceContract` / `assertClientProductContract`）。
+  `--min` 是**测试文件数**下限（glob 展开计数，不含 `test()` 子测试条目），用于封堵
+  `node --test` 零匹配仍 exit 0 的假绿向量。
 
 ### 落盘路径必须感知 DSH_HOME（#510）
 
@@ -362,8 +367,9 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 
 - **无网络与零真实凭据**：smoke 测试全部无网络、无真实凭据，本地可直接离线运行。
 - **断言全覆盖**：新功能/修复必须带 smoke 断言（含路由 403/405 围栏用例、client 契约断言）。
-- **CI 稳定性门槛**：新增 / 修改 `test/smoke.ts` 后，本地连续跑 **≥10 次**（如
-  `for i in $(seq 1 10); do node packages/<pkg>/test/smoke.ts; done`）确认无 flake 再提交。
+- **CI 稳定性门槛**：新增 / 修改测试文件后，本地在该包目录内连续跑 **≥10 次**确认无 flake
+  再提交，如 `cd packages/<pkg> && for i in $(seq 1 10); do node ../../scripts/gate/run-tests.mjs --min <N>; done`
+  （`--min` 取值见该包 `package.json` 的 test script）。
 
 ### 5.2 防 flake 核心原则
 
@@ -385,7 +391,12 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 3. **异步落盘用轮询替代固定 sleep**：断言持久化状态前必须 `poll-until` 满足条件再断言，
    严禁 `setTimeout(resolve, 50 / 300)` 这类「等够毫秒」的时序假设。参考 notifier 的
    `waitForHistory(route, predicate)` 辅助（轮询 GET 直到谓词成立，超时兜底返回当前态）。
-4. **fire-and-forget 写入禁止跨块断言顺序**：若写是 `void flush()` / 防抖定时器
+4. **测试文件禁止顶层悬挂 promise**：`node --test` 以「模块求值结束」判定文件测试通过，
+   悬挂的 `main().catch(...)` 会让体内断言在文件测试判定之后才跑——配合 runner 的收尾逻辑
+   会被整段吞掉（#690 S2 实测：注入必然失败的断言仍得 exit 0）。统一写法是顶层
+   `await main();`。唯一例外是经 `execFileSync` + 退出码/输出标记双重校验的 worker 脚本
+   （`test/*.worker.mjs`，不参与 `test/**/*.test.ts` glob）。
+5. **fire-and-forget 写入禁止跨块断言顺序**：若写是 `void flush()` / 防抖定时器
    （如 opencode-usage 的 `schedulePersist`、notifier 的 `appendHistory`），绝不能依赖
    「最后一条是 X」「条数 === N」等顺序敏感断言；必须**隔离文件 + 轮询**。理想情况：
    被测插件暴露 `await flushPersist()` 之类的可等待落盘钩子，测试直接 `await` 比轮询更稳。

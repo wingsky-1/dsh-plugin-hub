@@ -13,7 +13,7 @@
 //     watchdog / 回前台强制重建（详见 unit-routes-sse 与下方产物断言）
 //   - apply：enabled:false 时不注册路由与提示词
 //
-// 运行：node dsh-mcp-manager/test/smoke.mjs
+// 运行：pnpm --filter @wingsky-1/dsh-mcp-manager test
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -78,35 +78,9 @@ import {
   assertSupportedOutputSchema,
 } from "../lib/index.js";
 
-// 服务契约门禁（#476）：apply.ts provide 方法面与 shared 类型面契约清单一致
-// （运行时方法名/参数形状断言；编译期类型断言经 scripts/test/
-// service-contract-wiring.test.ts 的 tsc 编译面执行）
-import "./service-contract.test.ts";
-// 结构化单元测试（#82 批次 1：清零未覆盖 CRAP 超阈热点）
-import "./unit-shared.test.ts";
-import "./unit-manager.test.ts";
-import "./unit-apply.test.ts";
-import "./unit-hotspot.test.ts";
-// 中间层（#228：ws_mcp_search / ws_mcp_call + 连接池 + 目录 + 策略）
-import "./unit-middleware.test.ts";
-// 管理器方法面 / SSE+health 路由边界（#228 打回修复：装载断链自 PR#234 起既存，
-// 缺失期间这两个文件的用例只在 mutation 跑——smoke 门禁从未执行它们）
-import "./unit-manager2.test.ts";
-import "./unit-routes-sse.test.ts";
-// call-stats 统计（#664 阶段 1 双登记接线：原 node:test 零执行孤儿，改造自执行后接入）
-import "./unit-call-stats.test.ts";
-// 执行管道域契约（#664 阶段 2：两路径同构 + stats 埋点红测）
-import "./unit-pipeline.test.ts";
-// 工作空间路由域（#664 阶段 4：makeResolveRoot 路由 + B3 红测）
-import "./unit-workspace.test.ts";
-// 三通道不对称收敛（#664 阶段 8）：catalog/store/supervisor/transport 四个文件
-// 此前只在 stryker 管线执行（本地 pnpm test 从不跑，漏检窗口）；均为轻量
-// mock/纯函数断言（无真实子进程、无固定 sleep），纳入 smoke 补齐配置域/目录域/
-// 重连状态机/传输协议桩的动态断言面，时长代价可控。
-import "./unit-catalog.test.ts";
-import "./unit-store.test.ts";
-import "./unit-supervisor.test.ts";
-import "./unit-transport.test.ts";
+// 服务契约门禁（#476）、结构化单元测试（#82/#228/#664 各批次）等 15 个文件由包内
+// `test/*.test.ts` glob 直接执行（#690 S2）；此处不再 import 聚合——聚合会让同一文件
+// 在同进程内被求值两遍。
 
 const failures = [];
 const check = (label, fn) => {
@@ -2834,16 +2808,16 @@ const main = async () => {
 
   if (failures.length > 0) {
     console.error(`\n${failures.length} check(s) failed: ${failures.join(", ")}`);
-    process.exit(1);
+    // 用 exitCode 而非 process.exit：本文件现由 node --test 调度，强制退出会连 runner
+    // 一起杀掉（后续测试文件不执行、TAP 汇总缺失）——那正是 #690 S2 要封堵的假绿向量。
+    process.exitCode = 1;
+    return;
   }
   console.log("\nall checks passed");
-  // 显式退出（成功路径）：SDK 端到端块 spawn 的 stdio 子进程句柄残留会导致事件循环
-  // 不空、进程挂起不退出（本地 Node 24.19 复现，基线与 CI 差异），断言全过后强制收尾，
-  // 保证 `pnpm test` 与连续 10 次零 flake 验证可完成；失败路径已在上方 exit(1)。
-  process.exit(0);
+  // 不再显式 process.exit(0)：成功路径强退会吞掉 runner 的汇总与后续测试文件
+  // （正是 #690 S2 要封堵的假绿向量）；SDK 端到端块 spawn 的 stdio 句柄随进程自然回收。
 };
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+// 顶层 await：node --test 以「模块求值结束」判定文件测试通过，不等待悬挂的 promise，
+// 悬挂形态下断言失败会被吞成 exit 0（#690 S2 对抗评审实测）。
+await main();
