@@ -188,7 +188,6 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
 {
   const { WebSocketServer, WebSocket: WsClient } = await import("ws");
 
-  const upPort = 19790 + Math.floor(Math.random() * 100);
   const upServer = createServer();
   const wss = new WebSocketServer({ noServer: true });
   upServer.on("upgrade", (req, socket, head) => {
@@ -196,7 +195,8 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
       ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
     });
   });
-  await new Promise((r) => upServer.listen(upPort, "127.0.0.1", r));
+  await new Promise((r) => upServer.listen(0, "127.0.0.1", r));
+  const upPort = upServer.address().port;
 
   const proxy = createLanProxy({
     host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort,
@@ -230,7 +230,6 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
 {
   const { WebSocketServer, WebSocket: WsClient } = await import("ws");
 
-  const upPort = 19850 + Math.floor(Math.random() * 100);
   const upServer = createServer();
   const wss = new WebSocketServer({ noServer: true });
   let upgradeHeaders = null;
@@ -240,7 +239,8 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
       ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
     });
   });
-  await new Promise((r) => upServer.listen(upPort, "127.0.0.1", r));
+  await new Promise((r) => upServer.listen(0, "127.0.0.1", r));
+  const upPort = upServer.address().port;
 
   const proxy = createLanProxy({
     host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort,
@@ -287,7 +287,6 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
 {
   const { WebSocket: WsClient, WebSocketServer } = await import("ws");
 
-  const upPort = 21050 + Math.floor(Math.random() * 40);
   const upServer = createServer();
   const wss = new WebSocketServer({ noServer: true });
   let noCookieUpgrades = 0;
@@ -303,7 +302,8 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
       ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
     });
   });
-  await new Promise((r) => upServer.listen(upPort, "127.0.0.1", r));
+  await new Promise((r) => upServer.listen(0, "127.0.0.1", r));
+  const upPort = upServer.address().port;
 
   const proxy = createLanProxy({
     host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort,
@@ -339,7 +339,6 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
 // —— 断言 1 + 3：真 echo 上游（ws 库自动回 pong）→ ping 按间隔到达、连接不被误杀 ——
 {
   const { WebSocketServer, WebSocket: WsClient } = await import("ws");
-  const upPort = 19950 + Math.floor(Math.random() * 40);
   const upServer = createServer();
   const wss = new WebSocketServer({ noServer: true });
   let upstreamPings = 0; // 真 echo 上游收到的 ping 帧数 = 上游段探活按间隔发出
@@ -349,7 +348,8 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
       ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
     });
   });
-  await new Promise((r) => upServer.listen(upPort, "127.0.0.1", r));
+  await new Promise((r) => upServer.listen(0, "127.0.0.1", r));
+  const upPort = upServer.address().port;
 
   const proxy = createLanProxy({
     host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort,
@@ -387,12 +387,12 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
 // pong）→ 上游段探活超时 terminate → close 互断逻辑关闭浏览器端（1006）。
 {
   const { WebSocket: WsClient } = await import("ws");
-  const silentPort = 20000 + Math.floor(Math.random() * 40);
   const silentServer = createServer((req, res) => res.destroy());
   silentServer.on("upgrade", (req, socket) => {
     socket.write(wsHandshakeResponse(req.headers["sec-websocket-key"]));
   });
-  await new Promise((r) => silentServer.listen(silentPort, "127.0.0.1", r));
+  await new Promise((r) => silentServer.listen(0, "127.0.0.1", r));
+  const silentPort = silentServer.address().port;
 
   const proxy = createLanProxy({
     host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: silentPort,
@@ -417,7 +417,6 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
 // raw 假客户端经 node:http upgrade 拿裸 socket（不回 pong）连压缩白名单路径。
 {
   const { WebSocketServer } = await import("ws");
-  const upPort = 20050 + Math.floor(Math.random() * 40);
   const upServer = createServer();
   const wss = new WebSocketServer({ noServer: true });
   let upstreamClosed = false;
@@ -427,7 +426,8 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
       ws.on("close", () => { upstreamClosed = true; });
     });
   });
-  await new Promise((r) => upServer.listen(upPort, "127.0.0.1", r));
+  await new Promise((r) => upServer.listen(0, "127.0.0.1", r));
+  const upPort = upServer.address().port;
 
   const proxy = createLanProxy({
     host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort,
@@ -530,9 +530,7 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
 {
   const { WebSocketServer, WebSocket: WsClient } = await import("ws");
 
-  async function mkUpstream(portOffset) {
-    // 端口区间错开前置测试（19850+rand(100) 最大 19949）：取 20100+ 避免碰撞。
-    const upPort = 20100 + portOffset + Math.floor(Math.random() * 60);
+  async function mkUpstream() {
     const upServer = createServer();
     const wss = new WebSocketServer({ noServer: true });
     upServer.on("upgrade", (req, socket, head) => {
@@ -540,7 +538,8 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
         ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
       });
     });
-    await new Promise((r) => upServer.listen(upPort, "127.0.0.1", r));
+    await new Promise((r) => upServer.listen(0, "127.0.0.1", r));
+    const upPort = upServer.address().port;
     return { upPort, upServer, wss };
   }
   /** 经代理建一条 WS 连接、等 open、重试发送帧至回显（上游段 open 竞态：桥接的
@@ -562,7 +561,7 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
 
   // a) wsBridge=false：命中白名单路径也走透传（显式放弃桥接/保活）
   {
-    const u = await mkUpstream(0);
+    const u = await mkUpstream();
     const proxy = createLanProxy({
       host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: u.upPort,
       wsBridge: { enabled: false },
@@ -580,7 +579,7 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
 
   // b) wsBridge=true：未命中白名单路径也走桥接（保活基座不依赖压缩白名单）
   {
-    const u = await mkUpstream(100);
+    const u = await mkUpstream();
     const proxy = createLanProxy({
       host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: u.upPort,
       wsBridge: { enabled: true },
@@ -598,7 +597,7 @@ assert.equal(DEFAULT_OPTIONS.targetHost, "127.0.0.1");
 
   // c) wsBridge 缺省（旧行为兼容）：命中白名单走桥接、未命中走透传
   {
-    const u = await mkUpstream(200);
+    const u = await mkUpstream();
     const proxy = createLanProxy({
       host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: u.upPort,
       wsCompress: { enabled: true, paths: ["/api/remote.mux"], probeIntervalMs: 0 },

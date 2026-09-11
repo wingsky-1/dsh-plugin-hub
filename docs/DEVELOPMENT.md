@@ -452,6 +452,29 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 - **提交前自查**：`git status` 出现 `packages/*/undefined/`、`*.jsonl` 等运行时产物
   一律视为污染，不得提交；自动收集脚本（基线等）只收白名单路径。
 
+<a id="port-handle-discipline"></a><a id="user-content-port-handle-discipline"></a>
+### 5.4 端口与残留句柄纪律（#690 S2c）
+
+- **端口一律动态分配**：测试需要监听端口时用 `server.listen(0, ...)`，再从
+  `server.address().port` 读实际端口，**禁止写死端口号**——也包括「固定基数 + 随机区间」
+  这类写法，窄区间在并发下仍会碰撞。为什么：写死端口只在「严格串行 + 无残留进程」这一
+  脆弱前提下成立；实测同一端口被 8 个文件并发持有时 7 个 `EADDRINUSE`，Stryker 并发下
+  亦有 19998 互踩的历史记录（#147 / #217）。
+  「端口被占 → 启动失败」的**负向用例仍然保留**：先 `listen(0)` 占位拿到端口，再让被测
+  对象去绑同一端口——语义不变，只是不再写死端口号。
+- **残留句柄在 `finally` 里回收**：测试自己起的 server / socket / 定时器 / watcher 必须在
+  用例结束时关闭。`node --test` 的 per-file 隔离下，未回收的句柄会让**整个包**挂到 runner
+  超时才判红，而不是只红那一个文件。
+- **分诊工具（只报告，不判红）**：排查挂起或评估隔离模式时，先逐文件分诊：
+
+  ```sh
+  node scripts/gate/probe-handles.mjs [--only <子串>] [--timeout <ms>] [--grace <ms>] [--idle <ms>] [--json]
+  ```
+
+  它在 per-file 隔离下逐文件运行并给出四态：`clean` / `leak`（测试跑完但句柄吊住进程）/
+  `hang`（测试本身没跑完）/ `fail`（含顺序依赖在隔离下暴露）。判定依据与已知局限见该脚本
+  头注释。
+
 ## 6. 多端兼容（三操作系统 + 三访问形态 + 明暗双主题）
 
 dsh web 部署在 Linux 服务器，经局域网被多种设备 / 系统访问。插件（尤其客户端 UI 与

@@ -1,9 +1,9 @@
 // @ts-nocheck
 // dsh-lan-proxy 冒烟测试 —— 无外部依赖。
 //
-// 在 127.0.0.1:19090 起一个"假 dsh web 服务器"（回显请求要素、对 WebSocket
-// 升级应答字节回显），把代理挂在 127.0.0.1:19091（HTTP）/ 19092（HTTPS）上
-// 指向它，然后验证：
+// 起一个"假 dsh web 服务器"（回显请求要素、对 WebSocket 升级应答字节回显），
+// 把代理挂在它的 HTTP / HTTPS 监听上指向它；端口一律 bind(0) 动态分配
+// （#690 S2c 端口治理：写死端口在并发或残留进程下会 EADDRINUSE 假阳性），然后验证：
 //   - Host/Origin 被重写为回环目标（围栏要求）
 //   - 无 Origin 的非浏览器请求也能通过
 //   - DNS 域名 Host 头被拒绝（重绑定防护）
@@ -37,9 +37,11 @@ import { apply, sanitizeSettings, validateSettings, ROUTES, pluginDir,
 // 结构化单元测试（issue #82 批次 2）由包内 `test/*.test.ts` glob 直接执行（#690 S2）；
 // 此处不再 import 聚合——聚合会让同一文件在同进程内被求值两遍。
 
-const UPSTREAM_PORT = 19090;
-const PROXY_PORT = 19091;
-const PROXY_HTTPS_PORT = 19092;
+// 端口在 main() 里 bind(0) 之后回填（#690 S2c / #713 T5）：写死端口在并发运行或残留
+// 进程下会 EADDRINUSE 假阳性；helpers 与断言按名引用，回填后语义不变。
+let UPSTREAM_PORT = 0;
+let PROXY_PORT = 0;
+let PROXY_HTTPS_PORT = 0;
 const LAN_HOST = "192.168.1.50";
 const failures = [];
 const pendingChecks = []; // 收集全部 async 用例 promise，收尾统一 allSettled（防迟到失败漏计 → 假绿）
@@ -234,14 +236,8 @@ upstream.on("upgrade", (req, socket) => {
 // ── proxy under test ────────────────────────────────────────────────────────
 const certDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-test-"));
 const tls = ensureSelfSignedTls({ dir: certDir, extraSans: [LAN_HOST] });
-const proxy = createLanProxy({
-  host: "127.0.0.1",
-  port: PROXY_PORT,
-  httpsPort: PROXY_HTTPS_PORT,
-  tls,
-  targetHost: "127.0.0.1",
-  targetPort: UPSTREAM_PORT,
-});
+// proxy 在 main() 里创建：targetPort 必须等 upstream 绑定到具体端口后才确定。
+let proxy;
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 function getViaProxy(headers) {
@@ -343,8 +339,20 @@ function rawRequest(requestText) {
 }
 
 const main = async () => {
-  await new Promise((r) => upstream.listen(UPSTREAM_PORT, "127.0.0.1", r));
-  await proxy.listen();
+  await new Promise((r) => upstream.listen(0, "127.0.0.1", r));
+  UPSTREAM_PORT = upstream.address().port;
+  proxy = createLanProxy({
+    host: "127.0.0.1",
+    port: 0,
+    httpsPort: 0,
+    tls,
+    targetHost: "127.0.0.1",
+    targetPort: UPSTREAM_PORT,
+  });
+  const listening = await proxy.listen();
+  PROXY_PORT = listening.httpPort;
+  assert.ok(listening.httpsPort !== undefined, "HTTPS 应成功监听（端口动态分配）");
+  PROXY_HTTPS_PORT = listening.httpsPort;
   console.log("unit: hostnameAllowed / formatAuthority");
   check("accepts IPv4 literal", () => assert.equal(hostnameAllowed(`${LAN_HOST}:${PROXY_PORT}`), true));
   check("accepts bare IPv4 literal", () => assert.equal(hostnameAllowed(LAN_HOST), true));
@@ -748,7 +756,6 @@ const main = async () => {
   // ── 转发层 HTTP 压缩：真实 upstream × 真实 createLanProxy ─────────────────
   console.log("integration: 转发层 HTTP 压缩（compression 中间件）");
   {
-    const upPort = 19190, pxPort = 19191;
     const bigBody = JSON.stringify({ data: "y".repeat(300_000) });
     // issue #528 反向回归：跟踪「上游长连接被销毁」次数（客户端断开后上游 close）。
     let upstreamSseHoldClosed = 0;
@@ -783,7 +790,8 @@ const main = async () => {
         setTimeout(() => { res.socket?.destroy(); }, 30);
       } else { res.writeHead(404); res.end(); }
     });
-    await new Promise((r) => upstream.listen(upPort, "127.0.0.1", r));
+    await new Promise((r) => upstream.listen(0, "127.0.0.1", r));
+    const upPort = upstream.address().port;
 
     const requestThrough = (port, path, headers) => new Promise((resolve, reject) => {
       const req = httpRequest({ host: "127.0.0.1", port, path, headers: { host: "127.0.0.1", ...headers } }, (res) => {
@@ -796,10 +804,10 @@ const main = async () => {
     });
 
     const proxyOn = createLanProxy(
-      { host: "127.0.0.1", port: pxPort, targetHost: "127.0.0.1", targetPort: upPort, httpCompress: { enabled: true, level: 1 } },
+      { host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort, httpCompress: { enabled: true, level: 1 } },
       console,
     );
-    await proxyOn.listen();
+    const { httpPort: pxPort } = await proxyOn.listen();
 
     let r = await requestThrough(pxPort, "/big", { "accept-encoding": "gzip" });
     check("转发层：大 JSON 经代理被 gzip 且解压逐字节一致", () => {
@@ -902,11 +910,11 @@ const main = async () => {
     await proxyOn.close();
 
     const proxyOff = createLanProxy(
-      { host: "127.0.0.1", port: pxPort + 1, targetHost: "127.0.0.1", targetPort: upPort, httpCompress: { enabled: false, level: 1 } },
+      { host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort, httpCompress: { enabled: false, level: 1 } },
       console,
     );
-    await proxyOff.listen();
-    r = await requestThrough(pxPort + 1, "/big", { "accept-encoding": "gzip" });
+    const { httpPort: pxPortOff } = await proxyOff.listen();
+    r = await requestThrough(pxPortOff, "/big", { "accept-encoding": "gzip" });
     check("转发层：enabled=false 全透传", () => {
       assert.equal(r.headers["content-encoding"], undefined);
       assert.equal(r.body.toString(), bigBody);
