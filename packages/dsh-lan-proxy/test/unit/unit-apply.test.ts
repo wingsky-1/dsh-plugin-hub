@@ -203,7 +203,9 @@ const { createServer } = await import("node:http");
   };
 
   const { apply } = await import("../../lib/index.js");
-  apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: true, printBanner: false, wsCompressEnabled: false, httpCompressEnabled: false });
+  // httpsPort 显式传 0：不传会落到产品默认值 3443 并**真实监听**（端口审计实测），
+  // 并发或残留进程下即 EADDRINUSE（#690 S2c 端口治理）。
+  apply(ctx, { host: "127.0.0.1", port: 0, httpsPort: 0, httpsEnabled: true, printBanner: false, wsCompressEnabled: false, httpCompressEnabled: false });
 
   await sleep(100);
 
@@ -277,11 +279,13 @@ const { createServer } = await import("node:http");
   const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-listenfail-"));
   const prevHome = process.env.DSH_HOME;
   process.env.DSH_HOME = applyHome;
-  // 占用一个具体端口（#217 回滚：unit-apply 在 stryker 变异面内，port 0 随机化
-  // 破坏变异覆盖（covered 57.9% < 60% 阈值）；19998 在单包 tap runner 上下文安全，
-  // 真正 CI flake 来自 smoke 端口另见 #217 子项）
+  // 占位端口改为动态分配（#690 S2c / #713 T5）：写死端口在并发运行或残留进程下会
+  // EADDRINUSE 假阳性。这与 #217 回滚的「apply 传 port: 0」不是同一件事——那种写法会让
+  // listen 成功、走不到 catch 分支（covered 掉到 57.9%）；这里 occupied 先占位，apply 绑
+  // 同一端口仍必然失败，被覆盖的分支不变。
   const occupied = createServer();
-  await new Promise((r) => occupied.listen(19998, "127.0.0.1", r));
+  await new Promise((r) => occupied.listen(0, "127.0.0.1", r));
+  const occupiedPort = occupied.address().port;
   const routes = [];
   const rpcHandles = [];
   const disposers = [];
@@ -296,7 +300,7 @@ const { createServer } = await import("node:http");
     effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
   };
   const { apply } = await import("../../lib/index.js");
-  apply(ctx, { host: "127.0.0.1", port: 19998, httpsEnabled: false, printBanner: false, wsCompressEnabled: false, httpCompressEnabled: false });
+  apply(ctx, { host: "127.0.0.1", port: occupiedPort, httpsEnabled: false, printBanner: false, wsCompressEnabled: false, httpCompressEnabled: false });
   await sleep(200); // 等 listen 异步 reject
   // health 路由存在，但 listening: false
   const healthRoute = routes.find((r) => r.path === ROUTES.health);
