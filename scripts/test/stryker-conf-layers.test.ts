@@ -74,7 +74,7 @@ const BASE_FILES = {
   [`packages/${PKG}/test/client/client-a.test.ts`]: 'import "../../src/client/ui.ts"\n',
   [`packages/${PKG}/test/e2e/smoke.test.ts`]: 'import "../../src/index.ts"\n',
   [`packages/${PKG}/test/helpers.ts`]: 'export const h = 1\n',
-  [`packages/${PKG}/package.json`]: `${JSON.stringify({ name: PKG, scripts: { test: 'node ../../scripts/gate/run-tests.mjs --min 6' } }, null, 2)}\n`,
+  [`packages/${PKG}/package.json`]: `${JSON.stringify({ name: PKG, scripts: { test: 'node ../../scripts/test/run-vitest.mjs --min 6' } }, null, 2)}\n`,
 }
 
 /** 造 fixture 仓库根（含拓扑与 stryker.conf.d），返回根路径。 */
@@ -318,7 +318,7 @@ test('P0-1 反证：import 派生模块不得写盘（否则 test:scripts 会静
 test('P0-2 反证：磁盘上有测试但未登记的包 → 判红点名（不得只遍历拓扑声明）', () => {
   const root = makeFixtureRoot({
     'packages/ghost-pkg/test/unit/unit-x.test.ts': '// 未登记拓扑的包\n',
-    'packages/ghost-pkg/package.json': `${JSON.stringify({ name: 'ghost-pkg', scripts: { test: 'node ../../scripts/gate/run-tests.mjs --min 1' } }, null, 2)}\n`,
+    'packages/ghost-pkg/package.json': `${JSON.stringify({ name: 'ghost-pkg', scripts: { test: 'node ../../scripts/test/run-vitest.mjs --min 1' } }, null, 2)}\n`,
   })
   try {
     generate(root)
@@ -336,14 +336,14 @@ test('P0-2b：$noMutationPackages 声明过的包放行，但其 --min 仍受限
   withSkip.$noMutationPackages = { 'ghost-pkg': '只有 e2e 冒烟，刻意不登记变异面' }
   const root = makeFixtureRoot({
     'packages/ghost-pkg/test/unit/unit-x.test.ts': '// 刻意不进变异面\n',
-    'packages/ghost-pkg/package.json': `${JSON.stringify({ name: 'ghost-pkg', scripts: { test: 'node ../../scripts/gate/run-tests.mjs --min 1' } }, null, 2)}\n`,
+    'packages/ghost-pkg/package.json': `${JSON.stringify({ name: 'ghost-pkg', scripts: { test: 'node ../../scripts/test/run-vitest.mjs --min 1' } }, null, 2)}\n`,
   }, withSkip)
   try {
     generate(root)
     assert.equal(runGenerator(root, ['--check']).status, 0, '声明过的包应放行')
     // 把 --min 改错（实际 1 个文件）→ 仍必须判红（声明的意思是「不登记变异面」，不是「不受门禁」）
     writeFileSync(join(root, 'packages/ghost-pkg/package.json'),
-      `${JSON.stringify({ name: 'ghost-pkg', scripts: { test: 'node ../../scripts/gate/run-tests.mjs --min 9' } }, null, 2)}\n`)
+      `${JSON.stringify({ name: 'ghost-pkg', scripts: { test: 'node ../../scripts/test/run-vitest.mjs --min 9' } }, null, 2)}\n`)
     const res = runGenerator(root, ['--check'])
     assert.equal(res.status, 1, `$noMutationPackages 的包 --min 脱节也必须判红：\n${res.out}`)
     assert.match(res.out, /ghost-pkg.*--min 9 != 实际测试文件数 1/s, '应点名该包的 --min 脱节')
@@ -377,8 +377,8 @@ test('P1-5：--sync-test-min 遇无法同步的 --min 必须非零退出', () =>
   const root = makeFixtureRoot()
   try {
     const pkgJsonPath = join(root, `packages/${PKG}/package.json`)
-    // 去掉 --min（保留 run-tests.mjs 入口）→ sync 无法自动修
-    writeFileSync(pkgJsonPath, `${JSON.stringify({ name: PKG, scripts: { test: 'node ../../scripts/gate/run-tests.mjs' } }, null, 2)}\n`)
+    // 去掉 --min（保留 run-vitest.mjs 入口）→ sync 无法自动修
+    writeFileSync(pkgJsonPath, `${JSON.stringify({ name: PKG, scripts: { test: 'node ../../scripts/test/run-vitest.mjs' } }, null, 2)}\n`)
     const res = runGenerator(root, ['--sync-test-min'])
     assert.equal(res.status, 1, `存在无法同步项时必须非零退出：\n${res.out}`)
     assert.match(res.out, /无法自动同步/, '应说明无法同步')

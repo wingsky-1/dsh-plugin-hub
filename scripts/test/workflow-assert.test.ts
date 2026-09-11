@@ -462,13 +462,15 @@ test('#423+#722: 变异测试单份维护——禁 *.src.test.ts 回潮 + 变异
     'Forbid legacy src tests 必须调用 scripts/gate/forbid-src-tests.mjs')
   assert.ok(existsSync(join(ROOT, 'scripts/gate/forbid-src-tests.mjs')),
     'forbid-src-tests.mjs 脚本必须存在')
-  // #722 起 Stryker runner 由 tap 换为 vitest，变异面内的测试直接 import src/，
-  // lib→src 重定向 hook 不再参与变异链路。这两个文件保留是因为 scripts/gate/cov.mjs
-  // （cov:src）仍靠它把 lib 产物映射回源码——退役它必须与 cov.mjs 同批（阶段 3）。
-  assert.ok(existsSync(join(ROOT, 'scripts/test/mutation-lib-to-src-hook.mjs')),
-    'mutation-lib-to-src-hook.mjs 必须存在（#423 方案 A；#722 后仅 cov:src 使用）')
-  assert.ok(existsSync(join(ROOT, 'scripts/test/mutation-lib-to-src-loader.mjs')),
-    'mutation-lib-to-src-loader.mjs 必须存在（#423 方案 A resolve hook）')
+  // #722 阶段五：lib→src 重定向 hook 两件套随 cov.mjs（cov:src）一并退役——变异面内的测试
+  // 已直连 src/，Stryker 侧与覆盖率侧都不再需要解析期重定向。防回潮：不得重新引入。
+  for (const p of [
+    'scripts/test/mutation-lib-to-src-hook.mjs',
+    'scripts/test/mutation-lib-to-src-loader.mjs',
+  ]) {
+    assert.ok(!existsSync(join(ROOT, p)),
+      `${p} 应已删除（#722 阶段五退役：测试直连 src，无需解析期重定向）`)
+  }
 
   const topology = JSON.parse(readFileSync(join(ROOT, 'scripts/data/mutation-topology.json'), 'utf8'))
   const { projectTestSurface } = await import('../gate/test-surface.mjs')

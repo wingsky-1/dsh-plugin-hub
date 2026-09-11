@@ -17,8 +17,11 @@ import { dirname, join, relative, sep } from 'node:path'
  * #722 起 runner 由 `run-tests.mjs` 换成 vitest，本模式不变——`vitest.config.ts` 的
  * unit / integration / e2e / contract 四个 project 的 glob 并集恰好等于 `test/**` 下的
  * `*.test.ts` 全集，故门禁口径无需跟随 runner 实现变动。
+ *
+ * 不作为模块导出：消费者只有已退役的 `run-tests.mjs` 与 `probe-handles.mjs`（#722 阶段五），
+ * 现在仅本文件的 runner 面 glob 与包发现使用。
  */
-export const RUN_TESTS_PATTERN = 'test/**/*.test.ts'
+const RUN_TESTS_PATTERN = 'test/**/*.test.ts'
 
 /**
  * 必须留在变异面内的层（#690 S2b 的充分性下限）。
