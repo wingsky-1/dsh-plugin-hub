@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url'
 import process from 'node:process'
 
 import { computeCiMatrix } from '../ci/ci-matrix.mjs'
+import { PREREQ_PACKAGES } from '../test/script-test-prereqs.mjs'
 import { planChangedScope } from './local-scope.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
@@ -72,15 +73,20 @@ function tierSteps(tier, { hitPackages, withCoverage }) {
     return steps
   }
 
-  // 廉价全仓一致性闸：不依赖 lib 产物、秒级，恒跑（不是「全量构建」类成本）
+  // 廉价全仓一致性闸：不依赖 lib 产物、秒级，恒跑（不是「全量构建」类成本）。
+  // test:scripts 不在此列——它有编译面用例依赖声明产物，需先满足前置包（见下方）。
   const cheapGlobal = [
     { label: 'stryker:check（变异配置与拓扑一致）', args: ['stryker:check'] },
     { label: 'aggregate:check（聚合 patch 不漂移）', args: ['aggregate:check'] },
     { label: 'test:src-tests（*.src.test.ts 禁现）', args: ['test:src-tests'] },
     { label: 'gate:homedir（src 禁直连 HOME）', args: ['gate:homedir'] },
     { label: 'docs:check（README/链接）', args: ['docs:check'] },
-    { label: 'test:scripts（门禁脚本自测）', args: ['test:scripts'] },
   ]
+  const prereqStep = {
+    label: `build 编译面前置包（test:scripts 依赖：${PREREQ_PACKAGES.join(', ')}）`,
+    args: [...PREREQ_PACKAGES.map((p) => `--filter @wingsky-1/${p}...`), 'build'],
+  }
+  const scriptsSelfTest = { label: 'test:scripts（门禁脚本自测）', args: ['test:scripts'] }
 
   if (tier === 'pr') {
     // PR 增量口径：命中包构建/测试 + **命中包**产物闸 + 廉价全仓一致性闸。
@@ -100,6 +106,8 @@ function tierSteps(tier, { hitPackages, withCoverage }) {
       { label: `pack:check（切片 ${hitPackages.length} 包）`, cmd: 'node', args: ['scripts/gate/pack-check.ts', '--packages', scopeArg] },
       { label: `verify:npmlayout（切片 ${hitPackages.length} 包）`, cmd: 'node', args: ['scripts/gate/verify-npm-layout.ts', '--packages', scopeArg] },
       ...cheapGlobal,
+      prereqStep,
+      scriptsSelfTest,
     )
     return steps
   }
@@ -112,6 +120,7 @@ function tierSteps(tier, { hitPackages, withCoverage }) {
     { label: 'pack:check（全仓）', args: ['pack:check'] },
     { label: 'verify:npmlayout（全仓）', args: ['verify:npmlayout'] },
     ...cheapGlobal,
+    scriptsSelfTest,
   ]
   if (withCoverage) {
     steps.push({ label: 'cov（c8 全仓覆盖率）', args: ['cov'] }, { label: 'crap（圈复杂度，观察期）', args: ['crap'] })
