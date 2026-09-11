@@ -22,7 +22,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { projectTestSurface } from '../gate/gen-stryker-conf.mjs'
+import { projectTestSurface } from '../gate/test-surface.mjs'
 
 const ROOT = join(import.meta.dirname, '..', '..')
 const GENERATOR = join(ROOT, 'scripts', 'gate', 'gen-stryker-conf.mjs')
@@ -167,7 +167,7 @@ test('T3① 反证：runner 面出现无层归属的文件 → 判红并点名',
 test('T3②：豁免必须带理由且真实存在于 unit 层', () => {
   const withBadReason = structuredClone(TOPOLOGY)
   withBadReason.packages[PKG].testLayers = {
-    unitExemptions: { 'test/unit/unit-b.test.ts': '   ' },
+    testMutationExemptions: { unit: { 'test/unit/unit-b.test.ts': '   ' } },
   }
   const root = makeFixtureRoot({}, withBadReason)
   try {
@@ -179,7 +179,7 @@ test('T3②：豁免必须带理由且真实存在于 unit 层', () => {
 
   const withGhost = structuredClone(TOPOLOGY)
   withGhost.packages[PKG].testLayers = {
-    unitExemptions: { 'test/unit/ghost.test.ts': '不存在的文件' },
+    testMutationExemptions: { unit: { 'test/unit/ghost.test.ts': '不存在的文件' } },
   }
   const root2 = makeFixtureRoot({}, withGhost)
   try {
@@ -243,6 +243,117 @@ test('T2 幂等：连续两次生成后 --check 仍绿（无静默漂移）', ()
     const second = readFileSync(join(root, 'stryker.conf.d', `${PKG}-only.json`), 'utf8')
     assert.equal(first, second, '两次生成必须逐字一致')
     assert.equal(runGenerator(root, ['--check']).status, 0)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('P0-1 反证：import 派生模块不得写盘（否则 test:scripts 会静默修好被破坏的 conf）', () => {
+  // 假绿向量：若纯函数与带副作用的 CLI 同模块，测试一旦 import 它就会重写真实仓库的
+  // stryker.conf.d/*.json —— 「删掉登记条目 → 门禁判红」会在下次 test:scripts 后自动变绿。
+  const root = makeFixtureRoot()
+  try {
+    const conf = generate(root)
+    const before = readFileSync(conf, 'utf8')
+    // 破坏派生结果，模拟「登记条目被删」
+    const broken = JSON.parse(before)
+    broken.tap.testFiles = broken.tap.testFiles.slice(1)
+    writeFileSync(conf, `${JSON.stringify(broken, null, 2)}\n`, 'utf8')
+    assert.equal(runGenerator(root, ['--check']).status, 1, '破坏后 --check 应判红')
+
+    // import 纯模块（不是 CLI）：必须零输出、零写盘
+    const probe = spawnSync(process.execPath, [
+      '-e',
+      `import(${JSON.stringify(join(ROOT, 'scripts', 'gate', 'test-surface.mjs'))}).then(() => process.stdout.write('IMPORT-OK'))`,
+    ], { encoding: 'utf8', env: { ...process.env, GEN_STRYKER_ROOT: root } })
+    assert.equal(probe.status, 0, `import 应成功：${probe.stdout}${probe.stderr}`)
+    assert.match(probe.stdout, /IMPORT-OK/, '纯模块 import 应无副作用')
+    assert.equal(readFileSync(conf, 'utf8'), `${JSON.stringify(broken, null, 2)}\n`, 'import 纯模块不得改写 conf')
+    assert.equal(runGenerator(root, ['--check']).status, 1, 'import 之后 --check 仍须判红（未被静默修好）')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('P0-2 反证：磁盘上有测试但未登记的包 → 判红点名（不得只遍历拓扑声明）', () => {
+  const root = makeFixtureRoot({
+    'packages/ghost-pkg/test/unit/unit-x.test.ts': '// 未登记拓扑的包\n',
+    'packages/ghost-pkg/package.json': `${JSON.stringify({ name: 'ghost-pkg', scripts: { test: 'node ../../scripts/gate/run-tests.mjs --min 1' } }, null, 2)}\n`,
+  })
+  try {
+    generate(root)
+    const res = runGenerator(root, ['--check'])
+    assert.equal(res.status, 1, `未登记包必须判红：\n${res.out}`)
+    assert.match(res.out, /ghost-pkg/, '应点名未登记的包')
+    assert.match(res.out, /磁盘上有测试文件但未在 mutation-topology\.json 登记/, '应说明 fail-closed 理由')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('P0-2b：$noMutationPackages 声明过的包放行，但其 --min 仍受限', () => {
+  const withSkip = structuredClone(TOPOLOGY)
+  withSkip.$noMutationPackages = { 'ghost-pkg': '只有 e2e 冒烟，刻意不登记变异面' }
+  const root = makeFixtureRoot({
+    'packages/ghost-pkg/test/unit/unit-x.test.ts': '// 刻意不进变异面\n',
+    'packages/ghost-pkg/package.json': `${JSON.stringify({ name: 'ghost-pkg', scripts: { test: 'node ../../scripts/gate/run-tests.mjs --min 1' } }, null, 2)}\n`,
+  }, withSkip)
+  try {
+    generate(root)
+    assert.equal(runGenerator(root, ['--check']).status, 0, '声明过的包应放行')
+    // 把 --min 改错（实际 1 个文件）→ 仍必须判红（声明的意思是「不登记变异面」，不是「不受门禁」）
+    writeFileSync(join(root, 'packages/ghost-pkg/package.json'),
+      `${JSON.stringify({ name: 'ghost-pkg', scripts: { test: 'node ../../scripts/gate/run-tests.mjs --min 9' } }, null, 2)}\n`)
+    const res = runGenerator(root, ['--check'])
+    assert.equal(res.status, 1, `$noMutationPackages 的包 --min 脱节也必须判红：\n${res.out}`)
+    assert.match(res.out, /ghost-pkg.*--min 9 != 实际测试文件数 1/s, '应点名该包的 --min 脱节')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('P0-3 反证：把必需层移出 mutationLayers（或加进排除层）→ 判红', () => {
+  // 假绿向量：两行拓扑改动（mutationExcludeLayers 加 "unit"）能把变异面从 56 个文件削到 12 个，
+  // 而「声明 ↔ 派生一致」类判据全绿。充分性下限必须由代码常量锚定。
+  for (const [label, mutate] of [
+    ['unit 被移出 mutationLayers', (t) => { t.$testLayers.mutationLayers = ['integration'] }],
+    ['unit 被加进排除层', (t) => { t.$testLayers.mutationExcludeLayers = ['client', 'e2e', 'unit'] }],
+    ['mutationLayers 清空', (t) => { t.$testLayers.mutationLayers = [] }],
+  ]) {
+    const broken = structuredClone(TOPOLOGY)
+    mutate(broken)
+    const root = makeFixtureRoot({}, broken)
+    try {
+      const p = projectTestSurface(root, broken, PKG)
+      assert.ok(p.errors.length > 0, `${label}：必须报充分性错误，实际无错误（变异面 ${p.testFiles.length} 个）`)
+      assert.match(p.errors.join('; '), /必需层|变异面/, `${label}：错误应点明充分性：${p.errors.join('; ')}`)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  }
+})
+
+test('P1-5：--sync-test-min 遇无法同步的 --min 必须非零退出', () => {
+  const root = makeFixtureRoot()
+  try {
+    const pkgJsonPath = join(root, `packages/${PKG}/package.json`)
+    // 去掉 --min（保留 run-tests.mjs 入口）→ sync 无法自动修
+    writeFileSync(pkgJsonPath, `${JSON.stringify({ name: PKG, scripts: { test: 'node ../../scripts/gate/run-tests.mjs' } }, null, 2)}\n`)
+    const res = runGenerator(root, ['--sync-test-min'])
+    assert.equal(res.status, 1, `存在无法同步项时必须非零退出：\n${res.out}`)
+    assert.match(res.out, /无法自动同步/, '应说明无法同步')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('P2-7：unit 层零命中（glob 被改坏）→ 判红并点名', () => {
+  const broken = structuredClone(TOPOLOGY)
+  broken.$testLayers.layers.unit = 'test/units/**/*.test.ts'
+  const root = makeFixtureRoot({}, broken)
+  try {
+    const p = projectTestSurface(root, broken, PKG)
+    assert.ok(p.errors.some((e) => /unit.*零命中/.test(e)), `应报 unit 层零命中：${p.errors.join('; ')}`)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

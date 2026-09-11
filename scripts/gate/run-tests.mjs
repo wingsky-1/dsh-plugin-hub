@@ -50,7 +50,10 @@
 import { spawnSync } from 'node:child_process'
 import { globSync } from 'node:fs'
 
-const PATTERN = 'test/**/*.test.ts'
+import { RUN_TESTS_PATTERN } from './test-surface.mjs'
+
+// 与变异面登记门禁（gen-stryker-conf --check 的判据 ③）同源：不再各写一份字面量。
+const PATTERN = RUN_TESTS_PATTERN
 /**
  * 单包测试墙钟上限：CI 上最慢的包（dsh-mcp-manager 含 SDK stdio 端到端）约 6 分钟。
  * `RUN_TESTS_TIMEOUT_MS` 供门禁自测与本地调试收紧（调小只会更快判红，不能用来伪造绿灯）。

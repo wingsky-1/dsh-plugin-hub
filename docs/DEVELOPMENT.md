@@ -229,12 +229,17 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
 - `tap.testFiles` 由 `scripts/gate/gen-stryker-conf.mjs` **从层 glob 展开为真实文件清单**。
   为什么不把 `**` 通配直接交给 Stryker：#712 已 CI 实证沙箱语义失败（`smoke.test.ts` 的
   provide 方法面断言）+ mcp 5 个段 dry run 撞 5 分钟预算；
-- `pnpm stryker:check` 是登记完整性门禁：① 每个 `test/` 下的 `*.test.ts` 必须落入某一层 glob
-  或某条排除 glob——新增测试文件必须显式决定层归属，不能靠「没写进清单」逃逸；② 每条登记在磁盘上
-  真实存在；③ 各包 `package.json` 的 `--min` == runner glob 实际文件数；
+- `pnpm stryker:check` 是登记完整性门禁（实现见 `scripts/gate/test-surface.mjs`，纯函数、import 无副作用）：
+  ① 磁盘上有测试的**每个包**都必须在拓扑登记（漏登即在 `$noMutationPackages` 写明理由），且该包
+  `test/` 下每个 `*.test.ts` 都要有层归属——新增测试必须显式决定层归属，不能靠「没写进清单」逃逸；
+  ② 每条登记与每条豁免在磁盘上真实存在；③ 每个有测试的包（含未登记变异面的包）`--min` == runner glob
+  实际文件数；④ **充分性下限**：`mutationLayers` 必须包含 `test-surface.mjs` 里的 `REQUIRED_MUTATION_LAYERS`
+  （unit + integration）且每包变异面非空——防「两行拓扑改动把变异面削掉」；
 - 新增测试文件后的固定动作：放进对应层目录 → `node scripts/gate/gen-stryker-conf.mjs --sync-test-min`
-  → 提交。单元层与集成层**零手工登记**；`unitExemptions` 只用于「写了单元测试但刻意不进变异面」的
-  逐条裁决，必须写明理由（模型样例：mcp 的 `unit-shared.test.ts` 测的是 shared 层，不在本包 mutate 面内）；
+  → `pnpm stryker:gen` → 提交。单元层与集成层**零手工登记**；`testMutationExemptions`（按层分组）只用于
+  「刻意不进变异面」的逐条裁决，必须写明理由，模型样例两条：
+  mcp 的 `unit/unit-shared.test.ts`（测的是 shared 层，不在本包 mutate 面内）、
+  notifier 的 `integration/real-context.test.ts`（Stryker 沙箱内 dry run 失败，属 #712 记录的沙箱语义族）；
 - 变异面扩缩**在 PR 门禁里看不出来**（`incremental: true` 复用基线状态）。真信号来自 observe.yml
   班次全量重建；PR 内的自证方式是「派生 testFiles ↔ 基线的集合对比 + 单段真跑 stryker 报告的
   mutant 状态分布与基线一致」。

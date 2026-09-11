@@ -55,7 +55,6 @@
       "packages/dsh-notifier/test/integration/e2e-outbound.test.ts",
       "packages/dsh-notifier/test/integration/e2e-question-turn.test.ts",
       "packages/dsh-notifier/test/integration/migration.test.ts",
-      "packages/dsh-notifier/test/integration/real-context.test.ts",
       "packages/dsh-notifier/test/integration/routes.test.ts",
       "packages/dsh-notifier/test/integration/service-contract.test.ts",
       "packages/dsh-notifier/test/unit/unit-aggregate.test.ts",
