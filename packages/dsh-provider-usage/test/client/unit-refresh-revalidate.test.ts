@@ -7,52 +7,86 @@
  * 模块图内其他文件的 fetch 替换/恢复交错冲突，故进程隔离）。本外壳：
  * - 源码契约：A1 接线存在且被 refreshStats/detect 正确调用；
  * - 同步 spawn worker，校验退出码与 WORKER-PASS 标记。
+ *
+ * 结构：每个主题块一个 describe，每条断言一个 it。
  */
 import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { assert } from "../helpers.ts";
+import { beforeAll, describe, expect, it } from "vitest";
 
-const here = dirname(fileURLToPath(import.meta.url));
 const pkgDir = fileURLToPath(new URL("../../", import.meta.url));
 
-// ---------------------------------------------------------------- 源码契约：A1 接线存在
+describe("refreshStats 取数前 provider 复检外壳（issue #71 方案 A1）", () => {
+  // ---------------------------------------------------------------- 源码契约：A1 接线存在
 
-{
-  const src = readFileSync(join(pkgDir, "src/client/index.tsx"), "utf8");
-  assert.ok(src.includes("async function revalidateProvider"), "A1 检测半区函数已抽出");
-  assert.ok(
-    /async function refreshStats[\s\S]*?await revalidateProvider\(\)/.test(src),
-    "refreshStats 取数前先复检 provider（A1 主接线）",
-  );
-  // detect 变化分支 → onProviderChanged 立即重拉；未变分支 → renderPill 后仅 current
-  // 会话切换时补刷（#419 diff 语义：投影/运行态噪声帧不刷，收敛高频 /stats 调用）
-  assert.ok(/const changed = await revalidateProvider\(\);[\s\S]*?onProviderChanged\(\)/.test(src),
-    "detect 复检变化 → 立即重拉（切换会话即时跟随）");
-  assert.ok(/renderPill\(\);[\s\S]*?currentSessionId\(sessions\)[\s\S]*?lastDetectCurrent/.test(src),
-    "detect 未变分支按 current diff 判定是否补刷（#419 去高频）");
-  // #419：modelCatalog 兜底走缓存 loader（官方 catalog 同款），不再裸调跟随帧频率
-  assert.ok(src.includes("makeCatalogCache()"), "客户端持有 catalog 缓存实例");
-  assert.ok(src.includes("catalogCache.load"), "resolveProviderFromSession 注入缓存 loader");
-  assert.ok(src.includes("catalogCache.reset()"), "卸载时失效目录缓存");
-}
+  describe("源码契约：A1 接线存在且被正确调用", () => {
+    let src;
+    beforeAll(() => {
+      src = readFileSync(join(pkgDir, "src/client/index.tsx"), "utf8");
+    });
 
-// ---------------------------------------------------------------- 子进程行为级剧本
+    it("A1 检测半区函数已抽出", () => {
+      expect(src.includes("async function revalidateProvider")).toBeTruthy();
+    });
 
-let stdout;
-try {
-  stdout = execFileSync(process.execPath, [join(pkgDir, "test/client-revalidate.worker.mjs")], {
-    encoding: "utf8",
-    timeout: 30000,
-    stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, NODE_NO_WARNINGS: "1" },
+    it("refreshStats 取数前先复检 provider（A1 主接线）", () => {
+      expect(/async function refreshStats[\s\S]*?await revalidateProvider\(\)/.test(src)).toBeTruthy();
+    });
+
+    it("detect 复检变化 → 立即重拉（切换会话即时跟随）", () => {
+      // detect 变化分支 → onProviderChanged 立即重拉；未变分支 → renderPill 后仅 current
+      // 会话切换时补刷（#419 diff 语义：投影/运行态噪声帧不刷，收敛高频 /stats 调用）
+      expect(/const changed = await revalidateProvider\(\);[\s\S]*?onProviderChanged\(\)/.test(src)).toBeTruthy();
+    });
+
+    it("detect 未变分支按 current diff 判定是否补刷（#419 去高频）", () => {
+      expect(/renderPill\(\);[\s\S]*?currentSessionId\(sessions\)[\s\S]*?lastDetectCurrent/.test(src)).toBeTruthy();
+    });
+
+    it("客户端持有 catalog 缓存实例", () => {
+      // #419：modelCatalog 兜底走缓存 loader（官方 catalog 同款），不再裸调跟随帧频率
+      expect(src.includes("makeCatalogCache()")).toBeTruthy();
+    });
+
+    it("resolveProviderFromSession 注入缓存 loader", () => {
+      expect(src.includes("catalogCache.load")).toBeTruthy();
+    });
+
+    it("卸载时失效目录缓存", () => {
+      expect(src.includes("catalogCache.reset()")).toBeTruthy();
+    });
   });
-} catch (error) {
-  console.error("worker stdout:\n" + (error.stdout ?? ""));
-  console.error("worker stderr:\n" + (error.stderr ?? ""));
-  assert.fail(`client-revalidate.worker 子进程失败（exit=${error.status}）`);
-}
-assert.match(stdout, /WORKER-PASS/, "worker 打印 WORKER-PASS 标记");
 
-console.log("[unit-refresh-revalidate] 全部断言通过 ✓ (#71 A1 外壳+worker)");
+  // ---------------------------------------------------------------- 子进程行为级剧本
+
+  describe("子进程行为级剧本", () => {
+    let stdout, workerFailed, workerFailureDetail;
+
+    beforeAll(() => {
+      try {
+        stdout = execFileSync(process.execPath, [join(pkgDir, "test/client-revalidate.worker.mjs")], {
+          encoding: "utf8",
+          timeout: 30000,
+          stdio: ["ignore", "pipe", "pipe"],
+          env: { ...process.env, NODE_NO_WARNINGS: "1" },
+        });
+        workerFailed = false;
+      } catch (error) {
+        workerFailed = true;
+        workerFailureDetail = `client-revalidate.worker 子进程失败（exit=${error.status}）`;
+        console.error("worker stdout:\n" + (error.stdout ?? ""));
+        console.error("worker stderr:\n" + (error.stderr ?? ""));
+      }
+    });
+
+    it("client-revalidate.worker 子进程退出码为 0", () => {
+      expect(workerFailed, workerFailureDetail).toBe(false);
+    });
+
+    it("worker 打印 WORKER-PASS 标记", () => {
+      expect(stdout).toMatch(/WORKER-PASS/);
+    });
+  });
+});
