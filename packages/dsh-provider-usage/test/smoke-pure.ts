@@ -357,7 +357,7 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   const rjkData = legacySampleToData([{ key: "balance", name: "余额" }], [1787000000000, 10.1365]);
   assert.deepEqual(rjkData, { balance: 10.1365 }, "balance 列产出裸数值");
   const ogData = legacySampleToData(
-    [{ key: "rolling" }, { key: "weekly" }, { key: "monthly" }],
+    [{ key: "rolling", name: "5h 滚动" }, { key: "weekly", name: "每周" }, { key: "monthly", name: "每月" }],
     [1787000000000, 2, 1, 0],
   );
   assert.deepEqual(ogData, { rolling: { percent: 2 }, weekly: { percent: 1 }, monthly: { percent: 0 } }, "三窗口列产出 percent 对象");
@@ -384,7 +384,7 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   const migratedCount = await migrateLegacyV3(dir, store2);
   assert.equal(migratedCount, 2, "迁移 2 个采样点");
   // 新格式可查询（balance 裸值）
-  const q = await store2.query("prov1", "adp1", { start: ts - 600000, end: ts + 1 }, 10);
+  const q = await store2.query("prov1", "adp1", { start: ts - 600000, end: ts + 1 });
   assert.equal(q.entries.length, 2);
   assert.deepEqual(q.entries[0].data, { balance: 9.5 }, "迁移后 data 形态正确");
   // 旧文件已重命名 .bak
