@@ -24,8 +24,25 @@ export default defineConfig({
           environment: 'node',
         },
       },
-      // e2e / contract / client 三个 project 在后续阶段接入：
-      // e2e 需真实 IO 环境、contract 测 lib 产物、client 需 happy-dom（当前形态是 vm 读产物字符串）。
+      {
+        test: {
+          name: 'e2e',
+          include: ['packages/*/test/e2e/**/*.test.ts'],
+          environment: 'node',
+          // e2e 走真实端口、文件系统与子进程，单文件最坏数百秒（mcp-manager smoke 实测 328s）
+          testTimeout: 600_000,
+          hookTimeout: 600_000,
+        },
+      },
+      {
+        test: {
+          name: 'contract',
+          // test/client/** 的现有形态是「读 lib 产物字符串 + vm 执行」，属产物契约断言，
+          // 不需要 DOM 环境；未来直连 src/client/** 的 DOM 单测另立 happy-dom project。
+          include: ['packages/*/test/client/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
     ],
     coverage: {
       provider: 'istanbul',
