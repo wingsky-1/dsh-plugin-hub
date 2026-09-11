@@ -1,21 +1,9 @@
 {
-  "$comment": "Gauntlet 阈值唯一事实源（指导文档 11.4：阈值外置单一 config）。观察期基线校准后在此改值并开启 strict；文档附录 A 起点量级：CRAP <=12、覆盖率下限 80~90%（当前 lib 产物口径 + 同行多函数宽松判定，实际取值需按本仓基线上浮）。",
+  "$comment": "Gauntlet 阈值唯一事实源（指导文档 11.4：阈值外置单一 config）。观察期基线校准后在此改值并开启 strict。覆盖率阈值自 #722 阶段三起迁至 vitest.config.ts 的 coverage.thresholds（唯一事实源，降线由 scripts/gate/threshold-monotonic.mjs 守护）；本文件保留 CRAP 与变异阈值。",
   "crap": {
     "threshold": 16,
-    "strict": false
-  },
-  "coverage": {
-    "note": "#85 v3 起 self-written 函数口径接入夜间硬校验（observe.yml → self-cov --check）；lines/functions（c8 全口径）继续观察期",
-    "lines": null,
-    "functions": null,
-    "selfWrittenFunctions": {
-      "pct": 66.31,
-      "total": 653,
-      "covered": 433,
-      "threshold": 60,
-      "strict": true,
-      "note": "#85 v2 裁决：基线 60%、阶段二提至 80%（届时一次性改本字段并删除过渡说明）。当前实测 66.31% 高于下限，strict 开启由 observe.yml 夜间执行"
-    }
+    "strict": false,
+    "note": "#722 阶段三起 crap-check 处于 fail-closed 停用态：其圈复杂度取自 lib 编译产物，而覆盖率采集已切到 src 口径（vitest/istanbul），两者行号不可比，入口自检不匹配即 exit 2（不再以「0 个函数」静默归零）。src 口径重建归阶段 5，与 ESLint 复杂度规则同批。"
   },
   "mutation": {
     "note": "观察期仅记录不卡点；阶段三按 #42 二期校准后接入 ci.yml 硬卡点。score 为 Stryker 报告口径（分母含 noCoverage），covered 为官方 mutationScore 口径（(killed+timeout)/(total-noCoverage)）。#151 起 tap-runner 的 RuntimeError 分类缺陷曾由 scripts/test/mutation-tap-bridge.cjs 修正（未捕获异常转写 TAP not ok），error=0，自动口径与此前人工换算口径一致；#722 起 runner 换为 @stryker-mutator/vitest-runner，该桥接随 tap-runner 一并退役，未捕获异常改由 vitest runner 归入 errorsSet 并判该次运行 Error。",

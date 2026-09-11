@@ -6,8 +6,15 @@
  *   CRAP = comp^2 * (1 - cov) + comp
  *
  * comp：acorn（ESTree）对 lib 编译产物的逐函数圈复杂度；
- * cov：c8 产出的 istanbul 格式 coverage/coverage-final.json 中该函数的命中状态。
+ * cov：istanbul 格式 coverage/coverage-final.json 中该函数的命中状态。
  * 先跑 `pnpm cov` 生成覆盖率，再运行本脚本。
+ *
+ * 现状（#722 阶段三起）——本脚本处于 fail-closed 停用态：
+ *   阶段三把覆盖率采集切到 vitest/istanbul 的 src 口径，而 comp 仍取自 lib 编译产物，
+ *   两者行号不可比。此时按 lib 过滤会命中 0 个文件、以「0 个函数」的名义 exit 0
+ *   （静默降级，#718 定性），故入口处加了数据源口径自检：不匹配即 exit 2 并说明原因。
+ *   src 口径重建归 #722 阶段 5（与 ESLint 复杂度规则同批，届时可直接消费其 TS parser）。
+ *   四个消费点（observe.yml / health-report.yml / local-gate.mjs / 本脚本自测）已同步摘除。
  *
  * 圈复杂度决策点口径——已计入：if / for / for-of / for-in / while / do-while /
  *   case / catch / 三元（ConditionalExpression）/ && / || / ?? / optional chaining（?.）
@@ -82,6 +89,33 @@ export function foreignSegments(code) {
 
 export function inForeign(offset, ranges) {
   return ranges.some((r) => offset >= r.start && offset < r.end);
+}
+
+/**
+ * 统计覆盖率数据的路径口径：lib（本脚本的圈复杂度来源）/ src（#722 阶段三起的采集口径）。
+ *
+ * 为什么需要它：复杂度与覆盖率必须同源才能按行号对齐。阶段三把覆盖率采集切到
+ * vitest/istanbul 后分母只剩 src，而本脚本仍从 lib 产物算复杂度——此时按 lib 过滤
+ * 会命中 0 个文件，脚本以「0 个函数」的名义 exit 0，属静默降级（#718 定性）。
+ */
+export function coverageDataSource(coverage) {
+  let libCount = 0;
+  let srcCount = 0;
+  for (const file of Object.keys(coverage ?? {})) {
+    const norm = file.replace(/\\/g, '/');
+    if (/\/packages\/[^/]+\/lib\//.test(norm)) libCount += 1;
+    else if (/\/packages\/[^/]+\/src\//.test(norm)) srcCount += 1;
+  }
+  return { libCount, srcCount };
+}
+
+/** 数据源口径不匹配时的统一报错（fail-closed，防「0 个函数仍 exit 0」的静默降级）。 */
+function reportDataSourceMismatch(counts, mode = '') {
+  const tag = mode ? ` [${mode}]` : '';
+  console.error(`crap-check${tag}: 覆盖率数据里没有任何 packages/*/lib/ 条目（lib ${counts.libCount} / src ${counts.srcCount}）—— 数据源口径不匹配，fail-closed`);
+  console.error('  本脚本的圈复杂度取自 lib 编译产物，而 #722 阶段三起覆盖率只采集 src（vitest/istanbul），');
+  console.error('  两者行号不可比；继续运行会命中 0 个文件并以 exit 0 放行，属静默降级。');
+  console.error('  src 口径的 CRAP 重建归 #722 阶段 5（与 ESLint 复杂度规则同批，届时可用 TS parser）。');
 }
 
 /**
@@ -437,6 +471,12 @@ export function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath }) {
     console.warn('crap-check [diff]: 未检测到 coverage/coverage-final.json，默认按未覆盖（cov=0）评估');
   }
 
+  const counts = coverageDataSource(coverage);
+  if (counts.libCount === 0 && counts.srcCount > 0) {
+    reportDataSourceMismatch(counts, 'diff');
+    return { exitCode: 2, passed: false, violations: [] };
+  }
+
   // 构建 coverage 索引：按 relativePath -> fileData
   const coverageByRel = new Map();
   for (const [covFile, covData] of Object.entries(coverage)) {
@@ -563,6 +603,13 @@ export function runFullCheck({ repoRoot, threshold, strict, coveragePath }) {
   }
 
   const coverage = JSON.parse(readFileSync(coveragePath, 'utf8'));
+
+  const counts = coverageDataSource(coverage);
+  if (counts.libCount === 0) {
+    reportDataSourceMismatch(counts);
+    return { exitCode: 2, passed: false, hotspots: [] };
+  }
+
   const hotspots = [];
   let totalFns = 0;
   let coveredFns = 0;

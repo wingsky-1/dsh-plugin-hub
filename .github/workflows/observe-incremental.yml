@@ -3,7 +3,7 @@ name: Observe (incremental)
 # #433 调度重设计 + #572 孤立分支基线：每日四班次增量班（北京 12/16/20/24 = UTC 04/08/12/16）。
 # - 基于孤立分支 refs/heads/baseline/mutation 拉取最新基线跑增量变异（快）；
 # - 变异产物由 orphan-baseline.mjs push 强推至孤立分支 baseline/mutation；
-# - 职责收敛：本班次不跑 cov / self-cov --check / crap / observe-check 报告，
+# - 职责收敛：本班次不跑 cov / crap / observe-check 报告，
 #   只做「恢复基线 → 增量变异 → 推送孤立基线」。
 # - #572 方案：基线走孤立分支，彻底剥离 main 分支代码树巨型 JSON 与自动 PR 噪音。
 

@@ -37,14 +37,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build all
-        run: pnpm build
-
-      - name: Coverage（c8 采集）
+      # 刻意不构建：覆盖率只跑 unit + integration（直连 src），不消费 lib 产物
+      - name: Coverage（vitest coverage，分母仅 src，阈值见 vitest.config.ts）
         run: pnpm cov
 
-      - name: CRAP 明细
-        run: pnpm crap
+      # CRAP 自 #722 阶段三起处于 fail-closed 停用态（圈复杂度取自 lib 产物、覆盖率已切
+      # src 口径，行号不可比 → crap-check 入口自检 exit 2），故移除本步骤；src 口径重建
+      # 归阶段 5。crap-report.json 缺席时报告正文自动省略该段（见 health-report-body.mjs）。
 
       - name: Generate report body
         run: node scripts/release/health-report-body.mjs > health-body.md

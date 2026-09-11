@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 /**
  * 生成周度健康报告的「机器信号段」markdown（指导文档 5.6 / 6.1）。
- * 数据源：pnpm cov 产出的 coverage/coverage-summary.json 与 pnpm crap 产出的
- * coverage/crap-report.json。人工判断段由模板预留，结论永远留给人。
+ * 数据源：pnpm cov 产出的 coverage/coverage-summary.json（#722 阶段三起为 vitest
+ * 的 src 口径）与 pnpm crap 产出的 coverage/crap-report.json（该脚本自阶段三起
+ * fail-closed 停用，文件缺席时本报告自动省略 CRAP 段）。人工判断段由模板预留，
+ * 结论永远留给人。
  */
 import { readFileSync, existsSync } from 'node:fs';
 
@@ -22,7 +24,7 @@ lines.push('## 机器信号段（自动生成，勿改）');
 if (summary?.total) {
   const t = summary.total;
   lines.push(
-    `- 覆盖率（lib 产物口径）：lines ${t.lines.pct}% / functions ${t.functions.pct}%` +
+    `- 覆盖率（vitest/istanbul 源码口径，分母仅 src，不含 vendor 与 lib 产物；阈值见 vitest.config.ts）：lines ${t.lines.pct}% / functions ${t.functions.pct}%` +
     ` / branches ${t.branches.pct}%`,
   );
 } else {

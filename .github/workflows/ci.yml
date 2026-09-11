@@ -104,6 +104,10 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'tsconfig.base.json'
+              # #722 阶段三：根级测试与覆盖率配置是阈值/分母的唯一事实源，
+              # 与 stryker.conf.d/*.json 同理——不映射则配置类 PR 不触发任何
+              # job，改动无法自证（阈值降线也会绕过全部切片）。
+              - 'vitest.config.ts'
             dsh-notifier:
               - 'packages/dsh-notifier/**'
               # #322：stryker 段配置变更须命中本包面（段配置是 mutation 单一事实源，
@@ -203,19 +207,22 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # ── 第 3 段之一：全局单次覆盖采集（#217 变异/覆盖解耦）──
-  # cov 从变异矩阵剥离为全局单进程采集：此前矩阵 6 实例并行各自跑 c8 全仓
-  # smoke，lan-proxy 固定端口 EADDRINUSE 与 provider-usage K12 时序漂移是 flake
-  # 根因；单次采集根治端口竞争，self-coverage.json 经 artifact 下发给 verdict。
+  # ── 第 3 段之一：全局单次覆盖采集（#217 变异/覆盖解耦；#722 阶段三切 vitest）──
+  # cov 从变异矩阵剥离为全局单进程采集：此前矩阵 6 实例并行各自跑全仓 smoke，
+  # lan-proxy 固定端口 EADDRINUSE 与 provider-usage K12 时序漂移是 flake 根因；
+  # 单次采集根治端口竞争。
   #
   # 拓扑（复核裁决采纳并行选项 b）：本 job 与 mutation-gate 矩阵平行
-  # （wall-clock = max(install+build+cov, install+build+stryker)，严格优于串行）。
+  # （wall-clock = max(install+cov, install+build+stryker)，严格优于串行）。
   # fail-closed 链路（GHA needs 默认语义，勿「优化」掉）：coverage 失败/skip →
   # mutation-verdict（if 显式要求本 job success）连带 skipped → repo-gate 判定表
   # 对 hasMutations=true 的 PR 以 GATE_COVERAGE 维度优先点名「coverage 失败连坐」
   # 整体判红。变异矩阵不受本 job 影响、独立跑完（报告照常产出），但整体仍红——
-  # 不存在「cov 挂了而门禁绿」的半通状态。coverage job 失败 ≈ smoke 失败（同一
-  # c8 包裹），属 build-test 同级硬信号，观察期语义不豁免本 job。
+  # 不存在「cov 挂了而门禁绿」的半通状态。
+  #
+  # #722 阶段三：采集换为 vitest coverage（istanbul provider），阈值判分随之移入
+  # vitest.config.ts 的 coverage.thresholds（未达标即非零退出，不再有独立判分脚本）；
+  # 分母只含 packages/*/src + shared，零 vendor、零 lib 产物。
   coverage:
     name: Coverage collection (global single-run)
     needs: changes
@@ -223,7 +230,9 @@ jobs:
     # 只有 PR 打 gate:full 标签时才补跑。hasMutations 仍作为对象面判据保留。
     if: github.event_name == 'pull_request' && needs.changes.outputs.fullGate == 'true' && needs.changes.outputs.hasMutations == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 10 分钟：新链路只剩 install + 采集（本机 8 核实测 47s），原 20 分钟是为
+    # 「全量 build + c8 包裹全仓 smoke + self-cov」三段设的。
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -241,29 +250,23 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # 必须全量构建：selfWritten.functions.pct 是全仓 self-written 函数口径，
-      # 任一包 lib/index.js 缺失既会让 c8 smoke 报 ERR_MODULE_NOT_FOUND，也让
-      # 覆盖率分母与夜间 observe 口径漂移（run #32790425132 教训）
-      - name: Build all packages（覆盖率口径为全仓分母，依赖全集 lib 产物）
-        run: pnpm build
+      # 刻意不构建：unit/integration 直连 src（#722 阶段一），覆盖率分母只含
+      # packages/*/src + shared，不消费 lib 产物。实测无 lib 产物时本链路 exit 0
+      # （原始「必须全量构建」注释属 c8 产物口径遗留）。
 
       # Mutate 面守卫已随 #276 方案 A 退役：src 级 mutate 用文件 glob 声明
       # （stryker.conf.d/<pkg>[-<n>].json 的 mutate = 源文件名清单），无产物
       # 行号、永不漂移，原 sync-mutate-segments / mutate-scope-guard 整套机制
       # 随之删除（见 #276 阶段 3 退役清点）。
 
-      - name: Coverage collection（c8 包裹全仓 smoke，全局单进程无端口竞争）
+      - name: Coverage collection（vitest coverage，unit + integration 直连 src）
         run: pnpm cov
 
-      - name: Self-written coverage report（落盘 coverage/self-coverage.json）
-        run: node scripts/gate/self-cov.mjs
-
-      - name: Upload self-coverage artifact（供 mutation-verdict 聚合判分）
+      - name: Upload coverage artifact（留档与夜间归档；阈值判分已由 pnpm cov 的 thresholds 完成）
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          # 精确 name：下游 download 用同名精确取（pattern 匹配 0 个不报错，精确名缺失才报错）
-          name: self-coverage
-          path: coverage/self-coverage.json
+          name: coverage
+          path: coverage/coverage-summary.json
           retention-days: 1
           if-no-files-found: error
 
@@ -275,7 +278,8 @@ jobs:
   #   归 release.yml tag 管线；非 PR 事件下整体 skipped，由 repo-gate 判定脚本
   #   按事件语义显式放行
   # - #217 解耦：本 job 只做基线 restore + stryker run + 报告上传，不再各自跑
-  #   pnpm cov / self-cov / 判分——双指标判分统一收敛到 mutation-verdict；
+  #   pnpm cov / 判分——变异率判分统一收敛到 mutation-verdict（#722 阶段三起覆盖率
+  #   维度已上移到 coverage job 的 vitest thresholds）；
   #   与 coverage job 平行无依赖（复核裁决选项 b），cov 失败不影响本矩阵跑完，
   #   由 verdict 缺席 + repo-gate 判定表兜底整体红
   # - 基线来源（#572）：读孤立分支 refs/heads/baseline/mutation（git 协议
@@ -381,9 +385,12 @@ jobs:
           retention-days: 1
           if-no-files-found: ignore
 
-  # ── 第 3 段之三：聚合判分收尾（artifact 汇合 + 逐包双指标判分，#217）──
-  # - self-coverage（coverage job）与各包 stryker 报告（mutation-gate 矩阵）
-  #   在此汇合后逐包跑 scripts/gate/mutation-gate.mjs 双指标判分；
+  # ── 第 3 段之三：聚合判分收尾（artifact 汇合 + 逐包变异率判分，#217）──
+  # - 各包 stryker 报告（mutation-gate 矩阵）在此汇合后逐包跑
+  #   scripts/gate/mutation-gate.mjs 判分；
+  # - 覆盖率维度不在此判（#722 阶段三 D1）：阈值由 vitest 的 coverage.thresholds
+  #   在 coverage job 内 fail-closed，本 job 的 if 要求 needs.coverage.result ==
+  #   'success' 即为该维度的连坐入口；
   # - if 用 always() 组合：矩阵 failure（实例级 stryker 非零退出）时仍运行
   #   聚合判分——已产出报告的包照常计账、缺报告的包由脚本 exit 2 fail-closed；
   #   coverage 非 success（失败/skip，本 job 是 fail-closed 链路的收敛点）或
@@ -412,14 +419,6 @@ jobs:
           # "Unable to locate executable file: pnpm"，repo-gate F2 随之连坐红）
           package-manager-cache: false
 
-      - name: Download self-coverage artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: self-coverage
-          # 单文件上传的 zip 根层级 = 文件本身：解压到 coverage/ 即还原出
-          # coverage/self-coverage.json 原始路径（判分脚本按此固定路径读取）
-          path: coverage
-
       - name: Download mutation report artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -433,7 +432,6 @@ jobs:
           COMBOS: ${{ needs.changes.outputs.mutationCombos }}
         run: |
           set -e
-          test -f coverage/self-coverage.json || { echo '::error::self-coverage artifact 未下发 —— fail-closed'; exit 1; }
           DIRS="$(ls -d coverage/mutation/mutation-report-* 2>/dev/null || true)"
           [ -n "$DIRS" ] || { echo '::error::变异报告 artifact 未下发（pattern 匹配 0 个）—— fail-closed'; exit 1; }
           for dir in $DIRS; do
@@ -447,9 +445,9 @@ jobs:
             [ -f "$f" ] || { echo "::error::${f} 报告 artifact 未下发 —— fail-closed"; MISSING=1; }
           done
           [ "$MISSING" -eq 0 ] || exit 1
-          echo 'artifact 层级还原完成：coverage/self-coverage.json + coverage/mutation/<pkg>[-<seg>].json'
+          echo 'artifact 层级还原完成：coverage/mutation/<pkg>[-<seg>].json'
 
-      - name: Mutation gate verdict（逐包双指标判分：覆盖率恒硬 + 变异率受 strict 开关）
+      - name: Mutation gate verdict（逐包变异率判分，受 mutation.strict 开关约束）
         # 记账模式：任一包判分失败继续跑完其余包，结尾统一判红（与夜间逐包容错纪律一致）
         env:
           SLICE: ${{ needs.changes.outputs.mutationPackages }}
@@ -465,7 +463,7 @@ jobs:
               FAILED=1
             fi
           done
-          [ "$FAILED" -eq 0 ] || { echo '::error::存在未通过双指标判分的切片包 —— fail-closed'; exit 1; }
+          [ "$FAILED" -eq 0 ] || { echo '::error::存在未通过变异率判分的切片包 —— fail-closed'; exit 1; }
 
   # ── 第 4 段：聚合闸（job 名保持分支保护 required check 名不变，无缝切换）──
   # needs 连坐语义（#217）：coverage / mutation-gate / mutation-verdict 任一失败
