@@ -123,7 +123,9 @@ function tierSteps(tier, { hitPackages, withCoverage }) {
     scriptsSelfTest,
   ]
   if (withCoverage) {
-    steps.push({ label: 'cov（c8 全仓覆盖率）', args: ['cov'] }, { label: 'crap（圈复杂度，观察期）', args: ['crap'] })
+    // crap 不在此列（#722 阶段三）：其圈复杂度取自 lib 产物、覆盖率已切 src 口径，
+    // 入口自检 exit 2；src 口径重建归阶段 5，届时与 ESLint 复杂度规则同批接入。
+    steps.push({ label: 'cov（vitest 覆盖率，unit + integration 直连 src）', args: ['cov'] })
   }
   return steps
 }

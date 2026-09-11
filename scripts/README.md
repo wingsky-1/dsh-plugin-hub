@@ -17,12 +17,13 @@
 - `gate/verify-npm-layout.ts` — npm 发布布局校验。
 - `gate/verify-docs.ts` — 文档/description 校验（缺 .md、占位符残留）。
 - `gate/aggregate.ts` — 聚合 `cordis.patch.yml` 生成 + 一致性校验（`--check` 供 CI）。
-- `gate/crap-check.mjs` — 单函数 CRAP 复杂度检查（阈值唯一事实源 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict，观察期仅记录，翻期可置 true 判红）
+- `gate/crap-check.mjs` — 单函数 CRAP 复杂度检查（阈值唯一事实源 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict）。**现状为 fail-closed 停用态（#722 阶段三）**：其圈复杂度取自 lib 编译产物，而覆盖率已切 src 口径，两者行号不可比——入口自检不匹配即 exit 2，不再以「0 个函数」静默放行；src 口径重建归阶段 5（与 ESLint 复杂度规则同批）。
 - `gate/forbid-src-tests.mjs` — #423 防双份回潮：扫 packages 下全部遗留 src 副本测试文件（含未跟踪），命中即 exit 1。
 - `gate/local-gate.mjs` — 本地/PR 门禁分层入口（`pnpm gate:changed` / `gate:pr` / `gate:full`，#726）：
   按改动类型选闸，PR 默认走增量口径，打 `gate:full` 标签才跑全量（覆盖率 + 变异 + 全仓产物闸）。
 - `gate/gen-stryker-conf.mjs` — 变异配置生成/校验：派生 `vitest.stryker.d/<pkg>.config.ts` 并同步各包 `--min`（`--check` 供门禁，`--sync-test-min` 改 `--min`）。
 - `gate/test-surface.mjs` / `gate/mutation-topology.mjs` — 测试分层与变异面登记校验（唯一事实源 `data/mutation-topology.json`）。
+- `gate/threshold-monotonic.mjs` — 阈值单调性校验（对比 `origin/main`，只许升不许降）：守护 `vitest.config.ts` 的 `coverage.thresholds`（#722 阶段三起的覆盖率唯一事实源）与 `gauntlet.config.json` 的变异阈值。
 
 ## maintenance/（一次性维护脚本，按需手工执行）
 
@@ -44,13 +45,14 @@
 - `test/run-vitest.mjs` — 包级 test 脚本的 vitest 包装：在 vitest 之上恢复 `--min <文件数>` fail-closed 判据（防 include 漂移的假绿）。
 - `test/build-client.test.ts` — build-client 脚本自测。
 - `test/collect-licenses.test.ts` — collect-licenses 脚本自测。
-- `test/crap-check.test.ts` — crap-check 脚本自测（config.strict 单一开关）。
+- `test/crap-check.test.ts` — crap-check 脚本自测（config.strict 单一开关；#722 起含「src 口径数据必须 fail-closed」用例）。
+- `test/threshold-monotonic.test.ts` — 阈值单调性自测（#722：vitest.config.ts 的 coverage.thresholds 提取、降线判红、缺块 fail-closed）。
 - `test/mutation-lib-to-src-hook.mjs` / `mutation-lib-to-src-loader.mjs` — #423 方案 A：Stryker 宿主将同包 `packages/<pkg>/lib/<relative-file>.(js|ts)` 重定向到 `src/<relative-file>.ts`；只处理相对/file URL，保留 packages 边界并排除 shared、node_modules、client 与路径穿越。
 
 ## data/（配置数据）
 
 - `data/plugins-manifest.json` — 插件清单（某插件是否参与聚合/发布校验的唯一声明处）。
-- `data/gauntlet.config.json` — CRAP 阈值唯一事实源。
+- `data/gauntlet.config.json` — 变异与 CRAP 阈值唯一事实源（覆盖率阈值自 #722 阶段三起改由 `vitest.config.ts` 的 `coverage.thresholds` 承载）。
 
 ## 仓库根的派生生成物
 

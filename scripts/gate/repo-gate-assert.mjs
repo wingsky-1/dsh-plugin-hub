@@ -135,10 +135,10 @@ export function evaluateGate(input) {
           ? '该跑没跑视为门禁绕过'
           : verdict === 'cancelled'
             ? '被取消（未完成判分）'
-            : '双指标判分未通过（覆盖率/变异率不达标或报告 artifact 链路违约）';
+            : '变异率判分未通过（变异率不达标或报告 artifact 链路违约）';
         return { ok: false, code: 1, reason: `mutation-verdict 结果 ${verdict}（期望 success）—— ${why}` };
       }
-      return { ok: true, code: 0, reason: `PR 门禁：变更切片 + 全局覆盖率 + 增量变异（[${pkgs.join(', ')}]）双指标全部通过` };
+      return { ok: true, code: 0, reason: `PR 门禁：变更切片 + 全局覆盖率 + 增量变异（[${pkgs.join(', ')}]）全部通过` };
     }
 
     // ── 空切片（合法缺席）：GitHub 对零实例动态矩阵实测回报 'failure' 而非官方

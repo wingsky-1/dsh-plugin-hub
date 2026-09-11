@@ -55,9 +55,22 @@ export default defineConfig({
     coverage: {
       provider: 'istanbul',
       include: ['packages/*/src/**/*.{ts,tsx}', 'shared/**/*.js'],
-      exclude: ['**/*.d.ts'],
+      // client 源码的直连 src 测试（happy-dom project）尚未落地：现有 test/client/** 是
+      // 读 lib 产物的契约测试，不进覆盖率，其源文件在分母里恒为 0%（33 个文件、755 个函数）。
+      // 计入分母会把全局值稀释到 59%，阈值失去约束力；且 happy-dom project 落地后分子跳升、
+      // 必须二次基线化。待该 project 建立后移除本排除项并一次性重新基线化。
+      exclude: ['**/*.d.ts', '**/client/**'],
       reporter: ['text', 'json-summary', 'json', 'lcov'],
       reportsDirectory: 'coverage',
+      // 基线（#722 阶段三实测，分母 132 文件）：lines 81.77 / functions 81.18 /
+      // statements 79.01 / branches 71.79，阈值留 1.0~1.8pp 余量。覆盖率数据确定性
+      // （连跑逐字一致），余量用于正常代码演进；下调阈值须走 threshold-monotonic 判定。
+      thresholds: {
+        lines: 80,
+        functions: 80,
+        statements: 78,
+        branches: 70,
+      },
     },
   },
 })

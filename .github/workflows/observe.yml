@@ -1,7 +1,8 @@
 name: Observe (nightly)
 
 # #85 v3 F1/F6 定案：观察期采集与变异门禁的夜间调度。
-# - cov / self-cov --check（阈值硬校验）/ crap 明细
+# - cov（含阈值硬校验：vitest 的 coverage.thresholds 未达标即非零退出）；
+#   CRAP 明细自 #722 阶段三起停用（数据源口径不可比），见下方 Coverage 步骤旁注释
 # - 全量变异（串行）
 # - 报告落 issue（幂等：同日不重开）；回落 >1pp 自动追评（隔夜必有工单）
 # 变异硬门禁在本 workflow 生效：任一包 covered < threshold 且 strict 开启 → 运行失败。
@@ -75,15 +76,15 @@ jobs:
       - name: Stryker config check（变异配置与拓扑 SSOT 一致）
         run: pnpm stryker:check
 
-      - name: Coverage（c8 采集）
+      # #722 阶段三：阈值判分进入 vitest 的 coverage.thresholds，未达标即非零退出——
+      # 本步骤同时承担采集与硬校验，原独立的 self-cov --check 执行点随之退役。
+      - name: Coverage（vitest coverage，阈值 coverage.thresholds 内 fail-closed）
         run: pnpm cov
 
-      - name: Self-written coverage gate（selfWrittenFunctions threshold 硬校验）
-        run: node scripts/gate/self-cov.mjs --check
-
-      - name: CRAP check（复杂度×覆盖率，观察期只记录）
-        run: pnpm crap
-        continue-on-error: true   # 观察期：基线校准归 #42 二期
+      # CRAP 自 #722 阶段三起处于 fail-closed 停用态（其圈复杂度取自 lib 产物，
+      # 而覆盖率已切 src 口径，行号不可比 → crap-check 入口自检 exit 2），故移除本
+      # 步骤而非保留一个恒红/恒空的执行点。src 口径重建归阶段 5（与 ESLint 复杂度
+      # 规则同批），届时重新接入本班次。crap-report.json 缺席时报告正文自动省略该段。
 
       - name: Resolve mutation suites（#276 方案 A + #433 全量班：每日一次全量）
         id: suite-plan
@@ -172,7 +173,7 @@ jobs:
         with:
           name: observe-reports
           path: |
-            coverage/self-coverage.json
+            coverage/coverage-summary.json
             coverage/mutation/
           retention-days: 14
           if-no-files-found: error   # 报告缺失本身即异常（fail-closed，评审 F4 旁证）

@@ -1,30 +1,32 @@
 #!/usr/bin/env node
 /**
- * mutation-gate — PR 增量变异门禁双指标判分（#178 v2；#217 起由 mutation-verdict
+ * mutation-gate — PR 增量变异门禁变异率判分（#178 v2；#217 起由 mutation-verdict
  * job 在 artifact 汇合后统一调用）
  *
- * 时序假设（#217 变异/覆盖解耦后的三段式链路）：
- *   1. coverage job 全局单次跑 pnpm cov + self-cov.mjs，先于本脚本产出
- *      coverage/self-coverage.json；
+ * 时序假设（#217 变异/覆盖解耦；#722 阶段三起覆盖率维度上移）：
+ *   1. coverage job 单次跑 pnpm cov，阈值判分由 vitest 的 coverage.thresholds
+ *      在该 job 内 fail-closed 完成，本脚本不再读覆盖率数据；
  *   2. mutation-gate 矩阵各实例只做基线 restore + stryker run，报告经
  *      upload-artifact 下发；
- *   3. mutation-verdict job 用 download-artifact 把两路产物还原到本脚本约定
- *      的固定路径后，才调用本脚本逐包判分。
+ *   3. mutation-verdict job 用 download-artifact 把报告还原到本脚本约定的
+ *      固定路径后，才调用本脚本逐包判分。
  *
- * 输入（运行时必须已在工作区就位，均来自上游 artifact 下发）：
+ * 输入（运行时必须已在工作区就位，来自上游 artifact 下发）：
  *   - coverage/mutation/<pkg>.json     Stryker JSON 报告（incremental 运行产物，
  *                                      复用 mutant 继承原状态，报告恒为全量口径）
- *   - coverage/self-coverage.json      self-written 覆盖率明细（coverage job 先行产出）
- *   - scripts/data/gauntlet.config.json（阈值唯一事实源，随 checkout 就位）
+ *   - scripts/data/gauntlet.config.json（变异阈值唯一事实源，随 checkout 就位）
  *
  * 用法：node scripts/gate/mutation-gate.mjs <pkg>   # pkg 形如 dsh-mcp-manager
  *
- * 判分（两项指标）：
- *   1) 测试覆盖率：self-written functions pct ≥ coverage.selfWrittenFunctions.threshold
- *      —— 恒硬（PR 门禁不随观察期开关放松，防止低覆盖改动借道合入）；
- *   2) 变异测试率：covered score ≥ mutation.packages[pkg].threshold
- *      —— 受全局 mutation.strict 开关约束：false 期间仅标注不拦截
- *      （provider-usage 在 #150 达标翻转 strict 后自动变硬，避免达标前卡死触该包的 PR）。
+ * 判分（单项指标）：
+ *   变异测试率：covered score ≥ mutation.packages[pkg].threshold
+ *     —— 受全局 mutation.strict 开关约束：false 期间仅标注不拦截
+ *     （provider-usage 在 #150 达标翻转 strict 后自动变硬，避免达标前卡死触该包的 PR）。
+ *
+ * 覆盖率维度为何不在此判：其 fail-closed 由 needs 链承担——mutation-verdict 的 if
+ * 显式要求 needs.coverage.result == 'success'，coverage 失败则本 job skipped，repo-gate
+ * 判定表按 GATE_COVERAGE 维度点名连坐。阈值唯一事实源是 vitest.config.ts 的
+ * coverage.thresholds（#722 阶段三 D1：避免同一数字在配置与脚本两处漂移）。
  *
  * 退出码：0 = 通过；1 = 门禁违约；2 = 环境/数据缺失错误（fail-closed）
  */
@@ -58,39 +60,10 @@ if (threshold === null) {
   process.exit(2);
 }
 const mutationStrict = Boolean(gauntlet?.mutation?.strict);
-const covCfg = gauntlet?.coverage?.selfWrittenFunctions ?? {};
-const covThreshold = typeof covCfg.threshold === 'number' ? covCfg.threshold : null;
-if (covThreshold === null) {
-  console.error('mutation-gate: coverage.selfWrittenFunctions.threshold 未配置 —— 视为配置错误（fail-closed）');
-  process.exit(2);
-}
 
 let failed = false;
 
-// ── 指标一：测试覆盖率（self-written 函数口径，恒硬） ──────────
-const selfCovPath = join(repoRoot, 'coverage', 'self-coverage.json');
-if (!existsSync(selfCovPath)) {
-  console.error('mutation-gate: coverage/self-coverage.json 不存在 —— coverage job 的 artifact 未下发（时序假设被破坏）—— fail-closed');
-  process.exit(2);
-}
-let fnPct = null;
-try {
-  fnPct = JSON.parse(readFileSync(selfCovPath, 'utf8'))?.selfWritten?.functions?.pct ?? null;
-} catch (err) {
-  console.error(`mutation-gate: self-coverage.json 解析失败：${err.message}`);
-  process.exit(2);
-}
-if (fnPct === null) {
-  console.error('mutation-gate: self-coverage.json 缺少 selfWritten.functions.pct —— fail-closed');
-  process.exit(2);
-}
-console.log(`mutation-gate [${pkg}] 测试覆盖率: functions ${fnPct}% vs threshold ${covThreshold}%（恒硬）`);
-if (fnPct < covThreshold) {
-  console.error(`mutation-gate: FAIL —— self-written 函数覆盖 ${fnPct}% 低于下限 ${covThreshold}%`);
-  failed = true;
-}
-
-// ── 指标二：变异测试率（covered 口径，受 mutation.strict 约束）──
+// ── 变异测试率（covered 口径，受 mutation.strict 约束）──────────
 // #220 B 方案：包可拆分为多个段配置（<pkg>-<seg>.json），各段独立 matrix 实例
 // 产出 <pkg>-<seg>.json 报告；此处按段报告聚合（mutant id 去重）为包级口径。
 // 未拆分包仍读单报告 <pkg>.json。任一段报告缺失即 fail-closed。
@@ -144,4 +117,4 @@ if (r.coveredScore < threshold) {
 }
 
 if (failed) process.exit(1);
-console.log(`mutation-gate: ${pkg} 双指标通过`);
+console.log(`mutation-gate: ${pkg} 变异率通过`);

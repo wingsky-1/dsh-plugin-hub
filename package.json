@@ -23,7 +23,7 @@
     "gate:changed": "node scripts/gate/local-gate.mjs --tier changed",
     "gate:pr": "node scripts/gate/local-gate.mjs --tier pr",
     "gate:full": "node scripts/gate/local-gate.mjs --tier full",
-    "cov": "c8 --reporter=json --reporter=json-summary --reporter=text pnpm -r --filter !dsh-plugin-hub --if-present test",
+    "cov": "vitest run --coverage --project unit --project integration",
     "cov:src": "node scripts/gate/cov.mjs",
     "crap": "node scripts/gate/crap-check.mjs"
   },

@@ -18,7 +18,7 @@
  *     VariableDeclaration（含 var/const/let，含 esbuild 提升后的模块级 var，
  *     客户端 apply 内的 var 在 transform 后亦提升到模块顶层）；
  *   2. acorn.parse(js, { ecmaVersion: 'latest', sourceType: 'module' })（仓库
- *     既有 devDep，self-cov / crap-check 同款）——AST 按 key.name 取键，
+ *     既有 devDep，crap-check 同款）——AST 按 key.name 取键，
  *     对中文 \uXXXX 转义、模板串、z.object().default({...}) 嵌套一律免疫。
  *
  * 全部函数**文件路径 / 文本参数化**（不读仓库全局路径），保证负向自测可对

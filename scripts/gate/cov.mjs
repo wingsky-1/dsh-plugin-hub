@@ -2,28 +2,30 @@
 /**
  * cov:src — **源码口径**覆盖率度量入口（issue #690 S1）。
  *
- * 为什么单独一个命令而不替换 `pnpm cov`：`pnpm cov` 是 CI mutation-verdict 的
- * 覆盖率输入，其 self-written 派生（scripts/gate/self-cov.mjs）的口径绑定 **lib
- * 产物形态**（靠 esbuild 边界注释 / 垫片过滤分段）。本脚本经 lib→src hook 让测试
- * 从 src 加载，coverage 数据路径随之变为 `src/*.ts`，self-cov 解析不到产物形态 →
- * 逐包报 `self-written 函数覆盖 0%` → PR 全红（已实测）。
- * refactor-plan §6 也把「覆盖率经源码镜像」列为**移出**的仓库级项（破坏单包
- * PR 可独立回滚），故这里的定位是**开发者/评审用的真实口径度量**，不动 CI 判分。
+ * 现状（#722 阶段三起）——本命令已冗余，退役归阶段 5：
+ *   它当初的存在理由是「`pnpm cov` 只能从 lib 产物采集，src 行是失真值」。阶段三把
+ *   `pnpm cov` 换成 vitest 的 istanbul provider 并只跑 unit + integration（两者直连
+ *   `src/`）后，**`pnpm cov` 本身就是 src 口径**，本命令的动机不复存在。差异只剩采集
+ *   范围：本命令走 c8 默认口径（凡被加载的文件都进分母，含 `scripts/**`），而
+ *   `pnpm cov` 由 include 限定为 `packages/*/src` + `shared`——后者才是 CI 判分口径。
+ *   两者共用 `coverage/coverage-final.json` 同一落盘路径，**先跑本命令会覆盖 CI 口径
+ *   的产物**，不要连着跑。
  *
- * 为什么需要它：`pnpm cov` 从产物入口采集时，src 行只统计「被产物直连加载」的
- * 模块——实测 `All files 61.61%`、`events/event-handlers.ts` 27.24%、
- * `server/routes.ts` 46.72%，是失真值。复用 Stryker 测试宿主既有的 lib→src
- * resolve hook（scripts/test/mutation-lib-to-src-hook.mjs）把 `lib/*.js` 解析重定向
- * 到同包 `src/*.ts` 后，真实口径为 `All files 93.02%`、`event-handlers.ts` 96.91%、
- * `sdk/service.ts` 94.42%、`server/routes.ts` 92.28%。
+ * 保留原因：仍可跑通（实测 exit 0），作为独立采集器的对照面存在；退役必须与
+ * mutation-lib-to-src-{hook,loader}.mjs 同批（本命令是它们仅剩的引用方），归阶段 5。
+ *
+ * 历史动机（保留以备回溯）：`pnpm cov` 曾是 CI mutation-verdict 的覆盖率输入，其
+ * self-written 派生（scripts/gate/self-cov.mjs，阶段三已退役）绑定 lib 产物形态
+ * （esbuild 边界注释 / 垫片过滤分段）；本脚本经 lib→src hook 让测试从 src 加载，
+ * 把产物口径下的失真值（`All files 61.61%`、`events/event-handlers.ts` 27.24%、
+ * `server/routes.ts` 46.72%）还原为真实口径（93.02% / 96.91% / 92.28%）。
  *
  * 为什么不写成 `NODE_OPTIONS="..." c8 ...` 放进 package.json：仓库无环境变量前缀
  * 脚本先例，且该语法在 Windows cmd 下不成立；Node wrapper 用 file URL 传路径，
  * 天然跨平台（也规避盘符与空格问题）。
  *
- * 约束：hook 只在本命令注入——`pnpm test` 与 `pnpm cov` 仍直跑产物，测试三层
- * 口径与 CI 判分口径都不受影响。
- * 前提：需要先有 lib 产物（与 `pnpm cov` 一致，CI 的 coverage job 先跑 pnpm build）。
+ * 约束：hook 只在本命令注入——`pnpm test` 与 `pnpm cov` 不受影响。
+ * 前提：需要先有 lib 产物（契约测试仍读 lib）。
  *
  * 用法：node scripts/gate/cov.mjs（或 pnpm cov:src）
  * 退出码：透传 c8 的退出码（采集失败必须显式失败，不得吞掉）。

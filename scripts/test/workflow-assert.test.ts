@@ -11,7 +11,8 @@
  *   - build-test 矩阵恒全集构建（repo-gate 全局门禁依赖全量 lib 产物，评审 F1）
  *   - action 一律 pin commit SHA（供应链纪律，release.yml 为最高风险面——持有
  *     NPM_TOKEN + contents: write，必须纳入断言盲区外全覆盖；health-report.yml 同防回归）
- *   - observe.yml：全量班调度（北京次日 04:00）、self-cov --check 执行点在位；
+ *   - observe.yml：全量班调度（北京次日 04:00）、覆盖率硬校验执行点（#722 阶段三起
+ *     并入 pnpm cov 的 vitest coverage.thresholds）在位、self-cov 执行点不得回潮；
  *     全量清单 ↔ stryker.conf.d 文件集 ↔ gauntlet mutation.packages 三方一致
  *   - observe-incremental.yml：增量班调度（北京 12/16/20/24）、无日期闸、
  *     有变化即 PR、不跑覆盖校验
@@ -187,11 +188,15 @@ test('ci.yml/observe*/baseline-overlay/release/health-report.yml: 第三方与�
   }
 })
 
-test('observe.yml: 夜间调度 + 双硬门禁执行点 + issues 写权限', () => {
+test('observe.yml: 夜间调度 + 硬门禁执行点 + issues 写权限', () => {
   assert.ok(OBSERVE.includes('cron:'), 'schedule 触发器在位')
   assert.ok(OBSERVE.includes('workflow_dispatch'), '支持手动 dispatch')
   assert.ok(OBSERVE.includes('issues: write'), '自动建 issue 需要 issues:write')
-  assert.ok(OBSERVE.includes('self-cov.mjs --check'), 'self-written 覆盖率阈值校验执行点（#85 v3）')
+  // #722 阶段三：覆盖率硬校验并入 pnpm cov（vitest 的 coverage.thresholds 未达标即
+  // 非零退出），原独立的 self-cov --check 执行点退役。两端一起锁：新执行点在位 +
+  // 旧执行点不得回潮，防「切了一半」导致夜间覆盖率无人判红。
+  assert.ok(OBSERVE.includes('run: pnpm cov'), '覆盖率采集与阈值校验执行点在位（#722 阶段三）')
+  assert.ok(!OBSERVE.includes('self-cov.mjs'), 'self-cov 执行点已退役（阈值归 vitest coverage.thresholds）')
   assert.ok(OBSERVE.includes('observe-check.mjs'), '阈值校验+回落检测脚本执行点（F1/F6）')
 })
 
@@ -884,7 +889,7 @@ test('#178: 变异统计口径单一事实源——observe-check 与 mutation-ga
 })
 
 // ── #217 变异/覆盖解耦：cov 全局单次采集 + artifact 跨 job 传递 + 聚合判分 ──
-// 三段式：coverage（全局单进程 cov+self-cov+guard 前移）∥ mutation-gate 矩阵
+// 三段式：coverage（全局单进程 vitest coverage，阈值判分在其退出码内）∥ mutation-gate 矩阵
 // （仅基线+stryker+报告上传，needs 仅 changes、与 coverage 平行无依赖——复核
 // 裁决选项 b，wall-clock = max）→ mutation-verdict（artifact 汇合后逐包判分，
 // if 要求 coverage success：cov 失败时 verdict 连带缺席，repo-gate 判红兜底）。
@@ -910,23 +915,24 @@ test('#217: coverage job 全局单次采集——if 精确、步骤链与 artifa
     "github.event_name == 'pull_request' && needs.changes.outputs.fullGate == 'true' && needs.changes.outputs.hasMutations == 'true'",
     'coverage if 必须精确为「仅 PR 且 gate:full 且 hasMutations」（#722：覆盖率是全仓分母口径，归夜间/标签触发）',
   )
-  // 步骤链顺序：build → cov → self-cov → upload
-  const buildIdx = cov.indexOf('- name: Build all packages')
+  // #722 阶段三步骤链：install → cov → upload。
+  // build 已移除（unit/integration 直连 src，不消费 lib 产物）；self-cov 判分已并入
+  // vitest 的 coverage.thresholds（未达标即非零退出，故 PR 侧不再「只落盘不判红」）。
   const covRunIdx = cov.indexOf('run: pnpm cov')
-  const selfCovIdx = cov.indexOf('node scripts/gate/self-cov.mjs')
-  const upIdx = cov.indexOf('Upload self-coverage artifact')
-  for (const [name, idx] of [['Build all packages', buildIdx],
-    ['pnpm cov', covRunIdx], ['self-cov.mjs', selfCovIdx], ['upload artifact', upIdx]]) {
-    assert.ok(idx > 0, `coverage 步骤 ${name} 在位`)
-  }
-  assert.ok(buildIdx < covRunIdx && covRunIdx < selfCovIdx && selfCovIdx < upIdx,
-    'coverage 步骤链必须按 build → cov → self-cov → upload 排布（guard 已退役，self-cov 读 c8 产物）')
-  assert.ok(!cov.slice(0, upIdx).includes('--check'), 'PR coverage 只落盘不判红（--check 阈值硬校验归 observe 四班次）')
+  const upIdx = cov.indexOf('Upload coverage artifact')
+  assert.ok(covRunIdx > 0, 'coverage 步骤 pnpm cov 在位')
+  assert.ok(upIdx > covRunIdx, 'coverage 步骤 upload artifact 在位且排在 pnpm cov 之后')
+  assert.ok(!cov.includes('- name: Build all packages'),
+    'coverage job 不得再全量构建（#722 阶段三：分母只含 packages/*/src + shared，不消费 lib）')
+  assert.ok(!cov.includes('node scripts/gate/self-cov.mjs'),
+    'self-cov 判分步骤已退役（阈值归 vitest coverage.thresholds，防两处判分并存）')
+  assert.ok(/^    timeout-minutes: 10$/m.test(cov),
+    'timeout 必须收敛为 10 分钟（新链路实测 ~47s；原 20 分钟是 build + c8 全仓 smoke + self-cov 三段口径）')
 
   // artifact 上传契约（fail-closed）
   const uploadBlock = cov.slice(upIdx)
-  assert.ok(uploadBlock.includes('name: self-coverage'), 'artifact 名必须精确为 self-coverage（下游同名精确下载）')
-  assert.ok(uploadBlock.includes('path: coverage/self-coverage.json'), '上传路径为固定产物路径')
+  assert.ok(uploadBlock.includes('name: coverage'), 'artifact 名必须精确为 coverage')
+  assert.ok(uploadBlock.includes('path: coverage/coverage-summary.json'), '上传路径为覆盖摘要的固定产物路径')
   assert.ok(uploadBlock.includes('if-no-files-found: error'), '产物缺失必须 error（防下游静默空判分）')
   assert.ok(uploadBlock.includes('retention-days: 1'), '跨 job 传递产物 retention 收敛为 1 天')
 })
@@ -958,7 +964,7 @@ test('#217: mutation-gate 剥离 cov——与 coverage 平行（needs 仅 change
   assert.ok(upBlock.includes('if-no-files-found: error'), '报告缺失必须 error（verdict 缺报告 fail-closed 的前提）')
 })
 
-test('#217: mutation-verdict 聚合收尾——artifact 汇合 + 逐包双指标判分', () => {
+test('#217: mutation-verdict 聚合收尾——artifact 汇合 + 逐包变异率判分', () => {
   const mv = CI.slice(CI.indexOf('\n  mutation-verdict:'), CI.indexOf('\n  repo-gate:'))
   assert.ok(mv.length > 0, 'mutation-verdict job 在位')
   assert.ok(/needs: \[changes, coverage, mutation-gate\]/.test(mv),
@@ -970,14 +976,11 @@ test('#217: mutation-verdict 聚合收尾——artifact 汇合 + 逐包双指标
     + '矩阵 failure 时仍聚合判分（缺报告包 exit 2 fail-closed）；增量路径（无标签）下本 job 不实例化，'
     + '由 repo-gate 判定表按 fullGate=false 要求三段全 skipped',
   )
-  // artifact 下载：精确名 + pattern 双通道；download self-coverage 步骤块逐项精确断言
-  const dlIdx = mv.indexOf('- name: Download self-coverage artifact')
-  assert.ok(dlIdx > 0, 'self-coverage 下载步骤在位')
-  const dlBlock = mv.slice(dlIdx, mv.indexOf('- name:', dlIdx + 10))
-  assert.ok(dlBlock.includes('name: self-coverage'),
-    'download 必须用精确 name self-coverage（pattern 匹配 0 个不报错，精确名缺失才报错）')
-  assert.ok(/path: coverage\s*$/m.test(dlBlock),
-    'download path 必须恰为 coverage/（单文件 zip 根层级 = 文件本身，解压即还原 coverage/self-coverage.json）')
+  // artifact 下载：#722 阶段三起只剩变异报告一条 pattern 通道——覆盖率维度已上移，
+  // 其 fail-closed 由上面的 needs.coverage.result == 'success' 承担。锁定「下载步骤
+  // 不得回潮」，否则会出现一个下载了却无人消费的 dead artifact。
+  assert.ok(!mv.includes('Download self-coverage artifact'),
+    'self-coverage 下载步骤已退役（覆盖率判分上移到 coverage job 的 vitest thresholds）')
   assert.ok(mv.includes('pattern: mutation-report-*'), '各包 stryker 报告经 pattern 枚举下载')
   assert.ok(mv.includes('node scripts/gate/mutation-gate.mjs'), '逐包判分脚本调用在位')
   assert.ok(mv.includes("SLICE: ${{ needs.changes.outputs.mutationPackages }}"),

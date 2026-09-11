@@ -5,7 +5,7 @@
  * 输入：
  *   - scripts/data/gauntlet.config.json（mutation.packages 基线 + threshold/strict）
  *   - coverage/mutation/dsh-<pkg>.json（Stryker JSON 报告，须先跑完变异套件）
- *   - coverage/self-coverage.json（self-cov 口径明细）
+ *   - coverage/coverage-summary.json（vitest/istanbul 源码覆盖率，供报告展示）
  *
  * 行为：
  *   - 逐包计算 covered score = (killed+timeout) / (killed+timeout+survived)
@@ -45,13 +45,17 @@ const mutationStrict = Boolean(gauntlet?.mutation?.strict);
 const rows = [];
 const violations = [];
 const regressions = [];
-let selfWrittenPct = null;
+let coveragePct = null;
 
-// self-written 函数覆盖（供报告展示；硬校验已由 self-cov --check 独立执行）
-const selfCovPath = join(repoRoot, 'coverage', 'self-coverage.json');
-if (existsSync(selfCovPath)) {
+// 源码覆盖率（供报告展示；阈值硬校验已由 vitest 的 coverage.thresholds 在 pnpm cov
+// 内 fail-closed 执行——#722 阶段三起口径为 src，分母不含 vendor 与 lib 产物）
+const coverageSummaryPath = join(repoRoot, 'coverage', 'coverage-summary.json');
+if (existsSync(coverageSummaryPath)) {
   try {
-    selfWrittenPct = JSON.parse(readFileSync(selfCovPath, 'utf8'))?.selfWritten?.functions?.pct ?? null;
+    const total = JSON.parse(readFileSync(coverageSummaryPath, 'utf8'))?.total ?? null;
+    coveragePct = total
+      ? { lines: total.lines?.pct ?? null, functions: total.functions?.pct ?? null, branches: total.branches?.pct ?? null }
+      : null;
   } catch { /* 展示性字段，缺失不致命 */ }
 }
 
@@ -142,8 +146,10 @@ const today = new Date().toISOString().slice(0, 10);
 const lines = [];
 lines.push(`## 夜间质量观察报告 ${today}`);
 lines.push('');
-if (selfWrittenPct !== null) {
-  lines.push(`self-written 函数覆盖：**${selfWrittenPct}%**（threshold 见 gauntlet coverage.selfWrittenFunctions）`);
+if (coveragePct !== null) {
+  lines.push(`源码覆盖率（vitest/istanbul，分母仅 src，不含 vendor 与 lib 产物）：`
+    + `lines **${coveragePct.lines}%** / functions ${coveragePct.functions}% / branches ${coveragePct.branches}%`
+    + `（阈值唯一事实源 vitest.config.ts 的 coverage.thresholds）`);
   lines.push('');
 }
 lines.push('| 包 | covered | threshold | 基线 | Δ vs 基线 | killed | survived | noCov |');

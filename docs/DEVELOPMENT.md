@@ -20,31 +20,35 @@ pnpm install       # 仓库根，pnpm workspace 依赖安装（必须先于一�
 pnpm build        # 全仓构建 = pnpm -r build（各包：clean-lib → tsc → bundle-host）
 pnpm contract     # 客户端契约（node scripts/gate/contract-check.ts）
 pnpm test         # 全量 smoke（Node ≥23.6 原生 type stripping 直跑）
-pnpm cov          # 覆盖率采集（c8 包裹 smoke，测量对象 = lib 编译产物）
-pnpm crap         # 单函数 CRAP 检查（先跑 cov；阈值唯一事实源 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict，观察期仅记录，翻期可置 true 判红）
-node scripts/gate/self-cov.mjs
-                  # self-written 覆盖率口径报告（先跑 cov；读 coverage/coverage-final.json，
-                  # 去 esbuild 内联 vendor 段与 __ 运行时垫片后仅计自写函数/行/分支，
-                  # 输出 coverage/self-coverage.json；函数计数与 crap-check 同一口径；
-                  # --dry-run 预览不落盘；观察期只记录不判红）
+pnpm cov          # 覆盖率采集 + 阈值判分（vitest coverage / istanbul provider，只跑 unit + integration）
+pnpm crap         # 单函数 CRAP 检查（阈值唯一事实源 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict）
+                  # 现状为 fail-closed 停用态，见下方引用块
 pnpm pack:check   # tarball 完整性（含聚合包）
 pnpm typecheck    # 全仓类型检查
 ```
 
 > Node 版本：本地直跑 TS 需 **≥23.6**（type stripping 门槛）；CI 固定 Node 24。
-> 阈值与 strict 开关见 `scripts/data/gauntlet.config.json`（唯一事实源）。其中
-> `coverage.selfWrittenFunctions` 记录 self-written 函数覆盖基线：self-cov 口径
-> （去 esbuild 内联 vendor 段与 `__` 运行时垫片后仅计自写函数），已接入 observe.yml
-> 夜间硬校验（`self-cov.mjs --check`，strict=true）；threshold=60 为当前硬阈值，
-> 80% 为阶段二目标。
+> 阈值事实源分处两处，按维度划分：**覆盖率**在 `vitest.config.ts` 的
+> `coverage.thresholds`（降线由 `scripts/gate/threshold-monotonic.mjs` 对比
+> `origin/main` 守护）；**变异与 CRAP**在 `scripts/data/gauntlet.config.json`。
 >
-> **两个覆盖口径并存**：`pnpm cov` 是 CI 判分口径（从 lib 产物采集，self-written
-> 派生依赖产物形态）；`pnpm cov:src` 是开发者/评审口径，经 lib→src resolve hook
-> 从 src 采集真实覆盖率（实测 `All files` 61.61% → 93.02%、`events/event-handlers.ts`
-> 27.24% → 96.91%、`server/routes.ts` 46.72% → 92.28%）。后者**不参与 CI 判分**：
-> 换成 src 口径后 self-cov 解析不到产物形态，逐包报 `self-written 函数覆盖 0%`
-> 而全区判红（已实测），且「覆盖率经源码镜像」属 refactor-plan §6 移出的仓库级项。
-> 细节见 `scripts/gate/cov.mjs` 头注释。
+> **覆盖率口径（#722 阶段三）**：`pnpm cov` = vitest 的 istanbul provider，只跑
+> unit + integration（两者直连 `src/`）。分母仅 `packages/*/src/**/*.{ts,tsx}` +
+> `shared/**/*.js` 的**源文件**——零 vendor、零 lib 产物，且未加载的源文件按 0%
+> 计入分母（分母不随「加载了什么」变化）。e2e（不可复现）与 contract（测 lib
+> 产物）不进覆盖率，仍由 `pnpm test` 全量执行。阈值判分就是 `pnpm cov` 的退出码，
+> 不再有独立判分步骤；PR 的 `gate:full` 标签与 `observe.yml` 夜间班次共用这一执行点。
+>
+> **`**/client/**` 暂排除在分母外**：其直连 src 的测试（happy-dom project）尚未
+> 落地，现有 `test/client/**` 是读 lib 产物的契约测试。计入分母会让 33 个恒 0%
+> 的文件把全局值稀释约 22pp、阈值失去约束力，且 happy-dom project 落地时分子跳升、
+> 必须二次基线化。**待该 project 建立时移除排除项并一次性重新基线化。**
+>
+> **`pnpm crap` 现状（fail-closed 停用态）**：其圈复杂度取自 lib 编译产物，而覆盖率
+> 已切到 src 口径，两者行号不可比——此时按 lib 过滤会命中 0 个文件并以 exit 0 放行
+> （静默降级，#718 定性）。故入口处加了数据源口径自检：不匹配即 exit 2 并说明原因；
+> 夜间的 CRAP 步骤与 `gate:full --with-coverage` 的 crap 步骤已同步摘除。
+> src 口径重建归 **#722 阶段 5**（与 ESLint 复杂度规则同批，届时可直接消费其 TS parser）。
 
 ### 变异测试与增量链路（#178 / #187）
 
@@ -67,7 +71,7 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
   cron `0 4,8,12,16 * * *`）：restore 仓库基线 → 增量变异（快，跳过未变
   mutant）→ 基线有实质变化即 create-pull-request + auto-merge（无日期闸，每次
   独立判断「有变化即 PR」；create-pull-request 无 diff 时自然 no-op）；增量班
-  不跑 cov/self-cov/crap 等报告，职责收敛为「变异 + 基线 PR」。
+  不跑 cov/crap 等报告，职责收敛为「变异 + 基线 PR」。
 - **PR 门禁分层**（ci.yml，#722）：默认走**增量**，只有给 PR 打 `gate:full` 标签才跑全量链路
   （`pull_request.types` 含 `labeled`/`unlabeled`，打标签即触发重跑）。策略由 `changes`
   job 一处计算为 `fullGate` 输出，判定表与三个全量 job 的 `if` 共用同源布尔。
@@ -81,11 +85,12 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
      组 B（产物闸，按 `fullGate` 切口径）：`contract` / `pack:check` / `verify:npmlayout`
      —— 默认只验命中包（`--packages <命中清单>`），`gate:full` 时验全仓；
   3. `coverage` / `mutation-gate` / `mutation-verdict`（全量链路）：只在 `gate:full` 的
-     PR 上实例化。coverage 全局单次采集（`pnpm cov` + `self-cov.mjs`，产物经 artifact
-     下发——cov 从变异矩阵剥离后，矩阵多实例各自全仓 smoke 导致的端口竞争 flake 随之
-     消除）；mutation 按命中包切片跑 Stryker（incremental 跳过未变 mutant）；verdict
-     汇合 artifact 逐包跑双指标判分（self-written 覆盖率 ≥ threshold 恒硬，变异率 covered
-     ≥ per-package threshold 受 `mutation.strict` 约束）。矩阵实例级 failure 时 verdict
+     PR 上实例化。coverage 全局单次采集（`pnpm cov` = vitest coverage，只跑 unit +
+     integration，阈值判分即其退出码；摘要产物经 artifact 留档——cov 从变异矩阵剥离后，
+     矩阵多实例各自全仓 smoke 导致的端口竞争 flake 随之消除）；mutation 按命中包切片跑
+     Stryker（incremental 跳过未变 mutant）；verdict 汇合变异报告逐包判分（变异率 covered
+     ≥ per-package threshold，受 `mutation.strict` 约束；覆盖率维度已上移到 coverage job，
+     verdict 以 `needs.coverage.result == 'success'` 连坐）。矩阵实例级 failure 时 verdict
      仍聚合判分（缺报告包 exit 2 fail-closed）。
 
   判定表为**六维**「事件 × fullGate × 切片(hasMutations) × coverage × 变异矩阵 ×
