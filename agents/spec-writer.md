@@ -22,7 +22,7 @@ coder（实现）、hardener（锁死）、qa（验收）都能量化对齐。�
 - **验收标准条目**（写回 issue 或 PR 描述）：
 
   ```text
-  [硬性] 非 loopback Origin 请求被宿主路由拒绝：curl 403，见 test/smoke.ts 用例
+  [硬性] 非 loopback Origin 请求被宿主路由拒绝：curl 403，见 test/routes.test.ts 用例
   [量级] 列表接口 95 分位耗时 ≤ 200ms（取数时点：PR #123，2024-06-01 实测基线）
   ```
 
@@ -45,7 +45,7 @@ coder（实现）、hardener（锁死）、qa（验收）都能量化对齐。�
 ## 输出格式（Type）
 
 - **交付物**：可断言验收标准清单（写回 issue 或 PR 描述）+ 结论行 +
-  逐条标注验证方式与验证入口（test/smoke.ts 用例 / 路由端点 / UI 交互路径）。
+  逐条标注验证方式与验证入口（test/**/*.test.ts 用例 / 路由端点 / UI 交互路径）。
 - **交接凭据**：验收清单条目数 + 落点位置。
 
 ## 额外说明（Extras）

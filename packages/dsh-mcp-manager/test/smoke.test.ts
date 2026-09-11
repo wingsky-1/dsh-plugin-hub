@@ -2834,16 +2834,17 @@ const main = async () => {
 
   if (failures.length > 0) {
     console.error(`\n${failures.length} check(s) failed: ${failures.join(", ")}`);
-    process.exit(1);
+    // 用 exitCode 而非 process.exit：本文件现由 node --test 调度，强制退出会连 runner
+    // 一起杀掉（后续测试文件不执行、TAP 汇总缺失）——那正是 #690 S2 要封堵的假绿向量。
+    process.exitCode = 1;
+    return;
   }
   console.log("\nall checks passed");
-  // 显式退出（成功路径）：SDK 端到端块 spawn 的 stdio 子进程句柄残留会导致事件循环
-  // 不空、进程挂起不退出（本地 Node 24.19 复现，基线与 CI 差异），断言全过后强制收尾，
-  // 保证 `pnpm test` 与连续 10 次零 flake 验证可完成；失败路径已在上方 exit(1)。
-  process.exit(0);
+  // 不再显式 process.exit(0)：成功路径强退会吞掉 runner 的汇总与后续测试文件；
+  // SDK 端到端块 spawn 的 stdio 子进程句柄残留改由 runner 的 --test-force-exit 收尾。
 };
 
 main().catch((error) => {
   console.error(error);
-  process.exit(1);
+  process.exitCode = 1;
 });

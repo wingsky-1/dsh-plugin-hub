@@ -86,7 +86,8 @@ pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck
 
 - `contract`：load id === 包名、`src/client/index.ts ⇒ lib/client.js` 产物、
   arrive 可解析、`exports.apply/inject` 装配。
-- `smoke.ts` 用 `assertClientSourceContract`/`assertClientProductContract`（兼容三种产物
+- 测试文件（`test/**/*.test.ts`，由包内 `pnpm test` → `run-tests.mjs` 以 `node --test`
+  直跑）用 `assertClientSourceContract`/`assertClientProductContract`（兼容三种产物
   形态）；路由 403/405 围栏用例；两端路由一致性断言。
 - 新增/修改客户端后确认无游离 css（CSS 全内联）、`lib/` 是构建产物不手改。
 - **阶段式门禁 + 阶段 commit**：每个逻辑阶段（一次评审项修复 / 一个里程碑）结束即

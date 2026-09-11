@@ -208,9 +208,11 @@
   显式排除项，不得移除差异面声明（C-ABT/D6）。
 - **T3**：防 flake 纪律（DEVELOPMENT.md §5）全量生效——mkdtempSync 隔离落盘、
   pollUntil/assertNoGrowth 替代固定 sleep；SSE 帧断言按帧序轮询而非计时。
-- **新测试文件双登记**：新 test/*.test.ts 必须同时登记 smoke.ts import 聚合与
-  mutation-topology.json testFiles（防三通道不对称扩大，见
-  requirements-and-tdd-plan.md 8.3-P0④）。
+- **新测试文件零登记**（#690 S2 起）：测试入口是 `test/**/*.test.ts` glob，新文件放对
+  目录即自动纳入运行与变异面——**不再需要**登记 `smoke.ts` import 聚合（入口已删除），
+  也不再需要登记 `mutation-topology.json` 的 `testFiles`（已改 glob）。
+  但各包 `package.json` 的 `--min <文件数下限>` **必须随新增文件同步上调**：
+  该下限只用于封堵零匹配/漏跑，不会自动跟随新增，忘记上调会让新文件落在保护面之外。
 
 ### 3.3 变异分层（阶段 6 重画 mutate 的依据）
 

@@ -37,8 +37,7 @@
       "./scripts/test/mutation-lib-to-src-hook.mjs"
     ],
     "testFiles": [
-      "packages/dsh-lan-proxy/test/unit-apply.test.ts",
-      "packages/dsh-lan-proxy/test/unit-proxy.test.ts"
+      "packages/dsh-lan-proxy/test/**/*.test.ts"
     ]
   },
   "jsonReporter": {

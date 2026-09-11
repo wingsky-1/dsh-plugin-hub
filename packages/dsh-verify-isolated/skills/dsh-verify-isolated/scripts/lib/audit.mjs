@@ -6,7 +6,7 @@
  * 写面审计」）与 t1 终态快照（dsh 退出后）对比，白名单外的变化报「可疑」，
  * 不阻断退出（审计是补充非门禁）。本模块零依赖、只做「纯 stat 路径级」判定
  * （lstat 不读文件内容），smoke 用 mkdtemp fixture 直接断言正反例行为
- * （见 test/smoke.ts）。
+ * （见 test/smoke.test.ts）。
  *
  * ## 口径（实现注释说明）
  *

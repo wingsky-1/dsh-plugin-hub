@@ -200,8 +200,11 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   `exports["./client"]`（`contract-check` 联动断言，缺则整包拒载）。**独立包与聚合包
   禁双装**（同 id 双装 loader 报 duplicate）；改独立包 patch 后必须
   `node scripts/gate/aggregate.ts` 重新生成聚合 patch。
-- **测试**：`test/smoke.ts` 直跑，必含 403/405 围栏用例 + 客户端契约断言
-  （`assertClientSourceContract` / `assertClientProductContract`）。
+- **测试**：`pnpm test` 直跑（包内实现为 `node ../../scripts/gate/run-tests.mjs --min <N>`，
+  底层 runner 是 `node --test "test/**/*.test.ts"`），不依赖构建产物即测；必含 403/405
+  围栏用例 + 客户端契约断言（`assertClientSourceContract` / `assertClientProductContract`）。
+  `--min` 是**测试文件数**下限（glob 展开计数，不含 `test()` 子测试条目），用于封堵
+  `node --test` 零匹配仍 exit 0 的假绿向量。
 
 ### 落盘路径必须感知 DSH_HOME（#510）
 
@@ -362,8 +365,9 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 
 - **无网络与零真实凭据**：smoke 测试全部无网络、无真实凭据，本地可直接离线运行。
 - **断言全覆盖**：新功能/修复必须带 smoke 断言（含路由 403/405 围栏用例、client 契约断言）。
-- **CI 稳定性门槛**：新增 / 修改 `test/smoke.ts` 后，本地连续跑 **≥10 次**（如
-  `for i in $(seq 1 10); do node packages/<pkg>/test/smoke.ts; done`）确认无 flake 再提交。
+- **CI 稳定性门槛**：新增 / 修改测试文件后，本地在该包目录内连续跑 **≥10 次**确认无 flake
+  再提交，如 `cd packages/<pkg> && for i in $(seq 1 10); do node ../../scripts/gate/run-tests.mjs --min <N>; done`
+  （`--min` 取值见该包 `package.json` 的 test script）。
 
 ### 5.2 防 flake 核心原则
 
