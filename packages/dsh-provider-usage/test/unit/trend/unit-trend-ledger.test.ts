@@ -32,8 +32,8 @@
  * 归属缺失（provider/model 缺失 → TREND_UNIDENTIFIED）、#633 目录归属两条线
  * （合法 dir 经 resolveCwd 净化、缺失归 TREND_UNIDENTIFIED）、跨天（DAY0/DAY1 逐日对账）。
  */
-import { assert } from "../../helpers.ts";
-import { TrendCollector, TrendAggregator, dayKey, sumToken, TREND_UNIDENTIFIED } from "../../../lib/index.js";
+import { afterAll, describe, expect, it } from "vitest";
+import { TrendCollector, TrendAggregator, dayKey, sumToken, TREND_UNIDENTIFIED } from "../../../src/apply/index.ts";
 
 // ---------------------------------------------------------------- 工具（与 unit-trend.test.ts 同口径）
 
@@ -128,19 +128,6 @@ send("s4", ev("assistant/chunk", USAGE(1, 1, 8, 4, 1, 0), T1 + 4000, 19)); // ca
 const calls = emitted.filter((e) => e.type === "call").map((e) => e.record);
 const corrects = emitted.filter((e) => e.type === "correct").map((e) => e.record);
 const counters = emitted.filter((e) => e.type === "counter").map((e) => e.record);
-assert.equal(calls.length, 9, "Σ事件：call 事件数 = 9（每次结算一条）");
-assert.equal(corrects.length, 0, "0.1.5 结算自带完整 token，无校正事件");
-assert.equal(counters.length, 6, "turn/end×3 + tool/call×3 = 6 个 counter 事件");
-assert.equal(calls[0].provider, "deepseek", "归属折叠正确（s1 header 主源）");
-assert.equal(calls[4].interrupted, true, "s2 结算带 interrupted 标记");
-assert.equal(calls[4].provider, TREND_UNIDENTIFIED, "归属缺失 → TREND_UNIDENTIFIED 桶");
-assert.equal(calls[4].model, null, "未识别桶 model=null");
-assert.equal(calls[7].tokens, null, "零 usage 的 message 结算 token 为 null");
-assert.deepEqual(
-  calls.map((c) => c.dir).sort(),
-  [TREND_UNIDENTIFIED, TREND_UNIDENTIFIED, TREND_UNIDENTIFIED, "proj-a", "proj-a", "proj-a", "proj-a", "proj-b", "proj-b"],
-  "#633 目录归属两条线：合法 basename 与缺失归未识别均落盘",
-);
 
 // ---------------------------------------------------------------- 对账
 
@@ -222,7 +209,7 @@ for (const c of counters) {
 // ---- 对账断言（失败消息给出视角 / 日 / 键 / 期望与实得，精确缺账多账定位）----
 function assertEqualTotals(label, expected, actual) {
   for (const f of ALL_FIELDS) {
-    assert.equal(actual[f], expected[f], `${label}：字段 ${f} 不守恒——期望 ${expected[f]}，实得 ${actual[f]}（${expected[f] === null || actual[f] === null ? "null 语义参与" : `差 ${actual[f] - expected[f]}`}）`);
+    expect(actual[f], `${label}：字段 ${f} 不守恒——期望 ${expected[f]}，实得 ${actual[f]}（${expected[f] === null || actual[f] === null ? "null 语义参与" : `差 ${actual[f] - expected[f]}`}）`).toBe(expected[f]);
   }
 }
 
@@ -258,31 +245,107 @@ function dirSnapshotOfDirTotals(day, dir) {
   return acc;
 }
 
-assert.equal(finalByKey.size, calls.length, "身份快照键数 == call 事件数（correct 不新增）");
 const days = [...expectByDay.keys()].sort();
-assert.deepEqual(days, [DAY0, DAY1], "回放覆盖两天（跨天逐日对账）");
-for (const day of days) {
-  const expected = expectByDay.get(day);
-  // a. Σ事件 == b. buckets（内存聚合面）
-  assertEqualTotals(`[${day}] a→b：Σ事件 vs 内存桶 buckets 合计`, expected, bucketsTotalsOf(day));
-  // a. Σ事件 == c. agg（压实折算，不二次累加）
-  assertEqualTotals(`[${day}] a→c：Σ事件 vs rollupSnapshot.aggRows 合计`, expected, aggRowsTotalsOf(day));
-  // a. Σ事件 == d. dirRows（pending 折算）+ dirRows() 快照（dirDays+残差；有 dir 事实为界）
-  assertEqualTotals(`[${day}] a→d：Σ事件 vs rollupSnapshot.dirRows 合计`, expected, dirRowsTotalsOf(day));
-  assertEqualTotals(`[${day}] a→d：Σ事件 vs dirRows() 快照（残差应为 0）`, expected, dirSnapshotTotalsOf(day));
-  // 未识别桶份额逐键对齐（归属/目录缺失不静默丢弃、不双计）
-  const byDir = expectByDayDir.get(day);
-  for (const [dir, expectedDir] of byDir) {
-    assertEqualTotals(`[${day}] dir=${dir}（rollupSnapshot 折算）`, expectedDir, dirRowsOfDirTotals(day, dir));
-    assertEqualTotals(`[${day}] dir=${dir}（dirRows() 快照）`, expectedDir, dirSnapshotOfDirTotals(day, dir));
-  }
-  assert.equal(byDir.has(TREND_UNIDENTIFIED), true, "该日未识别桶确有份额（防口径空转）");
-}
 
-// 台账守恒链完整表达式（终态抽查）：Σ事件 == buckets == agg == dirRows + unidentified
-{
+describe("emitted 结构 sanity（0.1.5：一次结算一条 call；counter 独立；无校正事件）", () => {
+  it("Σ事件：call 事件数 = 9（每次结算一条）", () => {
+    expect(calls.length).toBe(9);
+  });
+
+  it("0.1.5 结算自带完整 token，无校正事件", () => {
+    expect(corrects.length).toBe(0);
+  });
+
+  it("turn/end×3 + tool/call×3 = 6 个 counter 事件", () => {
+    expect(counters.length).toBe(6);
+  });
+
+  it("归属折叠正确（s1 header 主源）", () => {
+    expect(calls[0].provider).toBe("deepseek");
+  });
+
+  it("s2 结算带 interrupted 标记", () => {
+    expect(calls[4].interrupted).toBe(true);
+  });
+
+  it("归属缺失 → TREND_UNIDENTIFIED 桶", () => {
+    expect(calls[4].provider).toBe(TREND_UNIDENTIFIED);
+  });
+
+  it("未识别桶 model=null", () => {
+    expect(calls[4].model).toBe(null);
+  });
+
+  it("零 usage 的 message 结算 token 为 null", () => {
+    expect(calls[7].tokens).toBe(null);
+  });
+
+  it("#633 目录归属两条线：合法 basename 与缺失归未识别均落盘", () => {
+    expect(calls.map((c) => c.dir).sort()).toEqual(
+      [TREND_UNIDENTIFIED, TREND_UNIDENTIFIED, TREND_UNIDENTIFIED, "proj-a", "proj-a", "proj-a", "proj-a", "proj-b", "proj-b"],
+    );
+  });
+
+  it("身份快照键数 == call 事件数（correct 不新增）", () => {
+    expect(finalByKey.size).toBe(calls.length);
+  });
+
+  it("回放覆盖两天（跨天逐日对账）", () => {
+    expect(days).toEqual([DAY0, DAY1]);
+  });
+});
+
+describe("台账守恒对账（a→b→c→d 四视角逐日）", () => {
+  const views = [
+    { label: "a→b：Σ事件 vs 内存桶 buckets 合计", totalsOf: bucketsTotalsOf },
+    { label: "a→c：Σ事件 vs rollupSnapshot.aggRows 合计", totalsOf: aggRowsTotalsOf },
+    { label: "a→d：Σ事件 vs rollupSnapshot.dirRows 合计", totalsOf: dirRowsTotalsOf },
+    { label: "a→d：Σ事件 vs dirRows() 快照（残差应为 0）", totalsOf: dirSnapshotTotalsOf },
+  ];
+
+  for (const day of days) {
+    for (const v of views) {
+      it(`[${day}] ${v.label}`, () => {
+        assertEqualTotals(`[${day}] ${v.label}`, expectByDay.get(day), v.totalsOf(day));
+      });
+    }
+  }
+
+  // 未识别桶份额逐键对齐（归属/目录缺失不静默丢弃、不双计）
+  for (const day of days) {
+    const byDir = expectByDayDir.get(day);
+    for (const [dir, expectedDir] of byDir) {
+      it(`[${day}] dir=${dir}（rollupSnapshot 折算）`, () => {
+        assertEqualTotals(`[${day}] dir=${dir}（rollupSnapshot 折算）`, expectedDir, dirRowsOfDirTotals(day, dir));
+      });
+
+      it(`[${day}] dir=${dir}（dirRows() 快照）`, () => {
+        assertEqualTotals(`[${day}] dir=${dir}（dirRows() 快照）`, expectedDir, dirSnapshotOfDirTotals(day, dir));
+      });
+    }
+
+    it(`[${day}] 该日未识别桶确有份额（防口径空转）`, () => {
+      expect(byDir.has(TREND_UNIDENTIFIED)).toBe(true);
+    });
+  }
+});
+
+describe("台账守恒链完整表达式（终态抽查）", () => {
   const day = DAY0;
-  const chain = [bucketsTotalsOf(day), aggRowsTotalsOf(day), dirRowsTotalsOf(day), dirSnapshotTotalsOf(day)];
-  for (const t of chain) assertEqualTotals(`[${day}] 守恒链终态`, expectByDay.get(day), t);
+  const chain = [
+    { label: "buckets", totals: () => bucketsTotalsOf(day) },
+    { label: "aggRows", totals: () => aggRowsTotalsOf(day) },
+    { label: "dirRows", totals: () => dirRowsTotalsOf(day) },
+    { label: "dirRows() 快照", totals: () => dirSnapshotTotalsOf(day) },
+  ];
+
+  for (const c of chain) {
+    it(`[${day}] 守恒链终态（${c.label}）`, () => {
+      assertEqualTotals(`[${day}] 守恒链终态`, expectByDay.get(day), c.totals());
+    });
+  }
+});
+
+afterAll(() => {
   console.log(`unit-trend-ledger: DAY0/DAY1 四视角台账守恒全部通过（calls=${expectByDay.get(DAY0).calls + expectByDay.get(DAY1).calls}，corrects=${corrects.length}，counters=${counters.length}）`);
-}
+});

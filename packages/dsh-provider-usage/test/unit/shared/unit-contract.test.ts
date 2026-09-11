@@ -8,8 +8,13 @@
  * isUsageStatsAdapter / describeUsageStatsAdapterShape（v2 契约校验全分支，
  * #150 变异驱动加固）。
  */
-import { assert } from "../../helpers.ts";
 console.error("EVAL-ORDER-TAG: CONTRACT");
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
+import { beforeAll, describe, expect, it } from "vitest";
 import {
   safeSegment,
   sseData,
@@ -21,102 +26,252 @@ import {
   describeUsageStatsAdapterShape,
   ADAPTER_CONTRACT_VERSION,
   ERROR_CODES,
-} from "../../../lib/index.js";
+} from "../../../src/apply/index.ts";
+import { makeAdapterRegistry, sanitizeHtml, safeFetchData, safeFormat,
+  runV2Pipeline, runV2PanelPipeline, HistoryStore,
+  HotReloadableAdapter, readStamp, stampEqual, miniChartSvgMarkup,
+  OPENCODE_GO_PROVIDER } from "../../../src/apply/index.ts";
 
-// ---------------------------------------------------------------- safeSegment
+describe("safeSegment", () => {
+  it("字母数字连字符原样保留", () => {
+    expect(safeSegment("hello-world")).toBe("hello-world");
+  });
 
-assert.equal(safeSegment("hello-world"), "hello-world", "字母数字连字符原样保留");
-assert.equal(safeSegment("a.b_c"), "a.b_c", "点和下划线保留");
-assert.equal(safeSegment("a/b\\c"), "a_b_c", "路径分隔符替换为下划线");
-assert.equal(safeSegment("a b\tc"), "a_b_c", "空白字符替换为下划线");
-assert.equal(safeSegment("中文/测试"), "_____", "非 ASCII 字符与路径分隔符全替换为下划线");
-assert.equal(safeSegment(""), "unknown", "空字符串回退 unknown");
-assert.equal(safeSegment("!@#$%^"), "______", "全部特殊字符替换为下划线");
+  it("点和下划线保留", () => {
+    expect(safeSegment("a.b_c")).toBe("a.b_c");
+  });
 
-// ---------------------------------------------------------------- sseData
+  it("路径分隔符替换为下划线", () => {
+    expect(safeSegment("a/b\\c")).toBe("a_b_c");
+  });
 
-assert.equal(sseData({ a: 1 }), "data: {\"a\":1}\n\n", "JSON SSE 序列化");
-assert.equal(sseData("hello"), "data: \"hello\"\n\n", "字符串 SSE 带转义");
-assert.equal(sseData([1, 2, 3]), "data: [1,2,3]\n\n", "数组 SSE 序列化");
-assert.equal(sseData(null), "data: null\n\n", "null SSE 序列化");
+  it("空白字符替换为下划线", () => {
+    expect(safeSegment("a b\tc")).toBe("a_b_c");
+  });
+
+  it("非 ASCII 字符与路径分隔符全替换为下划线", () => {
+    expect(safeSegment("中文/测试")).toBe("_____");
+  });
+
+  it("空字符串回退 unknown", () => {
+    expect(safeSegment("")).toBe("unknown");
+  });
+
+  it("全部特殊字符替换为下划线", () => {
+    expect(safeSegment("!@#$%^")).toBe("______");
+  });
+});
+
+describe("sseData", () => {
+  it("JSON SSE 序列化", () => {
+    expect(sseData({ a: 1 })).toBe("data: {\"a\":1}\n\n");
+  });
+
+  it("字符串 SSE 带转义", () => {
+    expect(sseData("hello")).toBe("data: \"hello\"\n\n");
+  });
+
+  it("数组 SSE 序列化", () => {
+    expect(sseData([1, 2, 3])).toBe("data: [1,2,3]\n\n");
+  });
+
+  it("null SSE 序列化", () => {
+    expect(sseData(null)).toBe("data: null\n\n");
+  });
+});
 
 // #472 收敛锚定：lib/index.js 的 sseData（re-export 自 shared/host-utils.js）
 // 输出与 shared 单一事实源一致（防 re-export 链被误删/改指后导出面漂移）。
-{
-  const { sseData: sharedSseData } = await import("../../../../../shared/host-utils.js");
-  assert.equal(typeof sseData, "function", "lib/index.js 可 import sseData");
-  assert.equal(sseData({ type: "ui-config-changed" }), sharedSseData({ type: "ui-config-changed" }), "lib 导出与 shared 输出一致");
-}
+describe("sseData 与 shared 单一事实源一致（#472）", () => {
+  let sharedSseData;
 
-// ---------------------------------------------------------------- parseUserAdapters
+  beforeAll(async () => {
+    ({ sseData: sharedSseData } = await import("../../../../../shared/host-utils.js"));
+  });
 
-assert.deepEqual(parseUserAdapters(undefined), [], "undefined 返回空数组");
-assert.deepEqual(parseUserAdapters(""), [], "空字符串返回空数组");
-assert.deepEqual(parseUserAdapters("not json"), [], "非法 JSON 返回空数组");
-assert.deepEqual(parseUserAdapters("[]"), [], "裸数组（非对象）返回空数组");
-assert.deepEqual(parseUserAdapters('{"adapters": "not array"}'), [], "adapters 非数组返回空数组");
-assert.deepEqual(parseUserAdapters('{"adapters": [{"id":"a","providers":["p1"],"file":"/x.mjs"}]}'), [
-  { id: "a", label: "a", providers: ["p1"], file: "/x.mjs" },
-], "合法条目解析");
-assert.deepEqual(parseUserAdapters('{"adapters": [{"id":"","providers":["p1"],"file":"/x.mjs"}]}'), [],
-  "空 id 条目丢弃");
-assert.deepEqual(parseUserAdapters('{"adapters": [{"id":"a","providers":[],"file":"/x.mjs"}]}'), [],
-  "空 providers 条目丢弃");
-assert.deepEqual(parseUserAdapters('{"adapters": [{"id":"a","providers":["p1"],"file":""}]}'), [],
-  "空 file 条目丢弃");
-assert.deepEqual(parseUserAdapters('{"adapters": [{"id":"a","providers":["p1"],"file":"/x.mjs","label":"My Adp"}]}'), [
-  { id: "a", label: "My Adp", providers: ["p1"], file: "/x.mjs" },
-], "label 保留");
-assert.deepEqual(parseUserAdapters('{"adapters": [{"id":"a","providers":["p1",""],"file":"/x.mjs"}]}'), [
-  { id: "a", label: "a", providers: ["p1"], file: "/x.mjs" },
-], "空 provider 字符串过滤");
+  it("lib/index.js 可 import sseData", () => {
+    expect(typeof sseData).toBe("function");
+  });
 
-// ---------------------------------------------------------------- summarizeTextFromWindows (deprecated)
+  it("lib 导出与 shared 输出一致", () => {
+    expect(sseData({ type: "ui-config-changed" })).toBe(sharedSseData({ type: "ui-config-changed" }));
+  });
+});
 
-assert.equal(summarizeTextFromWindows(undefined), "", "undefined 窗口返回空");
-assert.equal(summarizeTextFromWindows([]), "", "空数组返回空");
-assert.equal(summarizeTextFromWindows([{ key: "5h", name: "5h 滚动", percent: 5 }]), "5h 滚动 5%",
-  "单窗口百分比展示");
-assert.equal(summarizeTextFromWindows([{ key: "w", name: "每周", percent: 80 }]), "每周 80%",
-  "整百分比无小数");
-assert.equal(summarizeTextFromWindows([{ key: "r", name: "5h 滚动", percent: 5 }, { key: "w", name: "每周", percent: null }]),
-  "5h 滚动 5% · 每周 --", "null 百分比显示 --");
+describe("parseUserAdapters", () => {
+  it("undefined 返回空数组", () => {
+    expect(parseUserAdapters(undefined)).toEqual([]);
+  });
 
-// ---------------------------------------------------------------- levelFromWindows (deprecated)
+  it("空字符串返回空数组", () => {
+    expect(parseUserAdapters("")).toEqual([]);
+  });
 
-assert.equal(levelFromWindows(undefined), "off", "undefined 窗口返回 off");
-assert.equal(levelFromWindows([]), "off", "空数组返回 off");
-assert.equal(levelFromWindows([{ key: "r", percent: 10 }]), "ok", "10% → ok");
-assert.equal(levelFromWindows([{ key: "r", percent: 80 }]), "warn", "80% → warn");
-assert.equal(levelFromWindows([{ key: "r", percent: 95 }]), "err", "95% → err");
-assert.equal(levelFromWindows([{ key: "r", percent: 100 }]), "err", "100% → err");
-assert.equal(levelFromWindows([{ key: "r", percent: null }]), "off", "null 百分比 → off");
-assert.equal(levelFromWindows([{ key: "r", percent: 10 }, { key: "w", percent: 90 }]), "warn",
-  "多窗口取最差（90 → warn，≥80 即为 warn）");
-assert.equal(levelFromWindows("not array" as unknown as Parameters<typeof levelFromWindows>[0]), "off",
-  "非数组输入返回 off（#150）");
-assert.equal(levelFromWindows([{ key: "r", percent: 79.9 }]), "ok", "79.9 < 80 → ok 边界（#150）");
-assert.equal(levelFromWindows([{ key: "r", percent: 94.9 }]), "warn", "94.9 < 95 → warn 边界（#150）");
-assert.equal(levelFromWindows([{ key: "r" }]), "off", "缺 percent 字段 → off（#150）");
-assert.equal(levelFromWindows([{ key: "r", percent: 30 }, { key: "w", percent: null }]), "ok",
-  "null 混合窗口只计数值项（#150）");
+  it("非法 JSON 返回空数组", () => {
+    expect(parseUserAdapters("not json")).toEqual([]);
+  });
 
-// ---------------------------------------------------------------- esc（#150）
+  it("裸数组（非对象）返回空数组", () => {
+    expect(parseUserAdapters("[]")).toEqual([]);
+  });
 
-assert.equal(esc(null), "", "null 转义为空串");
-assert.equal(esc(undefined), "", "undefined 转义为空串");
-assert.equal(esc(""), "", "空字符串原样");
-assert.equal(esc("plain"), "plain", "无特殊字符原样");
-assert.equal(esc("<a>"), "&lt;a&gt;", "尖括号转义");
-assert.equal(esc('a"b'), "a&quot;b", "双引号转义");
-assert.equal(esc("a'b"), "a&#39;b", "单引号转义");
-assert.equal(esc("a&b"), "a&amp;b", "与号转义");
-assert.equal(esc('<script>&"\'</script>'),
-  "&lt;script&gt;&amp;&quot;&#39;&lt;/script&gt;", "五类实体一次全转义");
-assert.equal(esc(42), "42", "数字经 String() 后转义");
-assert.equal(esc(true), "true", "布尔经 String() 后转义");
+  it("adapters 非数组返回空数组", () => {
+    expect(parseUserAdapters('{"adapters": "not array"}')).toEqual([]);
+  });
 
-// ---------------------------------------------------------------- isUsageStatsAdapter 全条件穷举（#150）
+  it("合法条目解析", () => {
+    expect(parseUserAdapters('{"adapters": [{"id":"a","providers":["p1"],"file":"/x.mjs"}]}')).toEqual([
+      { id: "a", label: "a", providers: ["p1"], file: "/x.mjs" },
+    ]);
+  });
+
+  it("空 id 条目丢弃", () => {
+    expect(parseUserAdapters('{"adapters": [{"id":"","providers":["p1"],"file":"/x.mjs"}]}')).toEqual([]);
+  });
+
+  it("空 providers 条目丢弃", () => {
+    expect(parseUserAdapters('{"adapters": [{"id":"a","providers":[],"file":"/x.mjs"}]}')).toEqual([]);
+  });
+
+  it("空 file 条目丢弃", () => {
+    expect(parseUserAdapters('{"adapters": [{"id":"a","providers":["p1"],"file":""}]}')).toEqual([]);
+  });
+
+  it("label 保留", () => {
+    expect(parseUserAdapters('{"adapters": [{"id":"a","providers":["p1"],"file":"/x.mjs","label":"My Adp"}]}')).toEqual([
+      { id: "a", label: "My Adp", providers: ["p1"], file: "/x.mjs" },
+    ]);
+  });
+
+  it("空 provider 字符串过滤", () => {
+    expect(parseUserAdapters('{"adapters": [{"id":"a","providers":["p1",""],"file":"/x.mjs"}]}')).toEqual([
+      { id: "a", label: "a", providers: ["p1"], file: "/x.mjs" },
+    ]);
+  });
+});
+
+describe("summarizeTextFromWindows (deprecated)", () => {
+  it("undefined 窗口返回空", () => {
+    expect(summarizeTextFromWindows(undefined)).toBe("");
+  });
+
+  it("空数组返回空", () => {
+    expect(summarizeTextFromWindows([])).toBe("");
+  });
+
+  it("单窗口百分比展示", () => {
+    expect(summarizeTextFromWindows([{ key: "5h", name: "5h 滚动", percent: 5 }])).toBe("5h 滚动 5%");
+  });
+
+  it("整百分比无小数", () => {
+    expect(summarizeTextFromWindows([{ key: "w", name: "每周", percent: 80 }])).toBe("每周 80%");
+  });
+
+  it("null 百分比显示 --", () => {
+    expect(summarizeTextFromWindows([{ key: "r", name: "5h 滚动", percent: 5 }, { key: "w", name: "每周", percent: null }]))
+      .toBe("5h 滚动 5% · 每周 --");
+  });
+});
+
+describe("levelFromWindows (deprecated)", () => {
+  it("undefined 窗口返回 off", () => {
+    expect(levelFromWindows(undefined)).toBe("off");
+  });
+
+  it("空数组返回 off", () => {
+    expect(levelFromWindows([])).toBe("off");
+  });
+
+  it("10% → ok", () => {
+    expect(levelFromWindows([{ key: "r", percent: 10 }])).toBe("ok");
+  });
+
+  it("80% → warn", () => {
+    expect(levelFromWindows([{ key: "r", percent: 80 }])).toBe("warn");
+  });
+
+  it("95% → err", () => {
+    expect(levelFromWindows([{ key: "r", percent: 95 }])).toBe("err");
+  });
+
+  it("100% → err", () => {
+    expect(levelFromWindows([{ key: "r", percent: 100 }])).toBe("err");
+  });
+
+  it("null 百分比 → off", () => {
+    expect(levelFromWindows([{ key: "r", percent: null }])).toBe("off");
+  });
+
+  it("多窗口取最差（90 → warn，≥80 即为 warn）", () => {
+    expect(levelFromWindows([{ key: "r", percent: 10 }, { key: "w", percent: 90 }])).toBe("warn");
+  });
+
+  it("非数组输入返回 off（#150）", () => {
+    expect(levelFromWindows("not array" as unknown as Parameters<typeof levelFromWindows>[0])).toBe("off");
+  });
+
+  it("79.9 < 80 → ok 边界（#150）", () => {
+    expect(levelFromWindows([{ key: "r", percent: 79.9 }])).toBe("ok");
+  });
+
+  it("94.9 < 95 → warn 边界（#150）", () => {
+    expect(levelFromWindows([{ key: "r", percent: 94.9 }])).toBe("warn");
+  });
+
+  it("缺 percent 字段 → off（#150）", () => {
+    expect(levelFromWindows([{ key: "r" }])).toBe("off");
+  });
+
+  it("null 混合窗口只计数值项（#150）", () => {
+    expect(levelFromWindows([{ key: "r", percent: 30 }, { key: "w", percent: null }])).toBe("ok");
+  });
+});
+
+describe("esc（#150）", () => {
+  it("null 转义为空串", () => {
+    expect(esc(null)).toBe("");
+  });
+
+  it("undefined 转义为空串", () => {
+    expect(esc(undefined)).toBe("");
+  });
+
+  it("空字符串原样", () => {
+    expect(esc("")).toBe("");
+  });
+
+  it("无特殊字符原样", () => {
+    expect(esc("plain")).toBe("plain");
+  });
+
+  it("尖括号转义", () => {
+    expect(esc("<a>")).toBe("&lt;a&gt;");
+  });
+
+  it("双引号转义", () => {
+    expect(esc('a"b')).toBe("a&quot;b");
+  });
+
+  it("单引号转义", () => {
+    expect(esc("a'b")).toBe("a&#39;b");
+  });
+
+  it("与号转义", () => {
+    expect(esc("a&b")).toBe("a&amp;b");
+  });
+
+  it("五类实体一次全转义", () => {
+    expect(esc('<script>&"\'</script>')).toBe("&lt;script&gt;&amp;&quot;&#39;&lt;/script&gt;");
+  });
+
+  it("数字经 String() 后转义", () => {
+    expect(esc(42)).toBe("42");
+  });
+
+  it("布尔经 String() 后转义", () => {
+    expect(esc(true)).toBe("true");
+  });
+});
 
 function validAdapter(): Record<string, unknown> {
   return {
@@ -129,209 +284,260 @@ function validAdapter(): Record<string, unknown> {
   };
 }
 
-assert.equal(isUsageStatsAdapter(validAdapter()), true, "完整合法对象通过校验");
+describe("isUsageStatsAdapter 全条件穷举（#150）", () => {
+  it("完整合法对象通过校验", () => {
+    expect(isUsageStatsAdapter(validAdapter())).toBe(true);
+  });
 
-// 非对象侧
-assert.equal(isUsageStatsAdapter(null), false, "null 拒绝");
-assert.equal(isUsageStatsAdapter(undefined), false, "undefined 拒绝");
-assert.equal(isUsageStatsAdapter(42), false, "数字拒绝");
-assert.equal(isUsageStatsAdapter("str"), false, "字符串拒绝");
-assert.equal(isUsageStatsAdapter([]), false, "数组（无 version 字段）拒绝");
+  // 非对象侧
+  it("null 拒绝", () => {
+    expect(isUsageStatsAdapter(null)).toBe(false);
+  });
 
-// version 条件两侧
-{
-  const a = validAdapter();
-  a.version = 1;
-  assert.equal(isUsageStatsAdapter(a), false, "version=1（旧契约版本）拒绝");
-}
-{
-  const a = validAdapter();
-  a.version = "2";
-  assert.equal(isUsageStatsAdapter(a), false, "version 为字符串严格比较拒绝");
-}
-{
-  const a = validAdapter();
-  delete a.version;
-  assert.equal(isUsageStatsAdapter(a), false, "缺 version 拒绝");
-}
+  it("undefined 拒绝", () => {
+    expect(isUsageStatsAdapter(undefined)).toBe(false);
+  });
 
-// name 条件：类型 / 最短长度 / 正则白名单 / 最长长度
-{
-  const a = validAdapter();
-  a.name = 123;
-  assert.equal(isUsageStatsAdapter(a), false, "name 非字符串拒绝");
-}
-{
-  const a = validAdapter();
-  a.name = "a";
-  assert.equal(isUsageStatsAdapter(a), false, "name 单字符拒绝（length>=2）");
-}
-{
-  const a = validAdapter();
-  a.name = "ab";
-  assert.equal(isUsageStatsAdapter(a), true, "name 两字符通过（regex 下界）");
-}
-{
-  const a = validAdapter();
-  a.name = "a".repeat(64);
-  assert.equal(isUsageStatsAdapter(a), true, "name 64 字符通过（regex 上界）");
-}
-{
-  const a = validAdapter();
-  a.name = "a".repeat(65);
-  assert.equal(isUsageStatsAdapter(a), false, "name 65 字符拒绝（regex 上界外）");
-}
-{
-  const a = validAdapter();
-  a.name = "a b";
-  assert.equal(isUsageStatsAdapter(a), false, "name 含空格拒绝（白名单外）");
-}
-{
-  const a = validAdapter();
-  a.name = "适配器";
-  assert.equal(isUsageStatsAdapter(a), false, "name 含中文拒绝（白名单外）");
-}
+  it("数字拒绝", () => {
+    expect(isUsageStatsAdapter(42)).toBe(false);
+  });
 
-// providers 条件：非数组 / 空数组 / 元素类型 / 空串元素
-{
-  const a = validAdapter();
-  a.providers = "p1";
-  assert.equal(isUsageStatsAdapter(a), false, "providers 非数组拒绝");
-}
-{
-  const a = validAdapter();
-  a.providers = [];
-  assert.equal(isUsageStatsAdapter(a), false, "providers 空数组拒绝");
-}
-{
-  const a = validAdapter();
-  a.providers = [1];
-  assert.equal(isUsageStatsAdapter(a), false, "providers 元素非字符串拒绝");
-}
-{
-  const a = validAdapter();
-  a.providers = [""];
-  assert.equal(isUsageStatsAdapter(a), false, "providers 空串元素拒绝");
-}
-{
-  const a = validAdapter();
-  a.providers = ["p1", ""];
-  assert.equal(isUsageStatsAdapter(a), false, "providers 多元素含空串拒绝");
-}
+  it("字符串拒绝", () => {
+    expect(isUsageStatsAdapter("str")).toBe(false);
+  });
 
-// 三函数条件
-for (const fn of ["fetchData", "formatCapsule", "formatPanel"] as const) {
-  const a = validAdapter();
-  delete a[fn];
-  assert.equal(isUsageStatsAdapter(a), false, `缺 ${fn} 拒绝`);
-  const b = validAdapter();
-  b[fn] = "not-fn";
-  assert.equal(isUsageStatsAdapter(b), false, `${fn} 非函数拒绝`);
-}
+  it("数组（无 version 字段）拒绝", () => {
+    expect(isUsageStatsAdapter([])).toBe(false);
+  });
 
-// ---------------------------------------------------------------- describeUsageStatsAdapterShape 全分支（#150）
+  // version 条件两侧
+  it("version=1（旧契约版本）拒绝", () => {
+    const a = validAdapter();
+    a.version = 1;
+    expect(isUsageStatsAdapter(a)).toBe(false);
+  });
 
-assert.equal(describeUsageStatsAdapterShape(null), "导出不是对象（null）", "null 描述文案");
-assert.equal(describeUsageStatsAdapterShape(undefined), "导出不是对象（undefined）", "undefined 描述文案");
-assert.equal(describeUsageStatsAdapterShape(42), "导出不是对象（number）", "number 描述文案");
-assert.equal(describeUsageStatsAdapterShape("s"), "导出不是对象（string）", "string 描述文案");
-assert.equal(describeUsageStatsAdapterShape(validAdapter()), null, "合法形状返回 null");
+  it("version 为字符串严格比较拒绝", () => {
+    const a = validAdapter();
+    a.version = "2";
+    expect(isUsageStatsAdapter(a)).toBe(false);
+  });
 
-assert.equal(describeUsageStatsAdapterShape({}), [
-  "version 必须 === 2（实际 undefined）",
-  "name（2-64 位字母数字下划线连字符）",
-  "providers（非空字符串数组）",
-  "fetchData（函数）",
-  "formatCapsule（函数）",
-  "formatPanel（函数）",
-].join("、"), "全缺时六项按序合并");
+  it("缺 version 拒绝", () => {
+    const a = validAdapter();
+    delete a.version;
+    expect(isUsageStatsAdapter(a)).toBe(false);
+  });
 
-{
-  const a = validAdapter();
-  a.version = 3;
-  const detail = describeUsageStatsAdapterShape(a);
-  assert.ok(detail !== null && detail.startsWith("version 必须 === 2（实际 3）"),
-    "version 错误含期望值与实际值");
-  assert.ok(detail !== null && !detail.includes("name"), "仅 version 缺陷时不报 name");
-}
-{
-  const a = validAdapter();
-  a.name = "x!";
-  assert.ok(describeUsageStatsAdapterShape(a)?.includes("name（2-64 位字母数字下划线连字符）") === true,
-    "name 白名单外的明细文案");
-}
+  // name 条件：类型 / 最短长度 / 正则白名单 / 最长长度
+  it("name 非字符串拒绝", () => {
+    const a = validAdapter();
+    a.name = 123;
+    expect(isUsageStatsAdapter(a)).toBe(false);
+  });
 
-// ---------------------------------------------------------------- ERROR_CODES 全量清单（#150 分片 2）
+  it("name 单字符拒绝（length>=2）", () => {
+    const a = validAdapter();
+    a.name = "a";
+    expect(isUsageStatsAdapter(a)).toBe(false);
+  });
 
-assert.deepEqual(ERROR_CODES, [
-  "no-provider",
-  "no-adapter",
-  "no-enabled-adapter",
-  "no-api-key",
-  "unauthorized",
-  "timeout",
-  "network",
-  "bad-data",
-  "bad-json",
-  "adapter-load-failed",
-  "adapter-crash",
-  "adapter-timeout",
-], "错误码清单逐项锁定（顺序与内容均不可变）");
+  it("name 两字符通过（regex 下界）", () => {
+    const a = validAdapter();
+    a.name = "ab";
+    expect(isUsageStatsAdapter(a)).toBe(true);
+  });
 
-// ---------------------------------------------------------------- isUsageStatsAdapter 补充边界（#150 分片 2）
+  it("name 64 字符通过（regex 上界）", () => {
+    const a = validAdapter();
+    a.name = "a".repeat(64);
+    expect(isUsageStatsAdapter(a)).toBe(true);
+  });
 
-{
+  it("name 65 字符拒绝（regex 上界外）", () => {
+    const a = validAdapter();
+    a.name = "a".repeat(65);
+    expect(isUsageStatsAdapter(a)).toBe(false);
+  });
+
+  it("name 含空格拒绝（白名单外）", () => {
+    const a = validAdapter();
+    a.name = "a b";
+    expect(isUsageStatsAdapter(a)).toBe(false);
+  });
+
+  it("name 含中文拒绝（白名单外）", () => {
+    const a = validAdapter();
+    a.name = "适配器";
+    expect(isUsageStatsAdapter(a)).toBe(false);
+  });
+
+  // providers 条件：非数组 / 空数组 / 元素类型 / 空串元素
+  it("providers 非数组拒绝", () => {
+    const a = validAdapter();
+    a.providers = "p1";
+    expect(isUsageStatsAdapter(a)).toBe(false);
+  });
+
+  it("providers 空数组拒绝", () => {
+    const a = validAdapter();
+    a.providers = [];
+    expect(isUsageStatsAdapter(a)).toBe(false);
+  });
+
+  it("providers 元素非字符串拒绝", () => {
+    const a = validAdapter();
+    a.providers = [1];
+    expect(isUsageStatsAdapter(a)).toBe(false);
+  });
+
+  it("providers 空串元素拒绝", () => {
+    const a = validAdapter();
+    a.providers = [""];
+    expect(isUsageStatsAdapter(a)).toBe(false);
+  });
+
+  it("providers 多元素含空串拒绝", () => {
+    const a = validAdapter();
+    a.providers = ["p1", ""];
+    expect(isUsageStatsAdapter(a)).toBe(false);
+  });
+
+  // 三函数条件
+  for (const fn of ["fetchData", "formatCapsule", "formatPanel"] as const) {
+    it(`缺 ${fn} 拒绝`, () => {
+      const a = validAdapter();
+      delete a[fn];
+      expect(isUsageStatsAdapter(a)).toBe(false);
+    });
+
+    it(`${fn} 非函数拒绝`, () => {
+      const b = validAdapter();
+      b[fn] = "not-fn";
+      expect(isUsageStatsAdapter(b)).toBe(false);
+    });
+  }
+});
+
+describe("describeUsageStatsAdapterShape 全分支（#150）", () => {
+  it("null 描述文案", () => {
+    expect(describeUsageStatsAdapterShape(null)).toBe("导出不是对象（null）");
+  });
+
+  it("undefined 描述文案", () => {
+    expect(describeUsageStatsAdapterShape(undefined)).toBe("导出不是对象（undefined）");
+  });
+
+  it("number 描述文案", () => {
+    expect(describeUsageStatsAdapterShape(42)).toBe("导出不是对象（number）");
+  });
+
+  it("string 描述文案", () => {
+    expect(describeUsageStatsAdapterShape("s")).toBe("导出不是对象（string）");
+  });
+
+  it("合法形状返回 null", () => {
+    expect(describeUsageStatsAdapterShape(validAdapter())).toBe(null);
+  });
+
+  it("全缺时六项按序合并", () => {
+    expect(describeUsageStatsAdapterShape({})).toBe([
+      "version 必须 === 2（实际 undefined）",
+      "name（2-64 位字母数字下划线连字符）",
+      "providers（非空字符串数组）",
+      "fetchData（函数）",
+      "formatCapsule（函数）",
+      "formatPanel（函数）",
+    ].join("、"));
+  });
+
+  it("version 错误含期望值与实际值", () => {
+    const a = validAdapter();
+    a.version = 3;
+    const detail = describeUsageStatsAdapterShape(a);
+    expect(detail !== null && detail.startsWith("version 必须 === 2（实际 3）")).toBeTruthy();
+  });
+
+  it("仅 version 缺陷时不报 name", () => {
+    const a = validAdapter();
+    a.version = 3;
+    const detail = describeUsageStatsAdapterShape(a);
+    expect(detail !== null && !detail.includes("name")).toBeTruthy();
+  });
+
+  it("name 白名单外的明细文案", () => {
+    const a = validAdapter();
+    a.name = "x!";
+    expect(describeUsageStatsAdapterShape(a)?.includes("name（2-64 位字母数字下划线连字符）") === true).toBeTruthy();
+  });
+});
+
+describe("ERROR_CODES 全量清单（#150 分片 2）", () => {
+  it("错误码清单逐项锁定（顺序与内容均不可变）", () => {
+    expect(ERROR_CODES).toEqual([
+      "no-provider",
+      "no-adapter",
+      "no-enabled-adapter",
+      "no-api-key",
+      "unauthorized",
+      "timeout",
+      "network",
+      "bad-data",
+      "bad-json",
+      "adapter-load-failed",
+      "adapter-crash",
+      "adapter-timeout",
+    ]);
+  });
+});
+
+describe("isUsageStatsAdapter 补充边界（#150 分片 2）", () => {
   // String 包装对象：typeof 非 string，但 .length 与 regex.test 均可通过，
   // 用于区分「typeof name 恒真」类变异（后续检查全部放行的伪装类型）
-  const a = validAdapter();
-  a.name = new String("abc");
-  assert.equal(isUsageStatsAdapter(a), false, "name 为 String 包装对象拒绝（严格 typeof）");
-}
-{
-  // 元素为非字符串但带 length 的值：every 回调 typeof 恒真变异下会放行
-  const a = validAdapter();
-  a.providers = [[1, 2]];
-  assert.equal(isUsageStatsAdapter(a), false, "providers 元素为数组（length>0 非字符串）拒绝");
-}
-
-// ---------------------------------------------------------------- describeUsageStatsAdapterShape 补充边界（#150 分片 2）
-
-{
-  // 头部非法尾部合法：regex 去 ^ 锚变异后不再报 name 缺失
-  const a = validAdapter();
-  a.name = "!!ab";
-  assert.ok(describeUsageStatsAdapterShape(a)?.includes("name（") === true,
-    "name 头部白名单外仍报缺失（锚点 ^ 必需）");
-}
-{
-  // 头部合法尾部非法：regex 去 $ 锚变异后不再报 name 缺失
-  const a = validAdapter();
-  a.name = "ab!!";
-  assert.ok(describeUsageStatsAdapterShape(a)?.includes("name（") === true,
-    "name 尾部白名单外仍报缺失（锚点 $ 必需）");
-}
-{
-  // 其余字段全合法、仅 providers 空数组：length===0 判定不可移除
-  const d = describeUsageStatsAdapterShape({
-    version: ADAPTER_CONTRACT_VERSION,
-    name: "ok-name",
-    providers: [],
-    fetchData: () => {},
-    formatCapsule: () => {},
-    formatPanel: () => {},
+  it("name 为 String 包装对象拒绝（严格 typeof）", () => {
+    const a = validAdapter();
+    a.name = new String("abc");
+    expect(isUsageStatsAdapter(a)).toBe(false);
   });
-  assert.ok(d !== null && d.includes("providers（非空字符串数组）"),
-    "空 providers 在其余字段合法时单独报缺失");
-}
-// ================================================================ #150 二阶段：registry 全分支矩阵
 
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { makeAdapterRegistry, sanitizeHtml, safeFetchData, safeFormat,
-  runV2Pipeline, runV2PanelPipeline, HistoryStore,
-  HotReloadableAdapter, readStamp, stampEqual, miniChartSvgMarkup,
-  OPENCODE_GO_PROVIDER } from "../../../lib/index.js";
+  // 元素为非字符串但带 length 的值：every 回调 typeof 恒真变异下会放行
+  it("providers 元素为数组（length>0 非字符串）拒绝", () => {
+    const a = validAdapter();
+    a.providers = [[1, 2]];
+    expect(isUsageStatsAdapter(a)).toBe(false);
+  });
+});
+
+describe("describeUsageStatsAdapterShape 补充边界（#150 分片 2）", () => {
+  // 头部非法尾部合法：regex 去 ^ 锚变异后不再报 name 缺失
+  it("name 头部白名单外仍报缺失（锚点 ^ 必需）", () => {
+    const a = validAdapter();
+    a.name = "!!ab";
+    expect(describeUsageStatsAdapterShape(a)?.includes("name（") === true).toBeTruthy();
+  });
+
+  // 头部合法尾部非法：regex 去 $ 锚变异后不再报 name 缺失
+  it("name 尾部白名单外仍报缺失（锚点 $ 必需）", () => {
+    const a = validAdapter();
+    a.name = "ab!!";
+    expect(describeUsageStatsAdapterShape(a)?.includes("name（") === true).toBeTruthy();
+  });
+
+  // 其余字段全合法、仅 providers 空数组：length===0 判定不可移除
+  it("空 providers 在其余字段合法时单独报缺失", () => {
+    const d = describeUsageStatsAdapterShape({
+      version: ADAPTER_CONTRACT_VERSION,
+      name: "ok-name",
+      providers: [],
+      fetchData: () => {},
+      formatCapsule: () => {},
+      formatPanel: () => {},
+    });
+    expect(d !== null && d.includes("providers（非空字符串数组）")).toBeTruthy();
+  });
+});
+
+// ================================================================ #150 二阶段：registry 全分支矩阵
 
 /** 构造合法 v2 适配器（可覆写字段）。 */
 function mkAdapter(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -347,273 +553,593 @@ function mkAdapter(over: Record<string, unknown> = {}): Record<string, unknown> 
   };
 }
 
-// register：契约失败分支（带 file / 无 file 两种诊断路径）
-{
-  const reg = makeAdapterRegistry();
-  assert.equal(reg.register({ version: 1 }, "builtin"), false, "契约不满足拒绝注册");
-  const withFile = makeAdapterRegistry();
-  assert.equal(withFile.register({ foo: 1 }, "user-file", "/tmp/x.mjs"), false, "用户文件契约失败返回 false");
-}
+describe("registry：register 契约失败分支（带 file / 无 file 两种诊断路径）", () => {
+  let builtinRejected, userFileRejected;
 
-// register：name 重复拒绝 + registeredNames 隔离
-{
-  const reg = makeAdapterRegistry();
-  assert.equal(reg.register(mkAdapter(), "builtin"), true);
-  assert.equal(reg.hasName("adapter-a"), true, "hasName 注册后为真");
-  // 同 name 不同 provider 的第二个适配器仍被拒（name 全局唯一）
-  assert.equal(reg.register(mkAdapter({ providers: ["prov-y"] }), "builtin"), false, "同 name 跨 provider 也拒");
-  assert.equal(reg.getEntry("prov-y"), undefined, "被拒者未进入候选");
-}
+  beforeAll(() => {
+    const reg = makeAdapterRegistry();
+    builtinRejected = reg.register({ version: 1 }, "builtin");
+    const withFile = makeAdapterRegistry();
+    userFileRejected = withFile.register({ foo: 1 }, "user-file", "/tmp/x.mjs");
+  });
 
-// register：enabledHint=false 只入候选不启用
-{
-  const reg = makeAdapterRegistry();
-  assert.equal(reg.register(mkAdapter(), "user-file", "/f.mjs", false), true, "enabledHint=false 注册成功");
-  assert.equal(reg.getEntry("prov-x"), undefined, "未成为启用条目");
-  assert.equal(reg.hasCandidates("prov-x"), true, "候选仍在");
-  assert.equal(reg.isEnabled("prov-x", "adapter-a"), false, "isEnabled false");
-  assert.equal(reg.select("prov-x", "adapter-a"), true, "手动切换成功");
-  assert.equal(reg.isEnabled("prov-x", "adapter-a"), true, "切换后启用");
-}
+  it("契约不满足拒绝注册", () => {
+    expect(builtinRejected).toBe(false);
+  });
 
-// select：清空幂等 / 未知名 false / get 与 getEntry 一致性
-{
-  const reg = makeAdapterRegistry();
-  assert.equal(reg.select("nope", null), true, "清空恒成功（幂等）");
-  assert.equal(reg.select("nope", "ghost"), false, "未知 provider+name 返回 false");
-  reg.register(mkAdapter(), "builtin");
-  assert.equal(reg.get("prov-x") !== undefined, true, "get 返回适配器本体");
-  reg.select("prov-x", null);
-  assert.equal(reg.get("prov-x"), undefined, "清空后 get undefined");
-  assert.deepEqual(reg.enabledProviders(), [], "清空后 enabledProviders 为空");
-}
+  it("用户文件契约失败返回 false", () => {
+    expect(userFileRejected).toBe(false);
+  });
+});
 
-// snapshot：多 provider 认领去重（同一条目按 name/provider 去重）+ errors 列表
-{
-  const reg = makeAdapterRegistry();
-  reg.register(mkAdapter({ providers: ["px", "py"] }), "builtin");
-  reg.recordError("k1", "load", "加载失败消息");
-  reg.recordError("k2", "exec", "执行超时消息");
-  const snap = reg.snapshot();
-  assert.equal(snap.infos.length, 2, "双 provider 认领产生两个 info 行");
-  assert.deepEqual(snap.enabled, { px: "adapter-a", py: "adapter-a" }, "enabled 映射完整");
-  assert.ok(snap.infos.every((i) => i.enabled === true), "默认全部启用标记");
-  assert.equal(snap.errors.find((e) => e.key === "k1")?.kind, "load", "errors kind=load");
-  assert.equal(snap.errors.find((e) => e.key === "k2")?.kind, "exec", "errors kind=exec");
-  assert.deepEqual(snap.enabledProviders.sort(), ["px", "py"], "snapshot.enabledProviders 完整");
-}
+describe("registry：name 重复拒绝 + registeredNames 隔离", () => {
+  let firstRegister, hasNameAfterFirst, secondRegister, entryProvY;
 
-// recordError 同 key 覆盖（只保留最近一次）
-{
-  const reg = makeAdapterRegistry();
-  reg.recordError("dup", "load", "第一次");
-  reg.recordError("dup", "exec", "第二次");
-  const snap = reg.snapshot();
-  const dupErrors = snap.errors.filter((e) => e.key === "dup");
-  assert.equal(dupErrors.length, 1, "同 key 仅保留最近一次");
-  assert.equal(dupErrors[0].message, "第二次", "覆盖为新消息");
-}
+  beforeAll(() => {
+    const reg = makeAdapterRegistry();
+    firstRegister = reg.register(mkAdapter(), "builtin");
+    hasNameAfterFirst = reg.hasName("adapter-a");
+    // 同 name 不同 provider 的第二个适配器仍被拒（name 全局唯一）
+    secondRegister = reg.register(mkAdapter({ providers: ["prov-y"] }), "builtin");
+    entryProvY = reg.getEntry("prov-y");
+  });
 
-// removeByFile：计数 + registeredNames/enabled 引用清理
-{
-  const reg = makeAdapterRegistry();
-  reg.register(mkAdapter({ name: "f-one" }), "user-file", "/a.mjs");   // prov-x 启用 f-one
-  reg.register(mkAdapter({ name: "f-two", providers: ["pz"] }), "user-file", "/b.mjs");
-  const removed = reg.removeByFile("/a.mjs");
-  assert.equal(removed, 1, "removeByFile 移除计数");
-  assert.equal(reg.hasName("f-one"), false, "registeredNames 清理 f-one");
-  assert.equal(reg.hasName("f-two"), true, "f-two 不受影响");
-  assert.equal(reg.getEntry("prov-x"), undefined, "f-one 的 enabled 引用清理");
-  assert.notEqual(reg.getEntry("pz"), undefined, "f-two 启用不受影响");
-  // 全移除后 enabledProviders 空
-  reg.removeByFile("/b.mjs");
-  assert.deepEqual(reg.enabledProviders(), [], "全部移除后无启用 provider");
-  // 不存在的 file → 0
-  assert.equal(reg.removeByFile("/ghost.mjs"), 0, "移除不存在文件计 0");
-}
+  it("首次注册成功", () => {
+    expect(firstRegister).toBe(true);
+  });
+
+  it("hasName 注册后为真", () => {
+    expect(hasNameAfterFirst).toBe(true);
+  });
+
+  it("同 name 跨 provider 也拒", () => {
+    expect(secondRegister).toBe(false);
+  });
+
+  it("被拒者未进入候选", () => {
+    expect(entryProvY).toBe(undefined);
+  });
+});
+
+describe("registry：enabledHint=false 只入候选不启用", () => {
+  let reg, registerResult, entryBeforeSelect, hasCandidates, isEnabledBeforeSelect, selectResult, isEnabledAfterSelect;
+
+  beforeAll(() => {
+    reg = makeAdapterRegistry();
+    registerResult = reg.register(mkAdapter(), "user-file", "/f.mjs", false);
+    entryBeforeSelect = reg.getEntry("prov-x");
+    hasCandidates = reg.hasCandidates("prov-x");
+    isEnabledBeforeSelect = reg.isEnabled("prov-x", "adapter-a");
+    selectResult = reg.select("prov-x", "adapter-a");
+    isEnabledAfterSelect = reg.isEnabled("prov-x", "adapter-a");
+  });
+
+  it("enabledHint=false 注册成功", () => {
+    expect(registerResult).toBe(true);
+  });
+
+  it("未成为启用条目", () => {
+    expect(entryBeforeSelect).toBe(undefined);
+  });
+
+  it("候选仍在", () => {
+    expect(hasCandidates).toBe(true);
+  });
+
+  it("isEnabled false", () => {
+    expect(isEnabledBeforeSelect).toBe(false);
+  });
+
+  it("手动切换成功", () => {
+    expect(selectResult).toBe(true);
+  });
+
+  it("切换后启用", () => {
+    expect(isEnabledAfterSelect).toBe(true);
+  });
+});
+
+describe("registry：select 清空幂等 / 未知名 false / get 与 getEntry 一致性", () => {
+  let clearNoop, unknownSelect, getAfterRegister, getAfterClear, enabledAfterClear;
+
+  beforeAll(() => {
+    const reg = makeAdapterRegistry();
+    clearNoop = reg.select("nope", null);
+    unknownSelect = reg.select("nope", "ghost");
+    reg.register(mkAdapter(), "builtin");
+    getAfterRegister = reg.get("prov-x") !== undefined;
+    reg.select("prov-x", null);
+    getAfterClear = reg.get("prov-x");
+    enabledAfterClear = reg.enabledProviders();
+  });
+
+  it("清空恒成功（幂等）", () => {
+    expect(clearNoop).toBe(true);
+  });
+
+  it("未知 provider+name 返回 false", () => {
+    expect(unknownSelect).toBe(false);
+  });
+
+  it("get 返回适配器本体", () => {
+    expect(getAfterRegister).toBe(true);
+  });
+
+  it("清空后 get undefined", () => {
+    expect(getAfterClear).toBe(undefined);
+  });
+
+  it("清空后 enabledProviders 为空", () => {
+    expect(enabledAfterClear).toEqual([]);
+  });
+});
+
+describe("registry：snapshot 多 provider 认领去重 + errors 列表", () => {
+  let snap;
+
+  beforeAll(() => {
+    const reg = makeAdapterRegistry();
+    reg.register(mkAdapter({ providers: ["px", "py"] }), "builtin");
+    reg.recordError("k1", "load", "加载失败消息");
+    reg.recordError("k2", "exec", "执行超时消息");
+    snap = reg.snapshot();
+  });
+
+  it("双 provider 认领产生两个 info 行", () => {
+    expect(snap.infos.length).toBe(2);
+  });
+
+  it("enabled 映射完整", () => {
+    expect(snap.enabled).toEqual({ px: "adapter-a", py: "adapter-a" });
+  });
+
+  it("默认全部启用标记", () => {
+    expect(snap.infos.every((i) => i.enabled === true)).toBeTruthy();
+  });
+
+  it("errors kind=load", () => {
+    expect(snap.errors.find((e) => e.key === "k1")?.kind).toBe("load");
+  });
+
+  it("errors kind=exec", () => {
+    expect(snap.errors.find((e) => e.key === "k2")?.kind).toBe("exec");
+  });
+
+  it("snapshot.enabledProviders 完整", () => {
+    expect(snap.enabledProviders.sort()).toEqual(["px", "py"]);
+  });
+});
+
+describe("registry：recordError 同 key 覆盖（只保留最近一次）", () => {
+  let dupErrors;
+
+  beforeAll(() => {
+    const reg = makeAdapterRegistry();
+    reg.recordError("dup", "load", "第一次");
+    reg.recordError("dup", "exec", "第二次");
+    dupErrors = reg.snapshot().errors.filter((e) => e.key === "dup");
+  });
+
+  it("同 key 仅保留最近一次", () => {
+    expect(dupErrors.length).toBe(1);
+  });
+
+  it("覆盖为新消息", () => {
+    expect(dupErrors[0].message).toBe("第二次");
+  });
+});
+
+describe("registry：removeByFile 计数 + registeredNames/enabled 引用清理", () => {
+  let removed, hasNameOne, hasNameTwo, entryProvX, entryPz, enabledAfterAllRemoved, removedGhost;
+
+  beforeAll(() => {
+    const reg = makeAdapterRegistry();
+    reg.register(mkAdapter({ name: "f-one" }), "user-file", "/a.mjs");   // prov-x 启用 f-one
+    reg.register(mkAdapter({ name: "f-two", providers: ["pz"] }), "user-file", "/b.mjs");
+    removed = reg.removeByFile("/a.mjs");
+    hasNameOne = reg.hasName("f-one");
+    hasNameTwo = reg.hasName("f-two");
+    entryProvX = reg.getEntry("prov-x");
+    entryPz = reg.getEntry("pz");
+    // 全移除后 enabledProviders 空
+    reg.removeByFile("/b.mjs");
+    enabledAfterAllRemoved = reg.enabledProviders();
+    removedGhost = reg.removeByFile("/ghost.mjs");
+  });
+
+  it("removeByFile 移除计数", () => {
+    expect(removed).toBe(1);
+  });
+
+  it("registeredNames 清理 f-one", () => {
+    expect(hasNameOne).toBe(false);
+  });
+
+  it("f-two 不受影响", () => {
+    expect(hasNameTwo).toBe(true);
+  });
+
+  it("f-one 的 enabled 引用清理", () => {
+    expect(entryProvX).toBe(undefined);
+  });
+
+  it("f-two 启用不受影响", () => {
+    expect(entryPz).not.toBe(undefined);
+  });
+
+  it("全部移除后无启用 provider", () => {
+    expect(enabledAfterAllRemoved).toEqual([]);
+  });
+
+  it("移除不存在文件计 0", () => {
+    expect(removedGhost).toBe(0);
+  });
+});
 
 // ================================================================ #212：replaceByFile 热更新替换（enabled 保持 + 冲突保留旧条目）
 
-// A1：显式停用的适配器热更新后不得变回启用（缺陷 A 回归）
-{
-  const reg = makeAdapterRegistry();
-  assert.equal(reg.register(mkAdapter({ name: "f-one" }), "user-file", "/a.mjs"), true);
-  assert.equal(reg.select("prov-x", null), true, "用户显式停用");
-  const r = reg.replaceByFile("/a.mjs", mkAdapter({ name: "f-one", label: "v2" }));
-  assert.equal(r.ok, true, "同名替换成功");
-  const info = reg.snapshot().infos.find((i) => i.name === "f-one");
-  assert.equal(info?.enabled, false, "停用的适配器热更新后保持停用（#212-A）");
-  assert.equal(reg.getEntry("prov-x"), undefined, "prov-x 保持无启用者");
-}
+describe("#212-A1：显式停用的适配器热更新后不得变回启用（缺陷 A 回归）", () => {
+  let registerResult, selectResult, r, info, entryProvX;
 
-// A2：启用中的适配器替换后仍是启用者（保持语义的另一侧）
-{
-  const reg = makeAdapterRegistry();
-  reg.register(mkAdapter({ name: "on-a" }), "user-file", "/a.mjs");
-  const r = reg.replaceByFile("/a.mjs", mkAdapter({ name: "on-a", label: "v2" }));
-  assert.equal(r.ok, true);
-  assert.equal(reg.isEnabled("prov-x", "on-a"), true, "启用者热更新后仍启用（#212-A）");
-}
+  beforeAll(() => {
+    const reg = makeAdapterRegistry();
+    registerResult = reg.register(mkAdapter({ name: "f-one" }), "user-file", "/a.mjs");
+    selectResult = reg.select("prov-x", null);
+    r = reg.replaceByFile("/a.mjs", mkAdapter({ name: "f-one", label: "v2" }));
+    info = reg.snapshot().infos.find((i) => i.name === "f-one");
+    entryProvX = reg.getEntry("prov-x");
+  });
 
-// A3：多 provider 认领时逐 provider 精确恢复（部分启用部分停用）
-{
-  const reg = makeAdapterRegistry();
-  reg.register(mkAdapter({ name: "multi", providers: ["p1", "p2"] }), "user-file", "/m.mjs");
-  assert.equal(reg.select("p2", null), true, "仅停用 p2");
-  const r = reg.replaceByFile("/m.mjs", mkAdapter({ name: "multi", providers: ["p1", "p2"], label: "v2" }));
-  assert.equal(r.ok, true);
-  const snap = reg.snapshot();
-  assert.equal(snap.enabled.p1, "multi", "p1 启用关系保持");
-  assert.equal(snap.enabled.p2, undefined, "p2 停用关系保持（不得被默认启用覆盖）");
-}
+  it("注册成功（前置）", () => {
+    expect(registerResult).toBe(true);
+  });
+
+  it("用户显式停用", () => {
+    expect(selectResult).toBe(true);
+  });
+
+  it("同名替换成功", () => {
+    expect(r.ok).toBe(true);
+  });
+
+  it("停用的适配器热更新后保持停用（#212-A）", () => {
+    expect(info?.enabled).toBe(false);
+  });
+
+  it("prov-x 保持无启用者", () => {
+    expect(entryProvX).toBe(undefined);
+  });
+});
+
+describe("#212-A2：启用中的适配器替换后仍是启用者（保持语义的另一侧）", () => {
+  let r, enabledAfterReplace;
+
+  beforeAll(() => {
+    const reg = makeAdapterRegistry();
+    reg.register(mkAdapter({ name: "on-a" }), "user-file", "/a.mjs");
+    r = reg.replaceByFile("/a.mjs", mkAdapter({ name: "on-a", label: "v2" }));
+    enabledAfterReplace = reg.isEnabled("prov-x", "on-a");
+  });
+
+  it("替换成功", () => {
+    expect(r.ok).toBe(true);
+  });
+
+  it("启用者热更新后仍启用（#212-A）", () => {
+    expect(enabledAfterReplace).toBe(true);
+  });
+});
+
+describe("#212-A3：多 provider 认领时逐 provider 精确恢复（部分启用部分停用）", () => {
+  let selectResult, r, snap;
+
+  beforeAll(() => {
+    const reg = makeAdapterRegistry();
+    reg.register(mkAdapter({ name: "multi", providers: ["p1", "p2"] }), "user-file", "/m.mjs");
+    selectResult = reg.select("p2", null);
+    r = reg.replaceByFile("/m.mjs", mkAdapter({ name: "multi", providers: ["p1", "p2"], label: "v2" }));
+    snap = reg.snapshot();
+  });
+
+  it("仅停用 p2", () => {
+    expect(selectResult).toBe(true);
+  });
+
+  it("替换成功", () => {
+    expect(r.ok).toBe(true);
+  });
+
+  it("p1 启用关系保持", () => {
+    expect(snap.enabled.p1).toBe("multi");
+  });
+
+  it("p2 停用关系保持（不得被默认启用覆盖）", () => {
+    expect(snap.enabled.p2).toBe(undefined);
+  });
+});
 
 // B1：改名撞内置名 → 拒绝且旧条目原样保留（缺陷 B 回归；health 报错可见性见 smoke #212-B 集成用例）
-{
-  const reg = makeAdapterRegistry();
-  assert.equal(reg.register(mkAdapter({ name: "builtin-occ" }), "builtin"), true);
-  assert.equal(reg.register(mkAdapter({ name: "renamer" }), "user-file", "/r.mjs"), true);
-  const r = reg.replaceByFile("/r.mjs", mkAdapter({ name: "builtin-occ" }));
-  assert.equal(r.ok, false, "撞名拒绝替换");
-  assert.equal(r.code, "duplicate-name");
-  assert.ok(r.detail.includes("builtin-occ"), "拒绝结果携带冲突 name 详情");
-  const infos = reg.snapshot().infos;
-  assert.ok(infos.some((i) => i.name === "renamer" && i.file === "/r.mjs"), "旧条目未被删除（#212-B）");
-  assert.equal(reg.hasName("renamer"), true, "旧名仍在注册表");
-}
+describe("#212-B1：改名撞内置名 → 拒绝且旧条目原样保留", () => {
+  let builtinRegister, renamerRegister, r, infos, hasNameRenamer;
 
-// B2：改名撞另一 user-file 名 → 同样拒绝且两文件条目均保留
-{
-  const reg = makeAdapterRegistry();
-  reg.register(mkAdapter({ name: "u-first", providers: ["pq"] }), "user-file", "/u1.mjs");
-  reg.register(mkAdapter({ name: "u-second", providers: ["pr"] }), "user-file", "/u2.mjs");
-  const r = reg.replaceByFile("/u2.mjs", mkAdapter({ name: "u-first", providers: ["pr"] }));
-  assert.equal(r.ok, false, "撞 user-file 名拒绝");
-  assert.equal(r.code, "duplicate-name");
-  const infos = reg.snapshot().infos;
-  assert.ok(infos.some((i) => i.name === "u-second" && i.file === "/u2.mjs"), "u2 旧条目保留");
-  assert.ok(infos.some((i) => i.name === "u-first" && i.file === "/u1.mjs"), "u1 条目不受牵连");
-}
+  beforeAll(() => {
+    const reg = makeAdapterRegistry();
+    builtinRegister = reg.register(mkAdapter({ name: "builtin-occ" }), "builtin");
+    renamerRegister = reg.register(mkAdapter({ name: "renamer" }), "user-file", "/r.mjs");
+    r = reg.replaceByFile("/r.mjs", mkAdapter({ name: "builtin-occ" }));
+    infos = reg.snapshot().infos;
+    hasNameRenamer = reg.hasName("renamer");
+  });
 
-// B3：改名不冲突 → 替换成功，旧名清理，启用关系跟随文件语义
-{
-  const reg = makeAdapterRegistry();
-  reg.register(mkAdapter({ name: "old-name" }), "user-file", "/c.mjs"); // 默认启用 prov-x
-  const r = reg.replaceByFile("/c.mjs", mkAdapter({ name: "new-name" }));
-  assert.equal(r.ok, true, "改名不冲突替换成功");
-  assert.equal(reg.hasName("old-name"), false, "旧名已清理");
-  assert.equal(reg.isEnabled("prov-x", "new-name"), true, "该文件原为启用者，新版沿用启用");
-}
+  it("内置名注册成功（前置）", () => {
+    expect(builtinRegister).toBe(true);
+  });
 
-// B4：契约失败的新版同样拒绝且保留旧条目
-{
-  const reg = makeAdapterRegistry();
-  reg.register(mkAdapter({ name: "orig" }), "user-file", "/o.mjs");
-  const r = reg.replaceByFile("/o.mjs", { foo: 1 });
-  assert.equal(r.ok, false);
-  assert.equal(r.code, "invalid-adapter");
-  assert.ok(reg.snapshot().infos.some((i) => i.name === "orig"), "非法新版不破坏旧条目");
-}
+  it("待改名条目注册成功（前置）", () => {
+    expect(renamerRegister).toBe(true);
+  });
+
+  it("撞名拒绝替换", () => {
+    expect(r.ok).toBe(false);
+  });
+
+  it("拒绝码为 duplicate-name", () => {
+    expect(r.code).toBe("duplicate-name");
+  });
+
+  it("拒绝结果携带冲突 name 详情", () => {
+    expect(r.detail.includes("builtin-occ")).toBeTruthy();
+  });
+
+  it("旧条目未被删除（#212-B）", () => {
+    expect(infos.some((i) => i.name === "renamer" && i.file === "/r.mjs")).toBeTruthy();
+  });
+
+  it("旧名仍在注册表", () => {
+    expect(hasNameRenamer).toBe(true);
+  });
+});
+
+describe("#212-B2：改名撞另一 user-file 名 → 同样拒绝且两文件条目均保留", () => {
+  let r, infos;
+
+  beforeAll(() => {
+    const reg = makeAdapterRegistry();
+    reg.register(mkAdapter({ name: "u-first", providers: ["pq"] }), "user-file", "/u1.mjs");
+    reg.register(mkAdapter({ name: "u-second", providers: ["pr"] }), "user-file", "/u2.mjs");
+    r = reg.replaceByFile("/u2.mjs", mkAdapter({ name: "u-first", providers: ["pr"] }));
+    infos = reg.snapshot().infos;
+  });
+
+  it("撞 user-file 名拒绝", () => {
+    expect(r.ok).toBe(false);
+  });
+
+  it("拒绝码为 duplicate-name", () => {
+    expect(r.code).toBe("duplicate-name");
+  });
+
+  it("u2 旧条目保留", () => {
+    expect(infos.some((i) => i.name === "u-second" && i.file === "/u2.mjs")).toBeTruthy();
+  });
+
+  it("u1 条目不受牵连", () => {
+    expect(infos.some((i) => i.name === "u-first" && i.file === "/u1.mjs")).toBeTruthy();
+  });
+});
+
+describe("#212-B3：改名不冲突 → 替换成功，旧名清理，启用关系跟随文件语义", () => {
+  let r, hasNameOld, enabledNew;
+
+  beforeAll(() => {
+    const reg = makeAdapterRegistry();
+    reg.register(mkAdapter({ name: "old-name" }), "user-file", "/c.mjs"); // 默认启用 prov-x
+    r = reg.replaceByFile("/c.mjs", mkAdapter({ name: "new-name" }));
+    hasNameOld = reg.hasName("old-name");
+    enabledNew = reg.isEnabled("prov-x", "new-name");
+  });
+
+  it("改名不冲突替换成功", () => {
+    expect(r.ok).toBe(true);
+  });
+
+  it("旧名已清理", () => {
+    expect(hasNameOld).toBe(false);
+  });
+
+  it("该文件原为启用者，新版沿用启用", () => {
+    expect(enabledNew).toBe(true);
+  });
+});
+
+describe("#212-B4：契约失败的新版同样拒绝且保留旧条目", () => {
+  let r, keptOrig;
+
+  beforeAll(() => {
+    const reg = makeAdapterRegistry();
+    reg.register(mkAdapter({ name: "orig" }), "user-file", "/o.mjs");
+    r = reg.replaceByFile("/o.mjs", { foo: 1 });
+    keptOrig = reg.snapshot().infos.some((i) => i.name === "orig");
+  });
+
+  it("替换被拒", () => {
+    expect(r.ok).toBe(false);
+  });
+
+  it("拒绝码为 invalid-adapter", () => {
+    expect(r.code).toBe("invalid-adapter");
+  });
+
+  it("非法新版不破坏旧条目", () => {
+    expect(keptOrig).toBeTruthy();
+  });
+});
 
 // ================================================================ #212：sanitizeHtml 白名单矩阵
 
-assert.equal(sanitizeHtml(""), "", "空串直通");
-assert.equal(sanitizeHtml("<p>plain</p>"), "<p>plain</p>", "无害 HTML 原样");
+describe("sanitizeHtml 白名单矩阵", () => {
+  it("空串直通", () => {
+    expect(sanitizeHtml("")).toBe("");
+  });
 
-// 元素级移除（含成对标签与自闭合形态）
-assert.equal(sanitizeHtml('<script>alert(1)</script>ok'), "ok", "script 成对移除");
-assert.equal(sanitizeHtml('<iframe src="x"></iframe>ok'), "ok", "iframe 移除");
-assert.equal(sanitizeHtml('<frame src="x"></frame>ok'), "ok", "frame 移除");
-assert.equal(sanitizeHtml('<object data="x"></object>ok'), "ok", "object 移除");
-assert.equal(sanitizeHtml('<embed src="x"></embed>ok'), "ok", "embed 成对移除（正则要求闭合标签，自闭合形态不在净化范围——现状行为）");
-assert.equal(sanitizeHtml('<meta charset="utf-8">ok'), "ok", "meta 移除");
-assert.equal(sanitizeHtml('<link rel="stylesheet" href="x">ok'), "ok", "link 移除");
-assert.equal(sanitizeHtml('<base href="x">ok'), "ok", "base 移除");
-assert.equal(sanitizeHtml("<div>keep</div><SCRIPT>x</SCRIPT>tail"), "<div>keep</div>tail", "大写 SCRIPT 大小写不敏感");
+  it("无害 HTML 原样", () => {
+    expect(sanitizeHtml("<p>plain</p>")).toBe("<p>plain</p>");
+  });
 
-// on* 事件属性三种引号形态
-assert.equal(sanitizeHtml('<img src="a.png" onclick="evil()">'), '<img src="a.png">', "onclick 双引号移除");
-assert.equal(sanitizeHtml("<img src='a.png' onload='evil()'>"), "<img src='a.png'>", "onload 单引号移除");
-assert.equal(sanitizeHtml("<img src=a.png onerror=evil()>"), "<img src=a.png>", "onerror 无引号移除");
+  // 元素级移除（含成对标签与自闭合形态）
+  it("script 成对移除", () => {
+    expect(sanitizeHtml('<script>alert(1)</script>ok')).toBe("ok");
+  });
 
-// 危险协议与 CSS 表达式
-assert.equal(sanitizeHtml('<a href="javascript:alert(1)">c</a>'), '<a href="alert(1)">c</a>', "javascript: 协议剥除");
-assert.equal(sanitizeHtml('<a href="JaVaScRiPt:x">c</a>'), '<a href="x">c</a>', "协议大小写变体剥除");
-assert.equal(sanitizeHtml('<a href="data:text/html;base64,x">c</a>'), '<a href=";base64,x">c</a>', "data:text/html 剥除");
-assert.equal(sanitizeHtml('<div style="width: expression(alert(1))">x</div>'), '<div style="width: alert(1))">x</div>', "expression( 剥除");
+  it("iframe 移除", () => {
+    expect(sanitizeHtml('<iframe src="x"></iframe>ok')).toBe("ok");
+  });
 
-// 实体编码变体封闭（#105③）——解码副本仅用于定位，输出恒为原文子序列
-assert.equal(
-  sanitizeHtml('<a href="jav&#x61;script:alert(1)">c</a>'),
-  '<a href="alert(1)">c</a>',
-  "hex 实体 javascript: 剥除",
-);
-assert.equal(
-  sanitizeHtml('<a href="javascript&colon;x">c</a>'),
-  '<a href="x">c</a>',
-  "具名冒号实体协议剥除（data&colon; 同路径，见 smoke-pure A7）",
-);
-assert.equal(
-  sanitizeHtml('<img src=x o&#110;click="evil()">'),
-  "<img src=x>",
-  "事件属性名部分实体编码剥除（保守封堵）",
-);
-assert.equal(
-  sanitizeHtml('<div style="width:expression&#40;alert(1))">x</div>'),
-  '<div style="width:alert(1))">x</div>',
-  "expression 数字实体变体剥除",
-);
-assert.equal(
-  sanitizeHtml('<a href="&amp;#106;avascript:x">c</a>'),
-  '<a href="&amp;#106;avascript:x">c</a>',
-  "双重编码安全文本零损伤（不得误解码升级为新载体）",
-);
-assert.equal(
-  sanitizeHtml("&lt;b&gt;text&lt;/b&gt;"),
-  "&lt;b&gt;text&lt;/b&gt;",
-  "无害实体文本原样（解码副本绝不回写为输出）",
-);
+  it("frame 移除", () => {
+    expect(sanitizeHtml('<frame src="x"></frame>ok')).toBe("ok");
+  });
+
+  it("object 移除", () => {
+    expect(sanitizeHtml('<object data="x"></object>ok')).toBe("ok");
+  });
+
+  it("embed 成对移除（正则要求闭合标签，自闭合形态不在净化范围——现状行为）", () => {
+    expect(sanitizeHtml('<embed src="x"></embed>ok')).toBe("ok");
+  });
+
+  it("meta 移除", () => {
+    expect(sanitizeHtml('<meta charset="utf-8">ok')).toBe("ok");
+  });
+
+  it("link 移除", () => {
+    expect(sanitizeHtml('<link rel="stylesheet" href="x">ok')).toBe("ok");
+  });
+
+  it("base 移除", () => {
+    expect(sanitizeHtml('<base href="x">ok')).toBe("ok");
+  });
+
+  it("大写 SCRIPT 大小写不敏感", () => {
+    expect(sanitizeHtml("<div>keep</div><SCRIPT>x</SCRIPT>tail")).toBe("<div>keep</div>tail");
+  });
+
+  // on* 事件属性三种引号形态
+  it("onclick 双引号移除", () => {
+    expect(sanitizeHtml('<img src="a.png" onclick="evil()">')).toBe('<img src="a.png">');
+  });
+
+  it("onload 单引号移除", () => {
+    expect(sanitizeHtml("<img src='a.png' onload='evil()'>")).toBe("<img src='a.png'>");
+  });
+
+  it("onerror 无引号移除", () => {
+    expect(sanitizeHtml("<img src=a.png onerror=evil()>")).toBe("<img src=a.png>");
+  });
+
+  // 危险协议与 CSS 表达式
+  it("javascript: 协议剥除", () => {
+    expect(sanitizeHtml('<a href="javascript:alert(1)">c</a>')).toBe('<a href="alert(1)">c</a>');
+  });
+
+  it("协议大小写变体剥除", () => {
+    expect(sanitizeHtml('<a href="JaVaScRiPt:x">c</a>')).toBe('<a href="x">c</a>');
+  });
+
+  it("data:text/html 剥除", () => {
+    expect(sanitizeHtml('<a href="data:text/html;base64,x">c</a>')).toBe('<a href=";base64,x">c</a>');
+  });
+
+  it("expression( 剥除", () => {
+    expect(sanitizeHtml('<div style="width: expression(alert(1))">x</div>')).toBe('<div style="width: alert(1))">x</div>');
+  });
+
+  // 实体编码变体封闭（#105③）——解码副本仅用于定位，输出恒为原文子序列
+  it("hex 实体 javascript: 剥除", () => {
+    expect(sanitizeHtml('<a href="jav&#x61;script:alert(1)">c</a>')).toBe('<a href="alert(1)">c</a>');
+  });
+
+  it("具名冒号实体协议剥除（data&colon; 同路径，见 smoke-pure A7）", () => {
+    expect(sanitizeHtml('<a href="javascript&colon;x">c</a>')).toBe('<a href="x">c</a>');
+  });
+
+  it("事件属性名部分实体编码剥除（保守封堵）", () => {
+    expect(sanitizeHtml('<img src=x o&#110;click="evil()">')).toBe("<img src=x>");
+  });
+
+  it("expression 数字实体变体剥除", () => {
+    expect(sanitizeHtml('<div style="width:expression&#40;alert(1))">x</div>')).toBe('<div style="width:alert(1))">x</div>');
+  });
+
+  it("双重编码安全文本零损伤（不得误解码升级为新载体）", () => {
+    expect(sanitizeHtml('<a href="&amp;#106;avascript:x">c</a>')).toBe('<a href="&amp;#106;avascript:x">c</a>');
+  });
+
+  it("无害实体文本原样（解码副本绝不回写为输出）", () => {
+    expect(sanitizeHtml("&lt;b&gt;text&lt;/b&gt;")).toBe("&lt;b&gt;text&lt;/b&gt;");
+  });
+});
 
 // ================================================================ #150 二阶段：guards 边界
 
-// safeFetchData：序列化校验（数组/标量/null 拒绝）
-{
-  const arr = await safeFetchData(async () => [1, 2]);
-  assert.match(arr.error as string, /必须返回对象/, "数组返回被拒");
+describe("safeFetchData：序列化校验（数组/标量/null 拒绝）", () => {
+  it("数组返回被拒", async () => {
+    const arr = await safeFetchData(async () => [1, 2]);
+    expect(arr.error).toMatch(/必须返回对象/);
+  });
 
-  const nul = await safeFetchData(async () => null);
-  assert.match(nul.error as string, /必须返回对象/, "null 返回被拒");
+  it("null 返回被拒", async () => {
+    const nul = await safeFetchData(async () => null);
+    expect(nul.error).toMatch(/必须返回对象/);
+  });
 
-  const str = await safeFetchData(async () => "text");
-  assert.match(str.error as string, /必须返回对象/, "字符串返回被拒");
+  it("字符串返回被拒", async () => {
+    const str = await safeFetchData(async () => "text");
+    expect(str.error).toMatch(/必须返回对象/);
+  });
 
-  const ok = await safeFetchData(async () => ({ v: 1 }));
-  assert.deepEqual(ok.data, { v: 1 }, "对象正常透传");
+  it("对象正常透传", async () => {
+    const ok = await safeFetchData(async () => ({ v: 1 }));
+    expect(ok.data).toEqual({ v: 1 });
+  });
 
-  const thrown = await safeFetchData(async () => { throw new Error("boom"); });
-  assert.equal(thrown.error, "boom", "fetchData 抛错隔离为 error 字段");
+  it("fetchData 抛错隔离为 error 字段", async () => {
+    const thrown = await safeFetchData(async () => { throw new Error("boom"); });
+    expect(thrown.error).toBe("boom");
+  });
 
-  const thrownStr = await safeFetchData(async () => { throw "raw-str"; });
-  assert.equal(thrownStr.error, "raw-str", "非 Error 抛出物 String() 化");
+  it("非 Error 抛出物 String() 化", async () => {
+    const thrownStr = await safeFetchData(async () => { throw "raw-str"; });
+    expect(thrownStr.error).toBe("raw-str");
+  });
 
   // 超时：timeoutMs 最小化 + 永不 resolve 的 promise
-  const slow = await safeFetchData(() => new Promise(() => {}), 30);
-  assert.match(slow.error as string, /超时/, "慢 fetchData 超时中断");
-}
+  it("慢 fetchData 超时中断", async () => {
+    const slow = await safeFetchData(() => new Promise(() => {}), 30);
+    expect(slow.error).toMatch(/超时/);
+  });
+});
 
-// safeFormat：非字符串返回 / 抛错 / 超时
-{
-  const badType = await safeFormat(() => 42 as unknown as string, "formatCapsule");
-  assert.match(badType.error as string, /必须返回字符串/, "非字符串 HTML 拒绝");
+describe("safeFormat：非字符串返回 / 抛错 / 超时", () => {
+  it("非字符串 HTML 拒绝", async () => {
+    const badType = await safeFormat(() => 42 as unknown as string, "formatCapsule");
+    expect(badType.error).toMatch(/必须返回字符串/);
+  });
 
-  const thrown = await safeFormat(() => { throw new Error("fmt-boom"); }, "formatCapsule");
-  assert.equal(thrown.error, "fmt-boom", "format 抛错隔离");
+  it("format 抛错隔离", async () => {
+    const thrown = await safeFormat(() => { throw new Error("fmt-boom"); }, "formatCapsule");
+    expect(thrown.error).toBe("fmt-boom");
+  });
 
-  const slow = await safeFormat(() => new Promise<string>(() => {}) as unknown as string, "formatPanel", 30);
-  assert.match(slow.error as string, /formatPanel 超时/, "异步 format 超时带函数名");
+  it("异步 format 超时带函数名", async () => {
+    const slow = await safeFormat(() => new Promise<string>(() => {}) as unknown as string, "formatPanel", 30);
+    expect(slow.error).toMatch(/formatPanel 超时/);
+  });
 
-  const ok = await safeFormat(() => "<b>hi</b>", "formatCapsule");
-  assert.equal(ok.html, "<b>hi</b>", "同步 format 正常返回");
-}
+  it("同步 format 正常返回", async () => {
+    const ok = await safeFormat(() => "<b>hi</b>", "formatCapsule");
+    expect(ok.html).toBe("<b>hi</b>");
+  });
+});
 
 // ================================================================ #150 二阶段：pipeline v2 分支
 
@@ -629,241 +1155,398 @@ function mkV2Adapter(over: Record<string, unknown> = {}): Record<string, unknown
   };
 }
 
-{
-  // 成功路径：fresh + rawData + capsule 净化
-  const r = await runV2Pipeline({
-    adapter: mkV2Adapter() as never,
-    provider: "pv",
-    config: { apiEndpoint: "http://127.0.0.1:9", apiKey: "sk" },
-    staticPath: "",
-    timeoutMs: 1000,
-  });
-  assert.equal(r.ok, true, "管道成功 ok");
-  assert.equal(r.status, "fresh", "管道状态 fresh");
-  assert.deepEqual(r.rawData, { used: 1 }, "rawData 透传");
-  assert.equal(r.capsuleHtml, "<span>capsule</span>", "胶囊经净化输出");
-}
-{
-  // fetchData 失败 → fetch-failed stale
-  const r = await runV2Pipeline({
-    adapter: mkV2Adapter({ fetchData: async () => { throw new Error("net-down"); } }) as never,
-    provider: "pv",
-    config: {},
-    staticPath: "",
-    timeoutMs: 500,
-  });
-  assert.equal(r.ok, false, "fetch 失败 ok=false");
-  assert.equal(r.reason, "fetch-failed", "reason=fetch-failed");
-  assert.equal(r.error, "net-down", "错误信息透传");
-  assert.equal(r.status, "stale", "fetch 失败状态 stale");
-}
-{
-  // formatCapsule 注入脚本 → 净化兜底
-  const r = await runV2Pipeline({
-    adapter: mkV2Adapter({ formatCapsule: () => '<span onclick="x()">t</span>' }) as never,
-    provider: "pv",
-    config: {},
-    staticPath: "",
-    timeoutMs: 500,
-  });
-  assert.equal(r.capsuleHtml, "<span>t</span>", "胶囊 XSS 属性被净化");
-}
+describe("pipeline v2：成功路径：fresh + rawData + capsule 净化", () => {
+  let r;
 
-{
-  // 面板管道：正常 / formatPanel 抛错
-  const store = new HistoryStore({ root: mkdtempSync(join(tmpdir(), "dou-pipe-")) });
-  const day = new Date().setHours(12, 0, 0, 0);
-  await store.append("pv", "pipe-a", { time: day, data: { v: 1 } });
-
-  const okP = await runV2PanelPipeline({
-    adapter: mkV2Adapter() as never,
-    provider: "pv",
-    history: store,
-    range: { start: day - 1000, end: day + 1000 },
+  beforeAll(async () => {
+    r = await runV2Pipeline({
+      adapter: mkV2Adapter() as never,
+      provider: "pv",
+      config: { apiEndpoint: "http://127.0.0.1:9", apiKey: "sk" },
+      staticPath: "",
+      timeoutMs: 1000,
+    });
   });
-  assert.equal(okP.panelHtml, "<p>panel</p>", "面板 HTML 输出");
 
-  const badP = await runV2PanelPipeline({
-    adapter: mkV2Adapter({ formatPanel: () => { throw new Error("panel-boom"); } }) as never,
-    provider: "pv",
-    history: store,
-    range: { start: day - 1000, end: day + 1000 },
+  it("管道成功 ok", () => {
+    expect(r.ok).toBe(true);
   });
-  assert.match(badP.error as string, /panel-boom/, "formatPanel 抛错进 error 字段");
 
-  // 空历史 → entries 空，formatPanel 收到空列表
-  const emptyP = await runV2PanelPipeline({
-    adapter: mkV2Adapter({ formatPanel: (i: { entries: unknown[] }) => `n=${i.entries.length}` }) as never,
-    provider: "zz",
-    history: store,
-    range: { start: day - 1000, end: day + 1000 },
+  it("管道状态 fresh", () => {
+    expect(r.status).toBe("fresh");
   });
-  assert.equal(emptyP.panelHtml, "n=0", "空历史 entries 为 0");
-}
+
+  it("rawData 透传", () => {
+    expect(r.rawData).toEqual({ used: 1 });
+  });
+
+  it("胶囊经净化输出", () => {
+    expect(r.capsuleHtml).toBe("<span>capsule</span>");
+  });
+});
+
+describe("pipeline v2：fetchData 失败 → fetch-failed stale", () => {
+  let r;
+
+  beforeAll(async () => {
+    r = await runV2Pipeline({
+      adapter: mkV2Adapter({ fetchData: async () => { throw new Error("net-down"); } }) as never,
+      provider: "pv",
+      config: {},
+      staticPath: "",
+      timeoutMs: 500,
+    });
+  });
+
+  it("fetch 失败 ok=false", () => {
+    expect(r.ok).toBe(false);
+  });
+
+  it("reason=fetch-failed", () => {
+    expect(r.reason).toBe("fetch-failed");
+  });
+
+  it("错误信息透传", () => {
+    expect(r.error).toBe("net-down");
+  });
+
+  it("fetch 失败状态 stale", () => {
+    expect(r.status).toBe("stale");
+  });
+});
+
+describe("pipeline v2：formatCapsule 注入脚本 → 净化兜底", () => {
+  let r;
+
+  beforeAll(async () => {
+    r = await runV2Pipeline({
+      adapter: mkV2Adapter({ formatCapsule: () => '<span onclick="x()">t</span>' }) as never,
+      provider: "pv",
+      config: {},
+      staticPath: "",
+      timeoutMs: 500,
+    });
+  });
+
+  it("胶囊 XSS 属性被净化", () => {
+    expect(r.capsuleHtml).toBe("<span>t</span>");
+  });
+});
+
+describe("pipeline v2：面板管道：正常 / formatPanel 抛错 / 空历史", () => {
+  let okP, badP, emptyP;
+
+  beforeAll(async () => {
+    const store = new HistoryStore({ root: mkdtempSync(join(tmpdir(), "dou-pipe-")) });
+    const day = new Date().setHours(12, 0, 0, 0);
+    await store.append("pv", "pipe-a", { time: day, data: { v: 1 } });
+
+    okP = await runV2PanelPipeline({
+      adapter: mkV2Adapter() as never,
+      provider: "pv",
+      history: store,
+      range: { start: day - 1000, end: day + 1000 },
+    });
+
+    badP = await runV2PanelPipeline({
+      adapter: mkV2Adapter({ formatPanel: () => { throw new Error("panel-boom"); } }) as never,
+      provider: "pv",
+      history: store,
+      range: { start: day - 1000, end: day + 1000 },
+    });
+
+    // 空历史 → entries 空，formatPanel 收到空列表
+    emptyP = await runV2PanelPipeline({
+      adapter: mkV2Adapter({ formatPanel: (i: { entries: unknown[] }) => `n=${i.entries.length}` }) as never,
+      provider: "zz",
+      history: store,
+      range: { start: day - 1000, end: day + 1000 },
+    });
+  });
+
+  it("面板 HTML 输出", () => {
+    expect(okP.panelHtml).toBe("<p>panel</p>");
+  });
+
+  it("formatPanel 抛错进 error 字段", () => {
+    expect(badP.error).toMatch(/panel-boom/);
+  });
+
+  it("空历史 entries 为 0", () => {
+    expect(emptyP.panelHtml).toBe("n=0");
+  });
+});
 
 // ================================================================ #150 二阶段：hotreload 纯函数与轮询
 
-{
-  // stampEqual 四象限
-  assert.equal(stampEqual(null, null), true, "双 null 相等");
-  assert.equal(stampEqual(null, { mtimeMs: 1, size: 1 }), false, "null vs 值不等");
-  assert.equal(stampEqual({ mtimeMs: 1, size: 1 }, null), false, "值 vs null 不等");
-  assert.equal(stampEqual({ mtimeMs: 1, size: 2 }, { mtimeMs: 1, size: 3 }), false, "size 差异不等");
-  assert.equal(stampEqual({ mtimeMs: 5, size: 5 }, { mtimeMs: 5, size: 5 }), true, "全等通过");
+describe("stampEqual 四象限", () => {
+  it("双 null 相等", () => {
+    expect(stampEqual(null, null)).toBe(true);
+  });
 
-  // readStamp：不存在 null、存在取值
-  assert.equal(await readStamp("/nonexistent/path/x"), null, "readStamp 缺失返回 null");
-  const tmpF = join(mkdtempSync(join(tmpdir(), "dou-hr-stamp-")), "f.mjs");
-  writeFileSync(tmpF, "x", "utf8");
-  const st = await readStamp(tmpF);
-  assert.ok(st !== null && typeof st.mtimeMs === "number" && st.size === 1, "readStamp 取到 mtime+size");
-}
+  it("null vs 值不等", () => {
+    expect(stampEqual(null, { mtimeMs: 1, size: 1 })).toBe(false);
+  });
 
-{
-  // HotReloadableAdapter：start 文件缺失失败回调；pollOnce 文件删除保留 current
-  const dir = mkdtempSync(join(tmpdir(), "dou-hr-cls-"));
-  const missing = join(dir, "missing.mjs");
-  const events: Array<{ ok: boolean; error?: string }> = [];
-  const hrMissing = new HotReloadableAdapter(missing, 60000, (i) => events.push(i));
-  const started = await hrMissing.start();
-  assert.equal(started.ok, false, "start 文件缺失失败");
-  assert.match(started.error as string, /不存在或不可读/, "start 错误信息");
-  assert.equal(events.length, 1, "onReload 收到失败事件");
+  it("值 vs null 不等", () => {
+    expect(stampEqual({ mtimeMs: 1, size: 1 }, null)).toBe(false);
+  });
 
-  // 合法文件启动 + 变更后 pollOnce 原子切换 + 删除后保留旧版
-  const good = join(dir, "good.mjs");
-  writeFileSync(good, `
-export const version = ${ADAPTER_CONTRACT_VERSION};
-export const name = "hr-unit";
-export const providers = ["${OPENCODE_GO_PROVIDER}"];
-export async function fetchData() { return { v: 1 }; }
-export function formatCapsule() { return "<span>v1</span>"; }
-export function formatPanel() { return "<p>v1</p>"; }
-`, "utf8");
-  const hr = new HotReloadableAdapter(good, 60000);
-  const startedOk = await hr.start();
-  assert.equal(startedOk.ok, true, "合法文件启动成功");
-  assert.notEqual(hr.current, null, "current 已装载");
-  hr.stop(); // 停表后手动 poll
+  it("size 差异不等", () => {
+    expect(stampEqual({ mtimeMs: 1, size: 2 }, { mtimeMs: 1, size: 3 })).toBe(false);
+  });
 
-  // 内容变更（mtime 变化）→ 重载
-  const { utimesSync } = await import("node:fs");
-  writeFileSync(good, `
-export const version = ${ADAPTER_CONTRACT_VERSION};
-export const name = "hr-unit";
-export const providers = ["${OPENCODE_GO_PROVIDER}"];
-export async function fetchData() { return { v: 2 }; }
-export function formatCapsule() { return "<span>v2</span>"; }
-export function formatPanel() { return "<p>v2</p>"; }
-`, "utf8");
-  const future = new Date(Date.now() + 5000);
-  utimesSync(good, future, future);
-  const polled = await hr.pollOnce();
-  assert.equal(polled.ok, true, "变更后 poll 成功");
-  assert.notEqual(hr.current, null, "变更后 current 保持装载");
+  it("全等通过", () => {
+    expect(stampEqual({ mtimeMs: 5, size: 5 }, { mtimeMs: 5, size: 5 })).toBe(true);
+  });
+});
 
-  // 校验失败的替换内容 → reload 报错且 current 不动
-  writeFileSync(good, 'export const version = 1; export const name = "bad";', "utf8");
-  utimesSync(good, new Date(Date.now() + 9000), new Date(Date.now() + 9000));
-  const badReload = await hr.pollOnce();
-  assert.equal(badReload.ok, false, "非法新版本 poll 失败");
-  assert.match(badReload.error as string, /契约校验失败/, "reload 错误信息");
+describe("readStamp：不存在 null、存在取值", () => {
+  it("readStamp 缺失返回 null", async () => {
+    expect(await readStamp("/nonexistent/path/x")).toBe(null);
+  });
 
-  // 文件删除 → 保留当前适配器不切换
-  const { unlinkSync } = await import("node:fs");
-  unlinkSync(good);
-  const delPoll = await hr.pollOnce();
-  assert.equal(delPoll.ok, true, "删除场景 poll 恒 ok");
-  assert.notEqual(hr.current, null, "删除后 current 保留旧版");
-}
+  it("readStamp 取到 mtime+size", async () => {
+    const tmpF = join(mkdtempSync(join(tmpdir(), "dou-hr-stamp-")), "f.mjs");
+    writeFileSync(tmpF, "x", "utf8");
+    const st = await readStamp(tmpF);
+    expect(st !== null && typeof st.mtimeMs === "number" && st.size === 1).toBeTruthy();
+  });
+});
+
+describe("hotreload：start 文件缺失失败回调；pollOnce 文件删除保留 current", () => {
+  // 该段必须走 Node 子进程（test/hotreload-probe.mjs）：src 用
+  // `import(url + "?t=" + mtimeMs)` 破 ESM 模块缓存，而 vitest 的 module runner 会按
+  // 路径缓存 src 内发出的动态 import 并吞掉该查询——同一 fixture 连续两次 import
+  // 时而拿到新版本、时而拿到缓存版本（实测多次运行结果不一致，属环境引入的 flake）。
+  // 原生 Node 的 ESM 缓存严格按含查询串的完整 URL 区分，与生产运行态一致，
+  // 故整段序列在子进程内回放，上层只逐条核对回传的观测量。
+  let startedMissing, startedMissingError, eventsLength;
+  let startedOk, currentAfterStart, polledOk, currentAfterPoll;
+  let badReloadOk, badReloadError, delPollOk, currentAfterDelete;
+
+  beforeAll(() => {
+    const probe = fileURLToPath(new URL("../../hotreload-probe.mjs", import.meta.url));
+    const raw = execFileSync(process.execPath, [probe], { encoding: "utf8" });
+    const line = raw.trimEnd().split("\n").filter((l) => l.trimStart().startsWith("{")).pop();
+    const out = JSON.parse(line);
+    startedMissing = { ok: out.startedMissingOk };
+    startedMissingError = out.startedMissingError;
+    eventsLength = out.eventsLength;
+    startedOk = { ok: out.startedOk };
+    currentAfterStart = out.currentAfterStart;
+    polledOk = { ok: out.polledOk };
+    currentAfterPoll = out.currentAfterPoll;
+    badReloadOk = { ok: out.badReloadOk };
+    badReloadError = out.badReloadError;
+    delPollOk = { ok: out.delPollOk };
+    currentAfterDelete = out.currentAfterDelete;
+  });
+
+  it("start 文件缺失失败", () => {
+    expect(startedMissing.ok).toBe(false);
+  });
+
+  it("start 错误信息", () => {
+    expect(startedMissingError).toMatch(/不存在或不可读/);
+  });
+
+  it("onReload 收到失败事件", () => {
+    expect(eventsLength).toBe(1);
+  });
+
+  it("合法文件启动成功", () => {
+    expect(startedOk.ok).toBe(true);
+  });
+
+  it("current 已装载", () => {
+    expect(currentAfterStart).toBe(true);
+  });
+
+  it("变更后 poll 成功", () => {
+    expect(polledOk?.ok).toBe(true);
+  });
+
+  it("变更后 current 保持装载", () => {
+    expect(currentAfterPoll).toBe(true);
+  });
+
+  it("非法新版本 poll 失败", () => {
+    expect(badReloadOk?.ok).toBe(false);
+  });
+
+  it("reload 错误信息", () => {
+    expect(badReloadError ?? "").toMatch(/契约校验失败/);
+  });
+
+  it("删除场景 poll 恒 ok", () => {
+    expect(delPollOk.ok).toBe(true);
+  });
+
+  it("删除后 current 保留旧版", () => {
+    expect(currentAfterDelete).toBe(true);
+  });
+});
 
 // ================================================================ #150 二阶段：图表纯函数结构断言（miniChartSvgMarkup）
 
-// 样本不足 2 点 → 空 SVG
-assert.equal(miniChartSvgMarkup({
-  samples: [{ x: 1, y: 50 }],
-  color: "#fff", lo: 0, hi: 100, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
-}), "", "样本 <2 返回空串");
+describe("miniChartSvgMarkup 图表纯函数结构断言", () => {
+  // 样本不足 2 点 → 空 SVG
+  it("样本 <2 返回空串", () => {
+    expect(miniChartSvgMarkup({
+      samples: [{ x: 1, y: 50 }],
+      color: "#fff", lo: 0, hi: 100, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+    })).toBe("");
+  });
 
-// 基本结构：svg 包裹 + 平滑曲线 + 终点圆点 + 网格线
-{
-  const t0 = Date.UTC(2026, 0, 1, 0, 0);
-  const svg = miniChartSvgMarkup({
-    samples: [
-      { x: t0, y: 10 },
-      { x: t0 + 3600000, y: 40 },
-      { x: t0 + 7200000, y: 70 },
-    ],
-    color: "#123456", lo: 0, hi: 100, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
-  });
-  assert.ok(svg.startsWith("<svg"), "SVG 开头");
-  assert.ok(svg.includes('viewBox="0 0 320 100"'), "视口尺寸固定");
-  assert.ok(svg.includes("stroke:#123456"), "曲线使用传入色");
-  assert.ok(svg.includes("<circle"), "终点圆点存在");
-  // 网格线恰为 lo/mid/hi 三条（stroke-dasharray:3 3）；重置线(2 3)与 100% 参考
-  // 线(4 3)用不同 dash 值不会混入计数——精确计数而非 includes 存在性
-  const gridLines = svg.split('stroke-dasharray:3 3').length - 1;
-  assert.equal(gridLines, 3, "网格虚线恰三条（lo/中位/hi 各一）");
-  assert.ok(svg.includes("100%"), "lo=0/hi=100 满足 lo<=100<=hi 且域宽>0.01 → 参考线存在");
-}
-{
-  // domain 含 100% 参考线：hi=80 时 100% 线不可见；hi<100 且 dmax>=90 强制抬到 100 的行为经 niceDomain 间接生效
-  const t0 = Date.UTC(2026, 0, 1, 0, 0);
-  const noRefLine = miniChartSvgMarkup({
-    samples: [{ x: t0, y: 10 }, { x: t0 + 60000, y: 60 }],
-    color: "#000", lo: 0, hi: 50, resetsAt: undefined, resetPeriodMs: 0, dateOnly: true,
-  });
-  assert.ok(noRefLine.includes("100%") === false, "hi=50 < 100 时无 100% 参考线");
-  const withRefLine = miniChartSvgMarkup({
-    samples: [{ x: t0, y: 10 }, { x: t0 + 60000, y: 95 }],
-    color: "#000", lo: 0, hi: 100, resetsAt: undefined, resetPeriodMs: 0, dateOnly: true,
-  });
-  assert.ok(withRefLine.includes("100%"), "hi=100 且域宽 >0.01 时有 100% 参考线");
-}
-{
-  // 重置标记线：resetsAt 落在窗口内 → title「窗口重置点」出现；周期外推的历史点也在
-  const t0 = Date.UTC(2026, 0, 1, 0, 0);
-  const resetAt = new Date(t0 + 3600000).toISOString();
-  const svg = miniChartSvgMarkup({
-    samples: [{ x: t0, y: 10 }, { x: t0 + 7200000, y: 30 }],
-    color: "#000", lo: 0, hi: 100,
-    resetsAt: resetAt, resetPeriodMs: 3600000, dateOnly: false,
-  });
-  const marks = svg.split("窗口重置点").length - 1;
-  assert.ok(marks >= 2, `重置点标记含当期与外推历史（实际 ${marks} 个）`);
-}
-{
-  // resetsAt 无效值 → 无标记
-  const t0 = Date.UTC(2026, 0, 1, 0, 0);
-  const svgNone = miniChartSvgMarkup({
-    samples: [{ x: t0, y: 10 }, { x: t0 + 60000, y: 20 }],
-    color: "#000", lo: 0, hi: 100, resetsAt: "garbage", resetPeriodMs: 0, dateOnly: false,
-  });
-  assert.ok(!svgNone.includes("窗口重置点"), "非法 resetsAt 无标记");
-}
+  // 基本结构：svg 包裹 + 平滑曲线 + 终点圆点 + 网格线
+  describe("基本结构：svg 包裹 + 平滑曲线 + 终点圆点 + 网格线", () => {
+    let svg, gridLines;
 
-// downsample：>300 点降采样后仍 ≤301 点且保留末点
-{
-  const t0 = Date.UTC(2026, 0, 1, 0, 0);
-  const many = Array.from({ length: 700 }, (_, i) => ({ x: t0 + i * 1000, y: i % 97 }));
-  const svg = miniChartSvgMarkup({
-    samples: many, color: "#000", lo: 0, hi: 100, resetsAt: undefined, resetPeriodMs: 0, dateOnly: true,
-  });
-  const circles = svg.split("<circle").length - 1;
-  assert.equal(circles, 1, "降采样后仍只有一个终点圆点（渲染未崩）");
-  // 仅作退化护栏（防止降采样失效导致体积爆炸的非线性增长），非精确口径：
-  // 700 点降采样到 ≤301 点的 SVG 实际远小于该上限
-  assert.ok(svg.length < 100000, "降采样控制了输出体积");
-}
+    beforeAll(() => {
+      const t0 = Date.UTC(2026, 0, 1, 0, 0);
+      svg = miniChartSvgMarkup({
+        samples: [
+          { x: t0, y: 10 },
+          { x: t0 + 3600000, y: 40 },
+          { x: t0 + 7200000, y: 70 },
+        ],
+        color: "#123456", lo: 0, hi: 100, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+      });
+      // 网格线恰为 lo/mid/hi 三条（stroke-dasharray:3 3）；重置线(2 3)与 100% 参考
+      // 线(4 3)用不同 dash 值不会混入计数——精确计数而非 includes 存在性
+      gridLines = svg.split('stroke-dasharray:3 3').length - 1;
+    });
 
-// smoothPath：单点返回空串（pts<2 分支）
-// （smoothPath 未导出，经由 samples<2 已覆盖；此处补两点的 path 形状断言）
-{
-  const t0 = Date.UTC(2026, 0, 1, 0, 0);
-  const svg = miniChartSvgMarkup({
-    samples: [{ x: t0, y: 0 }, { x: t0 + 60000, y: 100 }],
-    color: "#000", lo: 0, hi: 100, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+    it("SVG 开头", () => {
+      expect(svg.startsWith("<svg")).toBeTruthy();
+    });
+
+    it("视口尺寸固定", () => {
+      expect(svg.includes('viewBox="0 0 320 100"')).toBeTruthy();
+    });
+
+    it("曲线使用传入色", () => {
+      expect(svg.includes("stroke:#123456")).toBeTruthy();
+    });
+
+    it("终点圆点存在", () => {
+      expect(svg.includes("<circle")).toBeTruthy();
+    });
+
+    it("网格虚线恰三条（lo/中位/hi 各一）", () => {
+      expect(gridLines).toBe(3);
+    });
+
+    it("lo=0/hi=100 满足 lo<=100<=hi 且域宽>0.01 → 参考线存在", () => {
+      expect(svg.includes("100%")).toBeTruthy();
+    });
   });
-  assert.ok(svg.includes("C "), "两点曲线走三次贝塞尔（平滑）");
-  assert.ok(svg.includes("fill-opacity:.13"), "面积图填充透明度存在");
-}
+
+  describe("domain 含 100% 参考线", () => {
+    let noRefLine, withRefLine;
+
+    beforeAll(() => {
+      // hi=80 时 100% 线不可见；hi<100 且 dmax>=90 强制抬到 100 的行为经 niceDomain 间接生效
+      const t0 = Date.UTC(2026, 0, 1, 0, 0);
+      noRefLine = miniChartSvgMarkup({
+        samples: [{ x: t0, y: 10 }, { x: t0 + 60000, y: 60 }],
+        color: "#000", lo: 0, hi: 50, resetsAt: undefined, resetPeriodMs: 0, dateOnly: true,
+      });
+      withRefLine = miniChartSvgMarkup({
+        samples: [{ x: t0, y: 10 }, { x: t0 + 60000, y: 95 }],
+        color: "#000", lo: 0, hi: 100, resetsAt: undefined, resetPeriodMs: 0, dateOnly: true,
+      });
+    });
+
+    it("hi=50 < 100 时无 100% 参考线", () => {
+      expect(noRefLine.includes("100%") === false).toBeTruthy();
+    });
+
+    it("hi=100 且域宽 >0.01 时有 100% 参考线", () => {
+      expect(withRefLine.includes("100%")).toBeTruthy();
+    });
+  });
+
+  describe("重置标记线", () => {
+    let marks;
+
+    beforeAll(() => {
+      // resetsAt 落在窗口内 → title「窗口重置点」出现；周期外推的历史点也在
+      const t0 = Date.UTC(2026, 0, 1, 0, 0);
+      const resetAt = new Date(t0 + 3600000).toISOString();
+      const svg = miniChartSvgMarkup({
+        samples: [{ x: t0, y: 10 }, { x: t0 + 7200000, y: 30 }],
+        color: "#000", lo: 0, hi: 100,
+        resetsAt: resetAt, resetPeriodMs: 3600000, dateOnly: false,
+      });
+      marks = svg.split("窗口重置点").length - 1;
+    });
+
+    it("重置点标记含当期与外推历史", () => {
+      expect(marks >= 2, `重置点标记含当期与外推历史（实际 ${marks} 个）`).toBeTruthy();
+    });
+  });
+
+  describe("resetsAt 无效值 → 无标记", () => {
+    let svgNone;
+
+    beforeAll(() => {
+      const t0 = Date.UTC(2026, 0, 1, 0, 0);
+      svgNone = miniChartSvgMarkup({
+        samples: [{ x: t0, y: 10 }, { x: t0 + 60000, y: 20 }],
+        color: "#000", lo: 0, hi: 100, resetsAt: "garbage", resetPeriodMs: 0, dateOnly: false,
+      });
+    });
+
+    it("非法 resetsAt 无标记", () => {
+      expect(!svgNone.includes("窗口重置点")).toBeTruthy();
+    });
+  });
+
+  // downsample：>300 点降采样后仍 ≤301 点且保留末点
+  describe("downsample：>300 点降采样", () => {
+    let circles, svg;
+
+    beforeAll(() => {
+      const t0 = Date.UTC(2026, 0, 1, 0, 0);
+      const many = Array.from({ length: 700 }, (_, i) => ({ x: t0 + i * 1000, y: i % 97 }));
+      svg = miniChartSvgMarkup({
+        samples: many, color: "#000", lo: 0, hi: 100, resetsAt: undefined, resetPeriodMs: 0, dateOnly: true,
+      });
+      circles = svg.split("<circle").length - 1;
+    });
+
+    it("降采样后仍只有一个终点圆点（渲染未崩）", () => {
+      expect(circles).toBe(1);
+    });
+
+    // 仅作退化护栏（防止降采样失效导致体积爆炸的非线性增长），非精确口径：
+    // 700 点降采样到 ≤301 点的 SVG 实际远小于该上限
+    it("降采样控制了输出体积", () => {
+      expect(svg.length < 100000).toBeTruthy();
+    });
+  });
+
+  // smoothPath：单点返回空串（pts<2 分支）
+  // （smoothPath 未导出，经由 samples<2 已覆盖；此处补两点的 path 形状断言）
+  describe("smoothPath：两点 path 形状", () => {
+    let svg;
+
+    beforeAll(() => {
+      const t0 = Date.UTC(2026, 0, 1, 0, 0);
+      svg = miniChartSvgMarkup({
+        samples: [{ x: t0, y: 0 }, { x: t0 + 60000, y: 100 }],
+        color: "#000", lo: 0, hi: 100, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+      });
+    });
+
+    it("两点曲线走三次贝塞尔（平滑）", () => {
+      expect(svg.includes("C ")).toBeTruthy();
+    });
+
+    it("面积图填充透明度存在", () => {
+      expect(svg.includes("fill-opacity:.13")).toBeTruthy();
+    });
+  });
+});
