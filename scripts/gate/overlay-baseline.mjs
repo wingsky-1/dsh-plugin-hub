@@ -22,6 +22,15 @@ import {
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
+import {
+  BASELINE_FILE_RE,
+  GH_API_PER_PAGE,
+  expectedBaselineFiles,
+  mergeArtifactPage,
+  mutationArtifacts,
+  reconcileArchive,
+} from './baseline-archive.mjs';
+
 const repo = process.env.GITHUB_REPOSITORY;
 const commitSha = process.env.COMMIT_SHA || execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
 const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || process.env.OBSERVE_PAT;
@@ -78,7 +87,7 @@ async function main() {
   try {
     const raw = runGh([
       'api',
-      `repos/${repo}/actions/runs?head_sha=${prHeadSha}&event=pull_request&status=completed`,
+      `repos/${repo}/actions/runs?head_sha=${prHeadSha}&event=pull_request&status=completed&per_page=${GH_API_PER_PAGE}`,
       '--jq',
       '.workflow_runs',
     ]);
@@ -94,28 +103,49 @@ async function main() {
     process.exit(0);
   }
 
-  // 3. 检查是否有变异增量产物
-  let artifacts;
+  // 3. 检查是否有变异增量产物（必须分页取全：默认 30 条会截断，实测一次 PR CI 有 70 个 artifact，
+  //    第 1 页只含 14 个 mutation-incremental —— 截断后强推会把其余段的旧基线固化，见 baseline-archive.mjs 头注释）
+  let artifacts = [];
   try {
-    const raw = runGh([
-      'api',
-      `repos/${repo}/actions/runs/${successfulCiRun.id}/artifacts`,
-      '--jq',
-      '.artifacts',
-    ]);
-    artifacts = JSON.parse(raw);
+    let page = 1;
+    let expectedTotal = null;
+    // 硬上限：翻页条件用「已收条数 < total_count」，若上游返回短页且 total_count 偏大，
+    // 没有上限就会无限重复请求同一页。20 页 × 100 条 = 2000，远超单次 run 的产物规模。
+    const MAX_PAGES = 20;
+    for (let guard = 0; guard < MAX_PAGES; guard++) {
+      const raw = runGh([
+        'api',
+        `repos/${repo}/actions/runs/${successfulCiRun.id}/artifacts?per_page=${GH_API_PER_PAGE}&page=${page}`,
+      ]);
+      const body = JSON.parse(raw);
+      if (expectedTotal === null && typeof body.total_count === 'number') expectedTotal = body.total_count;
+      const merged = mergeArtifactPage(artifacts, body, page);
+      artifacts = merged.items;
+      if (merged.nextPage === null) break;
+      page = merged.nextPage;
+      if (guard === MAX_PAGES - 1) {
+        throw new Error(`artifact 分页超过 ${MAX_PAGES} 页仍未取完（拿到 ${artifacts.length} / total_count ${expectedTotal}）`);
+      }
+    }
+    if (expectedTotal !== null && artifacts.length < expectedTotal) {
+      throw new Error(`artifact 分页取全失败：拿到 ${artifacts.length} / total_count ${expectedTotal}`);
+    }
+    console.log(`[overlay-baseline] artifact 分页取全：${artifacts.length} / total_count ${expectedTotal ?? artifacts.length}`);
   } catch (err) {
-    console.log(`[overlay-baseline] 查询 Artifacts 列表失败，跳过基线覆盖: ${err.message}`);
-    process.exit(0);
+    // fail-loud（#690 门禁纪律：环境/数据获取失败不得静默降级为成功）。
+    // 「查不到产物」与「确实没有产物」是两回事：前者说明归档没同步，必须让合并后的
+    // baseline-overlay 步骤红，否则缺口会被静默固化（本缺陷的历史形态）。
+    console.error(`[overlay-baseline] 查询 Artifacts 列表失败，未执行归档（fail-loud）: ${err.message}`);
+    process.exit(1);
   }
 
-  const mutArtifacts = (artifacts || []).filter((a) => a.name.startsWith('mutation-incremental-'));
+  const mutArtifacts = mutationArtifacts(artifacts);
   if (mutArtifacts.length === 0) {
     console.log(`[overlay-baseline] PR #${pr.number} 未产生任何增量变异产物（纯文档/未触及变异切片），安全跳过 (No-op)`);
     process.exit(0);
   }
 
-  console.log(`[overlay-baseline] 发现 ${mutArtifacts.length} 个增量产物，准备执行差量覆盖 (Overlay)...`);
+  console.log(`[overlay-baseline] 发现 ${mutArtifacts.length} / ${artifacts.length} 个增量产物，准备执行差量覆盖 (Overlay)...`);
 
   // 4. 创建隔离的临时目录工作区
   const tmpWork = mkdtempSync(join(tmpdir(), 'dsh-overlay-'));
@@ -133,9 +163,10 @@ async function main() {
       for (const line of treeOutput.split('\n').filter(Boolean)) {
         const parts = line.split('\t');
         const fileName = parts[1];
-        if (/^incremental-.+\.json$/.test(fileName) || fileName === 'manifest.json') {
+        if (BASELINE_FILE_RE.test(fileName) || fileName === 'manifest.json') {
           const content = runCmd('git', ['show', `FETCH_HEAD:${fileName}`]);
           writeFileSync(join(baselineDir, fileName), content);
+          if (BASELINE_FILE_RE.test(fileName)) carriedForward.push(fileName);
         }
       }
     } catch {
@@ -165,6 +196,7 @@ async function main() {
           JSON.parse(content); // 严格校验合法 JSON
           writeFileSync(dst, content);
           overlayCount++;
+          overlaid.push(f);
           console.log(`[overlay-baseline] 差量覆盖: ${f}`);
         } catch {
           console.warn(`[overlay-baseline] 文件 ${f} 损坏或非有效 JSON，拒绝覆盖`);
@@ -175,6 +207,25 @@ async function main() {
     if (overlayCount === 0) {
       console.log('[overlay-baseline] 没有成功覆盖任何有效基线文件，跳过推送');
       process.exit(0);
+    }
+
+    // 6.5 对账（#714 后续修复）：期望集合 = stryker.conf.d 派生的段文件；缺口 = 既没被本次覆盖
+    //     也不在旧基线里 —— 该段在归档分支上没有可用基线，增量班次每次都会全量重跑。
+    //     不拒绝推送（拒绝会让归档停在更旧的树），但必须判红点名，暴露上游问题。
+    const expected = expectedBaselineFiles(readdirSync(join(process.cwd(), 'stryker.conf.d')));
+    const reconciled = reconcileArchive({ expected, overlaid, carriedForward });
+    console.log(
+      `[overlay-baseline] 对账：期望 ${expected.length} 段，本次覆盖 ${reconciled.overlaidCount} 段，`
+      + `沿用旧基线 ${reconciled.carriedCount} 段`,
+    );
+    let archiveGap = false;
+    if (reconciled.missing.length > 0) {
+      archiveGap = true;
+      console.error(
+        `[overlay-baseline] 归档缺口 ${reconciled.missing.length} 段（既未覆盖也不在旧基线）：`
+        + reconciled.missing.join(', '),
+      );
+      console.error('[overlay-baseline] 这些段将每次全量重跑。检查上游：产物是否上传成功 / 分页是否取全 / 段配置是否漂移。');
     }
 
     // 7. 重新校准并生成 manifest.json
@@ -231,6 +282,10 @@ async function main() {
 
     runCmd('git', ['push', '--force', remoteTarget, `${commitShaNew}:refs/heads/${BRANCH}`]);
     console.log(`[overlay-baseline] 成功完成 PR #${pr.number} 产物差量覆盖并强推至 ${BRANCH}！`);
+    if (archiveGap) {
+      console.error('[overlay-baseline] 归档已更新，但存在缺口（见上）—— 本次以非零退出暴露问题');
+      process.exitCode = 1;
+    }
   } finally {
     rmSync(tmpWork, { recursive: true, force: true });
   }
