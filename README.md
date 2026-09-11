@@ -11,6 +11,17 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 - 聚合包：`@wingsky-1/dsh-plugins-all`（一键装齐全部插件）
 - 单插件：`@wingsky-1/dsh-*`（按需安装）
 
+> **从 0.1.5 之前的 dsh 升级上来，出现历史会话打不开？**
+> 报 `cannot safely transform unclassified message source` 的会话，是 `dsh-mcp-manager` 早期版本
+> 注入的能力目录消息触发的宿主迁移闸门拒载（产物完好，只是读不出）。**一条命令可救回**：
+>
+> ```sh
+> node scripts/maintenance/repair-mcp-catalog-sessions.mjs          # 预演，列受影响会话
+> node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply  # 落盘（自动备份），随后重启 dsh web
+> ```
+>
+> 详见 [修复方案](#mcp-catalog-修复与升级须知) · [issue #723](https://github.com/wingsky-1/dsh-plugin-hub/issues/723)
+
 ## 核心优势
 
 - **安全内建于默认**：坚持最小暴露面与最小凭据流转——管理面只对本机开放，
@@ -26,6 +37,41 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
   用量推算、使用趋势、峰谷倒计时与日/周/月报告
 - **工程质量背书**：每个插件自带 smoke 断言（路由围栏 / 客户端契约），构建契约 +
   打包校验等全部门禁在 CI 全量执行
+
+<a id="mcp-catalog-修复与升级须知"></a>
+## 升级须知与修复：历史会话打不开（mcp-catalog）
+
+**症状**：从 0.1.5 之前的 dsh 升级上来后，某些历史会话在 GUI 里报
+
+```
+历史加载失败：failed to observe session "session-…":
+cannot safely transform unclassified message source;
+source v0 artifact remains unchanged (raw log: …/session.jsonl.zstd)（gateway/internal）
+```
+
+且该会话目录下始终不出现 `session.v3.jsonl.zstd`，每次打开都同样失败。
+
+**原因（不是会话损坏）**：`dsh-mcp-manager` 0.2.x 及更早把能力目录注入消息写成
+`source.kind = "mcp-catalog"`，而 dsh 0.1.5 的 session format v2→v3 迁移对 surface 消息的
+`source.kind` 有一份**封闭白名单**，自造值不在其中 → 迁移被拒；产物按宿主设计**原样保留**
+（未损坏）。v3 读取路径本身不校验该字段，所以只有"升级前的旧会话 + 装过本插件并触发过目录
+注入"的用户会命中，升级后的新会话不受影响。
+
+**修复**：本插件新版已改用宿主词表内的通用 source 形态（今后不再产生此类消息）；
+**已落盘的旧产物**用一次性脚本就地修复（只改 source 元数据，正文与事件序列不动）：
+
+```sh
+# 先停掉 dsh web（正在写入的日志不保证可安全重写）
+node scripts/maintenance/repair-mcp-catalog-sessions.mjs          # 预演：只列受影响会话与处数
+node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply  # 落盘：先留 .bak-<时间戳>，写入原子
+# 重启 dsh web，打开原会话
+```
+
+- 默认只读 `<DSH_HOME>`（`--home <dir>` / `DSH_HOME` 可覆盖）；`--session <id>` 只处理单个会话
+- 幂等；写后自检（帧结构 + 逐行 JSON + 零遗留旧 kind）；回滚 = 用 `.bak-<时间戳>` 覆盖回去
+- 不产出 v3 产物：修复后仍由 dsh 自己完成迁移
+- 细节与验证证据见 [dsh-mcp-manager README](packages/dsh-mcp-manager/README.md#723-修复方案) 与
+  [issue #723](https://github.com/wingsky-1/dsh-plugin-hub/issues/723)
 
 ## 版本适配（只适配 rc）
 
@@ -43,7 +89,7 @@ DSH（DeepSeek Harness）Web GUI 插件集，npm 分发：一键装全家桶，�
 | `@wingsky-1/dsh-notifier` | 任务事件通知中心：6 类事件（提问/审批/完成/子代理完成/错误/轮次完成），双通道（浏览器通知 + 宿主系统 toast）+ Bark/Webhook 推送频道（ntfy、Gotify、自建网关）；免打扰时段与紧急例外、审批超时二次提醒、完成风暴聚合、通知文本脱敏 | [README](packages/dsh-notifier/README.md) · [架构图解](docs/architecture/dsh-notifier.md) | 已发布 |
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计框架（v2 适配器契约）：常驻胶囊 + 详情面板；内置 DeepSeek 官方（区间记账法推算每日用量 + 峰谷倒计时徽标，官方无用量接口也能算）与 OpenCode Go 开箱即用；自写一个 mjs 即可接入任意数据源、设置页热插拔；日/周/月用量报告（经宿主 llm 生成）；密钥只在宿主端不进浏览器 | [README](packages/dsh-provider-usage/README.md) · [适配器开发指南](packages/dsh-provider-usage/docs/adapter-guide.md) · [架构图解](docs/architecture/dsh-provider-usage.md) | 已发布 |
 | `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI：HTTP/HTTPS/WS 转发 + TLS（自签名/自定义证书）；HTTP（Brotli/gzip 自适应）与 WebSocket（permessage-deflate）双压缩；WS 半开探活，移动端切后台不僵死；启动令牌自动注入，LAN 设备免手工拿 token；DNS 重绑定防护 + 回环目标白名单 | [README](packages/dsh-lan-proxy/README.md) · [架构图解](docs/architecture/dsh-lan-proxy.md) | 已发布 |
-| `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio / streamable-http）：项目级/全局两级配置分工作目录维护；项目级 MCP 默认经中间层收敛为 4 个原子工具（`middleware: all` 全量收敛、设置页热切换）；工作空间隔离防串台；配置只存 `${ENV}` 引用不落盘密钥；提供运行时注册接口供其他插件注入 MCP | [README](packages/dsh-mcp-manager/README.md) · [架构图解](docs/architecture/dsh-mcp-manager.md) | 已发布 |
+| `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio / streamable-http）：项目级/全局两级配置分工作目录维护；项目级 MCP 默认经中间层收敛为 4 个原子工具（`middleware: all` 全量收敛、设置页热切换）；工作空间隔离防串台；配置只存 `${ENV}` 引用不落盘密钥；提供运行时注册接口供其他插件注入 MCP | [README](packages/dsh-mcp-manager/README.md) · [架构图解](docs/architecture/dsh-mcp-manager.md) · [升级修复](#mcp-catalog-修复与升级须知) | 已发布 |
 | `@wingsky-1/dsh-web-file-preview` | 把对话内「用默认应用打开」的文件请求改写成官方右侧栏预览（拦截 `POST /api/present.open` 转 `ctx.sidebarRight.openResource`），不注册官方扩展点、不修改官方源码 | [README](packages/dsh-web-file-preview/README.md) · [架构图解](docs/architecture/dsh-web-file-preview.md) | 已发布 |
 | `@wingsky-1/dsh-verify-isolated` | DSH 插件开发的隔离环境浏览器验证 skill：临时 DSH_HOME + 独立 profile + 独立端口 + 独立浏览器实例四重隔离，一键拉起、退出自动清理；自带 raw CDP 零依赖浏览器驱动（快照/点击/截图/求值），可选隔离审计 | [README](packages/dsh-verify-isolated/README.md) · [架构图解](docs/architecture/dsh-verify-isolated.md) | 已发布 |
 
