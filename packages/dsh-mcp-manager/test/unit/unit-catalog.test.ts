@@ -23,6 +23,8 @@ const {
   escapeCatalogText,
   findCatalogMessage,
   readCatalogEntries,
+  isCatalogSource,
+  resolveCatalogEntries,
   catalogHistory,
   renderMcpCatalogUpdate,
   resolveCatalogInjection,
@@ -153,8 +155,10 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
   const message = renderMcpCatalogMessage([{ name: "m1", text: "t<1" }]);
   assert.equal(message.role, "user");
   assert.ok(message.id, "随机 id 存在");
-  assert.equal(message.source.kind, "mcp-catalog");
-  assert.equal(message.source.form, "catalog");
+  assert.equal(message.source.kind, "plugin", "#723：kind 只允许宿主词表内的值");
+  assert.equal(message.source.plugin, "@wingsky-1/dsh-mcp-manager", "身份由 source.plugin 承载");
+  assert.equal(message.source.form, "snapshot");
+  assert.equal(isCatalogSource(message.source), true);
   const text = message.content[0].text;
   assert.ok(text.includes("<available_mcp_servers>"));
   assert.ok(text.includes("- `m1`: t&lt;1"), "条目转义渲染");
@@ -165,9 +169,17 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
   assert.equal(findCatalogMessage([{ source: { kind: "other" } }, message]), message, "定位到目录消息");
   assert.equal(findCatalogMessage([undefined, null]), undefined, "坏消息容错");
 
-  const entries = readCatalogEntries(message.source);
-  assert.deepEqual(entries, [{ name: "m1", text: "t<1" }]);
+  // #723：新形态的目录快照经 resolveCatalogEntries 还原（正文即段文本），旧形态仍走 readCatalogEntries
+  // #723：快照正文里的 `<available_mcp_servers>` 块可单射还原为条目（含反转义），
+  // 从而与 composeCatalogEntries 的 digest 同口径。
+  assert.deepEqual(resolveCatalogEntries(message.source), [{ name: "m1", text: "t<1" }], "新形态还原条目并反转义");
+  assert.deepEqual(readCatalogEntries({ kind: "mcp-catalog", form: "catalog", entries: [{ name: "m1", text: "t<1" }] }), [{ name: "m1", text: "t<1" }], "旧形态仍可读（跨版本兼容）");
   assert.equal(readCatalogEntries(undefined), undefined);
+  assert.equal(resolveCatalogEntries(undefined), undefined);
+  assert.equal(resolveCatalogEntries({ kind: "user" }), undefined, "非目录 source → undefined");
+  assert.equal(resolveCatalogEntries({ kind: "plugin", plugin: "other-plugin", form: "snapshot", sections: [] }), undefined, "他插件 source → undefined");
+  assert.equal(resolveCatalogEntries({ kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager", form: "snapshot" }), undefined, "缺 sections → undefined");
+  assert.equal(resolveCatalogEntries({ kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager", form: "snapshot", sections: [{ name: "other", text: "x" }] }), undefined, "段名不匹配 → undefined");
   assert.equal(readCatalogEntries({}), undefined);
   assert.equal(readCatalogEntries({ entries: "nope" }), undefined, "entries 非 Array → undefined");
   assert.equal(readCatalogEntries({ entries: [1] }), undefined, "entry 非对象 → undefined");
@@ -244,6 +256,42 @@ assert.equal(DEFAULT_CATALOG_MAX_ENTRIES, 6);
   // 只有非目录消息。
   assert.deepEqual(
     catalogHistory({ session: { snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source: { kind: "x" } } }] } }),
+    { published: false },
+  );
+}
+
+// ---- catalogHistory：#723 新旧两代形态双识别 ----
+
+{
+  const entries = [{ name: "s", text: "d" }];
+  const digest = digestCatalogEntries(entries);
+  const body = [
+    "<system-reminder>",
+    "<available_mcp_servers>",
+    "- `s`: d",
+    "</available_mcp_servers>",
+    "</system-reminder>",
+  ].join("\n");
+  const newShape = { kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager", form: "snapshot", sections: [{ name: "mcp-catalog", text: body }] };
+
+  // 新形态：可见且 digest 与条目口径一致（解析正文反向对齐 composeCatalogEntries）。
+  assert.deepEqual(
+    catalogHistory({ session: { surface: { nodes: [1] }, snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source: newShape } }] } }),
+    { visibleDigest: digest, published: true },
+  );
+  // 新形态：被 compaction 遮蔽（不可见）→ published 但无 visibleDigest。
+  assert.deepEqual(
+    catalogHistory({ session: { surface: { nodes: [] }, snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source: newShape } }] } }),
+    { published: true },
+  );
+  // 旧形态：升级前的会话仍被识别（同一 digest 口径）。
+  assert.deepEqual(
+    catalogHistory({ session: { surface: { nodes: [1] }, snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source: { kind: "mcp-catalog", form: "catalog", entries } } }] } }),
+    { visibleDigest: digest, published: true },
+  );
+  // 他插件的 plugin 消息不得被误认。
+  assert.deepEqual(
+    catalogHistory({ session: { surface: { nodes: [1] }, snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source: { kind: "plugin", plugin: "other", form: "snapshot", sections: [{ name: "mcp-catalog", text: body }] } } }] } }),
     { published: false },
   );
 }

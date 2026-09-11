@@ -37,6 +37,7 @@ import {
   digestCatalogEntries,
   escapeCatalogText,
   findCatalogMessage,
+  isCatalogSource,
   fromClaudeEntry,
   expandEnv,
   inject,
@@ -55,6 +56,7 @@ import {
   parseSsePayload,
   publicToolName,
   renderMcpCatalogMessage,
+  resolveCatalogEntries,
   renderMcpCatalogUpdate,
   resolveCatalogInjection,
   ROUTES,
@@ -2267,7 +2269,7 @@ const main = async () => {
     // 含 project 条目 → 引导经 ws_mcp_search/ws_mcp_call（#228 双轨迁移）
     const msg = renderMcpCatalogMessage([{ name: "code-graph", text: "代码图谱", scope: "project" }]);
     assert.equal(msg.role, "user");
-    assert.equal(msg.source.kind, "mcp-catalog");
+    assert.equal(msg.source.kind, "plugin");
     assert.equal(msg.content[0].type, "text");
     assert.match(msg.content[0].text, /available_mcp_servers/);
     assert.match(msg.content[0].text, /does not reflect active connection status/);
@@ -2387,10 +2389,10 @@ const main = async () => {
     const result = resolveCatalogInjection(decision, messages, supervisors, 6, cache, agent);
     const known = new Set();
     for (const evt of agent.session.snapshotEvents()) {
-      if (evt.type === "user/message" && evt.data?.source?.kind === "mcp-catalog") known.add(evt.data.id);
+      if (evt.type === "user/message" && isCatalogSource(evt.data?.source)) known.add(evt.data.id);
     }
     for (const msg of result.messages) {
-      if (msg.source?.kind === "mcp-catalog" && !known.has(msg.id)) agent.session.append("user/message", msg);
+      if (isCatalogSource(msg.source) && !known.has(msg.id)) agent.session.append("user/message", msg);
     }
     return result;
   }
@@ -2404,8 +2406,8 @@ const main = async () => {
     for (let round = 1; round <= 5; round += 1) {
       const decision = { kind: "enter", messages: [{ id: `user-${round}`, role: "user", content: [] }] };
       const result = runStep(decision, decision.messages, supervisors, undefined, agent);
-      historyCount = agent.session.snapshotEvents().filter((e) => e.type === "user/message" && e.data?.source?.kind === "mcp-catalog").length;
-      const inMessages = result.messages.filter((m) => m.source?.kind === "mcp-catalog").length;
+      historyCount = agent.session.snapshotEvents().filter((e) => e.type === "user/message" && isCatalogSource(e.data?.source)).length;
+      const inMessages = result.messages.filter((m) => isCatalogSource(m.source)).length;
       if (round === 1) {
         assert.equal(historyCount, 1, "首轮注入 1 条");
         assert.equal(inMessages, 1, "首轮消息列表含目录");
@@ -2425,13 +2427,13 @@ const main = async () => {
     // 首次注入
     let result = runStep({ kind: "enter", messages: [...messages] }, messages, base, undefined, agent);
     messages = result.messages;
-    const firstId = agent.session.snapshotEvents().find((e) => e.data?.source?.kind === "mcp-catalog").data.id;
+    const firstId = agent.session.snapshotEvents().find((e) => isCatalogSource(e.data?.source)).data.id;
     assert.ok(firstId, "首次注入");
 
     // 描述变化（集合不变）→ 不注入
     const descChanged = new Map([["code-graph", { server: { description: "新描述" }, tools: [], toolMeta: new Map() }]]);
     result = runStep({ kind: "enter", messages: [...messages, { id: "u2", role: "user", content: [] }] }, messages, descChanged, undefined, agent);
-    assert.equal(agent.session.snapshotEvents().filter((e) => e.data?.source?.kind === "mcp-catalog").length, 1, "描述变化不注入");
+    assert.equal(agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source)).length, 1, "描述变化不注入");
 
     // 集合变化（新增服务器）→ 注入"更新"消息（历史 1 + 更新 1，声明作废旧目录）
     const added = new Map([
@@ -2439,14 +2441,14 @@ const main = async () => {
       ["playwright", { server: { description: "浏览器自动化" }, tools: [], toolMeta: new Map() }],
     ]);
     result = runStep({ kind: "enter", messages: [...messages, { id: "u3", role: "user", content: [] }] }, messages, added, undefined, agent);
-    const afterAdd = agent.session.snapshotEvents().filter((e) => e.data?.source?.kind === "mcp-catalog");
+    const afterAdd = agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source));
     assert.equal(afterAdd.length, 2, "集合变化注入更新消息（历史目录无法删除，新消息声明作废）");
     assert.match(afterAdd[1].data.content[0].text, /replaces all previous available_mcp_servers/);
     assert.match(afterAdd[1].data.content[0].text, /playwright/);
 
     // 更新后同集合不再注入
     result = runStep({ kind: "enter", messages: [...messages, { id: "u4", role: "user", content: [] }] }, messages, added, undefined, agent);
-    assert.equal(agent.session.snapshotEvents().filter((e) => e.data?.source?.kind === "mcp-catalog").length, 2, "更新后不再注入");
+    assert.equal(agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source)).length, 2, "更新后不再注入");
   });
 
   check("resolveCatalogInjection：compaction 后重建 + 门控 + reject", () => {
@@ -2455,14 +2457,14 @@ const main = async () => {
     let messages = [{ id: "m1", role: "user", content: [] }];
     let result = runStep({ kind: "enter", messages: [...messages] }, messages, supervisors, undefined, agent);
     messages = result.messages;
-    assert.equal(agent.session.snapshotEvents().filter((e) => e.data?.source?.kind === "mcp-catalog").length, 1, "首次注入");
+    assert.equal(agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source)).length, 1, "首次注入");
 
     // compaction 模拟：surface 清空（旧目录不可见）→ 重新注入
     agent.session.surface.nodes.clear();
     result = runStep({ kind: "enter", messages: [{ id: "m1", role: "user", content: [] }] }, messages, supervisors, undefined, agent);
-    const afterCompact = agent.session.snapshotEvents().filter((e) => e.data?.source?.kind === "mcp-catalog");
+    const afterCompact = agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source));
     assert.ok(afterCompact.length >= 1, "compaction 后按可见性重建");
-    assert.equal(result.messages.filter((m) => m.source?.kind === "mcp-catalog").length, 1);
+    assert.equal(result.messages.filter((m) => isCatalogSource(m.source)).length, 1);
 
     // 门控：从未发布且无服务器 → 不注入
     const agent2 = makeAgent();
@@ -2491,14 +2493,17 @@ const main = async () => {
     assert.equal(entries[2].text, "有描述");
 
     // AC-2：两条渲染路径的完整消息 JSON 往返后深度相等（载荷无 undefined 属性）
+    // #723：source 改为宿主通用形态（plugin + snapshot sections），正文承载全部条目行，
+    // 因此"无 text 属性"的约束落在正文渲染上（双缺省条目只渲染服务器名）。
     for (const rendered of [renderMcpCatalogMessage(entries), renderMcpCatalogUpdate(entries)]) {
       assert.doesNotThrow(() => JSON.stringify(rendered));
       assert.deepEqual(JSON.parse(JSON.stringify(rendered)), rendered, "完整消息 JSON 往返深度相等");
-      assert.equal(
-        rendered.source.entries.map((e) => Object.hasOwn(e, "text")).join(","),
-        "false,false,true",
-        "source.entries 全部干净",
-      );
+      const sections = rendered.source.sections;
+      assert.equal(Array.isArray(sections) && sections.length, 1, "snapshot 只有一个目录段");
+      for (const name of ["bare-a", "bare-b", "with-desc"]) {
+        assert.ok(sections[0].text.includes(`- \`${name}\``), `正文含条目 ${name}`);
+      }
+      assert.ok(sections[0].text.includes("- `bare-a`\n"), "双缺省条目只渲染服务器名（不产出 text: undefined）");
     }
   });
 
@@ -2508,17 +2513,20 @@ const main = async () => {
     let messages = [{ id: "m1", role: "user", content: [] }];
     let result = runStep({ kind: "enter", messages: [...messages] }, messages, supervisors, undefined, agent);
     messages = result.messages;
-    const catalogEvents = agent.session.snapshotEvents().filter((e) => e.type === "user/message" && e.data?.source?.kind === "mcp-catalog");
+    const catalogEvents = agent.session.snapshotEvents().filter((e) => e.type === "user/message" && isCatalogSource(e.data?.source));
     assert.equal(catalogEvents.length, 1, "首轮注入成功（append 为 user/message 未被拒绝）");
     const appended = catalogEvents[0].data;
-    assert.equal(Object.hasOwn(appended.source.entries[0], "text"), false, "append 后事件载荷仍无 text 属性");
+    // #723：新形态的 source 只含 plugin/snapshot sections，条目正文全在段文本里
+    assert.equal(appended.source.kind, "plugin");
+    assert.equal(appended.source.form, "snapshot");
+    assert.ok(appended.source.sections[0].text.includes("- `bare-only`"), "正文含双缺省服务器名");
     assert.doesNotThrow(() => JSON.stringify(appended), "事件载荷可 JSON 序列化（dsh-session 序列化校验等价物）");
     assert.deepEqual(JSON.parse(JSON.stringify(appended)), appended, "往返深度相等");
 
     // digest 去重语义不变：同集合再次 pre-step 不重复注入
     result = runStep({ kind: "enter", messages: [...messages] }, messages, supervisors, undefined, agent);
     assert.equal(
-      agent.session.snapshotEvents().filter((e) => e.type === "user/message" && e.data?.source?.kind === "mcp-catalog").length,
+      agent.session.snapshotEvents().filter((e) => e.type === "user/message" && isCatalogSource(e.data?.source)).length,
       1,
       "次轮不重复注入（digest 去重不变）",
     );

@@ -20,6 +20,11 @@ immediately and persisted, no restart needed), or set in the config file (read a
 startup); the server lists across both config tiers hot-reload without a restart
 (add/remove/toggle/edit).
 
+> **A historical session will not open after upgrading DSH to 0.1.5+**
+> (`unclassified message source`)? See
+> [Troubleshooting: a historical session will not open after upgrading (#723)](#723-repair),
+> one command recovers it.
+
 ## Core advantages
 
 - **Context cost under control**: project-level MCP is collapsed through the middleware
@@ -283,6 +288,50 @@ await ctx.mcpManager.registerServer({
 - **Call stats and debug mode (Metadata-Only)**: Disabled by default; when configured with `dsh-mcp-manager.debug.callStats: true` in `~/.dsh/settings.yaml`, tool call metrics (call count, success/error, average/max duration) and progressive disclosure funnel stats (`ws_mcp_search` query frequencies, `ws_mcp_list` / `ws_mcp_detail` query distributions) are debounced and atomically written to `<DSH_HOME>/mcp-stats.json`, with single-line console debug logs; strictly does not persist user arguments or returned content, avoiding code or privacy leaks
 - The capability catalog injection includes source annotations and a "does not represent current
   connection status" note
+- **Message-source shape of the catalog injection**: `source` uses the host-registered generic
+  shape `{ kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager", form: "snapshot",
+  sections: [{ name: "mcp-catalog", text }] }`. A self-invented `source.kind` is refused by
+  DSH's session-format v2-to-v3 migration gate (closed whitelist), which makes every session
+  persisted before the upgrade unloadable — see the next section
+
+<a id="723-repair"></a>
+## Troubleshooting: a historical session will not open after upgrading (#723)
+
+**Symptom**: after upgrading DSH to 0.1.5 or later, a historical session reports in the GUI:
+
+```
+历史加载失败：failed to observe session "session-…":
+cannot safely transform unclassified message source;
+source v0 artifact remains unchanged (raw log: …/session.jsonl.zstd)（gateway/internal）
+```
+
+and `session.v3.jsonl.zstd` never appears next to the original log. Cause: 0.2.x and earlier
+wrote the catalog injection message as `source.kind = "mcp-catalog"`, which DSH's v2-to-v3
+migration refuses against its closed `source.kind` whitelist for surface messages (the original
+artifact is preserved by design). This version changes the write side to the generic
+host-registered shape, **but artifacts already on disk need a one-time repair**.
+
+**Repair (one-off, repeatable)**: the repository script rewrites the old source in place; it
+touches only source metadata, never the body or the event sequence, so DSH still performs the
+migration itself.
+
+```sh
+# 1) Dry run: list affected sessions and counts, change nothing
+node scripts/maintenance/repair-mcp-catalog-sessions.mjs
+
+# 2) Apply (a session.jsonl.zstd.bak-<timestamp> backup is created for every rewritten log)
+node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply
+
+# 3) Restart dsh web and open the session
+```
+
+- Stop `dsh web` first: a session log being written is not guaranteed safe to rewrite
+- Reads `<DSH_HOME>` by default (`--home <dir>` or `DSH_HOME` overrides it); `--session <id>`
+  limits the run to one session
+- Idempotent: repaired artifacts no longer match; every write is self-checked (frame structure,
+  per-line JSON, zero leftover legacy kinds)
+- Rollback: overwrite `session.jsonl.zstd` with the matching `.bak-<timestamp>`
+- Only v0/v1/v2 artifacts are processed (v3 sessions are unaffected); it never writes a v3 file
 
 ## Verification
 
