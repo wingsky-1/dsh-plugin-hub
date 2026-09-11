@@ -64,8 +64,10 @@ async function main() {
     const raw = runGh(['api', `repos/${repo}/commits/${commitSha}/pulls`]);
     pulls = JSON.parse(raw);
   } catch (err) {
-    console.log(`[overlay-baseline] 查询关联 PR 失败或无关联，安全跳过 (No-op): ${err.message}`);
-    process.exit(0);
+    // fail-loud（#690 门禁纪律）：查询失败 ≠「查不到关联 PR」。后者是空数组、属正常 no-op；
+    // 前者意味着无法判定这次合并是否需要覆盖基线，静默跳过会让归档更新无声丢失。
+    console.error(`[overlay-baseline] 查询关联 PR 失败，未执行归档（fail-loud）: ${err.message}`);
+    process.exit(1);
   }
 
   if (!Array.isArray(pulls) || pulls.length === 0) {
@@ -93,8 +95,9 @@ async function main() {
     ]);
     runs = JSON.parse(raw);
   } catch (err) {
-    console.log(`[overlay-baseline] 查询 PR #${pr.number} 的 Workflow Runs 失败，跳过基线覆盖: ${err.message}`);
-    process.exit(0);
+    // 与下方 artifacts 查询同一纪律：查不了就必须红，不能当成「没有成功的 CI Run」。
+    console.error(`[overlay-baseline] 查询 PR #${pr.number} 的 Workflow Runs 失败，未执行归档（fail-loud）: ${err.message}`);
+    process.exit(1);
   }
 
   const successfulCiRun = runs.find((r) => r.name === 'CI' && r.conclusion === 'success');

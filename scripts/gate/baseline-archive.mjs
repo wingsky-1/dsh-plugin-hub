@@ -75,3 +75,27 @@ export function reconcileArchive({ expected, overlaid, carriedForward }) {
   const missing = (expected ?? []).filter((f) => !have.has(f))
   return { missing, carriedCount: (carriedForward ?? []).length, overlaidCount: (overlaid ?? []).length }
 }
+
+/**
+ * 恢复远端基线树的三态判定：`restore` / `bootstrap` / `fail`。
+ *
+ * 为什么不能只看「fetch 成不成功」：fetch 失败有两种完全相反的含义——
+ *   · 远端可达但 ref 不存在 = 首夜，没有基线可恢复，降级为全量变异是正常的；
+ *   · 远端不可达 / 权限故障 = 基线**可能存在但取不到**，此时若当成空分支继续，
+ *     本班产物会被当成"全部内容"推回去，把沿用中的基线整批删掉。
+ * 2026-09-11 05:18 的 overlay 就出现过后者（分支明明存在，日志却是"尚不可达或为空"），
+ * 修复落在 overlay-baseline.mjs 一侧（#716）；本函数让 orphan-baseline.mjs 的 restore
+ * 走同一判据，避免同一操作两份实现长期分叉。
+ *
+ * 判据因此是「远端可不可达 + ref 在不在」，而不是「fetch 有没有报错」。
+ */
+export function decideRestoreOutcome({ remoteReachable, refExists, fetchOk }) {
+  if (fetchOk) return { action: 'restore' }
+  if (!remoteReachable) {
+    return { action: 'fail', reason: '远端不可达，无法判定是否存在基线（拒绝以空基线继续）' }
+  }
+  if (refExists) {
+    return { action: 'fail', reason: '远端基线分支存在但拉取失败（拒绝以空基线覆盖）' }
+  }
+  return { action: 'bootstrap', reason: '远端基线分支尚不存在，本次安全降级为全量变异' }
+}

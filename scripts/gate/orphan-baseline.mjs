@@ -14,9 +14,10 @@
  *     - 强制推送到 refs/heads/baseline/mutation
  *
  *   node scripts/gate/orphan-baseline.mjs restore
- *     - 从 refs/heads/baseline/mutation 浅拉取（fetch --depth=1，带 3 次退避重试）
+ *     - 先 ls-remote 判「远端可不可达」与「ref 在不在」，再浅拉取（fetch --depth=1，带 3 次退避重试）
  *     - 将 incremental-*.json 与 manifest.json 恢复到 coverage/mutation/
- *     - 分支不存在或拉取失败时输出 notice 并以退出码 0 安全降级全量
+ *     - 仅在「远端可达且 ref 不存在」时输出 notice 并以退出码 0 降级全量（首夜）；
+ *       远端不可达、或 ref 存在但拉取失败，一律 fail-loud 退出（拒绝以空基线继续，见 #718）
  */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -29,6 +30,8 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+
+import { decideRestoreOutcome } from './baseline-archive.mjs';
 
 const action = process.argv[2];
 const BRANCH = 'baseline/mutation';
@@ -125,6 +128,12 @@ if (action === 'push') {
 } else if (action === 'restore') {
   mkdirSync(TARGET_DIR, { recursive: true });
 
+  // 先问「远端有没有这条 ref」，再 decide 怎么处置。判据不能只看 fetch 成不成功：
+  // 「取不到」与「不存在」是两件事，前者若被当成空分支，会把沿用中的基线整批丢掉。
+  const lsRemote = runGit(['ls-remote', '--heads', 'origin', `refs/heads/${BRANCH}`], {
+    ignoreError: true,
+  });
+
   // 带有退避重试的 fetch 机制（抵御 Runner 网络突发抖动）
   let fetched = false;
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -142,8 +151,18 @@ if (action === 'push') {
     }
   }
 
-  if (!fetched) {
-    console.log(`::notice::孤立分支 refs/heads/${BRANCH} 不可达或暂无基线，本次安全降级为全量变异`);
+  const outcome = decideRestoreOutcome({
+    remoteReachable: lsRemote !== null,
+    refExists: typeof lsRemote === 'string' && lsRemote.length > 0,
+    fetchOk: fetched,
+  });
+
+  if (outcome.action === 'fail') {
+    console.error(`[orphan-baseline] ${outcome.reason}（fail-loud）`);
+    process.exit(1);
+  }
+  if (outcome.action === 'bootstrap') {
+    console.log(`::notice::${outcome.reason}`);
     process.exit(0);
   }
 

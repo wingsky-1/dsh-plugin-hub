@@ -21,6 +21,7 @@ import { join } from 'node:path'
 import {
   BASELINE_FILE_RE,
   GH_API_PER_PAGE,
+  decideRestoreOutcome,
   expectedBaselineFiles,
   mergeArtifactPage,
   mutationArtifacts,
@@ -175,4 +176,25 @@ test('脚本静态检查：两处 GitHub API 调用都显式带上分页参数',
   for (const call of apiCalls) {
     assert.match(call, /per_page=/, `gh api 调用缺少分页参数（默认 30 条会截断）：${call}`)
   }
+})
+
+test('#718: restore 三态判定 —— 「取不到」与「不存在」必须走不同分支', () => {
+  // 拿到就把远端树恢复回来。
+  assert.equal(decideRestoreOutcome({ remoteReachable: true, refExists: true, fetchOk: true }).action, 'restore')
+  assert.equal(decideRestoreOutcome({ remoteReachable: true, refExists: false, fetchOk: true }).action, 'restore')
+
+  // 远端不可达 = 无法判定有没有基线 → fail-loud（这正是 2026-09-11 05:18 的形态）。
+  const unreachable = decideRestoreOutcome({ remoteReachable: false, refExists: false, fetchOk: false })
+  assert.equal(unreachable.action, 'fail', '远端不可达不得降级为首夜')
+  assert.ok(!unreachable.reason.includes('安全降级'), 'fail 分支不得复用降级文案')
+
+  // ref 存在但拉取失败 = 基线确实在、只是取不到 → fail-loud，绝不能被当成空分支。
+  const fetchFailed = decideRestoreOutcome({ remoteReachable: true, refExists: true, fetchOk: false })
+  assert.equal(fetchFailed.action, 'fail', 'ref 存在但拉取失败必须 fail-loud')
+  assert.notEqual(fetchFailed.reason, unreachable.reason, '两种 fail 原因应可区分，便于定位')
+
+  // 只有「远端可达且 ref 不存在」才是真正的首夜，允许降级为全量变异。
+  const bootstrap = decideRestoreOutcome({ remoteReachable: true, refExists: false, fetchOk: false })
+  assert.equal(bootstrap.action, 'bootstrap')
+  assert.ok(bootstrap.reason.includes('安全降级为全量变异'), '首夜文案保持既有约定')
 })

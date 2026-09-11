@@ -47,11 +47,13 @@ test('#572: orphan-baseline push 在空目录下防御', () => {
   }
 });
 
-test('#572: orphan-baseline restore 在无远端孤立分支时优雅降级（exit 0 + notice）', () => {
+test('#572: orphan-baseline restore 在远端可达但无基线分支时优雅降级（exit 0 + notice）', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'orphan-test-restore-'));
   try {
-    // 在临时 git 仓库中运行 restore（无 baseline/mutation 分支）
+    // 首夜的真实形态是「远端可达、ref 不存在」——不是「没有远端」。
+    // 无远端属「取不到」，必须与「不存在」区分开（见下一条测试）。
     execFileSync('git', ['init'], { cwd: tmp, stdio: 'ignore' });
+    execFileSync('git', ['remote', 'add', 'origin', tmp], { cwd: tmp, stdio: 'ignore' });
     const output = execFileSync('node', [scriptPath, 'restore'], {
       cwd: tmp,
       encoding: 'utf8',
@@ -59,6 +61,58 @@ test('#572: orphan-baseline restore 在无远端孤立分支时优雅降级（ex
     });
     assert.ok(output.includes('::notice::'), '输出包含 notice 标注全量降级');
     assert.ok(output.includes('安全降级为全量变异'), '日志提示安全降级');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('#718: orphan-baseline restore 在远端不可达时 fail-loud（exit != 0）', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'orphan-test-unreachable-'));
+  try {
+    // 无 origin 远端 = 无法判定「是否存在基线」。此时若按空分支继续，会把沿用中的基线整批丢掉。
+    execFileSync('git', ['init'], { cwd: tmp, stdio: 'ignore' });
+    let failed = false;
+    try {
+      execFileSync('node', [scriptPath, 'restore'], { cwd: tmp, encoding: 'utf8', stdio: 'pipe' });
+    } catch (err) {
+      failed = true;
+      const out = `${err.stdout ?? ''}${err.stderr ?? ''}`;
+      assert.notEqual(err.status, 0, '必须非零退出');
+      assert.ok(out.includes('fail-loud'), `输出须点名 fail-loud，实际: ${out}`);
+      assert.ok(out.includes('远端不可达'), `输出须说明远端不可达，实际: ${out}`);
+    }
+    assert.ok(failed, '远端不可达时不得静默降级为全量变异');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('#718: overlay-baseline 查询失败必须 fail-loud（不得静默 No-op）', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'overlay-test-queryfail-'));
+  try {
+    // 用受限 PATH 让 gh 不可用 —— 「查不了」与「查不到（空数组）」必须走不同分支：
+    // 前者 fail-loud，后者才是 no-op。node 用绝对路径调用，故不受 PATH 影响。
+    let failed = false;
+    try {
+      execFileSync(process.execPath, [overlayScriptPath], {
+        cwd: tmp,
+        encoding: 'utf8',
+        stdio: 'pipe',
+        env: {
+          ...process.env,
+          PATH: tmp,
+          GITHUB_REPOSITORY: 'owner/repo',
+          COMMIT_SHA: 'a'.repeat(40),
+          GH_TOKEN: 'dummy',
+        },
+      });
+    } catch (err) {
+      failed = true;
+      const out = `${err.stdout ?? ''}${err.stderr ?? ''}`;
+      assert.notEqual(err.status, 0, '必须非零退出');
+      assert.ok(out.includes('fail-loud'), `输出须点名 fail-loud，实际: ${out}`);
+    }
+    assert.ok(failed, '查询失败不得静默 No-op');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
