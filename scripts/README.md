@@ -24,6 +24,7 @@
 - `gate/gen-stryker-conf.mjs` — 变异配置生成/校验：派生 `vitest.stryker.d/<pkg>.config.ts` 并同步各包 `--min`（`--check` 供门禁，`--sync-test-min` 改 `--min`）。
 - `gate/test-surface.mjs` / `gate/mutation-topology.mjs` — 测试分层与变异面登记校验（唯一事实源 `data/mutation-topology.json`）。
 - `gate/threshold-monotonic.mjs` — 阈值单调性校验（对比 `origin/main`，只许升不许降）：守护 `vitest.config.ts` 的 `coverage.thresholds`（#722 阶段三起的覆盖率唯一事实源）与 `gauntlet.config.json` 的变异阈值。
+- `gate/mutation-ledger.mjs` — 变异段实测台账（#718 S0.2）：从 Actions run 日志解析逐段 `wallSeconds`（真实执行时间，区别于会被增量班刷新的文件 mtime）与复用率/杀灭分布；`--check` 离线校验覆盖不变量（测量值 ∪ `unmeasured` == 当前 `stryker.conf.d` 段集合，消失的历史段须在 `superseded` 登记取代关系），由 `test:scripts` 调用。生成模式需 gh 与网络，故定位为维护者工具、不进 CI（进 CI 需改 `.github/`，属红线段）。
 
 ## maintenance/（一次性维护脚本，按需手工执行）
 
@@ -33,6 +34,7 @@
 
 - `lib/client-contract-lib.ts` — 客户端契约断言（stub/执行实现同源唯一事实源）。
 - `lib/plugins-manifest-lib.ts` — 插件清单单一事实源（issue #36）纯函数库。
+- `lib/mutation-ledger-lib.mjs` — 变异段台账的解析与覆盖对账纯函数（#718 S0.2，与 `gate/mutation-ledger.mjs` 同源实现，测试离线 import）。
 
 ## release/（发布/周期 CI 专用）
 
@@ -47,11 +49,13 @@
 - `test/collect-licenses.test.ts` — collect-licenses 脚本自测。
 - `test/crap-check.test.ts` — crap-check 脚本自测（config.strict 单一开关；#722 阶段五起含「非 src 口径数据必须 fail-closed」用例）。
 - `test/threshold-monotonic.test.ts` — 阈值单调性自测（#722：vitest.config.ts 的 coverage.thresholds 提取、降线判红、缺块 fail-closed）。
+- `test/mutation-ledger.test.ts` — 变异段台账自测（#718 S0.2：GHA 日志解析口径含单空格前缀与 ANSI 剥离、未闭合段宁缺勿造、`wallSeconds` 正数不变量、覆盖全部段对账、历史段 `superseded` 登记）。
 - `test/pack-check-scope.test.ts` — pack-check 聚合段切片口径自测（#722/#751：增量切片下不得对未构建的聚合包假红；全仓口径必须仍执行该段，缺产物 fail-loud 且 exit 与判定自洽；切片用例取 `script-test-prereqs.mjs` 的 PREREQ 包——取清单外的包会把假红从 pack:check 搬进 test:scripts）。
 
 ## data/（配置数据）
 
 - `data/plugins-manifest.json` — 插件清单（某插件是否参与聚合/发布校验的唯一声明处）。
+- `data/mutation-segment-ledger.json` — 变异段实测台账（#718 S0.2）：逐段 `wallSeconds` + mutant 数 + 复用率，由 `gate/mutation-ledger.mjs` 从 run 日志生成；`unmeasured` 登记尚无测量值的段，`superseded` 登记被拆分/更名的历史段。
 - `data/gauntlet.config.json` — 变异 / CRAP / ESLint 复杂度阈值唯一事实源（覆盖率阈值自 #722 阶段三起改由 `vitest.config.ts` 的 `coverage.thresholds` 承载；`complexity` 段自 #722 阶段五起供 `tools/lint` 消费）。
 
 ## tools/lint/（lint 工具链隔离包，非发布包）
