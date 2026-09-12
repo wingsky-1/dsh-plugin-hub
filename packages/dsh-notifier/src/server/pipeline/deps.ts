@@ -15,7 +15,7 @@
 import type * as channelsApi from "../channels/interface.ts";
 import type * as configApi from "../config/interface.ts";
 import type * as storesApi from "../stores/interface.ts";
-import type { NotifyKind } from "./impl/service/type.ts";
+import type { NotifyKind } from "./impl/service/kinds.ts";
 
 /** config 域给下游的能力面：本域只读设置，不改。 */
 export type ConfigPort = Pick<typeof configApi, "readConfig">;
@@ -65,5 +65,5 @@ export interface PipelineDeps {
   channels: ChannelsPort;
 }
 
-export type { DeliveryTarget, NotifyMessage } from "../channels/interface.ts";
+export type { DeliveryTarget, NotifyMessage, NotifySeverity } from "../channels/interface.ts";
 export type { ChannelDelivery, HistoryEntry } from "../stores/interface.ts";

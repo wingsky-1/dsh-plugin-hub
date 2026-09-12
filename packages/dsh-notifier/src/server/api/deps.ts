@@ -15,6 +15,7 @@
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type * as configApi from "../config/interface.ts";
 import type * as pipelineApi from "../pipeline/interface.ts";
+import type * as sdkApi from "../sdk/interface.ts";
 import type * as storesApi from "../stores/interface.ts";
 import type { LoggerPort } from "../shared/type.ts";
 
@@ -26,6 +27,14 @@ export type StorePort = Pick<typeof storesApi, "readHistory" | "clearHistory" | 
 
 /** pipeline 域给下游的能力面：测试通知走**同一条**裁决管线。 */
 export type PipelinePort = Pick<typeof pipelineApi, "submit">;
+
+/**
+ * sdk 域给浏览器的能力面：动态种类的清单与用户确认。
+ *
+ * 只要管理面，不要服务面（登记与发送）：那是给兄弟插件的。设置页既不替别人登记种类，
+ * 也不代人发送通知。
+ */
+export type KindPort = Pick<typeof sdkApi, "confirmKind" | "listKinds">;
 
 export type { NotifyFrame } from "../channels/interface.ts";
 export type { LoggerPort } from "../shared/type.ts";
@@ -64,4 +73,6 @@ export interface ApiDeps {
   stores: StorePort;
   /** 下游裁决管线：页面上的测试按钮经它提交。 */
   pipeline: PipelinePort;
+  /** 动态种类的管理面：设置页看清单、替用户确认。 */
+  kinds: KindPort;
 }

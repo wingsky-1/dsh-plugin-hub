@@ -12,6 +12,7 @@
  */
 import type { ApiDeps } from "../../deps.ts";
 import { JournalEndpoints } from "../journal/index.ts";
+import { KindEndpoints } from "../kinds/index.ts";
 import { ProbeEndpoints } from "../probe/index.ts";
 import { registerEndpoints } from "../route/index.ts";
 import type { Endpoint } from "../route/type.ts";
@@ -34,10 +35,12 @@ class ApiService {
     const settings = new SettingsEndpoints(deps.config);
     const journal = new JournalEndpoints(deps.stores);
     const probe = new ProbeEndpoints(deps.pipeline);
+    const kinds = new KindEndpoints(deps.kinds);
     const endpoints: Endpoint[] = [
       { path: "/api/dsh-notifier/config", methods: { GET: settings.read, PUT: settings.write } },
       { path: "/api/dsh-notifier/history", methods: { GET: journal.read, DELETE: journal.clear } },
       { path: "/api/dsh-notifier/status", methods: { GET: journal.readStatus } },
+      { path: "/api/dsh-notifier/kinds", methods: { GET: kinds.read, POST: kinds.confirm } },
       { path: "/api/dsh-notifier/test", methods: { POST: probe.test } },
       { path: "/api/dsh-notifier/health", methods: { GET: probe.health } },
       // 包一层而不是裸传 streamHub.handle：那个方法要用 this，裸传会在回调时丢掉。

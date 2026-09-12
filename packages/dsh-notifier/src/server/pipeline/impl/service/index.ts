@@ -11,7 +11,7 @@
  * 依赖方向：只引用本目录、`../judge/`、`../route/`、`../dispatch/`、`../../deps.ts`，
  * 不引用 `interface.ts`。
  */
-import type { ChannelDelivery, HistoryEntry, PipelineDeps, StorePort } from "../../deps.ts";
+import type { ChannelDelivery, HistoryEntry, NotifyMessage, PipelineDeps, StorePort } from "../../deps.ts";
 import { dispatchMessage } from "../dispatch/index.ts";
 import type { DispatchPort } from "../dispatch/type.ts";
 import { judgeRequest } from "../judge/index.ts";
@@ -110,7 +110,11 @@ class NotificationPipeline {
 
   /** 投递，然后归档。 */
   private async send(deps: DispatchPort, request: NotifyRequest, targets: RoutedTarget[]): Promise<void> {
-    const deliveries = await dispatchMessage(deps, { title: request.title, body: request.body }, targets);
+    // 强度随请求带到消息上：它是陈述的一部分（调用方说「这是哪一档」），不是加工——
+    // 在这里丢掉，出站频道就只能各自猜，而猜出来的等级没人能解释。
+    const message: NotifyMessage = { title: request.title, body: request.body };
+    if (request.severity !== undefined) message.severity = request.severity;
+    const deliveries = await dispatchMessage(deps, message, targets);
     this.archive(deps.stores, request, { channels: deliveries });
   }
 

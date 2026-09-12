@@ -4,29 +4,12 @@
  * 归本域而不是宿主事件那边：种类词汇是**裁决的坐标系**——事件开关、`kindRoutes`、
  * `allowKinds`、bark 的按 kind 紧急度全按它查。谁命名坐标系，谁就定义了什么算「一类
  * 通知」；事件适配层只负责往里填，不参与定义。
+ *
+ * 种类本身的物理定义在 `./kinds.ts`：它同时是值（内置种类数组）与类型（`NotifyKind`），
+ * 而派生出来的联合要能被两处取到，所以单独一个文件而不是塞进这里。
  */
-
-/**
- * 内置通知种类。
- *
- * 收成字面量联合而不是宽 `string`，是为了让裁决层的映射表拿到穷举检查：漏一个 kind
- * 是编译错误，而不是「某种通知静默地不发了」——后者没人会去查。
- *
- * 命名与客户端字典同源：kind 同时是用户可见的配置键（`kindRoutes`、bark 的按 kind
- * 紧急度），改一个名字就要两端同时改，而漏改的一端只会表现为「种类显示不出来」。
- * `test` 是页面测试按钮造出来的那一种，不对应任何宿主事件。
- *
- * 动态 kind（外部注册的通知种类）不在这个联合里：那是一套独立的白名单机制，等 sdk
- * 域落地时单独开口，不在这里放宽成 `string` 把内置 kind 的检查一起赔掉。
- */
-export type NotifyKind =
-  | "ask"
-  | "question"
-  | "done"
-  | "subagent-done"
-  | "error"
-  | "turn-end"
-  | "test";
+import type { NotifySeverity } from "../../deps.ts";
+import type { NotifyKind } from "./kinds.ts";
 
 /**
  * 通知请求：一次「发生了什么」的陈述。
@@ -41,6 +24,15 @@ export type NotifyKind =
 export interface NotifyRequest {
   /** 事件种类：裁决与路由据此查事件开关与频道。 */
   kind: NotifyKind;
+  /**
+   * 展示强度：只影响出站频道怎么呈现（bark 的紧急度、webhook 的模板变量），**不参与
+   * 裁决**——该不该发全看 kind。
+   *
+   * 缺省即「没指定」，各出口回落自己的默认。内置事件源不填它：内置种类的强度由文案层
+   * 按 kind 决定，让适配层各填一份等于把同一张表抄到七个事件分支里。外部调用方填了照用
+   * ——它的 kind 是自定的，没人替它知道该是什么强度。
+   */
+  severity?: NotifySeverity;
   /** 标题与正文（原样，未经下游加工）。 */
   title: string;
   body: string;

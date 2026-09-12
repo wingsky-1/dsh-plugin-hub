@@ -19,7 +19,7 @@
  * | 2 | `stores` | 历史与投递状态的持久化 | 日志 |
  * | 3 | `pipeline` | 一条通知的生命周期与**唯一裁决点** | 总开关、帧出口 |
  * | 4 | `events` | 宿主事件 → 通知请求（适配层） | 宿主事件面 |
- * | 5 | `sdk` | 对外 ABI（`ctx["wingsky.notifier"]`） | 裁决管线、内置 kind 列表 |
+ * | 5 | `sdk` | 对外 ABI：登记通知种类、接收外部发送 | 宿主出口、裁决管线、设置面 |
  * | 6 | `api` | 浏览器出口：HTTP 路由 + SSE | 路由注册口、帧入口、日志 |
  *
  * `upgrade` 排在最前不是因为它是上游，而是因为它动的是**磁盘**：各域装配时会读
@@ -52,9 +52,20 @@ import * as eventsApi from "./server/events/interface.ts";
 import type { HostEventPort } from "./server/events/interface.ts";
 import * as pipelineApi from "./server/pipeline/interface.ts";
 import type { OutgoingFrame } from "./server/pipeline/interface.ts";
+import type { ExposePort } from "./server/sdk/deps.ts";
+import * as sdkApi from "./server/sdk/interface.ts";
+import type { NotifierService } from "./server/sdk/interface.ts";
 import type { LoggerPort } from "./server/shared/type.ts";
 import * as storesApi from "./server/stores/interface.ts";
 import { installUpgrade } from "./server/upgrade/interface.ts";
+
+/**
+ * 对外服务面的类型。
+ *
+ * 消费方要写 `const n: NotifierService = ctx["wingsky.notifier"]` 就得能命名它，而它同时
+ * 是下面那段声明合并的载荷——不导出，这个包对兄弟插件就只有运行时可用、类型上无从引用。
+ */
+export type { NotifierService } from "./server/sdk/interface.ts";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "notifier";
@@ -100,6 +111,19 @@ const GLOBAL_LISTEN = { global: true } as const;
  * 拼错了不会有任何提示，而症状是「帧发出去没人收到」。
  */
 declare module "@deepseek-ai/cordis" {
+  interface Context {
+    /**
+     * 通知中心服务面：兄弟插件经它登记自己的通知种类、发送通知。
+     *
+     * 声明在这里与 `Events` 同因（见下）：`declare module` 是全局增强，只有落在入口可达
+     * 的声明闭包里才会进产物 `lib/index.d.ts`。写在 sdk 域里，消费方按包名导入时
+     * `ctx["wingsky.notifier"]` 就是一个不存在的属性。
+     *
+     * 服务名是本插件的 ABI 常量，只在这里与 sdk 域内各出现一次：sdk 域负责 `provide`，
+     * 这里负责让类型系统认识它。
+     */
+    "wingsky.notifier": NotifierService;
+  }
   interface Events {
     "notifier/frame"(payload: OutgoingFrame): void;
   }
@@ -124,6 +148,8 @@ interface HostPort {
   /** 宿主路由注册口：只有组合根够得着 `ctx.webServer`。 */
   readonly register: (route: WebRoute) => () => void;
   readonly events: HostEventPort;
+  /** 宿主出口：把服务面挂上上下文。服务名是 sdk 域的 ABI，组合根不参与命名。 */
+  readonly expose: ExposePort;
 }
 
 function bindHost(ctx: Context): HostPort {
@@ -158,6 +184,8 @@ function bindHost(ctx: Context): HostPort {
       }),
     },
     register: (route) => ctx.webServer.register(route),
+    // 服务名写在这一处，由 sdk 域决定它是什么；组合根只把「挂上去」这个动作递过去。
+    expose: { provide: (service) => ctx.provide("wingsky.notifier", service) },
     events: {
       // 宿主的审批事件是 waterfall：监听者要么自己裁决、要么调 next() 把判定交还。
       // 本插件只旁观，所以转发之后必须 next()——漏掉这一步就等于替所有人否决了
@@ -267,7 +295,10 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
   eventsApi.installEvents({ events: host.events, pipeline: pipelineApi });
   disposers.push(eventsApi.releaseEvents);
 
-  // 5. 对外 ABI：尚未装配。
+  // 5. 对外 ABI：把服务面挂上上下文。排在 api 之前——设置端点要读它的种类清单，而 api
+  //    域是最后装的；服务面自己不依赖任何后装的域。
+  sdkApi.installSdk({ expose: host.expose, config: configApi, pipeline: pipelineApi });
+  disposers.push(sdkApi.releaseSdk);
 
   // 6. 浏览器出口：最后装——它读各域的现值，装早了页面第一次请求就会拿到半成品。
   apiApi.installApi({
@@ -277,6 +308,7 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
     config: configApi,
     stores: storesApi,
     pipeline: pipelineApi,
+    kinds: sdkApi,
   });
   disposers.push(apiApi.releaseApi);
 
