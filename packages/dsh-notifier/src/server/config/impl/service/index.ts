@@ -84,6 +84,18 @@ class ConfigStore {
     this.adopt(read.ok ? parseJsonObject(read.text) : {});
   }
 
+  /**
+   * 卸载：放开装配入参并丢掉用户层快照。
+   *
+   * 快照要一起丢：它同时是「用户层」与「磁盘状态」的记忆，留到下一次装配会让新一次
+   * install 的读盘结果与旧快照叠在一起——而那份混合形态看起来与正常状态一模一样。
+   */
+  release(): void {
+    this.installed = false;
+    this.deps = UNINSTALLED;
+    this.adopt({});
+  }
+
   /** 当前生效设置（含明文凭据；不外发）。 */
   current(): NotifyConfig {
     return this.effective;

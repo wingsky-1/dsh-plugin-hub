@@ -17,6 +17,7 @@
  */
 import type * as channelsApi from "../channels/interface.ts";
 import type * as configApi from "../config/interface.ts";
+import type { LoggerPort } from "../shared/type.ts";
 import type * as storesApi from "../stores/interface.ts";
 import type { NotifyKind } from "./impl/service/kinds.ts";
 
@@ -72,6 +73,8 @@ export interface PipelineDeps {
   enabled: boolean;
   /** 帧出口：接的是宿主事件总线，只有组合根够得着。 */
   frames: FramePort;
+  /** 失败出口：投递层承诺 fail-soft，真抛出来时只有这里能出声。 */
+  logger: LoggerPort;
   /** 设置读面：每次裁决现取，不在装配期取快照。 */
   config: ConfigPort;
   /** 历史与频道状态的写面。 */

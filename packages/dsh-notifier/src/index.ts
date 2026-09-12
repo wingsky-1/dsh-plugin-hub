@@ -33,8 +33,9 @@
  * ## 纪律
  *
  * - 域之间不互相引用实现；需要谁的能力、需要哪一样，在各自的 `deps.ts` 里引出来。
- * - 组合根只交付**域拿不到的东西**：宿主能力（日志、事件面、路由口、帧总线）与挂载点
- *   值（总开关）。域间依赖不经这里，所以本文件读起来就是一张「谁需要宿主什么」的表。
+ * - 组合根只交付两样东西：域**拿不到**的宿主能力（日志、事件面、路由口、帧总线、服务
+ *   出口）与挂载点值（总开关），以及**域之间的能力**——后者按提供方分组、递的是命名空间
+ *   对象，消费方用 `Pick` 收窄要哪几样。本文件因此读起来就是一张「谁需要谁」的表。
  * - 交付的是**能力**，不是算好的值：设置是活的，装配期取一次的快照会在用户改设置后
  *   失效，而它看起来与实时读取一模一样。
  * - 本文件是唯一允许引用全部域 `interface.ts` 的地方。
@@ -285,9 +286,11 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
 
   // 1. 设置：读面在装配返回时即可用，后续各域不必等加载。
   configApi.installConfig({ logger: host.logger });
+  disposers.push(configApi.releaseConfig);
 
   // 2. 存储：保留天数由它自己按需读设置，不在这里替它取值。
   storesApi.installStores({ logger: host.logger, config: configApi });
+  disposers.push(storesApi.releaseStores);
 
   // 3. 裁决管线：交付的是**能力对象**而不是算好的值——设置是活的，装配期取一次快照
   //    会在用户改设置后失效，而它看起来与实时读取一模一样。
@@ -296,6 +299,7 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
   pipelineApi.installPipeline({
     enabled: config.enabled !== false,
     frames: host.frames,
+    logger: host.logger,
     config: configApi,
     stores: storesApi,
     channels: channelsApi,
@@ -333,7 +337,9 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
 
 /** 逐个释放；单个释放失败不阻断其余（否则一个域的清理会拖垮整条卸载链）。 */
 function safeDisposeAll(disposers: Array<() => void>): void {
-  for (const dispose of disposers) {
+  // 逆序：后装的先释放。api 域读的是各域的现值，它必须最先关掉；正序释放会让它在
+  // 别人已经放开的入参上继续服务。
+  for (const dispose of [...disposers].reverse()) {
     try {
       dispose();
     } catch {

@@ -99,6 +99,7 @@ class StreamHub {
     this.hub.dispose();
     this.hub = UNINSTALLED_HUB;
     this.replay = [];
+    this.installed = false;
   }
 
   /**

@@ -42,6 +42,13 @@ class StatusStore {
     this.deps = deps;
   }
 
+  /** 卸载：放开装配入参并丢掉内存镜像。镜像要一起丢——它是「磁盘状态」的记忆。 */
+  release(): void {
+    this.installed = false;
+    this.deps = UNINSTALLED;
+    this.mirror = {};
+  }
+
   /** 记录一次投递终态：内存立即更新，落盘延后合并（失败仅经日志出口告警）。 */
   record(channelId: string, status: "ok" | "failed", error?: string): void {
     void channelId;

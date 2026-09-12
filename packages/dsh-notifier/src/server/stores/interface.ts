@@ -32,6 +32,17 @@ export function installStores(deps: StoreDeps): void {
   statusStore.install({ logger: deps.logger });
 }
 
+/**
+ * 卸载两个存储（组合根在卸载期调用）。
+ *
+ * 与 `installStores` 配对。写队列里在飞的写不等待：它们各有自己的失败出口，而卸载期
+ * 阻塞等待会让一次退出卡在磁盘上。重复调用无害。
+ */
+export function releaseStores(): void {
+  historyStore.release();
+  statusStore.release();
+}
+
 /** 写入：追加一条通知历史（内部队列串行化，失败只记日志）。 */
 export function appendHistory(entry: HistoryEntry): void {
   historyStore.append(entry);

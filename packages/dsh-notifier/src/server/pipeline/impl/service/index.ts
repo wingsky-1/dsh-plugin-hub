@@ -45,6 +45,8 @@ const NOT_INSTALLED = "dsh-notifier: 裁决管线尚未装配";
 const UNINSTALLED: PipelineDeps = {
   enabled: false,
   frames: { emit: () => {} },
+  // 未装配时的失败出口只能是静默的：这时候没有任何人在听。
+  logger: { warn: () => {} },
   config: {
     readConfig: () => {
       throw new Error(NOT_INSTALLED);
@@ -93,7 +95,7 @@ class NotificationPipeline {
     if (!this.installed) return;
     // 能力在入口取一次并往下传：`send` 是异步的，卸载可能发生在它完成之前，而这次
     // 投递已经开始了——半路换成占位值，会让一条本该正常送达的通知在归档时凭空失败。
-    const { enabled, frames, config, stores, channels } = this.deps;
+    const { enabled, frames, logger, config, stores, channels } = this.deps;
 
     const snapshot = config.readConfig();
     const verdict = judgeRequest(snapshot, request, enabled);
@@ -108,9 +110,12 @@ class NotificationPipeline {
       return;
     }
 
-    void this.send({ channels, stores }, request, targets).catch(() => {
-      // 投递层承诺逐目标 fail-soft（失败是返回值，不是异常），走到这里说明契约已被
-      // 破坏。宿主事件链上不能抛：一次未捕获的拒绝会打断整条通知路径，而它是唯一路径。
+    void this.send({ channels, stores }, request, targets).catch((cause) => {
+      // 投递层承诺逐目标 fail-soft（失败是返回值，不是异常），走到这里说明契约已被破坏。
+      // 宿主事件链上不能抛：一次未捕获的拒绝会打断整条通知路径，而它是唯一路径。但也不能
+      // 静默——「通知没发出去、且没有任何痕迹」是本插件最难查的一种故障。
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      logger.warn(`dsh-notifier: 投递失败 —— ${reason}`);
     });
   }
 

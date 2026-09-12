@@ -61,6 +61,7 @@ class ApiService {
     for (const dispose of this.disposers) dispose();
     this.disposers = [];
     streamHub.release();
+    this.installed = false;
   }
 }
 

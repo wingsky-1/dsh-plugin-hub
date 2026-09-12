@@ -61,6 +61,9 @@ class EventListener {
   release(): void {
     for (const release of this.releases) release();
     this.releases.length = 0;
+    // 复位而不是只摘订阅：留着会让同进程的下一次 `install` 撞上「只能装配一次」，
+    // 而那次装配失败看起来与本域毫无关系。
+    this.installed = false;
   }
 }
 

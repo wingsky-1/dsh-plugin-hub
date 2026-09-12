@@ -54,6 +54,12 @@ class HistoryStore {
     this.deps = deps;
   }
 
+  /** 卸载：放开装配入参。在飞的写入不等待——它们各有自己的失败出口。 */
+  release(): void {
+    this.installed = false;
+    this.deps = UNINSTALLED;
+  }
+
   /** 追加一条记录：入队即返回（不阻塞通知主流程），失败仅经日志出口告警。 */
   append(entry: HistoryEntry): void {
     void entry;

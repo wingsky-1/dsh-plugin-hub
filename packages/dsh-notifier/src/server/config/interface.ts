@@ -60,6 +60,16 @@ export function installConfig(deps: ConfigDeps): void {
   configStore.install(deps);
 }
 
+/**
+ * 卸载设置存取（组合根在卸载期调用）。
+ *
+ * 与 `installConfig` 配对：放开装配入参、丢掉用户层快照，此后读面回落默认设置。
+ * 重复调用无害——卸载链可能走到不止一次。
+ */
+export function releaseConfig(): void {
+  configStore.release();
+}
+
 // ---------------------------------------------------------------- 读面
 
 /**
