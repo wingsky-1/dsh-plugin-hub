@@ -30,6 +30,7 @@
  *     - 取到后浅拉取（fetch --depth=1）并把 incremental-*.json 与 manifest.json 恢复到 coverage/mutation/
  */
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -174,22 +175,25 @@ function expectedFromConfDir() {
 /**
  * 读取 FETCH_HEAD 上的归档树：`ls-tree -l` 给出每份文件的 blob sha 与大小（不做内容往返）。
  * blob sha 直接复用于并集树里的沿用文件——字节级一致，因而不产生新对象，保住内容去重红利。
+ * `sizes` 与 `blobs` 另有用途：远端 manifest 缺条目时按二者就地重算（见 archive 分支）。
  */
 function readRemoteTree() {
   const treeOutput = runGit(['ls-tree', '-r', '-l', 'FETCH_HEAD'], { ignoreError: true });
-  if (!treeOutput) return { files: [], blobs: new Map(), manifest: {}, entries: 0 };
+  if (!treeOutput) return { files: [], blobs: new Map(), sizes: new Map(), manifest: {}, entries: 0 };
 
   const files = [];
   const blobs = new Map();
+  const sizes = new Map();
   let entries = 0;
   for (const line of treeOutput.split('\n').filter(Boolean)) {
     entries++;
-    const match = line.match(/^100644\s+blob\s+([0-9a-f]{40})\s+\d+\t(.+)$/);
+    const match = line.match(/^100644\s+blob\s+([0-9a-f]{40})\s+(\d+)\t(.+)$/);
     if (!match) continue;
-    const [, blobSha, fileName] = match;
+    const [, blobSha, size, fileName] = match;
     if (!BASELINE_FILE_RE.test(fileName)) continue;
     files.push(fileName);
     blobs.set(fileName, blobSha);
+    sizes.set(fileName, Number(size));
   }
   files.sort();
 
@@ -212,7 +216,13 @@ function readRemoteTree() {
       process.exit(1);
     }
   }
-  return { files, blobs, manifest, entries };
+  return { files, blobs, sizes, manifest, entries };
+}
+
+/** 远端 blob 内容的 sha256——按**原始字节**读，不能用 runGit（它会 trim，哈希会与实际内容不符）。 */
+function sha256OfBlob(blobSha) {
+  const buf = execFileSync('git', ['cat-file', 'blob', blobSha], { maxBuffer: MAX_BUFFER });
+  return createHash('sha256').update(buf).digest('hex');
 }
 
 if (action === 'push') {
@@ -277,14 +287,29 @@ if (action === 'push') {
   }
 
   const kept = [...plan.newlyMeasured, ...plan.carriedOver].sort();
+  // 沿用段沿用远端 manifest 条目（其 mtime 是上次真实测量时间）。条目缺失时按远端 blob **就地重算**
+  // 并点名，而不是拒绝入档：文件内容就在树里，条目缺失是可恢复的；拒绝入档只会让归档停在旧状态，
+  // 而「谁也推不上去」正是本次要消灭的失效形态（2026-09-12 生产实测：manifest 缺 2 条，
+  // 若按 fail-loud 处理，下一班会被自己的守卫卡死）。
   const preserved = {};
+  const recomputed = [];
   for (const f of plan.carriedOver) {
-    if (!remote.manifest[f]) {
-      // 归档写入方从不漏条目，缺条目意味着这份树不是本脚本写的（人工推送/截断）。
-      console.error(`[orphan-baseline] 远端 manifest 缺 ${f} 条目（归档形状异常），拒绝沿用不可信条目（fail-loud）`);
-      process.exit(1);
+    if (remote.manifest[f]) {
+      preserved[f] = remote.manifest[f];
+      continue;
     }
-    preserved[f] = remote.manifest[f];
+    preserved[f] = {
+      size: remote.sizes.get(f) ?? null,
+      // mtime 未知即 null：不冒充「刚刚测过」——陈旧判据必须能区分「未知」与「新鲜」。
+      mtime: null,
+      sha256: sha256OfBlob(remote.blobs.get(f)),
+    };
+    recomputed.push(f);
+  }
+  if (recomputed.length > 0) {
+    console.warn(
+      `::warning::远端 manifest 缺 ${recomputed.length} 个沿用段条目，已按远端 blob 重算（mtime 记 null）：${recomputed.join(' ')}`,
+    );
   }
 
   pushBaselineTree({
@@ -294,7 +319,9 @@ if (action === 'push') {
       // 沿用文件直接复用远端 blob sha：不做内容往返，字节级一致因而零新对象。
       plan.carriedOver.includes(f) ? { name: f, blobSha: remote.blobs.get(f) } : { name: f, blobSha: hashFile(join(TARGET_DIR, f)) },
     ),
-    manifest: buildManifest(TARGET_DIR, plan.newlyMeasured, preserved),
+    // manifest 必须覆盖**树里的全部基线文件**（新算 + 沿用都算）：漏掉沿用段会让 manifest
+    // 与树不对齐——2026-09-12 生产实测就这么漏过 2 条（本行的 kept 曾误写成 newlyMeasured）。
+    manifest: buildManifest(TARGET_DIR, kept, preserved),
     subject: `chore(ci): archive mutation baseline（并集入档 新算${plan.newlyMeasured.length}/沿用${plan.carriedOver.length}/缺${plan.missing.length}）[skip ci]`,
     label: 'orphan-baseline',
     log: console.log,
