@@ -5,8 +5,9 @@
 /**
  * 变异基线归档分支的纯函数回归（#714 后续修复）。
  *
- * 为什么存在：归档分支 `baseline/mutation` 由两个入口维护——夜间增量班次（全量恢复+强推）
- * 与 PR 合并后的 overlay（只覆盖本次 CI 产出的段）。后者曾因 **artifact API 默认分页 30 条**
+ * 为什么存在：归档分支 `baseline/mutation` 由两个写入方维护——夜间全量班的**并集入档**
+ * （#718 S1.2）与 PR 合并后的 overlay（只覆盖本次 CI 产出的段，其余沿用远端）。
+ * 后者曾因 **artifact API 默认分页 30 条**
  * 只覆盖 14/31 段，再配合整棵树强推，把未覆盖的段固化成旧版本、把两个「本来没有基线」的段
  * （provider-usage-errsurf、web-file-preview）每次合并都抹掉。实测证据（2026-09-11）：
  *   gh api repos/.../actions/runs/34559972509/artifacts            → total_count 70、mutation-incremental 14

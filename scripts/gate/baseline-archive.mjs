@@ -154,8 +154,8 @@ export function pruneSnapshotPlan(refNames, keep = ARCHIVE_SNAPSHOT_KEEP) {
 
 /**
  * 对账：把「本次真正覆盖的文件」与「旧基线已有的文件」并起来，找出期望集合里的缺口。
- * 调用方据此决定是否判红——缺口意味着该段在归档分支上没有可用基线：
- *   · 增量班次每次都会全量恢复并强推，所以缺口会**持续**存在；
+ * 调用方（overlay）据此决定是否判红——缺口意味着该段在归档分支上没有可用基线：
+ *   · overlay 是差量覆盖，缺口不会自愈，该段在后续每次 PR 门禁里都会降级为全量重跑；
  *   · 修法不是拒绝推送（那会让归档停在更旧的整棵树），而是**判红 + 点名**，
  *     让维护者知道要查上游（产物上传失败 / 分页截断 / 段配置漂移）。
  */
@@ -193,10 +193,9 @@ export function classifyRemoteProbe({ ok, code }) {
  *
  * 已知边界（必须诚实记录）：`absent` 只能证明「本次广告里没有这条 ref」，**不能**证明
  * 「服务端上不存在」——服务端可用 `uploadpack.hideRefs` 隐藏某条 ref，此时与真·首夜完全同形，
- * 本函数无从区分。这一支上唯一实际生效的防护是 workflow 层 `mutation-suites` 的 outcome 门控
- * （依赖 restore 非零退出，见 observe-incremental.yml）。
- * 「推送侧拒绝空/缺段快照」的保护已由 #718 S1.2 落地：写路径改走并集入档（`planArchive`），
- * 且拉取失败一律 fail-loud，不再存在「取不到就当空归档推回去」的分支。
+ * 本函数无从区分。写路径侧的保护已由 #718 S1.2 落地：并集入档（`planArchive`）且拉取失败一律
+ * fail-loud，不再存在「取不到就当空归档推回去」的分支；旧增量班在 workflow 层的
+ * `mutation-suites` outcome 门控已随 #718 S2.2 退役（并集语义不依赖「产物齐全」）。
  */
 export function decideRestoreOutcome({ probeStatus, fetchOk }) {
   if (fetchOk) return { action: 'restore' }

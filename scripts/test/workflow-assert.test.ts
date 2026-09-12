@@ -14,8 +14,7 @@
  *   - observe.yml：全量班调度（北京次日 04:00）、覆盖率硬校验执行点（#722 阶段三起
  *     并入 pnpm cov 的 vitest coverage.thresholds）在位、self-cov 执行点不得回潮；
  *     全量清单 ↔ stryker.conf.d 文件集 ↔ gauntlet mutation.packages 三方一致
- *   - observe-incremental.yml：增量班调度（北京 12/16/20/24）、无日期闸、
- *     有变化即 PR、不跑覆盖校验
+ *   - observe-incremental.yml：**已退役**（#718 S2.2）——断言反转成「该文件不得回潮」
  *   - changes 的 case 映射覆盖全部包（防新增包静默漏检，评审 F7）
  *   - #187 触发面收敛：mutation-gate 仅限 pull_request；repo-gate 判定走
  *     scripts/gate/repo-gate-assert.mjs 并以判定表全组合单测锁死
@@ -37,7 +36,8 @@ const ROOT = join(import.meta.dirname, '../..')
 const lf = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
 const CI = lf(join(ROOT, '.github/workflows/ci.yml'))
 const OBSERVE = lf(join(ROOT, '.github/workflows/observe.yml'))
-const OBSERVE_INC = lf(join(ROOT, '.github/workflows/observe-incremental.yml'))
+// #718 S2.2 退役后不再读该文件（读会直接抛），只留路径给「不得回潮」断言。
+const OBSERVE_INC_PATH = join(ROOT, '.github/workflows/observe-incremental.yml')
 const OVERLAY = lf(join(ROOT, '.github/workflows/baseline-overlay.yml'))
 const RELEASE = readFileSync(join(ROOT, '.github/workflows/release.yml'), 'utf8')
 const HEALTH = readFileSync(join(ROOT, '.github/workflows/health-report.yml'), 'utf8')
@@ -173,7 +173,7 @@ test('ci.yml: changes 步骤委托给 ci-matrix.mjs 且 paths-filter 完整覆�
 
 test('ci.yml/observe*/baseline-overlay/release/health-report.yml: 第三方与官方 action 一律 pin commit SHA', () => {
   for (const [name, text] of [
-    ['ci.yml', CI], ['observe.yml', OBSERVE], ['observe-incremental.yml', OBSERVE_INC],
+    ['ci.yml', CI], ['observe.yml', OBSERVE],
     ['baseline-overlay.yml', OVERLAY], ['release.yml', RELEASE], ['health-report.yml', HEALTH],
   ]) {
     // 逐行解析 uses: 值（避免贪婪 \S+ 吞掉 @ref，评审 F9）
@@ -243,7 +243,7 @@ test('#322: 每个带 stryker 配置的包在 path-filter 均有段配置通配�
   }
 })
 
-test('#433+#572 调度重设计与孤立分支基线: observe 全量班（北京次日 04:00）+ 增量班四班次（强推孤立分支）', () => {
+test('#433+#572 调度重设计与孤立分支基线: observe 全量班（北京次日 04:00，强推孤立分支）+ 增量班不得回潮', () => {
   // ── 全量班（observe.yml）：每日一次，北京次日 04:00 = UTC 20:00 ──
   assert.ok(OBSERVE.includes("'0 20 * * *'"),
     '全量班 cron 必须为每日一次 UTC 20:00（北京次日 04:00）')
@@ -262,25 +262,23 @@ test('#433+#572 调度重设计与孤立分支基线: observe 全量班（北京
   assert.ok(!OBSERVE.includes('orphan-baseline.mjs push'),
     '全量班不得回退为整树替换的 push（#718 S1.2：会静默丢段）')
 
-  // ── 增量班（observe-incremental.yml）：每日四班次，北京 12/16/20/24 = UTC 04/08/12/16 ──
-  assert.ok(OBSERVE_INC.includes("'0 4,8,12,16 * * *'"),
-    '增量班 cron 必须为每日四班次（UTC 04/08/12/16 = 北京 12/16/20/次日 0 点）')
-  assert.ok(OBSERVE_INC.includes('workflow_dispatch'), '增量班支持手动 dispatch')
-  assert.ok(OBSERVE_INC.includes('Resolve mutation suites'), '增量班 suite-plan 步骤在位')
-  assert.ok(OBSERVE_INC.includes('orphan-baseline.mjs push'), '增量班调用 orphan-baseline.mjs push 强推孤立分支')
-  assert.ok(!OBSERVE_INC.includes('create-pull-request@'), '#572：增量班基线不再建 PR，直接推送孤立分支')
-  assert.ok(!OBSERVE_INC.includes('gh pr merge'), '#572：增量班 auto-merge 步骤已退役')
-  assert.ok(!OBSERVE_INC.includes('skip_pr=true'), '增量班不得有日期闸')
-  assert.ok(!OBSERVE_INC.includes('self-cov.mjs --check'), '增量班不跑覆盖校验（职责收敛到全量班）')
+  // ── 增量班（observe-incremental.yml）：#718 S2.2 已退役，断言反转为「不得回潮」 ──
+  // 退役依据（实测，2026-09-12）：它的唯一独有价值是修复全量班整树替换丢掉的段，而 #718 S1.2
+  // 的并集入档已让丢段物理上不可能；其余职责（基线新鲜度）由「合入即 overlay」+「夜间并集入档」
+  // 两条路径承担。代价侧：它占着 mutation-baseline-sync 互斥锁（实测阻塞全量班 13 min），
+  // 空闲班 8~12 min，需要修复时 43 min 险过 45 min 超时，近 20 次里 2 次在 45 min 被超时杀掉
+  // （只跑完 12/31 段，一次修复都没完成）。
+  assert.ok(!existsSync(OBSERVE_INC_PATH),
+    '增量班必须保持退役：基线新鲜度由「合入 overlay + 夜间并集入档」承担；'
+    + '若确需复活，请先在 #718 内更新本断言并说明新的职责边界与互斥锁占用代价')
 })
 
 test('#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ gauntlet 包集', () => {
-  // observe 两班的段清单都必须以 `stryker.conf.d/` 为单一事实源（新增配置自动纳入），
-  // 但 #718 S1.1 后载体不同：
-  //   - 全量班改为逐段矩阵，段清单必须在 **workflow 之前** 派生（动态 matrix 只能引用
-  //     needs output，不能读工作区文件），故 glob 迁进 `scripts/gate/mutation-plan.mjs`；
-  //   - 增量班未矩阵化（#718 S2.2 单独处置），仍是 workflow 内联 glob + 逐行循环。
-  // 判据随之拆成「workflow 调用脚本 + 脚本内 glob」两段合取——强度不降（多锁一条脚本侧口径）。
+  // 段清单必须以 `stryker.conf.d/` 为单一事实源（新增配置自动纳入）。#718 S1.1 后载体是
+  // 逐段矩阵：段清单必须在 **workflow 之前** 派生（动态 matrix 只能引用 needs output，不能读
+  // 工作区文件），故 glob 迁进 `scripts/gate/mutation-plan.mjs`；判据拆成「workflow 调用脚本
+  // + 脚本内 glob」两段合取——强度不降（多锁一条脚本侧口径）。
+  // 增量班（原第三个消费方）已随 #718 S2.2 退役。
   assert.ok(OBSERVE.includes('node scripts/gate/mutation-plan.mjs'),
     'observe.yml 段清单必须由 mutation-plan.mjs 派生')
   assert.ok(OBSERVE.includes('shard: ${{ fromJSON(needs.mutation-plan.outputs.shards) }}'),
@@ -290,10 +288,6 @@ test('#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ 
     'mutation-plan.mjs 必须以 stryker.conf.d/ 目录为段清单的单一事实源（新增配置自动纳入）')
   assert.ok(planSrc.includes("startsWith('dsh-')"),
     'mutation-plan.mjs 的段清单口径必须与 ci-matrix / mutation-gate 同源（dsh- 前缀 + .json 后缀）')
-  assert.ok(OBSERVE_INC.includes('ls stryker.conf.d/dsh-*.json'),
-    'observe-incremental.yml suite-plan 的全量清单必须以 glob stryker.conf.d/dsh-*.json 为单一事实源（新增配置自动纳入）')
-  assert.ok(OBSERVE_INC.includes('while read -r conf; do'),
-    'observe-incremental.yml 变异循环必须从 suite-plan 清单文件逐行消费')
 
   // stryker.conf.d 实际文件集 → 基础包名集合（段配置 <pkg>-<后缀>.json 与包级
   // <pkg>.json 统一归并到 <pkg>——功能段名/数字段名兼容，basePkgOfConf 共享函数）
@@ -405,11 +399,10 @@ test('gauntlet: mutation.packages 全部带 threshold 字段且 ≥60（阶段�
 // 基线改走独立孤立分支 refs/heads/baseline/mutation，直接存单 commit 纯文本树，
 // PR 侧通过 orphan-baseline.mjs restore 浅拉取恢复。
 
-test('#178+#204+#572: observe 两班均使用孤立分支基线——全量班不 restore、增量班 restore 孤立分支', () => {
-  // #718 S1.2：写入口按班次分工——全量班走并集入档（archive），增量班退役前仍是整树 push
+test('#178+#204+#572: 全量班使用孤立分支基线——不 restore、收口 job 单点并集入档', () => {
+  // #718 S2.2 起只剩全量班一个写入口（增量班已退役）
   for (const [name, wf, writeStep, writeCmd] of [
     ['observe.yml', OBSERVE, 'Archive baseline to orphan branch', 'orphan-baseline.mjs archive'],
-    ['observe-incremental.yml', OBSERVE_INC, 'Push baseline to orphan branch', 'orphan-baseline.mjs push'],
   ]) {
     assert.ok(
       !wf.includes('actions/cache/restore'),
@@ -432,16 +425,14 @@ test('#178+#204+#572: observe 两班均使用孤立分支基线——全量班�
     assert.ok(wf.includes('contents: write'), `${name} permissions 需 contents: write（孤立分支推送需要）`)
     assert.ok(wf.includes('mutation-baseline-sync'), `${name} concurrency 统一为 mutation-baseline-sync（防止覆盖踩踏）`)
   }
-  // 增量班刻意 restore 孤立分支基线（通过 orphan-baseline.mjs restore 恢复到 coverage/mutation/）；
-  // 全量班刻意不恢复任何基线——无增量基线即天然全量
-  assert.ok(OBSERVE_INC.includes('Restore incremental baseline from orphan branch'),
-    '增量班 restore 步骤在位（#572：基于孤立分支跑增量变异）')
-  assert.ok(OBSERVE_INC.includes('orphan-baseline.mjs restore'),
-    '增量班 restore 必须调用 orphan-baseline.mjs restore')
+  // 全量班刻意不恢复任何基线——无增量基线即天然全量；恢复职责只剩 PR 门禁（ci.yml 的
+  // mutation-gate 由下方 #178 用例单独锁定），故这里不再要求任何 workflow 含 restore 步骤。
+  assert.ok(!OBSERVE.includes('orphan-baseline.mjs restore'),
+    '全量班不得恢复基线（#572：无增量基线即天然全量，勿"好心"补 restore）')
 })
 
 test('#276 方案 A: src 级 mutate 退役产物行号机制——ci/observe 两班均不得再出现 sync/guard', () => {
-  for (const [name, wf] of [['ci.yml', CI], ['observe.yml', OBSERVE], ['observe-incremental.yml', OBSERVE_INC]]) {
+  for (const [name, wf] of [['ci.yml', CI], ['observe.yml', OBSERVE]]) {
     assert.ok(!wf.includes('sync-mutate-segments.mjs'),
       `${name} 不得再调用 sync-mutate-segments.mjs（src 级 mutate 无产物行号，已退役）`)
     assert.ok(!wf.includes('mutate-scope-guard.mjs'),
@@ -1038,21 +1029,9 @@ test('#722: 全仓产物闸在夜间班次落地（PR 改增量后全仓口径�
   }
 })
 
-test('#217+#572: observe 两班变异记账与 push 区分整套 skip 与部分失败', () => {
-  // 增量班未矩阵化（#718 S2.2 单独处置）：仍是「Mutation suites 步骤 + outcome != skipped」
-  {
-    const name = 'observe-incremental.yml'
-    const wf = OBSERVE_INC
-    const sIdx = wf.indexOf('- name: Mutation suites')
-    assert.ok(sIdx > 0, `${name} Mutation suites 步骤在位`)
-    const sBlock = wf.slice(sIdx, wf.indexOf('- name:', sIdx + 10))
-    assert.ok(sBlock.includes('id: mutation-suites'), `${name} Mutation suites 必须声明 id 供下游引用 outcome`)
-    const pIdx = wf.indexOf('- name: Push baseline to orphan branch')
-    assert.ok(pIdx > 0, `${name} Push baseline to orphan branch 步骤在位`)
-    const pBlock = wf.slice(pIdx, wf.indexOf('- name:', pIdx + 10))
-    assert.ok(pBlock.includes("if: always() && steps.mutation-suites.outcome != 'skipped'"),
-      `${name} push 条件必须区分整套 skip（无产物不推送）与部分失败（记账班次照常提交）`)
-  }
+test('#217+#572: observe 全量班变异记账与入档区分整套 skip 与部分失败', () => {
+  // 增量班那一支（「Mutation suites 步骤 + outcome != skipped」）随 #718 S2.2 退役，
+  // 其语义由下方全量班收口 job 的「有段报告才入档」承担。
   // #718 S1.1/S1.5：全量班矩阵化后，「整套 skip vs 部分失败」由收口 job 的
   // 「有段报告才推送」承担——零报告 = 无产物 = 不推送；部分失败 = 有报告 = 照常提交，
   // 与原语义词一一对应。另锁「齐备性判定必须早于 push」这一时序（push 消费其 output）。

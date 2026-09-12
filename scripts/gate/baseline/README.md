@@ -12,11 +12,12 @@
 - **存储格式**：解开的纯文本 JSON 目录树（`incremental-*.json` + `manifest.json`），充分利用 Git Blob 原生内容寻址与去重红利（未变动文件 0 开销）；
 - **工作流同步**：
   - 全量班（`observe.yml`）跑完后，通过 `node scripts/gate/orphan-baseline.mjs archive` **并集入档**（见下节）；
-  - 增量班（`observe-incremental.yml`）退役前仍走 `node scripts/gate/orphan-baseline.mjs push`（整树推送，
-    但它先 `restore` 再跑，所以推回去的本身就是全集）；
   - PR 门禁（`ci.yml` 的 `mutation-gate`）通过 `node scripts/gate/orphan-baseline.mjs restore` 浅拉取恢复到 `coverage/mutation/`；
   - PR 合并到 main 后由 `baseline-overlay.yml` → `node scripts/gate/overlay-baseline.mjs` 秒级差量覆盖（复用该 PR CI 产出的 `mutation-incremental-*` artifact）；
   - 任务统一收敛至互斥并发组 `concurrency: group: mutation-baseline-sync`。
+  - #718 S2.2：原每日四班次增量班（`observe-incremental.yml`）**已退役**，基线新鲜度只剩上述两条路径
+    （夜间并集入档 + 合入 overlay）。`orphan-baseline.mjs push` 随之失去 workflow 调用方，保留为
+    人工应急入口（需要无视远端、整树覆盖时用），不在任何调度里出现。
 
 ### 并集入档与可回滚（#718 S1.2）
 
@@ -109,15 +110,15 @@ overlay 只在合入那一刻取产物，1 天窗口意味着「CI 跑完隔夜�
 
 **已知边界（不要误读为强保证）**：`absent` 只能证明「本次广告里没有这条 ref」，**不能**证明
 服务端上不存在——服务端可用 `uploadpack.hideRefs` 隐藏某条 ref，此时与真·首夜完全同形，
-客户端无从区分。这一支上 workflow 层 `mutation-suites` 的 outcome 门控（`observe-incremental.yml`
-的 push 步骤要求它非 `skipped`，而它依赖 restore 非零退出）仍在起作用；**写路径侧的防护**已由
-#718 S1.2 落地：全量班改走并集入档（`planArchive`，见上节），且拉取失败一律 fail-loud，
-「取不到就当空归档推回去」这条分支已不存在。
+客户端无从区分。**写路径侧的防护**已由 #718 S1.2 落地：全量班改走并集入档（`planArchive`，见上节），
+且拉取失败一律 fail-loud，「取不到就当空归档推回去」这条分支已不存在；旧增量班在 workflow 层
+另有一道 `mutation-suites` outcome 门控，已随 #718 S2.2 退役一并消失（不再需要——并集语义本身
+就不依赖「产物齐全」）。
 
 **两条路径的有意差异**：orphan 侧在「远端树里有 blob 却无基线文件」时**拒绝继续**（fail-loud）；
 overlay 侧没有这个检查，而是由 `reconcileArchive` 以 `archiveGap` 判红、**仍照常推送**——
 因为 overlay 是差量覆盖，拒绝推送会让归档停在更旧的树上。两处语义不同是有意的，不要当作不一致。
 
 > 注：`.github/workflows/ci.yml`（「首夜/基线缺失时天然降级为全量变异，门禁语义不变仅变慢」等）
-> 与 `observe-incremental.yml` 的对应注释**尚未同步**。`.github/` 属红线，须在 issue 内取得
-> 维护者 `approved` 后单独修改；在同步之前，以本节与脚本头部注释为准。
+> 的对应注释**尚未同步**。`.github/` 属红线，须在 issue 内取得维护者 `approved` 后单独修改；
+> 在同步之前，以本节与脚本头部注释为准。

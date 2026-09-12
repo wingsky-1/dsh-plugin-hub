@@ -14,8 +14,10 @@
  *     - 并集入档后「段被失败实例吃掉」在物理上不可能再发生（旧实现是整树替换，实测丢过 33 → 31）
  *     - 沿用文件直接复用远端 blob sha，字节级一致因而零新对象（保住内容去重红利）
  *
- *   node scripts/gate/orphan-baseline.mjs push（增量班用，退役前保留）
- *     - 从 coverage/mutation/ 收集 incremental-*.json 产物，整树推送（调用方已先 restore）
+ *   node scripts/gate/orphan-baseline.mjs push（人工应急入口）
+ *     - 从 coverage/mutation/ 收集 incremental-*.json 产物，**整树**推送（无视远端已有内容）
+ *     - 用途：需要强制覆盖归档时手工执行。原调用方（增量班）已于 #718 S2.2 退役，
+ *       当前没有任何 workflow 走这条路径——常规入档一律用 archive（并集语义）
  *     - 生成 coverage/mutation/manifest.json（文件级 size/mtime/sha256）
  *
  *   两条动作共用：先给旧 tip 打回滚快照 tag（保留最近 N 个），再以显式租约强推新树。
