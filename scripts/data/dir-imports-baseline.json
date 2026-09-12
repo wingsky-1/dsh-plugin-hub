@@ -2,6 +2,24 @@
   "$comment": "S0 门禁基线（#690）：结构型计数由 verify-dir-imports.mjs --write-baseline 登记（随新增文件/目录合法上升）；质量型计数（leafModuleCycles/fileCycles/raLegacy*/implToOtherImpl/missingInterface/directImpl）与 uncoveredSrcFiles 只许降不许升，--write-baseline 不更新它们，须人工处置。",
   "version": 1,
   "packages": {
+    "dsh-notifier": {
+      "modules": 8,
+      "scannedSrcFiles": 38,
+      "allSrcTsFiles": 43,
+      "interfaceFacades": 8,
+      "leafValueEdges": 8,
+      "leafModuleCycles": 0,
+      "fileValueEdges": 67,
+      "fileCycles": 0,
+      "crossModuleRefs": 97,
+      "raLegacy": 39,
+      "raLegacyValue": 15,
+      "raLegacyType": 24,
+      "implToOtherImpl": 0,
+      "missingInterface": 0,
+      "directImpl": 0,
+      "uncoveredSrcFiles": []
+    },
     "dsh-lan-proxy": {
       "modules": 0,
       "scannedSrcFiles": 8,
@@ -36,24 +54,6 @@
       "implToOtherImpl": 0,
       "missingInterface": 0,
       "directImpl": 1,
-      "uncoveredSrcFiles": []
-    },
-    "dsh-notifier": {
-      "modules": 8,
-      "scannedSrcFiles": 37,
-      "allSrcTsFiles": 42,
-      "interfaceFacades": 8,
-      "leafValueEdges": 10,
-      "leafModuleCycles": 0,
-      "fileValueEdges": 68,
-      "fileCycles": 1,
-      "crossModuleRefs": 97,
-      "raLegacy": 39,
-      "raLegacyValue": 15,
-      "raLegacyType": 24,
-      "implToOtherImpl": 0,
-      "missingInterface": 0,
-      "directImpl": 0,
       "uncoveredSrcFiles": []
     },
     "dsh-provider-usage": {

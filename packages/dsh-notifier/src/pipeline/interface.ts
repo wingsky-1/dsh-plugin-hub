@@ -1,18 +1,27 @@
 /**
  * dsh-notifier — pipeline/interface.ts：推送管线域唯一对外引用面。
  *
- * 本域为「裁决/投递工厂」——createAdjudicator 承载 current() 单刻快照与
+ * 本域为「裁决/投递/编排」——createAdjudicator 承载 current() 单刻快照与
  * enabled→确认→免打扰→路由→播放决议全链；
  * createDeliverer 承载单频道 fail-soft 投递与终态上报（DeliverDeps 注入，内置
- * 频道播放经 play 值传递、不持快照引用）。域间依赖全部经注入面显式化
- * （pipeline 对 sdk/config 仅 type+值；sdk 经 createAdjudicator/
- * createDeliverer + 结果类型消费本域）。
+ * 频道播放经 play 值传递、不持快照引用）；
+ * createSendKind/createHandleDecision 承载渲染 → 裁决 → 统一脱敏 → 落史 + 投递的
+ * 编排闭环（orchestrate.ts，自 sdk/service.ts 迁入）。域间依赖全部经注入面显式化
+ * （pipeline 对 sdk/config 仅 type+值；sdk 经 createSendKind/
+ * createAdjudicator/createDeliverer + 结果类型消费本域）。
  */
 import type { NotifyConfig, SoundId, SoundSetting } from "../config/interface.ts";
 import type { NotifyChannel, NotifySeverity, NotifyResult, NotifySentEvent } from "../sdk/interface.ts";
 
 export { isBuiltinKind, isKindConfirmed, resolveRoutes, createAdjudicator } from "./adjudicate.ts";
 export { truncateCodePoints, createDeliverer } from "./deliver.ts";
+export {
+  createAppendHistory,
+  createHandleDecision,
+  createSendKind,
+  encodeBrowserSound,
+  resolveChannelPool,
+} from "./orchestrate.ts";
 
 /** 内置 browser 频道播放决议（browser 帧级 sound；裁决时随快照解析）。 */
 export interface BrowserDispatchSpec {
@@ -84,7 +93,8 @@ export interface AdjudicateDeps {
   enabled(): boolean;
   /** kind 确认判定（内置恒真；动态 kind 查快照 allowKinds）。 */
   isKindConfirmed(kind: string, snapshot: NotifyConfig): boolean;
-  /** 投递集合解析（内置频道启用条件 + 播放决议随快照解析；出站频道同步并入）。 */
+  /** 投递集合解析（内置频道启用条件 + 播放决议随快照解析；出站频道同步并入）。
+   *  生产实现 = resolveChannelPool（本域 orchestrate.ts）。 */
   allChannels(snapshot: NotifyConfig): ChannelPoolEntry[];
 }
 
@@ -111,3 +121,21 @@ export interface DeliverDeps {
 
 /** 单次投递编排（notice → NotifyResult[]；含 stale skipped 与逐频道 fail-soft）。 */
 export type Deliverer = (notice: AdjudicatedNotice) => NotifyResult[];
+
+/** 编排器注入面（createHandleDecision：裁决结果 → 受理结果 + 落史）。 */
+export interface OrchestrateDeps {
+  /** 裁决通过的投递编排（stale skipped + 逐频道 fail-soft + 通知级落史）。 */
+  deliver: Deliverer;
+  /** 通知级历史落盘（suppressed 分支与投递分支共用同一落史入口）。 */
+  appendHistory(entry: { ts: number; kind: string; title: string; message: string; suppressed?: string }): void;
+  /** 日志出口（stale/quiet/投递结果的观测面）。 */
+  logger: { warn: (message: string) => void; info: (message: string) => void };
+}
+
+/** createSendKind 注入面（渲染 → 裁决 → 编排；adjudicate 的注入面由 sdk 装配）。 */
+export interface SendKindDeps {
+  /** 裁决器（createAdjudicator 产物；其 allChannels 经 resolveChannelPool 解析池）。 */
+  adjudicate(opts: AdjudicateOptions): AdjudicateResult;
+  /** 编排器（createHandleDecision 产物）。 */
+  handleDecision(decision: AdjudicateResult): NotifyResult[];
+}

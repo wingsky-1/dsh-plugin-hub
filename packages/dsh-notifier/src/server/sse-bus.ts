@@ -7,12 +7,64 @@
  * 截断），framesSince(since) 供 events 路由 ?since 补拉。
  */
 import type { ServerResponse } from "node:http";
-import { sseData } from "../../../../shared/host-utils.js";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import { errorMessage, sseData } from "../../../../shared/host-utils.js";
 import { createSseHub as createSharedHub } from "../../../../shared/sse-hub.js";
 import type { SseConnHealth, SseEvictStats } from "../../../../shared/sse-hub.js";
 
 export type { SseConnHealth, SseEvictStats };
 export type { SseHubOptions } from "../../../../shared/sse-hub.js";
+
+/**
+ * seq 计数器持久化存储（本域内聚读写实现；装配层只提供路径与日志出口）。
+ *
+ * 语义硬约束（#733 M1-F2 自组合根**逐行等价**迁入，不得变更）：
+ * - 缺文件 = 首启静默回退 0（ENOENT 不告警）；
+ * - **合法 JSON 但值非法**（负数/小数/非数字）→ warn「seq 计数文件损坏」+ 回退 0；
+ * - **非法 JSON（解析失败）与其他读取失败** → 走 catch 分支 → warn
+ *   「seq 计数文件读取失败」（除 ENOENT 外）+ 回退 0。这是迁出前的既有控制流
+ *   （损坏文案只在 JSON.parse 成功、值校验失败时命中），文案与分支归属逐字保留；
+ * - 写面为**同步** tmp+rename 原子写——createSseHub 的 dispose 同步补写依赖
+ *   此同步性（正常停止零丢失；kill -9 崩溃窗口 ≤ 500ms 防抖窗口）。
+ */
+export interface SeqStore {
+  /** 读取续计数值（非法/缺失/损坏一律回退 0）。 */
+  load(): number;
+  /** 原子写入计数值（失败只 warn，不抛）。 */
+  save(seq: number): void;
+}
+
+/**
+ * 创建 seq 计数器存储。
+ * @param options.file 计数器文件路径（装配层解析：与 status 文件同目录）。
+ * @param options.warn 告警出口（装配层注入 ctx.logger.warn）。
+ */
+export function createSeqStore(options: { file: string; warn: (message: string) => void }): SeqStore {
+  const { file, warn } = options;
+  return {
+    load(): number {
+      try {
+        const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown;
+        if (typeof parsed === "number" && Number.isFinite(parsed) && parsed >= 0 && Number.isInteger(parsed)) return parsed;
+        warn(`dsh-notifier: seq 计数文件损坏，回退 0：${file}`);
+        return 0;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException | undefined)?.code;
+        if (code !== "ENOENT") warn(`dsh-notifier: seq 计数文件读取失败，回退 0：${errorMessage(error)}`);
+        return 0;
+      }
+    },
+    save(seq: number): void {
+      try {
+        const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
+        writeFileSync(tmp, String(seq), "utf8");
+        renameSync(tmp, file);
+      } catch (error) {
+        warn(`dsh-notifier: seq 计数写入失败: ${errorMessage(error)}`);
+      }
+    },
+  };
+}
 
 /** notifier 视角的 SSE 枢纽：共享连接管理面 + 业务广播 + 断线补拉。
  *  注意不 extends 共享 SseHub：共享的 broadcast(text) 是「写现成帧」原语，

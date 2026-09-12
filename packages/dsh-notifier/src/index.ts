@@ -16,10 +16,10 @@ import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-session/types";
 import type {} from "@deepseek-ai/dsh-session-title";
 import type {} from "@deepseek-ai/dsh-user-approval";
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { errorMessage } from "../../../shared/host-utils.js";
 import {
+  BUILTIN_CHANNELS,
   CONFIG_KEYS,
   DEFAULT_CONFIG,
   SETTINGS_NS,
@@ -42,8 +42,8 @@ import { createDoneBatcher, createEventHandlers } from "./events/interface.ts";
 import type { DoneBatcher, SubagentOwnership } from "./events/interface.ts";
 import { sanitizeErrorText } from "./text/interface.ts";
 import type { NotifyDetail } from "./text/interface.ts";
-import { ROUTES, buildRoutes, createSseHub, createSystemNotifier } from "./server/interface.ts";
-import { BUILTIN_CHANNELS, createNotifierService } from "./sdk/interface.ts";
+import { ROUTES, buildRoutes, createSeqStore, createSseHub, createSystemNotifier } from "./server/interface.ts";
+import { createNotifierService } from "./sdk/interface.ts";
 import type { NotifierServiceInternal, NotifySentEvent } from "./sdk/interface.ts";
 import type { BrowserDispatchSpec, DeliverPayload, ResolvedTarget, SystemDispatchSpec } from "./pipeline/interface.ts";
 import { buildBrowserFrame, createBarkChannel, createBrowserChannel, createOutboundChannelResolver, createSystemChannel, createWebhookChannel } from "./channels/interface.ts";
@@ -125,8 +125,10 @@ export { isSubagentOf, lastTurnEndOf, sessionTitleOf } from "./events/interface.
 export { ROUTES, applyConfigPatch } from "./server/interface.ts";
 export type { PatchResult, RouteDeps } from "./server/interface.ts";
 export { KIND_SEVERITY } from "./text/interface.ts";
+// 内置频道 id 的物理定义在 config 域（最底层）：导出面直指 config，不经 sdk 门面
+// 转发——sdk/interface.ts 的值 re-export 会与 sdk/service.ts 的取值构成文件级值环。
+export { BUILTIN_CHANNELS } from "./config/interface.ts";
 export {
-  BUILTIN_CHANNELS,
   createNotifierService,
   getNotifierService,
 } from "./sdk/interface.ts";
@@ -195,36 +197,15 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
 
   const { toastScript, historyPath, statusPath, seqPath } = resolveStorePaths(config);
 
-  // seq 计数器持久化注入（服务端重启续计数，客户端零改动）。
-  // 缺文件 = 首启静默回退 0；损坏 = warn + 回退 0（宁可归零不可卡死续计数面）。
-  // 写面为同步 tmp+rename 原子写——createSseHub 的 dispose 同步落盘依赖此同步性
-  // （正常停止零丢失；kill -9 崩溃窗口 ≤ 500ms 防抖窗口）。
-  function loadSeq(): number {
-    try {
-      const parsed = JSON.parse(readFileSync(seqPath, "utf8")) as unknown;
-      if (typeof parsed === "number" && Number.isFinite(parsed) && parsed >= 0 && Number.isInteger(parsed)) return parsed;
-      ctx.logger.warn(`dsh-notifier: seq 计数文件损坏，回退 0：${seqPath}`);
-      return 0;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException | undefined)?.code;
-      if (code !== "ENOENT") ctx.logger.warn(`dsh-notifier: seq 计数文件读取失败，回退 0：${errorMessage(error)}`);
-      return 0;
-    }
-  }
-  function saveSeq(seq: number): void {
-    try {
-      const tmp = `${seqPath}.${process.pid}.${Date.now().toString(36)}.tmp`;
-      writeFileSync(tmp, String(seq), "utf8");
-      renameSync(tmp, seqPath);
-    } catch (error) {
-      ctx.logger.warn(`dsh-notifier: seq 计数写入失败: ${errorMessage(error)}`);
-    }
-  }
+  // seq 计数器持久化（读写实现内聚在 server 域，装配层只解析路径 + 注入日志出口）；
+  // 语义与迁出前逐行等价：缺文件首启静默回退 0 / 损坏 warn + 回退 0 / 同步 tmp+rename
+  // 原子写（createSseHub 的 dispose 同步补写依赖此同步性）。
+  const seqStore = createSeqStore({ file: seqPath, warn: (message) => ctx.logger.warn(message) });
 
   const sse = createSseHub({
     getMaxConnections: () => currentConfig().maxConnections,
-    loadSeq,
-    saveSeq,
+    loadSeq: () => seqStore.load(),
+    saveSeq: (seq) => seqStore.save(seq),
   });
   const system = createSystemNotifier({
     toastScript,
@@ -247,8 +228,8 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   // 播放决议随裁决快照解析并经 DeliverDeps.play 值传递——browser→SSE 帧、
   // system→system.notify（spec.pop/spec.sound；notify resolve false → throw →
   // 终态 failed，对照落位前的 dispatchSystem 语义）。
-  const browserChannel = createBrowserChannel({ sse });
-  const systemChannel = createSystemChannel({ system });
+  const browserChannel = createBrowserChannel();
+  const systemChannel = createSystemChannel();
 
   const notifierService: NotifierServiceInternal = createNotifierService({
     current: currentConfig,

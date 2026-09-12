@@ -5,17 +5,16 @@
  * system.notify(spec.pop, spec.sound, ...) 的调用在 index.ts 装配处（对照落位
  * 移前的 dispatchSystem：notify resolve false → throw → 终态 failed）。
  * 本实例仅供投递池（id + capabilities），send 已退役（误触响亮失败，防静默丢
- * 通知）。对 server 域只 import type SystemNotifier（值不跨域）。
+ * 通知）。实例不持任何依赖（无注入面参数），故本域对 server 域零依赖
+ * （零值边 + 零 type 边，消除 channels→server 倒置边）。
  */
-import type { SystemNotifier } from "../server/interface.ts";
 import { BUILTIN_CHANNELS } from "../config/interface.ts";
 import type { NotifyChannel } from "../sdk/interface.ts";
 
 /**
  * 创建内置 system 频道实例（仅供投递池：id + capabilities；播放经 play 注入）。
- * @param options.system 装配层注入的系统通知通道（值依赖经注入面，不跨域 import）。
  */
-export function createSystemChannel(options: { system: SystemNotifier }): NotifyChannel {
+export function createSystemChannel(): NotifyChannel {
   return {
     name: BUILTIN_CHANNELS.system,
     capabilities: { titleMaxLen: 64, maxBodyLen: 256 },
