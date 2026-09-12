@@ -1,20 +1,7 @@
 /**
- * dsh-notifier config 域 —— 设置存取的实现。
+ * dsh-notifier config 域 —— 设置存取的实现：读 = 文件 → 净化 → 归一化 → 快照，写 = 掩码还原 → 校验 → 合并 → 落盘。
  *
- * 状态是实例字段：目录、生效快照、用户层、修订号、写队列。类本身可以被实例化
- * 多次，但域只装配一个——「唯一存取点」靠契约层不导出实例来保证，而不是靠把状态
- * 藏进闭包让别人够不着。
- *
- * 读写都是**组合**而非直通：读 = 文件 → 净化 → 归一化 → 生效快照；写 = 掩码还原
- * → 校验 → 合并 → 原子落盘 → 刷新快照。调用方不需要知道这条链上有几道工序，也不
- * 该知道。
- *
- * **装配期同步读完文件**：读面是同步的，而「装配完成」与「文件读完」之间只要留
- * 一个窗口，窗口内的读者就会拿到尚未生效的默认值——一次几 KB 的同步读换掉整类
- * 竞态，值。
- *
- * 依赖方向：只引用本目录、`../input/`、`../model/`、`../redact/`、`../../deps.ts`、
- * 包内共享层，不引用 `interface.ts`。
+ * 装配期同步读完文件：读面是同步的，留一个窗口就会有读者拿到尚未生效的默认值。
  */
 import { createHash } from "node:crypto";
 import type { ConfigDeps } from "../../deps.ts";
@@ -45,12 +32,7 @@ const NEW_CHANNEL_MASK_HINT = "新增频道不能提交掩码占位，请填写�
 /** 原型链上的危险键名：JSON 文本能造出自有键，展开进设置对象就会改写原型。 */
 const UNSAFE_KEYS: readonly string[] = ["__proto__", "constructor", "prototype"];
 
-/**
- * 未装配时的占位。
- *
- * 装配是必经路径（`installed` 守卫），占位值不会被真正读到；它的作用是让字段
- * 有确定的类型，从而不必让每个使用点都先判一次空。
- */
+/** 未装配时的占位：装配是必经路径，占位只是让字段不必每个使用点判空。 */
 const UNINSTALLED: ConfigDeps = { logger: { warn: () => {} } };
 
 const NOOP = (): void => {};
@@ -84,12 +66,7 @@ class ConfigStore {
     this.adopt(read.ok ? parseJsonObject(read.text) : {});
   }
 
-  /**
-   * 卸载：放开装配入参并丢掉用户层快照。
-   *
-   * 快照要一起丢：它同时是「用户层」与「磁盘状态」的记忆，留到下一次装配会让新一次
-   * install 的读盘结果与旧快照叠在一起——而那份混合形态看起来与正常状态一模一样。
-   */
+  /** 卸载：放开装配入参并丢掉用户层快照——它同时是「用户层」与「磁盘状态」的记忆。 */
   release(): void {
     this.installed = false;
     this.deps = UNINSTALLED;
@@ -114,11 +91,8 @@ class ConfigStore {
   /**
    * 写：掩码还原 → 校验 → 合并 → 落盘 → 刷新快照。
    *
-   * 顺序不可换：掩码不是合法的密钥值，未还原就被校验拦死；校验必须晚于掩码还原、
-   * 早于落盘，否则非法值会先写进文件再被报错。
-   *
-   * 校验与合并之间不做净化：净化会把陌生键剔掉，而陌生键是**透传保留**的——文件
-   * 里已有的不受影响，本次提交携带的一并写回。
+   * 顺序不可换：掩码不是合法密钥值，未还原就被校验拦死；校验早于落盘，否则非法值会先写进文件。
+   * 校验与合并之间不净化：陌生键是透传保留的，一次保存不该把它们抹掉。
    */
   async write(patch: SettingsPatch, expectedRevision?: number): Promise<WriteResult> {
     const restored = this.restoreSecrets(patch);
@@ -139,8 +113,8 @@ class ConfigStore {
   /**
    * 提交：版本比对 → 合并 → 原子落盘 → 采纳。
    *
-   * 整段在写队列内执行：版本比对与写入之间若能被另一次写插入，乐观并发就形同虚设
-   * ——两次写都读到同一个旧版本、都判定通过，后写的那次把先写的悄悄覆盖。
+   * 整段在写队列内执行：比对与写入之间若能被另一次写插入，乐观并发就形同虚设
+   * ——两次写都读到同一旧版本、都判定通过，后写的把先写的悄悄覆盖。
    */
   private async commit(incoming: StoredSettings, expectedRevision?: number): Promise<WriteResult> {
     if (expectedRevision !== undefined && expectedRevision !== this.revision) {
@@ -164,11 +138,7 @@ class ConfigStore {
     this.revision = revisionOf(stored);
   }
 
-  /**
-   * 掩码还原：patch 里等于掩码的密钥字段，按 id 换回用户层原值。
-   *
-   * 只在 patch 带了频道时才有这一步——其余键没有密钥语义。
-   */
+  /** 掩码还原：patch 里等于掩码的密钥字段按 id 换回用户层原值；只有带了频道才需要这一步。 */
   private restoreSecrets(patch: SettingsPatch): RestoredPatch {
     const channels = patch.channels;
     if (channels === undefined) return { ok: true, patch };
@@ -189,12 +159,7 @@ class ConfigStore {
 /** 本域唯一的存取点实例：类不外放，外面 `new` 不出第二份设置状态。 */
 export const configStore = new ConfigStore();
 
-/**
- * 提交体 → 可写入的原始设置。
- *
- * 只剔除原型链危险键，其余（含契约不认识的键）原样放行：配置文件里的陌生键可能是
- * 手写的、也可能是更高版本留下的，一次保存把它们抹掉属于静默破坏。
- */
+/** 提交体 → 可写入的原始设置：只剔除原型链危险键，契约不认识的键原样放行（抹掉属于静默破坏）。 */
 function writableEntries(patch: SettingsPatch): StoredSettings {
   const entries: Record<string, RawSettingValue> = {};
   for (const [key, value] of Object.entries(patch)) {
@@ -207,10 +172,32 @@ function writableEntries(patch: SettingsPatch): StoredSettings {
 /**
  * 修订号：用户层内容的摘要。
  *
- * 键先排序再进摘要——键序不是内容，同一份设置在两次读写之间换了键序不该被当成
- * 改动，否则界面会凭空收到一次「你编辑期间它变了」。
+ * 键序不是内容，换键序不该算改动；但排序必须**递归**做——`JSON.stringify` 的 replacer
+ * 数组会作用到每一层，用它排顶层键会把嵌套键（频道、免打扰、路由表）统统丢掉，两份内容
+ * 不同的设置于是算出同一个修订号，乐观并发的版本冲突漏判。
  */
 function revisionOf(stored: StoredSettings): number {
-  const text = JSON.stringify(stored, Object.keys(stored).sort());
-  return createHash("sha256").update(text, "utf8").digest().readUInt32BE(0);
+  return createHash("sha256").update(stableJson(stored), "utf8").digest().readUInt32BE(0);
+}
+
+/** 稳定序列化：对象递归按键排序，数组保持原序（数组顺序是内容的一部分）。 */
+function stableJson(value: RawSettingValue): string {
+  if (isJsonArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (isJsonObject(value)) {
+    const fields = Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`);
+    return `{${fields.join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/** JSON 数组：`readonly` 数组落在 `Array.isArray` 的收窄结果之外，用守卫补上。 */
+function isJsonArray(value: RawSettingValue): value is readonly RawSettingValue[] {
+  return Array.isArray(value);
+}
+
+/** JSON 对象：排除数组与 `null`（`typeof null` 也是 `"object"`）。 */
+function isJsonObject(value: RawSettingValue): value is StoredSettings {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

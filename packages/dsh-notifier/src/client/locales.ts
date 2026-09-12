@@ -26,7 +26,8 @@ export const zh = {
   chStateSound: "仅声音",
   chStateOff: "已停用",
   chSoundFollow: "跟随系统默认",
-  chSoundFollowHint: "系统卡：Windows 用系统通知音 / macOS Glass / Linux 自播默认事件音；浏览器卡：交给操作系统发声（不 silent）。",
+  chSoundFollowHint:
+    "系统卡：Windows 用系统通知音 / macOS Glass / Linux 自播默认事件音；浏览器卡：交给操作系统发声（不 silent）。",
   chSoundTone: "音色",
   chSoundPreview: "试听",
   chSoundOnlyNote: "弹窗已关、声音开启：本频道只响不弹（不打扰界面）。",
@@ -34,9 +35,12 @@ export const zh = {
   toneBell: "铃（Bell）",
   toneChime: "钟琴（Chime）",
   tonePop: "啵（Pop）",
-  sysPlatformWin: "宿主平台 Windows：系统提示音走 toast 系统音；选音色后经 SoundPlayer 播放内置 wav（近似映射，与系统设置音可不同）。",
-  sysPlatformMac: "宿主平台 macOS：系统提示音经 osascript/NSSound（Glass/Tink/Sosumi/Pop 近似映射），受系统「允许通知声音」设置约束。",
-  sysPlatformLinux: "宿主平台 Linux：不依赖桌面守护进程的发声支持——声音由插件自播（pw-play/paplay 播 freedesktop 事件音），仅宿主有桌面/音频会话才响。",
+  sysPlatformWin:
+    "宿主平台 Windows：系统提示音走 toast 系统音；选音色后经 SoundPlayer 播放内置 wav（近似映射，与系统设置音可不同）。",
+  sysPlatformMac:
+    "宿主平台 macOS：系统提示音经 osascript/NSSound（Glass/Tink/Sosumi/Pop 近似映射），受系统「允许通知声音」设置约束。",
+  sysPlatformLinux:
+    "宿主平台 Linux：不依赖桌面守护进程的发声支持——声音由插件自播（pw-play/paplay 播 freedesktop 事件音），仅宿主有桌面/音频会话才响。",
   sysPlatformOther: "系统提示音随宿主平台尽力而为；此处试听为浏览器本地合成，仅作听感参考。",
   // kind 标签（历史列表）
   kAsk: "审批等待",
@@ -47,7 +51,8 @@ export const zh = {
   kTurnEnd: "轮次完成",
   kTest: "测试",
   // 403 引导（accessHint）
-  lanAccessHint: "（若为局域网直连访问，通知服务仅允许回环调用而被拒：请用 dsh-lan-proxy 的 https://<局域网IP>:3443 或 ssh -L 3080:127.0.0.1:3080 隧道访问后刷新）",
+  lanAccessHint:
+    "（若为局域网直连访问，通知服务仅允许回环调用而被拒：请用 dsh-lan-proxy 的 https://<局域网IP>:3443 或 ssh -L 3080:127.0.0.1:3080 隧道访问后刷新）",
   // 设置卡
   settingsLoading: "通知：加载中…",
   settingsUnavailable: "设置服务不可用",
@@ -70,8 +75,6 @@ export const zh = {
   cleared: "已清空 {n} 条通知记录",
   clearFail: "清空失败：{msg}{hint}",
   // 配置行
-  errMergeWindow: "错误合并窗口（ms，0=关）",
-  doneAggWindow: "完成聚合窗口（ms，0=关）",
   approveRemind: "审批二次提醒（分钟，0=关）",
   historyRetention: "历史保留天数（0=不按天清理）",
   maxConnections: "最大连接数（条，超出淘汰最老）",
@@ -84,12 +87,15 @@ export const zh = {
   allowFollowEnabled: "跟随已启用事件",
   allowResetDefault: "恢复默认（审批/提问/出错）",
   // 权限/降级说明
-  settingsSvcDown: "设置服务不可用：当前无法保存配置（settings 服务未挂载）。插件通知功能不受影响，但更改将被拒绝。",
-  httpDegraded: "当前为局域网 HTTP 访问（非安全上下文），浏览器禁止系统级弹窗，已启用「页面内横幅 + 提示音 + 标题提醒」降级通道。如需系统弹窗，请改用 dsh-lan-proxy 的 https://<局域网IP>:3443 或 localhost 隧道访问（如 ssh -L 3080:127.0.0.1:3080）后刷新页面。",
+  settingsSvcDown:
+    "设置服务不可用：当前无法保存配置（settings 服务未挂载）。插件通知功能不受影响，但更改将被拒绝。",
+  httpDegraded:
+    "当前为局域网 HTTP 访问（非安全上下文），浏览器禁止系统级弹窗，已启用「页面内横幅 + 提示音 + 标题提醒」降级通道。如需系统弹窗，请改用 dsh-lan-proxy 的 https://<局域网IP>:3443 或 localhost 隧道访问（如 ssh -L 3080:127.0.0.1:3080）后刷新页面。",
   permGranted: "浏览器通知权限：已授权 ✓",
   permDenied: "浏览器通知权限：已拒绝（请在浏览器站点设置中允许本页通知）",
   permDefault: "浏览器通知权限：未授权（点击下方按钮在浏览器弹窗中允许）",
-  iosUnsupported: "当前设备不支持系统级通知（如 iOS Safari 普通标签页无 Web Notifications）。可用通道：页面可见时的横幅 + 提示音（需保持页面打开），或经 dsh-lan-proxy 的 https://<局域网IP>:3443 访问并「添加到主屏幕」后获得 PWA 级通知能力。",
+  iosUnsupported:
+    "当前设备不支持系统级通知（如 iOS Safari 普通标签页无 Web Notifications）。可用通道：页面可见时的横幅 + 提示音（需保持页面打开），或经 dsh-lan-proxy 的 https://<局域网IP>:3443 访问并「添加到主屏幕」后获得 PWA 级通知能力。",
   // 动作区
   clearConfirm: "确认清理记录？",
   clearLabel: "清理记录",
@@ -105,7 +111,7 @@ export const zh = {
   // 卡内双 tab 文案，术语统一为「通知频道」）
   secEvents: "通知事件",
   secChannels: "通知频道",
-  secDedup: "合并/去重",
+  secDedup: "参数上限",
   tabLabel: "通知中心",
   save: "保存",
   saving: "保存中…",
@@ -134,7 +140,8 @@ export const zh = {
   chBarkUrl: "跳转 url",
   chBarkBadge: "角标 badge",
   chBarkLevel: "默认紧急度 level",
-  chBarkLevelHint: "实例级紧急度（缺省按事件强度自动映射）；下方「按类型紧急度映射」命中时优先于本项",
+  chBarkLevelHint:
+    "实例级紧急度（缺省按事件强度自动映射）；下方「按类型紧急度映射」命中时优先于本项",
   chLevelAuto: "按事件强度自动映射",
   // ===== levels（kind→level 稀疏映射矩阵）=====
   chLevelsHint: "按事件类型指定 Bark 紧急度，优先于「默认紧急度」与自动映射；未配置的类型走默认",
@@ -193,7 +200,8 @@ export const zh = {
   whAuthBearer: "Bearer Token（Authorization 头）",
   whAuthBasic: "Basic 用户名/密码",
   whAuthHeader: "自定义请求头",
-  whAuthHint: "凭据只走请求头（ntfy / Gotify 均支持 Authorization 头，不拼 URL）；仅存本机配置并掩码回显，错误信息出站前统一脱敏",
+  whAuthHint:
+    "凭据只走请求头（ntfy / Gotify 均支持 Authorization 头，不拼 URL）；仅存本机配置并掩码回显",
   whAuthToken: "访问令牌",
   whAuthUsername: "用户名",
   whAuthPassword: "密码",
@@ -202,7 +210,8 @@ export const zh = {
   whTimeout: "投递超时",
   whTimeoutHint: "秒 · 1–60（超限按边界取值，默认 10）；超时与失败均落记录，不自动重试",
   whTemplate: "消息模板（JSON body，占位符点击插入）",
-  whTemplateHint: "{{priority}} 由服务端按频道映射渲染（ntfy：info→default / success→low / warning→high / failure→urgent）；文本占位符 JSON-aware 转义，{{ts}} 数字直出",
+  whTemplateHint:
+    "{{priority}} 由服务端按频道映射渲染（ntfy：info→default / success→low / warning→high / failure→urgent）；文本占位符 JSON-aware 转义，{{ts}} 数字直出",
   whTemplateFailHint: "模板非法或渲染失败按该频道投递失败落记录，不阻断其他频道",
   whTplRestore: "恢复预设模板",
 } as const;
@@ -226,7 +235,8 @@ export const en: Record<NotifierLocaleKey, string> = {
   chStateSound: "Sound only",
   chStateOff: "Disabled",
   chSoundFollow: "Follow system default",
-  chSoundFollowHint: "System card: Windows uses the toast system sound / macOS Glass / Linux self-plays the default event sound; browser card: lets the OS play (not silent).",
+  chSoundFollowHint:
+    "System card: Windows uses the toast system sound / macOS Glass / Linux self-plays the default event sound; browser card: lets the OS play (not silent).",
   chSoundTone: "Tone",
   chSoundPreview: "Preview",
   chSoundOnlyNote: "Popup off, sound on: this channel plays sound only (no popup).",
@@ -234,10 +244,14 @@ export const en: Record<NotifierLocaleKey, string> = {
   toneBell: "Bell",
   toneChime: "Chime",
   tonePop: "Pop",
-  sysPlatformWin: "Host platform Windows: system sound uses the toast default; with a tone selected it plays a built-in wav via SoundPlayer (approximate mapping, may differ from system-settings sounds).",
-  sysPlatformMac: "Host platform macOS: system sound goes through osascript/NSSound (Glass/Tink/Sosumi/Pop approximate mapping), subject to the system \"Allow notification sounds\" setting.",
-  sysPlatformLinux: "Host platform Linux: does not rely on desktop daemon sound support — the plugin self-plays (pw-play/paplay with freedesktop event sounds); audible only when the host has a desktop/audio session.",
-  sysPlatformOther: "System sound is best-effort on the host platform; the preview here is synthesized locally in your browser as a listening reference.",
+  sysPlatformWin:
+    "Host platform Windows: system sound uses the toast default; with a tone selected it plays a built-in wav via SoundPlayer (approximate mapping, may differ from system-settings sounds).",
+  sysPlatformMac:
+    'Host platform macOS: system sound goes through osascript/NSSound (Glass/Tink/Sosumi/Pop approximate mapping), subject to the system "Allow notification sounds" setting.',
+  sysPlatformLinux:
+    "Host platform Linux: does not rely on desktop daemon sound support — the plugin self-plays (pw-play/paplay with freedesktop event sounds); audible only when the host has a desktop/audio session.",
+  sysPlatformOther:
+    "System sound is best-effort on the host platform; the preview here is synthesized locally in your browser as a listening reference.",
   kAsk: "Approval pending",
   kQuestion: "Question for you",
   kDone: "Task completed",
@@ -245,7 +259,8 @@ export const en: Record<NotifierLocaleKey, string> = {
   kError: "Task failed",
   kTurnEnd: "Turn completed",
   kTest: "Test",
-  lanAccessHint: " (If you are on a LAN connection: the notify service only accepts loopback calls — open via dsh-lan-proxy https://<LAN-IP>:3443 or an ssh -L 3080:127.0.0.1:3080 tunnel, then refresh)",
+  lanAccessHint:
+    " (If you are on a LAN connection: the notify service only accepts loopback calls — open via dsh-lan-proxy https://<LAN-IP>:3443 or an ssh -L 3080:127.0.0.1:3080 tunnel, then refresh)",
   settingsLoading: "Notifier: loading…",
   settingsUnavailable: "Settings service unavailable",
   loadFail: "Failed to load settings: {msg}{hint}",
@@ -265,8 +280,6 @@ export const en: Record<NotifierLocaleKey, string> = {
   testFail: "Failed to send test notification: {msg}{hint}",
   cleared: "Cleared {n} history entries",
   clearFail: "Clear failed: {msg}{hint}",
-  errMergeWindow: "Error merge window (ms, 0=off)",
-  doneAggWindow: "Completion aggregate window (ms, 0=off)",
   approveRemind: "Approval re-reminder (minutes, 0=off)",
   historyRetention: "History retention (days, 0=no daily cleanup)",
   maxConnections: "Max connections (evict oldest beyond)",
@@ -277,12 +290,17 @@ export const en: Record<NotifierLocaleKey, string> = {
   allowDisabledHint: "Not enabled",
   allowFollowEnabled: "Follow enabled events",
   allowResetDefault: "Reset default (approval/question/error)",
-  settingsSvcDown: "Settings service unavailable: cannot save configuration (settings service not mounted). Plugin notifications are unaffected, but changes will be rejected.",
-  httpDegraded: "You are on a LAN HTTP connection (insecure context) — the browser blocks system notifications; in-page banner + sound + title reminders are active instead. For system notifications, use dsh-lan-proxy https://<LAN-IP>:3443 or a localhost tunnel (e.g. ssh -L 3080:127.0.0.1:3080), then refresh.",
+  settingsSvcDown:
+    "Settings service unavailable: cannot save configuration (settings service not mounted). Plugin notifications are unaffected, but changes will be rejected.",
+  httpDegraded:
+    "You are on a LAN HTTP connection (insecure context) — the browser blocks system notifications; in-page banner + sound + title reminders are active instead. For system notifications, use dsh-lan-proxy https://<LAN-IP>:3443 or a localhost tunnel (e.g. ssh -L 3080:127.0.0.1:3080), then refresh.",
   permGranted: "Browser notification permission: granted ✓",
-  permDenied: "Browser notification permission: denied (allow notifications for this site in the browser site settings)",
-  permDefault: "Browser notification permission: not asked (click the button below and allow in the browser prompt)",
-  iosUnsupported: "This device does not support system notifications (e.g. iOS Safari in a normal tab). Available channels: in-page banner + sound while the page is open, or PWA-grade notifications via dsh-lan-proxy https://<LAN-IP>:3443 with \"Add to Home Screen\".",
+  permDenied:
+    "Browser notification permission: denied (allow notifications for this site in the browser site settings)",
+  permDefault:
+    "Browser notification permission: not asked (click the button below and allow in the browser prompt)",
+  iosUnsupported:
+    'This device does not support system notifications (e.g. iOS Safari in a normal tab). Available channels: in-page banner + sound while the page is open, or PWA-grade notifications via dsh-lan-proxy https://<LAN-IP>:3443 with "Add to Home Screen".',
   clearConfirm: "Clear history?",
   clearLabel: "Clear history",
   requestPerm: "Request permission",
@@ -290,11 +308,11 @@ export const en: Record<NotifierLocaleKey, string> = {
   sendTest: "Send test notification",
   refresh: "Refresh",
   historyTitle: "History (last 10)",
-  historyEmpty: "No history yet (click \"Send test notification\" to create one)",
+  historyEmpty: 'No history yet (click "Send test notification" to create one)',
   historySuppressed: "Suppressed by do-not-disturb",
   secEvents: "Events",
   secChannels: "Channels",
-  secDedup: "Merge / dedup",
+  secDedup: "Limits",
   tabLabel: "Notification center",
   save: "Save",
   saving: "Saving…",
@@ -322,9 +340,11 @@ export const en: Record<NotifierLocaleKey, string> = {
   chBarkUrl: "URL to open",
   chBarkBadge: "Badge",
   chBarkLevel: "Default level",
-  chBarkLevelHint: "Instance-level urgency (auto-mapped from event severity when unset); a matching row in \"Per-type level map\" below wins over this",
+  chBarkLevelHint:
+    'Instance-level urgency (auto-mapped from event severity when unset); a matching row in "Per-type level map" below wins over this',
   chLevelAuto: "Auto-map from event severity",
-  chLevelsHint: "Set a Bark urgency per event type; takes precedence over the default level and auto-mapping. Types without a row use the default",
+  chLevelsHint:
+    "Set a Bark urgency per event type; takes precedence over the default level and auto-mapping. Types without a row use the default",
   chLevelsKindPlaceholder: "e.g. question",
   chLevelsAdd: "Add mapping",
   chLevelsRemove: "Remove",
@@ -348,12 +368,15 @@ export const en: Record<NotifierLocaleKey, string> = {
   kindRevoke: "Revoke",
   routeCap: "Deliver to",
   routeDefaultState: "Follow default · all enabled channels",
-  routeDefaultStateTitle: "Not customized: delivered to all enabled channels (dynamic as channels toggle)",
+  routeDefaultStateTitle:
+    "Not customized: delivered to all enabled channels (dynamic as channels toggle)",
   routeCustomState: "Custom · {n} channels · reset",
   routeCustomStateTitle: "Route customized (frozen snapshot); click to reset to default",
   routeStaleChip: "deleted",
-  routeStaleTitle: "This channel was deleted but its route entry remains; skipped at delivery (the stale entry is not removed automatically)",
-  routeDisabledHint: "Channel not enabled: enable it under Notify channels first to configure delivery",
+  routeStaleTitle:
+    "This channel was deleted but its route entry remains; skipped at delivery (the stale entry is not removed automatically)",
+  routeDisabledHint:
+    "Channel not enabled: enable it under Notify channels first to configure delivery",
   dirtySome: "{n} unsaved change(s)",
   discardChanges: "Discard changes",
   discardOk: "Unsaved changes discarded",
@@ -371,22 +394,27 @@ export const en: Record<NotifierLocaleKey, string> = {
   whPresetHint: "Preset fills URL shape / auth method / message template",
   whUrl: "Target URL",
   whUrlPlaceholder: "https://ntfy.sh/<topic>",
-  whUrlHint: "POST JSON; http(s) only, no embedded credentials in the URL; add a random suffix to ntfy topic names",
+  whUrlHint:
+    "POST JSON; http(s) only, no embedded credentials in the URL; add a random suffix to ntfy topic names",
   whAuth: "Auth",
   whAuthNone: "None",
   whAuthBearer: "Bearer Token (Authorization header)",
   whAuthBasic: "Basic username/password",
   whAuthHeader: "Custom header",
-  whAuthHint: "Credentials go in request headers only (ntfy / Gotify both support the Authorization header), never in the URL; stored locally and shown masked; errors are sanitized",
+  whAuthHint:
+    "Credentials go in request headers only (ntfy / Gotify both support the Authorization header), never in the URL; stored locally and shown masked",
   whAuthToken: "Access token",
   whAuthUsername: "Username",
   whAuthPassword: "Password",
   whAuthHeaderName: "Header name (e.g. X-Gotify-Key)",
   whAuthHeaderValue: "Header value (token)",
   whTimeout: "Delivery timeout",
-  whTimeoutHint: "seconds · 1–60 (clamped, default 10); timeouts and failures are recorded, no auto-retry",
+  whTimeoutHint:
+    "seconds · 1–60 (clamped, default 10); timeouts and failures are recorded, no auto-retry",
   whTemplate: "Message template (JSON body, click to insert placeholders)",
-  whTemplateHint: "{{priority}} is rendered by the server per-channel map (ntfy: info→default / success→low / warning→high / failure→urgent); text placeholders are JSON-aware escaped, {{ts}} is raw number",
-  whTemplateFailHint: "Invalid template or render failure counts as a failed delivery for this channel only; other channels are unaffected",
+  whTemplateHint:
+    "{{priority}} is rendered by the server per-channel map (ntfy: info→default / success→low / warning→high / failure→urgent); text placeholders are JSON-aware escaped, {{ts}} is raw number",
+  whTemplateFailHint:
+    "Invalid template or render failure counts as a failed delivery for this channel only; other channels are unaffected",
   whTplRestore: "Reset preset template",
 };

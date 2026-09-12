@@ -73,7 +73,7 @@ Pick one of the following access forms (both the settings card and the README su
 - **Ask you a question** (on by default): notifies when `ask_user_question` / the GUI question popup is triggered
 - **Approval reminder**: notifies when the real approval path `approval/request` is triggered, including task title, tool display name (Chinese), request reason, and an action hint
 - **Completion reminder**: notifies when a task transitions from running to idle (`agent/status` running → idle), including task title and elapsed time; completion detection is dual-source — on idle, the latest `turn/end` read back from the session event snapshot is merged with the latest `turn/end` remembered from the `session/event` push stream, taking the newer as this turn's closure evidence (issue #272: a one-off snapshot read lag no longer solidifies into permanent silence; both sources for the same turn notify only once, and skipped decisions emit an observable warn log); subagent completion uses a separate toggle `notifySubagentDone` (off by default; subagents include spawned ones with `origin: subagent` and fork-delegated workers whose runtime ownership holds — fork mainline sessions without ownership are unaffected and still report as main-task completion); no completion notification is sent when the user stops generation / interrupts / the task fails / the task is blocked (when this turn's `turn/end` reason is `aborted`/`interrupted`/`error`/`blocked` it is always silent — failed tasks are handled separately by the error reminder's "task errored" so the same turn never both errors and falsely reports completion)
-- **Error reminder**: notifies when a task errors (`agent/error`), including task title, the errored turn/step, and the error message (first 300 chars); identical errors within a 60-second window are auto-merged
+- **Error reminder**: notifies when a task errors (`agent/error`), including task title, the errored turn/step, and the error message (first 300 chars)
 - **Turn completion** (off by default): notifies on `agent/turn-stopping`
 - **Dual channels**:
   - System notifications: native Windows toast (embedded PowerShell WinRT script, zero dependencies); macOS uses `osascript` (display notification, zero dependencies); Linux uses `notify-send` (only when available)
@@ -86,27 +86,41 @@ Pick one of the following access forms (both the settings card and the README su
   carry no sound hint and DE support varies); see "Configuration → Per-channel sound".
 - **Insecure-context fallback**: on LAN HTTP access the browser blocks system-level popups — automatically falls back to "in-page banner + sound + title reminder"
 - **Do-not-disturb window**: supports crossing midnight (e.g. 22:00 → 08:00); an **urgent exception** can be set (`quietHours.allowKinds`: events still reminded during DND). The default candidates are the high-frequency blocking kinds (approval / question / error); the settings page lets you check **all 6 built-in events** (including task-done / subagent-done / turn-end) with one-click "Follow enabled events" or "Reset default". Exemption is orthogonal to the event toggles — a disabled event never produces notifications anyway, and the exemption entry stays intact
-- **Approval timeout re-reminder**: when an approval waits longer than `askRemindMin` minutes (default 5, 0 disables) without being handled, remind again
-- **Completion-storm aggregation**: when multiple tasks / subagents finish at once, auto-aggregate into "N other tasks have completed" to avoid notification spam
+- **Approval timeout re-reminder**: when an approval waits longer than `askRemindMin` minutes (default 5, 0 disables) without being handled, remind again — **currently a no-op** (pending a contract ruling, see "Outward contract")
 - **Settings-card diagnostics**: the plugin card under Settings → Plugins → dsh-notifier shows the browser notification permission status and a secure-context hint, plus the 10 most recent notification records, a "Send test notification" button, and a "Clear history" entry
 
-## Configuration (official settings storage, editable via Settings → Plugins → dsh-notifier)
+## Outward contract (surface visible to other plugins, #733 convergence)
 
-Configuration is stored in the **official settings store** (`<DSH_HOME>/settings.yaml`,
-namespace `dsh-notifier`), read/written through the plugin card under
-Settings → Plugins → dsh-notifier (issue #76). The legacy self-maintained
-`dsh-notifier.json` (under DSH_HOME, default `~/.dsh`) is **migrated once at startup**
-into the official store;
-the original file is renamed `dsh-notifier.json.migrated.bak` (corrupt files are
-renamed `.corrupted.bak` without being written). The self-maintained read/write path
-is retired.
+The service surface is exposed on the host context as `ctx["wingsky.notifier"]`, and its `apiVersion` is **2**. What this domain-by-domain rewrite converges on the outside:
 
-> The storage/read paths of the notification history jsonl, the per-channel delivery
-> status json (`dsh-notifier-status.json`), the SSE seq counter file
-> (`notifier-seq.json`), and the legacy migration source json all respect `DSH_HOME`
-> (#510): they resolve to `~/.dsh` when the variable is unset and
-> follow the isolated home when set — isolated environments (multi-instance / test
-> sandboxes / dsh-verify-isolated) never touch the real `~/.dsh`.
+- **The `wingsky-notify/sent` event is retired**: delivery terminal states are now carried by two query surfaces — `GET /api/dsh-notifier/status` (per-channel latest state + consecutive failure count) and `GET /api/dsh-notifier/history` (recent records, including per-channel delivery details);
+- **`registerChannel` is retired**: it promised a channel-contribution model that never landed; channel types are built-in only (system / browser / bark / webhook);
+- **`send` no longer returns an accepted array**: it returns `Promise<void>` — the `ok` in that array meant "accepted", not "delivered", and misreading the direction is more expensive than having no return value at all;
+- **`registerKind` and `send` themselves are unchanged**: consumers using only those two are unaffected.
+
+Setting left blank: `askRemindMin` (second reminder after a long approval wait, default 5 minutes) **is currently a no-op** — it first needs a contract ruling on "request identity"; the key is still validated, persisted and echoed, but produces no reminder.
+
+## Configuration (editable via Settings → Plugins → dsh-notifier)
+
+Configuration is owned by the plugin itself and lives in `config.json` inside its **package-private
+storage directory** (`<DSH_HOME>/@wingsky-1/dsh-notifier/config.json`, `~/.dsh` by default), read and
+written through the plugin card under Settings → Plugins → dsh-notifier or via
+`GET/PUT /api/dsh-notifier/config`. On upgrade the **legacy locations are read once at startup**
+(old files are not rewritten during migration): the 0.2.3 official settings namespace `dsh-notifier`
+takes precedence, falling back to the older self-maintained `dsh-notifier.json` (DSH_HOME root,
+including the `.migrated.bak` left by an earlier migration); whatever user layer is read is written
+into `config.json`, and that becomes the only read/write path afterwards.
+
+> **Storage layout (#733 convergence)**: configuration, notification history, channel status, the SSE
+> seq counter and the storage version marker all live under `DSH_HOME/@wingsky-1/dsh-notifier/` —
+> `config.json` / `history.jsonl` / `status.json` / `seq.json` / `version` (`version` is the upgrade
+> chain's scale). Legacy locations are **read once at startup**: the DSH_HOME-root
+> `dsh-notifier-history.jsonl` / `dsh-notifier-status.json` / `notifier-seq.json` are renamed to
+> `.migrated.bak` after being moved; the two generations of configuration (the 0.2.3 settings
+> namespace and the older `dsh-notifier.json`) are read without being renamed.
+> All paths respect `DSH_HOME` (#510): they resolve to `~/.dsh` when the variable is unset and
+> follow the isolated home when set — isolated environments (multi-instance / test sandboxes /
+> dsh-verify-isolated) never touch the real `~/.dsh`.
 
 **Unknown-key semantics (forward compatibility, issue #470)**: dsh-notifier applies a
 **"pass-through and preserve"** policy to configuration keys it does **not recognize** —
@@ -114,7 +128,7 @@ read and write behave consistently; unknown keys are never dropped, validated or
 rewritten (except for composition-layer assembly keys, see boundaries below):
 
 - **Reading**: `GET /api/dsh-notifier/config` returns unknown keys verbatim in both
-  `user` (the raw settings user layer) and `effective` (the resolved config), keeping
+  `user` (the raw user layer) and `effective` (the resolved config), keeping
   future-version / third-party keys visible.
 - **Writing**: `PUT /api/dsh-notifier/config` is an incremental patch — it merges the
   submitted known keys only; unknown keys already in the user layer are **not affected
@@ -129,11 +143,11 @@ rewritten (except for composition-layer assembly keys, see boundaries below):
   on read, normalize falls back to defaults for invalid known-key values (dirty values
   do not affect the effective config or other keys); a **400 + hint** is only raised when
   you **actively submit** that key with an invalid value. To clear a leftover dirty key,
-  delete it manually in `settings.yaml`.
-- **Legacy migration**: unknown keys in the old `dsh-notifier.json` are **preserved
-  through migration** — written when missing from the user layer, never overwriting
-  existing ones; a legacy file containing only unknown keys is no longer treated as
-  "no valid keys".
+  delete it manually in `config.json`.
+- **Legacy migration**: unknown keys in the old configuration (the 0.2.3 settings
+  namespace and the older self-maintained json) are **preserved** when read — written
+  when missing from the user layer, never overwriting existing ones; a legacy file
+  containing only unknown keys is no longer treated as "no valid keys".
 - **Boundary exceptions**:
   - `patch` **must be an object**: non-object shapes (arrays, `null`, numbers, etc.)
     always return 400 — arrays are never passed through as numeric-index dirty keys.
@@ -143,7 +157,7 @@ rewritten (except for composition-layer assembly keys, see boundaries below):
     never validated and never written.
   - Composition-layer assembly keys (`configFile` / `toastScript` / `historyFile` /
     `statusFile` / `enabled`) are cordis composition/startup parameters and **never
-    enter the settings user layer** — PUT and migration drop same-named keys; entry
+    enter the user layer** — PUT and migration drop same-named keys; entry
     composition goes through the whitelist filter.
   - Reserved Bark channel keys (`device_key` / `device_keys` / `ciphertext`) are still
     always stripped / rejected; unknown channel params only pass through as
@@ -152,7 +166,7 @@ rewritten (except for composition-layer assembly keys, see boundaries below):
     400 + hint).
 
 Consequence: after an upgrade, if the settings page does not show a field that still
-exists in `settings.yaml`, that is the intended preserve behavior — saving other known
+exists in `config.json`, that is the intended preserve behavior — saving other known
 settings will not lose it.
 
 Example values (defaults):
@@ -172,12 +186,9 @@ Example values (defaults):
   "browserSound": true,
   "systemSound": true,
   "quietHours": { "enabled": false, "start": "22:00", "end": "08:00", "allowKinds": [] },
-  "errorMergeWindowMs": 60000,
   "askRemindMin": 5,
-  "doneMergeWindowMs": 3000,
   "historyMaxAgeDays": 0,
-  "maxConnections": 16,
-  "sanitizeContent": true
+  "maxConnections": 16
 }
 ```
 
@@ -315,7 +326,8 @@ with your topic name before delivering.
 
 Delivery reliability: timeout 1-60 s (default 10); **failures are never retried
 automatically** — 4xx / 5xx / network errors / render failures all end as a terminal
-failure recorded in the status file and the notification history (error summary redacted);
+failure recorded in the status file and the notification history (the error summary is
+truncated as-is, see "Security & boundaries");
 re-send via "Send test notification" to verify. Reference channels in `kindRoutes` as
 `webhook:<id>` (same `type:id` shape as `bark:<id>`).
 
@@ -354,17 +366,10 @@ be able to resolve these official packages (skipping type checking is unaffected
 ## Security & boundaries
 
 - Notification text only contains metadata such as task title / tool name / request reason — **never tool parameters** (prevents sensitive info leakage)
-- **Unified notification redaction (B-1)**: `sanitizeContent` defaults to `true` — notification body and title are masked via the ordered rule table (processed once, after rendering and before any history write / delivery), covering **notifications, history (including suppressed and error-merged entries) and delivery**; `false` = both notifications and history stay plaintext (hand-edited config or API only; no UI switch in this release). Covered categories and placeholders:
-  - User paths (`/home` `/Users` `/root` `/etc` `C:\Users`) → `<path>`
-  - PEM private key blocks (including truncated forms with only the BEGIN header) → `<private-key>`
-  - Database / message-queue connection-string credentials (postgres/mysql/mongodb/redis/amqps etc., scheme preserved; not redacted when the password contains URL-reserved chars like `<>`/quotes — known limitation) → `scheme://<redacted>@host`
-  - Tokens: JWT, AWS AKIA, GitHub PAT (classic and fine-grained), ≥24-char hex / ≥32-char base64 runs → `<token>`
-  - Secret field assignments (`password=`/`token=`/`api_key=`…; an explicit `=`/`:` separator is required) → `key=<redacted>`
-  - Email addresses → `<email>`
-  - **Approval reasons and question texts** go through the same unified entry — these most often embed command echo and credential fragments; the body is not truncated here (the per-channel capability cap applies at delivery)
-  - **Known trade-off (rule intentionally unchanged)**: 40-char git commit SHAs are indistinguishable from "≥24-char hex secrets" and get masked to `<token>` by the generic long-run rule (e.g. `HEAD detached at abc0123…` → `HEAD detached at <token>`), losing the lookup value of error messages. The false positive is accepted in exchange for secret coverage: a SHA-scenario whitelist would be unreliable (40-hex cannot be told apart from real secrets by shape), so this is documented as known behavior only
-  - Proven false-positive-prone, deliberately not covered: IPv4 (same shape as UA version numbers), phone numbers (same shape as order IDs), credit cards (13-digit millisecond timestamps match at 100%)
-- **Fixed-exit scrubbing is not affected by the `sanitizeContent` switch** (credential masking / error summaries are exit safety guardrails that always apply): Bark device-key literal scrub and webhook credential scrub (4xx response bodies can echo credentials; error text first replaces credential literals, then runs the generic redaction table), delivery error summaries (`finalizeError` truncated redaction), fixed server error wording (underlying causes only go to server logs), and `redactConfigView` config-view masking (`********`)
+- **Notification body and title are no longer masked (#733 convergence)**: the old `sanitizeContent` rule table (paths / PEM private keys / connection-string credentials / tokens / emails …) has been deleted — notifications, history writes (including suppressed entries) and delivery all carry the original text; the body is not truncated here, and length is capped by each delivery channel's display limit. Deployments that need "a given kind of text never appears in logs" must handle it at the event source
+- **The only remaining credential masking is in the settings view**: channel credentials in `GET /config`'s `user` + `effective` and in `PUT` success responses (bark `deviceKey`, webhook `token` / `password` / `headerValue`) are always masked as `********`; submitting the full mask = keep the original value (backfilled aligned by instance id so a reordering never swaps credentials between instances); a mask submitted for a new instance returns 400 (`CHANNEL_SECRET_FIELDS` is the per-channel-type single source of truth)
+- **Outbound error reasons no longer replace credential literals (measured risk, documented as-is)**: Bark 4xx response bodies echo the device key, and webhook non-2xx response bodies echo the credentials they received — failure reasons are now only truncated (webhook response body 200 chars; status entry 300 chars), with **no guarantee that credentials stay out of the error text**. Those texts go to server logs and to the status file (`status.json`), and reach the settings page via `GET /status`; deployments sensitive to error-text exposure should act on the bullet above
+- Server-side internal errors still return fixed wording (root causes only go to server logs)
 - System notification failures are silent (logs only), and do not affect the main flow; a missing / non-executable native binary (ENOENT etc.) is caught by the `error` event and **never bubbles up as an unhandled error that crashes the host process** (see issue #1)
 - **The two channels are delivered to different machines (don't confuse them)**:
   - **Browser notifications** are pushed to **the browser client you are actually using** (your Mac / phone both count), and pop a native notification via the browser's Notification API; they require permission and by default only pop when the page is hidden (the settings card can enable "also when visible"). No matter which machine dsh web runs on, as long as browser notifications are allowed you receive them on your own Mac.
@@ -379,7 +384,7 @@ be able to resolve these official packages (skipping type checking is unaffected
   - **Credential masking funneled via `CHANNEL_SECRET_FIELDS`**: the masked-field list is a per-channel-type single source of truth (bark → `deviceKey`, webhook → `token`/`password`/`headerValue`); GET /config (user + effective) and PUT success responses always mask `********`, submitting the full mask = keep the original value (backfilled aligned by instance id so a reordering never swaps credentials between instances); a mask submitted for a new instance returns 400
   - **Reserved keys block config bypass (`WEBHOOK_RESERVED_KEYS`)**: credential alias keys such as `auth_token` / `access_token` / `bearer_token` / `api_key` / `apikey` / `client_secret` / `secret` / `password_hash` are always stripped / rejected on write — legitimate credentials can only enter via the known secret fields (masked end to end)
   - **JSON injection protection**: the template renders JSON-aware in two steps (value-level substitution + uniform re-serialization escaping); notification content cannot break out of a string to inject extra JSON fields
-  - **Unified error redaction**: error text first has credential literals replaced, then goes through the generic redaction table (same as Bark); non-2xx response bodies are truncated to 200 chars before redaction into the error summary
+  - **Outbound errors do not replace credentials**: same as Bark — non-2xx response bodies are truncated to 200 chars and enter the error summary as-is, with no credential-literal replacement and no rule table (see "Security & boundaries")
   - **URL SSRF posture (same normalize as Bark)**: http/https schemes only, credential URLs (`user:pass@host`) rejected, query/hash stripped; no domain allowlist — an intranet self-hosted gateway is a legitimate use case; custom header names forbid end-to-end headers (`content-type`/`content-length`/`host`/`cookie`/`authorization`) against request smuggling / JSON body corruption
   - **No retry on failure**: a failed delivery is terminal (4xx/5xx/network/render) — no retry-driven outbound amplification
   - Webhook is an **additive channel type**: the semantics and compatibility commitments of existing channels and notification outputs (SSE frames / system notifications / history jsonl) are unchanged

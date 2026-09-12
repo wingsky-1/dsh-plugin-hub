@@ -1,9 +1,4 @@
-/**
- * dsh-notifier stores 域 —— 通知历史（jsonl）自己的形状。
- *
- * 记录与装配入参都归这里：它们只对历史这一块成立，另一块存储用不上，因此不进
- * `shared/`（那里只收跨域、无单一归属的公共语言）。
- */
+/** dsh-notifier stores 域 —— 通知历史（jsonl）自己的形状：记录与装配入参。 */
 import type { ConfigPort } from "../../deps.ts";
 import type { LoggerPort } from "../../../shared/type.ts";
 
@@ -12,15 +7,13 @@ export interface ChannelDelivery {
   /** 频道实例 id：配置里的身份，也是设置页定位那一行的键。 */
   channelId: string;
   status: "ok" | "failed";
-  /** 失败原因（由投递出口给出，不含凭据；ok 时缺省）。 */
+  /** 失败原因（不含凭据）；只在失败那一支上。 */
   reason?: string;
 }
 
 /**
- * 单条历史记录（与通知文案同源，不含工具参数等敏感信息）。
- *
- * `kind` 是宽 `string` 而不是那个内置种类联合：历史是**持久格式**，里面可能躺着早已
- * 退役的种类，读的时候不能因为「现在的代码不认识它」就把整行当成坏数据丢掉。
+ * 单条历史记录（与通知文案同源，不含工具参数等敏感信息）。`kind` 是宽 `string`：历史是持久
+ * 格式，可能躺着早已退役的种类，不能因为现在的代码不认识它就把整行丢掉。
  */
 export interface HistoryEntry {
   ts: number;
@@ -29,11 +22,12 @@ export interface HistoryEntry {
   message: string;
   /** 被压制的原因；真正投递出去时缺省。 */
   suppressed?: string;
-  /** 逐出口投递明细；被压制时缺省。 */
   channels?: ChannelDelivery[];
 }
 
-/** 通知历史的装配入参。 */
+/** 一行 jsonl 的解析结果：坏行是常态，由调用点各自决定去向——读取侧跳过，清理侧保守保留。 */
+export type ParsedHistoryLine = { ok: true; entry: HistoryEntry } | { ok: false };
+
 export interface HistoryDeps {
   /** 写入失败出口（append 为 fire-and-forget，失败无返回值可承载）。 */
   logger: LoggerPort;

@@ -1,16 +1,6 @@
 /**
- * dsh-notifier stores 域 —— **对外契约**。
- *
- * **职责边界**：通知历史 jsonl 与频道投递状态的**唯一持久化实现**。对外承诺是
- * 「写队列串行化 + tmp+rename 原子写」——调用方不需要重试、不需要加锁；读取语义
- * （滚动上限、按天过滤、内存镜像优先）同样由本域兜住，不上升为调用方的义务。
- *
- * **状态收在实现的闭包里，对外只有动作方法。** 契约里没有任何句柄：外面拿不到
- * 实例，也就造不出第二份写队列——「唯一持久化实现」这句话才有物理含义（能 `new`
- * 出多个，就不再唯一；两个队列指向同一文件、各自串行化、互相不知道对方，
- * 「写队列串行化」会从模块级承诺退化成每个实例各自的承诺）。装配只发生一次。
- *
- * **依赖方向**：只引 `./impl/`（契约调实现）与本域依赖声明 `./deps.ts`。
+ * stores 域对外契约：通知历史 jsonl 与频道投递状态的**唯一持久化实现**——写队列串行化 + tmp+rename 原子写，读取语义
+ * （滚动上限、按天过滤、内存镜像优先）也由本域兜住。契约里没有任何句柄：外面拿不到实例就造不出第二份写队列。
  */
 import type { StoreDeps } from "./deps.ts";
 import { historyStore } from "./impl/history/index.ts";
@@ -18,14 +8,12 @@ import type { HistoryEntry } from "./impl/history/type.ts";
 import { statusStore } from "./impl/status/index.ts";
 import type { ChannelStatusEntry } from "./impl/status/type.ts";
 
-// 写入面要构造的。状态条目的形状经 `readStatus()` 的签名可达，调用方不必命名它
-// 也能读字段。
+// 只导出这两个名字：状态条目的形状经 `readStatus()` 的签名可达，调用方不必命名它。
 export type { ChannelDelivery, HistoryEntry } from "./impl/history/type.ts";
 
 /**
- * 装配（组合根在 `apply` 期调用一次）。
- *
- * 只交付外部数据与宿主能力，不返回任何句柄——本域的状态由自己持有。
+ * 装配（组合根在 `apply` 期调用一次）。只交付外部数据与宿主能力，不返回任何句柄——
+ * 本域的状态由自己持有。
  */
 export function installStores(deps: StoreDeps): void {
   historyStore.install({ logger: deps.logger, config: deps.config });
@@ -33,10 +21,8 @@ export function installStores(deps: StoreDeps): void {
 }
 
 /**
- * 卸载两个存储（组合根在卸载期调用）。
- *
- * 与 `installStores` 配对。写队列里在飞的写不等待：它们各有自己的失败出口，而卸载期
- * 阻塞等待会让一次退出卡在磁盘上。重复调用无害。
+ * 卸载两个存储，与 `installStores` 配对。写队列里在飞的写不等待：它们各有自己的失败出口，
+ * 卸载期阻塞等待会让一次退出卡在磁盘上。重复调用无害。
  */
 export function releaseStores(): void {
   historyStore.release();

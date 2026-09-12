@@ -1,23 +1,23 @@
 /**
- * dsh-notifier stores 域 —— 频道投递状态落盘实现。
+ * dsh-notifier stores 域 —— 频道投递状态落盘实现：内存镜像 + debounce 合并的整文件原子写。
  *
- * 与历史互补：事件流负责实时性，本文件负责「重启后仍成立」的持久事实。写入范式与
- * 历史同源（写队列串行化 + tmp+rename 原子写），另加 debounce 合并——通知风暴时
- * 避免每条通知一次整文件重写。内存镜像是本类的单一事实源，故冷启动要先把文件读
- * 进内存再对外服务。
- *
- * 依赖方向：只引用本目录与包内共享层，不引用 `interface.ts`。
+ * 与历史同源但多一层 debounce：通知风暴时避免每条通知一次整文件重写。
  */
+import { readTextFileSync, writeTextAtomic } from "../../../shared/file-io.ts";
 import { STATUS_FILE_NAME, notifierFile } from "../../../shared/paths.ts";
 import type { ChannelStatusEntry, StatusDeps } from "./type.ts";
 
-/**
- * 未装配时的占位。
- *
- * 装配是必经路径（`installed` 守卫），占位值不会被真正读到；它的作用是让字段
- * 有确定的类型，从而不必让每个使用点都先判一次空。
- */
+/** 未装配时的占位：装配是必经路径，占位只是让字段不必每个使用点判空。 */
 const UNINSTALLED: StatusDeps = { logger: { warn: () => {} } };
+
+/** 状态条目上限（防已删频道残留键无限累积；超出时最旧先出）。 */
+const STATUS_MAX_ENTRIES = 64;
+
+/** 落盘 debounce 窗口（毫秒）：窗口内的多次 record 合并为一次整文件写。 */
+const STATUS_DEBOUNCE_MS = 500;
+
+/** 错误摘要上限（字符）：摘要会随 GET /status 出到设置页，够定位问题即可。 */
+const STATUS_ERROR_LIMIT = 300;
 
 /** 待落盘状态：有改动尚未落盘时才持有定时器。 */
 type PendingFlush = { pending: false } | { pending: true; timer: ReturnType<typeof setTimeout> };
@@ -28,14 +28,14 @@ class StatusStore {
   private installed = false;
   /** 落盘路径：DSH home 由环境决定、进程内不变，故随实例一次性定下。 */
   private readonly file = notifierFile(STATUS_FILE_NAME);
-  /** 装配入参（失败出口）。 */
   private deps: StatusDeps = UNINSTALLED;
   /** 内存镜像：本类的单一事实源，冷启动从文件加载；空表即「尚未加载」。 */
   private mirror: Record<string, ChannelStatusEntry> = {};
   /** 落盘 debounce：窗口内多次 record 合并为一次整文件写。 */
   private flush: PendingFlush = { pending: false };
+  /** 写队列串行化：整文件重写若并发交错，后写的会把先写的整份内容覆盖掉。 */
+  private queue: Promise<void> = Promise.resolve();
 
-  /** 装配：单次生效。 */
   install(deps: StatusDeps): void {
     if (this.installed) throw new Error("dsh-notifier: 投递状态只能装配一次");
     this.installed = true;
@@ -44,6 +44,7 @@ class StatusStore {
 
   /** 卸载：放开装配入参并丢掉内存镜像。镜像要一起丢——它是「磁盘状态」的记忆。 */
   release(): void {
+    this.clearPendingFlush();
     this.installed = false;
     this.deps = UNINSTALLED;
     this.mirror = {};
@@ -51,16 +52,94 @@ class StatusStore {
 
   /** 记录一次投递终态：内存立即更新，落盘延后合并（失败仅经日志出口告警）。 */
   record(channelId: string, status: "ok" | "failed", error?: string): void {
-    void channelId;
-    void status;
-    void error;
-    throw new Error("not implemented: StatusStore.record");
+    this.loadFromDisk();
+    const prev = this.mirror[channelId];
+    const entry: ChannelStatusEntry = {
+      lastTs: Date.now(),
+      lastStatus: status,
+      // 连续失败计数跨重启延续：冷启动已把文件读进镜像，「上一次」因此就在 prev 里。
+      failStreak: status === "ok" ? 0 : (prev === undefined ? 0 : prev.failStreak) + 1,
+    };
+    if (status === "failed" && error !== undefined && error.length > 0) {
+      entry.lastError = error.slice(0, STATUS_ERROR_LIMIT);
+    }
+    // 删了再插 = 移到表尾：镜像键序即最近使用序。频道 id 形如 `bark:<id>` 或内置通道名，
+    // 不是整数样键——整数样键在对象里恒按数值升序枚举，回插改不动位置。
+    delete this.mirror[channelId];
+    this.mirror[channelId] = entry;
+    this.evictOldest();
+    this.scheduleFlush();
   }
 
   /** 读取全部频道状态（内存镜像优先，冷启动回落文件）。 */
   async read(): Promise<Record<string, ChannelStatusEntry>> {
-    throw new Error("not implemented: StatusStore.read");
+    this.loadFromDisk();
+    // 浅拷贝：镜像会被下一次 record 改写，调用方拿到的必须是「读到的那一刻」。
+    return { ...this.mirror };
   }
+
+  /**
+   * 冷启动懒加载：把文件读进镜像。
+   *
+   * 必须同步读：`record` 是 fire-and-forget，异步加载会与它抢跑，让磁盘上的旧值把刚记下的
+   * 投递盖回去。空表即「尚未加载」，读不出内容时下一次再读一遍。
+   */
+  private loadFromDisk(): void {
+    if (Object.keys(this.mirror).length > 0) return;
+    const read = readTextFileSync(this.file);
+    if (!read.ok) return;
+    try {
+      const stored = JSON.parse(read.text) as Record<string, ChannelStatusEntry>;
+      for (const [channelId, entry] of Object.entries(stored)) {
+        if (isStatusEntry(entry)) this.mirror[channelId] = entry;
+      }
+    } catch {
+      // 半截 JSON：从空表开始，下一次落盘会用完整内容覆盖它。
+    }
+  }
+
+  private scheduleFlush(): void {
+    if (this.flush.pending) return;
+    const timer = setTimeout(() => {
+      this.flush = { pending: false };
+      this.flushToDisk();
+    }, STATUS_DEBOUNCE_MS);
+    // 不把进程钉在事件循环上：丢掉的是「最近一次投递」的记录，下一次投递会重新记。
+    timer.unref();
+    this.flush = { pending: true, timer };
+  }
+
+  /** 丢掉待写定时器：卸载后这次落盘已没有要表达的事实。 */
+  private clearPendingFlush(): void {
+    if (this.flush.pending) clearTimeout(this.flush.timer);
+    this.flush = { pending: false };
+  }
+
+  private flushToDisk(): void {
+    // 快照先取：任务真正执行时镜像可能已被 release 丢掉，那时序列化出来的是一张空
+    // 表——这次写本来要表达一次投递终态，却会把状态文件整份清掉。
+    const snapshot = JSON.stringify(this.mirror, null, 2);
+    const deps = this.deps;
+    this.queue = this.queue.then(async () => {
+      const written = await writeTextAtomic(this.file, snapshot);
+      if (!written.ok) {
+        deps.logger.warn(`dsh-notifier: 投递状态写入失败: ${written.reason}`);
+      }
+    });
+  }
+
+  private evictOldest(): void {
+    const ids = Object.keys(this.mirror);
+    const excess = ids.length - STATUS_MAX_ENTRIES;
+    for (const channelId of ids.slice(0, Math.max(0, excess))) {
+      delete this.mirror[channelId];
+    }
+  }
+}
+
+/** 磁盘内容不受契约约束：只收「看起来是状态条目」的项，其余（陌生形态、半截值）丢掉。 */
+function isStatusEntry(entry: ChannelStatusEntry): boolean {
+  return typeof entry === "object" && entry !== null && typeof entry.lastTs === "number";
 }
 
 /** 本域唯一的存储实例：类不外放，外面 `new` 不出第二份内存镜像。 */
