@@ -35,7 +35,9 @@
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { Agent } from "@deepseek-ai/dsh-agent";
+import type { Agent, AgentStatus } from "@deepseek-ai/dsh-agent";
+import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
+import type { ApprovalOutcome, ApprovalRequestEvent } from "@deepseek-ai/dsh-user-approval/types";
 import type { ServerResponse } from "node:http";
 import {
   BUILTIN_CHANNELS,
@@ -109,6 +111,12 @@ type NotifySentEventShape = {
   error?: string;
   ts: number;
 };
+
+/** dsh-agent 的 `'agent/error'` / `'agent/turn-stopping'` 官方载荷：官方在
+ * `Events` 上**内联**声明结构、未导出具名别名，故按结构独立写死为期望值
+ * （引用实现侧派生的 `Parameters<Events[...]>[0]` 会让锚与被测类型同步漂移、退化为恒真）。 */
+type AgentErrorPayloadShape = { agent: Agent; turn: number; step: number; error: unknown };
+type AgentTurnStoppingPayloadShape = { agent: Agent; turn: number; signal: AbortSignal };
 
 /** config 域 WebhookChannelConfig / ChannelConfig 联合（src/config/config.ts）。 */
 type WebhookChannelConfigShape = {
@@ -498,18 +506,18 @@ type _ChannelStatusEntryShape = Expect<
   Equal<ChannelStatusEntry, { lastTs: number; lastStatus: "ok" | "failed"; lastError?: string; failStreak: number }>
 >;
 
-/** 类型 25/28：EventHandlers（src/events/event-handlers.ts）。 */
+/** 类型 25/28：EventHandlers（src/events/event-handlers.ts；#733 M2-3.3 起载荷为官方类型）。 */
 type _EventHandlersShape = Expect<
   Equal<
     EventHandlers,
     {
-      handleApprovalRequest: (req: any, next: () => Promise<any>) => Promise<any>;
+      handleApprovalRequest: (req: ApprovalRequestEvent, next: () => Promise<ApprovalOutcome>) => Promise<ApprovalOutcome>;
       handleInternalService: (name: string) => void;
-      handleSessionEvent: (session: any, event: any) => void;
-      handleAgentStatus: (payload: { agent: any; status: string }) => void;
-      handleAgentDisposed: (payload: { agent: any }) => void;
-      handleAgentError: (payload: any) => void;
-      handleAgentTurnStopping: (payload: any) => Promise<void>;
+      handleSessionEvent: (session: Session, event: SessionEvent) => void;
+      handleAgentStatus: (payload: { agent: Agent; status: AgentStatus }) => void;
+      handleAgentDisposed: (payload: { agent: Agent }) => void;
+      handleAgentError: (payload: AgentErrorPayloadShape) => void;
+      handleAgentTurnStopping: (payload: AgentTurnStoppingPayloadShape) => Promise<void>;
       hookUserQuestions: () => void;
       dispose: () => void;
     }

@@ -39,7 +39,7 @@ import {
 import type { NotifierApplyConfig, NotifyConfig } from "./config/interface.ts";
 import { HISTORY_LIMIT, createHistoryStore, createStatusStore } from "./stores/interface.ts";
 import { createDoneBatcher, createEventHandlers } from "./events/interface.ts";
-import type { DoneBatcher, SubagentOwnership } from "./events/interface.ts";
+import type { DoneBatcher } from "./events/interface.ts";
 import { sanitizeErrorText } from "./text/interface.ts";
 import type { NotifyDetail } from "./text/interface.ts";
 import { ROUTES, buildRoutes, createSeqStore, createSseHub, createSystemNotifier } from "./server/interface.ts";
@@ -197,9 +197,13 @@ function safeDisposeAll(disposers: Array<() => void>): void {
 function createSentEmitter(ctx: Context): (payload: NotifySentEvent) => void {
   return function emitSent(payload: NotifySentEvent): void {
     try {
-      (ctx as unknown as { emit?: (name: string, ...args: unknown[]) => void }).emit?.("wingsky-notify/sent", payload);
+      // 事件名与载荷类型由本文件下方的 declare module 合并提供（cordis 4.0.2 的
+      // `Context.emit` 是 `emit<K extends keyof Events>(name: K, ...args)` 单一重载）。
+      ctx.emit("wingsky-notify/sent", payload);
     } catch {
-      // 事件派发失败不影响投递语义（终态仍可见于 status 文件与历史）
+      // 事件派发失败不影响投递语义（终态仍可见于 status 文件与历史）：ctx 缺 emit
+      //（fake ctx / 宿主降级）时抛出的 TypeError 同样由本 catch 收敛——两种情况的可
+      // 观测结果一致（都不派发、都不外抛）。
     }
   };
 }
@@ -278,8 +282,11 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
     },
   });
 
-  if (typeof (ctx as unknown as { provide?: unknown }).provide === "function") {
-    (ctx as unknown as { provide: (name: string, svc: unknown) => void }).provide("wingsky.notifier", notifierService);
+  // ctx.provide 的值类型由本文件的 declare module 合并约束（Context["wingsky.notifier"]
+  // = NotifierService，NotifierServiceInternal 是其子类型）；typeof 守卫保留，覆盖
+  // fake ctx / 旧宿主无 provide 的降级路径。
+  if (typeof ctx.provide === "function") {
+    ctx.provide("wingsky.notifier", notifierService);
   }
 
   function notify(kind: string, detail: NotifyDetail = {}): boolean {
@@ -298,8 +305,13 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
     appendHistory: (entry) => historyStore.append(entry),
     doneBatcher,
     logger: ctx.logger,
-    getAgents: () =>
-      typeof ctx.get === "function" ? (ctx.get("agents", false) as SubagentOwnership | undefined) : undefined,
+    // ctx.get("agents") 的类型来自 dsh-agent 的 Context 合并（AgentRegistry）；其
+    // get / isOwnedBy 是**方法声明**，按方法双变性可直接赋给本域窄读面
+    // SubagentOwnership（AgentRegistry 是更宽的实现面，收窄赋值成立）。
+    getAgents: () => (typeof ctx.get === "function" ? ctx.get("agents", false) : undefined),
+    // userQuestions 的官方包（@deepseek-ai/dsh-user-questions）不在 catalog：该键
+    // 未声明，`ctx.get(name: string, strict?)` 落到返回 any 的宽松重载，故此处保留
+    // 显式收窄到本域窄读面。事件化改造需 catalog 增包，属仓库级决策（#733 裁决点 2）。
     getUserQuestionsService: () =>
       typeof ctx.get === "function" ? (ctx.get("userQuestions", false) as { ask?: unknown } | undefined) : undefined,
   });
