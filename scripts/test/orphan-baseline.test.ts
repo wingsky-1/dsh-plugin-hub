@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -310,6 +310,165 @@ test('#572: orphan-baseline 本地 push 与 restore 往返完整性', () => {
     assert.ok(file1.includes('Killed'), '内容恢复一致');
     assert.ok(file2.includes('Survived'), '内容恢复一致');
     assert.ok(manifest['incremental-test-pkg.json'].size > 0, 'manifest 存在且包含文件统计');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// ── #718 S1.2：并集入档（archive）────────────────────────────────────────────
+// 旧写入口把「本班次目录里有什么」当成「归档的全部内容」整树替换：段一旦没产出（实例超时/
+// 被杀），该段文件就不在新树里，归档**静默缩水**（实测 33 → 31 且无任何日志）。以下用例锁住
+// 并集语义、三类记账、退役清理与两条 fail-loud 分支。
+
+/** 造一个「origin 指向自身」的模拟仓库（archive/push/restore 都能在上面真跑）。 */
+function initBaselineRepo(confNames: string[]): string {
+  const tmp = mkdtempSync(join(tmpdir(), 'orphan-archive-'));
+  execFileSync('git', ['init'], { cwd: tmp, stdio: 'ignore' });
+  execFileSync('git', ['config', 'user.name', 'test'], { cwd: tmp, stdio: 'ignore' });
+  execFileSync('git', ['config', 'user.email', 'test@test.com'], { cwd: tmp, stdio: 'ignore' });
+  writeFileSync(join(tmp, 'dummy.txt'), 'dummy');
+  execFileSync('git', ['add', '.'], { cwd: tmp, stdio: 'ignore' });
+  execFileSync('git', ['commit', '-m', 'initial'], { cwd: tmp, stdio: 'ignore' });
+  execFileSync('git', ['remote', 'add', 'origin', tmp], { cwd: tmp, stdio: 'ignore' });
+
+  const confDir = join(tmp, 'stryker.conf.d');
+  mkdirSync(confDir, { recursive: true });
+  for (const name of confNames) {
+    writeFileSync(join(confDir, `dsh-${name}.json`), JSON.stringify({ mutate: ['src/**/*.ts'] }));
+  }
+  mkdirSync(join(tmp, 'coverage', 'mutation'), { recursive: true });
+  return tmp;
+}
+
+function writeBaselines(repo: string, files: Record<string, string>): void {
+  const dir = join(repo, 'coverage', 'mutation');
+  for (const [name, content] of Object.entries(files)) writeFileSync(join(dir, name), content);
+}
+
+function archivedFiles(repo: string): string[] {
+  return execFileSync('git', ['ls-tree', '-r', '--name-only', 'refs/heads/baseline/mutation'], {
+    cwd: repo,
+    encoding: 'utf8',
+  })
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .sort();
+}
+
+function readArchived(repo: string, name: string): string {
+  return execFileSync('git', ['show', `refs/heads/baseline/mutation:${name}`], { cwd: repo, encoding: 'utf8' });
+}
+
+test('#718 S1.2: archive 并集入档——本次未产出的段沿用远端，段数不缩水', () => {
+  const tmp = initBaselineRepo(['alpha', 'beta', 'gamma']);
+  try {
+    writeBaselines(tmp, {
+      'incremental-alpha.json': '{"seg":"alpha"}',
+      'incremental-beta.json': '{"seg":"beta"}',
+      'incremental-gamma.json': '{"seg":"gamma"}',
+    });
+    const seeded = runScript(scriptPath, ['push'], { cwd: tmp });
+    assert.equal(seeded.status, 0, `首次 push 应成功，实际 ${seeded.status}: ${seeded.out}`);
+    const tipBefore = execFileSync('git', ['rev-parse', 'refs/heads/baseline/mutation'], {
+      cwd: tmp,
+      encoding: 'utf8',
+    }).trim();
+    // push 会往本班次报告目录写 manifest；清掉它以便断言 archive 不污染该目录
+    rmSync(join(tmp, 'coverage', 'mutation', 'manifest.json'));
+
+    // 模拟「beta/gamma 两个实例被杀」：本次只产出 alpha
+    rmSync(join(tmp, 'coverage', 'mutation', 'incremental-beta.json'));
+    rmSync(join(tmp, 'coverage', 'mutation', 'incremental-gamma.json'));
+
+    const archived = runScript(scriptPath, ['archive'], { cwd: tmp });
+    assert.equal(archived.status, 0, `archive 应成功，实际 ${archived.status}: ${archived.out}`);
+    assert.match(
+      archived.out,
+      /归档对账（期望 3 段）：新算 1 \/ 沿用 2 \/ 缺 0 \/ 退役 0/,
+      '三类计数 + 退役必须逐项记账',
+    );
+
+    assert.deepEqual(
+      archivedFiles(tmp),
+      ['incremental-alpha.json', 'incremental-beta.json', 'incremental-gamma.json', 'manifest.json'],
+      '并集入档后段的集合不得缩水（旧实现会在这里抹掉 beta/gamma）',
+    );
+    assert.equal(readArchived(tmp, 'incremental-beta.json'), '{"seg":"beta"}', '沿用段保留远端内容');
+    assert.ok(
+      !existsSync(join(tmp, 'coverage', 'mutation', 'manifest.json')),
+      'archive 不得把 manifest 写进本班次报告目录（会污染 observe-reports 留档）',
+    );
+
+    const tag = execFileSync('git', ['tag', '-l', 'baseline-snap-*'], { cwd: tmp, encoding: 'utf8' }).trim();
+    assert.ok(tag.length > 0, '入档必须留下回滚快照 tag（分支深度恒为 1，可回滚性由 tag 承担）');
+    assert.equal(
+      execFileSync('git', ['rev-parse', `refs/tags/${tag}`], { cwd: tmp, encoding: 'utf8' }).trim(),
+      tipBefore,
+      '快照 tag 必须指向入档前的 tip（真回滚点）',
+    );
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('#718 S1.2: archive 退役清理 + 缺段点名告警', () => {
+  const tmp = initBaselineRepo(['alpha', 'beta']);
+  try {
+    // 远端先有一份「段已拆并/改名」的遗留文件，且 beta 从未有过基线
+    writeBaselines(tmp, {
+      'incremental-alpha.json': '{"seg":"alpha"}',
+      'incremental-removed.json': '{"seg":"removed"}',
+    });
+    const seeded = runScript(scriptPath, ['push'], { cwd: tmp });
+    assert.equal(seeded.status, 0, `首次 push 应成功，实际 ${seeded.status}: ${seeded.out}`);
+
+    const archived = runScript(scriptPath, ['archive'], { cwd: tmp });
+    assert.equal(archived.status, 0, `archive 应成功，实际 ${archived.status}: ${archived.out}`);
+    assert.match(archived.out, /新算 1 \/ 沿用 0 \/ 缺 1 \/ 退役 1/, '缺与退役必须分别计数');
+    assert.match(
+      archived.out,
+      /::warning::归档缺段 1 个.*incremental-beta\.json/,
+      '缺段必须点名告警（告警而非判红：段首次入档本就无基线可沿用）',
+    );
+    assert.match(archived.out, /退役段.*incremental-removed\.json/, '退役段必须显式点名');
+    assert.deepEqual(
+      archivedFiles(tmp),
+      ['incremental-alpha.json', 'manifest.json'],
+      '退役段从归档移除；缺段不得落盘为空文件',
+    );
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('#718 S1.2: archive 拉取失败必须 fail-loud（拒绝以空沿用集合入档）', () => {
+  const tmp = initBaselineRepo(['alpha']);
+  const bin = mkdtempSync(join(tmpdir(), 'orphan-archive-bin-'));
+  try {
+    writeBaselines(tmp, { 'incremental-alpha.json': '{"seg":"alpha"}' });
+    // ls-remote 放行（present）、fetch 强制失败 → 「基线可能存在但取不到」这一支
+    writeGitShim(bin, { fetchFails: true });
+    const r = runScript(scriptPath, ['archive'], {
+      cwd: tmp,
+      env: { PATH: `${bin}:${process.env.PATH}` },
+    });
+    assert.equal(r.status, 1, `拉取失败必须 exit 1，实际 ${r.status}: ${r.out}`);
+    assert.match(r.out, /拒绝以空沿用集合入档/, '须点名拒绝原因（取不到远端 ≠ 远端为空）');
+    assert.match(r.out, /存在但拉取失败/, '须走「存在但恢复失败」站点，而不是笼统的无法确认');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+    rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+test('#718 S1.2: archive 期望集合为空必须 fail-loud（防把整棵基线判成退役）', () => {
+  const tmp = initBaselineRepo([]);
+  try {
+    writeBaselines(tmp, { 'incremental-alpha.json': '{"seg":"alpha"}' });
+    const r = runScript(scriptPath, ['archive'], { cwd: tmp });
+    assert.equal(r.status, 1, `空期望集合必须 exit 1，实际 ${r.status}: ${r.out}`);
+    assert.match(r.out, /无法从 .*stryker\.conf\.d 派生期望段集合/, '须点名期望集合派生失败');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

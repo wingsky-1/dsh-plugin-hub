@@ -19,6 +19,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import {
+  ARCHIVE_SNAPSHOT_KEEP,
   BASELINE_FILE_RE,
   GH_API_PER_PAGE,
   classifyRemoteProbe,
@@ -26,7 +27,10 @@ import {
   expectedBaselineFiles,
   mergeArtifactPage,
   mutationArtifacts,
+  planArchive,
+  pruneSnapshotPlan,
   reconcileArchive,
+  snapshotTagFor,
 } from '../gate/baseline-archive.mjs'
 
 const ROOT = join(import.meta.dirname, '..', '..')
@@ -214,4 +218,70 @@ test('#718: restore 三态判定 —— 「取不到」与「不存在」必须�
 
   // 未知状态属于编程错误：宁可判红，也不能默默降级。
   assert.equal(decideRestoreOutcome({ probeStatus: 'bogus', fetchOk: false }).action, 'fail')
+})
+
+// ── #718 S1.2：并集入档对账 ──────────────────────────────────────────────────
+// 旧写入口是整树替换：本班次没产出的段直接在新树里消失，且没有任何日志说出来（实测 33 → 31）。
+// planArchive 把「本次没产出什么」变成一条显式记账，并把归档里不该留的遗留段点名退役。
+
+test('#718 S1.2: 并集对账 —— 未产出但远端有的段沿用，两边都没有的才算缺', () => {
+  const expected = ['incremental-a.json', 'incremental-b.json', 'incremental-c.json']
+  const plan = planArchive({
+    expected,
+    produced: ['incremental-a.json'],
+    carried: ['incremental-a.json', 'incremental-b.json'],
+  })
+  assert.deepEqual(plan.newlyMeasured, ['incremental-a.json'], '本次产出 = 新算')
+  assert.deepEqual(plan.carriedOver, ['incremental-b.json'], '未产出但远端有 = 沿用（不丢段）')
+  assert.deepEqual(plan.missing, ['incremental-c.json'], '两边都没有 = 缺（必须告警）')
+  // 三类互斥且完备：并起来恰好等于期望集合，不多不少。
+  assert.deepEqual(
+    [...plan.newlyMeasured, ...plan.carriedOver, ...plan.missing].sort(),
+    [...expected].sort(),
+    '三类必须互斥且完备，否则计数会掩盖丢段',
+  )
+  assert.deepEqual(plan.retired, [])
+})
+
+test('#718 S1.2: 并集对账 —— 段被拆并/改名后的遗留文件必须退役，否则永远留在归档里', () => {
+  // 真实形态：dsh-notifier-config 拆成 -normalize/-validate/-rest 三段后，旧文件仍在归档上。
+  const plan = planArchive({
+    expected: ['incremental-notifier-config-normalize.json', 'incremental-notifier-config-rest.json'],
+    produced: ['incremental-notifier-config-rest.json'],
+    carried: ['incremental-notifier-config.json', 'incremental-notifier-config-normalize.json'],
+  })
+  assert.deepEqual(plan.retired, ['incremental-notifier-config.json'], '不在期望集合的遗留段要退役')
+  assert.deepEqual(plan.carriedOver, ['incremental-notifier-config-normalize.json'])
+  assert.deepEqual(plan.missing, [])
+})
+
+test('#718 S1.2: 并集对账 —— 首次入档（无远端）时除本次产出外全为缺，且不得报退役', () => {
+  const plan = planArchive({ expected: ['incremental-a.json', 'incremental-b.json'], produced: ['incremental-a.json'] })
+  assert.deepEqual(plan.missing, ['incremental-b.json'], '首夜缺段是预期形态，靠告警而非判红')
+  assert.deepEqual(plan.retired, [], '本地产出都在期望集合内时不得报退役')
+  // 期望集合为空是编程/配置错误：此时每个文件都会被判退役，故调用方必须在此之前 fail-loud。
+  const degenerate = planArchive({ expected: [], produced: ['incremental-a.json'], carried: ['incremental-b.json'] })
+  assert.deepEqual(degenerate.retired, ['incremental-a.json', 'incremental-b.json'])
+})
+
+test('#718 S1.2: 回滚快照 tag —— 名字含旧 tip 短 sha，保留窗口按时间序裁剪', () => {
+  const tip = 'a'.repeat(40)
+  const tag = snapshotTagFor(tip, new Date('2026-09-12T09:40:00.000Z'))
+  assert.equal(tag, `baseline-snap-20260912T094000Z-${'a'.repeat(7)}`)
+  // release.yml 由 `push: tags: v*` 触发：快照 tag 一旦以 v 开头就会误触发发布管线。
+  assert.ok(!tag.startsWith('v'), '快照 tag 不得以 v 开头（会命中 release.yml 的 v* 触发器）')
+  // 同一秒内两次入档（旧 tip 不同）也必须区分得开，否则 tag 推送直接失败。
+  assert.notEqual(tag, snapshotTagFor('b'.repeat(40), new Date('2026-09-12T09:40:00.000Z')))
+
+  const refs = Array.from({ length: ARCHIVE_SNAPSHOT_KEEP + 3 }, (_, i) =>
+    `refs/tags/baseline-snap-202609${String(i + 1).padStart(2, '0')}T000000Z-${'c'.repeat(7)}`,
+  )
+  assert.deepEqual(
+    pruneSnapshotPlan(refs),
+    refs.slice(0, 3),
+    `超出保留窗口的 ${3} 个（最旧）应被清理`,
+  )
+  assert.deepEqual(pruneSnapshotPlan(refs.slice(0, 2)), [], '未超窗口不得删任何快照')
+  // 非本前缀的 tag（例如发布 tag）绝不能被这条清理逻辑碰到。
+  assert.deepEqual(pruneSnapshotPlan(['refs/tags/v1.2.3', 'refs/tags/baseline-snap-other']), [], '只清理自己的前缀')
 })

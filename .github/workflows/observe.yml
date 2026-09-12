@@ -268,17 +268,19 @@ jobs:
           # 应写文件而非用 delimiter 格式）。下游步骤直接读 observe-body.md /
           # observe-marker.txt（[ -s file ] 判断非空）。
 
-      - name: Push baseline to orphan branch（#572：提交纯文本树到孤立分支）
+      - name: Archive baseline to orphan branch（#718 S1.2：并集入档 + 对账）
         # #572：替代旧方案（#204 方案 A：向 main 自动建 PR 提交数十万行 JSON 导致 git 膨胀）。
         # 将最新增量基线以单 commit 纯文本树推送到孤立分支 refs/heads/baseline/mutation，
         # 享受 Git Blob 原生内容去重红利，彻底净化 main 分支代码树与提交历史。
-        # #718 S1.5：本步骤**单点**落在收口 job——矩阵各实例不再各自推送，消除并发覆盖踩踏；
-        # 部分失败夜已产出的基线文件照常收集（if: always() + 有报告才推）。
+        # #718 S1.5：本步骤**单点**落在收口 job——矩阵各实例不再各自推送，消除并发覆盖踩踏。
+        # #718 S1.2：由整树替换改为**并集入档**——先取回远端基线，本次未产出的段沿用远端文件
+        # 并在日志里记账（新算/沿用/缺/退役），段被失败实例吃掉因而在物理上不可能再发生；
+        # 拉取失败一律 fail-loud（取不到远端 = 沿用集合未知，以空集合推送就是删段）。
         if: always() && steps.reports.outputs.count != '0'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OBSERVE_PAT: ${{ secrets.OBSERVE_PAT }}
-        run: node scripts/gate/orphan-baseline.mjs push
+        run: node scripts/gate/orphan-baseline.mjs archive
 
       - name: Create/update observe issue（幂等：同日重跑不重复建；回落即追评）
         if: always() && steps.report.outcome == 'success'

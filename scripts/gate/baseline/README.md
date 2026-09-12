@@ -11,11 +11,36 @@
 - **存储位置**：孤立分支 `baseline/mutation`（历史深度恒为 1，无父提交，不影响 main 分支代码树）；
 - **存储格式**：解开的纯文本 JSON 目录树（`incremental-*.json` + `manifest.json`），充分利用 Git Blob 原生内容寻址与去重红利（未变动文件 0 开销）；
 - **工作流同步**：
-  - 全量班（`observe.yml`）与增量班（`observe-incremental.yml`）跑完后，通过 `node scripts/gate/orphan-baseline.mjs push` 强推至孤立分支；
+  - 全量班（`observe.yml`）跑完后，通过 `node scripts/gate/orphan-baseline.mjs archive` **并集入档**（见下节）；
+  - 增量班（`observe-incremental.yml`）退役前仍走 `node scripts/gate/orphan-baseline.mjs push`（整树推送，
+    但它先 `restore` 再跑，所以推回去的本身就是全集）；
   - PR 门禁（`ci.yml` 的 `mutation-gate`）通过 `node scripts/gate/orphan-baseline.mjs restore` 浅拉取恢复到 `coverage/mutation/`；
-  - 增量班通过 `node scripts/gate/orphan-baseline.mjs restore` 恢复基线并执行增量；
   - PR 合并到 main 后由 `baseline-overlay.yml` → `node scripts/gate/overlay-baseline.mjs` 秒级差量覆盖（复用该 PR CI 产出的 `mutation-incremental-*` artifact）；
   - 任务统一收敛至互斥并发组 `concurrency: group: mutation-baseline-sync`。
+
+### 并集入档与可回滚（#718 S1.2）
+
+`archive` 之前，写入口是**整树替换**——把「本班次目录里有什么」当成「归档的全部内容」。段一旦没产出
+（矩阵实例超时/被杀），该段文件就不在新树里，归档**静默缩水**：实测 2026-09-12 全量班 33 段只成功
+31 段，归档随之从 33 段掉到 31 段，且没有任何日志说明。现在：
+
+- **并集语义**：先取回远端现存基线，再叠加本次产物。本次有的以本次为准（**新算**），本次没有但远端
+  有的沿用旧文件（**沿用**），两边都没有的显式点名（**缺**）。段被失败实例吃掉因而在物理上不可能再发生。
+- **逐项记账**：每次入档打印「期望 N 段：新算 x / 沿用 y / 缺 z / 退役 w」。缺段打 `::warning::` 并点名
+  （不判红——拆段当夜新段本就无基线可沿用）；真·数据丢失由段报告齐备性校验与台账 `--check` 兜底判红。
+- **退役清理**：期望集合由 `stryker.conf.d/dsh-*.json` 派生，不在集合里的遗留文件（段被拆并/改名后的旧文件）
+  从归档移除并点名。并集语义本身不会删文件，所以这一支必须显式做，否则遗留段会永远留在归档里。
+- **零新对象**：沿用文件直接复用远端 blob sha，不做内容往返，字节级一致因而保住「未变动文件 0 开销」。
+  沿用段在 `manifest.json` 里保留远端条目（其 `mtime` 是上次**真实测量**时间；重新盖章会让陈旧判据失效）。
+- **可回滚**：分支深度恒为 1（无父提交），可回滚性由**快照 tag** `baseline-snap-<UTC 时间戳>-<旧 tip 短 sha>`
+  承担，保留最近 10 个（`ARCHIVE_SNAPSHOT_KEEP`）。回滚即
+  `git push origin refs/tags/<快照 tag>:refs/heads/baseline/mutation --force`。
+  tag 刻意不以 `v` 开头——`release.yml` 由 `push: tags: v*` 触发。
+- **推送用显式租约**：`--force-with-lease=refs/heads/baseline/mutation:<读到的旧 sha>`。本路径不做 fetch，
+  无参的 `--force-with-lease` 会退化成裸 `--force`（#718 裁决），故必须带上读到的期望值。
+- **两条 fail-loud**：远端取不到（`present`/`unreachable` 且 fetch 失败）时拒绝入档——并集语义下
+  「取不到远端」等于「沿用集合未知」，以空集合推送就是删段；`stryker.conf.d/` 派生不出期望集合时同样拒绝
+  （空期望集合会把每个现存文件判成退役，反手删掉整棵归档）。
 
 ### 归档缺口与对账（#714 后续修复）
 `overlay-baseline.mjs` 曾按 GitHub API 的**默认分页（30 条/页）**读取 artifact 列表，而一次 PR CI 会产生
@@ -56,9 +81,10 @@
 
 **已知边界（不要误读为强保证）**：`absent` 只能证明「本次广告里没有这条 ref」，**不能**证明
 服务端上不存在——服务端可用 `uploadpack.hideRefs` 隐藏某条 ref，此时与真·首夜完全同形，
-客户端无从区分。这一支上**唯一实际生效**的防护是 workflow 层 `mutation-suites` 的 outcome
-门控（`observe-incremental.yml` 的 push 步骤要求它非 `skipped`，而它依赖 restore 非零退出）；
-**代码里没有「推送侧拒绝空/缺段快照」的保护**，补该保护已登记在 #718 的方案中（并集入档），尚未实施。
+客户端无从区分。这一支上 workflow 层 `mutation-suites` 的 outcome 门控（`observe-incremental.yml`
+的 push 步骤要求它非 `skipped`，而它依赖 restore 非零退出）仍在起作用；**写路径侧的防护**已由
+#718 S1.2 落地：全量班改走并集入档（`planArchive`，见上节），且拉取失败一律 fail-loud，
+「取不到就当空归档推回去」这条分支已不存在。
 
 **两条路径的有意差异**：orphan 侧在「远端树里有 blob 却无基线文件」时**拒绝继续**（fail-loud）；
 overlay 侧没有这个检查，而是由 `reconcileArchive` 以 `archiveGap` 判红、**仍照常推送**——
