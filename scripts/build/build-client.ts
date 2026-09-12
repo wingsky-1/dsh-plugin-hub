@@ -28,7 +28,7 @@
  *   const { buildClient, copyClientResources } = await import('./build-client.ts')
  */
 import { build } from 'esbuild'
-import { cpSync, existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { extractInlinedModuleRefs } from './collect-licenses.ts'
 
@@ -218,31 +218,59 @@ export async function buildMermaidChunk({ entry, outfile }) {
   return { bytes: Buffer.byteLength(code, 'utf8'), refs: extractInlinedModuleRefs(inputs) }
 }
 
+/** 代码与样式：构建的输入，不是运行时资源。`.d.*` 声明同列（tsc 产物，非资源）。 */
+const CODE_FILE = /\.(ts|tsx|mts|cts|js|mjs|cjs|css)$/
+
 /**
- * 复制 src/ 下非代码资源（toast.ps1 等）→ lib/（运行时从 lib 同目录定位）。
+ * 列出 src/ 下的运行时资源（递归；返回相对 src/ 的路径，分隔符统一为 `/`）。
+ *
+ * 递归而非只扫顶层：资源跟着它的消费者走——系统通知的 `toast.ps1` 属于系统通知出口，
+ * 摆在 `server/channels/impl/system/` 里才说得清「谁在用它」；摊在 src/ 根目录时，
+ * 一个包里有几个资源、各自归谁，只能靠文件名猜。
+ *
+ * `.css` 走客户端 text-loader 构建期内联（见 loader 配置），不以独立资源形式复制。
+ *
+ * 导出给 pack-check 复用：「构建复制了什么」与「发布该带什么」必须是同一份清单，
+ * 各写一份就会各自漂移，而漂移的那一次是发布物缺文件。
+ *
+ * @param {string} srcDir 包内 src 目录
+ * @returns {string[]} 相对路径列表（已排序）
+ */
+export function listResources(srcDir) {
+  const out = []
+  const walk = (dir, prefix) => {
+    for (const ent of readdirSync(dir, { withFileTypes: true })) {
+      if (ent.name.startsWith('.')) continue
+      const rel = prefix ? `${prefix}/${ent.name}` : ent.name
+      if (ent.isDirectory()) { walk(join(dir, ent.name), rel); continue }
+      if (CODE_FILE.test(ent.name)) continue
+      out.push(rel)
+    }
+  }
+  walk(srcDir, '')
+  return out.sort()
+}
+
+/**
+ * 复制 src/ 下的运行时资源 → lib/ 同相对路径（运行时按模块位置定位）。
  * @param {string} pkgDir 插件包目录
  * @param {string} libDir 产物目录（lib/）
- * @returns {string[]} 复制的文件名列表
+ * @returns {string[]} 复制的相对路径列表
  */
 export function copyClientResources(pkgDir, libDir) {
   const srcDir = join(pkgDir, 'src')
   if (!existsSync(srcDir)) return []
-  const copied = []
-  // withFileTypes：只处理文件，跳过目录（src/client/ 目录、shared 子目录等不是资源）
-  for (const ent of readdirSync(srcDir, { withFileTypes: true })) {
-    const f = ent.name
-    if (!ent.isFile()) continue
-    // .css 走客户端 text-loader 构建期内联（见 loader 配置），不再作为独立资源复制
-    if (!/\.(ts|tsx|js|mjs|cjs|css)$/.test(f) && !f.startsWith('.') && existsSync(join(srcDir, f))) {
-      cpSync(join(srcDir, f), join(libDir, f))
-      // .ps1 资源强制 UTF-8 BOM（issue #238）：Windows PowerShell 5.1 对无 BOM
-      // 文件按 ANSI 码页解码，非 ASCII 注释即解析失败。构建期机器兜底，
-      // 不依赖编辑器保存行为；已带 BOM 则原样跳过，重复构建不叠加双 BOM。
-      if (f.endsWith('.ps1')) ensureUtf8Bom(join(libDir, f))
-      copied.push(f)
-    }
+  const resources = listResources(srcDir)
+  for (const rel of resources) {
+    const target = join(libDir, rel)
+    mkdirSync(dirname(target), { recursive: true })
+    cpSync(join(srcDir, rel), target)
+    // .ps1 资源强制 UTF-8 BOM（issue #238）：Windows PowerShell 5.1 对无 BOM
+    // 文件按 ANSI 码页解码，非 ASCII 注释即解析失败。构建期机器兜底，
+    // 不依赖编辑器保存行为；已带 BOM 则原样跳过，重复构建不叠加双 BOM。
+    if (rel.endsWith('.ps1')) ensureUtf8Bom(target)
   }
-  return copied
+  return resources
 }
 
 /** 确保 .ps1 产物带 UTF-8 BOM；已带则原样返回 false，缺失/不完整则补写并返回 true。 */

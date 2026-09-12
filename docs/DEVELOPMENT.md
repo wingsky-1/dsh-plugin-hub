@@ -137,7 +137,7 @@ scripts/                   # 仓库维护脚本（*.ts，Node 直跑；按职能
 1. esbuild 内联 `shared/*` 进 `lib/index.js`（宿主端自包含单文件）。
 2. 客户端经 `scripts/build/build-client.ts`（唯一契约外壳/注入点）构建 `lib/client.js`。
 3. d.ts X1：shared 声明随包机制（见下小节）。
-4. 拷贝资源（非 TS 文件）+ LICENSE。
+4. 拷贝资源（非代码文件，递归且保持相对路径）+ LICENSE。
 5. 第三方 license 归集：扫描产物中 esbuild 的 node_modules 模块注释，把真实被内联
    的第三方库（含传递依赖）license 文本写入 `lib/THIRD-PARTY-LICENSES`
    （`scripts/build/collect-licenses.ts`）。**运行时依赖 = 构建期内联**——内联在法律上

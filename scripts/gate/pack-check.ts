@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { executeClient } from '../lib/client-contract-lib.ts'
 import { extractInlinedPackages, readMermaidChunkRefs } from '../build/collect-licenses.ts'
+import { listResources } from '../build/build-client.ts'
 import { AGGREGATE_NAME, checkAggregateConsistency, filterOutRetiredDirs, listPluginDirs, loadManifest, warnUnknownEntries } from '../lib/plugins-manifest-lib.ts'
 import { resolvePackageScopeOrExit } from '../lib/package-scope.ts'
 import { checkExportTypesResolvable } from '../lib/exports-types-lib.ts'
@@ -198,13 +199,14 @@ for (const p of targets) {
       }
     }
 
-    // 运行时资源完整性：src/ 下非代码资源（bundle-host 复制进 lib/，如 toast.ps1）
-    // 必须随 tarball 发布——files 白名单规范化时最容易静默丢这类资源。
+    // 运行时资源完整性：src/ 下的非代码资源（bundle-host 按相对路径复制进 lib/，如
+    // server/channels/impl/system/toast.ps1）必须随 tarball 发布——files 白名单规范化
+    // 时最容易静默丢这类资源。清单与构建同一实现，否则「复制了什么」与「该带什么」
+    // 会各写一份、各自漂移。
     const srcDir = join(ROOT, 'packages', p, 'src')
     if (existsSync(srcDir)) {
-      const missingResources = readdirSync(srcDir)
-        .filter((f) => !/\.(ts|tsx|js|mjs|cjs)$/.test(f))
-        .filter((f) => !existsSync(join(pkgRoot, 'lib', f)))
+      const missingResources = listResources(srcDir)
+        .filter((rel) => !existsSync(join(pkgRoot, 'lib', rel)))
       if (missingResources.length > 0) problems.push(`运行时资源未随包发布: ${missingResources.join(', ')}`)
     }
 
