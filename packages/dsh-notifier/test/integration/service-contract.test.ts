@@ -18,7 +18,6 @@ import { createBrowserChannel, createSystemChannel } from "../../src/channels/in
 import type { BarkChannelConfig, NotifyConfig, SoundSetting } from "../../src/config/interface.ts";
 import type { BrowserDispatchSpec, DeliverPayload, SystemDispatchSpec } from "../../src/pipeline/interface.ts";
 import type { NotifyChannel, NotifyRequest, NotifySentEvent, RetryableError } from "../../src/sdk/interface.ts";
-import type { SseHub } from "../../src/server/interface.ts";
 import type { HistoryEntry } from "../../src/stores/interface.ts";
 import { quietWindowNow } from "../helpers.ts";
 
@@ -156,10 +155,11 @@ function makeService(cfgOverrides: Partial<NotifyConfig> = {}, hooks: ServiceHoo
   const sentEvents: NotifySentEvent[] = [];
   /** 确认写入收集（confirmKind 走配置）。 */
   const confirmCalls: Array<{ kind: string; confirmed: boolean }> = [];
-  // 内置频道经 index.ts 装配面注入——实例只承载 id+capabilities，
-  // 播放决议经 DeliverDeps.play 值传递（browser→buildBrowserFrame、system→notify）
-  const browserChannel = createBrowserChannel({ sse: sse as unknown as SseHub });
-  const systemChannel = createSystemChannel({ system });
+  // 内置频道经 index.ts 装配面注入——实例只承载 id+capabilities（工厂无参，
+  // 不持 sse/system 引用），播放决议经 DeliverDeps.play 值传递
+  // （browser→buildBrowserFrame、system→notify）
+  const browserChannel = createBrowserChannel();
+  const systemChannel = createSystemChannel();
   const service = createNotifierService({
     current: hooks.current ?? (() => cfg),
     enabled,

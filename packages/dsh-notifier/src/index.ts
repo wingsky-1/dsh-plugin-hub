@@ -250,8 +250,8 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   // 播放决议随裁决快照解析并经 DeliverDeps.play 值传递——browser→SSE 帧、
   // system→system.notify（spec.pop/spec.sound；notify resolve false → throw →
   // 终态 failed，对照落位前的 dispatchSystem 语义）。
-  const browserChannel = createBrowserChannel({ sse });
-  const systemChannel = createSystemChannel({ system });
+  const browserChannel = createBrowserChannel();
+  const systemChannel = createSystemChannel();
 
   const notifierService: NotifierServiceInternal = createNotifierService({
     current: currentConfig,
