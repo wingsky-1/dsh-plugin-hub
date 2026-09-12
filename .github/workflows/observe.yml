@@ -3,7 +3,7 @@ name: Observe (nightly)
 # #85 v3 F1/F6 定案：观察期采集与变异门禁的夜间调度。
 # - cov（含阈值硬校验：vitest 的 coverage.thresholds 未达标即非零退出）；
 #   CRAP 明细自 #722 阶段三起停用（数据源口径不可比），见下方 Coverage 步骤旁注释
-# - 全量变异（串行）
+# - 全量变异（#718 S1.1 起改为**逐段矩阵**，并行度由 max-parallel 控制）
 # - 报告落 issue（幂等：同日不重开）；回落 >1pp 自动追评（隔夜必有工单）
 # 变异硬门禁在本 workflow 生效：任一包 covered < threshold 且 strict 开启 → 运行失败。
 # #276 方案 A + #433 调度重设计 + #572 孤立分支基线：本 workflow 为每日全量班（北京次日 04:00 = UTC 20:00，
@@ -14,6 +14,20 @@ name: Observe (nightly)
 #   请勿"好心"补 restore 步骤（会破坏全量基线语义）。
 # - 全量运行末尾将 incremental 基线提交至孤立分支 baseline/mutation（单 commit 纯文本树，
 #   #572），PR 侧 ci.yml mutation-gate 直接浅拉取该分支走增量变异，彻底剥离 main 分支代码树巨型 JSON 与自动 PR 噪音。
+#
+# #718 S1.1 / S1.4 / S1.5（本 job 拓扑的成因，务必连着读）：
+# - **S1.5 job 边界**：`quality`（install + build + contract/pack:check/verify:npmlayout +
+#   stryker:check + cov + crap）与 `mutation-shards` **无相互依赖、并行跑**；两者产出由
+#   `mutation-collect`（判分 + 单点 push 基线 + 报告 + 工单，if: always()）收口。
+#   为什么必须拆：原单 job 串行 90 分钟，任一长段擦边即整班被杀，且被杀点在报告步骤之前
+#   ⇒ 当夜无工单、无留痕、基线不更新（#718 两次事故 34536263640 / 34652766708 的形态）。
+# - **S1.1 矩阵化**：段清单由 `stryker.conf.d/*.json` 派生（`mutation-plan` job 秒级产出），
+#   每段一个矩阵实例；`max-parallel: 5`（S0.3 实测账户并发额度上界 20，留足余量给
+#   build-test 与其它 workflow）。
+# - **S1.4 逐段超时**：`timeout-minutes` 取 `matrix.shard.timeoutMinutes`，由
+#   `scripts/gate/mutation-plan.mjs` 按 `mutation-segment-ledger.json` 里该段 `scope=full`
+#   的实测墙钟 × 1.5 + 构建开销派生，下限 10 分钟（#718 整合版规定）；无实测的段取保守
+#   默认值。`fail-fast: false`：单段失败不连坐其余段，配合 `gh run rerun --failed` 定向重跑。
 
 on:
   schedule:
@@ -33,15 +47,44 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  nightly:
-    name: Cov / Crap / Mutation nightly
+  # ── 段清单与逐段超时 ──────────────────────────────────────────────
+  # 为什么需要这个 job：GHA 的动态 matrix 只能引用 `needs` 的 output，**不能读工作区文件**，
+  # 而「哪些段要跑」的唯一事实源是 stryker.conf.d/*.json（随拆段/加包自动演进，
+  # #720 拆段即 31→33）。故由本 job 把文件系统事实翻译成 matrix 可消费的 JSON。
+  # 秒级完成，不构成并行度瓶颈。
+  mutation-plan:
+    name: Plan mutation shards
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 5
+    outputs:
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          # 本 job 只跑 Node 内置模块，不 pnpm install；显式关掉 setup-node 的
+          # package-manager-cache（它会调 PATH 里的 pnpm，而本 job 无 pnpm/action-setup）
+          package-manager-cache: false
+
+      - name: Derive shard matrix（段清单 + 逐段超时）
+        id: plan
+        run: node scripts/gate/mutation-plan.mjs
+
+  # ── 质量侧（无 needs：与 mutation-shards 并行跑，S1.5）──────────────
+  quality:
+    name: Quality (cov / crap / artifact gates)
+    runs-on: ubuntu-latest
+    # cov + crap + 三个全仓产物闸 + 全量 build 的实测墙钟远低于此值；
+    # 设 30 分钟是给 runner 抖动与主干增长留余量，不与变异段的预算互相挤占。
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        # #220 按需基线：push 事件需 before 对象可达以 diff 变动包（fail-closed 全量兜底）
         with:
           fetch-depth: 0
 
@@ -86,60 +129,137 @@ jobs:
       - name: CRAP（热点报告；strict 见 gauntlet.config.json 的 crap.strict）
         run: pnpm crap
 
-      - name: Resolve mutation suites（#276 方案 A + #433 全量班：每日一次全量）
-        id: suite-plan
+      - name: Upload coverage summary（供 mutation-collect 的报告展示；#718 S1.5）
+        # 报告正文同时含覆盖率与变异率，故覆盖率产物必须跨 job 传递。
+        # 失败时不阻断收口：collect 侧的 observe-check 对该文件本就是可选的。
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage-summary
+          path: coverage/coverage-summary.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  # ── 变异矩阵：每段一个实例（S1.1）────────────────────────────────
+  mutation-shards:
+    name: Mutation shard (${{ matrix.shard.seg }})
+    needs: mutation-plan
+    strategy:
+      # S1.4：单段失败不连坐——原串行实现的「单配置失败记账继续跑完」语义由矩阵天然承担，
+      # 且失败段可用 `gh run rerun --failed` 定向重跑，无需整班重来。
+      fail-fast: false
+      # S1.1：S0.3 实测账户并发额度上界 20（20 个 gate:full run 中 15 个精确触达且从未超过）。
+      # 取 5 留足余量给 build-test 矩阵与其它 workflow 的并发需求。
+      max-parallel: 5
+      matrix:
+        # 段清单与逐段超时均来自 mutation-plan（见该 job 与文件头注释）
+        shard: ${{ fromJSON(needs.mutation-plan.outputs.shards) }}
+    runs-on: ubuntu-latest
+    # S1.4：逐段超时（下限 10 分钟），由台账里该段 scope=full 的实测墙钟派生；
+    # 无实测的段取保守默认值。原实现取整班 90 分钟，长段擦边即整班被杀。
+    timeout-minutes: ${{ matrix.shard.timeoutMinutes }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@a8198c4bff370c8506180b035930dea56dbd5288 # v5
+        # 版本以根 package.json 的 packageManager 字段为单一事实源（勿同时指定 version）
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # 必须全量构建（run #32790425132 教训）：变异面按 src 级文件 glob 声明，
+      # 但测试面与 workspace 内联链（shared/ 与依赖包副本）需要全集一致的构建产物。
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Mutation shard（全量冷跑：本班无基线 restore，见文件头）
+        run: npx stryker run "stryker.conf.d/${{ matrix.shard.seg }}.json"
+
+      # if: always()：实例非零退出（崩溃 / 内建阈值不足）时已产出的报告照常下发聚合判分；
+      # 未产出报告时 if-no-files-found: error 让实例自身红（fail-closed）。
+      - name: Upload shard reports（交 mutation-collect 统一判分与归档）
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-shard-${{ matrix.shard.seg }}
+          path: |
+            coverage/mutation/${{ matrix.shard.seg }}.json
+            coverage/mutation/incremental-*.json
+          retention-days: 1
+          if-no-files-found: error
+
+  # ── 收口：判分 + 单点 push 基线 + 报告 + 工单（S1.5）──────────────
+  # - 各段报告（mutation-shards 矩阵）与覆盖率（quality）在此汇合后判分：
+  #   报告齐备性由 observe-check.mjs 按 stryker.conf.d/ 派生的段集合校验（缺段 fail-closed）。
+  # - `if: always()`：矩阵实例失败、quality 失败（cov 阈值不达标）时本 job 仍运行——
+  #   它同时承担「已产出数据的收集」与「异常留痕」，这正是 #718 两次事故中缺失的环节
+  #   （取消点在报告步骤之前 ⇒ 当夜无工单、基线不更新且无人察觉）。
+  # - 判分链与基线推送均为纯 Node 内置模块 + git，无需 pnpm install。
+  mutation-collect:
+    name: Mutation collect (score + baseline + report)
+    needs: [mutation-plan, quality, mutation-shards]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # 基线推送要操作孤立分支，需要完整 ref 视图
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          # 本 job 不 pnpm install（判分链为纯 Node 内置模块），必须显式关闭
+          # setup-node v5 默认的 package-manager-cache：它探测到 pnpm-lock.yaml 会调
+          # PATH 中的 pnpm，而本 job 无 pnpm/action-setup（实证 run 32879414842）。
+          package-manager-cache: false
+
+      - name: Download shard reports
+        # 全段失败时也可能零产物：不因下载为空而阻断收口——「零报告」本身要由
+        # 后续的报告齐备性校验判红并留痕，而不是让本步骤先崩掉。
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: mutation-shard-*
+          path: coverage/mutation
+
+      - name: Download coverage summary
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: coverage-summary
+          path: coverage
+
+      - name: Restore report layout（多 artifact 下载各建子目录，平铺回 coverage/mutation/）
+        id: reports
         run: |
           set -e
-          # 全量清单（glob conf 目录为单一事实源）——全量班即全量变异，无 push
-          # 裁剪分支（#220 按需基线的 push 触发已随 #276 方案 A 调度重设计移除，
-          # #433 起本 workflow 收敛为每日全量班，见本文件 on: 节）
-          ls stryker.conf.d/dsh-*.json > /tmp/suites.txt
-          echo "mode=full" >> "$GITHUB_OUTPUT"
-          echo "has_suites=true" >> "$GITHUB_OUTPUT"
-
-      - name: Mutation suites（串行执行计划内变异配置；单配置失败记账继续跑完，结尾统一判红）
-        # id 供 collect 步骤区分「整套 skip（无产物无从收集）」与「部分失败
-        # （记账夜已产出的基线照常收集）」（#217）
-        id: mutation-suites
-        if: steps.suite-plan.outputs.has_suites == 'true'
-        # #178 逐包容错：strict 判红路径下 incremental 基线已先落盘（StrykerJS 源码核实），
-        # 记账继续可让后续包照常产出报告与基线，避免单包连锁丢弃整夜数据。
-        # #220 B 方案：循环清单由 suite-plan 步骤产出（全量 glob 或按需裁剪），
-        # 本步骤不再关心名单来源
-        run: |
-          FAILED=0
-          FAILED_CONFS=''
-          while read -r conf; do
-            name="$(basename "$conf" .json)"
-            echo "::group::stryker $name"
-            if npx stryker run "$conf"; then
-              echo "::endgroup::"
-            else
-              echo "::endgroup::"
-              echo "::error::变异套件失败：$name（记账后继续执行其余配置）"
-              FAILED=1
-              FAILED_CONFS="$FAILED_CONFS $name"
-            fi
-          done < /tmp/suites.txt
-          if [ "$FAILED" -ne 0 ]; then
-            echo "::error::以下变异套件失败，统一判红:$FAILED_CONFS"
-            exit 1
+          mkdir -p coverage/mutation
+          DIRS="$(ls -d coverage/mutation/mutation-shard-* 2>/dev/null || true)"
+          for dir in $DIRS; do cp "$dir"/*.json coverage/mutation/ 2>/dev/null || true; done
+          COUNT=$(ls coverage/mutation/dsh-*.json 2>/dev/null | wc -l | tr -d ' ')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "报告 artifact 还原完成：${COUNT} 份段报告"
+          if [ "$COUNT" -eq 0 ]; then
+            echo '::warning::本班次未产出任何段报告（全部实例失败或被杀）—— 基线不更新，由收尾工单留痕'
           fi
-
-      - name: Push baseline to orphan branch（#572：提交纯文本树到孤立分支）
-        # #572：替代旧方案（#204 方案 A：向 main 自动建 PR 提交数十万行 JSON 导致 git 膨胀）。
-        # 将最新增量基线以单 commit 纯文本树推送到孤立分支 refs/heads/baseline/mutation，
-        # 享受 Git Blob 原生内容去重红利，彻底净化 main 分支代码树与提交历史。
-        # if: always() && 非 skipped 且有计划 —— 部分失败夜已产出的基线文件照常收集；
-        # 但整套变异被 skip 或按需计划为空时无任何产物，不运行。
-        if: always() && steps.mutation-suites.outcome != 'skipped' && steps.suite-plan.outputs.has_suites == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OBSERVE_PAT: ${{ secrets.OBSERVE_PAT }}
-        run: node scripts/gate/orphan-baseline.mjs push
 
       - name: Threshold check & report body（阈值校验 + 回落检测 + 报告产出）
         id: report
+        if: steps.reports.outputs.count != '0'
         run: |
           set -e
           node scripts/gate/observe-check.mjs --body-file observe-body.md --marker-file observe-marker.txt
@@ -147,6 +267,18 @@ jobs:
           # 触发 "Matching delimiter not found" 解析失败；GitHub 官方文档明示值不可控时
           # 应写文件而非用 delimiter 格式）。下游步骤直接读 observe-body.md /
           # observe-marker.txt（[ -s file ] 判断非空）。
+
+      - name: Push baseline to orphan branch（#572：提交纯文本树到孤立分支）
+        # #572：替代旧方案（#204 方案 A：向 main 自动建 PR 提交数十万行 JSON 导致 git 膨胀）。
+        # 将最新增量基线以单 commit 纯文本树推送到孤立分支 refs/heads/baseline/mutation，
+        # 享受 Git Blob 原生内容去重红利，彻底净化 main 分支代码树与提交历史。
+        # #718 S1.5：本步骤**单点**落在收口 job——矩阵各实例不再各自推送，消除并发覆盖踩踏；
+        # 部分失败夜已产出的基线文件照常收集（if: always() + 有报告才推）。
+        if: always() && steps.reports.outputs.count != '0'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OBSERVE_PAT: ${{ secrets.OBSERVE_PAT }}
+        run: node scripts/gate/orphan-baseline.mjs push
 
       - name: Create/update observe issue（幂等：同日重跑不重复建；回落即追评）
         if: always() && steps.report.outcome == 'success'
@@ -176,4 +308,6 @@ jobs:
             coverage/coverage-summary.json
             coverage/mutation/
           retention-days: 14
-          if-no-files-found: error   # 报告缺失本身即异常（fail-closed，评审 F4 旁证）
+          # 报告缺失本身即异常，但此处不判红：判红由 observe-check 的段齐备性校验承担，
+          # 本步骤只负责留档（若在此 error，被杀夜次会连「零产物」这一事实都留不下）。
+          if-no-files-found: warn
