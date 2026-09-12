@@ -50,7 +50,7 @@ export type OutgoingFrame = pipelineApi.OutgoingFrame;
 export type RegisterRoute = (route: WebRoute) => () => void;
 
 /**
- * 帧入口：订阅待展示的通知帧（组合根把宿主事件总线那一头接好）。
+ * 帧入口：订阅待展示的通知帧（组合根把帧总线的消费那一头接好）。
  *
  * 只有 `on` 没有 `emit`：api 域是帧的**消费者**，给它发帧的能力等于让它能伪造通知。
  * 生产帧是裁决管线的事。

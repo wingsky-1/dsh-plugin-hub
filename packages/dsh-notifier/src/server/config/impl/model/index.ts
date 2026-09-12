@@ -25,7 +25,6 @@ export const DEFAULT_CONFIG: NotifyConfig = {
   channels: [],
   kindRoutes: {},
   allowKinds: [],
-  sanitizeContent: true,
 
   errorMergeWindowMs: 60_000,
   askRemindMin: 5,

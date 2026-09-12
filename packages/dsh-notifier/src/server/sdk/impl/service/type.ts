@@ -26,8 +26,15 @@ export interface NotifyRequest {
 
 /** `wingsky.notifier` 服务面：本插件对兄弟插件开放的全部能力。 */
 export interface NotifierService {
-  /** ABI 版本：消费方可据此判断自己面对的是哪一版服务面。 */
-  readonly apiVersion: 1;
+  /**
+   * ABI 版本：消费方可据此判断自己面对的是哪一版服务面。
+   *
+   * 2 = 服务面收敛版：确认与清单上收到设置端点（`api` 域），`registerChannel` 退役
+   * （它承诺了一个从未入库的频道贡献模型），`send` 不再返回受理数组（那个数组里的
+   * `ok` 是「已受理」而不是「已送达」，读错方向比没有返回值更贵）。只用 `registerKind`
+   * 与 `send` 的消费方不受影响。
+   */
+  readonly apiVersion: 2;
   /**
    * 登记一种动态通知种类。
    *

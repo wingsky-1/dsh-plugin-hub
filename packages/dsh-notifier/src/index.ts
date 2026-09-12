@@ -50,7 +50,7 @@ import * as apiApi from "./server/api/interface.ts";
 import * as channelsApi from "./server/channels/interface.ts";
 import * as configApi from "./server/config/interface.ts";
 import * as eventsApi from "./server/events/interface.ts";
-import type { HostEventPort } from "./server/events/interface.ts";
+import type { AgentRegistryPort, HostEventPort } from "./server/events/interface.ts";
 import * as pipelineApi from "./server/pipeline/interface.ts";
 import type { OutgoingFrame } from "./server/pipeline/interface.ts";
 import type { LegacySettingsPort } from "./server/upgrade/deps.ts";
@@ -105,32 +105,26 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
 const GLOBAL_LISTEN = { global: true } as const;
 
 /**
- * 两个对外名字的声明合并。
+ * 对外名字的声明合并。
  *
- * 声明在包入口而不是它们各自的域文件里：`declare module` 是全局增强，tsc 只在入口
- * 可达的声明闭包里保留它——写在域里、而入口的对外声明面又不引用那个域时，产物
- * `lib/index.d.ts` 里根本看不到它，消费方按包名导入时 `ctx.on(…, …)` 与
- * `ctx["wingsky.notifier"]` 就都没有类型。`pack:check` 的「声明合并可达性」判据盯的
- * 正是这条。
+ * 声明在包入口而不是它所属的域文件里：`declare module` 是全局增强，tsc 只在入口可达的
+ * 声明闭包里保留它——写在域里、而入口的对外声明面又不引用那个域时，产物
+ * `lib/index.d.ts` 里根本看不到它，消费方按包名导入时 `ctx["wingsky.notifier"]` 就没有
+ * 类型。`pack:check` 的「声明合并可达性」判据盯的正是这条。
  *
- * 两个键都引用常量而不是写字面量：接口的计算属性名接受**字面量类型**，而两个常量在
- * `as const` 下正是字面量类型。于是名字各只有一个物理定义（服务名在 sdk 域、帧事件名
- * 在 pipeline 域，都是它们所属 ABI 的定义处），这里不再各抄一份——抄一份同样能编译，
- * 代价是改名时漏改一处，而两个名字都只在运行时的另一头才暴露：服务名漏改是消费方
- * `ctx.get` 拿到空，帧事件名漏改是「帧发出去没人收到」。
+ * 键引用常量而不是写字面量：接口的计算属性名接受**字面量类型**，而 `NOTIFIER_SERVICE`
+ * 在 `as const` 下正是字面量类型。于是服务名只有一个物理定义（在 sdk 域——那是它所属
+ * ABI 的定义处），这里不再抄一份：抄一份同样能编译，代价是改名时漏改一处，而它只在
+ * 运行时的另一头才暴露——消费方 `ctx.get` 拿到空。
+ *
+ * 本包**只声明这一个**对外名。通知帧走组合根本地接线（见 `FrameBus`），投递终态走
+ * 历史与频道状态两个查询面：对外的两个需求（「我要发通知」「发出去没有」）都是点对点
+ * 的，广播事件只会让公共面多一份要养、又没人认领的协议。
  */
 declare module "@deepseek-ai/cordis" {
   interface Context {
-    /**
-     * 通知中心服务面：兄弟插件经它登记自己的通知种类、发送通知。
-     *
-     * 声明在这里与 `Events` 同因（见上）。
-     */
+    /** 通知中心服务面：兄弟插件经它登记自己的通知种类、发送通知。 */
     [sdkApi.NOTIFIER_SERVICE]: NotifierService;
-  }
-  interface Events {
-    /** 待展示的通知帧（生产端是裁决管线的帧出口，消费端是 api 域的流枢纽）。 */
-    [pipelineApi.NOTIFIER_FRAME](payload: OutgoingFrame): void;
   }
 }
 
@@ -138,11 +132,27 @@ declare module "@deepseek-ai/cordis" {
  * 帧总线：组合根接上的两头。
  *
  * 生产端给裁决管线（只有 `emit`），消费端给浏览器出口（只有 `onFrame`）——两个域各自
- * 只拿到自己该有的那一半，谁也伪造不了通知、谁也发不出帧。合起来才是总线。
+ * 只拿到自己该有的那一半（类型就是围栏），谁也伪造不了通知、谁也发不出帧。
+ *
+ * 两端都在本包内，所以它是**组合根的本地设施**而不是宿主事件总线上的一个事件：总线
+ * 上的名字是公共面，任何插件都能 emit 与 on，而这里的两头都只该由本包的两个域持有。
+ *
+ * 状态收在实例字段里：帧是 fire-and-forget 的旁路，逐个投给订阅者，一个订阅者出问题
+ * 不该让其余收不到帧——所以遍历前先取快照，回调里退订也不会打断本轮。
  */
-interface FrameBus {
-  emit(payload: OutgoingFrame): void;
-  onFrame(handler: (payload: OutgoingFrame) => void): () => void;
+class FrameBus {
+  private readonly handlers = new Set<(payload: OutgoingFrame) => void>();
+
+  emit(payload: OutgoingFrame): void {
+    for (const handler of [...this.handlers]) handler(payload);
+  }
+
+  onFrame(handler: (payload: OutgoingFrame) => void): () => void {
+    this.handlers.add(handler);
+    return () => {
+      this.handlers.delete(handler);
+    };
+  }
 }
 
 /** 组合根用到的宿主面：域拿到的是能力，不是上下文。 */
@@ -153,6 +163,8 @@ interface HostPort {
   /** 宿主路由注册口：只有组合根够得着 `ctx.webServer`。 */
   readonly register: (route: WebRoute) => () => void;
   readonly events: HostEventPort;
+  /** 宿主 agent 注册表：子代理归属判定要它。 */
+  readonly agents: AgentRegistryPort;
   /**
    * 宿主 settings 服务：0.2.3 把配置存在那里，新架构搬走之后仍需读它一次。
    *
@@ -185,19 +197,7 @@ function bindHost(ctx: Context): HostPort {
 
   return {
     logger: ctx.logger,
-    frames: {
-      // 事件名取自 pipeline 域（帧出口的定义处），组合根不自己写一遍字面量。`emit` 与
-      // `on` 都没有 `(name: string)` 那样的逃生重载，所以名字与声明合并不一致时是编译
-      // 错误，不需要额外的保险写法。
-      emit: (payload) => {
-        ctx.emit(pipelineApi.NOTIFIER_FRAME, payload);
-      },
-      // 转发而不是把 ctx 递出去：域要的是「订阅帧」，不是「订阅任意事件」。
-      onFrame: (handler) =>
-        ctx.on(pipelineApi.NOTIFIER_FRAME, (payload) => {
-          guard(() => handler(payload));
-        }),
-    },
+    frames: new FrameBus(),
     // 存量配置的读取面：先试一次（服务可能已经在），再监听晚到的。只监听事件会漏掉
     // 「注册之前就已经 provide」的那种顺序，而只试一次会漏掉晚到的——两个都要。
     legacySettings: {
@@ -258,11 +258,14 @@ function bindHost(ctx: Context): HostPort {
           },
           GLOBAL_LISTEN,
         ),
+      // agent 四个事件把官方载荷**原样**转过去，不在这里拆字段：任务名、子代理归属、
+      // turn 证据都要从 Agent 对象上读，拆成 id 就等于替域决定「哪些字段有用」，而那个
+      // 决定正是本域该做的判断（见 `events/deps.ts`）。
       onAgentStatus: (handler) =>
         ctx.on(
           "agent/status",
           (payload) => {
-            guard(() => handler(payload.agent.id, payload.status));
+            guard(() => handler(payload));
           },
           GLOBAL_LISTEN,
         ),
@@ -270,7 +273,7 @@ function bindHost(ctx: Context): HostPort {
         ctx.on(
           "agent/disposed",
           (payload) => {
-            guard(() => handler(payload.agent.id));
+            guard(() => handler(payload));
           },
           GLOBAL_LISTEN,
         ),
@@ -278,21 +281,31 @@ function bindHost(ctx: Context): HostPort {
         ctx.on(
           "agent/turn-stopping",
           (payload) => {
-            guard(() => handler(payload.agent.id, payload.turn));
+            guard(() => handler(payload));
           },
           GLOBAL_LISTEN,
         ),
-      // 失败可能是任何东西抛出的：在这里做唯一一次收窄，域拿到的就是一条文本。
+      // 唯一的例外是错误原文：失败可能是任何东西抛出的（官方那边是宽类型），在这里做
+      // 唯一一次收窄，域拿到的就是一条文本——域内不出现宽类型。
       onAgentError: (handler) =>
         ctx.on(
           "agent/error",
           (payload) => {
             const failure = payload.error;
             const reason = failure instanceof Error ? failure.message : String(failure);
-            guard(() => handler(payload.agent.id, payload.turn, reason));
+            guard(() => handler({ ...payload, error: reason }));
           },
           GLOBAL_LISTEN,
         ),
+    },
+    // 宿主 agent 注册表：子代理归属判定的第二个信号。查不到与查得到分开报（见
+    // `AgentLookup`），组合根不做判断——「父 agent 不在册」该怎么理解是域的事。
+    agents: {
+      lookup: (id) => {
+        const agent = ctx.get("agents", false)?.get(id);
+        return agent === undefined ? { found: false } : { found: true, agent };
+      },
+      isOwnedBy: (id, owner) => ctx.get("agents", false)?.isOwnedBy(id, owner) === true,
     },
   };
 }
@@ -336,7 +349,7 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
 
   // 4. 事件：宿主事件 → 通知请求。请求一律产出，去留由裁决层决定——开关会在本域
   //    看不见的地方被改，让它去问一遍等于把运行期策略摊进按事件驱动的块里。
-  eventsApi.installEvents({ events: host.events, pipeline: pipelineApi });
+  eventsApi.installEvents({ events: host.events, agents: host.agents, pipeline: pipelineApi });
   disposers.push(eventsApi.releaseEvents);
 
   // 5. 对外 ABI：把服务面挂上上下文。排在 api 之前——设置端点要读它的种类清单，而 api

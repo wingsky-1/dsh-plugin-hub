@@ -32,12 +32,16 @@ const CHANNEL_SECRET_FIELDS: Record<ChannelConfig["type"], readonly string[]> = 
  *
  * 拷贝而非原地改，是因为它作用于**即将外发的视图**，而同一份设置在域内还要以明文
  * 参与投递——原地掩码会把凭据真的抹掉。
+ *
+ * 频道项按**原始值**处理而不是按 `ChannelConfig`：存储层不受契约约束，里面可能躺着
+ * 更高版本写的频道类型，而这一层的职责是"原样送出去、抹掉已知类型的密钥"，不是校验。
  */
 export function redactConfig(value: Partial<NotifyConfig>): Partial<NotifyConfig> {
   const copy = structuredClone(value);
   const channels = copy.channels;
   if (!Array.isArray(channels)) return copy;
-  copy.channels = channels.map(maskChannel);
+  // 断言只声明"这是同一批频道，只是密钥被换成了掩码"——掩码不会改变项的形状。
+  copy.channels = channels.map(maskChannel) as ChannelConfig[];
   return copy;
 }
 
@@ -66,12 +70,13 @@ export function unmaskChannels(
   return { ok: true, channels: restored };
 }
 
-function maskChannel(channel: ChannelConfig): ChannelConfig {
+function maskChannel(channel: RawSettingValue): RawSettingValue {
+  if (!isRecord(channel)) return channel;
   const masked: Record<string, RawSettingValue> = { ...channel };
-  for (const field of CHANNEL_SECRET_FIELDS[channel.type]) {
+  for (const field of secretFieldsOfType(channel.type)) {
     if (typeof masked[field] === "string") masked[field] = SECRET_MASK;
   }
-  return masked as ChannelConfig;
+  return masked;
 }
 
 function unmaskChannel(
@@ -94,11 +99,22 @@ function unmaskChannel(
   return { ok: true, channel: restored };
 }
 
+/**
+ * 某个频道类型的密钥字段；**不认识的类型给空清单**。
+ *
+ * 不认识的类型是常态而不是异常：配置文件里可能躺着更高版本写的频道、或手写进去的键，
+ * 而读出口的职责是"把它原样送出去、顺便抹掉已知类型的密钥"，不是"因为不认识它就报错"
+ * ——在这里抛，用户看到的是设置页整页 500，而真正的原因（某个陌生频道类型）没有任何
+ * 线索指向它。
+ */
+function secretFieldsOfType(type: RawSettingValue): readonly string[] {
+  if (type === "bark" || type === "webhook") return CHANNEL_SECRET_FIELDS[type];
+  return [];
+}
+
 /** 提交项里**实际带了掩码**的密钥字段；不是频道对象时为空。 */
 function secretFieldsOf(patch: Record<string, RawSettingValue>): readonly string[] {
-  const type = patch.type;
-  if (type !== "bark" && type !== "webhook") return [];
-  return CHANNEL_SECRET_FIELDS[type].filter((field) => patch[field] === SECRET_MASK);
+  return secretFieldsOfType(patch.type).filter((field) => patch[field] === SECRET_MASK);
 }
 
 /** 按 id 查找的结果；找不到时不带回任何值。 */

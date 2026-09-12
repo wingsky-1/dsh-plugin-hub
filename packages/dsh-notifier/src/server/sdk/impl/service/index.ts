@@ -134,7 +134,8 @@ function isSendableKind(kind: string, pipeline: PipelinePort): kind is NotifyKin
  * 从此不能再改。
  */
 class HostedService implements NotifierService {
-  readonly apiVersion = 1;
+  /** 类型取自契约上的字面量：改一处不改另一处是编译错误。 */
+  readonly apiVersion: NotifierService["apiVersion"] = 2;
 
   constructor(private readonly pipeline: PipelinePort) {}
 

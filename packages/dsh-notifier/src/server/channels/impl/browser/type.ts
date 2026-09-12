@@ -22,7 +22,7 @@ export interface NotifyFrame {
 }
 
 /**
- * 浏览器出口：帧经事件出口发出，本域不持有任何推送设施。
+ * 浏览器出口：帧经帧出口发出，本域不持有任何推送设施。
  *
  * `sound` 只是一个铃声属性——用户选了什么，就传什么。至于它该走系统提示音还是
  * 页内自播、用哪段旋律，是这个出口的知识（平台与实现相关），调用方不参与决定。
@@ -32,6 +32,6 @@ export interface BrowserTarget {
   pop: boolean;
   /** 铃声：false = 不发声；true = 跟随系统；字符串 = 指定音色；缺省视同不发声。 */
   sound?: boolean | string;
-  /** 帧出口：由调用方接上宿主事件总线（api 域监听后经 SSE 送页面）。 */
+  /** 帧出口：由调用方接上帧总线（api 域监听后经 SSE 送页面）。 */
   emitFrame(frame: NotifyFrame): void;
 }

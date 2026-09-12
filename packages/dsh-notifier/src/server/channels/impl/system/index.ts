@@ -78,12 +78,21 @@ export async function sendSystem(
     if (play.length > 0) commands.push(play);
   }
   if (commands.length === 0) {
-    return { status: "failed", stage: "delivered", reason: "本平台没有可用的系统通知通道" };
+    // 本平台放不出窗也放不出声：换一次投递还是同样的结论，所以不可重试。
+    return {
+      status: "failed",
+      stage: "delivered",
+      reason: "本平台没有可用的系统通知通道",
+      retryable: false,
+    };
   }
 
   for (const command of commands) {
     const ok = await run(command);
-    if (!ok) return { status: "failed", stage: "delivered", reason: "系统命令执行失败" };
+    if (!ok) {
+      // 命令已经跑过一次且失败：重投等于把同一个子进程再失败一次。
+      return { status: "failed", stage: "delivered", reason: "系统命令执行失败", retryable: false };
+    }
   }
   return { status: "ok", stage: "delivered" };
 }

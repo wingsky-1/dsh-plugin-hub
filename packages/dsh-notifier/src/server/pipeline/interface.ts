@@ -45,15 +45,6 @@ export type { BuiltinKind, ExternalKind, NotifyKind } from "./impl/service/kinds
 export type { NotifyRequest } from "./impl/service/type.ts";
 
 /**
- * 帧在宿主事件总线上的地址。
- *
- * 定义在 `deps.ts`（与帧出口同处），这里只是把它交出去：组合根要拿它 `emit` 与 `on`，
- * 而包入口那段声明合并也引用同一个常量。写死一个字面量同样能编译，代价是名字有两份，
- * 改名漏改一处的症状是「帧发出去没人收到」。
- */
-export { NOTIFIER_FRAME } from "./deps.ts";
-
-/**
  * 是不是内置通知种类。
  *
  * 值出口而不只是类型出口：这是「内置 / 外部注册」的唯一判据，而下游拿到的是运行时的

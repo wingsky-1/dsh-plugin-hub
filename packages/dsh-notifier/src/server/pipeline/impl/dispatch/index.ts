@@ -30,7 +30,13 @@ export async function dispatchMessage(
   );
   return targets.map((routed, index) => {
     const result = results[index];
-    deps.stores.recordStatus(routed.channelId, result.status, result.reason);
-    return { channelId: routed.channelId, status: result.status, reason: result.reason };
+    // 失败原因只在失败那一支上有；分成两支写而不是取一个可能是 undefined 的字段，
+    // 是因为状态与历史两侧对「没有原因」的处理本来就不同（status 省略键、历史同样省略）。
+    if (result.status === "failed") {
+      deps.stores.recordStatus(routed.channelId, "failed", result.reason);
+      return { channelId: routed.channelId, status: "failed", reason: result.reason };
+    }
+    deps.stores.recordStatus(routed.channelId, "ok");
+    return { channelId: routed.channelId, status: "ok" };
   });
 }

@@ -10,9 +10,10 @@
  * 而「什么时候读、以什么语义读」是各域自己的事，集中过来只会让谁在写什么变得
  * 不可见。
  *
- * 依赖方向：只引用仓库共享层的 DSH home 解析，不引用任何域。
+ * 依赖方向：只引用仓库共享层的 DSH home 解析与 Node 内置模块，不引用任何域。
  */
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { dshHome } from "../../../../../shared/dsh-home.js";
 
 /** 本插件在 DSH home 下的私有目录（按 npm 包名分区，避免与其它插件争用根目录）。 */
@@ -63,4 +64,26 @@ export function notifierFile(fileName: string): string {
  */
 export function legacyFile(fileName: string): string {
   return join(dshHome(), fileName);
+}
+
+/**
+ * 系统通知脚本（Windows 的 WinRT toast）在本包产物里的位置。
+ *
+ * 与落盘路径不同：它随包分发而不在 DSH home 下，所以只能从**本模块所在位置**反推。
+ * 产物形态是唯一要考虑的形态——tsc 产物经 bundle-host 全部内联进 `lib/index.js`，
+ * 而 `.ps1` 这类资源由构建脚本按 `src/` 下的相对位置复制进 `lib/`，于是：
+ * 本模块运行时在 `lib/`，脚本在 `lib/server/channels/impl/system/toast.ps1`。
+ *
+ * 脚本属于系统通知出口（平台适配是它的实现细节），但路径是**产物布局**的事实，与
+ * 存储布局同理只有一个事实源，所以落在这里而不是出口内部。
+ */
+export function toastScriptPath(): string {
+  return join(
+    dirname(fileURLToPath(import.meta.url)),
+    "server",
+    "channels",
+    "impl",
+    "system",
+    "toast.ps1",
+  );
 }

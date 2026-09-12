@@ -65,6 +65,9 @@ async function deliverOne(target: DeliveryTarget, message: NotifyMessage): Promi
       status: "failed",
       stage: "accepted",
       reason: cause instanceof Error ? cause.message : String(cause),
+      // 违约不可重试：出口本应把失败做成返回值，抛出来说明它的错误处理有洞——
+      // 再投一次只会把同一个洞踩第二遍，而两次的失败长得一模一样。
+      retryable: false,
     };
   }
 }

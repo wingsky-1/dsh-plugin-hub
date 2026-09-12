@@ -22,18 +22,29 @@ export interface NotifyMessage {
 }
 
 /**
+ * 该通道能给出的**证据上限**，由通道能力决定，不是调用方选的：
+ * 对端确认接收（HTTP 2xx / OS 退出码 0）为 `delivered`；浏览器帧只能交到
+ * 传输通道，为 `accepted`——`ok` 不代表页面已弹出。
+ */
+export type DeliverStage = "accepted" | "delivered";
+
+/**
  * 逐出口投递结果（与目标清单**下标同序**）。
  *
  * 结果不带出口身份——「我是谁」是配置层与裁决层的概念，投递层不需要。
+ *
+ * 分成两支而不是一个带可选字段的形状：失败分支里的 `retryable` 是**必答项**，于是每个
+ * 失败点都必须对「这次失败能不能重试」表态，漏答是编译错误。用可选字段的话，漏答会
+ * 静默落进"未标注"那个语义里，而那个语义只在调用方一侧才看得见。
  */
-export interface DeliverResult {
-  status: "ok" | "failed";
+export type DeliverResult =
+  /** 出口完成/受理了这次投递；`stage` 说明它拿得出什么证据。 */
+  | { status: "ok"; stage: DeliverStage }
   /**
-   * 该通道能给出的**证据上限**，由通道能力决定，不是调用方选的：
-   * 对端确认接收（HTTP 2xx / OS 退出码 0）为 `delivered`；浏览器帧只能交到
-   * 传输通道，为 `accepted`——`ok` 不代表页面已弹出。
+   * 出口失败了。
+   *
+   * `retryable` 是出口对失败的**分类**（它才分得清 4xx 与 5xx、网络超时与参数错误），
+   * 而不是它自己去重试：重试次数、退避与在途上限是管线的事（`pipeline/impl/dispatch/`），
+   * 出口答完这一句就没有后续动作。
    */
-  stage: "accepted" | "delivered";
-  /** 失败原因（不含凭据；ok 时缺省）。 */
-  reason?: string;
-}
+  | { status: "failed"; stage: DeliverStage; reason: string; retryable: boolean };

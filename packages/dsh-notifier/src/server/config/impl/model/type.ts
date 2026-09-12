@@ -145,8 +145,6 @@ export type NotifyConfig = {
   kindRoutes: Record<string, string[]>;
   /** 已确认的动态 kind。 */
   allowKinds: string[];
-  /** 通知与历史的统一脱敏开关。 */
-  sanitizeContent: boolean;
 
   // 资源上限
   /** 同类错误合并窗口（毫秒；0 = 不合并）。 */

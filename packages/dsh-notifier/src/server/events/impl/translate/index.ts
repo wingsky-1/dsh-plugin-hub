@@ -12,10 +12,15 @@
  *
  * 依赖方向：只引用本目录，不引用 `interface.ts`。
  */
-import type { AgentStatus } from "@deepseek-ai/dsh-agent";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import type { ApprovalRequest } from "@deepseek-ai/dsh-user-approval";
 import type { AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
+import type {
+  AgentDisposedPayload,
+  AgentErrorPayload,
+  AgentStatusPayload,
+  AgentTurnStoppingPayload,
+} from "../../deps.ts";
 import type { Translation } from "./type.ts";
 
 /**
@@ -55,9 +60,8 @@ export function translateSessionEvent(sessionId: string, event: SessionEvent): T
  *
  * 未实现：`idle` 是子代理完成的判据。
  */
-export function translateAgentStatus(agentId: string, status: AgentStatus): Translation {
-  void agentId;
-  void status;
+export function translateAgentStatus(payload: AgentStatusPayload): Translation {
+  void payload;
   return { ok: false };
 }
 
@@ -67,8 +71,8 @@ export function translateAgentStatus(agentId: string, status: AgentStatus): Tran
  * 未实现：子代理消亡的收尾通知。与 `agent/status` 的 `idle` 互补——正常路径先
  * `idle` 再销毁，异常路径可能只有销毁。
  */
-export function translateAgentDisposed(agentId: string): Translation {
-  void agentId;
+export function translateAgentDisposed(payload: AgentDisposedPayload): Translation {
+  void payload;
   return { ok: false };
 }
 
@@ -77,9 +81,8 @@ export function translateAgentDisposed(agentId: string): Translation {
  *
  * 未实现：与 `turn/end` 会话事件互补——一个说「要停了」，一个说「已经停了」。
  */
-export function translateTurnStopping(agentId: string, turn: number): Translation {
-  void agentId;
-  void turn;
+export function translateTurnStopping(payload: AgentTurnStoppingPayload): Translation {
+  void payload;
   return { ok: false };
 }
 
@@ -88,9 +91,7 @@ export function translateTurnStopping(agentId: string, turn: number): Translatio
  *
  * 未实现：`error` 的直接来源。
  */
-export function translateAgentError(agentId: string, turn: number, errorText: string): Translation {
-  void agentId;
-  void turn;
-  void errorText;
+export function translateAgentError(payload: AgentErrorPayload): Translation {
+  void payload;
   return { ok: false };
 }

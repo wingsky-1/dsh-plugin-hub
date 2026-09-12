@@ -44,16 +44,12 @@ class EventListener {
       port.onSessionEvent((sessionId, event) =>
         forward(pipeline, translateSessionEvent(sessionId, event)),
       ),
-      port.onAgentStatus((agentId, status) =>
-        forward(pipeline, translateAgentStatus(agentId, status)),
-      ),
-      port.onAgentDisposed((agentId) => forward(pipeline, translateAgentDisposed(agentId))),
-      port.onAgentTurnStopping((agentId, turn) =>
-        forward(pipeline, translateTurnStopping(agentId, turn)),
-      ),
-      port.onAgentError((agentId, turn, errorText) =>
-        forward(pipeline, translateAgentError(agentId, turn, errorText)),
-      ),
+      // agent 四个事件把官方载荷整份转给翻译：翻出哪一类通知要看会话日志、header 与
+      // turn 证据，这些都在载荷里的 Agent 对象上，本块不做拆分。
+      port.onAgentStatus((payload) => forward(pipeline, translateAgentStatus(payload))),
+      port.onAgentDisposed((payload) => forward(pipeline, translateAgentDisposed(payload))),
+      port.onAgentTurnStopping((payload) => forward(pipeline, translateTurnStopping(payload))),
+      port.onAgentError((payload) => forward(pipeline, translateAgentError(payload))),
     );
   }
 

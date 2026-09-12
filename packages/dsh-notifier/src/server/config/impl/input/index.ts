@@ -67,7 +67,6 @@ const BOOLEAN_KEYS: readonly string[] = [
   "browserNotify",
   "notifyWhenVisible",
   "notifySound",
-  "sanitizeContent",
 ];
 
 /** 非负整数键及其上界（越界视为非法而不是截断——静默改写用户的输入比拒绝更糟）。 */
@@ -127,7 +126,6 @@ export function normalizeConfig(input: StoredSettings): NotifyConfig {
     channels: asChannels(input.channels),
     kindRoutes: asKindRoutes(input.kindRoutes),
     allowKinds: asStrings(input.allowKinds),
-    sanitizeContent: asBoolean(input.sanitizeContent, fallback.sanitizeContent),
 
     errorMergeWindowMs: asCount(
       input.errorMergeWindowMs,
