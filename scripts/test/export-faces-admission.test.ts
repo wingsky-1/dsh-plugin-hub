@@ -126,6 +126,20 @@ test('loadExportFaces：字段缺失时按空集合读取（由 checkExportFaces
   })
 })
 
+test('已知边界（如实登记）：新符号塞进 legacy 可绕过准入判据——本判据只让「静默增长」不可能', () => {
+  // 为什么要有这条「断言放行」的用例：docs/DEVELOPMENT.md 的准入段与
+  // scripts/lib/export-faces-lib.ts 的注释都声称「legacy 上没有阻止其增大的机器判据」。
+  // 该声称若只写在散文里，就会随判据演化而反向（#733 M2c 复核实测：规范文档一度写成
+  // 「legacy 只许随符号退役而缩小」，与实现相反）。把它钉成机器事实后，判据一旦收紧
+  // （例如让 legacy 对齐冻结清单），本用例必红并点名要同步的两处文本。
+  const problems = checkExportFaces({ exports: ['A', 'B', 'brandNew'], faces: {}, legacy: ['A', 'B', 'brandNew'] })
+  assert.deepEqual(
+    problems,
+    [],
+    '若变红说明判据已收紧为「legacy 只许缩小」——请同步 docs/DEVELOPMENT.md 的导出准入段与 export-faces-lib.ts 的存量口径注释',
+  )
+})
+
 // ---------------------------------------------------------------- 2) 真实仓库登记文件自洽
 
 test('真实登记文件：package 匹配且覆盖基线全部导出符号', () => {

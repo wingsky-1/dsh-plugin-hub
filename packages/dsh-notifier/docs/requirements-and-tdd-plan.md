@@ -386,7 +386,7 @@
 
 | 项 | 产出 | 状态 |
 |---|---|---|
-| 目录树搬家 | 16 平铺 → 8 域 42 个宿主 TS（9 interface.ts）：config/10、text/4、channels/6、server/4、pipeline/3、sdk/2、events/4、stores/3 + 根 index.ts/~~service.d.ts~~（**#733 M2a 已删除该文件，现为 41 个宿主 TS + index.ts**） | ✅ |
+| 目录树搬家 | 16 平铺 → 8 域（**v2 时点计数**：42 个宿主 TS / 9 interface.ts——勿作现状引用）：config/10、text/4、channels/6、server/4、pipeline/3、sdk/2、events/4、stores/3 + 根 index.ts/~~service.d.ts~~（**#733 M2a 已删除该文件**；**当前实测**：`src/` 下 42 个 TS = 宿主端 38（含根 `index.ts` 与 8 个 `interface.ts`）+ `src/client` 4） | ✅ |
 | interface.ts 门面 | 每域 interface.ts 收口（类型 + 工厂 re-export）；verify-dir-imports PASS（42 文件/8 目录，跨目录引用全走 interface.ts；contract 接入 --package dsh-notifier） | ✅ |
 | 导出面快照 | scripts/gate/export-surface-snapshot.mjs（符号集 + 导出符号定义块双保险，路径/语句组织免疫）；基线 scripts/data/dsh-notifier-export-surface.json 由 git archive 重构前 src 生成；重构后零 diff | ✅ |
 | service 拆分 | sdk/service.ts 编排（≈330 行）+ pipeline/adjudicate.ts（isBuiltinKind/isKindConfirmed/resolveRoutes）+ pipeline/deliver.ts（truncateCodePoints/deliverToChannel）；函数体逐行等价，行为由全套测试锁定（≤400 行纪律达标） | ✅ |

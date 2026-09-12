@@ -406,9 +406,15 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
     实测）**：`export interface` / `export type` 无 `declare` 关键字，进不了 ② 的提取器，
     interface/type 体由 `packages/<pkg>/test/integration/consumer-types.test.ts` 的类型体锚
     兜住；不在包导出面的域内符号两条粒度都不覆盖。
-  - **新增导出准入（`export-surface-snapshot` 内的分类判据；#733 M2a-3.5）**：包导出面
-    ⊆ 安装面 ∪ 配置面 ∪ 契约面。新导出必须在 `scripts/data/<pkg>-export-faces.json` 的
-    `faces` 显式登记三类面之一，未登记判红；`legacy` 是存量白名单，只许随符号退役而缩小。
+  - **新增导出准入（`export-surface-snapshot` 内的分类判据；#733 M2a-3.5）**：目标不变式是
+    包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面，**当前只对「新增导出」强制**——新导出必须在
+    `scripts/data/<pkg>-export-faces.json` 的 `faces` 显式登记三类面之一，未登记判红。
+    **存量尚未分类**：dsh-notifier 实测 `faces = {}` / `legacy = 100`，100 个存量符号全走
+    `legacy` 白名单（`legacy` 不属三类面之一），存量分类（保留 / 移除清单）是 M2b 的一等
+    交付物，本阶段不预判。`legacy` 上**没有**机器判据阻止其增大：`checkExportFaces` 只强制
+    「无重复 / 条目必须仍在导出面 / 与 `faces` 互斥」，把新符号塞进 `legacy` 可绕过准入判据
+    ——那是一次显眼且可评审的登记文件改动，本判据的价值是让「静默增长」不可能（口径与
+    `scripts/lib/export-faces-lib.ts` 的注释同源，可用 `node --input-type=module -e` 直接复现）。
     判据实现 `scripts/lib/export-faces-lib.ts` 被门禁与 fixture 自测复用（§9 禁止双轨）；
     `--snapshot` 只写基线、不碰登记文件，故「更新基线」不会顺手把新符号变成合法导出。
 - **跨包类型可达闭包（`pnpm pack:check` 内；#733 M2a-3.1）**：源面声明了 cordis 声明合并
