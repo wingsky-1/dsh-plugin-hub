@@ -247,12 +247,13 @@ test('#433+#572 调度重设计与孤立分支基线: observe 全量班（北京
   // ── 全量班（observe.yml）：每日一次，北京次日 04:00 = UTC 20:00 ──
   assert.ok(OBSERVE.includes("'0 20 * * *'"),
     '全量班 cron 必须为每日一次 UTC 20:00（北京次日 04:00）')
-  assert.ok(OBSERVE.includes('Resolve mutation suites'), '全量班 suite-plan 步骤在位')
-  assert.ok(OBSERVE.includes('ls stryker.conf.d/dsh-*.json > /tmp/suites.txt'),
-    '全量班 suite-plan 必须纯全量（glob conf 目录为单一事实源，无 push 裁剪分支）')
+  // #718 S1.1：全量班由「单 job 串行循环」改为「逐段矩阵」，段清单的单一事实源
+  // 从 workflow 内联 glob 迁到 mutation-plan.mjs（仍 glob conf 目录，无 push 裁剪分支）
+  assert.ok(OBSERVE.includes('node scripts/gate/mutation-plan.mjs'),
+    '全量班段清单必须由 mutation-plan.mjs 派生（glob conf 目录为单一事实源，无 push 裁剪分支）')
   assert.ok(!OBSERVE.includes('EVENT_NAME'), 'observe 不得再依赖 push/事件类型（#276 方案 A 已移除 push 触发）')
-  assert.ok(OBSERVE.includes('steps.suite-plan.outputs.has_suites == \'true\''),
-    '全量班变异执行与 push 必须以 has_suites 为前提——空计划不跑 push')
+  assert.ok(OBSERVE.includes("steps.reports.outputs.count != '0'"),
+    '全量班变异执行与 push 必须以「有段报告产出」为前提——空产物不跑 push（原 has_suites 语义的矩阵化等价物）')
   assert.ok(!OBSERVE.includes('skip_pr=true'), '#572：全量班已迁移至孤立分支，日期闸与 PR 步骤已退役')
   assert.ok(OBSERVE.includes('orphan-baseline.mjs push'), '全量班调用 orphan-baseline.mjs push 提交孤立分支')
 
@@ -269,16 +270,25 @@ test('#433+#572 调度重设计与孤立分支基线: observe 全量班（北京
 })
 
 test('#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ gauntlet 包集', () => {
-  // observe 两班（全量班 observe.yml + 增量班 observe-incremental.yml）循环清单
-  // 均由各自 suite-plan 步骤产出（#433：全量班即全量、增量班基于基线跑增量但
-  // 清单同样 glob 全量——新增配置自动纳入，Stryker 增量模式跳过未变 mutant）；
-  // 循环本身从计划文件读取
-  for (const [name, wf] of [['observe.yml', OBSERVE], ['observe-incremental.yml', OBSERVE_INC]]) {
-    assert.ok(wf.includes('ls stryker.conf.d/dsh-*.json'),
-      `${name} suite-plan 的全量清单必须以 glob stryker.conf.d/dsh-*.json 为单一事实源（新增配置自动纳入）`)
-    assert.ok(wf.includes('while read -r conf; do'),
-      `${name} 变异循环必须从 suite-plan 清单文件逐行消费`)
-  }
+  // observe 两班的段清单都必须以 `stryker.conf.d/` 为单一事实源（新增配置自动纳入），
+  // 但 #718 S1.1 后载体不同：
+  //   - 全量班改为逐段矩阵，段清单必须在 **workflow 之前** 派生（动态 matrix 只能引用
+  //     needs output，不能读工作区文件），故 glob 迁进 `scripts/gate/mutation-plan.mjs`；
+  //   - 增量班未矩阵化（#718 S2.2 单独处置），仍是 workflow 内联 glob + 逐行循环。
+  // 判据随之拆成「workflow 调用脚本 + 脚本内 glob」两段合取——强度不降（多锁一条脚本侧口径）。
+  assert.ok(OBSERVE.includes('node scripts/gate/mutation-plan.mjs'),
+    'observe.yml 段清单必须由 mutation-plan.mjs 派生')
+  assert.ok(OBSERVE.includes('shard: ${{ fromJSON(needs.mutation-plan.outputs.shards) }}'),
+    'observe.yml 矩阵必须消费 mutation-plan 的段清单（不得硬编码段列表）')
+  const planSrc = readFileSync(join(ROOT, 'scripts', 'gate', 'mutation-plan.mjs'), 'utf8')
+  assert.ok(planSrc.includes('stryker.conf.d') && planSrc.includes('readdirSync'),
+    'mutation-plan.mjs 必须以 stryker.conf.d/ 目录为段清单的单一事实源（新增配置自动纳入）')
+  assert.ok(planSrc.includes("startsWith('dsh-')"),
+    'mutation-plan.mjs 的段清单口径必须与 ci-matrix / mutation-gate 同源（dsh- 前缀 + .json 后缀）')
+  assert.ok(OBSERVE_INC.includes('ls stryker.conf.d/dsh-*.json'),
+    'observe-incremental.yml suite-plan 的全量清单必须以 glob stryker.conf.d/dsh-*.json 为单一事实源（新增配置自动纳入）')
+  assert.ok(OBSERVE_INC.includes('while read -r conf; do'),
+    'observe-incremental.yml 变异循环必须从 suite-plan 清单文件逐行消费')
 
   // stryker.conf.d 实际文件集 → 基础包名集合（段配置 <pkg>-<后缀>.json 与包级
   // <pkg>.json 统一归并到 <pkg>——功能段名/数字段名兼容，basePkgOfConf 共享函数）
@@ -1019,8 +1029,11 @@ test('#722: 全仓产物闸在夜间班次落地（PR 改增量后全仓口径�
   }
 })
 
-test('#217+#572: observe 两班 Mutation suites id + push 区分整套 skip 与部分失败', () => {
-  for (const [name, wf] of [['observe.yml', OBSERVE], ['observe-incremental.yml', OBSERVE_INC]]) {
+test('#217+#572: observe 两班变异记账与 push 区分整套 skip 与部分失败', () => {
+  // 增量班未矩阵化（#718 S2.2 单独处置）：仍是「Mutation suites 步骤 + outcome != skipped」
+  {
+    const name = 'observe-incremental.yml'
+    const wf = OBSERVE_INC
     const sIdx = wf.indexOf('- name: Mutation suites')
     assert.ok(sIdx > 0, `${name} Mutation suites 步骤在位`)
     const sBlock = wf.slice(sIdx, wf.indexOf('- name:', sIdx + 10))
@@ -1031,4 +1044,60 @@ test('#217+#572: observe 两班 Mutation suites id + push 区分整套 skip 与�
     assert.ok(pBlock.includes("if: always() && steps.mutation-suites.outcome != 'skipped'"),
       `${name} push 条件必须区分整套 skip（无产物不推送）与部分失败（记账班次照常提交）`)
   }
+  // #718 S1.1/S1.5：全量班矩阵化后，「整套 skip vs 部分失败」由收口 job 的
+  // 「有段报告才推送」承担——零报告 = 无产物 = 不推送；部分失败 = 有报告 = 照常提交，
+  // 与原语义词一一对应。另锁「齐备性判定必须早于 push」这一时序（push 消费其 output）。
+  {
+    const sIdx = OBSERVE.indexOf('\n  mutation-shards:')
+    assert.ok(sIdx > 0, 'observe.yml mutation-shards job 在位（原 Mutation suites 步骤的矩阵化替身）')
+    const cIdx = OBSERVE.indexOf('\n  mutation-collect:')
+    assert.ok(cIdx > 0, 'observe.yml mutation-collect job 在位（收口：判分 + 单点 push + 报告 + 工单）')
+    const pIdx = OBSERVE.indexOf('- name: Push baseline to orphan branch', cIdx)
+    assert.ok(pIdx > cIdx, 'observe.yml push 必须落在收口 job 内（单点推送，消除矩阵并发踩踏）')
+    const pBlock = OBSERVE.slice(pIdx, OBSERVE.indexOf('- name:', pIdx + 10))
+    assert.ok(pBlock.includes("if: always() && steps.reports.outputs.count != '0'"),
+      'observe.yml push 条件必须区分零产物（不推送）与部分失败（有报告即照常提交）')
+    const rIdx = OBSERVE.indexOf('- name: Restore report layout', cIdx)
+    assert.ok(rIdx > cIdx && rIdx < pIdx, '报告齐备性判定必须排在 push 之前（push 依赖其 output）')
+  }
+})
+
+test('#718 S1.1/S1.4/S1.5: observe 全量班三段式矩阵（plan / quality+shards 并行 / collect 收口）', () => {
+  // S1.1 矩阵化：段清单跨 job 传递，矩阵消费它（不得硬编码段列表）
+  assert.ok(OBSERVE.includes('shards: ${{ steps.plan.outputs.shards }}'),
+    'mutation-plan 必须把段清单作为 job output 暴露给矩阵')
+  assert.ok(OBSERVE.includes('shard: ${{ fromJSON(needs.mutation-plan.outputs.shards) }}'),
+    '矩阵必须以 fromJSON 消费段清单')
+  // S1.1 并行度 + S1.4 fail-fast：都在 strategy 块内断言（块内含解释性注释，
+  // 用行锚定的局部切片而不是跨行正则，避免注释一变断言就假红）
+  const shardsStart = OBSERVE.indexOf('\n  mutation-shards:')
+  const stratIdx = OBSERVE.indexOf('    strategy:', shardsStart)
+  assert.ok(stratIdx > shardsStart, 'observe.yml mutation-shards 必须声明 strategy')
+  const stratBlock = OBSERVE.slice(stratIdx, OBSERVE.indexOf('\n    runs-on:', stratIdx))
+  assert.ok(/max-parallel:\s*5\s*$/m.test(stratBlock),
+    'observe.yml 矩阵必须声明 max-parallel: 5（#718 S1.1；S0.3 实测额度上界 20，取 5 留余量）')
+  assert.ok(/fail-fast:\s*false\s*$/m.test(stratBlock),
+    'observe.yml 矩阵必须 fail-fast: false（#718 S1.4：单段失败不连坐，可定向重跑）')
+  // S1.4 逐段超时：必须引用矩阵携带的值，而不是全局常量
+  assert.ok(OBSERVE.includes('timeout-minutes: ${{ matrix.shard.timeoutMinutes }}'),
+    'observe.yml 矩阵超时必须逐段取自 matrix.shard.timeoutMinutes（#718 S1.4）')
+  assert.ok(!/timeout-minutes:\s*90\s*$/m.test(OBSERVE),
+    '整班 90 分钟超时必须退役（长段擦边即整班被杀的成因）')
+  // S1.5 job 边界：quality 与 mutation-shards 无相互依赖（并行），collect 收口两者
+  const qIdx = OBSERVE.indexOf('\n  quality:')
+  const shardsIdx = OBSERVE.indexOf('\n  mutation-shards:')
+  const collectIdx = OBSERVE.indexOf('\n  mutation-collect:')
+  assert.ok(qIdx > 0 && shardsIdx > qIdx && collectIdx > shardsIdx, 'job 顺序须为 quality → mutation-shards → mutation-collect')
+  const qBlock = OBSERVE.slice(qIdx, shardsIdx)
+  assert.ok(!/^\s{4}needs:/m.test(qBlock),
+    'quality 不得声明 needs——它必须与 mutation-shards 并行（#718 S1.5）')
+  const cBlock = OBSERVE.slice(collectIdx)
+  assert.ok(/needs:\s*\[mutation-plan, quality, mutation-shards\]/.test(cBlock),
+    'mutation-collect 必须 needs 三者（收口全部上游）')
+  assert.ok(/^\s{4}if:\s*always\(\)/m.test(cBlock),
+    'mutation-collect 必须 if: always()（上游失败/被杀时仍收口并留痕，#718 S1.3 的基础）')
+  // 单点 push：矩阵实例内不得出现 push（否则回到并发踩踏）
+  const shardsBlock = OBSERVE.slice(shardsIdx, collectIdx)
+  assert.ok(!shardsBlock.includes('orphan-baseline.mjs push'),
+    '矩阵实例内不得推送基线——推送必须单点落在收口 job')
 })

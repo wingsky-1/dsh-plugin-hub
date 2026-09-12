@@ -3,6 +3,213 @@
   "measurements": [
     {
       "run": {
+        "id": 34536263640,
+        "workflow": "observe.yml",
+        "event": "schedule",
+        "conclusion": "cancelled",
+        "createdAt": "2026-09-10T22:12:31Z",
+        "headSha": "98f003f0aa9c24b725da29068c31460eeab1dd5f"
+      },
+      "scope": "full",
+      "measuredAt": "2026-09-12T06:37:33.483Z",
+      "logSource": "gh run view 34536263640 --log",
+      "segments": [
+        {
+          "seg": "dsh-lan-proxy-1",
+          "startedAt": "2026-09-10T22:13:46.2135240",
+          "endedAt": "2026-09-10T22:17:04.5870062",
+          "wallSeconds": 198.4,
+          "mutants": 693,
+          "dryTests": 2,
+          "dryRunSeconds": 6,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": "3 minutes and 17 seconds"
+        },
+        {
+          "seg": "dsh-lan-proxy-2",
+          "startedAt": "2026-09-10T22:17:04.5886151",
+          "endedAt": "2026-09-10T22:18:50.5549645",
+          "wallSeconds": 106,
+          "mutants": 691,
+          "dryTests": 2,
+          "dryRunSeconds": 6,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": "1 minute and 44 seconds"
+        },
+        {
+          "seg": "dsh-lan-proxy-3",
+          "startedAt": "2026-09-10T22:18:50.5565501",
+          "endedAt": "2026-09-10T22:19:34.2101211",
+          "wallSeconds": 43.7,
+          "mutants": 313,
+          "dryTests": 2,
+          "dryRunSeconds": 6,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": "42 seconds"
+        },
+        {
+          "seg": "dsh-lan-proxy-4",
+          "startedAt": "2026-09-10T22:19:34.2116904",
+          "endedAt": "2026-09-10T22:19:54.6670322",
+          "wallSeconds": 20.5,
+          "mutants": 82,
+          "dryTests": 2,
+          "dryRunSeconds": 6,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": "19 seconds"
+        },
+        {
+          "seg": "dsh-mcp-manager-entry",
+          "startedAt": "2026-09-10T22:19:54.6685404",
+          "endedAt": "2026-09-10T22:23:32.7331516",
+          "wallSeconds": 218.1,
+          "mutants": 477,
+          "dryTests": 13,
+          "dryRunSeconds": 53,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": "3 minutes and 36 seconds"
+        },
+        {
+          "seg": "dsh-mcp-manager-manager",
+          "startedAt": "2026-09-10T22:23:32.7346429",
+          "endedAt": "2026-09-10T22:32:37.3775172",
+          "wallSeconds": 544.6,
+          "mutants": 991,
+          "dryTests": 13,
+          "dryRunSeconds": 52,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": "9 minutes and 3 seconds"
+        },
+        {
+          "seg": "dsh-mcp-manager-middleware",
+          "startedAt": "2026-09-10T22:32:37.3791300",
+          "endedAt": "2026-09-10T22:50:41.1521842",
+          "wallSeconds": 1083.8,
+          "mutants": 1646,
+          "dryTests": 13,
+          "dryRunSeconds": 52,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": "18 minutes and 2 seconds"
+        },
+        {
+          "seg": "dsh-mcp-manager-routes",
+          "startedAt": "2026-09-10T22:50:41.1536692",
+          "endedAt": "2026-09-10T22:52:33.6807288",
+          "wallSeconds": 112.5,
+          "mutants": 536,
+          "dryTests": 13,
+          "dryRunSeconds": 52,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": "1 minute and 51 seconds"
+        },
+        {
+          "seg": "dsh-mcp-manager-runtime",
+          "startedAt": "2026-09-10T22:52:33.6822192",
+          "endedAt": "2026-09-10T23:13:45.9376886",
+          "wallSeconds": 1272.3,
+          "mutants": 1822,
+          "dryTests": 13,
+          "dryRunSeconds": 52,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": "21 minutes and 11 seconds"
+        },
+        {
+          "seg": "dsh-mcp-manager-supervisor",
+          "startedAt": "2026-09-10T23:13:45.9392486",
+          "endedAt": "2026-09-10T23:23:57.6214399",
+          "wallSeconds": 611.7,
+          "mutants": 1150,
+          "dryTests": 13,
+          "dryRunSeconds": 52,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": "10 minutes and 10 seconds"
+        },
+        {
+          "seg": "dsh-notifier-channels",
+          "startedAt": "2026-09-10T23:23:57.6233023",
+          "endedAt": "2026-09-10T23:24:48.3032546",
+          "wallSeconds": 50.7,
+          "mutants": 285,
+          "dryTests": 24,
+          "dryRunSeconds": 14,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": "49 seconds"
+        },
+        {
+          "seg": "dsh-notifier-config",
+          "startedAt": "2026-09-10T23:24:48.3047358",
+          "endedAt": "2026-09-10T23:35:03.9063685",
+          "wallSeconds": 615.6,
+          "mutants": 2365,
+          "dryTests": 24,
+          "dryRunSeconds": 14,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": "10 minutes and 14 seconds"
+        },
+        {
+          "seg": "dsh-notifier-events",
+          "startedAt": "2026-09-10T23:35:03.9078396",
+          "endedAt": "2026-09-10T23:36:47.8923396",
+          "wallSeconds": 104,
+          "mutants": 553,
+          "dryTests": 24,
+          "dryRunSeconds": 14,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": "1 minute and 42 seconds"
+        },
+        {
+          "seg": "dsh-notifier-pipeline",
+          "startedAt": "2026-09-10T23:36:47.8938637",
+          "endedAt": "2026-09-10T23:37:53.2749202",
+          "wallSeconds": 65.4,
+          "mutants": 227,
+          "dryTests": 24,
+          "dryRunSeconds": 14,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": "1 minute and 4 seconds"
+        },
+        {
+          "seg": "dsh-notifier-sdk",
+          "startedAt": "2026-09-10T23:37:53.2763428",
+          "endedAt": "2026-09-10T23:40:03.0736961",
+          "wallSeconds": 129.8,
+          "mutants": 393,
+          "dryTests": 24,
+          "dryRunSeconds": 14,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": "2 minutes and 8 seconds"
+        },
+        {
+          "seg": "dsh-notifier-server",
+          "startedAt": "2026-09-10T23:40:03.0751763",
+          "endedAt": "2026-09-10T23:42:51.7697965",
+          "wallSeconds": 168.7,
+          "mutants": 722,
+          "dryTests": 24,
+          "dryRunSeconds": 14,
+          "reused": null,
+          "reuseTotal": null,
+          "strykerReported": null
+        }
+      ]
+    },
+    {
+      "run": {
         "id": 34579060425,
         "workflow": "observe-incremental.yml",
         "event": "schedule",
