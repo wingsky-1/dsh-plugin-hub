@@ -55,13 +55,28 @@ export function parseSegmentBody(lines) {
 }
 
 /**
- * 从 GHA 原始日志解析逐段实测（栈式配对 `##[group]stryker <seg>` 与 `##[endgroup]`）。
+ * 从 GHA 原始日志解析逐段实测。同一份台账要能读两种日志形态，故按优先级回退：
  *
- * 为什么用栈而不是「下一个 group 起点」：Stryker 自身的输出里也可能出现 `##[group]`，
- * 用后者会把段边界切错。返回按出现顺序排列的记录，段墙钟 = 配对 endgroup 与 group 的时间差；
- * 段被杀导致 group 未闭合时该段不出现在结果里（宁缺勿造）。
+ *   1. **group 形态**（#718 S1.1 之前的串行班）：`observe.yml` 在循环里用
+ *      `echo "::group::stryker <seg>"` 包裹每个 `npx stryker run`，段边界即 group 边界。
+ *   2. **矩阵形态**（#718 S1.1 之后）：每段是独立 job、无 group 包裹，见 `parseByShardJob`。
+ *
+ * 为什么矩阵形态必须支持而不是让它「退化」：矩阵化不改变段语义，只改变日志载体；
+ * 解析器只认一种形态会让台账在结构改造后**静默停止更新**（生成侧报「未解析到任何段」，
+ * 而断言侧仍绿）——#754 落地后本函数首次实测即命中该缺口。
+ *
+ * 栈式配对 group 而不是「取下一个 group 起点」：Stryker 自身的输出里也可能出现
+ * `##[group]`，用后者会把段边界切错。段被杀导致 group 未闭合时该段不出现在结果里
+ * （宁缺勿造，不得用 0 冒充有效测量）。
  */
 export function parseSegmentLedger(logText) {
+  const byGroup = parseByGroup(logText)
+  if (byGroup.length > 0) return byGroup
+  return parseByShardJob(logText)
+}
+
+/** group 形态：栈式配对 `##[group]stryker <seg>` 与 `##[endgroup]`，段墙钟取两者时间差。 */
+function parseByGroup(logText) {
   const raw = logText.split('\n')
   const events = []
   for (let i = 0; i < raw.length; i++) {
@@ -91,11 +106,69 @@ export function parseSegmentLedger(logText) {
       seg: open.seg,
       startedAt: open.at,
       endedAt: ev.at,
-      wallSeconds: Math.round(((Date.parse(ev.at + 'Z') - Date.parse(open.at + 'Z')) / 1000) * 10) / 10,
+      wallSeconds: secondsBetween(open.at, ev.at),
       ...parseSegmentBody(body),
     })
   }
   return out
+}
+
+/** 矩阵实例的 job 名 → 段名（`Mutation shard (dsh-notifier-sdk)` → `dsh-notifier-sdk`）。 */
+const SHARD_JOB = /^Mutation shard \((.+)\)$/
+
+/**
+ * 段内的 Stryker 输出特征（两种形态都要认）：
+ *   - logger 行：`08:05:21 (2726) INFO Instrumenter …`
+ *   - 进度行：`Mutation testing 64% (elapsed: ~8m…) 322/475 tested`（progress-append-only
+ *     reporter，**不带** `(pid) INFO` 前缀）
+ * 为什么按内容而不是按步骤名定位：GHA 在部分 job 上会把步骤名解析成 `UNKNOWN STEP`
+ * （实测本次 33 个 shard 里有 11 个如此），按步骤名过滤会静默漏段——而漏段正是
+ * 「覆盖全部段」断言要防的方向。
+ */
+const SEGMENT_OUTPUT = /(\(\d+\) INFO |^Mutation testing \d+%)/
+
+/**
+ * 矩阵形态（#718 S1.1 之后）：每段是**独立 job**（名为 `Mutation shard (<seg>)`），没有
+ * group 包裹，段范围改用该 job 内**以 `Mutation shard` 开头的步骤**（与 job 名同源）。
+ *
+ * 为什么不取「INFO 行的首末」：Stryker 的进度行来自 progress-append-only reporter，
+ * 形如 `Mutation testing 64% (elapsed: ~8m…) 322/475 tested`，**不带 `(pid) INFO` 前缀**；
+ * 只认 INFO 会在段被杀的实例上严重低估墙钟（实测 events：真实 10.3 min 被算成 30 s），
+ * 而低估正是超时定标最危险的偏差方向。
+ *
+ * 为什么不取 job 起止：job 还含 checkout / install / build，取它会把固定开销算进
+ * 「段执行时间」，与 group 形态不可比（实测同段 job 墙钟比段墙钟多约 20~30 s）。
+ * 无该步骤输出的实例（install 阶段就失败）不产出记录——没有可测的执行时间。
+ */
+function parseByShardJob(logText) {
+  const byJob = new Map()
+  for (const line of logText.split('\n')) {
+    const parsed = parseLogLine(line)
+    if (parsed === null) continue
+    const m = SHARD_JOB.exec(parsed.job)
+    if (m === null) continue
+    if (!byJob.has(m[1])) byJob.set(m[1], [])
+    byJob.get(m[1]).push(parsed)
+  }
+  const out = []
+  for (const [seg, entries] of byJob) {
+    const output = entries.filter((e) => SEGMENT_OUTPUT.test(e.body))
+    if (output.length === 0) continue
+    const startedAt = output[0].at
+    const endedAt = output[output.length - 1].at
+    out.push({
+      seg,
+      startedAt,
+      endedAt,
+      wallSeconds: secondsBetween(startedAt, endedAt),
+      ...parseSegmentBody(output.map((e) => e.body)),
+    })
+  }
+  return out.sort((a, b) => a.seg.localeCompare(b.seg))
+}
+
+function secondsBetween(a, b) {
+  return Math.round(((Date.parse(b + 'Z') - Date.parse(a + 'Z')) / 1000) * 10) / 10
 }
 
 /**

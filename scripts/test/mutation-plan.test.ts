@@ -79,7 +79,7 @@ test('超时公式：实测 × 安全系数 + 构建开销，且不低于下限'
   const peaks = new Map([['big', 21.2 * 60], ['tiny', 20]])
   // 21.2 min × 1.5 + 4 = 35.8 → 36
   assert.equal(timeoutForSegment('big', peaks), Math.ceil(21.2 * SAFETY_FACTOR + SETUP_OVERHEAD_MINUTES))
-  // 20 s × 1.5 + 4 = 4.5 → 5，但下限 10 生效
+  // 20 s × 1.5 + 4 = 4.5 → 5，但下限（TIMEOUT_FLOOR_MINUTES）生效
   assert.equal(timeoutForSegment('tiny', peaks), TIMEOUT_FLOOR_MINUTES)
   assert.ok(SAFETY_FACTOR > 1, '安全系数必须 > 1（大于 1 才是余量）')
 })
@@ -103,18 +103,19 @@ test('真实仓库：段清单与 stryker.conf.d 文件集精确一致（漏段�
     'mutation-plan 的段清单必须与 stryker.conf.d 文件集一一对应')
 })
 
-test('真实仓库：入库台账的 full 测量值确实被超时派生消费', () => {
+test('真实仓库：入库台账的 full 测量值确实被超时派生消费（逐段验证公式关系）', () => {
   const ledger = JSON.parse(readFileSync(join(ROOT, 'scripts', 'data', 'mutation-segment-ledger.json'), 'utf8'))
   const peaks = fullScopePeaks(ledger)
   const matrix = buildShardMatrix(listSegments(join(ROOT, 'stryker.conf.d')), peaks)
-  const measured = matrix.filter((m) => m.timeoutMinutes !== DEFAULT_TIMEOUT_MINUTES)
-  // 不硬编码具体段数：只断言「有全量实测的段确实派生出非默认超时」这一因果关系
+  // 逐段重算期望值并与矩阵比对，而不是用「值 ≠ 默认常量」间接判断：
+  // 实测值恰好使 ceil(实测×系数+开销) 等于默认值时，那种间接判据会误报「派生链断了」。
   for (const m of matrix) {
-    if (peaks.has(m.seg)) {
-      assert.notEqual(m.timeoutMinutes, DEFAULT_TIMEOUT_MINUTES,
-        `${m.seg} 有 full 实测却落到默认超时——派生链断了`)
-    }
+    const measured = peaks.get(m.seg)
+    const expected = measured === undefined
+      ? DEFAULT_TIMEOUT_MINUTES
+      : Math.max(TIMEOUT_FLOOR_MINUTES, Math.ceil((measured / 60) * SAFETY_FACTOR + SETUP_OVERHEAD_MINUTES))
+    assert.equal(m.timeoutMinutes, expected,
+      `${m.seg} 的超时派生与公式不符（full 实测 ${measured ?? '无'} s）`)
   }
-  assert.ok(measured.length > 0 || peaks.size === 0,
-    '台账里存在 full 测量时，矩阵必须至少消费一条')
+  assert.ok(matrix.length > 0, '矩阵非空')
 })

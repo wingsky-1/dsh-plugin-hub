@@ -67,6 +67,53 @@ test('解析器：时间戳与正文间的空格必须剥离（否则 group 前�
   assert.equal(parsed.body, '##[group]stryker dsh-x-a')
 })
 
+// ── 矩阵形态（#718 S1.1 之后：每段一个独立 job，无 group 包裹）────────────────
+// 这批用例防的是 #754 落地后实际发生的两个缺口：日志载体变了而解析器只认 group 形态
+// （台账会静默停止更新），以及只认 INFO 行会低估被杀段的墙钟（进度行不带 `(pid) INFO`）。
+
+/** 矩阵形态的日志行：`<job 名>\t<step 名>\t<ts>Z <content>`。 */
+const shardLine = (seg, step, ts, body) => `Mutation shard (${seg})\t${step}\t${ts}Z ${body}`
+
+const MATRIX_FIXTURE = [
+  shardLine('dsh-x', 'UNKNOWN STEP', '2026-09-12T08:00:00.0000000', '##[group]Run npx stryker run "stryker.conf.d/dsh-x.json"'),
+  shardLine('dsh-x', 'UNKNOWN STEP', '2026-09-12T08:00:01.0000000', '\u001b[32m08:00:01 (123) INFO ProjectReader\u001b[39m Found 1 of 10 file(s)'),
+  shardLine('dsh-x', 'UNKNOWN STEP', '2026-09-12T08:00:02.0000000', '\u001b[32m08:00:02 (123) INFO Instrumenter\u001b[39m Instrumented 1 source file(s) with 50 mutant'),
+  shardLine('dsh-x', 'UNKNOWN STEP', '2026-09-12T08:00:04.0000000', '\u001b[32m08:00:04 (123) INFO DryRunExecutor\u001b[39m Initial test run succeeded. Ran 3 tests in 2 seconds'),
+  // 进度行：progress-append-only reporter，不带 (pid) INFO —— 只认 INFO 会在此截断
+  shardLine('dsh-x', 'UNKNOWN STEP', '2026-09-12T08:00:30.0000000', 'Mutation testing 50% (elapsed: ~30s, remaining: ~30s) 15/30 tested'),
+  shardLine('dsh-x', 'UNKNOWN STEP', '2026-09-12T08:01:00.0000000', 'Mutation testing 90% (elapsed: ~59s, remaining: ~7s) 27/30 tested'),
+  shardLine('dsh-x', 'UNKNOWN STEP', '2026-09-12T08:01:05.0000000', '##[group]Upload shard reports'),
+].join('\n')
+
+test('矩阵形态：无 group 包裹时按 job 名与段内输出解析（步名 UNKNOWN STEP 也要认）', () => {
+  const segs = parseSegmentLedger(MATRIX_FIXTURE)
+  assert.equal(segs.length, 1)
+  const s = segs[0]
+  assert.equal(s.seg, 'dsh-x', '段名取自 job 名 `Mutation shard (<seg>)`，不依赖步骤名')
+  assert.equal(s.mutants, 50)
+  assert.equal(s.dryRunSeconds, 2)
+  assert.equal(s.wallSeconds, 59, '段墙钟必须覆盖到最后的进度行（08:00:01 → 08:01:00）')
+})
+
+test('矩阵形态：只认 INFO 行会低估被杀段的墙钟（回归锁）', () => {
+  // 去掉最后一条进度行后，段墙钟应停在剩余的最后一条输出上——证明边界由输出决定，
+  // 而不是被 job 起止或固定偏移污染
+  const trimmed = MATRIX_FIXTURE.split('\n').filter((l) => !l.includes('08:01:00')).join('\n')
+  const s = parseSegmentLedger(trimmed)[0]
+  assert.equal(s.wallSeconds, 29, '边界 = 最后一条段内输出（08:00:01 → 08:00:30）')
+})
+
+test('矩阵形态：多个 shard job 各自成段，顺序按段名排序', () => {
+  const two = MATRIX_FIXTURE + '\n' + MATRIX_FIXTURE.replace(/dsh-x/g, 'dsh-a')
+  const segs = parseSegmentLedger(two)
+  assert.deepEqual(segs.map((s) => s.seg), ['dsh-a', 'dsh-x'])
+})
+
+test('矩阵形态：无段内输出的实例不产出记录（不得用 0 或 job 墙钟冒充）', () => {
+  const noOutput = shardLine('dsh-x', 'Install dependencies', '2026-09-12T08:00:00.0000000', 'Progress: resolved 505')
+  assert.deepEqual(parseSegmentLedger(noOutput), [])
+})
+
 test('段字段抽取：字段缺失一律为 null，不得用 0 冒充', () => {
   const body = parseSegmentBody(['nothing here'])
   assert.deepEqual(body, {
