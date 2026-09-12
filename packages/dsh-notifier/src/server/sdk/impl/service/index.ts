@@ -33,6 +33,18 @@ const DEFAULT_TITLE = "DSH 通知";
 const NOT_INSTALLED = "dsh-notifier: 对外服务面尚未装配";
 
 /**
+ * 服务名：本插件对兄弟插件开放的 ABI 名。
+ *
+ * 名字的事实源在这里，不在组合根：它属于 ABI，而 ABI 的形状由本域定义。组合根硬编码
+ * 一个字面量，改名时就会有一处漏改，而症状是消费方 `ctx.get` 拿到空——一个只在别的
+ * 插件里才看得见的失败，本包的门禁与产物检查都照不到。
+ *
+ * 包入口的声明合并仍要写一遍字面量（TS 的接口成员名不能是变量），但两者不一致时，
+ * 组合根那次 `ctx.provide` 会编译失败——见 `src/index.ts` 里对类型参数的说明。
+ */
+export const NOTIFIER_SERVICE = "wingsky.notifier" as const;
+
+/**
  * 未装配时的占位。
  *
  * 占位成抛错而不是空实现：真被读到的时候，「没装配」应当当场暴露，而不是让一条通知

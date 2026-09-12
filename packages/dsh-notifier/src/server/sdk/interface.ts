@@ -38,6 +38,9 @@ import { sdkService } from "./impl/service/index.ts";
 export type { RegisteredKind } from "./impl/registry/type.ts";
 export type { NotifierService } from "./impl/service/type.ts";
 
+// 服务名的值出口：组合根拿它去 `ctx.provide`，不自己写一遍字面量。
+export { NOTIFIER_SERVICE } from "./impl/service/index.ts";
+
 /**
  * 装配对外服务面（组合根在 `apply` 期调用一次）。
  */

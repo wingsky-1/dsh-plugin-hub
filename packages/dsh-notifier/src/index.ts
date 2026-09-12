@@ -119,8 +119,10 @@ declare module "@deepseek-ai/cordis" {
      * 的声明闭包里才会进产物 `lib/index.d.ts`。写在 sdk 域里，消费方按包名导入时
      * `ctx["wingsky.notifier"]` 就是一个不存在的属性。
      *
-     * 服务名是本插件的 ABI 常量，只在这里与 sdk 域内各出现一次：sdk 域负责 `provide`，
-     * 这里负责让类型系统认识它。
+     * 键必须是字面量——TS 的接口成员名不能是变量，所以它与 sdk 域的 `NOTIFIER_SERVICE`
+     * 是同一件事的两处写法。两者不一致时，`bindHost` 里那次 `ctx.provide` 会编译失败，
+     * 那是这条链上唯一的机器校验：服务名写错了不会有任何运行时报错，只会让消费方的
+     * `ctx.get` 拿到空。
      */
     "wingsky.notifier": NotifierService;
   }
@@ -184,8 +186,14 @@ function bindHost(ctx: Context): HostPort {
       }),
     },
     register: (route) => ctx.webServer.register(route),
-    // 服务名写在这一处，由 sdk 域决定它是什么；组合根只把「挂上去」这个动作递过去。
-    expose: { provide: (service) => ctx.provide("wingsky.notifier", service) },
+    // 名字取自 sdk 域（ABI 的定义处），组合根不自己写一遍字面量。
+    //
+    // 显式给类型参数不是啰嗦：`ctx.provide` 的第二个重载是 `(name: string, value?: any)`，
+    // 它会把任意字符串都兜住——少了这个类型参数，这里的名字与上面声明合并的键不一致也能
+    // 编译通过，而症状是消费方 `ctx.get` 拿到空，一个只在别的插件里才看得见的失败。
+    expose: {
+      provide: (service) => ctx.provide<typeof sdkApi.NOTIFIER_SERVICE>(sdkApi.NOTIFIER_SERVICE, service),
+    },
     events: {
       // 宿主的审批事件是 waterfall：监听者要么自己裁决、要么调 next() 把判定交还。
       // 本插件只旁观，所以转发之后必须 next()——漏掉这一步就等于替所有人否决了
