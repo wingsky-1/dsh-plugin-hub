@@ -45,7 +45,7 @@ import type { SettingsView, WriteResult } from "./impl/service/type.ts";
 // 写面要读的原始值，加上升级链要读的存量形态。其余类型经这些签名可达即可，不额外占
 // 一个出口名字——多一个出口就是多一份要同步的事实源。
 
-export type { RawSettingValue, StoredSettings } from "./impl/model/type.ts";
+export type { RawSettingValue, SettingsPatch, StoredSettings } from "./impl/model/type.ts";
 
 // ---------------------------------------------------------------- 装配
 

@@ -53,12 +53,13 @@ import * as eventsApi from "./server/events/interface.ts";
 import type { HostEventPort } from "./server/events/interface.ts";
 import * as pipelineApi from "./server/pipeline/interface.ts";
 import type { OutgoingFrame } from "./server/pipeline/interface.ts";
+import type { LegacySettingsPort } from "./server/upgrade/deps.ts";
 import type { ExposePort } from "./server/sdk/deps.ts";
 import * as sdkApi from "./server/sdk/interface.ts";
 import type { NotifierService } from "./server/sdk/interface.ts";
 import type { LoggerPort } from "./server/shared/type.ts";
 import * as storesApi from "./server/stores/interface.ts";
-import { installUpgrade } from "./server/upgrade/interface.ts";
+import { installUpgrade, releaseUpgrade } from "./server/upgrade/interface.ts";
 
 /**
  * 对外服务面的类型。
@@ -67,6 +68,9 @@ import { installUpgrade } from "./server/upgrade/interface.ts";
  * 是下面那段声明合并的载荷——不导出，这个包对兄弟插件就只有运行时可用、类型上无从引用。
  */
 export type { NotifierService } from "./server/sdk/interface.ts";
+
+/** 宿主 settings 服务的名字。它是宿主的知识，不是本插件的 ABI。 */
+const SETTINGS_SERVICE = "settings";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "notifier";
@@ -149,6 +153,12 @@ interface HostPort {
   /** 宿主路由注册口：只有组合根够得着 `ctx.webServer`。 */
   readonly register: (route: WebRoute) => () => void;
   readonly events: HostEventPort;
+  /**
+   * 宿主 settings 服务：0.2.3 把配置存在那里，新架构搬走之后仍需读它一次。
+   *
+   * 它是**可选**的：服务可能晚于本插件就绪，宿主也可以根本不装它。
+   */
+  readonly legacySettings: LegacySettingsPort;
   /** 宿主出口：把服务面挂上上下文。服务名是 sdk 域的 ABI，组合根不参与命名。 */
   readonly expose: ExposePort;
 }
@@ -187,6 +197,21 @@ function bindHost(ctx: Context): HostPort {
         ctx.on(pipelineApi.NOTIFIER_FRAME, (payload) => {
           guard(() => handler(payload));
         }),
+    },
+    // 存量配置的读取面：先试一次（服务可能已经在），再监听晚到的。只监听事件会漏掉
+    // 「注册之前就已经 provide」的那种顺序，而只试一次会漏掉晚到的——两个都要。
+    legacySettings: {
+      whenReady: (handler) => {
+        const existing = ctx.get("settings", false);
+        if (existing) handler(existing);
+        return ctx.on(
+          "internal/service",
+          (name, value) => {
+            if (name === SETTINGS_SERVICE) handler(value);
+          },
+          GLOBAL_LISTEN,
+        );
+      },
     },
     register: (route) => ctx.webServer.register(route),
     // 名字取自 sdk 域（ABI 的定义处），组合根不自己写一遍字面量。
@@ -282,7 +307,10 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
   const disposers: Array<() => void> = [];
 
   // 0. 存储形态迁移：动的是磁盘，必须早于任何读文件的域。
-  installUpgrade({ logger: host.logger });
+  //    它的存量配置那一路要等宿主 settings 服务就绪（0.2.3 把配置存在那里），所以装的是
+  //    一个回调而不是一次同步动作——回调里经 config 域的写面落地。
+  installUpgrade({ logger: host.logger, legacySettings: host.legacySettings, config: configApi });
+  disposers.push(releaseUpgrade);
 
   // 1. 设置：读面在装配返回时即可用，后续各域不必等加载。
   configApi.installConfig({ logger: host.logger });
