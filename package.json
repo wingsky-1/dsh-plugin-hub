@@ -15,7 +15,7 @@
     "stryker:gen": "node scripts/gate/gen-stryker-conf.mjs",
     "stryker:check": "node scripts/gate/gen-stryker-conf.mjs --check",
     "test:scripts": "node --test scripts/test/*.test.ts",
-  "repair:mcp-catalog": "node scripts/maintenance/repair-mcp-catalog-sessions.mjs",
+    "repair:mcp-catalog": "node scripts/maintenance/repair-mcp-catalog-sessions.mjs",
     "test:src-tests": "node scripts/gate/forbid-src-tests.mjs",
     "gate:homedir": "node scripts/gate/forbid-homedir-src.mjs",
     "gate:module-state": "node scripts/gate/forbid-module-state-src.mjs",
@@ -27,7 +27,9 @@
     "cov": "vitest run --coverage --project unit --project integration",
     "crap": "node scripts/gate/crap-check.mjs",
     "lint": "node tools/lint/bin/lint.mjs",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "keywords": [
     "dsh",
@@ -36,7 +38,10 @@
   ],
   "packageManager": "pnpm@11.21.0",
   "lint-staged": {
-    "*.{ts,tsx,mts,cts,js,mjs,cjs}": "node tools/lint/bin/lint.mjs"
+    "*.{ts,tsx,mts,cts,js,mjs,cjs}": [
+      "prettier --write",
+      "node tools/lint/bin/lint.mjs"
+    ]
   },
   "devDependencies": {
     "@commitlint/cli": "21.2.2",
@@ -51,6 +56,7 @@
     "happy-dom": "^20.14.3",
     "lefthook": "2.1.12",
     "lint-staged": "17.5.1",
+    "prettier": "3.9.6",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vitest": "4.1.11"

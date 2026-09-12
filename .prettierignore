@@ -1,0 +1,12 @@
+# 依赖与构建产物
+node_modules/
+**/lib/
+coverage/
+**/dist/
+
+# 本地草稿（在 .gitignore 里，但 Prettier 不读 .gitignore）
+.maintenance-drafts/
+**/.maintenance-drafts/
+
+# 锁文件由 pnpm 写入，格式化它会与 pnpm 的写入格式互相打架
+pnpm-lock.yaml

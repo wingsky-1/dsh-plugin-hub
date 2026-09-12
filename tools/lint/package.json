@@ -7,6 +7,7 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "eslint": "10.10.0",
+    "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-sonarjs": "4.2.0",
     "typescript": "6.0.3",
     "typescript-eslint": "8.70.0"
