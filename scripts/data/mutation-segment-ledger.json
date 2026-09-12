@@ -1,0 +1,407 @@
+{
+  "$comment": "变异段实测台账（#718 S0.2）——由 scripts/gate/mutation-ledger.mjs 从 Actions run 日志解析生成，禁止手工编造数值。核心量 wallSeconds = 日志里 `##[group]stryker <seg>` 与配对 `##[endgroup]` 的墙钟（含 Stryker 启动、项目读取、instrument、dry run、变异执行、报告落盘；不含 install/build）。为什么不取段配置文件的 mtime：增量班次会周期性重写 stryker.conf.d/ 与 coverage/mutation/，文件时间戳永远是「刚刚」，无法区分「真的重测过」与「只是被重写」——台账的真实执行时间是唯一可信判据。scope 标口径：incremental = 有基线 restore 的增量班；full = 夜班全量冷跑（无 restore）。覆盖不变量由 scripts/gate/mutation-ledger.mjs --check 强制（test:scripts 内调用）：本次测量值 ∪ unmeasured 必须精确等于当前 stryker.conf.d 派生的段集合；已消失的历史段必须在 superseded 登记取代关系。",
+  "measurements": [
+    {
+      "run": {
+        "id": 34579060425,
+        "workflow": "observe-incremental.yml",
+        "event": "schedule",
+        "conclusion": "success",
+        "createdAt": "2026-09-11T08:24:55Z",
+        "headSha": "184ba08060ff5507c97c31b133d5e613ce29f892"
+      },
+      "scope": "incremental",
+      "measuredAt": "2026-09-12T04:35:31.489Z",
+      "logSource": "gh run view 34579060425 --log",
+      "segments": [
+        {
+          "seg": "dsh-lan-proxy-1",
+          "startedAt": "2026-09-11T08:25:17.5069391",
+          "endedAt": "2026-09-11T08:25:27.5328974",
+          "wallSeconds": 10,
+          "mutants": 693,
+          "dryTests": 2,
+          "dryRunSeconds": 5,
+          "reused": 533,
+          "reuseTotal": 693,
+          "strykerReported": "7 seconds"
+        },
+        {
+          "seg": "dsh-lan-proxy-2",
+          "startedAt": "2026-09-11T08:25:27.5340763",
+          "endedAt": "2026-09-11T08:25:36.1646441",
+          "wallSeconds": 8.6,
+          "mutants": 691,
+          "dryTests": 2,
+          "dryRunSeconds": 5,
+          "reused": 545,
+          "reuseTotal": 691,
+          "strykerReported": "7 seconds"
+        },
+        {
+          "seg": "dsh-lan-proxy-3",
+          "startedAt": "2026-09-11T08:25:36.1657798",
+          "endedAt": "2026-09-11T08:25:45.0025605",
+          "wallSeconds": 8.8,
+          "mutants": 313,
+          "dryTests": 2,
+          "dryRunSeconds": 5,
+          "reused": 237,
+          "reuseTotal": 313,
+          "strykerReported": "8 seconds"
+        },
+        {
+          "seg": "dsh-lan-proxy-4",
+          "startedAt": "2026-09-11T08:25:45.0036771",
+          "endedAt": "2026-09-11T08:25:53.7535627",
+          "wallSeconds": 8.8,
+          "mutants": 82,
+          "dryTests": 2,
+          "dryRunSeconds": 5,
+          "reused": 50,
+          "reuseTotal": 82,
+          "strykerReported": "8 seconds"
+        },
+        {
+          "seg": "dsh-mcp-manager-entry",
+          "startedAt": "2026-09-11T08:25:53.7547029",
+          "endedAt": "2026-09-11T08:26:45.9452802",
+          "wallSeconds": 52.2,
+          "mutants": 477,
+          "dryTests": 13,
+          "dryRunSeconds": 49,
+          "reused": 359,
+          "reuseTotal": 477,
+          "strykerReported": "51 seconds"
+        },
+        {
+          "seg": "dsh-mcp-manager-manager",
+          "startedAt": "2026-09-11T08:26:45.9464511",
+          "endedAt": "2026-09-11T08:27:55.0360859",
+          "wallSeconds": 69.1,
+          "mutants": 991,
+          "dryTests": 13,
+          "dryRunSeconds": 49,
+          "reused": 899,
+          "reuseTotal": 991,
+          "strykerReported": "1 minute and 8 seconds"
+        },
+        {
+          "seg": "dsh-mcp-manager-middleware",
+          "startedAt": "2026-09-11T08:27:55.0372581",
+          "endedAt": "2026-09-11T08:28:47.3872442",
+          "wallSeconds": 52.4,
+          "mutants": 1646,
+          "dryTests": 13,
+          "dryRunSeconds": 49,
+          "reused": 1255,
+          "reuseTotal": 1646,
+          "strykerReported": "51 seconds"
+        },
+        {
+          "seg": "dsh-mcp-manager-routes",
+          "startedAt": "2026-09-11T08:28:47.3884714",
+          "endedAt": "2026-09-11T08:29:39.2635438",
+          "wallSeconds": 51.9,
+          "mutants": 536,
+          "dryTests": 13,
+          "dryRunSeconds": 49,
+          "reused": 375,
+          "reuseTotal": 536,
+          "strykerReported": "51 seconds"
+        },
+        {
+          "seg": "dsh-mcp-manager-runtime",
+          "startedAt": "2026-09-11T08:29:39.2646725",
+          "endedAt": "2026-09-11T08:30:49.1467984",
+          "wallSeconds": 69.9,
+          "mutants": 1822,
+          "dryTests": 13,
+          "dryRunSeconds": 49,
+          "reused": 1521,
+          "reuseTotal": 1822,
+          "strykerReported": "1 minute and 9 seconds"
+        },
+        {
+          "seg": "dsh-mcp-manager-supervisor",
+          "startedAt": "2026-09-11T08:30:49.1479648",
+          "endedAt": "2026-09-11T08:32:33.4655492",
+          "wallSeconds": 104.3,
+          "mutants": 1150,
+          "dryTests": 13,
+          "dryRunSeconds": 49,
+          "reused": 916,
+          "reuseTotal": 1150,
+          "strykerReported": "1 minute and 43 seconds"
+        },
+        {
+          "seg": "dsh-notifier-channels",
+          "startedAt": "2026-09-11T08:32:33.4667339",
+          "endedAt": "2026-09-11T08:32:48.1042428",
+          "wallSeconds": 14.6,
+          "mutants": 285,
+          "dryTests": 23,
+          "dryRunSeconds": 11,
+          "reused": 188,
+          "reuseTotal": 285,
+          "strykerReported": "13 seconds"
+        },
+        {
+          "seg": "dsh-notifier-config",
+          "startedAt": "2026-09-11T08:32:48.1054450",
+          "endedAt": "2026-09-11T08:33:03.3149728",
+          "wallSeconds": 15.2,
+          "mutants": 2365,
+          "dryTests": 23,
+          "dryRunSeconds": 12,
+          "reused": 1986,
+          "reuseTotal": 2365,
+          "strykerReported": "14 seconds"
+        },
+        {
+          "seg": "dsh-notifier-events",
+          "startedAt": "2026-09-11T08:33:03.3161011",
+          "endedAt": "2026-09-11T08:33:18.8220475",
+          "wallSeconds": 15.5,
+          "mutants": 553,
+          "dryTests": 23,
+          "dryRunSeconds": 12,
+          "reused": 475,
+          "reuseTotal": 553,
+          "strykerReported": "14 seconds"
+        },
+        {
+          "seg": "dsh-notifier-pipeline",
+          "startedAt": "2026-09-11T08:33:18.8232428",
+          "endedAt": "2026-09-11T08:33:33.5325446",
+          "wallSeconds": 14.7,
+          "mutants": 227,
+          "dryTests": 23,
+          "dryRunSeconds": 12,
+          "reused": 186,
+          "reuseTotal": 227,
+          "strykerReported": "14 seconds"
+        },
+        {
+          "seg": "dsh-notifier-sdk",
+          "startedAt": "2026-09-11T08:33:33.5337144",
+          "endedAt": "2026-09-11T08:33:48.2885567",
+          "wallSeconds": 14.8,
+          "mutants": 393,
+          "dryTests": 23,
+          "dryRunSeconds": 11,
+          "reused": 278,
+          "reuseTotal": 393,
+          "strykerReported": "14 seconds"
+        },
+        {
+          "seg": "dsh-notifier-server",
+          "startedAt": "2026-09-11T08:33:48.2897043",
+          "endedAt": "2026-09-11T08:34:03.0065657",
+          "wallSeconds": 14.7,
+          "mutants": 722,
+          "dryTests": 23,
+          "dryRunSeconds": 11,
+          "reused": 504,
+          "reuseTotal": 722,
+          "strykerReported": "14 seconds"
+        },
+        {
+          "seg": "dsh-notifier-stores",
+          "startedAt": "2026-09-11T08:34:03.0078302",
+          "endedAt": "2026-09-11T08:34:17.5233758",
+          "wallSeconds": 14.5,
+          "mutants": 161,
+          "dryTests": 23,
+          "dryRunSeconds": 11,
+          "reused": 132,
+          "reuseTotal": 161,
+          "strykerReported": "13 seconds"
+        },
+        {
+          "seg": "dsh-notifier-text",
+          "startedAt": "2026-09-11T08:34:17.5245920",
+          "endedAt": "2026-09-11T08:34:32.2388578",
+          "wallSeconds": 14.7,
+          "mutants": 506,
+          "dryTests": 23,
+          "dryRunSeconds": 11,
+          "reused": 314,
+          "reuseTotal": 506,
+          "strykerReported": "14 seconds"
+        },
+        {
+          "seg": "dsh-provider-usage-apply",
+          "startedAt": "2026-09-11T08:34:32.2399992",
+          "endedAt": "2026-09-11T08:34:41.9868468",
+          "wallSeconds": 9.7,
+          "mutants": 310,
+          "dryTests": 15,
+          "dryRunSeconds": 6,
+          "reused": 219,
+          "reuseTotal": 310,
+          "strykerReported": "9 seconds"
+        },
+        {
+          "seg": "dsh-provider-usage-contracts",
+          "startedAt": "2026-09-11T08:34:41.9880450",
+          "endedAt": "2026-09-11T08:34:51.7628646",
+          "wallSeconds": 9.8,
+          "mutants": 524,
+          "dryTests": 15,
+          "dryRunSeconds": 6,
+          "reused": 426,
+          "reuseTotal": 524,
+          "strykerReported": "9 seconds"
+        },
+        {
+          "seg": "dsh-provider-usage-entry",
+          "startedAt": "2026-09-11T08:34:51.7640045",
+          "endedAt": "2026-09-11T08:35:01.5603650",
+          "wallSeconds": 9.8,
+          "mutants": 536,
+          "dryTests": 15,
+          "dryRunSeconds": 6,
+          "reused": 403,
+          "reuseTotal": 536,
+          "strykerReported": "9 seconds"
+        },
+        {
+          "seg": "dsh-provider-usage-errsurf",
+          "startedAt": "2026-09-11T08:35:01.5616352",
+          "endedAt": "2026-09-11T08:35:11.2734976",
+          "wallSeconds": 9.7,
+          "mutants": 38,
+          "dryTests": 15,
+          "dryRunSeconds": 6,
+          "reused": 25,
+          "reuseTotal": 38,
+          "strykerReported": "9 seconds"
+        },
+        {
+          "seg": "dsh-provider-usage-pipeline",
+          "startedAt": "2026-09-11T08:35:11.2746951",
+          "endedAt": "2026-09-11T08:35:21.4226349",
+          "wallSeconds": 10.1,
+          "mutants": 1593,
+          "dryTests": 15,
+          "dryRunSeconds": 6,
+          "reused": 1365,
+          "reuseTotal": 1593,
+          "strykerReported": "9 seconds"
+        },
+        {
+          "seg": "dsh-provider-usage-registry",
+          "startedAt": "2026-09-11T08:35:21.4238071",
+          "endedAt": "2026-09-11T08:35:31.1457228",
+          "wallSeconds": 9.7,
+          "mutants": 234,
+          "dryTests": 15,
+          "dryRunSeconds": 6,
+          "reused": 189,
+          "reuseTotal": 234,
+          "strykerReported": "9 seconds"
+        },
+        {
+          "seg": "dsh-provider-usage-report-execute",
+          "startedAt": "2026-09-11T08:35:31.1469359",
+          "endedAt": "2026-09-11T08:35:41.1044263",
+          "wallSeconds": 10,
+          "mutants": 629,
+          "dryTests": 15,
+          "dryRunSeconds": 6,
+          "reused": 506,
+          "reuseTotal": 629,
+          "strykerReported": "9 seconds"
+        },
+        {
+          "seg": "dsh-provider-usage-report-schedule",
+          "startedAt": "2026-09-11T08:35:41.1058494",
+          "endedAt": "2026-09-11T08:35:51.1548823",
+          "wallSeconds": 10,
+          "mutants": 894,
+          "dryTests": 15,
+          "dryRunSeconds": 6,
+          "reused": 546,
+          "reuseTotal": 894,
+          "strykerReported": "9 seconds"
+        },
+        {
+          "seg": "dsh-provider-usage-routes",
+          "startedAt": "2026-09-11T08:35:51.1561777",
+          "endedAt": "2026-09-11T08:36:01.1267598",
+          "wallSeconds": 10,
+          "mutants": 858,
+          "dryTests": 15,
+          "dryRunSeconds": 6,
+          "reused": 608,
+          "reuseTotal": 858,
+          "strykerReported": "9 seconds"
+        },
+        {
+          "seg": "dsh-provider-usage-sanitize",
+          "startedAt": "2026-09-11T08:36:01.1280731",
+          "endedAt": "2026-09-11T08:36:11.3439504",
+          "wallSeconds": 10.2,
+          "mutants": 415,
+          "dryTests": 15,
+          "dryRunSeconds": 7,
+          "reused": 331,
+          "reuseTotal": 415,
+          "strykerReported": "9 seconds"
+        },
+        {
+          "seg": "dsh-provider-usage-trend-aggregate",
+          "startedAt": "2026-09-11T08:36:11.3451358",
+          "endedAt": "2026-09-11T08:36:21.4610043",
+          "wallSeconds": 10.1,
+          "mutants": 1280,
+          "dryTests": 15,
+          "dryRunSeconds": 6,
+          "reused": 1133,
+          "reuseTotal": 1280,
+          "strykerReported": "9 seconds"
+        },
+        {
+          "seg": "dsh-provider-usage-trend-collect",
+          "startedAt": "2026-09-11T08:36:21.4621893",
+          "endedAt": "2026-09-11T08:36:31.3268582",
+          "wallSeconds": 9.9,
+          "mutants": 670,
+          "dryTests": 15,
+          "dryRunSeconds": 6,
+          "reused": 585,
+          "reuseTotal": 670,
+          "strykerReported": "9 seconds"
+        },
+        {
+          "seg": "dsh-web-file-preview",
+          "startedAt": "2026-09-11T08:36:31.3280660",
+          "endedAt": "2026-09-11T08:36:34.1562589",
+          "wallSeconds": 2.8,
+          "mutants": 204,
+          "dryTests": 1,
+          "dryRunSeconds": 0,
+          "reused": 164,
+          "reuseTotal": 204,
+          "strykerReported": "2 seconds"
+        }
+      ]
+    }
+  ],
+  "unmeasured": {
+    "dsh-notifier-config-normalize": "#720 静态拆段（PR #746，main dbd92fd）新增段，尚无成功 run 覆盖——首个 observe 班次后由 mutation-ledger 补齐",
+    "dsh-notifier-config-validate": "#720 静态拆段（PR #746，main dbd92fd）新增段，尚无成功 run 覆盖——首个 observe 班次后由 mutation-ledger 补齐",
+    "dsh-notifier-config-rest": "#720 静态拆段（PR #746，main dbd92fd）新增段，尚无成功 run 覆盖——首个 observe 班次后由 mutation-ledger 补齐"
+  },
+  "superseded": {
+    "dsh-notifier-config": {
+      "replacedBy": [
+        "dsh-notifier-config-normalize",
+        "dsh-notifier-config-validate",
+        "dsh-notifier-config-rest"
+      ],
+      "reason": "#720 静态拆段（PR #746）：原 config 段 9 实现 2366 mutant 按文件密度拆三段（877/862/627），本段不再存在于 stryker.conf.d"
+    }
+  }
+}
