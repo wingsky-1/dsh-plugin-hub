@@ -29,6 +29,17 @@ const REPLAY_LIMIT = 200;
 const HEARTBEAT_MS = 30000;
 
 /**
+ * 开流锚点。
+ *
+ * 注释帧客户端不解析，它的作用是**立即 flush 响应头**：Node 会缓冲响应头直到第一次
+ * 写入，没有这一行，客户端要等到第一个心跳（30s 后）才从 CONNECTING 进入 OPEN。
+ */
+const CONNECTED = ": connected\n\n";
+
+/** 线协议里的通知事件（`ping` 之外的那一支）。 */
+type NotifyEvent = Extract<StreamEvent, { type: "notify" }>;
+
+/**
  * 未装配时的占位。
  *
  * 装配是必经路径（`installed` 守卫），占位值不会被真正读到；它的作用是让字段有确定
@@ -96,15 +107,33 @@ class StreamHub {
       // 反代缓冲会把 SSE 攒成一次性大响应，客户端看起来像「连上了但一直没消息」。
       "x-accel-buffering": "no",
     });
+    res.write(CONNECTED);
     for (const event of this.since(sinceOf(req))) res.write(encode(event));
     this.hub.register(res);
   }
 
-  /** 广播一条通知帧：编号、入缓冲、落序号、推给所有连接。 */
+  /**
+   * 广播一条通知帧：翻成线协议 → 编号 → 入缓冲 → 落序号 → 推给所有连接。
+   *
+   * 翻译（`body`→`message`、`pop`→`playOnly`）在这里而不在裁决管线：线协议是**浏览器
+   * 出口**的约定，管线对外给的是内部帧。翻译上移会让内部词汇被线协议反向锁死。
+   */
   publish(payload: OutgoingFrame): void {
     if (!this.installed) return;
     this.seq += 1;
-    const event: StreamEvent = { type: "notify", seq: this.seq, kind: payload.kind, frame: payload.frame };
+    const { frame } = payload;
+    const event: NotifyEvent = {
+      type: "notify",
+      seq: this.seq,
+      kind: payload.kind,
+      title: frame.title,
+      message: frame.body,
+      ts: Date.now(),
+      sound: frame.sound,
+    };
+    // 缺席而不是 `false`：客户端判的是 `=== true`，两种写法对它等价，但缺席让不认识
+    // 这个字段的旧客户端收到的帧与从前逐字节一致。
+    if (!frame.pop) event.playOnly = true;
     this.replay.push(event);
     if (this.replay.length > REPLAY_LIMIT) this.replay.splice(0, this.replay.length - REPLAY_LIMIT);
     // 序号是 fire-and-forget：写失败只让下次重启回退几条，不值得挡住广播。

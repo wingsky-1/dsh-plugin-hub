@@ -26,8 +26,6 @@
 import type { UpgradeDeps } from "./deps.ts";
 import { runUpgradeChain } from "./impl/chain/index.ts";
 
-export type { UpgradeDeps } from "./deps.ts";
-
 /**
  * 跑一遍升级链（组合根在各域装配之前调用一次）。
  *

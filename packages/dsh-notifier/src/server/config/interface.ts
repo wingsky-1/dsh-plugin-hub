@@ -42,11 +42,10 @@ import { configStore } from "./impl/service/index.ts";
 import type { SettingsView, WriteResult } from "./impl/service/type.ts";
 
 // ---------------------------------------------------------------- 入参类型
-// 只出「调用方必须构造的」：组合根要造装配面，写入方要造提交体。其余类型经这些
-// 签名可达即可，不额外占一个出口名字——多一个出口就是多一份要同步的事实源。
+// 写面要读的原始值，加上升级链要读的存量形态。其余类型经这些签名可达即可，不额外占
+// 一个出口名字——多一个出口就是多一份要同步的事实源。
 
-export type { ConfigDeps } from "./deps.ts";
-export type { SettingsPatch, StoredSettings } from "./impl/model/type.ts";
+export type { RawSettingValue, StoredSettings } from "./impl/model/type.ts";
 
 // ---------------------------------------------------------------- 装配
 

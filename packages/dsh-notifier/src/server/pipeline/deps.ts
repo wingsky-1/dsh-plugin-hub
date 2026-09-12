@@ -49,6 +49,5 @@ export interface PipelineDeps {
   frames: FramePort;
 }
 
-export type { NotifyFrame };
 export type { DeliveryTarget, NotifyMessage } from "../channels/interface.ts";
 export type { ChannelDelivery, HistoryEntry } from "../stores/interface.ts";

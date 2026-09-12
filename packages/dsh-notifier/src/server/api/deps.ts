@@ -12,14 +12,15 @@ import type { NotifyKind, OutgoingFrame } from "../pipeline/interface.ts";
 import type { LoggerPort } from "../shared/type.ts";
 
 export { readConfig, readSettingsView, writeConfig } from "../config/interface.ts";
-export { submit } from "../pipeline/interface.ts";
 export { clearHistory, readHistory, readStatus } from "../stores/interface.ts";
 export { isLoopbackRequest } from "../../../../../shared/loopback.js";
+export { readJsonBody } from "../../../../../shared/host-utils.js";
 export { createSseHub } from "../../../../../shared/sse-hub.js";
 
 export type { NotifyFrame } from "../channels/interface.ts";
 export type { LoggerPort } from "../shared/type.ts";
-export type { SseHub, SseHubOptions } from "../../../../../shared/sse-hub.js";
+export type { RawSettingValue } from "../config/interface.ts";
+export type { SseHub } from "../../../../../shared/sse-hub.js";
 export type { NotifyKind, OutgoingFrame };
 
 /** 宿主路由注册口：与宿主契约同源，不在两侧各写一遍。 */
@@ -31,7 +32,7 @@ export type RegisterRoute = (route: WebRoute) => () => void;
  * 只有 `on` 没有 `emit`：api 域是帧的**消费者**，给它发帧的能力等于让它能伪造通知。
  * 生产帧是裁决管线的事。
  */
-export interface FrameInlet {
+interface FrameInlet {
   onFrame(handler: (payload: OutgoingFrame) => void): () => void;
 }
 

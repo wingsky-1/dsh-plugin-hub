@@ -12,9 +12,11 @@ import { sendJson } from "../route/index.ts";
 /**
  * POST /test：造一条 `test` 通知交给裁决管线。
  *
- * 未实现。待填：读 `{channelId?}` → 组装请求 → `submit`。带 channelId 时是「只发给
- * 这个频道」的定向测试，而 `NotifyRequest` 目前没有承载它的字段——定向属于裁决输入
- * 而不是事件陈述，落点待定，实现时再定。
+ * 未实现。待填：读 `{channelId?}` → 组装请求 → `submit` → 回
+ * `{ ok: true, sseConnections, results }`（客户端用 `sseConnections` 提示「服务端未
+ * 释放句柄几条」，`results` 是逐频道受理结果）。带 channelId 时是「只发给这个频道」
+ * 的定向测试，而 `NotifyRequest` 目前没有承载它的字段——定向属于裁决输入而不是事件
+ * 陈述，落点待定，实现时再定。
  */
 export async function sendTest(_req: IncomingMessage, res: ServerResponse): Promise<void> {
   void res;
@@ -23,5 +25,5 @@ export async function sendTest(_req: IncomingMessage, res: ServerResponse): Prom
 
 /** GET /health：宿主平台。客户端据此写系统通道的平台提示——不能拿浏览器 OS 猜。 */
 export function reportHealth(_req: IncomingMessage, res: ServerResponse): void {
-  sendJson(res, 200, { platform: process.platform });
+  sendJson(res, 200, { ok: true, plugin: "dsh-notifier", platform: process.platform });
 }

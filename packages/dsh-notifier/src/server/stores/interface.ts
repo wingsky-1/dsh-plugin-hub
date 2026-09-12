@@ -18,9 +18,8 @@ import type { HistoryEntry } from "./impl/history/type.ts";
 import { statusStore } from "./impl/status/index.ts";
 import type { ChannelStatusEntry } from "./impl/status/type.ts";
 
-// 入参类型：只出装配面与写入面要构造的。状态条目的形状经 `readStatus()` 的签名
-// 可达，调用方不必命名它也能读字段。
-export type { StoreDeps } from "./deps.ts";
+// 写入面要构造的。状态条目的形状经 `readStatus()` 的签名可达，调用方不必命名它
+// 也能读字段。
 export type { ChannelDelivery, HistoryEntry } from "./impl/history/type.ts";
 
 /**

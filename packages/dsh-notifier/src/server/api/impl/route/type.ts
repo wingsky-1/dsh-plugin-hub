@@ -4,7 +4,7 @@
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 
 /** 端点处理函数：自己写完整个响应（SSE 端点会一直持有它）。 */
-export type RouteHandler = WebRoute["handler"];
+type RouteHandler = WebRoute["handler"];
 
 /** 支持的 HTTP 方法：本域的端点只用这四个。 */
 export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";

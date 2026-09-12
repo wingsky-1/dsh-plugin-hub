@@ -24,8 +24,6 @@
 import type { ApiDeps } from "./deps.ts";
 import { apiService } from "./impl/service/index.ts";
 
-export type { ApiDeps } from "./deps.ts";
-
 /**
  * 装配浏览器出口（组合根在 `apply` 期调用一次）。
  */

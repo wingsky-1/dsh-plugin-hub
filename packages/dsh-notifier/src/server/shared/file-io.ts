@@ -16,11 +16,11 @@
  * 依赖方向：只引用 Node 内置模块，不引用任何域。
  */
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 /** 读取结果：文件不存在、不可读、是目录都归为「没有内容」。 */
-export type FileRead = { ok: true; text: string } | { ok: false };
+type FileRead = { ok: true; text: string } | { ok: false };
 
 /** 写入结果：失败带回原因文本（不含路径之外的敏感信息）。 */
 export type FileWrite = { ok: true } | { ok: false; reason: string };
@@ -28,23 +28,12 @@ export type FileWrite = { ok: true } | { ok: false; reason: string };
 /**
  * 读全文。
  *
- * 不区分「不存在」与「读失败」：两者的处置一致——调用方回落到空值，下一次写入把
- * 目录与文件一并补出来。区分它们只会让每个调用点多一个分支。
- */
-export async function readTextFile(file: string): Promise<FileRead> {
-  try {
-    return { ok: true, text: await readFile(file, "utf8") };
-  } catch {
-    return { ok: false };
-  }
-}
-
-/**
- * 读全文（同步版）。
- *
  * 只在装配路径上使用：设置必须在 `apply` 返回时就已是最终值，否则「读面第一次被
  * 调用」与「文件加载完成」之间会开一个窗口，窗口内的读者拿到的是尚未生效的默认值。
  * 单次几 KB 的读，代价一次性付清。
+ *
+ * 不区分「不存在」与「读失败」：两者的处置一致——调用方回落到空值，下一次写入把
+ * 目录与文件一并补出来。区分它们只会让每个调用点多一个分支。
  */
 export function readTextFileSync(file: string): FileRead {
   try {

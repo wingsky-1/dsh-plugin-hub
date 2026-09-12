@@ -12,15 +12,15 @@ import { sendJson } from "../route/index.ts";
 
 /** GET /history：最近记录（截断与倒序由客户端做，它要的条数由界面决定）。 */
 export async function readJournal(_req: IncomingMessage, res: ServerResponse): Promise<void> {
-  sendJson(res, 200, { records: await readHistory() });
+  sendJson(res, 200, { ok: true, records: await readHistory() });
 }
 
-/** DELETE /history：清空，返回被清空条数。 */
+/** DELETE /history：清空，返回被清空条数（键名 `removed` 是客户端锁定的契约）。 */
 export async function clearJournal(_req: IncomingMessage, res: ServerResponse): Promise<void> {
-  sendJson(res, 200, { cleared: await clearHistory() });
+  sendJson(res, 200, { ok: true, removed: await clearHistory() });
 }
 
 /** GET /status：各频道最近一次投递终态。 */
 export async function readChannelStatus(_req: IncomingMessage, res: ServerResponse): Promise<void> {
-  sendJson(res, 200, { channels: await readStatus() });
+  sendJson(res, 200, { ok: true, channels: await readStatus() });
 }

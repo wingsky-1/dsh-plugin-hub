@@ -1,26 +1,95 @@
 /**
  * dsh-notifier api 域 —— 设置端点：读设置视图、写设置。
  *
+ * 写面把请求**形状**与设置**内容**分开把关。`patch` 是不是对象、`expectedRevision`
+ * 是不是非负整数，是线协议的事，本域判；字段值合不合法、掩码要不要还原、陌生键怎么
+ * 办，是设置语义的事，由 config 域的写面回答。两边都判一遍的代价不是多算一次，而是
+ * 两处答案不一致时没人知道该信谁。
+ *
  * 依赖方向：只引用本目录与 `../../deps.ts`，不引用 `interface.ts`。
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { readSettingsView } from "../../deps.ts";
-import { sendJson } from "../route/index.ts";
+import type { RawSettingValue } from "../../deps.ts";
+import { readJsonBody, readSettingsView, writeConfig } from "../../deps.ts";
+import { sendFailure, sendJson } from "../route/index.ts";
+import type { PatchRequest } from "./type.ts";
+
+/** 请求体上限（字节）：设置是几百字节的 JSON，16KB 已远超合理值。 */
+const BODY_LIMIT = 16 * 1024;
+
+/** 写面结果：不额外请 config 域导出一个类型名，它的形状经 `writeConfig` 的签名可达。 */
+type WriteOutcome = Awaited<ReturnType<typeof writeConfig>>;
 
 /** GET /config：一次取齐视图的四个事实（分开取会让界面拿旧修订号提交，凭空造出冲突）。 */
 export function readSettings(_req: IncomingMessage, res: ServerResponse): void {
-  sendJson(res, 200, readSettingsView());
+  sendJson(res, 200, { ok: true, ...readSettingsView() });
 }
 
 /**
  * PUT /config：写用户设置。
  *
- * 未实现。待填：读 JSON 体 → 取 `patch` 与 `expectedRevision` → `writeConfig` → 按
- * `WriteResult` 的四态映射状态码（ok 200 / invalid 400 / conflict 409 / unavailable
- * 503）。四态各有各的界面处置，压成一两个就会丢掉「该刷新重试」与「这个字段填错了」
- * 的区别。
+ * 四态逐态映射而不是压成一两个状态码：`invalid` 要让界面定位到出错的那一行，
+ * `conflict` 要触发「加载最新 / 覆盖提交」的恢复流程，`unavailable` 要把表单整体
+ * 置灰。压扁之后用户看到的就只剩「保存失败」，而三种原因要做的事完全不同。
  */
-export async function writeSettings(_req: IncomingMessage, res: ServerResponse): Promise<void> {
-  void res;
-  throw new Error("not implemented: api 设置写入");
+export async function writeSettings(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const raw = await readJsonBody(req, BODY_LIMIT);
+  if (raw === undefined) {
+    sendFailure(res, 400, { code: "invalid-json", details: "请求体不是合法 JSON 对象（或超出大小上限）" });
+    return;
+  }
+  // 断言只声明「这里有这两个字段」，不校验它们是什么——校验是紧接着的两步。
+  const body = raw as PatchRequest;
+  if (!isPatch(body.patch)) {
+    sendFailure(res, 400, { error: "配置校验失败: patch", hint: "需至少包含一个配置键（patch 不能为空）" });
+    return;
+  }
+  const patch = body.patch;
+  const revision = body.expectedRevision;
+  if (revision === undefined) {
+    respond(res, await writeConfig(patch));
+    return;
+  }
+  if (typeof revision !== "number" || !Number.isInteger(revision) || revision < 0) {
+    sendFailure(res, 400, { error: "配置校验失败: expectedRevision", hint: "expectedRevision 必须为非负整数或省略" });
+    return;
+  }
+  respond(res, await writeConfig(patch, revision));
+}
+
+/**
+ * 提交体里的 `patch` 是不是一份可用的记录。
+ *
+ * 不判形状就会被上面的断言一路放行：`{patch: "abc"}` 在设置域里是三个「陌生键」，而
+ * 陌生键是刻意放行的（透传保留），于是一次非法请求会把 "0"/"1"/"2" 写进配置文件。
+ *
+ * 空 patch 也归为不可用：它在设置域是一次「无变化的写」，在界面上却是一次点击——
+ * 两者对不上时，用户会以为这次保存丢了。
+ */
+function isPatch(value?: RawSettingValue): value is { readonly [key: string]: RawSettingValue } {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  return Object.keys(value).length > 0;
+}
+
+/**
+ * 写面结果 → 响应。
+ *
+ * 成功体只回 `user` 与 `revision`：`effective` 是这次合并的结果，界面用自己刚提交的
+ * 草稿就能推出来，多回一份只会多一个可能与本地草稿不一致的「服务端版本」。
+ */
+function respond(res: ServerResponse, result: WriteOutcome): void {
+  if (result.ok) {
+    sendJson(res, 200, { ok: true, user: result.view.user, revision: result.view.revision });
+    return;
+  }
+  if (result.reason === "invalid") {
+    sendFailure(res, 400, { error: `配置校验失败: ${result.error.key}`, hint: result.error.hint });
+    return;
+  }
+  if (result.reason === "conflict") {
+    // 客户端按 `code` 分流而不是按文案：文案会翻译，code 不会。
+    sendFailure(res, 409, { error: "版本冲突", code: "SETTINGS_CONFLICT" });
+    return;
+  }
+  sendFailure(res, 503, { error: "设置服务不可用", code: "settings-unavailable" });
 }

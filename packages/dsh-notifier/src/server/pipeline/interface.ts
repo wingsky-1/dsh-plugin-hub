@@ -40,8 +40,7 @@ import type { PipelineDeps } from "./deps.ts";
 import { notificationPipeline } from "./impl/service/index.ts";
 import type { NotifyRequest } from "./impl/service/type.ts";
 
-// 装配方要构造的、调用方要构造的，各出一个名字。
-export type { OutgoingFrame, PipelineDeps } from "./deps.ts";
+export type { OutgoingFrame } from "./deps.ts";
 export type { NotifyKind, NotifyRequest } from "./impl/service/type.ts";
 
 /**

@@ -45,7 +45,7 @@ export const VERSION_FILE_NAME = "version";
  * 只给目录不给完整路径：文件不存在与目录不存在是两件事，前者是各域的读语义
  * （回落空值），后者由写入方按需创建。
  */
-export function notifierHome(): string {
+function notifierHome(): string {
   return join(dshHome(), PACKAGE_DIR);
 }
 
