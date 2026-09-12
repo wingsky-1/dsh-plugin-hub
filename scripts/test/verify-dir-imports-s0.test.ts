@@ -178,6 +178,9 @@ test('--write-baseline 只更新结构型，质量型计数不得被放宽（#73
   try {
     const first = runOn(root, ['--write-baseline'])
     assert.equal(first.status, 0, `写基线应成功：\n${first.out}`)
+    // 首次登记路径（旧基线无该包）是质量型**唯一**会被写入的路径，须显式提示并锁住——
+    // 否则未来重构可把它变成「静默按当前值写入」＝静默放宽。
+    assert.match(first.out, /质量型首次登记/, `首次写基线应提示质量型首次登记：\n${first.out}`)
     const before = readFixtureBaseline(root)
     assert.equal(before.packages[PKG].leafModuleCycles, 0, `fixture 初始无环：${JSON.stringify(before.packages[PKG])}`)
 

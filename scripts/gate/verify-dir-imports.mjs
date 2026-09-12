@@ -617,7 +617,7 @@ const COUNTED_METRICS = [
   const dup = STRUCTURAL_METRICS.filter((k) => QUALITY_METRICS.includes(k))
   if (missing.length > 0 || extra.length > 0 || dup.length > 0 || grouped.size !== COUNTED_METRICS.length) {
     throw new Error(
-      `计数分组与 COUNTED_METRICS 不一致：未分组 [${missing}]、多余 [${extra}]、跨组重复 [${dup}]、组内重复 [${[...grouped].length !== STRUCTURAL_METRICS.length + QUALITY_METRICS.length}]`,
+      `计数分组与 COUNTED_METRICS 不一致：未分组 [${missing}]、多余 [${extra}]、跨组重复 [${dup}]、两组去重后 ${grouped.size} 项 != 计数字段 ${COUNTED_METRICS.length} 项`,
     )
   }
 }
