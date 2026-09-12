@@ -20,10 +20,12 @@
  * | 3 | `pipeline` | 一条通知的生命周期与**唯一裁决点** | 总开关、帧出口 |
  * | 4 | `events` | 宿主事件 → 通知请求（适配层） | 宿主事件面 |
  * | 5 | `sdk` | 对外 ABI（`ctx["wingsky.notifier"]`） | 裁决管线、内置 kind 列表 |
- * | 6 | `api` | 浏览器出口：HTTP 路由 + SSE | 配置读写、历史、裁决管线、帧入口 |
+ * | 6 | `api` | 浏览器出口：HTTP 路由 + SSE | 路由注册口、帧入口、日志 |
  *
  * `upgrade` 排在最前不是因为它是上游，而是因为它动的是**磁盘**：各域装配时会读
  * 文件，迁移必须在那些读之前落定。
+ *
+ * `api` 排在最后：它读的是各域的现值，装早了页面第一次请求就会拿到半成品。
  *
  * `channels` 无状态，**不参与装配**：它是纯动作，谁用谁引契约。组合根不替它持有
  * 实例，也不替调用方保管它的入参。
@@ -31,8 +33,8 @@
  * ## 纪律
  *
  * - 域之间不互相引用实现；需要谁的能力、需要哪一样，在各自的 `deps.ts` 里引出来。
- * - 组合根只交付**域拿不到的东西**：宿主能力（日志、事件面、帧出口）与挂载点值
- *   （总开关）。域间依赖不经这里，所以本文件读起来就是一张「谁需要宿主什么」的表。
+ * - 组合根只交付**域拿不到的东西**：宿主能力（日志、事件面、路由口、帧总线）与挂载点
+ *   值（总开关）。域间依赖不经这里，所以本文件读起来就是一张「谁需要宿主什么」的表。
  * - 交付的是**能力**，不是算好的值：设置是活的，装配期取一次的快照会在用户改设置后
  *   失效，而它看起来与实时读取一模一样。
  * - 本文件是唯一允许引用全部域 `interface.ts` 的地方。
@@ -42,11 +44,13 @@ import type {} from "@deepseek-ai/dsh-agent";
 import type {} from "@deepseek-ai/dsh-session";
 import type {} from "@deepseek-ai/dsh-user-approval";
 import type {} from "@deepseek-ai/dsh-user-questions";
-import type { NotifyFrame } from "./server/channels/interface.ts";
+import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
+import * as apiApi from "./server/api/interface.ts";
 import * as configApi from "./server/config/interface.ts";
 import * as eventsApi from "./server/events/interface.ts";
 import type { HostEventPort } from "./server/events/interface.ts";
 import * as pipelineApi from "./server/pipeline/interface.ts";
+import type { OutgoingFrame } from "./server/pipeline/interface.ts";
 import type { LoggerPort } from "./server/shared/type.ts";
 import * as storesApi from "./server/stores/interface.ts";
 import { installUpgrade } from "./server/upgrade/interface.ts";
@@ -96,21 +100,28 @@ const GLOBAL_LISTEN = { global: true } as const;
  */
 declare module "@deepseek-ai/cordis" {
   interface Events {
-    "notifier/frame"(frame: NotifyFrame): void;
+    "notifier/frame"(payload: OutgoingFrame): void;
   }
+}
+
+/**
+ * 帧总线：组合根接上的两头。
+ *
+ * 生产端给裁决管线（只有 `emit`），消费端给浏览器出口（只有 `onFrame`）——两个域各自
+ * 只拿到自己该有的那一半，谁也伪造不了通知、谁也发不出帧。合起来才是总线。
+ */
+interface FrameBus {
+  emit(payload: OutgoingFrame): void;
+  onFrame(handler: (payload: OutgoingFrame) => void): () => void;
 }
 
 /** 组合根用到的宿主面：域拿到的是能力，不是上下文。 */
 interface HostPort {
   readonly logger: LoggerPort;
-  /**
-   * 帧出口：通知帧经宿主事件总线交给 api 域。
-   *
-   * 走总线而不是直连 api 域，是因为投递域能证明的只有「帧交出去了」——浏览器通道
-   * 不提供展示回执（同 FCM / APNs 只保证 accepted）。出口到总线为止，「谁在听」
-   * 就不是投递域需要知道的事。
-   */
-  readonly emitFrame: (frame: NotifyFrame) => void;
+  /** 帧总线：帧经它从裁决管线走到浏览器出口。 */
+  readonly frames: FrameBus;
+  /** 宿主路由注册口：只有组合根够得着 `ctx.webServer`。 */
+  readonly register: (route: WebRoute) => () => void;
   readonly events: HostEventPort;
 }
 
@@ -136,9 +147,16 @@ function bindHost(ctx: Context): HostPort {
 
   return {
     logger: ctx.logger,
-    emitFrame: (frame) => {
-      ctx.emit("notifier/frame", frame);
+    frames: {
+      emit: (payload) => {
+        ctx.emit("notifier/frame", payload);
+      },
+      // 转发而不是把 ctx 递出去：域要的是「订阅帧」，不是「订阅任意事件」。
+      onFrame: (handler) => ctx.on("notifier/frame", (payload) => {
+        guard(() => handler(payload));
+      }),
     },
+    register: (route) => ctx.webServer.register(route),
     events: {
       // 宿主的审批事件是 waterfall：监听者要么自己裁决、要么调 next() 把判定交还。
       // 本插件只旁观，所以转发之后必须 next()——漏掉这一步就等于替所有人否决了
@@ -233,7 +251,7 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
   // 3. 裁决管线：域间依赖它自己引，这里只给够不着的那两样——挂载点总开关与帧出口。
   pipelineApi.installPipeline({
     enabled: config.enabled !== false,
-    frames: { emit: host.emitFrame },
+    frames: host.frames,
   });
   disposers.push(pipelineApi.releasePipeline);
 
@@ -241,6 +259,16 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
   //    看不见的地方被改，让它去问一遍等于把运行期策略摊进按事件驱动的块里。
   eventsApi.installEvents({ events: host.events });
   disposers.push(eventsApi.releaseEvents);
+
+  // 5. 对外 ABI：尚未装配。
+
+  // 6. 浏览器出口：最后装——它读各域的现值，装早了页面第一次请求就会拿到半成品。
+  apiApi.installApi({
+    register: host.register,
+    frames: host.frames,
+    logger: host.logger,
+  });
+  disposers.push(apiApi.releaseApi);
 
   return disposers;
 }

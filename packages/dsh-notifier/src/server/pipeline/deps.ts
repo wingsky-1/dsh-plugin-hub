@@ -10,6 +10,7 @@
  */
 import type { NotifyFrame } from "../channels/interface.ts";
 import { readConfig } from "../config/interface.ts";
+import type { NotifyKind } from "./impl/service/type.ts";
 
 export { deliver } from "../channels/interface.ts";
 export { readConfig };
@@ -19,13 +20,25 @@ export { appendHistory, recordStatus } from "../stores/interface.ts";
 export type EffectiveConfig = ReturnType<typeof readConfig>;
 
 /**
- * 帧出口：通知帧交给宿主事件总线（组合根接线，api 域消费）。
+ * 帧出口的载荷：一次通知的种类，以及它该怎么弹。
+ *
+ * 种类与画面分开：`NotifyFrame` 是投递参数（怎么弹），kind 是这次通知**是什么**——
+ * 客户端靠后者选图标与颜色。投递域不需要知道种类（消息无身份），所以它不在这份线
+ * 协议里；但页面上要显示，于是随帧一起出去。
+ */
+export interface OutgoingFrame {
+  kind: NotifyKind;
+  frame: NotifyFrame;
+}
+
+/**
+ * 帧出口：把一条待展示的通知交给宿主事件总线（组合根接线，api 域消费）。
  *
  * 它不属于任何域，所以不成「面」；写成具名接口而不是裸函数，是为了让依赖清单里出现
  * 的是「一个出口」，而不是一个看不出从哪来的回调。
  */
 export interface FramePort {
-  emit(frame: NotifyFrame): void;
+  emit(payload: OutgoingFrame): void;
 }
 
 /** 装配入参：本域**拿不到**的东西。域间依赖不在这里——它们由本文件直接引。 */

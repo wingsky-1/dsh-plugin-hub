@@ -12,16 +12,21 @@
  * 收成字面量联合而不是宽 `string`，是为了让裁决层的映射表拿到穷举检查：漏一个 kind
  * 是编译错误，而不是「某种通知静默地不发了」——后者没人会去查。
  *
+ * 命名与客户端字典同源：kind 同时是用户可见的配置键（`kindRoutes`、bark 的按 kind
+ * 紧急度），改一个名字就要两端同时改，而漏改的一端只会表现为「种类显示不出来」。
+ * `test` 是页面测试按钮造出来的那一种，不对应任何宿主事件。
+ *
  * 动态 kind（外部注册的通知种类）不在这个联合里：那是一套独立的白名单机制，等 sdk
  * 域落地时单独开口，不在这里放宽成 `string` 把内置 kind 的检查一起赔掉。
  */
 export type NotifyKind =
   | "ask"
   | "question"
-  | "task-done"
+  | "done"
   | "subagent-done"
-  | "task-error"
-  | "turn-end";
+  | "error"
+  | "turn-end"
+  | "test";
 
 /**
  * 通知请求：一次「发生了什么」的陈述。
