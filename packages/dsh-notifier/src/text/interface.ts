@@ -2,10 +2,19 @@
  * dsh-notifier — text/interface.ts：文本域唯一对外引用面。
  *
  * 目录外代码只能从这里引用：文案单表（NOTIFY_KINDS）、展示强度映射
- * （KIND_SEVERITY）、耗时/工具名美化、错误脱敏、系统命令构造与音色平台映射。
+ * （KIND_SEVERITY）、severity 运行时校验（NOTIFY_SEVERITIES / isNotifySeverity /
+ * normalizeSeverity）、耗时/工具名美化、错误脱敏、系统命令构造与音色平台映射。
  * 全部纯函数；跨域消费者所需符号在本文件收口（verify-dir-imports 静态强制）。
  */
-export { KIND_SEVERITY, NOTIFY_KINDS, formatDuration, prettyToolName } from "./message.ts";
+export {
+  KIND_SEVERITY,
+  NOTIFY_KINDS,
+  NOTIFY_SEVERITIES,
+  formatDuration,
+  isNotifySeverity,
+  normalizeSeverity,
+  prettyToolName,
+} from "./message.ts";
 export type { NotifyDetail } from "./message.ts";
 export { sanitizeErrorText, sanitizeNoticeContent } from "./sanitize.ts";
 export {

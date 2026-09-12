@@ -9,7 +9,7 @@
  */
 import { BUILTIN_CHANNELS, isInQuietHours } from "../config/interface.ts";
 import type { NotifyConfig } from "../config/interface.ts";
-import { NOTIFY_KINDS } from "../text/interface.ts";
+import { NOTIFY_KINDS, normalizeSeverity } from "../text/interface.ts";
 import type { AdjudicateDeps, AdjudicateOptions, AdjudicateResult, AdjudicatedNotice, ChannelPoolEntry } from "./interface.ts";
 
 /** 内置 kind 恒可用（无需确认）。 */
@@ -70,7 +70,12 @@ export function createAdjudicator(deps: AdjudicateDeps): (opts: AdjudicateOption
     // 单刻快照——本次裁决全部读面（确认态/免打扰/路由/播放决议）共用此
     // 对象；后续任何配置变更不影响本次判定结果（派生闭包只经快照取值）。
     const snapshot = deps.current();
-    const { kind, title, body, severity, ts, bypassQuiet, onlyChannel } = opts;
+    const { kind, title, body, ts, bypassQuiet, onlyChannel } = opts;
+    // severity 入口校验（#733 M2-3.4）：类型联合只在编译期存在，跨宿主边界传来的值
+    //（未类型化调用方 / 配置 / JSON）不受它约束。裁决是通知进入投递管线的唯一入口，
+    // 故校验与归一只在此处做一次——非法值回落「未提供」，由下游既有缺省路径接管，
+    // 不新造第二套默认值语义（见 text/message.ts normalizeSeverity）。
+    const severity = normalizeSeverity(opts.severity);
     // 脱敏开关随快照解析并随结果携带（快照缺键 → undefined 容错为 true），
     // 编排层据其统一脱敏——不开第二次 current()（单刻契约）。
     const sanitizeContent = snapshot.sanitizeContent !== false;

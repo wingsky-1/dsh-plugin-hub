@@ -24,7 +24,7 @@ import type {
   DeliverPayload,
   ResolvedTarget,
 } from "../../src/pipeline/interface.ts";
-import type { ChannelCapabilities, NotifyChannel, NotifySentEvent, RetryableError } from "../../src/sdk/interface.ts";
+import type { ChannelCapabilities, NotifyChannel, NotifySentEvent, NotifySeverity, RetryableError } from "../../src/sdk/interface.ts";
 
 /** 裁决结果判别分支读面（断言前置的运行时形状由断言自身锁定）。 */
 type SuppressedResult = Extract<AdjudicateResult, { decision: "suppressed" }>;
@@ -776,4 +776,48 @@ describe("bark 单次投递 + retryable 标注", () => {
       expect((await barkFailure(c.response)).err.retryable).toBe(c.want);
     });
   }
+});
+
+// ================================================================ #733 M2-3.4 severity 入口校验
+
+/**
+ * 跨边界非法输入构造：宿主 / 未类型化调用方 / PUT 配置传来的值不受编译期联合约束，
+ * 「运行时不合法」这一事实无法用静态类型表达，故经 unknown 形参中转（测试判据是
+ * 运行时守卫，不是编译期约束）。不用 `as unknown as`。
+ */
+function wire<T>(value: unknown): T {
+  return value as T;
+}
+
+describe("裁决入口 severity 运行时校验（#733 M2-3.4）", () => {
+  /** 走一遍真实裁决，取 deliver 分支的 notice.severity（非 deliver 即抛）。 */
+  function severityOfDelivered(rawSeverity: unknown): unknown {
+    const browser: ChannelPoolEntry = { id: "browser", channel: fakeChannel("browser"), dispatch: { pop: true, sound: { mode: "system", tone: undefined } } };
+    const adjudicate = createAdjudicator({
+      current: () => baseCfg(),
+      enabled: () => true,
+      isKindConfirmed: () => true,
+      allChannels: () => [browser],
+    });
+    const result = adjudicate({ kind: "ready", title: "T", body: "B", severity: wire<NotifySeverity>(rawSeverity), ts: 1 });
+    if (result.decision !== "deliver") throw new Error("预期 deliver 裁决结果");
+    return result.notice.severity;
+  }
+
+  it("合法 severity 原样进入 notice（行为零回归）", () => {
+    for (const severity of ["info", "success", "warning", "failure"] as NotifySeverity[]) {
+      expect(severityOfDelivered(severity)).toBe(severity);
+    }
+  });
+
+  it("非法 severity 回落 undefined（= 视同未提供），不把原文带进投递载荷", () => {
+    const invalidValues: unknown[] = ["critical", "<script>alert(1)</script>", "", "INFO", 0, 1, true, null, {}, []];
+    // 先断言样本非空：空数组下循环体不执行，判据退化为恒真。
+    expect(invalidValues.length).toBe(10);
+    for (const bad of invalidValues) expect(severityOfDelivered(bad)).toBeUndefined();
+  });
+
+  it("未提供 severity → undefined（非法值的回落与既有缺省走同一条路径）", () => {
+    expect(severityOfDelivered(undefined)).toBeUndefined();
+  });
 });

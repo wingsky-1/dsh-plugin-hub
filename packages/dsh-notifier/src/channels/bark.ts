@@ -19,7 +19,7 @@
 import { SECRET_MASK } from "../config/interface.ts";
 import type { BarkChannelConfig, BarkLevel } from "../config/interface.ts";
 import type { NotifyChannel, NotifySeverity, RetryableError } from "../sdk/interface.ts";
-import { sanitizeErrorText } from "../text/interface.ts";
+import { normalizeSeverity, sanitizeErrorText } from "../text/interface.ts";
 
 /** severity → Bark level 静态映射（契约测试锁定；critical 需苹果特批故不映射）。 */
 export const SEVERITY_LEVEL: Readonly<Record<NotifySeverity, BarkLevel>> = {
@@ -120,7 +120,10 @@ export function createBarkChannel(cfg: BarkChannelConfig): NotifyChannel {
         title: payload.title,
         body: payload.body,
       };
-      const level = cfg.levels?.[payload.kind] ?? cfg.level ?? (payload.severity ? SEVERITY_LEVEL[payload.severity] : undefined);
+      // severity 同样按运行时枚举校验（payload 跨宿主边界）：非法值视同未提供 →
+      // 不写 level 字段，与「调用方未提供 severity」的既有行为逐点一致。
+      const severity = normalizeSeverity(payload.severity);
+      const level = cfg.levels?.[payload.kind] ?? cfg.level ?? (severity ? SEVERITY_LEVEL[severity] : undefined);
       if (level) body.level = level;
       if (cfg.sound !== undefined) body.sound = cfg.sound;
       if (cfg.group !== undefined) body.group = cfg.group;
