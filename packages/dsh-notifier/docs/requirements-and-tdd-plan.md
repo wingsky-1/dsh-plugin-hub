@@ -245,7 +245,7 @@
 | B-3 | 重试/并发门从 channel 内部上移框架（pipeline/deliver） | 行为对等 | bark 4xx 不重试/网络 5xx 重试 ×2/并发 ≤2 排队/门跨配置变更延续（channel-bark.ts:40-48/:110-139 + outbound.ts:13-22）；webhook 零重试（retry 缺省=关）；退避 1s/2s 线性；超时留 channel 侧 |
 | B-4 | sanitizeContent 默认 true：SDK send 动态 kind body 从「调用方负责脱敏」变「中心兜底统一脱敏」 | 安全增强 | service.ts:44 注释 + :487-503 直通路径；`sanitizeContent=false` = 通知与历史均明文（README 安全模型明示） |
 | B-5 | disabled（enabled=false）不落史保持 | 保持（D15） | service.ts:396-397 直接 skipped 不落史；「suppressed 统一落史」仅覆盖 kind-pending/quiet |
-| B-6 | registerChannel 定位文档化：配置层注册面 | 保持 ABI | D11：行为不变（仍不接线投递），语义从「注册频道待启用」改述为「配置层注册面」。**#733 M2c R3a 已落地**：`src/sdk/interface.ts` 的 `registerChannel` JSDoc + `src/sdk/service.ts:98` 实现处；注册表零读取点（只 `set` 无 `get`）是该口径的机器可核事实 |
+| B-6 | registerChannel 定位文档化：配置层注册面 + 登记后一次性 warn | 保持 ABI | D11：签名/返回值/登记语义不变（仍不接线投递），语义从「注册频道待启用」改述为「配置层注册面」。**#733 M2c R3a 已落地文档化；#733 M2c 后续 N1 已落地运行时面**（登记成功后按 `ch.name` 经 `logger.warn` 提示一次，同名不重复；非法入参逐字保持静默）：`src/sdk/interface.ts` 的 `registerChannel` JSDoc + `src/sdk/service.ts` 实现处；warn 文案由 `test/integration/service-contract.test.ts` 的 registerChannel 用例 `toBe` 全等锁定。注册表零读取点（只 `set` 无 `get`）仍是该口径的机器可核事实 |
 | B-7 | KIND_SEVERITY 移 text/ 域 | 无运行时变化 | 导出面 re-export 保持（index.ts:131），仅文件归属迁移 |
 | B-8 | 单刻快照行为（B2）的事件源级补充：错误合并窗口/聚合窗口不受快照影响 | 保持 | 事件层状态机（errorMerge/agentStates/batch）沿用现状语义，不随重构改动 |
 | B-9 | send() 动态 kind 与 sendKind 统一过裁决（enabled→免打扰→路由） | 行为变更（D24） | 现状动态 kind 路径绕过 enabled/免打扰（sdk/service.ts:165-197）；统一后 enabled=false/免打扰期间动态 kind 从「照常投递」变「skipped」——先红测锁定现状再改，登记用例 N-25 |
@@ -289,7 +289,7 @@
 | S3-1 | L8-1 ChannelCapabilities titleMaxLen<=0 注释 vs 实现（标题并入正文缺失） | service.ts:73 vs :282 | PR2（mergeTitleIntoBody） |
 | S3-2 | L8-2 confirmKind 双语义（fire-and-forget vs CAS 重试） | service.ts:155 / settings-bridge.ts:96-119 | PR2（ConfigPort.confirmKind） |
 | S3-3 | L8-3 NotifyRequest.data 字段悬空 | service.ts:46-48 | PR2 注明「MVP 未启用」或 v-next |
-| S3-4 | L8-4 registerChannel 悬空→**D11 已裁定配置层注册面** | `src/sdk/service.ts:98`（原引用 `service.ts:467-470` 随重构失效——该文件现 141 行）；`src/sdk/interface.ts` 同名 JSDoc | **#733 M2c R3a 已落地**（纯文档化，行为保持；登记 + 一次性 warn 需另取 approved） |
+| S3-4 | L8-4 registerChannel 悬空→**D11 已裁定配置层注册面** | `src/sdk/service.ts`（原引用 `service.ts:467-470` 随重构失效）；`src/sdk/interface.ts` 同名 JSDoc | **#733 M2c R3a 已落地文档化；#733 M2c 后续 N1 已落地运行时面**（登记 + 同一 name 一次性 warn；已获维护者 `approved`，R3b 授权） |
 | S3-5 | L8-5 expectedRevision 非整数静默忽略 | server.ts:387-388 | PR2（显式拒 400 或文档化） |
 | S3-6 | L8-6 history DELETE / test 无错误映射 | server.ts:716-719 | PR2 |
 | S3-7 | P1-2 频道状态行无轮询（README:286「实时可见」口径弱于实现） | index.tsx:865-869/:900/:1131 | PR2（D20 已定改 README 口径，T2-6 落地） |
@@ -338,7 +338,7 @@
 | 完成状态机（running→idle 证据链/子代理分流/快照冻结） | C3 | e2e-done（强） | — |
 | 错误合并滚动窗口（suppressed:merged 落史） | C4 | e2e-done/e2e-edge | B-1 落史脱敏断言 |
 | 完成风暴聚合（首条即时+窗口补发） | C7 | e2e-done | — |
-| 动态 kind 注册/确认/防冒认 | D4/D6 | service-contract | B-6 配置层注册面文档化 |
+| 动态 kind 注册/确认/防冒认 | D4/D6 | service-contract | B-6 配置层注册面文档化 + registerChannel 登记/一次性 warn |
 | 免打扰（跨午夜/allowKinds） | D5 | unit-config | — |
 | 路由/onlyChannel/稀疏命中/stale | D6 | service-contract | N-19 全链 |
 | fail-soft 逐频道 + 受理/终态解耦 | D7 | service-contract | N-9 |
@@ -388,7 +388,7 @@
 |---|---|---|
 | 目录树搬家 | 16 平铺 → 8 域（**v2 时点计数**：42 个宿主 TS / 9 interface.ts——勿作现状引用）：config/10、text/4、channels/6、server/4、pipeline/3、sdk/2、events/4、stores/3 + 根 index.ts/~~service.d.ts~~（**#733 M2a 已删除该文件**；**当前实测**：`src/` 下 42 个 TS = 宿主端 38（含根 `index.ts` 与 8 个 `interface.ts`）+ `src/client` 4） | ✅ |
 | interface.ts 门面 | 每域 interface.ts 收口（类型 + 工厂 re-export）；verify-dir-imports PASS（42 文件/8 目录，跨目录引用全走 interface.ts；contract 接入 --package dsh-notifier） | ✅ |
-| 导出面快照 | scripts/gate/export-surface-snapshot.mjs（符号集 + 导出符号定义块双保险，路径/语句组织免疫）；基线 scripts/data/dsh-notifier-export-surface.json 由 git archive 重构前 src 生成；重构后零 diff | ✅ |
+| 导出面快照 | scripts/gate/export-surface-snapshot.mjs（**逐入口**：各入口符号集 + 该入口导出面符号的定义块多重集，路径/语句组织免疫）；基线 scripts/data/dsh-notifier-export-surface.json 由 git archive 重构前 src 生成；**重构期零 diff，但该行不再是现状**——#733 M2c 后续 N0(B) 已重冻结为 v2 形态（`entries` 逐入口 + 兼容字段；declBlocks 96 → 105 = 4 条同名签名改写 + 9 条新增 + 0 丢失），故「重构后零 diff」只对重构期成立，此后以基线比对为准 | ✅ |
 | service 拆分 | sdk/service.ts 编排（≈330 行）+ pipeline/adjudicate.ts（isBuiltinKind/isKindConfirmed/resolveRoutes）+ pipeline/deliver.ts（truncateCodePoints/deliverToChannel）；函数体逐行等价，行为由全套测试锁定（≤400 行纪律达标） | ✅ |
 | 内置频道 | channels/browser.ts + channels/system.ts（PR1 时注入面 createBrowserChannel({sse,current})/createSystemChannel({system,current})——**#733 M1 F3 已收敛为无参工厂**；resolveSoundSetting 回落语义逐字保留）；sdk→channels 值边为 PR1 过渡（§4 图注），PR2 改注入消除 | ✅ |
 | mutation 更新 | mutate 路径全改新树；testFiles 9→16（补 e2e-interrupt/unit-sse-hub/unit-webhook/real-context/service-contract/client-contract/client-style，S3-31）；message 段 → text 三文件重定（S3-32）；gen-stryker-conf 26 份重生成 --check 过 | ✅ |

@@ -403,7 +403,7 @@
     }
   ],
   "declBlocks": [
-    "export declare class NotifierEventHandlers implements EventHandlers { private askRemindTimers; private agentStates; private eventStreamEnds; private errorMerge; private turnNotified; private deps; constructor(deps: EventHandlersDeps); handleApprovalRequest: (req: any, next: () => Promise<any>) => Promise<any>; hookUserQuestions: () => void; handleInternalService: (name: string) => void; handleSessionEvent: (session: any, event: any) => void; private handleAgentIdle; private handleAgentRunning; handleAgentStatus: ({ agent, status }: { agent: any; status: string; }) => void; handleAgentDisposed: ({ agent }: { agent: any; }) => void; handleAgentError: (payload: any) => void; handleAgentTurnStopping: (payload: any) => Promise<void>; dispose: () => void; }",
+    "export declare class NotifierEventHandlers implements EventHandlers { private askRemindTimers; private agentStates; private eventStreamEnds; private errorMerge; private turnNotified; private deps; constructor(deps: EventHandlersDeps); handleApprovalRequest: (req: ApprovalRequestEvent, next: () => Promise<ApprovalOutcome>) => Promise<ApprovalOutcome>; hookUserQuestions: () => void; handleInternalService: (name: string) => void; handleSessionEvent: (session: Session, event: SessionEvent) => void; private handleAgentIdle; private handleAgentRunning; handleAgentStatus: ({ agent, status }: { agent: Agent; status: AgentStatus; }) => void; handleAgentDisposed: ({ agent }: { agent: Agent; }) => void; handleAgentError: (payload: AgentErrorPayload) => void; handleAgentTurnStopping: (payload: AgentTurnStoppingPayload) => Promise<void>; dispose: () => void; }",
     "export declare class NotifierSettingsBridge implements SettingsBridge { entry: Record<string, unknown>; private current; private source; private attachedService; private attachedScope; constructor(ctx: Context, config?: NotifierEntryConfig); getCurrent: () => NotifyConfig; resolve: () => NotifyConfig; getSource: () => NotifyConfig; isWritable: () => boolean; writable: () => boolean; getScope: () => OwnerScopeLike | undefined; getService: () => SettingsServiceLike | undefined; readUser: () => { user: Record<string, unknown>; revision?: number; }; updateConfig: (patch: object, expectedRevision?: number) => Promise<void>; update: (patch: object, expectedRevision?: number) => Promise<void>; confirmKindToConfig: (kind: string, confirmed: boolean) => Promise<void>; confirmKind: (kind: string, confirmed: boolean) => Promise<void>; }",
     "export declare const ASSEMBLY_SETTING_KEYS: readonly [\"configFile\", \"toastScript\", \"historyFile\", \"statusFile\", \"enabled\"];",
     "export declare const BARK_ID_PATTERN: RegExp;",
@@ -421,6 +421,7 @@
     "export declare const MAC_SOUND_NAMES: Readonly<Record<SoundId, string>>;",
     "export declare const MIGRATED_BAK_SUFFIX = \".migrated.bak\";",
     "export declare const NOTIFY_KINDS: Record<string, { title: string; message: (detail: NotifyDetail) => string; }",
+    "export declare const NOTIFY_SEVERITIES: readonly [\"info\", \"success\", \"warning\", \"failure\"];",
     "export declare const PROTOTYPE_POLLUTION_KEYS: readonly string[];",
     "export declare const QUIET_ALLOW_KINDS: readonly [\"ask\", \"question\", \"done\", \"subagent-done\", \"error\", \"turn-end\"];",
     "export declare const ROUTES: { config: string; events: string; health: string; test: string; history: string; status: string; kinds: string; };",
@@ -450,20 +451,25 @@
     "export declare function buildSystemCommand(platform: string, title: string, message: string, options: { sound: SoundSetting; selfPlay?: boolean; notifySendAvailable?: boolean; toastScript: string; }",
     "export declare function configFile(): string;",
     "export declare function createAdjudicator(deps: AdjudicateDeps): (opts: AdjudicateOptions) => AdjudicateResult;",
+    "export declare function createAppendHistory(deps: { append(entry: { ts: number; kind: string; title: string; message: string; suppressed?: string; }): void; logger: { warn: (message: string) => void; }; }",
     "export declare function createBarkChannel(cfg: BarkChannelConfig): NotifyChannel;",
-    "export declare function createBrowserChannel(options: { sse: SseHub; }",
+    "export declare function createBrowserChannel(): NotifyChannel;",
     "export declare function createDeliverer(deps: DeliverDeps): Deliverer;",
     "export declare function createDoneBatcher(options: DoneBatcherOptions): DoneBatcher;",
     "export declare function createEventHandlers(deps: EventHandlersDeps): EventHandlers;",
+    "export declare function createHandleDecision(deps: OrchestrateDeps): (decision: AdjudicateResult) => NotifyResult[];",
     "export declare function createHistoryStore(options: { file: string; maxAgeDays: () => number; warn: (message: string) => void; }",
     "export declare function createNotifierService(deps: NotifierServiceDeps): NotifierServiceInternal;",
     "export declare function createOutboundChannelResolver(getChannels: () => ChannelConfig[] | undefined): () => Array<{ id: string; channel: NotifyChannel; }",
+    "export declare function createSendKind(deps: SendKindDeps): (kind: string, detail?: NotifyDetail, opts?: { bypassQuiet?: boolean; onlyChannel?: string; }",
+    "export declare function createSeqStore(options: { file: string; warn: (message: string) => void; }",
     "export declare function createSettingsBridge(ctx: Context, config?: NotifierEntryConfig): SettingsBridge;",
     "export declare function createSseHub(options: { getMaxConnections: () => number; heartbeatMs?: number; stalledTimeoutMs?: number; maxAgeMs?: number; idleTimeoutMs?: number; loadSeq?: () => number; saveSeq?: (seq: number) => void; seqFlushMs?: number; }",
     "export declare function createStatusStore(options: { file: string; warn: (message: string) => void; }",
-    "export declare function createSystemChannel(options: { system: SystemNotifier; }",
+    "export declare function createSystemChannel(): NotifyChannel;",
     "export declare function createSystemNotifier(options: { toastScript: string; warn: (message: string) => void; execFileImpl?: typeof execFile; spawnImpl?: typeof spawn; killTimeoutMs?: number; }",
     "export declare function createWebhookChannel(cfg: WebhookChannelConfig): NotifyChannel;",
+    "export declare function encodeBrowserSound(sound: NotifyConfig[\"browserSound\"], pop: boolean): { mode: \"silent\" | \"system\" | \"selfplay\"; tone?: SoundId; };",
     "export declare function formatDuration(ms: number): string;",
     "export declare function getNotifierService(ctx: unknown): NotifierService | undefined;",
     "export declare function historyFile(): string;",
@@ -471,6 +477,7 @@
     "export declare function isBuiltinKind(kind: string): boolean;",
     "export declare function isInQuietHours(now: Date, quietHours: QuietHoursConfig | undefined): boolean;",
     "export declare function isKindConfirmed(kind: string, kindRegistry: Map<string, { label: string; }",
+    "export declare function isNotifySeverity(value: unknown): value is NotifySeverity;",
     "export declare function isSoundSetting(v: unknown): v is SoundSetting;",
     "export declare function isSubagentOf(agent: Agent | undefined, ownership?: SubagentOwnership): boolean;",
     "export declare function isWebhookHeaderName(v: unknown): boolean;",
@@ -479,14 +486,16 @@
     "export declare function normalizeBarkBaseUrl(raw: unknown): string | null;",
     "export declare function normalizeBarkLevels(v: unknown): Record<string, BarkLevel> | undefined;",
     "export declare function normalizeConfig(input: unknown): NotifyConfig;",
+    "export declare function normalizeSeverity(value: unknown): NotifySeverity | undefined;",
     "export declare function parseHHMM(text: string): number;",
     "export declare function prettyToolName(name: unknown): string;",
     "export declare function priorityFor(preset: WebhookPreset, severity: NotifySeverity | undefined): string;",
     "export declare function redactConfigView<T>(value: T): T;",
     "export declare function renderWebhookBody(template: string, preset: WebhookPreset, vars: WebhookRenderVars): string;",
+    "export declare function resolveChannelPool(snapshot: NotifyConfig, deps: { builtinChannels: Array<{ id: string; channel: NotifyChannel; }>; outboundChannels(): ChannelPoolEntry[]; logger: { warn: (message: string) => void; }; }",
     "export declare function resolveRoutes(args: { kind: string; onlyChannel?: string; pool: ChannelPoolEntry[]; snapshot: NotifyConfig; }",
     "export declare function resolveSoundSetting(cfg: Pick<NotifyConfig, \"browserSound\" | \"systemSound\" | \"notifySound\">, channel: SoundChannel): SoundSetting;",
-    "export declare function resolveTurnEvidence(agent: any, state: AgentState, eventStreamEnds: Map<string, { turn: number; kind: string; }",
+    "export declare function resolveTurnEvidence(agent: Agent, state: AgentState, eventStreamEnds: Map<string, { turn: number; kind: string; }",
     "export declare function sanitizeErrorText(text: unknown, maxLen?: number): string;",
     "export declare function sanitizeNoticeContent(notice: { title: unknown; body: unknown; }",
     "export declare function sanitizePatchSettings(raw: unknown): Partial<NotifyConfig> | null;",
@@ -499,5 +508,744 @@
     "export declare function truncateCodePoints(s: string, max: number): string;",
     "export declare function unmaskChannels(patchChannels: unknown, userChannels: unknown): { ok: true; channels: unknown[]; }",
     "export declare function validateSettings(raw: unknown): SettingInvalid | null;"
-  ]
+  ],
+  "entries": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "exports": [
+        {
+          "name": "ASSEMBLY_SETTING_KEYS",
+          "isType": false
+        },
+        {
+          "name": "BARK_ID_PATTERN",
+          "isType": false
+        },
+        {
+          "name": "BARK_RESERVED_KEYS",
+          "isType": false
+        },
+        {
+          "name": "BARK_TIMEOUT_MS",
+          "isType": false
+        },
+        {
+          "name": "BUILTIN_CHANNELS",
+          "isType": false
+        },
+        {
+          "name": "BarkChannelConfig",
+          "isType": true
+        },
+        {
+          "name": "BarkLevel",
+          "isType": true
+        },
+        {
+          "name": "CONFIG_KEYS",
+          "isType": false
+        },
+        {
+          "name": "CORRUPTED_BAK_SUFFIX",
+          "isType": false
+        },
+        {
+          "name": "ChannelCapabilities",
+          "isType": true
+        },
+        {
+          "name": "ChannelStatusEntry",
+          "isType": true
+        },
+        {
+          "name": "DEFAULT_CONFIG",
+          "isType": false
+        },
+        {
+          "name": "EventHandlers",
+          "isType": true
+        },
+        {
+          "name": "EventHandlersDeps",
+          "isType": true
+        },
+        {
+          "name": "HISTORY_LIMIT",
+          "isType": false
+        },
+        {
+          "name": "KIND_SEVERITY",
+          "isType": false
+        },
+        {
+          "name": "KindRegistration",
+          "isType": true
+        },
+        {
+          "name": "LINUX_DEFAULT_TONE_FILE",
+          "isType": false
+        },
+        {
+          "name": "LINUX_TONE_FILES",
+          "isType": false
+        },
+        {
+          "name": "MAC_SOUND_NAMES",
+          "isType": false
+        },
+        {
+          "name": "MIGRATED_BAK_SUFFIX",
+          "isType": false
+        },
+        {
+          "name": "MigrationOutcome",
+          "isType": true
+        },
+        {
+          "name": "NotifierApplyConfig",
+          "isType": true
+        },
+        {
+          "name": "NotifierService",
+          "isType": true
+        },
+        {
+          "name": "NotifierServiceDeps",
+          "isType": true
+        },
+        {
+          "name": "NotifierServiceInternal",
+          "isType": true
+        },
+        {
+          "name": "NotifyChannel",
+          "isType": true
+        },
+        {
+          "name": "NotifyConfig",
+          "isType": true
+        },
+        {
+          "name": "NotifyDetail",
+          "isType": true
+        },
+        {
+          "name": "NotifyRequest",
+          "isType": true
+        },
+        {
+          "name": "NotifyResult",
+          "isType": true
+        },
+        {
+          "name": "NotifySeverity",
+          "isType": true
+        },
+        {
+          "name": "PatchResult",
+          "isType": true
+        },
+        {
+          "name": "QUIET_ALLOW_KINDS",
+          "isType": false
+        },
+        {
+          "name": "QuietHoursConfig",
+          "isType": true
+        },
+        {
+          "name": "ROUTES",
+          "isType": false
+        },
+        {
+          "name": "RouteDeps",
+          "isType": true
+        },
+        {
+          "name": "SECRET_MASK",
+          "isType": false
+        },
+        {
+          "name": "SETTINGS_NS",
+          "isType": false
+        },
+        {
+          "name": "SEVERITY_GOTIFY_PRIORITY",
+          "isType": false
+        },
+        {
+          "name": "SEVERITY_LEVEL",
+          "isType": false
+        },
+        {
+          "name": "SEVERITY_NTFY_PRIORITY",
+          "isType": false
+        },
+        {
+          "name": "SOUND_IDS",
+          "isType": false
+        },
+        {
+          "name": "SettingInvalid",
+          "isType": true
+        },
+        {
+          "name": "SettingsBridge",
+          "isType": true
+        },
+        {
+          "name": "SoundChannel",
+          "isType": true
+        },
+        {
+          "name": "SoundId",
+          "isType": true
+        },
+        {
+          "name": "SoundSetting",
+          "isType": true
+        },
+        {
+          "name": "StatusStore",
+          "isType": true
+        },
+        {
+          "name": "SystemTone",
+          "isType": true
+        },
+        {
+          "name": "TONE_BASE_DIRS",
+          "isType": false
+        },
+        {
+          "name": "WEBHOOK_DEFAULT_TIMEOUT_SEC",
+          "isType": false
+        },
+        {
+          "name": "WEBHOOK_MAX_TIMEOUT_SEC",
+          "isType": false
+        },
+        {
+          "name": "WEBHOOK_MIN_TIMEOUT_SEC",
+          "isType": false
+        },
+        {
+          "name": "WIN_TONE_FILES",
+          "isType": false
+        },
+        {
+          "name": "apply",
+          "isType": false
+        },
+        {
+          "name": "applyConfigPatch",
+          "isType": false
+        },
+        {
+          "name": "buildBrowserFrame",
+          "isType": false
+        },
+        {
+          "name": "buildSoundCommand",
+          "isType": false
+        },
+        {
+          "name": "buildSystemCommand",
+          "isType": false
+        },
+        {
+          "name": "configFile",
+          "isType": false
+        },
+        {
+          "name": "createBarkChannel",
+          "isType": false
+        },
+        {
+          "name": "createEventHandlers",
+          "isType": false
+        },
+        {
+          "name": "createNotifierService",
+          "isType": false
+        },
+        {
+          "name": "createSettingsBridge",
+          "isType": false
+        },
+        {
+          "name": "createStatusStore",
+          "isType": false
+        },
+        {
+          "name": "createWebhookChannel",
+          "isType": false
+        },
+        {
+          "name": "errorMessage",
+          "isType": false
+        },
+        {
+          "name": "formatDuration",
+          "isType": false
+        },
+        {
+          "name": "getNotifierService",
+          "isType": false
+        },
+        {
+          "name": "historyFile",
+          "isType": false
+        },
+        {
+          "name": "inject",
+          "isType": false
+        },
+        {
+          "name": "installNotifierSettings",
+          "isType": false
+        },
+        {
+          "name": "isInQuietHours",
+          "isType": false
+        },
+        {
+          "name": "isLoopbackRequest",
+          "isType": false
+        },
+        {
+          "name": "isSoundSetting",
+          "isType": false
+        },
+        {
+          "name": "isSubagentOf",
+          "isType": false
+        },
+        {
+          "name": "lastTurnEndOf",
+          "isType": false
+        },
+        {
+          "name": "migrateLegacyConfig",
+          "isType": false
+        },
+        {
+          "name": "name",
+          "isType": false
+        },
+        {
+          "name": "normalizeBarkBaseUrl",
+          "isType": false
+        },
+        {
+          "name": "normalizeBarkLevels",
+          "isType": false
+        },
+        {
+          "name": "normalizeConfig",
+          "isType": false
+        },
+        {
+          "name": "parseHHMM",
+          "isType": false
+        },
+        {
+          "name": "prettyToolName",
+          "isType": false
+        },
+        {
+          "name": "priorityFor",
+          "isType": false
+        },
+        {
+          "name": "readBody",
+          "isType": false
+        },
+        {
+          "name": "redactConfigView",
+          "isType": false
+        },
+        {
+          "name": "renderWebhookBody",
+          "isType": false
+        },
+        {
+          "name": "resolveSoundSetting",
+          "isType": false
+        },
+        {
+          "name": "sanitizeErrorText",
+          "isType": false
+        },
+        {
+          "name": "sanitizePatchSettings",
+          "isType": false
+        },
+        {
+          "name": "sanitizeSettings",
+          "isType": false
+        },
+        {
+          "name": "sessionTitleOf",
+          "isType": false
+        },
+        {
+          "name": "statusFile",
+          "isType": false
+        },
+        {
+          "name": "toastScriptPath",
+          "isType": false
+        },
+        {
+          "name": "toneFileCandidates",
+          "isType": false
+        },
+        {
+          "name": "unmaskChannels",
+          "isType": false
+        },
+        {
+          "name": "validateSettings",
+          "isType": false
+        },
+        {
+          "name": "writeJson",
+          "isType": false
+        }
+      ],
+      "blocks": {
+        "BARK_TIMEOUT_MS": [
+          "export declare const BARK_TIMEOUT_MS = 10000;"
+        ],
+        "SEVERITY_LEVEL": [
+          "export declare const SEVERITY_LEVEL: Readonly<Record<NotifySeverity, BarkLevel>>;"
+        ],
+        "createBarkChannel": [
+          "export declare function createBarkChannel(cfg: BarkChannelConfig): NotifyChannel;"
+        ],
+        "buildBrowserFrame": [
+          "export declare function buildBrowserFrame(payload: { title: string; body: string; kind: string; ts: number; severity?: NotifySeverity; }"
+        ],
+        "createBrowserChannel": [
+          "export declare function createBrowserChannel(): NotifyChannel;"
+        ],
+        "createOutboundChannelResolver": [
+          "export declare function createOutboundChannelResolver(getChannels: () => ChannelConfig[] | undefined): () => Array<{ id: string; channel: NotifyChannel; }"
+        ],
+        "createSystemChannel": [
+          "export declare function createSystemChannel(): NotifyChannel;"
+        ],
+        "SEVERITY_GOTIFY_PRIORITY": [
+          "export declare const SEVERITY_GOTIFY_PRIORITY: Readonly<Record<NotifySeverity, number>>;"
+        ],
+        "SEVERITY_NTFY_PRIORITY": [
+          "export declare const SEVERITY_NTFY_PRIORITY: Readonly<Record<NotifySeverity, string>>;"
+        ],
+        "WEBHOOK_DEFAULT_TIMEOUT_SEC": [
+          "export declare const WEBHOOK_DEFAULT_TIMEOUT_SEC = 10;"
+        ],
+        "WEBHOOK_MAX_TIMEOUT_SEC": [
+          "export declare const WEBHOOK_MAX_TIMEOUT_SEC = 60;"
+        ],
+        "WEBHOOK_MIN_TIMEOUT_SEC": [
+          "export declare const WEBHOOK_MIN_TIMEOUT_SEC = 1;"
+        ],
+        "createWebhookChannel": [
+          "export declare function createWebhookChannel(cfg: WebhookChannelConfig): NotifyChannel;"
+        ],
+        "priorityFor": [
+          "export declare function priorityFor(preset: WebhookPreset, severity: NotifySeverity | undefined): string;"
+        ],
+        "renderWebhookBody": [
+          "export declare function renderWebhookBody(template: string, preset: WebhookPreset, vars: WebhookRenderVars): string;"
+        ],
+        "ASSEMBLY_SETTING_KEYS": [
+          "export declare const ASSEMBLY_SETTING_KEYS: readonly [\"configFile\", \"toastScript\", \"historyFile\", \"statusFile\", \"enabled\"];"
+        ],
+        "BARK_ID_PATTERN": [
+          "export declare const BARK_ID_PATTERN: RegExp;"
+        ],
+        "BARK_RESERVED_KEYS": [
+          "export declare const BARK_RESERVED_KEYS: readonly string[];"
+        ],
+        "BUILTIN_CHANNELS": [
+          "export declare const BUILTIN_CHANNELS: { readonly browser: \"browser\"; readonly system: \"system\"; };"
+        ],
+        "CONFIG_KEYS": [
+          "export declare const CONFIG_KEYS: readonly BooleanKeys[];"
+        ],
+        "DEFAULT_CONFIG": [
+          "export declare const DEFAULT_CONFIG: NotifyConfig;"
+        ],
+        "PROTOTYPE_POLLUTION_KEYS": [
+          "export declare const PROTOTYPE_POLLUTION_KEYS: readonly string[];"
+        ],
+        "SOUND_IDS": [
+          "export declare const SOUND_IDS: readonly [\"ding\", \"bell\", \"chime\", \"pop\"];"
+        ],
+        "WEBHOOK_RESERVED_KEYS": [
+          "export declare const WEBHOOK_RESERVED_KEYS: readonly string[];"
+        ],
+        "isSoundSetting": [
+          "export declare function isSoundSetting(v: unknown): v is SoundSetting;"
+        ],
+        "resolveSoundSetting": [
+          "export declare function resolveSoundSetting(cfg: Pick<NotifyConfig, \"browserSound\" | \"systemSound\" | \"notifySound\">, channel: SoundChannel): SoundSetting;"
+        ],
+        "CORRUPTED_BAK_SUFFIX": [
+          "export declare const CORRUPTED_BAK_SUFFIX = \".corrupted.bak\";"
+        ],
+        "MIGRATED_BAK_SUFFIX": [
+          "export declare const MIGRATED_BAK_SUFFIX = \".migrated.bak\";"
+        ],
+        "migrateLegacyConfig": [
+          "export declare function migrateLegacyConfig(legacyPath: string, deps: MigrateDeps, logger?: { warn?: (...a: unknown[]) => void; }"
+        ],
+        "isWebhookHeaderName": [
+          "export declare function isWebhookHeaderName(v: unknown): boolean;"
+        ],
+        "normalizeBarkBaseUrl": [
+          "export declare function normalizeBarkBaseUrl(raw: unknown): string | null;"
+        ],
+        "normalizeBarkLevels": [
+          "export declare function normalizeBarkLevels(v: unknown): Record<string, BarkLevel> | undefined;"
+        ],
+        "normalizeConfig": [
+          "export declare function normalizeConfig(input: unknown): NotifyConfig;"
+        ],
+        "configFile": [
+          "export declare function configFile(): string;"
+        ],
+        "historyFile": [
+          "export declare function historyFile(): string;"
+        ],
+        "seqFile": [
+          "export declare function seqFile(): string;"
+        ],
+        "statusFile": [
+          "export declare function statusFile(): string;"
+        ],
+        "toastScriptPath": [
+          "export declare function toastScriptPath(): string;"
+        ],
+        "QUIET_ALLOW_KINDS": [
+          "export declare const QUIET_ALLOW_KINDS: readonly [\"ask\", \"question\", \"done\", \"subagent-done\", \"error\", \"turn-end\"];"
+        ],
+        "isInQuietHours": [
+          "export declare function isInQuietHours(now: Date, quietHours: QuietHoursConfig | undefined): boolean;"
+        ],
+        "parseHHMM": [
+          "export declare function parseHHMM(text: string): number;"
+        ],
+        "CHANNEL_SECRET_FIELDS": [
+          "export declare const CHANNEL_SECRET_FIELDS: Record<string, readonly string[]>;"
+        ],
+        "SECRET_MASK": [
+          "export declare const SECRET_MASK = \"********\";"
+        ],
+        "redactConfigView": [
+          "export declare function redactConfigView<T>(value: T): T;"
+        ],
+        "unmaskChannels": [
+          "export declare function unmaskChannels(patchChannels: unknown, userChannels: unknown): { ok: true; channels: unknown[]; }"
+        ],
+        "NotifierSettingsBridge": [
+          "export declare class NotifierSettingsBridge implements SettingsBridge { entry: Record<string, unknown>; private current; private source; private attachedService; private attachedScope; constructor(ctx: Context, config?: NotifierEntryConfig); getCurrent: () => NotifyConfig; resolve: () => NotifyConfig; getSource: () => NotifyConfig; isWritable: () => boolean; writable: () => boolean; getScope: () => OwnerScopeLike | undefined; getService: () => SettingsServiceLike | undefined; readUser: () => { user: Record<string, unknown>; revision?: number; }; updateConfig: (patch: object, expectedRevision?: number) => Promise<void>; update: (patch: object, expectedRevision?: number) => Promise<void>; confirmKindToConfig: (kind: string, confirmed: boolean) => Promise<void>; confirmKind: (kind: string, confirmed: boolean) => Promise<void>; }"
+        ],
+        "createSettingsBridge": [
+          "export declare function createSettingsBridge(ctx: Context, config?: NotifierEntryConfig): SettingsBridge;"
+        ],
+        "SETTINGS_NS": [
+          "export declare const SETTINGS_NS = \"dsh-notifier\";"
+        ],
+        "installNotifierSettings": [
+          "export declare function installNotifierSettings(ctx: Context, entry: Record<string, unknown>, hooks: NotifierSettingsHooks): void;"
+        ],
+        "sanitizePatchSettings": [
+          "export declare function sanitizePatchSettings(raw: unknown): Partial<NotifyConfig> | null;"
+        ],
+        "sanitizeSettings": [
+          "export declare function sanitizeSettings(raw: unknown): Partial<NotifyConfig> | null;"
+        ],
+        "validateSettings": [
+          "export declare function validateSettings(raw: unknown): SettingInvalid | null;"
+        ],
+        "isSubagentOf": [
+          "export declare function isSubagentOf(agent: Agent | undefined, ownership?: SubagentOwnership): boolean;"
+        ],
+        "lastTurnEndOf": [
+          "export declare function lastTurnEndOf(agent: Agent | undefined): { turn: number; kind: TurnEndKind; }"
+        ],
+        "sessionTitleOf": [
+          "export declare function sessionTitleOf(agent: Agent | undefined): string | undefined;"
+        ],
+        "createDoneBatcher": [
+          "export declare function createDoneBatcher(options: DoneBatcherOptions): DoneBatcher;"
+        ],
+        "NotifierEventHandlers": [
+          "export declare class NotifierEventHandlers implements EventHandlers { private askRemindTimers; private agentStates; private eventStreamEnds; private errorMerge; private turnNotified; private deps; constructor(deps: EventHandlersDeps); handleApprovalRequest: (req: ApprovalRequestEvent, next: () => Promise<ApprovalOutcome>) => Promise<ApprovalOutcome>; hookUserQuestions: () => void; handleInternalService: (name: string) => void; handleSessionEvent: (session: Session, event: SessionEvent) => void; private handleAgentIdle; private handleAgentRunning; handleAgentStatus: ({ agent, status }: { agent: Agent; status: AgentStatus; }) => void; handleAgentDisposed: ({ agent }: { agent: Agent; }) => void; handleAgentError: (payload: AgentErrorPayload) => void; handleAgentTurnStopping: (payload: AgentTurnStoppingPayload) => Promise<void>; dispose: () => void; }"
+        ],
+        "createEventHandlers": [
+          "export declare function createEventHandlers(deps: EventHandlersDeps): EventHandlers;"
+        ],
+        "resolveTurnEvidence": [
+          "export declare function resolveTurnEvidence(agent: Agent, state: AgentState, eventStreamEnds: Map<string, { turn: number; kind: string; }"
+        ],
+        "inject": [
+          "export declare const inject: string[];"
+        ],
+        "name": [
+          "export declare const name = \"notifier\";"
+        ],
+        "apply": [
+          "export declare function apply(ctx: Context, config?: NotifierApplyConfig): void;"
+        ],
+        "createAdjudicator": [
+          "export declare function createAdjudicator(deps: AdjudicateDeps): (opts: AdjudicateOptions) => AdjudicateResult;"
+        ],
+        "isBuiltinKind": [
+          "export declare function isBuiltinKind(kind: string): boolean;"
+        ],
+        "isKindConfirmed": [
+          "export declare function isKindConfirmed(kind: string, kindRegistry: Map<string, { label: string; }"
+        ],
+        "resolveRoutes": [
+          "export declare function resolveRoutes(args: { kind: string; onlyChannel?: string; pool: ChannelPoolEntry[]; snapshot: NotifyConfig; }"
+        ],
+        "createDeliverer": [
+          "export declare function createDeliverer(deps: DeliverDeps): Deliverer;"
+        ],
+        "truncateCodePoints": [
+          "export declare function truncateCodePoints(s: string, max: number): string;"
+        ],
+        "createAppendHistory": [
+          "export declare function createAppendHistory(deps: { append(entry: { ts: number; kind: string; title: string; message: string; suppressed?: string; }): void; logger: { warn: (message: string) => void; }; }"
+        ],
+        "createHandleDecision": [
+          "export declare function createHandleDecision(deps: OrchestrateDeps): (decision: AdjudicateResult) => NotifyResult[];"
+        ],
+        "createSendKind": [
+          "export declare function createSendKind(deps: SendKindDeps): (kind: string, detail?: NotifyDetail, opts?: { bypassQuiet?: boolean; onlyChannel?: string; }"
+        ],
+        "encodeBrowserSound": [
+          "export declare function encodeBrowserSound(sound: NotifyConfig[\"browserSound\"], pop: boolean): { mode: \"silent\" | \"system\" | \"selfplay\"; tone?: SoundId; };"
+        ],
+        "resolveChannelPool": [
+          "export declare function resolveChannelPool(snapshot: NotifyConfig, deps: { builtinChannels: Array<{ id: string; channel: NotifyChannel; }>; outboundChannels(): ChannelPoolEntry[]; logger: { warn: (message: string) => void; }; }"
+        ],
+        "createNotifierService": [
+          "export declare function createNotifierService(deps: NotifierServiceDeps): NotifierServiceInternal;"
+        ],
+        "getNotifierService": [
+          "export declare function getNotifierService(ctx: unknown): NotifierService | undefined;"
+        ],
+        "ROUTES": [
+          "export declare const ROUTES: { config: string; events: string; health: string; test: string; history: string; status: string; kinds: string; };"
+        ],
+        "applyConfigPatch": [
+          "export declare function applyConfigPatch(deps: RouteDeps, payload: unknown): Promise<PatchResult>;"
+        ],
+        "buildRoutes": [
+          "export declare function buildRoutes(deps: RouteDeps): WebRoute[];"
+        ],
+        "createSeqStore": [
+          "export declare function createSeqStore(options: { file: string; warn: (message: string) => void; }"
+        ],
+        "createSseHub": [
+          "export declare function createSseHub(options: { getMaxConnections: () => number; heartbeatMs?: number; stalledTimeoutMs?: number; maxAgeMs?: number; idleTimeoutMs?: number; loadSeq?: () => number; saveSeq?: (seq: number) => void; seqFlushMs?: number; }"
+        ],
+        "createSystemNotifier": [
+          "export declare function createSystemNotifier(options: { toastScript: string; warn: (message: string) => void; execFileImpl?: typeof execFile; spawnImpl?: typeof spawn; killTimeoutMs?: number; }"
+        ],
+        "HISTORY_LIMIT": [
+          "export declare const HISTORY_LIMIT = 200;"
+        ],
+        "createHistoryStore": [
+          "export declare function createHistoryStore(options: { file: string; maxAgeDays: () => number; warn: (message: string) => void; }"
+        ],
+        "createStatusStore": [
+          "export declare function createStatusStore(options: { file: string; warn: (message: string) => void; }"
+        ],
+        "KIND_SEVERITY": [
+          "export declare const KIND_SEVERITY: Readonly<Record<string, NotifySeverity>>;"
+        ],
+        "NOTIFY_KINDS": [
+          "export declare const NOTIFY_KINDS: Record<string, { title: string; message: (detail: NotifyDetail) => string; }"
+        ],
+        "NOTIFY_SEVERITIES": [
+          "export declare const NOTIFY_SEVERITIES: readonly [\"info\", \"success\", \"warning\", \"failure\"];"
+        ],
+        "formatDuration": [
+          "export declare function formatDuration(ms: number): string;"
+        ],
+        "isNotifySeverity": [
+          "export declare function isNotifySeverity(value: unknown): value is NotifySeverity;"
+        ],
+        "normalizeSeverity": [
+          "export declare function normalizeSeverity(value: unknown): NotifySeverity | undefined;"
+        ],
+        "prettyToolName": [
+          "export declare function prettyToolName(name: unknown): string;"
+        ],
+        "sanitizeErrorText": [
+          "export declare function sanitizeErrorText(text: unknown, maxLen?: number): string;"
+        ],
+        "sanitizeNoticeContent": [
+          "export declare function sanitizeNoticeContent(notice: { title: unknown; body: unknown; }"
+        ],
+        "LINUX_DEFAULT_TONE_FILE": [
+          "export declare const LINUX_DEFAULT_TONE_FILE = \"message-new-instant.oga\";"
+        ],
+        "LINUX_TONE_FILES": [
+          "export declare const LINUX_TONE_FILES: Readonly<Record<SoundId, readonly string[]>>;"
+        ],
+        "MAC_SOUND_NAMES": [
+          "export declare const MAC_SOUND_NAMES: Readonly<Record<SoundId, string>>;"
+        ],
+        "TONE_BASE_DIRS": [
+          "export declare const TONE_BASE_DIRS: Readonly<Record<string, string>>;"
+        ],
+        "WIN_TONE_FILES": [
+          "export declare const WIN_TONE_FILES: Readonly<Record<SoundId, readonly string[]>>;"
+        ],
+        "buildSoundCommand": [
+          "export declare function buildSoundCommand(platform: string, tone: SystemTone, player: string | undefined): string[] | null;"
+        ],
+        "buildSystemCommand": [
+          "export declare function buildSystemCommand(platform: string, title: string, message: string, options: { sound: SoundSetting; selfPlay?: boolean; notifySendAvailable?: boolean; toastScript: string; }"
+        ],
+        "toneFileCandidates": [
+          "export declare function toneFileCandidates(platform: string, tone: SystemTone): readonly string[];"
+        ]
+      }
+    },
+    "./client": {
+      "types": "./lib/client/index.d.ts",
+      "exports": [
+        {
+          "name": "apply",
+          "isType": false
+        },
+        {
+          "name": "inject",
+          "isType": false
+        }
+      ],
+      "blocks": {
+        "inject": [
+          "export declare const inject: string[];"
+        ],
+        "apply": [
+          "export declare function apply(ctx: any): void;"
+        ],
+        "en": [
+          "export declare const en: Record<NotifierLocaleKey, string>;"
+        ],
+        "zh": [
+          "export declare const zh: { readonly evtAsk: \"审批等待\"; readonly evtQuestion: \"向你提问\"; readonly evtTaskDone: \"任务完成\"; readonly evtSubagentDone: \"子任务完成\"; readonly evtTaskError: \"任务出错\"; readonly evtTurnEnd: \"轮次完成\"; readonly chSystemNotify: \"系统通知\"; readonly chBrowserNotify: \"浏览器通知\"; readonly chWhenVisible: \"页面可见时也弹\"; readonly chSound: \"声音\"; readonly chStateOn: \"启用\"; readonly chStateSound: \"仅声音\"; readonly chStateOff: \"已停用\"; readonly chSoundFollow: \"跟随系统默认\"; readonly chSoundFollowHint: \"系统卡：Windows 用系统通知音 / macOS Glass / Linux 自播默认事件音；浏览器卡：交给操作系统发声（不 silent）。\"; readonly chSoundTone: \"音色\"; readonly chSoundPreview: \"试听\"; readonly chSoundOnlyNote: \"弹窗已关、声音开启：本频道只响不弹（不打扰界面）。\"; readonly toneDing: \"叮（Ding）\"; readonly toneBell: \"铃（Bell）\"; readonly toneChime: \"钟琴（Chime）\"; readonly tonePop: \"啵（Pop）\"; readonly sysPlatformWin: \"宿主平台 Windows：系统提示音走 toast 系统音；选音色后经 SoundPlayer 播放内置 wav（近似映射，与系统设置音可不同）。\"; readonly sysPlatformMac: \"宿主平台 macOS：系统提示音经 osascript/NSSound（Glass/Tink/Sosumi/Pop 近似映射），受系统「允许通知声音」设置约束。\"; readonly sysPlatformLinux: \"宿主平台 Linux：不依赖桌面守护进程的发声支持——声音由插件自播（pw-play/paplay 播 freedesktop 事件音），仅宿主有桌面/音频会话才响。\"; readonly sysPlatformOther: \"系统提示音随宿主平台尽力而为；此处试听为浏览器本地合成，仅作听感参考。\"; readonly kAsk: \"审批等待\"; readonly kQuestion: \"向你提问\"; readonly kDone: \"任务完成\"; readonly kSubagentDone: \"子任务完成\"; readonly kError: \"任务出错\"; readonly kTurnEnd: \"轮次完成\"; readonly kTest: \"测试\"; readonly lanAccessHint: \"（若为局域网直连访问，通知服务仅允许回环调用而被拒：请用 dsh-lan-proxy 的 https: readonly settingsLoading: \"通知：加载中…\"; readonly settingsUnavailable: \"设置服务不可用\"; readonly loadFail: \"设置加载失败：{msg}{hint}\"; readonly unchanged: \"未修改\"; readonly savedOk: \"已保存\"; readonly conflictReloadFail: \"冲突恢复失败：未能拉取最新配置，请重试保存\"; readonly saveFail: \"保存失败：{msg}\"; readonly saveTimeout: \"保存超时：网络请求未在 15 秒内完成，请重试\"; readonly conflictTitle: \"配置已在其他窗口被修改：\"; readonly conflictChannels: \"频道配置已在其他窗口被修改：\"; readonly conflictLoadLatest: \"加载最新（放弃我的修改）\"; readonly conflictOverwrite: \"保留我的修改并覆盖\"; readonly conflictIgnore: \"忽略\"; readonly conflictLoadedLatest: \"已加载最新配置\"; readonly testSent: \"测试通知已发送（服务端未释放句柄 {n} 条）\"; readonly testFail: \"发送测试通知失败：{msg}{hint}\"; readonly cleared: \"已清空 {n} 条通知记录\"; readonly clearFail: \"清空失败：{msg}{hint}\"; readonly errMergeWindow: \"错误合并窗口（ms，0=关）\"; readonly doneAggWindow: \"完成聚合窗口（ms，0=关）\"; readonly approveRemind: \"审批二次提醒（分钟，0=关）\"; readonly historyRetention: \"历史保留天数（0=不按天清理）\"; readonly maxConnections: \"最大连接数（条，超出淘汰最老）\"; readonly dndEnable: \"启用免打扰\"; readonly dndStart: \"开始时间\"; readonly dndEnd: \"结束时间\"; readonly dndStillLabel: \"免打扰仍提醒\"; readonly allowDisabledHint: \"事件未启用\"; readonly allowFollowEnabled: \"跟随已启用事件\"; readonly allowResetDefault: \"恢复默认（审批/提问/出错）\"; readonly settingsSvcDown: \"设置服务不可用：当前无法保存配置（settings 服务未挂载）。插件通知功能不受影响，但更改将被拒绝。\"; readonly httpDegraded: \"当前为局域网 HTTP 访问（非安全上下文），浏览器禁止系统级弹窗，已启用「页面内横幅 + 提示音 + 标题提醒」降级通道。如需系统弹窗，请改用 dsh-lan-proxy 的 https: readonly permGranted: \"浏览器通知权限：已授权 ✓\"; readonly permDenied: \"浏览器通知权限：已拒绝（请在浏览器站点设置中允许本页通知）\"; readonly permDefault: \"浏览器通知权限：未授权（点击下方按钮在浏览器弹窗中允许）\"; readonly iosUnsupported: \"当前设备不支持系统级通知（如 iOS Safari 普通标签页无 Web Notifications）。可用通道：页面可见时的横幅 + 提示音（需保持页面打开），或经 dsh-lan-proxy 的 https: readonly clearConfirm: \"确认清理记录？\"; readonly clearLabel: \"清理记录\"; readonly requestPerm: \"请求通知权限\"; readonly permRequested: \"权限请求完成\"; readonly sendTest: \"发送测试通知\"; readonly refresh: \"刷新\"; readonly historyTitle: \"通知记录（最近 10 条）\"; readonly historyEmpty: \"暂无通知记录（点「发送测试通知」可生成一条）\"; readonly historySuppressed: \"免打扰拦截未发出\"; readonly secEvents: \"通知事件\"; readonly secChannels: \"通知频道\"; readonly secDedup: \"合并/去重\"; readonly tabLabel: \"通知中心\"; readonly save: \"保存\"; readonly saving: \"保存中…\"; readonly saveChannels: \"保存频道\"; readonly channelsDomainHint: \"仅保存频道改动，不影响事件/参数等未保存修改\"; readonly chTest: \"发送测试\"; readonly chLastOk: \"最近投递成功\"; readonly chLastFail: \"最近投递失败\"; readonly chNeverSent: \"尚未投递\"; readonly chAdvanced: \"高级参数\"; readonly chDelete: \"删除\"; readonly chDeleteConfirm: \"确认删除？再次点击执行\"; readonly chAddBark: \"添加 Bark 推送\"; readonly chBarkName: \"显示名称\"; readonly chBarkNamePlaceholder: \"如：我的 iPhone\"; readonly chBarkBaseUrl: \"服务器地址\"; readonly chBarkBaseUrlHint: \"Bark 服务器地址（http/https），如 https: readonly chBarkDeviceKey: \"Device Key\"; readonly chBarkDeviceKeyHint: \"Bark App 内查看；保存后仅显示掩码，留掩码即不修改\"; readonly chBarkSound: \"铃声 sound\"; readonly chBarkGroup: \"分组 group\"; readonly chBarkGroupHint: \"同组通知在手机上折叠展示\"; readonly chBarkIcon: \"图标 icon\"; readonly chBarkIconHint: \"图片 URL，需手机网络可访问；iOS 17+ 支持 SVG；留空用 Bark 默认图标\"; readonly chBarkUrl: \"跳转 url\"; readonly chBarkBadge: \"角标 badge\"; readonly chBarkLevel: \"默认紧急度 level\"; readonly chBarkLevelHint: \"实例级紧急度（缺省按事件强度自动映射）；下方「按类型紧急度映射」命中时优先于本项\"; readonly chLevelAuto: \"按事件强度自动映射\"; readonly chLevelsHint: \"按事件类型指定 Bark 紧急度，优先于「默认紧急度」与自动映射；未配置的类型走默认\"; readonly chLevelsKindPlaceholder: \"如 question\"; readonly chLevelsAdd: \"添加映射\"; readonly chLevelsRemove: \"移除\"; readonly chLevelsEmpty: \"未配置按类型映射（全部事件走默认紧急度）\"; readonly chLevelsUnknown: \"未知事件类型（可能不生效，请确认拼写）\"; readonly kindsTitle: \"通知类型\"; readonly kindsHint: \"其他插件注册的通知类型需你确认后才会投递\"; readonly kindAllow: \"允许\"; readonly kindDeny: \"拒绝\"; readonly kindsEmpty: \"没有待处理的通知类型\"; readonly testChannelOk: \"测试已受理（投递结果见频道状态行）\"; readonly kindConfirmOk: \"已更新通知类型确认状态\"; readonly kindConfirmFail: \"确认失败：{msg}\"; readonly chNewBarkName: \"Bark 推送\"; readonly secHistory: \"通知记录\"; readonly evtSwitch: \"事件开关：{name}\"; readonly chToggleOn: \"启用频道：\"; readonly chToggleOff: \"停用频道：\"; readonly chTypeBuiltin: \"内置\"; readonly kindRevoke: \"撤销允许\"; readonly routeCap: \"投递到\"; readonly routeDefaultState: \"跟随默认 · 全部启用频道\"; readonly routeDefaultStateTitle: \"未自定义路由：投递到全部已启用频道（随频道启停动态变化）\"; readonly routeCustomState: \"自定义 · {n} 频道 · 恢复默认\"; readonly routeCustomStateTitle: \"已自定义路由（冻结快照）；点击恢复跟随默认\"; readonly routeStaleChip: \"已删除\"; readonly routeStaleTitle: \"该频道已删除，路由条目残留；投递时自动跳过（残留条目不会自动移除）\"; readonly routeDisabledHint: \"频道未启用：先在上方「通知频道」启用后才能配置投递\"; readonly dirtySome: \"有 {n} 处未保存修改\"; readonly discardChanges: \"放弃更改\"; readonly discardOk: \"已放弃未保存修改\"; readonly secretShow: \"显示\"; readonly secretHide: \"隐藏\"; readonly kindRouteHint: \"允许后可像内置事件一样配置投递频道\"; readonly chAddWebhook: \"添加 Webhook（安卓 / 自建）\"; readonly chNewWebhookName: \"Webhook 推送\"; readonly whPreset: \"预设\"; readonly whPresetNtfy: \"ntfy（ntfy.sh 或自建）\"; readonly whPresetGotify: \"Gotify\"; readonly whPresetCustom: \"自建推送网关\"; readonly whPresetHint: \"预设填充 URL 形态 / 认证方式 / 消息模板\"; readonly whUrl: \"目标 URL\"; readonly whUrlPlaceholder: \"https: readonly whUrlHint: \"POST JSON；仅允许 http(s) 且 URL 不得内嵌凭据；ntfy 主题名建议带随机后缀防遍历\"; readonly whAuth: \"认证\"; readonly whAuthNone: \"无\"; readonly whAuthBearer: \"Bearer Token（Authorization 头）\"; readonly whAuthBasic: \"Basic 用户名/密码\"; readonly whAuthHeader: \"自定义请求头\"; readonly whAuthHint: \"凭据只走请求头（ntfy / Gotify 均支持 Authorization 头，不拼 URL）；仅存本机配置并掩码回显，错误信息出站前统一脱敏\"; readonly whAuthToken: \"访问令牌\"; readonly whAuthUsername: \"用户名\"; readonly whAuthPassword: \"密码\"; readonly whAuthHeaderName: \"请求头名（如 X-Gotify-Key）\"; readonly whAuthHeaderValue: \"头值（令牌）\"; readonly whTimeout: \"投递超时\"; readonly whTimeoutHint: \"秒 · 1–60（超限按边界取值，默认 10）；超时与失败均落记录，不自动重试\"; readonly whTemplate: \"消息模板（JSON body，占位符点击插入）\"; readonly whTemplateHint: \"{{priority}} 由服务端按频道映射渲染（ntfy：info→default / success→low / warning→high / failure→urgent）；文本占位符 JSON-aware 转义，{{ts}} 数字直出\"; readonly whTemplateFailHint: \"模板非法或渲染失败按该频道投递失败落记录，不阻断其他频道\"; readonly whTplRestore: \"恢复预设模板\"; };"
+        ]
+      }
+    }
+  }
 }

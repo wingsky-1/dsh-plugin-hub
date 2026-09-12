@@ -1147,3 +1147,70 @@ describe("⑧ 异步终态失败：promise reject → status failed + 事件带�
     expect(badEvent && badEvent.status === "failed" && badEvent.error).toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------- registerChannel：登记 + 一次性 warn
+
+describe("registerChannel：登记 + 同一 name 只提示一次（#733 M2c 后续 N1）", () => {
+  const caps = { titleMaxLen: 64, maxBodyLen: 256 };
+  /** 合法频道夹具：注册表不消费 send/capabilities，这里是「形状合法」的最小实例。 */
+  const channel = (name: string): NotifyChannel => ({ name, capabilities: caps, send: () => {} });
+  /** 固定单行文案：与实现逐字全等（禁裸 includes——文案漂移必须红）。 */
+  const notice = (name: string) =>
+    `dsh-notifier: registerChannel("${name}") 已登记；该注册表不参与裁决与投递解析，频道需经配置启用才会投递`;
+
+  it("首次登记合法频道 → warn 一次，且文案与实现全等", () => {
+    const warns: string[] = [];
+    const { service } = makeService({}, { warn: (m) => warns.push(m) });
+    service.registerChannel(channel("acme"));
+    // 先断言集合非空，再断言内容与条数（顺序反了会让「零条」也「全等」通过）
+    expect(warns.length).toBe(1);
+    expect(warns[0]).toBe(notice("acme"));
+  });
+
+  it("同一 name 重复登记 → 仍只 warn 一次（去重面是 Set，不是「每次登记都提示」）", () => {
+    const warns: string[] = [];
+    const { service } = makeService({}, { warn: (m) => warns.push(m) });
+    service.registerChannel(channel("dup"));
+    service.registerChannel(channel("dup"));
+    service.registerChannel(channel("dup"));
+    expect(warns.length).toBe(1);
+    expect(warns[0]).toBe(notice("dup"));
+  });
+
+  it("不同 name → 各提示一次（按 name 去重，不按调用序号）", () => {
+    const warns: string[] = [];
+    const { service } = makeService({}, { warn: (m) => warns.push(m) });
+    service.registerChannel(channel("first"));
+    service.registerChannel(channel("second"));
+    expect(warns.length).toBe(2);
+    expect(warns[0]).toBe(notice("first"));
+    expect(warns[1]).toBe(notice("second"));
+  });
+
+  it("非法入参保持静默（ch 空 / name 非字符串 / send 非函数）：不提示、不登记", () => {
+    const warns: string[] = [];
+    const { service } = makeService({}, { warn: (m) => warns.push(m) });
+    service.registerChannel(undefined as unknown as NotifyChannel);
+    service.registerChannel({ capabilities: caps, send: () => {} } as unknown as NotifyChannel);
+    service.registerChannel({ name: 42, capabilities: caps, send: () => {} } as unknown as NotifyChannel);
+    service.registerChannel({ name: "no-send", capabilities: caps } as unknown as NotifyChannel);
+    expect(warns.length).toBe(0);
+    // 非法入参不得占用 name：随后合法注册同名仍提示一次（「非法不登记」的机器证据）
+    service.registerChannel(channel("no-send"));
+    expect(warns.length).toBe(1);
+    expect(warns[0]).toBe(notice("no-send"));
+  });
+
+  it("logger.warn 抛错不影响登记，也不重复提示（记账先于日志）", () => {
+    let calls = 0;
+    const { service } = makeService({}, { warn: () => {
+      calls += 1;
+      throw new Error("日志出口故障");
+    } });
+    expect(() => service.registerChannel(channel("boom"))).not.toThrow();
+    expect(calls).toBe(1);
+    // 登记已生效：同名再注册不再尝试提示（calls 不增）
+    expect(() => service.registerChannel(channel("boom"))).not.toThrow();
+    expect(calls).toBe(1);
+  });
+});
