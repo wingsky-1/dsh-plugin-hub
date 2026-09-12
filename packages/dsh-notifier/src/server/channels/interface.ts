@@ -21,13 +21,15 @@ import type { DeliverResult, NotifyMessage } from "./impl/deliver/type.ts";
 // 入参类型：只出**真有消费者**的那几个。
 // - `NotifyMessage` / `DeliveryTarget`：`deliver` 签名里调用方必须亲手构造的；
 // - `BarkTarget` / `WebhookTarget`：config 域的频道配置继承它们（同一组投递字段
-//   不在两侧各定义一遍）。
+//   不在两侧各定义一遍）；
+// - `NotifyFrame`：本域是它的**生产者**，`emitFrame` 是它唯一的出口——组合根要把
+//   这个出口接上宿主事件总线，就得先能命名它产出的是什么。
 // 其余出口的参数形状经 `DeliveryTarget` 联合可达——调用方要构造哪一路，推导得
 // 出来；等真出现「要显式命名某一路」的调用点，再把那一路请出来。
 export type { NotifyMessage } from "./impl/deliver/type.ts";
-export type { NotifySeverity } from "./impl/deliver/type.ts";
 export type { BarkTarget } from "./impl/bark/type.ts";
 export type { WebhookTarget } from "./impl/webhook/type.ts";
+export type { NotifyFrame } from "./impl/browser/type.ts";
 export type { DeliveryTarget } from "./impl/deliver/index.ts";
 
 /**

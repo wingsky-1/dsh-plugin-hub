@@ -22,6 +22,21 @@ export interface NotifyFrame {
 }
 
 /**
+ * 帧的宿主事件名。
+ *
+ * 声明在帧类型同处，而不是消费者那边：帧的生产者在本域，事件名是生产者与消费者
+ * 之间的线协议名。搬到消费者名下，等于让生产者的产物去依赖消费者的命名。
+ *
+ * 名字不登记就只是一个字符串——事件总线按名字索引，`ctx.emit` / `ctx.on` 都查它，
+ * 拼错了不会有任何提示，而症状是「帧发出去没人收到」。
+ */
+declare module "@deepseek-ai/cordis" {
+  interface Events {
+    "notifier/frame"(frame: NotifyFrame): void;
+  }
+}
+
+/**
  * 浏览器出口：帧经事件出口发出，本域不持有任何推送设施。
  *
  * `sound` 只是一个铃声属性——用户选了什么，就传什么。至于它该走系统提示音还是

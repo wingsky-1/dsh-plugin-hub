@@ -61,7 +61,7 @@ export async function clearHistory(): Promise<number> {
   return historyStore.clear();
 }
 
-/** 写入：记录一次频道投递终态（错误文本须由调用方先脱敏）。 */
+/** 写入：记录一次频道投递终态（错误文本会落盘并被设置页读出，不要放凭据）。 */
 export function recordStatus(channelId: string, status: "ok" | "failed", error?: string): void {
   statusStore.record(channelId, status, error);
 }

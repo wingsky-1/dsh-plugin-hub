@@ -1,7 +1,7 @@
 /**
  * dsh-notifier stores 域 —— 频道投递状态自己的形状。
  *
- * 事件流的实时性由 `wingsky-notify/sent` 事件与 SSE 承担；这里只放「持久事实」：
+ * 事件流的实时性由 `notifier/frame` 事件与 SSE 承担；这里只放「持久事实」：
  * 重启后设置页仍能看到各频道最近一次投递终态。条目与装配入参都只对状态这一块
  * 成立，因此不进 `shared/`。
  */
@@ -13,7 +13,7 @@ export interface ChannelStatusEntry {
   lastTs: number;
   /** 最近一次投递终态。 */
   lastStatus: "ok" | "failed";
-  /** 最近一次失败的错误摘要（已脱敏；ok 时缺省）。 */
+  /** 最近一次失败的错误摘要（ok 时缺省）。 */
   lastError?: string;
   /** 连续失败计数（成功即清零）。 */
   failStreak: number;

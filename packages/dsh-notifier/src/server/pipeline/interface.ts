@@ -1,0 +1,68 @@
+/**
+ * dsh-notifier pipeline 域 —— **对外契约**。
+ *
+ * ## 职责边界
+ *
+ * **一条通知的生命周期，以及「该不该发」的唯一裁决点。** 通知请求进，投递出去、并
+ * 把经历写进历史出。开关、免打扰、动态 kind 白名单、频道路由都在域内判完，调用方
+ * 不需要知道这条链上有几道工序。
+ *
+ * 唯一裁决点的意思是：**别处不许再判一次**。events 域产出「发生了什么」的陈述，
+ * api 域与 sdk 域提交「请处理这一条」，三条路都汇到这里的 `submit`，由同一套判据
+ * 回答。分散判断的代价不是多算一次——是两个答案不一致时，用户看到的是「设置改了不
+ * 起作用」，而没人会想到去看第二个判断点。
+ *
+ * ## 为什么是「装配 + 具名释放 + 提交口」
+ *
+ * 管线是**有状态域**：装配入参要留着（裁决每次都得重新读设置），将来的合并窗口与
+ * 审批二次提醒还要定时器。状态收在实现里，对外只给三个动作——外面拿不到句柄就造不出
+ * 第二份管线，「唯一裁决点」这句话才有物理含义。
+ *
+ * 释放做成具名动作而不是 `install` 的返回值：返回一个闭包，等于把「谁负责清干净」
+ * 交给调用方保管，而这本来就是这个域的责任。
+ *
+ * ## 提交口为什么没有返回值
+ *
+ * `submit` 不返回结果、也不抛错。它挂在宿主事件链上，调用方只负责把事实递进来；
+ * 要不要发、发去哪、送没送到都是本域的事，结果写进历史与频道状态供查询。让调用方
+ * 从返回值里读出「发了没」，等于把裁决结果又摊回调用方。
+ *
+ * ## 依赖方向
+ *
+ * 只引本域 `./impl/`（契约调实现）与 events 契约——提交体的形状归它。对上依赖的完整
+ * 申报在 `./deps.ts`，那份表给实现块用；契约层要的类型直接来自归属域，不在本地转抄
+ * 一遍。
+ */
+import type { NotifyRequest } from "../events/interface.ts";
+import { notificationPipeline } from "./impl/service/index.ts";
+import type { PipelineDeps } from "./impl/service/type.ts";
+
+// 入参类型：只出组合根必须构造的那一个。投递消息、历史记录、通知请求的形状经
+// `PipelineDeps` 的字段签名可达，调用方不必为它们各起一个名字。
+export type { PipelineDeps } from "./impl/service/type.ts";
+
+/**
+ * 装配裁决管线（组合根在 `apply` 期调用一次）。
+ */
+export function installPipeline(deps: PipelineDeps): void {
+  notificationPipeline.install(deps);
+}
+
+/**
+ * 卸载裁决管线（组合根在卸载期调用）。
+ *
+ * 与 `installPipeline` 配对；重复调用无害——卸载后到达的请求会被丢弃。
+ */
+export function releasePipeline(): void {
+  notificationPipeline.release();
+}
+
+/**
+ * 提交一条通知请求。
+ *
+ * 入口有三条：宿主事件（经 events 域）、页面上的测试按钮（经 api 域）、对外 ABI
+ * （经 sdk 域）。三条都走到这里，所以「该不该发」只有一个答案。
+ */
+export function submit(request: NotifyRequest): void {
+  notificationPipeline.submit(request);
+}

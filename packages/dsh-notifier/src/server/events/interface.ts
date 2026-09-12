@@ -39,15 +39,16 @@
  *
  * ## 依赖方向
  *
- * 只引本域 `./impl/`（契约调实现）与本域装配入参申报表 `./deps.ts`（类型面）；
- * 不引任何他域实现。
+ * **依赖方向**：只引本域 `./impl/`（契约调实现）；本域无对上依赖，故不建 `deps.ts`——
+ * 通知请求的每个字段都是本域自己的词汇（kind 是内置种类，标题正文是原样文本），
+ * 没有一样需要向他域借形状。
  */
 import { eventListener } from "./impl/listen/index.ts";
 import type { EventsDeps } from "./impl/listen/type.ts";
 
 // 入参类型：只出「调用方必须构造的」——组合根要造宿主事件面与出口。
 export type { EventsDeps, HostEventPort } from "./impl/listen/type.ts";
-export type { NotifyRequest } from "./impl/translate/type.ts";
+export type { NotifyKind, NotifyRequest } from "./impl/translate/type.ts";
 
 /**
  * 装配事件订阅（组合根在 `apply` 期调用一次）。

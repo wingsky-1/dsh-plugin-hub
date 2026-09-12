@@ -10,7 +10,7 @@
  * 可能到达，抛出去等于让插件在正常运行中崩掉。骨架期的「还没做」在行为上就等于
  * 「不打扰」——想看出翻译没做，读这个文件比读日志可靠。
  *
- * 依赖方向：只引用本目录、`../../deps.ts`，不引用 `interface.ts`。
+ * 依赖方向：只引用本目录，不引用 `interface.ts`。
  */
 import type { AgentStatus } from "@deepseek-ai/dsh-agent";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
