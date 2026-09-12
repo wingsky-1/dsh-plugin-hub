@@ -1,16 +1,6 @@
 /**
- * dsh-notifier config 域 —— 外部输入 → 合法设置。
- *
- * 设置有三个来源：磁盘上的配置文件、组合层给的 entry、HTTP 提交的 patch。三者的
- * 共同点是**都不受信**——文件可能是手改的、entry 可能来自过期的 profile、patch
- * 可能是任意 JSON。本块是它们进入设置模型的唯一闸门：归一化让脏值有归宿，校验让
- * 非法值有明确的拒绝理由，净化让陌生键进不了用户层。
- *
- * 三道工序的分工不可互换：**归一化永不失败**（读路径必经，脏值回落默认），
- * **校验只审显式提交**（缺键不是错误），**净化只留认识的键**（陌生键既不认识、
- * 也不该被原样写回去）。
- *
- * 依赖方向：只引用本目录与 `../model/`，不引用 `interface.ts`。
+ * config 域：外部输入 → 合法设置。三个来源（磁盘配置文件、组合层 entry、HTTP patch）都**不受信**，这里是它们进入
+ * 设置模型的唯一闸门。三道工序不可互换：归一化**永不失败**、校验**只审显式提交**（缺键不是错误）、净化**只留认识的键**。
  */
 import { DEFAULT_CONFIG } from "../model/index.ts";
 import type {
@@ -48,10 +38,8 @@ const WEBHOOK_PRESETS: readonly WebhookPreset[] = ["ntfy", "gotify", "custom"];
 const CLOCK_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /**
- * 契约认识的键。
- *
- * 从默认设置派生而不是另抄一份清单：模型新增键时白名单自动跟上，不存在「加了键
- * 却忘了加进白名单，于是该键永远写不进去」这种沉默故障。
+ * 契约认识的键。从默认设置派生而不是另抄一份清单：模型新增键时白名单自动跟上，否则
+ * 就是「加了键却忘了加白名单，该键永远写不进去」这种沉默故障。
  */
 const CONFIG_KEYS: readonly string[] = Object.keys(DEFAULT_CONFIG);
 
@@ -71,9 +59,7 @@ const BOOLEAN_KEYS: readonly string[] = [
 
 /** 非负整数键及其上界（越界视为非法而不是截断——静默改写用户的输入比拒绝更糟）。 */
 const COUNT_LIMITS: Record<string, number> = {
-  errorMergeWindowMs: 3_600_000,
   askRemindMin: 1_440,
-  doneMergeWindowMs: 600_000,
   historyMaxAgeDays: 3_650,
   maxConnections: 1_024,
 };
@@ -81,10 +67,8 @@ const COUNT_LIMITS: Record<string, number> = {
 // ---------------------------------------------------------------- 解析
 
 /**
- * 文本 → 原始设置。
- *
- * 坏 JSON 与非对象（数组、标量）一律得到空设置：配置文件被手改成不合法内容时，
- * 读面该回落到默认值，而不是让整个插件装配失败——设置坏掉不该拖垮通知。
+ * 文本 → 原始设置。坏 JSON 与非对象（数组、标量）一律得到空设置：配置文件被手改成不合法
+ * 内容时读面该回落默认值，而不是让整个插件装配失败——设置坏掉不该拖垮通知。
  */
 export function parseJsonObject(text: string): StoredSettings {
   try {
@@ -98,12 +82,8 @@ export function parseJsonObject(text: string): StoredSettings {
 // ---------------------------------------------------------------- 归一化
 
 /**
- * 归一化：把任意输入收敛成一份完整的设置。
- *
- * 缺键补默认、非法值回落合法域——**永不失败**。它是读路径的必经工序：调用方拿到
- * 的一定是一份可以直接用的设置，不需要自己判空。
- *
- * 输出是**全量**的：每个键都有值，可选字段也写出来（空串 / 空对象表达「没有」）。
+ * 归一化：把任意输入收敛成一份完整设置，缺键补默认、非法值回落合法域——**永不失败**，
+ * 是读路径的必经工序。输出是**全量**的（可选字段也写出来，空串 / 空对象表达「没有」）：
  * 让形状随输入变化会迫使下游到处判键在不在，而这里正是唯一能把这件事做掉的地方。
  */
 export function normalizeConfig(input: StoredSettings): NotifyConfig {
@@ -127,17 +107,7 @@ export function normalizeConfig(input: StoredSettings): NotifyConfig {
     kindRoutes: asKindRoutes(input.kindRoutes),
     allowKinds: asStrings(input.allowKinds),
 
-    errorMergeWindowMs: asCount(
-      input.errorMergeWindowMs,
-      fallback.errorMergeWindowMs,
-      COUNT_LIMITS.errorMergeWindowMs,
-    ),
     askRemindMin: asCount(input.askRemindMin, fallback.askRemindMin, COUNT_LIMITS.askRemindMin),
-    doneMergeWindowMs: asCount(
-      input.doneMergeWindowMs,
-      fallback.doneMergeWindowMs,
-      COUNT_LIMITS.doneMergeWindowMs,
-    ),
     historyMaxAgeDays: asCount(
       input.historyMaxAgeDays,
       fallback.historyMaxAgeDays,
@@ -154,13 +124,9 @@ export function normalizeConfig(input: StoredSettings): NotifyConfig {
 // ---------------------------------------------------------------- 校验
 
 /**
- * 校验：给出首个非法键与提示，通过时返回 `ok`。
- *
- * 只对**显式提交**的键负责——缺键不是错误，它由归一化补默认。一次只报首个非法键，
- * 是因为设置页的定位光标只能落在一个字段上。
- *
- * 陌生键不参与校验：它们既不是本域的事实，也会被原样透传保留，拦下它们等于替未来
- * 的版本拒绝今天的用户。
+ * 校验：给出首个非法键与提示。只对**显式提交**的键负责——缺键不是错误，由归一化补默认；
+ * 一次只报首个非法键，因为设置页的定位光标只能落在一个字段上。陌生键不参与校验：拦下它们
+ * 等于替未来的版本拒绝今天的用户。
  */
 export function validateSettings(raw: SettingsPatch): ValidationResult {
   for (const [key, value] of Object.entries(raw)) {
@@ -262,16 +228,12 @@ function reject(key: string, hint: string): ValidationResult {
 // ---------------------------------------------------------------- 净化
 
 /**
- * 净化：只保留契约认识的键。
+ * 净化：只保留契约认识的键。陌生键一律剔除而不是拒绝——配置文件是共享的，别的东西写进来的
+ * 键不该让设置读取失败，也不该被原样带进用户层再写回去。**不归一化**：净化只回答「这个键归
+ * 不归我」，在这里顺手归一化会让写路径把用户的原始提交偷偷改写掉。
  *
- * 陌生键一律剔除而不是拒绝——配置文件是共享的，别的东西写进来的键不该让设置读取
- * 失败；但也不该被原样带进用户层再写回去。
- *
- * **不归一化**：净化只回答「这个键归不归我」，值的合法性由归一化与校验分别负责。
- * 在这里顺手归一化会让写路径把用户的原始提交偷偷改写掉。
- *
- * @returns 净化后的部分设置；输入不是对象时得到空设置——「一个键都不认识」与
- *   「没有键」对调用方是同一件事，不必再给一个空值语义让它自己判。
+ * @returns 净化后的部分设置；输入不是对象时得到空设置——「一个键都不认识」与「没有键」对
+ *   调用方是同一件事，不必再给一个空值语义让它自己判。
  */
 export function sanitizeSettings(raw: StoredSettings): Partial<NotifyConfig> {
   const kept: Record<string, RawSettingValue> = {};
@@ -353,10 +315,8 @@ function asKindRoutes(raw: RawSettingValue): Record<string, string[]> {
 type ChannelRead = { ok: true; channel: ChannelConfig } | { ok: false };
 
 /**
- * 频道数组：逐项归一化，**认不出的项直接丢弃**。
- *
- * 丢弃而不是补默认：一个没写 id、没写 url、没写凭据的「频道」没有任何可投递的
- * 目标，把它补成一个空壳频道只会在投递时制造一次必然失败的尝试。
+ * 频道数组：逐项归一化，**认不出的项直接丢弃**——一个没写 id、没写 url、没写凭据的「频道」
+ * 没有任何可投递的目标，补成空壳只会在投递时制造一次必然失败的尝试。
  */
 function asChannels(raw: RawSettingValue): ChannelConfig[] {
   const channels: ChannelConfig[] = [];
@@ -388,12 +348,17 @@ function asBarkChannel(raw: Record<string, RawSettingValue>, id: string): Channe
     name: asString(raw.name, ""),
     baseUrl,
     deviceKey,
-    level: isMember(raw.level, BARK_LEVELS) ? raw.level : "active",
     group: asString(raw.group, ""),
     sound: asString(raw.sound, ""),
+    icon: asString(raw.icon, ""),
+    url: asString(raw.url, ""),
     timeoutMs: asCount(raw.timeoutMs, 0, 600_000),
     levels: asLevels(raw.levels),
   };
+  // 紧急度不兜底：缺了它才轮到「severity → level」那层映射，兜成 active 会让 error 通知
+  // 永远发不出 timeSensitive；徽标同理，0 是有意义的取值。
+  if (isMember(raw.level, BARK_LEVELS)) channel.level = raw.level;
+  if (typeof raw.badge === "number") channel.badge = raw.badge;
   return { ok: true, channel };
 }
 

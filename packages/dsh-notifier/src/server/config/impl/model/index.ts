@@ -1,8 +1,6 @@
 /**
- * dsh-notifier config 域 —— 设置的默认形态。
- *
- * 与 `type.ts` 分开：形状与默认值是两套导出面，混在一起会让只想引一个类型的调用方
- * 连同一份值表一起拖进来。
+ * 设置默认形态。与 `type.ts` 分开：形状与默认值是两套导出面，混在一起会让只想引一个类型
+ * 的调用方连同一份值表一起拖进来。
  */
 import type { NotifyConfig } from "./type.ts";
 
@@ -26,9 +24,7 @@ export const DEFAULT_CONFIG: NotifyConfig = {
   kindRoutes: {},
   allowKinds: [],
 
-  errorMergeWindowMs: 60_000,
   askRemindMin: 5,
-  doneMergeWindowMs: 3_000,
   historyMaxAgeDays: 0,
   maxConnections: 16,
 };

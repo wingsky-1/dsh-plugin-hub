@@ -1,14 +1,6 @@
 /**
- * dsh-notifier config 域 —— 凭据的掩码往返（安全模块）。
- *
- * 设置的读出口与写入口在这一块上对称：**读出去一律掩码，写回来按 id 还原**。没有
- * 这条对称，凭据就只有两种结局——明文出到界面与日志，或者被掩码覆盖成字面量。
- *
- * 表是扩展点：新增频道类型只改 `CHANNEL_SECRET_FIELDS` 一处，读出口与写入口同时
- * 生效；两处各写一份清单就一定会漂移，漂移的那一次就是明文泄漏。表的键类型取自
- * 频道联合的判别键，所以「加了频道类型却忘了登记密钥字段」是编译错误，不是漏洞。
- *
- * 依赖方向：只引用本目录与 `../model/`，不引用 `interface.ts`。
+ * config 域凭据的掩码往返（安全模块）：**读出去一律掩码，写回来按 id 还原**——没有这条对称，凭据只有两种结局：
+ * 明文出到界面与日志，或被掩码覆盖成字面量。`CHANNEL_SECRET_FIELDS` 是唯一扩展点，两处各写一份清单一定会漂移。
  */
 import type { ChannelConfig, NotifyConfig, RawSettingValue } from "../model/type.ts";
 
@@ -27,15 +19,8 @@ const CHANNEL_SECRET_FIELDS: Record<ChannelConfig["type"], readonly string[]> = 
   webhook: ["token", "password", "headerValue"],
 };
 
-/**
- * 读出口脱敏：深拷贝后把密钥字段掩码。
- *
- * 拷贝而非原地改，是因为它作用于**即将外发的视图**，而同一份设置在域内还要以明文
- * 参与投递——原地掩码会把凭据真的抹掉。
- *
- * 频道项按**原始值**处理而不是按 `ChannelConfig`：存储层不受契约约束，里面可能躺着
- * 更高版本写的频道类型，而这一层的职责是"原样送出去、抹掉已知类型的密钥"，不是校验。
- */
+/** 读出口脱敏：深拷贝后把密钥字段掩码。拷贝而非原地改，是因为它作用于**即将外发的视图**，而同一份设置在域内还要以
+ * 明文参与投递；频道项按**原始值**处理——存储层不受契约约束，里面可能躺着更高版本写的频道类型。 */
 export function redactConfig(value: Partial<NotifyConfig>): Partial<NotifyConfig> {
   const copy = structuredClone(value);
   const channels = copy.channels;
@@ -46,14 +31,13 @@ export function redactConfig(value: Partial<NotifyConfig>): Partial<NotifyConfig
 }
 
 /**
- * 写入口还原：patch 里等于掩码的字段，按 **id** 对齐取回原值。
- *
- * 按 id 而非下标：数组顺序一变，下标对齐就会把 A 实例的凭据回填进 B。
+ * 写入口还原：patch 里等于掩码的字段，按 **id** 对齐取回原值——按下标对齐时数组顺序一变，
+ * 就会把 A 实例的凭据回填进 B。
  *
  * @param patchChannels 提交上来的频道数组。
  * @param userChannels 已存储的频道数组（原值来源）；缺省视为没有原值。
- * @returns 还原后的频道数组；`ok: false` = 有实例提交了掩码却没有对应原值，
- *   调用方应当拒绝——掩码只能表达「未修改」，不能凭空造出一个凭据。
+ * @returns 还原后的频道数组；`ok: false` = 有实例提交了掩码却没有对应原值，调用方应当拒绝
+ *   ——掩码只能表达「未修改」，不能凭空造出一个凭据。
  */
 export function unmaskChannels(
   patchChannels: RawSettingValue,
@@ -100,12 +84,9 @@ function unmaskChannel(
 }
 
 /**
- * 某个频道类型的密钥字段；**不认识的类型给空清单**。
- *
- * 不认识的类型是常态而不是异常：配置文件里可能躺着更高版本写的频道、或手写进去的键，
- * 而读出口的职责是"把它原样送出去、顺便抹掉已知类型的密钥"，不是"因为不认识它就报错"
- * ——在这里抛，用户看到的是设置页整页 500，而真正的原因（某个陌生频道类型）没有任何
- * 线索指向它。
+ * 某个频道类型的密钥字段；**不认识的类型给空清单**——配置文件里可能躺着更高版本或手写进去的
+ * 频道，读出口的职责是原样送出而不是报错：在这里抛，用户看到的是设置页整页 500，而真正的原因
+ * （某个陌生频道类型）没有任何线索指向它。
  */
 function secretFieldsOfType(type: RawSettingValue): readonly string[] {
   if (type === "bark" || type === "webhook") return CHANNEL_SECRET_FIELDS[type];
