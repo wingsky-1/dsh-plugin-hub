@@ -13,7 +13,7 @@
  *   full     全仓口径（= 夜间班次口径；发版前或改过构建链时跑）
  *
  * 必须全量的东西（全仓产物闸、覆盖率、变异）不在 PR 口径里：它们归 CI 夜间班次
- * （observe.yml / observe-incremental.yml），本地只在 --with-coverage 时按需补覆盖率。
+ * （observe.yml），本地只在 --with-coverage 时按需补覆盖率。
  * 包面归属的唯一事实源是 ci.yml 的 filters 块（见 local-scope.mjs），本脚本不重述路径规则。
  *
  * 用法：

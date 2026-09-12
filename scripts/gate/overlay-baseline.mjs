@@ -335,7 +335,7 @@ async function main() {
     }
 
     // 6.5 对账（#714 后续修复）：期望集合 = stryker.conf.d 派生的段文件；缺口 = 既没被本次覆盖
-    //     也不在旧基线里 —— 该段在归档分支上没有可用基线，增量班次每次都会全量重跑。
+    //     也不在旧基线里 —— 该段在归档分支上没有可用基线，后续每次 PR 门禁都会降级为全量重跑。
     //     不拒绝推送（拒绝会让归档停在更旧的树），但必须判红点名，暴露上游问题。
     const expected = expectedBaselineFiles(readdirSync(join(process.cwd(), 'stryker.conf.d')));
     const reconciled = reconcileArchive({ expected, overlaid, carriedForward });

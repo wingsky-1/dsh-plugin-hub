@@ -124,7 +124,7 @@ function pruneSnapshotTags(target, keep, log) {
  * 组树 → 建孤立 commit → 打快照 → 带租约推送。
  *
  * `entries` 为 `[{ name, blobSha }]`（沿用文件复用远端 blob sha）；`manifest` 由本函数序列化并
- * 作为树里的 manifest.json。给了 `manifestPath` 就同时落一份到本地（增量班的报告目录要用）。
+ * 作为树里的 manifest.json。给了 `manifestPath` 就同时落一份到本地（人工应急的 push 路径要用）。
  */
 export function pushBaselineTree({
   target,

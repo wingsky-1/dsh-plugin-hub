@@ -7,8 +7,9 @@ name: Observe (nightly)
 # - 报告落 issue（幂等：同日不重开）；回落 >1pp 自动追评（隔夜必有工单）
 # 变异硬门禁在本 workflow 生效：任一包 covered < threshold 且 strict 开启 → 运行失败。
 # #276 方案 A + #433 调度重设计 + #572 孤立分支基线：本 workflow 为每日全量班（北京次日 04:00 = UTC 20:00，
-# cron '0 20 * * *'）——全量变异 + 基线快照强推至孤立分支 baseline/mutation；每日四班次
-# 增量变异见 observe-incremental.yml（北京 12/16/20/24）。
+# cron '0 20 * * *'）——全量变异 + 基线并集入档至孤立分支 baseline/mutation。
+# #718 S2.2：原每日四班次增量班（observe-incremental.yml）**已退役**——基线新鲜度由
+# 「PR 合入即 baseline-overlay.yml 秒级 overlay」+「本班次夜间并集入档」两条路径承担。
 # #178 v2 增量链路（#572：基线改走 Orphan 孤立分支存储）：
 # - 本 workflow 刻意不做 actions/cache restore 与基线 restore —— 无增量基线即天然全量；
 #   请勿"好心"补 restore 步骤（会破坏全量基线语义）。
@@ -18,7 +19,7 @@ name: Observe (nightly)
 # #718 S1.1 / S1.4 / S1.5（本 job 拓扑的成因，务必连着读）：
 # - **S1.5 job 边界**：`quality`（install + build + contract/pack:check/verify:npmlayout +
 #   stryker:check + cov + crap）与 `mutation-shards` **无相互依赖、并行跑**；两者产出由
-#   `mutation-collect`（判分 + 单点 push 基线 + 报告 + 工单，if: always()）收口。
+#   `mutation-collect`（判分 + 单点并集入档 + 报告 + 工单，if: always()）收口。
 #   为什么必须拆：原单 job 串行 90 分钟，任一长段擦边即整班被杀，且被杀点在报告步骤之前
 #   ⇒ 当夜无工单、无留痕、基线不更新（#718 两次事故 34536263640 / 34652766708 的形态）。
 # - **S1.1 矩阵化**：段清单由 `stryker.conf.d/*.json` 派生（`mutation-plan` job 秒级产出），
@@ -32,7 +33,7 @@ name: Observe (nightly)
 on:
   schedule:
     # 每日全量变异与基线刷新（#276 方案 A + #433 调度重设计）：北京次日 04:00
-    # = UTC 20:00，避开整点 Actions 高峰；增量班见 observe-incremental.yml
+    # = UTC 20:00，避开整点 Actions 高峰（增量班已于 #718 S2.2 退役）
     - cron: '0 20 * * *'
   workflow_dispatch:
 

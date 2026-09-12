@@ -60,18 +60,21 @@ pnpm typecheck    # 全仓类型检查
 **全量分工总述**：PR 门管变更切片；夜间 observe 门管主干全量；发版前
 release.yml tag 管线跑全量门禁——全量只在这三处语义中的后两处真实执行。
 
-- **observe 调度（#433）**：每日全量班（observe.yml，北京次日 04:00 = UTC
+- **observe 调度（#433 / #572 / #718）**：每日全量班（observe.yml，北京次日 04:00 = UTC
   20:00，cron `0 20 * * *`）刷新基线——刻意不 restore 任何缓存——无 incremental
-  基线即天然全量；运行末尾把全部 `coverage/mutation/incremental-*.json` 收集到
-  仓库内版本化目录 `scripts/gate/baseline/`（#204 方案 A：git 跨 ref 天然可见，
-  替代按 ref 隔离、PR 永远 miss 的 actions/cache），有实质变化且当日尚无快照时
-  经 create-pull-request 自动开 PR 合入 main（快照 PR 每自然日最多一次日期闸防
-  git 膨胀）。逐包容错记账：单包失败记账继续跑完其余包，结尾统一非零退出。
-  每日四班次增量班（observe-incremental.yml，北京 12/16/20/24 = UTC 04/08/12/16，
-  cron `0 4,8,12,16 * * *`）：restore 仓库基线 → 增量变异（快，跳过未变
-  mutant）→ 基线有实质变化即 create-pull-request + auto-merge（无日期闸，每次
-  独立判断「有变化即 PR」；create-pull-request 无 diff 时自然 no-op）；增量班
-  不跑 cov/crap 等报告，职责收敛为「变异 + 基线 PR」。
+  基线即天然全量。基线存**孤立分支** `refs/heads/baseline/mutation`（单 commit 纯文本树，
+  #572：彻底剥离 main 分支代码树与自动 PR 噪音；旧 #204 方案 A 的「收进仓库目录
+  `scripts/gate/baseline/` + 自动开 PR」已废除）。班次结构为三段式（#718 S1.1/S1.5）：
+  `mutation-plan` 派生段清单与逐段超时 → `quality`（cov/契约/打包闸）∥ `mutation-shards`
+  （逐段矩阵，`max-parallel: 5`、`fail-fast: false`、单段超时按实测校准）→
+  `mutation-collect`（判分 + **单点并集入档** + 报告 + 工单，`if: always()` 收口）。
+  逐包容错记账：单段失败不连坐，结尾统一非零退出。
+  入档是**并集语义**（#718 S1.2）：先取回远端再叠加本次产物，本次未产出的段沿用远端文件，
+  日志逐项记账「新算/沿用/缺/退役」——段被失败实例吃掉因而在物理上不可能再发生。
+  **增量班（observe-incremental.yml）已于 #718 S2.2 退役**：其唯一独有价值是修复整树替换
+  丢掉的段，而并集入档后该职责消失；基线新鲜度由「PR 合入即 overlay
+  （baseline-overlay.yml，秒级复用该 PR CI 产出的 incremental 产物，不重跑变异）」+
+  「夜间并集入档」两条路径承担。
 - **PR 门禁分层**（ci.yml，#722）：默认走**增量**，只有给 PR 打 `gate:full` 标签才跑全量链路
   （`pull_request.types` 含 `labeled`/`unlabeled`，打标签即触发重跑）。策略由 `changes`
   job 一处计算为 `fullGate` 输出，判定表与三个全量 job 的 `if` 共用同源布尔。
@@ -97,7 +100,7 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
   verdict」，由单测全组合锁死。默认增量路径下三段必须**全部 skipped**——对称 fail-closed：
   没打标签却跑了全量同样判红。不新增分支保护 required check 名。
 - **为什么分层**（#722）：覆盖率是「全仓分母」口径，变异单段最坏约 20 分钟（#720），而
-  两者夜间 observe.yml（每日全量班 + 四班次增量班）已完整覆盖，PR 上属重复执行且拖长
+  两者夜间 observe.yml（每日全量班）已完整覆盖，PR 上属重复执行且拖长
   反馈回路。高风险改动（重构、依赖跃迁、发版前）在 PR 上加 `gate:full` 标签按需补跑；
   全仓产物闸在 `gate:full` PR 与 observe 全量班两处落地，默认 PR 只验命中包。
 - **触发面收敛**（#187 / #217 扩展）：全量三段 job 仅限 pull_request 触发——push 到 main
