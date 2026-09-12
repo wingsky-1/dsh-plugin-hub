@@ -20,6 +20,7 @@ import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { errorMessage } from "../../../shared/host-utils.js";
 import {
+  BUILTIN_CHANNELS,
   CONFIG_KEYS,
   DEFAULT_CONFIG,
   SETTINGS_NS,
@@ -43,7 +44,7 @@ import type { DoneBatcher, SubagentOwnership } from "./events/interface.ts";
 import { sanitizeErrorText } from "./text/interface.ts";
 import type { NotifyDetail } from "./text/interface.ts";
 import { ROUTES, buildRoutes, createSseHub, createSystemNotifier } from "./server/interface.ts";
-import { BUILTIN_CHANNELS, createNotifierService } from "./sdk/interface.ts";
+import { createNotifierService } from "./sdk/interface.ts";
 import type { NotifierServiceInternal, NotifySentEvent } from "./sdk/interface.ts";
 import type { BrowserDispatchSpec, DeliverPayload, ResolvedTarget, SystemDispatchSpec } from "./pipeline/interface.ts";
 import { buildBrowserFrame, createBarkChannel, createBrowserChannel, createOutboundChannelResolver, createSystemChannel, createWebhookChannel } from "./channels/interface.ts";
@@ -125,8 +126,10 @@ export { isSubagentOf, lastTurnEndOf, sessionTitleOf } from "./events/interface.
 export { ROUTES, applyConfigPatch } from "./server/interface.ts";
 export type { PatchResult, RouteDeps } from "./server/interface.ts";
 export { KIND_SEVERITY } from "./text/interface.ts";
+// 内置频道 id 的物理定义在 config 域（最底层）：导出面直指 config，不经 sdk 门面
+// 转发——sdk/interface.ts 的值 re-export 会与 sdk/service.ts 的取值构成文件级值环。
+export { BUILTIN_CHANNELS } from "./config/interface.ts";
 export {
-  BUILTIN_CHANNELS,
   createNotifierService,
   getNotifierService,
 } from "./sdk/interface.ts";

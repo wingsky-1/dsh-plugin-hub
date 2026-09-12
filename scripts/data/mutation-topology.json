@@ -239,13 +239,14 @@
                 "pipeline": {
                     "mutate": [
                         "packages/dsh-notifier/src/pipeline/adjudicate.ts",
-                        "packages/dsh-notifier/src/pipeline/deliver.ts"
+                        "packages/dsh-notifier/src/pipeline/deliver.ts",
+                        "packages/dsh-notifier/src/pipeline/orchestrate.ts"
                     ],
                     "excludes": [
                         "!packages/dsh-notifier/src/**/interface.ts",
                         "!packages/dsh-notifier/src/client/**"
                     ],
-                    "comment": "#669 PR2 T2-7 按域重划：pipeline——核心状态机裁决/投递（adjudicate/deliver，T2-1 工厂化后入面，N-24 落地）；testFiles 含 unit-pipeline-contract（N-14/N-15 注入面契约杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#669 PR2 T2-7 按域重划：pipeline——核心状态机裁决/投递/编排（adjudicate/deliver + orchestrate；orchestrate 为 #733 M1-F1 自 sdk/service.ts 迁入的编排三函数，T2-1 工厂化后入面，N-24 落地）；testFiles 含 unit-pipeline-contract/unit-pipeline-orchestrate（N-14/N-15 注入面契约杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
                 },
                 "events": {
                     "mutate": [

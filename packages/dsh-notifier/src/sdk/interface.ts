@@ -3,8 +3,10 @@
  *
  * 本域是包对外 ABI（'wingsky.notifier' 服务 + 消息模型 + Channel SPI）的
  * 类型与工厂收口：类型物理定义在本文件（本域独有、需面外的类型在
- * interface.ts 定义），工厂/常量从 service.ts re-export；非本域原创类型
- * （NotifyConfig/NotifyDetail/SseHub 等）一律 import type 自依赖域。
+ * interface.ts 定义），工厂从 service.ts re-export；非本域原创类型
+ * （NotifyConfig/NotifyDetail/DeliverPayload 等）一律 import type 自依赖域。
+ * 值 re-export 只允许指向本域实现——跨域值 re-export 会与本域实现反向引用
+ * 该门面构成文件级值环（BUILTIN_CHANNELS 即因此改由包导出面直指 config）。
  * 消费方（其他 hub 插件）与装配层（index.ts）都从这里引用（verify-dir-imports
  * 静态强制）。
  */
@@ -165,10 +167,6 @@ export interface NotifySentEvent {
   error?: string;
   ts: number;
 }
-
-// 内置频道 id 的物理定义在 config 域（最底层）：sdk 只 re-export 保持包导出面，
-// pipeline/channels 也从 config 取，避免 pipeline 值依赖 sdk 形成值环。
-export { BUILTIN_CHANNELS } from "../config/interface.ts";
 
 // 便捷访问与实现工厂（实现同目录 service.ts，本文件收口对外面）
 export { createNotifierService, getNotifierService } from "./service.ts";

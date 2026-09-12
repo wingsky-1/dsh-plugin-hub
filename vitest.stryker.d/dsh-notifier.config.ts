@@ -31,6 +31,7 @@ export default defineConfig({
       'packages/dsh-notifier/test/unit/unit-config.test.ts',
       'packages/dsh-notifier/test/unit/unit-event-handlers.test.ts',
       'packages/dsh-notifier/test/unit/unit-pipeline-contract.test.ts',
+      'packages/dsh-notifier/test/unit/unit-pipeline-orchestrate.test.ts',
       'packages/dsh-notifier/test/unit/unit-sanitize.test.ts',
       'packages/dsh-notifier/test/unit/unit-server-sse-bus.test.ts',
       'packages/dsh-notifier/test/unit/unit-settings-bridge.test.ts',

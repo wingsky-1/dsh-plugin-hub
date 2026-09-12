@@ -13,7 +13,7 @@
  * 版本兼容：服务实例暴露 apiVersion 常量；跨插件入口经形状守卫（评审 #4）。
  */
 export type { NotifierService, NotifyRequest, NotifyResult, NotifySeverity, KindRegistration, NotifyChannel, ChannelCapabilities, NotifySentEvent } from "./sdk/interface.ts";
-export { BUILTIN_CHANNELS } from "./sdk/interface.ts";
+export { BUILTIN_CHANNELS } from "./config/interface.ts";
 export { KIND_SEVERITY } from "./text/interface.ts";
 export type { NotifierServiceDeps } from "./sdk/interface.ts";
 

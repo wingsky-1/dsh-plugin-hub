@@ -1,22 +1,21 @@
 /**
  * dsh-notifier — SDK 契约域：通知中心核心服务实现（'wingsky.notifier'）。
  *
- * 判定/投递上移至 pipeline 工厂——createAdjudicator 单刻快照
- * （每次通知 current() 恰好 1 次，裁决/播放决议同快照）、createDeliverer
- * fail-soft 投递（DeliverDeps 注入，终态/落史/play 全经 deps）；内置频道经
- * index.ts 注入（builtinChannels + play，sdk→channels 值边消除）；
- * send() 动态 kind 与 sendKind 统一过裁决全链（enabled→确认→免打扰→路由）。
+ * 本模块是**包 ABI 适配器**：只持有 2 张注册表（kindRegistry/channelRegistry）与
+ * 5 方法薄适配；编排（渲染 → 裁决 → 统一脱敏 → 落史 + fail-soft 投递）全部在
+ * pipeline 域（createSendKind/createHandleDecision/resolveChannelPool/
+ * createDeliverer）。内置频道经 index.ts 注入（builtinChannels + play，
+ * sdk→channels 值边消除）；send() 动态 kind 与 sendKind 统一过裁决全链
+ * （enabled→确认→免打扰→路由）。
  *
  * 兼容红线：SSE 帧契约、历史 jsonl、免打扰/suppressed/多标签租约
  * 全部保持——本模块只做管线收敛，不改出口语义。
  */
-import { resolveSoundSetting } from "../config/interface.ts";
-import type { NotifyConfig, SoundId } from "../config/interface.ts";
-import { createAdjudicator, createDeliverer, isBuiltinKind, isKindConfirmed } from "../pipeline/interface.ts";
+import { createAppendHistory, createAdjudicator, createDeliverer, createHandleDecision, createSendKind, isBuiltinKind, isKindConfirmed, resolveChannelPool } from "../pipeline/interface.ts";
+import { sanitizeNoticeContent } from "../text/interface.ts";
+import { BUILTIN_CHANNELS } from "../config/interface.ts";
 import type { AdjudicateResult, ChannelPoolEntry } from "../pipeline/interface.ts";
-import { KIND_SEVERITY, NOTIFY_KINDS, sanitizeNoticeContent } from "../text/interface.ts";
-import type { NotifyDetail } from "../text/interface.ts";
-import { BUILTIN_CHANNELS } from "./interface.ts";
+import type { NotifyConfig } from "../config/interface.ts";
 import type {
   KindRegistration,
   NotifierService,
@@ -29,19 +28,10 @@ import type {
 
 // ---------------------------------------------------------------- 实现
 
-/** browser 帧级 sound 编码（BrowserDispatchSpec.sound；与 SSE 帧契约同源：
- *  false → silent；pop=true：true → system、SoundId → selfplay+tone；pop=false
- *  （只响不弹）：无 OS 通知实体可发声，true 也编码 selfplay（客户端默认旋律，编码需随 pop 决议，否则 system 模式会让客户端既不弹也不播）。 */
-function encodeBrowserSound(sound: NotifyConfig["browserSound"], pop: boolean): { mode: "silent" | "system" | "selfplay"; tone?: SoundId } {
-  if (sound === false) return { mode: "silent", tone: undefined };
-  if (sound === true) return pop ? { mode: "system", tone: undefined } : { mode: "selfplay", tone: undefined };
-  return { mode: "selfplay", tone: sound };
-}
-
 /**
  * 创建通知中心服务实现。
  *
- * 管线（与搬移前的 notify 行为一致，判定/投递经工厂收敛）：
+ * 管线（编排在 pipeline 域，本模块只装配注入面）：
  *   enabled 判定 → kind 动态未确认 → suppressed 落史 → 免打扰检查（被拦截
  *   也落 suppressed 历史）→ 逐频道 fail-soft 投递 → 历史落盘 → 返回受理结果。
  *
@@ -56,41 +46,17 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
   /** 插件贡献频道注册表（name → channel；默认未启用，MVP 仅存表）。 */
   const channelRegistry = new Map<string, NotifyChannel>();
 
-  /** 历史追加（与搬移前一致：fire-and-forget）。 */
-  function appendHistory(entry: { ts: number; kind: string; title: string; message: string; suppressed?: string }) {
-    try {
-      history.append(entry);
-    } catch (error) {
-      logger.warn(`dsh-notifier: 历史落盘失败: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
+  /** 历史追加（fire-and-forget：落史失败只 warn，不打断编排）。 */
+  const appendHistory = createAppendHistory({ append: (entry) => history.append(entry), logger });
 
-  /**
-   * 投递池解析（裁决时随快照调用——单刻语义：启用条件与播放决议全部基于
-   * 传入快照，派生闭包不得自行读 current）。内置频道按「弹窗开关 || 声音非静音」
-   * 进入（弹窗关 + 声音开 → 只响不弹投递）；出站频道 enabled 过滤
-   * 由装配层保证。
-   */
-  function allChannels(snapshot: NotifyConfig): ChannelPoolEntry[] {
-    const out: ChannelPoolEntry[] = [];
-    const browser = builtinChannels.find((c) => c.id === BUILTIN_CHANNELS.browser);
-    const browserSound = resolveSoundSetting(snapshot, "browser");
-    if (browser && (snapshot.browserNotify || browserSound !== false)) {
-      const pop = snapshot.browserNotify === true;
-      out.push({ ...browser, dispatch: { pop, sound: encodeBrowserSound(browserSound, pop) } });
-    }
-    const system = builtinChannels.find((c) => c.id === BUILTIN_CHANNELS.system);
-    const systemSound = resolveSoundSetting(snapshot, "system");
-    if (system && (snapshot.systemNotify || systemSound !== false)) {
-      out.push({ ...system, dispatch: { pop: snapshot.systemNotify === true, sound: systemSound } });
-    }
-    try {
-      out.push(...outboundChannels());
-    } catch (error) {
-      logger.warn(`dsh-notifier: 出站频道读取失败（fail-soft 跳过）: ${error instanceof Error ? error.message : String(error)}`);
-    }
-    return out;
-  }
+  const deliver = createDeliverer({ recordStatus, emitSent, appendHistory, play });
+
+  /** 统一脱敏时点与 suppressed 分叉（编排实现在 pipeline 域）。 */
+  const handleDecision = createHandleDecision({ deliver, appendHistory, logger });
+
+  /** 投递池解析（裁决时随快照调用——单刻语义：派生闭包不得自行读 current）。 */
+  const allChannels = (snapshot: NotifyConfig): ChannelPoolEntry[] =>
+    resolveChannelPool(snapshot, { builtinChannels, outboundChannels, logger });
 
   const adjudicate = createAdjudicator({
     current,
@@ -99,66 +65,8 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
     allChannels,
   });
 
-  const deliver = createDeliverer({
-    recordStatus,
-    emitSent,
-    appendHistory,
-    play,
-  });
-
-  /**
-   * 裁决结果 → 受理结果（suppressed：disabled 不落史/kind-pending、quiet
-   * 落史 + skipped；deliver：stale warn + 全链投递 + 落史）。
-   * 统一脱敏时点 = 渲染完成后、任何落史/投递前——裁决结果已携带快照
-   * 解析的 sanitizeContent 开关（单刻契约：此处不得二次调用 current()），
-   * 本函数按开关对结果文本统一脱敏一次后落入历史/投递。
-   */
-  function handleDecision(decision: AdjudicateResult): NotifyResult[] {
-    if (decision.decision === "suppressed") {
-      const { kind, title, body, ts, reason, sanitizeContent } = decision;
-      if (reason === "disabled") {
-        return [{ channelId: "*", status: "skipped", error: "enabled=false" }];
-      }
-      const safe = sanitizeNoticeContent({ title, body }, sanitizeContent);
-      if (reason === "quiet") {
-        logger.info(`dsh-notifier: ${kind} 被免打扰拦截（未发出）：${safe.body.replace(/\n/g, " / ")}`);
-      }
-      appendHistory({ ts, kind, title: safe.title, message: safe.body, suppressed: reason });
-      return [{ channelId: "*", status: "skipped", error: reason }];
-    }
-    const notice = decision.notice;
-    for (const id of notice.stale) {
-      logger.warn(`dsh-notifier: kindRoutes[${notice.kind}] 指向已删除频道 ${id}，记 skipped`);
-    }
-    const safe = sanitizeNoticeContent({ title: notice.title, body: notice.body }, notice.sanitizeContent);
-    const results = deliver({ ...notice, title: safe.title, body: safe.body });
-    logger.info(`dsh-notifier: ${notice.kind} ${safe.body.replace(/\n/g, " / ")}`);
-    return results;
-  }
-
-  /**
-   * 统一通知管线（kind 形态，等价搬移前的 notify）。外部 send() 与内置事件源
-   * 都经它收敛——send() 动态 kind 同样过裁决全链。
-   * 渲染文本原样进裁决（其结果携带脱敏开关），统一脱敏在其后
-   * handleDecision 内按开关执行——本函数不再自行读 current()（单刻契约）。
-   * @returns 受理结果数组（投递终态经历史落盘与 wingsky-notify/sent 事件可见）。
-   */
-  function sendKind(kind: string, detail: NotifyDetail = {}, opts?: { bypassQuiet?: boolean; onlyChannel?: string }): NotifyResult[] {
-    const spec = NOTIFY_KINDS[kind];
-    const ts = Date.now();
-    const title = spec?.title ?? "DSH 通知";
-    const message = spec?.message({ ...detail, ts }) ?? detail.message ?? "";
-    const decision = adjudicate({
-      kind,
-      title,
-      body: message,
-      severity: KIND_SEVERITY[kind],
-      ts,
-      bypassQuiet: opts?.bypassQuiet,
-      onlyChannel: opts?.onlyChannel,
-    });
-    return handleDecision(decision);
-  }
+  /** 统一通知管线（kind 形态，编排实现在 pipeline 域；本工厂不读 current()）。 */
+  const sendKind = createSendKind({ adjudicate, handleDecision });
 
   const service: NotifierServiceInternal = {
     apiVersion: 1,
@@ -212,7 +120,7 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
       const ts = Date.now();
       const title = req.title ?? "DSH 通知";
       const body = String(req.body ?? "");
-      const decision = adjudicate({ kind, title, body, severity: req.severity, ts });
+      const decision: AdjudicateResult = adjudicate({ kind, title, body, severity: req.severity, ts });
       return handleDecision(decision);
     },
   };
