@@ -1,20 +1,5 @@
-/**
- * dsh-notifier api 域 —— 流块：SSE 连接、序号与断线补拉。
- *
- * 共享层的枢纽只管连接表、心跳与上限淘汰（#515 的 stalled / maxAge 回收都在那边）。
- * 三件本插件特有的事在这里：
- *
- * - **序号**：单调递增且持久化（`seq.json`），重启后接着数。重置序号会让重连的客户端
- *   把旧帧当新的、或把新帧当旧的丢掉，而两种都表现为「偶尔少一条通知」；
- * - **补拉缓冲**：客户端重连带 `?since=N`，服务端回放序号更大的帧。EventSource 的
- *   自动重连不带 query，所以这条路径只在客户端主动重建时走到；
- * - **帧编码**：`data:` 行的文本由本块生成——枢纽的契约明写负载生成留调用方。
- *
- * 状态收在实例字段里。类可以被实例化多次，但域只装配一个——「一份序号」这件事靠
- * 契约层不导出实例来保证，而不是靠把状态藏进闭包让别人够不着。
- *
- * 依赖方向：只引用本目录、`../../deps.ts` 与包内共享层，不引用 `interface.ts`。
- */
+/** api 域流块：SSE 连接、序号与断线补拉（共享层枢纽只管连接表、心跳与上限淘汰）。**序号**持久化在 `seq.json` 且重启后
+ * 接着数——重置会让重连客户端把旧帧当新的，表现为「偶尔少一条通知」；**补拉**走 `?since=N`（EventSource 自动重连不带 query）。 */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createSseHub, type SseHub } from "../../../../../../../shared/sse-hub.js";
 import { readTextFileSync, writeTextAtomic } from "../../../shared/file-io.ts";
@@ -28,24 +13,15 @@ const REPLAY_LIMIT = 200;
 /** 心跳间隔（毫秒）：与客户端 60s 看门狗对齐，留足两次失败的余地。 */
 const HEARTBEAT_MS = 30000;
 
-/**
- * 开流锚点。
- *
- * 注释帧客户端不解析，它的作用是**立即 flush 响应头**：Node 会缓冲响应头直到第一次
- * 写入，没有这一行，客户端要等到第一个心跳（30s 后）才从 CONNECTING 进入 OPEN。
- */
+/** 开流锚点。注释帧客户端不解析，它的作用是**立即 flush 响应头**：Node 会缓冲响应头直到第一次写入，没有这一行，
+ * 客户端要等到第一个心跳（30s 后）才从 CONNECTING 进入 OPEN。 */
 const CONNECTED = ": connected\n\n";
 
 /** 线协议里的通知事件（`ping` 之外的那一支）。 */
 type NotifyEvent = Extract<StreamEvent, { type: "notify" }>;
 
-/**
- * 未装配时的占位。
- *
- * 装配是必经路径（`installed` 守卫），占位值不会被真正读到；它的作用是让字段有确定
- * 的类型，从而不必让每个使用点都先判一次空。能力占位成抛错而不是空实现：真被读到
- * 时，「没装配」应当当场暴露，而不是静默按默认上限去淘汰连接。
- */
+/** 未装配时的占位。占位值不会被真正读到（`installed` 守卫），它的作用是让字段有确定的类型、不必每个使用点判空；
+ * 能力占位成抛错而不是空实现：真被读到时应当场暴露，而不是静默按默认上限去淘汰连接。 */
 const UNINSTALLED: StreamDeps = {
   logger: { warn: () => {} },
   config: {
@@ -102,12 +78,8 @@ class StreamHub {
     this.installed = false;
   }
 
-  /**
-   * 当前连接数。
-   *
-   * 语义是**服务端未释放的句柄数**，不是「在线设备数」：设置页拿它提示「测试已发送
-   * （服务端未释放句柄 n 条）」，两者混起来会让刷新页面的残留句柄看起来像多了一台设备。
-   */
+  /** 当前连接数。语义是**服务端未释放的句柄数**，不是「在线设备数」：两者混起来会让刷新页面的残留句柄看起来像多了
+   * 一台设备。 */
   size(): number {
     return this.hub.size();
   }
@@ -132,10 +104,9 @@ class StreamHub {
   }
 
   /**
-   * 广播一条通知帧：翻成线协议 → 编号 → 入缓冲 → 落序号 → 推给所有连接。
-   *
-   * 翻译（`body`→`message`、`pop`→`playOnly`）在这里而不在裁决管线：线协议是**浏览器
-   * 出口**的约定，管线对外给的是内部帧。翻译上移会让内部词汇被线协议反向锁死。
+   * 广播一条通知帧：翻成线协议 → 编号 → 入缓冲 → 落序号 → 推给所有连接。翻译（`body`→`message`、
+   * `pop`→`playOnly`）在这里而不在裁决管线：线协议是**浏览器出口**的约定，管线对外给的是内部帧，
+   * 翻译上移会让内部词汇被线协议反向锁死。
    */
   publish(payload: OutgoingFrame): void {
     if (!this.installed) return;
@@ -150,8 +121,8 @@ class StreamHub {
       ts: Date.now(),
       sound: frame.sound,
     };
-    // 缺席而不是 `false`：客户端判的是 `=== true`，两种写法对它等价，但缺席让不认识
-    // 这个字段的旧客户端收到的帧与从前逐字节一致。
+    // 缺席而不是 `false`：客户端判的是 `=== true`，而缺席让不认识这个字段的旧客户端收到的帧
+    // 与从前逐字节一致。
     if (!frame.pop) event.playOnly = true;
     this.replay.push(event);
     if (this.replay.length > REPLAY_LIMIT) this.replay.splice(0, this.replay.length - REPLAY_LIMIT);

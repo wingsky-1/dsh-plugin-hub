@@ -1,22 +1,11 @@
-/**
- * dsh-notifier sdk 域 —— 动态种类注册表。
- *
- * 表里只有**插件进程报上来的声明**（id → 展示名），确认态不在这里：它属于用户，落在
- * 设置的 `allowKinds` 里。两者分开是因为生命周期不同——注册表随进程生灭（插件重载后
- * 重新登记），确认态跨重启保留（用户点过的「允许」不该因为一次重启而作废）。
- *
- * 按 id 覆盖而不是拒绝重复：同一个插件重载后改了展示名，或者同一 id 被重新声明，需要的
- * 都是「以最新一次为准」。表是插入有序的，因此它同时决定了设置页上的展示顺序。
- *
- * 依赖方向：只引用本目录与 `../../deps.ts`，不引用 `interface.ts`。
- */
+/** sdk 域动态种类注册表：只有**进程报上来的声明**（id → 展示名），确认态属于用户、落在设置的 `allowKinds` 里
+ * （注册表随进程生灭，确认态跨重启保留）。按 id 覆盖，表插入有序，故它同时决定设置页上的展示顺序。 */
 import type { KindRegistration, RegisteredKind } from "./type.ts";
 
 /** 注册表：谁登记过哪些种类。确认态经参数传入，本表不持有它。 */
 class KindRegistry {
   private readonly labels = new Map<string, string>();
 
-  /** 登记一个动态种类。重复登记同 id 覆盖展示名。 */
   register(registration: KindRegistration): void {
     this.labels.set(registration.id, registration.label);
   }

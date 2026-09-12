@@ -1,13 +1,5 @@
-/**
- * dsh-notifier api 域 —— 设置端点：读设置视图、写设置。
- *
- * 写面把请求**形状**与设置**内容**分开把关。`patch` 是不是对象、`expectedRevision`
- * 是不是非负整数，是线协议的事，本域判；字段值合不合法、掩码要不要还原、陌生键怎么
- * 办，是设置语义的事，由 config 域的写面回答。两边都判一遍的代价不是多算一次，而是
- * 两处答案不一致时没人知道该信谁。
- *
- * 依赖方向：只引用本目录、`../route/` 与 `../../deps.ts`，不引用 `interface.ts`。
- */
+/** api 域设置端点：读设置视图、写设置。写面把请求**形状**与设置**内容**分开把关——`patch` 是不是对象、
+ * `expectedRevision` 是不是非负整数是线协议的事，本域判；字段值合不合法、掩码要不要还原由 config 域写面回答。 */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readJsonBody } from "../../../../../../../shared/host-utils.js";
 import type { ConfigPort, RawSettingValue } from "../../deps.ts";
@@ -22,11 +14,8 @@ const BODY_LIMIT = 16 * 1024;
 type WriteOutcome = Awaited<ReturnType<ConfigPort["writeConfig"]>>;
 
 /**
- * 设置端点。
- *
- * 用类而不是返回闭包的工厂：能力在装配期接上，此后每个请求只读实例字段。闭包会把
- * 「这个处理函数从哪拿到 config 域」这个问题藏进词法环境，而类把它摊在构造签名上，
- * 于是「这个端点依赖什么」在文件里就能读到。
+ * 设置端点。用类而不是返回闭包的工厂：闭包会把「这个处理函数从哪拿到 config 域」藏进词法环境，
+ * 而类把它摊在构造签名上，于是「这个端点依赖什么」在文件里就能读到。
  */
 export class SettingsEndpoints {
   constructor(private readonly config: ConfigPort) {}
@@ -37,11 +26,9 @@ export class SettingsEndpoints {
   };
 
   /**
-   * PUT /config：写用户设置。
-   *
-   * 四态逐态映射而不是压成一两个状态码：`invalid` 要让界面定位到出错的那一行，
-   * `conflict` 要触发「加载最新 / 覆盖提交」的恢复流程，`unavailable` 要把表单整体
-   * 置灰。压扁之后用户看到的就只剩「保存失败」，而三种原因要做的事完全不同。
+   * PUT /config：写用户设置。四态逐态映射而不是压成一两个状态码：`invalid` 要让界面定位到出错的
+   * 那一行，`conflict` 要触发「加载最新 / 覆盖提交」的恢复流程，`unavailable` 要把表单整体置灰
+   * ——压扁之后用户看到的就只剩「保存失败」，而三种原因要做的事完全不同。
    */
   readonly write: RouteHandler = async (
     req: IncomingMessage,
@@ -81,25 +68,17 @@ export class SettingsEndpoints {
   };
 }
 
-/**
- * 提交体里的 `patch` 是不是一份可用的记录。
- *
- * 不判形状就会被上面的断言一路放行：`{patch: "abc"}` 在设置域里是三个「陌生键」，而
- * 陌生键是刻意放行的（透传保留），于是一次非法请求会把 "0"/"1"/"2" 写进配置文件。
- *
- * 空 patch 也归为不可用：它在设置域是一次「无变化的写」，在界面上却是一次点击——
- * 两者对不上时，用户会以为这次保存丢了。
- */
+/** 提交体里的 `patch` 是不是一份可用的记录。不判形状就会被上面的断言一路放行：`{patch: "abc"}` 在设置域里是三个
+ * 「陌生键」，而陌生键是刻意放行的（透传保留），于是一次非法请求会把 "0"/"1"/"2" 写进配置文件。空 patch 也归为不可用
+ * ——它在设置域是一次「无变化的写」，在界面上却是一次点击，两者对不上时用户会以为这次保存丢了。 */
 function isPatch(value?: RawSettingValue): value is { readonly [key: string]: RawSettingValue } {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   return Object.keys(value).length > 0;
 }
 
 /**
- * 写面结果 → 响应。
- *
- * 成功体只回 `user` 与 `revision`：`effective` 是这次合并的结果，界面用自己刚提交的
- * 草稿就能推出来，多回一份只会多一个可能与本地草稿不一致的「服务端版本」。
+ * 写面结果 → 响应。成功体只回 `user` 与 `revision`：`effective` 是这次合并的结果，界面用自己刚
+ * 提交的草稿就能推出来，多回一份只会多一个可能与本地草稿不一致的「服务端版本」。
  */
 function respond(res: ServerResponse, result: WriteOutcome): void {
   if (result.ok) {

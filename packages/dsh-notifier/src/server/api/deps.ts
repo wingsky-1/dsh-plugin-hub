@@ -1,17 +1,5 @@
-/**
- * dsh-notifier api 域 —— **依赖声明**。
- *
- * 本域声明「我需要外部什么」，不关心谁满足它——装配由组合根递进来。声明面**只有
- * 类型**：运行时能力不进这里（`ARCHITECTURE-METHOD.md` §2「跨域运行时能力一律经
- * `deps.ts` 注入」）。
- *
- * 浏览器出口要的能力比别的域杂，但组成一样：三个域的能力面（按提供方分组）、以及
- * 只有组合根够得着的两样——路由注册口与帧入口。
- *
- * 共享层的三个设施（回环围栏、请求体读取、SSE 枢纽）**不在这里**：它们是跨包共享层
- * 的源码依赖，由用到的实现块直接引——同一个东西在注入面上过一道，只会让「本域依赖
- * 了哪个域」这张清单里混进不属于任何域的条目。
- */
+/** api 域依赖声明：只声明「我需要外部什么」，声明面**只有类型**（共享层设施由实现块直接引）。浏览器出口要的能力
+ * 比别的域杂，但组成一样：域能力面（按提供方分组）+ 只有组合根够得着的两样（路由注册口、帧入口）。 */
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type * as configApi from "../config/interface.ts";
 import type * as pipelineApi from "../pipeline/interface.ts";
@@ -28,12 +16,8 @@ export type StorePort = Pick<typeof storesApi, "readHistory" | "clearHistory" | 
 /** pipeline 域给下游的能力面：测试通知走**同一条**裁决管线。 */
 export type PipelinePort = Pick<typeof pipelineApi, "submit">;
 
-/**
- * sdk 域给浏览器的能力面：动态种类的清单与用户确认。
- *
- * 只要管理面，不要服务面（登记与发送）：那是给兄弟插件的。设置页既不替别人登记种类，
- * 也不代人发送通知。
- */
+/** sdk 域给浏览器的能力面：动态种类的清单与用户确认。只要管理面、不要服务面——那是给兄弟插件的，设置页既不
+ * 替别人登记种类，也不代人发送通知。 */
 export type KindPort = Pick<typeof sdkApi, "confirmKind" | "listKinds">;
 
 export type { NotifyFrame } from "../channels/interface.ts";
@@ -49,12 +33,7 @@ export type OutgoingFrame = pipelineApi.OutgoingFrame;
 /** 宿主路由注册口：与宿主契约同源，不在两侧各写一遍。 */
 export type RegisterRoute = (route: WebRoute) => () => void;
 
-/**
- * 帧入口：订阅待展示的通知帧（组合根把帧总线的消费那一头接好）。
- *
- * 只有 `on` 没有 `emit`：api 域是帧的**消费者**，给它发帧的能力等于让它能伪造通知。
- * 生产帧是裁决管线的事。
- */
+/** 帧入口：只有 `on` 没有 `emit`——api 域是帧的**消费者**，给它发帧的能力等于让它能伪造通知。 */
 interface FrameInlet {
   onFrame(handler: (payload: OutgoingFrame) => void): () => void;
 }
@@ -63,13 +42,10 @@ interface FrameInlet {
 export interface ApiDeps {
   /** 宿主路由注册口：只有组合根够得着 `ctx.webServer`。 */
   register: RegisterRoute;
-  /** 帧入口。 */
   frames: FrameInlet;
   /** 失败出口（端点内的异常一律在这里出声，不静默吞）。 */
   logger: LoggerPort;
-  /** 设置读面与写面。 */
   config: ConfigPort;
-  /** 历史与频道状态的读面。 */
   stores: StorePort;
   /** 下游裁决管线：页面上的测试按钮经它提交。 */
   pipeline: PipelinePort;

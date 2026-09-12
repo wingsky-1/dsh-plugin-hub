@@ -1,17 +1,5 @@
-/**
- * dsh-notifier upgrade 域 —— 生命周期：跑链，以及把存量迁移挂到服务就绪的那一刻。
- *
- * 两件事分成两种时机，是这一块存在的全部理由：
- *
- * - **升级链**在装配期同步跑完（动的是磁盘上的文件）；
- * - **存量配置的迁移**要等宿主 settings 服务就绪——0.2.3 把配置存在那里，而那个服务可能
- *   晚于本插件装配，宿主也可以根本不装它。等不到就不做，不拦住启动。
- *
- * 迁移只做一件事：把旧配置交给 config 域的写面。旧版本长什么样的知识全在 `../legacy/`，
- * 业务域不认识「0.2.3」「settings 命名空间」这些词。
- *
- * 依赖方向：只引用本目录、`../chain/`、`../legacy/` 与 `../../deps.ts`。
- */
+/** upgrade 域生命周期：跑链，以及把存量迁移挂到服务就绪的那一刻。升级链在装配期同步跑完（动的是磁盘上的文件）；
+ * 存量配置的迁移要等宿主 settings 服务就绪（0.2.3 把配置存在那里），那个服务可能晚到或根本不来——等不到就不做。 */
 import type { SettingsPatch, UpgradeDeps } from "../../deps.ts";
 import { runUpgradeChain } from "../chain/index.ts";
 import { readLegacySettings } from "../legacy/index.ts";
@@ -41,15 +29,8 @@ class UpgradeRunner {
     this.installed = false;
   }
 
-  /**
-   * 存量配置 → 当前配置文件。
-   *
-   * 只交给 config 域的写面，不自己判「新旧哪个该赢」之外的事：写入是那次调用的全部语义，
-   * 而它本身就是幂等的合并（配置为空时才可能产生实际变化）。
-   *
-   * 失败只出声不抛出：这是装配完成之后的异步回调，抛出去没人接得住，而用户看到的症状
-   * 是「升级后设置回到了默认」——他需要一条日志能指向这里。
-   */
+  /** 存量配置 → 当前配置文件。只交给 config 域的写面：写入本身就是幂等的合并（配置为空时才可能产生实际变化）。
+   * 失败只出声不抛出——这是装配完成之后的异步回调，抛出去没人接得住，而症状是「升级后设置回到了默认」。 */
   private migrateLegacy(settings: LegacySettingsFace, deps: UpgradeDeps): void {
     const legacy = readLegacySettings(settings);
     if (Object.keys(legacy).length === 0) return;

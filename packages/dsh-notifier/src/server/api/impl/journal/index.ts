@@ -1,10 +1,6 @@
 /**
- * dsh-notifier api 域 —— 历史与频道状态端点。
- *
- * 两者都是「读持久事实」：历史是通知的流水，状态是各频道最近一次投递终态。滚动、
- * 按天过滤、损坏行跳过都由 stores 域兜住，本域只做形状转换。
- *
- * 依赖方向：只引用本目录、`../route/` 与 `../../deps.ts`，不引用 `interface.ts`。
+ * api 域历史与频道状态端点。两者都是「读持久事实」：历史是通知的流水，状态是各频道最近一次投递
+ * 终态；滚动、按天过滤、损坏行跳过都由 stores 域兜住，本域只做形状转换。
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { StorePort } from "../../deps.ts";
