@@ -46,5 +46,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-provider-usage-entry.json",
-  "_comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "_comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
 }

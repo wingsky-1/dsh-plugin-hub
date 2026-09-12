@@ -42,5 +42,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-notifier-events.json",
-  "_comment": "#669 PR2 T2-7 按域重划：events——核心状态机事件面（event-handlers/aggregate/agent-session，S3-30 修复入面）；testFiles 含 unit-event-handlers/unit-aggregate（N-6/N-7 直测杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "_comment": "#669 PR2 T2-7 按域重划：events——核心状态机事件面（event-handlers/aggregate/agent-session，S3-30 修复入面）；testFiles 含 unit-event-handlers/unit-aggregate（N-6/N-7 直测杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
 }

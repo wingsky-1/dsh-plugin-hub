@@ -40,5 +40,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-notifier-config-validate.json",
-  "_comment": "#720 静态拆段（2/3）：本段 = validators.ts 单文件 862 mutant（占原段 2366 的 36.4%），与 normalize.ts 合计 73.5%。二者单独成段而不与其余文件混装，是因为 mutant 密度与行数严重不成比例（validators.ts 324 行 / 862 mutant 对 config.ts 307 行 / 95 mutant，密度差约 8 倍）——按行数或按文件数均分都会拆错。interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "_comment": "#720 静态拆段（2/3）：本段 = validators.ts 单文件 862 mutant（占原段 2366 的 36.4%），与 normalize.ts 合计 73.5%。二者单独成段而不与其余文件混装，是因为 mutant 密度与行数严重不成比例（validators.ts 324 行 / 862 mutant 对 config.ts 307 行 / 95 mutant，密度差约 8 倍）——按行数或按文件数均分都会拆错。interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
 }

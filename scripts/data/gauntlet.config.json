@@ -28,7 +28,7 @@
         "fixedDate": "2026-08-24",
         "fixedDuration": "6m56s",
         "config": "stryker.conf.d/dsh-notifier-{server,message,config,history}.json（#342 二期：功能命名——事件/连接域 server / 消息构造 message / 配置迁移 config / 历史静默 history；message.ts 单文件 145s 物理极限维持）",
-        "scope": "src 级四段（#342 二期）：server index+server / message message.ts / config config+migrate+settings / history history+quiet-hours；基线为 src 口径，由四班次 observe 重建",
+        "scope": "src 级四段（#342 二期）：server index+server / message message.ts / config config+migrate+settings / history history+quiet-hours；基线为 src 口径，由 observe 夜间全量班重建",
         "threshold": 60
       },
       "dsh-web-file-preview": {
@@ -40,10 +40,10 @@
         "baselineErrors": 0,
         "baselineDate": "2026-08-24",
         "baselineDuration": "15s",
-        "baselineScope": "#698 重定位后 mutate 面 = src/{index,present-open}.ts（客户端 src/client/** 排除在 mutate 面外）；旧基线（自研预览实现的 lib/index.js:1255-1924）随代码删除作废，待 observe 四班次重建",
+        "baselineScope": "#698 重定位后 mutate 面 = src/{index,present-open}.ts（客户端 src/client/** 排除在 mutate 面外）；旧基线（自研预览实现的 lib/index.js:1255-1924）随代码删除作废，待 observe 夜间全量班重建",
         "config": "stryker.conf.d/dsh-web-file-preview.json",
         "threshold": 60,
-        "scope": "src 级全量（#276 方案 A）；基线为 src 口径，由四班次 observe 重建"
+        "scope": "src 级全量（#276 方案 A）；基线为 src 口径，由 observe 夜间全量班重建"
       },
       "dsh-mcp-manager": {
         "baselineScore": 58.74,
@@ -60,7 +60,7 @@
         "config": "stryker.conf.d/dsh-mcp-manager-{manager,entry,supervisor,middleware,routes,runtime}.json（#342 二期：功能命名——核心 manager / 入口 entry / 监督 supervisor / 中间件 middleware / 路由 routes / 运行时 runtime；manager.ts 单文件 134s 物理极限维持）",
         "hardeningNote": "#148 变异加固轮：6 个单测 commit 将 covered 由 29.37% 提升至 74.66%；耗时优化（#173）零杀伤 testFiles 移除 + conc8，3m52s→3m0s",
         "threshold": 60,
-        "scope": "src 级六段（#342 二期）：manager manager.ts / entry index+normalize+import / supervisor supervisor+middleware-state+store+scope / middleware middleware+middleware-utils+middleware-const / routes middleware-register+routes / runtime catalog+apply+transport+placement-math+config-schema+protocol+middleware-types；基线为 src 口径，由四班次 observe 重建"
+        "scope": "src 级六段（#342 二期）：manager manager.ts / entry index+normalize+import / supervisor supervisor+middleware-state+store+scope / middleware middleware+middleware-utils+middleware-const / routes middleware-register+routes / runtime catalog+apply+transport+placement-math+config-schema+protocol+middleware-types；基线为 src 口径，由 observe 夜间全量班重建"
       },
       "dsh-provider-usage": {
         "baselineScore": 71.41,
@@ -77,7 +77,7 @@
         "config": "stryker.conf.d/dsh-provider-usage-{entry,apply,contracts,sanitize,registry,pipeline,trend-aggregate,trend-collect,report-schedule,report-execute,routes,errsurf}.json（#342 二期六段 + 阶段零四段 + 阶段一 routes 段 + 阶段二 D8 归位 + 阶段三 errsurf 新段）",
         "hardeningNote": "#150 两阶段达标开启 strict；阶段零（#670）：补盲区四段 + testFiles；阶段一（#670）：routes 段开段；阶段二（#670）：D8 last-run/report-index/executor/list-dirs/report-config-service 新文件并入 report 段；阶段三（#670）：aggregator 拆分为 aggregate-rows/aggregate-query 两纯函数模块并入 trend-aggregate 段 + R8 台账守恒断言（unit-trend-ledger）与 errsurf（unit-errsurf）入 testFiles + errsurf 新段；基线已全包 12 段实测重建 71.41%",
         "threshold": 60,
-        "scope": "src 级十二段（#342 二期六段 + 阶段零四段 + 阶段一 routes 段 + 阶段三 errsurf 段）：entry / apply / contracts / sanitize / registry registry+user-adapter-loader / pipeline history+v2+hotreload+placement-math+path-resolve+client-logic+provider-config+charts+stats-service / trend-aggregate aggregator+aggregate-rows+aggregate-query+store+index（阶段三 D2 拆分并入 mutate 面） / trend-collect collector+types / report-schedule config+schedule+scheduler+tasks+last-run+report-config-service（D8 归位）/ report-execute runner+generate+format+report-index+executor+list-dirs（D8 归位）/ routes stats+adapters+ui+reports / errsurf errsurf.ts（阶段三 B）；基线为 src 口径，由四班次 observe 重建"
+        "scope": "src 级十二段（#342 二期六段 + 阶段零四段 + 阶段一 routes 段 + 阶段三 errsurf 段）：entry / apply / contracts / sanitize / registry registry+user-adapter-loader / pipeline history+v2+hotreload+placement-math+path-resolve+client-logic+provider-config+charts+stats-service / trend-aggregate aggregator+aggregate-rows+aggregate-query+store+index（阶段三 D2 拆分并入 mutate 面） / trend-collect collector+types / report-schedule config+schedule+scheduler+tasks+last-run+report-config-service（D8 归位）/ report-execute runner+generate+format+report-index+executor+list-dirs（D8 归位）/ routes stats+adapters+ui+reports / errsurf errsurf.ts（阶段三 B）；基线为 src 口径，由 observe 夜间全量班重建"
       },
       "dsh-lan-proxy": {
         "baselineScore": 52.43,
@@ -94,7 +94,7 @@
         "config": "stryker.conf.d/dsh-lan-proxy-{1..4}.json（#220 B 段拆分，区间原样四段；s1 proxy 单文件不可细分维持现状）",
         "hardeningNote": "#147 变异加固轮：covered 由 49.75% 提升至 62.52%，60% 第一阶达标",
         "threshold": 60,
-        "scope": "src 级四段（#276 方案 A）：seg1 proxy / seg2 apply+config / seg3 config-routes+migrate / seg4 settings+cert+index；基线为 src 口径，由四班次 observe 重建"
+        "scope": "src 级四段（#276 方案 A）：seg1 proxy / seg2 apply+config / seg3 config-routes+migrate / seg4 settings+cert+index；基线为 src 口径，由 observe 夜间全量班重建"
       }
     }
   }

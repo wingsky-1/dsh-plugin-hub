@@ -143,7 +143,7 @@
 | test/integration/service-contract.test.ts | `readFileSync("src/bootstrap/apply-services.ts")` + marker 扫描 | 同步扫描路径到新位置（bootstrap/apply-services.ts）；**阶段 1–5 该文件禁止薄转发/移动** |
 | stryker.conf.d/dsh-mcp-manager-{manager,entry,supervisor,middleware,routes,runtime}.json | mutate=显式 src 文件清单 | 按新域一次性重画六段；gen-stryker-conf --check 保持 topology 三方一致 |
 | scripts/data/mutation-topology.json | 段模板数据源 + workflow-assert 锚定 | 同步段定义 |
-| observe 基线 | src 口径四班次重建；incremental 缓存覆盖 | 迁移后重建基线（covered 回落豁免，见 2.5） |
+| observe 基线 | src 口径夜间全量班重建；incremental 缓存覆盖 | 迁移后重建基线（covered 回落豁免，见 2.5） |
 | bundle-host client 入口 | 探测链 src/client.tsx→…→src/client/index.ts | src/client/index.ts 保留即无感 |
 | smoke/unit | 全部 import ../lib/index.js | 不受影响（验证项） |
 | ~~mutate-scope-guard~~ | **已退役（#276）** | 不列入（workflow-assert 锁定不得再调用） |

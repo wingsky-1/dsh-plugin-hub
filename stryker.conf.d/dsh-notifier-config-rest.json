@@ -46,5 +46,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-notifier-config-rest.json",
-  "_comment": "#720 静态拆段（3/3）：原 config 段余下 7 实现（config/migrate/paths/redact/settings/quiet-hours/settings-bridge）合计 627 mutant（占原段 26.5%），远低于两个密度异常文件，故合并为一段。配置域划分沿用 #669 PR2 T2-7（settings-bridge/quiet-hours 自 PR1 盲区并入，S3-30 修复）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "_comment": "#720 静态拆段（3/3）：原 config 段余下 7 实现（config/migrate/paths/redact/settings/quiet-hours/settings-bridge）合计 627 mutant（占原段 26.5%），远低于两个密度异常文件，故合并为一段。配置域划分沿用 #669 PR2 T2-7（settings-bridge/quiet-hours 自 PR1 盲区并入，S3-30 修复）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
 }
