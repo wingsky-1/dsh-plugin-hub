@@ -44,7 +44,7 @@ import { sanitizeErrorText } from "./text/interface.ts";
 import type { NotifyDetail } from "./text/interface.ts";
 import { ROUTES, buildRoutes, createSeqStore, createSseHub, createSystemNotifier } from "./server/interface.ts";
 import { createNotifierService } from "./sdk/interface.ts";
-import type { NotifierServiceInternal, NotifySentEvent } from "./sdk/interface.ts";
+import type { NotifierService, NotifierServiceInternal, NotifySentEvent } from "./sdk/interface.ts";
 import type { BrowserDispatchSpec, DeliverPayload, ResolvedTarget, SystemDispatchSpec } from "./pipeline/interface.ts";
 import { buildBrowserFrame, createBarkChannel, createBrowserChannel, createOutboundChannelResolver, createSystemChannel, createWebhookChannel } from "./channels/interface.ts";
 
@@ -152,6 +152,24 @@ export type { EventHandlers, EventHandlersDeps } from "./events/interface.ts";
 // 辅助函数统一来自仓库共享层（loopback 围栏 / writeJson / readBody / errorMessage）。
 export { isLoopbackRequest } from "../../../shared/loopback.js";
 export { writeJson, readBody, errorMessage } from "../../../shared/host-utils.js";
+
+// ---------------------------------------------------------------- 类型合并面
+// 声明合并必须物理落在包入口：tsc 的 include 不 emit 源 `.d.ts`（`src/service.d.ts`
+// 因此从未进 `lib/`），消费方从 `lib/index.d.ts` 出发的相对 import 闭包取不到合并，
+// `ctx['wingsky.notifier']` 与 `'wingsky-notify/sent'` 双双失类型。写在本文件则随
+// 入口一起进产物（运行时零影响——声明整块被擦除）。门禁见
+// scripts/gate/pack-check.ts 的「声明合并可达性」断言。
+
+declare module "@deepseek-ai/cordis" {
+  interface Context {
+    /** 通知中心核心服务：其他插件经此发送单向通知 / 注册动态通知类型（'wingsky.notifier'）。 */
+    "wingsky.notifier": NotifierService;
+  }
+  /** 投递终态事件（铁律 1 的事件半边；旁观插件 ctx.on 订阅，per-channel 逐条派发）。 */
+  interface Events {
+    "wingsky-notify/sent": (payload: NotifySentEvent) => void;
+  }
+}
 
 function resolveStorePaths(config: NotifierApplyConfig) {
   const statusPath = typeof config.statusFile === "string" ? config.statusFile : statusFile();

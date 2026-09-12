@@ -1,7 +1,7 @@
 /**
  * dsh-notifier — config/interface.ts：配置域唯一对外引用面。
  *
- * 目录外代码（其他域 / index.ts / service.d.ts）只能从这里引用本域符号：
+ * 目录外代码（其他域 / index.ts）只能从这里引用本域符号：
  * 配置类型族、默认值/装配键、归一化、写校验、凭据脱敏、路径、免打扰纯函数、
  * settings 接线、settings 桥（ConfigPort 的现状实现面）、存量迁移。
  * 域内实现文件互引不经过本文件；跨域消费者所需符号全部在本文件收口

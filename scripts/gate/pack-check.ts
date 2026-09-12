@@ -19,6 +19,7 @@ import { extractInlinedPackages, readMermaidChunkRefs } from '../build/collect-l
 import { AGGREGATE_NAME, checkAggregateConsistency, filterOutRetiredDirs, listPluginDirs, loadManifest, warnUnknownEntries } from '../lib/plugins-manifest-lib.ts'
 import { resolvePackageScopeOrExit } from '../lib/package-scope.ts'
 import { assertSharedDtsNoExtras, assertSharedDtsPresent, listSharedDts } from '../lib/shared-dts-lib.ts'
+import { checkCordisMergeReachability } from '../lib/dts-cordis-merge-lib.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
@@ -87,6 +88,15 @@ for (const p of targets) {
     const problems = []
     if (!existsSync(join(pkgRoot, 'lib', 'index.js'))) problems.push('缺 lib/index.js')
     if (!readdirSync(join(pkgRoot, 'lib')).some(f => f.endsWith('.d.ts'))) problems.push('缺 lib/*.d.ts')
+    // 跨包 SDK 类型可达（#733 宪法第 3 条）：源面声明了 cordis 声明合并 ⇒ 合并必须
+    // 落在 lib/index.d.ts 的相对 import 闭包内。写在源 .d.ts 的合并不会被 emit，
+    // 消费方按包名导入时 ctx 服务面与 Events 事件面全部失类型，且没有任何既有门禁
+    // 能看见（实证：packages/dsh-notifier/src/service.d.ts）。判据实现见
+    // scripts/lib/dts-cordis-merge-lib.ts（含正反 fixture 自测）。
+    {
+      const merge = checkCordisMergeReachability(join(ROOT, 'packages', p), join(pkgRoot, 'lib'))
+      if (merge.problem) problems.push(merge.problem)
+    }
     for (const f of ['README.md', 'LICENSE', 'cordis.patch.yml']) {
       if (!existsSync(join(pkgRoot, f))) problems.push(`缺 ${f}`)
     }
