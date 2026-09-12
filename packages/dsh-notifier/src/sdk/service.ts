@@ -7,13 +7,13 @@
  * createDeliverer）。内置频道经 index.ts 注入（builtinChannels + play，
  * sdk→channels 值边消除）；send() 动态 kind 与 sendKind 统一过裁决全链
  * （enabled→确认→免打扰→路由）。
+ * 域间只剩 pipeline 值边 + config/pipeline/stores/text 的 type 边（编排迁出后
+ * 本域不再取值 config/text 的符号；BUILTIN_CHANNELS 归 config 并由编排层消费）。
  *
  * 兼容红线：SSE 帧契约、历史 jsonl、免打扰/suppressed/多标签租约
  * 全部保持——本模块只做管线收敛，不改出口语义。
  */
 import { createAppendHistory, createAdjudicator, createDeliverer, createHandleDecision, createSendKind, isBuiltinKind, isKindConfirmed, resolveChannelPool } from "../pipeline/interface.ts";
-import { sanitizeNoticeContent } from "../text/interface.ts";
-import { BUILTIN_CHANNELS } from "../config/interface.ts";
 import type { AdjudicateResult, ChannelPoolEntry } from "../pipeline/interface.ts";
 import type { NotifyConfig } from "../config/interface.ts";
 import type {
