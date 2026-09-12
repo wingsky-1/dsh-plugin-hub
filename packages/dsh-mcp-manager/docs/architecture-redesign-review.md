@@ -13,7 +13,7 @@
    bootstrap/ 该测试必红（pnpm test 必跑路径）。
 2. stryker/基线影响严重低估：六段 stryker.conf.d mutate 是显式 src 文件清单，
    mutation-topology.json 由 workflow-assert 锚定三方一致，PR 有 mutate-scope-guard，
-   observe 基线为 src 口径四班次重建；物理迁移 = 清单全失效 + incremental 缓存全废 +
+   observe 基线为 src 口径夜间全量班重建；物理迁移 = 清单全失效 + incremental 缓存全废 +
    58.74%（<60%）基线的重建窗口。方案一笔带过。
 3. 拆分归属多处错位：B10 是 ws_mcp_search 检索面缺陷（middleware-register.ts:181）非执行管道；
    目录检索函数族（searchCatalogMulti/listCatalog/findToolDetail/boundCatalogTools/scoreTool/

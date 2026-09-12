@@ -160,7 +160,7 @@ src/client/
 
 ### 集中式纯搬移 PR（阶段 6）
 - 前置：B 系列行为修复**全部完成**（B12/B19 已提前，见阶段表），迁移 PR 零行为变更；
-- 静态面清单（必须同步，否则必红）：service-contract.test.ts:145 扫描路径；stryker 六段 mutate 清单 + mutation-topology.json + workflow-assert；observe 基线（src 口径四班次重建）策略；incremental 缓存作废处理；bundle-host client 入口（src/client/index.ts 保留即无感）。
+- 静态面清单（必须同步，否则必红）：service-contract.test.ts:145 扫描路径；stryker 六段 mutate 清单 + mutation-topology.json + workflow-assert；observe 基线（src 口径夜间全量班重建）策略；incremental 缓存作废处理；bundle-host client 入口（src/client/index.ts 保留即无感）。
 - **迁移专用验证三件套（二轮 B 补机制）**：① 迁移前基线快照（全绿门禁 + smoke 断言清单逐条记录）；② 迁移 PR 的 `git diff --stat` 校验（只含 rename/移动，无内容变更）；③ 迁移后全绿 + observe 基线重建触发。
 - 门禁策略（D7 闭环后）：covered 口径已达标（74.66≥60），迁移 PR 不卡总得分；incremental 缓存作废后走 observe 夜间重建豁免或手动重建基线。
 

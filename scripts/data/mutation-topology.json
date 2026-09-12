@@ -56,7 +56,7 @@
                         "!packages/dsh-lan-proxy/src/client/**",
                         "!packages/dsh-lan-proxy/src/types.ts"
                     ],
-                    "comment": "#276 方案 A：src 级文件组分段（1）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#276 方案 A：src 级文件组分段（1）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "2": {
                     "mutate": [
@@ -67,7 +67,7 @@
                         "!packages/dsh-lan-proxy/src/client/**",
                         "!packages/dsh-lan-proxy/src/types.ts"
                     ],
-                    "comment": "#276 方案 A：src 级文件组分段（2）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#276 方案 A：src 级文件组分段（2）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "3": {
                     "mutate": [
@@ -78,7 +78,7 @@
                         "!packages/dsh-lan-proxy/src/client/**",
                         "!packages/dsh-lan-proxy/src/types.ts"
                     ],
-                    "comment": "#276 方案 A：src 级文件组分段（3）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#276 方案 A：src 级文件组分段（3）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "4": {
                     "mutate": [
@@ -90,7 +90,7 @@
                         "!packages/dsh-lan-proxy/src/client/**",
                         "!packages/dsh-lan-proxy/src/types.ts"
                     ],
-                    "comment": "#276 方案 A：src 级文件组分段（4）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#276 方案 A：src 级文件组分段（4）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 }
             },
             "testLayers": {}
@@ -111,7 +111,7 @@
                         "!packages/dsh-mcp-manager/src/integration/**",
                         "!packages/dsh-mcp-manager/src/placement-math.ts"
                     ],
-                    "comment": "#664 阶段6重画：entry——index+workspace（工作空间路由域）+config/model（归一化/导入/schema）；阶段1–5变异盲区（workspace/新文件）在本阶段随集中搬移一并纳入重画（v3 C4/C-DIR）；types/integration（type-only）与 placement-math.ts（shared 薄转发）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
+                    "comment": "#664 阶段6重画：entry——index+workspace（工作空间路由域）+config/model（归一化/导入/schema）；阶段1–5变异盲区（workspace/新文件）在本阶段随集中搬移一并纳入重画（v3 C4/C-DIR）；types/integration（type-only）与 placement-math.ts（shared 薄转发）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
                 },
                 "manager": {
                     "mutate": [
@@ -123,7 +123,7 @@
                         "!packages/dsh-mcp-manager/src/integration/**",
                         "!packages/dsh-mcp-manager/src/placement-math.ts"
                     ],
-                    "comment": "#664 阶段6重画：manager——connection/orchestrator（McpManager 类主体+展示投影 tool-names，原 manager.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
+                    "comment": "#664 阶段6重画：manager——connection/orchestrator（McpManager 类主体+展示投影 tool-names，原 manager.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
                 },
                 "middleware": {
                     "mutate": [
@@ -138,7 +138,7 @@
                         "!packages/dsh-mcp-manager/src/integration/**",
                         "!packages/dsh-mcp-manager/src/placement-math.ts"
                     ],
-                    "comment": "#664 阶段6重画：middleware——中间层池（runtime/middleware）+limits（原 middleware-const）+工具注册面（inject/）+策略裁决族（pipeline/authorize，原 middleware-utils 并入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
+                    "comment": "#664 阶段6重画：middleware——中间层池（runtime/middleware）+limits（原 middleware-const）+工具注册面（inject/）+策略裁决族（pipeline/authorize，原 middleware-utils 并入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
                 },
                 "routes": {
                     "mutate": [
@@ -150,7 +150,7 @@
                         "!packages/dsh-mcp-manager/src/integration/**",
                         "!packages/dsh-mcp-manager/src/placement-math.ts"
                     ],
-                    "comment": "#664 阶段6重画：routes——api 层（routes 装配/端点控制器/查询辅助，原 routes*.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
+                    "comment": "#664 阶段6重画：routes——api 层（routes 装配/端点控制器/查询辅助，原 routes*.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
                 },
                 "supervisor": {
                     "mutate": [
@@ -165,7 +165,7 @@
                         "!packages/dsh-mcp-manager/src/integration/**",
                         "!packages/dsh-mcp-manager/src/placement-math.ts"
                     ],
-                    "comment": "#664 阶段6重画：supervisor——连接监督器（runtime/supervisor+reconnect）+状态持久化（config/store，原 middleware-state/store 迁入）+统计（stats）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
+                    "comment": "#664 阶段6重画：supervisor——连接监督器（runtime/supervisor+reconnect）+状态持久化（config/store，原 middleware-state/store 迁入）+统计（stats）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
                 },
                 "runtime": {
                     "mutate": [
@@ -182,7 +182,7 @@
                         "!packages/dsh-mcp-manager/src/integration/**",
                         "!packages/dsh-mcp-manager/src/placement-math.ts"
                     ],
-                    "comment": "#664 阶段6重画：runtime——组合根（bootstrap/，原 apply*.ts 迁入）+transport/protocol+shared/placement-math（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析）+pipeline（执行管道域，阶段1–5变异盲区随迁纳入）+catalog（目录域，原 catalog.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
+                    "comment": "#664 阶段6重画：runtime——组合根（bootstrap/，原 apply*.ts 迁入）+transport/protocol+shared/placement-math（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析）+pipeline（执行管道域，阶段1–5变异盲区随迁纳入）+catalog（目录域，原 catalog.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
                 }
             },
             "testLayers": {
@@ -214,7 +214,7 @@
                         "!packages/dsh-notifier/src/**/interface.ts",
                         "!packages/dsh-notifier/src/client/**"
                     ],
-                    "comment": "#720 静态拆段（1/3）：原 #669 PR2 T2-7 的 config 段按文件 mutant 密度拆三。本段 = normalize.ts 单文件 877 mutant（占原段 2366 的 37.1%），是段内 mutant 的最大来源。拆段动因是密度失衡而非文件数：normalize.ts 284 行 877 mutant 对 config.ts 307 行 95 mutant（密度差约 8 倍），按行数或按文件数均分都会拆错。按文件拆而非按行区间（--mutate file:1-142）：行号是脆弱依赖，且会把分段 SSOT 从本文件迁进 CI matrix，扩大自研面。interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#720 静态拆段（1/3）：原 #669 PR2 T2-7 的 config 段按文件 mutant 密度拆三。本段 = normalize.ts 单文件 877 mutant（占原段 2366 的 37.1%），是段内 mutant 的最大来源。拆段动因是密度失衡而非文件数：normalize.ts 284 行 877 mutant 对 config.ts 307 行 95 mutant（密度差约 8 倍），按行数或按文件数均分都会拆错。按文件拆而非按行区间（--mutate file:1-142）：行号是脆弱依赖，且会把分段 SSOT 从本文件迁进 CI matrix，扩大自研面。interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "config-validate": {
                     "mutate": [
@@ -224,7 +224,7 @@
                         "!packages/dsh-notifier/src/**/interface.ts",
                         "!packages/dsh-notifier/src/client/**"
                     ],
-                    "comment": "#720 静态拆段（2/3）：本段 = validators.ts 单文件 862 mutant（占原段 2366 的 36.4%），与 normalize.ts 合计 73.5%。二者单独成段而不与其余文件混装，是因为 mutant 密度与行数严重不成比例（validators.ts 324 行 / 862 mutant 对 config.ts 307 行 / 95 mutant，密度差约 8 倍）——按行数或按文件数均分都会拆错。interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#720 静态拆段（2/3）：本段 = validators.ts 单文件 862 mutant（占原段 2366 的 36.4%），与 normalize.ts 合计 73.5%。二者单独成段而不与其余文件混装，是因为 mutant 密度与行数严重不成比例（validators.ts 324 行 / 862 mutant 对 config.ts 307 行 / 95 mutant，密度差约 8 倍）——按行数或按文件数均分都会拆错。interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "config-rest": {
                     "mutate": [
@@ -240,7 +240,7 @@
                         "!packages/dsh-notifier/src/**/interface.ts",
                         "!packages/dsh-notifier/src/client/**"
                     ],
-                    "comment": "#720 静态拆段（3/3）：原 config 段余下 7 实现（config/migrate/paths/redact/settings/quiet-hours/settings-bridge）合计 627 mutant（占原段 26.5%），远低于两个密度异常文件，故合并为一段。配置域划分沿用 #669 PR2 T2-7（settings-bridge/quiet-hours 自 PR1 盲区并入，S3-30 修复）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#720 静态拆段（3/3）：原 config 段余下 7 实现（config/migrate/paths/redact/settings/quiet-hours/settings-bridge）合计 627 mutant（占原段 26.5%），远低于两个密度异常文件，故合并为一段。配置域划分沿用 #669 PR2 T2-7（settings-bridge/quiet-hours 自 PR1 盲区并入，S3-30 修复）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "text": {
                     "mutate": [
@@ -252,7 +252,7 @@
                         "!packages/dsh-notifier/src/**/interface.ts",
                         "!packages/dsh-notifier/src/client/**"
                     ],
-                    "comment": "#669 PR2 T2-7 按域重划：text——文案域（message/sanitize/system-commands，PR1 message 段按域更名）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#669 PR2 T2-7 按域重划：text——文案域（message/sanitize/system-commands，PR1 message 段按域更名）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "pipeline": {
                     "mutate": [
@@ -264,7 +264,7 @@
                         "!packages/dsh-notifier/src/**/interface.ts",
                         "!packages/dsh-notifier/src/client/**"
                     ],
-                    "comment": "#669 PR2 T2-7 按域重划：pipeline——核心状态机裁决/投递/编排（adjudicate/deliver + orchestrate；orchestrate 为 #733 M1-F1 自 sdk/service.ts 迁入的编排三函数，T2-1 工厂化后入面，N-24 落地）；testFiles 含 unit-pipeline-contract/unit-pipeline-orchestrate（N-14/N-15 注入面契约杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#669 PR2 T2-7 按域重划：pipeline——核心状态机裁决/投递/编排（adjudicate/deliver + orchestrate；orchestrate 为 #733 M1-F1 自 sdk/service.ts 迁入的编排三函数，T2-1 工厂化后入面，N-24 落地）；testFiles 含 unit-pipeline-contract/unit-pipeline-orchestrate（N-14/N-15 注入面契约杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "events": {
                     "mutate": [
@@ -276,7 +276,7 @@
                         "!packages/dsh-notifier/src/**/interface.ts",
                         "!packages/dsh-notifier/src/client/**"
                     ],
-                    "comment": "#669 PR2 T2-7 按域重划：events——核心状态机事件面（event-handlers/aggregate/agent-session，S3-30 修复入面）；testFiles 含 unit-event-handlers/unit-aggregate（N-6/N-7 直测杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#669 PR2 T2-7 按域重划：events——核心状态机事件面（event-handlers/aggregate/agent-session，S3-30 修复入面）；testFiles 含 unit-event-handlers/unit-aggregate（N-6/N-7 直测杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "channels": {
                     "mutate": [
@@ -290,7 +290,7 @@
                         "!packages/dsh-notifier/src/**/interface.ts",
                         "!packages/dsh-notifier/src/client/**"
                     ],
-                    "comment": "#669 PR2 T2-7 按域重划：channels——频道域（bark/browser/system/webhook/outbound，S3-30 盲区修复）；testFiles 含 unit-webhook/e2e-outbound（N-10/N-13/B-3 杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#669 PR2 T2-7 按域重划：channels——频道域（bark/browser/system/webhook/outbound，S3-30 盲区修复）；testFiles 含 unit-webhook/e2e-outbound（N-10/N-13/B-3 杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "stores": {
                     "mutate": [
@@ -301,7 +301,7 @@
                         "!packages/dsh-notifier/src/**/interface.ts",
                         "!packages/dsh-notifier/src/client/**"
                     ],
-                    "comment": "#669 PR2 T2-7 按域重划：stores——存储域（history/status，PR1 history 段收窄，quiet-hours 归 config）；testFiles 含 unit-stores（N-4 直测杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#669 PR2 T2-7 按域重划：stores——存储域（history/status，PR1 history 段收窄，quiet-hours 归 config）；testFiles 含 unit-stores（N-4 直测杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "server": {
                     "mutate": [
@@ -313,7 +313,7 @@
                         "!packages/dsh-notifier/src/**/interface.ts",
                         "!packages/dsh-notifier/src/client/**"
                     ],
-                    "comment": "#669 PR2 T2-7 按域重划：server——服务域（routes/sse-bus/system-notifier；index.ts 装配层移出归 sdk 段）；testFiles 含 unit-server-sse-bus/unit-system-notifier（N-11/N-12 注入面直测杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#669 PR2 T2-7 按域重划：server——服务域（routes/sse-bus/system-notifier；index.ts 装配层移出归 sdk 段）；testFiles 含 unit-server-sse-bus/unit-system-notifier（N-11/N-12 注入面直测杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "sdk": {
                     "mutate": [
@@ -324,7 +324,7 @@
                         "!packages/dsh-notifier/src/**/interface.ts",
                         "!packages/dsh-notifier/src/client/**"
                     ],
-                    "comment": "#669 PR2 T2-7 按域重划：sdk——服务装配面（sdk/service.ts + 根 index.ts 并入：装配层归服务面，独立 assembly 段单文件且 re-export 过半可杀性低，并入 sdk 均衡段规模；原注释至此的『service.d.ts 非 src TS 不入面』已失效——该文件由 #733 M2a 删除，声明合并迁入 index.ts）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#669 PR2 T2-7 按域重划：sdk——服务装配面（sdk/service.ts + 根 index.ts 并入：装配层归服务面，独立 assembly 段单文件且 re-export 过半可杀性低，并入 sdk 均衡段规模；原注释至此的『service.d.ts 非 src TS 不入面』已失效——该文件由 #733 M2a 删除，声明合并迁入 index.ts）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 }
             },
             "testLayers": {
@@ -352,7 +352,7 @@
                         "!packages/dsh-provider-usage/src/client/**",
                         "!packages/dsh-provider-usage/src/types.ts"
                     ],
-                    "comment": "#342 v4：src 级文件组分段（2）——apply 单列（#316 拆分后最重文件独立成段）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#342 v4：src 级文件组分段（2）——apply 单列（#316 拆分后最重文件独立成段）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "errsurf": {
                     "mutate": [
@@ -373,7 +373,7 @@
                         "!packages/dsh-provider-usage/src/client/**",
                         "!packages/dsh-provider-usage/src/types.ts"
                     ],
-                    "comment": "#342 v4：src 级文件组分段（3）——contracts+domain1/pipeline/guards（契约面）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#342 v4：src 级文件组分段（3）——contracts+domain1/pipeline/guards（契约面）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "entry": {
                     "mutate": [
@@ -386,7 +386,7 @@
                         "!packages/dsh-provider-usage/src/client/**",
                         "!packages/dsh-provider-usage/src/types.ts"
                     ],
-                    "comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "pipeline": {
                     "mutate": [
@@ -404,7 +404,7 @@
                         "!packages/dsh-provider-usage/src/client/**",
                         "!packages/dsh-provider-usage/src/types.ts"
                     ],
-                    "comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts/stats-service（历史/管线/热更/图表/C3 服务面；charts 纳入修复变异盲区；阶段零补 stats-service 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts/stats-service（历史/管线/热更/图表/C3 服务面；charts 纳入修复变异盲区；阶段零补 stats-service 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "registry": {
                     "mutate": [
@@ -415,7 +415,7 @@
                         "!packages/dsh-provider-usage/src/client/**",
                         "!packages/dsh-provider-usage/src/types.ts"
                     ],
-                    "comment": "#342 二期：功能命名段（registry）——registry+user-adapter-loader（注册表域，25s；阶段零补 loader 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#342 二期：功能命名段（registry）——registry+user-adapter-loader（注册表域，25s；阶段零补 loader 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "sanitize": {
                     "mutate": [
@@ -425,7 +425,7 @@
                         "!packages/dsh-provider-usage/src/client/**",
                         "!packages/dsh-provider-usage/src/types.ts"
                     ],
-                    "comment": "#342 二期：功能命名段（sanitize）——sanitize（数据净化域，115s）；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#342 二期：功能命名段（sanitize）——sanitize（数据净化域，115s）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
                 },
                 "trend-aggregate": {
                     "mutate": [
@@ -519,7 +519,7 @@
                         "!packages/dsh-web-file-preview/src/client/**",
                         "!packages/dsh-web-file-preview/src/types.ts"
                     ],
-                    "comment": "#276 方案 A：src 级单段（mutate 直指 src，文件 glob 声明，无行号无漂移）；测试经 src 入口加载插桩代码；incremental 基线随 observe 四班次重建。"
+                    "comment": "#276 方案 A：src 级单段（mutate 直指 src，文件 glob 声明，无行号无漂移）；测试经 src 入口加载插桩代码；incremental 基线随 observe 夜间全量班重建。"
                 }
             },
             "testLayers": {}

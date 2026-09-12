@@ -37,5 +37,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-web-file-preview.json",
-  "_comment": "#276 方案 A：src 级单段（mutate 直指 src，文件 glob 声明，无行号无漂移）；测试经 src 入口加载插桩代码；incremental 基线随 observe 四班次重建。"
+  "_comment": "#276 方案 A：src 级单段（mutate 直指 src，文件 glob 声明，无行号无漂移）；测试经 src 入口加载插桩代码；incremental 基线随 observe 夜间全量班重建。"
 }

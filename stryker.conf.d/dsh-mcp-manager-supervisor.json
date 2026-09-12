@@ -43,5 +43,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-supervisor.json",
-  "_comment": "#664 阶段6重画：supervisor——连接监督器（runtime/supervisor+reconnect）+状态持久化（config/store，原 middleware-state/store 迁入）+统计（stats）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建（D7 迁移豁免）。"
+  "_comment": "#664 阶段6重画：supervisor——连接监督器（runtime/supervisor+reconnect）+状态持久化（config/store，原 middleware-state/store 迁入）+统计（stats）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
 }
