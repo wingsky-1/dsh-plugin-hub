@@ -59,6 +59,34 @@
     `node scripts/gate/orphan-baseline.mjs restore`
   - 注意：本地若没有可用的 `origin`（或远端不可达），该命令会**非零退出**，不再静默降级（见下节）。
 
+### 「产物过期」与「无产物」分流（#718 S2.1）
+
+overlay 原来只有一句「未产生任何增量变异产物，安全跳过」，把两件相反的事压成同一个静默 no-op：
+
+| 形态 | 事实 | 正确处置 |
+|---|---|---|
+| 真·无产物 | PR 没触及变异切片，overlay 无事可做 | no-op（`exit 0`） |
+| 产物丢失 | CI 确实跑过变异矩阵实例，但产物已过期/被删 | 该 PR 命中段的新基线**永远**进不了归档 → **fail-loud** |
+
+两者在旧日志里完全同形，事后无法区分。判据取「该 CI run 里有没有变异矩阵实例」
+（`classifyMissingMutationProducts`）：实例存在 ⇒ 产物必定产出过（上传步骤是实例内 `if: success()`
+门控），所以「看不到产物」只能解释为丢失。汇总判分 job `Mutation gate verdict (...)` 不计入实例数。
+*jobs 查询本身失败时降级为 no-op*——这个分流用于**提高**报警灵敏度，不该因为多一次查询失败把纯文档 PR 判红。
+
+同一类静默降级还有一处：**有产物却一个都没覆盖成功**（下载/解析全线失败，或产物全部过期）原本也是
+`exit 0`。现在同样 fail-loud 并点名是「已过期 N 个」还是「下载或解析全部失败」。
+
+配套放宽产物保留期：`ci.yml` 里 `mutation-incremental-*` 的 `retention-days` 由 **1 → 7 天**。
+overlay 只在合入那一刻取产物，1 天窗口意味着「CI 跑完隔夜才合」时产物已过期——告警只是兜底，
+放宽窗口才是治本（公开仓库的 Actions 存储不计费）。
+
+### 写路径单一实现（#718 S2.1）
+
+`baseline/mutation` 的两个写入方（夜间全量班的并集入档、PR 合并后的 overlay）此前各写一套
+「组树 → 建 commit → 强推」plumbing，包括各自的裸 `--force`。现统一走 `scripts/gate/baseline-push.mjs`：
+两者共用回滚快照 tag、保留窗口与带显式期望值的 `--force-with-lease`，overlay 侧不再有裸 `--force`。
+沿用段在 manifest 里保留远端条目（其 `mtime` 是上次真实测量时间）——两个写入方口径一致。
+
 ### 恢复与查询失败的三态语义（#718）
 
 `orphan-baseline.mjs restore` 与 `overlay-baseline.mjs` 的远端探针**共用同一判据**

@@ -376,13 +376,17 @@ jobs:
           if-no-files-found: error
 
       - name: Upload incremental baseline artifact（供合并后秒级 overlay 复用 #572）
-        # 变异测试通过时上传产出的增量基线文件，供 PR 合入 main 后由 baseline-overlay.yml 秒级复用
+        # 变异测试通过时上传产出的增量基线文件，供 PR 合入 main 后由 baseline-overlay.yml 秒级复用。
+        # 保留期从 1 天放宽到 7 天（#718 S2.1）：overlay 只在**合入那一刻**去取这份产物，
+        # 1 天的窗口意味着「PR 隔天再合」或「CI 跑完隔夜才合」时产物已过期，该 PR 命中段的新基线
+        # 就静默进不了归档（overlay 侧的静默 no-op 已同步改为 fail-loud，但放宽窗口才是治本）。
+        # 公开仓库的 Actions 存储不计费；单次 CI 的变异产物合计约 10~20 MB。
         if: success()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: mutation-incremental-${{ matrix.combo.package }}-${{ matrix.combo.seg }}
           path: coverage/mutation/${{ env.BASENAME }}.json
-          retention-days: 1
+          retention-days: 7
           if-no-files-found: ignore
 
   # ── 第 3 段之三：聚合判分收尾（artifact 汇合 + 逐包变异率判分，#217）──
