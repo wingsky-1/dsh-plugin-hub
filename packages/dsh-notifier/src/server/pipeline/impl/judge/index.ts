@@ -11,7 +11,8 @@
  *
  * 依赖方向：只引用本目录与 `../../deps.ts`，不引用 `interface.ts`。
  */
-import type { EffectiveConfig, NotifyRequest } from "../../deps.ts";
+import type { EffectiveConfig } from "../../deps.ts";
+import type { NotifyRequest } from "../service/type.ts";
 import type { Verdict } from "./type.ts";
 
 /**

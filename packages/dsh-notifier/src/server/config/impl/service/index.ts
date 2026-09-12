@@ -17,13 +17,14 @@
  * 不引用 `interface.ts`。
  */
 import { createHash } from "node:crypto";
+import type { ConfigDeps } from "../../deps.ts";
 import { readTextFileSync, writeTextAtomic } from "../../../shared/file-io.ts";
 import { CONFIG_FILE_NAME, notifierFile } from "../../../shared/paths.ts";
 import { normalizeConfig, parseJsonObject, sanitizeSettings, validateSettings } from "../input/index.ts";
 import { DEFAULT_CONFIG } from "../model/index.ts";
 import type { NotifyConfig, RawSettingValue, SettingsPatch, StoredSettings } from "../model/type.ts";
 import { redactConfig, unmaskChannels } from "../redact/index.ts";
-import type { ConfigDeps, SettingsView, WriteResult } from "./type.ts";
+import type { SettingsView, WriteResult } from "./type.ts";
 
 /** 掩码还原后的写入口 patch；失败 = patch 里的新实例提交了掩码占位。 */
 type RestoredPatch = { ok: true; patch: SettingsPatch } | { ok: false };

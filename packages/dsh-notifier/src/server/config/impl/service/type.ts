@@ -1,21 +1,7 @@
 /**
  * dsh-notifier config 域 —— 装配面与读写结果（本域形状）。
  */
-import type { LoggerPort } from "../../../shared/type.ts";
-import type { NotifierEntryConfig, NotifyConfig, SettingInvalid } from "../model/type.ts";
-
-/**
- * 装配入参。
- *
- * 落盘位置不在其中——文件放哪是存储自己的知识（目录由包内共享层给出），做成入参
- * 等于要求每个装配点都知道本域的文件叫什么、放哪里。
- */
-export interface ConfigDeps {
-  /** 组合层给的设置项：用户层**之下**的默认层，优先级低于用户显式提交的值。 */
-  entry: NotifierEntryConfig;
-  /** 写入失败出口（读面失败由归一化兜住，只有写面需要它）。 */
-  logger: LoggerPort;
-}
+import type { NotifyConfig, SettingInvalid } from "../model/type.ts";
 
 /**
  * 设置页视图。

@@ -7,6 +7,10 @@
  * 把经历写进历史出。开关、免打扰、动态 kind 白名单、频道路由都在域内判完，调用方
  * 不需要知道这条链上有几道工序。
  *
+ * 通知请求的形状与它那套种类词汇也归本域：它们是**裁决的坐标系**——事件开关、频道
+ * 路由、动态 kind 白名单、bark 的按 kind 紧急度全按它查。宿主事件那边只是**适配层**：
+ * 把「审批来了」「turn 结束了」翻译成本域的词汇，翻译完就不再有发言权。
+ *
  * 唯一裁决点的意思是：**别处不许再判一次**。events 域产出「发生了什么」的陈述，
  * api 域与 sdk 域提交「请处理这一条」，三条路都汇到这里的 `submit`，由同一套判据
  * 回答。分散判断的代价不是多算一次——是两个答案不一致时，用户看到的是「设置改了不
@@ -29,17 +33,16 @@
  *
  * ## 依赖方向
  *
- * 只引本域 `./impl/`（契约调实现）与 events 契约——提交体的形状归它。对上依赖的完整
- * 申报在 `./deps.ts`，那份表给实现块用；契约层要的类型直接来自归属域，不在本地转抄
- * 一遍。
+ * 只引本域 `./impl/`（契约调实现）与 `./deps.ts`（依赖声明）。后者是本域的对外依赖
+ * 清单，摆在契约旁边而不是藏进实现——装配方从契约就能读全「装这条管线要给它什么」。
  */
-import type { NotifyRequest } from "../events/interface.ts";
+import type { PipelineDeps } from "./deps.ts";
 import { notificationPipeline } from "./impl/service/index.ts";
-import type { PipelineDeps } from "./impl/service/type.ts";
+import type { NotifyRequest } from "./impl/service/type.ts";
 
-// 入参类型：只出组合根必须构造的那一个。投递消息、历史记录、通知请求的形状经
-// `PipelineDeps` 的字段签名可达，调用方不必为它们各起一个名字。
-export type { PipelineDeps } from "./impl/service/type.ts";
+// 装配方要构造的、调用方要构造的，各出一个名字。
+export type { PipelineDeps } from "./deps.ts";
+export type { NotifyKind, NotifyRequest } from "./impl/service/type.ts";
 
 /**
  * 装配裁决管线（组合根在 `apply` 期调用一次）。

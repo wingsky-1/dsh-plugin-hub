@@ -10,31 +10,18 @@
  * 出多个，就不再唯一；两个队列指向同一文件、各自串行化、互相不知道对方，
  * 「写队列串行化」会从模块级承诺退化成每个实例各自的承诺）。装配只发生一次。
  *
- * **依赖方向**：只引 `./impl/` 与共享语言；本域无对上依赖，故不建 `deps.ts`。
+ * **依赖方向**：只引 `./impl/`（契约调实现）与本域依赖声明 `./deps.ts`。
  */
-import type { LoggerPort } from "../shared/type.ts";
+import type { StoreDeps } from "./deps.ts";
 import { historyStore } from "./impl/history/index.ts";
 import type { HistoryEntry } from "./impl/history/type.ts";
 import { statusStore } from "./impl/status/index.ts";
 import type { ChannelStatusEntry } from "./impl/status/type.ts";
 
-// 入参类型：只出装配面与写入面要构造的两个。状态条目的形状经 `readStatus()`
-// 的签名可达，调用方不必命名它也能读字段。
-export type { HistoryEntry } from "./impl/history/type.ts";
-
-
-/**
- * 装配入参：只剩「本域拿不到的东西」。
- *
- * 落盘位置不在其中——文件名是本域自己的知识，根目录由 DSH home 决定，两者拼在
- * 域内完成；把它做成入参，等于要求每个装配点都知道本域的文件叫什么。
- */
-export interface StoreDeps {
-  /** 历史保留天数读取器（配置可变，故取 getter 而非装配期快照）。 */
-  maxAgeDays(): number;
-  /** 写入失败出口（写入是 fire-and-forget，没有同步返回值可承载失败）。 */
-  logger: LoggerPort;
-}
+// 入参类型：只出装配面与写入面要构造的。状态条目的形状经 `readStatus()` 的签名
+// 可达，调用方不必命名它也能读字段。
+export type { StoreDeps } from "./deps.ts";
+export type { ChannelDelivery, HistoryEntry } from "./impl/history/type.ts";
 
 /**
  * 装配（组合根在 `apply` 期调用一次）。
@@ -42,7 +29,7 @@ export interface StoreDeps {
  * 只交付外部数据与宿主能力，不返回任何句柄——本域的状态由自己持有。
  */
 export function installStores(deps: StoreDeps): void {
-  historyStore.install({ maxAgeDays: deps.maxAgeDays, logger: deps.logger });
+  historyStore.install({ config: deps.config, logger: deps.logger });
   statusStore.install({ logger: deps.logger });
 }
 

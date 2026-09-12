@@ -2,62 +2,45 @@
  * dsh-notifier pipeline 域 —— 编排：一条通知从「发生」到「出去」的全程。
  *
  * 本块只串流程、不判业务：留不留由裁决块回答，发给谁由路由块回答，送没送到由投递块
- * 回答。它自己多做的一件事是**落史**——只有站在全程的位置上，才知道这条通知走到了
+ * 回答。它自己多做的一件事是**归档**——只有站在全程的位置上，才知道这条通知走到了
  * 哪一步、为什么没走完，而「为什么」正是用户唯一会来问的东西。
  *
- * 状态只有装配入参一项。类可以被实例化多次，但域只装配一个——「唯一裁决点」靠契约
- * 层不导出实例来保证，而不是靠把状态藏进闭包让别人够不着。
+ * 归档只有一个时刻：**投递完成之后**。被压制的那条路没有投递，于是就地归档——两条
+ * 路写的是同一条记录形状，区别只在带的是「逐出口明细」还是「压制原因」。
+ *
+ * 装配状态用判别联合而不是哨兵对象：依赖是三个域的面，抄一份哨兵等于把依赖清单维护
+ * 两遍，而且它每次变动都要跟着改。
  *
  * 依赖方向：只引用本目录、`../judge/`、`../route/`、`../dispatch/`、`../../deps.ts`，
  * 不引用 `interface.ts`。
  */
-import type { NotifyRequest } from "../../deps.ts";
+import type { ChannelDelivery, HistoryEntry, PipelineDeps } from "../../deps.ts";
 import { dispatchMessage } from "../dispatch/index.ts";
 import { judgeRequest } from "../judge/index.ts";
 import type { SuppressReason } from "../judge/type.ts";
 import { routeTargets } from "../route/index.ts";
 import type { RoutedTarget } from "../route/type.ts";
-import type { PipelineDeps } from "./type.ts";
+import type { NotifyRequest } from "./type.ts";
 
-/** 未装配哨兵里的函数：被调到就说明守卫漏了，当场抛错好过继续往下走。 */
-function uninstalled(): never {
-  throw new Error("dsh-notifier: pipeline 域尚未装配");
-}
+/** 归档结果：发出去了带逐出口明细，被压制了带原因；两者必居其一。 */
+type ArchiveOutcome = { suppressed: SuppressReason } | { channels: ChannelDelivery[] };
 
-/**
- * 未装配哨兵。
- *
- * 它的唯一作用是让字段有确定的类型，从而不必让每个使用点都先判一次空。装配是必经
- * 路径，这些函数不会被真正调到。
- */
-const UNINSTALLED: PipelineDeps = {
-  enabled: false,
-  readConfig: uninstalled,
-  deliver: uninstalled,
-  recordStatus: uninstalled,
-  appendHistory: uninstalled,
-  emitFrame: uninstalled,
-};
+/** 装配状态：未装配时连入参一起不存在，因此不需要哨兵去扮演一份假依赖。 */
+type PipelineState = { installed: false } | { installed: true; deps: PipelineDeps };
 
 /** 裁决管线：唯一裁决点，以及一条通知的生命周期。 */
 class NotificationPipeline {
-  /**
-   * 装配入参；未装配或已卸载时是哨兵。
-   *
-   * 用它同时充当「装没装」的判据，而不是另设一个布尔字段：两个字段会出现「布尔说
-   * 装了、入参还是哨兵」这种自相矛盾的状态，而那种状态只能靠纪律维持一致。
-   */
-  private deps: PipelineDeps = UNINSTALLED;
+  private state: PipelineState = { installed: false };
 
   /** 装配。重复装配是编程错误，当场暴露。 */
   install(deps: PipelineDeps): void {
-    if (this.deps !== UNINSTALLED) throw new Error("dsh-notifier: pipeline 域只能装配一次");
-    this.deps = deps;
+    if (this.state.installed) throw new Error("dsh-notifier: pipeline 域只能装配一次");
+    this.state = { installed: true, deps };
   }
 
-  /** 卸载：放开对其他域的引用。此后到达的请求一律丢弃。 */
+  /** 卸载：连同入参一起放开对其他域的引用。此后到达的请求一律丢弃。 */
   release(): void {
-    this.deps = UNINSTALLED;
+    this.state = { installed: false };
   }
 
   /**
@@ -67,19 +50,20 @@ class NotificationPipeline {
    * 就停下来，而在这条链上抛错的代价是打断别人的流程——症状与本插件毫无字面关联。
    */
   submit(request: NotifyRequest): void {
-    const deps = this.deps;
-    if (deps === UNINSTALLED) return;
+    const state = this.state;
+    if (!state.installed) return;
+    const deps = state.deps;
 
-    const config = deps.readConfig();
+    const config = deps.config.readConfig();
     const verdict = judgeRequest(config, request, deps.enabled);
     if (!verdict.ok) {
-      appendSuppressed(deps, request, verdict.reason);
+      this.archive(deps, request, { suppressed: verdict.reason });
       return;
     }
 
-    const targets = routeTargets({ emitFrame: deps.emitFrame }, config, request.kind);
+    const targets = routeTargets({ frames: deps.frames }, config, request.kind);
     if (targets.length === 0) {
-      appendSuppressed(deps, request, "no-target");
+      this.archive(deps, request, { suppressed: "no-target" });
       return;
     }
 
@@ -90,39 +74,39 @@ class NotificationPipeline {
   }
 
   /**
-   * 投递并落史。
+   * 投递，然后归档。
    *
-   * 装配入参走参数而不是读 `this.deps`：`await` 期间可能发生卸载，读字段会在投递
-   * 返回后拿着哨兵去落史。
+   * 装配入参走参数而不是读 `this.state`：`await` 期间可能发生卸载，回头再读字段会
+   * 拿到一份已经不存在的依赖。
    */
   private async send(
     deps: PipelineDeps,
     request: NotifyRequest,
     targets: RoutedTarget[],
   ): Promise<void> {
-    await dispatchMessage(
-      { deliver: deps.deliver, recordStatus: deps.recordStatus },
+    const channels = await dispatchMessage(
+      { channels: deps.channels, stores: deps.stores },
       { title: request.title, body: request.body },
       targets,
     );
-    deps.appendHistory({
+    this.archive(deps, request, { channels });
+  }
+
+  /** 归档：一次通知写一条记录，发出与压制只在载荷上分叉。 */
+  private archive(deps: PipelineDeps, request: NotifyRequest, outcome: ArchiveOutcome): void {
+    const entry: HistoryEntry = {
       ts: Date.now(),
       kind: request.kind,
       title: request.title,
       message: request.body,
-    });
+    };
+    if ("suppressed" in outcome) {
+      entry.suppressed = outcome.suppressed;
+    } else {
+      entry.channels = outcome.channels;
+    }
+    deps.stores.appendHistory(entry);
   }
-}
-
-/** 记一条「本该发出、但被拦下」的历史：只记「没发」等于让用户对着空收件箱猜。 */
-function appendSuppressed(deps: PipelineDeps, request: NotifyRequest, reason: SuppressReason): void {
-  deps.appendHistory({
-    ts: Date.now(),
-    kind: request.kind,
-    title: request.title,
-    message: request.body,
-    suppressed: reason,
-  });
 }
 
 /** 本域唯一的裁决点：类不外放，外面 `new` 不出第二份。 */

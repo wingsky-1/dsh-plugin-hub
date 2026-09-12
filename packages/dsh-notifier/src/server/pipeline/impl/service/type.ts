@@ -1,31 +1,42 @@
 /**
- * dsh-notifier pipeline 域 —— 编排块自己的形状。
+ * dsh-notifier pipeline 域 —— 提交体的形状。
+ *
+ * 归本域而不是宿主事件那边：种类词汇是**裁决的坐标系**——事件开关、`kindRoutes`、
+ * `allowKinds`、bark 的按 kind 紧急度全按它查。谁命名坐标系，谁就定义了什么算「一类
+ * 通知」；事件适配层只负责往里填，不参与定义。
  */
-import type { DeliverPort, EffectiveConfig, FramePort, HistoryEntry } from "../../deps.ts";
 
 /**
- * 裁决管线的装配入参：本域拿不到的东西。
+ * 内置通知种类。
  *
- * 落盘位置、通知文案、投递实现都不在其中——它们是各自归属域的知识。本域只要能力，
- * 不要实现：拿到 `deliver` 这个动作，拿不到投递域的状态；拿到 `readConfig` 这个读面，
- * 也拿不到设置域的快照与写队列。
+ * 收成字面量联合而不是宽 `string`，是为了让裁决层的映射表拿到穷举检查：漏一个 kind
+ * 是编译错误，而不是「某种通知静默地不发了」——后者没人会去查。
+ *
+ * 动态 kind（外部注册的通知种类）不在这个联合里：那是一套独立的白名单机制，等 sdk
+ * 域落地时单独开口，不在这里放宽成 `string` 把内置 kind 的检查一起赔掉。
  */
-export interface PipelineDeps {
-  /** 总开关：组合层入口给的值，不落盘、不进设置层，因此装配期定下后不再变。 */
-  enabled: boolean;
-  /**
-   * 读当前生效设置。
-   *
-   * 取函数而不是装配期快照：设置在本域看不见的地方被改（用户在设置页提交），快照在
-   * 那一刻失效，而下一次裁决读到的仍是旧值——症状是「改了设置不生效」。
-   */
-  readConfig(): EffectiveConfig;
-  /** 投递出口（channels 契约）。 */
-  deliver: DeliverPort;
-  /** 频道终态写入（stores 契约）。 */
-  recordStatus(channelId: string, status: "ok" | "failed", error?: string): void;
-  /** 历史写入（stores 契约）。 */
-  appendHistory(entry: HistoryEntry): void;
-  /** 帧出口：组合根接宿主事件总线，api 域监听后经 SSE 送页面。 */
-  emitFrame: FramePort;
+export type NotifyKind =
+  | "ask"
+  | "question"
+  | "task-done"
+  | "subagent-done"
+  | "task-error"
+  | "turn-end";
+
+/**
+ * 通知请求：一次「发生了什么」的陈述。
+ *
+ * 刻意**不叫「要通知」**：产出它的域不判断该不该发。开关、免打扰、路由、频道选择
+ * 全是本域的事——它们都随设置变化，而在适配层看不见的地方被改。让适配层每次都去问
+ * 一遍「现在开着吗」，等于把一条运行期策略摊进翻译逻辑里，而它本来只需要认事件。
+ *
+ * 与投递域的消息（`NotifyMessage`）也不是同一个东西：请求是**未加工的陈述**，消息是
+ * **已定稿的载荷**。合起来会让加工那几道工序落到适配层里，而它们属于下游。
+ */
+export interface NotifyRequest {
+  /** 事件种类：裁决与路由据此查事件开关与频道。 */
+  kind: NotifyKind;
+  /** 标题与正文（原样，未经下游加工）。 */
+  title: string;
+  body: string;
 }

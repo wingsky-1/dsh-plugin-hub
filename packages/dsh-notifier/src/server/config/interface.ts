@@ -36,15 +36,16 @@
  * 只引本域 `./impl/`（契约调实现）与本域装配入参申报表 `./deps.ts`（类型面）；
  * 不引任何他域实现。
  */
+import type { ConfigDeps } from "./deps.ts";
 import type { NotifyConfig, SettingsPatch } from "./impl/model/type.ts";
 import { configStore } from "./impl/service/index.ts";
-import type { ConfigDeps, SettingsView, WriteResult } from "./impl/service/type.ts";
+import type { SettingsView, WriteResult } from "./impl/service/type.ts";
 
 // ---------------------------------------------------------------- 入参类型
 // 只出「调用方必须构造的」：组合根要造装配面，写入方要造提交体。其余类型经这些
 // 签名可达即可，不额外占一个出口名字——多一个出口就是多一份要同步的事实源。
 
-export type { ConfigDeps } from "./impl/service/type.ts";
+export type { ConfigDeps } from "./deps.ts";
 export type { NotifierEntryConfig, SettingsPatch, StoredSettings } from "./impl/model/type.ts";
 
 // ---------------------------------------------------------------- 装配

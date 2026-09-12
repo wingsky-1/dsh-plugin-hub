@@ -17,8 +17,8 @@ export interface RoutedTarget {
   target: DeliveryTarget;
 }
 
-/** 路由入参：构造目标时本域拿不到的外部能力。 */
+/** 路由入参：构造目标时本块拿不到的东西。 */
 export interface RouteDeps {
-  /** 帧出口：浏览器目标自带发帧能力，由组合根接上宿主事件总线。 */
-  emitFrame: FramePort;
+  /** 帧出口：浏览器目标自带发帧能力，由编排层从装配入参里取出来。 */
+  frames: FramePort;
 }

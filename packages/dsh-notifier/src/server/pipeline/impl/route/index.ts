@@ -9,7 +9,8 @@
  *
  * 依赖方向：只引用本目录与 `../../deps.ts`，不引用 `interface.ts`。
  */
-import type { EffectiveConfig, NotifyKind } from "../../deps.ts";
+import type { EffectiveConfig } from "../../deps.ts";
+import type { NotifyKind } from "../service/type.ts";
 import type { RouteDeps, RoutedTarget } from "./type.ts";
 
 /**

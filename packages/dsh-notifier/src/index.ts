@@ -16,11 +16,11 @@
  * |---|---|---|---|
  * | 0 | `upgrade` | 存储形态的版本迁移 | 日志 |
  * | 1 | `config` | 通知配置的单一事实源 | 组合层入口层、日志 |
- * | 2 | `stores` | 历史与投递状态的持久化 | 保留天数读取器、日志 |
- * | 3 | `pipeline` | 一条通知的生命周期与**唯一裁决点** | config / channels / stores 的能力、帧出口 |
- * | 4 | `events` | 宿主事件 → 通知请求 | 宿主事件面、提交口 |
- * | 5 | `sdk` | 对外 ABI（`ctx["wingsky.notifier"]`） | 提交口、内置 kind 列表 |
- * | 6 | `api` | 浏览器出口：HTTP 路由 + SSE | 配置读写、历史、提交口、帧入口 |
+ * | 2 | `stores` | 历史与投递状态的持久化 | 设置域的面、日志 |
+ * | 3 | `pipeline` | 一条通知的生命周期与**唯一裁决点** | config / channels / stores 三个域的面、帧出口、总开关 |
+ * | 4 | `events` | 宿主事件 → 通知请求（适配层） | 宿主事件面、裁决管线 |
+ * | 5 | `sdk` | 对外 ABI（`ctx["wingsky.notifier"]`） | 裁决管线、内置 kind 列表 |
+ * | 6 | `api` | 浏览器出口：HTTP 路由 + SSE | 配置读写、历史、裁决管线、帧入口 |
  *
  * `upgrade` 排在最前不是因为它是上游，而是因为它动的是**磁盘**：各域装配时会读
  * 文件，迁移必须在那些读之前落定。
@@ -31,6 +31,11 @@
  * ## 纪律
  *
  * - 域之间不互相引用实现；跨域能力由本文件显式接上。
+ * - 交接以**域的面**为单位，不是把对方的方法拆成一个个函数传进去：`config: configApi`
+ *   而不是 `readConfig`。散装函数在装配点读不出「依赖哪个域」，每多用一个方法还要
+ *   再改一次这里。
+ * - 同理不交接**算好的值**：设置是活的，装配期算出的数字会变成静态数据，而它看起来
+ *   与实时读取一模一样。
  * - 本文件是唯一允许引用全部域 `interface.ts` 的地方。
  * - 域的全部跨域依赖申报在各自的 `deps.ts`；本文件按该申报满足它。
  */
@@ -39,15 +44,15 @@ import type {} from "@deepseek-ai/dsh-agent";
 import type {} from "@deepseek-ai/dsh-session";
 import type {} from "@deepseek-ai/dsh-user-approval";
 import type {} from "@deepseek-ai/dsh-user-questions";
-import { deliver } from "./server/channels/interface.ts";
+import * as channelsApi from "./server/channels/interface.ts";
 import type { NotifyFrame } from "./server/channels/interface.ts";
-import { installConfig, readConfig } from "./server/config/interface.ts";
+import * as configApi from "./server/config/interface.ts";
 import type { NotifierEntryConfig } from "./server/config/interface.ts";
-import { installEvents, releaseEvents } from "./server/events/interface.ts";
+import * as eventsApi from "./server/events/interface.ts";
 import type { HostEventPort } from "./server/events/interface.ts";
-import { installPipeline, releasePipeline, submit } from "./server/pipeline/interface.ts";
+import * as pipelineApi from "./server/pipeline/interface.ts";
 import type { LoggerPort } from "./server/shared/type.ts";
-import { appendHistory, installStores, recordStatus } from "./server/stores/interface.ts";
+import * as storesApi from "./server/stores/interface.ts";
 import { installUpgrade } from "./server/upgrade/interface.ts";
 
 /** 稳定的 cordis 插件名。 */
@@ -207,33 +212,26 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
   installUpgrade({ logger: host.logger });
 
   // 1. 设置：读面在装配返回时即可用，后续各域不必等加载。
-  installConfig({ entry: config, logger: host.logger });
+  configApi.installConfig({ entry: config, logger: host.logger });
 
-  // 2. 存储：保留天数取 getter——设置可变，装配期快照会在用户改设置后失效。
-  installStores({
-    maxAgeDays: () => readConfig().historyMaxAgeDays,
-    logger: host.logger,
-  });
+  // 2. 存储：给它设置域的面，而不是算好的保留天数。
+  storesApi.installStores({ config: configApi, logger: host.logger });
 
-  // 3. 裁决管线：拿到的全是动作。判据在它这里，事实在别人那里——投递域不知道有
+  // 3. 裁决管线：拿到的全是域的面。判据在它这里，事实在别人那里——投递域不知道有
   //    历史，设置域不知道有通知，而「该不该发」只有这一处回答。
-  installPipeline({
+  pipelineApi.installPipeline({
     enabled: config.enabled !== false,
-    readConfig,
-    deliver,
-    recordStatus,
-    appendHistory,
-    emitFrame: host.emitFrame,
+    config: configApi,
+    channels: channelsApi,
+    stores: storesApi,
+    frames: { emit: host.emitFrame },
   });
-  disposers.push(releasePipeline);
+  disposers.push(pipelineApi.releasePipeline);
 
   // 4. 事件：宿主事件 → 通知请求。请求一律产出，去留由裁决层决定——开关会在本域
   //    看不见的地方被改，让它去问一遍等于把运行期策略摊进按事件驱动的块里。
-  installEvents({
-    events: host.events,
-    onSubmit: submit,
-  });
-  disposers.push(releaseEvents);
+  eventsApi.installEvents({ events: host.events, pipeline: pipelineApi });
+  disposers.push(eventsApi.releaseEvents);
 
   return disposers;
 }

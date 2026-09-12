@@ -21,17 +21,12 @@
  *
  * ## 依赖方向
  *
- * 只引本域 `./impl/`（契约调实现）与本域装配入参申报表 `./deps.ts`（类型面）；
- * 不引任何他域实现。
+ * 只引本域 `./impl/`（契约调实现）与本域依赖声明 `./deps.ts`；不引任何他域实现。
  */
-import type { LoggerPort } from "../shared/type.ts";
+import type { UpgradeDeps } from "./deps.ts";
 import { runUpgradeChain } from "./impl/chain/index.ts";
 
-/** 装配入参。 */
-export interface UpgradeDeps {
-  /** 升级链的诊断出口（失败与版本落差都在这里出声）。 */
-  logger: LoggerPort;
-}
+export type { UpgradeDeps } from "./deps.ts";
 
 /**
  * 跑一遍升级链（组合根在各域装配之前调用一次）。
