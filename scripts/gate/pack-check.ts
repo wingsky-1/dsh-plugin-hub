@@ -18,6 +18,7 @@ import { executeClient } from '../lib/client-contract-lib.ts'
 import { extractInlinedPackages, readMermaidChunkRefs } from '../build/collect-licenses.ts'
 import { AGGREGATE_NAME, checkAggregateConsistency, filterOutRetiredDirs, listPluginDirs, loadManifest, warnUnknownEntries } from '../lib/plugins-manifest-lib.ts'
 import { resolvePackageScopeOrExit } from '../lib/package-scope.ts'
+import { checkExportTypesResolvable } from '../lib/exports-types-lib.ts'
 import { assertSharedDtsNoExtras, assertSharedDtsPresent, listSharedDts } from '../lib/shared-dts-lib.ts'
 import { checkCordisMergeReachability } from '../lib/dts-cordis-merge-lib.ts'
 
@@ -88,6 +89,11 @@ for (const p of targets) {
     const problems = []
     if (!existsSync(join(pkgRoot, 'lib', 'index.js'))) problems.push('缺 lib/index.js')
     if (!readdirSync(join(pkgRoot, 'lib')).some(f => f.endsWith('.d.ts'))) problems.push('缺 lib/*.d.ts')
+    // exports[].types 可解析：发布物每个带 types 条件的子路径，其 types 必须指向真实
+    // 文件。指向不存在文件时严格 TS 消费方按子路径导入静默降级 any（TS7016），而既有
+    // 门禁全看不见（contract-check 只断言 exports['./client'] 键存在）。判据实现见
+    // scripts/lib/exports-types-lib.ts（与导出面快照门禁共用「types → 相对路径」映射）。
+    for (const problem of checkExportTypesResolvable(pkgRoot)) problems.push(problem)
     // 跨包 SDK 类型可达（#733 宪法第 3 条）：源面声明了 cordis 声明合并 ⇒ 合并必须
     // 落在 lib/index.d.ts 的相对 import 闭包内。写在源 .d.ts 的合并不会被 emit，
     // 消费方按包名导入时 ctx 服务面与 Events 事件面全部失类型，且没有任何既有门禁
