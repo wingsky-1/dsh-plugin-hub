@@ -983,15 +983,49 @@
       ]
     }
   ],
-  "unmeasured": {},
+  "unmeasured": {
+    "dsh-notifier-api": "#733 按域重写新增段（旧 server 域拆出 HTTP/SSE 面），历史上无同名段，尚无实测；待 observe 夜间全量班重建。",
+    "dsh-notifier-shared": "#733 按域重写新增段（包内共享层首次登记为模块），历史上无同名段，尚无实测；待 observe 夜间全量班重建。",
+    "dsh-notifier-upgrade": "#733 按域重写新增段（存量迁移从旧 config/migrate 独立成域），历史上无同名段，尚无实测；待 observe 夜间全量班重建。"
+  },
   "superseded": {
     "dsh-notifier-config": {
       "replacedBy": [
-        "dsh-notifier-config-normalize",
-        "dsh-notifier-config-validate",
-        "dsh-notifier-config-rest"
+        "dsh-notifier-config"
       ],
-      "reason": "#720 静态拆段（PR #746）：原 config 段 9 实现 2366 mutant 按文件密度拆三段（877/862/627），本段不再存在于 stryker.conf.d"
+      "reason": "#733 按域重写：同名段换了文件面（#720 静态拆段后的 config.ts+migrate+paths+redact+settings+quiet-hours+settings-bridge → config/impl/{model,input,service,redact}）。该段名在 #720 时曾被 config-normalize/validate/rest 三段取代，那三段又随 #733 消失（见各自条目）。历史 wallSeconds 描述的是旧文件面，不得用于新面的超时定标。"
+    },
+    "dsh-notifier-config-normalize": {
+      "replacedBy": [
+        "dsh-notifier-config"
+      ],
+      "reason": "#720 静态拆段的三段之一；#733 按域重写后旧 src/config/normalize.ts 不存在，归一化归入 config 域的 config/impl/input。历史测量值不再描述当前面。"
+    },
+    "dsh-notifier-config-validate": {
+      "replacedBy": [
+        "dsh-notifier-config"
+      ],
+      "reason": "#720 静态拆段的三段之一；#733 按域重写后旧 src/config/validators.ts 不存在，校验归入 config 域的 config/impl/input。历史测量值不再描述当前面。"
+    },
+    "dsh-notifier-config-rest": {
+      "replacedBy": [
+        "dsh-notifier-config"
+      ],
+      "reason": "#720 静态拆段的三段之一；#733 按域重写后旧 src/config/{config,migrate,paths,redact,settings,quiet-hours,settings-bridge}.ts 全部不存在：设置模型归 config 域、迁移归 upgrade 域、掩码归 config 域。历史测量值不再描述当前面。"
+    },
+    "dsh-notifier-text": {
+      "replacedBy": [
+        "dsh-notifier-events",
+        "dsh-notifier-channels"
+      ],
+      "reason": "#733 按域重写：旧 text 域（message/sanitize/system-commands）解散——内置 kind 文案表归 events/impl/translate/catalog，系统命令构造归 channels/impl/system，sanitize 规则表整体删除（内容脱敏不再实现）。"
+    },
+    "dsh-notifier-server": {
+      "replacedBy": [
+        "dsh-notifier-api",
+        "dsh-notifier-channels"
+      ],
+      "reason": "#733 按域重写：旧 server 域（routes/sse-bus/system-notifier）解散——HTTP 端点与 SSE 归 api 域，系统出口归 channels/impl/system。"
     }
   }
 }

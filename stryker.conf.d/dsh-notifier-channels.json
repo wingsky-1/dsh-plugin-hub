@@ -1,14 +1,11 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-notifier/src/channels/bark.ts",
-    "packages/dsh-notifier/src/channels/browser.ts",
-    "packages/dsh-notifier/src/channels/system.ts",
-    "packages/dsh-notifier/src/channels/webhook.ts",
-    "packages/dsh-notifier/src/channels/outbound.ts",
-    "!packages/dsh-notifier/src/**/interface.ts",
+    "packages/dsh-notifier/src/server/channels/**/*.ts",
     "!packages/dsh-notifier/src/client/**",
+    "!packages/dsh-notifier/src/types.ts",
     "!packages/dsh-notifier/src/**/interface.ts",
+    "!packages/dsh-notifier/src/**/deps.ts",
     "!packages/dsh-notifier/src/**/*.d.ts",
     "!packages/dsh-notifier/src/**/*.ps1"
   ],
@@ -44,5 +41,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-notifier-channels.json",
-  "_comment": "#669 PR2 T2-7 按域重划：channels——频道域（bark/browser/system/webhook/outbound，S3-30 盲区修复）；testFiles 含 unit-webhook/e2e-outbound（N-10/N-13/B-3 杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+  "_comment": "#733 按域重写：channels——出口域（bark/browser/system/webhook 四出口 + deliver 共享投递阶段与 caps 截断；tones 为系统音色表）。边界：出口只回答「本次失败可不可重试」（DeliverResult.retryable），重试/退避/节流/在途上限一律不在本域，归 pipeline/impl/dispatch。"
 }

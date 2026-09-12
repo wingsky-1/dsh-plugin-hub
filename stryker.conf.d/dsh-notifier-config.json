@@ -1,12 +1,11 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-notifier/src/text/message.ts",
-    "packages/dsh-notifier/src/text/sanitize.ts",
-    "packages/dsh-notifier/src/text/system-commands.ts",
-    "!packages/dsh-notifier/src/**/interface.ts",
+    "packages/dsh-notifier/src/server/config/**/*.ts",
     "!packages/dsh-notifier/src/client/**",
+    "!packages/dsh-notifier/src/types.ts",
     "!packages/dsh-notifier/src/**/interface.ts",
+    "!packages/dsh-notifier/src/**/deps.ts",
     "!packages/dsh-notifier/src/**/*.d.ts",
     "!packages/dsh-notifier/src/**/*.ps1"
   ],
@@ -38,9 +37,9 @@
     "configFile": "vitest.stryker.d/dsh-notifier.config.ts"
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-notifier-text.json"
+    "fileName": "coverage/mutation/dsh-notifier-config.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-notifier-text.json",
-  "_comment": "#669 PR2 T2-7 按域重划：text——文案域（message/sanitize/system-commands，PR1 message 段按域更名）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+  "incrementalFile": "coverage/mutation/incremental-notifier-config.json",
+  "_comment": "#733 按域重写：config——配置域（model 默认值与形状；input 解析/归一化/校验与键上限；service 读写、修订号与并发保护；redact 出站掩码）。#733 后期删除：内容脱敏规则表、错误合并窗口、完成聚合窗口、审批二次提醒（askRemindMin）四个设置面。"
 }

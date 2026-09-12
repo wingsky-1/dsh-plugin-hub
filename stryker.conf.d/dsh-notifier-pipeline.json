@@ -1,12 +1,11 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-notifier/src/pipeline/adjudicate.ts",
-    "packages/dsh-notifier/src/pipeline/deliver.ts",
-    "packages/dsh-notifier/src/pipeline/orchestrate.ts",
-    "!packages/dsh-notifier/src/**/interface.ts",
+    "packages/dsh-notifier/src/server/pipeline/**/*.ts",
     "!packages/dsh-notifier/src/client/**",
+    "!packages/dsh-notifier/src/types.ts",
     "!packages/dsh-notifier/src/**/interface.ts",
+    "!packages/dsh-notifier/src/**/deps.ts",
     "!packages/dsh-notifier/src/**/*.d.ts",
     "!packages/dsh-notifier/src/**/*.ps1"
   ],
@@ -42,5 +41,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-notifier-pipeline.json",
-  "_comment": "#669 PR2 T2-7 按域重划：pipeline——核心状态机裁决/投递/编排（adjudicate/deliver + orchestrate；orchestrate 为 #733 M1-F1 自 sdk/service.ts 迁入的编排三函数，T2-1 工厂化后入面，N-24 落地）；testFiles 含 unit-pipeline-contract/unit-pipeline-orchestrate（N-14/N-15 注入面契约杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+  "_comment": "#733 按域重写：pipeline——管线域（judge 三条裁决判据与抑制原因；route 目标解析与陈旧目标回收；finalize 严重度归一、标题截断与消息定稿；dispatch 重试/退避/节流/在途上限；service 编排与 kind 注册表）。重试状态机在本域是刻意的：出口保持无状态。"
 }

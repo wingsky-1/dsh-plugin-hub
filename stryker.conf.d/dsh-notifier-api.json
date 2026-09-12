@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-notifier/src/server/events/**/*.ts",
+    "packages/dsh-notifier/src/server/api/**/*.ts",
     "!packages/dsh-notifier/src/client/**",
     "!packages/dsh-notifier/src/types.ts",
     "!packages/dsh-notifier/src/**/interface.ts",
@@ -37,9 +37,9 @@
     "configFile": "vitest.stryker.d/dsh-notifier.config.ts"
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-notifier-events.json"
+    "fileName": "coverage/mutation/dsh-notifier-api.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-notifier-events.json",
-  "_comment": "#733 按域重写：events——宿主事件域（listen 订阅装配；state 代理由 running/idle 矩阵驱动的状态机；session 完成判定证据读取；translate 事件→NotifyRequest，catalog 为内置 kind 文案表）。本域只产出请求，不做裁决。"
+  "incrementalFile": "coverage/mutation/incremental-notifier-api.json",
+  "_comment": "#733 按域重写：api——HTTP 端点域（journal/kinds/probe/route/service/settings/stream）。loopback 围栏在 route 块内，端点自身只做「解析请求 → 调 pipeline/sdk 端口 → 序列化响应」，不含业务裁决。"
 }

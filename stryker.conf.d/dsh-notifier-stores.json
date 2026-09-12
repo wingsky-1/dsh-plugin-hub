@@ -1,11 +1,11 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-notifier/src/stores/history.ts",
-    "packages/dsh-notifier/src/stores/status.ts",
-    "!packages/dsh-notifier/src/**/interface.ts",
+    "packages/dsh-notifier/src/server/stores/**/*.ts",
     "!packages/dsh-notifier/src/client/**",
+    "!packages/dsh-notifier/src/types.ts",
     "!packages/dsh-notifier/src/**/interface.ts",
+    "!packages/dsh-notifier/src/**/deps.ts",
     "!packages/dsh-notifier/src/**/*.d.ts",
     "!packages/dsh-notifier/src/**/*.ps1"
   ],
@@ -41,5 +41,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-notifier-stores.json",
-  "_comment": "#669 PR2 T2-7 按域重划：stores——存储域（history/status，PR1 history 段收窄，quiet-hours 归 config）；testFiles 含 unit-stores（N-4 直测杀灭面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+  "_comment": "#733 按域重写：stores——存储域（history 串行写队列与按行滚动；status 内存镜像与防抖落盘、LRU 上限）。"
 }
