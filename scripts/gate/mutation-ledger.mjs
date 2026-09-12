@@ -6,9 +6,14 @@
  * 而入库台账的校验（--check）是离线的、由 test:scripts 调用。之所以不做成 CI 采集步骤：
  * 那会改动 `.github/workflows/`（红线段），而本项是零红线的测量任务。
  *
- * 台账的唯一可信量是 `wallSeconds`（run 日志里 `##[group]stryker <seg>` 与配对
- * `##[endgroup]` 的墙钟）。为什么不取段配置文件的 mtime：增量班次会周期性重写这些
- * 文件，mtime 永远是「刚刚」，无法区分「真的重测过」与「只是被重写」。
+ * 台账的唯一可信量是 `wallSeconds`：**段执行时间**取自 run 日志，而不是段配置文件的时间戳
+ * （增量班次会周期性重写这些文件，mtime 永远是「刚刚」，无法区分「真的重测过」与「只是被
+ * 重写」）。日志有两种载体形态，解析器都要认（见 `mutation-ledger-lib.mjs`）：
+ *   - group 形态（#718 S1.1 之前的串行班）：`##[group]stryker <seg>` 与配对 `##[endgroup]`；
+ *   - 矩阵形态（S1.1 之后，每段一个独立 job）：job 名 `Mutation shard (<seg>)` + 段内输出特征。
+ *
+ * 生成时**排除结论非 success 的 shard**：被杀实例的日志只到中途，采信它会系统性低估耗时
+ * （实测 run 34681565987 的 events / server 即如此），而低估是超时定标里最危险的方向。
  *
  * 用法：
  *   node scripts/gate/mutation-ledger.mjs --run <run-id> [--workflow <name>] --scope incremental --write
@@ -101,6 +106,28 @@ function ghRunMeta(runId) {
   }
 }
 
+/**
+ * 该 run 里结论非 success 的 shard 段名集合（其日志只到中途，耗时不可作实测）。
+ * 对 group 形态（#718 S1.1 之前的单 job 串行班）job 名不匹配，返回空集——旧路径不受影响。
+ */
+function incompleteShardSegs(runId) {
+  try {
+    const d = JSON.parse(execFileSync('gh', ['api',
+      `repos/wingsky-1/dsh-plugin-hub/actions/runs/${runId}/jobs?per_page=100`],
+    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }))
+    const out = new Set()
+    for (const j of d.jobs ?? []) {
+      if (j.conclusion === 'success') continue
+      const m = /^Mutation shard \((.+)\)$/.exec(j.name ?? '')
+      if (m !== null) out.add(m[1])
+    }
+    return out
+  } catch (e) {
+    console.error(`[ledger] 读取 run ${runId} 的 job 列表失败：${String(e.message).split('\n')[0]}`)
+    process.exit(2)
+  }
+}
+
 function main() {
   const isCheck = argv.includes('--check')
   if (isCheck) {
@@ -136,12 +163,22 @@ function main() {
     return 2
   }
   const logText = readFileSync(fromLog, 'utf8')
-  const segments = parseSegmentLedger(logText)
-  if (segments.length === 0) {
+  const parsed = parseSegmentLedger(logText)
+  if (parsed.length === 0) {
     console.error(`[ledger] 日志中未解析到任何 stryker 段：${fromLog}（run 未跑变异，或日志格式已变）`)
     return 2
   }
   const meta = ghRunMeta(runId)
+  // 未完成的段不得当实测写入：被 timeout 杀掉的 shard 也会留下日志（跑到 N% 就断），
+  // 直接采信会把「未跑完的时间」当成该段的耗时，系统性**低估**——而这正是超时定标里
+  // 最危险的方向（实测 run 34681565987 的 events / server 即如此）。故按 job 结论过滤。
+  const incomplete = incompleteShardSegs(runId)
+  const segments = parsed.filter((s) => !incomplete.has(s.seg))
+  for (const s of parsed) {
+    if (incomplete.has(s.seg)) {
+      console.error(`[ledger] 排除未完成段 ${s.seg}（job 非 success：日志只到中途，时间不可作为实测）`)
+    }
+  }
   const entry = {
     run: {
       id: meta.databaseId,

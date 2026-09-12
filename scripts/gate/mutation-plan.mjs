@@ -33,7 +33,20 @@ const LEDGER_PATH = join(ROOT, 'scripts', 'data', 'mutation-segment-ledger.json'
 /** 无全量实测时的保守超时（与 ci.yml 的 mutation-gate 一致，该 job 已覆盖过最坏冷跑）。 */
 export const DEFAULT_TIMEOUT_MINUTES = 30
 /** #718 整合版规定的下限：低于它会让短段在正常的 runner 抖动下擦边。 */
-export const TIMEOUT_FLOOR_MINUTES = 10
+/**
+ * 超时下限。取值依据（2026-09-12 实测 run 34681565987）：
+ *
+ * 整合版 S1.4 规定「下限 10 分钟」，但实测证明 10 分钟**不够**——`dsh-notifier-events`
+ * 与 `dsh-notifier-server` 都卡在下限被杀，其中 events 被杀时只跑到 67%（336/475，
+ * elapsed ~9m / remaining ~4m），即该段实际需要约 13 分钟。根因是台账里的 full 实测
+ * 来自两天前的 run，而主干测试面已增长（#748 等），1.5 倍安全系数不足以吸收。
+ *
+ * 为什么提到 20：13 分钟实测 + 约 7 分钟余量吸收 runner 抖动与后续增长。GHA 的
+ * `timeout-minutes` 是**上限**——放宽不影响正常执行，只影响卡死时多久放弃；而误杀的
+ * 代价（基线丢段 + 报告缺失导致整班判红）远大于多等几分钟。整合版给的是下限的
+ * **最小值要求**，提高不违反。
+ */
+export const TIMEOUT_FLOOR_MINUTES = 20
 /** checkout + pnpm install + 全量 build 的墙钟开销（矩阵实例每段都要付一次）。 */
 export const SETUP_OVERHEAD_MINUTES = 4
 /** 实测值的放大系数：runner 抖动 + 主干代码增长。 */
