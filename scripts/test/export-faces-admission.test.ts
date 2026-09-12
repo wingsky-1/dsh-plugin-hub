@@ -159,3 +159,24 @@ test('端到端：模拟新增未登记导出（把一个存量符号移出 lega
     assert.match(result.stdout, /\[导出面分类登记\]/)
   })
 })
+
+test('端到端 --verbose：声明块分列「当前/基线」，且仅当两者相等才允许称「与基线一致」（#733 M2c R4-2）', () => {
+  const baseBlocks = JSON.parse(readFileSync(BASELINE, 'utf8')).declBlocks
+  assert.equal(baseBlocks.length > 0, true, '基线声明块集必须非空（先断言集合非空）')
+  const result = spawnSync(process.execPath, [SCRIPT, '--package', 'dsh-notifier', '--verbose'], { cwd: ROOT, encoding: 'utf8', timeout: 180000 })
+  assert.equal(result.status, 0, `期望 exit 0，实际 ${result.status}\n${result.stdout}\n${result.stderr}`)
+  const line = result.stdout.split('\n').find((l) => l.includes('声明块 当前'))
+  assert.ok(line !== undefined, `verbose 应分列「当前 / 基线」两个声明块计数，实际输出：\n${result.stdout}`)
+  const m = /声明块 当前 (\d+) \/ 基线 (\d+)/.exec(line)
+  assert.ok(m !== null, `计数格式不符：${line}`)
+  // 「基线」计数必须真取自基线文件——把当前值打印两遍会在此判红。
+  assert.equal(Number(m[2]), baseBlocks.length, `「基线」计数应等于基线文件的 declBlocks 条数（${baseBlocks.length}）：${line}`)
+  // 旧文案（`${surface.declBlocks.length} 个声明块与基线一致`）会在两侧计数不等时仍声称
+  // 「与基线一致」（实测基线 96 / 现网 105）；把声称与前件绑定，旧文案即判红。
+  assert.equal(
+    line.includes('与基线一致'),
+    Number(m[1]) === Number(m[2]),
+    `「与基线一致」只能出现在两个计数相等时（当前 ${m[1]} / 基线 ${m[2]}）：${line}`,
+  )
+  assert.equal(line.includes('比对只覆盖导出面符号的定义块'), true, `必须写明比对口径：${line}`)
+})

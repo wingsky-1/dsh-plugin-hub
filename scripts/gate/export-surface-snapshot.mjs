@@ -9,11 +9,15 @@
  *
  * 粒度（双保险，均对「文件搬移/语句组织」免疫、对「符号/定义变更」敏感）：
  *  1. 顶层导出符号集（name + isType 标记）——增删改导出符号都会红；
- *  2. 全部声明块多重集——遍历 emitDeclaration 产出的全部 .d.ts，提取每个
- *     `export declare ...` 顶层声明块（interface/class 整块、type/const/
- *     function/enum 单行），空白归一化后做多重集比较——任何被导出定义的
- *     内容改写（类型结构/签名/泛型/联合）都会红；声明块搬去哪个文件不影响
- *     （它是「集合」不是「路径树」）。
+ *  2. **导出面符号的定义块**——遍历 emitDeclaration 产出的全部 .d.ts，提取顶层
+ *     `export declare ...` 声明块（空白归一化），与导出面符号名求交后逐块比对
+ *     文本——任何被导出定义的内容改写（签名/泛型/联合）都会红；声明块搬去哪个
+ *     文件不影响（它是「集合」不是「路径树」）。
+ *     **该集合不是「全部声明块」**，故其计数与基线计数不同源、不要求相等（详见
+ *     下方 verbose 输出）。两个已知盲区（#733 M2c R4 实测）：tsc 对 interface/type
+ *     产出的是 `export interface`/`export type`（无 `declare`，进不了本提取器），
+ *     类型体由 test/integration/consumer-types.test.ts 的类型体锚兜住；不在包导出
+ *     面的域内符号根本不参与比对。
  *
  * 用法：
  *   node scripts/gate/export-surface-snapshot.mjs --package dsh-notifier --snapshot  # 生成/更新基线
@@ -229,6 +233,14 @@ if (problems.length > 0) {
   console.log("  若为有意变更（PR2 行为重构等），先更新基线：node scripts/gate/export-surface-snapshot.mjs --package dsh-notifier --snapshot");
   process.exit(1);
 }
-if (verbose) console.log(`[export-surface-snapshot] ${surface.exports.length} 个导出符号、${surface.declBlocks.length} 个声明块与基线一致`);
+// 门禁自述必须与事实一致（#733 M2c R4-2）：declBlocks 是「全部 .d.ts 的顶层声明块」
+// 计数，而上面的比对走 declMapFor，只取其中「名字在包导出面」的定义块——两侧计数本就
+// 不同源（实测基线 96 / 现网 105），把当前值写成「与基线一致」是自述与事实相反。
+if (verbose) {
+  console.log(
+    `[export-surface-snapshot] ${surface.exports.length} 个导出符号；声明块 当前 ${surface.declBlocks.length} / 基线 ${baseline.declBlocks.length}` +
+      "（比对只覆盖导出面符号的定义块，两侧总数不同源、不要求相等）",
+  );
+}
 console.log(`[export-surface-snapshot] PASS ${pkgName} 导出面与基线零 diff`);
 process.exit(0);
