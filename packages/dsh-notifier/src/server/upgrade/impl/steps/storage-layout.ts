@@ -3,14 +3,14 @@
  * 在这一步落定**（直接建出初始形态）。配置文件不在这里：它有两代旧形态，读取要等宿主服务就绪（装配期拿不到的时机）。
  */
 import { existsSync, readFileSync, renameSync } from "node:fs";
-import { writeTextAtomicSync } from "../../../shared/file-io.ts";
 import {
+  writeTextAtomicSync,
   HISTORY_FILE_NAME,
   SEQ_FILE_NAME,
   STATUS_FILE_NAME,
   legacyFile,
   notifierFile,
-} from "../../../shared/paths.ts";
+} from "../../../shared/interface.ts";
 /** 旧文件改名后缀：搬完留证据，也是「这一份处理过了」的标记。 */
 const MIGRATED_SUFFIX = ".migrated.bak";
 

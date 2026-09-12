@@ -2,8 +2,12 @@
  * 接着数——重置会让重连客户端把旧帧当新的，表现为「偶尔少一条通知」；**补拉**走 `?since=N`（EventSource 自动重连不带 query）。 */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createSseHub, type SseHub } from "../../../../../../../shared/sse-hub.js";
-import { readTextFileSync, writeTextAtomic } from "../../../shared/file-io.ts";
-import { SEQ_FILE_NAME, notifierFile } from "../../../shared/paths.ts";
+import {
+  readTextFileSync,
+  writeTextAtomic,
+  SEQ_FILE_NAME,
+  notifierFile,
+} from "../../../shared/interface.ts";
 import type { OutgoingFrame } from "../../deps.ts";
 import type { StreamDeps, StreamEvent } from "./type.ts";
 

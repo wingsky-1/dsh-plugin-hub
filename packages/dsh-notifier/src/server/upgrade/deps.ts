@@ -1,6 +1,6 @@
 /** upgrade 域依赖声明：本域只声明「我需要外部什么」，装配由组合根完成；契约与实现都经本文件引用。 */
 import type * as configApi from "../config/interface.ts";
-import type { LoggerPort } from "../shared/type.ts";
+import type { LoggerPort } from "../shared/interface.ts";
 import type { LegacySettingsPort } from "./impl/legacy/type.ts";
 
 /** 装配入参：本域依赖的全部外部。 */

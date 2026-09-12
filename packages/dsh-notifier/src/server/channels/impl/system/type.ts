@@ -1,7 +1,7 @@
 /**
  * dsh-notifier channels 域 —— 系统出口的投递参数与平台探测结果。
  */
-import type { LoggerPort } from "../../../shared/type.ts";
+import type { LoggerPort } from "../../../shared/interface.ts";
 
 /** 系统通知出口：OS 原生弹窗 / 提示音。 */
 export interface SystemTarget {

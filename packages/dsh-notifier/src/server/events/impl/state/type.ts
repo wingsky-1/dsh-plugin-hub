@@ -1,6 +1,6 @@
 /** dsh-notifier events 域 —— agent 状态机自己的形状。 */
 import type { AgentRegistryPort } from "../../deps.ts";
-import type { LoggerPort } from "../../../shared/type.ts";
+import type { LoggerPort } from "../../../shared/interface.ts";
 import type { TurnEndEvidence } from "../session/type.ts";
 
 /** 一个 agent 的运行足迹（running → idle 之间）。 */

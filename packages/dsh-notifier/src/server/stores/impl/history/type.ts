@@ -1,6 +1,6 @@
 /** dsh-notifier stores 域 —— 通知历史（jsonl）自己的形状：记录与装配入参。 */
 import type { ConfigPort } from "../../deps.ts";
-import type { LoggerPort } from "../../../shared/type.ts";
+import type { LoggerPort } from "../../../shared/interface.ts";
 
 /** 单出口投递明细：这一次通知送到了哪个出口、结果如何。 */
 export interface ChannelDelivery {

@@ -19,7 +19,7 @@ import type { LegacySettingsPort } from "./server/upgrade/deps.ts";
 import type { ExposePort } from "./server/sdk/deps.ts";
 import * as sdkApi from "./server/sdk/interface.ts";
 import type { NotifierService } from "./server/sdk/interface.ts";
-import type { LoggerPort } from "./server/shared/type.ts";
+import type { LoggerPort } from "./server/shared/interface.ts";
 import * as storesApi from "./server/stores/interface.ts";
 import { installUpgrade, releaseUpgrade } from "./server/upgrade/interface.ts";
 

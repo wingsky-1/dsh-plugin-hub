@@ -3,8 +3,7 @@
  * 目标身份由客户端锁定：`bark:<id>` / `webhook:<id>` / 内置 `browser`、`system`。
  */
 import type { EffectiveConfig } from "../../deps.ts";
-import { toastScriptPath } from "../../../shared/paths.ts";
-import type { LoggerPort } from "../../../shared/type.ts";
+import { toastScriptPath, type LoggerPort } from "../../../shared/interface.ts";
 import type { NotifyKind } from "../service/kinds.ts";
 import type { NotifyRequest } from "../service/type.ts";
 import type {

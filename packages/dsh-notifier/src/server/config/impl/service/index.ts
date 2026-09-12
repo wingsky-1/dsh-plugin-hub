@@ -5,8 +5,12 @@
  */
 import { createHash } from "node:crypto";
 import type { ConfigDeps } from "../../deps.ts";
-import { readTextFileSync, writeTextAtomic } from "../../../shared/file-io.ts";
-import { CONFIG_FILE_NAME, notifierFile } from "../../../shared/paths.ts";
+import {
+  readTextFileSync,
+  writeTextAtomic,
+  CONFIG_FILE_NAME,
+  notifierFile,
+} from "../../../shared/interface.ts";
 import {
   normalizeConfig,
   parseJsonObject,

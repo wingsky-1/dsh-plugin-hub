@@ -2,7 +2,7 @@
  * 装配那侧不用改，要哪几样仍由 `Pick` 说了算），也不接算好的值——设置是活的，装配期算出的数字会变成静态数据。 */
 import type * as channelsApi from "../channels/interface.ts";
 import type * as configApi from "../config/interface.ts";
-import type { LoggerPort } from "../shared/type.ts";
+import type { LoggerPort } from "../shared/interface.ts";
 import type * as storesApi from "../stores/interface.ts";
 import type { NotifyKind } from "./impl/service/kinds.ts";
 

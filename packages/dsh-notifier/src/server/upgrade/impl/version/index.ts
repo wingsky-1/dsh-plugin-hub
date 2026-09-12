@@ -3,9 +3,13 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { FileWrite } from "../../../shared/file-io.ts";
-import { readTextFileSync, writeTextAtomicSync } from "../../../shared/file-io.ts";
-import { VERSION_FILE_NAME, notifierFile } from "../../../shared/paths.ts";
+import {
+  readTextFileSync,
+  writeTextAtomicSync,
+  VERSION_FILE_NAME,
+  notifierFile,
+  type FileWrite,
+} from "../../../shared/interface.ts";
 
 /** 没有版本文件时的起点：从未升级过。 */
 const BASELINE_VERSION = "0.0.0";

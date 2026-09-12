@@ -6,7 +6,7 @@
 import { execFile, spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import type { LoggerPort } from "../../../shared/type.ts";
+import type { LoggerPort } from "../../../shared/interface.ts";
 import { FAILURE_REASON_MAX, displayCaps, truncateCodePoints } from "../deliver/caps.ts";
 import type { DeliverResult, NotifyMessage } from "../deliver/type.ts";
 import { MAC_SOUND_NAMES, toneFileCandidates } from "./tones.ts";

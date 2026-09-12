@@ -6,7 +6,7 @@ import type { SessionId } from "@deepseek-ai/dsh-session/types";
 import type { ApprovalRequest } from "@deepseek-ai/dsh-user-approval";
 import type { AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
 import type * as pipelineApi from "../pipeline/interface.ts";
-import type { LoggerPort } from "../shared/type.ts";
+import type { LoggerPort } from "../shared/interface.ts";
 
 export type { NotifyRequest } from "../pipeline/interface.ts";
 

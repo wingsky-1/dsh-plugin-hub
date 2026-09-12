@@ -2,7 +2,7 @@
  * upgrade 域升级链驱动：读刻度 → 取刻度仍停在起点的步骤 → 逐步执行并回写刻度 → 与插件版本对账。**任何一步失败即抛出，
  * 启动随之中止**（存储没升完就被按错误形态解释，比不启动糟得多）；步骤按**目标版本**排序执行，不按声明顺序。
  */
-import type { LoggerPort } from "../../../shared/type.ts";
+import type { LoggerPort } from "../../../shared/interface.ts";
 import { STEPS } from "../steps/index.ts";
 import {
   compareVersions,

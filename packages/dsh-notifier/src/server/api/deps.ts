@@ -5,7 +5,7 @@ import type * as configApi from "../config/interface.ts";
 import type * as pipelineApi from "../pipeline/interface.ts";
 import type * as sdkApi from "../sdk/interface.ts";
 import type * as storesApi from "../stores/interface.ts";
-import type { LoggerPort } from "../shared/type.ts";
+import type { LoggerPort } from "../shared/interface.ts";
 
 /** config 域给下游的能力面：设置页要读视图写设置，流枢纽要读连接上限。 */
 export type ConfigPort = Pick<typeof configApi, "readConfig" | "readSettingsView" | "writeConfig">;
@@ -21,7 +21,7 @@ export type PipelinePort = Pick<typeof pipelineApi, "submit">;
 export type KindPort = Pick<typeof sdkApi, "confirmKind" | "listKinds">;
 
 export type { NotifyFrame } from "../channels/interface.ts";
-export type { LoggerPort } from "../shared/type.ts";
+export type { LoggerPort } from "../shared/interface.ts";
 export type { RawSettingValue } from "../config/interface.ts";
 export type { NotifyRequest } from "../pipeline/interface.ts";
 export type { SseHub } from "../../../../../shared/sse-hub.js";

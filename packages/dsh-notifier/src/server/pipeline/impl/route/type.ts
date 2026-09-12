@@ -3,7 +3,7 @@
  * 出站频道配置与投递参数都经设置模型、目标联合可达，不引它们的实现文件。
  */
 import type { DeliveryTarget, EffectiveConfig, FramePort } from "../../deps.ts";
-import type { LoggerPort } from "../../../shared/type.ts";
+import type { LoggerPort } from "../../../shared/interface.ts";
 
 /** 配置里的出站频道实例（bark / webhook）。 */
 export type ChannelConfig = EffectiveConfig["channels"][number];

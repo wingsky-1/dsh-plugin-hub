@@ -1,7 +1,7 @@
 /** upgrade 域存量配置的读取（0.2.3 及更早）：**V1** 是 0.2.3 搬进官方 settings 服务命名空间的那份，**V0** 是更早的自建
  * JSON 文件（0.2.3 迁移时改名成 `…migrated.bak` 作幂等标记）。**V1 优先于 V0**——反过来取会让「设置回到更早的样子」。 */
 import { existsSync, readFileSync } from "node:fs";
-import { legacyFile } from "../../../shared/paths.ts";
+import { legacyFile } from "../../../shared/interface.ts";
 import type { RawSettingValue } from "../../deps.ts";
 import type { LegacySettingsFace, LegacyStoredSettings } from "./type.ts";
 

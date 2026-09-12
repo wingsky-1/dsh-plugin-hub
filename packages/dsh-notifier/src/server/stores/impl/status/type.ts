@@ -1,5 +1,5 @@
 /** dsh-notifier stores 域 —— 频道投递状态自己的形状：重启后仍成立的持久事实。 */
-import type { LoggerPort } from "../../../shared/type.ts";
+import type { LoggerPort } from "../../../shared/interface.ts";
 
 /** 单频道投递状态条目。 */
 export interface ChannelStatusEntry {

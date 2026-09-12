@@ -3,8 +3,12 @@
  *
  * 与历史同源但多一层 debounce：通知风暴时避免每条通知一次整文件重写。
  */
-import { readTextFileSync, writeTextAtomic } from "../../../shared/file-io.ts";
-import { STATUS_FILE_NAME, notifierFile } from "../../../shared/paths.ts";
+import {
+  readTextFileSync,
+  writeTextAtomic,
+  STATUS_FILE_NAME,
+  notifierFile,
+} from "../../../shared/interface.ts";
 import type { ChannelStatusEntry, StatusDeps } from "./type.ts";
 
 /** 未装配时的占位：装配是必经路径，占位只是让字段不必每个使用点判空。 */

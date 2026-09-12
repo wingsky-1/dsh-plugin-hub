@@ -4,8 +4,7 @@
  * 保留天数每次读时现取：装配期取快照会在用户改设置后失效。
  */
 import { readFile } from "node:fs/promises";
-import { writeTextAtomic } from "../../../shared/file-io.ts";
-import { HISTORY_FILE_NAME, notifierFile } from "../../../shared/paths.ts";
+import { writeTextAtomic, HISTORY_FILE_NAME, notifierFile } from "../../../shared/interface.ts";
 import type { HistoryDeps, HistoryEntry, ParsedHistoryLine } from "./type.ts";
 
 /** 通知历史滚动上限（行数；超出后从尾部截断重写）。 */
