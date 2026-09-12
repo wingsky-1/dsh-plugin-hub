@@ -1,7 +1,7 @@
 /**
  * dsh-notifier api 域 —— 流块自己的形状。
  */
-import type { LoggerPort, NotifyFrame, NotifyKind } from "../../deps.ts";
+import type { ConfigPort, LoggerPort, NotifyFrame, NotifyKind } from "../../deps.ts";
 
 /**
  * SSE 帧（宿主 → 客户端**线协议**）。
@@ -27,8 +27,13 @@ export type StreamEvent =
     }
   | { type: "ping" };
 
+/** 流块要的设置能力：只读连接上限，设置页那两面与它无关。 */
+export type StreamConfigPort = Pick<ConfigPort, "readConfig">;
+
 /** 流块的装配入参。 */
 export interface StreamDeps {
   /** 失败出口（心跳停止、连接回收都经它出声）。 */
   logger: LoggerPort;
+  /** 设置读面：连接上限实时读，用户调小之后下一次淘汰就该按新值来。 */
+  config: StreamConfigPort;
 }

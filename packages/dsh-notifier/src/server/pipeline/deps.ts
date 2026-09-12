@@ -1,23 +1,33 @@
 /**
  * dsh-notifier pipeline 域 —— **依赖声明**。
  *
- * 本域声明「我需要外部什么」，不关心谁满足它——装配由组合根完成。域之间不互相注入：
- * 需要谁的能力，在这里引出来，实现块从本文件取。于是装配方只需要给「本域拿不到的
- * 东西」——宿主能力与挂载点值。
+ * 本域声明「我需要外部什么」，不关心谁满足它——装配由组合根递进来。声明面**只有
+ * 类型**：运行时能力不进这里（`ARCHITECTURE-METHOD.md` §2「跨域运行时能力一律经
+ * `deps.ts` 注入」），实现块拿到的是装配入参里的能力对象。
  *
- * 依赖以**能力**为单位，而且不接收算好的值：设置是活的，装配期算出的数字会变成静态
- * 数据，而它看起来与实时读取一模一样。
+ * 能力按**提供方**分组，而不是一个能力一个字段：组合根递的是提供方的命名空间对象，
+ * 于是本域将来多用一样能力时，装配那一侧一行都不用改。要哪几样仍然由本文件的 `Pick`
+ * 说了算——分组收的是装配方的样板，不是本域的可见面。
+ *
+ * 而且不接收算好的值：设置是活的，装配期算出的数字会变成静态数据，而它看起来与实时
+ * 读取一模一样。
  */
-import type { NotifyFrame } from "../channels/interface.ts";
-import { readConfig } from "../config/interface.ts";
+import type * as channelsApi from "../channels/interface.ts";
+import type * as configApi from "../config/interface.ts";
+import type * as storesApi from "../stores/interface.ts";
 import type { NotifyKind } from "./impl/service/type.ts";
 
-export { deliver } from "../channels/interface.ts";
-export { readConfig };
-export { appendHistory, recordStatus } from "../stores/interface.ts";
+/** config 域给下游的能力面：本域只读设置，不改。 */
+export type ConfigPort = Pick<typeof configApi, "readConfig">;
 
-/** 当前生效设置：config 读面的返回类型，不请 config 域再多导出一个名字。 */
-export type EffectiveConfig = ReturnType<typeof readConfig>;
+/** stores 域给下游的能力面：写历史（归档）与写频道终态（投递归位）。 */
+export type StorePort = Pick<typeof storesApi, "appendHistory" | "recordStatus">;
+
+/** channels 域给下游的能力面：把一条定稿消息投给若干出口。 */
+export type ChannelsPort = Pick<typeof channelsApi, "deliver">;
+
+/** 当前生效设置：从能力面派生，不请 config 域再多导出一个名字。 */
+export type EffectiveConfig = ReturnType<ConfigPort["readConfig"]>;
 
 /**
  * 帧出口的载荷：一次通知的种类，以及它该怎么弹。
@@ -28,7 +38,7 @@ export type EffectiveConfig = ReturnType<typeof readConfig>;
  */
 export interface OutgoingFrame {
   kind: NotifyKind;
-  frame: NotifyFrame;
+  frame: channelsApi.NotifyFrame;
 }
 
 /**
@@ -41,12 +51,18 @@ export interface FramePort {
   emit(payload: OutgoingFrame): void;
 }
 
-/** 装配入参：本域**拿不到**的东西。域间依赖不在这里——它们由本文件直接引。 */
+/** 装配入参：本域**拿不到**的东西（宿主能力、挂载点值）与它依赖的域。 */
 export interface PipelineDeps {
   /** 组合层总开关：挂载点给的值，不落盘、不进设置层，装配期定下后不再变。 */
   enabled: boolean;
   /** 帧出口：接的是宿主事件总线，只有组合根够得着。 */
   frames: FramePort;
+  /** 设置读面：每次裁决现取，不在装配期取快照。 */
+  config: ConfigPort;
+  /** 历史与频道状态的写面。 */
+  stores: StorePort;
+  /** 投递出口。 */
+  channels: ChannelsPort;
 }
 
 export type { DeliveryTarget, NotifyMessage } from "../channels/interface.ts";

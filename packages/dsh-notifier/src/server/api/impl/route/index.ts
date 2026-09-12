@@ -13,8 +13,8 @@
  * 依赖方向：只引用本目录与 `../../deps.ts`，不引用 `interface.ts`。
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { isLoopbackRequest } from "../../../../../../../shared/loopback.js";
 import type { LoggerPort, RegisterRoute } from "../../deps.ts";
-import { isLoopbackRequest } from "../../deps.ts";
 import type { Endpoint, HttpMethod } from "./type.ts";
 
 /**

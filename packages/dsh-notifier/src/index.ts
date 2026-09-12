@@ -27,8 +27,8 @@
  *
  * `api` 排在最后：它读的是各域的现值，装早了页面第一次请求就会拿到半成品。
  *
- * `channels` 无状态，**不参与装配**：它是纯动作，谁用谁引契约。组合根不替它持有
- * 实例，也不替调用方保管它的入参。
+ * `channels` 无状态，**没有装配动作**：它没有状态要装，只是被裁决管线当成能力面递
+ * 进去。组合根不替它持有实例，也不替调用方保管它的入参。
  *
  * ## 纪律
  *
@@ -46,6 +46,7 @@ import type {} from "@deepseek-ai/dsh-user-approval";
 import type {} from "@deepseek-ai/dsh-user-questions";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import * as apiApi from "./server/api/interface.ts";
+import * as channelsApi from "./server/channels/interface.ts";
 import * as configApi from "./server/config/interface.ts";
 import * as eventsApi from "./server/events/interface.ts";
 import type { HostEventPort } from "./server/events/interface.ts";
@@ -246,18 +247,24 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
   configApi.installConfig({ logger: host.logger });
 
   // 2. 存储：保留天数由它自己按需读设置，不在这里替它取值。
-  storesApi.installStores({ logger: host.logger });
+  storesApi.installStores({ logger: host.logger, config: configApi });
 
-  // 3. 裁决管线：域间依赖它自己引，这里只给够不着的那两样——挂载点总开关与帧出口。
+  // 3. 裁决管线：交付的是**能力对象**而不是算好的值——设置是活的，装配期取一次快照
+  //    会在用户改设置后失效，而它看起来与实时读取一模一样。
+  //    每个 Port 递的是提供方的命名空间对象（消费方用 Pick 收窄），于是本域将来多用
+  //    一样能力时，这一行不用改。
   pipelineApi.installPipeline({
     enabled: config.enabled !== false,
     frames: host.frames,
+    config: configApi,
+    stores: storesApi,
+    channels: channelsApi,
   });
   disposers.push(pipelineApi.releasePipeline);
 
   // 4. 事件：宿主事件 → 通知请求。请求一律产出，去留由裁决层决定——开关会在本域
   //    看不见的地方被改，让它去问一遍等于把运行期策略摊进按事件驱动的块里。
-  eventsApi.installEvents({ events: host.events });
+  eventsApi.installEvents({ events: host.events, pipeline: pipelineApi });
   disposers.push(eventsApi.releaseEvents);
 
   // 5. 对外 ABI：尚未装配。
@@ -267,6 +274,9 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
     register: host.register,
     frames: host.frames,
     logger: host.logger,
+    config: configApi,
+    stores: storesApi,
+    pipeline: pipelineApi,
   });
   disposers.push(apiApi.releaseApi);
 

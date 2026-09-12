@@ -2,15 +2,14 @@
  * dsh-notifier events 域 —— 订阅宿主事件并把翻译结果送出去。
  *
  * 本块只做搬运：订阅、转交翻译、把产出的请求递给下游。判断在 `../translate/`，
- * 下游是引来的（见 `../../deps.ts`）——它自己不留任何决定。
+ * 下游是装配期接上的能力（见 `../../deps.ts`）——它自己不留任何决定。
  *
  * 状态是实例字段：订阅句柄。类可以被实例化多次，但域只装配一个——「只订阅一次」
  * 靠契约层不导出实例来保证，而不是靠把状态藏进闭包让别人够不着。
  *
  * 依赖方向：只引用本目录、`../translate/` 与 `../../deps.ts`，不引用 `interface.ts`。
  */
-import type { EventsDeps } from "../../deps.ts";
-import { submit } from "../../deps.ts";
+import type { EventsDeps, PipelinePort } from "../../deps.ts";
 import {
   translateAgentDisposed,
   translateAgentError,
@@ -38,15 +37,15 @@ class EventListener {
   install(deps: EventsDeps): void {
     if (this.installed) throw new Error("dsh-notifier: events 域只能装配一次");
     this.installed = true;
-    const port = deps.events;
+    const { events: port, pipeline } = deps;
     this.releases.push(
-      port.onApprovalRequest((request) => forward(translateApproval(request))),
-      port.onUserQuestion((request) => forward(translateUserQuestion(request))),
-      port.onSessionEvent((sessionId, event) => forward(translateSessionEvent(sessionId, event))),
-      port.onAgentStatus((agentId, status) => forward(translateAgentStatus(agentId, status))),
-      port.onAgentDisposed((agentId) => forward(translateAgentDisposed(agentId))),
-      port.onAgentTurnStopping((agentId, turn) => forward(translateTurnStopping(agentId, turn))),
-      port.onAgentError((agentId, turn, errorText) => forward(translateAgentError(agentId, turn, errorText))),
+      port.onApprovalRequest((request) => forward(pipeline, translateApproval(request))),
+      port.onUserQuestion((request) => forward(pipeline, translateUserQuestion(request))),
+      port.onSessionEvent((sessionId, event) => forward(pipeline, translateSessionEvent(sessionId, event))),
+      port.onAgentStatus((agentId, status) => forward(pipeline, translateAgentStatus(agentId, status))),
+      port.onAgentDisposed((agentId) => forward(pipeline, translateAgentDisposed(agentId))),
+      port.onAgentTurnStopping((agentId, turn) => forward(pipeline, translateTurnStopping(agentId, turn))),
+      port.onAgentError((agentId, turn, errorText) => forward(pipeline, translateAgentError(agentId, turn, errorText))),
     );
   }
 
@@ -58,8 +57,8 @@ class EventListener {
 }
 
 /** 把翻译结果递给下游；不产出通知是常态，不是需要处理的情况。 */
-function forward(translation: Translation): void {
-  if (translation.ok) submit(translation.request);
+function forward(pipeline: PipelinePort, translation: Translation): void {
+  if (translation.ok) pipeline.submit(translation.request);
 }
 
 /** 本域唯一的订阅点：类不外放，外面 `new` 不出第二份订阅。 */

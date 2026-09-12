@@ -16,10 +16,10 @@
  * 依赖方向：只引用本目录、`../../deps.ts` 与包内共享层，不引用 `interface.ts`。
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { createSseHub, type SseHub } from "../../../../../../../shared/sse-hub.js";
 import { readTextFileSync, writeTextAtomic } from "../../../shared/file-io.ts";
 import { SEQ_FILE_NAME, notifierFile } from "../../../shared/paths.ts";
-import type { OutgoingFrame, SseHub } from "../../deps.ts";
-import { createSseHub, readConfig } from "../../deps.ts";
+import type { OutgoingFrame } from "../../deps.ts";
 import type { StreamDeps, StreamEvent } from "./type.ts";
 
 /** 补拉缓冲上限（条）：断线重连能回放的窗口，超出后只能从最新开始接。 */
@@ -43,9 +43,17 @@ type NotifyEvent = Extract<StreamEvent, { type: "notify" }>;
  * 未装配时的占位。
  *
  * 装配是必经路径（`installed` 守卫），占位值不会被真正读到；它的作用是让字段有确定
- * 的类型，从而不必让每个使用点都先判一次空。
+ * 的类型，从而不必让每个使用点都先判一次空。能力占位成抛错而不是空实现：真被读到
+ * 时，「没装配」应当当场暴露，而不是静默按默认上限去淘汰连接。
  */
-const UNINSTALLED: StreamDeps = { logger: { warn: () => {} } };
+const UNINSTALLED: StreamDeps = {
+  logger: { warn: () => {} },
+  config: {
+    readConfig: () => {
+      throw new Error("dsh-notifier: api 流尚未装配");
+    },
+  },
+};
 
 /** 未装配的枢纽：连接表为空，`dispose` 幂等。 */
 const UNINSTALLED_HUB: SseHub = {
@@ -80,7 +88,7 @@ class StreamHub {
     this.seq = readSeq(this.file);
     this.hub = createSseHub({
       // 连接上限实时读设置：用户在设置页调小之后，下一次淘汰就该按新值来。
-      getMaxConnections: () => readConfig().maxConnections,
+      getMaxConnections: () => this.deps.config.readConfig().maxConnections,
       heartbeatMs: HEARTBEAT_MS,
       warn: (message: string) => this.deps.logger.warn(message),
     });

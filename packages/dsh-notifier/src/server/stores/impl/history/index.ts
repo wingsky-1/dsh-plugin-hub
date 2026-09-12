@@ -10,9 +10,8 @@
  * 保留天数不经装配入参传进来，而是每次读时经 `../../deps.ts` 取当前设置：它是一条
  * 会变的设置，装配期取一次的快照会在用户改设置后失效。
  *
- * 依赖方向：只引用本目录、`../../deps.ts`、包内共享层，不引用 `interface.ts`。
+ * 依赖方向：只引用本目录与包内共享层；设置读面经装配入参拿，不直连 config 域。
  */
-import { readConfig } from "../../deps.ts";
 import { HISTORY_FILE_NAME, notifierFile } from "../../../shared/paths.ts";
 import type { HistoryDeps, HistoryEntry } from "./type.ts";
 
@@ -22,10 +21,18 @@ const HISTORY_LIMIT = 200;
 /**
  * 未装配时的占位。
  *
- * 装配是必经路径（`installed` 守卫），占位值不会被真正读到；它的作用是让字段
- * 有确定的类型，从而不必让每个使用点都先判一次空。
+ * 装配是必经路径（`installed` 守卫），占位值不会被真正读到；它的作用是让字段有确定
+ * 的类型，从而不必让每个使用点都先判一次空。能力占位成抛错而不是空实现：真被读到时，
+ * 「没装配」这个事实应当当场暴露，而不是静默按默认设置去清理用户的历史。
  */
-const UNINSTALLED: HistoryDeps = { logger: { warn: () => {} } };
+const UNINSTALLED: HistoryDeps = {
+  logger: { warn: () => {} },
+  config: {
+    readConfig: () => {
+      throw new Error("dsh-notifier: 历史存储尚未装配");
+    },
+  },
+};
 
 /** 通知历史：jsonl 追加写，读时滚动截断与按天过滤。 */
 class HistoryStore {

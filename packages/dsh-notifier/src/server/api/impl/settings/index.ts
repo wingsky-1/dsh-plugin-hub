@@ -6,55 +6,67 @@
  * 办，是设置语义的事，由 config 域的写面回答。两边都判一遍的代价不是多算一次，而是
  * 两处答案不一致时没人知道该信谁。
  *
- * 依赖方向：只引用本目录与 `../../deps.ts`，不引用 `interface.ts`。
+ * 依赖方向：只引用本目录、`../route/` 与 `../../deps.ts`，不引用 `interface.ts`。
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { RawSettingValue } from "../../deps.ts";
-import { readJsonBody, readSettingsView, writeConfig } from "../../deps.ts";
+import { readJsonBody } from "../../../../../../../shared/host-utils.js";
+import type { ConfigPort, RawSettingValue } from "../../deps.ts";
 import { sendFailure, sendJson } from "../route/index.ts";
+import type { RouteHandler } from "../route/type.ts";
 import type { PatchRequest } from "./type.ts";
 
 /** 请求体上限（字节）：设置是几百字节的 JSON，16KB 已远超合理值。 */
 const BODY_LIMIT = 16 * 1024;
 
-/** 写面结果：不额外请 config 域导出一个类型名，它的形状经 `writeConfig` 的签名可达。 */
-type WriteOutcome = Awaited<ReturnType<typeof writeConfig>>;
-
-/** GET /config：一次取齐视图的四个事实（分开取会让界面拿旧修订号提交，凭空造出冲突）。 */
-export function readSettings(_req: IncomingMessage, res: ServerResponse): void {
-  sendJson(res, 200, { ok: true, ...readSettingsView() });
-}
+/** 写面结果：不额外请 config 域导出一个类型名，它的形状经能力面的签名可达。 */
+type WriteOutcome = Awaited<ReturnType<ConfigPort["writeConfig"]>>;
 
 /**
- * PUT /config：写用户设置。
+ * 设置端点。
  *
- * 四态逐态映射而不是压成一两个状态码：`invalid` 要让界面定位到出错的那一行，
- * `conflict` 要触发「加载最新 / 覆盖提交」的恢复流程，`unavailable` 要把表单整体
- * 置灰。压扁之后用户看到的就只剩「保存失败」，而三种原因要做的事完全不同。
+ * 用类而不是返回闭包的工厂：能力在装配期接上，此后每个请求只读实例字段。闭包会把
+ * 「这个处理函数从哪拿到 config 域」这个问题藏进词法环境，而类把它摊在构造签名上，
+ * 于是「这个端点依赖什么」在文件里就能读到。
  */
-export async function writeSettings(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const raw = await readJsonBody(req, BODY_LIMIT);
-  if (raw === undefined) {
-    sendFailure(res, 400, { code: "invalid-json", details: "请求体不是合法 JSON 对象（或超出大小上限）" });
-    return;
-  }
-  // 断言只声明「这里有这两个字段」，不校验它们是什么——校验是紧接着的两步。
-  const body = raw as PatchRequest;
-  if (!isPatch(body.patch)) {
-    sendFailure(res, 400, { error: "配置校验失败: patch", hint: "需至少包含一个配置键（patch 不能为空）" });
-    return;
-  }
-  const patch = body.patch;
-  const revision = body.expectedRevision;
-  if (revision === undefined) {
-    respond(res, await writeConfig(patch));
-    return;
-  }
-  if (typeof revision !== "number" || !Number.isInteger(revision) || revision < 0) {
-    sendFailure(res, 400, { error: "配置校验失败: expectedRevision", hint: "expectedRevision 必须为非负整数或省略" });
-    return;
-  }
-  respond(res, await writeConfig(patch, revision));
+export class SettingsEndpoints {
+  constructor(private readonly config: ConfigPort) {}
+
+  /** GET /config：一次取齐视图的四个事实（分开取会让界面拿旧修订号提交，凭空造出冲突）。 */
+  readonly read: RouteHandler = (_req: IncomingMessage, res: ServerResponse): void => {
+    sendJson(res, 200, { ok: true, ...this.config.readSettingsView() });
+  };
+
+  /**
+   * PUT /config：写用户设置。
+   *
+   * 四态逐态映射而不是压成一两个状态码：`invalid` 要让界面定位到出错的那一行，
+   * `conflict` 要触发「加载最新 / 覆盖提交」的恢复流程，`unavailable` 要把表单整体
+   * 置灰。压扁之后用户看到的就只剩「保存失败」，而三种原因要做的事完全不同。
+   */
+  readonly write: RouteHandler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    const raw = await readJsonBody(req, BODY_LIMIT);
+    if (raw === undefined) {
+      sendFailure(res, 400, { code: "invalid-json", details: "请求体不是合法 JSON 对象（或超出大小上限）" });
+      return;
+    }
+    // 断言只声明「这里有这两个字段」，不校验它们是什么——校验是紧接着的两步。
+    const body = raw as PatchRequest;
+    if (!isPatch(body.patch)) {
+      sendFailure(res, 400, { error: "配置校验失败: patch", hint: "需至少包含一个配置键（patch 不能为空）" });
+      return;
+    }
+    const patch = body.patch;
+    const revision = body.expectedRevision;
+    if (revision === undefined) {
+      respond(res, await this.config.writeConfig(patch));
+      return;
+    }
+    if (typeof revision !== "number" || !Number.isInteger(revision) || revision < 0) {
+      sendFailure(res, 400, { error: "配置校验失败: expectedRevision", hint: "expectedRevision 必须为非负整数或省略" });
+      return;
+    }
+    respond(res, await this.config.writeConfig(patch, revision));
+  };
 }
 
 /**

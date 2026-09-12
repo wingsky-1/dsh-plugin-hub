@@ -1,17 +1,25 @@
 /**
  * dsh-notifier events 域 —— **依赖声明**。
  *
- * 本域声明「我需要外部什么」，不关心谁满足它——装配由组合根完成。域之间不互相注入：
- * 需要谁的能力，在这里引出来，实现块从本文件取。于是装配方只需要给「本域拿不到的
- * 东西」——宿主事件面。
+ * 本域声明「我需要外部什么」，不关心谁满足它——装配由组合根递进来。声明面**只有
+ * 类型**：运行时能力不进这里（`ARCHITECTURE-METHOD.md` §2），实现块拿到的是装配
+ * 入参里的能力对象。
  */
 import type { AgentStatus } from "@deepseek-ai/dsh-agent";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import type { ApprovalRequest } from "@deepseek-ai/dsh-user-approval";
 import type { AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
+import type * as pipelineApi from "../pipeline/interface.ts";
 
-export { submit } from "../pipeline/interface.ts";
 export type { NotifyRequest } from "../pipeline/interface.ts";
+
+/**
+ * pipeline 域给下游的能力面。
+ *
+ * 只有 `submit`：请求的去处只有一处，而「谁收到了」不属于适配层——裁决结果一旦回流
+ * 到这里，本域就得开始关心开关，那条边界随之失效。
+ */
+export type PipelinePort = Pick<typeof pipelineApi, "submit">;
 
 /**
  * 宿主事件面：订阅 + 退订，仅此而已。
@@ -55,8 +63,10 @@ export interface HostEventPort {
   onAgentError(handler: (agentId: string, turn: number, errorText: string) => void): () => void;
 }
 
-/** 装配入参：本域**拿不到**的东西。下游不在这里——它由本文件直接引。 */
+/** 装配入参：本域**拿不到**的东西与它依赖的域。 */
 export interface EventsDeps {
   /** 宿主事件面：只有组合根够得着 `ctx`。 */
   readonly events: HostEventPort;
+  /** 下游裁决管线：请求的去处只有一处。 */
+  readonly pipeline: PipelinePort;
 }

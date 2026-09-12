@@ -4,31 +4,19 @@
  * 端点表是本域对外的**完整承诺**：路径由客户端锁定，改一处就要两端同改，所以它摆在
  * 一处、一眼看得完。分派与围栏在 `route` 块，这里只声明「有哪些」。
  *
+ * 端点表在装配期构造而不是写成模块级常量：每个处理函数都要接上它依赖的能力，而能力
+ * 只有装配时才知道。写成常量，各端点就得自己去别处找依赖——那正是「隐藏依赖」，而它
+ * 的症状是测试里换不掉真实现。
+ *
  * 依赖方向：只引用本目录、各端点块与 `../../deps.ts`，不引用 `interface.ts`。
  */
 import type { ApiDeps } from "../../deps.ts";
-import * as journal from "../journal/index.ts";
-import * as probe from "../probe/index.ts";
+import { JournalEndpoints } from "../journal/index.ts";
+import { ProbeEndpoints } from "../probe/index.ts";
 import { registerEndpoints } from "../route/index.ts";
 import type { Endpoint } from "../route/type.ts";
-import * as settings from "../settings/index.ts";
+import { SettingsEndpoints } from "../settings/index.ts";
 import { streamHub } from "../stream/index.ts";
-
-/**
- * 端点表：路径 → 方法 → 处理函数。
- *
- * 路径与客户端 `ROUTES` 一一对应；那边少一条、这里多一条都不会报错，只会表现为
- * 「某个面板一直转圈」，所以这张表要能被逐条对照着读。
- */
-const ENDPOINTS: Endpoint[] = [
-  { path: "/api/dsh-notifier/config", methods: { GET: settings.readSettings, PUT: settings.writeSettings } },
-  { path: "/api/dsh-notifier/history", methods: { GET: journal.readJournal, DELETE: journal.clearJournal } },
-  { path: "/api/dsh-notifier/status", methods: { GET: journal.readChannelStatus } },
-  { path: "/api/dsh-notifier/test", methods: { POST: probe.sendTest } },
-  { path: "/api/dsh-notifier/health", methods: { GET: probe.reportHealth } },
-  // 包一层而不是裸传 streamHub.handle：那个方法要用 this，裸传会在回调时丢掉。
-  { path: "/api/dsh-notifier/events", methods: { GET: (req, res) => streamHub.handle(req, res) } },
-];
 
 /** 浏览器出口：路由注册与帧订阅的生命周期。 */
 class ApiService {
@@ -41,9 +29,23 @@ class ApiService {
   install(deps: ApiDeps): void {
     if (this.installed) throw new Error("dsh-notifier: api 域只能装配一次");
     this.installed = true;
-    streamHub.install({ logger: deps.logger });
+    streamHub.install({ logger: deps.logger, config: deps.config });
+
+    const settings = new SettingsEndpoints(deps.config);
+    const journal = new JournalEndpoints(deps.stores);
+    const probe = new ProbeEndpoints(deps.pipeline);
+    const endpoints: Endpoint[] = [
+      { path: "/api/dsh-notifier/config", methods: { GET: settings.read, PUT: settings.write } },
+      { path: "/api/dsh-notifier/history", methods: { GET: journal.read, DELETE: journal.clear } },
+      { path: "/api/dsh-notifier/status", methods: { GET: journal.readStatus } },
+      { path: "/api/dsh-notifier/test", methods: { POST: probe.test } },
+      { path: "/api/dsh-notifier/health", methods: { GET: probe.health } },
+      // 包一层而不是裸传 streamHub.handle：那个方法要用 this，裸传会在回调时丢掉。
+      { path: "/api/dsh-notifier/events", methods: { GET: (req, res) => streamHub.handle(req, res) } },
+    ];
+
     this.disposers.push(
-      ...registerEndpoints(deps.register, ENDPOINTS, deps.logger),
+      ...registerEndpoints(deps.register, endpoints, deps.logger),
       deps.frames.onFrame((payload) => streamHub.publish(payload)),
     );
   }
