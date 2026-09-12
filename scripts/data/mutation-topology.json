@@ -306,7 +306,7 @@
                         "!packages/dsh-notifier/src/**/interface.ts",
                         "!packages/dsh-notifier/src/client/**"
                     ],
-                    "comment": "#669 PR2 T2-7 按域重划：sdk——服务装配面（sdk/service.ts + 根 index.ts 并入：装配层归服务面，独立 assembly 段单文件且 re-export 过半可杀性低，并入 sdk 均衡段规模；service.d.ts 非 src TS 不入面）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+                    "comment": "#669 PR2 T2-7 按域重划：sdk——服务装配面（sdk/service.ts + 根 index.ts 并入：装配层归服务面，独立 assembly 段单文件且 re-export 过半可杀性低，并入 sdk 均衡段规模；原注释至此的『service.d.ts 非 src TS 不入面』已失效——该文件由 #733 M2a 删除，声明合并迁入 index.ts）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
                 }
             },
             "testLayers": {

@@ -1,5 +1,11 @@
 # dsh-notifier 架构重构方案（v2，结构定稿）
 
+> **历史文档**：本文件（v2）描述的目标架构与阶段计划已由 issue **#733（v3）**取代，
+> **仅存历史**——演进方向、阶段划分与验收口径一律以 #733 为准，本文与 #733 冲突处以
+> #733 为准。下文成文于重构开工前，其中已失效的事实（`src/service.d.ts` 文件、内置频道
+> 工厂的旧注入签名、`sdk/interface.ts` 的 `BUILTIN_CHANNELS` 值 re-export）已按 M1/M2a
+> 落地结果就地标注，保留原文以便追溯当时口径。
+
 > 依据：规格章（F 编号 + 规则矩阵）+ 目标架构图（docs/diagrams/current-architecture.{html,json}）+ 分层对抗评审（前序会话）+ **结构对抗性评审（双视角独立子代理：微服务专家 c4be9ca2 / 资深架构师 221c05b0，主会话逐项交叉验证全部成立）+ 人在环拍板（G2/G3）**。
 > 定调：**整体重构为目标架构，不拘泥于当前实现现状**（用户 G2 拍板）；结构方向「需修改后定稿」，M1-M12 修正项已全部采纳（见 §7）。
 
@@ -28,7 +34,8 @@
 ```
 src/
   index.ts                 # 装配层（唯一允许 import 全部域 interface.ts）+ 包导出面（re-export 段分节注释）
-  service.d.ts             # cordis 声明合并：只 re-export sdk/interface.ts 的类型
+  service.d.ts             # [已失效：#733 M2a 删除——cordis 声明合并迁入 index.ts]
+                           #   原文：cordis 声明合并：只 re-export sdk/interface.ts 的类型
   config/                  # 配置域（契约 + 桥两段）
     interface.ts           # NotifyConfig/ChannelConfig/SoundSetting… + BUILTIN_CHANNELS（内置频道 id，
                            #   物理归属本域：最底层且与 CHANNEL_KEYS 同族——pipeline/channels/sdk 消费它
@@ -55,8 +62,8 @@ src/
                            #   createOutboundChannelResolver + 各渠道常量（含 renderWebhookBody/priorityFor）
     bark.ts                # 出站：单次投递 + retryable 错误标记（4xx 不可重试；网络/5xx 可重试）；重试/门在框架层
     webhook.ts             # 出站：单次投递（失败不重试，retry 缺省 = 关）；凭据 scrub 出口
-    browser.ts             # 内置 browser 频道（createBrowserChannel({sse})，包 SseHub type）
-    system.ts              # 内置 system 频道（createSystemChannel({system})，包 SystemNotifier type）
+    browser.ts             # 内置 browser 频道（[M1 F3 后] createBrowserChannel()，无注入参数——原 {sse} 已删）
+    system.ts              # 内置 system 频道（[M1 F3 后] createSystemChannel()，无注入参数——原 {system} 已删）
     outbound.ts            # 统一装配：enabled 过滤 + 实例化（不再按 type 特判 gate）
   server/                  # API 层（路由 + SSE 枢纽 + 系统通知）
     interface.ts           # SseHub/SystemNotifier/RouteDeps(=ConfigPort+注入面)/PatchResult/ROUTES
@@ -73,7 +80,8 @@ src/
     interface.ts           # NotifyRequest/NotifyResult/KindRegistration/NotifyChannel/ChannelCapabilities/
                            #   NotifierService/NotifierServiceInternal/NotifySentEvent/NotifierServiceDeps/
                            #   NotifySeverity + createNotifierService/getNotifierService
-                           #   （BUILTIN_CHANNELS 仅在此 re-export 自 config 域以维持包导出面）
+                           #   [已失效：#733 F4 改为 index.ts 直指 config 域；sdk 域不再 re-export]
+                           #   原文：（BUILTIN_CHANNELS 仅在此 re-export 自 config 域以维持包导出面）
     service.ts             # createNotifierService 实现：注册表 + send/sendKind 编排（渲染→裁决→脱敏→投递/落史）
   events/                  # 事件监听域
     interface.ts           # EventHandlers/EventHandlersDeps/DoneBatcher + createEventHandlers/createDoneBatcher
@@ -92,7 +100,7 @@ src/
 
 ## 3. interface.ts 门面纪律
 
-1. **目录唯一出口**：域外代码（其他目录 / index.ts / service.d.ts）一律 `import "<域>/interface.ts"`；域内实现文件互引不受限。src 内禁止跨目录 import interface.ts 以外的文件（shared/ 仓库共享层与官方类型层为全局例外）。
+1. **目录唯一出口**：域外代码（其他目录 / index.ts / ~~service.d.ts~~）一律 `import "<域>/interface.ts"`；域内实现文件互引不受限。src 内禁止跨目录 import interface.ts 以外的文件（shared/ 仓库共享层与官方类型层为全局例外）。（`service.d.ts` 已由 #733 M2a 删除，本句的域外代码集合现为「其他目录 / index.ts」。）
 2. **内容 = 类型 + 公开入口 re-export**：本域独有、需面外的类型在 interface.ts 定义；公开工厂/常量 `export { createXxx } from "./impl.ts"` 收口；私有实现细节不导出。
 3. **类型原创规则（P2-11）**：非本域原创的类型一律 `import type` 自依赖域再 re-export，禁止把类型定义下沉到 impl 造成消费者被迫 import impl。
 4. **域内防表观环（P2-3）**：域内实现文件**不得** import 本域 interface.ts 的**值**（interface re-export impl 与 impl import interface 值会成 impl→interface→impl 表观环）；确需 interface.ts 内类型时用 `import type`（编译期擦除）。
@@ -206,13 +214,13 @@ interface RetryableError extends Error { retryable?: boolean }  // channel 按�
 | M5 | ConfigPort 补 confirmKind | 微服务 P1-6 | §5 ConfigPort；RouteDeps 移除 setConfirm |
 | M6 | 导出面核对机制 | 微服务 P1-7 + 架构师 P1-4 | tsc --declaration 快照 diff 随 PR1 落地（§10） |
 | M7 | config.ts 再拆 | 微服务 P1-8 + 架构师 P1-2 | config/ 五文件（config/normalize/validators/redact/paths），≤400 行自洽（Q3） |
-| M8 | 内置频道注入面 | 微服务 P1-4 + 架构师 P2-8 | createBrowserChannel({sse}) / createSystemChannel({system}) |
+| M8 | 内置频道注入面 | 微服务 P1-4 + 架构师 P2-8 | [M1 F3 已收敛为无参工厂] createBrowserChannel() / createSystemChannel()（原 `({sse})` / `({system})` 参数已删，倒置 type 边随之归零） |
 | M9 | RouteDeps 回调解耦纪律 | 微服务 P1-9 | §3-7 结构化字面量纪律 |
 | M10 | DispatchSpec + 快照变更登记 | 架构师 P1-6 | §5 spec 字段；「裁决时快照播放决议」行为变更登记（→ requirements §6.2） |
 | M11 | 规模计数修正 | 架构师 P1-2 | 35 TS 文件（含 9 interface.ts） |
 | M12 | 无环声明可验证化 | 架构师 P1-1 + 微服务 P2-5 | §4 图 + 「域内 impl→interface 仅 import type」纪律（§3-4） |
 
-P2 采纳项（不阻塞定稿，随 PR 消化）：sanitize 单实现双导出 + 一致性测试；sanitizeContent=false 明文语义入 README；sdk→channels(type) 虚边删除；单刻快照/播放决议行为变更补 TDD 用例；stryker mutate 路径随搬家更新 + message 拆三文件后段边界重定；SANITIZE_RULES why 注释保留；service.d.ts 两处 import("./service.ts") 改指 sdk/interface.ts；ConfigPort 降级语义 JSDoc；index.ts 装配段与 re-export 段分节注释（shared 4 个 re-export 保留）；消费方类型编译用例（现状类型面零编译校验）。
+P2 采纳项（不阻塞定稿，随 PR 消化）：sanitize 单实现双导出 + 一致性测试；sanitizeContent=false 明文语义入 README；sdk→channels(type) 虚边删除；单刻快照/播放决议行为变更补 TDD 用例；stryker mutate 路径随搬家更新 + message 拆三文件后段边界重定；SANITIZE_RULES why 注释保留；service.d.ts 两处 import("./service.ts") 改指 sdk/interface.ts（**已随 #733 M2a 删除该文件而失效**）；ConfigPort 降级语义 JSDoc；index.ts 装配段与 re-export 段分节注释（shared 4 个 re-export 保留）；消费方类型编译用例（现状类型面零编译校验）。
 
 ## 8. 决策表（D 扩展）
 
