@@ -111,9 +111,12 @@ export interface NotifierService {
   /** 查询动态 kind 注册与确认态（设置页渲染）。 */
   listKinds(): Array<{ id: string; label: string; confirmed: boolean }>;
   /**
-   * 注册一个插件贡献频道：**配置层注册面**，只登记、不接线投递（D11：行为保持）。
+   * 注册一个插件贡献频道：**配置层注册面**，只登记、不接线投递（D11）。
    * 注册表不被裁决与投递解析消费——登记的频道既不入投递池，`send` 也不会路由到它；
-   * 频道注册的启用模型属 v-next，改述不改变任何运行时行为。
+   * 频道注册的启用模型属 v-next。
+   * 登记成功后按 `ch.name` 经 `logger.warn` 提示**一次**（同名再注册不重复提示，
+   * #733 M2c 后续 N1）；非法入参（`name` 非字符串 / `send` 非函数）静默忽略，
+   * 既不登记也不提示。签名与登记语义不变，新增面只有日志。
    */
   registerChannel(ch: NotifyChannel): void;
   /** 通用发送入口：快速返回受理结果，投递终态经落盘/事件可见。 */

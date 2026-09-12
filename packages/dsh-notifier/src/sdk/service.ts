@@ -45,6 +45,8 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
   const kindRegistry = new Map<string, { label: string }>();
   /** 插件贡献频道注册表（name → channel；默认未启用，MVP 仅存表）。 */
   const channelRegistry = new Map<string, NotifyChannel>();
+  /** 已发过「登记即止」提示的频道名（同一 name 只 warn 一次）。 */
+  const announcedChannels = new Set<string>();
 
   /** 历史追加（fire-and-forget：落史失败只 warn，不打断编排）。 */
   const appendHistory = createAppendHistory({ append: (entry) => history.append(entry), logger });
@@ -100,6 +102,17 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
       // outboundChannels/builtinChannels 两个注入面给出，与本注册表无关。
       if (typeof ch?.name !== "string" || typeof ch?.send !== "function") return;
       channelRegistry.set(ch.name, ch);
+      // 登记成功后按 name 提示**一次**（同名再注册不重复提示）：插件作者需要知道
+      // 「注册 ≠ 生效」——本注册表不参与裁决与投递解析，频道要投递须进配置面。
+      // 记账先于日志：日志出口抛错也不得让同一 name 重复提示或影响登记结果。
+      if (!announcedChannels.has(ch.name)) {
+        announcedChannels.add(ch.name);
+        try {
+          logger.warn(`dsh-notifier: registerChannel("${ch.name}") 已登记；该注册表不参与裁决与投递解析，频道需经配置启用才会投递`);
+        } catch {
+          // 日志出口故障不得影响登记（fail-soft，与 appendHistory 同纪律）
+        }
+      }
     },
 
     async send(req: NotifyRequest) {
