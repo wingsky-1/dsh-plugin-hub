@@ -150,12 +150,99 @@ test('单调基线：写入基线后 PASS，人为把跨域引用计数调高即
     assert.match(before.out, /单调基线通过/, `应报基线通过：\n${before.out}`)
 
     // 人为把计数调高：c 域新增一条跨模块引用（模块级值边与跨模块引用计数同时 +1）。
+    // #733 M0b 起该变更同时抬高两个质量型计数（值环 leafModuleCycles/fileCycles 与
+    // raLegacy）——本用例只锁结构型红因，质量型红因由下方 M0b 用例专项覆盖。
     const impl = join(root, `${SRC}/c/impl.ts`)
     writeFileSync(impl, 'import { A } from "../a/interface.ts";\nexport const C = A;\n')
     const after = runOn(root)
     assert.equal(after.status, 1, `计数上升应 exit 1，实际 ${after.status}：\n${after.out}`)
     assert.match(after.out, /单调基线上升/, `应点名单调基线上升：\n${after.out}`)
-    assert.match(after.out, /leafValueEdges: 3 > 基线 2/, `应给出具体计数对照：\n${after.out}`)
+    assert.match(after.out, /\[结构型\] leafValueEdges: 3 > 基线 2/, `应给出具体计数对照：\n${after.out}`)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+/** 读 fixture 根下的基线 JSON（M0b 用例断言 --write-baseline 的实际落库内容）。 */
+function readFixtureBaseline(root) {
+  return JSON.parse(readFileSync(join(root, 'scripts/data/dir-imports-baseline.json'), 'utf8'))
+}
+
+/** 制造「结构型 + 质量型同时上升」：c → a 新增跨模块引用（值边 +1，同时成环）。 */
+function addCyclicCrossReference(root) {
+  writeFileSync(join(root, `${SRC}/c/impl.ts`), 'import { A } from "../a/interface.ts";\nexport const C = A;\n')
+}
+
+test('--write-baseline 只更新结构型，质量型计数不得被放宽（#733 M0b）', () => {
+  const root = makeFixtureRoot(chainFixture(''))
+  try {
+    const first = runOn(root, ['--write-baseline'])
+    assert.equal(first.status, 0, `写基线应成功：\n${first.out}`)
+    const before = readFixtureBaseline(root)
+    assert.equal(before.packages[PKG].leafModuleCycles, 0, `fixture 初始无环：${JSON.stringify(before.packages[PKG])}`)
+
+    addCyclicCrossReference(root)
+    const second = runOn(root, ['--write-baseline'])
+    assert.equal(second.status, 0, `写基线应成功：\n${second.out}`)
+    assert.match(second.out, /结构型计数已更新/, `应报结构型已更新：\n${second.out}`)
+    assert.match(second.out, /质量型未更新，须人工处置/, `应显式提示质量型未更新：\n${second.out}`)
+
+    const after = readFixtureBaseline(root)
+    // 结构型：随本次结构变更登记（c → a 值边 +1）。
+    assert.equal(after.packages[PKG].leafValueEdges, 3, `结构型应被更新为当前值：${JSON.stringify(after.packages[PKG])}`)
+    // 质量型：保持旧基线值，不被本次写入放宽（含环、raLegacy、未覆盖清单）。
+    assert.equal(after.packages[PKG].leafModuleCycles, 0, `质量型不得被 --write-baseline 放宽：${JSON.stringify(after.packages[PKG])}`)
+    assert.equal(after.packages[PKG].fileCycles, 0, `质量型 fileCycles 不得被放宽：${JSON.stringify(after.packages[PKG])}`)
+    assert.equal(after.packages[PKG].raLegacy, 0, `质量型 raLegacy 不得被放宽：${JSON.stringify(after.packages[PKG])}`)
+    assert.match(second.out, /leafModuleCycles：当前 1 \/ 保持基线 0/, `应列出被保留的质量型差异：\n${second.out}`)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('质量型计数上升仍判红，且 --write-baseline 不能放行（#733 M0b）', () => {
+  const root = makeFixtureRoot(chainFixture(''))
+  try {
+    assert.equal(runOn(root, ['--write-baseline']).status, 0)
+    assert.equal(runOn(root).status, 0, '基线写入后应 PASS')
+
+    addCyclicCrossReference(root)
+    const after = runOn(root)
+    assert.equal(after.status, 1, `质量型上升应 exit 1，实际 ${after.status}：\n${after.out}`)
+    assert.match(after.out, /\[质量型\] leafModuleCycles: 1 > 基线 0/, `应点名模块级值环：\n${after.out}`)
+    assert.match(after.out, /\[质量型\] fileCycles: 1 > 基线 0/, `应点名文件级值环：\n${after.out}`)
+    assert.match(after.out, /\[质量型\] raLegacy: 1 > 基线 0/, `应点名 raLegacy：\n${after.out}`)
+
+    // 写基线（只更新结构型）之后必须仍然红：质量型不得经由 --write-baseline 洗白。
+    assert.equal(runOn(root, ['--write-baseline']).status, 0, '写基线本身应成功（结构型登记）')
+    const again = runOn(root)
+    assert.equal(again.status, 1, `--write-baseline 后质量型上升仍应判红，实际 ${again.status}：\n${again.out}`)
+    assert.match(again.out, /\[质量型\] leafModuleCycles: 1 > 基线 0/, `质量型红因须保持：\n${again.out}`)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('结构型计数上升 → --write-baseline 正常放行（#733 M0b）', () => {
+  const root = makeFixtureRoot(chainFixture(''))
+  try {
+    assert.equal(runOn(root, ['--write-baseline']).status, 0)
+    assert.equal(runOn(root).status, 0, '基线写入后应 PASS')
+
+    // 新增一个叶子模块目录（modules / scannedSrcFiles / allSrcTsFiles 上升）。
+    mkdirSync(join(root, `${SRC}/d`), { recursive: true })
+    writeFileSync(join(root, `${SRC}/d/interface.ts`), 'export { D } from "./impl.ts";\n')
+    writeFileSync(join(root, `${SRC}/d/impl.ts`), 'export const D = 4;\n')
+
+    const before = runOn(root)
+    assert.equal(before.status, 1, `结构型上升未登记时应判红，实际 ${before.status}：\n${before.out}`)
+    assert.match(before.out, /\[结构型\] modules: 4 > 基线 3/, `结构型上升应点名：\n${before.out}`)
+
+    const written = runOn(root, ['--write-baseline'])
+    assert.equal(written.status, 0, `--write-baseline 应成功：\n${written.out}`)
+    const after = runOn(root)
+    assert.equal(after.status, 0, `结构型登记后应 PASS，实际 ${after.status}：\n${after.out}`)
+    assert.match(after.out, /单调基线通过/, `应报基线通过：\n${after.out}`)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -321,7 +408,7 @@ test('--soft：单调基线上升仍判红（CI 对 provider-usage 走 --soft）
     writeFileSync(join(root, `${SRC}/c/impl.ts`), 'import { A } from "../a/interface.ts";\nexport const C = A;\n')
     const after = runOn(root, ['--soft'])
     assert.equal(after.status, 1, `--soft 下计数上升仍须判红，实际 ${after.status}：\n${after.out}`)
-    assert.match(after.out, /单调基线上升：leafValueEdges: 3 > 基线 2/, `应给出计数对照：\n${after.out}`)
+    assert.match(after.out, /单调基线上升：\[结构型\] leafValueEdges: 3 > 基线 2/, `应给出计数对照：\n${after.out}`)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
