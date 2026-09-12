@@ -202,7 +202,7 @@ test('#718: overlay-baseline 恢复段——探针说 present 但拉取失败时
   }
 });
 
-test('#718: overlay-baseline 恢复段——探针明确 absent 时走首夜且不得崩（exit 0）', () => {
+test('#718: overlay-baseline 恢复段——探针明确 absent 时走首夜且不得崩', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'overlay-test-firstnight-'));
   const bin = mkdtempSync(join(tmpdir(), 'overlay-test-bin2-'));
   try {
@@ -227,8 +227,11 @@ exec "${real}" "$@"
     });
     assert.doesNotMatch(r.out, /ReferenceError/, '不得因变量作用域抛 ReferenceError');
     assert.match(r.out, /尚不存在（首夜）/, 'absent 应走首夜分支');
-    // 之后产物下载失败 → overlayCount 0 → 无有效覆盖，跳过推送并正常退出。
-    assert.equal(r.status, 0, `首夜应继续并最终 no-op exit 0，实际 ${r.status}: ${r.out}`);
+    // 之后产物下载失败 → overlayCount 0。**有产物却一个都没覆盖成功**不是「无事可做」：
+    // #718 S2.1 起按 fail-loud 处理（旧行为是打印一句「跳过推送」就 exit 0，整次合并的基线静默丢失）。
+    assert.equal(r.status, 1, `有产物但无一覆盖成功必须 exit 1，实际 ${r.status}: ${r.out}`);
+    assert.match(r.out, /无一覆盖成功/, '须点名「有产物但无一覆盖成功」');
+    assert.match(r.out, /基线未更新/, '须说明后果');
   } finally {
     rmSync(tmp, { recursive: true, force: true });
     rmSync(bin, { recursive: true, force: true });
@@ -469,6 +472,204 @@ test('#718 S1.2: archive 期望集合为空必须 fail-loud（防把整棵基线
     const r = runScript(scriptPath, ['archive'], { cwd: tmp });
     assert.equal(r.status, 1, `空期望集合必须 exit 1，实际 ${r.status}: ${r.out}`);
     assert.match(r.out, /无法从 .*stryker\.conf\.d 派生期望段集合/, '须点名期望集合派生失败');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// ── #718 S2.1：overlay 的「产物过期」与「无产物」分流 ────────────────────────
+// 旧实现把两件相反的事压成同一句「未产生任何增量变异产物，安全跳过」：真·无产物（正确的 no-op）
+// 与产物已过期/被删（该 PR 命中段的新基线永远进不了归档）。日志里两者完全同形，事后无法区分。
+
+/**
+ * S2.1 用的假 gh：在既有 pulls/runs/artifacts 分流之上支持 jobs 查询。
+ * jobs 走 `gh api --paginate <url> --jq ...` 形态，故 `$2` 是 `--paginate`、URL 落在 `$3`——
+ * 与 `$2` 是 URL 的既有三条分流天然不冲突（假 gh 不做 jq，直接输出脚本已烘焙好的结果）。
+ */
+function writeFakeGhForOverlay(dir, { jobNames = [], artifacts = '[]' } = {}) {
+  const head = `[{"number":7,"merged_at":"2026-01-01T00:00:00Z","head":{"sha":"${'b'.repeat(40)}"}}]`;
+  const runs = '[{"name":"CI","conclusion":"success","id":12345}]';
+  const script = `#!/bin/sh
+case "$2" in
+  *commits/*/pulls) printf '%s' '${head}'; exit 0 ;;
+  *artifacts*) printf '%s' '${artifacts}'; exit 0 ;;
+  *actions/runs*) printf '%s' '${runs}'; exit 0 ;;
+  --paginate) printf '%s\\n' ${jobNames.map((n) => `'${n}'`).join(' ')}; exit 0 ;;
+esac
+echo "unexpected gh args: $*" >&2; exit 1
+`;
+  const p = join(dir, 'gh');
+  writeFileSync(p, script, { mode: 0o755 });
+  return p;
+}
+
+function runOverlayWithFakeGh(tmp, options) {
+  writeFakeGhForOverlay(tmp, options);
+  return runScript(overlayScriptPath, [], {
+    cwd: tmp,
+    env: {
+      PATH: `${tmp}:${process.env.PATH}`,
+      GITHUB_REPOSITORY: 'owner/repo',
+      COMMIT_SHA: 'a'.repeat(40),
+      GH_TOKEN: 'dummy',
+    },
+  });
+}
+
+test('#718 S2.1: 变异产物已丢失必须 fail-loud（CI 跑过变异实例却看不到产物）', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'overlay-s21-lost-'));
+  try {
+    const r = runOverlayWithFakeGh(tmp, {
+      // run 里确实有变异矩阵实例（且汇总判分 job 不得被误计），但产物列表里一份变异产物都没有：
+      // 上传步骤是实例内 if: success() 门控，实例存在 ⇒ 产物产出过 ⇒ 只能解释为过期/被删。
+      jobNames: [
+        'Detect changed packages',
+        'Mutation gate (dsh-notifier · text)',
+        'Mutation gate verdict (aggregate)',
+      ],
+      artifacts: '{"total_count":1,"artifacts":[{"name":"observe-reports","expired":true}]}',
+    });
+    assert.equal(r.status, 1, `产物丢失必须 exit 1，实际 ${r.status}: ${r.out}`);
+    assert.match(r.out, /产物已不可见/, '须点名「曾运行变异实例但看不到产物」');
+    assert.match(r.out, /未进归档/, '须说明后果（该 PR 命中段的新基线未进归档）');
+    assert.match(r.out, /retention-days/, '须给出可执行的处置方向');
+    assert.doesNotMatch(r.out, /安全跳过 \(No-op\)/, '不得与「真·无产物」同形');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('#718 S2.1: 真·无产物仍是合法 no-op（CI 未运行任何变异实例）', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'overlay-s21-none-'));
+  try {
+    // 与上一条同形（都看不到变异产物），区别只在 run 里没有变异矩阵实例 = 纯文档 PR。
+    // 分流必须把这一支保留为 no-op，否则每个纯文档 PR 合并都会把 main 判红。
+    const r = runOverlayWithFakeGh(tmp, {
+      jobNames: ['Detect changed packages', 'Build / Test / Typecheck (dsh-notifier)'],
+      artifacts: '{"total_count":0,"artifacts":[]}',
+    });
+    assert.equal(r.status, 0, `真·无产物必须 exit 0，实际 ${r.status}: ${r.out}`);
+    assert.match(r.out, /未运行任何变异矩阵实例/, '须明说判据是「没跑过变异实例」');
+    assert.match(r.out, /安全跳过 \(No-op\)/, '保持既有 no-op 文案');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('#718 S2.1: jobs 查询失败不得把纯文档 PR 误判为产物丢失', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'overlay-s21-jobsfail-'));
+  const bin = mkdtempSync(join(tmpdir(), 'overlay-s21-bin-'));
+  try {
+    // 用 git shim 之外的手段不奏效（这里要坏的是 gh 的 jobs 分支），故写一个只让 --paginate 失败的假 gh。
+    writeFakeGh(tmp, { pullsOk: true, runsOk: true, artifactsOk: true, artifacts: '{"total_count":0,"artifacts":[]}' });
+    const r = runScript(overlayScriptPath, [], {
+      cwd: tmp,
+      env: {
+        PATH: `${tmp}:${process.env.PATH}`,
+        GITHUB_REPOSITORY: 'owner/repo',
+        COMMIT_SHA: 'a'.repeat(40),
+        GH_TOKEN: 'dummy',
+      },
+    });
+    assert.equal(r.status, 0, `jobs 查询失败应降级为 no-op 而非判红，实际 ${r.status}: ${r.out}`);
+    assert.match(r.out, /查询 run jobs 失败/, '须点名 jobs 查询失败（分流灵敏度降级，但不误伤）');
+    assert.match(r.out, /安全跳过 \(No-op\)/, '降级为 no-op');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+    rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+/**
+ * 端到端假 gh：pulls / runs / artifacts 之外还支持 `gh run download`（真在目标目录落一份段文件）。
+ * 只有这条用例会走到 overlay 的写路径，故下载必须真产出文件，否则测不到 push。
+ */
+function writeFakeGhForOverlayPush(dir, { fileName, content }) {
+  const head = `[{"number":7,"merged_at":"2026-01-01T00:00:00Z","head":{"sha":"${'b'.repeat(40)}"}}]`;
+  const runs = '[{"name":"CI","conclusion":"success","id":12345}]';
+  const artifacts = '{"total_count":1,"artifacts":[{"name":"mutation-incremental-dsh-alpha"}]}';
+  const script = `#!/bin/sh
+case "$2" in
+  *commits/*/pulls) printf '%s' '${head}'; exit 0 ;;
+  *artifacts*) printf '%s' '${artifacts}'; exit 0 ;;
+  *actions/runs*) printf '%s' '${runs}'; exit 0 ;;
+esac
+case "$1" in
+  run)
+    DIR=""
+    prev=""
+    for a in "$@"; do
+      [ "$prev" = "-D" ] && DIR="$a"
+      prev="$a"
+    done
+    [ -n "$DIR" ] || exit 1
+    mkdir -p "$DIR"
+    printf '%s' '${content}' > "$DIR/${fileName}"
+    exit 0 ;;
+esac
+echo "unexpected gh args: $*" >&2; exit 1
+`;
+  const p = join(dir, 'gh');
+  writeFileSync(p, script, { mode: 0o755 });
+  return p;
+}
+
+test('#718 S2.1: overlay 端到端——差量覆盖生效 + 沿用段保留旧 manifest 条目 + 回滚快照', () => {
+  const tmp = initBaselineRepo(['alpha', 'beta']);
+  try {
+    // 远端先有一份完整基线（alpha/beta 各一段）
+    writeBaselines(tmp, {
+      'incremental-alpha.json': '{"seg":"alpha","gen":1}',
+      'incremental-beta.json': '{"seg":"beta","gen":1}',
+    });
+    assert.equal(runScript(scriptPath, ['push'], { cwd: tmp }).status, 0, '播种基线');
+    const tipBefore = execFileSync('git', ['rev-parse', 'refs/heads/baseline/mutation'], {
+      cwd: tmp,
+      encoding: 'utf8',
+    }).trim();
+    const manifestBefore = JSON.parse(readArchived(tmp, 'manifest.json'));
+    // push 会往报告目录写 manifest，清掉以免干扰后续断言
+    rmSync(join(tmp, 'coverage', 'mutation', 'manifest.json'));
+
+    // 该 PR 的 CI 只产出了 alpha 段的新基线（内容换代）
+    writeFakeGhForOverlayPush(tmp, { fileName: 'incremental-alpha.json', content: '{"seg":"alpha","gen":2}' });
+    const r = runScript(overlayScriptPath, [], {
+      cwd: tmp,
+      env: {
+        PATH: `${tmp}:${process.env.PATH}`,
+        GITHUB_REPOSITORY: 'owner/repo',
+        COMMIT_SHA: 'a'.repeat(40),
+      },
+    });
+    assert.equal(r.status, 0, `overlay 应成功，实际 ${r.status}: ${r.out}`);
+    assert.match(r.out, /差量覆盖: incremental-alpha\.json/, '覆盖段须逐条点名');
+    assert.match(r.out, /对账：期望 2 段，本次覆盖 1 段，沿用旧基线 2 段/, '对账口径保持既有文案');
+
+    assert.equal(readArchived(tmp, 'incremental-alpha.json'), '{"seg":"alpha","gen":2}', '覆盖段换成新内容');
+    assert.equal(readArchived(tmp, 'incremental-beta.json'), '{"seg":"beta","gen":1}', '未覆盖段原样保留');
+
+    // 沿用段的 manifest 条目必须逐字段保留：其 mtime 是上次真实测量时间，重新盖章会让
+    // 「基线是否陈旧」无从判断（旧实现给所有文件重算，这条锁住回归）。
+    const manifestAfter = JSON.parse(readArchived(tmp, 'manifest.json'));
+    assert.deepEqual(
+      manifestAfter['incremental-beta.json'],
+      manifestBefore['incremental-beta.json'],
+      '沿用段的 manifest 条目不得被本次刷新',
+    );
+    assert.notDeepEqual(
+      manifestAfter['incremental-alpha.json'],
+      manifestBefore['incremental-alpha.json'],
+      '覆盖段的 manifest 条目必须重算',
+    );
+
+    // 写路径与夜间班共用：回滚快照 tag 指向本次入档前的 tip
+    const tag = execFileSync('git', ['tag', '-l', 'baseline-snap-*'], { cwd: tmp, encoding: 'utf8' }).trim();
+    assert.ok(tag.length > 0, 'overlay 也必须留下回滚快照（深度恒为 1，可回滚性由 tag 承担）');
+    assert.equal(
+      execFileSync('git', ['rev-parse', `refs/tags/${tag}`], { cwd: tmp, encoding: 'utf8' }).trim(),
+      tipBefore,
+      '快照 tag 必须指向 overlay 入档前的 tip',
+    );
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

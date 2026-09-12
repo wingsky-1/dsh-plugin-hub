@@ -27,23 +27,19 @@
  *       （拒绝以空基线继续——写路径上这意味着删段，见 #718）
  *     - 取到后浅拉取（fetch --depth=1）并把 incremental-*.json 与 manifest.json 恢复到 coverage/mutation/
  */
-import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
-  ARCHIVE_SNAPSHOT_KEEP,
-  ARCHIVE_SNAPSHOT_TAG_PREFIX,
   BASELINE_FILE_RE,
   BASELINE_MANIFEST_FILE,
   classifyRemoteProbe,
   decideRestoreOutcome,
   expectedBaselineFiles,
   planArchive,
-  pruneSnapshotPlan,
-  snapshotTagFor,
 } from './baseline-archive.mjs';
+import { buildManifest, hashFile, pushBaselineTree } from './baseline-push.mjs';
 
 const action = process.argv[2];
 const BRANCH = 'baseline/mutation';
@@ -53,12 +49,6 @@ const MAX_BUFFER = 64 * 1024 * 1024; // 64MB，防止巨型基线 JSON 突破 No
 const PROBE_ATTEMPTS = 3;
 // 环境故障（远端不可达）可能瞬时，按与 fetch 同规格的退避重试；测试用 0 秒避免拖慢套件。
 const RETRY_DELAY_MS = Number(process.env.ORPHAN_BASELINE_RETRY_DELAY_MS ?? 2000);
-const BOT_IDENTITY = {
-  GIT_AUTHOR_NAME: 'github-actions[bot]',
-  GIT_AUTHOR_EMAIL: 'github-actions[bot]@users.noreply.github.com',
-  GIT_COMMITTER_NAME: 'github-actions[bot]',
-  GIT_COMMITTER_EMAIL: 'github-actions[bot]@users.noreply.github.com',
-};
 
 function runGit(args, options = {}) {
   const { input, env, ignoreError = false } = options;
@@ -109,16 +99,6 @@ function remoteTarget() {
   const token = process.env.OBSERVE_PAT || process.env.GITHUB_TOKEN;
   const repo = process.env.GITHUB_REPOSITORY;
   return token && repo ? `https://x-access-token:${token}@github.com/${repo}.git` : 'origin';
-}
-
-/**
- * 归档分支当前 tip。空字符串 = 广告里没有这条 ref（首推）；取不到则抛错——
- * 首推与「读不到」都会走到非快进推送，但两者要给出不同的话，否则排障时无从区分。
- */
-function remoteTipSha() {
-  const res = runGitProbe(['ls-remote', '--heads', remoteTarget(), `refs/heads/${BRANCH}`]);
-  if (!res.ok) throw new Error('无法读取归档分支 tip（远端不可达或凭据缺失），拒绝在未知状态下推送');
-  return res.stdout ? res.stdout.split(/\s+/)[0] : '';
 }
 
 /**
@@ -233,93 +213,6 @@ function readRemoteTree() {
   return { files, blobs, manifest, entries };
 }
 
-/**
- * manifest 条目。沿用文件保留远端条目（其 mtime 是**上次真实测量时间**；重新盖章会让陈旧
- * 判据失效——重写时间戳正是 #718 S3.1 要修的那个坑），新算文件现算。
- */
-function buildManifest(dir, names, preserved = {}) {
-  const manifest = {};
-  for (const f of names) {
-    if (preserved[f]) {
-      manifest[f] = preserved[f];
-      continue;
-    }
-    const fullPath = join(dir, f);
-    const buf = readFileSync(fullPath);
-    manifest[f] = {
-      size: buf.length,
-      mtime: statSync(fullPath).mtime.toISOString(),
-      sha256: createHash('sha256').update(buf).digest('hex'),
-    };
-  }
-  return manifest;
-}
-
-function hashFile(path) {
-  return runGit(['hash-object', '-w', path]);
-}
-
-function hashBlob(content) {
-  return runGit(['hash-object', '-w', '--stdin'], { input: content });
-}
-
-/** 给旧 tip 打回滚快照 tag。必须先于新树推送——tag 指向的对象在推之前得是可达的。 */
-function pushSnapshotTag(oldSha) {
-  const tag = snapshotTagFor(oldSha);
-  runGit(['push', remoteTarget(), `${oldSha}:refs/tags/${tag}`]);
-  console.log(`[orphan-baseline] 回滚快照：refs/tags/${tag}（保留最近 ${ARCHIVE_SNAPSHOT_KEEP} 个）`);
-}
-
-function pruneSnapshotTags() {
-  const listed = runGit(
-    ['ls-remote', '--tags', remoteTarget(), `refs/tags/${ARCHIVE_SNAPSHOT_TAG_PREFIX}*`],
-    { ignoreError: true },
-  );
-  const refs = (listed ?? '')
-    .split('\n')
-    .map((l) => l.trim().split(/\s+/)[1])
-    .filter(Boolean);
-  const stale = pruneSnapshotPlan(refs);
-  if (stale.length === 0) return;
-  // 逐个删除：一条失败不连坐，过期快照留着只是多占一个 ref，不影响本次入档的正确性。
-  for (const ref of stale) runGit(['push', remoteTarget(), '--delete', ref], { ignoreError: true });
-  console.log(`[orphan-baseline] 清理过期回滚快照 ${stale.length} 个`);
-}
-
-/**
- * 归档分支深度恒为 1（无父 commit）：可回滚性靠快照 tag 承担，而不是靠父链——
- * 后者会让每次入档都把历史带上远端，与 #572「剥离 main 分支代码树巨型 JSON」的初衷分叉。
- * 推送用带显式 expect 的 `--force-with-lease`：本路径不做 fetch，无参形式会退化成裸 force（#718 裁决）。
- */
-function pushBaselineCommit(entries, subject) {
-  const allFiles = [...entries.map((e) => e.name), BASELINE_MANIFEST_FILE];
-  console.log(`[orphan-baseline] 准备提交 ${allFiles.length} 个基线文件到孤立分支 ${BRANCH}...`);
-
-  const mktreeLines = entries.map((e) => `100644 blob ${e.blobSha}\t${e.name}`);
-  const treeSha = runGit(['mktree'], { input: mktreeLines.join('\n') + '\n' });
-  const commitSha = runGit(['commit-tree', treeSha, '-m', subject], { env: BOT_IDENTITY });
-
-  const target = remoteTarget();
-  const oldSha = remoteTipSha();
-  if (oldSha) {
-    pushSnapshotTag(oldSha);
-    pruneSnapshotTags();
-    console.log(
-      `[orphan-baseline] 推送 commit ${commitSha.slice(0, 8)} 到 refs/heads/${BRANCH}（租约 expect ${oldSha.slice(0, 8)}）...`,
-    );
-    runGit([
-      'push',
-      `--force-with-lease=refs/heads/${BRANCH}:${oldSha}`,
-      target,
-      `${commitSha}:refs/heads/${BRANCH}`,
-    ]);
-  } else {
-    console.log(`[orphan-baseline] 推送 commit ${commitSha.slice(0, 8)} 到 refs/heads/${BRANCH}（首推）...`);
-    runGit(['push', target, `${commitSha}:refs/heads/${BRANCH}`]);
-  }
-  console.log(`[orphan-baseline] 成功同步基线至孤立分支 ${BRANCH}（包含 ${allFiles.length} 份文件）`);
-}
-
 if (action === 'push') {
   if (!existsSync(TARGET_DIR)) {
     console.error(`[orphan-baseline] 源目录不存在: ${TARGET_DIR}`);
@@ -332,16 +225,16 @@ if (action === 'push') {
     process.exit(1);
   }
 
-  const manifestPath = join(TARGET_DIR, BASELINE_MANIFEST_FILE);
-  writeFileSync(manifestPath, JSON.stringify(buildManifest(TARGET_DIR, baselineFiles), null, 2) + '\n');
-
-  pushBaselineCommit(
-    [
-      ...baselineFiles.map((f) => ({ name: f, blobSha: hashFile(join(TARGET_DIR, f)) })),
-      { name: BASELINE_MANIFEST_FILE, blobSha: hashFile(manifestPath) },
-    ].sort((a, b) => (a.name < b.name ? -1 : 1)),
-    'chore(ci): update mutation baseline snapshot [skip ci]',
-  );
+  pushBaselineTree({
+    target: remoteTarget(),
+    branch: BRANCH,
+    entries: baselineFiles.map((f) => ({ name: f, blobSha: hashFile(join(TARGET_DIR, f)) })),
+    manifest: buildManifest(TARGET_DIR, baselineFiles),
+    subject: 'chore(ci): update mutation baseline snapshot [skip ci]',
+    manifestPath: join(TARGET_DIR, BASELINE_MANIFEST_FILE),
+    label: 'orphan-baseline',
+    log: console.log,
+  });
 } else if (action === 'archive') {
   if (!existsSync(TARGET_DIR)) {
     console.error(`[orphan-baseline] 源目录不存在: ${TARGET_DIR}`);
@@ -392,18 +285,18 @@ if (action === 'push') {
     preserved[f] = remote.manifest[f];
   }
 
-  const manifest = buildManifest(TARGET_DIR, plan.newlyMeasured, preserved);
-  const entries = [
-    // 沿用文件直接复用远端 blob sha：不做内容往返，字节级一致因而零新对象。
-    ...plan.carriedOver.map((f) => ({ name: f, blobSha: remote.blobs.get(f) })),
-    ...plan.newlyMeasured.map((f) => ({ name: f, blobSha: hashFile(join(TARGET_DIR, f)) })),
-    { name: BASELINE_MANIFEST_FILE, blobSha: hashBlob(JSON.stringify(manifest, null, 2) + '\n') },
-  ].sort((a, b) => (a.name < b.name ? -1 : 1));
-
-  pushBaselineCommit(
-    entries,
-    `chore(ci): archive mutation baseline（并集入档 新算${plan.newlyMeasured.length}/沿用${plan.carriedOver.length}/缺${plan.missing.length}）[skip ci]`,
-  );
+  pushBaselineTree({
+    target: remoteTarget(),
+    branch: BRANCH,
+    entries: kept.map((f) =>
+      // 沿用文件直接复用远端 blob sha：不做内容往返，字节级一致因而零新对象。
+      plan.carriedOver.includes(f) ? { name: f, blobSha: remote.blobs.get(f) } : { name: f, blobSha: hashFile(join(TARGET_DIR, f)) },
+    ),
+    manifest: buildManifest(TARGET_DIR, plan.newlyMeasured, preserved),
+    subject: `chore(ci): archive mutation baseline（并集入档 新算${plan.newlyMeasured.length}/沿用${plan.carriedOver.length}/缺${plan.missing.length}）[skip ci]`,
+    label: 'orphan-baseline',
+    log: console.log,
+  });
 } else if (action === 'restore') {
   mkdirSync(TARGET_DIR, { recursive: true });
 

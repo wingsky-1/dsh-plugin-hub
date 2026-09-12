@@ -8,29 +8,21 @@
  * 差量覆盖（Overlay）到当前孤立分支 refs/heads/baseline/mutation 上，15 秒内完成同步。
  */
 import { execFileSync, execSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import {
   BASELINE_FILE_RE,
   GH_API_PER_PAGE,
+  classifyMissingMutationProducts,
   classifyRemoteProbe,
   expectedBaselineFiles,
   mergeArtifactPage,
   mutationArtifacts,
   reconcileArchive,
 } from './baseline-archive.mjs';
+import { buildManifest, hashFile, pushBaselineTree } from './baseline-push.mjs';
 
 const repo = process.env.GITHUB_REPOSITORY;
 const commitSha = process.env.COMMIT_SHA || execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
@@ -84,6 +76,29 @@ function probeArchiveRef() {
     }
   }
   return 'unreachable';
+}
+
+/**
+ * 该 CI run 的 job 名清单（#718 S2.1）。只在「看不到变异产物」这一支调用——正常路径不为它多付
+ * 一次 API 往返。取不到就返回空数组（= 判为「真·无产物」）：这个分流是为了**提高**报警灵敏度，
+ * 不该因为多一次查询失败而把正常的纯文档 PR 判红。
+ */
+function fetchRunJobNames(runId) {
+  try {
+    return runGh([
+      'api',
+      '--paginate',
+      `repos/${repo}/actions/runs/${runId}/jobs?per_page=${GH_API_PER_PAGE}`,
+      '--jq',
+      '.jobs[].name',
+    ])
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+  } catch (err) {
+    console.warn(`[overlay-baseline] 查询 run jobs 失败，无法分流「产物过期」与「无产物」: ${err.message}`);
+    return [];
+  }
 }
 
 async function main() {
@@ -179,9 +194,32 @@ async function main() {
   }
 
   const mutArtifacts = mutationArtifacts(artifacts);
+  const expiredArtifacts = artifacts.filter((a) => a?.expired === true);
   if (mutArtifacts.length === 0) {
-    console.log(`[overlay-baseline] PR #${pr.number} 未产生任何增量变异产物（纯文档/未触及变异切片），安全跳过 (No-op)`);
+    // #718 S2.1：分流「真·无产物」与「产物已过期/被删」。后者若也走静默 no-op，该 PR 命中段的
+    // 新基线就永远进不了归档，而日志与前者完全同形（这是本缺陷此前无法从日志发现的原因）。
+    const verdict = classifyMissingMutationProducts({
+      jobNames: fetchRunJobNames(successfulCiRun.id),
+      expiredArtifactCount: expiredArtifacts.length,
+    });
+    if (verdict.kind === 'lost') {
+      console.error(`[overlay-baseline] ${verdict.reason} —— 该 PR 命中段的新基线未进归档（fail-loud）`);
+      console.error(
+        '[overlay-baseline] 处置：重跑该 PR 的 CI 后重新触发合并，或等下一次全量班次并集入档重建；'
+        + '若为保留期过短所致，调 ci.yml 里变异产物的 retention-days。',
+      );
+      process.exit(1);
+    }
+    console.log(`[overlay-baseline] PR #${pr.number} ${verdict.reason}，安全跳过 (No-op)`);
     process.exit(0);
+  }
+  if (expiredArtifacts.length > 0) {
+    // 部分过期：产物还在，能覆盖的先覆盖；但必须点名，否则「哪些段没被覆盖」只能靠人的记忆。
+    console.warn(
+      `[overlay-baseline] ::warning::本次 CI 有 ${expiredArtifacts.length} 个 artifact 已过期`
+      + `（${expiredArtifacts.slice(0, 5).map((a) => a.name).join(', ')}${expiredArtifacts.length > 5 ? ' …' : ''}）`
+      + '—— 其对应的段不会被本次覆盖',
+    );
   }
 
   console.log(`[overlay-baseline] 发现 ${mutArtifacts.length} / ${artifacts.length} 个增量产物，准备执行差量覆盖 (Overlay)...`);
@@ -192,6 +230,8 @@ async function main() {
   const artifactsDir = join(tmpWork, 'artifacts');
   const carriedForward = []; // 旧基线里带过来的段文件（对账用：区分「本次覆盖」与「沿用旧版」）
   const overlaid = []; // 本次真正写入的段文件
+  // 远端 manifest：本次未覆盖的沿用段要保留它的条目（那里的 mtime 是上次真实测量时间）。
+  let remoteManifest = {};
   mkdirSync(baselineDir, { recursive: true });
   mkdirSync(artifactsDir, { recursive: true });
 
@@ -225,6 +265,14 @@ async function main() {
         process.exit(1);
       }
       console.log(`[overlay-baseline] 孤立分支 ${BRANCH} 尚不存在（首夜），基于当前产物构建全新快照`);
+    }
+    try {
+      remoteManifest = JSON.parse(readFileSync(join(baselineDir, 'manifest.json'), 'utf8'));
+    } catch {
+      // 缺 manifest / 内容损坏：沿用段的陈旧判据取不到，但覆盖本身仍是对的，
+      // 故降级为「现存条目一律重算」并点名，而不是让整次合并丢基线。
+      console.warn('[overlay-baseline] 远端 manifest 不可用，沿用段的时间戳将按本次时间重算（陈旧判据降级）');
+      remoteManifest = {};
     }
 
     // 6. 逐个下载增量产物并覆盖同名基线
@@ -272,8 +320,18 @@ async function main() {
     }
 
     if (overlayCount === 0) {
-      console.log('[overlay-baseline] 没有成功覆盖任何有效基线文件，跳过推送');
-      process.exit(0);
+      // #718 S2.1：有产物却一个都没覆盖成功 = 下载/解析全线失败或产物全部过期。旧实现只打印一句
+      // 「跳过推送」就 exit 0，与「真·无产物」同形——整次合并的基线就这么静默丢掉了。
+      const expiredNames = mutArtifacts.filter((a) => a?.expired === true).map((a) => a.name);
+      console.error(
+        `[overlay-baseline] 发现 ${mutArtifacts.length} 个变异产物但无一覆盖成功（`
+        + (expiredNames.length > 0
+          ? `其中 ${expiredNames.length} 个已过期: ${expiredNames.slice(0, 5).join(', ')}`
+          : '下载或解析全部失败')
+        + '）—— 本次合并的基线未更新（fail-loud）',
+      );
+      process.exitCode = 1;
+      return;
     }
 
     // 6.5 对账（#714 后续修复）：期望集合 = stryker.conf.d 派生的段文件；缺口 = 既没被本次覆盖
@@ -295,60 +353,29 @@ async function main() {
       console.error('[overlay-baseline] 这些段将每次全量重跑。检查上游：产物是否上传成功 / 分页是否取全 / 段配置是否漂移。');
     }
 
-    // 7. 重新校准并生成 manifest.json
+    // 7. 重建 manifest 并入档。写路径与夜间班的并集入档共用 baseline-push.mjs——同一操作两份实现
+    //    正是 #718 的成因之一（两份各自漏修），回滚快照与带租约推送也由该模块统一承担。
     const allFiles = readdirSync(baselineDir)
-      .filter((f) => /^incremental-.+\.json$/.test(f))
+      .filter((f) => BASELINE_FILE_RE.test(f))
       .sort();
 
-    const manifest = {};
+    // 本次未覆盖的沿用段保留远端 manifest 条目：那里的 mtime 是上次真实测量时间，
+    // 重新盖章会让「基线是否陈旧」无从判断（#718 S3.1 要修的那个坑）。
+    const preserved = {};
     for (const f of allFiles) {
-      const fullPath = join(baselineDir, f);
-      const buf = readFileSync(fullPath);
-      const st = statSync(fullPath);
-      manifest[f] = {
-        size: buf.length,
-        mtime: st.mtime.toISOString(),
-        sha256: createHash('sha256').update(buf).digest('hex'),
-      };
-    }
-    writeFileSync(join(baselineDir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
-    allFiles.push('manifest.json');
-
-    // 8. 用 Git plumbing 构建孤立 commit 并推送
-    console.log(`[overlay-baseline] 准备提交 ${allFiles.length} 个基线文件到孤立分支...`);
-    const mktreeLines = [];
-    for (const f of allFiles) {
-      const fullPath = join(baselineDir, f);
-      const blobSha = runCmd('git', ['hash-object', '-w', fullPath]);
-      mktreeLines.push(`100644 blob ${blobSha}\t${f}`);
+      if (!overlaid.includes(f) && remoteManifest[f]) preserved[f] = remoteManifest[f];
     }
 
-    const treeSha = execFileSync('git', ['mktree'], {
-      input: mktreeLines.join('\n') + '\n',
-      encoding: 'utf8',
-      maxBuffer: MAX_BUFFER,
-    }).trim();
-
-    const commitMsg = `chore(baseline): overlay incremental from PR #${pr.number} [skip ci]`;
-    const commitShaNew = runCmd(
-      'git',
-      ['commit-tree', treeSha, '-m', commitMsg],
-      {
-        env: {
-          GIT_AUTHOR_NAME: 'github-actions[bot]',
-          GIT_AUTHOR_EMAIL: 'github-actions[bot]@users.noreply.github.com',
-          GIT_COMMITTER_NAME: 'github-actions[bot]',
-          GIT_COMMITTER_EMAIL: 'github-actions[bot]@users.noreply.github.com',
-        },
-      },
-    );
-
-    const remoteTarget = token
-      ? `https://x-access-token:${token}@github.com/${repo}.git`
-      : 'origin';
-
-    runCmd('git', ['push', '--force', remoteTarget, `${commitShaNew}:refs/heads/${BRANCH}`]);
-    console.log(`[overlay-baseline] 成功完成 PR #${pr.number} 产物差量覆盖并强推至 ${BRANCH}！`);
+    pushBaselineTree({
+      target: token ? `https://x-access-token:${token}@github.com/${repo}.git` : 'origin',
+      branch: BRANCH,
+      entries: allFiles.map((f) => ({ name: f, blobSha: hashFile(join(baselineDir, f)) })),
+      manifest: buildManifest(baselineDir, allFiles, preserved),
+      subject: `chore(baseline): overlay incremental from PR #${pr.number} [skip ci]`,
+      label: 'overlay-baseline',
+      log: console.log,
+    });
+    console.log(`[overlay-baseline] 成功完成 PR #${pr.number} 产物差量覆盖并推至 ${BRANCH}！`);
     if (archiveGap) {
       console.error('[overlay-baseline] 归档已更新，但存在缺口（见上）—— 本次以非零退出暴露问题');
       process.exitCode = 1;

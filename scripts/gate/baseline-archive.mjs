@@ -51,6 +51,39 @@ export function mutationArtifacts(artifacts) {
   return (artifacts ?? []).filter((a) => typeof a?.name === 'string' && a.name.startsWith(MUTATION_ARTIFACT_PREFIX))
 }
 
+/** ci.yml 变异矩阵实例的 job 名形态：`Mutation gate (<pkg> · <seg>)`。 */
+export const MUTATION_GATE_JOB_RE = /^Mutation gate \(/
+
+/**
+ * 「看不到变异产物」的两态分流（#718 S2.1）。
+ *
+ * 旧实现只有一句「未产生任何增量变异产物，安全跳过」，把两件相反的事压成同一个静默 no-op：
+ *   · 真·无产物：PR 没触及变异切片，overlay 本就无事可做——正确的 no-op；
+ *   · 产物丢了：CI 确实跑过变异实例，但产物已过期/被删——该 PR 命中段的新基线**永远**进不了
+ *     归档，而日志只说了一句「没有产物」，与前者完全同形，事后无法区分。
+ *
+ * 判据取「该 CI run 里有没有变异矩阵实例」：实例存在 ⇒ 产物必定产出过（上传步骤是实例内
+ * `if: success()` 门控），所以「看不到产物」只能解释为丢失。`expiredArtifactCount` 只作原因里的
+ * 旁证，不单独当判据——过期记录本身也可能已被清理，届时它同样是 0。
+ */
+export function classifyMissingMutationProducts({ jobNames, expiredArtifactCount = 0 } = {}) {
+  const instances = (jobNames ?? []).filter((n) => typeof n === 'string' && MUTATION_GATE_JOB_RE.test(n))
+  if (instances.length > 0) {
+    return {
+      kind: 'lost',
+      instanceCount: instances.length,
+      reason:
+        `CI 曾运行 ${instances.length} 个变异矩阵实例，但产物已不可见`
+        + `（过期或被删除；本次 run 中 ${expiredArtifactCount} 个 artifact 标记 expired）`,
+    }
+  }
+  return {
+    kind: 'none',
+    instanceCount: 0,
+    reason: 'CI 未运行任何变异矩阵实例（纯文档 / 未触及变异切片）',
+  }
+}
+
 /**
  * 期望被归档的段文件名集合（由 stryker.conf.d/*.json 派生，与 stryker 配置同源）。
  * `dsh-web-file-preview.json`（未拆分包的 seg="0"）→ `incremental-web-file-preview.json`；

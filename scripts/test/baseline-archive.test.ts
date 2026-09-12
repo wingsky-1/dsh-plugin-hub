@@ -22,6 +22,8 @@ import {
   ARCHIVE_SNAPSHOT_KEEP,
   BASELINE_FILE_RE,
   GH_API_PER_PAGE,
+  MUTATION_GATE_JOB_RE,
+  classifyMissingMutationProducts,
   classifyRemoteProbe,
   decideRestoreOutcome,
   expectedBaselineFiles,
@@ -284,4 +286,39 @@ test('#718 S1.2: 回滚快照 tag —— 名字含旧 tip 短 sha，保留窗口
   assert.deepEqual(pruneSnapshotPlan(refs.slice(0, 2)), [], '未超窗口不得删任何快照')
   // 非本前缀的 tag（例如发布 tag）绝不能被这条清理逻辑碰到。
   assert.deepEqual(pruneSnapshotPlan(['refs/tags/v1.2.3', 'refs/tags/baseline-snap-other']), [], '只清理自己的前缀')
+})
+
+// ── #718 S2.1：overlay 的「产物过期」与「无产物」分流 ────────────────────────
+
+test('#718 S2.1: 「看不到变异产物」两态分流 —— 汇总判分 job 不得被误计为矩阵实例', () => {
+  const lost = classifyMissingMutationProducts({
+    jobNames: [
+      'Detect changed packages',
+      'Mutation gate (dsh-notifier · text)',
+      'Mutation gate (dsh-notifier · events)',
+      'Mutation gate verdict (aggregate)',
+    ],
+    expiredArtifactCount: 3,
+  })
+  assert.equal(lost.kind, 'lost', '有实例却看不到产物 ⇒ 只能是丢失')
+  assert.equal(lost.instanceCount, 2, '汇总判分 job「Mutation gate verdict (...)」不是矩阵实例，不得计入')
+  assert.ok(lost.reason.includes('产物已不可见'), '原因须点名「不可见」，与「没有产物」区分开')
+  assert.ok(lost.reason.includes('3'), '过期 artifact 计数作为旁证写进原因')
+
+  const none = classifyMissingMutationProducts({
+    jobNames: ['Detect changed packages', 'Build / Test / Typecheck (dsh-notifier)'],
+    expiredArtifactCount: 0,
+  })
+  assert.equal(none.kind, 'none', '没跑过变异实例 ⇒ 正确的 no-op')
+  assert.equal(none.instanceCount, 0)
+  assert.ok(none.reason.includes('未运行任何变异矩阵实例'))
+
+  // 空 / 脏输入不得抛，且一律落到 no-op：这个分流用于**提高**报警灵敏度，
+  // 宁可漏报一次，也不能因为上游返回形态异常把纯文档 PR 判红。
+  for (const input of [undefined, {}, { jobNames: null }, { jobNames: [1, null, ''] }]) {
+    assert.equal(classifyMissingMutationProducts(input).kind, 'none', `脏输入 ${JSON.stringify(input)} 应落 no-op`)
+  }
+
+  assert.equal(MUTATION_GATE_JOB_RE.test('Mutation gate verdict (aggregate)'), false, '汇总 job 名不匹配实例形态')
+  assert.equal(MUTATION_GATE_JOB_RE.test('Mutation gate (dsh-notifier · text)'), true)
 })
