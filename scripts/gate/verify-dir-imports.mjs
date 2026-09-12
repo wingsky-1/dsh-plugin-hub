@@ -160,8 +160,11 @@ function isTypeOnlyClause(clause) {
  */
 function extractRefs(text) {
   const out = []
+  // 子句部分不得跨过下一个 import/export 关键字：`export interface X { … }` 这类
+  // 没有 from 的语句，否则会把后面某个 `export type { … } from "…"` 一并吃进来，
+  // 于是整段被判成值引——一个纯类型的依赖声明面凭空多出一条值边。
   const staticRe =
-    /(?:^|\n)[ \t]*(?:import|export)\s+([^'"]*?)\bfrom\s*['"]([^'"]+)['"]|(?:^|\n)[ \t]*import\s*['"]([^'"]+)['"]/g
+    /(?:^|\n)[ \t]*(?:import|export)\s+((?:(?!\b(?:import|export)\b)[^'"])*?)\bfrom\s*['"]([^'"]+)['"]|(?:^|\n)[ \t]*import\s*['"]([^'"]+)['"]/g
   let m
   while ((m = staticRe.exec(text)) !== null) {
     if (m[3] !== undefined) out.push({ spec: m[3], isType: false }) // 副作用导入仍是值依赖
@@ -173,6 +176,105 @@ function extractRefs(text) {
     const after = text.slice(m.index + m[0].length, m.index + m[0].length + 10)
     const isValue = /\bawait\s*$/.test(before) || /^\s*\.\s*(?:then|catch|finally)\b/.test(after)
     out.push({ spec: m[1], isType: !isValue })
+  }
+  return out
+}
+
+/**
+ * 提取对象字面量 `{ … }` 的顶层键。入参从 `{` 开始。
+ *
+ * 遇到展开运算符、计算属性键或读不懂的成员一律返回 null——那是「判不出来」，调用方
+ * 据此放弃判定，而不是当成空集：把判不出来当成合规，正是本门禁要防的假绿。
+ */
+function objectLiteralKeys(text) {
+  if (text[0] !== '{') return null
+  const keys = []
+  let depth = 0
+  let quote = null
+  let start = 1
+  const take = (end) => {
+    const member = text.slice(start, end).trim()
+    if (member === '') return true
+    if (member.startsWith('...') || member.startsWith('[')) return false
+    const colon = member.indexOf(':')
+    const key = (colon === -1 ? member : member.slice(0, colon)).trim().replace(/^['"]|['"]$/g, '')
+    if (!/^[A-Za-z_$][\w$]*$/.test(key)) return false
+    keys.push(key)
+    return true
+  }
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i]
+    if (quote !== null) {
+      if (ch === quote && text[i - 1] !== '\\') quote = null
+      continue
+    }
+    if (ch === '"' || ch === "'" || ch === '`') {
+      quote = ch
+      continue
+    }
+    if (ch === '{' || ch === '(' || ch === '[') depth += 1
+    else if (ch === '}' || ch === ')' || ch === ']') {
+      depth -= 1
+      if (depth === 0) return take(i) ? keys : null
+    } else if ((ch === ',' || ch === ';' || ch === '\n') && depth === 1) {
+      // `;` 与换行是 interface 成员的合法分隔符，`,` 是对象字面量的；这个函数两者都要
+      // 读——只在深度 1 切分，属性值跨行发生在更深层，不受影响。
+      if (!take(i)) return null
+      start = i + 1
+    }
+  }
+  return null
+}
+
+/**
+ * 注入面对账（#733 方案 C）。
+ *
+ * `deps.ts` 是**纯类型面**，「本域声明要什么」与「组合根递了什么」之间因此少了一层编译
+ * 器兜底：漏给一个 Port 会编译报错，但**多给、给了已删字段、或某个域压根没接上**都只剩
+ * 运行期空值——而它的症状与本插件毫无字面关联。这条规则把那份对照补回机器面。
+ *
+ * 判据：`installXxx(deps: XxxDeps)` 的实参键集 == `XxxDeps` 的字段集，任一侧多出即红。
+ * 实参不是对象字面量时同样判红——否则「传个变量进来」就是绕过路径。
+ */
+function analyzeInjectionFaces(srcDir) {
+  const files = collectTsFiles(srcDir)
+  const indexFile = files.find((f) => rel(srcDir, f) === 'index.ts')
+  if (indexFile === undefined) return []
+  const fieldsByType = new Map()
+  for (const f of files.filter((x) => x.endsWith('deps.ts'))) {
+    const text = stripComments(readFileSync(f, 'utf8'))
+    const re = /export\s+interface\s+([A-Za-z_$][\w$]*)\s*\{/g
+    let m
+    while ((m = re.exec(text)) !== null) {
+      const keys = objectLiteralKeys(text.slice(m.index + m[0].length - 1))
+      if (keys !== null) fieldsByType.set(m[1], keys)
+    }
+  }
+  const typeByInstall = new Map()
+  for (const f of files.filter((x) => x.endsWith('interface.ts'))) {
+    const text = stripComments(readFileSync(f, 'utf8'))
+    const re = /export\s+function\s+(install[A-Z]\w*)\s*\(\s*[A-Za-z_$][\w$]*\s*:\s*([A-Za-z_$][\w$]*)/g
+    let m
+    while ((m = re.exec(text)) !== null) typeByInstall.set(m[1], m[2])
+  }
+  const out = []
+  const indexText = stripComments(readFileSync(indexFile, 'utf8'))
+  const callRe = /\b(install[A-Z]\w*)\s*\(/g
+  let m
+  while ((m = callRe.exec(indexText)) !== null) {
+    const depsType = typeByInstall.get(m[1])
+    if (depsType === undefined) continue
+    const fields = fieldsByType.get(depsType)
+    if (fields === undefined) continue
+    let i = m.index + m[0].length
+    while (i < indexText.length && /\s/.test(indexText[i])) i += 1
+    const keys = indexText[i] === '{' ? objectLiteralKeys(indexText.slice(i)) : null
+    if (keys === null) {
+      out.push(`${m[1]}：实参不是可解析的对象字面量，无法与 ${depsType} 对账`)
+      continue
+    }
+    for (const k of fields.filter((x) => !keys.includes(x))) out.push(`${m[1]}：漏接 "${k}"（${depsType} 声明了，组合根没给）`)
+    for (const k of keys.filter((x) => !fields.includes(x))) out.push(`${m[1]}：多接 "${k}"（${depsType} 没有这个字段）`)
   }
   return out
 }
@@ -856,6 +958,11 @@ for (const pkgName of applyPackages) {
         )
       }
     }
+  }
+  // 注入面对账：deps.ts 是纯类型面，声明与装配之间没有编译器兜底（多给、给已删字段、
+  // 漏装某个域都只剩运行期空值），这条把它补回机器面。
+  for (const problem of analyzeInjectionFaces(analysis.srcDir)) {
+    failures.push(`[${pkgName}] 注入面对账：${problem}`)
   }
   analysis.metrics.interfaceFacades = referencedInterfaces.size
   analyses.push(analysis)
