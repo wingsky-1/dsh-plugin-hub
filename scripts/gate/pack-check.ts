@@ -212,42 +212,60 @@ for (const p of targets) {
   }
 }
 // 聚合包专项：dsh-plugins-all tarball 完整性 + 聚合 patch 与子包一致（防 P6 复发）
+//
+// 本段是**产物级**断言：`pnpm --filter dsh-plugins-all pack` 要求聚合包已构建（lib/index.js），
+// 而聚合包由 `pnpm build` 产出、不由本脚本产出。故必须与上方逐包循环共用**同一个切片口径**
+// （#722 门禁分层）：
+//   - 全仓口径（未传 --packages，或聚合包在切片内）：本段执行，覆盖不变；
+//   - 增量切片（--packages 命中的是真子集）：本段跳过——此时聚合包未构建，执行必然假红。
+//     全仓覆盖不因此丢失：夜间 observe.yml 的「Pack check（全仓）」与 release.yml 均无切片，
+//     两者都会执行本段（observe.yml 注释即声明「全仓产物闸必须在这里落地」）。
+// 历史：本段此前不受切片控制，凡 HIT_PACKAGES 不含聚合包的 PR 都会假红（PR #747 首次触发）。
 {
   const AGG = 'dsh-plugins-all'
-  const tmp = mkdtempSync(join(tmpdir(), 'dsh-pack-agg-'))
-  const aggName = JSON.parse(readFileSync(join(ROOT, 'packages', AGG, 'package.json'), 'utf8')).name
-  try {
-    execFileSync('pnpm', ['--filter', aggName, 'pack', '--pack-destination', tmp], { cwd: ROOT, stdio: 'pipe' })
-    const tgz = readdirSync(tmp).find(f => f.endsWith('.tgz'))
-    execFileSync('tar', tarArgs(['-xzf', join(tmp, tgz), '-C', tmp]))
-    const pkgRoot = join(tmp, 'package')
-    const problems = []
-    if (!existsSync(join(pkgRoot, 'lib', 'index.js'))) problems.push('缺 lib/index.js')
-    const patch = existsSync(join(pkgRoot, 'cordis.patch.yml')) ? readFileSync(join(pkgRoot, 'cordis.patch.yml'), 'utf8') : ''
-    if (!patch) problems.push('缺 cordis.patch.yml')
-    // 聚合行/依赖与 manifest.active 双向相等（issue #36：deps「多」也会 fail-loud）
-    if (patch) {
-      const aggRows = [...patch.matchAll(/^\s*- id:\s*(\S+)/gm)].map(m => m[1])
-      const deps = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8')).dependencies ?? {}
-      // 期望聚合 id 集 = 各 active 子包 cordis.patch.yml 的实际 insert id
-      // （客户端插件 ui-<dir>，纯宿主插件如 dsh-verify-isolated 用 skill- 前缀；
-      //   与 aggregate.ts「子包行原样拼接」语义一致，不硬编码 ui-）
-      const expectedPatchIds = []
-      for (const dir of manifest.active) {
-        const childPatch = join(ROOT, 'packages', dir, 'cordis.patch.yml')
-        const childText = existsSync(childPatch) ? readFileSync(childPatch, 'utf8') : ''
-        expectedPatchIds.push(...[...childText.matchAll(/^\s*-\s+id:\s*(\S+)/gm)].map(m => m[1]))
-      }
-      problems.push(...checkAggregateConsistency({ dirNames: plugins, manifest, aggDeps: deps, aggPatchIds: aggRows, expectedPatchIds }))
-      if (/^\s*config:/m.test(patch)) problems.push('聚合行带 config（应走 schema 默认值）')
-    }
-    if (problems.length > 0) failed++
-    console.log(`${problems.length === 0 ? 'PASS' : 'FAIL'} ${aggName} | ${problems.join('; ') || '聚合 tarball 完整且与子包一致'}`)
-  } catch (e) {
+  const inScope = scoped === null || scoped.includes(AGG)
+  if (!inScope) {
+    console.log(`[pack-check] 聚合包专项跳过：不在 --packages 切片内（本闸逐包范围：${targets.join(', ') || '（空）'}）；全仓口径由 observe.yml / release.yml 覆盖`)
+  } else if (!existsSync(join(ROOT, 'packages', AGG, 'lib', 'index.js'))) {
+    // 产物前提缺失时给出可诊断原因，而不是让 pnpm pack 抛裸错误（artifact 链路静默丢包时同此）
     failed++
-    console.log(`FAIL ${aggName} | ${String(e.message).split('\n')[0]}`)
-  } finally {
-    rmSync(tmp, { recursive: true, force: true })
+    console.log(`FAIL ${AGG} | 缺 packages/${AGG}/lib/index.js —— 本段是产物级断言，需先构建聚合包（全仓口径用 pnpm build；增量口径须把 ${AGG} 纳入 HIT_PACKAGES）`)
+  } else {
+    const tmp = mkdtempSync(join(tmpdir(), 'dsh-pack-agg-'))
+    const aggName = JSON.parse(readFileSync(join(ROOT, 'packages', AGG, 'package.json'), 'utf8')).name
+    try {
+      execFileSync('pnpm', ['--filter', aggName, 'pack', '--pack-destination', tmp], { cwd: ROOT, stdio: 'pipe' })
+      const tgz = readdirSync(tmp).find(f => f.endsWith('.tgz'))
+      execFileSync('tar', tarArgs(['-xzf', join(tmp, tgz), '-C', tmp]))
+      const pkgRoot = join(tmp, 'package')
+      const problems = []
+      if (!existsSync(join(pkgRoot, 'lib', 'index.js'))) problems.push('缺 lib/index.js')
+      const patch = existsSync(join(pkgRoot, 'cordis.patch.yml')) ? readFileSync(join(pkgRoot, 'cordis.patch.yml'), 'utf8') : ''
+      if (!patch) problems.push('缺 cordis.patch.yml')
+      // 聚合行/依赖与 manifest.active 双向相等（issue #36：deps「多」也会 fail-loud）
+      if (patch) {
+        const aggRows = [...patch.matchAll(/^\s*- id:\s*(\S+)/gm)].map(m => m[1])
+        const deps = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8')).dependencies ?? {}
+        // 期望聚合 id 集 = 各 active 子包 cordis.patch.yml 的实际 insert id
+        // （客户端插件 ui-<dir>，纯宿主插件如 dsh-verify-isolated 用 skill- 前缀；
+        //   与 aggregate.ts「子包行原样拼接」语义一致，不硬编码 ui-）
+        const expectedPatchIds = []
+        for (const dir of manifest.active) {
+          const childPatch = join(ROOT, 'packages', dir, 'cordis.patch.yml')
+          const childText = existsSync(childPatch) ? readFileSync(childPatch, 'utf8') : ''
+          expectedPatchIds.push(...[...childText.matchAll(/^\s*-\s+id:\s*(\S+)/gm)].map(m => m[1]))
+        }
+        problems.push(...checkAggregateConsistency({ dirNames: plugins, manifest, aggDeps: deps, aggPatchIds: aggRows, expectedPatchIds }))
+        if (/^\s*config:/m.test(patch)) problems.push('聚合行带 config（应走 schema 默认值）')
+      }
+      if (problems.length > 0) failed++
+      console.log(`${problems.length === 0 ? 'PASS' : 'FAIL'} ${aggName} | ${problems.join('; ') || '聚合 tarball 完整且与子包一致'}`)
+    } catch (e) {
+      failed++
+      console.log(`FAIL ${aggName} | ${String(e.message).split('\n')[0]}`)
+    } finally {
+      rmSync(tmp, { recursive: true, force: true })
+    }
   }
 }
 console.log(failed === 0 ? '\npack-check：全部通过' : `\npack-check：${failed} 个失败`)
