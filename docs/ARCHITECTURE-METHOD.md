@@ -1,7 +1,9 @@
 # 架构治理方法论
 
 > 适用范围：dsh-plugin-hub 各插件（cordis bundle 包），可迁移至其他 cordis 插件。
-> 本方法论的每条原则都锚定真实实测案例，案例来源见 [dsh-notifier 整改计划](../packages/dsh-notifier/docs/refactor-plan-690.md)。
+> 本方法论的每条原则都锚定真实实测案例，案例出自 dsh-notifier 的两轮结构整改
+> （issue #690 先修尺子、issue #733 按域重写）；执行清单见
+> [dsh-plugin-hub-refactor skill](../.dsh/skills/dsh-plugin-hub-refactor/SKILL.md)。
 > 定位：指导结构重构的实施，以及重构完成后的长期维护。
 
 ## 1. 四条第一性原则

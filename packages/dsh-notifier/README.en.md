@@ -72,7 +72,7 @@ Pick one of the following access forms (both the settings card and the README su
 
 - **Ask you a question** (on by default): notifies when `ask_user_question` / the GUI question popup is triggered
 - **Approval reminder**: notifies when the real approval path `approval/request` is triggered, including task title, tool display name (Chinese), request reason, and an action hint
-- **Completion reminder**: notifies when a task transitions from running to idle (`agent/status` running → idle), including task title and elapsed time; completion detection is dual-source — on idle, the latest `turn/end` read back from the session event snapshot is merged with the latest `turn/end` remembered from the `session/event` push stream, taking the newer as this turn's closure evidence (issue #272: a one-off snapshot read lag no longer solidifies into permanent silence; both sources for the same turn notify only once, and skipped decisions emit an observable warn log); subagent completion uses a separate toggle `notifySubagentDone` (off by default; subagents include spawned ones with `origin: subagent` and fork-delegated workers whose runtime ownership holds — fork mainline sessions without ownership are unaffected and still report as main-task completion); no completion notification is sent when the user stops generation / interrupts / the task fails / the task is blocked (when this turn's `turn/end` reason is `aborted`/`interrupted`/`error`/`blocked` it is always silent — failed tasks are handled separately by the error reminder's "task errored" so the same turn never both errors and falsely reports completion)
+- **Completion reminder**: notifies when a task transitions from running to idle (`agent/status` running → idle), including task title and elapsed time; completion detection is **push-first with a snapshot fallback** — the latest `turn/end` remembered from the `session/event` push stream is the primary evidence (dispatched synchronously post-commit, always fresh), and the snapshot read-back (`lastTurnEndOf`) only serves as a fallback when the push is missing (the plugin was mounted mid-turn, or the event was dispatched inside a reload window before the new fiber remembered it) (issue #290 phase two: a one-off snapshot read lag no longer solidifies into permanent silence; the same turn notifies only once, and a skipped decision emits an observable warn log that names the evidence source); subagent completion uses a separate toggle `notifySubagentDone` (off by default; subagents include spawned ones with `origin: subagent` and fork-delegated workers whose runtime ownership holds — fork mainline sessions without ownership are unaffected and still report as main-task completion); no completion notification is sent when the user stops generation / interrupts / the task fails / the task is blocked (when this turn's `turn/end` reason is `aborted`/`interrupted`/`error`/`blocked` it is always silent — failed tasks are handled separately by the error reminder's "task errored" so the same turn never both errors and falsely reports completion)
 - **Error reminder**: notifies when a task errors (`agent/error`), including task title, the errored turn/step, and the error message (first 300 chars)
 - **Turn completion** (off by default): notifies on `agent/turn-stopping`
 - **Dual channels**:
@@ -85,9 +85,32 @@ Pick one of the following access forms (both the settings card and the README su
   sound is fixed by host self-play of freedesktop event sounds (notify-send used to
   carry no sound hint and DE support varies); see "Configuration → Per-channel sound".
 - **Insecure-context fallback**: on LAN HTTP access the browser blocks system-level popups — automatically falls back to "in-page banner + sound + title reminder"
-- **Do-not-disturb window**: supports crossing midnight (e.g. 22:00 → 08:00); an **urgent exception** can be set (`quietHours.allowKinds`: events still reminded during DND). The default candidates are the high-frequency blocking kinds (approval / question / error); the settings page lets you check **all 6 built-in events** (including task-done / subagent-done / turn-end) with one-click "Follow enabled events" or "Reset default". Exemption is orthogonal to the event toggles — a disabled event never produces notifications anyway, and the exemption entry stays intact
-- **Approval timeout re-reminder**: when an approval waits longer than `askRemindMin` minutes (default 5, 0 disables) without being handled, remind again — **currently a no-op** (pending a contract ruling, see "Outward contract")
+- **Do-not-disturb window**: supports crossing midnight (e.g. 22:00 → 08:00); an **urgent exception** can be set (`quietHours.allowKinds`: events still reminded during DND). The default candidates are the high-frequency blocking kinds (approval / question / error); the settings page lets you check **all 6 built-in events** (including task-done / subagent-done / turn-end) with one-click "Follow enabled events" or "Reset default". Exemption is orthogonal to the event toggles — a disabled event never produces notifications anyway, and the exemption entry stays intact; disabled events are shown dimmed (reduced opacity) on the settings page and can still be exempted. **Upgrade note**: now that the allow-list is open, kinds that older configurations used to filter out (e.g. hand-edited `done`/`turn-end`) will be reminded again during DND — a behavior change; adjust the exemptions on the settings page if you do not want that
 - **Settings-card diagnostics**: the plugin card under Settings → Plugins → dsh-notifier shows the browser notification permission status and a secure-context hint, plus the 10 most recent notification records, a "Send test notification" button, and a "Clear history" entry
+
+## Event subscription and scope semantics ({global:true} trade-off)
+
+When subscribing to host events (`approval/request`, `internal/service`, `session/event`,
+`agent/status`, `agent/disposed`, `agent/error`, `agent/turn-stopping`), the plugin always
+registers `{ global: true }` (cordis `EventOptions`, "Receive the event regardless of
+context filter checks"). The trade-off (issue #290):
+
+- **Events arrive anyway under an untagged flat mount**: a plugin ctx inserted flat via
+  `cordis.patch.yml` carries no scope tag, and the host dsh-scope event dispatch lets
+  listener contexts without a scope tag through — agent-scoped events arrive even without
+  `{ global: true }`;
+- **`{ global: true }` is consumer-side defense**: it decouples event arrival from the host's
+  scope-dispatch semantics — if the plugin ever runs in a private-scoped mount form (listener
+  ctx carrying a scope tag that does not match the event carrier's scope), `hook.global`
+  passes unconditionally in the dispatch filter, so notifications never go mute on scope
+  filtering (every `ctx.on` registration in this plugin carries the option);
+- **The cost (the trade-off)**: `global` also receives **cross-scope** events — under an
+  extreme deployment of many plugins and many scopes it may receive events outside the
+  current ctx scope. Every listener in this plugin consumes with "payload self-validation +
+  per-agent / event-content filtering" (event payloads are untrusted across the host
+  boundary, validated field by field at runtime, and a non-finite turn is skipped outright),
+  so a cross-scope arrival is only filtered out silently and never produces a wrong
+  notification; this stage **adds no configuration key** to control that behavior.
 
 ## Outward contract (surface visible to other plugins, #733 convergence)
 
@@ -97,8 +120,6 @@ The service surface is exposed on the host context as `ctx["wingsky.notifier"]`,
 - **`registerChannel` is retired**: it promised a channel-contribution model that never landed; channel types are built-in only (system / browser / bark / webhook);
 - **`send` no longer returns an accepted array**: it returns `Promise<void>` — the `ok` in that array meant "accepted", not "delivered", and misreading the direction is more expensive than having no return value at all;
 - **`registerKind` and `send` themselves are unchanged**: consumers using only those two are unaffected.
-
-Setting left blank: `askRemindMin` (second reminder after a long approval wait, default 5 minutes) **is currently a no-op** — it first needs a contract ruling on "request identity"; the key is still validated, persisted and echoed, but produces no reminder.
 
 ## Configuration (editable via Settings → Plugins → dsh-notifier)
 
@@ -110,17 +131,6 @@ written through the plugin card under Settings → Plugins → dsh-notifier or v
 takes precedence, falling back to the older self-maintained `dsh-notifier.json` (DSH_HOME root,
 including the `.migrated.bak` left by an earlier migration); whatever user layer is read is written
 into `config.json`, and that becomes the only read/write path afterwards.
-
-> **Storage layout (#733 convergence)**: configuration, notification history, channel status, the SSE
-> seq counter and the storage version marker all live under `DSH_HOME/@wingsky-1/dsh-notifier/` —
-> `config.json` / `history.jsonl` / `status.json` / `seq.json` / `version` (`version` is the upgrade
-> chain's scale). Legacy locations are **read once at startup**: the DSH_HOME-root
-> `dsh-notifier-history.jsonl` / `dsh-notifier-status.json` / `notifier-seq.json` are renamed to
-> `.migrated.bak` after being moved; the two generations of configuration (the 0.2.3 settings
-> namespace and the older `dsh-notifier.json`) are read without being renamed.
-> All paths respect `DSH_HOME` (#510): they resolve to `~/.dsh` when the variable is unset and
-> follow the isolated home when set — isolated environments (multi-instance / test sandboxes /
-> dsh-verify-isolated) never touch the real `~/.dsh`.
 
 **Unknown-key semantics (forward compatibility, issue #470)**: dsh-notifier applies a
 **"pass-through and preserve"** policy to configuration keys it does **not recognize** —
@@ -159,9 +169,11 @@ rewritten (except for composition-layer assembly keys, see boundaries below):
     `statusFile` / `enabled`) are cordis composition/startup parameters and **never
     enter the user layer** — PUT and migration drop same-named keys; entry
     composition goes through the whitelist filter.
-  - Reserved Bark channel keys (`device_key` / `device_keys` / `ciphertext`) are still
-    always stripped / rejected; unknown channel params only pass through as
-    string/number values.
+  - Reserved keys are still always stripped / rejected — `device_key` / `device_keys` /
+    `ciphertext` inside a Bark channel instance, and `WEBHOOK_RESERVED_KEYS`
+    (`auth_token` / `access_token` / `bearer_token` / `api_key` / `apikey` /
+    `client_secret` / `secret` / `password_hash`) inside a webhook channel instance;
+    unknown channel params only pass through as string/number values.
   - Unknown keys take no part in validation (invalid known keys still return
     400 + hint).
 
@@ -169,7 +181,7 @@ Consequence: after an upgrade, if the settings page does not show a field that s
 exists in `config.json`, that is the intended preserve behavior — saving other known
 settings will not lose it.
 
-Example values (defaults):
+Example values (defaults; `channels` / `kindRoutes` / `allowKinds` are new M2 keys):
 
 ```json
 {
@@ -186,19 +198,26 @@ Example values (defaults):
   "browserSound": true,
   "systemSound": true,
   "quietHours": { "enabled": false, "start": "22:00", "end": "08:00", "allowKinds": [] },
-  "askRemindMin": 5,
   "historyMaxAgeDays": 0,
-  "maxConnections": 16
+  "maxConnections": 16,
+  "channels": [],
+  "kindRoutes": {},
+  "allowKinds": []
 }
 ```
 
 > `maxConnections`: SSE connection-table cap (default 16, range 1–1024). It counts
 > **server-side unreleased handles**, not "online devices" — half-open connections
-> (device screen off / network switch / silent NAT cut) linger briefly until the
-> transport layer reaps them; the cap keeps the connection table bounded, evicting
-> the oldest connection beyond the limit (clients auto-reconnect with `since`
-> replay, transparent). If more devices×tabs are concurrently online, raise it in
-> the card.
+> (device screen off / network switch / silent NAT cut) send no FIN, so close/error
+> never fires. Since #515 the connection table is managed by shared/sse-hub with three
+> complementary reclamation paths: **stalled reclamation** (writes rejected for over
+> 90 s → disconnect), **maxAge rotation** (alive for over 120 min with no business
+> frames → actively disconnected; clients auto-reconnect and replay with `since`, so it
+> is transparent), and **cap eviction** (oldest evicted beyond the limit). The cap keeps
+> the table bounded; if it is **persistently exceeded** (clients reconnect after eviction
+> and are evicted again, a churn loop), the value is below peak concurrent connections —
+> raise it to at least the peak and observe again. Reclamation-path counters are exposed
+> as `sseEvicts` on `/api/dsh-notifier/health`.
 
 ### Per-channel sound (#640 / #641)
 
@@ -274,6 +293,72 @@ Delivery matrix (all 2×2 combinations work):
   (the system card shows a platform hint from it — the browser OS and the host OS can
   differ; don't confuse them).
 
+### Bark push channel (M2, issue #366)
+
+Configure via the "Notification center → Delivery channels → Add Bark push" tab (or edit the
+configuration JSON above directly). Per-instance fields: `id` (auto-generated then locked),
+`name` (display name), `baseUrl` (Bark server address, http/https), `deviceKey` (found in the
+Bark app; always masked as `********` in responses, submitting the mask = keep the original
+value), `enabled` (default **false** — outbound authorization must be granted explicitly).
+
+Optional parameters (all omitted = not sent; unknown string/number keys pass through verbatim
+for forward compatibility with future Bark parameters; `device_key` / `device_keys` /
+`ciphertext` are reserved keys and never pass through):
+
+| Field | Notes |
+|---|---|
+| `sound` | Ringtone name (Bark Sounds list) |
+| `group` | Group (notifications in the same group collapse on the phone) |
+| `icon` | Icon URL (**must be reachable from the phone's network**, not from the server; SVG needs iOS 17+; empty uses the Bark default) |
+| `url` | URL opened when the notification is tapped |
+| `badge` | App badge number |
+| `level` | Instance-level urgency override; when omitted, mapped automatically from event severity: `failure→timeSensitive`, `warning/success→active`, `info→passive` |
+| `levels` | Per-event (kind) urgency sparse mapping (below) |
+
+`levels` (kind→level sparse mapping matrix): sets Bark urgency for a concrete event type,
+**taking precedence over the instance-level `level` and the severity auto-mapping**; unconfigured
+types use the default. Suited to per-event differentiation such as "questions must ring,
+subagent completions stay quiet":
+
+```json
+{ "id": "phone", "type": "bark", "baseUrl": "https://api.day.app", "deviceKey": "…",
+  "enabled": true, "levels": { "question": "timeSensitive", "subagent-done": "passive" } }
+```
+
+- Keys are event kinds (the built-ins `ask/question/done/subagent-done/error/turn-end/test` or
+  dynamic kinds; any string); values are limited to `active` / `timeSensitive` / `passive` /
+  `critical`; at most 64 entries, each key at most 64 chars.
+- Full precedence: `levels[kind]` > `level` > severity mapping > not carried.
+- Note: `critical` requires special Apple authorization (regular apps cannot request it);
+  without it Bark may downgrade or reject the request.
+- Orthogonal to `kindRoutes` (kind→channelId[] routing): routing decides "which channels receive
+  it", `levels` decides "how loudly this instance rings".
+
+Delivery reliability: 10 s hard timeout, network errors / 5xx retried ×2 (4xx not retried), at
+most 2 in-flight deliveries per instance (built-in channels are unlimited); success requires
+both HTTP 2xx and a response body with `code===200`. Terminal delivery states (success/failure
++ error summary) are persisted to this plugin's status file (see "Storage layout" below), and
+the settings-page channel-card status row is refreshed on card load and after sending a test
+via `GET /api/dsh-notifier/status` (no polling, the D20 stance).
+
+> **Storage layout (#733 convergence)**: configuration, notification history, channel status, the SSE
+> seq counter and the storage version marker all live under `DSH_HOME/@wingsky-1/dsh-notifier/` —
+> `config.json` / `history.jsonl` / `status.json` / `seq.json` / `version` (`version` is the upgrade
+> chain's scale). Legacy locations are **read once at startup**: the DSH_HOME-root
+> `dsh-notifier-history.jsonl` / `dsh-notifier-status.json` / `notifier-seq.json` are renamed to
+> `.migrated.bak` after being moved; the two generations of configuration (the 0.2.3 settings
+> namespace and the older `dsh-notifier.json`) are read without being renamed.
+> All paths respect `DSH_HOME` (#510): they resolve to `~/.dsh` when the variable is unset and
+> follow the isolated home when set — isolated environments (multi-instance / test sandboxes /
+> dsh-verify-isolated) never touch the real `~/.dsh`.
+
+`kindRoutes`: a sparse kind → channelId[] routing map (e.g.
+`{ "error": ["browser", "system", "bark:phone"] }`); kinds without an entry broadcast to every
+enabled channel; the events area of the settings page edits it both ways (sharing one copy of
+the configuration with the channel cards).
+`allowKinds`: the list of confirmed dynamic kinds (notification types registered by other
+plugins are persisted here once you confirm them).
+
 ### Webhook push channel (#508)
 
 Configure via the "Notification center → Delivery channels → Add Webhook push" tab (or edit
@@ -343,15 +428,17 @@ across types):
 
 | Route | Method | Notes |
 |---|---|---|
-| `/api/dsh-notifier/config` | GET/PUT | **GET** returns `{ok, user, revision, effective, writable}` (`user` = official settings user layer, `revision` for optimistic concurrency, `effective` = resolved config); **PUT** accepts `{patch, expectedRevision?}` (incremental patch, optional `expectedRevision`), returns `{ok, user, revision}` |
+| `/api/dsh-notifier/config` | GET/PUT | **GET** returns `{ok, user, revision, effective, writable}` (`user` = official settings user layer, `revision` for optimistic concurrency, `effective` = resolved config; **credential fields (bark `deviceKey` / webhook `token`·`password`·`headerValue`) are always masked**); **PUT** accepts `{patch, expectedRevision?}` (incremental patch, optional `expectedRevision` for optimistic concurrency), returns `{ok, user, revision}` (also masked) |
 | `/api/dsh-notifier/events` | GET | SSE notification frames (browser EventSource subscription; `?since=<seq>` replays missed frames after reconnect) |
-| `/api/dsh-notifier/test` | POST | Test notification (bypasses Do-Not-Disturb) |
+| `/api/dsh-notifier/test` | POST | Test notification (funnels through the service pipeline, bypasses Do-Not-Disturb; optional body `{channelId}` to test a single channel) |
 | `/api/dsh-notifier/history` | GET / **DELETE** | GET recent notification records (up to 200, filtered by `historyMaxAgeDays`; entries suppressed by DND are flagged `suppressed`); **DELETE clears** |
+| `/api/dsh-notifier/status` | GET | Channel delivery status (per-channel latest delivery terminal state + consecutive failure count; error summaries truncated as-is, with no credential replacement) |
+| `/api/dsh-notifier/kinds` | GET / POST | GET the dynamic kind list (including confirmation state); POST `{kind, confirmed}` writes a confirmation (persisted to `allowKinds`); the 200 response carries `revision` (for the client to sync its optimistic-concurrency version) |
 | `/api/dsh-notifier/health` | GET | Health check |
 
 Error mapping (PUT /config): invalid config key → 400 (`{ok:false, error:{error:"配置校验失败: <key>", hint}}`); stale `expectedRevision` conflict → 409 (`code:"SETTINGS_CONFLICT"`); settings service unavailable → 503 (`code:"settings-unavailable"`); write failure → 500 (root cause only in server logs).
 
-Error mapping (POST /kinds): kind-confirmation CAS retries (≤2) exhausted → 409 (`code:"SETTINGS_CONFLICT"`, rare: sustained concurrent writes during confirmation); settings service unavailable → 503 (`code:"settings-unavailable"`, same semantics as PUT /config); write failure → 500 (fixed `error` text, root cause only in server logs). The 200 response carries the fresh `revision` for the client to sync its optimistic-concurrency version.
+Error mapping (POST /kinds): kind-confirmation CAS retries (≤2) exhausted → 409 (`code:"SETTINGS_CONFLICT"`, rare: sustained concurrent writes during confirmation); settings service unavailable → 503 (`code:"settings-unavailable"`, same semantics as PUT /config); write failure → 500 (fixed `error` text, root cause only in server logs).
 
 ## Type dependencies
 
@@ -378,6 +465,11 @@ be able to resolve these official packages (skipping type checking is unaffected
 - Browser notifications require a **secure context** (HTTPS or localhost); LAN HTTP access automatically routes through the fallback channel (banner / sound / title reminder)
 - Browser notification permission is requested within a gesture (via the "Request notification permission" button on the Settings → Plugins → dsh-notifier card)
 - Windows system notifications are implemented via a PowerShell WinRT script, with the command passed as a parameter array and title/body packed into a single base64 (UTF-8 JSON) payload argument (no shell concatenation surface, and immune to PS 5.1 command-line argument parsing ambiguities, see issue #238); the script idempotently registers the AppUserModelId `DSH.dsh-notifier` on startup (HKCU, no admin required) — an unregistered AUMID gets toasts silently dropped by Windows 10/11. The AUMID follows the `Company.Product` convention to avoid collisions in the public namespace (`HKCU\SOFTWARE\Classes\AppUserModelId`) where same-named apps overwrite each other's display names; a legacy `DSH` key registered by older versions is harmless leftover (just an empty registry entry, does not affect new toasts) and can be removed manually with `Remove-Item -Path "HKCU:\SOFTWARE\Classes\AppUserModelId\DSH"` if desired
+- **Bark channel credentials & outbound security (M2)**:
+  - **The device key never lands in the URL**: pushes go to `POST {baseUrl}/push` with a JSON body (the `device_key` field) — reverse-proxy access logs record URLs and headers by default, never bodies
+  - **A single masking exit**: `deviceKey` in `GET /config`'s user+effective and in `PUT` success responses is always masked as `********`; submitting the full mask = keep the original value (backfilled aligned by instance id so a reordering never swaps credentials between instances)
+  - **No credential replacement at the error exit (measured)**: Bark 4xx response bodies echo the key verbatim — failure reasons are truncated as-is and go to the logger and to `status.json`; the literal device-key replacement is gone, and so is the `sent` event as an exit (see "Security & boundaries")
+  - **SSRF posture**: `baseUrl` is limited to the http/https scheme, credential URLs (`user:pass@host`) are rejected, and query/hash are dropped. **No domain allowlist** — pointing baseUrl at an intranet self-hosted bark-server is a legitimate case; known residual risk: a caller able to reach dsh web from the LAN (through a lan-proxy reverse proxy it can cross the loopback fence, see the deployment doc) can use `/test` to trigger one outbound POST to `baseUrl` (semi-blind: the response error summary echoes only a truncated raw excerpt). Deployments sensitive to that risk can turn the plugin's `enabled` off or adopt a dedicated-port setup (a later version)
 - **Webhook channel credentials & outbound security (#508)**:
   - **Disabled by default**: `enabled` defaults to false — outbound authorization must be granted explicitly (same posture as Bark)
   - **Credentials never land in the URL**: credentials travel only in request headers (bearer → `Authorization: Bearer`, basic → `Authorization: Basic` (base64), header → custom header name + value); reverse-proxy access logs (URL + header names) never see them
@@ -390,6 +482,10 @@ be able to resolve these official packages (skipping type checking is unaffected
   - Webhook is an **additive channel type**: the semantics and compatibility commitments of existing channels and notification outputs (SSE frames / system notifications / history jsonl) are unchanged
 
 ## Verification
+
+Tests are maintained in a single copy, with mutation coverage automatic: unit tests only live in
+`test/*.test.ts` (`import "../lib/index.js"` exercises the built artifact); stryker reuses the
+same assertions through the lib→src hook, so no hand-synced copy is needed.
 
 ```sh
 # Health check (loopback)

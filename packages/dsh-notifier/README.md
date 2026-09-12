@@ -80,7 +80,6 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-notifier
   修复（原 notify-send 无声音 hint，DE 支持参差）；详见「配置 → 每通道声音」小节
 - **非安全上下文降级**：局域网 HTTP 访问时浏览器禁止系统级弹窗——自动降级为「页面内横幅 + 提示音 + 标题提醒」
 - **免打扰时段**：支持跨午夜（如 22:00 → 08:00）；可设**紧急例外**（`quietHours.allowKinds`：免打扰期间仍提醒的事件）。默认候选为高频阻塞型（审批/提问/出错），设置页支持勾选**全部 6 个内置事件**（含任务完成/子任务完成/轮次完成）并一键「跟随已启用事件」或「恢复默认」；豁免与事件开关正交——关闭的事件即使豁免也不会收到通知（事件不产生），豁免项照常保留；未启用事件在设置页以弱化（降低透明度）样式展示，仍可勾选豁免。**升级提示**：放开白名单后，旧配置中原本会被过滤掉的 kind（如手改的 `done`/`turn-end`）会在免打扰期间恢复提醒——行为变化；如不希望这样，可在设置页豁免区自行调整
-- **审批超时二次提醒**：审批等待超 `askRemindMin` 分钟（默认 5，0 关闭）未处理时再次提醒——**当前不生效**（待契约裁决，见「对外契约」）
 - **设置卡片诊断**：设置 → 插件 → dsh-notifier 卡片显示浏览器通知授权状态与安全上下文提示，并含最近 10 条通知记录、发送测试通知与清理记录入口
 
 ## 事件订阅与 scope 语义（{global:true} 取舍）
@@ -111,8 +110,6 @@ context filter checks」）。取舍如下（issue #290）：
 - **`registerChannel` 退役**：它承诺了一个从未入库的频道贡献模型；频道类型以内置为准（系统 / 浏览器 / bark / webhook）；
 - **`send` 不再返回受理数组**：改为返回 `Promise<void>`——原数组里的 `ok` 是「已受理」而不是「已送达」，读错方向比没有返回值更贵；
 - **`registerKind` 与 `send` 本身不变**：只用这两个的消费方不受影响。
-
-设置项留白：`askRemindMin`（审批久等二次提醒，默认 5 分钟）**当前不生效**——它需要先有一次「请求身份」的契约裁决；当前该键照常校验、落盘与回显，但不产生提醒。
 
 ## 配置（设置 → 插件 → dsh-notifier 卡片可改）
 
@@ -176,7 +173,6 @@ context filter checks」）。取舍如下（issue #290）：
   "browserSound": true,
   "systemSound": true,
   "quietHours": { "enabled": false, "start": "22:00", "end": "08:00", "allowKinds": [] },
-  "askRemindMin": 5,
   "historyMaxAgeDays": 0,
   "maxConnections": 16,
   "channels": [],

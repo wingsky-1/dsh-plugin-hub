@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg viewBox="0 0 1160 540" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="notifier-title notifier-desc">
-      <title id="notifier-title">dsh-notifier 通知管线架构</title>
-      <desc id="notifier-desc">宿主事件经 sendKind 通知管线（门控、模板、免打扰、路由）分发到浏览器 SSE、系统 toast 与 Bark 三个通道，并落盘历史。</desc>
+<svg viewBox="0 0 1240 780" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="notifier-title notifier-desc">
+      <title id="notifier-title">dsh-notifier 按域架构</title>
+      <desc id="notifier-desc">唯一组合根 src/index.ts 按序装配八个域与共享层：宿主事件由 events 域翻译成通知请求，经 pipeline 域的裁决、路由、定稿、投递四步送达 channels 域的 browser / system / bark / webhook 四个出口，历史与状态落 stores 域。</desc>
       <defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
         <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
           <circle cx="1" cy="1" r="0.9" fill="rgba(45,49,66,0.10)"/>
@@ -14,118 +14,279 @@
       <rect width="100%" height="100%" fill="#f5f5f5"/>
       <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
 
-      <!-- Zone: 投递通道 -->
-      <rect x="580" y="80" width="240" height="400" rx="8"
+      <!-- 分区框：src/server 的八个域与共享层 -->
+      <rect x="220" y="160" width="992" height="374" rx="8"
             fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
-      <rect x="668" y="84" width="64" height="12" rx="2" fill="#f5f5f5"/>
-      <text x="700" y="93" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace"
-            text-anchor="middle" letter-spacing="0.14em">投递通道</text>
+      <rect x="656" y="152" width="120" height="16" rx="2" fill="#f5f5f5"/>
+      <text x="716" y="164" fill="rgba(45,49,66,0.40)" font-size="7" font-family="'Geist Mono', monospace"
+            text-anchor="middle" letter-spacing="0.14em">SRC/SERVER · 8 域 + shared</text>
 
-      <!-- Arrows (behind boxes) -->
-      <!-- 事件源 → 管线（accent） -->
-      <path d="M 180,228 H 236 Q 244,228 244,220 V 196 Q 244,188 252,188 H 300"
-            fill="none" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
-      <!-- 管线 → browser（accent） -->
-      <path d="M 520,188 H 572 Q 580,188 580,180 V 150 Q 580,142 588,142 H 620"
-            fill="none" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
-      <!-- 管线 → system -->
-      <path d="M 520,188 H 572 Q 580,188 580,196 V 272 Q 580,280 588,280 H 620"
-            fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <!-- 管线 → bark -->
-      <path d="M 520,188 H 572 Q 580,188 580,196 V 410 Q 580,418 588,418 H 620"
-            fill="none" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
-      <!-- browser → 客户端（SSE 长连接） -->
-      <line x1="780" y1="142" x2="880" y2="142" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
-      <!-- 管线 → 历史（落盘） -->
-      <line x1="410" y1="236" x2="410" y2="380" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- 箭头层（画在方块之下） -->
+      <!-- 装配：组合根 → 域 -->
+      <line x1="340" y1="132" x2="340" y2="170" stroke="#eb6c36" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-accent)"/>
+      <!-- 主链路：宿主事件 → events -->
+      <line x1="188" y1="262" x2="230" y2="262" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <!-- 主链路：events → pipeline -->
+      <line x1="448" y1="262" x2="490" y2="262" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <!-- 主链路：pipeline → channels -->
+      <line x1="912" y1="262" x2="954" y2="262" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <!-- pipeline 内部四步 -->
+      <line x1="588" y1="264" x2="606" y2="264" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+      <line x1="692" y1="264" x2="710" y2="264" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+      <line x1="796" y1="264" x2="814" y2="264" stroke="#eb6c36" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+      <!-- 归档：pipeline → stores -->
+      <line x1="520" y1="352" x2="520" y2="390" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <!-- 帧：channels（browser 出口）→ api 域 -->
+      <line x1="1021" y1="352" x2="1021" y2="390" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <!-- 服务面：sdk 域 → 兄弟插件 -->
+      <line x1="646" y1="522" x2="646" y2="560" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <!-- 浏览器出口：api 域 → 浏览器页面 -->
+      <line x1="1070" y1="522" x2="1070" y2="560" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
 
-      <!-- Arrow labels -->
-      <rect x="186" y="204" width="96" height="12" rx="2" fill="#f5f5f5"/>
-      <text x="234" y="213" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">7 事件触发</text>
+      <!-- 箭头标签 -->
+      <rect x="352" y="140" width="52" height="13" rx="2" fill="#f5f5f5"/>
+      <text x="378" y="150" fill="#eb6c36" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">按序装配</text>
 
-      <rect x="524" y="118" width="64" height="12" rx="2" fill="#f5f5f5"/>
-      <text x="556" y="127" fill="#eb6c36" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SSE 帧</text>
+      <rect x="186" y="242" width="46" height="13" rx="2" fill="#f5f5f5"/>
+      <text x="209" y="252" fill="#eb6c36" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">ctx.on</text>
 
-      <rect x="524" y="256" width="64" height="12" rx="2" fill="#f5f5f5"/>
-      <text x="556" y="265" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">系统 toast</text>
+      <rect x="446" y="242" width="46" height="13" rx="2" fill="#f5f5f5"/>
+      <text x="469" y="252" fill="#eb6c36" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">submit()</text>
 
-      <rect x="524" y="394" width="64" height="12" rx="2" fill="#f5f5f5"/>
-      <text x="556" y="403" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">POST /push</text>
+      <rect x="910" y="242" width="46" height="13" rx="2" fill="#f5f5f5"/>
+      <text x="933" y="252" fill="#eb6c36" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">deliver()</text>
 
-      <rect x="800" y="120" width="72" height="12" rx="2" fill="#f5f5f5"/>
-      <text x="836" y="129" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SSE 长连接</text>
+      <rect x="418" y="362" width="90" height="13" rx="2" fill="#f5f5f5"/>
+      <text x="463" y="372" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">归档 · 历史 + 状态</text>
 
-      <rect x="418" y="308" width="72" height="12" rx="2" fill="#f5f5f5"/>
-      <text x="454" y="317" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">历史落盘</text>
+      <rect x="1035" y="362" width="92" height="13" rx="2" fill="#f5f5f5"/>
+      <text x="1081" y="372" fill="#2e5aa8" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">帧总线 FrameBus</text>
 
-      <!-- Node: 事件源 -->
-      <rect x="40" y="180" width="140" height="96" rx="6" fill="#f5f5f5"/>
-      <rect x="40" y="180" width="140" height="96" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
-      <rect x="48" y="188" width="36" height="12" rx="2" fill="transparent" stroke="rgba(122,131,153,0.40)" stroke-width="0.8"/>
-      <text x="66" y="197" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EVT</text>
-      <text x="110" y="216" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">宿主事件</text>
-      <text x="110" y="232" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">approval / agent / session</text>
-      <text x="110" y="246" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">（{global:true} 监听）</text>
+      <rect x="658" y="532" width="128" height="13" rx="2" fill="#f5f5f5"/>
+      <text x="722" y="542" fill="#2e5aa8" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">ctx["wingsky.notifier"]</text>
 
-      <!-- Node: 通知管线（focal） -->
-      <rect x="300" y="140" width="220" height="96" rx="6" fill="#f5f5f5"/>
-      <rect x="300" y="140" width="220" height="96" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
-      <rect x="308" y="148" width="52" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
-      <text x="334" y="157" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PIPE</text>
-      <text x="410" y="180" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">通知管线 sendKind</text>
-      <text x="410" y="196" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">门控 · 模板 · 免打扰 · 路由</text>
-      <text x="410" y="210" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">（聚合 / 合并 / 脱敏）</text>
+      <rect x="996" y="532" width="66" height="13" rx="2" fill="#f5f5f5"/>
+      <text x="1029" y="542" fill="#2e5aa8" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SSE 长连接</text>
 
-      <!-- Node: browser 通道 -->
-      <rect x="620" y="110" width="160" height="64" rx="6" fill="#f5f5f5"/>
-      <rect x="620" y="110" width="160" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
-      <rect x="628" y="118" width="52" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
-      <text x="654" y="127" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">BROWSER</text>
-      <text x="700" y="146" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">浏览器通道</text>
-      <text x="700" y="162" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">SSE 广播 · Notification</text>
+      <!-- 组合根：src/index.ts -->
+      <rect x="40" y="60" width="1160" height="72" rx="8" fill="#f5f5f5"/>
+      <rect x="40" y="60" width="1160" height="72" rx="8" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <rect x="52" y="68" width="44" height="13" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="74" y="78" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ROOT</text>
+      <text x="108" y="88" fill="#2d3142" font-size="13.5" font-weight="600" font-family="'Geist', sans-serif">src/index.ts · 唯一组合根</text>
+      <text x="108" y="108" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace">apply(ctx)：bindHost 收窄宿主面 → assemble 按依赖顺序装配 → ctx.effect 逆序释放</text>
+      <text x="108" y="124" fill="#4f5d75" font-size="8.5" font-family="'Geist Mono', monospace">装配序 <tspan fill="#eb6c36">upgrade → config → stores → pipeline → events → sdk → api</tspan></text>
+      <text x="1188" y="108" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="end">帧总线 FrameBus 由组合根本地接线：帧不经宿主事件总线</text>
 
-      <!-- Node: system 通道 -->
-      <rect x="620" y="248" width="160" height="64" rx="6" fill="#f5f5f5"/>
-      <rect x="620" y="248" width="160" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
-      <rect x="628" y="256" width="52" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
-      <text x="654" y="265" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SYSTEM</text>
-      <text x="700" y="284" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">系统通知</text>
-      <text x="700" y="300" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">WinRT / osascript / notify-send</text>
+      <!-- 外部：宿主事件 -->
+      <rect x="40" y="194" width="148" height="136" rx="6" fill="#f5f5f5"/>
+      <rect x="40" y="194" width="148" height="136" rx="6" fill="rgba(79,93,117,0.10)" stroke="#7a8399" stroke-width="1"/>
+      <rect x="48" y="202" width="36" height="13" rx="2" fill="transparent" stroke="rgba(122,131,153,0.40)" stroke-width="0.8"/>
+      <text x="66" y="212" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EVT</text>
+      <text x="114" y="240" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">宿主事件</text>
+      <text x="114" y="258" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">approval/request</text>
+      <text x="114" y="272" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">user-questions/request</text>
+      <text x="114" y="286" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">session/event · agent/*</text>
+      <text x="114" y="302" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">{global:true} 订阅</text>
+      <text x="114" y="318" fill="#7a8399" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle">转发后必须 next()</text>
 
-      <!-- Node: bark 通道 -->
-      <rect x="620" y="386" width="160" height="64" rx="6" fill="#f5f5f5"/>
-      <rect x="620" y="386" width="160" height="64" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
-      <rect x="628" y="394" width="40" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
-      <text x="648" y="403" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">BARK</text>
-      <text x="700" y="422" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Bark 推送</text>
-      <text x="700" y="438" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">POST /push · 重试 ×2</text>
+      <!-- 域：events -->
+      <rect x="232" y="172" width="216" height="180" rx="6" fill="#f5f5f5"/>
+      <rect x="232" y="172" width="216" height="180" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="242" y="180" width="48" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="266" y="190" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EVENTS</text>
+      <text x="300" y="190" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">事件适配层</text>
+      <text x="242" y="212" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">宿主事件 → 通知请求（不判该不该发）</text>
+      <text x="242" y="246" fill="#2d3142" font-size="7.5" font-family="'Geist Mono', monospace">listen</text>
+      <text x="290" y="246" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">订阅宿主事件并转发</text>
+      <text x="242" y="262" fill="#2d3142" font-size="7.5" font-family="'Geist Mono', monospace">state</text>
+      <text x="290" y="262" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">完成判定与 turn 去重</text>
+      <text x="242" y="278" fill="#2d3142" font-size="7.5" font-family="'Geist Mono', monospace">translate</text>
+      <text x="290" y="278" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">七类宿主事件 → 通知请求</text>
+      <text x="242" y="294" fill="#2d3142" font-size="7.5" font-family="'Geist Mono', monospace">session</text>
+      <text x="290" y="294" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">会话日志与子代理归属</text>
+      <rect x="242" y="306" width="64" height="13" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="274" y="316" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">interface.ts</text>
+      <rect x="314" y="306" width="46" height="13" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="337" y="316" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">deps.ts</text>
+      <text x="242" y="338" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">请求一律产出 —— 开关与免打扰归 pipeline</text>
 
-      <!-- Node: 客户端 -->
-      <rect x="880" y="110" width="160" height="64" rx="6" fill="#f5f5f5"/>
-      <rect x="880" y="110" width="160" height="64" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
-      <rect x="888" y="118" width="52" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
-      <text x="914" y="127" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CLIENT</text>
-      <text x="960" y="146" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">浏览器客户端</text>
-      <text x="960" y="162" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">Notification / 横幅 / 提示音</text>
+      <!-- 域：pipeline -->
+      <rect x="492" y="172" width="420" height="180" rx="6" fill="#f5f5f5"/>
+      <rect x="492" y="172" width="420" height="180" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="504" y="180" width="56" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="532" y="190" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PIPELINE</text>
+      <text x="570" y="190" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">裁决管线 · 唯一裁决点</text>
+      <text x="504" y="212" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">开关 · 免打扰 · kind 白名单 · 频道路由 都在本域判完，别处不许再判一次</text>
 
-      <!-- Node: 历史 -->
-      <rect x="300" y="380" width="220" height="64" rx="6" fill="#f5f5f5"/>
-      <rect x="300" y="380" width="220" height="64" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
-      <rect x="308" y="388" width="40" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
-      <text x="328" y="397" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HIST</text>
-      <text x="410" y="416" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">历史 / 状态存储</text>
-      <text x="410" y="432" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">jsonl 落盘 · 原子写</text>
+      <rect x="504" y="228" width="84" height="72" rx="4" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="546" y="250" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">judge</text>
+      <text x="546" y="266" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">裁决</text>
+      <text x="546" y="284" fill="#7a8399" font-size="7" font-family="'Geist', sans-serif" text-anchor="middle">该不该发</text>
+
+      <rect x="608" y="228" width="84" height="72" rx="4" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="650" y="250" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">route</text>
+      <text x="650" y="266" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">路由</text>
+      <text x="650" y="284" fill="#7a8399" font-size="7" font-family="'Geist', sans-serif" text-anchor="middle">该发给谁</text>
+
+      <rect x="712" y="228" width="84" height="72" rx="4" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="754" y="250" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">finalize</text>
+      <text x="754" y="266" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">定稿</text>
+      <text x="754" y="284" fill="#7a8399" font-size="7" font-family="'Geist', sans-serif" text-anchor="middle">该长什么样</text>
+
+      <rect x="816" y="228" width="84" height="72" rx="4" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="858" y="250" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">dispatch</text>
+      <text x="858" y="266" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif" text-anchor="middle">投递</text>
+      <text x="858" y="284" fill="#7a8399" font-size="7" font-family="'Geist', sans-serif" text-anchor="middle">重试 · 节流</text>
+
+      <text x="504" y="320" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">重试 · 退避 · 在途上限 · 节流都在 dispatch；出口只回答可不可重试</text>
+      <rect x="504" y="330" width="64" height="13" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="536" y="340" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">interface.ts</text>
+      <rect x="576" y="330" width="46" height="13" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="599" y="340" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">deps.ts</text>
+
+      <!-- 域：channels -->
+      <rect x="956" y="172" width="244" height="180" rx="6" fill="#f5f5f5"/>
+      <rect x="956" y="172" width="244" height="180" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="968" y="180" width="56" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="996" y="190" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CHANNELS</text>
+      <text x="1034" y="190" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">投递出口</text>
+      <text x="968" y="212" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace">逐目标 fail-soft，只答「送到没有」</text>
+
+      <rect x="968" y="226" width="106" height="40" rx="4" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="1021" y="246" fill="#2d3142" font-size="9.5" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">browser</text>
+      <text x="1021" y="260" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif" text-anchor="middle">浏览器帧</text>
+
+      <rect x="1082" y="226" width="106" height="40" rx="4" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="1135" y="246" fill="#2d3142" font-size="9.5" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">system</text>
+      <text x="1135" y="260" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif" text-anchor="middle">系统通知</text>
+
+      <rect x="968" y="274" width="106" height="40" rx="4" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="1021" y="294" fill="#2d3142" font-size="9.5" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">bark</text>
+      <text x="1021" y="308" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif" text-anchor="middle">Bark 推送</text>
+
+      <rect x="1082" y="274" width="106" height="40" rx="4" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="1135" y="294" fill="#2d3142" font-size="9.5" font-weight="600" font-family="'Geist Mono', monospace" text-anchor="middle">webhook</text>
+      <text x="1135" y="308" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif" text-anchor="middle">Webhook</text>
+
+      <text x="968" y="332" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">不持有重试状态：只回答这次失败可不可重试</text>
+      <text x="968" y="346" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace">interface.ts → deliver · 无 deps.ts</text>
+
+      <!-- 域：api -->
+      <rect x="940" y="392" width="260" height="130" rx="6" fill="#f5f5f5"/>
+      <rect x="940" y="392" width="260" height="130" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="952" y="400" width="36" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="970" y="410" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">API</text>
+      <text x="998" y="410" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif">浏览器出口</text>
+      <text x="952" y="430" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace">impl/service · route · stream</text>
+      <text x="952" y="444" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace">settings · journal · kinds · probe</text>
+      <text x="952" y="464" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">7 条 /api/dsh-notifier/* 端点 + SSE</text>
+      <text x="952" y="478" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">回环围栏：非回环 403 · 方法错 405</text>
+      <text x="952" y="492" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">唯一的浏览器入口，围栏只有一份实现</text>
+      <rect x="952" y="500" width="64" height="13" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="984" y="510" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">interface.ts</text>
+      <rect x="1024" y="500" width="46" height="13" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="1047" y="510" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">deps.ts</text>
+
+      <!-- 支撑域：upgrade -->
+      <rect x="40" y="392" width="156" height="130" rx="6" fill="#f5f5f5"/>
+      <rect x="40" y="392" width="156" height="130" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <rect x="52" y="400" width="52" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+      <text x="78" y="410" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">UPGRADE</text>
+      <text x="52" y="432" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif">版本迁移</text>
+      <text x="52" y="452" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace">impl/chain · steps</text>
+      <text x="52" y="466" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace">service · legacy · version</text>
+      <text x="52" y="486" fill="#eb6c36" font-size="7.5" font-family="'Geist Mono', monospace">interface.ts · deps.ts</text>
+      <text x="52" y="502" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">存储形态逐版本推进</text>
+      <text x="52" y="516" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">装配先跑 · 失败即中止</text>
+
+      <!-- 支撑域：config -->
+      <rect x="216" y="392" width="156" height="130" rx="6" fill="#f5f5f5"/>
+      <rect x="216" y="392" width="156" height="130" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <rect x="228" y="400" width="48" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+      <text x="252" y="410" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CONFIG</text>
+      <text x="228" y="432" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif">设置存取</text>
+      <text x="228" y="452" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace">impl/service · input</text>
+      <text x="228" y="466" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace">model · redact</text>
+      <text x="228" y="486" fill="#eb6c36" font-size="7.5" font-family="'Geist Mono', monospace">interface.ts · deps.ts</text>
+      <text x="228" y="502" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">读 / 写的唯一存取点</text>
+      <text x="228" y="516" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">归一化 · 校验 · 掩码往返</text>
+
+      <!-- 支撑域：stores -->
+      <rect x="392" y="392" width="156" height="130" rx="6" fill="#f5f5f5"/>
+      <rect x="392" y="392" width="156" height="130" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <rect x="404" y="400" width="48" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+      <text x="428" y="410" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">STORES</text>
+      <text x="404" y="432" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif">持久化</text>
+      <text x="404" y="452" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace">impl/history · status</text>
+      <text x="404" y="466" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace">history.jsonl · status.json</text>
+      <text x="404" y="486" fill="#eb6c36" font-size="7.5" font-family="'Geist Mono', monospace">interface.ts · deps.ts</text>
+      <text x="404" y="502" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">写队列串行化 + 原子写</text>
+      <text x="404" y="516" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">保留天数每次读时现取</text>
+
+      <!-- 支撑域：sdk -->
+      <rect x="568" y="392" width="156" height="130" rx="6" fill="#f5f5f5"/>
+      <rect x="568" y="392" width="156" height="130" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <rect x="580" y="400" width="36" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+      <text x="598" y="410" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SDK</text>
+      <text x="580" y="432" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif">对外服务面</text>
+      <text x="580" y="452" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace">impl/service · registry</text>
+      <text x="580" y="466" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace">ctx["wingsky.notifier"]</text>
+      <text x="580" y="486" fill="#eb6c36" font-size="7.5" font-family="'Geist Mono', monospace">interface.ts · deps.ts</text>
+      <text x="580" y="502" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">apiVersion: 2</text>
+      <text x="580" y="516" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">registerKind / send</text>
+
+      <!-- 共享层：shared -->
+      <rect x="744" y="392" width="156" height="130" rx="6" fill="#f5f5f5"/>
+      <rect x="744" y="392" width="156" height="130" rx="6" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="4,3"/>
+      <rect x="756" y="400" width="48" height="13" rx="2" fill="transparent" stroke="rgba(45,49,66,0.22)" stroke-width="0.8"/>
+      <text x="780" y="410" fill="#7a8399" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SHARED</text>
+      <text x="756" y="432" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif">共享层（叶子）</text>
+      <text x="756" y="452" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace">file-io · paths</text>
+      <text x="756" y="466" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace">type · interface</text>
+      <text x="756" y="486" fill="#eb6c36" font-size="7.5" font-family="'Geist Mono', monospace">interface.ts（唯一入口）</text>
+      <text x="756" y="502" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">不依赖任何域</text>
+      <text x="756" y="516" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif">各域经它引用共享设施</text>
+
+      <!-- 域约定 -->
+      <rect x="40" y="562" width="320" height="100" rx="6" fill="none" stroke="rgba(45,49,66,0.15)" stroke-width="0.8" stroke-dasharray="4,3"/>
+      <text x="52" y="584" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.14em">域约定</text>
+      <text x="52" y="604" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">interface.ts 对外门面：安装 / 卸载 / 能力出口</text>
+      <text x="52" y="621" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">deps.ts 对上注入端口：按提供方 Pick 收窄</text>
+      <text x="52" y="638" fill="#4f5d75" font-size="8" font-family="'Geist', sans-serif">impl/&lt;块&gt;/ 实现全部住在这里</text>
+
+      <!-- 外部：兄弟插件 -->
+      <rect x="568" y="562" width="156" height="100" rx="6" fill="#f5f5f5"/>
+      <rect x="568" y="562" width="156" height="100" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <text x="646" y="598" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">兄弟插件</text>
+      <text x="646" y="620" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle">ctx["wingsky.notifier"]</text>
+      <text x="646" y="636" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle">registerKind / send</text>
+      <text x="646" y="652" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle">send → Promise&lt;void&gt;</text>
+
+      <!-- 外部：浏览器页面 -->
+      <rect x="940" y="562" width="260" height="100" rx="6" fill="#f5f5f5"/>
+      <rect x="940" y="562" width="260" height="100" rx="6" fill="rgba(45,49,66,0.05)" stroke="#4f5d75" stroke-width="1"/>
+      <text x="1070" y="598" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">浏览器页面</text>
+      <text x="1070" y="620" fill="#4f5d75" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle">src/client</text>
+      <text x="1070" y="636" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif" text-anchor="middle">SSE 订阅 + fetch 七条端点</text>
+      <text x="1070" y="652" fill="#4f5d75" font-size="7.5" font-family="'Geist', sans-serif" text-anchor="middle">Notification / 提示音 / 设置页</text>
 
       <!-- Legend strip -->
-      <line x1="40" y1="508" x2="1120" y2="508" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
-      <text x="40" y="524" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+      <line x1="40" y1="706" x2="1200" y2="706" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="40" y="722" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
 
-      <rect x="40" y="532" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
-      <text x="60" y="540" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Focal（主链路）</text>
+      <rect x="40" y="736" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="60" y="745" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Focal（组合根与主链路）</text>
 
-      <rect x="180" y="532" width="14" height="10" rx="2" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
-      <text x="200" y="540" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Backend 通道</text>
+      <rect x="212" y="736" width="14" height="10" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="232" y="745" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">域（interface.ts / deps.ts 门面）</text>
 
-      <line x1="360" y1="537" x2="388" y2="537" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
-      <text x="396" y="540" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">HTTP / 长连接</text>
+      <rect x="440" y="736" width="14" height="10" rx="2" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1"/>
+      <text x="460" y="745" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">域内实现块</text>
+
+      <line x1="556" y1="741" x2="584" y2="741" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <text x="592" y="745" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">帧 / 服务面 / SSE</text>
+
+      <line x1="736" y1="741" x2="764" y2="741" stroke="#eb6c36" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow-accent)"/>
+      <text x="772" y="745" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">装配（按序 · 逆序释放）</text>
     </svg>

@@ -93,7 +93,7 @@ flowchart LR
 | 本页（全景） | 挂载流程图 | mermaid 内嵌（无独立源） |
 | [dsh-lan-proxy.md](dsh-lan-proxy.md) | 转发架构图 | `diagrams/lan-proxy-architecture.html` |
 | [dsh-mcp-manager.md](dsh-mcp-manager.md) | 双轨架构图 | `diagrams/mcp-manager-architecture.html` |
-| [dsh-notifier.md](dsh-notifier.md) | 通知管线图 | `diagrams/notifier-architecture.html` |
+| [dsh-notifier.md](dsh-notifier.md) | 按域架构与通知管线图 | `diagrams/notifier-architecture.html` |
 | [dsh-provider-usage.md](dsh-provider-usage.md) | 宿主端渲染架构图 | `diagrams/provider-usage-architecture.html` |
 
 > 调整方法：用浏览器打开源 HTML → 修改 SVG 内容 → 重新导出 SVG
