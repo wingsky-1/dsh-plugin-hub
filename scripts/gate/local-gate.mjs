@@ -85,7 +85,9 @@ function tierSteps(tier, { hitPackages, withCoverage }) {
   ]
   const prereqStep = {
     label: `build 编译面前置包（test:scripts 依赖：${PREREQ_PACKAGES.join(', ')}）`,
-    args: [...PREREQ_PACKAGES.map((p) => `--filter @wingsky-1/${p}...`), 'build'],
+    // --filter 与取值必须是两个独立 argv 元素（与本文件其余步骤同写法）；拼成单个
+    // 字符串会被 pnpm 当成一个未知选项：Unknown options: 'filter @wingsky-1/<pkg>...'
+    args: [...PREREQ_PACKAGES.flatMap((p) => ['--filter', `@wingsky-1/${p}...`]), 'build'],
   }
   const scriptsSelfTest = { label: 'test:scripts（门禁脚本自测）', args: ['test:scripts'] }
 
