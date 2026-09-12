@@ -125,6 +125,11 @@ function pruneSnapshotTags(target, keep, log) {
  *
  * `entries` 为 `[{ name, blobSha }]`（沿用文件复用远端 blob sha）；`manifest` 由本函数序列化并
  * 作为树里的 manifest.json。给了 `manifestPath` 就同时落一份到本地（人工应急的 push 路径要用）。
+ *
+ * 推送前强制校验 **manifest 与树逐文件对齐**（双向）。这一条不是洁癖：2026-09-12 的并集入档
+ * 首次上线时，manifest 只覆盖了「新算」的 31 段而漏掉「沿用」的 2 段，树本身正确（33 段没缩水）
+ * 但 manifest 少 2 条——而 manifest 是留段时间戳与后续完整性校验的唯一依据。守卫放在这里，
+ * 任何写入方漏算都会在**推送之前**炸掉，而不是把不对齐的归档推上去。
  */
 export function pushBaselineTree({
   target,
@@ -139,6 +144,15 @@ export function pushBaselineTree({
 }) {
   const say = (msg) => log(`[${label}] ${msg}`);
   const ordered = [...entries].sort((a, b) => (a.name < b.name ? -1 : 1));
+  const names = new Set(ordered.map((e) => e.name));
+  const missing = [...names].filter((n) => !(n in manifest));
+  const extra = Object.keys(manifest).filter((n) => !names.has(n));
+  if (missing.length > 0 || extra.length > 0) {
+    throw new Error(
+      `manifest 与树不对齐（缺 ${missing.length} 条${missing.length ? `: ${missing.slice(0, 5).join(', ')}` : ''}`
+      + `；多 ${extra.length} 条${extra.length ? `: ${extra.slice(0, 5).join(', ')}` : ''}）——拒绝推送不对齐的归档`,
+    );
+  }
   const manifestBlobSha = hashBlob(serializeManifest(manifest));
   if (manifestPath) writeFileSync(manifestPath, serializeManifest(manifest));
 

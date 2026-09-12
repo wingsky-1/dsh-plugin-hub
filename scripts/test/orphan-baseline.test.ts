@@ -5,6 +5,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
+import { pushBaselineTree } from '../gate/baseline-push.mjs';
+
 const scriptPath = join(process.cwd(), 'scripts', 'gate', 'orphan-baseline.mjs');
 const overlayScriptPath = join(process.cwd(), 'scripts', 'gate', 'overlay-baseline.mjs');
 
@@ -398,6 +400,13 @@ test('#718 S1.2: archive 并集入档——本次未产出的段沿用远端，�
       '并集入档后段的集合不得缩水（旧实现会在这里抹掉 beta/gamma）',
     );
     assert.equal(readArchived(tmp, 'incremental-beta.json'), '{"seg":"beta"}', '沿用段保留远端内容');
+    // manifest 必须覆盖树里的**全部**段（新算 + 沿用）。2026-09-12 生产实测：首次并集入档时
+    // manifest 只写了「新算」的 31 段、漏掉「沿用」的 2 段——树正确但 manifest 与树不对齐。
+    assert.deepEqual(
+      Object.keys(JSON.parse(readArchived(tmp, 'manifest.json'))).sort(),
+      ['incremental-alpha.json', 'incremental-beta.json', 'incremental-gamma.json'],
+      'manifest 必须覆盖树里的全部段（含沿用段）',
+    );
     assert.ok(
       !existsSync(join(tmp, 'coverage', 'mutation', 'manifest.json')),
       'archive 不得把 manifest 写进本班次报告目录（会污染 observe-reports 留档）',
@@ -669,6 +678,102 @@ test('#718 S2.1: overlay 端到端——差量覆盖生效 + 沿用段保留旧 
       execFileSync('git', ['rev-parse', `refs/tags/${tag}`], { cwd: tmp, encoding: 'utf8' }).trim(),
       tipBefore,
       '快照 tag 必须指向 overlay 入档前的 tip',
+    );
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// ── 2026-09-12 生产实测暴露的 manifest 缺陷（并集入档首夜）──────────────────
+// 现象：2 段实例失败 → archive 记账「新算 31 / 沿用 2」→ 树 34 份（33 段 + manifest）正确，
+// 但 manifest.json 只有 31 条——漏掉了沿用段。manifest 是留段时间戳与完整性校验的唯一依据，
+// 漏条目会让「不推不对齐归档」这道守卫在下一班把自己卡死。
+
+/** 把远端归档分支的 manifest 改写成只含指定条目（模拟写入方漏条目 / 人工截断）。 */
+function rewriteRemoteManifest(repo: string, keepNames: string[]): void {
+  const full = JSON.parse(readArchived(repo, 'manifest.json'));
+  const trimmed = Object.fromEntries(keepNames.map((n) => [n, full[n]]));
+  const blob = execFileSync('git', ['hash-object', '-w', '--stdin'], {
+    cwd: repo,
+    encoding: 'utf8',
+    input: `${JSON.stringify(trimmed, null, 2)}\n`,
+  }).trim();
+  const lines = execFileSync('git', ['ls-tree', '-r', 'refs/heads/baseline/mutation'], { cwd: repo, encoding: 'utf8' })
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((l) => (l.endsWith('\tmanifest.json') ? `100644 blob ${blob}\tmanifest.json` : l));
+  const tree = execFileSync('git', ['mktree'], { cwd: repo, encoding: 'utf8', input: `${lines.join('\n')}\n` }).trim();
+  const commit = execFileSync('git', ['commit-tree', tree, '-m', 'test: trim manifest'], { cwd: repo, encoding: 'utf8' }).trim();
+  execFileSync('git', ['update-ref', 'refs/heads/baseline/mutation', commit], { cwd: repo });
+}
+
+test('#718 S1.2 修复: 远端 manifest 缺沿用段条目时按 blob 重算并告警（自愈，不卡死归档）', () => {
+  const tmp = initBaselineRepo(['alpha', 'beta']);
+  try {
+    writeBaselines(tmp, {
+      'incremental-alpha.json': '{"seg":"alpha"}',
+      'incremental-beta.json': '{"seg":"beta"}',
+    });
+    assert.equal(runScript(scriptPath, ['push'], { cwd: tmp }).status, 0, '播种基线');
+    rewriteRemoteManifest(tmp, ['incremental-alpha.json']); // beta 条目被抹掉
+    rmSync(join(tmp, 'coverage', 'mutation', 'manifest.json'));
+
+    // 本次只产出 alpha → beta 走沿用分支，正是漏条目的那一支
+    rmSync(join(tmp, 'coverage', 'mutation', 'incremental-beta.json'));
+    const r = runScript(scriptPath, ['archive'], { cwd: tmp });
+    assert.equal(r.status, 0, `缺条目必须自愈而非卡死归档，实际 ${r.status}: ${r.out}`);
+    assert.match(
+      r.out,
+      /::warning::远端 manifest 缺 1 个沿用段条目.*incremental-beta\.json/,
+      '须点名重算的段（异常可见，但不阻断入档）',
+    );
+
+    const manifest = JSON.parse(readArchived(tmp, 'manifest.json'));
+    assert.deepEqual(
+      Object.keys(manifest).sort(),
+      ['incremental-alpha.json', 'incremental-beta.json'],
+      '重算后 manifest 必须与树逐文件对齐',
+    );
+    assert.equal(manifest['incremental-beta.json'].mtime, null, '重算条目 mtime 必须诚实记 null（不冒充刚测过）');
+    assert.equal(manifest['incremental-beta.json'].size, '{"seg":"beta"}'.length, 'size 取自远端 blob');
+    assert.equal(typeof manifest['incremental-beta.json'].sha256, 'string', 'sha256 按远端 blob 原始字节重算');
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('#718 S1.2 修复: manifest 与树不对齐时拒绝推送（任何写入方漏算都在推送前炸掉）', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'push-guard-'));
+  try {
+    const entries = [
+      { name: 'incremental-a.json', blobSha: 'a'.repeat(40) },
+      { name: 'incremental-b.json', blobSha: 'b'.repeat(40) },
+    ];
+    assert.throws(
+      () => pushBaselineTree({
+        target: 'origin',
+        branch: 'baseline/mutation',
+        entries,
+        manifest: { 'incremental-a.json': { size: 1, mtime: null, sha256: 'x' } },
+        subject: 'x',
+      }),
+      /manifest 与树不对齐.*缺 1 条.*incremental-b\.json/,
+      '漏条目必须在推送前炸掉',
+    );
+    assert.throws(
+      () => pushBaselineTree({
+        target: 'origin',
+        branch: 'baseline/mutation',
+        entries: [entries[0]],
+        manifest: {
+          'incremental-a.json': { size: 1, mtime: null, sha256: 'x' },
+          'incremental-ghost.json': { size: 1, mtime: null, sha256: 'x' },
+        },
+        subject: 'x',
+      }),
+      /多 1 条.*incremental-ghost\.json/,
+      '多余条目同样不对齐',
     );
   } finally {
     rmSync(tmp, { recursive: true, force: true });
