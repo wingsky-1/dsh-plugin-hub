@@ -1,5 +1,5 @@
 {
-  "$comment": "S0 门禁基线（#690）：每包每类计数只许降不许升；uncoveredSrcFiles 只许减不许增。由 verify-dir-imports.mjs --write-baseline 生成。",
+  "$comment": "S0 门禁基线（#690）：结构型计数由 verify-dir-imports.mjs --write-baseline 登记（随新增文件/目录合法上升）；质量型计数（leafModuleCycles/fileCycles/raLegacy*/implToOtherImpl/missingInterface/directImpl）与 uncoveredSrcFiles 只许降不许升，--write-baseline 不更新它们，须人工处置。",
   "version": 1,
   "packages": {
     "dsh-lan-proxy": {

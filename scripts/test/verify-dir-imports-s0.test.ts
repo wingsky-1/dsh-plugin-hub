@@ -11,7 +11,8 @@
  *   - 叶子粒度：同样三域「平铺」与「移入 src/server/」必须报出**相同**的模块数与
  *     值边数（旧实现下后者退化为 1 目录 / 0 值边但仍 PASS）；
  *   - deps.ts 判据：跨模块引用目标 deps.ts 放行、直引实现文件判红；
- *   - 单调基线：写入基线后人为把某计数调高必须 exit 1；
+ *   - 死声明判据（#733 M0a）：值面判死、类型面豁免；deps.ts 自身含值 import 硬判红；
+ *   - 单调基线：写入基线后人为把某计数调高必须 exit 1（#733 M0b 起分结构型 / 质量型）；
  *   - 全覆盖断言：新增未被 mutate/excludes 覆盖的 src 文件必须 exit 1。
  *
  * fixture 经 VERIFY_DIR_IMPORTS_ROOT 指向 mkdtemp 隔离目录（基线路径随根推导），
@@ -149,41 +150,182 @@ test('单调基线：写入基线后 PASS，人为把跨域引用计数调高即
     assert.match(before.out, /单调基线通过/, `应报基线通过：\n${before.out}`)
 
     // 人为把计数调高：c 域新增一条跨模块引用（模块级值边与跨模块引用计数同时 +1）。
+    // #733 M0b 起该变更同时抬高两个质量型计数（值环 leafModuleCycles/fileCycles 与
+    // raLegacy）——本用例只锁结构型红因，质量型红因由下方 M0b 用例专项覆盖。
     const impl = join(root, `${SRC}/c/impl.ts`)
     writeFileSync(impl, 'import { A } from "../a/interface.ts";\nexport const C = A;\n')
     const after = runOn(root)
     assert.equal(after.status, 1, `计数上升应 exit 1，实际 ${after.status}：\n${after.out}`)
     assert.match(after.out, /单调基线上升/, `应点名单调基线上升：\n${after.out}`)
-    assert.match(after.out, /leafValueEdges: 3 > 基线 2/, `应给出具体计数对照：\n${after.out}`)
+    assert.match(after.out, /\[结构型\] leafValueEdges: 3 > 基线 2/, `应给出具体计数对照：\n${after.out}`)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
 })
 
-test('--graph 死声明：deps.ts 声明而本模块无事实边 → 报出，有事实边 → 不报', () => {
+/** 读 fixture 根下的基线 JSON（M0b 用例断言 --write-baseline 的实际落库内容）。 */
+function readFixtureBaseline(root) {
+  return JSON.parse(readFileSync(join(root, 'scripts/data/dir-imports-baseline.json'), 'utf8'))
+}
+
+/** 制造「结构型 + 质量型同时上升」：c → a 新增跨模块引用（值边 +1，同时成环）。 */
+function addCyclicCrossReference(root) {
+  writeFileSync(join(root, `${SRC}/c/impl.ts`), 'import { A } from "../a/interface.ts";\nexport const C = A;\n')
+}
+
+test('--write-baseline 只更新结构型，质量型计数不得被放宽（#733 M0b）', () => {
+  const root = makeFixtureRoot(chainFixture(''))
+  try {
+    const first = runOn(root, ['--write-baseline'])
+    assert.equal(first.status, 0, `写基线应成功：\n${first.out}`)
+    // 首次登记路径（旧基线无该包）是质量型**唯一**会被写入的路径，须显式提示并锁住——
+    // 否则未来重构可把它变成「静默按当前值写入」＝静默放宽。
+    assert.match(first.out, /质量型首次登记/, `首次写基线应提示质量型首次登记：\n${first.out}`)
+    const before = readFixtureBaseline(root)
+    assert.equal(before.packages[PKG].leafModuleCycles, 0, `fixture 初始无环：${JSON.stringify(before.packages[PKG])}`)
+
+    addCyclicCrossReference(root)
+    const second = runOn(root, ['--write-baseline'])
+    assert.equal(second.status, 0, `写基线应成功：\n${second.out}`)
+    assert.match(second.out, /结构型计数已更新/, `应报结构型已更新：\n${second.out}`)
+    assert.match(second.out, /质量型未更新，须人工处置/, `应显式提示质量型未更新：\n${second.out}`)
+
+    const after = readFixtureBaseline(root)
+    // 结构型：随本次结构变更登记（c → a 值边 +1）。
+    assert.equal(after.packages[PKG].leafValueEdges, 3, `结构型应被更新为当前值：${JSON.stringify(after.packages[PKG])}`)
+    // 质量型：保持旧基线值，不被本次写入放宽（含环、raLegacy、未覆盖清单）。
+    assert.equal(after.packages[PKG].leafModuleCycles, 0, `质量型不得被 --write-baseline 放宽：${JSON.stringify(after.packages[PKG])}`)
+    assert.equal(after.packages[PKG].fileCycles, 0, `质量型 fileCycles 不得被放宽：${JSON.stringify(after.packages[PKG])}`)
+    assert.equal(after.packages[PKG].raLegacy, 0, `质量型 raLegacy 不得被放宽：${JSON.stringify(after.packages[PKG])}`)
+    assert.match(second.out, /leafModuleCycles：当前 1 \/ 保持基线 0/, `应列出被保留的质量型差异：\n${second.out}`)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('质量型计数上升仍判红，且 --write-baseline 不能放行（#733 M0b）', () => {
+  const root = makeFixtureRoot(chainFixture(''))
+  try {
+    assert.equal(runOn(root, ['--write-baseline']).status, 0)
+    assert.equal(runOn(root).status, 0, '基线写入后应 PASS')
+
+    addCyclicCrossReference(root)
+    const after = runOn(root)
+    assert.equal(after.status, 1, `质量型上升应 exit 1，实际 ${after.status}：\n${after.out}`)
+    assert.match(after.out, /\[质量型\] leafModuleCycles: 1 > 基线 0/, `应点名模块级值环：\n${after.out}`)
+    assert.match(after.out, /\[质量型\] fileCycles: 1 > 基线 0/, `应点名文件级值环：\n${after.out}`)
+    assert.match(after.out, /\[质量型\] raLegacy: 1 > 基线 0/, `应点名 raLegacy：\n${after.out}`)
+
+    // 写基线（只更新结构型）之后必须仍然红：质量型不得经由 --write-baseline 洗白。
+    assert.equal(runOn(root, ['--write-baseline']).status, 0, '写基线本身应成功（结构型登记）')
+    const again = runOn(root)
+    assert.equal(again.status, 1, `--write-baseline 后质量型上升仍应判红，实际 ${again.status}：\n${again.out}`)
+    assert.match(again.out, /\[质量型\] leafModuleCycles: 1 > 基线 0/, `质量型红因须保持：\n${again.out}`)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('结构型计数上升 → --write-baseline 正常放行（#733 M0b）', () => {
+  const root = makeFixtureRoot(chainFixture(''))
+  try {
+    assert.equal(runOn(root, ['--write-baseline']).status, 0)
+    assert.equal(runOn(root).status, 0, '基线写入后应 PASS')
+
+    // 新增一个叶子模块目录（modules / scannedSrcFiles / allSrcTsFiles 上升）。
+    mkdirSync(join(root, `${SRC}/d`), { recursive: true })
+    writeFileSync(join(root, `${SRC}/d/interface.ts`), 'export { D } from "./impl.ts";\n')
+    writeFileSync(join(root, `${SRC}/d/impl.ts`), 'export const D = 4;\n')
+
+    const before = runOn(root)
+    assert.equal(before.status, 1, `结构型上升未登记时应判红，实际 ${before.status}：\n${before.out}`)
+    assert.match(before.out, /\[结构型\] modules: 4 > 基线 3/, `结构型上升应点名：\n${before.out}`)
+
+    const written = runOn(root, ['--write-baseline'])
+    assert.equal(written.status, 0, `--write-baseline 应成功：\n${written.out}`)
+    const after = runOn(root)
+    assert.equal(after.status, 0, `结构型登记后应 PASS，实际 ${after.status}：\n${after.out}`)
+    assert.match(after.out, /单调基线通过/, `应报基线通过：\n${after.out}`)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('--graph 死声明（#733 M0a）：deps.ts 只 import type 时不得报死声明（类型面豁免）', () => {
+  // 语义变化（相对 S0 原断言「deps.ts 声明而本模块无事实边 → 报出」）：原实现把
+  // deps.ts 的**类型边**也计入意图图，故该形态报 1 条死声明。M0a 改「值面判死、
+  // 类型面豁免」后恒为 0 条——修正目的即此：deps.ts 一旦落地（M1 的 F1 / #690 P1），
+  // 跨域类型引用会集中进 deps.ts，实现文件上的事实边随之消失，旧口径会把真声明
+  // 报成假死声明（已定位实例：sdk → stores 的唯一来源是 sdk/interface.ts 的
+  // import type { HistoryStore }，迁入 deps.ts 后 actual 变空）。
+  const root = makeFixtureRoot({
+    [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
+    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
+    [`${SRC}/b/impl.ts`]: 'export const B = 2;\n',
+    [`${SRC}/b/deps.ts`]: 'import type { A } from "../a/interface.ts";\nexport type BDep = A;\n',
+  })
+  try {
+    const { status, out } = runOn(root, ['--graph'])
+    assert.equal(status, 0, `类型面声明豁免后应 PASS，实际 ${status}：\n${out}`)
+    assert.match(out, /死声明（意图 - 事实，只计 deps\.ts 的值声明）：0 条/, `类型边不得报死声明：\n${out}`)
+    assert.match(out, /deps\.ts 值依赖声明（声明面混入值 import，硬判红）：0 条/, `类型边不得报值依赖：\n${out}`)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('--graph 死声明（#733 M0a）：值面判死——deps.ts 值边无佐证 → 报出，有佐证 → 不报', () => {
   const base = {
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
     [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
     [`${SRC}/b/impl.ts`]: 'export const B = 2;\n',
-    [`${SRC}/b/deps.ts`]: 'export type { A } from "../a/interface.ts";\n',
+    [`${SRC}/b/deps.ts`]: 'import { A } from "../a/interface.ts";\nexport const AFromA = A;\n',
   }
   const dead = makeFixtureRoot(base)
+  // 有事实边：佐证来自**非 deps.ts** 的本模块实现文件（deps.ts 自身不自证）。
   const alive = makeFixtureRoot({
     ...base,
     [`${SRC}/b/impl.ts`]: 'import { A } from "../a/interface.ts";\nexport const B = A;\n',
   })
   try {
     const d = runOn(dead, ['--graph'])
-    assert.equal(d.status, 0, `死声明 S0 只报告不判红，应 PASS：\n${d.out}`)
-    assert.match(d.out, /死声明（意图 - 事实）：1 条/, `声明无事实支撑应报死声明：\n${d.out}`)
-    assert.match(d.out, /b\/deps\.ts → a（意图有而事实无）/, `应点名死声明来源与目标：\n${d.out}`)
+    assert.match(d.out, /死声明（意图 - 事实，只计 deps\.ts 的值声明）：1 条/, `值声明无事实支撑应报死声明：\n${d.out}`)
+    assert.match(d.out, /b\/deps\.ts → a（值声明有而事实无）/, `应点名死声明来源与目标：\n${d.out}`)
     const a = runOn(alive, ['--graph'])
-    assert.equal(a.status, 0, `无误报时应 PASS：\n${a.out}`)
-    assert.match(a.out, /死声明（意图 - 事实）：0 条/, `有事实边时不得误报死声明：\n${a.out}`)
+    assert.match(a.out, /死声明（意图 - 事实，只计 deps\.ts 的值声明）：0 条/, `有事实边时不得误报死声明：\n${a.out}`)
   } finally {
     rmSync(dead, { recursive: true, force: true })
     rmSync(alive, { recursive: true, force: true })
+  }
+})
+
+test('deps.ts 值依赖判红（#733 M0a）：声明面混入值 import → exit 1 且提示清晰', () => {
+  const crossModule = makeFixtureRoot({
+    [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
+    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
+    [`${SRC}/b/impl.ts`]: 'export const B = 2;\n',
+    [`${SRC}/b/deps.ts`]: 'import { A } from "../a/interface.ts";\nexport type BDep = typeof A;\n',
+  })
+  // 同模块值 import 同样是「声明面混入值依赖」：deps.ts 只能声明形状，不得参与运行时。
+  const sameModule = makeFixtureRoot({
+    [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
+    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/deps.ts`]: 'import { A } from "./impl.ts";\nexport type ADep = typeof A;\n',
+  })
+  try {
+    const c = runOn(crossModule)
+    assert.equal(c.status, 1, `跨模块值 import 应硬判红，实际 ${c.status}：\n${c.out}`)
+    assert.match(c.out, /b\/deps\.ts 出现值 import "\.\.\/a\/interface\.ts"/, `应点名文件与 spec：\n${c.out}`)
+    assert.match(c.out, /deps\.ts 只能声明类型依赖/, `应给出修法提示：\n${c.out}`)
+    const s = runOn(sameModule)
+    assert.equal(s.status, 1, `同模块值 import 同样应判红，实际 ${s.status}：\n${s.out}`)
+    assert.match(s.out, /a\/deps\.ts 出现值 import "\.\/impl\.ts"/, `应点名同模块值 import：\n${s.out}`)
+  } finally {
+    rmSync(crossModule, { recursive: true, force: true })
+    rmSync(sameModule, { recursive: true, force: true })
   }
 })
 
@@ -269,7 +411,7 @@ test('--soft：单调基线上升仍判红（CI 对 provider-usage 走 --soft）
     writeFileSync(join(root, `${SRC}/c/impl.ts`), 'import { A } from "../a/interface.ts";\nexport const C = A;\n')
     const after = runOn(root, ['--soft'])
     assert.equal(after.status, 1, `--soft 下计数上升仍须判红，实际 ${after.status}：\n${after.out}`)
-    assert.match(after.out, /单调基线上升：leafValueEdges: 3 > 基线 2/, `应给出计数对照：\n${after.out}`)
+    assert.match(after.out, /单调基线上升：\[结构型\] leafValueEdges: 3 > 基线 2/, `应给出计数对照：\n${after.out}`)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

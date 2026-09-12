@@ -30,10 +30,17 @@
  *   - `--zones`：叶子口径跨域引用明细 + R-A 两个语义口径计数（D-2 前后）。
  *   - `--graph`：依赖矩阵 + 扇入扇出 + 模块级/文件级值环 + 死声明。
  *   - **单调基线**：每包每类计数只许降不许升（`scripts/data/dir-imports-baseline.json`），
- *     上升即 exit 1。基线由 `--write-baseline` 生成/更新。
+ *     上升即 exit 1。基线由 `--write-baseline` 生成/更新（#733 M0b 起只更新结构型计数）。
  *   - **源码全覆盖断言**：`src` 下每个文件必须落在 `∪mutate ∪ ∪excludes` 之内。
  *     `gen-stryker-conf --check` 只比对「磁盘配置 ↔ 拓扑派生」，不会因新增源文件
  *     而变红，故新增未被度量覆盖的源文件必须由本断言兜住（存量登记在基线里）。
+ *
+ * #733 M0 修正：
+ *   - **死声明口径改「值面判死、类型面豁免」**（M0a）：`deps.ts` 的类型边不进死声明
+ *     计算（类型声明本身即完整性），值边必须由本模块非 deps.ts 文件佐证；`deps.ts`
+ *     自身出现值 import 单独硬判红。
+ *   - **计数拆「结构型 / 质量型」**（M0b）：结构型随新增文件/目录合法上升，
+ *     `--write-baseline` 只更新结构型；质量型不得被自动放宽（保持旧基线值），上升仍判红。
  *
  * 豁免：
  *   - `src/client/`（index.ts 为 build-client 契约锚点）：from 侧完全豁免；
@@ -456,15 +463,27 @@ function analyzePackage(pkgName, topology) {
 
   // 死声明（意图 - 事实）：deps.ts 声明依赖某模块，而本模块 deps.ts **之外**的
   // 实现/门面文件并无对应事实边。deps.ts 自身的边属意图声明，不能自证为事实。
-  // S0 时 deps.ts 尚未落地，故一般为空；机制先建好，S5 落地后即自动生效。
+  //
+  // 口径（#733 M0a）：**值面判死、类型面豁免**。
+  //   - 类型边（import type / export type）是「本域对上依赖的形状声明」，声明本身
+  //     即完整性（供意图图对照），不构成可被判死的依赖承诺——跨域类型引用集中进
+  //     deps.ts 后事实边从实现文件消失，按旧口径会报假死声明（sdk → stores 的唯一
+  //     来源是 interface.ts 的 import type，迁入 deps.ts 后 actual 变空即误报）。
+  //   - 值边是「本域真的要取用的运行时能力」，必须由本模块非 deps.ts 文件佐证。
+  //   - 「改覆盖式」（把 deps.ts 自身的边并入 actual）会让 intended ⊆ actual 恒成立、
+  //     指标恒 0——空判，明确不采用。
   const deadDeclarations = []
+  const depsValueImports = []
   for (const [modDir, modId] of modules) {
     const depsFile = join(modDir, 'deps.ts')
     if (!existsSync(depsFile)) continue
     const intended = new Set()
     for (const r of refs) {
       if (r.fromFile !== depsFile) continue
+      // 声明面混入值依赖：不论目标模块（含同模块与 src 根），一律单独判红。
+      if (!r.isType) depsValueImports.push(r)
       if (r.toModule === null || r.toModule === modId) continue
+      if (r.isType) continue // 类型面豁免：声明即完整性，不参与死声明计算
       intended.add(r.toModule)
     }
     const actual = new Set()
@@ -474,7 +493,7 @@ function analyzePackage(pkgName, topology) {
       actual.add(r.toModule)
     }
     for (const target of intended) {
-      if (!actual.has(target)) deadDeclarations.push(`${modId}/deps.ts → ${target}（意图有而事实无）`)
+      if (!actual.has(target)) deadDeclarations.push(`${modId}/deps.ts → ${target}（值声明有而事实无）`)
     }
   }
 
@@ -504,6 +523,7 @@ function analyzePackage(pkgName, topology) {
     graphs: { topValueEdges, leafValueEdges, fileValueEdges },
     cycles: { top: topCycles, leaf: leafCycles, file: fileCycles },
     deadDeclarations,
+    depsValueImports,
     // 覆盖断言可判定性：包未登记拓扑时 uncoveredSrcFiles 恒为空，若不显式区分，
     // 「从拓扑里删掉一个包」就成了让覆盖断言消失的绕过路径（已复现的假绿向量）。
     topologyRegistered: specs !== null,
@@ -533,12 +553,45 @@ function analyzePackage(pkgName, topology) {
 }
 
 /**
- * 基线字段（数值型）：只许降不许升。
- * 全部为**叶子模块粒度**——顶层域历史对照口径不进此表也不进基线：它复刻的是
- * 有缺陷的旧算法（嵌套目标丢边），对它设阈值等于让「结构搬迁」误红（三域移入
- * src/server/ 就会改变顶层域集合），且与叶子口径构成同一约束的双轨判定
- * （ARCHITECTURE-METHOD §9 禁止双轨）。它只用于打印跨期对照。
+ * 基线计数分两组（#733 M0b）。
+ *
+ * **结构型**（规模计数）：随新增源文件 / 模块目录 / 合法跨模块引用上升是结构演进的
+ * 正常结果——它们的价值是跨期对照与「结构变更显式登记」，故 `--write-baseline` 更新。
+ *
+ * **质量型**（缺陷 / 债务计数）：只许降不许升，任何上升都是回归。`--write-baseline`
+ * **不得**自动放宽它们（保持旧基线值），否则「每次结构 PR 顺手放宽质量计数」会让
+ * 单调基线退化为「每次放宽」（#690 B1 的原始病灶）。
+ *   - leafModuleCycles / fileCycles：值环（M1 目标 0）
+ *   - raLegacy*：`<域>/<impl>.ts` 直接引用他域文件的存量（ARCHITECTURE-METHOD §2
+ *     载体依赖表：impl 只允许依赖本目录内 + 本域 deps.ts，跨域须经 deps.ts 声明）
+ *   - implToOtherImpl：impl 直引他域**实现文件**（D-2 新口径，目标 0）
+ *   - missingInterface / directImpl：规则违例存量
+ *
+ * 两组之外另有质量型**清单** `uncoveredSrcFiles`（只许减不许增），同样不由
+ * `--write-baseline` 更新。
+ *
+ * 字段顺序沿用既有入库顺序（跨组混排），避免 `--write-baseline` 产生纯重排 diff；
+ * 分组是语义划分，顺序是文件格式，两者分离。
  */
+const STRUCTURAL_METRICS = [
+  'modules',
+  'scannedSrcFiles',
+  'allSrcTsFiles',
+  'interfaceFacades',
+  'leafValueEdges',
+  'fileValueEdges',
+  'crossModuleRefs',
+]
+const QUALITY_METRICS = [
+  'leafModuleCycles',
+  'fileCycles',
+  'raLegacy',
+  'raLegacyValue',
+  'raLegacyType',
+  'implToOtherImpl',
+  'missingInterface',
+  'directImpl',
+]
 const COUNTED_METRICS = [
   'modules',
   'scannedSrcFiles',
@@ -556,6 +609,18 @@ const COUNTED_METRICS = [
   'missingInterface',
   'directImpl',
 ]
+// 分组与计数字段必须严格同集：漏登记会让某个计数既不被判红也不被写基线（静默脱管）。
+{
+  const grouped = new Set([...STRUCTURAL_METRICS, ...QUALITY_METRICS])
+  const missing = COUNTED_METRICS.filter((k) => !grouped.has(k))
+  const extra = [...grouped].filter((k) => !COUNTED_METRICS.includes(k))
+  const dup = STRUCTURAL_METRICS.filter((k) => QUALITY_METRICS.includes(k))
+  if (missing.length > 0 || extra.length > 0 || dup.length > 0 || grouped.size !== COUNTED_METRICS.length) {
+    throw new Error(
+      `计数分组与 COUNTED_METRICS 不一致：未分组 [${missing}]、多余 [${extra}]、跨组重复 [${dup}]、两组去重后 ${grouped.size} 项 != 计数字段 ${COUNTED_METRICS.length} 项`,
+    )
+  }
+}
 
 /** 读取基线 JSON；缺失返回 null（调用方按 fail-closed 处理）。 */
 function loadBaseline() {
@@ -568,7 +633,7 @@ function loadBaseline() {
   }
 }
 
-/** 单调基线比对：数值上升或未覆盖清单新增条目即判红。 */
+/** 单调基线比对：数值上升或未覆盖清单新增条目即判红（结构型与质量型一视同仁）。 */
 function compareWithBaseline(analysis, baseline) {
   const pkgBase = baseline?.packages?.[analysis.package]
   if (pkgBase === undefined) return { mode: 'absent', rises: [] }
@@ -576,12 +641,15 @@ function compareWithBaseline(analysis, baseline) {
   for (const key of COUNTED_METRICS) {
     const cur = analysis.metrics[key]
     const base = pkgBase[key]
-    if (typeof base !== 'number') rises.push(`${key}: 基线未登记（当前 ${cur}）`)
-    else if (cur > base) rises.push(`${key}: ${cur} > 基线 ${base}`)
+    // 标签区分两类红因：结构型上升 = 结构变更未登记（跑 --write-baseline）；
+    // 质量型上升 = 缺陷/债务回归（只能改代码，不能靠写基线放行）。
+    const tag = QUALITY_METRICS.includes(key) ? '质量型' : '结构型'
+    if (typeof base !== 'number') rises.push(`[${tag}] ${key}: 基线未登记（当前 ${cur}）`)
+    else if (cur > base) rises.push(`[${tag}] ${key}: ${cur} > 基线 ${base}`)
   }
   const baseUncovered = new Set(pkgBase.uncoveredSrcFiles ?? [])
   for (const f of analysis.metrics.uncoveredSrcFiles) {
-    if (!baseUncovered.has(f)) rises.push(`uncoveredSrcFiles: 新增未覆盖源文件 ${f}`)
+    if (!baseUncovered.has(f)) rises.push(`[质量型] uncoveredSrcFiles: 新增未覆盖源文件 ${f}`)
   }
   return { mode: 'compared', rises }
 }
@@ -634,7 +702,7 @@ function renderZones(analysis) {
 
 /** 渲染 --graph 段：依赖矩阵 + 扇入扇出 + 模块级/文件级值环 + 死声明。 */
 function renderGraph(analysis) {
-  const { package: pkgName, moduleIds, graphs, cycles, deadDeclarations, refs } = analysis
+  const { package: pkgName, moduleIds, graphs, cycles, deadDeclarations, depsValueImports, refs } = analysis
   const lines = [`graph ${pkgName}（叶子粒度依赖图）`]
   const cellType = (from, to) => {
     const hasV = (graphs.leafValueEdges.get(from) ?? new Set()).has(to)
@@ -670,47 +738,76 @@ function renderGraph(analysis) {
   for (const c of cycles.leaf.values()) lines.push(`  ${c.join(' → ')}`)
   lines.push(`文件级值环（门禁口径，按节点集合去重的环集合数）：${cycles.file.size} 个`)
   for (const c of cycles.file.values()) lines.push(`  ${c.join(' → ')}`)
-  lines.push(`死声明（意图 - 事实）：${deadDeclarations.length} 条`)
+  lines.push(`死声明（意图 - 事实，只计 deps.ts 的值声明）：${deadDeclarations.length} 条`)
   for (const d of deadDeclarations) lines.push(`  ${d}`)
-  lines.push('（意图图 = 各模块 deps.ts；S0 阶段尚未落地，故死声明为空属预期）')
+  lines.push(`deps.ts 值依赖声明（声明面混入值 import，硬判红）：${depsValueImports.length} 条`)
+  for (const r of depsValueImports) lines.push(`  ${rel(analysis.srcDir, r.fromFile)} → import "${r.spec}"`)
+  lines.push('（意图图 = 各模块 deps.ts；类型边 import type/export type 是声明即完整性，豁免死声明判定）')
   return lines
 }
 
-/** 生成基线 JSON 结构（稳定排序，便于 diff）。 */
-function buildBaseline(analyses) {
+/**
+ * 生成基线 JSON 结构（稳定排序，便于 diff）。
+ *
+ * `--write-baseline` 的更新面（#733 M0b）：**只更新结构型计数**。质量型计数与
+ * `uncoveredSrcFiles` 清单保持旧基线值——首次登记（旧基线无该包或该键）才按当前值
+ * 写入并单独提示。这样「结构 PR 顺手放宽质量计数」的路径被机器堵死；收紧（当前值
+ * 更低）同样不自动写入，基线变更须显式且说明理由（ARCHITECTURE-METHOD §11）。
+ *
+ * @returns `{ baseline, qualityKept, qualityFirst }`——后两项供写基线时显式报告。
+ */
+function buildBaseline(analyses, previous) {
   const packages = {}
+  const qualityKept = [] // 保留旧基线值的质量型项（当前值 ≠ 基线值）
+  const qualityFirst = [] // 首次登记的质量型项（旧基线无条目 → 按当前值写入）
   for (const a of [...analyses].sort((x, y) => x.package.localeCompare(y.package))) {
     const m = a.metrics
-    packages[a.package] = {
-      modules: m.modules,
-      scannedSrcFiles: m.scannedSrcFiles,
-      allSrcTsFiles: m.allSrcTsFiles,
-      interfaceFacades: m.interfaceFacades,
-      leafValueEdges: m.leafValueEdges,
-      leafModuleCycles: m.leafModuleCycles,
-      fileValueEdges: m.fileValueEdges,
-      fileCycles: m.fileCycles,
-      crossModuleRefs: m.crossModuleRefs,
-      raLegacy: m.raLegacy,
-      raLegacyValue: m.raLegacyValue,
-      raLegacyType: m.raLegacyType,
-      implToOtherImpl: m.implToOtherImpl,
-      missingInterface: m.missingInterface,
-      directImpl: m.directImpl,
-      uncoveredSrcFiles: m.uncoveredSrcFiles,
+    const prev = previous?.packages?.[a.package]
+    const entry = {}
+    for (const key of COUNTED_METRICS) {
+      if (!QUALITY_METRICS.includes(key)) {
+        entry[key] = m[key]
+        continue
+      }
+      if (typeof prev?.[key] === 'number') {
+        entry[key] = prev[key]
+        if (prev[key] !== m[key]) qualityKept.push(`${a.package}.${key}：当前 ${m[key]} / 保持基线 ${prev[key]}`)
+      } else {
+        entry[key] = m[key]
+        qualityFirst.push(`${a.package}.${key}：${m[key]}`)
+      }
     }
+    const prevUncovered = prev?.uncoveredSrcFiles
+    if (Array.isArray(prevUncovered)) {
+      entry.uncoveredSrcFiles = prevUncovered
+      const cur = m.uncoveredSrcFiles
+      if (cur.length !== prevUncovered.length || cur.some((f) => !prevUncovered.includes(f))) {
+        qualityKept.push(
+          `${a.package}.uncoveredSrcFiles：当前 ${cur.length} 项 / 保持基线 ${prevUncovered.length} 项（人工处置后手工更新）`,
+        )
+      }
+    } else {
+      entry.uncoveredSrcFiles = m.uncoveredSrcFiles
+      if (m.uncoveredSrcFiles.length > 0) qualityFirst.push(`${a.package}.uncoveredSrcFiles：${m.uncoveredSrcFiles.length} 项`)
+    }
+    packages[a.package] = entry
   }
   return {
-    // S0（#690 A 轨）门禁基线：每包每类计数只许降不许升。
-    // 口径：全部为**叶子模块粒度**实测（S0 起模块 = 递归含 interface.ts 的目录）。
-    // 顶层域历史对照口径刻意不入库：它复刻的是有缺陷的旧算法（嵌套目标丢边），
-    // 对它设阈值会让结构搬迁误红，并与叶子口径构成同一约束的双轨（§9 禁止双轨）。
-    // leafModuleCycles/fileCycles 的存量环待 #690 P1 拆解，本阶段只锁「不许变多」；
-    // uncoveredSrcFiles = `src ⊆ ∪mutate ∪ ∪excludes` 断言的历史存量，新增即红。
-    $comment:
-      'S0 门禁基线（#690）：每包每类计数只许降不许升；uncoveredSrcFiles 只许减不许增。由 verify-dir-imports.mjs --write-baseline 生成。',
-    version: 1,
-    packages,
+    baseline: {
+      // S0（#690 A 轨）门禁基线：结构型计数随新增文件/目录容许上升（--write-baseline 登记），
+      // 质量型计数只许降不许升且**不由 --write-baseline 更新**（#733 M0b）。
+      // 口径：全部为**叶子模块粒度**实测（S0 起模块 = 递归含 interface.ts 的目录）。
+      // 顶层域历史对照口径刻意不入库：它复刻的是有缺陷的旧算法（嵌套目标丢边），
+      // 对它设阈值会让结构搬迁误红，并与叶子口径构成同一约束的双轨（§9 禁止双轨）。
+      // leafModuleCycles/fileCycles 的存量环待 #690 P1 拆解，本阶段只锁「不许变多」；
+      // uncoveredSrcFiles = `src ⊆ ∪mutate ∪ ∪excludes` 断言的历史存量，新增即红。
+      $comment:
+        'S0 门禁基线（#690）：结构型计数由 verify-dir-imports.mjs --write-baseline 登记（随新增文件/目录合法上升）；质量型计数（leafModuleCycles/fileCycles/raLegacy*/implToOtherImpl/missingInterface/directImpl）与 uncoveredSrcFiles 只许降不许升，--write-baseline 不更新它们，须人工处置。',
+      version: 1,
+      packages,
+    },
+    qualityKept,
+    qualityFirst,
   }
 }
 
@@ -772,22 +869,37 @@ if (WRITE_BASELINE) {
     for (const f of failures) console.log(`  ${f}`)
     process.exit(1)
   }
-  const baseline = buildBaseline(analyses)
-  // `--write-baseline --package X` 只应更新 X 的条目：直接整体覆盖会抹掉其他包的
-  // 基线（随后它们全部落到 fail-closed），补救只能全量重写——那等于一键放宽。
+  // 旧基线同时承担两个职责：质量型计数/未覆盖清单的**保留来源**（#733 M0b），以及
+  // `--write-baseline --package X` 只写 X 时的其余包条目来源。
+  let previous = null
   if (existsSync(BASELINE_PATH)) {
     try {
-      const existing = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'))
-      for (const [name, entry] of Object.entries(existing?.packages ?? {})) {
-        if (!(name in baseline.packages)) baseline.packages[name] = entry
-      }
+      previous = JSON.parse(readFileSync(BASELINE_PATH, 'utf8'))
     } catch {
-      // 旧基线不可解析时按「全量重写」处理：保留损坏内容只会延续问题。
+      // 旧基线不可解析时按「全量首次登记」处理：保留损坏内容只会延续问题。
+      previous = null
     }
+  }
+  const { baseline, qualityKept, qualityFirst } = buildBaseline(analyses, previous)
+  // `--write-baseline --package X` 只应更新 X 的条目：直接整体覆盖会抹掉其他包的
+  // 基线（随后它们全部落到 fail-closed），补救只能全量重写——那等于一键放宽。
+  for (const [name, entry] of Object.entries(previous?.packages ?? {})) {
+    if (!(name in baseline.packages)) baseline.packages[name] = entry
   }
   mkdirSync(dirname(BASELINE_PATH), { recursive: true })
   writeFileSync(BASELINE_PATH, `${JSON.stringify(baseline, null, 2)}\n`, 'utf8')
   console.log(`verify-dir-imports | 已写入基线 ${BASELINE_PATH}（${analyses.length} 个包）`)
+  console.log(
+    `verify-dir-imports |   结构型计数已更新（${STRUCTURAL_METRICS.length} 类，随新增文件/目录登记）：${STRUCTURAL_METRICS.join(' / ')}`,
+  )
+  console.log(
+    `verify-dir-imports |   质量型未更新，须人工处置（${QUALITY_METRICS.length} 类 + uncoveredSrcFiles）：保持基线值，不被本次写入放宽`,
+  )
+  for (const note of qualityKept) console.log(`verify-dir-imports |     ${note}`)
+  if (qualityFirst.length > 0) {
+    console.log('verify-dir-imports |   质量型首次登记（旧基线无条目 → 按当前值写入，须在 PR 内确认）：')
+    for (const note of qualityFirst) console.log(`verify-dir-imports |     ${note}`)
+  }
   for (const a of analyses) {
     const coverNote = a.topologyRegistered
       ? `未覆盖 ${a.metrics.uncoveredSrcFiles.length} 个`
@@ -810,6 +922,15 @@ for (const analysis of analyses) {
   const { package: pkgName, metrics } = analysis
   const state = baseline === null ? { mode: 'absent', rises: [] } : compareWithBaseline(analysis, baseline)
   registerRuleViolations(analysis, state)
+  // deps.ts 是**依赖声明面**（本域对上依赖的形状），只能 import type / export type：
+  // 出现值 import 即声明面混入了运行时依赖，跨域运行时能力必须经组合根注入
+  // （ARCHITECTURE-METHOD §2「跨域运行时能力一律经 deps.ts 注入」），故硬判红且
+  // 不受单调基线与 soft 模式影响（有基线也红——它不是存量计数而是结构缺陷）。
+  for (const r of analysis.depsValueImports) {
+    failures.push(
+      `[${pkgName}] ${rel(analysis.srcDir, r.fromFile)} 出现值 import "${r.spec}"（deps.ts 只能声明类型依赖：改 import type / export type，运行时能力由组合根注入）`,
+    )
+  }
   if (!analysis.topologyRegistered && topology !== null) {
     failures.push(
       `[${pkgName}] 未在 scripts/data/mutation-topology.json 登记 —— 源码全覆盖断言无法判定（fail-closed：新增源文件会静默逃逸度量）`,
@@ -833,7 +954,9 @@ for (const analysis of analyses) {
 
   if (state.mode === 'compared') {
     if (state.rises.length === 0) {
-      summary.push(`${pkgName}: 单调基线通过（${COUNTED_METRICS.length} 类计数与未覆盖清单均未上升）`)
+      summary.push(
+        `${pkgName}: 单调基线通过（结构型 ${STRUCTURAL_METRICS.length} 类 + 质量型 ${QUALITY_METRICS.length} 类 + 未覆盖清单均未上升）`,
+      )
     } else {
       for (const rise of state.rises) failures.push(`[${pkgName}] 单调基线上升：${rise}`)
     }
