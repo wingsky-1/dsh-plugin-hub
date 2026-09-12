@@ -96,6 +96,8 @@ export function createNotifierService(deps: NotifierServiceDeps): NotifierServic
     },
 
     registerChannel(ch: NotifyChannel) {
+      // 配置层注册面（D11）：登记即止，注册表不参与裁决与投递解析——投递池由
+      // outboundChannels/builtinChannels 两个注入面给出，与本注册表无关。
       if (typeof ch?.name !== "string" || typeof ch?.send !== "function") return;
       channelRegistry.set(ch.name, ch);
     },

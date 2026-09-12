@@ -245,7 +245,7 @@
 | B-3 | 重试/并发门从 channel 内部上移框架（pipeline/deliver） | 行为对等 | bark 4xx 不重试/网络 5xx 重试 ×2/并发 ≤2 排队/门跨配置变更延续（channel-bark.ts:40-48/:110-139 + outbound.ts:13-22）；webhook 零重试（retry 缺省=关）；退避 1s/2s 线性；超时留 channel 侧 |
 | B-4 | sanitizeContent 默认 true：SDK send 动态 kind body 从「调用方负责脱敏」变「中心兜底统一脱敏」 | 安全增强 | service.ts:44 注释 + :487-503 直通路径；`sanitizeContent=false` = 通知与历史均明文（README 安全模型明示） |
 | B-5 | disabled（enabled=false）不落史保持 | 保持（D15） | service.ts:396-397 直接 skipped 不落史；「suppressed 统一落史」仅覆盖 kind-pending/quiet |
-| B-6 | registerChannel 定位文档化：配置层注册面 | 保持 ABI | D11：行为不变（仍不接线投递），语义从「注册频道待启用」改述为「配置层注册面」 |
+| B-6 | registerChannel 定位文档化：配置层注册面 | 保持 ABI | D11：行为不变（仍不接线投递），语义从「注册频道待启用」改述为「配置层注册面」。**#733 M2c R3a 已落地**：`src/sdk/interface.ts` 的 `registerChannel` JSDoc + `src/sdk/service.ts:98` 实现处；注册表零读取点（只 `set` 无 `get`）是该口径的机器可核事实 |
 | B-7 | KIND_SEVERITY 移 text/ 域 | 无运行时变化 | 导出面 re-export 保持（index.ts:131），仅文件归属迁移 |
 | B-8 | 单刻快照行为（B2）的事件源级补充：错误合并窗口/聚合窗口不受快照影响 | 保持 | 事件层状态机（errorMerge/agentStates/batch）沿用现状语义，不随重构改动 |
 | B-9 | send() 动态 kind 与 sendKind 统一过裁决（enabled→免打扰→路由） | 行为变更（D24） | 现状动态 kind 路径绕过 enabled/免打扰（sdk/service.ts:165-197）；统一后 enabled=false/免打扰期间动态 kind 从「照常投递」变「skipped」——先红测锁定现状再改，登记用例 N-25 |
@@ -289,7 +289,7 @@
 | S3-1 | L8-1 ChannelCapabilities titleMaxLen<=0 注释 vs 实现（标题并入正文缺失） | service.ts:73 vs :282 | PR2（mergeTitleIntoBody） |
 | S3-2 | L8-2 confirmKind 双语义（fire-and-forget vs CAS 重试） | service.ts:155 / settings-bridge.ts:96-119 | PR2（ConfigPort.confirmKind） |
 | S3-3 | L8-3 NotifyRequest.data 字段悬空 | service.ts:46-48 | PR2 注明「MVP 未启用」或 v-next |
-| S3-4 | L8-4 registerChannel 悬空→**D11 已裁定配置层注册面** | service.ts:467-470 | 文档化（行为保持） |
+| S3-4 | L8-4 registerChannel 悬空→**D11 已裁定配置层注册面** | `src/sdk/service.ts:98`（原引用 `service.ts:467-470` 随重构失效——该文件现 141 行）；`src/sdk/interface.ts` 同名 JSDoc | **#733 M2c R3a 已落地**（纯文档化，行为保持；登记 + 一次性 warn 需另取 approved） |
 | S3-5 | L8-5 expectedRevision 非整数静默忽略 | server.ts:387-388 | PR2（显式拒 400 或文档化） |
 | S3-6 | L8-6 history DELETE / test 无错误映射 | server.ts:716-719 | PR2 |
 | S3-7 | P1-2 频道状态行无轮询（README:286「实时可见」口径弱于实现） | index.tsx:865-869/:900/:1131 | PR2（D20 已定改 README 口径，T2-6 落地） |
