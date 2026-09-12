@@ -255,7 +255,12 @@ test('#433+#572 调度重设计与孤立分支基线: observe 全量班（北京
   assert.ok(OBSERVE.includes("steps.reports.outputs.count != '0'"),
     '全量班变异执行与 push 必须以「有段报告产出」为前提——空产物不跑 push（原 has_suites 语义的矩阵化等价物）')
   assert.ok(!OBSERVE.includes('skip_pr=true'), '#572：全量班已迁移至孤立分支，日期闸与 PR 步骤已退役')
-  assert.ok(OBSERVE.includes('orphan-baseline.mjs push'), '全量班调用 orphan-baseline.mjs push 提交孤立分支')
+  // #718 S1.2：全量班写入口由整树替换改为并集入档。整树替换下「段被失败实例吃掉」是静默
+  // 丢段（实测 33 → 31），故这里同时锁正向（archive 在位）与反向（push 不得回流）。
+  assert.ok(OBSERVE.includes('orphan-baseline.mjs archive'),
+    '全量班必须走并集入档（#718 S1.2：先取回远端再叠加，缺段显式记账）')
+  assert.ok(!OBSERVE.includes('orphan-baseline.mjs push'),
+    '全量班不得回退为整树替换的 push（#718 S1.2：会静默丢段）')
 
   // ── 增量班（observe-incremental.yml）：每日四班次，北京 12/16/20/24 = UTC 04/08/12/16 ──
   assert.ok(OBSERVE_INC.includes("'0 4,8,12,16 * * *'"),
@@ -401,7 +406,11 @@ test('gauntlet: mutation.packages 全部带 threshold 字段且 ≥60（阶段�
 // PR 侧通过 orphan-baseline.mjs restore 浅拉取恢复。
 
 test('#178+#204+#572: observe 两班均使用孤立分支基线——全量班不 restore、增量班 restore 孤立分支', () => {
-  for (const [name, wf] of [['observe.yml', OBSERVE], ['observe-incremental.yml', OBSERVE_INC]]) {
+  // #718 S1.2：写入口按班次分工——全量班走并集入档（archive），增量班退役前仍是整树 push
+  for (const [name, wf, writeStep, writeCmd] of [
+    ['observe.yml', OBSERVE, 'Archive baseline to orphan branch', 'orphan-baseline.mjs archive'],
+    ['observe-incremental.yml', OBSERVE_INC, 'Push baseline to orphan branch', 'orphan-baseline.mjs push'],
+  ]) {
     assert.ok(
       !wf.includes('actions/cache/restore'),
       `${name} 严禁出现 restore 缓存步骤——基线走孤立分支（勿"好心"补 actions/cache restore）`,
@@ -414,12 +423,12 @@ test('#178+#204+#572: observe 两班均使用孤立分支基线——全量班�
       !wf.includes('create-pull-request@'),
       `${name} #572 已废除基线自动开 PR 合入 main（杜绝 git 树与提交历史膨胀）`,
     )
-    const pushIdx = wf.indexOf('Push baseline to orphan branch')
-    assert.ok(pushIdx > 0, `${name} push 步骤在位（增量基线 → 孤立分支 baseline/mutation）`)
+    const pushIdx = wf.indexOf(writeStep)
+    assert.ok(pushIdx > 0, `${name} 基线写入步骤「${writeStep}」在位（增量基线 → 孤立分支 baseline/mutation）`)
     const pushBlock = wf.slice(pushIdx, wf.indexOf('- name:', pushIdx + 10))
     assert.ok(pushBlock.includes('if: always()'),
-      `${name} push 步骤必须 if: always()（部分失败班次已产出的基线照常收集并强推）`)
-    assert.ok(pushBlock.includes('orphan-baseline.mjs push'), `${name} orphan-baseline.mjs push 脚本执行点在位`)
+      `${name} 基线写入步骤必须 if: always()（部分失败班次已产出的基线照常收集并强推）`)
+    assert.ok(pushBlock.includes(writeCmd), `${name} 基线写入必须调用 ${writeCmd}`)
     assert.ok(wf.includes('contents: write'), `${name} permissions 需 contents: write（孤立分支推送需要）`)
     assert.ok(wf.includes('mutation-baseline-sync'), `${name} concurrency 统一为 mutation-baseline-sync（防止覆盖踩踏）`)
   }
@@ -1052,11 +1061,11 @@ test('#217+#572: observe 两班变异记账与 push 区分整套 skip 与部分�
     assert.ok(sIdx > 0, 'observe.yml mutation-shards job 在位（原 Mutation suites 步骤的矩阵化替身）')
     const cIdx = OBSERVE.indexOf('\n  mutation-collect:')
     assert.ok(cIdx > 0, 'observe.yml mutation-collect job 在位（收口：判分 + 单点 push + 报告 + 工单）')
-    const pIdx = OBSERVE.indexOf('- name: Push baseline to orphan branch', cIdx)
-    assert.ok(pIdx > cIdx, 'observe.yml push 必须落在收口 job 内（单点推送，消除矩阵并发踩踏）')
+    const pIdx = OBSERVE.indexOf('- name: Archive baseline to orphan branch', cIdx)
+    assert.ok(pIdx > cIdx, 'observe.yml 入档必须落在收口 job 内（单点写入，消除矩阵并发踩踏）')
     const pBlock = OBSERVE.slice(pIdx, OBSERVE.indexOf('- name:', pIdx + 10))
     assert.ok(pBlock.includes("if: always() && steps.reports.outputs.count != '0'"),
-      'observe.yml push 条件必须区分零产物（不推送）与部分失败（有报告即照常提交）')
+      'observe.yml 入档条件必须区分零产物（不推送）与部分失败（有报告即照常提交）')
     const rIdx = OBSERVE.indexOf('- name: Restore report layout', cIdx)
     assert.ok(rIdx > cIdx && rIdx < pIdx, '报告齐备性判定必须排在 push 之前（push 依赖其 output）')
   }
