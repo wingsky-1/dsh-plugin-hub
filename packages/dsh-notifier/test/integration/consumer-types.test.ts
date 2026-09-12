@@ -11,8 +11,10 @@
  * pnpm test:scripts 无条件执行。文件内的运行时断言只是「用例没被绕开」的护栏，
  * 本文件的判据在编译期。
  *
- * 覆盖纪律（#733 M0c）：导出面快照门禁（scripts/data/dsh-notifier-export-surface.json）
- * 的 declBlocks（入库基线 96 条）**全部是 `export declare const/function/class`**，对
+ * 覆盖纪律（#733 M0c；数字随 N0(B) 重基线同步）：导出面快照门禁
+ * （scripts/data/dsh-notifier-export-surface.json）的 declBlocks（入库基线 **105** 条 =
+ * 全部 .d.ts 顶层声明块的多重集；本文件读的兼容字段 `exports` 是**主入口**的 100 条导出面）
+ * **全部是 `export declare const/function/class`**，对
  * interface / type 体零覆盖——加一个联合成员、给接口加字段时快照不会红。故类型面由本
  * 文件的「类型体快照锚」兜住：包导出面 28 个类型导出**逐个**一条 `Equal<T, 完整字面量>`，
  * 成员增删 / 字段改型 / 可选性变化都会编译报错。

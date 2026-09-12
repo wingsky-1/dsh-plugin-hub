@@ -18,6 +18,12 @@
  * `faces` 并显式选择三类面之一，否则判红。把新符号塞进 `legacy` 同样能绕过本判据，
  * 但那是一次显眼且可评审的登记文件改动——本判据的价值是让「静默增长」不可能，而不是
  * 防止人为改写登记文件（任何登记制都做不到后者，如实写明胜过过度声称）。
+ *
+ * **论域（#733 M2c 后续 N0(B) 钉死）= 主入口（`.`）的导出面**：调用方只传主入口的符号集，
+ * 非主入口（如 `./client`）只进导出面快照的基线比对、不喂本判据。理由是宪法第 3 条指 SDK
+ * 面；客户端入口首次出现独有导出（UI 组件/类型）时无法归入三类面，只能塞 `legacy`，与
+ * M2b「legacy 归零」冲突。同一分工写在 docs/ARCHITECTURE-METHOD.md §6 三层裁定、
+ * docs/DEVELOPMENT.md 的准入段与 export-surface-snapshot.mjs 的门禁自述里。
  */
 
 import { existsSync, readFileSync } from 'node:fs'

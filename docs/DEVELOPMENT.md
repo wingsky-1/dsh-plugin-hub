@@ -398,21 +398,41 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
     代码。另含 `src ⊆ ∪mutate ∪ ∪excludes` 全覆盖断言（新增 src 未被变异面或排除面覆盖即红）。
     死声明判据为**值面判死、类型面豁免**：`deps.ts` 的 `import type` 是声明即完整性，不参与
     死声明计算（#733 M0a）。**可见度边界**：只管依赖方向与环路，不管符号签名。
-  - **导出面门禁（`scripts/gate/export-surface-snapshot.mjs`；#669 PR1 / #733 M0+M2a）**：
+  - **导出面门禁（`scripts/gate/export-surface-snapshot.mjs`；#669 PR1 / #733 M0+M2a / N0(B)）**：
     `tsc --declaration` 产物是包对外契约的编译期镜像，固化为入库基线
-    `scripts/data/<pkg>-export-surface.json`，重构前后零 diff 即机器证据。粒度两条：① 顶层
-    导出符号集（name + isType）——增删改导出符号都红；② **导出面符号的定义块**（名字在包导出
-    面的 `export declare ...` 块，按名比对文本）——被比对到的块，签名/泛型/联合改写即红。
-    **可见度边界（#733 M2c R4 + 独立复核对抗实测，四类，勿读作只有两类）**：
+    `scripts/data/<pkg>-export-surface.json`，重构前后零 diff 即机器证据。粒度两条（**逐入口**）：
+    ① 每个入口的顶层导出符号集（name + isType）——增删改导出符号都红；② **每个入口内导出面
+    符号的定义块**（该入口前缀所辖全部 `.d.ts` 里、名字在**该入口**导出面的 `export declare ...`
+    块，按名过滤后比**块多重集**）——被比对到的块，签名/泛型/联合改写即红；声明块搬去哪个
+    文件不影响。**该集合不是「全部声明块」**：打印的总数是全部 `.d.ts` 的顶层声明块数，判据
+    比对的只是其中「名字在该入口导出面」的块，两者不要求相等（verbose 分列「当前 / 基线」）。
+    **入口模型**（#733 M2c 后续 N0(B)；模型本身即判据，勿读作实现细节）：入口集 = `package.json`
+    的 `exports` 中带 `types` 条件的子路径（显式排除 `./package.json` 这类无 `types` 的）；
+    `typesTarget(e)` = `exports[e].types` 去掉 `./lib/` 前缀后的**本次 emit 产物**相对路径
+    （解析根 = tsc `--declaration` 产物，与是否已 build 无关）；`prefix(e)` = `dirname(typesTarget(e))`，
+    每个 emit `.d.ts` 按**最长前缀**归属，**同长度多命中判红**、**未被任何前缀归属判红**（不得
+    静默丢弃）；**每入口至少辖 1 个 `.d.ts` / 1 条声明块**、各入口 `typesTarget` **互不相同**，
+    否则判红。基线形态 v2（兼容形态，两个既有消费者零改动）：`{ package, exports, declBlocks,
+    entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks` = **全部块的多重集**；
+    `entries[e]` = `{ types, exports, blocks: { 名: [块…] } }`（`exports` 取该入口 `typesTarget`
+    单文件的导出面，**不是**前缀所辖全部文件的导出名并集——实测 152 ≠ 100）。自洽断言常驻：
+    `exports == entries["."].exports`、`declBlocks == 各入口块的多重集并集`（逐条相等，禁止用 Set）。
+    **可见度边界（#733 M2c R4 + 独立复核对抗实测，勿读作只有两类）**：
     ① `export interface` / `export type` 无 `declare` 关键字，进不了 ② 的提取器，interface/
     type 体由 `packages/<pkg>/test/integration/consumer-types.test.ts` 的类型体锚兜住；
     ② 不在包导出面的域内符号不参与比对（实测四条门禁 + 包内测试全绿）；
     ③ 导出面里两侧都无定义块的名字被直接跳过（100 个里 32 个，其中 4 个是值符号
     `readBody`/`writeJson`/`errorMessage`/`isLoopbackRequest`，re-export 自 `shared/`）
     ——其签名改动无任何判据覆盖；
-    ④ **同一导出名有多个定义块时只比对排序末块**（`declMapFor` 的 Map 后写覆盖）——实测
-    `apply` 的宿主入口签名改写红不了，改客户端签名才红。
-    ③④ 是判据缺陷而非设计边界，修复须另经评审（#733 M2c 复核结论）。
+    ④ **按名过滤的域内残块**：前缀内但不在该入口导出面的块不参与按名比对——当前实例 =
+    `client/locales.d.ts` 的 `en`/`zh`（`./client` 4 块里的 2 块），属 ② 的一个实例而非新增类；
+    要覆盖须改为「不按 exports 过滤」（会显著收紧，须另裁决）。
+    **同一入口内同名多块的分支当前不构成判据**（实测 `.` 101 块、`./client` 4 块，各自块名无
+    重复）；跨入口同名（`apply`/`inject`）各归各入口比对才是 N0(B) 的核心收益——旧实现
+    `declMapFor` 的 `Map.set(name, block)` 只留排序末块，改**宿主** `apply` 签名实测 exit=0
+    （漏判）、改客户端块才红（归属错误）；F-1（旧 `extractExports` 只读 `index.d.ts` ⇒ `./client`
+    入口零判据）同样已修。提取/归属实现抽到 `scripts/lib/surface-extract-lib.ts`（门禁与 fixture
+    自测同一实现，§9 禁止双轨）。
   - **新增导出准入（`export-surface-snapshot` 内的分类判据；#733 M2a-3.5）**：目标不变式是
     包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面，**当前只对「新增导出」强制**——新导出必须在
     `scripts/data/<pkg>-export-faces.json` 的 `faces` 显式登记三类面之一，未登记判红。
@@ -424,11 +444,26 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
     `scripts/lib/export-faces-lib.ts` 的注释同源，可用 `node --input-type=module -e` 直接复现）。
     判据实现 `scripts/lib/export-faces-lib.ts` 被门禁与 fixture 自测复用（§9 禁止双轨）；
     `--snapshot` 只写基线、不碰登记文件，故「更新基线」不会顺手把新符号变成合法导出。
+    **判据的论域 = 主入口（`.`）的导出面**：非主入口（如 `./client`）只进导出面快照比对，
+    不喂 `checkExportFaces`——客户端入口首次出现独有导出（UI 组件/类型）时无法归入三类面，
+    只能塞 `legacy`，与 M2b「legacy 归零」冲突（同写在 ARCHITECTURE-METHOD §6 与门禁自述）。
 - **跨包类型可达闭包（`pnpm pack:check` 内；#733 M2a-3.1）**：源面声明了 cordis 声明合并
   （`declare module "@deepseek-ai/cordis"`）⇒ 该合并必须落在 tarball 内 `lib/index.d.ts` 的
   相对 import 闭包内。写在源 `.d.ts` 的合并不会被 emit，消费方按包名导入时服务面与事件面
   全部失类型，而既有门禁都看不见（实证：`packages/dsh-notifier/src/service.d.ts`）；判据
   实现 `scripts/lib/dts-cordis-merge-lib.ts`（含正反 fixture 自测）。
+- **`exports[].types` 可解析（`pnpm pack:check` 内；#733 M2c 后续 N9）**：发布物（tarball）
+  每个**带 `types` 条件**的导出子路径，其 `types` 必须指向包内真实文件。实证缺陷：
+  `exports["./client"].types` 曾写 `./lib/client.d.ts`（实际产出 `lib/client/index.d.ts`），
+  严格 TS 消费方按包名子路径导入时静默降级为 `any`（TS7016），而 `pack:check` /
+  `contract-check` 都看不见（后者只断言 `exports['./client']` 键存在）。**该缺陷实测存在于
+  全部 5 个有客户端的包**（dsh-notifier / dsh-lan-proxy / dsh-mcp-manager /
+  dsh-provider-usage / dsh-web-file-preview），判据面对全部包生效、不留切片。判据实现
+  `scripts/lib/exports-types-lib.ts`——与导出面快照门禁**共用**「`exports[].types` → 产物
+  相对路径」映射，但**判的是不同产物**（此处判 tarball，门禁判 emit 产物），故不是双轨；
+  消费方探针：隔离目录软链 `node_modules/@wingsky-1/<pkg>` → 包目录 + `--strict
+  --moduleResolution bundler`，五包实测统一为「对照组主入口 exit=0 / 子路径修复前 TS7016 /
+  修复后 TS2322」。
 - `assertClientSourceContract`（smoke-lib）：兼容三种产物形态（纯净 wrapper /
   React externals / legacy），断言 `"use strict"`、契约外壳、Symbol.toStringTag、
   `factory: function(`、load 注册。
