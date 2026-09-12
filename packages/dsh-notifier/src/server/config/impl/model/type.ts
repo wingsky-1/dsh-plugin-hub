@@ -156,9 +156,6 @@ export type NotifyConfig = {
   maxConnections: number;
 };
 
-/** 组合层入口配置：cordis 组合层可直接给设置项，作为命名空间的 base 层。 */
-export type NotifierEntryConfig = Partial<NotifyConfig>;
-
 /**
  * 设置提交体：键名受契约约束（写错键名是编译错误），值待校验——提交上来的东西在
  * 运行时不受类型约束，所以值的类型是原始的、需要过闸门的。

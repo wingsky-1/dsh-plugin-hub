@@ -4,7 +4,6 @@
  * 记录与装配入参都归这里：它们只对历史这一块成立，另一块存储用不上，因此不进
  * `shared/`（那里只收跨域、无单一归属的公共语言）。
  */
-import type { ConfigPort } from "../../deps.ts";
 import type { LoggerPort } from "../../../shared/type.ts";
 
 /** 单出口投递明细：这一次通知送到了哪个出口、结果如何。 */
@@ -35,8 +34,6 @@ export interface HistoryEntry {
 
 /** 通知历史的装配入参。 */
 export interface HistoryDeps {
-  /** 设置：保留天数在每次读时取——设置可变，装配期快照会在用户改设置后失效。 */
-  config: ConfigPort;
   /** 写入失败出口（append 为 fire-and-forget，失败无返回值可承载）。 */
   logger: LoggerPort;
 }

@@ -15,22 +15,21 @@
  * 依赖方向：只引用本目录、`../route/type.ts` 与 `../../deps.ts`，不引用 `interface.ts`。
  */
 import type { ChannelDelivery, NotifyMessage } from "../../deps.ts";
+import { deliver, recordStatus } from "../../deps.ts";
 import type { RoutedTarget } from "../route/type.ts";
-import type { DispatchDeps } from "./type.ts";
 
 /** 投递：逐目标结果按序归位到频道身份，写进频道状态并返回归档用的明细。 */
 export async function dispatchMessage(
-  deps: DispatchDeps,
   message: NotifyMessage,
   targets: RoutedTarget[],
 ): Promise<ChannelDelivery[]> {
-  const results = await deps.channels.deliver(
+  const results = await deliver(
     message,
     targets.map((routed) => routed.target),
   );
   return targets.map((routed, index) => {
     const result = results[index];
-    deps.stores.recordStatus(routed.channelId, result.status, result.reason);
+    recordStatus(routed.channelId, result.status, result.reason);
     return { channelId: routed.channelId, status: result.status, reason: result.reason };
   });
 }

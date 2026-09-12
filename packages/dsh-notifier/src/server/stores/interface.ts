@@ -29,7 +29,7 @@ export type { ChannelDelivery, HistoryEntry } from "./impl/history/type.ts";
  * 只交付外部数据与宿主能力，不返回任何句柄——本域的状态由自己持有。
  */
 export function installStores(deps: StoreDeps): void {
-  historyStore.install({ config: deps.config, logger: deps.logger });
+  historyStore.install({ logger: deps.logger });
   statusStore.install({ logger: deps.logger });
 }
 

@@ -8,13 +8,11 @@
  * 归档只有一个时刻：**投递完成之后**。被压制的那条路没有投递，于是就地归档——两条
  * 路写的是同一条记录形状，区别只在带的是「逐出口明细」还是「压制原因」。
  *
- * 装配状态用判别联合而不是哨兵对象：依赖是三个域的面，抄一份哨兵等于把依赖清单维护
- * 两遍，而且它每次变动都要跟着改。
- *
  * 依赖方向：只引用本目录、`../judge/`、`../route/`、`../dispatch/`、`../../deps.ts`，
  * 不引用 `interface.ts`。
  */
 import type { ChannelDelivery, HistoryEntry, PipelineDeps } from "../../deps.ts";
+import { appendHistory, readConfig } from "../../deps.ts";
 import { dispatchMessage } from "../dispatch/index.ts";
 import { judgeRequest } from "../judge/index.ts";
 import type { SuppressReason } from "../judge/type.ts";
@@ -25,22 +23,32 @@ import type { NotifyRequest } from "./type.ts";
 /** 归档结果：发出去了带逐出口明细，被压制了带原因；两者必居其一。 */
 type ArchiveOutcome = { suppressed: SuppressReason } | { channels: ChannelDelivery[] };
 
-/** 装配状态：未装配时连入参一起不存在，因此不需要哨兵去扮演一份假依赖。 */
-type PipelineState = { installed: false } | { installed: true; deps: PipelineDeps };
+/**
+ * 未装配时的占位。
+ *
+ * 装配是必经路径（`installed` 守卫），占位值不会被真正读到；它的作用是让字段有确定
+ * 的类型，从而不必让每个使用点都先判一次空。
+ */
+const UNINSTALLED: PipelineDeps = { enabled: false, frames: { emit: () => {} } };
 
 /** 裁决管线：唯一裁决点，以及一条通知的生命周期。 */
 class NotificationPipeline {
-  private state: PipelineState = { installed: false };
+  /** 是否已装配；单例实例重复装配是编程错误，当场暴露。 */
+  private installed = false;
+  /** 装配入参：本域拿不到的那两样。 */
+  private deps: PipelineDeps = UNINSTALLED;
 
   /** 装配。重复装配是编程错误，当场暴露。 */
   install(deps: PipelineDeps): void {
-    if (this.state.installed) throw new Error("dsh-notifier: pipeline 域只能装配一次");
-    this.state = { installed: true, deps };
+    if (this.installed) throw new Error("dsh-notifier: pipeline 域只能装配一次");
+    this.installed = true;
+    this.deps = deps;
   }
 
-  /** 卸载：连同入参一起放开对其他域的引用。此后到达的请求一律丢弃。 */
+  /** 卸载：放开对宿主面的引用。此后到达的请求一律丢弃。 */
   release(): void {
-    this.state = { installed: false };
+    this.installed = false;
+    this.deps = UNINSTALLED;
   }
 
   /**
@@ -50,50 +58,36 @@ class NotificationPipeline {
    * 就停下来，而在这条链上抛错的代价是打断别人的流程——症状与本插件毫无字面关联。
    */
   submit(request: NotifyRequest): void {
-    const state = this.state;
-    if (!state.installed) return;
-    const deps = state.deps;
+    if (!this.installed) return;
+    const { enabled, frames } = this.deps;
 
-    const config = deps.config.readConfig();
-    const verdict = judgeRequest(config, request, deps.enabled);
+    const config = readConfig();
+    const verdict = judgeRequest(config, request, enabled);
     if (!verdict.ok) {
-      this.archive(deps, request, { suppressed: verdict.reason });
+      this.archive(request, { suppressed: verdict.reason });
       return;
     }
 
-    const targets = routeTargets({ frames: deps.frames }, config, request.kind);
+    const targets = routeTargets({ frames }, config, request.kind);
     if (targets.length === 0) {
-      this.archive(deps, request, { suppressed: "no-target" });
+      this.archive(request, { suppressed: "no-target" });
       return;
     }
 
-    void this.send(deps, request, targets).catch(() => {
+    void this.send(request, targets).catch(() => {
       // 投递层承诺逐目标 fail-soft（失败是返回值，不是异常），走到这里说明契约已被
       // 破坏。宿主事件链上不能抛：一次未捕获的拒绝会打断整条通知路径，而它是唯一路径。
     });
   }
 
-  /**
-   * 投递，然后归档。
-   *
-   * 装配入参走参数而不是读 `this.state`：`await` 期间可能发生卸载，回头再读字段会
-   * 拿到一份已经不存在的依赖。
-   */
-  private async send(
-    deps: PipelineDeps,
-    request: NotifyRequest,
-    targets: RoutedTarget[],
-  ): Promise<void> {
-    const channels = await dispatchMessage(
-      { channels: deps.channels, stores: deps.stores },
-      { title: request.title, body: request.body },
-      targets,
-    );
-    this.archive(deps, request, { channels });
+  /** 投递，然后归档。 */
+  private async send(request: NotifyRequest, targets: RoutedTarget[]): Promise<void> {
+    const channels = await dispatchMessage({ title: request.title, body: request.body }, targets);
+    this.archive(request, { channels });
   }
 
   /** 归档：一次通知写一条记录，发出与压制只在载荷上分叉。 */
-  private archive(deps: PipelineDeps, request: NotifyRequest, outcome: ArchiveOutcome): void {
+  private archive(request: NotifyRequest, outcome: ArchiveOutcome): void {
     const entry: HistoryEntry = {
       ts: Date.now(),
       kind: request.kind,
@@ -105,7 +99,7 @@ class NotificationPipeline {
     } else {
       entry.channels = outcome.channels;
     }
-    deps.stores.appendHistory(entry);
+    appendHistory(entry);
   }
 }
 

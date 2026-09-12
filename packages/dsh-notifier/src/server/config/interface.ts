@@ -46,7 +46,7 @@ import type { SettingsView, WriteResult } from "./impl/service/type.ts";
 // 签名可达即可，不额外占一个出口名字——多一个出口就是多一份要同步的事实源。
 
 export type { ConfigDeps } from "./deps.ts";
-export type { NotifierEntryConfig, SettingsPatch, StoredSettings } from "./impl/model/type.ts";
+export type { SettingsPatch, StoredSettings } from "./impl/model/type.ts";
 
 // ---------------------------------------------------------------- 装配
 

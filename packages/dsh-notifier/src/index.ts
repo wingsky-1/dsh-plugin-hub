@@ -15,10 +15,10 @@
  * | 序 | 域 | 职责 | 交给它什么 |
  * |---|---|---|---|
  * | 0 | `upgrade` | 存储形态的版本迁移 | 日志 |
- * | 1 | `config` | 通知配置的单一事实源 | 组合层入口层、日志 |
- * | 2 | `stores` | 历史与投递状态的持久化 | 设置域的面、日志 |
- * | 3 | `pipeline` | 一条通知的生命周期与**唯一裁决点** | config / channels / stores 三个域的面、帧出口、总开关 |
- * | 4 | `events` | 宿主事件 → 通知请求（适配层） | 宿主事件面、裁决管线 |
+ * | 1 | `config` | 通知配置的单一事实源 | 日志 |
+ * | 2 | `stores` | 历史与投递状态的持久化 | 日志 |
+ * | 3 | `pipeline` | 一条通知的生命周期与**唯一裁决点** | 总开关、帧出口 |
+ * | 4 | `events` | 宿主事件 → 通知请求（适配层） | 宿主事件面 |
  * | 5 | `sdk` | 对外 ABI（`ctx["wingsky.notifier"]`） | 裁决管线、内置 kind 列表 |
  * | 6 | `api` | 浏览器出口：HTTP 路由 + SSE | 配置读写、历史、裁决管线、帧入口 |
  *
@@ -30,24 +30,20 @@
  *
  * ## 纪律
  *
- * - 域之间不互相引用实现；跨域能力由本文件显式接上。
- * - 交接以**域的面**为单位，不是把对方的方法拆成一个个函数传进去：`config: configApi`
- *   而不是 `readConfig`。散装函数在装配点读不出「依赖哪个域」，每多用一个方法还要
- *   再改一次这里。
- * - 同理不交接**算好的值**：设置是活的，装配期算出的数字会变成静态数据，而它看起来
- *   与实时读取一模一样。
+ * - 域之间不互相引用实现；需要谁的能力、需要哪一样，在各自的 `deps.ts` 里引出来。
+ * - 组合根只交付**域拿不到的东西**：宿主能力（日志、事件面、帧出口）与挂载点值
+ *   （总开关）。域间依赖不经这里，所以本文件读起来就是一张「谁需要宿主什么」的表。
+ * - 交付的是**能力**，不是算好的值：设置是活的，装配期取一次的快照会在用户改设置后
+ *   失效，而它看起来与实时读取一模一样。
  * - 本文件是唯一允许引用全部域 `interface.ts` 的地方。
- * - 域的全部跨域依赖申报在各自的 `deps.ts`；本文件按该申报满足它。
  */
 import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-agent";
 import type {} from "@deepseek-ai/dsh-session";
 import type {} from "@deepseek-ai/dsh-user-approval";
 import type {} from "@deepseek-ai/dsh-user-questions";
-import * as channelsApi from "./server/channels/interface.ts";
 import type { NotifyFrame } from "./server/channels/interface.ts";
 import * as configApi from "./server/config/interface.ts";
-import type { NotifierEntryConfig } from "./server/config/interface.ts";
 import * as eventsApi from "./server/events/interface.ts";
 import type { HostEventPort } from "./server/events/interface.ts";
 import * as pipelineApi from "./server/pipeline/interface.ts";
@@ -64,11 +60,11 @@ export const inject = ["webServer"];
 /**
  * 组合层入口配置（插件挂载点传入）。
  *
- * 两层合一：**设置项**作为用户层之下的默认层——组合层与启动参数给出厂默认之外的
- * 取值，用户在设置页里显式改过的键仍然压在它上面；**装配开关**只在这一层表达。
+ * 只有总开关。设置项不在这里——设置全部住在本插件自己的配置文件里，由设置页读写；
+ * 再开一层「组合层默认值」，只会让人以为某处配过什么，而它永远是空的。
  */
-export interface NotifierApplyConfig extends NotifierEntryConfig {
-  /** 总开关；`false` 时一律不投递。归裁决层消费，不落盘、不进设置层。 */
+export interface NotifierApplyConfig {
+  /** 总开关；`false` 时一律不投递。不落盘、不进设置层。 */
   enabled?: boolean;
 }
 
@@ -212,25 +208,21 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
   installUpgrade({ logger: host.logger });
 
   // 1. 设置：读面在装配返回时即可用，后续各域不必等加载。
-  configApi.installConfig({ entry: config, logger: host.logger });
+  configApi.installConfig({ logger: host.logger });
 
-  // 2. 存储：给它设置域的面，而不是算好的保留天数。
-  storesApi.installStores({ config: configApi, logger: host.logger });
+  // 2. 存储：保留天数由它自己按需读设置，不在这里替它取值。
+  storesApi.installStores({ logger: host.logger });
 
-  // 3. 裁决管线：拿到的全是域的面。判据在它这里，事实在别人那里——投递域不知道有
-  //    历史，设置域不知道有通知，而「该不该发」只有这一处回答。
+  // 3. 裁决管线：域间依赖它自己引，这里只给够不着的那两样——挂载点总开关与帧出口。
   pipelineApi.installPipeline({
     enabled: config.enabled !== false,
-    config: configApi,
-    channels: channelsApi,
-    stores: storesApi,
     frames: { emit: host.emitFrame },
   });
   disposers.push(pipelineApi.releasePipeline);
 
   // 4. 事件：宿主事件 → 通知请求。请求一律产出，去留由裁决层决定——开关会在本域
   //    看不见的地方被改，让它去问一遍等于把运行期策略摊进按事件驱动的块里。
-  eventsApi.installEvents({ events: host.events, pipeline: pipelineApi });
+  eventsApi.installEvents({ events: host.events });
   disposers.push(eventsApi.releaseEvents);
 
   return disposers;

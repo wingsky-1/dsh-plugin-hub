@@ -1,20 +1,16 @@
 /**
  * dsh-notifier events 域 —— **依赖声明**。
  *
- * 本域声明「我需要外部什么」，不关心谁满足它——装配由组合根完成。契约与实现块都
- * 经本文件引用，不直连他域。
- *
- * 依赖一律以**域**为单位，而不是把对方的方法拆成一个个函数传进来：写 `pipeline`
- * 而不是 `onSubmit`。散装函数在装配点读不出「依赖哪个域」。
+ * 本域声明「我需要外部什么」，不关心谁满足它——装配由组合根完成。域之间不互相注入：
+ * 需要谁的能力，在这里引出来，实现块从本文件取。于是装配方只需要给「本域拿不到的
+ * 东西」——宿主事件面。
  */
 import type { AgentStatus } from "@deepseek-ai/dsh-agent";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import type { ApprovalRequest } from "@deepseek-ai/dsh-user-approval";
 import type { AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
 
-/** 裁决管线对外契约的完整面。通知请求的种类词汇也由它定义。 */
-export type PipelinePort = typeof import("../pipeline/interface.ts");
-
+export { submit } from "../pipeline/interface.ts";
 export type { NotifyRequest } from "../pipeline/interface.ts";
 
 /**
@@ -59,15 +55,8 @@ export interface HostEventPort {
   onAgentError(handler: (agentId: string, turn: number, errorText: string) => void): () => void;
 }
 
-/** 装配入参：本域依赖的全部外部。 */
+/** 装配入参：本域**拿不到**的东西。下游不在这里——它由本文件直接引。 */
 export interface EventsDeps {
-  /** 宿主事件面。 */
+  /** 宿主事件面：只有组合根够得着 `ctx`。 */
   readonly events: HostEventPort;
-  /**
-   * 下游：通知请求的消费者。
-   *
-   * 做成入参而不是对本域下游的硬引用：请求去哪、要不要发都不是本域的决定——把出口
-   * 做成参数，「谁消费通知」这件事就只有一个地方需要改。
-   */
-  readonly pipeline: PipelinePort;
 }
