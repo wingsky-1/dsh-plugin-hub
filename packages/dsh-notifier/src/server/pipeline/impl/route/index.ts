@@ -10,11 +10,15 @@
  * 依赖方向：只引用本目录与 `../../deps.ts`，不引用 `interface.ts`。
  */
 import type { EffectiveConfig } from "../../deps.ts";
-import type { NotifyKind } from "../service/type.ts";
+import type { NotifyRequest } from "../service/type.ts";
 import type { RouteDeps, RoutedTarget } from "./type.ts";
 
 /**
  * 路由：按 kind 与设置选出本次要投递的目标。
+ *
+ * 取整个请求而不是只取 kind：`onlyChannel` 同样参与选目标（它把结果收窄到一处），
+ * 而它和 kind 一样是裁决输入的一部分——分成两个参数，将来每加一个输入就要改一次
+ * 签名，改漏一端就是「设置改了不生效」。
  *
  * 未实现。待填的四路出口：
  *
@@ -29,9 +33,9 @@ import type { RouteDeps, RoutedTarget } from "./type.ts";
  * 系统通知脚本的路径不在这里选：它由包内共享层按平台推导，同一进程内恒定，做成
  * 装配入参只会让每个装配点都知道本包的文件叫什么。
  */
-export function routeTargets(deps: RouteDeps, config: EffectiveConfig, kind: NotifyKind): RoutedTarget[] {
+export function routeTargets(deps: RouteDeps, config: EffectiveConfig, request: NotifyRequest): RoutedTarget[] {
   void deps;
   void config;
-  void kind;
+  void request;
   return [];
 }

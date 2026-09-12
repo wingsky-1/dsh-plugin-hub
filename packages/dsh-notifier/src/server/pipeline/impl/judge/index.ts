@@ -27,6 +27,9 @@ import type { Verdict } from "./type.ts";
  *
  * 前三条只回答「留或弃」，第四条会额外产出请求，因此需要定时器——本块届时会从纯
  * 函数变成有状态块，清定时器的责任随之落到本域的生命周期上。
+ *
+ * `test` 是唯一不走前两条的 kind：它不对应任何宿主事件，也就没有对应的开关；它是
+ * 用户主动按下的，被免打扰吃掉就等于测试按钮失效，而测试的全部意义是验证链路。
  */
 export function judgeRequest(config: EffectiveConfig, request: NotifyRequest, enabled: boolean): Verdict {
   void config;

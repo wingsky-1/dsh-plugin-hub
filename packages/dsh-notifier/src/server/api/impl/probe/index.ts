@@ -4,23 +4,50 @@
  * 测试通知走的是**同一条**裁决管线（`submit`），不另开旁路——否则「测试能响、真实事件
  * 不响」这类问题会被测试本身掩盖掉。
  *
- * 依赖方向：只引用本目录与 `../../deps.ts`，不引用 `interface.ts`。
+ * 依赖方向：只引用本目录、`../route/`、`../stream/` 与 `../../deps.ts`，不引用
+ * `interface.ts`。
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { sendJson } from "../route/index.ts";
+import type { NotifyRequest } from "../../deps.ts";
+import { readJsonBody, submit } from "../../deps.ts";
+import { sendFailure, sendJson } from "../route/index.ts";
+import { streamHub } from "../stream/index.ts";
+import type { TestRequest } from "./type.ts";
+
+/** 请求体上限（字节）：它最多带一个频道 id。 */
+const BODY_LIMIT = 4 * 1024;
+
+/**
+ * 测试通知的固定文案。
+ *
+ * 不引入自由文本面：它验证的是链路本身，不是文案。取值沿用重写前的文案——用户看到的
+ * 那两句不该因为一次内部重构而变。
+ */
+const TEST_NOTIFICATION: NotifyRequest = {
+  kind: "test",
+  title: "DSH：测试通知",
+  body: "通知链路工作正常（此通知来自测试按钮）",
+};
 
 /**
  * POST /test：造一条 `test` 通知交给裁决管线。
  *
- * 未实现。待填：读 `{channelId?}` → 组装请求 → `submit` → 回
- * `{ ok: true, sseConnections, results }`（客户端用 `sseConnections` 提示「服务端未
- * 释放句柄几条」，`results` 是逐频道受理结果）。带 channelId 时是「只发给这个频道」
- * 的定向测试，而 `NotifyRequest` 目前没有承载它的字段——定向属于裁决输入而不是事件
- * 陈述，落点待定，实现时再定。
+ * 只承诺「已受理」：`submit` 不返回结果，投递结果要去频道状态里看。响应里的
+ * `sseConnections` 是**服务端未释放的句柄数**而不是投递计数——两者混起来，会让
+ * 「测试发出去了但计数没动」这种正常现象看起来像故障。
  */
-export async function sendTest(_req: IncomingMessage, res: ServerResponse): Promise<void> {
-  void res;
-  throw new Error("not implemented: api 测试通知");
+export async function sendTest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const raw = await readJsonBody(req, BODY_LIMIT);
+  // body 可选，读不到就按全频道测试处理：客户端的两个按钮一个发 `{}`、一个发
+  // `{channelId}`，没有第三种形态。
+  const body = (raw ?? {}) as TestRequest;
+  const channelId = body.channelId;
+  if (channelId !== undefined && (typeof channelId !== "string" || channelId.length === 0)) {
+    sendFailure(res, 400, { error: "测试通知参数非法", details: "channelId 必须为非空字符串或省略" });
+    return;
+  }
+  submit(channelId === undefined ? TEST_NOTIFICATION : { ...TEST_NOTIFICATION, onlyChannel: channelId });
+  sendJson(res, 200, { ok: true, sseConnections: streamHub.size() });
 }
 
 /** GET /health：宿主平台。客户端据此写系统通道的平台提示——不能拿浏览器 OS 猜。 */

@@ -12,6 +12,7 @@ import type { NotifyKind, OutgoingFrame } from "../pipeline/interface.ts";
 import type { LoggerPort } from "../shared/type.ts";
 
 export { readConfig, readSettingsView, writeConfig } from "../config/interface.ts";
+export { submit } from "../pipeline/interface.ts";
 export { clearHistory, readHistory, readStatus } from "../stores/interface.ts";
 export { isLoopbackRequest } from "../../../../../shared/loopback.js";
 export { readJsonBody } from "../../../../../shared/host-utils.js";
@@ -20,6 +21,7 @@ export { createSseHub } from "../../../../../shared/sse-hub.js";
 export type { NotifyFrame } from "../channels/interface.ts";
 export type { LoggerPort } from "../shared/type.ts";
 export type { RawSettingValue } from "../config/interface.ts";
+export type { NotifyRequest } from "../pipeline/interface.ts";
 export type { SseHub } from "../../../../../shared/sse-hub.js";
 export type { NotifyKind, OutgoingFrame };
 

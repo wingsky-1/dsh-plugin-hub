@@ -44,4 +44,11 @@ export interface NotifyRequest {
   /** 标题与正文（原样，未经下游加工）。 */
   title: string;
   body: string;
+  /**
+   * 只投递给这一个频道实例；省略 = 按路由裁决。
+   *
+   * 叫「限制」而不是「目标」：它不指定去哪，只把裁决结果收窄到一处。只有设置页的
+   * 单频道测试会填——宿主事件那边既不知道有哪些频道，也不该知道。
+   */
+  onlyChannel?: string;
 }

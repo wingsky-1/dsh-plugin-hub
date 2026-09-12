@@ -68,7 +68,7 @@ class NotificationPipeline {
       return;
     }
 
-    const targets = routeTargets({ frames }, config, request.kind);
+    const targets = routeTargets({ frames }, config, request);
     if (targets.length === 0) {
       this.archive(request, { suppressed: "no-target" });
       return;

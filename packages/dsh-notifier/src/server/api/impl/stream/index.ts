@@ -93,6 +93,16 @@ class StreamHub {
     this.replay = [];
   }
 
+  /**
+   * 当前连接数。
+   *
+   * 语义是**服务端未释放的句柄数**，不是「在线设备数」：设置页拿它提示「测试已发送
+   * （服务端未释放句柄 n 条）」，两者混起来会让刷新页面的残留句柄看起来像多了一台设备。
+   */
+  size(): number {
+    return this.hub.size();
+  }
+
   /** GET /events：接上一条 SSE 连接，并回放 `?since` 之后的帧。 */
   handle(req: IncomingMessage, res: ServerResponse): void {
     if (!this.installed) {
