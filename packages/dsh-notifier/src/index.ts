@@ -83,6 +83,23 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
  */
 const GLOBAL_LISTEN = { global: true } as const;
 
+/**
+ * 帧的宿主事件名。
+ *
+ * 声明在包入口而不是帧类型所在的域文件里：`declare module` 是全局增强，tsc 只在入口
+ * 可达的声明闭包里保留它——写在域里、而入口的对外声明面又不引用那个域时，产物
+ * `lib/index.d.ts` 里根本看不到它，消费方按包名导入时 `ctx.on("notifier/frame", …)`
+ * 就没有类型。`pack:check` 的「声明合并可达性」判据盯的正是这条。
+ *
+ * 名字不登记就只是一个字符串：事件总线按名字索引，`ctx.emit` / `ctx.on` 都查它，
+ * 拼错了不会有任何提示，而症状是「帧发出去没人收到」。
+ */
+declare module "@deepseek-ai/cordis" {
+  interface Events {
+    "notifier/frame"(frame: NotifyFrame): void;
+  }
+}
+
 /** 组合根用到的宿主面：域拿到的是能力，不是上下文。 */
 interface HostPort {
   readonly logger: LoggerPort;
