@@ -1,45 +1,23 @@
 /**
  * dsh-notifier channels 域 —— **对外契约**。
- *
- * 本域只承担一件事：**把一条通知投递出去**。它没有主见——不裁决发给谁、不读
- * 配置、不渲染文案、不落史、不记状态；消息与目标全部由调用方传入，它只回答
- * 「送到没有、为什么没送到」。
- *
- * 跨端帧经帧出口发出：本域不认识 api 域、不认识 SSE、不认识连接表，帧交给
- * 那个出口即完成职责（出口由组合根接线，见 `browser/type.ts` 的 `BrowserTarget`）。
- * 谁在听、听没听到，不是投递域能证明的事——浏览器通道
- * 本身不提供展示回执（业界同类通道 FCM / APNs / Web Push 同样只保证 accepted）。
- *
- * **只导出入参类型**：调用方必须构造的东西才需要具名；返回值类型由签名带出，
- * 不额外占一个名字。
- *
- * **本域对其它域零依赖**，因此没有 `deps.ts`：没有对上依赖就不造那个文件。
+ * 只做一件事：把一条通知投递出去——不裁决发给谁、不读配置、不落史，只回答「送到没有、
+ * 为什么没送到」；跨端帧交给帧出口即完成职责。本域对其它域零依赖，故没有 deps.ts。
  */
 import { deliverImpl } from "./impl/deliver/index.ts";
 import type { DeliveryTarget } from "./impl/deliver/index.ts";
 import type { DeliverResult, NotifyMessage } from "./impl/deliver/type.ts";
 
-// 入参类型：只出**真有消费者**的那几个。
-// - `NotifyMessage` / `DeliveryTarget`：`deliver` 签名里调用方必须亲手构造的；
-// - `NotifySeverity`：`NotifyMessage` 的字段类型，而请求方（裁决管线）要构造那个字段
-//   ——它只能经本域拿到这个名字，自己再写一份联合就是把「有哪几档强度」变成两份事实源；
-// - `BarkTarget` / `WebhookTarget`：config 域的频道配置继承它们（同一组投递字段
-//   不在两侧各定义一遍）；
-// - `NotifyFrame`：本域是它的**生产者**，`emitFrame` 是它唯一的出口——调用方要把
-//   这个出口接上帧总线，就得先能命名它产出的是什么。
-// 其余出口的参数形状经 `DeliveryTarget` 联合可达——调用方要构造哪一路，推导得
-// 出来；等真出现「要显式命名某一路」的调用点，再把那一路请出来。
+// 只导出入参类型：调用方必须亲手构造的那几个。`NotifySeverity` 是消息的字段类型，请求方
+// 只能经本域拿到这个名字，否则「有哪几档强度」会变成两份事实源；`BarkTarget` /
+// `WebhookTarget` 被 config 域的频道配置继承；`NotifyFrame` 是本域产出的线协议。
+// 其余出口参数经 `DeliveryTarget` 联合可达，等真出现要显式命名的调用点再请出来。
 export type { NotifyMessage, NotifySeverity } from "./impl/deliver/type.ts";
 export type { BarkTarget } from "./impl/bark/type.ts";
 export type { WebhookTarget } from "./impl/webhook/type.ts";
 export type { NotifyFrame } from "./impl/browser/type.ts";
 export type { DeliveryTarget } from "./impl/deliver/index.ts";
 
-/**
- * 投递：消息与目标全部由外部传入。
- *
- * @returns 与 `targets` 同序的结果；逐目标 fail-soft，单个失败不影响其余。
- */
+/** 投递：消息与目标全部由外部传入；结果与 `targets` 同序，逐目标 fail-soft。 */
 export async function deliver(
   message: NotifyMessage,
   targets: DeliveryTarget[],

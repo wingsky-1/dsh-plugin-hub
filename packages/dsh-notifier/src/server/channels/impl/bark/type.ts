@@ -1,8 +1,6 @@
 /**
- * dsh-notifier channels 域 —— bark 出口的投递参数。
- *
- * 只描述「把消息送到 bark 需要什么」：投递视角，不是用户配置视角（enabled、
- * 校验、默认值属配置层）。调用方负责把自己的配置模型适配成这里的形状。
+ * dsh-notifier channels 域 —— bark 出口的投递参数与对端形状。
+ * 只描述投递需要什么；enabled、校验、默认值属配置层。
  */
 
 /** bark 出口。 */
@@ -13,5 +11,27 @@ export interface BarkTarget {
   level?: string;
   group?: string;
   sound?: string;
+  icon?: string;
+  url?: string;
+  badge?: number;
   timeoutMs?: number;
+}
+
+/** POST `/push` 的请求体：device_key 与正文同走 body，绝不进 URL。 */
+export interface BarkPushBody {
+  device_key: string;
+  title: string;
+  body: string;
+  level?: string;
+  sound?: string;
+  group?: string;
+  icon?: string;
+  url?: string;
+  badge?: number;
+}
+
+/** `/push` 的响应体：只读成功判定用到的两键（部分反代会用 200 包一张错误页）。 */
+export interface BarkPushResponse {
+  code?: number;
+  message?: string;
 }

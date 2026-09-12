@@ -1,104 +1,264 @@
 /**
- * dsh-notifier channels 域 —— 系统通知出口。
- *
- * 本目录承担系统出口的全部实现：**探测**平台可用能力（脚本 / 播放器 /
- * notify-send）、**构造**命令（平台 × 音色 / 标题正文 → spawn 参数数组，零
- * shell 拼接）、**执行**命令。命令构造收在这里是职责正确的表现——平台适配是
- * 出口的实现细节，不是文本处理，放出去会让本域为拼一条命令多欠一份跨域依赖。
- *
- * 依赖方向：只引用本目录与共享语言，不引用 `interface.ts`。
+ * dsh-notifier channels 域 —— 系统出口：探测平台能力、构造命令、执行命令。
+ * 命令一律 `[bin, ...args]` 参数数组（零 shell 拼接）；弹窗半边的失败只记日志不翻转
+ * 终态，「只响不弹」时自播失败才是这次投递失败。1 秒节流不在这里（归管线）。
  */
+import { execFile, spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
+import { existsSync } from "node:fs";
+import type { LoggerPort } from "../../../shared/type.ts";
+import { FAILURE_REASON_MAX, displayCaps, truncateCodePoints } from "../deliver/caps.ts";
 import type { DeliverResult, NotifyMessage } from "../deliver/type.ts";
-import { toneFileCandidates } from "./tones.ts";
-import type { PlatformProbe, SystemTarget } from "./type.ts";
+import { MAC_SOUND_NAMES, toneFileCandidates } from "./tones.ts";
+import type { PlatformProbe, SystemCommandOptions, SystemTarget } from "./type.ts";
 
-/** 探测当前平台的系统通知与音频能力。 */
-function probePlatform(toastScript: string): PlatformProbe {
-  void toastScript;
-  throw new Error("not implemented: probePlatform");
+/** 探测超时（毫秒）：探测不许拖住第一次投递。 */
+const PROBE_TIMEOUT_MS = 3000;
+/** 子进程兜底杀进程时限：通知与音频进程都是短命任务。 */
+const KILL_TIMEOUT_MS = 8000;
+/** stderr 收集上限与进日志的尾部长度（字符）。 */
+const STDERR_TAIL_MAX = 512;
+const STDERR_LOG_MAX = 300;
+/** Linux 自播播放器候选：PipeWire 优先，PulseAudio 兜底。 */
+const LINUX_PLAYERS: readonly string[] = ["pw-play", "paplay"];
+
+/** 平台能力：进程级事实，探测一次后缓存（不做模块级可变状态，故收在实例字段）。 */
+class PlatformCapabilities {
+  private probe?: Promise<PlatformProbe>;
+
+  /** 取本进程的平台能力；脚本路径同进程恒定，首个调用者探到的即后续复用的。 */
+  get(toastScript: string): Promise<PlatformProbe> {
+    this.probe ??= probePlatform(toastScript);
+    return this.probe;
+  }
 }
 
-/** 系统通知命令的构造参数。 */
-type SystemCommandOptions = {
-  /** 用户的声音选择；怎么发声由本出口决定。 */
-  sound: boolean | string;
-  /** 是否由本出口自播——弹出命令因此不带系统提示音，否则会响两声。 */
-  selfPlay: boolean;
-  toastScript: string;
-};
+const platformCapabilities = new PlatformCapabilities();
 
-/** 构造系统通知命令；空数组 = 本平台弹不出窗，调用方据此记 failed。 */
-function buildSystemCommand(
+/** 探测本平台能力（异步一次；不用 spawnSync 阻塞事件循环）。 */
+export async function probePlatform(toastScript: string): Promise<PlatformProbe> {
+  const platform = process.platform;
+  // macOS 走 osascript、Windows 走 PowerShell，都不依赖 notify-send，故不探测
+  const notifySendAvailable =
+    platform === "darwin" || platform === "win32" ? false : await probeCommand("notify-send");
+  const players =
+    platform === "linux" ? await probePlayers() : platform === "darwin" ? ["afplay"] : [];
+  return { platform, toastScriptAvailable: existsSync(toastScript), notifySendAvailable, players };
+}
+
+/** 候选播放器逐个探测，取第一个可用的。 */
+async function probePlayers(): Promise<readonly string[]> {
+  for (const player of LINUX_PLAYERS) {
+    if (await probeCommand(player)) return [player];
+  }
+  return [];
+}
+
+/** 探测一条命令是否可用：`--version` 既不弹通知也不发声。 */
+function probeCommand(bin: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    execFile(bin, ["--version"], { timeout: PROBE_TIMEOUT_MS }, (cause) => {
+      resolve(cause === null);
+    });
+  });
+}
+
+/**
+ * 构造弹窗命令；空数组 = 本平台给不出这条命令。
+ * silent = 声音关闭或出口要自播（自播时不静音会响两声）。
+ */
+export function buildSystemCommand(
   probe: PlatformProbe,
   title: string,
   message: string,
   options: SystemCommandOptions,
 ): readonly string[] {
-  void probe;
-  void title;
-  void message;
-  void options;
-  throw new Error("not implemented: buildSystemCommand");
+  const silent = options.sound === false || options.selfPlay;
+  if (probe.platform === "win32") {
+    if (!probe.toastScriptAvailable) return [];
+    // PS 5.1 的 -File 对 `-Name=Value` 不做命名参数绑定，裸 dash token 又会被当成下一个
+    // 参数名；base64 字母表无空格无引号，彻底脱离命令行 tokenizer 的歧义面
+    const payload = Buffer.from(JSON.stringify({ title, message, silent }), "utf8").toString(
+      "base64",
+    );
+    return [
+      "powershell",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      options.toastScript,
+      "-Payload",
+      payload,
+    ];
+  }
+  if (probe.platform === "darwin") {
+    // osascript 脚本串里转义 \ 与 "、换行换空格（脚本语法不接受裸换行）
+    const escape = (text: string) =>
+      text.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"').replace(/\n/gu, " ");
+    const tone = options.sound;
+    const named =
+      typeof tone === "string" && Object.hasOwn(MAC_SOUND_NAMES, tone)
+        ? MAC_SOUND_NAMES[tone]
+        : "Glass";
+    const soundName = silent ? "" : ` sound name "${named}"`;
+    return [
+      "osascript",
+      "-e",
+      `display notification "${escape(message)}" with title "${escape(title)}"${soundName}`,
+    ];
+  }
+  if (!probe.notifySendAvailable) return [];
+  // 恒带 suppress-sound：各 DE 对 sound hint 支持参差，发声一律由出口自播承担
+  return ["notify-send", "-h", "boolean:suppress-sound:true", title, message];
 }
 
-/** 构造自播命令（平台 × 音色 → spawn 参数）；空数组 = 本平台放不出声。 */
-function buildSoundCommand(probe: PlatformProbe, tone: string): readonly string[] {
+/** 构造自播命令；空数组 = 本平台（或这个音色）放不出声。 */
+export function buildSoundCommand(probe: PlatformProbe, tone: string): readonly string[] {
+  const file = toneFileCandidates(probe.platform, tone).find((path) => existsSync(path));
+  if (file === undefined) return [];
+  if (probe.platform === "darwin") return ["afplay", file];
+  if (probe.platform === "win32") {
+    // 路径不拼进命令串：固定骨架读 $args[0]，白名单 wav 绝对路径作为独立 argv 传入
+    const play = "$p=$args[0]; (New-Object System.Media.SoundPlayer $p).PlaySync()";
+    return [
+      "powershell",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      play,
+      file,
+    ];
+  }
   const player = probe.players[0];
-  if (player === undefined) return [];
-  const file = toneFileCandidates(probe.platform, tone).find(exists);
-  return file === undefined ? [] : [player, file];
+  return player === undefined ? [] : [player, file];
 }
 
-/** 音色文件按候选顺序逐个探测，取第一个真实存在的。 */
-function exists(path: string): boolean {
-  void path;
-  throw new Error("not implemented: exists");
+/**
+ * 自播判定：linux 任何非静音都自播（DE 的 sound hint 不可依赖）；darwin 只在只响不弹
+ * 时自播；win32 指定音色或只响不弹时自播。
+ */
+export function shouldSelfPlay(pop: boolean, tone: boolean | string, platform: string): boolean {
+  if (tone === false) return false;
+  if (platform === "linux") return true;
+  if (platform === "darwin") return !pop;
+  if (platform === "win32") return typeof tone === "string" || !pop;
+  return false;
 }
 
-/** 投递一条系统通知（弹出 + 可选提示音）。 */
+/**
+ * 执行一条命令；任何退出方式都收敛成 boolean，不外抛。
+ * 必须挂 `error` 监听：原生二进制缺失时无人接住的 error 事件会把宿主进程打挂
+ * （历史版本在 macOS 上直接 spawn 缺失的 powershell 崩过）。
+ */
+function run(command: readonly string[], logger: LoggerPort): Promise<boolean> {
+  const bin = command[0];
+  return new Promise((resolve) => {
+    let child: ChildProcess;
+    try {
+      child = spawn(
+        bin,
+        command.slice(1),
+        process.platform === "win32"
+          ? { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] }
+          : { stdio: "ignore" },
+      );
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      logger.warn(`dsh-notifier: 命令启动失败（${bin}）: ${reason}`);
+      resolve(false);
+      return;
+    }
+    // 限长收集 stderr 尾部：Windows 的 PS 诊断（参数绑定失败、WinRT 异常）否则全丢
+    let stderrTail = "";
+    if (child.stderr) {
+      child.stderr.on("data", (chunk: Buffer) => {
+        if (stderrTail.length < STDERR_TAIL_MAX) stderrTail += chunk.toString("utf8");
+      });
+    }
+    const killer = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {
+        // 子进程可能已退出：杀不掉不影响结论
+      }
+    }, KILL_TIMEOUT_MS);
+    let settled = false;
+    child.on("exit", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(killer);
+      // code 为 null = 被信号杀死（多数是我们自己的超时）：那是主动行为，不当异常刷屏
+      if (code !== 0 && code !== null) {
+        const tail = stderrTail.trim();
+        const detail = tail ? `：${tail.slice(-STDERR_LOG_MAX)}` : "";
+        logger.warn(`dsh-notifier: 命令退出码异常（${bin} exit ${code}）${detail}`);
+      }
+      resolve(code === 0);
+    });
+    child.on("error", (cause) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(killer);
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      logger.warn(`dsh-notifier: 命令不可用（${bin}）: ${reason}`);
+      resolve(false);
+    });
+  });
+}
+
+/** 投递一条系统通知（弹窗 + 可选提示音）。 */
 export async function sendSystem(
   target: SystemTarget,
   message: NotifyMessage,
 ): Promise<DeliverResult> {
-  const probe = probePlatform(target.toastScript);
-  // 指定音色时由本出口自播，弹出命令因此不带系统提示音——否则会响两声。
-  const tone = typeof target.sound === "string" ? target.sound : undefined;
-  const commands: Array<readonly string[]> = [];
+  const probe = await platformCapabilities.get(target.toastScript);
+  const selfPlay = shouldSelfPlay(target.pop, target.sound, probe.platform);
+  const play = selfPlay ? buildSoundCommand(probe, toneOf(target.sound)) : [];
 
   if (target.pop) {
-    const pop = buildSystemCommand(probe, message.title, message.body, {
-      sound: target.sound,
-      selfPlay: tone !== undefined,
-      toastScript: target.toastScript,
-    });
-    if (pop.length > 0) commands.push(pop);
-  }
-  if (tone !== undefined) {
-    const play = buildSoundCommand(probe, tone);
-    if (play.length > 0) commands.push(play);
-  }
-  if (commands.length === 0) {
-    // 本平台放不出窗也放不出声：换一次投递还是同样的结论，所以不可重试。
-    return {
-      status: "failed",
-      stage: "delivered",
-      reason: "本平台没有可用的系统通知通道",
-      retryable: false,
-    };
-  }
-
-  for (const command of commands) {
-    const ok = await run(command);
-    if (!ok) {
-      // 命令已经跑过一次且失败：重投等于把同一个子进程再失败一次。
-      return { status: "failed", stage: "delivered", reason: "系统命令执行失败", retryable: false };
+    const pop = buildSystemCommand(
+      probe,
+      truncateCodePoints(message.title, displayCaps.system.titleMax),
+      truncateCodePoints(message.body, displayCaps.system.bodyMax),
+      { sound: target.sound, selfPlay, toastScript: target.toastScript },
+    );
+    // 弹窗半边的 spawn 结果只记日志（run 内 warn）：无桌面会话、无 notify-send 是常态
+    // 环境，不是投递失败；弹窗场景下自播失败也忽略（toast 已出去，声音尽力而为）
+    if (pop.length === 0 && probe.platform === "win32" && !probe.toastScriptAvailable) {
+      // 脚本缺失是打包缺陷而非环境常态：命令都没构造出来，得留一条痕迹
+      const reason = `dsh-notifier: 系统通知脚本缺失，Windows 弹窗未发出：${target.toastScript}`;
+      target.logger.warn(reason);
     }
+    if (pop.length > 0) await run(pop, target.logger);
+    if (play.length > 0) await run(play, target.logger);
+    return { status: "ok", stage: "delivered" };
   }
-  return { status: "ok", stage: "delivered" };
+  if (!selfPlay) {
+    // 既不弹也不响：请求里没有任何动作（管线不会给出这种目标），没有可失败的环节
+    return { status: "ok", stage: "delivered" };
+  }
+  // 只响不弹：声音是唯一动作，平台放不出声或播放失败都是这次投递的失败
+  if (play.length === 0) return failed("本平台没有可用的系统通知通道");
+  const played = await run(play, target.logger);
+  return played ? { status: "ok", stage: "delivered" } : failed("系统命令执行失败");
 }
 
-/** 执行一条命令；失败返回 false——失败也是投递结果的一种，不外抛给上层。 */
-async function run(command: readonly string[]): Promise<boolean> {
-  void command;
-  throw new Error("not implemented: run");
+/** 声音选择 → 自播目标音色（true = 各平台的跟随系统默认音）。 */
+function toneOf(sound: boolean | string): string {
+  return typeof sound === "string" ? sound : "default";
+}
+
+/** 失败结果：原因按展示上限截断（截断是展示语义，不是脱敏）。 */
+function failed(reason: string): DeliverResult {
+  return {
+    status: "failed",
+    stage: "delivered",
+    reason: truncateCodePoints(reason, FAILURE_REASON_MAX),
+    // 平台能力与命令退出码不会因为重投而改变：换一次投递还是同样的结论
+    retryable: false,
+  };
 }
