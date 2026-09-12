@@ -16,7 +16,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { createAdjudicator, createAppendHistory, createDeliverer, createHandleDecision, createSendKind, encodeBrowserSound, resolveChannelPool } from "../../src/pipeline/interface.ts";
-import { sanitizeNoticeContent } from "../../src/text/interface.ts";
+import { NOTIFY_KINDS, sanitizeNoticeContent } from "../../src/text/interface.ts";
 import type { AdjudicateResult, AdjudicatedNotice, DeliverPayload, ResolvedTarget } from "../../src/pipeline/interface.ts";
 import type { NotifyConfig } from "../../src/config/interface.ts";
 import type { NotifyChannel, NotifySentEvent, NotifyResult } from "../../src/sdk/interface.ts";
@@ -272,7 +272,8 @@ describe("② deliver 分支统一脱敏（渲染文本 → 恰好一次 → 落
     expect(results).toEqual([{ channelId: "browser", status: "ok" }]);
     expect(made.played.length).toBe(1);
     expect(made.history.length).toBe(0);
-    expect(made.warns.some((w) => w.includes("history append boom"))).toBe(true);
+    // 锁全等文案（含固定前缀）：只 includes 异常消息会让「历史落盘失败: 」文案漂移不可见
+    expect(made.warns).toEqual(["dsh-notifier: 历史落盘失败: history append boom"]);
   });
 });
 
@@ -307,6 +308,13 @@ describe("③ stale 频道 warn + 不影响其他目标", () => {
     const made = makeOrchestrateDeps();
     handleDecisionFn(deliverDecision([browserTarget()]), made.deps);
     expect(made.warns).toEqual([]);
+  });
+
+  it("deliver 分支记 info（渲染后正文，换行折为 ' / '）", () => {
+    const made = makeOrchestrateDeps();
+    handleDecisionFn(deliverDecision([browserTarget()], { body: "第一行\n第二行" }), made.deps);
+    // 全等：固定前缀 + kind + 折行后的正文（deliver 分支的 info 此前无直测）
+    expect(made.infos).toEqual(["dsh-notifier: done 第一行 / 第二行"]);
   });
 
   it("deliver 返回的结果原样透出（编排层不改写受理结果）", () => {
@@ -364,6 +372,10 @@ describe("⑤ encodeBrowserSound（browser 帧级 sound 编码）", () => {
   it("SoundId + pop=false 仍为 selfplay + tone（编码随 pop 决议，音色不丢）", () => {
     expect(encodeBrowserSound("chime", false)).toEqual({ mode: "selfplay", tone: "chime" });
   });
+
+  it("false + pop=false → 仍 silent（静音优先级高于 pop）", () => {
+    expect(encodeBrowserSound(false, false)).toEqual({ mode: "silent", tone: undefined });
+  });
 });
 
 // ---------------------------------------------------------------- ⑥ resolveChannelPool
@@ -417,7 +429,8 @@ describe("⑥ resolveChannelPool（投递池解析）", () => {
     });
     expect(pool.map((e) => e.id)).toEqual(["browser"]);
     expect(warns.length).toBe(1);
-    expect(warns[0].includes("outbound boom")).toBe(true);
+    // 锁全等文案（含固定前缀），同 (2)：只 includes 异常消息会漏掉文案漂移
+    expect(warns[0]).toBe("dsh-notifier: 出站频道读取失败（fail-soft 跳过）: outbound boom");
   });
 });
 
@@ -425,14 +438,14 @@ describe("⑥ resolveChannelPool（投递池解析）", () => {
 
 describe("⑦ createSendKind（渲染 → 裁决 → 编排）", () => {
   /** 真实裁决器 + 真实编排器的接线（fakes 只在域边界：配置/投递/落史/日志）。 */
-  function makeSendKind(cfg: Partial<NotifyConfig> = {}, enabled = true) {
+  function makeSendKind(cfg: Partial<NotifyConfig> = {}, enabled = true, pool = [browserTarget()]) {
     const made = makeOrchestrateDeps();
     const snapshot = baseCfg(cfg);
     const adjudicate = createAdjudicator({
       current: () => snapshot,
       enabled: () => enabled,
       isKindConfirmed: () => true,
-      allChannels: () => [browserTarget()],
+      allChannels: () => pool,
     });
     const sendKind = createSendKind({ adjudicate, handleDecision: createHandleDecision(made.deps) });
     return { sendKind, ...made };
@@ -441,7 +454,9 @@ describe("⑦ createSendKind（渲染 → 裁决 → 编排）", () => {
   it("内置 kind 取 NOTIFY_KINDS 的 title 模板（非 detail.message 原样）", () => {
     const made = makeSendKind();
     made.sendKind("done", { message: "自定义正文" });
-    expect(made.played[0].payload.title.length).toBeGreaterThan(0);
+    // 全等锁定模板值本身：弱化成「非空」会让「误用 detail.message 作 title」也通过
+    expect(made.played[0].payload.title).toBe(NOTIFY_KINDS.done.title);
+    expect(made.played[0].payload.title).not.toBe("自定义正文");
     expect(made.played[0].payload.kind).toBe("done");
   });
 
@@ -461,11 +476,21 @@ describe("⑦ createSendKind（渲染 → 裁决 → 编排）", () => {
     expect(made.played[0].payload.title.includes("/home/alice")).toBe(false);
   });
 
-  it("opts.onlyChannel 透传裁决（单频道受理时其他目标不投）", () => {
-    const made = makeSendKind();
+  it("opts.onlyChannel 透传裁决：目标频道被跳过、其余频道不投、返回 skipped", () => {
+    // 池里放两个目标（browser + system）——若实现漏传 onlyChannel，browser 会被投递、
+    // 断言必然红；池里只放单目标时本用例恒真（空数组 every 恒真 + played 本就为 0）
+    const made = makeSendKind({}, true, [browserTarget(), browserTarget("system")]);
     const results = made.sendKind("test", {}, { onlyChannel: "system" });
-    expect(made.played.length).toBe(0);
-    expect(results.every((r) => r.channelId !== "browser")).toBe(true);
+    expect(made.played.map((p) => p.id)).toEqual(["system"]);
+    expect(results.map((r) => r.channelId)).toEqual(["system"]);
+    expect(results.some((r) => r.channelId === "browser")).toBe(false);
+  });
+
+  it("不传 onlyChannel 时池内全部目标投递（与上例对照，证 onlyChannel 是差异来源）", () => {
+    const made = makeSendKind({}, true, [browserTarget(), browserTarget("system")]);
+    const results = made.sendKind("test", {});
+    expect(made.played.map((p) => p.id)).toEqual(["browser", "system"]);
+    expect(results.map((r) => r.channelId)).toEqual(["browser", "system"]);
   });
 
   it("enabled=false → 裁决 suppressed，编排返回 skipped 且零投递", () => {

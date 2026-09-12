@@ -138,6 +138,7 @@ describe("(i) createSeqStore：save 原子写与失败 fail-soft", () => {
     const store = createSeqStore({ file: join(dir, "missing", "seq.json"), warn: log.warn });
     expect(() => store.save(3)).not.toThrow();
     expect(log.warns.length).toBe(1);
-    expect(log.warns[0].includes("seq 计数写入失败")).toBe(true);
+    // 锁全等固定前缀（错误详情部分随 errno 文本变化，故用 startsWith 锚前缀）
+    expect(log.warns[0].startsWith("dsh-notifier: seq 计数写入失败: ")).toBe(true);
   });
 });
