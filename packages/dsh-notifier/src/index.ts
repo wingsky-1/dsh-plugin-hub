@@ -100,34 +100,32 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
 const GLOBAL_LISTEN = { global: true } as const;
 
 /**
- * 帧的宿主事件名。
+ * 两个对外名字的声明合并。
  *
- * 声明在包入口而不是帧类型所在的域文件里：`declare module` 是全局增强，tsc 只在入口
+ * 声明在包入口而不是它们各自的域文件里：`declare module` 是全局增强，tsc 只在入口
  * 可达的声明闭包里保留它——写在域里、而入口的对外声明面又不引用那个域时，产物
- * `lib/index.d.ts` 里根本看不到它，消费方按包名导入时 `ctx.on("notifier/frame", …)`
- * 就没有类型。`pack:check` 的「声明合并可达性」判据盯的正是这条。
+ * `lib/index.d.ts` 里根本看不到它，消费方按包名导入时 `ctx.on(…, …)` 与
+ * `ctx["wingsky.notifier"]` 就都没有类型。`pack:check` 的「声明合并可达性」判据盯的
+ * 正是这条。
  *
- * 名字不登记就只是一个字符串：事件总线按名字索引，`ctx.emit` / `ctx.on` 都查它，
- * 拼错了不会有任何提示，而症状是「帧发出去没人收到」。
+ * 两个键都引用常量而不是写字面量：接口的计算属性名接受**字面量类型**，而两个常量在
+ * `as const` 下正是字面量类型。于是名字各只有一个物理定义（服务名在 sdk 域、帧事件名
+ * 在 pipeline 域，都是它们所属 ABI 的定义处），这里不再各抄一份——抄一份同样能编译，
+ * 代价是改名时漏改一处，而两个名字都只在运行时的另一头才暴露：服务名漏改是消费方
+ * `ctx.get` 拿到空，帧事件名漏改是「帧发出去没人收到」。
  */
 declare module "@deepseek-ai/cordis" {
   interface Context {
     /**
      * 通知中心服务面：兄弟插件经它登记自己的通知种类、发送通知。
      *
-     * 声明在这里与 `Events` 同因（见下）：`declare module` 是全局增强，只有落在入口可达
-     * 的声明闭包里才会进产物 `lib/index.d.ts`。写在 sdk 域里，消费方按包名导入时
-     * `ctx["wingsky.notifier"]` 就是一个不存在的属性。
-     *
-     * 键用常量而不是字面量：接口的计算属性名接受**字面量类型**，而 `NOTIFIER_SERVICE`
-     * 在 `as const` 下正是字面量类型，于是服务名只有一个物理定义（在 sdk 域，ABI 的定义
-     * 处），这里不再抄一份。抄一份的后果不是编译不过——它同样合法——而是改名时漏改一处，
-     * 症状是消费方 `ctx.get` 拿到空，一个只在别的插件里才看得见的失败。
+     * 声明在这里与 `Events` 同因（见上）。
      */
     [sdkApi.NOTIFIER_SERVICE]: NotifierService;
   }
   interface Events {
-    "notifier/frame"(payload: OutgoingFrame): void;
+    /** 待展示的通知帧（生产端是裁决管线的帧出口，消费端是 api 域的流枢纽）。 */
+    [pipelineApi.NOTIFIER_FRAME](payload: OutgoingFrame): void;
   }
 }
 
@@ -177,12 +175,15 @@ function bindHost(ctx: Context): HostPort {
   return {
     logger: ctx.logger,
     frames: {
+      // 事件名取自 pipeline 域（帧出口的定义处），组合根不自己写一遍字面量。`emit` 与
+      // `on` 都没有 `(name: string)` 那样的逃生重载，所以名字与声明合并不一致时是编译
+      // 错误，不需要额外的保险写法。
       emit: (payload) => {
-        ctx.emit("notifier/frame", payload);
+        ctx.emit(pipelineApi.NOTIFIER_FRAME, payload);
       },
       // 转发而不是把 ctx 递出去：域要的是「订阅帧」，不是「订阅任意事件」。
       onFrame: (handler) =>
-        ctx.on("notifier/frame", (payload) => {
+        ctx.on(pipelineApi.NOTIFIER_FRAME, (payload) => {
           guard(() => handler(payload));
         }),
     },

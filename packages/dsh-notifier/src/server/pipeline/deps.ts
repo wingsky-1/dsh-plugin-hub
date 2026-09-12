@@ -11,6 +11,9 @@
  *
  * 而且不接收算好的值：设置是活的，装配期算出的数字会变成静态数据，而它看起来与实时
  * 读取一模一样。
+ *
+ * 唯一的例外是文件末尾那个帧事件名：名字是**标识符**而不是能力，它必须在值层存在
+ * （事件总线按字符串索引），而它标识的正是本文件里的帧出口。
  */
 import type * as channelsApi from "../channels/interface.ts";
 import type * as configApi from "../config/interface.ts";
@@ -50,6 +53,18 @@ export interface OutgoingFrame {
 export interface FramePort {
   emit(payload: OutgoingFrame): void;
 }
+
+/**
+ * 帧在宿主事件总线上的地址。
+ *
+ * 与 `FramePort` 同处而不是放在哪扇门面上：出口的名字和出口的形状是一件事，分开放就
+ * 会在改名时只改一处。而事件总线按名字索引（`ctx.emit` / `ctx.on` 都查它），拼错了
+ * 不会有任何提示——症状是「帧发出去没人收到」。
+ *
+ * 本文件唯一的值。名字必须在值层存在，类型层表达不了它；`emit` / `on` 都没有
+ * `(name: string)` 那样的逃生重载，所以包入口那次声明合并一旦与它不一致，编译就会失败。
+ */
+export const NOTIFIER_FRAME = "notifier/frame";
 
 /** 装配入参：本域**拿不到**的东西（宿主能力、挂载点值）与它依赖的域。 */
 export interface PipelineDeps {
