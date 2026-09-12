@@ -1,15 +1,7 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-notifier/src/config/config.ts",
-    "packages/dsh-notifier/src/config/migrate.ts",
     "packages/dsh-notifier/src/config/normalize.ts",
-    "packages/dsh-notifier/src/config/paths.ts",
-    "packages/dsh-notifier/src/config/redact.ts",
-    "packages/dsh-notifier/src/config/settings.ts",
-    "packages/dsh-notifier/src/config/validators.ts",
-    "packages/dsh-notifier/src/config/quiet-hours.ts",
-    "packages/dsh-notifier/src/config/settings-bridge.ts",
     "!packages/dsh-notifier/src/**/interface.ts",
     "!packages/dsh-notifier/src/client/**",
     "!packages/dsh-notifier/src/**/interface.ts",
@@ -44,9 +36,9 @@
     "configFile": "vitest.stryker.d/dsh-notifier.config.ts"
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-notifier-config.json"
+    "fileName": "coverage/mutation/dsh-notifier-config-normalize.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-notifier-config.json",
-  "_comment": "#669 PR2 T2-7 按域重划：config——配置域全 9 实现（config/migrate/normalize/paths/redact/settings/validators/quiet-hours/settings-bridge；settings-bridge/quiet-hours 自 PR1 盲区并入，S3-30 修复）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+  "incrementalFile": "coverage/mutation/incremental-notifier-config-normalize.json",
+  "_comment": "#720 静态拆段（1/3）：原 #669 PR2 T2-7 的 config 段按文件 mutant 密度拆三。本段 = normalize.ts 单文件 877 mutant（占原段 2366 的 37.1%），是段内 mutant 的最大来源。拆段动因是密度失衡而非文件数：normalize.ts 284 行 877 mutant 对 config.ts 307 行 95 mutant（密度差约 8 倍），按行数或按文件数均分都会拆错。按文件拆而非按行区间（--mutate file:1-142）：行号是脆弱依赖，且会把分段 SSOT 从本文件迁进 CI matrix，扩大自研面。interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
 }

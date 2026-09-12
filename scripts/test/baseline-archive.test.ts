@@ -106,11 +106,13 @@ test('期望集合派生：dsh- 前缀剥离 + seg=0 单配置形态', () => {
   assert.deepEqual(expectedBaselineFiles(['README.md', null]), [], '非 .json 条目不得进期望集合')
 })
 
-test('期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（31 段）', () => {
+test('期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（33 段）', () => {
   const confNames = readdirSync(join(ROOT, 'stryker.conf.d')).filter((f) => f.endsWith('.json'))
   const expected = expectedBaselineFiles(confNames)
   assert.equal(expected.length, confNames.length, '每个段配置都应对应一个基线文件')
-  assert.equal(expected.length, 31, `段数应为 31，实际 ${expected.length}`)
+  // 段数为显式哨兵：拆段/合段必须同时改这里（#720 把 dsh-notifier config 段拆三段，31 → 33），
+  // 否则新增段静默漏进归档期望集合也无人察觉。
+  assert.equal(expected.length, 33, `段数应为 33，实际 ${expected.length}`)
   for (const f of expected) assert.match(f, BASELINE_FILE_RE, `文件名应匹配归档形态：${f}`)
 })
 

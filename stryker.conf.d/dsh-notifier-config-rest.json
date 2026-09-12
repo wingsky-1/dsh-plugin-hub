@@ -1,0 +1,50 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-notifier/src/config/config.ts",
+    "packages/dsh-notifier/src/config/migrate.ts",
+    "packages/dsh-notifier/src/config/paths.ts",
+    "packages/dsh-notifier/src/config/redact.ts",
+    "packages/dsh-notifier/src/config/settings.ts",
+    "packages/dsh-notifier/src/config/quiet-hours.ts",
+    "packages/dsh-notifier/src/config/settings-bridge.ts",
+    "!packages/dsh-notifier/src/**/interface.ts",
+    "!packages/dsh-notifier/src/client/**",
+    "!packages/dsh-notifier/src/**/interface.ts",
+    "!packages/dsh-notifier/src/**/*.d.ts",
+    "!packages/dsh-notifier/src/**/*.ps1"
+  ],
+  "testRunner": "vitest",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.stryker.d/dsh-notifier.config.ts"
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-notifier-config-rest.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-notifier-config-rest.json",
+  "_comment": "#720 静态拆段（3/3）：原 config 段余下 7 实现（config/migrate/paths/redact/settings/quiet-hours/settings-bridge）合计 627 mutant（占原段 26.5%），远低于两个密度异常文件，故合并为一段。配置域划分沿用 #669 PR2 T2-7（settings-bridge/quiet-hours 自 PR1 盲区并入，S3-30 修复）；interface.ts 纯 re-export 不入变异面；测试全套跑（perTest 关联）；incremental 基线随 observe 四班次重建。"
+}
