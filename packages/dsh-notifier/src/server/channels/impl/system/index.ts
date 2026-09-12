@@ -14,6 +14,7 @@ import type { PlatformProbe, SystemTarget } from "./type.ts";
 
 /** 探测当前平台的系统通知与音频能力。 */
 function probePlatform(toastScript: string): PlatformProbe {
+  void toastScript;
   throw new Error("not implemented: probePlatform");
 }
 
@@ -33,6 +34,10 @@ function buildSystemCommand(
   message: string,
   options: SystemCommandOptions,
 ): readonly string[] {
+  void probe;
+  void title;
+  void message;
+  void options;
   throw new Error("not implemented: buildSystemCommand");
 }
 
@@ -46,11 +51,15 @@ function buildSoundCommand(probe: PlatformProbe, tone: string): readonly string[
 
 /** 音色文件按候选顺序逐个探测，取第一个真实存在的。 */
 function exists(path: string): boolean {
+  void path;
   throw new Error("not implemented: exists");
 }
 
 /** 投递一条系统通知（弹出 + 可选提示音）。 */
-export async function sendSystem(target: SystemTarget, message: NotifyMessage): Promise<DeliverResult> {
+export async function sendSystem(
+  target: SystemTarget,
+  message: NotifyMessage,
+): Promise<DeliverResult> {
   const probe = probePlatform(target.toastScript);
   // 指定音色时由本出口自播，弹出命令因此不带系统提示音——否则会响两声。
   const tone = typeof target.sound === "string" ? target.sound : undefined;
@@ -81,5 +90,6 @@ export async function sendSystem(target: SystemTarget, message: NotifyMessage): 
 
 /** 执行一条命令；失败返回 false——失败也是投递结果的一种，不外抛给上层。 */
 async function run(command: readonly string[]): Promise<boolean> {
+  void command;
   throw new Error("not implemented: run");
 }

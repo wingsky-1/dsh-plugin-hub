@@ -42,10 +42,16 @@ export class KindEndpoints {
    * 成功体带回**新修订号**：客户端确认之后要同步自己那份 meta，否则紧接着的一次保存会
    * 拿着旧修订号提交，凭空造出一次冲突——而用户会以为自己刚才的确认没生效。
    */
-  readonly confirm: RouteHandler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+  readonly confirm: RouteHandler = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> => {
     const raw = await readJsonBody(req, BODY_LIMIT);
     if (raw === undefined) {
-      sendFailure(res, 400, { code: "invalid-json", details: "请求体不是合法 JSON 对象（或超出大小上限）" });
+      sendFailure(res, 400, {
+        code: "invalid-json",
+        details: "请求体不是合法 JSON 对象（或超出大小上限）",
+      });
       return;
     }
     // 断言只声明「这里有这两个字段」，不校验它们是什么——校验是紧接着的一步。
@@ -53,7 +59,10 @@ export class KindEndpoints {
     const kind = body.kind;
     const confirmed = body.confirmed;
     if (typeof kind !== "string" || kind.length === 0 || typeof confirmed !== "boolean") {
-      sendFailure(res, 400, { code: "invalid", details: "需为 { kind: string, confirmed: boolean }" });
+      sendFailure(res, 400, {
+        code: "invalid",
+        details: "需为 { kind: string, confirmed: boolean }",
+      });
       return;
     }
     if (!this.kinds.listKinds().some((entry) => entry.id === kind)) {

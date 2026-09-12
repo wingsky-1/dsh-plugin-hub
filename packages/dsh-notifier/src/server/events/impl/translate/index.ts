@@ -24,6 +24,7 @@ import type { Translation } from "./type.ts";
  * 未实现：应产出 `ask` 请求（工具名 + 等待理由）。
  */
 export function translateApproval(request: ApprovalRequest): Translation {
+  void request;
   return { ok: false };
 }
 
@@ -33,6 +34,7 @@ export function translateApproval(request: ApprovalRequest): Translation {
  * 未实现：应产出 `question` 请求（问题摘要）。
  */
 export function translateUserQuestion(request: AskUserQuestionRequest): Translation {
+  void request;
   return { ok: false };
 }
 
@@ -43,6 +45,8 @@ export function translateUserQuestion(request: AskUserQuestionRequest): Translat
  * `tool/result` 承接工具失败。多数 kind 本就不对应任何通知。
  */
 export function translateSessionEvent(sessionId: string, event: SessionEvent): Translation {
+  void sessionId;
+  void event;
   return { ok: false };
 }
 
@@ -52,6 +56,8 @@ export function translateSessionEvent(sessionId: string, event: SessionEvent): T
  * 未实现：`idle` 是子代理完成的判据。
  */
 export function translateAgentStatus(agentId: string, status: AgentStatus): Translation {
+  void agentId;
+  void status;
   return { ok: false };
 }
 
@@ -62,6 +68,7 @@ export function translateAgentStatus(agentId: string, status: AgentStatus): Tran
  * `idle` 再销毁，异常路径可能只有销毁。
  */
 export function translateAgentDisposed(agentId: string): Translation {
+  void agentId;
   return { ok: false };
 }
 
@@ -71,6 +78,8 @@ export function translateAgentDisposed(agentId: string): Translation {
  * 未实现：与 `turn/end` 会话事件互补——一个说「要停了」，一个说「已经停了」。
  */
 export function translateTurnStopping(agentId: string, turn: number): Translation {
+  void agentId;
+  void turn;
   return { ok: false };
 }
 
@@ -80,5 +89,8 @@ export function translateTurnStopping(agentId: string, turn: number): Translatio
  * 未实现：`error` 的直接来源。
  */
 export function translateAgentError(agentId: string, turn: number, errorText: string): Translation {
+  void agentId;
+  void turn;
+  void errorText;
   return { ok: false };
 }

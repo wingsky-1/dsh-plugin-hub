@@ -27,4 +27,3 @@ export interface StoreDeps {
   /** 设置读面：保留天数每次读时现取，不在装配期取快照。 */
   config: ConfigPort;
 }
-

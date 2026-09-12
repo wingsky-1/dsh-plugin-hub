@@ -20,9 +20,19 @@ import { createHash } from "node:crypto";
 import type { ConfigDeps } from "../../deps.ts";
 import { readTextFileSync, writeTextAtomic } from "../../../shared/file-io.ts";
 import { CONFIG_FILE_NAME, notifierFile } from "../../../shared/paths.ts";
-import { normalizeConfig, parseJsonObject, sanitizeSettings, validateSettings } from "../input/index.ts";
+import {
+  normalizeConfig,
+  parseJsonObject,
+  sanitizeSettings,
+  validateSettings,
+} from "../input/index.ts";
 import { DEFAULT_CONFIG } from "../model/index.ts";
-import type { NotifyConfig, RawSettingValue, SettingsPatch, StoredSettings } from "../model/type.ts";
+import type {
+  NotifyConfig,
+  RawSettingValue,
+  SettingsPatch,
+  StoredSettings,
+} from "../model/type.ts";
 import { redactConfig, unmaskChannels } from "../redact/index.ts";
 import type { SettingsView, WriteResult } from "./type.ts";
 
@@ -101,7 +111,11 @@ class ConfigStore {
   async write(patch: SettingsPatch, expectedRevision?: number): Promise<WriteResult> {
     const restored = this.restoreSecrets(patch);
     if (!restored.ok) {
-      return { ok: false, reason: "invalid", error: { key: "channels", hint: NEW_CHANNEL_MASK_HINT } };
+      return {
+        ok: false,
+        reason: "invalid",
+        error: { key: "channels", hint: NEW_CHANNEL_MASK_HINT },
+      };
     }
     const verdict = validateSettings(restored.patch);
     if (!verdict.ok) return { ok: false, reason: "invalid", error: verdict.error };
@@ -147,7 +161,9 @@ class ConfigStore {
     const channels = patch.channels;
     if (channels === undefined) return { ok: true, patch };
     const restored = unmaskChannels(channels, this.user.channels);
-    return restored.ok ? { ok: true, patch: { ...patch, channels: restored.channels } } : { ok: false };
+    return restored.ok
+      ? { ok: true, patch: { ...patch, channels: restored.channels } }
+      : { ok: false };
   }
 
   /** 把一次写挂到队列尾；前一次无论成败，后一次都照常执行。 */

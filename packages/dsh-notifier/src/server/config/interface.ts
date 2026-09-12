@@ -92,6 +92,9 @@ export function readSettingsView(): SettingsView {
  *
  * @param expectedRevision 期望的用户层修订号（乐观并发；缺省 = 不做版本校验）。
  */
-export async function writeConfig(patch: SettingsPatch, expectedRevision?: number): Promise<WriteResult> {
+export async function writeConfig(
+  patch: SettingsPatch,
+  expectedRevision?: number,
+): Promise<WriteResult> {
   return configStore.write(patch, expectedRevision);
 }

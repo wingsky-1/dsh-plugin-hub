@@ -18,7 +18,12 @@ import type { BarkTarget, WebhookTarget } from "../../deps.ts";
  * 只承诺「是 JSON 结构」，不承诺落在任何合法域：形状是清楚的（设置值就那么几种），
  * 只是内容不受信。收窄它的责任在输入闸门。
  */
-export type RawSettingValue = string | number | boolean | readonly RawSettingValue[] | { readonly [key: string]: RawSettingValue };
+export type RawSettingValue =
+  | string
+  | number
+  | boolean
+  | readonly RawSettingValue[]
+  | { readonly [key: string]: RawSettingValue };
 
 /** 宿主存储里的原始设置：键名也不受契约约束——存储里可能是陌生键。 */
 export type StoredSettings = { readonly [key: string]: RawSettingValue };

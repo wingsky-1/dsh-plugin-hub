@@ -11,12 +11,6 @@
 import { STATUS_FILE_NAME, notifierFile } from "../../../shared/paths.ts";
 import type { ChannelStatusEntry, StatusDeps } from "./type.ts";
 
-/** 状态条目上限（防已删频道残留键无限累积；超出时最旧先出）。 */
-const STATUS_MAX_ENTRIES = 64;
-
-/** 落盘 debounce 窗口（毫秒）：窗口内的多次 record 合并为一次整文件写。 */
-const STATUS_DEBOUNCE_MS = 500;
-
 /**
  * 未装配时的占位。
  *
@@ -50,6 +44,9 @@ class StatusStore {
 
   /** 记录一次投递终态：内存立即更新，落盘延后合并（失败仅经日志出口告警）。 */
   record(channelId: string, status: "ok" | "failed", error?: string): void {
+    void channelId;
+    void status;
+    void error;
     throw new Error("not implemented: StatusStore.record");
   }
 

@@ -21,6 +21,8 @@ import type { BrowserSound, BrowserTarget, NotifyFrame } from "./type.ts";
  * 调用方只说用户选了什么，怎么发声在这里定。
  */
 function resolveSound(pop: boolean, sound?: boolean | string): BrowserSound {
+  void pop;
+  void sound;
   throw new Error("not implemented: resolveSound");
 }
 

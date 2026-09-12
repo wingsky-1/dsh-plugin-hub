@@ -51,7 +51,10 @@ export function redactConfig(value: Partial<NotifyConfig>): Partial<NotifyConfig
  * @returns 还原后的频道数组；`ok: false` = 有实例提交了掩码却没有对应原值，
  *   调用方应当拒绝——掩码只能表达「未修改」，不能凭空造出一个凭据。
  */
-export function unmaskChannels(patchChannels: RawSettingValue, userChannels?: RawSettingValue): UnmaskResult {
+export function unmaskChannels(
+  patchChannels: RawSettingValue,
+  userChannels?: RawSettingValue,
+): UnmaskResult {
   if (!Array.isArray(patchChannels)) return { ok: false };
   const existing: readonly RawSettingValue[] = Array.isArray(userChannels) ? userChannels : [];
   const restored: RawSettingValue[] = [];
@@ -71,7 +74,10 @@ function maskChannel(channel: ChannelConfig): ChannelConfig {
   return masked as ChannelConfig;
 }
 
-function unmaskChannel(patch: RawSettingValue, existing: readonly RawSettingValue[]): UnmaskedChannel {
+function unmaskChannel(
+  patch: RawSettingValue,
+  existing: readonly RawSettingValue[],
+): UnmaskedChannel {
   if (!isRecord(patch)) return { ok: true, channel: patch };
   const masked = secretFieldsOf(patch);
   if (masked.length === 0) return { ok: true, channel: patch };

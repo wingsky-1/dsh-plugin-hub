@@ -16,7 +16,12 @@
  */
 import type { LoggerPort } from "../../../shared/type.ts";
 import { STEPS } from "../steps/index.ts";
-import { compareVersions, pluginVersion, readStoredVersion, writeStoredVersion } from "../version/index.ts";
+import {
+  compareVersions,
+  pluginVersion,
+  readStoredVersion,
+  writeStoredVersion,
+} from "../version/index.ts";
 import type { UpgradeStep } from "./type.ts";
 
 /**
@@ -93,7 +98,8 @@ function reportGap(recorded: string, target: string, logger: LoggerPort): void {
 function newestTargetVersion(): string {
   let newest = "";
   for (const step of STEPS) {
-    if (newest === "" || compareVersions(step.targetVersion, newest) > 0) newest = step.targetVersion;
+    if (newest === "" || compareVersions(step.targetVersion, newest) > 0)
+      newest = step.targetVersion;
   }
   return newest;
 }

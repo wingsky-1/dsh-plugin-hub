@@ -41,7 +41,13 @@ const CORRUPTED_SUFFIX = ".corrupted.bak";
 const EMPTY_OBJECT = "{}\n";
 
 /** 旧配置里属于组合层装配的键：新架构下它们是启动参数，不再进配置文件。 */
-const ENTRY_KEYS: readonly string[] = ["enabled", "configFile", "historyFile", "statusFile", "toastScript"];
+const ENTRY_KEYS: readonly string[] = [
+  "enabled",
+  "configFile",
+  "historyFile",
+  "statusFile",
+  "toastScript",
+];
 
 /** 旧全局声音开关；新架构按出口拆成两个键。 */
 const LEGACY_SOUND_KEY = "notifySound";
@@ -65,10 +71,30 @@ interface StorageEntry {
 type Prepared = { ok: true; text: string } | { ok: false };
 
 const LAYOUT: readonly StorageEntry[] = [
-  { legacy: "dsh-notifier.json", target: CONFIG_FILE_NAME, legacySettings: true, initial: EMPTY_OBJECT },
-  { legacy: "dsh-notifier-history.jsonl", target: HISTORY_FILE_NAME, legacySettings: false, initial: "" },
-  { legacy: "dsh-notifier-status.json", target: STATUS_FILE_NAME, legacySettings: false, initial: EMPTY_OBJECT },
-  { legacy: "notifier-seq.json", target: SEQ_FILE_NAME, legacySettings: false, initial: EMPTY_OBJECT },
+  {
+    legacy: "dsh-notifier.json",
+    target: CONFIG_FILE_NAME,
+    legacySettings: true,
+    initial: EMPTY_OBJECT,
+  },
+  {
+    legacy: "dsh-notifier-history.jsonl",
+    target: HISTORY_FILE_NAME,
+    legacySettings: false,
+    initial: "",
+  },
+  {
+    legacy: "dsh-notifier-status.json",
+    target: STATUS_FILE_NAME,
+    legacySettings: false,
+    initial: EMPTY_OBJECT,
+  },
+  {
+    legacy: "notifier-seq.json",
+    target: SEQ_FILE_NAME,
+    legacySettings: false,
+    initial: EMPTY_OBJECT,
+  },
 ];
 
 /** 旧存储 → 新存储布局：有旧文件的搬过来，没有的建出初始形态。 */

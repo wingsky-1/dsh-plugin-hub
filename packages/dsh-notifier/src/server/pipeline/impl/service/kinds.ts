@@ -12,7 +12,15 @@
  */
 
 /** 内置通知种类（顺序即设置页的展示顺序）。 */
-export const BUILTIN_KINDS = ["ask", "question", "done", "subagent-done", "error", "turn-end", "test"] as const;
+export const BUILTIN_KINDS = [
+  "ask",
+  "question",
+  "done",
+  "subagent-done",
+  "error",
+  "turn-end",
+  "test",
+] as const;
 
 /** 内置通知种类。 */
 export type BuiltinKind = (typeof BUILTIN_KINDS)[number];

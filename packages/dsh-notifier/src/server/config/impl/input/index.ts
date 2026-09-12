@@ -129,11 +129,27 @@ export function normalizeConfig(input: StoredSettings): NotifyConfig {
     allowKinds: asStrings(input.allowKinds),
     sanitizeContent: asBoolean(input.sanitizeContent, fallback.sanitizeContent),
 
-    errorMergeWindowMs: asCount(input.errorMergeWindowMs, fallback.errorMergeWindowMs, COUNT_LIMITS.errorMergeWindowMs),
+    errorMergeWindowMs: asCount(
+      input.errorMergeWindowMs,
+      fallback.errorMergeWindowMs,
+      COUNT_LIMITS.errorMergeWindowMs,
+    ),
     askRemindMin: asCount(input.askRemindMin, fallback.askRemindMin, COUNT_LIMITS.askRemindMin),
-    doneMergeWindowMs: asCount(input.doneMergeWindowMs, fallback.doneMergeWindowMs, COUNT_LIMITS.doneMergeWindowMs),
-    historyMaxAgeDays: asCount(input.historyMaxAgeDays, fallback.historyMaxAgeDays, COUNT_LIMITS.historyMaxAgeDays),
-    maxConnections: asCount(input.maxConnections, fallback.maxConnections, COUNT_LIMITS.maxConnections),
+    doneMergeWindowMs: asCount(
+      input.doneMergeWindowMs,
+      fallback.doneMergeWindowMs,
+      COUNT_LIMITS.doneMergeWindowMs,
+    ),
+    historyMaxAgeDays: asCount(
+      input.historyMaxAgeDays,
+      fallback.historyMaxAgeDays,
+      COUNT_LIMITS.historyMaxAgeDays,
+    ),
+    maxConnections: asCount(
+      input.maxConnections,
+      fallback.maxConnections,
+      COUNT_LIMITS.maxConnections,
+    ),
   };
 }
 
@@ -164,7 +180,9 @@ function validateOne(key: string, raw: RawSettingValue): ValidationResult {
     return typeof raw === "boolean" ? { ok: true } : reject(key, "需要 true 或 false");
   }
   if (key === "browserSound" || key === "systemSound") {
-    return typeof raw === "boolean" || isSoundId(raw) ? { ok: true } : reject(key, "需要 false、true 或内置音色名");
+    return typeof raw === "boolean" || isSoundId(raw)
+      ? { ok: true }
+      : reject(key, "需要 false、true 或内置音色名");
   }
   const limit = COUNT_LIMITS[key];
   if (Number.isFinite(limit)) {
@@ -186,9 +204,12 @@ function validateOne(key: string, raw: RawSettingValue): ValidationResult {
 function validateQuietHours(raw: RawSettingValue): ValidationResult {
   if (!isRecord(raw)) return reject("quietHours", "需要对象");
   if (typeof raw.enabled !== "boolean") return reject("quietHours", "缺少 enabled");
-  if (typeof raw.start !== "string" || !CLOCK_PATTERN.test(raw.start)) return reject("quietHours", "start 需要 HH:MM");
-  if (typeof raw.end !== "string" || !CLOCK_PATTERN.test(raw.end)) return reject("quietHours", "end 需要 HH:MM");
-  if ("allowKinds" in raw && !Array.isArray(raw.allowKinds)) return reject("quietHours", "allowKinds 需要字符串数组");
+  if (typeof raw.start !== "string" || !CLOCK_PATTERN.test(raw.start))
+    return reject("quietHours", "start 需要 HH:MM");
+  if (typeof raw.end !== "string" || !CLOCK_PATTERN.test(raw.end))
+    return reject("quietHours", "end 需要 HH:MM");
+  if ("allowKinds" in raw && !Array.isArray(raw.allowKinds))
+    return reject("quietHours", "allowKinds 需要字符串数组");
   return { ok: true };
 }
 
@@ -205,15 +226,21 @@ function validateChannel(raw: RawSettingValue): ValidationResult {
   if (!isRecord(raw)) return reject("channels", "频道项需要对象");
   if (typeof raw.id !== "string" || raw.id === "") return reject("channels", "频道缺少 id");
   if (raw.type === "bark") {
-    if (typeof raw.baseUrl !== "string" || raw.baseUrl === "") return reject("channels", `bark 频道 ${raw.id} 缺少 baseUrl`);
-    if (typeof raw.deviceKey !== "string" || raw.deviceKey === "") return reject("channels", `bark 频道 ${raw.id} 缺少 deviceKey`);
-    if (!isMember(raw.level, BARK_LEVELS)) return reject("channels", `bark 频道 ${raw.id} 的 level 非法`);
+    if (typeof raw.baseUrl !== "string" || raw.baseUrl === "")
+      return reject("channels", `bark 频道 ${raw.id} 缺少 baseUrl`);
+    if (typeof raw.deviceKey !== "string" || raw.deviceKey === "")
+      return reject("channels", `bark 频道 ${raw.id} 缺少 deviceKey`);
+    if (!isMember(raw.level, BARK_LEVELS))
+      return reject("channels", `bark 频道 ${raw.id} 的 level 非法`);
     return { ok: true };
   }
   if (raw.type === "webhook") {
-    if (typeof raw.url !== "string" || raw.url === "") return reject("channels", `webhook 频道 ${raw.id} 缺少 url`);
-    if (!isMember(raw.auth, WEBHOOK_AUTHS)) return reject("channels", `webhook 频道 ${raw.id} 的 auth 非法`);
-    if (!isMember(raw.preset, WEBHOOK_PRESETS)) return reject("channels", `webhook 频道 ${raw.id} 的 preset 非法`);
+    if (typeof raw.url !== "string" || raw.url === "")
+      return reject("channels", `webhook 频道 ${raw.id} 缺少 url`);
+    if (!isMember(raw.auth, WEBHOOK_AUTHS))
+      return reject("channels", `webhook 频道 ${raw.id} 的 auth 非法`);
+    if (!isMember(raw.preset, WEBHOOK_PRESETS))
+      return reject("channels", `webhook 频道 ${raw.id} 的 preset 非法`);
     return { ok: true };
   }
   return reject("channels", "频道 type 需要 bark 或 webhook");
@@ -284,7 +311,9 @@ function asString(raw: RawSettingValue, fallback: string): string {
 
 /** 非负整数且不越界；越界回落而不是截断（与校验的口径一致：拒绝胜过静默改写）。 */
 function asCount(raw: RawSettingValue, fallback: number, limit: number): number {
-  return typeof raw === "number" && Number.isInteger(raw) && raw >= 0 && raw <= limit ? raw : fallback;
+  return typeof raw === "number" && Number.isInteger(raw) && raw >= 0 && raw <= limit
+    ? raw
+    : fallback;
 }
 
 /** 声音设置：`false` / `true` / 内置音色名三种形态；音色名非法即回落。 */

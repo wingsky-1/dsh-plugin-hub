@@ -15,9 +15,6 @@
 import { HISTORY_FILE_NAME, notifierFile } from "../../../shared/paths.ts";
 import type { HistoryDeps, HistoryEntry } from "./type.ts";
 
-/** 通知历史滚动上限（行数；超出后从尾部截断重写）。 */
-const HISTORY_LIMIT = 200;
-
 /**
  * 未装配时的占位。
  *
@@ -59,6 +56,7 @@ class HistoryStore {
 
   /** 追加一条记录：入队即返回（不阻塞通知主流程），失败仅经日志出口告警。 */
   append(entry: HistoryEntry): void {
+    void entry;
     throw new Error("not implemented: HistoryStore.append");
   }
 

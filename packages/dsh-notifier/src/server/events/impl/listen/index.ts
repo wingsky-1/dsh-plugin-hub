@@ -41,11 +41,19 @@ class EventListener {
     this.releases.push(
       port.onApprovalRequest((request) => forward(pipeline, translateApproval(request))),
       port.onUserQuestion((request) => forward(pipeline, translateUserQuestion(request))),
-      port.onSessionEvent((sessionId, event) => forward(pipeline, translateSessionEvent(sessionId, event))),
-      port.onAgentStatus((agentId, status) => forward(pipeline, translateAgentStatus(agentId, status))),
+      port.onSessionEvent((sessionId, event) =>
+        forward(pipeline, translateSessionEvent(sessionId, event)),
+      ),
+      port.onAgentStatus((agentId, status) =>
+        forward(pipeline, translateAgentStatus(agentId, status)),
+      ),
       port.onAgentDisposed((agentId) => forward(pipeline, translateAgentDisposed(agentId))),
-      port.onAgentTurnStopping((agentId, turn) => forward(pipeline, translateTurnStopping(agentId, turn))),
-      port.onAgentError((agentId, turn, errorText) => forward(pipeline, translateAgentError(agentId, turn, errorText))),
+      port.onAgentTurnStopping((agentId, turn) =>
+        forward(pipeline, translateTurnStopping(agentId, turn)),
+      ),
+      port.onAgentError((agentId, turn, errorText) =>
+        forward(pipeline, translateAgentError(agentId, turn, errorText)),
+      ),
     );
   }
 

@@ -71,6 +71,9 @@ export function listKinds(): RegisteredKind[] {
  * 返回值是设置写面的结果而不是布尔：失败分「版本冲突」与「服务不可用」两类，端点要据此
  * 回 409 与 503——压成一个布尔，用户看到的就只剩「操作失败」，而两种原因要做的事不同。
  */
-export function confirmKind(id: string, confirmed: boolean): Promise<Awaited<ReturnType<ConfigPort["writeConfig"]>>> {
+export function confirmKind(
+  id: string,
+  confirmed: boolean,
+): Promise<Awaited<ReturnType<ConfigPort["writeConfig"]>>> {
   return sdkService.confirmKind(id, confirmed);
 }

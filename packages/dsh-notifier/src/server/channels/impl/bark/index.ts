@@ -9,18 +9,9 @@
 import type { DeliverResult, NotifyMessage } from "../deliver/type.ts";
 import type { BarkTarget } from "./type.ts";
 
-/** 请求超时（毫秒）。 */
-const BARK_TIMEOUT_MS = 10_000;
-
-/** severity → bark 等级映射（未显式指定 level 时生效）。 */
-const SEVERITY_LEVEL: Readonly<Record<string, string>> = {
-  info: "passive",
-  success: "active",
-  warning: "timeSensitive",
-  failure: "critical",
-};
-
 /** 投递一条消息到 bark 实例。 */
 export async function sendBark(target: BarkTarget, message: NotifyMessage): Promise<DeliverResult> {
+  void target;
+  void message;
   throw new Error("not implemented: sendBark");
 }

@@ -196,10 +196,7 @@ function bindHost(ctx: Context): HostPort {
     // 没人认识的名字上。
     expose: {
       provide: (service) =>
-        ctx.provide<typeof sdkApi.NOTIFIER_SERVICE>(
-          sdkApi.NOTIFIER_SERVICE,
-          service,
-        ),
+        ctx.provide<typeof sdkApi.NOTIFIER_SERVICE>(sdkApi.NOTIFIER_SERVICE, service),
     },
     events: {
       // 宿主的审批事件是 waterfall：监听者要么自己裁决、要么调 next() 把判定交还。
@@ -265,8 +262,7 @@ function bindHost(ctx: Context): HostPort {
           "agent/error",
           (payload) => {
             const failure = payload.error;
-            const reason =
-              failure instanceof Error ? failure.message : String(failure);
+            const reason = failure instanceof Error ? failure.message : String(failure);
             guard(() => handler(payload.agent.id, payload.turn, reason));
           },
           GLOBAL_LISTEN,
@@ -281,10 +277,7 @@ function bindHost(ctx: Context): HostPort {
  * 每一步的入参都来自上一步的产出或 `host`——装配顺序即依赖顺序，顺序错了就是
  * 运行期空值。
  */
-function assemble(
-  host: HostPort,
-  config: NotifierApplyConfig,
-): Array<() => void> {
+function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void> {
   const disposers: Array<() => void> = [];
 
   // 0. 存储形态迁移：动的是磁盘，必须早于任何读文件的域。

@@ -11,7 +11,14 @@
  *
  * 依赖方向：只引用本目录、`../registry/` 与 `../../deps.ts`，不引用 `interface.ts`。
  */
-import type { BuiltinKind, ConfigPort, ExternalKind, NotifyKind, PipelinePort, SdkDeps } from "../../deps.ts";
+import type {
+  BuiltinKind,
+  ConfigPort,
+  ExternalKind,
+  NotifyKind,
+  PipelinePort,
+  SdkDeps,
+} from "../../deps.ts";
 import { kindRegistry } from "../registry/index.ts";
 import type { KindRegistration, RegisteredKind } from "../registry/type.ts";
 import type { NotifierService, NotifyRequest } from "./type.ts";
@@ -165,7 +172,9 @@ class HostedService implements NotifierService {
   async send(request: NotifyRequest): Promise<void> {
     const kind = request.kind;
     if (typeof kind !== "string" || !isSendableKind(kind, this.pipeline)) {
-      throw new Error(`dsh-notifier: 通知种类非法 —— ${String(kind)}（需为内置种类或 <命名空间>:<id>）`);
+      throw new Error(
+        `dsh-notifier: 通知种类非法 —— ${String(kind)}（需为内置种类或 <命名空间>:<id>）`,
+      );
     }
     const body = request.body;
     if (typeof body !== "string") {

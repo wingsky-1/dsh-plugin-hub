@@ -16,17 +16,26 @@ export class JournalEndpoints {
   constructor(private readonly stores: StorePort) {}
 
   /** GET /history：最近记录（截断与倒序由客户端做，它要的条数由界面决定）。 */
-  readonly read: RouteHandler = async (_req: IncomingMessage, res: ServerResponse): Promise<void> => {
+  readonly read: RouteHandler = async (
+    _req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> => {
     sendJson(res, 200, { ok: true, records: await this.stores.readHistory() });
   };
 
   /** DELETE /history：清空，返回被清空条数（键名 `removed` 是客户端锁定的契约）。 */
-  readonly clear: RouteHandler = async (_req: IncomingMessage, res: ServerResponse): Promise<void> => {
+  readonly clear: RouteHandler = async (
+    _req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> => {
     sendJson(res, 200, { ok: true, removed: await this.stores.clearHistory() });
   };
 
   /** GET /status：各频道最近一次投递终态。 */
-  readonly readStatus: RouteHandler = async (_req: IncomingMessage, res: ServerResponse): Promise<void> => {
+  readonly readStatus: RouteHandler = async (
+    _req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> => {
     sendJson(res, 200, { ok: true, channels: await this.stores.readStatus() });
   };
 }

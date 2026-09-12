@@ -43,16 +43,25 @@ export class SettingsEndpoints {
    * `conflict` 要触发「加载最新 / 覆盖提交」的恢复流程，`unavailable` 要把表单整体
    * 置灰。压扁之后用户看到的就只剩「保存失败」，而三种原因要做的事完全不同。
    */
-  readonly write: RouteHandler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+  readonly write: RouteHandler = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> => {
     const raw = await readJsonBody(req, BODY_LIMIT);
     if (raw === undefined) {
-      sendFailure(res, 400, { code: "invalid-json", details: "请求体不是合法 JSON 对象（或超出大小上限）" });
+      sendFailure(res, 400, {
+        code: "invalid-json",
+        details: "请求体不是合法 JSON 对象（或超出大小上限）",
+      });
       return;
     }
     // 断言只声明「这里有这两个字段」，不校验它们是什么——校验是紧接着的两步。
     const body = raw as PatchRequest;
     if (!isPatch(body.patch)) {
-      sendFailure(res, 400, { error: "配置校验失败: patch", hint: "需至少包含一个配置键（patch 不能为空）" });
+      sendFailure(res, 400, {
+        error: "配置校验失败: patch",
+        hint: "需至少包含一个配置键（patch 不能为空）",
+      });
       return;
     }
     const patch = body.patch;
@@ -62,7 +71,10 @@ export class SettingsEndpoints {
       return;
     }
     if (typeof revision !== "number" || !Number.isInteger(revision) || revision < 0) {
-      sendFailure(res, 400, { error: "配置校验失败: expectedRevision", hint: "expectedRevision 必须为非负整数或省略" });
+      sendFailure(res, 400, {
+        error: "配置校验失败: expectedRevision",
+        hint: "expectedRevision 必须为非负整数或省略",
+      });
       return;
     }
     respond(res, await this.config.writeConfig(patch, revision));

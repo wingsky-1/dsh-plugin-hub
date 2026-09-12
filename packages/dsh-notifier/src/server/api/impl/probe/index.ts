@@ -41,17 +41,27 @@ export class ProbeEndpoints {
    * `sseConnections` 是**服务端未释放的句柄数**而不是投递计数——两者混起来，会让
    * 「测试发出去了但计数没动」这种正常现象看起来像故障。
    */
-  readonly test: RouteHandler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+  readonly test: RouteHandler = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> => {
     const raw = await readJsonBody(req, BODY_LIMIT);
     // body 可选，读不到就按全频道测试处理：客户端的两个按钮一个发 `{}`、一个发
     // `{channelId}`，没有第三种形态。
     const body = (raw ?? {}) as TestRequest;
     const channelId = body.channelId;
     if (channelId !== undefined && (typeof channelId !== "string" || channelId.length === 0)) {
-      sendFailure(res, 400, { error: "测试通知参数非法", details: "channelId 必须为非空字符串或省略" });
+      sendFailure(res, 400, {
+        error: "测试通知参数非法",
+        details: "channelId 必须为非空字符串或省略",
+      });
       return;
     }
-    this.pipeline.submit(channelId === undefined ? TEST_NOTIFICATION : { ...TEST_NOTIFICATION, onlyChannel: channelId });
+    this.pipeline.submit(
+      channelId === undefined
+        ? TEST_NOTIFICATION
+        : { ...TEST_NOTIFICATION, onlyChannel: channelId },
+    );
     sendJson(res, 200, { ok: true, sseConnections: streamHub.size() });
   };
 

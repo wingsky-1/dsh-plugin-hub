@@ -33,7 +33,11 @@ import type { RouteDeps, RoutedTarget } from "./type.ts";
  * 系统通知脚本的路径不在这里选：它由包内共享层按平台推导，同一进程内恒定，做成
  * 装配入参只会让每个装配点都知道本包的文件叫什么。
  */
-export function routeTargets(deps: RouteDeps, config: EffectiveConfig, request: NotifyRequest): RoutedTarget[] {
+export function routeTargets(
+  deps: RouteDeps,
+  config: EffectiveConfig,
+  request: NotifyRequest,
+): RoutedTarget[] {
   void deps;
   void config;
   void request;

@@ -44,7 +44,10 @@ class ApiService {
       { path: "/api/dsh-notifier/test", methods: { POST: probe.test } },
       { path: "/api/dsh-notifier/health", methods: { GET: probe.health } },
       // 包一层而不是裸传 streamHub.handle：那个方法要用 this，裸传会在回调时丢掉。
-      { path: "/api/dsh-notifier/events", methods: { GET: (req, res) => streamHub.handle(req, res) } },
+      {
+        path: "/api/dsh-notifier/events",
+        methods: { GET: (req, res) => streamHub.handle(req, res) },
+      },
     ];
 
     this.disposers.push(

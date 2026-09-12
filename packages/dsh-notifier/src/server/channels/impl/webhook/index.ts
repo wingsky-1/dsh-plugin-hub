@@ -9,30 +9,12 @@
 import type { DeliverResult, NotifyMessage } from "../deliver/type.ts";
 import type { WebhookTarget } from "./type.ts";
 
-/** ntfy 优先级取值。 */
-const SEVERITY_NTFY_PRIORITY: Readonly<Record<string, string>> = {
-  info: "3",
-  success: "4",
-  warning: "4",
-  failure: "5",
-};
-
-/** gotify 优先级取值。 */
-const SEVERITY_GOTIFY_PRIORITY: Readonly<Record<string, number>> = {
-  info: 3,
-  success: 5,
-  warning: 7,
-  failure: 10,
-};
-
-/** 默认请求超时（秒）。 */
-const DEFAULT_TIMEOUT_SEC = 10;
-/** 超时下限（秒）。 */
-const MIN_TIMEOUT_SEC = 1;
-/** 超时上限（秒）。 */
-const MAX_TIMEOUT_SEC = 60;
-
 /** 投递一条消息到 webhook 端点。 */
-export async function sendWebhook(target: WebhookTarget, message: NotifyMessage): Promise<DeliverResult> {
+export async function sendWebhook(
+  target: WebhookTarget,
+  message: NotifyMessage,
+): Promise<DeliverResult> {
+  void target;
+  void message;
   throw new Error("not implemented: sendWebhook");
 }

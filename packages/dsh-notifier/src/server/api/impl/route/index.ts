@@ -12,7 +12,7 @@
  *
  * 依赖方向：只引用本目录与 `../../deps.ts`，不引用 `interface.ts`。
  */
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { ServerResponse } from "node:http";
 import { isLoopbackRequest } from "../../../../../../../shared/loopback.js";
 import type { LoggerPort, RegisterRoute } from "../../deps.ts";
 import type { Endpoint, HttpMethod } from "./type.ts";
@@ -23,7 +23,12 @@ import type { Endpoint, HttpMethod } from "./type.ts";
  * 泛型而不是固定形状：响应体有设置视图、历史数组、状态表各不相同的形状，让它们各自
  * 搬进本域或退化成宽类型都不划算——序列化不关心形状，只关心它能被 JSON 表达。
  */
-export function sendJson<T>(res: ServerResponse, status: number, body: T, headers: Record<string, string> = {}): void {
+export function sendJson<T>(
+  res: ServerResponse,
+  status: number,
+  body: T,
+  headers: Record<string, string> = {},
+): void {
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
@@ -51,7 +56,12 @@ interface FailureBody {
 }
 
 /** 写一个失败响应：`{ ok: false, error: {...} }`，与端点的成功体同族。 */
-export function sendFailure(res: ServerResponse, status: number, failure: FailureBody, headers: Record<string, string> = {}): void {
+export function sendFailure(
+  res: ServerResponse,
+  status: number,
+  failure: FailureBody,
+  headers: Record<string, string> = {},
+): void {
   sendJson(res, status, { ok: false, error: failure }, headers);
 }
 
@@ -62,7 +72,12 @@ export function sendFailure(res: ServerResponse, status: number, failure: Failur
  * 直连只认最后那条兜底里的状态码。把 403 也包成对象，提示文案就会变成「非回环请求」，
  * 状态码消失，「请改用 https 访问」的引导随之失效。
  */
-function sendRefused(res: ServerResponse, status: number, reason: string, headers: Record<string, string> = {}): void {
+function sendRefused(
+  res: ServerResponse,
+  status: number,
+  reason: string,
+  headers: Record<string, string> = {},
+): void {
   sendJson(res, status, { error: reason }, headers);
 }
 
