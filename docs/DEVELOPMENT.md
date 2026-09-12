@@ -387,6 +387,35 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 
 - `pnpm contract`（contract-check）：load id === 包名、`dsh.client ⇒ exports["./client"]`、
   `src/client/index.ts ⇒ lib/client.js` 产物、arrive 可解析、`exports.apply/inject` 装配。
+  下列两条门禁同属本段执行（**不新增 workflow**，执法点唯一）：
+  - **依赖图门禁（`scripts/gate/verify-dir-imports.mjs`；#690 S0 / #733 M0）**：模块按
+    **叶子粒度**（递归含 `interface.ts` 的目录，分组层透明）划分，跨模块引用只能走目标
+    模块的 `interface.ts`（入口）或 `deps.ts`（出口）。`scripts/data/dir-imports-baseline.json`
+    是单调基线，计数分两组：**结构型**（模块数/源文件数/边数/引用数等规模计数）随新增文件
+    与目录合法上升，由 `--write-baseline` 登记；**质量型**（`leafModuleCycles` /
+    `fileCycles` / `raLegacy*` / `implToOtherImpl` / `missingInterface` / `directImpl` 与
+    `uncoveredSrcFiles` 清单）只许降不许升，**`--write-baseline` 不更新它们**——上升只能改
+    代码。另含 `src ⊆ ∪mutate ∪ ∪excludes` 全覆盖断言（新增 src 未被变异面或排除面覆盖即红）。
+    死声明判据为**值面判死、类型面豁免**：`deps.ts` 的 `import type` 是声明即完整性，不参与
+    死声明计算（#733 M0a）。**可见度边界**：只管依赖方向与环路，不管符号签名。
+  - **导出面门禁（`scripts/gate/export-surface-snapshot.mjs`；#669 PR1 / #733 M0+M2a）**：
+    `tsc --declaration` 产物是包对外契约的编译期镜像，固化为入库基线
+    `scripts/data/<pkg>-export-surface.json`，重构前后零 diff 即机器证据。粒度两条：① 顶层
+    导出符号集（name + isType）——增删改导出符号都红；② **导出面符号的定义块**（只取名字在
+    包导出面的 `export declare ...` 块）——签名/泛型/联合改写即红。**可见度边界（#733 M2c R4
+    实测）**：`export interface` / `export type` 无 `declare` 关键字，进不了 ② 的提取器，
+    interface/type 体由 `packages/<pkg>/test/integration/consumer-types.test.ts` 的类型体锚
+    兜住；不在包导出面的域内符号两条粒度都不覆盖。
+  - **新增导出准入（`export-surface-snapshot` 内的分类判据；#733 M2a-3.5）**：包导出面
+    ⊆ 安装面 ∪ 配置面 ∪ 契约面。新导出必须在 `scripts/data/<pkg>-export-faces.json` 的
+    `faces` 显式登记三类面之一，未登记判红；`legacy` 是存量白名单，只许随符号退役而缩小。
+    判据实现 `scripts/lib/export-faces-lib.ts` 被门禁与 fixture 自测复用（§9 禁止双轨）；
+    `--snapshot` 只写基线、不碰登记文件，故「更新基线」不会顺手把新符号变成合法导出。
+- **跨包类型可达闭包（`pnpm pack:check` 内；#733 M2a-3.1）**：源面声明了 cordis 声明合并
+  （`declare module "@deepseek-ai/cordis"`）⇒ 该合并必须落在 tarball 内 `lib/index.d.ts` 的
+  相对 import 闭包内。写在源 `.d.ts` 的合并不会被 emit，消费方按包名导入时服务面与事件面
+  全部失类型，而既有门禁都看不见（实证：`packages/dsh-notifier/src/service.d.ts`）；判据
+  实现 `scripts/lib/dts-cordis-merge-lib.ts`（含正反 fixture 自测）。
 - `assertClientSourceContract`（smoke-lib）：兼容三种产物形态（纯净 wrapper /
   React externals / legacy），断言 `"use strict"`、契约外壳、Symbol.toStringTag、
   `factory: function(`、load 注册。
