@@ -25,6 +25,17 @@
 | `@wingsky-1/dsh-verify-isolated` | 插件开发隔离浏览器验证 skill（临时 DSH_HOME + 独立 profile） | [dsh-verify-isolated.md](dsh-verify-isolated.md) |
 | `@wingsky-1/dsh-plugins-all` | 全家桶聚合包（一键装齐 + 聚合 cordis patch） | [dsh-plugins-all.md](dsh-plugins-all.md) |
 
+## 包内实现文档（架构演进 / 契约）
+
+上表是**当前实现的原理图解**。部分包另有包内文档，承载**目标态结构、层间边界与契约条款**——
+两者互补：图解讲「现在怎么跑」，包内文档讲「结构与契约应当是什么」。
+
+| 包 | 文档 | 内容 |
+|---|---|---|
+| `@wingsky-1/dsh-mcp-manager` | [architecture-implementation-v4.md](../../packages/dsh-mcp-manager/docs/architecture-implementation-v4.md) | 目标态结构、模块职责与边界、三方契约、分阶段迁移（issue #744） |
+| `@wingsky-1/dsh-mcp-manager` | [architecture-contract.md](../../packages/dsh-mcp-manager/docs/architecture-contract.md) | 契约条款与验证方式（含未兑现条款的状态标注） |
+| `@wingsky-1/dsh-mcp-manager` | [architecture-redesign.md](../../packages/dsh-mcp-manager/docs/architecture-redesign.md) | v3 十域结构定稿（已由 #664 阶段 0-8 落地） |
+
 ## 全景：插件如何挂载进 dsh web
 
 所有插件都不修改 DSH 源码——统一经 **`cordis.patch.yml` + profile 机制**挂载：

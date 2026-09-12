@@ -2,14 +2,26 @@
 
 > 关联：`refactor-phase0-spec.md`（阶段 0 三件套主文档）、`architecture-redesign.md`（v3 主方案）、
 > `requirements-and-tdd-plan.md`（需求规格/B 系列与 C 系列 bug 清单，已两轮纠偏）、
-> `architecture-redesign-review.md`（两轮对抗性评审全文 62/100 → 78/100）。
+> `architecture-redesign-review.md`（两轮对抗性评审全文 62/100 → 78/100）、
+> `architecture-implementation-v4.md`（**目标态结构与边界面**，issue #744）。
 >
 > **定位**：本文档把 `refactor-phase0-spec.md` §B 契约缺口清单与 §C 迁移门禁策略正式成文，
 > 作为阶段 1–8 各 PR 的验收基准。凡「契约条款」与后续实现冲突，以本文档为裁决面，改动需
 > 走 issue 评审（红线流程）。
 >
+> **与 `architecture-implementation-v4.md` 的分工**：本文承载**契约条款与验证方式**，
+> 该文承载**目标态结构、模块职责与层间边界**。两者不重复描述；本文 §五 的迁移期已结束，
+> 新老交替的迁移规范见该文 §五。
+>
+> **条款状态须显式标注（本轮补入）**：本文部分条款的「目标契约」**从未兑现**——
+> 典型如 C-ERR 的 `api/redactor-factory.ts`（至今不存在）。**「写在目标契约里」不等于
+> 「已生效」**。凡未兑现条款已在下文逐条标注 `【未兑现 → issue #745】`；实施与评审时
+> 不得据本文假定其已实现。契约条款的兑现属**行为变更**（改变可观测输出），按
+> `architecture-implementation-v4.md` §六 边界，**不在架构重构范围**，须在 #745 内分诊。
+>
 > **行号口径**：文中行号引用来自现状 `src/*.ts`（main 基线 `9ed7e5f`），已经两轮独立
 > 对抗性评审逐行核实；阶段 6 集中式纯搬移后行号作废，但契约条款与验收断言不变。
+> 本文 §三 起为迁移期（阶段 1–8，已随 #664 结束）的策略记录，保留作历史与门禁锚点。
 
 ---
 
@@ -25,12 +37,23 @@
 - **缺口**：无「HTTP body 与日志双轨脱敏」边界；无业务错误码。
 - **目标契约**：
   1. **声明「无业务错误码，文案即契约」**——错误文案是稳定测试面，改动须同步测试；
+     **【部分未兑现 → issue #745】**：两轨的策略拒绝文案实测**不一致**
+     （`inject/middleware-register.ts` 的 guard 载荷缺「；如需放行请调整 middlewarePolicy
+     配置」后缀），而工具级禁用两处逐字相同；
   2. HTTP 400 body 写入前经 redactor：`makeRoutes` 构造时注入 redactor 实例
      （`api/redactor-factory.ts` 从 manager 服务器配置构建），`handleError` 写 body 前先
      redact——HTTP body 与日志同口径脱敏；
+     **【未兑现 → issue #745】**：`api/redactor-factory.ts` **至今不存在**，`src/api/**` 对
+     `createRedactor` **零调用**；实测 `HTTP 400 body` 含凭据明文，且客户端直接显示/alert。
+     **另注**：即便补上注入点，脱敏的 servers 集合在四个调用点**三口径不一**
+     （池运行时全集 / 单 server / 配置全集）`【未兑现 → issue #745】`；
   3. 日志脱敏覆盖点全量清单：`supervisor.ts:362` 及 manager 十余处
      `logger.warn(String(error))`（manager.ts L190/L375/L421/L449/L611/L616/L705/L744/
-     L781/L820/L987 等，实施时按 src 现状核验补全，不得只修抽样）。
+     L781/L820/L987 等，实施时按 src 现状核验补全，不得只修抽样）；
+     **【部分未兑现 → issue #745】**：`stats` 落盘出口（`supervisor.ts:251` →
+     `stats/collector.ts` 的 `lastError`）未过 redactor，明文写入 `~/.dsh/mcp-stats.json`；
+     且 `${ENV}` 展开值从不进 secrets 集（`pipeline/redact.ts` 只登记字面量，
+     `connection/runtime/transport.ts` 才展开）——**明文写配置反而安全，构成反向激励**。
 - **验证**：B8 红测 + routes 层单测（伪造含 URL 凭据错误 → body 脱敏断言）。
 - **落位**：阶段 2（执行管道）+ 阶段 1（createRedactor 基线测试先行）。
 
@@ -131,6 +154,62 @@
 
 - **验证**：目录图与迁移 PR 静态面同步；`gen-stryker-conf --check` 绿。
 - **落位**：阶段 6（集中搬移）；catalogViewFor 条目阶段 5 先行。
+
+### C-MDL 模型面契约（两档披露粒度）
+
+> **本节为新增条款**（此前缺失）。缺口影响：模型面与目录面无条款时，1137 用例全绿仍可漏
+> 掉 4 条 P1（规格层不存在可断言项）。本节把两档披露粒度的**可断言面**逐条写死。
+
+- **现状**：两档披露并行——直呼 `mcp__<server>__<tool>`（`connection/runtime/supervisor.ts` 注册）
+  与 `ws_mcp_*` 四原子（`inject/middleware-register.ts`）。实测两轨差异 **≥8 类**，
+  其中 3 类属语义必须（调用形态 / 超时来源 / 授权入口），其余为缺陷。
+- **目标契约**：
+  1. **公开工具名规则**（与官方 `dsh-mcp-client` **逐字同构**，实测核对）：
+     `mcp__${serverName}__${rawName}` → 非法字符 `[^A-Za-z0-9_-]` 替换为 `_` →
+     长度 ≤ **64**；超限或发生替换时改用
+     `${前缀.slice(0, 64 - 12 - 1)}_${sha256(serverName + "\0" + rawName).slice(0, 12)}`。
+     **不得单方面修改该规则**（官方同名契约）。
+  2. **四原子键集** = {`ws_mcp_list`, `ws_mcp_detail`, `ws_mcp_search`, `ws_mcp_call`}；
+     参数与返回 schema 的手写字面量须收敛为单表（`as const satisfies`），漏改即 tsc 红。
+  3. **同名冲突语义**：当前为静默吞并（`connection/orchestrator/manager.ts` 返回
+     `{existing:true}`，零日志），官方与 Docker gateway 两处独立实现均为 fail-loud。
+     **本条款要求显式声明二选一并在 UI/文档同步**；当前为静默吞并
+     `【未兑现 → issue #745】`（改 fail-loud 属行为变更，且 `test/e2e/smoke.test.ts`
+     两条断言把现状锁成期望行为，须同 PR 翻转）。
+  4. **截断上限**：直连轨经 `truncateText`，四原子轨经 `renderCallOutput`——**两轨必须同口径**。
+     当前四原子轨**无截断** `【未兑现 → issue #745】`；且 `truncateText` 在小 `maxBytes`
+     下失效（`budget = Math.max(maxBytes - suffixBytes, 64)` ⇒ `maxBytes=8` 实测返回
+     **127 字节**）`【未兑现 → issue #745】`。
+  5. **授权入口一致性**：`middlewarePolicy`（`allowTools` / `denyTools`）须对**两轨同时生效**。
+     当前仅 `ws_mcp_call` 检查（`inject/middleware-register.ts` 的第二参恒 `undefined`），
+     `mcp__` 直呼可绕过 `【未兑现 → issue #745】`。
+  6. **工具级禁用裁决**：须对含 `__` 的 server/tool 名给出确定裁决，不得依赖公开名反解。
+     当前对含 `__` 的名字**放行**（fail-open）`【未兑现 → issue #745】`。
+- **验证**：以两轨输入-输出对拍（同一工具、同一参数、同一策略，断言两轨结果一致）；
+  工具名规则以官方实现为锚做逐字断言；schema 单表以 `as const satisfies` 编译期收口。
+- **落位**：**未排期** —— 本契约的兑现均为行为变更，属 issue #745。
+
+### C-DIRFACE 目录注入面契约
+
+> **本节为新增条款**（此前缺失）。
+
+- **现状**：`<available_mcp_servers>` 目录注入由 `catalog/injection.ts` 产出；
+  条目文本经 `escapeCatalogText`，但**条目名未转义**。
+- **目标契约**：
+  1. **注入内容的每个字段都必须转义**（当前 `catalog/entries.ts` 只对条目 `text` 转义，
+     `entry.name` 裸插）`【未兑现 → issue #745】`——未转义的 server 名可逃逸注入指令，
+     且注入内容会持久化进宿主会话日志。
+  2. **目录注入的宿主词表**：仅使用宿主已声明的 `source.kind` 与 `section.name`；
+     自定义 kind 会致用户历史会话**永久无法加载**（#723 事故形态）。
+     **不得**用本包自定义常量表手抄宿主词表（那会形成第二份事实源，静默漂移）。
+  3. **目录摘要的脱敏声明**：README 称「目录摘要经 redactor」，实测**任何代码路径都不存在**。
+     本条款要求「声明与实现一致」——二者必须择一修改 `【未兑现 → issue #745】`。
+  4. **限额与截断**：`summary` / `health` 须暴露 `toolsTruncated`（注册面只 warn，不静默改变
+     既有行为）；限额为 opt-in。
+- **验证**：注入内容以恶意 server 名的负向夹具断言（含 `</available_mcp_servers>`、
+  换行、`system` 一类指令形态）；宿主词表以官方联合类型锚定（见
+  `architecture-implementation-v4.md` §4.2）。
+- **落位**：**未排期** —— 兑现均为行为变更，属 issue #745。
 
 ---
 
