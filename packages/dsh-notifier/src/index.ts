@@ -17,8 +17,8 @@
  * | 0 | `upgrade` | 存储形态的版本迁移 | 日志 |
  * | 1 | `config` | 通知配置的单一事实源 | 组合层入口层、日志 |
  * | 2 | `stores` | 历史与投递状态的持久化 | 保留天数读取器、日志 |
- * | 3 | `pipeline` | 一条通知的完整生命周期 | config / content / channels / stores 的能力 |
- * | 4 | `events` | 宿主事件 → 通知请求 | 宿主事件面、提交口、事件开关 |
+ * | 3 | `pipeline` | 一条通知的生命周期与**唯一裁决点** | config / content / channels / stores 的能力 |
+ * | 4 | `events` | 宿主事件 → 通知请求 | 宿主事件面、提交口 |
  * | 5 | `sdk` | 对外 ABI（`ctx["wingsky.notifier"]`） | 提交口、内置 kind 列表 |
  * | 6 | `api` | 浏览器出口：HTTP 路由 + SSE | 配置读写、历史、提交口、帧入口 |
  *
@@ -35,8 +35,14 @@
  * - 域的全部跨域依赖申报在各自的 `deps.ts`；本文件按该申报满足它。
  */
 import type { Context } from "@deepseek-ai/cordis";
+import type {} from "@deepseek-ai/dsh-agent";
+import type {} from "@deepseek-ai/dsh-session";
+import type {} from "@deepseek-ai/dsh-user-approval";
+import type {} from "@deepseek-ai/dsh-user-questions";
 import { installConfig, readConfig } from "./server/config/interface.ts";
 import type { NotifierEntryConfig } from "./server/config/interface.ts";
+import { installEvents, releaseEvents } from "./server/events/interface.ts";
+import type { HostEventPort, NotifyRequest } from "./server/events/interface.ts";
 import type { LoggerPort } from "./server/shared/type.ts";
 import { installStores } from "./server/stores/interface.ts";
 import { installUpgrade } from "./server/upgrade/interface.ts";
@@ -65,13 +71,93 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   ctx.effect(() => () => safeDisposeAll(disposers));
 }
 
+/**
+ * 宿主事件默认按作用域过滤：只有与当前 fiber 相关的事件才会送达。
+ *
+ * 通知插件必须看到**所有**会话与 agent，所以每条订阅都要带它。漏掉的表现是
+ * 「有些会话不通知」，而且只在多会话场景下才出现——单会话调试永远复现不了。
+ */
+const GLOBAL_LISTEN = { global: true } as const;
+
 /** 组合根用到的宿主面：域拿到的是能力，不是上下文。 */
 interface HostPort {
   readonly logger: LoggerPort;
+  readonly events: HostEventPort;
 }
 
 function bindHost(ctx: Context): HostPort {
-  return { logger: ctx.logger };
+  return {
+    logger: ctx.logger,
+    events: {
+      // 宿主的审批事件是 waterfall：监听者要么自己裁决、要么调 next() 把判定交还。
+      // 本插件只旁观，所以转发之后必须 next()——漏掉这一步就等于替所有人否决了
+      // 这次审批，而症状是「审批不弹了」，与通知毫无字面关联。
+      // prepend 让本监听器排在链的前面：排在别人后面时，任何一个不调 next() 的
+      // 前序监听器都会让这次审批对本插件彻底不可见。
+      onApprovalRequest: (handler) =>
+        ctx.on(
+          "approval/request",
+          (request, next) => {
+            handler(request);
+            return next();
+          },
+          { global: true, prepend: true },
+        ),
+      // 与审批同构的第二个 waterfall：提问同样只旁观，同样必须把判定交还。
+      // 漏掉 next() 的症状是「提问不弹了」——比吞掉审批更隐蔽，因为提问本来就少见。
+      onUserQuestion: (handler) =>
+        ctx.on(
+          "user-questions/request",
+          (request, next) => {
+            handler(request);
+            return next();
+          },
+          { global: true, prepend: true },
+        ),
+      onSessionEvent: (handler) =>
+        ctx.on(
+          "session/event",
+          (session, event) => {
+            handler(session.id, event);
+          },
+          GLOBAL_LISTEN,
+        ),
+      onAgentStatus: (handler) =>
+        ctx.on(
+          "agent/status",
+          (payload) => {
+            handler(payload.agent.id, payload.status);
+          },
+          GLOBAL_LISTEN,
+        ),
+      onAgentDisposed: (handler) =>
+        ctx.on(
+          "agent/disposed",
+          (payload) => {
+            handler(payload.agent.id);
+          },
+          GLOBAL_LISTEN,
+        ),
+      onAgentTurnStopping: (handler) =>
+        ctx.on(
+          "agent/turn-stopping",
+          (payload) => {
+            handler(payload.agent.id, payload.turn);
+          },
+          GLOBAL_LISTEN,
+        ),
+      // 失败可能是任何东西抛出的：在这里做唯一一次收窄，域拿到的就是一条文本。
+      onAgentError: (handler) =>
+        ctx.on(
+          "agent/error",
+          (payload) => {
+            const cause = payload.error;
+            handler(payload.agent.id, payload.turn, cause instanceof Error ? cause.message : String(cause));
+          },
+          GLOBAL_LISTEN,
+        ),
+    },
+  };
 }
 
 /**
@@ -95,7 +181,28 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
     logger: host.logger,
   });
 
+  // 3. 裁决管线：尚未装配，通知请求暂时无处可去（见 dropRequest）。
+
+  // 4. 事件：宿主事件 → 通知请求。请求一律产出，去留由裁决层决定——开关会在本域
+  //    看不见的地方被改，让它去问一遍等于把运行期策略摊进按事件驱动的块里。
+  installEvents({
+    events: host.events,
+    onSubmit: dropRequest,
+  });
+  disposers.push(releaseEvents);
+
   return disposers;
+}
+
+/**
+ * 通知请求的出口。
+ *
+ * 裁决管线尚未装配：请求到此为止。写成显式的空实现、而不是让 events 域持有一个
+ * 可选出口——「下游还没接上」是组合根知道的事实，应该摆在组合根里，而不是藏进
+ * 域的判空分支。管线就位后这一行换成它的提交口，其余不动。
+ */
+function dropRequest(request: NotifyRequest): void {
+  void request;
 }
 
 /** 逐个释放；单个释放失败不阻断其余（否则一个域的清理会拖垮整条卸载链）。 */

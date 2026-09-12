@@ -25,6 +25,7 @@ import type { DeliverResult, NotifyMessage } from "./impl/deliver/type.ts";
 // 其余出口的参数形状经 `DeliveryTarget` 联合可达——调用方要构造哪一路，推导得
 // 出来；等真出现「要显式命名某一路」的调用点，再把那一路请出来。
 export type { NotifyMessage } from "./impl/deliver/type.ts";
+export type { NotifySeverity } from "./impl/deliver/type.ts";
 export type { BarkTarget } from "./impl/bark/type.ts";
 export type { WebhookTarget } from "./impl/webhook/type.ts";
 export type { DeliveryTarget } from "./impl/deliver/index.ts";
