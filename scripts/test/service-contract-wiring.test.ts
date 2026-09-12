@@ -45,7 +45,15 @@ const SUITES = [
     name: 'dsh-notifier（SDK 契约 + L1/L2 直测 + 消费方类型编译用例）',
     pkg: 'dsh-notifier',
     tsconfig: join(ROOT, 'packages', 'dsh-notifier', 'test', 'tsconfig.json'),
-    expectFiles: [join('integration', 'service-contract.test.ts'), join('integration', 'consumer-types.test.ts')],
+    // consumer-product-face.ts 是**产物面**消费方夹具（#733 M2-3.2）：按包名经
+    // test/tsconfig.json 的 paths 取 lib/index.d.ts，判据是「声明合并对消费方可达」。
+    // 登记进 expectFiles 是为了让「夹具被误删 / 被排除出 tsconfig」在此 fail-loud，
+    // 而不是表现为编译面静默少覆盖一块。
+    expectFiles: [
+      join('integration', 'service-contract.test.ts'),
+      join('integration', 'consumer-types.test.ts'),
+      join('integration', 'consumer-product-face.ts'),
+    ],
   },
 ]
 
