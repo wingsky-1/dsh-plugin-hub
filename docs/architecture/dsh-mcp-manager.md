@@ -1,11 +1,16 @@
 # dsh-mcp-manager 架构与运行机制（图解）
 
-> 包：`@wingsky-1/dsh-mcp-manager` · 源码：`packages/dsh-mcp-manager/` · 版本：0.2.0
+> 包：`@wingsky-1/dsh-mcp-manager` · 源码：`packages/dsh-mcp-manager/` · 版本：0.2.3
 > 功能一句话：**DSH 的 MCP 服务器管理器**——管理 stdio / streamable-http 两种传输的
 > MCP 服务器，把已连接服务器的工具注册给模型，并提供三档中间层模式把项目级工具面
 > 收敛为四个原子工具（`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`）。
 >
 > 快速上手（安装 / 配置 / 验证）见 [包 README](../../packages/dsh-mcp-manager/README.md)；本文讲**原理与运行机制**。
+>
+> **本文描述的是当前实现**（v3 十域结构，见 [architecture-redesign.md](../../packages/dsh-mcp-manager/docs/architecture-redesign.md)）；
+> 文中提到的 `src/**` 文件名均指其 **v3 落位**。目标态结构与层间边界见
+> [architecture-implementation-v4.md](../../packages/dsh-mcp-manager/docs/architecture-implementation-v4.md)，契约条款见
+> [architecture-contract.md](../../packages/dsh-mcp-manager/docs/architecture-contract.md)。
 
 ---
 
@@ -33,7 +38,7 @@
 
 ## 2. 插件装配流程
 
-`apply(ctx)` 启动顺序（`src/apply.ts`）：
+`apply(ctx)` 启动顺序（v3 落位 `src/apply.ts`，现为 `src/bootstrap/apply.ts`）：
 
 ```mermaid
 flowchart TD
