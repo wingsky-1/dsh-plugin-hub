@@ -152,7 +152,14 @@ export interface NotifierServiceDeps {
   play(target: ResolvedTarget, payload: DeliverPayload): void | Promise<void>;
 }
 
-/** 投递终态事件负载（'wingsky-notify/sent'；旁观插件订阅面，铁律 1 的事件半边）。 */
+/**
+ * 投递终态事件负载（'wingsky-notify/sent'；旁观插件订阅面，铁律 1 的事件半边）。
+ *
+ * **有意不进包导出面**（域内公共类型，非包 ABI —— #733 M2c R2）：消费方不需要命名它，
+ * 包入口把 `Events` 合并声明注入宿主后，`ctx.on("wingsky-notify/sent", …)` 的回调形参
+ * 就是本类型（test/integration/consumer-product-face.ts 正向锚）。再导出一个同名符号，
+ * 只会让「事件签名」与「包导出面」变成两份必须同步的事实源，而收益为 0。
+ */
 export interface NotifySentEvent {
   kind: string;
   /** 消息标题（模板渲染后）。 */

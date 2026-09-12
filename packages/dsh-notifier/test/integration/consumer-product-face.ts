@@ -48,6 +48,16 @@ type _SentEventSignature = Expect<Equal<Events["wingsky-notify/sent"], (payload:
 // 正向枚举断言（不写「不存在某 key」的反向式）：本包注入的 Events key 恰好这一个。
 type _MergedEventKeys = Expect<Equal<Extract<keyof Events, `wingsky-notify/${string}`>, "wingsky-notify/sent">>;
 
+// ---------------------------------------------------------------- 反向锚：NotifySentEvent 不进包导出面
+// 上一条正向锚证明「载荷类型经合并签名可达」，这一条证明「可达性不靠包导出面」——
+// src/sdk/interface.ts 已写明它有意不导出（#733 M2c R2）。
+// 形态有实测依据：先写成 `Equal<Extract<keyof typeof NotifierPkg, "NotifySentEvent">, never>`
+// 是**假绿**——`keyof typeof <命名空间>` 只枚举**值面**，把 `export type { NotifySentEvent }`
+// 加进 src/index.ts 后该断言实测仍 exit=0（探针实证，见 PR 正文）。故改用唯一能看见类型
+// 导出的形态：按名导入必须失败。导入一旦成功，@ts-expect-error 变成「未使用指令」→ 编译硬失败。
+// @ts-expect-error NotifySentEvent 有意不进包导出面：该导入必须解析失败
+import type { NotifySentEvent as _ProbeSentEventMustNotResolve } from "@wingsky-1/dsh-notifier";
+
 // ---------------------------------------------------------------- 合并面：宿主 Context
 type _ServiceFace = Expect<Equal<Context["wingsky.notifier"], NotifierService>>;
 type _MergedContextKeys = Expect<Equal<Extract<keyof Context, "wingsky.notifier">, "wingsky.notifier">>;
