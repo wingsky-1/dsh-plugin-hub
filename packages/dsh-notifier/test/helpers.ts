@@ -10,6 +10,7 @@
  * 自建自清（隔离文件路径，防 flake 纪律见 docs/DEVELOPMENT.md）。
  */
 import { join } from "node:path";
+import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { Context } from "@deepseek-ai/cordis";
 import assert from "node:assert/strict";
 import { apply, normalizeConfig, sanitizeSettings, SETTINGS_NS } from "../src/index.ts";
@@ -280,8 +281,14 @@ export async function waitForHistory(historyRoute, predicate, timeoutMs = 2000) 
  * opts.cwd：header.cwd（模拟 headless CLI 会话「header 仅 {cwd}」形态）。
  * 0.1.2-rc.1 起 session.events getter 移除：fake 暴露 snapshotEvents()（无参语义
  * 等价旧 getter），与真实宿主形态一致。
+ *
+ * 返回类型显式标注为官方 `Agent`（#733 M2-3.3）：本文件是 @ts-nocheck 的桩对象
+ * 技术债文件，此前返回类型隐式为匿名对象，导致「把 fake agent 传进已类型化的
+ * `resolveTurnEvidence(agent: Agent)`」在 typed 测试里不可赋值。标注把「这个桩
+ * 代指 Agent」这一事实写清，而不是让签名为迁就桩对象退回 any。代价是标注本身
+ * 不受 tsc 校验（@ts-nocheck），属该文件既有技术债的一部分（#733 第八节 T-6）。
  */
-export function agentWithTitle(id, title, opts = {}) {
+export function agentWithTitle(id, title, opts = {}): Agent {
   const events = [];
   if (opts.turnEnd !== undefined) {
     events.push({ type: "turn/end", data: { turn: opts.turnEnd, reason: { kind: opts.turnEndKind ?? "completed" } } });

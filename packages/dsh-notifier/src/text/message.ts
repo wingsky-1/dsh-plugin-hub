@@ -100,6 +100,33 @@ export const KIND_SEVERITY: Readonly<Record<string, NotifySeverity>> = {
 };
 
 /**
+ * 合法 severity 全集的**运行时**形态（与 sdk/interface.ts 的 `NotifySeverity` 联合
+ * 一一对应；`satisfies` 保证每个成员都是合法 severity，成员集合本身由契约测试锁死）。
+ * 供跨宿主边界的入口校验使用——类型联合只在编译期存在，配置/调用方传来的值不受它约束。
+ */
+export const NOTIFY_SEVERITIES = ["info", "success", "warning", "failure"] as const satisfies readonly NotifySeverity[];
+
+const SEVERITY_SET: ReadonlySet<string> = new Set<string>(NOTIFY_SEVERITIES);
+
+/** 运行时枚举校验（类型谓词，非断言）：值确为四值之一时才收窄为 NotifySeverity。 */
+export function isNotifySeverity(value: unknown): value is NotifySeverity {
+  return typeof value === "string" && SEVERITY_SET.has(value);
+}
+
+/**
+ * severity 入口归一化：合法值原样返回，**非法值一律回落 `undefined`（= 视同未提供）**。
+ *
+ * 为什么回落成「未提供」而不是某个具体档位：下游三条缺省路径（webhook 的
+ * `?? "info"` / custom preset 的 `?? ""` / bark 的「不写 level」）已经定义了
+ * 「未提供」的语义；把非法值折叠进同一条路径，避免为它新造第二套默认值语义。
+ * 对 ntfy/gotify 而言，`undefined` 与 `"info"` 最终落同一档，故实际投递结果只受
+ * 「不再产出 `"undefined"`/原文透传」这一处影响（#733 M2-3.4 在 PR 显式登记）。
+ */
+export function normalizeSeverity(value: unknown): NotifySeverity | undefined {
+  return isNotifySeverity(value) ? value : undefined;
+}
+
+/**
  * 通知文案单表（kind → {title, message}）：全部文案集中于此，杜绝「表 + switch
  * 分支」双份维护导致的漂移。
  * 时间由系统通知呈现，正文不重复时间戳。

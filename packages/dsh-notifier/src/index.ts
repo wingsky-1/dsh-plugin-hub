@@ -39,12 +39,12 @@ import {
 import type { NotifierApplyConfig, NotifyConfig } from "./config/interface.ts";
 import { HISTORY_LIMIT, createHistoryStore, createStatusStore } from "./stores/interface.ts";
 import { createDoneBatcher, createEventHandlers } from "./events/interface.ts";
-import type { DoneBatcher, SubagentOwnership } from "./events/interface.ts";
+import type { DoneBatcher } from "./events/interface.ts";
 import { sanitizeErrorText } from "./text/interface.ts";
 import type { NotifyDetail } from "./text/interface.ts";
 import { ROUTES, buildRoutes, createSeqStore, createSseHub, createSystemNotifier } from "./server/interface.ts";
 import { createNotifierService } from "./sdk/interface.ts";
-import type { NotifierServiceInternal, NotifySentEvent } from "./sdk/interface.ts";
+import type { NotifierService, NotifierServiceInternal, NotifySentEvent } from "./sdk/interface.ts";
 import type { BrowserDispatchSpec, DeliverPayload, ResolvedTarget, SystemDispatchSpec } from "./pipeline/interface.ts";
 import { buildBrowserFrame, createBarkChannel, createBrowserChannel, createOutboundChannelResolver, createSystemChannel, createWebhookChannel } from "./channels/interface.ts";
 
@@ -153,6 +153,24 @@ export type { EventHandlers, EventHandlersDeps } from "./events/interface.ts";
 export { isLoopbackRequest } from "../../../shared/loopback.js";
 export { writeJson, readBody, errorMessage } from "../../../shared/host-utils.js";
 
+// ---------------------------------------------------------------- 类型合并面
+// 声明合并必须物理落在包入口：tsc 的 include 不 emit 源 `.d.ts`（`src/service.d.ts`
+// 因此从未进 `lib/`），消费方从 `lib/index.d.ts` 出发的相对 import 闭包取不到合并，
+// `ctx['wingsky.notifier']` 与 `'wingsky-notify/sent'` 双双失类型。写在本文件则随
+// 入口一起进产物（运行时零影响——声明整块被擦除）。门禁见
+// scripts/gate/pack-check.ts 的「声明合并可达性」断言。
+
+declare module "@deepseek-ai/cordis" {
+  interface Context {
+    /** 通知中心核心服务：其他插件经此发送单向通知 / 注册动态通知类型（'wingsky.notifier'）。 */
+    "wingsky.notifier": NotifierService;
+  }
+  /** 投递终态事件（铁律 1 的事件半边；旁观插件 ctx.on 订阅，per-channel 逐条派发）。 */
+  interface Events {
+    "wingsky-notify/sent": (payload: NotifySentEvent) => void;
+  }
+}
+
 function resolveStorePaths(config: NotifierApplyConfig) {
   const statusPath = typeof config.statusFile === "string" ? config.statusFile : statusFile();
   // seq 计数器随 status 文件同目录（statusFile 覆盖时测试经
@@ -179,9 +197,13 @@ function safeDisposeAll(disposers: Array<() => void>): void {
 function createSentEmitter(ctx: Context): (payload: NotifySentEvent) => void {
   return function emitSent(payload: NotifySentEvent): void {
     try {
-      (ctx as unknown as { emit?: (name: string, ...args: unknown[]) => void }).emit?.("wingsky-notify/sent", payload);
+      // 事件名与载荷类型由本文件下方的 declare module 合并提供（cordis 4.0.2 的
+      // `Context.emit` 是 `emit<K extends keyof Events>(name: K, ...args)` 单一重载）。
+      ctx.emit("wingsky-notify/sent", payload);
     } catch {
-      // 事件派发失败不影响投递语义（终态仍可见于 status 文件与历史）
+      // 事件派发失败不影响投递语义（终态仍可见于 status 文件与历史）：ctx 缺 emit
+      //（fake ctx / 宿主降级）时抛出的 TypeError 同样由本 catch 收敛——两种情况的可
+      // 观测结果一致（都不派发、都不外抛）。
     }
   };
 }
@@ -260,8 +282,11 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
     },
   });
 
-  if (typeof (ctx as unknown as { provide?: unknown }).provide === "function") {
-    (ctx as unknown as { provide: (name: string, svc: unknown) => void }).provide("wingsky.notifier", notifierService);
+  // ctx.provide 的值类型由本文件的 declare module 合并约束（Context["wingsky.notifier"]
+  // = NotifierService，NotifierServiceInternal 是其子类型）；typeof 守卫保留，覆盖
+  // fake ctx / 旧宿主无 provide 的降级路径。
+  if (typeof ctx.provide === "function") {
+    ctx.provide("wingsky.notifier", notifierService);
   }
 
   function notify(kind: string, detail: NotifyDetail = {}): boolean {
@@ -280,8 +305,13 @@ export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
     appendHistory: (entry) => historyStore.append(entry),
     doneBatcher,
     logger: ctx.logger,
-    getAgents: () =>
-      typeof ctx.get === "function" ? (ctx.get("agents", false) as SubagentOwnership | undefined) : undefined,
+    // ctx.get("agents") 的类型来自 dsh-agent 的 Context 合并（AgentRegistry）；其
+    // get / isOwnedBy 是**方法声明**，按方法双变性可直接赋给本域窄读面
+    // SubagentOwnership（AgentRegistry 是更宽的实现面，收窄赋值成立）。
+    getAgents: () => (typeof ctx.get === "function" ? ctx.get("agents", false) : undefined),
+    // userQuestions 的官方包（@deepseek-ai/dsh-user-questions）不在 catalog：该键
+    // 未声明，`ctx.get(name: string, strict?)` 落到返回 any 的宽松重载，故此处保留
+    // 显式收窄到本域窄读面。事件化改造需 catalog 增包，属仓库级决策（#733 裁决点 2）。
     getUserQuestionsService: () =>
       typeof ctx.get === "function" ? (ctx.get("userQuestions", false) as { ask?: unknown } | undefined) : undefined,
   });

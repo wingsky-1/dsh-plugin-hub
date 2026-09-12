@@ -3,13 +3,16 @@
  *
  * 覆盖：formatDuration 人类可读耗时、prettyToolName（中文映射 / MCP 美化 /
  * 未知原样）、sessionTitleOf（标题提取/截断/容错）、buildSystemCommand
- * （Windows/macOS/Linux 参数形态）、isLoopbackRequest 围栏判定。
+ * （Windows/macOS/Linux 参数形态）、isLoopbackRequest 围栏判定、
+ * severity 运行时枚举校验（#733 M2-3.4）。
  */
 import type { IncomingMessage } from "node:http";
 import type { Agent } from "@deepseek-ai/dsh-agent";
 import { describe, expect, it } from "vitest";
 import { fakeReq } from "../helpers.ts";
 import { type SystemTone, formatDuration, prettyToolName, sessionTitleOf, buildSystemCommand, buildSoundCommand, MAC_SOUND_NAMES, toneFileCandidates, isLoopbackRequest } from "../../src/index.ts";
+// severity 运行时校验面有意不进包导出面（#733 M2 原则＝零公共面变更），故经域门面引用。
+import { NOTIFY_SEVERITIES, isNotifySeverity, normalizeSeverity } from "../../src/text/interface.ts";
 
 // buildSystemCommand：Windows/macOS/Linux 参数形态（smoke 断言 spawn 参数）
 const decodePayload = (argv: string[]) => JSON.parse(Buffer.from(argv[argv.length - 1], "base64").toString("utf8"));
@@ -302,5 +305,39 @@ describe("isLoopbackRequest 围栏判定", () => {
 
   it("非回环拒绝", () => {
     expect(isLoopbackRequest(fakeReq({ socket: { remoteAddress: "10.0.0.2" } }) as unknown as IncomingMessage)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------- #733 M2-3.4 severity 运行时校验
+// 背景：类型联合只在编译期存在；severity 的来源（未类型化调用方 / PUT 配置 / JSON）
+// 不受它约束。实测缺陷：priorityFor('gotify','critical') → 字面量 "undefined"，
+// custom preset 把 `<script>` 原文透传进模板。
+describe("severity 运行时枚举校验（#733 M2-3.4）", () => {
+  /** 非法值样本（跨宿主边界的真实形态）。 */
+  const invalidValues: unknown[] = ["critical", "<script>alert(1)</script>", "", "INFO", " warning", "info ", 0, 1, true, null, undefined, {}, [], ["info"]];
+
+  it("NOTIFY_SEVERITIES 恰为四值（与 NotifySeverity 联合一一对应）", () => {
+    expect(NOTIFY_SEVERITIES.length).toBe(4);
+    expect([...NOTIFY_SEVERITIES]).toEqual(["info", "success", "warning", "failure"]);
+  });
+
+  it("isNotifySeverity：四个合法值全部 true", () => {
+    expect(NOTIFY_SEVERITIES.length).toBeGreaterThan(0);
+    for (const severity of NOTIFY_SEVERITIES) expect(isNotifySeverity(severity)).toBe(true);
+  });
+
+  it("isNotifySeverity：非法值全部 false", () => {
+    expect(invalidValues.length).toBeGreaterThan(0);
+    for (const bad of invalidValues) expect(isNotifySeverity(bad)).toBe(false);
+  });
+
+  it("normalizeSeverity：合法值原样返回（行为零回归）", () => {
+    expect(NOTIFY_SEVERITIES.length).toBeGreaterThan(0);
+    for (const severity of NOTIFY_SEVERITIES) expect(normalizeSeverity(severity)).toBe(severity);
+  });
+
+  it("normalizeSeverity：非法值一律回落 undefined（视同未提供）", () => {
+    expect(invalidValues.length).toBeGreaterThan(0);
+    for (const bad of invalidValues) expect(normalizeSeverity(bad)).toBeUndefined();
   });
 });

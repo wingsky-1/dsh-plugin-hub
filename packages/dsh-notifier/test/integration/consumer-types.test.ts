@@ -12,18 +12,32 @@
  * 本文件的判据在编译期。
  *
  * 覆盖纪律（#733 M0c）：导出面快照门禁（scripts/data/dsh-notifier-export-surface.json）
- * 的 declBlocks 96 条**全部是 `export declare const/function/class`**，对 interface /
- * type 体零覆盖——加一个联合成员、给接口加字段时快照不会红。故类型面由本文件的
- * 「类型体快照锚」兜住：包导出面 28 个类型导出**逐个**一条 `Equal<T, 完整字面量>`，
+ * 的 declBlocks（入库基线 96 条）**全部是 `export declare const/function/class`**，对
+ * interface / type 体零覆盖——加一个联合成员、给接口加字段时快照不会红。故类型面由本
+ * 文件的「类型体快照锚」兜住：包导出面 28 个类型导出**逐个**一条 `Equal<T, 完整字面量>`，
  * 成员增删 / 字段改型 / 可选性变化都会编译报错。
+ *
+ * 锚条数口径（#733 M2 核对后修正旧注释）：本文件的编译期锚共 **49 条**
+ * `type _X = Expect<...>` —— 28 条类型体快照锚（上述「逐个覆盖」）+ 21 条 ABI / 能力
+ * 契约 / 路由面 / 常量面锚。旧注释把「28」（导出面 isType 符号数）写成了锚数，两者不是
+ * 一回事；本文件末尾的「头部注释口径自检」用机器断言把这两个数钉住（#10 纪律：自述必须
+ * 有机器锁定，否则长期反向）。
+ *
+ * 面口径（#733 M2-3.2）：本文件按**源码面**（`../../src/index.ts`）导入，锚的是域内类型
+ * 体；**产物面**（按包名取 `lib/index.d.ts`）的跨包可达性判据单列在
+ * `test/integration/consumer-product-face.ts` —— 声明合并只写进源 `.d.ts`、从未进产物
+ * 这类缺陷只有在产物面才可见（源码面导入会让 `src/index.ts` 直接进编译程序而掩盖它）。
  *
  * 写死期望值的纪律：期望值必须是**独立字面量**。用 `T["m"]` 自引用、或 import 包内
  * 未导出类型当期望值，会让两侧同步漂移、锚退化为恒真。未进包导出面的依赖域类型
  * （HistoryStore / SseHub / SystemNotifier / DoneBatcher / ConfigPort 等）一律按结构
  * 写死为本文件的 Shape 别名。
  */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { Agent } from "@deepseek-ai/dsh-agent";
+import type { Agent, AgentStatus } from "@deepseek-ai/dsh-agent";
+import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
+import type { ApprovalOutcome, ApprovalRequestEvent } from "@deepseek-ai/dsh-user-approval/types";
 import type { ServerResponse } from "node:http";
 import {
   BUILTIN_CHANNELS,
@@ -97,6 +111,12 @@ type NotifySentEventShape = {
   error?: string;
   ts: number;
 };
+
+/** dsh-agent 的 `'agent/error'` / `'agent/turn-stopping'` 官方载荷：官方在
+ * `Events` 上**内联**声明结构、未导出具名别名，故按结构独立写死为期望值
+ * （引用实现侧派生的 `Parameters<Events[...]>[0]` 会让锚与被测类型同步漂移、退化为恒真）。 */
+type AgentErrorPayloadShape = { agent: Agent; turn: number; step: number; error: unknown };
+type AgentTurnStoppingPayloadShape = { agent: Agent; turn: number; signal: AbortSignal };
 
 /** config 域 WebhookChannelConfig / ChannelConfig 联合（src/config/config.ts）。 */
 type WebhookChannelConfigShape = {
@@ -486,18 +506,18 @@ type _ChannelStatusEntryShape = Expect<
   Equal<ChannelStatusEntry, { lastTs: number; lastStatus: "ok" | "failed"; lastError?: string; failStreak: number }>
 >;
 
-/** 类型 25/28：EventHandlers（src/events/event-handlers.ts）。 */
+/** 类型 25/28：EventHandlers（src/events/event-handlers.ts；#733 M2-3.3 起载荷为官方类型）。 */
 type _EventHandlersShape = Expect<
   Equal<
     EventHandlers,
     {
-      handleApprovalRequest: (req: any, next: () => Promise<any>) => Promise<any>;
+      handleApprovalRequest: (req: ApprovalRequestEvent, next: () => Promise<ApprovalOutcome>) => Promise<ApprovalOutcome>;
       handleInternalService: (name: string) => void;
-      handleSessionEvent: (session: any, event: any) => void;
-      handleAgentStatus: (payload: { agent: any; status: string }) => void;
-      handleAgentDisposed: (payload: { agent: any }) => void;
-      handleAgentError: (payload: any) => void;
-      handleAgentTurnStopping: (payload: any) => Promise<void>;
+      handleSessionEvent: (session: Session, event: SessionEvent) => void;
+      handleAgentStatus: (payload: { agent: Agent; status: AgentStatus }) => void;
+      handleAgentDisposed: (payload: { agent: Agent }) => void;
+      handleAgentError: (payload: AgentErrorPayloadShape) => void;
+      handleAgentTurnStopping: (payload: AgentTurnStoppingPayloadShape) => Promise<void>;
       hookUserQuestions: () => void;
       dispose: () => void;
     }
@@ -582,5 +602,40 @@ describe("运行时护栏：导出面确实可从包入口取到", () => {
 
   it("applyConfigPatch 随包导出面可用", () => {
     expect(typeof applyConfigPatch).toBe("function");
+  });
+});
+
+// ---- 头部注释口径自检（#733 M2）：注释里的数字必须能被一条命令证伪 ----
+// 旧注释把「导出面 isType 符号数 28」写成了锚数（实际 49），属自述与代码不一致。
+// 下面三条把「锚总数」「类型体锚编号自洽」「类型体锚逐个覆盖导出面类型导出」全部
+// 机器化——任一漂移即红，不再依赖人记得同步注释。
+describe("头部注释口径自检（锚条数 / 类型体锚覆盖不变式）", () => {
+  const self = readFileSync(new URL("./consumer-types.test.ts", import.meta.url), "utf8");
+
+  it("注释声明的编译期锚条数与实际一致", () => {
+    const anchors = self.match(/^type _[A-Za-z]+ = Expect</gmu) ?? [];
+    expect(anchors.length).toBeGreaterThan(0);
+    const declared = /本文件的编译期锚共 \*\*(\d+) 条\*\*/u.exec(self);
+    expect(declared).not.toBeNull();
+    expect(anchors.length).toBe(Number(declared![1]));
+  });
+
+  it("「类型 N/28」编号自洽（序号连续、分母一致且等于条数）", () => {
+    const numbered = [...self.matchAll(/^\/\*\* 类型 (\d+)\/(\d+)：/gmu)];
+    expect(numbered.length).toBeGreaterThan(0);
+    const totals = new Set(numbered.map((m) => m[2]));
+    expect([...totals]).toHaveLength(1);
+    expect(Number([...totals][0])).toBe(numbered.length);
+    expect(numbered.map((m) => Number(m[1]))).toEqual(numbered.map((_, i) => i + 1));
+  });
+
+  it("每个导出面类型导出都有一条 `<名字>Shape` 类型体锚（逐个覆盖不变式）", () => {
+    const baseline: { exports: Array<{ name: string; isType: boolean }> } = JSON.parse(
+      readFileSync(new URL("../../../../scripts/data/dsh-notifier-export-surface.json", import.meta.url), "utf8"),
+    );
+    const typeExports = baseline.exports.filter((e) => e.isType).map((e) => e.name);
+    expect(typeExports.length).toBeGreaterThan(0);
+    const missing = typeExports.filter((name) => !self.includes(`_${name}Shape = Expect<`));
+    expect(missing).toEqual([]);
   });
 });

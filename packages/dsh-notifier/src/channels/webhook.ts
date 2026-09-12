@@ -27,7 +27,7 @@
 import { SECRET_MASK, isWebhookHeaderName } from "../config/interface.ts";
 import type { WebhookChannelConfig, WebhookPreset } from "../config/interface.ts";
 import type { NotifyChannel, NotifySeverity } from "../sdk/interface.ts";
-import { sanitizeErrorText } from "../text/interface.ts";
+import { normalizeSeverity, sanitizeErrorText } from "../text/interface.ts";
 
 /** severity → ntfy priority 静态映射（契约测试锁定）。 */
 export const SEVERITY_NTFY_PRIORITY: Readonly<Record<NotifySeverity, string>> = {
@@ -59,9 +59,14 @@ const DEFAULT_TEMPLATES: Readonly<Record<WebhookPreset, string>> = {
 
 /** {{priority}} 频道感知映射（preset → severity → 渲染值）。 */
 export function priorityFor(preset: WebhookPreset, severity: NotifySeverity | undefined): string {
-  if (preset === "gotify") return String(SEVERITY_GOTIFY_PRIORITY[severity ?? "info"]);
-  if (preset === "custom") return severity ?? "";
-  return SEVERITY_NTFY_PRIORITY[severity ?? "info"];
+  // 本函数在包导出面上（外部调用方可直接传任意值），故自身做运行时枚举校验，而非
+  // 假定调用方已归一化：非法值视同未提供 → gotify/ntfy 落 info 档、custom 落空串。
+  // 不做校验的两个失效方向：映射表未命中返回 undefined，经 String() 变成字面量
+  // "undefined"；custom 分支会把 `<script>` 之类的原文直接透传进模板。
+  const normalized = normalizeSeverity(severity);
+  if (preset === "gotify") return String(SEVERITY_GOTIFY_PRIORITY[normalized ?? "info"]);
+  if (preset === "custom") return normalized ?? "";
+  return SEVERITY_NTFY_PRIORITY[normalized ?? "info"];
 }
 
 /** 渲染变量（渠道 SPI 契约字段 + 派生值）。 */

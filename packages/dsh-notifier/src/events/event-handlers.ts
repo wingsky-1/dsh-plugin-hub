@@ -1,4 +1,11 @@
-import type { Agent } from "@deepseek-ai/dsh-agent";
+import type { Events } from "@deepseek-ai/cordis";
+import type { Agent, AgentStatus } from "@deepseek-ai/dsh-agent";
+import type { Session, SessionEvent } from "@deepseek-ai/dsh-session";
+// ApprovalRequestEvent 只从官方 `/types` 子路径导出（根入口只导 ApprovalRequest 与
+// ApprovalOutcome），走 `/types` 与 agent-session.ts 引 TurnEndReason 的既有先例一致。
+// 事件载荷必须用 ApprovalRequestEvent 而非 ApprovalRequest：后者是它的窄化子类型，
+// 用作 handler 形参会与官方 `'approval/request'` 事件签名不可赋值。
+import type { ApprovalOutcome, ApprovalRequestEvent } from "@deepseek-ai/dsh-user-approval/types";
 import { errorMessage } from "../../../../shared/host-utils.js";
 import type { NotifyConfig } from "../config/interface.ts";
 import { sanitizeNoticeContent } from "../text/interface.ts";
@@ -6,6 +13,14 @@ import type { NotifyDetail } from "../text/interface.ts";
 import { isSubagentOf, lastTurnEndOf, sessionTitleOf } from "./agent-session.ts";
 import type { SubagentOwnership } from "./agent-session.ts";
 import type { DoneBatcher } from "./aggregate.ts";
+
+/**
+ * `agent/error` / `agent/turn-stopping` 的官方载荷类型：dsh-agent 在 `Events` 上
+ * 内联声明结构、未导出具名别名，故从官方事件签名派生（派生的好处是上游改形状时
+ * 本插件签名自动跟随，不会静默漂移成第二份事实源）。
+ */
+type AgentErrorPayload = Parameters<Events["agent/error"]>[0];
+type AgentTurnStoppingPayload = Parameters<Events["agent/turn-stopping"]>[0];
 
 export interface EventHandlersDeps {
   getConfig: () => NotifyConfig;
@@ -37,13 +52,13 @@ interface ErrorMergeEntry {
 }
 
 export interface EventHandlers {
-  handleApprovalRequest: (req: any, next: () => Promise<any>) => Promise<any>;
+  handleApprovalRequest: (req: ApprovalRequestEvent, next: () => Promise<ApprovalOutcome>) => Promise<ApprovalOutcome>;
   handleInternalService: (name: string) => void;
-  handleSessionEvent: (session: any, event: any) => void;
-  handleAgentStatus: (payload: { agent: any; status: string }) => void;
-  handleAgentDisposed: (payload: { agent: any }) => void;
-  handleAgentError: (payload: any) => void;
-  handleAgentTurnStopping: (payload: any) => Promise<void>;
+  handleSessionEvent: (session: Session, event: SessionEvent) => void;
+  handleAgentStatus: (payload: { agent: Agent; status: AgentStatus }) => void;
+  handleAgentDisposed: (payload: { agent: Agent }) => void;
+  handleAgentError: (payload: AgentErrorPayload) => void;
+  handleAgentTurnStopping: (payload: AgentTurnStoppingPayload) => Promise<void>;
   hookUserQuestions: () => void;
   dispose: () => void;
 }
@@ -68,7 +83,7 @@ function formatEvidenceSource(pushed: unknown, snapshot: unknown, stale: boolean
  * 导出供直测（判定矩阵基线；重构 adjudicate 拆分时的行为判别网）。
  */
 export function resolveTurnEvidence(
-  agent: any,
+  agent: Agent,
   state: AgentState,
   eventStreamEnds: Map<string, { turn: number; kind: string }>,
 ): TurnEvidenceResult {
@@ -104,7 +119,7 @@ function logIdleSkipped(
 }
 
 function dispatchUnmergedError(
-  payload: any,
+  payload: AgentErrorPayload,
   rawMessage: string,
   key: string,
   now: number,
@@ -172,7 +187,7 @@ export class NotifierEventHandlers implements EventHandlers {
     this.deps = deps;
   }
 
-  handleApprovalRequest = async (req: any, next: () => Promise<any>): Promise<any> => {
+  handleApprovalRequest = async (req: ApprovalRequestEvent, next: () => Promise<ApprovalOutcome>): Promise<ApprovalOutcome> => {
     const current = this.deps.getConfig();
     if (!current.notifyAsk) return next();
     const askDetail = () => ({
@@ -255,7 +270,7 @@ export class NotifierEventHandlers implements EventHandlers {
     if (name === "userQuestions") this.hookUserQuestions();
   };
 
-  handleSessionEvent = (session: any, event: any): void => {
+  handleSessionEvent = (session: Session, event: SessionEvent): void => {
     try {
       if (event?.type !== "turn/end") return;
       const reason = event.data?.reason;
@@ -273,7 +288,7 @@ export class NotifierEventHandlers implements EventHandlers {
     }
   };
 
-  private handleAgentIdle(agent: any, state: AgentState): void {
+  private handleAgentIdle(agent: Agent, state: AgentState): void {
     const agentId = agent?.id ?? "?";
     const durationMs = state.startedAt > 0 ? Date.now() - state.startedAt : 0;
     state.runningSeen = false;
@@ -299,13 +314,13 @@ export class NotifierEventHandlers implements EventHandlers {
     if (best !== undefined) state.lastEndedTurn = best.turn;
   }
 
-  private handleAgentRunning(agent: any, state: AgentState): void {
+  private handleAgentRunning(agent: Agent, state: AgentState): void {
     state.runningSeen = true;
     state.startedAt = Date.now();
     state.runningBaseline = lastTurnEndOf(agent);
   }
 
-  handleAgentStatus = ({ agent, status }: { agent: any; status: string }): void => {
+  handleAgentStatus = ({ agent, status }: { agent: Agent; status: AgentStatus }): void => {
     try {
       const agentId = agent?.id ?? "?";
       let state = this.agentStates.get(agentId);
@@ -323,7 +338,7 @@ export class NotifierEventHandlers implements EventHandlers {
     }
   };
 
-  handleAgentDisposed = ({ agent }: { agent: any }): void => {
+  handleAgentDisposed = ({ agent }: { agent: Agent }): void => {
     if (agent?.id !== undefined) {
       this.agentStates.delete(agent.id);
       this.eventStreamEnds.delete(agent.id);
@@ -334,7 +349,7 @@ export class NotifierEventHandlers implements EventHandlers {
     }
   };
 
-  handleAgentError = (payload: any): void => {
+  handleAgentError = (payload: AgentErrorPayload): void => {
     try {
       const current = this.deps.getConfig();
       if (!current.notifyTaskError) return;
@@ -357,7 +372,7 @@ export class NotifierEventHandlers implements EventHandlers {
     }
   };
 
-  handleAgentTurnStopping = async (payload: any): Promise<void> => {
+  handleAgentTurnStopping = async (payload: AgentTurnStoppingPayload): Promise<void> => {
     try {
       if (this.deps.getConfig().notifyTurnEnd) {
         const turn = typeof payload?.turn === "number" ? payload.turn : NaN;

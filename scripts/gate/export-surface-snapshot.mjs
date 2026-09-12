@@ -19,6 +19,13 @@
  *   node scripts/gate/export-surface-snapshot.mjs --package dsh-notifier --snapshot  # 生成/更新基线
  *   node scripts/gate/export-surface-snapshot.mjs --package dsh-notifier             # 与基线比对（--check 同义）
  *
+ * 除基线比对外，同一次 `emitDeclarations()` 产物还喂「导出面分类登记」准入判据
+ *（#733 宪法第 3 条 / M2a-3.5：包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面）——新增导出
+ * 必须在 scripts/data/<pkg>-export-faces.json 的 faces 显式登记三类面之一，未登记判红。
+ * 判据实现见 scripts/lib/export-faces-lib.ts（**同一实现**被门禁与 fixture 自测复用，
+ * §9 禁止双轨）；`--snapshot` 只写基线、不碰登记文件，故「更新基线」不会顺手把新符号
+ * 变成合法导出——分类登记始终是一次显式动作。
+ *
  * 基线文件：scripts/data/<package>-export-surface.json（入库；重构后合入 PR）。
  * 接入：scripts/gate/contract-check.ts（PR1 起对 dsh-notifier 强制）。
  */
@@ -27,6 +34,7 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkExportFaces, loadExportFaces } from "../lib/export-faces-lib.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const ARGV = process.argv.slice(2);
@@ -41,6 +49,8 @@ if (!pkgName) {
 const tsconfigIdx = ARGV.indexOf("--tsconfig");
 const baselineIdx = ARGV.indexOf("--baseline");
 const baselinePath = baselineIdx >= 0 ? ARGV[baselineIdx + 1] : join(ROOT, "scripts", "data", `${pkgName}-export-surface.json`);
+const facesIdx = ARGV.indexOf("--faces");
+const facesPath = facesIdx >= 0 ? ARGV[facesIdx + 1] : join(ROOT, "scripts", "data", `${pkgName}-export-faces.json`);
 const pkgDir = join(ROOT, "packages", pkgName);
 const tsconfigPath = tsconfigIdx >= 0 ? ARGV[tsconfigIdx + 1] : join(pkgDir, "tsconfig.json");
 
@@ -193,6 +203,23 @@ function declMapFor(declBlocks, exportNames) {
     if (missingInBase) problems.push(`  导出符号 ${name} 基线无定义块（基线侧异常）`);
     else if (missingInCur) problems.push(`  导出符号 ${name} 现在无定义块（定义被删除或未导出）`);
     else if (baseMap.get(name) !== curMap.get(name)) problems.push(`  导出符号 ${name} 定义被改写：\n   基线 ${baseMap.get(name).slice(0, 200)}\n   现在 ${curMap.get(name).slice(0, 200)}`);
+  }
+}
+
+// 导出面分类登记准入判据（#733 M2a-3.5）：与基线比对共用同一次 emitDeclarations() 产物。
+// 登记文件缺失即抛（判据的输入不能静默降级为「无约束」）——用 --faces 覆盖仅用于 fixture 自测。
+{
+  const registry = loadExportFaces(facesPath);
+  if (registry.package !== undefined && registry.package !== pkgName) {
+    problems.push(`分类登记文件的 package 字段（${registry.package}）与 --package（${pkgName}）不一致`);
+  }
+  for (const p of checkExportFaces({
+    exports: surface.exports.map((e) => e.name),
+    faces: registry.faces,
+    legacy: registry.legacy,
+    registryPath: `scripts/data/${pkgName}-export-faces.json`,
+  })) {
+    problems.push(`  [导出面分类登记] ${p}`);
   }
 }
 

@@ -5,7 +5,7 @@
     "dsh-notifier": {
       "modules": 8,
       "scannedSrcFiles": 38,
-      "allSrcTsFiles": 43,
+      "allSrcTsFiles": 42,
       "interfaceFacades": 8,
       "leafValueEdges": 8,
       "leafModuleCycles": 0,

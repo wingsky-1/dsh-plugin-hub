@@ -40,7 +40,10 @@ export function redactConfigView<T>(value: T): T {
   const clone = JSON.parse(JSON.stringify(value ?? null)) as T & { channels?: Array<Record<string, unknown>> };
   if (clone && typeof clone === "object") {
     for (const key of PROTOTYPE_POLLUTION_KEYS) {
-      if (Object.prototype.hasOwnProperty.call(clone, key)) delete (clone as unknown as Record<string, unknown>)[key];
+      // clone 的静态类型由泛型 T 决定，无法按任意字符串键索引；Reflect.deleteProperty
+      // 只要求值可赋给 object（安全收窄，不经 unknown 逃生），且语义等价——clone 是
+      // JSON.parse 产物，自有属性全部 configurable，删自有键时与 delete 不可区分。
+      if (Object.prototype.hasOwnProperty.call(clone, key)) Reflect.deleteProperty(clone, key);
     }
   }
   if (Array.isArray(clone?.channels)) {

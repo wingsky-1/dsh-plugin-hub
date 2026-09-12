@@ -5,6 +5,8 @@
  * - renderWebhookBody JSON-aware 两步法：映射表（ntfy/gotify/custom）、默认模板、
  *   {{ts}} 数字直出、文本占位符单趟替换（注入内容不被二次替换）、JSON 注入防护
  *   （引号/`"}}` 逃逸失败）、非法模板抛错；
+ * - priorityFor 的 severity 运行时校验与回落（#733 M2-3.4：非法值不得产出字面量
+ *   "undefined"，custom preset 不得原文透传）；
  * - createWebhookChannel + fetch mock：bearer/basic/header/none 认证头、4xx 失败
  *   终态且凭据脱敏、渲染失败转投递失败、无重试；
  * - config 契约：webhook 实例 normalize（URL 姿态/auth 枚举/timeoutSec clamp/
@@ -30,6 +32,15 @@ import {
   SEVERITY_GOTIFY_PRIORITY,
   WEBHOOK_DEFAULT_TIMEOUT_SEC,
 } from "../../src/index.ts";
+
+/**
+ * 跨边界非法输入构造：宿主 / 未类型化调用方 / PUT 配置传来的值不受编译期联合约束，
+ * 「运行时不合法」这一事实无法用静态类型表达，故经 unknown 形参中转（测试判据是
+ * 运行时守卫，不是编译期约束）。不用 `as unknown as`。
+ */
+function wire<T>(value: unknown): T {
+  return value as T;
+}
 
 /** 掩码回填受理面（未受理即抛——断言前置的受理条件）。 */
 function unmaskOk(result: ReturnType<typeof unmaskChannels>): Array<Record<string, unknown>> {
@@ -111,6 +122,40 @@ describe("① {{priority}} 频道感知映射表（契约锁定）", () => {
 
   it("severity 缺省 → ntfy default", () => {
     expect(priorityFor("ntfy", undefined)).toBe("default");
+  });
+
+  // ---- #733 M2-3.4：非法 severity 的回落（公共 API 行为变更，PR 显式登记） ----
+  // priorityFor 在包导出面上，外部调用方可直接传任意值，故运行时校验在本函数内。
+  it('非法 severity（gotify）→ 回落 info 档 "3"，不得产出字面量 "undefined"', () => {
+    expect(priorityFor("gotify", wire<NotifySeverity>("critical"))).toBe("3");
+    expect(priorityFor("gotify", wire<NotifySeverity>("critical"))).not.toBe("undefined");
+  });
+
+  it("非法 severity（ntfy）→ 回落 default", () => {
+    expect(priorityFor("ntfy", wire<NotifySeverity>("critical"))).toBe("default");
+  });
+
+  it("非法 severity（custom）→ 空串，原文不再透传（<script> 形态）", () => {
+    expect(priorityFor("custom", wire<NotifySeverity>("<script>alert(1)</script>"))).toBe("");
+    expect(priorityFor("custom", wire<NotifySeverity>("critical"))).toBe("");
+  });
+
+  it("合法 severity（custom）仍原文直出（行为零回归）", () => {
+    expect(priorityFor("custom", "warning")).toBe("warning");
+    expect(priorityFor("custom", "failure")).toBe("failure");
+  });
+
+  it('映射表 3 preset × 4 合法 severity 全枚举：无一为 "undefined"、无一为空串', () => {
+    const presets = ["ntfy", "gotify", "custom"] as const;
+    const severities: NotifySeverity[] = ["info", "success", "warning", "failure"];
+    // 先断言枚举集合非空：空数组下 filter/every 恒真，会把判据变成恒真断言。
+    expect(presets.length).toBe(3);
+    expect(severities.length).toBe(4);
+    const produced: string[] = [];
+    for (const preset of presets) for (const severity of severities) produced.push(priorityFor(preset, severity));
+    expect(produced).toHaveLength(12);
+    expect(produced.filter((value) => value === "undefined")).toEqual([]);
+    expect(produced.filter((value) => value.length === 0)).toEqual([]);
   });
 });
 

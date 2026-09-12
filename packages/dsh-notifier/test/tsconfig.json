@@ -4,7 +4,10 @@
     "noEmit": true,
     "types": ["node"],
     "rewriteRelativeImportExtensions": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "@wingsky-1/dsh-notifier": ["../lib/index.d.ts"]
+    }
   },
   "include": ["./**/*.ts"]
 }
