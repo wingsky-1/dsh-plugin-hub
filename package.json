@@ -18,6 +18,7 @@
   "repair:mcp-catalog": "node scripts/maintenance/repair-mcp-catalog-sessions.mjs",
     "test:src-tests": "node scripts/gate/forbid-src-tests.mjs",
     "gate:homedir": "node scripts/gate/forbid-homedir-src.mjs",
+    "gate:module-state": "node scripts/gate/forbid-module-state-src.mjs",
     "docs:check": "node scripts/gate/verify-docs.ts --strict-en",
     "typecheck": "pnpm -r --if-present run typecheck",
     "gate:changed": "node scripts/gate/local-gate.mjs --tier changed",

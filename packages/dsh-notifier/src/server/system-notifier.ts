@@ -29,9 +29,6 @@ export interface SystemNotifier {
   notify(pop: boolean, tone: SoundSetting, title: string, message: string): Promise<boolean>;
 }
 
-/** 系统通知节流吞掉时透传的「上一次决议」初值（首投递无上一次 = 视为可成功）。 */
-let lastSystemOutcome = true;
-
 /**
  * 创建系统通知通道。
  * @param options.toastScript toast.ps1 路径。
@@ -57,6 +54,10 @@ export function createSystemNotifier(options: {
   /** 系统通知节流间隔：防连发（生产密集事件/连点测试按钮）造成 spawn 风暴。 */
   const SYSTEM_NOTIFY_THROTTLE_MS = 1000;
   let lastSystemNotifyAt = 0;
+  /** 节流吞掉时透传的「上一次决议」初值（首投递无上一次 = 视为可成功）。**实例内状态**
+   *  （#733 宪法 1）：放在模块级会让两个 SystemNotifier 实例在节流窗口内互相透传对方的
+   *  决议——实例 B 会拿到实例 A 的失败结论。 */
+  let lastSystemOutcome = true;
 
   /** notify-send 可用性探测（仅 Linux 需要；macOS 走 osascript，darwin 分支
    *  不依赖此探测，故不在 macOS 上无谓尝试缺失的 notify-send）。异步，只探一次。 */

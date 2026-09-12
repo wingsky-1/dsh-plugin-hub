@@ -192,3 +192,32 @@ describe.skipIf(process.platform !== "linux")("E（linux-only）：notify-send �
     expect(spawn.calls.length).toBe(0);
   });
 });
+
+describe("F：节流状态是实例内的（#733 宪法 1 / #733 M2c 后续 N2）", () => {
+  it("F：实例 A 投递失败后，实例 B 的节流吞掉返回 B 自己的初值 true（模块级 let 版为 false）", async () => {
+    // 为什么需要这条新用例：模块级 `let lastSystemOutcome` 改成实例内状态是**行为变更**
+    // （跨实例共享 → 每实例独立），而既有 1790 条测试在两版下都全绿（实测）——即「既有
+    // 测试锁定」对这次改动是恒真的。判据只能落在新用例上。
+    //
+    // 前置 1：A 投递失败（只响不弹 → 自播 exit 1 → false），旧的模块级实现会把它写成 false
+    const a = makeNotifier();
+    const pa = a.system.notify(false, "ding", "", "");
+    expect(a.spawn.calls.length).toBe(1);
+    a.spawn.children[0].emit("exit", 1);
+    expect(await pa).toBe(false);
+
+    // 前置 2：B 是独立实例，第一次投递的 spawn 仍挂起（未决议）→ 此时没有任何实例内的
+    // 「上一次决议」，节流窗口内的第二次必被吞掉且必须透传 B 自己的初值
+    const b = makeNotifier();
+    const first = b.system.notify(false, "ding", "", "");
+    expect(b.spawn.calls.length).toBe(1);
+    const second = b.system.notify(false, "ding", "", "");
+    expect(b.spawn.calls.length).toBe(1); // 第二次确实被节流吞掉（零新增 spawn）
+
+    // 判据：实例级状态 → true（B 的初值）；模块级 let → false（读到 A 写的结论）
+    expect(await second).toBe(true);
+
+    b.spawn.children[0].emit("exit", 0);
+    expect(await first).toBe(true);
+  });
+});

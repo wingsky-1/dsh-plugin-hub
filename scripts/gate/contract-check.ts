@@ -234,4 +234,17 @@ console.log(failed === 0 ? '客户端契约：全部通过' : `客户端契约�
     failed++
   }
 }
+// N2a（#733 M2c 后续）：模块级可变状态门禁——宪法第 1 条（状态收进闭包/实例）的机器判据。
+// 只对 dsh-notifier 生效（扫描面是门禁内的版本化常量；其它包存量未清零，见门禁自述）。
+// 该门禁的违规明细走 stderr（与 forbid-homedir-src 同款三态输出），故两路都回显。
+{
+  const moduleStateGate = spawnSync(process.execPath, [join(ROOT, 'scripts/gate/forbid-module-state-src.mjs')], { encoding: 'utf8' })
+  for (const stream of [moduleStateGate.stdout, moduleStateGate.stderr]) {
+    for (const line of (stream ?? '').split('\n')) if (line.trim() !== '') console.log(line)
+  }
+  if (moduleStateGate.status !== 0) {
+    console.log(`forbid-module-state-src | FAIL exit=${moduleStateGate.status}`)
+    failed++
+  }
+}
 process.exit(failed === 0 ? 0 : 1)
