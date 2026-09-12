@@ -18,10 +18,10 @@ export type { SseHubOptions } from "../../../../shared/sse-hub.js";
 /**
  * seq 计数器持久化存储（本域内聚读写实现；装配层只提供路径与日志出口）。
  *
- * 语义硬约束（#733 M1-F2 自组合根逐行等价迁入，不得变更）：
+ * 语义硬约束（#733 M1-F2 自组合根**逐行等价**迁入，不得变更）：
  * - 缺文件 = 首启静默回退 0（ENOENT 不告警）；
  * - **合法 JSON 但值非法**（负数/小数/非数字）→ warn「seq 计数文件损坏」+ 回退 0；
- * - **非法 JSON（解析失败）与其他读取失败** → 走同一 catch 分支 → warn
+ * - **非法 JSON（解析失败）与其他读取失败** → 走 catch 分支 → warn
  *   「seq 计数文件读取失败」（除 ENOENT 外）+ 回退 0。这是迁出前的既有控制流
  *   （损坏文案只在 JSON.parse 成功、值校验失败时命中），文案与分支归属逐字保留；
  * - 写面为**同步** tmp+rename 原子写——createSseHub 的 dispose 同步补写依赖
@@ -46,7 +46,8 @@ export function createSeqStore(options: { file: string; warn: (message: string) 
       try {
         const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown;
         if (typeof parsed === "number" && Number.isFinite(parsed) && parsed >= 0 && Number.isInteger(parsed)) return parsed;
-        throw new Error(`非法 seq 值：${String(parsed)}`);
+        warn(`dsh-notifier: seq 计数文件损坏，回退 0：${file}`);
+        return 0;
       } catch (error) {
         const code = (error as NodeJS.ErrnoException | undefined)?.code;
         if (code !== "ENOENT") warn(`dsh-notifier: seq 计数文件读取失败，回退 0：${errorMessage(error)}`);

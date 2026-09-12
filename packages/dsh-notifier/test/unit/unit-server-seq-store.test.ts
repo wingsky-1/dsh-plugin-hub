@@ -1,11 +1,12 @@
 /**
  * dsh-notifier — unit：server 域 seq 计数器存储直测（#733 M1-F2）。
  *
- * createSeqStore 的实现自组合根（src/index.ts 的 loadSeq/saveSeq）逐行等价迁入
+ * createSeqStore 的实现自组合根（src/index.ts 的 loadSeq/saveSeq）**逐行等价**迁入
  * server/sse-bus.ts，本文件锁定搬迁不得改变的语义：
  * - 缺文件（ENOENT）= 首启静默回退 0，**不告警**；
- * - 损坏（非法 JSON）与非 ENOENT 读取失败 = warn + 回退 0（宁可归零不可卡死续计数面）；
- * - 非负整数之外的合法 JSON 值（负数/小数/字符串/null/超范围）一律判损坏；
+ * - **合法 JSON 但值非法**（负数/小数/字符串/null/布尔/对象）→ warn「seq 计数文件损坏」+ 回退 0；
+ * - **非法 JSON（解析失败）** 与其他非 ENOENT 读取失败 → warn「seq 计数文件读取失败」+ 回退 0
+ *   （既有控制流：损坏文案只在 JSON.parse 成功、值校验失败时命中）；
  * - 写入为同步 tmp+rename 原子写（createSseHub 的 dispose 同步补写依赖此同步性），
  *   失败只 warn 不抛。
  *
@@ -54,12 +55,14 @@ describe("(h) createSeqStore：load 续计数与回退语义", () => {
     expect(createSeqStore({ file, warn: makeWarn().warn }).load()).toBe(0);
   });
 
-  it("非法 JSON（解析失败）→ warn(读取失败) + 回退 0（迁出前的既有控制流：损坏文案只在值校验失败时命中）", () => {
+  it("非法 JSON（解析失败）→ warn「读取失败」+ 回退 0（既有控制流：损坏文案只在值校验失败时命中）", () => {
     writeFileSync(file, "{not json", "utf8");
     const log = makeWarn();
     expect(createSeqStore({ file, warn: log.warn }).load()).toBe(0);
     expect(log.warns.length).toBe(1);
     expect(log.warns[0].includes("seq 计数文件读取失败")).toBe(true);
+    // 逐字等价：告警文本就是 JSON.parse 的解析错误摘要，不含额外诊断前缀
+    expect(log.warns[0].startsWith("dsh-notifier: seq 计数文件读取失败，回退 0：")).toBe(true);
   });
 
   for (const [label, raw] of [
@@ -70,12 +73,13 @@ describe("(h) createSeqStore：load 续计数与回退语义", () => {
     ["布尔", "true"],
     ["对象", '{"seq":3}'],
   ] as const) {
-    it(`合法 JSON 但值非法（${label}）→ 判损坏并回退 0`, () => {
+    it(`合法 JSON 但值非法（${label}）→ warn「损坏」+ 回退 0`, () => {
       writeFileSync(file, raw, "utf8");
       const log = makeWarn();
       expect(createSeqStore({ file, warn: log.warn }).load()).toBe(0);
       expect(log.warns.length).toBe(1);
-      expect(log.warns[0].includes("读取失败")).toBe(true);
+      // 逐字等价：文案 + 文件路径，无额外诊断文本
+      expect(log.warns[0]).toBe(`dsh-notifier: seq 计数文件损坏，回退 0：${file}`);
     });
   }
 
