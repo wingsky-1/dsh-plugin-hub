@@ -401,11 +401,18 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
   - **导出面门禁（`scripts/gate/export-surface-snapshot.mjs`；#669 PR1 / #733 M0+M2a）**：
     `tsc --declaration` 产物是包对外契约的编译期镜像，固化为入库基线
     `scripts/data/<pkg>-export-surface.json`，重构前后零 diff 即机器证据。粒度两条：① 顶层
-    导出符号集（name + isType）——增删改导出符号都红；② **导出面符号的定义块**（只取名字在
-    包导出面的 `export declare ...` 块）——签名/泛型/联合改写即红。**可见度边界（#733 M2c R4
-    实测）**：`export interface` / `export type` 无 `declare` 关键字，进不了 ② 的提取器，
-    interface/type 体由 `packages/<pkg>/test/integration/consumer-types.test.ts` 的类型体锚
-    兜住；不在包导出面的域内符号两条粒度都不覆盖。
+    导出符号集（name + isType）——增删改导出符号都红；② **导出面符号的定义块**（名字在包导出
+    面的 `export declare ...` 块，按名比对文本）——被比对到的块，签名/泛型/联合改写即红。
+    **可见度边界（#733 M2c R4 + 独立复核对抗实测，四类，勿读作只有两类）**：
+    ① `export interface` / `export type` 无 `declare` 关键字，进不了 ② 的提取器，interface/
+    type 体由 `packages/<pkg>/test/integration/consumer-types.test.ts` 的类型体锚兜住；
+    ② 不在包导出面的域内符号不参与比对（实测四条门禁 + 包内测试全绿）；
+    ③ 导出面里两侧都无定义块的名字被直接跳过（100 个里 32 个，其中 4 个是值符号
+    `readBody`/`writeJson`/`errorMessage`/`isLoopbackRequest`，re-export 自 `shared/`）
+    ——其签名改动无任何判据覆盖；
+    ④ **同一导出名有多个定义块时只比对排序末块**（`declMapFor` 的 Map 后写覆盖）——实测
+    `apply` 的宿主入口签名改写红不了，改客户端签名才红。
+    ③④ 是判据缺陷而非设计边界，修复须另经评审（#733 M2c 复核结论）。
   - **新增导出准入（`export-surface-snapshot` 内的分类判据；#733 M2a-3.5）**：目标不变式是
     包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面，**当前只对「新增导出」强制**——新导出必须在
     `scripts/data/<pkg>-export-faces.json` 的 `faces` 显式登记三类面之一，未登记判红。

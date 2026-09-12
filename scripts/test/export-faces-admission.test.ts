@@ -174,7 +174,7 @@ test('端到端：模拟新增未登记导出（把一个存量符号移出 lega
   })
 })
 
-test('端到端 --verbose：声明块分列「当前/基线」，且仅当两者相等才允许称「与基线一致」（#733 M2c R4-2）', () => {
+test('端到端 --verbose：声明块分列「当前/基线」，且两侧不等时不得声称「与基线一致」（#733 M2c R4-2）', () => {
   const baseBlocks = JSON.parse(readFileSync(BASELINE, 'utf8')).declBlocks
   assert.equal(baseBlocks.length > 0, true, '基线声明块集必须非空（先断言集合非空）')
   const result = spawnSync(process.execPath, [SCRIPT, '--package', 'dsh-notifier', '--verbose'], { cwd: ROOT, encoding: 'utf8', timeout: 180000 })
@@ -185,12 +185,13 @@ test('端到端 --verbose：声明块分列「当前/基线」，且仅当两者
   assert.ok(m !== null, `计数格式不符：${line}`)
   // 「基线」计数必须真取自基线文件——把当前值打印两遍会在此判红。
   assert.equal(Number(m[2]), baseBlocks.length, `「基线」计数应等于基线文件的 declBlocks 条数（${baseBlocks.length}）：${line}`)
-  // 旧文案（`${surface.declBlocks.length} 个声明块与基线一致`）会在两侧计数不等时仍声称
-  // 「与基线一致」（实测基线 96 / 现网 105）；把声称与前件绑定，旧文案即判红。
-  assert.equal(
-    line.includes('与基线一致'),
-    Number(m[1]) === Number(m[2]),
-    `「与基线一致」只能出现在两个计数相等时（当前 ${m[1]} / 基线 ${m[2]}）：${line}`,
-  )
-  assert.equal(line.includes('比对只覆盖导出面符号的定义块'), true, `必须写明比对口径：${line}`)
+  // 旧文案（`${surface.declBlocks.length} 个声明块与基线一致`）的缺陷是**单向**的：它把
+  // 「当前值」说成与基线一致，无论两侧计数是否相等。故判据也取单向——**两侧不等时不得
+  // 出现该短语**。写成双向等价（`includes(...) === (m1===m2)`）会埋一条假红地雷：实现
+  // 永不再打印该短语，一旦基线被合法刷新到与现状相等（M2b 的待决事项），右式为 true 而
+  // 左式恒 false → 门禁正确却判红，最可能的"修法"是把断言改弱（#733 M2c 复核实测）。
+  if (Number(m[1]) !== Number(m[2])) {
+    assert.equal(line.includes('与基线一致'), false, `两侧计数不等时不得声称「与基线一致」：${line}`)
+  }
+  assert.equal(line.includes('不等于判据实际比对的块集合'), true, `必须写明该计数与比对块集合的关系：${line}`)
 })
