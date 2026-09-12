@@ -119,12 +119,12 @@ declare module "@deepseek-ai/cordis" {
      * 的声明闭包里才会进产物 `lib/index.d.ts`。写在 sdk 域里，消费方按包名导入时
      * `ctx["wingsky.notifier"]` 就是一个不存在的属性。
      *
-     * 键必须是字面量——TS 的接口成员名不能是变量，所以它与 sdk 域的 `NOTIFIER_SERVICE`
-     * 是同一件事的两处写法。两者不一致时，`bindHost` 里那次 `ctx.provide` 会编译失败，
-     * 那是这条链上唯一的机器校验：服务名写错了不会有任何运行时报错，只会让消费方的
-     * `ctx.get` 拿到空。
+     * 键用常量而不是字面量：接口的计算属性名接受**字面量类型**，而 `NOTIFIER_SERVICE`
+     * 在 `as const` 下正是字面量类型，于是服务名只有一个物理定义（在 sdk 域，ABI 的定义
+     * 处），这里不再抄一份。抄一份的后果不是编译不过——它同样合法——而是改名时漏改一处，
+     * 症状是消费方 `ctx.get` 拿到空，一个只在别的插件里才看得见的失败。
      */
-    "wingsky.notifier": NotifierService;
+    [sdkApi.NOTIFIER_SERVICE]: NotifierService;
   }
   interface Events {
     "notifier/frame"(payload: OutgoingFrame): void;
@@ -181,18 +181,24 @@ function bindHost(ctx: Context): HostPort {
         ctx.emit("notifier/frame", payload);
       },
       // 转发而不是把 ctx 递出去：域要的是「订阅帧」，不是「订阅任意事件」。
-      onFrame: (handler) => ctx.on("notifier/frame", (payload) => {
-        guard(() => handler(payload));
-      }),
+      onFrame: (handler) =>
+        ctx.on("notifier/frame", (payload) => {
+          guard(() => handler(payload));
+        }),
     },
     register: (route) => ctx.webServer.register(route),
     // 名字取自 sdk 域（ABI 的定义处），组合根不自己写一遍字面量。
     //
-    // 显式给类型参数不是啰嗦：`ctx.provide` 的第二个重载是 `(name: string, value?: any)`，
-    // 它会把任意字符串都兜住——少了这个类型参数，这里的名字与上面声明合并的键不一致也能
-    // 编译通过，而症状是消费方 `ctx.get` 拿到空，一个只在别的插件里才看得见的失败。
+    // 显式给类型参数：上面声明合并的键引用同一个常量，两者结构上不可能不一致，所以这行
+    // 现在是一道保险——谁把那里退回硬编码字面量，少了它就变成静默失败：`ctx.provide` 的
+    // 第二个重载 `(name: string, value?: any)` 会兜住任意字符串，编译通过、服务却挂在
+    // 没人认识的名字上。
     expose: {
-      provide: (service) => ctx.provide<typeof sdkApi.NOTIFIER_SERVICE>(sdkApi.NOTIFIER_SERVICE, service),
+      provide: (service) =>
+        ctx.provide<typeof sdkApi.NOTIFIER_SERVICE>(
+          sdkApi.NOTIFIER_SERVICE,
+          service,
+        ),
     },
     events: {
       // 宿主的审批事件是 waterfall：监听者要么自己裁决、要么调 next() 把判定交还。
@@ -258,7 +264,8 @@ function bindHost(ctx: Context): HostPort {
           "agent/error",
           (payload) => {
             const failure = payload.error;
-            const reason = failure instanceof Error ? failure.message : String(failure);
+            const reason =
+              failure instanceof Error ? failure.message : String(failure);
             guard(() => handler(payload.agent.id, payload.turn, reason));
           },
           GLOBAL_LISTEN,
@@ -273,7 +280,10 @@ function bindHost(ctx: Context): HostPort {
  * 每一步的入参都来自上一步的产出或 `host`——装配顺序即依赖顺序，顺序错了就是
  * 运行期空值。
  */
-function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void> {
+function assemble(
+  host: HostPort,
+  config: NotifierApplyConfig,
+): Array<() => void> {
   const disposers: Array<() => void> = [];
 
   // 0. 存储形态迁移：动的是磁盘，必须早于任何读文件的域。
@@ -305,7 +315,11 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
 
   // 5. 对外 ABI：把服务面挂上上下文。排在 api 之前——设置端点要读它的种类清单，而 api
   //    域是最后装的；服务面自己不依赖任何后装的域。
-  sdkApi.installSdk({ expose: host.expose, config: configApi, pipeline: pipelineApi });
+  sdkApi.installSdk({
+    expose: host.expose,
+    config: configApi,
+    pipeline: pipelineApi,
+  });
   disposers.push(sdkApi.releaseSdk);
 
   // 6. 浏览器出口：最后装——它读各域的现值，装早了页面第一次请求就会拿到半成品。
