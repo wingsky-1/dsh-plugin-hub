@@ -126,6 +126,20 @@ test('loadExportFaces：字段缺失时按空集合读取（由 checkExportFaces
   })
 })
 
+test('已知边界（如实登记）：新符号塞进 legacy 可绕过准入判据——本判据只让「静默增长」不可能', () => {
+  // 为什么要有这条「断言放行」的用例：docs/DEVELOPMENT.md 的准入段与
+  // scripts/lib/export-faces-lib.ts 的注释都声称「legacy 上没有阻止其增大的机器判据」。
+  // 该声称若只写在散文里，就会随判据演化而反向（#733 M2c 复核实测：规范文档一度写成
+  // 「legacy 只许随符号退役而缩小」，与实现相反）。把它钉成机器事实后，判据一旦收紧
+  // （例如让 legacy 对齐冻结清单），本用例必红并点名要同步的两处文本。
+  const problems = checkExportFaces({ exports: ['A', 'B', 'brandNew'], faces: {}, legacy: ['A', 'B', 'brandNew'] })
+  assert.deepEqual(
+    problems,
+    [],
+    '若变红说明判据已收紧为「legacy 只许缩小」——请同步 docs/DEVELOPMENT.md 的导出准入段与 export-faces-lib.ts 的存量口径注释',
+  )
+})
+
 // ---------------------------------------------------------------- 2) 真实仓库登记文件自洽
 
 test('真实登记文件：package 匹配且覆盖基线全部导出符号', () => {
@@ -158,4 +172,26 @@ test('端到端：模拟新增未登记导出（把一个存量符号移出 lega
     // 判红必须来自分类登记判据，而不是被基线比对的红掩盖（两条判据各自独立发声）
     assert.match(result.stdout, /\[导出面分类登记\]/)
   })
+})
+
+test('端到端 --verbose：声明块分列「当前/基线」，且两侧不等时不得声称「与基线一致」（#733 M2c R4-2）', () => {
+  const baseBlocks = JSON.parse(readFileSync(BASELINE, 'utf8')).declBlocks
+  assert.equal(baseBlocks.length > 0, true, '基线声明块集必须非空（先断言集合非空）')
+  const result = spawnSync(process.execPath, [SCRIPT, '--package', 'dsh-notifier', '--verbose'], { cwd: ROOT, encoding: 'utf8', timeout: 180000 })
+  assert.equal(result.status, 0, `期望 exit 0，实际 ${result.status}\n${result.stdout}\n${result.stderr}`)
+  const line = result.stdout.split('\n').find((l) => l.includes('声明块 当前'))
+  assert.ok(line !== undefined, `verbose 应分列「当前 / 基线」两个声明块计数，实际输出：\n${result.stdout}`)
+  const m = /声明块 当前 (\d+) \/ 基线 (\d+)/.exec(line)
+  assert.ok(m !== null, `计数格式不符：${line}`)
+  // 「基线」计数必须真取自基线文件——把当前值打印两遍会在此判红。
+  assert.equal(Number(m[2]), baseBlocks.length, `「基线」计数应等于基线文件的 declBlocks 条数（${baseBlocks.length}）：${line}`)
+  // 旧文案（`${surface.declBlocks.length} 个声明块与基线一致`）的缺陷是**单向**的：它把
+  // 「当前值」说成与基线一致，无论两侧计数是否相等。故判据也取单向——**两侧不等时不得
+  // 出现该短语**。写成双向等价（`includes(...) === (m1===m2)`）会埋一条假红地雷：实现
+  // 永不再打印该短语，一旦基线被合法刷新到与现状相等（M2b 的待决事项），右式为 true 而
+  // 左式恒 false → 门禁正确却判红，最可能的"修法"是把断言改弱（#733 M2c 复核实测）。
+  if (Number(m[1]) !== Number(m[2])) {
+    assert.equal(line.includes('与基线一致'), false, `两侧计数不等时不得声称「与基线一致」：${line}`)
+  }
+  assert.equal(line.includes('不等于判据实际比对的块集合'), true, `必须写明该计数与比对块集合的关系：${line}`)
 })

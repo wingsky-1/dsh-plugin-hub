@@ -110,7 +110,11 @@ export interface NotifierService {
   confirmKind(kind: string, confirmed: boolean): void;
   /** 查询动态 kind 注册与确认态（设置页渲染）。 */
   listKinds(): Array<{ id: string; label: string; confirmed: boolean }>;
-  /** 注册一个插件贡献频道（MVP：进注册表待用户开启，未启用不投递）。 */
+  /**
+   * 注册一个插件贡献频道：**配置层注册面**，只登记、不接线投递（D11：行为保持）。
+   * 注册表不被裁决与投递解析消费——登记的频道既不入投递池，`send` 也不会路由到它；
+   * 频道注册的启用模型属 v-next，改述不改变任何运行时行为。
+   */
   registerChannel(ch: NotifyChannel): void;
   /** 通用发送入口：快速返回受理结果，投递终态经落盘/事件可见。 */
   send(req: NotifyRequest): Promise<NotifyResult[]>;
@@ -152,7 +156,14 @@ export interface NotifierServiceDeps {
   play(target: ResolvedTarget, payload: DeliverPayload): void | Promise<void>;
 }
 
-/** 投递终态事件负载（'wingsky-notify/sent'；旁观插件订阅面，铁律 1 的事件半边）。 */
+/**
+ * 投递终态事件负载（'wingsky-notify/sent'；旁观插件订阅面，铁律 1 的事件半边）。
+ *
+ * **有意不进包导出面**（域内公共类型，非包 ABI —— #733 M2c R2）：消费方不需要命名它，
+ * 包入口把 `Events` 合并声明注入宿主后，`ctx.on("wingsky-notify/sent", …)` 的回调形参
+ * 就是本类型（test/integration/consumer-product-face.ts 正向锚）。再导出一个同名符号，
+ * 只会让「事件签名」与「包导出面」变成两份必须同步的事实源，而收益为 0。
+ */
 export interface NotifySentEvent {
   kind: string;
   /** 消息标题（模板渲染后）。 */

@@ -6,7 +6,7 @@
 
 | 层 | 职责（做什么 / 不做什么） | 现状代码映射 | 关键证据 |
 |---|---|---|---|
-| SDK 契约层 | 对外插件稳定 API：registerKind/confirmKind/listKinds/send；sent 订阅 | service.ts:440-505 + service.d.ts + index.ts:230-232 | registerKind 防冒认（':' 前缀且非内置）service.ts:446-453 |
+| SDK 契约层 | 对外插件稳定 API：registerKind/confirmKind/listKinds/send；sent 订阅 | service.ts:440-505 + ~~service.d.ts~~（**已由 #733 M2a 删除**，声明合并现写在 `src/index.ts`）+ index.ts:230-232（**本表行号为 v2 草案时点，重构后已整体失效；以 #733 与现状源码为准**） | registerKind 防冒认（':' 前缀且非内置）service.ts:446-453 |
 | API 层 | 前端 REST/SSE：config/history/status/test/kinds/events/health；loopback 围栏 | server.ts:444-726 + shared/loopback | 7 路由注册 server.ts:725；guardLoopbackMethod 每路由 |
 | 配置存储层 | 配置模型/校验/掩码/迁移/DSH_HOME；被 SDK 扩展可用 kind 范围；供 API/判定经接口读取 | config.ts + settings-bridge.ts + settings.ts + migrate.ts | settings-bridge 状态镜像/读写通道 settings-bridge.ts:24-119 |
 | ① 事件监听层 | 订阅宿主事件 → 提取详情/状态机/聚合 → 生成通知请求 | event-handlers.ts + aggregate.ts + index.ts ctx.on | 7 ctx.on global index.ts:256-266 |

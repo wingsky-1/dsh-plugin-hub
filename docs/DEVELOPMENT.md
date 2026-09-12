@@ -387,6 +387,48 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 
 - `pnpm contract`（contract-check）：load id === 包名、`dsh.client ⇒ exports["./client"]`、
   `src/client/index.ts ⇒ lib/client.js` 产物、arrive 可解析、`exports.apply/inject` 装配。
+  下列两条门禁同属本段执行（**不新增 workflow**，执法点唯一）：
+  - **依赖图门禁（`scripts/gate/verify-dir-imports.mjs`；#690 S0 / #733 M0）**：模块按
+    **叶子粒度**（递归含 `interface.ts` 的目录，分组层透明）划分，跨模块引用只能走目标
+    模块的 `interface.ts`（入口）或 `deps.ts`（出口）。`scripts/data/dir-imports-baseline.json`
+    是单调基线，计数分两组：**结构型**（模块数/源文件数/边数/引用数等规模计数）随新增文件
+    与目录合法上升，由 `--write-baseline` 登记；**质量型**（`leafModuleCycles` /
+    `fileCycles` / `raLegacy*` / `implToOtherImpl` / `missingInterface` / `directImpl` 与
+    `uncoveredSrcFiles` 清单）只许降不许升，**`--write-baseline` 不更新它们**——上升只能改
+    代码。另含 `src ⊆ ∪mutate ∪ ∪excludes` 全覆盖断言（新增 src 未被变异面或排除面覆盖即红）。
+    死声明判据为**值面判死、类型面豁免**：`deps.ts` 的 `import type` 是声明即完整性，不参与
+    死声明计算（#733 M0a）。**可见度边界**：只管依赖方向与环路，不管符号签名。
+  - **导出面门禁（`scripts/gate/export-surface-snapshot.mjs`；#669 PR1 / #733 M0+M2a）**：
+    `tsc --declaration` 产物是包对外契约的编译期镜像，固化为入库基线
+    `scripts/data/<pkg>-export-surface.json`，重构前后零 diff 即机器证据。粒度两条：① 顶层
+    导出符号集（name + isType）——增删改导出符号都红；② **导出面符号的定义块**（名字在包导出
+    面的 `export declare ...` 块，按名比对文本）——被比对到的块，签名/泛型/联合改写即红。
+    **可见度边界（#733 M2c R4 + 独立复核对抗实测，四类，勿读作只有两类）**：
+    ① `export interface` / `export type` 无 `declare` 关键字，进不了 ② 的提取器，interface/
+    type 体由 `packages/<pkg>/test/integration/consumer-types.test.ts` 的类型体锚兜住；
+    ② 不在包导出面的域内符号不参与比对（实测四条门禁 + 包内测试全绿）；
+    ③ 导出面里两侧都无定义块的名字被直接跳过（100 个里 32 个，其中 4 个是值符号
+    `readBody`/`writeJson`/`errorMessage`/`isLoopbackRequest`，re-export 自 `shared/`）
+    ——其签名改动无任何判据覆盖；
+    ④ **同一导出名有多个定义块时只比对排序末块**（`declMapFor` 的 Map 后写覆盖）——实测
+    `apply` 的宿主入口签名改写红不了，改客户端签名才红。
+    ③④ 是判据缺陷而非设计边界，修复须另经评审（#733 M2c 复核结论）。
+  - **新增导出准入（`export-surface-snapshot` 内的分类判据；#733 M2a-3.5）**：目标不变式是
+    包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面，**当前只对「新增导出」强制**——新导出必须在
+    `scripts/data/<pkg>-export-faces.json` 的 `faces` 显式登记三类面之一，未登记判红。
+    **存量尚未分类**：dsh-notifier 实测 `faces = {}` / `legacy = 100`，100 个存量符号全走
+    `legacy` 白名单（`legacy` 不属三类面之一），存量分类（保留 / 移除清单）是 M2b 的一等
+    交付物，本阶段不预判。`legacy` 上**没有**机器判据阻止其增大：`checkExportFaces` 只强制
+    「无重复 / 条目必须仍在导出面 / 与 `faces` 互斥」，把新符号塞进 `legacy` 可绕过准入判据
+    ——那是一次显眼且可评审的登记文件改动，本判据的价值是让「静默增长」不可能（口径与
+    `scripts/lib/export-faces-lib.ts` 的注释同源，可用 `node --input-type=module -e` 直接复现）。
+    判据实现 `scripts/lib/export-faces-lib.ts` 被门禁与 fixture 自测复用（§9 禁止双轨）；
+    `--snapshot` 只写基线、不碰登记文件，故「更新基线」不会顺手把新符号变成合法导出。
+- **跨包类型可达闭包（`pnpm pack:check` 内；#733 M2a-3.1）**：源面声明了 cordis 声明合并
+  （`declare module "@deepseek-ai/cordis"`）⇒ 该合并必须落在 tarball 内 `lib/index.d.ts` 的
+  相对 import 闭包内。写在源 `.d.ts` 的合并不会被 emit，消费方按包名导入时服务面与事件面
+  全部失类型，而既有门禁都看不见（实证：`packages/dsh-notifier/src/service.d.ts`）；判据
+  实现 `scripts/lib/dts-cordis-merge-lib.ts`（含正反 fixture 自测）。
 - `assertClientSourceContract`（smoke-lib）：兼容三种产物形态（纯净 wrapper /
   React externals / legacy），断言 `"use strict"`、契约外壳、Symbol.toStringTag、
   `factory: function(`、load 注册。

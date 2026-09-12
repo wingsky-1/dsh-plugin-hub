@@ -10,7 +10,7 @@
 - 定位：审批/完成/错误事件通知 + 通知中心（浏览器/系统双通道 + Bark/webhook 出站频道 + 免打扰 + 动态 kind 服务）
 - 宿主端 src/ 16 个 TS/PS1 文件（共 ~4.3k 行）；客户端 src/client 4 文件（index.tsx 2525 行为主）；test/ 16 个测试文件 + helpers/smoke（~6.2k 行）
 - 挂载：cordis.patch.yml insert（patch id `ui-dsh-notifier`，name 包名）；`inject: ["webServer"]`；客户端 `dsh.client.inject: ["@deepseek-ai/dsh-client-connection"]`、platform web
-- 服务/事件对外契约：`provide("wingsky.notifier")` + `wingsky-notify/sent` 事件（service.d.ts）；消费方：dsh-provider-usage（registerKind + send）
+- 服务/事件对外契约：`provide("wingsky.notifier")` + `wingsky-notify/sent` 事件（~~service.d.ts~~ 已由 #733 M2a 删除，声明合并现写在 `src/index.ts`）；消费方：dsh-provider-usage（registerKind + send）
 - 官方类型层：@deepseek-ai/{dsh-session,dsh-agent,dsh-user-approval,dsh-session-title,dsh-host-webserver} 0.1.2-rc.1，仅 import type
 
 ## 1. 域与功能特性清单（F 编号）
@@ -59,7 +59,7 @@
 - D7 fail-soft 逐频道投递 + 受理与终态解耦（铁律 1）+ status/sent 上报：service.ts:278-318
 - D8 每通道声音 × 弹窗组合（browser/system 分派 dispatchBrowser/dispatchSystem + 只响不弹 + 帧级 sound）：service.ts:324-367、config.ts:190-209
 - D9 SSE 帧契约（notify/ping、seq、sound、playOnly）：service.ts:329-353、server.ts:49-121
-- D10 跨插件消费面（dsh-provider-usage registerKind/send、sent 事件旁观订阅）：service.d.ts、provider-usage apply.ts:349-358
+- D10 跨插件消费面（dsh-provider-usage registerKind/send、sent 事件旁观订阅）：~~service.d.ts~~（#733 M2a 删除，见 `src/index.ts` 的声明合并）、provider-usage apply.ts:349-358
 
 ### 域 E：HTTP 路由（对外接口面）
 - E1 七路由注册 + loopback 围栏 + 方法白名单（403/405）：server.ts:444-726、shared/loopback
@@ -113,7 +113,7 @@
 ### 域 J：跨模块契约/共享层
 - J1 共享 sse-hub（表/心跳/stalled/maxAge/上限淘汰/evictStats/connHealth）：shared/sse-hub.js（server.ts:80-121 包装）
 - J2 shared 工具面（loopback/host-utils/ensure-style/settings-namespace/dsh-home）：shared/*.js、*.d.ts
-- J3 wingsky.notifier 服务 + sent 事件声明合并：service.d.ts:19-28
+- J3 wingsky.notifier 服务 + sent 事件声明合并：~~service.d.ts:19-28~~（#733 M2a 起写在 `src/index.ts`；产物面判据见 `test/integration/consumer-product-face.ts`）
 - J4 平台命令/音色映射常量跨端同源复制（客户端 SOUND_IDS 与宿主 SOUND_IDS 分离）：client/index.tsx:207-210、config.ts:179-185
 
 ## 2. 需求规则矩阵（每域五行：happy / 边界 / 异常 / 并发竞态 / 安全）
@@ -217,7 +217,7 @@
 
 ## 5. 覆盖结论（G1 呈现用摘要）
 
-- 已全读：宿主 src 全部 16 文件（index/config/quiet-hours/message/history/aggregate/status/event-handlers/service/settings/settings-bridge/migrate/server/channel-bark/channel-webhook/outbound/toast.ps1/service.d.ts）；客户端 index.tsx 全 2525 行 + locales/style；测试 16 文件 + helpers + smoke + 4 份 stryker conf + topology/gauntlet/ci/observe；共享层 sse-hub/host-utils/loopback/settings-namespace/dsh-home/ensure-style
+- 已全读：宿主 src 全部 16 文件（index/config/quiet-hours/message/history/aggregate/status/event-handlers/service/settings/settings-bridge/migrate/server/channel-bark/channel-webhook/outbound/toast.ps1/service.d.ts（**该文件已由 #733 M2a 删除**））；客户端 index.tsx 全 2525 行 + locales/style；测试 16 文件 + helpers + smoke + 4 份 stryker conf + topology/gauntlet/ci/observe；共享层 sse-hub/host-utils/loopback/settings-namespace/dsh-home/ensure-style
 - 交叉验证：测试审计子代理 + 客户端评审子代理独立交付；关键弱项（P1-1/P1-2/P1-3/P1-4/P2-1/P2-2/P2-4/P2-5）经本人二次核实，P2-4 结论已修正
 - 已知盲区（本阶段诚实声明）：真实浏览器 UI 行为（明暗/响应式/多标签/音频）需 dsh-verify-isolated 隔离实测，不在本静态梳理范围；宿主官方 rc 事件语义以类型层为准（agent/session/user-approval 事件签名已核对）；Windows/macOS 真机系统通知链需目标平台实测
 
@@ -245,7 +245,7 @@
 | B-3 | 重试/并发门从 channel 内部上移框架（pipeline/deliver） | 行为对等 | bark 4xx 不重试/网络 5xx 重试 ×2/并发 ≤2 排队/门跨配置变更延续（channel-bark.ts:40-48/:110-139 + outbound.ts:13-22）；webhook 零重试（retry 缺省=关）；退避 1s/2s 线性；超时留 channel 侧 |
 | B-4 | sanitizeContent 默认 true：SDK send 动态 kind body 从「调用方负责脱敏」变「中心兜底统一脱敏」 | 安全增强 | service.ts:44 注释 + :487-503 直通路径；`sanitizeContent=false` = 通知与历史均明文（README 安全模型明示） |
 | B-5 | disabled（enabled=false）不落史保持 | 保持（D15） | service.ts:396-397 直接 skipped 不落史；「suppressed 统一落史」仅覆盖 kind-pending/quiet |
-| B-6 | registerChannel 定位文档化：配置层注册面 | 保持 ABI | D11：行为不变（仍不接线投递），语义从「注册频道待启用」改述为「配置层注册面」 |
+| B-6 | registerChannel 定位文档化：配置层注册面 | 保持 ABI | D11：行为不变（仍不接线投递），语义从「注册频道待启用」改述为「配置层注册面」。**#733 M2c R3a 已落地**：`src/sdk/interface.ts` 的 `registerChannel` JSDoc + `src/sdk/service.ts:98` 实现处；注册表零读取点（只 `set` 无 `get`）是该口径的机器可核事实 |
 | B-7 | KIND_SEVERITY 移 text/ 域 | 无运行时变化 | 导出面 re-export 保持（index.ts:131），仅文件归属迁移 |
 | B-8 | 单刻快照行为（B2）的事件源级补充：错误合并窗口/聚合窗口不受快照影响 | 保持 | 事件层状态机（errorMerge/agentStates/batch）沿用现状语义，不随重构改动 |
 | B-9 | send() 动态 kind 与 sendKind 统一过裁决（enabled→免打扰→路由） | 行为变更（D24） | 现状动态 kind 路径绕过 enabled/免打扰（sdk/service.ts:165-197）；统一后 enabled=false/免打扰期间动态 kind 从「照常投递」变「skipped」——先红测锁定现状再改，登记用例 N-25 |
@@ -255,7 +255,7 @@
 
 - **PR1 机械搬家 + interface.ts 落地 + stryker 路径更新**：零行为变更；导出面快照（tsc --declaration 基线 diff）；全门禁（build/test/contract/pack:check/typecheck）。
 - **PR2 行为重构**：adjudicate/deliver 拆分 + current() 快照 + 播放决议快照化；重试/并发门上移（B-3 对等清单）；脱敏统一时点 + sanitizeContent（B-1/B-4）；ConfigPort/RouteDeps 契约（L8-2/5/6）；每步对齐规则矩阵并补 §6.2 用例。
-- **PR3 注释清理 + 门禁 lint 落地**：interface import 检查 + 环路检测；消费方类型编译用例（service.d.ts 改指 sdk/interface.ts）。
+- **PR3 注释清理 + 门禁 lint 落地**：interface import 检查 + 环路检测；消费方类型编译用例（~~service.d.ts 改指 sdk/interface.ts~~ 已改为声明合并直接写进 `src/index.ts` + `consumer-product-face.ts` 产物面夹具，#733 M2a）。
 
 ### 6.4 mutation/stryker 冲击面（架构师实证，已核实）
 
@@ -289,7 +289,7 @@
 | S3-1 | L8-1 ChannelCapabilities titleMaxLen<=0 注释 vs 实现（标题并入正文缺失） | service.ts:73 vs :282 | PR2（mergeTitleIntoBody） |
 | S3-2 | L8-2 confirmKind 双语义（fire-and-forget vs CAS 重试） | service.ts:155 / settings-bridge.ts:96-119 | PR2（ConfigPort.confirmKind） |
 | S3-3 | L8-3 NotifyRequest.data 字段悬空 | service.ts:46-48 | PR2 注明「MVP 未启用」或 v-next |
-| S3-4 | L8-4 registerChannel 悬空→**D11 已裁定配置层注册面** | service.ts:467-470 | 文档化（行为保持） |
+| S3-4 | L8-4 registerChannel 悬空→**D11 已裁定配置层注册面** | `src/sdk/service.ts:98`（原引用 `service.ts:467-470` 随重构失效——该文件现 141 行）；`src/sdk/interface.ts` 同名 JSDoc | **#733 M2c R3a 已落地**（纯文档化，行为保持；登记 + 一次性 warn 需另取 approved） |
 | S3-5 | L8-5 expectedRevision 非整数静默忽略 | server.ts:387-388 | PR2（显式拒 400 或文档化） |
 | S3-6 | L8-6 history DELETE / test 无错误映射 | server.ts:716-719 | PR2 |
 | S3-7 | P1-2 频道状态行无轮询（README:286「实时可见」口径弱于实现） | index.tsx:865-869/:900/:1131 | PR2（D20 已定改 README 口径，T2-6 落地） |
@@ -386,11 +386,11 @@
 
 | 项 | 产出 | 状态 |
 |---|---|---|
-| 目录树搬家 | 16 平铺 → 8 域 42 个宿主 TS（9 interface.ts）：config/10、text/4、channels/6、server/4、pipeline/3、sdk/2、events/4、stores/3 + 根 index.ts/service.d.ts | ✅ |
+| 目录树搬家 | 16 平铺 → 8 域（**v2 时点计数**：42 个宿主 TS / 9 interface.ts——勿作现状引用）：config/10、text/4、channels/6、server/4、pipeline/3、sdk/2、events/4、stores/3 + 根 index.ts/~~service.d.ts~~（**#733 M2a 已删除该文件**；**当前实测**：`src/` 下 42 个 TS = 宿主端 38（含根 `index.ts` 与 8 个 `interface.ts`）+ `src/client` 4） | ✅ |
 | interface.ts 门面 | 每域 interface.ts 收口（类型 + 工厂 re-export）；verify-dir-imports PASS（42 文件/8 目录，跨目录引用全走 interface.ts；contract 接入 --package dsh-notifier） | ✅ |
 | 导出面快照 | scripts/gate/export-surface-snapshot.mjs（符号集 + 导出符号定义块双保险，路径/语句组织免疫）；基线 scripts/data/dsh-notifier-export-surface.json 由 git archive 重构前 src 生成；重构后零 diff | ✅ |
 | service 拆分 | sdk/service.ts 编排（≈330 行）+ pipeline/adjudicate.ts（isBuiltinKind/isKindConfirmed/resolveRoutes）+ pipeline/deliver.ts（truncateCodePoints/deliverToChannel）；函数体逐行等价，行为由全套测试锁定（≤400 行纪律达标） | ✅ |
-| 内置频道 | channels/browser.ts + channels/system.ts（M8 注入面 createBrowserChannel({sse,current})/createSystemChannel({system,current})；resolveSoundSetting 回落语义逐字保留）；sdk→channels 值边为 PR1 过渡（§4 图注），PR2 改注入消除 | ✅ |
+| 内置频道 | channels/browser.ts + channels/system.ts（PR1 时注入面 createBrowserChannel({sse,current})/createSystemChannel({system,current})——**#733 M1 F3 已收敛为无参工厂**；resolveSoundSetting 回落语义逐字保留）；sdk→channels 值边为 PR1 过渡（§4 图注），PR2 改注入消除 | ✅ |
 | mutation 更新 | mutate 路径全改新树；testFiles 9→16（补 e2e-interrupt/unit-sse-hub/unit-webhook/real-context/service-contract/client-contract/client-style，S3-31）；message 段 → text 三文件重定（S3-32）；gen-stryker-conf 26 份重生成 --check 过 | ✅ |
 | 新增文件入变异面决策 | 暂不入面（PR1 纯机械搬动零行为变更）；PR2 按域重划段（S3-30/N-24）纳入核心状态机 adjudicate/deliver/event-handlers；interface.ts 纯 re-export 一律不入 | 决策 |
 | L1 补测 N-4/N-5/N-6 | unit-stores（写队列原子写/滚动/按天/debounce/64 上限/冷启动）、unit-settings-bridge（attach/降级/CAS 冲突重试 ≤2/耗尽 reject）、unit-aggregate（首条即时/窗口聚合/kind 切换/dispose）；均直测 src 域 interface.ts（§11.2-1；Node24 strip-types） | ✅ |
@@ -409,7 +409,7 @@
 - **D20**：客户端口径诚实化——S3-7 频道状态行改 README 口径（「加载/测试后刷新」）；S3-15 stale 路由文案改「stale 已跳过」；均不做功能增强。
 - **D21**：客户端低优先级修复取舍——PR3 只做 C3-2（409 横幅残留）与 C3-7（错误文案）；C3-3/4/5/6 登记 backlog 延迟。（**PR2 T2-6 复核**：C3-4（S3-16 fetchStatus 失败清空状态行）与 C3-5（S3-17 showBanner kind 未转义选择器）成本极低（≤5 行），随 T2-6 顺手落地——不推翻 D21 的 backlog 决定，属「有余量顺手做」；C3-3 由 D20 裁定改口径；C3-6（S3-18 writable=false 保存按钮未禁用）保持 backlog。）
 - **D22（PR2 动工前，R-6 mini 决策，用户拍板）**：S3-9 seq 归零修复选**选项 A 服务端持久化**——seq 计数器持久化（复用 stores/status.ts 写队列+tmp+rename 原子写范式，500ms 防抖 + dispose 同步落盘）；客户端零改动、D9 帧契约/客户端 ABI 零破坏、旧客户端免升级同步受益。选项 B（客户端回退检测）结构性否决：重启后 k>lastSeq 时数值比较检测不到（情形 2）+ 多标签页丢帧不一致。备选 A'（epoch 广播）不采纳（需客户端+服务端同步升级）。TDD 5 用例 + N-22 锁定（见评审记录）。
-- **D23（PR2 动工前，T2-1 播放决议消费链路，用户拍板）**：采纳**DeliverDeps 增 play(target, payload) 注入**（index.ts 装配：browser→sse.broadcast(buildBrowserFrame(payload,spec))、system→system.notify(spec.pop,spec.sound,…)）——spec 值传递、共享实例零状态、并发安全、ABI/导出面不动；内置频道工厂签名收敛为 createBrowserChannel({sse})/createSystemChannel({system})（去 current，消除 sdk→channels 值边）。
+- **D23（PR2 动工前，T2-1 播放决议消费链路，用户拍板）**：采纳**DeliverDeps 增 play(target, payload) 注入**（index.ts 装配：browser→sse.broadcast(buildBrowserFrame(payload,spec))、system→system.notify(spec.pop,spec.sound,…)）——spec 值传递、共享实例零状态、并发安全、ABI/导出面不动；内置频道工厂签名收敛为 createBrowserChannel({sse})/createSystemChannel({system})（去 current，消除 sdk→channels 值边）。（**#733 M1 F3 再进一步**：注入参数整体删除，现为 `createBrowserChannel()` / `createSystemChannel()`——F3 原文要求的是窄端口 `FrameSink`/`SystemSink`，实际以「直接删边」达成零边，偏差已回填 #733。）
 - **D24（PR2 动工前，T2-1 send 动态 kind 统一，用户拍板）**：send() 动态 kind 路径与 sendKind 统一过裁决（enabled→免打扰→路由），登记行为变更 **B-9**；现状绕过 enabled/免打扰的行为（sdk/service.ts:165-197）先红测锁定再改。
 
 **隐患登记表（R-x，重构全过程风险与缓解）**：

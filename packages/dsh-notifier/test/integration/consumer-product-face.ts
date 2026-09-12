@@ -48,6 +48,21 @@ type _SentEventSignature = Expect<Equal<Events["wingsky-notify/sent"], (payload:
 // 正向枚举断言（不写「不存在某 key」的反向式）：本包注入的 Events key 恰好这一个。
 type _MergedEventKeys = Expect<Equal<Extract<keyof Events, `wingsky-notify/${string}`>, "wingsky-notify/sent">>;
 
+// ---------------------------------------------------------------- 反向锚：NotifySentEvent 不进包导出面
+// 上一条正向锚证明「载荷类型经合并签名可达」，这一条证明「可达性不靠包导出面」——
+// src/sdk/interface.ts 已写明它有意不导出（#733 M2c R2）。
+// 形态有两轮实测依据：
+//  1. `Equal<Extract<keyof typeof NotifierPkg, "NotifySentEvent">, never>` 是**假绿**——
+//     `keyof typeof <命名空间>` 只枚举**值面**，把 `export type { NotifySentEvent }` 加进
+//     src/index.ts 后该断言实测仍 exit=0；
+//  2. 按名 `import type` 形态能红，但依赖 `noUnusedLocals` 关闭——该选项一旦开启，「未使用
+//     的导入」会占用 @ts-expect-error，锚退化为恒绿（#733 M2c 复核实测）。
+// 故改用**类型位置**探测，且**导出**该别名：导出声明不受 noUnusedLocals 约束，指令只在
+// 「成员存在」时才成为未使用——成员不存在 → TS2694 被抑制；成员一旦被导出 → 无错可抑 →
+// TS2578「未使用指令」→ 编译硬失败。
+// @ts-expect-error NotifySentEvent 有意不进包导出面：包命名空间里不该有这个成员
+export type _ProbeSentEventMustNotResolve = import("@wingsky-1/dsh-notifier").NotifySentEvent;
+
 // ---------------------------------------------------------------- 合并面：宿主 Context
 type _ServiceFace = Expect<Equal<Context["wingsky.notifier"], NotifierService>>;
 type _MergedContextKeys = Expect<Equal<Extract<keyof Context, "wingsky.notifier">, "wingsky.notifier">>;
