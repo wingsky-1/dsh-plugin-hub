@@ -1,15 +1,9 @@
 /**
- * dsh-notifier events 域 —— 订阅宿主事件并把翻译结果送出去。
- *
- * 本块只做搬运：订阅、转交翻译、把产出的请求递给下游。判断在 `../translate/`，
- * 下游是装配期接上的能力（见 `../../deps.ts`）——它自己不留任何决定。
- *
- * 状态是实例字段：订阅句柄。类可以被实例化多次，但域只装配一个——「只订阅一次」
- * 靠契约层不导出实例来保证，而不是靠把状态藏进闭包让别人够不着。
- *
- * 依赖方向：只引用本目录、`../translate/` 与 `../../deps.ts`，不引用 `interface.ts`。
+ * dsh-notifier events 域 —— 订阅宿主事件、转交翻译、把请求递给下游。
+ * 本块只做搬运不含判断；状态机的装配与卸载也在这里成对发生。
  */
 import type { EventsDeps, PipelinePort } from "../../deps.ts";
+import { agentStates } from "../state/index.ts";
 import {
   translateAgentDisposed,
   translateAgentError,
@@ -28,15 +22,11 @@ class EventListener {
   /** 退订句柄；卸载期逐个调用。 */
   private readonly releases: Array<() => void> = [];
 
-  /**
-   * 装配：订阅宿主事件。
-   *
-   * 不交出释放句柄：摘订阅是本域自己的动作（`release`），由契约层在卸载期调用。
-   * 把闭包递出去，等于让「谁负责摘干净」这件事散到调用方手里。
-   */
+  /** 装配：装状态机，再订阅宿主事件。 */
   install(deps: EventsDeps): void {
     if (this.installed) throw new Error("dsh-notifier: events 域只能装配一次");
     this.installed = true;
+    agentStates.install({ logger: deps.logger, agents: deps.agents });
     const { events: port, pipeline } = deps;
     this.releases.push(
       port.onApprovalRequest((request) => forward(pipeline, translateApproval(request))),
@@ -53,12 +43,12 @@ class EventListener {
     );
   }
 
-  /** 摘除全部订阅。重复调用无害——卸载链可能走到不止一次。 */
+  /** 摘除全部订阅并卸载状态机。重复调用无害——卸载链可能走到不止一次。 */
   release(): void {
     for (const release of this.releases) release();
     this.releases.length = 0;
-    // 复位而不是只摘订阅：留着会让同进程的下一次 `install` 撞上「只能装配一次」，
-    // 而那次装配失败看起来与本域毫无关系。
+    agentStates.release();
+    // 复位而不是只摘订阅：留着会让同进程的下一次 `install` 撞上「只能装配一次」。
     this.installed = false;
   }
 }

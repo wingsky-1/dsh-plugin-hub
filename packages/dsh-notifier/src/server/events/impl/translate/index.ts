@@ -1,17 +1,8 @@
 /**
- * dsh-notifier events 域 —— 宿主事件 → 通知请求。
- *
- * 本块只回答「刚刚发生了什么」：哪种宿主事件对应哪一种通知、该说什么话。**它不做
- * 「该不该发」的判断**——事件开关、免打扰时段、频道选择都属于裁决层，而它们会在
- * 本域看不见的地方被改。让这里每次都去问一遍「现在开着吗」，等于把一条运行期策略
- * 摊进翻译逻辑，而翻译只该认事件。
- *
- * **未实现的翻译返回「不是通知」而不是抛错**：宿主事件是活的，装配完成那一刻就
- * 可能到达，抛出去等于让插件在正常运行中崩掉。骨架期的「还没做」在行为上就等于
- * 「不打扰」——想看出翻译没做，读这个文件比读日志可靠。
- *
- * 依赖方向：只引用本目录，不引用 `interface.ts`。
+ * dsh-notifier events 域 —— 宿主事件 → 通知请求；不看开关（那是裁决层的事）。
+ * 认不出的宿主事件返回「不是通知」而不是抛错——事件链是活的，抛错等于让插件崩在运行中。
  */
+import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import type { ApprovalRequest } from "@deepseek-ai/dsh-user-approval";
 import type { AskUserQuestionRequest } from "@deepseek-ai/dsh-user-questions";
@@ -21,77 +12,81 @@ import type {
   AgentStatusPayload,
   AgentTurnStoppingPayload,
 } from "../../deps.ts";
-import type { Translation } from "./type.ts";
+import { sessionTitleOf, turnEndEvidenceOf } from "../session/index.ts";
+import type { SessionTitle } from "../session/type.ts";
+import { agentStates } from "../state/index.ts";
+import { NOTIFY_KINDS } from "./catalog.ts";
+import type { TranslatedKind } from "./catalog.ts";
+import type { NotifyDetail, Translation } from "./type.ts";
 
-/**
- * 审批请求 → 通知请求。
- *
- * 未实现：应产出 `ask` 请求（工具名 + 等待理由）。
- */
+/** 不是通知：多数宿主事件的归宿。 */
+const NOT_A_NOTIFICATION: Translation = { ok: false };
+
+/** 把详情渲染成一条请求；标题与正文只来自本目录的文案表（本域不填 severity）。 */
+function render(kind: TranslatedKind, detail: NotifyDetail): Translation {
+  const text = NOTIFY_KINDS[kind];
+  return { ok: true, request: { kind, title: text.title, body: text.body(detail) } };
+}
+
+/** 任务名；`agent` 可缺（提问载荷上是可选的），缺了就是没有任务名。 */
+function titleOf(agent?: Agent): SessionTitle {
+  return agent === undefined ? { found: false } : sessionTitleOf(agent);
+}
+
+/** 审批请求 → `ask`（工具名 + 理由 + 任务名）。 */
 export function translateApproval(request: ApprovalRequest): Translation {
-  void request;
-  return { ok: false };
+  const title = titleOf(request.agent);
+  return render("ask", {
+    tool: request.toolName,
+    taskTitle: title.found ? title.title : undefined,
+    reason: request.reason,
+  });
 }
 
-/**
- * 用户提问 → 通知请求。
- *
- * 未实现：应产出 `question` 请求（问题摘要）。
- */
+/** 用户提问 → `question`（首问摘要 + 任务名）。 */
 export function translateUserQuestion(request: AskUserQuestionRequest): Translation {
-  void request;
-  return { ok: false };
+  const first = request.questions[0];
+  const title = titleOf(request.agent);
+  return render("question", {
+    taskTitle: title.found ? title.title : undefined,
+    question: first !== undefined && first.question.length > 0 ? first.question : undefined,
+  });
 }
 
-/**
- * 会话内事件 → 通知请求。
- *
- * 未实现：`turn/end` 分流完成与错误（`done` / `error` / `turn-end`），
- * `tool/result` 承接工具失败。多数 kind 本就不对应任何通知。
- */
+/** 会话内事件 → 通知请求：只认 `turn/end`，只记账不产出。 */
 export function translateSessionEvent(sessionId: string, event: SessionEvent): Translation {
-  void sessionId;
-  void event;
-  return { ok: false };
+  const read = turnEndEvidenceOf(event);
+  if (read.found) agentStates.rememberTurnEnd(sessionId, read.evidence);
+  return NOT_A_NOTIFICATION;
 }
 
-/**
- * agent 生命周期迁移 → 通知请求。
- *
- * 未实现：`idle` 是子代理完成的判据。
- */
+/** agent 生命周期迁移 → 完成通知；`idle` 是判据，`running` 只记账。 */
 export function translateAgentStatus(payload: AgentStatusPayload): Translation {
-  void payload;
-  return { ok: false };
+  const outcome = agentStates.observeStatus(payload);
+  if (!outcome.ok) return NOT_A_NOTIFICATION;
+  return render(outcome.kind, { taskTitle: outcome.taskTitle, durationMs: outcome.durationMs });
 }
 
-/**
- * agent 被销毁 → 通知请求。
- *
- * 未实现：子代理消亡的收尾通知。与 `agent/status` 的 `idle` 互补——正常路径先
- * `idle` 再销毁，异常路径可能只有销毁。
- */
+/** agent 被销毁 → 清账（不产出：完成与否已由 `idle` 判过）。 */
 export function translateAgentDisposed(payload: AgentDisposedPayload): Translation {
-  void payload;
-  return { ok: false };
+  agentStates.forget(payload.agent.id);
+  return NOT_A_NOTIFICATION;
 }
 
-/**
- * turn 到达停止边界 → 通知请求。
- *
- * 未实现：与 `turn/end` 会话事件互补——一个说「要停了」，一个说「已经停了」。
- */
+/** turn 到停止边界 → `turn-end`（同一 turn 只发一次）。 */
 export function translateTurnStopping(payload: AgentTurnStoppingPayload): Translation {
-  void payload;
-  return { ok: false };
+  const outcome = agentStates.observeTurnStopping(payload);
+  if (!outcome.ok) return NOT_A_NOTIFICATION;
+  return render("turn-end", { turn: outcome.turn, taskTitle: outcome.taskTitle });
 }
 
-/**
- * agent 出错 → 通知请求。
- *
- * 未实现：`error` 的直接来源。
- */
+/** agent 出错 → `error`（错误文本 + turn + step + 任务名）。 */
 export function translateAgentError(payload: AgentErrorPayload): Translation {
-  void payload;
-  return { ok: false };
+  const title = titleOf(payload.agent);
+  return render("error", {
+    message: payload.error,
+    taskTitle: title.found ? title.title : undefined,
+    turn: payload.turn,
+    step: payload.step,
+  });
 }

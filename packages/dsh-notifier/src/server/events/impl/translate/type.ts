@@ -1,23 +1,29 @@
 /**
- * dsh-notifier events 域 —— 翻译块自己的形状。
- *
- * 翻译是**单向**的：宿主事件进、通知请求出。本块不知道请求会被谁消费、怎么投递，
- * 也不回看宿主——它只回答「刚刚发生了什么」。
- *
- * 通知请求的形状与它那套种类词汇都不在这里定义：那是裁决的坐标系，归下游所有（见
- * `../../deps.ts` 的申报）。本域是**适配层**，只负责把宿主事件填进那套词汇——填完
- * 就没有发言权。
+ * dsh-notifier events 域 —— 翻译块自己的形状：宿主事件进、通知请求出。
+ * 种类词汇归下游（裁决的坐标系，见 `../../deps.ts`），本块只往里填。
  */
 import type { NotifyRequest } from "../../deps.ts";
 
 /**
- * 翻译结果。
- *
- * 用具名判别联合而不是空返回值：**大多数宿主事件都不对应任何一种通知**（流式增量、
- * 请求上下文、步骤起止……），这不是异常路径而是常态。把常态表达成「没有值」，
- * 调用方就得到处判空。
- *
- * 注意它与「开关关着」是两回事：这里说的是「这件事不构成通知」，而「这件事构成
- * 通知但现在不该发」是裁决层的判断。
+ * 翻译结果。大多数宿主事件都不构成通知，这是常态而不是异常路径。
+ * 与「开关关着」是两回事：这里说「这件事不构成通知」，后者由裁决层回答。
  */
 export type Translation = { ok: true; request: NotifyRequest } | { ok: false };
+
+/** 渲染一条通知需要的事实（不含工具参数等敏感信息）。 */
+export interface NotifyDetail {
+  tool?: string;
+  taskTitle?: string;
+  reason?: string;
+  question?: string;
+  durationMs?: number;
+  turn?: number;
+  step?: number;
+  message?: string;
+}
+
+/** 一条通知的文案：标题，以及由详情渲染出的正文。 */
+export interface KindText {
+  title: string;
+  body: (detail: NotifyDetail) => string;
+}
