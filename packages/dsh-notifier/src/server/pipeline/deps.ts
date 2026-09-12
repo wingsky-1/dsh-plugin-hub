@@ -1,17 +1,5 @@
-/**
- * dsh-notifier pipeline 域 —— **依赖声明**。
- *
- * 本域声明「我需要外部什么」，不关心谁满足它——装配由组合根递进来。声明面**只有
- * 类型**：运行时能力不进这里（`ARCHITECTURE-METHOD.md` §2「跨域运行时能力一律经
- * `deps.ts` 注入」），实现块拿到的是装配入参里的能力对象。
- *
- * 能力按**提供方**分组，而不是一个能力一个字段：组合根递的是提供方的命名空间对象，
- * 于是本域将来多用一样能力时，装配那一侧一行都不用改。要哪几样仍然由本文件的 `Pick`
- * 说了算——分组收的是装配方的样板，不是本域的可见面。
- *
- * 而且不接收算好的值：设置是活的，装配期算出的数字会变成静态数据，而它看起来与实时
- * 读取一模一样。
- */
+/** pipeline 域依赖声明：只声明「我需要外部什么」，声明面**只有类型**；能力按**提供方**分组（本域将来多用一样时
+ * 装配那侧不用改，要哪几样仍由 `Pick` 说了算），也不接算好的值——设置是活的，装配期算出的数字会变成静态数据。 */
 import type * as channelsApi from "../channels/interface.ts";
 import type * as configApi from "../config/interface.ts";
 import type { LoggerPort } from "../shared/type.ts";
@@ -30,28 +18,15 @@ export type ChannelsPort = Pick<typeof channelsApi, "deliver">;
 /** 当前生效设置：从能力面派生，不请 config 域再多导出一个名字。 */
 export type EffectiveConfig = ReturnType<ConfigPort["readConfig"]>;
 
-/**
- * 帧出口的载荷：一次通知的种类，以及它该怎么弹。
- *
- * 种类与画面分开：`NotifyFrame` 是投递参数（怎么弹），kind 是这次通知**是什么**——
- * 客户端靠后者选图标与颜色。投递域不需要知道种类（消息无身份），所以它不在这份线
- * 协议里；但页面上要显示，于是随帧一起出去。
- */
+/** 帧出口的载荷：一次通知的种类，以及它该怎么弹。种类与画面分开——`NotifyFrame` 是投递参数（怎么弹），kind 是
+ * 这次通知**是什么**，客户端靠后者选图标与颜色；投递域不需要知道种类（消息无身份），但页面上要显示，故随帧一起出去。 */
 export interface OutgoingFrame {
   kind: NotifyKind;
   frame: channelsApi.NotifyFrame;
 }
 
-/**
- * 帧出口：把一条待展示的通知交给浏览器那一侧的入口（组合根接线，api 域消费）。
- *
- * 它不属于任何域，所以不成「面」；写成具名接口而不是裸函数，是为了让依赖清单里出现
- * 的是「一个出口」，而不是一个看不出从哪来的回调。
- *
- * 出口的实现由组合根本地接线（`FrameBus`），**不经过宿主事件总线**：帧的生产与消费
- * 两端都在本包内，挂上全局总线等于把一条内网线拉到公共面上——任何插件都能伪造或窥探
- * 通知内容，而包还多欠一份事件协议要养。
- */
+/** 帧出口：把一条待展示的通知交给浏览器那一侧的入口（组合根接线，api 域消费）。实现由组合根本地接线（`FrameBus`），
+ * **不经过宿主事件总线**——帧的生产与消费两端都在本包内，挂上全局总线等于把一条内网线拉到公共面上。 */
 export interface FramePort {
   emit(payload: OutgoingFrame): void;
 }
@@ -66,9 +41,7 @@ export interface PipelineDeps {
   logger: LoggerPort;
   /** 设置读面：每次裁决现取，不在装配期取快照。 */
   config: ConfigPort;
-  /** 历史与频道状态的写面。 */
   stores: StorePort;
-  /** 投递出口。 */
   channels: ChannelsPort;
 }
 

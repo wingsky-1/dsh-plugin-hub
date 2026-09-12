@@ -1,25 +1,10 @@
 /**
  * dsh-notifier pipeline 域 —— 编排：一条通知从「发生」到「出去」的全程。
- *
- * 本块只串流程、不判业务：留不留由裁决块回答，发给谁由路由块回答，送没送到由投递块
- * 回答。它自己多做的一件事是**归档**——只有站在全程的位置上，才知道这条通知走到了
- * 哪一步、为什么没走完，而「为什么」正是用户唯一会来问的东西。
- *
- * 归档只有一个时刻：**投递完成之后**。被压制的那条路没有投递，于是就地归档——两条
- * 路写的是同一条记录形状，区别只在带的是「逐出口明细」还是「压制原因」。
- *
- * 依赖方向：只引用本目录、`../judge/`、`../route/`、`../dispatch/`、`../../deps.ts`，
- * 不引用 `interface.ts`。
+ * 本块只串流程，另做一件事是归档——记录这条通知走到了哪一步、为什么没走完。
  */
-import type {
-  ChannelDelivery,
-  HistoryEntry,
-  NotifyMessage,
-  PipelineDeps,
-  StorePort,
-} from "../../deps.ts";
-import { dispatchMessage } from "../dispatch/index.ts";
-import type { DispatchPort } from "../dispatch/type.ts";
+import type { ChannelDelivery, HistoryEntry, PipelineDeps, StorePort } from "../../deps.ts";
+import { notificationDispatcher } from "../dispatch/index.ts";
+import { finalizeRequest } from "../finalize/index.ts";
 import { judgeRequest } from "../judge/index.ts";
 import type { SuppressReason } from "../judge/type.ts";
 import { routeTargets } from "../route/index.ts";
@@ -33,19 +18,13 @@ type ArchiveOutcome = { suppressed: SuppressReason } | { channels: ChannelDelive
 const NOT_INSTALLED = "dsh-notifier: 裁决管线尚未装配";
 
 /**
- * 未装配时的占位。
- *
- * 装配是必经路径（`installed` 守卫），占位值不会被真正读到；它的作用是让字段有确定
- * 的类型，从而不必让每个使用点都先判一次空。能力占位成抛错而不是空实现：真被读到
- * 时，「没装配」应当当场暴露，而不是静默地不归档、不投递。
- *
- * 帧出口是例外，它保持静默：帧是 fire-and-forget 的旁路，「没人听」与「没有出口」
- * 对它没有区别。
+ * 未装配时的占位：让字段有确定的类型，不必让每个使用点先判一次空。
+ * 能力占位成抛错而不是空实现——真被读到时「没装配」应当当场暴露。帧出口是例外：它是
+ * 旁路，「没人听」与「没有出口」对它没有区别。
  */
 const UNINSTALLED: PipelineDeps = {
   enabled: false,
   frames: { emit: () => {} },
-  // 未装配时的失败出口只能是静默的：这时候没有任何人在听。
   logger: { warn: () => {} },
   config: {
     readConfig: () => {
@@ -77,66 +56,73 @@ class NotificationPipeline {
     if (this.installed) throw new Error("dsh-notifier: pipeline 域只能装配一次");
     this.installed = true;
     this.deps = deps;
+    notificationDispatcher.install({ channels: deps.channels, stores: deps.stores });
   }
 
-  /** 卸载：放开对宿主面的引用。此后到达的请求一律丢弃。 */
+  /** 卸载：清空投递节奏状态、放开对宿主面的引用。此后到达的请求一律丢弃。 */
   release(): void {
     this.installed = false;
     this.deps = UNINSTALLED;
+    notificationDispatcher.release();
   }
 
   /**
    * 提交一条通知请求。
-   *
-   * 未装配时静默丢弃，不抛错：本方法是宿主事件链的出口，事件不会因为本插件没准备好
-   * 就停下来，而在这条链上抛错的代价是打断别人的流程——症状与本插件毫无字面关联。
+   * 未装配时静默丢弃，不抛错：本方法挂在宿主事件链上，在这里抛会打断别人的流程。
    */
   submit(request: NotifyRequest): void {
     if (!this.installed) return;
     // 能力在入口取一次并往下传：`send` 是异步的，卸载可能发生在它完成之前，而这次
-    // 投递已经开始了——半路换成占位值，会让一条本该正常送达的通知在归档时凭空失败。
-    const { enabled, frames, logger, config, stores, channels } = this.deps;
+    // 投递已经开始了——半路换成占位值会让一条本该正常送达的通知凭空失败。
+    const { enabled, frames, logger, config, stores } = this.deps;
+    // 本次通知的时刻只取一次：投递载荷与历史记录共用它，两处各取一次会对不上。
+    const ts = Date.now();
 
     const snapshot = config.readConfig();
     const verdict = judgeRequest(snapshot, request, enabled);
     if (!verdict.ok) {
-      this.archive(stores, request, { suppressed: verdict.reason });
+      this.archive(stores, request, ts, { suppressed: verdict.reason });
       return;
     }
 
-    const targets = routeTargets({ frames }, snapshot, request);
-    if (targets.length === 0) {
-      this.archive(stores, request, { suppressed: "no-target" });
+    const route = routeTargets({ frames, logger }, snapshot, request);
+    for (const id of route.stale) {
+      logger.warn(`dsh-notifier: kindRoutes[${request.kind}] 指向已删除频道 ${id}，记 skipped`);
+    }
+    if (route.targets.length === 0) {
+      this.archive(stores, request, ts, { suppressed: "no-target" });
       return;
     }
 
-    void this.send({ channels, stores }, request, targets).catch((cause) => {
-      // 投递层承诺逐目标 fail-soft（失败是返回值，不是异常），走到这里说明契约已被破坏。
-      // 宿主事件链上不能抛：一次未捕获的拒绝会打断整条通知路径，而它是唯一路径。但也不能
-      // 静默——「通知没发出去、且没有任何痕迹」是本插件最难查的一种故障。
+    void this.send(stores, request, ts, route.targets).catch((cause) => {
+      // 投递块承诺逐目标 fail-soft（失败是返回值，不是异常），走到这里说明契约已被破坏。
+      // 宿主事件链上不能抛，但也不能静默——「通知没发出去、且没有任何痕迹」最难查。
       const reason = cause instanceof Error ? cause.message : String(cause);
       logger.warn(`dsh-notifier: 投递失败 —— ${reason}`);
     });
   }
 
-  /** 投递，然后归档。 */
+  /** 定稿，投递，归档。 */
   private async send(
-    deps: DispatchPort,
+    stores: StorePort,
     request: NotifyRequest,
+    ts: number,
     targets: RoutedTarget[],
   ): Promise<void> {
-    // 强度随请求带到消息上：它是陈述的一部分（调用方说「这是哪一档」），不是加工——
-    // 在这里丢掉，出站频道就只能各自猜，而猜出来的等级没人能解释。
-    const message: NotifyMessage = { title: request.title, body: request.body };
-    if (request.severity !== undefined) message.severity = request.severity;
-    const deliveries = await dispatchMessage(deps, message, targets);
-    this.archive(deps.stores, request, { channels: deliveries });
+    const message = finalizeRequest(request, ts);
+    const deliveries = await notificationDispatcher.dispatch(message, targets);
+    this.archive(stores, request, ts, { channels: deliveries });
   }
 
   /** 归档：一次通知写一条记录，发出与压制只在载荷上分叉。 */
-  private archive(stores: StorePort, request: NotifyRequest, outcome: ArchiveOutcome): void {
+  private archive(
+    stores: StorePort,
+    request: NotifyRequest,
+    ts: number,
+    outcome: ArchiveOutcome,
+  ): void {
     const entry: HistoryEntry = {
-      ts: Date.now(),
+      ts,
       kind: request.kind,
       title: request.title,
       message: request.body,

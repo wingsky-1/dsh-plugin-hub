@@ -2,33 +2,20 @@
  * dsh-notifier pipeline 域 —— 裁决块自己的形状。
  */
 
-/**
- * 压制原因：一条本该发出的通知为什么没出去。
- *
- * 它随记录写进历史，是「为什么我没收到」这个问题的唯一答案来源。只记「没发」，
- * 等于让用户对着一个空收件箱猜——而通知插件最容易被怀疑的恰恰是「它是不是没工作」。
- */
-export type SuppressReason =
-  /** 组合层总开关关着。它不落盘，只能在挂载点表达，所以用户改不了也看不到。 */
-  | "disabled"
-  /** 这一类事件的通知开关关着。 */
-  | "kind-off"
-  /** 动态 kind 尚未被用户确认。 */
-  | "unlisted"
-  /**
-   * 落在免打扰时段内，且该类通知不在放行名单里。
-   *
-   * 取值是 `quiet` 而不是更清楚的 `quiet-hours`：它随记录写进 `history.jsonl`，
-   * 而历史是**持久格式**——盘上已有的记录写的是 `quiet`，设置页也按它判「免打扰
-   * 拦截未发出」。改一个更好听的名字，代价是新旧记录对不上、且那一行提示不再出现。
-   */
-  | "quiet"
-  /** 与窗口内的同类通知合并，只留下了先到的那条。 */
-  | "merged"
-  /** 没有任何可用出口：频道全关，或该类通知的路由落空。 */
-  | "no-target"
-  /** 裁决尚未实现。骨架期的保守取值，实现落地后删除。 */
-  | "unimplemented";
+/** 事件开关在设置里的键名。 */
+export type KindSwitchKey =
+  | "notifyAsk"
+  | "notifyQuestion"
+  | "notifyTaskDone"
+  | "notifySubagentDone"
+  | "notifyTaskError"
+  | "notifyTurnEnd";
 
-/** 裁决结果：留或弃。弃必有原因——「为什么没发」要能回答。 */
+/**
+ * 压制原因：随记录写进历史，是「为什么我没收到」的唯一答案来源。`unlisted` = 动态 kind
+ * 还没被用户确认；`quiet` 不改名——它是持久格式，盘上记录与设置页判定都按这个字面量。
+ */
+export type SuppressReason = "disabled" | "kind-off" | "unlisted" | "quiet" | "no-target";
+
+/** 裁决结果：留或弃；弃必有原因。 */
 export type Verdict = { ok: true } | { ok: false; reason: SuppressReason };
