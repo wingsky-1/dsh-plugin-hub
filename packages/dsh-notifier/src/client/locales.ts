@@ -75,7 +75,6 @@ export const zh = {
   cleared: "已清空 {n} 条通知记录",
   clearFail: "清空失败：{msg}{hint}",
   // 配置行
-  approveRemind: "审批二次提醒（分钟，0=关）",
   historyRetention: "历史保留天数（0=不按天清理）",
   maxConnections: "最大连接数（条，超出淘汰最老）",
   dndEnable: "启用免打扰",
@@ -280,7 +279,6 @@ export const en: Record<NotifierLocaleKey, string> = {
   testFail: "Failed to send test notification: {msg}{hint}",
   cleared: "Cleared {n} history entries",
   clearFail: "Clear failed: {msg}{hint}",
-  approveRemind: "Approval re-reminder (minutes, 0=off)",
   historyRetention: "History retention (days, 0=no daily cleanup)",
   maxConnections: "Max connections (evict oldest beyond)",
   dndEnable: "Enable do-not-disturb",

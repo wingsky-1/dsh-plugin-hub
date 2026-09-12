@@ -24,7 +24,6 @@ export const DEFAULT_CONFIG: NotifyConfig = {
   kindRoutes: {},
   allowKinds: [],
 
-  askRemindMin: 5,
   historyMaxAgeDays: 0,
   maxConnections: 16,
 };

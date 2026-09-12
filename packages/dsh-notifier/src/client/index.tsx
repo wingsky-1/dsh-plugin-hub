@@ -2581,25 +2581,11 @@ function SettingsCard() {
     </div>,
   );
 
-  // 合并去重折叠区（统一 dn-ch-adv 折叠形态 + dn-adv-row 行）
+  // 资源上限折叠区（统一 dn-ch-adv 折叠形态 + dn-adv-row 行）
   var dedupFold = (
     <details className="dn-ch-adv dn-sec-adv" key="adv-params">
       <summary>{t("secDedup")}</summary>
       <div className="dn-ch-adv-body">
-        {advRow(
-          t("approveRemind"),
-          <input
-            type="number"
-            min={0}
-            step={1}
-            className="dn-set-input dn-set-numInput"
-            aria-label={t("approveRemind")}
-            value={settings.askRemindMin}
-            onChange={function (e: any) {
-              patch({ askRemindMin: Number(e.target.value) });
-            }}
-          />,
-        )}
         {advRow(
           t("historyRetention"),
           <input

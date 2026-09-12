@@ -59,7 +59,6 @@ const BOOLEAN_KEYS: readonly string[] = [
 
 /** 非负整数键及其上界（越界视为非法而不是截断——静默改写用户的输入比拒绝更糟）。 */
 const COUNT_LIMITS: Record<string, number> = {
-  askRemindMin: 1_440,
   historyMaxAgeDays: 3_650,
   maxConnections: 1_024,
 };
@@ -107,7 +106,6 @@ export function normalizeConfig(input: StoredSettings): NotifyConfig {
     kindRoutes: asKindRoutes(input.kindRoutes),
     allowKinds: asStrings(input.allowKinds),
 
-    askRemindMin: asCount(input.askRemindMin, fallback.askRemindMin, COUNT_LIMITS.askRemindMin),
     historyMaxAgeDays: asCount(
       input.historyMaxAgeDays,
       fallback.historyMaxAgeDays,

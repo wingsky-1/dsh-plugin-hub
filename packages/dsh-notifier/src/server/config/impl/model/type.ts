@@ -119,8 +119,6 @@ export type NotifyConfig = {
   allowKinds: string[];
 
   // 资源上限
-  /** 审批等待超时二次提醒（分钟；0 = 关闭）。 */
-  askRemindMin: number;
   /** 历史按天自动清理（0 = 只按行数滚动）。 */
   historyMaxAgeDays: number;
   /** SSE 连接表上限（超限淘汰最老连接）。 */
