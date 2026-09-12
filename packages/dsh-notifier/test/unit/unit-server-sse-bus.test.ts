@@ -241,3 +241,59 @@ describe("(g) loadSeq 非法值（损坏/越界/非整数）→ 回退 0", () =>
     });
   }
 });
+
+// #733 M1-F2：dispose 顺序要求「sse.dispose() 最前」，而 ctx.effect 的 disposer
+// 在某些生命周期路径下可能被重复触发——dispose 必须幂等（重复调用不重复落盘、
+// 不抛错），否则「正常停止零丢失」会退化为「重复补写」或卸载期异常。
+describe("(j) dispose 幂等（重复调用不重复落盘、不抛错）", () => {
+  it("连续两次 dispose：saveSeq 只被调用一次（seqDirty 已清）", () => {
+    const saves: number[] = [];
+    const hub = createSseHub({
+      getMaxConnections: () => 4, heartbeatMs: 60_000, saveSeq: (s) => saves.push(s), seqFlushMs: 60_000,
+    });
+    hub.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
+    hub.dispose();
+    hub.dispose();
+    expect(saves).toEqual([1]);
+  });
+
+  it("连续三次 dispose 不抛错", () => {
+    const hub = createSseHub({
+      getMaxConnections: () => 4, heartbeatMs: 60_000, saveSeq: () => {}, seqFlushMs: 60_000,
+    });
+    hub.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
+    expect(() => {
+      hub.dispose();
+      hub.dispose();
+      hub.dispose();
+    }).not.toThrow();
+  });
+
+  it("无未落盘变更时 dispose 不触发 saveSeq（重复 dispose 的零写路径）", () => {
+    const saves: number[] = [];
+    const hub = createSseHub({
+      getMaxConnections: () => 4, heartbeatMs: 60_000, saveSeq: (s) => saves.push(s), seqFlushMs: 60_000,
+    });
+    hub.dispose();
+    hub.dispose();
+    expect(saves).toEqual([]);
+  });
+
+  it("内存模式（无 saveSeq）重复 dispose 不抛错", () => {
+    const hub = createSseHub({ getMaxConnections: () => 4, heartbeatMs: 60_000 });
+    hub.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
+    expect(() => {
+      hub.dispose();
+      hub.dispose();
+    }).not.toThrow();
+  });
+
+  it("dispose 后 framesSince 仍可读（滚动缓冲不随 dispose 清空，?since 补拉语义不变）", () => {
+    const hub = createSseHub({
+      getMaxConnections: () => 4, heartbeatMs: 60_000, saveSeq: () => {}, seqFlushMs: 60_000,
+    });
+    hub.broadcast({ type: "notify", kind: "done", title: "t", message: "m", ts: 1 });
+    hub.dispose();
+    expect(hub.framesSince(0).length).toBe(1);
+  });
+});
