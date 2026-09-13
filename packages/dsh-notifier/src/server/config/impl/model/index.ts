@@ -13,6 +13,8 @@ export const DEFAULT_CONFIG: NotifyConfig = {
   notifyTaskError: true,
   notifyTurnEnd: false,
 
+  systemEnabled: true,
+  browserEnabled: true,
   systemNotify: true,
   browserNotify: true,
   notifyWhenVisible: false,

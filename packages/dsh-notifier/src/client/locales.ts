@@ -20,6 +20,7 @@ export const zh = {
   chSystemNotify: "系统通知",
   chBrowserNotify: "浏览器通知",
   chWhenVisible: "页面可见时也弹",
+  chPopup: "弹窗",
   chSound: "声音",
   // 每通道声音行与三态
   chStateOn: "启用",
@@ -31,6 +32,8 @@ export const zh = {
   chSoundTone: "音色",
   chSoundPreview: "试听",
   chSoundOnlyNote: "弹窗已关、声音开启：本频道只响不弹（不打扰界面）。",
+  chPopupSoundOffNote:
+    "弹窗与声音都已关闭：本频道不会有任何提醒（要停用请用卡头开关，它是唯一的「发不发」判据）。",
   toneDing: "叮（Ding）",
   toneBell: "铃（Bell）",
   toneChime: "钟琴（Chime）",
@@ -229,6 +232,7 @@ export const en: Record<NotifierLocaleKey, string> = {
   chSystemNotify: "System notification",
   chBrowserNotify: "Browser notification",
   chWhenVisible: "Also banner when visible",
+  chPopup: "Popup",
   chSound: "Sound",
   chStateOn: "Enabled",
   chStateSound: "Sound only",
@@ -239,6 +243,8 @@ export const en: Record<NotifierLocaleKey, string> = {
   chSoundTone: "Tone",
   chSoundPreview: "Preview",
   chSoundOnlyNote: "Popup off, sound on: this channel plays sound only (no popup).",
+  chPopupSoundOffNote:
+    "Popup and sound are both off: this channel shows nothing (use the header switch to disable it — the switch is the only send/don't-send gate).",
   toneDing: "Ding",
   toneBell: "Bell",
   toneChime: "Chime",

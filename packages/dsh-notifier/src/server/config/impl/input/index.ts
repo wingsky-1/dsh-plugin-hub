@@ -115,6 +115,8 @@ export const BOOLEAN_KEYS: readonly string[] = [
   "notifySubagentDone",
   "notifyTaskError",
   "notifyTurnEnd",
+  "systemEnabled",
+  "browserEnabled",
   "systemNotify",
   "browserNotify",
   "notifyWhenVisible",
@@ -163,6 +165,8 @@ export function normalizeConfig(input: StoredSettings): NotifyConfig {
     notifyTaskError: asBoolean(input.notifyTaskError, fallback.notifyTaskError),
     notifyTurnEnd: asBoolean(input.notifyTurnEnd, fallback.notifyTurnEnd),
 
+    systemEnabled: asBoolean(input.systemEnabled, fallback.systemEnabled),
+    browserEnabled: asBoolean(input.browserEnabled, fallback.browserEnabled),
     systemNotify: asBoolean(input.systemNotify, fallback.systemNotify),
     browserNotify: asBoolean(input.browserNotify, fallback.browserNotify),
     notifyWhenVisible: asBoolean(input.notifyWhenVisible, fallback.notifyWhenVisible),

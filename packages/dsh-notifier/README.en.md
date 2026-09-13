@@ -78,12 +78,15 @@ Pick one of the following access forms (both the settings card and the README su
 - **Dual channels**:
   - System notifications: native Windows toast (embedded PowerShell WinRT script, zero dependencies); macOS uses `osascript` (display notification, zero dependencies); Linux uses `notify-send` (only when available)
   - Browser notifications: SSE frame push + Notification API (only pops when the page is hidden)
-- **Independent popup & sound per channel (#640/#641)**: the browser and system
-  channels each have their own popup toggle and sound setting (muted / follow the
-  system default / built-in tones `ding`·`bell`·`chime`·`pop` with ▶ Preview),
-  supporting "popup without sound / sound only / silent"; Linux system notification
-  sound is fixed by host self-play of freedesktop event sounds (notify-send used to
-  carry no sound hint and DE support varies); see "Configuration → Per-channel sound".
+- **Three switches per channel: enabled / popup / sound**: the browser and system channels
+  each have "Enabled" (send or not), "Popup" (pop or not) and "Sound" (sound or not, which
+  tone). **Turning the channel switch off means no delivery at all** — not even sound.
+  That is the dividing line from the old behavior: a single key used to act as both popup
+  toggle and channel switch, so "popup off + sound on" still made noise. Sound values:
+  muted / follow the system default / built-in tones `ding`·`bell`·`chime`·`pop` with
+  ▶ Preview; Linux system notification sound is fixed by host self-play of freedesktop
+  event sounds (notify-send used to carry no sound hint and DE support varies); see
+  "Configuration → Per-channel sound".
 - **Insecure-context fallback**: on LAN HTTP access the browser blocks system-level popups — automatically falls back to "in-page banner + sound + title reminder"
 - **Do-not-disturb window**: supports crossing midnight (e.g. 22:00 → 08:00); an **urgent exception** can be set (`quietHours.allowKinds`: events still reminded during DND). The default candidates are the high-frequency blocking kinds (approval / question / error); the settings page lets you check **all 6 built-in events** (including task-done / subagent-done / turn-end) with one-click "Follow enabled events" or "Reset default". Exemption is orthogonal to the event toggles — a disabled event never produces notifications anyway, and the exemption entry stays intact; disabled events are shown dimmed (reduced opacity) on the settings page and can still be exempted. **Upgrade note**: now that the allow-list is open, kinds that older configurations used to filter out (e.g. hand-edited `done`/`turn-end`) will be reminded again during DND — a behavior change; adjust the exemptions on the settings page if you do not want that
 - **Settings-card diagnostics**: the plugin card under Settings → Plugins → dsh-notifier shows the browser notification permission status and a secure-context hint, plus the 10 most recent notification records, a "Send test notification" button, and a "Clear history" entry
@@ -192,6 +195,8 @@ Example values (defaults; `channels` / `kindRoutes` / `allowKinds` are new M2 ke
   "notifySubagentDone": false,
   "notifyTaskError": true,
   "notifyTurnEnd": false,
+  "systemEnabled": true,
+  "browserEnabled": true,
   "systemNotify": true,
   "browserNotify": true,
   "notifyWhenVisible": false,
@@ -222,13 +227,15 @@ Example values (defaults; `channels` / `kindRoutes` / `allowKinds` are new M2 ke
 
 ### Per-channel sound (#640 / #641)
 
-Popup and sound are configured **independently per channel** (browser / system), so you
-can have "popup without sound", "sound only" or "silent":
+Popup and sound are configured **independently per channel** (browser / system), and
+"sending or not" is separated from "how it looks/sounds": `*Enabled` is the only delivery
+gate, while `*Notify` (popup) and `*Sound` decide what the delivery looks like.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `browserNotify` / `systemNotify` | boolean | existing popup toggles (unchanged) |
-| `browserSound` | `boolean \| tone id` | browser channel sound |
+| `browserEnabled` / `systemEnabled` | boolean | **channel switch (send or not)**: off = no delivery at all, not even sound |
+| `browserNotify` / `systemNotify` | boolean | **popup switch (pop or not)**: off with sound on = sound only |
+| `browserSound` | `boolean \| tone id` | browser channel sound (whether / which tone) |
 | `systemSound` | `boolean \| tone id` | system channel sound |
 | `notifySound` | boolean | **deprecated read-only alias** (below) |
 
@@ -239,15 +246,17 @@ dropdown of each channel card and hit ▶ Preview: the preview is synthesized lo
 with Web Audio as a listening reference — **the real system sound follows the platform
 and system settings**).
 
-Delivery matrix (all 2×2 combinations work):
+Delivery matrix (**with the channel switch off nothing is delivered, regardless of popup
+and sound**; with it on, popup × sound decide the shape):
 
-| Popup | Sound | Behavior |
-|---|---|---|
-| On | `false` | Show notification, silent |
-| On | `true` | Show notification, OS-default sound |
-| On | tone id | Show notification; the app self-plays the tone (system notification silenced to avoid double sound) |
-| Off | `false` | No delivery at all (silent) |
-| Off | `true`/tone id | **Sound only**: no popup, self-play only (page alive / host self-play) |
+| Enabled | Popup | Sound | Behavior |
+|---|---|---|---|
+| Off | any | any | **no delivery at all** (sending depends on the channel switch only) |
+| On | On | `false` | Show notification, silent |
+| On | On | `true` | Show notification, OS-default sound |
+| On | On | tone id | Show notification; the app self-plays the tone (system notification silenced to avoid double sound) |
+| On | Off | `true`/tone id | **Sound only**: no popup, self-play only (page alive / host self-play) |
+| On | Off | `false` | No delivery: the channel currently has no way to remind you (the settings card says so) |
 
 - **`notifySound` (old global key) is a deprecated compatibility alias**: kept for
   reading and legacy migration only; the settings UI no longer writes it. When

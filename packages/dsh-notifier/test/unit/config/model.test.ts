@@ -26,6 +26,8 @@ const EXPECTED_DEFAULTS = {
   notifyTaskError: true,
   notifyTurnEnd: false,
 
+  systemEnabled: true,
+  browserEnabled: true,
   systemNotify: true,
   browserNotify: true,
   notifyWhenVisible: false,
@@ -49,6 +51,8 @@ const BOOLEAN_SETTING_KEYS: readonly string[] = [
   "notifySubagentDone",
   "notifyTaskError",
   "notifyTurnEnd",
+  "systemEnabled",
+  "browserEnabled",
   "systemNotify",
   "browserNotify",
   "notifyWhenVisible",
@@ -56,7 +60,7 @@ const BOOLEAN_SETTING_KEYS: readonly string[] = [
 ];
 
 describe("DEFAULT_CONFIG：默认形态以手写字面量为准，不由实现自述", () => {
-  it("整份默认设置等于手写形态：12 个布尔的偏置与计数/列表类默认值逐个锚住（改坏一行不该悄无声息）", () => {
+  it("整份默认设置等于手写形态：14 个布尔的偏置与计数/列表类默认值逐个锚住（改坏一行不该悄无声息）", () => {
     expect(DEFAULT_CONFIG).toEqual(EXPECTED_DEFAULTS);
   });
 

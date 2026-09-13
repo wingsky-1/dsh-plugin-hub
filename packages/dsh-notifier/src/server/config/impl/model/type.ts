@@ -103,7 +103,13 @@ export type NotifyConfig = {
   notifyTurnEnd: boolean;
 
   // 投递形态
+  /** 系统通道开关（发不发）：内置渠道唯一的投递闸门，关掉就是完全不投递。 */
+  systemEnabled: boolean;
+  /** 浏览器通道开关（发不发）：与 `systemEnabled` 同语义。 */
+  browserEnabled: boolean;
+  /** 系统通道弹窗开关（弹不弹）：关掉而声音开着 = 只响不弹。 */
   systemNotify: boolean;
+  /** 浏览器通道弹窗开关（弹不弹）：与 `systemNotify` 同语义。 */
   browserNotify: boolean;
   /** 页面可见时是否也弹浏览器通知。 */
   notifyWhenVisible: boolean;

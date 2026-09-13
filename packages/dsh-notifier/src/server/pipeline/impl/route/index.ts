@@ -30,7 +30,8 @@ const PRESET_MAP: Record<NonNullable<WebhookConfig["preset"]>, WebhookTarget["pr
 
 /**
  * 路由：按 kind 与设置选出本次要投递的目标。
- * 内置频道「开关开 或 声音非静音」就进池——弹窗关而声音开就是只响不弹。
+ * 内置频道先看**渠道开关**（发不发），再看「有没有提醒方式」——弹窗与声音都关掉时进池也只是
+ * 一条什么都不做的投递；弹窗关而声音开就是只响不弹。
  */
 export function routeTargets(
   deps: RouteDeps,
@@ -44,7 +45,7 @@ export function routeTargets(
 function resolvePool(deps: RouteDeps, config: EffectiveConfig, kind: NotifyKind): RoutedTarget[] {
   const pool: RoutedTarget[] = [];
   const browserSound = config.browserSound;
-  if (config.browserNotify || browserSound !== false) {
+  if (config.browserEnabled && (config.browserNotify || browserSound !== false)) {
     pool.push({
       channelId: BUILTIN_CHANNELS.browser,
       target: {
@@ -57,7 +58,7 @@ function resolvePool(deps: RouteDeps, config: EffectiveConfig, kind: NotifyKind)
     });
   }
   const systemSound = config.systemSound;
-  if (config.systemNotify || systemSound !== false) {
+  if (config.systemEnabled && (config.systemNotify || systemSound !== false)) {
     pool.push({
       channelId: BUILTIN_CHANNELS.system,
       target: {

@@ -179,9 +179,9 @@ describe("kindRoutes：命中收窄，缺省广播", () => {
   });
 });
 
-describe("内置频道池：弹窗关而声音开 = 只响不弹", () => {
+describe("内置频道池：启用决定发不发，弹窗与声音决定怎么发", () => {
   // 弹窗关而声音开是合法组合（只响不弹），判成「没配置」会让用户彻底收不到。
-  it("开关关但声音非静音时仍进池（pop=false），两者全关才出池", () => {
+  it("启用开着而弹窗关、声音非静音时仍进池（pop=false）；弹窗与声音全关才出池", () => {
     const outcome = routeTargets(
       { frames: framePort().port, logger: makeLogger() },
       configAt({
@@ -208,6 +208,25 @@ describe("内置频道池：弹窗关而声音开 = 只响不弹", () => {
       requestOf(),
     );
     expect(closed.targets).toEqual([]);
+  });
+
+  // 「发不发只看启用」：关掉启用之后，哪怕弹窗与声音都开着也不该有任何目标。这条与上一条一起
+  // 把三个键的职责钉开——`enabled &&` 从池条件里删掉，这里的期望就会变成两个目标。
+  it("渠道启用关掉即完全不投递：弹窗与声音开着也没有目标", () => {
+    const deps = { frames: framePort().port, logger: makeLogger() };
+    const browserOff = routeTargets(
+      deps,
+      configAt({ browserEnabled: false, browserNotify: true, browserSound: true }),
+      requestOf(),
+    );
+    expect(browserOff.targets.map((routed) => routed.channelId)).toEqual(["system"]);
+
+    const bothOff = routeTargets(
+      deps,
+      configAt({ browserEnabled: false, systemEnabled: false }),
+      requestOf(),
+    );
+    expect(bothOff.targets).toEqual([]);
   });
 
   // pop 不是「有没有这个目标」，而是「弹不弹」：取反或写死一处，用户关掉弹窗后仍会被弹，

@@ -243,6 +243,11 @@ var ROUTES = {
 /** 内置音色 id（与服务端 config.ts SOUND_IDS 同源复制——客户端不 import 宿主
  *  模块，两处由各自测试锁定；定稿口径 ding/bell/chime/pop）。 */
 var SOUND_IDS: readonly string[] = ["ding", "bell", "chime", "pop"];
+/** 声音设置是否处于「开」：true 与内置音色 id 都算开，false 与脏值算关。
+ *  三态摘要、卡体提示、声音行开关三处共用这一条口径——各判一遍就会出现「卡片说有声、开关说没有」。 */
+function soundIsOn(value: any): boolean {
+  return value === true || (typeof value === "string" && SOUND_IDS.indexOf(value) !== -1);
+}
 /** 宿主平台（/health platform 拉取；服务端运行机器 OS——系统通道提示据此，
  *  防浏览器 OS 与宿主 OS 混淆。null = 未拉取/失败）。 */
 var hostPlatform: string | null = null;
@@ -1394,13 +1399,13 @@ function SettingsCard() {
     });
   }
 
-  /** 当前「跟随默认」投递面（路由 id 列表）：内置频道看开关、实例频道看 enabled。
+  /** 当前「跟随默认」投递面（路由 id 列表）：内置频道看**启用**（发不发），实例频道看 enabled。
    *  chips 点亮态（无条目时）与首次切换物化的快照都以本函数为准——所见即所得。
    *  实例频道 id 经 channelIdFor（type:id）生成，bark/webhook 通用。 */
   function defaultRouteIds(prev: any): string[] {
     var ids: string[] = [];
-    if (prev.browserNotify === true) ids.push("browser");
-    if (prev.systemNotify === true) ids.push("system");
+    if (prev.browserEnabled === true) ids.push("browser");
+    if (prev.systemEnabled === true) ids.push("system");
     (prev.channels || []).forEach(function (c: any) {
       if (c.enabled === true) ids.push(channelIdFor(c));
     });
@@ -1416,8 +1421,8 @@ function SettingsCard() {
       return { id: channelIdFor(c), label: c.name || String(c.id), enabled: c.enabled === true };
     });
     return [
-      { id: "browser", label: t("chBrowserNotify"), enabled: prev.browserNotify === true },
-      { id: "system", label: t("chSystemNotify"), enabled: prev.systemNotify === true },
+      { id: "browser", label: t("chBrowserNotify"), enabled: prev.browserEnabled === true },
+      { id: "system", label: t("chSystemNotify"), enabled: prev.systemEnabled === true },
     ].concat(inst);
   }
 
@@ -1668,20 +1673,32 @@ function SettingsCard() {
    * checkbox 依赖 HTML 规范豁免（点击 interactive content 不触发 summary 激活）。
    */
   /**
-   * 内置频道卡（三态与声音行）：
-   * 卡头 = 类型图标 + 名称 + 类型徽标 + 状态点/摘要 + 启用 switch；卡体 =
-   * 行为参数 + 声音行（开关 + 音色下拉 + ▶试听）+（浏览器）权限状态行 + 测试按钮。
-   * 三态：弹窗开 = onEdge（启用）；弹窗关+声音开 = sound（仅声音/半启用，
-   * 卡体展开提示「只响不弹」）；弹窗+声音全关 = off（未启用）。open = on || soundOn。
+   * 内置频道卡（三开关：启用 / 弹窗 / 声音）：
+   * 卡头 = 类型图标 + 名称 + 类型徽标 + 状态点/摘要 + **启用** switch；卡体 = 弹窗行 + 声音行
+   * （开关 + 音色下拉 + ▶试听）+（浏览器）权限状态行 + 测试按钮。
+   *
+   * 谁决定什么：**启用**决定「发不发」（关掉 = 完全不投递，声音也不发）；**弹窗 + 声音**决定
+   * 「怎么发」（弹窗关而声音开 = 只响不弹；两者都关 = 本频道不会有任何提醒，卡体给出提示）。
+   * 三态摘要：启用开 + 弹窗开 = 启用；启用开 + 弹窗关 + 声音开 = 仅声音；启用关 = 已停用。
    */
-  function builtinCard(cfgKey: string, soundKey: string, label: string, channelId: string) {
-    var on = settings[cfgKey] === true;
-    var soundVal = settings[soundKey];
-    var soundOn =
-      soundVal === true || (typeof soundVal === "string" && SOUND_IDS.indexOf(soundVal) !== -1);
-    var stateCls = on ? " dn-ch-onEdge" : soundOn ? " dn-ch-sound" : " dn-ch-off";
-    var summaryState = on ? t("chStateOn") : soundOn ? t("chStateSound") : t("chStateOff");
+  function builtinCard(
+    enableKey: string,
+    popupKey: string,
+    soundKey: string,
+    label: string,
+    channelId: string,
+  ) {
+    var enabled = settings[enableKey] === true;
+    var popup = settings[popupKey] === true;
+    var soundOn = soundIsOn(settings[soundKey]);
+    var stateCls = !enabled ? " dn-ch-off" : !popup && soundOn ? " dn-ch-sound" : " dn-ch-onEdge";
+    var summaryState = !enabled
+      ? t("chStateOff")
+      : !popup && soundOn
+        ? t("chStateSound")
+        : t("chStateOn");
     var extras: any[] = [];
+    extras.push(chRow(t("chPopup"), switchControl(popupKey, t("chPopup") + "：" + label)));
     if (channelId === "browser") {
       extras.push(
         chRow(t("chWhenVisible"), switchControl("notifyWhenVisible", t("chWhenVisible"))),
@@ -1691,8 +1708,8 @@ function SettingsCard() {
     return (
       <details
         className={"dn-ch-card" + stateCls}
-        key={"ch-" + channelId + ":" + on + ":" + soundOn}
-        open={on || soundOn}
+        key={"ch-" + channelId + ":" + enabled + ":" + popup + ":" + soundOn}
+        open={enabled}
       >
         <summary>
           {iconEl(channelId)}
@@ -1706,20 +1723,23 @@ function SettingsCard() {
           {failBadge(channelId)}
           <span className="dn-ch-summaryRight">
             {switchToggle(
-              on,
+              enabled,
               function (v: boolean) {
                 var p: Record<string, any> = {};
-                p[cfgKey] = v;
+                p[enableKey] = v;
                 patch(p);
               },
-              (on ? t("chToggleOff") : t("chToggleOn")) + label,
+              (enabled ? t("chToggleOff") : t("chToggleOn")) + label,
             )}
           </span>
         </summary>
         <div className="dn-ch-body">
           {extras}
-          {on === false && soundOn ? (
+          {enabled && !popup && soundOn ? (
             <div className="dn-set-note-inline dn-soundOnly">{t("chSoundOnlyNote")}</div>
+          ) : null}
+          {enabled && !popup && !soundOn ? (
+            <div className="dn-set-note-inline dn-soundOnly">{t("chPopupSoundOffNote")}</div>
           ) : null}
           {/* 浏览器通知权限状态行归入浏览器频道卡（权限授权入口同卡就近可达） */}
           {channelId === "browser" ? browserPermLine() : null}
@@ -1756,8 +1776,7 @@ function SettingsCard() {
    *  纯后台页面自播需此前任意手势解锁；试听点击本身即手势）。 */
   function soundRow(soundKey: string, channelLabel: string) {
     var soundVal = settings[soundKey];
-    var soundOn =
-      soundVal === true || (typeof soundVal === "string" && SOUND_IDS.indexOf(soundVal) !== -1);
+    var soundOn = soundIsOn(soundVal);
     var toneValue =
       typeof soundVal === "string" && SOUND_IDS.indexOf(soundVal) !== -1 ? soundVal : "";
     var toneOpts: any[] = [
@@ -2555,8 +2574,8 @@ function SettingsCard() {
 
   // 频道区：内置两卡 + 实例卡（bark / webhook 按类型分派）+ 添加按钮
   var channelsChildren: any[] = [
-    builtinCard("browserNotify", "browserSound", t("chBrowserNotify"), "browser"),
-    builtinCard("systemNotify", "systemSound", t("chSystemNotify"), "system"),
+    builtinCard("browserEnabled", "browserNotify", "browserSound", t("chBrowserNotify"), "browser"),
+    builtinCard("systemEnabled", "systemNotify", "systemSound", t("chSystemNotify"), "system"),
   ].concat(
     (settings.channels || []).map(function (c: any, i: number) {
       return String(c.type) === "webhook" ? webhookCard(c, i) : barkCard(c, i);
