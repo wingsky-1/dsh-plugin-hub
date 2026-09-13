@@ -10,7 +10,7 @@ import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { SessionEvent } from "@deepseek-ai/dsh-session";
 import { describe, expect, it } from "vitest";
 
-import type { AgentRegistryPort } from "../../../src/server/events/deps.ts";
+import { makeAgentRegistry } from "../../helpers.ts";
 import {
   isSubagentOf,
   lastTurnEndOf,
@@ -55,23 +55,6 @@ function makeAgent(
       },
     },
   } as unknown as Agent;
-}
-
-/** 活体注册表假实现：`live` 是查得到的 agent，`owned` 是确凿的归属对。 */
-function makeRegistry(
-  options: { live?: Agent[]; owned?: ReadonlyArray<readonly [string, string]> } = {},
-): AgentRegistryPort {
-  const live = new Map((options.live ?? []).map((agent) => [String(agent.id), agent]));
-  return {
-    lookup: (id) => {
-      const agent = live.get(String(id));
-      return agent === undefined ? { found: false } : { found: true, agent };
-    },
-    isOwnedBy: (id, owner) =>
-      (options.owned ?? []).some(
-        ([child, parent]) => child === String(id) && parent === String(owner.id),
-      ),
-  };
 }
 
 describe("sessionTitleOf：任务名取自日志里最后一条标题", () => {
@@ -146,30 +129,30 @@ describe("lastTurnEndOf：取日志里最新一条结束证据", () => {
 describe("isSubagentOf：子代理归属判定", () => {
   it("origin 命中即真，不必再问注册表", () => {
     const agent = makeAgent("sub-origin", { header: { origin: "subagent" } });
-    expect(isSubagentOf(agent, makeRegistry())).toBe(true);
+    expect(isSubagentOf(agent, makeAgentRegistry())).toBe(true);
   });
 
   it("没有 parentSession 就是主任务", () => {
     const agent = makeAgent("main-root", { header: {} });
-    expect(isSubagentOf(agent, makeRegistry())).toBe(false);
+    expect(isSubagentOf(agent, makeAgentRegistry())).toBe(false);
   });
 
   it("父 agent 已消亡（查不到）时判主任务：宁可多报一条 done，也不静默用户自己的任务", () => {
     const agent = makeAgent("fork-orphan", { header: { parentSession: "p-gone" } });
-    expect(isSubagentOf(agent, makeRegistry())).toBe(false);
+    expect(isSubagentOf(agent, makeAgentRegistry())).toBe(false);
   });
 
   it("父 agent 在册但不拥有它（用户 fork 主线）时判主任务：header 单信号分不开两种 fork", () => {
     const child = makeAgent("fork-user", { header: { parentSession: "p-live" } });
     const parent = makeAgent("p-live");
-    const registry = makeRegistry({ live: [parent], owned: [] });
+    const registry = makeAgentRegistry({ live: [parent], owned: [] });
     expect(isSubagentOf(child, registry)).toBe(false);
   });
 
   it("父 agent 在册且确由它创建时判子代理（运行时归属是唯一可靠的第二个信号）", () => {
     const child = makeAgent("sub-owned", { header: { parentSession: "p-owner" } });
     const parent = makeAgent("p-owner");
-    const registry = makeRegistry({ live: [parent], owned: [["sub-owned", "p-owner"]] });
+    const registry = makeAgentRegistry({ live: [parent], owned: [["sub-owned", "p-owner"]] });
     expect(isSubagentOf(child, registry)).toBe(true);
   });
 });

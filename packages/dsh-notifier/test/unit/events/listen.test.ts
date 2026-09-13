@@ -26,7 +26,7 @@ import type {
   NotifyRequest,
 } from "../../../src/server/events/deps.ts";
 import { installEvents, releaseEvents } from "../../../src/server/events/interface.ts";
-import { makeLogger } from "../../helpers.ts";
+import { makeAgentRegistry, makeLogger } from "../../helpers.ts";
 
 afterEach(() => {
   releaseEvents();
@@ -154,23 +154,6 @@ function makeSession(
   };
 }
 
-/** 活体注册表假实现：`live` 查得到，`owned` 是确凿的归属对。 */
-function makeRegistry(
-  options: { live?: Agent[]; owned?: ReadonlyArray<readonly [string, string]> } = {},
-): AgentRegistryPort {
-  const live = new Map((options.live ?? []).map((agent) => [String(agent.id), agent]));
-  return {
-    lookup: (id) => {
-      const agent = live.get(String(id));
-      return agent === undefined ? { found: false } : { found: true, agent };
-    },
-    isOwnedBy: (id, owner) =>
-      (options.owned ?? []).some(
-        ([child, parent]) => child === String(id) && parent === String(owner.id),
-      ),
-  };
-}
-
 /** 装配一次 events 域，交出观测面。 */
 function assemble(options: { agents?: AgentRegistryPort } = {}) {
   const events = makeHostEvents();
@@ -178,7 +161,7 @@ function assemble(options: { agents?: AgentRegistryPort } = {}) {
   const submitted: NotifyRequest[] = [];
   const deps: EventsDeps = {
     events: events.port,
-    agents: options.agents ?? makeRegistry(),
+    agents: options.agents ?? makeAgentRegistry(),
     logger,
     pipeline: {
       submit: (request) => {
@@ -382,7 +365,7 @@ describe("子代理归属：main 与 subagent 的 kind 分流", () => {
     const parent = makeSession("p-owner");
     const child = makeSession("s-owned", { header: { parentSession: "p-owner" } });
     const { events, submitted } = assemble({
-      agents: makeRegistry({ live: [parent.agent], owned: [["s-owned", "p-owner"]] }),
+      agents: makeAgentRegistry({ live: [parent.agent], owned: [["s-owned", "p-owner"]] }),
     });
     setStatus(events, child, "running");
     child.endTurn(1);

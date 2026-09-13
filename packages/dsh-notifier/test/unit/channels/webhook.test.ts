@@ -11,6 +11,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  clampTimeoutSec,
   renderWebhookBody,
   priorityFor,
   sendWebhook,
@@ -23,16 +24,7 @@ import type {
   NotifyMessage,
   NotifySeverity,
 } from "../../../src/server/channels/impl/deliver/type.ts";
-import { reasonOf, stubFetch, wire } from "../../helpers.ts";
-
-/** 出口结果的形状经签名可达，不必请 impl 再导出一个名字。 */
-type DeliverResult = Awaited<ReturnType<typeof sendWebhook>>;
-
-/** 失败结果的可重试标记；非失败直接判红（与 `reasonOf` 同款收窄）。 */
-function retryableOf(result: DeliverResult): boolean {
-  if (result.status !== "failed") throw new Error(`期望失败，实际 ${result.status}`);
-  return result.retryable;
-}
+import { reasonOf, retryableOf, stubFetch, wire } from "../../helpers.ts";
 
 /** 渲染变量；`ts` 写死，免得断言跟着运行时刻漂。 */
 function varsOf(over: Partial<Parameters<typeof renderWebhookBody>[2]> = {}) {
@@ -66,6 +58,8 @@ describe("模板渲染（纯函数，无网络）", () => {
     expect(Object.keys(raw).sort()).toEqual(["body", "event", "severity", "title", "ts"]);
     expect(raw.event).toBe("done");
     expect(raw.body).toBe("正文");
+    // raw 的 {{severity}} 是强度原文：回落成空串等于对端永远看不到这次通知的严重性。
+    expect(raw.severity).toBe("failure");
   });
 
   // {{ts}} 若进了字符串占位符白名单，raw 模板的裸数字会变成字符串，对端解析直接报错。
@@ -234,6 +228,20 @@ describe("投递：凭据只走请求头，失败即终态", () => {
       "ok",
     );
     expect(calls[1]!.signal?.aborted).toBe(false);
+  });
+
+  // 上界与下界是**唯一**箍：配置层允许到 600，而 clamp 的产物只落在 AbortSignal 的 deadline 上，
+  // 从外面读不出来（改宽上界、把下界改成 0 都不影响「请求发出去了」）。故这里直接判函数值。
+  it.each<[string, number | undefined, number]>([
+    ["负数 → 下界", -5, 1],
+    ["0 → 下界", 0, 1],
+    ["下界本身保留", 1, 1],
+    ["上界本身保留", 60, 60],
+    ["配置层允许的 600 也被收到上界", 600, 60],
+    ["NaN → 缺省", Number.NaN, 10],
+    ["undefined（未配置）→ 缺省", undefined, 10],
+  ])("timeoutSec clamp（%s）：%s → %s 秒", (_label, value, expected) => {
+    expect(clampTimeoutSec(value)).toBe(expected);
   });
 
   // 状态页只显示一行，未截断的长原因会把它撑坏并挤掉别的信息。

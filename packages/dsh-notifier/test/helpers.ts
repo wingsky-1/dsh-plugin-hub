@@ -12,8 +12,10 @@ import { join } from "node:path";
 
 import { vi } from "vitest";
 
+import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { DeliverResult } from "../src/server/channels/impl/deliver/type.ts";
+import type { AgentRegistryPort } from "../src/server/events/deps.ts";
 import type { LoggerPort } from "../src/server/shared/interface.ts";
 
 /**
@@ -177,6 +179,33 @@ export function makeRegister(): {
 export function reasonOf(result: DeliverResult): string {
   if (result.status !== "failed") throw new Error(`期望失败，实际 ${result.status}`);
   return result.reason;
+}
+
+/** 取失败结果的可重试标记；非失败同上处理。 */
+export function retryableOf(result: DeliverResult): boolean {
+  if (result.status !== "failed") throw new Error(`期望失败，实际 ${result.status}`);
+  return result.retryable;
+}
+
+/**
+ * 假 Agent 注册表：`live` 是 id → Agent，`owned` 是「子 id + 父 Agent」对。
+ *
+ * 与 sdk 的 `makeRegister`（种类登记）只差一个字，故这里叫 `makeAgentRegistry`。
+ */
+export function makeAgentRegistry(
+  options: { live?: Agent[]; owned?: ReadonlyArray<readonly [string, string]> } = {},
+): AgentRegistryPort {
+  const live = new Map((options.live ?? []).map((agent) => [String(agent.id), agent]));
+  return {
+    lookup: (id) => {
+      const agent = live.get(String(id));
+      return agent === undefined ? { found: false } : { found: true, agent };
+    },
+    isOwnedBy: (id, owner) =>
+      (options.owned ?? []).some(
+        ([child, parent]) => child === String(id) && parent === String(owner.id),
+      ),
+  };
 }
 
 /** 跨边界喂值：编译期联合不代表运行时的值也在枚举里，守的正是编译期管不到的那一侧。 */

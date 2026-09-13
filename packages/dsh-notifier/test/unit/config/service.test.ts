@@ -236,6 +236,17 @@ describe("写面：落盘、校验、版本", () => {
     expect(readConfig().notifyAsk).toBe(DEFAULT_CONFIG.notifyAsk);
   });
 
+  it("提交里值为 undefined 的键是「没提交」：不该把文件里已有的值抹掉（设置页整份提交时未改动的字段可能带 undefined）", async () => {
+    assemble();
+    expect((await writeConfig({ notifyAsk: false })).ok).toBe(true);
+
+    const result = await writeConfig({ notifyAsk: undefined, notifyTaskDone: false });
+    expect(result.ok).toBe(true);
+    expect(onDisk().notifyAsk).toBe(false);
+    expect(readConfig().notifyAsk).toBe(false);
+    expect(readConfig().notifyTaskDone).toBe(false);
+  });
+
   it("修订号是用户层内容摘要：键序无关、内容不同则号不同（含嵌套——号不稳定会让每次保存都凭空冲突）", () => {
     const first = revisionOfFile(
       '{"notifyAsk":false,"quietHours":{"start":"22:00","enabled":true,"end":"08:00"}}',
@@ -250,6 +261,26 @@ describe("写面：落盘、校验、版本", () => {
       '{"notifyAsk":false,"quietHours":{"start":"22:00","enabled":true,"end":"07:00"}}',
     );
     expect(nestedChanged).not.toBe(first);
+    // 数组里的对象同样按键排序：数组走的是另一条序列化支路，漏了它等于频道键序一变就凭空冲突。
+    const channelKeysOrdered = revisionOfFile(
+      '{"channels":[{"id":"bark:a","type":"bark","deviceKey":"k"}]}',
+    );
+    const channelKeysSwapped = revisionOfFile(
+      '{"channels":[{"type":"bark","id":"bark:a","deviceKey":"k"}]}',
+    );
+    expect(channelKeysSwapped).toBe(channelKeysOrdered);
+    // 标量值参与摘要：把 true / false 摘要成同一个号，两次内容不同的设置会被判成同一版本。
+    expect(revisionOfFile('{"notifyAsk":true}')).not.toBe(revisionOfFile('{"notifyAsk":false}'));
+    // 手改过的文件里可能有 null 值：摘要必须对它照样可算——装配期同步算号，抛出去整个插件装不上。
+    expect(typeof revisionOfFile('{"notifyAsk":null}')).toBe("number");
+  });
+
+  it("数组顺序是内容：调换频道顺序必须改号（排数组会把「用户调序」读成没改动）", () => {
+    const pad = { ...BARK, id: "bark:pad", name: "B" };
+    const forward = revisionOfFile(JSON.stringify({ channels: [BARK, pad] }));
+    const swapped = revisionOfFile(JSON.stringify({ channels: [pad, BARK] }));
+    // 排序数组会让两份内容不同的设置算出同一个号：用户调序后提交不再判冲突，静默覆盖别人的改动。
+    expect(swapped).not.toBe(forward);
   });
 });
 

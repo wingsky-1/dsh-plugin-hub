@@ -13,7 +13,7 @@ import type {
   LegacySettingsEntry,
   LegacySettingsFace,
 } from "../../../src/server/upgrade/impl/legacy/type.ts";
-import { tempDshHome } from "../../helpers.ts";
+import { tempDshHome, wire } from "../../helpers.ts";
 
 /** 本插件 0.2.3 在官方 settings 服务里用的命名空间。 */
 const NS = "dsh-notifier";
@@ -61,8 +61,23 @@ describe("读取优先级：V1 优先，V0 兜底", () => {
 
   it("V1 条目存在但 user 不是对象时同样回退 V0 文件（脏条目不能把存量配置吃掉）", () => {
     writeLegacyFile("dsh-notifier.json", { notifyAsk: true });
-    const settings = makeSettings([{ ns: NS, user: ["notifyAsk"] }]);
-    expect(readLegacySettings(settings)).toEqual({ notifyAsk: true });
+    // 数组只是脏的一种：标量（typeof 不是 object）与 null（typeof 是 object 但取键会抛）都要挡住。
+    for (const user of [["notifyAsk"], "notifyAsk", 42, wire<LegacySettingsEntry["user"]>(null)]) {
+      expect(readLegacySettings(makeSettings([{ ns: NS, user }]))).toEqual({ notifyAsk: true });
+    }
+  });
+
+  it("读存量设置时要求脱敏（不要求脱敏会把密钥类设置读进内存并原样搬进新配置）", () => {
+    const calls: Array<{ redactSecrets: boolean }> = [];
+    const settings: LegacySettingsFace = {
+      describe: (options) => {
+        calls.push(options);
+        return [{ ns: NS, user: { notifyAsk: false } }];
+      },
+    };
+
+    expect(readLegacySettings(settings)).toEqual({ notifyAsk: false });
+    expect(calls).toEqual([{ redactSecrets: true }]);
   });
 
   it("settings 调用抛错时回退 V0 文件（服务在但拒绝这次调用，不该拦住插件启动）", () => {
@@ -79,6 +94,15 @@ describe("读取优先级：V1 优先，V0 兜底", () => {
     writeLegacyFile("dsh-notifier.json", "{ 这不是 JSON");
     expect(readLegacySettings(makeSettings([]))).toEqual({});
     expect(existsSync(legacyFile("dsh-notifier.json"))).toBe(true);
+  });
+
+  // 合法 JSON 但不是对象：数组/标量都能被 Object.keys 读出一堆下标键，认下来就等于往配置里
+  // 灌进用户从没设过的键——所以两个候选名都要按「解释不了」处理。
+  it("V0 文件是合法 JSON 但不是对象时两个候选都不认（数组/标量会读出一堆假键）", () => {
+    writeLegacyFile("dsh-notifier.json", [1, 2]);
+    writeLegacyFile("dsh-notifier.json.migrated.bak", '"这不是对象"');
+
+    expect(readLegacySettings(makeSettings([]))).toEqual({});
   });
 
   it("两份来源都没有时给空对象（它就是「没有可迁的东西」的答案）", () => {

@@ -49,11 +49,12 @@ function applyStep(step: UpgradeStep): void {
 }
 
 /**
- * 链跑完后的对账。三种落差分开报，因为它们要人去改的地方完全不同：落后 = 这一步的升级函数还没写（开发期
+ * 链跑完后的对账（导出只为本域用例能直接喂 (recorded, target) 断言三种落差；对外契约面仍只有 `installUpgrade`）。
+ * 三种落差分开报，因为它们要人去改的地方完全不同：落后 = 这一步的升级函数还没写（开发期
  * 漏项）；超前且步骤表本身也超前 = 步骤表与 package.json 没同步；超前而步骤表没超前 = 装的是更旧的包（降级）。
  * 三者都不中止启动——它们不是迁移动作失败，而静默地把刻度改成看起来对的值更糟。
  */
-function reportGap(recorded: string, target: string, logger: LoggerPort): void {
+export function reportGap(recorded: string, target: string, logger: LoggerPort): void {
   const gap = compareVersions(recorded, target);
   if (gap === 0) return;
 

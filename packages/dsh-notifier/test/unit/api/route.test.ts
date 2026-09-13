@@ -5,13 +5,12 @@
  * 出现在功能用例里——非回环请求照样能读到设置、写设置、清历史。故这里逐道断言：回环 → 方法 →
  * 异常收口，且顺序不能颠倒（403 必须早于 405：安全判定不能被方法判定绕过）。
  */
-import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
 
 import { registerEndpoints, sendJson } from "../../../src/server/api/impl/route/index.ts";
 import type { Endpoint, RouteHandler } from "../../../src/server/api/impl/route/type.ts";
-import { jsonReq, makeLogger, makeRegister, pollUntil } from "../../helpers.ts";
+import { jsonReq, makeLogger, makeRegister, makeRes, pollUntil } from "../../helpers.ts";
 
 /** 假请求：默认是合法回环请求，`body` 由 async 迭代器吐出（`readJsonBody` 走的就是这条路）。 */
 function makeReq(
@@ -31,37 +30,6 @@ function makeReq(
     remoteAddress: options.remoteAddress,
     host: options.host,
   });
-}
-
-/** 假响应：把状态码、头与正文抓下来供断言。 */
-function makeRes() {
-  const rec = {
-    status: 0,
-    headers: {} as Record<string, string>,
-    text: "",
-    headersSent: false,
-  };
-  const res = {
-    get headersSent() {
-      return rec.headersSent;
-    },
-    writeHead(status: number, headers?: Record<string, string>) {
-      rec.status = status;
-      rec.headers = { ...(headers ?? {}) };
-      rec.headersSent = true;
-      return res;
-    },
-    write(chunk: string) {
-      rec.text += chunk;
-      return true;
-    },
-    end(chunk?: string) {
-      if (chunk !== undefined) rec.text += chunk;
-      rec.headersSent = true;
-      return res;
-    },
-  };
-  return { res: res as unknown as ServerResponse, rec, json: (): unknown => JSON.parse(rec.text) };
 }
 
 /** 一个端点组，handler 可替换：围栏用例只关心 handler 有没有被调到。 */

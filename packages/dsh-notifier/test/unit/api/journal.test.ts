@@ -5,7 +5,7 @@
  * 页面就整块空白，而服务端不会有任何报错。另外这三个端点都必须**等**存储域的结果——store 的读是
  * 异步的，漏掉 await 会把一个 Promise 序列化成 `{}`，接口看上去「正常返回空历史」。
  */
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
 
 import type { StorePort } from "../../../src/server/api/deps.ts";

@@ -100,6 +100,21 @@ describe("redactConfig：读出口只出掩码", () => {
     const stored = { channels: [unknown] } as unknown as Partial<NotifyConfig>;
     expect(redactConfig(stored).channels?.[0]).toEqual(unknown);
   });
+
+  it("非对象项原样送出且不抛：字符串 / null / 数组都可能躺在存储层里（同一个对象守卫的两侧出口，读面原样送出、写面原样通过）", () => {
+    for (const item of ["not-a-channel", null, []]) {
+      const stored = { channels: [item] } as unknown as Partial<NotifyConfig>;
+      expect(redactConfig(stored).channels?.[0], JSON.stringify(item)).toEqual(item);
+      expect(restoredOf([bare(item)], []), JSON.stringify(item)).toEqual([item]);
+    }
+  });
+
+  it("只掩字符串：非字符串值不是凭据，掩掉它等于把一个坏值换成另一个坏值（原文还在域内参与投递，改了就送不出去）", () => {
+    const stored = { channels: [{ ...WEBHOOK, token: 42 }] } as unknown as Partial<NotifyConfig>;
+    const channel = redactConfig(stored).channels?.[0];
+    if (channel?.type !== "webhook") throw new Error("夹具形状不对");
+    expect(channel.token).toBe(42);
+  });
 });
 
 describe("unmaskChannels：写入口按 id 还原", () => {
@@ -132,6 +147,10 @@ describe("unmaskChannels：写入口按 id 还原", () => {
       [[{ ...BARK_A, deviceKey: MASK }], [{ id: "bark:a", type: "bark", name: "无密钥字段" }]],
       [[{ ...BARK_A, deviceKey: MASK }], undefined],
       [[{ ...BARK_A, id: 42, deviceKey: MASK }], [BARK_A]],
+      // 空 id 与数字 id 都不是对齐键：不能与存储里同样「没写 id」「写了数字 id」的项对上，
+      // 否则会把 A 的凭据回填进 B。
+      [[{ ...BARK_A, id: "", deviceKey: MASK }], [{ id: "", type: "bark", deviceKey: "key-x" }]],
+      [[{ ...BARK_A, id: 42, deviceKey: MASK }], [{ id: 42, type: "bark", deviceKey: "key-42" }]],
     ];
     for (const [patch, existing] of rows) {
       expect(unmaskChannels(patch, existing), JSON.stringify(patch)).toEqual({ ok: false });

@@ -620,9 +620,12 @@ describe("宿主事件可达性", () => {
     );
 
     // ③ agent/turn-stopping：同一 turn 只发一次（去重状态机在收紧的派发下也要吃到这两跳）。
+    // 本段只证明「到达并被记账」：本例的 notifyTurnEnd 是默认的 false，所以这条 turn-end 是以
+    // suppressed 落的史——它分不出「发了」与「被压制」，投递面的判据在下面那条用例里。
     const turnAgent = fakeAgent("itest-scope-turn");
     root.emit(scopedAgent, "agent/turn-stopping", { agent: turnAgent, turn: 7, signal });
-    await pollUntil(() => countKind("turn-end") === 1, "③ 作用域收紧下 turn 边界仍通知");
+    await pollUntil(() => countKind("turn-end") === 1, "③ 作用域收紧下 turn 边界仍到达状态机");
+    expect(kindLine("turn-end")?.suppressed).toBe("kind-off");
     root.emit(scopedAgent, "agent/turn-stopping", { agent: turnAgent, turn: 7, signal });
     await settleHistory();
     expect(countKind("turn-end")).toBe(1);
@@ -712,6 +715,13 @@ describe("宿主事件可达性", () => {
 
     root.emit("agent/turn-stopping", { agent, turn: 7, signal });
     await pollUntil(() => countKind("turn-end") === 1, "turn-end 落史");
+
+    // 落史本身只证明「事件到了状态机并写了一行」：notifyTurnEnd 关着时同一条也会以 turn-end 落史，
+    // 只是带 suppressed。投递面要有自己的判据——出站明细与浏览器帧的序号。
+    const delivered = kindLine("turn-end");
+    expect(delivered?.suppressed).toBeUndefined();
+    expect(delivered?.channels).toEqual([{ channelId: "browser", status: "ok" }]);
+    await pollUntil(() => seqValue() === seqAnchor + 1, "帧经 FrameBus 出去");
 
     // 同一 turn 再来一次：去重状态机在真实事件链上也要成立（否则每步都弹一条）。
     root.emit("agent/turn-stopping", { agent, turn: 7, signal });

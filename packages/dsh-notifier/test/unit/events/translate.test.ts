@@ -135,6 +135,15 @@ describe("审批与提问：两条 waterfall 的旁路翻译", () => {
     const request = requestOf(translateUserQuestion(question({ questions: [] })));
     expect(request.body).toBe("有提问需要你回答\n请到 DSH 界面回答");
   });
+
+  // 空串与「没有 question 字段」是两回事，但对用户是同一件事：两条都会渲染出一行没有内容的
+  // 「问题：」。只测 `questions: []` 的话，把判据退化成「首个问题存在就行」也全绿。
+  it("首个问题的文本是空串时同样不写「问题：」行（判的是摘要非空，不是「有没有首个问题」）", () => {
+    const request = requestOf(
+      translateUserQuestion(question({ questions: [{ id: "q1", question: "" }] })),
+    );
+    expect(request.body).toBe("有提问需要你回答\n请到 DSH 界面回答");
+  });
 });
 
 describe("会话内事件：只记账，不产出", () => {
@@ -157,6 +166,20 @@ describe("会话内事件：只记账，不产出", () => {
   it("认不出的宿主事件类型也不产出、不抛错（事件链是活的，抛错等于让插件崩在运行中）", () => {
     const unknown = { type: "assistant/message", data: {} } as unknown as SessionEvent;
     expect(translateSessionEvent("s1", unknown).ok).toBe(false);
+  });
+
+  // 占位能力是「抛错」而不是「空实现」：没人听的日志出口会静默，但装配守卫有洞时必须当场暴露，
+  // 否则表现为「通知全没了、且没有任何线索指向装配」。
+  it("未装配时判定路过的状态机当场抛错（占位成抛错而非按空状态判定）", () => {
+    const agent = {
+      id: "u-uninstalled",
+      session: { header: { parentSession: "p-gone" }, snapshotEvents: () => [] },
+    } as unknown as Agent;
+
+    agentStates.observeStatus({ agent, status: "running" });
+    agentStates.rememberTurnEnd(agent.id, { turn: 1, kind: "completed" });
+    // 归属查询是这条判定路上唯一碰到装配入参的一步：它在未装配时应当抛「尚未装配」。
+    expect(() => agentStates.observeStatus({ agent, status: "idle" })).toThrow(/尚未装配/u);
   });
 });
 

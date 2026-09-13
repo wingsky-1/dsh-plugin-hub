@@ -142,6 +142,14 @@ describe("send：本域只做形状收窄，不判该不该发", () => {
     ]);
   });
 
+  // 空串标题与「没给标题」对用户是同一件事：空标题在系统通知里看起来像一条残缺记录。
+  // 只测缺席那一档的话，把判据退化成「有字符串就用」也全绿。
+  it("标题是空串时同样补中性文案（判的是非空，不是「有没有给字符串」）", async () => {
+    const { service, pipeline } = assemble();
+    await service.send({ kind: "done", title: "", body: "正文" });
+    expect(pipeline.submitted).toEqual([{ kind: "done", title: "DSH 通知", body: "正文" }]);
+  });
+
   it("形状守卫：非法种类与非字符串正文一律 reject（调用方应在调用点 catch）", async () => {
     const { service, pipeline } = assemble();
     await expect(
@@ -173,11 +181,30 @@ describe("registerKind：登记不等于放行", () => {
     expect(listKinds()).toContainEqual({ id: "svc-face:pre", label: "预确认", confirmed: true });
   });
 
+  // 清单顺序就是设置页的展示顺序（注册表注释自称如此），而重复登记是插件重载/热更新下的常态：
+  // 取先登记的 label 会让用户看到过期的名字，把新登记项插到前面会让列表每次重载都跳一下。
+  it("同 id 重复登记取后者的 label 且保持首次登记的位置：清单顺序 = 登记顺序", () => {
+    const { service } = assemble();
+    // 注册表跨用例累积（没有重置口），故按本用例独有的命名空间过滤后判相对顺序。
+    service.registerKind({ id: "svc-order:a", label: "先登记" });
+    service.registerKind({ id: "svc-order:b", label: "后登记" });
+    service.registerKind({ id: "svc-order:a", label: "后改的展示名" });
+
+    expect(listKinds().filter((kind) => kind.id.startsWith("svc-order:"))).toEqual([
+      { id: "svc-order:a", label: "后改的展示名", confirmed: false },
+      { id: "svc-order:b", label: "后登记", confirmed: false },
+    ]);
+  });
+
   it("守卫：无冒号 / 命名空间撞内置 / id 非字符串 一律抛错而不是静默忽略", () => {
     const { service } = assemble();
     expect(() =>
       service.registerKind(untyped<RegisterInput>({ id: "no-colon", label: "x" })),
     ).toThrow(/id 非法/u);
+    // `:x` 的冒号位置在头部：命名空间是空串，它在设置页上是一行没有归属人的种类。
+    expect(() => service.registerKind(untyped<RegisterInput>({ id: ":x", label: "x" }))).toThrow(
+      /id 非法/u,
+    );
     expect(() =>
       service.registerKind(untyped<RegisterInput>({ id: "ask:foo", label: "x" })),
     ).toThrow(/命名空间/u);
@@ -189,16 +216,17 @@ describe("registerKind：登记不等于放行", () => {
 
 describe("清单与确认：确认态住在设置里，注册表随进程生灭", () => {
   it("确认写整份名单（去重），撤销从名单里移除", async () => {
-    const { service, config } = assemble(["svc-face:c"]);
+    const { service, config } = assemble(["svc-face:c", "svc-keep:other"]);
     service.registerKind({ id: "svc-face:c", label: "C" });
     expect(listKinds()).toContainEqual({ id: "svc-face:c", label: "C", confirmed: true });
 
+    // 撤销一个不能顺手清掉别人：名单是整份写回的，过滤条件写错就是「撤销 A 之后 B 也失效」。
     await confirmKind("svc-face:c", false);
-    expect(config.writes).toEqual([{ allowKinds: [] }]);
+    expect(config.writes).toEqual([{ allowKinds: ["svc-keep:other"] }]);
     expect(listKinds()).toContainEqual({ id: "svc-face:c", label: "C", confirmed: false });
 
     await confirmKind("svc-face:c", true);
-    expect(config.writes[1]).toEqual({ allowKinds: ["svc-face:c"] });
+    expect(config.writes[1]).toEqual({ allowKinds: ["svc-keep:other", "svc-face:c"] });
     expect(listKinds()).toContainEqual({ id: "svc-face:c", label: "C", confirmed: true });
   });
 

@@ -102,6 +102,16 @@ function browserTargetOf(outcome: RouteOutcome, channelId: string): BrowserTarge
   return target;
 }
 
+/** 系统出口的投递参数：`pop` 的取值只有在这里看得见。 */
+function systemTargetOf(
+  outcome: RouteOutcome,
+  channelId: string,
+): Extract<DeliveryTarget, { type: "system" }> {
+  const target = targetOf(outcome, channelId);
+  if (target.type !== "system") throw new Error(`${channelId} 不是系统目标`);
+  return target;
+}
+
 describe("kindRoutes：命中收窄，缺省广播", () => {
   // 路由命中不生效，用户看到的是「设置改了没用」。
   it("命中时只投命中的频道实例（改了路由就要生效）", () => {
@@ -200,6 +210,37 @@ describe("内置频道池：弹窗关而声音开 = 只响不弹", () => {
     expect(closed.targets).toEqual([]);
   });
 
+  // pop 不是「有没有这个目标」，而是「弹不弹」：取反或写死一处，用户关掉弹窗后仍会被弹，
+  // 而「只响不弹」这个组合也就退化成「什么都没配」。
+  it("pop 跟随各自的弹窗开关：开关开才弹，只响不弹时两个内置出口都是 pop=false", () => {
+    const deps = { frames: framePort().port, logger: makeLogger() };
+    const bothOpen = routeTargets(
+      deps,
+      configAt({
+        browserNotify: true,
+        browserSound: false,
+        systemNotify: true,
+        systemSound: false,
+      }),
+      requestOf(),
+    );
+    expect(browserTargetOf(bothOpen, "browser").pop).toBe(true);
+    expect(systemTargetOf(bothOpen, "system").pop).toBe(true);
+
+    const soundOnly = routeTargets(
+      deps,
+      configAt({
+        browserNotify: false,
+        browserSound: "ding",
+        systemNotify: false,
+        systemSound: "ding",
+      }),
+      requestOf(),
+    );
+    expect(browserTargetOf(soundOnly, "browser").pop).toBe(false);
+    expect(systemTargetOf(soundOnly, "system").pop).toBe(false);
+  });
+
   // 帧里没有 kind，客户端只能给所有通知同一套图标与颜色。
   it("浏览器目标的帧出口带上本次 kind（客户端靠它选图标与颜色）", () => {
     const { port, emitted } = framePort();
@@ -286,6 +327,20 @@ describe("出站目标构造", () => {
     expect(custom.preset).toBe("raw");
     expect(custom.template).toBe('{"a":1}');
     expect("timeoutSec" in custom).toBe(false);
+
+    // 空模板是「用预设默认模板」的表达，带进去对端会收到一个空 body。
+    const emptyTemplate = webhookTargetOf(
+      routeTargets(deps, configAt({ channels: [webhookChannel({ template: "" })] }), requestOf()),
+      "webhook:w",
+    );
+    expect("template" in emptyTemplate).toBe(false);
+
+    // 正超时必须带过去：不带就等于用户在设置页设的超时永远不生效（出口一律回落 10s）。
+    const timed = webhookTargetOf(
+      routeTargets(deps, configAt({ channels: [webhookChannel({ timeoutSec: 30 })] }), requestOf()),
+      "webhook:w",
+    );
+    expect(timed.timeoutSec).toBe(30);
   });
 
   // 凭据空着却带上 auth 会发出一个「Bearer undefined」，none 却带凭据则是把凭据发给了不该收的端点。
@@ -319,6 +374,17 @@ describe("出站目标构造", () => {
     expect("auth" in outcomeOf({ auth: "none" })).toBe(false);
     // 凭据字段空着时宁可没有 auth，也不发一个 "Bearer undefined" 出去。
     expect("auth" in outcomeOf({ auth: "bearer", token: "" })).toBe(false);
+    // 字段整个缺席（不只是空串）也不能炸：脏配置不该把整条出站路由一起吃掉。
+    expect("auth" in outcomeOf({ auth: "bearer" })).toBe(false);
+    expect("auth" in outcomeOf({ auth: "basic" })).toBe(false);
+    // header 认证两侧都非空才并入：空名会写出一个无名头，空值等于把对端原有的凭据清掉。
+    expect("headers" in outcomeOf({ auth: "header", headerName: "X-Token", headerValue: "" })).toBe(
+      false,
+    );
+    expect("headers" in outcomeOf({ auth: "header", headerName: "", headerValue: "v-1" })).toBe(
+      false,
+    );
+    expect("headers" in outcomeOf({ auth: "header" })).toBe(false);
   });
 
   // 一个坏项吃掉整条通知，表现为「配置里加了个频道之后所有通知都没了」。

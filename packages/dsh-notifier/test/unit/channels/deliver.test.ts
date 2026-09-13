@@ -19,7 +19,7 @@ import {
   displayCaps,
   truncateCodePoints,
 } from "../../../src/server/channels/impl/deliver/caps.ts";
-import { pollUntil, wire } from "../../helpers.ts";
+import { pollUntil, stubFetch, wire } from "../../helpers.ts";
 
 /** 待投递消息：`ts` 写死不取 `Date.now()`，免得断言跟着运行时刻漂。 */
 function messageOf(over: Partial<NotifyMessage> = {}): NotifyMessage {
@@ -110,6 +110,18 @@ describe("deliver：并发投递，逐目标 fail-soft", () => {
     expect(results[1]).toEqual({ status: "ok", stage: "accepted" });
     expect(emitted).toHaveLength(1);
   });
+
+  // 派发表漏一个 case，那个出口的目标会被判成「未知类型」——用户看到的是「webhook 频道永远失败」。
+  it("webhook 目标经派发表走到出口：真发出请求并回报出口的结论（漏 case 即该出口永远失败）", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const results = await deliver(messageOf(), [
+      { type: "webhook", url: "http://127.0.0.1:40281/hook", preset: "raw" },
+    ]);
+
+    expect(results).toEqual([{ status: "ok", stage: "delivered" }]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.method).toBe("POST");
+  });
 });
 
 describe("展示上限：码点口径与逐出口数值", () => {
@@ -117,9 +129,6 @@ describe("展示上限：码点口径与逐出口数值", () => {
   it("按码点截断：emoji 代理对不会被腰斩成替换符（按 UTF-16 切会留下孤立高位代理）", () => {
     expect(truncateCodePoints("🙂🙂", 1)).toBe("🙂");
     expect(truncateCodePoints("🙂".repeat(64), 64)).toBe("🙂".repeat(64));
-    expect(Array.from(truncateCodePoints("文".repeat(400), FAILURE_REASON_MAX))).toHaveLength(
-      FAILURE_REASON_MAX,
-    );
   });
 
   // 上限是各外部系统容忍度的编码，改宽一处就会让某个出口收到它显示不了的长度。

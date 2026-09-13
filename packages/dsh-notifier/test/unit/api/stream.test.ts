@@ -14,7 +14,8 @@
  */
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { ApiDeps, OutgoingFrame } from "../../../src/server/api/deps.ts";
@@ -28,6 +29,8 @@ import { jsonReq, makeLogger, pollUntil, tempDshHome } from "../../helpers.ts";
 
 const home = tempDshHome();
 const { installApi, releaseApi } = await import("../../../src/server/api/interface.ts");
+// 动态导入而不是顶层静态 import：流实例的落盘路径在构造时定下，静态导入会先于上面的临时 home 求值。
+const { streamHub } = await import("../../../src/server/api/impl/stream/index.ts");
 
 /** 视图四件事实：流块只用 `readConfig`，其余两处给足形状即可。 */
 const VIEW = { user: {}, revision: 1, writable: true, effective: {} };
@@ -224,6 +227,24 @@ describe("序号：落盘并跨装配接着数", () => {
 
     expect(framesOf(connect(second.routes).rec.text).map((event) => event.seq)).toEqual([2]);
   });
+
+  // 刻度文件是磁盘上的东西：断电截断、被别的工具写过都会留下脏值。负刻度若原样采纳，新帧的序号
+  // 会接在负值后面（重连客户端 `since` 全是正数，于是每一帧都被当成旧的丢掉）；非数字与空白则
+  // 必须回落 0。表里只有 `-5` 那一档能杀掉「去掉 parsed > 0 守卫」的改写，另两档是口径的另外两侧。
+  it.each([["-5"], ["abc"], ["   "], [""]])(
+    "刻度文件是脏值（%j）时从 0 起算：第一帧仍是 1，负值不被采纳",
+    async (text) => {
+      const file = notifierFile(SEQ_FILE_NAME);
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, text);
+
+      const { routes, publish } = assemble();
+      publish(frame());
+      await pollUntil(() => readSeqFromDisk() === 1, "脏刻度被当成 0 之后第一帧写回 1");
+
+      expect(framesOf(connect(routes).rec.text).map((event) => event.seq)).toEqual([1]);
+    },
+  );
 });
 
 describe("断线补拉：?since=N", () => {
@@ -290,6 +311,34 @@ describe("回放缓冲：上限 200 条", () => {
     expect(overLimit.map((event) => event.seq)).toEqual(
       Array.from({ length: 200 }, (_item, index) => index + 2),
     );
+  });
+});
+
+describe("装配守卫：未装配与重复装配", () => {
+  // 第二次装配会换掉连接表与序号来源，而序号是从盘上读回来的——半途换掉就是「同一个进程两套刻度」。
+  it("重复装配当场抛错（单例语义：第二次装配会换掉连接表与刻度来源）", () => {
+    assemble();
+    expect(() =>
+      streamHub.install({
+        logger: makeLogger(),
+        config: { readConfig: () => DEFAULT_CONFIG },
+      }),
+    ).toThrow(/api 流只能装配一次/u);
+  });
+
+  // 未装配时按默认上限工作、或让 publish 推进刻度，都会在下一次装配时冒出一批谁也没发过的旧帧。
+  it("未装配时 handle 回 503 空响应，publish 被丢弃且不写刻度文件", async () => {
+    const { routes } = assemble();
+    releaseApi();
+
+    const refused = connect(routes);
+    expect(refused.rec.status).toBe(503);
+    expect(refused.rec.text).toBe("");
+
+    streamHub.publish(frame());
+    // 刻度文件是被 publish 创建的：等一小会儿仍不存在，才说明这次发布根本没落盘。
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(readSeqFromDisk()).toBe(0);
   });
 });
 

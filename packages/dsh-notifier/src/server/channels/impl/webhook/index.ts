@@ -135,7 +135,7 @@ export async function sendWebhook(
       method: "POST",
       headers,
       body,
-      signal: AbortSignal.timeout(timeoutSecOf(target) * 1000),
+      signal: AbortSignal.timeout(clampTimeoutSec(target.timeoutSec) * 1000),
     });
   } catch (cause) {
     const reason = cause instanceof Error ? cause.message : String(cause);
@@ -164,9 +164,13 @@ function setHeader(headers: Record<string, string>, name: string, value: string)
   headers[name] = value;
 }
 
-/** 投递超时 clamp 到 1..60 秒（缺省 10）：配置层已归一，这里兜跨边界值。 */
-function timeoutSecOf(target: WebhookTarget): number {
-  const value = target.timeoutSec;
+/**
+ * 投递超时 clamp 到 1..60 秒（缺省 10）：配置层已归一，这里兜跨边界值。
+ *
+ * 导出是为了让这条口径可表驱动：clamp 的产物只落在 `AbortSignal` 的 deadline 上，从外面读不出来
+ * ——「上界被改宽」与「下界被改成 0」在行为用例里都是绿的。
+ */
+export function clampTimeoutSec(value?: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return DEFAULT_TIMEOUT_SEC;
   return Math.min(MAX_TIMEOUT_SEC, Math.max(MIN_TIMEOUT_SEC, Math.round(value)));
 }

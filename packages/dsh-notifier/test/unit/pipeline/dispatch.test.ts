@@ -186,6 +186,39 @@ describe("重试与退避（假时钟推进，不真等 3 秒）", () => {
     expect(attempts).toBe(3);
   });
 
+  // 重试的停止条件有两个：不可重试与已成功。只测「一直失败」的话，重投循环丢掉「重新取结果」
+  // 也全绿——而那样第二条已送达的通知会被再投两遍，并在归档里被记成失败。
+  it("重试中途成功即停止：第二次成功不再重投，也不写失败", async () => {
+    const harness = assemble();
+    harness.useConfig({ ...BUILTINS_OFF, channels: [barkChannel()] });
+    let attempts = 0;
+    harness.onDeliver(async (_message, targets) => {
+      attempts += targets.length;
+      return attempts === 1
+        ? [
+            {
+              status: "failed" as const,
+              stage: "delivered" as const,
+              reason: "上游 5xx",
+              retryable: true,
+            },
+          ]
+        : [{ status: "ok" as const, stage: "delivered" as const }];
+    });
+
+    submit(requestOf());
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(attempts).toBe(2);
+
+    // 第二次已经成功：上限之内也不许再投，否则同一条通知会在对端出现两遍。
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(attempts).toBe(2);
+
+    await settleMicrotasks();
+    expect(harness.history[0]!.channels).toEqual([{ channelId: "bark:a", status: "ok" }]);
+    expect(harness.statuses).toEqual([{ channelId: "bark:a", status: "ok", error: undefined }]);
+  });
+
   // 出口说不可重试却重投，等于让对端把同一条通知处理多遍。
   it("出口标 retryable=false 时一次也不多投：分类是出口的责任，管线照办", async () => {
     const harness = assemble();
@@ -408,6 +441,28 @@ describe("节奏：节流与在途门", () => {
     expect(harness.history[1]!.channels).toEqual([
       { channelId: "system", status: "failed", reason: "系统出口不可用" },
     ]);
+  });
+
+  // 出口违约时槽位同样要放开：漏一次，该频道的在途计数就永久 +1，两次之后它的通知全部卡在队列里，
+  // 表现为「这个频道从此再也不发通知」，而通道本身没有任何错误。
+  it("出口违约会放开它在途槽位：两次违约之后第三条照常开投（漏释放即该频道永久卡死）", async () => {
+    const harness = assemble();
+    harness.useConfig({ ...BUILTINS_OFF, channels: [barkChannel()] });
+    let calls = 0;
+    harness.onDeliver(async (_message, targets) => {
+      calls += targets.length;
+      if (calls <= 2) throw new Error("出口实现违约");
+      return targets.map(() => ({ status: "ok", stage: "delivered" }));
+    });
+
+    submit(requestOf());
+    submit(requestOf());
+    await pollUntil(() => harness.history.length === 2, "两条违约各自归档");
+    expect(harness.logger.warns).toEqual([]);
+
+    submit(requestOf());
+    await pollUntil(() => harness.history.length === 3, "槽位释放后第三条开投");
+    expect(harness.history[2]!.channels).toEqual([{ channelId: "bark:a", status: "ok" }]);
   });
 
   // 无上限并发会把同一频道打爆；门形同虚设则慢出口会被并发踩。

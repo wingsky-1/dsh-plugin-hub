@@ -16,21 +16,12 @@ import type {
   NotifyMessage,
   NotifySeverity,
 } from "../../../src/server/channels/impl/deliver/type.ts";
-import { pollUntil, reasonOf, stubFetch, wire } from "../../helpers.ts";
+import { pollUntil, reasonOf, retryableOf, stubFetch, wire } from "../../helpers.ts";
 import type { FetchCall } from "../../helpers.ts";
-
-/** 出口结果的形状经签名可达，不必请 impl 再导出一个名字。 */
-type DeliverResult = Awaited<ReturnType<typeof sendBark>>;
 
 /** 2xx JSON 响应。 */
 function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status });
-}
-
-/** 失败结果的可重试标记；非失败直接判红（与 `reasonOf` 同款收窄）。 */
-function retryableOf(result: DeliverResult): boolean {
-  if (result.status !== "failed") throw new Error(`期望失败，实际 ${result.status}`);
-  return result.retryable;
 }
 
 /** 桩里记下的请求体（bark 要发的就是 `BarkPushBody`）。 */
@@ -140,6 +131,20 @@ describe("请求构造", () => {
     expect(result.status).toBe("failed");
     expect(retryableOf(result)).toBe(true);
   });
+
+  // 0 不是「立刻超时」而是「没配置」：把它当合法时限传下去，`AbortSignal.timeout(0)` 会在请求发出的
+  // 同一刻中止——该频道从此每次都失败，而设置页上看不出任何异常。
+  it("timeoutMs=0 视同未配置，回落出口自己的 10s 硬超时（0 不是「立刻超时」）", async () => {
+    const calls = stubFetch(() => jsonResponse({ code: 200 }));
+    expect(await sendBark(targetOf({ timeoutMs: 0 }), messageOf())).toEqual({
+      status: "ok",
+      stage: "delivered",
+    });
+
+    // 0ms 的中止计时器若被建起来，这一刻早已触发；硬超时是 10s，信号不该中止。
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    expect(calls[0]!.signal?.aborted).toBe(false);
+  });
 });
 
 describe("失败分类：只回答可不可重试，不自己重投", () => {
@@ -159,6 +164,14 @@ describe("失败分类：只回答可不可重试，不自己重投", () => {
     expect(notJson).toHaveLength(1);
   });
 
+  // 反代/中间件常回 2xx 包一个空对象：把「没有 code 键」判成失败，等于把一次成功投递记成故障
+  // （而重试会把同一条通知再发两遍）。口径是「有 code 且 ≠200 才算失败」，不是「code 必须等于 200」。
+  it("2xx 且响应体没有 code 键时按成功处理（只有 code 存在且非 200 才是失败）", async () => {
+    const calls = stubFetch(() => jsonResponse({}));
+    expect(await sendBark(targetOf(), messageOf())).toEqual({ status: "ok", stage: "delivered" });
+    expect(calls).toHaveLength(1);
+  });
+
   // 4xx 判可重试会把用户的错误配置重投三次，5xx 判不可重试则是静默丢通知。
   it("HTTP 状态分类：4xx 是确定失败，5xx 进可重试面；读不到响应体时原因只留状态码", async () => {
     const client = stubFetch(() => new Response("bad token", { status: 400 }));
@@ -172,6 +185,13 @@ describe("失败分类：只回答可不可重试，不自己重投", () => {
     expect(retryableOf(serverError)).toBe(true);
     expect(reasonOf(serverError)).toBe("bark HTTP 503: boom");
     expect(server).toHaveLength(1);
+
+    // 边界取 500 本身：判据写成 `> 500` 会把恰好 500 的服务端故障当成终态，静默丢掉一次可恢复的失败。
+    const exactly500 = stubFetch(() => new Response("boom", { status: 500 }));
+    const serverFault = await sendBark(targetOf(), messageOf());
+    expect(retryableOf(serverFault)).toBe(true);
+    expect(reasonOf(serverFault)).toBe("bark HTTP 500: boom");
+    expect(exactly500).toHaveLength(1);
 
     stubFetch(
       () =>

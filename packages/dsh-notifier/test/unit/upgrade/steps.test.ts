@@ -6,7 +6,7 @@
  * 目标已存在时**不覆盖**（用户可能已经在新位置改过东西）、重跑不累积归档。
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -107,5 +107,18 @@ describe("旧文件归位", () => {
     mkdirSync(legacyFile("dsh-notifier-history.jsonl"), { recursive: true });
 
     expect(() => migrateStorageLayout()).toThrow(/旧存储文件不可读/u);
+  });
+
+  // 归档是「这一份处理过了」的标记：改名失败却继续，旧数据就悬在两套布局之间（新位置有了副本，
+  // 归档标记却没有），而用户看到的是「迁移成功」。
+  it("旧文件改名失败即抛（归档没成功就不能算这一步做完了）", () => {
+    isolatedHome();
+    const legacy = legacyFile("dsh-notifier-history.jsonl");
+    writeLegacy("dsh-notifier-history.jsonl", '{"ts":1}\n');
+    // 归档目标被非空目录占住：rename 覆盖不了它。
+    mkdirSync(`${legacy}.migrated.bak`, { recursive: true });
+    writeFileSync(join(`${legacy}.migrated.bak`, "占位"), "", "utf8");
+
+    expect(() => migrateStorageLayout()).toThrow(/旧存储文件改名失败/u);
   });
 });

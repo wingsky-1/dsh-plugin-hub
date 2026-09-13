@@ -118,6 +118,20 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
     }
   });
 
+  it("计数键：闭区间 [0, 上界] 内的整数原样保留（0 与上界都是有意义的取值，不该被当成越界让给默认值）", () => {
+    const kept = normalizeConfig({ historyMaxAgeDays: 30, maxConnections: 64 });
+    expect(kept.historyMaxAgeDays).toBe(30);
+    expect(kept.maxConnections).toBe(64);
+
+    const bounds = normalizeConfig({ historyMaxAgeDays: 3_650, maxConnections: 1_024 });
+    expect(bounds.historyMaxAgeDays).toBe(3_650);
+    expect(bounds.maxConnections).toBe(1_024);
+
+    const zero = normalizeConfig({ historyMaxAgeDays: 0, maxConnections: 0 });
+    expect(zero.historyMaxAgeDays).toBe(0);
+    expect(zero.maxConnections).toBe(0);
+  });
+
   it("声音三态：false 是显式静音、四个内置音色名保留、白名单外的字符串回落（音色名是跨端约定，不是自由文本）", () => {
     const rows: ReadonlyArray<readonly [RawSettingValue, boolean | string]> = [
       [false, false],
@@ -165,6 +179,24 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
     expect(partial.allowKinds).toEqual([]);
   });
 
+  it("quietHours 是「类型闸门 + 逐个格式」两道关：能强转成合法时间的数组不算时间（JSON 提交里数组是合法形状，`test()` 却会做字符串强转）", () => {
+    const badStart: SettingsPatch = {
+      quietHours: { enabled: true, start: ["22:00"], end: "08:00" },
+    };
+    expect(invalidOf(badStart).hint).toContain("start");
+    const badEnd: SettingsPatch = {
+      quietHours: { enabled: true, start: "22:00", end: ["08:00"] },
+    };
+    expect(invalidOf(badEnd).hint).toContain("end");
+
+    // 归一化侧同一口径：非字符串一律回落，不把数组当时间存进设置。
+    const quiet = normalizeConfig({
+      quietHours: { enabled: true, start: ["22:00"], end: ["08:00"] },
+    }).quietHours;
+    expect(quiet.start).toBe("22:00");
+    expect(quiet.end).toBe("08:00");
+  });
+
   it("整块回落交出的是副本：调用方就地改写它不该污染全局默认表（默认值被改过之后，此后每个读者拿到的都不是默认）", () => {
     const pristine = { ...DEFAULT_CONFIG.quietHours };
     const fallback = normalizeConfig({ quietHours: "22:00" }).quietHours;
@@ -197,7 +229,7 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
     expect(routes.ask).toEqual(["webhook:c"]);
   });
 
-  it("channels 逐项丢弃认不出的项（没有投递目标的空壳会在投递时制造一次必然失败的尝试）", () => {
+  it("channels 逐项丢弃认不出的项（缺 id / 缺凭据 / 空地址 / 非对象项都不带回值——没有投递目标的空壳会在投递时制造一次必然失败的尝试）", () => {
     const channels = normalizeConfig({
       channels: [
         BARK,
@@ -205,8 +237,10 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
         { type: "bark", id: "bark:no-key", baseUrl: "https://x" },
         { type: "webhook", id: "webhook:no-url" },
         { type: "bark", baseUrl: "https://x", deviceKey: "k" },
+        { type: "bark", id: "bark:empty-base", baseUrl: "", deviceKey: "k" },
         { type: "mail", id: "mail:a", url: "https://x" },
         "not-a-channel",
+        raw(null),
       ],
     }).channels;
     expect(channels.map((channel) => channel.id)).toEqual(["bark:phone", "webhook:hook"]);
@@ -227,11 +261,12 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
     expect("badge" in dirty).toBe(false);
   });
 
-  it("bark 频道缺省不启用：出站授权须用户显式授予", () => {
+  it("频道缺省不启用：出站授权须用户显式授予（两类频道同一口径——webhook 只是把同样的授权换成一次外发请求）", () => {
     expect(normalizeConfig({ channels: [BARK] }).channels[0].enabled).toBe(false);
     expect(normalizeConfig({ channels: [{ ...BARK, enabled: true }] }).channels[0].enabled).toBe(
       true,
     );
+    expect(normalizeConfig({ channels: [WEBHOOK] }).channels[0].enabled).toBe(false);
   });
 
   it("bark 的 levels 稀疏映射剔除非白名单值（按 kind 的紧急度命中优先于 level）", () => {
@@ -262,6 +297,20 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
     expect(kept.token).toBe("t-1");
     expect(kept.headerValue).toBe("");
   });
+
+  it("webhook 自定义 headers：只留字符串值、非对象即空表（头值上线前必须是字符串，数字与嵌套对象拼不进请求头）", () => {
+    const kept = webhookOf(
+      normalizeConfig({
+        channels: [{ ...WEBHOOK, headers: { "x-a": "1", "x-b": 2, "x-c": raw(null), "x-d": {} } }],
+      }).channels,
+    );
+    expect(kept.headers).toEqual({ "x-a": "1" });
+
+    for (const headers of ["oops", ["x-a"], raw(null), 3]) {
+      const empty = webhookOf(normalizeConfig({ channels: [{ ...WEBHOOK, headers }] }).channels);
+      expect(empty.headers, JSON.stringify(headers)).toEqual({});
+    }
+  });
 });
 
 describe("validateSettings：只审显式提交（缺键不是错误）", () => {
@@ -274,31 +323,65 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
     expect(invalidOf({ maxConnections: -1, notifyAsk: "yes" }).key).toBe("maxConnections");
     expect(invalidOf({ maxConnections: -1, notifyAsk: "yes" }).hint).toContain("1024");
     expect(invalidOf({ notifyAsk: "yes", maxConnections: -1 }).key).toBe("notifyAsk");
+    // 合法值不是出口：扫到它必须继续往下看，否则「合法键 + 非法键」的整份提交会被整体放行。
+    expect(invalidOf({ notifyAsk: true, maxConnections: -1 }).key).toBe("maxConnections");
   });
 
-  it("逐键类型闸门：每个非法值都指向它自己那个键", () => {
-    const rows: ReadonlyArray<readonly [SettingsPatch, string]> = [
-      [{ notifyAsk: "false" }, "notifyAsk"],
-      [{ systemNotify: 1 }, "systemNotify"],
-      [{ historyMaxAgeDays: -1 }, "historyMaxAgeDays"],
-      [{ historyMaxAgeDays: 3_651 }, "historyMaxAgeDays"],
-      [{ maxConnections: 1.5 }, "maxConnections"],
-      [{ maxConnections: "8" }, "maxConnections"],
-      [{ browserSound: "mp3" }, "browserSound"],
-      [{ systemSound: 3 }, "systemSound"],
-      [{ allowKinds: "error" }, "allowKinds"],
-      [{ allowKinds: ["a", 1] }, "allowKinds"],
-      [{ quietHours: "22:00" }, "quietHours"],
-      [{ quietHours: { enabled: true } }, "quietHours"],
-      [{ quietHours: { enabled: true, start: "9:30", end: "08:00" } }, "quietHours"],
-      [{ quietHours: { enabled: true, start: "22:00", end: "24:00" } }, "quietHours"],
+  it("逐键类型闸门：每个非法值都指向它自己那个键，且提示指向真正拦下它的那条分支（键对了、提示指向别处，等于把用户引到另一个字段）", () => {
+    const rows: ReadonlyArray<readonly [SettingsPatch, string, string]> = [
+      [{ notifyAsk: "false" }, "notifyAsk", "true 或 false"],
+      [{ systemNotify: 1 }, "systemNotify", "true 或 false"],
+      [{ historyMaxAgeDays: -1 }, "historyMaxAgeDays", "0 到 3650"],
+      [{ historyMaxAgeDays: 3_651 }, "historyMaxAgeDays", "0 到 3650"],
+      [{ maxConnections: 1.5 }, "maxConnections", "0 到 1024"],
+      [{ maxConnections: "8" }, "maxConnections", "0 到 1024"],
+      [{ browserSound: "mp3" }, "browserSound", "内置音色名"],
+      [{ systemSound: 3 }, "systemSound", "内置音色名"],
+      [{ allowKinds: "error" }, "allowKinds", "字符串数组"],
+      [{ allowKinds: ["a", 1] }, "allowKinds", "字符串数组"],
+      // quietHours：「不是对象」与「缺了哪个子键」是不同分支，提示分不开用户就改不对。
+      [{ quietHours: "22:00" }, "quietHours", "需要对象"],
+      [{ quietHours: { enabled: true } }, "quietHours", "start"],
+      [{ quietHours: { enabled: true, start: "9:30", end: "08:00" } }, "quietHours", "start"],
+      [{ quietHours: { enabled: true, start: "x22:00", end: "08:00" } }, "quietHours", "start"],
+      [{ quietHours: { enabled: true, start: "22:00", end: "24:00" } }, "quietHours", "end"],
+      [{ quietHours: { enabled: true, start: "22:00", end: "08:00x" } }, "quietHours", "end"],
+      [{ quietHours: { enabled: "yes", start: "22:00", end: "08:00" } }, "quietHours", "enabled"],
       [
         { quietHours: { enabled: true, start: "22:00", end: "08:00", allowKinds: "error" } },
         "quietHours",
+        "allowKinds",
       ],
-      [{ channels: {} }, "channels"],
-      [{ channels: [{ type: "bark", id: "bark:a", baseUrl: "https://x" }] }, "channels"],
-      [{ channels: [{ type: "bark", id: "bark:a", deviceKey: "k" }] }, "channels"],
+      // channels：每条拒绝都挂在同一个键上，能分辨出是哪一条拦下的只有提示。逐项校验各自独立
+      // ——前面那条合法不替后面那条担保。
+      [{ channels: {} }, "channels", "需要数组"],
+      [{ channels: ["x"] }, "channels", "需要对象"],
+      [
+        { channels: [{ type: "bark", baseUrl: "https://x", deviceKey: "k" }] },
+        "channels",
+        "缺少 id",
+      ],
+      [
+        { channels: [{ type: "bark", id: "", baseUrl: "https://x", deviceKey: "k" }] },
+        "channels",
+        "缺少 id",
+      ],
+      [
+        { channels: [{ type: "bark", id: "bark:a", baseUrl: "https://x" }] },
+        "channels",
+        "deviceKey",
+      ],
+      [{ channels: [{ type: "bark", id: "bark:a", deviceKey: "k" }] }, "channels", "baseUrl"],
+      [
+        { channels: [{ type: "bark", id: "bark:a", baseUrl: "", deviceKey: "k" }] },
+        "channels",
+        "baseUrl",
+      ],
+      [
+        { channels: [{ type: "bark", id: "bark:a", baseUrl: "https://x", deviceKey: "" }] },
+        "channels",
+        "deviceKey",
+      ],
       [
         {
           channels: [
@@ -306,10 +389,17 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
           ],
         },
         "channels",
+        "level",
       ],
       [
         { channels: [{ type: "webhook", id: "webhook:a", auth: "none", preset: "custom" }] },
         "channels",
+        "url",
+      ],
+      [
+        { channels: [{ type: "webhook", id: "webhook:a", url: "", auth: "none" }] },
+        "channels",
+        "url",
       ],
       [
         {
@@ -318,6 +408,7 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
           ],
         },
         "channels",
+        "auth",
       ],
       [
         {
@@ -326,14 +417,28 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
           ],
         },
         "channels",
+        "preset",
       ],
-      [{ channels: [{ type: "mail", id: "mail:a" }] }, "channels"],
-      [{ channels: [{ baseUrl: "https://x" }] }, "channels"],
-      [{ kindRoutes: [] }, "kindRoutes"],
-      [{ kindRoutes: { done: "bark:a" } }, "kindRoutes"],
+      [{ channels: [{ type: "mail", id: "mail:a" }] }, "channels", "type 需要"],
+      [
+        {
+          channels: [
+            { type: "mail", id: "mail:a", url: "https://x", auth: "none", preset: "custom" },
+          ],
+        },
+        "channels",
+        "type 需要",
+      ],
+      [{ channels: [BARK, { type: "mail", id: "mail:a" }] }, "channels", "type 需要"],
+      // kindRoutes：`every` 与 `some` 的分别只在这个混合数组上看得出来。
+      [{ kindRoutes: [] }, "kindRoutes", "需要对象"],
+      [{ kindRoutes: { done: "bark:a" } }, "kindRoutes", "字符串数组"],
+      [{ kindRoutes: { done: ["bark:a", 1] } }, "kindRoutes", "字符串数组"],
     ];
-    for (const [patch, key] of rows) {
-      expect(invalidOf(patch).key, JSON.stringify(patch)).toBe(key);
+    for (const [patch, key, hint] of rows) {
+      const error = invalidOf(patch);
+      expect(error.key, JSON.stringify(patch)).toBe(key);
+      expect(error.hint, JSON.stringify(patch)).toContain(hint);
     }
   });
 
@@ -401,15 +506,10 @@ describe("sanitizeSettings：只留认识的键，且不归一化", () => {
     expect(kept.maxConnections).toBe(-5);
   });
 
-  it("一个认识的键都没有时得到空设置（「都不认识」与「没有键」对调用方是同一件事）", () => {
+  it("没有可认识的键时得到空设置：陌生键被剔除、输入根本不是对象（空值走到索引取值会直接抛），两条路对调用方是同一件事", () => {
     expect(sanitizeSettings({ a: 1, b: [2] })).toEqual({});
-  });
-
-  it("输入不是对象时得到空设置（空值走到索引取值会直接抛，与「一个键都不认识」的承诺不符）", () => {
     for (const value of [null, undefined, [], "notifyAsk", 3, true]) {
       expect(sanitizeSettings(stored(value)), String(value)).toEqual({});
     }
-
-    expect(sanitizeSettings(stored({ notifyAsk: false, future: 1 }))).toEqual({ notifyAsk: false });
   });
 });

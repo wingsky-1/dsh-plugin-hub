@@ -35,7 +35,7 @@ import {
   submit,
 } from "../../../src/server/pipeline/interface.ts";
 import type { NotifyRequest } from "../../../src/server/pipeline/interface.ts";
-import { makeLogger, settleMicrotasks } from "../../helpers.ts";
+import { makeLogger, pollUntil, settleMicrotasks } from "../../helpers.ts";
 
 /** 出站频道配置与帧载荷：经设置模型 / 域依赖声明可达，不必请别的块再导出一个名字。 */
 type ChannelConfig = NotifyConfig["channels"][number];
@@ -322,5 +322,25 @@ describe("归档：发出与压制只在载荷上分叉", () => {
     submit(requestOf());
     await settleMicrotasks();
     expect(harness.delivered).toHaveLength(2);
+  });
+
+  // 归档面违约发生在投递之后：不在这里收口，「通知发出去了但历史里没有」就只剩一个未捕获拒绝，
+  // 而它挂在宿主事件链上，抛出去会打断别人的流程。
+  it("归档面违约经「投递失败」告警收口：既不抛穿，也不静默（这是这条通知唯一的痕迹）", async () => {
+    const logger = makeLogger();
+    assemble({
+      logger,
+      stores: {
+        appendHistory: () => {
+          throw new Error("历史文件不可写");
+        },
+        recordStatus: () => {},
+      },
+    });
+
+    submit(requestOf());
+    await pollUntil(() => logger.warns.length === 1, "归档违约经日志收口");
+    expect(logger.warns[0]).toContain("投递失败");
+    expect(logger.warns[0]).toContain("历史文件不可写");
   });
 });

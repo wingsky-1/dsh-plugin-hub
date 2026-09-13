@@ -6,7 +6,7 @@
  * 不在这里重测；这里守的是「端点如何把 sdk 的答复翻译成 HTTP」——两个端点上对同一件事给出
  * 不同答复，会让客户端被迫按路径分叉处理同一件事。
  */
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
 
 import type { KindPort } from "../../../src/server/api/deps.ts";

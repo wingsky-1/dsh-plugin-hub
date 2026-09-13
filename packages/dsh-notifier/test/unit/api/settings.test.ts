@@ -6,13 +6,13 @@
  * 四态不能压扁——压扁之后用户看到的就只剩「保存失败」，而「字段非法」「版本过期」「服务不可用」
  * 要做的事完全不同。故这里逐态断言状态码与机器可判的 `code`，而不是只断言「不是 200」。
  */
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
 
 import type { ConfigPort } from "../../../src/server/api/deps.ts";
 import { SettingsEndpoints } from "../../../src/server/api/impl/settings/index.ts";
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
-import { jsonReq } from "../../helpers.ts";
+import { jsonReq, makeRes } from "../../helpers.ts";
 
 /** 视图与写面结果经能力面的签名可达，不请 config 域再多导出一个名字。 */
 type SettingsView = ReturnType<ConfigPort["readSettingsView"]>;
@@ -28,36 +28,6 @@ const VIEW: SettingsView = {
 /** 假请求：body 由 async 迭代器吐出（`readJsonBody` 走的就是这条路）。 */
 function makeReq(options: { body?: unknown; rawBody?: string } = {}): IncomingMessage {
   return jsonReq({ method: "PUT", url: "/api/dsh-notifier/config", ...options });
-}
-
-/** 假响应：把状态码、头与正文抓下来供断言。 */
-function makeRes() {
-  const rec = { status: 0, headers: {} as Record<string, string>, text: "", headersSent: false };
-  const res = {
-    get headersSent() {
-      return rec.headersSent;
-    },
-    writeHead(status: number, headers?: Record<string, string>) {
-      rec.status = status;
-      rec.headers = { ...(headers ?? {}) };
-      rec.headersSent = true;
-      return res;
-    },
-    write(chunk: string) {
-      rec.text += chunk;
-      return true;
-    },
-    end(chunk?: string) {
-      if (chunk !== undefined) rec.text += chunk;
-      rec.headersSent = true;
-      return res;
-    },
-  };
-  return {
-    res: res as unknown as ServerResponse,
-    rec,
-    json: (): Record<string, unknown> => JSON.parse(rec.text),
-  };
 }
 
 /** 假 config 端口：读面给固定视图，写面记账并按用例指定的结果作答。 */
@@ -116,6 +86,16 @@ describe("PUT /config：形状把关", () => {
   it("带 expectedRevision 时把修订号原样交给写面（乐观并发是客户端唯一的防覆盖手段）", async () => {
     const { config } = await put({ body: { patch: { notifyAsk: true }, expectedRevision: 3 } });
     expect(config.writes[0]!.revision).toBe(3);
+  });
+
+  // 0 是合法的修订号（冷启动后的第一份设置就是 0）。把「显式传 0」当成「省略」，写面就不再比对
+  // 版本——用户拿着旧界面提交会静默覆盖别人的改动，而这条路径上没有任何错误可看。
+  it("expectedRevision 显式传 0 不等于省略：写面收到的 revision 必须是 0", async () => {
+    const { rec, config } = await put({
+      body: { patch: { notifyAsk: true }, expectedRevision: 0 },
+    });
+    expect(rec.status).toBe(200);
+    expect(config.writes).toEqual([{ patch: { notifyAsk: true }, revision: 0 }]);
   });
 
   it("成功体只回 user 与 revision（多回一份 effective 就多一个可能与本地草稿不一致的服务端版本）", async () => {
