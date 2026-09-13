@@ -431,11 +431,13 @@ export function verifyVendoredBinaries(root, { registryPath, isBinary = isBinary
 
   const registered = new Set(withPath.map((e) => e.path));
   for (const hit of hits) {
-    if (!registered.has(hit)) {
-      problems.push(
-        `未登记的裸二进制（在发布物面内 ⇒ 随包分发）：${hit}；请登记 sha256 与随包 license 文本`,
-      );
-    }
+    if (registered.has(hit)) continue;
+    // 哈希直接打在问题里：登记表 note 要求「先跑门禁取 sha256」，而只说不合规的话用户取不到
+    // 这个值，只能自己另算一遍（note 与实现不符）。
+    problems.push(
+      `未登记的裸二进制（在发布物面内 ⇒ 随包分发）：${hit}（sha256 ${sha256File(join(root, hit))}）；` +
+        `请以该哈希登记并附随包 license 文本`,
+    );
   }
 
   for (const e of withPath) {

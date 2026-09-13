@@ -711,6 +711,19 @@ test("CLI：正例 exit 0，反例 exit 1，登记表不可读 exit 2", () => {
   assert.match(unreadable.stderr, /判定不可执行/);
 });
 
+test("CLI：未登记的命中直接打印 sha256（登记表 note 的「先跑门禁取哈希」才成立）", () => {
+  const root = makeRoot({ files: ["lib"], tree: { "lib/tool.exe": BINARY } });
+  const expected = sha256File(join(root, "packages", PKG, "lib", "tool.exe"));
+  const r = spawnSync(process.execPath, [SCRIPT, "--root", root, "--registry", writeRegistry([])], {
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 1);
+  assert.ok(
+    r.stdout.includes(expected),
+    "未登记命中必须给出可直接登记的 sha256，否则用户只能自己另算",
+  );
+});
+
 test("真实仓库：发布物面内零命中，登记表为空即合规", () => {
   const result = verifyVendoredBinaries(ROOT);
   assert.deepEqual(result.problems, []);
