@@ -10,7 +10,7 @@
  *   2. arrive(row) 拉取 /plugins/<包名>/client.js 后校验 factories.has(包名)；
  *   3. materialize 后 exports.apply 为函数、exports.inject 为数组。
  *
- * 断言实现统一来自 scripts/client-contract-lib.ts（唯一事实源：stub/执行/
+ * 断言实现统一来自 scripts/lib/client-contract-lib.ts（唯一事实源：stub/执行/
  * materialize/断言），本脚本只负责包级联动断言（dsh.client 声明 ⇒
  * exports["./client"] 存在；src/client.ts ⇒ lib/client.js 产物存在）与报告汇总。
  */
