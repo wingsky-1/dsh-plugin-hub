@@ -394,7 +394,7 @@ describe("真实 HTTP 面（真实宿主 + 真实 loopback socket）", () => {
     expect(parseBody<{ error: string }>(wrongMethod.body).error).toBe("method not allowed: DELETE");
   });
 
-  it("GET /health：真实 socket 上给出插件名与宿主平台", async () => {
+  it("GET /health：真实 socket 上给出插件名、宿主平台与回收计数（形状精确，键集不与实现分叉）", async () => {
     const { port } = await mount();
     const res = await send(port, "/api/dsh-notifier/health");
     expect(res.status).toBe(200);
@@ -404,7 +404,32 @@ describe("真实 HTTP 面（真实宿主 + 真实 loopback socket）", () => {
       ok: true,
       plugin: "dsh-notifier",
       platform: process.platform,
+      sseEvicts: {
+        close: 0,
+        error: 0,
+        limit: 0,
+        stalled: 0,
+        maxage: 0,
+        destroyed: 0,
+        dispose: 0,
+      },
     });
+  });
+
+  it("GET /health 的 sseEvicts 是真实计数：断开一条 SSE 后 close ≥ 1（写死的零会被这条判红）", async () => {
+    const { port } = await mount();
+    const connection = await openSse(port, "/api/dsh-notifier/events");
+    connection.close();
+    // 服务端在 socket 的 close 回调里记这一笔，是异步的；用带截止时间的轮询等它上涨。
+    // 不能复用 pollUntil：它收同步谓词，传 async 函数会被当成「永远成立」而立刻返回（判据变假绿）。
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+      const res = await send(port, "/api/dsh-notifier/health");
+      const body = parseBody<{ sseEvicts: { close: number } }>(res.body);
+      if (body.sseEvicts.close >= 1) return;
+      if (Date.now() > deadline) throw new Error("客户端断开后 close 计数在 10s 内未上涨");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
   });
 
   it("GET /config 与 PUT /config：视图四件套经真实 socket 往返，写入真实落盘并推进 revision", async () => {

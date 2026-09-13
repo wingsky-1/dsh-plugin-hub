@@ -1,7 +1,11 @@
 /** api 域流块：SSE 连接、序号与断线补拉（共享层枢纽只管连接表、心跳与上限淘汰）。**序号**持久化在 `seq.json` 且重启后
  * 接着数——重置会让重连客户端把旧帧当新的，表现为「偶尔少一条通知」；**补拉**走 `?since=N`（EventSource 自动重连不带 query）。 */
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { createSseHub, type SseHub } from "../../../../../../../shared/sse-hub.js";
+import {
+  createSseHub,
+  type SseEvictStats,
+  type SseHub,
+} from "../../../../../../../shared/sse-hub.js";
 import {
   readTextFileSync,
   writeTextAtomic,
@@ -35,12 +39,21 @@ const UNINSTALLED: StreamDeps = {
   },
 };
 
-/** 未装配的枢纽：连接表为空，`dispose` 幂等。 */
+/** 未装配的枢纽：连接表为空，`dispose` 幂等。返回形状必须与真实枢纽逐键一致，否则「未装配」与
+ * 「已装配但一条都没淘汰」在 `/health` 上长得不一样。 */
 const UNINSTALLED_HUB: SseHub = {
   register: () => {},
   broadcast: () => {},
   size: () => 0,
-  evictStats: () => ({ close: 0, error: 0, limit: 0, stalled: 0, maxage: 0, destroyed: 0 }),
+  evictStats: () => ({
+    close: 0,
+    error: 0,
+    limit: 0,
+    stalled: 0,
+    maxage: 0,
+    destroyed: 0,
+    dispose: 0,
+  }),
   connHealth: () => [],
   dispose: () => {},
 };
@@ -70,7 +83,6 @@ class StreamHub {
       // 连接上限实时读设置：用户在设置页调小之后，下一次淘汰就该按新值来。
       getMaxConnections: () => this.deps.config.readConfig().maxConnections,
       heartbeatMs: HEARTBEAT_MS,
-      warn: (message: string) => this.deps.logger.warn(message),
     });
   }
 
@@ -86,6 +98,12 @@ class StreamHub {
    * 一台设备。 */
   size(): number {
     return this.hub.size();
+  }
+
+  /** 回收原因计数：`/health` 的 `sseEvicts` 观测面（常量大小的聚合）。per-conn 明细（`connHealth`）
+   * 故意不上去——它随连接数增长，而 `/health` 经 lan-proxy 对局域网可见。 */
+  evictStats(): SseEvictStats {
+    return this.hub.evictStats();
   }
 
   /** GET /events：接上一条 SSE 连接，并回放 `?since` 之后的帧。 */

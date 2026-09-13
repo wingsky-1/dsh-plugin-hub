@@ -147,9 +147,6 @@ export function makeEventsRoute(manager: RoutesManager, options?: { heartbeatMs?
       const hub = (manager.sseHub ??= createSseHub({
         getMaxConnections: () => options?.maxConnections ?? 16,
         heartbeatMs: options?.heartbeatMs,
-        warn: (_message) => {
-          // 无 logger 注入面，静默（连接回收是自愈路径，无需告警）
-        },
       }));
       res.writeHead(200, {
         "content-type": "text/event-stream",

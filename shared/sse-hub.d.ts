@@ -15,10 +15,11 @@ export interface SseConnState {
   lastWriteAt: number;
 }
 
-/** 回收/淘汰原因（health 观测 + 调试）。 */
-export type SseEvictReason = "close" | "error" | "limit" | "stalled" | "maxage" | "destroyed";
+/** 回收/淘汰原因（health 观测 + 调试）。`dispose` = 卸载时统一关连接那一次。 */
+export type SseEvictReason =
+  "close" | "error" | "limit" | "stalled" | "maxage" | "destroyed" | "dispose";
 
-/** evict 原因计数（health 观测：先量化残留构成再调参）。 */
+/** evict 原因计数（health 观测：先量化残留构成再调参）。键集与 `SseEvictReason` 一一对应。 */
 export interface SseEvictStats {
   close: number;
   error: number;
@@ -26,9 +27,11 @@ export interface SseEvictStats {
   stalled: number;
   maxage: number;
   destroyed: number;
+  dispose: number;
 }
 
-/** 连接健康观测（health per-conn 用）。 */
+/** 连接健康观测：排障用明细，**故意不进 `/health`**——它随连接数增长（上限 16~1024），
+ *  而 `/health` 是常量大小的聚合面且经 lan-proxy 对局域网可见。真要暴露请单开路由。 */
 export interface SseConnHealth {
   /** 连接已存活时长（ms）。 */
   ageMs: number;
@@ -50,8 +53,6 @@ export interface SseHubOptions {
   maxAgeMs?: number;
   /** maxAge 轮换的"空闲"门槛：距最近成功写超过此时长才算空闲（默认 15min）。 */
   idleTimeoutMs?: number;
-  /** 日志出口（缺省静默）。 */
-  warn?: (message: string) => void;
 }
 
 /**
@@ -69,7 +70,7 @@ export interface SseHub {
   size(): number;
   /** evict 原因计数（health 观测）。 */
   evictStats(): SseEvictStats;
-  /** 连接健康快照（按注册序；health per-conn 观测）。 */
+  /** 连接健康快照（按注册序；排障用明细，不进 `/health`，理由见 `SseConnHealth`）。 */
   connHealth(now?: number): SseConnHealth[];
   /** 停止心跳定时器。 */
   dispose(): void;

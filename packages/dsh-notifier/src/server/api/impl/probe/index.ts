@@ -70,8 +70,14 @@ export class ProbeEndpoints {
     sendJson(res, 200, { ok: true, sseConnections: streamHub.size() });
   };
 
-  /** GET /health：宿主平台。客户端据此写系统通道的平台提示——不能拿浏览器 OS 猜。 */
+  /** GET /health：宿主平台 + 连接回收计数。平台值供客户端写系统通道提示（不能拿浏览器 OS 猜）；
+   * `sseEvicts` 是 README 承诺的 churn 排障面——只有聚合计数（常量大小），per-conn 明细不上这里。 */
   readonly health: RouteHandler = (_req: IncomingMessage, res: ServerResponse): void => {
-    sendJson(res, 200, { ok: true, plugin: "dsh-notifier", platform: process.platform });
+    sendJson(res, 200, {
+      ok: true,
+      plugin: "dsh-notifier",
+      platform: process.platform,
+      sseEvicts: streamHub.evictStats(),
+    });
   };
 }

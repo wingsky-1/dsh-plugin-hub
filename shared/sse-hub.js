@@ -53,7 +53,6 @@ const PING_FRAME = 'data: {"type":"ping"}\n\n';
  * @param {number} [options.stalledTimeoutMs] stalled 回收窗口（默认 90s；测试注入短值）。
  * @param {number} [options.maxAgeMs] maxAge 轮换上限（默认 120min；0 = 关闭轮换）。
  * @param {number} [options.idleTimeoutMs] maxAge 轮换的「空闲」门槛（默认 15min）。
- * @param {(message: string) => void} [options.warn] 日志出口（缺省静默）。
  * @returns {import("./sse-hub.d.ts").SseHub}
  */
 export function createSseHub(options) {

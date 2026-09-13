@@ -206,8 +206,8 @@ describe("POST /test：body 读不出来时 fail-closed（不许当成「没给 
   });
 });
 
-describe("GET /health：报宿主平台", () => {
-  it("platform 取宿主进程的真实平台值（客户端据此写系统通道提示，不能拿浏览器 OS 猜）", () => {
+describe("GET /health：报宿主平台与连接回收计数", () => {
+  it("platform 取宿主进程的真实平台值（客户端据此写系统通道提示，不能拿浏览器 OS 猜），sseEvicts 形状与真实枢纽逐键一致", () => {
     const { res, rec, json } = makeRes();
     new ProbeEndpoints(fakePipeline().port).health(makeReq({ method: "GET" }), res);
     expect(rec.status).toBe(200);
@@ -215,6 +215,16 @@ describe("GET /health：报宿主平台", () => {
       ok: true,
       plugin: "dsh-notifier",
       platform: process.platform,
+      // 未装配占位：形状（键集）必须与真实枢纽一致，否则「未装配」与「装好但没淘汰过」在 /health 上长得不一样
+      sseEvicts: {
+        close: 0,
+        error: 0,
+        limit: 0,
+        stalled: 0,
+        maxage: 0,
+        destroyed: 0,
+        dispose: 0,
+      },
     });
   });
 });
