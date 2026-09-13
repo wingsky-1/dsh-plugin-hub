@@ -37,6 +37,9 @@ import { REGISTRY_REL, kindOf, vendoredEntriesFor } from "../lib/vendored-binari
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
+/** 归集一段 vendored 许可所读的字段：缺哪个都会走到读不到路径/空许可头的分支。 */
+const VENDORED_LICENSE_FIELDS = ["path", "license", "source", "licenseFile"];
+
 /**
  * 本包的 vendored 登记项。
  *
@@ -50,7 +53,20 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
  */
 function vendoredFor(root, pkgDir) {
   if (!existsSync(join(root, REGISTRY_REL))) return [];
-  return vendoredEntriesFor(root, pkgDir).filter((e) => kindOf(e) !== "first-party");
+  const entries = vendoredEntriesFor(root, pkgDir).filter((e) => kindOf(e) !== "first-party");
+  for (const e of entries) {
+    const missing = VENDORED_LICENSE_FIELDS.filter(
+      (f) => typeof e?.[f] !== "string" || e[f].trim() === "",
+    );
+    if (missing.length > 0) {
+      // 门禁另有判据，但构建链是独立入口：不在这里显式拦，缺字段会以 `join(undefined)`
+      // 的 TypeError 或空许可头收场，报错文本指不到真正的原因。
+      throw new Error(
+        `vendored 登记项 ${e?.path ?? "无 path"} 字段缺失或非字符串：${missing.join(", ")}`,
+      );
+    }
+  }
+  return entries;
 }
 
 /**

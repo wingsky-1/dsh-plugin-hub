@@ -208,6 +208,32 @@ test("collectForPackage：first-party 登记项不进第三方许可段（自有
   }
 });
 
+test("collectForPackage：vendored 登记项缺字段 → fail-loud（不走 join(undefined) 的奇怪分支）", () => {
+  const { dir, cleanup } = tempRepo();
+  try {
+    fixturePackage(dir, { name: "dsh-shape", indexSource: "export const apply = () => {}" });
+    writeFileSync(
+      join(dir, "packages", "dsh-shape", "lib", "tool.exe"),
+      Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0, 0]),
+    );
+    vendoredRegistry(dir, [
+      {
+        path: "packages/dsh-shape/lib/tool.exe",
+        sha256: "a".repeat(64),
+        license: "MIT",
+        source: "https://example.invalid/upstream@1.0.0",
+        // 缺 licenseFile
+      },
+    ]);
+    assert.throws(
+      () => collectForPackage("packages/dsh-shape", dir),
+      /字段缺失或非字符串：licenseFile/,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
 test("collectForPackage：登记表缺失按空集处理（不然 fixture 仓库与未用该机制的包都构建不了）", () => {
   const { dir, cleanup } = tempRepo();
   try {
