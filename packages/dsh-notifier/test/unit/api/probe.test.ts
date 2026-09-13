@@ -38,12 +38,30 @@ function fakePipeline() {
   return { port, submitted };
 }
 
-/** POST 一次测试通知。 */
-async function post(request: { body?: unknown; rawBody?: string }) {
+/** POST 一次测试通知（给定请求对象）。 */
+async function postWith(req: IncomingMessage) {
   const pipeline = fakePipeline();
   const { res, rec, json } = makeRes();
-  await new ProbeEndpoints(pipeline.port).test(makeReq(request), res);
+  await new ProbeEndpoints(pipeline.port).test(req, res);
   return { rec, json, pipeline };
+}
+
+/** POST 一次测试通知。 */
+function post(request: { body?: unknown; rawBody?: string }) {
+  return postWith(makeReq(request));
+}
+
+/** 读流中途出错的路由请求：客户端半途断开、socket 报错都长这样。 */
+function makeBrokenReq(): IncomingMessage {
+  return {
+    method: "POST",
+    url: "/api/dsh-notifier/test",
+    headers: { host: "127.0.0.1:3080" },
+    socket: { remoteAddress: "127.0.0.1" },
+    async *[Symbol.asyncIterator]() {
+      throw new Error("socket hang up");
+    },
+  } as unknown as IncomingMessage;
 }
 
 /**
@@ -117,6 +135,51 @@ describe("POST /test：测试通知走同一条裁决管线", () => {
       error: { error: "测试通知参数非法", details: "channelId 必须为非空字符串或省略" },
     });
     expect(pipeline.submitted).toEqual([]);
+  });
+});
+
+/**
+ * 这个端点有副作用，所以「body 读不出来」不能退化成「没给 body」——后者会真的发一条通知出去。
+ * 四类成因各自的文案都要落到响应里，客户端才能说清是体太大还是写错了。
+ */
+describe("POST /test：body 读不出来时 fail-closed（不许当成「没给 body」）", () => {
+  it.each<[string, string, string]>([
+    ["JSON 语法错", "{ not json", "请求体不是合法 JSON"],
+    ["JSON 合法但是数字", "42", "请求体必须是 JSON 对象"],
+    ["JSON 合法但是 null", "null", "请求体必须是 JSON 对象"],
+  ])("%s → 400 invalid-json，一条都不提交", async (_label, rawBody, details) => {
+    const { rec, json, pipeline } = await post({ rawBody });
+    expect(rec.status).toBe(400);
+    expect(json()).toEqual({ ok: false, error: { code: "invalid-json", details } });
+    expect(pipeline.submitted).toEqual([]);
+  });
+
+  it("超限体 → 400 invalid-json 且不提交：JSON 本身合法也不例外", async () => {
+    const { rec, json, pipeline } = await post({ body: { channelId: "a".repeat(5000) } });
+    expect(rec.status).toBe(400);
+    expect(json()).toEqual({
+      ok: false,
+      error: { code: "invalid-json", details: "请求体超出大小上限（4096 字节）" },
+    });
+    expect(pipeline.submitted).toEqual([]);
+  });
+
+  it("读流中断 → 400 invalid-json：半途断开不等于「没给 body」", async () => {
+    const { rec, json, pipeline } = await postWith(makeBrokenReq());
+    expect(rec.status).toBe(400);
+    expect(json()).toEqual({
+      ok: false,
+      error: { code: "invalid-json", details: "请求体读取失败" },
+    });
+    expect(pipeline.submitted).toEqual([]);
+  });
+
+  it("纯空白 body 仍是「没给 body」：按全频道测试受理，不判畸形", async () => {
+    const { rec, pipeline } = await post({ rawBody: "   \n\t " });
+    expect(rec.status).toBe(200);
+    expect(pipeline.submitted).toEqual([
+      { kind: "test", title: "DSH：测试通知", body: "通知链路工作正常（此通知来自测试按钮）" },
+    ]);
   });
 });
 

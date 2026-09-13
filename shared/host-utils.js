@@ -64,26 +64,52 @@ export function sseData(payload) {
 }
 
 /**
- * 宽松读请求 body（JSON）：解析失败或超限返回 undefined（不抛错），
- * 由调用方决定响应。与 readBody 共用限长语义。
+ * 读请求 body（JSON）并**保留失败成因**。
+ *
+ * 为什么需要它：`readJsonBody` 把「没给 body」「JSON 畸形」「超出上限」「JSON 合法但不是对象」
+ * 收敛成同一个 undefined，调用方想区分「可选 body 缺席」与「给了但读不出来」只能靠猜。对**有副作用**
+ * 的端点，这个歧义是有代价的：畸形请求会走到「按缺省处理」那条路，等于拿垃圾输入触发真实动作。
+ * 需要 fail-closed 的端点用本函数；宽松端点继续用 `readJsonBody`（它是本函数的薄包装）。
+ * @param {import("node:http").IncomingMessage} req - Node http 请求对象（或 async-iterator 桩）。
+ * @param {number} [limit] - 字节上限（默认 2MB）。
+ * @returns {Promise<{kind:"absent"}|{kind:"json",value:object}|{kind:"invalid",reason:string}>} 成因可辨的结果。
+ */
+export async function readJsonBodyOutcome(req, limit = 2 * 1024 * 1024) {
+  const chunks = [];
+  let size = 0;
+  try {
+    for await (const chunk of req) {
+      size += chunk.length;
+      if (size > limit) return { kind: "invalid", reason: "too-large" };
+      chunks.push(chunk);
+    }
+  } catch {
+    return { kind: "invalid", reason: "unreadable" };
+  }
+  const text = Buffer.concat(chunks).toString("utf8");
+  // 空 body（含纯空白）与「没写 body」是同一件事：可选参数缺席，不是错误。
+  if (text.trim() === "") return { kind: "absent" };
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { kind: "invalid", reason: "malformed" };
+  }
+  if (typeof parsed !== "object" || parsed === null)
+    return { kind: "invalid", reason: "not-object" };
+  return { kind: "json", value: parsed };
+}
+
+/**
+ * 宽松读请求 body（JSON）：解析失败或超限返回 undefined（不抛错），由调用方决定响应。
+ * 成因不可辨——要区分「缺席」与「非法」用 `readJsonBodyOutcome`。与 readBody 共用限长语义。
  * @param {import("node:http").IncomingMessage} req - Node http 请求对象（或 async-iterator 桩）。
  * @param {number} [limit] - 字节上限（默认 2MB）。
  * @returns {Promise<object|undefined>} 解析后的 JSON 对象；空/非法/超限返回 undefined。
  */
 export async function readJsonBody(req, limit = 2 * 1024 * 1024) {
-  try {
-    const chunks = [];
-    let size = 0;
-    for await (const chunk of req) {
-      size += chunk.length;
-      if (size > limit) return undefined;
-      chunks.push(chunk);
-    }
-    const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    return typeof parsed === "object" && parsed !== null ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
+  const outcome = await readJsonBodyOutcome(req, limit);
+  return outcome.kind === "json" ? outcome.value : undefined;
 }
 
 /**
@@ -137,7 +163,9 @@ export function readBody(req, limit = 256 * 1024) {
     });
     req.on("end", () => {
       try {
-        resolvePromise(chunks.length === 0 ? {} : JSON.parse(Buffer.concat(chunks).toString("utf8")));
+        resolvePromise(
+          chunks.length === 0 ? {} : JSON.parse(Buffer.concat(chunks).toString("utf8")),
+        );
       } catch (error) {
         const e = /** @type {Error} */ (error);
         reject(new Error(`invalid JSON body: ${e.message}`));

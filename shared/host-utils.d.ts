@@ -10,11 +10,34 @@ export declare function writeJson(res: ServerResponse, status: number, payload: 
  */
 export declare function sseData(payload: unknown): string;
 
+/** 请求体读不出来的具体成因：供端点在失败文案里说清是哪一种。 */
+export type JsonBodyInvalidReason = "too-large" | "unreadable" | "malformed" | "not-object";
+
+/** `readJsonBodyOutcome` 的成因可辨结果：缺席（可选 body 未给）/ 合法对象 / 非法（带具体成因）。 */
+export type JsonBodyOutcome =
+  | { kind: "absent" }
+  | { kind: "json"; value: object }
+  | { kind: "invalid"; reason: JsonBodyInvalidReason };
+
 /**
- * 宽松读请求 body（JSON）：解析失败或超限返回 undefined（不抛错），由调用方决定响应。
+ * 读请求 body（JSON）并保留失败成因：需要 fail-closed 的端点用它（畸形 body 不能被当成「没有 body」，
+ * 否则有副作用的端点会拿垃圾输入触发真实动作）。
  * @param limit 字节上限（默认 2MB）。
  */
-export declare function readJsonBody(req: IncomingMessage, limit?: number): Promise<object | undefined>;
+export declare function readJsonBodyOutcome(
+  req: IncomingMessage,
+  limit?: number,
+): Promise<JsonBodyOutcome>;
+
+/**
+ * 宽松读请求 body（JSON）：解析失败或超限返回 undefined（不抛错），由调用方决定响应。
+ * 成因不可辨——要区分「缺席」与「非法」用 `readJsonBodyOutcome`。
+ * @param limit 字节上限（默认 2MB）。
+ */
+export declare function readJsonBody(
+  req: IncomingMessage,
+  limit?: number,
+): Promise<object | undefined>;
 
 /** 把任意抛出的值转成可读错误消息。 */
 export declare function errorMessage(error: unknown): string;
@@ -38,5 +61,5 @@ export declare function guardLoopbackMethod(
   req: IncomingMessage,
   res: ServerResponse,
   methods: string[],
-  loopbackOptions?: LoopbackOptions
+  loopbackOptions?: LoopbackOptions,
 ): boolean;

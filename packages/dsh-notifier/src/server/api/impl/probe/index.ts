@@ -1,7 +1,10 @@
 /** api 域自检端点：发测试通知、报宿主平台。测试通知走的是**同一条**裁决管线（能力面的 `submit`），不另开旁路——
  * 否则「测试能响、真实事件不响」这类问题会被测试本身掩盖掉。 */
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { readJsonBody } from "../../../../../../../shared/host-utils.js";
+import {
+  type JsonBodyInvalidReason,
+  readJsonBodyOutcome,
+} from "../../../../../../../shared/host-utils.js";
 import type { NotifyRequest, PipelinePort } from "../../deps.ts";
 import { sendFailure, sendJson } from "../route/index.ts";
 import type { RouteHandler } from "../route/type.ts";
@@ -10,6 +13,14 @@ import type { TestRequest } from "./type.ts";
 
 /** 请求体上限（字节）：它最多带一个频道 id。 */
 const BODY_LIMIT = 4 * 1024;
+
+/** 畸形 body 的回应文案：与 settings/kinds 的 invalid-json 同族，并把成因说清（客户端会展示 details）。 */
+function invalidBodyDetail(reason: JsonBodyInvalidReason, limit: number): string {
+  if (reason === "too-large") return `请求体超出大小上限（${limit} 字节）`;
+  if (reason === "not-object") return "请求体必须是 JSON 对象";
+  if (reason === "unreadable") return "请求体读取失败";
+  return "请求体不是合法 JSON";
+}
 
 /** 测试通知的固定文案。不引入自由文本面：它验证的是链路本身而不是文案；取值沿用重写前的文案，用户看到的那两句
  * 不该因为一次内部重构而变。 */
@@ -32,9 +43,17 @@ export class ProbeEndpoints {
     req: IncomingMessage,
     res: ServerResponse,
   ): Promise<void> => {
-    const raw = await readJsonBody(req, BODY_LIMIT);
-    // body 可选，读不到就按全频道测试处理：两个按钮一个发 `{}`、一个发 `{channelId}`。
-    const body = (raw ?? {}) as TestRequest;
+    const outcome = await readJsonBodyOutcome(req, BODY_LIMIT);
+    // body 可选（缺席 = 全频道测试），但**畸形 body 不等于「没有 body」**：这个端点有副作用，
+    // 把截断的半包、超限体、非对象 JSON 当缺省处理，等于拿垃圾输入真发一条通知出去。
+    if (outcome.kind === "invalid") {
+      sendFailure(res, 400, {
+        code: "invalid-json",
+        details: invalidBodyDetail(outcome.reason, BODY_LIMIT),
+      });
+      return;
+    }
+    const body = (outcome.kind === "json" ? outcome.value : {}) as TestRequest;
     const channelId = body.channelId;
     if (channelId !== undefined && (typeof channelId !== "string" || channelId.length === 0)) {
       sendFailure(res, 400, {
