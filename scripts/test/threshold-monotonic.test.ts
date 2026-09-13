@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import {
   COVERAGE_THRESHOLD_KEYS,
+  parseCoverageConfigThresholds,
   parseCoverageThresholds,
   runThresholdMonotonic,
 } from "../gate/threshold-monotonic.mjs";
@@ -65,19 +66,33 @@ test("parseCoverageThresholds: 小数阈值与部分键可用", () => {
   assert.deepEqual(parseCoverageThresholds("thresholds: { lines: 79.5 }").global, { lines: 79.5 });
 });
 
-test("#722: 真实 vitest.config.ts 必须声明 coverage.thresholds 四键且为数字", () => {
-  const thresholds = parseCoverageThresholds(readFileSync(join(ROOT, "vitest.config.ts"), "utf8"));
+test("#733 3.4: 真实 coverage.config.json 必须声明 coverage 阈值四键且为数字", () => {
+  // 事实源自 #733 计划项 3.4 起从 vitest.config.ts 迁到 scripts/data/coverage.config.json；
+  // 断言强度不变（四键必须存在且为数字），只是换了读的地方——同一条不变量不该因为搬家而消失。
+  const thresholds = parseCoverageConfigThresholds(
+    readFileSync(join(ROOT, "scripts/data/coverage.config.json"), "utf8"),
+  );
   assert.ok(
     thresholds,
-    "vitest.config.ts 缺少 coverage.thresholds —— 覆盖率硬门禁的唯一事实源，不得缺失",
+    "coverage.config.json 缺少 thresholds —— 覆盖率硬门禁的唯一事实源，不得缺失",
   );
   for (const key of COVERAGE_THRESHOLD_KEYS) {
     assert.equal(
       typeof thresholds.global[key],
       "number",
-      `coverage.thresholds.${key} 必须是数字字面量（提取失败或写成了表达式）`,
+      `thresholds.${key} 必须是数字（提取失败或写成了表达式）`,
     );
   }
+});
+
+test("#733 3.4: vitest.config.ts 不得再内联 coverage 阈值（否则两个事实源）", () => {
+  const text = readFileSync(join(ROOT, "vitest.config.ts"), "utf8");
+  const block = /\bcoverage\s*:\s*\{[\s\S]*/.exec(text)?.[0] ?? "";
+  assert.ok(block.length > 0, "vitest.config.ts 应有 coverage 块");
+  assert.ok(
+    !/thresholds\s*:\s*\{/.test(block),
+    "coverage 块内不得再出现 thresholds 对象字面量——它属 scripts/data/coverage.config.json",
+  );
 });
 
 test("#722: 覆盖率阈值降线判红（基准 80 → 工作区 70）", () => {

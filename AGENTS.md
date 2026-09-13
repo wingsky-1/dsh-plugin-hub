@@ -5,6 +5,7 @@ DeepSeek Harness（DSH）的插件集 monorepo（npm 分发）。每个插件是
 （基线）→ 本文件（仓库）→ `packages/<pkg>/AGENTS.md`（包级叠加）→ `.dsh/skills/*`。
 
 <a id="authority"></a>
+
 ## 权威顺序（冲突时按此裁决，低层不得覆盖高层）
 
 系统提示词 > 用户直接指令 > 本文件（仓库硬性）> 包级 `AGENTS.md` > `.dsh/skills/*`、
@@ -61,23 +62,23 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
 
 ## 门禁（分层：快线 / 最小集 / 收尾全量）
 
-| 层 | 命令 | 用途与口径 |
-|---|---|---|
-| 快线 | `pnpm gate:changed` | 迭代中反复跑：只跑 diff 命中包的 build + test + typecheck。包面归属取自 `ci.yml` 的 paths-filter（**唯一事实源**，本地不重述路径规则）；命中全局面时自动升级为 `gate:pr`，解析失败一律回退全量（fail-closed） |
-| 最小集 | `pnpm gate:pr` | 开 PR 前：快线 + **命中包**的产物闸（`contract` / `pack:check` / `verify:npmlayout` 按 `--packages` 切片）+ 廉价全仓一致性闸（`stryker:check`、`aggregate:check`、`test:src-tests`、`gate:homedir`、`docs:check`、`test:scripts`、`lint`，均秒级且不依赖 lib 产物） |
-| 收尾 | `pnpm gate:full` | 全仓口径（= 夜间班次口径）：全仓 build/test/typecheck + 全仓产物闸 + 全部静态闸；改过构建链、包结构或发版前跑一遍 |
-| 全量 | CI 夜间班次（`observe.yml`） | 全仓产物闸 + 覆盖率 + 全量变异与基线并集入档（原每日四班次增量班已于 #718 S2.2 退役）。本地不默认跑，需要时 `pnpm gate:full --with-coverage` |
+| 层       | 命令                                      | 用途与口径                                                                                                                                                                                                                                                                           |
+| -------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 快线     | `pnpm gate:changed`                       | 迭代中反复跑：只跑 diff 命中包的 build + test + typecheck。包面归属取自 `ci.yml` 的 paths-filter（**唯一事实源**，本地不重述路径规则）；命中全局面时自动升级为 `gate:pr`，解析失败一律回退全量（fail-closed）                                                                        |
+| 最小集   | `pnpm gate:pr`                            | 开 PR 前：快线 + **命中包**的产物闸（`contract` / `pack:check` / `verify:npmlayout` 按 `--packages` 切片）+ 廉价全仓一致性闸（`stryker:check`、`aggregate:check`、`test:src-tests`、`gate:homedir`、`docs:check`、`test:scripts`、`lint`，均秒级且不依赖 lib 产物）                  |
+| 收尾     | `pnpm gate:full`                          | 全仓口径（= 夜间班次口径）：全仓 build/test/typecheck + 全仓产物闸 + 全部静态闸；改过构建链、包结构或发版前跑一遍                                                                                                                                                                    |
+| 全量     | CI 夜间班次（`observe.yml`）              | 全仓产物闸 + 覆盖率 + 全量变异与基线并集入档（原每日四班次增量班已于 #718 S2.2 退役）。本地不默认跑，需要时 `pnpm gate:full --with-coverage`                                                                                                                                         |
 | 提交钩子 | `lefthook`（`pre-commit` / `commit-msg`） | 提交瞬间的最内层：`pre-commit` 只对本次 **staged 源文件**跑 lint、`commit-msg` 校验提交信息为 Conventional Commits。**不替代上面任何一层**——它不做 build / typecheck / 变异 / 覆盖率。钩子由 `pnpm install` 的 `prepare` 自动安装；跳过用 `git commit --no-verify`（仅限确认无害时） |
 
-| 改动类型 | 归属层 |
-|---|---|
-| 新增 / 退役包、改 `cordis.patch.yml` | `gate:full`（含全仓 `aggregate:check` + `verify:npmlayout`） |
-| 新增 `*.src.test.ts` | `gate:pr` 起（含 `test:src-tests`） |
-| 改 `src/` 里 HOME 来源 API | `gate:pr` 起（含 `gate:homedir`） |
-| 改 `scripts/` / workflow | `gate:pr` 起（含 `test:scripts`）；改 `.github/` 属红线，先评审 |
-| 改 README、新增文档链接 | `gate:pr` 起（含 `docs:check`） |
+| 改动类型                                                                     | 归属层                                                                                         |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 新增 / 退役包、改 `cordis.patch.yml`                                         | `gate:full`（含全仓 `aggregate:check` + `verify:npmlayout`）                                   |
+| 新增 `*.src.test.ts`                                                         | `gate:pr` 起（含 `test:src-tests`）                                                            |
+| 改 `src/` 里 HOME 来源 API                                                   | `gate:pr` 起（含 `gate:homedir`）                                                              |
+| 改 `scripts/` / workflow                                                     | `gate:pr` 起（含 `test:scripts`）；改 `.github/` 属红线，先评审                                |
+| 改 README、新增文档链接                                                      | `gate:pr` 起（含 `docs:check`）                                                                |
 | 改任意手写源码（`packages/*/src`、`packages/*/test`、`shared/`、`scripts/`） | `gate:pr` 起（含 `lint`：ESLint 复杂度门禁，阈值见 `gauntlet.config.json` 的 `complexity` 段） |
-| 提交前最终一遍 | `pnpm gate:pr`；单包迭代用 `pnpm gate:changed` |
+| 提交前最终一遍                                                               | `pnpm gate:pr`；单包迭代用 `pnpm gate:changed`                                                 |
 
 - 分层**不减少检查，只改变时机**：PR 与本地都走增量（命中包），只有"必须全仓才能判定"的
   口径（全仓产物闸、全仓覆盖率分母、全量变异基线）留夜间；高风险改动打 `gate:full` 标签
@@ -85,11 +86,12 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
 - 结论里**逐条粘贴实际 exit code**；任一非 0 不得声称完成。
 - 新增 `homedir()` / `process.env.HOME` / `untildify()` 调用走**双源豁免**：
   `scripts/data/gate-exemptions.json` 的条目（`gate` 为 `forbid-homedir-src`，含 issue 号）
-  + 调用点紧邻 `// dsh-gate:allow-homedir #<issue> <理由>`，缺一判红
-  （见 `scripts/gate/forbid-homedir-src.mjs`；豁免是**数据**不是代码，门禁不得内嵌豁免常量）。
+  - 调用点紧邻 `// dsh-gate:allow-homedir #<issue> <理由>`，缺一判红
+    （见 `scripts/gate/forbid-homedir-src.mjs`；豁免是**数据**不是代码，门禁不得内嵌豁免常量）。
 - 质量指标 `pnpm cov` / `pnpm crap`。阈值事实源按维度分处：**覆盖率**在
-  `vitest.config.ts` 的 `coverage.thresholds`（#722 阶段三起；降线由
-  `scripts/gate/threshold-monotonic.mjs` 对比 `origin/main` 拦截），**变异与 CRAP** 在
+  `scripts/data/coverage.config.json`（#733 计划项 3.4 起；`vitest.config.ts` 只 import 它，
+  不得再内联 `include`/`exclude`/`thresholds`；降线由 `scripts/gate/threshold-monotonic.mjs`
+  对比 `origin/main` 拦截，面完整性由 `verify:coverage-scope` 守），**变异与 CRAP** 在
   `scripts/data/gauntlet.config.json`；CRAP 仍在观察期（`crap.strict=false`），
   **不得自行改该字段**。CRAP 自阶段三起处于 fail-closed 停用态（数据源口径不可比，
   `pnpm crap` 以 exit 2 报明原因），重建归 #722 阶段 5。
@@ -124,12 +126,12 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
 
 ## 按需加载（细则不在本文件，动手前读）
 
-| 主题 | 去哪 |
-|---|---|
-| 发布与 release notes（中英分节、双锚跳转导航的完整写法） | `.dsh/skills/dsh-plugin-release/SKILL.md` |
-| 宿主 / 客户端写法、构建契约、多端兼容、防 flake | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
-| 插件开发执行清单 | `.dsh/skills/dsh-plugin-hub-dev/SKILL.md` |
-| PR 评审（含 PR 正文嵌图） | `.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md` + `references/pr-images.md` |
-| issue 全周期处理、标签体系与 loop 状态机 | [docs/ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md) |
-| 自治维护循环（计划门 / 状态机 / 熔断） | `.dsh/skills/oss-pipeline/SKILL.md` |
-| 包级特殊约定 | `packages/<pkg>/AGENTS.md`（若有；新增包按 dsh-lan-proxy 的模板补一份） |
+| 主题                                                     | 去哪                                                                        |
+| -------------------------------------------------------- | --------------------------------------------------------------------------- |
+| 发布与 release notes（中英分节、双锚跳转导航的完整写法） | `.dsh/skills/dsh-plugin-release/SKILL.md`                                   |
+| 宿主 / 客户端写法、构建契约、多端兼容、防 flake          | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)                                  |
+| 插件开发执行清单                                         | `.dsh/skills/dsh-plugin-hub-dev/SKILL.md`                                   |
+| PR 评审（含 PR 正文嵌图）                                | `.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md` + `references/pr-images.md` |
+| issue 全周期处理、标签体系与 loop 状态机                 | [docs/ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md)                            |
+| 自治维护循环（计划门 / 状态机 / 熔断）                   | `.dsh/skills/oss-pipeline/SKILL.md`                                         |
+| 包级特殊约定                                             | `packages/<pkg>/AGENTS.md`（若有；新增包按 dsh-lan-proxy 的模板补一份）     |

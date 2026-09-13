@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "note": "覆盖率面（include / exclude / thresholds）的单一事实源（#733 计划项 3.4）。此前这三样内联在 vitest.config.ts 里：阈值与门槛混在配置代码里，改「算什么」与改「卡多严」在 diff 里长得一样，且 #722 的基线注释（分母 132 文件）与静态复算（223）差了 40% 无人能解释。现在：配置只 import 本文件，`vitest.config.ts` 不得再内联 thresholds/include/exclude 字面量（判据见 scripts/gate/verify-coverage-scope.mjs）。\n\ninclude 的两条口径是**两个面**，别混：#722 起的宿主端面是 `{ts,tsx}`；`.mjs` 是 #733 3.4 补进来的适配器实现（3 个文件、1756 行，此前既不在分母也不在变异面——变异面里它们被 mutation-topology.json 显式排除，属**两个面的不同口径**，理由见该文件的 coverageExcludes）。实测（本轮全量 cov，含 .mjs）：statements 79.70 / functions 81.86 / branches 72.30，对阈值 78/80/70 仍有余量；其中 deepseek-official.mjs 96.7%、opencode-go.mjs 95.5% 覆盖良好，zai-coding-cn.mjs 仅 13.9%（274 语句 / 26 函数）——**如实记录，不因此把它排除**：排除只会把缺口藏起来，而它已被 10 个测试文件引用，属可测面。\n\nexclude 条目是**结构化的**（pattern + reason + kind），不是裸 glob：kind 值域 type-only（无运行时代码的声明）/ not-source（src 下的非源码资源）/ pending-project（是源码，但要等某个 project 落地才能计）。**只有 pending-project 允许带 reviewBy**（临时豁免，自动进 collect-exemptions 的到期台账）与 exitCriteria（解除条件）；其它 kind 带上即判红——给永久事实编到期日只会逼出「永不续期」的假条目。pattern 命中 0 个物理文件即判红（条目腐烂）。",
+  "include": ["packages/*/src/**/*.{ts,tsx}", "packages/*/src/**/*.mjs", "shared/**/*.js"],
+  "exclude": [
+    {
+      "pattern": "**/*.d.ts",
+      "kind": "type-only",
+      "reason": "类型声明文件无运行时代码，不可覆盖（packages/*/src 下 8 个 + shared 下 10 个）",
+      "since": "#722 阶段三"
+    },
+    {
+      "pattern": "**/*.d.mts",
+      "kind": "type-only",
+      "reason": "同上：`.d.ts` 的通配不覆盖 `.d.mts`，需单列（provider-usage 适配器旁 3 个）——这条正是「面完整性断言」第一次跑就发现的逃逸",
+      "since": "#733 3.4"
+    },
+    {
+      "pattern": "**/*.ps1",
+      "kind": "not-source",
+      "reason": "系统通知出口的 PowerShell 脚本资源（dsh-notifier/src/server/channels/impl/system/toast.ps1），经构建链作为资源随包分发，非 JS 源码",
+      "since": "#733 3.4"
+    },
+    {
+      "pattern": "**/*.md",
+      "kind": "not-source",
+      "reason": "src/shared 下的说明文档（shared/README.md）不是源码",
+      "since": "#733 3.4"
+    },
+    {
+      "pattern": "**/client/**",
+      "kind": "pending-project",
+      "reason": "客户端渲染面：packages/*/src/client/**（33 文件、755 函数）与 shared/client/**（ensure-style.js、i18n.js 两个模块，其测试在 scripts/test 下、不在 unit/integration 两个 project 内）。现有 test/client/** 是「读 lib 产物 + vm 执行」的契约测试，直连 src 的 DOM 单测（happy-dom project）尚未落地，计入分母只会让这些文件恒为 0%、把全局值稀释到 59%，阈值随之失去约束力。",
+      "exitCriteria": "happy-dom（或等价 DOM）project 落地、且 client 源码有直连 src 的单测后，删除本条并一次性重新基线化阈值",
+      "since": "#722 阶段三",
+      "reviewBy": "2027-03-31"
+    }
+  ],
+  "thresholds": {
+    "lines": 80,
+    "functions": 80,
+    "statements": 78,
+    "branches": 70
+  }
+}

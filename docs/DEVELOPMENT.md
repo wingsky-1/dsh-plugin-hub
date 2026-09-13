@@ -6,6 +6,7 @@
 > [AGENTS.md](../AGENTS.md)，发版执行规程见 [.dsh/skills/dsh-plugin-release/SKILL.md](../.dsh/skills/dsh-plugin-release/SKILL.md)。
 
 <a id="0-构建总览"></a><a id="user-content-0-构建总览"></a>
+
 ## 0. 构建总览
 
 每个插件包 = 独立 npm 包（`@wingsky-1/dsh-*`），发布物自包含（第三方依赖构建期内联）。
@@ -28,20 +29,26 @@ pnpm typecheck    # 全仓类型检查
 ```
 
 > Node 版本：本地直跑 TS 需 **≥23.6**（type stripping 门槛）；CI 固定 Node 24。
-> 阈值事实源分处两处，按维度划分：**覆盖率**在 `vitest.config.ts` 的
-> `coverage.thresholds`（降线由 `scripts/gate/threshold-monotonic.mjs` 对比
-> `origin/main` 守护）；**变异与 CRAP**在 `scripts/data/gauntlet.config.json`。
+> 阈值事实源分处两处，按维度划分：**覆盖率**在 `scripts/data/coverage.config.json`
+> 的 `thresholds`（#733 计划项 3.4 起；`vitest.config.ts` 只 import 它，不得再内联
+> `include`/`exclude`/`thresholds`——降线由 `scripts/gate/threshold-monotonic.mjs` 对比
+> `origin/main` 守护，面完整性由 `pnpm verify:coverage-scope` 守）；
+> **变异与 CRAP**在 `scripts/data/gauntlet.config.json`。
 >
 > **覆盖率口径（#722 阶段三）**：`pnpm cov` = vitest 的 istanbul provider，只跑
-> unit + integration（两者直连 `src/`）。分母仅 `packages/*/src/**/*.{ts,tsx}` +
-> `shared/**/*.js` 的**源文件**——零 vendor、零 lib 产物，且未加载的源文件按 0%
-> 计入分母（分母不随「加载了什么」变化）。e2e（不可复现）与 contract（测 lib
+> unit + integration（两者直连 `src/`）。分母是 `scripts/data/coverage.config.json` 的
+> `include`：`packages/*/src/**/*.{ts,tsx}` + `packages/*/src/**/*.mjs`（#733 3.4 补入的 3 个
+> 适配器实现，1756 行）+ `shared/**/*.js` 的**源文件**——零 vendor、零 lib 产物，且未加载的
+> 源文件按 0% 计入分母（分母不随「加载了什么」变化）。排除项是**结构化条目**（pattern +
+> reason + kind），`verify:coverage-scope` 保证 src 下没有任何文件既不在 include 也不在
+> exclude 里（静默逃逸即判红）。e2e（不可复现）与 contract（测 lib
 > 产物）不进覆盖率，仍由 `pnpm test` 全量执行。阈值判分就是 `pnpm cov` 的退出码，
 > 不再有独立判分步骤；PR 的 `gate:full` 标签与 `observe.yml` 夜间班次共用这一执行点。
 >
-> **`**/client/**` 暂排除在分母外**：其直连 src 的测试（happy-dom project）尚未
-> 落地，现有 `test/client/**` 是读 lib 产物的契约测试。计入分母会让 33 个恒 0%
-> 的文件把全局值稀释约 22pp、阈值失去约束力，且 happy-dom project 落地时分子跳升、
+> **client 面暂排除在分母外**（`coverage.config.json` 里 `kind: pending-project` 的条目，
+> 带 `reviewBy` 与 `exitCriteria`，会进 `collect-exemptions` 的到期台账）：其直连 src 的测试
+> （happy-dom project）尚未落地，现有 `test/client/**` 是读 lib 产物的契约测试。计入分母会让
+> 33 个恒 0% 的文件把全局值稀释约 22pp、阈值失去约束力，且 happy-dom project 落地时分子跳升、
 > 必须二次基线化。**待该 project 建立时移除排除项并一次性重新基线化。**
 >
 > **`pnpm crap` 现状（fail-closed 停用态）**：其圈复杂度取自 lib 编译产物，而覆盖率
@@ -83,7 +90,8 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
   2. `repo-gate` 分两组——
      组 A（廉价全仓闸，恒跑）：判定脚本 `repo-gate-assert.mjs`、`threshold-monotonic`、
      `aggregate:check`、`stryker:check`、`test:scripts`、`forbid-src-tests`、
-     `forbid-homedir-src`、`forbid-module-state-src`、`verify-scripts-index`、`docs:check`
+     `forbid-homedir-src`、`forbid-module-state-src`、`verify-scripts-index`、
+     `verify-coverage-scope`、`docs:check`
      （`test:scripts` 的编译面前置包清单见
      `scripts/test/script-test-prereqs.mjs`，CI 与本地门禁同源读取；
      `verify-scripts-index` 的判据见 `scripts/README.md` 顶部说明——**索引边界是「仓库会调用
@@ -102,6 +110,7 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
   判定表为**六维**「事件 × fullGate × 切片(hasMutations) × coverage × 变异矩阵 ×
   verdict」，由单测全组合锁死。默认增量路径下三段必须**全部 skipped**——对称 fail-closed：
   没打标签却跑了全量同样判红。不新增分支保护 required check 名。
+
 - **为什么分层**（#722）：覆盖率是「全仓分母」口径，变异单段最坏约 20 分钟（#720），而
   两者夜间 observe.yml（每日全量班）已完整覆盖，PR 上属重复执行且拖长
   反馈回路。高风险改动（重构、依赖跃迁、发版前）在 PR 上加 `gate:full` 标签按需补跑；
@@ -137,6 +146,7 @@ scripts/                   # 仓库维护脚本（*.ts，Node 直跑；按职能
 ```
 
 `scripts/build/bundle-host.ts` 编排单包构建：
+
 1. esbuild 内联 `shared/*` 进 `lib/index.js`（宿主端自包含单文件）。
 2. 客户端经 `scripts/build/build-client.ts`（唯一契约外壳/注入点）构建 `lib/client.js`。
 3. d.ts X1：shared 声明随包机制（见下小节）。
@@ -148,6 +158,7 @@ scripts/                   # 仓库维护脚本（*.ts，Node 直跑；按职能
    「有内联 ⇒ 清单存在、非空、含 MIT/BSD/Apache 字样且覆盖每个被内联的包名」。
 
 <a id="dts-x1"></a><a id="user-content-dts-x1"></a>
+
 ### d.ts X1：shared 声明随包机制（#478）
 
 宿主端共享层（shared/）是 **js + d.ts 双写**（tsc `rootDir` 硬约束，shared 不可
@@ -179,6 +190,7 @@ shared**；X1 保证**已准入的模块随每个消费包完整发布**（机�
 进 shared → 自动随包」，使 shared 单点维护而各包发布物自包含不断链。
 
 **断言链**（`scripts/lib/shared-dts-lib.ts` + `pack:check`）：
+
 - `listSharedDts(ROOT)` 用与 2b **同一 walkFiles 谓词**枚举仓库 shared/ 全部 .d.ts
   相对路径；pack:check 打包每个插件后逐包比对 tarball：
   - `assertSharedDtsPresent` 查缺：新增 shared 子目录/文件漏随包 → fail-loud；
@@ -186,7 +198,7 @@ shared**；X1 保证**已准入的模块随每个消费包完整发布**（机�
     （DEPRECATED 两步走 → 移除）后，旧声明副本残留在包内 shared/（bundle-host 每次
     构建覆盖写入新副本但从不清理已移除者，files 白名单仍会把它带进 tarball，过期
     声明随包发布 = 陈旧类型面）→ 报「shared 副本残留」fail-loud。
-  枚举与复制同源，杜绝两处漂移；双向（缺/多）断言把「机制保证」升级为「断言保证」。
+    枚举与复制同源，杜绝两处漂移；双向（缺/多）断言把「机制保证」升级为「断言保证」。
 
 宿主端类型一律用官方类型层（pnpm-workspace catalog 锁版：`@deepseek-ai/cordis`
 的 `Context` + `@deepseek-ai/dsh-host-webserver` 的 `WebRoute`/ctx.webServer 增强 +
@@ -200,6 +212,7 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
 锚定声明。
 
 <a id="1-宿主端srcindexts规范"></a><a id="user-content-1-宿主端srcindexts规范"></a>
+
 ## 1. 宿主端（`src/index.ts`）规范
 
 - **单入口**：`src/index.ts` export 一个 cordis service；需要给客户端传路由时
@@ -215,8 +228,10 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   禁双装**（同 id 双装 loader 报 duplicate）；改独立包 patch 后必须
   `node scripts/gate/aggregate.ts` 重新生成聚合 patch。
 - **测试**：`pnpm test` 直跑（包内实现为 `node ../../scripts/test/run-vitest.mjs --min <N>`）。
-  运行器由 vitest 承载：根 `vitest.config.ts` 按目录切四个 project（`test/unit` → `unit`、
-  `test/integration` → `integration`、`test/e2e` → `e2e`、`test/client` → `contract`），
+  运行器由 vitest 承载：根 `vitest.config.ts` 从 `scripts/data/mutation-topology.json` 的
+  `$testLayers.layers` 派生四个 project（`test/unit` → `unit`、
+  `test/integration` → `integration`、`test/e2e` → `e2e`、`test/client` → `contract`；
+  层 glob 与 `--min` 口径因此同源，不再三处声明），
   每个测试文件独立环境（per-file 隔离），包级调用按 cwd 自动收窄到本包；
   乱序验证用 `--sequence.shuffle` 透传。
   测试文件直跑 TS 源码，但部分文件断言 `lib/` 产物
@@ -230,12 +245,12 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
 
 测试文件按**机制**分层，目录即分类源（不按文件名判断）：
 
-| 层 | 判据 | 进变异面 |
-|---|---|---|
-| `test/unit/**` | 单模块 / 纯逻辑 / fake 驱动、只做临时目录 I/O（允许为覆盖分支而短暂 bind 一个端口，如 lan-proxy 的 EADDRINUSE 用例） | 是 |
-| `test/integration/**` | 以真实 socket/真实组合根为被测对象：起真实 http server（内核临时端口）走完整转发链、真实 cordis Context、真实配置迁移 | 是 |
-| `test/client/**` | 断言对象是客户端**构建产物** `lib/client.js`——而 `mutate` 面本身排除 `src/client/**`，登记进变异面测试清单只增加每个段的 dry run 成本、杀灭贡献为零 | 否 |
-| `test/e2e/**` | 真实监听端口 / spawn 子进程 / 真机系统调用的大 smoke | 否 |
+| 层                    | 判据                                                                                                                                                | 进变异面 |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `test/unit/**`        | 单模块 / 纯逻辑 / fake 驱动、只做临时目录 I/O（允许为覆盖分支而短暂 bind 一个端口，如 lan-proxy 的 EADDRINUSE 用例）                                | 是       |
+| `test/integration/**` | 以真实 socket/真实组合根为被测对象：起真实 http server（内核临时端口）走完整转发链、真实 cordis Context、真实配置迁移                               | 是       |
+| `test/client/**`      | 断言对象是客户端**构建产物** `lib/client.js`——而 `mutate` 面本身排除 `src/client/**`，登记进变异面测试清单只增加每个段的 dry run 成本、杀灭贡献为零 | 否       |
+| `test/e2e/**`         | 真实监听端口 / spawn 子进程 / 真机系统调用的大 smoke                                                                                                | 否       |
 
 支撑模块不入任何层：`test/helpers.ts`、`test/smoke-lib.ts`、`test/smoke-pure.ts`、
 `test/*.worker.mjs`（它们不是测试条目）。**判层按机制而非文件名**：notifier 的
@@ -321,25 +336,31 @@ cordis `EventsService.dispatch` 对已注册监听器的过滤条件为
   即使未来以 private-scoped 形态挂载（listener ctx 带 scope 标签且与事件
   carrier 的 scope 不一致）仍全收（dsh-notifier 全部 `ctx.on` 均如此）；
 - **代价**：`global` 会收到**跨 scope** 的事件——消费端必须按「payload 自校验
-  + 事件内容过滤」处理（事件载荷跨宿主边界不受信，逐字段运行时校验），仅想靠
-  scope 过滤防串扰的监听不应加 `global`。
+  - 事件内容过滤」处理（事件载荷跨宿主边界不受信，逐字段运行时校验），仅想靠
+    scope 过滤防串扰的监听不应加 `global`。
 
 ## 2. 客户端（`src/client/index.ts`）规范 — 干净模块
 
 **核心：源码只写干净模块，不写任何 loader 痕迹。**
 
 ```ts
-import STYLE from "./style.css";          // 样式走独立 CSS（见 §3）
+import STYLE from "./style.css"; // 样式走独立 CSS（见 §3）
 
 // ... 顶部模块体（函数、常量、DOM 渲染）...
 
-export function apply(ctx: any): void {   // 挂载入口
+export function apply(ctx: any): void {
+  // 挂载入口
   // ctx.get("connection"/"sessions"/"workspaces"/"slots") ...
   // 卸载清理必须写在 ctx.effect(() => () => { ... }) 返回的 disposer 里
-  ctx.effect(() => () => { cleanup(); }, "dsh-<name>: ui");
+  ctx.effect(
+    () => () => {
+      cleanup();
+    },
+    "dsh-<name>: ui",
+  );
 }
 
-export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务（如 ["slots"]）
+export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 ["slots"]）
 ```
 
 **禁止在源码里**：`window.__ModuleLoader__.load`、手拼 `__DSH_PLUGIN_ID__`、`require(`、
@@ -350,11 +371,11 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 
 ### 2.1 三种客户端路径（build-client 自动选择，作者不用配置）
 
-| 路径 | 触发 | 说明 |
-|---|---|---|
-| 纯净 wrapper | 干净模块、无 bare import | esbuild iife + 生成契约外壳；`apply/inject` 直出 |
+| 路径                | 触发                                      | 说明                                                                                                                                                                                                                             |
+| ------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 纯净 wrapper        | 干净模块、无 bare import                  | esbuild iife + 生成契约外壳；`apply/inject` 直出                                                                                                                                                                                 |
 | wrapper + externals | 干净模块 `import * as React from "react"` | 干净模块 cjs 内联进 `factory(require)`，React 由 loader 的 `require("react")` 注入（dsh web **无全局 React**）。需同目录 `react-shim.d.ts`（`declare module "react"`，不引 @types/react），`peerDependencies.react` + `optional` |
-| 第三方内联 | `dsh.client.inlineBareImports: true` | 干净模块的 bare import（dompurify/diff2html/marked/highlight…）由 esbuild **内联进 client.js**，产物仍自包含。用于纯浏览器第三方库、无宿主注入 JS 模块的场景 |
+| 第三方内联          | `dsh.client.inlineBareImports: true`      | 干净模块的 bare import（dompurify/diff2html/marked/highlight…）由 esbuild **内联进 client.js**，产物仍自包含。用于纯浏览器第三方库、无宿主注入 JS 模块的场景                                                                     |
 
 > ⚠️ **互斥**：默认「bare import = 宿主注入 external（React）」；`inlineBareImports: true`
 > 则全部内联。按包二选一，不要混用。
@@ -423,7 +444,7 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
     每个 emit `.d.ts` 按**最长前缀**归属，**同长度多命中判红**、**未被任何前缀归属判红**（不得
     静默丢弃）；**每入口至少辖 1 个 `.d.ts` / 1 条声明块**、各入口 `typesTarget` **互不相同**，
     否则判红。基线形态 v2（兼容形态，两个既有消费者零改动）：`{ package, exports, declBlocks,
-    entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks` = **全部块的多重集**；
+entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks` = **全部块的多重集**；
     `entries[e]` = `{ types, exports, blocks: { 名: [块…] } }`（`exports` 取该入口 `typesTarget`
     单文件的导出面，**不是**前缀所辖全部文件的导出名并集——实测 152 ≠ 100）。自洽断言常驻：
     `exports == entries["."].exports`、`declBlocks == 各入口块的多重集并集`（逐条相等，禁止用 Set）。
@@ -472,7 +493,7 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
   `scripts/lib/exports-types-lib.ts`——与导出面快照门禁**共用**「`exports[].types` → 产物
   相对路径」映射，但**判的是不同产物**（此处判 tarball，门禁判 emit 产物），故不是双轨；
   消费方探针：隔离目录软链 `node_modules/@wingsky-1/<pkg>` → 包目录 + `--strict
-  --moduleResolution bundler`，五包实测统一为「对照组主入口 exit=0 / 子路径修复前 TS7016 /
+--moduleResolution bundler`，五包实测统一为「对照组主入口 exit=0 / 子路径修复前 TS7016 /
   修复后 TS2322」。
 - `assertClientSourceContract`（smoke-lib）：兼容三种产物形态（纯净 wrapper /
   React externals / legacy），断言 `"use strict"`、契约外壳、Symbol.toStringTag、
@@ -518,6 +539,7 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
   分层口径与「改动类型 → 归属层」对照表见根 [AGENTS.md 门禁矩阵](../AGENTS.md)）。
 
 <a id="5-smoke-测试防-flake-纪律"></a><a id="user-content-5-smoke-测试防-flake-纪律"></a>
+
 ## 5. Smoke 测试防 flake 纪律
 
 ### 5.1 基本要求
@@ -580,6 +602,7 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
 写盘为 `await writeFile`（已等待）。
 
 <a id="zero-pollution"></a><a id="user-content-zero-pollution"></a>
+
 ### 5.3 测试产物零污染纪律（#218）
 
 - **临时落盘隔离**：测试运行时落盘**必须**落在 `mkdtempSync` 隔离目录（`DSH_HOME` 已隔离），
@@ -588,6 +611,7 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
   一律视为污染，不得提交；自动收集脚本（基线等）只收白名单路径。
 
 <a id="port-handle-discipline"></a><a id="user-content-port-handle-discipline"></a>
+
 ### 5.4 端口与残留句柄纪律（#690 S2c）
 
 - **端口一律动态分配**：测试需要监听端口时用 `server.listen(0, ...)`，再从

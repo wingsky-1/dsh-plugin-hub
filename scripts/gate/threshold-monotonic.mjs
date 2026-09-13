@@ -3,9 +3,10 @@
  * threshold-monotonic — 阈值单调性校验（#85 v3 F3 兜底）
  *
  * 对比工作区与指定 git 基准（默认 origin/main）中的阈值来源，只许升不许降：
- *   - vitest.config.ts 的 coverage.thresholds.{lines,functions,statements,branches}
- *     ——#722 阶段三起覆盖率阈值的唯一事实源，取代原 gauntlet.config.json 的
- *     coverage.selfWrittenFunctions.threshold（该字段随 self-cov.mjs 一并退役）；
+ *   - 覆盖率阈值 `{lines,functions,statements,branches}`：#722 阶段三起由 vitest coverage 承载，
+ *     **#733 计划项 3.4 起事实源迁到 scripts/data/coverage.config.json**。迁移期**双读**：
+ *     某一侧有该 JSON 就用它，没有则回落到同侧的 vitest.config.ts——否则「基准侧还没有 JSON」
+ *     会被读成「首次引入，跳过对比」，把一次性静默降线的窗口留在迁移 PR 里；
  *   - scripts/data/gauntlet.config.json 的 mutation.packages.<pkg>.threshold。
  * 降线必须走原 issue 内 approved 流程改基线，而不是悄悄调低阈值。
  *
@@ -22,13 +23,15 @@
  * 退出码：0 = 无降线；1 = 存在降线；2 = 环境/数据错误
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseExpressionAt, tokenizer } from "acorn";
 
 const GAUNTLET = "scripts/data/gauntlet.config.json";
 const VITEST_CONFIG = "vitest.config.ts";
+/** #733 计划项 3.4 起的覆盖率面单一事实源（include/exclude/thresholds）。 */
+const COVERAGE_CONFIG = "scripts/data/coverage.config.json";
 export const COVERAGE_THRESHOLD_KEYS = ["lines", "functions", "statements", "branches"];
 const ACORN_OPTIONS = { ecmaVersion: "latest", sourceType: "module" };
 
@@ -100,13 +103,51 @@ function warnScopedThresholds(label, parsed) {
   );
 }
 
-/** 基准上是否存在该文件：cat-file 退出 1 = 确实没有；其它错误上抛（环境故障不得放行）。 */
+/**
+ * 从 coverage.config.json 取全局阈值（#733 3.4 起的形态）。
+ * 结构不合法（缺 thresholds / 非数字）返回 null：与「配置里没有 thresholds」同义，由调用方
+ * 决定是回落 vitest.config.ts 还是 fail-closed。
+ */
+export function parseCoverageConfigThresholds(text) {
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const raw = json?.thresholds;
+  if (raw === null || typeof raw !== "object") return null;
+  const global = {};
+  for (const key of COVERAGE_THRESHOLD_KEYS) {
+    if (typeof raw[key] === "number") global[key] = raw[key];
+  }
+  return Object.keys(global).length === 0 ? null : { global, scoped: [] };
+}
+
+/**
+ * 基准 ref 本身是否可解析。必须先查它：`cat-file -e` 对「路径不存在」与「ref 不存在」都报
+ * fatal（实测路径不存在退出 **128**，不是 1），只看退出码会把写错的 ref 读成「基准上没这个
+ * 文件」→ 走进「首次引入，跳过对比」而静默放行。
+ */
+function refExists(ref, repoRoot) {
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
+      cwd: repoRoot,
+      stdio: "ignore",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 基准上是否存在该文件：路径不存在退出 1 或 128（git 版本差异），两者都算「没有」；其它错误上抛。 */
 function existsInGit(ref, path, repoRoot) {
   try {
     execFileSync("git", ["cat-file", "-e", `${ref}:${path}`], { cwd: repoRoot, stdio: "ignore" });
     return true;
   } catch (err) {
-    if (err.status === 1) return false;
+    if (err.status === 1 || err.status === 128) return false;
     throw err;
   }
 }
@@ -129,17 +170,30 @@ export function runThresholdMonotonic(
   const baseRef = argv[0] ?? "origin/main";
   let failures = 0;
 
-  // ── 维度一：覆盖率阈值（vitest.config.ts）──────────────────────
+  if (!refExists(baseRef, repoRoot)) {
+    console.error(
+      `threshold-monotonic: 基准 ref ${baseRef} 不可解析（fetch 了吗？）—— 环境故障按 fail-closed 处理`,
+    );
+    return { exitCode: 2, failures: 0 };
+  }
+
+  // ── 维度一：覆盖率阈值（coverage.config.json，迁移期双读 vitest.config.ts）──
   let oldCoverage = null;
   try {
-    if (existsInGit(baseRef, VITEST_CONFIG, repoRoot)) {
-      oldCoverage = parseCoverageThresholds(readFromGit(baseRef, VITEST_CONFIG, repoRoot));
+    const oldSource = existsInGit(baseRef, COVERAGE_CONFIG, repoRoot)
+      ? COVERAGE_CONFIG
+      : VITEST_CONFIG;
+    if (existsInGit(baseRef, oldSource, repoRoot)) {
+      oldCoverage =
+        oldSource === COVERAGE_CONFIG
+          ? parseCoverageConfigThresholds(readFromGit(baseRef, COVERAGE_CONFIG, repoRoot))
+          : parseCoverageThresholds(readFromGit(baseRef, VITEST_CONFIG, repoRoot));
       if (oldCoverage === null) {
         console.log(
-          `threshold-monotonic: ${baseRef} 的 ${VITEST_CONFIG} 无 coverage.thresholds —— 首次引入，跳过覆盖率阈值对比`,
+          `threshold-monotonic: ${baseRef} 的 ${oldSource} 无 coverage.thresholds —— 首次引入，跳过覆盖率阈值对比`,
         );
       } else {
-        warnScopedThresholds(`${baseRef} 的 ${VITEST_CONFIG}`, oldCoverage);
+        warnScopedThresholds(`${baseRef} 的 ${oldSource}`, oldCoverage);
       }
     } else {
       console.log(
@@ -153,20 +207,26 @@ export function runThresholdMonotonic(
     return { exitCode: 2, failures: 0 };
   }
 
+  // 工作区侧同样双读：有 coverage.config.json 就用它（#733 3.4 后的正常态），
+  // 没有才回落 vitest.config.ts（迁移前的形态或尚未迁移的分支）。
+  const newHasConfig = existsSync(join(repoRoot, COVERAGE_CONFIG));
+  const newSource = newHasConfig ? COVERAGE_CONFIG : VITEST_CONFIG;
   let newCoverage = null;
   try {
-    newCoverage = parseCoverageThresholds(readFileSync(join(repoRoot, VITEST_CONFIG), "utf8"));
+    newCoverage = newHasConfig
+      ? parseCoverageConfigThresholds(readFileSync(join(repoRoot, COVERAGE_CONFIG), "utf8"))
+      : parseCoverageThresholds(readFileSync(join(repoRoot, VITEST_CONFIG), "utf8"));
   } catch (err) {
-    console.error(`threshold-monotonic: 工作区 ${VITEST_CONFIG} 读取失败：${err.message}`);
+    console.error(`threshold-monotonic: 工作区 ${newSource} 读取失败：${err.message}`);
     return { exitCode: 2, failures: 0 };
   }
   if (newCoverage === null) {
     console.error(
-      `threshold-monotonic: 工作区 ${VITEST_CONFIG} 缺 coverage.thresholds —— 覆盖率阈值是硬门禁，缺失视为配置错误（fail-closed）`,
+      `threshold-monotonic: 工作区 ${newSource} 缺 coverage.thresholds —— 覆盖率阈值是硬门禁，缺失视为配置错误（fail-closed）`,
     );
     return { exitCode: 2, failures: 0 };
   }
-  warnScopedThresholds(`工作区 ${VITEST_CONFIG}`, newCoverage);
+  warnScopedThresholds(`工作区 ${newSource}`, newCoverage);
   if (Object.keys(newCoverage.global).length === 0) {
     console.error(
       `threshold-monotonic: 工作区 ${VITEST_CONFIG} 的 coverage.thresholds 没有任何全局阈值键 —— 全局硬门禁被摘除，fail-closed`,
