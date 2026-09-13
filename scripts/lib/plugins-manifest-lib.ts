@@ -134,7 +134,11 @@ export function loadManifest(root) {
   }
   for (const item of surfaces) {
     claimSurface(item, 'configSurfaces')
-    for (const field of ['defaults', 'normalizer']) {
+    // 四个面都必须声明：defaults（默认值/键集）、normalizer（归一化）、booleanKeys（只接受
+    // 布尔值的键清单）、countLimits（非负整数键及其上界）。后两者在 #733 重写后一度未导出、
+    // 导致这两层约束无法在门禁侧恢复；notifier 侧导出后在此要求必备——没有的包应显式声明空
+    // 数组/空对象，而不是省略字段（省略会让门禁静默失去该维度）。
+    for (const field of ['defaults', 'normalizer', 'booleanKeys', 'countLimits']) {
       const face = item[field]
       if (typeof face !== 'object' || face === null) fail(`configSurfaces.${item.package}.${field} 缺声明对象`)
       if (typeof face.module !== 'string' || face.module.length === 0) fail(`configSurfaces.${item.package}.${field}.module 缺失`)

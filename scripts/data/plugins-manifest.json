@@ -18,6 +18,14 @@
       "normalizer": {
         "module": "packages/dsh-notifier/src/server/config/impl/input/index.ts",
         "export": "normalizeConfig"
+      },
+      "booleanKeys": {
+        "module": "packages/dsh-notifier/src/server/config/impl/input/index.ts",
+        "export": "BOOLEAN_KEYS"
+      },
+      "countLimits": {
+        "module": "packages/dsh-notifier/src/server/config/impl/input/index.ts",
+        "export": "COUNT_LIMITS"
       }
     }
   ],

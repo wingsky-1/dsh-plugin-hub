@@ -204,9 +204,13 @@ function loadSurfaceExport(root, face, label, problems) {
  *   N2 normalizeConfig({}) 的键集双向等于 DEFAULT_CONFIG 键集（丢键 / 凭空造键都红）；
  *   N3 README 配置表缺键仅 warn（量级 #12，保留）。
  *
- * 已知缺口（如实登记，不假装门禁比实际强）：BOOLEAN_KEYS 与 COUNT_LIMITS 在
- * impl/input/index.ts 里**未导出**，运行时取不到，故「布尔键清单」「计数上界清单」这两层
- * 约束在本批无法恢复；恢复前提是 notifier 侧导出它们，而那是 #733 另一会话的写入面。
+ * N3 BOOLEAN_KEYS 的每个键都是真实配置键，且其在 DEFAULT_CONFIG 中的默认值是布尔
+ *    （反向不成立：browserSound / systemSound 的默认值也是 true，但类型是
+ *    boolean | SoundId，不属于「只接受布尔值」，故不做双向断言）；
+ * N4 COUNT_LIMITS 的每个键都是真实配置键、上界是非负整数，且 DEFAULT_CONFIG 的默认值
+ *    不超过该上界。
+ * 这两层约束在 #733 重写后一度无法执行（那两个清单当时未导出，曾在门禁注释里如实登记为
+ * 缺口）；notifier 侧导出后由声明驱动恢复，缺口随之关闭。
  */
 function runNotifier(root, surface) {
   const problems = []
@@ -243,7 +247,53 @@ function runNotifier(root, surface) {
     problems.push(`notifier normalizeConfig 多键: ${k}（不在 DEFAULT_CONFIG 中——归一化凭空造键）`)
   }
 
-  lines.push(`notifier ${base.length} 键 × [defaults → normalizeConfig] 运行时取值全等`)
+  // N3/N4：布尔键清单与计数上界清单（两张清单的导出由 notifier 侧补齐后恢复执行）
+  const booleanKeys = loadSurfaceExport(root, surface.booleanKeys, 'booleanKeys', problems)
+  const countLimits = loadSurfaceExport(root, surface.countLimits, 'countLimits', problems)
+  if (booleanKeys === undefined || countLimits === undefined) return { problems, warnings, lines }
+
+  const baseSet = new Set(base)
+  if (!Array.isArray(booleanKeys)) {
+    problems.push(`notifier configSurfaces.booleanKeys 的导出不是数组（${surface.booleanKeys.export}）`)
+  } else {
+    for (const k of booleanKeys) {
+      if (!baseSet.has(k)) {
+        problems.push(`notifier BOOLEAN_KEYS 含非配置键: ${k}（不在 DEFAULT_CONFIG 中）`)
+      } else if (typeof defaults[k] !== 'boolean') {
+        problems.push(`notifier BOOLEAN_KEYS 含非布尔键: ${k}（DEFAULT_CONFIG 里的默认值是 ${typeof defaults[k]}）`)
+      }
+    }
+  }
+
+  if (countLimits === null || typeof countLimits !== 'object' || Array.isArray(countLimits)) {
+    problems.push(`notifier configSurfaces.countLimits 的导出不是对象（${surface.countLimits.export}）`)
+  } else {
+    for (const [k, limit] of Object.entries(countLimits)) {
+      if (!baseSet.has(k)) {
+        problems.push(`notifier COUNT_LIMITS 含非配置键: ${k}（不在 DEFAULT_CONFIG 中）`)
+        continue
+      }
+      if (!Number.isInteger(limit) || limit < 0) {
+        problems.push(`notifier COUNT_LIMITS.${k} 的上界不是非负整数: ${JSON.stringify(limit)}`)
+      }
+      const fallback = defaults[k]
+      if (!Number.isInteger(fallback) || fallback < 0) {
+        problems.push(`notifier COUNT_LIMITS 覆盖的键 ${k} 在 DEFAULT_CONFIG 里不是非负整数: ${JSON.stringify(fallback)}`)
+      } else if (Number.isInteger(limit) && fallback > limit) {
+        problems.push(`notifier DEFAULT_CONFIG.${k} = ${fallback} 超过 COUNT_LIMITS.${k} 上界 ${limit}（默认值本身越界）`)
+      }
+    }
+  }
+
+  // 摘要里的计数用安全取值：类型不合法时上面已判红，这里不能再抛（报告要完整）。
+  const boolCount = Array.isArray(booleanKeys) ? booleanKeys.length : '?'
+  const limitCount =
+    countLimits !== null && typeof countLimits === 'object' && !Array.isArray(countLimits)
+      ? Object.keys(countLimits).length
+      : '?'
+  lines.push(
+    `notifier ${base.length} 键 × [defaults → normalizeConfig] 运行时取值全等 + BOOLEAN_KEYS ${boolCount} + COUNT_LIMITS ${limitCount}`,
+  )
 
   // 量级 #12：README JSON 样例键集一致性——代码键缺文档仅 warn 不判红
   const readmePath = join(root, 'packages/dsh-notifier/README.md')

@@ -260,6 +260,71 @@ test("notifier: 两处都不登记 → 红（manifest 自洽的双向断言）",
   );
 });
 
+// ---- notifier 布尔键清单 / 计数上界清单（N3/N4；两张清单由 notifier 侧导出后恢复执行）----
+
+test("notifier: BOOLEAN_KEYS 加非配置键 → 红且报错含键名", () => {
+  assertRed(
+    "notifier BOOLEAN_KEYS 加 ghostKey",
+    (root) => {
+      edit(root, "dsh-notifier", "server/config/impl/input/index.ts", (s) =>
+        s.replace(
+          "export const BOOLEAN_KEYS: readonly string[] = [",
+          'export const BOOLEAN_KEYS: readonly string[] = [\n  "ghostKey",',
+        ),
+      );
+    },
+    ["ghostKey", "含非配置键"],
+  );
+});
+
+test("notifier: BOOLEAN_KEYS 加非布尔键 → 红（该清单语义是「只接受布尔值」）", () => {
+  assertRed(
+    "notifier BOOLEAN_KEYS 加 quietHours",
+    (root) => {
+      edit(root, "dsh-notifier", "server/config/impl/input/index.ts", (s) =>
+        s.replace(
+          "export const BOOLEAN_KEYS: readonly string[] = [",
+          'export const BOOLEAN_KEYS: readonly string[] = [\n  "quietHours",',
+        ),
+      );
+    },
+    ["quietHours", "含非布尔键"],
+  );
+});
+
+test("notifier: COUNT_LIMITS 加非配置键 → 红且报错含键名", () => {
+  assertRed(
+    "notifier COUNT_LIMITS 加 ghostKey",
+    (root) => {
+      edit(root, "dsh-notifier", "server/config/impl/input/index.ts", (s) =>
+        s.replace(
+          "export const COUNT_LIMITS: Record<string, number> = {",
+          "export const COUNT_LIMITS: Record<string, number> = {\n  ghostKey: 1,",
+        ),
+      );
+    },
+    ["ghostKey", "含非配置键"],
+  );
+});
+
+test("notifier: COUNT_LIMITS 上界低于 DEFAULT_CONFIG 默认值 → 红（默认值自身越界）", () => {
+  assertRed(
+    "notifier COUNT_LIMITS.maxConnections 降到 8",
+    (root) => {
+      edit(root, "dsh-notifier", "server/config/impl/input/index.ts", (s) => {
+        const after = s.replace(/maxConnections: 1_024,/, "maxConnections: 8,");
+        assert.notEqual(
+          after,
+          s,
+          "fixture 应含 maxConnections: 1_024 上界（源码改动后请同步本注入）",
+        );
+        return after;
+      });
+    },
+    ["maxConnections", "超过 COUNT_LIMITS"],
+  );
+});
+
 // 量级 #12：README 键集一致性仅 warn 不判红（缺文档键 → warnings 含键名，pass 仍 true）
 test("量级: README 配置表缺键 → warn 不红（pass 仍 true）", () => {
   const root = fakeRepo();
