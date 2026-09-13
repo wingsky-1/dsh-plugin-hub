@@ -223,6 +223,25 @@ test("npm 强制包含：bundledDependencies 子树里的二进制在 files 之�
   assert.match(join2(result.problems), /packages\/dsh-demo\/node_modules\/dep\/addon\.node/);
 });
 
+test("npm 强制包含：bin 的值是数组时逐个并入分发面", () => {
+  const { result } = judge({
+    files: ["lib"],
+    pkgExtra: { bin: { tool: ["bin/a.exe", "bin/b.exe"] } },
+    tree: { "lib/index.js": "text\n", "bin/a.exe": BINARY, "bin/b.exe": BINARY },
+  });
+  assert.equal(result.hits, 2);
+});
+
+test("npm 强制包含：bundleDependencies 别名同样展开为分发面", () => {
+  const { result } = judge({
+    files: ["lib"],
+    pkgExtra: { dependencies: { dep: "1.0.0" }, bundleDependencies: ["dep"] },
+    tree: { "lib/index.js": "text\n", "node_modules/dep/addon.node": BINARY },
+  });
+  assert.equal(result.hits, 1);
+  assert.match(join2(result.problems), /packages\/dsh-demo\/node_modules\/dep\/addon\.node/);
+});
+
 test("npm 强制包含：根级 README*/LICENSE* 与 package.json 在面内，非根级同名文件不在", () => {
   const root = makeRoot({
     files: ["lib"],
@@ -318,6 +337,15 @@ test("内容嗅探：512 字节 ASCII + 文件头 + 大段 NUL → 仍判为二�
 test("内容嗅探：纯 ASCII 文本不因放大采样窗口而假红", () => {
   const text = Buffer.from("a".repeat(20 * 1024));
   const { result } = judge({ files: ["lib"], tree: { "lib/plain.txt": text } });
+  assert.equal(result.hits, 0);
+  assert.deepEqual(result.problems, []);
+});
+
+test("内容嗅探：带 BOM 的 UTF-16 文本不因 NUL 预筛而假红", () => {
+  // NUL 预筛把采样段整个过一遍，但带 BOM 的 UTF-16 文本自身就含 NUL；isbinaryfile 对 BOM
+  // 有豁免，预筛必须口径一致，否则纯文本被要求按「裸二进制」登记。
+  const text = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("中文文本内容\n", "utf16le")]);
+  const { result } = judge({ files: ["lib"], tree: { "lib/utf16.txt": text } });
   assert.equal(result.hits, 0);
   assert.deepEqual(result.problems, []);
 });
