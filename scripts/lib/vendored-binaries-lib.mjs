@@ -102,6 +102,22 @@ function normalizeRel(entry) {
   return String(entry).trim().replace(/^\.\//, "").replace(/\/+$/, "");
 }
 
+/** 解析 files 条目：`!` 前缀为否定条目（npm 支持，实测只会打包未被否定的文件）。 */
+function parseEntry(raw) {
+  const trimmed = String(raw).trim();
+  const negated = trimmed.startsWith("!");
+  return { negated, entry: normalizeRel(negated ? trimmed.slice(1) : trimmed) };
+}
+
+/**
+ * 否定条目命中判定：含通配符的走 matchesGlob（与正向展开同一个匹配器）；字面条目按
+ * 「自身或整棵子树」排除——npm 的 `!dir` 排除该目录下全部文件。
+ */
+function matchesNegation(rel, pattern) {
+  if (GLOB_CHARS.test(pattern)) return matchesGlob(rel, pattern);
+  return rel === pattern || rel.startsWith(`${pattern}/`);
+}
+
 /** bin 字段的值形态：单个字符串，或 `名 → 字符串 | 字符串数组` 的映射。 */
 function binPaths(bin) {
   const values =
@@ -175,11 +191,14 @@ function expandEntry(pkgDirAbs, entry) {
 }
 
 /**
- * 某包发布物面的包内相对路径全集（files 白名单展开，去重排序）。
+ * 某包发布物面的包内相对路径全集：files 白名单（含 `!` 否定）∪ npm 强制包含集，去重排序。
  *
- * `!` 否定条目**不解释**：npm 的 files 是否支持否定模式（那是 .npmignore 的特性）无法从
- * 本仓现状证实，猜错的方向恰好是 fail-open（把真会分发的文件当成被排除）。故 `!x` 只按
- * 字面路径匹配、通常什么都不命中；真出现时表现为多报而非漏报，方向安全。
+ * 否定条目按 npm 语义处理：先展开正向集合，再滤掉命中否定模式的相对路径。原先把 `!x`
+ * 当字面路径、等于不解释否定，`files:["assets","!assets/secret.bin"]` 会把 npm 明确排除的
+ * 文件判成随包分发（多报），逼用户登记一个根本不发布的副本。
+ *
+ * 否定只作用于 files 展开出的路径：npm 的强制包含集不受否定约束（实测 `!README.bin`
+ * 挡不住 README 随包），故先过滤再并集。
  */
 export function distributionPaths(pkgDirAbs, filesField = readFilesField(pkgDirAbs)) {
   const patterns = Array.isArray(filesField)
@@ -188,14 +207,19 @@ export function distributionPaths(pkgDirAbs, filesField = readFilesField(pkgDirA
       ? [filesField]
       : readdirSync(pkgDirAbs).filter((n) => !DEFAULT_EXCLUDES.has(n));
   const positives = new Set();
+  const negatives = [];
   for (const raw of patterns) {
-    const entry = normalizeRel(raw);
+    const { negated, entry } = parseEntry(raw);
     if (entry === "") continue;
+    if (negated) {
+      negatives.push(entry);
+      continue;
+    }
     for (const p of expandEntry(pkgDirAbs, entry)) positives.add(p);
   }
-  // npm 的强制包含集不受 files 约束（实测 `!README.bin` 也挡不住 README 随包），故并集在后。
-  for (const p of forcedPaths(pkgDirAbs)) positives.add(p);
-  return [...positives].sort();
+  const kept = [...positives].filter((p) => !negatives.some((n) => matchesNegation(p, n)));
+  for (const p of forcedPaths(pkgDirAbs)) kept.push(p);
+  return [...new Set(kept)].sort();
 }
 
 /** 全仓发布物面（packages/<包>/<相对路径>），供登记项「在不在分发面内」判定复用同一事实源。 */

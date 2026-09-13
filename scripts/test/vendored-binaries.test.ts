@@ -251,6 +251,35 @@ test("files 条目归一化：前导 ./ 与尾斜杠并存仍归一化", () => {
   assert.match(join2(result.problems), /packages\/dsh-demo\/assets\/blob\.bin/);
 });
 
+test("files 否定条目：`!` 命中的二进制不随包分发（npm 支持否定，多报会逼出逃生分支）", () => {
+  const { result } = judge({
+    files: ["assets", "!assets/secret.bin"],
+    tree: { "assets/a.bin": BINARY, "assets/secret.bin": BINARY },
+  });
+  assert.equal(result.hits, 1);
+  assert.equal(result.problems.length, 1);
+  assert.match(result.problems[0], /assets\/a\.bin/);
+  assert.ok(!join2(result.problems).includes("secret.bin"), "被否定的文件不该要求登记");
+});
+
+test("files 否定条目：目录形态 `!dir` 排除整棵子树", () => {
+  const { result } = judge({
+    files: ["lib", "!lib/vendor"],
+    tree: { "lib/a.exe": BINARY, "lib/vendor/b.exe": BINARY },
+  });
+  assert.equal(result.hits, 1);
+  assert.match(result.problems[0], /lib\/a\.exe/);
+});
+
+test("files 否定条目：否定不覆盖 npm 强制包含集（实测 `!README.bin` 挡不住强制包含）", () => {
+  const { result } = judge({
+    files: ["lib", "!README.bin"],
+    tree: { "lib/a.js": "text\n", "README.bin": BINARY },
+  });
+  assert.equal(result.hits, 1);
+  assert.match(result.problems[0], /README\.bin/);
+});
+
 test("退役残留目录不参与扫描（manifest.retired）", () => {
   const root = makeRoot({
     files: ["lib"],
