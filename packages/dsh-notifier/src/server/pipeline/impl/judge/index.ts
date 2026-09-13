@@ -4,9 +4,9 @@
  */
 import type { EffectiveConfig } from "../../deps.ts";
 import { isBuiltinKind } from "../service/kinds.ts";
-import type { BuiltinKind } from "../service/kinds.ts";
+import type { BuiltinKind, NotifyKind } from "../service/kinds.ts";
 import type { NotifyRequest } from "../service/type.ts";
-import type { KindSwitchKey, Verdict } from "./type.ts";
+import type { KindSwitchKey, SuppressReason, Verdict } from "./type.ts";
 
 /** 内置种类的开关；`test` 不在表里——它不对应任何宿主事件，也就没有开关。 */
 const KIND_SWITCHES: Record<Exclude<BuiltinKind, "test">, KindSwitchKey> = {
@@ -44,9 +44,10 @@ function isQuietNow(now: Date, quietHours: EffectiveConfig["quietHours"]): boole
 }
 
 /**
- * 裁决。判据顺序即短路顺序：总开关 → kind 开关 → 动态 kind 确认 → 免打扰。
- * `test` 跳过 kind 开关与免打扰：它没有宿主事件也就没有开关，而用户是主动按下它的
- * ——被静音吃掉等于测试按钮失效。
+ * 裁决。判据顺序即短路顺序：**总开关 → kind 开关 → 动态 kind 确认 → 免打扰**。
+ *
+ * 每条规则写成一个有名函数、顺序在这四行里读得出来：此前四条规则混在一个函数体里、
+ * 「`test` 不受约束」这个例外散在三处判断里，想插一条规则的人只能从中间猜位置。
  */
 export function judgeRequest(
   config: EffectiveConfig,
@@ -54,17 +55,39 @@ export function judgeRequest(
   enabled: boolean,
 ): Verdict {
   const kind = request.kind;
-  if (enabled === false) return { ok: false, reason: "disabled" };
-  if (isBuiltinKind(kind) && kind !== "test" && !config[KIND_SWITCHES[kind]]) {
-    return { ok: false, reason: "kind-off" };
+  if (enabled === false) return blocked("disabled");
+  // `test` 是用户主动按下的自检：过了总开关就不再受 kind 开关与免打扰约束——被静音吃掉
+  // 等于测试按钮失效，而它验证的正是链路本身。这一句也是 `test` 在全文件唯一的例外。
+  if (kind === "test") return passed();
+  if (isBuiltinKind(kind) && isKindOff(config, kind)) return blocked("kind-off");
+  if (isUnconfirmed(config, kind)) return blocked("unlisted");
+  if (isQuietNow(new Date(), config.quietHours) && !allowsInQuiet(config.quietHours, kind)) {
+    return blocked("quiet");
   }
-  // 外部注册的 kind 没有开关这一关，只认用户是否确认过（确认态的物理形态就是 allowKinds）。
-  if (!isBuiltinKind(kind) && !config.allowKinds.includes(kind)) {
-    return { ok: false, reason: "unlisted" };
-  }
-  if (kind !== "test" && isQuietNow(new Date(), config.quietHours)) {
-    const allowed = config.quietHours.allowKinds ?? [];
-    if (!allowed.includes(kind)) return { ok: false, reason: "quiet" };
-  }
+  return passed();
+}
+
+/** 内置 kind 看它自己的事件开关（`test` 没有开关，调用方在此之前已放行它）。 */
+function isKindOff(config: EffectiveConfig, kind: Exclude<BuiltinKind, "test">): boolean {
+  return config[KIND_SWITCHES[kind]] !== true;
+}
+
+/** 外部注册的 kind 没有开关这一关，只认用户是否确认过（确认态的物理形态就是 allowKinds）。 */
+function isUnconfirmed(config: EffectiveConfig, kind: NotifyKind): boolean {
+  return !isBuiltinKind(kind) && !config.allowKinds.includes(kind);
+}
+
+/** 免打扰时段内放行谁：只有被显式写进 `allowKinds` 的 kind 能穿过去。 */
+function allowsInQuiet(quietHours: EffectiveConfig["quietHours"], kind: NotifyKind): boolean {
+  const allowed = quietHours.allowKinds ?? [];
+  return allowed.includes(kind);
+}
+
+function passed(): Verdict {
   return { ok: true };
+}
+
+/** 压制：原因随记录写进历史，是「为什么我没收到」的唯一答案来源。 */
+function blocked(reason: SuppressReason): Verdict {
+  return { ok: false, reason };
 }
