@@ -5,7 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const ROOT = join(import.meta.dirname, "../..");
@@ -180,22 +180,33 @@ test("F1：字符串字面量里的伪豁免注释不生效（真实注释词法
 });
 
 test("F2：台账条目文件存在但本次零命中 → 报已腐烂（非死代码）", () => {
-  // 构造与真实台账条目相对路径同形的文件，但内容无任何 HOME API 命中。
-  // 路径须与 scripts/data/gate-exemptions.json 现存条目一致：改用共享接缝后
-  // #525/#517 两条已删除，仅剩 path-resolve.ts（~user 透传）——此处锚定失效，
-  // 说明条目又漂了（台账与自测必须同时改）。
+  // 为什么改用注入台账（--exemptions）而不是锚定真实台账：本用例的判定面是「反向腐烂
+  // 校验」这条机制，与真实台账里此刻有几条无关。原先锚定真实条目，结果是台账一收紧
+  // （~user 透传那条被 provider-usage 自己去掉后，homedir 面已零豁免）本用例就跟着红，
+  // 属于把机制判据绑在了数据现状上。
   const dir = mkdtempSync(join(tmpdir(), "forbid-homedir-rot-"));
   mkdirSync(join(dir, "packages/dsh-provider-usage/src/domain1/registry"), { recursive: true });
   writeFileSync(
     join(dir, "packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts"),
     "export const clean = 1\n",
   ); // 台账含此文件，但零命中（反向腐烂校验的判定面）
+  const ledger = exemptionsFile([
+    {
+      gate: "forbid-homedir-src",
+      path: "packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts",
+      reason: "测试用登记：文件存在但零命中",
+      trackingIssue: "#999",
+    },
+  ]);
   try {
-    const r = spawnSync(process.execPath, [SCRIPT, "--root", dir], { encoding: "utf8" });
+    const r = spawnSync(process.execPath, [SCRIPT, "--root", dir, "--exemptions", ledger], {
+      encoding: "utf8",
+    });
     assert.equal(r.status, 1, r.stderr);
     assert.match(r.stderr, /已腐烂，应删除条目/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+    rmSync(dirname(ledger), { recursive: true, force: true });
   }
 });
 
@@ -250,19 +261,21 @@ test("fail-closed：语法损坏文件（TS 不可解析）→ exit 1 且指明�
   assert.match(r.stderr, /解析失败（fail-closed，一律判红）/);
 });
 
-test("本仓真实快照：1 处合法豁免全部识别 → exit 0 且台账一致", () => {
-  // #722 起 provider-config.ts 与 apply.ts 改走 shared/dsh-home.js 的 userHome 接缝，
-  // 两条台账条目随之腐烂删除（门禁净收紧）；仅剩 ~user 透传一处。
+test("本仓真实快照：homedir 面零豁免 → exit 0 且无任何已登记条目", () => {
+  // 收紧史：#722 起 provider-config.ts 与 apply.ts 改走 shared/dsh-home.js 的 userHome 接缝，
+  // 两条台账条目随之腐烂删除；此后仅剩 path-resolve.ts 的 `~user` 透传一处。该处已由
+  // provider-usage 自己去掉——`~user` 一律原样返回（untildify v6 会经 os.homedir() +
+  // os.userInfo() 展开 `~<当前登录用户>`，既绕过 DSH_HOME 接缝，也违反本模块写明的语义边界）。
+  // 于是本面**零豁免**：这条断言从此是「门禁面不许再长出豁免」的守卫，而非台账清单。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /合法豁免 1 处/);
-  for (const f of ["packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts"])
-    assert.ok(r.stdout.includes(f), `${f} 应在合法豁免台账中`);
+  assert.match(r.stdout, /无 HOME 来源 API 直连/);
   for (const f of [
+    "packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts",
     "packages/dsh-provider-usage/src/apply/apply.ts",
     "packages/dsh-provider-usage/src/domain1/registry/provider-config.ts",
   ])
-    assert.ok(!r.stdout.includes(f), `${f} 已改走共享接缝，不应再出现在豁免台账中`);
+    assert.ok(!r.stdout.includes(f), `${f} 不应再出现在豁免台账中（该面已零豁免）`);
 });
 
 /** 构造豁免台账临时文件（--exemptions 注入），返回其路径。 */
