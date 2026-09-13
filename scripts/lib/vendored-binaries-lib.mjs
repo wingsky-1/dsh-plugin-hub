@@ -93,6 +93,15 @@ function isRegularFile(absPath) {
   }
 }
 
+/**
+ * files 条目的路径归一化：去首尾空白、前导 `./`、尾部 `/`。
+ * npm 把 `lib/` 当 `lib`。不归一化会展开出 `lib//sub/tool.exe`，而登记表按规范路径写
+ * （`lib/sub/tool.exe`），登记项反而被判「不在发布物面内」——把正确动作判红。
+ */
+function normalizeRel(entry) {
+  return String(entry).trim().replace(/^\.\//, "").replace(/\/+$/, "");
+}
+
 /** bin 字段的值形态：单个字符串，或 `名 → 字符串 | 字符串数组` 的映射。 */
 function binPaths(bin) {
   const values =
@@ -112,9 +121,9 @@ function bundledNames(pkgJson) {
  * npm「无论 files 都强制包含」的位置：package.json、根级 README/LICENSE/CHANGELOG/NOTICE
  * 变体、bin、main，以及 bundledDependencies 展开出的包内 `node_modules/<dep>` 子树。
  *
- * 只认**根级** README/LICENSE：npm 不打包 `lib/README`、`sub/README`（实测 npm pack），
- * 把子目录同名文件算进来是多报，会逼出逃生分支。只收磁盘上真实存在的普通文件——`files`
- * 之外的位置若不存在就不是分发物，不该扩大扫描面。
+ * 只认**根级** README/LICENSE：npm 的强制包含规则不递归到子目录（实测 `files:["lib"]` 下
+ * `docs/README` 不随包）；把非根级同名文件算进来是多报，会逼出逃生分支。只收磁盘上真实
+ * 存在的普通文件——`files` 之外的位置若不存在就不是分发物，不该扩大扫描面。
  */
 function forcedPaths(pkgDirAbs) {
   const out = new Set();
@@ -128,7 +137,7 @@ function forcedPaths(pkgDirAbs) {
     ...(typeof pkgJson.main === "string" ? [pkgJson.main] : []),
   ];
   for (const raw of declared) {
-    const rel = String(raw).trim().replace(/^\.\//, "");
+    const rel = normalizeRel(raw);
     if (rel !== "" && isRegularFile(join(pkgDirAbs, rel))) out.add(rel);
   }
   for (const dep of bundledNames(pkgJson)) {
@@ -180,7 +189,7 @@ export function distributionPaths(pkgDirAbs, filesField = readFilesField(pkgDirA
       : readdirSync(pkgDirAbs).filter((n) => !DEFAULT_EXCLUDES.has(n));
   const positives = new Set();
   for (const raw of patterns) {
-    const entry = String(raw).trim().replace(/^\.\//, "");
+    const entry = normalizeRel(raw);
     if (entry === "") continue;
     for (const p of expandEntry(pkgDirAbs, entry)) positives.add(p);
   }

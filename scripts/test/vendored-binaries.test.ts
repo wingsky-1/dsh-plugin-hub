@@ -229,6 +229,28 @@ test("npm 强制包含：根级 README*/LICENSE* 与 package.json 在面内，�
   assert.match(join2(result.problems), /packages\/dsh-demo\/LICENSE/);
 });
 
+test("files 条目归一化：尾斜杠展开出的路径与登记项对得上（不产生双斜杠）", () => {
+  // 不归一化时展开面里是 `lib//sub/tool.exe`，按规范路径登记的条目会被判「不在发布物面内」——
+  // 门禁把正确动作判红，用户只能把登记表写成双斜杠来迁就实现。
+  const { root, result } = judge({
+    files: ["lib/"],
+    tree: { "lib/sub/tool.exe": BINARY, "lib/sub/tool.exe.LICENSE": LICENSE_TEXT },
+    entries: (r) => [entryOf(r, "lib/sub/tool.exe")],
+  });
+  assert.ok(
+    distributionPaths(join(root, "packages", PKG)).includes("lib/sub/tool.exe"),
+    "展开面里应是规范相对路径",
+  );
+  assert.deepEqual(result.problems, []);
+  assert.equal(result.registered, 1);
+});
+
+test("files 条目归一化：前导 ./ 与尾斜杠并存仍归一化", () => {
+  const { result } = judge({ files: ["./assets/"], tree: { "assets/blob.bin": BINARY } });
+  assert.equal(result.hits, 1);
+  assert.match(join2(result.problems), /packages\/dsh-demo\/assets\/blob\.bin/);
+});
+
 test("退役残留目录不参与扫描（manifest.retired）", () => {
   const root = makeRoot({
     files: ["lib"],
