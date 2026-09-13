@@ -327,6 +327,24 @@ test("内容嗅探：采样块起点落在 UTF-8 字符边界（截断多字节�
   );
 });
 
+test("未构建的工作副本：files 声明但磁盘不存在的条目只报告、不判红", () => {
+  const { result } = judge({ files: ["lib", "README.md"], tree: { "README.md": "text\n" } });
+  assert.deepEqual(result.problems, []);
+  assert.ok(
+    result.reports.some((r) => r.includes("packages/dsh-demo/lib")),
+    "未构建的 lib/ 必须报告出来：扫描面静默变小是事实，不能装作没发生",
+  );
+});
+
+test("CLI：声明但缺失的条目打印 NOTE 且 exit 0（报告不是判据）", () => {
+  const root = makeRoot({ files: ["lib", "README.md"], tree: { "README.md": "text\n" } });
+  const r = spawnSync(process.execPath, [SCRIPT, "--root", root, "--registry", writeRegistry([])], {
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /NOTE \| .*packages\/dsh-demo\/lib/);
+});
+
 test("退役残留目录不参与扫描（manifest.retired）", () => {
   const root = makeRoot({
     files: ["lib"],

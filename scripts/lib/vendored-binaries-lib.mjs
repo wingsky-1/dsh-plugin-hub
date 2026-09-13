@@ -225,7 +225,7 @@ function forcedPaths(pkgDirAbs) {
     if (rel !== "" && isRegularFile(join(pkgDirAbs, rel))) out.add(rel);
   }
   for (const dep of bundledNames(pkgJson)) {
-    for (const p of expandEntry(pkgDirAbs, `node_modules/${dep}`)) out.add(p);
+    for (const p of expandEntry(pkgDirAbs, `node_modules/${dep}`) ?? []) out.add(p);
   }
   return out;
 }
@@ -239,12 +239,13 @@ function readFilesField(pkgDirAbs) {
  * 展开单个 files 条目为包内相对路径（/ 分隔）。
  * 目录条目整棵递归；glob 条目以**第一个通配符之前的目录**为遍历根——否则为匹配一个
  * `shared/**\/*.d.ts` 要遍历整包（含 node_modules），把秒级闸拖成分钟级。
+ * 返回 null = 该条目在磁盘上不存在（未构建的 `lib/` 等），交给调用方报告，不当成空集吞掉。
  */
 function expandEntry(pkgDirAbs, entry) {
   const globAt = entry.search(GLOB_CHARS);
   if (globAt === -1) {
     const abs = join(pkgDirAbs, entry);
-    if (!existsSync(abs)) return [];
+    if (!existsSync(abs)) return null;
     if (!statSync(abs).isDirectory()) return [entry];
     return walkFiles(abs, () => true).map((r) => `${entry}/${r}`);
   }
@@ -252,14 +253,14 @@ function expandEntry(pkgDirAbs, entry) {
   const slash = head.lastIndexOf("/");
   const baseDir = slash === -1 ? "" : head.slice(0, slash);
   const absBase = baseDir ? join(pkgDirAbs, baseDir) : pkgDirAbs;
-  if (!existsSync(absBase)) return [];
+  if (!existsSync(absBase)) return null;
   return walkFiles(absBase, () => true)
     .map((r) => (baseDir ? `${baseDir}/${r}` : r))
     .filter((p) => matchesGlob(p, entry));
 }
 
 /**
- * 某包发布物面的包内相对路径全集：files 白名单（含 `!` 否定）∪ npm 强制包含集，去重排序。
+ * 某包发布物面的展开结果：files 白名单（含 `!` 否定）∪ npm 强制包含集，去重排序。
  *
  * 否定条目按 npm 语义处理：先展开正向集合，再滤掉命中否定模式的相对路径。原先把 `!x`
  * 当字面路径、等于不解释否定，`files:["assets","!assets/secret.bin"]` 会把 npm 明确排除的
@@ -267,8 +268,12 @@ function expandEntry(pkgDirAbs, entry) {
  *
  * 否定只作用于 files 展开出的路径：npm 的强制包含集不受否定约束（实测 `!README.bin`
  * 挡不住 README 随包），故先过滤再并集。
+ *
+ * `missing` = files 里声明了、磁盘上却没有的条目：未构建的工作副本扫描面会静默变小
+ * （实测 `--root` 副本 30 文件 vs 源码树 371 文件），不装作没发生，但也不判红——判据面是
+ * 源码树，构建产物由 pack-check 的 tarball 断言覆盖。
  */
-export function distributionPaths(pkgDirAbs, filesField = readFilesField(pkgDirAbs)) {
+export function distributionReport(pkgDirAbs, filesField = readFilesField(pkgDirAbs)) {
   const patterns = Array.isArray(filesField)
     ? filesField
     : typeof filesField === "string"
@@ -276,6 +281,7 @@ export function distributionPaths(pkgDirAbs, filesField = readFilesField(pkgDirA
       : readdirSync(pkgDirAbs).filter((n) => !DEFAULT_EXCLUDES.has(n));
   const positives = new Set();
   const negatives = [];
+  const missing = [];
   for (const raw of patterns) {
     const { negated, entry } = parseEntry(raw);
     if (entry === "") continue;
@@ -283,21 +289,35 @@ export function distributionPaths(pkgDirAbs, filesField = readFilesField(pkgDirA
       negatives.push(entry);
       continue;
     }
-    for (const p of expandEntry(pkgDirAbs, entry)) positives.add(p);
+    const expanded = expandEntry(pkgDirAbs, entry);
+    if (expanded === null) missing.push(entry);
+    else for (const p of expanded) positives.add(p);
   }
   const kept = [...positives].filter((p) => !negatives.some((n) => matchesNegation(p, n)));
   for (const p of forcedPaths(pkgDirAbs)) kept.push(p);
-  return [...new Set(kept)].sort();
+  return { paths: [...new Set(kept)].sort(), missing: missing.sort() };
+}
+
+/** 某包发布物面的包内相对路径全集（distributionReport 的路径视图）。 */
+export function distributionPaths(pkgDirAbs, filesField) {
+  return distributionReport(pkgDirAbs, filesField).paths;
+}
+
+/** 全仓发布物面 + 「files 声明了但磁盘上不存在」的条目（后者只报告，不判红）。 */
+function distributionSurfaceReport(root) {
+  const surface = new Set();
+  const missing = [];
+  for (const pkg of packageDirs(root)) {
+    const report = distributionReport(join(root, "packages", pkg));
+    for (const rel of report.paths) surface.add(`packages/${pkg}/${rel}`);
+    for (const rel of report.missing) missing.push(`packages/${pkg}/${rel}`);
+  }
+  return { surface, missing: missing.sort() };
 }
 
 /** 全仓发布物面（packages/<包>/<相对路径>），供登记项「在不在分发面内」判定复用同一事实源。 */
 export function distributionSurface(root) {
-  const surface = new Set();
-  for (const pkg of packageDirs(root)) {
-    const pkgDirAbs = join(root, "packages", pkg);
-    for (const rel of distributionPaths(pkgDirAbs)) surface.add(`packages/${pkg}/${rel}`);
-  }
-  return surface;
+  return distributionSurfaceReport(root).surface;
 }
 
 /**
@@ -337,12 +357,14 @@ function checkEntryShape(e, index) {
  * 门禁全量判据（供 CLI 与自测共用）。
  * 双向 fail-closed：扫到未登记的 ⇒ 红；登记了但文件消失 / 哈希漂移 / 内容已不是二进制 /
  * license 文本缺失或不在分发面内 ⇒ 红（防「登记表腐坏后判据静默失效」）。
+ * `reports` 是不判红的诚实报告（未构建的声明条目等），CLI 打印但不影响退出码。
  */
 export function verifyVendoredBinaries(root, { registryPath, isBinary = isBinaryFileSync } = {}) {
   // 登记表不可读 = 判据不可执行，直接抛（调用方按结构错误 exit 2）——不得退化成「零命中放行」。
   const entries = loadVendoredRegistry(registryPath ?? join(root, REGISTRY_REL));
 
   const problems = [];
+  const reports = [];
   const seen = new Set();
   // withPath：path 可用（供「已登记」集合与存在性/license 判据）；hashable：sha256 形态
   // 合法（形态非法的条目若再比一次哈希，同一处错误会被报成两条噪声问题）。
@@ -358,10 +380,17 @@ export function verifyVendoredBinaries(root, { registryPath, isBinary = isBinary
     if (shape.length === 0) hashable.add(e);
   }
 
-  const surface = distributionSurface(root);
+  const { surface, missing } = distributionSurfaceReport(root);
   const hits = scanVendoredBinaries(root, { isBinary });
   // 扫描面为空 = 判据前提不成立（包结构或 root 传错），不得当作「零命中」放行。
   if (surface.size === 0) problems.push(`发布物面为空（扫描根 ${root}）：判据前提不成立`);
+  // 扫描面静默变小是事实，但拿文件数下限去判红只会制造脆弱判据；报告出来让人看见即可。
+  for (const rel of missing) {
+    reports.push(
+      `${rel} 在 files 白名单里声明但磁盘上不存在（未构建的工作副本扫描面会静默变小）；` +
+        `本闸判据面是源码树，构建产物由 pack-check 的 tarball 断言覆盖`,
+    );
+  }
 
   const registered = new Set(withPath.map((e) => e.path));
   for (const hit of hits) {
@@ -402,7 +431,13 @@ export function verifyVendoredBinaries(root, { registryPath, isBinary = isBinary
     }
   }
 
-  return { problems, scanned: surface.size, registered: withPath.length, hits: hits.length };
+  return {
+    problems,
+    reports,
+    scanned: surface.size,
+    registered: withPath.length,
+    hits: hits.length,
+  };
 }
 
 /** 取某包在登记表里的条目（消费者：collect-licenses 归集、pack-check 随包断言）。 */

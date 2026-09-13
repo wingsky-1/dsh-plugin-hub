@@ -52,7 +52,9 @@ try {
   process.exit(2);
 }
 
-const { problems, scanned, registered, hits } = result;
+const { problems, reports, scanned, registered, hits } = result;
+// 报告不是判据：未构建的声明条目会让扫描面静默变小，但门禁不据此判红（判据面是源码树）。
+for (const r of reports) console.log(`NOTE | ${r}`);
 for (const p of problems) console.log(`FAIL | ${p}`);
 if (problems.length > 0) {
   console.log(
