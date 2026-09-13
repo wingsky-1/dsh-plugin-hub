@@ -534,7 +534,11 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: pkg-*
-          path: artifacts-tmp
+          # 暂存目录落在 runner 临时区，**不放进工作树**：本 job 后续要跑组 A 的全仓扫描闸
+          # （format:check 的 `prettier --check .`、docs:check、lint），工作树里多出的产物目录
+          # 会被它们当成仓库内容——实测它让 format:check 判出 205 个"格式违规"（#777）。
+          # 面只应由仓库内容定义，不去给扫描器加"这不是源码"的例外条目。
+          path: ${{ runner.temp }}/artifacts-tmp
 
       - name: Restore package outputs into package trees
         env:
@@ -544,9 +548,10 @@ jobs:
         run: |
           set -e
           # 多路径上传的 zip 根 = 包根：artifact 内容即 lib/ shared/ types/ LICENSE 本身
-          for dir in artifacts-tmp/pkg-*; do
+          STAGING="${RUNNER_TEMP}/artifacts-tmp"
+          for dir in "$STAGING"/pkg-*; do
             [ -d "$dir" ] || continue
-            pkg="${dir#artifacts-tmp/pkg-}"
+            pkg="${dir#"$STAGING"/pkg-}"
             mkdir -p "packages/$pkg"
             cp -r "$dir/." "packages/$pkg/"
           done
