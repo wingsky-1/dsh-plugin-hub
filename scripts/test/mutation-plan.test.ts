@@ -11,7 +11,8 @@
  * 全量可达增量的数倍）。故这里锁死四条：
  *   1. 段清单口径与 ci-matrix / mutation-gate 同源（dsh- 前缀 + .json，去后缀）；
  *   2. 超时只认 `scope=full` 的实测（增量值不得参与定标）；
- *   3. 超时公式与下限（#718 整合版规定 10 分钟）不被静默放宽；
+ *   3. 超时公式与下限不被静默放宽（下限 #718 整合版规定 10 分钟，实测证明不足，
+ *      故 `TIMEOUT_FLOOR_MINUTES` 取 20——抬高不违反「最小值要求」，见 mutation-plan.mjs）；
  *   4. 无实测的段必须落到保守默认值，而不是 0 或继承别的段的值。
  */
 import { test } from "node:test";
@@ -96,13 +97,36 @@ test("超时：无实测的段取保守默认，不得取 0 或继承他段值",
   assert.ok(DEFAULT_TIMEOUT_MINUTES >= TIMEOUT_FLOOR_MINUTES, "保守默认不得低于下限");
 });
 
-test("矩阵结构：每项含 seg 与 timeoutMinutes，顺序与传入段序一致", () => {
-  const m = buildShardMatrix(["a", "b"], new Map([["a", 600]]));
+test("矩阵顺序：按估计耗时降序（长段先跑 = LPT），无实测段按默认超时反推参与排序", () => {
+  // 判据刻意不是「顺序 == 传入顺序」（那对字典序与降序都成立，等于没判）：排序的唯一依据是
+  // 台账派生出的估计耗时，传入顺序不得影响结果。
+  const peaks = new Map([
+    ["short", 60],
+    ["long", 1200],
+  ]);
+  const expectOrder = ["long", "unknown", "short"]; // 1200 > 反推估计 1040 > 60
   assert.deepEqual(
-    m.map((x) => x.seg),
-    ["a", "b"],
+    buildShardMatrix(["short", "unknown", "long"], peaks).map((x) => x.seg),
+    expectOrder,
+    "长段先跑（LPT）；无实测段按 (默认超时-构建开销)/安全系数 反推后参与排序",
   );
-  for (const x of m)
+  assert.deepEqual(
+    buildShardMatrix(["long", "short", "unknown"], peaks).map((x) => x.seg),
+    expectOrder,
+    "同一份台账必须派生出同一份 matrix（传入顺序无关）",
+  );
+  assert.deepEqual(
+    buildShardMatrix(
+      ["bbb", "aaa"],
+      new Map([
+        ["aaa", 600],
+        ["bbb", 600],
+      ]),
+    ).map((x) => x.seg),
+    ["aaa", "bbb"],
+    "估计值相同时按段名升序（保证可复现）",
+  );
+  for (const x of buildShardMatrix(["short", "unknown", "long"], peaks))
     assert.ok(Number.isInteger(x.timeoutMinutes) && x.timeoutMinutes >= TIMEOUT_FLOOR_MINUTES);
 });
 

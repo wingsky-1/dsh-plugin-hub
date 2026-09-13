@@ -27,8 +27,14 @@
       "gate": "verify-dir-imports",
       "script": "scripts/gate/verify-dir-imports.mjs",
       "scopeFrom": "cli",
-      "packages": ["dsh-mcp-manager", "dsh-notifier", "dsh-provider-usage"],
-      "why": "目录 interface.ts 门面 + 依赖图尺子（#664/#670/#690）。范围由调用点 --package 累加：contract-check.ts 里 dsh-mcp-manager 与 dsh-notifier 是硬判、dsh-provider-usage 加 --soft（软报告只改打印标签，基线与全覆盖断言一视同仁）。脚本缺省（无 --package）只覆盖 dsh-mcp-manager，CI 与本地门禁一律显式传参，故登记值取**调用点并集**——自测会断言本字段等于调用点并集，两边漂移即红。"
+      "packages": [
+        "dsh-mcp-manager",
+        "dsh-notifier",
+        "dsh-provider-usage",
+        "dsh-lan-proxy",
+        "dsh-web-file-preview"
+      ],
+      "why": "目录 interface.ts 门面 + 依赖图尺子（#664/#670/#690）。范围由调用点 --package 累加：contract-check.ts 里 dsh-mcp-manager 与 dsh-notifier 是硬判、dsh-provider-usage 加 --soft（软报告只改打印标签，基线与全覆盖断言一视同仁）。#742 阶段 2 前置补齐 lan-proxy 与 web-file-preview：此前这两包的 src 不在任何扫描面内，S0 的「源码全覆盖断言」（src ⊆ ∪mutate ∪ ∪excludes）对它们不生效——新文件既不会被判未覆盖，也没有 R-A 约束；实测两包在现有判据下零违规，故并入硬判。脚本缺省（无 --package）只覆盖 dsh-mcp-manager，CI 与本地门禁一律显式传参，故登记值取**调用点并集**——自测会断言本字段等于调用点并集，两边漂移即红。"
     },
     {
       "gate": "export-surface-snapshot",

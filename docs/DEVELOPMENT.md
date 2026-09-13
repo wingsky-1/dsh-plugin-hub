@@ -85,8 +85,8 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
 - **PR 门禁分层**（ci.yml，#722）：默认走**增量**，只有给 PR 打 `gate:full` 标签才跑全量链路
   （`pull_request.types` 含 `labeled`/`unlabeled`，打标签即触发重跑）。策略由 `changes`
   job 一处计算为 `fullGate` 输出，判定表与三个全量 job 的 `if` 共用同源布尔。
-  1. `build-test` 矩阵（固定 7 实例，防 GHA 零实例矩阵回报 failure）：按 paths-filter
-     命中包切片构建 + test + typecheck，artifact 只上传命中包；
+  1. `build-test` 矩阵（矩阵 = paths-filter 命中的包；空切片时补 1 个哨兵实例，防 GHA
+     零实例矩阵回报 failure）：按命中包切片构建 + test + typecheck，artifact 只上传命中包；
   2. `repo-gate` 分两组——
      组 A（廉价全仓闸，恒跑）：判定脚本 `repo-gate-assert.mjs`、`threshold-monotonic`、
      `aggregate:check`、`stryker:check`、`test:scripts`、`forbid-src-tests`、

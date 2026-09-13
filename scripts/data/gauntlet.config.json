@@ -26,13 +26,13 @@
       "dsh-notifier": {
         "baselineScore": 1.19,
         "baselineCovered": 1.33,
-        "legacyNote": "#139 阶段一试点原始记录：bridge 修正前报告口径（211/295 RuntimeError 未计杀灭）；当时人工换算有效口径约 72.6%（212/286）",
-        "fixedScore": 71.86,
-        "fixedCovered": 74.13,
-        "fixedDate": "2026-08-24",
-        "fixedDuration": "6m56s",
-        "config": "stryker.conf.d/dsh-notifier-{server,message,config,history}.json（#342 二期：功能命名——事件/连接域 server / 消息构造 message / 配置迁移 config / 历史静默 history；message.ts 单文件 145s 物理极限维持）",
-        "scope": "src 级四段（#342 二期）：server index+server / message message.ts / config config+migrate+settings / history history+quiet-hours；基线为 src 口径，由 observe 夜间全量班重建",
+        "legacyNote": "#139 阶段一试点原始记录：bridge 修正前报告口径（211/295 RuntimeError 未计杀灭）；当时人工换算有效口径约 72.6%（212/286）。注意 baselineScore / baselineCovered 两个字段**已作废且不得再作锚**——它们描述的是 #733 按域重写前的 mutate 面（server/message/config/history 四段），其中 1.33 是 bridge 修正前的原始记录。回落判据只读 fixedCovered（observe-check.mjs 的回退链 fixedCovered ?? baselineCovered），保留这两个字段仅为留档。",
+        "fixedScore": 92.27,
+        "fixedCovered": 92.27,
+        "fixedDate": "2026-09-13",
+        "fixedDuration": "10m13s",
+        "config": "stryker.conf.d/dsh-notifier-{api,channels,config,events,pipeline,sdk,shared,stores,upgrade}.json（#733 按域重写：段面 = src/server/<域>/**，新增 shared；sdk 段沿用 #669 口径并入根 index.ts）",
+        "scope": "src 级九段（#733 按域重写）：api HTTP 端点 / channels 出口 / config 配置 / events 宿主事件 / pipeline 管线 / sdk 服务面+组合根 / shared 包内共享 / stores 存储 / upgrade 存量迁移；基线为 2026-09-13 夜间全量班（run 34752395124）实测 covered 92.27%（killed 2586 / survived 217 / noCov 37），九段墙钟合计 10m13s",
         "threshold": 60
       },
       "dsh-web-file-preview": {

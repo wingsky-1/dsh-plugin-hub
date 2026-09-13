@@ -17,9 +17,13 @@
  * （实测 run 34681565987 的 events / server 即如此），而低估是超时定标里最危险的方向。
  *
  * 用法：
- *   node scripts/gate/mutation-ledger.mjs --run <run-id> [--workflow <name>] --scope incremental --write
- *   node scripts/gate/mutation-ledger.mjs --from-log <path> --run <id> [--workflow <n>] --scope <s> --write
+ *   gh run view <run-id> --log > /tmp/observe.log          # 生成模式需 gh 与网络，故不进 CI
+ *   node scripts/gate/mutation-ledger.mjs --run <id> --from-log /tmp/observe.log \
+ *        [--workflow <name>] --scope <full|incremental> --write
  *   node scripts/gate/mutation-ledger.mjs --check      # 离线校验入库台账（覆盖全部段 + 字段完整）
+ *
+ * `--run` 与 `--from-log` 都是必填：前者是台账的幂等键（同一 run 重跑是替换而非追加），后者是
+ * 数据来源——解析器只认日志，不认工作区文件时间戳（见上）。
  *
  * 退出码：0 = 通过；1 = 校验失败；2 = 环境/用法错误。
  */

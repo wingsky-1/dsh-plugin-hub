@@ -68,8 +68,8 @@ export function evaluateGate(input) {
   if (changes !== "success") {
     return { ok: false, code: 1, reason: `changes 作业未成功（${changes}）—— fail-closed` };
   }
-  // build-test 恒全集矩阵（#722 后矩阵仍固定 7 实例、未命中实例只跑 checkout+setup），
-  // 任何实例失败/skipped 即红
+  // build-test 矩阵 = 命中包（空切片时补 1 个哨兵实例：GHA 对零实例动态矩阵实测回报 failure，
+  // 哨兵不匹配任何包、只跑一次 checkout+setup），任何实例失败/skipped 即红
   if (buildTest !== "success") {
     return {
       ok: false,

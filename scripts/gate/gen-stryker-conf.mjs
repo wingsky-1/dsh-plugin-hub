@@ -4,7 +4,7 @@
  *
  * 核心设计（单一事实源 SSOT + 确定性代码生成 + 登记完整性门禁）：
  * 1. 唯一事实源：scripts/data/mutation-topology.json 的 `$testLayers` 与各包 `testLayers`。
- * 2. 派生目标：stryker.conf.d/*.json（全部 31 份分段配置）+ vitest.stryker.d/<pkg>.config.ts
+ * 2. 派生目标：stryker.conf.d/*.json（全部段配置：当前 32 份）+ vitest.stryker.d/<pkg>.config.ts
  *    （每包一份「变异面测试清单」的 vitest 配置）。
  * 3. **测试面不再由 Stryker 的 `testFiles` 承载**（#722 方案 A 路径一）：该字段非空会让
  *    core 把 static mutant 判成 runtime 激活（上游 #6144，未修），模块级变异体在模块加载

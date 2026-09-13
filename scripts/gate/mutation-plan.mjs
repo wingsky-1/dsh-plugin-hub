@@ -82,9 +82,36 @@ export function timeoutForSegment(seg, peaks) {
   return Math.max(TIMEOUT_FLOOR_MINUTES, minutes);
 }
 
-/** 生成 matrix：`[{ seg, timeoutMinutes }]`，按段名字典序（与 conf 目录顺序一致，便于比对）。 */
+/**
+ * 段耗时估计（秒），只用于排序：有全量实测的取实测峰值；无实测的由「它会拿到默认超时」反推
+ * （默认超时 = 估计耗时 × 安全系数 + 构建开销）——排序用的估计与超时用的假设同源，不另立口径。
+ */
+function estimateSeconds(seg, peaks) {
+  const measured = peaks.get(seg);
+  if (measured !== undefined) return measured;
+  return ((DEFAULT_TIMEOUT_MINUTES - SETUP_OVERHEAD_MINUTES) * 60) / SAFETY_FACTOR;
+}
+
+/**
+ * 生成 matrix：`[{ seg, timeoutMinutes }]`，按**估计耗时降序**（长段先跑）。
+ *
+ * 为什么排序而不是保持字典序：GHA 以 `max-parallel` 个槽位按 matrix 声明顺序消费，声明顺序
+ * 就是调度顺序；字典序等价于随机顺序。实测代价（2026-09-13 run 34752395124，32 段）：字典序
+ * makespan 52.9 min，LPT 顺序 42.1 min，而串行合计/并发度给出的下界是 41.4 min——即每晚白等
+ * 约 11 分钟。「长段先跑」是 LPT 的贪心形式：把最长项压到最前面即可逼近下界。
+ * 同估计值按段名升序，保证同一份台账派生出同一份 matrix（可复现）。
+ *
+ * 依赖说明：GHA 只承诺「按 max-parallel 限流」，**没有**承诺按声明顺序消费；这里依赖的是实测
+ * 到的实现行为（32 个 job 的 start 顺序在槽位模型下 30/32 精确吻合，另 2 处为 runner 排队
+ * 延迟）。该行为若变化，退化结果只是顺序不再最优，不影响正确性。
+ */
 export function buildShardMatrix(segs, peaks) {
-  return segs.map((seg) => ({ seg, timeoutMinutes: timeoutForSegment(seg, peaks) }));
+  return [...segs]
+    .sort((a, b) => {
+      const byWeight = estimateSeconds(b, peaks) - estimateSeconds(a, peaks);
+      return byWeight !== 0 ? byWeight : a.localeCompare(b);
+    })
+    .map((seg) => ({ seg, timeoutMinutes: timeoutForSegment(seg, peaks) }));
 }
 
 function main() {
