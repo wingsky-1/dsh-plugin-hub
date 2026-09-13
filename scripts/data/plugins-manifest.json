@@ -32,26 +32,31 @@
   "configSurfacesPending": [
     {
       "package": "dsh-lan-proxy",
+      "trackingIssue": "#774",
       "reason": "现有 L1/L2 断言仍按 packages/dsh-lan-proxy/src/config.ts 硬编码提取；迁到声明驱动见 #733 计划项 3.1.1 的「按包逐个开」",
       "reviewBy": "2027-03-31"
     },
     {
       "package": "dsh-mcp-manager",
+      "trackingIssue": "#774",
       "reason": "尚未纳入配置矩阵（#733 计划项 3.1.1 按包逐个开）",
       "reviewBy": "2027-03-31"
     },
     {
       "package": "dsh-provider-usage",
+      "trackingIssue": "#774",
       "reason": "尚未纳入配置矩阵（#733 计划项 3.1.1 按包逐个开）",
       "reviewBy": "2027-03-31"
     },
     {
       "package": "dsh-verify-isolated",
+      "trackingIssue": "#774",
       "reason": "尚未纳入配置矩阵（#733 计划项 3.1.1 按包逐个开）",
       "reviewBy": "2027-03-31"
     },
     {
       "package": "dsh-web-file-preview",
+      "trackingIssue": "#774",
       "reason": "尚未纳入配置矩阵（#733 计划项 3.1.1 按包逐个开）",
       "reviewBy": "2027-03-31"
     }
