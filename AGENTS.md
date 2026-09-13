@@ -96,9 +96,11 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
   `scripts/data/coverage.config.json`（#733 计划项 3.4 起；`vitest.config.ts` 只 import 它，
   不得再内联 `include`/`exclude`/`thresholds`；降线由 `scripts/gate/threshold-monotonic.mjs`
   对比 `origin/main` 拦截，面完整性由 `verify:coverage-scope` 守），**变异与 CRAP** 在
-  `scripts/data/gauntlet.config.json`；CRAP 仍在观察期（`crap.strict=false`），
-  **不得自行改该字段**。CRAP 自阶段三起处于 fail-closed 停用态（数据源口径不可比，
-  `pnpm crap` 以 exit 2 报明原因），重建归 #722 阶段 5。
+  `scripts/data/gauntlet.config.json`。CRAP 已在 #722 阶段五重建为 src 口径（复杂度取 ESLint
+  内置 `complexity` 规则、覆盖率取 `coverage/coverage-final.json`），`crap.strict=false` 是
+  **观察期**语义：超阈热点只落盘 `coverage/crap-report.json` 并 exit 0，置 true 才判红；
+  **不得自行改该字段**（开启时机与 #732 的复杂度阈值收紧同批裁决）。数据源缺失或解析失败仍
+  fail-closed `exit 2`（`scripts/gate/crap-check.mjs`），与观察期语义不矛盾。
 
 ## 测试纪律
 
