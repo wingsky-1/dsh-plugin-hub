@@ -2,7 +2,12 @@
  * config 域凭据的掩码往返（安全模块）：**读出去一律掩码，写回来按 id 还原**——没有这条对称，凭据只有两种结局：
  * 明文出到界面与日志，或被掩码覆盖成字面量。`CHANNEL_SECRET_FIELDS` 是唯一扩展点，两处各写一份清单一定会漂移。
  */
-import type { ChannelConfig, NotifyConfig, RawSettingValue } from "../model/type.ts";
+import type {
+  ChannelConfig,
+  NotifyConfig,
+  RawSettingValue,
+  StoredSettings,
+} from "../model/type.ts";
 
 /** 掩码占位：提交整值等于它 = 该字段「未修改」。 */
 const SECRET_MASK = "********";
@@ -28,6 +33,21 @@ export function redactConfig(value: Partial<NotifyConfig>): Partial<NotifyConfig
   // 断言只声明"这是同一批频道，只是密钥被换成了掩码"——掩码不会改变项的形状。
   copy.channels = channels.map(maskChannel) as ChannelConfig[];
   return copy;
+}
+
+/**
+ * 存储层的读出口脱敏：视图的 `user` 要**原样带陌生键**（只掩码凭据），所以不能先过净化——
+ * 净化会把用户手写的未来键从视图里摘掉，而它们其实还在文件里，界面与文件就此各说各话。
+ */
+export function redactStored(stored: StoredSettings): StoredSettings {
+  const masked: Record<string, RawSettingValue> = {};
+  for (const [key, value] of Object.entries(stored)) {
+    masked[key] =
+      key === "channels" && Array.isArray(value)
+        ? (value.map(maskChannel) as RawSettingValue)
+        : structuredClone(value);
+  }
+  return masked;
 }
 
 /**

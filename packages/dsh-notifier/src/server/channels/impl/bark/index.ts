@@ -61,7 +61,10 @@ export async function sendBark(target: BarkTarget, message: NotifyMessage): Prom
 
 /** 推送体：可选键「取不到就不写」，与服务端的缺省语义对齐。 */
 function barkBodyOf(target: BarkTarget, message: NotifyMessage): BarkPushBody {
+  // 未知键先铺底、已知键随后覆盖：透传是「带上用户写的额外参数」，不是「允许它们改写通知本身」
+  // （配置里写一个 `title` 就能顶掉通知标题，那是透传面不该有的能力）。
   const body: BarkPushBody = {
+    ...target.extras,
     device_key: target.deviceKey,
     title: truncateCodePoints(message.title, displayCaps.bark.titleMax),
     body: truncateCodePoints(message.body, displayCaps.bark.bodyMax),

@@ -11,6 +11,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BARK_RESERVED_KEYS,
+  WEBHOOK_RESERVED_KEYS,
   normalizeConfig,
   parseJsonObject,
   sanitizeSettings,
@@ -261,6 +263,40 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
     expect("badge" in dirty).toBe(false);
   });
 
+  it("频道的未知键按 string/number 透传成 extras（README 的前向兼容承诺：bark 将来加参数，用户现在写进去要留住）", () => {
+    const channel = barkOf(
+      normalizeConfig({
+        channels: [{ ...BARK, volume: 5, call: "1", nested: { a: 1 }, flag: true }],
+      }).channels,
+    );
+    expect(channel.extras).toEqual({ volume: 5, call: "1" });
+    const hook = webhookOf(
+      normalizeConfig({ channels: [{ ...WEBHOOK, futureKey: "v", retries: 2 }] }).channels,
+    );
+    expect(hook.extras).toEqual({ futureKey: "v", retries: 2 });
+  });
+
+  it("保留键在归一化里也剔除：手改过的配置文件不经过写入口径，一条手写的 device_key 就能绕开「凭据只走已知字段」", () => {
+    // 保留键清单按频道类型分（bark 的别名与 webhook 的别名不是同一批），这里只用 bark 自己的。
+    const channel = barkOf(
+      normalizeConfig({
+        channels: [{ ...BARK, device_key: "leak", ciphertext: "leak2" }],
+      }).channels,
+    );
+    expect(channel.extras).toBeUndefined();
+    expect(JSON.stringify(channel)).not.toContain("leak");
+  });
+
+  it("只写过旧全局键 notifySound 的存量：读面回落到它（当时关掉的提示音不该因新键缺省 true 而复活成有声）", () => {
+    const quiet = normalizeConfig({ notifySound: false });
+    expect(quiet.browserSound).toBe(false);
+    expect(quiet.systemSound).toBe(false);
+    // 显式的新键优先于旧键：回落只补缺，不覆盖用户后来的选择。
+    const mixed = normalizeConfig({ notifySound: false, browserSound: "ding" });
+    expect(mixed.browserSound).toBe("ding");
+    expect(mixed.systemSound).toBe(false);
+  });
+
   it("频道缺省不启用：出站授权须用户显式授予（两类频道同一口径——webhook 只是把同样的授权换成一次外发请求）", () => {
     expect(normalizeConfig({ channels: [BARK] }).channels[0].enabled).toBe(false);
     expect(normalizeConfig({ channels: [{ ...BARK, enabled: true }] }).channels[0].enabled).toBe(
@@ -325,6 +361,28 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
     expect(invalidOf({ notifyAsk: "yes", maxConnections: -1 }).key).toBe("notifyAsk");
     // 合法值不是出口：扫到它必须继续往下看，否则「合法键 + 非法键」的整份提交会被整体放行。
     expect(invalidOf({ notifyAsk: true, maxConnections: -1 }).key).toBe("maxConnections");
+  });
+
+  it("保留键写拒：凭据别名键命中即 400 且提示点名该键（静默剔除会让用户以为设置生效了）", () => {
+    for (const key of BARK_RESERVED_KEYS) {
+      const invalid = invalidOf({ channels: [{ ...BARK, [key]: "x" }] });
+      expect(invalid.key, key).toBe("channels");
+      expect(invalid.hint, key).toContain(key);
+    }
+    // webhook 的必需键先过闸，所以这里必须给全 auth，否则拦下提交的是 auth 那条分支。
+    for (const key of WEBHOOK_RESERVED_KEYS) {
+      const invalid = invalidOf({ channels: [{ ...WEBHOOK, auth: "none", [key]: "x" }] });
+      expect(invalid.hint, key).toContain(key);
+    }
+  });
+
+  it("未知键的写入口径：只放行 string/number（对象/布尔/数组的透传值会让下游分不清「有值」与「没值」）", () => {
+    expect(validateSettings({ channels: [{ ...BARK, volume: 5, call: "1" }] })).toEqual({
+      ok: true,
+    });
+    expect(invalidOf({ channels: [{ ...BARK, nested: { a: 1 } }] }).hint).toContain("nested");
+    expect(invalidOf({ channels: [{ ...BARK, flag: true }] }).hint).toContain("flag");
+    expect(invalidOf({ channels: [{ ...BARK, list: [1] }] }).hint).toContain("list");
   });
 
   it("逐键类型闸门：每个非法值都指向它自己那个键，且提示指向真正拦下它的那条分支（键对了、提示指向别处，等于把用户引到另一个字段）", () => {

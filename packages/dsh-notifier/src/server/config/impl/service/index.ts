@@ -24,7 +24,7 @@ import type {
   SettingsPatch,
   StoredSettings,
 } from "../model/type.ts";
-import { redactConfig, unmaskChannels } from "../redact/index.ts";
+import { redactConfig, redactStored, unmaskChannels } from "../redact/index.ts";
 import type { SettingsView, WriteResult } from "./type.ts";
 
 /** 掩码还原后的写入口 patch；失败 = patch 里的新实例提交了掩码占位。 */
@@ -85,7 +85,9 @@ class ConfigStore {
   /** 设置页视图：脱敏后的用户层与生效值 + 修订号 + 可写性，同一刻取齐。 */
   view(): SettingsView {
     return {
-      user: redactConfig(this.user),
+      // `user` 是**存储原样**（只掩码）：陌生键也要看得见——净化后的 this.user 里没有它们，
+      // 而它们确实还在文件里，视图不显示就等于「文件里有、界面里没有」两套事实。
+      user: redactStored(this.stored),
       revision: this.revision,
       writable: true,
       effective: redactConfig(this.effective),

@@ -38,6 +38,65 @@ const WEBHOOK_PRESETS: readonly WebhookPreset[] = ["ntfy", "gotify", "custom"];
 const CLOCK_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /**
+ * 频道实例里**合法的凭据只能走已知字段**（bark 的 `deviceKey`、webhook 的 `token`/`password`/`headerValue`），
+ * 这些凭据别名键在写入口径直接**拒绝**而不是静默剔除——静默剔除会让用户以为设置生效了。
+ *
+ * 导出是为了让判据按清单表驱动：README 的「保留键写拒」与这份清单必须是同一份事实源。
+ */
+export const BARK_RESERVED_KEYS: readonly string[] = ["device_key", "device_keys", "ciphertext"];
+
+/** webhook 侧的凭据别名键；与 `BARK_RESERVED_KEYS` 同语义（见上）。 */
+export const WEBHOOK_RESERVED_KEYS: readonly string[] = [
+  "auth_token",
+  "access_token",
+  "bearer_token",
+  "api_key",
+  "apikey",
+  "client_secret",
+  "secret",
+  "password_hash",
+];
+
+/**
+ * 频道实例的已知键。校验与归一化**共用这一份**——未知键的判定正是拿它做的减法，两处各写一份清单，
+ * 「什么算未知」就会在两个工序里给出两种答案。
+ */
+const BARK_KNOWN_KEYS: readonly string[] = [
+  "id",
+  "type",
+  "enabled",
+  "name",
+  "baseUrl",
+  "deviceKey",
+  "level",
+  "levels",
+  "group",
+  "sound",
+  "icon",
+  "url",
+  "badge",
+  "timeoutMs",
+];
+
+const WEBHOOK_KNOWN_KEYS: readonly string[] = [
+  "id",
+  "type",
+  "enabled",
+  "name",
+  "url",
+  "preset",
+  "auth",
+  "token",
+  "username",
+  "password",
+  "headerName",
+  "headerValue",
+  "template",
+  "headers",
+  "timeoutSec",
+];
+
+/**
  * 契约认识的键。从默认设置派生而不是另抄一份清单：模型新增键时白名单自动跟上，否则
  * 就是「加了键却忘了加白名单，该键永远写不进去」这种沉默故障。
  */
@@ -108,8 +167,11 @@ export function normalizeConfig(input: StoredSettings): NotifyConfig {
     browserNotify: asBoolean(input.browserNotify, fallback.browserNotify),
     notifyWhenVisible: asBoolean(input.notifyWhenVisible, fallback.notifyWhenVisible),
     notifySound: asBoolean(input.notifySound, fallback.notifySound),
-    browserSound: asSound(input.browserSound, fallback.browserSound),
-    systemSound: asSound(input.systemSound, fallback.systemSound),
+    browserSound: asSound(
+      input.browserSound,
+      legacySound(input.notifySound, fallback.browserSound),
+    ),
+    systemSound: asSound(input.systemSound, legacySound(input.notifySound, fallback.systemSound)),
     quietHours: asQuietHours(input.quietHours, fallback.quietHours),
     channels: asChannels(input.channels),
     kindRoutes: asKindRoutes(input.kindRoutes),
@@ -220,7 +282,7 @@ function validateBarkChannel(raw: Record<string, RawSettingValue>, id: string): 
     return reject("channels", `bark 频道 ${id} 缺少 deviceKey`);
   if (raw.level !== undefined && !isMember(raw.level, BARK_LEVELS))
     return reject("channels", `bark 频道 ${id} 的 level 非法`);
-  return { ok: true };
+  return validateExtras(raw, id, BARK_KNOWN_KEYS, BARK_RESERVED_KEYS, "bark");
 }
 
 /** webhook 频道：`url` 与 `auth` 是投递必需；`preset` 缺省归一到 custom，故可省。 */
@@ -234,6 +296,31 @@ function validateWebhookChannel(
     return reject("channels", `webhook 频道 ${id} 的 auth 非法`);
   if (raw.preset !== undefined && !isMember(raw.preset, WEBHOOK_PRESETS))
     return reject("channels", `webhook 频道 ${id} 的 preset 非法`);
+  return validateExtras(raw, id, WEBHOOK_KNOWN_KEYS, WEBHOOK_RESERVED_KEYS, "webhook");
+}
+
+/**
+ * 未知键的写入口径：保留键**写拒**（400），其余只放行 string/number。
+ *
+ * 为什么不做成「未知键一律拒绝」：README 承诺了前向兼容——bark 将来新增的参数，用户现在写进配置
+ * 就该被保留并原样带出去；而为什么不做成「一律接受」：`{}`、数组、布尔的透传值会污染生效设置，
+ * 让「有值」与「没值」在下游分不清。
+ */
+function validateExtras(
+  raw: Record<string, RawSettingValue>,
+  id: string,
+  known: readonly string[],
+  reserved: readonly string[],
+  kindLabel: string,
+): ValidationResult {
+  for (const key of Object.keys(raw)) {
+    if (known.includes(key)) continue;
+    if (reserved.includes(key))
+      return reject("channels", `${kindLabel} 频道 ${id} 的 ${key} 是保留键：凭据只能走已知字段`);
+    const value = raw[key];
+    if (typeof value !== "string" && typeof value !== "number")
+      return reject("channels", `${kindLabel} 频道 ${id} 的 ${key} 只能是字符串或数字`);
+  }
   return { ok: true };
 }
 
@@ -315,6 +402,16 @@ function asSound(raw: RawSettingValue, fallback: SoundSetting): SoundSetting {
   return isSoundId(raw) ? raw : fallback;
 }
 
+/**
+ * 旧全局声音键的**读面**回落：两个按出口的新键缺失（或非法）时先看 `notifySound`，再看默认值。
+ *
+ * 为什么保留这条链：存量 user 层不迁移（只在官方 settings 里写过旧键的用户），没有它，「当时关过提示音」
+ * 这件事在升级后会被读成默认的 `true` —— 静音设置无声复活成有声。
+ */
+function legacySound(legacy: RawSettingValue, fallback: SoundSetting): SoundSetting {
+  return typeof legacy === "boolean" ? legacy : fallback;
+}
+
 /** 字符串数组：非字符串项剔除而不是整组丢弃（一项脏值不该连累其余）。 */
 function asStrings(raw: RawSettingValue): string[] {
   return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
@@ -393,7 +490,30 @@ function asBarkChannel(raw: Record<string, RawSettingValue>, id: string): Channe
   // 永远发不出 timeSensitive；徽标同理，0 是有意义的取值。
   if (isMember(raw.level, BARK_LEVELS)) channel.level = raw.level;
   if (typeof raw.badge === "number") channel.badge = raw.badge;
+  const extras = extrasOf(raw, BARK_KNOWN_KEYS, BARK_RESERVED_KEYS);
+  if (Object.keys(extras).length > 0) channel.extras = extras;
   return { ok: true, channel };
+}
+
+/**
+ * 实例里的未知键：只留 string/number 值。
+ *
+ * 校验面已经拒掉保留键与非 string/number 值，这里再过滤一遍不是重复——归一化读的是**磁盘上的内容**，
+ * 手改过的文件不经过写入口径；而保留键在这里必须剔除，否则一条手写的 `device_key` 就能绕开
+ * 「凭据只能走已知字段」的收口。
+ */
+function extrasOf(
+  raw: Record<string, RawSettingValue>,
+  known: readonly string[],
+  reserved: readonly string[],
+): Record<string, string | number> {
+  const extras: Record<string, string | number> = {};
+  for (const key of Object.keys(raw)) {
+    if (known.includes(key) || reserved.includes(key)) continue;
+    const value = raw[key];
+    if (typeof value === "string" || typeof value === "number") extras[key] = value;
+  }
+  return extras;
 }
 
 function asLevels(raw: RawSettingValue): Record<string, BarkLevel> {
@@ -426,6 +546,8 @@ function asWebhookChannel(raw: Record<string, RawSettingValue>, id: string): Cha
     headers: asHeaders(raw.headers),
     timeoutSec: asCount(raw.timeoutSec, 0, 600),
   };
+  const extras = extrasOf(raw, WEBHOOK_KNOWN_KEYS, WEBHOOK_RESERVED_KEYS);
+  if (Object.keys(extras).length > 0) channel.extras = extras;
   return { ok: true, channel };
 }
 

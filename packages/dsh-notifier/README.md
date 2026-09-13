@@ -124,8 +124,9 @@ context filter checks」）。取舍如下（issue #290）：
 采取「透传保留」策略——读取与写入口径一致，未知键不会被丢弃，也不会被校验
 或改写（仅组合层装配键名例外，见下）：
 
-- **读取**：`GET /api/dsh-notifier/config` 的 `user`（用户层原始节）与
-  `effective`（生效配置）均原样返回未知键，供未来版本/第三方键保持可见；
+- **读取**：`GET /api/dsh-notifier/config` 的 `user`（用户层原始节）原样返回未知键，
+  供未来版本/第三方键保持可见；`effective`（生效配置）是归一化后的**固定形状**，
+  本就不含未知键（未知键只存在于文件与 `user` 视图里）；
 - **写入**：`PUT /api/dsh-notifier/config` 为增量 patch——仅合并提交的已知键；
   存量 user 层中已有的未知键**不受已知键保存影响**，本次 patch 中携带的未知键
   **一并原样保留**（不会静默丢弃）。纯未知键 patch（如 `{"futureKey":1}`）返回

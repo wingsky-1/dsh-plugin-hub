@@ -310,6 +310,16 @@ describe("写面的合并与凭据", () => {
     expect(onDisk().futureFlag).toBe(true);
   });
 
+  it("视图的 user 是存储原样（只掩码）：陌生键在界面上也要看得见，同时凭据仍然掩码", () => {
+    writeConfigFile(JSON.stringify({ futureFlag: true, futureChannelKey: "v", channels: [BARK] }));
+    assemble();
+    const user = readSettingsView().user as unknown as Record<string, RawSettingValue>;
+    expect(user.futureFlag).toBe(true);
+    expect(user.futureChannelKey).toBe("v");
+    // 净化后的用户层里没有陌生键，视图一旦改回用它，上面两条就会读到 undefined。
+    expect(channelsOf(readSettingsView().user)[0].deviceKey).toBe(MASK);
+  });
+
   it("原型链危险键不写回文件（`__proto__` 等自有键经 JSON 提交是可能的，展开进设置对象就会改写原型）", async () => {
     assemble();
     const patch = JSON.parse(

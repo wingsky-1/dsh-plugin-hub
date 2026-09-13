@@ -124,6 +124,21 @@ describe("请求构造", () => {
     expect(Array.from(body.body)).toHaveLength(4096);
   });
 
+  // 未知键是 README 承诺的前向兼容面（配置层已按 string/number 过滤）；已知键必须赢，
+  // 否则配置里写一个 title 就能顶掉通知标题——那是透传面不该有的能力。
+  it("实例的未知键原样进推送体，且已知键优先：透传不参与改写通知本身", async () => {
+    const calls = stubFetch(() => jsonResponse({ code: 200 }));
+    await sendBark(
+      targetOf({ extras: { volume: 5, call: "1", title: "顶掉标题", body: "顶掉正文" } }),
+      messageOf({ title: "原标题", body: "原正文" }),
+    );
+    const body = bodyOf(calls[0]!);
+    expect(body.volume).toBe(5);
+    expect(body.call).toBe("1");
+    expect(body.title).toBe("原标题");
+    expect(body.body).toBe("原正文");
+  });
+
   // 调用方给的超时若不生效，一次挂死的推送会一直占着管线到出口的 10s 硬超时。
   it("timeoutMs 是真实的中止时限：到点即中止（不写就用出口自己的 10s 硬超时）", async () => {
     let aborted = false;

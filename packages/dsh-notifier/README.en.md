@@ -137,9 +137,10 @@ into `config.json`, and that becomes the only read/write path afterwards.
 read and write behave consistently; unknown keys are never dropped, validated or
 rewritten (except for composition-layer assembly keys, see boundaries below):
 
-- **Reading**: `GET /api/dsh-notifier/config` returns unknown keys verbatim in both
-  `user` (the raw user layer) and `effective` (the resolved config), keeping
-  future-version / third-party keys visible.
+- **Reading**: `GET /api/dsh-notifier/config` returns unknown keys verbatim in `user`
+  (the raw user layer), keeping future-version / third-party keys visible. `effective`
+  (the resolved config) has a **fixed shape** and therefore never contains unknown keys
+  — they live in the file and in the `user` view only.
 - **Writing**: `PUT /api/dsh-notifier/config` is an incremental patch — it merges the
   submitted known keys only; unknown keys already in the user layer are **not affected
   by saving known keys**, and unknown keys carried in the current patch are **preserved

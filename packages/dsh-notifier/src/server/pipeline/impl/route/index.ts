@@ -115,6 +115,8 @@ function barkTarget(channel: BarkConfig, kind: NotifyKind): BarkTarget {
   if (channel.timeoutMs !== undefined && channel.timeoutMs > 0) {
     target.timeoutMs = channel.timeoutMs;
   }
+  // 未知键整袋带走：出口把它原样写进推送体（前向兼容），这里不做逐键判断。
+  if (channel.extras !== undefined) target.extras = channel.extras;
   return target;
 }
 
@@ -142,6 +144,8 @@ function webhookTarget(channel: WebhookConfig): WebhookTarget {
   if (channel.timeoutSec !== undefined && channel.timeoutSec > 0) {
     target.timeoutSec = channel.timeoutSec;
   }
+  // 未知键只保留在生效设置里（webhook 的 body 由模板渲染，透传键不绕开模板语义）。
+  if (channel.extras !== undefined) target.extras = channel.extras;
   return target;
 }
 

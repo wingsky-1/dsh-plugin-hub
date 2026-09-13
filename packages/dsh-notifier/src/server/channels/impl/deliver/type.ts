@@ -20,3 +20,10 @@ export type DeliverResult =
   | { status: "ok"; stage: DeliverStage }
   // retryable 是出口对失败的分类，不是它自己去重试：次数、退避与在途上限全在管线
   | { status: "failed"; stage: DeliverStage; reason: string; retryable: boolean };
+
+/**
+ * 频道实例上的未知键（值已按 string/number 过滤）：README 承诺的「未来参数前向兼容」那一面。
+ * 配置域负责保留，出口按需带上——bark 原样写进推送体；webhook 的 body 由模板渲染，故只保留不发送
+ * （与重写前一致，模板语义不该被透传键绕开）。
+ */
+export type ChannelExtras = Record<string, string | number>;
