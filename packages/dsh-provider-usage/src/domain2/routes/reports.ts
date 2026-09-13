@@ -9,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
-import { guardLoopbackMethod, readJsonBody, writeJson } from "../../../../../shared/host-utils.js";
+import { guardLoopbackMethod, readJsonBodyOutcome, writeJson } from "../../../../../shared/host-utils.js";
 import {
   DEFAULT_PROMPTS,
   normalizeReportConfig,
@@ -97,14 +97,12 @@ export async function handleReportConfig(
     return writeJson(res, 200, { ok: true, config, providers, dirs, promptDefaults: DEFAULT_PROMPTS });
   }
 
-  let body: unknown;
-  try {
-    body = await readJsonBody(req);
-  } catch {
-    return writeJson(res, 400, { error: "bad-json" });
-  }
+  // 读不出来的 body 不能当「没给配置」：normalizeReportConfig(undefined) 会回落**整套默认值**，
+  // 于是畸形或超限的请求会把用户已存的报告配置静默重置（写盘 + 热更都照做）。
+  const outcome = await readJsonBodyOutcome(req);
+  if (outcome.kind !== "json") return writeJson(res, 400, { error: "bad-json" });
 
-  const normalized = normalizeReportConfig(body);
+  const normalized = normalizeReportConfig(outcome.value);
   const currentCfg = context.reportCfgService.get();
   // preset 写 lastRun 走单一临界区（写前重读），不与任务执行器推进互踩字段；
   // readLastRun 仅作 changed 预判（乐观跳过无变化时的写盘），真实快照在临界区内重读。
@@ -212,14 +210,9 @@ export async function handleReportGenerate(
   if (!guardLoopbackMethod(req, res, ["POST"])) return;
   const { historyRoot, reportQueue, reportCfgService } = context;
 
-  let body: Record<string, unknown>;
-  try {
-    const raw = await readJsonBody(req);
-    if (typeof raw !== "object" || raw === null) return writeJson(res, 400, { error: "bad-json" });
-    body = raw as Record<string, unknown>;
-  } catch {
-    return writeJson(res, 400, { error: "bad-json" });
-  }
+  const outcome = await readJsonBodyOutcome(req);
+  if (outcome.kind !== "json") return writeJson(res, 400, { error: "bad-json" });
+  const body = outcome.value as Record<string, unknown>;
 
   const period = body.period;
   if (typeof period !== "string" || !isReportPeriodValid(period)) {

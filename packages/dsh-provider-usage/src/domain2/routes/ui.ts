@@ -4,7 +4,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename } from "node:path";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
-import { guardLoopbackMethod, readJsonBody, writeJson } from "../../../../../shared/host-utils.js";
+import { guardLoopbackMethod, readJsonBodyOutcome, writeJson } from "../../../../../shared/host-utils.js";
 import { ADAPTER_CONTRACT_VERSION } from "../../shared/interface.ts";
 import type { LayerErrorSurface } from "../common/interface.ts";
 import type { StatsService } from "../../domain1/pipeline/interface.ts";
@@ -177,14 +177,9 @@ export async function handleUiConfig(
     return;
   }
 
-  let body: Record<string, unknown>;
-  try {
-    const raw = await readJsonBody(req);
-    if (typeof raw !== "object" || raw === null) return writeJson(res, 400, { error: "bad-json" });
-    body = raw as Record<string, unknown>;
-  } catch {
-    return writeJson(res, 400, { error: "bad-json" });
-  }
+  const outcome = await readJsonBodyOutcome(req);
+  if (outcome.kind !== "json") return writeJson(res, 400, { error: "bad-json" });
+  const body = outcome.value as Record<string, unknown>;
 
   const next = normalizeUiConfig(body);
   Object.assign(uiConfig, next);

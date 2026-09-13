@@ -5,7 +5,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
-import { guardLoopbackMethod, readJsonBody, writeJson } from "../../../../../shared/host-utils.js";
+import { guardLoopbackMethod, readJsonBodyOutcome, writeJson } from "../../../../../shared/host-utils.js";
 import { ADAPTER_CONTRACT_VERSION } from "../../shared/interface.ts";
 import type { StatsService } from "../pipeline/interface.ts";
 import { loadUserAdapterChecked } from "../registry/interface.ts";
@@ -65,14 +65,9 @@ export async function handleSelect(
   if (!guardLoopbackMethod(req, res, ["POST"])) return;
   const { statsService } = context;
 
-  let body: Record<string, unknown>;
-  try {
-    const raw = await readJsonBody(req);
-    if (typeof raw !== "object" || raw === null) return writeJson(res, 400, { error: "bad-json" });
-    body = raw as Record<string, unknown>;
-  } catch {
-    return writeJson(res, 400, { error: "bad-json" });
-  }
+  const outcome = await readJsonBodyOutcome(req);
+  if (outcome.kind !== "json") return writeJson(res, 400, { error: "bad-json" });
+  const body = outcome.value as Record<string, unknown>;
 
   const provider = typeof body.provider === "string" ? body.provider : "";
   const clearing = body.adapterName === null;
@@ -101,14 +96,9 @@ export async function handleInspect(
   if (!guardLoopbackMethod(req, res, ["POST"])) return;
   const { statsService } = context;
 
-  let body: Record<string, unknown>;
-  try {
-    const raw = await readJsonBody(req);
-    if (typeof raw !== "object" || raw === null) return writeJson(res, 400, { error: "bad-json" });
-    body = raw as Record<string, unknown>;
-  } catch {
-    return writeJson(res, 400, { error: "bad-json" });
-  }
+  const outcome = await readJsonBodyOutcome(req);
+  if (outcome.kind !== "json") return writeJson(res, 400, { error: "bad-json" });
+  const body = outcome.value as Record<string, unknown>;
 
   const file = resolveAddAdapterFile(body.file);
   if (file === undefined) {
@@ -136,14 +126,9 @@ export async function handleAdd(
   if (!guardLoopbackMethod(req, res, ["POST"])) return;
   const { statsService, ensureHotReload } = context;
 
-  let body: Record<string, unknown>;
-  try {
-    const raw = await readJsonBody(req);
-    if (typeof raw !== "object" || raw === null) return writeJson(res, 400, { error: "bad-json" });
-    body = raw as Record<string, unknown>;
-  } catch {
-    return writeJson(res, 400, { error: "bad-json" });
-  }
+  const outcome = await readJsonBodyOutcome(req);
+  if (outcome.kind !== "json") return writeJson(res, 400, { error: "bad-json" });
+  const body = outcome.value as Record<string, unknown>;
 
   const file = resolveAddAdapterFile(body.file);
   if (file === undefined) {

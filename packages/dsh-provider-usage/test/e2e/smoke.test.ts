@@ -3081,6 +3081,21 @@ describe("#503 M3：用量报告接线", () => {
     obs.rereadConfig = reread.config;
     obs.savedConfigSnapshot = savedCfg.config;
 
+    // d. 畸形 / 缺席 body 一律 400：读不出来的 body 不能当「没给配置」——那会把上面刚存的
+    //    配置静默重置回默认值（历史上这里没有非对象判据，readJsonBody 又把畸形收敛成 undefined）。
+    const statusOf = { code: 0 };
+    const resExt = { writeHead: (code: number) => { statusOf.code = code; } };
+    const badJson = await callHandler(cfgRoute, fakeReq({ method: "POST", body: "{" }), resExt);
+    obs.badJsonStatus = statusOf.code;
+    obs.badJsonError = badJson.error;
+    statusOf.code = 0;
+    const noBody = await callHandler(cfgRoute, fakeReq({ method: "POST" }), resExt);
+    obs.noBodyStatus = statusOf.code;
+    obs.noBodyError = noBody.error;
+    const afterBad = await callHandler(cfgRoute, fakeReq({ url: ROUTES.reportConfig }));
+    obs.configSurvivesBadJson = afterBad.config?.daily?.time;
+    obs.configSurvivesNoBody = afterBad.config?.daily?.enabled;
+
     // e0. #532 报告模型候选路由：已知 provider → listModels 白名单映射；未知/缺失 → unknown-provider
     {
       const modelsRoute = routes.find((r) => r.path === ROUTES.reportModels);
@@ -3397,6 +3412,21 @@ describe("#503 M3：用量报告接线", () => {
 
   it("POST 后 GET 回读一致", () => {
     expect(obs.rereadConfig).toEqual(obs.savedConfigSnapshot);
+  });
+
+  it("畸形 body 落 400 bad-json", () => {
+    expect(obs.badJsonStatus).toBe(400);
+    expect(obs.badJsonError).toBe("bad-json");
+  });
+
+  it("缺席 body 落 400 bad-json（与其余写面同口径）", () => {
+    expect(obs.noBodyStatus).toBe(400);
+    expect(obs.noBodyError).toBe("bad-json");
+  });
+
+  it("畸形与缺席 body 都不得改写已存的报告配置", () => {
+    expect(obs.configSurvivesBadJson).toBe("22:00");
+    expect(obs.configSurvivesNoBody).toBe(true);
   });
 
   it("report-models 路由存在", () => {
