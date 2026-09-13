@@ -5,13 +5,14 @@
  * 终态判据分两条，不再用「零动作」当统一口径：**执行过动作而它失败了**就是失败（有失败证据）；
  * **一条命令都构造不出来**是空动作（没有可失败环节），成因经 `reason` 的 code 带出去。
  */
+import { FOLLOW_SYSTEM_TONE, TONES } from "../../../../shared/interface.ts";
 import type { LoggerPort, ReasonCode, ReasonParams } from "../../../shared/interface.ts";
 import { reason } from "../../../shared/interface.ts";
 import { displayCaps, truncateCodePoints } from "../deliver/caps.ts";
 import type { DeliverResult, NotifyMessage, ToneSetting } from "../deliver/type.ts";
 import { platformCapabilities, systemDeps } from "./deps.ts";
 import type { ChildHandle } from "./deps.ts";
-import { MAC_SOUND_NAMES, toneFileCandidates } from "./tones.ts";
+import { toneFileCandidates } from "./tones.ts";
 import type { PlatformProbe, SystemCommandOptions, SystemTarget } from "./type.ts";
 
 /** 探测超时（毫秒）：探测不许拖住第一次投递。 */
@@ -93,10 +94,13 @@ export function buildSystemCommand(
     const escape = (text: string) =>
       text.replace(/\\/gu, "\\\\").replace(/"/gu, '\\"').replace(/\n/gu, " ");
     const tone = options.sound;
-    const named =
-      typeof tone === "string" && Object.hasOwn(MAC_SOUND_NAMES, tone)
-        ? MAC_SOUND_NAMES[tone]
-        : "Glass";
+    // 音色事实只有一份：未知音色与 `sound: true` 都落到「跟随系统默认音」那一档。
+    const spec =
+      typeof tone === "string" && Object.hasOwn(TONES, tone)
+        ? TONES[tone]
+        : TONES[FOLLOW_SYSTEM_TONE];
+    // 声名缺失时不能给空串：`sound name ""` 在 osascript 里是静默不响，而不是退回默认音。
+    const named = spec.darwinSound ?? "Glass";
     const soundName = silent ? "" : ` sound name "${named}"`;
     return [
       "osascript",
@@ -290,7 +294,7 @@ function commandNameOf(command: readonly string[]): string {
 
 /** 声音选择 → 自播目标音色（true = 各平台的跟随系统默认音）。 */
 function toneOf(sound: ToneSetting): string {
-  return typeof sound === "string" ? sound : "default";
+  return typeof sound === "string" ? sound : FOLLOW_SYSTEM_TONE;
 }
 
 /** 成功结果：两个分支共用同一形状。 */

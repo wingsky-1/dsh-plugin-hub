@@ -190,12 +190,15 @@
           "comment": "#733 按域重写：api——HTTP 端点域（journal/kinds/probe/route/service/settings/stream）。loopback 围栏在 route 块内，端点自身只做「解析请求 → 调 pipeline/sdk 端口 → 序列化响应」，不含业务裁决。"
         },
         "channels": {
-          "mutate": ["packages/dsh-notifier/src/server/channels/**/*.ts"],
+          "mutate": [
+            "packages/dsh-notifier/src/server/channels/**/*.ts",
+            "packages/dsh-notifier/src/shared/tones.ts"
+          ],
           "excludes": [
             "!packages/dsh-notifier/src/client/**",
             "!packages/dsh-notifier/src/types.ts"
           ],
-          "comment": "#733 按域重写：channels——出口域（bark/browser/system/webhook 四出口 + deliver 共享投递阶段与 caps 截断；tones 为系统音色表）。边界：出口只回答「本次失败可不可重试」（DeliverResult.retryable），重试/退避/节流/在途上限一律不在本域，归 pipeline/impl/dispatch。"
+          "comment": "#733 按域重写：channels——出口域（bark/browser/system/webhook 四出口 + deliver 共享投递阶段与 caps 截断；tones 为系统音色表）。边界：出口只回答「本次失败可不可重试」（DeliverResult.retryable），重试/退避/节流/在途上限一律不在本域，归 pipeline/impl/dispatch。#783 起音色事实源（含三平台素材字段）迁到 src/shared/tones.ts 由两端共用，随本域一起度量：该文件里可变异的是 candidateNames 的平台翻译分支，纯数据字面量由 sharedDefaults.excludedMutations 排除（ObjectLiteral/ArrayLiteral/StringLiteral）。"
         },
         "config": {
           "mutate": ["packages/dsh-notifier/src/server/config/**/*.ts"],

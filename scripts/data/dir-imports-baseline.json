@@ -3,13 +3,13 @@
   "version": 2,
   "packages": {
     "dsh-notifier": {
-      "modules": 9,
-      "scannedSrcFiles": 95,
-      "allSrcTsFiles": 101,
-      "interfaceFacades": 9,
-      "leafValueEdges": 6,
-      "fileValueEdges": 94,
-      "crossModuleRefs": 84,
+      "modules": 10,
+      "scannedSrcFiles": 97,
+      "allSrcTsFiles": 103,
+      "interfaceFacades": 10,
+      "leafValueEdges": 7,
+      "fileValueEdges": 98,
+      "crossModuleRefs": 89,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],

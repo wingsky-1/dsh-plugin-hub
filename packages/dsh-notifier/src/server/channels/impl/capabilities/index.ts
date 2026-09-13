@@ -4,6 +4,7 @@
  * 它只做投影：把已探到的进程事实翻成「哪半边能用、下一步该干什么」，不新增任何探测副作用
  * （只允许向 `org.freedesktop.DBus` 问 owner 与可激活清单，见 `../system/deps.ts`）。
  */
+import { FOLLOW_SYSTEM_TONE } from "../../../../shared/interface.ts";
 import { toastScriptPath } from "../../../shared/interface.ts";
 import { platformCapabilities, systemDeps } from "../system/deps.ts";
 import { probePlatform } from "../system/index.ts";
@@ -22,7 +23,7 @@ import type {
 } from "./type.ts";
 
 /** 参与探测的音色：`sound: true` 走的就是它，故能力面报的就是用户默认配置下的可得性。 */
-const TONE_FOR_PROBE = "default";
+const TONE_FOR_PROBE = FOLLOW_SYSTEM_TONE;
 
 /** 严重度序：`unreachable > unknown > degraded > ok`。`unknown` 不得降级为 `ok`，也不得升格为 `unreachable`。 */
 const SEVERITY: Readonly<Record<Verdict, number>> = {

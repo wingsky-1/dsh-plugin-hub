@@ -37,13 +37,9 @@ import {
   sendSystem,
   shouldSelfPlay,
 } from "../../../src/server/channels/impl/system/index.ts";
-import {
-  SYNTH_TONES,
-  synthToneGaps,
-  synthToneNames,
-  synthToneWav,
-} from "../../../src/server/channels/impl/system/synth.ts";
+import { synthToneWav } from "../../../src/server/channels/impl/system/synth.ts";
 import { toneFileCandidates } from "../../../src/server/channels/impl/system/tones.ts";
+import { TONES } from "../../../src/shared/interface.ts";
 import type {
   PlatformProbe,
   SystemCommandOptions,
@@ -1110,7 +1106,7 @@ describe("synth.ts：主题文件缺失时的自包含合成音（#783）", () =
   }
 
   it("每个音色都产出参数自洽的 16-bit 单声道 WAV", () => {
-    for (const tone of synthToneNames()) {
+    for (const tone of Object.keys(TONES)) {
       const wav = synthToneWav(tone);
       expect(wav, `${tone} 应能合成`).not.toBeNull();
       const p = parseWav(wav as Buffer);
@@ -1126,8 +1122,8 @@ describe("synth.ts：主题文件缺失时的自包含合成音（#783）", () =
       // 头里声明的长度必须与真实字节一致：长度字段写错时 aplay/ffplay 会当成截断文件
       expect(p.declared).toBe(p.total - 8);
       expect(p.dataBytes).toBe(p.total - 44);
-      // 时长由音段表决定：采样数 = Σ(ms/1000×44100)
-      const expected = SYNTH_TONES[tone].reduce((n, s) => n + Math.round((s.ms / 1000) * 44100), 0);
+      // 时长由音色表的音符决定：采样数 = 最晚结束的音符（at/dur 是秒）
+      const expected = Math.round(Math.max(...TONES[tone].notes.map((n) => n.at + n.dur)) * 44100);
       expect(p.samples.length).toBe(expected);
     }
   });
@@ -1137,13 +1133,12 @@ describe("synth.ts：主题文件缺失时的自包含合成音（#783）", () =
     expect(synthToneWav("")).toBeNull();
   });
 
-  it("合成表与 Linux 主题表的音色键集必须一一对应", () => {
-    // 缺一个键 ⇒ 该音色在没装主题包的宿主上永远不响（有主题的宿主却能响）：正是 #783 的形态
-    expect(synthToneGaps()).toEqual([]);
-    expect(synthToneNames()).toEqual(["bell", "chime", "default", "ding", "pop"]);
+  it("音色表就是合成表：键集与内置音色一致", () => {
+    // 音色事实源合并后不再有「主题表有而合成表没有」的缺口，键集由音色表本身锁住
+    expect(Object.keys(TONES).sort()).toEqual(["bell", "chime", "default", "ding", "pop"]);
   });
 
-  it("首尾淡入淡出生效且段边界收敛到零（防起止咔嗒与段间爆音）", () => {
+  it("首尾淡入淡出生效（防起止咔嗒）", () => {
     const wav = synthToneWav("chime") as Buffer;
     const s = parseWav(wav).samples;
     expect(Math.abs(s[0])).toBeLessThan(64);
@@ -1151,11 +1146,5 @@ describe("synth.ts：主题文件缺失时的自包含合成音（#783）", () =
     // 中段必须有真实幅度，否则「淡入淡出」只是把整段乘成 0 也能让上面两条通过
     const peak = Math.max(...s.map((v) => Math.abs(v)));
     expect(peak).toBeGreaterThan(0x7fff * 0.3);
-    // 每个音段的边界处应回到 0 附近（每段独立淡出）
-    let offset = 0;
-    for (const seg of SYNTH_TONES.chime.slice(0, -1)) {
-      offset += Math.round((seg.ms / 1000) * 44100);
-      expect(Math.abs(s[offset])).toBeLessThan(0x7fff * 0.05);
-    }
   });
 });

@@ -21,6 +21,9 @@ import STYLE from "./style.css";
 // { id, cssText, version } 实参；STYLE_ID/CSS_VERSION 常量保留为调用实参来源，
 // disposer（getElementById(STYLE_ID)）沿用常量。
 import { ensureStyle } from "../../../../shared/client/ensure-style.js";
+// 音色单点：试听/自播与服务端合成、平台素材共用同一份 notes（src/shared/interface.ts）。
+// 此前两端各写一份，已实测出同一音色在试听与宿主上不是同一个音（#783）。
+import { FOLLOW_SYSTEM_TONE, TONES } from "../shared/interface.ts";
 import * as React from "react";
 // i18n：复用官方 dsh-client-locale——zh/en 双语字典，LocaleNamespaceMap
 // 声明合并进官方 ui-slots 类型面；仅 import type（编译期擦除，无运行时依赖）。
@@ -541,31 +544,16 @@ function playGate(): boolean {
   return true;
 }
 
-/** 按音色合成短旋律（Web Audio；4 音色语义：ding=双短高音、bell=单中高音、
- *  chime=三音上行、pop=短促低音）。试听与通知自播共用同一实现。 */
+/** 按音色合成短旋律（Web Audio）。音色事实（音符、频率、波形）只有一份，收在
+ *  src/shared/interface.ts；未知音色与「跟随系统」都落到 FOLLOW_SYSTEM_TONE。
+ *  试听与通知自播共用同一实现。 */
 function playTone(tone: string | undefined) {
   if (audioCtx === null || audioCtx.state !== "running") return;
   try {
     var t = audioCtx.currentTime;
-    var notes: Array<{ freq: number; at: number; dur: number; type?: string }>;
-    if (tone === "ding")
-      notes = [
-        { freq: 1318, at: 0, dur: 0.14 },
-        { freq: 1760, at: 0.16, dur: 0.22 },
-      ];
-    else if (tone === "bell") notes = [{ freq: 880, at: 0, dur: 0.5 }];
-    else if (tone === "chime")
-      notes = [
-        { freq: 660, at: 0, dur: 0.3 },
-        { freq: 880, at: 0.15, dur: 0.3 },
-        { freq: 1320, at: 0.3, dur: 0.5 },
-      ];
-    else if (tone === "pop") notes = [{ freq: 392, at: 0, dur: 0.12, type: "triangle" }];
-    else
-      notes = [
-        { freq: 880, at: 0, dur: 0.16 },
-        { freq: 660, at: 0.16, dur: 0.22 },
-      ]; // 默认双音
+    var spec =
+      tone !== undefined && Object.hasOwn(TONES, tone) ? TONES[tone] : TONES[FOLLOW_SYSTEM_TONE];
+    var notes = spec.notes;
     for (var i = 0; i < notes.length; i += 1) {
       var n = notes[i];
       var osc = audioCtx.createOscillator();

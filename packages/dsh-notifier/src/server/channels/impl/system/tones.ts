@@ -1,40 +1,13 @@
 /**
- * dsh-notifier channels 域 —— 系统通知的音色平台映射（数据表）。
- * 表是数据不是决策：键用 string，本域只按名字找文件，不认识「用户能选哪些音色」。
+ * dsh-notifier channels 域 —— 音色到平台素材文件的翻译。
+ *
+ * 表是数据不是决策：本文件只回答「这个平台上这个音色的候选文件是哪几个」，不认识
+ * 「用户能选哪些音色」。音色事实本身（含三个平台的素材字段）收在 `shared/interface.ts`，
+ * 本文件不再持有第二份表——两份表已实测漂移过（#783）。
  */
 import { posix as pathPosix, win32 as pathWin } from "node:path";
 
-/** macOS 系统内置声音名（osascript `sound name` 取值；同名 .aiff 为历代 macOS 内置）。 */
-export const MAC_SOUND_NAMES: Readonly<Record<string, string>> = {
-  ding: "Glass",
-  bell: "Tink",
-  chime: "Sosumi",
-  pop: "Pop",
-};
-
-/**
- * Linux freedesktop 声音事件文件候选（sound-theme-freedesktop 基线包内；首存在者胜）。
- *
- * 导出给 synth.ts 对键集：主题文件缺失时改用运行时合成音，两侧音色键必须一一对应，否则会
- * 出现「某音色在有主题的宿主上能响、没主题的宿主上永远不响」（#783）。
- */
-export const LINUX_TONE_FILES: Readonly<Record<string, readonly string[]>> = {
-  ding: ["message-new-instant.oga"],
-  bell: ["bell.oga"],
-  chime: ["complete.oga", "dialog-information.oga"],
-  pop: ["message.oga", "dialog-information.oga"],
-};
-
-/** Linux「跟随系统默认」的自播事件文件（基线包确定存在）。 */
-const LINUX_DEFAULT_TONE_FILE = "message-new-instant.oga";
-
-/** Windows 系统媒体 wav 白名单候选（C:\Windows\Media 出厂自带；缺失静默）。 */
-const WIN_TONE_FILES: Readonly<Record<string, readonly string[]>> = {
-  ding: ["Windows Ding.wav"],
-  bell: ["Windows Chimes.wav"],
-  chime: ["Windows Chord.wav", "Windows Notify System Generic.wav"],
-  pop: ["Windows Balloon.wav", "Windows Notify System Generic.wav"],
-};
+import { TONES } from "../../../../shared/interface.ts";
 
 /** 平台声音文件基目录（命令只在此目录内拼绝对路径）。 */
 const TONE_BASE_DIRS: Readonly<Record<string, string>> = {
@@ -43,7 +16,7 @@ const TONE_BASE_DIRS: Readonly<Record<string, string>> = {
   win32: "C:\\Windows\\Media",
 };
 
-/** 平台 × 音色 → 候选文件绝对路径（首存在者胜；default 走各平台的跟随系统默认音）。 */
+/** 平台 × 音色 → 候选文件绝对路径（首存在者胜）。 */
 export function toneFileCandidates(platform: string, tone: string): readonly string[] {
   const base = TONE_BASE_DIRS[platform];
   if (base === undefined) return [];
@@ -54,23 +27,13 @@ export function toneFileCandidates(platform: string, tone: string): readonly str
 
 /** 未知音色给不出候选（跨边界值不受编译期约束）：不猜一个默认音顶替。 */
 function candidateNames(platform: string, tone: string): readonly string[] {
-  if (tone === "default") {
-    if (platform === "linux") return [LINUX_DEFAULT_TONE_FILE];
-    if (platform === "darwin") return ["Glass.aiff"];
-    if (platform === "win32") return ["Windows Notify System Generic.wav", "Windows Ding.wav"];
-    return [];
-  }
-  if (platform === "linux") {
-    const files = LINUX_TONE_FILES[tone];
-    return Array.isArray(files) ? files : [];
-  }
-  if (platform === "darwin") {
-    const name = MAC_SOUND_NAMES[tone];
-    return typeof name === "string" ? [`${name}.aiff`] : [];
-  }
-  if (platform === "win32") {
-    const files = WIN_TONE_FILES[tone];
-    return Array.isArray(files) ? files : [];
-  }
+  // `constructor` / `__proto__` 这类原型链键名不是 TONES 的成员，直接取值会读到
+  // Object.prototype 上的东西，于是给出一个并不存在的候选路径。`in` 有同样的坑。
+  if (!Object.hasOwn(TONES, tone)) return [];
+  const spec = TONES[tone];
+  if (platform === "linux") return spec.linuxFile ?? [];
+  if (platform === "darwin")
+    return spec.darwinSound === undefined ? [] : [`${spec.darwinSound}.aiff`];
+  if (platform === "win32") return spec.win32File ?? [];
   return [];
 }
