@@ -33,9 +33,9 @@ provider-usage **400s**（n=49，频率与耗时双高）、lan-proxy 204s、mcp
 | # | 手段 | 状态 | 实测效果 | 关键约束 |
 |---|---|---|---|---|
 | 1 | 增量基线仓库内文件化（#204/#178） | 已落地 | 常态 mutation job 分钟级 → **20-38s 全程** | actions/cache 按 ref 隔离不可用；基线必须入 git |
-| 2 | concurrency 超订（notifier 先例 #159） | 已落地（16×3 包） | notifier **6m54s → 1m42s** | 仅等待主导型收益巨大；见 §4.2 分级评估法 |
-| 3 | provider-usage 4→8（#249）+ timeoutMS 60s→30s（#257） | 已落地 | 同机基准 4→8 提速 **42%**（771.9s→449.9s），score/killed 与独立全量逐项一致；CI 首跑无假阳性 | 收紧只减假阳性 killed，方向安全；升 16 待 CI 自然场景数据。注：30s 为 #257 当时的历史值，当前 conf 实际 timeoutMS=60000（勿误读） |
-| 4 | lan-proxy / idle-archive 维持 4 | 决策维持 | — | #147 端口互踩实证 / 变异面含固定端口 smoke.test.ts（idle-archive 已退役 #397） |
+| 2 | concurrency 超订（notifier 先例 #159） | 已落地（现 5 包 32 段全 16，定标见 #13） | notifier **6m54s → 1m42s** | 仅等待主导型收益巨大；见 §4.2 分级评估法。`sharedDefaults.concurrency` 允许按**包**覆盖（`gen-stryker-conf.mjs`），数字型取值 Stryker **不做 cap** |
+| 3 | provider-usage 4→8（#249）+ timeoutMS 60s→30s（#257） | 已落地 | 同机基准 4→8 提速 **42%**（771.9s→449.9s），score/killed 与独立全量逐项一致；CI 首跑无假阳性 | 收紧只减假阳性 killed，方向安全；「升 16 待 CI 自然场景数据」已由 #13 补上同机对照。注：30s 为 #257 当时的历史值，当前 conf 实际 timeoutMS=60000（勿误读） |
+| 4 | lan-proxy / idle-archive 维持 4 | **已失效（2026-09-13 实测）** | lan-proxy 现为 16（`mutation-topology.json` 与 4 个段 conf 均 16） | 原理由（#147 端口互踩 / 变异面含固定端口 `smoke.test.ts`）今天不成立：lan-proxy 的变异测试面只剩 `unit/unit-apply` + `unit/unit-proxy`，e2e smoke 不在面内；idle-archive 已退役 #397。本行保留为历史记录 |
 | 5 | mutate 段拆分 CI matrix（B） | **已落地（#257）→ 方案 A 落地后整体退役（#276）** | 段式矩阵真实 CI 实例化正常；wall-clock 数据待段式基线就绪后回收 | 三慢包 provider-usage×2 / lan-proxy×3 / mcp-manager×4；判分聚合去重键教训见 §4.6；计费分钟×N 为已知代价。方案 A 落地后 mutate 改为 src 级文件组分段（mcp-manager×3 / provider-usage×3 / lan-proxy×4），行号区间整套退役 |
 | 6 | 构建产物复用（build-all artifact，D） | **否决（维护者裁定）** | — | 收益模型失效：本仓为 PUBLIC，GitHub Actions 对公共仓库免费不限时长，「降计费分钟」不适用；剩余次要价值撑不起 ci.yml 改造面与红线流程。教训见 §4.7 |
 | 7 | 变异面最小集裁剪（C） | 暂缓 | — | per-test 覆盖分析已做关联，剩余空间在大测试文件整体跳过，成本高收益不确定 |
@@ -44,6 +44,7 @@ provider-usage **400s**（n=49，频率与耗时双高）、lan-proxy 204s、mcp
 | 10 | 大文件拆分（src 级分段前置） | 已落地 | mcp-manager index 1237→147 / middleware 1046→511 / provider-usage index 1122→73 / lan-proxy index 991→59（行数为拆分时点快照） | 分段粒度下限是整文件；拆文件让密度均匀、段可细切。维护收益 + CRAP 模块精度 |
 | 11 | src 级两级分段（文件组声明） | 已落地 | mcp-manager×6 / provider-usage×6 / notifier×4 / lan-proxy×4 段（#342 二期后实况），单段 wall ≤~120s | 段 = 源文件名清单（非行号），永不漂移，无 sync/guard 开销 |
 | 12 | 四班次调度 + 快照 PR 日期闸（#276 配套） | 已落地 | 基线快照 PR 有界（≤4/日，实际随当日合入） | observe.yml cron UTC 01/04/08/12（北京 09/12/16/20）；push 触发移除；snapshot PR 每日最多一次 |
+| 13 | **concurrency 定标复测（4 / 8 / 16，2026-09-13）** | 决策：**维持 16** | 同机 8 vCPU、`--force` 全量、仓库 conf 未改：`trend-collect`(670 mutant) **1138 / 831 / 840 s**；`contracts`(524) **444 / 285 / 217 s**；`errsurf`(38，n=2) **29.1 / 29.1 / 31.2 s**；**dry run 12 次全为 10–12 s，与 concurrency 无关** | 最优值随段规模变化：小段 4~8 略优、大段 16 明显优（`contracts` 8→16 快 31%），故单一常量 16 是「大段不亏、小段只损 ~7%」的折中；降档对大段是净损失且逼近 30min 派生地板（`trend-collect` 全量实测峰 1012s），且对 flake 零收益（flake 只出在 dry run）；每段独占 runner，CPU% 高不增计费 |
 
 ### 3.1 方案 A 实测记录（#276，同机同口径、冷缓存全量、每侧 ≥2 轮）
 
@@ -138,6 +139,7 @@ D 方案从「提案待裁定」到「否决」的根因不是工程问题，而
 **开销与对策**：
 - src 级每 mutant 开销比 bundle 高 ~50%（sandbox 内 TS 转译加载）；`enableCompileCache()`（Node ≥24.12，bridge `-r` 注入）实测 -41%，把倍率从 ×1.47 压到 ×1.10；
 - Stryker CLI 的 `-c` 是 `--concurrency` 短旗标，conf 文件必须用**位置参数**传入（`npx stryker run <conf>`）；
+- Stryker 对**数字型** `concurrency` 不做 cap（`ConcurrencyTokenProvider.computeConcurrency` 原样返回；只有 `"50%"` 这类百分比形态才按 `os.availableParallelism()` 换算）。CI 实测 `Creating 16 test runner process(es)`——标准 `ubuntu-latest` 为 4 vCPU，即每段 4x 过订阅；dry run 是单进程、不受该值影响（定标见 §3 手段 13）；
 - incremental 文件会让二轮对照测量失真（每段数秒假象），对照测量前须清理或 `--force`；
 - 分段声明用源文件名清单（永不漂移），sync/guard/行号机器派生整套退役。
 
