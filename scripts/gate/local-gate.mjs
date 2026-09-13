@@ -168,6 +168,13 @@ function tierSteps(tier, { hitPackages, withCoverage }) {
     { label: "verify:npmlayout（全仓）", args: ["verify:npmlayout"] },
     ...cheapGlobal,
     scriptsSelfTest,
+    // 豁免/临时项到期台账：只在全量档收集打印（纯报告，退出码恒 0）。增量档不跑——
+    // PR 上反复打印同一份存量台账只会变成噪音，而它的用途是排期复核（裁决见 #765）。
+    {
+      label: "豁免到期台账（收集 reviewBy，仅报告）",
+      cmd: "node",
+      args: ["scripts/gate/collect-exemptions.mjs"],
+    },
   ];
   if (withCoverage) {
     steps.push({ label: "cov（vitest 覆盖率，unit + integration 直连 src）", args: ["cov"] });
