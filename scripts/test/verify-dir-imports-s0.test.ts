@@ -43,6 +43,28 @@ function makeFixtureRoot(files) {
 }
 
 /** 对 fixture 根跑脚本，返回 { status, out }。 */
+/** 生成一份 fixture 台账（#765 统一形态：仍是 gate-exemptions.json 的条目，gate=verify-dir-imports）。 */
+function writeLedger(dir, paths) {
+  const p = join(dir, "exemptions-fixture.json");
+  writeFileSync(
+    p,
+    JSON.stringify({
+      exemptions: paths.map((path) => ({
+        gate: "verify-dir-imports",
+        path,
+        reason: "用例：登记新增质量证据",
+        trackingIssue: "#999",
+      })),
+    }),
+  );
+  return p;
+}
+
+/** 从「写基线中止」输出里取出待登记的台账键（形态 `<包名>:<证据项>（<指标>）`）。 */
+function pendingLedgerKeys(out) {
+  return [...out.matchAll(/^\s+(\S+?)（/gm)].map((m) => m[1]);
+}
+
 function runOn(root, args = []) {
   const env = { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root };
   // 外部若设了基线路径，会与 fixture 自己的基线串味（残留风险），显式清掉。
@@ -226,9 +248,17 @@ test("--write-baseline 只清理质量证据，新增证据不得被写入（#73
       1,
       `新增质量证据时写基线应中止，实际 ${second.status}：\n${second.out}`,
     );
-    assert.match(second.out, /写基线中止：存在新增质量证据/, `应报中止原因：\n${second.out}`);
-    assert.match(second.out, /leafModuleCycles: a\|b\|c/, `应列出待接受证据：\n${second.out}`);
-    assert.match(second.out, /--accept-quality-new --reason/, `应给显式接受指引：\n${second.out}`);
+    assert.match(
+      second.out,
+      /写基线中止：存在未登记的新增质量证据/,
+      `应报中止原因：\n${second.out}`,
+    );
+    assert.match(
+      second.out,
+      /fixture-pkg:a\|b\|c（leafModuleCycles）/,
+      `应列出待登记的台账键（形态 <包名>:<证据项>）：\n${second.out}`,
+    );
+    assert.match(second.out, /gate=verify-dir-imports/, `应给统一台账的登记指引：\n${second.out}`);
     // 中止即不落盘：不留「结构型已登记、质量证据未登记」的半成品。
     const untouched = readFixtureBaseline(root);
     assert.deepEqual(
@@ -237,14 +267,10 @@ test("--write-baseline 只清理质量证据，新增证据不得被写入（#73
       `中止后基线不得被改写：${JSON.stringify(untouched.packages[PKG].quality)}`,
     );
 
-    // 显式接受通道：理由随条目入库留痕后才允许写入。
-    const accepted = runOn(root, [
-      "--write-baseline",
-      "--accept-quality-new",
-      "--reason",
-      "用例：显式接受新环",
-    ]);
-    assert.equal(accepted.status, 0, `显式接受后应写入成功：\n${accepted.out}`);
+    // 统一台账通道（#765）：把待登记的证据逐条登记进 gate-exemptions.json 后才允许写入。
+    const ledger = writeLedger(root, pendingLedgerKeys(second.out));
+    const accepted = runOn(root, ["--write-baseline", "--exemptions", ledger]);
+    assert.equal(accepted.status, 0, `按台账登记后应写入成功：\n${accepted.out}`);
     const after = readFixtureBaseline(root);
     assert.equal(
       after.packages[PKG].leafValueEdges,
@@ -256,18 +282,35 @@ test("--write-baseline 只清理质量证据，新增证据不得被写入（#73
       ["a|b|c"],
       `接受后的环应入库：${JSON.stringify(after.packages[PKG].quality)}`,
     );
-    assert.equal(
-      after.$acceptances?.length,
-      3,
-      `三类新增证据各留一条痕：${JSON.stringify(after.$acceptances)}`,
+    // 私有 `$acceptances` 机制已删除：留痕改由台账承担（条目带 reason + trackingIssue）。
+    assert.equal(after.$acceptances, undefined, "基线里不得再有 $acceptances 数组");
+    assert.equal(runOn(root, ["--exemptions", ledger]).status, 0, "登记后应 PASS");
+
+    // 台账的反向腐烂校验：条目指向的证据已消失（这里塞一条不存在的键）→ 判红。
+    const rotten = writeLedger(root, [...pendingLedgerKeys(second.out), `${PKG}:a|b|zzz`]);
+    const rot = runOn(root, ["--exemptions", rotten]);
+    assert.equal(rot.status, 1, `失效条目应判红，实际 ${rot.status}：\n${rot.out}`);
+    assert.match(
+      rot.out,
+      /指向的质量证据本次零命中（已失效，应删除条目 #999）/,
+      `应点名失效条目：\n${rot.out}`,
     );
-    assert.deepEqual(
-      [...after.$acceptances].map((x) => x.metric).sort(),
-      ["fileCycles", "leafModuleCycles", "raLegacy"],
-      `留痕须逐指标记录：${JSON.stringify(after.$acceptances)}`,
+
+    // 子集口径：只分析别的包时，不得把本包条目判成失效（真实仓缺省白名单只跑 mcp-manager，
+    // `--package X` 同理）。runOn 会固定注入 fixture 包名，故这里直接起一次只点名别的包的运行。
+    const subsetEnv = { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root };
+    delete subsetEnv.VERIFY_DIR_IMPORTS_BASELINE;
+    const subset = spawnSync(
+      process.execPath,
+      [SCRIPT, "--package", "dsh-mcp-manager", "--exemptions", rotten],
+      { env: subsetEnv, encoding: "utf8" },
     );
-    for (const entry of after.$acceptances) assert.equal(entry.reason, "用例：显式接受新环");
-    assert.equal(runOn(root).status, 0, "显式接受后应 PASS");
+    const subsetOut = `${subset.stdout ?? ""}${subset.stderr ?? ""}`;
+    assert.doesNotMatch(
+      subsetOut,
+      /指向的质量证据本次零命中/,
+      `未分析到的包不得参与腐烂判定：\n${subsetOut}`,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -292,11 +335,8 @@ test("质量型证据新增仍判红，且 --write-baseline 不放行（#733 后
       /\[质量型\] fileCycles: 新增未登记证据/,
       `应点名文件级值环：\n${after.out}`,
     );
-    assert.match(
-      after.out,
-      /\[质量型\] raLegacy: 新增未登记证据 c\/impl\.ts\|a\/interface\.ts（value）/,
-      `应点名 raLegacy：\n${after.out}`,
-    );
+    // raLegacy 已退出判据面（它是旧口径计数：会把「impl 直接引用共享层/门面」这类架构允许的
+    // 引用也记成待登记证据，机制该默认放行的事不该靠记录放行）——故这里不再断言它。
 
     // 未经显式接受，--write-baseline 不得把新增证据洗白（比旧口径更严：旧口径是
     // 「保持旧值后仍判红」，新口径是「直接拒绝写入」）。
@@ -306,38 +346,46 @@ test("质量型证据新增仍判红，且 --write-baseline 不放行（#733 后
       1,
       `未经接受写基线应被拒，实际 ${refused.status}：\n${refused.out}`,
     );
-    assert.match(refused.out, /写基线中止：存在新增质量证据/, `应报中止原因：\n${refused.out}`);
+    assert.match(
+      refused.out,
+      /写基线中止：存在未登记的新增质量证据/,
+      `应报中止原因：\n${refused.out}`,
+    );
     assert.equal(runOn(root).status, 1, `拒绝写入后红因须保持：\n${runOn(root).out}`);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
-test("--accept-quality-new 的用法约束：必须与 --write-baseline 同用且附理由（exit 2）", () => {
+test("豁免台账不可用/结构不合法 → fail-closed exit 2（#765 统一形态）", () => {
   const root = makeFixtureRoot(chainFixture(""));
   try {
-    const noWrite = runOn(root, ["--accept-quality-new", "--reason", "缺 --write-baseline"]);
+    const missing = runOn(root, ["--exemptions", join(root, "no-such-ledger.json")]);
     assert.equal(
-      noWrite.status,
+      missing.status,
       2,
-      `未与 --write-baseline 同用应 exit 2，实际 ${noWrite.status}：\n${noWrite.out}`,
+      `台账不可读应 exit 2（不得当作「没有豁免」继续跑），实际 ${missing.status}：\n${missing.out}`,
     );
-    assert.match(noWrite.out, /只能与 --write-baseline 同用/, `应说明用法约束：\n${noWrite.out}`);
-    const noReason = runOn(root, ["--write-baseline", "--accept-quality-new"]);
+    assert.match(missing.out, /豁免台账不可用/, `应说明台账不可用：\n${missing.out}`);
+    const bad = join(root, "bad-ledger.json");
+    writeFileSync(bad, JSON.stringify({ exemptions: [{ gate: "verify-dir-imports" }] }));
+    const broken = runOn(root, ["--exemptions", bad]);
     assert.equal(
-      noReason.status,
+      broken.status,
       2,
-      `缺 --reason 应 exit 2，实际 ${noReason.status}：\n${noReason.out}`,
+      `台账结构不合法应 exit 2，实际 ${broken.status}：\n${broken.out}`,
     );
-    assert.match(noReason.out, /必须附 --reason/, `应说明理由必填：\n${noReason.out}`);
+    assert.match(broken.out, /缺 path/, `应点名结构问题：\n${broken.out}`);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 });
 
 test("kind 语义：值→类型收口放行并自动采纳，类型→值降级判红（#733 后续）", () => {
-  const implValue = 'import { A } from "../a/interface.ts";\nexport const B = A;\n';
-  const implType = 'import type { A } from "../a/interface.ts";\nexport const B = 1;\n';
+  // 目标用**实现文件**（a/impl.ts）而不是门面：门面引用是架构允许的、不进判据面，
+  // 而 kind（value/type）语义只对「impl → 他域实现文件」这条真判据成立。
+  const implValue = 'import { A } from "../a/impl.ts";\nexport const B = A;\n';
+  const implType = 'import type { A } from "../a/impl.ts";\nexport const B = 1;\n';
   const root = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
     [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
@@ -347,9 +395,9 @@ test("kind 语义：值→类型收口放行并自动采纳，类型→值降级
   try {
     assert.equal(runOn(root, ["--write-baseline"]).status, 0);
     assert.deepEqual(
-      readFixtureBaseline(root).packages[PKG].quality.raLegacy,
-      ["b/impl.ts|a/interface.ts|value"],
-      "值引用应作为 value 证据入库",
+      readFixtureBaseline(root).packages[PKG].quality.implToOtherImpl,
+      ["b/impl.ts|a/impl.ts|value"],
+      "值引用他域实现文件应作为 value 证据入库",
     );
 
     // 收口：同一个跨域引用改成 import type → 改善，放行且写基线时按当前形态自动采纳。
@@ -367,8 +415,8 @@ test("kind 语义：值→类型收口放行并自动采纳，类型→值降级
       "收口属改善，写基线应成功（无需显式接受）",
     );
     assert.deepEqual(
-      readFixtureBaseline(root).packages[PKG].quality.raLegacy,
-      ["b/impl.ts|a/interface.ts|type"],
+      readFixtureBaseline(root).packages[PKG].quality.implToOtherImpl,
+      ["b/impl.ts|a/impl.ts|type"],
       "收口后的形态应被采纳入库",
     );
 

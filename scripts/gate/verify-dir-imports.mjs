@@ -32,7 +32,9 @@
  *   - **单调基线**（`scripts/data/dir-imports-baseline.json`）：结构型存**计数**
  *     （`--write-baseline` 登记），质量型存**证据集合**——新增证据判红、证据消失视为
  *     改善（写入时自动清理）、kind 由 value→type 视为收口、type→value 判红；放宽的
- *     唯一通道是 `--accept-quality-new --reason "<理由>"`（记入 `$acceptances`）。
+ *     唯一通道是登记到 `scripts/data/gate-exemptions.json`（gate = `verify-dir-imports`，
+ *     key = `<包名>:<证据项>`）——与另两闸共用同一份台账与同一个校验器，条目带
+ *     reason + trackingIssue（+ 可选 reviewBy），并自动进 `collect-exemptions` 的到期台账。
  *   - **源码全覆盖断言**：`src` 下每个文件必须落在 `∪mutate ∪ ∪excludes` 之内。
  *     `gen-stryker-conf --check` 只比对「磁盘配置 ↔ 拓扑派生」，不会因新增源文件
  *     而变红，故新增未被度量覆盖的源文件必须由本断言兜住（存量登记在基线里）。
@@ -62,20 +64,21 @@
  * 适用包白名单：`--package <name>`（可多次）；缺省 = 仅 dsh-mcp-manager。
  * 用法：node scripts/gate/verify-dir-imports.mjs [--package <name>] [--soft] [--verbose]
  *                                              [--zones] [--graph] [--write-baseline]
- *                                              [--accept-quality-new --reason <text>]
- * 退出码：0 = 通过；1 = 硬违规 / 新增质量证据 / 结构型上升 / 新增未覆盖源文件；
- *         2 = 用法错误（--accept-quality-new 缺 --reason 或未与 --write-baseline 同用）。
+ *                                              [--exemptions <path>]
+ * 退出码：0 = 通过；1 = 硬违规 / 新增未登记的质量证据 / 结构型上升 / 台账条目失效；
+ *         2 = 用法错误（豁免台账不可读或结构不合法）。
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { argValue, loadLedger } from "../lib/exemption-gate.ts";
 import { collectMutationSpecs } from "./mutation-topology.mjs";
 
 // 仓库根；测试可用 VERIFY_DIR_IMPORTS_ROOT 注入临时 fixture 根，避免在仓库内
 // 造包目录（产物零污染纪律）。基线可用 VERIFY_DIR_IMPORTS_BASELINE 覆盖。
-const ROOT =
-  process.env.VERIFY_DIR_IMPORTS_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const ROOT = process.env.VERIFY_DIR_IMPORTS_ROOT ?? REPO_ROOT;
 const BASELINE_PATH =
   process.env.VERIFY_DIR_IMPORTS_BASELINE ??
   join(ROOT, "scripts", "data", "dir-imports-baseline.json");
@@ -85,22 +88,29 @@ const SOFT = process.argv.includes("--soft");
 const ZONES = process.argv.includes("--zones");
 const GRAPH = process.argv.includes("--graph");
 const WRITE_BASELINE = process.argv.includes("--write-baseline");
-// 放宽质量证据的唯一通道（#733 后续）：必须显式给理由，理由与条目一并入库留痕。
-const ACCEPT_QUALITY_NEW = process.argv.includes("--accept-quality-new");
-const ACCEPT_REASON = (() => {
-  const i = process.argv.indexOf("--reason");
-  return i === -1 ? null : (process.argv[i + 1] ?? null);
-})();
-if (ACCEPT_QUALITY_NEW && !WRITE_BASELINE) {
-  console.error(
-    "verify-dir-imports | --accept-quality-new 只能与 --write-baseline 同用（接受即写库）",
-  );
-  process.exit(2);
-}
-if (ACCEPT_QUALITY_NEW && (ACCEPT_REASON === null || ACCEPT_REASON.trim() === "")) {
-  console.error(
-    'verify-dir-imports | --accept-quality-new 必须附 --reason "<理由>"（留痕是这条通道的全部约束力）',
-  );
+// 质量证据的放宽通道：**统一走 scripts/data/gate-exemptions.json**（#765 收口）。
+//
+// 为什么删掉原先的 `--accept-quality-new` / 基线内 `$acceptances`：那是本闸私有的第二套
+// 豁免机制——没有 trackingIssue、没有 reviewBy、没有反向腐烂校验，也不进 collect-exemptions
+// 的到期台账。同一件事两套机制必然漂移（一处能到期、一处不能），而「放宽」恰恰是最需要
+// 留痕与收口处的动作。现在与 forbid-homedir-src / forbid-module-state-src 共用同一份台账、
+// 同一个校验器（scripts/lib/exemption-gate.ts）与同一条到期台账。
+//
+// 条目形态：`path` 填**证据键** `<包名>:<证据项>`（证据项取自基线的 quality 集合，边的形态是
+// `from|to`；环是签名；未覆盖源文件是路径），并必填 reason + trackingIssue。
+// 默认锚在**真实仓库根**而不是 fixture 扫描根：与另两闸同语义——`--root` 只改扫描面，
+// 台账永远是仓库里那一份（否则 fixture 会因为「临时根下没有台账」而 fail-closed）。
+const EXEMPTIONS_PATH = argValue(
+  process.argv,
+  "--exemptions",
+  join(REPO_ROOT, "scripts", "data", "gate-exemptions.json"),
+);
+const EXEMPTIONS_DISPLAY = relative(REPO_ROOT, EXEMPTIONS_PATH) || EXEMPTIONS_PATH;
+let evidenceLedger;
+try {
+  evidenceLedger = loadLedger(EXEMPTIONS_PATH, "verify-dir-imports");
+} catch (e) {
+  console.error(`verify-dir-imports | 豁免台账不可用：${e.message}`);
   process.exit(2);
 }
 // 适用包白名单：显式 --package 累加；缺省仅 #664 重构包
@@ -721,8 +731,8 @@ function analyzePackage(pkgName, topology) {
  * 存事实与计数器实现解耦：新增事实判红、事实消失视为改善、kind 由 value→type 视为
  * 收口，三者都不依赖计数器怎么写。
  *
- * 放宽的唯一通道是 `--accept-quality-new --reason "<理由>"`（条目与理由入库留痕）；
- * 否则 `--write-baseline` 只做「清理已消失的证据」，新增证据一律判红。
+ * 放宽的唯一通道是 `scripts/data/gate-exemptions.json` 的登记条目（gate = `verify-dir-imports`，
+ * path = `<包名>:<证据项>`）；否则 `--write-baseline` 只做「清理已消失的证据」，新增证据一律判红。
  */
 const STRUCTURAL_METRICS = [
   "modules",
@@ -733,11 +743,18 @@ const STRUCTURAL_METRICS = [
   "fileValueEdges",
   "crossModuleRefs",
 ];
-/** 质量型入库形态 = 证据集合（见 collectQualityEvidence）。 */
+/**
+ * 质量型入库形态 = 证据集合（见 collectQualityEvidence）。
+ *
+ * 判据面只放**规则本身**能判的东西：`implToOtherImpl`（impl 不得引用他域实现文件）、环、虚导出、
+ * 直接引实现、未覆盖源文件。`raLegacy`（R-A **旧口径**：impl → 他域任意文件）**不在其中**：
+ * 它把「impl 直接引用共享层门面」这类**架构允许**的引用也记成待登记证据（本仓 168 条里 167 条
+ * 是这种），于是合规写法反而要逐条开豁免——机制该默认放行的事，不该靠记录放行。
+ * 它仍照常统计与展示（见 DERIVED_REPORT_ONLY_METRICS 与 summary/--graph）。
+ */
 const QUALITY_EVIDENCE_METRICS = [
   "leafModuleCycles",
   "fileCycles",
-  "raLegacy",
   "implToOtherImpl",
   "missingInterface",
   "directImpl",
@@ -749,6 +766,7 @@ const QUALITY_EVIDENCE_METRICS = [
  * 故本清单不需要与 metrics 对象手工保持同步。
  */
 const DERIVED_REPORT_ONLY_METRICS = [
+  "raLegacy",
   "raLegacyValue",
   "raLegacyType",
   "topValueEdges",
@@ -794,7 +812,6 @@ function collectQualityEvidence(analysis) {
   return {
     leafModuleCycles: [...analysis.cycles.leaf.keys()].sort(),
     fileCycles: [...analysis.cycles.file.keys()].sort(),
-    raLegacy: analysis.raLegacy.map((r) => edge(r, true)).sort(),
     implToOtherImpl: analysis.raImpl.map((r) => edge(r, true)).sort(),
     missingInterface: analysis.rules.missingInterface.map((r) => edge(r, false)).sort(),
     directImpl: analysis.rules.directImpl.map((r) => edge(r, false)).sort(),
@@ -846,7 +863,7 @@ function compareWithBaseline(analysis, baseline) {
     for (const [id, kind] of curById) {
       if (!baseById.has(id)) {
         rises.push(
-          `[质量型] ${key}: 新增未登记证据 ${id}${kind === null ? "" : `（${kind}）`} —— 须修代码；确需接受用 --accept-quality-new --reason "<理由>"`,
+          `[质量型] ${key}: 新增未登记证据 ${id}${kind === null ? "" : `（${kind}）`} —— 须修代码；确需放宽须登记到 gate-exemptions.json（gate=verify-dir-imports，path=${analysis?.package ?? "<包名>"}:${id}）`,
         );
       } else if (baseById.get(id) === "type" && kind === "value") {
         rises.push(
@@ -989,20 +1006,19 @@ function renderGraph(analysis) {
  * `--write-baseline` 的更新面（#733 后续）：
  *   - 结构型计数：按当前值登记（结构演进的显式留痕）。
  *   - 质量证据：只做两件事——**清理已消失的证据**（改善）、把 kind 收口
- *     （value → type）的条目更新为当前形态。**新增证据一律不写入**：没有
- *     `--accept-quality-new --reason "<理由>"` 时中止写入并列出待接受条目（exit 1），
- *     给了则连同理由记入 `$acceptances` 留痕。
+ *     （value → type）的条目更新为当前形态。**新增证据默认不写入**：只有已在
+ *     `gate-exemptions.json`（gate = `verify-dir-imports`，key = `<包名>:<证据项>`）
+ *     登记的条目才允许写入，其余中止写入并列出（exit 1）。
  *   - 首次登记（旧基线无该包，或旧基线为数字口径 = 迁移）按当前证据写入并单独提示。
  *
  * @returns `{ baseline, qualityPruned, qualityFirst, qualityNeedsAcceptance, qualityAccepted }`
  */
-function buildBaseline(analyses, previous, acceptNew) {
+function buildBaseline(analyses, previous, ledger) {
   const packages = {};
   const qualityPruned = []; // 本次写入清理掉的已消失证据
   const qualityFirst = []; // 首次登记 / 数字口径迁移
-  const qualityNeedsAcceptance = []; // 新增证据：未被显式接受时中止写入
-  const qualityAccepted = []; // 本次显式接受的新增证据
-  const acceptances = [...(previous?.$acceptances ?? [])];
+  const qualityNeedsAcceptance = []; // 新增证据：未在台账登记时中止写入
+  const qualityAccepted = []; // 本次按台账放行的新增证据
   for (const a of [...analyses].sort((x, y) => x.package.localeCompare(y.package))) {
     const m = a.metrics;
     const prev = previous?.packages?.[a.package];
@@ -1042,20 +1058,17 @@ function buildBaseline(analyses, previous, acceptNew) {
         kept.push(curKind === null ? id : `${id}|${curKind}`);
       }
       const added = cur.filter((item) => !prevById.has(splitEvidenceItem(key, item).id));
-      if (added.length > 0) {
-        if (acceptNew) {
-          kept.push(...added);
-          qualityAccepted.push(`${a.package}.${key}: +${added.length} 条`);
-          acceptances.push({
-            package: a.package,
-            metric: key,
-            items: added,
-            reason: ACCEPT_REASON,
-            date: new Date().toISOString().slice(0, 10),
-          });
-        } else {
-          for (const item of added) qualityNeedsAcceptance.push(`${a.package}.${key}: ${item}`);
+      for (const item of added) {
+        // 台账按「包名:证据 id」匹配（id 不含 kind）：kind 由 value→type 是收口、反向降级
+        // 另有判据，故登记一条即覆盖该证据的形态漂移，不必随 kind 改台账。
+        const ledgerKey = `${a.package}:${splitEvidenceItem(key, item).id}`;
+        const entry = ledger.get(ledgerKey);
+        if (entry === undefined) {
+          qualityNeedsAcceptance.push(`${ledgerKey}（${key}）`);
+          continue;
         }
+        kept.push(item);
+        qualityAccepted.push(`${ledgerKey}（${key}，登记豁免 ${entry.trackingIssue}）`);
       }
       quality[key] = kept.sort();
     }
@@ -1073,15 +1086,15 @@ function buildBaseline(analyses, previous, acceptNew) {
     baseline: {
       // S0（#690 A 轨）门禁基线。结构型计数随新增文件/目录合法上升（--write-baseline 登记）；
       // 质量型入库的是**证据集合**而非计数（#733 后续）——新增证据判红、证据消失=改善、
-      // kind 由 value→type 视为收口；放宽须 --accept-quality-new --reason 并记入 $acceptances。
+      // kind 由 value→type 视为收口；放宽的唯一通道是 scripts/data/gate-exemptions.json
+      // 的登记条目（gate = verify-dir-imports，key = <包名>:<证据项>）。
       // 口径：全部为**叶子模块粒度**实测（S0 起模块 = 递归含 interface.ts 的目录）。
       // 顶层域历史对照口径刻意不入库：它复刻的是有缺陷的旧算法（嵌套目标丢边），
       // 对它设阈值会让结构搬迁误红，并与叶子口径构成同一约束的双轨（§9 禁止双轨）。
       $comment:
-        "S0 门禁基线（#690 / #733 后续）：结构型计数由 verify-dir-imports.mjs --write-baseline 登记；quality 段存质量型**证据集合**（边 from|to|kind、环签名、未覆盖源文件），新增证据判红、消失即清理、kind 降级（type→value）判红，放宽须 --accept-quality-new --reason 并记入 $acceptances。",
+        "S0 门禁基线（#690 / #733 后续）：结构型计数由 verify-dir-imports.mjs --write-baseline 登记；quality 段存质量型**证据集合**（边 from|to|kind、环签名、未覆盖源文件），新增证据判红、消失即清理、kind 降级（type→value）判红；放宽的唯一通道是 scripts/data/gate-exemptions.json 的登记条目（gate=verify-dir-imports，path=<包名>:<证据项>，必填 reason+trackingIssue，可选 reviewBy，条目失效由反向腐烂校验判红）。",
       version: 2,
       packages,
-      ...(acceptances.length > 0 ? { $acceptances: acceptances } : {}),
     },
     qualityPruned,
     qualityFirst,
@@ -1167,6 +1180,35 @@ for (const a of analyses) {
   }
 }
 
+// 台账反向腐烂校验（#765）：登记的证据项必须仍在本次证据面里。证据消失后若无人清理条目，
+// 台账就会累积「登记了但已不需要」的条目——与另两闸的零命中条目同罪。写入路径同样校验：
+// 带着失效条目写基线，等于把「已不需要的放宽」固化下去。
+{
+  const seenEvidence = new Set();
+  const analyzedPackages = new Set();
+  for (const a of analyses) {
+    analyzedPackages.add(a.package);
+    const evidence = collectQualityEvidence(a);
+    for (const key of QUALITY_EVIDENCE_METRICS) {
+      for (const item of evidence[key] ?? []) {
+        seenEvidence.add(`${a.package}:${splitEvidenceItem(key, item).id}`);
+      }
+    }
+  }
+  for (const [ledgerKey, entry] of evidenceLedger) {
+    // 判定只覆盖**本次真正分析过的包**：缺省白名单只跑 mcp-manager，`--package X` 也只跑 X。
+    // 少了这条口径，任何子集运行都会把其余包的条目判成「已失效」——与 lint 那边基线棘轮
+    // 被 pre-commit 的 staged-only 运行误判是同一个坑。
+    const pkg = ledgerKey.slice(0, ledgerKey.indexOf(":"));
+    if (!analyzedPackages.has(pkg)) continue;
+    if (!seenEvidence.has(ledgerKey)) {
+      failures.push(
+        `[豁免台账] ${ledgerKey} 指向的质量证据本次零命中（已失效，应删除条目 ${entry.trackingIssue}）`,
+      );
+    }
+  }
+}
+
 if (WRITE_BASELINE) {
   // 写基线前先拦阻断性错误（拓扑损坏 / interface.ts 虚导出）：静默落库会把
   // 「判不出来」固化成「看起来全覆盖」，正是本门禁要防的假绿。
@@ -1187,12 +1229,12 @@ if (WRITE_BASELINE) {
     }
   }
   const { baseline, qualityPruned, qualityFirst, qualityNeedsAcceptance, qualityAccepted } =
-    buildBaseline(analyses, previous, ACCEPT_QUALITY_NEW);
+    buildBaseline(analyses, previous, evidenceLedger);
   if (qualityNeedsAcceptance.length > 0) {
-    console.log("verify-dir-imports | 写基线中止：存在新增质量证据（放宽须显式且留痕）");
+    console.log("verify-dir-imports | 写基线中止：存在未登记的新增质量证据");
     for (const note of qualityNeedsAcceptance) console.log(`  ${note}`);
     console.log(
-      'verify-dir-imports |   处置：优先修代码；确需接受用 --write-baseline --accept-quality-new --reason "<理由>"（条目与理由记入基线 $acceptances）',
+      `verify-dir-imports |   处置：优先修代码；确需放宽须在 ${EXEMPTIONS_DISPLAY} 登记条目（gate=verify-dir-imports，path=<包名>:<证据项>，必填 reason 与 trackingIssue）后重跑`,
     );
     process.exit(1);
   }
@@ -1216,7 +1258,7 @@ if (WRITE_BASELINE) {
   }
   if (qualityAccepted.length > 0) {
     console.log(
-      "verify-dir-imports |   本次显式接受的新增证据（已记入 $acceptances，理由须在 PR 内确认）：",
+      `verify-dir-imports |   本次按台账放行的新增证据（条目在 ${EXEMPTIONS_DISPLAY}，理由须在 PR 内确认）：`,
     );
     for (const note of qualityAccepted) console.log(`verify-dir-imports |     ${note}`);
   }
