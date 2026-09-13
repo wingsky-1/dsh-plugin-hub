@@ -4,7 +4,7 @@
  * 自 observe-check.mjs 提出（#178）：observe 夜间报告与 ci PR 增量门禁
  * （mutation-gate.mjs）共用同一 covered 口径统计，防两处口径漂移。
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync } from "node:fs";
 
 /**
  * 从 Stryker JSON 报告提取 covered 口径指标。
@@ -24,7 +24,7 @@ import { readFileSync } from 'node:fs';
 export function readMutationReport(path) {
   let raw;
   try {
-    raw = readFileSync(path, 'utf8');
+    raw = readFileSync(path, "utf8");
   } catch {
     return null;
   }
@@ -34,13 +34,16 @@ export function readMutationReport(path) {
   } catch {
     return null;
   }
-  let killed = 0, timeout = 0, survived = 0, noCoverage = 0;
+  let killed = 0,
+    timeout = 0,
+    survived = 0,
+    noCoverage = 0;
   for (const f of Object.values(report.files ?? {})) {
     for (const m of f.mutants ?? []) {
-      if (m.status === 'Killed') killed += 1;
-      else if (m.status === 'Timeout') timeout += 1;
-      else if (m.status === 'Survived') survived += 1;
-      else if (m.status === 'NoCoverage') noCoverage += 1;
+      if (m.status === "Killed") killed += 1;
+      else if (m.status === "Timeout") timeout += 1;
+      else if (m.status === "Survived") survived += 1;
+      else if (m.status === "NoCoverage") noCoverage += 1;
     }
   }
   const covered = killed + timeout + survived;
@@ -66,7 +69,7 @@ export function readMutationReportsAgg(paths) {
   for (const p of paths) {
     let raw;
     try {
-      raw = readFileSync(p, 'utf8');
+      raw = readFileSync(p, "utf8");
     } catch {
       return null;
     }
@@ -79,7 +82,7 @@ export function readMutationReportsAgg(paths) {
     for (const [file, f] of Object.entries(report.files ?? {})) {
       for (const m of f.mutants ?? []) {
         // id 是每份报告独立的序号（#257 实证），跨报告去重必须用完整位置
-        const k = `${file}::${m.location?.start?.line}:${m.location?.start?.column}:${m.location?.end?.line}:${m.location?.end?.column}::${m.mutatorName ?? ''}:${m.replacement ?? ''}`;
+        const k = `${file}::${m.location?.start?.line}:${m.location?.start?.column}:${m.location?.end?.line}:${m.location?.end?.column}::${m.mutatorName ?? ""}:${m.replacement ?? ""}`;
         const prev = seen.get(k);
         if (prev === undefined) {
           seen.set(k, m.status);
@@ -90,12 +93,15 @@ export function readMutationReportsAgg(paths) {
       }
     }
   }
-  let killed = 0, timeout = 0, survived = 0, noCoverage = 0;
+  let killed = 0,
+    timeout = 0,
+    survived = 0,
+    noCoverage = 0;
   for (const status of seen.values()) {
-    if (status === 'Killed') killed += 1;
-    else if (status === 'Timeout') timeout += 1;
-    else if (status === 'Survived') survived += 1;
-    else if (status === 'NoCoverage') noCoverage += 1;
+    if (status === "Killed") killed += 1;
+    else if (status === "Timeout") timeout += 1;
+    else if (status === "Survived") survived += 1;
+    else if (status === "NoCoverage") noCoverage += 1;
   }
   const covered = killed + timeout + survived;
   const coveredScore = covered > 0 ? Math.round(((killed + timeout) / covered) * 10000) / 100 : 0;

@@ -101,7 +101,8 @@ test("#5 同源防漂移：bundle-host 复用共享 walkFiles，无私有枚举�
   // 机制保证：bundle-host d.ts X1（2b）必须 import 共享 walkFiles，而不是自写遍历
   assert.match(
     bundleHost,
-    /import \{ walkFiles \} from '\.\.\/lib\/walk-files\.ts'/,
+    // 引号形态归 Prettier（该文件在格式化面内），判据只认语义、不绑引号
+    /import \{ walkFiles \} from ["']\.\.\/lib\/walk-files\.ts["']/,
     "bundle-host 必须复用共享 walkFiles",
   );
   // 断言保证：pack-check 必须经 listSharedDts 枚举期望清单（与复制谓词同源）

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-'use strict'
+"use strict";
 
 /**
  * config-matrix-gate — 配置平行事实源「字段覆盖矩阵」门禁编排（issue #471）。
@@ -27,20 +27,24 @@
  *   N4 notifier：COUNT_LIMITS ⊆ 配置键、上界是非负整数，且默认值不越界（上界必须真的箍住默认值）
  *   N5 notifier：README 配置表缺键仅 warn（量级 #12，不判红）
  */
-import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
-import { join } from 'node:path'
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { join } from "node:path";
 import {
-  parseTs, findTopVar, objectKeysOf, diffKeys, sourceLineOf,
+  parseTs,
+  findTopVar,
+  objectKeysOf,
+  diffKeys,
+  sourceLineOf,
   extractReadmeConfigKeys,
-} from './config-matrix-lib.ts'
-import { loadManifest } from './plugins-manifest-lib.ts'
+} from "./config-matrix-lib.ts";
+import { loadManifest } from "./plugins-manifest-lib.ts";
 
 // lan-proxy 客户端 UI 豁免表（#733 计划项 3.2.2 数据化）：条目（哪些键、为什么）是**事实**，
 // 在 scripts/data/lan-proxy-ui-exempt.json；条目数上限与「超限即红」是**策略**，留在代码里
 // ——把上限放进被约束的数据文件等于让被约束方自己改约束。
-const UI_EXEMPT_REL = 'scripts/data/lan-proxy-ui-exempt.json'
-const UI_EXEMPT_MAX = 8
+const UI_EXEMPT_REL = "scripts/data/lan-proxy-ui-exempt.json";
+const UI_EXEMPT_MAX = 8;
 
 /**
  * 读取 UI 豁免表（键 → 原因）。只做**结构**加载：IO / JSON / 数组形态 / 键与原因的存在性 /
@@ -49,147 +53,202 @@ const UI_EXEMPT_MAX = 8
  * 「漏 UI」，把修复方向指错。
  */
 function loadUiExempt(root, problems) {
-  const filePath = join(root, UI_EXEMPT_REL)
-  let json
+  const filePath = join(root, UI_EXEMPT_REL);
+  let json;
   try {
-    json = JSON.parse(readFileSync(filePath, 'utf8'))
+    json = JSON.parse(readFileSync(filePath, "utf8"));
   } catch (e) {
-    problems.push(`lan-proxy UI 豁免表不可读（${UI_EXEMPT_REL}）：${String(e.message).split('\n')[0]}`)
-    return {}
+    problems.push(
+      `lan-proxy UI 豁免表不可读（${UI_EXEMPT_REL}）：${String(e.message).split("\n")[0]}`,
+    );
+    return {};
   }
   if (!Array.isArray(json.exemptKeys)) {
-    problems.push(`lan-proxy UI 豁免表缺 exemptKeys 数组（${UI_EXEMPT_REL}）`)
-    return {}
+    problems.push(`lan-proxy UI 豁免表缺 exemptKeys 数组（${UI_EXEMPT_REL}）`);
+    return {};
   }
-  const out = {}
+  const out = {};
   for (const item of json.exemptKeys) {
-    if (item === null || typeof item !== 'object' || typeof item.key !== 'string' || item.key.length === 0) {
-      problems.push(`lan-proxy UI 豁免表条目缺 key（${UI_EXEMPT_REL}）`)
-      continue
+    if (
+      item === null ||
+      typeof item !== "object" ||
+      typeof item.key !== "string" ||
+      item.key.length === 0
+    ) {
+      problems.push(`lan-proxy UI 豁免表条目缺 key（${UI_EXEMPT_REL}）`);
+      continue;
     }
-    if (typeof item.reason !== 'string' || item.reason.length === 0) {
-      problems.push(`lan-proxy UI 豁免键 ${item.key} 缺 reason（${UI_EXEMPT_REL}）`)
-      continue
+    if (typeof item.reason !== "string" || item.reason.length === 0) {
+      problems.push(`lan-proxy UI 豁免键 ${item.key} 缺 reason（${UI_EXEMPT_REL}）`);
+      continue;
     }
     if (out[item.key] !== undefined) {
-      problems.push(`lan-proxy UI 豁免表存在重复键：${item.key}`)
-      continue
+      problems.push(`lan-proxy UI 豁免表存在重复键：${item.key}`);
+      continue;
     }
-    out[item.key] = item.reason
+    out[item.key] = item.reason;
   }
-  return out
+  return out;
 }
 
 /** 豁免表结构自检：≤8 键 + 每条原因含「文件:行」+ 一句理由。 */
 function checkExempts(pkg, exempt) {
-  const problems = []
+  const problems = [];
   if (Object.keys(exempt).length > UI_EXEMPT_MAX) {
-    problems.push(`${pkg} 豁免表 ${Object.keys(exempt).length} 键 > ${UI_EXEMPT_MAX}（超限即红，强制走评审）`)
+    problems.push(
+      `${pkg} 豁免表 ${Object.keys(exempt).length} 键 > ${UI_EXEMPT_MAX}（超限即红，强制走评审）`,
+    );
   }
   for (const [k, reason] of Object.entries(exempt)) {
-    if (typeof reason !== 'string' || reason.length === 0 || !/:\d+/.test(reason)) {
-      problems.push(`${pkg} 豁免键 ${k} 缺原因（须含「文件:行 + 一句理由」）`)
+    if (typeof reason !== "string" || reason.length === 0 || !/:\d+/.test(reason)) {
+      problems.push(`${pkg} 豁免键 ${k} 缺原因（须含「文件:行 + 一句理由」）`);
     }
   }
-  return problems
+  return problems;
 }
 
 /** 读取表键（容错返回 err；附带 text/ast/init/line 供下游派生断言）。 */
 function loadTable(filePath, name, shape) {
-  let text
+  let text;
   try {
-    text = readFileSync(filePath, 'utf8')
+    text = readFileSync(filePath, "utf8");
   } catch (e) {
-    return { err: `文件不可读: ${filePath}（${e.message}）` }
+    return { err: `文件不可读: ${filePath}（${e.message}）` };
   }
-  const line = sourceLineOf(text, name)
-  const ast = parseTs(text)
-  const init = findTopVar(ast, name)
+  const line = sourceLineOf(text, name);
+  const ast = parseTs(text);
+  const init = findTopVar(ast, name);
   if (init === null) {
-    return { err: `${name} 声明缺失 @ ${filePath}${line ? `:${line}` : ''}（提取器失效或声明被删）` }
+    return {
+      err: `${name} 声明缺失 @ ${filePath}${line ? `:${line}` : ""}（提取器失效或声明被删）`,
+    };
   }
-  let keys
-  if (shape === 'object') {
-    keys = objectKeysOf(init)
+  let keys;
+  if (shape === "object") {
+    keys = objectKeysOf(init);
   } else {
-    keys = init.type === 'ArrayExpression'
-      ? init.elements.filter((e) => e && e.type === 'Literal' && typeof e.value === 'string').map((e) => e.value)
-      : []
+    keys =
+      init.type === "ArrayExpression"
+        ? init.elements
+            .filter((e) => e && e.type === "Literal" && typeof e.value === "string")
+            .map((e) => e.value)
+        : [];
   }
   if (keys.length === 0) {
-    return { err: `${name} 键集为空 @ ${filePath}:${line}（提取器可能失效或表被掏空）` }
+    return { err: `${name} 键集为空 @ ${filePath}:${line}（提取器可能失效或表被掏空）` };
   }
-  return { text, ast, init, keys, line }
+  return { text, ast, init, keys, line };
 }
 
 /** 差集 → 缺/多键报错行。 */
-function diffProblems(scope, tableName, filePath, line, d, hint = '') {
-  const out = []
-  for (const k of d.missing) out.push(`${scope} ${tableName} 缺键（相对基准）: ${k} @ ${filePath}:${line}${hint ? `（${hint}）` : ''}`)
-  for (const k of d.extra) out.push(`${scope} ${tableName} 多键（基准之外）: ${k} @ ${filePath}:${line}${hint ? `（${hint}）` : ''}`)
-  return out
+function diffProblems(scope, tableName, filePath, line, d, hint = "") {
+  const out = [];
+  for (const k of d.missing)
+    out.push(
+      `${scope} ${tableName} 缺键（相对基准）: ${k} @ ${filePath}:${line}${hint ? `（${hint}）` : ""}`,
+    );
+  for (const k of d.extra)
+    out.push(
+      `${scope} ${tableName} 多键（基准之外）: ${k} @ ${filePath}:${line}${hint ? `（${hint}）` : ""}`,
+    );
+  return out;
 }
 
 /** lan-proxy 矩阵；返回 { problems, lines }。 */
 function runLanProxy(root) {
-  const problems = []
-  const lines = []
-  const cfgPath = join(root, 'packages/dsh-lan-proxy/src/config.ts')
-  const clientPath = join(root, 'packages/dsh-lan-proxy/src/client/index.ts')
+  const problems = [];
+  const lines = [];
+  const cfgPath = join(root, "packages/dsh-lan-proxy/src/config.ts");
+  const clientPath = join(root, "packages/dsh-lan-proxy/src/client/index.ts");
 
-  const schema = loadTable(cfgPath, 'Config', 'object')
-  const validators = loadTable(cfgPath, 'FILE_CONFIG_VALIDATORS', 'object')
-  const hints = loadTable(cfgPath, 'SETTING_FIELD_HINTS', 'object')
-  const defaults = loadTable(clientPath, 'DEFAULTS', 'object')
-  const failed = [schema, validators, hints, defaults].filter((t) => t.err)
+  const schema = loadTable(cfgPath, "Config", "object");
+  const validators = loadTable(cfgPath, "FILE_CONFIG_VALIDATORS", "object");
+  const hints = loadTable(cfgPath, "SETTING_FIELD_HINTS", "object");
+  const defaults = loadTable(clientPath, "DEFAULTS", "object");
+  const failed = [schema, validators, hints, defaults].filter((t) => t.err);
   if (failed.length > 0) {
-    for (const t of failed) problems.push(t.err)
-    return { problems, lines }
+    for (const t of failed) problems.push(t.err);
+    return { problems, lines };
   }
 
   // L1：三表两两全等（16 键）
   const pairs = [
-    ['Config', schema, 'FILE_CONFIG_VALIDATORS', validators],
-    ['Config', schema, 'SETTING_FIELD_HINTS', hints],
-    ['FILE_CONFIG_VALIDATORS', validators, 'SETTING_FIELD_HINTS', hints],
-  ]
+    ["Config", schema, "FILE_CONFIG_VALIDATORS", validators],
+    ["Config", schema, "SETTING_FIELD_HINTS", hints],
+    ["FILE_CONFIG_VALIDATORS", validators, "SETTING_FIELD_HINTS", hints],
+  ];
   for (const [na, ta, nb, tb] of pairs) {
-    problems.push(...diffProblems('lan-proxy', nb, cfgPath, tb.line, diffKeys(ta.keys, tb.keys), `与 ${na} 不一致`))
-    problems.push(...diffProblems('lan-proxy', na, cfgPath, ta.line, diffKeys(tb.keys, ta.keys), `与 ${nb} 不一致`))
+    problems.push(
+      ...diffProblems(
+        "lan-proxy",
+        nb,
+        cfgPath,
+        tb.line,
+        diffKeys(ta.keys, tb.keys),
+        `与 ${na} 不一致`,
+      ),
+    );
+    problems.push(
+      ...diffProblems(
+        "lan-proxy",
+        na,
+        cfgPath,
+        ta.line,
+        diffKeys(tb.keys, ta.keys),
+        `与 ${nb} 不一致`,
+      ),
+    );
   }
 
   // L2：DEFAULTS ⊆ schema；schema − DEFAULTS == 豁免；豁免表结构自检
-  const exempt = loadUiExempt(root, problems)
-  problems.push(...checkExempts('lan-proxy', exempt))
-  const exemptKeys = Object.keys(exempt)
-  const d = diffKeys(schema.keys, defaults.keys)
+  const exempt = loadUiExempt(root, problems);
+  problems.push(...checkExempts("lan-proxy", exempt));
+  const exemptKeys = Object.keys(exempt);
+  const d = diffKeys(schema.keys, defaults.keys);
   // DEFAULTS 出现 schema 外键 → 红（客户端提交未知键被宿主白名单静默丢弃）
-  for (const k of d.extra) problems.push(`lan-proxy client DEFAULTS 多键（Config 之外）: ${k} @ ${clientPath}:${defaults.line}`)
+  for (const k of d.extra)
+    problems.push(
+      `lan-proxy client DEFAULTS 多键（Config 之外）: ${k} @ ${clientPath}:${defaults.line}`,
+    );
   // schema − DEFAULTS 缺键必须恰为豁免集合（新增可编辑键漏 UI → 红）
   for (const k of d.missing) {
-    if (!exemptKeys.includes(k)) problems.push(`lan-proxy client DEFAULTS 缺键（相对 Config，非豁免）: ${k} @ ${clientPath}:${defaults.line}（新增可编辑键漏 UI）`)
+    if (!exemptKeys.includes(k))
+      problems.push(
+        `lan-proxy client DEFAULTS 缺键（相对 Config，非豁免）: ${k} @ ${clientPath}:${defaults.line}（新增可编辑键漏 UI）`,
+      );
   }
   // 豁免残留：豁免键出现在客户端 DEFAULTS 中 = 键已 UI 化但白名单未删
   // （注意判据是「∈ DEFAULTS」而非「∉ 差集」——豁免键从 schema 删除时差集自然
   // 不含它，此时不算残留）
   for (const k of exemptKeys) {
-    if (defaults.keys.includes(k)) problems.push(`lan-proxy 豁免键 ${k} 已在客户端 DEFAULTS 中（豁免残留，应移除豁免或改豁免原因）`)
+    if (defaults.keys.includes(k))
+      problems.push(
+        `lan-proxy 豁免键 ${k} 已在客户端 DEFAULTS 中（豁免残留，应移除豁免或改豁免原因）`,
+      );
   }
 
-  lines.push(`lan-proxy ${schema.keys.length} 键 × [schema/validators/hints] 全等 + client DEFAULTS ${defaults.keys.length}(豁免 ${exemptKeys.length})`)
+  lines.push(
+    `lan-proxy ${schema.keys.length} 键 × [schema/validators/hints] 全等 + client DEFAULTS ${defaults.keys.length}(豁免 ${exemptKeys.length})`,
+  );
 
   // 量级 #12：README 配置表键集一致性——代码键缺文档仅 warn 不判红（防文档漂移提示）
-  const warnings = []
-  const readmePath = join(root, 'packages/dsh-lan-proxy/README.md')
-  let readmeText = null
-  try { readmeText = readFileSync(readmePath, 'utf8') } catch { readmeText = null }
+  const warnings = [];
+  const readmePath = join(root, "packages/dsh-lan-proxy/README.md");
+  let readmeText = null;
+  try {
+    readmeText = readFileSync(readmePath, "utf8");
+  } catch {
+    readmeText = null;
+  }
   if (readmeText !== null) {
-    const { keys: docKeys } = extractReadmeConfigKeys(readmeText, 'lan-proxy')
+    const { keys: docKeys } = extractReadmeConfigKeys(readmeText, "lan-proxy");
     for (const k of diffKeys(schema.keys, docKeys).missing) {
-      warnings.push(`lan-proxy README 配置表缺文档键: ${k}（docs/README 与代码键集不一致，仅提示）`)
+      warnings.push(
+        `lan-proxy README 配置表缺文档键: ${k}（docs/README 与代码键集不一致，仅提示）`,
+      );
     }
   }
-  return { problems, warnings, lines }
+  return { problems, warnings, lines };
 }
 
 /**
@@ -200,21 +259,25 @@ function runLanProxy(root) {
  * 路径，ESM loader 缓存不串味。
  */
 function loadSurfaceExport(root, face, label, problems) {
-  if (typeof face?.module !== 'string' || typeof face.export !== 'string') {
-    problems.push(`notifier configSurfaces.${label} 声明结构不合法（须含 module/export 字符串）`)
-    return undefined
+  if (typeof face?.module !== "string" || typeof face.export !== "string") {
+    problems.push(`notifier configSurfaces.${label} 声明结构不合法（须含 module/export 字符串）`);
+    return undefined;
   }
   try {
-    const req = createRequire(join(root, 'scripts', 'data', 'plugins-manifest.json'))
-    const mod = req(join(root, face.module))
+    const req = createRequire(join(root, "scripts", "data", "plugins-manifest.json"));
+    const mod = req(join(root, face.module));
     if (mod === null || mod === undefined || mod[face.export] === undefined) {
-      problems.push(`notifier configSurfaces.${label} 声明的导出不存在: ${face.module} → ${face.export}`)
-      return undefined
+      problems.push(
+        `notifier configSurfaces.${label} 声明的导出不存在: ${face.module} → ${face.export}`,
+      );
+      return undefined;
     }
-    return mod[face.export]
+    return mod[face.export];
   } catch (e) {
-    problems.push(`notifier configSurfaces.${label} 模块加载失败: ${face.module}（${String(e.message).split('\n')[0]}）`)
-    return undefined
+    problems.push(
+      `notifier configSurfaces.${label} 模块加载失败: ${face.module}（${String(e.message).split("\n")[0]}）`,
+    );
+    return undefined;
   }
 }
 
@@ -240,99 +303,121 @@ function loadSurfaceExport(root, face, label, problems) {
  * 缺口）；notifier 侧导出后由声明驱动恢复，缺口随之关闭。
  */
 function runNotifier(root, surface) {
-  const problems = []
-  const warnings = []
-  const lines = []
+  const problems = [];
+  const warnings = [];
+  const lines = [];
 
   if (!surface) {
-    problems.push('notifier 未在 scripts/data/plugins-manifest.json 的 configSurfaces 声明配置面（#733 计划项 3.1.1：未登记即红）')
-    return { problems, warnings, lines }
+    problems.push(
+      "notifier 未在 scripts/data/plugins-manifest.json 的 configSurfaces 声明配置面（#733 计划项 3.1.1：未登记即红）",
+    );
+    return { problems, warnings, lines };
   }
 
-  const defaults = loadSurfaceExport(root, surface.defaults, 'defaults', problems)
-  const normalizer = loadSurfaceExport(root, surface.normalizer, 'normalizer', problems)
-  if (defaults === undefined || normalizer === undefined) return { problems, warnings, lines }
+  const defaults = loadSurfaceExport(root, surface.defaults, "defaults", problems);
+  const normalizer = loadSurfaceExport(root, surface.normalizer, "normalizer", problems);
+  if (defaults === undefined || normalizer === undefined) return { problems, warnings, lines };
 
-  const base = Object.keys(defaults)
+  const base = Object.keys(defaults);
   if (base.length === 0) {
-    problems.push(`notifier configSurfaces.defaults 的导出键集为空：${surface.defaults.module} → ${surface.defaults.export}`)
-    return { problems, warnings, lines }
+    problems.push(
+      `notifier configSurfaces.defaults 的导出键集为空：${surface.defaults.module} → ${surface.defaults.export}`,
+    );
+    return { problems, warnings, lines };
   }
 
-  let normalized
+  let normalized;
   try {
-    normalized = normalizer({})
+    normalized = normalizer({});
   } catch (e) {
-    problems.push(`notifier normalizeConfig({}) 执行失败：${String(e.message).split('\n')[0]}`)
-    return { problems, warnings, lines }
+    problems.push(`notifier normalizeConfig({}) 执行失败：${String(e.message).split("\n")[0]}`);
+    return { problems, warnings, lines };
   }
-  const d2 = diffKeys(base, Object.keys(normalized ?? {}))
+  const d2 = diffKeys(base, Object.keys(normalized ?? {}));
   for (const k of d2.missing) {
-    problems.push(`notifier normalizeConfig 丢键: ${k}（DEFAULT_CONFIG 有该键，normalizeConfig({}) 结果里没有）`)
+    problems.push(
+      `notifier normalizeConfig 丢键: ${k}（DEFAULT_CONFIG 有该键，normalizeConfig({}) 结果里没有）`,
+    );
   }
   for (const k of d2.extra) {
-    problems.push(`notifier normalizeConfig 多键: ${k}（不在 DEFAULT_CONFIG 中——归一化凭空造键）`)
+    problems.push(`notifier normalizeConfig 多键: ${k}（不在 DEFAULT_CONFIG 中——归一化凭空造键）`);
   }
 
   // N3/N4：布尔键清单与计数上界清单（两张清单的导出由 notifier 侧补齐后恢复执行）
-  const booleanKeys = loadSurfaceExport(root, surface.booleanKeys, 'booleanKeys', problems)
-  const countLimits = loadSurfaceExport(root, surface.countLimits, 'countLimits', problems)
-  if (booleanKeys === undefined || countLimits === undefined) return { problems, warnings, lines }
+  const booleanKeys = loadSurfaceExport(root, surface.booleanKeys, "booleanKeys", problems);
+  const countLimits = loadSurfaceExport(root, surface.countLimits, "countLimits", problems);
+  if (booleanKeys === undefined || countLimits === undefined) return { problems, warnings, lines };
 
-  const baseSet = new Set(base)
+  const baseSet = new Set(base);
   if (!Array.isArray(booleanKeys)) {
-    problems.push(`notifier configSurfaces.booleanKeys 的导出不是数组（${surface.booleanKeys.export}）`)
+    problems.push(
+      `notifier configSurfaces.booleanKeys 的导出不是数组（${surface.booleanKeys.export}）`,
+    );
   } else {
     for (const k of booleanKeys) {
       if (!baseSet.has(k)) {
-        problems.push(`notifier BOOLEAN_KEYS 含非配置键: ${k}（不在 DEFAULT_CONFIG 中）`)
-      } else if (typeof defaults[k] !== 'boolean') {
-        problems.push(`notifier BOOLEAN_KEYS 含非布尔键: ${k}（DEFAULT_CONFIG 里的默认值是 ${typeof defaults[k]}）`)
+        problems.push(`notifier BOOLEAN_KEYS 含非配置键: ${k}（不在 DEFAULT_CONFIG 中）`);
+      } else if (typeof defaults[k] !== "boolean") {
+        problems.push(
+          `notifier BOOLEAN_KEYS 含非布尔键: ${k}（DEFAULT_CONFIG 里的默认值是 ${typeof defaults[k]}）`,
+        );
       }
     }
   }
 
-  if (countLimits === null || typeof countLimits !== 'object' || Array.isArray(countLimits)) {
-    problems.push(`notifier configSurfaces.countLimits 的导出不是对象（${surface.countLimits.export}）`)
+  if (countLimits === null || typeof countLimits !== "object" || Array.isArray(countLimits)) {
+    problems.push(
+      `notifier configSurfaces.countLimits 的导出不是对象（${surface.countLimits.export}）`,
+    );
   } else {
     for (const [k, limit] of Object.entries(countLimits)) {
       if (!baseSet.has(k)) {
-        problems.push(`notifier COUNT_LIMITS 含非配置键: ${k}（不在 DEFAULT_CONFIG 中）`)
-        continue
+        problems.push(`notifier COUNT_LIMITS 含非配置键: ${k}（不在 DEFAULT_CONFIG 中）`);
+        continue;
       }
       if (!Number.isInteger(limit) || limit < 0) {
-        problems.push(`notifier COUNT_LIMITS.${k} 的上界不是非负整数: ${JSON.stringify(limit)}`)
+        problems.push(`notifier COUNT_LIMITS.${k} 的上界不是非负整数: ${JSON.stringify(limit)}`);
       }
-      const fallback = defaults[k]
+      const fallback = defaults[k];
       if (!Number.isInteger(fallback) || fallback < 0) {
-        problems.push(`notifier COUNT_LIMITS 覆盖的键 ${k} 在 DEFAULT_CONFIG 里不是非负整数: ${JSON.stringify(fallback)}`)
+        problems.push(
+          `notifier COUNT_LIMITS 覆盖的键 ${k} 在 DEFAULT_CONFIG 里不是非负整数: ${JSON.stringify(fallback)}`,
+        );
       } else if (Number.isInteger(limit) && fallback > limit) {
-        problems.push(`notifier DEFAULT_CONFIG.${k} = ${fallback} 超过 COUNT_LIMITS.${k} 上界 ${limit}（默认值本身越界）`)
+        problems.push(
+          `notifier DEFAULT_CONFIG.${k} = ${fallback} 超过 COUNT_LIMITS.${k} 上界 ${limit}（默认值本身越界）`,
+        );
       }
     }
   }
 
   // 摘要里的计数用安全取值：类型不合法时上面已判红，这里不能再抛（报告要完整）。
-  const boolCount = Array.isArray(booleanKeys) ? booleanKeys.length : '?'
+  const boolCount = Array.isArray(booleanKeys) ? booleanKeys.length : "?";
   const limitCount =
-    countLimits !== null && typeof countLimits === 'object' && !Array.isArray(countLimits)
+    countLimits !== null && typeof countLimits === "object" && !Array.isArray(countLimits)
       ? Object.keys(countLimits).length
-      : '?'
+      : "?";
   lines.push(
     `notifier ${base.length} 键 × [defaults → normalizeConfig] 运行时取值全等 + BOOLEAN_KEYS ${boolCount} + COUNT_LIMITS ${limitCount}`,
-  )
+  );
 
   // 量级 #12：README JSON 样例键集一致性——代码键缺文档仅 warn 不判红
-  const readmePath = join(root, 'packages/dsh-notifier/README.md')
-  let readmeText = null
-  try { readmeText = readFileSync(readmePath, 'utf8') } catch { readmeText = null }
+  const readmePath = join(root, "packages/dsh-notifier/README.md");
+  let readmeText = null;
+  try {
+    readmeText = readFileSync(readmePath, "utf8");
+  } catch {
+    readmeText = null;
+  }
   if (readmeText !== null) {
-    const { keys: docKeys } = extractReadmeConfigKeys(readmeText, 'notifier')
+    const { keys: docKeys } = extractReadmeConfigKeys(readmeText, "notifier");
     for (const k of diffKeys(base, docKeys).missing) {
-      warnings.push(`notifier README JSON 样例缺文档键: ${k}（docs/README 与代码键集不一致，仅提示）`)
+      warnings.push(
+        `notifier README JSON 样例缺文档键: ${k}（docs/README 与代码键集不一致，仅提示）`,
+      );
     }
   }
-  return { problems, warnings, lines }
+  return { problems, warnings, lines };
 }
 
 /**
@@ -340,25 +425,30 @@ function runNotifier(root, surface) {
  * @returns {{ pass: boolean, problems: string[], warnings: string[], lines: string[] }}
  */
 export function runConfigMatrix(root) {
-  const problems = []
-  const warnings = []
-  const lines = []
+  const problems = [];
+  const warnings = [];
+  const lines = [];
   // 配置面声明来自 manifest（#733 计划项 3.1.1）：读不到/结构不合法即红——
   // 声明是门禁的输入面，它坏掉不能退化成「没有声明就跳过 notifier 段」。
-  let surfaces = []
+  let surfaces = [];
   try {
-    surfaces = loadManifest(root).configSurfaces ?? []
+    surfaces = loadManifest(root).configSurfaces ?? [];
   } catch (e) {
-    problems.push(`读取 configSurfaces 声明失败（scripts/data/plugins-manifest.json）：${e.message}`)
+    problems.push(
+      `读取 configSurfaces 声明失败（scripts/data/plugins-manifest.json）：${e.message}`,
+    );
   }
   const results = [
     runLanProxy(root),
-    runNotifier(root, surfaces.find((s) => s.package === 'dsh-notifier')),
-  ]
+    runNotifier(
+      root,
+      surfaces.find((s) => s.package === "dsh-notifier"),
+    ),
+  ];
   for (const r of results) {
-    problems.push(...r.problems)
-    warnings.push(...(r.warnings ?? []))
-    lines.push(...r.lines)
+    problems.push(...r.problems);
+    warnings.push(...(r.warnings ?? []));
+    lines.push(...r.lines);
   }
-  return { pass: problems.length === 0, problems, warnings, lines }
+  return { pass: problems.length === 0, problems, warnings, lines };
 }

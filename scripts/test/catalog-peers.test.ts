@@ -41,6 +41,26 @@ test("parseCatalog：只取 catalog 段，不被后续顶层段污染", () => {
   assert.equal(catalog.get("@deepseek-ai/dsh-session"), "0.1.2-rc.1");
 });
 
+test("引号形态无关：单引号/双引号/不加引号解析结果一致", () => {
+  // pnpm-workspace.yaml 在 Prettier 格式化面内，引号写法归格式化器决定；
+  // 解析器若绑死某一种形态，格式化一次就会让 catalog 段整体失读（#733 实测踩过）。
+  const forms = [
+    ["  '@deepseek-ai/cordis': 4.0.2", "  - '@deepseek-ai/cordis@4.0.2'"],
+    ['  "@deepseek-ai/cordis": 4.0.2', '  - "@deepseek-ai/cordis@4.0.2"'],
+    ["  @deepseek-ai/cordis: 4.0.2", "  - @deepseek-ai/cordis@4.0.2"],
+  ];
+  for (const [catalogLine, excludeLine] of forms) {
+    const yaml = ["catalog:", catalogLine, "minimumReleaseAgeExclude:", excludeLine, ""].join("\n");
+    const catalog = parseCatalog(yaml);
+    assert.equal(catalog.size, 1, `catalog 行「${catalogLine}」应恰好解析出 1 键`);
+    assert.equal(catalog.get("@deepseek-ai/cordis"), "4.0.2", `catalog 行「${catalogLine}」`);
+    assert.ok(
+      parseReleaseExclude(yaml).has("@deepseek-ai/cordis"),
+      `豁免行「${excludeLine}」应解析出包名`,
+    );
+  }
+});
+
 test("parseReleaseExclude：剥离 @version 后缀", () => {
   const yaml = [
     "minimumReleaseAgeExclude:",

@@ -1,6 +1,9 @@
 # 依赖与构建产物
 node_modules/
-**/lib/
+# 只排构建产物本身，不要写成 `**/lib/`：那条会把同名源码目录一并吞掉
+# （scripts/lib/** 与 dsh-verify-isolated 的 skills/**/scripts/lib/** 都是手写源码，
+# 实测曾整目录逃出格式化面，导致同一目录里 gate 脚本被格式化、lib 却没被格式化）。
+packages/*/lib/
 coverage/
 **/dist/
 

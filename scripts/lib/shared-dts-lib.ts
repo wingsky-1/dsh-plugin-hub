@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-'use strict'
+"use strict";
 
 /**
  * shared-dts-lib — shared 声明副本随包断言的共享库（issue #461 L2）。
@@ -18,9 +18,9 @@
  *     的残留 .d.ts（查多，issue #478：retired 模块移除后旧副本不得残留在包内）。
  * 未来 shared 新增子目录/文件自动纳入断言，无需再改 pack-check。
  */
-import { existsSync, readdirSync, statSync } from 'node:fs'
-import { join, relative, sep } from 'node:path'
-import { walkFiles } from './walk-files.ts'
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { join, relative, sep } from "node:path";
+import { walkFiles } from "./walk-files.ts";
 
 /**
  * 枚举仓库 shared/ 下全部声明文件（.d.ts，递归含子目录），返回相对路径列表。
@@ -29,7 +29,7 @@ import { walkFiles } from './walk-files.ts'
  * @returns {string[]} 相对路径，如 ['client/i18n.d.ts', 'loopback.d.ts', ...]
  */
 export function listSharedDts(root) {
-  return walkFiles(join(root, 'shared'), (f) => f.endsWith('.d.ts'))
+  return walkFiles(join(root, "shared"), (f) => f.endsWith(".d.ts"));
 }
 
 /**
@@ -39,7 +39,7 @@ export function listSharedDts(root) {
  * @returns {string[]} 缺失文件相对路径列表（空 = 完整）
  */
 export function assertSharedDtsPresent(pkgSharedDir, expected) {
-  return expected.filter((rel) => !existsSync(join(pkgSharedDir, rel)))
+  return expected.filter((rel) => !existsSync(join(pkgSharedDir, rel)));
 }
 
 /**
@@ -53,18 +53,21 @@ export function assertSharedDtsPresent(pkgSharedDir, expected) {
  * 残留 fail-loud。
  */
 export function assertSharedDtsNoExtras(pkgSharedDir, expected) {
-  const expectedSet = new Set(expected)
-  const out = []
+  const expectedSet = new Set(expected);
+  const out = [];
   const visit = (cur) => {
     for (const f of readdirSync(cur, { withFileTypes: true })) {
-      const abs = join(cur, f.name)
-      if (f.isDirectory()) { visit(abs); continue }
-      if (!f.name.endsWith('.d.ts')) continue
+      const abs = join(cur, f.name);
+      if (f.isDirectory()) {
+        visit(abs);
+        continue;
+      }
+      if (!f.name.endsWith(".d.ts")) continue;
       // 包内目录相对 shared/ 根的路径（walkFiles 同款归一：relative + / 分隔）
-      const rel = relative(pkgSharedDir, abs).split(sep).join('/')
-      if (!expectedSet.has(rel)) out.push(rel)
+      const rel = relative(pkgSharedDir, abs).split(sep).join("/");
+      if (!expectedSet.has(rel)) out.push(rel);
     }
-  }
-  if (existsSync(pkgSharedDir) && statSync(pkgSharedDir).isDirectory()) visit(pkgSharedDir)
-  return out
+  };
+  if (existsSync(pkgSharedDir) && statSync(pkgSharedDir).isDirectory()) visit(pkgSharedDir);
+  return out;
 }

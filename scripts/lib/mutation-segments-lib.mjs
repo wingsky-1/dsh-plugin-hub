@@ -17,7 +17,7 @@
  *      c. 声明 to —— lib/ 模块锚（#k 同 from 语义），取其前一行；
  *      d. 缺省 —— 下一个任意类型锚点的前一行；无后续锚点延伸到 EOF。
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync } from "node:fs";
 
 /** 解析 "name" / "name#k" → { mod, occ } */
 function parseSpec(spec) {
@@ -28,13 +28,18 @@ function parseSpec(spec) {
 /** 提取产物全部路径型分段锚点：[{ line, isLib, mod }]（line 1-based） */
 export function scanAnchors(content) {
   const anchors = [];
-  const lines = content.split('\n');
+  const lines = content.split("\n");
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(/^\/\/ (\S+\.\w+)\s*$/);
     if (!m) continue;
     const path = m[1];
-    if (!path.includes('/')) continue; // 排除非路径型注释
-    anchors.push({ line: i + 1, isLib: path.startsWith('lib/'), mod: path.replace(/^lib\//, ''), path });
+    if (!path.includes("/")) continue; // 排除非路径型注释
+    anchors.push({
+      line: i + 1,
+      isLib: path.startsWith("lib/"),
+      mod: path.replace(/^lib\//, ""),
+      path,
+    });
   }
   return anchors;
 }
@@ -49,7 +54,7 @@ export function makeDeriver() {
   let anchors = [];
 
   function deriveFor(content, groups) {
-    lines = content.split('\n');
+    lines = content.split("\n");
     anchors = scanAnchors(content);
     const results = [];
     let cursor = 0; // 同名模块顺序消费的游标
@@ -60,7 +65,10 @@ export function makeDeriver() {
       for (let i = cursor; i < anchors.length; i++) {
         if (anchors[i].isLib && anchors[i].mod === fspec.mod) {
           seen++;
-          if (fspec.occ == null || seen === fspec.occ) { si = i; break; }
+          if (fspec.occ == null || seen === fspec.occ) {
+            si = i;
+            break;
+          }
         }
       }
       if (si < 0) return null;
@@ -73,21 +81,28 @@ export function makeDeriver() {
         end = ai.line - 1;
       } else if (g.to) {
         const tspec = parseSpec(g.to);
-        let ti = -1, tseen = 0;
+        let ti = -1,
+          tseen = 0;
         for (let i = si + 1; i < anchors.length; i++) {
           if (anchors[i].isLib && anchors[i].mod === tspec.mod) {
             tseen++;
-            if (tspec.occ == null || tseen === tspec.occ) { ti = i; break; }
+            if (tspec.occ == null || tseen === tspec.occ) {
+              ti = i;
+              break;
+            }
           }
         }
         if (ti < 0) return null;
         end = anchors[ti].line - 1;
       } else if (g.lastLineText) {
-        const parts = g.lastLineText.split('\n');
+        const parts = g.lastLineText.split("\n");
         for (let ln = start; ln + parts.length - 1 <= lines.length; ln++) {
           let all = true;
           for (let k = 0; k < parts.length; k++) {
-            if (!(lines[ln - 1 + k] ?? '').includes(parts[k])) { all = false; break; }
+            if (!(lines[ln - 1 + k] ?? "").includes(parts[k])) {
+              all = false;
+              break;
+            }
           }
           if (all) end = ln + parts.length - 1;
         }

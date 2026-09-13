@@ -14,25 +14,28 @@
  */
 
 /** Stryker 段在 GHA 日志里的 group 名（`stryker <conf-base-name>`，见 observe*.yml 的循环）。 */
-const GROUP_PREFIX = 'stryker '
+const GROUP_PREFIX = "stryker ";
 
 /** 日志行时间戳（GHA 前缀 `2026-09-11T08:32:48.1054450Z`，小数位不定长）。 */
-const TIMESTAMP = /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+)Z/
+const TIMESTAMP = /(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+)Z/;
 
 /** ANSI 颜色转义（Stryker 的 reporter 输出带色）。 */
-const ANSI = /\u001b\[[0-9;]*m/g
+const ANSI = /\u001b\[[0-9;]*m/g;
 
 /** `gh run view --log` 的行前缀：`<job>\t<step>\t<timestamp>Z <content>`（时间戳与正文间有一个空格）。 */
 export function parseLogLine(line) {
-  const parts = line.split('\t')
-  if (parts.length < 3) return null
-  const rest = parts.slice(2).join('\t')
-  const m = TIMESTAMP.exec(rest)
-  if (m === null) return null
+  const parts = line.split("\t");
+  if (parts.length < 3) return null;
+  const rest = parts.slice(2).join("\t");
+  const m = TIMESTAMP.exec(rest);
+  if (m === null) return null;
   // trimStart：时间戳与正文之间的分隔空格必须剥掉，否则 `##[group]` 前缀判定永不成立
   // （实测 gh 日志恒为 `<ts>Z <content>` 单空格形态）。
-  const body = rest.slice(m.index + m[0].length).replace(ANSI, '').trimStart()
-  return { job: parts[0], step: parts[1], at: m[1], body }
+  const body = rest
+    .slice(m.index + m[0].length)
+    .replace(ANSI, "")
+    .trimStart();
+  return { job: parts[0], step: parts[1], at: m[1], body };
 }
 
 /**
@@ -40,11 +43,11 @@ export function parseLogLine(line) {
  * 字段全部可选：`Done in` 在段被取消/失败时不会出现，缺失即 null（不得用 0 冒充）。
  */
 export function parseSegmentBody(lines) {
-  const text = lines.join('\n')
-  const mutants = /with (\d+) mutant/.exec(text)
-  const dry = /Ran (\d+) tests in (\d+) seconds/.exec(text)
-  const reuse = /(\d+) of (\d+) mutant result\(s\) are reused/.exec(text)
-  const done = /Done in ([^.]+)\./.exec(text)
+  const text = lines.join("\n");
+  const mutants = /with (\d+) mutant/.exec(text);
+  const dry = /Ran (\d+) tests in (\d+) seconds/.exec(text);
+  const reuse = /(\d+) of (\d+) mutant result\(s\) are reused/.exec(text);
+  const done = /Done in ([^.]+)\./.exec(text);
   return {
     mutants: mutants === null ? null : Number(mutants[1]),
     dryTests: dry === null ? null : Number(dry[1]),
@@ -52,7 +55,7 @@ export function parseSegmentBody(lines) {
     reused: reuse === null ? null : Number(reuse[1]),
     reuseTotal: reuse === null ? null : Number(reuse[2]),
     strykerReported: done === null ? null : done[1].trim(),
-  }
+  };
 }
 
 /**
@@ -71,37 +74,42 @@ export function parseSegmentBody(lines) {
  * （宁缺勿造，不得用 0 冒充有效测量）。
  */
 export function parseSegmentLedger(logText) {
-  const byGroup = parseByGroup(logText)
-  if (byGroup.length > 0) return byGroup
-  return parseByShardJob(logText)
+  const byGroup = parseByGroup(logText);
+  if (byGroup.length > 0) return byGroup;
+  return parseByShardJob(logText);
 }
 
 /** group 形态：栈式配对 `##[group]stryker <seg>` 与 `##[endgroup]`，段墙钟取两者时间差。 */
 function parseByGroup(logText) {
-  const raw = logText.split('\n')
-  const events = []
+  const raw = logText.split("\n");
+  const events = [];
   for (let i = 0; i < raw.length; i++) {
-    const parsed = parseLogLine(raw[i])
-    if (parsed === null) continue
-    if (parsed.body.startsWith('##[group]' + GROUP_PREFIX)) {
-      events.push({ kind: 'open', line: i, at: parsed.at, seg: parsed.body.slice(('##[group]' + GROUP_PREFIX).length).trim() })
-    } else if (parsed.body.startsWith('##[endgroup]')) {
-      events.push({ kind: 'close', line: i, at: parsed.at })
+    const parsed = parseLogLine(raw[i]);
+    if (parsed === null) continue;
+    if (parsed.body.startsWith("##[group]" + GROUP_PREFIX)) {
+      events.push({
+        kind: "open",
+        line: i,
+        at: parsed.at,
+        seg: parsed.body.slice(("##[group]" + GROUP_PREFIX).length).trim(),
+      });
+    } else if (parsed.body.startsWith("##[endgroup]")) {
+      events.push({ kind: "close", line: i, at: parsed.at });
     }
   }
-  const stack = []
-  const out = []
+  const stack = [];
+  const out = [];
   for (const ev of events) {
-    if (ev.kind === 'open') {
-      stack.push(ev)
-      continue
+    if (ev.kind === "open") {
+      stack.push(ev);
+      continue;
     }
-    const open = stack.pop()
-    if (open === undefined) continue
-    const body = []
+    const open = stack.pop();
+    if (open === undefined) continue;
+    const body = [];
     for (let i = open.line; i <= ev.line; i++) {
-      const parsed = parseLogLine(raw[i])
-      if (parsed !== null) body.push(parsed.body)
+      const parsed = parseLogLine(raw[i]);
+      if (parsed !== null) body.push(parsed.body);
     }
     out.push({
       seg: open.seg,
@@ -109,13 +117,13 @@ function parseByGroup(logText) {
       endedAt: ev.at,
       wallSeconds: secondsBetween(open.at, ev.at),
       ...parseSegmentBody(body),
-    })
+    });
   }
-  return out
+  return out;
 }
 
 /** 矩阵实例的 job 名 → 段名（`Mutation shard (dsh-notifier-sdk)` → `dsh-notifier-sdk`）。 */
-const SHARD_JOB = /^Mutation shard \((.+)\)$/
+const SHARD_JOB = /^Mutation shard \((.+)\)$/;
 
 /**
  * 段内的 Stryker 输出特征（两种形态都要认）：
@@ -126,7 +134,7 @@ const SHARD_JOB = /^Mutation shard \((.+)\)$/
  * （实测本次 33 个 shard 里有 11 个如此），按步骤名过滤会静默漏段——而漏段正是
  * 「覆盖全部段」断言要防的方向。
  */
-const SEGMENT_OUTPUT = /(\(\d+\) INFO |^Mutation testing \d+%)/
+const SEGMENT_OUTPUT = /(\(\d+\) INFO |^Mutation testing \d+%)/;
 
 /**
  * 矩阵形态（#718 S1.1 之后）：每段是**独立 job**（名为 `Mutation shard (<seg>)`），没有
@@ -142,34 +150,34 @@ const SEGMENT_OUTPUT = /(\(\d+\) INFO |^Mutation testing \d+%)/
  * 无该步骤输出的实例（install 阶段就失败）不产出记录——没有可测的执行时间。
  */
 function parseByShardJob(logText) {
-  const byJob = new Map()
-  for (const line of logText.split('\n')) {
-    const parsed = parseLogLine(line)
-    if (parsed === null) continue
-    const m = SHARD_JOB.exec(parsed.job)
-    if (m === null) continue
-    if (!byJob.has(m[1])) byJob.set(m[1], [])
-    byJob.get(m[1]).push(parsed)
+  const byJob = new Map();
+  for (const line of logText.split("\n")) {
+    const parsed = parseLogLine(line);
+    if (parsed === null) continue;
+    const m = SHARD_JOB.exec(parsed.job);
+    if (m === null) continue;
+    if (!byJob.has(m[1])) byJob.set(m[1], []);
+    byJob.get(m[1]).push(parsed);
   }
-  const out = []
+  const out = [];
   for (const [seg, entries] of byJob) {
-    const output = entries.filter((e) => SEGMENT_OUTPUT.test(e.body))
-    if (output.length === 0) continue
-    const startedAt = output[0].at
-    const endedAt = output[output.length - 1].at
+    const output = entries.filter((e) => SEGMENT_OUTPUT.test(e.body));
+    if (output.length === 0) continue;
+    const startedAt = output[0].at;
+    const endedAt = output[output.length - 1].at;
     out.push({
       seg,
       startedAt,
       endedAt,
       wallSeconds: secondsBetween(startedAt, endedAt),
       ...parseSegmentBody(output.map((e) => e.body)),
-    })
+    });
   }
-  return out.sort((a, b) => a.seg.localeCompare(b.seg))
+  return out.sort((a, b) => a.seg.localeCompare(b.seg));
 }
 
 function secondsBetween(a, b) {
-  return Math.round(((Date.parse(b + 'Z') - Date.parse(a + 'Z')) / 1000) * 10) / 10
+  return Math.round(((Date.parse(b + "Z") - Date.parse(a + "Z")) / 1000) * 10) / 10;
 }
 
 /**
@@ -180,13 +188,13 @@ function secondsBetween(a, b) {
  * `stryker.conf.d/` 已脱节。两种都必须判红——拆段/加包后必须重测并更新台账。
  */
 export function reconcileLedgerSegments(measuredSegs, expectedSegs) {
-  const measured = new Set(measuredSegs)
-  const expected = new Set(expectedSegs)
+  const measured = new Set(measuredSegs);
+  const expected = new Set(expectedSegs);
   return {
     missing: [...expected].filter((s) => !measured.has(s)).sort(),
     extra: [...measured].filter((s) => !expected.has(s)).sort(),
     ok: measured.size === expected.size && [...expected].every((s) => measured.has(s)),
-  }
+  };
 }
 
 /**
@@ -195,20 +203,26 @@ export function reconcileLedgerSegments(measuredSegs, expectedSegs) {
  * 取 0 或负数说明解析失败却被当成有效测量写入。
  */
 export function checkLedgerEntry(entry) {
-  const problems = []
-  if (typeof entry?.seg !== 'string' || entry.seg.trim() === '') problems.push('seg 缺失')
-  if (typeof entry?.wallSeconds !== 'number' || !(entry.wallSeconds > 0)) problems.push(`${entry?.seg}: wallSeconds 必须是正数`)
-  if (entry?.mutants !== null && !(Number.isInteger(entry?.mutants) && entry.mutants > 0)) problems.push(`${entry?.seg}: mutants 缺失或非正整数`)
-  if (entry?.reused !== null && entry?.reuseTotal !== null && !(entry.reused >= 0 && entry.reused <= entry.reuseTotal)) {
-    problems.push(`${entry?.seg}: reused 必须在 [0, reuseTotal] 内`)
+  const problems = [];
+  if (typeof entry?.seg !== "string" || entry.seg.trim() === "") problems.push("seg 缺失");
+  if (typeof entry?.wallSeconds !== "number" || !(entry.wallSeconds > 0))
+    problems.push(`${entry?.seg}: wallSeconds 必须是正数`);
+  if (entry?.mutants !== null && !(Number.isInteger(entry?.mutants) && entry.mutants > 0))
+    problems.push(`${entry?.seg}: mutants 缺失或非正整数`);
+  if (
+    entry?.reused !== null &&
+    entry?.reuseTotal !== null &&
+    !(entry.reused >= 0 && entry.reused <= entry.reuseTotal)
+  ) {
+    problems.push(`${entry?.seg}: reused 必须在 [0, reuseTotal] 内`);
   }
-  return problems
+  return problems;
 }
 
 /** 由 `stryker.conf.d/` 的文件名派生期望段集合（与 ci-matrix / mutation-gate 同源口径）。 */
 export function expectedSegsFromConfFiles(confFileNames) {
   return confFileNames
-    .filter((f) => f.startsWith('dsh-') && f.endsWith('.json'))
-    .map((f) => f.slice(0, -'.json'.length))
-    .sort()
+    .filter((f) => f.startsWith("dsh-") && f.endsWith(".json"))
+    .map((f) => f.slice(0, -".json".length))
+    .sort();
 }

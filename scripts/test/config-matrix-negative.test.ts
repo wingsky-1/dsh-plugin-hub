@@ -140,10 +140,9 @@ test("lan-proxy: DEFAULTS 增 schema 外键 → 红且报错含键名", () => {
     "lan-proxy DEFAULTS 加 fakeKey",
     (root) => {
       edit(root, "dsh-lan-proxy", "client/index.ts", (s) =>
-        s.replace(
-          "  var DEFAULTS: Record<string, any> = {",
-          "  var DEFAULTS: Record<string, any> = {\n    fakeKey: 1,",
-        ),
+        // 锚点只锁声明本身：缩进归 Prettier（顶层块的多余缩进会被归一化），
+        // 注入行自带格式化器口径的缩进，避免判据绑死在某一版排版上。
+        s.replace(/var DEFAULTS: Record<string, any> = \{\n/, "$&  fakeKey: 1,\n"),
       );
     },
     "fakeKey",
@@ -167,7 +166,8 @@ test("lan-proxy: DEFAULTS 删非豁免可编辑键 → 红且报错含键名", (
     "lan-proxy DEFAULTS 删 tlsCertFile",
     (root) => {
       edit(root, "dsh-lan-proxy", "client/index.ts", (s) =>
-        s.replace(/    tlsCertFile: "",\n/, ""),
+        // 缩进与引号形态均归 Prettier，判据只锁「这一行存在」，不锁它怎么排的
+        s.replace(/^[ \t]*tlsCertFile: (?:""|''),\n/m, ""),
       );
     },
     "tlsCertFile",

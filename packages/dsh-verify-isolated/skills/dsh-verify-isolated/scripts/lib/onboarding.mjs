@@ -66,12 +66,19 @@ export function welcomeSettingsDocument(version) {
  */
 export function dshRootOf(dshBinPath) {
   let entry;
-  try { entry = realpathSync(dshBinPath); } catch { return null; }
+  try {
+    entry = realpathSync(dshBinPath);
+  } catch {
+    return null;
+  }
   let dir = dirname(entry);
   for (let i = 0; i < 8; i++) {
     try {
-      if (JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name === "@deepseek-ai/dsh") return dir;
-    } catch { /* 无 manifest / 非 JSON：继续向上 */ }
+      if (JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name === "@deepseek-ai/dsh")
+        return dir;
+    } catch {
+      /* 无 manifest / 非 JSON：继续向上 */
+    }
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;

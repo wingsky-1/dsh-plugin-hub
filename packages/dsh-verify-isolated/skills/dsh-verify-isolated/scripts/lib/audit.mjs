@@ -109,13 +109,19 @@ export function scanSnapshot(root, opts = {}) {
   const skipDeep = opts.skipDeep ?? [];
   const walk = (dir, rel) => {
     let dirents;
-    try { dirents = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    try {
+      dirents = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
     for (const d of dirents) {
       const childRel = rel === "" ? d.name : `${rel}/${d.name}`;
       const childPath = resolve(dir, d.name);
       if (d.isSymbolicLink()) {
         let target = null;
-        try { target = readlinkSync(childPath); } catch {}
+        try {
+          target = readlinkSync(childPath);
+        } catch {}
         entries.set(childRel, { type: "symlink", linkTarget: target });
         continue; // 不跟随 symlink（防逃逸核心：快照不读链接目标内容）
       }
@@ -125,7 +131,9 @@ export function scanSnapshot(root, opts = {}) {
         walk(childPath, childRel);
       } else if (d.isFile()) {
         let st = null;
-        try { st = lstatSync(childPath); } catch {}
+        try {
+          st = lstatSync(childPath);
+        } catch {}
         entries.set(childRel, {
           type: "file",
           size: st?.size ?? 0,
@@ -166,7 +174,10 @@ export function diffAgainstWhitelist(t0, t1, whitelist) {
   for (const [rel, e1] of t1.entries) {
     if (isWl(rel)) continue;
     const e0 = t0.entries.get(rel);
-    if (!e0) { added.push({ path: rel, type: e1.type }); continue; }
+    if (!e0) {
+      added.push({ path: rel, type: e1.type });
+      continue;
+    }
     if (isModified(e0, e1)) modified.push({ path: rel, type: e1.type });
   }
   for (const [rel, e0] of t0.entries) {
@@ -224,9 +235,13 @@ export function runAudit({ t0, t1, isolatedRoot, whitelist = WHITELIST }) {
   });
   const escapePaths = new Set(escapes.map((s) => s.path));
   const suspicious = [
-    ...diff.added.filter((x) => !escapePaths.has(x.path)).map((x) => ({ path: x.path, type: "新增" })),
+    ...diff.added
+      .filter((x) => !escapePaths.has(x.path))
+      .map((x) => ({ path: x.path, type: "新增" })),
     ...diff.removed.map((x) => ({ path: x.path, type: "删除" })),
-    ...diff.modified.filter((x) => !escapePaths.has(x.path)).map((x) => ({ path: x.path, type: "修改" })),
+    ...diff.modified
+      .filter((x) => !escapePaths.has(x.path))
+      .map((x) => ({ path: x.path, type: "修改" })),
     ...escapes.map((s) => ({
       path: s.path,
       type: "越界 symlink",

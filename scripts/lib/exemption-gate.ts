@@ -82,9 +82,7 @@ export function hasExemptionMarker(tsLines, lineIdx, mark) {
  * （测试用 homedir 锁默认路径契约是合法的，不该被判据命中）。
  */
 export function isScannedSourceFile(name) {
-  return (
-    /\.(ts|tsx|mts|mjs)$/.test(name) && !/\.d\.(ts|mts)$/.test(name) && !/\.test\./.test(name)
-  );
+  return /\.(ts|tsx|mts|mjs)$/.test(name) && !/\.d\.(ts|mts)$/.test(name) && !/\.test\./.test(name);
 }
 
 /** 列出 `packages/` 下以 prefix 开头的包目录名（读不到 packages 目录时抛出，由调用方 fail-closed）。 */
@@ -183,7 +181,8 @@ export function loadLedger(path, gate) {
 
 /** 合法豁免的回显文本：临时条目带 reviewBy，长期条目如实说明。 */
 function legitDetail(entry) {
-  const due = entry.reviewBy === undefined ? "（长期条目，无 reviewBy）" : `（reviewBy ${entry.reviewBy}）`;
+  const due =
+    entry.reviewBy === undefined ? "（长期条目，无 reviewBy）" : `（reviewBy ${entry.reviewBy}）`;
   return `登记豁免 ${entry.trackingIssue}${due}`;
 }
 

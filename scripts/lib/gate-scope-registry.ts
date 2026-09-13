@@ -43,8 +43,7 @@ export function loadScopeRegistry(path) {
   if (!Array.isArray(json.gates)) throw new Error(`范围注册表缺 gates 数组（${path}）`);
   const gates = new Map();
   for (const item of json.gates) {
-    if (item === null || typeof item !== "object")
-      throw new Error("范围注册表 gates 含非对象项");
+    if (item === null || typeof item !== "object") throw new Error("范围注册表 gates 含非对象项");
     if (typeof item.gate !== "string" || item.gate.length === 0)
       throw new Error(`范围注册表条目缺 gate：${JSON.stringify(item).slice(0, 120)}`);
     if (typeof item.script !== "string" || item.script.length === 0)
@@ -68,7 +67,8 @@ export function loadScopeRegistry(path) {
 /** packages 字段形态：`"<prefix>*"` 通配，或非空包名数组。 */
 function isPackageScope(value) {
   if (typeof value === "string") return value.endsWith(WILDCARD_SUFFIX) && value.length > 1;
-  if (Array.isArray(value)) return value.length > 0 && value.every((v) => typeof v === "string" && v.length > 0);
+  if (Array.isArray(value))
+    return value.length > 0 && value.every((v) => typeof v === "string" && v.length > 0);
   return false;
 }
 
@@ -100,8 +100,6 @@ function resolvePackages(root, gate, entry) {
   try {
     return listPackageNames(root, prefix);
   } catch (e) {
-    throw new Error(
-      `${gate} 的范围无法解析：读取 ${join(root, "packages")} 失败（${e.message}）`,
-    );
+    throw new Error(`${gate} 的范围无法解析：读取 ${join(root, "packages")} 失败（${e.message}）`);
   }
 }

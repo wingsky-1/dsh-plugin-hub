@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-'use strict'
+"use strict";
 
 /**
  * catalog-peers-lib — catalog ↔ peer/devDeps 一致性校验（纯逻辑库，可单测）。
@@ -12,49 +12,60 @@
  * 本库把「收敛后不再漂移」变成机器约束。
  *
  * 零新增依赖：yaml 只解析本文件自用的两个顶层段（受限子集，非通用 YAML 解析器）。
- * 该文件由本仓独占维护，其格式受本门禁约束，故不做通用性兜底。
+ * 受限子集里唯一必须与形态解耦的是标量引号：pnpm-workspace.yaml 在 Prettier 格式化面内，
+ * 引号写法（单引号/双引号/不加）归格式化器决定，解析器只认结构、不认引号形态。
  */
-import { readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
-const OFFICIAL_SCOPE = '@deepseek-ai/'
-const DEP_FIELDS = ['peerDependencies', 'devDependencies', 'dependencies']
+const OFFICIAL_SCOPE = "@deepseek-ai/";
+const DEP_FIELDS = ["peerDependencies", "devDependencies", "dependencies"];
+
+/** 剥掉 YAML 标量两侧的成对引号（单/双均可）；未加引号时原样返回。 */
+function unquote(scalar) {
+  const quote = scalar[0];
+  if ((quote === "'" || quote === '"') && scalar.length >= 2 && scalar.endsWith(quote)) {
+    return scalar.slice(1, -1);
+  }
+  return scalar;
+}
 
 /** 解析顶层 `catalog:` 段的 name → version。 */
 export function parseCatalog(yamlText) {
-  const catalog = new Map()
-  let inSection = false
-  for (const line of yamlText.split('\n')) {
+  const catalog = new Map();
+  let inSection = false;
+  for (const line of yamlText.split("\n")) {
     if (/^catalog:\s*$/.test(line)) {
-      inSection = true
-      continue
+      inSection = true;
+      continue;
     }
     // 顶层键（非缩进行）终止当前段
-    if (/^[A-Za-z]/.test(line)) inSection = false
-    if (!inSection) continue
-    const m = /^ {2}'([^']+)':\s*(\S+)\s*$/.exec(line)
-    if (m) catalog.set(m[1], m[2])
+    if (/^[A-Za-z]/.test(line)) inSection = false;
+    if (!inSection) continue;
+    const m = /^ {2}(\S+):\s*(\S+)\s*$/.exec(line);
+    if (m) catalog.set(unquote(m[1]), unquote(m[2]));
   }
-  return catalog
+  return catalog;
 }
 
 /** 解析顶层 `minimumReleaseAgeExclude:` 段的包名集（剥离 @version 后缀）。 */
 export function parseReleaseExclude(yamlText) {
-  const names = new Set()
-  let inSection = false
-  for (const line of yamlText.split('\n')) {
+  const names = new Set();
+  let inSection = false;
+  for (const line of yamlText.split("\n")) {
     if (/^minimumReleaseAgeExclude:\s*$/.test(line)) {
-      inSection = true
-      continue
+      inSection = true;
+      continue;
     }
-    if (/^[A-Za-z]/.test(line)) inSection = false
-    if (!inSection) continue
-    const m = /^ {2}- '([^']+)'\s*$/.exec(line)
-    if (!m) continue
-    const at = m[1].lastIndexOf('@')
-    names.add(at > 0 ? m[1].slice(0, at) : m[1])
+    if (/^[A-Za-z]/.test(line)) inSection = false;
+    if (!inSection) continue;
+    const m = /^ {2}- (\S+)\s*$/.exec(line);
+    if (!m) continue;
+    const name = unquote(m[1]);
+    const at = name.lastIndexOf("@");
+    names.add(at > 0 ? name.slice(0, at) : name);
   }
-  return names
+  return names;
 }
 
 /**
@@ -62,34 +73,36 @@ export function parseReleaseExclude(yamlText) {
  * catalog 每个键都要在供应链豁免清单里登记。
  */
 export function checkCatalogPeers(root) {
-  const yamlText = readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8')
-  const catalog = parseCatalog(yamlText)
-  const excluded = parseReleaseExclude(yamlText)
-  const problems = []
-  let officialPeerCount = 0
+  const yamlText = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8");
+  const catalog = parseCatalog(yamlText);
+  const excluded = parseReleaseExclude(yamlText);
+  const problems = [];
+  let officialPeerCount = 0;
 
-  const pkgDirs = readdirSync(join(root, 'packages'), { withFileTypes: true })
-    .filter((e) => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'node_modules')
+  const pkgDirs = readdirSync(join(root, "packages"), { withFileTypes: true })
+    .filter((e) => e.isDirectory() && !e.name.startsWith(".") && e.name !== "node_modules")
     .map((e) => e.name)
-    .sort()
+    .sort();
 
   for (const dir of pkgDirs) {
-    let pkg
+    let pkg;
     try {
-      pkg = JSON.parse(readFileSync(join(root, 'packages', dir, 'package.json'), 'utf8'))
+      pkg = JSON.parse(readFileSync(join(root, "packages", dir, "package.json"), "utf8"));
     } catch {
-      continue
+      continue;
     }
     for (const field of DEP_FIELDS) {
-      const deps = pkg[field]
-      if (deps === undefined || deps === null || typeof deps !== 'object') continue
+      const deps = pkg[field];
+      if (deps === undefined || deps === null || typeof deps !== "object") continue;
       for (const [name, spec] of Object.entries(deps)) {
-        if (!name.startsWith(OFFICIAL_SCOPE)) continue
-        if (field === 'peerDependencies') officialPeerCount++
-        if (spec !== 'catalog:') {
-          problems.push(`${dir}: ${field}["${name}"] = "${spec}" —— 官方包一律写 catalog:`)
+        if (!name.startsWith(OFFICIAL_SCOPE)) continue;
+        if (field === "peerDependencies") officialPeerCount++;
+        if (spec !== "catalog:") {
+          problems.push(`${dir}: ${field}["${name}"] = "${spec}" —— 官方包一律写 catalog:`);
         } else if (!catalog.has(name)) {
-          problems.push(`${dir}: ${field}["${name}"] 用了 catalog: 但 pnpm-workspace.yaml 无此 catalog 条目`)
+          problems.push(
+            `${dir}: ${field}["${name}"] 用了 catalog: 但 pnpm-workspace.yaml 无此 catalog 条目`,
+          );
         }
       }
     }
@@ -97,12 +110,14 @@ export function checkCatalogPeers(root) {
 
   for (const name of catalog.keys()) {
     if (!excluded.has(name)) {
-      problems.push(`catalog["${name}"] 未登记进 minimumReleaseAgeExclude（供应链豁免清单与事实源漂移）`)
+      problems.push(
+        `catalog["${name}"] 未登记进 minimumReleaseAgeExclude（供应链豁免清单与事实源漂移）`,
+      );
     }
   }
 
   const lines = [
     `catalog ${catalog.size} 键 | 官方 peer ${officialPeerCount} 处 | 豁免清单 ${excluded.size} 条`,
-  ]
-  return { lines, problems, catalogSize: catalog.size, officialPeerCount }
+  ];
+  return { lines, problems, catalogSize: catalog.size, officialPeerCount };
 }

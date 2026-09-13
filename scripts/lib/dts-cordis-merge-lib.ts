@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-'use strict'
+"use strict";
 
 /**
  * dts-cordis-merge-lib — 「cordis 声明合并必须在包入口声明闭包内」判据（#733 宪法第 3 条）。
@@ -29,15 +29,18 @@
  * re-export 可达，消费方程序内同样生效。只判「直接出现」会把这种正确形态误判为红。
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { dirname, join, relative, sep } from 'node:path'
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, relative, sep } from "node:path";
 
 /** 合并的目标模块：本仓消费方依赖的宿主类型面（cordis 服务/事件声明合并）。 */
-export const CORDIS_MODULE = '@deepseek-ai/cordis'
+export const CORDIS_MODULE = "@deepseek-ai/cordis";
 
-const MERGE_RE = new RegExp(`declare\\s+module\\s+["']${CORDIS_MODULE.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}["']`, 'u')
+const MERGE_RE = new RegExp(
+  `declare\\s+module\\s+["']${CORDIS_MODULE.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}["']`,
+  "u",
+);
 // 相对说明符的三种写法：`from "./x.js"`、`import("./x.js")`、副作用 `import "./x.js"`。
-const REL_SPEC_RE = /(?:from|import)\s*\(?\s*["'](\.[^"']*)["']/gu
+const REL_SPEC_RE = /(?:from|import)\s*\(?\s*["'](\.[^"']*)["']/gu;
 
 /**
  * 递归枚举目录下全部 `.ts` / `.tsx` 文件（含 `.d.ts`）。
@@ -45,16 +48,19 @@ const REL_SPEC_RE = /(?:from|import)\s*\(?\s*["'](\.[^"']*)["']/gu
  * @returns {string[]} 绝对路径列表（目录不存在时为空）
  */
 function collectTsFiles(dir) {
-  const out = []
+  const out = [];
   const visit = (cur) => {
     for (const entry of readdirSync(cur, { withFileTypes: true })) {
-      const abs = join(cur, entry.name)
-      if (entry.isDirectory()) { visit(abs); continue }
-      if (/\.tsx?$/u.test(entry.name)) out.push(abs)
+      const abs = join(cur, entry.name);
+      if (entry.isDirectory()) {
+        visit(abs);
+        continue;
+      }
+      if (/\.tsx?$/u.test(entry.name)) out.push(abs);
     }
-  }
-  if (existsSync(dir) && statSync(dir).isDirectory()) visit(dir)
-  return out
+  };
+  if (existsSync(dir) && statSync(dir).isDirectory()) visit(dir);
+  return out;
 }
 
 /**
@@ -64,7 +70,7 @@ function collectTsFiles(dir) {
  * @returns {string[]} 命中文件列表
  */
 export function srcDeclaresCordisMerge(srcDir) {
-  return collectTsFiles(srcDir).filter((f) => MERGE_RE.test(readFileSync(f, 'utf8')))
+  return collectTsFiles(srcDir).filter((f) => MERGE_RE.test(readFileSync(f, "utf8")));
 }
 
 /**
@@ -74,13 +80,13 @@ export function srcDeclaresCordisMerge(srcDir) {
  * @returns {string[]} 候选绝对路径（按优先级）
  */
 function dtsCandidates(fromFile, spec) {
-  const base = join(dirname(fromFile), spec)
-  if (base.endsWith('.d.ts')) return [base]
-  const out = []
-  const stem = base.replace(/\.(?:js|mjs|cjs|jsx|ts|tsx)$/u, '')
-  if (stem !== base) out.push(`${stem}.d.ts`)
-  out.push(`${base}.d.ts`, join(base, 'index.d.ts'))
-  return out
+  const base = join(dirname(fromFile), spec);
+  if (base.endsWith(".d.ts")) return [base];
+  const out = [];
+  const stem = base.replace(/\.(?:js|mjs|cjs|jsx|ts|tsx)$/u, "");
+  if (stem !== base) out.push(`${stem}.d.ts`);
+  out.push(`${base}.d.ts`, join(base, "index.d.ts"));
+  return out;
 }
 
 /**
@@ -91,20 +97,23 @@ function dtsCandidates(fromFile, spec) {
  * @returns {string[]} 闭包内文件绝对路径（含入口自身）
  */
 export function collectDtsClosure(entryDts) {
-  const seen = new Set()
-  const stack = [entryDts]
+  const seen = new Set();
+  const stack = [entryDts];
   while (stack.length > 0) {
-    const file = stack.pop()
-    if (seen.has(file) || !existsSync(file)) continue
-    seen.add(file)
-    const text = readFileSync(file, 'utf8')
+    const file = stack.pop();
+    if (seen.has(file) || !existsSync(file)) continue;
+    seen.add(file);
+    const text = readFileSync(file, "utf8");
     for (const m of text.matchAll(REL_SPEC_RE)) {
       for (const cand of dtsCandidates(file, m[1])) {
-        if (existsSync(cand)) { stack.push(cand); break }
+        if (existsSync(cand)) {
+          stack.push(cand);
+          break;
+        }
       }
     }
   }
-  return [...seen]
+  return [...seen];
 }
 
 /**
@@ -113,8 +122,8 @@ export function collectDtsClosure(entryDts) {
  * @returns {{ hit: boolean, files: string[] }} hit 与命中的声明文件列表
  */
 export function closureDeclaresCordisMerge(entryDts) {
-  const files = collectDtsClosure(entryDts).filter((f) => MERGE_RE.test(readFileSync(f, 'utf8')))
-  return { hit: files.length > 0, files }
+  const files = collectDtsClosure(entryDts).filter((f) => MERGE_RE.test(readFileSync(f, "utf8")));
+  return { hit: files.length > 0, files };
 }
 
 /**
@@ -124,9 +133,9 @@ export function closureDeclaresCordisMerge(entryDts) {
  * @returns {string[]} 注册的服务名列表（空 = 未注册服务）
  */
 export function detectCordisServiceProvide(libIndexJs) {
-  if (!existsSync(libIndexJs)) return []
-  const text = readFileSync(libIndexJs, 'utf8')
-  return [...text.matchAll(/\.provide\(\s*["'`]([^"'`\n]+)["'`]/gu)].map((m) => m[1])
+  if (!existsSync(libIndexJs)) return [];
+  const text = readFileSync(libIndexJs, "utf8");
+  return [...text.matchAll(/\.provide\(\s*["'`]([^"'`\n]+)["'`]/gu)].map((m) => m[1]);
 }
 
 /**
@@ -136,27 +145,41 @@ export function detectCordisServiceProvide(libIndexJs) {
  * @returns {{ applicable: boolean, problem: string | null, detail: string }} applicable=false 表示本包不提供 cordis 服务（不适用）
  */
 export function checkCordisMergeReachability(pkgDir, libDir) {
-  const rel = (f) => relative(pkgDir, f).split(sep).join('/')
-  const srcHits = srcDeclaresCordisMerge(join(pkgDir, 'src'))
-  const provided = detectCordisServiceProvide(join(libDir, 'index.js'))
+  const rel = (f) => relative(pkgDir, f).split(sep).join("/");
+  const srcHits = srcDeclaresCordisMerge(join(pkgDir, "src"));
+  const provided = detectCordisServiceProvide(join(libDir, "index.js"));
   if (srcHits.length === 0 && provided.length === 0) {
-    return { applicable: false, problem: null, detail: 'src 未声明 cordis 合并、产物未注册 cordis 服务（不适用）' }
+    return {
+      applicable: false,
+      problem: null,
+      detail: "src 未声明 cordis 合并、产物未注册 cordis 服务（不适用）",
+    };
   }
-  const why = []
-  if (provided.length > 0) why.push(`产物经 ctx.provide 注册服务（${provided.join(', ')}）`)
-  if (srcHits.length > 0) why.push(`src 内含 declare module "${CORDIS_MODULE}"（${srcHits.map(rel).join(', ')}）`)
-  const entry = join(libDir, 'index.d.ts')
+  const why = [];
+  if (provided.length > 0) why.push(`产物经 ctx.provide 注册服务（${provided.join(", ")}）`);
+  if (srcHits.length > 0)
+    why.push(`src 内含 declare module "${CORDIS_MODULE}"（${srcHits.map(rel).join(", ")}）`);
+  const entry = join(libDir, "index.d.ts");
   if (!existsSync(entry)) {
-    return { applicable: true, problem: `缺 lib/index.d.ts（${why.join('；')}，声明合并无法随包发布）`, detail: entry }
+    return {
+      applicable: true,
+      problem: `缺 lib/index.d.ts（${why.join("；")}，声明合并无法随包发布）`,
+      detail: entry,
+    };
   }
-  const { hit } = closureDeclaresCordisMerge(entry)
+  const { hit } = closureDeclaresCordisMerge(entry);
   if (hit) {
-    return { applicable: true, problem: null, detail: '声明合并可达（lib/index.d.ts 相对 import 闭包内命中）' }
+    return {
+      applicable: true,
+      problem: null,
+      detail: "声明合并可达（lib/index.d.ts 相对 import 闭包内命中）",
+    };
   }
   return {
     applicable: true,
-    problem: `声明合并不可达：${why.join('；')}，但 lib/index.d.ts 的相对 import 闭包内零命中`
-      + '（消费方按包名导入时 ctx 服务合并与 Events 事件合并全部失类型；把合并写进包入口 .ts，或让入口 re-export 承载它的域文件）',
+    problem:
+      `声明合并不可达：${why.join("；")}，但 lib/index.d.ts 的相对 import 闭包内零命中` +
+      "（消费方按包名导入时 ctx 服务合并与 Events 事件合并全部失类型；把合并写进包入口 .ts，或让入口 re-export 承载它的域文件）",
     detail: entry,
-  }
+  };
 }

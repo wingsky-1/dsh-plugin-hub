@@ -32,7 +32,8 @@ function parseViewport(raw, name) {
 
 function parseDpr(raw) {
   // 文案与判据必须一致：下限是「大于 0」，写成「0-8」会让 0 被拒看起来像 bug
-  const invalid = () => new Error(`错误: --dpr 需要大于 0 且不超过 ${MAX_DPR} 的数（可带小数）: ${raw}`);
+  const invalid = () =>
+    new Error(`错误: --dpr 需要大于 0 且不超过 ${MAX_DPR} 的数（可带小数）: ${raw}`);
   if (!/^\d+(\.\d+)?$/.test(raw)) throw invalid();
   const n = Number(raw);
   if (!(n > 0) || n > MAX_DPR) throw invalid();

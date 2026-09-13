@@ -136,7 +136,8 @@ test("ci.yml: filter 失败 fallback 全量切片（fail-closed 双闸）", () =
     "Compute hit packages 必须注入 BASE_SET",
   );
   assert.ok(
-    CI_MATRIX.includes("filterOutcome !== 'success'"),
+    // 引号形态归 Prettier（ci-matrix.mjs 在格式化面内），判据不绑引号
+    /filterOutcome !== ["']success["']/.test(CI_MATRIX),
     "ci-matrix 内部必须在 filter outcome failure/非 success 时触发全量切片 fallback",
   );
   assert.ok(/按全量处理/.test(CI), "diff base 不可用时按全量处理（F4）");
@@ -435,7 +436,8 @@ test("#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ 
     "mutation-plan.mjs 必须以 stryker.conf.d/ 目录为段清单的单一事实源（新增配置自动纳入）",
   );
   assert.ok(
-    planSrc.includes("startsWith('dsh-')"),
+    // 引号形态归 Prettier（mutation-plan.mjs 在格式化面内），判据不绑引号
+    /startsWith\(["']dsh-["']\)/.test(planSrc),
     "mutation-plan.mjs 的段清单口径必须与 ci-matrix / mutation-gate 同源（dsh- 前缀 + .json 后缀）",
   );
 

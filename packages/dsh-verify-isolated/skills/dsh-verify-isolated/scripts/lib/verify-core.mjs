@@ -44,8 +44,12 @@ export async function poll(fn, timeoutMs, intervalMs = 200) {
 /** 进程存活判断（kill(pid, 0) 探测，browser-driver 同款）。 */
 export function pidAlive(pid) {
   if (!pid) return false;
-  try { process.kill(pid, 0); return true; }
-  catch { return false; }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** 等待进程退出（超时返回是否已退出；browser-driver waitPidExit 同款）。 */

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-'use strict'
+"use strict";
 
 /**
  * export-faces-lib — 包导出面「分类登记」准入判据（#733 宪法第 3 条 / M2-3.5）。
@@ -26,10 +26,10 @@
  * docs/DEVELOPMENT.md 的准入段与 export-surface-snapshot.mjs 的门禁自述里。
  */
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from "node:fs";
 
 /** 三类面（#733 宪法第 3 条：包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面）。 */
-export const EXPORT_FACES = ['安装面', '配置面', '契约面']
+export const EXPORT_FACES = ["安装面", "配置面", "契约面"];
 
 /**
  * 读取分类登记文件（缺失即抛——登记文件是判据的输入，不能静默降级为「无约束」）。
@@ -37,13 +37,13 @@ export const EXPORT_FACES = ['安装面', '配置面', '契约面']
  * @returns {{ package?: string, faces: Record<string, string>, legacy: string[] }}
  */
 export function loadExportFaces(path) {
-  if (!existsSync(path)) throw new Error(`导出面分类登记文件不存在：${path}`)
-  const parsed = JSON.parse(readFileSync(path, 'utf8'))
+  if (!existsSync(path)) throw new Error(`导出面分类登记文件不存在：${path}`);
+  const parsed = JSON.parse(readFileSync(path, "utf8"));
   return {
     package: parsed.package,
-    faces: parsed.faces && typeof parsed.faces === 'object' ? parsed.faces : {},
+    faces: parsed.faces && typeof parsed.faces === "object" ? parsed.faces : {},
     legacy: Array.isArray(parsed.legacy) ? parsed.legacy : [],
-  }
+  };
 }
 
 /**
@@ -52,29 +52,39 @@ export function loadExportFaces(path) {
  * @returns {string[]} 违规描述列表（空 = 合规）
  */
 export function checkExportFaces(input) {
-  const { exports: exportNames, faces, legacy, registryPath = 'scripts/data/<pkg>-export-faces.json' } = input
-  const problems = []
-  const exportSet = new Set(exportNames)
-  const legacySet = new Set(legacy)
+  const {
+    exports: exportNames,
+    faces,
+    legacy,
+    registryPath = "scripts/data/<pkg>-export-faces.json",
+  } = input;
+  const problems = [];
+  const exportSet = new Set(exportNames);
+  const legacySet = new Set(legacy);
 
-  if (legacySet.size !== legacy.length) problems.push('legacy 含重复项')
+  if (legacySet.size !== legacy.length) problems.push("legacy 含重复项");
   if (legacy.length === 0 && Object.keys(faces).length === 0) {
-    problems.push('登记文件既无 faces 也无 legacy——判据退化为「无约束」，拒绝放行')
+    problems.push("登记文件既无 faces 也无 legacy——判据退化为「无约束」，拒绝放行");
   }
   for (const name of legacy) {
-    if (!exportSet.has(name)) problems.push(`legacy 含已不存在的导出符号：${name}（符号退役后须一并从 legacy 移除）`)
+    if (!exportSet.has(name))
+      problems.push(`legacy 含已不存在的导出符号：${name}（符号退役后须一并从 legacy 移除）`);
   }
   for (const [name, face] of Object.entries(faces)) {
     if (!EXPORT_FACES.includes(face)) {
-      problems.push(`faces["${name}"] 的分类「${face}」不在三类面内（合法值：${EXPORT_FACES.join(' / ')}）`)
+      problems.push(
+        `faces["${name}"] 的分类「${face}」不在三类面内（合法值：${EXPORT_FACES.join(" / ")}）`,
+      );
     }
-    if (legacySet.has(name)) problems.push(`符号 ${name} 同时登记在 faces 与 legacy（二者互斥）`)
-    if (!exportSet.has(name)) problems.push(`faces 含已不存在的导出符号：${name}`)
+    if (legacySet.has(name)) problems.push(`符号 ${name} 同时登记在 faces 与 legacy（二者互斥）`);
+    if (!exportSet.has(name)) problems.push(`faces 含已不存在的导出符号：${name}`);
   }
   for (const name of exportNames) {
     if (faces[name] === undefined && !legacySet.has(name)) {
-      problems.push(`新增导出未分类登记：${name}（必须落进 ${EXPORT_FACES.join(' / ')} 之一，写进 ${registryPath} 的 faces）`)
+      problems.push(
+        `新增导出未分类登记：${name}（必须落进 ${EXPORT_FACES.join(" / ")} 之一，写进 ${registryPath} 的 faces）`,
+      );
     }
   }
-  return problems
+  return problems;
 }

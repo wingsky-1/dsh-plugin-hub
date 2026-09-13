@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-'use strict'
+"use strict";
 
 /**
  * exports-types-lib — `package.json` 的 `exports[].types` → 产物相对路径 映射（单一实现）。
@@ -17,11 +17,11 @@
  *     对应 `.d.ts` 上（门禁自跑 `tsc --declaration`，与是否已 build 无关）。
  */
 
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 /** 发布物内产物目录前缀（`exports[].types` 的约定根）。 */
-export const LIB_PREFIX = './lib/'
+export const LIB_PREFIX = "./lib/";
 
 /**
  * 读取 package.json 的 exports 中「带 types 条件」的子路径条目。
@@ -30,23 +30,23 @@ export const LIB_PREFIX = './lib/'
  * @returns {{ subpath: string, types: string }[]} 按子路径字典序（判定面顺序稳定）
  */
 export function listExportTypesEntries(pkgRoot) {
-  const pkgJsonPath = join(pkgRoot, 'package.json')
-  if (!existsSync(pkgJsonPath)) throw new Error(`package.json 不存在：${pkgJsonPath}`)
-  const parsed = JSON.parse(readFileSync(pkgJsonPath, 'utf8'))
-  const exportsField = parsed.exports
-  if (exportsField === undefined) return []
+  const pkgJsonPath = join(pkgRoot, "package.json");
+  if (!existsSync(pkgJsonPath)) throw new Error(`package.json 不存在：${pkgJsonPath}`);
+  const parsed = JSON.parse(readFileSync(pkgJsonPath, "utf8"));
+  const exportsField = parsed.exports;
+  if (exportsField === undefined) return [];
   // fail-loud：不认识的 exports 形态不得静默退化为「零子路径 = 全合规」
-  if (typeof exportsField !== 'object' || exportsField === null || Array.isArray(exportsField)) {
-    throw new Error(`${pkgJsonPath} 的 exports 不是对象形态，无法解析子路径 types`)
+  if (typeof exportsField !== "object" || exportsField === null || Array.isArray(exportsField)) {
+    throw new Error(`${pkgJsonPath} 的 exports 不是对象形态，无法解析子路径 types`);
   }
-  const entries = []
+  const entries = [];
   for (const [subpath, value] of Object.entries(exportsField)) {
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
-    if (typeof value.types !== 'string') continue
-    entries.push({ subpath, types: value.types })
+    if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
+    if (typeof value.types !== "string") continue;
+    entries.push({ subpath, types: value.types });
   }
-  entries.sort((a, b) => (a.subpath < b.subpath ? -1 : a.subpath > b.subpath ? 1 : 0))
-  return entries
+  entries.sort((a, b) => (a.subpath < b.subpath ? -1 : a.subpath > b.subpath ? 1 : 0));
+  return entries;
 }
 
 /**
@@ -56,9 +56,9 @@ export function listExportTypesEntries(pkgRoot) {
  *   不静默丢弃。
  */
 export function stripLibPrefix(typesField) {
-  if (typeof typesField !== 'string' || !typesField.startsWith(LIB_PREFIX)) return null
-  const rel = typesField.slice(LIB_PREFIX.length)
-  return rel.length === 0 ? null : rel
+  if (typeof typesField !== "string" || !typesField.startsWith(LIB_PREFIX)) return null;
+  const rel = typesField.slice(LIB_PREFIX.length);
+  return rel.length === 0 ? null : rel;
 }
 
 /**
@@ -67,15 +67,15 @@ export function stripLibPrefix(typesField) {
  * @returns {string[]} 违规描述列表（空 = 合规）
  */
 export function checkExportTypesResolvable(pkgRoot) {
-  const problems = []
+  const problems = [];
   for (const { subpath, types } of listExportTypesEntries(pkgRoot)) {
-    if (existsSync(join(pkgRoot, types))) continue
-    const rel = stripLibPrefix(types)
+    if (existsSync(join(pkgRoot, types))) continue;
+    const rel = stripLibPrefix(types);
     problems.push(
       rel === null
         ? `exports["${subpath}"].types 不在 ${LIB_PREFIX} 下（无法定位产物）：${types}`
         : `exports["${subpath}"].types 指向不存在的文件：${types}`,
-    )
+    );
   }
-  return problems
+  return problems;
 }
