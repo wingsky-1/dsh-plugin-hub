@@ -9,8 +9,6 @@
  */
 import assert from "node:assert/strict";
 
-export { assert };
-
 /** 伪造 node:http res：捕获 writeHead / end，供断言状态码与响应体。 */
 export function fakeRes() {
   const state = { status: 200, headers: {}, body: "", destroyed: false, writableEnded: false };

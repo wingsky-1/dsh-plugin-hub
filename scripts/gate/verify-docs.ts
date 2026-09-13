@@ -26,6 +26,7 @@
  *
  * 用法：node scripts/gate/verify-docs.ts [--strict-en]
  */
+import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -41,6 +42,31 @@ const AGENT_ROOT = ((): string => {
   return v !== undefined && v !== "" ? v : ROOT;
 })();
 const failures: string[] = [];
+
+/** .gitignore 排除面（#707 第 3 项）：草稿目录与构建产物不进扫描面。
+ *  为什么要这一层：`.maintenance-drafts/` 是本地草稿（19 个 .md），里面的命令引用常常
+ *  先于实现出现，扫它会让**本地**门禁对临时文档判红——执行者据此就无法把这闸当可靠绿灯，
+ *  而它在 CI 上又是绿的（草稿不入库），形成「本地红、CI 绿」的分裂。
+ *  为什么问 git 而不是自己解析 .gitignore：否定模式、目录与文件规则的优先级、子目录
+ *  .gitignore 的叠加都由 git 解释，复刻一份必然与真实忽略面漂移。取 `-o -i`（未跟踪且被忽略）
+ *  而非仅 `-i`：**已跟踪**的、恰好命中忽略规则的文件仍必须扫（忽略规则对已入库文件无效）。
+ *  git 不可用（非 git 检出、fixture 临时根）时按「没有忽略面」放行——本闸不额外承担
+ *  「git 是否存在」这条判据。 */
+const IGNORED_PATHS = ((): Set<string> => {
+  const out = new Set<string>();
+  const res = spawnSync(
+    "git",
+    ["ls-files", "-z", "-o", "-i", "--exclude-standard", "--directory"],
+    { cwd: AGENT_ROOT, encoding: "utf8" },
+  );
+  if (res.status !== 0 || typeof res.stdout !== "string") return out;
+  for (const rel of res.stdout.split("\0")) {
+    // `--directory` 给目录加尾斜杠，而 path.join('/a', 'b/') **保留**尾斜杠（不是去掉）——
+    // 不剥掉它，集合里就是 `<root>/drafts/`，与遍历时的 `<root>/drafts` 永不相等。
+    if (rel !== "") out.add(join(AGENT_ROOT, rel.replace(/\/+$/, "")));
+  }
+  return out;
+})();
 
 const isRelLink = (t: string): boolean => /^\.{1,2}\//.test(t);
 // 提取 markdown 中的相对链接目标（[t](target) 与 [t]: target 引用）
@@ -66,6 +92,7 @@ function walkAgentDocs(dir: string, out: string[], inSkills = false): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === "node_modules" || entry.name === ".git") continue;
     const full = join(dir, entry.name);
+    if (IGNORED_PATHS.has(full)) continue;
     const isSkillsDir = inSkills || (entry.name === "skills" && dir.endsWith(sep + ".dsh"));
     if (entry.isDirectory()) walkAgentDocs(full, out, isSkillsDir);
     else if (entry.name === "AGENTS.md" || inSkills || full.startsWith(join(AGENT_ROOT, "agents")))
@@ -97,6 +124,7 @@ function walkDocFiles(dir: string, out: string[]): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === "node_modules" || entry.name === ".git") continue;
     const full = join(dir, entry.name);
+    if (IGNORED_PATHS.has(full)) continue;
     if (entry.isDirectory()) walkDocFiles(full, out);
     else if (entry.name.endsWith(".md") && !full.includes("release-notes")) out.push(full);
   }

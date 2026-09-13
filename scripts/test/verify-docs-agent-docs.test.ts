@@ -21,8 +21,10 @@ import { spawnSync } from "node:child_process";
 const ROOT = join(import.meta.dirname, "../..");
 const GATE = join(ROOT, "scripts/gate/verify-docs.ts");
 
-/** 构造最小 fixture 仓库：packages/dsh-fake 一个包 + 可选 agent 规则文件。 */
-function fixture({ agentFiles = {} } = {}) {
+/** 构造最小 fixture 仓库：packages/dsh-fake 一个包 + 可选 agent 规则文件。
+ *  gitInit 为真时把 fixture 变成真实 git 仓并写入 gitignore——忽略面的判定由 git 给出，
+ *  不建仓就测不到「被忽略即跳过」这条路径。 */
+function fixture({ agentFiles = {}, gitignore } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "verify-docs-agent-"));
   mkdirSync(join(dir, "packages/dsh-fake"), { recursive: true });
   writeFileSync(join(dir, "packages/dsh-fake/README.md"), "# fake\n");
@@ -34,6 +36,11 @@ function fixture({ agentFiles = {} } = {}) {
     const p = join(dir, rel);
     mkdirSync(join(p, ".."), { recursive: true });
     writeFileSync(p, content);
+  }
+  if (gitignore !== undefined) {
+    writeFileSync(join(dir, ".gitignore"), gitignore);
+    const r = spawnSync("git", ["init", "-q"], { cwd: dir, encoding: "utf8" });
+    assert.equal(r.status, 0, `fixture 建仓失败：${r.stderr}`);
   }
   return dir;
 }
@@ -59,6 +66,26 @@ test("正例：裸相对路径全部有效 → exit 0，且计入扫描计数", 
   assert.equal(r.status, 0, r.stderr);
   // 3 个 agent 规则文档：根 AGENTS.md + skill + agents/_protocol.md（docs/DEVELOPMENT.md 不算）
   assert.match(r.stdout, /\+ 3 个 agent 规则文档/);
+});
+
+test("#707 第 3 项：gitignore 的草稿目录不进扫描面（草稿里的假命令不再判红）", () => {
+  const dir = fixture({
+    agentFiles: { "drafts/note.md": "草稿：稍后要加 `pnpm nonexistent-draft-cmd`。\n" },
+    gitignore: "drafts/\n",
+  });
+  const r = run(dir);
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /nonexistent-draft-cmd/);
+});
+
+test("#707 第 3 项反证：同一仓库里**未被忽略**的草稿照样判红（跳过由 git 忽略面决定）", () => {
+  const dir = fixture({
+    agentFiles: { "drafts/note.md": "草稿：稍后要加 `pnpm nonexistent-draft-cmd`。\n" },
+    gitignore: "# 不覆盖 drafts/\n",
+  });
+  const r = run(dir);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /drafts\/note\.md: 引用了不存在的 pnpm 命令 nonexistent-draft-cmd/);
 });
 
 test("反例：根 AGENTS.md 的**裸相对路径**失效 → exit 1（README 面认不出的形态）", () => {

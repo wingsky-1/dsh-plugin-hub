@@ -6,8 +6,6 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-export { assert };
-
 // ---------------------------------------------------------------- 时序工具（#315 批次 A）
 //
 // 防 flake 纪律（docs/DEVELOPMENT.md §5 + issue #315）：
