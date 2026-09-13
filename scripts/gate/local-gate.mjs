@@ -14,10 +14,10 @@
  *
  * 注意 pr/full 两档都是**全仓**对象面，与 CI 的「PR 默认增量」不同——本文件只把增量留给
  * changed 快线（CI 的增量由 paths-filter 切片承担，本地没有 PR 上下文可切）。因此本地 pr
- * ≈ CI 的 gate:full 减去覆盖率与变异（那两项归夜间）。
+ * ≈ CI 的 gate:full 减去覆盖率与变异。
  *
- * 必须全量的东西（全仓产物闸、覆盖率、变异）不在 PR 口径里：它们归 CI 夜间班次
- * （observe.yml），本地只在 --with-coverage 时按需补覆盖率。
+ * 本地不跑变异（#742 阶段 3.2 起更要点明）：变异自 #742 阶段 1 起在 PR 上按命中切片**强制**
+ * 跑，本地三档都覆盖不到它；覆盖率与全仓产物闸归 gate:full 标签与夜间 observe.yml。
  * 包面归属的唯一事实源是 ci.yml 的 filters 块（见 local-scope.mjs），本脚本不重述路径规则。
  *
  * 用法：
@@ -317,6 +317,15 @@ function main(argv) {
   const failed = results.some((r) => r.code !== 0);
   if (skipped > 0) console.log(`[local-gate] 因首个失败跳过 ${skipped} 步`);
   console.log(failed ? "[local-gate] 结果：FAIL" : "[local-gate] 结果：PASS");
+  if (!failed) {
+    // #742 阶段 3.2：本地三档都不跑变异，而 PR 上变异自 #742 阶段 1 起按命中切片**强制**跑
+    // （打不打 gate:full 标签都跑）。不点明的话「本地 PASS」很容易被读成「CI 也会绿」，
+    // 而这正是本地门禁最贵的一种误读——变异不达标只在 CI 上暴露。
+    console.log(
+      "[local-gate] 注意：本档不含变异与全仓覆盖率。变异在 PR 上按命中切片强制跑（#742 阶段 1），" +
+        "覆盖率与全仓产物闸归 gate:full 标签与夜间 observe.yml —— 本地 PASS 不等于 CI 绿。",
+    );
+  }
   return failed ? 1 : 0;
 }
 

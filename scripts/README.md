@@ -9,7 +9,8 @@
 
 ## ci/（CI 切片与矩阵派生）
 
-- `ci/ci-matrix.mjs` — CI 矩阵派生（#722）：从 `ci.yml` filters 的包面算 build / test / typecheck 的实例清单与空切片哨兵项（包面归属的唯一事实源仍是 `ci.yml`，本文件不重述路径规则）。
+- `ci/ci-matrix.mjs` — CI 矩阵派生（#722）：从 `ci.yml` filters 的包面算 build / test / typecheck 的实例清单与空切片哨兵项（包面归属的唯一事实源仍是 `ci.yml`，本文件不重述路径规则）；#742 起另为每个变异 combo 派生逐段超时（复用 `gate/mutation-plan.mjs` 的台账公式）与 `invalidateBaseline`。
+- `ci/changed-test-packages.mjs` — 本次 diff 里 `packages/<pkg>/test/**` 有变更的包清单（#742 阶段 1.7）：Stryker 的 static mutant 无覆盖信息、测试变更对它们不可见，命中包改了测试就主动失效该包基线（维护者裁决 3）。口径 = `BASE...HEAD` 三点 diff + `--no-renames`。
 
 ## build/（构建流水线，每个插件包 build 都会跑）
 

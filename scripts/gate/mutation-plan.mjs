@@ -74,6 +74,20 @@ export function fullScopePeaks(ledger) {
   return peaks;
 }
 
+/**
+ * 读台账并返回全量实测峰值（Map）；台账文件缺失时返回空 Map（全部回退默认超时）。
+ *
+ * 为什么导出读盘入口而不是让调用方各自解析：PR 矩阵（scripts/ci/ci-matrix.mjs）与夜间矩阵
+ * 必须用**同一套**「台账 + 峰值 + 公式」派生超时。两处各写一份必然漂移，而超时漂移的代价是
+ * 长段擦边被杀（run 34628767342 的 dsh-notifier · config 跑到 1819s 被 30 分钟固定值砍掉）。
+ * 台账存在但不可解析时抛出：调用方 fail-closed，与 main() 的 exit 2 同源。
+ */
+export function loadFullScopePeaks(rootDir = ROOT) {
+  const p = join(rootDir, "scripts", "data", "mutation-segment-ledger.json");
+  if (!existsSync(p)) return new Map();
+  return fullScopePeaks(JSON.parse(readFileSync(p, "utf8")));
+}
+
 /** 单段超时（分钟）：有全量实测则按其放大 + 构建开销，否则取保守默认；一律不低于下限。 */
 export function timeoutForSegment(seg, peaks) {
   const measured = peaks.get(seg);
