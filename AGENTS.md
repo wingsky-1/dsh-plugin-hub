@@ -83,9 +83,10 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
   口径（全仓产物闸、全仓覆盖率分母、全量变异基线）留夜间；高风险改动打 `gate:full` 标签
   在 PR 上补跑（方案见 #722）。
 - 结论里**逐条粘贴实际 exit code**；任一非 0 不得声称完成。
-- 新增 `homedir()` / `process.env.HOME` / `untildify()` 调用走**双源豁免**：`WHITELIST`
-  条目（含 issue 号）+ 调用点紧邻 `// dsh-gate:allow-homedir #<issue> <理由>`，缺一判红
-  （见 `scripts/gate/forbid-homedir-src.mjs`）。
+- 新增 `homedir()` / `process.env.HOME` / `untildify()` 调用走**双源豁免**：
+  `scripts/data/gate-exemptions.json` 的条目（`gate` 为 `forbid-homedir-src`，含 issue 号）
+  + 调用点紧邻 `// dsh-gate:allow-homedir #<issue> <理由>`，缺一判红
+  （见 `scripts/gate/forbid-homedir-src.mjs`；豁免是**数据**不是代码，门禁不得内嵌豁免常量）。
 - 质量指标 `pnpm cov` / `pnpm crap`。阈值事实源按维度分处：**覆盖率**在
   `vitest.config.ts` 的 `coverage.thresholds`（#722 阶段三起；降线由
   `scripts/gate/threshold-monotonic.mjs` 对比 `origin/main` 拦截），**变异与 CRAP** 在

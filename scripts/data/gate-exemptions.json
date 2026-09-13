@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "路径受限门禁的临时豁免台账（#733 计划项 3.1.2）。单一事实源：门禁不得再内嵌豁免常量。reviewBy 是到期提示，在到期机制落地（#733 计划项 3.2）前只随判红信息与 OK 汇总打印、不触发判红；到期语义与续期通道见该计划项。",
+  "note": "路径受限门禁的豁免台账（#733 计划项 3.1.2 / 3.2.2）。单一事实源：门禁不得再内嵌豁免常量（旧 forbid-homedir-src.mjs 的 WHITELIST、config-matrix-gate.ts 的 LAN_PROXY_UI_EXEMPT 均已迁入数据面）。机制实现在 scripts/lib/exemption-gate.ts：条目是**文件级**的，调用点粒度由各门禁的 marker 策略（markerRequired）决定。reviewBy 可选——**有**=临时豁免（自动进入全量门禁档的到期台账，见 scripts/gate/collect-exemptions.mjs 与 #765），**无**=长期条目（设计事实，不是待办）。到期**不判红**（#765 裁决：收集打印 + 汇总 issue，人工处理），因此台账不会在到期日冻结 PR。",
   "exemptions": [
     {
       "gate": "forbid-module-state-src",
@@ -8,6 +8,12 @@
       "reason": "客户端入口迁移自旧 IIFE 包装，保留了 22 处模块级 var（真实模块级可变状态）。判据口径源自 #733 宪法第 1 条（宿主端状态收进闭包/实例），客户端业务改动不在本轮重写范围，故按登记豁免而非留在判据外——旧实现靠「顶格」形态把它们排除在判据之外，是一个缩进一格即可绕过的静默缺口。与 ESLint 侧 tools/lint/eslint.config.js 对 packages/*/src/client/** 的 no-var:off 是同一条存量债，收口时两处一并删除。",
       "trackingIssue": "#762",
       "reviewBy": "2027-03-31"
+    },
+    {
+      "gate": "forbid-homedir-src",
+      "path": "packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts",
+      "reason": "expandHomePath 的其余形态分支（#87）：行首裸 `~` / `~/` 已在上一行改走 shared/dsh-home.js 的 userHome() 接缝，落到 untildify(p) 的是 `~user`、绝对路径与相对路径——untildify 只展开行首裸 `~`，对这些形态原样返回、不读 home 值。豁免的是「调用 untildify 这一形态本身会被判据命中」，属 DSH_HOME 域之外的显式透传。长期条目：该分支若要彻底移出判据，得由 provider-usage 自己把这一行去掉（届时本条目随反向腐烂校验一并删除），不是到期复核事项。",
+      "trackingIssue": "#87"
     }
   ]
 }
