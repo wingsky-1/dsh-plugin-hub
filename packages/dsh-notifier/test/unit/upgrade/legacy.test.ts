@@ -1,13 +1,16 @@
 /**
- * dsh-notifier upgrade 域 legacy 块 —— 存量设置的读取（V1：官方 settings 命名空间 / V0：自建 JSON 文件）。
+ * dsh-notifier upgrade 域 legacy 块 —— 存量设置的读取（V1：宿主 settings 文档 / 服务面，V0：自建 JSON 文件）。
  *
  * 判据面：这一块决定升级后用户看到的是**哪一份设置**。取错顺序（V0 盖 V1）或漏做语义转换的表现都是
  * 「升级后设置回到了更早的样子」，而磁盘上一切正常、没有任何报错。故这里逐条锁优先级与转换规则。
+ *
+ * 一条专门的判据面：**未注册命名空间也要读得到**（`describe()` 只列已注册的，而本插件不再注册它）。
  */
 import { existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { legacyFile } from "../../../src/server/shared/interface.ts";
+import { legacyFile, settingsDocument } from "../../../src/server/shared/interface.ts";
 import { readLegacySettings } from "../../../src/server/upgrade/impl/legacy/index.ts";
 import type { LegacySettingsFace } from "../../../src/server/upgrade/impl/legacy/type.ts";
 import { tempDshHome, wire } from "../../helpers.ts";
@@ -34,14 +37,26 @@ afterEach(() => {
   home.dispose();
 });
 
-/** 假 settings 读面：`describe` 给固定条目，或按需抛错（服务在但调用失败）。 */
-function makeSettings(entries: readonly FakeDescriptor[], throws = false): LegacySettingsFace {
+/** 假 settings 读面：`describe` 给固定条目（或按需抛错），`documentPath` 指向宿主文档（缺省 = provider 没有文件）。 */
+function makeSettings(
+  entries: readonly FakeDescriptor[],
+  throws = false,
+  documentPath?: string,
+): LegacySettingsFace {
   return {
     describe: () => {
       if (throws) throw new Error("settings 服务拒绝了这次调用");
       return entries as unknown as ReturnType<LegacySettingsFace["describe"]>;
     },
+    documentPath,
   };
+}
+
+/** 写一份宿主 settings 文档（默认 YAML 形态，与官方文件型 provider 一致）。 */
+function writeDocument(text: string, name = "settings.yaml"): string {
+  const path = join(home.dir, name);
+  writeFileSync(path, text, "utf8");
+  return path;
 }
 
 /** 写一份 V0 配置文件（旧的自建 JSON）。 */
@@ -79,6 +94,7 @@ describe("读取优先级：V1 优先，V0 兜底", () => {
           LegacySettingsFace["describe"]
         >;
       },
+      documentPath: undefined,
     };
 
     expect(readLegacySettings(settings)).toEqual({ notifyAsk: false });
@@ -112,6 +128,56 @@ describe("读取优先级：V1 优先，V0 兜底", () => {
 
   it("两份来源都没有时给空对象（它就是「没有可迁的东西」的答案）", () => {
     expect(readLegacySettings(makeSettings([]))).toEqual({});
+  });
+});
+
+describe("宿主文档文件：未注册命名空间的存量也读得到", () => {
+  it("describe 里没有本插件命名空间（新架构不注册它）时，文档里的分节照样读出来", () => {
+    const doc = writeDocument("dsh-notifier:\n  notifyTaskDone: false\n");
+    // 这正是本块存在的理由：服务面只列已注册的命名空间，文档那条路必须自己把存量读出来。
+    expect(readLegacySettings(makeSettings([], false, doc))).toEqual({ notifyTaskDone: false });
+  });
+
+  it("provider 没自报路径时按 DSH home 下的 settings.yaml 兜底", () => {
+    writeFileSync(settingsDocument("settings.yaml"), "dsh-notifier:\n  customKey: 42\n", "utf8");
+    expect(readLegacySettings(makeSettings([]))).toEqual({ customKey: 42 });
+  });
+
+  it("文档是 JSON 时同样能读（官方 provider 支持 .json 扩展名）", () => {
+    writeFileSync(settingsDocument("settings.json"), `{"${NS}":{"notifyAsk":true}}`, "utf8");
+    expect(readLegacySettings(makeSettings([]))).toEqual({ notifyAsk: true });
+  });
+
+  it("文档与服务面都有时以文档为准（它是用户提交的原始层，服务面给的是解析值）", () => {
+    const doc = writeDocument("dsh-notifier:\n  notifyAsk: false\n");
+    const settings = makeSettings([{ ns: NS, user: { notifyAsk: true } }], false, doc);
+    expect(readLegacySettings(settings)).toEqual({ notifyAsk: false });
+  });
+
+  it("文档解释不了时回退服务面与 V0（坏文件、缺分节、分节不是对象都不能把存量吃掉）", () => {
+    const broken = [
+      "dsh-notifier:\n\tnotifyAsk: false\n",
+      "other-plugin:\n  notifyAsk: false\n",
+      'dsh-notifier: "不是对象"\n',
+    ];
+    for (const [index, text] of broken.entries()) {
+      const doc = writeDocument(text, `broken-${index}.yaml`);
+      expect(
+        readLegacySettings(makeSettings([{ ns: NS, user: { notifyAsk: true } }], false, doc)),
+      ).toEqual({ notifyAsk: true });
+    }
+  });
+
+  it("文档来源同样做语义转换：装配键剔除、旧全局音效键摊到两个出口", () => {
+    const doc = writeDocument(
+      "dsh-notifier:\n  enabled: true\n  configFile: /legacy/config.json\n  notifySound: false\n  notifyTaskDone: false\n",
+    );
+    expect(readLegacySettings(makeSettings([], false, doc))).toEqual({
+      notifySound: false,
+      notifyTaskDone: false,
+      browserSound: false,
+      systemSound: false,
+    });
   });
 });
 

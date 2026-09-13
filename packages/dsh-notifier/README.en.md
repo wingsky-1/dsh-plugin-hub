@@ -131,7 +131,10 @@ storage directory** (`<DSH_HOME>/@wingsky-1/dsh-notifier/config.json`, `~/.dsh` 
 written through the plugin card under Settings → Plugins → dsh-notifier or via
 `GET/PUT /api/dsh-notifier/config`. On upgrade the **legacy locations are read once during
 assembly, and the shape is migrated along the way**: the 0.2.3 official settings namespace
-`dsh-notifier` takes precedence (old files are not rewritten during migration), falling back to
+`dsh-notifier` takes precedence, read **straight from the host settings document file** (the
+`documentPath` the provider reports, falling back to `<DSH_HOME>/settings.yaml` and
+`settings.json`; `.yaml`/`.yml` are parsed as YAML) because `describe()` only lists **registered**
+namespaces and the plugin stops registering this one in 0.2.4; falling back to
 the older self-maintained `dsh-notifier.json` (DSH_HOME root, including the `.migrated.bak` left
 by an earlier migration); what is read is merged into the current `config.json` (legacy values
 override the file, the same precedence the old write path used), and the 8 top-level channel keys

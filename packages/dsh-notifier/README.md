@@ -119,10 +119,12 @@ context filter checks」）。取舍如下（issue #290）：
 （`<DSH_HOME>/@wingsky-1/dsh-notifier/config.json`，默认 `~/.dsh`），经
 「设置 → 插件 → dsh-notifier」卡片或 `GET/PUT /api/dsh-notifier/config` 读写。
 升级时**装配期读一次旧位置，并顺手割接成新形态**：0.2.3 的官方 settings 命名空间
-`dsh-notifier` 优先，更早的自建 `dsh-notifier.json`（DSH_HOME 根目录，含此前迁移留下的
-`.migrated.bak`）回退；读到的存量与当前 `config.json` 合并（存量覆盖文件，与旧写面同序），
-再把 8 个顶层渠道键搬进 `channels` 的两条内置条目并**删除旧键**（见「每通道三个开关」）。
-此后只有 `config.json` 一个读写面。
+`dsh-notifier` 优先——它**直接从宿主 settings 文档文件读**（provider 自报的 `documentPath`，
+取不到则按 `<DSH_HOME>/settings.yaml`、`settings.json` 兜底；`.yaml` / `.yml` 按 YAML 解析），
+因为 `describe()` 只列**已注册**的命名空间、而 0.2.4 起本插件不再注册它；更早的自建
+`dsh-notifier.json`（DSH_HOME 根目录，含此前迁移留下的 `.migrated.bak`）回退；读到的存量与
+当前 `config.json` 合并（存量覆盖文件，与旧写面同序），再把 8 个顶层渠道键搬进 `channels`
+的两条内置条目并**删除旧键**（见「每通道三个开关」）。此后只有 `config.json` 一个读写面。
 
 **未知键语义（前向兼容，issue #470）**：dsh-notifier 对配置中**无法识别的键**
 采取「透传保留」策略——读取与写入口径一致，未知键不会被丢弃，也不会被校验

@@ -16,5 +16,6 @@ export {
   VERSION_FILE_NAME,
   legacyFile,
   notifierFile,
+  settingsDocument,
   toastScriptPath,
 } from "./paths.ts";

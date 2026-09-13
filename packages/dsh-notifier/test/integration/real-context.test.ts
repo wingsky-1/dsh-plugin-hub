@@ -213,10 +213,17 @@ function scopeRejecting<K extends keyof Events>(): ScopedThis<K> {
   return { [Context.filter]: () => false } as unknown as ScopedThis<K>;
 }
 
-/** 假 settings 服务：本插件只经 `describe({ redactSecrets })` 读 0.2.3 的存量命名空间。 */
-function fakeSettings(user: Record<string, unknown>): { describe: () => unknown[] } {
+/**
+ * 假 settings 服务：本插件读存量有**两条路**——provider 自报的宿主文档路径（`documentPath`）与已注册命名空间的服务面
+ * （`describe`）。真实宿主里新架构不再注册该命名空间，故 `user` 缺省表示「服务面里没有这一条」，存量只能从文档读到。
+ */
+function fakeSettings(
+  user: Record<string, unknown> | undefined,
+  documentPath?: string,
+): { describe: () => unknown[]; documentPath: string | undefined } {
   return {
-    describe: () => [{ ns: "dsh-notifier", user }],
+    describe: () => (user === undefined ? [] : [{ ns: "dsh-notifier", user }]),
+    documentPath,
   };
 }
 
@@ -293,10 +300,12 @@ let live: Fiber | null = null;
 async function mount(options: {
   config?: { enabled?: boolean };
   settings?: Record<string, unknown>;
+  /** 宿主文档路径：给了它就意味着 provider 是文件型，存量从该文件读（`settings` 缺省时服务面为空）。 */
+  settingsDocument?: string;
   services?: Record<string, unknown>;
 }): Promise<Mounted> {
   const root = new Context();
-  root.provide("settings", fakeSettings(options.settings ?? {}));
+  root.provide("settings", fakeSettings(options.settings, options.settingsDocument));
   for (const [name, value] of Object.entries(options.services ?? {})) root.provide(name, value);
   const warns = captureWarnings(root);
   const host = fakeWebServer(() => ({
@@ -831,6 +840,29 @@ describe("宿主 settings 服务：装配期同步割接存量配置", () => {
     ]);
     // 装配键（configFile）不进新配置：它在旧格式里就属于组合层的启动参数。
     expect("configFile" in stored).toBe(false);
+    await unmount();
+  });
+
+  it("命名空间未注册时也能割接：存量只在宿主文档里（服务面为空），直接读文件把它读出来", async () => {
+    rmSync(versionFile, { force: true });
+    rmSync(configFile, { force: true });
+    const document = join(home.dir, "settings.yaml");
+    writeFileSync(
+      document,
+      "dsh-notifier:\n  notifyTaskDone: false\n  notifySound: false\n",
+      "utf8",
+    );
+    // `settings` 缺省 = 服务面里没有这条命名空间（新架构不注册它）：只有文档那条路读得到存量。
+    const { unmount } = await mount({ settingsDocument: document });
+
+    const stored = JSON.parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
+    expect(stored.notifyTaskDone).toBe(false);
+    // 旧键搬完即删，且装配键不进新配置。
+    expect("notifySound" in stored).toBe(false);
+    expect(stored.channels).toEqual([
+      { type: "browser", id: "browser", sound: false },
+      { type: "system", id: "system", sound: false },
+    ]);
     await unmount();
   });
 

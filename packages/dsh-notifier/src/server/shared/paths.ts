@@ -37,6 +37,12 @@ export function legacyFile(fileName: string): string {
   return join(dshHome(), fileName);
 }
 
+/** 宿主 settings 文档的兜底路径（provider 没自报 `documentPath` 时用）。它与上面的「旧版存储位置」同属
+ * 「旧配置在哪」这一件事，放在一起才不会各自漂移——迁移读空的表现是静默丢设置。 */
+export function settingsDocument(fileName: string): string {
+  return join(dshHome(), fileName);
+}
+
 /** 系统通知脚本（Windows 的 WinRT toast）在本包产物里的位置：它随包分发、不在 DSH home 下，只能从本模块位置反推。 */
 export function toastScriptPath(): string {
   return join(

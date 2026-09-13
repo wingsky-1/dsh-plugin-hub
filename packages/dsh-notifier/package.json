@@ -48,7 +48,8 @@
     "@deepseek-ai/dsh-session-title": "catalog:",
     "@deepseek-ai/dsh-settings": "catalog:",
     "@deepseek-ai/dsh-user-approval": "catalog:",
-    "@deepseek-ai/dsh-user-questions": "catalog:"
+    "@deepseek-ai/dsh-user-questions": "catalog:",
+    "yaml": "^2.9.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "catalog:",
