@@ -44,7 +44,7 @@ import { walkFiles } from "./walk-files.ts";
 export const REGISTRY_REL = join("scripts", "data", "vendored-binaries.json");
 
 /** vendored（第三方副本）登记项必填字段；语义判据由 verifyVendoredBinaries 逐条报 problem。 */
-export const ENTRY_FIELDS = ["path", "sha256", "license", "source", "licenseFile"];
+const ENTRY_FIELDS = ["path", "sha256", "license", "source", "licenseFile"];
 /** first-party（本仓自有二进制资产）只要求哈希绑定：没有第三方许可义务可言。 */
 const FIRST_PARTY_FIELDS = ["path", "sha256"];
 /** 登记项类别：缺省 vendored（第三方副本）。 */
