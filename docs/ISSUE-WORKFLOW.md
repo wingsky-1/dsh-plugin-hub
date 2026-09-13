@@ -65,11 +65,17 @@
    邻接面、跨 ≥2 插件包时，在合并决定前委派上下文独立的 subagent 按
    dsh-plugin-hub-pr-review 精简清单审查 diff，产出发现列表交维护者裁决，
    复核 subagent 不直接改码；小改动跳过本闸。
-6. **PR 关联 issue**（二选一，推荐前者）：
+6. **开 PR 前先对齐主干**：`git fetch && git rebase origin/main`，再开 PR。
+   为什么必须放在**开 PR 之前**而不是合并前：分支保护是 `strict: true`，落后主干时
+   `mergeStateStatus` 会是 `BEHIND`，合并按钮被禁——最终仍要 rebase 一次，但那次 rebase
+   会让**已经跑完的 CI 作废**。本仓 PR 上按命中切片强制跑变异（#742），命中全局面时是
+   32 个矩阵实例，白跑一轮的代价远高于一次秒级 rebase。
+   与下方第 8 条的冲突路径的关系：第 8 条是**已经落后/冲突**时的补救，本条是预防。
+7. **PR 关联 issue**（二选一，推荐前者）：
    - PR 正文写 `Fixes #<编号>` —— merge 后 GitHub 自动关闭 issue；
    - 或 commit message 引用 `(#<编号>)`，merge 后 issue 上会留下 referenced 记录，
      手动关闭。
-7. **收敛与冲突处理**：先查合并状态再看 CI——`gh pr view --json mergeStateStatus`：
+8. **收敛与冲突处理**：先查合并状态再看 CI——`gh pr view --json mergeStateStatus`：
    - `CLEAN` → 等 CI 全绿即可；
    - checks 未触发/缺失 → 先确认 mergeState 不是 `BLOCKED(CONFLICTING)`，再考虑等待
      或手动 dispatch（最多一次）；
@@ -77,9 +83,9 @@
      ① `git fetch && git rebase origin/main`；② 解决冲突（保留双方语义，不丢任一方改动）；
      ③ 本地重跑全量门禁；④ `git push --force-with-lease` 回推 PR。
      冲突多源于并行合入的 docs/skill 改动，属正常演进代价，一次 rebase 消化。
-8. **合并即收尾**：CI 全绿后 squash merge（远端分支自动删除）；issue 若未自动关闭
+9. **合并即收尾**：CI 全绿后 squash merge（远端分支自动删除）；issue 若未自动关闭
    则手动关闭并在评论里给出「修复版本号」（发布后回填）。
-9. **重开原 issue 纪律**：合并后若发现**处于同一 issue 范围内**的新不符项 / 验收未全满足
+10. **重开原 issue 纪律**：合并后若发现**处于同一 issue 范围内**的新不符项 / 验收未全满足
    （功能不完整、漏验收子项、或该改动自身带出的同域 bug），应**重开原 issue 继续修**，
    并在原 issue 评论留痕「重开原因 + 后续 PR 号」，**不另开 follow-up issue**；
    仅当偏离项**确属跨领域 / 独立课题**（不同包、不同主题、不同层）时才另开新 issue 跟踪。
