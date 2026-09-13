@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-'use strict'
+"use strict";
 
 /**
  * verify-dir-imports S0（#690 A 轨）回归测试：叶子粒度 / deps.ts 判据 / 单调基线 /
@@ -19,239 +19,403 @@
  * 不在仓库内造包目录（产物零污染纪律）。断言同时校验 exit code 与输出计数——
  * `node --test` 零匹配也会 exit 0，只看 exit code 会假绿。
  */
-import { test } from 'node:test'
-import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
-const ROOT = join(import.meta.dirname, '..', '..')
-const SCRIPT = join(ROOT, 'scripts', 'gate', 'verify-dir-imports.mjs')
-const PKG = 'fixture-pkg'
-const SRC = `packages/${PKG}/src`
+const ROOT = join(import.meta.dirname, "..", "..");
+const SCRIPT = join(ROOT, "scripts", "gate", "verify-dir-imports.mjs");
+const PKG = "fixture-pkg";
+const SRC = `packages/${PKG}/src`;
 
 /** 在隔离根下造任意相对路径文件，返回根路径（调用方负责清理）。 */
 function makeFixtureRoot(files) {
-  const root = mkdtempSync(join(tmpdir(), 'verify-dir-imports-s0-'))
+  const root = mkdtempSync(join(tmpdir(), "verify-dir-imports-s0-"));
   for (const [rel, content] of Object.entries(files)) {
-    const full = join(root, rel)
-    mkdirSync(dirname(full), { recursive: true })
-    writeFileSync(full, content)
+    const full = join(root, rel);
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, content);
   }
-  return root
+  return root;
 }
 
 /** 对 fixture 根跑脚本，返回 { status, out }。 */
 function runOn(root, args = []) {
-  const env = { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root }
+  const env = { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root };
   // 外部若设了基线路径，会与 fixture 自己的基线串味（残留风险），显式清掉。
-  delete env.VERIFY_DIR_IMPORTS_BASELINE
-  const r = spawnSync(process.execPath, [SCRIPT, '--package', PKG, ...args], { env, encoding: 'utf8' })
-  return { status: r.status, out: `${r.stdout ?? ''}${r.stderr ?? ''}` }
+  delete env.VERIFY_DIR_IMPORTS_BASELINE;
+  const r = spawnSync(process.execPath, [SCRIPT, "--package", PKG, ...args], {
+    env,
+    encoding: "utf8",
+  });
+  return { status: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
 
 /** 三域链式依赖体（a → b → c），`prefix` 决定平铺还是移入分组层。 */
 function chainFixture(prefix) {
-  const p = prefix === '' ? '' : `${prefix}/`
+  const p = prefix === "" ? "" : `${prefix}/`;
   return {
     [`${SRC}/${p}a/interface.ts`]: `export { A } from "./impl.ts";\nexport { B } from "../b/interface.ts";\n`,
-    [`${SRC}/${p}a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/${p}a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/${p}b/interface.ts`]: `export { B } from "./impl.ts";\nexport { C } from "../c/interface.ts";\n`,
-    [`${SRC}/${p}b/impl.ts`]: 'export const B = 2;\n',
+    [`${SRC}/${p}b/impl.ts`]: "export const B = 2;\n",
     [`${SRC}/${p}c/interface.ts`]: 'export { C } from "./impl.ts";\n',
-    [`${SRC}/${p}c/impl.ts`]: 'export const C = 3;\n',
-  }
+    [`${SRC}/${p}c/impl.ts`]: "export const C = 3;\n",
+  };
 }
 
-test('叶子粒度：三域平铺与移入分组层 src/server/ 报出相同模块数与值边数', () => {
-  const flat = makeFixtureRoot(chainFixture(''))
-  const nested = makeFixtureRoot(chainFixture('server'))
+test("叶子粒度：三域平铺与移入分组层 src/server/ 报出相同模块数与值边数", () => {
+  const flat = makeFixtureRoot(chainFixture(""));
+  const nested = makeFixtureRoot(chainFixture("server"));
   try {
-    const a = runOn(flat)
-    const b = runOn(nested)
-    assert.equal(a.status, 0, `平铺形态应 PASS，实际 ${a.status}：\n${a.out}`)
-    assert.equal(b.status, 0, `分组层形态应 PASS，实际 ${b.status}：\n${b.out}`)
-    assert.match(a.out, /叶子模块 3 个、值边 2 条/, `平铺应报 3 模块 / 2 值边：\n${a.out}`)
-    assert.match(b.out, /叶子模块 3 个、值边 2 条/, `分组层不得退化（旧实现退化为 1 目录 / 0 值边）：\n${b.out}`)
+    const a = runOn(flat);
+    const b = runOn(nested);
+    assert.equal(a.status, 0, `平铺形态应 PASS，实际 ${a.status}：\n${a.out}`);
+    assert.equal(b.status, 0, `分组层形态应 PASS，实际 ${b.status}：\n${b.out}`);
+    assert.match(a.out, /叶子模块 3 个、值边 2 条/, `平铺应报 3 模块 / 2 值边：\n${a.out}`);
+    assert.match(
+      b.out,
+      /叶子模块 3 个、值边 2 条/,
+      `分组层不得退化（旧实现退化为 1 目录 / 0 值边）：\n${b.out}`,
+    );
     // 退化证据：顶层域历史口径下分组层形态确实归零（这正是修复前的门禁盲区），
     // 而门禁口径不受影响——两条断言必须同时成立才说明粒度修正真的生效。
-    assert.match(a.out, /历史对照（顶层域口径，已退出门禁）：值边 2 条/, `平铺顶层口径应为 2 条：\n${a.out}`)
-    assert.match(b.out, /历史对照（顶层域口径，已退出门禁）：值边 0 条/, `分组层顶层口径应退化为 0：\n${b.out}`)
+    assert.match(
+      a.out,
+      /历史对照（顶层域口径，已退出门禁）：值边 2 条/,
+      `平铺顶层口径应为 2 条：\n${a.out}`,
+    );
+    assert.match(
+      b.out,
+      /历史对照（顶层域口径，已退出门禁）：值边 0 条/,
+      `分组层顶层口径应退化为 0：\n${b.out}`,
+    );
     // 模块 id 保留分组层路径（分组层透明，不吞掉层级）。
-    const graphed = runOn(nested, ['--graph'])
-    assert.match(graphed.out, /server\/a/, `分组层模块 id 应保留完整路径：\n${graphed.out}`)
-    assert.doesNotMatch(graphed.out, /^  (a|b|c) /m, `不得把分组层当模块：\n${graphed.out}`)
+    const graphed = runOn(nested, ["--graph"]);
+    assert.match(graphed.out, /server\/a/, `分组层模块 id 应保留完整路径：\n${graphed.out}`);
+    assert.doesNotMatch(graphed.out, /^  (a|b|c) /m, `不得把分组层当模块：\n${graphed.out}`);
   } finally {
-    rmSync(flat, { recursive: true, force: true })
-    rmSync(nested, { recursive: true, force: true })
+    rmSync(flat, { recursive: true, force: true });
+    rmSync(nested, { recursive: true, force: true });
   }
-})
+});
 
-test('deps.ts 判据：跨模块引用他域 deps.ts 放行（D-2 出口面）', () => {
+test("deps.ts 判据：跨模块引用他域 deps.ts 放行（D-2 出口面）", () => {
   const root = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/a/deps.ts`]: 'export type { A } from "./interface.ts";\n',
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
     [`${SRC}/b/impl.ts`]: 'import { A } from "../a/deps.ts";\nexport const B = A;\n',
-  })
+  });
   try {
-    const { status, out } = runOn(root)
-    assert.equal(status, 0, `引用他域 deps.ts 应放行（exit 0），实际 ${status}：\n${out}`)
-    assert.match(out, /叶子模块 2 个、值边 1 条/, `应报 2 模块 / 1 值边：\n${out}`)
+    const { status, out } = runOn(root);
+    assert.equal(status, 0, `引用他域 deps.ts 应放行（exit 0），实际 ${status}：\n${out}`);
+    assert.match(out, /叶子模块 2 个、值边 1 条/, `应报 2 模块 / 1 值边：\n${out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('deps.ts 判据：跨模块直引他域实现文件仍判红（无基线 fail-closed）', () => {
+test("deps.ts 判据：跨模块直引他域实现文件仍判红（无基线 fail-closed）", () => {
   const root = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
     [`${SRC}/b/impl.ts`]: 'import { A } from "../a/impl.ts";\nexport const B = A;\n',
-  })
+  });
   try {
-    const { status, out } = runOn(root)
-    assert.equal(status, 1, `直引他域实现文件应判红（exit 1），实际 ${status}：\n${out}`)
-    assert.match(out, /跨模块引用必须走目标模块 interface\.ts\/deps\.ts/, `应点名规则：\n${out}`)
-    assert.match(out, /b\/impl\.ts → import "\.\.\/a\/impl\.ts"/, `应给出违规点：\n${out}`)
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `直引他域实现文件应判红（exit 1），实际 ${status}：\n${out}`);
+    assert.match(out, /跨模块引用必须走目标模块 interface\.ts\/deps\.ts/, `应点名规则：\n${out}`);
+    assert.match(out, /b\/impl\.ts → import "\.\.\/a\/impl\.ts"/, `应给出违规点：\n${out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('规则 1：跨模块引用落在不含 interface.ts 的目录内判红', () => {
+test("规则 1：跨模块引用落在不含 interface.ts 的目录内判红", () => {
   const root = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
     [`${SRC}/b/impl.ts`]: 'import { X } from "../group/x.ts";\nexport const B = X;\n',
-    [`${SRC}/group/x.ts`]: 'export const X = 1;\n',
-  })
+    [`${SRC}/group/x.ts`]: "export const X = 1;\n",
+  });
   try {
-    const { status, out } = runOn(root)
-    assert.equal(status, 1, `目标目录缺 interface.ts 应判红，实际 ${status}：\n${out}`)
-    assert.match(out, /目标目录缺少 interface\.ts/, `应点名缺门面：\n${out}`)
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `目标目录缺 interface.ts 应判红，实际 ${status}：\n${out}`);
+    assert.match(out, /目标目录缺少 interface\.ts/, `应点名缺门面：\n${out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('单调基线：写入基线后 PASS，人为把跨域引用计数调高即 exit 1', () => {
-  const files = chainFixture('')
-  const root = makeFixtureRoot(files)
+test("单调基线：写入基线后 PASS，人为把跨域引用计数调高即 exit 1", () => {
+  const files = chainFixture("");
+  const root = makeFixtureRoot(files);
   try {
-    const written = runOn(root, ['--write-baseline'])
-    assert.equal(written.status, 0, `写基线应成功：\n${written.out}`)
-    const before = runOn(root)
-    assert.equal(before.status, 0, `基线写入后应 PASS，实际 ${before.status}：\n${before.out}`)
-    assert.match(before.out, /单调基线通过/, `应报基线通过：\n${before.out}`)
+    const written = runOn(root, ["--write-baseline"]);
+    assert.equal(written.status, 0, `写基线应成功：\n${written.out}`);
+    const before = runOn(root);
+    assert.equal(before.status, 0, `基线写入后应 PASS，实际 ${before.status}：\n${before.out}`);
+    assert.match(before.out, /单调基线通过/, `应报基线通过：\n${before.out}`);
 
     // 人为把计数调高：c 域新增一条跨模块引用（模块级值边与跨模块引用计数同时 +1）。
     // #733 M0b 起该变更同时抬高两个质量型计数（值环 leafModuleCycles/fileCycles 与
     // raLegacy）——本用例只锁结构型红因，质量型红因由下方 M0b 用例专项覆盖。
-    const impl = join(root, `${SRC}/c/impl.ts`)
-    writeFileSync(impl, 'import { A } from "../a/interface.ts";\nexport const C = A;\n')
-    const after = runOn(root)
-    assert.equal(after.status, 1, `计数上升应 exit 1，实际 ${after.status}：\n${after.out}`)
-    assert.match(after.out, /单调基线上升/, `应点名单调基线上升：\n${after.out}`)
-    assert.match(after.out, /\[结构型\] leafValueEdges: 3 > 基线 2/, `应给出具体计数对照：\n${after.out}`)
+    const impl = join(root, `${SRC}/c/impl.ts`);
+    writeFileSync(impl, 'import { A } from "../a/interface.ts";\nexport const C = A;\n');
+    const after = runOn(root);
+    assert.equal(after.status, 1, `计数上升应 exit 1，实际 ${after.status}：\n${after.out}`);
+    assert.match(after.out, /单调基线上升/, `应点名单调基线上升：\n${after.out}`);
+    assert.match(
+      after.out,
+      /\[结构型\] leafValueEdges: 3 > 基线 2/,
+      `应给出具体计数对照：\n${after.out}`,
+    );
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
 /** 读 fixture 根下的基线 JSON（M0b 用例断言 --write-baseline 的实际落库内容）。 */
 function readFixtureBaseline(root) {
-  return JSON.parse(readFileSync(join(root, 'scripts/data/dir-imports-baseline.json'), 'utf8'))
+  return JSON.parse(readFileSync(join(root, "scripts/data/dir-imports-baseline.json"), "utf8"));
 }
 
 /** 制造「结构型 + 质量型同时上升」：c → a 新增跨模块引用（值边 +1，同时成环）。 */
 function addCyclicCrossReference(root) {
-  writeFileSync(join(root, `${SRC}/c/impl.ts`), 'import { A } from "../a/interface.ts";\nexport const C = A;\n')
+  writeFileSync(
+    join(root, `${SRC}/c/impl.ts`),
+    'import { A } from "../a/interface.ts";\nexport const C = A;\n',
+  );
 }
 
-test('--write-baseline 只更新结构型，质量型计数不得被放宽（#733 M0b）', () => {
-  const root = makeFixtureRoot(chainFixture(''))
+test("--write-baseline 只清理质量证据，新增证据不得被写入（#733 后续）", () => {
+  const root = makeFixtureRoot(chainFixture(""));
   try {
-    const first = runOn(root, ['--write-baseline'])
-    assert.equal(first.status, 0, `写基线应成功：\n${first.out}`)
-    // 首次登记路径（旧基线无该包）是质量型**唯一**会被写入的路径，须显式提示并锁住——
+    const first = runOn(root, ["--write-baseline"]);
+    assert.equal(first.status, 0, `写基线应成功：\n${first.out}`);
+    // 首次登记（旧基线无该包 / 数字口径迁移）会按当前事实写入证据，必须显式提示——
     // 否则未来重构可把它变成「静默按当前值写入」＝静默放宽。
-    assert.match(first.out, /质量型首次登记/, `首次写基线应提示质量型首次登记：\n${first.out}`)
-    const before = readFixtureBaseline(root)
-    assert.equal(before.packages[PKG].leafModuleCycles, 0, `fixture 初始无环：${JSON.stringify(before.packages[PKG])}`)
+    assert.match(
+      first.out,
+      /质量证据首次登记 \/ 数字口径迁移/,
+      `首次写基线应提示首次登记：\n${first.out}`,
+    );
+    const before = readFixtureBaseline(root);
+    assert.ok(
+      Array.isArray(before.packages[PKG].quality.leafModuleCycles),
+      `证据应为数组：${JSON.stringify(before.packages[PKG])}`,
+    );
+    assert.deepEqual(
+      before.packages[PKG].quality.leafModuleCycles,
+      [],
+      `fixture 初始无环：${JSON.stringify(before.packages[PKG].quality)}`,
+    );
 
-    addCyclicCrossReference(root)
-    const second = runOn(root, ['--write-baseline'])
-    assert.equal(second.status, 0, `写基线应成功：\n${second.out}`)
-    assert.match(second.out, /结构型计数已更新/, `应报结构型已更新：\n${second.out}`)
-    assert.match(second.out, /质量型未更新，须人工处置/, `应显式提示质量型未更新：\n${second.out}`)
+    addCyclicCrossReference(root);
+    // 结构型变更照常可登记，但新出现的环与边是**新增质量证据**：未经显式接受必须中止写入。
+    const second = runOn(root, ["--write-baseline"]);
+    assert.equal(
+      second.status,
+      1,
+      `新增质量证据时写基线应中止，实际 ${second.status}：\n${second.out}`,
+    );
+    assert.match(second.out, /写基线中止：存在新增质量证据/, `应报中止原因：\n${second.out}`);
+    assert.match(second.out, /leafModuleCycles: a\|b\|c/, `应列出待接受证据：\n${second.out}`);
+    assert.match(second.out, /--accept-quality-new --reason/, `应给显式接受指引：\n${second.out}`);
+    // 中止即不落盘：不留「结构型已登记、质量证据未登记」的半成品。
+    const untouched = readFixtureBaseline(root);
+    assert.deepEqual(
+      untouched.packages[PKG].quality.leafModuleCycles,
+      [],
+      `中止后基线不得被改写：${JSON.stringify(untouched.packages[PKG].quality)}`,
+    );
 
-    const after = readFixtureBaseline(root)
-    // 结构型：随本次结构变更登记（c → a 值边 +1）。
-    assert.equal(after.packages[PKG].leafValueEdges, 3, `结构型应被更新为当前值：${JSON.stringify(after.packages[PKG])}`)
-    // 质量型：保持旧基线值，不被本次写入放宽（含环、raLegacy、未覆盖清单）。
-    assert.equal(after.packages[PKG].leafModuleCycles, 0, `质量型不得被 --write-baseline 放宽：${JSON.stringify(after.packages[PKG])}`)
-    assert.equal(after.packages[PKG].fileCycles, 0, `质量型 fileCycles 不得被放宽：${JSON.stringify(after.packages[PKG])}`)
-    assert.equal(after.packages[PKG].raLegacy, 0, `质量型 raLegacy 不得被放宽：${JSON.stringify(after.packages[PKG])}`)
-    assert.match(second.out, /leafModuleCycles：当前 1 \/ 保持基线 0/, `应列出被保留的质量型差异：\n${second.out}`)
+    // 显式接受通道：理由随条目入库留痕后才允许写入。
+    const accepted = runOn(root, [
+      "--write-baseline",
+      "--accept-quality-new",
+      "--reason",
+      "用例：显式接受新环",
+    ]);
+    assert.equal(accepted.status, 0, `显式接受后应写入成功：\n${accepted.out}`);
+    const after = readFixtureBaseline(root);
+    assert.equal(
+      after.packages[PKG].leafValueEdges,
+      3,
+      `结构型应被更新为当前值：${JSON.stringify(after.packages[PKG])}`,
+    );
+    assert.deepEqual(
+      after.packages[PKG].quality.leafModuleCycles,
+      ["a|b|c"],
+      `接受后的环应入库：${JSON.stringify(after.packages[PKG].quality)}`,
+    );
+    assert.equal(
+      after.$acceptances?.length,
+      3,
+      `三类新增证据各留一条痕：${JSON.stringify(after.$acceptances)}`,
+    );
+    assert.deepEqual(
+      [...after.$acceptances].map((x) => x.metric).sort(),
+      ["fileCycles", "leafModuleCycles", "raLegacy"],
+      `留痕须逐指标记录：${JSON.stringify(after.$acceptances)}`,
+    );
+    for (const entry of after.$acceptances) assert.equal(entry.reason, "用例：显式接受新环");
+    assert.equal(runOn(root).status, 0, "显式接受后应 PASS");
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('质量型计数上升仍判红，且 --write-baseline 不能放行（#733 M0b）', () => {
-  const root = makeFixtureRoot(chainFixture(''))
+test("质量型证据新增仍判红，且 --write-baseline 不放行（#733 后续）", () => {
+  const root = makeFixtureRoot(chainFixture(""));
   try {
-    assert.equal(runOn(root, ['--write-baseline']).status, 0)
-    assert.equal(runOn(root).status, 0, '基线写入后应 PASS')
+    assert.equal(runOn(root, ["--write-baseline"]).status, 0);
+    assert.equal(runOn(root).status, 0, "基线写入后应 PASS");
 
-    addCyclicCrossReference(root)
-    const after = runOn(root)
-    assert.equal(after.status, 1, `质量型上升应 exit 1，实际 ${after.status}：\n${after.out}`)
-    assert.match(after.out, /\[质量型\] leafModuleCycles: 1 > 基线 0/, `应点名模块级值环：\n${after.out}`)
-    assert.match(after.out, /\[质量型\] fileCycles: 1 > 基线 0/, `应点名文件级值环：\n${after.out}`)
-    assert.match(after.out, /\[质量型\] raLegacy: 1 > 基线 0/, `应点名 raLegacy：\n${after.out}`)
+    addCyclicCrossReference(root);
+    const after = runOn(root);
+    assert.equal(after.status, 1, `新增质量证据应 exit 1，实际 ${after.status}：\n${after.out}`);
+    assert.match(
+      after.out,
+      /\[质量型\] leafModuleCycles: 新增未登记证据 a\|b\|c/,
+      `应点名模块级值环：\n${after.out}`,
+    );
+    assert.match(
+      after.out,
+      /\[质量型\] fileCycles: 新增未登记证据/,
+      `应点名文件级值环：\n${after.out}`,
+    );
+    assert.match(
+      after.out,
+      /\[质量型\] raLegacy: 新增未登记证据 c\/impl\.ts\|a\/interface\.ts（value）/,
+      `应点名 raLegacy：\n${after.out}`,
+    );
 
-    // 写基线（只更新结构型）之后必须仍然红：质量型不得经由 --write-baseline 洗白。
-    assert.equal(runOn(root, ['--write-baseline']).status, 0, '写基线本身应成功（结构型登记）')
-    const again = runOn(root)
-    assert.equal(again.status, 1, `--write-baseline 后质量型上升仍应判红，实际 ${again.status}：\n${again.out}`)
-    assert.match(again.out, /\[质量型\] leafModuleCycles: 1 > 基线 0/, `质量型红因须保持：\n${again.out}`)
+    // 未经显式接受，--write-baseline 不得把新增证据洗白（比旧口径更严：旧口径是
+    // 「保持旧值后仍判红」，新口径是「直接拒绝写入」）。
+    const refused = runOn(root, ["--write-baseline"]);
+    assert.equal(
+      refused.status,
+      1,
+      `未经接受写基线应被拒，实际 ${refused.status}：\n${refused.out}`,
+    );
+    assert.match(refused.out, /写基线中止：存在新增质量证据/, `应报中止原因：\n${refused.out}`);
+    assert.equal(runOn(root).status, 1, `拒绝写入后红因须保持：\n${runOn(root).out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('结构型计数上升 → --write-baseline 正常放行（#733 M0b）', () => {
-  const root = makeFixtureRoot(chainFixture(''))
+test("--accept-quality-new 的用法约束：必须与 --write-baseline 同用且附理由（exit 2）", () => {
+  const root = makeFixtureRoot(chainFixture(""));
   try {
-    assert.equal(runOn(root, ['--write-baseline']).status, 0)
-    assert.equal(runOn(root).status, 0, '基线写入后应 PASS')
+    const noWrite = runOn(root, ["--accept-quality-new", "--reason", "缺 --write-baseline"]);
+    assert.equal(
+      noWrite.status,
+      2,
+      `未与 --write-baseline 同用应 exit 2，实际 ${noWrite.status}：\n${noWrite.out}`,
+    );
+    assert.match(noWrite.out, /只能与 --write-baseline 同用/, `应说明用法约束：\n${noWrite.out}`);
+    const noReason = runOn(root, ["--write-baseline", "--accept-quality-new"]);
+    assert.equal(
+      noReason.status,
+      2,
+      `缺 --reason 应 exit 2，实际 ${noReason.status}：\n${noReason.out}`,
+    );
+    assert.match(noReason.out, /必须附 --reason/, `应说明理由必填：\n${noReason.out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("kind 语义：值→类型收口放行并自动采纳，类型→值降级判红（#733 后续）", () => {
+  const implValue = 'import { A } from "../a/interface.ts";\nexport const B = A;\n';
+  const implType = 'import type { A } from "../a/interface.ts";\nexport const B = 1;\n';
+  const root = makeFixtureRoot({
+    [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
+    [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
+    [`${SRC}/b/impl.ts`]: implValue,
+  });
+  try {
+    assert.equal(runOn(root, ["--write-baseline"]).status, 0);
+    assert.deepEqual(
+      readFixtureBaseline(root).packages[PKG].quality.raLegacy,
+      ["b/impl.ts|a/interface.ts|value"],
+      "值引用应作为 value 证据入库",
+    );
+
+    // 收口：同一个跨域引用改成 import type → 改善，放行且写基线时按当前形态自动采纳。
+    writeFileSync(join(root, `${SRC}/b/impl.ts`), implType);
+    const improved = runOn(root);
+    assert.equal(
+      improved.status,
+      0,
+      `value → type 应放行，实际 ${improved.status}：\n${improved.out}`,
+    );
+    assert.match(improved.out, /质量证据改善 1 条/, `应报告改善：\n${improved.out}`);
+    assert.equal(
+      runOn(root, ["--write-baseline"]).status,
+      0,
+      "收口属改善，写基线应成功（无需显式接受）",
+    );
+    assert.deepEqual(
+      readFixtureBaseline(root).packages[PKG].quality.raLegacy,
+      ["b/impl.ts|a/interface.ts|type"],
+      "收口后的形态应被采纳入库",
+    );
+
+    // 降级：改回值引用 → 判红（这条方向才是回归）。
+    writeFileSync(join(root, `${SRC}/b/impl.ts`), implValue);
+    const degraded = runOn(root);
+    assert.equal(
+      degraded.status,
+      1,
+      `type → value 应判红，实际 ${degraded.status}：\n${degraded.out}`,
+    );
+    assert.match(degraded.out, /类型面降级 type → value/, `应点名降级：\n${degraded.out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("结构型计数上升 → --write-baseline 正常放行（#733 M0b）", () => {
+  const root = makeFixtureRoot(chainFixture(""));
+  try {
+    assert.equal(runOn(root, ["--write-baseline"]).status, 0);
+    assert.equal(runOn(root).status, 0, "基线写入后应 PASS");
 
     // 新增一个叶子模块目录（modules / scannedSrcFiles / allSrcTsFiles 上升）。
-    mkdirSync(join(root, `${SRC}/d`), { recursive: true })
-    writeFileSync(join(root, `${SRC}/d/interface.ts`), 'export { D } from "./impl.ts";\n')
-    writeFileSync(join(root, `${SRC}/d/impl.ts`), 'export const D = 4;\n')
+    mkdirSync(join(root, `${SRC}/d`), { recursive: true });
+    writeFileSync(join(root, `${SRC}/d/interface.ts`), 'export { D } from "./impl.ts";\n');
+    writeFileSync(join(root, `${SRC}/d/impl.ts`), "export const D = 4;\n");
 
-    const before = runOn(root)
-    assert.equal(before.status, 1, `结构型上升未登记时应判红，实际 ${before.status}：\n${before.out}`)
-    assert.match(before.out, /\[结构型\] modules: 4 > 基线 3/, `结构型上升应点名：\n${before.out}`)
+    const before = runOn(root);
+    assert.equal(
+      before.status,
+      1,
+      `结构型上升未登记时应判红，实际 ${before.status}：\n${before.out}`,
+    );
+    assert.match(before.out, /\[结构型\] modules: 4 > 基线 3/, `结构型上升应点名：\n${before.out}`);
 
-    const written = runOn(root, ['--write-baseline'])
-    assert.equal(written.status, 0, `--write-baseline 应成功：\n${written.out}`)
-    const after = runOn(root)
-    assert.equal(after.status, 0, `结构型登记后应 PASS，实际 ${after.status}：\n${after.out}`)
-    assert.match(after.out, /单调基线通过/, `应报基线通过：\n${after.out}`)
+    const written = runOn(root, ["--write-baseline"]);
+    assert.equal(written.status, 0, `--write-baseline 应成功：\n${written.out}`);
+    const after = runOn(root);
+    assert.equal(after.status, 0, `结构型登记后应 PASS，实际 ${after.status}：\n${after.out}`);
+    assert.match(after.out, /单调基线通过/, `应报基线通过：\n${after.out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('--graph 死声明（#733 M0a）：deps.ts 只 import type 时不得报死声明（类型面豁免）', () => {
+test("--graph 死声明（#733 M0a）：deps.ts 只 import type 时不得报死声明（类型面豁免）", () => {
   // 语义变化（相对 S0 原断言「deps.ts 声明而本模块无事实边 → 报出」）：原实现把
   // deps.ts 的**类型边**也计入意图图，故该形态报 1 条死声明。M0a 改「值面判死、
   // 类型面豁免」后恒为 0 条——修正目的即此：deps.ts 一旦落地（M1 的 F1 / #690 P1），
@@ -260,162 +424,226 @@ test('--graph 死声明（#733 M0a）：deps.ts 只 import type 时不得报死�
   // import type { HistoryStore }，迁入 deps.ts 后 actual 变空）。
   const root = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
-    [`${SRC}/b/impl.ts`]: 'export const B = 2;\n',
+    [`${SRC}/b/impl.ts`]: "export const B = 2;\n",
     [`${SRC}/b/deps.ts`]: 'import type { A } from "../a/interface.ts";\nexport type BDep = A;\n',
-  })
+  });
   try {
-    const { status, out } = runOn(root, ['--graph'])
-    assert.equal(status, 0, `类型面声明豁免后应 PASS，实际 ${status}：\n${out}`)
-    assert.match(out, /死声明（意图 - 事实，只计 deps\.ts 的值声明）：0 条/, `类型边不得报死声明：\n${out}`)
-    assert.match(out, /deps\.ts 值依赖声明（声明面混入值 import，硬判红）：0 条/, `类型边不得报值依赖：\n${out}`)
+    const { status, out } = runOn(root, ["--graph"]);
+    assert.equal(status, 0, `类型面声明豁免后应 PASS，实际 ${status}：\n${out}`);
+    assert.match(
+      out,
+      /死声明（意图 - 事实，只计 deps\.ts 的值声明）：0 条/,
+      `类型边不得报死声明：\n${out}`,
+    );
+    assert.match(
+      out,
+      /deps\.ts 值依赖声明（声明面混入值 import，硬判红）：0 条/,
+      `类型边不得报值依赖：\n${out}`,
+    );
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('--graph 死声明（#733 M0a）：值面判死——deps.ts 值边无佐证 → 报出，有佐证 → 不报', () => {
+test("--graph 死声明（#733 M0a）：值面判死——deps.ts 值边无佐证 → 报出，有佐证 → 不报", () => {
   const base = {
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
-    [`${SRC}/b/impl.ts`]: 'export const B = 2;\n',
+    [`${SRC}/b/impl.ts`]: "export const B = 2;\n",
     [`${SRC}/b/deps.ts`]: 'import { A } from "../a/interface.ts";\nexport const AFromA = A;\n',
-  }
-  const dead = makeFixtureRoot(base)
+  };
+  const dead = makeFixtureRoot(base);
   // 有事实边：佐证来自**非 deps.ts** 的本模块实现文件（deps.ts 自身不自证）。
   const alive = makeFixtureRoot({
     ...base,
     [`${SRC}/b/impl.ts`]: 'import { A } from "../a/interface.ts";\nexport const B = A;\n',
-  })
+  });
   try {
-    const d = runOn(dead, ['--graph'])
-    assert.match(d.out, /死声明（意图 - 事实，只计 deps\.ts 的值声明）：1 条/, `值声明无事实支撑应报死声明：\n${d.out}`)
-    assert.match(d.out, /b\/deps\.ts → a（值声明有而事实无）/, `应点名死声明来源与目标：\n${d.out}`)
-    const a = runOn(alive, ['--graph'])
-    assert.match(a.out, /死声明（意图 - 事实，只计 deps\.ts 的值声明）：0 条/, `有事实边时不得误报死声明：\n${a.out}`)
+    const d = runOn(dead, ["--graph"]);
+    assert.match(
+      d.out,
+      /死声明（意图 - 事实，只计 deps\.ts 的值声明）：1 条/,
+      `值声明无事实支撑应报死声明：\n${d.out}`,
+    );
+    assert.match(
+      d.out,
+      /b\/deps\.ts → a（值声明有而事实无）/,
+      `应点名死声明来源与目标：\n${d.out}`,
+    );
+    const a = runOn(alive, ["--graph"]);
+    assert.match(
+      a.out,
+      /死声明（意图 - 事实，只计 deps\.ts 的值声明）：0 条/,
+      `有事实边时不得误报死声明：\n${a.out}`,
+    );
   } finally {
-    rmSync(dead, { recursive: true, force: true })
-    rmSync(alive, { recursive: true, force: true })
+    rmSync(dead, { recursive: true, force: true });
+    rmSync(alive, { recursive: true, force: true });
   }
-})
+});
 
-test('deps.ts 值依赖判红（#733 M0a）：声明面混入值 import → exit 1 且提示清晰', () => {
+test("deps.ts 值依赖判红（#733 M0a）：声明面混入值 import → exit 1 且提示清晰", () => {
   const crossModule = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
-    [`${SRC}/b/impl.ts`]: 'export const B = 2;\n',
+    [`${SRC}/b/impl.ts`]: "export const B = 2;\n",
     [`${SRC}/b/deps.ts`]: 'import { A } from "../a/interface.ts";\nexport type BDep = typeof A;\n',
-  })
+  });
   // 同模块值 import 同样是「声明面混入值依赖」：deps.ts 只能声明形状，不得参与运行时。
   const sameModule = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/a/deps.ts`]: 'import { A } from "./impl.ts";\nexport type ADep = typeof A;\n',
-  })
+  });
   try {
-    const c = runOn(crossModule)
-    assert.equal(c.status, 1, `跨模块值 import 应硬判红，实际 ${c.status}：\n${c.out}`)
-    assert.match(c.out, /b\/deps\.ts 出现值 import "\.\.\/a\/interface\.ts"/, `应点名文件与 spec：\n${c.out}`)
-    assert.match(c.out, /deps\.ts 只能声明类型依赖/, `应给出修法提示：\n${c.out}`)
-    const s = runOn(sameModule)
-    assert.equal(s.status, 1, `同模块值 import 同样应判红，实际 ${s.status}：\n${s.out}`)
-    assert.match(s.out, /a\/deps\.ts 出现值 import "\.\/impl\.ts"/, `应点名同模块值 import：\n${s.out}`)
+    const c = runOn(crossModule);
+    assert.equal(c.status, 1, `跨模块值 import 应硬判红，实际 ${c.status}：\n${c.out}`);
+    assert.match(
+      c.out,
+      /b\/deps\.ts 出现值 import "\.\.\/a\/interface\.ts"/,
+      `应点名文件与 spec：\n${c.out}`,
+    );
+    assert.match(c.out, /deps\.ts 只能声明类型依赖/, `应给出修法提示：\n${c.out}`);
+    const s = runOn(sameModule);
+    assert.equal(s.status, 1, `同模块值 import 同样应判红，实际 ${s.status}：\n${s.out}`);
+    assert.match(
+      s.out,
+      /a\/deps\.ts 出现值 import "\.\/impl\.ts"/,
+      `应点名同模块值 import：\n${s.out}`,
+    );
   } finally {
-    rmSync(crossModule, { recursive: true, force: true })
-    rmSync(sameModule, { recursive: true, force: true })
+    rmSync(crossModule, { recursive: true, force: true });
+    rmSync(sameModule, { recursive: true, force: true });
   }
-})
+});
 
-test('--zones：R-A 双口径计数与明细（合法跨域引用：旧口径 2 条 / 新口径 0 条）', () => {
+test("--zones：R-A 双口径计数与明细（合法跨域引用：旧口径 2 条 / 新口径 0 条）", () => {
   const root = makeFixtureRoot({
-    [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\nexport type { TA } from "./types.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
-    [`${SRC}/a/types.ts`]: 'export type TA = number;\n',
+    [`${SRC}/a/interface.ts`]:
+      'export { A } from "./impl.ts";\nexport type { TA } from "./types.ts";\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
+    [`${SRC}/a/types.ts`]: "export type TA = number;\n",
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
     [`${SRC}/b/impl.ts`]:
       'import { A } from "../a/interface.ts";\nimport type { TA } from "../a/interface.ts";\nexport const B: TA = A;\n',
-  })
+  });
   try {
-    const { status, out } = runOn(root, ['--zones'])
-    assert.equal(status, 0, `引用他域 interface.ts 应 PASS，实际 ${status}：\n${out}`)
-    assert.match(out, /R-A 语义切换前（impl → 他域任意文件，旧口径）：2 条（值 1 \/ type 1）/, `旧口径应 2 条：\n${out}`)
-    assert.match(out, /R-A 语义切换后（impl → 他域实现文件，D-2 批准口径）：0 条/, `新口径应 0 条：\n${out}`)
-    assert.match(out, /b\/impl\.ts → a\/interface\.ts \[type\]/, `应列出 type 明细：\n${out}`)
-    assert.match(out, /b\/impl\.ts → a\/interface\.ts \[value\]/, `应列出 value 明细：\n${out}`)
+    const { status, out } = runOn(root, ["--zones"]);
+    assert.equal(status, 0, `引用他域 interface.ts 应 PASS，实际 ${status}：\n${out}`);
+    assert.match(
+      out,
+      /R-A 语义切换前（impl → 他域任意文件，旧口径）：2 条（值 1 \/ type 1）/,
+      `旧口径应 2 条：\n${out}`,
+    );
+    assert.match(
+      out,
+      /R-A 语义切换后（impl → 他域实现文件，D-2 批准口径）：0 条/,
+      `新口径应 0 条：\n${out}`,
+    );
+    assert.match(out, /b\/impl\.ts → a\/interface\.ts \[type\]/, `应列出 type 明细：\n${out}`);
+    assert.match(out, /b\/impl\.ts → a\/interface\.ts \[value\]/, `应列出 value 明细：\n${out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('--zones：impl 直引他域实现文件在新口径下计数为 1', () => {
+test("--zones：impl 直引他域实现文件在新口径下计数为 1", () => {
   const root = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
     [`${SRC}/b/impl.ts`]: 'import { A } from "../a/impl.ts";\nexport const B = A;\n',
-  })
+  });
   try {
-    const { status, out } = runOn(root, ['--zones'])
-    assert.equal(status, 1, `直引实现文件应判红，实际 ${status}：\n${out}`)
-    assert.match(out, /R-A 语义切换前（impl → 他域任意文件，旧口径）：1 条（值 1 \/ type 0）/, `旧口径应 1 条：\n${out}`)
-    assert.match(out, /R-A 语义切换后（impl → 他域实现文件，D-2 批准口径）：1 条/, `新口径应 1 条：\n${out}`)
-    assert.match(out, /b\/impl\.ts → a\/impl\.ts \[value\]/, `应列出违规明细：\n${out}`)
+    const { status, out } = runOn(root, ["--zones"]);
+    assert.equal(status, 1, `直引实现文件应判红，实际 ${status}：\n${out}`);
+    assert.match(
+      out,
+      /R-A 语义切换前（impl → 他域任意文件，旧口径）：1 条（值 1 \/ type 0）/,
+      `旧口径应 1 条：\n${out}`,
+    );
+    assert.match(
+      out,
+      /R-A 语义切换后（impl → 他域实现文件，D-2 批准口径）：1 条/,
+      `新口径应 1 条：\n${out}`,
+    );
+    assert.match(out, /b\/impl\.ts → a\/impl\.ts \[value\]/, `应列出违规明细：\n${out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('--graph：依赖矩阵与扇入扇出报出叶子模块边', () => {
-  const root = makeFixtureRoot(chainFixture(''))
+test("--graph：依赖矩阵与扇入扇出报出叶子模块边", () => {
+  const root = makeFixtureRoot(chainFixture(""));
   try {
-    const { status, out } = runOn(root, ['--graph'])
-    assert.equal(status, 0, `--graph 应 PASS，实际 ${status}：\n${out}`)
-    assert.match(out, /依赖矩阵（行=from 模块，列=to 模块；V=值边 T=type 边 B=两者 \.=无）/, `应有矩阵表头：\n${out}`)
+    const { status, out } = runOn(root, ["--graph"]);
+    assert.equal(status, 0, `--graph 应 PASS，实际 ${status}：\n${out}`);
+    assert.match(
+      out,
+      /依赖矩阵（行=from 模块，列=to 模块；V=值边 T=type 边 B=两者 \.=无）/,
+      `应有矩阵表头：\n${out}`,
+    );
     // a → b → c 各 1 条值边：矩阵须真的落在对应单元格上，而非只打印空表。
-    assert.match(out, /a\s+-\s+V\s+\./, `a 行应指向 b：\n${out}`)
-    assert.match(out, /c\s+\.\s+\.\s+-/, `c 行应无出边：\n${out}`)
-    assert.match(out, /b\s+扇出 1\/0\s+扇入 1\/0/, `b 扇出/扇入应为 1/1：\n${out}`)
-    assert.match(out, /叶子模块级值环（门禁口径，按节点集合去重的环集合数，只许降不许升）：0 个/, `应报 0 环：\n${out}`)
+    assert.match(out, /a\s+-\s+V\s+\./, `a 行应指向 b：\n${out}`);
+    assert.match(out, /c\s+\.\s+\.\s+-/, `c 行应无出边：\n${out}`);
+    assert.match(out, /b\s+扇出 1\/0\s+扇入 1\/0/, `b 扇出/扇入应为 1/1：\n${out}`);
+    assert.match(
+      out,
+      /叶子模块级值环（门禁口径，按节点集合去重的环集合数，只许降不许升）：0 个/,
+      `应报 0 环：\n${out}`,
+    );
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('文件级值环：同模块内文件互引成环 → 计入文件级值环并 fail-closed 判红', () => {
+test("文件级值环：同模块内文件互引成环 → 计入文件级值环并 fail-closed 判红", () => {
   // 同模块内部的文件环不影响叶子模块图，只有文件级图能看见（notifier 的 sdk 域
   // 就是这一形态，S3 待修）。缺了这条断言，fileCycles 整条判据坏掉也不会被发现。
   const root = makeFixtureRoot({
     [`${SRC}/sdk/interface.ts`]: 'export { A } from "./service.ts";\n',
     [`${SRC}/sdk/service.ts`]: 'import { A } from "./interface.ts";\nexport const A = 1;\n',
-  })
+  });
   try {
-    const { status, out } = runOn(root)
-    assert.equal(status, 1, `文件级值环应 fail-closed 判红，实际 ${status}：\n${out}`)
-    assert.match(out, /模块级值环 0 个、文件级值环 1 个/, `模块级 0 / 文件级 1：\n${out}`)
-    assert.match(out, /无基线 fail-closed：文件级值环 1 个/, `应点名文件级值环：\n${out}`)
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `文件级值环应 fail-closed 判红，实际 ${status}：\n${out}`);
+    assert.match(out, /模块级值环 0 个、文件级值环 1 个/, `模块级 0 / 文件级 1：\n${out}`);
+    assert.match(out, /无基线 fail-closed：文件级值环 1 个/, `应点名文件级值环：\n${out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('--soft：单调基线上升仍判红（CI 对 provider-usage 走 --soft）', () => {
-  const root = makeFixtureRoot(chainFixture(''))
+test("--soft：单调基线上升仍判红（CI 对 provider-usage 走 --soft）", () => {
+  const root = makeFixtureRoot(chainFixture(""));
   try {
-    assert.equal(runOn(root, ['--write-baseline']).status, 0)
-    const clean = runOn(root, ['--soft'])
-    assert.equal(clean.status, 0, `无上升时 --soft 应 PASS，实际 ${clean.status}：\n${clean.out}`)
+    assert.equal(runOn(root, ["--write-baseline"]).status, 0);
+    const clean = runOn(root, ["--soft"]);
+    assert.equal(clean.status, 0, `无上升时 --soft 应 PASS，实际 ${clean.status}：\n${clean.out}`);
     // 人为把计数调高：--soft 只影响明细打印标签，不得成为绕过基线判红的开关。
-    writeFileSync(join(root, `${SRC}/c/impl.ts`), 'import { A } from "../a/interface.ts";\nexport const C = A;\n')
-    const after = runOn(root, ['--soft'])
-    assert.equal(after.status, 1, `--soft 下计数上升仍须判红，实际 ${after.status}：\n${after.out}`)
-    assert.match(after.out, /单调基线上升：\[结构型\] leafValueEdges: 3 > 基线 2/, `应给出计数对照：\n${after.out}`)
+    writeFileSync(
+      join(root, `${SRC}/c/impl.ts`),
+      'import { A } from "../a/interface.ts";\nexport const C = A;\n',
+    );
+    const after = runOn(root, ["--soft"]);
+    assert.equal(
+      after.status,
+      1,
+      `--soft 下计数上升仍须判红，实际 ${after.status}：\n${after.out}`,
+    );
+    assert.match(
+      after.out,
+      /单调基线上升：\[结构型\] leafValueEdges: 3 > 基线 2/,
+      `应给出计数对照：\n${after.out}`,
+    );
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
 test('引用提取：类型查询 import("…") 不产生值边，await import() 动态导入才产生（F1）', () => {
   const typed = makeFixtureRoot({
@@ -423,204 +651,221 @@ test('引用提取：类型查询 import("…") 不产生值边，await import()
     [`${SRC}/a/impl.ts`]: 'export type T = { b?: import("../b/interface.ts").U };\n',
     [`${SRC}/b/interface.ts`]: 'export type { U } from "./impl.ts";\n',
     [`${SRC}/b/impl.ts`]: 'export type U = { a?: import("../a/interface.ts").T };\n',
-  })
+  });
   const dynamic = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
     [`${SRC}/b/impl.ts`]: 'export const B = await import("../a/interface.ts");\n',
-  })
+  });
   try {
-    const t = runOn(typed)
-    assert.equal(t.status, 0, `类型查询互引不应造出幻影值环，实际 ${t.status}：\n${t.out}`)
-    assert.match(t.out, /值边 0 条、模块级值环 0 个/, `类型查询不应计入值边：\n${t.out}`)
-    const d = runOn(dynamic)
-    assert.equal(d.status, 0, `await import 应正常解析：\n${d.out}`)
-    assert.match(d.out, /值边 1 条/, `await import() 是值依赖，应计 1 条值边：\n${d.out}`)
+    const t = runOn(typed);
+    assert.equal(t.status, 0, `类型查询互引不应造出幻影值环，实际 ${t.status}：\n${t.out}`);
+    assert.match(t.out, /值边 0 条、模块级值环 0 个/, `类型查询不应计入值边：\n${t.out}`);
+    const d = runOn(dynamic);
+    assert.equal(d.status, 0, `await import 应正常解析：\n${d.out}`);
+    assert.match(d.out, /值边 1 条/, `await import() 是值依赖，应计 1 条值边：\n${d.out}`);
   } finally {
-    rmSync(typed, { recursive: true, force: true })
-    rmSync(dynamic, { recursive: true, force: true })
+    rmSync(typed, { recursive: true, force: true });
+    rmSync(dynamic, { recursive: true, force: true });
   }
-})
+});
 
-test('引用提取：.d.ts 声明文件不作 from 侧（F2）', () => {
+test("引用提取：.d.ts 声明文件不作 from 侧（F2）", () => {
   const root = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
-    [`${SRC}/b/impl.ts`]: 'export const B = 2;\n',
-    [`${SRC}/b/service.d.ts`]: 'import { A } from "../a/interface.ts";\nexport declare const A2: typeof A;\n',
-  })
+    [`${SRC}/b/impl.ts`]: "export const B = 2;\n",
+    [`${SRC}/b/service.d.ts`]:
+      'import { A } from "../a/interface.ts";\nexport declare const A2: typeof A;\n',
+  });
   try {
-    const { status, out } = runOn(root, ['--zones'])
-    assert.equal(status, 0, `声明文件不应参与门禁：\n${out}`)
-    assert.match(out, /R-A 语义切换前（impl → 他域任意文件，旧口径）：0 条/, `声明文件不得计入 R-A：\n${out}`)
+    const { status, out } = runOn(root, ["--zones"]);
+    assert.equal(status, 0, `声明文件不应参与门禁：\n${out}`);
+    assert.match(
+      out,
+      /R-A 语义切换前（impl → 他域任意文件，旧口径）：0 条/,
+      `声明文件不得计入 R-A：\n${out}`,
+    );
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('引用提取：.js 后缀 specifier 映射到 .ts（F3：不得整条丢弃）', () => {
+test("引用提取：.js 后缀 specifier 映射到 .ts（F3：不得整条丢弃）", () => {
   const root = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
     [`${SRC}/b/impl.ts`]: 'import { A } from "../a/impl.js";\nexport const B = A;\n',
-  })
+  });
   try {
-    const { status, out } = runOn(root)
-    assert.equal(status, 1, `用 .js 后缀直引他域实现文件同样应判红，实际 ${status}：\n${out}`)
-    assert.match(out, /跨模块引用必须走目标模块 interface\.ts\/deps\.ts/, `应点名规则 2：\n${out}`)
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `用 .js 后缀直引他域实现文件同样应判红，实际 ${status}：\n${out}`);
+    assert.match(out, /跨模块引用必须走目标模块 interface\.ts\/deps\.ts/, `应点名规则 2：\n${out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
 test('引用提取：副作用导入 import "spec" 也被识别（F4）', () => {
   const root = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
     [`${SRC}/b/impl.ts`]: 'import "../a/impl.ts";\nexport const B = 2;\n',
-  })
+  });
   try {
-    const { status, out } = runOn(root)
-    assert.equal(status, 1, `副作用直引他域实现文件应判红，实际 ${status}：\n${out}`)
-    assert.match(out, /b\/impl\.ts → import "\.\.\/a\/impl\.ts"/, `应报出副作用导入：\n${out}`)
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `副作用直引他域实现文件应判红，实际 ${status}：\n${out}`);
+    assert.match(out, /b\/impl\.ts → import "\.\.\/a\/impl\.ts"/, `应报出副作用导入：\n${out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('引用提取：注释里的 import 不被当真（F5）', () => {
+test("引用提取：注释里的 import 不被当真（F5）", () => {
   const root = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
     // 关键形态：块注释内**顶格**的 import（行首即 import）。注释若不被剥离，
     // 提取正则会把整行当真（` * import` 这类带星号的缩进反而不会命中）。
     [`${SRC}/b/impl.ts`]:
       '/*\nimport { A } from "../a/impl.ts";\n*/\n// import { A } from "../a/impl.ts";\nconst url = "https://example.com/x";\nexport const B = 2;\n',
-  })
+  });
   try {
-    const { status, out } = runOn(root, ['--zones'])
-    assert.equal(status, 0, `注释中的 import 不应产生违规，实际 ${status}：\n${out}`)
-    assert.match(out, /R-A 语义切换前（impl → 他域任意文件，旧口径）：0 条/, `注释不得计入 R-A：\n${out}`)
+    const { status, out } = runOn(root, ["--zones"]);
+    assert.equal(status, 0, `注释中的 import 不应产生违规，实际 ${status}：\n${out}`);
+    assert.match(
+      out,
+      /R-A 语义切换前（impl → 他域任意文件，旧口径）：0 条/,
+      `注释不得计入 R-A：\n${out}`,
+    );
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('引用提取：内联 import { type X } 判为类型边（F6）', () => {
+test("引用提取：内联 import { type X } 判为类型边（F6）", () => {
   const root = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
-    [`${SRC}/b/impl.ts`]: 'import { type A } from "../a/interface.ts";\nexport const B: A = 1 as never;\n',
-  })
+    [`${SRC}/b/impl.ts`]:
+      'import { type A } from "../a/interface.ts";\nexport const B: A = 1 as never;\n',
+  });
   try {
-    const { status, out } = runOn(root, ['--zones'])
-    assert.equal(status, 0, `内联 type 修饰不应造出值边：\n${out}`)
+    const { status, out } = runOn(root, ["--zones"]);
+    assert.equal(status, 0, `内联 type 修饰不应造出值边：\n${out}`);
     assert.match(
       out,
       /R-A 语义切换前（impl → 他域任意文件，旧口径）：1 条（值 0 \/ type 1）/,
       `内联 type 应计入 type 而非 value：\n${out}`,
-    )
+    );
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('门面资格：非模块目录下的 deps.ts 不是出口（F7：规则 2 不得放水）', () => {
+test("门面资格：非模块目录下的 deps.ts 不是出口（F7：规则 2 不得放水）", () => {
   const root = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
     [`${SRC}/b/impl.ts`]: 'import { X } from "../c/internal/deps.ts";\nexport const B = X;\n',
     [`${SRC}/c/interface.ts`]: 'export { X } from "./internal/deps.ts";\n',
-    [`${SRC}/c/internal/deps.ts`]: 'export const X = 1;\n',
-  })
+    [`${SRC}/c/internal/deps.ts`]: "export const X = 1;\n",
+  });
   try {
-    const { status, out } = runOn(root)
-    assert.equal(status, 1, `同名但非模块根部的 deps.ts 不得被当出口，实际 ${status}：\n${out}`)
-    assert.match(out, /c\/internal\/deps\.ts/, `应点名该实现文件：\n${out}`)
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `同名但非模块根部的 deps.ts 不得被当出口，实际 ${status}：\n${out}`);
+    assert.match(out, /c\/internal\/deps\.ts/, `应点名该实现文件：\n${out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('规则 4：export { default as A } from 不假报虚导出（F8）', () => {
+test("规则 4：export { default as A } from 不假报虚导出（F8）", () => {
   const root = makeFixtureRoot({
-    [`${SRC}/a/impl.ts`]: 'export default 1;\n',
+    [`${SRC}/a/impl.ts`]: "export default 1;\n",
     [`${SRC}/a/interface.ts`]: 'export { default as A } from "./impl.ts";\n',
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
     [`${SRC}/b/impl.ts`]: 'import { A } from "../a/interface.ts";\nexport const B = A;\n',
-  })
+  });
   try {
-    const { status, out } = runOn(root)
-    assert.equal(status, 0, `default re-export 应可解析，实际 ${status}：\n${out}`)
-    assert.doesNotMatch(out, /虚导出/, `不得误报虚导出：\n${out}`)
+    const { status, out } = runOn(root);
+    assert.equal(status, 0, `default re-export 应可解析，实际 ${status}：\n${out}`);
+    assert.doesNotMatch(out, /虚导出/, `不得误报虚导出：\n${out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('规则 4：同模块子目录引用 interface.ts 的虚导出仍判红（F12：判定按目录而非模块）', () => {
+test("规则 4：同模块子目录引用 interface.ts 的虚导出仍判红（F12：判定按目录而非模块）", () => {
   // 引用方 a/sub/x.ts 与 a/interface.ts 属**同一叶子模块**，但目录不同。
   // 按模块比较会整块跳过该 interface.ts 的符号存在性检查（F12 的漏面），
   // 按目录比较才与「interface.ts 是这一层唯一的对外符号面」的语义一致。
   const root = makeFixtureRoot({
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/a/interface.ts`]: 'export { MISSING } from "./impl.ts";\n',
-    [`${SRC}/a/sub/x.ts`]: 'import { MISSING } from "../interface.ts";\nexport const X = MISSING;\n',
-  })
+    [`${SRC}/a/sub/x.ts`]:
+      'import { MISSING } from "../interface.ts";\nexport const X = MISSING;\n',
+  });
   try {
-    const { status, out } = runOn(root)
-    assert.equal(status, 1, `同模块子目录的虚导出应判红，实际 ${status}：\n${out}`)
-    assert.match(out, /虚导出/, `应点名虚导出：\n${out}`)
-    assert.match(out, /a\/interface\.ts 导出符号 "MISSING"/, `应点名符号与文件：\n${out}`)
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `同模块子目录的虚导出应判红，实际 ${status}：\n${out}`);
+    assert.match(out, /虚导出/, `应点名虚导出：\n${out}`);
+    assert.match(out, /a\/interface\.ts 导出符号 "MISSING"/, `应点名符号与文件：\n${out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('模块定义：根级 src/interface.ts 不构成模块（F13：模块必是目录）', () => {
+test("模块定义：根级 src/interface.ts 不构成模块（F13：模块必是目录）", () => {
   // 根级 interface.ts 没有「对外引用面」语义（根文件互引在规则 3 下放行），
   // 故它既不入模块表，也不进规则 4 的符号存在性检查对象——显式固化该取值。
   const root = makeFixtureRoot({
     [`${SRC}/interface.ts`]: 'export const ROOT_FACADE = "src 根文件不是模块";\n',
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
-    [`${SRC}/a/impl.ts`]: 'export const A = 1;\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
     [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
-    [`${SRC}/b/impl.ts`]: 'export const B = 2;\n',
-  })
+    [`${SRC}/b/impl.ts`]: "export const B = 2;\n",
+  });
   try {
-    const { status, out } = runOn(root, ['--graph'])
-    assert.equal(status, 0, `根级 interface.ts 不得引入违规，实际 ${status}：\n${out}`)
-    assert.match(out, /叶子模块 2 个、值边 0 条/, `模块表应只含 a/ 与 b/：\n${out}`)
-    assert.doesNotMatch(out, /^  interface /m, `根级 interface.ts 不得成为模块行：\n${out}`)
+    const { status, out } = runOn(root, ["--graph"]);
+    assert.equal(status, 0, `根级 interface.ts 不得引入违规，实际 ${status}：\n${out}`);
+    assert.match(out, /叶子模块 2 个、值边 0 条/, `模块表应只含 a/ 与 b/：\n${out}`);
+    assert.doesNotMatch(out, /^  interface /m, `根级 interface.ts 不得成为模块行：\n${out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('--write-baseline --package 不抹掉其他包条目（F9）', () => {
+test("--write-baseline --package 不抹掉其他包条目（F9）", () => {
   const root = makeFixtureRoot({
-    ...chainFixture(''),
-    'scripts/data/dir-imports-baseline.json': JSON.stringify({
+    ...chainFixture(""),
+    "scripts/data/dir-imports-baseline.json": JSON.stringify({
       version: 1,
-      packages: { 'other-pkg': { modules: 7, marker: 'keep-me' } },
+      packages: { "other-pkg": { modules: 7, marker: "keep-me" } },
     }),
-  })
+  });
   try {
-    assert.equal(runOn(root, ['--write-baseline']).status, 0)
-    const written = JSON.parse(readFileSync(join(root, 'scripts/data/dir-imports-baseline.json'), 'utf8'))
-    assert.equal(written.packages['other-pkg']?.marker, 'keep-me', `其他包条目必须原样保留：${JSON.stringify(written)}`)
-    assert.equal(written.packages[PKG]?.modules, 3, `本次包应被写入：${JSON.stringify(written)}`)
+    assert.equal(runOn(root, ["--write-baseline"]).status, 0);
+    const written = JSON.parse(
+      readFileSync(join(root, "scripts/data/dir-imports-baseline.json"), "utf8"),
+    );
+    assert.equal(
+      written.packages["other-pkg"]?.marker,
+      "keep-me",
+      `其他包条目必须原样保留：${JSON.stringify(written)}`,
+    );
+    assert.equal(written.packages[PKG]?.modules, 3, `本次包应被写入：${JSON.stringify(written)}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
 /** 覆盖断言所需的最小拓扑：mutate 覆盖 src/<域>/**，不含 excludes。 */
 function coverageTopology(domains) {
@@ -640,90 +885,106 @@ function coverageTopology(domains) {
     },
     null,
     2,
-  )
+  );
 }
 
-test('全覆盖断言：包未登记变异拓扑 → fail-closed 判红（封堵「删条目即绕过」）', () => {
+test("全覆盖断言：包未登记变异拓扑 → fail-closed 判红（封堵「删条目即绕过」）", () => {
   const root = makeFixtureRoot({
-    ...chainFixture(''),
-    'scripts/data/mutation-topology.json': JSON.stringify({
+    ...chainFixture(""),
+    "scripts/data/mutation-topology.json": JSON.stringify({
       sharedDefaults: {},
-      packages: { 'other-pkg': { segments: {} } },
+      packages: { "other-pkg": { segments: {} } },
     }),
-  })
+  });
   try {
-    const { status, out } = runOn(root)
-    assert.equal(status, 1, `包未登记拓扑应 fail-closed 判红，实际 ${status}：\n${out}`)
-    assert.match(out, /未在 scripts\/data\/mutation-topology\.json 登记/, `应点名未登记：\n${out}`)
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `包未登记拓扑应 fail-closed 判红，实际 ${status}：\n${out}`);
+    assert.match(out, /未在 scripts\/data\/mutation-topology\.json 登记/, `应点名未登记：\n${out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('全覆盖断言：拓扑缺登记的新增 src 文件判红，登记后放行', () => {
+test("全覆盖断言：拓扑缺登记的新增 src 文件判红，登记后放行", () => {
   const files = {
-    ...chainFixture(''),
-    'scripts/data/mutation-topology.json': coverageTopology(['a', 'b', 'c']),
-  }
-  const root = makeFixtureRoot(files)
+    ...chainFixture(""),
+    "scripts/data/mutation-topology.json": coverageTopology(["a", "b", "c"]),
+  };
+  const root = makeFixtureRoot(files);
   try {
-    const written = runOn(root, ['--write-baseline'])
-    assert.equal(written.status, 0, `写基线应成功：\n${written.out}`)
-    const before = runOn(root)
-    assert.equal(before.status, 0, `未覆盖清单为空时应 PASS，实际 ${before.status}：\n${before.out}`)
+    const written = runOn(root, ["--write-baseline"]);
+    assert.equal(written.status, 0, `写基线应成功：\n${written.out}`);
+    const before = runOn(root);
+    assert.equal(
+      before.status,
+      0,
+      `未覆盖清单为空时应 PASS，实际 ${before.status}：\n${before.out}`,
+    );
 
     // 新增一个既不在 mutate 也不在 excludes 的源文件 → 必须红。
-    const orphan = join(root, `${SRC}/newdir/orphan.ts`)
-    mkdirSync(dirname(orphan), { recursive: true })
-    writeFileSync(orphan, 'export const ORPHAN = 1;\n')
-    const after = runOn(root)
-    assert.equal(after.status, 1, `新增未覆盖源文件应 exit 1，实际 ${after.status}：\n${after.out}`)
-    assert.match(after.out, /uncoveredSrcFiles: 新增未覆盖源文件/, `应点名覆盖断言：\n${after.out}`)
-    assert.match(after.out, /src\/newdir\/orphan\.ts/, `应给出文件路径：\n${after.out}`)
+    const orphan = join(root, `${SRC}/newdir/orphan.ts`);
+    mkdirSync(dirname(orphan), { recursive: true });
+    writeFileSync(orphan, "export const ORPHAN = 1;\n");
+    const after = runOn(root);
+    assert.equal(
+      after.status,
+      1,
+      `新增未覆盖源文件应 exit 1，实际 ${after.status}：\n${after.out}`,
+    );
+    assert.match(after.out, /uncoveredSrcFiles: 新增未登记证据/, `应点名覆盖断言：\n${after.out}`);
+    assert.match(after.out, /src\/newdir\/orphan\.ts/, `应给出文件路径：\n${after.out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('全覆盖断言：非 .ts 孤儿（资源/声明类）同样判红，且红因不被其它计数混淆', () => {
+test("全覆盖断言：非 .ts 孤儿（资源/声明类）同样判红，且红因不被其它计数混淆", () => {
   const root = makeFixtureRoot({
-    ...chainFixture(''),
-    'scripts/data/mutation-topology.json': coverageTopology(['a', 'b', 'c']),
-  })
+    ...chainFixture(""),
+    "scripts/data/mutation-topology.json": coverageTopology(["a", "b", "c"]),
+  });
   try {
-    assert.equal(runOn(root, ['--write-baseline']).status, 0)
+    assert.equal(runOn(root, ["--write-baseline"]).status, 0);
     // .ps1 不是 TS：两个 TS 计数口径（#710 F14 拆分后的 scannedSrcFiles / allSrcTsFiles）
     // 都不变，故本次判红只可能来自覆盖断言（把红因隔离出来，否则新增 .ts 孤儿会同时抬高
     // 计数、断言被别的计数「代偿」成假绿）。
-    writeFileSync(join(root, `${SRC}/a/toast.ps1`), 'Write-Host hi\n')
-    const after = runOn(root)
-    assert.equal(after.status, 1, `非 .ts 孤儿应判红，实际 ${after.status}：\n${after.out}`)
+    writeFileSync(join(root, `${SRC}/a/toast.ps1`), "Write-Host hi\n");
+    const after = runOn(root);
+    assert.equal(after.status, 1, `非 .ts 孤儿应判红，实际 ${after.status}：\n${after.out}`);
     assert.match(
       after.out,
-      /uncoveredSrcFiles: 新增未覆盖源文件 packages\/fixture-pkg\/src\/a\/toast\.ps1/,
+      /uncoveredSrcFiles: 新增未登记证据 packages\/fixture-pkg\/src\/a\/toast\.ps1/,
       `应点名未覆盖文件：\n${after.out}`,
-    )
-    assert.doesNotMatch(after.out, /scannedSrcFiles:/, `红因不得是 scannedSrcFiles：\n${after.out}`)
-    assert.doesNotMatch(after.out, /allSrcTsFiles:/, `红因不得是 allSrcTsFiles：\n${after.out}`)
+    );
+    assert.doesNotMatch(
+      after.out,
+      /scannedSrcFiles:/,
+      `红因不得是 scannedSrcFiles：\n${after.out}`,
+    );
+    assert.doesNotMatch(after.out, /allSrcTsFiles:/, `红因不得是 allSrcTsFiles：\n${after.out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
-test('全覆盖断言：未覆盖清单之外的既有文件不会被误判（正反双向）', () => {
+test("全覆盖断言：未覆盖清单之外的既有文件不会被误判（正反双向）", () => {
   const files = {
-    ...chainFixture(''),
-    'scripts/data/mutation-topology.json': coverageTopology(['a', 'b']),
-  }
-  const root = makeFixtureRoot(files)
+    ...chainFixture(""),
+    "scripts/data/mutation-topology.json": coverageTopology(["a", "b"]),
+  };
+  const root = makeFixtureRoot(files);
   try {
     // c/ 未登记 → 首次写基线即把两个文件登记为存量。
-    const written = runOn(root, ['--write-baseline'])
-    assert.equal(written.status, 0, `写基线应成功：\n${written.out}`)
-    const before = runOn(root)
-    assert.equal(before.status, 0, `存量未覆盖文件不得判红，实际 ${before.status}：\n${before.out}`)
-    assert.match(before.out, /单调基线通过/, `存量应被基线接受：\n${before.out}`)
+    const written = runOn(root, ["--write-baseline"]);
+    assert.equal(written.status, 0, `写基线应成功：\n${written.out}`);
+    const before = runOn(root);
+    assert.equal(
+      before.status,
+      0,
+      `存量未覆盖文件不得判红，实际 ${before.status}：\n${before.out}`,
+    );
+    assert.match(before.out, /单调基线通过/, `存量应被基线接受：\n${before.out}`);
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});

@@ -394,11 +394,14 @@ export const inject: string[] = [];        // 声明 apply 用到的 ctx 服务�
   - **依赖图门禁（`scripts/gate/verify-dir-imports.mjs`；#690 S0 / #733 M0）**：模块按
     **叶子粒度**（递归含 `interface.ts` 的目录，分组层透明）划分，跨模块引用只能走目标
     模块的 `interface.ts`（入口）或 `deps.ts`（出口）。`scripts/data/dir-imports-baseline.json`
-    是单调基线，计数分两组：**结构型**（模块数/源文件数/边数/引用数等规模计数）随新增文件
-    与目录合法上升，由 `--write-baseline` 登记；**质量型**（`leafModuleCycles` /
-    `fileCycles` / `raLegacy*` / `implToOtherImpl` / `missingInterface` / `directImpl` 与
-    `uncoveredSrcFiles` 清单）只许降不许升，**`--write-baseline` 不更新它们**——上升只能改
-    代码。另含 `src ⊆ ∪mutate ∪ ∪excludes` 全覆盖断言（新增 src 未被变异面或排除面覆盖即红）。
+    是单调基线，两类入库形态不同：**结构型**存计数（模块数/源文件数/边数/引用数等规模计数），
+    随新增文件与目录合法上升，由 `--write-baseline` 登记；**质量型**存**证据集合**
+    （`leafModuleCycles` / `fileCycles` 的环签名、`raLegacy` / `implToOtherImpl` 的
+    `from|to|kind` 边、`missingInterface` / `directImpl` 边、`uncoveredSrcFiles` 清单）——
+    新增证据判红、证据消失视为改善（写入时自动清理）、`kind` 由 value→type 视为收口、
+    type→value 判红；**放宽的唯一通道**是 `--accept-quality-new --reason "<理由>"`，条目与
+    理由记入基线 `$acceptances` 留痕（#733 后续：计数器修正不再等价于永久判红）。
+    另含 `src ⊆ ∪mutate ∪ ∪excludes` 全覆盖断言（新增 src 未被变异面或排除面覆盖即红）。
     死声明判据为**值面判死、类型面豁免**：`deps.ts` 的 `import type` 是声明即完整性，不参与
     死声明计算（#733 M0a）。**可见度边界**：只管依赖方向与环路，不管符号签名。
   - **导出面门禁（`scripts/gate/export-surface-snapshot.mjs`；#669 PR1 / #733 M0+M2a / N0(B)）**：

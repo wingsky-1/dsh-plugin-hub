@@ -255,7 +255,8 @@ concurrency:
   **`packages/<pkg>/src` 下每个文件都落在 `∪mutate ∪ ∪excludes` 之内**（excludes 含段级
   默认值与包级 `testLayers.coverageExcludes` 的存量登记，见 `scripts/gate/mutation-topology.mjs`）。
   只要新增业务代码却忘记配置变异分段或显式登记排除，门禁直接报错阻断。
-  覆盖断言的存量缺口存在 `scripts/data/dir-imports-baseline.json` 的 `uncoveredSrcFiles`，
+  覆盖断言的存量缺口存在 `scripts/data/dir-imports-baseline.json` 的
+  `packages.<pkg>.quality.uncoveredSrcFiles`（#733 后续起质量型统一收进 `quality` 证据段），
   **只许减不许增**；#690 S2b 已把 24 个门面/声明/资源类存量清空为 0。
 
 ---
