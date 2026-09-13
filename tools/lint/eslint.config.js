@@ -55,12 +55,15 @@ const complexityRules = {
   "sonarjs/cognitive-complexity": ["error", cognitive],
 };
 
-// 存量面降级清单：这几条在本次重写之外的代码里有 340+ 处，且都**不可自动修**
-// （可自动修的 no-var / prefer-const / no-wrapper-object-types 已全仓 --fix 过一轮）。
+// 存量面降级清单：这几条在本次重写之外的代码里有 340+ 处，且都**不可自动修**。
 // 降为 warn 让新规则先「可见」——它立刻挡得住新写的代码，而不把落地阻塞在存量清理上。
 // 全量清理与关闭这条清单见 #762。
+//
+// 为什么 `no-var` 不在本清单（#765 第 6 项）：它在全仓命中数为 **0**（唯一的 var 面是下面
+// 两个客户端文件，走豁免关闭）。留在降级集里等于「把一条零命中的规则记成技术债」——既虚增
+// 存量清单，又让新写的 `var` 只拿到 warn。现改为在常规规则面按 **error** 生效：命中数不变
+// （0），但守卫从「warn + 吃预算」变成「直接红」。
 const LEGACY_WARN = {
-  "no-var": "warn",
   "prefer-const": "warn",
   "@typescript-eslint/no-unused-vars": "warn",
   "@typescript-eslint/ban-ts-comment": "warn",
@@ -69,6 +72,13 @@ const LEGACY_WARN = {
   "@typescript-eslint/no-require-imports": "warn",
   "@typescript-eslint/no-wrapper-object-types": "warn",
 };
+
+// 客户端 `var` 的豁免面（#765 第 2 项「收窄」）：**当前实际含 var 的两个文件**，是事实快照
+// 而非白名单。判据见上面对 files 的说明；某文件不再含 var 即由自测判红，届时删条目。
+const CLIENT_VAR_EXEMPT_FILES = [
+  "packages/dsh-notifier/src/client/index.tsx",
+  "packages/dsh-lan-proxy/src/client/index.ts",
+];
 
 export default [
   { ignores: IGNORES },
@@ -84,12 +94,12 @@ export default [
     files: TS_SOURCES,
     languageOptions: { parser: tseslint.parser, ecmaVersion: "latest", sourceType: "module" },
     plugins: { sonarjs },
-    rules: complexityRules,
+    rules: { ...complexityRules, "no-var": "error" },
   },
   {
     files: JS_SOURCES,
     plugins: { sonarjs },
-    rules: complexityRules,
+    rules: { ...complexityRules, "no-var": "error" },
   },
   {
     // #764 落地项 A3：**类型感知分阶段**的第一步。只开三条「能抓 bug 且存量已清零」的规则：
@@ -142,10 +152,16 @@ export default [
     rules: LEGACY_WARN,
   },
   {
-    // 未重写的老客户端：`no-var` 关掉而不是降级——降级仍会被 `--fix` 改写，而 259 行的
-    // var→let/const 等价改写超出重写范围（客户端不在本次重写内，且 var 与 let 在闭包捕获
-    // 上并非处处等价）。客户端重写时一并收掉。
-    files: ["packages/*/src/client/**"],
+    // 老客户端里 `no-var` 关掉而不是降级——降级仍会被 `--fix` 改写，而 var→let/const 的等价
+    // 改写超出重写范围（客户端不在本次重写内，且 var 与 let 在闭包捕获上并非处处等价）。
+    //
+    // #765 第 2 项「收窄」：面从 `packages/*/src/client/**` 通配收窄为**当前实际含 var 的文件**。
+    // 通配的代价是判据面随目录增长而变宽——以后任何新客户端文件写 var 都会被静默豁免，而且它与
+    // 登记台账不同源（`gate-exemptions.json` 只登记了 notifier 那个文件的 22 处**模块级** var，
+    // 其余是函数内局部 var）。收窄后新增文件立刻可见：非豁免面走 LEGACY_WARN 或下面的 error。
+    // 这份清单是**事实快照**，不是白名单：某一项不再含 var 时，`scripts/test/lint-toolchain.test.ts`
+    // 会因「条目零命中」判红，届时删条目即可（反向腐烂校验）。
+    files: CLIENT_VAR_EXEMPT_FILES,
     rules: { "no-var": "off" },
   },
   prettierConfig,

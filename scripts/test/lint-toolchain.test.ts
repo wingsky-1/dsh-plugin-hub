@@ -17,7 +17,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
@@ -360,4 +360,82 @@ test("#764 A5：基线的只许收缩棘轮（官方只在 CLI 侧检查，Node 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("#765 第 2 项：客户端 var 豁免面 == 实际含 var 的客户端文件（收窄 + 反向腐烂校验）", async () => {
+  const { ESLint } = requireLint("eslint");
+  const eslint = new ESLint({
+    cwd: ROOT,
+    overrideConfigFile: join(ROOT, "tools", "lint", "eslint.config.js"),
+  });
+  const level = (configured) => (Array.isArray(configured) ? configured[0] : configured);
+  const isOff = (configured) => level(configured) === 0 || level(configured) === "off";
+
+  // 为什么要这条不变量：豁免面原先是 `packages/*/src/client/**` 通配——判据面随目录增长而变宽，
+  // 以后任何新客户端文件写 `var` 都会被静默豁免。收窄成显式文件清单之后，「清单 == 实际含 var
+  // 的文件」这条等式就是收窄的**判据本身**：新增文件写 var（等式右侧变大）与清单条目腐烂
+  // （左侧有条目、右侧没有）都会让它变红，逼出一次显式决定——补清单，或改代码。
+  const clientDir = (pkg) => join(ROOT, "packages", pkg, "src", "client");
+  const clientFiles = [];
+  for (const pkg of readdirSync(join(ROOT, "packages"))) {
+    const dir = clientDir(pkg);
+    if (!existsSync(dir)) continue;
+    for (const rel of readdirSync(dir, { recursive: true })) {
+      const abs = join(dir, rel);
+      if (!/\.(ts|tsx|mts|cts)$/.test(abs) || !existsSync(abs)) continue;
+      if (!readFileSync(abs, "utf8").includes("var")) continue; // 粗筛：不含 var 的文件无需起 lint
+      clientFiles.push(abs);
+    }
+  }
+  assert.ok(clientFiles.length > 0, "粗筛应当命中已知的两个含 var 客户端文件");
+
+  for (const abs of clientFiles) {
+    const rel = abs.replace(ROOT + "/", "");
+    // 该文件到底有没有 var 声明：用规则本身判，不用正则（string / 注释里的 var 不算）。
+    // 检出用一份「强制把 no-var 打开」的实例——豁免文件上它是 off，不打开就什么都看不到。
+    const withNoVar = new ESLint({
+      cwd: ROOT,
+      overrideConfigFile: join(ROOT, "tools", "lint", "eslint.config.js"),
+      overrideConfig: { rules: { "no-var": "error" } },
+    });
+    const messages = await withNoVar.lintText(readFileSync(abs, "utf8"), { filePath: abs });
+    const hasVar = messages.some((m) => m.messages.some((x) => x.ruleId === "no-var"));
+    const configured = (await eslint.calculateConfigForFile(abs)).rules?.["no-var"];
+    assert.equal(
+      isOff(configured),
+      hasVar,
+      `${rel}：no-var 的关闭状态必须与「该文件确实含 var」一致（豁免清单是事实快照，不是白名单）；实际 off=${isOff(configured)} 含 var=${hasVar}`,
+    );
+  }
+
+  // 面不再是通配：未列入清单的客户端文件必须按常规规则面处理（error，而不是静默豁免）。
+  const probe = join(ROOT, "packages", "dsh-lan-proxy", "src", "client", "probe-not-listed.ts");
+  const probeConfigured = (await eslint.calculateConfigForFile(probe)).rules?.["no-var"];
+  assert.equal(level(probeConfigured), 2, "新客户端文件不得继承 no-var 豁免");
+});
+
+test("#765 第 6 项：no-var 不在降级集里，且在常规规则面按 error 生效", async () => {
+  const { ESLint } = requireLint("eslint");
+  const eslint = new ESLint({
+    cwd: ROOT,
+    overrideConfigFile: join(ROOT, "tools", "lint", "eslint.config.js"),
+  });
+  const level = (configured) => (Array.isArray(configured) ? configured[0] : configured);
+
+  // 全仓命中数为 0 的规则留在 LEGACY_WARN 里 = 把一条不存在的债记成技术债，还让新写的 var 只拿 warn。
+  for (const rel of ["scripts/gate/verify-docs.ts", "shared/sse-hub.js"]) {
+    const configured = (await eslint.calculateConfigForFile(join(ROOT, rel))).rules?.["no-var"];
+    assert.equal(
+      level(configured),
+      2,
+      `${rel}：no-var 必须按 error 生效，实际 ${JSON.stringify(configured)}`,
+    );
+  }
+  const probe = await eslint.lintText("var probe = 1;\nexport { probe };\n", {
+    filePath: join(ROOT, "scripts", "gate", "probe-no-var.ts"),
+  });
+  assert.ok(
+    probe.some((r) => r.messages.some((m) => m.ruleId === "no-var" && m.severity === 2)),
+    "新写的 var 必须直接判红（而不是降级成警告去吃预算）",
+  );
 });
