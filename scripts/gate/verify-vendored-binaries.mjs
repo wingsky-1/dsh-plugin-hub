@@ -17,17 +17,17 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import { argValue } from "../lib/exemption-gate.ts";
 import { REGISTRY_REL, verifyVendoredBinaries } from "../lib/vendored-binaries-lib.mjs";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 
-/** 取 `--flag value` 形式的参数值；未给出返回 fallback。 */
-function argValue(argv, flag, fallback) {
-  const eq = argv.find((a) => a.startsWith(`${flag}=`));
-  const eqv = eq === undefined ? undefined : eq.slice(flag.length + 1);
-  const idx = argv.indexOf(flag);
-  const next = idx !== -1 ? argv[idx + 1] : undefined;
-  const v = eqv ?? next ?? fallback;
+/**
+ * 取参数值：解析走 exemption-gate 的共享实现（`--flag value` / `--flag=value` 两种形态，
+ * 与各 forbid-* 门禁同源），空值在本闸按结构错误 fail-closed。
+ */
+function requiredArg(flag, fallback) {
+  const v = argValue(process.argv, flag, fallback);
   if (typeof v !== "string" || v.trim() === "") {
     console.error(`[verify-vendored-binaries] ${flag} 取值非法`);
     process.exit(2);
@@ -35,8 +35,8 @@ function argValue(argv, flag, fallback) {
   return v;
 }
 
-const root = argValue(process.argv, "--root", ROOT);
-const registry = argValue(process.argv, "--registry", join(ROOT, REGISTRY_REL));
+const root = requiredArg("--root", ROOT);
+const registry = requiredArg("--registry", join(ROOT, REGISTRY_REL));
 if (!existsSync(root)) {
   console.error(`[verify-vendored-binaries] 扫描根不存在：${root}`);
   process.exit(2);

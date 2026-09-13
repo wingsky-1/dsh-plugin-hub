@@ -717,6 +717,13 @@ test("CLI：正例 exit 0，反例 exit 1，登记表不可读 exit 2", () => {
   );
   assert.equal(unreadable.status, 2);
   assert.match(unreadable.stderr, /判定不可执行/);
+
+  // 空值按参数错误处理（复用 exemption-gate 的取值实现后仍须 fail-closed）
+  const blank = spawnSync(process.execPath, [SCRIPT, "--root=", "--registry", writeRegistry([])], {
+    encoding: "utf8",
+  });
+  assert.equal(blank.status, 2);
+  assert.match(blank.stderr, /--root 取值非法/);
 });
 
 test("CLI：未登记的命中直接打印 sha256（登记表 note 的「先跑门禁取哈希」才成立）", () => {
