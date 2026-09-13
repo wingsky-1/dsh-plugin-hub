@@ -19,9 +19,18 @@ import {
   LIST_MAX_TOOLS_PER_SERVER,
 } from "../connection/runtime/interface.ts";
 import { withTimeout } from "../pipeline/interface.ts";
-import { policyAllows, policyDenialReason, isToolDenied, toolDisabledReason } from "../pipeline/interface.ts";
+import {
+  policyAllows,
+  policyDenialReason,
+  isToolDenied,
+  toolDisabledReason,
+} from "../pipeline/interface.ts";
 import { searchCatalogMulti, listCatalog, findToolDetail } from "../catalog/interface.ts";
-import { parseFullServerName, fullServerName, MIDDLEWARE_GLOBAL_ROOT } from "../workspace/interface.ts";
+import {
+  parseFullServerName,
+  fullServerName,
+  MIDDLEWARE_GLOBAL_ROOT,
+} from "../workspace/interface.ts";
 import type { MiddlewareMode, DisabledToolsMap } from "../types/interface.ts";
 import type { McpStatsCollector } from "../stats/interface.ts";
 
@@ -49,7 +58,9 @@ function visibleProjectServers(mw: McpMiddleware, root: string): string[] {
 }
 
 /** 等待 in-flight 连接/发现（8s 预算，与 search 对齐；超时不阻塞返回已有目录）。 */
-async function waitForDiscovery(unit: NonNullable<Awaited<ReturnType<McpMiddleware["projectUnitFor"]>>>): Promise<void> {
+async function waitForDiscovery(
+  unit: NonNullable<Awaited<ReturnType<McpMiddleware["projectUnitFor"]>>>,
+): Promise<void> {
   const inflight = [...unit.inFlight.values()];
   if (inflight.length === 0) return;
   try {
@@ -95,7 +106,9 @@ async function checkMiddlewareRoot(
   }
   if (parsed.root === MIDDLEWARE_GLOBAL_ROOT && mode !== "all") {
     const bare = parsed.server;
-    const known = mw.host.isGlobalServer(bare) || mw.units.get(MIDDLEWARE_GLOBAL_ROOT)?.catalog.has(bare) === true;
+    const known =
+      mw.host.isGlobalServer(bare) ||
+      mw.units.get(MIDDLEWARE_GLOBAL_ROOT)?.catalog.has(bare) === true;
     if (known) {
       throw new Error(
         `${caller}: server ${JSON.stringify(server)} 是全局级（global scope）服务器，中间层只覆盖项目级服务器；请直接用 mcp__${bare}__<tool> 前缀工具调用（project 模式全局工具仍直呼注册）`,
@@ -124,14 +137,20 @@ function formatUnavailableServer(entry: Record<string, unknown>): string {
 }
 
 function renderSearchOutput(_args: unknown, value: unknown) {
-  const v = (value ?? {}) as { results?: Array<Record<string, unknown>>; unavailable?: Array<Record<string, unknown>>; truncated?: unknown };
+  const v = (value ?? {}) as {
+    results?: Array<Record<string, unknown>>;
+    unavailable?: Array<Record<string, unknown>>;
+    truncated?: unknown;
+  };
   const lines = (v.results ?? []).map(formatSearchHit);
   let body = lines.length > 0 ? lines.join("\n") : SEARCH_EMPTY_HINT;
   if (v.truncated === true) {
-    body += "\n(Results reached limit and may be incomplete — increase limit or use ws_mcp_list for full audit)";
+    body +=
+      "\n(Results reached limit and may be incomplete — increase limit or use ws_mcp_list for full audit)";
   }
   const unavailable = (v.unavailable ?? []).map(formatUnavailableServer);
-  const text = unavailable.length > 0 ? `${body}\n\nUnavailable servers:\n${unavailable.join("\n")}` : body;
+  const text =
+    unavailable.length > 0 ? `${body}\n\nUnavailable servers:\n${unavailable.join("\n")}` : body;
   return [{ type: "text" as const, text }];
 }
 
@@ -166,11 +185,17 @@ async function executeSearch(
     const visibleUnit = visible === root ? unit : await toolCtx.mw.projectUnitFor(visible);
     if (visibleUnit !== undefined) await waitForDiscovery(visibleUnit);
   }
-  const { results, unavailable, truncated } = searchCatalogMulti(toolCtx.mw.units, roots, query, limit);
+  const { results, unavailable, truncated } = searchCatalogMulti(
+    toolCtx.mw.units,
+    roots,
+    query,
+    limit,
+  );
   // truncated 由检索函数返回截断事实（恰好命中 limit 不误报，B10 修正——
   // 旧实现按过滤前 results.length >= limit 判定，恰恰等于 limit 也误报
   // 「可能未列全」）；serverFilter 过滤在截断判定之后，纯展示层过滤。
-  const filtered = serverFilter === undefined ? results : results.filter((hit) => hit.server === serverFilter);
+  const filtered =
+    serverFilter === undefined ? results : results.filter((hit) => hit.server === serverFilter);
   return { results: filtered, unavailable, truncated };
 }
 
@@ -182,7 +207,10 @@ function buildSearchTool(toolCtx: MiddlewareToolContext): ToolDefinition {
     parameters: {
       type: "object",
       properties: {
-        query: { type: "string", description: "Search query / keywords; empty returns capability summary" },
+        query: {
+          type: "string",
+          description: "Search query / keywords; empty returns capability summary",
+        },
         server: { type: "string", description: "Optional: @<root>/<server> full name filter" },
         limit: { type: "number", description: "Max results to return (default 5, max 10)" },
       },
@@ -193,7 +221,11 @@ function buildSearchTool(toolCtx: MiddlewareToolContext): ToolDefinition {
         properties: {
           results: { type: "array", items: {} },
           unavailable: { type: "array", items: {} },
-          truncated: { type: "boolean", description: "结果是否因 limit 截断（results 达到 limit 时为 true，提示模型可能未列全）" },
+          truncated: {
+            type: "boolean",
+            description:
+              "结果是否因 limit 截断（results 达到 limit 时为 true，提示模型可能未列全）",
+          },
         },
         required: ["results", "unavailable", "truncated"],
         additionalProperties: false,
@@ -227,7 +259,12 @@ function renderCallOutput(_args: unknown, value: unknown) {
   const v = (value ?? {}) as { content?: unknown };
   const content = Array.isArray(v.content) ? v.content : [];
   const parts = content.map(formatCallContentBlock);
-  return [{ type: "text" as const, text: parts.length > 0 ? parts.join("\n") : "(MCP tool returned no content)" }];
+  return [
+    {
+      type: "text" as const,
+      text: parts.length > 0 ? parts.join("\n") : "(MCP tool returned no content)",
+    },
+  ];
 }
 
 function parseCallParams(args: unknown): { server: string; tool: string; arguments?: unknown } {
@@ -247,13 +284,23 @@ async function executeCall(
   const { server, tool, arguments: callArguments } = parseCallParams(args);
   if (server === "" || tool === "") throw new Error("ws_mcp_call: server 与 tool 均为必填");
   const parsed = parseFullServerName(server);
-  if (parsed === undefined) throw new Error("ws_mcp_call: server 参数格式非法，应为 @<root>/<server>");
-  const targetRoot = await checkMiddlewareRoot("ws_mcp_call", server, root, toolCtx.mode, toolCtx.mw);
+  if (parsed === undefined)
+    throw new Error("ws_mcp_call: server 参数格式非法，应为 @<root>/<server>");
+  const targetRoot = await checkMiddlewareRoot(
+    "ws_mcp_call",
+    server,
+    root,
+    toolCtx.mode,
+    toolCtx.mw,
+  );
   if (targetRoot === undefined) {
-    throw new Error(`ws_mcp_call: server ${JSON.stringify(server)} 不属于当前工作空间 ${JSON.stringify(root)}；路由一致性校验失败（防跨空间串台）`);
+    throw new Error(
+      `ws_mcp_call: server ${JSON.stringify(server)} 不属于当前工作空间 ${JSON.stringify(root)}；路由一致性校验失败（防跨空间串台）`,
+    );
   }
   const unit = await toolCtx.mw.projectUnitFor(targetRoot);
-  if (unit === undefined) throw new Error(`ws_mcp_call: 工作空间 ${JSON.stringify(targetRoot)} 无项目级 MCP 配置`);
+  if (unit === undefined)
+    throw new Error(`ws_mcp_call: 工作空间 ${JSON.stringify(targetRoot)} 无项目级 MCP 配置`);
   await toolCtx.mw.ensureConnected(targetRoot, parsed.server);
   // #413：透传 exec.agent 给 callTool（封装直呼分支的 execute 依赖
   // agent.session.header.cwd 做 projectPath 补全）。
@@ -268,7 +315,13 @@ async function executeCall(
   } catch (error) {
     const durationMs = Date.now() - startTime;
     if (toolCtx.stats?.isEnabled()) {
-      toolCtx.stats.recordCall(parsed.server, tool, durationMs, false, error instanceof Error ? error.message : String(error));
+      toolCtx.stats.recordCall(
+        parsed.server,
+        tool,
+        durationMs,
+        false,
+        error instanceof Error ? error.message : String(error),
+      );
     }
     throw error;
   }
@@ -282,8 +335,14 @@ function buildCallTool(toolCtx: MiddlewareToolContext): ToolDefinition {
     parameters: {
       type: "object",
       properties: {
-        server: { type: "string", description: "Required: @<root>/<server> full name (from ws_mcp_search / ws_mcp_list)" },
-        tool: { type: "string", description: "Required: bare remote tool name (from ws_mcp_search / ws_mcp_list)" },
+        server: {
+          type: "string",
+          description: "Required: @<root>/<server> full name (from ws_mcp_search / ws_mcp_list)",
+        },
+        tool: {
+          type: "string",
+          description: "Required: bare remote tool name (from ws_mcp_search / ws_mcp_list)",
+        },
         arguments: {
           type: "object",
           additionalProperties: true,
@@ -328,7 +387,9 @@ function formatListServerEntry(entry: Record<string, unknown>): string {
       : `${server} (0 tools)`;
   const disabled = entry.disabled === true ? " [disabled]" : "";
   const unavailable =
-    typeof entry.unavailable === "string" && entry.unavailable !== "" ? ` [unavailable: ${entry.unavailable}]` : "";
+    typeof entry.unavailable === "string" && entry.unavailable !== ""
+      ? ` [unavailable: ${entry.unavailable}]`
+      : "";
   const truncated =
     entry.toolsTruncated === true
       ? " [toolsTruncated: tool count reached limit, increase perServerLimit to retry]"
@@ -349,17 +410,25 @@ function renderListOutput(_args: unknown, value: unknown) {
   const servers = v.servers ?? [];
   const lines = servers.map(formatListServerEntry);
   const prefix = `Workspace ${String(v.workspace ?? "")} (mode=${String(v.mode ?? "")}): ${String(v.totalServers ?? 0)} servers / ${String(v.totalTools ?? 0)} tools in total`;
-  const body = lines.length > 0 ? lines.join("\n\n") : String(v.message ?? "(No MCP servers found in current workspace)");
+  const body =
+    lines.length > 0
+      ? lines.join("\n\n")
+      : String(v.message ?? "(No MCP servers found in current workspace)");
   const truncated =
-    v.toolsTruncated === true ? "\n(Some server tool lists were truncated; increase perServerLimit if needed)" : "";
+    v.toolsTruncated === true
+      ? "\n(Some server tool lists were truncated; increase perServerLimit if needed)"
+      : "";
   return [{ type: "text" as const, text: `${prefix}\n\n${body}${truncated}` }];
 }
 
 function parseListParams(args: unknown): { serverFilter?: string; toolLimit: number } {
   const params = (typeof args === "object" && args !== null ? args : {}) as Record<string, unknown>;
-  const serverFilter = typeof params.server === "string" && params.server !== "" ? params.server : undefined;
+  const serverFilter =
+    typeof params.server === "string" && params.server !== "" ? params.server : undefined;
   const requested =
-    typeof params.perServerLimit === "number" ? Math.floor(params.perServerLimit) : LIST_DEFAULT_TOOLS_PER_SERVER;
+    typeof params.perServerLimit === "number"
+      ? Math.floor(params.perServerLimit)
+      : LIST_DEFAULT_TOOLS_PER_SERVER;
   const toolLimit = Math.max(1, Math.min(requested, LIST_MAX_TOOLS_PER_SERVER));
   return { serverFilter, toolLimit };
 }
@@ -372,7 +441,10 @@ function resolveEmptyListMessage(
 ): string {
   if (serverFilter !== undefined) {
     const visible = visibleProjectServers(mw, root);
-    const visibleText = visible.length > 0 ? `可见项目级服务器：${visible.join(" / ")}；` : "当前工作空间无已发现的项目级服务器；";
+    const visibleText =
+      visible.length > 0
+        ? `可见项目级服务器：${visible.join(" / ")}；`
+        : "当前工作空间无已发现的项目级服务器；";
     return `没有匹配 server=${JSON.stringify(serverFilter)} 的项目级服务器。${visibleText}全局级服务器不在此列出，请用 mcp__<server>__<tool> 前缀工具访问`;
   }
   return mode === "all"
@@ -395,7 +467,8 @@ async function resolveListWithoutUnit(
       totalServers: 0,
       totalTools: 0,
       toolsTruncated: false,
-      message: "当前工作空间没有项目级 MCP 配置（可在 <项目根>/.dsh/mcp.json 添加服务器，或切换工作区）",
+      message:
+        "当前工作空间没有项目级 MCP 配置（可在 <项目根>/.dsh/mcp.json 添加服务器，或切换工作区）",
     };
   }
   const globalUnit = await mw.projectUnitFor("@global");
@@ -433,7 +506,15 @@ async function executeList(
     const visibleUnit = visible === root ? unit : await toolCtx.mw.projectUnitFor(visible);
     if (visibleUnit !== undefined) await waitForDiscovery(visibleUnit);
   }
-  const result = listCatalog(toolCtx.mw.units, roots, serverFilter, toolLimit, toolCtx.mode, "", toolCtx.mw.disabledTools);
+  const result = listCatalog(
+    toolCtx.mw.units,
+    roots,
+    serverFilter,
+    toolLimit,
+    toolCtx.mode,
+    "",
+    toolCtx.mw.disabledTools,
+  );
   // A1：带 serverFilter 过滤后 0 命中 → message 可归因（不谎报「未配置」）。
   if (result.servers.length === 0) {
     result.message = resolveEmptyListMessage(serverFilter, toolCtx.mw, root, toolCtx.mode);
@@ -451,7 +532,8 @@ function buildListTool(toolCtx: MiddlewareToolContext): ToolDefinition {
       properties: {
         server: {
           type: "string",
-          description: "Optional: @<root>/<server> full name or bare name filter (error if root is not in current workspace)",
+          description:
+            "Optional: @<root>/<server> full name or bare name filter (error if root is not in current workspace)",
         },
         perServerLimit: {
           type: "number",
@@ -496,11 +578,17 @@ function renderDetailOutput(_args: unknown, value: unknown) {
   };
   const server = String(v.server ?? "");
   const tool = String(v.tool ?? "");
-  const description = typeof v.description === "string" && v.description !== "" ? v.description : "（无描述）";
+  const description =
+    typeof v.description === "string" && v.description !== "" ? v.description : "（无描述）";
   const schema = v.inputSchema === undefined ? "{}" : JSON.stringify(v.inputSchema, null, 2);
   const fresh = v.fresh === true ? "fresh" : "stale";
   const disabled = v.disabled === true ? " [disabled]" : "";
-  return [{ type: "text" as const, text: `${server}/${tool}（${fresh}${disabled}）：${description}\n\ninputSchema:\n${schema}` }];
+  return [
+    {
+      type: "text" as const,
+      text: `${server}/${tool}（${fresh}${disabled}）：${description}\n\ninputSchema:\n${schema}`,
+    },
+  ];
 }
 
 function parseDetailParams(args: unknown): { server: string; tool: string } {
@@ -523,7 +611,13 @@ async function executeDetail(
   if (toolCtx.stats?.isEnabled()) {
     toolCtx.stats.recordDetail(parsed?.server ?? server, tool);
   }
-  const targetRoot = await checkMiddlewareRoot("ws_mcp_detail", server, root, toolCtx.mode, toolCtx.mw);
+  const targetRoot = await checkMiddlewareRoot(
+    "ws_mcp_detail",
+    server,
+    root,
+    toolCtx.mode,
+    toolCtx.mw,
+  );
   if (targetRoot === undefined) {
     throw new Error(
       `ws_mcp_detail: server ${JSON.stringify(server)} 不属于当前工作空间 ${JSON.stringify(root)}；路由一致性校验失败（防跨空间串台）`,
@@ -542,8 +636,15 @@ function buildDetailTool(toolCtx: MiddlewareToolContext): ToolDefinition {
     parameters: {
       type: "object",
       properties: {
-        server: { type: "string", description: "Required: @<root>/<server> full name (from ws_mcp_list / ws_mcp_search)" },
-        tool: { type: "string", description: "Required: bare remote tool name (from ws_mcp_list / ws_mcp_search; supports mcp__<server>__<tool> prefix)" },
+        server: {
+          type: "string",
+          description: "Required: @<root>/<server> full name (from ws_mcp_list / ws_mcp_search)",
+        },
+        tool: {
+          type: "string",
+          description:
+            "Required: bare remote tool name (from ws_mcp_list / ws_mcp_search; supports mcp__<server>__<tool> prefix)",
+        },
       },
       required: ["server", "tool"],
     },
@@ -579,7 +680,10 @@ function handleCallGuard(args: unknown, mw: McpMiddleware): PreToolDecision | un
   const policyKey = fullServerName(parsed.root, parsed.server);
   if (isToolDenied(mw.disabledTools, mw.policy, policyKey, tool)) {
     if (!policyAllows(mw.policy, policyKey, tool)) {
-      return { kind: "deny", reason: policyDenialReason(mw.policy, policyKey, tool) ?? "ws_mcp_call: 工具被策略拒绝" };
+      return {
+        kind: "deny",
+        reason: policyDenialReason(mw.policy, policyKey, tool) ?? "ws_mcp_call: 工具被策略拒绝",
+      };
     }
     return { kind: "deny", reason: toolDisabledReason(policyKey, tool) };
   }
@@ -608,7 +712,10 @@ async function handleDirectMcpGuard(
   if (root === undefined) {
     // 无法解析会话 root：按最宽可见范围放行（仅 @global 共享记录生效）。
     if (disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server)?.has(tool) === true) {
-      return { kind: "deny", reason: toolDisabledReason(`@${MIDDLEWARE_GLOBAL_ROOT}/${server}`, tool) };
+      return {
+        kind: "deny",
+        reason: toolDisabledReason(`@${MIDDLEWARE_GLOBAL_ROOT}/${server}`, tool),
+      };
     }
     return undefined;
   }
@@ -639,7 +746,12 @@ function registerPreExecuteGuard(
         return next();
       }
       if (name.startsWith("mcp__")) {
-        const decision = await handleDirectMcpGuard(name, exec.agent, mw.disabledTools, resolveRoot);
+        const decision = await handleDirectMcpGuard(
+          name,
+          exec.agent,
+          mw.disabledTools,
+          resolveRoot,
+        );
         if (decision !== undefined) return decision;
         return next();
       }

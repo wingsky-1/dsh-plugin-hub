@@ -130,7 +130,12 @@ export class StdioTransport {
   /** 断开原因（onerror 记录最近错误；未出错即退出时为通用退出消息）。 */
   closeReason: Error;
 
-  constructor(config: { command: string; args?: string[]; env?: Record<string, unknown>; cwd?: string }) {
+  constructor(config: {
+    command: string;
+    args?: string[];
+    env?: Record<string, unknown>;
+    cwd?: string;
+  }) {
     this.command = config.command;
     this.args = config.args ?? [];
     this.env = config.env ?? {};
@@ -175,7 +180,12 @@ export class StdioTransport {
 /** 按传输类型创建传输实例。 */
 export function createTransport(server: ServerConfig): StdioTransport | HttpTransport {
   if (server.transport === "stdio") {
-    return new StdioTransport({ command: server.command as string, args: server.args, env: server.env, cwd: server.cwd });
+    return new StdioTransport({
+      command: server.command as string,
+      args: server.args,
+      env: server.env,
+      cwd: server.cwd,
+    });
   }
   return new HttpTransport(server.url as string, server.headers ?? {});
 }

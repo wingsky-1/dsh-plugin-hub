@@ -22,12 +22,7 @@ import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 
 /** 服务器连接状态（与 manager summarize 投影一致）。 */
 export type McpServerStatus =
-  | "connected"
-  | "connecting"
-  | "reconnecting"
-  | "disabled"
-  | "stopped"
-  | "failed";
+  "connected" | "connecting" | "reconnecting" | "disabled" | "stopped" | "failed";
 
 /** 作用域。 */
 export type McpScope = "global" | "project";

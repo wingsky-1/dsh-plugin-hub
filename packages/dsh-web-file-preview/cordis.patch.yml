@@ -1,4 +1,4 @@
 # dsh-web-file-preview bundle patch：仅客户端半边——把对话内「用默认应用打开」改写成官方右侧栏预览。
 - insert:
     - id: ui-dsh-web-file-preview
-      name: '@wingsky-1/dsh-web-file-preview'
+      name: "@wingsky-1/dsh-web-file-preview"

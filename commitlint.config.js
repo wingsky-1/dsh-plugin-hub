@@ -5,4 +5,4 @@
  * 前缀，header 最长 91 字符、body 最长 84 字符，均在默认上限（100）内。放宽会削弱本钩子
  * 唯一的判据。
  */
-export default { extends: ['@commitlint/config-conventional'] }
+export default { extends: ["@commitlint/config-conventional"] };

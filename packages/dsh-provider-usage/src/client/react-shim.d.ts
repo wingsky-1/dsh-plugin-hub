@@ -6,13 +6,7 @@
 declare module "react" {
   /** React 节点：元素 / 原文 / 可空（含嵌套数组，供 map 渲染列表）。 */
   export type ReactNode =
-    | ReactElement
-    | string
-    | number
-    | boolean
-    | null
-    | undefined
-    | readonly ReactNode[];
+    ReactElement | string | number | boolean | null | undefined | readonly ReactNode[];
 
   /** createElement 产物（结构最小面）。 */
   export interface ReactElement {
@@ -27,10 +21,7 @@ declare module "react" {
   ): [S, (next: S | ((prev: S) => S)) => void];
 
   /** useEffect：副作用 + 可选清理函数，deps 只作依赖数组。 */
-  export function useEffect(
-    effect: () => void | (() => void),
-    deps?: readonly unknown[],
-  ): void;
+  export function useEffect(effect: () => void | (() => void), deps?: readonly unknown[]): void;
 
   /** useCallback：按 deps 记忆回调（保持引用稳定）。 */
   export function useCallback<T extends (...args: never[]) => unknown>(

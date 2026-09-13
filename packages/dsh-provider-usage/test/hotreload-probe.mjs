@@ -12,7 +12,11 @@
 import { mkdtempSync, writeFileSync, utimesSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { HotReloadableAdapter, ADAPTER_CONTRACT_VERSION, OPENCODE_GO_PROVIDER } from "../src/apply/index.ts";
+import {
+  HotReloadableAdapter,
+  ADAPTER_CONTRACT_VERSION,
+  OPENCODE_GO_PROVIDER,
+} from "../src/apply/index.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "dou-hr-probe-"));
 const body = (v) => `
@@ -52,16 +56,18 @@ unlinkSync(good);
 const delPoll = await hr.pollOnce();
 const currentAfterDelete = hr.current !== null;
 
-console.log(JSON.stringify({
-  startedMissingOk: started.ok,
-  startedMissingError: started.error ?? null,
-  eventsLength: events.length,
-  startedOk: startedOk.ok,
-  currentAfterStart,
-  polledOk: polled.ok,
-  currentAfterPoll,
-  badReloadOk: badReload.ok,
-  badReloadError: badReload.error ?? null,
-  delPollOk: delPoll.ok,
-  currentAfterDelete,
-}));
+console.log(
+  JSON.stringify({
+    startedMissingOk: started.ok,
+    startedMissingError: started.error ?? null,
+    eventsLength: events.length,
+    startedOk: startedOk.ok,
+    currentAfterStart,
+    polledOk: polled.ok,
+    currentAfterPoll,
+    badReloadOk: badReload.ok,
+    badReloadError: badReload.error ?? null,
+    delPollOk: delPoll.ok,
+    currentAfterDelete,
+  }),
+);

@@ -24,8 +24,16 @@ import { createHash } from "node:crypto";
 import { WebSocket as WsClient, WebSocketServer } from "ws";
 
 import {
-  hostnameAllowed, formatAuthority, rewriteHeaders, bridgeUpstreamHeaders, createLanProxy, isLoopbackTarget,
-  DEFAULT_OPTIONS, compressWsPath, isCompressible, resolveCompressionOptions,
+  hostnameAllowed,
+  formatAuthority,
+  rewriteHeaders,
+  bridgeUpstreamHeaders,
+  createLanProxy,
+  isLoopbackTarget,
+  DEFAULT_OPTIONS,
+  compressWsPath,
+  isCompressible,
+  resolveCompressionOptions,
   ensureSelfSignedTls,
 } from "../../src/index.ts";
 
@@ -44,7 +52,9 @@ async function waitFor(predicate, deadlineMs = 5000, stepMs = 20) {
 /** RFC6455 握手应答行（Sec-WebSocket-Accept 计算；供 raw 假对端完成升级）。 */
 const wsHandshakeResponse = (key) =>
   "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
-  `Sec-WebSocket-Accept: ${createHash("sha1").update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64")}\r\n\r\n`;
+  `Sec-WebSocket-Accept: ${createHash("sha1")
+    .update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+    .digest("base64")}\r\n\r\n`;
 
 /** 起一个 WS 回显上游（wsBridge 三态用例共用）。 */
 async function mkUpstream() {
@@ -67,7 +77,10 @@ async function openAndEcho(port, path) {
   const ws = new WsClient(`ws://127.0.0.1:${port}${path}`);
   const received = [];
   ws.on("message", (data) => received.push(data.toString()));
-  await new Promise((r, j) => { ws.on("open", r); ws.on("error", j); });
+  await new Promise((r, j) => {
+    ws.on("open", r);
+    ws.on("error", j);
+  });
   for (let i = 0; i < 6; i++) {
     ws.send(`ping-${path}-${i}`);
     if (await waitFor(() => received.length > 0, 800)) break;
@@ -87,13 +100,16 @@ describe("纯函数边界用例", () => {
     it("非字符串（undefined）→ 拒绝", () => expect(hostnameAllowed(undefined)).toBe(false));
     it("any IPv4", () => expect(hostnameAllowed("0.0.0.0")).toBe(true));
     it("LAN IPv4", () => expect(hostnameAllowed("192.168.1.1")).toBe(true));
-    it("端口越界 → URL 解析失败 → 拒绝", () => expect(hostnameAllowed("127.0.0.1:99999")).toBe(false));
+    it("端口越界 → URL 解析失败 → 拒绝", () =>
+      expect(hostnameAllowed("127.0.0.1:99999")).toBe(false));
     it("localhost 字面量放行", () => expect(hostnameAllowed("localhost")).toBe(true));
     it("localhost 带端口放行", () => expect(hostnameAllowed("localhost:3080")).toBe(true));
     it("bracketed IPv6 带端口放行", () => expect(hostnameAllowed("[::1]:443")).toBe(true));
-    it("DNS 域名拒绝（重绑定防护核心语义）", () => expect(hostnameAllowed("example.com")).toBe(false));
+    it("DNS 域名拒绝（重绑定防护核心语义）", () =>
+      expect(hostnameAllowed("example.com")).toBe(false));
     it("多级 DNS 域名拒绝", () => expect(hostnameAllowed("sub.example.org")).toBe(false));
-    it("裸 IPv6 冒号 authority → URL 解析失败 → 拒绝", () => expect(hostnameAllowed("::1")).toBe(false));
+    it("裸 IPv6 冒号 authority → URL 解析失败 → 拒绝", () =>
+      expect(hostnameAllowed("::1")).toBe(false));
   });
 
   describe("isLoopbackTarget", () => {
@@ -103,7 +119,8 @@ describe("纯函数边界用例", () => {
     it("localhost", () => expect(isLoopbackTarget("localhost")).toBe(true));
     it("bracketed IPv6 loopback", () => expect(isLoopbackTarget("[::1]")).toBe(true));
     it("bracketed IPv4 loopback", () => expect(isLoopbackTarget("[127.0.0.1]")).toBe(true));
-    it("bracketed mapped loopback", () => expect(isLoopbackTarget("[::ffff:127.0.0.1]")).toBe(true));
+    it("bracketed mapped loopback", () =>
+      expect(isLoopbackTarget("[::ffff:127.0.0.1]")).toBe(true));
     it("非回环拒绝", () => expect(isLoopbackTarget("192.168.1.1")).toBe(false));
     it("DNS 名拒绝", () => expect(isLoopbackTarget("evil.com")).toBe(false));
     it("空串拒绝", () => expect(isLoopbackTarget("")).toBe(false));
@@ -126,7 +143,9 @@ describe("纯函数边界用例", () => {
 
   describe("rewriteHeaders", () => {
     it("多键重写", () => {
-      expect(rewriteHeaders({ host: "x:1", origin: "http://x:1", "x-custom": "v" }, "127.0.0.1:3080")).toEqual({
+      expect(
+        rewriteHeaders({ host: "x:1", origin: "http://x:1", "x-custom": "v" }, "127.0.0.1:3080"),
+      ).toEqual({
         host: "127.0.0.1:3080",
         origin: "http://127.0.0.1:3080",
         "x-custom": "v",
@@ -161,17 +180,22 @@ describe("纯函数边界用例", () => {
 
   describe("bridgeUpstreamHeaders（issue #379：压缩桥接上游连接入站头透传）", () => {
     it("透传认证/自定义头，重写 Host/Origin，剥离 hop-by-hop 与 WS 握手专有头", () => {
-      expect(bridgeUpstreamHeaders({
-        host: "192.168.1.50:3081",
-        origin: "http://192.168.1.50:3081",
-        cookie: "dsh-auth-x=v1.aaa",
-        "x-custom": "v",
-        connection: "Upgrade",
-        upgrade: "websocket",
-        "sec-websocket-key": "AAA=",
-        "sec-websocket-version": "13",
-        "sec-websocket-extensions": "permessage-deflate",
-      }, "127.0.0.1:3080")).toEqual({
+      expect(
+        bridgeUpstreamHeaders(
+          {
+            host: "192.168.1.50:3081",
+            origin: "http://192.168.1.50:3081",
+            cookie: "dsh-auth-x=v1.aaa",
+            "x-custom": "v",
+            connection: "Upgrade",
+            upgrade: "websocket",
+            "sec-websocket-key": "AAA=",
+            "sec-websocket-version": "13",
+            "sec-websocket-extensions": "permessage-deflate",
+          },
+          "127.0.0.1:3080",
+        ),
+      ).toEqual({
         cookie: "dsh-auth-x=v1.aaa",
         "x-custom": "v",
         host: "127.0.0.1:3080",
@@ -202,15 +226,20 @@ describe("纯函数边界用例", () => {
 
     // 分支补充：大写键名归一化小写、undefined 值跳过、hop-by-hop 全集与 WS 握手头剥离
     it("大写键名归一化、undefined 跳过、Proxy-Authorization/te/trailer/transfer-encoding/sec-websocket-protocol 剥离", () => {
-      expect(bridgeUpstreamHeaders({
-        Cookie: "c=1",
-        "X-Undefined": undefined,
-        "Proxy-Authorization": "Basic x",
-        te: "trailers",
-        trailer: "x-foo",
-        "transfer-encoding": "chunked",
-        "sec-websocket-protocol": "chat",
-      }, "127.0.0.1:3080")).toEqual({
+      expect(
+        bridgeUpstreamHeaders(
+          {
+            Cookie: "c=1",
+            "X-Undefined": undefined,
+            "Proxy-Authorization": "Basic x",
+            te: "trailers",
+            trailer: "x-foo",
+            "transfer-encoding": "chunked",
+            "sec-websocket-protocol": "chat",
+          },
+          "127.0.0.1:3080",
+        ),
+      ).toEqual({
         cookie: "c=1",
         host: "127.0.0.1:3080",
         origin: "http://127.0.0.1:3080",
@@ -220,7 +249,9 @@ describe("纯函数边界用例", () => {
     // L2（#395）：sec-websocket-accept 是响应头、请求侧不可达，不在剥离集——入站若
     // 恰好携带该头则原样透传（deny 集仅针对请求侧可达头，防回归误加回剥离集）。
     it("sec-websocket-accept 不再被剥离（响应头请求侧不可达）", () => {
-      expect(bridgeUpstreamHeaders({ "sec-websocket-accept": "ABC=", cookie: "c=1" }, "127.0.0.1:3080")).toEqual({
+      expect(
+        bridgeUpstreamHeaders({ "sec-websocket-accept": "ABC=", cookie: "c=1" }, "127.0.0.1:3080"),
+      ).toEqual({
         "sec-websocket-accept": "ABC=",
         cookie: "c=1",
         host: "127.0.0.1:3080",
@@ -255,7 +286,8 @@ describe("纯函数边界用例", () => {
   describe("DEFAULT_OPTIONS 常量", () => {
     it('DEFAULT_OPTIONS.host === "0.0.0.0"', () => expect(DEFAULT_OPTIONS.host).toBe("0.0.0.0"));
     it("DEFAULT_OPTIONS.port === 3081", () => expect(DEFAULT_OPTIONS.port).toBe(3081));
-    it('DEFAULT_OPTIONS.targetHost === "127.0.0.1"', () => expect(DEFAULT_OPTIONS.targetHost).toBe("127.0.0.1"));
+    it('DEFAULT_OPTIONS.targetHost === "127.0.0.1"', () =>
+      expect(DEFAULT_OPTIONS.targetHost).toBe("127.0.0.1"));
   });
 });
 
@@ -279,15 +311,23 @@ describe("bridgeCompressedWs（WebSocket 压缩桥接）", () => {
     const upPort = upServer.address().port;
 
     const proxy = createLanProxy({
-      host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort,
+      host: "127.0.0.1",
+      port: 0,
+      targetHost: "127.0.0.1",
+      targetPort: upPort,
       wsCompress: { enabled: true, paths: ["/api/remote.mux"] },
     });
     const { httpPort } = await proxy.listen();
 
     const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/remote.mux`);
     const got = [];
-    browserWs.on("message", (data) => { got.push(data.toString()); });
-    await new Promise((r, j) => { browserWs.on("open", r); browserWs.on("error", j); });
+    browserWs.on("message", (data) => {
+      got.push(data.toString());
+    });
+    await new Promise((r, j) => {
+      browserWs.on("open", r);
+      browserWs.on("error", j);
+    });
     browserWs.send("hello-via-ws-bridge");
     await sleep(300);
     browserWs.close();
@@ -329,7 +369,10 @@ describe("#379 桥接上游连接入站头透传", () => {
     upPortValue = upPort;
 
     const proxy = createLanProxy({
-      host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort,
+      host: "127.0.0.1",
+      port: 0,
+      targetHost: "127.0.0.1",
+      targetPort: upPort,
       wsCompress: { enabled: true, paths: ["/api/remote.mux"], probeIntervalMs: 0 },
     });
     const { httpPort } = await proxy.listen();
@@ -341,8 +384,13 @@ describe("#379 桥接上游连接入站头透传", () => {
         "x-lan-proxy-probe": "issue-379",
       },
     });
-    const echoed = new Promise((resolve) => browserWs.once("message", (d) => resolve(d.toString())));
-    await new Promise((r, j) => { browserWs.on("open", r); browserWs.on("error", j); });
+    const echoed = new Promise((resolve) =>
+      browserWs.once("message", (d) => resolve(d.toString())),
+    );
+    await new Promise((r, j) => {
+      browserWs.on("open", r);
+      browserWs.on("error", j);
+    });
     browserWs.send("headers-probe");
     echoedValue = await echoed;
     browserWs.close();
@@ -416,7 +464,10 @@ describe("#395 L4 无 cookie 的 WS 桥接升级被上游 401 拒绝", () => {
     const upPort = upServer.address().port;
 
     const proxy = createLanProxy({
-      host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort,
+      host: "127.0.0.1",
+      port: 0,
+      targetHost: "127.0.0.1",
+      targetPort: upPort,
       wsCompress: { enabled: true, paths: ["/api/remote.mux"], probeIntervalMs: 0 },
     });
     const { httpPort } = await proxy.listen();
@@ -427,7 +478,10 @@ describe("#395 L4 无 cookie 的 WS 桥接升级被上游 401 拒绝", () => {
     browserWs.on("open", () => events.push("open"));
     browserWs.on("error", () => events.push("error"));
     browserWs.on("close", (code) => events.push(`close:${code}`));
-    failedInTime = await waitFor(() => events.some((e) => e === "error" || e.startsWith("close:")), 5000);
+    failedInTime = await waitFor(
+      () => events.some((e) => e === "error" || e.startsWith("close:")),
+      5000,
+    );
     readyStateAfterFailure = browserWs.readyState;
 
     browserWs.close();
@@ -470,7 +524,9 @@ describe("#268 P0-1 探活断言 1+3：ping 按间隔发出、pong 正常不误�
     let upstreamPings = 0; // 真 echo 上游收到的 ping 帧数 = 上游段探活按间隔发出
     upServer.on("upgrade", (req, socket, head) => {
       wss.handleUpgrade(req, socket, head, (ws) => {
-        ws.on("ping", () => { upstreamPings += 1; });
+        ws.on("ping", () => {
+          upstreamPings += 1;
+        });
         ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
       });
     });
@@ -478,15 +534,23 @@ describe("#268 P0-1 探活断言 1+3：ping 按间隔发出、pong 正常不误�
     const upPort = upServer.address().port;
 
     const proxy = createLanProxy({
-      host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort,
+      host: "127.0.0.1",
+      port: 0,
+      targetHost: "127.0.0.1",
+      targetPort: upPort,
       wsCompress: { enabled: true, paths: ["/api/events.mux"], probeIntervalMs: 80 },
     });
     const { httpPort } = await proxy.listen();
 
     const pings = []; // 浏览器端收到 ping 的时刻 = 浏览器段探活按间隔发出
     const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/events.mux`);
-    browserWs.on("ping", () => { pings.push(Date.now()); });
-    await new Promise((r, j) => { browserWs.on("open", r); browserWs.on("error", j); });
+    browserWs.on("ping", () => {
+      pings.push(Date.now());
+    });
+    await new Promise((r, j) => {
+      browserWs.on("open", r);
+      browserWs.on("error", j);
+    });
 
     // 断言 1：ping 帧按间隔发出（浏览器段 ≥2 帧且相邻间距贴近 interval：
     // 下界 60ms 排除风暴式连发，上界 interval×10 宽松兜底慢机调度抖动防 flake）
@@ -495,7 +559,9 @@ describe("#268 P0-1 探活断言 1+3：ping 按间隔发出、pong 正常不误�
     // 断言 3：pong 正常（两端 ws 库自动回 pong）→ 多周期后不误杀且消息双向可达
     upstreamPingsReachedTwo = await waitFor(() => upstreamPings >= 2, 4000);
     readyStateAlive = browserWs.readyState;
-    const echoed = new Promise((resolve) => browserWs.once("message", (d) => resolve(d.toString())));
+    const echoed = new Promise((resolve) =>
+      browserWs.once("message", (d) => resolve(d.toString())),
+    );
     browserWs.send("probe-alive-check");
     echoedAlive = await echoed;
 
@@ -542,14 +608,22 @@ describe("#268 P0-1 探活断言 2a：上游段 pong 缺失 → terminate 上游
     const silentPort = silentServer.address().port;
 
     const proxy = createLanProxy({
-      host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: silentPort,
+      host: "127.0.0.1",
+      port: 0,
+      targetHost: "127.0.0.1",
+      targetPort: silentPort,
       wsCompress: { enabled: true, paths: ["/api/events.mux"], probeIntervalMs: 80 },
     });
     const { httpPort } = await proxy.listen();
 
     const browserWs = new WsClient(`ws://127.0.0.1:${httpPort}/api/events.mux`);
-    browserWs.on("close", (code) => { closeCode = code; });
-    await new Promise((r, j) => { browserWs.on("open", r); browserWs.on("error", j); });
+    browserWs.on("close", (code) => {
+      closeCode = code;
+    });
+    await new Promise((r, j) => {
+      browserWs.on("open", r);
+      browserWs.on("error", j);
+    });
 
     closeObserved = await waitFor(() => closeCode !== null, 5000);
 
@@ -579,23 +653,32 @@ describe("#268 P0-1 探活断言 2b：浏览器段 pong 缺失 → terminate 浏
     upServer.on("upgrade", (req, socket, head) => {
       wss.handleUpgrade(req, socket, head, (ws) => {
         ws.on("message", (data, isBinary) => ws.send(data, { binary: isBinary }));
-        ws.on("close", () => { closed = true; });
+        ws.on("close", () => {
+          closed = true;
+        });
       });
     });
     await new Promise((r) => upServer.listen(0, "127.0.0.1", r));
     const upPort = upServer.address().port;
 
     const proxy = createLanProxy({
-      host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: upPort,
+      host: "127.0.0.1",
+      port: 0,
+      targetHost: "127.0.0.1",
+      targetPort: upPort,
       wsCompress: { enabled: true, paths: ["/api/events.host"], probeIntervalMs: 80 },
     });
     const { httpPort } = await proxy.listen();
 
     const req = httpRequest({
-      hostname: "127.0.0.1", port: httpPort, path: "/api/events.host",
+      hostname: "127.0.0.1",
+      port: httpPort,
+      path: "/api/events.host",
       headers: {
-        connection: "Upgrade", upgrade: "websocket",
-        "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", "sec-websocket-version": "13",
+        connection: "Upgrade",
+        upgrade: "websocket",
+        "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+        "sec-websocket-version": "13",
         host: `127.0.0.1:${httpPort}`,
       },
     });
@@ -632,12 +715,21 @@ describe("createLanProxy 转发错误处理（proxy error → 502）", () => {
 
   beforeAll(async () => {
     const proxy = createLanProxy({
-      host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: 1, // 1 端口不可达
+      host: "127.0.0.1",
+      port: 0,
+      targetHost: "127.0.0.1",
+      targetPort: 1, // 1 端口不可达
     });
     const { httpPort } = await proxy.listen();
     res = await new Promise((resolve) => {
       const req = httpRequest(
-        { hostname: "127.0.0.1", port: httpPort, path: "/any", method: "GET", headers: { host: "127.0.0.1" } },
+        {
+          hostname: "127.0.0.1",
+          port: httpPort,
+          path: "/any",
+          method: "GET",
+          headers: { host: "127.0.0.1" },
+        },
         (res2) => {
           let body = "";
           res2.on("data", (c) => (body += c));
@@ -658,23 +750,30 @@ describe("createLanProxy 转发错误处理（proxy error → 502）", () => {
 // ===== createLanProxy 围栏：非回环 targetHost =====
 describe("createLanProxy 围栏：非回环 targetHost", () => {
   it("非回环 targetHost 拒绝启动（防开放转发）", () => {
-    expect(() => createLanProxy({ host: "127.0.0.1", port: 0, targetHost: "evil.com", targetPort: 3080 }))
-      .toThrow(/仅允许回环/);
+    expect(() =>
+      createLanProxy({ host: "127.0.0.1", port: 0, targetHost: "evil.com", targetPort: 3080 }),
+    ).toThrow(/仅允许回环/);
   });
 });
 
 // ===== createLanProxy 非法 targetPort =====
 describe("createLanProxy 非法 targetPort", () => {
   it("targetPort=0 越下界拒绝", () => {
-    expect(() => createLanProxy({ host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: 0 })).toThrow(/valid port/);
+    expect(() =>
+      createLanProxy({ host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: 0 }),
+    ).toThrow(/valid port/);
   });
 
   it("targetPort=70000 越上界拒绝", () => {
-    expect(() => createLanProxy({ host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: 70000 })).toThrow(/valid port/);
+    expect(() =>
+      createLanProxy({ host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: 70000 }),
+    ).toThrow(/valid port/);
   });
 
   it("targetPort=-1 负数拒绝", () => {
-    expect(() => createLanProxy({ host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: -1 })).toThrow(/valid port/);
+    expect(() =>
+      createLanProxy({ host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: -1 }),
+    ).toThrow(/valid port/);
   });
 });
 
@@ -692,7 +791,12 @@ describe("createLanProxy HTTPS 降级", () => {
     const certDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-httpsfail-"));
     const tls = ensureSelfSignedTls({ dir: certDir, extraSans: [] });
     const proxy = createLanProxy({
-      host: "127.0.0.1", port: 0, httpsPort: occupiedPort, tls, targetHost: "127.0.0.1", targetPort: 1,
+      host: "127.0.0.1",
+      port: 0,
+      httpsPort: occupiedPort,
+      tls,
+      targetHost: "127.0.0.1",
+      targetPort: 1,
     });
     result = await proxy.listen();
     httpListening = proxy.server.listening;
@@ -729,7 +833,10 @@ describe("wsBridgeEnabled 三态路径选择（issue #552 解耦）", () => {
     beforeAll(async () => {
       const u = await mkUpstream();
       const proxy = createLanProxy({
-        host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: u.upPort,
+        host: "127.0.0.1",
+        port: 0,
+        targetHost: "127.0.0.1",
+        targetPort: u.upPort,
         wsBridge: { enabled: false },
         wsCompress: { enabled: true, paths: ["/api/remote.mux"], probeIntervalMs: 0 },
       });
@@ -740,7 +847,9 @@ describe("wsBridgeEnabled 三态路径选择（issue #552 解耦）", () => {
       // 若 socket 始终没销毁，waitFor 超时后快照仍为 0、下面断言照旧判红——是去抖，不是放宽。
       await waitFor(() => proxy.connStats().wsPassthroughDestroyed >= 1, 5000);
       cs = proxy.connStats();
-      await proxy.close(); u.wss.close(); u.upServer.close();
+      await proxy.close();
+      u.wss.close();
+      u.upServer.close();
     }, 30000);
 
     it("wsBridge=false 命中白名单仍可转发（透传）", () => {
@@ -764,7 +873,10 @@ describe("wsBridgeEnabled 三态路径选择（issue #552 解耦）", () => {
     beforeAll(async () => {
       const u = await mkUpstream();
       const proxy = createLanProxy({
-        host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: u.upPort,
+        host: "127.0.0.1",
+        port: 0,
+        targetHost: "127.0.0.1",
+        targetPort: u.upPort,
         wsBridge: { enabled: true },
         wsCompress: { enabled: true, paths: ["/api/remote.mux"], probeIntervalMs: 0 },
       });
@@ -772,7 +884,9 @@ describe("wsBridgeEnabled 三态路径选择（issue #552 解耦）", () => {
       got = await openAndEcho(httpPort, "/api/other");
       await waitFor(() => proxy.connStats().wsBridgeClosed >= 1, 5000);
       cs = proxy.connStats();
-      await proxy.close(); u.wss.close(); u.upServer.close();
+      await proxy.close();
+      u.wss.close();
+      u.upServer.close();
     }, 30000);
 
     it("wsBridge=true 未命中白名单仍可转发（桥接明文）", () => {
@@ -795,18 +909,24 @@ describe("wsBridgeEnabled 三态路径选择（issue #552 解耦）", () => {
     beforeAll(async () => {
       const u = await mkUpstream();
       const proxy = createLanProxy({
-        host: "127.0.0.1", port: 0, targetHost: "127.0.0.1", targetPort: u.upPort,
+        host: "127.0.0.1",
+        port: 0,
+        targetHost: "127.0.0.1",
+        targetPort: u.upPort,
         wsCompress: { enabled: true, paths: ["/api/remote.mux"], probeIntervalMs: 0 },
       });
       const { httpPort } = await proxy.listen();
-      await openAndEcho(httpPort, "/api/remote.mux");   // 命中 → 桥接
-      await openAndEcho(httpPort, "/api/other");        // 未命中 → 透传
+      await openAndEcho(httpPort, "/api/remote.mux"); // 命中 → 桥接
+      await openAndEcho(httpPort, "/api/other"); // 未命中 → 透传
       await waitFor(
-        () => proxy.connStats().wsBridgeClosed >= 1 && proxy.connStats().wsPassthroughDestroyed >= 1,
+        () =>
+          proxy.connStats().wsBridgeClosed >= 1 && proxy.connStats().wsPassthroughDestroyed >= 1,
         5000,
       );
       cs = proxy.connStats();
-      await proxy.close(); u.wss.close(); u.upServer.close();
+      await proxy.close();
+      u.wss.close();
+      u.upServer.close();
     }, 30000);
 
     it("缺省 wsBridge：命中白名单走桥接", () => {

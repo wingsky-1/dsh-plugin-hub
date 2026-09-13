@@ -86,7 +86,12 @@ export async function pollUntil(label, cond, { timeoutMs = 5000, tickMs = 10 } =
  * 比「单次固定 sleep 后一次性断言」更能即时暴露竞态。窗口时长是物理必需
  * （无法不经过时间就证明『未来无新帧』），tick 属轮询 tick。
  */
-export async function assertNoGrowth(label, measure, baseline, { windowMs = 120, tickMs = 10 } = {}) {
+export async function assertNoGrowth(
+  label,
+  measure,
+  baseline,
+  { windowMs = 120, tickMs = 10 } = {},
+) {
   const deadline = Date.now() + windowMs;
   for (;;) {
     assert.equal(measure(), baseline, label);

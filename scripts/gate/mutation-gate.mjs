@@ -30,31 +30,35 @@
  *
  * 退出码：0 = 通过；1 = 门禁违约；2 = 环境/数据缺失错误（fail-closed）
  */
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { readMutationReport, readMutationReportsAgg } from '../lib/mutation-report-lib.mjs';
+import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { readMutationReport, readMutationReportsAgg } from "../lib/mutation-report-lib.mjs";
 
 const repoRoot = process.cwd();
 const pkg = process.argv[2];
 if (!pkg || !/^dsh-[a-z0-9-]+$/.test(pkg)) {
-  console.error('mutation-gate: 用法：node scripts/gate/mutation-gate.mjs <dsh-<name>>');
+  console.error("mutation-gate: 用法：node scripts/gate/mutation-gate.mjs <dsh-<name>>");
   process.exit(2);
 }
 
 // ── gauntlet 配置 ─────────────────────────────────────────────
 let gauntlet;
 try {
-  gauntlet = JSON.parse(readFileSync(join(repoRoot, 'scripts', 'data', 'gauntlet.config.json'), 'utf8'));
+  gauntlet = JSON.parse(
+    readFileSync(join(repoRoot, "scripts", "data", "gauntlet.config.json"), "utf8"),
+  );
 } catch (err) {
   console.error(`mutation-gate: gauntlet.config.json 解析失败：${err.message}`);
   process.exit(2);
 }
 const mutCfg = gauntlet?.mutation?.packages?.[pkg];
 if (!mutCfg) {
-  console.error(`mutation-gate: ${pkg} 不在 gauntlet mutation.packages 内——聚合包无变异配置，不应进入本门禁`);
+  console.error(
+    `mutation-gate: ${pkg} 不在 gauntlet mutation.packages 内——聚合包无变异配置，不应进入本门禁`,
+  );
   process.exit(2);
 }
-const threshold = typeof mutCfg.threshold === 'number' ? mutCfg.threshold : null;
+const threshold = typeof mutCfg.threshold === "number" ? mutCfg.threshold : null;
 if (threshold === null) {
   console.error(`mutation-gate: ${pkg}.threshold 未配置 —— 视为配置错误（fail-closed）`);
   process.exit(2);
@@ -67,13 +71,13 @@ let failed = false;
 // #220 B 方案：包可拆分为多个段配置（<pkg>-<seg>.json），各段独立 matrix 实例
 // 产出 <pkg>-<seg>.json 报告；此处按段报告聚合（mutant id 去重）为包级口径。
 // 未拆分包仍读单报告 <pkg>.json。任一段报告缺失即 fail-closed。
-const reportDir = join(repoRoot, 'coverage', 'mutation');
+const reportDir = join(repoRoot, "coverage", "mutation");
 let r = null;
 {
   // 期望段名由 stryker.conf.d/ 实际存在的 <pkg>-<后缀>.json 推导（单一事实源；
   // 后缀即功能段名，数字段名亦兼容——#342 二期功能命名改造）；报告必须与段
   // 配置一一对应，缺任一段 = 链路异常，fail-closed
-  const confDir = join(repoRoot, 'stryker.conf.d');
+  const confDir = join(repoRoot, "stryker.conf.d");
   const expectedSegs = readdirSync(confDir)
     .map((f) => (f.match(new RegExp(`^${pkg}-(.+)\\.json$`)) ?? [])[1])
     .filter(Boolean)
@@ -81,7 +85,9 @@ let r = null;
   const segPaths = expectedSegs.map((n) => {
     const p = join(reportDir, `${pkg}-${n}.json`);
     if (!existsSync(p)) {
-      console.error(`mutation-gate: ${pkg} 段 ${n} 报告缺失（${p}）—— 段 matrix 实例未产出，fail-closed`);
+      console.error(
+        `mutation-gate: ${pkg} 段 ${n} 报告缺失（${p}）—— 段 matrix 实例未产出，fail-closed`,
+      );
       process.exit(2);
     }
     return p;
@@ -89,7 +95,9 @@ let r = null;
   if (segPaths.length > 0) {
     r = readMutationReportsAgg(segPaths);
     if (!r) {
-      console.error(`mutation-gate: ${pkg} 段式报告缺失或不可解析（${segPaths.length} 份中存在异常）—— fail-closed`);
+      console.error(
+        `mutation-gate: ${pkg} 段式报告缺失或不可解析（${segPaths.length} 份中存在异常）—— fail-closed`,
+      );
       process.exit(2);
     }
   } else {
@@ -98,21 +106,27 @@ let r = null;
     if (!r) {
       // stryker 步骤成功后报告必然存在；缺失 = 报告 artifact 未下发（链路异常）
       // 而非门禁语义，一律判红
-      console.error(`mutation-gate: ${pkg} 变异报告缺失或不可解析（${singlePath}）—— stryker 报告 artifact 未下发，fail-closed`);
+      console.error(
+        `mutation-gate: ${pkg} 变异报告缺失或不可解析（${singlePath}）—— stryker 报告 artifact 未下发，fail-closed`,
+      );
       process.exit(2);
     }
   }
 }
 console.log(
-  `mutation-gate [${pkg}] 变异测试率: covered ${r.coveredScore}% vs threshold ${threshold}%`
-  + ` (killed ${r.killed} + timeout ${r.timeout} / covered ${r.killed + r.timeout + r.survived})`,
+  `mutation-gate [${pkg}] 变异测试率: covered ${r.coveredScore}% vs threshold ${threshold}%` +
+    ` (killed ${r.killed} + timeout ${r.timeout} / covered ${r.killed + r.timeout + r.survived})`,
 );
 if (r.coveredScore < threshold) {
   if (mutationStrict) {
-    console.error(`mutation-gate: FAIL —— 变异 covered ${r.coveredScore}% 低于 threshold ${threshold}%（strict=${mutationStrict}）`);
+    console.error(
+      `mutation-gate: FAIL —— 变异 covered ${r.coveredScore}% 低于 threshold ${threshold}%（strict=${mutationStrict}）`,
+    );
     failed = true;
   } else {
-    console.warn(`mutation-gate: WARN —— 变异 covered ${r.coveredScore}% 低于 threshold ${threshold}%，strict=false 观察态不拦截（#150 达标后自动变硬）`);
+    console.warn(
+      `mutation-gate: WARN —— 变异 covered ${r.coveredScore}% 低于 threshold ${threshold}%，strict=false 观察态不拦截（#150 达标后自动变硬）`,
+    );
   }
 }
 

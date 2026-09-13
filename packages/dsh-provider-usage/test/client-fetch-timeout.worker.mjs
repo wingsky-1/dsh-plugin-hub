@@ -41,7 +41,11 @@ const client = await import(
 
 async function main() {
   // 常量契约
-  assert.equal(client.CLIENT_FETCH_TIMEOUT_MS, 10_000, "客户端 fetch 默认超时 = 10s（#111 先例对齐）");
+  assert.equal(
+    client.CLIENT_FETCH_TIMEOUT_MS,
+    10_000,
+    "客户端 fetch 默认超时 = 10s（#111 先例对齐）",
+  );
   console.log("[client-fetch-timeout.worker] 常量契约 ✓");
 
   // 场景1（#268 主断言）：慢响应在超时窗内 abort 不悬挂
@@ -59,7 +63,10 @@ async function main() {
     // abort 正常发生即清除；若实现回归为悬挂则由它触发失败（防 flake：轮询替代固定 sleep 同理）。
     let guardTimer;
     const guard = new Promise((_, reject) => {
-      guardTimer = setTimeout(() => reject(new Error("fetchTimeout 未在守护窗（2s）内 abort——疑似悬挂")), 2000);
+      guardTimer = setTimeout(
+        () => reject(new Error("fetchTimeout 未在守护窗（2s）内 abort——疑似悬挂")),
+        2000,
+      );
     });
     const t0 = Date.now();
     try {
@@ -88,7 +95,9 @@ async function main() {
       seenInit = init;
       return resp;
     };
-    const out = await client.fetchTimeout("/api/dsh-provider-usage/ui-config", { cache: "no-store" });
+    const out = await client.fetchTimeout("/api/dsh-provider-usage/ui-config", {
+      cache: "no-store",
+    });
     assert.equal(out, resp, "快响应原样透传返回");
     assert.equal(seenInit.cache, "no-store", "RequestInit 其余字段保留");
     assert.equal(seenInit.signal?.aborted, false, "正常路径信号未触发");

@@ -193,7 +193,9 @@ describe("per-key 单飞：同 key 并发 miss 不双跑 formatPanel（评审 M2
 
   beforeAll(async () => {
     let release;
-    const gate = new Promise((res) => { release = res; });
+    const gate = new Promise((res) => {
+      release = res;
+    });
     const h = makeService({ spy: { panelGate: gate } });
     spy = h.spy;
     const entry = entryOf(h.registry);
@@ -270,7 +272,9 @@ describe("generation 失效：在途 getStats 期间 purgeAllCaches → 旧结�
 
   beforeAll(async () => {
     let release;
-    const gate = new Promise((res) => { release = res; });
+    const gate = new Promise((res) => {
+      release = res;
+    });
     const h = makeService({ spy: { fetchGate: gate } });
     spy = h.spy;
 

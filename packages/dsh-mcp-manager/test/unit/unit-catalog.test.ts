@@ -73,13 +73,17 @@ describe("summarizeToolDescriptions", () => {
   it("句点后随大写 → 只取首句", () => {
     // 首句提取：句点后随大写开新句；"1." 编号不误切；无句读整行返回。
     expect(
-      summarizeToolDescriptions(new Map([["x", { description: "Search the web. Use for facts." }]])),
+      summarizeToolDescriptions(
+        new Map([["x", { description: "Search the web. Use for facts." }]]),
+      ),
     ).toBe("Search the web.");
   });
 
   it("1. 编号不误切（句读前置数字跳过）", () => {
     expect(
-      summarizeToolDescriptions(new Map([["x", { description: "Step 1. Crawl a site. Step 2. Done." }]])),
+      summarizeToolDescriptions(
+        new Map([["x", { description: "Step 1. Crawl a site. Step 2. Done." }]]),
+      ),
     ).toBe("Step 1. Crawl a site.");
   });
 
@@ -92,21 +96,28 @@ describe("summarizeToolDescriptions", () => {
   it("重复描述去重", () => {
     // 精确去重：同句两个工具只出现一次。
     expect(
-      summarizeToolDescriptions(new Map([["a", { description: "同句" }], ["b", { description: "同句" }]])),
+      summarizeToolDescriptions(
+        new Map([
+          ["a", { description: "同句" }],
+          ["b", { description: "同句" }],
+        ]),
+      ),
     ).toBe("2 tools: 同句");
   });
 
   it("超长摘要总长受控（≤240）", () => {
     // 超长截断：总长 ≤ 240 字符（UTF-16 安全；截断处补 …）。
     const many = new Map();
-    for (let i = 0; i < 30; i += 1) many.set(`t${String(i).padStart(2, "0")}`, { description: `工具 ${i} 的功能说明`.repeat(6) });
+    for (let i = 0; i < 30; i += 1)
+      many.set(`t${String(i).padStart(2, "0")}`, { description: `工具 ${i} 的功能说明`.repeat(6) });
     const long = summarizeToolDescriptions(many);
     expect(long.length <= 240).toBeTruthy();
   });
 
   it("超长以省略号收尾（不句中切）", () => {
     const many = new Map();
-    for (let i = 0; i < 30; i += 1) many.set(`t${String(i).padStart(2, "0")}`, { description: `工具 ${i} 的功能说明`.repeat(6) });
+    for (let i = 0; i < 30; i += 1)
+      many.set(`t${String(i).padStart(2, "0")}`, { description: `工具 ${i} 的功能说明`.repeat(6) });
     const long = summarizeToolDescriptions(many);
     expect(long.endsWith("…")).toBeTruthy();
   });
@@ -114,7 +125,8 @@ describe("summarizeToolDescriptions", () => {
   it("重复描述去重后单条即完整", () => {
     // 描述去重（30 个工具同句）→ 内容一条 + 总数前缀即足够，无需省略号。
     const dedupMap = new Map();
-    for (let i = 0; i < 30; i += 1) dedupMap.set(`t${String(i).padStart(2, "0")}`, { description: "同句说明" });
+    for (let i = 0; i < 30; i += 1)
+      dedupMap.set(`t${String(i).padStart(2, "0")}`, { description: "同句说明" });
     expect(summarizeToolDescriptions(dedupMap)).toBe("30 tools: 同句说明");
   });
 
@@ -139,7 +151,11 @@ describe("composeCatalogEntries", () => {
       ["s4", { server: { name: "s4" } }],
     ]);
   }
-  const cacheFixture = () => new Map([["s3", { summary: "cached-summary" }], ["s4", { summary: "" }]]);
+  const cacheFixture = () =>
+    new Map([
+      ["s3", { summary: "cached-summary" }],
+      ["s4", { summary: "" }],
+    ]);
 
   it("条目数与服务器数一致", () => {
     const entries = composeCatalogEntries(supervisorsFixture(), 10, cacheFixture());
@@ -263,7 +279,9 @@ describe("renderMcpCatalogMessage / findCatalogMessage / readCatalogEntries", ()
   });
 
   it("文本含 does not reflect active connection status", () => {
-    expect(makeMessage().content[0].text.includes("does not reflect active connection status")).toBeTruthy();
+    expect(
+      makeMessage().content[0].text.includes("does not reflect active connection status"),
+    ).toBeTruthy();
   });
 
   it("findCatalogMessage 命中目录消息", () => {
@@ -329,7 +347,9 @@ describe("renderMcpCatalogUpdate", () => {
   });
 
   it("替换声明", () => {
-    expect(makeText().includes("This catalog replaces all previous available_mcp_servers")).toBeTruthy();
+    expect(
+      makeText().includes("This catalog replaces all previous available_mcp_servers"),
+    ).toBeTruthy();
   });
 
   it("内层裁掉原头部说明", () => {
@@ -369,7 +389,11 @@ describe("catalogHistory", () => {
       session: {
         surface: { nodes: [7] },
         snapshotEvents: () => [
-          { type: "user/message", seq: 5, data: { source: { kind: "mcp-catalog", entries: entry } } },
+          {
+            type: "user/message",
+            seq: 5,
+            data: { source: { kind: "mcp-catalog", entries: entry } },
+          },
           event(7),
           { type: "user/message", seq: 8, data: { source: { kind: "other" } } },
         ],
@@ -397,7 +421,11 @@ describe("catalogHistory", () => {
         surface: { nodes: [1] },
         snapshotEvents: () => [
           event(1),
-          { type: "user/message", seq: 2, data: { source: { kind: "mcp-catalog", entries: "bad" } } },
+          {
+            type: "user/message",
+            seq: 2,
+            data: { source: { kind: "mcp-catalog", entries: "bad" } },
+          },
         ],
       },
     };
@@ -406,7 +434,11 @@ describe("catalogHistory", () => {
 
   it("只有非目录消息 → {published:false}", () => {
     expect(
-      catalogHistory({ session: { snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source: { kind: "x" } } }] } }),
+      catalogHistory({
+        session: {
+          snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source: { kind: "x" } } }],
+        },
+      }),
     ).toEqual({ published: false });
   });
 });
@@ -420,18 +452,42 @@ describe("resolveCatalogInjection：六条路径", () => {
     const entry = [{ name: "s", text: "d" }];
     return {
       entry,
-      agentSame: { session: { surface: { nodes: [1] }, snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source: { kind: "mcp-catalog", entries: entry } } }] } },
+      agentSame: {
+        session: {
+          surface: { nodes: [1] },
+          snapshotEvents: () => [
+            {
+              type: "user/message",
+              seq: 1,
+              data: { source: { kind: "mcp-catalog", entries: entry } },
+            },
+          ],
+        },
+      },
     };
   }
 
   function otherDigestAgent() {
-    return { session: { surface: { nodes: [] }, snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source: { kind: "mcp-catalog", entries: [{ name: "old" }] } } }] } };
+    return {
+      session: {
+        surface: { nodes: [] },
+        snapshotEvents: () => [
+          {
+            type: "user/message",
+            seq: 1,
+            data: { source: { kind: "mcp-catalog", entries: [{ name: "old" }] } },
+          },
+        ],
+      },
+    };
   }
 
   it("reject 直接透传", () => {
     // 1. reject 直接透传。
     const rejected = { kind: "reject", messages: [] };
-    expect(resolveCatalogInjection(rejected, [], supervisors(), 6, new Map(), undefined)).toBe(rejected);
+    expect(resolveCatalogInjection(rejected, [], supervisors(), 6, new Map(), undefined)).toBe(
+      rejected,
+    );
   });
 
   it("历史 digest 相同 + 本轮已带目录 → kind 保持 enter", () => {
@@ -439,7 +495,14 @@ describe("resolveCatalogInjection：六条路径", () => {
     const { entry, agentSame } = sameDigestAgent();
     const existingMsg = renderMcpCatalogMessage(entry);
     const decisionWith = { kind: "enter", messages: [plainMessage("keep"), existingMsg] };
-    const filtered = resolveCatalogInjection(decisionWith, [], supervisors(), 6, new Map(), agentSame);
+    const filtered = resolveCatalogInjection(
+      decisionWith,
+      [],
+      supervisors(),
+      6,
+      new Map(),
+      agentSame,
+    );
     expect(filtered.kind).toBe("enter");
   });
 
@@ -447,7 +510,14 @@ describe("resolveCatalogInjection：六条路径", () => {
     const { entry, agentSame } = sameDigestAgent();
     const existingMsg = renderMcpCatalogMessage(entry);
     const decisionWith = { kind: "enter", messages: [plainMessage("keep"), existingMsg] };
-    const filtered = resolveCatalogInjection(decisionWith, [], supervisors(), 6, new Map(), agentSame);
+    const filtered = resolveCatalogInjection(
+      decisionWith,
+      [],
+      supervisors(),
+      6,
+      new Map(),
+      agentSame,
+    );
     expect(filtered.messages.map((m) => m.id)).toEqual(["keep"]);
   });
 
@@ -455,7 +525,9 @@ describe("resolveCatalogInjection：六条路径", () => {
     // 3. 历史 digest 相同 + 本轮无目录 → 原样返回。
     const { agentSame } = sameDigestAgent();
     const decisionPlain = { kind: "enter", messages: [plainMessage("k")] };
-    expect(resolveCatalogInjection(decisionPlain, [], supervisors(), 6, new Map(), agentSame)).toBe(decisionPlain);
+    expect(resolveCatalogInjection(decisionPlain, [], supervisors(), 6, new Map(), agentSame)).toBe(
+      decisionPlain,
+    );
   });
 
   it("existing digest 相同 → 不重复追加", () => {
@@ -463,60 +535,136 @@ describe("resolveCatalogInjection：六条路径", () => {
     const entry = [{ name: "s", text: "d" }];
     const freshExisting = renderMcpCatalogMessage(entry);
     const decisionReuse = { kind: "enter", messages: [freshExisting] };
-    const resultReuse = resolveCatalogInjection(decisionReuse, [], supervisors(), 6, new Map(), undefined);
+    const resultReuse = resolveCatalogInjection(
+      decisionReuse,
+      [],
+      supervisors(),
+      6,
+      new Map(),
+      undefined,
+    );
     expect(resultReuse.messages.map((m) => m.id)).toEqual([freshExisting.id]);
   });
 
   it("未发布且空目录 → 保持原样", () => {
     // 5. 未发布且无服务器 → 不注入。
-    const emptyResult = resolveCatalogInjection(baseDecision(), [], new Map(), 6, new Map(), undefined);
+    const emptyResult = resolveCatalogInjection(
+      baseDecision(),
+      [],
+      new Map(),
+      6,
+      new Map(),
+      undefined,
+    );
     expect(emptyResult.messages).toEqual([]);
   });
 
   it("未发布且有服务器 → kind enter", () => {
     // 6. 未发布且有服务器 → 注入普通目录帧（append）。
-    const injected = resolveCatalogInjection(baseDecision(), [], supervisors(), 6, new Map(), undefined);
+    const injected = resolveCatalogInjection(
+      baseDecision(),
+      [],
+      supervisors(),
+      6,
+      new Map(),
+      undefined,
+    );
     expect(injected.kind).toBe("enter");
   });
 
   it("未发布且有服务器 → 注入 1 条", () => {
-    const injected = resolveCatalogInjection(baseDecision(), [], supervisors(), 6, new Map(), undefined);
+    const injected = resolveCatalogInjection(
+      baseDecision(),
+      [],
+      supervisors(),
+      6,
+      new Map(),
+      undefined,
+    );
     expect(injected.messages.length).toBe(1);
   });
 
   it("首次注入用普通帧", () => {
-    const injected = resolveCatalogInjection(baseDecision(), [], supervisors(), 6, new Map(), undefined);
-    expect(injected.messages[0].content[0].text.includes("Configured MCP servers in this session")).toBeTruthy();
+    const injected = resolveCatalogInjection(
+      baseDecision(),
+      [],
+      supervisors(),
+      6,
+      new Map(),
+      undefined,
+    );
+    expect(
+      injected.messages[0].content[0].text.includes("Configured MCP servers in this session"),
+    ).toBeTruthy();
   });
 
   it("digest 变化 → 更新帧", () => {
     // 6b. 已发布但 digest 变化 → 注入更新帧。
-    const updated = resolveCatalogInjection(baseDecision(), [], supervisors(), 6, new Map(), otherDigestAgent());
-    expect(updated.messages[0].content[0].text.includes("MCP server configuration has changed")).toBeTruthy();
+    const updated = resolveCatalogInjection(
+      baseDecision(),
+      [],
+      supervisors(),
+      6,
+      new Map(),
+      otherDigestAgent(),
+    );
+    expect(
+      updated.messages[0].content[0].text.includes("MCP server configuration has changed"),
+    ).toBeTruthy();
   });
 
   it("本轮已有旧目录且 digest 变化 → 替换不追加", () => {
     // 6c. 本轮已有旧目录且 digest 变化 → 原位替换而非追加。
     const stale = renderMcpCatalogMessage([{ name: "stale" }]);
-    const replaced = resolveCatalogInjection({ kind: "enter", messages: [plainMessage("k2"), stale] }, [], supervisors(), 6, new Map(), otherDigestAgent());
+    const replaced = resolveCatalogInjection(
+      { kind: "enter", messages: [plainMessage("k2"), stale] },
+      [],
+      supervisors(),
+      6,
+      new Map(),
+      otherDigestAgent(),
+    );
     expect(replaced.messages.length).toBe(2);
   });
 
   it("替换保留前序消息 id", () => {
     const stale = renderMcpCatalogMessage([{ name: "stale" }]);
-    const replaced = resolveCatalogInjection({ kind: "enter", messages: [plainMessage("k2"), stale] }, [], supervisors(), 6, new Map(), otherDigestAgent());
+    const replaced = resolveCatalogInjection(
+      { kind: "enter", messages: [plainMessage("k2"), stale] },
+      [],
+      supervisors(),
+      6,
+      new Map(),
+      otherDigestAgent(),
+    );
     expect(replaced.messages[0].id).toBe("k2");
   });
 
   it("替换后的消息为更新帧", () => {
     const stale = renderMcpCatalogMessage([{ name: "stale" }]);
-    const replaced = resolveCatalogInjection({ kind: "enter", messages: [plainMessage("k2"), stale] }, [], supervisors(), 6, new Map(), otherDigestAgent());
-    expect(replaced.messages[1].content[0].text.includes("MCP server configuration has changed")).toBeTruthy();
+    const replaced = resolveCatalogInjection(
+      { kind: "enter", messages: [plainMessage("k2"), stale] },
+      [],
+      supervisors(),
+      6,
+      new Map(),
+      otherDigestAgent(),
+    );
+    expect(
+      replaced.messages[1].content[0].text.includes("MCP server configuration has changed"),
+    ).toBeTruthy();
   });
 
   it("替换后 id 与旧目录不同", () => {
     const stale = renderMcpCatalogMessage([{ name: "stale" }]);
-    const replaced = resolveCatalogInjection({ kind: "enter", messages: [plainMessage("k2"), stale] }, [], supervisors(), 6, new Map(), otherDigestAgent());
+    const replaced = resolveCatalogInjection(
+      { kind: "enter", messages: [plainMessage("k2"), stale] },
+      [],
+      supervisors(),
+      6,
+      new Map(),
+      otherDigestAgent(),
+    );
     expect(replaced.messages[1].id).not.toBe(stale.id);
   });
 });
@@ -530,16 +678,41 @@ describe("#723 目录 source 双形态识别", () => {
   });
 
   it("readCatalogEntries 仍读旧形态（跨版本兼容）", () => {
-    expect(readCatalogEntries({ kind: "mcp-catalog", form: "catalog", entries: [{ name: "m1", text: "t<1" }] }))
-      .toEqual([{ name: "m1", text: "t<1" }]);
+    expect(
+      readCatalogEntries({
+        kind: "mcp-catalog",
+        form: "catalog",
+        entries: [{ name: "m1", text: "t<1" }],
+      }),
+    ).toEqual([{ name: "m1", text: "t<1" }]);
   });
 
   it("resolveCatalogEntries 坏数据面一律 undefined", () => {
     expect(resolveCatalogEntries(undefined)).toBeUndefined();
     expect(resolveCatalogEntries({ kind: "user" })).toBeUndefined();
-    expect(resolveCatalogEntries({ kind: "plugin", plugin: "other-plugin", form: "snapshot", sections: [] })).toBeUndefined();
-    expect(resolveCatalogEntries({ kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager", form: "snapshot" })).toBeUndefined();
-    expect(resolveCatalogEntries({ kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager", form: "snapshot", sections: [{ name: "other", text: "x" }] })).toBeUndefined();
+    expect(
+      resolveCatalogEntries({
+        kind: "plugin",
+        plugin: "other-plugin",
+        form: "snapshot",
+        sections: [],
+      }),
+    ).toBeUndefined();
+    expect(
+      resolveCatalogEntries({
+        kind: "plugin",
+        plugin: "@wingsky-1/dsh-mcp-manager",
+        form: "snapshot",
+      }),
+    ).toBeUndefined();
+    expect(
+      resolveCatalogEntries({
+        kind: "plugin",
+        plugin: "@wingsky-1/dsh-mcp-manager",
+        form: "snapshot",
+        sections: [{ name: "other", text: "x" }],
+      }),
+    ).toBeUndefined();
   });
 });
 
@@ -553,13 +726,24 @@ describe("#723 catalogHistory 双形态识别", () => {
     "</available_mcp_servers>",
     "</system-reminder>",
   ].join("\n");
-  const newSource = { kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager", form: "snapshot", sections: [{ name: "mcp-catalog", text: body }] };
+  const newSource = {
+    kind: "plugin",
+    plugin: "@wingsky-1/dsh-mcp-manager",
+    form: "snapshot",
+    sections: [{ name: "mcp-catalog", text: body }],
+  };
   const agentOf = (nodes, source) => ({
-    session: { surface: { nodes }, snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source } }] },
+    session: {
+      surface: { nodes },
+      snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source } }],
+    },
   });
 
   it("新形态可见 → digest 与条目口径一致", () => {
-    expect(catalogHistory(agentOf([1], newSource))).toEqual({ visibleDigest: digest, published: true });
+    expect(catalogHistory(agentOf([1], newSource))).toEqual({
+      visibleDigest: digest,
+      published: true,
+    });
   });
 
   it("新形态被 compaction 遮蔽 → published 但无 digest", () => {
@@ -567,12 +751,21 @@ describe("#723 catalogHistory 双形态识别", () => {
   });
 
   it("旧形态仍被识别（同一 digest 口径）", () => {
-    expect(catalogHistory(agentOf([1], { kind: "mcp-catalog", form: "catalog", entries })))
-      .toEqual({ visibleDigest: digest, published: true });
+    expect(catalogHistory(agentOf([1], { kind: "mcp-catalog", form: "catalog", entries }))).toEqual(
+      { visibleDigest: digest, published: true },
+    );
   });
 
   it("他插件的 plugin 消息不得被误认", () => {
-    expect(catalogHistory(agentOf([1], { kind: "plugin", plugin: "other", form: "snapshot", sections: [{ name: "mcp-catalog", text: body }] })))
-      .toEqual({ published: false });
+    expect(
+      catalogHistory(
+        agentOf([1], {
+          kind: "plugin",
+          plugin: "other",
+          form: "snapshot",
+          sections: [{ name: "mcp-catalog", text: body }],
+        }),
+      ),
+    ).toEqual({ published: false });
   });
 });

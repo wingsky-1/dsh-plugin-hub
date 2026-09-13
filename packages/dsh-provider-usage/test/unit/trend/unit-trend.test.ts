@@ -30,7 +30,15 @@
  * 断言位置取 structuredClone 快照，it 只读快照——避免把动作前置导致后续断言看到
  * 错误状态（快照必须复制：存引用会被后续动作改写）。
  */
-import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync, utimesSync, rmdirSync } from "node:fs";
+import {
+  mkdtempSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  utimesSync,
+  rmdirSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -72,7 +80,12 @@ const HOUR = 3600_000;
 function ev(type, data, time, seq = 1) {
   if (type === "assistant/chunk") {
     if (data?.chunk?.type !== "usage") {
-      return { type: "assistant/attempt", seq, time, data: { turn: data?.turn, step: data?.step, stream: [] } };
+      return {
+        type: "assistant/attempt",
+        seq,
+        time,
+        data: { turn: data?.turn, step: data?.step, stream: [] },
+      };
     }
     return {
       type: "assistant/message",
@@ -95,12 +108,23 @@ const HEADER = (provider = "deepseek", model = "deepseek-chat") => ({
 const USAGE = (input = 100, output = 50, cacheRead = 0, cacheWrite = 0) => ({
   turn: 1,
   step: 1,
-  chunk: { type: "usage", usage: { inputTokens: input, outputTokens: output, cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite } },
+  chunk: {
+    type: "usage",
+    usage: {
+      inputTokens: input,
+      outputTokens: output,
+      cacheReadTokens: cacheRead,
+      cacheWriteTokens: cacheWrite,
+    },
+  },
 });
 const MESSAGE = (usage, opts = {}) => ({
   turn: 1,
   step: 1,
-  message: { role: "assistant", source: { kind: "model", provider: "deepseek", model: "deepseek-chat" } },
+  message: {
+    role: "assistant",
+    source: { kind: "model", provider: "deepseek", model: "deepseek-chat" },
+  },
   ...(usage !== null ? { usage } : {}),
   ...(opts.interrupted ? { interrupted: true } : {}),
 });
@@ -109,7 +133,8 @@ function makeCollector(now = () => T0) {
   const emitted = [];
   const collector = new TrendCollector({ now, emit: (e) => emitted.push(e) });
   // collector 直接吃字符串 session id（id 提取在 tracker 层）；对象/null 经此解包以覆盖非法输入防御
-  const send = (session, event) => collector.handleEvent(typeof session === "string" ? session : session?.id, event);
+  const send = (session, event) =>
+    collector.handleEvent(typeof session === "string" ? session : session?.id, event);
   return { collector, emitted, send };
 }
 
@@ -136,7 +161,15 @@ describe("collector：定稿主信号——usage 到达即定稿", () => {
     const { emitted, send } = makeCollector();
     const s = { id: "s1" };
     send(s, ev("request/header", HEADER(), T0, 1));
-    send(s, ev("assistant/chunk", { turn: 1, step: 1, chunk: { type: "text-delta", index: 0, text: "hi" } }, T0, 2));
+    send(
+      s,
+      ev(
+        "assistant/chunk",
+        { turn: 1, step: 1, chunk: { type: "text-delta", index: 0, text: "hi" } },
+        T0,
+        2,
+      ),
+    );
     send(s, ev("assistant/chunk", USAGE(100, 50, 10, 5), T0 + 1000, 3));
     calls = snapshot(callsOf(emitted));
     correctCount = emitted.filter((e) => e.type === "correct").length;
@@ -184,13 +217,24 @@ describe("collector：结算事件防双计——两处 usage 同时在场只记
     const s = { id: "s1" };
     const tokens = { inputTokens: 100, outputTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 };
     send(s, ev("request/header", HEADER(), T0, 1));
-    send(s, ev("assistant/message", {
-      turn: 1,
-      step: 1,
-      message: { role: "assistant", source: { kind: "model", provider: "deepseek", model: "deepseek-chat" } },
-      usage: tokens,
-      stream: [{ type: "chunk", time: T0, chunk: { type: "usage", usage: tokens } }],
-    }, T0, 2));
+    send(
+      s,
+      ev(
+        "assistant/message",
+        {
+          turn: 1,
+          step: 1,
+          message: {
+            role: "assistant",
+            source: { kind: "model", provider: "deepseek", model: "deepseek-chat" },
+          },
+          usage: tokens,
+          stream: [{ type: "chunk", time: T0, chunk: { type: "usage", usage: tokens } }],
+        },
+        T0,
+        2,
+      ),
+    );
     calls = snapshot(callsOf(emitted));
   });
 
@@ -293,7 +337,15 @@ describe("collector：message 补记/校正/interrupted", () => {
       const { emitted, send } = makeCollector();
       const s = { id: "s1" };
       send(s, ev("request/header", HEADER(), T0, 1));
-      send(s, ev("assistant/message", MESSAGE({ inputTokens: 5, outputTokens: 3 }, { interrupted: true }), T0, 2));
+      send(
+        s,
+        ev(
+          "assistant/message",
+          MESSAGE({ inputTokens: 5, outputTokens: 3 }, { interrupted: true }),
+          T0,
+          2,
+        ),
+      );
       interrupted = callsOf(emitted)[0].interrupted;
     });
 
@@ -343,7 +395,19 @@ describe("collector：attempt 口径（Q1/Q2）", () => {
       const s = { id: "s1" };
       send(s, ev("request/header", HEADER(), T0, 1));
       const usage = { inputTokens: 12, outputTokens: 3 };
-      send(s, ev("assistant/attempt", { turn: 1, step: 1, stream: [{ type: "chunk", time: T0, chunk: { type: "usage", usage } }] }, T0, 2));
+      send(
+        s,
+        ev(
+          "assistant/attempt",
+          {
+            turn: 1,
+            step: 1,
+            stream: [{ type: "chunk", time: T0, chunk: { type: "usage", usage } }],
+          },
+          T0,
+          2,
+        ),
+      );
       calls = snapshot(callsOf(emitted));
     });
 
@@ -363,7 +427,19 @@ describe("collector：attempt 口径（Q1/Q2）", () => {
       const { emitted, send } = makeCollector();
       const s = { id: "s1" };
       send(s, ev("request/header", HEADER(), T0, 1));
-      send(s, ev("assistant/attempt", { turn: 1, step: 1, stream: [{ type: "text-chunks", time0: T0, index: 0, dt: [], texts: ["hi"] }] }, T0, 2));
+      send(
+        s,
+        ev(
+          "assistant/attempt",
+          {
+            turn: 1,
+            step: 1,
+            stream: [{ type: "text-chunks", time0: T0, index: 0, dt: [], texts: ["hi"] }],
+          },
+          T0,
+          2,
+        ),
+      );
       callCount = callsOf(emitted).length;
     });
 
@@ -396,15 +472,35 @@ describe("collector：归属", () => {
     });
   });
 
-  describe("副源：message.source（kind:\"model\"）在归属缺失时补齐", () => {
+  describe('副源：message.source（kind:"model"）在归属缺失时补齐', () => {
     let calls;
 
     beforeAll(() => {
       const { emitted, send } = makeCollector();
       const s = { id: "s1" };
-      send(s, ev("assistant/message", { ...MESSAGE({ inputTokens: 1, outputTokens: 1 }), turn: 1 }, T0, 1));
+      send(
+        s,
+        ev(
+          "assistant/message",
+          { ...MESSAGE({ inputTokens: 1, outputTokens: 1 }), turn: 1 },
+          T0,
+          1,
+        ),
+      );
       // 后续调用（新 turn）：副源归属已折叠进会话状态
-      send(s, ev("assistant/chunk", { turn: 2, step: 1, chunk: { type: "usage", usage: { inputTokens: 10, outputTokens: 5 } } }, T0 + 100, 2));
+      send(
+        s,
+        ev(
+          "assistant/chunk",
+          {
+            turn: 2,
+            step: 1,
+            chunk: { type: "usage", usage: { inputTokens: 10, outputTokens: 5 } },
+          },
+          T0 + 100,
+          2,
+        ),
+      );
       calls = snapshot(callsOf(emitted));
     });
 
@@ -428,9 +524,33 @@ describe("collector：归属", () => {
       const { emitted, send } = makeCollector();
       const s = { id: "s1" };
       send(s, ev("request/header", HEADER("deepseek", "chat"), T0, 1));
-      send(s, ev("assistant/chunk", { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 1, outputTokens: 1 } } }, T0, 2));
+      send(
+        s,
+        ev(
+          "assistant/chunk",
+          {
+            turn: 1,
+            step: 1,
+            chunk: { type: "usage", usage: { inputTokens: 1, outputTokens: 1 } },
+          },
+          T0,
+          2,
+        ),
+      );
       send(s, ev("request/header", HEADER("opencode", "glm-4"), T0 + 10, 3));
-      send(s, ev("assistant/chunk", { turn: 2, step: 1, chunk: { type: "usage", usage: { inputTokens: 2, outputTokens: 2 } } }, T0 + 20, 4));
+      send(
+        s,
+        ev(
+          "assistant/chunk",
+          {
+            turn: 2,
+            step: 1,
+            chunk: { type: "usage", usage: { inputTokens: 2, outputTokens: 2 } },
+          },
+          T0 + 20,
+          4,
+        ),
+      );
       providers = callsOf(emitted).map((c) => c.provider);
     });
 
@@ -454,8 +574,14 @@ describe("collector：turn/end 与计数", () => {
       const s = { id: "s1" };
       send(s, ev("request/header", HEADER(), T0, 1));
       send(s, ev("assistant/chunk", USAGE(100, 50), T0, 2));
-      send(s, ev("tool/call", { turn: 1, step: 1, callId: "c1", name: "bash", arguments: "{}" }, T0, 3));
-      send(s, ev("tool/call", { turn: 1, step: 1, callId: "c2", name: "bash", arguments: "{}" }, T0, 4));
+      send(
+        s,
+        ev("tool/call", { turn: 1, step: 1, callId: "c1", name: "bash", arguments: "{}" }, T0, 3),
+      );
+      send(
+        s,
+        ev("tool/call", { turn: 1, step: 1, callId: "c2", name: "bash", arguments: "{}" }, T0, 4),
+      );
       send(s, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0 + 1000, 5));
       counters = snapshot(countersOf(emitted));
       callCount = callsOf(emitted).length;
@@ -484,7 +610,10 @@ describe("collector：turn/end 与计数", () => {
       send(s, ev("request/header", HEADER(), T0, 1));
       send(s, ev("assistant/chunk", USAGE(100, 50), T0, 2));
       send(s, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0 + 1000, 3));
-      send(s, ev("assistant/message", MESSAGE({ inputTokens: 999, outputTokens: 999 }), T0 + 2000, 4));
+      send(
+        s,
+        ev("assistant/message", MESSAGE({ inputTokens: 999, outputTokens: 999 }), T0 + 2000, 4),
+      );
       calls = snapshot(callsOf(emitted));
       turnCounters = countersOf(emitted).filter((c) => c.turns === 1).length;
     });
@@ -546,7 +675,10 @@ describe("collector：TTL 与销毁", () => {
       nowMs = T0 + 61 * 60 * 1000;
       send({ id: "s2" }, ev("assistant/chunk", USAGE(1, 1), nowMs, 3));
       afterSecond = callsOf(emitted).length;
-      send(s1, ev("assistant/message", MESSAGE({ inputTokens: 7, outputTokens: 7 }), nowMs + 1000, 4));
+      send(
+        s1,
+        ev("assistant/message", MESSAGE({ inputTokens: 7, outputTokens: 7 }), nowMs + 1000, 4),
+      );
       calls = snapshot(callsOf(emitted));
     });
 
@@ -577,7 +709,10 @@ describe("collector：TTL 与销毁", () => {
       send(s, ev("assistant/chunk", USAGE(100, 50), T0, 2));
       send(s, null); // 非法 session 不崩
       send({ id: "s1" }, null); // 非法 event 不崩
-      send({ id: "s1" }, ev("assistant/chunk", { turn: "x", step: 1, chunk: { type: "usage" } }, T0, 3)); // 非法字段不崩
+      send(
+        { id: "s1" },
+        ev("assistant/chunk", { turn: "x", step: 1, chunk: { type: "usage" } }, T0, 3),
+      ); // 非法字段不崩
       callCount = callsOf(emitted).length;
     });
 
@@ -603,8 +738,32 @@ describe("aggregator：cells 累加与 null 语义", () => {
 
   beforeAll(() => {
     const agg = new TrendAggregator();
-    agg.apply({ type: "call", record: { time: T0, session: "s1", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", tokens: null } });
-    agg.apply({ type: "call", record: { time: T0 + HOUR, session: "s1", turn: 2, step: 1, retry: 1, provider: "deepseek", model: "chat", tokens: { input: 100, output: null, cacheRead: null, cacheWrite: null } } });
+    agg.apply({
+      type: "call",
+      record: {
+        time: T0,
+        session: "s1",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "deepseek",
+        model: "chat",
+        tokens: null,
+      },
+    });
+    agg.apply({
+      type: "call",
+      record: {
+        time: T0 + HOUR,
+        session: "s1",
+        turn: 2,
+        step: 1,
+        retry: 1,
+        provider: "deepseek",
+        model: "chat",
+        tokens: { input: 100, output: null, cacheRead: null, cacheWrite: null },
+      },
+    });
     cell = snapshot(cellTotals(agg, DAY0));
   });
 
@@ -636,9 +795,43 @@ describe("aggregator：日切压实", () => {
   beforeAll(() => {
     // 日切压实：cells 不动、pending 移除、聚合行正确
     const agg = new TrendAggregator();
-    agg.apply({ type: "call", record: { time: T0, session: "s1", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", tokens: { input: 10, output: 5, cacheRead: null, cacheWrite: null } } });
-    agg.apply({ type: "call", record: { time: T0 + HOUR, session: "s2", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", tokens: { input: 20, output: 5, cacheRead: null, cacheWrite: null } } });
-    agg.apply({ type: "counter", record: { time: T0, session: "s1", provider: "deepseek", model: "chat", turns: 1, toolCalls: 2 } });
+    agg.apply({
+      type: "call",
+      record: {
+        time: T0,
+        session: "s1",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "deepseek",
+        model: "chat",
+        tokens: { input: 10, output: 5, cacheRead: null, cacheWrite: null },
+      },
+    });
+    agg.apply({
+      type: "call",
+      record: {
+        time: T0 + HOUR,
+        session: "s2",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "deepseek",
+        model: "chat",
+        tokens: { input: 20, output: 5, cacheRead: null, cacheWrite: null },
+      },
+    });
+    agg.apply({
+      type: "counter",
+      record: {
+        time: T0,
+        session: "s1",
+        provider: "deepseek",
+        model: "chat",
+        turns: 1,
+        toolCalls: 2,
+      },
+    });
     bucketsBefore = JSON.stringify(agg.buckets());
     const rolled = agg.rollupDay(DAY0, DAY0);
     bucketsAfter = JSON.stringify(agg.buckets());
@@ -705,7 +898,19 @@ describe("aggregator：时钟回拨旧日落桶", () => {
     // 时钟回拨：旧日事件按其本地日落桶（append-only 容忍）
     const agg = new TrendAggregator();
     const past = new Date(2026, 8, 1, 8, 0, 0).getTime(); // 09-01 < DAY0
-    agg.apply({ type: "call", record: { time: past, session: "s1", turn: 1, step: 1, retry: 1, provider: "p", model: "m", tokens: { input: 7, output: 0, cacheRead: null, cacheWrite: null } } });
+    agg.apply({
+      type: "call",
+      record: {
+        time: past,
+        session: "s1",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "p",
+        model: "m",
+        tokens: { input: 7, output: 0, cacheRead: null, cacheWrite: null },
+      },
+    });
     hasPastBucket = agg.buckets().some((d) => d.day === dayKey(past));
   });
 
@@ -722,9 +927,48 @@ describe("aggregator：rebuild（agg 行 + 明细/计数行）", () => {
     const agg = new TrendAggregator();
     agg.rebuild(
       [
-        { v: 1, kind: "agg", day: DAY0, provider: "deepseek", model: "chat", input: 100, output: 50, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 3 },
-        { v: 1, kind: "detail", time: T0, day: DAY0, session: "s9", turn: 9, step: 1, retry: 1, provider: "deepseek", model: "chat", input: 7, output: 7, cacheRead: null, cacheWrite: null, calls: 1 },
-        { v: 1, kind: "counter", time: T0, day: DAY0, session: "s9", provider: "deepseek", model: "chat", turns: 1, toolCalls: 0 },
+        {
+          v: 1,
+          kind: "agg",
+          day: DAY0,
+          provider: "deepseek",
+          model: "chat",
+          input: 100,
+          output: 50,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 2,
+          turns: 1,
+          toolCalls: 3,
+        },
+        {
+          v: 1,
+          kind: "detail",
+          time: T0,
+          day: DAY0,
+          session: "s9",
+          turn: 9,
+          step: 1,
+          retry: 1,
+          provider: "deepseek",
+          model: "chat",
+          input: 7,
+          output: 7,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 1,
+        },
+        {
+          v: 1,
+          kind: "counter",
+          time: T0,
+          day: DAY0,
+          session: "s9",
+          provider: "deepseek",
+          model: "chat",
+          turns: 1,
+          toolCalls: 0,
+        },
       ],
       true,
     );
@@ -752,10 +996,42 @@ describe("aggregator：mergeAggRows 同键累加、null-aware", () => {
   let merged;
 
   beforeAll(() => {
-    merged = snapshot(mergeAggRows(
-      [{ v: 1, kind: "agg", day: DAY0, provider: "p", model: "m", input: 10, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 }],
-      [{ v: 1, kind: "agg", day: DAY0, provider: "p", model: "m", input: 5, output: 3, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 0 }],
-    ));
+    merged = snapshot(
+      mergeAggRows(
+        [
+          {
+            v: 1,
+            kind: "agg",
+            day: DAY0,
+            provider: "p",
+            model: "m",
+            input: 10,
+            output: null,
+            cacheRead: null,
+            cacheWrite: null,
+            calls: 1,
+            turns: 0,
+            toolCalls: 0,
+          },
+        ],
+        [
+          {
+            v: 1,
+            kind: "agg",
+            day: DAY0,
+            provider: "p",
+            model: "m",
+            input: 5,
+            output: 3,
+            cacheRead: null,
+            cacheWrite: null,
+            calls: 2,
+            turns: 1,
+            toolCalls: 0,
+          },
+        ],
+      ),
+    );
   });
 
   it("同键合并", () => {
@@ -786,13 +1062,40 @@ describe("aggregator：日序列（空日 null、provider 过滤、total 指标�
     const agg = new TrendAggregator();
     const d1 = new Date(2026, 8, 3, 10, 0, 0).getTime(); // 周四
     const d2 = T0; // 09-04 周五
-    agg.apply({ type: "call", record: { time: d1, session: "s", turn: 1, step: 1, retry: 1, provider: "a", model: "m", tokens: { input: 10, output: 0, cacheRead: null, cacheWrite: null } } });
-    agg.apply({ type: "call", record: { time: d2, session: "s", turn: 1, step: 1, retry: 1, provider: "b", model: "m", tokens: { input: 20, output: 0, cacheRead: null, cacheWrite: null } } });
+    agg.apply({
+      type: "call",
+      record: {
+        time: d1,
+        session: "s",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "a",
+        model: "m",
+        tokens: { input: 10, output: 0, cacheRead: null, cacheWrite: null },
+      },
+    });
+    agg.apply({
+      type: "call",
+      record: {
+        time: d2,
+        session: "s",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "b",
+        model: "m",
+        tokens: { input: 20, output: 0, cacheRead: null, cacheWrite: null },
+      },
+    });
     const days = agg.seriesDays(3, d2, "input");
     dayValues = snapshot(days.map((d) => d.value));
     const onlyB = agg.seriesDays(3, d2, "input", "b");
     onlyBValues = snapshot(onlyB.map((d) => d.value));
-    totalValue = metricValue({ input: 1, output: 2, cacheRead: 3, cacheWrite: null, calls: 9, turns: 0, toolCalls: 0 }, "total");
+    totalValue = metricValue(
+      { input: 1, output: 2, cacheRead: 3, cacheWrite: null, calls: 9, turns: 0, toolCalls: 0 },
+      "total",
+    );
   });
 
   it("日序列空日 null、按日取值", () => {
@@ -816,8 +1119,32 @@ describe("aggregator：周序列（周一锚点）", () => {
     // 周序列：2026-09-04 为周五，周一起点 = 08-31
     const agg = new TrendAggregator();
     const monday = new Date(2026, 7, 31, 10, 0, 0).getTime(); // 08-31 周一
-    agg.apply({ type: "call", record: { time: monday, session: "s", turn: 1, step: 1, retry: 1, provider: "a", model: "m", tokens: { input: 10, output: 0, cacheRead: null, cacheWrite: null } } });
-    agg.apply({ type: "call", record: { time: T0, session: "s", turn: 1, step: 1, retry: 1, provider: "a", model: "m", tokens: { input: 5, output: 0, cacheRead: null, cacheWrite: null } } });
+    agg.apply({
+      type: "call",
+      record: {
+        time: monday,
+        session: "s",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "a",
+        model: "m",
+        tokens: { input: 10, output: 0, cacheRead: null, cacheWrite: null },
+      },
+    });
+    agg.apply({
+      type: "call",
+      record: {
+        time: T0,
+        session: "s",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "a",
+        model: "m",
+        tokens: { input: 5, output: 0, cacheRead: null, cacheWrite: null },
+      },
+    });
     const weeks = agg.seriesWeeks(2, T0, "input");
     weekDays = snapshot(weeks.map((w) => w.day));
     weekValues = snapshot(weeks.map((w) => w.value));
@@ -839,8 +1166,32 @@ describe("aggregator：月序列（月区间跨自然月）", () => {
   beforeAll(() => {
     const agg = new TrendAggregator();
     const aug = new Date(2026, 7, 15, 10, 0, 0).getTime();
-    agg.apply({ type: "call", record: { time: aug, session: "s", turn: 1, step: 1, retry: 1, provider: "a", model: "m", tokens: { input: 8, output: 0, cacheRead: null, cacheWrite: null } } });
-    agg.apply({ type: "call", record: { time: T0, session: "s", turn: 1, step: 1, retry: 1, provider: "a", model: "m", tokens: { input: 4, output: 0, cacheRead: null, cacheWrite: null } } });
+    agg.apply({
+      type: "call",
+      record: {
+        time: aug,
+        session: "s",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "a",
+        model: "m",
+        tokens: { input: 8, output: 0, cacheRead: null, cacheWrite: null },
+      },
+    });
+    agg.apply({
+      type: "call",
+      record: {
+        time: T0,
+        session: "s",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "a",
+        model: "m",
+        tokens: { input: 4, output: 0, cacheRead: null, cacheWrite: null },
+      },
+    });
     const months = agg.seriesMonths(2, T0, "input");
     monthDays = snapshot(months.map((m) => m.day));
     monthValues = snapshot(months.map((m) => m.value));
@@ -900,7 +1251,16 @@ describe("aggregator：堆叠柱序列 seriesStacked / 窗口摘要 windowSummar
     const dPrev = new Date(2026, 7, 31, 10, 0, 0).getTime(); // 周一 08-31
     const call = (time, provider, model, input) => ({
       type: "call",
-      record: { time, session: "s", turn: 1, step: 1, retry: 1, provider, model, tokens: { input, output: 0, cacheRead: null, cacheWrite: null } },
+      record: {
+        time,
+        session: "s",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider,
+        model,
+        tokens: { input, output: 0, cacheRead: null, cacheWrite: null },
+      },
     });
     agg.apply(call(dPrev, "deepseek", "chat", 7));
     agg.apply(call(d1, "deepseek", "chat", 10));
@@ -978,12 +1338,20 @@ describe("aggregator：堆叠柱序列 seriesStacked / 窗口摘要 windowSummar
     const stackForReuse = agg.seriesStacked(3, "day", "input", undefined, false, T0).series;
     const sumReused = agg.windowSummary(3, "day", "input", undefined, T0, stackForReuse);
     sumReusedSubset = snapshot({
-      total: sumReused.total, calls: sumReused.calls, peakKey: sumReused.peakKey, top: sumReused.top,
-      prevTotal: sumReused.prevTotal, prevComplete: sumReused.prevComplete,
+      total: sumReused.total,
+      calls: sumReused.calls,
+      peakKey: sumReused.peakKey,
+      top: sumReused.top,
+      prevTotal: sumReused.prevTotal,
+      prevComplete: sumReused.prevComplete,
     });
     sumSubset = snapshot({
-      total: sum.total, calls: sum.calls, peakKey: sum.peakKey, top: sum.top,
-      prevTotal: sum.prevTotal, prevComplete: sum.prevComplete,
+      total: sum.total,
+      calls: sum.calls,
+      peakKey: sum.peakKey,
+      top: sum.top,
+      prevTotal: sum.prevTotal,
+      prevComplete: sum.prevComplete,
     });
   });
 
@@ -1000,7 +1368,10 @@ describe("aggregator：堆叠柱序列 seriesStacked / 窗口摘要 windowSummar
   });
 
   it("同 provider 跨 model 并段（20+3）", () => {
-    expect(daySeries2Parts).toEqual([["deepseek", 23], ["openai", 5]]);
+    expect(daySeries2Parts).toEqual([
+      ["deepseek", 23],
+      ["openai", 5],
+    ]);
   });
 
   it("桶 total = 段之和", () => {
@@ -1008,11 +1379,18 @@ describe("aggregator：堆叠柱序列 seriesStacked / 窗口摘要 windowSummar
   });
 
   it("图例并集（窗口内出现过的段）", () => {
-    expect(dayProviders).toEqual([{ provider: "deepseek", model: null }, { provider: "openai", model: null }]);
+    expect(dayProviders).toEqual([
+      { provider: "deepseek", model: null },
+      { provider: "openai", model: null },
+    ]);
   });
 
   it("byModel 拆段含 model", () => {
-    expect(byModelParts).toEqual([["deepseek", "reasoner", 20], ["deepseek", "chat", 3], ["openai", "gpt", 5]]);
+    expect(byModelParts).toEqual([
+      ["deepseek", "reasoner", 20],
+      ["deepseek", "chat", 3],
+      ["openai", "gpt", 5],
+    ]);
   });
 
   it("byModel 图例并集细到 model", () => {
@@ -1137,8 +1515,34 @@ describe("store：明细/聚合分片读写与 prune", () => {
     const root = mkdtempSync(join(tmpdir(), "dou-trend-store-"));
     const store = new TrendStore({ root });
     const rows = [
-      { v: 1, kind: "detail", time: T0, day: DAY0, session: "s1", turn: 1, step: 1, retry: 1, provider: "p", model: "m", input: 1, output: 2, cacheRead: null, cacheWrite: null, calls: 1 },
-      { v: 1, kind: "counter", time: T0, day: DAY0, session: "s1", provider: "p", model: "m", turns: 1, toolCalls: 0 },
+      {
+        v: 1,
+        kind: "detail",
+        time: T0,
+        day: DAY0,
+        session: "s1",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "p",
+        model: "m",
+        input: 1,
+        output: 2,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 1,
+      },
+      {
+        v: 1,
+        kind: "counter",
+        time: T0,
+        day: DAY0,
+        session: "s1",
+        provider: "p",
+        model: "m",
+        turns: 1,
+        toolCalls: 0,
+      },
     ];
     expectedRows = snapshot(rows);
     const ok = await store.appendRows(rows);
@@ -1146,7 +1550,22 @@ describe("store：明细/聚合分片读写与 prune", () => {
     back = snapshot(await store.readDetailShard(DAY0));
     hasAggBeforeWrite = await store.hasAggShard(DAY0);
 
-    await store.writeAggDay(DAY0, [{ v: 1, kind: "agg", day: DAY0, provider: "p", model: "m", input: 3, output: 2, cacheRead: null, cacheWrite: null, calls: 1, turns: 1, toolCalls: 0 }]);
+    await store.writeAggDay(DAY0, [
+      {
+        v: 1,
+        kind: "agg",
+        day: DAY0,
+        provider: "p",
+        model: "m",
+        input: 3,
+        output: 2,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 1,
+        turns: 1,
+        toolCalls: 0,
+      },
+    ]);
     hasAggAfterWrite = await store.hasAggShard(DAY0);
     aggShardLength = (await store.readAggShard(DAY0)).length;
 
@@ -1155,7 +1574,10 @@ describe("store：明细/聚合分片读写与 prune", () => {
 
     // prune：旧日删除、当日保留
     mkdirSync(join(root, "agg"), { recursive: true });
-    writeFileSync(join(root, "agg", "2026-01-01.jsonl"), '{"v":1,"kind":"agg","day":"2026-01-01","provider":"p","model":null,"input":null,"output":null,"cacheRead":null,"cacheWrite":null,"calls":0,"turns":0,"toolCalls":0}\n');
+    writeFileSync(
+      join(root, "agg", "2026-01-01.jsonl"),
+      '{"v":1,"kind":"agg","day":"2026-01-01","provider":"p","model":null,"input":null,"output":null,"cacheRead":null,"cacheWrite":null,"calls":0,"turns":0,"toolCalls":0}\n',
+    );
     removed = await store.prune("2026-06-01");
     oldAggFileExists = existsSync(join(root, "agg", "2026-01-01.jsonl"));
   });
@@ -1232,8 +1654,27 @@ describe("tracker：启动重建（聚合分片权威）", () => {
     const detDir = join(root, "details");
     mkdirSync(aggDir, { recursive: true });
     mkdirSync(detDir, { recursive: true });
-    writeFileSync(join(aggDir, `${day1}.jsonl`), writeAggShardLine({ v: 1, kind: "agg", day: day1, provider: "p", model: "m", input: 10, output: 5, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 0 }));
-    writeFileSync(join(detDir, `${day1}.jsonl`), `${JSON.stringify({ v: 1, kind: "detail", time: T0, day: day1, session: "sx", turn: 1, step: 1, retry: 1, provider: "p", model: "m", input: 999, output: 999, cacheRead: null, cacheWrite: null, calls: 1 })}\n`);
+    writeFileSync(
+      join(aggDir, `${day1}.jsonl`),
+      writeAggShardLine({
+        v: 1,
+        kind: "agg",
+        day: day1,
+        provider: "p",
+        model: "m",
+        input: 10,
+        output: 5,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 2,
+        turns: 1,
+        toolCalls: 0,
+      }),
+    );
+    writeFileSync(
+      join(detDir, `${day1}.jsonl`),
+      `${JSON.stringify({ v: 1, kind: "detail", time: T0, day: day1, session: "sx", turn: 1, step: 1, retry: 1, provider: "p", model: "m", input: 999, output: 999, cacheRead: null, cacheWrite: null, calls: 1 })}\n`,
+    );
     const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 50 });
     const b = tracker.buckets().find((d) => d.day === day1);
     cellCalls = b.providers[0].cell.calls;
@@ -1267,11 +1708,40 @@ describe("tracker：自愈压实（过去日明细无聚合分片）", () => {
     const aggDir = join(root, "agg");
     const detDir = join(root, "details");
     mkdirSync(detDir, { recursive: true });
-    writeFileSync(join(detDir, `${day1}.jsonl`), [
-      JSON.stringify({ v: 1, kind: "detail", time: T0, day: day1, session: "sx", turn: 1, step: 1, retry: 1, provider: "p", model: "m", input: 7, output: 0, cacheRead: null, cacheWrite: null, calls: 1 }),
-      JSON.stringify({ v: 1, kind: "counter", time: T0, day: day1, session: "sx", provider: "p", model: "m", turns: 1, toolCalls: 1 }),
-      "", // 尾空行容忍
-    ].join("\n"));
+    writeFileSync(
+      join(detDir, `${day1}.jsonl`),
+      [
+        JSON.stringify({
+          v: 1,
+          kind: "detail",
+          time: T0,
+          day: day1,
+          session: "sx",
+          turn: 1,
+          step: 1,
+          retry: 1,
+          provider: "p",
+          model: "m",
+          input: 7,
+          output: 0,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 1,
+        }),
+        JSON.stringify({
+          v: 1,
+          kind: "counter",
+          time: T0,
+          day: day1,
+          session: "sx",
+          provider: "p",
+          model: "m",
+          turns: 1,
+          toolCalls: 1,
+        }),
+        "", // 尾空行容忍
+      ].join("\n"),
+    );
     const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 50 });
     const b = tracker.buckets().find((d) => d.day === day1);
     cellCalls = b.providers[0].cell.calls;
@@ -1304,13 +1774,47 @@ describe("tracker：当日明细重建 + 新事件 flush（既有行不二次落
     const today = dayKey(T0);
     const detDir = join(root, "details");
     mkdirSync(detDir, { recursive: true });
-    const preRow = { v: 1, kind: "detail", time: T0 - HOUR, day: today, session: "s0", turn: 0, step: 1, retry: 1, provider: "p", model: "m", input: 1, output: 1, cacheRead: null, cacheWrite: null, calls: 1 };
+    const preRow = {
+      v: 1,
+      kind: "detail",
+      time: T0 - HOUR,
+      day: today,
+      session: "s0",
+      turn: 0,
+      step: 1,
+      retry: 1,
+      provider: "p",
+      model: "m",
+      input: 1,
+      output: 1,
+      cacheRead: null,
+      cacheWrite: null,
+      calls: 1,
+    };
     writeFileSync(join(detDir, `${today}.jsonl`), `${JSON.stringify(preRow)}\n`);
     const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 50 });
-    tracker.handleEvent({ id: "s1" }, ev("request/header", { header: { config: { provider: "p", model: "m" } }, reason: "initial" }, T0, 1));
-    tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 2, outputTokens: 2 } } }, T0, 2));
+    tracker.handleEvent(
+      { id: "s1" },
+      ev(
+        "request/header",
+        { header: { config: { provider: "p", model: "m" } }, reason: "initial" },
+        T0,
+        1,
+      ),
+    );
+    tracker.handleEvent(
+      { id: "s1" },
+      ev(
+        "assistant/chunk",
+        { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 2, outputTokens: 2 } } },
+        T0,
+        2,
+      ),
+    );
     await tracker.flushNow();
-    const lines = readFileSync(join(detDir, `${today}.jsonl`), "utf8").trimEnd().split("\n");
+    const lines = readFileSync(join(detDir, `${today}.jsonl`), "utf8")
+      .trimEnd()
+      .split("\n");
     lineCount = lines.length;
     const parsed = lines.map((l) => JSON.parse(l));
     s0Count = parsed.filter((r) => r.session === "s0").length;
@@ -1344,7 +1848,15 @@ describe("tracker：防抖刷盘 + dispose await 刷盘", () => {
     const root = mkdtempSync(join(tmpdir(), "dou-trend-flush-"));
     const today = dayKey(T0);
     const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 30 });
-    tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 5, outputTokens: 5 } } }, T0, 1));
+    tracker.handleEvent(
+      { id: "s1" },
+      ev(
+        "assistant/chunk",
+        { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 5, outputTokens: 5 } } },
+        T0,
+        1,
+      ),
+    );
     unpersistedRows = tracker.stats().unpersistedRows;
     const detailFile = join(root, "details", `${today}.jsonl`);
     flushed = existsSync(detailFile);
@@ -1384,7 +1896,10 @@ describe("tracker：日切压实与重启不双算（含迟到旧日行合并）
     let tracker = await TrendTracker.start({ root, now: () => nowMs, flushDebounceMs: 50 });
     tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 1));
     tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(100, 50), T0, 2));
-    tracker.handleEvent({ id: "s1" }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3));
+    tracker.handleEvent(
+      { id: "s1" },
+      ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3),
+    );
     nowMs = T0 + 24 * HOUR; // 次日 09-05
     await tracker.flushNow();
     const day0 = dayKey(T0);
@@ -1394,13 +1909,31 @@ describe("tracker：日切压实与重启不双算（含迟到旧日行合并）
 
     // 迟到旧日行（时钟回拨）：append + 二次压实合并，不覆盖既有聚合
     tracker.handleEvent({ id: "s2" }, ev("request/header", HEADER(), T0 + HOUR, 4)); // time 仍在 09-04
-    tracker.handleEvent({ id: "s2" }, ev("assistant/chunk", { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 7, outputTokens: 7 } } }, T0 + HOUR, 5));
+    tracker.handleEvent(
+      { id: "s2" },
+      ev(
+        "assistant/chunk",
+        { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 7, outputTokens: 7 } } },
+        T0 + HOUR,
+        5,
+      ),
+    );
     await tracker.flushNow();
-    const aggRow = readFileSync(join(root, "agg", `${day0}.jsonl`), "utf8").trimEnd().split("\n").map((l) => JSON.parse(l)).filter((r) => r.kind === "agg").at(-1);
+    const aggRow = readFileSync(join(root, "agg", `${day0}.jsonl`), "utf8")
+      .trimEnd()
+      .split("\n")
+      .map((l) => JSON.parse(l))
+      .filter((r) => r.kind === "agg")
+      .at(-1);
     lateAggCalls = aggRow.calls;
     lateAggInput = aggRow.input;
     // #662：混存分片尾行是 hour 行（写入约定 agg→dir→hour），末行断言须按 kind 定位
-    const lastLine = JSON.parse(readFileSync(join(root, "agg", `${day0}.jsonl`), "utf8").trimEnd().split("\n").at(-1));
+    const lastLine = JSON.parse(
+      readFileSync(join(root, "agg", `${day0}.jsonl`), "utf8")
+        .trimEnd()
+        .split("\n")
+        .at(-1),
+    );
     lastLineKind = lastLine.kind;
     lastLineCalls = lastLine.calls;
 
@@ -1464,7 +1997,15 @@ describe("tracker：dispose await 最终刷盘", () => {
     // dispose await 最终刷盘：事件后立即 dispose，分片必落盘
     const root = mkdtempSync(join(tmpdir(), "dou-trend-dispose-"));
     const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000 });
-    tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 9, outputTokens: 9 } } }, T0, 1));
+    tracker.handleEvent(
+      { id: "s1" },
+      ev(
+        "assistant/chunk",
+        { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 9, outputTokens: 9 } } },
+        T0,
+        1,
+      ),
+    );
     await tracker.dispose();
     detailShardExists = existsSync(join(root, "details", `${dayKey(T0)}.jsonl`));
   });
@@ -1481,7 +2022,15 @@ describe("tracker：flushNow 语义与 handleDisposed 清理", () => {
     // session/flush 语义在 tracker 层等价 flushNow；handleDisposed 清理不崩
     const root = mkdtempSync(join(tmpdir(), "dou-trend-flushpt-"));
     const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000 });
-    tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 3, outputTokens: 3 } } }, T0, 1));
+    tracker.handleEvent(
+      { id: "s1" },
+      ev(
+        "assistant/chunk",
+        { turn: 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 3, outputTokens: 3 } } },
+        T0,
+        1,
+      ),
+    );
     await tracker.flushNow();
     unpersistedRows = tracker.stats().unpersistedRows;
     tracker.handleDisposed({ id: "s1" });
@@ -1513,8 +2062,37 @@ describe("评审修复 P0-1 交叉：HistoryStore.pruneAll 不误删 trend 分�
     mkdirSync(join(root, "trend", "details"), { recursive: true });
     mkdirSync(join(root, "trend", "agg"), { recursive: true });
     mkdirSync(join(root, "p1", "n1"), { recursive: true });
-    const detailLine = JSON.stringify({ v: 1, kind: "detail", time: T0, day: "2026-01-01", session: "sx", turn: 1, step: 1, retry: 1, provider: "p", model: "m", input: 1, output: 1, cacheRead: null, cacheWrite: null, calls: 1 });
-    const aggLine = JSON.stringify({ v: 1, kind: "agg", day: "2026-01-01", provider: "p", model: "m", input: 1, output: 1, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 });
+    const detailLine = JSON.stringify({
+      v: 1,
+      kind: "detail",
+      time: T0,
+      day: "2026-01-01",
+      session: "sx",
+      turn: 1,
+      step: 1,
+      retry: 1,
+      provider: "p",
+      model: "m",
+      input: 1,
+      output: 1,
+      cacheRead: null,
+      cacheWrite: null,
+      calls: 1,
+    });
+    const aggLine = JSON.stringify({
+      v: 1,
+      kind: "agg",
+      day: "2026-01-01",
+      provider: "p",
+      model: "m",
+      input: 1,
+      output: 1,
+      cacheRead: null,
+      cacheWrite: null,
+      calls: 1,
+      turns: 0,
+      toolCalls: 0,
+    });
     writeFileSync(detFile, `${detailLine}\n`);
     writeFileSync(aggFile, `${aggLine}\n`);
     writeFileSync(usageFile, '{"time":1,"data":{}}\n');
@@ -1573,7 +2151,23 @@ describe("评审修复 P1-3（store 级）：部分失败日不进成功集、�
     const store = new TrendStore({ root, warn: () => {} });
     const dayB = "2026-09-03";
     mkdirSync(join(root, "details", `${dayB}.jsonl`), { recursive: true });
-    const rowOf = (day, session) => ({ v: 1, kind: "detail", time: T0, day, session, turn: 1, step: 1, retry: 1, provider: "p", model: "m", input: 1, output: 1, cacheRead: null, cacheWrite: null, calls: 1 });
+    const rowOf = (day, session) => ({
+      v: 1,
+      kind: "detail",
+      time: T0,
+      day,
+      session,
+      turn: 1,
+      step: 1,
+      retry: 1,
+      provider: "p",
+      model: "m",
+      input: 1,
+      output: 1,
+      cacheRead: null,
+      cacheWrite: null,
+      calls: 1,
+    });
     const okDays = await store.appendRows([rowOf(DAY0, "sA"), rowOf(dayB, "sB")]);
     okDaysIsSet = okDays instanceof Set;
     okDaysList = [...okDays];
@@ -1633,12 +2227,16 @@ describe("评审修复 P1-3（tracker 级）：flush 部分失败不重复 appen
     tracker.handleEvent({ id: "s2" }, ev("assistant/chunk", USAGE(7, 7), T0 - 24 * HOUR, 4)); // 过去日行
     mkdirSync(join(root, "details", `${pastDay}.jsonl`), { recursive: true }); // 失败日障碍
     await tracker.flushNow();
-    todayLinesAfterFirst = readFileSync(join(root, "details", `${today}.jsonl`), "utf8").trimEnd().split("\n").length;
+    todayLinesAfterFirst = readFileSync(join(root, "details", `${today}.jsonl`), "utf8")
+      .trimEnd()
+      .split("\n").length;
     unpersistedAfterFirst = tracker.stats().unpersistedRows;
     cellsAfterFirst = tracker.buckets().find((d) => d.day === today).providers[0].cell.calls;
     rmdirSync(join(root, "details", `${pastDay}.jsonl`)); // 移除障碍
     await tracker.flushNow();
-    todayLinesAfterSecond = readFileSync(join(root, "details", `${today}.jsonl`), "utf8").trimEnd().split("\n").length;
+    todayLinesAfterSecond = readFileSync(join(root, "details", `${today}.jsonl`), "utf8")
+      .trimEnd()
+      .split("\n").length;
     unpersistedAfterSecond = tracker.stats().unpersistedRows;
     pastAggHealed = existsSync(join(root, "agg", `${pastDay}.jsonl`));
     await tracker.dispose();
@@ -1736,7 +2334,10 @@ describe("done 记忆语义：结算序数跨 header 与 TTL 连续", () => {
     send(s, ev("assistant/chunk", USAGE(100, 50), T0, 2));
     send(s, ev("assistant/chunk", USAGE(70, 30), T0 + 6000, 3));
     nowMs = T0 + 11 * 60 * 1000;
-    send(s, ev("tool/call", { turn: 1, step: 1, callId: "c", name: "bash", arguments: "{}" }, nowMs, 4));
+    send(
+      s,
+      ev("tool/call", { turn: 1, step: 1, callId: "c", name: "bash", arguments: "{}" }, nowMs, 4),
+    );
     send(s, ev("assistant/message", MESSAGE({ inputTokens: 88, outputTokens: 66 }), nowMs, 5));
     calls = snapshot(callsOf(emitted));
   });
@@ -1763,7 +2364,11 @@ describe("done 记忆语义：超 TREND_DONE_MAX 按插入序淘汰最旧键", (
     doneMax = TREND_DONE_MAX;
     const { emitted, send } = makeCollector();
     const s = { id: "s1" };
-    const usageAt = (turn) => ({ turn, step: 1, chunk: { type: "usage", usage: { inputTokens: 1, outputTokens: 1 } } });
+    const usageAt = (turn) => ({
+      turn,
+      step: 1,
+      chunk: { type: "usage", usage: { inputTokens: 1, outputTokens: 1 } },
+    });
     for (let turn = 1; turn <= TREND_DONE_MAX + 1; turn++) {
       send(s, ev("assistant/chunk", usageAt(turn), T0, turn));
       send(s, ev("turn/end", { turn, reason: { kind: "completed" } }, T0, turn));
@@ -1821,12 +2426,51 @@ describe("评审修复 P2-4：分片行校验补强（坏行拒收 + 逐行告�
     const root = mkdtempSync(join(tmpdir(), "dou-trend-badrow-"));
     const warns = [];
     const store = new TrendStore({ root, warn: (m) => warns.push(m) });
-    const good = { v: 1, kind: "detail", time: T0, day: DAY0, session: "s1", turn: 1, step: 1, retry: 1, provider: "p", model: "m", input: 1, output: 1, cacheRead: null, cacheWrite: null, calls: 1 };
+    const good = {
+      v: 1,
+      kind: "detail",
+      time: T0,
+      day: DAY0,
+      session: "s1",
+      turn: 1,
+      step: 1,
+      retry: 1,
+      provider: "p",
+      model: "m",
+      input: 1,
+      output: 1,
+      cacheRead: null,
+      cacheWrite: null,
+      calls: 1,
+    };
     const badToken = { ...good, session: "s2", input: "x" };
     const badModel = { ...good, session: "s3", model: 3 };
     const badDay = { ...good, session: "s4", day: "2026-9-4" };
-    const badCounter = { v: 1, kind: "counter", time: T0, day: DAY0, session: "s5", provider: "p", model: 3, turns: 1, toolCalls: 0 };
-    const badAgg = { v: 1, kind: "agg", day: DAY0, provider: "p", model: 3, input: "x", output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 };
+    const badCounter = {
+      v: 1,
+      kind: "counter",
+      time: T0,
+      day: DAY0,
+      session: "s5",
+      provider: "p",
+      model: 3,
+      turns: 1,
+      toolCalls: 0,
+    };
+    const badAgg = {
+      v: 1,
+      kind: "agg",
+      day: DAY0,
+      provider: "p",
+      model: 3,
+      input: "x",
+      output: null,
+      cacheRead: null,
+      cacheWrite: null,
+      calls: 1,
+      turns: 0,
+      toolCalls: 0,
+    };
     // 校验面单点断言
     validBadToken = isValidShardRow(badToken);
     validBadModel = isValidShardRow(badModel);
@@ -1837,7 +2481,11 @@ describe("评审修复 P2-4：分片行校验补强（坏行拒收 + 逐行告�
     // 分片读取面：坏行跳过 + 告警
     mkdirSync(join(root, "details"), { recursive: true });
     mkdirSync(join(root, "agg"), { recursive: true });
-    writeFileSync(join(root, "details", `${DAY0}.jsonl`), [good, badToken, badModel, badDay, badCounter].map((r) => JSON.stringify(r)).join("\n") + "\n");
+    writeFileSync(
+      join(root, "details", `${DAY0}.jsonl`),
+      [good, badToken, badModel, badDay, badCounter].map((r) => JSON.stringify(r)).join("\n") +
+        "\n",
+    );
     writeFileSync(join(root, "agg", `${DAY0}.jsonl`), `${JSON.stringify(badAgg)}\n`);
     const details = await store.readDetailShard(DAY0);
     detailsLength = details.length;
@@ -1903,26 +2551,56 @@ describe("评审修复 P2-6：归属不一致告警（主源不被副源覆盖�
     // attribution 保持主源不被副源覆盖。
     const anomalies = [];
     const emitted = [];
-    const collector = new TrendCollector({ now: () => T0, emit: (e) => emitted.push(e), onAnomaly: (m) => anomalies.push(m) });
+    const collector = new TrendCollector({
+      now: () => T0,
+      emit: (e) => emitted.push(e),
+      onAnomaly: (m) => anomalies.push(m),
+    });
     collector.handleEvent("s1", ev("request/header", HEADER("deepseek", "deepseek-chat"), T0, 1));
-    collector.handleEvent("s1", ev("assistant/message", {
-      turn: 1, step: 1,
-      message: { role: "assistant", source: { kind: "model", provider: "opencode", model: "glm-4" } },
-      usage: { inputTokens: 10, outputTokens: 5 },
-    }, T0 + 100, 2));
+    collector.handleEvent(
+      "s1",
+      ev(
+        "assistant/message",
+        {
+          turn: 1,
+          step: 1,
+          message: {
+            role: "assistant",
+            source: { kind: "model", provider: "opencode", model: "glm-4" },
+          },
+          usage: { inputTokens: 10, outputTokens: 5 },
+        },
+        T0 + 100,
+        2,
+      ),
+    );
     anomaliesLength = anomalies.length;
     anomalyHasSession = anomalies[0].includes("s1");
     callProvider = callsOf(emitted)[0].provider;
     callModel = callsOf(emitted)[0].model;
     // 回归：主副源一致不告警；归属缺失走副源补齐不告警（既有语义不回退）
     const silent = [];
-    const c2 = new TrendCollector({ now: () => T0, emit: () => {}, onAnomaly: (m) => silent.push(m) });
+    const c2 = new TrendCollector({
+      now: () => T0,
+      emit: () => {},
+      onAnomaly: (m) => silent.push(m),
+    });
     c2.handleEvent("s1", ev("request/header", HEADER(), T0, 1));
-    c2.handleEvent("s1", ev("assistant/message", MESSAGE({ inputTokens: 1, outputTokens: 1 }), T0, 2));
+    c2.handleEvent(
+      "s1",
+      ev("assistant/message", MESSAGE({ inputTokens: 1, outputTokens: 1 }), T0, 2),
+    );
     silentLength = silent.length;
     const missing = [];
-    const c3 = new TrendCollector({ now: () => T0, emit: () => {}, onAnomaly: (m) => missing.push(m) });
-    c3.handleEvent("s1", ev("assistant/message", MESSAGE({ inputTokens: 1, outputTokens: 1 }), T0, 1));
+    const c3 = new TrendCollector({
+      now: () => T0,
+      emit: () => {},
+      onAnomaly: (m) => missing.push(m),
+    });
+    c3.handleEvent(
+      "s1",
+      ev("assistant/message", MESSAGE({ inputTokens: 1, outputTokens: 1 }), T0, 1),
+    );
     missingLength = missing.length;
   });
 
@@ -1958,13 +2636,33 @@ describe("评审修复 P2-6：tracker 侧 onAnomaly 接线到 warn", () => {
     // P2-6 tracker 接线：collector onAnomaly → tracker 统一 warn 出口
     const warns = [];
     const root = mkdtempSync(join(tmpdir(), "dou-trend-anomaly-"));
-    const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000, warn: (m) => warns.push(m) });
-    tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER("deepseek", "deepseek-chat"), T0, 1));
-    tracker.handleEvent({ id: "s1" }, ev("assistant/message", {
-      turn: 1, step: 1,
-      message: { role: "assistant", source: { kind: "model", provider: "opencode", model: "glm-4" } },
-      usage: { inputTokens: 1, outputTokens: 1 },
-    }, T0, 2));
+    const tracker = await TrendTracker.start({
+      root,
+      now: () => T0,
+      flushDebounceMs: 60000,
+      warn: (m) => warns.push(m),
+    });
+    tracker.handleEvent(
+      { id: "s1" },
+      ev("request/header", HEADER("deepseek", "deepseek-chat"), T0, 1),
+    );
+    tracker.handleEvent(
+      { id: "s1" },
+      ev(
+        "assistant/message",
+        {
+          turn: 1,
+          step: 1,
+          message: {
+            role: "assistant",
+            source: { kind: "model", provider: "opencode", model: "glm-4" },
+          },
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+        T0,
+        2,
+      ),
+    );
     warnHit = warns.some((m) => m.includes("归属"));
     await tracker.dispose();
   });
@@ -1987,7 +2685,22 @@ describe("评审修复 P2-7：writeAggDay 清理同日残留 tmp", () => {
     mkdirSync(join(root, "agg"), { recursive: true });
     writeFileSync(join(root, "agg", `${DAY0}.jsonl.1700000000000.tmp`), "stale\n"); // 同日残留
     writeFileSync(join(root, "agg", `2026-09-05.jsonl.1700000000000.tmp`), "other-day\n"); // 他日残留
-    await store.writeAggDay(DAY0, [{ v: 1, kind: "agg", day: DAY0, provider: "p", model: "m", input: 1, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 }]);
+    await store.writeAggDay(DAY0, [
+      {
+        v: 1,
+        kind: "agg",
+        day: DAY0,
+        provider: "p",
+        model: "m",
+        input: 1,
+        output: null,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 1,
+        turns: 0,
+        toolCalls: 0,
+      },
+    ]);
     sameDayTmpCleared = existsSync(join(root, "agg", `${DAY0}.jsonl.1700000000000.tmp`));
     otherDayTmpKept = existsSync(join(root, "agg", `2026-09-05.jsonl.1700000000000.tmp`));
     aggShardLength = (await store.readAggShard(DAY0)).length;
@@ -2075,10 +2788,24 @@ describe("#633 A1(a)：per-session 惰性单查（resolveCwd 恰 1 次）", () =
     tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 1));
     tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(10, 5), T0, 2)); // call 定稿（首次查询）
     tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(11, 6), T0, 3)); // 同 fold 校正
-    tracker.handleEvent({ id: "s1" }, ev("tool/call", { turn: 1, step: 1, callId: "c", name: "bash", arguments: "{}" }, T0, 4)); // counter
-    tracker.handleEvent({ id: "s1" }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 5)); // counter
+    tracker.handleEvent(
+      { id: "s1" },
+      ev("tool/call", { turn: 1, step: 1, callId: "c", name: "bash", arguments: "{}" }, T0, 4),
+    ); // counter
+    tracker.handleEvent(
+      { id: "s1" },
+      ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 5),
+    ); // counter
     tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 6));
-    tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", { turn: 2, step: 1, chunk: { type: "usage", usage: { inputTokens: 3, outputTokens: 3 } } }, T0, 7)); // 新 turn call
+    tracker.handleEvent(
+      { id: "s1" },
+      ev(
+        "assistant/chunk",
+        { turn: 2, step: 1, chunk: { type: "usage", usage: { inputTokens: 3, outputTokens: 3 } } },
+        T0,
+        7,
+      ),
+    ); // 新 turn call
     await tracker.flushNow();
     cwdCalls = snapshot(cwdCalls0);
     unpersistedRows = tracker.stats().unpersistedRows;
@@ -2117,14 +2844,23 @@ describe("#633 A1(b)：resolveCwd 缺失/抛错归未识别桶且各查 1 次", 
     });
     tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 1));
     tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(10, 5), T0, 2));
-    tracker.handleEvent({ id: "s1" }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3));
+    tracker.handleEvent(
+      { id: "s1" },
+      ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3),
+    );
     tracker.handleEvent({ id: "s2" }, ev("request/header", HEADER(), T0, 4));
     tracker.handleEvent({ id: "s2" }, ev("assistant/chunk", USAGE(7, 7), T0, 5));
-    tracker.handleEvent({ id: "s2" }, ev("tool/call", { turn: 1, step: 1, callId: "c", name: "bash", arguments: "{}" }, T0, 6));
+    tracker.handleEvent(
+      { id: "s2" },
+      ev("tool/call", { turn: 1, step: 1, callId: "c", name: "bash", arguments: "{}" }, T0, 6),
+    );
     await tracker.flushNow();
     countsS1 = counts.s1;
     countsS2 = counts.s2;
-    const rows = readFileSync(join(root, "details", `${dayKey(T0)}.jsonl`), "utf8").trimEnd().split("\n").map((l) => JSON.parse(l));
+    const rows = readFileSync(join(root, "details", `${dayKey(T0)}.jsonl`), "utf8")
+      .trimEnd()
+      .split("\n")
+      .map((l) => JSON.parse(l));
     s1Dir = rows.find((r) => r.kind === "detail" && r.session === "s1").dir;
     s2Dir = rows.find((r) => r.kind === "detail" && r.session === "s2").dir;
     await tracker.dispose();
@@ -2167,23 +2903,36 @@ describe("#633 A1(c)：cwd 经 sanitizeDirName 净化后落盘 + 纯函数面直
       root,
       now: () => T0,
       flushDebounceMs: 60000,
-      resolveCwd: () => ["/home/u/my proj/v2/", "C:\\Users\\alice\\repo", "D:\\work\\my app\\", "/mixed/slash\\back"][flip++ % 4],
+      resolveCwd: () =>
+        [
+          "/home/u/my proj/v2/",
+          "C:\\Users\\alice\\repo",
+          "D:\\work\\my app\\",
+          "/mixed/slash\\back",
+        ][flip++ % 4],
     });
     // 四个会话各一次定稿调用 + turn/end（覆盖 POSIX 尾斜杠 / Windows 反斜杠 / Windows 尾反斜杠 / 混合分隔符）
     for (let s = 1; s <= 4; s += 1) {
       tracker.handleEvent({ id: `s${s}` }, ev("request/header", HEADER(), T0, s * 3 - 2));
       tracker.handleEvent({ id: `s${s}` }, ev("assistant/chunk", USAGE(10, 5), T0, s * 3 - 1));
-      tracker.handleEvent({ id: `s${s}` }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, s * 3));
+      tracker.handleEvent(
+        { id: `s${s}` },
+        ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, s * 3),
+      );
     }
     await tracker.flushNow();
-    const rows = readFileSync(join(root, "details", `${dayKey(T0)}.jsonl`), "utf8").trimEnd().split("\n").map((l) => JSON.parse(l));
+    const rows = readFileSync(join(root, "details", `${dayKey(T0)}.jsonl`), "utf8")
+      .trimEnd()
+      .split("\n")
+      .map((l) => JSON.parse(l));
     const dirOf = (sid) => rows.find((r) => r.kind === "detail" && r.session === sid).dir;
     dirS1 = dirOf("s1");
     dirS2 = dirOf("s2");
     dirS3 = dirOf("s3");
     dirS4 = dirOf("s4");
     const counters = rows.filter((r) => r.kind === "counter");
-    countersAllBasename = counters.length === 4 && counters.every((r) => !r.dir.includes("\\") && !r.dir.includes("/"));
+    countersAllBasename =
+      counters.length === 4 && counters.every((r) => !r.dir.includes("\\") && !r.dir.includes("/"));
     await tracker.dispose();
     // 纯函数面直测（复核闸 P1 锁定 sanitizeDirName 本体语义）
     sanitizedWindows = sanitizeDirName("C:\\Users\\bob\\proj");
@@ -2241,12 +2990,21 @@ describe("#633 A1(d)：落盘 detail/counter 行均含 dir 字段且多 session 
     });
     tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 1));
     tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(10, 5), T0, 2));
-    tracker.handleEvent({ id: "s1" }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3));
+    tracker.handleEvent(
+      { id: "s1" },
+      ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3),
+    );
     tracker.handleEvent({ id: "s2" }, ev("request/header", HEADER(), T0, 4));
     tracker.handleEvent({ id: "s2" }, ev("assistant/chunk", USAGE(7, 7), T0, 5));
-    tracker.handleEvent({ id: "s2" }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 6));
+    tracker.handleEvent(
+      { id: "s2" },
+      ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 6),
+    );
     await tracker.flushNow();
-    const rows = readFileSync(join(root, "details", `${dayKey(T0)}.jsonl`), "utf8").trimEnd().split("\n").map((l) => JSON.parse(l));
+    const rows = readFileSync(join(root, "details", `${dayKey(T0)}.jsonl`), "utf8")
+      .trimEnd()
+      .split("\n")
+      .map((l) => JSON.parse(l));
     const dS1 = rows.find((r) => r.kind === "detail" && r.session === "s1");
     const dS2 = rows.find((r) => r.kind === "detail" && r.session === "s2");
     const cS1 = rows.find((r) => r.kind === "counter" && r.session === "s1");
@@ -2361,16 +3119,42 @@ describe("#633 A2(a)：旧格式 fixture 重建（聚合权威 + 当日明细不
     // 同日并存形态：过去日明细分片为压实残留（升级前崩溃于写聚合后、删明细前），
     // 聚合权威 → start 自愈删除（残留明细不双算；残留行同样无 dir 键）
     const residueFile = join(detDir, "2026-09-03.jsonl");
-    writeFileSync(residueFile, `${JSON.stringify(A2_LEGACY_DETAIL)}\n${JSON.stringify(A2_LEGACY_COUNTER)}\n`);
+    writeFileSync(
+      residueFile,
+      `${JSON.stringify(A2_LEGACY_DETAIL)}\n${JSON.stringify(A2_LEGACY_COUNTER)}\n`,
+    );
 
     const warns0 = [];
-    const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000, warn: (m) => warns0.push(m) });
+    const tracker = await TrendTracker.start({
+      root,
+      now: () => T0,
+      flushDebounceMs: 60000,
+      warn: (m) => warns0.push(m),
+    });
     const bPast = tracker.buckets().find((d) => d.day === "2026-09-03");
     pastBucketExists = bPast !== undefined;
-    const cellPast = bPast.providers.find((p) => p.provider === "deepseek" && p.model === "deepseek-chat").cell;
-    pastCell = snapshot({ input: cellPast.input, output: cellPast.output, cacheRead: cellPast.cacheRead, cacheWrite: cellPast.cacheWrite, calls: cellPast.calls, turns: cellPast.turns, toolCalls: cellPast.toolCalls });
+    const cellPast = bPast.providers.find(
+      (p) => p.provider === "deepseek" && p.model === "deepseek-chat",
+    ).cell;
+    pastCell = snapshot({
+      input: cellPast.input,
+      output: cellPast.output,
+      cacheRead: cellPast.cacheRead,
+      cacheWrite: cellPast.cacheWrite,
+      calls: cellPast.calls,
+      turns: cellPast.turns,
+      toolCalls: cellPast.toolCalls,
+    });
     const cellToday = tracker.buckets().find((d) => d.day === today).providers[0].cell;
-    todayCell = snapshot({ input: cellToday.input, output: cellToday.output, cacheRead: cellToday.cacheRead, cacheWrite: cellToday.cacheWrite, calls: cellToday.calls, turns: cellToday.turns, toolCalls: cellToday.toolCalls });
+    todayCell = snapshot({
+      input: cellToday.input,
+      output: cellToday.output,
+      cacheRead: cellToday.cacheRead,
+      cacheWrite: cellToday.cacheWrite,
+      calls: cellToday.calls,
+      turns: cellToday.turns,
+      toolCalls: cellToday.toolCalls,
+    });
     warns = snapshot(warns0);
     residueDeleted = existsSync(residueFile);
     detBytesUnchangedAfterStart = readFileSync(detFile, "utf8") === legacyDetailBytes;
@@ -2384,11 +3168,27 @@ describe("#633 A2(a)：旧格式 fixture 重建（聚合权威 + 当日明细不
   });
 
   it("过去日 agg 权威行数值与写入值一致", () => {
-    expect(pastCell).toEqual({ input: 5000, output: 800, cacheRead: 120, cacheWrite: 10, calls: 30, turns: 12, toolCalls: 40 });
+    expect(pastCell).toEqual({
+      input: 5000,
+      output: 800,
+      cacheRead: 120,
+      cacheWrite: 10,
+      calls: 30,
+      turns: 12,
+      toolCalls: 40,
+    });
   });
 
   it("当日旧格式明细/计数行重建数值与写入值一致", () => {
-    expect(todayCell).toEqual({ input: 1200, output: 300, cacheRead: 45, cacheWrite: 6, calls: 1, turns: 1, toolCalls: 1 });
+    expect(todayCell).toEqual({
+      input: 1200,
+      output: 300,
+      cacheRead: 45,
+      cacheWrite: 6,
+      calls: 1,
+      turns: 1,
+      toolCalls: 1,
+    });
   });
 
   it("旧格式行（无 dir 键）全量通过校验，无坏行告警", () => {
@@ -2434,12 +3234,22 @@ describe("#633 A2(b)：自愈压实路径（旧格式明细无聚合分片）", 
     const aggDir = join(root, "agg");
     const detDir = join(root, "details");
     mkdirSync(detDir, { recursive: true });
-    writeFileSync(join(detDir, "2026-09-03.jsonl"), `${JSON.stringify(A2_LEGACY_DETAIL)}\n${JSON.stringify(A2_LEGACY_COUNTER)}\n`);
+    writeFileSync(
+      join(detDir, "2026-09-03.jsonl"),
+      `${JSON.stringify(A2_LEGACY_DETAIL)}\n${JSON.stringify(A2_LEGACY_COUNTER)}\n`,
+    );
     const warns0 = [];
-    const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000, warn: (m) => warns0.push(m) });
+    const tracker = await TrendTracker.start({
+      root,
+      now: () => T0,
+      flushDebounceMs: 60000,
+      warn: (m) => warns0.push(m),
+    });
     const b = tracker.buckets().find((d) => d.day === "2026-09-03");
     bucketExists = b !== undefined;
-    const cell = b.providers.find((p) => p.provider === "deepseek" && p.model === "deepseek-chat").cell;
+    const cell = b.providers.find(
+      (p) => p.provider === "deepseek" && p.model === "deepseek-chat",
+    ).cell;
     cellCalls = cell.calls;
     cellTurns = cell.turns;
     cellToolCalls = cell.toolCalls;
@@ -2449,11 +3259,16 @@ describe("#633 A2(b)：自愈压实路径（旧格式明细无聚合分片）", 
     cellCacheWrite = cell.cacheWrite;
     aggWritten = existsSync(join(aggDir, "2026-09-03.jsonl"));
     detailDeleted = existsSync(join(detDir, "2026-09-03.jsonl"));
-    const aggRows = (await new TrendStore({ root }).readAggShard("2026-09-03"));
+    const aggRows = await new TrendStore({ root }).readAggShard("2026-09-03");
     aggRowCount = aggRows.length;
     aggRowValues = snapshot({
-      input: aggRows[0].input, output: aggRows[0].output, cacheRead: aggRows[0].cacheRead, cacheWrite: aggRows[0].cacheWrite,
-      calls: aggRows[0].calls, turns: aggRows[0].turns, toolCalls: aggRows[0].toolCalls,
+      input: aggRows[0].input,
+      output: aggRows[0].output,
+      cacheRead: aggRows[0].cacheRead,
+      cacheWrite: aggRows[0].cacheWrite,
+      calls: aggRows[0].calls,
+      turns: aggRows[0].turns,
+      toolCalls: aggRows[0].toolCalls,
     });
     warns = snapshot(warns0);
     await tracker.dispose();
@@ -2504,7 +3319,15 @@ describe("#633 A2(b)：自愈压实路径（旧格式明细无聚合分片）", 
   });
 
   it("压实产物数值与明细写入值一致（自愈不丢数不补造）", () => {
-    expect(aggRowValues).toEqual({ input: 1200, output: 300, cacheRead: 45, cacheWrite: 6, calls: 1, turns: 1, toolCalls: 1 });
+    expect(aggRowValues).toEqual({
+      input: 1200,
+      output: 300,
+      cacheRead: 45,
+      cacheWrite: 6,
+      calls: 1,
+      turns: 1,
+      toolCalls: 1,
+    });
   });
 
   it("旧格式行全量通过校验，无坏行告警", () => {
@@ -2532,7 +3355,18 @@ describe("#633 A2(c)：round-trip（旧格式行 rebuild → flushNow → 重读
     const detFile = join(detDir, `${dayKey(T0)}.jsonl`); // 当日明细（rebuild(true) 路径）
     const legacyTodayDetail = { ...A2_LEGACY_DETAIL, time: T0 - HOUR, day: dayKey(T0) };
     const legacyTodayCounter = { ...A2_LEGACY_COUNTER, time: T0 - HOUR, day: dayKey(T0) };
-    const legacyTodayDetail2 = { ...A2_LEGACY_DETAIL, time: T0 - 2 * HOUR, day: dayKey(T0), session: "旧会话-乙", turn: 1, step: 1, input: 50, output: 20, cacheRead: 3, cacheWrite: 4 };
+    const legacyTodayDetail2 = {
+      ...A2_LEGACY_DETAIL,
+      time: T0 - 2 * HOUR,
+      day: dayKey(T0),
+      session: "旧会话-乙",
+      turn: 1,
+      step: 1,
+      input: 50,
+      output: 20,
+      cacheRead: 3,
+      cacheWrite: 4,
+    };
     const originalBytes = `${JSON.stringify(legacyTodayDetail)}\n${JSON.stringify(legacyTodayCounter)}\n${JSON.stringify(legacyTodayDetail2)}\n`;
     writeFileSync(detFile, originalBytes);
     const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000 });
@@ -2546,7 +3380,17 @@ describe("#633 A2(c)：round-trip（旧格式行 rebuild → flushNow → 重读
     bytesUnchangedAfterFlush = readFileSync(detFile, "utf8") === originalBytes;
     const back = await new TrendStore({ root }).readDetailShard(dayKey(T0));
     backLength = back.length;
-    backFields = snapshot(back.map((r) => ({ kind: r.kind, session: r.session, time: r.time, provider: r.provider, model: r.model, input: "input" in r ? r.input : undefined, turns: "turns" in r ? r.turns : undefined })));
+    backFields = snapshot(
+      back.map((r) => ({
+        kind: r.kind,
+        session: r.session,
+        time: r.time,
+        provider: r.provider,
+        model: r.model,
+        input: "input" in r ? r.input : undefined,
+        turns: "turns" in r ? r.turns : undefined,
+      })),
+    );
     noDirKey = back.every((r) => !("dir" in r));
     await tracker.dispose();
   }, 60_000);
@@ -2583,9 +3427,33 @@ describe("#633 A2(c)：round-trip（旧格式行 rebuild → flushNow → 重读
     // 原 assert.deepEqual 为 node:assert/strict 的 deepStrictEqual：期望值显式含
     // input/turns: undefined，键在位性属判定一部分，故用 toStrictEqual 保语义不弱化。
     expect(backFields).toStrictEqual([
-      { kind: "detail", session: "旧会话-甲", time: T0 - HOUR, provider: "deepseek", model: "deepseek-chat", input: 1200, turns: undefined },
-      { kind: "counter", session: "旧会话-甲", time: T0 - HOUR, provider: "deepseek", model: "deepseek-chat", input: undefined, turns: 1 },
-      { kind: "detail", session: "旧会话-乙", time: T0 - 2 * HOUR, provider: "deepseek", model: "deepseek-chat", input: 50, turns: undefined },
+      {
+        kind: "detail",
+        session: "旧会话-甲",
+        time: T0 - HOUR,
+        provider: "deepseek",
+        model: "deepseek-chat",
+        input: 1200,
+        turns: undefined,
+      },
+      {
+        kind: "counter",
+        session: "旧会话-甲",
+        time: T0 - HOUR,
+        provider: "deepseek",
+        model: "deepseek-chat",
+        input: undefined,
+        turns: 1,
+      },
+      {
+        kind: "detail",
+        session: "旧会话-乙",
+        time: T0 - 2 * HOUR,
+        provider: "deepseek",
+        model: "deepseek-chat",
+        input: 50,
+        turns: undefined,
+      },
     ]);
   });
 
@@ -2607,9 +3475,17 @@ describe("#633 A2(d)：未知键容忍（legacyFlag 不拒绝、不告警）", (
     const detDir = join(root, "details");
     mkdirSync(detDir, { recursive: true });
     const withUnknown = { ...A2_LEGACY_DETAIL, legacyFlag: "x" };
-    writeFileSync(join(detDir, "2026-09-03.jsonl"), `${JSON.stringify(withUnknown)}\n${JSON.stringify(A2_LEGACY_COUNTER)}\n`);
+    writeFileSync(
+      join(detDir, "2026-09-03.jsonl"),
+      `${JSON.stringify(withUnknown)}\n${JSON.stringify(A2_LEGACY_COUNTER)}\n`,
+    );
     const warns0 = [];
-    const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000, warn: (m) => warns0.push(m) });
+    const tracker = await TrendTracker.start({
+      root,
+      now: () => T0,
+      flushDebounceMs: 60000,
+      warn: (m) => warns0.push(m),
+    });
     const cell = tracker.buckets().find((d) => d.day === "2026-09-03").providers[0].cell;
     cellCalls = cell.calls;
     cellInput = cell.input;
@@ -2645,7 +3521,10 @@ describe("#633 A2 补充：dir 值域防御不回退（空串/非字符串按坏
     const good = { ...A2_LEGACY_DETAIL, dir: "proj" };
     const badEmptyDir = { ...A2_LEGACY_DETAIL, session: "s-bad-1", dir: "" };
     const badNumDir = { ...A2_LEGACY_DETAIL, session: "s-bad-2", dir: 7 };
-    writeFileSync(join(root, "details", "2026-09-03.jsonl"), [good, badEmptyDir, badNumDir].map((r) => JSON.stringify(r)).join("\n") + "\n");
+    writeFileSync(
+      join(root, "details", "2026-09-03.jsonl"),
+      [good, badEmptyDir, badNumDir].map((r) => JSON.stringify(r)).join("\n") + "\n",
+    );
     const rows = await store.readDetailShard("2026-09-03");
     rowsLength = rows.length;
     keptSession = rows[0].session;
@@ -2686,11 +3565,19 @@ describe("#633 A3(a)：内存态归并（tracker 全链路压实产物）", () =
       root,
       now: () => nowMs,
       flushDebounceMs: 60000,
-      resolveCwd: (session) => (session === "s1" || session === "s2" ? "/home/u/shared" : session === "s3" ? "/home/u/other" : undefined),
+      resolveCwd: (session) =>
+        session === "s1" || session === "s2"
+          ? "/home/u/shared"
+          : session === "s3"
+            ? "/home/u/other"
+            : undefined,
     });
     tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 1));
     tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(10, 5), T0, 2));
-    tracker.handleEvent({ id: "s1" }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3));
+    tracker.handleEvent(
+      { id: "s1" },
+      ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3),
+    );
     tracker.handleEvent({ id: "s2" }, ev("request/header", HEADER(), T0, 4));
     tracker.handleEvent({ id: "s2" }, ev("assistant/chunk", USAGE(7, 7), T0, 5));
     tracker.handleEvent({ id: "s3" }, ev("request/header", HEADER(), T0, 6));
@@ -2703,7 +3590,11 @@ describe("#633 A3(a)：内存态归并（tracker 全链路压实产物）", () =
     shardKinds = snapshot(shard.map((r) => r.kind));
     shardHours = snapshot(shard.filter((r) => r.kind === "hour"));
     shardDirs = snapshot(shard.filter((r) => r.kind === "dir"));
-    shardAggCells = snapshot(shard.filter((r) => r.kind === "agg").map((r) => ({ input: r.input, output: r.output, calls: r.calls, turns: r.turns })));
+    shardAggCells = snapshot(
+      shard
+        .filter((r) => r.kind === "agg")
+        .map((r) => ({ input: r.input, output: r.output, calls: r.calls, turns: r.turns })),
+    );
     detailShardDeleted = existsSync(join(root, "details", `${DAY0}.jsonl`));
     await tracker.dispose();
   }, 60_000);
@@ -2714,15 +3605,63 @@ describe("#633 A3(a)：内存态归并（tracker 全链路压实产物）", () =
 
   it("混存分片 hour 行：同在 12:00 的 4 次调用折叠为 hour12（input 10+7+3+2）", () => {
     expect(shardHours).toEqual([
-      { v: TREND_ROW_VERSION, kind: "hour", day: DAY0, hour: 12, input: 22, output: 17, cacheRead: 0, cacheWrite: 0, calls: 4, turns: 1, toolCalls: 0 },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "hour",
+        day: DAY0,
+        hour: 12,
+        input: 22,
+        output: 17,
+        cacheRead: 0,
+        cacheWrite: 0,
+        calls: 4,
+        turns: 1,
+        toolCalls: 0,
+      },
     ]);
   });
 
   it("同 cwd 双 session 归并为恰 1 条（calls 为和）；不同 cwd/未识别桶独立行", () => {
     expect(shardDirs).toEqual([
-      { v: TREND_ROW_VERSION, kind: "dir", day: DAY0, dir: "shared", input: 17, output: 12, cacheRead: 0, cacheWrite: 0, calls: 2, turns: 1, toolCalls: 0 },
-      { v: TREND_ROW_VERSION, kind: "dir", day: DAY0, dir: "other", input: 3, output: 3, cacheRead: 0, cacheWrite: 0, calls: 1, turns: 0, toolCalls: 0 },
-      { v: TREND_ROW_VERSION, kind: "dir", day: DAY0, dir: TREND_UNIDENTIFIED, input: 2, output: 2, cacheRead: 0, cacheWrite: 0, calls: 1, turns: 0, toolCalls: 0 },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: DAY0,
+        dir: "shared",
+        input: 17,
+        output: 12,
+        cacheRead: 0,
+        cacheWrite: 0,
+        calls: 2,
+        turns: 1,
+        toolCalls: 0,
+      },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: DAY0,
+        dir: "other",
+        input: 3,
+        output: 3,
+        cacheRead: 0,
+        cacheWrite: 0,
+        calls: 1,
+        turns: 0,
+        toolCalls: 0,
+      },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: DAY0,
+        dir: TREND_UNIDENTIFIED,
+        input: 2,
+        output: 2,
+        cacheRead: 0,
+        cacheWrite: 0,
+        calls: 1,
+        turns: 0,
+        toolCalls: 0,
+      },
     ]);
   });
 
@@ -2745,20 +3684,89 @@ describe("#633 A3(b)：rebuild 混存行（dir 行不进 cells / 不进 pending�
     const agg = new TrendAggregator();
     agg.rebuild(
       [
-        { v: 1, kind: "agg", day: DAY0, provider: "deepseek", model: "chat", input: 100, output: 50, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 3 },
-        { v: 1, kind: "dir", day: DAY0, dir: "proj", input: 100, output: 50, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 3 },
-        { v: 1, kind: "detail", time: T0, day: DAY0, session: "s9", turn: 9, step: 1, retry: 1, provider: "deepseek", model: "chat", dir: "proj", input: 7, output: 7, cacheRead: null, cacheWrite: null, calls: 1 },
-        { v: 1, kind: "counter", time: T0, day: DAY0, session: "s9", provider: "deepseek", model: "chat", dir: "proj", turns: 1, toolCalls: 0 },
+        {
+          v: 1,
+          kind: "agg",
+          day: DAY0,
+          provider: "deepseek",
+          model: "chat",
+          input: 100,
+          output: 50,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 2,
+          turns: 1,
+          toolCalls: 3,
+        },
+        {
+          v: 1,
+          kind: "dir",
+          day: DAY0,
+          dir: "proj",
+          input: 100,
+          output: 50,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 2,
+          turns: 1,
+          toolCalls: 3,
+        },
+        {
+          v: 1,
+          kind: "detail",
+          time: T0,
+          day: DAY0,
+          session: "s9",
+          turn: 9,
+          step: 1,
+          retry: 1,
+          provider: "deepseek",
+          model: "chat",
+          dir: "proj",
+          input: 7,
+          output: 7,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 1,
+        },
+        {
+          v: 1,
+          kind: "counter",
+          time: T0,
+          day: DAY0,
+          session: "s9",
+          provider: "deepseek",
+          model: "chat",
+          dir: "proj",
+          turns: 1,
+          toolCalls: 0,
+        },
       ],
       true,
     );
     const c = cellTotals(agg, DAY0);
-    cell = snapshot({ input: c.input, output: c.output, cacheRead: c.cacheRead, cacheWrite: c.cacheWrite, calls: c.calls, turns: c.turns, toolCalls: c.toolCalls });
+    cell = snapshot({
+      input: c.input,
+      output: c.output,
+      cacheRead: c.cacheRead,
+      cacheWrite: c.cacheWrite,
+      calls: c.calls,
+      turns: c.turns,
+      toolCalls: c.toolCalls,
+    });
     pendingRows = agg.stats().pendingRows;
   });
 
   it("rebuild：agg + detail/counter 进 cells；dir 行不进（calls=2+1 而非 +dir 的 2）", () => {
-    expect(cell).toEqual({ input: 107, output: 57, cacheRead: null, cacheWrite: null, calls: 3, turns: 2, toolCalls: 3 });
+    expect(cell).toEqual({
+      input: 107,
+      output: 57,
+      cacheRead: null,
+      cacheWrite: null,
+      calls: 3,
+      turns: 2,
+      toolCalls: 3,
+    });
   });
 
   it("dir 行不进 pending（不二次落盘）", () => {
@@ -2776,9 +3784,46 @@ describe("#633 A4(c)：rollup 产物字段值（agg + dir + hour 同源折算）
     // dir 行十字段（v/kind/day/dir/input/output/cacheRead/cacheWrite/calls/turns/toolCalls）
     // 值与 pending 折算一致；tokens null 的行 null-aware 归并；消费后不重复产出。
     const agg = new TrendAggregator();
-    agg.apply({ type: "call", record: { time: T0, session: "s1", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", dir: "proj", tokens: { input: 100, output: 50, cacheRead: 10, cacheWrite: 5 } } });
-    agg.apply({ type: "counter", record: { time: T0, session: "s1", provider: "deepseek", model: "chat", dir: "proj", turns: 1, toolCalls: 2 } });
-    agg.apply({ type: "call", record: { time: T0 + HOUR, session: "s2", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", dir: "proj", tokens: null } });
+    agg.apply({
+      type: "call",
+      record: {
+        time: T0,
+        session: "s1",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "deepseek",
+        model: "chat",
+        dir: "proj",
+        tokens: { input: 100, output: 50, cacheRead: 10, cacheWrite: 5 },
+      },
+    });
+    agg.apply({
+      type: "counter",
+      record: {
+        time: T0,
+        session: "s1",
+        provider: "deepseek",
+        model: "chat",
+        dir: "proj",
+        turns: 1,
+        toolCalls: 2,
+      },
+    });
+    agg.apply({
+      type: "call",
+      record: {
+        time: T0 + HOUR,
+        session: "s2",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "deepseek",
+        model: "chat",
+        dir: "proj",
+        tokens: null,
+      },
+    });
     const rows = agg.rollupDay(DAY0, DAY0);
     aggAndDirRows = snapshot(rows.filter((r) => r.kind === "agg" || r.kind === "dir"));
     hourRows = snapshot(rows.filter((r) => r.kind === "hour"));
@@ -2787,15 +3832,64 @@ describe("#633 A4(c)：rollup 产物字段值（agg + dir + hour 同源折算）
 
   it("rollupDay 产物 agg+dir 行逐字段 deepEqual（null token 不污染、calls 独立累计）", () => {
     expect(aggAndDirRows).toEqual([
-      { v: TREND_ROW_VERSION, kind: "agg", day: DAY0, provider: "deepseek", model: "chat", input: 100, output: 50, cacheRead: 10, cacheWrite: 5, calls: 2, turns: 1, toolCalls: 2 },
-      { v: TREND_ROW_VERSION, kind: "dir", day: DAY0, dir: "proj", input: 100, output: 50, cacheRead: 10, cacheWrite: 5, calls: 2, turns: 1, toolCalls: 2 },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "agg",
+        day: DAY0,
+        provider: "deepseek",
+        model: "chat",
+        input: 100,
+        output: 50,
+        cacheRead: 10,
+        cacheWrite: 5,
+        calls: 2,
+        turns: 1,
+        toolCalls: 2,
+      },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: DAY0,
+        dir: "proj",
+        input: 100,
+        output: 50,
+        cacheRead: 10,
+        cacheWrite: 5,
+        calls: 2,
+        turns: 1,
+        toolCalls: 2,
+      },
     ]);
   });
 
   it("rollupDay 同源 hour 行（null token 行独立计入 calls、token 记 null）", () => {
     expect(hourRows).toEqual([
-      { v: TREND_ROW_VERSION, kind: "hour", day: DAY0, hour: 12, input: 100, output: 50, cacheRead: 10, cacheWrite: 5, calls: 1, turns: 1, toolCalls: 2 },
-      { v: TREND_ROW_VERSION, kind: "hour", day: DAY0, hour: 13, input: null, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "hour",
+        day: DAY0,
+        hour: 12,
+        input: 100,
+        output: 50,
+        cacheRead: 10,
+        cacheWrite: 5,
+        calls: 1,
+        turns: 1,
+        toolCalls: 2,
+      },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "hour",
+        day: DAY0,
+        hour: 13,
+        input: null,
+        output: null,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 1,
+        turns: 0,
+        toolCalls: 0,
+      },
     ]);
   });
 
@@ -2810,19 +3904,83 @@ describe("#633 A4(d)：mergeDirRows 纯函数（同键累加、null-aware、保�
   beforeAll(() => {
     // A4(d)：mergeDirRows 纯函数——同 dir 键累加（null-aware）、异 dir 独立、
     // 输出保序（base 在前：对应分片内既有 dir 行位置约定）。
-    merged = snapshot(mergeDirRows(
-      [
-        { v: 1, kind: "dir", day: DAY0, dir: "a", input: null, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
-        { v: 1, kind: "dir", day: DAY0, dir: "b", input: 7, output: null, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 1 },
-      ],
-      [{ v: 1, kind: "dir", day: DAY0, dir: "a", input: 5, output: 3, cacheRead: null, cacheWrite: null, calls: 2, turns: 0, toolCalls: 0 }],
-    ));
+    merged = snapshot(
+      mergeDirRows(
+        [
+          {
+            v: 1,
+            kind: "dir",
+            day: DAY0,
+            dir: "a",
+            input: null,
+            output: null,
+            cacheRead: null,
+            cacheWrite: null,
+            calls: 1,
+            turns: 0,
+            toolCalls: 0,
+          },
+          {
+            v: 1,
+            kind: "dir",
+            day: DAY0,
+            dir: "b",
+            input: 7,
+            output: null,
+            cacheRead: null,
+            cacheWrite: null,
+            calls: 2,
+            turns: 1,
+            toolCalls: 1,
+          },
+        ],
+        [
+          {
+            v: 1,
+            kind: "dir",
+            day: DAY0,
+            dir: "a",
+            input: 5,
+            output: 3,
+            cacheRead: null,
+            cacheWrite: null,
+            calls: 2,
+            turns: 0,
+            toolCalls: 0,
+          },
+        ],
+      ),
+    );
   });
 
   it("mergeDirRows 同键累加、null-aware、保序", () => {
     expect(merged).toEqual([
-      { v: 1, kind: "dir", day: DAY0, dir: "a", input: 5, output: 3, cacheRead: null, cacheWrite: null, calls: 3, turns: 0, toolCalls: 0 },
-      { v: 1, kind: "dir", day: DAY0, dir: "b", input: 7, output: null, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 1 },
+      {
+        v: 1,
+        kind: "dir",
+        day: DAY0,
+        dir: "a",
+        input: 5,
+        output: 3,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 3,
+        turns: 0,
+        toolCalls: 0,
+      },
+      {
+        v: 1,
+        kind: "dir",
+        day: DAY0,
+        dir: "b",
+        input: 7,
+        output: null,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 2,
+        turns: 1,
+        toolCalls: 1,
+      },
     ]);
   });
 });
@@ -2852,9 +4010,15 @@ describe("#633 A4(e)：混存 round-trip（压实→重启→迟到行二次压�
     });
     tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 1));
     tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(10, 5), T0, 2));
-    tracker.handleEvent({ id: "s1" }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3));
+    tracker.handleEvent(
+      { id: "s1" },
+      ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3),
+    );
     tracker.handleEvent({ id: "s2" }, ev("request/header", HEADER(), T0, 4));
-    tracker.handleEvent({ id: "s2" }, ev("tool/call", { turn: 1, step: 1, callId: "c", name: "bash", arguments: "{}" }, T0, 5));
+    tracker.handleEvent(
+      { id: "s2" },
+      ev("tool/call", { turn: 1, step: 1, callId: "c", name: "bash", arguments: "{}" }, T0, 5),
+    );
     tracker.handleEvent({ id: "s2" }, ev("assistant/chunk", USAGE(7, 7), T0, 6));
     nowMs = T0 + 24 * HOUR;
     await tracker.flushNow(); // 第一次压实：agg + dir 混存落盘
@@ -2864,20 +4028,59 @@ describe("#633 A4(e)：混存 round-trip（压实→重启→迟到行二次压�
     round1Hours = snapshot(round1.filter((r) => r.kind === "hour"));
     detailShardDeleted = existsSync(join(root, "details", `${DAY0}.jsonl`));
     await tracker.dispose();
-    tracker = await TrendTracker.start({ root, now: () => nowMs, flushDebounceMs: 60000, resolveCwd: () => "/home/u/alpha" });
-    const cellR1raw = tracker.buckets().find((d) => d.day === DAY0).providers.find((p) => p.provider === "deepseek").cell;
-    cellR1 = snapshot({ input: cellR1raw.input, output: cellR1raw.output, cacheRead: cellR1raw.cacheRead, cacheWrite: cellR1raw.cacheWrite, calls: cellR1raw.calls, turns: cellR1raw.turns, toolCalls: cellR1raw.toolCalls });
+    tracker = await TrendTracker.start({
+      root,
+      now: () => nowMs,
+      flushDebounceMs: 60000,
+      resolveCwd: () => "/home/u/alpha",
+    });
+    const cellR1raw = tracker
+      .buckets()
+      .find((d) => d.day === DAY0)
+      .providers.find((p) => p.provider === "deepseek").cell;
+    cellR1 = snapshot({
+      input: cellR1raw.input,
+      output: cellR1raw.output,
+      cacheRead: cellR1raw.cacheRead,
+      cacheWrite: cellR1raw.cacheWrite,
+      calls: cellR1raw.calls,
+      turns: cellR1raw.turns,
+      toolCalls: cellR1raw.toolCalls,
+    });
     // 迟到旧日行（时钟回拨）：s1 turn2 usage 落 DAY0 → 二次压实合并
     tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0 + HOUR, 7));
-    tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", { turn: 2, step: 1, chunk: { type: "usage", usage: { inputTokens: 3, outputTokens: 3, cacheReadTokens: 0, cacheWriteTokens: 0 } } }, T0 + HOUR, 8));
+    tracker.handleEvent(
+      { id: "s1" },
+      ev(
+        "assistant/chunk",
+        {
+          turn: 2,
+          step: 1,
+          chunk: {
+            type: "usage",
+            usage: { inputTokens: 3, outputTokens: 3, cacheReadTokens: 0, cacheWriteTokens: 0 },
+          },
+        },
+        T0 + HOUR,
+        8,
+      ),
+    );
     await tracker.flushNow();
     const round2 = await store.readAggDayShard(DAY0);
     round2Kinds = snapshot(round2.map((r) => r.kind));
     round2Hours = snapshot(round2.filter((r) => r.kind === "hour"));
     round2Dirs = snapshot(round2.filter((r) => r.kind === "dir"));
     await tracker.dispose();
-    tracker = await TrendTracker.start({ root, now: () => nowMs, flushDebounceMs: 60000, resolveCwd: () => "/home/u/alpha" });
-    const cellR2 = tracker.buckets().find((d) => d.day === DAY0).providers.find((p) => p.provider === "deepseek").cell;
+    tracker = await TrendTracker.start({
+      root,
+      now: () => nowMs,
+      flushDebounceMs: 60000,
+      resolveCwd: () => "/home/u/alpha",
+    });
+    const cellR2 = tracker
+      .buckets()
+      .find((d) => d.day === DAY0)
+      .providers.find((p) => p.provider === "deepseek").cell;
     cellR2Calls = cellR2.calls;
     finalKinds = snapshot((await store.readAggDayShard(DAY0)).map((r) => r.kind));
     await tracker.dispose();
@@ -2889,7 +4092,19 @@ describe("#633 A4(e)：混存 round-trip（压实→重启→迟到行二次压�
 
   it("首次压实 hour 行：同在 12:00 的计数并入 hour12", () => {
     expect(round1Hours).toEqual([
-      { v: TREND_ROW_VERSION, kind: "hour", day: DAY0, hour: 12, input: 17, output: 12, cacheRead: 0, cacheWrite: 0, calls: 2, turns: 1, toolCalls: 1 },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "hour",
+        day: DAY0,
+        hour: 12,
+        input: 17,
+        output: 12,
+        cacheRead: 0,
+        cacheWrite: 0,
+        calls: 2,
+        turns: 1,
+        toolCalls: 1,
+      },
     ]);
   });
 
@@ -2898,7 +4113,15 @@ describe("#633 A4(e)：混存 round-trip（压实→重启→迟到行二次压�
   });
 
   it("重启重建：agg 行权威进 cells，dir 行不双算（calls=2 而非 4）", () => {
-    expect(cellR1).toEqual({ input: 17, output: 12, cacheRead: 0, cacheWrite: 0, calls: 2, turns: 1, toolCalls: 1 });
+    expect(cellR1).toEqual({
+      input: 17,
+      output: 12,
+      cacheRead: 0,
+      cacheWrite: 0,
+      calls: 2,
+      turns: 1,
+      toolCalls: 1,
+    });
   });
 
   it("二次压实：既有 agg/dir/hour 行不抹掉，迟到行折出新 hour 档并入尾段", () => {
@@ -2907,15 +4130,63 @@ describe("#633 A4(e)：混存 round-trip（压实→重启→迟到行二次压�
 
   it("迟到行（13:00）折为新 hour13 档（hour12 既有行不受连坐）", () => {
     expect(round2Hours).toEqual([
-      { v: TREND_ROW_VERSION, kind: "hour", day: DAY0, hour: 12, input: 17, output: 12, cacheRead: 0, cacheWrite: 0, calls: 2, turns: 1, toolCalls: 1 },
-      { v: TREND_ROW_VERSION, kind: "hour", day: DAY0, hour: 13, input: 3, output: 3, cacheRead: 0, cacheWrite: 0, calls: 1, turns: 0, toolCalls: 0 },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "hour",
+        day: DAY0,
+        hour: 12,
+        input: 17,
+        output: 12,
+        cacheRead: 0,
+        cacheWrite: 0,
+        calls: 2,
+        turns: 1,
+        toolCalls: 1,
+      },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "hour",
+        day: DAY0,
+        hour: 13,
+        input: 3,
+        output: 3,
+        cacheRead: 0,
+        cacheWrite: 0,
+        calls: 1,
+        turns: 0,
+        toolCalls: 0,
+      },
     ]);
   });
 
   it("迟到行并入 dir 行（alpha calls=1+1、input 10+3）且 beta 不受连坐", () => {
     expect(round2Dirs).toEqual([
-      { v: TREND_ROW_VERSION, kind: "dir", day: DAY0, dir: "alpha", input: 13, output: 8, cacheRead: 0, cacheWrite: 0, calls: 2, turns: 1, toolCalls: 0 },
-      { v: TREND_ROW_VERSION, kind: "dir", day: DAY0, dir: "beta", input: 7, output: 7, cacheRead: 0, cacheWrite: 0, calls: 1, turns: 0, toolCalls: 1 },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: DAY0,
+        dir: "alpha",
+        input: 13,
+        output: 8,
+        cacheRead: 0,
+        cacheWrite: 0,
+        calls: 2,
+        turns: 1,
+        toolCalls: 0,
+      },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: DAY0,
+        dir: "beta",
+        input: 7,
+        output: 7,
+        cacheRead: 0,
+        cacheWrite: 0,
+        calls: 1,
+        turns: 0,
+        toolCalls: 1,
+      },
     ]);
   });
 
@@ -2936,12 +4207,62 @@ describe("#633 A4(f)：查询面零变化（dir 记账/rebuild 不影响 buckets
     // A4(f)：查询面零变化——含 dir 记账 + dir 行 rebuild 后，buckets()/seriesDays()
     // 与固定 fixture 全等（dir 不出现在 provider 查询面，cells 数值不受平行累加影响）。
     const agg = new TrendAggregator();
-    agg.apply({ type: "call", record: { time: T0, session: "s1", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", dir: "x", tokens: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 } } });
-    agg.apply({ type: "call", record: { time: T0 + HOUR, session: "s2", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", tokens: { input: 3, output: 4, cacheRead: null, cacheWrite: null } } });
+    agg.apply({
+      type: "call",
+      record: {
+        time: T0,
+        session: "s1",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "deepseek",
+        model: "chat",
+        dir: "x",
+        tokens: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+      },
+    });
+    agg.apply({
+      type: "call",
+      record: {
+        time: T0 + HOUR,
+        session: "s2",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "deepseek",
+        model: "chat",
+        tokens: { input: 3, output: 4, cacheRead: null, cacheWrite: null },
+      },
+    });
     agg.rebuild(
       [
-        { v: 1, kind: "agg", day: DAY0, provider: "other", model: null, input: 5, output: 5, cacheRead: null, cacheWrite: null, calls: 1, turns: 1, toolCalls: 1 },
-        { v: 1, kind: "dir", day: DAY0, dir: "x", input: 1, output: 2, cacheRead: 0, cacheWrite: 0, calls: 1, turns: 0, toolCalls: 0 },
+        {
+          v: 1,
+          kind: "agg",
+          day: DAY0,
+          provider: "other",
+          model: null,
+          input: 5,
+          output: 5,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 1,
+          turns: 1,
+          toolCalls: 1,
+        },
+        {
+          v: 1,
+          kind: "dir",
+          day: DAY0,
+          dir: "x",
+          input: 1,
+          output: 2,
+          cacheRead: 0,
+          cacheWrite: 0,
+          calls: 1,
+          turns: 0,
+          toolCalls: 0,
+        },
       ],
       false,
     );
@@ -2954,8 +4275,32 @@ describe("#633 A4(f)：查询面零变化（dir 记账/rebuild 不影响 buckets
       {
         day: DAY0,
         providers: [
-          { provider: "deepseek", model: "chat", cell: { input: 4, output: 6, cacheRead: 0, cacheWrite: 0, calls: 2, turns: 0, toolCalls: 0 } },
-          { provider: "other", model: null, cell: { input: 5, output: 5, cacheRead: null, cacheWrite: null, calls: 1, turns: 1, toolCalls: 1 } },
+          {
+            provider: "deepseek",
+            model: "chat",
+            cell: {
+              input: 4,
+              output: 6,
+              cacheRead: 0,
+              cacheWrite: 0,
+              calls: 2,
+              turns: 0,
+              toolCalls: 0,
+            },
+          },
+          {
+            provider: "other",
+            model: null,
+            cell: {
+              input: 5,
+              output: 5,
+              cacheRead: null,
+              cacheWrite: null,
+              calls: 1,
+              turns: 1,
+              toolCalls: 1,
+            },
+          },
         ],
       },
     ]);
@@ -2978,14 +4323,42 @@ describe("#633 A4(g)：量级留痕（1000 事件 / 5 session）", () => {
     const root = mkdtempSync(join(tmpdir(), "dou-trend-a4-scale-"));
     let cwdCalls0 = 0;
     const startAt = Date.now();
-    const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000, resolveCwd: () => { cwdCalls0 += 1; return "/home/u/scale"; } });
+    const tracker = await TrendTracker.start({
+      root,
+      now: () => T0,
+      flushDebounceMs: 60000,
+      resolveCwd: () => {
+        cwdCalls0 += 1;
+        return "/home/u/scale";
+      },
+    });
     const startMs = Date.now() - startAt;
     let seq = 0;
     for (let s = 1; s <= 5; s += 1) {
       const sid = `s${s}`;
       tracker.handleEvent({ id: sid }, ev("request/header", HEADER(), T0, (seq += 1)));
       for (let k = 0; k < 199; k += 1) {
-        tracker.handleEvent({ id: sid }, ev("assistant/chunk", { turn: k + 1, step: 1, chunk: { type: "usage", usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 } } }, T0, (seq += 1)));
+        tracker.handleEvent(
+          { id: sid },
+          ev(
+            "assistant/chunk",
+            {
+              turn: k + 1,
+              step: 1,
+              chunk: {
+                type: "usage",
+                usage: {
+                  inputTokens: 10,
+                  outputTokens: 5,
+                  cacheReadTokens: 0,
+                  cacheWriteTokens: 0,
+                },
+              },
+            },
+            T0,
+            (seq += 1),
+          ),
+        );
       }
     }
     const cell = tracker.buckets().find((d) => d.day === DAY0).providers[0].cell;
@@ -2994,10 +4367,15 @@ describe("#633 A4(g)：量级留痕（1000 事件 / 5 session）", () => {
     await tracker.dispose();
     const disposeMs = Date.now() - disposeAt;
     cwdCalls = cwdCalls0;
-    const rows = readFileSync(join(root, "details", `${DAY0}.jsonl`), "utf8").trimEnd().split("\n").map((l) => JSON.parse(l));
+    const rows = readFileSync(join(root, "details", `${DAY0}.jsonl`), "utf8")
+      .trimEnd()
+      .split("\n")
+      .map((l) => JSON.parse(l));
     diskRowCount = rows.length;
     s1DirsAllCorrect = rows.filter((r) => r.session === "s1").every((r) => r.dir === "scale");
-    console.error(`[#633 A4 量级基线] 1000 事件/5 session：start=${startMs}ms dispose=${disposeMs}ms（resolveCwd=5，995 行落盘）；取数时点 ${new Date().toISOString()} node ${process.version}`);
+    console.error(
+      `[#633 A4 量级基线] 1000 事件/5 session：start=${startMs}ms dispose=${disposeMs}ms（resolveCwd=5，995 行落盘）；取数时点 ${new Date().toISOString()} node ${process.version}`,
+    );
   }, 60_000);
 
   it("1000 事件（5 header + 995 usage）全量记账进 cells", () => {
@@ -3041,21 +4419,47 @@ describe("复核 M1(a)：混存分片重启重建后 dirDays 恢复（dir 行真
     });
     tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 1));
     tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(10, 5), T0, 2));
-    tracker.handleEvent({ id: "s1" }, ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3));
+    tracker.handleEvent(
+      { id: "s1" },
+      ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0, 3),
+    );
     tracker.handleEvent({ id: "s2" }, ev("request/header", HEADER(), T0, 4));
-    tracker.handleEvent({ id: "s2" }, ev("tool/call", { turn: 1, step: 1, callId: "c", name: "bash", arguments: "{}" }, T0, 5));
+    tracker.handleEvent(
+      { id: "s2" },
+      ev("tool/call", { turn: 1, step: 1, callId: "c", name: "bash", arguments: "{}" }, T0, 5),
+    );
     tracker.handleEvent({ id: "s2" }, ev("assistant/chunk", USAGE(7, 7), T0, 6));
     nowMs = T0 + 24 * HOUR;
     await tracker.flushNow(); // 压实：agg+dir 混存落盘、明细分片删除
     await tracker.dispose();
-    tracker = await TrendTracker.start({ root, now: () => nowMs, flushDebounceMs: 60000, resolveCwd: () => undefined });
+    tracker = await TrendTracker.start({
+      root,
+      now: () => nowMs,
+      flushDebounceMs: 60000,
+      resolveCwd: () => undefined,
+    });
     const dirMap = tracker.aggregator.dirDays.get(DAY0);
     dirMapExists = dirMap !== undefined;
     dirMapValues = snapshot(
-      [...dirMap.entries()].map(([dir, c]) => ({ dir, input: c.input, output: c.output, cacheRead: c.cacheRead, cacheWrite: c.cacheWrite, calls: c.calls, turns: c.turns, toolCalls: c.toolCalls })),
+      [...dirMap.entries()].map(([dir, c]) => ({
+        dir,
+        input: c.input,
+        output: c.output,
+        cacheRead: c.cacheRead,
+        cacheWrite: c.cacheWrite,
+        calls: c.calls,
+        turns: c.turns,
+        toolCalls: c.toolCalls,
+      })),
     );
     const cell = tracker.buckets().find((d) => d.day === DAY0).providers[0].cell;
-    cellValues = snapshot({ input: cell.input, output: cell.output, calls: cell.calls, turns: cell.turns, toolCalls: cell.toolCalls });
+    cellValues = snapshot({
+      input: cell.input,
+      output: cell.output,
+      calls: cell.calls,
+      turns: cell.turns,
+      toolCalls: cell.toolCalls,
+    });
     pendingRows = tracker.aggregator.stats().pendingRows;
     await tracker.dispose();
   }, 60_000);
@@ -3066,8 +4470,26 @@ describe("复核 M1(a)：混存分片重启重建后 dirDays 恢复（dir 行真
 
   it("dirDays 恢复值与分片 dir 行逐字段一致（读回不丢不变形）", () => {
     expect(dirMapValues).toEqual([
-      { dir: "alpha", input: 10, output: 5, cacheRead: 0, cacheWrite: 0, calls: 1, turns: 1, toolCalls: 0 },
-      { dir: "beta", input: 7, output: 7, cacheRead: 0, cacheWrite: 0, calls: 1, turns: 0, toolCalls: 1 },
+      {
+        dir: "alpha",
+        input: 10,
+        output: 5,
+        cacheRead: 0,
+        cacheWrite: 0,
+        calls: 1,
+        turns: 1,
+        toolCalls: 0,
+      },
+      {
+        dir: "beta",
+        input: 7,
+        output: 7,
+        cacheRead: 0,
+        cacheWrite: 0,
+        calls: 1,
+        turns: 0,
+        toolCalls: 1,
+      },
     ]);
   });
 
@@ -3097,13 +4519,46 @@ describe("复核 M1(b)：自愈压实 dir 行 + pruneDays 联动删除 dirDays",
     const day1 = "2026-09-03";
     const detDir = join(root, "details");
     mkdirSync(detDir, { recursive: true });
-    writeFileSync(join(detDir, `${day1}.jsonl`), [
-      JSON.stringify({ v: 1, kind: "detail", time: T0 - 24 * HOUR, day: day1, session: "sx", turn: 1, step: 1, retry: 1, provider: "p", model: "m", dir: "heal", input: 7, output: 3, cacheRead: null, cacheWrite: null, calls: 1 }),
-      JSON.stringify({ v: 1, kind: "counter", time: T0 - 24 * HOUR, day: day1, session: "sx", provider: "p", model: "m", dir: "heal", turns: 1, toolCalls: 1 }),
-      "",
-    ].join("\n"));
+    writeFileSync(
+      join(detDir, `${day1}.jsonl`),
+      [
+        JSON.stringify({
+          v: 1,
+          kind: "detail",
+          time: T0 - 24 * HOUR,
+          day: day1,
+          session: "sx",
+          turn: 1,
+          step: 1,
+          retry: 1,
+          provider: "p",
+          model: "m",
+          dir: "heal",
+          input: 7,
+          output: 3,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 1,
+        }),
+        JSON.stringify({
+          v: 1,
+          kind: "counter",
+          time: T0 - 24 * HOUR,
+          day: day1,
+          session: "sx",
+          provider: "p",
+          model: "m",
+          dir: "heal",
+          turns: 1,
+          toolCalls: 1,
+        }),
+        "",
+      ].join("\n"),
+    );
     const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000 });
-    healedDirRows = snapshot((await new TrendStore({ root }).readAggDayShard(day1)).filter((r) => r.kind === "dir"));
+    healedDirRows = snapshot(
+      (await new TrendStore({ root }).readAggDayShard(day1)).filter((r) => r.kind === "dir"),
+    );
     healDirDayCell = snapshot(tracker.aggregator.dirDays.get(day1)?.get("heal"));
     dirRowsForDay = snapshot(tracker.dirRows().filter((r) => r.day === day1));
     healedCells = tracker.buckets().find((d) => d.day === day1).providers[0].cell.calls;
@@ -3112,17 +4567,49 @@ describe("复核 M1(b)：自愈压实 dir 行 + pruneDays 联动删除 dirDays",
 
   it("自愈压实：dir 行从 pending 重建行同源折算，calls/turns/toolCalls 不丢", () => {
     expect(healedDirRows).toEqual([
-      { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: "heal", input: 7, output: 3, cacheRead: null, cacheWrite: null, calls: 1, turns: 1, toolCalls: 1 },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: "2026-09-03",
+        dir: "heal",
+        input: 7,
+        output: 3,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 1,
+        turns: 1,
+        toolCalls: 1,
+      },
     ]);
   });
 
   it("rebuild 明细/计数行平行折算进 dirDays（P1-1：过去日桶保留，与分片 dir 行值一致不重）", () => {
-    expect(healDirDayCell).toEqual({ input: 7, output: 3, cacheRead: null, cacheWrite: null, calls: 1, turns: 1, toolCalls: 1 });
+    expect(healDirDayCell).toEqual({
+      input: 7,
+      output: 3,
+      cacheRead: null,
+      cacheWrite: null,
+      calls: 1,
+      turns: 1,
+      toolCalls: 1,
+    });
   });
 
   it("自愈后目录查询面立即恢复（不随 dropPending 消失，修复前须重启读回）", () => {
     expect(dirRowsForDay).toEqual([
-      { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: "heal", input: 7, output: 3, cacheRead: null, cacheWrite: null, calls: 1, turns: 1, toolCalls: 1 },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: "2026-09-03",
+        dir: "heal",
+        input: 7,
+        output: 3,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 1,
+        turns: 1,
+        toolCalls: 1,
+      },
     ]);
   });
 
@@ -3143,10 +4630,60 @@ describe("复核 M1(b)：自愈压实 dir 行 + pruneDays 联动删除 dirDays",
       const agg = new TrendAggregator();
       agg.rebuild(
         [
-          { v: 1, kind: "agg", day: day1, provider: "p", model: "m", input: 1, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
-          { v: 1, kind: "dir", day: day1, dir: "stale", input: 1, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
-          { v: 1, kind: "agg", day: DAY0, provider: "p", model: "m", input: 2, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
-          { v: 1, kind: "dir", day: DAY0, dir: "keep", input: 2, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+          {
+            v: 1,
+            kind: "agg",
+            day: day1,
+            provider: "p",
+            model: "m",
+            input: 1,
+            output: null,
+            cacheRead: null,
+            cacheWrite: null,
+            calls: 1,
+            turns: 0,
+            toolCalls: 0,
+          },
+          {
+            v: 1,
+            kind: "dir",
+            day: day1,
+            dir: "stale",
+            input: 1,
+            output: null,
+            cacheRead: null,
+            cacheWrite: null,
+            calls: 1,
+            turns: 0,
+            toolCalls: 0,
+          },
+          {
+            v: 1,
+            kind: "agg",
+            day: DAY0,
+            provider: "p",
+            model: "m",
+            input: 2,
+            output: null,
+            cacheRead: null,
+            cacheWrite: null,
+            calls: 1,
+            turns: 0,
+            toolCalls: 0,
+          },
+          {
+            v: 1,
+            kind: "dir",
+            day: DAY0,
+            dir: "keep",
+            input: 2,
+            output: null,
+            cacheRead: null,
+            cacheWrite: null,
+            calls: 1,
+            turns: 0,
+            toolCalls: 0,
+          },
         ],
         false,
       );
@@ -3194,9 +4731,45 @@ describe("#662(a)：apply 平行累加 hourDays + rollupDay 同源 hour 行", ()
     const agg = new TrendAggregator();
     const t9 = new Date(2026, 8, 4, 9, 30, 0).getTime(); // 本地 09:30 → hour 9
     const t21 = new Date(2026, 8, 4, 21, 0, 0).getTime(); // 本地 21:00 → hour 21
-    agg.apply({ type: "call", record: { time: t9, session: "s1", turn: 1, step: 1, retry: 1, provider: "p", model: "m", tokens: { input: 100, output: 50, cacheRead: null, cacheWrite: null } } });
-    agg.apply({ type: "call", record: { time: t9 + 60000, session: "s2", turn: 1, step: 1, retry: 1, provider: "p", model: "m", tokens: { input: 20, output: 10, cacheRead: null, cacheWrite: null } } });
-    agg.apply({ type: "call", record: { time: t21, session: "s3", turn: 1, step: 1, retry: 1, provider: "p", model: "m", tokens: { input: 5, output: 5, cacheRead: null, cacheWrite: null } } });
+    agg.apply({
+      type: "call",
+      record: {
+        time: t9,
+        session: "s1",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "p",
+        model: "m",
+        tokens: { input: 100, output: 50, cacheRead: null, cacheWrite: null },
+      },
+    });
+    agg.apply({
+      type: "call",
+      record: {
+        time: t9 + 60000,
+        session: "s2",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "p",
+        model: "m",
+        tokens: { input: 20, output: 10, cacheRead: null, cacheWrite: null },
+      },
+    });
+    agg.apply({
+      type: "call",
+      record: {
+        time: t21,
+        session: "s3",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "p",
+        model: "m",
+        tokens: { input: 5, output: 5, cacheRead: null, cacheWrite: null },
+      },
+    });
     // 内存小时面（apply 平行累加，未压实亦可见）
     const rows = agg.hourRows();
     hourRowCount = rows.length;
@@ -3261,9 +4834,47 @@ describe("#662(b)：rebuild 双分支（hour 行直入桶 + detail/counter 折�
     const agg = new TrendAggregator();
     agg.rebuild(
       [
-        { v: 1, kind: "hour", day: DAY0, hour: 9, input: 100, output: 50, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 0 },
-        { v: 1, kind: "detail", time: new Date(2026, 8, 4, 21, 0, 0).getTime(), day: DAY0, session: "s9", turn: 9, step: 1, retry: 1, provider: "p", model: "m", input: 7, output: 7, cacheRead: null, cacheWrite: null, calls: 1 },
-        { v: 1, kind: "counter", time: new Date(2026, 8, 4, 21, 0, 0).getTime(), day: DAY0, session: "s9", provider: "p", model: "m", turns: 1, toolCalls: 2 },
+        {
+          v: 1,
+          kind: "hour",
+          day: DAY0,
+          hour: 9,
+          input: 100,
+          output: 50,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 2,
+          turns: 1,
+          toolCalls: 0,
+        },
+        {
+          v: 1,
+          kind: "detail",
+          time: new Date(2026, 8, 4, 21, 0, 0).getTime(),
+          day: DAY0,
+          session: "s9",
+          turn: 9,
+          step: 1,
+          retry: 1,
+          provider: "p",
+          model: "m",
+          input: 7,
+          output: 7,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 1,
+        },
+        {
+          v: 1,
+          kind: "counter",
+          time: new Date(2026, 8, 4, 21, 0, 0).getTime(),
+          day: DAY0,
+          session: "s9",
+          provider: "p",
+          model: "m",
+          turns: 1,
+          toolCalls: 2,
+        },
       ],
       true,
     );
@@ -3308,11 +4919,47 @@ describe("#662(c)：mergeHourRows 纯函数（同键累加、null-aware、保序
   beforeAll(() => {
     // #662(c)：mergeHourRows 纯函数——同 hour 键累加（null-aware）、异 hour 独立、保序
     const base = [
-      { v: 1, kind: "hour", day: DAY0, hour: 9, input: 100, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+      {
+        v: 1,
+        kind: "hour",
+        day: DAY0,
+        hour: 9,
+        input: 100,
+        output: null,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 1,
+        turns: 0,
+        toolCalls: 0,
+      },
     ];
     const add = [
-      { v: 1, kind: "hour", day: DAY0, hour: 9, input: 50, output: 20, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 1 },
-      { v: 1, kind: "hour", day: DAY0, hour: 21, input: 7, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+      {
+        v: 1,
+        kind: "hour",
+        day: DAY0,
+        hour: 9,
+        input: 50,
+        output: 20,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 2,
+        turns: 1,
+        toolCalls: 1,
+      },
+      {
+        v: 1,
+        kind: "hour",
+        day: DAY0,
+        hour: 21,
+        input: 7,
+        output: null,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 1,
+        turns: 0,
+        toolCalls: 0,
+      },
     ];
     const merged = mergeHourRows(base, add);
     mergedLength = merged.length;
@@ -3352,8 +4999,30 @@ describe("#662(d)：applyCorrect 第三面（小时桶同步回退/累加）", (
     // #662(d)：applyCorrect 第三面——修正明细 token 同步回退/累加小时桶（防小时面漂移）
     const agg = new TrendAggregator();
     const t9 = new Date(2026, 8, 4, 9, 30, 0).getTime();
-    agg.apply({ type: "call", record: { time: t9, session: "s1", turn: 1, step: 1, retry: 1, provider: "p", model: "m", tokens: { input: 100, output: 50, cacheRead: null, cacheWrite: null } } });
-    agg.apply({ type: "correct", record: { time: t9 + 1000, session: "s1", turn: 1, step: 1, retry: 1, tokens: { input: 200, output: 50, cacheRead: null, cacheWrite: null } } });
+    agg.apply({
+      type: "call",
+      record: {
+        time: t9,
+        session: "s1",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "p",
+        model: "m",
+        tokens: { input: 100, output: 50, cacheRead: null, cacheWrite: null },
+      },
+    });
+    agg.apply({
+      type: "correct",
+      record: {
+        time: t9 + 1000,
+        session: "s1",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        tokens: { input: 200, output: 50, cacheRead: null, cacheWrite: null },
+      },
+    });
     const h9 = agg.hourRows().find((r) => r.hour === 9);
     h9Input = h9.input;
     cellInput = agg.buckets()[0].providers[0].cell.input;
@@ -3379,8 +5048,32 @@ describe("#662(e)：pruneDays 联动删除 hourDays", () => {
     const agg = new TrendAggregator();
     agg.rebuild(
       [
-        { v: 1, kind: "hour", day: day1, hour: 9, input: 1, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
-        { v: 1, kind: "hour", day: DAY0, hour: 9, input: 2, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+        {
+          v: 1,
+          kind: "hour",
+          day: day1,
+          hour: 9,
+          input: 1,
+          output: null,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 1,
+          turns: 0,
+          toolCalls: 0,
+        },
+        {
+          v: 1,
+          kind: "hour",
+          day: DAY0,
+          hour: 9,
+          input: 2,
+          output: null,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 1,
+          turns: 0,
+          toolCalls: 0,
+        },
       ],
       false,
     );
@@ -3420,8 +5113,33 @@ describe("#662(f)：store 白名单与 isValidShardRow 校验（hour 行）", ()
     // 漏加 hour → 重启重建后小时数据静默全丢，P0）+ isValidShardRow 校验
     const root = mkdtempSync(join(tmpdir(), "dou-trend-hour-store-"));
     const store = new TrendStore({ root });
-    const aggRow = { v: 1, kind: "agg", day: DAY0, provider: "p", model: "m", input: 100, output: null, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 0 };
-    const hourRow = { v: 1, kind: "hour", day: DAY0, hour: 9, input: 100, output: null, cacheRead: null, cacheWrite: null, calls: 2, turns: 1, toolCalls: 0 };
+    const aggRow = {
+      v: 1,
+      kind: "agg",
+      day: DAY0,
+      provider: "p",
+      model: "m",
+      input: 100,
+      output: null,
+      cacheRead: null,
+      cacheWrite: null,
+      calls: 2,
+      turns: 1,
+      toolCalls: 0,
+    };
+    const hourRow = {
+      v: 1,
+      kind: "hour",
+      day: DAY0,
+      hour: 9,
+      input: 100,
+      output: null,
+      cacheRead: null,
+      cacheWrite: null,
+      calls: 2,
+      turns: 1,
+      toolCalls: 0,
+    };
     await store.writeAggDay(DAY0, [aggRow, hourRow]);
     const back = await store.readAggDayShard(DAY0);
     backHourCount = back.filter((r) => r.kind === "hour").length;
@@ -3513,13 +5231,44 @@ describe("复核 P1-1(a)：常驻运行期跨天（压实后 Day0 目录面保�
 
   it("跨天不重启：压实后 Day0 目录行保留（修复前恒空）", () => {
     expect(day0DirRows).toEqual([
-      { v: TREND_ROW_VERSION, kind: "dir", day: DAY0, dir: "alpha", input: 10, output: 5, cacheRead: 0, cacheWrite: 0, calls: 1, turns: 0, toolCalls: 0 },
-      { v: TREND_ROW_VERSION, kind: "dir", day: DAY0, dir: "beta", input: 7, output: 7, cacheRead: 0, cacheWrite: 0, calls: 1, turns: 0, toolCalls: 0 },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: DAY0,
+        dir: "alpha",
+        input: 10,
+        output: 5,
+        cacheRead: 0,
+        cacheWrite: 0,
+        calls: 1,
+        turns: 0,
+        toolCalls: 0,
+      },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: DAY0,
+        dir: "beta",
+        input: 7,
+        output: 7,
+        cacheRead: 0,
+        cacheWrite: 0,
+        calls: 1,
+        turns: 0,
+        toolCalls: 0,
+      },
     ]);
   });
 
   it("byDir 面 Day0 柱非 null：alpha=10/beta=7 按 dir 拆段", () => {
-    expect(stackedDay0).toEqual({ key: DAY0, parts: [{ provider: "alpha", model: null, value: 10 }, { provider: "beta", model: null, value: 7 }], total: 17 });
+    expect(stackedDay0).toEqual({
+      key: DAY0,
+      parts: [
+        { provider: "alpha", model: null, value: 10 },
+        { provider: "beta", model: null, value: 7 },
+      ],
+      total: 17,
+    });
   });
 
   it("Day1 当日柱照常（跨天压实不波及当日目录桶）", () => {
@@ -3540,12 +5289,22 @@ describe("复核 P1-1(b)：重启恢复后同日继续 apply（dirRows 当日 = 
     // dirRows 纯快照单源，结构性无重无漏。
     const root = mkdtempSync(join(tmpdir(), "dou-trend-p11-sameday-"));
     const nowMs = T0; // 当日（detail 分片 day === today，不走自愈压实）
-    let tracker = await TrendTracker.start({ root, now: () => nowMs, flushDebounceMs: 60000, resolveCwd: () => "/w/alpha" });
+    let tracker = await TrendTracker.start({
+      root,
+      now: () => nowMs,
+      flushDebounceMs: 60000,
+      resolveCwd: () => "/w/alpha",
+    });
     tracker.handleEvent({ id: "s1" }, ev("request/header", HEADER(), T0, 1));
     tracker.handleEvent({ id: "s1" }, ev("assistant/chunk", USAGE(10, 5), T0, 2));
     await tracker.flushNow(); // 当日明细落盘（persisted=true，pending 保留）
     await tracker.dispose();
-    tracker = await TrendTracker.start({ root, now: () => nowMs, flushDebounceMs: 60000, resolveCwd: () => "/w/alpha" });
+    tracker = await TrendTracker.start({
+      root,
+      now: () => nowMs,
+      flushDebounceMs: 60000,
+      resolveCwd: () => "/w/alpha",
+    });
     // 重启后：当日无聚合分片 → dirDays 该日为空，重建明细行的 dir 事实在 rebuild
     // 时折算入桶；同日续 apply 在同桶上平行累加（单源相加 = 真实值）。
     tracker.handleEvent({ id: "s2" }, ev("request/header", HEADER(), T0 + HOUR, 3));
@@ -3557,7 +5316,19 @@ describe("复核 P1-1(b)：重启恢复后同日继续 apply（dirRows 当日 = 
 
   it("同日重启+续 apply：dirRows 当日 = 真实值 17（非 2× 非丢数）", () => {
     expect(dirRows).toEqual([
-      { v: TREND_ROW_VERSION, kind: "dir", day: DAY0, dir: "alpha", input: 17, output: 12, cacheRead: 0, cacheWrite: 0, calls: 2, turns: 0, toolCalls: 0 },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: DAY0,
+        dir: "alpha",
+        input: 17,
+        output: 12,
+        cacheRead: 0,
+        cacheWrite: 0,
+        calls: 2,
+        turns: 0,
+        toolCalls: 0,
+      },
     ]);
   });
 
@@ -3575,8 +5346,31 @@ describe("复核 P1-1(c)：correct 校正双面同步（dirDays 不漂移）", (
     // 面与 cells/落盘明细一致（旧实现只修 cells、靠折算侧取 pending 新值掩盖漂移，
     // 单源化后不同步即固化错值）。
     const agg = new TrendAggregator();
-    agg.apply({ type: "call", record: { time: T0, session: "s1", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "chat", dir: "proj", tokens: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0 } } });
-    agg.apply({ type: "correct", record: { time: T0, session: "s1", turn: 1, step: 1, retry: 1, tokens: { input: 200, output: 60, cacheRead: 0, cacheWrite: 0 } } });
+    agg.apply({
+      type: "call",
+      record: {
+        time: T0,
+        session: "s1",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "deepseek",
+        model: "chat",
+        dir: "proj",
+        tokens: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0 },
+      },
+    });
+    agg.apply({
+      type: "correct",
+      record: {
+        time: T0,
+        session: "s1",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        tokens: { input: 200, output: 60, cacheRead: 0, cacheWrite: 0 },
+      },
+    });
     const cell = cellTotals(agg, DAY0);
     cellPair = snapshot({ input: cell.input, output: cell.output });
     dirDayCell = snapshot(agg.dirDays.get(DAY0)?.get("proj"));
@@ -3587,7 +5381,15 @@ describe("复核 P1-1(c)：correct 校正双面同步（dirDays 不漂移）", (
   });
 
   it("correct：dirDays 同步修正（目录查询面不漂移）", () => {
-    expect(dirDayCell).toEqual({ input: 200, output: 60, cacheRead: 0, cacheWrite: 0, calls: 1, turns: 0, toolCalls: 0 });
+    expect(dirDayCell).toEqual({
+      input: 200,
+      output: 60,
+      cacheRead: 0,
+      cacheWrite: 0,
+      calls: 1,
+      turns: 0,
+      toolCalls: 0,
+    });
   });
 });
 
@@ -3611,7 +5413,17 @@ describe("#654 单元级：rollupSnapshot 折算与消费严格同源", () => {
     const pastDay = dayKey(past);
     const call = (session, input, output) => ({
       type: "call",
-      record: { time: past, session, turn: 1, step: 1, retry: 1, provider: "p", model: "m", dir: "d", tokens: { input, output, cacheRead: 0, cacheWrite: 0 } },
+      record: {
+        time: past,
+        session,
+        turn: 1,
+        step: 1,
+        retry: 1,
+        provider: "p",
+        model: "m",
+        dir: "d",
+        tokens: { input, output, cacheRead: 0, cacheWrite: 0 },
+      },
     });
     agg.apply(call("sA", 10, 5));
     const snap = agg.rollupSnapshot(pastDay);
@@ -3680,11 +5492,18 @@ describe("#654 集成级：压实 await 窗口内到达的过去日行不被连�
     const root = mkdtempSync(join(tmpdir(), "dou-trend-654-"));
     const nowMs = T0; // 当日 09-04，迟到行落 09-03（时钟回拨形态）
     const pastDay = dayKey(T0 - 24 * HOUR);
-    const tracker = await TrendTracker.start({ root, now: () => nowMs, flushDebounceMs: 60000, warn: () => {} });
+    const tracker = await TrendTracker.start({
+      root,
+      now: () => nowMs,
+      flushDebounceMs: 60000,
+      warn: () => {},
+    });
     const store = tracker.store;
     const origReadAggDayShard = store.readAggDayShard.bind(store);
     let release;
-    const gate = new Promise((r) => { release = r; });
+    const gate = new Promise((r) => {
+      release = r;
+    });
     let gateHit = false;
     store.readAggDayShard = async (day) => {
       const rows = await origReadAggDayShard(day);
@@ -3714,7 +5533,11 @@ describe("#654 集成级：压实 await 窗口内到达的过去日行不被连�
     await tracker.flushNow();
     const aggRows = (await store.readAggDayShard(pastDay)).filter((r) => r.kind === "agg");
     aggRowCount = aggRows.length;
-    aggRowValues = snapshot({ calls: aggRows[0].calls, input: aggRows[0].input, output: aggRows[0].output });
+    aggRowValues = snapshot({
+      calls: aggRows[0].calls,
+      input: aggRows[0].input,
+      output: aggRows[0].output,
+    });
     pendingAfterSecondFlush = tracker.stats().pendingRows;
     await tracker.dispose();
   }, 60_000);
@@ -3750,12 +5573,19 @@ describe("#654 同域：deleteDetailShard 失败不得导致下一轮磁盘双�
     const root = mkdtempSync(join(tmpdir(), "dou-trend-654-del-"));
     const nowMs = T0;
     const pastDay = dayKey(T0 - 24 * HOUR);
-    const tracker = await TrendTracker.start({ root, now: () => nowMs, flushDebounceMs: 60000, warn: () => {} });
+    const tracker = await TrendTracker.start({
+      root,
+      now: () => nowMs,
+      flushDebounceMs: 60000,
+      warn: () => {},
+    });
     const store = tracker.store;
     const origDelete = store.deleteDetailShard.bind(store);
     tracker.handleEvent({ id: "sA" }, ev("request/header", HEADER(), T0 - 24 * HOUR, 1));
     tracker.handleEvent({ id: "sA" }, ev("assistant/chunk", USAGE(10, 5), T0 - 24 * HOUR, 2));
-    store.deleteDetailShard = async () => { throw new Error("EACCES simulated"); }; // 删除失败，其余步骤成功
+    store.deleteDetailShard = async () => {
+      throw new Error("EACCES simulated");
+    }; // 删除失败，其余步骤成功
     await tracker.flushNow();
     pendingAfterFailedDelete = tracker.stats().pendingRows;
     store.deleteDetailShard = origDelete;
@@ -3786,12 +5616,25 @@ describe("#655：同键多次尝试陆续结算（token 各自入账）", () => 
     // 真实数据形态：同一 (session,turn,step) 的多次尝试陆续结算，token 各自入账
     let nowT = new Date(2026, 8, 8, 4, 22, 7).getTime();
     const { emitted, send } = makeCollector(() => nowT);
-    const U = (input, output) => ev("assistant/chunk", { turn: 1, step: 9, chunk: { type: "usage", usage: { inputTokens: input, outputTokens: output } } }, nowT, 1);
+    const U = (input, output) =>
+      ev(
+        "assistant/chunk",
+        {
+          turn: 1,
+          step: 9,
+          chunk: { type: "usage", usage: { inputTokens: input, outputTokens: output } },
+        },
+        nowT,
+        1,
+      );
     send("s1", ev("request/header", HEADER("commandcode", "z-ai/glm-5.3-flash"), nowT, 0));
     send("s1", U(0, 0));
-    nowT += 13 * 60_000; send("s1", U(0, 0));
-    nowT += 13 * 60_000; send("s1", U(0, 0));
-    nowT += 12 * 60_000; send("s1", U(118593, 41240));
+    nowT += 13 * 60_000;
+    send("s1", U(0, 0));
+    nowT += 13 * 60_000;
+    send("s1", U(0, 0));
+    nowT += 12 * 60_000;
+    send("s1", U(118593, 41240));
     calls = snapshot(callsOf(emitted));
     correctCount = correctsOf(emitted).length;
   });
@@ -3805,7 +5648,12 @@ describe("#655：同键多次尝试陆续结算（token 各自入账）", () => 
   });
 
   it("末次 token 为真实值", () => {
-    expect(calls.at(-1).tokens).toEqual({ input: 118593, output: 41240, cacheRead: null, cacheWrite: null });
+    expect(calls.at(-1).tokens).toEqual({
+      input: 118593,
+      output: 41240,
+      cacheRead: null,
+      cacheWrite: null,
+    });
   });
 
   it("无校正路径", () => {
@@ -3820,7 +5668,17 @@ describe("#655：同键结算中途新 header 仍按结算序数递增", () => {
     // 同键结算中途出现新 header：仍按结算序数递增（header 只影响归属，不影响序数）
     let nowT = T0;
     const { emitted, send } = makeCollector(() => nowT);
-    const U = (input, output) => ev("assistant/chunk", { turn: 1, step: 9, chunk: { type: "usage", usage: { inputTokens: input, outputTokens: output } } }, nowT, 1);
+    const U = (input, output) =>
+      ev(
+        "assistant/chunk",
+        {
+          turn: 1,
+          step: 9,
+          chunk: { type: "usage", usage: { inputTokens: input, outputTokens: output } },
+        },
+        nowT,
+        1,
+      );
     send("s1", ev("request/header", HEADER(), nowT, 0));
     send("s1", U(10, 5));
     nowT += 13 * 60_000;
@@ -3889,8 +5747,26 @@ describe("#633 修复：目录面残差投影（纯函数面 a-j）", () => {
     // 残差投影纯函数面：cells（聚合面）与 dirDays（目录面）的关系决定是否补造。
     const day = "2026-09-03";
     const mkAgg = () => new TrendAggregator();
-    const call = (dir, input, output) => ({ time: T0 - 24 * HOUR, session: "s1", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "deepseek-chat", dir, tokens: { input, output, cacheRead: null, cacheWrite: null } });
-    const counter = (dir) => ({ time: T0 - 24 * HOUR, session: "s1", provider: "deepseek", model: "deepseek-chat", dir, turns: 1, toolCalls: 1 });
+    const call = (dir, input, output) => ({
+      time: T0 - 24 * HOUR,
+      session: "s1",
+      turn: 1,
+      step: 1,
+      retry: 1,
+      provider: "deepseek",
+      model: "deepseek-chat",
+      dir,
+      tokens: { input, output, cacheRead: null, cacheWrite: null },
+    });
+    const counter = (dir) => ({
+      time: T0 - 24 * HOUR,
+      session: "s1",
+      provider: "deepseek",
+      model: "deepseek-chat",
+      dir,
+      turns: 1,
+      toolCalls: 1,
+    });
 
     // (a) 目录面已覆盖全量（apply 平行累加）→ 残差 0 → 不补造未识别行
     const a = mkAgg();
@@ -3900,23 +5776,99 @@ describe("#633 修复：目录面残差投影（纯函数面 a-j）", () => {
 
     // (b) 只有聚合面事实（旧格式 agg 行重建）→ 残差 = 全量 → 补造一条未识别行
     const b = mkAgg();
-    b.rebuild([{ v: TREND_ROW_VERSION, kind: "agg", day, provider: "deepseek", model: "deepseek-chat", input: 5000, output: 800, cacheRead: 120, cacheWrite: 10, calls: 30, turns: 12, toolCalls: 40 }], false);
+    b.rebuild(
+      [
+        {
+          v: TREND_ROW_VERSION,
+          kind: "agg",
+          day,
+          provider: "deepseek",
+          model: "deepseek-chat",
+          input: 5000,
+          output: 800,
+          cacheRead: 120,
+          cacheWrite: 10,
+          calls: 30,
+          turns: 12,
+          toolCalls: 40,
+        },
+      ],
+      false,
+    );
     const bRows = b.dirRows();
     bRowsLength = bRows.length;
     bDir = bRows[0].dir;
-    bValues = snapshot({ input: bRows[0].input, output: bRows[0].output, cacheRead: bRows[0].cacheRead, cacheWrite: bRows[0].cacheWrite, calls: bRows[0].calls, turns: bRows[0].turns, toolCalls: bRows[0].toolCalls });
+    bValues = snapshot({
+      input: bRows[0].input,
+      output: bRows[0].output,
+      cacheRead: bRows[0].cacheRead,
+      cacheWrite: bRows[0].cacheWrite,
+      calls: bRows[0].calls,
+      turns: bRows[0].turns,
+      toolCalls: bRows[0].toolCalls,
+    });
 
     // (c) 混版日（旧 agg 行 + 新 dir 行并存）→ 残差 = 旧 agg 部分，新 dir 行照常分目录
     const c = mkAgg();
-    c.rebuild([
-      { v: TREND_ROW_VERSION, kind: "agg", day, provider: "deepseek", model: "deepseek-chat", input: 5000, output: 800, cacheRead: 120, cacheWrite: 10, calls: 30, turns: 12, toolCalls: 40 },
-      { v: TREND_ROW_VERSION, kind: "dir", day, dir: "alpha", input: 2000, output: 300, cacheRead: 0, cacheWrite: 0, calls: 10, turns: 4, toolCalls: 12 },
-    ], false);
-    cDirsSorted = snapshot(c.dirRows().map((r) => [r.dir, r.input, r.calls]).sort());
+    c.rebuild(
+      [
+        {
+          v: TREND_ROW_VERSION,
+          kind: "agg",
+          day,
+          provider: "deepseek",
+          model: "deepseek-chat",
+          input: 5000,
+          output: 800,
+          cacheRead: 120,
+          cacheWrite: 10,
+          calls: 30,
+          turns: 12,
+          toolCalls: 40,
+        },
+        {
+          v: TREND_ROW_VERSION,
+          kind: "dir",
+          day,
+          dir: "alpha",
+          input: 2000,
+          output: 300,
+          cacheRead: 0,
+          cacheWrite: 0,
+          calls: 10,
+          turns: 4,
+          toolCalls: 12,
+        },
+      ],
+      false,
+    );
+    cDirsSorted = snapshot(
+      c
+        .dirRows()
+        .map((r) => [r.dir, r.input, r.calls])
+        .sort(),
+    );
 
     // (d) 只有目录面事实（无聚合面）→ 不补造（残差行只在聚合面 > 目录面时产生）
     const d = mkAgg();
-    d.rebuild([{ v: TREND_ROW_VERSION, kind: "dir", day, dir: "alpha", input: 900, output: 90, cacheRead: 0, cacheWrite: 0, calls: 9, turns: 3, toolCalls: 9 }], false);
+    d.rebuild(
+      [
+        {
+          v: TREND_ROW_VERSION,
+          kind: "dir",
+          day,
+          dir: "alpha",
+          input: 900,
+          output: 90,
+          cacheRead: 0,
+          cacheWrite: 0,
+          calls: 9,
+          turns: 3,
+          toolCalls: 9,
+        },
+      ],
+      false,
+    );
     dDirs = snapshot(d.dirRows().map((r) => r.dir));
 
     // (e) 双面总量守恒（本修复的核心不变量）：∀day 目录面合计 == 聚合面合计
@@ -3924,14 +5876,23 @@ describe("#633 修复：目录面残差投影（纯函数面 a-j）", () => {
       const byDay = new Map();
       for (const r of agg.dirRows()) {
         const cur = byDay.get(r.day) ?? { input: 0, calls: 0, turns: 0, toolCalls: 0 };
-        cur.input += r.input ?? 0; cur.calls += r.calls; cur.turns += r.turns; cur.toolCalls += r.toolCalls;
+        cur.input += r.input ?? 0;
+        cur.calls += r.calls;
+        cur.turns += r.turns;
+        cur.toolCalls += r.toolCalls;
         byDay.set(r.day, cur);
       }
       const out = {};
       for (const bucket of agg.buckets()) {
-        let pInput = 0; let pCalls = 0; let pTurns = 0; let pTool = 0;
+        let pInput = 0;
+        let pCalls = 0;
+        let pTurns = 0;
+        let pTool = 0;
         for (const p of bucket.providers) {
-          pInput += p.cell.input ?? 0; pCalls += p.cell.calls; pTurns += p.cell.turns; pTool += p.cell.toolCalls;
+          pInput += p.cell.input ?? 0;
+          pCalls += p.cell.calls;
+          pTurns += p.cell.turns;
+          pTool += p.cell.toolCalls;
         }
         const dir = byDay.get(bucket.day) ?? { input: 0, calls: 0, turns: 0, toolCalls: 0 };
         out[bucket.day] = {
@@ -3945,44 +5906,168 @@ describe("#633 修复：目录面残差投影（纯函数面 a-j）", () => {
 
     // (f) 同键唯一：该日 dirDays 已有 (unidentified) 桶 + 残差 > 0（混版日）→ 合并为一行
     const f = mkAgg();
-    f.rebuild([
-      { v: TREND_ROW_VERSION, kind: "agg", day, provider: "deepseek", model: "deepseek-chat", input: 5000, output: 0, cacheRead: null, cacheWrite: null, calls: 30, turns: 0, toolCalls: 0 },
-      { v: TREND_ROW_VERSION, kind: "dir", day, dir: TREND_UNIDENTIFIED, input: 100, output: 0, cacheRead: null, cacheWrite: null, calls: 10, turns: 0, toolCalls: 0 },
-    ], false);
+    f.rebuild(
+      [
+        {
+          v: TREND_ROW_VERSION,
+          kind: "agg",
+          day,
+          provider: "deepseek",
+          model: "deepseek-chat",
+          input: 5000,
+          output: 0,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 30,
+          turns: 0,
+          toolCalls: 0,
+        },
+        {
+          v: TREND_ROW_VERSION,
+          kind: "dir",
+          day,
+          dir: TREND_UNIDENTIFIED,
+          input: 100,
+          output: 0,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 10,
+          turns: 0,
+          toolCalls: 0,
+        },
+      ],
+      false,
+    );
     const fRows = f.dirRows();
     fRowsLength = fRows.length;
     fRowValues = snapshot([fRows[0].dir, fRows[0].input, fRows[0].calls]);
 
     // (g) 负残差（目录面 > 聚合面，数据异常征兆）→ 不产行、不产生负值，恒等不成立
     const g = mkAgg();
-    g.rebuild([
-      { v: TREND_ROW_VERSION, kind: "agg", day, provider: "deepseek", model: "deepseek-chat", input: 100, output: 0, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
-      { v: TREND_ROW_VERSION, kind: "dir", day, dir: "alpha", input: 300, output: 0, cacheRead: null, cacheWrite: null, calls: 3, turns: 0, toolCalls: 0 },
-    ], false);
+    g.rebuild(
+      [
+        {
+          v: TREND_ROW_VERSION,
+          kind: "agg",
+          day,
+          provider: "deepseek",
+          model: "deepseek-chat",
+          input: 100,
+          output: 0,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 1,
+          turns: 0,
+          toolCalls: 0,
+        },
+        {
+          v: TREND_ROW_VERSION,
+          kind: "dir",
+          day,
+          dir: "alpha",
+          input: 300,
+          output: 0,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 3,
+          turns: 0,
+          toolCalls: 0,
+        },
+      ],
+      false,
+    );
     gDirs = snapshot(g.dirRows().map((r) => [r.dir, r.input, r.calls]));
 
     // (h) 行序契约：时钟回拨把旧日事件落进过去日桶（cells 插入序乱）→ dirRows 仍按 day 升序
     const h = mkAgg();
-    h.apply({ type: "call", record: { ...call("beta", 10, 0), time: new Date(2026, 8, 6, 12).getTime() } });
-    h.apply({ type: "call", record: { ...call("alpha", 10, 0), time: new Date(2026, 8, 8, 12).getTime() } });
-    h.apply({ type: "call", record: { ...call("gamma", 10, 0), time: new Date(2026, 8, 7, 12).getTime() } });
+    h.apply({
+      type: "call",
+      record: { ...call("beta", 10, 0), time: new Date(2026, 8, 6, 12).getTime() },
+    });
+    h.apply({
+      type: "call",
+      record: { ...call("alpha", 10, 0), time: new Date(2026, 8, 8, 12).getTime() },
+    });
+    h.apply({
+      type: "call",
+      record: { ...call("gamma", 10, 0), time: new Date(2026, 8, 7, 12).getTime() },
+    });
     hDays = snapshot(h.dirRows().map((r) => r.day));
 
     // (i) prune 后：被裁日的残差行同步消失（dirRows 不残留已裁剪日）
     const i = mkAgg();
-    i.rebuild([
-      { v: TREND_ROW_VERSION, kind: "agg", day: "2026-09-01", provider: "deepseek", model: "m", input: 1, output: 0, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
-      { v: TREND_ROW_VERSION, kind: "agg", day: "2026-09-03", provider: "deepseek", model: "m", input: 2, output: 0, cacheRead: null, cacheWrite: null, calls: 2, turns: 0, toolCalls: 0 },
-    ], false);
+    i.rebuild(
+      [
+        {
+          v: TREND_ROW_VERSION,
+          kind: "agg",
+          day: "2026-09-01",
+          provider: "deepseek",
+          model: "m",
+          input: 1,
+          output: 0,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 1,
+          turns: 0,
+          toolCalls: 0,
+        },
+        {
+          v: TREND_ROW_VERSION,
+          kind: "agg",
+          day: "2026-09-03",
+          provider: "deepseek",
+          model: "m",
+          input: 2,
+          output: 0,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 2,
+          turns: 0,
+          toolCalls: 0,
+        },
+      ],
+      false,
+    );
     iBeforeLength = i.dirRows().length;
     i.pruneDays("2026-09-03");
     iAfterDays = snapshot(i.dirRows().map((r) => r.day));
 
     // (j) 校正后：旧格式（无 dir 键）明细行 correct → 残差吸收增量（dirRows 随之变化）
     const j = mkAgg();
-    j.rebuild([{ v: TREND_ROW_VERSION, kind: "detail", time: T0 - 24 * HOUR, day, session: "s1", turn: 1, step: 1, retry: 1, provider: "deepseek", model: "deepseek-chat", input: 10, output: 0, cacheRead: null, cacheWrite: null, calls: 1 }], false);
+    j.rebuild(
+      [
+        {
+          v: TREND_ROW_VERSION,
+          kind: "detail",
+          time: T0 - 24 * HOUR,
+          day,
+          session: "s1",
+          turn: 1,
+          step: 1,
+          retry: 1,
+          provider: "deepseek",
+          model: "deepseek-chat",
+          input: 10,
+          output: 0,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 1,
+        },
+      ],
+      false,
+    );
     jInputBefore = j.dirRows()[0].input;
-    j.apply({ type: "correct", record: { session: "s1", turn: 1, step: 1, retry: 1, tokens: { input: 50, output: 0, cacheRead: null, cacheWrite: null } } });
+    j.apply({
+      type: "correct",
+      record: {
+        session: "s1",
+        turn: 1,
+        step: 1,
+        retry: 1,
+        tokens: { input: 50, output: 0, cacheRead: null, cacheWrite: null },
+      },
+    });
     jInputAfter = j.dirRows()[0].input;
   });
 
@@ -3999,11 +6084,22 @@ describe("#633 修复：目录面残差投影（纯函数面 a-j）", () => {
   });
 
   it("残差数值 = 聚合面全量（逐字段）", () => {
-    expect(bValues).toEqual({ input: 5000, output: 800, cacheRead: 120, cacheWrite: 10, calls: 30, turns: 12, toolCalls: 40 });
+    expect(bValues).toEqual({
+      input: 5000,
+      output: 800,
+      cacheRead: 120,
+      cacheWrite: 10,
+      calls: 30,
+      turns: 12,
+      toolCalls: 40,
+    });
   });
 
   it("混版日：残差 = agg − dir（归未识别），新 dir 行照常分目录，两者不重叠", () => {
-    expect(cDirsSorted).toEqual([["(unidentified)", 3000, 20], ["alpha", 2000, 10]]);
+    expect(cDirsSorted).toEqual([
+      ["(unidentified)", 3000, 20],
+      ["alpha", 2000, 10],
+    ]);
   });
 
   it("仅目录面事实原样输出，不补造未识别行", () => {
@@ -4012,12 +6108,15 @@ describe("#633 修复：目录面残差投影（纯函数面 a-j）", () => {
 
   // 原嵌套 for (const agg of [a, b, c]) × for (const bucket of agg.buckets()) 断言展开为
   // it.each(CONSERVATION_FIXTURES)：三例各只有一个 2026-09-03 日桶，故每例恰一条守恒断言。
-  it.each(CONSERVATION_FIXTURES)("日总量守恒（2026-09-03）：目录面 == 聚合面 [fixture %s]", (key) => {
-    const byDay = conservation[key];
-    for (const [bucketDay, t] of Object.entries(byDay)) {
-      expect(t.dir, `日总量守恒（${bucketDay}）：目录面 == 聚合面`).toEqual(t.agg);
-    }
-  });
+  it.each(CONSERVATION_FIXTURES)(
+    "日总量守恒（2026-09-03）：目录面 == 聚合面 [fixture %s]",
+    (key) => {
+      const byDay = conservation[key];
+      for (const [bucketDay, t] of Object.entries(byDay)) {
+        expect(t.dir, `日总量守恒（${bucketDay}）：目录面 == 聚合面`).toEqual(t.agg);
+      }
+    },
+  );
 
   it("同 (day, dir) 键唯一（残差并入既有未识别桶，不另起一行）", () => {
     expect(fRowsLength).toBe(1);
@@ -4066,14 +6165,21 @@ describe("#633 修复：真实升级场景端到端（旧 agg-only 分片重启�
     const root = mkdtempSync(join(tmpdir(), "dou-trend-residual-"));
     mkdirSync(join(root, "agg"), { recursive: true });
     writeFileSync(join(root, "agg", "2026-09-03.jsonl"), `${JSON.stringify(A2_LEGACY_AGG)}\n`);
-    const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000, warn: () => {} });
+    const tracker = await TrendTracker.start({
+      root,
+      now: () => T0,
+      flushDebounceMs: 60000,
+      warn: () => {},
+    });
     const rows = tracker.dirRows();
     rowsLength = rows.length;
     rowDay = rows[0].day;
     rowDir = rows[0].dir;
     rowCalls = rows[0].calls;
     // 分片不被改写（纯读侧投影，不落盘补造）
-    shardBytesUnchanged = readFileSync(join(root, "agg", "2026-09-03.jsonl"), "utf8") === `${JSON.stringify(A2_LEGACY_AGG)}\n`;
+    shardBytesUnchanged =
+      readFileSync(join(root, "agg", "2026-09-03.jsonl"), "utf8") ===
+      `${JSON.stringify(A2_LEGACY_AGG)}\n`;
     // dirStacked（趋势面板数据源）历史柱不再为 null
     const stacked = tracker.dirStacked(7, "day", "total");
     const past = stacked.series.find((p) => p.key === "2026-09-03");

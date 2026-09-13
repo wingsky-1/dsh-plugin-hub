@@ -48,7 +48,9 @@ function baseCtx(overrides = {}) {
     on: () => () => {},
     effect: (fn) => {
       const disposer = fn();
-      return () => { disposer(); };
+      return () => {
+        disposer();
+      };
     },
     ...overrides,
   };
@@ -79,7 +81,12 @@ describe("apply 的 agent/pre-step 监听（announceCatalog=true）", () => {
     const refs = await applyWithPreStep();
     // 测试 pre-step handler 的信号取消分支
     // 当 signal.aborted 时，handler 应抛 AbortError
-    const abortedSignal = { aborted: true, throwIfAborted: () => { throw new Error("aborted"); } };
+    const abortedSignal = {
+      aborted: true,
+      throwIfAborted: () => {
+        throw new Error("aborted");
+      },
+    };
     await expect(
       refs.preStepHandler(
         { agent: { session: { header: { cwd: "/tmp" } } }, messages: [], signal: abortedSignal },
@@ -162,7 +169,7 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings: {
-              update: function(ns, patch) {
+              update: function (ns, patch) {
                 refs.updateCalled = true;
                 refs.updateNs = ns;
                 refs.updatePatch = patch;
@@ -171,7 +178,9 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
               register: () => {
                 refs.registerCalled = true;
                 return {
-                  get: () => ({ ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } } }),
+                  get: () => ({
+                    ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } },
+                  }),
                   watch: () => {},
                 };
               },
@@ -316,7 +325,9 @@ describe("B20：makeMiddlewareHotSwitch 热切换补 emitStatus", () => {
     manager.onStatus(() => {
       emits += 1;
     });
-    const hotSwitch = makeMiddlewareHotSwitch(manager, {}, async () => undefined, { current: () => {} });
+    const hotSwitch = makeMiddlewareHotSwitch(manager, {}, async () => undefined, {
+      current: () => {},
+    });
     return { hotSwitch, emits: () => emits };
   }
 
@@ -389,7 +400,10 @@ describe("D8：off 模式 mcp__ 直呼命中禁用表 → deny", () => {
     const { guards, restore } = await applyOffModeWithDisabledTool();
     try {
       const guard = guards.get("tools/pre-execute");
-      const decision = await guard({ name: "mcp__svc__use_t", agent: { session: { header: {} } } }, async () => ({ kind: "allow" }));
+      const decision = await guard(
+        { name: "mcp__svc__use_t", agent: { session: { header: {} } } },
+        async () => ({ kind: "allow" }),
+      );
       expect(decision.kind).toBe("deny");
     } finally {
       restore();

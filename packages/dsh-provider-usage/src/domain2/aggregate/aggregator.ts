@@ -39,7 +39,12 @@ import {
   type TrendHourRow,
   type TrendTokens,
 } from "../collect/interface.ts";
-import type { TrendCallRecord, TrendCorrectRecord, TrendCounterRecord, TrendEmit } from "../collect/interface.ts";
+import type {
+  TrendCallRecord,
+  TrendCorrectRecord,
+  TrendCounterRecord,
+  TrendEmit,
+} from "../collect/interface.ts";
 import {
   emptyCell,
   emptyAggRow,
@@ -251,7 +256,10 @@ export class TrendAggregator {
    * @param rows 校验过的分片行（agg 权威行 + 当日明细/计数行）
    * @param persistedRows 这些行是否已落盘（agg 行无意义；明细/计数行来自分片 = true）
    */
-  rebuild(rows: Array<TrendAggRow | TrendDetailRow | TrendCounterRow | TrendDirRow | TrendHourRow>, persistedRows: boolean): void {
+  rebuild(
+    rows: Array<TrendAggRow | TrendDetailRow | TrendCounterRow | TrendDirRow | TrendHourRow>,
+    persistedRows: boolean,
+  ): void {
     for (const row of rows) {
       if (row.kind === "agg") {
         const cell = this.cellOf(row.day, row.provider, row.model);
@@ -429,7 +437,12 @@ export class TrendAggregator {
    * 缺键 = 无 dir 事实可折叠，不在折算侧补造）。cells/dirDays 不动（apply 时已累加，
    * 压实只做落盘形态转换，绝不二次累加）。
    */
-  rollupSnapshot(day: string): { consumed: PendingEntry[]; aggRows: TrendAggRow[]; dirRows: TrendDirRow[]; hourRows: TrendHourRow[] } {
+  rollupSnapshot(day: string): {
+    consumed: PendingEntry[];
+    aggRows: TrendAggRow[];
+    dirRows: TrendDirRow[];
+    hourRows: TrendHourRow[];
+  } {
     const consumed: PendingEntry[] = [];
     const aggByKey = new Map<string, TrendAggRow>();
     const dirByKey = new Map<string, TrendDirRow>();
@@ -473,7 +486,12 @@ export class TrendAggregator {
         addCounterTo(hour, row.turns, row.toolCalls);
       }
     }
-    return { consumed, aggRows: [...aggByKey.values()], dirRows: [...dirByKey.values()], hourRows: [...hourByKey.values()] };
+    return {
+      consumed,
+      aggRows: [...aggByKey.values()],
+      dirRows: [...dirByKey.values()],
+      hourRows: [...hourByKey.values()],
+    };
   }
 
   /**
@@ -555,8 +573,14 @@ export class TrendAggregator {
   // ---------------------------------------------------------------- 查询
 
   /** 全量桶快照（day 升序；路由与堆叠柱状的数据源）。 */
-  buckets(): Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell }> }> {
-    const out: Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell }> }> = [];
+  buckets(): Array<{
+    day: string;
+    providers: Array<{ provider: string; model: string | null; cell: TrendCell }>;
+  }> {
+    const out: Array<{
+      day: string;
+      providers: Array<{ provider: string; model: string | null; cell: TrendCell }>;
+    }> = [];
     for (const day of [...this.days.keys()].sort()) {
       const providers: Array<{ provider: string; model: string | null; cell: TrendCell }> = [];
       for (const [provider, models] of this.days.get(day)!) {
@@ -570,20 +594,44 @@ export class TrendAggregator {
   }
 
   /** 近 n 日序列（含今日；空日补 null——零 usage 语义，非 0）。 */
-  seriesDays(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null }> {
-    return lastNDayKeys(n, now).map((day) => ({ day, value: dayValueOf(this.days, day, metric, provider) }));
+  seriesDays(
+    n: number,
+    now: number,
+    metric: TrendMetric,
+    provider?: string,
+  ): Array<{ day: string; value: number | null }> {
+    return lastNDayKeys(n, now).map((day) => ({
+      day,
+      value: dayValueOf(this.days, day, metric, provider),
+    }));
   }
 
   /** 近 n 周序列（周一起点；key = 周首日 day key）。 */
-  seriesWeeks(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null }> {
+  seriesWeeks(
+    n: number,
+    now: number,
+    metric: TrendMetric,
+    provider?: string,
+  ): Array<{ day: string; value: number | null }> {
     const keys = lastNWeekKeys(n, now);
-    return keys.map((day) => ({ day, value: rangeValueOf(this.days, weekRange(day), metric, provider) }));
+    return keys.map((day) => ({
+      day,
+      value: rangeValueOf(this.days, weekRange(day), metric, provider),
+    }));
   }
 
   /** 近 n 月序列（key = YYYY-MM）。 */
-  seriesMonths(n: number, now: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null }> {
+  seriesMonths(
+    n: number,
+    now: number,
+    metric: TrendMetric,
+    provider?: string,
+  ): Array<{ day: string; value: number | null }> {
     const keys = lastNMonthKeys(n, now);
-    return keys.map((key) => ({ day: key, value: rangeValueOf(this.days, monthRange(key), metric, provider) }));
+    return keys.map((key) => ({
+      day: key,
+      value: rangeValueOf(this.days, monthRange(key), metric, provider),
+    }));
   }
 
   /**

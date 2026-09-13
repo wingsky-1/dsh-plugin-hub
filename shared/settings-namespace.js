@@ -100,7 +100,10 @@ export function installSettingsNamespace(ctx, ns, schema, entry, hooks) {
       });
     } catch (err) {
       // 重复注册等硬错误：报日志但不中断插件主体（宿主导入时并行注册同名 ns 会走到这）。
-      warnLog(ctx, `${ns}: settings.register 失败 — ${String(err && err.message ? err.message : err)}`);
+      warnLog(
+        ctx,
+        `${ns}: settings.register 失败 — ${String(err && err.message ? err.message : err)}`,
+      );
       return;
     }
     if (hooks && typeof hooks.onScope === "function") {

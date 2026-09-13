@@ -8,7 +8,9 @@
 import type { TrendTracker } from "../aggregate/interface.ts";
 import { sanitizeDirName, TREND_UNIDENTIFIED } from "../collect/interface.ts";
 
-export function makeListDirs(trend: TrendTracker): () => Array<{ dir: string; calls: number; total: number | null }> {
+export function makeListDirs(
+  trend: TrendTracker,
+): () => Array<{ dir: string; calls: number; total: number | null }> {
   return () =>
     trend.dirTotals("0000-01-01", "9999-12-31").map((r) => ({
       ...r,

@@ -39,9 +39,8 @@ import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 // tsd 风格零依赖类型原语（自实现，不引第三方）。
 type Assert<T extends true> = T;
 /** 精确相等（含可选性/联合分布）。tsd 风格；用于字面量联合与函数类型。 */
-type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
-  ? true
-  : false;
+type Equal<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 /**
  * 结构互含（双向子型）。interface 类型与匿名对象字面量的 tsd-Equal 存在
  * TypeScript 表示层边界（实测 TS7.0 下 interface 整体 Equal 匿名对象会误红），
@@ -53,7 +52,12 @@ type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
 // 类型面：6 个导出类型自含清单（与 shared/mcp-manager-service.d.ts 逐项比对；
 // 结构漂移 → 编译红）。标量/联合用 Equal 精确锁，对象结构用 Same 双向锁。
-type _SvcStatus = Assert<Equal<McpServerStatus, "connected" | "connecting" | "reconnecting" | "disabled" | "stopped" | "failed">>;
+type _SvcStatus = Assert<
+  Equal<
+    McpServerStatus,
+    "connected" | "connecting" | "reconnecting" | "disabled" | "stopped" | "failed"
+  >
+>;
 type _SvcScope = Assert<Equal<McpScope, "global" | "project">>;
 type _SvcSummary = Assert<
   Same<
@@ -98,38 +102,78 @@ type _SvcRegister = Assert<
     (server: McpManagerServerInput) => Promise<{ name: string; existing: boolean }>
   >
 >;
-type _SvcUnregister = Assert<Equal<McpManagerService["unregisterServer"], (name: string) => Promise<void>>>;
-type _SvcConnect = Assert<Equal<McpManagerService["connect"], (name: string, scope?: McpScope) => Promise<void>>>;
-type _SvcDisconnect = Assert<Equal<McpManagerService["disconnect"], (name: string, scope?: McpScope) => Promise<void>>>;
-type _SvcReconnect = Assert<Equal<McpManagerService["reconnect"], (name: string, scope?: McpScope) => Promise<void>>>;
-type _SvcGetStatus = Assert<Equal<McpManagerService["getStatus"], (name: string) => McpServerSummary | undefined>>;
+type _SvcUnregister = Assert<
+  Equal<McpManagerService["unregisterServer"], (name: string) => Promise<void>>
+>;
+type _SvcConnect = Assert<
+  Equal<McpManagerService["connect"], (name: string, scope?: McpScope) => Promise<void>>
+>;
+type _SvcDisconnect = Assert<
+  Equal<McpManagerService["disconnect"], (name: string, scope?: McpScope) => Promise<void>>
+>;
+type _SvcReconnect = Assert<
+  Equal<McpManagerService["reconnect"], (name: string, scope?: McpScope) => Promise<void>>
+>;
+type _SvcGetStatus = Assert<
+  Equal<McpManagerService["getStatus"], (name: string) => McpServerSummary | undefined>
+>;
 type _SvcGetTools = Assert<Equal<McpManagerService["getTools"], (name: string) => McpToolInfo[]>>;
 type _SvcList = Assert<Equal<McpManagerService["list"], () => McpServerSummary[]>>;
 
 // 服务接口总键集（方法名不多不少，与运行时断言同一清单源）。
-type _SvcKeys = Assert<Equal<keyof McpManagerService, "registerServer" | "unregisterServer" | "connect" | "disconnect" | "reconnect" | "getStatus" | "getTools" | "list">>;
+type _SvcKeys = Assert<
+  Equal<
+    keyof McpManagerService,
+    | "registerServer"
+    | "unregisterServer"
+    | "connect"
+    | "disconnect"
+    | "reconnect"
+    | "getStatus"
+    | "getTools"
+    | "list"
+  >
+>;
 // 数据类型总键集（字段增减锁：漏加/漏删字段 → 红）。
 type _ServerInputKeys = Assert<
   Equal<
     keyof McpManagerServerInput,
-    "name" | "transport" | "command" | "args" | "url" | "headers" | "env" | "cwd" | "enabled" | "toolCallTimeoutMs" | "reconnect" | "description" | "toolDefinitions"
+    | "name"
+    | "transport"
+    | "command"
+    | "args"
+    | "url"
+    | "headers"
+    | "env"
+    | "cwd"
+    | "enabled"
+    | "toolCallTimeoutMs"
+    | "reconnect"
+    | "description"
+    | "toolDefinitions"
   >
 >;
-type _SummaryKeys = Assert<Equal<keyof McpServerSummary, "name" | "transport" | "scope" | "status" | "error" | "tools" | "enabled">>;
+type _SummaryKeys = Assert<
+  Equal<
+    keyof McpServerSummary,
+    "name" | "transport" | "scope" | "status" | "error" | "tools" | "enabled"
+  >
+>;
 
 // ─────────────────────────── 运行时方法面断言区 ───────────────────────────
 // 契约清单（方法名 + 参数个数 + 可选参数个数）。单一事实源：与上方编译期清单
 // 同源同序；提供方 apply.ts 的 provide 对象若删方法/加方法/改参数形状 → 红。
-const CONTRACT_METHODS: ReadonlyArray<{ name: string; paramCount: number; optionalCount: number }> = [
-  { name: "registerServer", paramCount: 1, optionalCount: 0 },
-  { name: "unregisterServer", paramCount: 1, optionalCount: 0 },
-  { name: "connect", paramCount: 2, optionalCount: 1 },
-  { name: "disconnect", paramCount: 2, optionalCount: 1 },
-  { name: "reconnect", paramCount: 2, optionalCount: 1 },
-  { name: "getStatus", paramCount: 1, optionalCount: 0 },
-  { name: "getTools", paramCount: 1, optionalCount: 0 },
-  { name: "list", paramCount: 0, optionalCount: 0 },
-];
+const CONTRACT_METHODS: ReadonlyArray<{ name: string; paramCount: number; optionalCount: number }> =
+  [
+    { name: "registerServer", paramCount: 1, optionalCount: 0 },
+    { name: "unregisterServer", paramCount: 1, optionalCount: 0 },
+    { name: "connect", paramCount: 2, optionalCount: 1 },
+    { name: "disconnect", paramCount: 2, optionalCount: 1 },
+    { name: "reconnect", paramCount: 2, optionalCount: 1 },
+    { name: "getStatus", paramCount: 1, optionalCount: 0 },
+    { name: "getTools", paramCount: 1, optionalCount: 0 },
+    { name: "list", paramCount: 0, optionalCount: 0 },
+  ];
 
 const pkgDir = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -167,7 +211,10 @@ function extractProvidedServiceMethods(): {
       const quote = c;
       i += 1;
       while (i < s.length) {
-        if (s[i] === "\\") { i += 2; continue; }
+        if (s[i] === "\\") {
+          i += 2;
+          continue;
+        }
         if (s[i] === quote) return i + 1;
         i += 1;
       }
@@ -176,7 +223,10 @@ function extractProvidedServiceMethods(): {
     if (c === "`") {
       i += 1;
       while (i < s.length) {
-        if (s[i] === "\\") { i += 2; continue; }
+        if (s[i] === "\\") {
+          i += 2;
+          continue;
+        }
         if (s[i] === "`") return i + 1;
         if (s[i] === "$" && s[i + 1] === "{") {
           // 模板插值内可能含括号——保守跳过到配对的 }（简单计数，测试源无嵌套插值）

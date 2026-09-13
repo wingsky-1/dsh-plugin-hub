@@ -18,4 +18,8 @@ export declare function parseFrontmatterAll(content: string): Record<string, str
  * 改写 frontmatter 中的某个布尔字段（不存在则追加），原子写回（临时文件 + rename）。
  * @param file SKILL.md 绝对路径。
  */
-export declare function setFrontmatterField(file: string, field: string, value: boolean): Record<string, unknown>;
+export declare function setFrontmatterField(
+  file: string,
+  field: string,
+  value: boolean,
+): Record<string, unknown>;

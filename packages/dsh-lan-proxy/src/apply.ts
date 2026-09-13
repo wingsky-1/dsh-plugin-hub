@@ -104,7 +104,8 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
       // 存量迁移（issue #395 M2）：显式保存过旧默认白名单
       // ["/api/events.mux", "/api/events.host"] 的 settings 用户层值升级后仍要
       // 归一化为新默认 ["/api/remote.mux"]，否则压缩桥接对新 mux 端点静默失效。
-      wsCompressPaths: normalizeLegacyWsCompressPaths(value.wsCompressPaths) ?? DEFAULT_WSS_COMPRESS_PATHS,
+      wsCompressPaths:
+        normalizeLegacyWsCompressPaths(value.wsCompressPaths) ?? DEFAULT_WSS_COMPRESS_PATHS,
       wsDeflatePolicy: value.wsDeflatePolicy ?? DEFAULT_DEFLATE_POLICY,
       httpCompressEnabled: value.httpCompressEnabled ?? true,
       httpCompressLevel: value.httpCompressLevel ?? 1,
@@ -130,7 +131,9 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
     if (tokenProviderState === next) return;
     tokenProviderState = next;
     if (next === "error") {
-      out.warn("injectToken: 读取 dsh web launch token 失败 — 自动注入逐请求降级关闭（官方行为面变更？请按 dsh-upgrade 流程复核）");
+      out.warn(
+        "injectToken: 读取 dsh web launch token 失败 — 自动注入逐请求降级关闭（官方行为面变更？请按 dsh-upgrade 流程复核）",
+      );
     } else {
       out.info("injectToken: launch token 提供者就绪 — LAN 设备首次访问将自动铸造会话");
     }
@@ -141,7 +144,8 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
     (ctx as unknown as { inject: (services: string[], fn: (c: unknown) => void) => void }).inject(
       ["connection"],
       (connectionCtx: unknown) => {
-        const connection = (connectionCtx as { connection?: ConnectionLike } | undefined)?.connection;
+        const connection = (connectionCtx as { connection?: ConnectionLike } | undefined)
+          ?.connection;
         if (connection === undefined || typeof connection.authenticatedUrl !== "function") {
           setTokenProviderState("error");
           return;
@@ -175,7 +179,8 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
     return {
       httpCompressEnabled: v.httpCompressEnabled,
       httpCompressLevel: v.httpCompressLevel,
-      httpCompressMounted: v.enabled !== false && v.httpCompressEnabled !== false && disposeProxy !== undefined,
+      httpCompressMounted:
+        v.enabled !== false && v.httpCompressEnabled !== false && disposeProxy !== undefined,
       httpCompressStats: activeProxy?.httpCompressStats() ?? { compressed: 0, passthrough: 0 },
     };
   };
@@ -265,15 +270,21 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
           `listening http://${value.host}:${httpPort} -> http://${proxy.targetAuthority} (dsh web UI)`,
         ];
         if (httpsPort !== undefined) {
-          lines.push(`https https://${value.host}:${httpsPort} -> http://${proxy.targetAuthority} (${source})`);
+          lines.push(
+            `https https://${value.host}:${httpsPort} -> http://${proxy.targetAuthority} (${source})`,
+          );
         }
         for (const ip of lanIpv4Addresses()) {
-          lines.push(`LAN access http://${ip}:${httpPort}${httpsPort !== undefined ? ` · https://${ip}:${httpsPort}` : ""}`);
+          lines.push(
+            `LAN access http://${ip}:${httpPort}${httpsPort !== undefined ? ` · https://${ip}:${httpsPort}` : ""}`,
+          );
         }
         // injectToken 开启警示（issue #380）：开启 = LAN 内设备免 token 直入，
         // 横幅每次监听结果变化都带此行，保持可感知。
         if (value.injectToken) {
-          lines.push("injectToken: ON — 局域网设备免 token 直接进入（等效信任整个 LAN，关闭见 设置 → 插件 → dsh-lan-proxy）");
+          lines.push(
+            "injectToken: ON — 局域网设备免 token 直接进入（等效信任整个 LAN，关闭见 设置 → 插件 → dsh-lan-proxy）",
+          );
         }
         const banner = lines.map((line) => `  ${line}`).join("\n");
         if (value.printBanner !== false && banner !== lastBanner) {
@@ -285,7 +296,9 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
         const msg = (err as Error)?.message ?? String(err);
         out.error(`listen failed: ${msg}`);
         if ((err as NodeJS.ErrnoException)?.code === "EADDRINUSE") {
-          out.error("hint: 端口被占用——可能另一个 dsh 实例已启动；改端口请到 设置 → 插件 → dsh-lan-proxy");
+          out.error(
+            "hint: 端口被占用——可能另一个 dsh 实例已启动；改端口请到 设置 → 插件 → dsh-lan-proxy",
+          );
         }
         // 绑定失败（如端口被占）：关闭已创建的资源并清空引用，避免残留
         // 转发器；配置变化触发下次 sync 时可干净重建。
@@ -318,27 +331,31 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
   // 上下文（HTTPS/localhost）暴露该 API，LAN 明文 HTTP 下缺失会导致 dsh
   // client 的 RPC（mintRpcId）全部抛错。经 webServer 官方 tapIndex 钩子注入
   // （幂等，localhost 不受影响）。
-  ctx.effect(() => ctx.webServer.tapIndex!((html) => {
-    if (html.includes("__dshRandomUuidPolyfill__")) return html;
-    const polyfill = [
-      "<script id=\"__dshRandomUuidPolyfill__\">",
-      "(() => {",
-      "  if (typeof crypto.randomUUID === \"function\") return;",
-      "  try {",
-      "    crypto.randomUUID = () => {",
-      "      const bytes = crypto.getRandomValues(new Uint8Array(16));",
-      "      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);",
-      "      view.setUint8(6, (view.getUint8(6) & 15) | 64);",
-      "      view.setUint8(8, (view.getUint8(8) & 63) | 128);",
-      "      const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, \"0\"));",
-      "      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;",
-      "    };",
-      "  } catch {}",
-      "})();",
-      "</script>",
-    ].join("\n");
-    return html.replace("</head>", `${polyfill}\n</head>`);
-  }), "lan-proxy: randomUUID polyfill");
+  ctx.effect(
+    () =>
+      ctx.webServer.tapIndex!((html) => {
+        if (html.includes("__dshRandomUuidPolyfill__")) return html;
+        const polyfill = [
+          '<script id="__dshRandomUuidPolyfill__">',
+          "(() => {",
+          '  if (typeof crypto.randomUUID === "function") return;',
+          "  try {",
+          "    crypto.randomUUID = () => {",
+          "      const bytes = crypto.getRandomValues(new Uint8Array(16));",
+          "      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);",
+          "      view.setUint8(6, (view.getUint8(6) & 15) | 64);",
+          "      view.setUint8(8, (view.getUint8(8) & 63) | 128);",
+          '      const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0"));',
+          "      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;",
+          "    };",
+          "  } catch {}",
+          "})();",
+          "</script>",
+        ].join("\n");
+        return html.replace("</head>", `${polyfill}\n</head>`);
+      }),
+    "lan-proxy: randomUUID polyfill",
+  );
 
   // GUI 设置卡片数据面 + 存量迁移（issue #110）：settings 命名空间 attach 后——
   //   1. onScope 内先做存量 config.json rename-first 迁移（前置于一切 enabled
@@ -372,9 +389,13 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
     readUser: () => {
       if (!attachedService) return { user: {}, revision: undefined };
       try {
-        const descriptor = attachedService.describe({ redactSecrets: true }).find((d) => d.ns === SETTINGS_NS);
+        const descriptor = attachedService
+          .describe({ redactSecrets: true })
+          .find((d) => d.ns === SETTINGS_NS);
         return {
-          user: (descriptor?.user && typeof descriptor.user === "object" ? descriptor.user : {}) as Record<string, unknown>,
+          user: (descriptor?.user && typeof descriptor.user === "object"
+            ? descriptor.user
+            : {}) as Record<string, unknown>,
           revision: descriptor?.revision,
         };
       } catch {
@@ -409,7 +430,8 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
     kind: "exact",
     handler(req, res) {
       if (!guardLoopbackMethod(req, res, ["GET"])) return;
-      if (req.method !== "GET") return writeJson(res, 405, { error: "method not allowed: " + req.method });
+      if (req.method !== "GET")
+        return writeJson(res, 405, { error: "method not allowed: " + req.method });
       const v = resolve();
       // 压缩快照与 GET /config 同源（compressSnapshot 单一来源）。
       const compress = compressSnapshot();
@@ -434,17 +456,20 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
     },
   });
 
-  ctx.effect(() => () => {
-    disposed = true;
-    if (syncTimer !== undefined) clearTimeout(syncTimer);
-    try {
-      healthDisposer();
-    } catch {
-      // 忽略
-    }
-    if (disposeProxy) {
-      disposeProxy();
-      disposeProxy = undefined;
-    }
-  }, "lan-proxy: lifecycle");
+  ctx.effect(
+    () => () => {
+      disposed = true;
+      if (syncTimer !== undefined) clearTimeout(syncTimer);
+      try {
+        healthDisposer();
+      } catch {
+        // 忽略
+      }
+      if (disposeProxy) {
+        disposeProxy();
+        disposeProxy = undefined;
+      }
+    },
+    "lan-proxy: lifecycle",
+  );
 }

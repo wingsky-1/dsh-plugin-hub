@@ -26,7 +26,7 @@ export interface V2PipelineResult {
   fetchedAt: number;
   provider: string;
   adapterName: string;
-  status: 'fresh' | 'cached' | 'stale';
+  status: "fresh" | "cached" | "stale";
   capsuleHtml?: string;
   /** 拉取到的原始数据（供历史落盘）。 */
   rawData?: Record<string, unknown>;
@@ -73,19 +73,19 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
     return {
       ok: false,
       configured: true,
-      reason: 'fetch-failed',
+      reason: "fetch-failed",
       error: `pipeline 组装非法：timeoutMs=${ctx.timeoutMs}`,
       fetchedAt,
       provider,
       adapterName: adapter.name,
-      status: 'stale',
+      status: "stale",
     };
   }
 
   // 1. 组装 fetchData 入参（signal 由下方 safeFetchData 以合并信号注入，此处不预置；
   //    utils 一律强制注入 ADAPTER_UTILS——内置 mjs 与用户 mjs 均可消费共享图表工具）
   const fetchCtx: FetchContext = {
-    apiEndpoint: ctx.config.apiEndpoint ?? '',
+    apiEndpoint: ctx.config.apiEndpoint ?? "",
     staticPath: ctx.staticPath,
     apiKey: ctx.config.apiKey,
     provider,
@@ -100,10 +100,14 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
   // 并放进 adapter.fetchData 入参——适配器把 ctx.signal 透传给底层 fetch 即获得真取消能力
   // （deepseek-official 直传 fetch、opencode-go 监听 signal 均立即受益）；
   // 0 参 fetchData 忽略入参不受影响。
-  const fetched = await safeFetchData(async (signal) => {
-    const fetcher: typeof fetch = ctx.fetchImpl ?? fetch;
-    return adapter.fetchData({ ...fetchCtx, signal, fetch: fetcher } as unknown as FetchContext);
-  }, ctx.timeoutMs, ctx.signal);
+  const fetched = await safeFetchData(
+    async (signal) => {
+      const fetcher: typeof fetch = ctx.fetchImpl ?? fetch;
+      return adapter.fetchData({ ...fetchCtx, signal, fetch: fetcher } as unknown as FetchContext);
+    },
+    ctx.timeoutMs,
+    ctx.signal,
+  );
 
   if (fetched.error !== undefined) {
     // 取数失败仍产出 stale 胶囊 + status:'stale' + error；
@@ -122,21 +126,26 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
     const failCapsInput = {
       time: fetchedAt,
       data: failData,
-      status: 'stale' as const,
+      status: "stale" as const,
       error: fetched.error,
       esc,
     };
-    const failFormatted = await safeFormat(() => adapter.formatCapsule(failCapsInput), 'formatCapsule', ctx.timeoutMs);
-    const failCapsuleHtml = failFormatted.html !== undefined ? sanitizeHtml(failFormatted.html) : undefined;
+    const failFormatted = await safeFormat(
+      () => adapter.formatCapsule(failCapsInput),
+      "formatCapsule",
+      ctx.timeoutMs,
+    );
+    const failCapsuleHtml =
+      failFormatted.html !== undefined ? sanitizeHtml(failFormatted.html) : undefined;
     return {
       ok: false,
       configured: true,
-      reason: 'fetch-failed',
+      reason: "fetch-failed",
       error: fetched.error,
       fetchedAt,
       provider,
       adapterName: adapter.name,
-      status: 'stale',
+      status: "stale",
       ...(failCapsuleHtml !== undefined ? { capsuleHtml: failCapsuleHtml } : {}),
     };
   }
@@ -146,12 +155,16 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
   const capsInput = {
     time: fetchedAt,
     data,
-    status: 'fresh' as const,
+    status: "fresh" as const,
     esc,
   };
 
   // 4. safeFormat formatCapsule（宿主端渲染 HTML）+ 净化
-  const formatted = await safeFormat(() => adapter.formatCapsule(capsInput), 'formatCapsule', ctx.timeoutMs);
+  const formatted = await safeFormat(
+    () => adapter.formatCapsule(capsInput),
+    "formatCapsule",
+    ctx.timeoutMs,
+  );
   const capsuleHtml = formatted.html !== undefined ? sanitizeHtml(formatted.html) : undefined;
 
   return {
@@ -162,7 +175,7 @@ export async function runV2Pipeline(ctx: V2PipelineContext): Promise<V2PipelineR
     fetchedAt,
     provider,
     adapterName: adapter.name,
-    status: 'fresh',
+    status: "fresh",
     capsuleHtml,
     rawData: data,
   };
@@ -186,9 +199,13 @@ export async function runV2PanelPipeline(opts: {
     // 面板侧同注入共享图表工具（formatPanel 内 `const U = input.utils`）
     utils: ADAPTER_UTILS,
   };
-  const formatted = await safeFormat(() => adapter.formatPanel(panelInput), 'formatPanel', timeoutMs);
+  const formatted = await safeFormat(
+    () => adapter.formatPanel(panelInput),
+    "formatPanel",
+    timeoutMs,
+  );
   if (formatted.error !== undefined) return { error: formatted.error };
-  return { panelHtml: sanitizeHtml(formatted.html ?? '') };
+  return { panelHtml: sanitizeHtml(formatted.html ?? "") };
 }
 
 // ------------------------------------------------------------------ /history 渲染缓存（纯函数层）
@@ -207,7 +224,10 @@ export interface PanelCacheEntry {
 
 /** 自然日粒度归一化：时间戳折算到当地时区当日零点。
  *  路由的 end=Date.now() 每请求漂移，key 含精确时间戳会令缓存永不命中。 */
-export function normalizeRangeDay(range: { start: number; end: number }): { start: number; end: number } {
+export function normalizeRangeDay(range: { start: number; end: number }): {
+  start: number;
+  end: number;
+} {
   const dayFloor = (t: number): number => {
     const d = new Date(t);
     d.setHours(0, 0, 0, 0);

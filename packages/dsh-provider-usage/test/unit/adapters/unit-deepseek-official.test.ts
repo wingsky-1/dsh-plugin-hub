@@ -106,8 +106,12 @@ async function catchErr(p) {
 }
 
 const fetchCtx = (over = {}) => ({
-  apiEndpoint: "", staticPath: "", apiKey: "sk-unit",
-  provider: DEEPSEEK_OFFICIAL_PROVIDER, timeoutMs: 2000, ...over,
+  apiEndpoint: "",
+  staticPath: "",
+  apiKey: "sk-unit",
+  provider: DEEPSEEK_OFFICIAL_PROVIDER,
+  timeoutMs: 2000,
+  ...over,
 });
 
 // ================================================================ B1 + 契约自检
@@ -155,8 +159,12 @@ describe("B2/K1 余额解析 + 归一化输出", () => {
     const captured = capturingFetch(mockRes(200, officialBody()));
     calls = captured.calls;
     out = await deepSeekOfficialAdapter.fetchData({
-      apiEndpoint: "https://api.deepseek.com", staticPath: "", apiKey: "sk-unit",
-      provider: DEEPSEEK_OFFICIAL_PROVIDER, timeoutMs: 2000, fetch: captured.f,
+      apiEndpoint: "https://api.deepseek.com",
+      staticPath: "",
+      apiKey: "sk-unit",
+      provider: DEEPSEEK_OFFICIAL_PROVIDER,
+      timeoutMs: 2000,
+      fetch: captured.f,
     });
   });
 
@@ -195,10 +203,19 @@ describe("B2 金额非法形态 → null（杜绝 NaN 落盘）", () => {
 
   beforeAll(async () => {
     // 金额非法形态 → null（杜绝 NaN 落盘）
-    const { f } = capturingFetch(mockRes(200, officialBody({ total_balance: "abc", topped_up_balance: "", granted_balance: undefined })));
+    const { f } = capturingFetch(
+      mockRes(
+        200,
+        officialBody({ total_balance: "abc", topped_up_balance: "", granted_balance: undefined }),
+      ),
+    );
     out = await deepSeekOfficialAdapter.fetchData({
-      apiEndpoint: "", staticPath: "", apiKey: "sk-unit",
-      provider: DEEPSEEK_OFFICIAL_PROVIDER, timeoutMs: 2000, fetch: f,
+      apiEndpoint: "",
+      staticPath: "",
+      apiKey: "sk-unit",
+      provider: DEEPSEEK_OFFICIAL_PROVIDER,
+      timeoutMs: 2000,
+      fetch: f,
     });
   });
 
@@ -255,7 +272,12 @@ describe("B3 多币种仅留 CNY", () => {
   let out;
 
   beforeAll(async () => {
-    const usd = { currency: "USD", total_balance: "15.50", topped_up_balance: "15.50", granted_balance: "0.00" };
+    const usd = {
+      currency: "USD",
+      total_balance: "15.50",
+      topped_up_balance: "15.50",
+      granted_balance: "0.00",
+    };
     const { f } = capturingFetch(mockRes(200, officialBody({}, [usd])));
     out = await deepSeekOfficialAdapter.fetchData(fetchCtx({ fetch: f }));
   });
@@ -268,10 +290,7 @@ describe("B3 多币种仅留 CNY", () => {
 // ================================================================ B4（修订版）无 CNY → null 正常帧
 
 describe("B4（修订版）无 CNY → null 正常帧", () => {
-  for (const infos of [
-    [{ currency: "USD", total_balance: "15.50" }],
-    [],
-  ]) {
+  for (const infos of [[{ currency: "USD", total_balance: "15.50" }], []]) {
     let out;
 
     beforeAll(async () => {
@@ -292,7 +311,13 @@ describe("B4（修订版）无 CNY → null 正常帧", () => {
 // ================================================================ B5/K3 错误路径六态（参数化）
 
 describe("B5/K3 错误路径六态（参数化）", () => {
-  const baseCtx = { apiEndpoint: "", staticPath: "", apiKey: "sk-unit", provider: DEEPSEEK_OFFICIAL_PROVIDER, timeoutMs: 2000 };
+  const baseCtx = {
+    apiEndpoint: "",
+    staticPath: "",
+    apiKey: "sk-unit",
+    provider: DEEPSEEK_OFFICIAL_PROVIDER,
+    timeoutMs: 2000,
+  };
 
   it("no-api-key", async () => {
     const e = await catchErr(deepSeekOfficialAdapter.fetchData({ ...baseCtx, apiKey: undefined }));
@@ -314,15 +339,32 @@ describe("B5/K3 错误路径六态（参数化）", () => {
   });
 
   // 401 / 403 → unauthorized；其他非 2xx → http-<code>；非 JSON → bad-json
-  for (const [status, expected] of [[401, "unauthorized"], [403, "unauthorized"], [500, "http-500"], [429, "http-429"]]) {
+  for (const [status, expected] of [
+    [401, "unauthorized"],
+    [403, "unauthorized"],
+    [500, "http-500"],
+    [429, "http-429"],
+  ]) {
     it(`${status} → ${expected}`, async () => {
-      const e = await catchErr(deepSeekOfficialAdapter.fetchData({ ...baseCtx, fetch: (() => Promise.resolve(mockRes(status, {}))) as unknown as typeof fetch }));
+      const e = await catchErr(
+        deepSeekOfficialAdapter.fetchData({
+          ...baseCtx,
+          fetch: (() => Promise.resolve(mockRes(status, {}))) as unknown as typeof fetch,
+        }),
+      );
       expect(e?.message).toBe(expected);
     });
   }
 
   it("非 JSON 响应 → bad-json", async () => {
-    const badJsonF = (() => Promise.resolve({ status: 200, ok: true, json: async () => { throw new Error("Unexpected token"); } })) as unknown as typeof fetch;
+    const badJsonF = (() =>
+      Promise.resolve({
+        status: 200,
+        ok: true,
+        json: async () => {
+          throw new Error("Unexpected token");
+        },
+      })) as unknown as typeof fetch;
     const e = await catchErr(deepSeekOfficialAdapter.fetchData({ ...baseCtx, fetch: badJsonF }));
     expect(e?.message).toBe("bad-json");
   });
@@ -340,19 +382,27 @@ describe("K2 端点解析（/v1 剥离）", () => {
   });
 
   it("官方基址拼接", () => {
-    expect(resolveEndpoint("https://api.deepseek.com")).toBe("https://api.deepseek.com/user/balance");
+    expect(resolveEndpoint("https://api.deepseek.com")).toBe(
+      "https://api.deepseek.com/user/balance",
+    );
   });
 
   it("官方域名剥 /v1", () => {
-    expect(resolveEndpoint("https://api.deepseek.com/v1")).toBe("https://api.deepseek.com/user/balance");
+    expect(resolveEndpoint("https://api.deepseek.com/v1")).toBe(
+      "https://api.deepseek.com/user/balance",
+    );
   });
 
   it("剥 /v1/ 尾斜杠", () => {
-    expect(resolveEndpoint("https://api.deepseek.com/v1/")).toBe("https://api.deepseek.com/user/balance");
+    expect(resolveEndpoint("https://api.deepseek.com/v1/")).toBe(
+      "https://api.deepseek.com/user/balance",
+    );
   });
 
   it("大小写不敏感剥前缀", () => {
-    expect(resolveEndpoint("https://API.DEEPSEEK.COM/V1")).toBe("https://API.DEEPSEEK.COM/user/balance");
+    expect(resolveEndpoint("https://API.DEEPSEEK.COM/V1")).toBe(
+      "https://API.DEEPSEEK.COM/user/balance",
+    );
   });
 
   it("非官方端点原样拼接", () => {
@@ -371,8 +421,12 @@ describe("K2 实际请求 URL 经捕获断言（mock 注入）", () => {
     const captured = capturingFetch(mockRes(200, officialBody()));
     calls = captured.calls;
     await deepSeekOfficialAdapter.fetchData({
-      apiEndpoint: "https://api.deepseek.com/v1/", staticPath: "", apiKey: "sk-unit",
-      provider: DEEPSEEK_OFFICIAL_PROVIDER, timeoutMs: 2000, fetch: captured.f,
+      apiEndpoint: "https://api.deepseek.com/v1/",
+      staticPath: "",
+      apiKey: "sk-unit",
+      provider: DEEPSEEK_OFFICIAL_PROVIDER,
+      timeoutMs: 2000,
+      fetch: captured.f,
     });
   });
 
@@ -390,12 +444,16 @@ describe("E1 显式注入优先，env 干扰不影响", () => {
     const savedEnvKey = process.env.DEEPSEEK_OFFICIAL_API_KEY;
     const savedDsKey = process.env.DEEPSEEK_API_KEY;
     restore = () => {
-      if (savedEnvKey === undefined) delete process.env.DEEPSEEK_OFFICIAL_API_KEY; else process.env.DEEPSEEK_OFFICIAL_API_KEY = savedEnvKey;
-      if (savedDsKey === undefined) delete process.env.DEEPSEEK_API_KEY; else process.env.DEEPSEEK_API_KEY = savedDsKey;
+      if (savedEnvKey === undefined) delete process.env.DEEPSEEK_OFFICIAL_API_KEY;
+      else process.env.DEEPSEEK_OFFICIAL_API_KEY = savedEnvKey;
+      if (savedDsKey === undefined) delete process.env.DEEPSEEK_API_KEY;
+      else process.env.DEEPSEEK_API_KEY = savedDsKey;
     };
     process.env.DEEPSEEK_OFFICIAL_API_KEY = "sk-env-noise";
     process.env.DEEPSEEK_API_KEY = "sk-ds-noise";
-    resolved = await resolveProviderConfig(DEEPSEEK_OFFICIAL_PROVIDER, undefined, { apiKey: "sk-explicit" });
+    resolved = await resolveProviderConfig(DEEPSEEK_OFFICIAL_PROVIDER, undefined, {
+      apiKey: "sk-explicit",
+    });
   });
 
   afterAll(() => restore?.());
@@ -409,11 +467,18 @@ describe("E2 V1 链推导：provider deepseek-official → env DEEPSEEK_OFFICIAL
   let restore, resolved;
 
   beforeAll(async () => {
-    const saved = { dsh: process.env.DSH_HOME, home: process.env.HOME, env: process.env.DEEPSEEK_OFFICIAL_API_KEY };
+    const saved = {
+      dsh: process.env.DSH_HOME,
+      home: process.env.HOME,
+      env: process.env.DEEPSEEK_OFFICIAL_API_KEY,
+    };
     restore = () => {
-      if (saved.dsh === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = saved.dsh;
-      if (saved.home === undefined) delete process.env.HOME; else process.env.HOME = saved.home;
-      if (saved.env === undefined) delete process.env.DEEPSEEK_OFFICIAL_API_KEY; else process.env.DEEPSEEK_OFFICIAL_API_KEY = saved.env;
+      if (saved.dsh === undefined) delete process.env.DSH_HOME;
+      else process.env.DSH_HOME = saved.dsh;
+      if (saved.home === undefined) delete process.env.HOME;
+      else process.env.HOME = saved.home;
+      if (saved.env === undefined) delete process.env.DEEPSEEK_OFFICIAL_API_KEY;
+      else process.env.DEEPSEEK_OFFICIAL_API_KEY = saved.env;
     };
     process.env.DSH_HOME = mkdtempSync(join(tmpdir(), "dou-e2-"));
     process.env.HOME = process.env.DSH_HOME;
@@ -434,14 +499,19 @@ describe("E3 适配器内自查 DEEPSEEK_API_KEY 兜底（llm 能跑、余额接
   beforeAll(async () => {
     const savedDs = process.env.DEEPSEEK_API_KEY;
     restore = () => {
-      if (savedDs === undefined) delete process.env.DEEPSEEK_API_KEY; else process.env.DEEPSEEK_API_KEY = savedDs;
+      if (savedDs === undefined) delete process.env.DEEPSEEK_API_KEY;
+      else process.env.DEEPSEEK_API_KEY = savedDs;
     };
     process.env.DEEPSEEK_API_KEY = "sk-ds-fallback";
     const captured = capturingFetch(mockRes(200, officialBody()));
     calls = captured.calls;
     out = await deepSeekOfficialAdapter.fetchData({
-      apiEndpoint: "", staticPath: "", apiKey: undefined,
-      provider: DEEPSEEK_OFFICIAL_PROVIDER, timeoutMs: 2000, fetch: captured.f,
+      apiEndpoint: "",
+      staticPath: "",
+      apiKey: undefined,
+      provider: DEEPSEEK_OFFICIAL_PROVIDER,
+      timeoutMs: 2000,
+      fetch: captured.f,
     });
   });
 
@@ -459,7 +529,13 @@ describe("E3 适配器内自查 DEEPSEEK_API_KEY 兜底（llm 能跑、余额接
 // ================================================================ C/K4 区间记账分类（classifyIntervalDs，不做代数相消）
 
 describe("C/K4 区间记账分类（classifyIntervalDs，不做代数相消）", () => {
-  const pt = (t, balance, toppedUp, granted, available = true) => ({ t, balance, toppedUp, granted, available });
+  const pt = (t, balance, toppedUp, granted, available = true) => ({
+    t,
+    balance,
+    toppedUp,
+    granted,
+    available,
+  });
 
   it("无扰动区间 → clean", () => {
     // C1 纯消费区间：topped/granted 不变 → clean，消耗 = 余额降幅（可与平台账单对账）
@@ -547,12 +623,12 @@ describe("G2 归属规则：区间计入结束端所在日——跨午夜隔夜�
   beforeAll(() => {
     // 本地时区构造（dayKey 归组口径）：避免 UTC 助手与本地日切错位
     const satNight = new Date(2026, 7, 29, 22, 30).getTime(); // 本地周六
-    const sunEarly = new Date(2026, 7, 30, 0, 30).getTime();  // 本地周日（隔夜段，2h ≤ GAP）
+    const sunEarly = new Date(2026, 7, 30, 0, 30).getTime(); // 本地周日（隔夜段，2h ≤ GAP）
     const sunNoon = new Date(2026, 7, 30, 10, 30).getTime();
     const pts = [
       { t: satNight, balance: 100, toppedUp: 90, granted: 10 },
-      { t: sunEarly, balance: 99, toppedUp: 90, granted: 10 },  // 隔夜消耗 1 → 计入周日
-      { t: sunNoon, balance: 94, toppedUp: 90, granted: 10 },   // 周日内消耗 5
+      { t: sunEarly, balance: 99, toppedUp: 90, granted: 10 }, // 隔夜消耗 1 → 计入周日
+      { t: sunNoon, balance: 94, toppedUp: 90, granted: 10 }, // 周日内消耗 5
     ];
     const recs = aggregateDaily(pts, [dayKey(satNight), dayKey(sunEarly)], false);
     satRec = recs.find((r) => r.key === dayKey(satNight));
@@ -623,8 +699,8 @@ describe("G4 充值事件独立列示：充值区间漏计、事件额 toppedUpI
 
   beforeAll(() => {
     const d0 = utc(2026, 8, 24, 10, 0);
-    const d1 = utc(2026, 8, 24, 11, 0);   // 充值 +45.62（余额 10→55.62）
-    const d2 = utc(2026, 8, 24, 12, 0);   // 纯消费 1 元
+    const d1 = utc(2026, 8, 24, 11, 0); // 充值 +45.62（余额 10→55.62）
+    const d2 = utc(2026, 8, 24, 12, 0); // 纯消费 1 元
     const pts = [
       { t: d0, balance: 10, toppedUp: 10, granted: 0 },
       { t: d1, balance: 55.62, toppedUp: 55.62, granted: 0 },
@@ -719,7 +795,7 @@ describe("G7 不可用端点策略：is_available=false 帧两侧区间均跳过
 
   beforeAll(() => {
     const d0 = utc(2026, 8, 27, 8, 0);
-    const d1 = utc(2026, 8, 27, 9, 0);   // 该帧不可用：d0→d1 与 d1→d2 两段都跳过
+    const d1 = utc(2026, 8, 27, 9, 0); // 该帧不可用：d0→d1 与 d1→d2 两段都跳过
     const d2 = utc(2026, 8, 27, 10, 0);
     const pts = [
       { t: d0, balance: 100, toppedUp: 90, granted: 10, available: true },
@@ -841,11 +917,17 @@ describe("G1 常量存在 + 源码注释附官方定价 URL 与核实日期", ()
   let src;
 
   beforeAll(() => {
-    src = readFileSync(join(here, "..", "..", "..", "src", "domain1", "adapters", "deepseek-official.mjs"), "utf8");
+    src = readFileSync(
+      join(here, "..", "..", "..", "src", "domain1", "adapters", "deepseek-official.mjs"),
+      "utf8",
+    );
   });
 
   it("PEAK_WINDOWS_UTC=[[01:00,04:00],[06:00,10:00]]（分钟）", () => {
-    expect(PEAK_WINDOWS_UTC.map(([s, e]) => [s, e])).toEqual([[60, 240], [360, 600]]);
+    expect(PEAK_WINDOWS_UTC.map(([s, e]) => [s, e])).toEqual([
+      [60, 240],
+      [360, 600],
+    ]);
   });
 
   it("注释附官方定价 URL", () => {
@@ -910,7 +992,14 @@ describe("G3 工作日窗口外全谷", () => {
 });
 
 describe("G4 周末全天低谷（issue 点名用例）", () => {
-  for (const [hh, mi] of [[0, 0], [2, 30], [7, 0], [8, 0], [12, 0], [23, 59]]) {
+  for (const [hh, mi] of [
+    [0, 0],
+    [2, 30],
+    [7, 0],
+    [8, 0],
+    [12, 0],
+    [23, 59],
+  ]) {
     it(`周六 ${hh}:${mi} 谷`, () => {
       expect(isPeakUtc(SAT(hh, mi))).toBe(false);
     });
@@ -937,7 +1026,7 @@ describe("G4 周末全天低谷（issue 点名用例）", () => {
   });
 });
 
-describe("G6 边界钳制翻转：边界后滞后时刻显示新状态且倒计时 ≥0，无负值/\"-00:00\"", () => {
+describe('G6 边界钳制翻转：边界后滞后时刻显示新状态且倒计时 ≥0，无负值/"-00:00"', () => {
   let justAfter, tr, badge, justBefore;
 
   beforeAll(() => {
@@ -1042,10 +1131,16 @@ describe("G5/G9 徽标渲染", () => {
     });
     // K11 无数据 / 不可用 / 缓存标记
     empty = deepSeekOfficialAdapter.formatCapsule({
-      time: MON(2, 0), data: {}, status: "stale", esc,
+      time: MON(2, 0),
+      data: {},
+      status: "stale",
+      esc,
     });
     unavail = deepSeekOfficialAdapter.formatCapsule({
-      time: MON(2, 0), data: { balance: 5, isAvailable: false }, status: "fresh", esc,
+      time: MON(2, 0),
+      data: { balance: 5, isAvailable: false },
+      status: "fresh",
+      esc,
     });
     css = readFileSync(join(here, "..", "..", "..", "src", "client", "style.css"), "utf8");
   });
@@ -1104,7 +1199,9 @@ describe("G5/G9 徽标渲染", () => {
   });
 
   it("窄断点截断防溢出规则存在", () => {
-    expect(css.includes("@media (max-width: 380px)") && css.includes("text-overflow: ellipsis")).toBeTruthy();
+    expect(
+      css.includes("@media (max-width: 380px)") && css.includes("text-overflow: ellipsis"),
+    ).toBeTruthy();
   });
 });
 
@@ -1119,11 +1216,23 @@ describe("K10/D 组 面板结构（双卡 SVG）", () => {
     // 近 24h 内 5 个采样点（余额递减）+ 前 3 天历史
     const balances = [100, 99, 98.5, 98.2, 98];
     for (let i = 0; i < 5; i += 1) {
-      entries.push({ time: now - (4 - i) * 3600000, data: { balance: balances[i], toppedUp: 90, grantedBalance: 10, isAvailable: true } });
+      entries.push({
+        time: now - (4 - i) * 3600000,
+        data: { balance: balances[i], toppedUp: 90, grantedBalance: 10, isAvailable: true },
+      });
     }
-    entries.push({ time: now - 3 * 86400000, data: { balance: 120, toppedUp: 90, grantedBalance: 10, isAvailable: true } });
-    entries.push({ time: now - 2 * 86400000, data: { balance: 112, toppedUp: 90, grantedBalance: 10, isAvailable: true } });
-    entries.push({ time: now - 86400000, data: { balance: 101, toppedUp: 90, grantedBalance: 10, isAvailable: true } });
+    entries.push({
+      time: now - 3 * 86400000,
+      data: { balance: 120, toppedUp: 90, grantedBalance: 10, isAvailable: true },
+    });
+    entries.push({
+      time: now - 2 * 86400000,
+      data: { balance: 112, toppedUp: 90, grantedBalance: 10, isAvailable: true },
+    });
+    entries.push({
+      time: now - 86400000,
+      data: { balance: 101, toppedUp: 90, grantedBalance: 10, isAvailable: true },
+    });
 
     panel = deepSeekOfficialAdapter.formatPanel({
       entries,
@@ -1135,7 +1244,10 @@ describe("K10/D 组 面板结构（双卡 SVG）", () => {
     // D2 注入 >15 天历史仅呈现最近 15 个自然日（SVG 内日期槽位数 = 15）
     const manyEntries = [];
     for (let i = 0; i <= 20; i += 1) {
-      manyEntries.push({ time: now - i * 86400000, data: { balance: 100 - (20 - i), toppedUp: 90, grantedBalance: 10, isAvailable: true } });
+      manyEntries.push({
+        time: now - i * 86400000,
+        data: { balance: 100 - (20 - i), toppedUp: 90, grantedBalance: 10, isAvailable: true },
+      });
     }
     panelMany = deepSeekOfficialAdapter.formatPanel({
       entries: manyEntries,
@@ -1147,12 +1259,18 @@ describe("K10/D 组 面板结构（双卡 SVG）", () => {
 
     // D4 空 history 占位不抛错
     emptyPanel = deepSeekOfficialAdapter.formatPanel({
-      entries: [], range: { start: 0, end: now }, truncated: false, esc,
+      entries: [],
+      range: { start: 0, end: now },
+      truncated: false,
+      esc,
     });
 
     // K10 mixedCaliber 提示（gap/insufficient 存在时）
     const gapEntries = [
-      { time: now - 40 * 3600000, data: { balance: 100, toppedUp: 90, grantedBalance: 10, isAvailable: true } },
+      {
+        time: now - 40 * 3600000,
+        data: { balance: 100, toppedUp: 90, grantedBalance: 10, isAvailable: true },
+      },
       { time: now, data: { balance: 95, toppedUp: 90, grantedBalance: 10, isAvailable: true } },
     ];
     panelGap = deepSeekOfficialAdapter.formatPanel({
@@ -1165,7 +1283,10 @@ describe("K10/D 组 面板结构（双卡 SVG）", () => {
     // 降采样 ≤300 点（构造 400 点折线输入）
     const dense = [];
     for (let i = 0; i < 400; i += 1) {
-      dense.push({ time: now - (400 - i) * 60000, data: { balance: 100 + Math.sin(i) , toppedUp: 90, grantedBalance: 10, isAvailable: true } });
+      dense.push({
+        time: now - (400 - i) * 60000,
+        data: { balance: 100 + Math.sin(i), toppedUp: 90, grantedBalance: 10, isAvailable: true },
+      });
     }
     panelDense = deepSeekOfficialAdapter.formatPanel({
       entries: dense,
@@ -1213,7 +1334,7 @@ describe("K10/D 组 面板结构（双卡 SVG）", () => {
   });
 
   it("aria-label 汇总口径", () => {
-    expect(panel.includes("aria-label=\"近15日每日用量柱形图")).toBeTruthy();
+    expect(panel.includes('aria-label="近15日每日用量柱形图')).toBeTruthy();
   });
 
   it("汇总行", () => {
@@ -1256,9 +1377,15 @@ describe("C8 集成面：is_available=false 帧不作为守恒端点（经 forma
   beforeAll(() => {
     const now = utc(2026, 8, 26, 12, 0); // 周三
     const entries = [
-      { time: now - 48 * 3600000, data: { balance: 100, toppedUp: 90, grantedBalance: 10, isAvailable: true } },   // 周一
-      { time: now - 24 * 3600000, data: { balance: 40, toppedUp: 90, grantedBalance: 10, isAvailable: false } },  // 周二（不可用）
-      { time: now, data: { balance: 38, toppedUp: 90, grantedBalance: 10, isAvailable: true } },                  // 周三
+      {
+        time: now - 48 * 3600000,
+        data: { balance: 100, toppedUp: 90, grantedBalance: 10, isAvailable: true },
+      }, // 周一
+      {
+        time: now - 24 * 3600000,
+        data: { balance: 40, toppedUp: 90, grantedBalance: 10, isAvailable: false },
+      }, // 周二（不可用）
+      { time: now, data: { balance: 38, toppedUp: 90, grantedBalance: 10, isAvailable: true } }, // 周三
     ];
     panel = deepSeekOfficialAdapter.formatPanel({
       entries,
@@ -1288,8 +1415,14 @@ describe("v2.3 卡1 徽章消费口径：充值区间剔除后不再显示 ▲�
   beforeAll(() => {
     const now = utc(2026, 8, 26, 12, 0);
     const entries = [
-      { time: now - 5 * 3600000, data: { balance: 10, toppedUp: 10, grantedBalance: 0, isAvailable: true } },
-      { time: now, data: { balance: 55.62, toppedUp: 55.62, grantedBalance: 0, isAvailable: true } },
+      {
+        time: now - 5 * 3600000,
+        data: { balance: 10, toppedUp: 10, grantedBalance: 0, isAvailable: true },
+      },
+      {
+        time: now,
+        data: { balance: 55.62, toppedUp: 55.62, grantedBalance: 0, isAvailable: true },
+      },
     ];
     panel = deepSeekOfficialAdapter.formatPanel({
       entries,
@@ -1326,7 +1459,12 @@ describe("A2 opencode-go 空 data 防御回归", () => {
       error: "network",
       esc,
     });
-    panelHtml = openCodeGoAdapter.formatPanel({ entries: [], range: { start: 0, end: 1 }, truncated: false, esc });
+    panelHtml = openCodeGoAdapter.formatPanel({
+      entries: [],
+      range: { start: 0, end: 1 },
+      truncated: false,
+      esc,
+    });
   });
 
   it("opencode-go 空 data + stale → 「无数据」占位不抛错", () => {
@@ -1334,7 +1472,10 @@ describe("A2 opencode-go 空 data 防御回归", () => {
   });
 
   it("opencode-go formatPanel 空 entries 回归", () => {
-    expect(panelHtml.includes("暂无历史数据"), `opencode-go formatPanel 空 entries 回归（${OPENCODE_GO_ADAPTER_ID}）`).toBeTruthy();
+    expect(
+      panelHtml.includes("暂无历史数据"),
+      `opencode-go formatPanel 空 entries 回归（${OPENCODE_GO_ADAPTER_ID}）`,
+    ).toBeTruthy();
   });
 });
 
@@ -1356,7 +1497,10 @@ describe("管线集成：runV2Pipeline 失败分支 stale 帧", () => {
 
     // 带值降级：注入 history 时失败帧用最后一条成功数据渲染胶囊（数值不跌 "--"，
     // 数据来源状态由客户端圆点 dou-dot-warn 表达）；status/error 语义不变。
-    const lastOk = { time: Date.now() - 600000, data: { isAvailable: true, balance: 88.88, toppedUp: 88.88, grantedBalance: 0 } };
+    const lastOk = {
+      time: Date.now() - 600000,
+      data: { isAvailable: true, balance: 88.88, toppedUp: 88.88, grantedBalance: 0 },
+    };
     resultWithHistory = await runV2Pipeline({
       adapter: deepSeekOfficialAdapter,
       provider: DEEPSEEK_OFFICIAL_PROVIDER,
@@ -1375,7 +1519,11 @@ describe("管线集成：runV2Pipeline 失败分支 stale 帧", () => {
       staticPath: "",
       timeoutMs: 2000,
       fetchImpl: netFail,
-      history: { last: async () => { throw new Error("disk-boom"); } },
+      history: {
+        last: async () => {
+          throw new Error("disk-boom");
+        },
+      },
     });
 
     // 成功分支 fresh 帧 rawData 正常
@@ -1389,7 +1537,9 @@ describe("管线集成：runV2Pipeline 失败分支 stale 帧", () => {
     });
 
     // D5 sanitizeHtml 后 SVG 结构存活且净化面干净（panelHtml 走同一 sanitize 出口）
-    sanitized = sanitizeHtml('<svg role="img"><rect onmouseover="x()" fill="#fff"></rect></svg><a href="javascript:alert(1)">y</a>');
+    sanitized = sanitizeHtml(
+      '<svg role="img"><rect onmouseover="x()" fill="#fff"></rect></svg><a href="javascript:alert(1)">y</a>',
+    );
   });
 
   it("失败帧 ok=false", () => {
@@ -1492,11 +1642,15 @@ describe("#592 dailyBarTitle 拆解：单日柱悬浮文案全分支", () => {
   });
 
   it("unavailable 态（防御分支）", () => {
-    expect(dailyBarTitle(R({ status: "unavailable", u: 0 }), 0, 3)).toBe("08-24 服务不可用区间不计");
+    expect(dailyBarTitle(R({ status: "unavailable", u: 0 }), 0, 3)).toBe(
+      "08-24 服务不可用区间不计",
+    );
   });
 
   it("anomaly 态带 note", () => {
-    expect(dailyBarTitle(R({ status: "anomaly", u: 0, note: "余额净增 ¥1.20（异常）" }), 0, 3)).toBe("08-24 余额净增 ¥1.20（异常）");
+    expect(
+      dailyBarTitle(R({ status: "anomaly", u: 0, note: "余额净增 ¥1.20（异常）" }), 0, 3),
+    ).toBe("08-24 余额净增 ¥1.20（异常）");
   });
 
   it("anomaly 态 note 缺省", () => {
@@ -1504,11 +1658,15 @@ describe("#592 dailyBarTitle 拆解：单日柱悬浮文案全分支", () => {
   });
 
   it("净增 + extra 括注", () => {
-    expect(dailyBarTitle(R({ neg: true, u: -0.3, extra: "充值 +¥0.80 未计入" }), 0, 3)).toBe("08-24 余额净增 ¥0.30（充值 +¥0.80 未计入）");
+    expect(dailyBarTitle(R({ neg: true, u: -0.3, extra: "充值 +¥0.80 未计入" }), 0, 3)).toBe(
+      "08-24 余额净增 ¥0.30（充值 +¥0.80 未计入）",
+    );
   });
 
   it("消耗 + extra 括注", () => {
-    expect(dailyBarTitle(R({ u: 1.5, extra: "1 段中断不计" }), 0, 3)).toBe("08-24 消耗 ¥1.50（1 段中断不计）");
+    expect(dailyBarTitle(R({ u: 1.5, extra: "1 段中断不计" }), 0, 3)).toBe(
+      "08-24 消耗 ¥1.50（1 段中断不计）",
+    );
   });
 
   it("末位记录判今日", () => {
@@ -1533,7 +1691,10 @@ describe("#592 formatPanel 集成：柱图渲染路径（六态混合采样）",
     // 固定 now：UTC 正午。采样间隔全部 26~28h（>24h 保证任意时区下相邻区间
     // 结束端落不同日桶，断言与时区无关；首段 28h > GAP_MS 触发中断层）。
     const NOW = utc(2026, 9, 1, 12, 0);
-    const en = (t, balance, toppedUp = 0) => ({ time: t, data: { balance, toppedUp, grantedBalance: null, isAvailable: true } });
+    const en = (t, balance, toppedUp = 0) => ({
+      time: t,
+      data: { balance, toppedUp, grantedBalance: null, isAvailable: true },
+    });
     const H = 3600000;
     //   A(T-133h,100) → B(T-105h,90)：28h > GAP_MS → 中断层（A 所在日仅 1 帧 → 样本不足）
     //   B → C(T-79h,90.3)：免充值净增 0.3 ∈ (-1,-TOL) → 绿柱净增

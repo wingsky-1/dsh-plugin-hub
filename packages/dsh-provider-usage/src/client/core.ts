@@ -66,7 +66,7 @@ export interface StatsResponseV2 {
   version: number;
   provider: string;
   adapterName: string;
-  status: 'fresh' | 'cached' | 'stale';
+  status: "fresh" | "cached" | "stale";
   capsuleHtml?: string;
   ok: boolean;
   configured: boolean;
@@ -85,7 +85,7 @@ export interface HistoryResponseV2 {
   panelHtml?: string;
   error?: string | null;
   /** 无启用适配器等降级原因（panelHtml 为空时客户端据此展示引导）。 */
-  reason?: 'busy' | 'no-enabled-adapter' | 'no-adapter' | null;
+  reason?: "busy" | "no-enabled-adapter" | "no-adapter" | null;
   range: { start: number; end: number };
 }
 
@@ -123,8 +123,7 @@ export interface SessionRowProjectionValuesLike {
 export interface RemoteLike {
   session?: {
     modelCatalog?(): Promise<
-      | { ok: true; value?: { default?: { provider?: string } } }
-      | { ok: false; error?: unknown }
+      { ok: true; value?: { default?: { provider?: string } } } | { ok: false; error?: unknown }
     >;
   };
 }
@@ -226,7 +225,9 @@ export const CATALOG_CACHE_TTL_MS = 30_000;
 export type CatalogLoader = (remote: RemoteLike | undefined) => Promise<string | undefined>;
 
 /** 默认 catalog loader：裸调 remote.session.modelCatalog（无缓存，纯函数语义）。 */
-export async function defaultCatalogLoader(remote: RemoteLike | undefined): Promise<string | undefined> {
+export async function defaultCatalogLoader(
+  remote: RemoteLike | undefined,
+): Promise<string | undefined> {
   const modelCatalog = remote?.session?.modelCatalog;
   if (typeof modelCatalog !== "function") return undefined;
   try {
@@ -246,9 +247,10 @@ export async function defaultCatalogLoader(remote: RemoteLike | undefined): Prom
  * 与官方 dsh-client-ui-model-selection 的 Catalog.load() 三防护等价
  * （store ready 命中 / inflight 共享 / 仅 miss 时打 RPC）。
  */
-export function makeCatalogCache(
-  ttlMs: number = CATALOG_CACHE_TTL_MS,
-): { load: CatalogLoader; reset: () => void } {
+export function makeCatalogCache(ttlMs: number = CATALOG_CACHE_TTL_MS): {
+  load: CatalogLoader;
+  reset: () => void;
+} {
   let cached: { provider: string; at: number } | null = null;
   let inflight: Promise<string | undefined> | null = null;
   return {
@@ -353,17 +355,26 @@ export async function fetchStats(provider: string): Promise<StatsResponseV2> {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const data = (await res.json()) as StatsResponseV2;
   if (data.version !== ADAPTER_CONTRACT_VERSION) {
-    console.warn("[dsh-provider-usage] 版本不匹配（响应 v" + data.version + "，预期 v" + ADAPTER_CONTRACT_VERSION + "）");
+    console.warn(
+      "[dsh-provider-usage] 版本不匹配（响应 v" +
+        data.version +
+        "，预期 v" +
+        ADAPTER_CONTRACT_VERSION +
+        "）",
+    );
   }
   return data;
 }
 
 /** 拉取 /history（v2 响应）。 */
 export async function fetchHistory(provider: string, days: number): Promise<HistoryResponseV2> {
-  const res = await fetchTimeout(`${HISTORY_URL}?provider=${encodeURIComponent(provider)}&days=${days}`, {
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-  });
+  const res = await fetchTimeout(
+    `${HISTORY_URL}?provider=${encodeURIComponent(provider)}&days=${days}`,
+    {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    },
+  );
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as HistoryResponseV2;
 }
@@ -392,11 +403,16 @@ export const DEFAULT_CLIENT_UI_CONFIG: UiPlacementConfig = {
 /** 拉取当前胶囊位置配置（失败回退默认）。 */
 export async function fetchUiConfig(): Promise<UiPlacementConfig> {
   try {
-    const res = await fetchTimeout(UI_CONFIG_URL, { headers: { Accept: "application/json" }, cache: "no-store" });
+    const res = await fetchTimeout(UI_CONFIG_URL, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const body = (await res.json()) as { ui?: UiPlacementConfig };
     if (body.ui !== undefined) return body.ui;
-  } catch { /* 忽略，走默认 */ }
+  } catch {
+    /* 忽略，走默认 */
+  }
   return { ...DEFAULT_CLIENT_UI_CONFIG };
 }
 

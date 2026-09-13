@@ -53,7 +53,6 @@ export function provideMcpManagerService(ctx: Context, manager: McpManager): voi
       }
       return tools;
     },
-    list: () =>
-      (manager.summary().servers ?? []) as unknown as McpServerSummary[],
+    list: () => (manager.summary().servers ?? []) as unknown as McpServerSummary[],
   });
 }

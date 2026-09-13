@@ -41,7 +41,7 @@ const NS = "mcpManager";
 declare module "@deepseek-ai/dsh-client-ui-slots" {
   interface LocaleNamespaceMap {
     /** dsh-mcp-manager 浮窗/面板/表单/设置卡文案。 */
-    "mcpManager": McpLocaleKey;
+    mcpManager: McpLocaleKey;
   }
 }
 
@@ -88,33 +88,45 @@ export function apply(ctx: any): void {
     //（dsh-mcp-manager），才会被 configurable 面板派发（对照 dsh-lan-proxy）。
     const slots = ctx.get("slots");
     if (slots && typeof slots.inject === "function") {
-      slots.inject("settings.plugin.item", () => slots.register(
-        { name: "settings.plugin.item", id: "dsh-mcp-manager", key: "dsh-mcp-manager", order: 60, locale: NS },
-        () => React.createElement(SettingsCard, null),
-      ));
+      slots.inject("settings.plugin.item", () =>
+        slots.register(
+          {
+            name: "settings.plugin.item",
+            id: "dsh-mcp-manager",
+            key: "dsh-mcp-manager",
+            order: 60,
+            locale: NS,
+          },
+          () => React.createElement(SettingsCard, null),
+        ),
+      );
     }
 
     disposers.push(mountFloat(ctx, state, actions));
     disposers.push(bindSession(ctx, state, actions));
 
     // 读取 settings.yaml 中的 UI 配置（右上/右下 + 偏移量），不依赖设置页。
-    api(state.API.config).then((cfg: any) => {
-      if (cfg !== null && typeof cfg === "object") state.mcpUiConfig = cfg;
-      state.updateFloatState?.();
-    }).catch(() => {});
+    api(state.API.config)
+      .then((cfg: any) => {
+        if (cfg !== null && typeof cfg === "object") state.mcpUiConfig = cfg;
+        state.updateFloatState?.();
+      })
+      .catch(() => {});
 
     // 首次刷新：立即执行，失败按 500ms/1s/2s 退避重试（宿主路由可能尚未就绪，
     // 不依赖固定延迟猜测）。
     let retryTimer: any = undefined;
     const attemptRefresh = (attempt: number) => {
-      refresh(state, actions).then((ok) => {
-        if (!ok && attempt < 3) {
-          retryTimer = setTimeout(() => attemptRefresh(attempt + 1), 500 * 2 ** attempt);
-        }
-      }).catch((error: any) => {
-        // 防御：refresh 永不 reject（内部 try/catch），但兜底避免 unhandled rejection。
-        console.warn("[dsh-mcp-manager] 首刷失败：", error);
-      });
+      refresh(state, actions)
+        .then((ok) => {
+          if (!ok && attempt < 3) {
+            retryTimer = setTimeout(() => attemptRefresh(attempt + 1), 500 * 2 ** attempt);
+          }
+        })
+        .catch((error: any) => {
+          // 防御：refresh 永不 reject（内部 try/catch），但兜底避免 unhandled rejection。
+          console.warn("[dsh-mcp-manager] 首刷失败：", error);
+        });
     };
     attemptRefresh(0);
 
@@ -209,15 +221,17 @@ export function apply(ctx: any): void {
     const maybeRecoverSession = () => {
       const now = Date.now();
       if (now - lastRecoverAt < 10_000) return;
-      void api(state.API.servers).then((payload: any) => {
-        if (payload?.projectRoot !== undefined) return; // 宿主状态正常
-        const cwd = state.currentCwd;
-        if (typeof cwd !== "string" || cwd === "") return;
-        lastRecoverAt = Date.now();
-        void rebindSession(state)
-          .then(() => api(state.API.resume, { method: "POST" }))
-          .catch(() => {});
-      }).catch(() => {});
+      void api(state.API.servers)
+        .then((payload: any) => {
+          if (payload?.projectRoot !== undefined) return; // 宿主状态正常
+          const cwd = state.currentCwd;
+          if (typeof cwd !== "string" || cwd === "") return;
+          lastRecoverAt = Date.now();
+          void rebindSession(state)
+            .then(() => api(state.API.resume, { method: "POST" }))
+            .catch(() => {});
+        })
+        .catch(() => {});
     };
     const connectEvents = () => {
       closeEvents();
@@ -244,14 +258,16 @@ export function apply(ctx: any): void {
             // 配置变更（设置页保存 position/offset / middleware）→ 重新 GET /config
             // 就地更新浮窗位置与中间层模式，非仅刷新 /servers；更新后重新定位
             // 胶囊与（若展开的）面板。
-            void api(state.API.config).then((cfg: any) => {
-              if (cfg !== null && typeof cfg === "object") {
-                state.mcpUiConfig = cfg;
-                if (typeof cfg.middleware === "string") state.middlewareMode = cfg.middleware;
-              }
-              state.updateFloatState?.();
-              if (state.floatOpen) renderFloatPanel(state, actions);
-            }).catch(() => {});
+            void api(state.API.config)
+              .then((cfg: any) => {
+                if (cfg !== null && typeof cfg === "object") {
+                  state.mcpUiConfig = cfg;
+                  if (typeof cfg.middleware === "string") state.middlewareMode = cfg.middleware;
+                }
+                state.updateFloatState?.();
+                if (state.floatOpen) renderFloatPanel(state, actions);
+              })
+              .catch(() => {});
           } else {
             scheduleRefresh();
           }
@@ -323,25 +339,29 @@ export function apply(ctx: any): void {
     };
     window.addEventListener("pageshow", onPageShow);
 
-    ctx.effect(() => () => {
-      clearTimeout(retryTimer);
-      if (refreshTimer !== undefined) clearTimeout(refreshTimer);
-      if (pollTimer !== undefined) clearTimeout(pollTimer);
-      if (watchdog !== undefined) clearTimeout(watchdog);
-      closeEvents();
-      document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("pageshow", onPageShow);
-      if (unsubLocale !== undefined) unsubLocale();
-      for (const dispose of disposers.splice(0)) dispose();
-      // C4：卸载配对移除 Escape keydown 监听（先摘 document 级监听再删 DOM）。
-      disposePanel(state);
-      if (state.overlay !== undefined && state.overlay.parentElement !== null) state.overlay.remove();
-      // 重置全部模块级状态，但保留 mcpUiConfig（原始 dispose 不重置它，避免
-      // HMR 重复 apply 期间浮窗位置瞬态跳回默认再被 api(API.config) 拉回）。
-      const savedUiConfig = state.mcpUiConfig;
-      Object.assign(state, createState());
-      state.mcpUiConfig = savedUiConfig;
-    }, "dsh-mcp-manager: ui");
+    ctx.effect(
+      () => () => {
+        clearTimeout(retryTimer);
+        if (refreshTimer !== undefined) clearTimeout(refreshTimer);
+        if (pollTimer !== undefined) clearTimeout(pollTimer);
+        if (watchdog !== undefined) clearTimeout(watchdog);
+        closeEvents();
+        document.removeEventListener("visibilitychange", onVisible);
+        window.removeEventListener("pageshow", onPageShow);
+        if (unsubLocale !== undefined) unsubLocale();
+        for (const dispose of disposers.splice(0)) dispose();
+        // C4：卸载配对移除 Escape keydown 监听（先摘 document 级监听再删 DOM）。
+        disposePanel(state);
+        if (state.overlay !== undefined && state.overlay.parentElement !== null)
+          state.overlay.remove();
+        // 重置全部模块级状态，但保留 mcpUiConfig（原始 dispose 不重置它，避免
+        // HMR 重复 apply 期间浮窗位置瞬态跳回默认再被 api(API.config) 拉回）。
+        const savedUiConfig = state.mcpUiConfig;
+        Object.assign(state, createState());
+        state.mcpUiConfig = savedUiConfig;
+      },
+      "dsh-mcp-manager: ui",
+    );
   } catch (error) {
     console.warn("[dsh-mcp-manager] mount failed:", error);
   }

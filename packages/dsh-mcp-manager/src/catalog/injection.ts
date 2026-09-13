@@ -5,7 +5,14 @@
  * 完全复刻官方 dsh-tool-skill 的 catalog 语义（根治重复注入）。
  */
 
-import { composeCatalogEntries, findCatalogMessage, resolveCatalogEntries, renderMcpCatalogMessage, renderMcpCatalogUpdate, DEFAULT_CATALOG_MAX_ENTRIES } from "./entries.ts";
+import {
+  composeCatalogEntries,
+  findCatalogMessage,
+  resolveCatalogEntries,
+  renderMcpCatalogMessage,
+  renderMcpCatalogUpdate,
+  DEFAULT_CATALOG_MAX_ENTRIES,
+} from "./entries.ts";
 import type { CatalogCache, SupervisorLite } from "./entries.ts";
 import { digestCatalogEntries } from "./digest.ts";
 import { catalogHistory } from "./history.ts";
@@ -16,7 +23,13 @@ export interface CatalogMessage {
   id?: unknown;
   role?: string;
   content?: Array<{ type?: string; text?: string }>;
-  source?: { kind?: unknown; plugin?: unknown; form?: unknown; entries?: unknown; sections?: unknown };
+  source?: {
+    kind?: unknown;
+    plugin?: unknown;
+    form?: unknown;
+    entries?: unknown;
+    sections?: unknown;
+  };
 }
 
 /** pre-step 决策最小面。 */
@@ -57,24 +70,34 @@ export function resolveCatalogInjection(
 
   if (history.visibleDigest === digest) {
     // 历史已发布相同目录 → 本轮不注入；撤销本轮刚注入的（幂等）。
-    return existing === undefined ? decision : {
-      kind: "enter",
-      messages: decision.messages.filter((message) => message.id !== existing.id),
-    };
+    return existing === undefined
+      ? decision
+      : {
+          kind: "enter",
+          messages: decision.messages.filter((message) => message.id !== existing.id),
+        };
   }
   if (existing !== undefined) {
     const existingEntries = resolveCatalogEntries(existing.source);
-    if (existingEntries !== undefined && digestCatalogEntries(existingEntries) === digest) return decision;
+    if (existingEntries !== undefined && digestCatalogEntries(existingEntries) === digest)
+      return decision;
   }
   if (!history.published && entries.length === 0) {
-    return existing === undefined ? decision : {
-      kind: "enter",
-      messages: decision.messages.filter((message) => message.id !== existing.id),
-    };
+    return existing === undefined
+      ? decision
+      : {
+          kind: "enter",
+          messages: decision.messages.filter((message) => message.id !== existing.id),
+        };
   }
-  const catalog = history.published ? renderMcpCatalogUpdate(entries, mode) : renderMcpCatalogMessage(entries, mode);
+  const catalog = history.published
+    ? renderMcpCatalogUpdate(entries, mode)
+    : renderMcpCatalogMessage(entries, mode);
   return {
     kind: "enter",
-    messages: existing === undefined ? [...decision.messages, catalog] : decision.messages.map((message) => (message.id === existing.id ? catalog : message)),
+    messages:
+      existing === undefined
+        ? [...decision.messages, catalog]
+        : decision.messages.map((message) => (message.id === existing.id ? catalog : message)),
   };
 }

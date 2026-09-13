@@ -84,9 +84,10 @@ export async function handleHistory(
 
   const days = Number(url.searchParams.get("days"));
   const end = Date.now();
-  const start = Number.isFinite(days) && days > 0
-    ? end - Math.min(Math.round(days), statsService.config.maxAgeDays) * 86400000
-    : end - 86400000;
+  const start =
+    Number.isFinite(days) && days > 0
+      ? end - Math.min(Math.round(days), statsService.config.maxAgeDays) * 86400000
+      : end - 86400000;
 
   // D7：面板渲染管道整体下沉 StatsService.getPanelResult（命中/miss/失败不写/并发单飞
   // 均在服务方法内），路由不再直读写 panelCache 内部。

@@ -12,7 +12,16 @@
  * 并发纪律：同日明细分片写入经 per-day Promise 链单飞串行（防 flush 与压实互吞）；
  * 聚合分片整日重写天然幂等（最后一写为准）。
  */
-import { appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { join } from "node:path";
 import {
   TREND_ROW_VERSION,
@@ -24,7 +33,8 @@ import {
   type TrendHourRow,
 } from "../collect/interface.ts";
 
-export type TrendShardRow = TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow | TrendHourRow;
+export type TrendShardRow =
+  TrendDetailRow | TrendCounterRow | TrendAggRow | TrendDirRow | TrendHourRow;
 
 export class TrendStore {
   private readonly root: string;
@@ -97,7 +107,10 @@ export class TrendStore {
    * rows 为 agg+dir+hour 混存行（调用方约定 agg 在前、dir 居中、
    * hour 在后）——分片行自带 kind 判别，读侧按需过滤，互不干扰。
    */
-  async writeAggDay(day: string, rows: Array<TrendAggRow | TrendDirRow | TrendHourRow>): Promise<void> {
+  async writeAggDay(
+    day: string,
+    rows: Array<TrendAggRow | TrendDirRow | TrendHourRow>,
+  ): Promise<void> {
     await mkdir(this.aggDir(), { recursive: true });
     if (rows.length === 0) {
       await rm(this.aggFile(day), { force: true });
@@ -119,7 +132,9 @@ export class TrendStore {
         throw firstError.reason;
       }
     } catch (e: unknown) {
-      this.warn(`聚合分片 tmp 残留清理失败（${day}）：${e instanceof Error ? e.message : String(e)}`);
+      this.warn(
+        `聚合分片 tmp 残留清理失败（${day}）：${e instanceof Error ? e.message : String(e)}`,
+      );
     }
     const tmp = `${this.aggFile(day)}.${Date.now()}.tmp`;
     const body = rows.map((r) => JSON.stringify(r)).join("\n");
@@ -143,7 +158,10 @@ export class TrendStore {
    * 「只含非明细行」的分片读出空数组，由重建路径直接删除（见 TrendTracker.rebuildFromDisk）。
    */
   async readDetailShard(day: string): Promise<Array<TrendDetailRow | TrendCounterRow>> {
-    return this.readShard(this.detailsFile(day), (r): r is TrendDetailRow | TrendCounterRow => r.kind === "detail" || r.kind === "counter");
+    return this.readShard(
+      this.detailsFile(day),
+      (r): r is TrendDetailRow | TrendCounterRow => r.kind === "detail" || r.kind === "counter",
+    );
   }
 
   /**
@@ -171,7 +189,10 @@ export class TrendStore {
     );
   }
 
-  private async readShard<T extends TrendShardRow>(file: string, filter: (r: TrendShardRow) => r is T): Promise<T[]> {
+  private async readShard<T extends TrendShardRow>(
+    file: string,
+    filter: (r: TrendShardRow) => r is T,
+  ): Promise<T[]> {
     let raw: string;
     try {
       raw = await readFile(file, "utf8");

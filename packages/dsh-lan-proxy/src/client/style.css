@@ -10,9 +10,13 @@
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-3, #fbfbfc);
   overflow: hidden;
-  transition: border-color 0.16s, background 0.16s;
+  transition:
+    border-color 0.16s,
+    background 0.16s;
 }
-.lp-set-card:hover { border-color: var(--dsw-alias-label-dimmed, #9ba1a6); }
+.lp-set-card:hover {
+  border-color: var(--dsw-alias-label-dimmed, #9ba1a6);
+}
 .lp-set-head {
   display: flex;
   align-items: center;
@@ -26,16 +30,34 @@
   text-align: left;
   font: inherit;
 }
-.lp-set-head:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04)); }
-.lp-set-headText { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.lp-set-name { font-size: 15px; font-weight: 600; line-height: 1.4; color: var(--dsw-alias-label-primary, #1f2329); }
-.lp-set-description { font-size: 13px; line-height: 1.5; color: var(--dsw-alias-label-tertiary, #8a919c); }
+.lp-set-head:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));
+}
+.lp-set-headText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.lp-set-name {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-primary, #1f2329);
+}
+.lp-set-description {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary, #8a919c);
+}
 .lp-set-chevron {
   color: var(--dsw-alias-label-tertiary, #5f6672);
   flex: none;
   transition: transform 0.16s;
 }
-.lp-set-chevronOpen { transform: rotate(180deg); }
+.lp-set-chevronOpen {
+  transform: rotate(180deg);
+}
 .lp-set-body {
   padding: 4px 14px 14px;
   border-top: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
@@ -43,8 +65,18 @@
   flex-direction: column;
   gap: 9px;
 }
-.lp-set-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 9px; }
-.lp-set-row label { font-size: 12.5px; color: var(--dsw-alias-label-secondary, #5f6672); flex: none; }
+.lp-set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 9px;
+}
+.lp-set-row label {
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  flex: none;
+}
 .lp-set-input {
   flex: 1;
   min-width: 0;
@@ -57,8 +89,15 @@
   border-radius: 7px;
   font-family: inherit;
 }
-.lp-set-input:focus { outline: none; border-color: var(--dsw-alias-state-info-primary, #3b82f6); }
-.lp-set-hint { font-size: 11px; color: var(--dsw-alias-label-tertiary, #8a919c); line-height: 1.5; }
+.lp-set-input:focus {
+  outline: none;
+  border-color: var(--dsw-alias-state-info-primary, #3b82f6);
+}
+.lp-set-hint {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #8a919c);
+  line-height: 1.5;
+}
 /* injectToken 开启态安全警示（issue #380）：常驻提醒「LAN 免 token = 信任整个局域网」。 */
 .lp-set-warn {
   font-size: 11px;
@@ -74,7 +113,13 @@
   color: var(--dsw-alias-label-secondary, #5f6672);
   line-height: 1.5;
 }
-.lp-set-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 10px; }
+.lp-set-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+}
 .lp-set-save {
   border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
   background: var(--dsw-alias-bg-layer-1, #f5f6f8);
@@ -84,6 +129,14 @@
   font-size: 12.5px;
   cursor: pointer;
 }
-.lp-set-save:hover { background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06)); }
-.lp-set-saved { font-size: 12px; color: var(--dsw-alias-state-success-primary, #16a34a); }
-.lp-set-error { font-size: 12px; color: var(--dsw-alias-state-danger-primary, #dc2626); }
+.lp-set-save:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.06));
+}
+.lp-set-saved {
+  font-size: 12px;
+  color: var(--dsw-alias-state-success-primary, #16a34a);
+}
+.lp-set-error {
+  font-size: 12px;
+  color: var(--dsw-alias-state-danger-primary, #dc2626);
+}

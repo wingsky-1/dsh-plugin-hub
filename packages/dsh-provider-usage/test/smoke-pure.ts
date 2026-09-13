@@ -94,10 +94,14 @@ assert.equal(sanitizeHtml('<a href="javascript:alert(1)">x</a>'), '<a href="aler
 assert.equal(sanitizeHtml('<iframe src="x"></iframe>y'), "y");
 // #198 D5/I2 净化契约：SVG 图表结构存活且净化面干净（错误文案含 <script> 注入面同样被双层防护）
 {
-  const svgOut = sanitizeHtml('<svg role="img"><rect onmouseover="evil()" fill="#fff"></rect><title>ok</title></svg>');
-  assert.ok(svgOut.includes("<svg") && svgOut.includes("role=\"img\""), "sanitize 后 SVG 结构存活");
+  const svgOut = sanitizeHtml(
+    '<svg role="img"><rect onmouseover="evil()" fill="#fff"></rect><title>ok</title></svg>',
+  );
+  assert.ok(svgOut.includes("<svg") && svgOut.includes('role="img"'), "sanitize 后 SVG 结构存活");
   assert.ok(!svgOut.includes("onmouseover"), "SVG 内 on* 事件属性被移除");
-  const injected = sanitizeHtml('<span>&lt;script&gt;alert(1)&lt;/script&gt;</span><script>alert(2)</script>');
+  const injected = sanitizeHtml(
+    "<span>&lt;script&gt;alert(1)&lt;/script&gt;</span><script>alert(2)</script>",
+  );
   assert.ok(!injected.includes("<script"), "脚本标签被移除（esc 实体化文本不受影响）");
 }
 
@@ -117,9 +121,9 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
 // A2 [硬性] 十进制数字实体变体被封（含前导零形态）
 {
   for (const payload of [
-    '<a href="&#106;avascript:alert(1)">x</a>',       // 词首 j = 106
-    '<a href="&#0000106;avascript:alert(1)">x</a>',   // 前导零形态
-    '<a href="jav&#97;script:alert(1)">x</a>',        // a = 97
+    '<a href="&#106;avascript:alert(1)">x</a>', // 词首 j = 106
+    '<a href="&#0000106;avascript:alert(1)">x</a>', // 前导零形态
+    '<a href="jav&#97;script:alert(1)">x</a>', // a = 97
   ]) {
     assert.ok(sanContained(sanitizeHtml(payload)), `A2: 十进制实体变体封闭 ${payload}`);
   }
@@ -149,16 +153,20 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
 // A4 [硬性] 大小写混合变体被封（前缀 X 大写 / hex 字母大小写混排）
 {
   for (const payload of [
-    '<a href="&#X6A;avascript:alert(1)">x</a>',   // 前缀 X 大写
-    '<a href="&#X6a;avascript:alert(1)">x</a>',   // 前缀大写 + 数字小写混排
-    '<a href="jav&#X61;script:alert(1)">x</a>',   // hex 字母大写混排（X61）
+    '<a href="&#X6A;avascript:alert(1)">x</a>', // 前缀 X 大写
+    '<a href="&#X6a;avascript:alert(1)">x</a>', // 前缀大写 + 数字小写混排
+    '<a href="jav&#X61;script:alert(1)">x</a>', // hex 字母大写混排（X61）
   ]) {
     assert.ok(sanContained(sanitizeHtml(payload)), `A4: 大小写混合变体封闭 ${payload}`);
   }
   // &#X3c;（= '<'）构造的部分编码开标签
   const tagOut = sanitizeHtml("&#X3c;script>alert(1)</script>x");
   assert.ok(sanContained(tagOut), "A4: &#X3c; 开标签变体封闭");
-  assert.equal(tagOut, "alert(1)x", "A4: 部分编码标签 token 自原文移除，其间文本保留（同 B3 语义）");
+  assert.equal(
+    tagOut,
+    "alert(1)x",
+    "A4: 部分编码标签 token 自原文移除，其间文本保留（同 B3 语义）",
+  );
 }
 
 // A5 [硬性] 具名实体变体被封（HTML5 具名冒号实体）
@@ -205,11 +213,11 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   const idemSamples = [
     '<a href="jav&#x61;script:alert(1)">x</a>',
     '<img src=x o&#110;click="alert(1)">',
-    '&lt;script&gt;alert(1)&lt;/script&gt;',
+    "&lt;script&gt;alert(1)&lt;/script&gt;",
     dblIn,
-    "data:text/htexpression(ml",           // 删除拼接出新载体的收敛样本
-    '<SCRIPT>a</SCRIPT><iframe src=x></iframe>',
-    '<p>plain <b>text</b> &amp; more</p>',
+    "data:text/htexpression(ml", // 删除拼接出新载体的收敛样本
+    "<SCRIPT>a</SCRIPT><iframe src=x></iframe>",
+    "<p>plain <b>text</b> &amp; more</p>",
     '<a href="/api/x?a=1&amp;b=2">n</a>',
   ];
   for (const s of idemSamples) {
@@ -222,23 +230,32 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
 // javascript:——v1 判据与实现曾共盲穿透，现实现按 URL 语义在剥除视图定位
 {
   const t1 = [
-    '<a href="jav&#9;ascript:alert(1)">x</a>',    // 十进制 tab
-    '<a href="jav&#x09;ascript:alert(1)">x</a>',  // hex tab
-    '<a href="jav&#10;ascript:alert(1)">x</a>',   // LF
-    '<a href="jav&#13;ascript:alert(1)">x</a>',   // CR
-    '<a href="jav&Tab;ascript:alert(1)">x</a>',   // 具名 Tab
+    '<a href="jav&#9;ascript:alert(1)">x</a>', // 十进制 tab
+    '<a href="jav&#x09;ascript:alert(1)">x</a>', // hex tab
+    '<a href="jav&#10;ascript:alert(1)">x</a>', // LF
+    '<a href="jav&#13;ascript:alert(1)">x</a>', // CR
+    '<a href="jav&Tab;ascript:alert(1)">x</a>', // 具名 Tab
     '<a href="dat&#9;a:text/html;base64,x">c</a>', // data:text/html 同族
   ];
   for (const payload of t1) {
     const out = sanitizeHtml(payload);
     assert.ok(sanContained(out), `A9: v2 判据下封闭 ${payload}`);
-    assert.ok(!out.includes("&#9;") && !out.includes("&#x09;") && !out.includes("&Tab;")
-      && !out.includes("&#10;") && !out.includes("&#13;"), `A9: 危险实体区间自输出移除 ${payload}`);
+    assert.ok(
+      !out.includes("&#9;") &&
+        !out.includes("&#x09;") &&
+        !out.includes("&Tab;") &&
+        !out.includes("&#10;") &&
+        !out.includes("&#13;"),
+      `A9: 危险实体区间自输出移除 ${payload}`,
+    );
   }
   // 明文 tab 混入协议词同样封闭（URL 剥除语义不区分实体/字面来源）
-  assert.ok(sanContained(sanitizeHtml('<a href="jav\tascript:alert(1)">x</a>')), "A9: 字面 tab 变体封闭");
+  assert.ok(
+    sanContained(sanitizeHtml('<a href="jav\tascript:alert(1)">x</a>')),
+    "A9: 字面 tab 变体封闭",
+  );
   // 正常文本中的 tab/newline 不受影响（剥除仅用于检测视图，不改写输出）
-  const normal = '<p>a\tb\nc</p>';
+  const normal = "<p>a\tb\nc</p>";
   assert.equal(sanitizeHtml(normal), normal, "A9: 正常空白字符零损伤");
 }
 
@@ -246,7 +263,8 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
 // pad(k) 每轮仅暴露一层 <meta>（删除拼接出下一层），k 层需 k 轮——
 // 实现迭代至收敛，pad(15..25) 均在 64 轮宽松上限内全净收敛且幂等
 {
-  for (const depth of [15, 16, 17, 18, 25]) {   // 覆盖旧 16 轮上限两侧
+  for (const depth of [15, 16, 17, 18, 25]) {
+    // 覆盖旧 16 轮上限两侧
     const x = pad(depth);
     const y = sanitizeHtml(x);
     assert.equal(sanitizeHtml(y), y, `A10: pad(${depth}) 幂等不动点`);
@@ -273,7 +291,7 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   //    阈值依据：修复前同规模嵌套输入实测 ~29.5s；本机实测修复后 60KB
   //    最坏构造 ~4ms / 62KB 正常文档 ~20ms，500ms 为实测 ×20+ 余量，
   //    覆盖慢速 CI 环境（冻结级回归即可判红）
-  const evil = ("<met<meta>a>".repeat(3000)).slice(0, 60000);
+  const evil = "<met<meta>a>".repeat(3000).slice(0, 60000);
   const t0 = Date.now();
   sanitizeHtml(evil);
   const cost = Date.now() - t0;
@@ -291,8 +309,14 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
 {
   const frag = `<p>${esc("<b>bold</b>")} &amp; ${esc(`a"b'c&d`)} tail</p>`;
   // esc 五形态齐备：&lt; &gt; &amp; &#39; &quot;
-  assert.ok(frag.includes("&lt;") && frag.includes("&gt;") && frag.includes("&amp;")
-    && frag.includes("&#39;") && frag.includes("&quot;"), "B1: 片段含 esc 全部五种产出形态");
+  assert.ok(
+    frag.includes("&lt;") &&
+      frag.includes("&gt;") &&
+      frag.includes("&amp;") &&
+      frag.includes("&#39;") &&
+      frag.includes("&quot;"),
+    "B1: 片段含 esc 全部五种产出形态",
+  );
   assert.equal(sanitizeHtml(frag), frag, "B1: 正常片段逐字符原样返回");
 }
 
@@ -320,7 +344,10 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   await store.append("prov", "adp", { time: now, data: { v: 2 } });
 
   const last = await store.last("prov", "adp");
-  assert.ok(last !== null && (last.data as Record<string, unknown>).v === 2, "last() 应返回最新一条");
+  assert.ok(
+    last !== null && (last.data as Record<string, unknown>).v === 2,
+    "last() 应返回最新一条",
+  );
 
   const q = await store.query("prov", "adp", { start: now - 2000, end: now + 1 });
   assert.equal(q.entries.length, 2, "全量返回不截断");
@@ -356,10 +383,18 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   const rjkData = legacySampleToData([{ key: "balance", name: "余额" }], [1787000000000, 10.1365]);
   assert.deepEqual(rjkData, { balance: 10.1365 }, "balance 列产出裸数值");
   const ogData = legacySampleToData(
-    [{ key: "rolling", name: "5h 滚动" }, { key: "weekly", name: "每周" }, { key: "monthly", name: "每月" }],
+    [
+      { key: "rolling", name: "5h 滚动" },
+      { key: "weekly", name: "每周" },
+      { key: "monthly", name: "每月" },
+    ],
     [1787000000000, 2, 1, 0],
   );
-  assert.deepEqual(ogData, { rolling: { percent: 2 }, weekly: { percent: 1 }, monthly: { percent: 0 } }, "三窗口列产出 percent 对象");
+  assert.deepEqual(
+    ogData,
+    { rolling: { percent: 2 }, weekly: { percent: 1 }, monthly: { percent: 0 } },
+    "三窗口列产出 percent 对象",
+  );
   // 无列声明 → colNN 通用装配
   const generic = legacySampleToData(undefined, [1787000000000, 5, 6]);
   assert.deepEqual(generic, { col1: 5, col2: 6 }, "无列声明产出 colNN");
@@ -369,17 +404,26 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   const histDir = join(dir, "history", "prov1");
   await import("node:fs/promises").then((m) => m.mkdir(histDir, { recursive: true }));
   const ts = Date.now() - 3600000;
-  await import("node:fs/promises").then((m) => m.writeFile(
-    join(histDir, "adp1.json"),
-    JSON.stringify({
-      version: 3,
-      provider: "prov1",
-      adapterId: "adp1",
-      columns: [{ key: "balance", name: "余额" }],
-      samples: [[ts - 600000, 9.5], [ts, 9.2]],
-    }),
-  ));
-  const store2 = new HistoryStore({ root: dir, maxAgeMs: 30 * 86400000, maxSizeBytes: 1024 * 1024 });
+  await import("node:fs/promises").then((m) =>
+    m.writeFile(
+      join(histDir, "adp1.json"),
+      JSON.stringify({
+        version: 3,
+        provider: "prov1",
+        adapterId: "adp1",
+        columns: [{ key: "balance", name: "余额" }],
+        samples: [
+          [ts - 600000, 9.5],
+          [ts, 9.2],
+        ],
+      }),
+    ),
+  );
+  const store2 = new HistoryStore({
+    root: dir,
+    maxAgeMs: 30 * 86400000,
+    maxSizeBytes: 1024 * 1024,
+  });
   const migratedCount = await migrateLegacyV3(dir, store2);
   assert.equal(migratedCount, 2, "迁移 2 个采样点");
   // 新格式可查询（balance 裸值）
@@ -388,7 +432,10 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   assert.deepEqual(q.entries[0].data, { balance: 9.5 }, "迁移后 data 形态正确");
   // 旧文件已重命名 .bak
   const filesAfter = await import("node:fs/promises").then((m) => m.readdir(histDir));
-  assert.ok(filesAfter.some((f) => f.endsWith(".v3.bak")), "旧桶重命名为 .bak");
+  assert.ok(
+    filesAfter.some((f) => f.endsWith(".v3.bak")),
+    "旧桶重命名为 .bak",
+  );
   // 幂等：二次迁移不重复
   const again = await migrateLegacyV3(dir, store2);
   assert.equal(again, 0, "二次迁移幂等（.bak 不再扫描）");
@@ -403,7 +450,9 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   assert.deepEqual(okR.data, { a: 1 });
 
   // 抛错 → error 不外抛
-  const errR = await safeFetchData(async () => { throw new Error("boom"); }, 2000);
+  const errR = await safeFetchData(async () => {
+    throw new Error("boom");
+  }, 2000);
   assert.ok(errR.error !== undefined && errR.error.includes("boom"));
 
   // 数组 → 校验失败（必须对象）
@@ -427,7 +476,13 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   const okF = await safeFormat(() => "<b>x</b>", "formatCapsule", 2000);
   assert.equal(okF.html, "<b>x</b>");
 
-  const errF = await safeFormat(() => { throw new Error("fmt-boom"); }, "formatCapsule", 2000);
+  const errF = await safeFormat(
+    () => {
+      throw new Error("fmt-boom");
+    },
+    "formatCapsule",
+    2000,
+  );
   assert.ok(errF.error !== undefined && errF.error.includes("fmt-boom"));
 
   const typeF = await safeFormat(() => 42 as unknown as string, "formatCapsule", 2000);
@@ -441,11 +496,22 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   assert.equal(c.fetchTimeoutMs, DEFAULT_CONFIG.fetchTimeoutMs);
   assert.equal(c.provider, "opencode-go");
   assert.equal(c.autoReload, true, "autoReload 默认开启：编辑适配器 mjs 后自动热更新");
-  const m = normalizeConfig({ adapter: "/tmp/a.mjs", staticPath: "/v1/usage", provider: "deepseek", apiKey: "sk-x", fetchTimeoutMs: 99999, maxAgeDays: 9999 });
+  const m = normalizeConfig({
+    adapter: "/tmp/a.mjs",
+    staticPath: "/v1/usage",
+    provider: "deepseek",
+    apiKey: "sk-x",
+    fetchTimeoutMs: 99999,
+    maxAgeDays: 9999,
+  });
   assert.equal(m.adapter, "/tmp/a.mjs");
   assert.equal(m.provider, "deepseek");
   assert.equal(m.apiKey, "sk-x");
-  assert.equal(m.fetchTimeoutMs, DEFAULT_CONFIG.fetchTimeoutMs, "fetchTimeoutMs 固定 5s 不可配置（#206 配套）");
+  assert.equal(
+    m.fetchTimeoutMs,
+    DEFAULT_CONFIG.fetchTimeoutMs,
+    "fetchTimeoutMs 固定 5s 不可配置（#206 配套）",
+  );
   assert.equal(m.maxAgeDays, 365, "保留天数上限 clamp");
 }
 
@@ -457,12 +523,22 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   // 默认垂直偏移 48：让胶囊位于 MCP 浮窗（默认 top-right/offsetY=8）下方，两胶囊默认不重叠（issue #116）
   assert.equal(DEFAULT_UI_CONFIG.offsetY, 48, "默认 offsetY 48（避让 MCP 胶囊默认位置）");
   assert.equal(DEFAULT_UI_CONFIG.offsetX, 0, "默认 offsetX 0（右侧对齐贴右缘）");
-  const clamped = normalizeUiConfig({ placement: "bottom-left", offsetX: 99999, offsetY: -3, panelOffsetY: 0.6 });
+  const clamped = normalizeUiConfig({
+    placement: "bottom-left",
+    offsetX: 99999,
+    offsetY: -3,
+    panelOffsetY: 0.6,
+  });
   assert.equal(clamped.placement, "bottom-left", "合法 placement 透传");
   assert.equal(clamped.offsetX, 2000, "offsetX 上限 clamp");
   assert.equal(clamped.offsetY, 0, "offsetY 下限 clamp");
   assert.equal(clamped.panelOffsetY, 1, "panelOffsetY 取整");
-  const bad = normalizeUiConfig({ placement: "middle", offsetX: "abc", offsetY: null, panelOffsetY: 44 });
+  const bad = normalizeUiConfig({
+    placement: "middle",
+    offsetX: "abc",
+    offsetY: null,
+    panelOffsetY: 44,
+  });
   assert.equal(bad.placement, DEFAULT_UI_CONFIG.placement, "非法 placement 回退默认");
   assert.equal(bad.offsetX, DEFAULT_UI_CONFIG.offsetX, "非法 offsetX 回退默认");
   // #128 重开：胶囊与主面板 computed z-index 均取配置值（不再派生 +30，维护者 2026-08-28
@@ -470,11 +546,31 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   // 派生扩展点（B5，不占用 zIndexBase 预算）。
   assert.equal(DEFAULT_UI_CONFIG.zIndexBase, 40, "#128 默认层级基准 40 与 CSS 默认 z-index 一致");
   assert.equal(normalizeUiConfig({ zIndexBase: 5000 }).zIndexBase, 5000, "#128 合法层级基准透传");
-  assert.equal(normalizeUiConfig({ zIndexBase: 0 }).zIndexBase, Z_INDEX_BASE_MIN, "#128 低于下界压到 1");
-  assert.equal(normalizeUiConfig({ zIndexBase: -99 }).zIndexBase, Z_INDEX_BASE_MIN, "#128 负数压到 1");
-  assert.equal(normalizeUiConfig({ zIndexBase: 9000 }).zIndexBase, Z_INDEX_BASE_MAX, "#128 上界 9000 透传");
-  assert.equal(normalizeUiConfig({ zIndexBase: 9001 }).zIndexBase, Z_INDEX_BASE_MAX, "#128 超上界压到 9000");
-  assert.equal(clampZIndexBase(40, DEFAULT_UI_CONFIG.zIndexBase), 40, "#128 主面板与胶囊同取配置值（不再派生 +30）");
+  assert.equal(
+    normalizeUiConfig({ zIndexBase: 0 }).zIndexBase,
+    Z_INDEX_BASE_MIN,
+    "#128 低于下界压到 1",
+  );
+  assert.equal(
+    normalizeUiConfig({ zIndexBase: -99 }).zIndexBase,
+    Z_INDEX_BASE_MIN,
+    "#128 负数压到 1",
+  );
+  assert.equal(
+    normalizeUiConfig({ zIndexBase: 9000 }).zIndexBase,
+    Z_INDEX_BASE_MAX,
+    "#128 上界 9000 透传",
+  );
+  assert.equal(
+    normalizeUiConfig({ zIndexBase: 9001 }).zIndexBase,
+    Z_INDEX_BASE_MAX,
+    "#128 超上界压到 9000",
+  );
+  assert.equal(
+    clampZIndexBase(40, DEFAULT_UI_CONFIG.zIndexBase),
+    40,
+    "#128 主面板与胶囊同取配置值（不再派生 +30）",
+  );
   assert.equal(panelZIndexFor(40), 70, "#128 子浮层派生扩展点 base+30（B5，不占主面板预算）");
 }
 
@@ -483,19 +579,47 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
 {
   const container = { top: 0, bottom: 844 };
   // D2：seat 贴底 → true
-  assert.equal(composerDockedAtBottom({ top: 670, bottom: 844 }, container), true, "seat 贴底 → docked=true");
+  assert.equal(
+    composerDockedAtBottom({ top: 670, bottom: 844 }, container),
+    true,
+    "seat 贴底 → docked=true",
+  );
   // D4：恰好贴底（差 0）→ true；距底缘 1px → false
-  assert.equal(composerDockedAtBottom({ top: 670, bottom: 844 }, { top: 0, bottom: 844 }), true, "恰好贴底（差 0）→ true");
-  assert.equal(composerDockedAtBottom({ top: 670, bottom: 843 }, { top: 0, bottom: 844 }), false, "距底缘 1px 未贴底 → false");
+  assert.equal(
+    composerDockedAtBottom({ top: 670, bottom: 844 }, { top: 0, bottom: 844 }),
+    true,
+    "恰好贴底（差 0）→ true",
+  );
+  assert.equal(
+    composerDockedAtBottom({ top: 670, bottom: 843 }, { top: 0, bottom: 844 }),
+    false,
+    "距底缘 1px 未贴底 → false",
+  );
   // D2：居中 / 未贴底 → false
-  assert.equal(composerDockedAtBottom({ top: 300, bottom: 500 }, { top: 0, bottom: 844 }), false, "seat 居中未贴底 → false");
-  assert.equal(composerDockedAtBottom({ top: 670, bottom: 800 }, { top: 0, bottom: 844 }), false, "seat 距底缘 >0.5px → false");
+  assert.equal(
+    composerDockedAtBottom({ top: 300, bottom: 500 }, { top: 0, bottom: 844 }),
+    false,
+    "seat 居中未贴底 → false",
+  );
+  assert.equal(
+    composerDockedAtBottom({ top: 670, bottom: 800 }, { top: 0, bottom: 844 }),
+    false,
+    "seat 距底缘 >0.5px → false",
+  );
   // D2：seat 为 null → false；container 为 null → false
   assert.equal(composerDockedAtBottom(null, container), false, "seat null → false");
   assert.equal(composerDockedAtBottom(undefined, container), false, "seat undefined → false");
-  assert.equal(composerDockedAtBottom({ top: 670, bottom: 844 }, null), false, "container null → false");
+  assert.equal(
+    composerDockedAtBottom({ top: 670, bottom: 844 }, null),
+    false,
+    "container null → false",
+  );
   // 非有限数不产生误判
-  assert.equal(composerDockedAtBottom({ top: 0, bottom: Number.NaN }, container), false, "seat.bottom NaN → false");
+  assert.equal(
+    composerDockedAtBottom({ top: 0, bottom: Number.NaN }, container),
+    false,
+    "seat.bottom NaN → false",
+  );
 }
 
 {
@@ -503,8 +627,16 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   assert.equal(bottomAnchorEdge(844, 670, true), 670, "docked → seatTop");
   assert.equal(bottomAnchorEdge(844, 670, false), 844, "未 docked → containerBottom");
   assert.equal(bottomAnchorEdge(844, null, true), 844, "docked 但 seatTop=null → containerBottom");
-  assert.equal(bottomAnchorEdge(844, undefined, true), 844, "docked 但 seatTop=undefined → containerBottom");
-  assert.equal(bottomAnchorEdge(844, Number.NaN, true), 844, "seatTop 非有限数 → containerBottom（不产生 NaN）");
+  assert.equal(
+    bottomAnchorEdge(844, undefined, true),
+    844,
+    "docked 但 seatTop=undefined → containerBottom",
+  );
+  assert.equal(
+    bottomAnchorEdge(844, Number.NaN, true),
+    844,
+    "seatTop 非有限数 → containerBottom（不产生 NaN）",
+  );
 }
 
 // ---------------------------------------------------------------- #128 断点与视口终 clamp
@@ -519,10 +651,26 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   assert.equal(breakpointForWidth(BREAKPOINT_TABLET_MAX + 1), "wide", "835 翻转 wide");
   assert.equal(breakpointForWidth(Number.NaN), "wide", "异常宽度按 wide 兜底");
   // 终坐标视口 clamp：safe-area inset 缺省 0 自然退化（宿主无 viewport-fit=cover）
-  assert.deepEqual(clampPointToViewport(-30, -50, 100, 80, 375, 667), { x: 0, y: 0 }, "负坐标钳回视口原点");
-  assert.deepEqual(clampPointToViewport(400, 700, 100, 80, 375, 667), { x: 275, y: 587 }, "右/下溢出钳回视口内");
-  assert.deepEqual(clampPointToViewport(10, 20, 50, 40, 800, 600), { x: 10, y: 20 }, "视口内坐标不变（桌面零回归）");
-  assert.deepEqual(clampPointToViewport(-30, -50, 100, 80, 375, 667, 10), { x: 10, y: 10 }, "safeInset>0 按安全区内缩");
+  assert.deepEqual(
+    clampPointToViewport(-30, -50, 100, 80, 375, 667),
+    { x: 0, y: 0 },
+    "负坐标钳回视口原点",
+  );
+  assert.deepEqual(
+    clampPointToViewport(400, 700, 100, 80, 375, 667),
+    { x: 275, y: 587 },
+    "右/下溢出钳回视口内",
+  );
+  assert.deepEqual(
+    clampPointToViewport(10, 20, 50, 40, 800, 600),
+    { x: 10, y: 20 },
+    "视口内坐标不变（桌面零回归）",
+  );
+  assert.deepEqual(
+    clampPointToViewport(-30, -50, 100, 80, 375, 667, 10),
+    { x: 10, y: 10 },
+    "safeInset>0 按安全区内缩",
+  );
 }
 
 // ---------------------------------------------------------------- qa F1 场景：bottom 锚点首开→数据撑高→重定位后不溢出
@@ -569,7 +717,10 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
 
 {
   // 显式 key 优先（ctx 缺席回落 V1 链）
-  const r1 = await resolveProviderConfig("myprov", undefined, { apiKey: "explicit", apiEndpoint: "https://x" });
+  const r1 = await resolveProviderConfig("myprov", undefined, {
+    apiKey: "explicit",
+    apiEndpoint: "https://x",
+  });
   assert.equal(r1.apiKey, "explicit");
   assert.equal(r1.apiEndpoint, "https://x");
 
@@ -587,17 +738,34 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   const fakeCtx = {
     llm: {
       listConfigurableProviders: () => [
-        { provider: "deepseek-official", displayName: "DeepSeek", settingsNs: "llm-deepseek", settingsPath: [] },
+        {
+          provider: "deepseek-official",
+          displayName: "DeepSeek",
+          settingsNs: "llm-deepseek",
+          settingsPath: [],
+        },
       ],
     },
     get: (name: string) => {
-      if (name === "settings") return { get: (ns: string) => (ns === "llm-deepseek" ? { apiKeyEnv: "DEEPSEEK_API_KEY" } : undefined) };
-      if (name === "credentials") return { resolve: async (ref: string) => (ref === "DEEPSEEK_API_KEY" ? { value: "sk-seam-test" } : undefined) };
+      if (name === "settings")
+        return {
+          get: (ns: string) =>
+            ns === "llm-deepseek" ? { apiKeyEnv: "DEEPSEEK_API_KEY" } : undefined,
+        };
+      if (name === "credentials")
+        return {
+          resolve: async (ref: string) =>
+            ref === "DEEPSEEK_API_KEY" ? { value: "sk-seam-test" } : undefined,
+        };
       return undefined;
     },
   };
   const r4 = await resolveProviderConfig("deepseek-official", fakeCtx);
-  assert.equal(r4.apiKey, "sk-seam-test", "seam 经 settings.get(apiKeyEnv) + credentials.resolve 取到 key");
+  assert.equal(
+    r4.apiKey,
+    "sk-seam-test",
+    "seam 经 settings.get(apiKeyEnv) + credentials.resolve 取到 key",
+  );
 
   // seam：settingsPath 下钻（pi-ai 类嵌套命名空间）
   const fakeCtxNested = {
@@ -607,8 +775,18 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
       ],
     },
     get: (name: string) => {
-      if (name === "settings") return { get: (ns: string) => (ns === "llm-pi-ai" ? { providers: { "pi-ai-r": { apiKeyEnv: "RJK_API_KEY" } } } : undefined) };
-      if (name === "credentials") return { resolve: async (ref: string) => (ref === "RJK_API_KEY" ? { value: "sk-nested" } : undefined) };
+      if (name === "settings")
+        return {
+          get: (ns: string) =>
+            ns === "llm-pi-ai"
+              ? { providers: { "pi-ai-r": { apiKeyEnv: "RJK_API_KEY" } } }
+              : undefined,
+        };
+      if (name === "credentials")
+        return {
+          resolve: async (ref: string) =>
+            ref === "RJK_API_KEY" ? { value: "sk-nested" } : undefined,
+        };
       return undefined;
     },
   };
@@ -637,17 +815,33 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   const fakeRes = (status: number, body: unknown): Response =>
     ({ status, ok: status >= 200 && status < 300, json: async () => body }) as unknown as Response;
   const okF = await fetchOpenCodeGoV2(
-    { apiEndpoint: "https://x", staticPath: "/usage", apiKey: "sk-1", provider: OPENCODE_GO_PROVIDER, timeoutMs: 2000 },
-    (async () => fakeRes(200, { usage: { rolling: { percent: 2 }, weekly: { percent: 1 }, monthly: { percent: 0 } } })) as unknown as typeof fetch,
+    {
+      apiEndpoint: "https://x",
+      staticPath: "/usage",
+      apiKey: "sk-1",
+      provider: OPENCODE_GO_PROVIDER,
+      timeoutMs: 2000,
+    },
+    (async () =>
+      fakeRes(200, {
+        usage: { rolling: { percent: 2 }, weekly: { percent: 1 }, monthly: { percent: 0 } },
+      })) as unknown as typeof fetch,
   );
   assert.ok(okF.rolling !== undefined);
 
   // 401 → 抛 unauthorized（由 safeFetchData 在管道层隔离）
   await assert.rejects(
-    () => fetchOpenCodeGoV2(
-      { apiEndpoint: "https://x", staticPath: "/u", apiKey: "sk-1", provider: "p", timeoutMs: 2000 },
-      (async () => fakeRes(401, {})) as unknown as typeof fetch,
-    ),
+    () =>
+      fetchOpenCodeGoV2(
+        {
+          apiEndpoint: "https://x",
+          staticPath: "/u",
+          apiKey: "sk-1",
+          provider: "p",
+          timeoutMs: 2000,
+        },
+        (async () => fakeRes(401, {})) as unknown as typeof fetch,
+      ),
     /unauthorized/,
   );
 
@@ -674,15 +868,24 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   // formatPanel 返回三窗口迷你图卡片 HTML（SVG 图表，与 v1 展示逻辑一致）
   const panel = openCodeGoAdapter.formatPanel({
     entries: [
-      { time: Date.now() - 600000, data: { rolling: { percent: 2 }, weekly: { percent: 1 }, monthly: { percent: 0 } } },
-      { time: Date.now(), data: { rolling: { percent: 5 }, weekly: { percent: 3 }, monthly: { percent: 1 } } },
+      {
+        time: Date.now() - 600000,
+        data: { rolling: { percent: 2 }, weekly: { percent: 1 }, monthly: { percent: 0 } },
+      },
+      {
+        time: Date.now(),
+        data: { rolling: { percent: 5 }, weekly: { percent: 3 }, monthly: { percent: 1 } },
+      },
     ],
     range: { start: Date.now() - 1000, end: Date.now() },
     truncated: false,
     esc,
   });
   assert.ok(panel.includes("dou-card"), "面板应含卡片");
-  assert.ok(panel.includes("5h 滚动") && panel.includes("每周") && panel.includes("每月"), "面板含三窗口名称");
+  assert.ok(
+    panel.includes("5h 滚动") && panel.includes("每周") && panel.includes("每月"),
+    "面板含三窗口名称",
+  );
   assert.ok(panel.includes("<svg"), "面板含 SVG 迷你图");
   assert.ok(panel.includes("dou-cardCur"), "卡片头含当前百分比");
   // 空历史 → 空态文案
@@ -695,7 +898,12 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   assert.ok(emptyPanel.includes("暂无"), "空历史应有空态提示");
   // 单点历史 → 采集中提示（≥2 点才显示趋势）
   const onePanel = openCodeGoAdapter.formatPanel({
-    entries: [{ time: Date.now(), data: { rolling: { percent: 5 }, weekly: { percent: 3 }, monthly: { percent: 1 } } }],
+    entries: [
+      {
+        time: Date.now(),
+        data: { rolling: { percent: 5 }, weekly: { percent: 3 }, monthly: { percent: 1 } },
+      },
+    ],
     range: { start: Date.now() - 1000, end: Date.now() },
     truncated: false,
     esc,
@@ -724,17 +932,37 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   const sample = quotaBody(200, {
     level: "lite",
     limits: [
-      { type: "CREDIT_LIMIT", unit: 3, number: 5, usage: 2000, currentValue: 0, remaining: 2000, percentage: 0 },
-      { type: "CREDIT_LIMIT", unit: 6, number: 1, usage: 2000, currentValue: 2026, remaining: 0, percentage: 100, nextResetTime: Date.now() + 7 * 86400000 },
+      {
+        type: "CREDIT_LIMIT",
+        unit: 3,
+        number: 5,
+        usage: 2000,
+        currentValue: 0,
+        remaining: 2000,
+        percentage: 0,
+      },
+      {
+        type: "CREDIT_LIMIT",
+        unit: 6,
+        number: 1,
+        usage: 2000,
+        currentValue: 2026,
+        remaining: 0,
+        percentage: 100,
+        nextResetTime: Date.now() + 7 * 86400000,
+      },
     ],
   });
   const savedFetch = globalThis.fetch;
   globalThis.fetch = (async () => fakeRes(200, sample)) as unknown as typeof fetch;
   try {
-    const out = await zaiCodingCnAdapter.fetchData({
+    const out = (await zaiCodingCnAdapter.fetchData({
       apiEndpoint: "https://open.bigmodel.cn/api/coding/paas/v4",
-      staticPath: "", apiKey: "sk-test", provider: "zai-coding-cn", timeoutMs: 2000,
-    }) as Record<string, unknown>;
+      staticPath: "",
+      apiKey: "sk-test",
+      provider: "zai-coding-cn",
+      timeoutMs: 2000,
+    })) as Record<string, unknown>;
     const wins = out.windows as Array<Record<string, unknown>>;
     assert.equal(out.level, "lite", "level 套餐等级解析");
     assert.equal(wins.length, 2, "两窗口（5h/周）");
@@ -747,9 +975,14 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
     // 业务码校验：网关 200 + 业务 code 404 → bad-data
     globalThis.fetch = (async () => fakeRes(200, quotaBody(404, null))) as unknown as typeof fetch;
     await assert.rejects(
-      () => zaiCodingCnAdapter.fetchData({
-        apiEndpoint: "", staticPath: "", apiKey: "sk", provider: "p", timeoutMs: 2000,
-      }),
+      () =>
+        zaiCodingCnAdapter.fetchData({
+          apiEndpoint: "",
+          staticPath: "",
+          apiKey: "sk",
+          provider: "p",
+          timeoutMs: 2000,
+        }),
       (e: unknown) => (e as Error).message === "bad-data",
       "业务码 404 → bad-data（网关对未知路径回 HTTP 200 + 业务错误码）",
     );
@@ -760,28 +993,64 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
   // 胶囊：`5h 0% · 周 100% · Lite` + stale 带值降级尾注
   const caps = zaiCodingCnAdapter.formatCapsule({
     time: Date.now(),
-    data: { level: "lite", windows: [{ key: "5h", percent: 0 }, { key: "week", percent: 100 }] },
-    status: "fresh", esc,
+    data: {
+      level: "lite",
+      windows: [
+        { key: "5h", percent: 0 },
+        { key: "week", percent: 100 },
+      ],
+    },
+    status: "fresh",
+    esc,
   });
-  assert.ok(caps.includes("5h 0%") && caps.includes("周 100%") && caps.includes("Lite"), "胶囊窗口短名百分比 + 套餐等级");
+  assert.ok(
+    caps.includes("5h 0%") && caps.includes("周 100%") && caps.includes("Lite"),
+    "胶囊窗口短名百分比 + 套餐等级",
+  );
   const capsStale = zaiCodingCnAdapter.formatCapsule({
     time: Date.now(),
     data: { level: "lite", windows: [{ key: "5h", percent: 79 }] },
-    status: "stale", esc,
+    status: "stale",
+    esc,
   });
   assert.ok(capsStale.includes("79%") && capsStale.includes("(缓存)"), "stale 带值降级 + 缓存尾注");
-  const capsEmpty = zaiCodingCnAdapter.formatCapsule({ time: Date.now(), data: {}, status: "stale", esc });
+  const capsEmpty = zaiCodingCnAdapter.formatCapsule({
+    time: Date.now(),
+    data: {},
+    status: "stale",
+    esc,
+  });
   assert.ok(capsEmpty.includes("无数据"), "空 data 占位");
 
   // 面板：两窗口卡 + 工具卡条件渲染 + SVG
   const now = Date.now();
   const panel = zaiCodingCnAdapter.formatPanel({
     entries: [
-      { time: now - 120000, data: { level: "lite", windows: [{ key: "5h", percent: 70 }, { key: "week", percent: 60 }] } },
-      { time: now, data: { level: "lite", windows: [{ key: "5h", percent: 79 }, { key: "week", percent: 79 }], tools: { percent: 45, currentValue: 4500, total: 10000 } } },
+      {
+        time: now - 120000,
+        data: {
+          level: "lite",
+          windows: [
+            { key: "5h", percent: 70 },
+            { key: "week", percent: 60 },
+          ],
+        },
+      },
+      {
+        time: now,
+        data: {
+          level: "lite",
+          windows: [
+            { key: "5h", percent: 79 },
+            { key: "week", percent: 79 },
+          ],
+          tools: { percent: 45, currentValue: 4500, total: 10000 },
+        },
+      },
     ],
     range: { start: now - 3600000, end: now },
-    truncated: false, esc,
+    truncated: false,
+    esc,
   });
   const cardCount = (panel.match(/<div class="dou-card">/g) || []).length;
   assert.equal(cardCount, 3, "三张卡（5h/周/工具条件渲染）");
@@ -813,14 +1082,18 @@ import { judgeContained as sanContained, judgePad as pad } from "./helpers.ts";
 
   // 合法适配器
   const okFile = join(dir, "adapter-ok.mjs");
-  writeFileSync(okFile, `
+  writeFileSync(
+    okFile,
+    `
 export const version = 2;
 export const name = "hot-adapter";
 export const providers = ["hp"];
 export async function fetchData() { return {}; }
 export function formatCapsule() { return ""; }
 export function formatPanel() { return ""; }
-`, "utf8");
+`,
+    "utf8",
+  );
   const stamp = await readStamp(okFile);
   assert.ok(stamp !== null);
   const loaded = await loadAndValidateAdapter(okFile, stamp);

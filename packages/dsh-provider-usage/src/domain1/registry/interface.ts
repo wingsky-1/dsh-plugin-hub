@@ -38,7 +38,12 @@ export { loadUserHostAdapterFile, loadUserAdapterChecked } from "./user-adapter-
 
 // ------------------------------------------------------------------ 热更新（hotreload.ts）
 
-export { readStamp, stampEqual, loadAndValidateAdapter, HotReloadableAdapter } from "./hotreload.ts";
+export {
+  readStamp,
+  stampEqual,
+  loadAndValidateAdapter,
+  HotReloadableAdapter,
+} from "./hotreload.ts";
 
 // ------------------------------------------------------------------ 模型配置读取（provider-config.ts）
 

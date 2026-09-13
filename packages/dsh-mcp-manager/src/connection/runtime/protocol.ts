@@ -48,7 +48,9 @@ export class MCPClient {
       // 场景的 stderr 是唯一线索）。
       const tail = (this.transport as StdioTransport).stderrTail?.trim();
       if (typeof tail === "string" && tail !== "") {
-        throw new Error(`${error instanceof Error ? error.message : String(error)} (stderr: ${tail})`);
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)} (stderr: ${tail})`,
+        );
       }
       throw error;
     }
@@ -70,11 +72,16 @@ export class MCPClient {
    * （isError / structuredContent 判定统一由 pipeline/project.ts
    * projectCallToolResult 收敛（#512），不用 Client.callTool 以避开其
    * outputSchema 运行时强校验与 task-required 门禁带来的行为漂移）。 */
-  async callTool(rawName: string, args?: unknown, opts?: { signal?: AbortSignal; timeoutMs?: number }) {
+  async callTool(
+    rawName: string,
+    args?: unknown,
+    opts?: { signal?: AbortSignal; timeoutMs?: number },
+  ) {
     const client = this.requireClient();
     // arguments 按规范仅接受 object；非对象入参省略该键（supervisor 实际只传对象）。
     const params: { name: string; arguments?: Record<string, unknown> } = { name: rawName };
-    if (typeof args === "object" && args !== null) params.arguments = args as Record<string, unknown>;
+    if (typeof args === "object" && args !== null)
+      params.arguments = args as Record<string, unknown>;
     return client.request({ method: "tools/call", params }, ResultSchema, {
       signal: opts?.signal,
       timeout: opts?.timeoutMs,

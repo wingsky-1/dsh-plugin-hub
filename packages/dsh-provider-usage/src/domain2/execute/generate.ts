@@ -26,7 +26,13 @@ import type {
   TokenUsage,
 } from "@deepseek-ai/dsh-llm";
 import { metricValue } from "../aggregate/interface.ts";
-import { sumToken, TREND_UNIDENTIFIED, type TrendCell, type TrendDirRow, type TrendHourRow } from "../collect/interface.ts";
+import {
+  sumToken,
+  TREND_UNIDENTIFIED,
+  type TrendCell,
+  type TrendDirRow,
+  type TrendHourRow,
+} from "../collect/interface.ts";
 import type { ReportPeriod } from "../schedule/interface.ts";
 
 /** 报告生成所用 llm 服务面（LlmRuntime 最小结构面——只依赖实际用到的三个方法）。 */
@@ -131,7 +137,12 @@ export interface ReportStatsSnapshot {
   /** 逐日总量序列（窗口内出现数据的日，升序）。 */
   byDay: Array<{ day: string; total: number | null }>;
   /** 按适配器聚合（calls 降序；叙事化「最活跃适配器/模型」数据源）。 */
-  byProvider: Array<{ provider: string; model: string | null; calls: number; total: number | null }>;
+  byProvider: Array<{
+    provider: string;
+    model: string | null;
+    calls: number;
+    total: number | null;
+  }>;
   /** 上一同等长度窗口的指标总量（环比基准；接线层经 windowSummary 取得）。 */
   prevTotal: number | null;
   /** 按目录聚合（calls 降序，口径与 byProvider 一致；未识别桶
@@ -236,7 +247,14 @@ export async function generateReport(opts: GenerateReportOptions): Promise<Repor
   };
   const fail = (error: string): ReportResult => ({
     body: "",
-    meta: { ...metaBase, provider: opts.provider, model: opts.model, durationMs: now() - started, ok: false, error },
+    meta: {
+      ...metaBase,
+      provider: opts.provider,
+      model: opts.model,
+      durationMs: now() - started,
+      ok: false,
+      error,
+    },
   });
   const route = await resolveRoute(opts.llm, opts.provider, opts.model);
   if (route === null) return fail("无可用的已注册 provider/model（须先在 dsh 注册适配器路由）");
@@ -292,7 +310,10 @@ export function buildStatsSnapshot(input: {
   startDay: string;
   endDay: string;
   /** tracker.buckets() 快照（day 升序；day×provider×model×cell）。 */
-  buckets: Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell }> }>;
+  buckets: Array<{
+    day: string;
+    providers: Array<{ provider: string; model: string | null; cell: TrendCell }>;
+  }>;
   /**
    * 目录维度日汇总行快照（store.readAggDayShard 产物 filter kind:"dir"，
    * 可选；缺省 = 旧数据无目录事实，不补造桶（旧格式零变化口径）。
@@ -317,7 +338,10 @@ export function buildStatsSnapshot(input: {
     total: null as number | null,
   };
   const byDay: Array<{ day: string; total: number | null }> = [];
-  const byKey = new Map<string, { provider: string; model: string | null; calls: number; total: number | null }>();
+  const byKey = new Map<
+    string,
+    { provider: string; model: string | null; calls: number; total: number | null }
+  >();
   for (const { day, providers } of input.buckets) {
     if (day < input.startDay || day > input.endDay) continue;
     let dayTotal: number | null = null;
@@ -362,12 +386,12 @@ export function buildStatsSnapshot(input: {
   // ---- 年报派生维度（快照内单遍 O(n)，全部聚合数值，注入面收敛不变） ----
   // 注入文本防御：provider/model 名为 adapter/上游可影响文本，进快照前截断 80 字符
   // 并剥离控制字符（prompt 注入面收紧；快照数值维度不受影响）。
-  const safeName = (name: string): string =>
-    name.length > 80 ? name.slice(0, 80) : name;
+  const safeName = (name: string): string => (name.length > 80 ? name.slice(0, 80) : name);
   for (const row of byProvider) {
     // 剥 C0 + DEL + C1（0x80–0x9F），与数据层 sanitizeDirName（collect/types.ts 权威定义）同口径
     row.provider = safeName(row.provider.replace(/[\u0000-\u001f\u007f-\u009f]/g, ""));
-    if (row.model !== null) row.model = safeName(row.model.replace(/[\u0000-\u001f\u007f-\u009f]/g, ""));
+    if (row.model !== null)
+      row.model = safeName(row.model.replace(/[\u0000-\u001f\u007f-\u009f]/g, ""));
   }
   // 目录名出口统一 basename 化 + 剥控制字符 + 截断 80（沿用
   // provider/model 的 safeName 防御模式；collector.dirOf 落盘前已 sanitizeDirName，
@@ -384,7 +408,7 @@ export function buildStatsSnapshot(input: {
   // 峰值日：byDay（升序）内 total 最大；并列取最早一天
   let peakDay: { day: string; total: number | null } | null = null;
   for (const d of byDay) {
-    if (peakDay === null || ((d.total ?? 0) > (peakDay.total ?? 0))) peakDay = d;
+    if (peakDay === null || (d.total ?? 0) > (peakDay.total ?? 0)) peakDay = d;
   }
   // 活跃天数 / 窗口天数 / 活跃日均
   const activeDays = byDay.length;
@@ -404,9 +428,10 @@ export function buildStatsSnapshot(input: {
     prevDay = ts;
   }
   // 环比：prevTotal 缺失或 <= 0 → null（不做对比；防 Infinity）
-  const wowRatio = input.prevTotal !== null && input.prevTotal > 0 && totals.total !== null
-    ? totals.total / input.prevTotal
-    : null;
+  const wowRatio =
+    input.prevTotal !== null && input.prevTotal > 0 && totals.total !== null
+      ? totals.total / input.prevTotal
+      : null;
   // 星期分布：周一..周日（bucket day 为 UTC key，星期口径与 day 生成处一致用 UTC 星期，
   // 避免「按本地构造 day key 却按本地星期统计」的口径漂移——快照内自洽即可）
   const byWeekday: [number, number, number, number, number, number, number] = [0, 0, 0, 0, 0, 0, 0];
@@ -441,10 +466,13 @@ export function buildStatsSnapshot(input: {
   let peakHour: ReportStatsSnapshot["peakHour"] = null;
   if (hourCovered) {
     // 分支内 list 明确非 null（byHour 24 项全量：无数据钟点 calls=0/total=null）
-    const list: Array<{ hour: number; calls: number; total: number | null }> = Array.from({ length: 24 }, (_, hour) => {
-      const c = hourCells.get(hour);
-      return { hour, calls: c?.calls ?? 0, total: c?.total ?? null };
-    });
+    const list: Array<{ hour: number; calls: number; total: number | null }> = Array.from(
+      { length: 24 },
+      (_, hour) => {
+        const c = hourCells.get(hour);
+        return { hour, calls: c?.calls ?? 0, total: c?.total ?? null };
+      },
+    );
     byHour = list;
     byPeriod = PERIOD_BUCKETS.map((p) => {
       let calls = 0;

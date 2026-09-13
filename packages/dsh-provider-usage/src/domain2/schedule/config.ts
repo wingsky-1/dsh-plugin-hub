@@ -37,7 +37,9 @@ export interface ReportPrompts {
 export interface ReportConfig {
   daily: ReportPeriodConfig;
   weekly: ReportPeriodConfig & { /** 周起点：1=周一（ISO，默认）/ 0=周日。 */ weekStartsOn: 0 | 1 };
-  monthly: ReportPeriodConfig & { /** 月内触发日（1–28，默认 1；覆盖上一自然月）。 */ dayOfMonth: number };
+  monthly: ReportPeriodConfig & {
+    /** 月内触发日（1–28，默认 1；覆盖上一自然月）。 */ dayOfMonth: number;
+  };
   /** 报告生成所用模型路由；空串 = 跟随 dsh 默认 provider（GenerateOptions 须为已注册路由）。 */
   provider: string;
   model: string;
@@ -394,7 +396,8 @@ export function parseHHMM(v: unknown): { h: number; m: number } | null {
   if (m === null) return null;
   const h = Number(m[1]);
   const mm = Number(m[2]);
-  if (!Number.isInteger(h) || !Number.isInteger(mm) || h < 0 || h > 23 || mm < 0 || mm > 59) return null;
+  if (!Number.isInteger(h) || !Number.isInteger(mm) || h < 0 || h > 23 || mm < 0 || mm > 59)
+    return null;
   return { h, m: mm };
 }
 
@@ -450,7 +453,8 @@ function migrateLegacyPrompt(legacy: string): ReportPrompts {
     legacy === LEGACY_PROMPT_TEMPLATE ||
     legacy === LEGACY_MONTHLY_PROMPT_V1 ||
     legacy === LEGACY_MONTHLY_PROMPT_V2
-  ) return { ...DEFAULT_PROMPTS };
+  )
+    return { ...DEFAULT_PROMPTS };
   return { daily: legacy, weekly: legacy, monthly: legacy };
 }
 
@@ -463,22 +467,51 @@ function legacyPromptOf(src: Record<string, unknown>): string | null {
 /** 校验并归一化报告配置（非法值回退默认；旧单模板自动迁移为三周期表；未自定义的旧三周期模板平滑升级）。 */
 export function normalizeReportConfig(raw: unknown): ReportConfig {
   const src = (typeof raw === "object" && raw !== null ? raw : {}) as Record<string, unknown>;
-  const weeklySrc = (typeof src.weekly === "object" && src.weekly !== null ? src.weekly : {}) as Record<string, unknown>;
-  const monthlySrc = (typeof src.monthly === "object" && src.monthly !== null ? src.monthly : {}) as Record<string, unknown>;
-  const pushSrc = (typeof src.push === "object" && src.push !== null ? src.push : {}) as Record<string, unknown>;
+  const weeklySrc = (
+    typeof src.weekly === "object" && src.weekly !== null ? src.weekly : {}
+  ) as Record<string, unknown>;
+  const monthlySrc = (
+    typeof src.monthly === "object" && src.monthly !== null ? src.monthly : {}
+  ) as Record<string, unknown>;
+  const pushSrc = (typeof src.push === "object" && src.push !== null ? src.push : {}) as Record<
+    string,
+    unknown
+  >;
   const d = DEFAULT_REPORT_CONFIG;
-  const dom = typeof monthlySrc.dayOfMonth === "number" && Number.isInteger(monthlySrc.dayOfMonth) && monthlySrc.dayOfMonth >= 1 && monthlySrc.dayOfMonth <= 28
-    ? monthlySrc.dayOfMonth
-    : d.monthly.dayOfMonth;
+  const dom =
+    typeof monthlySrc.dayOfMonth === "number" &&
+    Number.isInteger(monthlySrc.dayOfMonth) &&
+    monthlySrc.dayOfMonth >= 1 &&
+    monthlySrc.dayOfMonth <= 28
+      ? monthlySrc.dayOfMonth
+      : d.monthly.dayOfMonth;
   // prompts：新格式 prompts{daily,weekly,monthly} 优先；否则从旧 promptTemplate 迁移
-  const promptsSrc = (typeof src.prompts === "object" && src.prompts !== null ? src.prompts : null) as Record<string, unknown> | null;
-  const prompts: ReportPrompts = promptsSrc !== null
-    ? {
-        daily: normalizePrompt(promptsSrc.daily, d.prompts.daily, [LEGACY_DAILY_PROMPT_V1, LEGACY_DAILY_PROMPT_V2, LEGACY_DAILY_PROMPT_V3, LEGACY_DAILY_PROMPT_V4]),
-        weekly: normalizePrompt(promptsSrc.weekly, d.prompts.weekly, [LEGACY_WEEKLY_PROMPT_V1, LEGACY_WEEKLY_PROMPT_V2, LEGACY_WEEKLY_PROMPT_V3, LEGACY_WEEKLY_PROMPT_V4]),
-        monthly: normalizePrompt(promptsSrc.monthly, d.prompts.monthly, [LEGACY_MONTHLY_PROMPT_V1, LEGACY_MONTHLY_PROMPT_V2, LEGACY_MONTHLY_PROMPT_V3, LEGACY_MONTHLY_PROMPT_V4]),
-      }
-    : migrateLegacyPrompt(legacyPromptOf(src) ?? LEGACY_PROMPT_TEMPLATE);
+  const promptsSrc = (
+    typeof src.prompts === "object" && src.prompts !== null ? src.prompts : null
+  ) as Record<string, unknown> | null;
+  const prompts: ReportPrompts =
+    promptsSrc !== null
+      ? {
+          daily: normalizePrompt(promptsSrc.daily, d.prompts.daily, [
+            LEGACY_DAILY_PROMPT_V1,
+            LEGACY_DAILY_PROMPT_V2,
+            LEGACY_DAILY_PROMPT_V3,
+            LEGACY_DAILY_PROMPT_V4,
+          ]),
+          weekly: normalizePrompt(promptsSrc.weekly, d.prompts.weekly, [
+            LEGACY_WEEKLY_PROMPT_V1,
+            LEGACY_WEEKLY_PROMPT_V2,
+            LEGACY_WEEKLY_PROMPT_V3,
+            LEGACY_WEEKLY_PROMPT_V4,
+          ]),
+          monthly: normalizePrompt(promptsSrc.monthly, d.prompts.monthly, [
+            LEGACY_MONTHLY_PROMPT_V1,
+            LEGACY_MONTHLY_PROMPT_V2,
+            LEGACY_MONTHLY_PROMPT_V3,
+            LEGACY_MONTHLY_PROMPT_V4,
+          ]),
+        }
+      : migrateLegacyPrompt(legacyPromptOf(src) ?? LEGACY_PROMPT_TEMPLATE);
   return {
     daily: normalizePeriod(src.daily, d.daily),
     weekly: {
@@ -489,7 +522,8 @@ export function normalizeReportConfig(raw: unknown): ReportConfig {
       ...normalizePeriod(src.monthly, d.monthly),
       dayOfMonth: dom,
     },
-    provider: typeof src.provider === "string" && src.provider.length <= 128 ? src.provider : d.provider,
+    provider:
+      typeof src.provider === "string" && src.provider.length <= 128 ? src.provider : d.provider,
     model: typeof src.model === "string" && src.model.length <= 256 ? src.model : d.model,
     // promptTemplate 保留 = 月报模板镜像（旧消费方/外部读者兼容；写侧同步回填）
     promptTemplate: prompts.monthly,

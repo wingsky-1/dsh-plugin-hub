@@ -165,7 +165,11 @@ function prevWindowAnchorFor(now: number, n: number, gran: TrendGranularity): nu
 }
 
 /** 日区间内的全部 (provider, model, cell)（升序日；provider 过滤可选）。 */
-function rangeCellsOf(days: Map<string, Map<string, Map<string | null, TrendCell>>>, range: { start: string; end: string }, provider?: string): Array<{ provider: string; model: string | null; cell: TrendCell }> {
+function rangeCellsOf(
+  days: Map<string, Map<string, Map<string | null, TrendCell>>>,
+  range: { start: string; end: string },
+  provider?: string,
+): Array<{ provider: string; model: string | null; cell: TrendCell }> {
   const out: Array<{ provider: string; model: string | null; cell: TrendCell }> = [];
   for (const [day, models] of days) {
     if (day < range.start || day > range.end) continue;
@@ -178,7 +182,12 @@ function rangeCellsOf(days: Map<string, Map<string, Map<string | null, TrendCell
 }
 
 /** 单日取值（provider 过滤可选；跨 model 求和；aggregator.seriesDays 委托用）。 */
-export function dayValueOf(days: Map<string, Map<string, Map<string | null, TrendCell>>>, day: string, metric: TrendMetric, provider?: string): number | null {
+export function dayValueOf(
+  days: Map<string, Map<string, Map<string | null, TrendCell>>>,
+  day: string,
+  metric: TrendMetric,
+  provider?: string,
+): number | null {
   const models = days.get(day);
   if (models === undefined) return null;
   let acc: number | null = null;
@@ -190,7 +199,12 @@ export function dayValueOf(days: Map<string, Map<string, Map<string | null, Tren
 }
 
 /** 日区间取值（[startDay, endDay] 闭区间，按本地日字典序比较；aggregator 序列方法委托用）。 */
-export function rangeValueOf(days: Map<string, Map<string, Map<string | null, TrendCell>>>, range: { start: string; end: string }, metric: TrendMetric, provider?: string): number | null {
+export function rangeValueOf(
+  days: Map<string, Map<string, Map<string | null, TrendCell>>>,
+  range: { start: string; end: string },
+  metric: TrendMetric,
+  provider?: string,
+): number | null {
   let acc: number | null = null;
   for (const [day, models] of days) {
     if (day < range.start || day > range.end) continue;
@@ -326,7 +340,8 @@ export function buildWindowSummary(
   let peakVal = -1;
   let top: { provider: string; model: string | null; value: number } | null = null;
   // 复用路由已算的 stack 序列（消除单请求双算；缺省自算保持独立可用）
-  const series = stackSeries ?? buildStackedSeries(days, n, gran, metric, provider, false, now).series;
+  const series =
+    stackSeries ?? buildStackedSeries(days, n, gran, metric, provider, false, now).series;
   for (const point of series) {
     if (point.total !== null && point.total > peakVal) {
       peakVal = point.total;
@@ -510,7 +525,19 @@ export function buildDirRows(
   };
   for (const day of [...dirDays.keys()].sort()) {
     for (const [dir, cell] of dirDays.get(day)!) {
-      put({ v: TREND_ROW_VERSION, kind: "dir", day, dir, input: cell.input, output: cell.output, cacheRead: cell.cacheRead, cacheWrite: cell.cacheWrite, calls: cell.calls, turns: cell.turns, toolCalls: cell.toolCalls });
+      put({
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day,
+        dir,
+        input: cell.input,
+        output: cell.output,
+        cacheRead: cell.cacheRead,
+        cacheWrite: cell.cacheWrite,
+        calls: cell.calls,
+        turns: cell.turns,
+        toolCalls: cell.toolCalls,
+      });
     }
   }
   // 每日残差：聚合面（cells）− 目录面（dirDays）。cells 的键是 day → provider →
@@ -570,7 +597,13 @@ export function buildDirRows(
     // （例如明细目录误落 dir 行——已由 readDetailShard 白名单阻断），此时目录面
     // 日合计会大于聚合面，README「总量守恒」节已注明该边界不保证恒等。
     const hasResidual =
-      calls > 0 || turns > 0 || toolCalls > 0 || (input ?? 0) > 0 || (output ?? 0) > 0 || (cacheRead ?? 0) > 0 || (cacheWrite ?? 0) > 0;
+      calls > 0 ||
+      turns > 0 ||
+      toolCalls > 0 ||
+      (input ?? 0) > 0 ||
+      (output ?? 0) > 0 ||
+      (cacheRead ?? 0) > 0 ||
+      (cacheWrite ?? 0) > 0;
     if (!hasResidual) continue;
     // 同键（该日已有 (unidentified) 桶，混版日常态）由 put 合并到既有行，
     // 保证 (day, dir) 键唯一；负值按 0 处理（不产生负柱）。

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-'use strict'
+"use strict";
 
 /**
  * collect-licenses — 第三方 license 归集进发布物（issue #13，合规义务）。
@@ -24,12 +24,12 @@
  * 门禁：pack-check 对 tarball 断言「有内联 ⇒ THIRD-PARTY-LICENSES 存在、
  * 非空、含 MIT/BSD/Apache 字样且覆盖每个被内联的包名」（见 pack-check.ts）。
  */
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { filterOutRetiredDirs, listPluginDirs, loadManifest } from '../lib/plugins-manifest-lib.ts'
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { filterOutRetiredDirs, listPluginDirs, loadManifest } from "../lib/plugins-manifest-lib.ts";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 /**
  * 从 esbuild 产物源码提取被内联的第三方模块引用（去重，按包名排序）。
@@ -42,23 +42,23 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
  * 非 pnpm 布局引用时为 null。
  */
 export function extractInlinedModuleRefs(source) {
-  const re = /node_modules\/((?:\.pnpm\/[^/\s]+\/node_modules\/)?)((?:@[\w.-]+\/)?[\w][\w.-]*)\//g
-  const refs = new Map()
+  const re = /node_modules\/((?:\.pnpm\/[^/\s]+\/node_modules\/)?)((?:@[\w.-]+\/)?[\w][\w.-]*)\//g;
+  const refs = new Map();
   for (const m of source.matchAll(re)) {
-    const name = m[2]
+    const name = m[2];
     // 宿主注入模型：@deepseek-ai/* 运行时由 dsh 宿主提供（peer/inject），
     // 非本包分发物；其余 node_modules 引用即被内联分发的第三方库。
-    if (name.startsWith('@deepseek-ai/')) continue
-    if (!refs.has(name)) refs.set(name, m[1] ? m[1].replace(/\/$/, '') + '/' + name : null)
+    if (name.startsWith("@deepseek-ai/")) continue;
+    if (!refs.has(name)) refs.set(name, m[1] ? m[1].replace(/\/$/, "") + "/" + name : null);
   }
   return [...refs.entries()]
     .map(([name, pnpmSeg]) => ({ name, pnpmSeg }))
-    .sort((a, b) => a.name.localeCompare(b.name))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** extractInlinedModuleRefs 的纯包名视图（门禁断言用）。 */
 export function extractInlinedPackages(source) {
-  return extractInlinedModuleRefs(source).map(r => r.name)
+  return extractInlinedModuleRefs(source).map((r) => r.name);
 }
 
 /**
@@ -71,43 +71,43 @@ export function extractInlinedPackages(source) {
  * license 覆盖断言静默失效」。
  */
 export function readMermaidChunkRefs(libDir) {
-  const p = join(libDir, 'client-mermaid.deps.json')
-  if (!existsSync(p)) return []
-  let parsed
+  const p = join(libDir, "client-mermaid.deps.json");
+  if (!existsSync(p)) return [];
+  let parsed;
   try {
-    parsed = JSON.parse(readFileSync(p, 'utf8'))
+    parsed = JSON.parse(readFileSync(p, "utf8"));
   } catch (e) {
-    throw new Error(`client-mermaid.deps.json 非法 JSON: ${String(e.message).split('\n')[0]}`)
+    throw new Error(`client-mermaid.deps.json 非法 JSON: ${String(e.message).split("\n")[0]}`);
   }
-  if (!Array.isArray(parsed) || parsed.some((r) => typeof r?.name !== 'string')) {
-    throw new Error('client-mermaid.deps.json 形态非法（期望 {name, pnpmSeg} 数组）')
+  if (!Array.isArray(parsed) || parsed.some((r) => typeof r?.name !== "string")) {
+    throw new Error("client-mermaid.deps.json 形态非法（期望 {name, pnpmSeg} 数组）");
   }
-  return parsed
+  return parsed;
 }
 
 /** 列出某包产物中被内联的第三方模块引用（index.js / client.js / client-mermaid.js 并集，同名取首个含 pnpmSeg 者）。 */
 export function inlinedRefsForLib(libDir) {
-  const byName = new Map()
+  const byName = new Map();
   // client-mermaid.js（issue #104）：mermaid 懒加载独立 chunk 同为构建期内联产物；
   // 其 minified 产物注释被移除，包名证据来自构建期 metafile sidecar 清单
   // （readMermaidChunkRefs），不入归集则 mermaid 全树的 license 缺收（合规缺口）。
-  for (const f of ['index.js', 'client.js', 'client-mermaid.js']) {
-    const p = join(libDir, f)
-    if (!existsSync(p)) continue
-    const source = readFileSync(p, 'utf8')
+  for (const f of ["index.js", "client.js", "client-mermaid.js"]) {
+    const p = join(libDir, f);
+    if (!existsSync(p)) continue;
+    const source = readFileSync(p, "utf8");
     // client-mermaid.js 自身注释已失明，跳过注释提取、只认 sidecar（防字符串
     // 残留被误当证据）；其余产物维持注释提取。sidecar 在循环外统一并入。
-    const refs = f === 'client-mermaid.js' ? [] : extractInlinedModuleRefs(source)
+    const refs = f === "client-mermaid.js" ? [] : extractInlinedModuleRefs(source);
     for (const r of refs) {
-      if (!byName.has(r.name)) byName.set(r.name, r)
-      else if (r.pnpmSeg && !byName.get(r.name).pnpmSeg) byName.set(r.name, r)
+      if (!byName.has(r.name)) byName.set(r.name, r);
+      else if (r.pnpmSeg && !byName.get(r.name).pnpmSeg) byName.set(r.name, r);
     }
   }
   for (const r of readMermaidChunkRefs(libDir)) {
-    if (!byName.has(r.name)) byName.set(r.name, r)
-    else if (r.pnpmSeg && !byName.get(r.name).pnpmSeg) byName.set(r.name, r)
+    if (!byName.has(r.name)) byName.set(r.name, r);
+    else if (r.pnpmSeg && !byName.get(r.name).pnpmSeg) byName.set(r.name, r);
   }
-  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name))
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
@@ -120,32 +120,32 @@ export function inlinedRefsForLib(libDir) {
  * UNKNOWN 段，pack-check 对该字样 fail-loud）。
  */
 function findLicenseFile(installDir) {
-  let candidates = []
+  let candidates = [];
   try {
     candidates = readdirSync(installDir)
       .filter((f) => /^licen[cs]e(\.\w+)?$/i.test(f))
-      .sort()
+      .sort();
   } catch {
-    return null
+    return null;
   }
   for (const c of candidates) {
     try {
-      const text = readFileSync(join(installDir, c), 'utf8').trim()
-      if (text) return { file: c, text }
+      const text = readFileSync(join(installDir, c), "utf8").trim();
+      if (text) return { file: c, text };
     } catch {
       /* 读失败尝试下一个候选 */
     }
   }
-  return null
+  return null;
 }
 
 /** 读取安装目录 package.json 的 name/version/license 元信息（缺失容错）。 */
 function pkgMeta(installDir) {
   try {
-    const j = JSON.parse(readFileSync(join(installDir, 'package.json'), 'utf8'))
-    return { version: j.version ?? '?', license: j.license ?? 'UNKNOWN' }
+    const j = JSON.parse(readFileSync(join(installDir, "package.json"), "utf8"));
+    return { version: j.version ?? "?", license: j.license ?? "UNKNOWN" };
   } catch {
-    return { version: '?', license: 'UNKNOWN' }
+    return { version: "?", license: "UNKNOWN" };
   }
 }
 
@@ -156,11 +156,11 @@ function pkgMeta(installDir) {
  * 未命中返回 null 维持原值。
  */
 function detectLicenseName(text) {
-  if (/isc license/i.test(text)) return 'ISC'
-  if (/apache license/i.test(text)) return 'Apache-2.0'
-  if (/mit license/i.test(text)) return 'MIT'
-  if (/redistribution and use|bsd/i.test(text)) return 'BSD'
-  return null
+  if (/isc license/i.test(text)) return "ISC";
+  if (/apache license/i.test(text)) return "Apache-2.0";
+  if (/mit license/i.test(text)) return "MIT";
+  if (/redistribution and use|bsd/i.test(text)) return "BSD";
+  return null;
 }
 
 /**
@@ -170,7 +170,7 @@ function detectLicenseName(text) {
  * UNKNOWN / 安装目录未找到」字样 fail-loud，故上游缺失必须在此显式登记；
  * 未登记的新命中会让门禁变红，强制人工核实上游仓库后补充。
  */
-const DECLARED_LICENSE_ONLY = new Set(['fastdom', 'schemastery'])
+const DECLARED_LICENSE_ONLY = new Set(["fastdom", "schemastery"]);
 
 /**
  * 为单个插件包归集第三方 license，写 lib/THIRD-PARTY-LICENSES。
@@ -179,87 +179,94 @@ const DECLARED_LICENSE_ONLY = new Set(['fastdom', 'schemastery'])
  * 返回 [] 且不写文件）。
  */
 export function collectForPackage(pkgDir, root = ROOT) {
-  const absPkg = resolve(root, pkgDir)
-  const libDir = join(absPkg, 'lib')
-  if (!existsSync(libDir)) throw new Error(`${pkgDir}: 缺 lib/（先构建再归集）`)
-  const refs = inlinedRefsForLib(libDir)
-  if (refs.length === 0) return []
+  const absPkg = resolve(root, pkgDir);
+  const libDir = join(absPkg, "lib");
+  if (!existsSync(libDir)) throw new Error(`${pkgDir}: 缺 lib/（先构建再归集）`);
+  const refs = inlinedRefsForLib(libDir);
+  if (refs.length === 0) return [];
 
-  const sections = []
+  const sections = [];
   for (const { name, pnpmSeg } of refs) {
     // 解析真实安装目录，依次尝试：
     //   1) 包级 node_modules symlink（pnpm 布局直接依赖）
     //   2) 根 node_modules（提升安装）
     //   3) .pnpm 安装段（传递依赖，如 diff2html 的 hogan/diff 不出现在前两级）
     const candidates = [
-      join(absPkg, 'node_modules', name),
-      join(root, 'node_modules', name),
-      ...(pnpmSeg ? [join(root, 'node_modules', ...pnpmSeg.split('/'))] : []),
-    ]
-    const installDir = candidates.find(d => existsSync(d))
+      join(absPkg, "node_modules", name),
+      join(root, "node_modules", name),
+      ...(pnpmSeg ? [join(root, "node_modules", ...pnpmSeg.split("/"))] : []),
+    ];
+    const installDir = candidates.find((d) => existsSync(d));
     if (!installDir) {
-      sections.push(`\n${'='.repeat(69)}\n${name}\n${'='.repeat(69)}\n\n[警告] 安装目录未找到，license 文本缺收。\n`)
-      continue
+      sections.push(
+        `\n${"=".repeat(69)}\n${name}\n${"=".repeat(69)}\n\n[警告] 安装目录未找到，license 文本缺收。\n`,
+      );
+      continue;
     }
-    const meta = pkgMeta(installDir)
-    const lic = findLicenseFile(installDir)
+    const meta = pkgMeta(installDir);
+    const lic = findLicenseFile(installDir);
     // 头部许可名兜底链：package.json license 字段 → license 文本字样推断 → UNKNOWN
     //（文本已收但声明缺失时不得标 UNKNOWN，否则 pack-check 合规空段断言误报）。
     const declared =
-      (meta.license && meta.license !== 'UNKNOWN' ? meta.license : null) ??
+      (meta.license && meta.license !== "UNKNOWN" ? meta.license : null) ??
       (lic ? detectLicenseName(lic.text) : null) ??
-      'UNKNOWN'
-    const head = `${name}@${meta.version} — ${declared}`
-    let body
+      "UNKNOWN";
+    const head = `${name}@${meta.version} — ${declared}`;
+    let body;
     if (lic) {
-      body = lic.text
-    } else if (declared !== 'UNKNOWN' && DECLARED_LICENSE_ONLY.has(name)) {
-      body = `上游 npm 包未附带 license 文件；以 package.json SPDX 声明为准（${declared}）。`
+      body = lic.text;
+    } else if (declared !== "UNKNOWN" && DECLARED_LICENSE_ONLY.has(name)) {
+      body = `上游 npm 包未附带 license 文件；以 package.json SPDX 声明为准（${declared}）。`;
     } else {
-      body = `[未找到 license 文件；该库声明许可证为 ${declared}]`
+      body = `[未找到 license 文件；该库声明许可证为 ${declared}]`;
     }
-    sections.push(`\n${'='.repeat(69)}\n${head}\n来源：https://www.npmjs.com/package/${name}\n${'='.repeat(69)}\n\n${body}\n`)
+    sections.push(
+      `\n${"=".repeat(69)}\n${head}\n来源：https://www.npmjs.com/package/${name}\n${"=".repeat(69)}\n\n${body}\n`,
+    );
   }
 
   const out = [
-    'THIRD-PARTY LICENSES',
-    '===================',
-    '',
+    "THIRD-PARTY LICENSES",
+    "===================",
+    "",
     `本发布物遵循「运行时依赖 = 构建期内联」模型，将下列第三方库打包进产物；`,
-    '依其许可证条款随附许可文本与版权声明。',
+    "依其许可证条款随附许可文本与版权声明。",
     `生成：scripts/collect-licenses.ts（issue #13）。本仓库自身以 MIT 许可发布。`,
-    '',
+    "",
     ...sections,
-  ].join('\n')
-  writeFileSync(join(libDir, 'THIRD-PARTY-LICENSES'), out)
-  return refs.map(r => r.name)
+  ].join("\n");
+  writeFileSync(join(libDir, "THIRD-PARTY-LICENSES"), out);
+  return refs.map((r) => r.name);
 }
 
 // ---- CLI 入口：无参数 = 全部插件包（按 manifest.retired 过滤，T1 防退役残留目录）----
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  let dirs = listPluginDirs(ROOT)
+  let dirs = listPluginDirs(ROOT);
   if (process.argv.length <= 2) {
     // T1（#397）：退役残留目录无 lib/ 会 FAIL，全量模式按 manifest.retired 过滤
-    const { kept, skipped } = filterOutRetiredDirs(dirs, loadManifest(ROOT))
+    const { kept, skipped } = filterOutRetiredDirs(dirs, loadManifest(ROOT));
     if (skipped.length > 0) {
-      console.warn(`[collect-licenses] 跳过已退役包残留目录: ${skipped.join(', ')}（manifest.retired 已登记，请清理）`)
+      console.warn(
+        `[collect-licenses] 跳过已退役包残留目录: ${skipped.join(", ")}（manifest.retired 已登记，请清理）`,
+      );
     }
-    dirs = kept
+    dirs = kept;
   }
-  const targets = process.argv.slice(2).length > 0
-    ? process.argv.slice(2)
-    : dirs.map(d => `packages/${d}`)
-  let failed = 0
+  const targets =
+    process.argv.slice(2).length > 0 ? process.argv.slice(2) : dirs.map((d) => `packages/${d}`);
+  let failed = 0;
   for (const t of targets) {
     try {
-      const names = collectForPackage(t)
-      console.log(names.length > 0
-        ? `PASS ${t} | THIRD-PARTY-LICENSES 已归集（${names.length} 个库: ${names.join(', ')}）`
-        : `SKIP ${t} | 产物未内联第三方库`)
+      const names = collectForPackage(t);
+      console.log(
+        names.length > 0
+          ? `PASS ${t} | THIRD-PARTY-LICENSES 已归集（${names.length} 个库: ${names.join(", ")}）`
+          : `SKIP ${t} | 产物未内联第三方库`,
+      );
     } catch (e) {
-      failed++
-      console.log(`FAIL ${t} | ${String(e.message).split('\n')[0]}`)
+      failed++;
+      console.log(`FAIL ${t} | ${String(e.message).split("\n")[0]}`);
     }
   }
-  process.exit(failed === 0 ? 0 : 1)
+  process.exit(failed === 0 ? 0 : 1);
 }

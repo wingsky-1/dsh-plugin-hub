@@ -37,7 +37,9 @@ export function callHandler<T = unknown>(
   let payload: T = undefined as unknown as T;
   const res = {
     writeHead: () => {},
-    end: (chunk: unknown) => { payload = JSON.parse(String(chunk)) as T; },
+    end: (chunk: unknown) => {
+      payload = JSON.parse(String(chunk)) as T;
+    },
     ...resExt,
   };
   const ret = route.handler(req, res);
@@ -62,18 +64,30 @@ export function callHandler<T = unknown>(
  *
  * @param dir 历史 jsonl 所在目录（historyDir/<provider>/<adapter>）
  */
-export async function pollUntilJsonlReady(dir: string, deadlineMs = 4000, tickMs = 50): Promise<void> {
-  const ready = await pollUntil(() => {
-    try {
-      for (const f of readdirSync(dir)) {
-        if (f.endsWith(".jsonl") && readFileSync(join(dir, f), "utf8").trimEnd() !== "") return true;
+export async function pollUntilJsonlReady(
+  dir: string,
+  deadlineMs = 4000,
+  tickMs = 50,
+): Promise<void> {
+  const ready = await pollUntil(
+    () => {
+      try {
+        for (const f of readdirSync(dir)) {
+          if (f.endsWith(".jsonl") && readFileSync(join(dir, f), "utf8").trimEnd() !== "")
+            return true;
+        }
+      } catch {
+        /* 目录未建：预热尚未开始，继续轮询 */
       }
-    } catch {
-      /* 目录未建：预热尚未开始，继续轮询 */
-    }
-    return false;
-  }, deadlineMs, tickMs);
-  assert.ok(ready === true, `预热 jsonl 首行未在 ${deadlineMs}ms 内落盘（append 落盘链路未就绪：${dir}）`);
+      return false;
+    },
+    deadlineMs,
+    tickMs,
+  );
+  assert.ok(
+    ready === true,
+    `预热 jsonl 首行未在 ${deadlineMs}ms 内落盘（append 落盘链路未就绪：${dir}）`,
+  );
 }
 
 /**
@@ -110,20 +124,33 @@ export async function pollUntil<T = boolean>(
 
 /** 具名实体表（qa 判据子集）：产出 ASCII 危险字符的 WHATWG 正式名小写。 */
 const JUDGE_NAMED: Record<string, string> = {
-  lt: "<", gt: ">", amp: "&", quot: '"', apos: "'",
-  colon: ":", semi: ";", equals: "=", sol: "/", num: "#",
-  lpar: "(", rpar: ")",
+  lt: "<",
+  gt: ">",
+  amp: "&",
+  quot: '"',
+  apos: "'",
+  colon: ":",
+  semi: ";",
+  equals: "=",
+  sol: "/",
+  num: "#",
+  lpar: "(",
+  rpar: ")",
 };
 
 /** 恰好一轮 HTML 实体解码（具名 + 十进制 + 十六进制数字实体，有无分号均解）。 */
 export function judgeDecodeOnce(s: string): string {
   return s
     .replace(/&#x([0-9a-fA-F]+);?/g, (_m: string, h: string) =>
-      String.fromCodePoint(Math.min(parseInt(h, 16), 0x10ffff)))
+      String.fromCodePoint(Math.min(parseInt(h, 16), 0x10ffff)),
+    )
     .replace(/&#(\d+);?/g, (_m: string, d: string) =>
-      String.fromCodePoint(Math.min(parseInt(d, 10), 0x10ffff)))
-    .replace(/&([a-zA-Z][a-zA-Z0-9]*);?/g, (_m: string, nm: string) =>
-      JUDGE_NAMED[nm.toLowerCase()] ?? `&${nm}`);
+      String.fromCodePoint(Math.min(parseInt(d, 10), 0x10ffff)),
+    )
+    .replace(
+      /&([a-zA-Z][a-zA-Z0-9]*);?/g,
+      (_m: string, nm: string) => JUDGE_NAMED[nm.toLowerCase()] ?? `&${nm}`,
+    );
 }
 
 /**
@@ -161,19 +188,22 @@ export function judgePad(k: number): string {
  * @param body 注入体：经 set(mock) 更换全局 fetch（可多次），返回值透传给调用方；
  *             退出时无论成败都恢复进入通道时刻的全局现场。
  */
-export function injectGlobalFetch<T>(
-  body: (set: (m: unknown) => void) => Promise<T>,
-): Promise<T> {
+export function injectGlobalFetch<T>(body: (set: (m: unknown) => void) => Promise<T>): Promise<T> {
   const run = fetchChain.then(async (): Promise<T> => {
     const saved = globalThis.fetch;
-    const set = (m: unknown): void => { globalThis.fetch = m as typeof fetch; };
+    const set = (m: unknown): void => {
+      globalThis.fetch = m as typeof fetch;
+    };
     try {
       return await body(set);
     } finally {
       globalThis.fetch = saved;
     }
   });
-  fetchChain = run.then(() => undefined, () => undefined);
+  fetchChain = run.then(
+    () => undefined,
+    () => undefined,
+  );
   return run;
 }
 let fetchChain: Promise<unknown> = Promise.resolve();

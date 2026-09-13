@@ -15,7 +15,16 @@
  *   settings 注入 uiUpdate、effect disposer
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -116,7 +125,15 @@ describe("normalizeServer", () => {
     reconnect: { maxAttempts: 3 },
   });
   const full = () => normalizeServer(fullInput());
-  const stdio = () => normalizeServer({ name: "s", transport: "stdio", command: " npx ", args: [1, "x"], cwd: "/w", env: { K: null } });
+  const stdio = () =>
+    normalizeServer({
+      name: "s",
+      transport: "stdio",
+      command: " npx ",
+      args: [1, "x"],
+      cwd: "/w",
+      env: { K: null },
+    });
   const bare = () => normalizeServer({ name: "b", transport: "stdio", command: "x" });
 
   it("SERVER_NAME_PATTERN 是锚定正则", () => {
@@ -220,32 +237,50 @@ describe("normalizeServer", () => {
   });
 
   it("stdio 空白 command 抛 requires a command", () => {
-    expect(() => normalizeServer({ name: "n", transport: "stdio", command: "   " })).toThrow(/requires a command/);
+    expect(() => normalizeServer({ name: "n", transport: "stdio", command: "   " })).toThrow(
+      /requires a command/,
+    );
   });
 
   it("http 缺 url 抛 requires a url", () => {
-    expect(() => normalizeServer({ name: "n", transport: "streamable-http" })).toThrow(/requires a url/);
+    expect(() => normalizeServer({ name: "n", transport: "streamable-http" })).toThrow(
+      /requires a url/,
+    );
   });
 
   it("http 非法 url 抛 invalid url", () => {
-    expect(() => normalizeServer({ name: "n", transport: "streamable-http", url: "::::" })).toThrow(/invalid url/);
+    expect(() => normalizeServer({ name: "n", transport: "streamable-http", url: "::::" })).toThrow(
+      /invalid url/,
+    );
   });
 
   // timeout 非法回退默认（0/负数/NaN）。
   it.each([0, -5, Number.NaN])("timeout 非法值 %s 回退为正数", (bad) => {
-    const s = normalizeServer({ name: "t", transport: "stdio", command: "x", toolCallTimeoutMs: bad });
+    const s = normalizeServer({
+      name: "t",
+      transport: "stdio",
+      command: "x",
+      toolCallTimeoutMs: bad,
+    });
     expect(s.toolCallTimeoutMs > 0).toBe(true);
   });
 
   it.each([0, -5, Number.NaN])("timeout 非法值 %s 回退为有限数", (bad) => {
-    const s = normalizeServer({ name: "t", transport: "stdio", command: "x", toolCallTimeoutMs: bad });
+    const s = normalizeServer({
+      name: "t",
+      transport: "stdio",
+      command: "x",
+      toolCallTimeoutMs: bad,
+    });
     expect(Number.isFinite(s.toolCallTimeoutMs)).toBe(true);
   });
 });
 
 describe("normalizeUiConfig / buildConfigUiPatch / panel 定位", () => {
   it("新嵌套形态归一", () => {
-    expect(normalizeUiConfig({ ui: { position: "bottom-right", offset: { x: 1.6, y: -3, blankY: 0 } } })).toEqual({
+    expect(
+      normalizeUiConfig({ ui: { position: "bottom-right", offset: { x: 1.6, y: -3, blankY: 0 } } }),
+    ).toEqual({
       position: "bottom-right",
       offsetX: 2,
       offsetY: 0,
@@ -255,17 +290,26 @@ describe("normalizeUiConfig / buildConfigUiPatch / panel 定位", () => {
   });
 
   it("旧扁平 offset 形态归一", () => {
-    expect(normalizeUiConfig({ position: "top-right", offset: { x: 7, y: 8, blankY: 9 } })).toEqual({
-      position: "top-right",
-      offsetX: 7,
-      offsetY: 8,
-      blankY: 9,
-      zIndexBase: DEFAULT_UI_CONFIG.zIndexBase,
-    });
+    expect(normalizeUiConfig({ position: "top-right", offset: { x: 7, y: 8, blankY: 9 } })).toEqual(
+      {
+        position: "top-right",
+        offsetX: 7,
+        offsetY: 8,
+        blankY: 9,
+        zIndexBase: DEFAULT_UI_CONFIG.zIndexBase,
+      },
+    );
   });
 
   it("客户端扁平 offsetX 形态优先于 offset.*", () => {
-    expect(normalizeUiConfig({ offsetX: 11, offsetY: 12, blankY: 13, offset: { x: 1, y: 2, blankY: 3 } })).toEqual({
+    expect(
+      normalizeUiConfig({
+        offsetX: 11,
+        offsetY: 12,
+        blankY: 13,
+        offset: { x: 1, y: 2, blankY: 3 },
+      }),
+    ).toEqual({
       position: "top-right",
       offsetX: 11,
       offsetY: 12,
@@ -310,11 +354,7 @@ describe("normalizeUiConfig / buildConfigUiPatch / panel 定位", () => {
   });
 
   it("字符串输入回退默认", () => {
-    expect(normalizeUiConfig("junk")).toEqual({ position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 });
-  });
-
-  it("非法 position + 非有限 offset 回退默认", () => {
-    expect(normalizeUiConfig({ position: "left", offsetX: Number.NaN, offsetY: Infinity })).toEqual({
+    expect(normalizeUiConfig("junk")).toEqual({
       position: "top-right",
       offsetX: 8,
       offsetY: 8,
@@ -323,12 +363,32 @@ describe("normalizeUiConfig / buildConfigUiPatch / panel 定位", () => {
     });
   });
 
+  it("非法 position + 非有限 offset 回退默认", () => {
+    expect(normalizeUiConfig({ position: "left", offsetX: Number.NaN, offsetY: Infinity })).toEqual(
+      {
+        position: "top-right",
+        offsetX: 8,
+        offsetY: 8,
+        blankY: 40,
+        zIndexBase: 10,
+      },
+    );
+  });
+
   it("ui 非对象按顶层处理", () => {
     expect(normalizeUiConfig({ ui: 5 }).offsetX).toBe(8);
   });
 
   it("buildConfigUiPatch 组装嵌套 patch", () => {
-    expect(buildConfigUiPatch({ position: "bottom-right", offsetX: 4, offsetY: 5, blankY: 6, zIndexBase: 20 })).toEqual({
+    expect(
+      buildConfigUiPatch({
+        position: "bottom-right",
+        offsetX: 4,
+        offsetY: 5,
+        blankY: 6,
+        zIndexBase: 20,
+      }),
+    ).toEqual({
       position: "bottom-right",
       offset: { x: 4, y: 5, blankY: 6 },
       zIndexBase: 20,
@@ -522,7 +582,13 @@ function makeManager(dir) {
   return { manager: trackManager(manager), store, log };
 }
 
-const quietServer = (name, extra = {}) => ({ name, transport: "stdio", command: "dsh-noop-cmd", reconnect: { enabled: false }, ...extra });
+const quietServer = (name, extra = {}) => ({
+  name,
+  transport: "stdio",
+  command: "dsh-noop-cmd",
+  reconnect: { enabled: false },
+  ...extra,
+});
 
 function managerFixture(prefix = "dsh-mcp-mgr2a-") {
   const dir = makeTempDir(prefix);
@@ -533,7 +599,13 @@ function managerFixture(prefix = "dsh-mcp-mgr2a-") {
 describe("uiConfig / updateUiConfig / 目录缓存", () => {
   it("uiConfig 默认值", () => {
     const { manager } = managerFixture();
-    expect(manager.uiConfig()).toEqual({ position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 });
+    expect(manager.uiConfig()).toEqual({
+      position: "top-right",
+      offsetX: 8,
+      offsetY: 8,
+      blankY: 40,
+      zIndexBase: 10,
+    });
   });
 
   it("写不可用抛错（not writable）", async () => {
@@ -560,14 +632,32 @@ describe("uiConfig / updateUiConfig / 目录缓存", () => {
 
   it("patch 归一化传递", async () => {
     const { manager, captured } = writableFixture();
-    await manager.updateUiConfig({ position: "bottom-right", offsetX: 3.4, offsetY: -1, blankY: 100 });
-    expect(captured()).toEqual({ ui: { position: "bottom-right", offset: { x: 3, y: 0, blankY: 100 }, zIndexBase: 10 } });
+    await manager.updateUiConfig({
+      position: "bottom-right",
+      offsetX: 3.4,
+      offsetY: -1,
+      blankY: 100,
+    });
+    expect(captured()).toEqual({
+      ui: { position: "bottom-right", offset: { x: 3, y: 0, blankY: 100 }, zIndexBase: 10 },
+    });
   });
 
   it("updateUiConfig 返回最新配置", async () => {
     const { manager } = writableFixture();
-    const written = await manager.updateUiConfig({ position: "bottom-right", offsetX: 3.4, offsetY: -1, blankY: 100 });
-    expect(written).toEqual({ position: "bottom-right", offsetX: 3, offsetY: 0, blankY: 100, zIndexBase: 10 });
+    const written = await manager.updateUiConfig({
+      position: "bottom-right",
+      offsetX: 3.4,
+      offsetY: -1,
+      blankY: 100,
+    });
+    expect(written).toEqual({
+      position: "bottom-right",
+      offsetX: 3,
+      offsetY: 0,
+      blankY: 100,
+      zIndexBase: 10,
+    });
   });
 
   it("loadCatalogCache：缺失文件静默", async () => {
@@ -580,7 +670,10 @@ describe("uiConfig / updateUiConfig / 目录缓存", () => {
   it("仅字符串 summary 入缓存", async () => {
     const { manager, dir } = managerFixture();
     manager.catalogCachePath = join(dir, "cache.json");
-    writeFileSync(manager.catalogCachePath, JSON.stringify({ version: 1, entries: { a: { summary: "sa" }, b: { summary: 5 }, c: {} } }));
+    writeFileSync(
+      manager.catalogCachePath,
+      JSON.stringify({ version: 1, entries: { a: { summary: "sa" }, b: { summary: 5 }, c: {} } }),
+    );
     await manager.loadCatalogCache();
     expect([...manager.catalogCache.entries()]).toEqual([["a", { summary: "sa" }]]);
   });
@@ -753,7 +846,9 @@ describe("reconcileServers", () => {
     const { dir, manager, store } = managerFixture("dsh-mcp-mgr2c-");
     store.upsert(normalizeServer(quietServer("both")));
     manager.projectStore = new McpStore(join(dir, "proj.json"));
-    manager.projectStore.data.servers.push(normalizeServer({ ...quietServer("both"), command: "other" }));
+    manager.projectStore.data.servers.push(
+      normalizeServer({ ...quietServer("both"), command: "other" }),
+    );
     manager.projectStores.set(dir, manager.projectStore);
     manager.projectRoot = dir;
     manager.reconcileServers();
@@ -982,13 +1077,19 @@ describe("#382 F3/F4：all 模式池接管", () => {
 
   it("@global 单元连接条目建立", async () => {
     const { manager } = await allModeStarted();
-    await pollUntil("@global 单元连接条目建立", () => manager.middleware.units.get("@global")?.connections.has("g2") === true);
+    await pollUntil(
+      "@global 单元连接条目建立",
+      () => manager.middleware.units.get("@global")?.connections.has("g2") === true,
+    );
     expect(manager.middleware.units.get("@global")?.connections.has("g2")).toBe(true);
   });
 
   it("connect 不复活 supervisor（F4 走池）", async () => {
     const { manager } = await allModeStarted();
-    await pollUntil("@global 单元连接条目建立", () => manager.middleware.units.get("@global")?.connections.has("g2") === true);
+    await pollUntil(
+      "@global 单元连接条目建立",
+      () => manager.middleware.units.get("@global")?.connections.has("g2") === true,
+    );
     // F4：all 模式 connect 全局走池（userDisabled 解除 + ensureConnected），
     // 不复活 supervisor。
     manager.middleware.units.get("@global").userDisabled.add("g2");
@@ -998,7 +1099,10 @@ describe("#382 F3/F4：all 模式池接管", () => {
 
   it("userDisabled 已解除", async () => {
     const { manager } = await allModeStarted();
-    await pollUntil("@global 单元连接条目建立", () => manager.middleware.units.get("@global")?.connections.has("g2") === true);
+    await pollUntil(
+      "@global 单元连接条目建立",
+      () => manager.middleware.units.get("@global")?.connections.has("g2") === true,
+    );
     manager.middleware.units.get("@global").userDisabled.add("g2");
     await manager.connect("g2");
     expect(manager.middleware.units.get("@global").userDisabled.has("g2")).toBe(false);
@@ -1153,7 +1257,10 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
     const projRoot = join(dir, "proj");
     mkdirSync(projRoot, { recursive: true });
     const projStore = new McpStore(join(projRoot, ".dsh", "mcp.json"));
-    projStore.data = { version: 1, servers: [normalizeServer(quietServer("p1")), normalizeServer(quietServer("p2"))] };
+    projStore.data = {
+      version: 1,
+      servers: [normalizeServer(quietServer("p1")), normalizeServer(quietServer("p2"))],
+    };
     manager.projectStores.set(projRoot, projStore);
     manager.projectRoot = projRoot;
     manager.projectStore = projStore;
@@ -1178,17 +1285,24 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
       units: new Map([[projRoot, mkUnit(projRoot)]]),
       projectUnitFor: async (root) => {
         calls614.push(["projectUnitFor", root]);
-        return fakeMw.units.get(root) ?? (() => {
-          const unit = mkUnit(root);
-          fakeMw.units.set(root, unit);
-          return unit;
-        })();
+        return (
+          fakeMw.units.get(root) ??
+          (() => {
+            const unit = mkUnit(root);
+            fakeMw.units.set(root, unit);
+            return unit;
+          })()
+        );
       },
       ensureConnected: async (root, name, opts) => {
         calls614.push(["ensureConnected", root, name, opts]);
         const unit = fakeMw.units.get(root);
         if (unit !== undefined && !unit.connections.has(name)) {
-          unit.connections.set(name, { server: projStore.find(name), client: {}, status: "connected" });
+          unit.connections.set(name, {
+            server: projStore.find(name),
+            client: {},
+            status: "connected",
+          });
         }
         return opts;
       },
@@ -1205,7 +1319,10 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
     // 项目单元整个拆毁且无人重建）。
     fixture.store.upsert(normalizeServer(quietServer("g1")));
     fixture.manager.reconcileServers();
-    await pollUntil("all 模式全局 g1 经池接管连接", () => fixture.fakeMw.units.get("@global")?.connections.has("g1") === true);
+    await pollUntil(
+      "all 模式全局 g1 经池接管连接",
+      () => fixture.fakeMw.units.get("@global")?.connections.has("g1") === true,
+    );
     return fixture;
   }
 
@@ -1242,7 +1359,9 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
     const { manager, projRoot, calls614, teardownRoots } = await afterReconcile();
     calls614.length = 0;
     manager.start("p1", "project");
-    await pollUntil("start(项目级) 幂等触达完成", () => calls614.some((c) => c[0] === "ensureConnected" && c[1] === projRoot && c[2] === "p1"));
+    await pollUntil("start(项目级) 幂等触达完成", () =>
+      calls614.some((c) => c[0] === "ensureConnected" && c[1] === projRoot && c[2] === "p1"),
+    );
     expect(teardownRoots.length).toBe(0);
   });
 
@@ -1250,7 +1369,9 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
     const { manager, calls614 } = await afterReconcile();
     calls614.length = 0;
     manager.start("p1", "project");
-    await pollUntil("start(项目级) 幂等触达完成", () => calls614.some((c) => c[0] === "ensureConnected" && c[2] === "p1"));
+    await pollUntil("start(项目级) 幂等触达完成", () =>
+      calls614.some((c) => c[0] === "ensureConnected" && c[2] === "p1"),
+    );
     expect(calls614.every((c) => c[0] !== "ensureConnected" || c[3]?.force !== true)).toBeTruthy();
   });
 
@@ -1261,7 +1382,9 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
     calls614.length = 0;
     projStore.data.servers[0] = normalizeServer(quietServer("p1", { command: "dsh-noop-cmd-v2" }));
     manager.start("p1", "project");
-    await pollUntil("配置漂移 force 重建完成", () => calls614.some((c) => c[0] === "ensureConnected" && c[2] === "p1" && c[3]?.force === true));
+    await pollUntil("配置漂移 force 重建完成", () =>
+      calls614.some((c) => c[0] === "ensureConnected" && c[2] === "p1" && c[3]?.force === true),
+    );
     expect(teardownRoots.length).toBe(0);
   });
 
@@ -1271,7 +1394,9 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
     calls614.length = 0;
     fakeMw.units.get(projRoot).userDisabled.add("p2");
     manager.start("p2", "project");
-    await pollUntil("projectUnitFor 触达完成", () => calls614.some((c) => c[0] === "projectUnitFor" && c[1] === projRoot));
+    await pollUntil("projectUnitFor 触达完成", () =>
+      calls614.some((c) => c[0] === "projectUnitFor" && c[1] === projRoot),
+    );
     // 反向验证：userDisabled 命中后稳定不连接（观察窗口内持续断言，替代固定 sleep）
     await assertNoGrowth(
       "userDisabled命中不连接",
@@ -1300,8 +1425,20 @@ describe("#413 all 模式 runtime 注入归一中台", () => {
     return {
       name: "cg_node",
       description: "查符号",
-      parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] },
-      output: { schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false }, render: (a, v) => [{ type: "text", text: v.text }] },
+      parameters: {
+        type: "object",
+        properties: { symbol: { type: "string" } },
+        required: ["symbol"],
+      },
+      output: {
+        schema: {
+          type: "object",
+          properties: { text: { type: "string" } },
+          required: ["text"],
+          additionalProperties: false,
+        },
+        render: (a, v) => [{ type: "text", text: v.text }],
+      },
       execute: async (args) => ({ text: `node(${args.symbol})` }),
     };
   }
@@ -1313,8 +1450,17 @@ describe("#413 all 模式 runtime 注入归一中台", () => {
     const mw = manager.middleware;
     // 经 registerServer 注入（带 toolDefinitions）→ start 内部 middlewareTakes
     // 判定接管 → 触达 @global 单元虚拟连接，不建 supervisor、不注册 mcp__ 工具。
-    await manager.registerServer({ name: "cg", transport: "stdio", command: "codegraph", args: ["serve", "--mcp"], toolDefinitions: [wrappedTool()] });
-    await pollUntil("@global 单元虚拟连接建立", () => mw.units.get("@global")?.connections.has("cg") === true);
+    await manager.registerServer({
+      name: "cg",
+      transport: "stdio",
+      command: "codegraph",
+      args: ["serve", "--mcp"],
+      toolDefinitions: [wrappedTool()],
+    });
+    await pollUntil(
+      "@global 单元虚拟连接建立",
+      () => mw.units.get("@global")?.connections.has("cg") === true,
+    );
     if (unregister) await manager.unregisterServer("cg");
     return { manager, store, log, mw };
   }
@@ -1398,13 +1544,31 @@ describe("#413 project 模式 runtime 保留 supervisor", () => {
     const wrapped = {
       name: "cg_node",
       description: "查符号",
-      parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] },
-      output: { schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false }, render: (a, v) => [{ type: "text", text: v.text }] },
+      parameters: {
+        type: "object",
+        properties: { symbol: { type: "string" } },
+        required: ["symbol"],
+      },
+      output: {
+        schema: {
+          type: "object",
+          properties: { text: { type: "string" } },
+          required: ["text"],
+          additionalProperties: false,
+        },
+        render: (a, v) => [{ type: "text", text: v.text }],
+      },
       execute: async (args) => ({ text: `node(${args.symbol})` }),
     };
     manager.middlewareMode = "project";
     await manager.initMiddleware("project", {});
-    await manager.registerServer({ name: "cg", transport: "stdio", command: "codegraph", args: ["serve", "--mcp"], toolDefinitions: [wrapped] });
+    await manager.registerServer({
+      name: "cg",
+      transport: "stdio",
+      command: "codegraph",
+      args: ["serve", "--mcp"],
+      toolDefinitions: [wrapped],
+    });
     return { manager };
   }
 
@@ -1453,9 +1617,15 @@ describe("#392 遗留①：remove 清内存目录幽灵条目", () => {
     // Connection 只拆 connections 不清 catalog，TTL 内 ws_mcp_list 仍显示已删服务器。
     store.upsert(normalizeServer(quietServer("ghost")));
     manager.start("ghost", "global");
-    await pollUntil("@global 单元连接条目建立", () => mw.units.get("@global")?.connections.has("ghost") === true);
+    await pollUntil(
+      "@global 单元连接条目建立",
+      () => mw.units.get("@global")?.connections.has("ghost") === true,
+    );
     // 手动塞目录条目模拟「已 discover」残留（真实 remove 前目录必然存在）。
-    mw.units.get("@global").catalog.set("ghost", { discoveredAt: Date.now(), tools: new Map([["t", { description: "d", inputSchema: {} }]]) });
+    mw.units.get("@global").catalog.set("ghost", {
+      discoveredAt: Date.now(),
+      tools: new Map([["t", { description: "d", inputSchema: {} }]]),
+    });
     if (remove) await manager.remove("ghost");
     return { manager, store, log, mw };
   }
@@ -1502,8 +1672,14 @@ describe("#392 遗留①（M1 复核）：remove 清磁盘 last-good 缓存", ()
     const mw = manager.middleware;
     store.upsert(normalizeServer(quietServer("ghost")));
     manager.start("ghost", "global");
-    await pollUntil("@global 单元连接条目建立", () => mw.units.get("@global")?.connections.has("ghost") === true);
-    mw.units.get("@global").catalog.set("ghost", { discoveredAt: Date.now(), tools: new Map([["t", { description: "d", inputSchema: {} }]]) });
+    await pollUntil(
+      "@global 单元连接条目建立",
+      () => mw.units.get("@global")?.connections.has("ghost") === true,
+    );
+    mw.units.get("@global").catalog.set("ghost", {
+      discoveredAt: Date.now(),
+      tools: new Map([["t", { description: "d", inputSchema: {} }]]),
+    });
     await mw.persistCatalog("@global");
     const cacheFile = mw.host.catalogCachePath("@global");
     if (remove) {
@@ -1559,7 +1735,10 @@ describe("#392 遗留③：disconnect 显式 scope 定位", () => {
     mkdirSync(join(proj, ".dsh"), { recursive: true });
     writeFileSync(
       join(proj, ".dsh", "mcp.json"),
-      JSON.stringify({ version: 1, servers: [{ name: "dup", transport: "stdio", command: "dcmd", enabled: true }] }),
+      JSON.stringify({
+        version: 1,
+        servers: [{ name: "dup", transport: "stdio", command: "dcmd", enabled: true }],
+      }),
     );
     await manager.setSession(proj);
     await manager.connect("dup", "project");
@@ -1633,8 +1812,11 @@ describe("拆除时在途建连的 in-flight 残留", () => {
 
   // 挂起型服务器：子进程常驻但不吐 MCP 帧 → transport.connect() 恒 pending。
   const hangServer = (name) => ({
-    name, transport: "stdio", command: process.execPath,
-    args: ["-e", "setInterval(() => {}, 1e6)"], reconnect: { enabled: false },
+    name,
+    transport: "stdio",
+    command: process.execPath,
+    args: ["-e", "setInterval(() => {}, 1e6)"],
+    reconnect: { enabled: false },
   });
 
   async function allModeFixture() {
@@ -1649,11 +1831,17 @@ describe("拆除时在途建连的 in-flight 残留", () => {
     // remove 路径：connecting 中强拆 + 重加，连接条目须立即重建。
     store.upsert(normalizeServer(hangServer("hang")));
     manager.start("hang", "global");
-    await pollUntil("hang 连接条目建立（connecting）", () => mw.units.get("@global")?.connections.has("hang") === true);
+    await pollUntil(
+      "hang 连接条目建立（connecting）",
+      () => mw.units.get("@global")?.connections.has("hang") === true,
+    );
     await manager.remove("hang");
     store.upsert(normalizeServer(hangServer("hang")));
     manager.start("hang", "global");
-    await pollUntil("remove 后重加立即重建连接条目（in-flight 残留已废弃）", () => mw.units.get("@global")?.connections.has("hang") === true);
+    await pollUntil(
+      "remove 后重加立即重建连接条目（in-flight 残留已废弃）",
+      () => mw.units.get("@global")?.connections.has("hang") === true,
+    );
     expect(mw.units.get("@global")?.connections.has("hang")).toBe(true);
   });
 
@@ -1662,7 +1850,10 @@ describe("拆除时在途建连的 in-flight 残留", () => {
     // disconnect 路径：connecting 中断开 + 显式「连接」，force 建连不被去重吞掉。
     store.upsert(normalizeServer(hangServer("hang")));
     manager.start("hang", "global");
-    await pollUntil("hang 连接条目建立（connecting）", () => mw.units.get("@global")?.connections.has("hang") === true);
+    await pollUntil(
+      "hang 连接条目建立（connecting）",
+      () => mw.units.get("@global")?.connections.has("hang") === true,
+    );
     await manager.disconnect("hang", "global");
     expect(mw.units.get("@global").userDisabled.has("hang")).toBeTruthy();
   });
@@ -1671,10 +1862,16 @@ describe("拆除时在途建连的 in-flight 残留", () => {
     const { manager, store, mw } = await allModeFixture();
     store.upsert(normalizeServer(hangServer("hang")));
     manager.start("hang", "global");
-    await pollUntil("hang 连接条目建立（connecting）", () => mw.units.get("@global")?.connections.has("hang") === true);
+    await pollUntil(
+      "hang 连接条目建立（connecting）",
+      () => mw.units.get("@global")?.connections.has("hang") === true,
+    );
     await manager.disconnect("hang", "global");
     await manager.connect("hang", "global");
-    await pollUntil("disconnect 后显式连接立即重建条目", () => mw.units.get("@global")?.connections.has("hang") === true);
+    await pollUntil(
+      "disconnect 后显式连接立即重建条目",
+      () => mw.units.get("@global")?.connections.has("hang") === true,
+    );
     expect(mw.units.get("@global")?.connections.has("hang")).toBe(true);
   });
 });
@@ -1690,7 +1887,9 @@ describe("add / update / remove（全局）", () => {
   it("重复 add 抛 already exists", async () => {
     const { manager } = managerFixture("dsh-mcp-mgr2f-");
     await manager.add(normalizeServer(quietServer("new")));
-    await expect(manager.add(normalizeServer(quietServer("new")))).rejects.toThrow(/already exists/);
+    await expect(manager.add(normalizeServer(quietServer("new")))).rejects.toThrow(
+      /already exists/,
+    );
   });
 
   it("update 返回新 command", async () => {
@@ -1724,7 +1923,13 @@ describe("setSession", () => {
     const proj = join(dir, "proj");
     mkdirSync(join(proj, ".git"), { recursive: true });
     mkdirSync(join(proj, ".dsh"), { recursive: true });
-    writeFileSync(join(proj, ".dsh", "mcp.json"), JSON.stringify({ version: 1, servers: [{ name: "psrv", transport: "stdio", command: "pcmd", enabled: true }] }));
+    writeFileSync(
+      join(proj, ".dsh", "mcp.json"),
+      JSON.stringify({
+        version: 1,
+        servers: [{ name: "psrv", transport: "stdio", command: "pcmd", enabled: true }],
+      }),
+    );
     return { dir, manager, store, proj };
   }
 
@@ -1799,10 +2004,18 @@ describe("catalogServersFor", () => {
     const proj = join(dir, "proj");
     mkdirSync(join(proj, ".git"), { recursive: true });
     mkdirSync(join(proj, ".dsh"), { recursive: true });
-    writeFileSync(join(proj, ".dsh", "mcp.json"), JSON.stringify({ version: 1, servers: [{ name: "psrv", transport: "stdio", command: "pcmd", enabled: true }] }));
+    writeFileSync(
+      join(proj, ".dsh", "mcp.json"),
+      JSON.stringify({
+        version: 1,
+        servers: [{ name: "psrv", transport: "stdio", command: "pcmd", enabled: true }],
+      }),
+    );
     await manager.setSession(proj);
     // catalogServersFor：全局 + 项目聚合，禁用过滤，同名项目级被顶掉。
-    manager.projectStore.data.servers.push(normalizeServer({ ...quietServer("psrv2", { enabled: false }) }));
+    manager.projectStore.data.servers.push(
+      normalizeServer({ ...quietServer("psrv2", { enabled: false }) }),
+    );
     return { dir, manager, store, proj };
   }
 
@@ -1841,7 +2054,13 @@ describe("projectStoreFor", () => {
     const proj = join(dir, "proj");
     mkdirSync(join(proj, ".git"), { recursive: true });
     mkdirSync(join(proj, ".dsh"), { recursive: true });
-    writeFileSync(join(proj, ".dsh", "mcp.json"), JSON.stringify({ version: 1, servers: [{ name: "psrv", transport: "stdio", command: "pcmd", enabled: true }] }));
+    writeFileSync(
+      join(proj, ".dsh", "mcp.json"),
+      JSON.stringify({
+        version: 1,
+        servers: [{ name: "psrv", transport: "stdio", command: "pcmd", enabled: true }],
+      }),
+    );
     await manager.setSession(proj);
     return { manager, proj };
   }
@@ -1883,22 +2102,40 @@ describe("refreshFromDisk", () => {
   it("重读生效", async () => {
     const { dir, manager, store, broadcasts } = await refreshFixture();
     const future = Date.now() / 1000 + 10;
-    writeFileSync(join(dir, "global.json"), JSON.stringify({ version: 1, servers: [{ name: "fresh", transport: "stdio", command: "x", enabled: false }] }));
+    writeFileSync(
+      join(dir, "global.json"),
+      JSON.stringify({
+        version: 1,
+        servers: [{ name: "fresh", transport: "stdio", command: "x", enabled: false }],
+      }),
+    );
     utimesSync(join(dir, "global.json"), future, future);
     await manager.refreshFromDisk();
     // emitStatus 是 coalesce 异步（setTimeout 0）：轮询等广播落定且无未决 coalesce
     //（statusTimer 清空 = 广播 handler 已全部执行），再取基线（事件驱动）。
-    await pollUntil("配置变化广播落定", () => broadcasts() >= 1 && manager.statusTimer === undefined);
+    await pollUntil(
+      "配置变化广播落定",
+      () => broadcasts() >= 1 && manager.statusTimer === undefined,
+    );
     expect(store.data.servers.some((s) => s.name === "fresh")).toBeTruthy();
   });
 
   it("无变化不广播", async () => {
     const { dir, manager, broadcasts } = await refreshFixture();
     const future = Date.now() / 1000 + 10;
-    writeFileSync(join(dir, "global.json"), JSON.stringify({ version: 1, servers: [{ name: "fresh", transport: "stdio", command: "x", enabled: false }] }));
+    writeFileSync(
+      join(dir, "global.json"),
+      JSON.stringify({
+        version: 1,
+        servers: [{ name: "fresh", transport: "stdio", command: "x", enabled: false }],
+      }),
+    );
     utimesSync(join(dir, "global.json"), future, future);
     await manager.refreshFromDisk();
-    await pollUntil("配置变化广播落定", () => broadcasts() >= 1 && manager.statusTimer === undefined);
+    await pollUntil(
+      "配置变化广播落定",
+      () => broadcasts() >= 1 && manager.statusTimer === undefined,
+    );
     // 无变化时不广播：先取基线（上一广播已完全落定），再 refreshFromDisk
     //（无变化 → 不 emitStatus），轮询确认无未决广播后断言计数不变。
     const before = broadcasts();
@@ -1919,7 +2156,12 @@ describe("setSession 零连接副作用（#228）", () => {
     mkdirSync(join(proj, ".dsh"), { recursive: true });
     writeFileSync(
       join(proj, ".dsh", "mcp.json"),
-      JSON.stringify({ version: 1, servers: [{ name: "slow", transport: "stdio", command: "definitely-not-exist-cmd", enabled: true }] }),
+      JSON.stringify({
+        version: 1,
+        servers: [
+          { name: "slow", transport: "stdio", command: "definitely-not-exist-cmd", enabled: true },
+        ],
+      }),
     );
     // 中间层 project 模式：setSession 只切 currentRoot，不 await 连接。
     manager.middlewareMode = "project";
@@ -1954,7 +2196,10 @@ describe("中间层模式 connect/disconnect 分支（#228）", () => {
     mkdirSync(join(proj, ".dsh"), { recursive: true });
     writeFileSync(
       join(proj, ".dsh", "mcp.json"),
-      JSON.stringify({ version: 1, servers: [{ name: "p1", transport: "stdio", command: "pcmd", enabled: true }] }),
+      JSON.stringify({
+        version: 1,
+        servers: [{ name: "p1", transport: "stdio", command: "pcmd", enabled: true }],
+      }),
     );
     await manager.setSession(proj);
     // 初始化中间层（模拟 apply）。
@@ -2120,9 +2365,15 @@ describe("dispose", () => {
 // 中间层模式 summary 投影（#228 回归：连接池状态投影到浮窗/summary） ----
 describe("中间层模式 summary 投影（#228）", () => {
   const connectedEntry = () => ({
-    server: undefined, client: undefined, transport: undefined,
-    status: "connected", error: undefined, connectedAt: Date.now(),
-    reconnectTimer: undefined, disposed: false, failedAttempts: 0,
+    server: undefined,
+    client: undefined,
+    transport: undefined,
+    status: "connected",
+    error: undefined,
+    connectedAt: Date.now(),
+    reconnectTimer: undefined,
+    disposed: false,
+    failedAttempts: 0,
   });
 
   async function projectionBase() {
@@ -2132,7 +2383,10 @@ describe("中间层模式 summary 投影（#228）", () => {
     mkdirSync(join(proj, ".dsh"), { recursive: true });
     writeFileSync(
       join(proj, ".dsh", "mcp.json"),
-      JSON.stringify({ version: 1, servers: [{ name: "p1", transport: "stdio", command: "pcmd", enabled: true }] }),
+      JSON.stringify({
+        version: 1,
+        servers: [{ name: "p1", transport: "stdio", command: "pcmd", enabled: true }],
+      }),
     );
     // 先切中间层模式再 setSession（off 语义的 setSession 会 reconcile 启动
     // 项目级真 supervisor 并异步重连，污染后续兜底投影断言）。
@@ -2149,7 +2403,10 @@ describe("中间层模式 summary 投影（#228）", () => {
     unit.connections.set("p1", connectedEntry());
     unit.catalog.set("p1", {
       discoveredAt: Date.now(),
-      tools: new Map([["t1", { description: "d1", inputSchema: {} }], ["t2", { description: "", inputSchema: {} }]]),
+      tools: new Map([
+        ["t1", { description: "d1", inputSchema: {} }],
+        ["t2", { description: "", inputSchema: {} }],
+      ]),
     });
     return { dir, manager, store, proj, mw, unit, entry: unit.connections.get("p1") };
   }
@@ -2220,7 +2477,11 @@ describe("中间层模式 summary 投影（#228）", () => {
     const fixture = await projectionBase();
     // connected + 目录发现失败（unavailable）→ 0 工具且透出原因到 error。
     fixture.entry.status = "connected";
-    fixture.unit.catalog.set("p1", { discoveredAt: 0, tools: new Map(), unavailable: "discovery timed out" });
+    fixture.unit.catalog.set("p1", {
+      discoveredAt: 0,
+      tools: new Map(),
+      unavailable: "discovery timed out",
+    });
     return fixture;
   }
 
@@ -2236,7 +2497,9 @@ describe("中间层模式 summary 投影（#228）", () => {
 
   it("unavailable reason 透出到 error", async () => {
     const { manager } = await unavailableBase();
-    expect(manager.summarize(manager.projectStore.find("p1"), "project").error).toBe("discovery timed out");
+    expect(manager.summarize(manager.projectStore.find("p1"), "project").error).toBe(
+      "discovery timed out",
+    );
   });
 
   async function stoppedBase() {
@@ -2290,7 +2553,15 @@ describe("中间层模式 summary 投影（#228）", () => {
     fixture.mw.units.set("@global", {
       root: "@global",
       connections: new Map([["g1", connectedEntry()]]),
-      catalog: new Map([["g1", { discoveredAt: Date.now(), tools: new Map([["gt", { description: "", inputSchema: {} }]]) }]]),
+      catalog: new Map([
+        [
+          "g1",
+          {
+            discoveredAt: Date.now(),
+            tools: new Map([["gt", { description: "", inputSchema: {} }]]),
+          },
+        ],
+      ]),
       userDisabled: new Set(),
       lastTouchedAt: Date.now(),
       inFlight: new Map(),
@@ -2471,7 +2742,10 @@ describe("B5 红测（续）：顺序不变式（真实 stdio 连接）", () => 
     // directConfig：同内容新引用（模拟 registerServer 直传 config 覆盖 store）。
     manager.start("s5", "global", { ...srv });
     await pollUntil("旧代际工具已注销", () => events.includes("dispose:mcp__s5__echo"));
-    await pollUntil("新代际工具已注册", () => events.filter((e) => e === "register:mcp__s5__echo").length >= 2);
+    await pollUntil(
+      "新代际工具已注册",
+      () => events.filter((e) => e === "register:mcp__s5__echo").length >= 2,
+    );
     const firstReg = events.indexOf("register:mcp__s5__echo");
     const disAt = events.indexOf("dispose:mcp__s5__echo");
     const secondReg = events.lastIndexOf("register:mcp__s5__echo");
@@ -2523,20 +2797,24 @@ describe("apply：配置分支", () => {
     const ctx = {
       logger: { warn: () => {}, info: () => {}, error: () => {} },
       tools: { register: () => () => {} },
-      webServer: { register: (route) => {
-        state.routes.push(route.path);
-        return () => {
-          const i = state.routes.indexOf(route.path);
-          if (i >= 0) state.routes.splice(i, 1);
-        };
-      } },
-      systemPrompt: { section: (opts) => {
-        state.sections.push(opts.name);
-        return () => {
-          const i = state.sections.indexOf(opts.name);
-          if (i >= 0) state.sections.splice(i, 1);
-        };
-      } },
+      webServer: {
+        register: (route) => {
+          state.routes.push(route.path);
+          return () => {
+            const i = state.routes.indexOf(route.path);
+            if (i >= 0) state.routes.splice(i, 1);
+          };
+        },
+      },
+      systemPrompt: {
+        section: (opts) => {
+          state.sections.push(opts.name);
+          return () => {
+            const i = state.sections.indexOf(opts.name);
+            if (i >= 0) state.sections.splice(i, 1);
+          };
+        },
+      },
       inject: (keys, cb) => {
         state.injected.push(keys);
         return () => {};
@@ -2585,7 +2863,12 @@ describe("apply：配置分支", () => {
   });
 
   // announceToAgent:false：有路由无 section；announceCatalog:false：无 pre-step。
-  const disabledAnnounce = () => applied({ announceToAgent: false, announceCatalog: false, storePath: join(homeDir, "st.json") });
+  const disabledAnnounce = () =>
+    applied({
+      announceToAgent: false,
+      announceCatalog: false,
+      storePath: join(homeDir, "st.json"),
+    });
 
   it("启用时注册全部路由", async () => {
     const { state } = await disabledAnnounce();
@@ -2683,7 +2966,11 @@ describe("#569 catalogViewFor 合成注入端目录视图", () => {
   });
 
   const catalogFileFor = (root) =>
-    join(homeDir, "dsh-mcp-catalog", `${createHash("sha256").update(root).digest("hex").slice(0, 16)}.json`);
+    join(
+      homeDir,
+      "dsh-mcp-catalog",
+      `${createHash("sha256").update(root).digest("hex").slice(0, 16)}.json`,
+    );
   const unitFor = (root, catalogEntries) => ({
     root,
     connections: new Map(),
@@ -2738,13 +3025,19 @@ describe("#569 catalogViewFor 合成注入端目录视图", () => {
     mw.units.set(
       "@global",
       unitFor("@global", {
-        g1: { discoveredAt: 1, tools: new Map([["g_search", { description: "Global search the web for facts." }]]) },
+        g1: {
+          discoveredAt: 1,
+          tools: new Map([["g_search", { description: "Global search the web for facts." }]]),
+        },
       }),
     );
     mw.units.set(
       projDir,
       unitFor(projDir, {
-        p1: { discoveredAt: 1, tools: new Map([["p_read", { description: "Project read files." }]]) },
+        p1: {
+          discoveredAt: 1,
+          tools: new Map([["p_read", { description: "Project read files." }]]),
+        },
       }),
     );
     const servers = serversWith({
@@ -2779,7 +3072,10 @@ describe("#569 catalogViewFor 合成注入端目录视图", () => {
     mw.units.set(
       projDir,
       unitFor(projDir, {
-        p1: { discoveredAt: 1, tools: new Map([["p_read", { description: "Project read files." }]]) },
+        p1: {
+          discoveredAt: 1,
+          tools: new Map([["p_read", { description: "Project read files." }]]),
+        },
         p2: { discoveredAt: 1, tools: new Map(), unavailable: "discovery failed" },
       }),
     );

@@ -42,8 +42,18 @@ export const inject = ["webServer"];
 // smoke/lint 只能从 lib/index.js 导入，故契约与核心模块一律在此 re-export。
 // 配置模型与校验（#276 方案 A 阶段 3 拆出：schema / 校验 / 净化 / 类型面；
 // normalizeLegacyWsCompressPaths 为 #395 M2 存量白名单归一化纯函数）
-export { Config, sanitizeSettings, validateSettings, normalizeLegacyWsCompressPaths } from "./config.ts";
-export type { HttpCompressSnapshot, LanProxyConfig, ResolvedConfig, SettingInvalid } from "./config.ts";
+export {
+  Config,
+  sanitizeSettings,
+  validateSettings,
+  normalizeLegacyWsCompressPaths,
+} from "./config.ts";
+export type {
+  HttpCompressSnapshot,
+  LanProxyConfig,
+  ResolvedConfig,
+  SettingInvalid,
+} from "./config.ts";
 // 官方 settings 命名空间接线（#276 方案 A 阶段 3 拆出）
 export { SETTINGS_NS, installLanProxySettings } from "./settings.ts";
 export type { LanProxySettingsHooks, OwnerScopeLike } from "./settings.ts";
@@ -57,6 +67,29 @@ export type { ConfigRouteDeps, PatchResult } from "./config-routes.ts";
 export { apply, pluginDir, DEFAULT_WSS_COMPRESS_PATHS } from "./apply.ts";
 
 // 测试面 re-export（smoke 只依赖主入口，避免发布物保留内部模块）
-export { createLanProxy, hostnameAllowed, formatAuthority, rewriteHeaders, bridgeUpstreamHeaders, isLoopbackTarget, DEFAULT_OPTIONS, compressWsPath, isCompressible, resolveCompressionOptions, deflateAllowedByPolicy, DEFAULT_DEFLATE_POLICY, hasDshAuthCookie, isTokenMintCandidate, withLaunchToken } from "./proxy.ts";
+export {
+  createLanProxy,
+  hostnameAllowed,
+  formatAuthority,
+  rewriteHeaders,
+  bridgeUpstreamHeaders,
+  isLoopbackTarget,
+  DEFAULT_OPTIONS,
+  compressWsPath,
+  isCompressible,
+  resolveCompressionOptions,
+  deflateAllowedByPolicy,
+  DEFAULT_DEFLATE_POLICY,
+  hasDshAuthCookie,
+  isTokenMintCandidate,
+  withLaunchToken,
+} from "./proxy.ts";
 export type { ConnStats, DeflatePolicy, LanProxy, TokenProvider } from "./proxy.ts";
-export { ensureSelfSignedTls, certStillValid, toSanEntry, loadTlsFromFiles, SELF_SIGNED_KEY, SELF_SIGNED_CERT } from "./cert.ts";
+export {
+  ensureSelfSignedTls,
+  certStillValid,
+  toSanEntry,
+  loadTlsFromFiles,
+  SELF_SIGNED_KEY,
+  SELF_SIGNED_CERT,
+} from "./cert.ts";

@@ -20,7 +20,9 @@ export const MIGRATED_BAK_NAME = "config.json.migrated.bak";
  * 旧白名单归一化——显式保存过旧默认 ["/api/events.mux", "/api/events.host"] 的
  * 存量 config.json 迁移后同样写入新默认 ["/api/remote.mux"]；自定义白名单原样保留。
  */
-function normalizeMigratedWsCompressPaths(sanitized: ReturnType<typeof sanitizeSettings>): ReturnType<typeof sanitizeSettings> {
+function normalizeMigratedWsCompressPaths(
+  sanitized: ReturnType<typeof sanitizeSettings>,
+): ReturnType<typeof sanitizeSettings> {
   if (sanitized === null || sanitized.wsCompressPaths === undefined) return sanitized;
   const normalized = normalizeLegacyWsCompressPaths(sanitized.wsCompressPaths);
   if (normalized === undefined) return sanitized;
@@ -57,23 +59,55 @@ async function resumeMigrateFromBak(
   try {
     parsed = JSON.parse(readFileSync(bakPath, "utf8"));
   } catch {
-    logger?.warn?.(`lan-proxy: 检测到上次未完成的迁移残留 ${MIGRATED_BAK_NAME}，但文件不是合法 JSON — 无法自动恢复，请手动检查该文件（原始 config.json 内容应在其内）或删除它`);
-    return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: true };
+    logger?.warn?.(
+      `lan-proxy: 检测到上次未完成的迁移残留 ${MIGRATED_BAK_NAME}，但文件不是合法 JSON — 无法自动恢复，请手动检查该文件（原始 config.json 内容应在其内）或删除它`,
+    );
+    return {
+      performed: false,
+      migrated: false,
+      rolledBack: false,
+      skippedCorrupt: true,
+      resumed: true,
+    };
   }
   const sanitized0 =
     typeof parsed === "object" && parsed !== null ? sanitizeSettings(parsed) : null;
   if (sanitized0 === null || Object.keys(sanitized0).length === 0) {
-    logger?.warn?.(`lan-proxy: 上次未完成的迁移残留 ${MIGRATED_BAK_NAME} 无可迁移的有效键 — 已跳过，确认无误后可手动删除该文件`);
-    return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: true };
+    logger?.warn?.(
+      `lan-proxy: 上次未完成的迁移残留 ${MIGRATED_BAK_NAME} 无可迁移的有效键 — 已跳过，确认无误后可手动删除该文件`,
+    );
+    return {
+      performed: false,
+      migrated: false,
+      rolledBack: false,
+      skippedCorrupt: true,
+      resumed: true,
+    };
   }
   const sanitized = normalizeMigratedWsCompressPaths(sanitized0);
   try {
     await scope.update(sanitized as Record<string, unknown>);
-    logger?.warn?.(`lan-proxy: 检测到上次未完成的迁移 — 已从 ${MIGRATED_BAK_NAME} 重放写入设置；确认运行正常后可手动删除该备份`);
-    return { performed: false, migrated: true, rolledBack: false, skippedCorrupt: false, resumed: true };
+    logger?.warn?.(
+      `lan-proxy: 检测到上次未完成的迁移 — 已从 ${MIGRATED_BAK_NAME} 重放写入设置；确认运行正常后可手动删除该备份`,
+    );
+    return {
+      performed: false,
+      migrated: true,
+      rolledBack: false,
+      skippedCorrupt: false,
+      resumed: true,
+    };
   } catch (err) {
-    logger?.warn?.(`lan-proxy: 未完成的迁移从 ${MIGRATED_BAK_NAME} 重放写入设置失败（${errorMessage(err)}）— 配置仍保留在该备份中，请排查后重启重试，或手动将其内容恢复到设置`);
-    return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, resumed: true };
+    logger?.warn?.(
+      `lan-proxy: 未完成的迁移从 ${MIGRATED_BAK_NAME} 重放写入设置失败（${errorMessage(err)}）— 配置仍保留在该备份中，请排查后重启重试，或手动将其内容恢复到设置`,
+    );
+    return {
+      performed: false,
+      migrated: false,
+      rolledBack: false,
+      skippedCorrupt: false,
+      resumed: true,
+    };
   }
 }
 
@@ -107,7 +141,13 @@ export async function migrateFileConfig(
   // 中断态优先于幂等判定：config.json 与 .bak 同时不存在才是真正的已迁移稳态。
   if (!existsSync(cfgPath)) {
     if (existsSync(bakPath)) return resumeMigrateFromBak(bakPath, scope, logger);
-    return { performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, resumed: false };
+    return {
+      performed: false,
+      migrated: false,
+      rolledBack: false,
+      skippedCorrupt: false,
+      resumed: false,
+    };
   }
   // Windows 上 rename 到已存在目标会抛错；先移除历史 bak（见函数注释）。
   if (existsSync(bakPath)) unlinkSync(bakPath);
@@ -116,34 +156,80 @@ export async function migrateFileConfig(
   try {
     parsed = JSON.parse(readFileSync(bakPath, "utf8"));
   } catch {
-    logger?.warn?.(`lan-proxy: 存量 config.json 不是合法 JSON — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`);
-    return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false };
+    logger?.warn?.(
+      `lan-proxy: 存量 config.json 不是合法 JSON — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`,
+    );
+    return {
+      performed: true,
+      migrated: false,
+      rolledBack: false,
+      skippedCorrupt: true,
+      resumed: false,
+    };
   }
   if (typeof parsed !== "object" || parsed === null) {
-    logger?.warn?.(`lan-proxy: 存量 config.json 不是配置对象 — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`);
-    return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false };
+    logger?.warn?.(
+      `lan-proxy: 存量 config.json 不是配置对象 — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`,
+    );
+    return {
+      performed: true,
+      migrated: false,
+      rolledBack: false,
+      skippedCorrupt: true,
+      resumed: false,
+    };
   }
   const sanitized0 = sanitizeSettings(parsed);
   if (sanitized0 === null) {
     // 含类型非法值：整体不写入（与保存通道同口径，宁可不迁也不迁一半）。
-    logger?.warn?.(`lan-proxy: 存量 config.json 含非法配置值 — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`);
-    return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false };
+    logger?.warn?.(
+      `lan-proxy: 存量 config.json 含非法配置值 — 仅标记为已迁移（${MIGRATED_BAK_NAME}），不写入设置`,
+    );
+    return {
+      performed: true,
+      migrated: false,
+      rolledBack: false,
+      skippedCorrupt: true,
+      resumed: false,
+    };
   }
   if (Object.keys(sanitized0).length === 0) {
-    return { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false };
+    return {
+      performed: true,
+      migrated: false,
+      rolledBack: false,
+      skippedCorrupt: true,
+      resumed: false,
+    };
   }
   const sanitized = normalizeMigratedWsCompressPaths(sanitized0);
   try {
     await scope.update(sanitized as Record<string, unknown>);
-    return { performed: true, migrated: true, rolledBack: false, skippedCorrupt: false, resumed: false };
+    return {
+      performed: true,
+      migrated: true,
+      rolledBack: false,
+      skippedCorrupt: false,
+      resumed: false,
+    };
   } catch (err) {
     // 写入失败：回滚改名，让下次启动重试（数据始终存在于 config.json 或 bak 之一）。
     try {
       if (!existsSync(cfgPath)) renameSync(bakPath, cfgPath);
     } catch (rollbackErr) {
-      logger?.warn?.(`lan-proxy: 迁移回滚失败（${errorMessage(rollbackErr)}）— 数据保留在 ${MIGRATED_BAK_NAME}，请手动恢复`);
+      logger?.warn?.(
+        `lan-proxy: 迁移回滚失败（${errorMessage(rollbackErr)}）— 数据保留在 ${MIGRATED_BAK_NAME}，请手动恢复`,
+      );
     }
-    logger?.warn?.(`lan-proxy: 存量 config.json 迁移写入设置失败（${errorMessage(err)}）— 已回滚，下次启动重试`);
-    return { performed: true, migrated: false, rolledBack: true, skippedCorrupt: false, resumed: false };
+    logger?.warn?.(
+      `lan-proxy: 存量 config.json 迁移写入设置失败（${errorMessage(err)}）— 已回滚，下次启动重试`,
+    );
+    return {
+      performed: true,
+      migrated: false,
+      rolledBack: true,
+      skippedCorrupt: false,
+      resumed: false,
+    };
   }
 }

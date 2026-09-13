@@ -162,7 +162,9 @@ describe("provider 检测链：子代理 / 父会话投影上溯（#69 / #383）
       },
       "own",
     );
-    expect(await resolveProviderFromSession(sessions, makeRemote("catalog-fallback"))).toBe("catalog-fallback");
+    expect(await resolveProviderFromSession(sessions, makeRemote("catalog-fallback"))).toBe(
+      "catalog-fallback",
+    );
   });
 });
 
@@ -174,7 +176,11 @@ describe("全链投影缺失：modelCatalog 兜底 + 保持上次检测 / 未识
   beforeAll(async () => {
     // 全链（自身 + 祖先）投影均缺失 → 兜底 modelCatalog().default
     const sessions = makeSessions(
-      { s: row(undefined, { parentId: "m" }), m: row(undefined, { parentId: "g" }), g: row(undefined) },
+      {
+        s: row(undefined, { parentId: "m" }),
+        m: row(undefined, { parentId: "g" }),
+        g: row(undefined),
+      },
       "s",
     );
     got = await resolveProviderFromSession(sessions, makeRemote("catalog-default"));
@@ -182,9 +188,17 @@ describe("全链投影缺失：modelCatalog 兜底 + 保持上次检测 / 未识
     noRemote = await resolveProviderFromSession(sessions, undefined);
     failRemote = await resolveProviderFromSession(sessions, makeRemote());
     // 有历史检测 → 保持上次值且标注未识别
-    d1 = decideProviderAfterDetect({ resolved: undefined, hadSession: true, previousDetected: "deepseek" });
+    d1 = decideProviderAfterDetect({
+      resolved: undefined,
+      hadSession: true,
+      previousDetected: "deepseek",
+    });
     // 从未成功检测过 → 才回落默认
-    d2 = decideProviderAfterDetect({ resolved: undefined, hadSession: true, previousDetected: undefined });
+    d2 = decideProviderAfterDetect({
+      resolved: undefined,
+      hadSession: true,
+      previousDetected: undefined,
+    });
   });
 
   it("全链投影缺失 → modelCatalog().default 兜底", () => {
@@ -259,7 +273,10 @@ describe("无任何会话 → 维持原回落行为（回归防护）", () => {
     let calls = 0;
     const remote = {
       session: {
-        modelCatalog: async () => { calls += 1; return { ok: true, value: { default: { provider: "x" } } }; },
+        modelCatalog: async () => {
+          calls += 1;
+          return { ok: true, value: { default: { provider: "x" } } };
+        },
       },
     };
     noSessions = await resolveProviderFromSession(undefined, remote);
@@ -267,8 +284,16 @@ describe("无任何会话 → 维持原回落行为（回归防护）", () => {
     emptyCurrent = await resolveProviderFromSession(makeSessions({ a: {} }, ""), remote);
     catalogCalls = calls;
     // 决策层：无任何会话一律回落默认（即使有历史检测也不沿用——维持原行为）
-    d1 = decideProviderAfterDetect({ resolved: undefined, hadSession: false, previousDetected: "deepseek" });
-    d2 = decideProviderAfterDetect({ resolved: undefined, hadSession: false, previousDetected: undefined });
+    d1 = decideProviderAfterDetect({
+      resolved: undefined,
+      hadSession: false,
+      previousDetected: "deepseek",
+    });
+    d2 = decideProviderAfterDetect({
+      resolved: undefined,
+      hadSession: false,
+      previousDetected: undefined,
+    });
   });
 
   it("无 sessions → undefined", () => {
@@ -318,7 +343,10 @@ describe("上溯深度封顶 / 环防御", () => {
     const self = makeSessions({ a: { parentId: "a" } }, "a");
     selfResult = [...sessionAncestryChain(self, "a")];
     // 深链封顶：d → c → b → a，默认深度 3 只取三代
-    const deep = makeSessions({ d: { parentId: "c" }, c: { parentId: "b" }, b: { parentId: "a" }, a: {} }, "d");
+    const deep = makeSessions(
+      { d: { parentId: "c" }, c: { parentId: "b" }, b: { parentId: "a" }, a: {} },
+      "d",
+    );
     deepDefault = [...sessionAncestryChain(deep, "d")];
     deepCustom1 = [...sessionAncestryChain(deep, "d", 1)];
     deepCustom0 = [...sessionAncestryChain(deep, "d", 0)];
@@ -326,7 +354,9 @@ describe("上溯深度封顶 / 环防御", () => {
     noSessionsChain = [...sessionAncestryChain(undefined, "x")];
     noListChain = [...sessionAncestryChain({}, "x")];
     brokenChain = [...sessionAncestryChain(makeSessions({ x: {} }, "x"), "x")];
-    emptyParentChain = [...sessionAncestryChain(makeSessions({ x: { parentId: "" }, "": {} }, "x"), "x")];
+    emptyParentChain = [
+      ...sessionAncestryChain(makeSessions({ x: { parentId: "" }, "": {} }, "x"), "x"),
+    ];
     // 环链下解析器有限次调用后终止（投影全缺 → 兜底也被调用一次，不无限循环）
     cycResolved = await resolveProviderFromSession(cyc, makeRemote("default-ok"));
   });
@@ -426,7 +456,10 @@ describe("#419 modelCatalog 兜底缓存：重复 detect 命中缓存", () => {
     let n = 0;
     const remote = {
       session: {
-        modelCatalog: async () => { n += 1; return { ok: true, value: { default: { provider: "cached-p" } } }; },
+        modelCatalog: async () => {
+          n += 1;
+          return { ok: true, value: { default: { provider: "cached-p" } } };
+        },
       },
     };
     const cache = makeCatalogCache();
@@ -462,7 +495,10 @@ describe("#419 modelCatalog 兜底缓存：并发共享 inflight", () => {
     let n = 0;
     const remote = {
       session: {
-        modelCatalog: async () => { n += 1; return { ok: true, value: { default: { provider: "inflight-p" } } }; },
+        modelCatalog: async () => {
+          n += 1;
+          return { ok: true, value: { default: { provider: "inflight-p" } } };
+        },
       },
     };
     const cache = makeCatalogCache();
@@ -540,7 +576,10 @@ describe("#419 modelCatalog 兜底缓存：TTL 过期重拉", () => {
     let n = 0;
     const remote = {
       session: {
-        modelCatalog: async () => { n += 1; return { ok: true, value: { default: { provider: "ttl-p" } } }; },
+        modelCatalog: async () => {
+          n += 1;
+          return { ok: true, value: { default: { provider: "ttl-p" } } };
+        },
       },
     };
     const cache = makeCatalogCache(50); // 短 TTL 便于测试
@@ -569,7 +608,10 @@ describe("#419 默认 loader（无缓存）语义不变", () => {
     let n = 0;
     const remote = {
       session: {
-        modelCatalog: async () => { n += 1; return { ok: true, value: { default: { provider: "bare-p" } } }; },
+        modelCatalog: async () => {
+          n += 1;
+          return { ok: true, value: { default: { provider: "bare-p" } } };
+        },
       },
     };
     first = await defaultCatalogLoader(remote);

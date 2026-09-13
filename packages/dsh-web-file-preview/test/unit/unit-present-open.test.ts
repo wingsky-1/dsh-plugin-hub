@@ -50,35 +50,49 @@ describe("#698 地址构造", () => {
     ["/w", "a%b.md", `${PREFIX}a%25b.md`],
     ["/w", "@a.md", `${PREFIX}%40a.md`],
   ];
-  it.each(addressCases.map(([cwd, path, expected]) => ({
-    title: `#698 地址构造 cwd=${JSON.stringify(cwd)} path=${JSON.stringify(path)}`,
-    cwd,
-    path,
-    expected,
-  })))("$title", ({ cwd, path, expected }) => {
+  it.each(
+    addressCases.map(([cwd, path, expected]) => ({
+      title: `#698 地址构造 cwd=${JSON.stringify(cwd)} path=${JSON.stringify(path)}`,
+      cwd,
+      path,
+      expected,
+    })),
+  )("$title", ({ cwd, path, expected }) => {
     expect(fileAddressFor(S, cwd, path)).toBe(expected);
   });
 
   it("#698 会话 id 逐段编码", () => {
-    expect(fileAddressFor("s 1/x", "/w", "a.md")).toBe("dsh-resource://file/session/s%201%2Fx/a.md");
+    expect(fileAddressFor("s 1/x", "/w", "a.md")).toBe(
+      "dsh-resource://file/session/s%201%2Fx/a.md",
+    );
   });
 });
 
 describe("#698 请求识别", () => {
   it("#698 命中打开请求", () => {
-    expect(isOpenRequest("/api/present.open?sessionId=s1&seq=1&index=0", { method: "POST" })).toBe(true);
+    expect(isOpenRequest("/api/present.open?sessionId=s1&seq=1&index=0", { method: "POST" })).toBe(
+      true,
+    );
   });
 
   it("#698 method 大小写归一", () => {
-    expect(isOpenRequest("/api/present.open?sessionId=s1&seq=1&index=0", { method: "post" })).toBe(true);
+    expect(isOpenRequest("/api/present.open?sessionId=s1&seq=1&index=0", { method: "post" })).toBe(
+      true,
+    );
   });
 
   it("#698 reveal 刻意放行（决策 1）", () => {
-    expect(isOpenRequest("/api/present.open?sessionId=s1&seq=1&index=0&action=reveal", { method: "POST" })).toBe(false);
+    expect(
+      isOpenRequest("/api/present.open?sessionId=s1&seq=1&index=0&action=reveal", {
+        method: "POST",
+      }),
+    ).toBe(false);
   });
 
   it("#698 显式 action=open 仍命中", () => {
-    expect(isOpenRequest("/api/present.open?sessionId=s1&seq=1&index=0&action=open", { method: "POST" })).toBe(true);
+    expect(
+      isOpenRequest("/api/present.open?sessionId=s1&seq=1&index=0&action=open", { method: "POST" }),
+    ).toBe(true);
   });
 
   it("#698 无 init 视为 GET", () => {
@@ -98,16 +112,28 @@ describe("#698 请求识别", () => {
   });
 
   it("#698 绝对 URL", () => {
-    expect(isOpenRequest("http://127.0.0.1:3080/api/present.open?sessionId=s1", { method: "POST" })).toBe(true);
+    expect(
+      isOpenRequest("http://127.0.0.1:3080/api/present.open?sessionId=s1", { method: "POST" }),
+    ).toBe(true);
   });
 
   // 官方调用点是字符串 URL，但包装器必须对 Request 实例同样稳健。
   it("#698 Request 实例", () => {
-    expect(isOpenRequest({ url: "http://127.0.0.1:3080/api/present.open?sessionId=s1", method: "POST" }, undefined)).toBe(true);
+    expect(
+      isOpenRequest(
+        { url: "http://127.0.0.1:3080/api/present.open?sessionId=s1", method: "POST" },
+        undefined,
+      ),
+    ).toBe(true);
   });
 
   it("#698 init.method 优先于 Request.method", () => {
-    expect(isOpenRequest({ url: "http://127.0.0.1:3080/api/present.open?sessionId=s1", method: "GET" }, { method: "POST" })).toBe(true);
+    expect(
+      isOpenRequest(
+        { url: "http://127.0.0.1:3080/api/present.open?sessionId=s1", method: "GET" },
+        { method: "POST" },
+      ),
+    ).toBe(true);
   });
 
   it("#698 非 URL 入参不炸", () => {

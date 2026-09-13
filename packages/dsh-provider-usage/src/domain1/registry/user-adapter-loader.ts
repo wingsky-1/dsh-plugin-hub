@@ -29,7 +29,8 @@ export async function loadUserAdapterChecked(
   const candidate = (mod ?? null) as unknown;
   const detail = describeUsageStatsAdapterShape(candidate);
   if (detail !== null) {
-    if (registry) registry.recordError(`file:${basename(file)}`, "load", `契约校验失败（${detail}），已拒收`);
+    if (registry)
+      registry.recordError(`file:${basename(file)}`, "load", `契约校验失败（${detail}），已拒收`);
     return { ok: false, code: "invalid-adapter", detail: `契约校验失败（${detail}）` };
   }
   return { ok: true, adapter: candidate as UsageStatsAdapter };

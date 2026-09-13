@@ -6,7 +6,12 @@
  * apply.ts：config-routes 与 apply 都要引用 ROUTES，放在本模块可避免
  * apply ↔ config-routes 循环引用（apply.ts 不得 import index.ts 的同一纪律）。
  */
-import { writeJson, readBody, errorMessage, guardLoopbackMethod } from "../../../shared/host-utils.js";
+import {
+  writeJson,
+  readBody,
+  errorMessage,
+  guardLoopbackMethod,
+} from "../../../shared/host-utils.js";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { sanitizeSettings, validateSettings } from "./config.ts";
 import type { HttpCompressSnapshot, ResolvedConfig } from "./config.ts";
@@ -51,27 +56,45 @@ const TLS_PAIR_KEYS = ["tlsCertFile", "tlsKeyFile"] as const;
  * 走 replace（update 是 merge 语义无法 unset，owner scope 无 mutate 面）：
  * 从当前用户层复制全节、剔除被清除的键后整节替换，其余语义不变。
  */
-export async function applyConfigPatch(deps: ConfigRouteDeps, payload: unknown): Promise<PatchResult> {
+export async function applyConfigPatch(
+  deps: ConfigRouteDeps,
+  payload: unknown,
+): Promise<PatchResult> {
   if (!deps.writable()) {
-    return { ok: false, status: 503, code: "settings-unavailable", details: "settings 服务不可用，无法保存配置" };
+    return {
+      ok: false,
+      status: 503,
+      code: "settings-unavailable",
+      details: "settings 服务不可用，无法保存配置",
+    };
   }
   const body = (typeof payload === "object" && payload !== null ? payload : {}) as {
     patch?: unknown;
     expectedRevision?: unknown;
   };
   const expectedRevision =
-    typeof body.expectedRevision === "number" && Number.isInteger(body.expectedRevision) ? body.expectedRevision : undefined;
+    typeof body.expectedRevision === "number" && Number.isInteger(body.expectedRevision)
+      ? body.expectedRevision
+      : undefined;
   const rawPatch = body.patch;
   // 先定位首个非法键（issue #33 子项 1）：错误文案指明字段与合法范围。
   const invalid = validateSettings(rawPatch);
   if (invalid !== null) {
-    return { ok: false, status: 400, code: "invalid", details: `配置项「${invalid.key}」非法：${invalid.hint}` };
+    return {
+      ok: false,
+      status: 400,
+      code: "invalid",
+      details: `配置项「${invalid.key}」非法：${invalid.hint}`,
+    };
   }
   const sanitized = sanitizeSettings(rawPatch);
   if (sanitized === null) {
     return { ok: false, status: 400, code: "invalid", details: "非法配置值（未知键或类型错误）" };
   }
-  const rawSrc = (typeof rawPatch === "object" && rawPatch !== null ? rawPatch : {}) as Record<string, unknown>;
+  const rawSrc = (typeof rawPatch === "object" && rawPatch !== null ? rawPatch : {}) as Record<
+    string,
+    unknown
+  >;
   // 证书成对约束（#467 固化成对语义）：raw 层按「键是否显式出现」判定形态——
   // 只显式给出单侧（另一侧未提交 = undefined）即拒绝；"一空一缺"与"一非空一缺"
   // 同属单侧出现。注意须用键存在性（rawSrc[key] !== undefined）而非字符串判型：
@@ -81,11 +104,21 @@ export async function applyConfigPatch(deps: ConfigRouteDeps, payload: unknown):
   const rawCertExplicit = rawSrc.tlsCertFile !== undefined;
   const rawKeyExplicit = rawSrc.tlsKeyFile !== undefined;
   if (rawCertExplicit !== rawKeyExplicit) {
-    return { ok: false, status: 400, code: "tls-pair", details: "证书文件与私钥文件必须成对提供（或都留空以使用自签名证书）" };
+    return {
+      ok: false,
+      status: 400,
+      code: "tls-pair",
+      details: "证书文件与私钥文件必须成对提供（或都留空以使用自签名证书）",
+    };
   }
   // 成对约束第二层（sanitize 后判定，口径与历史版本一致）：只给单侧值。
   if (Boolean(sanitized.tlsCertFile) !== Boolean(sanitized.tlsKeyFile)) {
-    return { ok: false, status: 400, code: "tls-pair", details: "证书文件与私钥文件必须成对提供（或都留空以使用自签名证书）" };
+    return {
+      ok: false,
+      status: 400,
+      code: "tls-pair",
+      details: "证书文件与私钥文件必须成对提供（或都留空以使用自签名证书）",
+    };
   }
   const clearingTls = TLS_PAIR_KEYS.some((key) => rawSrc[key] === "");
   try {
@@ -97,14 +130,22 @@ export async function applyConfigPatch(deps: ConfigRouteDeps, payload: unknown):
       for (const key of TLS_PAIR_KEYS) {
         if (rawSrc[key] === "" || user[key] !== undefined) delete section[key];
       }
-      await deps.replace({ ...section, ...(sanitized as Record<string, unknown>) }, expectedRevision);
+      await deps.replace(
+        { ...section, ...(sanitized as Record<string, unknown>) },
+        expectedRevision,
+      );
     } else {
       await deps.update(sanitized as Record<string, unknown>, expectedRevision);
     }
   } catch (err) {
     const code = (err as { code?: unknown })?.code;
     if (code === "SETTINGS_CONFLICT") {
-      return { ok: false, status: 409, code: "conflict", details: "设置已被其他窗口修改，请刷新后重试" };
+      return {
+        ok: false,
+        status: 409,
+        code: "conflict",
+        details: "设置已被其他窗口修改，请刷新后重试",
+      };
     }
     // P2-2：对外收敛固定文案，不把底层异常原文（可能含路径等内部信息）回给
     // 客户端；完整原因走服务端日志。
@@ -143,7 +184,10 @@ export function buildConfigRoutes(deps: ConfigRouteDeps): WebRoute[] {
         } catch (error) {
           const message = errorMessage(error);
           if (message.includes("invalid JSON body")) {
-            writeJson(res, 400, { ok: false, error: { code: "invalid-json", details: `invalid JSON body: ${message}` } });
+            writeJson(res, 400, {
+              ok: false,
+              error: { code: "invalid-json", details: `invalid JSON body: ${message}` },
+            });
             return;
           }
           // 超限路径：readBody 已 reject 并 destroy 连接（socket 已断无法再写响应）。
@@ -151,7 +195,10 @@ export function buildConfigRoutes(deps: ConfigRouteDeps): WebRoute[] {
         }
         const result = await applyConfigPatch(deps, body);
         if (!result.ok) {
-          writeJson(res, result.status, { ok: false, error: { code: result.code, details: result.details } });
+          writeJson(res, result.status, {
+            ok: false,
+            error: { code: result.code, details: result.details },
+          });
           return;
         }
         writeJson(res, 200, { ok: true, user: result.value.user, revision: result.value.revision });

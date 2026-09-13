@@ -5,7 +5,7 @@
 # 不以路径拼接猜测安装位置。
 - insert:
     - id: dsh-verify-isolated-skill-filesystem
-      name: '@deepseek-ai/dsh-skill-filesystem'
+      name: "@deepseek-ai/dsh-skill-filesystem"
       config:
         providerName: dsh-verify-isolated
         includeDefaultRoots: false

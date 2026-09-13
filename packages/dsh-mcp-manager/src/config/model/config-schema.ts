@@ -22,26 +22,45 @@ export const DEFAULT_UI_CONFIG: UiPlacementConfig = {
   zIndexBase: DEFAULT_Z_INDEX_BASE,
 };
 
-const DebugConfigSchema = z.object({
-  callStats: z.boolean().default(false).description("是否开启 MCP 工具调用统计调试与落盘（默认关闭，仅可通过配置文件开启）"),
-  statsFile: z.string().default("").description("统计落盘路径，留空使用默认 <DSH_HOME>/mcp-stats.json"),
-}).default({ callStats: false, statsFile: "" });
+const DebugConfigSchema = z
+  .object({
+    callStats: z
+      .boolean()
+      .default(false)
+      .description("是否开启 MCP 工具调用统计调试与落盘（默认关闭，仅可通过配置文件开启）"),
+    statsFile: z
+      .string()
+      .default("")
+      .description("统计落盘路径，留空使用默认 <DSH_HOME>/mcp-stats.json"),
+  })
+  .default({ callStats: false, statsFile: "" });
 
-const UI_POSITIONS: UiPlacementConfig["position"][] = ["top-right", "top-left", "bottom-right", "bottom-left"];
+const UI_POSITIONS: UiPlacementConfig["position"][] = [
+  "top-right",
+  "top-left",
+  "bottom-right",
+  "bottom-left",
+];
 
 const UiConfigSchema = z.object({
-  position: z.union([
-    z.const("top-right"),
-    z.const("top-left"),
-    z.const("bottom-right"),
-    z.const("bottom-left"),
-  ]).default("top-right"),
-  offset: z.object({
-    x: z.number().default(8),
-    y: z.number().default(8),
-    blankY: z.number().default(40),
-  }).default({ x: 8, y: 8, blankY: 40 }),
-  zIndexBase: z.number().default(DEFAULT_UI_CONFIG.zIndexBase)
+  position: z
+    .union([
+      z.const("top-right"),
+      z.const("top-left"),
+      z.const("bottom-right"),
+      z.const("bottom-left"),
+    ])
+    .default("top-right"),
+  offset: z
+    .object({
+      x: z.number().default(8),
+      y: z.number().default(8),
+      blankY: z.number().default(40),
+    })
+    .default({ x: 8, y: 8, blankY: 40 }),
+  zIndexBase: z
+    .number()
+    .default(DEFAULT_UI_CONFIG.zIndexBase)
     .description("浮窗层级基准（1-9000），胶囊与点击后弹出的主面板同取该配置值"),
 });
 
@@ -58,7 +77,10 @@ export function normalizeUiConfig(raw: unknown): ClientUiConfig {
   const position = UI_POSITIONS.includes(ui.position as UiPlacementConfig["position"])
     ? (ui.position as UiPlacementConfig["position"])
     : DEFAULT_UI_CONFIG.position;
-  const offset = (typeof ui.offset === "object" && ui.offset !== null ? ui.offset : {}) as Record<string, unknown>;
+  const offset = (typeof ui.offset === "object" && ui.offset !== null ? ui.offset : {}) as Record<
+    string,
+    unknown
+  >;
   const clampNum = (value: unknown, dflt: number): number =>
     typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.round(value)) : dflt;
   const offsetX = clampNum(ui.offsetX ?? offset.x, DEFAULT_UI_CONFIG.offset.x);
@@ -108,16 +130,44 @@ export const Config: z<{
   ui: UiPlacementConfig;
 }> = z.object({
   enabled: z.boolean().default(true).description("是否启用本插件"),
-  announceToAgent: z.boolean().default(true).description("是否向 Agent 宣告插件（能力清单由 <available_mcp_servers> 承担）"),
-  storePath: z.string().description("全局服务器配置路径，留空用默认 <DSH_HOME>/dsh-mcp.json").disabled(true),
-  announceCatalog: z.boolean().default(DEFAULT_ANNOUNCE_CATALOG).description("是否注入 MCP 能力目录（<available_mcp_servers>）"),
-  catalogMaxEntries: z.number().default(DEFAULT_CATALOG_MAX_ENTRIES).description("目录注入条目上限").disabled(true),
-  enhanceEmptyDescriptions: z.boolean().default(DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS).description("空描述工具条件拼接自定义描述"),
-  resultTruncateBytes: z.number().default(DEFAULT_RESULT_TRUNCATE_BYTES).description("工具结果截断字节数").disabled(true),
-  middleware: z.union([z.const("off"), z.const("project"), z.const("all")]).default("project")
-    .description("MCP 中间层模式：off=直接注册 mcp__ 工具（默认兼容）；project=项目级走 ws_mcp_search/ws_mcp_call（推荐）；all=全部走中间层"),
-  middlewarePolicy: z.dict(z.any()).default({})
-    .description("中间层策略：{ allowTools: {<server>: [glob]}, denyTools: {<server>: [glob]} }，server 为裸名"),
+  announceToAgent: z
+    .boolean()
+    .default(true)
+    .description("是否向 Agent 宣告插件（能力清单由 <available_mcp_servers> 承担）"),
+  storePath: z
+    .string()
+    .description("全局服务器配置路径，留空用默认 <DSH_HOME>/dsh-mcp.json")
+    .disabled(true),
+  announceCatalog: z
+    .boolean()
+    .default(DEFAULT_ANNOUNCE_CATALOG)
+    .description("是否注入 MCP 能力目录（<available_mcp_servers>）"),
+  catalogMaxEntries: z
+    .number()
+    .default(DEFAULT_CATALOG_MAX_ENTRIES)
+    .description("目录注入条目上限")
+    .disabled(true),
+  enhanceEmptyDescriptions: z
+    .boolean()
+    .default(DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS)
+    .description("空描述工具条件拼接自定义描述"),
+  resultTruncateBytes: z
+    .number()
+    .default(DEFAULT_RESULT_TRUNCATE_BYTES)
+    .description("工具结果截断字节数")
+    .disabled(true),
+  middleware: z
+    .union([z.const("off"), z.const("project"), z.const("all")])
+    .default("project")
+    .description(
+      "MCP 中间层模式：off=直接注册 mcp__ 工具（默认兼容）；project=项目级走 ws_mcp_search/ws_mcp_call（推荐）；all=全部走中间层",
+    ),
+  middlewarePolicy: z
+    .dict(z.any())
+    .default({})
+    .description(
+      "中间层策略：{ allowTools: {<server>: [glob]}, denyTools: {<server>: [glob]} }，server 为裸名",
+    ),
   debug: DebugConfigSchema.disabled(true),
   ui: UiConfigSchema,
 });

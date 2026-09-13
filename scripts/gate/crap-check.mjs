@@ -32,18 +32,18 @@
  *    - 未触及的存量函数：全部豁免；
  *    - 存在新增超标或存量恶化时 exit 1，否则 exit 0。
  */
-import { readFileSync, existsSync, mkdirSync, writeFileSync, realpathSync } from 'node:fs';
-import { join, resolve, dirname } from 'node:path';
-import { spawnSync } from 'node:child_process';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { createRequire } from 'node:module';
+import { readFileSync, existsSync, mkdirSync, writeFileSync, realpathSync } from "node:fs";
+import { join, resolve, dirname } from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const SCRIPT_DIR = dirname(SCRIPT_PATH);
 
 // 工具链来源：本脚本所属仓库的 tools/lint 隔离包（与「被评估的仓库」可能是两个位置——
 // 测试 fixture 用 cwd 指向临时目录，而 ESLint 工具链始终来自本脚本所在仓库）。
-const TOOLCHAIN_PKG = join(SCRIPT_DIR, '..', '..', 'tools', 'lint', 'package.json');
+const TOOLCHAIN_PKG = join(SCRIPT_DIR, "..", "..", "tools", "lint", "package.json");
 
 /** 被评估文件的路径口径（仓库根相对 posix）。 */
 const SRC_RE = /(?:^|\/)packages\/[^/]+\/src\//;
@@ -58,8 +58,8 @@ let toolchainCache = null;
 async function loadToolchain() {
   if (toolchainCache !== null) return toolchainCache;
   const requireFromLint = createRequire(TOOLCHAIN_PKG);
-  const { Linter } = await import(pathToFileURL(requireFromLint.resolve('eslint')).href);
-  const tseslint = await import(pathToFileURL(requireFromLint.resolve('typescript-eslint')).href);
+  const { Linter } = await import(pathToFileURL(requireFromLint.resolve("eslint")).href);
+  const tseslint = await import(pathToFileURL(requireFromLint.resolve("typescript-eslint")).href);
   toolchainCache = { Linter, parser: tseslint.default.parser };
   return toolchainCache;
 }
@@ -67,7 +67,7 @@ async function loadToolchain() {
 /** 从 ESLint 诊断文本里取函数名（无名形态回退为空串）。 */
 function nameFromMessage(message) {
   const m = /^(?:Function|Method|Getter|Setter|Constructor|Static block) '([^']+)'/.exec(message);
-  return m === null ? '' : m[1];
+  return m === null ? "" : m[1];
 }
 
 /**
@@ -78,23 +78,25 @@ export async function functionsOf(code, filename) {
   const { Linter, parser } = await loadToolchain();
   const isJs = /\.(js|mjs|cjs)$/.test(filename);
   const linter = new Linter();
-  const config = [{
-    files: isJs ? ['**/*.{js,mjs,cjs}'] : ['**/*.{ts,tsx,mts,cts}'],
-    languageOptions: isJs
-      ? { ecmaVersion: 'latest', sourceType: 'module' }
-      : { parser, ecmaVersion: 'latest', sourceType: 'module' },
-    rules: { complexity: ['error', 0] },
-  }];
-  const verifyName = isJs ? 'x.mjs' : filename.endsWith('.tsx') ? 'x.tsx' : 'x.ts';
+  const config = [
+    {
+      files: isJs ? ["**/*.{js,mjs,cjs}"] : ["**/*.{ts,tsx,mts,cts}"],
+      languageOptions: isJs
+        ? { ecmaVersion: "latest", sourceType: "module" }
+        : { parser, ecmaVersion: "latest", sourceType: "module" },
+      rules: { complexity: ["error", 0] },
+    },
+  ];
+  const verifyName = isJs ? "x.mjs" : filename.endsWith(".tsx") ? "x.tsx" : "x.ts";
   let messages;
   try {
     messages = linter.verify(code, config, { filename: verifyName });
   } catch (error) {
-    return { fns: [], parseError: String(error.message).split('\n')[0] };
+    return { fns: [], parseError: String(error.message).split("\n")[0] };
   }
   const fatal = messages.find((m) => m.fatal === true);
   if (fatal !== undefined) {
-    return { fns: [], parseError: String(fatal.message).split('\n')[0] };
+    return { fns: [], parseError: String(fatal.message).split("\n")[0] };
   }
   const fns = [];
   for (const m of messages) {
@@ -102,7 +104,12 @@ export async function functionsOf(code, filename) {
     if (/Class field initializer/.test(m.message)) continue;
     const c = /complexity of (\d+)/.exec(m.message);
     if (c === null) continue;
-    fns.push({ name: nameFromMessage(m.message), line: m.line, column: m.column, complexity: Number(c[1]) });
+    fns.push({
+      name: nameFromMessage(m.message),
+      line: m.line,
+      column: m.column,
+      complexity: Number(c[1]),
+    });
   }
   return { fns, parseError: null };
 }
@@ -120,7 +127,7 @@ export function coverageHitLines(fileCov) {
   const hit = new Map();
   for (const [id, fn] of Object.entries(fileCov?.fnMap ?? {})) {
     const line = fn.decl?.start?.line ?? fn.loc?.start?.line ?? fn.line;
-    if (typeof line !== 'number') continue;
+    if (typeof line !== "number") continue;
     const covered = (fileCov.f?.[id] ?? 0) > 0;
     hit.set(line, (hit.get(line) ?? false) || covered);
   }
@@ -143,19 +150,19 @@ export function coveredAt(hitByLine, line) {
  */
 export function parseGitDiff(diffText) {
   const files = new Map();
-  if (!diffText || typeof diffText !== 'string') return files;
+  if (!diffText || typeof diffText !== "string") return files;
 
-  const lines = diffText.split('\n');
+  const lines = diffText.split("\n");
   let currentFile = null;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    if (line.startsWith('diff --git ')) {
-      const parts = line.slice('diff --git '.length).trim().split(' ');
-      const aPath = parts[0]?.replace(/^a\//, '') ?? '';
-      const bPath = parts[1]?.replace(/^b\//, '') ?? '';
-      const targetPath = (bPath && bPath !== '/dev/null') ? bPath : aPath;
+    if (line.startsWith("diff --git ")) {
+      const parts = line.slice("diff --git ".length).trim().split(" ");
+      const aPath = parts[0]?.replace(/^a\//, "") ?? "";
+      const bPath = parts[1]?.replace(/^b\//, "") ?? "";
+      const targetPath = bPath && bPath !== "/dev/null" ? bPath : aPath;
       currentFile = {
         file: targetPath,
         oldFile: aPath,
@@ -171,26 +178,26 @@ export function parseGitDiff(diffText) {
 
     if (!currentFile) continue;
 
-    if (line.startsWith('--- /dev/null')) {
+    if (line.startsWith("--- /dev/null")) {
       currentFile.isNew = true;
       continue;
     }
-    if (line.startsWith('+++ /dev/null')) {
+    if (line.startsWith("+++ /dev/null")) {
       currentFile.isDeleted = true;
       continue;
     }
-    if (line.startsWith('--- a/')) {
-      currentFile.oldFile = line.slice('--- a/'.length).trim();
+    if (line.startsWith("--- a/")) {
+      currentFile.oldFile = line.slice("--- a/".length).trim();
       continue;
     }
-    if (line.startsWith('+++ b/')) {
-      currentFile.file = line.slice('+++ b/'.length).trim();
+    if (line.startsWith("+++ b/")) {
+      currentFile.file = line.slice("+++ b/".length).trim();
       files.set(currentFile.file, currentFile);
       continue;
     }
 
     // Hunk header: @@ -oldStart[,oldCount] +newStart[,newCount] @@
-    if (line.startsWith('@@ ')) {
+    if (line.startsWith("@@ ")) {
       const match = /^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/.exec(line);
       if (match) {
         const oldStart = parseInt(match[1], 10);
@@ -231,7 +238,7 @@ export function mapNewToOldLine(newLine, hunks) {
     if (newLine >= hunk.newStart && newLine < hunk.newStart + hunk.newCount) {
       return null;
     }
-    cumulativeOffset += (hunk.newCount - hunk.oldCount);
+    cumulativeOffset += hunk.newCount - hunk.oldCount;
   }
   return newLine - cumulativeOffset;
 }
@@ -250,7 +257,7 @@ export function mapOldToNewLine(oldLine, hunks) {
     if (oldLine >= hunk.oldStart && oldLine < hunk.oldStart + hunk.oldCount) {
       return null;
     }
-    cumulativeOffset += (hunk.newCount - hunk.oldCount);
+    cumulativeOffset += hunk.newCount - hunk.oldCount;
   }
   return oldLine + cumulativeOffset;
 }
@@ -304,9 +311,9 @@ export function findBaseFunction(newFn, baseFns, hunks) {
     }
     if (nameMatches.length > 1) {
       const targetLine = mappedOldLine ?? newFn.startLine;
-      return nameMatches.slice().sort((a, b) =>
-        Math.abs(a.startLine - targetLine) - Math.abs(b.startLine - targetLine)
-      )[0];
+      return nameMatches
+        .slice()
+        .sort((a, b) => Math.abs(a.startLine - targetLine) - Math.abs(b.startLine - targetLine))[0];
     }
   }
 
@@ -314,8 +321,11 @@ export function findBaseFunction(newFn, baseFns, hunks) {
   if (!newFn.name && hunks) {
     for (const hunk of hunks) {
       if (newFn.startLine >= hunk.newStart && newFn.startLine < hunk.newStart + hunk.newCount) {
-        const candidates = baseFns.filter((bf) =>
-          !bf.name && bf.startLine >= hunk.oldStart && bf.startLine < hunk.oldStart + hunk.oldCount
+        const candidates = baseFns.filter(
+          (bf) =>
+            !bf.name &&
+            bf.startLine >= hunk.oldStart &&
+            bf.startLine < hunk.oldStart + hunk.oldCount,
         );
         if (candidates.length === 1) {
           return candidates[0];
@@ -332,21 +342,21 @@ export function findBaseFunction(newFn, baseFns, hunks) {
  */
 export function resolveBaseRef(base, cwd) {
   const tryRef = (ref) => {
-    const res = spawnSync('git', ['rev-parse', '--verify', ref], {
+    const res = spawnSync("git", ["rev-parse", "--verify", ref], {
       cwd,
-      encoding: 'utf8',
-      stdio: ['pipe', 'pipe', 'pipe'],
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
     });
     return res.status === 0;
   };
   if (base && tryRef(base)) return base;
-  if (!base || base === 'origin/main') {
-    if (tryRef('origin/main')) return 'origin/main';
-    if (tryRef('main')) return 'main';
-    if (tryRef('HEAD~1')) return 'HEAD~1';
-    if (tryRef('HEAD')) return 'HEAD';
+  if (!base || base === "origin/main") {
+    if (tryRef("origin/main")) return "origin/main";
+    if (tryRef("main")) return "main";
+    if (tryRef("HEAD~1")) return "HEAD~1";
+    if (tryRef("HEAD")) return "HEAD";
   }
-  return base || 'HEAD';
+  return base || "HEAD";
 }
 
 /**
@@ -366,20 +376,24 @@ function withRange(fns) {
  */
 export async function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath }) {
   const baseRef = resolveBaseRef(baseArg, repoRoot);
-  const diffRes = spawnSync('git', ['diff', '-U0', baseRef, '--'], {
+  const diffRes = spawnSync("git", ["diff", "-U0", baseRef, "--"], {
     cwd: repoRoot,
-    encoding: 'utf8',
-    stdio: ['pipe', 'pipe', 'pipe'],
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
   });
 
   if (diffRes.status !== 0) {
-    console.error(`crap-check [diff]: git diff 失败（base: ${baseRef}）：${diffRes.stderr || '未知错误'}`);
+    console.error(
+      `crap-check [diff]: git diff 失败（base: ${baseRef}）：${diffRes.stderr || "未知错误"}`,
+    );
     return { exitCode: 2, passed: false, violations: [] };
   }
 
   const diffFiles = parseGitDiff(diffRes.stdout);
   // 只评估包 src 下的改动（复杂度与覆盖率同口径）
-  const relevantDiffFiles = Array.from(diffFiles.entries()).filter(([path]) => SRC_RE.test(path.replace(/\\/g, '/')));
+  const relevantDiffFiles = Array.from(diffFiles.entries()).filter(([path]) =>
+    SRC_RE.test(path.replace(/\\/g, "/")),
+  );
 
   if (relevantDiffFiles.length === 0) {
     console.log(`crap-check [diff]: base=${baseRef}，未检测到包 src 下的代码变更，OK`);
@@ -389,12 +403,14 @@ export async function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath 
   let coverage = {};
   if (existsSync(coveragePath)) {
     try {
-      coverage = JSON.parse(readFileSync(coveragePath, 'utf8'));
+      coverage = JSON.parse(readFileSync(coveragePath, "utf8"));
     } catch {
-      console.warn('crap-check [diff]: coverage/coverage-final.json 解析失败，默认按未覆盖评估');
+      console.warn("crap-check [diff]: coverage/coverage-final.json 解析失败，默认按未覆盖评估");
     }
   } else {
-    console.warn('crap-check [diff]: 未检测到 coverage/coverage-final.json，默认按未覆盖（cov=0）评估');
+    console.warn(
+      "crap-check [diff]: 未检测到 coverage/coverage-final.json，默认按未覆盖（cov=0）评估",
+    );
   }
 
   const coverageByAbs = new Map();
@@ -410,10 +426,12 @@ export async function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath 
     const absPath = join(repoRoot, relPath);
     if (!existsSync(absPath)) continue;
 
-    const currentCode = readFileSync(absPath, 'utf8');
+    const currentCode = readFileSync(absPath, "utf8");
     const current = await functionsOf(currentCode, absPath);
     if (current.parseError !== null) {
-      console.error(`crap-check [diff]: ${relPath} 解析失败（${current.parseError}）—— fail-closed`);
+      console.error(
+        `crap-check [diff]: ${relPath} 解析失败（${current.parseError}）—— fail-closed`,
+      );
       return { exitCode: 2, passed: false, violations: [] };
     }
     const currentFns = withRange(current.fns);
@@ -421,10 +439,10 @@ export async function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath 
     // 读取 base 提交中的老文件内容
     let baseFns = [];
     if (!fileDiff.isNew) {
-      const showRes = spawnSync('git', ['show', `${baseRef}:${fileDiff.oldFile || relPath}`], {
+      const showRes = spawnSync("git", ["show", `${baseRef}:${fileDiff.oldFile || relPath}`], {
         cwd: repoRoot,
-        encoding: 'utf8',
-        stdio: ['pipe', 'pipe', 'pipe'],
+        encoding: "utf8",
+        stdio: ["pipe", "pipe", "pipe"],
       });
       if (showRes.status === 0) {
         baseFns = withRange((await functionsOf(showRes.stdout, absPath)).fns);
@@ -452,10 +470,10 @@ export async function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath 
 
       if (!baseFn) {
         violations.push({
-          type: 'NEW_EXCEEDED',
+          type: "NEW_EXCEEDED",
           file: relPath,
           line: fn.line,
-          name: fn.name || '<anonymous>',
+          name: fn.name || "<anonymous>",
           comp: fn.complexity,
           covered,
           crap: crapNew,
@@ -465,10 +483,10 @@ export async function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath 
         const crapBase = crapOf(baseFn.complexity, covered);
         if (crapNew > crapBase) {
           violations.push({
-            type: 'REGRESSION',
+            type: "REGRESSION",
             file: relPath,
             line: fn.line,
-            name: fn.name || '<anonymous>',
+            name: fn.name || "<anonymous>",
             compNew: fn.complexity,
             compBase: baseFn.complexity,
             covered,
@@ -484,18 +502,26 @@ export async function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath 
   }
 
   if (violations.length > 0) {
-    console.error(`crap-check [diff]: FAIL - 发现 ${violations.length} 处 CRAP 增量违规（base: ${baseRef}，阈值: ${threshold}）：`);
+    console.error(
+      `crap-check [diff]: FAIL - 发现 ${violations.length} 处 CRAP 增量违规（base: ${baseRef}，阈值: ${threshold}）：`,
+    );
     for (const v of violations) {
-      if (v.type === 'NEW_EXCEEDED') {
-        console.error(`  [新增超标] ${v.file}:${v.line} (${v.name}) CRAP=${v.crap} > ${threshold}（comp=${v.comp}，${v.covered ? '已覆盖' : '未覆盖'}）`);
-      } else if (v.type === 'REGRESSION') {
-        console.error(`  [存量恶化] ${v.file}:${v.line} (${v.name}) CRAP 恶化: ${v.crapBase} -> ${v.crapNew}（comp: ${v.compBase} -> ${v.compNew}，${v.covered ? '已覆盖' : '未覆盖'}）`);
+      if (v.type === "NEW_EXCEEDED") {
+        console.error(
+          `  [新增超标] ${v.file}:${v.line} (${v.name}) CRAP=${v.crap} > ${threshold}（comp=${v.comp}，${v.covered ? "已覆盖" : "未覆盖"}）`,
+        );
+      } else if (v.type === "REGRESSION") {
+        console.error(
+          `  [存量恶化] ${v.file}:${v.line} (${v.name}) CRAP 恶化: ${v.crapBase} -> ${v.crapNew}（comp: ${v.compBase} -> ${v.compNew}，${v.covered ? "已覆盖" : "未覆盖"}）`,
+        );
       }
     }
     return { exitCode: 1, passed: false, violations, touchedCount, compliantCount };
   }
 
-  console.log(`crap-check [diff]: OK - base=${baseRef}，改动触及 ${touchedCount} 个函数，全部合规放行（未触及存量函数全部豁免）。`);
+  console.log(
+    `crap-check [diff]: OK - base=${baseRef}，改动触及 ${touchedCount} 个函数，全部合规放行（未触及存量函数全部豁免）。`,
+  );
   return { exitCode: 0, passed: true, violations: [], touchedCount, compliantCount };
 }
 
@@ -504,12 +530,12 @@ export async function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath 
  */
 export async function runFullCheck({ repoRoot, threshold, strict, coveragePath }) {
   if (!existsSync(coveragePath)) {
-    console.error('crap-check: coverage/coverage-final.json 不存在，请先运行 pnpm cov');
+    console.error("crap-check: coverage/coverage-final.json 不存在，请先运行 pnpm cov");
     return { exitCode: 2, passed: false, hotspots: [] };
   }
 
-  const coverage = JSON.parse(readFileSync(coveragePath, 'utf8'));
-  const normRoot = repoRoot.replace(/\\/g, '/').replace(/\/$/, '');
+  const coverage = JSON.parse(readFileSync(coveragePath, "utf8"));
+  const normRoot = repoRoot.replace(/\\/g, "/").replace(/\/$/, "");
 
   const hotspots = [];
   let totalFns = 0;
@@ -520,13 +546,13 @@ export async function runFullCheck({ repoRoot, threshold, strict, coveragePath }
   for (const [file, data] of Object.entries(coverage)) {
     // 路径口径：只评估包 src（与 vitest coverage 的 include 同口径）。先对分隔符归一，
     // 避免 Windows 反斜杠路径整批跳过而报 0。
-    const normFile = file.replace(/\\/g, '/');
+    const normFile = file.replace(/\\/g, "/");
     if (!SRC_RE.test(normFile)) continue;
     const absPath = resolve(file);
     if (!existsSync(absPath)) continue;
     scannedFiles++;
 
-    const { fns, parseError } = await functionsOf(readFileSync(absPath, 'utf8'), absPath);
+    const { fns, parseError } = await functionsOf(readFileSync(absPath, "utf8"), absPath);
     if (parseError !== null) {
       parseFailed++;
       console.warn(`crap-check: ${normFile} 解析失败，跳过（${parseError}）`);
@@ -542,7 +568,9 @@ export async function runFullCheck({ repoRoot, threshold, strict, coveragePath }
       const crap = crapOf(fn.complexity, covered);
       if (crap > threshold) {
         hotspots.push({
-          file: normFile.startsWith(normRoot + '/') ? normFile.slice(normRoot.length + 1) : normFile,
+          file: normFile.startsWith(normRoot + "/")
+            ? normFile.slice(normRoot.length + 1)
+            : normFile,
           line: fn.line,
           name: fn.name,
           comp: fn.complexity,
@@ -555,34 +583,46 @@ export async function runFullCheck({ repoRoot, threshold, strict, coveragePath }
 
   // 零函数 = 数据源口径不匹配，属静默降级（#718 定性），必须 fail-closed。
   if (totalFns === 0) {
-    console.error(`crap-check: 在 coverage 数据里没有任何包 src 条目（扫描文件 ${scannedFiles}）——`);
-    console.error('  覆盖率数据源口径不匹配（期望 vitest/istanbul 的 src 口径）。请先运行 pnpm cov，再重试。');
+    console.error(
+      `crap-check: 在 coverage 数据里没有任何包 src 条目（扫描文件 ${scannedFiles}）——`,
+    );
+    console.error(
+      "  覆盖率数据源口径不匹配（期望 vitest/istanbul 的 src 口径）。请先运行 pnpm cov，再重试。",
+    );
     return { exitCode: 2, passed: false, hotspots: [] };
   }
 
   hotspots.sort((a, b) => b.crap - a.crap);
-  console.log(`crap-check: 本仓函数 ${totalFns} 个（${scannedFiles} 个 src 文件，解析失败 ${parseFailed} 个），`
-    + `已覆盖 ${coveredFns}（${Math.round((coveredFns / totalFns) * 100)}%），阈值 ${threshold}`);
+  console.log(
+    `crap-check: 本仓函数 ${totalFns} 个（${scannedFiles} 个 src 文件，解析失败 ${parseFailed} 个），` +
+      `已覆盖 ${coveredFns}（${Math.round((coveredFns / totalFns) * 100)}%），阈值 ${threshold}`,
+  );
 
-  mkdirSync(join(repoRoot, 'coverage'), { recursive: true });
+  mkdirSync(join(repoRoot, "coverage"), { recursive: true });
   writeFileSync(
-    join(repoRoot, 'coverage', 'crap-report.json'),
-    JSON.stringify({
-      generatedAt: new Date().toISOString(),
-      threshold,
-      strict,
-      totalFns,
-      coveredFns,
-      scannedFiles,
-      parseFailed,
-      hotspots,
-    }, null, 2),
+    join(repoRoot, "coverage", "crap-report.json"),
+    JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        threshold,
+        strict,
+        totalFns,
+        coveredFns,
+        scannedFiles,
+        parseFailed,
+        hotspots,
+      },
+      null,
+      2,
+    ),
   );
 
   if (hotspots.length) {
     console.log(`crap-check: 超阈热点 ${hotspots.length} 个（Top10）：`);
     for (const h of hotspots.slice(0, 10)) {
-      console.log(`  CRAP=${h.crap} comp=${h.comp}${h.covered ? '' : ' 未覆盖'}  ${h.file}:${h.line}`);
+      console.log(
+        `  CRAP=${h.crap} comp=${h.comp}${h.covered ? "" : " 未覆盖"}  ${h.file}:${h.line}`,
+      );
     }
   }
 
@@ -591,11 +631,13 @@ export async function runFullCheck({ repoRoot, threshold, strict, coveragePath }
       console.error(`crap-check: [strict] 超阈热点 ${hotspots.length} 个，判定为红`);
       return { exitCode: 1, passed: false, hotspots };
     }
-    console.log('crap-check: [strict] 无超阈热点，OK');
+    console.log("crap-check: [strict] 无超阈热点，OK");
     return { exitCode: 0, passed: true, hotspots: [] };
   }
 
-  console.log('crap-check: OK（strict=false 观察期，strict 来源 gauntlet.config.json: crap.strict，明细已落盘 coverage/crap-report.json）');
+  console.log(
+    "crap-check: OK（strict=false 观察期，strict 来源 gauntlet.config.json: crap.strict，明细已落盘 coverage/crap-report.json）",
+  );
   return { exitCode: 0, passed: true, hotspots };
 }
 
@@ -604,32 +646,32 @@ export async function runFullCheck({ repoRoot, threshold, strict, coveragePath }
  */
 export async function runCrapCheck(argv = process.argv.slice(2), { shouldExit = true } = {}) {
   const repoRoot = process.cwd();
-  const configPath = join(repoRoot, 'scripts', 'data', 'gauntlet.config.json');
-  const config = existsSync(configPath) ? JSON.parse(readFileSync(configPath, 'utf8')) : {};
+  const configPath = join(repoRoot, "scripts", "data", "gauntlet.config.json");
+  const config = existsSync(configPath) ? JSON.parse(readFileSync(configPath, "utf8")) : {};
   const DEFAULT_THRESHOLD = config.crap?.threshold ?? 16;
 
-  const idx = argv.indexOf('--threshold');
+  const idx = argv.indexOf("--threshold");
   const threshold = Number(idx >= 0 ? argv[idx + 1] : DEFAULT_THRESHOLD);
   if (!Number.isFinite(threshold) || threshold <= 0) {
-    console.error('crap-check: invalid --threshold');
+    console.error("crap-check: invalid --threshold");
     if (shouldExit) process.exit(2);
     return { exitCode: 2 };
   }
   const strict = Boolean(config.crap?.strict);
-  const coveragePath = join(repoRoot, 'coverage', 'coverage-final.json');
+  const coveragePath = join(repoRoot, "coverage", "coverage-final.json");
 
   // 解析 --diff 参数
   let isDiff = false;
   let baseArg = null;
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] === '--diff') {
+    if (argv[i] === "--diff") {
       isDiff = true;
-      if (i + 1 < argv.length && !argv[i + 1].startsWith('-')) {
+      if (i + 1 < argv.length && !argv[i + 1].startsWith("-")) {
         baseArg = argv[i + 1];
       }
-    } else if (argv[i].startsWith('--diff=')) {
+    } else if (argv[i].startsWith("--diff=")) {
       isDiff = true;
-      baseArg = argv[i].slice('--diff='.length);
+      baseArg = argv[i].slice("--diff=".length);
     }
   }
 
@@ -637,7 +679,7 @@ export async function runCrapCheck(argv = process.argv.slice(2), { shouldExit = 
     ? await runDiffCheck({ repoRoot, threshold, baseArg, coveragePath })
     : await runFullCheck({ repoRoot, threshold, strict, coveragePath });
 
-  if (shouldExit && typeof result.exitCode === 'number') {
+  if (shouldExit && typeof result.exitCode === "number") {
     process.exit(result.exitCode);
   }
   return result;

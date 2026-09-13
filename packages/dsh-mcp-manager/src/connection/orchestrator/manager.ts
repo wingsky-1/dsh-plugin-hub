@@ -29,7 +29,11 @@ import {
   findProjectRoot,
   normalizedProjectRoot,
 } from "../../workspace/interface.ts";
-import { catalogCacheFile, summarizeToolDescriptions, makeCatalogViewFor } from "../../catalog/interface.ts";
+import {
+  catalogCacheFile,
+  summarizeToolDescriptions,
+  makeCatalogViewFor,
+} from "../../catalog/interface.ts";
 import type { CatalogViewResolver } from "../../catalog/interface.ts";
 import { McpMiddleware } from "../runtime/interface.ts";
 import { msgOf } from "../../pipeline/interface.ts";
@@ -150,7 +154,12 @@ export class McpManager {
       if (!existsSync(this.catalogCachePath)) return;
       const raw = await readFile(this.catalogCachePath, "utf8");
       const parsed = JSON.parse(raw) as { entries?: Record<string, unknown> } | null;
-      if (parsed && typeof parsed === "object" && typeof parsed.entries === "object" && parsed.entries !== null) {
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        typeof parsed.entries === "object" &&
+        parsed.entries !== null
+      ) {
         for (const [name, entry] of Object.entries(parsed.entries)) {
           if (typeof (entry as { summary?: unknown } | undefined)?.summary === "string") {
             this.catalogCache.set(name, { summary: (entry as { summary: string }).summary });
@@ -167,7 +176,10 @@ export class McpManager {
    * 保证重连拿到相同描述不触发 digest 变化、不重复注入）。
    * 缓存是持久数据（磁盘），与实时连接状态解耦：断开/重连不清空 → 目录稳定。
    */
-  async recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown }>): Promise<void> {
+  async recordCatalogTools(
+    serverName: string,
+    toolMeta: Map<string, { description?: unknown }>,
+  ): Promise<void> {
     const summary = summarizeToolDescriptions(toolMeta);
     const current = this.catalogCache.get(serverName)?.summary;
     if (summary === undefined || summary === current) return;
@@ -241,7 +253,10 @@ export class McpManager {
   /** 中间层宿主：该 server 是否全局级（双源：store + runtimeRegistry）。
    * runtime 注册的服务器不落 store，单源会误判「非全局」——P1 修正。 */
   isGlobalServer(name: string): boolean {
-    return this.store.data.servers.some((server) => server.name === name) || this.runtimeRegistry.has(name);
+    return (
+      this.store.data.servers.some((server) => server.name === name) ||
+      this.runtimeRegistry.has(name)
+    );
   }
 
   /** 中间层宿主：全局服务器配置（all 模式使用）。 */
@@ -260,7 +275,10 @@ export class McpManager {
   }
 
   /** 初始化中间层（apply 时按模式调用；幂等）。 */
-  async initMiddleware(mode: MiddlewareMode, policy: Record<string, unknown>): Promise<McpMiddleware> {
+  async initMiddleware(
+    mode: MiddlewareMode,
+    policy: Record<string, unknown>,
+  ): Promise<McpMiddleware> {
     this.middlewareMode = mode;
     if (this.middleware !== undefined) return this.middleware;
     const mw = new McpMiddleware(
@@ -319,7 +337,12 @@ export class McpManager {
    * @param disabled true=禁用 / false=解除。
    * 工具级禁用独立于服务器级 enabled：服务器级复活不清工具级状态。
    */
-  async setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void> {
+  async setToolDisabled(
+    root: string,
+    server: string,
+    tool: string,
+    disabled: boolean,
+  ): Promise<void> {
     const tools = this.disabledTools.get(root) ?? new Map<string, Set<string>>();
     const set = tools.get(server) ?? new Set<string>();
     if (disabled) set.add(tool);
@@ -346,7 +369,9 @@ export class McpManager {
       try {
         await store.reloadIfChanged();
       } catch (error) {
-        this.logger.warn(`dsh-mcp-manager: reload project config failed: ${this.redactError(error)}`);
+        this.logger.warn(
+          `dsh-mcp-manager: reload project config failed: ${this.redactError(error)}`,
+        );
       }
     }
     return store;
@@ -364,7 +389,9 @@ export class McpManager {
    * 但此前不在目录里——模型看不到能力，只能自己翻 CLI。同名 runtime 优先
    * （与 reconcile 双轨一致）。
    */
-  async catalogServersFor(cwd: string | undefined): Promise<Map<string, { server: ServerConfig; scope: string }>> {
+  async catalogServersFor(
+    cwd: string | undefined,
+  ): Promise<Map<string, { server: ServerConfig; scope: string }>> {
     const servers = new Map<string, { server: ServerConfig; scope: string }>();
     for (const server of this.store.data.servers) {
       if (server.enabled === false) continue;
@@ -375,7 +402,8 @@ export class McpManager {
       if (server.enabled === false) continue;
       servers.set(name, { server, scope: SCOPE_GLOBAL });
     }
-    const root = cwd === undefined || cwd === null || cwd === "" ? undefined : await findProjectRoot(cwd);
+    const root =
+      cwd === undefined || cwd === null || cwd === "" ? undefined : await findProjectRoot(cwd);
     const store = root === undefined ? undefined : await this.projectStoreFor(root);
     if (store !== undefined) {
       for (const server of store.data.servers) {
@@ -410,7 +438,8 @@ export class McpManager {
    * middleware=project/all 时项目级连接由中间层池常驻，切走不断开。
    */
   async setSession(cwd: string | undefined): Promise<void> {
-    const root = cwd === undefined || cwd === null || cwd === "" ? undefined : await findProjectRoot(cwd);
+    const root =
+      cwd === undefined || cwd === null || cwd === "" ? undefined : await findProjectRoot(cwd);
     if (root === this.projectRoot && this.projectStore !== undefined) return;
     // 本就没有活动项目且新会话同样无项目（空 cwd）：保持幂等，避免反复
     // emitStatus → SSE → 客户端 refresh 的广播循环。
@@ -439,7 +468,12 @@ export class McpManager {
     if (this.middlewareMode !== "off" && this.middleware !== undefined) {
       // 中间层：仅触达单元（fire-and-forget 惰性连接在 projectUnitFor 内）。
       // all 模式：无项目 cwd 也触达全局虚拟 root @global。
-      const target = root !== undefined ? root : (this.middlewareMode === "all" ? MIDDLEWARE_GLOBAL_ROOT : undefined);
+      const target =
+        root !== undefined
+          ? root
+          : this.middlewareMode === "all"
+            ? MIDDLEWARE_GLOBAL_ROOT
+            : undefined;
       if (target !== undefined) {
         void this.middleware.projectUnitFor(target).then((unit) => {
           if (unit !== undefined) this.middleware?.evictIfNeeded();
@@ -471,7 +505,8 @@ export class McpManager {
   async resumeReconnect(): Promise<void> {
     const mw = this.middleware;
     if (mw === undefined || this.middlewareMode === "off") return;
-    const root = this.projectRoot ?? (this.middlewareMode === "all" ? MIDDLEWARE_GLOBAL_ROOT : undefined);
+    const root =
+      this.projectRoot ?? (this.middlewareMode === "all" ? MIDDLEWARE_GLOBAL_ROOT : undefined);
     if (root === undefined) return;
     // 单元缺失（宿主重启/状态丢失）先创建：projectUnitFor 负责惰性连接兜底。
     const unit = mw.units.get(root) ?? (await mw.projectUnitFor(root));
@@ -479,7 +514,9 @@ export class McpManager {
     // 目标 = 配置全集（本项目/全局的全部 enabled 服务器），而非仅已有 entry。
     const servers = await this.projectServersFor(root);
     const targets = (servers ?? [])
-      .filter((server: ServerConfig) => server.enabled !== false && !unit.userDisabled.has(server.name))
+      .filter(
+        (server: ServerConfig) => server.enabled !== false && !unit.userDisabled.has(server.name),
+      )
       .map((server: ServerConfig) => server.name);
     await Promise.all(
       targets.map((name) =>
@@ -515,7 +552,9 @@ export class McpManager {
       try {
         configChanged = (await this.projectStore.reloadIfChanged()) || configChanged;
       } catch (error) {
-        this.logger.warn(`dsh-mcp-manager: reload project config failed: ${this.redactError(error)}`);
+        this.logger.warn(
+          `dsh-mcp-manager: reload project config failed: ${this.redactError(error)}`,
+        );
       }
     }
     if (!configChanged) return;
@@ -554,7 +593,12 @@ export class McpManager {
         // 中间层接管（与 start 同口径单一事实源 middlewareTakes）：停掉不该以
         // supervisor 形态存在的连接（#413：all 模式 runtime 亦被接管，同样停）。
         const middlewareTakes = this.middlewareTakes(name, supervisor.scope);
-        if (want === undefined || want.server.enabled === false || want.scope !== supervisor.scope || middlewareTakes) {
+        if (
+          want === undefined ||
+          want.server.enabled === false ||
+          want.scope !== supervisor.scope ||
+          middlewareTakes
+        ) {
           this.stop(name);
           changed = true;
         }
@@ -604,7 +648,9 @@ export class McpManager {
       if (server === undefined && scope === SCOPE_GLOBAL) {
         const runtime = this.runtimeRegistry.get(name);
         if (runtime !== undefined) {
-          this.logger.warn(`dsh-mcp-manager: server "${name}" not in store; using runtime registry entry`);
+          this.logger.warn(
+            `dsh-mcp-manager: server "${name}" not in store; using runtime registry entry`,
+          );
           server = runtime;
         }
       }
@@ -647,7 +693,9 @@ export class McpManager {
     }
     if (existing !== undefined && existing.scope !== scope) {
       // 同名服务器跨 scope 冲突：工具名会重复，拒绝启动
-      this.logger.warn(`dsh-mcp-manager: server "${name}" already registered in scope "${existing.scope}" — skipping "${scope}"`);
+      this.logger.warn(
+        `dsh-mcp-manager: server "${name}" already registered in scope "${existing.scope}" — skipping "${scope}"`,
+      );
       return;
     }
     // B5：未连接旧代际同样走 disconnect 语义（清 reconnectTimer + 注销残留工具）。
@@ -677,7 +725,8 @@ export class McpManager {
   private touchGlobalUnit(name: string): void {
     const mw = this.middleware;
     if (mw === undefined) return;
-    void mw.projectUnitFor(MIDDLEWARE_GLOBAL_ROOT)
+    void mw
+      .projectUnitFor(MIDDLEWARE_GLOBAL_ROOT)
       .then((unit) => {
         if (unit === undefined || unit.userDisabled.has(name)) return;
         void mw.ensureConnected(MIDDLEWARE_GLOBAL_ROOT, name);
@@ -685,7 +734,9 @@ export class McpManager {
       .catch((error: unknown) => {
         // #392 遗留⑥：不再静默吞错——projectUnitFor 失败时打 warn 日志，
         // 否则该服务器永不连接且无迹可查（ensureConnected 调用面仍会尝试）。
-        this.logger.warn(`dsh-mcp-manager: touchGlobalUnit(${name}) failed: ${this.redactError(error)}`);
+        this.logger.warn(
+          `dsh-mcp-manager: touchGlobalUnit(${name}) failed: ${this.redactError(error)}`,
+        );
       });
   }
 
@@ -707,7 +758,8 @@ export class McpManager {
     // 入口捕获 root（评审 P2-3）：.then 回调内不再读 this.projectRoot——
     // setSession 切换后实例字段已变，沿用调用时快照保证 root 与 unit 配套。
     const root = this.projectRoot;
-    void mw.projectUnitFor(root)
+    void mw
+      .projectUnitFor(root)
       .then(async (unit) => {
         if (unit === undefined || unit.userDisabled.has(name)) return;
         const current = this.projectStore?.find(name);
@@ -717,14 +769,20 @@ export class McpManager {
         // 对象（键序由 normalizeServer 固定），内容不同则串必不同——假阴性
         // 不存在；唯一假阳性是用户手排 mcp.json 键序（值不变）触发一次性
         // force 重连，重建后自愈、不循环。
-        if (entry !== undefined && current !== undefined && JSON.stringify(entry.server) !== JSON.stringify(current)) {
+        if (
+          entry !== undefined &&
+          current !== undefined &&
+          JSON.stringify(entry.server) !== JSON.stringify(current)
+        ) {
           await mw.ensureConnected(root, name, { force: true });
           return;
         }
         await mw.ensureConnected(root, name);
       })
       .catch((error: unknown) => {
-        this.logger.warn(`dsh-mcp-manager: ensureMiddlewareServer(${name}) failed: ${this.redactError(error)}`);
+        this.logger.warn(
+          `dsh-mcp-manager: ensureMiddlewareServer(${name}) failed: ${this.redactError(error)}`,
+        );
       });
   }
 
@@ -746,7 +804,8 @@ export class McpManager {
         const client = entry.client;
         entry.client = undefined;
         entry.transport = undefined;
-        if (client !== undefined && client.transport !== undefined) void client.transport.close().catch(() => {});
+        if (client !== undefined && client.transport !== undefined)
+          void client.transport.close().catch(() => {});
         unit.connections.delete(name);
       }
       // #392 遗留①：目录条目随连接一并拆除——remove/update 后已删服务器不再以
@@ -783,10 +842,13 @@ export class McpManager {
    *   全部用调用方封装定义注册（supervisor 跳过远端 schema 投影，execute
    *   来自调用方；命名仍按 publicToolName 的 mcp__ 前缀规则）。
    */
-  async registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean }> {
+  async registerServer(
+    options: Record<string, unknown>,
+  ): Promise<{ name: string; existing: boolean }> {
     const { toolDefinitions, ...rest } = options;
     const config = normalizeServer(rest);
-    if (Array.isArray(toolDefinitions)) config.toolDefinitions = toolDefinitions as ToolDefinition[];
+    if (Array.isArray(toolDefinitions))
+      config.toolDefinitions = toolDefinitions as ToolDefinition[];
     const run = this.registerQueue.then(async () => {
       if (this.runtimeRegistry.has(config.name) || this.store.find(config.name) !== undefined) {
         return { name: config.name, existing: true };
@@ -803,7 +865,10 @@ export class McpManager {
       if (config.enabled !== false) this.start(config.name, SCOPE_GLOBAL, config);
       return { name: config.name, existing: false };
     });
-    this.registerQueue = run.then(() => undefined, () => undefined);
+    this.registerQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
     return run;
   }
 
@@ -830,7 +895,10 @@ export class McpManager {
         this.reconcileServers();
       }
     });
-    this.registerQueue = run.then(() => undefined, () => undefined);
+    this.registerQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
     return run;
   }
 
@@ -849,7 +917,11 @@ export class McpManager {
     return config;
   }
 
-  async update(name: string, patch: Record<string, unknown>, scope: string = SCOPE_GLOBAL): Promise<ServerConfig> {
+  async update(
+    name: string,
+    patch: Record<string, unknown>,
+    scope: string = SCOPE_GLOBAL,
+  ): Promise<ServerConfig> {
     const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
     const existing = store.find(name);
     if (existing === undefined) throw new Error(`server "${name}" not found in ${scope} scope`);
@@ -881,7 +953,11 @@ export class McpManager {
     await store.save();
   }
 
-  async connect(name: string, scope: string = SCOPE_GLOBAL, directConfig?: ServerConfig): Promise<void> {
+  async connect(
+    name: string,
+    scope: string = SCOPE_GLOBAL,
+    directConfig?: ServerConfig,
+  ): Promise<void> {
     let server = directConfig;
     if (server === undefined) {
       const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
@@ -891,7 +967,9 @@ export class McpManager {
       if (server === undefined && scope === SCOPE_GLOBAL) {
         const runtime = this.runtimeRegistry.get(name);
         if (runtime !== undefined) {
-          this.logger.warn(`dsh-mcp-manager: server "${name}" not in store; using runtime registry entry`);
+          this.logger.warn(
+            `dsh-mcp-manager: server "${name}" not in store; using runtime registry entry`,
+          );
           server = runtime;
         }
       }
@@ -904,7 +982,8 @@ export class McpManager {
     // 归一中间层）。
     if (this.middlewareTakes(name, scope) && this.middleware !== undefined) {
       const root = scope === SCOPE_PROJECT ? this.projectRoot : MIDDLEWARE_GLOBAL_ROOT;
-      if (root === undefined) throw new Error("no active project session (call session with a cwd first)");
+      if (root === undefined)
+        throw new Error("no active project session (call session with a cwd first)");
       const unit = await this.middleware.projectUnitFor(root);
       if (unit === undefined) throw new Error(`workspace ${root} has no project MCP config`);
       unit.userDisabled.delete(name);
@@ -917,7 +996,8 @@ export class McpManager {
     }
     const existing = this.supervisors.get(name);
     if (existing !== undefined && existing.client !== undefined) return;
-    if (existing !== undefined && existing.scope !== scope) throw new Error(`server "${name}" is registered in scope "${existing.scope}"`);
+    if (existing !== undefined && existing.scope !== scope)
+      throw new Error(`server "${name}" is registered in scope "${existing.scope}"`);
     // B5：connect 替换分支复用 disconnect 语义（清 reconnectTimer + 注销残留工具），
     // await 保证旧代际清理先于新代际建立（与 start 分支同口径）。
     if (existing !== undefined) await existing.disconnect();
@@ -941,11 +1021,18 @@ export class McpManager {
       if (scoped === SCOPE_PROJECT) {
         // 项目级：定位当前项目 root 单元（同名跨 scope 修正——此前 all 模式
         // 误用全局 store 定位 @global，同名项目级服务器被写错单元）。
-        targetUnit = this.projectRoot !== undefined ? this.middleware.units.get(this.projectRoot) : undefined;
-      } else if (this.middlewareMode === "all" && this.store.find(name) !== undefined && !this.runtimeRegistry.has(name)) {
+        targetUnit =
+          this.projectRoot !== undefined ? this.middleware.units.get(this.projectRoot) : undefined;
+      } else if (
+        this.middlewareMode === "all" &&
+        this.store.find(name) !== undefined &&
+        !this.runtimeRegistry.has(name)
+      ) {
         targetUnit = this.middleware.units.get(MIDDLEWARE_GLOBAL_ROOT);
       } else {
-        targetUnit = [...this.middleware.units.values()].find((unit) => unit.connections.has(name) || unit.userDisabled.has(name));
+        targetUnit = [...this.middleware.units.values()].find(
+          (unit) => unit.connections.has(name) || unit.userDisabled.has(name),
+        );
       }
       if (targetUnit !== undefined) {
         targetUnit.userDisabled.add(name);
@@ -957,7 +1044,8 @@ export class McpManager {
           const client = entry.client;
           entry.client = undefined;
           entry.transport = undefined;
-          if (client !== undefined && client.transport !== undefined) void client.transport.close().catch(() => {});
+          if (client !== undefined && client.transport !== undefined)
+            void client.transport.close().catch(() => {});
           targetUnit.connections.delete(name);
         }
         // 断开即废弃同名在途标记：拆除时旧 attempt 仍 pending（挂至超时）会吞掉
@@ -996,8 +1084,16 @@ export class McpManager {
     for (const server of this.runtimeRegistry.values()) {
       servers.push(this.summarize(server, SCOPE_GLOBAL));
     }
-    const byStatus: Record<string, number> = { connected: 0, connecting: 0, reconnecting: 0, disabled: 0, stopped: 0, failed: 0 };
-    for (const server of servers) byStatus[server.status as string] = (byStatus[server.status as string] ?? 0) + 1;
+    const byStatus: Record<string, number> = {
+      connected: 0,
+      connecting: 0,
+      reconnecting: 0,
+      disabled: 0,
+      stopped: 0,
+      failed: 0,
+    };
+    for (const server of servers)
+      byStatus[server.status as string] = (byStatus[server.status as string] ?? 0) + 1;
     return {
       cwd: this.projectRoot ?? undefined,
       projectRoot: this.projectRoot ?? undefined,
@@ -1033,9 +1129,17 @@ export class McpManager {
       if (entry !== undefined) {
         const catalog = unit.catalog.get(server.name);
         const disabledTools = this.disabledTools.get(unit.root)?.get(server.name);
-        const globalTools = unit.root === MIDDLEWARE_GLOBAL_ROOT ? undefined : this.disabledTools.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server.name);
-        const tools = catalog !== undefined && catalog.unavailable === undefined ? [...catalog.tools.keys()] : [];
-        const disabledList = tools.filter((tool) => (disabledTools?.has(tool) ?? false) || (globalTools?.has(tool) ?? false));
+        const globalTools =
+          unit.root === MIDDLEWARE_GLOBAL_ROOT
+            ? undefined
+            : this.disabledTools.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server.name);
+        const tools =
+          catalog !== undefined && catalog.unavailable === undefined
+            ? [...catalog.tools.keys()]
+            : [];
+        const disabledList = tools.filter(
+          (tool) => (disabledTools?.has(tool) ?? false) || (globalTools?.has(tool) ?? false),
+        );
         return {
           ...server,
           scope,
@@ -1059,12 +1163,17 @@ export class McpManager {
     // 工具级禁用表键、guard 层反解口径一致；此前浮窗禁用提交带前缀名而 guard
     // 查裸名，禁用静默无效）。超长哈希名剥出截断键，与 guard 路径二反解结果
     // 相同，禁用链路一致生效；前缀不匹配（不可剥）原样返回。
-    const supervisorTools = (supervisor?.tools ?? []).map((tool) => stripMcpPrefix(tool, server.name));
+    const supervisorTools = (supervisor?.tools ?? []).map((tool) =>
+      stripMcpPrefix(tool, server.name),
+    );
     // B19：禁用查询与中间层分支同口径——@global 与 projectRoot 禁用集**合并判定**
     // （现状 ?? 二者只取其一，跨空间禁用漏算）。@global 跨工作空间共享、项目根
     // 目录级追加，任一命中即禁用。
     const globalDisabled = this.disabledTools.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server.name);
-    const projectDisabled = this.projectRoot !== undefined ? this.disabledTools.get(this.projectRoot)?.get(server.name) : undefined;
+    const projectDisabled =
+      this.projectRoot !== undefined
+        ? this.disabledTools.get(this.projectRoot)?.get(server.name)
+        : undefined;
     const supervisorDisabled = supervisorTools.filter(
       (tool) => (globalDisabled?.has(tool) ?? false) || (projectDisabled?.has(tool) ?? false),
     );

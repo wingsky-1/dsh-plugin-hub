@@ -43,7 +43,9 @@ describe("parseJsonl", () => {
   });
 
   it("time 非数字行跳过", () => {
-    expect(parseJsonl('{"time":1,"data":{}}\n{"time":"bad","data":{}}\n{"time":3,"data":{}}')).toEqual([
+    expect(
+      parseJsonl('{"time":1,"data":{}}\n{"time":"bad","data":{}}\n{"time":3,"data":{}}'),
+    ).toEqual([
       { time: 1, data: {} },
       { time: 3, data: {} },
     ]);
@@ -135,34 +137,33 @@ describe("startOfDay", () => {
 
 describe("legacySampleToData", () => {
   it("balance 裸值列", () => {
-    expect(legacySampleToData(
-      [{ key: "balance", name: "余额" }],
-      [1787000000000, 10.1365],
-    )).toEqual({ balance: 10.1365 });
+    expect(
+      legacySampleToData([{ key: "balance", name: "余额" }], [1787000000000, 10.1365]),
+    ).toEqual({ balance: 10.1365 });
   });
 
   // 三窗口列
   it("三窗口 percent 列", () => {
-    expect(legacySampleToData(
-      [{ key: "rolling" }, { key: "weekly" }, { key: "monthly" }],
-      [1787000000000, 2, 1, 0],
-    )).toEqual({ rolling: { percent: 2 }, weekly: { percent: 1 }, monthly: { percent: 0 } });
+    expect(
+      legacySampleToData(
+        [{ key: "rolling" }, { key: "weekly" }, { key: "monthly" }],
+        [1787000000000, 2, 1, 0],
+      ),
+    ).toEqual({ rolling: { percent: 2 }, weekly: { percent: 1 }, monthly: { percent: 0 } });
   });
 
   // null 值在 percent 列 → null
   it("null 值 percent 列保持 null", () => {
-    expect(legacySampleToData(
-      [{ key: "rolling" }],
-      [1787000000000, null],
-    )).toEqual({ rolling: { percent: null } });
+    expect(legacySampleToData([{ key: "rolling" }], [1787000000000, null])).toEqual({
+      rolling: { percent: null },
+    });
   });
 
   // null 值在裸值列 → null
   it("null 值裸值列保持 null", () => {
-    expect(legacySampleToData(
-      [{ key: "balance", name: "余额" }],
-      [1787000000000, null],
-    )).toEqual({ balance: null });
+    expect(legacySampleToData([{ key: "balance", name: "余额" }], [1787000000000, null])).toEqual({
+      balance: null,
+    });
   });
 
   // 无列声明 → colNN 通用装配
@@ -172,23 +173,36 @@ describe("legacySampleToData", () => {
 
   // 列数少于采样值 → 多余值用 colNN 通用装配
   it("列数少于采样值，多余列用 colNN 装配", () => {
-    expect(legacySampleToData([{ key: "a" }], [1787000000000, 1, 2, 3]))
-      .toEqual({ a: { percent: 1 }, col2: 2, col3: 3 });
+    expect(legacySampleToData([{ key: "a" }], [1787000000000, 1, 2, 3])).toEqual({
+      a: { percent: 1 },
+      col2: 2,
+      col3: 3,
+    });
   });
 
   // 列数多于采样值 → 缺的跳过
   it("列数多于采样值，缺列跳过", () => {
-    expect(legacySampleToData(
-      [{ key: "a" }, { key: "b" }, { key: "c" }],
-      [1787000000000, 1],
-    )).toEqual({ a: { percent: 1 } });
+    expect(
+      legacySampleToData([{ key: "a" }, { key: "b" }, { key: "c" }], [1787000000000, 1]),
+    ).toEqual({ a: { percent: 1 } });
   });
 });
 
 describe("pickWindow（防御式窗口解析）", () => {
   it("合法窗口完整解析", () => {
-    const w = pickWindow({ percent: 5, raw: "5000", resetsAt: "2026-08-01T00:00:00Z" }, "rolling", "5h 滚动", 12);
-    expect(w !== null && w.key === "rolling" && w.percent === 5 && w.raw === "5000" && w.resetsAt === "2026-08-01T00:00:00Z").toBeTruthy();
+    const w = pickWindow(
+      { percent: 5, raw: "5000", resetsAt: "2026-08-01T00:00:00Z" },
+      "rolling",
+      "5h 滚动",
+      12,
+    );
+    expect(
+      w !== null &&
+        w.key === "rolling" &&
+        w.percent === 5 &&
+        w.raw === "5000" &&
+        w.resetsAt === "2026-08-01T00:00:00Z",
+    ).toBeTruthy();
   });
 
   it("null 输入返回 null", () => {
@@ -364,11 +378,18 @@ describe("last()", () => {
 
     // 最新文件内混入坏行：JSON.parse 失败行与校验不过行都被跳过
     const dir = join(root, "p", "n");
-    const todayName = readdirSync(dir).filter((f) => f.endsWith(".jsonl")).sort().pop() as string;
+    const todayName = readdirSync(dir)
+      .filter((f) => f.endsWith(".jsonl"))
+      .sort()
+      .pop() as string;
     {
       const { readFile, writeFile } = await import("node:fs/promises");
       const raw = await readFile(join(dir, todayName), "utf8");
-      await writeFile(join(dir, todayName), raw + "broken-line\n" + '{"time":"nan","data":{}}\n' + '{"time":999}\n', "utf8");
+      await writeFile(
+        join(dir, todayName),
+        raw + "broken-line\n" + '{"time":"nan","data":{}}\n' + '{"time":999}\n',
+        "utf8",
+      );
       // 追加的坏行之后无有效条目 → 回退到文件内前面的有效条目（v=2 仍在前面）
       lastAfterTailBadLines = await store.last("p", "n");
 
@@ -534,7 +555,14 @@ describe("listAdapters", () => {
 });
 
 describe("migrateLegacyV3", () => {
-  let noHistoryDir, migrated, entries, bakExists, originalExists, secondRun, badMigrated, badOriginalKept;
+  let noHistoryDir,
+    migrated,
+    entries,
+    bakExists,
+    originalExists,
+    secondRun,
+    badMigrated,
+    badOriginalKept;
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-mig-"));
@@ -548,12 +576,16 @@ describe("migrateLegacyV3", () => {
 
     // 正常桶：两条采样（同一天）+ 一条坏采样
     const ts = new Date(2026, 5, 15, 12).getTime();
-    writeFileSync(join(pdir, "opencode-go-builtin.json"), JSON.stringify({
-      provider: "opencode-go",
-      adapterId: "opencode-go-builtin",
-      columns: [{ key: "rolling", name: "5h" }],
-      samples: [[ts, 5], [ts + 60000, 6], ["not-array"], [ts], [NaN]],
-    }), "utf8");
+    writeFileSync(
+      join(pdir, "opencode-go-builtin.json"),
+      JSON.stringify({
+        provider: "opencode-go",
+        adapterId: "opencode-go-builtin",
+        columns: [{ key: "rolling", name: "5h" }],
+        samples: [[ts, 5], [ts + 60000, 6], ["not-array"], [ts], [NaN]],
+      }),
+      "utf8",
+    );
     // .bak 跳过
     writeFileSync(join(pdir, "old.v3.bak"), JSON.stringify({ samples: [[ts, 1]] }), "utf8");
     // 非 .json 跳过
@@ -647,7 +679,12 @@ describe("#105② readDay prune 并发删文件竞态容错", () => {
     const store = new HistoryStore({ root });
     const now = Date.now();
     await store.append("p1", "n1", { time: now, data: { a: 1 } });
-    const dayFile = join(root, "p1", "n1", `${new Date(now).getFullYear()}-${String(new Date(now).getMonth() + 1).padStart(2, "0")}-${String(new Date(now).getDate()).padStart(2, "0")}.jsonl`);
+    const dayFile = join(
+      root,
+      "p1",
+      "n1",
+      `${new Date(now).getFullYear()}-${String(new Date(now).getMonth() + 1).padStart(2, "0")}-${String(new Date(now).getDate()).padStart(2, "0")}.jsonl`,
+    );
     await import("node:fs/promises").then((m) => m.rm(dayFile, { force: true }));
     entries = await store.readDay("p1", "n1", now);
   });
@@ -684,7 +721,11 @@ describe("#105② pruneAll：过期清理 + 停用目录数据保留", () => {
 
   beforeAll(async () => {
     const root = mkdtempSync(join(tmpdir(), "dou-hist-pruneall-"));
-    const store = new HistoryStore({ root, maxAgeMs: 30 * 86400000, maxSizeBytes: 20 * 1024 * 1024 });
+    const store = new HistoryStore({
+      root,
+      maxAgeMs: 30 * 86400000,
+      maxSizeBytes: 20 * 1024 * 1024,
+    });
     const now = Date.now();
     // 两个 provider：p1（启用）与 p2-disabled（停用孤儿目录）
     await store.append("p1", "n1", { time: now, data: { a: 1 } });

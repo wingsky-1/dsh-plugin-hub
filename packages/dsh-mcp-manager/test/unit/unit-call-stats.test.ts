@@ -20,7 +20,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-const { McpStatsCollector, McpManager, McpStore, resolveDebugConfig } = await import("../../src/index.ts");
+const { McpStatsCollector, McpManager, McpStore, resolveDebugConfig } =
+  await import("../../src/index.ts");
 
 let tempDirs = [];
 
@@ -160,7 +161,9 @@ describe("开启时正确聚合调用与渐进式披露指标并原子落盘", (
 
   it("codegraph_explore lastError 记录原文", () => {
     const { statsFile } = enabledFixture();
-    expect(rawOf(statsFile).servers.codegraph.tools.codegraph_explore.lastError).toBe("timeout error");
+    expect(rawOf(statsFile).servers.codegraph.tools.codegraph_explore.lastError).toBe(
+      "timeout error",
+    );
   });
 
   it("mem0 totalCalls 聚合为 1", () => {

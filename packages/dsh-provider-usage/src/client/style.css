@@ -25,7 +25,11 @@
   font-size: 12px;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
   line-height: 1.2;
   white-space: nowrap;
 }
@@ -44,10 +48,18 @@
   border-radius: 50%;
   flex: none;
 }
-.dou-dot-ok { background: var(--dsw-alias-state-success-primary, #0f9d6e); }
-.dou-dot-warn { background: var(--dsw-alias-state-warn-primary, #c9820b); }
-.dou-dot-err { background: var(--dsw-alias-state-error-primary, #d64545); }
-.dou-dot-off { background: var(--dsw-alias-label-tertiary, #9aa0ab); }
+.dou-dot-ok {
+  background: var(--dsw-alias-state-success-primary, #0f9d6e);
+}
+.dou-dot-warn {
+  background: var(--dsw-alias-state-warn-primary, #c9820b);
+}
+.dou-dot-err {
+  background: var(--dsw-alias-state-error-primary, #d64545);
+}
+.dou-dot-off {
+  background: var(--dsw-alias-label-tertiary, #9aa0ab);
+}
 
 .dou-panel {
   position: fixed;
@@ -64,10 +76,16 @@
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.18);
   z-index: 40;
   padding: 12px 14px;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
   font-size: 12px;
 }
-.dou-panel[hidden] { display: none !important; }
+.dou-panel[hidden] {
+  display: none !important;
+}
 
 /* #128 移动端档位样式：由客户端按 conversationHost rect 宽度判定并写 data-dou-bp
    （JS 判定，非 @media——防桌面窄窗 / iPad Slide Over 误触发）；阈值见 src/placement-math.ts。
@@ -118,7 +136,11 @@
   gap: 8px;
   margin-bottom: 10px;
 }
-.dou-title { font-size: 14px; font-weight: 600; margin: 0; }
+.dou-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
 
 .dou-card {
   border: 1px solid var(--dsw-alias-border-l2, #e8eaf0);
@@ -134,13 +156,19 @@
   gap: 8px;
   margin-bottom: 6px;
 }
-.dou-cardName { font-size: 13px; font-weight: 600; margin: 0; }
+.dou-cardName {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
 .dou-cardLimit {
   color: var(--dsw-alias-label-tertiary, #9aa0ab);
   font-size: 11px;
   margin: 0;
 }
-.dou-label { white-space: nowrap; }
+.dou-label {
+  white-space: nowrap;
+}
 
 /* #198 峰谷倒计时徽标：峰态橙（计费高）、谷态绿（折扣中）；
    窄断点（≤380px）下与余额同排 nowrap + 省略号截断，不撑破胶囊容器 */
@@ -155,21 +183,43 @@
   font-size: 11px;
   font-weight: 600;
 }
-.dou-peak-on { color: var(--dsw-alias-state-warn-primary, #c9820b); }
-.dou-peak-off { color: var(--dsw-alias-state-success-primary, #0f9d6e); }
+.dou-peak-on {
+  color: var(--dsw-alias-state-warn-primary, #c9820b);
+}
+.dou-peak-off {
+  color: var(--dsw-alias-state-success-primary, #0f9d6e);
+}
 @media (max-width: 380px) {
-  .dou-peak { max-width: 88px; }
+  .dou-peak {
+    max-width: 88px;
+  }
 }
 
-.dou-cardMeta { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.dou-cardMeta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
 .dou-cardCur {
   font-weight: 700;
   font-size: 14px;
   color: var(--dsw-alias-label-primary, #1c1e26);
 }
-.dou-trend-up { color: var(--dsw-alias-state-error-primary, #d64545); font-weight: 600; font-size: 11px; }
-.dou-trend-down { color: var(--dsw-alias-state-success-primary, #0f9d6e); font-weight: 600; font-size: 11px; }
-.dou-trend-flat { color: var(--dsw-alias-label-tertiary, #9aa0ab); font-size: 11px; }
+.dou-trend-up {
+  color: var(--dsw-alias-state-error-primary, #d64545);
+  font-weight: 600;
+  font-size: 11px;
+}
+.dou-trend-down {
+  color: var(--dsw-alias-state-success-primary, #0f9d6e);
+  font-weight: 600;
+  font-size: 11px;
+}
+.dou-trend-flat {
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  font-size: 11px;
+}
 
 .dou-foot {
   display: flex;
@@ -205,8 +255,15 @@
   margin: 4px 0 8px;
 }
 
-.dou-miniChart svg { display: block; width: 100%; height: auto; }
-.dou-miniChart svg text { font-size: 9.5px; fill: var(--dsw-alias-label-tertiary, #9aa0ab); }
+.dou-miniChart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.dou-miniChart svg text {
+  font-size: 9.5px;
+  fill: var(--dsw-alias-label-tertiary, #9aa0ab);
+}
 .dou-chartEmpty {
   color: var(--dsw-alias-label-tertiary, #9aa0ab);
   font-size: 11px;
@@ -214,8 +271,15 @@
   padding: 18px 6px;
   text-align: center;
 }
-.dou-legendDot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.dou-miniChart { margin-top: 6px; }
+.dou-legendDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.dou-miniChart {
+  margin-top: 6px;
+}
 
 /* ---------------------------------------------------------------- 设置页·使用趋势区块（issue #503 M2） */
 
@@ -229,9 +293,15 @@
 }
 
 /* 图表容器：SVG 铺满宽度、按 viewBox 等比伸缩（与 .dou-miniChart 同语义） */
-.dou-trend-chart svg { display: block; width: 100%; height: auto; }
+.dou-trend-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
 /* 图例色点与轴文字跟随主题（颜色变量集中在 SVG 内联处与组件内联处） */
-.dou-trend-legendDot { display: inline-block; }
+.dou-trend-legendDot {
+  display: inline-block;
+}
 
 /* ---------------------------------------------------------------- 设置页·提供商手风琴列表（issue #38） */
 
@@ -265,7 +335,9 @@
   display: inline-block;
   transition: transform 0.15s ease;
 }
-.dou-provArrowOpen { transform: rotate(90deg); }
+.dou-provArrowOpen {
+  transform: rotate(90deg);
+}
 .dou-provName {
   flex: 1;
   min-width: 0;
@@ -285,7 +357,10 @@
   border: 1px solid var(--dsw-alias-border-l1, #d7dae0);
   background: var(--dsw-alias-bg-layer-1, #f8f9fb);
 }
-.dou-provBadgeOff { color: var(--dsw-alias-label-tertiary, #9aa0ab); border-style: dashed; }
+.dou-provBadgeOff {
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+  border-style: dashed;
+}
 .dou-provBody {
   display: flex;
   flex-direction: column;
@@ -311,7 +386,9 @@
   min-width: 0;
   flex: 1;
 }
-.dou-adapterName { font-weight: 600; }
+.dou-adapterName {
+  font-weight: 600;
+}
 .dou-adapterMeta {
   font-size: 11px;
   color: var(--dsw-alias-label-tertiary, #9aa0ab);
@@ -353,9 +430,16 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   transition: left 0.15s;
 }
-.dou-switch:checked + .dou-switchTrack { background: var(--dsw-alias-state-info-primary, #4a7dd6); }
-.dou-switch:checked + .dou-switchTrack::after { left: 18px; }
-.dou-switch:disabled + .dou-switchTrack { opacity: 0.5; cursor: not-allowed; }
+.dou-switch:checked + .dou-switchTrack {
+  background: var(--dsw-alias-state-info-primary, #4a7dd6);
+}
+.dou-switch:checked + .dou-switchTrack::after {
+  left: 18px;
+}
+.dou-switch:disabled + .dou-switchTrack {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .dou-provErr {
   color: var(--dsw-alias-state-error-primary, #d64545);
   font-size: 11px;
@@ -398,9 +482,19 @@
   background: var(--dsw-alias-state-success-secondary, #e7f6ef);
   font-size: 12px;
 }
-.dou-inspectRow { display: flex; gap: 6px; }
-.dou-inspectK { flex: none; width: 70px; color: var(--dsw-alias-label-tertiary, #9aa0ab); }
-.dou-inspectV { font-weight: 600; overflow-wrap: anywhere; }
+.dou-inspectRow {
+  display: flex;
+  gap: 6px;
+}
+.dou-inspectK {
+  flex: none;
+  width: 70px;
+  color: var(--dsw-alias-label-tertiary, #9aa0ab);
+}
+.dou-inspectV {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
 .dou-addLabel {
   flex: none;
   min-width: 60px;
@@ -690,16 +784,29 @@
 
 /* 三端响应式：窄屏收起展开区左缩进，徽标允许换行占整行 */
 @media (max-width: 480px) {
-  .dou-provBody { padding-left: 10px; }
-  .dou-provBadge { max-width: 100%; }
-  .dou-reportItemTime { margin-left: 0; width: 100%; }
+  .dou-provBody {
+    padding-left: 10px;
+  }
+  .dou-provBadge {
+    max-width: 100%;
+  }
+  .dou-reportItemTime {
+    margin-left: 0;
+    width: 100%;
+  }
 }
 
 /* #128 悬停态统一包裹 @media(hover:hover)：触屏设备不吸附悬停背景（规格第 7 条）。 */
 @media (hover: hover) {
-.dou-btn:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f3f6); }
-.dou-provHead:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f3f6); }
-.dou-float:hover { background: var(--dsw-alias-interactive-bg-hover, #f2f3f6); }
+  .dou-btn:hover {
+    background: var(--dsw-alias-interactive-bg-hover, #f2f3f6);
+  }
+  .dou-provHead:hover {
+    background: var(--dsw-alias-interactive-bg-hover, #f2f3f6);
+  }
+  .dou-float:hover {
+    background: var(--dsw-alias-interactive-bg-hover, #f2f3f6);
+  }
 }
 
 /* ================= #532 设置页多 tab（通知中心 #508 分段器同语言） =================
@@ -724,7 +831,9 @@
   overflow-x: auto;
   scrollbar-width: none;
 }
-.dou-set-tabs::-webkit-scrollbar { display: none; }
+.dou-set-tabs::-webkit-scrollbar {
+  display: none;
+}
 .dou-set-tab {
   display: inline-flex;
   align-items: center;
@@ -751,16 +860,28 @@
   outline: 2px solid var(--dsw-alias-state-info-primary, #4a7dd6);
   outline-offset: 2px;
 }
-.dou-set-body { padding: 14px; }
-.dou-set-pane[hidden] { display: none !important; }
+.dou-set-body {
+  padding: 14px;
+}
+.dou-set-pane[hidden] {
+  display: none !important;
+}
 @media (hover: hover) {
-  .dou-set-tab:hover { color: var(--dsw-alias-label-primary, #1f2329); }
+  .dou-set-tab:hover {
+    color: var(--dsw-alias-label-primary, #1f2329);
+  }
 }
 
 /* ================= #532 年报化：hero 摘要 + 三周期提示词 tab + 正文排版 =================
  * hero 为海报式渐变（不随主题反转，文字恒浅色——年报产品惯例）；正文 h3/strong/ul/p
  * 由宿主 reportBodyToHtml 管线产出（escape-then-transform，无属性白名单标签）。 */
-.dou-reportPromptTabs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.dou-reportPromptTabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
 .dou-reportPromptTab {
   border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
   background: var(--dsw-alias-bg-layer-1, #f5f6f8);
@@ -773,7 +894,7 @@
   font-family: inherit;
 }
 .dou-reportPromptTabActive {
-  background: var(--dsw-alias-state-info-soft, rgba(47, 111, 237, 0.10));
+  background: var(--dsw-alias-state-info-soft, rgba(47, 111, 237, 0.1));
   border-color: var(--dsw-alias-state-info-primary, #4a7dd6);
   color: var(--dsw-alias-state-info-primary, #4a7dd6);
   font-weight: 600;
@@ -790,9 +911,14 @@
   font-family: inherit;
 }
 @media (hover: hover) {
-  .dou-reportPromptReset:hover { color: var(--dsw-alias-state-error-primary, #d64545); }
+  .dou-reportPromptReset:hover {
+    color: var(--dsw-alias-state-error-primary, #d64545);
+  }
 }
-.dou-reportGenNotice { color: var(--dsw-alias-state-success-primary, #0f9d6e); font-size: 11px; }
+.dou-reportGenNotice {
+  color: var(--dsw-alias-state-success-primary, #0f9d6e);
+  font-size: 11px;
+}
 
 /* 详情页 hero（渐变海报；移动端字号收缩） */
 .dou-hero {
@@ -800,12 +926,17 @@
   color: #f2f4f8;
   background:
     radial-gradient(120% 90% at 85% -10%, rgba(107, 154, 255, 0.35), transparent 55%),
-    radial-gradient(110% 80% at 0% 100%, rgba(15, 157, 110, 0.30), transparent 50%),
+    radial-gradient(110% 80% at 0% 100%, rgba(15, 157, 110, 0.3), transparent 50%),
     linear-gradient(135deg, #131b2e 0%, #1a2340 48%, #14203a 100%);
   padding: 16px 16px 14px;
   margin-bottom: 10px;
 }
-.dou-heroBig { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.dou-heroBig {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .dou-heroNum {
   font-size: clamp(26px, 6vw, 38px);
   font-weight: 800;
@@ -816,7 +947,10 @@
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
-.dou-heroNumUnit { font-size: 11px; color: rgba(242, 244, 248, 0.6); }
+.dou-heroNumUnit {
+  font-size: 11px;
+  color: rgba(242, 244, 248, 0.6);
+}
 .dou-heroRatio {
   display: inline-flex;
   align-items: center;
@@ -827,11 +961,31 @@
   background: rgba(242, 244, 248, 0.14);
   color: rgba(242, 244, 248, 0.75);
 }
-.dou-heroRatioUp { background: rgba(52, 196, 142, 0.22); color: #4fd6a4; }
-.dou-heroRatioDown { background: rgba(240, 101, 90, 0.22); color: #f0817a; }
-.dou-heroStats { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px; }
-.dou-heroStat small { display: block; font-size: 10px; color: rgba(242, 244, 248, 0.55); letter-spacing: 1px; }
-.dou-heroStat b { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dou-heroRatioUp {
+  background: rgba(52, 196, 142, 0.22);
+  color: #4fd6a4;
+}
+.dou-heroRatioDown {
+  background: rgba(240, 101, 90, 0.22);
+  color: #f0817a;
+}
+.dou-heroStats {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.dou-heroStat small {
+  display: block;
+  font-size: 10px;
+  color: rgba(242, 244, 248, 0.55);
+  letter-spacing: 1px;
+}
+.dou-heroStat b {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
 
 /* 年报正文排版（宿主管线产物：h3/strong/ul/li/p，全部无属性） */
 .dou-reportDetailBody h3 {
@@ -850,7 +1004,21 @@
   margin-right: 8px;
   vertical-align: -1px;
 }
-.dou-reportDetailBody p { font-size: 12px; color: var(--dsw-alias-label-secondary, #5f6672); margin: 6px 0; }
-.dou-reportDetailBody strong { color: var(--dsw-alias-label-primary, #1f2329); font-weight: 700; }
-.dou-reportDetailBody ul { margin: 6px 0; padding-left: 18px; }
-.dou-reportDetailBody li { font-size: 12px; color: var(--dsw-alias-label-secondary, #5f6672); margin: 4px 0; }
+.dou-reportDetailBody p {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  margin: 6px 0;
+}
+.dou-reportDetailBody strong {
+  color: var(--dsw-alias-label-primary, #1f2329);
+  font-weight: 700;
+}
+.dou-reportDetailBody ul {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+.dou-reportDetailBody li {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  margin: 4px 0;
+}

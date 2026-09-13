@@ -37,13 +37,20 @@ export function isLoopbackRequest(request, options = {}) {
   } catch {
     return false;
   }
-  if (hostUrl.hostname !== "127.0.0.1" && hostUrl.hostname !== "localhost" && hostUrl.hostname !== "[::1]") return false;
+  if (
+    hostUrl.hostname !== "127.0.0.1" &&
+    hostUrl.hostname !== "localhost" &&
+    hostUrl.hostname !== "[::1]"
+  )
+    return false;
   // 跨站判定（#549）：默认拒绝一切 cross-site；仅 serve 资源路由经
   // allowCrossSiteNoCors 放行「显式 no-cors」的跨站子资源（标签型加载）。
   // fail-closed：cross-site 请求缺少 no-cors 标记（含头缺失的防御语义）
   // 一律拒绝，不猜测放行。
   if (request.headers["sec-fetch-site"] === "cross-site") {
-    if (!(options.allowCrossSiteNoCors === true && request.headers["sec-fetch-mode"] === "no-cors")) {
+    if (!(
+      options.allowCrossSiteNoCors === true && request.headers["sec-fetch-mode"] === "no-cors"
+    )) {
       return false;
     }
   }

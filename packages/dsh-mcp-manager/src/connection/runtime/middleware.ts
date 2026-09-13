@@ -22,7 +22,14 @@ import { dirname } from "node:path";
 import type { ServerConfig } from "../../types/interface.ts";
 import type { ToolDefinition, ToolOutputDefinition } from "@deepseek-ai/dsh-tools";
 import { MCPClient } from "./protocol.ts";
-import { defaultCallResultFallbackText, projectCallToolResult, withTimeout, msgOf, createRedactor, normalizeArguments } from "../../pipeline/interface.ts";
+import {
+  defaultCallResultFallbackText,
+  projectCallToolResult,
+  withTimeout,
+  msgOf,
+  createRedactor,
+  normalizeArguments,
+} from "../../pipeline/interface.ts";
 import { resolveReconnect } from "../interface.ts";
 import { createTransport } from "./transport.ts";
 import {
@@ -38,7 +45,12 @@ import {
   bareServerName,
   MIDDLEWARE_GLOBAL_ROOT,
 } from "../../workspace/interface.ts";
-import { policyAllows, policyDenialReason, isToolDenied, toolDisabledReason } from "../../pipeline/interface.ts";
+import {
+  policyAllows,
+  policyDenialReason,
+  isToolDenied,
+  toolDisabledReason,
+} from "../../pipeline/interface.ts";
 import { isCatalogFresh, boundCatalogTools } from "../../catalog/interface.ts";
 import type {
   MiddlewareHost,
@@ -48,8 +60,6 @@ import type {
   CatalogTool,
   DisabledToolsMap,
 } from "../../types/interface.ts";
-
-
 
 // ------------------------------------------------------------ 连接池
 
@@ -106,7 +116,11 @@ export class McpMiddleware {
    *  entry 当前状态（含半开卡在 connected 的死连接），总是受控重建；惰性/重试
    *  路径缺省 false，保持「已 connected 则短路」防重复建连。
    */
-  async ensureConnected(root: string, serverName: string, opts: { force?: boolean } = {}): Promise<void> {
+  async ensureConnected(
+    root: string,
+    serverName: string,
+    opts: { force?: boolean } = {},
+  ): Promise<void> {
     const unit = this.units.get(root);
     if (unit === undefined) return;
     if (unit.userDisabled.has(serverName)) return;
@@ -139,7 +153,11 @@ export class McpMiddleware {
     for (const unit of this.units.values()) unit.inFlight.delete(serverName);
   }
 
-  private async connectInternal(root: string, serverName: string, opts: { force?: boolean } = {}): Promise<void> {
+  private async connectInternal(
+    root: string,
+    serverName: string,
+    opts: { force?: boolean } = {},
+  ): Promise<void> {
     const unit = this.units.get(root);
     if (unit === undefined) return;
     const force = opts.force === true;
@@ -147,7 +165,12 @@ export class McpMiddleware {
     // 非 force：已 connected/connecting 短路，防重复建连。
     // force（用户显式「连接」/切回前台恢复）：忽略当前状态，总是受控重建——
     // 修半开死连接卡在 connected 后 connect/refresh 均短路失效（#412）。
-    if (!force && entry !== undefined && (entry.status === "connected" || entry.status === "connecting")) return;
+    if (
+      !force &&
+      entry !== undefined &&
+      (entry.status === "connected" || entry.status === "connecting")
+    )
+      return;
     // 重连路径：旧 entry（failed，或 force 重建的死连接）的 transport 先 close，
     // 防 streamable-http 半开 socket 累积泄漏（P1 修复）。
     if (entry !== undefined) {
@@ -170,7 +193,11 @@ export class McpMiddleware {
     // 不应回退远端 spawn）。
     if (Array.isArray(server.toolDefinitions)) {
       const existingWrapped = unit.connections.get(serverName);
-      if (existingWrapped !== undefined && (existingWrapped.status === "connected" || existingWrapped.status === "connecting")) return;
+      if (
+        existingWrapped !== undefined &&
+        (existingWrapped.status === "connected" || existingWrapped.status === "connecting")
+      )
+        return;
       const wrappedEntry: ConnectionEntry = {
         server,
         client: undefined,
@@ -184,7 +211,9 @@ export class McpMiddleware {
       };
       unit.connections.set(serverName, wrappedEntry);
       this.projectWrappedCatalog(root, serverName, server);
-      this.host.logger.info(`dsh-mcp-manager(${serverName}@${root}): wrapped (toolDefinitions) connected`);
+      this.host.logger.info(
+        `dsh-mcp-manager(${serverName}@${root}): wrapped (toolDefinitions) connected`,
+      );
       this.host.emitStatus();
       return;
     }
@@ -195,8 +224,16 @@ export class McpMiddleware {
       try {
         const registered = this.host.ctx.tools.schemas();
         const prefix = `mcp__${serverName}__`;
-        if (Array.isArray(registered) && registered.some((schema) => typeof schema?.name === "string" && (schema.name as string).startsWith(prefix))) {
-          this.host.logger.warn(`dsh-mcp-manager(${serverName}@${root}): server 已由其他插件（如官方 dsh-mcp-client）注册 mcp__ 工具，跳过本实例连接（防双进程）`);
+        if (
+          Array.isArray(registered) &&
+          registered.some(
+            (schema) =>
+              typeof schema?.name === "string" && (schema.name as string).startsWith(prefix),
+          )
+        ) {
+          this.host.logger.warn(
+            `dsh-mcp-manager(${serverName}@${root}): server 已由其他插件（如官方 dsh-mcp-client）注册 mcp__ 工具，跳过本实例连接（防双进程）`,
+          );
           // F5（#382）：命中多为热更新/模式切换窗口期——旧实例 mcp__ 注册尚未
           // 注销（dispose 为 fire-and-forget）。确保存在可挂重试定时器的 entry
           // （首次连接无旧 entry → 落 failed 占位；旧 entry 保留其退避语义），
@@ -262,8 +299,16 @@ export class McpMiddleware {
     };
     if ("onClose" in transport && transport.onClose !== undefined) transport.onClose(closeHandler);
     try {
-      await withTimeout(transport.connect(), CONNECT_TIMEOUT_MS, `connect timed out (${CONNECT_TIMEOUT_MS}ms)`);
-      await withTimeout(client.initialize(), CONNECT_TIMEOUT_MS, `initialize timed out (${CONNECT_TIMEOUT_MS}ms)`);
+      await withTimeout(
+        transport.connect(),
+        CONNECT_TIMEOUT_MS,
+        `connect timed out (${CONNECT_TIMEOUT_MS}ms)`,
+      );
+      await withTimeout(
+        client.initialize(),
+        CONNECT_TIMEOUT_MS,
+        `initialize timed out (${CONNECT_TIMEOUT_MS}ms)`,
+      );
       await this.discover(root, serverName);
       if (newEntry.disposed || unit.connections.get(serverName) !== newEntry) return;
       newEntry.status = "connected";
@@ -274,7 +319,9 @@ export class McpMiddleware {
       this.host.emitStatus();
     } catch (error) {
       if (newEntry.disposed || unit.connections.get(serverName) !== newEntry) return;
-      this.host.logger.warn(`dsh-mcp-manager(${serverName}@${root}): connection attempt failed: ${this.redact(error)}`);
+      this.host.logger.warn(
+        `dsh-mcp-manager(${serverName}@${root}): connection attempt failed: ${this.redact(error)}`,
+      );
       // B4/B18：状态投影交给 scheduleReconnect 统一裁决（预算内 reconnecting /
       // 耗尽 failed）——catch 只记账（failedAttempts）与排重连。
       newEntry.error = error;
@@ -309,13 +356,18 @@ export class McpMiddleware {
       // 预算耗尽：停止后台重试（保持 failed 状态；手动/调用触发可再试）。
       entry.status = "failed";
       this.host.emitStatus();
-      this.host.logger.warn(`dsh-mcp-manager(${serverName}@${root}): reconnect gave up after ${policy.maxAttempts} attempts`);
+      this.host.logger.warn(
+        `dsh-mcp-manager(${serverName}@${root}): reconnect gave up after ${policy.maxAttempts} attempts`,
+      );
       return;
     }
     // B4：退避窗口内状态投影为 reconnecting（区别于预算耗尽的 failed）。
     entry.status = "reconnecting";
     this.host.emitStatus();
-    const delayMs = Math.min(policy.maxDelayMs, policy.initialDelayMs * 2 ** Math.min(entry.failedAttempts - 1, 6));
+    const delayMs = Math.min(
+      policy.maxDelayMs,
+      policy.initialDelayMs * 2 ** Math.min(entry.failedAttempts - 1, 6),
+    );
     entry.reconnectTimer = setTimeout(() => {
       entry.reconnectTimer = undefined;
       if (entry.disposed) return;
@@ -356,11 +408,19 @@ export class McpMiddleware {
     if (entry === undefined || entry.client === undefined) return;
     if (isCatalogFresh(unit.catalog.get(serverName))) return; // fresh
     try {
-      const tools = await withTimeout(this.listToolsAll(entry.client), DISCOVERY_TIMEOUT_MS, `discovery timed out (${DISCOVERY_TIMEOUT_MS}ms)`);
+      const tools = await withTimeout(
+        this.listToolsAll(entry.client),
+        DISCOVERY_TIMEOUT_MS,
+        `discovery timed out (${DISCOVERY_TIMEOUT_MS}ms)`,
+      );
       unit.catalog.set(serverName, { discoveredAt: Date.now(), tools: boundCatalogTools(tools) });
       this.persistCatalog(root);
     } catch (error) {
-      unit.catalog.set(serverName, { discoveredAt: 0, tools: new Map(), unavailable: this.redact(error) });
+      unit.catalog.set(serverName, {
+        discoveredAt: 0,
+        tools: new Map(),
+        unavailable: this.redact(error),
+      });
     }
   }
 
@@ -395,7 +455,8 @@ export class McpMiddleware {
     const all: Array<Record<string, unknown>> = [];
     let cursor: string | undefined;
     do {
-      const response = (await client.listTools(cursor)) as { tools?: unknown[]; nextCursor?: unknown } | undefined;
+      const response = (await client.listTools(cursor)) as
+        { tools?: unknown[]; nextCursor?: unknown } | undefined;
       const tools = response?.tools ?? [];
       for (const tool of tools) {
         if (typeof tool === "object" && tool !== null) all.push(tool as Record<string, unknown>);
@@ -419,7 +480,11 @@ export class McpMiddleware {
       anyTools = true;
       payload[serverName] = {
         discoveredAt: catalog.discoveredAt,
-        tools: [...catalog.tools.entries()].map(([name, tool]) => ({ name, description: tool.description, inputSchema: tool.inputSchema })),
+        tools: [...catalog.tools.entries()].map(([name, tool]) => ({
+          name,
+          description: tool.description,
+          inputSchema: tool.inputSchema,
+        })),
       };
     }
     if (!anyTools) return;
@@ -447,8 +512,18 @@ export class McpMiddleware {
     try {
       if (!existsSync(file)) return;
       const raw = await readFile(file, "utf8");
-      const parsed = JSON.parse(raw) as { version?: unknown; root?: unknown; entries?: Record<string, unknown> } | null;
-      if (parsed === null || typeof parsed !== "object" || typeof parsed.entries !== "object" || parsed.entries === null) return;
+      const parsed = JSON.parse(raw) as {
+        version?: unknown;
+        root?: unknown;
+        entries?: Record<string, unknown>;
+      } | null;
+      if (
+        parsed === null ||
+        typeof parsed !== "object" ||
+        typeof parsed.entries !== "object" ||
+        parsed.entries === null
+      )
+        return;
       if (!(serverName in parsed.entries)) return;
       delete parsed.entries[serverName];
       if (Object.keys(parsed.entries).length === 0) {
@@ -456,7 +531,11 @@ export class McpMiddleware {
         return;
       }
       const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
-      await writeFile(tmp, JSON.stringify({ version: 1, root, entries: parsed.entries }, null, 2), "utf8");
+      await writeFile(
+        tmp,
+        JSON.stringify({ version: 1, root, entries: parsed.entries }, null, 2),
+        "utf8",
+      );
       await rename(tmp, file);
     } catch (error) {
       this.host.logger.warn(`dsh-mcp-manager: catalog cache remove failed: ${msgOf(error)}`);
@@ -472,15 +551,26 @@ export class McpMiddleware {
       if (!existsSync(file)) return;
       const raw = await readFile(file, "utf8");
       const parsed = JSON.parse(raw) as { entries?: Record<string, unknown> } | null;
-      if (parsed && typeof parsed === "object" && typeof parsed.entries === "object" && parsed.entries !== null) {
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        typeof parsed.entries === "object" &&
+        parsed.entries !== null
+      ) {
         for (const [serverName, entry] of Object.entries(parsed.entries)) {
           const rec = entry as { discoveredAt?: unknown; tools?: unknown } | undefined;
           if (typeof rec !== "object" || rec === null) continue;
           const tools = new Map<string, CatalogTool>();
           if (Array.isArray(rec.tools)) {
             for (const tool of rec.tools) {
-              const toolRec = tool as { name?: unknown; description?: unknown; inputSchema?: unknown } | undefined;
-              if (typeof toolRec !== "object" || toolRec === null || typeof toolRec.name !== "string") continue;
+              const toolRec = tool as
+                { name?: unknown; description?: unknown; inputSchema?: unknown } | undefined;
+              if (
+                typeof toolRec !== "object" ||
+                toolRec === null ||
+                typeof toolRec.name !== "string"
+              )
+                continue;
               tools.set(toolRec.name, {
                 description: typeof toolRec.description === "string" ? toolRec.description : "",
                 inputSchema: (toolRec.inputSchema ?? {}) as Record<string, unknown>,
@@ -510,27 +600,45 @@ export class McpMiddleware {
   ): Promise<unknown> {
     const parsed = parseFullServerName(fullName);
     if (parsed === undefined) {
-      throw new Error(`ws_mcp_call: unknown server ${JSON.stringify(fullName)}; 格式应为 @<root>/<server>`);
+      throw new Error(
+        `ws_mcp_call: unknown server ${JSON.stringify(fullName)}; 格式应为 @<root>/<server>`,
+      );
     }
     const unit = this.units.get(parsed.root);
     if (unit === undefined) {
-      throw new Error(`ws_mcp_call: 工作空间 ${JSON.stringify(parsed.root)} 未激活；请先 ws_mcp_search 或 ws_mcp_list`);
+      throw new Error(
+        `ws_mcp_call: 工作空间 ${JSON.stringify(parsed.root)} 未激活；请先 ws_mcp_search 或 ws_mcp_list`,
+      );
     }
     const entry = unit.connections.get(parsed.server);
     const entryStatus = entry?.status;
     // B4 连带：六态状态机补 reconnecting 后，调用守卫须把「后台重连中」纳入未就绪
     // 范畴——否则退避窗口内会落到下方 entry.client.callTool（client 未 initialize）。
-    if (entry === undefined || entryStatus === "failed" || entryStatus === "reconnecting" || entryStatus === "stopped" || entryStatus === "disabled") {
+    if (
+      entry === undefined ||
+      entryStatus === "failed" ||
+      entryStatus === "reconnecting" ||
+      entryStatus === "stopped" ||
+      entryStatus === "disabled"
+    ) {
       if (unit.userDisabled.has(parsed.server)) {
-        throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 已被用户禁用；可先在 GUI「MCP」浮窗中重新连接`);
+        throw new Error(
+          `ws_mcp_call: server ${JSON.stringify(fullName)} 已被用户禁用；可先在 GUI「MCP」浮窗中重新连接`,
+        );
       }
       if (entryStatus === "reconnecting") {
-        throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 连接失败、正在后台重连；请稍后重试或重新连接`);
+        throw new Error(
+          `ws_mcp_call: server ${JSON.stringify(fullName)} 连接失败、正在后台重连；请稍后重试或重新连接`,
+        );
       }
-      throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 未连接或连接失败，请先 ws_mcp_search 或 ws_mcp_list 确认 server 已连接`);
+      throw new Error(
+        `ws_mcp_call: server ${JSON.stringify(fullName)} 未连接或连接失败，请先 ws_mcp_search 或 ws_mcp_list 确认 server 已连接`,
+      );
     }
     if (entryStatus === "connecting") {
-      throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 连接仍在进行，请稍后重试；连接完成后再调用`);
+      throw new Error(
+        `ws_mcp_call: server ${JSON.stringify(fullName)} 连接仍在进行，请稍后重试；连接完成后再调用`,
+      );
     }
     const tool = normalizeToolName(parsed.server, toolRaw);
     // 工具级禁用（先查禁用表再查策略；P0-1 三入口统一走 isToolDenied）。
@@ -539,13 +647,17 @@ export class McpMiddleware {
       // 策略拒绝与禁用拒绝文案区分（策略拒绝附「调整 middlewarePolicy 配置」下一步）。
       if (!policyAllows(this.policy, policyKey, tool)) {
         const reason = policyDenialReason(this.policy, policyKey, tool);
-        throw new Error(`${reason ?? `ws_mcp_call: 工具 ${JSON.stringify(`${policyKey}/${tool}`)} 被策略拒绝`}；如需放行请调整 middlewarePolicy 配置`);
+        throw new Error(
+          `${reason ?? `ws_mcp_call: 工具 ${JSON.stringify(`${policyKey}/${tool}`)} 被策略拒绝`}；如需放行请调整 middlewarePolicy 配置`,
+        );
       }
       throw new Error(toolDisabledReason(policyKey, tool));
     }
     const catalog = unit.catalog.get(parsed.server);
     const stale =
-      catalog !== undefined && catalog.unavailable === undefined && Date.now() - catalog.discoveredAt > CATALOG_TTL_MS;
+      catalog !== undefined &&
+      catalog.unavailable === undefined &&
+      Date.now() - catalog.discoveredAt > CATALOG_TTL_MS;
     if (stale) {
       // stale：仍可调用（目录只是提示），但 schema 可能过期——在结果前置提示。
     }
@@ -562,27 +674,37 @@ export class McpMiddleware {
     if (Array.isArray(wrapped)) {
       const def = wrapped.find((d) => d?.name === tool);
       if (def === undefined) {
-        throw new Error(`ws_mcp_call: 工具 ${JSON.stringify(`${parsed.server}/${tool}`)} 不存在（封装定义服务器）`);
+        throw new Error(
+          `ws_mcp_call: 工具 ${JSON.stringify(`${parsed.server}/${tool}`)} 不存在（封装定义服务器）`,
+        );
       }
       try {
         // 封装定义契约：execute(args, exec) 的 exec 为完整 ToolRunContext，但
         // 中间层只能提供最小面（agent 透传，session cwd 解析用）——经 unknown
         // 中转（消费方封装定义只读 exec.agent）。
-        const execCtx = { agent } as unknown as Parameters<NonNullable<ToolDefinition["execute"]>>[1];
+        const execCtx = { agent } as unknown as Parameters<
+          NonNullable<ToolDefinition["execute"]>
+        >[1];
         // #413 QA P2-2：封装 execute 补超时兜底（与远端分支同预算 callBudgetMs，
         // 封装实现挂起时不无限等待）。
         const value = await withTimeout(
-          def.execute(
-            typeof args === "object" && args !== null ? args : {},
-            execCtx,
-          ),
+          def.execute(typeof args === "object" && args !== null ? args : {}, execCtx),
           callBudgetMs + 2000,
           `ws_mcp_call: 封装调用超时（${callBudgetMs}ms），可重试；若反复超时请检查插件状态`,
           signal,
         );
-        const content = typeof def.output?.render === "function"
-          ? def.output.render(args, value as unknown as Parameters<NonNullable<ToolOutputDefinition["render"]>>[1])
-          : [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value ?? {}) }];
+        const content =
+          typeof def.output?.render === "function"
+            ? def.output.render(
+                args,
+                value as unknown as Parameters<NonNullable<ToolOutputDefinition["render"]>>[1],
+              )
+            : [
+                {
+                  type: "text",
+                  text: typeof value === "string" ? value : JSON.stringify(value ?? {}),
+                },
+              ];
         // #512 共性问题：structuredContent 条件展开——封装 execute 返回 undefined
         // 时不落键，防显式 undefined 值键触发宿主 lossless JSON 校验失败（#381 同源）。
         return {
@@ -591,11 +713,17 @@ export class McpMiddleware {
         };
       } catch (error) {
         if (signal?.aborted === true) throw signal.reason;
-        throw new Error(this.hostRedact(`ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 封装调用失败：${msgOf(error)}`));
+        throw new Error(
+          this.hostRedact(
+            `ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 封装调用失败：${msgOf(error)}`,
+          ),
+        );
       }
     }
     if (entry.client === undefined) {
-      throw new Error(`ws_mcp_call: server ${JSON.stringify(fullName)} 未就绪（client 缺失）；请稍后重试或重新连接`);
+      throw new Error(
+        `ws_mcp_call: server ${JSON.stringify(fullName)} 未就绪（client 缺失）；请稍后重试或重新连接`,
+      );
     }
     try {
       const result = await withTimeout(
@@ -617,22 +745,36 @@ export class McpMiddleware {
         errorText: (content) =>
           `ws_mcp_call: 远端工具返回错误：${msgOf(content)}；可先用 ws_mcp_detail 核对参数 schema 后重试`,
         fallbackText: (r) => {
-          const raw = typeof r === "object" && r !== null && "content" in r ? (r as { content?: unknown }).content : undefined;
-          return raw !== undefined && !Array.isArray(raw) ? msgOf(raw) : defaultCallResultFallbackText(r);
+          const raw =
+            typeof r === "object" && r !== null && "content" in r
+              ? (r as { content?: unknown }).content
+              : undefined;
+          return raw !== undefined && !Array.isArray(raw)
+            ? msgOf(raw)
+            : defaultCallResultFallbackText(r);
         },
       });
       if (stale) {
         // schema 可能已过期：结果前置提示（投影后的白名单结构，仅扩 content）。
-        const hint = { type: "text", text: "（提示：本工具目录已过期，schema 可能已变更，请重新 ws_mcp_search）" };
+        const hint = {
+          type: "text",
+          text: "（提示：本工具目录已过期，schema 可能已变更，请重新 ws_mcp_search）",
+        };
         return {
           content: [hint, ...projected.content],
-          ...(projected.structuredContent !== undefined ? { structuredContent: projected.structuredContent } : {}),
+          ...(projected.structuredContent !== undefined
+            ? { structuredContent: projected.structuredContent }
+            : {}),
         };
       }
       return projected;
     } catch (error) {
       if (signal?.aborted === true) throw signal.reason;
-      throw new Error(this.hostRedact(`ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 调用失败：${msgOf(error)}`));
+      throw new Error(
+        this.hostRedact(
+          `ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 调用失败：${msgOf(error)}`,
+        ),
+      );
     }
   }
 

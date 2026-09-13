@@ -8,15 +8,7 @@
  *
  * 目录结构：historyDir/<safe(provider)>/<safe(name)>/YYYY-MM-DD.jsonl
  */
-import {
-  appendFile,
-  mkdir,
-  readFile,
-  readdir,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { safeSegment } from "../../shared/interface.ts";
 
@@ -89,8 +81,8 @@ export class HistoryStore {
     for (let day = startOfDay(range.start); day <= startOfDay(range.end); day += 86400000) {
       promises.push(
         this.readDay(provider, name, day).then((dayEntries) =>
-          dayEntries.filter((e) => e.time >= range.start && e.time <= range.end)
-        )
+          dayEntries.filter((e) => e.time >= range.start && e.time <= range.end),
+        ),
       );
     }
     const results = await Promise.all(promises);
@@ -120,7 +112,11 @@ export class HistoryStore {
         for (let j = lines.length - 1; j >= 0; j--) {
           try {
             const entry = JSON.parse(lines[j]) as HistoryEntry;
-            if (typeof entry?.time === "number" && typeof entry.data === "object" && entry.data !== null) {
+            if (
+              typeof entry?.time === "number" &&
+              typeof entry.data === "object" &&
+              entry.data !== null
+            ) {
               return entry;
             }
           } catch {
@@ -149,7 +145,11 @@ export class HistoryStore {
     for (const f of jsonlFiles) {
       const dayMs = Date.parse(f.slice(0, 10));
       if (Number.isFinite(dayMs) && dayMs < cutoff) {
-        try { await rm(join(dir, f), { force: true }); } catch { /* 忽略 */ }
+        try {
+          await rm(join(dir, f), { force: true });
+        } catch {
+          /* 忽略 */
+        }
       }
     }
     // 2. 总大小超限：从最旧文件逐个删（保留最后 1 个文件，防清零）
@@ -162,7 +162,9 @@ export class HistoryStore {
       try {
         const stat = await import("node:fs/promises").then((m) => m.stat(join(dir, f)));
         total += stat.size;
-      } catch { /* 忽略 */ }
+      } catch {
+        /* 忽略 */
+      }
     }
     while (total > this.maxSizeBytes && remaining.length > 1) {
       const oldest = remaining.shift();
@@ -171,7 +173,9 @@ export class HistoryStore {
         const stat = await import("node:fs/promises").then((m) => m.stat(join(dir, oldest)));
         total -= stat.size;
         await rm(join(dir, oldest), { force: true });
-      } catch { /* 忽略 */ }
+      } catch {
+        /* 忽略 */
+      }
     }
   }
 
@@ -227,7 +231,9 @@ export class HistoryStore {
     for (const f of files.filter((x) => x.endsWith(".jsonl")).sort()) {
       try {
         out.push(...parseJsonl(await readFile(join(dir, f), "utf8")));
-      } catch { /* 忽略 */ }
+      } catch {
+        /* 忽略 */
+      }
     }
     return out;
   }
@@ -236,7 +242,12 @@ export class HistoryStore {
    * 割接：原子写一份文件（写 tmp + rename）。
    * 供迁移工具把旧 v3 数据拷入新格式时使用。
    */
-  async writeDirect(provider: string, name: string, day: number, entries: HistoryEntry[]): Promise<void> {
+  async writeDirect(
+    provider: string,
+    name: string,
+    day: number,
+    entries: HistoryEntry[],
+  ): Promise<void> {
     if (entries.length === 0) return;
     const file = this.fileOf(provider, name, day);
     await mkdir(this.dirOf(provider, name), { recursive: true });
@@ -246,7 +257,11 @@ export class HistoryStore {
     try {
       await rename(tmp, file);
     } catch (e) {
-      try { await rm(tmp, { force: true }); } catch { /* 忽略 */ }
+      try {
+        await rm(tmp, { force: true });
+      } catch {
+        /* 忽略 */
+      }
       throw e;
     }
   }
@@ -259,7 +274,11 @@ export function parseJsonl(raw: string): HistoryEntry[] {
     if (line.trim() === "") continue;
     try {
       const entry = JSON.parse(line) as HistoryEntry;
-      if (typeof entry?.time === "number" && typeof entry.data === "object" && entry.data !== null) {
+      if (
+        typeof entry?.time === "number" &&
+        typeof entry.data === "object" &&
+        entry.data !== null
+      ) {
         out.push(entry);
       }
     } catch {
@@ -277,7 +296,9 @@ export function startOfDay(time: number): number {
 }
 
 /** 目录结构推导（探测用：返回已有 provider/name 列表）。 */
-export async function listAdapters(root: string): Promise<Array<{ provider: string; name: string }>> {
+export async function listAdapters(
+  root: string,
+): Promise<Array<{ provider: string; name: string }>> {
   let providers: string[];
   try {
     providers = await readdir(root);
@@ -289,7 +310,9 @@ export async function listAdapters(root: string): Promise<Array<{ provider: stri
     try {
       const names = await readdir(join(root, p));
       for (const n of names) out.push({ provider: p, name: n });
-    } catch { /* 忽略 */ }
+    } catch {
+      /* 忽略 */
+    }
   }
   return out;
 }
@@ -412,7 +435,9 @@ export async function migrateLegacyV3(root: string, store: HistoryStore): Promis
         // 成功 → 旧文件重命名 .bak（幂等：不扫描 .bak；覆盖同名保留时间戳）
         try {
           await rename(join(pdir, file), join(pdir, `${file}.v3.bak`));
-        } catch { /* 重命名失败保留原文件，下次重试 */ }
+        } catch {
+          /* 重命名失败保留原文件，下次重试 */
+        }
         migrated += entries.length;
       }
     }

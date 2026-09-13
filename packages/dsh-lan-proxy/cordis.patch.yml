@@ -5,4 +5,4 @@
 # （host 0.0.0.0 / port 3081），独立/聚合行均不带 config。
 - insert:
     - id: ui-dsh-lan-proxy
-      name: '@wingsky-1/dsh-lan-proxy'
+      name: "@wingsky-1/dsh-lan-proxy"

@@ -35,7 +35,8 @@ const stubPlugin = {
   setup(build) {
     build.onResolve({ filter: /^react$/ }, () => ({ path: "react-stub", namespace: "stub-rc" }));
     build.onLoad({ filter: /.*/, namespace: "stub-rc" }, () => ({
-      contents: "export const createElement = (type, props, ...children) => ({ type, props, children });",
+      contents:
+        "export const createElement = (type, props, ...children) => ({ type, props, children });",
       loader: "js",
     }));
     build.onLoad({ filter: /\.css$/, namespace: "file" }, (args) => ({
@@ -89,14 +90,23 @@ function makeNode(tag) {
       }
       node.parentElement = null;
     },
-    setAttribute(k, v) { node.attrs[k] = String(v); },
-    addEventListener(type, fn) { (node.listeners[type] ??= []).push(fn); },
+    setAttribute(k, v) {
+      node.attrs[k] = String(v);
+    },
+    addEventListener(type, fn) {
+      (node.listeners[type] ??= []).push(fn);
+    },
     removeEventListener(type, fn) {
       const arr = node.listeners[type];
-      if (arr) { const i = arr.indexOf(fn); if (i >= 0) arr.splice(i, 1); }
+      if (arr) {
+        const i = arr.indexOf(fn);
+        if (i >= 0) arr.splice(i, 1);
+      }
     },
     /** 仅支持本插件实际使用的两类查询：.class 与 tag[attr]（含裸 attr 形态由 document 侧处理）。 */
-    querySelector(sel) { return deepFind(node.children, sel); },
+    querySelector(sel) {
+      return deepFind(node.children, sel);
+    },
     getBoundingClientRect() {
       return { width: 800, height: 600, left: 0, top: 0, right: 800, bottom: 600, x: 0, y: 0 };
     },
@@ -115,7 +125,10 @@ function makeNode(tag) {
 
 function matchSelector(node, sel) {
   const cls = sel.match(/^\.([\w-]+)$/);
-  if (cls) return String(node.className || "").split(/\s+/).includes(cls[1]);
+  if (cls)
+    return String(node.className || "")
+      .split(/\s+/)
+      .includes(cls[1]);
   const tagAttr = sel.match(/^([\w-]+)\[(.+?)\]$/);
   if (tagAttr) {
     const [, tag, attr] = tagAttr;
@@ -156,7 +169,9 @@ globalThis.document = {
   body: docBody,
   visibilityState: "visible",
   createElement: (t) => makeNode(t),
-  getElementById(id) { return findNodeById([docHead, docBody], id); },
+  getElementById(id) {
+    return findNodeById([docHead, docBody], id);
+  },
   createTextNode: (t) => ({ nodeName: "#text", textContent: String(t), parentElement: null }),
   addEventListener() {},
   removeEventListener() {},
@@ -173,12 +188,16 @@ globalThis.window = {
   removeEventListener() {},
 };
 globalThis.MutationObserver = class {
-  constructor(cb) { this.cb = cb; }
+  constructor(cb) {
+    this.cb = cb;
+  }
   observe() {}
   disconnect() {}
 };
 globalThis.EventSource = class {
-  constructor(url) { EventSource.lastUrl = url; }
+  constructor(url) {
+    EventSource.lastUrl = url;
+  }
   close() {}
 };
 
@@ -220,13 +239,21 @@ globalThis.fetch = async (url) => {
     historyCalls.push(u);
     const provider = new URL(u, "http://x").searchParams.get("provider") ?? "";
     return json({
-      ok: true, plugin: "dsh-provider-usage", version: 2, provider,
-      adapterName: `${provider}-usage`, panelHtml: `<p data-p="${provider}">panel</p>`, error: null,
+      ok: true,
+      plugin: "dsh-provider-usage",
+      version: 2,
+      provider,
+      adapterName: `${provider}-usage`,
+      panelHtml: `<p data-p="${provider}">panel</p>`,
+      error: null,
       range: { start: Date.now() - 86400000, end: Date.now() },
     });
   }
   if (u.startsWith(ROUTES.uiConfig)) {
-    return json({ ok: true, ui: { placement: "top-right", offsetX: 0, offsetY: 48, panelOffsetY: 10 } });
+    return json({
+      ok: true,
+      ui: { placement: "top-right", offsetX: 0, offsetY: 48, panelOffsetY: 10 },
+    });
   }
   return { ok: false, status: 404, json: async () => ({}) };
 };
@@ -234,7 +261,10 @@ globalThis.fetch = async (url) => {
 // ---- setInterval 收集器：轮询回调由测试手动触发（不真等 60s）----
 const intervals = [];
 const origSetInterval = globalThis.setInterval;
-globalThis.setInterval = (fn, ms) => { intervals.push({ fn, ms }); return intervals.length; };
+globalThis.setInterval = (fn, ms) => {
+  intervals.push({ fn, ms });
+  return intervals.length;
+};
 globalThis.clearInterval = () => {};
 
 // ---------------------------------------------------------------- fake sessions/remote/ctx
@@ -264,14 +294,18 @@ function makeFakeServices(initialProvider) {
             const proj = state.projectionBySession[id];
             return [
               id,
-              proj === undefined
-                ? base
-                : { ...base, projectionValues: { modelSelection: proj } },
+              proj === undefined ? base : { ...base, projectionValues: { modelSelection: proj } },
             ];
           }),
         ),
       }),
-      subscribe: (fn) => { listSubs.push(fn); return () => { const i = listSubs.indexOf(fn); if (i >= 0) listSubs.splice(i, 1); }; },
+      subscribe: (fn) => {
+        listSubs.push(fn);
+        return () => {
+          const i = listSubs.indexOf(fn);
+          if (i >= 0) listSubs.splice(i, 1);
+        };
+      },
     },
   };
   return {
@@ -280,11 +314,16 @@ function makeFakeServices(initialProvider) {
     // 0.1.2-alpha.2：ctx.remote 网关（兜底 modelCatalog；剧本主路径走投影，无需兜底命中）
     remote: {
       session: {
-        modelCatalog: async () => ({ ok: true, value: { default: { provider: "mock-catalog-default" } } }),
+        modelCatalog: async () => ({
+          ok: true,
+          value: { default: { provider: "mock-catalog-default" } },
+        }),
       },
     },
     /** 模拟宿主 publishCurrent：仅切换会话/roster 变化时 fire（#71 已实证边界）。 */
-    fireSessionChanged() { for (const fn of [...listSubs]) fn(); },
+    fireSessionChanged() {
+      for (const fn of [...listSubs]) fn();
+    },
   };
 }
 
@@ -314,7 +353,11 @@ function makeCtx(svc) {
 async function until(cond, what, ms = 3000) {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
-    try { if (cond()) return; } catch { /* 条件内部异常继续等到超时 */ }
+    try {
+      if (cond()) return;
+    } catch {
+      /* 条件内部异常继续等到超时 */
+    }
     await new Promise((r) => setTimeout(r, 10));
   }
   throw new Error(`until 超时：${what}`);
@@ -329,157 +372,169 @@ const lastProviderOf = (urls) => {
 // ---------------------------------------------------------------- 剧本：一个 GUI 生命周期串起全部场景
 
 async function main() {
-const svc = makeFakeServices("mock-a");
-const { ctx, disposers } = makeCtx(svc);
-client.apply(ctx);
+  const svc = makeFakeServices("mock-a");
+  const { ctx, disposers } = makeCtx(svc);
+  client.apply(ctx);
 
-// 场景 1：初次挂载——检测先行，首拉即会话实际 provider（FALLBACK 不出现在任何 /stats 请求）
-{
-  await until(
-    () => statsCalls.length > 0 && pillLabel()?.innerHTML.includes("MOCK-A"),
-    "初次挂载胶囊出现 MOCK-A",
-  );
-  assert.ok(
-    statsCalls.every((u) => new URL(u, "http://x").searchParams.get("provider") === "mock-a"),
-    `首次挂载全部 /stats 请求均为 mock-a（实际 ${JSON.stringify(statsCalls)}）`,
-  );
-  console.log("[client-revalidate.worker] 场景1 初次挂载直取 mock-a ✓");
-}
-
-// 打开面板（qa b3 场景前置）：面板跟随断言需要 floatOpen
-{
-  const pill = deepFind([docBody], ".dou-float");
-  assert.ok(pill, "胶囊已挂载");
-  pill.listeners.click[0]();
-  assert.ok(deepFind([docBody], ".dou-panel"), "面板已展开");
-}
-
-// 场景 2a（#383 修复核心·即时路径）：会话内切模型 a→b——sessionId/list.current 均不变，
-// 但宿主 modelSelection 投影帧（control frame type:projection）会 fire sessions.list
-// subscribe → detect 立即复检 → 切完即重拉，不等 60s 轮询。
-// #383 追加根因：切模型只更新 next（pending），lastUsed 保持旧值（等真发请求才随动）——
-// 修复后胶囊应跟随 next 的新 provider，而非滞留 lastUsed
-{
-  const before = statsCalls.length;
-  svc.state.projectionBySession.s1 = {
-    lastUsed: { provider: "mock-a", model: "model-x" }, // 上次实际使用仍为 a（未发新请求）
-    next: { provider: "mock-b", model: "model-x" }, // 当前选择已切到 b（pending）
-  };
-  svc.fireSessionChanged(); // 模拟宿主投影帧 → sessions.list subscribe fire
-  await until(
-    () => lastProviderOf(statsCalls) === "mock-b" && pillLabel()?.innerHTML.includes("MOCK-B"),
-    "切模型后投影帧 fire → 立即跟随 mock-b（next 优先，不滞留 lastUsed）",
-  );
-  const afterSwitch = statsCalls.slice(before);
-  assert.ok(statsCalls.length > before, "fire 后确有新请求（即时性：非轮询驱动）");
-  assert.ok(
-    afterSwitch.every((u) => new URL(u, "http://x").searchParams.get("provider") === "mock-b"),
-    `切换后 refreshStats 使用新 provider（实际 ${JSON.stringify(afterSwitch)}）`,
-  );
-  // 面板同步跟随（旧实现在此滞留旧 provider——qa b3 反证点）
-  await until(() => {
-    const box = deepFind([docBody], ".dou-charts");
-    return box !== null && String(box.innerHTML).includes('data-p="mock-b"');
-  }, "面板内容跟随 mock-b");
-  console.log("[client-revalidate.worker] 场景2a 切模型即时跟随（投影帧 fire，next 优先，含面板） ✓");
-}
-
-// 场景 2b（#71 A1 兜底路径）：会话内再切 b→a，投影帧【不 fire】（信号缺失最坏场景）——
-// 手动触发一次轮询回调 → refreshStats 取数前复检 → 使用新 provider（最长一个轮询周期收敛）
-{
-  const before = statsCalls.length;
-  svc.state.projectionBySession.s1 = {
-    lastUsed: { provider: "mock-b", model: "model-x" }, // 上次实际使用已随请求变 b
-    next: { provider: "mock-a", model: "model-x" }, // 当前选择切回 a（pending）
-  };
-  const pollTimer = intervals.find((t) => t.ms === 60000);
-  assert.ok(pollTimer, "60s 轮询定时器已注册");
-  pollTimer.fn();
-
-  await until(
-    () => lastProviderOf(statsCalls) === "mock-a" && pillLabel()?.innerHTML.includes("MOCK-A"),
-    "轮询周期内 refreshStats 自愈到 mock-a（next 优先，不滞留 lastUsed）",
-  );
-  assert.ok(statsCalls.length > before, "轮询确有新请求");
-  console.log("[client-revalidate.worker] 场景2b 轮询兜底自愈 b→a（#71 A1） ✓");
-}
-
-// 场景 3（维护者补充需求）：切换会话 s2，provider 相同（mock-b）→ 仍立即刷一次 stats
-{
-  svc.state.byId.s2 = {};
-  svc.state.listCurrent = "s2";
-  svc.state.projectionBySession.s2 = {
-    lastUsed: { provider: "mock-b", model: "model-x" },
-    next: { provider: "mock-b", model: "model-x" },
-  };
-  const before = statsCalls.length;
-  svc.fireSessionChanged(); // 宿主信号：切换会话时 fire
-  await until(() => statsCalls.length > before, "同 provider 切换会话仍立即刷新 stats");
-  assert.equal(lastProviderOf(statsCalls), "mock-b", "同 provider 刷新仍指向 mock-b");
-  console.log("[client-revalidate.worker] 场景3 切换会话（同 provider）立即刷 stats ✓");
-}
-
-// 场景 3b（#419 核心）：会话运行期间快照噪声帧（projection 写入 / running bit 等——
-// current 不变）→ detect 复检但不补刷 stats，请求数不增长
-{
-  const before = statsCalls.length;
-  // 模拟投影逐条写入（如 sessionListMetadata/title 更新）：current 不变
-  svc.state.projectionBySession.s2 = {
-    lastUsed: { provider: "mock-b", model: "model-x" },
-    next: { provider: "mock-b", model: "model-x" },
-  };
-  svc.fireSessionChanged();
-  svc.fireSessionChanged(); // 多帧噪声
-  svc.fireSessionChanged();
-  // 给 detect 异步体一个结算窗口 + 让 refreshStats 若误触发有暴露窗口
-  await new Promise((r) => setTimeout(r, 100));
-  assert.equal(statsCalls.length, before, "快照噪声帧（current 不变）不触发 /stats（#419 diff 语义）");
-  console.log("[client-revalidate.worker] 场景3b 快照噪声帧不刷 stats ✓");
-}
-
-// 场景 4：切换会话 s3 跨 provider（b→a）→ fire 后立即拉新 provider，不等轮询
-{
-  svc.state.byId.s3 = {};
-  svc.state.listCurrent = "s3";
-  svc.state.projectionBySession.s3 = {
-    lastUsed: { provider: "mock-a", model: "model-x" },
-    next: { provider: "mock-a", model: "model-x" },
-  };
-  const before = statsCalls.length;
-  svc.fireSessionChanged();
-  await until(
-    () => lastProviderOf(statsCalls) === "mock-a" && pillLabel()?.innerHTML.includes("MOCK-A"),
-    "切换会话跨 provider 立即跟随",
-  );
-  assert.ok(statsCalls.length > before, "fire 后确有新请求（即时性：非轮询驱动）");
-  console.log("[client-revalidate.worker] 场景4 切换会话跨 provider 即时跟随 ✓");
-}
-
-// 场景 4b（#419 回归）：current 切走（undefined）再切回——即使 provider 相同也立即补刷
-{
-  svc.state.listCurrent = undefined;
-  svc.fireSessionChanged();
-  await until(() => statsCalls.length > 0 && pillLabel()?.innerHTML !== "", "无会话回落渲染", 3000);
-  const before = statsCalls.length;
-  svc.state.listCurrent = "s3";
-  svc.state.projectionBySession.s3 = {
-    lastUsed: { provider: "mock-a", model: "model-x" },
-    next: { provider: "mock-a", model: "model-x" },
-  };
-  svc.fireSessionChanged();
-  await until(() => statsCalls.length > before, "current 变化（同 provider）立即补刷", 3000);
-  console.log("[client-revalidate.worker] 场景4b current 变化立即补刷（#419 diff 判定） ✓");
-}
-
-// 场景 5：卸载清理不抛错
-{
-  for (const d of [...disposers].reverse()) {
-    try { d(); } catch (error) {
-      assert.fail(`卸载清理抛错：${error?.message ?? error}`);
-    }
+  // 场景 1：初次挂载——检测先行，首拉即会话实际 provider（FALLBACK 不出现在任何 /stats 请求）
+  {
+    await until(
+      () => statsCalls.length > 0 && pillLabel()?.innerHTML.includes("MOCK-A"),
+      "初次挂载胶囊出现 MOCK-A",
+    );
+    assert.ok(
+      statsCalls.every((u) => new URL(u, "http://x").searchParams.get("provider") === "mock-a"),
+      `首次挂载全部 /stats 请求均为 mock-a（实际 ${JSON.stringify(statsCalls)}）`,
+    );
+    console.log("[client-revalidate.worker] 场景1 初次挂载直取 mock-a ✓");
   }
-  console.log("[client-revalidate.worker] 场景5 卸载清理 ✓");
-}
+
+  // 打开面板（qa b3 场景前置）：面板跟随断言需要 floatOpen
+  {
+    const pill = deepFind([docBody], ".dou-float");
+    assert.ok(pill, "胶囊已挂载");
+    pill.listeners.click[0]();
+    assert.ok(deepFind([docBody], ".dou-panel"), "面板已展开");
+  }
+
+  // 场景 2a（#383 修复核心·即时路径）：会话内切模型 a→b——sessionId/list.current 均不变，
+  // 但宿主 modelSelection 投影帧（control frame type:projection）会 fire sessions.list
+  // subscribe → detect 立即复检 → 切完即重拉，不等 60s 轮询。
+  // #383 追加根因：切模型只更新 next（pending），lastUsed 保持旧值（等真发请求才随动）——
+  // 修复后胶囊应跟随 next 的新 provider，而非滞留 lastUsed
+  {
+    const before = statsCalls.length;
+    svc.state.projectionBySession.s1 = {
+      lastUsed: { provider: "mock-a", model: "model-x" }, // 上次实际使用仍为 a（未发新请求）
+      next: { provider: "mock-b", model: "model-x" }, // 当前选择已切到 b（pending）
+    };
+    svc.fireSessionChanged(); // 模拟宿主投影帧 → sessions.list subscribe fire
+    await until(
+      () => lastProviderOf(statsCalls) === "mock-b" && pillLabel()?.innerHTML.includes("MOCK-B"),
+      "切模型后投影帧 fire → 立即跟随 mock-b（next 优先，不滞留 lastUsed）",
+    );
+    const afterSwitch = statsCalls.slice(before);
+    assert.ok(statsCalls.length > before, "fire 后确有新请求（即时性：非轮询驱动）");
+    assert.ok(
+      afterSwitch.every((u) => new URL(u, "http://x").searchParams.get("provider") === "mock-b"),
+      `切换后 refreshStats 使用新 provider（实际 ${JSON.stringify(afterSwitch)}）`,
+    );
+    // 面板同步跟随（旧实现在此滞留旧 provider——qa b3 反证点）
+    await until(() => {
+      const box = deepFind([docBody], ".dou-charts");
+      return box !== null && String(box.innerHTML).includes('data-p="mock-b"');
+    }, "面板内容跟随 mock-b");
+    console.log(
+      "[client-revalidate.worker] 场景2a 切模型即时跟随（投影帧 fire，next 优先，含面板） ✓",
+    );
+  }
+
+  // 场景 2b（#71 A1 兜底路径）：会话内再切 b→a，投影帧【不 fire】（信号缺失最坏场景）——
+  // 手动触发一次轮询回调 → refreshStats 取数前复检 → 使用新 provider（最长一个轮询周期收敛）
+  {
+    const before = statsCalls.length;
+    svc.state.projectionBySession.s1 = {
+      lastUsed: { provider: "mock-b", model: "model-x" }, // 上次实际使用已随请求变 b
+      next: { provider: "mock-a", model: "model-x" }, // 当前选择切回 a（pending）
+    };
+    const pollTimer = intervals.find((t) => t.ms === 60000);
+    assert.ok(pollTimer, "60s 轮询定时器已注册");
+    pollTimer.fn();
+
+    await until(
+      () => lastProviderOf(statsCalls) === "mock-a" && pillLabel()?.innerHTML.includes("MOCK-A"),
+      "轮询周期内 refreshStats 自愈到 mock-a（next 优先，不滞留 lastUsed）",
+    );
+    assert.ok(statsCalls.length > before, "轮询确有新请求");
+    console.log("[client-revalidate.worker] 场景2b 轮询兜底自愈 b→a（#71 A1） ✓");
+  }
+
+  // 场景 3（维护者补充需求）：切换会话 s2，provider 相同（mock-b）→ 仍立即刷一次 stats
+  {
+    svc.state.byId.s2 = {};
+    svc.state.listCurrent = "s2";
+    svc.state.projectionBySession.s2 = {
+      lastUsed: { provider: "mock-b", model: "model-x" },
+      next: { provider: "mock-b", model: "model-x" },
+    };
+    const before = statsCalls.length;
+    svc.fireSessionChanged(); // 宿主信号：切换会话时 fire
+    await until(() => statsCalls.length > before, "同 provider 切换会话仍立即刷新 stats");
+    assert.equal(lastProviderOf(statsCalls), "mock-b", "同 provider 刷新仍指向 mock-b");
+    console.log("[client-revalidate.worker] 场景3 切换会话（同 provider）立即刷 stats ✓");
+  }
+
+  // 场景 3b（#419 核心）：会话运行期间快照噪声帧（projection 写入 / running bit 等——
+  // current 不变）→ detect 复检但不补刷 stats，请求数不增长
+  {
+    const before = statsCalls.length;
+    // 模拟投影逐条写入（如 sessionListMetadata/title 更新）：current 不变
+    svc.state.projectionBySession.s2 = {
+      lastUsed: { provider: "mock-b", model: "model-x" },
+      next: { provider: "mock-b", model: "model-x" },
+    };
+    svc.fireSessionChanged();
+    svc.fireSessionChanged(); // 多帧噪声
+    svc.fireSessionChanged();
+    // 给 detect 异步体一个结算窗口 + 让 refreshStats 若误触发有暴露窗口
+    await new Promise((r) => setTimeout(r, 100));
+    assert.equal(
+      statsCalls.length,
+      before,
+      "快照噪声帧（current 不变）不触发 /stats（#419 diff 语义）",
+    );
+    console.log("[client-revalidate.worker] 场景3b 快照噪声帧不刷 stats ✓");
+  }
+
+  // 场景 4：切换会话 s3 跨 provider（b→a）→ fire 后立即拉新 provider，不等轮询
+  {
+    svc.state.byId.s3 = {};
+    svc.state.listCurrent = "s3";
+    svc.state.projectionBySession.s3 = {
+      lastUsed: { provider: "mock-a", model: "model-x" },
+      next: { provider: "mock-a", model: "model-x" },
+    };
+    const before = statsCalls.length;
+    svc.fireSessionChanged();
+    await until(
+      () => lastProviderOf(statsCalls) === "mock-a" && pillLabel()?.innerHTML.includes("MOCK-A"),
+      "切换会话跨 provider 立即跟随",
+    );
+    assert.ok(statsCalls.length > before, "fire 后确有新请求（即时性：非轮询驱动）");
+    console.log("[client-revalidate.worker] 场景4 切换会话跨 provider 即时跟随 ✓");
+  }
+
+  // 场景 4b（#419 回归）：current 切走（undefined）再切回——即使 provider 相同也立即补刷
+  {
+    svc.state.listCurrent = undefined;
+    svc.fireSessionChanged();
+    await until(
+      () => statsCalls.length > 0 && pillLabel()?.innerHTML !== "",
+      "无会话回落渲染",
+      3000,
+    );
+    const before = statsCalls.length;
+    svc.state.listCurrent = "s3";
+    svc.state.projectionBySession.s3 = {
+      lastUsed: { provider: "mock-a", model: "model-x" },
+      next: { provider: "mock-a", model: "model-x" },
+    };
+    svc.fireSessionChanged();
+    await until(() => statsCalls.length > before, "current 变化（同 provider）立即补刷", 3000);
+    console.log("[client-revalidate.worker] 场景4b current 变化立即补刷（#419 diff 判定） ✓");
+  }
+
+  // 场景 5：卸载清理不抛错
+  {
+    for (const d of [...disposers].reverse()) {
+      try {
+        d();
+      } catch (error) {
+        assert.fail(`卸载清理抛错：${error?.message ?? error}`);
+      }
+    }
+    console.log("[client-revalidate.worker] 场景5 卸载清理 ✓");
+  }
 }
 
 main()

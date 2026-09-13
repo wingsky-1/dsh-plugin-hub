@@ -1,5 +1,5 @@
 // @ts-nocheck
-'use strict'
+"use strict";
 
 /**
  * build-client — 共享客户端构建预设（唯一注入点 + 唯一契约外壳）。
@@ -27,15 +27,15 @@
  * 用法（库形态，被 bundle-host.ts 编排调用；也可被其他构建入口复用）：
  *   const { buildClient, copyClientResources } = await import('./build-client.ts')
  */
-import { build } from 'esbuild'
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
-import { extractInlinedModuleRefs } from './collect-licenses.ts'
+import { build } from "esbuild";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { extractInlinedModuleRefs } from "./collect-licenses.ts";
 
 /** 契约外壳模板：零依赖干净模块 → 浏览器端 IIFE 产物（纯 JS，构建期生成不经 tsc）。 */
 function renderWrapper(entryRel) {
   return `// 契约外壳（scripts/build-client.ts 生成），浏览器端全局由 dsh web 运行时提供。
-import * as impl from ${JSON.stringify('./' + entryRel)}
+import * as impl from ${JSON.stringify("./" + entryRel)}
 window.__ModuleLoader__.load({
   id: __DSH_PLUGIN_ID__,
   factory: function (require) {
@@ -47,7 +47,7 @@ window.__ModuleLoader__.load({
     return module.exports
   },
 })
-`
+`;
 }
 
 /**
@@ -56,7 +56,10 @@ window.__ModuleLoader__.load({
  * `require("react")` 即解析到注入值（对齐 dsh-web-ui 的 loader 模块表机制）。
  */
 function renderFactoryContract(packageName, cleanCjs) {
-  const indented = cleanCjs.split('\n').map((l) => (l.length ? '    ' + l : '')).join('\n')
+  const indented = cleanCjs
+    .split("\n")
+    .map((l) => (l.length ? "    " + l : ""))
+    .join("\n");
   return `"use strict";
 // 契约外壳（scripts/build-client.ts 生成）：external 依赖（React 等）经 factory 注入的 require 解析
 window.__ModuleLoader__.load({
@@ -69,18 +72,18 @@ ${indented}
     return module.exports
   }
 })
-`
+`;
 }
 
 /** 提取源码顶层 bare import specifier（非相对/绝对 → 宿主注入 external；scoped 包取前两段）。 */
 function bareImports(ts) {
-  const out = new Set()
+  const out = new Set();
   for (const m of ts.matchAll(/\bfrom\s*["']([^"']+)["']/g)) {
-    const spec = m[1]
-    if (spec.startsWith('.') || spec.startsWith('/')) continue
-    out.add(spec.startsWith('@') ? spec.split('/').slice(0, 2).join('/') : spec.split('/')[0])
+    const spec = m[1];
+    if (spec.startsWith(".") || spec.startsWith("/")) continue;
+    out.add(spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split("/")[0]);
   }
-  return [...out]
+  return [...out];
 }
 
 /**
@@ -104,71 +107,92 @@ function bareImports(ts) {
  *   inlineBareImports=true 则全部内联。二者按包二选一。
  * @returns {Promise<{ code: string, mode: 'wrapper' | 'legacy' }>}
  */
-export async function buildClient({ src, outfile, packageName, extraDefine = {}, externals = [], inlineBareImports = false }) {
-  const sourceText = readFileSync(src, 'utf8')
+export async function buildClient({
+  src,
+  outfile,
+  packageName,
+  extraDefine = {},
+  externals = [],
+  inlineBareImports = false,
+}) {
+  const sourceText = readFileSync(src, "utf8");
   // 形态检测：剥离注释后检测 __ModuleLoader__.load——干净模块注释若提到 loader
   // 会被误判 legacy（导致 wrapper 没用上，构建行为错误）。
-  const codeOnly = sourceText.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
-  const mode = /__ModuleLoader__\.load/.test(codeOnly) ? 'legacy' : 'wrapper'
+  const codeOnly = sourceText.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+  const mode = /__ModuleLoader__\.load/.test(codeOnly) ? "legacy" : "wrapper";
   // externals：显式传入优先；否则 wrapper 且未声明 inlineBareImports 时按「bare
   // import = 宿主注入 external」自动提取；inlineBareImports 或 legacy → 全部内联。
   const resolvedExternals =
     externals.length > 0
       ? externals
-      : mode === 'wrapper' && !inlineBareImports
+      : mode === "wrapper" && !inlineBareImports
         ? bareImports(sourceText)
-        : []
+        : [];
   const define = {
     __DSH_PLUGIN_ID__: JSON.stringify(packageName),
     ...Object.fromEntries(Object.entries(extraDefine).map(([k, v]) => [k, JSON.stringify(v)])),
-  }
+  };
   const base = {
     bundle: true,
-    target: 'es2020',
-    charset: 'utf8',
+    target: "es2020",
+    charset: "utf8",
     banner: { js: '"use strict";' },
     define,
     write: false,
-    logLevel: 'warning',
+    logLevel: "warning",
     // .css → import 得到字符串字面量：客户端 CSS 放独立 .css 文件（有语法高亮/可静态检查），
     // 构建期 text-loader 原样内联进 client.js（产物仍自包含单文件、零运行时依赖、无独立请求）。
-    loader: { '.css': 'text' },
-  }
+    loader: { ".css": "text" },
+  };
 
-  let code
-  if (mode === 'legacy') {
-    const r = await build({ ...base, format: 'iife', entryPoints: [src] })
-    code = r.outputFiles[0].text
+  let code;
+  if (mode === "legacy") {
+    const r = await build({ ...base, format: "iife", entryPoints: [src] });
+    code = r.outputFiles[0].text;
   } else if (resolvedExternals.length > 0) {
     // externals 路径：干净模块 cjs（external 走 require）→ 内联进 factory
-    const r = await build({ ...base, format: 'cjs', platform: 'browser', external: resolvedExternals, entryPoints: [src] })
-    code = renderFactoryContract(packageName, r.outputFiles[0].text)
+    const r = await build({
+      ...base,
+      format: "cjs",
+      platform: "browser",
+      external: resolvedExternals,
+      entryPoints: [src],
+    });
+    code = renderFactoryContract(packageName, r.outputFiles[0].text);
   } else {
     // 零依赖干净模块：iife + stdin wrapper
     const r = await build({
       ...base,
-      format: 'iife',
-      stdin: { contents: renderWrapper(basename(src)), resolveDir: dirname(src), sourcefile: 'client-wrapper.ts' },
-    })
-    code = r.outputFiles[0].text
+      format: "iife",
+      stdin: {
+        contents: renderWrapper(basename(src)),
+        resolveDir: dirname(src),
+        sourcefile: "client-wrapper.ts",
+      },
+    });
+    code = r.outputFiles[0].text;
   }
 
   // 内建契约校验（硬依赖）：产物 load id 必须是字符串字面量且 === 包名；
   // exports.apply/inject 装配必须存在——define 被局部遮蔽/占位符拼错/外壳装配
   // 出错时唯一兜底，构建即失败，不等发布后炸。
-  const m = code.match(/__ModuleLoader__\.load\(\s*\{\s*id:\s*"([^"]+)"/)
+  const m = code.match(/__ModuleLoader__\.load\(\s*\{\s*id:\s*"([^"]+)"/);
   if (!m || m[1] !== packageName) {
-    throw new Error(`客户端契约校验失败：load id 必须等于包名 ${packageName}（实际: ${m ? m[1] : '缺失'}）——检查源码占位符 __DSH_PLUGIN_ID__ 是否被遮蔽/拼错，或 wrapper 装配错误`)
+    throw new Error(
+      `客户端契约校验失败：load id 必须等于包名 ${packageName}（实际: ${m ? m[1] : "缺失"}）——检查源码占位符 __DSH_PLUGIN_ID__ 是否被遮蔽/拼错，或 wrapper 装配错误`,
+    );
   }
-  const isFactory = mode === 'wrapper' && resolvedExternals.length > 0
+  const isFactory = mode === "wrapper" && resolvedExternals.length > 0;
   const exportsOk = isFactory
     ? /apply/.test(code) && /inject/.test(code)
-    : /exports\.apply\s*=/.test(code) && /exports\.inject\s*=/.test(code)
+    : /exports\.apply\s*=/.test(code) && /exports\.inject\s*=/.test(code);
   if (!exportsOk) {
-    throw new Error(`客户端契约校验失败：产物缺少 exports.apply/exports.inject 装配——检查 wrapper 模板或源码导出`)
+    throw new Error(
+      `客户端契约校验失败：产物缺少 exports.apply/exports.inject 装配——检查 wrapper 模板或源码导出`,
+    );
   }
-  writeFileSync(outfile, code)
-  return { code, mode }
+  writeFileSync(outfile, code);
+  return { code, mode };
 }
 
 /**
@@ -200,26 +224,26 @@ export async function buildMermaidChunk({ entry, outfile }) {
     entryPoints: [entry],
     outfile,
     bundle: true,
-    format: 'esm',
-    platform: 'browser',
-    target: 'es2020',
-    charset: 'utf8',
+    format: "esm",
+    platform: "browser",
+    target: "es2020",
+    charset: "utf8",
     minify: true,
     write: false,
     metafile: true,
-    logLevel: 'warning',
-  })
-  const code = r.outputFiles[0].text
-  writeFileSync(outfile, code)
+    logLevel: "warning",
+  });
+  const code = r.outputFiles[0].text;
+  writeFileSync(outfile, code);
   // metafile.inputs 键即各模块相对路径（含 node_modules 安装段），与产物注释
   // 同构——直接复用注释提取器得到 {name, pnpmSeg} 清单（已排序、去重、
   // @deepseek-ai/* 宿主注入模型排除）。
-  const inputs = Object.keys(r.metafile?.inputs ?? {}).join('\n')
-  return { bytes: Buffer.byteLength(code, 'utf8'), refs: extractInlinedModuleRefs(inputs) }
+  const inputs = Object.keys(r.metafile?.inputs ?? {}).join("\n");
+  return { bytes: Buffer.byteLength(code, "utf8"), refs: extractInlinedModuleRefs(inputs) };
 }
 
 /** 代码与样式：构建的输入，不是运行时资源。`.d.*` 声明同列（tsc 产物，非资源）。 */
-const CODE_FILE = /\.(ts|tsx|mts|cts|js|mjs|cjs|css)$/
+const CODE_FILE = /\.(ts|tsx|mts|cts|js|mjs|cjs|css)$/;
 
 /**
  * 列出 src/ 下的运行时资源（递归；返回相对 src/ 的路径，分隔符统一为 `/`）。
@@ -237,18 +261,21 @@ const CODE_FILE = /\.(ts|tsx|mts|cts|js|mjs|cjs|css)$/
  * @returns {string[]} 相对路径列表（已排序）
  */
 export function listResources(srcDir) {
-  const out = []
+  const out = [];
   const walk = (dir, prefix) => {
     for (const ent of readdirSync(dir, { withFileTypes: true })) {
-      if (ent.name.startsWith('.')) continue
-      const rel = prefix ? `${prefix}/${ent.name}` : ent.name
-      if (ent.isDirectory()) { walk(join(dir, ent.name), rel); continue }
-      if (CODE_FILE.test(ent.name)) continue
-      out.push(rel)
+      if (ent.name.startsWith(".")) continue;
+      const rel = prefix ? `${prefix}/${ent.name}` : ent.name;
+      if (ent.isDirectory()) {
+        walk(join(dir, ent.name), rel);
+        continue;
+      }
+      if (CODE_FILE.test(ent.name)) continue;
+      out.push(rel);
     }
-  }
-  walk(srcDir, '')
-  return out.sort()
+  };
+  walk(srcDir, "");
+  return out.sort();
 }
 
 /**
@@ -258,26 +285,26 @@ export function listResources(srcDir) {
  * @returns {string[]} 复制的相对路径列表
  */
 export function copyClientResources(pkgDir, libDir) {
-  const srcDir = join(pkgDir, 'src')
-  if (!existsSync(srcDir)) return []
-  const resources = listResources(srcDir)
+  const srcDir = join(pkgDir, "src");
+  if (!existsSync(srcDir)) return [];
+  const resources = listResources(srcDir);
   for (const rel of resources) {
-    const target = join(libDir, rel)
-    mkdirSync(dirname(target), { recursive: true })
-    cpSync(join(srcDir, rel), target)
+    const target = join(libDir, rel);
+    mkdirSync(dirname(target), { recursive: true });
+    cpSync(join(srcDir, rel), target);
     // .ps1 资源强制 UTF-8 BOM（issue #238）：Windows PowerShell 5.1 对无 BOM
     // 文件按 ANSI 码页解码，非 ASCII 注释即解析失败。构建期机器兜底，
     // 不依赖编辑器保存行为；已带 BOM 则原样跳过，重复构建不叠加双 BOM。
-    if (rel.endsWith('.ps1')) ensureUtf8Bom(target)
+    if (rel.endsWith(".ps1")) ensureUtf8Bom(target);
   }
-  return resources
+  return resources;
 }
 
 /** 确保 .ps1 产物带 UTF-8 BOM；已带则原样返回 false，缺失/不完整则补写并返回 true。 */
 export function ensureUtf8Bom(filePath) {
-  const buf = readFileSync(filePath)
-  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) return false
-  const text = buf.toString('utf8').replace(/^\uFEFF/, '')
-  writeFileSync(filePath, '\uFEFF' + text, 'utf8')
-  return true
+  const buf = readFileSync(filePath);
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) return false;
+  const text = buf.toString("utf8").replace(/^\uFEFF/, "");
+  writeFileSync(filePath, "\uFEFF" + text, "utf8");
+  return true;
 }

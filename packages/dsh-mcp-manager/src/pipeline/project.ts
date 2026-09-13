@@ -51,7 +51,12 @@ export function defaultCallResultFallbackText(result: unknown): string {
 function defaultErrorText(content: unknown[], fallbackText: string): string {
   const parts: string[] = [];
   for (const block of content) {
-    if (typeof block === "object" && block !== null && (block as { type?: unknown }).type === "text" && typeof (block as { text?: unknown }).text === "string") {
+    if (
+      typeof block === "object" &&
+      block !== null &&
+      (block as { type?: unknown }).type === "text" &&
+      typeof (block as { text?: unknown }).text === "string"
+    ) {
       parts.push((block as { text: string }).text);
     }
   }

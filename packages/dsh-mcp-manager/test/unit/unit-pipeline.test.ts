@@ -109,8 +109,11 @@ describe("两路径同构：投影面（#512 单一事实源）", () => {
     // isError:true → 两路径统一抛错（错误契约同构：Error 形态，非裸对象；
     // 具体文案是 handler 注入差异面，不强匹配）
     for (const handlers of [supervisorHandlers, middlewareHandlers]) {
-      expect(
-        () => projectCallToolResult({ content: [{ type: "text", text: "boom" }], isError: true }, handlers),
+      expect(() =>
+        projectCallToolResult(
+          { content: [{ type: "text", text: "boom" }], isError: true },
+          handlers,
+        ),
       ).toThrow(Error);
       expect(() => projectCallToolResult({ isError: true }, handlers)).toThrow(Error);
     }
@@ -118,7 +121,7 @@ describe("两路径同构：投影面（#512 单一事实源）", () => {
 });
 
 describe("两路径同构：args 面（middleware 归一化；supervisor 直传——同构点）", () => {
-  it('normalizeArguments 解析 JSON 字符串为对象', () => {
+  it("normalizeArguments 解析 JSON 字符串为对象", () => {
     expect(normalizeArguments('{"a":1}')).toEqual({ a: 1 });
   });
 

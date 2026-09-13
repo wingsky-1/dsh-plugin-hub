@@ -59,8 +59,12 @@ function makeHost(serversByRoot = new Map()) {
     projectServersFor: async (root) => serversByRoot.get(root),
     globalServers: () => [],
     normalizedProjectRoot: async (cwd) => (typeof cwd === "string" && cwd !== "" ? cwd : undefined),
-    saveUserState: async () => { log.saved += 1; },
-    emitStatus: () => { log.emits += 1; },
+    saveUserState: async () => {
+      log.saved += 1;
+    },
+    emitStatus: () => {
+      log.emits += 1;
+    },
     catalogCachePath: (root) => join(root, ".dsh-mcp-catalog-test.json"),
   };
   return { host, log };
@@ -270,13 +274,22 @@ describe("scoreTool / searchCatalog", () => {
   function unitsFixture() {
     const unit = makeUnit({
       catalog: new Map([
-        ["ctx", {
-          discoveredAt: Date.now(),
-          tools: new Map([
-            ["use_ctx", { description: "查询 context7 文档", inputSchema: { type: "object", properties: { query: { type: "string" } } } }],
-            ["search", { description: "search tool", inputSchema: {} }],
-          ]),
-        }],
+        [
+          "ctx",
+          {
+            discoveredAt: Date.now(),
+            tools: new Map([
+              [
+                "use_ctx",
+                {
+                  description: "查询 context7 文档",
+                  inputSchema: { type: "object", properties: { query: { type: "string" } } },
+                },
+              ],
+              ["search", { description: "search tool", inputSchema: {} }],
+            ]),
+          },
+        ],
         ["down", { discoveredAt: 0, tools: new Map(), unavailable: "连接失败" }],
       ]),
     });
@@ -316,7 +329,23 @@ describe("scoreTool / searchCatalog", () => {
   it("TTL 过期 → fresh=false", () => {
     const unit = unitsFixture().get(ROOT);
     const stale = searchCatalog(
-      new Map([[ROOT, { ...unit, catalog: new Map([["ctx", { discoveredAt: Date.now() - CATALOG_TTL_MS - 1000, tools: unit.catalog.get("ctx").tools }]]) }]]),
+      new Map([
+        [
+          ROOT,
+          {
+            ...unit,
+            catalog: new Map([
+              [
+                "ctx",
+                {
+                  discoveredAt: Date.now() - CATALOG_TTL_MS - 1000,
+                  tools: unit.catalog.get("ctx").tools,
+                },
+              ],
+            ]),
+          },
+        ],
+      ]),
       ROOT,
       "文档",
       5,
@@ -332,7 +361,9 @@ describe("isCatalogFresh", () => {
   });
 
   it("unavailable 段 → 不新鲜", () => {
-    expect(isCatalogFresh({ discoveredAt: Date.now(), tools: new Map(), unavailable: "x" })).toBe(false);
+    expect(isCatalogFresh({ discoveredAt: Date.now(), tools: new Map(), unavailable: "x" })).toBe(
+      false,
+    );
   });
 
   it("TTL 内 → 新鲜", () => {
@@ -340,7 +371,9 @@ describe("isCatalogFresh", () => {
   });
 
   it("TTL 过期 → 不新鲜", () => {
-    expect(isCatalogFresh({ discoveredAt: Date.now() - CATALOG_TTL_MS - 1, tools: new Map() })).toBe(false);
+    expect(
+      isCatalogFresh({ discoveredAt: Date.now() - CATALOG_TTL_MS - 1, tools: new Map() }),
+    ).toBe(false);
   });
 });
 
@@ -358,15 +391,24 @@ describe("boundCatalogTools", () => {
   });
 
   it("常规条目原样映射", () => {
-    expect(boundCatalogTools(fixtureTools()).get("a")).toEqual({ description: "alpha", inputSchema: { type: "object" } });
+    expect(boundCatalogTools(fixtureTools()).get("a")).toEqual({
+      description: "alpha",
+      inputSchema: { type: "object" },
+    });
   });
 
   it("缺省描述/schema 补空", () => {
-    expect(boundCatalogTools(fixtureTools()).get("b")).toEqual({ description: "", inputSchema: {} });
+    expect(boundCatalogTools(fixtureTools()).get("b")).toEqual({
+      description: "",
+      inputSchema: {},
+    });
   });
 
   it("非字符串 name String 化、描述归空", () => {
-    expect(boundCatalogTools(fixtureTools()).get("42")).toEqual({ description: "", inputSchema: {} });
+    expect(boundCatalogTools(fixtureTools()).get("42")).toEqual({
+      description: "",
+      inputSchema: {},
+    });
   });
 
   it("B9：超限描述截断后字节数 ≤ MAX_BYTES_PER_TOOL", () => {
@@ -456,9 +498,9 @@ describe("callTool：路由一致性 / 未连接 / 策略", () => {
 
   it("未连接 → 错误含下一步提示（ws_mcp_search 或 ws_mcp_list）", async () => {
     const mw = await callToolFixture();
-    await expect(mw.callTool(fullServerName(ROOT, "ctx"), "use_ctx", {}, undefined)).rejects.toThrow(
-      /未连接或连接失败，请先 ws_mcp_search 或 ws_mcp_list 确认 server 已连接/,
-    );
+    await expect(
+      mw.callTool(fullServerName(ROOT, "ctx"), "use_ctx", {}, undefined),
+    ).rejects.toThrow(/未连接或连接失败，请先 ws_mcp_search 或 ws_mcp_list 确认 server 已连接/);
   });
 
   it("userDisabled → 错误含 GUI 重连提示", async () => {
@@ -466,9 +508,9 @@ describe("callTool：路由一致性 / 未连接 / 策略", () => {
     mw.disabledByRoot.set(ROOT, new Set(["ctx"]));
     const disabledUnit = await mw.projectUnitFor(ROOT);
     disabledUnit.userDisabled.add("ctx");
-    await expect(mw.callTool(fullServerName(ROOT, "ctx"), "use_ctx", {}, undefined)).rejects.toThrow(
-      /已被用户禁用；可先在 GUI「MCP」浮窗中重新连接/,
-    );
+    await expect(
+      mw.callTool(fullServerName(ROOT, "ctx"), "use_ctx", {}, undefined),
+    ).rejects.toThrow(/已被用户禁用；可先在 GUI「MCP」浮窗中重新连接/);
   });
 });
 
@@ -510,14 +552,19 @@ describe("userState 持久化", () => {
   async function saveAndLoad() {
     const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-"));
     const file = join(dir, "user-state.json");
-    const units = new Map([[ROOT, {
-      root: ROOT,
-      connections: new Map(),
-      catalog: new Map(),
-      userDisabled: new Set(["ctx"]),
-      lastTouchedAt: Date.now(),
-      inFlight: new Map(),
-    }]]);
+    const units = new Map([
+      [
+        ROOT,
+        {
+          root: ROOT,
+          connections: new Map(),
+          catalog: new Map(),
+          userDisabled: new Set(["ctx"]),
+          lastTouchedAt: Date.now(),
+          inFlight: new Map(),
+        },
+      ],
+    ]);
     await saveUserState(file, units);
     const loaded = await loadUserState(file);
     mkdirSync(join(dir, "sub"));
@@ -549,10 +596,13 @@ describe("last-good 目录缓存", () => {
     const mw = trackMw(new McpMiddleware(catalogHost, {}));
     const unit = makeUnit({
       catalog: new Map([
-        ["ctx", {
-          discoveredAt: Date.now(),
-          tools: new Map([["use_ctx", { description: "查询文档", inputSchema: {} }]]),
-        }],
+        [
+          "ctx",
+          {
+            discoveredAt: Date.now(),
+            tools: new Map([["use_ctx", { description: "查询文档", inputSchema: {} }]]),
+          },
+        ],
       ]),
     });
     mw.units.set(ROOT, unit);
@@ -583,28 +633,37 @@ describe("searchCatalogMulti：多单元合并检索", () => {
   function multiUnits() {
     const unit = makeUnit({
       catalog: new Map([
-        ["ctx", {
-          discoveredAt: Date.now(),
-          tools: new Map([
-            ["use_ctx", { description: "查询 context7 文档", inputSchema: {} }],
-            ["search", { description: "search tool", inputSchema: {} }],
-          ]),
-        }],
+        [
+          "ctx",
+          {
+            discoveredAt: Date.now(),
+            tools: new Map([
+              ["use_ctx", { description: "查询 context7 文档", inputSchema: {} }],
+              ["search", { description: "search tool", inputSchema: {} }],
+            ]),
+          },
+        ],
       ]),
     });
     const globalUnit = makeUnit({
       root: "@global",
       catalog: new Map([
-        ["gctx", {
-          discoveredAt: Date.now(),
-          tools: new Map([
-            ["use_g", { description: "全局工具", inputSchema: {} }],
-            ["other", { description: "无关", inputSchema: {} }],
-          ]),
-        }],
+        [
+          "gctx",
+          {
+            discoveredAt: Date.now(),
+            tools: new Map([
+              ["use_g", { description: "全局工具", inputSchema: {} }],
+              ["other", { description: "无关", inputSchema: {} }],
+            ]),
+          },
+        ],
       ]),
     });
-    return new Map([[ROOT, unit], ["@global", globalUnit]]);
+    return new Map([
+      [ROOT, unit],
+      ["@global", globalUnit],
+    ]);
   }
 
   it("命中项目单元", () => {
@@ -615,7 +674,9 @@ describe("searchCatalogMulti：多单元合并检索", () => {
 
   it("命中 @global 单元", () => {
     const multi = searchCatalogMulti(multiUnits(), [ROOT, "@global"], "use", 10);
-    expect(multi.results.some((hit) => hit.server === fullServerName("@global", "gctx"))).toBeTruthy();
+    expect(
+      multi.results.some((hit) => hit.server === fullServerName("@global", "gctx")),
+    ).toBeTruthy();
   });
 
   it("合并摘要含全部工具", () => {
@@ -652,7 +713,8 @@ describe("searchCatalogMulti：多单元合并检索", () => {
 describe("listCatalog：完整清单 / 过滤 / 空返回 / 截断 / unavailable / disabled", () => {
   const mkTools = (count) => {
     const tools = new Map();
-    for (let i = 0; i < count; i += 1) tools.set(`t${i}`, { description: `desc${i}`, inputSchema: {} });
+    for (let i = 0; i < count; i += 1)
+      tools.set(`t${i}`, { description: `desc${i}`, inputSchema: {} });
     return tools;
   };
 
@@ -672,14 +734,20 @@ describe("listCatalog：完整清单 / 过滤 / 空返回 / 截断 / unavailable
       root: "@global",
       catalog: new Map([["gctx", { discoveredAt: Date.now(), tools: mkTools(3) }]]),
     });
-    return new Map([[ROOT, unit], ["@global", globalUnit]]);
+    return new Map([
+      [ROOT, unit],
+      ["@global", globalUnit],
+    ]);
   }
 
   // 完整清单（project 模式：单 root）
   const listed = () => listCatalog(listUnits(), [ROOT], undefined, 50, "project", "empty");
-  const ctxEntryOf = (result) => result.servers.find((s) => s.server === fullServerName(ROOT, "ctx"));
-  const offEntryOf = (result) => result.servers.find((s) => s.server === fullServerName(ROOT, "off"));
-  const downEntryOf = (result) => result.servers.find((s) => s.server === fullServerName(ROOT, "down"));
+  const ctxEntryOf = (result) =>
+    result.servers.find((s) => s.server === fullServerName(ROOT, "ctx"));
+  const offEntryOf = (result) =>
+    result.servers.find((s) => s.server === fullServerName(ROOT, "off"));
+  const downEntryOf = (result) =>
+    result.servers.find((s) => s.server === fullServerName(ROOT, "down"));
 
   it("workspace 为当前 root", () => {
     expect(listed().workspace).toBe(ROOT);
@@ -740,14 +808,21 @@ describe("listCatalog：完整清单 / 过滤 / 空返回 / 截断 / unavailable
   });
 
   it("server 过滤（全名）", () => {
-    const filteredFull = listCatalog(listUnits(), [ROOT], fullServerName(ROOT, "ctx"), 50, "project", "empty");
+    const filteredFull = listCatalog(
+      listUnits(),
+      [ROOT],
+      fullServerName(ROOT, "ctx"),
+      50,
+      "project",
+      "empty",
+    );
     expect(filteredFull.totalServers).toBe(1);
   });
 
   it("全名 root 不属于当前 roots → 路由一致性错误", () => {
-    expect(() => listCatalog(listUnits(), [ROOT], "@/other/root/ctx", 50, "project", "empty")).toThrow(
-      /不属于当前工作空间/,
-    );
+    expect(() =>
+      listCatalog(listUnits(), [ROOT], "@/other/root/ctx", 50, "project", "empty"),
+    ).toThrow(/不属于当前工作空间/);
   });
 
   it("all 模式回显", () => {
@@ -867,17 +942,24 @@ describe("listCatalog：完整清单 / 过滤 / 空返回 / 截断 / unavailable
 
 // findToolDetail：精确命中 / 完整 schema / 错误三分 / tool 归一化 ----
 describe("findToolDetail：精确命中 / 完整 schema / 错误三分 / tool 归一化", () => {
-  const schema = { type: "object", properties: { query: { type: "string" }, mode: { type: "string", enum: ["a", "b"] } }, required: ["query"] };
+  const schema = {
+    type: "object",
+    properties: { query: { type: "string" }, mode: { type: "string", enum: ["a", "b"] } },
+    required: ["query"],
+  };
 
   function detailUnits() {
     const unit = makeUnit({
       catalog: new Map([
-        ["ctx", {
-          discoveredAt: Date.now(),
-          tools: new Map([
-            ["use_ctx", { description: "查询 context7 文档", inputSchema: schema }],
-          ]),
-        }],
+        [
+          "ctx",
+          {
+            discoveredAt: Date.now(),
+            tools: new Map([
+              ["use_ctx", { description: "查询 context7 文档", inputSchema: schema }],
+            ]),
+          },
+        ],
         ["down", { discoveredAt: 0, tools: new Map(), unavailable: "连接失败" }],
       ]),
     });
@@ -912,50 +994,82 @@ describe("findToolDetail：精确命中 / 完整 schema / 错误三分 / tool �
   });
 
   it("tool 归一化（mcp__ 前缀剥离）", () => {
-    const normalized = findToolDetail(detailUnits(), ROOT, fullServerName(ROOT, "ctx"), "mcp__ctx__use_ctx");
+    const normalized = findToolDetail(
+      detailUnits(),
+      ROOT,
+      fullServerName(ROOT, "ctx"),
+      "mcp__ctx__use_ctx",
+    );
     expect(normalized.tool).toBe("use_ctx");
   });
 
   it("归一化后 schema 不变", () => {
-    const normalized = findToolDetail(detailUnits(), ROOT, fullServerName(ROOT, "ctx"), "mcp__ctx__use_ctx");
+    const normalized = findToolDetail(
+      detailUnits(),
+      ROOT,
+      fullServerName(ROOT, "ctx"),
+      "mcp__ctx__use_ctx",
+    );
     expect(normalized.inputSchema).toEqual(schema);
   });
 
   it("跨 server 前缀 → 疑似其他", () => {
-    expect(() => findToolDetail(detailUnits(), ROOT, fullServerName(ROOT, "ctx"), "mcp__other__tool")).toThrow(/疑似其他/);
+    expect(() =>
+      findToolDetail(detailUnits(), ROOT, fullServerName(ROOT, "ctx"), "mcp__other__tool"),
+    ).toThrow(/疑似其他/);
   });
 
   it("错误三分 1：server 发现失败（附原因）", () => {
-    expect(() => findToolDetail(detailUnits(), ROOT, fullServerName(ROOT, "down"), "x")).toThrow(/发现失败.*连接失败/);
+    expect(() => findToolDetail(detailUnits(), ROOT, fullServerName(ROOT, "down"), "x")).toThrow(
+      /发现失败.*连接失败/,
+    );
   });
 
   it("错误三分 2：服务器未发现", () => {
-    expect(() => findToolDetail(detailUnits(), ROOT, fullServerName(ROOT, "nope"), "x")).toThrow(/未连接或未发现/);
+    expect(() => findToolDetail(detailUnits(), ROOT, fullServerName(ROOT, "nope"), "x")).toThrow(
+      /未连接或未发现/,
+    );
   });
 
   it("错误三分 2b：单元未激活", () => {
-    expect(() => findToolDetail(detailUnits(), "/no/such", fullServerName("/no/such", "ctx"), "x")).toThrow(/未连接或未发现/);
+    expect(() =>
+      findToolDetail(detailUnits(), "/no/such", fullServerName("/no/such", "ctx"), "x"),
+    ).toThrow(/未连接或未发现/);
   });
 
   it("错误三分 3：工具不存在", () => {
-    expect(() => findToolDetail(detailUnits(), ROOT, fullServerName(ROOT, "ctx"), "nope")).toThrow(/tool 不存在/);
+    expect(() => findToolDetail(detailUnits(), ROOT, fullServerName(ROOT, "ctx"), "nope")).toThrow(
+      /tool 不存在/,
+    );
   });
 
   it("路由一致性：参数 root ≠ 路由 root → 拒绝", () => {
-    expect(() => findToolDetail(detailUnits(), ROOT, fullServerName("@global", "ctx"), "x")).toThrow(/不属于当前工作空间/);
+    expect(() =>
+      findToolDetail(detailUnits(), ROOT, fullServerName("@global", "ctx"), "x"),
+    ).toThrow(/不属于当前工作空间/);
   });
 
   it("用户禁用标注 disabled", () => {
     const unit = makeUnit({
       catalog: new Map([
-        ["ctx", {
-          discoveredAt: Date.now(),
-          tools: new Map([["use_ctx", { description: "查询 context7 文档", inputSchema: schema }]]),
-        }],
+        [
+          "ctx",
+          {
+            discoveredAt: Date.now(),
+            tools: new Map([
+              ["use_ctx", { description: "查询 context7 文档", inputSchema: schema }],
+            ]),
+          },
+        ],
       ]),
       userDisabled: ["ctx"],
     });
-    const disabledDetail = findToolDetail(new Map([[ROOT, unit]]), ROOT, fullServerName(ROOT, "ctx"), "use_ctx");
+    const disabledDetail = findToolDetail(
+      new Map([[ROOT, unit]]),
+      ROOT,
+      fullServerName(ROOT, "ctx"),
+      "use_ctx",
+    );
     expect(disabledDetail.disabled).toBe(true);
   });
 
@@ -964,7 +1078,9 @@ describe("findToolDetail：精确命中 / 完整 schema / 错误三分 / tool �
       catalog: new Map([["ctx", { discoveredAt: 0, tools: new Map() }]]),
       userDisabled: ["ctx"],
     });
-    expect(() => findToolDetail(new Map([[ROOT, unit]]), ROOT, fullServerName(ROOT, "ctx"), "x")).toThrow(/已被用户禁用/);
+    expect(() =>
+      findToolDetail(new Map([[ROOT, unit]]), ROOT, fullServerName(ROOT, "ctx"), "x"),
+    ).toThrow(/已被用户禁用/);
   });
 });
 
@@ -981,7 +1097,13 @@ describe("#412 force 受控重建：半开 connected entry 不短路", () => {
     mw.units.set(ROOT, unit);
     // 预置「半开死连接」：status 卡 connected、transport 已静默断链（模拟移动端
     // 切后台掐断 TCP 后 onClose 不触发）。
-    const deadTransport = { close: () => { deadTransport.closed = true; return Promise.resolve(); }, closed: false };
+    const deadTransport = {
+      close: () => {
+        deadTransport.closed = true;
+        return Promise.resolve();
+      },
+      closed: false,
+    };
     const deadEntry = {
       server: servers[0],
       client: {},
@@ -1047,9 +1169,18 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
     const wrappedTool = {
       name: "cg_node",
       description: "查符号（封装定义）",
-      parameters: { type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] },
+      parameters: {
+        type: "object",
+        properties: { symbol: { type: "string" } },
+        required: ["symbol"],
+      },
       output: {
-        schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false },
+        schema: {
+          type: "object",
+          properties: { text: { type: "string" } },
+          required: ["text"],
+          additionalProperties: false,
+        },
         render: (args, value) => [{ type: "text", text: `rendered:${value.text}` }],
       },
       isConcurrencySafe: () => true,
@@ -1058,7 +1189,13 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
         return { text: `node(${args.symbol})@${cwd ?? "no-cwd"}` };
       },
     };
-    const wrappedServer = { name: "cg", transport: "stdio", command: "codegraph", enabled: true, toolDefinitions: [wrappedTool] };
+    const wrappedServer = {
+      name: "cg",
+      transport: "stdio",
+      command: "codegraph",
+      enabled: true,
+      toolDefinitions: [wrappedTool],
+    };
     const { host, log } = makeHost(new Map([["@global", [wrappedServer]]]));
     const mw = trackMw(new McpMiddleware(host, {}));
     return { mw, host, log, wrappedServer, wrappedTool };
@@ -1115,20 +1252,38 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
   it("parameters 直接作 inputSchema", async () => {
     // 目录从 toolDefinitions 投影（name/description/parameters → inputSchema）。
     const { catalog } = await connected();
-    expect(catalog.tools.get("cg_node").inputSchema).toEqual({ type: "object", properties: { symbol: { type: "string" } }, required: ["symbol"] });
+    expect(catalog.tools.get("cg_node").inputSchema).toEqual({
+      type: "object",
+      properties: { symbol: { type: "string" } },
+      required: ["symbol"],
+    });
   });
 
   it("封装直呼：execute + render + agent 透传", async () => {
     // callTool 封装直呼：execute 被调用 + output.render 投影 content + agent 透传。
     const { mw } = await connected();
-    const result = await mw.callTool(fullServerName("@global", "cg"), "cg_node", { symbol: "foo" }, undefined, { session: { header: { cwd: "/proj" } } });
-    expect(result).toEqual({ content: [{ type: "text", text: "rendered:node(foo)@/proj" }], structuredContent: { text: "node(foo)@/proj" } });
+    const result = await mw.callTool(
+      fullServerName("@global", "cg"),
+      "cg_node",
+      { symbol: "foo" },
+      undefined,
+      { session: { header: { cwd: "/proj" } } },
+    );
+    expect(result).toEqual({
+      content: [{ type: "text", text: "rendered:node(foo)@/proj" }],
+      structuredContent: { text: "node(foo)@/proj" },
+    });
   });
 
   it("agent 缺省不崩（封装侧自处理）", async () => {
     const { mw } = await connected();
     // agent 缺省 → cwd 解析 undefined。
-    const noAgent = await mw.callTool(fullServerName("@global", "cg"), "cg_node", { symbol: "bar" }, undefined);
+    const noAgent = await mw.callTool(
+      fullServerName("@global", "cg"),
+      "cg_node",
+      { symbol: "bar" },
+      undefined,
+    );
     expect(noAgent.structuredContent).toEqual({ text: "node(bar)@no-cwd" });
   });
 
@@ -1136,15 +1291,17 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
     const { mw } = await connected();
     mw.disabledTools.set("@global", new Map([["cg", new Set(["cg_node"])]]));
     await expect(
-      mw.callTool(fullServerName("@global", "cg"), "cg_node", { symbol: "x" }, undefined, { session: { header: { cwd: "/p" } } }),
+      mw.callTool(fullServerName("@global", "cg"), "cg_node", { symbol: "x" }, undefined, {
+        session: { header: { cwd: "/p" } },
+      }),
     ).rejects.toThrow(/已被用户在「MCP」浮窗禁用/);
   });
 
   it("不存在的封装工具名 → 明确报错", async () => {
     const { mw } = await connected();
-    await expect(mw.callTool(fullServerName("@global", "cg"), "nope", {}, undefined)).rejects.toThrow(
-      /不存在（封装定义服务器）/,
-    );
+    await expect(
+      mw.callTool(fullServerName("@global", "cg"), "nope", {}, undefined),
+    ).rejects.toThrow(/不存在（封装定义服务器）/);
   });
 
   // persistCatalog 跳过 runtime 条目（isRuntimeServer 命中 → 不写盘）。
@@ -1160,8 +1317,20 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
     const unit2 = makeUnit({
       root: "@global",
       catalog: new Map([
-        ["cg", { discoveredAt: Date.now(), tools: new Map([["cg_node", { description: "d", inputSchema: {} }]]) }],
-        ["storeSrv", { discoveredAt: Date.now(), tools: new Map([["t1", { description: "d", inputSchema: {} }]]) }],
+        [
+          "cg",
+          {
+            discoveredAt: Date.now(),
+            tools: new Map([["cg_node", { description: "d", inputSchema: {} }]]),
+          },
+        ],
+        [
+          "storeSrv",
+          {
+            discoveredAt: Date.now(),
+            tools: new Map([["t1", { description: "d", inputSchema: {} }]]),
+          },
+        ],
       ]),
     });
     mw2.units.set("@global", unit2);
@@ -1187,7 +1356,13 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
 describe("#413：空 toolDefinitions / 封装调用超时兜底", () => {
   async function emptyWrappedConnected() {
     // 空 toolDefinitions：连接照建、目录 0 工具、调用报「不存在」。
-    const emptyWrapped = { name: "cg", transport: "stdio", command: "codegraph", enabled: true, toolDefinitions: [] };
+    const emptyWrapped = {
+      name: "cg",
+      transport: "stdio",
+      command: "codegraph",
+      enabled: true,
+      toolDefinitions: [],
+    };
     const { host } = makeHost(new Map([["@global", [emptyWrapped]]]));
     const mw = trackMw(new McpMiddleware(host, {}));
     await mw.projectUnitFor("@global");
@@ -1208,9 +1383,9 @@ describe("#413：空 toolDefinitions / 封装调用超时兜底", () => {
 
   it("空 toolDefinitions 调用报不存在", async () => {
     const { mw } = await emptyWrappedConnected();
-    await expect(mw.callTool(fullServerName("@global", "cg"), "anything", {}, undefined)).rejects.toThrow(
-      /不存在（封装定义服务器）/,
-    );
+    await expect(
+      mw.callTool(fullServerName("@global", "cg"), "anything", {}, undefined),
+    ).rejects.toThrow(/不存在（封装定义服务器）/);
   });
 
   it("封装 execute 挂起 → withTimeout 超时兜底（不无限等待）", { timeout: 60_000 }, async () => {
@@ -1218,15 +1393,31 @@ describe("#413：空 toolDefinitions / 封装调用超时兜底", () => {
       name: "hang",
       description: "挂起",
       parameters: { type: "object", properties: {} },
-      output: { schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"], additionalProperties: false }, render: (a, v) => [{ type: "text", text: v.text }] },
+      output: {
+        schema: {
+          type: "object",
+          properties: { text: { type: "string" } },
+          required: ["text"],
+          additionalProperties: false,
+        },
+        render: (a, v) => [{ type: "text", text: v.text }],
+      },
       execute: async () => new Promise(() => {}), // 永不 resolve
     };
-    const hangingServer = { name: "hg", transport: "stdio", command: "x", enabled: true, toolDefinitions: [hangingTool] };
+    const hangingServer = {
+      name: "hg",
+      transport: "stdio",
+      command: "x",
+      enabled: true,
+      toolDefinitions: [hangingTool],
+    };
     const { host: host2 } = makeHost(new Map([["@global", [hangingServer]]]));
     const mw3 = trackMw(new McpMiddleware(host2, {}));
     await mw3.projectUnitFor("@global");
     await mw3.ensureConnected("@global", "hg");
-    await expect(mw3.callTool(fullServerName("@global", "hg"), "hang", {}, undefined)).rejects.toThrow(/封装调用超时/);
+    await expect(
+      mw3.callTool(fullServerName("@global", "hg"), "hang", {}, undefined),
+    ).rejects.toThrow(/封装调用超时/);
   });
 });
 
@@ -1238,11 +1429,14 @@ describe("#512：callTool 远端结果投影收敛", () => {
     const mw = trackMw(new McpMiddleware(host, {}));
     const unit = makeUnit({
       catalog: new Map([
-        ["py", {
-          discoveredAt: stale ? Date.now() - CATALOG_TTL_MS - 1000 : Date.now(),
-          tools: new Map([["echo", { description: "回声", inputSchema: { type: "object" } }]]),
-          unavailable: undefined,
-        }],
+        [
+          "py",
+          {
+            discoveredAt: stale ? Date.now() - CATALOG_TTL_MS - 1000 : Date.now(),
+            tools: new Map([["echo", { description: "回声", inputSchema: { type: "object" } }]]),
+            unavailable: undefined,
+          },
+        ],
       ]),
     });
     mw.units.set(ROOT, unit);
@@ -1278,13 +1472,21 @@ describe("#512：callTool 远端结果投影收敛", () => {
   });
 
   it("无 isError 键", async () => {
-    const mw = await withFakeClient({ content: [{ type: "text", text: "你好" }], isError: false, _meta: { trace: "x" } });
+    const mw = await withFakeClient({
+      content: [{ type: "text", text: "你好" }],
+      isError: false,
+      _meta: { trace: "x" },
+    });
     const out = await echo(mw);
     expect(Object.hasOwn(out, "isError")).toBe(false);
   });
 
   it("无 _meta 键", async () => {
-    const mw = await withFakeClient({ content: [{ type: "text", text: "你好" }], isError: false, _meta: { trace: "x" } });
+    const mw = await withFakeClient({
+      content: [{ type: "text", text: "你好" }],
+      isError: false,
+      _meta: { trace: "x" },
+    });
     const out = await echo(mw);
     expect(Object.hasOwn(out, "_meta")).toBe(false);
   });
@@ -1304,13 +1506,19 @@ describe("#512：callTool 远端结果投影收敛", () => {
   it("isError:true 应抛错（Error 实例）", async () => {
     const mw = await withFakeClient({ content: [{ type: "text", text: "boom" }], isError: true });
     // #529：外层 catch 不再追加 detail 建议，同一条错误里「ws_mcp_detail」只出现一次。
-    const dupErr = await echo(mw).then(() => null, (e) => e);
+    const dupErr = await echo(mw).then(
+      () => null,
+      (e) => e,
+    );
     expect(dupErr instanceof Error).toBeTruthy();
   });
 
   it("detail 建议只出现一次", async () => {
     const mw = await withFakeClient({ content: [{ type: "text", text: "boom" }], isError: true });
-    const dupErr = await echo(mw).then(() => null, (e) => e);
+    const dupErr = await echo(mw).then(
+      () => null,
+      (e) => e,
+    );
     const detailCount = (dupErr.message.match(/ws_mcp_detail/g) ?? []).length;
     expect(detailCount).toBe(1);
   });
@@ -1345,31 +1553,46 @@ describe("#512：callTool 远端结果投影收敛", () => {
   });
 
   it("stale hint 文案", async () => {
-    const mw = await withFakeClient({ content: [{ type: "text", text: "旧结果" }] }, { stale: true });
+    const mw = await withFakeClient(
+      { content: [{ type: "text", text: "旧结果" }] },
+      { stale: true },
+    );
     const out = await echo(mw);
     expect(out.content[0].text).toMatch(/本工具目录已过期/);
   });
 
   it("stale 保留远端原文", async () => {
-    const mw = await withFakeClient({ content: [{ type: "text", text: "旧结果" }] }, { stale: true });
+    const mw = await withFakeClient(
+      { content: [{ type: "text", text: "旧结果" }] },
+      { stale: true },
+    );
     const out = await echo(mw);
     expect(out.content[1]).toEqual({ type: "text", text: "旧结果" });
   });
 
   it("stale 分支也不泄漏 isError", async () => {
-    const mw = await withFakeClient({ content: [{ type: "text", text: "旧结果" }], isError: false, _meta: { t: 1 } }, { stale: true });
+    const mw = await withFakeClient(
+      { content: [{ type: "text", text: "旧结果" }], isError: false, _meta: { t: 1 } },
+      { stale: true },
+    );
     const out = await echo(mw);
     expect(Object.hasOwn(out, "isError")).toBe(false);
   });
 
   it("stale 分支也不泄漏 _meta", async () => {
-    const mw = await withFakeClient({ content: [{ type: "text", text: "旧结果" }], isError: false, _meta: { t: 1 } }, { stale: true });
+    const mw = await withFakeClient(
+      { content: [{ type: "text", text: "旧结果" }], isError: false, _meta: { t: 1 } },
+      { stale: true },
+    );
     const out = await echo(mw);
     expect(Object.hasOwn(out, "_meta")).toBe(false);
   });
 
   it("#512 stale lossless 合规", async () => {
-    const mw = await withFakeClient({ content: [{ type: "text", text: "旧结果" }] }, { stale: true });
+    const mw = await withFakeClient(
+      { content: [{ type: "text", text: "旧结果" }] },
+      { stale: true },
+    );
     const out = await echo(mw);
     expect(losslessViolation(out, "#512 stale")).toBeUndefined();
   });
@@ -1380,10 +1603,19 @@ describe("#512：callTool 远端结果投影收敛", () => {
       name: "void_op",
       description: "无返回值",
       parameters: { type: "object", properties: {} },
-      output: { schema: { type: "object", properties: {}, additionalProperties: false }, render: () => [{ type: "text", text: "done" }] },
+      output: {
+        schema: { type: "object", properties: {}, additionalProperties: false },
+        render: () => [{ type: "text", text: "done" }],
+      },
       execute: async () => undefined,
     };
-    const voidServer = { name: "vd", transport: "stdio", command: "x", enabled: true, toolDefinitions: [voidTool] };
+    const voidServer = {
+      name: "vd",
+      transport: "stdio",
+      command: "x",
+      enabled: true,
+      toolDefinitions: [voidTool],
+    };
     const { host } = makeHost(new Map([["@global", [voidServer]]]));
     const mw = trackMw(new McpMiddleware(host, {}));
     await mw.projectUnitFor("@global");
@@ -1434,12 +1666,25 @@ describe("#512：callTool 远端结果投影收敛", () => {
   }
 
   it("缺省 errorText = content 内 text 块 join", () => {
-    const thrown = thrownOf(() => probe({ content: [{ type: "text", text: "e1" }, { type: "text", text: "e2" }], isError: true }, {}));
+    const thrown = thrownOf(() =>
+      probe(
+        {
+          content: [
+            { type: "text", text: "e1" },
+            { type: "text", text: "e2" },
+          ],
+          isError: true,
+        },
+        {},
+      ),
+    );
     expect(thrown.message).toBe("e1\ne2");
   });
 
   it("缺省 errorText 无 text 块退化兜底", () => {
-    const thrown = thrownOf(() => probe({ content: [{ type: "image", mimeType: "image/png" }], isError: true }, {}));
+    const thrown = thrownOf(() =>
+      probe({ content: [{ type: "image", mimeType: "image/png" }], isError: true }, {}),
+    );
     expect(thrown.message).toBe("(no output)");
   });
 
@@ -1448,7 +1693,12 @@ describe("#512：callTool 远端结果投影收敛", () => {
     let fallbackCalls = 0;
     probe(
       { content: [{ type: "text", text: "ok" }], isError: false },
-      { fallbackText: () => { fallbackCalls += 1; return "unused"; } },
+      {
+        fallbackText: () => {
+          fallbackCalls += 1;
+          return "unused";
+        },
+      },
     );
     expect(fallbackCalls).toBe(0);
   });
@@ -1481,7 +1731,9 @@ describe("createRedactor 基线", () => {
       },
     ]);
     return redact(
-      new Error("failed connect to https://user:pass@example.com/path?token=abc with Bearer secret-token k-123 tok-456"),
+      new Error(
+        "failed connect to https://user:pass@example.com/path?token=abc with Bearer secret-token k-123 tok-456",
+      ),
     );
   }
 
@@ -1559,15 +1811,24 @@ describe("B9 红测：boundCatalogTools 描述截断按字节", () => {
 describe("B10 红测：searchCatalogMulti 恰好 limit 命中不误报 truncated", () => {
   function multiFixture() {
     const cata = new Map([
-      ["s1", {
-        server: "s1",
-        tools: new Map([
-          ["alpha", { name: "alpha", description: "alpha tool", inputSchema: {} }],
-          ["beta", { name: "beta", description: "beta tool", inputSchema: {} }],
-        ]),
-      }],
+      [
+        "s1",
+        {
+          server: "s1",
+          tools: new Map([
+            ["alpha", { name: "alpha", description: "alpha tool", inputSchema: {} }],
+            ["beta", { name: "beta", description: "beta tool", inputSchema: {} }],
+          ]),
+        },
+      ],
     ]);
-    const fakeUnit = { connections: new Map(), catalog: cata, userDisabled: new Set(), inFlight: new Map(), lastTouchedAt: Date.now() };
+    const fakeUnit = {
+      connections: new Map(),
+      catalog: cata,
+      userDisabled: new Set(),
+      inFlight: new Map(),
+      lastTouchedAt: Date.now(),
+    };
     return new Map([[ROOT, fakeUnit]]);
   }
 
@@ -1586,13 +1847,21 @@ describe("B10 红测：searchCatalogMulti 恰好 limit 命中不误报 truncated
 // B18 红测a：callTool 应用 server.toolCallTimeoutMs（现状固定 CALL_TIMEOUT_MS）----
 describe("B18 红测a：callTool 应用 server.toolCallTimeoutMs", () => {
   async function withTimeoutServer() {
-    const servers = [{ name: "s1", transport: "stdio", command: "echo", enabled: true, toolCallTimeoutMs: 5000 }];
+    const servers = [
+      { name: "s1", transport: "stdio", command: "echo", enabled: true, toolCallTimeoutMs: 5000 },
+    ];
     const { host } = makeHost(new Map([[ROOT, servers]]));
     const mw = trackMw(new McpMiddleware(host, {}));
     const unit = await mw.projectUnitFor(ROOT);
     const calls = [];
     unit.connections.set("s1", {
-      server: { name: "s1", transport: "stdio", command: "echo", enabled: true, toolCallTimeoutMs: 5000 },
+      server: {
+        name: "s1",
+        transport: "stdio",
+        command: "echo",
+        enabled: true,
+        toolCallTimeoutMs: 5000,
+      },
       status: "connected",
       connectedAt: Date.now(),
       catalog: new Map(),
@@ -1622,12 +1891,26 @@ describe("B18 红测a：callTool 应用 server.toolCallTimeoutMs", () => {
 // B18 红测b：scheduleReconnect 退避读 server.reconnect（现状硬编码 500 系列）----
 describe("B18 红测b：scheduleReconnect 退避读 server.reconnect", () => {
   async function reconnectFixture(connectionOverrides = {}) {
-    const servers = [{ name: "s1", transport: "stdio", command: "echo", enabled: true, reconnect: { initialDelayMs: 2000 } }];
+    const servers = [
+      {
+        name: "s1",
+        transport: "stdio",
+        command: "echo",
+        enabled: true,
+        reconnect: { initialDelayMs: 2000 },
+      },
+    ];
     const { host } = makeHost(new Map([[ROOT, servers]]));
     const mw = trackMw(new McpMiddleware(host, {}));
     const unit = await mw.projectUnitFor(ROOT);
     const entry = {
-      server: { name: "s1", transport: "stdio", command: "echo", enabled: true, reconnect: { initialDelayMs: 2000 } },
+      server: {
+        name: "s1",
+        transport: "stdio",
+        command: "echo",
+        enabled: true,
+        reconnect: { initialDelayMs: 2000 },
+      },
       status: "failed",
       failedAttempts: 1,
       reconnectTimer: undefined,
@@ -1653,7 +1936,15 @@ describe("B18 红测b：scheduleReconnect 退避读 server.reconnect", () => {
   it("B4：退避窗口内 entry.status 为 reconnecting", async () => {
     // B4 红测：退避窗口内 entry.status 应为 "reconnecting"（现状保持 failed）
     // summarize 投影/客户端 counts.reconnecting 依赖此态。
-    const servers = [{ name: "s1", transport: "stdio", command: "echo", enabled: true, reconnect: { enabled: true, initialDelayMs: 10_000 } }];
+    const servers = [
+      {
+        name: "s1",
+        transport: "stdio",
+        command: "echo",
+        enabled: true,
+        reconnect: { enabled: true, initialDelayMs: 10_000 },
+      },
+    ];
     const { host } = makeHost(new Map([[ROOT, servers]]));
     const mw = trackMw(new McpMiddleware(host, {}));
     const unit = await mw.projectUnitFor(ROOT);
@@ -1675,7 +1966,15 @@ describe("B18 红测b：scheduleReconnect 退避读 server.reconnect", () => {
 // B4 红测（续）：预算耗尽 → failed（与 reconnecting 区分）----
 describe("B4 红测（续）：预算耗尽 → failed", () => {
   async function exhaustedFixture() {
-    const servers = [{ name: "s1", transport: "stdio", command: "echo", enabled: true, reconnect: { enabled: true, initialDelayMs: 10_000, maxAttempts: 1 } }];
+    const servers = [
+      {
+        name: "s1",
+        transport: "stdio",
+        command: "echo",
+        enabled: true,
+        reconnect: { enabled: true, initialDelayMs: 10_000, maxAttempts: 1 },
+      },
+    ];
     const { host } = makeHost(new Map([[ROOT, servers]]));
     const mw = trackMw(new McpMiddleware(host, {}));
     const unit = await mw.projectUnitFor(ROOT);
@@ -1707,7 +2006,15 @@ describe("B4 红测（续）：预算耗尽 → failed", () => {
 // enabled 字段，与 supervisor resolveReconnect 口径分裂）----
 describe("B18 红测c：reconnect.enabled=false 不安排后台重试", () => {
   async function disabledReconnectFixture() {
-    const servers = [{ name: "s1", transport: "stdio", command: "echo", enabled: true, reconnect: { enabled: false } }];
+    const servers = [
+      {
+        name: "s1",
+        transport: "stdio",
+        command: "echo",
+        enabled: true,
+        reconnect: { enabled: false },
+      },
+    ];
     const { host } = makeHost(new Map([[ROOT, servers]]));
     const mw = trackMw(new McpMiddleware(host, {}));
     const unit = await mw.projectUnitFor(ROOT);
@@ -1764,9 +2071,12 @@ describe("B11 红测：含连续双下划线 server 名按未知处理", () => {
       catalogCachePath: () => "/tmp/cache.json",
       isGlobalServer: () => false,
     };
-    const resolveRoot = async (agent) => (agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined);
+    const resolveRoot = async (agent) =>
+      agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined;
     const mw = trackMw(new McpMiddleware(host, {}));
-    const dispose = registerMiddlewareTools(ctx, mw, resolveRoot, "project", { disabledTools: disabledMap });
+    const dispose = registerMiddlewareTools(ctx, mw, resolveRoot, "project", {
+      disabledTools: disabledMap,
+    });
     return { guards, dispose };
   }
 
@@ -1789,7 +2099,7 @@ describe("B11 红测：含连续双下划线 server 名按未知处理", () => {
   it("B11：真实形态记录同样不命中（不可逆按未知 server 处理）", async () => {
     // 情形 A（防回归）：禁用表只有「真实形态」记录（@global/my__sv → t）→ 同样
     // 不可逆 → 放行（不禁用；现状查错漏禁，修复后保持不误禁不误杀）。
-    const { guards } = guardFixture(parseDisabledTools({ "@global": { "my__sv": ["t"] } }));
+    const { guards } = guardFixture(parseDisabledTools({ "@global": { my__sv: ["t"] } }));
     const decisionA = await guards.get("tools/pre-execute")(
       { name: "mcp__my__sv__t", agent: { session: { header: { cwd: "/proj" } } } },
       async () => ({ kind: "allow" }),

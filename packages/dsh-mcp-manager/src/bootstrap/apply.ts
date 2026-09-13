@@ -21,7 +21,11 @@ import { registerMiddlewareTools, registerDirectMcpGuard } from "../inject/inter
 import { loadDisabledTools } from "../config/store/interface.ts";
 import { makeMiddlewareHotSwitch } from "./apply-runtime.ts";
 import { normalizeMiddlewareMode, makeResolveRoot } from "../workspace/interface.ts";
-import { registerCatalogInjection, setupConfigWatchersAsync, setupRoutesAndBroadcast } from "./apply-runtime.ts";
+import {
+  registerCatalogInjection,
+  setupConfigWatchersAsync,
+  setupRoutesAndBroadcast,
+} from "./apply-runtime.ts";
 import { provideMcpManagerService } from "./apply-services.ts";
 import {
   injectSettingsSink,
@@ -59,17 +63,22 @@ interface EnabledRuntimeDisposers {
  * @param {import("@deepseek-ai/cordis").Context} ctx - 宿主插件上下文。
  * @param config 解析后的插件配置。
  */
-export async function apply(ctx: Context, config: Record<string, unknown> | undefined): Promise<void> {
+export async function apply(
+  ctx: Context,
+  config: Record<string, unknown> | undefined,
+): Promise<void> {
   const options = resolveApplyOptions(config);
 
   const store = new McpStore(resolveStorePath(config));
   await store.load();
   const manager = new McpManager(ctx, store);
   // 感知增强配置（对抗性评审 v2）。默认值引用具名常量（单一事实源）。
-  const enhanceEmptyDescriptions = (config?.enhanceEmptyDescriptions as boolean | undefined) ?? DEFAULT_ENHANCE_EMPTY;
-  const resultTruncateBytes = Number.isFinite(config?.resultTruncateBytes) && (config?.resultTruncateBytes as number) > 0
-    ? Math.floor(config?.resultTruncateBytes as number)
-    : DEFAULT_TRUNCATE;
+  const enhanceEmptyDescriptions =
+    (config?.enhanceEmptyDescriptions as boolean | undefined) ?? DEFAULT_ENHANCE_EMPTY;
+  const resultTruncateBytes =
+    Number.isFinite(config?.resultTruncateBytes) && (config?.resultTruncateBytes as number) > 0
+      ? Math.floor(config?.resultTruncateBytes as number)
+      : DEFAULT_TRUNCATE;
   manager.enhancement = { enhanceEmptyDescriptions, resultTruncateBytes };
 
   // 核心化服务（官方 storageDomain 模式）：对外暴露 ctx.mcpManager（apply-services）。
@@ -87,11 +96,20 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
       logger: manager.logger,
     });
     if (typeof manager.setMiddlewareMode !== "function") return;
-    const persisted = typeof source === "object" && source !== null ? (source as Record<string, unknown>).middleware : undefined;
+    const persisted =
+      typeof source === "object" && source !== null
+        ? (source as Record<string, unknown>).middleware
+        : undefined;
     if (typeof persisted !== "string") return;
     const next = normalizeMiddlewareMode(persisted);
     if (next === manager.middlewareMode) return;
-    void manager.setMiddlewareMode(next).catch((error: unknown) => manager.logger.warn(`dsh-mcp-manager: sync middleware from settings failed: ${String(error)}`));
+    void manager
+      .setMiddlewareMode(next)
+      .catch((error: unknown) =>
+        manager.logger.warn(
+          `dsh-mcp-manager: sync middleware from settings failed: ${String(error)}`,
+        ),
+      );
   };
   installConfigSettings(ctx, manager, config, syncMiddlewareFromSettings);
   injectSettingsSink(ctx, manager);
@@ -115,21 +133,30 @@ export async function apply(ctx: Context, config: Record<string, unknown> | unde
     runtime = await assembleEnabledRuntime(ctx, manager, options, syncMiddlewareFromSettings);
   }
 
-  ctx.effect(() => () => {
-    runtime.disposeInjection();
-    runtime.disposeSection();
-    runtime.disposeRoutes();
-    runtime.disposeMiddleware();
-    runtime.watchCleanup();
-    void manager.dispose();
-  }, "dsh-mcp-manager: dispose");
+  ctx.effect(
+    () => () => {
+      runtime.disposeInjection();
+      runtime.disposeSection();
+      runtime.disposeRoutes();
+      runtime.disposeMiddleware();
+      runtime.watchCleanup();
+      void manager.dispose();
+    },
+    "dsh-mcp-manager: dispose",
+  );
 }
 
 /** enabled 分支装配（中间层 / 启动 / catalog / 路由 / watchers / 提示词）。 */
 async function assembleEnabledRuntime(
   ctx: Context,
   manager: McpManager,
-  options: { announceCatalog: boolean; announceToAgent: boolean; catalogMaxEntries: number; middlewarePolicy: Record<string, unknown>; middlewareModeRaw: string | undefined },
+  options: {
+    announceCatalog: boolean;
+    announceToAgent: boolean;
+    catalogMaxEntries: number;
+    middlewarePolicy: Record<string, unknown>;
+    middlewareModeRaw: string | undefined;
+  },
   syncMiddlewareFromSettings: () => void,
 ): Promise<EnabledRuntimeDisposers> {
   // F3（#382）：中间层初始化提前到 startAll 之前（防「先建后停」竞态，详见
@@ -162,7 +189,12 @@ async function assembleEnabledRuntime(
     const guardDispose = registerDirectMcpGuard(ctx, manager.disabledTools, resolveRoot);
     if (guardDispose !== undefined) currentMiddlewareDispose = guardDispose;
   }
-  manager.setMiddlewareMode = makeMiddlewareHotSwitch(manager, options.middlewarePolicy, resolveRoot, middlewareDisposer);
+  manager.setMiddlewareMode = makeMiddlewareHotSwitch(
+    manager,
+    options.middlewarePolicy,
+    resolveRoot,
+    middlewareDisposer,
+  );
 
   await manager.startAll();
   await manager.loadCatalogCache();
@@ -177,14 +209,19 @@ async function assembleEnabledRuntime(
     disposeInjection = registerCatalogInjection(ctx, manager, options.catalogMaxEntries);
   }
 
-  const disposeRoutes = ctx.effect(() => setupRoutesAndBroadcast(ctx, manager), "dsh-mcp-manager: routes");
+  const disposeRoutes = ctx.effect(
+    () => setupRoutesAndBroadcast(ctx, manager),
+    "dsh-mcp-manager: routes",
+  );
   const watchCleanup = await setupConfigWatchersAsync(manager);
 
   let disposeSection = () => {};
   if (options.announceToAgent) {
     // 官方 SystemPrompt.section(opts) 签名（PromptSection）；此处传参满足其形状，
     // 经 unknown 中转以维持局部最小面写法。
-    disposeSection = (ctx.systemPrompt as unknown as { section(opts: Record<string, unknown>): () => void }).section({
+    disposeSection = (
+      ctx.systemPrompt as unknown as { section(opts: Record<string, unknown>): () => void }
+    ).section({
       name: "plugin:dsh-mcp-manager",
       order: MCP_SECTION_ORDER,
       text: MCP_GUIDANCE,

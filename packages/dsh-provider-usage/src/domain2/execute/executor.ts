@@ -22,7 +22,9 @@ export interface DueExecutorDeps {
 }
 
 /** 构造串行执行器（幂等/推进/脱敏行为在此固化）。 */
-export function makeDueReportExecutor(deps: DueExecutorDeps): (input: ReportTaskInput) => Promise<ReportTaskResult> {
+export function makeDueReportExecutor(
+  deps: DueExecutorDeps,
+): (input: ReportTaskInput) => Promise<ReportTaskResult> {
   return async (input) => {
     try {
       if (input.force !== true) {

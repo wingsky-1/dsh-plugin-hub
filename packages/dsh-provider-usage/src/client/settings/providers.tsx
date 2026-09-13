@@ -102,7 +102,10 @@ function ProviderItem({
       setTimeout(() => setCopied(false), 2000);
     }
   };
-  const badge = providerBadgeText(item, t as (key: string, params?: Record<string, unknown>) => string);
+  const badge = providerBadgeText(
+    item,
+    t as (key: string, params?: Record<string, unknown>) => string,
+  );
 
   /** 检测文件：inspect 路由回显导出信息，不注册（确认后才 add）。 */
   const doInspect = async (): Promise<void> => {
@@ -159,7 +162,10 @@ function ProviderItem({
             {`${c.name} · ${c.source === "builtin" ? t("adapterBuiltin") : t("adapterCustom")}${c.file ? ` · ${c.file}` : ""}`}
           </span>
         </div>
-        <label className="dou-switchWrap" title={enabled ? t("switchOffTitle") : t("switchOnTitle")}>
+        <label
+          className="dou-switchWrap"
+          title={enabled ? t("switchOffTitle") : t("switchOnTitle")}
+        >
           <input
             type="checkbox"
             className="dou-switch"
@@ -173,7 +179,9 @@ function ProviderItem({
           />
           <span className="dou-switchTrack" aria-hidden="true" />
         </label>
-        {err !== undefined ? <div className="dou-provErr">{t("lastError", { msg: err.message })}</div> : null}
+        {err !== undefined ? (
+          <div className="dou-provErr">{t("lastError", { msg: err.message })}</div>
+        ) : null}
       </div>
     );
   });
@@ -181,10 +189,22 @@ function ProviderItem({
   const inspectCard =
     inspected === null ? null : (
       <div className="dou-inspectCard">
-        <div className="dou-inspectRow"><span className="dou-inspectK">{t("inspectKName")}</span><span className="dou-inspectV">{inspected.name}</span></div>
-        <div className="dou-inspectRow"><span className="dou-inspectK">{t("inspectKLabel")}</span><span className="dou-inspectV">{inspected.label}</span></div>
-        <div className="dou-inspectRow"><span className="dou-inspectK">{t("inspectKProviders")}</span><span className="dou-inspectV">{inspected.providers.join("、") || item.provider}</span></div>
-        <div className="dou-inspectRow"><span className="dou-inspectK">{t("inspectKVersion")}</span><span className="dou-inspectV">{`version ${inspected.version} ✓`}</span></div>
+        <div className="dou-inspectRow">
+          <span className="dou-inspectK">{t("inspectKName")}</span>
+          <span className="dou-inspectV">{inspected.name}</span>
+        </div>
+        <div className="dou-inspectRow">
+          <span className="dou-inspectK">{t("inspectKLabel")}</span>
+          <span className="dou-inspectV">{inspected.label}</span>
+        </div>
+        <div className="dou-inspectRow">
+          <span className="dou-inspectK">{t("inspectKProviders")}</span>
+          <span className="dou-inspectV">{inspected.providers.join("、") || item.provider}</span>
+        </div>
+        <div className="dou-inspectRow">
+          <span className="dou-inspectK">{t("inspectKVersion")}</span>
+          <span className="dou-inspectV">{`version ${inspected.version} ✓`}</span>
+        </div>
       </div>
     );
 
@@ -221,7 +241,9 @@ function ProviderItem({
         >
           {adding ? t("adding") : t("confirmAdd")}
         </button>
-        <button type="button" className="dou-btn" disabled={busy || adding} onClick={toggleAdd}>{t("cancel")}</button>
+        <button type="button" className="dou-btn" disabled={busy || adding} onClick={toggleAdd}>
+          {t("cancel")}
+        </button>
       </div>
       {inspErr !== null ? <div className="dou-provErr">{inspErr}</div> : null}
       {inspectCard}
@@ -238,7 +260,9 @@ function ProviderItem({
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
-        <span className={`dou-provArrow${open ? " dou-provArrowOpen" : ""}`} aria-hidden="true">▸</span>
+        <span className={`dou-provArrow${open ? " dou-provArrowOpen" : ""}`} aria-hidden="true">
+          ▸
+        </span>
         <span className="dou-provName">{item.provider}</span>
         <span className={`dou-provBadge${item.enabledId === null ? " dou-provBadgeOff" : ""}`}>
           {badge}
@@ -247,16 +271,18 @@ function ProviderItem({
       {!open ? null : (
         <div className="dou-provBody">
           {/* 无候选引导：文件注入 + 复制一句话引导指令（v2 文档） */}
-          {candidates.length === 0 ? [
-            <div key="hint" className="dou-hint">
-              {t("noCandidates")}
-            </div>,
-            <div key="guide" className="dou-provActions">
-              <button type="button" className="dou-btn" disabled={busy} onClick={onCopyGuide}>
-                {copied ? t("copied") : t("copyGuide")}
-              </button>
-            </div>,
-          ] : adapterRows}
+          {candidates.length === 0
+            ? [
+                <div key="hint" className="dou-hint">
+                  {t("noCandidates")}
+                </div>,
+                <div key="guide" className="dou-provActions">
+                  <button type="button" className="dou-btn" disabled={busy} onClick={onCopyGuide}>
+                    {copied ? t("copied") : t("copyGuide")}
+                  </button>
+                </div>,
+              ]
+            : adapterRows}
           <div className="dou-provActions">
             <button type="button" className="dou-btn" disabled={busy} onClick={toggleAdd}>
               {showAddForm ? t("collapse") : t("addAdapter")}
@@ -290,7 +316,10 @@ export function ProviderListSection({
   onAdd(provider: string, form: { file: string }): Promise<AddResult>;
 }): React.ReactElement {
   // host[] 按 providers 分组为候选映射
-  const candidatesByProvider = new Map<string, Array<{ name: string; label: string; source: string; file?: string | null }>>();
+  const candidatesByProvider = new Map<
+    string,
+    Array<{ name: string; label: string; source: string; file?: string | null }>
+  >();
   for (const info of meta?.host ?? []) {
     for (const provider of info.providers) {
       const list = candidatesByProvider.get(provider) ?? [];
@@ -357,7 +386,9 @@ export function ProviderListSection({
             </button>
           </div>
         </div>
-      ) : accordion(main)}
+      ) : (
+        accordion(main)
+      )}
       {extra.length > 0 ? (
         <div>
           <h4 style={titleStyle}>{t("customProvTitle")}</h4>

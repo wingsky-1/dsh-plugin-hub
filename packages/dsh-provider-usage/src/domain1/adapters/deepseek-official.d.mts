@@ -4,7 +4,12 @@
  * 说明：内置适配器以 .mjs 为权威实现（供 adapter-guide 引导 agent 参照编写），
  * 本文件手写导出声明，与实现保持同步；经 index.ts re-export 后供 TS 消费。
  */
-import type { UsageStatsAdapter, FetchContext, CapsuleInput, PanelInput } from "../../shared/interface.ts";
+import type {
+  UsageStatsAdapter,
+  FetchContext,
+  CapsuleInput,
+  PanelInput,
+} from "../../shared/interface.ts";
 import type { AdapterUtils } from "../../shared/interface.ts";
 
 /** 内置适配器认领的 provider 名（与会话模型 provider 精确匹配）。 */
@@ -79,7 +84,12 @@ export interface DayRecord {
 export declare function classifyIntervalDs(
   a: SamplePoint,
   b: SamplePoint,
-): { type: "unavailable" | "gap" | "disturbed" | "clean"; drop: number; topup: number; grantDelta: number };
+): {
+  type: "unavailable" | "gap" | "disturbed" | "clean";
+  drop: number;
+  topup: number;
+  grantDelta: number;
+};
 
 /** 单日柱悬浮文案纯函数（从 dailyBarsSvg 拆出）。运行时导出，声明面补齐以保持 lib re-export 完整。 */
 export declare function dailyBarTitle(r: DayRecord, i: number, total: number): string;

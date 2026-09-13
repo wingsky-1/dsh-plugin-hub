@@ -45,22 +45,22 @@ const NS = "settings.lanProxy";
 var STYLE_ID = "dsh-lan-proxy-style";
 var CSS_VERSION = "4";
 
-  /** 展示缺省值（与宿主 DEFAULT_OPTIONS 同构；用户层未保存的键回落这些值）。 */
-  var DEFAULTS: Record<string, any> = {
-    enabled: true,
-    port: 3081,
-    httpsEnabled: true,
-    httpsPort: 3443,
-    tlsCertFile: "",
-    tlsKeyFile: "",
-    printBanner: true,
-    wsBridgeEnabled: true,
-    wsCompressEnabled: true,
-    wsCompressPaths: ["/api/remote.mux"],
-    httpCompressEnabled: true,
-    httpCompressLevel: 1,
-    injectToken: true,
-  };
+/** 展示缺省值（与宿主 DEFAULT_OPTIONS 同构；用户层未保存的键回落这些值）。 */
+var DEFAULTS: Record<string, any> = {
+  enabled: true,
+  port: 3081,
+  httpsEnabled: true,
+  httpsPort: 3443,
+  tlsCertFile: "",
+  tlsKeyFile: "",
+  printBanner: true,
+  wsBridgeEnabled: true,
+  wsCompressEnabled: true,
+  wsCompressPaths: ["/api/remote.mux"],
+  httpCompressEnabled: true,
+  httpCompressLevel: 1,
+  injectToken: true,
+};
 
 var disposed = false;
 
@@ -85,7 +85,11 @@ export function apply(ctx: any) {
         bindLocale(locale, NS);
         if (typeof locale.subscribe === "function" && typeof locale.getSnapshot === "function") {
           unsubLocale = locale.subscribe(function () {
-            try { bindLocale(locale, NS); } catch (e) { /* 忽略 */ }
+            try {
+              bindLocale(locale, NS);
+            } catch (e) {
+              /* 忽略 */
+            }
           });
         }
       } catch (e) {
@@ -102,10 +106,16 @@ export function apply(ctx: any) {
     // 注册进 settings 服务的命名空间，才会被 configurable 面板派发。
     slots.inject("settings.plugin.item", function () {
       return slots.register(
-        { name: "settings.plugin.item", id: "dsh-lan-proxy", key: "dsh-lan-proxy", order: 50, locale: NS },
+        {
+          name: "settings.plugin.item",
+          id: "dsh-lan-proxy",
+          key: "dsh-lan-proxy",
+          order: 50,
+          locale: NS,
+        },
         function () {
           return React.createElement(SettingsCard, { defaults: DEFAULTS });
-        }
+        },
       );
     });
 

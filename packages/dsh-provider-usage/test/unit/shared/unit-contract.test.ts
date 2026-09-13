@@ -27,10 +27,20 @@ import {
   ADAPTER_CONTRACT_VERSION,
   ERROR_CODES,
 } from "../../../src/apply/index.ts";
-import { makeAdapterRegistry, sanitizeHtml, safeFetchData, safeFormat,
-  runV2Pipeline, runV2PanelPipeline, HistoryStore,
-  HotReloadableAdapter, readStamp, stampEqual, miniChartSvgMarkup,
-  OPENCODE_GO_PROVIDER } from "../../../src/apply/index.ts";
+import {
+  makeAdapterRegistry,
+  sanitizeHtml,
+  safeFetchData,
+  safeFormat,
+  runV2Pipeline,
+  runV2PanelPipeline,
+  HistoryStore,
+  HotReloadableAdapter,
+  readStamp,
+  stampEqual,
+  miniChartSvgMarkup,
+  OPENCODE_GO_PROVIDER,
+} from "../../../src/apply/index.ts";
 
 describe("safeSegment", () => {
   it("字母数字连字符原样保留", () => {
@@ -64,11 +74,11 @@ describe("safeSegment", () => {
 
 describe("sseData", () => {
   it("JSON SSE 序列化", () => {
-    expect(sseData({ a: 1 })).toBe("data: {\"a\":1}\n\n");
+    expect(sseData({ a: 1 })).toBe('data: {"a":1}\n\n');
   });
 
   it("字符串 SSE 带转义", () => {
-    expect(sseData("hello")).toBe("data: \"hello\"\n\n");
+    expect(sseData("hello")).toBe('data: "hello"\n\n');
   });
 
   it("数组 SSE 序列化", () => {
@@ -94,7 +104,9 @@ describe("sseData 与 shared 单一事实源一致（#472）", () => {
   });
 
   it("lib 导出与 shared 输出一致", () => {
-    expect(sseData({ type: "ui-config-changed" })).toBe(sharedSseData({ type: "ui-config-changed" }));
+    expect(sseData({ type: "ui-config-changed" })).toBe(
+      sharedSseData({ type: "ui-config-changed" }),
+    );
   });
 });
 
@@ -120,33 +132,41 @@ describe("parseUserAdapters", () => {
   });
 
   it("合法条目解析", () => {
-    expect(parseUserAdapters('{"adapters": [{"id":"a","providers":["p1"],"file":"/x.mjs"}]}')).toEqual([
-      { id: "a", label: "a", providers: ["p1"], file: "/x.mjs" },
-    ]);
+    expect(
+      parseUserAdapters('{"adapters": [{"id":"a","providers":["p1"],"file":"/x.mjs"}]}'),
+    ).toEqual([{ id: "a", label: "a", providers: ["p1"], file: "/x.mjs" }]);
   });
 
   it("空 id 条目丢弃", () => {
-    expect(parseUserAdapters('{"adapters": [{"id":"","providers":["p1"],"file":"/x.mjs"}]}')).toEqual([]);
+    expect(
+      parseUserAdapters('{"adapters": [{"id":"","providers":["p1"],"file":"/x.mjs"}]}'),
+    ).toEqual([]);
   });
 
   it("空 providers 条目丢弃", () => {
-    expect(parseUserAdapters('{"adapters": [{"id":"a","providers":[],"file":"/x.mjs"}]}')).toEqual([]);
+    expect(parseUserAdapters('{"adapters": [{"id":"a","providers":[],"file":"/x.mjs"}]}')).toEqual(
+      [],
+    );
   });
 
   it("空 file 条目丢弃", () => {
-    expect(parseUserAdapters('{"adapters": [{"id":"a","providers":["p1"],"file":""}]}')).toEqual([]);
+    expect(parseUserAdapters('{"adapters": [{"id":"a","providers":["p1"],"file":""}]}')).toEqual(
+      [],
+    );
   });
 
   it("label 保留", () => {
-    expect(parseUserAdapters('{"adapters": [{"id":"a","providers":["p1"],"file":"/x.mjs","label":"My Adp"}]}')).toEqual([
-      { id: "a", label: "My Adp", providers: ["p1"], file: "/x.mjs" },
-    ]);
+    expect(
+      parseUserAdapters(
+        '{"adapters": [{"id":"a","providers":["p1"],"file":"/x.mjs","label":"My Adp"}]}',
+      ),
+    ).toEqual([{ id: "a", label: "My Adp", providers: ["p1"], file: "/x.mjs" }]);
   });
 
   it("空 provider 字符串过滤", () => {
-    expect(parseUserAdapters('{"adapters": [{"id":"a","providers":["p1",""],"file":"/x.mjs"}]}')).toEqual([
-      { id: "a", label: "a", providers: ["p1"], file: "/x.mjs" },
-    ]);
+    expect(
+      parseUserAdapters('{"adapters": [{"id":"a","providers":["p1",""],"file":"/x.mjs"}]}'),
+    ).toEqual([{ id: "a", label: "a", providers: ["p1"], file: "/x.mjs" }]);
   });
 });
 
@@ -160,7 +180,9 @@ describe("summarizeTextFromWindows (deprecated)", () => {
   });
 
   it("单窗口百分比展示", () => {
-    expect(summarizeTextFromWindows([{ key: "5h", name: "5h 滚动", percent: 5 }])).toBe("5h 滚动 5%");
+    expect(summarizeTextFromWindows([{ key: "5h", name: "5h 滚动", percent: 5 }])).toBe(
+      "5h 滚动 5%",
+    );
   });
 
   it("整百分比无小数", () => {
@@ -168,8 +190,12 @@ describe("summarizeTextFromWindows (deprecated)", () => {
   });
 
   it("null 百分比显示 --", () => {
-    expect(summarizeTextFromWindows([{ key: "r", name: "5h 滚动", percent: 5 }, { key: "w", name: "每周", percent: null }]))
-      .toBe("5h 滚动 5% · 每周 --");
+    expect(
+      summarizeTextFromWindows([
+        { key: "r", name: "5h 滚动", percent: 5 },
+        { key: "w", name: "每周", percent: null },
+      ]),
+    ).toBe("5h 滚动 5% · 每周 --");
   });
 });
 
@@ -203,11 +229,18 @@ describe("levelFromWindows (deprecated)", () => {
   });
 
   it("多窗口取最差（90 → warn，≥80 即为 warn）", () => {
-    expect(levelFromWindows([{ key: "r", percent: 10 }, { key: "w", percent: 90 }])).toBe("warn");
+    expect(
+      levelFromWindows([
+        { key: "r", percent: 10 },
+        { key: "w", percent: 90 },
+      ]),
+    ).toBe("warn");
   });
 
   it("非数组输入返回 off（#150）", () => {
-    expect(levelFromWindows("not array" as unknown as Parameters<typeof levelFromWindows>[0])).toBe("off");
+    expect(levelFromWindows("not array" as unknown as Parameters<typeof levelFromWindows>[0])).toBe(
+      "off",
+    );
   });
 
   it("79.9 < 80 → ok 边界（#150）", () => {
@@ -223,7 +256,12 @@ describe("levelFromWindows (deprecated)", () => {
   });
 
   it("null 混合窗口只计数值项（#150）", () => {
-    expect(levelFromWindows([{ key: "r", percent: 30 }, { key: "w", percent: null }])).toBe("ok");
+    expect(
+      levelFromWindows([
+        { key: "r", percent: 30 },
+        { key: "w", percent: null },
+      ]),
+    ).toBe("ok");
   });
 });
 
@@ -261,7 +299,7 @@ describe("esc（#150）", () => {
   });
 
   it("五类实体一次全转义", () => {
-    expect(esc('<script>&"\'</script>')).toBe("&lt;script&gt;&amp;&quot;&#39;&lt;/script&gt;");
+    expect(esc("<script>&\"'</script>")).toBe("&lt;script&gt;&amp;&quot;&#39;&lt;/script&gt;");
   });
 
   it("数字经 String() 后转义", () => {
@@ -441,14 +479,16 @@ describe("describeUsageStatsAdapterShape 全分支（#150）", () => {
   });
 
   it("全缺时六项按序合并", () => {
-    expect(describeUsageStatsAdapterShape({})).toBe([
-      "version 必须 === 2（实际 undefined）",
-      "name（2-64 位字母数字下划线连字符）",
-      "providers（非空字符串数组）",
-      "fetchData（函数）",
-      "formatCapsule（函数）",
-      "formatPanel（函数）",
-    ].join("、"));
+    expect(describeUsageStatsAdapterShape({})).toBe(
+      [
+        "version 必须 === 2（实际 undefined）",
+        "name（2-64 位字母数字下划线连字符）",
+        "providers（非空字符串数组）",
+        "fetchData（函数）",
+        "formatCapsule（函数）",
+        "formatPanel（函数）",
+      ].join("、"),
+    );
   });
 
   it("version 错误含期望值与实际值", () => {
@@ -468,7 +508,9 @@ describe("describeUsageStatsAdapterShape 全分支（#150）", () => {
   it("name 白名单外的明细文案", () => {
     const a = validAdapter();
     a.name = "x!";
-    expect(describeUsageStatsAdapterShape(a)?.includes("name（2-64 位字母数字下划线连字符）") === true).toBeTruthy();
+    expect(
+      describeUsageStatsAdapterShape(a)?.includes("name（2-64 位字母数字下划线连字符）") === true,
+    ).toBeTruthy();
   });
 });
 
@@ -602,7 +644,13 @@ describe("registry：name 重复拒绝 + registeredNames 隔离", () => {
 });
 
 describe("registry：enabledHint=false 只入候选不启用", () => {
-  let reg, registerResult, entryBeforeSelect, hasCandidates, isEnabledBeforeSelect, selectResult, isEnabledAfterSelect;
+  let reg,
+    registerResult,
+    entryBeforeSelect,
+    hasCandidates,
+    isEnabledBeforeSelect,
+    selectResult,
+    isEnabledAfterSelect;
 
   beforeAll(() => {
     reg = makeAdapterRegistry();
@@ -734,7 +782,7 @@ describe("registry：removeByFile 计数 + registeredNames/enabled 引用清理"
 
   beforeAll(() => {
     const reg = makeAdapterRegistry();
-    reg.register(mkAdapter({ name: "f-one" }), "user-file", "/a.mjs");   // prov-x 启用 f-one
+    reg.register(mkAdapter({ name: "f-one" }), "user-file", "/a.mjs"); // prov-x 启用 f-one
     reg.register(mkAdapter({ name: "f-two", providers: ["pz"] }), "user-file", "/b.mjs");
     removed = reg.removeByFile("/a.mjs");
     hasNameOne = reg.hasName("f-one");
@@ -837,7 +885,10 @@ describe("#212-A3：多 provider 认领时逐 provider 精确恢复（部分启�
     const reg = makeAdapterRegistry();
     reg.register(mkAdapter({ name: "multi", providers: ["p1", "p2"] }), "user-file", "/m.mjs");
     selectResult = reg.select("p2", null);
-    r = reg.replaceByFile("/m.mjs", mkAdapter({ name: "multi", providers: ["p1", "p2"], label: "v2" }));
+    r = reg.replaceByFile(
+      "/m.mjs",
+      mkAdapter({ name: "multi", providers: ["p1", "p2"], label: "v2" }),
+    );
     snap = reg.snapshot();
   });
 
@@ -988,7 +1039,7 @@ describe("sanitizeHtml 白名单矩阵", () => {
 
   // 元素级移除（含成对标签与自闭合形态）
   it("script 成对移除", () => {
-    expect(sanitizeHtml('<script>alert(1)</script>ok')).toBe("ok");
+    expect(sanitizeHtml("<script>alert(1)</script>ok")).toBe("ok");
   });
 
   it("iframe 移除", () => {
@@ -1046,16 +1097,22 @@ describe("sanitizeHtml 白名单矩阵", () => {
   });
 
   it("data:text/html 剥除", () => {
-    expect(sanitizeHtml('<a href="data:text/html;base64,x">c</a>')).toBe('<a href=";base64,x">c</a>');
+    expect(sanitizeHtml('<a href="data:text/html;base64,x">c</a>')).toBe(
+      '<a href=";base64,x">c</a>',
+    );
   });
 
   it("expression( 剥除", () => {
-    expect(sanitizeHtml('<div style="width: expression(alert(1))">x</div>')).toBe('<div style="width: alert(1))">x</div>');
+    expect(sanitizeHtml('<div style="width: expression(alert(1))">x</div>')).toBe(
+      '<div style="width: alert(1))">x</div>',
+    );
   });
 
   // 实体编码变体封闭（#105③）——解码副本仅用于定位，输出恒为原文子序列
   it("hex 实体 javascript: 剥除", () => {
-    expect(sanitizeHtml('<a href="jav&#x61;script:alert(1)">c</a>')).toBe('<a href="alert(1)">c</a>');
+    expect(sanitizeHtml('<a href="jav&#x61;script:alert(1)">c</a>')).toBe(
+      '<a href="alert(1)">c</a>',
+    );
   });
 
   it("具名冒号实体协议剥除（data&colon; 同路径，见 smoke-pure A7）", () => {
@@ -1067,11 +1124,15 @@ describe("sanitizeHtml 白名单矩阵", () => {
   });
 
   it("expression 数字实体变体剥除", () => {
-    expect(sanitizeHtml('<div style="width:expression&#40;alert(1))">x</div>')).toBe('<div style="width:alert(1))">x</div>');
+    expect(sanitizeHtml('<div style="width:expression&#40;alert(1))">x</div>')).toBe(
+      '<div style="width:alert(1))">x</div>',
+    );
   });
 
   it("双重编码安全文本零损伤（不得误解码升级为新载体）", () => {
-    expect(sanitizeHtml('<a href="&amp;#106;avascript:x">c</a>')).toBe('<a href="&amp;#106;avascript:x">c</a>');
+    expect(sanitizeHtml('<a href="&amp;#106;avascript:x">c</a>')).toBe(
+      '<a href="&amp;#106;avascript:x">c</a>',
+    );
   });
 
   it("无害实体文本原样（解码副本绝不回写为输出）", () => {
@@ -1103,12 +1164,16 @@ describe("safeFetchData：序列化校验（数组/标量/null 拒绝）", () =>
   });
 
   it("fetchData 抛错隔离为 error 字段", async () => {
-    const thrown = await safeFetchData(async () => { throw new Error("boom"); });
+    const thrown = await safeFetchData(async () => {
+      throw new Error("boom");
+    });
     expect(thrown.error).toBe("boom");
   });
 
   it("非 Error 抛出物 String() 化", async () => {
-    const thrownStr = await safeFetchData(async () => { throw "raw-str"; });
+    const thrownStr = await safeFetchData(async () => {
+      throw "raw-str";
+    });
     expect(thrownStr.error).toBe("raw-str");
   });
 
@@ -1126,12 +1191,18 @@ describe("safeFormat：非字符串返回 / 抛错 / 超时", () => {
   });
 
   it("format 抛错隔离", async () => {
-    const thrown = await safeFormat(() => { throw new Error("fmt-boom"); }, "formatCapsule");
+    const thrown = await safeFormat(() => {
+      throw new Error("fmt-boom");
+    }, "formatCapsule");
     expect(thrown.error).toBe("fmt-boom");
   });
 
   it("异步 format 超时带函数名", async () => {
-    const slow = await safeFormat(() => new Promise<string>(() => {}) as unknown as string, "formatPanel", 30);
+    const slow = await safeFormat(
+      () => new Promise<string>(() => {}) as unknown as string,
+      "formatPanel",
+      30,
+    );
     expect(slow.error).toMatch(/formatPanel 超时/);
   });
 
@@ -1190,7 +1261,11 @@ describe("pipeline v2：fetchData 失败 → fetch-failed stale", () => {
 
   beforeAll(async () => {
     r = await runV2Pipeline({
-      adapter: mkV2Adapter({ fetchData: async () => { throw new Error("net-down"); } }) as never,
+      adapter: mkV2Adapter({
+        fetchData: async () => {
+          throw new Error("net-down");
+        },
+      }) as never,
       provider: "pv",
       config: {},
       staticPath: "",
@@ -1249,7 +1324,11 @@ describe("pipeline v2：面板管道：正常 / formatPanel 抛错 / 空历史",
     });
 
     badP = await runV2PanelPipeline({
-      adapter: mkV2Adapter({ formatPanel: () => { throw new Error("panel-boom"); } }) as never,
+      adapter: mkV2Adapter({
+        formatPanel: () => {
+          throw new Error("panel-boom");
+        },
+      }) as never,
       provider: "pv",
       history: store,
       range: { start: day - 1000, end: day + 1000 },
@@ -1257,7 +1336,9 @@ describe("pipeline v2：面板管道：正常 / formatPanel 抛错 / 空历史",
 
     // 空历史 → entries 空，formatPanel 收到空列表
     emptyP = await runV2PanelPipeline({
-      adapter: mkV2Adapter({ formatPanel: (i: { entries: unknown[] }) => `n=${i.entries.length}` }) as never,
+      adapter: mkV2Adapter({
+        formatPanel: (i: { entries: unknown[] }) => `n=${i.entries.length}`,
+      }) as never,
       provider: "zz",
       history: store,
       range: { start: day - 1000, end: day + 1000 },
@@ -1327,7 +1408,11 @@ describe("hotreload：start 文件缺失失败回调；pollOnce 文件删除保�
   beforeAll(() => {
     const probe = fileURLToPath(new URL("../../hotreload-probe.mjs", import.meta.url));
     const raw = execFileSync(process.execPath, [probe], { encoding: "utf8" });
-    const line = raw.trimEnd().split("\n").filter((l) => l.trimStart().startsWith("{")).pop();
+    const line = raw
+      .trimEnd()
+      .split("\n")
+      .filter((l) => l.trimStart().startsWith("{"))
+      .pop();
     const out = JSON.parse(line);
     startedMissing = { ok: out.startedMissingOk };
     startedMissingError = out.startedMissingError;
@@ -1392,10 +1477,17 @@ describe("hotreload：start 文件缺失失败回调；pollOnce 文件删除保�
 describe("miniChartSvgMarkup 图表纯函数结构断言", () => {
   // 样本不足 2 点 → 空 SVG
   it("样本 <2 返回空串", () => {
-    expect(miniChartSvgMarkup({
-      samples: [{ x: 1, y: 50 }],
-      color: "#fff", lo: 0, hi: 100, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
-    })).toBe("");
+    expect(
+      miniChartSvgMarkup({
+        samples: [{ x: 1, y: 50 }],
+        color: "#fff",
+        lo: 0,
+        hi: 100,
+        resetsAt: undefined,
+        resetPeriodMs: 0,
+        dateOnly: false,
+      }),
+    ).toBe("");
   });
 
   // 基本结构：svg 包裹 + 平滑曲线 + 终点圆点 + 网格线
@@ -1410,11 +1502,16 @@ describe("miniChartSvgMarkup 图表纯函数结构断言", () => {
           { x: t0 + 3600000, y: 40 },
           { x: t0 + 7200000, y: 70 },
         ],
-        color: "#123456", lo: 0, hi: 100, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+        color: "#123456",
+        lo: 0,
+        hi: 100,
+        resetsAt: undefined,
+        resetPeriodMs: 0,
+        dateOnly: false,
       });
       // 网格线恰为 lo/mid/hi 三条（stroke-dasharray:3 3）；重置线(2 3)与 100% 参考
       // 线(4 3)用不同 dash 值不会混入计数——精确计数而非 includes 存在性
-      gridLines = svg.split('stroke-dasharray:3 3').length - 1;
+      gridLines = svg.split("stroke-dasharray:3 3").length - 1;
     });
 
     it("SVG 开头", () => {
@@ -1449,12 +1546,28 @@ describe("miniChartSvgMarkup 图表纯函数结构断言", () => {
       // hi=80 时 100% 线不可见；hi<100 且 dmax>=90 强制抬到 100 的行为经 niceDomain 间接生效
       const t0 = Date.UTC(2026, 0, 1, 0, 0);
       noRefLine = miniChartSvgMarkup({
-        samples: [{ x: t0, y: 10 }, { x: t0 + 60000, y: 60 }],
-        color: "#000", lo: 0, hi: 50, resetsAt: undefined, resetPeriodMs: 0, dateOnly: true,
+        samples: [
+          { x: t0, y: 10 },
+          { x: t0 + 60000, y: 60 },
+        ],
+        color: "#000",
+        lo: 0,
+        hi: 50,
+        resetsAt: undefined,
+        resetPeriodMs: 0,
+        dateOnly: true,
       });
       withRefLine = miniChartSvgMarkup({
-        samples: [{ x: t0, y: 10 }, { x: t0 + 60000, y: 95 }],
-        color: "#000", lo: 0, hi: 100, resetsAt: undefined, resetPeriodMs: 0, dateOnly: true,
+        samples: [
+          { x: t0, y: 10 },
+          { x: t0 + 60000, y: 95 },
+        ],
+        color: "#000",
+        lo: 0,
+        hi: 100,
+        resetsAt: undefined,
+        resetPeriodMs: 0,
+        dateOnly: true,
       });
     });
 
@@ -1475,9 +1588,16 @@ describe("miniChartSvgMarkup 图表纯函数结构断言", () => {
       const t0 = Date.UTC(2026, 0, 1, 0, 0);
       const resetAt = new Date(t0 + 3600000).toISOString();
       const svg = miniChartSvgMarkup({
-        samples: [{ x: t0, y: 10 }, { x: t0 + 7200000, y: 30 }],
-        color: "#000", lo: 0, hi: 100,
-        resetsAt: resetAt, resetPeriodMs: 3600000, dateOnly: false,
+        samples: [
+          { x: t0, y: 10 },
+          { x: t0 + 7200000, y: 30 },
+        ],
+        color: "#000",
+        lo: 0,
+        hi: 100,
+        resetsAt: resetAt,
+        resetPeriodMs: 3600000,
+        dateOnly: false,
       });
       marks = svg.split("窗口重置点").length - 1;
     });
@@ -1493,8 +1613,16 @@ describe("miniChartSvgMarkup 图表纯函数结构断言", () => {
     beforeAll(() => {
       const t0 = Date.UTC(2026, 0, 1, 0, 0);
       svgNone = miniChartSvgMarkup({
-        samples: [{ x: t0, y: 10 }, { x: t0 + 60000, y: 20 }],
-        color: "#000", lo: 0, hi: 100, resetsAt: "garbage", resetPeriodMs: 0, dateOnly: false,
+        samples: [
+          { x: t0, y: 10 },
+          { x: t0 + 60000, y: 20 },
+        ],
+        color: "#000",
+        lo: 0,
+        hi: 100,
+        resetsAt: "garbage",
+        resetPeriodMs: 0,
+        dateOnly: false,
       });
     });
 
@@ -1511,7 +1639,13 @@ describe("miniChartSvgMarkup 图表纯函数结构断言", () => {
       const t0 = Date.UTC(2026, 0, 1, 0, 0);
       const many = Array.from({ length: 700 }, (_, i) => ({ x: t0 + i * 1000, y: i % 97 }));
       svg = miniChartSvgMarkup({
-        samples: many, color: "#000", lo: 0, hi: 100, resetsAt: undefined, resetPeriodMs: 0, dateOnly: true,
+        samples: many,
+        color: "#000",
+        lo: 0,
+        hi: 100,
+        resetsAt: undefined,
+        resetPeriodMs: 0,
+        dateOnly: true,
       });
       circles = svg.split("<circle").length - 1;
     });
@@ -1535,8 +1669,16 @@ describe("miniChartSvgMarkup 图表纯函数结构断言", () => {
     beforeAll(() => {
       const t0 = Date.UTC(2026, 0, 1, 0, 0);
       svg = miniChartSvgMarkup({
-        samples: [{ x: t0, y: 0 }, { x: t0 + 60000, y: 100 }],
-        color: "#000", lo: 0, hi: 100, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+        samples: [
+          { x: t0, y: 0 },
+          { x: t0 + 60000, y: 100 },
+        ],
+        color: "#000",
+        lo: 0,
+        hi: 100,
+        resetsAt: undefined,
+        resetPeriodMs: 0,
+        dateOnly: false,
       });
     });
 

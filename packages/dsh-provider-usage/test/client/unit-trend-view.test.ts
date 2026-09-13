@@ -54,11 +54,11 @@ const {
 // 本文件所有未识别展示断言均以 key 字面为预期值（运行时装配后即「未识别」译文）。
 
 describe("fmtCompact：紧凑档位与零 usage null 语义", () => {
-  it("null → \"-\"", () => {
+  it('null → "-"', () => {
     expect(fmtCompact(null)).toBe("-");
   });
 
-  it("NaN → \"-\"", () => {
+  it('NaN → "-"', () => {
     expect(fmtCompact(Number.NaN)).toBe("-");
   });
 
@@ -237,10 +237,7 @@ describe("niceTicks：按数据最大值动态推导步长与刻度序列（#503
 describe("trendYTicks：Y 域口径 = 桶堆叠合计 point.total（#589，#571 遗留）", () => {
   // 多段桶：单段最大 600K、桶合计 1.1M（= 汇总卡「峰值」）——旧单段口径轴顶 600K，
   // 堆叠柱顶溢出绘图区；正确口径轴顶 1.25M ≥ 峰值
-  const a = trendYTicks([
-    { total: 1_100_000 },
-    { total: 600_000 },
-  ]);
+  const a = trendYTicks([{ total: 1_100_000 }, { total: 600_000 }]);
 
   it("桶合计 1.1M → 轴顶 1.25M", () => {
     expect(a.top).toBe(1_250_000);
@@ -290,8 +287,23 @@ describe("seriesColor：跨调用稳定", () => {
 describe("stackedBarsSvg：空桶虚位 / 部分桶描边 / data-bucket 委托锚点", () => {
   const bars = [
     { key: "2026-02-01", segs: [], visibleTotal: null, none: true, mark: null },
-    { key: "2026-02-02", segs: [{ id: "p1", value: 100 }], visibleTotal: 100, none: false, mark: "edge" },
-    { key: "2026-02-03", segs: [{ id: "p1", value: 60 }, { id: "p2", value: 40 }], visibleTotal: 100, none: false, mark: "ongoing" },
+    {
+      key: "2026-02-02",
+      segs: [{ id: "p1", value: 100 }],
+      visibleTotal: 100,
+      none: false,
+      mark: "edge",
+    },
+    {
+      key: "2026-02-03",
+      segs: [
+        { id: "p1", value: 60 },
+        { id: "p2", value: 40 },
+      ],
+      visibleTotal: 100,
+      none: false,
+      mark: "ongoing",
+    },
   ];
   const svg = stackedBarsSvg({ bars, gran: "day", ticks: niceTicks(100).ticks });
 
@@ -321,9 +333,23 @@ describe("stackedAreasSvg：连续段 / null 桶断开 / 命中区同构", () =>
   const bars = [
     { key: "2026-01", segs: [{ id: "p1", value: 30 }], visibleTotal: 30, none: false, mark: null },
     { key: "2026-02", segs: [], visibleTotal: null, none: true, mark: null }, // p1 断开点
-    { key: "2026-03", segs: [{ id: "p1", value: 50 }, { id: "p2", value: 20 }], visibleTotal: 70, none: false, mark: null },
+    {
+      key: "2026-03",
+      segs: [
+        { id: "p1", value: 50 },
+        { id: "p2", value: 20 },
+      ],
+      visibleTotal: 70,
+      none: false,
+      mark: null,
+    },
   ];
-  const svg = stackedAreasSvg({ bars, gran: "month", ticks: niceTicks(70).ticks, stackOrder: ["p1", "p2"] });
+  const svg = stackedAreasSvg({
+    bars,
+    gran: "month",
+    ticks: niceTicks(70).ticks,
+    stackOrder: ["p1", "p2"],
+  });
 
   it("p1 两段 + p1 一段 = 3 条 path（null 桶断开）", () => {
     expect(svg.match(/<path /g)?.length).toBe(3);
@@ -340,12 +366,23 @@ describe("stackedAreasSvg：连续段 / null 桶断开 / 命中区同构", () =>
 
 describe("SVG 注入面：受信外文本不进 SVG（M2 的 <title> 注入面在 M2.1 已移除）", () => {
   // M2.1 的 SVG 内没有任何段 id/明细文本（id 仅哈希取色；明细走 React tooltip 文本节点自动转义）
-  const evil = '<img src=x onerror=alert(1)>';
+  const evil = "<img src=x onerror=alert(1)>";
   const bars = [
-    { key: "2026-02-01", segs: [{ id: evil, value: 10 }], visibleTotal: 10, none: false, mark: null },
+    {
+      key: "2026-02-01",
+      segs: [{ id: evil, value: 10 }],
+      visibleTotal: 10,
+      none: false,
+      mark: null,
+    },
   ];
   const svg = stackedBarsSvg({ bars, gran: "day", ticks: niceTicks(10).ticks });
-  const areaSvg = stackedAreasSvg({ bars, gran: "day", ticks: niceTicks(10).ticks, stackOrder: [evil] });
+  const areaSvg = stackedAreasSvg({
+    bars,
+    gran: "day",
+    ticks: niceTicks(10).ticks,
+    stackOrder: [evil],
+  });
 
   it("恶意段 id 不以任何形态进 SVG", () => {
     expect(svg.includes("<img")).toBeFalsy();
@@ -482,7 +519,7 @@ describe("#633 B2/B3 展示语义与值语义分离：dirStackId 与 dirDisplayL
 describe("#633 P0 trendRequestParams：默认面 = byDir=1 且无 dir/provider（B1 入口可达）", () => {
   const p = trendRequestParams("day", "total", 30, "", false, "", 30);
 
-  it("默认（provider=\"\"、dirFilter=\"\"）→ byDir=1 全目录拆段面", () => {
+  it('默认（provider=""、dirFilter=""）→ byDir=1 全目录拆段面', () => {
     expect(p.get("byDir")).toBe("1");
   });
 

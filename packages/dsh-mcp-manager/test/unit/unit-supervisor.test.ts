@@ -17,15 +17,19 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { pollUntil } from "../helpers.ts";
 
-const {
-  ConnectionSupervisor,
-  resolveReconnect,
-  RECONNECT_DEFAULTS,
-  SCOPE_GLOBAL,
-} = await import("../../src/index.ts");
+const { ConnectionSupervisor, resolveReconnect, RECONNECT_DEFAULTS, SCOPE_GLOBAL } =
+  await import("../../src/index.ts");
 
 function makeManagerLog() {
-  const log = { registered: [], disposed: [], info: [], warn: [], error: [], emits: 0, catalog: [] };
+  const log = {
+    registered: [],
+    disposed: [],
+    info: [],
+    warn: [],
+    error: [],
+    emits: 0,
+    catalog: [],
+  };
   const manager = {
     ctx: {
       tools: {
@@ -51,7 +55,12 @@ function makeManagerLog() {
   return { manager, log };
 }
 
-const failServer = { name: "srv", transport: "stdio", command: "dsh-mcp-missing-cmd-xyz", enabled: true };
+const failServer = {
+  name: "srv",
+  transport: "stdio",
+  command: "dsh-mcp-missing-cmd-xyz",
+  enabled: true,
+};
 
 // 重连 timer 是真实 setTimeout：用例结束后统一清理，避免残留 timer 泄漏。
 const tracked = [];
@@ -535,7 +544,12 @@ describe("scheduleReconnect 直调：老化重置 / 超限 gave up", () => {
 describe("syncTools：注册 / 排序 / 分页 / 重复名 / 回滚", () => {
   async function syncedFixture() {
     const { manager, log } = makeManagerLog();
-    const sup = makeSup(manager, { name: "srv", transport: "stdio", command: "echo", enabled: true });
+    const sup = makeSup(manager, {
+      name: "srv",
+      transport: "stdio",
+      command: "echo",
+      enabled: true,
+    });
     const pages = [
       {
         tools: [
@@ -568,7 +582,12 @@ describe("syncTools：注册 / 排序 / 分页 / 重复名 / 回滚", () => {
       if (def.name.includes("second")) throw new Error("registry full");
       return () => log.disposed.push(def.name);
     };
-    const supFail = makeSup(failingMgr.manager, { name: "srv", transport: "stdio", command: "echo", enabled: true });
+    const supFail = makeSup(failingMgr.manager, {
+      name: "srv",
+      transport: "stdio",
+      command: "echo",
+      enabled: true,
+    });
     supFail.toolDisposers.set("old", () => log.disposed.push("old"));
     supFail.tools = ["old"];
     await supFail.syncTools(
@@ -600,7 +619,10 @@ describe("syncTools：注册 / 排序 / 分页 / 重复名 / 回滚", () => {
 
   it("目录摘要上报", async () => {
     const { log } = await syncedFixture();
-    expect(log.catalog[0]).toEqual(["srv", ["mcp__srv__alpha", "mcp__srv__beta", "mcp__srv__gamma"]]);
+    expect(log.catalog[0]).toEqual([
+      "srv",
+      ["mcp__srv__alpha", "mcp__srv__beta", "mcp__srv__gamma"],
+    ]);
   });
 
   it("toolDisposers 3 个", async () => {
@@ -622,7 +644,10 @@ describe("syncTools：注册 / 排序 / 分页 / 重复名 / 回滚", () => {
     const { sup } = await syncedFixture();
     // 重复工具名（服务器列表返回同名工具）→ 抛错。
     await expect(
-      sup.syncTools({ listTools: async () => ({ tools: [{ name: "dup" }, { name: "dup" }] }) }, false),
+      sup.syncTools(
+        { listTools: async () => ({ tools: [{ name: "dup" }, { name: "dup" }] }) },
+        false,
+      ),
     ).rejects.toThrow(/listed tool .* more than once/);
   });
 
@@ -630,7 +655,10 @@ describe("syncTools：注册 / 排序 / 分页 / 重复名 / 回滚", () => {
     // 非法字符不同名不碰撞（各自派生独立 hash 后缀）。
     const { sup } = await syncedFixture();
     await expect(
-      sup.syncTools({ listTools: async () => ({ tools: [{ name: "a.b" }, { name: "a_c" }] }) }, false),
+      sup.syncTools(
+        { listTools: async () => ({ tools: [{ name: "a.b" }, { name: "a_c" }] }) },
+        false,
+      ),
     ).resolves.toBeUndefined();
   });
 
@@ -657,15 +685,28 @@ describe("syncTools：注册 / 排序 / 分页 / 重复名 / 回滚", () => {
     throwMgr.manager.ctx.tools.register = () => {
       throw new Error("boom");
     };
-    const supRethrow = makeSup(throwMgr.manager, { name: "srv", transport: "stdio", command: "echo", enabled: true });
+    const supRethrow = makeSup(throwMgr.manager, {
+      name: "srv",
+      transport: "stdio",
+      command: "echo",
+      enabled: true,
+    });
     await expect(
       supRethrow.syncTools({ listTools: async () => ({ tools: [{ name: "boom" }] }) }, true),
     ).rejects.toThrow(/boom/);
   });
 
   it("cursor 为空串终止循环", async () => {
-    const supEmpty = makeSup(makeManagerLog().manager, { name: "z", transport: "stdio", command: "echo", enabled: true });
-    await supEmpty.syncTools({ listTools: async () => ({ tools: [{ name: "t" }], nextCursor: "" }) }, false);
+    const supEmpty = makeSup(makeManagerLog().manager, {
+      name: "z",
+      transport: "stdio",
+      command: "echo",
+      enabled: true,
+    });
+    await supEmpty.syncTools(
+      { listTools: async () => ({ tools: [{ name: "t" }], nextCursor: "" }) },
+      false,
+    );
     expect(supEmpty.tools).toEqual(["mcp__z__t"]);
   });
 });
@@ -685,11 +726,25 @@ describe("syncTools：封装定义路径（#362 补充 4）", () => {
         {
           name: "codegraph_explore",
           description: "wrapped-desc",
-          parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+          parameters: {
+            type: "object",
+            properties: { query: { type: "string" } },
+            required: ["query"],
+          },
           output: {
-            schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
+            schema: {
+              type: "object",
+              properties: { text: { type: "string" } },
+              required: ["text"],
+            },
             render(_args, value) {
-              return [{ type: "text", text: value && typeof value === "object" && "text" in value ? String(value.text) : "" }];
+              return [
+                {
+                  type: "text",
+                  text:
+                    value && typeof value === "object" && "text" in value ? String(value.text) : "",
+                },
+              ];
             },
           },
           async execute(args) {
@@ -721,7 +776,12 @@ describe("syncTools：封装定义路径（#362 补充 4）", () => {
 
   function dupFixture() {
     const dupMgr = makeManagerLog();
-    const supDup = makeSup(dupMgr.manager, { name: "cg", transport: "stdio", command: "echo", enabled: true });
+    const supDup = makeSup(dupMgr.manager, {
+      name: "cg",
+      transport: "stdio",
+      command: "echo",
+      enabled: true,
+    });
     supDup.server.toolDefinitions = [
       { name: "t", description: "a", parameters: {} },
       { name: "t", description: "b", parameters: {} },
@@ -731,7 +791,12 @@ describe("syncTools：封装定义路径（#362 补充 4）", () => {
 
   function noNameFixture() {
     const noNameMgr = makeManagerLog();
-    const supNoName = makeSup(noNameMgr.manager, { name: "cg", transport: "stdio", command: "echo", enabled: true });
+    const supNoName = makeSup(noNameMgr.manager, {
+      name: "cg",
+      transport: "stdio",
+      command: "echo",
+      enabled: true,
+    });
     supNoName.server.toolDefinitions = [{ description: "no name", parameters: {} }];
     return supNoName;
   }
@@ -781,12 +846,16 @@ describe("syncTools：封装定义路径（#362 补充 4）", () => {
 
   it("重复封装工具名 → 抛错", async () => {
     const supDup = dupFixture();
-    await expect(supDup.syncTools({ listTools: async () => ({ tools: [] }) }, false)).rejects.toThrow(/duplicate wrapped tool/);
+    await expect(
+      supDup.syncTools({ listTools: async () => ({ tools: [] }) }, false),
+    ).rejects.toThrow(/duplicate wrapped tool/);
   });
 
   it("缺 name 的封装定义 → 抛错", async () => {
     const supNoName = noNameFixture();
-    await expect(supNoName.syncTools({ listTools: async () => ({ tools: [] }) }, false)).rejects.toThrow(/without a name/);
+    await expect(
+      supNoName.syncTools({ listTools: async () => ({ tools: [] }) }, false),
+    ).rejects.toThrow(/without a name/);
   });
 });
 

@@ -29,12 +29,15 @@ export class McpStatsCollector {
   private logger?: { info?: (msg: string) => void; debug?: (msg: string) => void };
   private startedAt: string = new Date().toISOString();
   private updatedAt: string = new Date().toISOString();
-  private servers: Map<string, {
-    totalCalls: number;
-    successCalls: number;
-    failedCalls: number;
-    tools: Map<string, ToolCallMetric>;
-  }> = new Map();
+  private servers: Map<
+    string,
+    {
+      totalCalls: number;
+      successCalls: number;
+      failedCalls: number;
+      tools: Map<string, ToolCallMetric>;
+    }
+  > = new Map();
   private disclosure: ProgressiveDisclosureStats = {
     searches: {},
     lists: {},
@@ -57,7 +60,11 @@ export class McpStatsCollector {
   }
 
   /** 更新运行配置（热重载 / 设置同步）。 */
-  configure(options: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void } }): void {
+  configure(options: {
+    enabled?: boolean;
+    filePath?: string;
+    logger?: { info?: (msg: string) => void };
+  }): void {
     const prevEnabled = this.enabled;
     const nextEnabled = options.enabled ?? prevEnabled;
     if (options.filePath) this.filePath = resolve(options.filePath);
@@ -116,7 +123,13 @@ export class McpStatsCollector {
   }
 
   /** 记录工具调用（ws_mcp_call 或直呼工具）。 */
-  recordCall(server: string, tool: string, durationMs: number, success: boolean, errorMsg?: string): void {
+  recordCall(
+    server: string,
+    tool: string,
+    durationMs: number,
+    success: boolean,
+    errorMsg?: string,
+  ): void {
     if (!this.enabled) return;
 
     this.updatedAt = new Date().toISOString();
@@ -159,7 +172,7 @@ export class McpStatsCollector {
     // debug 控制台单行输出
     const status = success ? "ok" : "fail";
     this.logger?.info?.(
-      `[mcp:stats] ${server}/${tool} - ${durationMs}ms - ${status} (total: ${t.calls})`
+      `[mcp:stats] ${server}/${tool} - ${durationMs}ms - ${status} (total: ${t.calls})`,
     );
 
     this.scheduleFlush();
@@ -177,7 +190,8 @@ export class McpStatsCollector {
   /** 记录渐进式披露漏斗：ws_mcp_list 查询过滤项。 */
   recordList(serverFilter?: string): void {
     if (!this.enabled) return;
-    const f = (serverFilter ?? "").trim() === "" ? "<all>" : (serverFilter ?? "").trim().slice(0, 100);
+    const f =
+      (serverFilter ?? "").trim() === "" ? "<all>" : (serverFilter ?? "").trim().slice(0, 100);
     this.disclosure.lists[f] = (this.disclosure.lists[f] ?? 0) + 1;
     this.updatedAt = new Date().toISOString();
     this.scheduleFlush();

@@ -16,7 +16,8 @@ import type { McpState, UiActions } from "../core/state.ts";
 /** 服务器端点摘要：streamable-http 显示 URL，stdio 显示 command + args。 */
 export function endpointOf(server: any): string {
   if (server.transport === "streamable-http") return server.url ?? "";
-  const args = Array.isArray(server.args) && server.args.length > 0 ? ` ${server.args.join(" ")}` : "";
+  const args =
+    Array.isArray(server.args) && server.args.length > 0 ? ` ${server.args.join(" ")}` : "";
   return `${server.command ?? ""}${args}`;
 }
 
@@ -29,14 +30,22 @@ export function actionButton(label: any, onClick: any, primary = false, danger =
       try {
         await onClick();
       } catch (error) {
-        window.alert(t("actionFail", { msg: error instanceof Error ? error.message : String(error) }));
+        window.alert(
+          t("actionFail", { msg: error instanceof Error ? error.message : String(error) }),
+        );
       }
     },
   });
 }
 
 /** 工具级禁用 checkbox（PATCH /api/dsh-mcp/tool-disable；#362 交互拍板 2b）。 */
-function toolCheckbox(server: any, tool: string, disabled: boolean, state: McpState, actions: UiActions): any {
+function toolCheckbox(
+  server: any,
+  tool: string,
+  disabled: boolean,
+  state: McpState,
+  actions: UiActions,
+): any {
   const label = el("label", { class: "dm-tool" });
   const input = el("input", { type: "checkbox", checked: disabled });
   input.addEventListener("change", () => {
@@ -56,7 +65,8 @@ function toolCheckbox(server: any, tool: string, disabled: boolean, state: McpSt
         tool,
         disabled: input.checked,
       }),
-    }).then(() => actions.refresh())
+    })
+      .then(() => actions.refresh())
       .catch((error: any) => {
         input.checked = !input.checked;
         console.warn("[dsh-mcp-manager] tool-disable failed:", error);
@@ -68,19 +78,36 @@ function toolCheckbox(server: any, tool: string, disabled: boolean, state: McpSt
 }
 
 /** 渲染单台服务器卡片。 */
-export function renderServer(server: any, state: McpState, actions: UiActions, opts: { tools: boolean; openTools?: Set<string> } = { tools: true }): any {
+export function renderServer(
+  server: any,
+  state: McpState,
+  actions: UiActions,
+  opts: { tools: boolean; openTools?: Set<string> } = { tools: true },
+): any {
   const article = el("article", { class: "dm-server" });
   const header = el("header");
   header.appendChild(el("span", { class: "dm-name", text: server.name }));
-  header.appendChild(el("span", {
-    class: `dm-badge ${server.transport === "streamable-http" ? "dm-http" : "dm-stdio"}`,
-    text: server.transport === "streamable-http" ? "HTTP" : "stdio",
-  }));
-  header.appendChild(el("span", { class: "dm-badge", text: server.scope === "project" ? t("badgeScopeProject") : t("badgeScopeGlobal") }));
-  const statusBadge = el("span", { class: `dm-badge dm-st-${server.status}`, text: tStatus(server.status) });
+  header.appendChild(
+    el("span", {
+      class: `dm-badge ${server.transport === "streamable-http" ? "dm-http" : "dm-stdio"}`,
+      text: server.transport === "streamable-http" ? "HTTP" : "stdio",
+    }),
+  );
+  header.appendChild(
+    el("span", {
+      class: "dm-badge",
+      text: server.scope === "project" ? t("badgeScopeProject") : t("badgeScopeGlobal"),
+    }),
+  );
+  const statusBadge = el("span", {
+    class: `dm-badge dm-st-${server.status}`,
+    text: tStatus(server.status),
+  });
   header.appendChild(statusBadge);
   const toolCount = Array.isArray(server.tools) ? server.tools.length : 0;
-  header.appendChild(el("span", { class: "dm-count", text: t("toolsCountPlain", { n: toolCount }) }));
+  header.appendChild(
+    el("span", { class: "dm-count", text: t("toolsCountPlain", { n: toolCount }) }),
+  );
   article.appendChild(header);
 
   article.appendChild(el("div", { class: "dm-endpoint", text: endpointOf(server) }));
@@ -95,7 +122,9 @@ export function renderServer(server: any, state: McpState, actions: UiActions, o
     const list = el("ul");
     const disabledSet = new Set(Array.isArray(server.disabledTools) ? server.disabledTools : []);
     for (const tool of server.tools) {
-      list.appendChild(el("li", {}, [toolCheckbox(server, tool, disabledSet.has(tool), state, actions)]));
+      list.appendChild(
+        el("li", {}, [toolCheckbox(server, tool, disabledSet.has(tool), state, actions)]),
+      );
     }
     details.appendChild(list);
     article.appendChild(details);
@@ -118,51 +147,93 @@ export function renderServer(server: any, state: McpState, actions: UiActions, o
   // 正常时零副作用。
   const cwdQuery = cwdQueryOf(state);
   if (server.status === "connected") {
-    actionsEl.appendChild(actionButton(t("disconnect"), async () => {
-      // C7：disconnect 同样带 cwd（#412 场景浮窗/面板操作自愈，与 connect 对齐）。
-      await api(`${state.API.disconnect}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`, { method: "POST" });
-      await actions.refresh();
-    }));
-    actionsEl.appendChild(actionButton(t("reconnect"), async () => {
-      await api(`${state.API.reconnect}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`, { method: "POST" });
-      await actions.refresh();
-    }));
+    actionsEl.appendChild(
+      actionButton(t("disconnect"), async () => {
+        // C7：disconnect 同样带 cwd（#412 场景浮窗/面板操作自愈，与 connect 对齐）。
+        await api(
+          `${state.API.disconnect}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`,
+          { method: "POST" },
+        );
+        await actions.refresh();
+      }),
+    );
+    actionsEl.appendChild(
+      actionButton(t("reconnect"), async () => {
+        await api(
+          `${state.API.reconnect}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`,
+          { method: "POST" },
+        );
+        await actions.refresh();
+      }),
+    );
   } else if (server.status === "disabled") {
-    actionsEl.appendChild(actionButton(t("enableAndConnect"), async () => {
-      await api(`${state.API.servers}?name=${encodeURIComponent(server.name)}${scopeQuery}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabled: true }),
-      });
-      await api(`${state.API.connect}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`, { method: "POST" });
-      await actions.refresh();
-    }, true));
+    actionsEl.appendChild(
+      actionButton(
+        t("enableAndConnect"),
+        async () => {
+          await api(`${state.API.servers}?name=${encodeURIComponent(server.name)}${scopeQuery}`, {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ enabled: true }),
+          });
+          await api(
+            `${state.API.connect}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`,
+            { method: "POST" },
+          );
+          await actions.refresh();
+        },
+        true,
+      ),
+    );
   } else {
-    actionsEl.appendChild(actionButton(t("connect"), async () => {
-      await api(`${state.API.connect}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`, { method: "POST" });
-      await actions.refresh();
-    }, true));
+    actionsEl.appendChild(
+      actionButton(
+        t("connect"),
+        async () => {
+          await api(
+            `${state.API.connect}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`,
+            { method: "POST" },
+          );
+          await actions.refresh();
+        },
+        true,
+      ),
+    );
   }
   // 禁用开关：非 disabled 状态可一键禁用（宿主断开并注销工具）
   if (server.status !== "disabled") {
-    actionsEl.appendChild(actionButton(t("disable"), async () => {
-      // C7：disable 同样带 cwd（与 disconnect 对齐，#412 自愈）。
-      await api(`${state.API.servers}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabled: false }),
-      });
-      if (state.editingName === server.name) actions.resetForm();
-      await actions.refresh();
-    }));
+    actionsEl.appendChild(
+      actionButton(t("disable"), async () => {
+        // C7：disable 同样带 cwd（与 disconnect 对齐，#412 自愈）。
+        await api(
+          `${state.API.servers}?name=${encodeURIComponent(server.name)}${scopeQuery}${cwdQuery}`,
+          {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ enabled: false }),
+          },
+        );
+        if (state.editingName === server.name) actions.resetForm();
+        await actions.refresh();
+      }),
+    );
   }
   actionsEl.appendChild(actionButton(t("edit"), () => actions.beginEdit(server)));
-  actionsEl.appendChild(actionButton(t("delete"), async () => {
-    if (!window.confirm(t("confirmDelete", { name: server.name }))) return;
-    await api(`${state.API.servers}?name=${encodeURIComponent(server.name)}${scopeQuery}`, { method: "DELETE" });
-    if (state.editingName === server.name) actions.resetForm();
-    await actions.refresh();
-  }, false, true));
+  actionsEl.appendChild(
+    actionButton(
+      t("delete"),
+      async () => {
+        if (!window.confirm(t("confirmDelete", { name: server.name }))) return;
+        await api(`${state.API.servers}?name=${encodeURIComponent(server.name)}${scopeQuery}`, {
+          method: "DELETE",
+        });
+        if (state.editingName === server.name) actions.resetForm();
+        await actions.refresh();
+      },
+      false,
+      true,
+    ),
+  );
   actionsEl.children[actionsEl.children.length - 1].disabled = busy;
   article.appendChild(actionsEl);
   return article;
@@ -191,7 +262,9 @@ export function renderServers(state: McpState, actions: UiActions): void {
     if (list.length === 0) continue;
     const section = el("section", { class: "dm-group" });
     const title = el("h3");
-    title.appendChild(document.createTextNode(scope === "project" ? t("groupProject") : t("groupGlobal")));
+    title.appendChild(
+      document.createTextNode(scope === "project" ? t("groupProject") : t("groupGlobal")),
+    );
     title.appendChild(el("span", { class: "dm-count", text: `${list.length}` }));
     section.appendChild(title);
     // 各自内部再按状态分组（状态序：运行中 → 连接中 → 重连中 → 未连接 → 已停用 → 失败）。
@@ -208,9 +281,16 @@ export function renderServers(state: McpState, actions: UiActions): void {
       const bucket = byStatus.get(group.key) ?? [];
       if (bucket.length === 0) continue;
       const sub = el("div", { class: "dm-subgroup" });
-      sub.appendChild(el("h4", { class: "dm-subgroup-title", text: t("statusGroupCount", { status: t(group.titleKey), n: bucket.length }) }));
+      sub.appendChild(
+        el("h4", {
+          class: "dm-subgroup-title",
+          text: t("statusGroupCount", { status: t(group.titleKey), n: bucket.length }),
+        }),
+      );
       for (const server of [...bucket].sort((a: any, b: any) => a.name.localeCompare(b.name))) {
-        sub.appendChild(renderServer(server, state, actions, { tools: toolsEnabled(scope), openTools }));
+        sub.appendChild(
+          renderServer(server, state, actions, { tools: toolsEnabled(scope), openTools }),
+        );
       }
       section.appendChild(sub);
     }

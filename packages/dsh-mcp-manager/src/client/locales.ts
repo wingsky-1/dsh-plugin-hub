@@ -75,7 +75,8 @@ export const zh = {
   transportStdioOpt: "stdio（本地子进程）",
   transportHttpOpt: "streamable-http（远程）",
   envPlaceholder: "每行 KEY=VALUE，如\nCONTEXT7_API_KEY=${CONTEXT7_API_KEY}",
-  headersPlaceholder: "每行 KEY: VALUE，支持 ${ENV} 引用，如\nAuthorization: Bearer ${CONTEXT7_API_KEY}",
+  headersPlaceholder:
+    "每行 KEY: VALUE，支持 ${ENV} 引用，如\nAuthorization: Bearer ${CONTEXT7_API_KEY}",
   cwdPlaceholder: "可选工作目录",
   pasteTitle: "粘贴 mcpServers JSON 导入",
   importJson: "导入 JSON",
@@ -103,7 +104,8 @@ export const zh = {
   offsetY: "垂直偏移",
   blankY: "空白偏移",
   zIndexBase: "层级基准",
-  settingsHint: "保存即热更新：浮窗位置即时生效；中间层模式切换即时生效并持久化（无需重启 dsh web）。",
+  settingsHint:
+    "保存即热更新：浮窗位置即时生效；中间层模式切换即时生效并持久化（无需重启 dsh web）。",
   savingNow: "保存中…",
   settingsSavedOk: "已保存——浮窗位置与中间层模式即时生效（无需重启）",
 } as const;
@@ -138,13 +140,14 @@ export const en: Record<McpLocaleKey, string> = {
   floatAriaLabel: "MCP manager",
   floatTitle: "MCP manager (click to expand)",
   floatManage: "Manage",
-  floatEmpty: "No MCP servers — click \"Manage\" to add",
+  floatEmpty: 'No MCP servers — click "Manage" to add',
   floatGlobalSession: "global session",
   groupProject: "Project",
   groupGlobal: "Global",
   badgeScopeProject: "Project",
   badgeScopeGlobal: "Global",
-  globalToolHint: "Global tool switches are managed in all mode (middleware takes over everything) — switch to all mode to manage global tools",
+  globalToolHint:
+    "Global tool switches are managed in all mode (middleware takes over everything) — switch to all mode to manage global tools",
   serverMeta: "{status} · {tools} tools",
   toolsCount: "Tools ({n})",
   toolsCountPlain: "{n} tools",
@@ -164,7 +167,8 @@ export const en: Record<McpLocaleKey, string> = {
   transportLabel: "Transport",
   commandLabel: "Command (stdio)",
   argsLabel: "Args (comma-separated)",
-  envLabel: "Env vars (KEY=VALUE per line, ${ENV} refs supported; empty value inherits the parent environment)",
+  envLabel:
+    "Env vars (KEY=VALUE per line, ${ENV} refs supported; empty value inherits the parent environment)",
   cwdLabel: "Working directory (optional)",
   urlLabel: "URL (streamable-http)",
   headersLabel: "Headers (KEY: VALUE per line, ${ENV} refs supported)",
@@ -174,7 +178,8 @@ export const en: Record<McpLocaleKey, string> = {
   transportStdioOpt: "stdio (local subprocess)",
   transportHttpOpt: "streamable-http (remote)",
   envPlaceholder: "One KEY=VALUE per line, e.g.\nCONTEXT7_API_KEY=${CONTEXT7_API_KEY}",
-  headersPlaceholder: "One KEY: VALUE per line, ${ENV} refs supported, e.g.\nAuthorization: Bearer ${CONTEXT7_API_KEY}",
+  headersPlaceholder:
+    "One KEY: VALUE per line, ${ENV} refs supported, e.g.\nAuthorization: Bearer ${CONTEXT7_API_KEY}",
   cwdPlaceholder: "Optional working directory",
   pasteTitle: "Paste mcpServers JSON to import",
   importJson: "Import JSON",
@@ -182,8 +187,9 @@ export const en: Record<McpLocaleKey, string> = {
   importedNone: "(none)",
   importSkipped: "Skipped (already present): {names}",
   importFail: "Import failed: {msg}",
-  serversEmpty: "No MCP servers yet. Add one on the \"Quick add\" tab, or paste mcpServers JSON to import.",
-  confirmDelete: "Delete MCP server \"{name}\"?",
+  serversEmpty:
+    'No MCP servers yet. Add one on the "Quick add" tab, or paste mcpServers JSON to import.',
+  confirmDelete: 'Delete MCP server "{name}"?',
   settingsLoading: "MCP manager: loading…",
   settingsName: "MCP manager (dsh-mcp-manager)",
   settingsDescription: "Float placement / horizontal·vertical·gap offsets",
@@ -200,7 +206,9 @@ export const en: Record<McpLocaleKey, string> = {
   offsetY: "Vertical offset",
   blankY: "Blank-session offset",
   zIndexBase: "Z-index base",
-  settingsHint: "Hot reload on save: float placement applies immediately; middleware mode applies immediately and persists (no dsh web restart).",
+  settingsHint:
+    "Hot reload on save: float placement applies immediately; middleware mode applies immediately and persists (no dsh web restart).",
   savingNow: "Saving…",
-  settingsSavedOk: "Saved — float placement and middleware mode take effect immediately (no restart)",
+  settingsSavedOk:
+    "Saved — float placement and middleware mode take effect immediately (no restart)",
 };

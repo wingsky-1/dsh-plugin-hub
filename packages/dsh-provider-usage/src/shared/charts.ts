@@ -80,7 +80,12 @@ export function toEpochMs(v: string | number | undefined | null): number | undef
 }
 
 /** 重置标记 tick：resetsAt 归一化后落在窗口内 + 按周期外推历史点。 */
-export function resetTicks(resetsAt: string | number | undefined | null, periodMs: number, t0: number, t1: number): number[] {
+export function resetTicks(
+  resetsAt: string | number | undefined | null,
+  periodMs: number,
+  t0: number,
+  t1: number,
+): number[] {
   const r = toEpochMs(resetsAt);
   if (r === undefined || !(periodMs > 0)) return [];
   const out: number[] = [];
@@ -200,18 +205,31 @@ export function timeTicks(t0: number, t1: number, minGapMs: number): number[] {
 }
 
 /** 趋势判定（自 opencode-go；首末有效点之差，±0.05 死区）。 */
-export function trendOf(pcts: Array<number | null>): { delta: number; up: boolean; down: boolean } | null {
+export function trendOf(
+  pcts: Array<number | null>,
+): { delta: number; up: boolean; down: boolean } | null {
   let first: number | null = null;
   let last: number | null = null;
-  for (const v of pcts) if (typeof v === "number") { first = v; break; }
-  for (let j = pcts.length - 1; j >= 0; j -= 1) if (typeof pcts[j] === "number") { last = pcts[j]; break; }
+  for (const v of pcts)
+    if (typeof v === "number") {
+      first = v;
+      break;
+    }
+  for (let j = pcts.length - 1; j >= 0; j -= 1)
+    if (typeof pcts[j] === "number") {
+      last = pcts[j];
+      break;
+    }
   if (first === null || last === null) return null;
   const d = last - first;
   return { delta: Math.round(d * 10) / 10, up: d > 0.05, down: d < -0.05 };
 }
 
 /** 降采样（统一 peak 语义：区间取最大值；末点恒保留——deepseek 旧 first 语义作废）。 */
-export function downsample(points: Array<{ x: number; y: number }>, maxPoints: number): Array<{ x: number; y: number }> {
+export function downsample(
+  points: Array<{ x: number; y: number }>,
+  maxPoints: number,
+): Array<{ x: number; y: number }> {
   if (points.length <= maxPoints) return points;
   const step = points.length / maxPoints;
   const out: Array<{ x: number; y: number }> = [];
@@ -277,19 +295,31 @@ export function miniAreaSvg(opts: {
   const resets = resetTicks(resetsAt, resetPeriodMs, t0, t1);
   for (const rr of resets) {
     const rx = xOf(rr);
-    parts.push(`<line x1="${rx.toFixed(1)}" y1="${PT}" x2="${rx.toFixed(1)}" y2="${(PT + plotH).toFixed(1)}" style="stroke:var(--dsw-alias-label-tertiary,#9aa0ab);stroke-width:1;stroke-dasharray:2 3;stroke-opacity:.55"><title>窗口重置点</title></line>`);
-    parts.push(`<path d="M ${rx.toFixed(1)} ${PT} l 3.5 3.5 l -7 0 z" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.55"/>`);
+    parts.push(
+      `<line x1="${rx.toFixed(1)}" y1="${PT}" x2="${rx.toFixed(1)}" y2="${(PT + plotH).toFixed(1)}" style="stroke:var(--dsw-alias-label-tertiary,#9aa0ab);stroke-width:1;stroke-dasharray:2 3;stroke-opacity:.55"><title>窗口重置点</title></line>`,
+    );
+    parts.push(
+      `<path d="M ${rx.toFixed(1)} ${PT} l 3.5 3.5 l -7 0 z" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.55"/>`,
+    );
   }
   const gridVals = [lo, (lo + hi) / 2, hi];
   for (const gv of gridVals) {
     const gy = yOf(gv);
-    parts.push(`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${(W - PR)}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;stroke-dasharray:3 3"/>`);
-    parts.push(`<text x="${(PL - 4)}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:${fs}px">${fmtPctTick(gv)}</text>`);
+    parts.push(
+      `<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W - PR}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;stroke-dasharray:3 3"/>`,
+    );
+    parts.push(
+      `<text x="${PL - 4}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:${fs}px">${fmtPctTick(gv)}</text>`,
+    );
   }
   if (lo <= 100 && 100 <= hi && hi - lo > 0.01) {
     const ly = yOf(100);
-    parts.push(`<line x1="${PL}" y1="${ly.toFixed(1)}" x2="${(W - PR)}" y2="${ly.toFixed(1)}" style="stroke:var(--dsw-alias-state-error-primary,#d64545);stroke-width:1;stroke-dasharray:4 3;stroke-opacity:.65"/>`);
-    parts.push(`<text x="${(W - PR - 2)}" y="${(ly - 3).toFixed(1)}" text-anchor="end" style="fill:var(--dsw-alias-state-error-primary,#d64545);font-size:${fs100}px">100%</text>`);
+    parts.push(
+      `<line x1="${PL}" y1="${ly.toFixed(1)}" x2="${W - PR}" y2="${ly.toFixed(1)}" style="stroke:var(--dsw-alias-state-error-primary,#d64545);stroke-width:1;stroke-dasharray:4 3;stroke-opacity:.65"/>`,
+    );
+    parts.push(
+      `<text x="${W - PR - 2}" y="${(ly - 3).toFixed(1)}" text-anchor="end" style="fill:var(--dsw-alias-state-error-primary,#d64545);font-size:${fs100}px">100%</text>`,
+    );
   }
   const line: Array<{ x: number; y: number }> = [];
   for (const s of samples) {
@@ -304,8 +334,12 @@ export function miniAreaSvg(opts: {
     const bottom = PT + plotH;
     const areaD = `${d} L ${lastPt.x.toFixed(1)} ${bottom} L ${first.x.toFixed(1)} ${bottom} Z`;
     parts.push(`<path d="${areaD}" style="fill:${color};fill-opacity:.13"/>`);
-    parts.push(`<path d="${d}" style="fill:none;stroke:${color};stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round"/>`);
-    parts.push(`<circle cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="2.6" style="fill:${color};stroke:var(--dsw-alias-bg-base,#fdfdfd);stroke-width:1.2"/>`);
+    parts.push(
+      `<path d="${d}" style="fill:none;stroke:${color};stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round"/>`,
+    );
+    parts.push(
+      `<circle cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="2.6" style="fill:${color};stroke:var(--dsw-alias-bg-base,#fdfdfd);stroke-width:1.2"/>`,
+    );
   }
   const labelPx = axisLabelWidthPx(spanMs, fs, dateOnly);
   const minGapMs = (labelPx * spanMs) / xw;
@@ -313,7 +347,9 @@ export function miniAreaSvg(opts: {
   for (let k = 0; k < ticks.length; k += 1) {
     const tx = xOf(ticks[k]);
     const anchor = k === 0 ? "start" : k === ticks.length - 1 ? "end" : "middle";
-    parts.push(`<text x="${tx.toFixed(1)}" y="${(H - 4)}" text-anchor="${anchor}" style="font-size:${fs}px">${fmtAxisTime(ticks[k], spanMs, dateOnly)}</text>`);
+    parts.push(
+      `<text x="${tx.toFixed(1)}" y="${H - 4}" text-anchor="${anchor}" style="font-size:${fs}px">${fmtAxisTime(ticks[k], spanMs, dateOnly)}</text>`,
+    );
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">${parts.join("")}</svg>`;
 }

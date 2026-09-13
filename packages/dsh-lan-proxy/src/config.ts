@@ -8,7 +8,12 @@
  * config-routes.ts / settings.ts / migrate.ts / apply.ts。
  */
 import z from "schemastery";
-import { DEFAULT_OPTIONS, DEFAULT_DEFLATE_POLICY, isLoopbackTarget, type DeflatePolicy } from "./proxy.ts";
+import {
+  DEFAULT_OPTIONS,
+  DEFAULT_DEFLATE_POLICY,
+  isLoopbackTarget,
+  type DeflatePolicy,
+} from "./proxy.ts";
 
 /**
  * WebSocket 压缩桥接默认路径白名单（dsh 0.1.2 起 api-gateway 拥有的 Remote 流
@@ -133,13 +138,15 @@ export const Config: z<LanProxyConfig> = z.object({
    * browser=false 全局关压缩；uaDeny 片段命中即降级为明文帧（对这类端省去
    * compress 字节流的解压负担，连接更稳）。热更新经 scope.watch 生效。
    */
-  wsDeflatePolicy: z.object({
-    browser: z.boolean().default(true),
-    uaDeny: z.array(z.string()).default([...(DEFAULT_DEFLATE_POLICY.uaDeny ?? [])]),
-  }).default({
-    browser: DEFAULT_DEFLATE_POLICY.browser ?? true,
-    uaDeny: [...(DEFAULT_DEFLATE_POLICY.uaDeny ?? [])],
-  }),
+  wsDeflatePolicy: z
+    .object({
+      browser: z.boolean().default(true),
+      uaDeny: z.array(z.string()).default([...(DEFAULT_DEFLATE_POLICY.uaDeny ?? [])]),
+    })
+    .default({
+      browser: DEFAULT_DEFLATE_POLICY.browser ?? true,
+      uaDeny: [...(DEFAULT_DEFLATE_POLICY.uaDeny ?? [])],
+    }),
   /**
    * HTTP 响应 gzip 压缩总开关（默认开；合并自 dsh-gzip）：对 /api、/plugins、
    * 静态资源等可压缩响应做应用层 gzip。安装失败仅 warn 降级，不阻断转发。
@@ -177,8 +184,11 @@ const FILE_CONFIG_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   wsDeflatePolicy: (v) => {
     if (typeof v !== "object" || v === null) return false;
     const rec = v as Record<string, unknown>;
-    return (rec.browser === undefined || typeof rec.browser === "boolean") &&
-      (rec.uaDeny === undefined || (Array.isArray(rec.uaDeny) && rec.uaDeny.every((s) => typeof s === "string")));
+    return (
+      (rec.browser === undefined || typeof rec.browser === "boolean") &&
+      (rec.uaDeny === undefined ||
+        (Array.isArray(rec.uaDeny) && rec.uaDeny.every((s) => typeof s === "string")))
+    );
   },
   httpCompressEnabled: (v) => typeof v === "boolean",
   httpCompressLevel: (v) => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 3,
@@ -197,7 +207,14 @@ export function sanitizeSettings(raw: unknown): Partial<LanProxyConfig> | null {
   for (const key of Object.keys(FILE_CONFIG_VALIDATORS)) {
     let value = src[key];
     // 旧档位（0..9）迁移：整数 4..9 视为「高」档；其余仍走校验器
-    if (key === "httpCompressLevel" && typeof value === "number" && Number.isInteger(value) && value > 3 && value <= 9) value = 3;
+    if (
+      key === "httpCompressLevel" &&
+      typeof value === "number" &&
+      Number.isInteger(value) &&
+      value > 3 &&
+      value <= 9
+    )
+      value = 3;
     if (value === undefined || value === null) continue;
     if (!FILE_CONFIG_VALIDATORS[key](value)) return null;
     if ((key === "tlsCertFile" || key === "tlsKeyFile") && value === "") continue;
@@ -221,7 +238,9 @@ const LEGACY_WSS_COMPRESS_PATHS: readonly string[] = ["/api/events.mux", "/api/e
  * 自定义，含废弃端点的自定义白名单同样保留）。导出供 resolve()、
  * migrateFileConfig() 与单测复用。
  */
-export function normalizeLegacyWsCompressPaths(paths: readonly string[] | undefined): readonly string[] | undefined {
+export function normalizeLegacyWsCompressPaths(
+  paths: readonly string[] | undefined,
+): readonly string[] | undefined {
   if (paths === undefined) return undefined;
   if (paths.length !== LEGACY_WSS_COMPRESS_PATHS.length) return paths;
   const rest = new Set(LEGACY_WSS_COMPRESS_PATHS);
@@ -277,7 +296,11 @@ export function validateSettings(raw: unknown): SettingInvalid | null {
     const value = src[key];
     // 与 sanitizeSettings 同口径：旧档位整数 4..9 先迁移再校验。
     const normalized =
-      key === "httpCompressLevel" && typeof value === "number" && Number.isInteger(value) && value > 3 && value <= 9
+      key === "httpCompressLevel" &&
+      typeof value === "number" &&
+      Number.isInteger(value) &&
+      value > 3 &&
+      value <= 9
         ? 3
         : value;
     if (normalized === undefined || normalized === null) continue;

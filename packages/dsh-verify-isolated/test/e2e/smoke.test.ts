@@ -55,7 +55,16 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -70,7 +79,12 @@ const SCRIPTS_DIR = join(SKILL_DIR, "scripts");
 const scriptFile = join(SCRIPTS_DIR, "verify-isolated.mjs");
 const driverFile = join(SCRIPTS_DIR, "browser-driver.mjs");
 const REF_DIR = join(SKILL_DIR, "references");
-const REF_FILES = ["script-contracts.md", "manual-setup.md", "browser-kernel.md", "viewport-geometry.md"];
+const REF_FILES = [
+  "script-contracts.md",
+  "manual-setup.md",
+  "browser-kernel.md",
+  "viewport-geometry.md",
+];
 
 // win32：.mjs 夹具无法直接 spawn（shebang 仅 POSIX 语义）——按产品 win32 设计
 // 路径提供 .cmd 入口（isWinScript → shell:true 回退），垫片转发到 node。
@@ -181,8 +195,11 @@ describe("5. browser-driver.mjs 存在 + --help 参数契约（不启动浏览�
     driverExists = existsSync(driverFile);
     help = execFileSync(process.execPath, [driverFile, "--help"], { encoding: "utf8" });
     noArgExitsNonZero = false;
-    try { execFileSync(process.execPath, [driverFile], { encoding: "utf8" }); }
-    catch { noArgExitsNonZero = true; }
+    try {
+      execFileSync(process.execPath, [driverFile], { encoding: "utf8" });
+    } catch {
+      noArgExitsNonZero = true;
+    }
   });
 
   it("browser-driver.mjs 随 skill 目录分发", () => {
@@ -194,7 +211,17 @@ describe("5. browser-driver.mjs 存在 + --help 参数契约（不启动浏览�
   });
 
   // 原脚本把命令契约写在数组循环内，故按命令展开为逐条可见用例。
-  const driverCommands = ["launch", "quit", "snapshot", "click", "eval", "fill", "wait", "screenshot", "console"];
+  const driverCommands = [
+    "launch",
+    "quit",
+    "snapshot",
+    "click",
+    "eval",
+    "fill",
+    "wait",
+    "screenshot",
+    "console",
+  ];
   it.each(driverCommands)("browser-driver --help 契约含命令 %s", (cmd) => {
     expect(help.includes(cmd)).toBeTruthy();
   });
@@ -230,18 +257,34 @@ describe("5b. 设备模拟（视口）：纯函数行为 + 参数错误退出码
 
     emu = await import(pathToFileURL(emulationFile).href);
     noFlagActive = emu.parseEmulationFlags(get({})).active;
-    allFlagsParsed = emu.parseEmulationFlags(get({ width: "375", height: "667", dpr: "2", mobile: "true" }));
+    allFlagsParsed = emu.parseEmulationFlags(
+      get({ width: "375", height: "667", dpr: "2", mobile: "true" }),
+    );
     widthOnly = emu.parseEmulationFlags(get({ width: "375" }));
     widthOnlyMetrics = emu.buildDeviceMetrics(widthOnly, { width: 800, height: 600 });
 
     // 参数校验先于连浏览器：state 指向不存在的实例时也应报参数错误而非环境错误
-    badViewportCode = 0; badViewportOut = "";
+    badViewportCode = 0;
+    badViewportOut = "";
     try {
-      badViewportOut = execFileSync(process.execPath, [
-        driverFile, "eval", "--state", join(tmpdir(), "nonexistent-browser.state"),
-        "--width", "0", "--expression", "1",
-      ], { encoding: "utf8" });
-    } catch (e) { badViewportCode = e.status ?? -1; badViewportOut = e.stdout ?? ""; }
+      badViewportOut = execFileSync(
+        process.execPath,
+        [
+          driverFile,
+          "eval",
+          "--state",
+          join(tmpdir(), "nonexistent-browser.state"),
+          "--width",
+          "0",
+          "--expression",
+          "1",
+        ],
+        { encoding: "utf8" },
+      );
+    } catch (e) {
+      badViewportCode = e.status ?? -1;
+      badViewportOut = e.stdout ?? "";
+    }
 
     // --mobile 取值语义：「出现即启用」会让 `--mobile=false` 得到与字面相反的结果
     mobileOmitted = emu.parseEmulationFlags(get({ mobile: "true" })).mobile;
@@ -274,23 +317,50 @@ describe("5b. 设备模拟（视口）：纯函数行为 + 参数错误退出码
   });
 
   it("四个设备 flag 全部解析", () => {
-    expect(allFlagsParsed).toEqual({ active: true, width: 375, height: 667, deviceScaleFactor: 2, mobile: true });
+    expect(allFlagsParsed).toEqual({
+      active: true,
+      width: 375,
+      height: 667,
+      deviceScaleFactor: 2,
+      mobile: true,
+    });
   });
 
   it("只给 --width：height 留空待补齐、dpr 默认 1", () => {
-    expect(widthOnly).toEqual({ active: true, width: 375, height: undefined, deviceScaleFactor: 1, mobile: false });
+    expect(widthOnly).toEqual({
+      active: true,
+      width: 375,
+      height: undefined,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
   });
 
   it("缺省维度按页面当前视口补齐（不把 undefined 传给 CDP）", () => {
-    expect(widthOnlyMetrics).toEqual({ width: 375, height: 600, deviceScaleFactor: 1, mobile: false });
+    expect(widthOnlyMetrics).toEqual({
+      width: 375,
+      height: 600,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
   });
 
   // 非法值必须抛错：否则 NaN/undefined 直达 CDP，用户只会看到难懂的协议报错。
   // 原脚本把 6 个非法值写在数组循环内，故逐个展开为可见用例。
   const badViewportFlags = [
-    { width: "0" }, { width: "abc" }, { height: "10001" }, { dpr: "0" }, { dpr: "abc" }, { dpr: "9" },
+    { width: "0" },
+    { width: "abc" },
+    { height: "10001" },
+    { dpr: "0" },
+    { dpr: "abc" },
+    { dpr: "9" },
   ];
-  it.each(badViewportFlags.map((bad) => ({ title: `非法参数应抛可操作错误: ${JSON.stringify(bad)}`, bad })))("$title", ({ bad }) => {
+  it.each(
+    badViewportFlags.map((bad) => ({
+      title: `非法参数应抛可操作错误: ${JSON.stringify(bad)}`,
+      bad,
+    })),
+  )("$title", ({ bad }) => {
     expect(() => emu.parseEmulationFlags(get(bad))).toThrow(/错误: --(width|height|dpr)/);
   });
 
@@ -332,7 +402,15 @@ describe("5b. 设备模拟（视口）：纯函数行为 + 参数错误退出码
 
   // 七条页面命令都必须走设备模拟路径：任何一条改回直连 connectPage，都会让
   // --width 等 flag 在该命令上静默失效（单命令回退的回归盲区）
-  const emulatedCommands = ["cmdSnapshot", "cmdClick", "cmdEval", "cmdFill", "cmdWait", "cmdScreenshot", "cmdConsole"];
+  const emulatedCommands = [
+    "cmdSnapshot",
+    "cmdClick",
+    "cmdEval",
+    "cmdFill",
+    "cmdWait",
+    "cmdScreenshot",
+    "cmdConsole",
+  ];
   it.each(emulatedCommands)("%s 接入设备模拟（页面命令不得绕过 wrapper 直连）", (cmd) => {
     const body = driverSrc.split(`async function ${cmd}(`)[1]?.split("\nasync function ")[0] ?? "";
     expect(body.includes("withPageEmulation(")).toBeTruthy();
@@ -512,7 +590,15 @@ describe("6b. verify-isolated.mjs 关键契约文本锚定", () => {
   });
 
   // 归一化语义由 6a resolvePkgArg 行为断言覆盖——内建进 verify-core，不依赖独立文件
-  const optionContracts = ["--dsh", "--port 0", "--browser", "--keep", "--no-build", "--evidence-dir", "--json"];
+  const optionContracts = [
+    "--dsh",
+    "--port 0",
+    "--browser",
+    "--keep",
+    "--no-build",
+    "--evidence-dir",
+    "--json",
+  ];
   it.each(optionContracts)("脚本含 %s 选项契约", (opt) => {
     expect(script.includes(opt)).toBeTruthy();
   });
@@ -532,9 +618,21 @@ describe("6b. verify-isolated.mjs 关键契约文本锚定", () => {
 
   // B6 verdict schema 字段集锚（从单字符串锚升级为字段序列 + 关键值）
   const verdictFields = [
-    "v:", "ok:", "dsh:", "dshHome:", "profile:", "port:", "pid:", "browser:",
-    "telemetry:", "ready:", "readyAt:", "evidenceDir:", "cleanup:",
-    "officialContract: false", "非官方契约，不承诺实际生效",
+    "v:",
+    "ok:",
+    "dsh:",
+    "dshHome:",
+    "profile:",
+    "port:",
+    "pid:",
+    "browser:",
+    "telemetry:",
+    "ready:",
+    "readyAt:",
+    "evidenceDir:",
+    "cleanup:",
+    "officialContract: false",
+    "非官方契约，不承诺实际生效",
   ];
   it.each(verdictFields)("verdict schema 含字段 %s", (field) => {
     expect(script.includes(field)).toBeTruthy();
@@ -602,8 +700,12 @@ describe("6c. 子进程退出码实测（不启动 dsh / 浏览器，走 --dsh �
     const run = (args) => {
       let code = 0;
       let out = "";
-      try { out = execFileSync(process.execPath, [scriptFile, ...args], { encoding: "utf8" }); }
-      catch (e) { code = e.status ?? -1; out = (e.stdout ?? "") + (e.stderr ?? ""); }
+      try {
+        out = execFileSync(process.execPath, [scriptFile, ...args], { encoding: "utf8" });
+      } catch (e) {
+        code = e.status ?? -1;
+        out = (e.stdout ?? "") + (e.stderr ?? "");
+      }
       return { code, out };
     };
     // --help：用法提示，退出码 0
@@ -613,7 +715,10 @@ describe("6c. 子进程退出码实测（不启动 dsh / 浏览器，走 --dsh �
     // --json --dsh 不存在：stdout **恰好 1 行** JSON（含 exitCode 2；锁定
     // stdout 只出 JSON 的约束，人类文案不得混入）
     j = run(["--json", "--dsh", "/nonexistent/dsh"]);
-    jLines = j.out.trim().split("\n").filter((l) => l.trim().length > 0);
+    jLines = j.out
+      .trim()
+      .split("\n")
+      .filter((l) => l.trim().length > 0);
     parsed = JSON.parse(jLines[0]);
     // 回归：`--` 之后的 --json 是插件参数，不得误开全局 jsonMode
     afterDash = run(["--dsh", "/nonexistent/dsh", "--", "--json"]);
@@ -681,7 +786,9 @@ describe("6d. 回归：dsh 就绪前退出 → 契约码 1 + 可操作诊断", (
     // package.json，不建则 ENOENT 走不到就绪阶段）；web 启动（--host 参数）时
     // 按 FAKE_DH_EXIT 立即退出（模拟就绪前崩溃）
     const fakeDshScript = join(tmpDir, "fake-dsh.mjs");
-    writeFileSync(fakeDshScript, `#!/usr/bin/env node
+    writeFileSync(
+      fakeDshScript,
+      `#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const args = process.argv.slice(2);
@@ -694,16 +801,23 @@ if (args[0] === "plugin" && args.includes("list")) {
   process.exit(0);
 }
 process.exit(Number(process.env.FAKE_DH_EXIT ?? "0"));
-`);
+`,
+    );
     chmodSync(fakeDshScript, 0o755);
     const fakeDsh = winCmdShimFor(fakeDshScript);
     const runWithFake = (exitCode) => {
-      let code = 0; let out = "";
+      let code = 0;
+      let out = "";
       try {
         out = execFileSync(process.execPath, [scriptFile, "--dsh", fakeDsh, "--port", "0"], {
-          encoding: "utf8", env: { ...process.env, FAKE_DH_EXIT: String(exitCode) }, timeout: 30000,
+          encoding: "utf8",
+          env: { ...process.env, FAKE_DH_EXIT: String(exitCode) },
+          timeout: 30000,
         });
-      } catch (e) { code = e.status ?? -1; out = (e.stdout ?? "") + (e.stderr ?? ""); }
+      } catch (e) {
+        code = e.status ?? -1;
+        out = (e.stdout ?? "") + (e.stderr ?? "");
+      }
       return { code, out };
     };
     // dsh exit 0（就绪前净退出）：不得静默假成功——契约码必须 1 且 stderr 有诊断
@@ -713,10 +827,19 @@ process.exit(Number(process.env.FAKE_DH_EXIT ?? "0"));
     // --json：错误路径 stdout 单 JSON（人类文案走 stderr，只解析 stdout）、exitCode=1
     let jout = "";
     try {
-      jout = execFileSync(process.execPath, [scriptFile, "--json", "--dsh", fakeDsh, "--port", "0"], {
-        encoding: "utf8", env: { ...process.env, FAKE_DH_EXIT: "0" }, timeout: 30000,
-      });
-    } catch (e) { jcode = e.status ?? -1; jout = e.stdout ?? ""; } // stdout 单 JSON；人类文案在 stderr 不并入
+      jout = execFileSync(
+        process.execPath,
+        [scriptFile, "--json", "--dsh", fakeDsh, "--port", "0"],
+        {
+          encoding: "utf8",
+          env: { ...process.env, FAKE_DH_EXIT: "0" },
+          timeout: 30000,
+        },
+      );
+    } catch (e) {
+      jcode = e.status ?? -1;
+      jout = e.stdout ?? "";
+    } // stdout 单 JSON；人类文案在 stderr 不并入
     jparsed = JSON.parse(jout.trim().split("\n").filter(Boolean).at(-1));
   }, 120_000);
 
@@ -844,10 +967,20 @@ describe("7. SKILL.md 主线 + references/ 支线（渐进式披露：内容随�
 
   // 防照抄锁：resizeTo 只作为「为何不用」的事实出现，示例代码块里不得再出现
   it("references/viewport-geometry.md 示例代码块不出现 resizeTo", () => {
-    expect(vpRef.split("```bash").slice(1).every((b) => !b.split("```")[0].includes("resizeTo"))).toBeTruthy();
+    expect(
+      vpRef
+        .split("```bash")
+        .slice(1)
+        .every((b) => !b.split("```")[0].includes("resizeTo")),
+    ).toBeTruthy();
   });
 
-  const manualAnchors = ["DSH_HOME=$(mktemp -d)", "WELCOME_NOTICE_VERSION", "DSH_WEB_URL", "browser-driver.mjs"];
+  const manualAnchors = [
+    "DSH_HOME=$(mktemp -d)",
+    "WELCOME_NOTICE_VERSION",
+    "DSH_WEB_URL",
+    "browser-driver.mjs",
+  ];
   it.each(manualAnchors)("references/manual-setup.md 含手动步骤锚点 %s", (anchor) => {
     expect(manualRef.includes(anchor)).toBeTruthy();
   });
@@ -924,9 +1057,19 @@ describe("9a. 白名单版本化 + 模式全集存在", () => {
   });
 
   const whitelistPatterns = [
-    "profiles/**", "*.json", "*.jsonl", "*.log", ".credentials.yaml", "settings.yaml",
-    "browser.state", "browser-profile/**", "evidence/**", "audit/**",
-    "storages/**", "dsh.log", "verdict.json",
+    "profiles/**",
+    "*.json",
+    "*.jsonl",
+    "*.log",
+    ".credentials.yaml",
+    "settings.yaml",
+    "browser.state",
+    "browser-profile/**",
+    "evidence/**",
+    "audit/**",
+    "storages/**",
+    "dsh.log",
+    "verdict.json",
   ];
   it.each(whitelistPatterns)("预置白名单含 %s", (p) => {
     expect(audit.WHITELIST.includes(p)).toBeTruthy();
@@ -982,20 +1125,36 @@ describe("9c. --audit 子进程退出码实测", () => {
     const run = (args) => {
       let code = 0;
       let out = "";
-      try { out = execFileSync(process.execPath, [scriptFile, ...args], { encoding: "utf8" }); }
-      catch (e) { code = e.status ?? -1; out = (e.stdout ?? "") + (e.stderr ?? ""); }
+      try {
+        out = execFileSync(process.execPath, [scriptFile, ...args], { encoding: "utf8" });
+      } catch (e) {
+        code = e.status ?? -1;
+        out = (e.stdout ?? "") + (e.stderr ?? "");
+      }
       return { code, out };
     };
     h2 = run(["--audit", "--help"]);
-    badExtra = run(["--audit", "--audit-extra-dirs", join(tmpdir(), "dsh-verify-no-such-audit-dir-xyz")]);
+    badExtra = run([
+      "--audit",
+      "--audit-extra-dirs",
+      join(tmpdir(), "dsh-verify-no-such-audit-dir-xyz"),
+    ]);
     // M4：--audit-extra-dirs 传文件 → 参数错误（exit 2，不得静默漏审）
     fileAsExtra = mkdtempSync(join(tmpdir(), "dsh-verify-extra-file-"));
     plainFile = join(fileAsExtra, "afile");
     writeFileSync(plainFile, "x");
     badFile = run(["--audit", "--audit-extra-dirs", plainFile]);
     // t0 前错误（extra-dir 不存在）--json 单 JSON 恒带 audit:null（与 verdict 对齐）
-    m6 = run(["--json", "--audit", "--audit-extra-dirs", join(tmpdir(), "dsh-verify-no-such-audit-dir-m6")]);
-    m6Lines = m6.out.trim().split("\n").filter((l) => l.trim().length > 0);
+    m6 = run([
+      "--json",
+      "--audit",
+      "--audit-extra-dirs",
+      join(tmpdir(), "dsh-verify-no-such-audit-dir-m6"),
+    ]);
+    m6Lines = m6.out
+      .trim()
+      .split("\n")
+      .filter((l) => l.trim().length > 0);
     m6Parsed = JSON.parse(m6Lines[0]);
   });
 
@@ -1059,7 +1218,9 @@ describe("9g. --audit 端到端回归（假 dsh 建模启动写面）", () => {
     const audit = await import(pathToFileURL(join(SCRIPTS_DIR, "lib", "audit.mjs")).href);
     tmp2 = mkdtempSync(join(tmpdir(), "dsh-verify-audit-e2e-"));
     const fakeDsh = join(tmp2, "fake-dsh-audit.mjs");
-    writeFileSync(fakeDsh, `#!/usr/bin/env node
+    writeFileSync(
+      fakeDsh,
+      `#!/usr/bin/env node
 import { mkdirSync, writeFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import http from "node:http";
@@ -1101,17 +1262,27 @@ if (args.includes("--host")) {
   await new Promise(() => {});
 }
 process.exit(1);
-`);
+`,
+    );
     chmodSync(fakeDsh, 0o755);
     const fakeDshEntry = winCmdShimFor(fakeDsh);
     const runAuditE2E = (extraEnv) => {
       let code = 0;
       let out = "";
       try {
-        out = execFileSync(process.execPath, [scriptFile, "--audit", "--keep", "--dsh", fakeDshEntry, "--port", "0"], {
-          encoding: "utf8", env: { ...process.env, ...extraEnv }, timeout: 60000,
-        });
-      } catch (e) { code = e.status ?? -1; out = (e.stdout ?? "") + (e.stderr ?? ""); }
+        out = execFileSync(
+          process.execPath,
+          [scriptFile, "--audit", "--keep", "--dsh", fakeDshEntry, "--port", "0"],
+          {
+            encoding: "utf8",
+            env: { ...process.env, ...extraEnv },
+            timeout: 60000,
+          },
+        );
+      } catch (e) {
+        code = e.status ?? -1;
+        out = (e.stdout ?? "") + (e.stderr ?? "");
+      }
       const home = /DSH_HOME=([^ ]+)/.exec(out)?.[1] ?? null;
       return { code, out, home };
     };
@@ -1193,7 +1364,10 @@ describe("9d. mkdtemp fixture 正反例", () => {
     const audit = await import(pathToFileURL(join(SCRIPTS_DIR, "lib", "audit.mjs")).href);
     tmp = mkdtempSync(join(tmpdir(), "dsh-verify-audit-"));
     outside = mkdtempSync(join(tmpdir(), "dsh-verify-audit-out-"));
-    const w = (p, s) => { mkdirSync(join(tmp, dirname(p)), { recursive: true }); writeFileSync(join(tmp, p), s); };
+    const w = (p, s) => {
+      mkdirSync(join(tmp, dirname(p)), { recursive: true });
+      writeFileSync(join(tmp, p), s);
+    };
     const wl = audit.WHITELIST;
 
     // 正例1：白名单外新增 → 可疑（新增）
@@ -1202,7 +1376,12 @@ describe("9d. mkdtemp fixture 正反例", () => {
       w("mystery.bin", "x");
       const t1 = audit.scanSnapshot(tmp);
       const r = audit.runAudit({ t0, t1, isolatedRoot: tmp });
-      p1 = { count: r.count, path: r.suspicious[0].path, type: r.suspicious[0].type, conclusion: r.conclusion };
+      p1 = {
+        count: r.count,
+        path: r.suspicious[0].path,
+        type: r.suspicious[0].type,
+        conclusion: r.conclusion,
+      };
     }
 
     // 正例2：越界 symlink——新增且 resolve 后在扫描根外（顶层 + 白名单内
@@ -1217,7 +1396,9 @@ describe("9d. mkdtemp fixture 正反例", () => {
       p2 = {
         count: r.count,
         evilLink: r.suspicious.some((s) => s.path === "evil-link" && s.type === "越界 symlink"),
-        nested: r.suspicious.some((s) => s.path === "profiles/verify_x/evil2" && s.type === "越界 symlink"),
+        nested: r.suspicious.some(
+          (s) => s.path === "profiles/verify_x/evil2" && s.type === "越界 symlink",
+        ),
         dupNew: r.suspicious.some((s) => s.path === "evil-link" && s.type === "新增"),
       };
     }
@@ -1229,7 +1410,10 @@ describe("9d. mkdtemp fixture 正反例", () => {
       rmSync(join(tmp, "doomed.bin"));
       const t1 = audit.scanSnapshot(tmp);
       const r = audit.runAudit({ t0, t1, isolatedRoot: tmp });
-      p3 = { count: r.count, deleted: r.suspicious.some((s) => s.path === "doomed.bin" && s.type === "删除") };
+      p3 = {
+        count: r.count,
+        deleted: r.suspicious.some((s) => s.path === "doomed.bin" && s.type === "删除"),
+      };
     }
 
     // 正例4：白名单外修改（size 变化）→ 可疑（修改）
@@ -1239,7 +1423,10 @@ describe("9d. mkdtemp fixture 正反例", () => {
       w("mut.bin", "bbbb");
       const t1 = audit.scanSnapshot(tmp);
       const r = audit.runAudit({ t0, t1, isolatedRoot: tmp });
-      p4 = { count: r.count, modified: r.suspicious.some((s) => s.path === "mut.bin" && s.type === "修改") };
+      p4 = {
+        count: r.count,
+        modified: r.suspicious.some((s) => s.path === "mut.bin" && s.type === "修改"),
+      };
     }
 
     // 同 size 同 mtimeMs 快速重写经 ctimeMs 检出——直接构造
@@ -1285,7 +1472,11 @@ describe("9d. mkdtemp fixture 正反例", () => {
     // 反例2：t0 已存在且目标未变的外部 symlink（link: 挂载点）不报
     {
       mkdirSync(join(tmp, "profiles", "verify_x", "node_modules"), { recursive: true });
-      symlinkSync(join(outside, "pkg"), join(tmp, "profiles", "verify_x", "node_modules", "pkg"), SYMLINK_TYPE);
+      symlinkSync(
+        join(outside, "pkg"),
+        join(tmp, "profiles", "verify_x", "node_modules", "pkg"),
+        SYMLINK_TYPE,
+      );
       const t0 = audit.scanSnapshot(tmp);
       const t1 = audit.scanSnapshot(tmp);
       const r = audit.runAudit({ t0, t1, isolatedRoot: tmp });
@@ -1304,24 +1495,41 @@ describe("9d. mkdtemp fixture 正反例", () => {
     {
       w("browser-profile/deep/file", "y");
       const s = audit.scanSnapshot(tmp, { skipDeep: audit.SKIP_DEEP });
-      e9 = { hasDir: s.entries.has("browser-profile"), hasDeepFile: s.entries.has("browser-profile/deep/file") };
+      e9 = {
+        hasDir: s.entries.has("browser-profile"),
+        hasDeepFile: s.entries.has("browser-profile/deep/file"),
+      };
     }
 
     // 9f. dsh 启动写面回归（纯函数层）：t0 含官方 bundle link（指向
     // 扫描根外、t0 已存在未变 → 合法挂载点）+ .credentials.yaml + storages/**，
     // 干净运行 pass；运行期新增（白名单外）仍报——「就绪后运行期写面审计」语义
     {
-      mkdirSync(join(tmp, "profiles", "verify_x", "node_modules", "@deepseek-ai"), { recursive: true });
-      symlinkSync(join(outside, "dsh-install-lib"), join(tmp, "profiles", "verify_x", "node_modules", "@deepseek-ai", "dsh-base"), SYMLINK_TYPE);
+      mkdirSync(join(tmp, "profiles", "verify_x", "node_modules", "@deepseek-ai"), {
+        recursive: true,
+      });
+      symlinkSync(
+        join(outside, "dsh-install-lib"),
+        join(tmp, "profiles", "verify_x", "node_modules", "@deepseek-ai", "dsh-base"),
+        SYMLINK_TYPE,
+      );
       w(".credentials.yaml", "token: x\n");
       w("storages/workspace.json", "{}");
       const t0 = audit.scanSnapshot(tmp, { skipDeep: audit.SKIP_DEEP });
       // 干净运行：t1 无变化 → pass（启动写面在基线内，483 条 bundle link 场景建模）
-      const r1 = audit.runAudit({ t0, t1: audit.scanSnapshot(tmp, { skipDeep: audit.SKIP_DEEP }), isolatedRoot: tmp });
+      const r1 = audit.runAudit({
+        t0,
+        t1: audit.scanSnapshot(tmp, { skipDeep: audit.SKIP_DEEP }),
+        isolatedRoot: tmp,
+      });
       f1 = { count: r1.count, conclusion: r1.conclusion };
       // 运行期新增（白名单外）→ 仍报
       w("runtime-mystery.bin", "x");
-      const r2 = audit.runAudit({ t0, t1: audit.scanSnapshot(tmp, { skipDeep: audit.SKIP_DEEP }), isolatedRoot: tmp });
+      const r2 = audit.runAudit({
+        t0,
+        t1: audit.scanSnapshot(tmp, { skipDeep: audit.SKIP_DEEP }),
+        isolatedRoot: tmp,
+      });
       f2 = { count: r2.count, path: r2.suspicious[0].path, type: r2.suspicious[0].type };
     }
   });
@@ -1485,7 +1693,9 @@ describe("10a. 须知版本提取", () => {
   });
 
   it("从客户端产物提取须知版本", () => {
-    expect(ob.extractWelcomeNoticeVersion('const WELCOME_NOTICE_VERSION = "2026-08-13.1";')).toBe("2026-08-13.1");
+    expect(ob.extractWelcomeNoticeVersion('const WELCOME_NOTICE_VERSION = "2026-08-13.1";')).toBe(
+      "2026-08-13.1",
+    );
   });
 
   it("无版本常量返回 null（降级不抛）", () => {
@@ -1507,7 +1717,9 @@ describe("10b. settings 文档形状 + 注入防护", () => {
   });
 
   it("settings 文档形状", () => {
-    expect(ob.welcomeSettingsDocument("2026-08-13.1")).toBe("ui-onboarding:\n  welcomeNoticeVersion: 2026-08-13.1\n");
+    expect(ob.welcomeSettingsDocument("2026-08-13.1")).toBe(
+      "ui-onboarding:\n  welcomeNoticeVersion: 2026-08-13.1\n",
+    );
   });
 
   it("版本含换行被拒绝", () => {
@@ -1533,13 +1745,27 @@ describe("10c. dsh 安装根与产物定位（mkdtemp fixture 建模 npm 提升�
     fix = mkdtempSync(join(tmpdir(), "dsh-verify-onboarding-"));
     fixBare = mkdtempSync(join(tmpdir(), "dsh-verify-onboarding-bare-"));
     dshRoot = join(fix, "node_modules", "@deepseek-ai", "dsh");
-    const clientDir = join(dshRoot, "node_modules", "@deepseek-ai", "dsh-client-ui-settings-models");
+    const clientDir = join(
+      dshRoot,
+      "node_modules",
+      "@deepseek-ai",
+      "dsh-client-ui-settings-models",
+    );
     mkdirSync(join(dshRoot, "lib"), { recursive: true });
     mkdirSync(join(clientDir, "lib"), { recursive: true });
-    writeFileSync(join(dshRoot, "package.json"), JSON.stringify({ name: "@deepseek-ai/dsh", version: "0.0.0" }));
+    writeFileSync(
+      join(dshRoot, "package.json"),
+      JSON.stringify({ name: "@deepseek-ai/dsh", version: "0.0.0" }),
+    );
     writeFileSync(join(dshRoot, "lib", "bin.js"), "");
-    writeFileSync(join(clientDir, "package.json"), JSON.stringify({ name: "@deepseek-ai/dsh-client-ui-settings-models" }));
-    writeFileSync(join(clientDir, "lib", "client.js"), 'const WELCOME_NOTICE_VERSION = "2099-01-01.1";');
+    writeFileSync(
+      join(clientDir, "package.json"),
+      JSON.stringify({ name: "@deepseek-ai/dsh-client-ui-settings-models" }),
+    );
+    writeFileSync(
+      join(clientDir, "lib", "client.js"),
+      'const WELCOME_NOTICE_VERSION = "2099-01-01.1";',
+    );
     bin = join(dshRoot, "lib", "bin.js");
     dshRootResolved = ob.dshRootOf(bin);
     welcomeClientFile = ob.welcomeClientFileOf(dshRoot);
@@ -1549,7 +1775,10 @@ describe("10c. dsh 安装根与产物定位（mkdtemp fixture 建模 npm 提升�
     // 的路径缓存挡住，测不出真实的「依赖缺失」路径
     rootBare = join(fixBare, "node_modules", "@deepseek-ai", "dsh");
     mkdirSync(join(rootBare, "lib"), { recursive: true });
-    writeFileSync(join(rootBare, "package.json"), JSON.stringify({ name: "@deepseek-ai/dsh", version: "0.0.0" }));
+    writeFileSync(
+      join(rootBare, "package.json"),
+      JSON.stringify({ name: "@deepseek-ai/dsh", version: "0.0.0" }),
+    );
     writeFileSync(join(rootBare, "lib", "bin.js"), "");
     bareClientFile = ob.welcomeClientFileOf(rootBare);
     bareVersion = ob.findWelcomeNoticeVersion(join(rootBare, "lib", "bin.js"));
@@ -1565,7 +1794,16 @@ describe("10c. dsh 安装根与产物定位（mkdtemp fixture 建模 npm 提升�
   });
 
   it("welcomeClientFileOf 经 Node 解析算法定位产物", () => {
-    expect(welcomeClientFile).toBe(join(dshRoot, "node_modules", "@deepseek-ai", "dsh-client-ui-settings-models", "lib", "client.js"));
+    expect(welcomeClientFile).toBe(
+      join(
+        dshRoot,
+        "node_modules",
+        "@deepseek-ai",
+        "dsh-client-ui-settings-models",
+        "lib",
+        "client.js",
+      ),
+    );
   });
 
   it("端到端解析版本", () => {
@@ -1622,7 +1860,9 @@ describe("10d. 弹窗探针表达式", () => {
   });
 
   it.each(probeCases)("$title：禁止点击的分支先于 target.click()（防假开关回归）", ({ key }) => {
-    expect(probes[key].indexOf("if (!allowClick) return") < probes[key].indexOf("target.click()")).toBeTruthy();
+    expect(
+      probes[key].indexOf("if (!allowClick) return") < probes[key].indexOf("target.click()"),
+    ).toBeTruthy();
   });
 
   it.each(probeCases)("$title：探针以应用根 inert 为阻断判据", ({ key }) => {
@@ -1647,11 +1887,15 @@ describe("10e. 令牌脱敏", () => {
   });
 
   it("回显去令牌", () => {
-    expect(ob.redactToken("http://127.0.0.1:41915/?token=abc123")).toBe("http://127.0.0.1:41915/?token=***");
+    expect(ob.redactToken("http://127.0.0.1:41915/?token=abc123")).toBe(
+      "http://127.0.0.1:41915/?token=***",
+    );
   });
 
   it("多参数下只替换令牌值", () => {
-    expect(ob.redactToken("http://127.0.0.1:1/a?x=1&token=abc&y=2")).toBe("http://127.0.0.1:1/a?x=1&token=***&y=2");
+    expect(ob.redactToken("http://127.0.0.1:1/a?x=1&token=abc&y=2")).toBe(
+      "http://127.0.0.1:1/a?x=1&token=***&y=2",
+    );
   });
 
   it("非字符串原样返回", () => {
@@ -1668,7 +1912,9 @@ describe("10f. 访问 URL 解析（readDshUrl 行完整性）", () => {
   });
 
   it("readDshUrl 取带令牌 URL", () => {
-    expect(core2.readDshUrl("dsh web: http://127.0.0.1:41915/?token=abc\n")).toBe("http://127.0.0.1:41915/?token=abc");
+    expect(core2.readDshUrl("dsh web: http://127.0.0.1:41915/?token=abc\n")).toBe(
+      "http://127.0.0.1:41915/?token=abc",
+    );
   });
 
   it("readDshUrl 拒绝截断行（半个令牌表现为 401，比缺参数更难排查）", () => {
@@ -1690,7 +1936,12 @@ describe("10g. verify-isolated 首启弹窗契约锚定", () => {
     viHelp = execFileSync(process.execPath, [scriptFile, "--help"], { encoding: "utf8" });
   });
 
-  const onboardingContracts = ["--no-skip-onboarding", "presetWelcomeNotice", "settings.yaml", "首启弹窗预置"];
+  const onboardingContracts = [
+    "--no-skip-onboarding",
+    "presetWelcomeNotice",
+    "settings.yaml",
+    "首启弹窗预置",
+  ];
   it.each(onboardingContracts)("verify-isolated 含首启弹窗契约 %s", (opt) => {
     expect(vScript.includes(opt)).toBeTruthy();
   });
@@ -1724,7 +1975,12 @@ describe("10h. browser-driver 首启弹窗契约锚定", () => {
     drvHelp = execFileSync(process.execPath, [driverFile, "--help"], { encoding: "utf8" });
   });
 
-  const driverOnboardingContracts = ["--no-auto-dismiss", "--overlay-wait", "dshWebUrl", "onboardingBlocked"];
+  const driverOnboardingContracts = [
+    "--no-auto-dismiss",
+    "--overlay-wait",
+    "dshWebUrl",
+    "onboardingBlocked",
+  ];
   it.each(driverOnboardingContracts)("browser-driver 含 %s 契约", (opt) => {
     expect(dScript.includes(opt)).toBeTruthy();
   });
@@ -1737,7 +1993,8 @@ describe("10h. browser-driver 首启弹窗契约锚定", () => {
 
   // console 走长连接收事件（短连接的 goto 会丢事件），导航与收尾内联，但收尾必须在
   it("cmdConsole 内联接入导航收尾（弹窗跳过不得绕过）", () => {
-    const body = dScript.split("async function cmdConsole(")[1]?.split("\nasync function ")[0] ?? "";
+    const body =
+      dScript.split("async function cmdConsole(")[1]?.split("\nasync function ")[0] ?? "";
     expect(body.includes("settleOverlays(")).toBeTruthy();
   });
 
@@ -1769,7 +2026,14 @@ describe("10i. 文档同步（跳过与令牌指导锚点）", () => {
     readmeEn = readFileSync(join(PKG_ROOT, "README.en.md"), "utf8");
   });
 
-  const skillAnchors = ["--url state", "首启弹窗", "401", "token=***", "--no-skip-onboarding", "inert"];
+  const skillAnchors = [
+    "--url state",
+    "首启弹窗",
+    "401",
+    "token=***",
+    "--no-skip-onboarding",
+    "inert",
+  ];
   it.each(skillAnchors)("SKILL.md 含跳过/鉴权指导锚点 %s", (anchor) => {
     expect(skillRaw.includes(anchor)).toBeTruthy();
   });
@@ -1784,4 +2048,3 @@ describe("10i. 文档同步（跳过与令牌指导锚点）", () => {
     expect(readmeEn.includes(anchor)).toBeTruthy();
   });
 });
-

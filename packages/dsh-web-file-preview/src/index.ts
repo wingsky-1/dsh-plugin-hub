@@ -25,7 +25,12 @@ export function apply(): void {}
 // issue #698：「打开文件」→ 官方右侧栏预览的重定向纯逻辑（DOM-free，客户端装配经
 // src/client/present-open-redirect.ts 引用，此处透出供 smoke/单测直测）。
 export {
-  PRESENT_OPEN_PATH, PENDING_TTL_MS, isOpenRequest, sessionIdOf,
-  fileAddressFor, looksLikeFilePath, usablePending,
+  PRESENT_OPEN_PATH,
+  PENDING_TTL_MS,
+  isOpenRequest,
+  sessionIdOf,
+  fileAddressFor,
+  looksLikeFilePath,
+  usablePending,
 } from "./present-open.ts";
 export type { PendingEntry } from "./present-open.ts";

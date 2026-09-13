@@ -16,7 +16,10 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { ROUTES } from "../../lib/index.js";
-import { assertClientProductContract, assertClientSourceContract } from "../../../../test/smoke-lib.ts";
+import {
+  assertClientProductContract,
+  assertClientSourceContract,
+} from "../../../../test/smoke-lib.ts";
 
 const pkgDir = fileURLToPath(new URL("../../", import.meta.url));
 

@@ -15,13 +15,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-const {
-  McpManager,
-  McpStore,
-  makeResolveRoot,
-  normalizeServer,
-  MIDDLEWARE_GLOBAL_ROOT,
-} = await import("../../src/index.ts");
+const { McpManager, McpStore, makeResolveRoot, normalizeServer, MIDDLEWARE_GLOBAL_ROOT } =
+  await import("../../src/index.ts");
 
 describe("makeResolveRoot 基本路由（迁移自 apply-runtime.ts，行为不变）", () => {
   let dir;
@@ -65,7 +60,10 @@ describe("B3：all 模式空 cwd 回落 @global 含 runtime 源", () => {
     const manager = new McpManager({ logger: { warn: () => {}, info: () => {} } }, store);
     manager.middlewareMode = "all";
     // codegraph 等 runtime 注入服务器不落 store，只进 runtimeRegistry（#413）。
-    manager.runtimeRegistry.set("cg", normalizeServer({ name: "cg", transport: "stdio", command: "dsh-noop-cmd" }));
+    manager.runtimeRegistry.set(
+      "cg",
+      normalizeServer({ name: "cg", transport: "stdio", command: "dsh-noop-cmd" }),
+    );
     resolveRoot = makeResolveRoot(manager);
   });
 

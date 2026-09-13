@@ -35,8 +35,6 @@ import {
 } from "./routes-controllers.ts";
 import { queryParam } from "./routes-helpers.ts";
 
-
-
 // ------------------------------------------------------------ HTTP 路由
 
 /** 路由路径清单（与客户端一致）。 */
@@ -108,7 +106,10 @@ export const SSE_PING_FRAME = sseData({ type: "ping" });
  * 向全部 SSE 连接写出一帧（#515 起收口到共享 hub；本函数保留兼容导出，
  * 接受 hub 或旧 Set 形态）。判死/背压由 hub writeFrame 统一处理。
  */
-export function broadcastFrame(connections: SseHub | Set<ServerResponse> | undefined, frame: string): void {
+export function broadcastFrame(
+  connections: SseHub | Set<ServerResponse> | undefined,
+  frame: string,
+): void {
   if (!connections) return;
   if (typeof (connections as SseHub).broadcast === "function") {
     (connections as SseHub).broadcast(frame);
@@ -135,7 +136,10 @@ export function broadcastFrame(connections: SseHub | Set<ServerResponse> | undef
  * 心跳——移动端切后台系统冻结 JS 并静默掐断 TCP，两端均收不到 FIN/RST，
  * 无心跳则客户端 watchdog 无失活信号可依。
  */
-export function makeEventsRoute(manager: RoutesManager, options?: { heartbeatMs?: number; maxConnections?: number }): WebRoute {
+export function makeEventsRoute(
+  manager: RoutesManager,
+  options?: { heartbeatMs?: number; maxConnections?: number },
+): WebRoute {
   return {
     kind: "exact",
     path: ROUTES.events,

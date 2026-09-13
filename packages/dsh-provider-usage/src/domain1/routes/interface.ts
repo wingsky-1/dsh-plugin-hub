@@ -13,5 +13,11 @@ export type { StatsRoutesContext } from "./stats.ts";
 
 // ------------------------------------------------------------------ 适配器管理路由（adapters.ts）
 
-export { handleAdapters, handleSelect, handleInspect, handleAdd, createAdapterRoutes } from "./adapters.ts";
+export {
+  handleAdapters,
+  handleSelect,
+  handleInspect,
+  handleAdd,
+  createAdapterRoutes,
+} from "./adapters.ts";
 export type { AdapterRoutesContext } from "./adapters.ts";

@@ -40,7 +40,15 @@ export function diffToken(aggV: number | null, dirV: number | null): number | nu
 
 /** 单元格空壳（桶缺位时补建）。 */
 export function emptyCell(): TrendCell {
-  return { input: null, output: null, cacheRead: null, cacheWrite: null, calls: 0, turns: 0, toolCalls: 0 };
+  return {
+    input: null,
+    output: null,
+    cacheRead: null,
+    cacheWrite: null,
+    calls: 0,
+    turns: 0,
+    toolCalls: 0,
+  };
 }
 
 /** 空聚合行（压实折算起点；字段与 mergeCell 消费的 agg 行同构）。 */
@@ -96,7 +104,10 @@ export function emptyHourRow(day: string, hour: number): TrendHourRow {
 }
 
 /** 明细行并入聚合/目录/小时汇总行（三者字段同构，同函数复用；null-aware 求和）。 */
-export function addDetailTo(agg: TrendAggRow | TrendDirRow | TrendHourRow, row: TrendDetailRow): void {
+export function addDetailTo(
+  agg: TrendAggRow | TrendDirRow | TrendHourRow,
+  row: TrendDetailRow,
+): void {
   agg.calls += 1;
   agg.input = sumToken(agg.input, row.input);
   agg.output = sumToken(agg.output, row.output);
@@ -105,7 +116,11 @@ export function addDetailTo(agg: TrendAggRow | TrendDirRow | TrendHourRow, row: 
 }
 
 /** 计数行并入聚合/目录/小时汇总行（同上，同函数复用）。 */
-export function addCounterTo(agg: TrendAggRow | TrendDirRow | TrendHourRow, turns: number, toolCalls: number): void {
+export function addCounterTo(
+  agg: TrendAggRow | TrendDirRow | TrendHourRow,
+  turns: number,
+  toolCalls: number,
+): void {
   agg.turns += turns;
   agg.toolCalls += toolCalls;
 }

@@ -148,5 +148,7 @@ export function bottomAnchorEdge(containerBottom, seatTop, docked) {
  * @returns {number} 面板 top。
  */
 export function panelTopForAnchor(anchor, pillTop, pillBottom, panelHeight, gap) {
-  return anchor === "bottom" ? Math.max(6, pillTop - panelHeight - gap) : Math.max(6, pillBottom + gap);
+  return anchor === "bottom"
+    ? Math.max(6, pillTop - panelHeight - gap)
+    : Math.max(6, pillBottom + gap);
 }

@@ -27,11 +27,12 @@ export function renderPill(state: McpState): void {
   if (state.floatPill === undefined) return;
   const ok = state.counts.connected ?? 0;
   const bad = (state.counts.failed ?? 0) + (state.counts.reconnecting ?? 0);
-  const dot = bad > 0
-    ? "var(--dsw-alias-state-error-primary,#e0483e)"
-    : ok > 0
-      ? "var(--dsw-alias-state-success-primary,#0f9d6e)"
-      : "var(--dsw-alias-label-tertiary,#9aa1ad)";
+  const dot =
+    bad > 0
+      ? "var(--dsw-alias-state-error-primary,#e0483e)"
+      : ok > 0
+        ? "var(--dsw-alias-state-success-primary,#0f9d6e)"
+        : "var(--dsw-alias-label-tertiary,#9aa1ad)";
   const label = state.servers.length > 0 ? `MCP ${ok}/${state.servers.length}` : "MCP";
   state.floatPill.innerHTML = `<span class="dm-dot" style="background:${dot}"></span><span>${label}</span>`;
 }
@@ -42,7 +43,13 @@ export function renderPill(state: McpState): void {
  * 点击调宿主 API 持久化 + 刷新。project 模式全局组不渲染 checkbox
  * （runtime 注册的全局工具在 project 模式走 supervisor 不经中间层，无法禁用）。
  */
-function toolCheckbox(server: any, tool: string, disabled: boolean, state: McpState, actions: UiActions): any {
+function toolCheckbox(
+  server: any,
+  tool: string,
+  disabled: boolean,
+  state: McpState,
+  actions: UiActions,
+): any {
   const label = el("label", { class: "dm-float-tool" });
   const input = el("input", {
     type: "checkbox",
@@ -66,7 +73,8 @@ function toolCheckbox(server: any, tool: string, disabled: boolean, state: McpSt
         tool,
         disabled: input.checked,
       }),
-    }).then(() => actions.refresh())
+    })
+      .then(() => actions.refresh())
       .catch((error: any) => {
         input.checked = !input.checked;
         console.warn("[dsh-mcp-manager] tool-disable failed:", error);
@@ -79,7 +87,12 @@ function toolCheckbox(server: any, tool: string, disabled: boolean, state: McpSt
 
 /** 折叠式工具清单（方案 2b）：summary 显示「工具（N）」，展开后 checkbox 列表。
  * openTools：C8 折叠态恢复集合（渲染前由 renderFloatPanel 收集，按 server 名）。 */
-function renderFloatTools(server: any, state: McpState, actions: UiActions, openTools: Set<string>): any {
+function renderFloatTools(
+  server: any,
+  state: McpState,
+  actions: UiActions,
+  openTools: Set<string>,
+): any {
   const tools = Array.isArray(server.tools) ? server.tools : [];
   const disabledSet = new Set(Array.isArray(server.disabledTools) ? server.disabledTools : []);
   const details = el("details", { class: "dm-float-tools", dataset: { dmServer: server.name } });
@@ -94,12 +107,22 @@ function renderFloatTools(server: any, state: McpState, actions: UiActions, open
 }
 
 /** 浮窗面板里的一行服务器。 */
-function renderFloatRow(server: any, state: McpState, actions: UiActions, opts: { tools: boolean; openTools?: Set<string> } = { tools: true }): any {
+function renderFloatRow(
+  server: any,
+  state: McpState,
+  actions: UiActions,
+  opts: { tools: boolean; openTools?: Set<string> } = { tools: true },
+): any {
   const row = el("div", { class: "dm-float-row" });
   row.appendChild(el("span", { class: "dm-dot", style: `background:${statusDot(server.status)}` }));
   row.appendChild(el("span", { class: "dm-float-name", text: server.name, title: server.name }));
   const tools = Array.isArray(server.tools) ? server.tools.length : 0;
-  row.appendChild(el("span", { class: "dm-float-meta", text: t("serverMeta", { status: tStatus(server.status), tools }) }));
+  row.appendChild(
+    el("span", {
+      class: "dm-float-meta",
+      text: t("serverMeta", { status: tStatus(server.status), tools }),
+    }),
+  );
   const actionsEl = el("div", { class: "dm-float-actions" });
   const action = el("button", { class: "dm-float-action" });
   // C7：浮窗操作带 cwd（与 servers.ts 对齐，#412 宿主重启场景自愈）——
@@ -108,24 +131,34 @@ function renderFloatRow(server: any, state: McpState, actions: UiActions, opts: 
   if (server.status === "connected") {
     action.textContent = t("disconnect");
     action.addEventListener("click", () => {
-      void api(`${state.API.disconnect}?name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`, { method: "POST" })
+      void api(
+        `${state.API.disconnect}?name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`,
+        { method: "POST" },
+      )
         .then(() => actions.refresh())
         .catch((error: any) => console.warn("[dsh-mcp-manager] disconnect failed:", error));
     });
   } else if (server.status === "disabled") {
     action.textContent = t("enable");
     action.addEventListener("click", () => {
-      void api(`${state.API.servers}?name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabled: true }),
-      }).then(() => actions.refresh())
+      void api(
+        `${state.API.servers}?name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ enabled: true }),
+        },
+      )
+        .then(() => actions.refresh())
         .catch((error: any) => console.warn("[dsh-mcp-manager] enable failed:", error));
     });
   } else {
     action.textContent = t("connect");
     action.addEventListener("click", () => {
-      void api(`${state.API.connect}?name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`, { method: "POST" })
+      void api(
+        `${state.API.connect}?name=${encodeURIComponent(server.name)}&scope=${server.scope}${cwdQuery}`,
+        { method: "POST" },
+      )
         .then(() => actions.refresh())
         .catch((error: any) => console.warn("[dsh-mcp-manager] connect failed:", error));
     });
@@ -136,18 +169,23 @@ function renderFloatRow(server: any, state: McpState, actions: UiActions, opts: 
     const disable = el("button", { class: "dm-float-action" });
     disable.textContent = t("disable");
     disable.addEventListener("click", () => {
-      void api(`${state.API.servers}?name=${encodeURIComponent(server.name)}&scope=${server.scope}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabled: false }),
-      }).then(() => actions.refresh())
+      void api(
+        `${state.API.servers}?name=${encodeURIComponent(server.name)}&scope=${server.scope}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ enabled: false }),
+        },
+      )
+        .then(() => actions.refresh())
         .catch((error: any) => console.warn("[dsh-mcp-manager] disable failed:", error));
     });
     actionsEl.appendChild(disable);
   }
   row.appendChild(actionsEl);
   // 工具清单：project 模式全局组只读提示（切 all 可管理全局工具）。
-  if (opts.tools) row.appendChild(renderFloatTools(server, state, actions, opts.openTools ?? new Set()));
+  if (opts.tools)
+    row.appendChild(renderFloatTools(server, state, actions, opts.openTools ?? new Set()));
   return row;
 }
 
@@ -162,11 +200,20 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
   }
   state.floatPanel.textContent = "";
   const head = el("div", { class: "dm-float-head" });
-  const projectName = typeof state.projectRoot === "string" && state.projectRoot !== ""
-    ? (state.projectRoot.split(/[\\/]/).filter(Boolean).pop() ?? state.projectRoot)
-    : t("floatGlobalSession");
+  const projectName =
+    typeof state.projectRoot === "string" && state.projectRoot !== ""
+      ? (state.projectRoot.split(/[\\/]/).filter(Boolean).pop() ?? state.projectRoot)
+      : t("floatGlobalSession");
   head.appendChild(el("span", { class: "dm-float-title", text: projectName }));
-  head.appendChild(el("button", { text: t("floatManage"), onclick: () => { toggleFloat(state, actions, false); actions.showPanel(); } }));
+  head.appendChild(
+    el("button", {
+      text: t("floatManage"),
+      onclick: () => {
+        toggleFloat(state, actions, false);
+        actions.showPanel();
+      },
+    }),
+  );
   state.floatPanel.appendChild(head);
 
   if (state.servers.length === 0) {
@@ -180,7 +227,12 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
     const list = state.servers.filter((server: any) => server.scope === scope);
     if (list.length === 0) continue;
     const section = el("section", { class: "dm-float-group" });
-    section.appendChild(el("div", { class: "dm-float-group-title", text: scope === "project" ? t("groupProject") : t("groupGlobal") }));
+    section.appendChild(
+      el("div", {
+        class: "dm-float-group-title",
+        text: scope === "project" ? t("groupProject") : t("groupGlobal"),
+      }),
+    );
     // 各自内部再按状态分组（状态序：运行中 → 连接中 → 重连中 → 未连接 → 已停用 → 失败）。
     const byStatus = new Map<string, any[]>();
     for (const group of STATUS_ORDER) byStatus.set(group.key, []);
@@ -193,7 +245,9 @@ export function renderFloatPanel(state: McpState, actions: UiActions): void {
       const bucket = byStatus.get(group.key) ?? [];
       if (bucket.length === 0) continue;
       for (const server of [...bucket].sort((a: any, b: any) => a.name.localeCompare(b.name))) {
-        section.appendChild(renderFloatRow(server, state, actions, { tools: toolsEnabled(scope), openTools }));
+        section.appendChild(
+          renderFloatRow(server, state, actions, { tools: toolsEnabled(scope), openTools }),
+        );
       }
     }
     if (scope === "global" && !isAll) {
@@ -246,8 +300,12 @@ export function placePanel(state: McpState): void {
   // 终坐标视口 clamp（safe-area 语义：宿主无 viewport-fit=cover → inset 恒 0，
   // 自然退化为普通 clamp，桌面行为不回归）。
   const point = clampPointToViewport(
-    rawLeft, rawTop, panel.offsetWidth, panel.offsetHeight,
-    window.innerWidth, window.innerHeight,
+    rawLeft,
+    rawTop,
+    panel.offsetWidth,
+    panel.offsetHeight,
+    window.innerWidth,
+    window.innerHeight,
   );
   panel.style.left = `${Math.round(point.x)}px`;
   panel.style.top = `${Math.round(point.y)}px`;
@@ -256,16 +314,17 @@ export function placePanel(state: McpState): void {
 
 /** 会话滚动容器：聊天消息实际滚动的区域（shell 的 data-conversation-scroll）。 */
 export function conversationHost(): any {
-  return document.querySelector('[data-conversation-scroll]')
-    ?? document.querySelector('[data-pane="conversation"]')
-    ?? document.querySelector('.pI_x6G_centerCol')
-    ?? document.body;
+  return (
+    document.querySelector("[data-conversation-scroll]") ??
+    document.querySelector('[data-pane="conversation"]') ??
+    document.querySelector(".pI_x6G_centerCol") ??
+    document.body
+  );
 }
 
 /** 全局 overlay 层：下拉面板挂这里（fixed 定位，避免被滚动容器裁剪）。 */
 export function panelHost(): any {
-  return document.querySelector('[data-shell-overlay]')
-    ?? document.body;
+  return document.querySelector("[data-shell-overlay]") ?? document.body;
 }
 
 /** 从 settings.yaml 读取的配置决定新/老会话垂直偏移。 */
@@ -306,7 +365,8 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
   const onFocusOut = (event: any) => {
     if (!state.floatOpen) return;
     const next = event.relatedTarget as Node | null;
-    if (next !== null && (state.floatPanel?.contains(next) || state.floatPill?.contains(next))) return;
+    if (next !== null && (state.floatPanel?.contains(next) || state.floatPill?.contains(next)))
+      return;
     toggleFloat(state, actions, false);
   };
   document.addEventListener("focusout", onFocusOut);
@@ -342,9 +402,7 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
     const y = floatTopOffset(ctx, state);
     pill.style.position = "fixed";
     // 水平：left 锚点 → 容器左缘 + offsetX；right 锚点 → 容器右缘 - 宽 - offsetX。
-    const rawLeft = isLeft
-      ? rect.left + offsetX
-      : rect.right - pill.offsetWidth - offsetX;
+    const rawLeft = isLeft ? rect.left + offsetX : rect.right - pill.offsetWidth - offsetX;
     // 垂直：bottom 锚点 → 容器底 - 高 - y（clamp 到视口上缘防溢出）；top 锚点 → 容器顶 + y。
     // #128 重开回归修复：bottom-* 在断点非 wide 且 composer seat 贴底时，把下边界换成
     // seat.top（胶囊上移到输入区上方，避免遮挡输入卡片/底部状态条）；否则维持
@@ -353,15 +411,21 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
     if (isBottom && bp !== "wide") {
       const seat = document.querySelector<HTMLElement>("[data-composer-seat]");
       const seatRect = seat !== null ? seat.getBoundingClientRect() : null;
-      bottomEdge = bottomAnchorEdge(rect.bottom, seatRect?.top ?? null, composerDockedAtBottom(seatRect, rect));
+      bottomEdge = bottomAnchorEdge(
+        rect.bottom,
+        seatRect?.top ?? null,
+        composerDockedAtBottom(seatRect, rect),
+      );
     }
-    const rawTop = isBottom
-      ? Math.max(6, bottomEdge - pill.offsetHeight - y)
-      : rect.top + y;
+    const rawTop = isBottom ? Math.max(6, bottomEdge - pill.offsetHeight - y) : rect.top + y;
     // 终坐标视口 clamp（safe-area 语义；inset 缺省 0 自然退化，桌面行为不回归）。
     const point = clampPointToViewport(
-      rawLeft, rawTop, pill.offsetWidth, pill.offsetHeight,
-      window.innerWidth, window.innerHeight,
+      rawLeft,
+      rawTop,
+      pill.offsetWidth,
+      pill.offsetHeight,
+      window.innerWidth,
+      window.innerHeight,
     );
     pill.style.left = `${Math.round(point.x)}px`;
     pill.style.top = `${Math.round(point.y)}px`;
@@ -383,10 +447,14 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
   };
 
   /** orientationchange 后延迟一帧重算：横竖屏切换瞬间 rect 尚未更新（规格第 2 条）。 */
-  const onOrientationChange = () => { scheduleUpdate(); };
+  const onOrientationChange = () => {
+    scheduleUpdate();
+  };
 
   /** 软键盘弹出/收起：visualViewport resize 监听（iOS 13+ 全支持），fixed 元素跟随视口。 */
-  const onVisualViewportResize = () => { scheduleUpdate(); };
+  const onVisualViewportResize = () => {
+    scheduleUpdate();
+  };
 
   const attachListeners = (target: any) => {
     for (const detach of listeners.splice(0)) detach();
@@ -446,8 +514,14 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
     document.removeEventListener("focusout", onFocusOut);
     observer.disconnect();
     for (const detach of listeners.splice(0)) detach();
-    if (rafId !== 0) { cancelAnimationFrame(rafId); rafId = 0; }
-    if (observerRafId !== 0) { cancelAnimationFrame(observerRafId); observerRafId = 0; }
+    if (rafId !== 0) {
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+    }
+    if (observerRafId !== 0) {
+      cancelAnimationFrame(observerRafId);
+      observerRafId = 0;
+    }
     pill.remove();
     panel.remove();
     state.floatPill = undefined;

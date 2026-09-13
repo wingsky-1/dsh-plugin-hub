@@ -23,7 +23,11 @@ export function fmtCompact(n: number | null): string {
 }
 
 /** 环比符号与方向（基准不完整/无基准 null）。 */
-export function trendDelta(cur: number | null, prev: number | null, prevComplete = true): { text: string; up: boolean; down: boolean } | null {
+export function trendDelta(
+  cur: number | null,
+  prev: number | null,
+  prevComplete = true,
+): { text: string; up: boolean; down: boolean } | null {
   if (!prevComplete || cur === null || prev === null || prev === 0) return null;
   const pct = ((cur - prev) / Math.abs(prev)) * 100;
   const sign = pct >= 0 ? "+" : "";
@@ -37,7 +41,8 @@ export function fmtAxisLabel(key: string, gran: TrendGran): string {
 
 /** 桶键人话化（汇总卡峰值 / tooltip 标题；i18n）。 */
 export function fmtBucketHuman(key: string, gran: TrendGran): string {
-  if (gran === "month") return t("trendPeakMonth", { y: key.slice(0, 4), m: String(Number(key.slice(5, 7))) });
+  if (gran === "month")
+    return t("trendPeakMonth", { y: key.slice(0, 4), m: String(Number(key.slice(5, 7))) });
   const day = key.slice(5);
   return gran === "week" ? t("trendPeakWeek", { day }) : t("trendPeakDay", { day });
 }
@@ -103,7 +108,15 @@ export function dirNeedsScopeNote(dir: unknown): boolean {
  * n 键写入值取 range（组件解析后的生效档位；现调用点 n 与 range 同源
  * effectiveRange 恒等传入，签名保留「请求意图 / 生效档位」双分位）。
  */
-export function trendRequestParams(gran: string, metric: string, n: number, provider: string, byModel: boolean, dirFilter: string, range: number): URLSearchParams {
+export function trendRequestParams(
+  gran: string,
+  metric: string,
+  n: number,
+  provider: string,
+  byModel: boolean,
+  dirFilter: string,
+  range: number,
+): URLSearchParams {
   const params = new URLSearchParams({ granularity: gran, metric, n: String(range) });
   if (dirFilter !== "") params.set("dir", dirFilter);
   else if (provider === "") params.set("byDir", "1");
@@ -129,7 +142,12 @@ export function shouldShowByModel(provider: string, dirFilter: string): boolean 
  */
 export function trendRangeOptions(gran: TrendGran, retentionDays: number): number[] {
   const retention = Math.max(1, Math.floor(retentionDays));
-  const cap = gran === "day" ? Math.min(retention, 90) : gran === "week" ? Math.ceil(retention / 7) : Math.ceil(retention / 30);
+  const cap =
+    gran === "day"
+      ? Math.min(retention, 90)
+      : gran === "week"
+        ? Math.ceil(retention / 7)
+        : Math.ceil(retention / 30);
   const candidates = gran === "day" ? [7, 30, 90, 180] : gran === "week" ? [4, 13, 26] : [3, 6, 12];
   const opts = candidates.filter((c) => c <= cap);
   return opts.length > 0 ? opts : [Math.max(1, Math.min(cap, 30))];
@@ -167,7 +185,10 @@ export function niceTicks(maxV: number): { ticks: number[]; top: number } {
  * （遗留：刻度算法已动态化，喂入的最大值仍是单段口径）。
  * total 含隐藏段 → hidden 不缩轴（与汇总卡全段口径一致）。
  */
-export function trendYTicks(series: Array<{ total: number | null }>): { ticks: number[]; top: number } {
+export function trendYTicks(series: Array<{ total: number | null }>): {
+  ticks: number[];
+  top: number;
+} {
   let maxV = 0;
   for (const point of series) {
     if (point.total !== null && point.total > maxV) maxV = point.total;
@@ -225,8 +246,12 @@ function gridParts(ticks: number[], yOf: (v: number) => number): string[] {
   const parts: string[] = [];
   for (const gv of ticks) {
     const gy = yOf(gv);
-    parts.push(`<line x1="${SVG_PL}" y1="${gy.toFixed(1)}" x2="${SVG_W - SVG_PR}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;${gv === 0 ? "" : "stroke-dasharray:3 3;"}"/>`);
-    parts.push(`<text x="${SVG_PL - 4}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:9.5px;fill:var(--dsw-alias-label-tertiary,#9aa0ab)">${escHtml(fmtCompact(gv))}</text>`);
+    parts.push(
+      `<line x1="${SVG_PL}" y1="${gy.toFixed(1)}" x2="${SVG_W - SVG_PR}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;${gv === 0 ? "" : "stroke-dasharray:3 3;"}"/>`,
+    );
+    parts.push(
+      `<text x="${SVG_PL - 4}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:9.5px;fill:var(--dsw-alias-label-tertiary,#9aa0ab)">${escHtml(fmtCompact(gv))}</text>`,
+    );
   }
   return parts;
 }
@@ -240,7 +265,9 @@ function axisLabelParts(bars: RenderBar[], gran: TrendGran): string[] {
     if (i % labelStep !== 0 && i !== bars.length - 1) return;
     const cx = SVG_PL + gap * i + gap / 2;
     const anchor = i === 0 ? "start" : i === bars.length - 1 ? "end" : "middle";
-    parts.push(`<text x="${cx.toFixed(1)}" y="${SVG_H - 16}" text-anchor="${anchor}" style="font-size:9.5px;fill:var(--dsw-alias-label-tertiary,#9aa0ab)">${escHtml(fmtAxisLabel(b.key, gran))}</text>`);
+    parts.push(
+      `<text x="${cx.toFixed(1)}" y="${SVG_H - 16}" text-anchor="${anchor}" style="font-size:9.5px;fill:var(--dsw-alias-label-tertiary,#9aa0ab)">${escHtml(fmtAxisLabel(b.key, gran))}</text>`,
+    );
   });
   return parts;
 }
@@ -254,7 +281,11 @@ function bucketGroup(i: number, colX: number, colW: number, inner: string): stri
  * 堆叠柱状 SVG（M2 基础上 M2.1 增强）：空桶虚位、部分桶描边、data-bucket 委托锚点、
  * 月键标签修复。segs 为可见段（hidden 已滤），Y 域由调用方按全量段算（隐藏不缩轴）。
  */
-export function stackedBarsSvg(opts: { bars: RenderBar[]; gran: TrendGran; ticks: number[] }): string {
+export function stackedBarsSvg(opts: {
+  bars: RenderBar[];
+  gran: TrendGran;
+  ticks: number[];
+}): string {
   const { bars, gran, ticks } = opts;
   const yMax = ticks[ticks.length - 1];
   if (bars.length === 0 || XW <= 0) return "";
@@ -268,19 +299,28 @@ export function stackedBarsSvg(opts: { bars: RenderBar[]; gran: TrendGran; ticks
     const segs: string[] = [];
     if (b.none) {
       // 空桶虚位：统一「无数据」（tooltip 标注；挂载前/超保留期不做三态区分）
-      segs.push(`<rect x="${x.toFixed(1)}" y="${(SVG_H - SVG_PB - 2).toFixed(1)}" width="${barW.toFixed(1)}" height="2" rx="1" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.45"/>`);
+      segs.push(
+        `<rect x="${x.toFixed(1)}" y="${(SVG_H - SVG_PB - 2).toFixed(1)}" width="${barW.toFixed(1)}" height="2" rx="1" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.45"/>`,
+      );
     }
     let acc = 0;
     for (const seg of b.segs) {
       const y1 = yOf(acc);
       acc += seg.value;
       const y2 = yOf(acc);
-      segs.push(`<rect x="${x.toFixed(1)}" y="${y2.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(0.5, y1 - y2).toFixed(1)}" rx="1" style="fill:${seriesColor(seg.id)};fill-opacity:.9"/>`);
+      segs.push(
+        `<rect x="${x.toFixed(1)}" y="${y2.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(0.5, y1 - y2).toFixed(1)}" rx="1" style="fill:${seriesColor(seg.id)};fill-opacity:.9"/>`,
+      );
     }
     // 部分桶描边：进行中=警示色虚线；留存/起算边缘=灰点线（值天然偏低防误读）
     if (b.mark !== null && acc > 0) {
-      const stroke = b.mark === "ongoing" ? "var(--dsw-alias-state-warn-primary,#d9a13c)" : "var(--dsw-alias-label-tertiary,#9aa0ab)";
-      segs.push(`<rect x="${(x - 2.5).toFixed(1)}" y="${yOf(acc).toFixed(1)}" width="${(barW + 5).toFixed(1)}" height="${(SVG_H - SVG_PB - yOf(acc)).toFixed(1)}" rx="4" style="fill:none;stroke:${stroke};stroke-width:1;stroke-dasharray:${b.mark === "ongoing" ? "3 2" : "1.5 2.5"}"/>`);
+      const stroke =
+        b.mark === "ongoing"
+          ? "var(--dsw-alias-state-warn-primary,#d9a13c)"
+          : "var(--dsw-alias-label-tertiary,#9aa0ab)";
+      segs.push(
+        `<rect x="${(x - 2.5).toFixed(1)}" y="${yOf(acc).toFixed(1)}" width="${(barW + 5).toFixed(1)}" height="${(SVG_H - SVG_PB - yOf(acc)).toFixed(1)}" rx="4" style="fill:none;stroke:${stroke};stroke-width:1;stroke-dasharray:${b.mark === "ongoing" ? "3 2" : "1.5 2.5"}"/>`,
+      );
     }
     parts.push(bucketGroup(i, cx - gap / 2, gap, segs.join("")));
   });
@@ -293,7 +333,12 @@ export function stackedBarsSvg(opts: { bars: RenderBar[]; gran: TrendGran; ticks
  * 逐 id 画带状 path（自底堆叠）；null 桶断开为独立连续段；禁用平滑曲线
  * （Catmull-Rom 过冲会产生负面积视觉失真——方案 §3.3 定稿）。
  */
-export function stackedAreasSvg(opts: { bars: RenderBar[]; gran: TrendGran; ticks: number[]; stackOrder: string[] }): string {
+export function stackedAreasSvg(opts: {
+  bars: RenderBar[];
+  gran: TrendGran;
+  ticks: number[];
+  stackOrder: string[];
+}): string {
   const { bars, gran, ticks, stackOrder } = opts;
   const yMax = ticks[ticks.length - 1];
   if (bars.length === 0 || XW <= 0) return "";
@@ -308,9 +353,13 @@ export function stackedAreasSvg(opts: { bars: RenderBar[]; gran: TrendGran; tick
     const flush = (): void => {
       if (run.length === 0) return;
       let d = `M${run[0].x.toFixed(1)} ${run[0].top.toFixed(1)}`;
-      for (let k = 1; k < run.length; k += 1) d += ` L${run[k].x.toFixed(1)} ${run[k].top.toFixed(1)}`;
-      for (let k = run.length - 1; k >= 0; k -= 1) d += ` L${run[k].x.toFixed(1)} ${run[k].bottom.toFixed(1)}`;
-      parts.push(`<path d="${d} Z" style="fill:${seriesColor(id)};fill-opacity:.26;stroke:${seriesColor(id)};stroke-width:1;stroke-opacity:.5"/>`);
+      for (let k = 1; k < run.length; k += 1)
+        d += ` L${run[k].x.toFixed(1)} ${run[k].top.toFixed(1)}`;
+      for (let k = run.length - 1; k >= 0; k -= 1)
+        d += ` L${run[k].x.toFixed(1)} ${run[k].bottom.toFixed(1)}`;
+      parts.push(
+        `<path d="${d} Z" style="fill:${seriesColor(id)};fill-opacity:.26;stroke:${seriesColor(id)};stroke-width:1;stroke-opacity:.5"/>`,
+      );
       run = [];
     };
     bars.forEach((_, i) => {

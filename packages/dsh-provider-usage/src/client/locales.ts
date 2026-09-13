@@ -52,7 +52,8 @@ export const zh = {
   noDataShort: "暂无数据",
   // 无启用适配器引导（胶囊面板）
   noAdapterTitle: "该提供商暂无启用的适配器。",
-  noAdapterHint: "在设置面板「用量统计」的适配器管理中启用一个候选适配器；也可复制下方引导指令，让 Agent 帮你接入用量数据源。",
+  noAdapterHint:
+    "在设置面板「用量统计」的适配器管理中启用一个候选适配器；也可复制下方引导指令，让 Agent 帮你接入用量数据源。",
   copyGuide: "复制引导指令",
   copied: "已复制 ✓",
   copyFail: "复制失败",
@@ -102,16 +103,20 @@ export const zh = {
   cancel: "取消",
   inspectFail: "检测失败",
   addFail: "添加失败",
-  noCandidates: "该提供商暂无候选适配器——可通过下方 [+ 添加适配器] 注入本地适配器文件；也可复制引导指令，让 Agent 帮你创建适配器。",
+  noCandidates:
+    "该提供商暂无候选适配器——可通过下方 [+ 添加适配器] 注入本地适配器文件；也可复制引导指令，让 Agent 帮你创建适配器。",
   collapse: "收起",
   addAdapter: "+ 添加适配器",
   // 设置页：提供商列表区
   provTitle: "提供商",
-  provListHint: "提供商列表与模型配置页保持一致（共 {n} 个）；展开某个提供商以切换适配器开关或添加新适配器。",
+  provListHint:
+    "提供商列表与模型配置页保持一致（共 {n} 个）；展开某个提供商以切换适配器开关或添加新适配器。",
   fileLoadFail: "用户文件 {f} 加载失败：{msg}",
-  noProvHint: "未发现已配置的提供商（adapters.json 不可达或模型配置页尚未配置提供商）。可复制引导指令，让 Agent 帮你接入数据源并创建适配器。",
+  noProvHint:
+    "未发现已配置的提供商（adapters.json 不可达或模型配置页尚未配置提供商）。可复制引导指令，让 Agent 帮你接入数据源并创建适配器。",
   customProvTitle: "自定义提供商",
-  customProvHint: "以下 providers 未出现在 dsh 模型配置页（模型暂选不到该提供商，先登记适配器；在模型页补建后即可选用），不计入上方数量。",
+  customProvHint:
+    "以下 providers 未出现在 dsh 模型配置页（模型暂选不到该提供商，先登记适配器；在模型页补建后即可选用），不计入上方数量。",
   // 设置页：使用趋势
   trendTitle: "使用趋势",
   trendGranularity: "粒度",
@@ -191,7 +196,8 @@ export const zh = {
   reportDirectoriesHintAll: "统计全部目录（默认口径）。",
   reportDirectoriesHintScoped: "报告只统计所选目录的目录分布（其余维度保持全量）。",
   reportPromptReset: "恢复默认",
-  reportPromptHint: "三周期各自独立模板；{stats} 注入对应周期聚合统计 JSON（含峰值日/活跃天数/环比等年报维度）",
+  reportPromptHint:
+    "三周期各自独立模板；{stats} 注入对应周期聚合统计 JSON（含峰值日/活跃天数/环比等年报维度）",
   reportNoData: "当期无用量数据，未生成报告",
   reportHeroTotal: "tokens",
   reportHeroCalls: "对话次数",
@@ -258,15 +264,18 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   errTimeout: "Request timed out, please retry.",
   errNetwork: "Network error, check the connection and retry.",
   errBadData: "Malformed data — check the provider API or adapter output.",
-  errAdapterLoadFailed: "Custom adapter failed to load — check the file path and contract (details on the settings page).",
+  errAdapterLoadFailed:
+    "Custom adapter failed to load — check the file path and contract (details on the settings page).",
   errBusy: "Previous fetch still in progress, refreshing shortly.",
-  errNoEnabledAdapter: "This provider has candidate adapters but none enabled — enable one under Usage statistics.",
+  errNoEnabledAdapter:
+    "This provider has candidate adapters but none enabled — enable one under Usage statistics.",
   errNoAdapter: "No adapter configured for this provider — add one under Usage statistics.",
   errHttpStatus: "Service returned {code} — check the relay status.",
   errGeneric: "Usage fetch failed: {code}.",
   noDataShort: "no data",
   noAdapterTitle: "No enabled adapter for this provider.",
-  noAdapterHint: "Enable a candidate adapter under Usage statistics, or copy the guide prompt below and let an agent wire up the data source.",
+  noAdapterHint:
+    "Enable a candidate adapter under Usage statistics, or copy the guide prompt below and let an agent wire up the data source.",
   copyGuide: "Copy guide prompt",
   copied: "Copied ✓",
   copyFail: "Copy failed",
@@ -307,21 +316,25 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   filePathOnly: " (the only input — name/display name/providers are read from the file exports)",
   detecting: "Detecting…",
   detectFile: "Detect file",
-  detectFirst: "Run \"Detect file\" before confirming",
+  detectFirst: 'Run "Detect file" before confirming',
   adding: "Adding…",
   confirmAdd: "Confirm",
   cancel: "Cancel",
   inspectFail: "Detection failed",
   addFail: "Add failed",
-  noCandidates: "No candidate adapters for this provider — inject a local adapter file via [+ Add adapter] below, or copy the guide prompt and let an agent create one.",
+  noCandidates:
+    "No candidate adapters for this provider — inject a local adapter file via [+ Add adapter] below, or copy the guide prompt and let an agent create one.",
   collapse: "Collapse",
   addAdapter: "+ Add adapter",
   provTitle: "Providers",
-  provListHint: "Provider list mirrors the model configuration page ({n} total); expand a provider to switch adapters or add new ones.",
+  provListHint:
+    "Provider list mirrors the model configuration page ({n} total); expand a provider to switch adapters or add new ones.",
   fileLoadFail: "User file {f} failed to load: {msg}",
-  noProvHint: "No configured provider found (adapters.json unreachable or none configured on the model page). Copy the guide prompt and let an agent wire up a data source.",
+  noProvHint:
+    "No configured provider found (adapters.json unreachable or none configured on the model page). Copy the guide prompt and let an agent wire up a data source.",
   customProvTitle: "Custom providers",
-  customProvHint: "These providers are absent from the dsh model page (not selectable yet — register the adapter first; they count separately from the list above).",
+  customProvHint:
+    "These providers are absent from the dsh model page (not selectable yet — register the adapter first; they count separately from the list above).",
   // 设置页：使用趋势
   trendTitle: "Usage trend",
   trendGranularity: "Granularity",
@@ -346,8 +359,10 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   trendFetchFail: "Failed to load trend data",
   trendEmptyTitle: "No trend data yet",
   trendEmptyHint: "Trends for recent usage will appear here once sessions produce usage.",
-  trendMountedHint: "Counting since the plugin mount time; sessions before that point are not included",
-  trendMountedHintDay: "Counting since {day} (plugin mount time); sessions before that point are not included",
+  trendMountedHint:
+    "Counting since the plugin mount time; sessions before that point are not included",
+  trendMountedHintDay:
+    "Counting since {day} (plugin mount time); sessions before that point are not included",
   // Settings: usage trend
   trendRangeLabel: "Range",
   trendRangeDayUnit: "{n}d",
@@ -397,11 +412,14 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   reportDirectoriesAll: "All directories",
   reportDirectoriesSelectAll: "Select all",
   reportDirectoriesClear: "Clear",
-  reportDirectoriesEmpty: "No directory data yet — directories appear here once sessions produce usage.",
+  reportDirectoriesEmpty:
+    "No directory data yet — directories appear here once sessions produce usage.",
   reportDirectoriesHintAll: "All directories are included (default scope).",
-  reportDirectoriesHintScoped: "Reports include the directory breakdown of selected directories only (other dimensions stay full).",
+  reportDirectoriesHintScoped:
+    "Reports include the directory breakdown of selected directories only (other dimensions stay full).",
   reportPromptReset: "Reset to default",
-  reportPromptHint: "Per-period templates; {stats} injects that period's aggregate stats JSON (peak day / active days / WoW ratio and more)",
+  reportPromptHint:
+    "Per-period templates; {stats} injects that period's aggregate stats JSON (peak day / active days / WoW ratio and more)",
   reportNoData: "No usage in this period — nothing generated",
   reportHeroTotal: "tokens",
   reportHeroCalls: "calls",
@@ -419,7 +437,7 @@ export const en: Record<ProviderUsageLocaleKey, string> = {
   reportGenerating: "Generating…",
   reportGenerateFail: "Generation failed: {msg}",
   reportStillGenerating: "Still generating in background — refresh the list later",
-  reportReused: "Report already exists for this window — reused (check \"Regenerate\" to overwrite)",
+  reportReused: 'Report already exists for this window — reused (check "Regenerate" to overwrite)',
   reportForceRegen: "Regenerate (overwrite)",
   reportHistory: "Report history",
   reportEmpty: "No reports yet — configure a schedule or generate one now",

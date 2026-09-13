@@ -32,9 +32,8 @@ import { join } from "node:path";
  * @returns {string} 用户 home 目录路径。
  */
 export function userHome() {
-  const env = process.platform === "win32"
-    ? (process.env.USERPROFILE ?? process.env.HOME)
-    : process.env.HOME;
+  const env =
+    process.platform === "win32" ? (process.env.USERPROFILE ?? process.env.HOME) : process.env.HOME;
   return env !== undefined && env.trim().length > 0 ? env : homedir();
 }
 

@@ -44,7 +44,7 @@
  * 用法：node scripts/gate/repo-gate-assert.mjs   （无命令行参数，全部走 env）
  * 退出码：0 = 通过；1 = 门禁违约；2 = 环境/数据缺失错误（fail-closed）
  */
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL } from "node:url";
 
 /**
  * 判定核心（纯函数，供单元测试全组合覆盖）。
@@ -65,13 +65,17 @@ export function evaluateGate(input) {
   const { event, changes, buildTest, coverage, mutation, verdict, hasMutations } = input;
 
   // 前提闸：changes 是所有切片判定的事实源，非 success 即红
-  if (changes !== 'success') {
+  if (changes !== "success") {
     return { ok: false, code: 1, reason: `changes 作业未成功（${changes}）—— fail-closed` };
   }
   // build-test 恒全集矩阵（#722 后矩阵仍固定 7 实例、未命中实例只跑 checkout+setup），
   // 任何实例失败/skipped 即红
-  if (buildTest !== 'success') {
-    return { ok: false, code: 1, reason: `build-test 存在失败/skipped 实例（${buildTest}）—— fail-closed` };
+  if (buildTest !== "success") {
+    return {
+      ok: false,
+      code: 1,
+      reason: `build-test 存在失败/skipped 实例（${buildTest}）—— fail-closed`,
+    };
   }
 
   // 数据契约闸：切片清单与显式布尔必须同时合法且互相一致
@@ -79,28 +83,48 @@ export function evaluateGate(input) {
   try {
     pkgs = JSON.parse(input.mutationPkgsJson);
   } catch (err) {
-    return { ok: false, code: 2, reason: `mutationPackages 不是合法 JSON（${err.message}）—— 数据契约破坏` };
+    return {
+      ok: false,
+      code: 2,
+      reason: `mutationPackages 不是合法 JSON（${err.message}）—— 数据契约破坏`,
+    };
   }
   if (!Array.isArray(pkgs)) {
-    return { ok: false, code: 2, reason: 'mutationPackages 不是 JSON 数组 —— 数据契约破坏' };
+    return { ok: false, code: 2, reason: "mutationPackages 不是 JSON 数组 —— 数据契约破坏" };
   }
-  if (hasMutations !== 'true' && hasMutations !== 'false') {
-    return { ok: false, code: 2, reason: `hasMutations 必须为 'true'/'false'（实际 "${hasMutations}"）—— 数据契约破坏` };
+  if (hasMutations !== "true" && hasMutations !== "false") {
+    return {
+      ok: false,
+      code: 2,
+      reason: `hasMutations 必须为 'true'/'false'（实际 "${hasMutations}"）—— 数据契约破坏`,
+    };
   }
-  if (input.fullRequested !== 'true' && input.fullRequested !== 'false') {
-    return { ok: false, code: 2, reason: `fullGate 必须为 'true'/'false'（实际 "${input.fullRequested}"）—— 数据契约破坏` };
+  if (input.fullRequested !== "true" && input.fullRequested !== "false") {
+    return {
+      ok: false,
+      code: 2,
+      reason: `fullGate 必须为 'true'/'false'（实际 "${input.fullRequested}"）—— 数据契约破坏`,
+    };
   }
   // 交叉校验：hasMutations 与切片清单非空性由 changes 同一函数推导，不一致即违约
-  if ((hasMutations === 'true') !== (pkgs.length > 0)) {
-    return { ok: false, code: 2, reason: `hasMutations=${hasMutations} 与切片长度 ${pkgs.length} 矛盾 —— 数据契约破坏` };
+  if ((hasMutations === "true") !== pkgs.length > 0) {
+    return {
+      ok: false,
+      code: 2,
+      reason: `hasMutations=${hasMutations} 与切片长度 ${pkgs.length} 矛盾 —— 数据契约破坏`,
+    };
   }
 
-  if (event === 'pull_request' && input.fullRequested === 'false') {
+  if (event === "pull_request" && input.fullRequested === "false") {
     // ── #722 增量门禁路径：全量链路「该被跳过」而不是「可以随便跑」──
     // 对称 fail-closed：出现任何非 skipped 结果，说明 ci.yml 的 if 或 gate:full
     // 标签语义被改坏（默认 PR 不该实例化 coverage/变异矩阵）。
-    for (const [name, result] of [['coverage', coverage], ['mutation-gate', mutation], ['mutation-verdict', verdict]]) {
-      if (result !== 'skipped') {
+    for (const [name, result] of [
+      ["coverage", coverage],
+      ["mutation-gate", mutation],
+      ["mutation-verdict", verdict],
+    ]) {
+      if (result !== "skipped") {
         return {
           ok: false,
           code: 1,
@@ -108,37 +132,55 @@ export function evaluateGate(input) {
         };
       }
     }
-    return { ok: true, code: 0, reason: `PR 增量门禁：命中包构建/测试/产物闸 + 廉价全仓静态闸通过（全量链路按 gate:full 标签缺席，符合预期）` };
+    return {
+      ok: true,
+      code: 0,
+      reason: `PR 增量门禁：命中包构建/测试/产物闸 + 廉价全仓静态闸通过（全量链路按 gate:full 标签缺席，符合预期）`,
+    };
   }
 
-  if (event === 'pull_request') {
-    if (hasMutations === 'true') {
+  if (event === "pull_request") {
+    if (hasMutations === "true") {
       // ── 该跑必须真跑：三段链逐维锁定 ──
       // 维度一：coverage（全局单次采集，与变异矩阵平行）
-      if (coverage !== 'success') {
-        const why = coverage === 'skipped'
-          ? 'coverage 作业缺席 —— hasMutations=true 却未运行，ci.yml if 契约疑似被改坏'
-          : 'coverage 失败连坐（c8 全仓 smoke 同级硬信号）：聚合判分 verdict 将因 if 要求 coverage success 连带缺席';
-        return { ok: false, code: 1, reason: `PR 变异链前置 coverage 结果 ${coverage}（期望 success）—— ${why}` };
-      }
-      // 维度二：变异矩阵（防静默绕过；failure 由 verdict 兜底裁决）
-      if (mutation !== 'success' && mutation !== 'failure') {
+      if (coverage !== "success") {
+        const why =
+          coverage === "skipped"
+            ? "coverage 作业缺席 —— hasMutations=true 却未运行，ci.yml if 契约疑似被改坏"
+            : "coverage 失败连坐（c8 全仓 smoke 同级硬信号）：聚合判分 verdict 将因 if 要求 coverage success 连带缺席";
         return {
           ok: false,
           code: 1,
-          reason: `mutation-gate 切片 [${pkgs.join(', ')}] 结果为 ${mutation}（期望 success/failure）—— PR 下该跑没跑视为门禁绕过`,
+          reason: `PR 变异链前置 coverage 结果 ${coverage}（期望 success）—— ${why}`,
+        };
+      }
+      // 维度二：变异矩阵（防静默绕过；failure 由 verdict 兜底裁决）
+      if (mutation !== "success" && mutation !== "failure") {
+        return {
+          ok: false,
+          code: 1,
+          reason: `mutation-gate 切片 [${pkgs.join(", ")}] 结果为 ${mutation}（期望 success/failure）—— PR 下该跑没跑视为门禁绕过`,
         };
       }
       // 维度三：聚合判分 verdict（最终绿灯的唯一来源）
-      if (verdict !== 'success') {
-        const why = verdict === 'skipped'
-          ? '该跑没跑视为门禁绕过'
-          : verdict === 'cancelled'
-            ? '被取消（未完成判分）'
-            : '变异率判分未通过（变异率不达标或报告 artifact 链路违约）';
-        return { ok: false, code: 1, reason: `mutation-verdict 结果 ${verdict}（期望 success）—— ${why}` };
+      if (verdict !== "success") {
+        const why =
+          verdict === "skipped"
+            ? "该跑没跑视为门禁绕过"
+            : verdict === "cancelled"
+              ? "被取消（未完成判分）"
+              : "变异率判分未通过（变异率不达标或报告 artifact 链路违约）";
+        return {
+          ok: false,
+          code: 1,
+          reason: `mutation-verdict 结果 ${verdict}（期望 success）—— ${why}`,
+        };
       }
-      return { ok: true, code: 0, reason: `PR 门禁：变更切片 + 全局覆盖率 + 增量变异（[${pkgs.join(', ')}]）全部通过` };
+      return {
+        ok: true,
+        code: 0,
+        reason: `PR 门禁：变更切片 + 全局覆盖率 + 增量变异（[${pkgs.join(", ")}]）全部通过`,
+      };
     }
 
     // ── 空切片（合法缺席）：GitHub 对零实例动态矩阵实测回报 'failure' 而非官方
@@ -146,30 +188,45 @@ export function evaluateGate(input) {
     // 含 hasMutations，空切片时整个 job 直接 skipped，零实例 failure 形态理论
     // 上不再触发；保留宽容仅为防御平台结果上报行为漂移。success/cancelled
     // 仍属契约异常照旧判红。
-    if (coverage !== 'skipped') {
-      return { ok: false, code: 1, reason: `空切片却得到 coverage 结果 ${coverage}（期望 skipped）—— ci.yml if 契约破坏` };
+    if (coverage !== "skipped") {
+      return {
+        ok: false,
+        code: 1,
+        reason: `空切片却得到 coverage 结果 ${coverage}（期望 skipped）—— ci.yml if 契约破坏`,
+      };
     }
-    for (const [name, result] of [['mutation-gate', mutation], ['mutation-verdict', verdict]]) {
-      if (result !== 'skipped' && result !== 'failure') {
-        return { ok: false, code: 1, reason: `空切片却得到 ${name} 结果 ${result}（期望 skipped/failure）—— 动态矩阵契约破坏` };
+    for (const [name, result] of [
+      ["mutation-gate", mutation],
+      ["mutation-verdict", verdict],
+    ]) {
+      if (result !== "skipped" && result !== "failure") {
+        return {
+          ok: false,
+          code: 1,
+          reason: `空切片却得到 ${name} 结果 ${result}（期望 skipped/failure）—— 动态矩阵契约破坏`,
+        };
       }
     }
-    return { ok: true, code: 0, reason: 'PR 空切片：无变异对象包，覆盖/变异链合法缺席' };
+    return { ok: true, code: 0, reason: "PR 空切片：无变异对象包，覆盖/变异链合法缺席" };
   }
 
   // 非 PR 事件：触发面收敛不变量（#187 + #217 扩展）——fullGate 必须为 false
   // （changes job 里非 PR 一律 false），且覆盖/变异三段全部只允许 skipped（main 归
   // 夜间、发版归 release）；出现其他结果说明 ci.yml if 的事件限制已失效，显性红防
   // 静默退化
-  if (input.fullRequested === 'true') {
+  if (input.fullRequested === "true") {
     return {
       ok: false,
       code: 1,
       reason: `${event} 事件下 fullGate=true（期望 false）—— #187 触发面收敛不变量被破坏（全量门禁只允许在 PR 上按标签触发）`,
     };
   }
-  for (const [name, result] of [['coverage', coverage], ['mutation-gate', mutation], ['mutation-verdict', verdict]]) {
-    if (result !== 'skipped') {
+  for (const [name, result] of [
+    ["coverage", coverage],
+    ["mutation-gate", mutation],
+    ["mutation-verdict", verdict],
+  ]) {
+    if (result !== "skipped") {
       return {
         ok: false,
         code: 1,
@@ -177,27 +234,33 @@ export function evaluateGate(input) {
       };
     }
   }
-  return { ok: true, code: 0, reason: '主干/手动触发：覆盖与变异门禁已收敛至夜间与发版管线（skipped 符合预期）' };
+  return {
+    ok: true,
+    code: 0,
+    reason: "主干/手动触发：覆盖与变异门禁已收敛至夜间与发版管线（skipped 符合预期）",
+  };
 }
 
 // ── CLI 入口（仅直跑时执行；被测试 import 时只暴露 evaluateGate 不产生副作用）──
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   const env = process.env;
   const verdict = evaluateGate({
-    event: env.GATE_EVENT ?? '',
-    changes: env.GATE_CHANGES ?? '',
-    buildTest: env.GATE_BUILD_TEST ?? '',
-    coverage: env.GATE_COVERAGE ?? '',
-    mutation: env.GATE_MUTATION ?? '',
-    verdict: env.GATE_VERDICT ?? '',
-    hasMutations: env.GATE_HAS_MUTATIONS ?? '',
-    mutationPkgsJson: env.GATE_MUTATION_PKGS ?? '',
-    fullRequested: env.GATE_FULL_REQUESTED ?? '',
+    event: env.GATE_EVENT ?? "",
+    changes: env.GATE_CHANGES ?? "",
+    buildTest: env.GATE_BUILD_TEST ?? "",
+    coverage: env.GATE_COVERAGE ?? "",
+    mutation: env.GATE_MUTATION ?? "",
+    verdict: env.GATE_VERDICT ?? "",
+    hasMutations: env.GATE_HAS_MUTATIONS ?? "",
+    mutationPkgsJson: env.GATE_MUTATION_PKGS ?? "",
+    fullRequested: env.GATE_FULL_REQUESTED ?? "",
   });
-  console.log(`event=${env.GATE_EVENT}  changes=${env.GATE_CHANGES}  `
-    + `build-test=${env.GATE_BUILD_TEST}  coverage=${env.GATE_COVERAGE}  `
-    + `mutation-gate=${env.GATE_MUTATION}  verdict=${env.GATE_VERDICT}  `
-    + `hasMutations=${env.GATE_HAS_MUTATIONS}  fullGate=${env.GATE_FULL_REQUESTED}`);
+  console.log(
+    `event=${env.GATE_EVENT}  changes=${env.GATE_CHANGES}  ` +
+      `build-test=${env.GATE_BUILD_TEST}  coverage=${env.GATE_COVERAGE}  ` +
+      `mutation-gate=${env.GATE_MUTATION}  verdict=${env.GATE_VERDICT}  ` +
+      `hasMutations=${env.GATE_HAS_MUTATIONS}  fullGate=${env.GATE_FULL_REQUESTED}`,
+  );
   // 违约/环境错误走 ::error:: 注解（GitHub PR 页面可见，与旧内联断言同款）
   if (verdict.code === 0) {
     console.log(`判定：${verdict.reason}`);

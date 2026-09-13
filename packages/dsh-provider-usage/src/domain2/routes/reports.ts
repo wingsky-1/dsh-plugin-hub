@@ -9,7 +9,11 @@ import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
-import { guardLoopbackMethod, readJsonBodyOutcome, writeJson } from "../../../../../shared/host-utils.js";
+import {
+  guardLoopbackMethod,
+  readJsonBodyOutcome,
+  writeJson,
+} from "../../../../../shared/host-utils.js";
 import {
   DEFAULT_PROMPTS,
   normalizeReportConfig,
@@ -19,7 +23,11 @@ import {
   type ReportPeriod,
 } from "../schedule/interface.ts";
 import { readReportIndex, reportHtmlFile, reportMetaFile } from "../execute/interface.ts";
-import { presetLastRunForNewlyEnabled, previousClosedWindow, type DueReport } from "../schedule/interface.ts";
+import {
+  presetLastRunForNewlyEnabled,
+  previousClosedWindow,
+  type DueReport,
+} from "../schedule/interface.ts";
 import { readLastRun, updateLastRun } from "../common/interface.ts";
 import type { ReportTaskQueue } from "../schedule/interface.ts";
 import type { ReportConfigService } from "../../apply/interface.ts";
@@ -79,9 +87,15 @@ export async function handleReportConfig(
       const listed = ctx.llm.listProviders();
       if (Array.isArray(listed)) {
         providers = listed
-          .map((i) => (i as { id?: unknown; name?: unknown } | null))
-          .filter((i): i is { id: string; name?: string } => typeof (i as { id?: unknown })?.id === "string")
-          .map((i) => ({ id: i.id as string, ...(typeof i.name === "string" ? { name: i.name } : {}) }));
+          .map((i) => i as { id?: unknown; name?: unknown } | null)
+          .filter(
+            (i): i is { id: string; name?: string } =>
+              typeof (i as { id?: unknown })?.id === "string",
+          )
+          .map((i) => ({
+            id: i.id as string,
+            ...(typeof i.name === "string" ? { name: i.name } : {}),
+          }));
       }
     } catch {
       // 回落空数组
@@ -94,7 +108,13 @@ export async function handleReportConfig(
     } catch {
       dirs = [];
     }
-    return writeJson(res, 200, { ok: true, config, providers, dirs, promptDefaults: DEFAULT_PROMPTS });
+    return writeJson(res, 200, {
+      ok: true,
+      config,
+      providers,
+      dirs,
+      promptDefaults: DEFAULT_PROMPTS,
+    });
   }
 
   // 读不出来的 body 不能当「没给配置」：normalizeReportConfig(undefined) 会回落**整套默认值**，
@@ -106,8 +126,17 @@ export async function handleReportConfig(
   const currentCfg = context.reportCfgService.get();
   // preset 写 lastRun 走单一临界区（写前重读），不与任务执行器推进互踩字段；
   // readLastRun 仅作 changed 预判（乐观跳过无变化时的写盘），真实快照在临界区内重读。
-  const preset = presetLastRunForNewlyEnabled(currentCfg, normalized, Date.now(), await readLastRun(historyRoot));
-  if (preset.changed) await updateLastRun(historyRoot, (cur) => presetLastRunForNewlyEnabled(currentCfg, normalized, Date.now(), cur).lastRun);
+  const preset = presetLastRunForNewlyEnabled(
+    currentCfg,
+    normalized,
+    Date.now(),
+    await readLastRun(historyRoot),
+  );
+  if (preset.changed)
+    await updateLastRun(
+      historyRoot,
+      (cur) => presetLastRunForNewlyEnabled(currentCfg, normalized, Date.now(), cur).lastRun,
+    );
   try {
     // 写盘 + 内存权威 + scheduler 热更由 ReportConfigService 串行收口（并发 POST 不交错）
     await context.reportCfgService.update(normalized);
@@ -147,9 +176,14 @@ export async function handleReportModels(
     const models = await Promise.race([pending, timeout]);
     const list = Array.isArray(models)
       ? (models as Array<{ id?: unknown; name?: unknown } | null>)
-          .filter((m): m is { id: string; name?: string } =>
-            typeof m?.id === "string" && (m.id as string).length > 0)
-          .map((m) => ({ id: m.id, ...(typeof m.name === "string" && m.name.length > 0 ? { name: m.name as string } : {}) }))
+          .filter(
+            (m): m is { id: string; name?: string } =>
+              typeof m?.id === "string" && (m.id as string).length > 0,
+          )
+          .map((m) => ({
+            id: m.id,
+            ...(typeof m.name === "string" && m.name.length > 0 ? { name: m.name as string } : {}),
+          }))
       : [];
     writeJson(res, 200, { ok: true, models: list });
   } catch (e: unknown) {
@@ -188,14 +222,18 @@ export async function handleReportDetail(
 
   let html: string;
   try {
-    html = sanitizeHtml(await readFile(reportHtmlFile(historyRoot, period as ReportPeriod, key), "utf8"));
+    html = sanitizeHtml(
+      await readFile(reportHtmlFile(historyRoot, period as ReportPeriod, key), "utf8"),
+    );
   } catch {
     return writeJson(res, 404, { error: "report-not-found" });
   }
 
   let meta: unknown;
   try {
-    meta = JSON.parse(await readFile(reportMetaFile(historyRoot, period as ReportPeriod, key), "utf8"));
+    meta = JSON.parse(
+      await readFile(reportMetaFile(historyRoot, period as ReportPeriod, key), "utf8"),
+    );
   } catch {
     return writeJson(res, 404, { error: "report-not-found" });
   }

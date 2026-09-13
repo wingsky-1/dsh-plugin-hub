@@ -40,7 +40,9 @@ function collect(root) {
 
 const hits = collect(ROOT);
 if (hits.length > 0) {
-  console.error(`forbid-src-tests: 发现 ${hits.length} 个遗留 *.src.test.ts（#423 已消除双份，禁止回潮）：`);
+  console.error(
+    `forbid-src-tests: 发现 ${hits.length} 个遗留 *.src.test.ts（#423 已消除双份，禁止回潮）：`,
+  );
   for (const h of hits) console.error(`  - ${relative(process.cwd(), h)}`);
   process.exit(1);
 }

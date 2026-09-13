@@ -29,7 +29,12 @@ export {
 
 // ------------------------------------------------------------------ 报告生成（generate.ts）
 
-export { generateReport, applyPromptTemplate, buildStatsSnapshot, PERIOD_BUCKETS } from "./generate.ts";
+export {
+  generateReport,
+  applyPromptTemplate,
+  buildStatsSnapshot,
+  PERIOD_BUCKETS,
+} from "./generate.ts";
 export type {
   ReportMeta,
   ReportResult,

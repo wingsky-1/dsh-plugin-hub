@@ -53,7 +53,9 @@ describe("客户端样式注入行为哨兵（issue #477 验收 3/8）", () => {
     const documentStub = {
       head: headNodes,
       body: { appendChild() {} },
-      getElementById(id) { return byId.get(id) ?? null; },
+      getElementById(id) {
+        return byId.get(id) ?? null;
+      },
       createElement(tag) {
         if (tag === "style") {
           counts.created += 1;
@@ -73,14 +75,25 @@ describe("客户端样式注入行为哨兵（issue #477 验收 3/8）", () => {
     let loadedFactory = null;
     const sandbox = {
       console: { ...console, warn: () => {} },
-      Symbol, Object, Array, JSON, Math, Date, Promise,
-      setTimeout, clearTimeout,
+      Symbol,
+      Object,
+      Array,
+      JSON,
+      Math,
+      Date,
+      Promise,
+      setTimeout,
+      clearTimeout,
       fetch: () => Promise.resolve({ ok: true, json: () => Promise.resolve({}) }),
       document: documentStub,
       localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
     };
     sandbox.window = sandbox;
-    sandbox.window.__ModuleLoader__ = { load(handoff) { loadedFactory = handoff.factory; } };
+    sandbox.window.__ModuleLoader__ = {
+      load(handoff) {
+        loadedFactory = handoff.factory;
+      },
+    };
     vm.createContext(sandbox);
     vm.runInContext(clientCode, sandbox);
     factoryRegistered = loadedFactory !== null;
@@ -98,7 +111,11 @@ describe("客户端样式注入行为哨兵（issue #477 验收 3/8）", () => {
         if (name === "locale") return { register() {}, bind: () => () => "" };
         return undefined;
       },
-      effect(fn) { const d = fn(); disposers.push(d); return d; },
+      effect(fn) {
+        const d = fn();
+        disposers.push(d);
+        return d;
+      },
     };
 
     mod.apply(ctx);

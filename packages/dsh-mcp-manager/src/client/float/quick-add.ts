@@ -27,7 +27,10 @@ export function parseKV(text: any): Record<string, string> {
 
 /** 当前表单选择的归属（project/global）。 */
 export function formScopeValue(state: McpState): string {
-  if (state.formScope !== undefined && (state.formScope.value === "project" || state.formScope.value === "global")) {
+  if (
+    state.formScope !== undefined &&
+    (state.formScope.value === "project" || state.formScope.value === "global")
+  ) {
     return state.formScope.value;
   }
   return state.projectRoot !== undefined && state.projectRoot !== "" ? "project" : "global";
@@ -35,7 +38,9 @@ export function formScopeValue(state: McpState): string {
 
 /** 当前会话 cwd（POST body 携带，宿主据此切换项目级 MCP）。 */
 export function currentCwdBody(state: McpState): Record<string, string> {
-  return typeof state.currentCwd === "string" && state.currentCwd !== "" ? { cwd: state.currentCwd } : {};
+  return typeof state.currentCwd === "string" && state.currentCwd !== ""
+    ? { cwd: state.currentCwd }
+    : {};
 }
 
 /** 表单数据 → 服务器配置对象（scope 由 formScope 决定）。 */
@@ -47,7 +52,10 @@ export function readForm(state: McpState): any {
   };
   if (server.transport === "stdio") {
     server.command = state.formCommand?.value.trim() ?? "";
-    const args = (state.formArgs?.value ?? "").split(",").map((part: any) => part.trim()).filter(Boolean);
+    const args = (state.formArgs?.value ?? "")
+      .split(",")
+      .map((part: any) => part.trim())
+      .filter(Boolean);
     if (args.length > 0) server.args = args;
     const env = parseKV(state.formEnv?.value ?? "");
     if (Object.keys(env).length > 0) server.env = env;
@@ -66,7 +74,8 @@ export function resetForm(state: McpState): void {
   state.editing = undefined;
   if (state.formName === undefined) return;
   state.formName.value = "";
-  state.formScope.value = state.projectRoot !== undefined && state.projectRoot !== "" ? "project" : "global";
+  state.formScope.value =
+    state.projectRoot !== undefined && state.projectRoot !== "" ? "project" : "global";
   state.formTransport.value = "stdio";
   state.formCommand.value = "";
   state.formArgs.value = "";
@@ -93,12 +102,16 @@ export function fillForm(state: McpState, fill: any): void {
   if (fill.command !== undefined) state.formCommand.value = fill.command;
   if (Array.isArray(fill.args)) state.formArgs.value = fill.args.join(", ");
   if (fill.env !== undefined) {
-    state.formEnv.value = Object.entries(fill.env).map(([key, value]) => `${key}=${value}`).join("\n");
+    state.formEnv.value = Object.entries(fill.env)
+      .map(([key, value]) => `${key}=${value}`)
+      .join("\n");
   }
   if (fill.cwd !== undefined) state.formCwd.value = fill.cwd;
   if (fill.url !== undefined) state.formUrl.value = fill.url;
   if (fill.headers !== undefined) {
-    state.formHeaders.value = Object.entries(fill.headers).map(([key, value]) => `${key}: ${value}`).join("\n");
+    state.formHeaders.value = Object.entries(fill.headers)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join("\n");
   }
   // C1 enabled 回填：resetForm 强制 checked=true，编辑 enabled:false 的服务器
   // 必须回填，否则保存时被静默重新启用并自动连接（宿主 update 分支）。
@@ -115,21 +128,29 @@ export async function saveForm(state: McpState, actions: UiActions): Promise<voi
     // C11 迁移式保存：宿主 PATCH 按 (scope,name) 定位且强制沿用定位名——
     // 编辑改名/改归属会 404 not found 无引导。先 POST 新条目再 DELETE 旧条目，
     // 任何失败即中止（保留原条目，alert 提示），避免半迁移脏数据。
-    const migrated = editing && (state.editingName !== server.name
-      || (state.editing?.scope !== undefined && state.editing.scope !== payload.scope));
+    const migrated =
+      editing &&
+      (state.editingName !== server.name ||
+        (state.editing?.scope !== undefined && state.editing.scope !== payload.scope));
     if (migrated) {
       await api(state.API.servers, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
-      await api(`${state.API.servers}?name=${encodeURIComponent(state.editingName)}&scope=${state.editing.scope}`, { method: "DELETE" });
+      await api(
+        `${state.API.servers}?name=${encodeURIComponent(state.editingName)}&scope=${state.editing.scope}`,
+        { method: "DELETE" },
+      );
     } else if (editing) {
-      await api(`${state.API.servers}?name=${encodeURIComponent(state.editingName)}&scope=${formScopeValue(state)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      await api(
+        `${state.API.servers}?name=${encodeURIComponent(state.editingName)}&scope=${formScopeValue(state)}`,
+        {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
     } else {
       await api(state.API.servers, {
         method: "POST",
@@ -166,14 +187,22 @@ export function buildQuickAdd(state: McpState, actions: UiActions): any {
   // 表单
   const form = el("section", { class: "dm-section" });
   form.appendChild(el("h3", { id: "dm-form-title", text: t("addServer") }));
-  state.formName = el("input", { id: "dm-f-name", placeholder: "context7", value: state.editing?.name ?? "" });
+  state.formName = el("input", {
+    id: "dm-f-name",
+    placeholder: "context7",
+    value: state.editing?.name ?? "",
+  });
   state.formScope = el("select", { id: "dm-f-scope" });
   state.formScope.appendChild(el("option", { value: "project", text: t("scopeProjectOpt") }));
   state.formScope.appendChild(el("option", { value: "global", text: t("scopeGlobalOpt") }));
-  state.formScope.value = state.editing?.scope ?? (state.projectRoot !== undefined && state.projectRoot !== "" ? "project" : "global");
+  state.formScope.value =
+    state.editing?.scope ??
+    (state.projectRoot !== undefined && state.projectRoot !== "" ? "project" : "global");
   state.formTransport = el("select", { id: "dm-f-transport" });
   state.formTransport.appendChild(el("option", { value: "stdio", text: t("transportStdioOpt") }));
-  state.formTransport.appendChild(el("option", { value: "streamable-http", text: t("transportHttpOpt") }));
+  state.formTransport.appendChild(
+    el("option", { value: "streamable-http", text: t("transportHttpOpt") }),
+  );
   state.formCommand = el("input", { id: "dm-f-command", placeholder: "npx" });
   state.formArgs = el("input", { id: "dm-f-args", placeholder: "-y, @context7/mcp-server" });
   state.formEnv = el("textarea", { id: "dm-f-env", placeholder: t("envPlaceholder") });
@@ -183,19 +212,77 @@ export function buildQuickAdd(state: McpState, actions: UiActions): any {
   state.formEnabled = el("input", { id: "dm-f-enabled", type: "checkbox", checked: true });
 
   const grid = el("div", { class: "dm-form" });
-  grid.appendChild(el("div", { class: "dm-field", children: [el("label", { text: t("nameLabel") }), state.formName] }));
-  grid.appendChild(el("div", { class: "dm-field", children: [el("label", { text: t("ownershipLabel") }), state.formScope] }));
-  grid.appendChild(el("div", { class: "dm-field", children: [el("label", { text: t("transportLabel") }), state.formTransport] }));
-  grid.appendChild(el("div", { class: "dm-field dm-full", children: [el("label", { text: t("commandLabel") }), state.formCommand] }));
-  grid.appendChild(el("div", { class: "dm-field dm-full", children: [el("label", { text: t("argsLabel") }), state.formArgs] }));
-  grid.appendChild(el("div", { class: "dm-field dm-full", children: [el("label", { text: t("envLabel") }), state.formEnv] }));
-  grid.appendChild(el("div", { class: "dm-field dm-full", children: [el("label", { text: t("cwdLabel") }), state.formCwd] }));
-  grid.appendChild(el("div", { class: "dm-field dm-full", children: [el("label", { text: t("urlLabel") }), state.formUrl] }));
-  grid.appendChild(el("div", { class: "dm-field dm-full", children: [el("label", { text: t("headersLabel") }), state.formHeaders] }));
-  grid.appendChild(el("div", { class: "dm-check dm-field dm-full", children: [state.formEnabled, el("label", { text: t("enabledLabel") })] }));
+  grid.appendChild(
+    el("div", {
+      class: "dm-field",
+      children: [el("label", { text: t("nameLabel") }), state.formName],
+    }),
+  );
+  grid.appendChild(
+    el("div", {
+      class: "dm-field",
+      children: [el("label", { text: t("ownershipLabel") }), state.formScope],
+    }),
+  );
+  grid.appendChild(
+    el("div", {
+      class: "dm-field",
+      children: [el("label", { text: t("transportLabel") }), state.formTransport],
+    }),
+  );
+  grid.appendChild(
+    el("div", {
+      class: "dm-field dm-full",
+      children: [el("label", { text: t("commandLabel") }), state.formCommand],
+    }),
+  );
+  grid.appendChild(
+    el("div", {
+      class: "dm-field dm-full",
+      children: [el("label", { text: t("argsLabel") }), state.formArgs],
+    }),
+  );
+  grid.appendChild(
+    el("div", {
+      class: "dm-field dm-full",
+      children: [el("label", { text: t("envLabel") }), state.formEnv],
+    }),
+  );
+  grid.appendChild(
+    el("div", {
+      class: "dm-field dm-full",
+      children: [el("label", { text: t("cwdLabel") }), state.formCwd],
+    }),
+  );
+  grid.appendChild(
+    el("div", {
+      class: "dm-field dm-full",
+      children: [el("label", { text: t("urlLabel") }), state.formUrl],
+    }),
+  );
+  grid.appendChild(
+    el("div", {
+      class: "dm-field dm-full",
+      children: [el("label", { text: t("headersLabel") }), state.formHeaders],
+    }),
+  );
+  grid.appendChild(
+    el("div", {
+      class: "dm-check dm-field dm-full",
+      children: [state.formEnabled, el("label", { text: t("enabledLabel") })],
+    }),
+  );
   const actionsEl = el("div", { class: "dm-form-actions" });
-  const save = el("button", { class: "dm-primary", text: t("save"), onclick: () => void saveForm(state, actions) });
-  const cancel = el("button", { text: t("cancelEdit"), onclick: () => resetForm(state), disabled: true });
+  const save = el("button", {
+    class: "dm-primary",
+    text: t("save"),
+    onclick: () => void saveForm(state, actions),
+  });
+  const cancel = el("button", {
+    text: t("cancelEdit"),
+    onclick: () => resetForm(state),
+    disabled: true,
+  });
   cancel.dataset.dmCancel = "";
   actionsEl.appendChild(save);
   actionsEl.appendChild(cancel);
@@ -221,29 +308,53 @@ export function buildQuickAdd(state: McpState, actions: UiActions): any {
   const pasteBox = el("div", { class: "dm-paste-box" });
   const textarea = el("textarea", {
     class: "dm-full",
-    placeholder: '{"my-server":{"command":"npx","args":["-y","pkg"],"env":{"KEY":"value"}},"remote":{"url":"https://...","headers":{}}}',
-    style: "width:100%;min-height:90px;border:1px solid #d7dae0;border-radius:6px;padding:6px 8px;font-size:12px;font-family:ui-monospace,Consolas,monospace;box-sizing:border-box",
+    placeholder:
+      '{"my-server":{"command":"npx","args":["-y","pkg"],"env":{"KEY":"value"}},"remote":{"url":"https://...","headers":{}}}',
+    style:
+      "width:100%;min-height:90px;border:1px solid #d7dae0;border-radius:6px;padding:6px 8px;font-size:12px;font-family:ui-monospace,Consolas,monospace;box-sizing:border-box",
   });
   pasteBox.appendChild(textarea);
-  pasteBox.appendChild(el("div", { class: "dm-actions", children: [
-    el("button", { class: "dm-primary", text: t("importJson"), onclick: async () => {
-      const result = pasteBox.querySelector(".dm-result");
-      try {
-        const payload = await api(state.API.importJson, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ json: textarea.value, scope: formScopeValue(state), ...currentCwdBody(state) }),
-        });
-        result.textContent = t("importedOk", { names: payload.imported.join(", ") || t("importedNone") });
-        if (payload.skipped.length > 0) {
-          result.appendChild(el("div", { class: "dm-skip", text: t("importSkipped", { names: payload.skipped.join(", ") }) }));
-        }
-        await actions.refresh();
-      } catch (error) {
-        result.textContent = t("importFail", { msg: error instanceof Error ? error.message : String(error) });
-      }
-    } }),
-  ] }));
+  pasteBox.appendChild(
+    el("div", {
+      class: "dm-actions",
+      children: [
+        el("button", {
+          class: "dm-primary",
+          text: t("importJson"),
+          onclick: async () => {
+            const result = pasteBox.querySelector(".dm-result");
+            try {
+              const payload = await api(state.API.importJson, {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                  json: textarea.value,
+                  scope: formScopeValue(state),
+                  ...currentCwdBody(state),
+                }),
+              });
+              result.textContent = t("importedOk", {
+                names: payload.imported.join(", ") || t("importedNone"),
+              });
+              if (payload.skipped.length > 0) {
+                result.appendChild(
+                  el("div", {
+                    class: "dm-skip",
+                    text: t("importSkipped", { names: payload.skipped.join(", ") }),
+                  }),
+                );
+              }
+              await actions.refresh();
+            } catch (error) {
+              result.textContent = t("importFail", {
+                msg: error instanceof Error ? error.message : String(error),
+              });
+            }
+          },
+        }),
+      ],
+    }),
+  );
   pasteBox.appendChild(el("div", { class: "dm-result" }));
   paste.appendChild(pasteBox);
   page.appendChild(paste);

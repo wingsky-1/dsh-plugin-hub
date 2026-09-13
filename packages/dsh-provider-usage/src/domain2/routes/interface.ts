@@ -13,7 +13,14 @@
 
 // ------------------------------------------------------------------ 健康/趋势/UI 配置/SSE 路由（ui.ts）
 
-export { createUiRoutes, clampTrendN, handleHealth, handleTrend, handleUiConfig, handleEvents } from "./ui.ts";
+export {
+  createUiRoutes,
+  clampTrendN,
+  handleHealth,
+  handleTrend,
+  handleUiConfig,
+  handleEvents,
+} from "./ui.ts";
 export type { UiRoutesContext, UiRoutesContextOptions } from "./ui.ts";
 
 // ------------------------------------------------------------------ 报告配置/历史/详情/手动生成路由（reports.ts）

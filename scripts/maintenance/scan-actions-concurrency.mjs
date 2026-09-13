@@ -21,22 +21,22 @@
  *
  * 退出码：0 = 扫描完成；2 = 环境错误（gh 不可用 / 无样本）。
  */
-import { execFileSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const argv = process.argv.slice(2)
+const argv = process.argv.slice(2);
 const flag = (name) => {
-  const i = argv.indexOf(name)
-  return i === -1 ? undefined : argv[i + 1]
-}
-const REPO = 'wingsky-1/dsh-plugin-hub'
+  const i = argv.indexOf(name);
+  return i === -1 ? undefined : argv[i + 1];
+};
+const REPO = "wingsky-1/dsh-plugin-hub";
 
 function ghJson(args) {
   try {
-    return JSON.parse(execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }))
+    return JSON.parse(execFileSync("gh", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }));
   } catch (e) {
-    console.error(`[scan] gh 调用失败：${String(e.message).split('\n')[0]}`)
-    return null
+    console.error(`[scan] gh 调用失败：${String(e.message).split("\n")[0]}`);
+    return null;
   }
 }
 
@@ -49,31 +49,31 @@ function ghJson(args) {
  *   3. 峰值之后运行数**从未超过**峰值——新 job 只能等旧 job 让位。
  */
 export function peakConcurrency(jobs) {
-  const events = []
+  const events = [];
   for (const j of jobs) {
-    if (!j.started_at || !j.completed_at) continue
-    const s = Date.parse(j.started_at)
-    const e = Date.parse(j.completed_at)
-    if (!(e > s)) continue // skipped / 零宽度 job 不占并发
-    events.push({ at: s, delta: 1, name: j.name })
-    events.push({ at: e, delta: -1, name: j.name })
+    if (!j.started_at || !j.completed_at) continue;
+    const s = Date.parse(j.started_at);
+    const e = Date.parse(j.completed_at);
+    if (!(e > s)) continue; // skipped / 零宽度 job 不占并发
+    events.push({ at: s, delta: 1, name: j.name });
+    events.push({ at: e, delta: -1, name: j.name });
   }
-  events.sort((a, b) => a.at - b.at || a.delta - b.delta)
-  let cur = 0
-  let peak = 0
-  let peakAt = null
-  let peakUntil = null
-  let maxAfterPeak = 0
+  events.sort((a, b) => a.at - b.at || a.delta - b.delta);
+  let cur = 0;
+  let peak = 0;
+  let peakAt = null;
+  let peakUntil = null;
+  let maxAfterPeak = 0;
   for (const ev of events) {
-    cur += ev.delta
+    cur += ev.delta;
     if (cur > peak) {
-      peak = cur
-      peakAt = ev.at
-      peakUntil = null
+      peak = cur;
+      peakAt = ev.at;
+      peakUntil = null;
     } else if (peakAt !== null && cur < peak && peakUntil === null) {
-      peakUntil = ev.at
+      peakUntil = ev.at;
     }
-    if (peakUntil !== null) maxAfterPeak = Math.max(maxAfterPeak, cur)
+    if (peakUntil !== null) maxAfterPeak = Math.max(maxAfterPeak, cur);
   }
   return {
     peak,
@@ -82,59 +82,83 @@ export function peakConcurrency(jobs) {
     countedJobs: events.filter((e) => e.delta === 1).length,
     maxAfterPeak,
     heldSeconds: peakUntil === null ? 0 : Math.round((peakUntil - peakAt) / 1000),
-  }
+  };
 }
 
 function scanRun(runId) {
-  const d = ghJson(['api', `repos/${REPO}/actions/runs/${runId}/jobs?per_page=100`])
-  if (d === null) return null
-  const jobs = d.jobs ?? []
-  const r = peakConcurrency(jobs)
-  console.log(`\n== run ${runId} ==`)
-  console.log(`job 总数 ${jobs.length}，计入并发 ${r.countedJobs}`
-    + `，峰值 ${r.peak}（首达 ${new Date(r.peakAt).toISOString()}，维持 ${r.heldSeconds}s）`)
-  console.log(`峰值后运行数上界 ${r.maxAfterPeak}`
-    + `（${r.maxAfterPeak <= r.peak ? '未超过峰值 → 新 job 只能等旧 job 让位，符合额度饱和' : '超过峰值 → 峰值是瞬时尖峰，不能据此定标'}）`)
-  return { runId, ...r, totalJobs: jobs.length }
+  const d = ghJson(["api", `repos/${REPO}/actions/runs/${runId}/jobs?per_page=100`]);
+  if (d === null) return null;
+  const jobs = d.jobs ?? [];
+  const r = peakConcurrency(jobs);
+  console.log(`\n== run ${runId} ==`);
+  console.log(
+    `job 总数 ${jobs.length}，计入并发 ${r.countedJobs}` +
+      `，峰值 ${r.peak}（首达 ${new Date(r.peakAt).toISOString()}，维持 ${r.heldSeconds}s）`,
+  );
+  console.log(
+    `峰值后运行数上界 ${r.maxAfterPeak}` +
+      `（${r.maxAfterPeak <= r.peak ? "未超过峰值 → 新 job 只能等旧 job 让位，符合额度饱和" : "超过峰值 → 峰值是瞬时尖峰，不能据此定标"}）`,
+  );
+  return { runId, ...r, totalJobs: jobs.length };
 }
 
 function main() {
-  const runId = flag('--run')
+  const runId = flag("--run");
   if (runId !== undefined) {
-    const r = scanRun(runId)
-    return r === null ? 2 : 0
+    const r = scanRun(runId);
+    return r === null ? 2 : 0;
   }
-  const limit = Number(argv.find((a) => /^\d+$/.test(a)) ?? 40)
-  const top = Number(flag('--top') ?? 8)
-  const runs = ghJson(['run', 'list', '--repo', REPO, '--limit', String(limit),
-    '--json', 'databaseId,name,event,createdAt,conclusion'])
+  const limit = Number(argv.find((a) => /^\d+$/.test(a)) ?? 40);
+  const top = Number(flag("--top") ?? 8);
+  const runs = ghJson([
+    "run",
+    "list",
+    "--repo",
+    REPO,
+    "--limit",
+    String(limit),
+    "--json",
+    "databaseId,name,event,createdAt,conclusion",
+  ]);
   if (runs === null || runs.length === 0) {
-    console.error('[scan] 未取到 run 列表')
-    return 2
+    console.error("[scan] 未取到 run 列表");
+    return 2;
   }
-  console.log(`扫描 ${runs.length} 个 run 的 job 时间线…`)
-  const rows = []
+  console.log(`扫描 ${runs.length} 个 run 的 job 时间线…`);
+  const rows = [];
   for (const r of runs) {
-    const d = ghJson(['api', `repos/${REPO}/actions/runs/${r.databaseId}/jobs?per_page=100`])
-    if (d === null) continue
-    const { peak, countedJobs, heldSeconds } = peakConcurrency(d.jobs ?? [])
-    rows.push({ peak, heldSeconds, runId: r.databaseId, workflow: r.name, event: r.event, createdAt: r.createdAt, countedJobs })
+    const d = ghJson(["api", `repos/${REPO}/actions/runs/${r.databaseId}/jobs?per_page=100`]);
+    if (d === null) continue;
+    const { peak, countedJobs, heldSeconds } = peakConcurrency(d.jobs ?? []);
+    rows.push({
+      peak,
+      heldSeconds,
+      runId: r.databaseId,
+      workflow: r.name,
+      event: r.event,
+      createdAt: r.createdAt,
+      countedJobs,
+    });
   }
-  rows.sort((a, b) => b.peak - a.peak || b.countedJobs - a.countedJobs)
-  console.log(`\n${'peak'.padStart(5)} ${'held_s'.padStart(6)} ${'jobs'.padStart(5)}  ${'run_id'.padStart(12)}  event           createdAt`)
+  rows.sort((a, b) => b.peak - a.peak || b.countedJobs - a.countedJobs);
+  console.log(
+    `\n${"peak".padStart(5)} ${"held_s".padStart(6)} ${"jobs".padStart(5)}  ${"run_id".padStart(12)}  event           createdAt`,
+  );
   for (const r of rows.slice(0, top)) {
-    console.log(`${String(r.peak).padStart(5)} ${String(r.heldSeconds).padStart(6)} ${String(r.countedJobs).padStart(5)}  ${String(r.runId).padStart(12)}  ${r.event.padEnd(15)} ${r.createdAt}`)
+    console.log(
+      `${String(r.peak).padStart(5)} ${String(r.heldSeconds).padStart(6)} ${String(r.countedJobs).padStart(5)}  ${String(r.runId).padStart(12)}  ${r.event.padEnd(15)} ${r.createdAt}`,
+    );
   }
-  const max = rows.length > 0 ? rows[0].peak : 0
-  console.log(`\n实测并发峰值 max=${max}（样本 ${rows.length}）`)
+  const max = rows.length > 0 ? rows[0].peak : 0;
+  console.log(`\n实测并发峰值 max=${max}（样本 ${rows.length}）`);
   if (max > 0) {
-    const winner = rows[0]
-    console.log(`最高样本 run ${winner.runId} —— 用 --run ${winner.runId} 查看饱和形态`)
+    const winner = rows[0];
+    console.log(`最高样本 run ${winner.runId} —— 用 --run ${winner.runId} 查看饱和形态`);
   }
-  return 0
+  return 0;
 }
 
 // CLI 守卫：被 import 时（argv[1] 不是本文件）不执行 main，便于复用 peakConcurrency。
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  process.exit(main())
+  process.exit(main());
 }

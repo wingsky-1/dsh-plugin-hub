@@ -31,12 +31,14 @@ export function SettingsCard() {
 
   useEffect(() => {
     let live = true;
-    api(API.config).then((c: any) => {
-      if (live && c !== null && typeof c === "object") {
-        setCfg(c);
-        if (typeof c.middleware === "string") setMiddleware(c.middleware);
-      }
-    }).catch(() => {});
+    api(API.config)
+      .then((c: any) => {
+        if (live && c !== null && typeof c === "object") {
+          setCfg(c);
+          if (typeof c.middleware === "string") setMiddleware(c.middleware);
+        }
+      })
+      .catch(() => {});
     return () => {
       live = false;
       if (msgTimer.current !== undefined) {
@@ -87,7 +89,10 @@ export function SettingsCard() {
         setMsg(null);
       }, 2400);
     } catch (e) {
-      setMsg({ ok: false, text: t("saveFail", { msg: e instanceof Error ? e.message : String(e) }) });
+      setMsg({
+        ok: false,
+        text: t("saveFail", { msg: e instanceof Error ? e.message : String(e) }),
+      });
     }
     setSaving(false);
   };
@@ -154,9 +159,7 @@ export function SettingsCard() {
             {numInput("blankY", t("blankY"))}
             {numInput("zIndexBase", t("zIndexBase"), 1, 9000)}
           </div>
-          <div className="dm-set-hint">
-            {t("settingsHint")}
-          </div>
+          <div className="dm-set-hint">{t("settingsHint")}</div>
           <div className="dm-set-foot">
             {msg !== null ? (
               <span className={msg.ok ? "dm-set-saved" : "dm-set-error"}>{msg.text}</span>
@@ -165,7 +168,9 @@ export function SettingsCard() {
               type="button"
               className="dm-set-save"
               disabled={saving}
-              onClick={() => { void save(); }}
+              onClick={() => {
+                void save();
+              }}
             >
               {saving ? t("savingNow") : t("save")}
             </button>

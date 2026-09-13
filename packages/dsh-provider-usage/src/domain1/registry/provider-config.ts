@@ -121,7 +121,13 @@ async function resolveViaCredentialSeam(
   ctx?: unknown,
 ): Promise<string | undefined> {
   const anyCtx = (ctx ?? {}) as {
-    llm?: { listConfigurableProviders?: () => Array<{ provider: string; settingsNs: string; settingsPath?: string[] }> };
+    llm?: {
+      listConfigurableProviders?: () => Array<{
+        provider: string;
+        settingsNs: string;
+        settingsPath?: string[];
+      }>;
+    };
     get?: (name: string) => unknown;
   };
   if (typeof anyCtx.llm?.listConfigurableProviders !== "function") return undefined;
@@ -130,7 +136,8 @@ async function resolveViaCredentialSeam(
   if (dir === undefined) return undefined;
 
   const settings = anyCtx.get?.("settings") as { get?: (ns: string) => unknown } | undefined;
-  const credentials = anyCtx.get?.("credentials") as { resolve?: (ref: string) => Promise<{ value?: string } | undefined> } | undefined;
+  const credentials = anyCtx.get?.("credentials") as
+    { resolve?: (ref: string) => Promise<{ value?: string } | undefined> } | undefined;
   if (settings === undefined || typeof settings.get !== "function") return undefined;
   if (credentials === undefined || typeof credentials.resolve !== "function") return undefined;
 
@@ -150,10 +157,7 @@ async function resolveViaCredentialSeam(
 }
 
 /** 解析密钥（V1 配置链）。 */
-async function resolveApiKey(
-  provider: string,
-  explicitKey?: string,
-): Promise<string | undefined> {
+async function resolveApiKey(provider: string, explicitKey?: string): Promise<string | undefined> {
   // 1. 显式配置优先
   if (typeof explicitKey === "string" && explicitKey.trim() !== "") return explicitKey.trim();
 
@@ -181,7 +185,9 @@ async function resolveApiKey(
         if (legacy !== undefined) return legacy;
       }
     }
-  } catch { /* 忽略 */ }
+  } catch {
+    /* 忽略 */
+  }
 
   // 5. auth.json（仅 opencode-go）
   if (provider === "opencode-go") {
@@ -192,7 +198,9 @@ async function resolveApiKey(
         const fromAuth = opencodeKeyFromAuth(text);
         if (fromAuth !== undefined) return fromAuth;
       }
-    } catch { /* 忽略 */ }
+    } catch {
+      /* 忽略 */
+    }
   }
 
   return undefined;

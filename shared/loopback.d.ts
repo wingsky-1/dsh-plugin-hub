@@ -15,4 +15,7 @@ export interface LoopbackOptions {
  * Loopback 围栏：请求必须来自回环地址 + 回环 Host，且满足跨站/来源约束，
  * 否则拒绝（DNS 重绑定 + 跨站防御）。
  */
-export declare function isLoopbackRequest(request: IncomingMessage, options?: LoopbackOptions): boolean;
+export declare function isLoopbackRequest(
+  request: IncomingMessage,
+  options?: LoopbackOptions,
+): boolean;

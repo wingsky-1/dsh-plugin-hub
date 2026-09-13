@@ -7,7 +7,11 @@
  */
 import { describe, expect, it } from "vitest";
 import { clampTrendN } from "../../../src/domain2/routes/ui.ts";
-import { isReportPeriodValid, isReportKeyValid, isTaskIdValid } from "../../../src/domain2/routes/reports.ts";
+import {
+  isReportPeriodValid,
+  isReportKeyValid,
+  isTaskIdValid,
+} from "../../../src/domain2/routes/reports.ts";
 
 describe("clampTrendN", () => {
   it("null → 默认 day=30", () => {

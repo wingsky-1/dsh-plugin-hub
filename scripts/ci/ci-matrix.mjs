@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-import fs from 'node:fs';
-import path from 'node:path';
-import process from 'node:process';
-import { fileURLToPath } from 'node:url';
+import fs from "node:fs";
+import path from "node:path";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 /**
  * 空切片时 build-test 矩阵的哨兵项（#722）：见 computeCiMatrix 内 buildPackages 注释。
  * 取一个不可能成为包名的值，保证所有 `contains(hitPackages, matrix.package)` 条件为假。
  */
-export const NO_HIT_PACKAGE = '__no-hit-package__';
+export const NO_HIT_PACKAGE = "__no-hit-package__";
 
 /**
  * 计算 CI 切片与变异矩阵
@@ -27,13 +27,14 @@ export const NO_HIT_PACKAGE = '__no-hit-package__';
  */
 export function computeCiMatrix(options = {}) {
   const env = options.env || process.env;
-  const rootDir = options.rootDir || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+  const rootDir =
+    options.rootDir || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
   // 1. 读取候选包全量集合（单一事实源：plugins-manifest.json）
-  const manifestPath = path.join(rootDir, 'scripts/data/plugins-manifest.json');
+  const manifestPath = path.join(rootDir, "scripts/data/plugins-manifest.json");
   let manifest;
   try {
-    const raw = fs.readFileSync(manifestPath, 'utf8');
+    const raw = fs.readFileSync(manifestPath, "utf8");
     manifest = JSON.parse(raw);
   } catch (err) {
     throw new Error(`读取 plugins-manifest.json 失败（fail-closed）: ${err.message}`);
@@ -43,21 +44,21 @@ export function computeCiMatrix(options = {}) {
   const standalone = Array.isArray(manifest.standalone) ? manifest.standalone : [];
   const pluginSet = new Set([...active, ...standalone]);
   // allPackages = 全量插件集 ∪ ["dsh-plugins-all"]（排好序去重，供 downstream 产物验证）
-  const allPackages = Array.from(new Set([...pluginSet, 'dsh-plugins-all'])).sort();
+  const allPackages = Array.from(new Set([...pluginSet, "dsh-plugins-all"])).sort();
 
   if (allPackages.length === 0) {
-    throw new Error('包清单为空（fail-closed，禁止静默通过）');
+    throw new Error("包清单为空（fail-closed，禁止静默通过）");
   }
 
   // 2. 环境变量解析
-  const globalHit = env.GLOBAL_HIT === 'true';
+  const globalHit = env.GLOBAL_HIT === "true";
   const filterOutcome = env.FILTER_OUTCOME;
-  const baseSetRaw = (env.BASE_SET || '').trim();
+  const baseSetRaw = (env.BASE_SET || "").trim();
 
   let filterOutputs = {};
   if (env.FILTER_OUTPUTS) {
     try {
-      if (typeof env.FILTER_OUTPUTS === 'object' && env.FILTER_OUTPUTS !== null) {
+      if (typeof env.FILTER_OUTPUTS === "object" && env.FILTER_OUTPUTS !== null) {
         filterOutputs = env.FILTER_OUTPUTS;
       } else {
         filterOutputs = JSON.parse(env.FILTER_OUTPUTS) || {};
@@ -69,7 +70,7 @@ export function computeCiMatrix(options = {}) {
 
   // 3. 切片命中逻辑（hitPackages）
   // 若 GLOBAL_HIT === 'true' 或 FILTER_OUTCOME !== 'success' 或 BASE_SET 为空，全量回退：hitPackages = allPackages
-  const shouldFallback = globalHit || filterOutcome !== 'success' || !baseSetRaw;
+  const shouldFallback = globalHit || filterOutcome !== "success" || !baseSetRaw;
 
   let hitPackages = [];
   if (shouldFallback) {
@@ -82,7 +83,7 @@ export function computeCiMatrix(options = {}) {
     for (const pkg of allPackages) {
       const hitInBase = baseTokens.has(pkg);
       const val = filterOutputs[pkg];
-      const hitInFilter = val === true || val === 'true';
+      const hitInFilter = val === true || val === "true";
       if (hitInBase || hitInFilter) {
         hits.add(pkg);
       }
@@ -91,11 +92,11 @@ export function computeCiMatrix(options = {}) {
   }
 
   // 4. 变异切片逻辑（mutationPackages / mutationCombos）
-  const confDir = path.join(rootDir, 'stryker.conf.d');
+  const confDir = path.join(rootDir, "stryker.conf.d");
   let confFiles = [];
   try {
     if (fs.existsSync(confDir)) {
-      confFiles = fs.readdirSync(confDir).filter((f) => f.endsWith('.json'));
+      confFiles = fs.readdirSync(confDir).filter((f) => f.endsWith(".json"));
     }
   } catch {
     confFiles = [];
@@ -104,7 +105,7 @@ export function computeCiMatrix(options = {}) {
   // mutationPackages = hitPackages 中排除了 "dsh-plugins-all" 以及在 stryker.conf.d/ 中没有任何配置文件的包
   const mutationPackages = [];
   for (const pkg of hitPackages) {
-    if (pkg === 'dsh-plugins-all') continue;
+    if (pkg === "dsh-plugins-all") continue;
     const hasSingleConf = confFiles.includes(`${pkg}.json`);
     const hasSegConf = confFiles.some((f) => f.startsWith(`${pkg}-`));
     if (hasSingleConf || hasSegConf) {
@@ -132,7 +133,7 @@ export function computeCiMatrix(options = {}) {
         mutationCombos.push({ package: pkg, seg });
       }
     } else {
-      mutationCombos.push({ package: pkg, seg: '0' });
+      mutationCombos.push({ package: pkg, seg: "0" });
     }
   }
 
@@ -171,8 +172,15 @@ export function runCli(argv = process.argv, env = process.env) {
     process.exit(1);
   }
 
-  const { allPackages, hitPackages, buildPackages, mutationPackages, hasMutations, mutationCombos } = result;
-  const isJson = argv.includes('--json');
+  const {
+    allPackages,
+    hitPackages,
+    buildPackages,
+    mutationPackages,
+    hasMutations,
+    mutationCombos,
+  } = result;
+  const isJson = argv.includes("--json");
 
   if (isJson) {
     console.log(JSON.stringify(result, null, 2));
@@ -195,7 +203,7 @@ export function runCli(argv = process.argv, env = process.env) {
         `hasMutations=${hasMutations}`,
         `mutationCombos=${JSON.stringify(mutationCombos)}`,
       ];
-      fs.appendFileSync(env.GITHUB_OUTPUT, lines.join('\n') + '\n', 'utf8');
+      fs.appendFileSync(env.GITHUB_OUTPUT, lines.join("\n") + "\n", "utf8");
     } catch (err) {
       console.error(`::error::写入 GITHUB_OUTPUT 失败: ${err.message}`);
       process.exit(1);

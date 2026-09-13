@@ -49,17 +49,31 @@ async function doRefresh(state: McpState, actions: UiActions): Promise<boolean> 
     const countsEl = document.querySelector(".dm-counts");
     if (countsEl !== null) {
       const parts = [];
-      if (state.counts.connected > 0) parts.push(t("countsConnected", { n: state.counts.connected }));
-      if (state.counts.connecting > 0 || state.counts.reconnecting > 0) parts.push(t("countsConnecting", { n: (state.counts.connecting ?? 0) + (state.counts.reconnecting ?? 0) }));
+      if (state.counts.connected > 0)
+        parts.push(t("countsConnected", { n: state.counts.connected }));
+      if (state.counts.connecting > 0 || state.counts.reconnecting > 0)
+        parts.push(
+          t("countsConnecting", {
+            n: (state.counts.connecting ?? 0) + (state.counts.reconnecting ?? 0),
+          }),
+        );
       if (state.counts.failed > 0) parts.push(t("countsFailed", { n: state.counts.failed }));
-      countsEl.textContent = parts.length > 0 ? t("countsSummary", { n: state.servers.length, parts: parts.join(" · ") }) : t("countsSummaryOnly", { n: state.servers.length });
+      countsEl.textContent =
+        parts.length > 0
+          ? t("countsSummary", { n: state.servers.length, parts: parts.join(" · ") })
+          : t("countsSummaryOnly", { n: state.servers.length });
     }
     if (state.bodyEl !== undefined && state.activeTab === "servers") renderServers(state, actions);
     return true;
   } catch (error) {
     if (state.bodyEl !== undefined && state.activeTab === "servers") {
       state.bodyEl.textContent = "";
-      state.bodyEl.appendChild(el("div", { class: "dm-status", text: t("loadFail", { msg: error instanceof Error ? error.message : String(error) }) }));
+      state.bodyEl.appendChild(
+        el("div", {
+          class: "dm-status",
+          text: t("loadFail", { msg: error instanceof Error ? error.message : String(error) }),
+        }),
+      );
     }
     return false;
   }
@@ -101,13 +115,29 @@ export function showPanel(state: McpState, actions: UiActions): void {
     const head = el("div", { class: "dm-head" });
     head.appendChild(el("h2", { text: t("panelTitle") }));
     head.appendChild(el("span", { class: "dm-counts", text: "" }));
-    head.appendChild(el("button", { text: t("refresh"), onclick: () => void refresh(state, actions) }));
+    head.appendChild(
+      el("button", { text: t("refresh"), onclick: () => void refresh(state, actions) }),
+    );
     head.appendChild(el("button", { text: t("close"), onclick: () => close(state) }));
     state.card.appendChild(head);
 
     const tabs = el("div", { class: "dm-tabs" });
-    tabs.appendChild(el("button", { class: "dm-tab", dataset: { tab: "servers" }, text: t("tabServers"), onclick: () => switchTab(state, actions, "servers") }));
-    tabs.appendChild(el("button", { class: "dm-tab", dataset: { tab: "quick" }, text: t("tabQuickAdd"), onclick: () => switchTab(state, actions, "quick") }));
+    tabs.appendChild(
+      el("button", {
+        class: "dm-tab",
+        dataset: { tab: "servers" },
+        text: t("tabServers"),
+        onclick: () => switchTab(state, actions, "servers"),
+      }),
+    );
+    tabs.appendChild(
+      el("button", {
+        class: "dm-tab",
+        dataset: { tab: "quick" },
+        text: t("tabQuickAdd"),
+        onclick: () => switchTab(state, actions, "quick"),
+      }),
+    );
     state.card.appendChild(tabs);
 
     state.bodyEl = el("div", { class: "dm-body" });

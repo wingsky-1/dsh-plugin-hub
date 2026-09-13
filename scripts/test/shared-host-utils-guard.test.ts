@@ -46,7 +46,9 @@ function fakeRes() {
 
 test("非 loopback → 403 + 逐字节文案 + false", () => {
   const { rec, res } = fakeRes();
-  const allow = guardLoopbackMethod(fakeReq({ socket: { remoteAddress: "10.0.0.2" } }), res, ["GET"]);
+  const allow = guardLoopbackMethod(fakeReq({ socket: { remoteAddress: "10.0.0.2" } }), res, [
+    "GET",
+  ]);
   assert.equal(allow, false, "非 loopback 返回 false");
   assert.equal(rec.status, 403);
   assert.equal(rec.body, '{"error":"forbidden: loopback-only"}', "403 body 逐字节");
@@ -54,7 +56,9 @@ test("非 loopback → 403 + 逐字节文案 + false", () => {
 
 test("loopback Host 不合法 → 403 + 逐字节文案 + false", () => {
   const { rec, res } = fakeRes();
-  const allow = guardLoopbackMethod(fakeReq({ headers: { host: "evil.example:3080" } }), res, ["GET"]);
+  const allow = guardLoopbackMethod(fakeReq({ headers: { host: "evil.example:3080" } }), res, [
+    "GET",
+  ]);
   assert.equal(allow, false);
   assert.equal(rec.status, 403);
   assert.equal(rec.body, '{"error":"forbidden: loopback-only"}', "403 body 逐字节");
@@ -72,7 +76,11 @@ test("loopback + 方法不在白名单 → 405 + 逐字节文案 + false", () =>
     const allow = guardLoopbackMethod(fakeReq({ method }), res, whitelist);
     assert.equal(allow, false, `${method} 不在 [${whitelist}] 返回 false`);
     assert.equal(rec.status, 405, `${method} → 405`);
-    assert.equal(rec.body, `{"error":"method not allowed: ${method}"}`, `${method} 405 body 逐字节`);
+    assert.equal(
+      rec.body,
+      `{"error":"method not allowed: ${method}"}`,
+      `${method} 405 body 逐字节`,
+    );
   }
 });
 
@@ -83,7 +91,11 @@ test("无 method 字段 → 405 + method not allowed: undefined（fail-closed，
   const allow = guardLoopbackMethod(noMethod, res, ["GET"]);
   assert.equal(allow, false, "无 method 字段不放行（fail-closed）");
   assert.equal(rec.status, 405);
-  assert.equal(rec.body, '{"error":"method not allowed: undefined"}', "405 body 逐字节锚定 undefined 插值");
+  assert.equal(
+    rec.body,
+    '{"error":"method not allowed: undefined"}',
+    "405 body 逐字节锚定 undefined 插值",
+  );
 });
 
 test("loopback + 白名单内方法 → true 放行且不写响应", () => {
@@ -119,7 +131,7 @@ test("#549 默认（无 options）拒绝一切 cross-site", () => {
     assert.equal(
       isLoopbackRequest(metaReq("cross-site", mode)),
       false,
-      `cross-site + mode=${mode} 默认拒绝`
+      `cross-site + mode=${mode} 默认拒绝`,
     );
   }
 });
@@ -134,7 +146,7 @@ test("#549 allowCrossSiteNoCors：cross-site 但非 no-cors 仍拒绝（fail-clo
     assert.equal(
       isLoopbackRequest(metaReq("cross-site", mode), { allowCrossSiteNoCors: true }),
       false,
-      `cross-site + mode=${mode} 即使允许 no-cors 也拒绝`
+      `cross-site + mode=${mode} 即使允许 no-cors 也拒绝`,
     );
   }
 });
@@ -150,10 +162,16 @@ test("#549 非跨站（same-origin / same-site / none / 无头）行为不变", 
 test("#549 guardLoopbackMethod 透传 allowCrossSiteNoCors（serve 路由形态）", () => {
   const { rec, res } = fakeRes();
   const allow = guardLoopbackMethod(
-    fakeReq({ headers: { host: "127.0.0.1:3080", "sec-fetch-site": "cross-site", "sec-fetch-mode": "no-cors" } }),
+    fakeReq({
+      headers: {
+        host: "127.0.0.1:3080",
+        "sec-fetch-site": "cross-site",
+        "sec-fetch-mode": "no-cors",
+      },
+    }),
     res,
     ["GET"],
-    { allowCrossSiteNoCors: true }
+    { allowCrossSiteNoCors: true },
   );
   assert.equal(allow, true, "serve 路由经守卫透传放行 cross-site no-cors");
   assert.equal(rec.status, 0, "放行时不写响应");
@@ -162,9 +180,15 @@ test("#549 guardLoopbackMethod 透传 allowCrossSiteNoCors（serve 路由形态�
 test("#549 guardLoopbackMethod 不透传时 cross-site 仍 403", () => {
   const { rec, res } = fakeRes();
   const allow = guardLoopbackMethod(
-    fakeReq({ headers: { host: "127.0.0.1:3080", "sec-fetch-site": "cross-site", "sec-fetch-mode": "no-cors" } }),
+    fakeReq({
+      headers: {
+        host: "127.0.0.1:3080",
+        "sec-fetch-site": "cross-site",
+        "sec-fetch-mode": "no-cors",
+      },
+    }),
     res,
-    ["GET"]
+    ["GET"],
   );
   assert.equal(allow, false, "不传 options 的守卫仍拒绝 cross-site");
   assert.equal(rec.status, 403);

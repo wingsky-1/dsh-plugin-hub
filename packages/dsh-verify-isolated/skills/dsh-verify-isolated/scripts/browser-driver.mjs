@@ -24,15 +24,22 @@
  * lib/onboarding.mjs 头部。
  */
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, platform, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { createServer } from "node:net";
 import { get } from "node:http";
 import { buildDeviceMetrics, parseEmulationFlags } from "./lib/emulation.mjs";
-import {
-  MAX_OVERLAY_ROUNDS, buildOverlayProbeExpression, redactToken,
-} from "./lib/onboarding.mjs";
+import { MAX_OVERLAY_ROUNDS, buildOverlayProbeExpression, redactToken } from "./lib/onboarding.mjs";
 
 // --- 基础工具 ---
 
@@ -67,14 +74,25 @@ function parseArgs(argv) {
   const positionals = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--") { positionals.push(...argv.slice(i + 1)); break; }
-    if (!a.startsWith("--")) { positionals.push(a); continue; }
+    if (a === "--") {
+      positionals.push(...argv.slice(i + 1));
+      break;
+    }
+    if (!a.startsWith("--")) {
+      positionals.push(a);
+      continue;
+    }
     const eq = a.indexOf("=");
-    if (eq !== -1) { flags.set(a.slice(2, eq), a.slice(eq + 1)); continue; }
+    if (eq !== -1) {
+      flags.set(a.slice(2, eq), a.slice(eq + 1));
+      continue;
+    }
     const key = a.slice(2);
     const next = argv[i + 1];
-    if (next !== undefined && !next.startsWith("--")) { flags.set(key, next); i++; }
-    else flags.set(key, "true");
+    if (next !== undefined && !next.startsWith("--")) {
+      flags.set(key, next);
+      i++;
+    } else flags.set(key, "true");
   }
   return { flags, positionals };
 }
@@ -88,10 +106,15 @@ function httpJson(url, timeoutMs = 3000) {
   return new Promise((resolve, reject) => {
     const req = get(url, (res) => {
       let body = "";
-      res.on("data", (c) => { body += c; });
+      res.on("data", (c) => {
+        body += c;
+      });
       res.on("end", () => {
-        try { resolve(JSON.parse(body)); }
-        catch (e) { reject(new Error(`解析 ${url} 响应失败: ${e.message}`)); }
+        try {
+          resolve(JSON.parse(body));
+        } catch (e) {
+          reject(new Error(`解析 ${url} 响应失败: ${e.message}`));
+        }
       });
     });
     req.setTimeout(timeoutMs, () => req.destroy(new Error(`请求 ${url} 超时`)));
@@ -101,8 +124,12 @@ function httpJson(url, timeoutMs = 3000) {
 
 function pidAlive(pid) {
   if (!pid) return false;
-  try { process.kill(pid, 0); return true; }
-  catch { return false; }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function waitPidExit(pid, timeoutMs) {
@@ -115,14 +142,26 @@ async function waitPidExit(pid, timeoutMs) {
 function rpc(wsUrl, method, params = {}, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     if (typeof WebSocket !== "function") {
-      reject(new Error("当前 Node 无全局 WebSocket（需 Node >= 22），请升级 Node 或改用系统 Chrome 手工调试"));
+      reject(
+        new Error(
+          "当前 Node 无全局 WebSocket（需 Node >= 22），请升级 Node 或改用系统 Chrome 手工调试",
+        ),
+      );
       return;
     }
     const ws = new WebSocket(wsUrl);
     const pending = new Map();
     let nextId = 1;
-    const timer = setTimeout(() => { cleanup(); reject(new Error(`CDP ${method} 超时（${timeoutMs}ms）`)); }, timeoutMs);
-    const cleanup = () => { clearTimeout(timer); try { ws.close(); } catch {} };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error(`CDP ${method} 超时（${timeoutMs}ms）`));
+    }, timeoutMs);
+    const cleanup = () => {
+      clearTimeout(timer);
+      try {
+        ws.close();
+      } catch {}
+    };
     ws.onopen = () => {
       ws.send(JSON.stringify({ id: nextId, method, params }));
       pending.set(nextId, { resolve, reject });
@@ -130,35 +169,66 @@ function rpc(wsUrl, method, params = {}, timeoutMs = 15000) {
     };
     ws.onmessage = (ev) => {
       let msg;
-      try { msg = JSON.parse(String(ev.data)); } catch { return; }
+      try {
+        msg = JSON.parse(String(ev.data));
+      } catch {
+        return;
+      }
       if (msg.id && pending.has(msg.id)) {
         const p = pending.get(msg.id);
         pending.delete(msg.id);
-        if (msg.error) { cleanup(); p.reject(new Error(`${method}: ${msg.error.message}`)); }
-        else { cleanup(); p.resolve(msg.result); }
+        if (msg.error) {
+          cleanup();
+          p.reject(new Error(`${method}: ${msg.error.message}`));
+        } else {
+          cleanup();
+          p.resolve(msg.result);
+        }
       }
     };
-    ws.onerror = () => { cleanup(); reject(new Error(`WebSocket 连接失败: ${wsUrl}`)); };
-    ws.onclose = () => { cleanup(); reject(new Error(`WebSocket 已关闭: ${wsUrl}`)); };
+    ws.onerror = () => {
+      cleanup();
+      reject(new Error(`WebSocket 连接失败: ${wsUrl}`));
+    };
+    ws.onclose = () => {
+      cleanup();
+      reject(new Error(`WebSocket 已关闭: ${wsUrl}`));
+    };
   });
 }
 
 // --- 浏览器内核探测（三平台，唯一收敛点） ---
 
-const isFile = (p) => { try { return statSync(p).isFile(); } catch { return false; } };
+const isFile = (p) => {
+  try {
+    return statSync(p).isFile();
+  } catch {
+    return false;
+  }
+};
 
 function* msPlaywrightCandidates() {
   let dir = null;
-  if (platform() === "win32") dir = process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "ms-playwright") : null;
+  if (platform() === "win32")
+    dir = process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "ms-playwright") : null;
   else if (platform() === "darwin") dir = join(homedir(), "Library", "Caches", "ms-playwright");
   else dir = join(homedir(), ".cache", "ms-playwright");
   if (!dir || !existsSync(dir)) return;
   for (const entry of readdirSync(dir)) {
     const base = join(dir, entry);
-    let st; try { st = statSync(base); } catch { continue; }
+    let st;
+    try {
+      st = statSync(base);
+    } catch {
+      continue;
+    }
     if (!st.isDirectory() || !entry.startsWith("chrom")) continue;
     // linux
-    for (const p of [join(base, "chrome-linux", "chrome"), join(base, "chrome-headless-shell-linux64", "chrome-headless-shell")]) if (isFile(p)) yield p;
+    for (const p of [
+      join(base, "chrome-linux", "chrome"),
+      join(base, "chrome-headless-shell-linux64", "chrome-headless-shell"),
+    ])
+      if (isFile(p)) yield p;
     // mac：chrome-mac/Chromium.app/Contents/MacOS/Chromium 或其它 .app 名
     if (platform() === "darwin") {
       for (const sub of ["chrome-mac", "chromium-mac"]) {
@@ -171,18 +241,33 @@ function* msPlaywrightCandidates() {
       }
     }
     // win
-    for (const p of [join(base, "chrome-win", "chrome.exe"), join(base, "chrome-win32", "chrome.exe"), join(base, "chrome-headless-shell-win64", "chrome-headless-shell.exe")]) if (isFile(p)) yield p;
+    for (const p of [
+      join(base, "chrome-win", "chrome.exe"),
+      join(base, "chrome-win32", "chrome.exe"),
+      join(base, "chrome-headless-shell-win64", "chrome-headless-shell.exe"),
+    ])
+      if (isFile(p)) yield p;
   }
 }
 
 function* pathCandidates() {
-  const names = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome", "msedge"];
+  const names = [
+    "google-chrome",
+    "google-chrome-stable",
+    "chromium",
+    "chromium-browser",
+    "chrome",
+    "msedge",
+  ];
   const paths = (process.env.PATH || "").split(delimiter).filter(Boolean);
   for (const dir of paths) {
     for (const name of names) {
       const p = join(dir, name);
       if (isFile(p)) yield p;
-      if (platform() === "win32") { const pe = p + ".exe"; if (isFile(pe)) yield pe; }
+      if (platform() === "win32") {
+        const pe = p + ".exe";
+        if (isFile(pe)) yield pe;
+      }
     }
   }
 }
@@ -198,11 +283,32 @@ function* commonPathCandidates() {
       }
     }
   } else if (platform() === "win32") {
-    const roots = [process.env.ProgramFiles, process.env["ProgramFiles(x86)"], process.env.LOCALAPPDATA].filter(Boolean);
-    const subs = [join("Google", "Chrome", "Application", "chrome.exe"), join("Chromium", "Application", "chrome.exe"), join("Microsoft", "Edge", "Application", "msedge.exe")];
-    for (const root of roots) for (const sub of subs) { const p = join(root, sub); if (isFile(p)) yield p; }
+    const roots = [
+      process.env.ProgramFiles,
+      process.env["ProgramFiles(x86)"],
+      process.env.LOCALAPPDATA,
+    ].filter(Boolean);
+    const subs = [
+      join("Google", "Chrome", "Application", "chrome.exe"),
+      join("Chromium", "Application", "chrome.exe"),
+      join("Microsoft", "Edge", "Application", "msedge.exe"),
+    ];
+    for (const root of roots)
+      for (const sub of subs) {
+        const p = join(root, sub);
+        if (isFile(p)) yield p;
+      }
   } else {
-    for (const p of ["/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/local/bin/google-chrome", "/opt/google/chrome/chrome", "/snap/bin/chromium", "/usr/bin/microsoft-edge"]) if (isFile(p)) yield p;
+    for (const p of [
+      "/usr/bin/google-chrome",
+      "/usr/bin/chromium",
+      "/usr/bin/chromium-browser",
+      "/usr/local/bin/google-chrome",
+      "/opt/google/chrome/chrome",
+      "/snap/bin/chromium",
+      "/usr/bin/microsoft-edge",
+    ])
+      if (isFile(p)) yield p;
   }
 }
 
@@ -220,7 +326,11 @@ function detectChrome() {
     if (isFile(envOverride)) return envOverride;
     fail(`DSH_VERIFY_CHROME 指定路径不存在: ${envOverride}\n${INSTALL_GUIDE}`);
   }
-  for (const cand of [...msPlaywrightCandidates(), ...pathCandidates(), ...commonPathCandidates()]) {
+  for (const cand of [
+    ...msPlaywrightCandidates(),
+    ...pathCandidates(),
+    ...commonPathCandidates(),
+  ]) {
     if (isFile(cand)) return cand;
   }
   fail(INSTALL_GUIDE);
@@ -241,8 +351,11 @@ async function findFreePort() {
 
 function readState(statePath) {
   if (!existsSync(statePath)) fail(`state 文件不存在: ${statePath}（请先 launch）`);
-  try { return JSON.parse(readFileSync(statePath, "utf8")); }
-  catch { fail(`state 文件解析失败: ${statePath}`); }
+  try {
+    return JSON.parse(readFileSync(statePath, "utf8"));
+  } catch {
+    fail(`state 文件解析失败: ${statePath}`);
+  }
 }
 
 async function cmdLaunch(flags) {
@@ -264,19 +377,33 @@ async function cmdLaunch(flags) {
 
   for (const headless of headlessFlags) {
     const args = [
-      headless, "--disable-gpu", "--no-first-run", "--no-default-browser-check",
-      "--disable-dev-shm-usage", "--remote-debugging-address=127.0.0.1",
-      `--remote-debugging-port=${actualPort}`, `--user-data-dir=${finalUserDataDir}`, "about:blank",
+      headless,
+      "--disable-gpu",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--disable-dev-shm-usage",
+      "--remote-debugging-address=127.0.0.1",
+      `--remote-debugging-port=${actualPort}`,
+      `--user-data-dir=${finalUserDataDir}`,
+      "about:blank",
     ];
     stderrBuf.length = 0;
     child = spawn(bin, args, { stdio: ["ignore", "ignore", "pipe"] });
     child.unref(); // daemon：父进程退出不等待浏览器，实例由 state 文件管理
-    child.stderr.on("data", (c) => { if (stderrBuf.join("").length < 4096) stderrBuf.push(String(c)); });
+    child.stderr.on("data", (c) => {
+      if (stderrBuf.join("").length < 4096) stderrBuf.push(String(c));
+    });
     try {
-      version = await waitForDebugEndpoint(actualPort, child, 15000, () => stderrBuf.join("").split("\n").slice(-8).join("\n"));
+      version = await waitForDebugEndpoint(actualPort, child, 15000, () =>
+        stderrBuf.join("").split("\n").slice(-8).join("\n"),
+      );
       break;
     } catch (e) {
-      if (child && pidAlive(child.pid)) { try { child.kill("SIGKILL"); } catch {} }
+      if (child && pidAlive(child.pid)) {
+        try {
+          child.kill("SIGKILL");
+        } catch {}
+      }
       const headlessHint = /headless/i.test(stderrBuf.join(""));
       if (headless === "--headless=new" && headlessHint && child.exitCode !== null) continue; // 旧内核不认 =new，回退
       throw e;
@@ -310,7 +437,8 @@ async function waitForDebugEndpoint(port, child, timeoutMs, stderrSnapshot) {
       const v = await httpJson(`http://127.0.0.1:${port}/json/version`, 1000);
       if (v && v.webSocketDebuggerUrl) return v;
     } catch {}
-    if (Date.now() >= deadline) throw new Error(`等待 CDP 就绪超时（${timeoutMs}ms）\n${stderrTail}`);
+    if (Date.now() >= deadline)
+      throw new Error(`等待 CDP 就绪超时（${timeoutMs}ms）\n${stderrTail}`);
     await sleep(200);
   }
 }
@@ -327,16 +455,34 @@ async function cmdQuit(flags) {
   if (st.pid && pidAlive(st.pid)) {
     await waitPidExit(st.pid, 5000);
     if (pidAlive(st.pid)) {
-      try { process.kill(st.pid, "SIGTERM"); } catch {}
+      try {
+        process.kill(st.pid, "SIGTERM");
+      } catch {}
       await waitPidExit(st.pid, 3000);
-      if (pidAlive(st.pid)) { try { process.kill(st.pid, "SIGKILL"); } catch {} }
+      if (pidAlive(st.pid)) {
+        try {
+          process.kill(st.pid, "SIGKILL");
+        } catch {}
+      }
     }
   }
   const exited = st.pid ? !pidAlive(st.pid) : true;
   // 3. 清理自建临时目录与 state 文件
-  if (st.userDataDirOwned && st.userDataDir) { try { rmSync(st.userDataDir, { recursive: true, force: true }); } catch {} }
-  try { unlinkSync(statePath); } catch {}
-  out(flags, { ok: true, pid: st.pid, exited, cleaned: st.userDataDirOwned ? st.userDataDir : null, stateFile: statePath });
+  if (st.userDataDirOwned && st.userDataDir) {
+    try {
+      rmSync(st.userDataDir, { recursive: true, force: true });
+    } catch {}
+  }
+  try {
+    unlinkSync(statePath);
+  } catch {}
+  out(flags, {
+    ok: true,
+    pid: st.pid,
+    exited,
+    cleaned: st.userDataDirOwned ? st.userDataDir : null,
+    stateFile: statePath,
+  });
 }
 
 // --- 页面操作（每次调用独立连接，操作互不依赖） ---
@@ -361,10 +507,15 @@ async function connectPage(statePath, index) {
 
 async function evalRaw(wsUrl, expression) {
   const res = await rpc(wsUrl, "Runtime.evaluate", {
-    expression, returnByValue: true, awaitPromise: true, userGesture: true,
+    expression,
+    returnByValue: true,
+    awaitPromise: true,
+    userGesture: true,
   });
   if (res.exceptionDetails) {
-    throw new Error(`页面执行异常: ${res.exceptionDetails.exception?.description || res.exceptionDetails.text}`);
+    throw new Error(
+      `页面执行异常: ${res.exceptionDetails.exception?.description || res.exceptionDetails.text}`,
+    );
   }
   return res.result.value;
 }
@@ -372,7 +523,11 @@ async function evalRaw(wsUrl, expression) {
 async function navigateIfGiven(wsUrl, url, timeoutMs = 15000) {
   if (!url) return;
   await rpc(wsUrl, "Page.navigate", { url });
-  await poll(async () => (await evalRaw(wsUrl, "document.readyState")) === "complete", timeoutMs, 200);
+  await poll(
+    async () => (await evalRaw(wsUrl, "document.readyState")) === "complete",
+    timeoutMs,
+    200,
+  );
 }
 
 /**
@@ -385,7 +540,9 @@ function resolveTargetUrl(flags, st) {
   if (raw === null || raw !== "state") return raw;
   const url = st?.dshWebUrl;
   if (!url) {
-    fail("--url state 需要 state 文件里存在 dshWebUrl（由 verify-isolated.mjs 写入）；手动拉起的 dsh web 请直接传带令牌的完整 URL");
+    fail(
+      "--url state 需要 state 文件里存在 dshWebUrl（由 verify-isolated.mjs 写入）；手动拉起的 dsh web 请直接传带令牌的完整 URL",
+    );
   }
   return url;
 }
@@ -417,15 +574,25 @@ async function settleOverlays(wsUrl, flags) {
     let seen = false;
     const deadline = Date.now() + waitMs;
     for (;;) {
-      try { probe = await evalRaw(wsUrl, expr); } catch { return result; }
+      try {
+        probe = await evalRaw(wsUrl, expr);
+      } catch {
+        return result;
+      }
       if (!probe) return result;
       if (probe.authRequired) result.authRequired = true;
-      if (probe.blocked) { seen = true; break; }
+      if (probe.blocked) {
+        seen = true;
+        break;
+      }
       if (Date.now() >= deadline) break;
       await sleep(150);
     }
     if (!seen) return result;
-    if (!probe.dismissed) { result.blocked = { reason: probe.reason, buttons: probe.buttons ?? [] }; return result; }
+    if (!probe.dismissed) {
+      result.blocked = { reason: probe.reason, buttons: probe.buttons ?? [] };
+      return result;
+    }
     result.dismissed.push(probe.clicked);
   }
   return result;
@@ -449,11 +616,15 @@ async function goto(wsUrl, flags, st) {
 function reportOverlay(overlay) {
   if (!overlay) return;
   if (overlay.authRequired) {
-    process.stderr.write("警告: 页面返回 dsh web 鉴权拒绝（缺访问令牌）——用 --url state 取 state 里的带令牌 URL；裸端口只会得到 401 文本页\n");
+    process.stderr.write(
+      "警告: 页面返回 dsh web 鉴权拒绝（缺访问令牌）——用 --url state 取 state 里的带令牌 URL；裸端口只会得到 401 文本页\n",
+    );
   }
   if (overlay.blocked) {
     const detail = overlay.blocked.buttons.length ? `: ${overlay.blocked.buttons.join(" / ")}` : "";
-    process.stderr.write(`警告: 首启弹窗未跳过（${overlay.blocked.reason}${detail}）——应用根仍为 inert，随后点击不会生效\n`);
+    process.stderr.write(
+      `警告: 首启弹窗未跳过（${overlay.blocked.reason}${detail}）——应用根仍为 inert，随后点击不会生效\n`,
+    );
   }
 }
 
@@ -478,10 +649,17 @@ function selExpr(selector, extra) {
 async function waitSelector(wsUrl, selector, timeoutMs) {
   // selExpr 未命中返回 { found:false }（对象恒 truthy），poll 必须显式判 found===true，
   // 否则等待会立即「成功」（假绿）
-  const found = await poll(async () => {
-    try { return (await evalRaw(wsUrl, selExpr(selector))).found === true; }
-    catch { return false; }
-  }, timeoutMs, 200);
+  const found = await poll(
+    async () => {
+      try {
+        return (await evalRaw(wsUrl, selExpr(selector))).found === true;
+      } catch {
+        return false;
+      }
+    },
+    timeoutMs,
+    200,
+  );
   if (!found) throw new Error(`等待选择器超时（${timeoutMs}ms）: ${selector}`);
 }
 
@@ -521,15 +699,24 @@ async function withPageEmulation(flags, run) {
     try {
       await rpcRaw(emuWs, "Emulation.clearDeviceMetricsOverride", {});
       const restored = await readViewport(emuWs);
-      const drifted = baseline && (restored.width !== baseline.width
-        || restored.height !== baseline.height || restored.dpr !== baseline.dpr);
+      const drifted =
+        baseline &&
+        (restored.width !== baseline.width ||
+          restored.height !== baseline.height ||
+          restored.dpr !== baseline.dpr);
       if (drifted) {
-        process.stderr.write(`警告: 设备模拟清理后视口未复原（${restored.width}x${restored.height}@${restored.dpr}，期望 ${baseline.width}x${baseline.height}@${baseline.dpr}）——后续命令可能受残留影响，必要时 quit 重建实例\n`);
+        process.stderr.write(
+          `警告: 设备模拟清理后视口未复原（${restored.width}x${restored.height}@${restored.dpr}，期望 ${baseline.width}x${baseline.height}@${baseline.dpr}）——后续命令可能受残留影响，必要时 quit 重建实例\n`,
+        );
       }
     } catch (e) {
-      process.stderr.write(`警告: 设备模拟清理失败（${e.message}）——视口状态可能残留，必要时 quit 重建实例\n`);
+      process.stderr.write(
+        `警告: 设备模拟清理失败（${e.message}）——视口状态可能残留，必要时 quit 重建实例\n`,
+      );
     }
-    try { emuWs.close(); } catch {}
+    try {
+      emuWs.close();
+    } catch {}
   }
 }
 
@@ -543,15 +730,33 @@ async function cmdSnapshot(flags) {
     let bodyText = null;
     let element = null;
     if (selector) {
-      element = await evalRaw(page.webSocketDebuggerUrl, selExpr(selector, `
+      element = await evalRaw(
+        page.webSocketDebuggerUrl,
+        selExpr(
+          selector,
+          `
         const r = el.getBoundingClientRect();
-        return { found: true, tag: el.tagName, text: (el.innerText || el.textContent || "").slice(0, 2000), rect: { x: r.x, y: r.y, width: r.width, height: r.height } };`));
+        return { found: true, tag: el.tagName, text: (el.innerText || el.textContent || "").slice(0, 2000), rect: { x: r.x, y: r.y, width: r.width, height: r.height } };`,
+        ),
+      );
     } else {
-      bodyText = (await evalRaw(page.webSocketDebuggerUrl, "document.body ? document.body.innerText.slice(0, 2000) : ''") || "");
+      bodyText =
+        (await evalRaw(
+          page.webSocketDebuggerUrl,
+          "document.body ? document.body.innerText.slice(0, 2000) : ''",
+        )) || "";
     }
-    const pages = (await httpJson(`http://127.0.0.1:${st.port}/json/list`) || []).filter((t) => t.type === "page");
+    const pages = ((await httpJson(`http://127.0.0.1:${st.port}/json/list`)) || []).filter(
+      (t) => t.type === "page",
+    );
     out(flags, {
-      ok: true, title, url: redactToken(pageUrl), readyState, tabCount: pages.length, bodyText, element,
+      ok: true,
+      title,
+      url: redactToken(pageUrl),
+      readyState,
+      tabCount: pages.length,
+      bodyText,
+      element,
       ...overlayFields(nav.overlay),
     });
   });
@@ -564,12 +769,20 @@ async function cmdClick(flags) {
   await withPageEmulation(flags, async ({ st, page }) => {
     const nav = await goto(page.webSocketDebuggerUrl, flags, st);
     await waitSelector(page.webSocketDebuggerUrl, selector, timeoutMs);
-    const clicked = await evalRaw(page.webSocketDebuggerUrl, selExpr(selector, `
+    const clicked = await evalRaw(
+      page.webSocketDebuggerUrl,
+      selExpr(
+        selector,
+        `
       el.scrollIntoView({ block: "center" });
       el.click();
-      return { found: true, clicked: true, tag: el.tagName };`));
+      return { found: true, clicked: true, tag: el.tagName };`,
+      ),
+    );
     out(flags, {
-      ok: true, selector, clicked,
+      ok: true,
+      selector,
+      clicked,
       url: nav.url ? redactToken(nav.url) : undefined,
       ...overlayFields(nav.overlay),
     });
@@ -592,7 +805,9 @@ async function cmdFill(flags) {
   if (!selector) fail("fill 需要 --selector");
   await withPageEmulation(flags, async ({ page }) => {
     await waitSelector(page.webSocketDebuggerUrl, selector, timeoutMs);
-    const filled = await evalRaw(page.webSocketDebuggerUrl, `(() => {
+    const filled = await evalRaw(
+      page.webSocketDebuggerUrl,
+      `(() => {
       const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) return { found: false };
       const tag = el.tagName.toLowerCase();
@@ -605,7 +820,8 @@ async function cmdFill(flags) {
         el.dispatchEvent(new Event("change", { bubbles: true }));
       }
       return { found: true, tag, value: el.value };
-    })()`);
+    })()`,
+    );
     out(flags, { ok: true, selector, value, filled });
   });
 }
@@ -618,7 +834,12 @@ async function cmdWait(flags) {
     const started = Date.now();
     const nav = await goto(page.webSocketDebuggerUrl, flags, st);
     await waitSelector(page.webSocketDebuggerUrl, selector, timeoutMs);
-    out(flags, { ok: true, selector, waitedMs: Date.now() - started, ...overlayFields(nav.overlay) });
+    out(flags, {
+      ok: true,
+      selector,
+      waitedMs: Date.now() - started,
+      ...overlayFields(nav.overlay),
+    });
   });
 }
 
@@ -630,21 +851,33 @@ async function cmdScreenshot(flags) {
     let clip = undefined;
     if (selector) {
       await waitSelector(page.webSocketDebuggerUrl, selector, 10000);
-      clip = await evalRaw(page.webSocketDebuggerUrl, selExpr(selector, `
+      clip = await evalRaw(
+        page.webSocketDebuggerUrl,
+        selExpr(
+          selector,
+          `
         const r = el.getBoundingClientRect();
         // getBoundingClientRect 是 viewport 坐标；captureBeyondViewport 下 CDP 按文档
         // 坐标解释 clip，须加 scrollX/scrollY 转换，否则页面滚动后截空白
-        return { found: true, x: r.x + window.scrollX, y: r.y + window.scrollY, width: r.width, height: r.height, dpr: window.devicePixelRatio || 1 };`));
+        return { found: true, x: r.x + window.scrollX, y: r.y + window.scrollY, width: r.width, height: r.height, dpr: window.devicePixelRatio || 1 };`,
+        ),
+      );
       if (!clip || !clip.found) throw new Error(`截图元素未找到: ${selector}`);
       clip = { x: clip.x, y: clip.y, width: clip.width, height: clip.height, scale: clip.dpr };
     }
     const shot = await rpc(page.webSocketDebuggerUrl, "Page.captureScreenshot", {
-      format: "png", captureBeyondViewport: true, fromSurface: true, clip,
+      format: "png",
+      captureBeyondViewport: true,
+      fromSurface: true,
+      clip,
     });
     writeFileSync(outPath, Buffer.from(shot.data, "base64"));
     const dims = clip ? { width: clip.width, height: clip.height } : null;
     out(flags, {
-      ok: true, path: outPath, bytes: Buffer.byteLength(shot.data, "base64"), clip: dims,
+      ok: true,
+      path: outPath,
+      bytes: Buffer.byteLength(shot.data, "base64"),
+      clip: dims,
       url: nav.url ? redactToken(nav.url) : undefined,
       ...overlayFields(nav.overlay),
     });
@@ -657,17 +890,38 @@ async function cmdConsole(flags) {
     const messages = [];
     const collect = (ev) => {
       if (!ev.data || typeof ev.data !== "string") return;
-      let m; try { m = JSON.parse(ev.data); } catch { return; }
+      let m;
+      try {
+        m = JSON.parse(ev.data);
+      } catch {
+        return;
+      }
       if (!m || m.id) return;
       if (m.method === "Runtime.consoleAPICalled") {
         const args = (m.params.args || []).map((a) => a.value ?? a.description ?? a.type);
-        messages.push({ type: m.params.type, text: args.join(" "), url: m.params.url || null, line: m.params.lineNumber ?? null });
+        messages.push({
+          type: m.params.type,
+          text: args.join(" "),
+          url: m.params.url || null,
+          line: m.params.lineNumber ?? null,
+        });
       } else if (m.method === "Runtime.exceptionThrown") {
         const d = m.params.exceptionDetails || {};
-        messages.push({ type: "exception", text: d.exception?.description || d.text || "未捕获异常", url: d.url || null, line: d.lineNumber ?? null });
+        messages.push({
+          type: "exception",
+          text: d.exception?.description || d.text || "未捕获异常",
+          url: d.url || null,
+          line: d.lineNumber ?? null,
+        });
       } else if (m.method === "Log.entryAdded") {
         const e = m.params.entry || {};
-        messages.push({ type: "log", level: e.level, text: e.text, url: e.url || null, line: e.lineNumber ?? null });
+        messages.push({
+          type: "log",
+          level: e.level,
+          text: e.text,
+          url: e.url || null,
+          line: e.lineNumber ?? null,
+        });
       }
     };
     const ws = await openRawWs(page.webSocketDebuggerUrl, collect);
@@ -682,10 +936,20 @@ async function cmdConsole(flags) {
       const target = resolveTargetUrl(flags, st);
       if (target) await rpcRaw(ws, "Page.navigate", { url: target });
       else await rpcRaw(ws, "Page.reload", {});
-      await poll(async () => {
-        try { return (await rpcRaw(ws, "Runtime.evaluate", { expression: readyExpr, returnByValue: true })).result.value === "complete"; }
-        catch { return false; }
-      }, 15000, 200);
+      await poll(
+        async () => {
+          try {
+            return (
+              (await rpcRaw(ws, "Runtime.evaluate", { expression: readyExpr, returnByValue: true }))
+                .result.value === "complete"
+            );
+          } catch {
+            return false;
+          }
+        },
+        15000,
+        200,
+      );
       overlay = await settleOverlays(page.webSocketDebuggerUrl, flags);
       reportOverlay(overlay);
     } catch {}
@@ -714,11 +978,17 @@ function rpcRaw(ws, method, params = {}) {
     const id = ++rpcRaw.nextId;
     const timer = setTimeout(() => reject(new Error(`CDP ${method} 超时`)), 15000);
     const onMsg = (ev) => {
-      let msg; try { msg = JSON.parse(String(ev.data)); } catch { return; }
+      let msg;
+      try {
+        msg = JSON.parse(String(ev.data));
+      } catch {
+        return;
+      }
       if (msg.id === id) {
         clearTimeout(timer);
         ws.removeEventListener("message", onMsg);
-        msg.error ? reject(new Error(`${method}: ${msg.error.message}`)) : resolve(msg.result);
+        if (msg.error) reject(new Error(`${method}: ${msg.error.message}`));
+        else resolve(msg.result);
       }
     };
     ws.addEventListener("message", onMsg);
@@ -767,31 +1037,63 @@ const USAGE_COMMON = `通用：--state <path> 指定实例 state 文件（多会
 const USAGE = `${USAGE_HEAD}\n${USAGE_COMMANDS}\n\n${USAGE_COMMON}`;
 
 function printHelp(cmd) {
-  if (!cmd) { process.stdout.write(USAGE + "\n"); return; }
+  if (!cmd) {
+    process.stdout.write(USAGE + "\n");
+    return;
+  }
   const lines = USAGE_COMMANDS.split("\n").filter((l) => l.includes(cmd));
   process.stdout.write([USAGE_HEAD, ...lines, "", USAGE_COMMON].join("\n") + "\n");
 }
 
 async function main() {
   const argv = process.argv.slice(2);
-  if (argv.length === 0) { process.stdout.write(USAGE + "\n"); process.exit(2); }
+  if (argv.length === 0) {
+    process.stdout.write(USAGE + "\n");
+    process.exit(2);
+  }
   const first = argv[0];
-  if (first === "--help" || first === "-h" || first === "help") { printHelp(argv[1]); process.exit(0); }
+  if (first === "--help" || first === "-h" || first === "help") {
+    printHelp(argv[1]);
+    process.exit(0);
+  }
   const { flags } = parseArgs(argv.slice(1));
-  if (flags.has("help")) { printHelp(first); process.exit(0); }
+  if (flags.has("help")) {
+    printHelp(first);
+    process.exit(0);
+  }
   const pretty = flags.has("pretty");
   try {
     switch (first) {
-      case "launch": await cmdLaunch(flags); break;
-      case "quit": await cmdQuit(flags); break;
-      case "snapshot": await cmdSnapshot(flags); break;
-      case "click": await cmdClick(flags); break;
-      case "eval": await cmdEval(flags); break;
-      case "fill": await cmdFill(flags); break;
-      case "wait": await cmdWait(flags); break;
-      case "screenshot": await cmdScreenshot(flags); break;
-      case "console": await cmdConsole(flags); break;
-      default: jsonOut({ ok: false, error: `未知命令: ${first}` }); process.exit(2);
+      case "launch":
+        await cmdLaunch(flags);
+        break;
+      case "quit":
+        await cmdQuit(flags);
+        break;
+      case "snapshot":
+        await cmdSnapshot(flags);
+        break;
+      case "click":
+        await cmdClick(flags);
+        break;
+      case "eval":
+        await cmdEval(flags);
+        break;
+      case "fill":
+        await cmdFill(flags);
+        break;
+      case "wait":
+        await cmdWait(flags);
+        break;
+      case "screenshot":
+        await cmdScreenshot(flags);
+        break;
+      case "console":
+        await cmdConsole(flags);
+        break;
+      default:
+        jsonOut({ ok: false, error: `未知命令: ${first}` });
+        process.exit(2);
     }
     // 成功路径显式退出：launch 等命令持有子进程管道句柄，不显式退出会阻塞事件循环
     process.exit(0);

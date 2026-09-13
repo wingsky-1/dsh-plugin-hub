@@ -150,7 +150,11 @@ export function SettingsCard(props?: { defaults?: Record<string, any> }) {
     // 增量提交（issue #33 子项 2）：只发送与加载基线不同的键，未改动的键
     // 不提交——组合层 base 设值不会被客户端默认值静默覆盖回写；宿主端把
     // patch 经 scope.update 增量合并进官方设置存储的用户层。
-    const normalized: Record<string, any> = { port: portValue, httpsPort: httpsPortValue, httpCompressLevel: levelValue };
+    const normalized: Record<string, any> = {
+      port: portValue,
+      httpsPort: httpsPortValue,
+      httpCompressLevel: levelValue,
+    };
     const payload: Record<string, any> = {};
     for (const key in DEFAULTS) {
       const cur = key in normalized ? normalized[key] : settings[key];
@@ -164,25 +168,33 @@ export function SettingsCard(props?: { defaults?: Record<string, any> }) {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ patch: payload, expectedRevision: revision }),
-    }).then((r: any) => {
-      return r.json().then((body: any) => {
-        if (!r.ok) {
-          const err = (body && body.error) || {};
-          throw new Error(err.details || err.code || ("HTTP " + r.status));
-        }
-        return body;
+    })
+      .then((r: any) => {
+        return r.json().then((body: any) => {
+          if (!r.ok) {
+            const err = (body && body.error) || {};
+            throw new Error(err.details || err.code || "HTTP " + r.status);
+          }
+          return body;
+        });
+      })
+      .then((body: any) => {
+        baseline = Object.assign({}, settings);
+        revision = (body && body.revision) || revision;
+        setSaved(t("savedOk"));
+        setTimeout(() => {
+          setSaved("");
+        }, 2200);
+      })
+      .catch((e: any) => {
+        const msg = (e && e.message) || e;
+        setSaved(
+          String(msg).indexOf("已被其他窗口修改") >= 0
+            ? t("saveFailConflict", { msg: msg })
+            : t("saveFail", { msg: msg }),
+          true,
+        );
       });
-    }).then((body: any) => {
-      baseline = Object.assign({}, settings);
-      revision = (body && body.revision) || revision;
-      setSaved(t("savedOk"));
-      setTimeout(() => { setSaved(""); }, 2200);
-    }).catch((e: any) => {
-      const msg = (e && e.message) || e;
-      setSaved(String(msg).indexOf("已被其他窗口修改") >= 0
-        ? t("saveFailConflict", { msg: msg })
-        : t("saveFail", { msg: msg }), true);
-    });
   }
 
   const compressLine = compressStatusLine(compress);
@@ -322,7 +334,10 @@ export function SettingsCard(props?: { defaults?: Record<string, any> }) {
               title={t("wsPathsHint")}
               value={(settings.wsCompressPaths || []).join(", ")}
               onChange={(e: any) => {
-                const parts = e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean);
+                const parts = e.target.value
+                  .split(",")
+                  .map((s: string) => s.trim())
+                  .filter(Boolean);
                 patch({ wsCompressPaths: parts });
               }}
             />
@@ -365,9 +380,7 @@ export function SettingsCard(props?: { defaults?: Record<string, any> }) {
             <div className="lp-set-warn">{t("injectTokenOnHint")}</div>
           ) : null}
           <div className="lp-set-hint">{t("bodyHint")}</div>
-          {compressLine ? (
-            <div className="lp-set-status">{compressLine}</div>
-          ) : null}
+          {compressLine ? <div className="lp-set-status">{compressLine}</div> : null}
           <div className="lp-set-foot">
             {saved ? (
               <span className={saved.err ? "lp-set-error" : "lp-set-saved"}>{saved.msg}</span>

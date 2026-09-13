@@ -7,7 +7,14 @@ import { Mutex } from "async-mutex";
 import { errorMessage } from "../../../../../shared/host-utils.js";
 import type { NormalizedConfig } from "../../shared/interface.ts";
 import type { HistoryStore } from "../history/interface.ts";
-import { runV2Pipeline, runV2PanelPipeline, panelCacheKey, isPanelCacheStale, type PanelCacheEntry, type V2PipelineResult } from "./v2.ts";
+import {
+  runV2Pipeline,
+  runV2PanelPipeline,
+  panelCacheKey,
+  isPanelCacheStale,
+  type PanelCacheEntry,
+  type V2PipelineResult,
+} from "./v2.ts";
 import { resolveProviderConfig } from "../registry/interface.ts";
 import type { AdapterRegistry } from "../registry/interface.ts";
 import type { UsageStatsAdapter } from "../../shared/interface.ts";
@@ -46,7 +53,10 @@ export class StatsService {
   // 在途 getStats 完成后校验纪元未变才 set，防「选择切换×在途取数」交错污染新缓存。
   private cacheGeneration = 0;
   /** 面板管道 in-flight 去重（同 key 并发 miss 共享一次执行）。 */
-  private readonly panelInFlight = new Map<string, Promise<{ panelHtml?: string; error?: string }>>();
+  private readonly panelInFlight = new Map<
+    string,
+    Promise<{ panelHtml?: string; error?: string }>
+  >();
 
   private stateChain: Promise<void> = Promise.resolve();
 
@@ -134,7 +144,11 @@ export class StatsService {
         timeoutMs: this.config.fetchTimeoutMs,
       });
       if (result.error === undefined) {
-        this.panelCache.set(cacheKey, { panelHtml: result.panelHtml, error: result.error, at: Date.now() });
+        this.panelCache.set(cacheKey, {
+          panelHtml: result.panelHtml,
+          error: result.error,
+          at: Date.now(),
+        });
       }
       return result;
     })().finally(() => {
@@ -160,15 +174,16 @@ export class StatsService {
           diagnostic: this.recordAdapterStateDiagnostic,
         });
         if (saved.status === "unreadable") {
-          throw new Error(`读取旧 adapter-state.json 失败（${saved.detail ?? "未知错误"}），为避免覆盖旧状态已取消写入`);
+          throw new Error(
+            `读取旧 adapter-state.json 失败（${saved.detail ?? "未知错误"}），为避免覆盖旧状态已取消写入`,
+          );
         }
         const merged: Record<string, string | null> = { ...saved.state };
-        for (const [provider, name] of Object.entries(this.registry.snapshot().enabled)) merged[provider] = name;
+        for (const [provider, name] of Object.entries(this.registry.snapshot().enabled))
+          merged[provider] = name;
         if (override !== undefined) Object.assign(merged, override);
-        await writeAdapterState(
-          this.historyRoot,
-          merged,
-          (message) => this.recordAdapterStateDiagnostic(this.sanitizeDiagnostic(message)),
+        await writeAdapterState(this.historyRoot, merged, (message) =>
+          this.recordAdapterStateDiagnostic(this.sanitizeDiagnostic(message)),
         );
       })
       .catch((error: unknown) => {
@@ -190,7 +205,11 @@ export class StatsService {
     try {
       await (this.stateChain = this.stateChain.then(write));
     } catch (e: unknown) {
-      this.registry.recordError("user-adapters", "load", `清单落盘失败：${e instanceof Error ? e.message : String(e)}`);
+      this.registry.recordError(
+        "user-adapters",
+        "load",
+        `清单落盘失败：${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }
 

@@ -172,7 +172,11 @@ export function alignLastRun(
  * - weekly：恒为上一完整周（覆盖距今最近已闭环的前 7 天）；
  * - monthly：恒为上一完整自然月 [上月1日, 上月末]。
  */
-export function previousClosedWindow(period: ReportPeriod, cfg: ReportConfig, now: number): DueReport {
+export function previousClosedWindow(
+  period: ReportPeriod,
+  cfg: ReportConfig,
+  now: number,
+): DueReport {
   if (period === "daily") {
     const yesterday = addDays(dayKey(now), -1);
     return { period, key: yesterday, startDay: yesterday, endDay: yesterday };
@@ -199,7 +203,11 @@ export function previousClosedWindow(period: ReportPeriod, cfg: ReportConfig, no
  * 对每个启用期，取候选窗口；窗口键 > lastRun[period]（日期字典序）即到期。
  * lastRun 缺失视为从未生成（首次挂载即补生成最近窗口——补跑语义）。
  */
-export function pendingReports(cfg: ReportConfig, now: number, lastRun: Partial<Record<ReportPeriod, string>>): DueReport[] {
+export function pendingReports(
+  cfg: ReportConfig,
+  now: number,
+  lastRun: Partial<Record<ReportPeriod, string>>,
+): DueReport[] {
   const out: DueReport[] = [];
   const periods: ReportPeriod[] = ["daily", "weekly", "monthly"];
   for (const period of periods) {

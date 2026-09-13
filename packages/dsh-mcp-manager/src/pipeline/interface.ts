@@ -19,11 +19,5 @@ export {
   isToolDenied,
   toolDisabledReason,
 } from "./authorize.ts";
-export {
-  defaultCallResultFallbackText,
-  projectCallToolResult,
-} from "./project.ts";
-export type {
-  CallResultTextHandlers,
-  ProjectedCallResult,
-} from "./project.ts";
+export { defaultCallResultFallbackText, projectCallToolResult } from "./project.ts";
+export type { CallResultTextHandlers, ProjectedCallResult } from "./project.ts";

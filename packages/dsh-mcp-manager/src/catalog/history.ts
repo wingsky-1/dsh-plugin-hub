@@ -19,7 +19,11 @@ export interface CatalogHistoryResult {
 export interface CatalogAgent {
   session?: {
     surface?: { nodes?: unknown[] };
-    snapshotEvents?: () => ReadonlyArray<{ type?: string; seq?: unknown; data?: { source?: CatalogSourceLike } }>;
+    snapshotEvents?: () => ReadonlyArray<{
+      type?: string;
+      seq?: unknown;
+      data?: { source?: CatalogSourceLike };
+    }>;
   };
 }
 

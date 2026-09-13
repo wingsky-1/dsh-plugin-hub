@@ -8,17 +8,14 @@
  */
 
 // runner 面（test/**/*.test.ts，与 vitest include 同口径）：`--min` 与登记完整性判据 ③ 的唯一口径。
-export const RUN_TESTS_PATTERN = 'test/**/*.test.ts'
+export const RUN_TESTS_PATTERN = "test/**/*.test.ts";
 
 /**
  * 段级 excludes 的默认值：拓扑里未显式声明 excludes 的段，生成时按此注入。
  * 与 packages/<pkg>/src/client/**、src/types.ts 同为「不建议纳入变异面」的默认面。
  */
 export function defaultSegmentExcludes(pkgName) {
-  return [
-    `!packages/${pkgName}/src/client/**`,
-    `!packages/${pkgName}/src/types.ts`,
-  ]
+  return [`!packages/${pkgName}/src/client/**`, `!packages/${pkgName}/src/types.ts`];
 }
 
 /**
@@ -27,15 +24,15 @@ export function defaultSegmentExcludes(pkgName) {
  * 覆盖断言与派生器共用本函数，故不存在「一边有默认值、一边没有」的漂移面。
  */
 export function collectMutationSpecs(topology, pkgName) {
-  const pkgDef = topology?.packages?.[pkgName]
-  if (pkgDef === undefined) return null
-  const mutate = []
-  const excludes = []
+  const pkgDef = topology?.packages?.[pkgName];
+  if (pkgDef === undefined) return null;
+  const mutate = [];
+  const excludes = [];
   for (const seg of Object.values(pkgDef.segments ?? {})) {
-    for (const g of seg.mutate ?? []) mutate.push(g)
-    const segExcludes = seg.excludes ?? defaultSegmentExcludes(pkgName)
-    for (const g of segExcludes) excludes.push(g.replace(/^!/, ''))
+    for (const g of seg.mutate ?? []) mutate.push(g);
+    const segExcludes = seg.excludes ?? defaultSegmentExcludes(pkgName);
+    for (const g of segExcludes) excludes.push(g.replace(/^!/, ""));
   }
-  for (const g of pkgDef.testLayers?.coverageExcludes ?? []) excludes.push(g.replace(/^!/, ''))
-  return { mutate, excludes }
+  for (const g of pkgDef.testLayers?.coverageExcludes ?? []) excludes.push(g.replace(/^!/, ""));
+  return { mutate, excludes };
 }

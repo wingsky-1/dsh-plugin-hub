@@ -20,7 +20,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { pollUntil } from "../../helpers.ts";
-import { makeLayerErrorSurface, makeNoopLayerErrorSurface, LAYER_ERROR_KEYS } from "../../../src/domain2/common/errsurf.ts";
+import {
+  makeLayerErrorSurface,
+  makeNoopLayerErrorSurface,
+  LAYER_ERROR_KEYS,
+} from "../../../src/domain2/common/errsurf.ts";
 import { handleHealth } from "../../../src/domain2/routes/ui.ts";
 import { ReportTaskQueue } from "../../../src/domain2/schedule/tasks.ts";
 import { ReportScheduler } from "../../../src/domain2/schedule/scheduler.ts";
@@ -38,7 +42,12 @@ function fakeReq(overrides = {}) {
 
 function callSyncHandler(handler, req) {
   let payload;
-  handler(req, { writeHead: () => {}, end: (chunk) => { payload = JSON.parse(String(chunk)); } });
+  handler(req, {
+    writeHead: () => {},
+    end: (chunk) => {
+      payload = JSON.parse(String(chunk));
+    },
+  });
   return payload;
 }
 
@@ -219,7 +228,10 @@ describe("2) handleHealth per-layer 段（记录→呈现链路）", () => {
   beforeAll(() => {
     const surface = makeLayerErrorSurface();
     surface.record("execute", "注入故障：persist 失败（/reports/generate）", "daily 2026-01-14");
-    payload = callSyncHandler((req, res) => handleHealth(req, res, healthContext(surface)), fakeReq());
+    payload = callSyncHandler(
+      (req, res) => handleHealth(req, res, healthContext(surface)),
+      fakeReq(),
+    );
   });
 
   it("health 正常响应", () => {
@@ -243,7 +255,9 @@ describe("2) handleHealth per-layer 段（记录→呈现链路）", () => {
   });
 
   it("最近记录消息与注入一致", () => {
-    expect(payload.layerErrors.execute.recent[0].message).toBe("注入故障：persist 失败（/reports/generate）");
+    expect(payload.layerErrors.execute.recent[0].message).toBe(
+      "注入故障：persist 失败（/reports/generate）",
+    );
   });
 
   it("最近记录带时间戳", () => {
@@ -282,10 +296,17 @@ describe("3) execute 层真实退出冒烟（ReportTaskQueue）", () => {
   beforeAll(async () => {
     const surface = makeLayerErrorSurface();
     const queue = new ReportTaskQueue({
-      executor: async () => { throw new Error("注入故障：生成器崩溃"); },
+      executor: async () => {
+        throw new Error("注入故障：生成器崩溃");
+      },
       warn: (m) => surface.record("execute", m),
     });
-    queue.submit({ period: "daily", key: "2026-01-14", startDay: "2026-01-14", endDay: "2026-01-14" });
+    queue.submit({
+      period: "daily",
+      key: "2026-01-14",
+      startDay: "2026-01-14",
+      endDay: "2026-01-14",
+    });
     surfaced = await pollUntil(() => surface.snapshot().execute.count >= 1);
     snap = surface.snapshot();
   });
@@ -311,7 +332,9 @@ describe("4) schedule 层真实退出冒烟（ReportScheduler onDue 失败）", 
       root: dir,
       config: normalizeReportConfig({ daily: { enabled: true, time: "00:00" } }),
       now: () => new Date(2026, 0, 15, 12, 0).getTime(),
-      onDue: async () => { throw new Error("注入故障：调度提交崩溃"); },
+      onDue: async () => {
+        throw new Error("注入故障：调度提交崩溃");
+      },
       warn: (m) => surface.record("schedule", m),
     });
     try {
@@ -328,12 +351,17 @@ describe("4) schedule 层真实退出冒烟（ReportScheduler onDue 失败）", 
   });
 
   it("调度失败消息内容原样记录", async () => {
-    expect((await probeSchedulerFailure()).message?.includes("注入故障：调度提交崩溃")).toBeTruthy();
+    expect(
+      (await probeSchedulerFailure()).message?.includes("注入故障：调度提交崩溃"),
+    ).toBeTruthy();
   });
 });
 
 describe("5) apply 集成：装配接线后 /health 携带 layerErrors", () => {
-  let savedDshHome, health, payload, disposers = [];
+  let savedDshHome,
+    health,
+    payload,
+    disposers = [];
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-errsurf-apply-"));
@@ -347,24 +375,44 @@ describe("5) apply 集成：装配接线后 /health 携带 layerErrors", () => {
     const routes = [];
     const ctx = {
       logger: { warn: () => {} },
-      webServer: { register(route) { routes.push(route); return () => {}; } },
+      webServer: {
+        register(route) {
+          routes.push(route);
+          return () => {};
+        },
+      },
       on: () => () => {},
-      llm: { listProviders() { return []; } },
+      llm: {
+        listProviders() {
+          return [];
+        },
+      },
       fiber: { state: "active" },
-      inject: (deps, cb) => { cb({ settings: {} }); },
+      inject: (deps, cb) => {
+        cb({ settings: {} });
+      },
       effect(fn) {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return typeof d === "function" ? d : () => {};
       },
     };
-    await apply(ctx, { autoReload: false, apiKey: "sk-test", apiEndpoint: "http://127.0.0.1:9", historyDir });
+    await apply(ctx, {
+      autoReload: false,
+      apiKey: "sk-test",
+      apiEndpoint: "http://127.0.0.1:9",
+      historyDir,
+    });
     health = routes.find((r) => r.path === ROUTES.health);
     payload = health === undefined ? undefined : callSyncHandler(health.handler, fakeReq());
   });
 
   afterAll(() => {
-    for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }
+    for (const dispose of [...disposers].reverse()) {
+      try {
+        dispose();
+      } catch {}
+    }
     if (savedDshHome === undefined) delete process.env.DSH_HOME;
     else process.env.DSH_HOME = savedDshHome;
   });

@@ -22,7 +22,6 @@ export interface CatalogEntry {
 /** supervisor 最小面（manager.supervisors 的条目；类型收敛于 types/host-faces.ts，此处 re-export）。 */
 export type { SupervisorLite } from "../types/interface.ts";
 
-
 /** 目录缓存（连接成功时持久化的工具描述摘要）。 */
 export type CatalogCache = Map<string, { summary: string }>;
 
@@ -68,7 +67,9 @@ export const CATALOG_ENTRY_MAX_CHARS = 180;
  *   描述（含远端不可信输入）反而稀释上下文；完整能力清单由 ws_mcp_list /
  *   工具注册表承担，不塞进目录。
  */
-export function summarizeToolDescriptions(toolMeta: Map<string, { description?: unknown }>): string | undefined {
+export function summarizeToolDescriptions(
+  toolMeta: Map<string, { description?: unknown }>,
+): string | undefined {
   // ① 收集 (工具名, 首句)（非空）；全空 → undefined。
   const collected: Array<[string, string]> = [];
   for (const [name, meta] of toolMeta) {
@@ -84,9 +85,11 @@ export function summarizeToolDescriptions(toolMeta: Map<string, { description?: 
   for (const [, sentence] of collected) {
     if (seen.has(sentence)) continue;
     seen.add(sentence);
-    sentences.push(sentence.length <= CATALOG_SUMMARY_PER_TOOL_CHARS
-      ? sentence
-      : `${charTruncate(sentence, CATALOG_SUMMARY_PER_TOOL_CHARS - 1)}…`);
+    sentences.push(
+      sentence.length <= CATALOG_SUMMARY_PER_TOOL_CHARS
+        ? sentence
+        : `${charTruncate(sentence, CATALOG_SUMMARY_PER_TOOL_CHARS - 1)}…`,
+    );
   }
   const prefix = collected.length >= 2 ? `${collected.length} tools: ` : "";
   // ③ 拼接（"; " 分隔），超总长按句整段回退补 "…"（绝不句中切）。
@@ -119,7 +122,8 @@ function firstSentenceOf(description: unknown): string {
   if (text === "") return "";
   for (let index = 0; index < text.length; index += 1) {
     const ch = text[index];
-    if (ch !== "." && ch !== "!" && ch !== "?" && ch !== "。" && ch !== "！" && ch !== "？") continue;
+    if (ch !== "." && ch !== "!" && ch !== "?" && ch !== "。" && ch !== "！" && ch !== "？")
+      continue;
     if (index > 0 && text[index - 1] >= "0" && text[index - 1] <= "9") continue;
     let next = index + 1;
     while (next < text.length && /\s/u.test(text[next])) next += 1;
@@ -148,7 +152,11 @@ function charTruncate(text: string, maxChars: number): string {
  * @param cache 目录缓存（manager.catalogCache）。
  * @returns 目录条目。
  */
-export function composeCatalogEntries(supervisors: Map<string, SupervisorLite>, maxEntries = DEFAULT_CATALOG_MAX_ENTRIES, cache?: CatalogCache): CatalogEntry[] {
+export function composeCatalogEntries(
+  supervisors: Map<string, SupervisorLite>,
+  maxEntries = DEFAULT_CATALOG_MAX_ENTRIES,
+  cache?: CatalogCache,
+): CatalogEntry[] {
   const entries: CatalogEntry[] = [];
   for (const [name, supervisor] of supervisors) {
     if (entries.length >= maxEntries) break;
@@ -157,7 +165,10 @@ export function composeCatalogEntries(supervisors: Map<string, SupervisorLite>, 
     if (typeof server.description === "string" && server.description !== "") {
       const sentence = firstSentenceOf(server.description);
       const raw = sentence !== "" ? sentence : server.description.trim().replace(/\s+/gu, " ");
-      text = raw.length <= CATALOG_ENTRY_MAX_CHARS ? raw : `${charTruncate(raw, CATALOG_ENTRY_MAX_CHARS - 1)}…`;
+      text =
+        raw.length <= CATALOG_ENTRY_MAX_CHARS
+          ? raw
+          : `${charTruncate(raw, CATALOG_ENTRY_MAX_CHARS - 1)}…`;
     } else {
       const cached = cache?.get(name);
       if (typeof cached?.summary === "string" && cached.summary !== "") text = cached.summary;
@@ -198,14 +209,18 @@ export function renderMcpCatalogMessage(entries: CatalogEntry[], mode?: string):
       : `When a task matches a server's capability, call its \`mcp__<server>__<tool>\` tool directly (see tool list for parameters). ${globalGuidance}`;
   const lines = [
     "<system-reminder>",
-    "Configured MCP servers in this session (**capability descriptions only, does not reflect active connection status**; tools register once connected via GUI \"MCP\" popup):",
+    'Configured MCP servers in this session (**capability descriptions only, does not reflect active connection status**; tools register once connected via GUI "MCP" popup):',
     "",
     "<available_mcp_servers>",
-    ...entries.map((entry) => (entry.text === undefined ? `- \`${entry.name}\`` : `- \`${entry.name}\`: ${escapeCatalogText(entry.text)}`)),
+    ...entries.map((entry) =>
+      entry.text === undefined
+        ? `- \`${entry.name}\``
+        : `- \`${entry.name}\`: ${escapeCatalogText(entry.text)}`,
+    ),
     "</available_mcp_servers>",
     "",
     guidance,
-    "If a server was available but is now disconnected, do not retry the same tool more than twice. Switch to an alternative method or ask the user to check the \"MCP\" popup.",
+    'If a server was available but is now disconnected, do not retry the same tool more than twice. Switch to an alternative method or ask the user to check the "MCP" popup.',
     "</system-reminder>",
   ].join("\n");
   return {
@@ -260,7 +275,9 @@ export function findCatalogMessage(messages: CatalogMessage[]): CatalogMessage |
  * 坏数据返回 undefined（按"不是本插件的目录"处理）：本函数在 step 监听器里被调用，
  * 抛错会让该会话每一轮都失败。
  */
-export function resolveCatalogEntries(source: CatalogSourceLike | undefined): CatalogEntry[] | undefined {
+export function resolveCatalogEntries(
+  source: CatalogSourceLike | undefined,
+): CatalogEntry[] | undefined {
   if (!isCatalogSource(source)) return undefined;
   if (source?.kind === "plugin") {
     const sections = source.sections;
@@ -306,7 +323,11 @@ function parseCatalogBody(body: string): CatalogEntry[] | undefined {
   for (const line of lines.slice(start + 1, end)) {
     const match = /^- `([^`]+)`(?:: (.*))?$/u.exec(line);
     if (match === null) return undefined;
-    entries.push(match[2] === undefined ? { name: match[1] } : { name: match[1], text: unescapeCatalogText(match[2]) });
+    entries.push(
+      match[2] === undefined
+        ? { name: match[1] }
+        : { name: match[1], text: unescapeCatalogText(match[2]) },
+    );
   }
   return entries;
 }
@@ -317,7 +338,9 @@ function parseCatalogBody(body: string): CatalogEntry[] | undefined {
  * 保留旧签名与旧语义（只读已发布形态的 `entries`）：它是包导出面与既有单测的契约，
  * 新形态的读取走 {@link resolveCatalogEntries}。
  */
-export function readCatalogEntries(source: { entries?: unknown } | undefined): CatalogEntry[] | undefined {
+export function readCatalogEntries(
+  source: { entries?: unknown } | undefined,
+): CatalogEntry[] | undefined {
   const entries = source?.entries;
   if (!Array.isArray(entries)) return undefined;
   const readable: CatalogEntry[] = [];

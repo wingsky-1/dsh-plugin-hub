@@ -173,8 +173,7 @@ function decodeEntitiesOnce(html: string): DecodedView {
       if (k > dStart) {
         const cp = parseInt(html.slice(dStart, k), hex ? 16 : 10);
         // HTML5 数值语义：0 / 代理区 / 超界映射 U+FFFD
-        const safe =
-          cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff) ? cp : 0xfffd;
+        const safe = cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff) ? cp : 0xfffd;
         let end = k;
         if (html[end] === ";") end++;
         for (const cu of String.fromCodePoint(safe)) pushCu(cu, i, end);
@@ -276,24 +275,24 @@ function stripDecodedDanger(html: string): string {
  * 后续如需更严格可换 DOMPurify（构建期 jsdom 不适用，保留正则方案）。
  */
 export function sanitizeHtml(html: string): string {
-  if (html === '') return '';
+  if (html === "") return "";
   // 1. 移除 script/frame/object/embed/meta/link/base 标签
   let out = html
-    .replace(SCRIPT_TAG_RE, '')
-    .replace(IFRAME_RE, '')
-    .replace(FRAME_RE, '')
-    .replace(OBJECT_RE, '')
-    .replace(EMBED_RE, '')
-    .replace(META_RE, '')
-    .replace(LINK_RE, '')
-    .replace(BASE_RE, '');
+    .replace(SCRIPT_TAG_RE, "")
+    .replace(IFRAME_RE, "")
+    .replace(FRAME_RE, "")
+    .replace(OBJECT_RE, "")
+    .replace(EMBED_RE, "")
+    .replace(META_RE, "")
+    .replace(LINK_RE, "")
+    .replace(BASE_RE, "");
   // 2. 移除 on* 事件属性
-  out = out.replace(EVENT_HANDLER_RE, '');
+  out = out.replace(EVENT_HANDLER_RE, "");
   // 3. 移除危险 URI 协议
   out = out
-    .replace(JAVASCRIPT_URI_RE, '')
-    .replace(DATA_TEXT_HTML_RE, '')
-    .replace(STYLE_ON_SCRIPT_RE, '');
+    .replace(JAVASCRIPT_URI_RE, "")
+    .replace(DATA_TEXT_HTML_RE, "")
+    .replace(STYLE_ON_SCRIPT_RE, "");
   // 4. 实体编码变体封闭：迭代至收敛，设宽松轮数上限 + 触底 fail-closed。
   //    收敛性论证：stripDecodedDanger 要么无匹配原样返回（终止），要么至少
   //    删除一个非空 match 区间使长度严格递减——正常内容 1-3 轮收敛，
@@ -314,5 +313,5 @@ export function sanitizeHtml(html: string): string {
     }
     out = next;
   }
-  return converged ? out : '';
+  return converged ? out : "";
 }

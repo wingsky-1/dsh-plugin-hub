@@ -26,7 +26,10 @@ export const titleStyle: Object = {
 
 /** JSON GET（设置页各面板共用；失败上抛由调用方兜底）。 */
 export async function jsonGet(url: string): Promise<unknown> {
-  const res = await fetchTimeout(url, { headers: { Accept: "application/json" }, cache: "no-store" });
+  const res = await fetchTimeout(url, {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }

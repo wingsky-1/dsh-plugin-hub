@@ -60,7 +60,10 @@ export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers):
       // GET：只读 UI 配置 + 中间层模式（允许非 loopback，供远程页面读取非敏感的展示配置）。
       if (req.method === "GET") {
         try {
-          writeJson(res, 200, { ...manager.uiConfig(), middleware: manager.middlewareMode ?? "off" });
+          writeJson(res, 200, {
+            ...manager.uiConfig(),
+            middleware: manager.middlewareMode ?? "off",
+          });
         } catch (error) {
           helpers.handleError(res, error);
         }
@@ -88,7 +91,11 @@ export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers):
           if (typeof rec.middleware === "string") {
             // B7：非法 middleware 显式 400 拒绝——不得静默回落 off 并热切换+落盘
             // （合法集合与 config-schema z.union 同源，勿只依赖 normalize 兜底）。
-            if (rec.middleware !== "off" && rec.middleware !== "project" && rec.middleware !== "all") {
+            if (
+              rec.middleware !== "off" &&
+              rec.middleware !== "project" &&
+              rec.middleware !== "all"
+            ) {
               writeJson(res, 400, { error: `invalid middleware mode: ${rec.middleware}` });
               return;
             }
@@ -99,7 +106,10 @@ export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers):
             if (typeof manager.uiUpdate === "function") {
               await manager.uiUpdate({ middleware: normalizeMiddlewareMode(rec.middleware) });
             }
-            writeJson(res, 200, { ...manager.uiConfig(), middleware: manager.middlewareMode ?? "off" });
+            writeJson(res, 200, {
+              ...manager.uiConfig(),
+              middleware: manager.middlewareMode ?? "off",
+            });
             return;
           }
           writeJson(res, 200, await manager.updateUiConfig(body));
@@ -218,7 +228,8 @@ export function buildResumeRoute(manager: RoutesManager, helpers: RouteHelpers):
     handler: async (req: Req, res: Res) => {
       if (!guardLoopbackMethod(req, res, ["POST"])) return;
       try {
-        if (typeof manager.resumeReconnect !== "function") throw new Error("resumeReconnect unavailable");
+        if (typeof manager.resumeReconnect !== "function")
+          throw new Error("resumeReconnect unavailable");
         await manager.resumeReconnect();
         writeJson(res, 200, { ok: true, summary: manager.summary() });
       } catch (error) {
@@ -258,17 +269,32 @@ function buildNameActionRoute(
 
 /** POST /servers/connect：连接单服务器。 */
 export function buildConnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
-  return buildNameActionRoute("/api/dsh-mcp/servers/connect", (name, scope) => manager.connect(name, scope), manager, helpers);
+  return buildNameActionRoute(
+    "/api/dsh-mcp/servers/connect",
+    (name, scope) => manager.connect(name, scope),
+    manager,
+    helpers,
+  );
 }
 
 /** POST /servers/disconnect：断开单服务器。 */
 export function buildDisconnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
-  return buildNameActionRoute("/api/dsh-mcp/servers/disconnect", (name, scope) => manager.disconnect(name, scope), manager, helpers);
+  return buildNameActionRoute(
+    "/api/dsh-mcp/servers/disconnect",
+    (name, scope) => manager.disconnect(name, scope),
+    manager,
+    helpers,
+  );
 }
 
 /** POST /servers/reconnect：重连单服务器。 */
 export function buildReconnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
-  return buildNameActionRoute("/api/dsh-mcp/servers/reconnect", (name, scope) => manager.reconnect(name, scope), manager, helpers);
+  return buildNameActionRoute(
+    "/api/dsh-mcp/servers/reconnect",
+    (name, scope) => manager.reconnect(name, scope),
+    manager,
+    helpers,
+  );
 }
 
 // ------------------------------------------------------------ /import/json
@@ -350,7 +376,9 @@ export function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelp
       const sessionRoot = manager.projectRoot;
       const allowed = root === MIDDLEWARE_GLOBAL_ROOT || root === sessionRoot;
       if (!allowed) {
-        writeJson(res, 400, { error: `server ${JSON.stringify(server)} 不属于当前工作空间；路由一致性校验失败（防跨空间串台）` });
+        writeJson(res, 400, {
+          error: `server ${JSON.stringify(server)} 不属于当前工作空间；路由一致性校验失败（防跨空间串台）`,
+        });
         return;
       }
       if (typeof manager.setToolDisabled !== "function") {

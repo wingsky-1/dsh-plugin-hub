@@ -12,7 +12,13 @@ import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { beforeEach, describe, expect, it } from "vitest";
-import { makeDueReportExecutor, ReportConfigService, readReportConfig, DEFAULT_REPORT_CONFIG, readLastRun } from "../../../src/apply/index.ts";
+import {
+  makeDueReportExecutor,
+  ReportConfigService,
+  readReportConfig,
+  DEFAULT_REPORT_CONFIG,
+  readLastRun,
+} from "../../../src/apply/index.ts";
 import { makeListDirs } from "../../../src/domain2/execute/list-dirs.ts";
 
 describe("ReportConfigService：串行写链 / 内存权威 / 回调顺序 / 磁盘 roundtrip", () => {
@@ -23,13 +29,18 @@ describe("ReportConfigService：串行写链 / 内存权威 / 回调顺序 / 磁
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "u-report-cfg-"));
     updates = [];
-    svc = new ReportConfigService({ root, initial: normalizeCfg({}), onUpdate: (c) => updates.push(c) });
+    svc = new ReportConfigService({
+      root,
+      initial: normalizeCfg({}),
+      onUpdate: (c) => updates.push(c),
+    });
   });
 
-  const concurrentUpdates = () => Promise.all([
-    svc.update(normalizeCfg({ daily: { enabled: true, time: "09:00" } })),
-    svc.update(normalizeCfg({ daily: { enabled: true, time: "18:00" } })),
-  ]);
+  const concurrentUpdates = () =>
+    Promise.all([
+      svc.update(normalizeCfg({ daily: { enabled: true, time: "09:00" } })),
+      svc.update(normalizeCfg({ daily: { enabled: true, time: "18:00" } })),
+    ]);
 
   it("初始内存权威（默认 daily 08:00）", () => {
     expect(svc.get().daily.time).toBe("08:00");
@@ -81,7 +92,14 @@ describe("executor 幂等短路：index 已有成功记录且非 force → 复�
     const root = mkdtempSync(join(tmpdir(), "u-exec-idem-"));
     const reportsDir = join(root, "reports");
     mkdirSync(reportsDir, { recursive: true });
-    meta = { period: "daily", key: "2026-09-05", startDay: "2026-09-05", endDay: "2026-09-05", generatedAt: 1, ok: true };
+    meta = {
+      period: "daily",
+      key: "2026-09-05",
+      startDay: "2026-09-05",
+      endDay: "2026-09-05",
+      generatedAt: 1,
+      ok: true,
+    };
     writeFileSync(join(reportsDir, "index.jsonl"), `${JSON.stringify(meta)}\n`);
 
     const executor = makeDueReportExecutor({
@@ -91,7 +109,12 @@ describe("executor 幂等短路：index 已有成功记录且非 force → 复�
       historyRoot: root,
       sanitizeDiagnostic: (s) => `SAN:${s}`,
     });
-    res = await executor({ period: "daily", key: "2026-09-05", startDay: "2026-09-05", endDay: "2026-09-05" });
+    res = await executor({
+      period: "daily",
+      key: "2026-09-05",
+      startDay: "2026-09-05",
+      endDay: "2026-09-05",
+    });
     lastRun = await readLastRun(root);
   });
 

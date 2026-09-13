@@ -21,9 +21,15 @@ export async function loadUserState(file: string): Promise<Map<string, Set<strin
     if (!existsSync(file)) return out;
     const raw = await readFile(file, "utf8");
     const parsed = JSON.parse(raw) as { disabled?: Record<string, string[]> } | null;
-    if (parsed && typeof parsed === "object" && typeof parsed.disabled === "object" && parsed.disabled !== null) {
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      typeof parsed.disabled === "object" &&
+      parsed.disabled !== null
+    ) {
       for (const [root, names] of Object.entries(parsed.disabled)) {
-        if (Array.isArray(names)) out.set(root, new Set(names.filter((name) => typeof name === "string")));
+        if (Array.isArray(names))
+          out.set(root, new Set(names.filter((name) => typeof name === "string")));
       }
     }
   } catch {
@@ -74,22 +80,33 @@ export interface PersistedCatalogServer {
  * 用途：能力目录注入端（manager.catalogViewFor）在中间层单元尚未创建时兜底
  * 读盘，避免 pre-step 触发连接副作用；与 middleware.loadCatalogCache 同源解析。
  */
-export async function readCatalogServerFromDisk(file: string, serverName: string): Promise<PersistedCatalogServer | undefined> {
+export async function readCatalogServerFromDisk(
+  file: string,
+  serverName: string,
+): Promise<PersistedCatalogServer | undefined> {
   try {
     if (!existsSync(file)) return undefined;
     const raw = await readFile(file, "utf8");
     const parsed = JSON.parse(raw) as { entries?: Record<string, unknown> } | null;
-    const entry = parsed && typeof parsed === "object" && parsed.entries !== null && typeof parsed.entries === "object"
-      ? (parsed.entries as Record<string, unknown>)[serverName]
-      : undefined;
+    const entry =
+      parsed &&
+      typeof parsed === "object" &&
+      parsed.entries !== null &&
+      typeof parsed.entries === "object"
+        ? (parsed.entries as Record<string, unknown>)[serverName]
+        : undefined;
     if (typeof entry !== "object" || entry === null) return undefined;
     const rec = entry as { discoveredAt?: unknown; tools?: unknown } | undefined;
     const tools: Array<{ name: string; description: string }> = [];
     if (rec !== undefined && Array.isArray(rec.tools)) {
       for (const tool of rec.tools) {
         const toolRec = tool as { name?: unknown; description?: unknown } | undefined;
-        if (typeof toolRec !== "object" || toolRec === null || typeof toolRec.name !== "string") continue;
-        tools.push({ name: toolRec.name, description: typeof toolRec.description === "string" ? toolRec.description : "" });
+        if (typeof toolRec !== "object" || toolRec === null || typeof toolRec.name !== "string")
+          continue;
+        tools.push({
+          name: toolRec.name,
+          description: typeof toolRec.description === "string" ? toolRec.description : "",
+        });
       }
     }
     return { discoveredAt: typeof rec?.discoveredAt === "number" ? rec.discoveredAt : 0, tools };
@@ -109,7 +126,9 @@ export function parseDisabledTools(raw: unknown): DisabledToolsMap {
     const serverMap = new Map<string, Set<string>>();
     for (const [server, tools] of Object.entries(servers as Record<string, unknown>)) {
       if (!Array.isArray(tools)) continue;
-      const set = new Set<string>(tools.filter((tool): tool is string => typeof tool === "string" && tool !== ""));
+      const set = new Set<string>(
+        tools.filter((tool): tool is string => typeof tool === "string" && tool !== ""),
+      );
       if (set.size > 0) serverMap.set(server, set);
     }
     if (serverMap.size > 0) out.set(root, serverMap);
@@ -136,7 +155,10 @@ export async function loadDisabledTools(file: string): Promise<DisabledToolsMap>
  * （同一进程内所有空间共用同一映射）；跨进程并发写属读-改-写竞态，与
  * 服务器级 userDisabled（saveUserState）现状一致。
  */
-export async function saveDisabledTools(file: string, disabledTools: DisabledToolsMap): Promise<void> {
+export async function saveDisabledTools(
+  file: string,
+  disabledTools: DisabledToolsMap,
+): Promise<void> {
   const payload: Record<string, Record<string, string[]>> = {};
   for (const [root, servers] of disabledTools) {
     const serverRec: Record<string, string[]> = {};

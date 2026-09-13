@@ -22,7 +22,10 @@ export interface ManagerLite {
   logger: LoggerService;
   enhancement: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number };
   emitStatus(): void;
-  recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown }>): Promise<void>;
+  recordCatalogTools(
+    serverName: string,
+    toolMeta: Map<string, { description?: unknown }>,
+  ): Promise<void>;
   /** 行为扩展（#664 阶段 2）：调用统计最小面，supervisor 直呼路径埋点。 */
   stats?: Pick<McpStatsCollector, "isEnabled" | "recordCall">;
 }

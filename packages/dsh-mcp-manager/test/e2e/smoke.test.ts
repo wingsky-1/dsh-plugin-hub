@@ -23,7 +23,10 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { assertClientProductContract, assertClientSourceContract } from "../../../../test/smoke-lib.ts";
+import {
+  assertClientProductContract,
+  assertClientSourceContract,
+} from "../../../../test/smoke-lib.ts";
 import { pollUntil } from "../helpers.ts";
 const pkgDir = fileURLToPath(new URL("../../", import.meta.url));
 import {
@@ -87,7 +90,13 @@ import {
 // 本文件（e2e project）不再以包内 glob 聚合方式执行，避免同一文件被求值两遍。
 
 function fakeCtx(overrides = {}) {
-  const state = { routes: [], sections: [], effects: [], registeredTools: [], listeners: new Map() };
+  const state = {
+    routes: [],
+    sections: [],
+    effects: [],
+    registeredTools: [],
+    listeners: new Map(),
+  };
   const ctx = {
     ...state,
     tools: {
@@ -163,14 +172,27 @@ it("client bundle 的 /api/ 路径与 host ROUTES 完全一致（防漂移）", 
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
   const clientPaths = [...clientSrc.matchAll(/"(\/api\/[^"]+)"/g)].map((m) => m[1]).sort();
   const hostPaths = [...new Set(Object.values(ROUTES))].sort();
-  expect(clientPaths, `两端路由漂移：client=${clientPaths.join(",")} host=${hostPaths.join(",")}`).toEqual(hostPaths);
+  expect(
+    clientPaths,
+    `两端路由漂移：client=${clientPaths.join(",")} host=${hostPaths.join(",")}`,
+  ).toEqual(hostPaths);
 });
-it("client source contract（load id/IIFE/use strict/load once）", () => assertClientSourceContract(pkgDir));
-it("client product contract（执行断言：arrive 可解析/apply/inject）", () => assertClientProductContract(pkgDir));
+it("client source contract（load id/IIFE/use strict/load once）", () =>
+  assertClientSourceContract(pkgDir));
+it("client product contract（执行断言：arrive 可解析/apply/inject）", () =>
+  assertClientProductContract(pkgDir));
 it("中间层工具注册（ws_mcp_search / ws_mcp_call / ws_mcp_list / ws_mcp_detail + 路由一致性）", async () => {
-  const { registerMiddlewareTools, McpMiddleware, fullServerName, parseFullServerName } = await import("../../lib/index.js");
+  const { registerMiddlewareTools, McpMiddleware, fullServerName, parseFullServerName } =
+    await import("../../lib/index.js");
   const registered = [];
-  const ctx = { tools: { register: (def) => { registered.push(def); return () => {}; } } };
+  const ctx = {
+    tools: {
+      register: (def) => {
+        registered.push(def);
+        return () => {};
+      },
+    },
+  };
   const host = {
     ctx,
     logger: { info: () => {}, warn: () => {}, error: () => {} },
@@ -187,23 +209,53 @@ it("中间层工具注册（ws_mcp_search / ws_mcp_call / ws_mcp_list / ws_mcp_d
     return cwd === "/proj" ? "/proj" : undefined;
   });
   const names = registered.map((def) => def.name).sort();
-  expect(names, "四个中间层工具注册").toEqual(["ws_mcp_call", "ws_mcp_detail", "ws_mcp_list", "ws_mcp_search"]);
-  expect(registered.find((d) => d.name === "ws_mcp_search").description, "search 描述引导先搜后调").toMatch(/ws_mcp_call/);
-  expect(registered.find((d) => d.name === "ws_mcp_search").description, "search 描述互引完整盘点").toMatch(/ws_mcp_list/);
-  expect(registered.find((d) => d.name === "ws_mcp_call").description, "call 描述互引参数 schema 查询").toMatch(/ws_mcp_detail/);
-  expect(registered.find((d) => d.name === "ws_mcp_list").description, "list 描述互引 detail").toMatch(/ws_mcp_detail/);
-  expect(registered.find((d) => d.name === "ws_mcp_list").description, "list 描述写明不做什么").toMatch(/Does not return inputSchema/);
-  expect(registered.find((d) => d.name === "ws_mcp_detail").description, "detail 描述说明完整 schema").toMatch(/inputSchema/);
-  expect(registered.find((d) => d.name === "ws_mcp_detail").description, "detail 描述写明不做什么").toMatch(/Does not perform keyword search/);
+  expect(names, "四个中间层工具注册").toEqual([
+    "ws_mcp_call",
+    "ws_mcp_detail",
+    "ws_mcp_list",
+    "ws_mcp_search",
+  ]);
+  expect(
+    registered.find((d) => d.name === "ws_mcp_search").description,
+    "search 描述引导先搜后调",
+  ).toMatch(/ws_mcp_call/);
+  expect(
+    registered.find((d) => d.name === "ws_mcp_search").description,
+    "search 描述互引完整盘点",
+  ).toMatch(/ws_mcp_list/);
+  expect(
+    registered.find((d) => d.name === "ws_mcp_call").description,
+    "call 描述互引参数 schema 查询",
+  ).toMatch(/ws_mcp_detail/);
+  expect(
+    registered.find((d) => d.name === "ws_mcp_list").description,
+    "list 描述互引 detail",
+  ).toMatch(/ws_mcp_detail/);
+  expect(
+    registered.find((d) => d.name === "ws_mcp_list").description,
+    "list 描述写明不做什么",
+  ).toMatch(/Does not return inputSchema/);
+  expect(
+    registered.find((d) => d.name === "ws_mcp_detail").description,
+    "detail 描述说明完整 schema",
+  ).toMatch(/inputSchema/);
+  expect(
+    registered.find((d) => d.name === "ws_mcp_detail").description,
+    "detail 描述写明不做什么",
+  ).toMatch(/Does not perform keyword search/);
   // Anthropic 规范：parameters 每个字段都带 description。
   for (const def of registered) {
     const props = def.parameters?.properties ?? {};
     for (const [key, prop] of Object.entries(props)) {
-      expect(typeof prop.description === "string" && prop.description !== "", `参数 ${def.name}.${key} 带 description`).toBeTruthy();
+      expect(
+        typeof prop.description === "string" && prop.description !== "",
+        `参数 ${def.name}.${key} 带 description`,
+      ).toBeTruthy();
     }
   }
   // search 输出 schema 含 truncated 字段。
-  const searchSchemaProps = registered.find((d) => d.name === "ws_mcp_search").output.schema.properties;
+  const searchSchemaProps = registered.find((d) => d.name === "ws_mcp_search").output.schema
+    .properties;
   expect(typeof searchSchemaProps.truncated, "search 输出含 truncated 字段").toBe("object");
   // 路由：agent-less → 显式失败
   const searchDef = registered.find((d) => d.name === "ws_mcp_search");
@@ -211,35 +263,62 @@ it("中间层工具注册（ws_mcp_search / ws_mcp_call / ws_mcp_list / ws_mcp_d
   const listDef = registered.find((d) => d.name === "ws_mcp_list");
   const detailDef = registered.find((d) => d.name === "ws_mcp_detail");
   // search 输出补 truncated 字段：空目录 → false。
-  const emptySearch = await searchDef.execute({}, { agent: { session: { header: { cwd: "/proj" } } } });
+  const emptySearch = await searchDef.execute(
+    {},
+    { agent: { session: { header: { cwd: "/proj" } } } },
+  );
   expect(emptySearch.truncated, "空目录 truncated=false").toBe(false);
   expect(emptySearch.unavailable).toEqual([]);
-  await expect(() => searchDef.execute({}, { agent: undefined })).rejects.toThrow(/无法确定工作空间/);
+  await expect(() => searchDef.execute({}, { agent: undefined })).rejects.toThrow(
+    /无法确定工作空间/,
+  );
   await expect(() => listDef.execute({}, { agent: undefined })).rejects.toThrow(/无法确定工作空间/);
-  await expect(() => detailDef.execute({}, { agent: undefined })).rejects.toThrow(/无法确定工作空间/);
+  await expect(() => detailDef.execute({}, { agent: undefined })).rejects.toThrow(
+    /无法确定工作空间/,
+  );
   // 路由：有 agent 但 cwd 无项目 → 显式失败（ws_mcp_call 缺 server 参数先报必填）
-  await expect(() => callDef.execute({}, { agent: { session: { header: { cwd: "/other" } } } })).rejects.toThrow(/无法确定工作空间|server 与 tool 均为必填/);
+  await expect(() =>
+    callDef.execute({}, { agent: { session: { header: { cwd: "/other" } } } }),
+  ).rejects.toThrow(/无法确定工作空间|server 与 tool 均为必填/);
   // 空返回提示：无项目配置 → list 返回 message
   const emptyList = await listDef.execute({}, { agent: { session: { header: { cwd: "/proj" } } } });
   expect(emptyList.totalServers).toBe(0);
   expect(emptyList.totalTools).toBe(0);
   expect(emptyList.message, "空返回明确提示").toMatch(/没有可用 MCP 服务器|没有项目级 MCP 配置/);
   // detail 必填校验
-  await expect(() => detailDef.execute({}, { agent: { session: { header: { cwd: "/proj" } } } })).rejects.toThrow(/server 与 tool 均为必填/);
+  await expect(() =>
+    detailDef.execute({}, { agent: { session: { header: { cwd: "/proj" } } } }),
+  ).rejects.toThrow(/server 与 tool 均为必填/);
   // server 全名解析往返
   const full = fullServerName("/proj", "ctx");
   expect(parseFullServerName(full)).toEqual({ root: "/proj", server: "ctx" });
   // @global 单 @ / 双 @ 等价（隔离验证 P0：smoke 双 @ 掩盖单 @ 被拒）
   const { MIDDLEWARE_GLOBAL_ROOT } = await import("../../lib/index.js");
-  expect(parseFullServerName("@global/gctx"), "单 @ @global/ 归一化为 @global").toEqual({ root: MIDDLEWARE_GLOBAL_ROOT, server: "gctx" });
-  expect(parseFullServerName("@@global/gctx"), "双 @ @@global/ 归一化为 @global").toEqual({ root: MIDDLEWARE_GLOBAL_ROOT, server: "gctx" });
-  expect(parseFullServerName(fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")), "fullServerName(@global) 往返一致").toEqual({ root: MIDDLEWARE_GLOBAL_ROOT, server: "gctx" });
+  expect(parseFullServerName("@global/gctx"), "单 @ @global/ 归一化为 @global").toEqual({
+    root: MIDDLEWARE_GLOBAL_ROOT,
+    server: "gctx",
+  });
+  expect(parseFullServerName("@@global/gctx"), "双 @ @@global/ 归一化为 @global").toEqual({
+    root: MIDDLEWARE_GLOBAL_ROOT,
+    server: "gctx",
+  });
+  expect(
+    parseFullServerName(fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")),
+    "fullServerName(@global) 往返一致",
+  ).toEqual({ root: MIDDLEWARE_GLOBAL_ROOT, server: "gctx" });
   dispose();
 });
 it("search 早退分支（unit undefined）返回 truncated=false（P1-1）", async () => {
   const { registerMiddlewareTools, McpMiddleware } = await import("../../lib/index.js");
   const registered = [];
-  const ctx = { tools: { register: (def) => { registered.push(def); return () => {}; } } };
+  const ctx = {
+    tools: {
+      register: (def) => {
+        registered.push(def);
+        return () => {};
+      },
+    },
+  };
   const host = {
     ctx,
     logger: { info: () => {}, warn: () => {}, error: () => {} },
@@ -257,18 +336,31 @@ it("search 早退分支（unit undefined）返回 truncated=false（P1-1）", as
   });
   const searchDef = registered.find((d) => d.name === "ws_mcp_search");
   const out = await searchDef.execute({}, { agent: { session: { header: { cwd: "/proj" } } } });
-  expect(out, "早退分支补 truncated=false（output.schema required）").toEqual({ results: [], unavailable: [], truncated: false });
+  expect(out, "早退分支补 truncated=false（output.schema required）").toEqual({
+    results: [],
+    unavailable: [],
+    truncated: false,
+  });
   dispose();
 });
 it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放行 @global）", async () => {
-  const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT } = await import("../../lib/index.js");
+  const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT } =
+    await import("../../lib/index.js");
   const registered = [];
-  const ctx = { tools: { register: (def) => { registered.push(def); return () => {}; } } };
+  const ctx = {
+    tools: {
+      register: (def) => {
+        registered.push(def);
+        return () => {};
+      },
+    },
+  };
   const host = {
     ctx,
     logger: { info: () => {}, warn: () => {}, error: () => {} },
     projectServersFor: async (root) => {
-      if (root === MIDDLEWARE_GLOBAL_ROOT) return [{ name: "gctx", transport: "stdio", command: "npx", enabled: true }];
+      if (root === MIDDLEWARE_GLOBAL_ROOT)
+        return [{ name: "gctx", transport: "stdio", command: "npx", enabled: true }];
       return [{ name: "ctx", transport: "stdio", command: "npx", enabled: true }];
     },
     globalServers: () => [{ name: "gctx", transport: "stdio", command: "npx", enabled: true }],
@@ -282,10 +374,15 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
   const projUnit = {
     root: "/proj",
     connections: new Map(),
-    catalog: new Map([["ctx", {
-      discoveredAt: Date.now(),
-      tools: new Map([["use_ctx", { description: "项目工具", inputSchema: {} }]]),
-    }]]),
+    catalog: new Map([
+      [
+        "ctx",
+        {
+          discoveredAt: Date.now(),
+          tools: new Map([["use_ctx", { description: "项目工具", inputSchema: {} }]]),
+        },
+      ],
+    ]),
     userDisabled: new Set(),
     lastTouchedAt: Date.now(),
     inFlight: new Map(),
@@ -293,24 +390,39 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
   const globalUnit = {
     root: MIDDLEWARE_GLOBAL_ROOT,
     connections: new Map(),
-    catalog: new Map([["gctx", {
-      discoveredAt: Date.now(),
-      tools: new Map([["use_g", { description: "全局工具", inputSchema: {} }]]),
-    }]]),
+    catalog: new Map([
+      [
+        "gctx",
+        {
+          discoveredAt: Date.now(),
+          tools: new Map([["use_g", { description: "全局工具", inputSchema: {} }]]),
+        },
+      ],
+    ]),
     userDisabled: new Set(),
     lastTouchedAt: Date.now(),
     inFlight: new Map(),
   };
   mw.units.set("/proj", projUnit);
   mw.units.set(MIDDLEWARE_GLOBAL_ROOT, globalUnit);
-  const dispose = registerMiddlewareTools(ctx, mw, async (agent) => {
-    const cwd = agent?.session?.header?.cwd;
-    // 模拟 apply.ts 的 all 模式 fallback：cwd 无项目 → @global（全局服务器存在时）。
-    if (cwd === "/no-project") return MIDDLEWARE_GLOBAL_ROOT;
-    return cwd === "/proj" ? "/proj" : undefined;
-  }, "all");
+  const dispose = registerMiddlewareTools(
+    ctx,
+    mw,
+    async (agent) => {
+      const cwd = agent?.session?.header?.cwd;
+      // 模拟 apply.ts 的 all 模式 fallback：cwd 无项目 → @global（全局服务器存在时）。
+      if (cwd === "/no-project") return MIDDLEWARE_GLOBAL_ROOT;
+      return cwd === "/proj" ? "/proj" : undefined;
+    },
+    "all",
+  );
   const names = registered.map((def) => def.name).sort();
-  expect(names, "all 模式注册四个工具").toEqual(["ws_mcp_call", "ws_mcp_detail", "ws_mcp_list", "ws_mcp_search"]);
+  expect(names, "all 模式注册四个工具").toEqual([
+    "ws_mcp_call",
+    "ws_mcp_detail",
+    "ws_mcp_list",
+    "ws_mcp_search",
+  ]);
   const searchDef = registered.find((d) => d.name === "ws_mcp_search");
   const callDef = registered.find((d) => d.name === "ws_mcp_call");
   const listDef = registered.find((d) => d.name === "ws_mcp_list");
@@ -318,32 +430,50 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
   const agent = { session: { header: { cwd: "/proj" } } };
   // list：项目 root + @global 合并可见
   const listed = await listDef.execute({}, { agent });
-  expect(listed.servers.some((s) => s.server === fullServerName("/proj", "ctx")), "list 含项目服务器").toBeTruthy();
-  expect(listed.servers.some((s) => s.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")), "all 模式 list 含 @global 服务器").toBeTruthy();
+  expect(
+    listed.servers.some((s) => s.server === fullServerName("/proj", "ctx")),
+    "list 含项目服务器",
+  ).toBeTruthy();
+  expect(
+    listed.servers.some((s) => s.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")),
+    "all 模式 list 含 @global 服务器",
+  ).toBeTruthy();
   expect(listed.mode).toBe("all");
   // search：合并查询命中 @global 工具
   const found = await searchDef.execute({ query: "全局" }, { agent });
-  expect(found.results.some((hit) => hit.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")), "all 模式 search 含 @global 命中").toBeTruthy();
+  expect(
+    found.results.some((hit) => hit.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")),
+    "all 模式 search 含 @global 命中",
+  ).toBeTruthy();
   expect(found.truncated, "all 模式 search 未达 limit → truncated=false").toBe(false);
   // detail：@global 可查
-  const detail = await detailDef.execute({ server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" }, { agent });
+  const detail = await detailDef.execute(
+    { server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" },
+    { agent },
+  );
   expect(detail.server).toBe(fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"));
   expect(detail.tool).toBe("use_g");
   // call：all 模式放行 @global root（预置 client 无法调用——此处断言路由放行后
   // 落到连接/调用错误而非「不属于当前工作空间」路由拒绝）。
-  await expect(
-    () => callDef.execute({ server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" }, { agent }),
+  await expect(() =>
+    callDef.execute(
+      { server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" },
+      { agent },
+    ),
   ).rejects.toThrow(/未连接|未就绪|连接失败|已禁用/);
   // call：非当前 root 的项目 root 仍拒绝（防跨空间串台）。
-  await expect(
-    () => callDef.execute({ server: fullServerName("/other", "ctx"), tool: "use_ctx" }, { agent }),
+  await expect(() =>
+    callDef.execute({ server: fullServerName("/other", "ctx"), tool: "use_ctx" }, { agent }),
   ).rejects.toThrow(/不属于当前工作空间/);
   // P1-2：all 模式无项目 cwd（root 本身为 @global）→ visibleRoots 去重不翻倍。
   const gAgent = { session: { header: { cwd: "/no-project" } } };
   const listedGlobalOnly = await listDef.execute({}, { agent: gAgent });
   const globalNames = listedGlobalOnly.servers.map((s) => s.server);
   expect(listedGlobalOnly.totalServers, "@global 去重：totalServers 不翻倍").toBe(1);
-  expect(globalNames.filter((n) => n === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")).length, "gctx 只出现一次").toBe(1);
+  expect(
+    globalNames.filter((n) => n === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")).length,
+    "gctx 只出现一次",
+  ).toBe(1);
   // P1-3：@global 单元首次触达（无预置目录 + in-flight 发现进行中）→
   // list/search 等待 in-flight 后全局可见（8s 预算内）。
   const freshGlobal = {
@@ -352,32 +482,57 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
     catalog: new Map(),
     userDisabled: new Set(),
     lastTouchedAt: Date.now(),
-    inFlight: new Map([["gctx", new Promise((resolve) => setTimeout(() => {
-      // 发现完成后填充目录（模拟 ensureConnected/discover 完成）。
-      freshGlobal.catalog.set("gctx", {
-        discoveredAt: Date.now(),
-        tools: new Map([["use_g", { description: "全局工具（发现完成）", inputSchema: {} }]]),
-      });
-      resolve();
-    }, 100))]]),
+    inFlight: new Map([
+      [
+        "gctx",
+        new Promise((resolve) =>
+          setTimeout(() => {
+            // 发现完成后填充目录（模拟 ensureConnected/discover 完成）。
+            freshGlobal.catalog.set("gctx", {
+              discoveredAt: Date.now(),
+              tools: new Map([["use_g", { description: "全局工具（发现完成）", inputSchema: {} }]]),
+            });
+            resolve();
+          }, 100),
+        ),
+      ],
+    ]),
   };
   mw.units.set(MIDDLEWARE_GLOBAL_ROOT, freshGlobal);
   const listedAfterWait = await listDef.execute({}, { agent: gAgent });
-  const freshEntry = listedAfterWait.servers.find((s) => s.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"));
+  const freshEntry = listedAfterWait.servers.find(
+    (s) => s.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"),
+  );
   expect(freshEntry !== undefined, "@global 首次触达等待 in-flight 后可见").toBeTruthy();
   expect(freshEntry.tools.length, "发现完成的工具列出").toBe(1);
   const foundAfterWait = await searchDef.execute({ query: "发现完成" }, { agent: gAgent });
-  expect(foundAfterWait.results.some((hit) => hit.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx")), "search 等待 in-flight 后命中 @global").toBeTruthy();
+  expect(
+    foundAfterWait.results.some(
+      (hit) => hit.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"),
+    ),
+    "search 等待 in-flight 后命中 @global",
+  ).toBeTruthy();
   dispose();
 });
 it("#362 A2：project 模式 detail/call 传全局级服务器 → 引导 mcp__ 直呼（不再谎报不属于工作空间）", async () => {
-  const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT } = await import("../../lib/index.js");
+  const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT } =
+    await import("../../lib/index.js");
   const registered = [];
-  const ctx = { tools: { register: (def) => { registered.push(def); return () => {}; } } };
+  const ctx = {
+    tools: {
+      register: (def) => {
+        registered.push(def);
+        return () => {};
+      },
+    },
+  };
   const host = {
     ctx,
     logger: { info: () => {}, warn: () => {}, error: () => {} },
-    projectServersFor: async (root) => (root === MIDDLEWARE_GLOBAL_ROOT ? [{ name: "gctx", transport: "stdio", command: "npx", enabled: true }] : undefined),
+    projectServersFor: async (root) =>
+      root === MIDDLEWARE_GLOBAL_ROOT
+        ? [{ name: "gctx", transport: "stdio", command: "npx", enabled: true }]
+        : undefined,
     globalServers: () => [{ name: "gctx", transport: "stdio", command: "npx", enabled: true }],
     normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
     saveUserState: async () => {},
@@ -386,27 +541,44 @@ it("#362 A2：project 模式 detail/call 传全局级服务器 → 引导 mcp__ 
     isGlobalServer: (name) => name === "gctx",
   };
   const mw = new McpMiddleware(host, {});
-  const dispose = registerMiddlewareTools(ctx, mw, async (agent) => agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined, "project");
+  const dispose = registerMiddlewareTools(
+    ctx,
+    mw,
+    async (agent) => (agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined),
+    "project",
+  );
   const detailDef = registered.find((d) => d.name === "ws_mcp_detail");
   const callDef = registered.find((d) => d.name === "ws_mcp_call");
   const agent = { session: { header: { cwd: "/proj" } } };
   // detail 全局服务器 → 引导（project 模式全局 mcp__ 直呼可用）。
   await expect(
-    () => detailDef.execute({ server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" }, { agent }),
+    () =>
+      detailDef.execute(
+        { server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" },
+        { agent },
+      ),
     "project 模式 detail 全局服务器给出直呼引导",
   ).rejects.toThrow(/全局级|mcp__gctx__/);
   // call 全局服务器 → 同样引导。
   await expect(
-    () => callDef.execute({ server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" }, { agent }),
+    () =>
+      callDef.execute(
+        { server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" },
+        { agent },
+      ),
     "project 模式 call 全局服务器给出直呼引导",
   ).rejects.toThrow(/全局级|mcp__gctx__/);
   // 非 global 其他 root 仍硬拒绝（防跨空间串台，不回归）。
-  await expect(
-    () => detailDef.execute({ server: fullServerName("/other", "ctx"), tool: "use_ctx" }, { agent }),
+  await expect(() =>
+    detailDef.execute({ server: fullServerName("/other", "ctx"), tool: "use_ctx" }, { agent }),
   ).rejects.toThrow(/不属于当前工作空间/);
   // project 模式未知 @global 服务器（非全局级）→ 硬拒绝（防经 @global 路由绕过）。
   await expect(
-    () => detailDef.execute({ server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "ghost"), tool: "x" }, { agent }),
+    () =>
+      detailDef.execute(
+        { server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "ghost"), tool: "x" },
+        { agent },
+      ),
     "project 模式未知 @global 服务器拒绝",
   ).rejects.toThrow(/不属于当前工作空间/);
   dispose();
@@ -419,7 +591,13 @@ it("#362 isGlobalServer 双源：runtime 注册的 codegraph 判全局（P1 修�
     store.data = { version: 1, servers: [] };
     const manager = new McpManager({ logger: { warn: () => {}, info: () => {} } }, store);
     // runtime 注册（不落 store）→ isGlobalServer 必须返回 true。
-    await manager.registerServer({ name: "codegraph", transport: "stdio", command: "echo", args: ["x"], enabled: false });
+    await manager.registerServer({
+      name: "codegraph",
+      transport: "stdio",
+      command: "echo",
+      args: ["x"],
+      enabled: false,
+    });
     expect(manager.isGlobalServer("codegraph"), "runtime 注册判全局（双源）").toBe(true);
     // store 持久化条目 → 全局。
     store.upsert({ name: "ctx", transport: "stdio", command: "echo", enabled: false });
@@ -431,13 +609,23 @@ it("#362 isGlobalServer 双源：runtime 注册的 codegraph 判全局（P1 修�
   }
 });
 it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因（不谎报未配置）", async () => {
-  const { registerMiddlewareTools, McpMiddleware, fullServerName, parseFullServerName } = await import("../../lib/index.js");
+  const { registerMiddlewareTools, McpMiddleware, fullServerName, parseFullServerName } =
+    await import("../../lib/index.js");
   const registered = [];
-  const ctx = { tools: { register: (def) => { registered.push(def); return () => {}; } } };
+  const ctx = {
+    tools: {
+      register: (def) => {
+        registered.push(def);
+        return () => {};
+      },
+    },
+  };
   const host = {
     ctx,
     logger: { info: () => {}, warn: () => {}, error: () => {} },
-    projectServersFor: async () => [{ name: "ctx", transport: "stdio", command: "npx", enabled: true }],
+    projectServersFor: async () => [
+      { name: "ctx", transport: "stdio", command: "npx", enabled: true },
+    ],
     globalServers: () => [],
     normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
     saveUserState: async () => {},
@@ -450,18 +638,33 @@ it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因
   mw.units.set("/proj", {
     root: "/proj",
     connections: new Map(),
-    catalog: new Map([["ctx", { discoveredAt: Date.now(), tools: new Map([["use_ctx", { description: "项目工具", inputSchema: {} }]]) }]]),
+    catalog: new Map([
+      [
+        "ctx",
+        {
+          discoveredAt: Date.now(),
+          tools: new Map([["use_ctx", { description: "项目工具", inputSchema: {} }]]),
+        },
+      ],
+    ]),
     userDisabled: new Set(),
     lastTouchedAt: Date.now(),
     inFlight: new Map(),
   });
-  const dispose = registerMiddlewareTools(ctx, mw, async (agent) => agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined, "project");
+  const dispose = registerMiddlewareTools(
+    ctx,
+    mw,
+    async (agent) => (agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined),
+    "project",
+  );
   const listDef = registered.find((d) => d.name === "ws_mcp_list");
   const agent = { session: { header: { cwd: "/proj" } } };
   // 过滤不存在的 server → 0 命中 + 可归因 message。
   const out = await listDef.execute({ server: "nope" }, { agent });
   expect(out.totalServers).toBe(0);
-  expect(out.message, "A1：message 归因到过滤条件").toMatch(/没有匹配 server="nope" 的项目级服务器/);
+  expect(out.message, "A1：message 归因到过滤条件").toMatch(
+    /没有匹配 server="nope" 的项目级服务器/,
+  );
   expect(out.message, "A1：列出可见项目级服务器").toMatch(/可见项目级服务器：ctx/);
   expect(out.message, "A1：提示全局级不列出").toMatch(/全局级服务器不在此列出/);
   // 不带过滤的真实空目录 → 原有空返回提示（不回归）。
@@ -470,18 +673,60 @@ it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因
   dispose();
 });
 it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / mcp__ 直呼）", async () => {
-  const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT, parseDisabledTools, isToolDenied, toolDisabledReason } = await import("../../lib/index.js");
+  const {
+    registerMiddlewareTools,
+    McpMiddleware,
+    fullServerName,
+    MIDDLEWARE_GLOBAL_ROOT,
+    parseDisabledTools,
+    isToolDenied,
+    toolDisabledReason,
+  } = await import("../../lib/index.js");
   // 1) isToolDenied 纯函数：项目 root 命中 + @global 回落 + 哈希超长名不误禁。
   const map = parseDisabledTools({ "/proj": { ctx: ["use_ctx"] }, "@global": { gctx: ["use_g"] } });
-  expect(isToolDenied(map, undefined, fullServerName("/proj", "ctx"), "use_ctx"), "项目 root 记录命中").toBe(true);
-  expect(isToolDenied(map, undefined, fullServerName("/proj", "ctx"), "other"), "未禁用工具放行").toBe(false);
-  expect(isToolDenied(map, undefined, fullServerName("/proj", "gctx"), "use_g"), "@global 共享记录回落命中").toBe(true);
-  expect(isToolDenied(map, undefined, fullServerName("@global", "gctx"), "use_g"), "@global root 自身记录命中").toBe(true);
-  expect(isToolDenied(map, undefined, "mcp__ctx__use_ctx_hash123456", "x"), "哈希超长名不可逆 → 不误禁").toBe(false);
-  expect(isToolDenied(new Map(), { denyTools: { ctx: ["evil"] } }, fullServerName("/proj", "ctx"), "evil"), "策略 deny 仍生效").toBe(true);
+  expect(
+    isToolDenied(map, undefined, fullServerName("/proj", "ctx"), "use_ctx"),
+    "项目 root 记录命中",
+  ).toBe(true);
+  expect(
+    isToolDenied(map, undefined, fullServerName("/proj", "ctx"), "other"),
+    "未禁用工具放行",
+  ).toBe(false);
+  expect(
+    isToolDenied(map, undefined, fullServerName("/proj", "gctx"), "use_g"),
+    "@global 共享记录回落命中",
+  ).toBe(true);
+  expect(
+    isToolDenied(map, undefined, fullServerName("@global", "gctx"), "use_g"),
+    "@global root 自身记录命中",
+  ).toBe(true);
+  expect(
+    isToolDenied(map, undefined, "mcp__ctx__use_ctx_hash123456", "x"),
+    "哈希超长名不可逆 → 不误禁",
+  ).toBe(false);
+  expect(
+    isToolDenied(
+      new Map(),
+      { denyTools: { ctx: ["evil"] } },
+      fullServerName("/proj", "ctx"),
+      "evil",
+    ),
+    "策略 deny 仍生效",
+  ).toBe(true);
   // 2) registerMiddlewareTools 的 pre-execute guard：mcp__ 直呼被 deny。
   const registered = [];
-  const ctx = { tools: { register: (def) => { registered.push(def); return () => {}; } }, on: (event, handler) => { guards.set(event, handler); return () => {}; } };
+  const ctx = {
+    tools: {
+      register: (def) => {
+        registered.push(def);
+        return () => {};
+      },
+    },
+    on: (event, handler) => {
+      guards.set(event, handler);
+      return () => {};
+    },
+  };
   const guards = new Map();
   const host = {
     ctx,
@@ -495,30 +740,71 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
     isGlobalServer: () => false,
   };
   const mw = new McpMiddleware(host, {});
-  const dispose = registerMiddlewareTools(ctx, mw, async (agent) => agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined, "project", { disabledTools: map });
+  const dispose = registerMiddlewareTools(
+    ctx,
+    mw,
+    async (agent) => (agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined),
+    "project",
+    { disabledTools: map },
+  );
   const guard = guards.get("tools/pre-execute");
   expect(typeof guard === "function", "pre-execute guard 已注册").toBeTruthy();
-  const deny = await guard({ name: "mcp__ctx__use_ctx", agent: { session: { header: { cwd: "/proj" } } } }, async () => ({ kind: "allow" }));
+  const deny = await guard(
+    { name: "mcp__ctx__use_ctx", agent: { session: { header: { cwd: "/proj" } } } },
+    async () => ({ kind: "allow" }),
+  );
   expect(deny.kind, "mcp__ 直呼被禁用表 deny").toBe("deny");
   expect(deny.reason, "拒绝原因含禁用语义声明").toMatch(/已被用户在「MCP」浮窗禁用/);
-  const allow = await guard({ name: "mcp__ctx__other", agent: { session: { header: { cwd: "/proj" } } } }, async () => ({ kind: "allow" }));
+  const allow = await guard(
+    { name: "mcp__ctx__other", agent: { session: { header: { cwd: "/proj" } } } },
+    async () => ({ kind: "allow" }),
+  );
   expect(allow.kind, "未禁用工具放行").toBe("allow");
   // agent-less → 按最宽可见范围放行（@global 记录仍生效）。
   const gDeny = await guard({ name: "mcp__gctx__use_g" }, async () => ({ kind: "allow" }));
   expect(gDeny.kind, "agent-less 时 @global 共享记录仍 deny").toBe("deny");
   // 超长哈希名（含非法字符被替换）→ 不误禁。
-  const hashed = await guard({ name: "mcp__ctx__use_ctx_0123456789ab" }, async () => ({ kind: "allow" }));
+  const hashed = await guard({ name: "mcp__ctx__use_ctx_0123456789ab" }, async () => ({
+    kind: "allow",
+  }));
   expect(hashed.kind, "哈希后缀名按未知 server 放行").toBe("allow");
   // ws_mcp_call guard：禁用命中 → deny。
-  const callDeny = await guard({ name: "ws_mcp_call", arguments: { server: fullServerName("/proj", "ctx"), tool: "use_ctx" } }, async () => ({ kind: "allow" }));
+  const callDeny = await guard(
+    { name: "ws_mcp_call", arguments: { server: fullServerName("/proj", "ctx"), tool: "use_ctx" } },
+    async () => ({ kind: "allow" }),
+  );
   expect(callDeny.kind, "ws_mcp_call guard 查禁用表").toBe("deny");
-  expect(toolDisabledReason(fullServerName("/proj", "ctx"), "use_ctx").includes("mcp-manager 管辖"), "禁用原因声明覆盖 mcp__ 与中间层工具（#413）").toBe(true);
+  expect(
+    toolDisabledReason(fullServerName("/proj", "ctx"), "use_ctx").includes("mcp-manager 管辖"),
+    "禁用原因声明覆盖 mcp__ 与中间层工具（#413）",
+  ).toBe(true);
 
   // 3) callTool（ws_mcp_call 执行路径）：禁用工具 → 显式抛错（验收 14：三入口一致）。
   const callUnit = {
     root: "/proj",
-    connections: new Map([["ctx", { server: { name: "ctx", transport: "stdio", command: "x", enabled: true }, status: "connected", error: undefined, client: { callTool: async () => ({ content: [] }) }, reconnectTimer: undefined, disposed: false, failedAttempts: 0 }]]),
-    catalog: new Map([["ctx", { discoveredAt: Date.now(), tools: new Map([["use_ctx", { description: "d", inputSchema: {} }]]) }]]),
+    connections: new Map([
+      [
+        "ctx",
+        {
+          server: { name: "ctx", transport: "stdio", command: "x", enabled: true },
+          status: "connected",
+          error: undefined,
+          client: { callTool: async () => ({ content: [] }) },
+          reconnectTimer: undefined,
+          disposed: false,
+          failedAttempts: 0,
+        },
+      ],
+    ]),
+    catalog: new Map([
+      [
+        "ctx",
+        {
+          discoveredAt: Date.now(),
+          tools: new Map([["use_ctx", { description: "d", inputSchema: {} }]]),
+        },
+      ],
+    ]),
     userDisabled: new Set(),
     lastTouchedAt: Date.now(),
     inFlight: new Map(),
@@ -541,7 +827,12 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
     // 提取注册的原子工具
     const statsRegTools: any[] = [];
     const statsCtx = {
-      tools: { register: (def: any) => { statsRegTools.push(def); return () => {}; } },
+      tools: {
+        register: (def: any) => {
+          statsRegTools.push(def);
+          return () => {};
+        },
+      },
       on: () => () => {},
     };
     const statsMwDispose = registerMiddlewareTools(
@@ -549,7 +840,7 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
       mw,
       async () => "/proj",
       "project",
-      { stats: statsCollector }
+      { stats: statsCollector },
     );
 
     const searchTool = statsRegTools.find((t) => t.name === "ws_mcp_search");
@@ -560,10 +851,19 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
     expect(searchTool && listTool && detailTool && callTool, "四个原子工具均已注册").toBeTruthy();
 
     // 执行四个原子工具
-    await searchTool.execute({ query: "codegraph" }, { agent: { session: { header: { cwd: "/proj" } } } });
+    await searchTool.execute(
+      { query: "codegraph" },
+      { agent: { session: { header: { cwd: "/proj" } } } },
+    );
     await listTool.execute({}, { agent: { session: { header: { cwd: "/proj" } } } });
-    await detailTool.execute({ server: fullServerName("/proj", "ctx"), tool: "use_ctx" }, { agent: { session: { header: { cwd: "/proj" } } } });
-    await callTool.execute({ server: fullServerName("/proj", "ctx"), tool: "other" }, { agent: { session: { header: { cwd: "/proj" } } } });
+    await detailTool.execute(
+      { server: fullServerName("/proj", "ctx"), tool: "use_ctx" },
+      { agent: { session: { header: { cwd: "/proj" } } } },
+    );
+    await callTool.execute(
+      { server: fullServerName("/proj", "ctx"), tool: "other" },
+      { agent: { session: { header: { cwd: "/proj" } } } },
+    );
 
     statsCollector.flushSync();
     const statsSnap = statsCollector.snapshot();
@@ -580,14 +880,24 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
   dispose();
 });
 it("#362 P1：disabledTools 持久化（合并式写盘 + 重启保留）", async () => {
-  const { McpManager, McpStore, loadDisabledTools, saveDisabledTools, parseDisabledTools, MIDDLEWARE_GLOBAL_ROOT } = await import("../../lib/index.js");
+  const {
+    McpManager,
+    McpStore,
+    loadDisabledTools,
+    saveDisabledTools,
+    parseDisabledTools,
+    MIDDLEWARE_GLOBAL_ROOT,
+  } = await import("../../lib/index.js");
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-tools-"));
   try {
     const file = join(dir, "dsh-mcp-user-state.json");
     // 预置磁盘记录（模拟另一工作空间已禁用），并让 manager 加载（等价
     // initMiddleware 的 loadDisabledTools 路径——进程内完整视图）。
     await saveDisabledTools(file, parseDisabledTools({ "/other": { s2: ["t2"] } }));
-    const manager = new McpManager({ logger: { warn: () => {}, info: () => {} } }, new McpStore(join(dir, "mcp.json")));
+    const manager = new McpManager(
+      { logger: { warn: () => {}, info: () => {} } },
+      new McpStore(join(dir, "mcp.json")),
+    );
     manager.userStatePath = file;
     manager.disabledTools = await loadDisabledTools(file);
     // 多空间共存：新增 /proj 记录，/other 记录保留（不整表覆盖）。
@@ -596,7 +906,10 @@ it("#362 P1：disabledTools 持久化（合并式写盘 + 重启保留）", asyn
     const reloaded = await loadDisabledTools(file);
     expect(reloaded.get("/proj")?.get("ctx")?.has("use_ctx"), "/proj 记录落盘").toBe(true);
     expect(reloaded.get("@global")?.get("gctx")?.has("use_g"), "@global 记录落盘").toBe(true);
-    expect(reloaded.get("/other")?.get("s2")?.has("t2"), "既有 /other 记录保留（合并式，绝不整表覆盖）").toBe(true);
+    expect(
+      reloaded.get("/other")?.get("s2")?.has("t2"),
+      "既有 /other 记录保留（合并式，绝不整表覆盖）",
+    ).toBe(true);
     // 解除禁用 → 记录清除；其他记录保留。
     await manager.setToolDisabled("/proj", "ctx", "use_ctx", false);
     const after = await loadDisabledTools(file);
@@ -611,7 +924,10 @@ it("#362 P1：disabledTools 持久化（合并式写盘 + 重启保留）", asyn
 it("client 注册 settings.plugin.item 卡（id/key = 宿主命名空间 dsh-mcp-manager）", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
   expect(clientSrc.includes("settings.plugin.item"), "settings.plugin.item 卡已注册").toBeTruthy();
-  expect(clientSrc.includes("dsh-mcp-manager"), "卡片 key/id 引用宿主命名空间 dsh-mcp-manager").toBeTruthy();
+  expect(
+    clientSrc.includes("dsh-mcp-manager"),
+    "卡片 key/id 引用宿主命名空间 dsh-mcp-manager",
+  ).toBeTruthy();
 });
 it("#362 客户端：工具级禁用 checkbox + scope 分组 + project 全局提示 + middleware 下拉", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
@@ -619,13 +935,22 @@ it("#362 客户端：工具级禁用 checkbox + scope 分组 + project 全局提
   expect(clientSrc.includes("tool-disable"), "客户端含 tool-disable API 调用").toBeTruthy();
   expect(clientSrc.includes('type: "checkbox"'), "工具开关为 checkbox").toBeTruthy();
   expect(clientSrc.includes("dm-float-tools"), "浮窗折叠式工具清单存在").toBeTruthy();
-  expect(clientSrc.includes("切 all 模式可管理全局工具"), "project 模式全局组提示文案").toBeTruthy();
+  expect(
+    clientSrc.includes("切 all 模式可管理全局工具"),
+    "project 模式全局组提示文案",
+  ).toBeTruthy();
   expect(clientSrc.includes("dm-set-middleware"), "设置页中间层模式下拉存在").toBeTruthy();
   // 浮窗与管理面板均按 scope 分组。
   expect(clientSrc.includes("dm-float-group-title"), "浮窗 scope 分组标题存在").toBeTruthy();
-  expect(clientSrc.includes("项目级") && clientSrc.includes("全局"), "scope 分组文案存在").toBeTruthy();
+  expect(
+    clientSrc.includes("项目级") && clientSrc.includes("全局"),
+    "scope 分组文案存在",
+  ).toBeTruthy();
   // #401 勾选 = 禁用：勾选态自绘为红色 ×（非原生蓝色 ✓），工具名同步标红。
-  expect(clientSrc.includes("appearance:none"), "工具 checkbox 自绘（appearance:none）").toBeTruthy();
+  expect(
+    clientSrc.includes("appearance:none"),
+    "工具 checkbox 自绘（appearance:none）",
+  ).toBeTruthy();
   expect(clientSrc.includes("input:checked::after"), "勾选态用 ::after 绘制 ×").toBeTruthy();
   expect(clientSrc.includes("state-error-primary"), "勾选态使用错误红主题变量").toBeTruthy();
   expect(clientSrc.includes(":has(input:checked)"), "已禁用工具名同步标红").toBeTruthy();
@@ -637,17 +962,33 @@ it("client i18n 接线哨兵（issue #348 → #378 抽取 shared）", () => {
   expect(clientSrc.includes("bindLocale"), "bindLocale（t 活绑定装配）进产物").toBeTruthy();
   // T4（#378）：locale.subscribe 返回值保存为 unsubLocale 并在卸载时调用——
   // 防重复 apply 后旧订阅持续重绑已停用实例（对齐 provider-usage 范式）。
-  expect(clientSrc.includes("unsubLocale = locale.subscribe"), "subscribe 返回值保存（unsubLocale）进产物").toBeTruthy();
-  expect(/unsubLocale!=null&&unsubLocale\(\)|unsubLocale\(\)/.test(clientSrc), "卸载调用 unsubLocale() 进产物").toBeTruthy();
+  expect(
+    clientSrc.includes("unsubLocale = locale.subscribe"),
+    "subscribe 返回值保存（unsubLocale）进产物",
+  ).toBeTruthy();
+  expect(
+    /unsubLocale!=null&&unsubLocale\(\)|unsubLocale\(\)/.test(clientSrc),
+    "卸载调用 unsubLocale() 进产物",
+  ).toBeTruthy();
   expect(clientSrc.includes("locale: NS"), "slots.register locale 参数进产物").toBeTruthy();
-  expect(clientSrc.includes("Running") && clientSrc.includes("stConnected"), "en/zh 双语字典 + STATUS_TEXT key 化进产物").toBeTruthy();
+  expect(
+    clientSrc.includes("Running") && clientSrc.includes("stConnected"),
+    "en/zh 双语字典 + STATUS_TEXT key 化进产物",
+  ).toBeTruthy();
 });
 it("#362 无游离 css：style.css 全部内联进 client.js（无独立样式请求）", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
   const css = readFileSync(new URL("../../src/client/style.css", import.meta.url), "utf8");
-  const probe = css.split("\n").filter((line) => line.trim() !== "").pop() ?? "";
+  const probe =
+    css
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .pop() ?? "";
   // 样式文件末尾规则应整体出现在 client.js 产物中（text-loader 原样内联）。
-  expect(clientSrc.includes(probe.slice(0, 40)), "style.css 尾部规则已内联进 client.js").toBeTruthy();
+  expect(
+    clientSrc.includes(probe.slice(0, 40)),
+    "style.css 尾部规则已内联进 client.js",
+  ).toBeTruthy();
   expect(!clientSrc.includes('rel="stylesheet"'), "无独立样式表请求").toBeTruthy();
 });
 
@@ -657,28 +998,47 @@ it("C1 编辑保存链路修复：fillForm 不再清空 editingName（PATCH 分�
   // 链路修复：fillForm 函数体（到 saveForm 为止）不得再调用会清空 editingName 的 resetForm。
   const fillFormStart = clientSrc.indexOf("function fillForm");
   const saveFormStart = clientSrc.indexOf("function saveForm");
-  expect(fillFormStart >= 0 && saveFormStart > fillFormStart, "产物含 fillForm/saveForm 标识符").toBeTruthy();
+  expect(
+    fillFormStart >= 0 && saveFormStart > fillFormStart,
+    "产物含 fillForm/saveForm 标识符",
+  ).toBeTruthy();
   expect(
     !clientSrc.slice(fillFormStart, saveFormStart).includes("resetForm("),
     "fillForm 内不再调用 resetForm（清空 editingName 的链路修复）",
   ).toBeTruthy();
   // enabled 回填：编辑 enabled:false 服务器时表单 checkbox 不得被强制勾选（C1 附带回填）。
-  expect(clientSrc.includes("fill.enabled"), "enabled 回填进产物（formEnabled.checked = fill.enabled !== false）").toBeTruthy();
+  expect(
+    clientSrc.includes("fill.enabled"),
+    "enabled 回填进产物（formEnabled.checked = fill.enabled !== false）",
+  ).toBeTruthy();
 });
 it("C2 SSE 轮询探测恢复：eventsRetired 后周期性探测重连（非永久轮询）", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
-  expect(clientSrc.includes("tryResumeEvents"), "轮询恢复探测入口 tryResumeEvents 进产物").toBeTruthy();
+  expect(
+    clientSrc.includes("tryResumeEvents"),
+    "轮询恢复探测入口 tryResumeEvents 进产物",
+  ).toBeTruthy();
   expect(clientSrc, "轮询计数周期性触发探测（pollTicks % N）").toMatch(/pollTicks\s*%/);
 });
 it("C3 超长名溢出防护：服务器名/工具名 CSS overflow-wrap", () => {
   const css = readFileSync(new URL("../../src/client/style.css", import.meta.url), "utf8");
-  expect(css, "管理面板服务器名 overflow-wrap").toMatch(/\.dm-server \.dm-name\{[^}]*overflow-wrap:anywhere/);
-  expect(css, "浮窗工具 checkbox 名 overflow-wrap").toMatch(/\.dm-float-tool,\.dm-tool\{[^}]*overflow-wrap:anywhere/);
+  expect(css, "管理面板服务器名 overflow-wrap").toMatch(
+    /\.dm-server \.dm-name\{[^}]*overflow-wrap:anywhere/,
+  );
+  expect(css, "浮窗工具 checkbox 名 overflow-wrap").toMatch(
+    /\.dm-float-tool,\.dm-tool\{[^}]*overflow-wrap:anywhere/,
+  );
 });
 it("C4 keydown 泄漏修复：Escape 监听具名 + 卸载配对移除", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
-  expect(clientSrc.includes('addEventListener("keydown", onKeyDown)'), "keydown 监听具名 onKeyDown 进产物").toBeTruthy();
-  expect(clientSrc.includes('removeEventListener("keydown", onKeyDown)'), "配对 removeEventListener 进产物").toBeTruthy();
+  expect(
+    clientSrc.includes('addEventListener("keydown", onKeyDown)'),
+    "keydown 监听具名 onKeyDown 进产物",
+  ).toBeTruthy();
+  expect(
+    clientSrc.includes('removeEventListener("keydown", onKeyDown)'),
+    "配对 removeEventListener 进产物",
+  ).toBeTruthy();
 });
 it("C5 设置卡成功提示 setTimeout 清理（卸载不 setState）", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
@@ -687,15 +1047,27 @@ it("C5 设置卡成功提示 setTimeout 清理（卸载不 setState）", () => {
 });
 it("C6 tool-disable 全名形态：projectRoot 缺失防御性不提交非法 @/name", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
-  expect(clientSrc.includes("toolDisableServerKey"), "tool-disable 全名拼装 helper 进产物").toBeTruthy();
+  expect(
+    clientSrc.includes("toolDisableServerKey"),
+    "tool-disable 全名拼装 helper 进产物",
+  ).toBeTruthy();
   // esbuild 保留模板串形态：helper 返回 `@@global/${server.name}`。
-  expect(clientSrc.includes("`@@global/${server.name}`"), "global 形态 @@global/<name> 进产物（helper 模板串）").toBeTruthy();
+  expect(
+    clientSrc.includes("`@@global/${server.name}`"),
+    "global 形态 @@global/<name> 进产物（helper 模板串）",
+  ).toBeTruthy();
 });
 it("C7 浮窗操作带 cwd：float connect/enable/disable 与 servers 对齐（#412 自愈）", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
   // esbuild 保留模板串形态：float `&scope=${server.scope}${cwdQuery}`；servers `${scopeQuery}${cwdQuery}`。
-  expect(clientSrc.includes("${server.scope}${cwdQuery}"), "float 操作 URL 拼接 cwdQuery 进产物").toBeTruthy();
-  expect(clientSrc.includes("${scopeQuery}${cwdQuery}"), "servers disconnect/disable 补齐 cwdQuery 进产物").toBeTruthy();
+  expect(
+    clientSrc.includes("${server.scope}${cwdQuery}"),
+    "float 操作 URL 拼接 cwdQuery 进产物",
+  ).toBeTruthy();
+  expect(
+    clientSrc.includes("${scopeQuery}${cwdQuery}"),
+    "servers disconnect/disable 补齐 cwdQuery 进产物",
+  ).toBeTruthy();
 });
 it("C8 checkbox 折叠态保留：details 按 server 记录并恢复 open", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
@@ -710,7 +1082,10 @@ it("C10 showPanel 主动刷新：面板打开即拉最新数据（中间层热�
   // 主动补一次 → ≥2 次（断言区分于 onclick 单次，防误绿）。
   const showBody = clientSrc.slice(showStart, showStart + 2500);
   const refreshCount = (showBody.match(/refresh\(state, actions\)/g) ?? []).length;
-  expect(refreshCount >= 2, "showPanel 内 refresh 出现≥2 次（onclick + 打开主动刷新）").toBeTruthy();
+  expect(
+    refreshCount >= 2,
+    "showPanel 内 refresh 出现≥2 次（onclick + 打开主动刷新）",
+  ).toBeTruthy();
 });
 it("C13 未知状态按 stopped 投影：servers 列表不静默丢卡（与 float 一致）", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
@@ -738,34 +1113,43 @@ it("客户端 watchdog：60s 失活重建 + 建连前先关旧（0.1.8 同款防
   // 关旧建新：new EventSource 前必先关旧——覆盖 source 引用不 close 会耗尽
   // 浏览器同源并发连接（dsh-notifier 0.1.8 同款事故）。
   expect(
-    clientSrc.indexOf("closeEvents()") >= 0 && clientSrc.indexOf("closeEvents()") < clientSrc.indexOf("new EventSource"),
+    clientSrc.indexOf("closeEvents()") >= 0 &&
+      clientSrc.indexOf("closeEvents()") < clientSrc.indexOf("new EventSource"),
     "建连前先执行关旧兜底",
   ).toBeTruthy();
   expect(clientSrc, "收到数据帧即喂狗").toMatch(/lastActivity\s*=\s*Date\.now\(\)/);
   // 心跳 ping 帧喂狗后早退，不得落入 else 触发 scheduleRefresh（否则 SSE 退化为隐性 30s 轮询）。
   expect(clientSrc, "ping 帧仅喂狗即早退").toMatch(/===\s*"ping"\)\s*return/);
   // 卸载清理：watchdog 定时器与 SSE 连接都要收掉（esbuild 产物 undefined 折叠为 void 0）。
-  expect(clientSrc, "卸载清 watchdog").toMatch(/if\s*\(watchdog\s*!==\s*(?:void 0|undefined)\)\s*clearTimeout\(watchdog\)/);
-  expect(clientSrc, "卸载关 SSE 并摘监听").toMatch(/closeEvents\(\);\s*document\.removeEventListener\("visibilitychange"/);
+  expect(clientSrc, "卸载清 watchdog").toMatch(
+    /if\s*\(watchdog\s*!==\s*(?:void 0|undefined)\)\s*clearTimeout\(watchdog\)/,
+  );
+  expect(clientSrc, "卸载关 SSE 并摘监听").toMatch(
+    /closeEvents\(\);\s*document\.removeEventListener\("visibilitychange"/,
+  );
 });
 it("回前台强制重建 SSE + 受控重建连接（visibilitychange → rebindSession → forceReconnect + resume + 补拉）", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
-  expect(clientSrc, "visibilitychange 监听已挂").toMatch(/addEventListener\("visibilitychange",\s*onVisible\)/);
-  expect(
-    clientSrc,
-    "回前台路径先强制重建 SSE",
-  ).toMatch(/onVisible\s*=\s*\(\)\s*=>\s*\{\s*if\s*\(document\.hidden\)\s*return;\s*forceReconnect\(\)/);
+  expect(clientSrc, "visibilitychange 监听已挂").toMatch(
+    /addEventListener\("visibilitychange",\s*onVisible\)/,
+  );
+  expect(clientSrc, "回前台路径先强制重建 SSE").toMatch(
+    /onVisible\s*=\s*\(\)\s*=>\s*\{\s*if\s*\(document\.hidden\)\s*return;\s*forceReconnect\(\)/,
+  );
   // #412：切回前台先 rebindSession（宿主重启后 projectRoot 丢失，旧页面
   // bindSession 不重跑——强制 POST /session 恢复 projectRoot + 惰性连接），
   // 再 POST resume 驱动宿主受控重建当前工作空间连接（半开死连接卡 connected
   // 时纯读 refresh 无法恢复）。
-  expect(
-    clientSrc,
-    "回前台路径先重绑会话再 resume（#412 复报：宿主重启场景恢复）",
-  ).toMatch(/rebindSession\(state\)\.then\(\(\)\s*=>\s*api\(state\.API\.resume,\s*\{\s*method:\s*"POST"\s*\}\)\)/);
+  expect(clientSrc, "回前台路径先重绑会话再 resume（#412 复报：宿主重启场景恢复）").toMatch(
+    /rebindSession\(state\)\.then\(\(\)\s*=>\s*api\(state\.API\.resume,\s*\{\s*method:\s*"POST"\s*\}\)\)/,
+  );
   // iOS bfcache 恢复（pageshow persisted）等价切回前台，走同一恢复路径。
-  expect(clientSrc, "pageshow 监听已挂（bfcache 恢复）").toMatch(/addEventListener\("pageshow",\s*onPageShow\)/);
-  expect(clientSrc, "pageshow persisted 才触发恢复").toMatch(/event\?\.persisted\s*===\s*true\s*\)\s*onVisible\(\)/);
+  expect(clientSrc, "pageshow 监听已挂（bfcache 恢复）").toMatch(
+    /addEventListener\("pageshow",\s*onPageShow\)/,
+  );
+  expect(clientSrc, "pageshow persisted 才触发恢复").toMatch(
+    /event\?\.persisted\s*===\s*true\s*\)\s*onVisible\(\)/,
+  );
   // 宿主重启而页面始终可见（无 visibilitychange）：SSE 自动重连成功即核对宿主
   // 会话状态（onopen → maybeRecoverSession → GET /servers 校验 projectRoot）。
   expect(clientSrc, "SSE 连接建立时挂 onopen 探测").toMatch(/es\.onopen\s*=\s*\(\)\s*=>\s*\{/);
@@ -775,20 +1159,35 @@ it("回前台强制重建 SSE + 受控重建连接（visibilitychange → rebind
 it("设置卡片样式对齐官方风格（#219：12px 圆角 / bg-layer-3 底 / border-l2 / 15px 名称字 / 13px 描述字 / 14 16 padding / gap 4）", () => {
   const css = readFileSync(new URL("../../src/client/style.css", import.meta.url), "utf8");
   expect(css, "卡片圆角对齐官方 12px").toMatch(/border-radius:12px/);
-  expect(css, "卡片底色对齐官方 bg-layer-3").toMatch(/background:var\(--dsw-alias-bg-layer-3,#fbfbfc\)/);
-  expect(css, "卡片边框对齐官方 border-l2").toMatch(/border:1px solid var\(--dsw-alias-border-l2,#e2e5ea\)/);
-  expect(css, "head padding 对齐官方 14px 16px").toMatch(/\.dm-set-head\{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px/);
-  expect(css, "headText gap 对齐官方 4px").toMatch(/\.dm-set-headText\{display:flex;flex-direction:column;gap:4px/);
-  expect(css, "名称字号对齐官方 15px").toMatch(/\.dm-set-name\{display:block;font-size:15px;font-weight:600;line-height:1\.4/);
-  expect(css, "描述字号对齐官方 13px").toMatch(/\.dm-set-description\{display:block;font-size:13px;line-height:1\.5/);
+  expect(css, "卡片底色对齐官方 bg-layer-3").toMatch(
+    /background:var\(--dsw-alias-bg-layer-3,#fbfbfc\)/,
+  );
+  expect(css, "卡片边框对齐官方 border-l2").toMatch(
+    /border:1px solid var\(--dsw-alias-border-l2,#e2e5ea\)/,
+  );
+  expect(css, "head padding 对齐官方 14px 16px").toMatch(
+    /\.dm-set-head\{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px/,
+  );
+  expect(css, "headText gap 对齐官方 4px").toMatch(
+    /\.dm-set-headText\{display:flex;flex-direction:column;gap:4px/,
+  );
+  expect(css, "名称字号对齐官方 15px").toMatch(
+    /\.dm-set-name\{display:block;font-size:15px;font-weight:600;line-height:1\.4/,
+  );
+  expect(css, "描述字号对齐官方 13px").toMatch(
+    /\.dm-set-description\{display:block;font-size:13px;line-height:1\.5/,
+  );
   expect(css, "描述用 tertiary 层级（与官方同款）").toMatch(/--dsw-alias-label-tertiary,#8a919c/);
 });
 
 it("设置卡片展开箭头为官方 SVG chevron（#167：非文本 ▾ 字符）", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
-  expect(clientSrc.includes('dm-set-chevron'), "chevron class 在客户端产物中").toBeTruthy();
-  expect(!/dm-set-chevron[^"]*"[^>]*>▾/.test(clientSrc), "不再使用文本 ▾ 字符作为箭头").toBeTruthy();
-  expect(clientSrc.includes('M11.8486 5.5L11.4238'), "使用官方 chevron-down SVG path").toBeTruthy();
+  expect(clientSrc.includes("dm-set-chevron"), "chevron class 在客户端产物中").toBeTruthy();
+  expect(
+    !/dm-set-chevron[^"]*"[^>]*>▾/.test(clientSrc),
+    "不再使用文本 ▾ 字符作为箭头",
+  ).toBeTruthy();
+  expect(clientSrc.includes("M11.8486 5.5L11.4238"), "使用官方 chevron-down SVG path").toBeTruthy();
   expect(clientSrc, "SVG 尺寸 14x14（官方同款）").toMatch(/width:\s*14,\s*height:\s*14/);
 });
 
@@ -798,7 +1197,10 @@ it("F1（qa 实测 #128）：浮窗面板内容更新后重定位 + toggleFloat 
   // 不重排会稳定向下溢出视口（375x667 bottom-left 实测 y=561/bottom=1082 稳态）。
   const renderStart = src.indexOf("function renderFloatPanel");
   const toggleStart = src.indexOf("function toggleFloat");
-  expect(renderStart >= 0 && toggleStart > renderStart, "产物含 renderFloatPanel/toggleFloat 标识符").toBeTruthy();
+  expect(
+    renderStart >= 0 && toggleStart > renderStart,
+    "产物含 renderFloatPanel/toggleFloat 标识符",
+  ).toBeTruthy();
   expect(
     src.slice(renderStart, toggleStart).includes("placePanel(state)"),
     "renderFloatPanel 内容渲染完成即触发 placePanel 重定位（bottom 锚点防溢出）",
@@ -806,8 +1208,8 @@ it("F1（qa 实测 #128）：浮窗面板内容更新后重定位 + toggleFloat 
   // toggleFloat 内先渲染后定位：以真实内容高度定位，消除首帧小高度错位。
   const tf = src.slice(toggleStart);
   expect(
-    tf.indexOf("renderFloatPanel(state, actions)") >= 0
-      && tf.indexOf("renderFloatPanel(state, actions)") < tf.indexOf("placePanel(state)"),
+    tf.indexOf("renderFloatPanel(state, actions)") >= 0 &&
+      tf.indexOf("renderFloatPanel(state, actions)") < tf.indexOf("placePanel(state)"),
     "toggleFloat 先 renderFloatPanel 后 placePanel",
   ).toBeTruthy();
 });
@@ -816,11 +1218,18 @@ it("Config 导出且含 ui 子对象（默认值与合法值域）", () => {
   expect(typeof Config === "function", "Config 是 schemastery schema（可调用）").toBeTruthy();
   const parsed = Config({});
   expect(parsed.ui.position, "ui.position 默认 top-right").toBe("top-right");
-  expect(parsed.ui.offset, "ui.offset 默认 {x:8,y:8,blankY:40}").toEqual({ x: 8, y: 8, blankY: 40 });
+  expect(parsed.ui.offset, "ui.offset 默认 {x:8,y:8,blankY:40}").toEqual({
+    x: 8,
+    y: 8,
+    blankY: 40,
+  });
   expect(parsed.ui.zIndexBase, "#128 ui.zIndexBase 默认 10").toBe(10);
   expect(DEFAULT_UI_CONFIG.position, "DEFAULT_UI_CONFIG.position 与升级前一致").toBe("top-right");
   expect(DEFAULT_UI_CONFIG.offset).toEqual({ x: 8, y: 8, blankY: 40 });
-  expect(DEFAULT_UI_CONFIG.zIndexBase, "#128 DEFAULT_UI_CONFIG.zIndexBase 与 CSS 默认 z-index 一致").toBe(10);
+  expect(
+    DEFAULT_UI_CONFIG.zIndexBase,
+    "#128 DEFAULT_UI_CONFIG.zIndexBase 与 CSS 默认 z-index 一致",
+  ).toBe(10);
   // 合法值域：四角全部透传（#128 补左上/左下）
   for (const p of ["top-left", "bottom-left"] as const) {
     const parsedP = Config({ ui: { position: p } });
@@ -831,8 +1240,20 @@ it("Config 导出且含 ui 子对象（默认值与合法值域）", () => {
 });
 it("normalizeUiConfig：默认 / 合法值透传 / 非法回退（不抛）", () => {
   // 未配置 → 默认
-  expect(normalizeUiConfig(undefined)).toEqual({ position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 });
-  expect(normalizeUiConfig(null)).toEqual({ position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 });
+  expect(normalizeUiConfig(undefined)).toEqual({
+    position: "top-right",
+    offsetX: 8,
+    offsetY: 8,
+    blankY: 40,
+    zIndexBase: 10,
+  });
+  expect(normalizeUiConfig(null)).toEqual({
+    position: "top-right",
+    offsetX: 8,
+    offsetY: 8,
+    blankY: 40,
+    zIndexBase: 10,
+  });
   // 新 Config.ui 嵌套形态
   expect(
     normalizeUiConfig({ ui: { position: "bottom-right", offset: { x: 12, y: 20, blankY: 60 } } }),
@@ -847,17 +1268,49 @@ it("normalizeUiConfig：默认 / 合法值透传 / 非法回退（不抛）", ()
   ).toEqual({ position: "bottom-right", offsetX: 3, offsetY: 4, blankY: 44, zIndexBase: 10 });
   // #128 zIndexBase clamp 边界：合法透传 / 越界压边界 / 非法回退默认
   expect(
-    normalizeUiConfig({ position: "top-left", offsetX: 1, offsetY: 2, blankY: 3, zIndexBase: 5000 }),
+    normalizeUiConfig({
+      position: "top-left",
+      offsetX: 1,
+      offsetY: 2,
+      blankY: 3,
+      zIndexBase: 5000,
+    }),
     "左上 + 合法层级基准透传",
   ).toEqual({ position: "top-left", offsetX: 1, offsetY: 2, blankY: 3, zIndexBase: 5000 });
   // 非法/缺失 → 安全回退默认，不抛
-  expect(normalizeUiConfig({ position: "middle-left" })).toEqual({ position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 });
-  expect(normalizeUiConfig({ ui: { position: "nope", offset: { x: "abc" } } })).toEqual({ position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 });
-  expect(normalizeUiConfig({ offset: {} })).toEqual({ position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: 10 });
-  expect(normalizeUiConfig({ zIndexBase: 0 }).zIndexBase, "#128 低于下界压到 1").toBe(Z_INDEX_BASE_MIN);
-  expect(normalizeUiConfig({ zIndexBase: -50 }).zIndexBase, "#128 负数压到 1").toBe(Z_INDEX_BASE_MIN);
-  expect(normalizeUiConfig({ zIndexBase: 9000 }).zIndexBase, "#128 上界 9000 透传").toBe(Z_INDEX_BASE_MAX);
-  expect(normalizeUiConfig({ zIndexBase: 9001 }).zIndexBase, "#128 超上界压到 9000").toBe(Z_INDEX_BASE_MAX);
+  expect(normalizeUiConfig({ position: "middle-left" })).toEqual({
+    position: "top-right",
+    offsetX: 8,
+    offsetY: 8,
+    blankY: 40,
+    zIndexBase: 10,
+  });
+  expect(normalizeUiConfig({ ui: { position: "nope", offset: { x: "abc" } } })).toEqual({
+    position: "top-right",
+    offsetX: 8,
+    offsetY: 8,
+    blankY: 40,
+    zIndexBase: 10,
+  });
+  expect(normalizeUiConfig({ offset: {} })).toEqual({
+    position: "top-right",
+    offsetX: 8,
+    offsetY: 8,
+    blankY: 40,
+    zIndexBase: 10,
+  });
+  expect(normalizeUiConfig({ zIndexBase: 0 }).zIndexBase, "#128 低于下界压到 1").toBe(
+    Z_INDEX_BASE_MIN,
+  );
+  expect(normalizeUiConfig({ zIndexBase: -50 }).zIndexBase, "#128 负数压到 1").toBe(
+    Z_INDEX_BASE_MIN,
+  );
+  expect(normalizeUiConfig({ zIndexBase: 9000 }).zIndexBase, "#128 上界 9000 透传").toBe(
+    Z_INDEX_BASE_MAX,
+  );
+  expect(normalizeUiConfig({ zIndexBase: 9001 }).zIndexBase, "#128 超上界压到 9000").toBe(
+    Z_INDEX_BASE_MAX,
+  );
   expect(normalizeUiConfig({ zIndexBase: Number.NaN }).zIndexBase, "#128 NaN 回退默认").toBe(10);
 });
 it("buildConfigUiPatch：客户端扁平形态 → Config.ui 嵌套补丁（写路径）", () => {
@@ -867,12 +1320,20 @@ it("buildConfigUiPatch：客户端扁平形态 → Config.ui 嵌套补丁（写�
   ).toEqual({ position: "bottom-right", offset: { x: 12, y: 20, blankY: 60 }, zIndexBase: 10 });
   // #128 四角 + 层级基准写入嵌套补丁
   expect(
-    buildConfigUiPatch({ position: "bottom-left", offsetX: 12, offsetY: 20, blankY: 60, zIndexBase: 77 }),
+    buildConfigUiPatch({
+      position: "bottom-left",
+      offsetX: 12,
+      offsetY: 20,
+      blankY: 60,
+      zIndexBase: 77,
+    }),
   ).toEqual({ position: "bottom-left", offset: { x: 12, y: 20, blankY: 60 }, zIndexBase: 77 });
   // 缺省 → 安全回退默认
-  expect(
-    buildConfigUiPatch(undefined),
-  ).toEqual({ position: "top-right", offset: { x: 8, y: 8, blankY: 40 }, zIndexBase: 10 });
+  expect(buildConfigUiPatch(undefined)).toEqual({
+    position: "top-right",
+    offset: { x: 8, y: 8, blankY: 40 },
+    zIndexBase: 10,
+  });
   // 非法 position → 回退 top-right；负偏移 clamp 到 0
   expect(
     buildConfigUiPatch({ position: "middle-left", offsetX: -5, offsetY: 3.6, blankY: 40 }),
@@ -888,7 +1349,10 @@ it("README 含 position/offset 配置说明（键名与默认值，中英）", (
     expect(text.includes("offset.y"), `${file} 未含 offset.y 键`).toBeTruthy();
     expect(text.includes("offset.blankY"), `${file} 未含 offset.blankY 键`).toBeTruthy();
     expect(text.includes("zIndexBase"), `#128 ${file} 未含 zIndexBase 键`).toBeTruthy();
-    expect(text.includes("top-left") && text.includes("bottom-left"), `#128 ${file} 未含四角值域`).toBeTruthy();
+    expect(
+      text.includes("top-left") && text.includes("bottom-left"),
+      `#128 ${file} 未含四角值域`,
+    ).toBeTruthy();
     expect(/#116/.test(text), `#128 ${file} 未标注 #116 跨包避让契约`).toBeTruthy();
     const hotUpdatePhrase = file === "README.en.md" ? "without restarting" : "无需重启";
     expect(text.includes(hotUpdatePhrase), `${file} 未声明「保存即热更新无需重启」`).toBeTruthy();
@@ -905,15 +1369,25 @@ it("lib/index.js 导出 sseData 且输出与 shared/host-utils.js 一致（#472�
   const { sseData: libSseData } = await import("../../lib/index.js");
   const { sseData: sharedSseData } = await import("../../../../shared/host-utils.js");
   expect(typeof libSseData, "lib/index.js 可 import sseData").toBe("function");
-  expect(libSseData({ type: "ui-config-changed" })).toBe(sharedSseData({ type: "ui-config-changed" }));
+  expect(libSseData({ type: "ui-config-changed" })).toBe(
+    sharedSseData({ type: "ui-config-changed" }),
+  );
   expect(libSseData({ type: "ping" })).toBe('data: {"type":"ping"}\n\n');
 });
 it("broadcastFrame 向全部连接写帧（掉线忽略）", () => {
   const written = [];
-  const conn = { write: (chunk) => { written.push(chunk); } };
-  const dead = { write: () => { throw new Error("closed"); } };
-  broadcastFrame(new Set([conn, dead]), "data: {\"type\":\"summary\"}\n\n");
-  expect(written).toEqual(["data: {\"type\":\"summary\"}\n\n"]);
+  const conn = {
+    write: (chunk) => {
+      written.push(chunk);
+    },
+  };
+  const dead = {
+    write: () => {
+      throw new Error("closed");
+    },
+  };
+  broadcastFrame(new Set([conn, dead]), 'data: {"type":"summary"}\n\n');
+  expect(written).toEqual(['data: {"type":"summary"}\n\n']);
   broadcastFrame(undefined, "x"); // 无连接不抛
 });
 
@@ -934,11 +1408,24 @@ it("#128 断点判定纯函数分支翻转（基准=conversationHost rect 宽度
   expect(breakpointForWidth(Number.NaN), "异常宽度按 wide 兜底").toBe("wide");
 });
 it("#128 终坐标视口 clamp 纯函数（safe-area inset 恒 0 自然退化）", () => {
-  expect(clampPointToViewport(-30, -50, 100, 80, 375, 667), "负坐标钳回视口原点").toEqual({ x: 0, y: 0 });
-  expect(clampPointToViewport(400, 700, 100, 80, 375, 667), "右/下溢出钳回视口内").toEqual({ x: 275, y: 587 });
-  expect(clampPointToViewport(10, 20, 100, 80, 375, 667), "视口内坐标不改变（桌面零回归）").toEqual({ x: 10, y: 20 });
-  expect(clampPointToViewport(-30, -50, 100, 80, 375, 667, 10), "safeInset>0 按安全区内缩").toEqual({ x: 10, y: 10 });
-  expect(clampPointToViewport(0, 0, 9999, 9999, 375, 667), "元素大于视口时钳到原点不倒挂").toEqual({ x: 0, y: 0 });
+  expect(clampPointToViewport(-30, -50, 100, 80, 375, 667), "负坐标钳回视口原点").toEqual({
+    x: 0,
+    y: 0,
+  });
+  expect(clampPointToViewport(400, 700, 100, 80, 375, 667), "右/下溢出钳回视口内").toEqual({
+    x: 275,
+    y: 587,
+  });
+  expect(clampPointToViewport(10, 20, 100, 80, 375, 667), "视口内坐标不改变（桌面零回归）").toEqual(
+    { x: 10, y: 20 },
+  );
+  expect(clampPointToViewport(-30, -50, 100, 80, 375, 667, 10), "safeInset>0 按安全区内缩").toEqual(
+    { x: 10, y: 10 },
+  );
+  expect(clampPointToViewport(0, 0, 9999, 9999, 375, 667), "元素大于视口时钳到原点不倒挂").toEqual({
+    x: 0,
+    y: 0,
+  });
 });
 it("#128 重开：zIndexBase clamp 边界、主面板与胶囊同值、composer seat 贴底纯函数", () => {
   expect(clampZIndexBase(5000, 10), "合法值透传").toBe(5000);
@@ -952,15 +1439,29 @@ it("#128 重开：zIndexBase clamp 边界、主面板与胶囊同值、composer 
   expect(Z_INDEX_PANEL_DELTA, "子浮层派生量约定值").toBe(30);
   // D1-D4：composerDockedAtBottom / bottomAnchorEdge 矩阵
   const container = { top: 0, bottom: 844 };
-  expect(composerDockedAtBottom({ top: 670, bottom: 844 }, container), "seat 贴底 → docked=true").toBe(true);
-  expect(composerDockedAtBottom({ top: 670, bottom: 843 }, { top: 0, bottom: 844 }), "距底缘 1px 未贴底 → false").toBe(false);
-  expect(composerDockedAtBottom({ top: 300, bottom: 500 }, { top: 0, bottom: 844 }), "seat 居中未贴底 → false").toBe(false);
+  expect(
+    composerDockedAtBottom({ top: 670, bottom: 844 }, container),
+    "seat 贴底 → docked=true",
+  ).toBe(true);
+  expect(
+    composerDockedAtBottom({ top: 670, bottom: 843 }, { top: 0, bottom: 844 }),
+    "距底缘 1px 未贴底 → false",
+  ).toBe(false);
+  expect(
+    composerDockedAtBottom({ top: 300, bottom: 500 }, { top: 0, bottom: 844 }),
+    "seat 居中未贴底 → false",
+  ).toBe(false);
   expect(composerDockedAtBottom(null, container), "seat null → false").toBe(false);
-  expect(composerDockedAtBottom({ top: 670, bottom: 844 }, null), "container null → false").toBe(false);
+  expect(composerDockedAtBottom({ top: 670, bottom: 844 }, null), "container null → false").toBe(
+    false,
+  );
   expect(bottomAnchorEdge(844, 670, true), "docked → seatTop").toBe(670);
   expect(bottomAnchorEdge(844, 670, false), "未 docked → containerBottom").toBe(844);
   expect(bottomAnchorEdge(844, null, true), "seatTop=null → containerBottom").toBe(844);
-  expect(bottomAnchorEdge(844, Number.NaN, true), "seatTop 非有限数 → containerBottom（无 NaN）").toBe(844);
+  expect(
+    bottomAnchorEdge(844, Number.NaN, true),
+    "seatTop 非有限数 → containerBottom（无 NaN）",
+  ).toBe(844);
 });
 it("F1（qa 实测 #128）：bottom 锚点首开小高度→数据撑高→重定位后不溢出", () => {
   // 375x667 视口、bottom-right、胶囊 offsetY(blankY 同构取 8)/高 26px → 上缘 633。
@@ -1002,8 +1503,15 @@ it("stdio 服务器规范化", () => {
   expect(server.args).toEqual(["-y", "@context7/mcp-server"]);
   expect(server.toolCallTimeoutMs, "超时默认下探至 15s").toBe(15_000);
   expect(server.description).toBe("上下文检索（自定义描述）");
-  expect(normalizeServer({ name: "a", transport: "stdio", command: "x", description: "  " }).description, "空白描述归一为 undefined").toBe(undefined);
-  expect(normalizeServer({ name: "a", transport: "stdio", command: "x", description: "长".repeat(200) }).description.length, "描述完整返回不截断").toBe(200);
+  expect(
+    normalizeServer({ name: "a", transport: "stdio", command: "x", description: "  " }).description,
+    "空白描述归一为 undefined",
+  ).toBe(undefined);
+  expect(
+    normalizeServer({ name: "a", transport: "stdio", command: "x", description: "长".repeat(200) })
+      .description.length,
+    "描述完整返回不截断",
+  ).toBe(200);
 });
 it("streamable-http 服务器规范化", () => {
   const server = normalizeServer({
@@ -1028,16 +1536,32 @@ it("stdio 缺 command 被拒绝", () => {
 });
 it("http 缺 url / 非法 url 被拒绝", () => {
   expect(() => normalizeServer({ name: "a", transport: "streamable-http" })).toThrow();
-  expect(() => normalizeServer({ name: "a", transport: "streamable-http", url: "not a url" })).toThrow();
+  expect(() =>
+    normalizeServer({ name: "a", transport: "streamable-http", url: "not a url" }),
+  ).toThrow();
 });
 it("B13: http(s) 之外的协议被拒绝（ftp/file 非 streamable-http）", () => {
-  expect(() => normalizeServer({ name: "a", transport: "streamable-http", url: "ftp://host/path" }), "B13：ftp 协议拒绝").toThrow(/protocol/);
-  expect(() => normalizeServer({ name: "a", transport: "streamable-http", url: "file:///etc/passwd" }), "B13：file 协议拒绝").toThrow(/protocol/);
-  expect(() => normalizeServer({ name: "a", transport: "streamable-http", url: "https://host/path" }), "https 放行").not.toThrow();
-  expect(() => normalizeServer({ name: "a", transport: "streamable-http", url: "http://host/path" }), "http 放行").not.toThrow();
+  expect(
+    () => normalizeServer({ name: "a", transport: "streamable-http", url: "ftp://host/path" }),
+    "B13：ftp 协议拒绝",
+  ).toThrow(/protocol/);
+  expect(
+    () => normalizeServer({ name: "a", transport: "streamable-http", url: "file:///etc/passwd" }),
+    "B13：file 协议拒绝",
+  ).toThrow(/protocol/);
+  expect(
+    () => normalizeServer({ name: "a", transport: "streamable-http", url: "https://host/path" }),
+    "https 放行",
+  ).not.toThrow();
+  expect(
+    () => normalizeServer({ name: "a", transport: "streamable-http", url: "http://host/path" }),
+    "http 放行",
+  ).not.toThrow();
 });
 it("enabled: false 保留", () => {
-  expect(normalizeServer({ name: "a", transport: "stdio", command: "x", enabled: false }).enabled).toBe(false);
+  expect(
+    normalizeServer({ name: "a", transport: "stdio", command: "x", enabled: false }).enabled,
+  ).toBe(false);
 });
 
 it("stdio 条目映射", () => {
@@ -1069,10 +1593,12 @@ it("无 command 且无 url 的条目被拒绝", () => {
   expect(() => fromClaudeEntry("bad", { type: "unknown" })).toThrow();
 });
 it("parseClaudeJson 解析整段 mcpServers", () => {
-  const servers = parseClaudeJson(JSON.stringify({
-    github: { command: "npx", args: ["-y", "@modelcontextprotocol/server-github"] },
-    remote: { type: "http", url: "https://mcp.example.com/mcp" },
-  }));
+  const servers = parseClaudeJson(
+    JSON.stringify({
+      github: { command: "npx", args: ["-y", "@modelcontextprotocol/server-github"] },
+      remote: { type: "http", url: "https://mcp.example.com/mcp" },
+    }),
+  );
   expect(servers.length).toBe(2);
   expect(servers[0].name).toBe("github");
   expect(servers[1].transport).toBe("streamable-http");
@@ -1084,7 +1610,9 @@ it("parseClaudeJson 拒绝非法 JSON", () => {
 
 it("publicToolName 确定性", () => {
   expect(publicToolName("context7", "use_context7")).toBe("mcp__context7__use_context7");
-  expect(publicToolName("context7", "use_context7")).toBe(publicToolName("context7", "use_context7"));
+  expect(publicToolName("context7", "use_context7")).toBe(
+    publicToolName("context7", "use_context7"),
+  );
   expect(publicToolName("a", "b").startsWith("mcp__a__b")).toBeTruthy();
 });
 it("publicToolName 超长名加哈希后缀", () => {
@@ -1105,50 +1633,69 @@ it("expandEnv 展开 ${ENV}", () => {
   }
 });
 it("parseSsePayload 提取匹配 id 的 JSON", () => {
-  const text = "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{\"ok\":true}}\n\n";
+  const text = 'event: message\ndata: {"jsonrpc":"2.0","id":7,"result":{"ok":true}}\n\n';
   expect(parseSsePayload(text, 7).result).toEqual({ ok: true });
   expect(parseSsePayload(text, 99)).toBe(undefined);
 });
 
 // sequential-thinking-server v0.2.0 实际返回的 inputSchema / outputSchema
 const ST_INPUT = {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "type": "object",
-  "properties": {
-    "thought": { "type": "string", "description": "Your current thinking step" },
-    "nextThoughtNeeded": { "description": "Whether another thought step is needed", "type": "boolean" },
-    "thoughtNumber": { "type": "integer", "minimum": 1, "maximum": 9007199254740991, "description": "Current thought number" },
-    "totalThoughts": { "type": "integer", "minimum": 1, "maximum": 9007199254740991, "description": "Estimated total thoughts" },
+  $schema: "http://json-schema.org/draft-07/schema#",
+  type: "object",
+  properties: {
+    thought: { type: "string", description: "Your current thinking step" },
+    nextThoughtNeeded: { description: "Whether another thought step is needed", type: "boolean" },
+    thoughtNumber: {
+      type: "integer",
+      minimum: 1,
+      maximum: 9007199254740991,
+      description: "Current thought number",
+    },
+    totalThoughts: {
+      type: "integer",
+      minimum: 1,
+      maximum: 9007199254740991,
+      description: "Estimated total thoughts",
+    },
   },
-  "required": ["thought", "thoughtNumber", "totalThoughts"],
+  required: ["thought", "thoughtNumber", "totalThoughts"],
 };
 const ST_OUTPUT = {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "type": "object",
-  "properties": {
-    "thoughtNumber": { "type": "number" },
-    "totalThoughts": { "type": "number" },
-    "nextThoughtNeeded": { "type": "boolean" },
-    "branches": { "type": "array", "items": { "type": "string" } },
-    "thoughtHistoryLength": { "type": "number" },
+  $schema: "http://json-schema.org/draft-07/schema#",
+  type: "object",
+  properties: {
+    thoughtNumber: { type: "number" },
+    totalThoughts: { type: "number" },
+    nextThoughtNeeded: { type: "boolean" },
+    branches: { type: "array", items: { type: "string" } },
+    thoughtHistoryLength: { type: "number" },
   },
-  "required": ["thoughtNumber", "totalThoughts", "nextThoughtNeeded", "branches", "thoughtHistoryLength"],
-  "additionalProperties": false,
+  required: [
+    "thoughtNumber",
+    "totalThoughts",
+    "nextThoughtNeeded",
+    "branches",
+    "thoughtHistoryLength",
+  ],
+  additionalProperties: false,
 };
 // playwright 真实声明的 browser_drop inputSchema（含 propertyNames 与 schema 形式 additionalProperties）
 const PWD_DROP_INPUT = {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "target": { "type": "string", "description": "Exact target element reference from the page snapshot" },
-    "data": {
-      "type": "object",
-      "propertyNames": { "type": "string" },
-      "additionalProperties": { "type": "string" },
+  $schema: "https://json-schema.org/draft/2020-12/schema",
+  type: "object",
+  properties: {
+    target: {
+      type: "string",
+      description: "Exact target element reference from the page snapshot",
+    },
+    data: {
+      type: "object",
+      propertyNames: { type: "string" },
+      additionalProperties: { type: "string" },
     },
   },
-  "required": ["target"],
-  "additionalProperties": false,
+  required: ["target"],
+  additionalProperties: false,
 };
 let assertSupportedJsonSchema;
 // 解析 @deepseek-ai/dsh-tools(真实 schema 校验器)做交叉断言。
@@ -1165,7 +1712,23 @@ if (typeof process.env.DSH_TOOLS_PATH === "string" && process.env.DSH_TOOLS_PATH
 }
 try {
   const voltaPackages = join(dirname(dirname(dirname(process.execPath))), "packages");
-  candidates.push(pathToFileURL(join(voltaPackages, "@deepseek-ai", "dsh", "node_modules", "@deepseek-ai", "dsh", "node_modules", "@deepseek-ai", "dsh-tools", "lib", "index.js")).href);
+  candidates.push(
+    pathToFileURL(
+      join(
+        voltaPackages,
+        "@deepseek-ai",
+        "dsh",
+        "node_modules",
+        "@deepseek-ai",
+        "dsh",
+        "node_modules",
+        "@deepseek-ai",
+        "dsh-tools",
+        "lib",
+        "index.js",
+      ),
+    ).href,
+  );
 } catch {
   // 非 Volta 环境,跳过布局候选
 }
@@ -1180,22 +1743,41 @@ for (const url of candidates) {
   }
 }
 if (assertSupportedJsonSchema === undefined) {
-  console.warn(`smoke: @deepseek-ai/dsh-tools 不可解析(${toolsLoadError?.message ?? "无可用候选"})——schema 交叉校验断言跳过;可设置 DSH_TOOLS_PATH 指向其 lib/index.js`);
+  console.warn(
+    `smoke: @deepseek-ai/dsh-tools 不可解析(${toolsLoadError?.message ?? "无可用候选"})——schema 交叉校验断言跳过;可设置 DSH_TOOLS_PATH 指向其 lib/index.js`,
+  );
 }
 it("output schema 带 $schema 关键字 → 校验失败（回退自由值）", () => {
   expect(assertSupportedOutputSchema(ST_OUTPUT)).toBe(undefined);
 });
 it("纯支持子集 output schema → 原样通过", () => {
-  const clean = { type: "object", properties: { a: { type: "string" } }, required: ["a"], additionalProperties: false };
+  const clean = {
+    type: "object",
+    properties: { a: { type: "string" } },
+    required: ["a"],
+    additionalProperties: false,
+  };
   expect(assertSupportedOutputSchema(clean)).toEqual(clean);
 });
 it("schema 形式的 additionalProperties / propertyNames → 校验失败", () => {
   expect(assertSupportedOutputSchema(PWD_DROP_INPUT)).toBe(undefined);
-  expect(assertSupportedOutputSchema({ type: "object", additionalProperties: { type: "string" } })).toBe(undefined);
-  expect(assertSupportedOutputSchema({ type: "object", properties: { data: { type: "object", propertyNames: { type: "string" } } } })).toBe(undefined);
+  expect(
+    assertSupportedOutputSchema({ type: "object", additionalProperties: { type: "string" } }),
+  ).toBe(undefined);
+  expect(
+    assertSupportedOutputSchema({
+      type: "object",
+      properties: { data: { type: "object", propertyNames: { type: "string" } } },
+    }),
+  ).toBe(undefined);
 });
 it("校验通过的 output 构建的 output.schema 通过真实 assertSupportedJsonSchema", () => {
-  const structured = assertSupportedOutputSchema({ type: "object", properties: { a: { type: "string" } }, required: ["a"], additionalProperties: false });
+  const structured = assertSupportedOutputSchema({
+    type: "object",
+    properties: { a: { type: "string" } },
+    required: ["a"],
+    additionalProperties: false,
+  });
   expect(structured !== undefined).toBeTruthy();
   const outputSchema = {
     type: "object",
@@ -1215,9 +1797,16 @@ it("无 outputSchema / 空 schema / 注解-only 的处理", () => {
   expect(assertSupportedOutputSchema({ description: "x" })).toEqual({ description: "x" });
 });
 it("oneOf ≥2 且无兄弟关键字；非法结构返回 undefined", () => {
-  expect(assertSupportedOutputSchema({ oneOf: [{ type: "string" }, { type: "number" }] })).toEqual({ oneOf: [{ type: "string" }, { type: "number" }] });
+  expect(assertSupportedOutputSchema({ oneOf: [{ type: "string" }, { type: "number" }] })).toEqual({
+    oneOf: [{ type: "string" }, { type: "number" }],
+  });
   expect(assertSupportedOutputSchema({ oneOf: [{ type: "string" }] })).toBe(undefined);
-  expect(assertSupportedOutputSchema({ type: "object", oneOf: [{ type: "string" }, { type: "number" }] })).toBe(undefined);
+  expect(
+    assertSupportedOutputSchema({
+      type: "object",
+      oneOf: [{ type: "string" }, { type: "number" }],
+    }),
+  ).toBe(undefined);
   expect(assertSupportedOutputSchema({ type: "object", additionalProperties: {} })).toBe(undefined); // additionalProperties 必须布尔
   expect(assertSupportedOutputSchema({ type: "object", required: ["missing"] })).toBe(undefined); // required 不在 properties
   expect(assertSupportedOutputSchema({ type: "string", enum: [1] })).toBe(undefined); // enum 值不匹配类型
@@ -1263,7 +1852,13 @@ it("reloadIfChanged：外部修改重读 / 未变跳过 / 删除清空", async (
     expect(await store.reloadIfChanged(), "无外部变更不重读").toBe(false);
     // 外部修改（模拟 git pull / 手动编辑 mcp.json）——显式拨未来 mtime，
     // 避免与 save() 基线同毫秒导致 reloadIfChanged 检测不到（事件驱动替代固定 sleep）。
-    writeFileSync(path, JSON.stringify({ version: 1, servers: [{ name: "b", transport: "stdio", command: "echo", enabled: true }] }));
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 1,
+        servers: [{ name: "b", transport: "stdio", command: "echo", enabled: true }],
+      }),
+    );
     utimesSync(path, Date.now() / 1000 + 10, Date.now() / 1000 + 10);
     expect(await store.reloadIfChanged(), "外部修改触发重读").toBe(true);
     expect(store.data.servers.length).toBe(1);
@@ -1284,7 +1879,24 @@ describe("项目根发现（findProjectRoot / setSession）", () => {
 
   beforeAll(async () => {
     base = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-root-"));
-    deep = join(base, "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8", "d9", "d10", "d11", "d12", "d13", "d14");
+    deep = join(
+      base,
+      "d0",
+      "d1",
+      "d2",
+      "d3",
+      "d4",
+      "d5",
+      "d6",
+      "d7",
+      "d8",
+      "d9",
+      "d10",
+      "d11",
+      "d12",
+      "d13",
+      "d14",
+    );
     home = join(deep, "home");
     leetcode = join(home, "dev", "leetcode");
     proj = join(base, "proj");
@@ -1354,7 +1966,6 @@ describe("项目根发现（findProjectRoot / setSession）", () => {
   });
 });
 
-
 describe("目录数据源按工作区计算（切换工作区不抖动）", () => {
   let base, rootA, rootB, subA, noReconnect, gstore, manager;
 
@@ -1367,17 +1978,29 @@ describe("目录数据源按工作区计算（切换工作区不抖动）", () =
     mkdirSync(join(rootB, ".dsh"), { recursive: true });
     mkdirSync(subA, { recursive: true });
     noReconnect = { reconnect: { enabled: false } };
-    writeFileSync(join(rootA, ".dsh", "mcp.json"), JSON.stringify({
-      version: 1,
-      servers: [normalizeServer({ name: "a1", transport: "stdio", command: "true", ...noReconnect })],
-    }));
-    writeFileSync(join(rootB, ".dsh", "mcp.json"), JSON.stringify({
-      version: 1,
-      servers: [normalizeServer({ name: "b1", transport: "stdio", command: "true", ...noReconnect })],
-    }));
+    writeFileSync(
+      join(rootA, ".dsh", "mcp.json"),
+      JSON.stringify({
+        version: 1,
+        servers: [
+          normalizeServer({ name: "a1", transport: "stdio", command: "true", ...noReconnect }),
+        ],
+      }),
+    );
+    writeFileSync(
+      join(rootB, ".dsh", "mcp.json"),
+      JSON.stringify({
+        version: 1,
+        servers: [
+          normalizeServer({ name: "b1", transport: "stdio", command: "true", ...noReconnect }),
+        ],
+      }),
+    );
 
     gstore = new McpStore(join(base, "dsh-mcp.json"));
-    gstore.data.servers = [normalizeServer({ name: "g1", transport: "stdio", command: "true", ...noReconnect })];
+    gstore.data.servers = [
+      normalizeServer({ name: "g1", transport: "stdio", command: "true", ...noReconnect }),
+    ];
     manager = new McpManager(
       { logger: { warn: () => {}, info: () => {}, error: () => {} } },
       gstore,
@@ -1413,7 +2036,9 @@ describe("目录数据源按工作区计算（切换工作区不抖动）", () =
   it("同名项目级被全局顶掉", async () => {
     // projB 里放一台与全局同名的服务器
     const storeB = await manager.projectStoreFor(rootB);
-    storeB.upsert(normalizeServer({ name: "g1", transport: "stdio", command: "true", ...noReconnect }));
+    storeB.upsert(
+      normalizeServer({ name: "g1", transport: "stdio", command: "true", ...noReconnect }),
+    );
     const names = [...(await manager.catalogServersFor(rootB)).keys()];
     expect(names).toEqual(["g1", "b1"]);
   });
@@ -1433,16 +2058,19 @@ describe("目录数据源按工作区计算（切换工作区不抖动）", () =
   });
 
   it("运行时注入（runtimeRegistry）并入目录数据源（#359）", async () => {
-    await manager.registerServer(normalizeServer({ name: "rt1", transport: "stdio", command: "true", ...noReconnect }));
+    await manager.registerServer(
+      normalizeServer({ name: "rt1", transport: "stdio", command: "true", ...noReconnect }),
+    );
     const names = [...(await manager.catalogServersFor("")).keys()];
     expect(names).toEqual(["g1", "rt1"]);
     // 同名 runtime 优先于 store（与 reconcile 双轨一致）——目录仍含该名。
-    await manager.registerServer(normalizeServer({ name: "g1", transport: "stdio", command: "true", ...noReconnect }));
+    await manager.registerServer(
+      normalizeServer({ name: "g1", transport: "stdio", command: "true", ...noReconnect }),
+    );
     const g1 = (await manager.catalogServersFor("")).get("g1");
     expect(g1 !== undefined && g1.server !== undefined, "g1 仍在目录中").toBe(true);
   });
 });
-
 
 describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）", () => {
   let base, proj, cfg, gstore, manager, disconnected;
@@ -1455,9 +2083,14 @@ describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）
     writeFileSync(cfg, JSON.stringify({ version: 1, servers: [] }));
     gstore = new McpStore(join(base, "dsh-mcp.json"));
     // 全局 disabled 服务器：验证 reconcile 不会为其 spawn 进程。
-    gstore.data.servers = [normalizeServer({ name: "g1", transport: "stdio", command: "true", enabled: false })];
+    gstore.data.servers = [
+      normalizeServer({ name: "g1", transport: "stdio", command: "true", enabled: false }),
+    ];
     await gstore.save();
-    manager = new McpManager({ logger: { warn: () => {}, info: () => {}, error: () => {} } }, gstore);
+    manager = new McpManager(
+      { logger: { warn: () => {}, info: () => {}, error: () => {} } },
+      gstore,
+    );
     await manager.setSession(proj);
     // 假 supervisor：验证配置移除后被断开（不 spawn 真实连接）。
     disconnected = 0;
@@ -1483,13 +2116,21 @@ describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）
 
   it("外部新增 disabled 服务器 → refreshFromDisk 重读并进 summary（不 spawn）", async () => {
     // 显式拨未来 mtime，避免与 setSession 基线同毫秒导致 reloadIfChanged 检测不到。
-    writeFileSync(cfg, JSON.stringify({
-      version: 1,
-      servers: [normalizeServer({ name: "p1", transport: "stdio", command: "true", enabled: false })],
-    }));
+    writeFileSync(
+      cfg,
+      JSON.stringify({
+        version: 1,
+        servers: [
+          normalizeServer({ name: "p1", transport: "stdio", command: "true", enabled: false }),
+        ],
+      }),
+    );
     utimesSync(cfg, Date.now() / 1000 + 10, Date.now() / 1000 + 10);
     await manager.refreshFromDisk();
-    const names = manager.summary().servers.filter((s) => s.scope === SCOPE_PROJECT).map((s) => s.name);
+    const names = manager
+      .summary()
+      .servers.filter((s) => s.scope === SCOPE_PROJECT)
+      .map((s) => s.name);
     expect(names, "外部新增出现在面板数据").toEqual(["p1"]);
     expect(manager.supervisors.has("p1"), "disabled 不启动").toBe(false);
   });
@@ -1521,7 +2162,6 @@ describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）
     expect(emitted, "无变化不 emitStatus").toBe(0);
   });
 });
-
 
 describe("路由（makeRoutes / events / health / tool-disable / resume）", () => {
   let store, cleanup, managerState, uiCfg, manager, routes, find, fakeReq, fakeFenceBroken;
@@ -1578,7 +2218,11 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
       method,
       url,
       socket: { remoteAddress: "127.0.0.1" },
-      headers: { host: "localhost:3080", origin: "http://localhost:3080", "sec-fetch-site": "same-origin" },
+      headers: {
+        host: "localhost:3080",
+        origin: "http://localhost:3080",
+        "sec-fetch-site": "same-origin",
+      },
       async *[Symbol.asyncIterator]() {
         if (body !== undefined) yield Buffer.from(JSON.stringify(body));
       },
@@ -1674,7 +2318,12 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
   it("config POST 写 → 200 且读回更新（配置读写）", async () => {
     const write = fakeRes();
     await find(ROUTES.config).handler(
-      fakeReq("POST", ROUTES.config, { position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60 }),
+      fakeReq("POST", ROUTES.config, {
+        position: "bottom-right",
+        offsetX: 12,
+        offsetY: 20,
+        blankY: 60,
+      }),
       write,
     );
     expect(write.state.status).toBe(200);
@@ -1685,7 +2334,14 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
     const read = fakeRes();
     await find(ROUTES.config).handler(fakeReq("GET", ROUTES.config), read);
     const readBack = JSON.parse(read.state.body);
-    expect(readBack).toEqual({ position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60, zIndexBase: 10, middleware: "project" });
+    expect(readBack).toEqual({
+      position: "bottom-right",
+      offsetX: 12,
+      offsetY: 20,
+      blankY: 60,
+      zIndexBase: 10,
+      middleware: "project",
+    });
   });
 
   it("config POST middleware → 热切换 + 落盘（读回 middleware 变化）", async () => {
@@ -1695,18 +2351,26 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
     const read = fakeRes();
     await find(ROUTES.config).handler(fakeReq("GET", ROUTES.config), read);
     const readBack = JSON.parse(read.state.body);
-    expect(readBack.middleware, "fake manager 无 setMiddlewareMode → 模式不变（读回原值）").toBe("project");
+    expect(readBack.middleware, "fake manager 无 setMiddlewareMode → 模式不变（读回原值）").toBe(
+      "project",
+    );
   });
 
   it("config POST 非 loopback → 403（写操作不开放远程页面）", async () => {
     const res = fakeRes();
-    await find(ROUTES.config).handler(fakeFenceBroken("POST", ROUTES.config, { position: "bottom-right" }), res);
+    await find(ROUTES.config).handler(
+      fakeFenceBroken("POST", ROUTES.config, { position: "bottom-right" }),
+      res,
+    );
     expect(res.state.status).toBe(403);
   });
 
   it("config PUT → 405（仅 GET/POST 合法；方法错围栏）", async () => {
     const res = fakeRes();
-    await find(ROUTES.config).handler(fakeReq("PUT", ROUTES.config, { position: "bottom-right" }), res);
+    await find(ROUTES.config).handler(
+      fakeReq("PUT", ROUTES.config, { position: "bottom-right" }),
+      res,
+    );
     expect(res.state.status).toBe(405);
   });
 
@@ -1772,23 +2436,26 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
       const res = fakeRes();
       await find(ROUTES.servers).handler(fakeReq(method, ROUTES.servers), res);
       expect(res.state.status, `servers ${method} → 405`).toBe(405);
-      expect(
-        JSON.parse(res.state.body).error,
-        `servers ${method} 405 文案逐字`,
-      ).toBe(`method not allowed: ${method}`);
+      expect(JSON.parse(res.state.body).error, `servers ${method} 405 文案逐字`).toBe(
+        `method not allowed: ${method}`,
+      );
     }
     // config（结构 β）：PUT 405 由 else 分支直出（不查 loopback），文案同源逐字。
     const cfgPut = fakeRes();
-    await find(ROUTES.config).handler(fakeReq("PUT", ROUTES.config, { position: "bottom-right" }), cfgPut);
+    await find(ROUTES.config).handler(
+      fakeReq("PUT", ROUTES.config, { position: "bottom-right" }),
+      cfgPut,
+    );
     expect(cfgPut.state.status).toBe(405);
-    expect(JSON.parse(cfgPut.state.body).error, "config PUT 405 文案逐字").toBe("method not allowed: PUT");
+    expect(JSON.parse(cfgPut.state.body).error, "config PUT 405 文案逐字").toBe(
+      "method not allowed: PUT",
+    );
     const cfgOptions = fakeRes();
     await find(ROUTES.config).handler(fakeReq("OPTIONS", ROUTES.config), cfgOptions);
     expect(cfgOptions.state.status).toBe(405);
-    expect(
-      JSON.parse(cfgOptions.state.body).error,
-      "config OPTIONS 405 文案逐字",
-    ).toBe("method not allowed: OPTIONS");
+    expect(JSON.parse(cfgOptions.state.body).error, "config OPTIONS 405 文案逐字").toBe(
+      "method not allowed: OPTIONS",
+    );
     // 单方法端点：每端点 ≥1 非法方法 405+文案（守卫收口后错误文案统一出自 shared）。
     // events/health 不在 makeRoutes 返回列表（独立工厂路由），单独取 handler。
     const wrong: Array<[string, string, string]> = [
@@ -1804,25 +2471,22 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
       const res = fakeRes();
       await find(path).handler(fakeReq(method, path), res);
       expect(res.state.status, `${label} ${method} → 405`).toBe(405);
-      expect(
-        JSON.parse(res.state.body).error,
-        `${label} 405 文案逐字`,
-      ).toBe(`method not allowed: ${method}`);
+      expect(JSON.parse(res.state.body).error, `${label} 405 文案逐字`).toBe(
+        `method not allowed: ${method}`,
+      );
     }
     const eventsWrong = fakeRes();
     await makeEventsRoute(manager).handler(fakeReq("POST", ROUTES.events), eventsWrong);
     expect(eventsWrong.state.status).toBe(405);
-    expect(
-      JSON.parse(eventsWrong.state.body).error,
-      "events 405 文案逐字",
-    ).toBe("method not allowed: POST");
+    expect(JSON.parse(eventsWrong.state.body).error, "events 405 文案逐字").toBe(
+      "method not allowed: POST",
+    );
     const healthWrong = fakeRes();
     await makeHealthRoute(manager).handler(fakeReq("POST", ROUTES.health), healthWrong);
     expect(healthWrong.state.status).toBe(405);
-    expect(
-      JSON.parse(healthWrong.state.body).error,
-      "health 405 文案逐字",
-    ).toBe("method not allowed: POST");
+    expect(JSON.parse(healthWrong.state.body).error, "health 405 文案逐字").toBe(
+      "method not allowed: POST",
+    );
   });
 
   it("resume：POST 合法 → 200 + 调用 resumeReconnect；围栏 403 / GET 405", async () => {
@@ -1830,7 +2494,9 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
     const res = fakeRes();
     await find(ROUTES.resume).handler(fakeReq("POST", ROUTES.resume), res);
     expect(res.state.status).toBe(200);
-    expect(managerState.resumed, "resumeReconnect 被调用（#412 切回前台恢复入口）").toBe(before + 1);
+    expect(managerState.resumed, "resumeReconnect 被调用（#412 切回前台恢复入口）").toBe(
+      before + 1,
+    );
     const res403 = fakeRes();
     await find(ROUTES.resume).handler(fakeFenceBroken("POST", ROUTES.resume), res403);
     expect(res403.state.status).toBe(403);
@@ -1867,7 +2533,11 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
     const tdRoute = tdRoutes.find((route) => route.path === ROUTES.toolDisable);
     const res = fakeRes();
     await tdRoute.handler(
-      fakeReq("PATCH", ROUTES.toolDisable, { server: "@/proj/ctx", tool: "use_ctx", disabled: true }),
+      fakeReq("PATCH", ROUTES.toolDisable, {
+        server: "@/proj/ctx",
+        tool: "use_ctx",
+        disabled: true,
+      }),
       res,
     );
     expect(res.state.status).toBe(200);
@@ -1876,22 +2546,39 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
     // 带前缀名仍生效；此前原样存键 → guard 查裸名不命中，禁用静默无效）。
     const resPrefix = fakeRes();
     await tdRoute.handler(
-      fakeReq("PATCH", ROUTES.toolDisable, { server: "@/proj/ctx", tool: "mcp__ctx__use_ctx", disabled: true }),
+      fakeReq("PATCH", ROUTES.toolDisable, {
+        server: "@/proj/ctx",
+        tool: "mcp__ctx__use_ctx",
+        disabled: true,
+      }),
       resPrefix,
     );
     expect(resPrefix.state.status).toBe(200);
-    expect(calls[calls.length - 1], "前缀名剥前缀入禁用表").toEqual({ root: "/proj", server: "ctx", tool: "use_ctx", disabled: true });
+    expect(calls[calls.length - 1], "前缀名剥前缀入禁用表").toEqual({
+      root: "/proj",
+      server: "ctx",
+      tool: "use_ctx",
+      disabled: true,
+    });
     // 跨 server 前缀（剥后仍 mcp__ 开头）→ 400（防错禁他 server 工具）。
     const resCross = fakeRes();
     await tdRoute.handler(
-      fakeReq("PATCH", ROUTES.toolDisable, { server: "@/proj/ctx", tool: "mcp__other__t", disabled: true }),
+      fakeReq("PATCH", ROUTES.toolDisable, {
+        server: "@/proj/ctx",
+        tool: "mcp__other__t",
+        disabled: true,
+      }),
       resCross,
     );
     expect(resCross.state.status, "跨 server 前缀拒绝").toBe(400);
     // 全局 root：scope=global 的服务器以 @global 为 key。
     const resG = fakeRes();
     await tdRoute.handler(
-      fakeReq("PATCH", ROUTES.toolDisable, { server: "@/proj/gctx", tool: "use_g", disabled: true }),
+      fakeReq("PATCH", ROUTES.toolDisable, {
+        server: "@/proj/gctx",
+        tool: "use_g",
+        disabled: true,
+      }),
       resG,
     );
     expect(resG.state.status, "global 服务器（store 条目）以项目 root 为 key 可写").toBe(200);
@@ -1907,7 +2594,10 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
   it("GET servers?cwd= 不触发会话切换（#324 纯读）", async () => {
     // #324：GET /servers 是纯读快照，cwd 参数被忽略（不再触发 setSession）。
     // 会话切换只走 POST /api/dsh-mcp/session。
-    await find(ROUTES.session).handler(fakeReq("POST", ROUTES.session, { cwd: "C:/proj" }), fakeRes());
+    await find(ROUTES.session).handler(
+      fakeReq("POST", ROUTES.session, { cwd: "C:/proj" }),
+      fakeRes(),
+    );
     const res = fakeRes();
     await find(ROUTES.servers).handler(fakeReq("GET", `${ROUTES.servers}?cwd=C:/other`), res);
     expect(res.state.status).toBe(200);
@@ -1917,7 +2607,12 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
   it("POST servers scope=project 透传 scope", async () => {
     const res = fakeRes();
     await find(ROUTES.servers).handler(
-      fakeReq("POST", ROUTES.servers, { name: "proj-mcp", transport: "stdio", command: "x", scope: "project" }),
+      fakeReq("POST", ROUTES.servers, {
+        name: "proj-mcp",
+        transport: "stdio",
+        command: "x",
+        scope: "project",
+      }),
       res,
     );
     expect(res.state.status).toBe(201);
@@ -1926,7 +2621,10 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
 
   it("DELETE ?scope=project 透传 scope", async () => {
     const res = fakeRes();
-    await find(ROUTES.servers).handler(fakeReq("DELETE", `${ROUTES.servers}?name=proj-mcp&scope=project`), res);
+    await find(ROUTES.servers).handler(
+      fakeReq("DELETE", `${ROUTES.servers}?name=proj-mcp&scope=project`),
+      res,
+    );
     expect(res.state.status).toBe(200);
     expect(managerState.lastScope).toBe("project");
   });
@@ -1937,7 +2635,6 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
     expect(res.state.status).toBe(400);
   });
 });
-
 
 it("enabled:false 不注册路由/提示词", async () => {
   const ctx = fakeCtx();
@@ -1951,7 +2648,10 @@ it("默认配置注册路由与提示词（空存储不连接）", async () => {
   try {
     await apply(ctx, { enabled: true, storePath: join(dir, "dsh-mcp.json") });
     expect(ctx.routes.length).toBe(11); // 9 条业务路由 + 1 条 SSE events + 1 条 health
-    expect(ctx.routes.some((route) => route.path === ROUTES.events), "SSE events 路由已注册").toBeTruthy();
+    expect(
+      ctx.routes.some((route) => route.path === ROUTES.events),
+      "SSE events 路由已注册",
+    ).toBeTruthy();
     expect(ctx.sections.length).toBe(1);
     expect(ctx.sections[0].name).toBe("plugin:dsh-mcp-manager");
     expect(ctx.sections[0].text).toMatch(/dsh-mcp-manager/);
@@ -1983,7 +2683,11 @@ it("#362 中间层模式热切换：off 启动也可切到 project（设置页�
       method: "POST",
       url: ROUTES.config,
       socket: { remoteAddress: "127.0.0.1" },
-      headers: { host: "localhost:3080", origin: "http://localhost:3080", "sec-fetch-site": "same-origin" },
+      headers: {
+        host: "localhost:3080",
+        origin: "http://localhost:3080",
+        "sec-fetch-site": "same-origin",
+      },
       async *[Symbol.asyncIterator]() {
         yield Buffer.from(JSON.stringify({ middleware: "project" }));
       },
@@ -1992,14 +2696,21 @@ it("#362 中间层模式热切换：off 启动也可切到 project（设置页�
     expect(res.state.status).toBe(200);
     const body = JSON.parse(res.state.body);
     expect(body.middleware, "热切换后 config 读回 project").toBe("project");
-    expect(ctx.registeredTools.some((def) => def.name === "ws_mcp_call"), "热切换后注册中间层工具").toBeTruthy();
+    expect(
+      ctx.registeredTools.some((def) => def.name === "ws_mcp_call"),
+      "热切换后注册中间层工具",
+    ).toBeTruthy();
     // 再切回 off：中间层工具卸载。
     const res2 = fakeRes();
     const req2 = {
       method: "POST",
       url: ROUTES.config,
       socket: { remoteAddress: "127.0.0.1" },
-      headers: { host: "localhost:3080", origin: "http://localhost:3080", "sec-fetch-site": "same-origin" },
+      headers: {
+        host: "localhost:3080",
+        origin: "http://localhost:3080",
+        "sec-fetch-site": "same-origin",
+      },
       async *[Symbol.asyncIterator]() {
         yield Buffer.from(JSON.stringify({ middleware: "off" }));
       },
@@ -2036,7 +2747,13 @@ it("config POST 经 apply 注入 settings：update 保留 this 不再 400（回�
       return this.write(ns, patch);
     },
   };
-  const sctx = { settings: settingsStub, effect: (fn) => { const d = fn(); return () => {}; } };
+  const sctx = {
+    settings: settingsStub,
+    effect: (fn) => {
+      const d = fn();
+      return () => {};
+    },
+  };
   const ctx = fakeCtx({
     inject: (keys, cb) => {
       if (Array.isArray(keys) && keys.includes("settings")) cb(sctx);
@@ -2047,7 +2764,11 @@ it("config POST 经 apply 注入 settings：update 保留 this 不再 400（回�
     method,
     url,
     socket: { remoteAddress: "127.0.0.1" },
-    headers: { host: "localhost:3080", origin: "http://localhost:3080", "sec-fetch-site": "same-origin" },
+    headers: {
+      host: "localhost:3080",
+      origin: "http://localhost:3080",
+      "sec-fetch-site": "same-origin",
+    },
     async *[Symbol.asyncIterator]() {
       if (body !== undefined) yield Buffer.from(JSON.stringify(body));
     },
@@ -2058,17 +2779,28 @@ it("config POST 经 apply 注入 settings：update 保留 this 不再 400（回�
     expect(configRoute, "config 路由已注册").toBeTruthy();
     const write = fakeRes();
     await configRoute.handler(
-      localReq("POST", ROUTES.config, { position: "bottom-right", offsetX: 12, offsetY: 20, blankY: 60 }),
+      localReq("POST", ROUTES.config, {
+        position: "bottom-right",
+        offsetX: 12,
+        offsetY: 20,
+        blankY: 60,
+      }),
       write,
     );
-    expect(write.state.status, "settings.update 以正确 this 调用 → 写路由 200（不再 400）").toBe(200);
+    expect(write.state.status, "settings.update 以正确 this 调用 → 写路由 200（不再 400）").toBe(
+      200,
+    );
     const written = JSON.parse(write.state.body);
     expect(written.position).toBe("bottom-right");
     expect(written.offsetX).toBe(12);
     expect(written.offsetY).toBe(20);
     expect(written.blankY).toBe(60);
     // 落盘：this 正确时 settings.update 内部 this.write 已把 Config.ui 补丁合并进 scope。
-    expect(scopeValue.ui.offset, "settings.update 落盘（this.write 生效）").toEqual({ x: 12, y: 20, blankY: 60 });
+    expect(scopeValue.ui.offset, "settings.update 落盘（this.write 生效）").toEqual({
+      x: 12,
+      y: 20,
+      blankY: 60,
+    });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -2081,7 +2813,10 @@ it("config POST 经 apply 注入 settings：update 保留 this 不再 400（回�
 it("#389：settings 持久化 middleware → apply 后运行时同步", async () => {
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-mw389-"));
   // scope.get() 返回 settings 合并面：含用户层保存的 middleware: "all"（config 缺省 project）。
-  let scopeValue = { ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } }, middleware: "all" };
+  let scopeValue = {
+    ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } },
+    middleware: "all",
+  };
   const settingsStub = {
     register(ns, schema, opts) {
       return { get: () => ({ ...scopeValue }), watch: () => {} };
@@ -2096,7 +2831,13 @@ it("#389：settings 持久化 middleware → apply 后运行时同步", async ()
       return this.write(ns, patch);
     },
   };
-  const sctx = { settings: settingsStub, effect: (fn) => { const d = fn(); return () => {}; } };
+  const sctx = {
+    settings: settingsStub,
+    effect: (fn) => {
+      const d = fn();
+      return () => {};
+    },
+  };
   const ctx = fakeCtx({
     inject: (keys, cb) => {
       if (Array.isArray(keys) && keys.includes("settings")) cb(sctx);
@@ -2107,7 +2848,11 @@ it("#389：settings 持久化 middleware → apply 后运行时同步", async ()
     method,
     url,
     socket: { remoteAddress: "127.0.0.1" },
-    headers: { host: "localhost:3080", origin: "http://localhost:3080", "sec-fetch-site": "same-origin" },
+    headers: {
+      host: "localhost:3080",
+      origin: "http://localhost:3080",
+      "sec-fetch-site": "same-origin",
+    },
     async *[Symbol.asyncIterator]() {
       if (body !== undefined) yield Buffer.from(JSON.stringify(body));
     },
@@ -2147,18 +2892,33 @@ it("composeCatalogEntries 数据源（配置优先 → 缓存摘要 → 仅名�
     ["srv-b", { server: { description: undefined }, tools: [], toolMeta: new Map() }],
     ["srv-c", { server: { description: undefined }, tools: [], toolMeta: new Map() }],
   ]);
-  const cache = new Map([
-    ["srv-b", { summary: "缓存摘要 B" }],
-  ]);
+  const cache = new Map([["srv-b", { summary: "缓存摘要 B" }]]);
   const entries = composeCatalogEntries(supervisors, 6, cache);
   expect(entries[0].text, "用户配置优先").toBe("自定义描述 A");
   expect(entries[1].text, "缓存摘要 fallback（无需用户配置）").toBe("缓存摘要 B");
   expect(entries[2].name, "无配置无缓存 → 条目按名称保留").toBe("srv-c");
-  expect(Object.hasOwn(entries[2], "text"), "双缺省条目不含 text 属性（值断言防不了 text: undefined，必须查存在性）").toBe(false);
+  expect(
+    Object.hasOwn(entries[2], "text"),
+    "双缺省条目不含 text 属性（值断言防不了 text: undefined，必须查存在性）",
+  ).toBe(false);
   // digest 稳定性：实时连接状态（tools/toolMeta）变化不影响目录 digest
   const connected = new Map([
-    ["srv-a", { server: { description: "自定义描述 A" }, tools: ["t1"], toolMeta: new Map([["x", { description: "实时描述" }]]) }],
-    ["srv-b", { server: { description: undefined }, tools: ["t1"], toolMeta: new Map([["x", { description: "实时描述" }]]) }],
+    [
+      "srv-a",
+      {
+        server: { description: "自定义描述 A" },
+        tools: ["t1"],
+        toolMeta: new Map([["x", { description: "实时描述" }]]),
+      },
+    ],
+    [
+      "srv-b",
+      {
+        server: { description: undefined },
+        tools: ["t1"],
+        toolMeta: new Map([["x", { description: "实时描述" }]]),
+      },
+    ],
     ["srv-c", { server: { description: undefined }, tools: [], toolMeta: new Map() }],
   ]);
   expect(
@@ -2176,8 +2936,12 @@ it("summarizeToolDescriptions 排序稳定与首句聚合", () => {
     ["mcp__s__b", { description: "工具 B 的说明文字" }],
     ["mcp__s__c", { description: "" }],
   ]);
-  expect(summarizeToolDescriptions(meta1), "顺序变化摘要稳定").toBe(summarizeToolDescriptions(meta2));
-  expect(summarizeToolDescriptions(new Map([["x", { description: "  " }]])), "全空描述无摘要").toBe(undefined);
+  expect(summarizeToolDescriptions(meta1), "顺序变化摘要稳定").toBe(
+    summarizeToolDescriptions(meta2),
+  );
+  expect(summarizeToolDescriptions(new Map([["x", { description: "  " }]])), "全空描述无摘要").toBe(
+    undefined,
+  );
   const long = summarizeToolDescriptions(new Map([["x", { description: "长".repeat(100) }]]));
   expect(long, "单句上限内完整返回不截断").toBe("长".repeat(100));
   // #569 防 crawler 回归：tavily 类多工具服务器摘要必须覆盖 search/research
@@ -2190,7 +2954,10 @@ it("summarizeToolDescriptions 排序稳定与首句聚合", () => {
     ["tavily_research", { description: "Perform comprehensive research on a given topic." }],
   ]);
   const tavilySummary = summarizeToolDescriptions(tavily)!;
-  expect(tavilySummary.includes("Search the web"), "摘要含 search 语义（防 crawler 误导）").toBeTruthy();
+  expect(
+    tavilySummary.includes("Search the web"),
+    "摘要含 search 语义（防 crawler 误导）",
+  ).toBeTruthy();
   expect(tavilySummary.includes("research"), "摘要含 research 语义").toBeTruthy();
   expect(tavilySummary.startsWith("5 tools: "), "多工具前缀标注真实工具数").toBeTruthy();
 });
@@ -2223,17 +2990,28 @@ it("recordCatalogTools 仅实质变化落盘", async () => {
 });
 it("composeCatalogEntries 条目上限", () => {
   const supervisors = new Map();
-  for (let i = 0; i < 10; i += 1) supervisors.set(`s${i}`, { server: { description: "d" }, tools: [], toolMeta: new Map() });
+  for (let i = 0; i < 10; i += 1)
+    supervisors.set(`s${i}`, { server: { description: "d" }, tools: [], toolMeta: new Map() });
   expect(composeCatalogEntries(supervisors, 3).length).toBe(3);
 });
 it("digestCatalogEntries 只含服务器集合（描述变化不触发注入）", () => {
   const a = [{ name: "x", text: "d1" }];
   const b = [{ name: "x", text: "d2" }];
-  const c = [{ name: "x", text: "d1" }, { name: "y", text: "d1" }];
-  expect(digestCatalogEntries(a), "描述文本变化 digest 不变（不触发注入）").toBe(digestCatalogEntries(b));
-  expect(digestCatalogEntries(a), "服务器集合变化 digest 变（触发替换）").not.toBe(digestCatalogEntries(c));
+  const c = [
+    { name: "x", text: "d1" },
+    { name: "y", text: "d1" },
+  ];
+  expect(digestCatalogEntries(a), "描述文本变化 digest 不变（不触发注入）").toBe(
+    digestCatalogEntries(b),
+  );
+  expect(digestCatalogEntries(a), "服务器集合变化 digest 变（触发替换）").not.toBe(
+    digestCatalogEntries(c),
+  );
   // 顺序敏感（服务器顺序变化 = 集合变化）
-  const reversed = [{ name: "y", text: "d1" }, { name: "x", text: "d1" }];
+  const reversed = [
+    { name: "y", text: "d1" },
+    { name: "x", text: "d1" },
+  ];
   expect(digestCatalogEntries(c), "顺序变化 digest 变").not.toBe(digestCatalogEntries(reversed));
 });
 it("escapeCatalogText 转义（完整返回不截断）", () => {
@@ -2264,28 +3042,59 @@ it("renderMcpCatalogMessage 结构与声明", () => {
   // P2-4：all 模式下纯 global 条目也引导经中间层（全局走中间层，不再 mcp__ 直呼）
   const onlyGlobalAll = renderMcpCatalogMessage([{ name: "ctx", scope: "global" }], "all");
   expect(onlyGlobalAll.content[0].text, "all 模式纯 global 引导经中间层").toMatch(/ws_mcp_search/);
-  expect(onlyGlobalAll.content[0].text, "all 模式不再 mcp__ 直呼引导").not.toMatch(/mcp__<server>__<tool>/);
+  expect(onlyGlobalAll.content[0].text, "all 模式不再 mcp__ 直呼引导").not.toMatch(
+    /mcp__<server>__<tool>/,
+  );
 
   // #192 AC-3：双缺省行仅渲染名字（无冒号描述），带描述条目渲染不变
-  const mixed = renderMcpCatalogMessage([{ name: "bare-x" }, { name: "code-graph", text: "代码图谱" }]);
+  const mixed = renderMcpCatalogMessage([
+    { name: "bare-x" },
+    { name: "code-graph", text: "代码图谱" },
+  ]);
   expect(mixed.content[0].text, "双缺省行仅名字").toMatch(/^- `bare-x`$/m);
   expect(mixed.content[0].text).not.toMatch(/`bare-x`: /);
   expect(mixed.content[0].text, "带描述行保持").toMatch(/^- `code-graph`: 代码图谱$/m);
 });
 it("findCatalogMessage 定位既有目录", () => {
   const catalog = renderMcpCatalogMessage([{ name: "a", text: "b" }]);
-  const messages = [{ id: "m1", role: "user", content: [] }, catalog, { id: "m2", role: "assistant", content: [] }];
+  const messages = [
+    { id: "m1", role: "user", content: [] },
+    catalog,
+    { id: "m2", role: "assistant", content: [] },
+  ];
   expect(findCatalogMessage(messages)?.id).toBe(catalog.id);
-  expect(findCatalogMessage([{ id: "x", role: "user", content: [], source: { kind: "other" } }])).toBe(undefined);
+  expect(
+    findCatalogMessage([{ id: "x", role: "user", content: [], source: { kind: "other" } }]),
+  ).toBe(undefined);
 });
 it("buildToolDefinition：空描述条件拼接（L2）", () => {
   const client = { callTool: async () => ({ content: [{ type: "text", text: "ok" }] }) };
-  const server = normalizeServer({ name: "demo", transport: "stdio", command: "npx", description: "演示服务器" });
-  const def = buildToolDefinition(client, { name: "ping", description: "", inputSchema: {} }, server, { enhanceEmptyDescriptions: true });
+  const server = normalizeServer({
+    name: "demo",
+    transport: "stdio",
+    command: "npx",
+    description: "演示服务器",
+  });
+  const def = buildToolDefinition(
+    client,
+    { name: "ping", description: "", inputSchema: {} },
+    server,
+    { enhanceEmptyDescriptions: true },
+  );
   expect(def.description, "空描述拼接自定义描述").toBe("[演示服务器]");
-  const defKeep = buildToolDefinition(client, { name: "ping", description: "原始描述", inputSchema: {} }, server, { enhanceEmptyDescriptions: true });
+  const defKeep = buildToolDefinition(
+    client,
+    { name: "ping", description: "原始描述", inputSchema: {} },
+    server,
+    { enhanceEmptyDescriptions: true },
+  );
   expect(defKeep.description, "非空描述不动").toBe("原始描述");
-  const defOff = buildToolDefinition(client, { name: "ping", description: "", inputSchema: {} }, server, { enhanceEmptyDescriptions: false });
+  const defOff = buildToolDefinition(
+    client,
+    { name: "ping", description: "", inputSchema: {} },
+    server,
+    { enhanceEmptyDescriptions: false },
+  );
   expect(defOff.description, "关闭增强不拼接").toBe("");
 });
 it("buildToolDefinition：超时下探与截断（L3）", async () => {
@@ -2299,7 +3108,12 @@ it("buildToolDefinition：超时下探与截断（L3）", async () => {
   const server = normalizeServer({ name: "demo", transport: "stdio", command: "npx" });
   expect(DEFAULT_TOOL_CALL_TIMEOUT_MS, "默认超时下探 15s").toBe(15_000);
   expect(server.toolCallTimeoutMs).toBe(DEFAULT_TOOL_CALL_TIMEOUT_MS);
-  const def = buildToolDefinition(client, { name: "big", description: "d", inputSchema: {} }, server, { resultTruncateBytes: 1024 });
+  const def = buildToolDefinition(
+    client,
+    { name: "big", description: "d", inputSchema: {} },
+    server,
+    { resultTruncateBytes: 1024 },
+  );
   const value = await def.execute({}, { signal: { aborted: false } });
   expect(seenTimeout, "execute 传递下探后的超时").toBe(15_000);
   const rendered = def.output.render({}, value);
@@ -2310,19 +3124,36 @@ it("buildToolDefinition：#512 投影收敛（isError 抛错 + 无 content 兜�
   const server = normalizeServer({ name: "demo", transport: "stdio", command: "npx" });
   // isError:true → throw，文案 = extractText(content)（占位符渲染）+ 截断链路。
   const errDef = buildToolDefinition(
-    { callTool: async () => ({ content: [{ type: "text", text: "远端故障" }], isError: true, _meta: { t: 1 } }) },
+    {
+      callTool: async () => ({
+        content: [{ type: "text", text: "远端故障" }],
+        isError: true,
+        _meta: { t: 1 },
+      }),
+    },
     { name: "err", description: "d", inputSchema: {} },
     server,
   );
-  await expect(() => errDef.execute({}, { signal: { aborted: false } }), "isError:true 抛错含远端文本").rejects.toThrow(/远端故障/);
+  await expect(
+    () => errDef.execute({}, { signal: { aborted: false } }),
+    "isError:true 抛错含远端文本",
+  ).rejects.toThrow(/远端故障/);
   // isError:false → 白名单收敛：isError/_meta 不进返回值（additionalProperties:false 契约）。
   const okDef = buildToolDefinition(
-    { callTool: async () => ({ content: [{ type: "text", text: "ok" }], isError: false, _meta: { t: 1 } }) },
+    {
+      callTool: async () => ({
+        content: [{ type: "text", text: "ok" }],
+        isError: false,
+        _meta: { t: 1 },
+      }),
+    },
     { name: "ok", description: "d", inputSchema: {} },
     server,
   );
   const okValue = await okDef.execute({}, { signal: { aborted: false } });
-  expect(Object.keys(okValue).sort(), "isError:false/_meta 不外泄，仅 content").toEqual(["content"]);
+  expect(Object.keys(okValue).sort(), "isError:false/_meta 不外泄，仅 content").toEqual([
+    "content",
+  ]);
   expect(Object.hasOwn(okValue, "isError")).toBe(false);
   expect(Object.hasOwn(okValue, "_meta")).toBe(false);
   // 无 content → toolResult JSON 兜底；空对象 → "(no output)"。
@@ -2341,7 +3172,6 @@ it("buildToolDefinition：#512 投影收敛（isError 抛错 + 无 content 兜�
   const emptyValue = await emptyDef.execute({}, { signal: { aborted: false } });
   expect(emptyValue.content[0].text, "空对象兜底 (no output)").toBe("(no output)");
 });
-
 
 // ---------- pre-step 目录注入（history-based 去重，复刻官方 tool-skill 语义）
 
@@ -2372,21 +3202,29 @@ function runStep(decision, messages, supervisors, cache, agent) {
     if (evt.type === "user/message" && isCatalogSource(evt.data?.source)) known.add(evt.data.id);
   }
   for (const msg of result.messages) {
-    if (isCatalogSource(msg.source) && !known.has(msg.id)) agent.session.append("user/message", msg);
+    if (isCatalogSource(msg.source) && !known.has(msg.id))
+      agent.session.append("user/message", msg);
   }
   return result;
 }
 
 it("resolveCatalogInjection：history-based 去重（核心：多轮不重复注入）", () => {
-  const supervisors = new Map([["code-graph", { server: { description: "代码图谱" }, tools: [], toolMeta: new Map() }]]);
+  const supervisors = new Map([
+    ["code-graph", { server: { description: "代码图谱" }, tools: [], toolMeta: new Map() }],
+  ]);
   const agent = makeAgent();
 
   // 真实语义：decision.messages 只含本轮新消息（历史在 session.snapshotEvents()）
   let historyCount = 0;
   for (let round = 1; round <= 5; round += 1) {
-    const decision = { kind: "enter", messages: [{ id: `user-${round}`, role: "user", content: [] }] };
+    const decision = {
+      kind: "enter",
+      messages: [{ id: `user-${round}`, role: "user", content: [] }],
+    };
     const result = runStep(decision, decision.messages, supervisors, undefined, agent);
-    historyCount = agent.session.snapshotEvents().filter((e) => e.type === "user/message" && isCatalogSource(e.data?.source)).length;
+    historyCount = agent.session
+      .snapshotEvents()
+      .filter((e) => e.type === "user/message" && isCatalogSource(e.data?.source)).length;
     const inMessages = result.messages.filter((m) => isCatalogSource(m.source)).length;
     if (round === 1) {
       expect(historyCount, "首轮注入 1 条").toBe(1);
@@ -2400,59 +3238,127 @@ it("resolveCatalogInjection：history-based 去重（核心：多轮不重复注
 });
 
 it("resolveCatalogInjection：描述/缓存变化不注入、集合变化注入更新消息", () => {
-  const base = new Map([["code-graph", { server: { description: "代码图谱" }, tools: [], toolMeta: new Map() }]]);
+  const base = new Map([
+    ["code-graph", { server: { description: "代码图谱" }, tools: [], toolMeta: new Map() }],
+  ]);
   const agent = makeAgent();
   let messages = [{ id: "m1", role: "user", content: [] }];
 
   // 首次注入
-  let result = runStep({ kind: "enter", messages: [...messages] }, messages, base, undefined, agent);
+  let result = runStep(
+    { kind: "enter", messages: [...messages] },
+    messages,
+    base,
+    undefined,
+    agent,
+  );
   messages = result.messages;
-  const firstId = agent.session.snapshotEvents().find((e) => isCatalogSource(e.data?.source)).data.id;
+  const firstId = agent.session.snapshotEvents().find((e) => isCatalogSource(e.data?.source))
+    .data.id;
   expect(firstId, "首次注入").toBeTruthy();
 
   // 描述变化（集合不变）→ 不注入
-  const descChanged = new Map([["code-graph", { server: { description: "新描述" }, tools: [], toolMeta: new Map() }]]);
-  result = runStep({ kind: "enter", messages: [...messages, { id: "u2", role: "user", content: [] }] }, messages, descChanged, undefined, agent);
-  expect(agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source)).length, "描述变化不注入").toBe(1);
+  const descChanged = new Map([
+    ["code-graph", { server: { description: "新描述" }, tools: [], toolMeta: new Map() }],
+  ]);
+  result = runStep(
+    { kind: "enter", messages: [...messages, { id: "u2", role: "user", content: [] }] },
+    messages,
+    descChanged,
+    undefined,
+    agent,
+  );
+  expect(
+    agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source)).length,
+    "描述变化不注入",
+  ).toBe(1);
 
   // 集合变化（新增服务器）→ 注入"更新"消息（历史 1 + 更新 1，声明作废旧目录）
   const added = new Map([
     ["code-graph", { server: { description: "代码图谱" }, tools: [], toolMeta: new Map() }],
     ["playwright", { server: { description: "浏览器自动化" }, tools: [], toolMeta: new Map() }],
   ]);
-  result = runStep({ kind: "enter", messages: [...messages, { id: "u3", role: "user", content: [] }] }, messages, added, undefined, agent);
+  result = runStep(
+    { kind: "enter", messages: [...messages, { id: "u3", role: "user", content: [] }] },
+    messages,
+    added,
+    undefined,
+    agent,
+  );
   const afterAdd = agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source));
   expect(afterAdd.length, "集合变化注入更新消息（历史目录无法删除，新消息声明作废）").toBe(2);
   expect(afterAdd[1].data.content[0].text).toMatch(/replaces all previous available_mcp_servers/);
   expect(afterAdd[1].data.content[0].text).toMatch(/playwright/);
 
   // 更新后同集合不再注入
-  result = runStep({ kind: "enter", messages: [...messages, { id: "u4", role: "user", content: [] }] }, messages, added, undefined, agent);
-  expect(agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source)).length, "更新后不再注入").toBe(2);
+  result = runStep(
+    { kind: "enter", messages: [...messages, { id: "u4", role: "user", content: [] }] },
+    messages,
+    added,
+    undefined,
+    agent,
+  );
+  expect(
+    agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source)).length,
+    "更新后不再注入",
+  ).toBe(2);
 });
 
 it("resolveCatalogInjection：compaction 后重建 + 门控 + reject", () => {
-  const supervisors = new Map([["code-graph", { server: { description: "代码图谱" }, tools: [], toolMeta: new Map() }]]);
+  const supervisors = new Map([
+    ["code-graph", { server: { description: "代码图谱" }, tools: [], toolMeta: new Map() }],
+  ]);
   const agent = makeAgent();
   let messages = [{ id: "m1", role: "user", content: [] }];
-  let result = runStep({ kind: "enter", messages: [...messages] }, messages, supervisors, undefined, agent);
+  let result = runStep(
+    { kind: "enter", messages: [...messages] },
+    messages,
+    supervisors,
+    undefined,
+    agent,
+  );
   messages = result.messages;
-  expect(agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source)).length, "首次注入").toBe(1);
+  expect(
+    agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source)).length,
+    "首次注入",
+  ).toBe(1);
 
   // compaction 模拟：surface 清空（旧目录不可见）→ 重新注入
   agent.session.surface.nodes.clear();
-  result = runStep({ kind: "enter", messages: [{ id: "m1", role: "user", content: [] }] }, messages, supervisors, undefined, agent);
-  const afterCompact = agent.session.snapshotEvents().filter((e) => isCatalogSource(e.data?.source));
+  result = runStep(
+    { kind: "enter", messages: [{ id: "m1", role: "user", content: [] }] },
+    messages,
+    supervisors,
+    undefined,
+    agent,
+  );
+  const afterCompact = agent.session
+    .snapshotEvents()
+    .filter((e) => isCatalogSource(e.data?.source));
   expect(afterCompact.length >= 1, "compaction 后按可见性重建").toBeTruthy();
   expect(result.messages.filter((m) => isCatalogSource(m.source)).length).toBe(1);
 
   // 门控：从未发布且无服务器 → 不注入
   const agent2 = makeAgent();
-  const decisionEmpty = resolveCatalogInjection({ kind: "enter", messages: [{ id: "x", role: "user", content: [] }] }, [], new Map(), 6, undefined, agent2);
+  const decisionEmpty = resolveCatalogInjection(
+    { kind: "enter", messages: [{ id: "x", role: "user", content: [] }] },
+    [],
+    new Map(),
+    6,
+    undefined,
+    agent2,
+  );
   expect(decisionEmpty.messages.length, "无服务器不注入").toBe(1);
 
   // reject 不处理
-  const rejected = resolveCatalogInjection({ kind: "reject" }, [], supervisors, 6, undefined, agent2);
+  const rejected = resolveCatalogInjection(
+    { kind: "reject" },
+    [],
+    supervisors,
+    6,
+    undefined,
+    agent2,
+  );
   expect(rejected.kind).toBe("reject");
 });
 
@@ -2483,30 +3389,57 @@ it("composeCatalogEntries 双缺省条目干净可序列化（#192 AC-1/AC-2）"
     for (const name of ["bare-a", "bare-b", "with-desc"]) {
       expect(sections[0].text.includes(`- \`${name}\``), `正文含条目 ${name}`).toBeTruthy();
     }
-    expect(sections[0].text.includes("- `bare-a`\n"), "双缺省条目只渲染服务器名（不产出 text: undefined）").toBeTruthy();
+    expect(
+      sections[0].text.includes("- `bare-a`\n"),
+      "双缺省条目只渲染服务器名（不产出 text: undefined）",
+    ).toBeTruthy();
   }
 });
 
 it("双缺省服务器目录消息可 append 为 user/message 且去重（#192 AC-4）", () => {
-  const supervisors = new Map([["bare-only", { server: { description: "" }, tools: [], toolMeta: new Map() }]]);
+  const supervisors = new Map([
+    ["bare-only", { server: { description: "" }, tools: [], toolMeta: new Map() }],
+  ]);
   const agent = makeAgent();
   let messages = [{ id: "m1", role: "user", content: [] }];
-  let result = runStep({ kind: "enter", messages: [...messages] }, messages, supervisors, undefined, agent);
+  let result = runStep(
+    { kind: "enter", messages: [...messages] },
+    messages,
+    supervisors,
+    undefined,
+    agent,
+  );
   messages = result.messages;
-  const catalogEvents = agent.session.snapshotEvents().filter((e) => e.type === "user/message" && isCatalogSource(e.data?.source));
+  const catalogEvents = agent.session
+    .snapshotEvents()
+    .filter((e) => e.type === "user/message" && isCatalogSource(e.data?.source));
   expect(catalogEvents.length, "首轮注入成功（append 为 user/message 未被拒绝）").toBe(1);
   const appended = catalogEvents[0].data;
   // #723：新形态 source 只含 plugin/snapshot sections，条目正文全在段文本里
   expect(appended.source.kind).toBe("plugin");
   expect(appended.source.form).toBe("snapshot");
-  expect(appended.source.sections[0].text.includes("- `bare-only`"), "正文含双缺省服务器名").toBeTruthy();
-  expect(() => JSON.stringify(appended), "事件载荷可 JSON 序列化（dsh-session 序列化校验等价物）").not.toThrow();
+  expect(
+    appended.source.sections[0].text.includes("- `bare-only`"),
+    "正文含双缺省服务器名",
+  ).toBeTruthy();
+  expect(
+    () => JSON.stringify(appended),
+    "事件载荷可 JSON 序列化（dsh-session 序列化校验等价物）",
+  ).not.toThrow();
   expect(JSON.parse(JSON.stringify(appended)), "往返深度相等").toEqual(appended);
 
   // digest 去重语义不变：同集合再次 pre-step 不重复注入
-  result = runStep({ kind: "enter", messages: [...messages] }, messages, supervisors, undefined, agent);
+  result = runStep(
+    { kind: "enter", messages: [...messages] },
+    messages,
+    supervisors,
+    undefined,
+    agent,
+  );
   expect(
-    agent.session.snapshotEvents().filter((e) => e.type === "user/message" && isCatalogSource(e.data?.source)).length,
+    agent.session
+      .snapshotEvents()
+      .filter((e) => e.type === "user/message" && isCatalogSource(e.data?.source)).length,
     "次轮不重复注入（digest 去重不变）",
   ).toBe(1);
 });
@@ -2531,9 +3464,9 @@ describe("SDK 端到端连接（连接/工具注册/callTool/断线重连）", (
         '  if (msg.method === "initialize") {',
         '    send({ id: msg.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "mini", version: "0.0.1" } } });',
         '  } else if (msg.method === "tools/list") {',
-        "    send({ id: msg.id, result: { tools: [{ name: \"echo\", description: \"echo back\", inputSchema: { type: \"object\", properties: { text: { type: \"string\" } } } }] } });",
+        '    send({ id: msg.id, result: { tools: [{ name: "echo", description: "echo back", inputSchema: { type: "object", properties: { text: { type: "string" } } } }] } });',
         '  } else if (msg.method === "tools/call") {',
-        "    send({ id: msg.id, result: { content: [{ type: \"text\", text: String(msg.params?.arguments?.text ?? \"\") }] } });",
+        '    send({ id: msg.id, result: { content: [{ type: "text", text: String(msg.params?.arguments?.text ?? "") }] } });',
         "  } else if (msg.id !== undefined) {",
         '    send({ id: msg.id, error: { code: -32601, message: "method not found" } });',
         "  }",
@@ -2544,7 +3477,14 @@ describe("SDK 端到端连接（连接/工具注册/callTool/断线重连）", (
     registered = [];
     supervisor = new ConnectionSupervisor(
       {
-        ctx: { tools: { register: (definition) => { registered.push(definition); return () => {}; } } },
+        ctx: {
+          tools: {
+            register: (definition) => {
+              registered.push(definition);
+              return () => {};
+            },
+          },
+        },
         logger: { warn: () => {}, info: () => {}, error: () => {} },
         enhancement: {},
         emitStatus() {},
@@ -2584,20 +3524,23 @@ describe("SDK 端到端连接（连接/工具注册/callTool/断线重连）", (
     expect(oldPid > 0).toBeTruthy();
     process.kill(oldPid, "SIGTERM");
     // 新代际 transport 建立且恢复 connected（旧 pid 不复用即证明发生过重连）。
-    await pollUntil("reconnected with new generation", () =>
-      supervisor.status === "connected" &&
-      supervisor.transport !== undefined &&
-      supervisor.transport.sdk.pid !== undefined &&
-      supervisor.transport.sdk.pid !== oldPid &&
-      supervisor.tools.length === 1,
+    await pollUntil(
+      "reconnected with new generation",
+      () =>
+        supervisor.status === "connected" &&
+        supervisor.transport !== undefined &&
+        supervisor.transport.sdk.pid !== undefined &&
+        supervisor.transport.sdk.pid !== oldPid &&
+        supervisor.tools.length === 1,
       { timeoutMs: 10_000 },
     );
     expect(registered.length >= 2, "重连后工具重新注册").toBeTruthy();
-    const value = await registered.at(-1).execute({ text: "after reconnect" }, { signal: undefined });
+    const value = await registered
+      .at(-1)
+      .execute({ text: "after reconnect" }, { signal: undefined });
     expect(value.content[0].text).toBe("after reconnect");
   });
 });
-
 
 // ---- 核心化 service（#329 阶段1）：runtimeRegistry / registerServer / unregisterServer ----
 // 用 enabled:false 的服务器（不连接、不 spawn 子进程，避免重连悬挂）验证登记语义。
@@ -2656,7 +3599,13 @@ describe("核心化 service（#329 阶段1）：runtimeRegistry / registerServer
 
   it("all 模式 reconcile 不杀 runtime supervisor（QA 复审回归）", async () => {
     manager.middlewareMode = "all";
-    await manager.registerServer({ name: "svc-all", transport: "stdio", command: "echo", args: ["x"], enabled: false });
+    await manager.registerServer({
+      name: "svc-all",
+      transport: "stdio",
+      command: "echo",
+      args: ["x"],
+      enabled: false,
+    });
     manager.reconcileServers();
     expect(manager.runtimeRegistry.has("svc-all"), "all 模式 runtime 条目保留").toBeTruthy();
     manager.middlewareMode = "off";
@@ -2673,14 +3622,23 @@ describe("核心化 service（#329 阶段1）：runtimeRegistry / registerServer
   });
 });
 
-
 // ---- #362 补充 4：registerServer.toolDefinitions（调用方封装定义注册）----
 // 带 toolDefinitions → 该服务器工具全部用封装定义注册（execute 来自调用方，
 // 命名仍按 publicToolName mcp__ 前缀）；不带 → 现状回归（远端 schema + 通用
 // callTool）。工具级禁用/可见性/能力目录按服务器+工具名判定照常生效。
 
 describe("#362 补充 4：registerServer.toolDefinitions（调用方封装定义注册）", () => {
-  let dir, store, manager, wrappedExecCalls, wrapped, registered, sup, plainRegistered, supPlain, plainExecCalls, plainClient;
+  let dir,
+    store,
+    manager,
+    wrappedExecCalls,
+    wrapped,
+    registered,
+    sup,
+    plainRegistered,
+    supPlain,
+    plainExecCalls,
+    plainClient;
 
   beforeAll(async () => {
     dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-wrapped-"));
@@ -2702,12 +3660,20 @@ describe("#362 补充 4：registerServer.toolDefinitions（调用方封装定义
         output: {
           schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
           render(_args, value) {
-            return [{ type: "text", text: value && typeof value === "object" && "text" in value ? String(value.text) : "" }];
+            return [
+              {
+                type: "text",
+                text:
+                  value && typeof value === "object" && "text" in value ? String(value.text) : "",
+              },
+            ];
           },
         },
         async execute(args) {
           wrappedExecCalls.push(args);
-          return { text: `wrapped:${args && typeof args === "object" ? String(args.query ?? "") : ""}` };
+          return {
+            text: `wrapped:${args && typeof args === "object" ? String(args.query ?? "") : ""}`,
+          };
         },
       },
       {
@@ -2717,7 +3683,13 @@ describe("#362 补充 4：registerServer.toolDefinitions（调用方封装定义
         output: {
           schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
           render(_args, value) {
-            return [{ type: "text", text: value && typeof value === "object" && "text" in value ? String(value.text) : "" }];
+            return [
+              {
+                type: "text",
+                text:
+                  value && typeof value === "object" && "text" in value ? String(value.text) : "",
+              },
+            ];
           },
         },
         execute: async () => ({ text: "ok" }),
@@ -2726,7 +3698,14 @@ describe("#362 补充 4：registerServer.toolDefinitions（调用方封装定义
     registered = [];
     sup = new ConnectionSupervisor(
       {
-        ctx: { tools: { register: (definition) => { registered.push(definition); return () => {}; } } },
+        ctx: {
+          tools: {
+            register: (definition) => {
+              registered.push(definition);
+              return () => {};
+            },
+          },
+        },
         logger: { warn: () => {}, info: () => {}, error: () => {} },
         enhancement: {},
         emitStatus() {},
@@ -2742,7 +3721,14 @@ describe("#362 补充 4：registerServer.toolDefinitions（调用方封装定义
     plainRegistered = [];
     supPlain = new ConnectionSupervisor(
       {
-        ctx: { tools: { register: (definition) => { plainRegistered.push(definition); return () => {}; } } },
+        ctx: {
+          tools: {
+            register: (definition) => {
+              plainRegistered.push(definition);
+              return () => {};
+            },
+          },
+        },
         logger: { warn: () => {}, info: () => {}, error: () => {} },
         enhancement: {},
         emitStatus() {},
@@ -2752,7 +3738,15 @@ describe("#362 补充 4：registerServer.toolDefinitions（调用方封装定义
     );
     plainExecCalls = [];
     plainClient = {
-      listTools: async () => ({ tools: [{ name: "echo", description: "echo back", inputSchema: { type: "object", properties: { text: { type: "string" } } } }] }),
+      listTools: async () => ({
+        tools: [
+          {
+            name: "echo",
+            description: "echo back",
+            inputSchema: { type: "object", properties: { text: { type: "string" } } },
+          },
+        ],
+      }),
       callTool: async (rawName, args) => {
         plainExecCalls.push([rawName, args]);
         return { content: [{ type: "text", text: `echo:${String(args.text ?? "")}` }] };
@@ -2766,11 +3760,25 @@ describe("#362 补充 4：registerServer.toolDefinitions（调用方封装定义
 
   it("toolDefinitions：封装定义注册（execute 来自调用方，mcp__ 前缀命名）", async () => {
     // 封装路径不触达远端 schema 投影：伪造 listTools 抛错证明未走远端路径。
-    await sup.syncTools({ listTools: async () => { throw new Error("must not reach remote schema"); } }, true);
-    expect(sup.tools, "公共名排序").toEqual(["mcp__codegraph__codegraph_explore", "mcp__codegraph__codegraph_status"]);
+    await sup.syncTools(
+      {
+        listTools: async () => {
+          throw new Error("must not reach remote schema");
+        },
+      },
+      true,
+    );
+    expect(sup.tools, "公共名排序").toEqual([
+      "mcp__codegraph__codegraph_explore",
+      "mcp__codegraph__codegraph_status",
+    ]);
     expect(registered.length).toBe(2);
-    expect(registered[0].name, "命名仍按 publicToolName（mcp__ 前缀）").toBe("mcp__codegraph__codegraph_explore");
-    expect(registered[0].description, "自定义 description 被采用").toBe("封装定义：查询前强制 sync + projectPath（#362 补充 4）");
+    expect(registered[0].name, "命名仍按 publicToolName（mcp__ 前缀）").toBe(
+      "mcp__codegraph__codegraph_explore",
+    );
+    expect(registered[0].description, "自定义 description 被采用").toBe(
+      "封装定义：查询前强制 sync + projectPath（#362 补充 4）",
+    );
     const value = await registered[0].execute({ query: "X 被谁调用" }, { signal: undefined });
     expect(value.text, "execute 来自封装定义").toBe("wrapped:X 被谁调用");
     expect(wrappedExecCalls.length).toBe(1);
@@ -2779,14 +3787,25 @@ describe("#362 补充 4：registerServer.toolDefinitions（调用方封装定义
   it("封装工具按服务器+裸名禁用命中（既有 isToolDenied 机制）/ 未禁用放行", async () => {
     // 工具级禁用对封装工具照常生效（#362 既有机制：isToolDenied 按服务器+工具
     // 裸名判定；封装工具注册名仍是 mcp__ 前缀，guard 反解裸名查表与普通工具同路径）。
-    const { isToolDenied, fullServerName, parseDisabledTools, MIDDLEWARE_GLOBAL_ROOT } = await import("../../lib/index.js");
+    const { isToolDenied, fullServerName, parseDisabledTools, MIDDLEWARE_GLOBAL_ROOT } =
+      await import("../../lib/index.js");
     const denyMap = parseDisabledTools({ "@global": { codegraph: ["codegraph_explore"] } });
     expect(
-      isToolDenied(denyMap, undefined, fullServerName(MIDDLEWARE_GLOBAL_ROOT, "codegraph"), "codegraph_explore"),
+      isToolDenied(
+        denyMap,
+        undefined,
+        fullServerName(MIDDLEWARE_GLOBAL_ROOT, "codegraph"),
+        "codegraph_explore",
+      ),
       "封装工具按服务器+裸名禁用命中（既有 isToolDenied 机制）",
     ).toBe(true);
     expect(
-      isToolDenied(denyMap, undefined, fullServerName(MIDDLEWARE_GLOBAL_ROOT, "codegraph"), "codegraph_status"),
+      isToolDenied(
+        denyMap,
+        undefined,
+        fullServerName(MIDDLEWARE_GLOBAL_ROOT, "codegraph"),
+        "codegraph_status",
+      ),
       "未禁用封装工具放行",
     ).toBe(false);
   });
@@ -2795,7 +3814,10 @@ describe("#362 补充 4：registerServer.toolDefinitions（调用方封装定义
     // 可见性/能力目录：summary 工具列表为裸名（#382 F4 展示口径统一：剥
     // mcp__ 前缀，与中间层投影分支/禁用表键/guard 反解口径一致）。
     const sum = manager.summarize(sup.server, SCOPE_GLOBAL);
-    expect(sum.tools, "summary 工具列表为裸名（#382 剥前缀口径）").toEqual(["codegraph_explore", "codegraph_status"]);
+    expect(sum.tools, "summary 工具列表为裸名（#382 剥前缀口径）").toEqual([
+      "codegraph_explore",
+      "codegraph_status",
+    ]);
   });
 
   it("不带 toolDefinitions → 现状回归（远端 schema + 通用 callTool）", async () => {
@@ -2808,4 +3830,3 @@ describe("#362 补充 4：registerServer.toolDefinitions（调用方封装定义
     expect(plainExecCalls, "通用 callTool 转发远端").toEqual([["echo", { text: "hi" }]]);
   });
 });
-

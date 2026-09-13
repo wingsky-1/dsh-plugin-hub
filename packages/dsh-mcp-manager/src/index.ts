@@ -74,7 +74,16 @@ export type { UiPlacementConfig, ClientUiConfig } from "./types/interface.ts";
 
 // 管理器 / 连接域（orchestrator+runtime：#664 阶段 6 集中搬移完成）
 export { McpManager } from "./connection/orchestrator/interface.ts";
-export { ConnectionSupervisor, McpMiddleware, expandEnv, HttpTransport, parseSsePayload, StdioTransport, createTransport, MCPClient } from "./connection/interface.ts";
+export {
+  ConnectionSupervisor,
+  McpMiddleware,
+  expandEnv,
+  HttpTransport,
+  parseSsePayload,
+  StdioTransport,
+  createTransport,
+  MCPClient,
+} from "./connection/interface.ts";
 export {
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
   DEFAULT_RESULT_TRUNCATE_BYTES,
@@ -97,7 +106,12 @@ export {
 } from "./connection/interface.ts";
 export type { ReconnectPolicy } from "./connection/interface.ts";
 // 工作空间路由域（项目根发现 / 全名解析 / scope / 模式归一化；阶段 4 成形）
-export { findProjectRoot, normalizedProjectRoot, makeResolveRoot, MIDDLEWARE_GLOBAL_ROOT } from "./workspace/interface.ts";
+export {
+  findProjectRoot,
+  normalizedProjectRoot,
+  makeResolveRoot,
+  MIDDLEWARE_GLOBAL_ROOT,
+} from "./workspace/interface.ts";
 export {
   fullServerName,
   parseFullServerName,
@@ -168,7 +182,12 @@ export {
   findToolDetail,
 } from "./catalog/interface.ts";
 // mcpServers JSON 导入 / 归一化（config/model）
-export { fromClaudeEntry, parseClaudeJson, SERVER_NAME_PATTERN, normalizeServer } from "./config/model/interface.ts";
+export {
+  fromClaudeEntry,
+  parseClaudeJson,
+  SERVER_NAME_PATTERN,
+  normalizeServer,
+} from "./config/model/interface.ts";
 // 统计与 Debug
 export { McpStatsCollector, defaultStatsPath } from "./stats/interface.ts";
 export type {
@@ -196,7 +215,16 @@ export type {
 } from "./types/interface.ts";
 
 // 路由
-export { ROUTES, makeRoutes, makeEventsRoute, makeHealthRoute, uiConfigChangedFrame, broadcastFrame, SSE_HEARTBEAT_MS, SSE_PING_FRAME } from "./api/interface.ts";
+export {
+  ROUTES,
+  makeRoutes,
+  makeEventsRoute,
+  makeHealthRoute,
+  uiConfigChangedFrame,
+  broadcastFrame,
+  SSE_HEARTBEAT_MS,
+  SSE_PING_FRAME,
+} from "./api/interface.ts";
 export { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./workspace/interface.ts";
 // 仓库共享层（loopback 围栏 / writeJson / readJsonBody / sseData）
 export { isLoopbackRequest } from "../../../shared/loopback.js";

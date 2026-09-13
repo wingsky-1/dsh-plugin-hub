@@ -31,7 +31,11 @@ export async function findProjectRoot(cwd: string | undefined): Promise<string> 
     const dotDsh = join(current, ".dsh");
     // .dsh 目录存在且不是 DSH 全局家目录才算项目标记。
     const hasProjectDsh = existsSync(dotDsh) && resolve(dotDsh) !== home;
-    if (existsSync(join(current, ".git")) || hasProjectDsh || existsSync(join(current, ".mcp.json"))) {
+    if (
+      existsSync(join(current, ".git")) ||
+      hasProjectDsh ||
+      existsSync(join(current, ".mcp.json"))
+    ) {
       return current;
     }
     const parent = dirname(current);
@@ -48,7 +52,9 @@ export async function normalizedProjectRoot(cwd: string | undefined): Promise<st
 }
 
 /** resolveRoot 路由：exec.agent → 归一化项目根（agent-less → undefined）。 */
-export function makeResolveRoot(manager: McpManager): (agent: unknown) => Promise<string | undefined> {
+export function makeResolveRoot(
+  manager: McpManager,
+): (agent: unknown) => Promise<string | undefined> {
   // 路由输入：exec.agent 当前 cwd = agent.session.header.cwd（实证已闭合）。
   // all 模式：cwd 无项目（或无项目配置）时 fallback 到全局虚拟 root @global。
   return async (agent: unknown): Promise<string | undefined> => {
@@ -61,9 +67,9 @@ export function makeResolveRoot(manager: McpManager): (agent: unknown) => Promis
       // B3（requirements 8.1 纠偏）：回落查 projectServersFor("@global")（含
       // runtime 注入并集，#413）而非 globalServers()（仅 store.data.servers）——
       // 否则仅 runtime 注入服务器时回落失败「无法确定工作空间」。
-      const globalServers = ((await manager.projectServersFor(MIDDLEWARE_GLOBAL_ROOT)) ?? []).filter(
-        (server) => server.enabled !== false,
-      );
+      const globalServers = (
+        (await manager.projectServersFor(MIDDLEWARE_GLOBAL_ROOT)) ?? []
+      ).filter((server) => server.enabled !== false);
       if (globalServers.length > 0) return MIDDLEWARE_GLOBAL_ROOT;
     }
     return undefined;

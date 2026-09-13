@@ -28,7 +28,11 @@ export function parseYamlBool(value) {
  * @returns {string} 去引号结果。
  */
 function unquote(value) {
-  if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
+  if (
+    value.length >= 2 &&
+    ((value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'")))
+  ) {
     return value.slice(1, -1);
   }
   return value;
@@ -41,7 +45,8 @@ function unquote(value) {
  * @param {string} content - 文件内容。
  * @returns {Record<string, unknown>} 解析出的已知键值。
  */
-export function parseFrontmatter(content) {  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content);
+export function parseFrontmatter(content) {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content);
   if (match === null) return {};
   /** @type {Record<string, unknown>} */
   const out = {};

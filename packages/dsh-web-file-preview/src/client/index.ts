@@ -11,9 +11,12 @@ import { REDIRECT_SERVICE, installPresentOpenRedirect } from "./present-open-red
 export function apply(ctx: any): void {
   try {
     const restore = installPresentOpenRedirect(ctx);
-    ctx.effect(() => () => {
-      restore();
-    }, "dsh-web-file-preview: present-open redirect");
+    ctx.effect(
+      () => () => {
+        restore();
+      },
+      "dsh-web-file-preview: present-open redirect",
+    );
   } catch (error) {
     console.warn("[dsh-web-file-preview] mount failed:", error);
   }

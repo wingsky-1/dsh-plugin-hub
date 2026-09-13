@@ -22,7 +22,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { judgeContained as pipeContained, judgePad as pad, injectGlobalFetch } from "../../helpers.ts";
+import {
+  judgeContained as pipeContained,
+  judgePad as pad,
+  injectGlobalFetch,
+} from "../../helpers.ts";
 console.error("EVAL-ORDER-TAG: V1");
 import {
   ADAPTER_CONTRACT_VERSION_V1,
@@ -108,7 +112,13 @@ describe("isHostProviderAdapter #150 分片 2：伪装类型与元素级边界",
     // 函数挂全套合法属性：typeof 守卫左子恒假变异下会被放行，
     // 契约必须以严格 typeof 拒绝非 object 载体
     const fake = () => {};
-    Object.assign(fake, { version: 1, id: "x", label: "y", providers: ["p"], fetchUsage: () => {} });
+    Object.assign(fake, {
+      version: 1,
+      id: "x",
+      label: "y",
+      providers: ["p"],
+      fetchUsage: () => {},
+    });
     expect(isHostProviderAdapter(fake)).toBe(false);
   });
 
@@ -148,21 +158,41 @@ describe("describeAdapterShape", () => {
   });
 
   it("空对象描述", () => {
-    expect(describeAdapterShape({})).toBe("version 必须 === 1（实际 undefined）、id（非空字符串）、label（非空字符串）、providers（非空字符串数组）、fetchUsage（函数）");
+    expect(describeAdapterShape({})).toBe(
+      "version 必须 === 1（实际 undefined）、id（非空字符串）、label（非空字符串）、providers（非空字符串数组）、fetchUsage（函数）",
+    );
   });
 
   it("合法适配器返回 null", () => {
-    expect(describeAdapterShape({ version: 1, id: "a", label: "b", providers: ["p1"], fetchUsage: async () => {} })).toBe(null);
+    expect(
+      describeAdapterShape({
+        version: 1,
+        id: "a",
+        label: "b",
+        providers: ["p1"],
+        fetchUsage: async () => {},
+      }),
+    ).toBe(null);
   });
 
   // 逐个缺字段
   it("缺 id 应报告", () => {
-    const d = describeAdapterShape({ version: 1, label: "b", providers: ["p1"], fetchUsage: async () => {} });
+    const d = describeAdapterShape({
+      version: 1,
+      label: "b",
+      providers: ["p1"],
+      fetchUsage: async () => {},
+    });
     expect(d.includes("id")).toBeTruthy();
   });
 
   it("缺 label 应报告", () => {
-    const d = describeAdapterShape({ version: 1, id: "a", providers: ["p1"], fetchUsage: async () => {} });
+    const d = describeAdapterShape({
+      version: 1,
+      id: "a",
+      providers: ["p1"],
+      fetchUsage: async () => {},
+    });
     expect(d.includes("label")).toBeTruthy();
   });
 
@@ -179,12 +209,24 @@ describe("describeAdapterShape", () => {
   // #150 分片 2：逐字段文案的元素级边界
   it("id 非字符串（数组）应报告", () => {
     // id 为 length>0 的非字符串：typeof id 判定恒假变异下只剩 length 检查会漏报
-    const d = describeAdapterShape({ version: 1, id: [1, 2], label: "b", providers: ["p1"], fetchUsage: async () => {} });
+    const d = describeAdapterShape({
+      version: 1,
+      id: [1, 2],
+      label: "b",
+      providers: ["p1"],
+      fetchUsage: async () => {},
+    });
     expect(d !== null && d.includes("id（非空字符串）")).toBeTruthy();
   });
 
   it("label 非字符串（数组）应报告", () => {
-    const d = describeAdapterShape({ version: 1, id: "a", label: [1], providers: ["p1"], fetchUsage: async () => {} });
+    const d = describeAdapterShape({
+      version: 1,
+      id: "a",
+      label: [1],
+      providers: ["p1"],
+      fetchUsage: async () => {},
+    });
     expect(d !== null && d.includes("label（非空字符串）")).toBeTruthy();
   });
 
@@ -199,12 +241,24 @@ describe("describeAdapterShape", () => {
   }
 
   it("多元素含空串应报告（全称量词）", () => {
-    const d = describeAdapterShape({ version: 1, id: "a", label: "b", providers: ["good", ""], fetchUsage: async () => {} });
+    const d = describeAdapterShape({
+      version: 1,
+      id: "a",
+      label: "b",
+      providers: ["good", ""],
+      fetchUsage: async () => {},
+    });
     expect(d.includes("providers（非空字符串数组）")).toBeTruthy();
   });
 
   it("元素为数组应报告", () => {
-    const d = describeAdapterShape({ version: 1, id: "a", label: "b", providers: [[1]], fetchUsage: async () => {} });
+    const d = describeAdapterShape({
+      version: 1,
+      id: "a",
+      label: "b",
+      providers: [[1]],
+      fetchUsage: async () => {},
+    });
     expect(d.includes("providers（非空字符串数组）")).toBeTruthy();
   });
 });
@@ -221,31 +275,43 @@ describe("isClientProviderRenderer", () => {
   });
 
   it("合法 renderer 返回 true", () => {
-    expect(isClientProviderRenderer({
-      version: 1, providers: ["anthropic"],
-      render: () => {},
-    })).toBe(true);
+    expect(
+      isClientProviderRenderer({
+        version: 1,
+        providers: ["anthropic"],
+        render: () => {},
+      }),
+    ).toBe(true);
   });
 
   it("providers 空数组返回 false", () => {
-    expect(isClientProviderRenderer({
-      version: 1, providers: [],
-      render: () => {},
-    })).toBe(false);
+    expect(
+      isClientProviderRenderer({
+        version: 1,
+        providers: [],
+        render: () => {},
+      }),
+    ).toBe(false);
   });
 
   it("render 非函数返回 false", () => {
-    expect(isClientProviderRenderer({
-      version: 1, providers: ["anthropic"],
-      render: "not-fn",
-    })).toBe(false);
+    expect(
+      isClientProviderRenderer({
+        version: 1,
+        providers: ["anthropic"],
+        render: "not-fn",
+      }),
+    ).toBe(false);
   });
 
   it("version 非 1 返回 false", () => {
-    expect(isClientProviderRenderer({
-      version: 2, providers: ["anthropic"],
-      render: () => {},
-    })).toBe(false);
+    expect(
+      isClientProviderRenderer({
+        version: 2,
+        providers: ["anthropic"],
+        render: () => {},
+      }),
+    ).toBe(false);
   });
 
   // #150 分片 2：伪装类型与元素级边界（变异驱动）
@@ -256,15 +322,23 @@ describe("isClientProviderRenderer", () => {
   });
 
   it("providers 多元素含空串拒绝（全称量词）", () => {
-    expect(isClientProviderRenderer({
-      version: 1, providers: ["good", ""], render: () => {},
-    })).toBe(false);
+    expect(
+      isClientProviderRenderer({
+        version: 1,
+        providers: ["good", ""],
+        render: () => {},
+      }),
+    ).toBe(false);
   });
 
   it("providers 元素为数组（length>0 非字符串）拒绝", () => {
-    expect(isClientProviderRenderer({
-      version: 1, providers: [[1]], render: () => {},
-    })).toBe(false);
+    expect(
+      isClientProviderRenderer({
+        version: 1,
+        providers: [[1]],
+        render: () => {},
+      }),
+    ).toBe(false);
   });
 });
 
@@ -351,15 +425,24 @@ describe("defineUsageAdapter", () => {
         { key: "rolling", name: "5h 滚动", limit: 12 },
         { key: "weekly", name: "每周", limit: 30 },
       ],
-      fetchUsage: async () => ({ ok: true, provider: "openai", label: "MT", fetchedAt: Date.now(), windows: [
-        { key: "rolling", name: "5h 滚动", percent: 5 },
-        { key: "weekly", name: "每周", percent: 80 },
-      ] }),
+      fetchUsage: async () => ({
+        ok: true,
+        provider: "openai",
+        label: "MT",
+        fetchedAt: Date.now(),
+        windows: [
+          { key: "rolling", name: "5h 滚动", percent: 5 },
+          { key: "weekly", name: "每周", percent: 80 },
+        ],
+      }),
     });
 
     // samplePoint：有 windows → 返回 {cols, values}
     sp = adapter.samplePoint({
-      ok: true, provider: "openai", label: "MT", fetchedAt: 1234567890,
+      ok: true,
+      provider: "openai",
+      label: "MT",
+      fetchedAt: 1234567890,
       windows: [
         { key: "rolling", name: "5h 滚动", percent: 5, limit: 12 },
         { key: "weekly", name: "每周", percent: 80, limit: 30 },
@@ -417,17 +500,27 @@ describe("defineUsageAdapter", () => {
 
   // samplePoint：windows 为空数组 → null
   it("samplePoint 空 windows 返回 null", () => {
-    expect(adapter.samplePoint({
-      ok: true, provider: "openai", label: "MT", fetchedAt: 1234567890,
-      windows: [],
-    })).toBe(null);
+    expect(
+      adapter.samplePoint({
+        ok: true,
+        provider: "openai",
+        label: "MT",
+        fetchedAt: 1234567890,
+        windows: [],
+      }),
+    ).toBe(null);
   });
 
   // samplePoint：无 windows 字段 → null
   it("samplePoint 无 windows 返回 null", () => {
-    expect(adapter.samplePoint({
-      ok: true, provider: "openai", label: "MT", fetchedAt: 1234567890,
-    })).toBe(null);
+    expect(
+      adapter.samplePoint({
+        ok: true,
+        provider: "openai",
+        label: "MT",
+        fetchedAt: 1234567890,
+      }),
+    ).toBe(null);
   });
 });
 
@@ -441,17 +534,23 @@ describe("defineUsageAdapter 的 summarize（默认 summarizeText）", () => {
       id: "sum-test",
       label: "Sum Test",
       providers: ["openai"],
-      windows: [
-        { key: "rolling", name: "5h 滚动", limit: 12 },
-      ],
-      fetchUsage: async () => ({ ok: true, provider: "openai", label: "ST", fetchedAt: Date.now() }),
+      windows: [{ key: "rolling", name: "5h 滚动", limit: 12 }],
+      fetchUsage: async () => ({
+        ok: true,
+        provider: "openai",
+        label: "ST",
+        fetchedAt: Date.now(),
+      }),
     });
 
     // summarize 使用默认 summarizeTextFromWindows（无自定义 summarizeText）
     summary = await adapter.summarize({
       provider: "openai",
       usage: {
-        ok: true, provider: "openai", label: "ST", fetchedAt: 1234567890,
+        ok: true,
+        provider: "openai",
+        label: "ST",
+        fetchedAt: 1234567890,
         windows: [{ key: "rolling", name: "5h 滚动", percent: 5 }],
       },
     } as any);
@@ -482,17 +581,23 @@ describe("defineUsageAdapter 的 summarize（自定义 summarizeText）", () => 
       id: "custom-sum",
       label: "Custom Sum",
       providers: ["openai"],
-      windows: [
-        { key: "rolling", name: "5h 滚动", limit: 12 },
-      ],
-      fetchUsage: async () => ({ ok: true, provider: "openai", label: "CS", fetchedAt: Date.now() }),
+      windows: [{ key: "rolling", name: "5h 滚动", limit: 12 }],
+      fetchUsage: async () => ({
+        ok: true,
+        provider: "openai",
+        label: "CS",
+        fetchedAt: Date.now(),
+      }),
       summarizeText: (windows) => windows.map((w) => `${w.key}=${w.percent ?? "--"}`).join("|"),
     });
 
     summary = await adapter.summarize({
       provider: "openai",
       usage: {
-        ok: true, provider: "openai", label: "CS", fetchedAt: 1234567890,
+        ok: true,
+        provider: "openai",
+        label: "CS",
+        fetchedAt: 1234567890,
         windows: [{ key: "rolling", name: "5h 滚动", percent: 5 }],
       },
     } as any);
@@ -512,7 +617,12 @@ describe("defineUsageAdapter 的 summarize（无 usage）", () => {
       label: "No Usage",
       providers: ["openai"],
       windows: [{ key: "r", name: "R", limit: 12 }],
-      fetchUsage: async () => ({ ok: false, provider: "openai", label: "NU", fetchedAt: Date.now() }),
+      fetchUsage: async () => ({
+        ok: false,
+        provider: "openai",
+        label: "NU",
+        fetchedAt: Date.now(),
+      }),
     });
 
     summary = await adapter.summarize({
@@ -535,8 +645,10 @@ describe("openCodeGoAdapter.formatCapsule", () => {
     const e = esc;
     // 有数据
     html1 = openCodeGoAdapter.formatCapsule({
-      time: 1000, data: { rolling: { percent: 5 }, weekly: { percent: 10 }, monthly: { percent: 0 } },
-      status: "fresh", esc: e,
+      time: 1000,
+      data: { rolling: { percent: 5 }, weekly: { percent: 10 }, monthly: { percent: 0 } },
+      status: "fresh",
+      esc: e,
     });
   });
 
@@ -551,8 +663,10 @@ describe("openCodeGoAdapter.formatCapsule", () => {
   it("formatCapsule 无数据回落", () => {
     // 无数据（所有 percent 均为 null）
     const html2 = openCodeGoAdapter.formatCapsule({
-      time: 1000, data: { rolling: { percent: null }, weekly: {}, monthly: {} },
-      status: "fresh", esc: (s) => String(s),
+      time: 1000,
+      data: { rolling: { percent: null }, weekly: {}, monthly: {} },
+      status: "fresh",
+      esc: (s) => String(s),
     });
     expect(html2.includes("无数据")).toBeTruthy();
   });
@@ -566,13 +680,28 @@ describe("openCodeGoAdapter.formatPanel（覆盖 fmtReset 分支）", () => {
   beforeAll(() => {
     const e = esc;
     // 空 entries → 暂无历史数据
-    empty = openCodeGoAdapter.formatPanel({ entries: [], range: { start: 0, end: 1000 }, truncated: false, esc: e });
+    empty = openCodeGoAdapter.formatPanel({
+      entries: [],
+      range: { start: 0, end: 1000 },
+      truncated: false,
+      esc: e,
+    });
 
     // 含 resetsAt 的条目 → fmtReset 被调用
     withData = openCodeGoAdapter.formatPanel({
       entries: [
-        { time: 1000, data: { rolling: { percent: 5 }, weekly: { percent: 3 }, monthly: { percent: 1 } } },
-        { time: 2000, data: { rolling: { percent: 8, resetsAt: "2026-08-01T00:00:00Z", raw: "8000", limit: 12 }, weekly: { percent: 4 }, monthly: { percent: 2 } } },
+        {
+          time: 1000,
+          data: { rolling: { percent: 5 }, weekly: { percent: 3 }, monthly: { percent: 1 } },
+        },
+        {
+          time: 2000,
+          data: {
+            rolling: { percent: 8, resetsAt: "2026-08-01T00:00:00Z", raw: "8000", limit: 12 },
+            weekly: { percent: 4 },
+            monthly: { percent: 2 },
+          },
+        },
       ],
       range: { start: 0, end: 3000 },
       truncated: false,
@@ -585,7 +714,14 @@ describe("openCodeGoAdapter.formatPanel（覆盖 fmtReset 分支）", () => {
       entries: [
         { time: 1000, data: { rolling: { percent: 5 }, weekly: {}, monthly: {} } },
         { time: 2000, data: { monthly: { percent: 1 } } },
-        { time: 3000, data: { rolling: { percent: 10, resetsAt: "not-a-date" }, weekly: {}, monthly: { percent: 2 } } },
+        {
+          time: 3000,
+          data: {
+            rolling: { percent: 10, resetsAt: "not-a-date" },
+            weekly: {},
+            monthly: { percent: 2 },
+          },
+        },
       ],
       range: { start: 0, end: 4000 },
       truncated: false,
@@ -623,8 +759,10 @@ describe("openCodeGoAdapter.formatCapsule 无数据窗口（仅月份有值）",
   beforeAll(() => {
     const e = esc;
     html = openCodeGoAdapter.formatCapsule({
-      time: 1000, data: { rolling: { percent: null }, weekly: { percent: null }, monthly: { percent: 2 } },
-      status: "fresh", esc: e,
+      time: 1000,
+      data: { rolling: { percent: null }, weekly: { percent: null }, monthly: { percent: 2 } },
+      status: "fresh",
+      esc: e,
     });
   });
 
@@ -686,8 +824,12 @@ describe("parseUsageResponse 双形状（#150）", () => {
       weekly: { percent: 2 },
       monthly: { percent: 3 },
     });
-    expect(direct !== null && direct.rolling.percent === 1 && direct.weekly.percent === 2
-      && direct.monthly.percent === 3).toBeTruthy();
+    expect(
+      direct !== null &&
+        direct.rolling.percent === 1 &&
+        direct.weekly.percent === 2 &&
+        direct.monthly.percent === 3,
+    ).toBeTruthy();
   });
 
   it("{usage:{}} 包裹形状解析", () => {
@@ -728,17 +870,19 @@ const okBody = {
   weekly: { percent: 22 },
   monthly: { percent: 33 },
 };
-const makeFetch = (status, body, failJson = false, capture = []) => async (url, init) => {
-  capture.push({ url, auth: init?.headers?.Authorization });
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    json: async () => {
-      if (failJson) throw new Error("Unexpected token");
-      return typeof body === "function" ? body() : body;
-    },
+const makeFetch =
+  (status, body, failJson = false, capture = []) =>
+  async (url, init) => {
+    capture.push({ url, auth: init?.headers?.Authorization });
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      json: async () => {
+        if (failJson) throw new Error("Unexpected token");
+        return typeof body === "function" ? body() : body;
+      },
+    };
   };
-};
 
 describe("fetchOpenCodeGoV2 错误链（#150）", () => {
   it("错误链：no-api-key（缺 apiKey）", async () => {
@@ -751,7 +895,9 @@ describe("fetchOpenCodeGoV2 错误链（#150）", () => {
 
   it("错误链：network（fetch 实现抛错）", async () => {
     await expectRejects(
-      fetchOpenCodeGoV2(baseCtx(), async () => { throw new Error("boom"); }),
+      fetchOpenCodeGoV2(baseCtx(), async () => {
+        throw new Error("boom");
+      }),
       "network",
     );
   });
@@ -826,10 +972,7 @@ describe("fetchOpenCodeGoV2 空 apiEndpoint 回落默认地址（#150）", () =>
   let data;
 
   beforeAll(async () => {
-    data = await fetchOpenCodeGoV2(
-      baseCtx({ apiEndpoint: "" }),
-      makeFetch(200, okBody),
-    );
+    data = await fetchOpenCodeGoV2(baseCtx({ apiEndpoint: "" }), makeFetch(200, okBody));
   });
 
   it("空 apiEndpoint 回落默认地址仍成功", () => {
@@ -844,10 +987,17 @@ const MIN = 60000;
 
 describe("miniChartSvgMarkup 结构断言（#150）", () => {
   it("少于 2 个采样点返回空串", () => {
-    expect(miniChartSvgMarkup({
-      samples: [{ x: T0, y: 10 }], color: "#000", lo: 0, hi: 100,
-      resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
-    })).toBe("");
+    expect(
+      miniChartSvgMarkup({
+        samples: [{ x: T0, y: 10 }],
+        color: "#000",
+        lo: 0,
+        hi: 100,
+        resetsAt: undefined,
+        resetPeriodMs: 0,
+        dateOnly: false,
+      }),
+    ).toBe("");
   });
 
   describe("两点基础结构（含 100% 参考线）", () => {
@@ -855,13 +1005,23 @@ describe("miniChartSvgMarkup 结构断言（#150）", () => {
 
     beforeAll(() => {
       svg = miniChartSvgMarkup({
-        samples: [{ x: T0, y: 10 }, { x: T0 + 30 * MIN, y: 20 }],
-        color: "#abc", lo: 0, hi: 100, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+        samples: [
+          { x: T0, y: 10 },
+          { x: T0 + 30 * MIN, y: 20 },
+        ],
+        color: "#abc",
+        lo: 0,
+        hi: 100,
+        resetsAt: undefined,
+        resetPeriodMs: 0,
+        dateOnly: false,
       });
     });
 
     it("SVG 头与固定视口尺寸", () => {
-      expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 100">')).toBeTruthy();
+      expect(
+        svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 100">'),
+      ).toBeTruthy();
     });
 
     it("SVG 闭合标签", () => {
@@ -869,11 +1029,11 @@ describe("miniChartSvgMarkup 结构断言（#150）", () => {
     });
 
     it("面积填充使用传入色与固定透明度", () => {
-      expect(svg.includes('fill:#abc;fill-opacity:.13')).toBeTruthy();
+      expect(svg.includes("fill:#abc;fill-opacity:.13")).toBeTruthy();
     });
 
     it("折线描边样式", () => {
-      expect(svg.includes('stroke:#abc;stroke-width:1.6')).toBeTruthy();
+      expect(svg.includes("stroke:#abc;stroke-width:1.6")).toBeTruthy();
     });
 
     it("末点圆标记存在", () => {
@@ -885,7 +1045,7 @@ describe("miniChartSvgMarkup 结构断言（#150）", () => {
     });
 
     it("100% 参考线虚线样式", () => {
-      expect(svg.includes('stroke-dasharray:4 3;stroke-opacity:.65')).toBeTruthy();
+      expect(svg.includes("stroke-dasharray:4 3;stroke-opacity:.65")).toBeTruthy();
     });
 
     it("lo<=100<=hi 时绘制 100% 配额参考线（与 y 轴 9.5px 刻度字号区分）", () => {
@@ -898,8 +1058,16 @@ describe("miniChartSvgMarkup 结构断言（#150）", () => {
 
     beforeAll(() => {
       svg = miniChartSvgMarkup({
-        samples: [{ x: T0, y: 1 }, { x: T0 + 30 * MIN, y: 2 }],
-        color: "#abc", lo: 0.5, hi: 99, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+        samples: [
+          { x: T0, y: 1 },
+          { x: T0 + 30 * MIN, y: 2 },
+        ],
+        color: "#abc",
+        lo: 0.5,
+        hi: 99,
+        resetsAt: undefined,
+        resetPeriodMs: 0,
+        dateOnly: false,
       });
     });
 
@@ -918,8 +1086,15 @@ describe("miniChartSvgMarkup 结构断言（#150）", () => {
     beforeAll(() => {
       const resetsAt = new Date(T0 + 10 * MIN).toISOString();
       svg = miniChartSvgMarkup({
-        samples: [{ x: T0, y: 10 }, { x: T0 + 30 * MIN, y: 20 }],
-        color: "#abc", lo: 0, hi: 100, resetsAt, resetPeriodMs: 5 * 3600000,
+        samples: [
+          { x: T0, y: 10 },
+          { x: T0 + 30 * MIN, y: 20 },
+        ],
+        color: "#abc",
+        lo: 0,
+        hi: 100,
+        resetsAt,
+        resetPeriodMs: 5 * 3600000,
         dateOnly: false,
       });
     });
@@ -929,11 +1104,11 @@ describe("miniChartSvgMarkup 结构断言（#150）", () => {
     });
 
     it("重置线短虚线样式", () => {
-      expect(svg.includes('stroke-dasharray:2 3')).toBeTruthy();
+      expect(svg.includes("stroke-dasharray:2 3")).toBeTruthy();
     });
 
     it("重置点三角标记", () => {
-      expect(svg.includes('l 3.5 3.5 l -7 0 z')).toBeTruthy();
+      expect(svg.includes("l 3.5 3.5 l -7 0 z")).toBeTruthy();
     });
   });
 
@@ -943,8 +1118,16 @@ describe("miniChartSvgMarkup 结构断言（#150）", () => {
     beforeAll(() => {
       const resetsAt = new Date(T0 - 48 * 3600000).toISOString();
       svg = miniChartSvgMarkup({
-        samples: [{ x: T0, y: 10 }, { x: T0 + 30 * MIN, y: 20 }],
-        color: "#abc", lo: 0, hi: 100, resetsAt, resetPeriodMs: 3600000, dateOnly: false,
+        samples: [
+          { x: T0, y: 10 },
+          { x: T0 + 30 * MIN, y: 20 },
+        ],
+        color: "#abc",
+        lo: 0,
+        hi: 100,
+        resetsAt,
+        resetPeriodMs: 3600000,
+        dateOnly: false,
       });
     });
 
@@ -959,12 +1142,28 @@ describe("miniChartSvgMarkup 结构断言（#150）", () => {
     beforeAll(() => {
       // span<1 天 → HH:mm；dateOnly → M-D
       short = miniChartSvgMarkup({
-        samples: [{ x: T0, y: 0 }, { x: T0 + 30 * MIN, y: 5 }],
-        color: "#c", lo: 0, hi: 10, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+        samples: [
+          { x: T0, y: 0 },
+          { x: T0 + 30 * MIN, y: 5 },
+        ],
+        color: "#c",
+        lo: 0,
+        hi: 10,
+        resetsAt: undefined,
+        resetPeriodMs: 0,
+        dateOnly: false,
       });
       dateOnlySvg = miniChartSvgMarkup({
-        samples: [{ x: T0, y: 0 }, { x: T0 + 26 * 3600000, y: 5 }],
-        color: "#c", lo: 0, hi: 10, resetsAt: undefined, resetPeriodMs: 0, dateOnly: true,
+        samples: [
+          { x: T0, y: 0 },
+          { x: T0 + 26 * 3600000, y: 5 },
+        ],
+        color: "#c",
+        lo: 0,
+        hi: 10,
+        resetsAt: undefined,
+        resetPeriodMs: 0,
+        dateOnly: true,
       });
     });
 
@@ -986,8 +1185,13 @@ describe("miniChartSvgMarkup 结构断言（#150）", () => {
         many.push({ x: T0 + i * MIN, y: i % 50 });
       }
       svg = miniChartSvgMarkup({
-        samples: many, color: "#c", lo: 0, hi: 100,
-        resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+        samples: many,
+        color: "#c",
+        lo: 0,
+        hi: 100,
+        resetsAt: undefined,
+        resetPeriodMs: 0,
+        dateOnly: false,
       });
     });
 
@@ -1048,13 +1252,18 @@ describe("openCodeGoAdapter.formatPanel（#150）", () => {
     const e = (s) => String(s);
 
     emptyHtml = openCodeGoAdapter.formatPanel({
-      entries: [], range: { start: T0, end: T0 }, truncated: false, esc: e,
+      entries: [],
+      range: { start: T0, end: T0 },
+      truncated: false,
+      esc: e,
     });
 
     // 单条 entry：三点分支之「数据采集中」
     singleHtml = openCodeGoAdapter.formatPanel({
       entries: [mkEntry(0, { rolling: { percent: 10 } })],
-      range: { start: T0, end: T0 }, truncated: false, esc: e,
+      range: { start: T0, end: T0 },
+      truncated: false,
+      esc: e,
     });
 
     // 两条 entry、第二窗口全 null：区分「采样不足」分支
@@ -1063,7 +1272,9 @@ describe("openCodeGoAdapter.formatPanel（#150）", () => {
         mkEntry(0, { rolling: { percent: 10 }, weekly: { percent: null } }),
         mkEntry(H5, { rolling: { percent: 20 }, weekly: { percent: null } }),
       ],
-      range: { start: T0, end: T0 + H5 }, truncated: false, esc: e,
+      range: { start: T0, end: T0 + H5 },
+      truncated: false,
+      esc: e,
     });
 
     // 下降趋势与平坦趋势
@@ -1072,14 +1283,18 @@ describe("openCodeGoAdapter.formatPanel（#150）", () => {
         mkEntry(0, { rolling: { percent: 20 } }),
         mkEntry(H5, { rolling: { percent: 10 } }),
       ],
-      range: { start: T0, end: T0 + H5 }, truncated: false, esc: e,
+      range: { start: T0, end: T0 + H5 },
+      truncated: false,
+      esc: e,
     });
     flat = openCodeGoAdapter.formatPanel({
       entries: [
         mkEntry(0, { rolling: { percent: 10 } }),
         mkEntry(H5, { rolling: { percent: 10 } }),
       ],
-      range: { start: T0, end: T0 + H5 }, truncated: false, esc: e,
+      range: { start: T0, end: T0 + H5 },
+      truncated: false,
+      esc: e,
     });
 
     // resetsAt 展示在卡片限额行；最新窗口 pct null 显示 --
@@ -1087,9 +1302,14 @@ describe("openCodeGoAdapter.formatPanel（#150）", () => {
     resetHtml = openCodeGoAdapter.formatPanel({
       entries: [
         mkEntry(0, { rolling: { percent: 10, resetsAt: resetsAtIso } }),
-        mkEntry(H5, { rolling: { percent: 11, resetsAt: resetsAtIso }, monthly: { percent: null } }),
+        mkEntry(H5, {
+          rolling: { percent: 11, resetsAt: resetsAtIso },
+          monthly: { percent: null },
+        }),
       ],
-      range: { start: T0, end: T0 + H5 }, truncated: false, esc: e,
+      range: { start: T0, end: T0 + H5 },
+      truncated: false,
+      esc: e,
     });
 
     // 观察窗过滤：rolling 只看最近 12h，窗外采样不进趋势
@@ -1098,7 +1318,9 @@ describe("openCodeGoAdapter.formatPanel（#150）", () => {
     const recent2 = mkEntry(0, { rolling: { percent: 12 } });
     windowedHtml = openCodeGoAdapter.formatPanel({
       entries: [old, recent1, recent2],
-      range: { start: T0 - 13 * H5, end: T0 }, truncated: false, esc: e,
+      range: { start: T0 - 13 * H5, end: T0 },
+      truncated: false,
+      esc: e,
     });
   });
 
@@ -1127,7 +1349,9 @@ describe("openCodeGoAdapter.formatPanel（#150）", () => {
   });
 
   it("上升趋势三角与增量", () => {
-    expect(insufficientHtml.includes("dou-trend-up") && insufficientHtml.includes("▲ +10%")).toBeTruthy();
+    expect(
+      insufficientHtml.includes("dou-trend-up") && insufficientHtml.includes("▲ +10%"),
+    ).toBeTruthy();
   });
 
   it("下降趋势负增量", () => {
@@ -1158,7 +1382,16 @@ describe("openCodeGoAdapter.formatPanel（#150）", () => {
 // ---------------------------------------------------------------- safeFetchData 边界（#150 变异加固）
 
 describe("safeFetchData 边界（#150 变异加固）", () => {
-  let success, arrayRes, nullRes, primitiveRes, undefinedRes, syncBoom, asyncBoom, plainThrow, timeoutRes, timeoutElapsed;
+  let success,
+    arrayRes,
+    nullRes,
+    primitiveRes,
+    undefinedRes,
+    syncBoom,
+    asyncBoom,
+    plainThrow,
+    timeoutRes,
+    timeoutElapsed;
 
   beforeAll(async () => {
     // 成功路径：JSON 序列化管道保真——Date 经 stringify/parse 变 ISO 字符串，
@@ -1181,13 +1414,19 @@ describe("safeFetchData 边界（#150 变异加固）", () => {
     undefinedRes = await safeFetchData(async () => undefined);
 
     // fn 同步抛 Error：message 原样入 error
-    syncBoom = await safeFetchData(() => { throw new Error("sync-boom"); });
+    syncBoom = await safeFetchData(() => {
+      throw new Error("sync-boom");
+    });
 
     // fn 返回 rejected promise：同样进 catch
-    asyncBoom = await safeFetchData(async () => { throw new Error("async-boom"); });
+    asyncBoom = await safeFetchData(async () => {
+      throw new Error("async-boom");
+    });
 
     // 非 Error 抛出值：String(e) 兜底
-    plainThrow = await safeFetchData(async () => { throw "plain"; });
+    plainThrow = await safeFetchData(async () => {
+      throw "plain";
+    });
 
     // 超时分支：fn 永挂 + 极小 timeoutMs -> abort 监听 reject 固定文案；
     // finally clearTimeout 保证进程不悬挂
@@ -1279,13 +1518,19 @@ describe("safeFormat 边界（#150 变异加固）", () => {
     }
 
     // fn 同步抛 Error：Promise.resolve().then(fn) 转 rejection 后 message 入 error
-    syncBoom = await safeFormat(() => { throw new Error("fmt-sync-boom"); }, "FmtC");
+    syncBoom = await safeFormat(() => {
+      throw new Error("fmt-sync-boom");
+    }, "FmtC");
 
     // fn 返回 rejected promise
-    asyncBoom = await safeFormat(async () => { throw new Error("fmt-async-boom"); }, "FmtD");
+    asyncBoom = await safeFormat(async () => {
+      throw new Error("fmt-async-boom");
+    }, "FmtD");
 
     // 非 Error 抛出值：String(e) 兜底
-    plainThrow = await safeFormat(async () => { throw 7; }, "FmtE");
+    plainThrow = await safeFormat(async () => {
+      throw 7;
+    }, "FmtE");
 
     // 超时分支：fn 永挂 + 极小 timeoutMs -> 文案含适配器名
     timeoutRes = await safeFormat(() => new Promise(() => {}), "FmtSlow", 25);
@@ -1345,8 +1590,11 @@ describe("fetchWithTimeout 边界（#150 变异加固）", () => {
       });
 
       // 快路径：远小于超时的延迟 -> 正常返回且 signal 未 abort
-      fast = await fetchWithTimeout("https://gw.test/x", 1000,
-        { headers: { "x-k": "v" }, signal: "fake-signal", delayMs: 10 });
+      fast = await fetchWithTimeout("https://gw.test/x", 1000, {
+        headers: { "x-k": "v" },
+        signal: "fake-signal",
+        delayMs: 10,
+      });
       // 同理按 url 过滤取 fast 的调用记录：calls 尾部在负载下可能被外部污染
       const sigFast = calls.find((c) => c.url === "https://gw.test/x")?.opts.signal;
       fastSigIsAbortSignal = sigFast instanceof AbortSignal;
@@ -1405,10 +1653,16 @@ describe("trendOf 阈值与取整边界（#150 变异加固）", () => {
 
   beforeAll(() => {
     const e = (s) => String(s);
-    const panelOf = (from, to) => openCodeGoAdapter.formatPanel({
-      entries: [mkEntry(0, { rolling: { percent: from } }), mkEntry(H5, { rolling: { percent: to } })],
-      range: { start: T0, end: T0 + H5 }, truncated: false, esc: e,
-    });
+    const panelOf = (from, to) =>
+      openCodeGoAdapter.formatPanel({
+        entries: [
+          mkEntry(0, { rolling: { percent: from } }),
+          mkEntry(H5, { rolling: { percent: to } }),
+        ],
+        range: { start: T0, end: T0 + H5 },
+        truncated: false,
+        esc: e,
+      });
 
     // delta 四舍五入到一位小数：1.234 -> 1.2
     rounded = panelOf(0, 1.234);
@@ -1427,7 +1681,9 @@ describe("trendOf 阈值与取整边界（#150 变异加固）", () => {
         mkEntry(0, { rolling: { percent: 10 } }),
         mkEntry(H5, { rolling: { percent: 12 } }),
       ],
-      range: { start: T0, end: T0 + H5 }, truncated: false, esc: e,
+      range: { start: T0, end: T0 + H5 },
+      truncated: false,
+      esc: e,
     });
   });
 
@@ -1476,8 +1732,9 @@ describe("trendOf 阈值与取整边界（#150 变异加固）", () => {
 
 /** 提取 SVG 中窗口重置竖线的 x1 坐标序列 */
 function resetLineXs(svg) {
-  return [...svg.matchAll(/<line x1="([\d.]+)" y1="14"[^]*?<title>窗口重置点<\/title>/g)]
-    .map((m) => Number(m[1]));
+  return [...svg.matchAll(/<line x1="([\d.]+)" y1="14"[^]*?<title>窗口重置点<\/title>/g)].map((m) =>
+    Number(m[1]),
+  );
 }
 
 describe("resetTicks 回溯与非法输入边界（#150 变异加固）", () => {
@@ -1485,20 +1742,32 @@ describe("resetTicks 回溯与非法输入边界（#150 变异加固）", () => 
     // r 在区间右端之外（+5min）：本体不入列；按 period=10min 回溯出
     // 25/15/5min 三点全部落在 [t0, t1] -> 恰三条重置线且 x 递增（锁排序）
     const svg = miniChartSvgMarkup({
-      samples: [{ x: T0, y: 10 }, { x: T0 + 30 * MIN, y: 20 }],
-      color: "#abc", lo: 0, hi: 100,
+      samples: [
+        { x: T0, y: 10 },
+        { x: T0 + 30 * MIN, y: 20 },
+      ],
+      color: "#abc",
+      lo: 0,
+      hi: 100,
       resetsAt: new Date(T0 + 35 * MIN).toISOString(),
-      resetPeriodMs: 10 * MIN, dateOnly: false,
+      resetPeriodMs: 10 * MIN,
+      dateOnly: false,
     });
     expect(resetLineXs(svg).length).toBe(3);
   });
 
   it("重置线 x 坐标升序（sort 生效）", () => {
     const svg = miniChartSvgMarkup({
-      samples: [{ x: T0, y: 10 }, { x: T0 + 30 * MIN, y: 20 }],
-      color: "#abc", lo: 0, hi: 100,
+      samples: [
+        { x: T0, y: 10 },
+        { x: T0 + 30 * MIN, y: 20 },
+      ],
+      color: "#abc",
+      lo: 0,
+      hi: 100,
       resetsAt: new Date(T0 + 35 * MIN).toISOString(),
-      resetPeriodMs: 10 * MIN, dateOnly: false,
+      resetPeriodMs: 10 * MIN,
+      dateOnly: false,
     });
     const xs = resetLineXs(svg);
     expect(xs.every((v, i) => i === 0 || v > xs[i - 1])).toBeTruthy();
@@ -1508,18 +1777,30 @@ describe("resetTicks 回溯与非法输入边界（#150 变异加固）", () => 
     // guard<40 截断：period=1min、r=t1 外 1min、区间 45min ->
     // 回溯点最多 40 个（循环守卫上限），不多不少
     const svg = miniChartSvgMarkup({
-      samples: [{ x: T0, y: 10 }, { x: T0 + 45 * MIN, y: 20 }],
-      color: "#abc", lo: 0, hi: 100,
+      samples: [
+        { x: T0, y: 10 },
+        { x: T0 + 45 * MIN, y: 20 },
+      ],
+      color: "#abc",
+      lo: 0,
+      hi: 100,
       resetsAt: new Date(T0 + 46 * MIN).toISOString(),
-      resetPeriodMs: MIN, dateOnly: false,
+      resetPeriodMs: MIN,
+      dateOnly: false,
     });
     expect(resetLineXs(svg).length).toBe(40);
   });
 
   {
     const base = {
-      samples: [{ x: T0, y: 10 }, { x: T0 + 30 * MIN, y: 20 }],
-      color: "#abc", lo: 0, hi: 100, dateOnly: false,
+      samples: [
+        { x: T0, y: 10 },
+        { x: T0 + 30 * MIN, y: 20 },
+      ],
+      color: "#abc",
+      lo: 0,
+      hi: 100,
+      dateOnly: false,
     };
     for (const bad of [
       { resetsAt: "", resetPeriodMs: 10 * MIN },
@@ -1539,14 +1820,38 @@ describe("resetTicks 回溯与非法输入边界（#150 变异加固）", () => 
 // ---------------------------------------------------------------- 图表纯函数分档矩阵（#150 变异加固 2/4 续）
 
 describe("图表纯函数分档矩阵（#150 变异加固 2/4 续）", () => {
-  let svg10m, svg30m, svg1h, svg6h, svg2d, svg5d, svg14d, svg60d, svgDateOnly, svgFrac, tight, wide, wider, svgDownsample, svgCurve, svgTiny;
+  let svg10m,
+    svg30m,
+    svg1h,
+    svg6h,
+    svg2d,
+    svg5d,
+    svg14d,
+    svg60d,
+    svgDateOnly,
+    svgFrac,
+    tight,
+    wide,
+    wider,
+    svgDownsample,
+    svgCurve,
+    svgTiny;
 
   beforeAll(() => {
-    const mk = (from, to, opts = {}) => miniChartSvgMarkup({
-      samples: [{ x: T0, y: 0 }, { x: T0 + to, y: 5 }],
-      color: "#c", lo: 0, hi: 10, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
-      ...opts,
-    });
+    const mk = (from, to, opts = {}) =>
+      miniChartSvgMarkup({
+        samples: [
+          { x: T0, y: 0 },
+          { x: T0 + to, y: 5 },
+        ],
+        color: "#c",
+        lo: 0,
+        hi: 10,
+        resetsAt: undefined,
+        resetPeriodMs: 0,
+        dateOnly: false,
+        ...opts,
+      });
 
     // timeTickStep 分档 + timeTicks 翻倍：spanMs=10min 触发 step=2min
     // 预期 10:00-10:10 约 6 个刻度（HH:mm），经 step 翻倍后 count≤6 停
@@ -1571,17 +1876,30 @@ describe("图表纯函数分档矩阵（#150 变异加固 2/4 续）", () => {
 
     // fmtPctTick 非整数：lo/hi 含小数 → 刻度出现 N.N%
     svgFrac = miniChartSvgMarkup({
-      samples: [{ x: T0, y: 1.5 }, { x: T0 + 30 * MIN, y: 2.5 }],
-      color: "#c", lo: 0.5, hi: 9.5, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+      samples: [
+        { x: T0, y: 1.5 },
+        { x: T0 + 30 * MIN, y: 2.5 },
+      ],
+      color: "#c",
+      lo: 0.5,
+      hi: 9.5,
+      resetsAt: undefined,
+      resetPeriodMs: 0,
+      dateOnly: false,
     });
 
     // niceDomain 经 formatPanel 覆盖：极差/3 映射到 niceStep 不同分档
     // niceStep 分档：norm<1.5 → step=mag；<3.5 → 2*mag；<7.5 → 5*mag；else → 10*mag
-    const panelOf = (from, to) => openCodeGoAdapter.formatPanel({
-      entries: [mkEntry(0, { rolling: { percent: from, resetsAt: undefined } }),
-                mkEntry(H5, { rolling: { percent: to, resetsAt: undefined } })],
-      range: { start: 0, end: H5 }, truncated: false, esc: (s) => String(s),
-    });
+    const panelOf = (from, to) =>
+      openCodeGoAdapter.formatPanel({
+        entries: [
+          mkEntry(0, { rolling: { percent: from, resetsAt: undefined } }),
+          mkEntry(H5, { rolling: { percent: to, resetsAt: undefined } }),
+        ],
+        range: { start: 0, end: H5 },
+        truncated: false,
+        esc: (s) => String(s),
+      });
     // 极差=0.5/3≈0.167 → norm=0.167/0.1=1.67 → <3.5 → step=2*0.1=0.2
     tight = panelOf(1, 1.5);
     // 极差=50/3≈16.67 → norm=16.67/10=1.667 → <3.5 → step=2*10=20
@@ -1595,8 +1913,13 @@ describe("图表纯函数分档矩阵（#150 变异加固 2/4 续）", () => {
       many.push({ x: T0 + i * MIN, y: i % 50 });
     }
     svgDownsample = miniChartSvgMarkup({
-      samples: many, color: "#c", lo: 0, hi: 100,
-      resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+      samples: many,
+      color: "#c",
+      lo: 0,
+      hi: 100,
+      resetsAt: undefined,
+      resetPeriodMs: 0,
+      dateOnly: false,
     });
 
     // smoothPath 短路径：pts.length<2 返回空串
@@ -1607,8 +1930,16 @@ describe("图表纯函数分档矩阵（#150 变异加固 2/4 续）", () => {
 
     // timeTicks out.length<2 → [t0, t1]：极短跨度（2 个点 x 相同，spanMs=1min fallback）
     svgTiny = miniChartSvgMarkup({
-      samples: [{ x: T0, y: 0 }, { x: T0 + 1, y: 5 }],
-      color: "#c", lo: 0, hi: 10, resetsAt: undefined, resetPeriodMs: 0, dateOnly: false,
+      samples: [
+        { x: T0, y: 0 },
+        { x: T0 + 1, y: 5 },
+      ],
+      color: "#c",
+      lo: 0,
+      hi: 10,
+      resetsAt: undefined,
+      resetPeriodMs: 0,
+      dateOnly: false,
     });
   });
 
@@ -1635,7 +1966,10 @@ describe("图表纯函数分档矩阵（#150 变异加固 2/4 续）", () => {
   it("6h span 刻度数合理（3-8 个）", () => {
     // 1h step → count≤6 循环限制下约 4-7 个刻度（10:00~16:00）
     const ticks = svg6h.match(/\d{2}:\d{2}<\/text>/g);
-    expect(ticks && ticks.length >= 3 && ticks.length <= 8, `6h span 刻度数合理（3-8 个），实为 ${ticks?.length}`).toBeTruthy();
+    expect(
+      ticks && ticks.length >= 3 && ticks.length <= 8,
+      `6h span 刻度数合理（3-8 个），实为 ${ticks?.length}`,
+    ).toBeTruthy();
   });
 
   it("2d span 刻度含月-日", () => {
@@ -1727,7 +2061,7 @@ describe("图表纯函数分档矩阵（#150 变异加固 2/4 续）", () => {
 
   it("smoothPath 产出 Catmull-Rom 曲线 C 命令", () => {
     // 相邻点 Catmull-Rom 曲线：C 命令存在
-    expect(svgCurve.includes(' C ')).toBeTruthy();
+    expect(svgCurve.includes(" C ")).toBeTruthy();
   });
 
   it("极短跨度仍产合法 SVG", () => {
@@ -1775,7 +2109,7 @@ describe("sanitizeHtml 清理链全正则覆盖（#150 变异加固）", () => {
   });
 
   it("link 标签移除", () => {
-    expect(sanitizeHtml('<link rel=stylesheet href=x>l')).toBe("l");
+    expect(sanitizeHtml("<link rel=stylesheet href=x>l")).toBe("l");
   });
 
   it("base 标签移除", () => {
@@ -1784,7 +2118,7 @@ describe("sanitizeHtml 清理链全正则覆盖（#150 变异加固）", () => {
 
   // on* 事件处理器三种引号形态 + 无引号形态
   it("on*=双引号事件被剥", () => {
-    expect(sanitizeHtml('<img src="x" onerror="alert(1)">')).toBe("<img src=\"x\">");
+    expect(sanitizeHtml('<img src="x" onerror="alert(1)">')).toBe('<img src="x">');
   });
 
   it("on*=单引号事件被剥", () => {
@@ -1809,7 +2143,7 @@ describe("sanitizeHtml 清理链全正则覆盖（#150 变异加固）", () => {
   });
 
   it("CSS expression( 被剥", () => {
-    const exp = sanitizeHtml("<div style=\"width:expression(alert(1))\">w</div>");
+    const exp = sanitizeHtml('<div style="width:expression(alert(1))">w</div>');
     expect(!exp.includes("expression(")).toBeTruthy();
   });
 
@@ -1819,7 +2153,9 @@ describe("sanitizeHtml 清理链全正则覆盖（#150 变异加固）", () => {
   });
 
   it("正常链接与属性保留", () => {
-    expect(sanitizeHtml('<a href="https://example.com" title="t">n</a>')).toBe('<a href="https://example.com" title="t">n</a>');
+    expect(sanitizeHtml('<a href="https://example.com" title="t">n</a>')).toBe(
+      '<a href="https://example.com" title="t">n</a>',
+    );
   });
 });
 
@@ -1827,11 +2163,15 @@ describe("sanitizeHtml 清理链全正则覆盖（#150 变异加固）", () => {
 
 describe("#105③ 实体编码变体（清理链补充）", () => {
   it("hex 实体 javascript: 剥除", () => {
-    expect(sanitizeHtml('<a href="jav&#x61;script:alert(1)">x</a>')).toBe('<a href="alert(1)">x</a>');
+    expect(sanitizeHtml('<a href="jav&#x61;script:alert(1)">x</a>')).toBe(
+      '<a href="alert(1)">x</a>',
+    );
   });
 
   it("十进制词首 j 实体剥除", () => {
-    expect(sanitizeHtml('<a href="&#106;avascript:alert(1)">y</a>')).toBe('<a href="alert(1)">y</a>');
+    expect(sanitizeHtml('<a href="&#106;avascript:alert(1)">y</a>')).toBe(
+      '<a href="alert(1)">y</a>',
+    );
   });
 
   it("hex 无分号变体剥除", () => {
@@ -1852,8 +2192,8 @@ describe("#105③ 实体编码变体（清理链补充）", () => {
     '<img src=x o&#110;click="alert(1)">',
     '&lt;iframe src="data:text/html,x"&gt;&lt;/iframe&gt;k',
     '<a href="&amp;#106;avascript:alert(1)">c</a>',
-    'data:text/htexpression(ml',
-    "<b>ok</b><a href=\"/api/x?a=1&amp;b=2\">n</a>",
+    "data:text/htexpression(ml",
+    '<b>ok</b><a href="/api/x?a=1&amp;b=2">n</a>',
   ];
   for (const s of idemSamples) {
     it(`幂等不动点: ${s}`, () => {
@@ -1923,7 +2263,8 @@ describe("#105③ C1 管道级端到端：净化在管道内生效", () => {
           providers: ["pv"],
           fetchData: async () => ({}),
           formatCapsule: () => "",
-          formatPanel: () => '<p t=1 o&#110;click="al()">x <a href="data&colon;text/html,y">l</a></p>',
+          formatPanel: () =>
+            '<p t=1 o&#110;click="al()">x <a href="data&colon;text/html,y">l</a></p>',
         },
         provider: "pv",
         history: store,
@@ -1951,7 +2292,11 @@ describe("#105③ C1 管道级端到端：净化在管道内生效", () => {
   });
 
   it("C1: 无害属性与文本保留（兜底不扩大化）", () => {
-    expect(panelR.panelHtml !== undefined && panelR.panelHtml.includes("<p t=1") && panelR.panelHtml.includes(">x ")).toBeTruthy();
+    expect(
+      panelR.panelHtml !== undefined &&
+        panelR.panelHtml.includes("<p t=1") &&
+        panelR.panelHtml.includes(">x "),
+    ).toBeTruthy();
   });
 });
 
@@ -1975,7 +2320,10 @@ describe("#150 二阶段：samplePoint / summarize 残余分支", () => {
 
     // percent 非有限值 → null 占位；limit/resetPeriodMs 缺省字段省略
     sp = adapter.samplePoint({
-      ok: true, provider: "openai", label: "SPE", fetchedAt: 0,
+      ok: true,
+      provider: "openai",
+      label: "SPE",
+      fetchedAt: 0,
       windows: [
         { key: "a", name: "A", percent: Number.NaN },
         { key: "b", name: "B", percent: 2.5, limit: 5, resetPeriodMs: 3600000 },
@@ -2006,10 +2354,15 @@ describe("#150 二阶段：samplePoint / summarize 残余分支", () => {
 
   // cols 与 values 长度不一致（usage.windows 少于 spec.windows）→ null
   it("values 短于 cols 返回 null", () => {
-    expect(adapter.samplePoint({
-      ok: true, provider: "openai", label: "SPE", fetchedAt: 0,
-      windows: [{ key: "a", name: "A", percent: 1 }],
-    })).toBe(null);
+    expect(
+      adapter.samplePoint({
+        ok: true,
+        provider: "openai",
+        label: "SPE",
+        fetchedAt: 0,
+        windows: [{ key: "a", name: "A", percent: 1 }],
+      }),
+    ).toBe(null);
   });
 
   it("NaN/Infinity 场景仍返回结构", () => {
@@ -2060,7 +2413,10 @@ describe("#150 二阶段：summarize 自定义文本为空串时回落 label", (
     summary = await adapter.summarize({
       provider: "openai",
       usage: {
-        ok: true, provider: "openai", label: "E", fetchedAt: 0,
+        ok: true,
+        provider: "openai",
+        label: "E",
+        fetchedAt: 0,
         windows: [{ key: "r", name: "R", percent: 10 }],
       },
     } as any);
@@ -2074,4 +2430,3 @@ describe("#150 二阶段：summarize 自定义文本为空串时回落 label", (
     expect(summary.fetchedAt > 0).toBe(true);
   });
 });
-

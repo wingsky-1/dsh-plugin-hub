@@ -41,7 +41,10 @@ function toListItem(input: ProviderListInput, provider: string): ProviderListIte
  * - extra：候选或启用态指向不在 modelProviders 的 provider（用户适配器自定义
  *   路由），收进尾部独立分组避免静默消失，不计入主列表数量。
  */
-export function splitProviderList(input: ProviderListInput): { main: ProviderListItem[]; extra: ProviderListItem[] } {
+export function splitProviderList(input: ProviderListInput): {
+  main: ProviderListItem[];
+  extra: ProviderListItem[];
+} {
   const modelSet = new Set(input.modelProviders ?? []);
   const main = (input.modelProviders ?? []).map((p) => toListItem(input, p));
   const extraKeys = new Set<string>();

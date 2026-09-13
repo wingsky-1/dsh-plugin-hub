@@ -72,7 +72,10 @@ function windowDayCount(startDay: string, endDay: string): number {
 
 /** 环比基准：同长度窗口整体前移（[startDay-len, startDay-1]）的 total 求和（null-aware）。 */
 export function prevWindowTotal(
-  buckets: Array<{ day: string; providers: Array<{ provider: string; model: string | null; cell: TrendCell }> }>,
+  buckets: Array<{
+    day: string;
+    providers: Array<{ provider: string; model: string | null; cell: TrendCell }>;
+  }>,
   startDay: string,
   endDay: string,
 ): number | null {
@@ -100,14 +103,33 @@ export function summaryOf(snapshot: ReportStatsSnapshot): ReportMetaSummary {
 }
 
 export function optionalNotifier(ctx: Context): {
-  send: (req: { source: string; kind: string; severity: string; title: string; body: string }) => Promise<unknown>;
+  send: (req: {
+    source: string;
+    kind: string;
+    severity: string;
+    title: string;
+    body: string;
+  }) => Promise<unknown>;
   registerKind?: (reg: { id: string; label: string }) => unknown;
 } | null {
   try {
-    const n = (ctx as { get?: (name: string, strict?: boolean) => unknown }).get?.("wingsky.notifier", false);
-    if (n !== null && typeof n === "object" && typeof (n as { send?: unknown }).send === "function") {
+    const n = (ctx as { get?: (name: string, strict?: boolean) => unknown }).get?.(
+      "wingsky.notifier",
+      false,
+    );
+    if (
+      n !== null &&
+      typeof n === "object" &&
+      typeof (n as { send?: unknown }).send === "function"
+    ) {
       return n as {
-        send: (req: { source: string; kind: string; severity: string; title: string; body: string }) => Promise<unknown>;
+        send: (req: {
+          source: string;
+          kind: string;
+          severity: string;
+          title: string;
+          body: string;
+        }) => Promise<unknown>;
         registerKind?: (reg: { id: string; label: string }) => unknown;
       };
     }
@@ -132,8 +154,18 @@ export function notifyReport(
     total === null ? "无数据" : total.toLocaleString("en-US")
   }，调用 ${snapshot.totals.calls} 次。详情见 dsh 设置页用量报告。`;
   notifier
-    .send({ source: "@wingsky-1/dsh-provider-usage", kind: "provider-usage:report", severity: "info", title: "用量报告", body })
-    .catch((e: unknown) => console.warn(`[dsh-provider-usage] report: 推送失败（不影响主流程）：${sanitizeDiagnostic(errorMessage(e))}`));
+    .send({
+      source: "@wingsky-1/dsh-provider-usage",
+      kind: "provider-usage:report",
+      severity: "info",
+      title: "用量报告",
+      body,
+    })
+    .catch((e: unknown) =>
+      console.warn(
+        `[dsh-provider-usage] report: 推送失败（不影响主流程）：${sanitizeDiagnostic(errorMessage(e))}`,
+      ),
+    );
 }
 
 function reportHtmlDocument(meta: ReportMeta, bodyText: string): string {
@@ -145,7 +177,11 @@ function reportHtmlDocument(meta: ReportMeta, bodyText: string): string {
   ].join("");
 }
 
-export async function persistReport(historyRoot: string, meta: ReportMeta, bodyText: string): Promise<void> {
+export async function persistReport(
+  historyRoot: string,
+  meta: ReportMeta,
+  bodyText: string,
+): Promise<void> {
   const dir = reportsDir(historyRoot);
   const htmlFile = reportHtmlFile(historyRoot, meta.period, meta.key);
   const metaFile = reportMetaFile(historyRoot, meta.period, meta.key);
@@ -186,9 +222,8 @@ export async function runDueReport(params: {
   // 「全量统计 + 所选目录分布」口径；缺省「全部」（空数组）零过滤。
   const scopeDirs = reportCfg.directories ?? [];
   const dirRows = trend.dirRows();
-  const scopedDirRows = scopeDirs.length === 0
-    ? dirRows
-    : dirRows.filter((r) => scopeDirs.includes(r.dir));
+  const scopedDirRows =
+    scopeDirs.length === 0 ? dirRows : dirRows.filter((r) => scopeDirs.includes(r.dir));
   const snapshot = buildStatsSnapshot({
     period: due.period,
     startDay: due.startDay,

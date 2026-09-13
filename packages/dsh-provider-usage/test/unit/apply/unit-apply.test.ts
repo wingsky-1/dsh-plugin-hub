@@ -55,9 +55,15 @@ function makeRes() {
   const chunks = [];
   let code = 200;
   return {
-    writeHead: (c) => { code = c; },
-    end: (chunk) => { chunks.push(chunk); },
-    write: (chunk) => { chunks.push(chunk); },
+    writeHead: (c) => {
+      code = c;
+    },
+    end: (chunk) => {
+      chunks.push(chunk);
+    },
+    write: (chunk) => {
+      chunks.push(chunk);
+    },
     on: () => {},
     _code: () => code,
     _body: () => chunks.map((c) => (typeof c === "string" ? c : String(c))).join(""),
@@ -67,17 +73,24 @@ function makeRes() {
 /** 构造标准 fake ctx：收集路由与 disposer。
  *  - over.get：可选注入的假 wingsky.notifier 服务（get 桩命中 "wingsky.notifier" 时返回）；
  *  - over.recordOn：为 true 时记录 ctx.on 监听器到 listeners（供 internal/service 补注册测试手动触发）。 */
-function makeCtx(over: {
-  llm?: unknown;
-  get?: unknown;
-  recordOn?: boolean;
-} = {}) {
+function makeCtx(
+  over: {
+    llm?: unknown;
+    get?: unknown;
+    recordOn?: boolean;
+  } = {},
+) {
   const routes: Array<Record<string, unknown>> = [];
   const disposers: Array<() => void> = [];
   const listeners: Map<string, Array<(...args: unknown[]) => unknown>> = new Map();
   const ctx = {
     logger: { warn: () => {} },
-    webServer: { register(route: Record<string, unknown>) { routes.push(route); return () => {}; } },
+    webServer: {
+      register(route: Record<string, unknown>) {
+        routes.push(route);
+        return () => {};
+      },
+    },
     on: over.recordOn
       ? (name: string, cb: (...args: unknown[]) => unknown) => {
           const list = listeners.get(name) ?? [];
@@ -86,9 +99,18 @@ function makeCtx(over: {
           return () => {};
         }
       : onStub,
-    llm: over.llm !== undefined ? over.llm : { listProviders() { return []; } },
+    llm:
+      over.llm !== undefined
+        ? over.llm
+        : {
+            listProviders() {
+              return [];
+            },
+          },
     fiber: { state: "active" },
-    inject: (deps: unknown, cb: (s: unknown) => void) => { cb({ settings: {} }); },
+    inject: (deps: unknown, cb: (s: unknown) => void) => {
+      cb({ settings: {} });
+    },
     effect(fn: () => unknown) {
       const d = fn();
       if (typeof d === "function") disposers.push(d as () => void);
@@ -96,7 +118,8 @@ function makeCtx(over: {
     },
   };
   if (over.get !== undefined) {
-    (ctx as Record<string, unknown>).get = (name: string) => (name === "wingsky.notifier" ? over.get : undefined);
+    (ctx as Record<string, unknown>).get = (name: string) =>
+      name === "wingsky.notifier" ? over.get : undefined;
   }
   return { ctx, routes, disposers, listeners };
 }
@@ -125,7 +148,8 @@ async function pollUntil(cond: () => boolean, timeoutMs = 2000): Promise<boolean
 }
 
 const routeOf = (routes: Array<Record<string, unknown>>, path: string) =>
-  routes.find((r) => r.path === path) as { handler: (req: unknown, res: unknown) => Promise<void> | void } | undefined;
+  routes.find((r) => r.path === path) as
+    { handler: (req: unknown, res: unknown) => Promise<void> | void } | undefined;
 
 // ---------------------------------------------------------------- 1) inject 回调：settings 正常注册
 
@@ -137,14 +161,25 @@ describe("1) inject 回调：settings 正常注册", () => {
     const routes = [];
     const ctx = {
       logger: { warn: () => {} },
-      webServer: { register(route) { routes.push(route); return () => {}; } },
+      webServer: {
+        register(route) {
+          routes.push(route);
+          return () => {};
+        },
+      },
       on: onStub,
-      llm: { listProviders() { return []; } },
+      llm: {
+        listProviders() {
+          return [];
+        },
+      },
       fiber: { state: "active" },
       inject: (deps, cb) => {
         const scope = {
           get: () => ({}),
-          watch: (fn) => { settingsEvents.push("watch-registered"); },
+          watch: (fn) => {
+            settingsEvents.push("watch-registered");
+          },
         };
         const sctx = {
           settings: {
@@ -191,15 +226,35 @@ describe("2) inject 回调：settings.register 抛错", () => {
     warns = [];
     const routes = [];
     const ctx = {
-      logger: { warn: (m) => { warns.push(m); } },
-      webServer: { register(route) { routes.push(route); return () => {}; } },
+      logger: {
+        warn: (m) => {
+          warns.push(m);
+        },
+      },
+      webServer: {
+        register(route) {
+          routes.push(route);
+          return () => {};
+        },
+      },
       on: onStub,
-      llm: { listProviders() { return []; } },
+      llm: {
+        listProviders() {
+          return [];
+        },
+      },
       fiber: { state: "active" },
       inject: (deps, cb) => {
         cb({
-          settings: { register: () => { throw new Error("duplicate"); } },
-          effect: (fn) => { const d = fn(); return typeof d === "function" ? d : () => {}; },
+          settings: {
+            register: () => {
+              throw new Error("duplicate");
+            },
+          },
+          effect: (fn) => {
+            const d = fn();
+            return typeof d === "function" ? d : () => {};
+          },
         });
       },
       effect: (fn) => {
@@ -224,10 +279,23 @@ describe("3) inject 回调：settings 服务缺 register", () => {
     warns = [];
     const routes = [];
     const ctx = {
-      logger: { warn: (m) => { warns.push(m); } },
-      webServer: { register(route) { routes.push(route); return () => {}; } },
+      logger: {
+        warn: (m) => {
+          warns.push(m);
+        },
+      },
+      webServer: {
+        register(route) {
+          routes.push(route);
+          return () => {};
+        },
+      },
       on: onStub,
-      llm: { listProviders() { return []; } },
+      llm: {
+        listProviders() {
+          return [];
+        },
+      },
       fiber: { state: "active" },
       inject: (deps, cb) => {
         cb({ settings: {} });
@@ -262,9 +330,18 @@ describe("5a) fiber.state=unloading → disposer 内 isUnloading=true 提前 ret
     const routes = [];
     const ctx = {
       logger: { warn: () => {} },
-      webServer: { register(route) { routes.push(route); return () => {}; } },
+      webServer: {
+        register(route) {
+          routes.push(route);
+          return () => {};
+        },
+      },
       on: onStub,
-      llm: { listProviders() { return []; } },
+      llm: {
+        listProviders() {
+          return [];
+        },
+      },
       fiber: { state: "unloading" },
       inject: (deps, cb) => {
         const scope = { get: () => ({}), watch: (fn) => {} };
@@ -278,7 +355,10 @@ describe("5a) fiber.state=unloading → disposer 内 isUnloading=true 提前 ret
           },
         });
       },
-      effect: (fn) => { const d = fn(); return typeof d === "function" ? d : () => {}; },
+      effect: (fn) => {
+        const d = fn();
+        return typeof d === "function" ? d : () => {};
+      },
     };
     // setSource 应该在 register 成功后被设为 () => scope.get()，但 disposer 内
     // isUnloading=true 时不会切回 entry。此处纯验证不抛错。
@@ -299,9 +379,18 @@ describe("5b) fiber.state=disposed → 同 unloading 分支", () => {
     const routes = [];
     const ctx = {
       logger: { warn: () => {} },
-      webServer: { register(route) { routes.push(route); return () => {}; } },
+      webServer: {
+        register(route) {
+          routes.push(route);
+          return () => {};
+        },
+      },
       on: onStub,
-      llm: { listProviders() { return []; } },
+      llm: {
+        listProviders() {
+          return [];
+        },
+      },
       fiber: { state: "disposed" },
       inject: (deps, cb) => {
         const scope = { get: () => ({}), watch: (fn) => {} };
@@ -314,7 +403,10 @@ describe("5b) fiber.state=disposed → 同 unloading 分支", () => {
           },
         });
       },
-      effect: (fn) => { const d = fn(); return typeof d === "function" ? d : () => {}; },
+      effect: (fn) => {
+        const d = fn();
+        return typeof d === "function" ? d : () => {};
+      },
     };
     await apply(ctx, { apiKey: "sk-test", apiEndpoint: "http://127.0.0.1:9" });
     applied = true;
@@ -334,7 +426,9 @@ describe("6a) 合法用户适配器文件 → onReload ok:true", () => {
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-hr-"));
     const goodFile = join(dir, "good.mjs");
-    writeFileSync(goodFile, `
+    writeFileSync(
+      goodFile,
+      `
 export const version = 2;
 export const name = "hr-test";
 export const label = "HR Test";
@@ -342,22 +436,40 @@ export const providers = ["${OPENCODE_GO_PROVIDER}"];
 export async function fetchData() { return { v: 1 }; }
 export function formatCapsule() { return "<span>ok</span>"; }
 export function formatPanel() { return "<p>p</p>"; }
-`, "utf8");
+`,
+      "utf8",
+    );
 
     const routes = [];
     const ctx = {
       logger: { warn: () => {} },
-      webServer: { register(route) { routes.push(route); return () => {}; } },
+      webServer: {
+        register(route) {
+          routes.push(route);
+          return () => {};
+        },
+      },
       on: onStub,
-      llm: { listProviders() { return []; } },
+      llm: {
+        listProviders() {
+          return [];
+        },
+      },
       fiber: { state: "active" },
-      inject: (deps, cb) => { cb({ settings: {} }); },
+      inject: (deps, cb) => {
+        cb({ settings: {} });
+      },
       effect: (fn) => {
         const d = fn();
         return typeof d === "function" ? d : () => {};
       },
     };
-    await apply(ctx, { adapter: goodFile, autoReload: true, apiKey: "sk-test", apiEndpoint: "http://127.0.0.1:9" });
+    await apply(ctx, {
+      adapter: goodFile,
+      autoReload: true,
+      apiKey: "sk-test",
+      apiEndpoint: "http://127.0.0.1:9",
+    });
     applied = true;
   });
 
@@ -378,17 +490,33 @@ describe("6b) 非法适配器文件 → onReload ok:false", () => {
     const routes = [];
     const ctx = {
       logger: { warn: () => {} },
-      webServer: { register(route) { routes.push(route); return () => {}; } },
+      webServer: {
+        register(route) {
+          routes.push(route);
+          return () => {};
+        },
+      },
       on: onStub,
-      llm: { listProviders() { return []; } },
+      llm: {
+        listProviders() {
+          return [];
+        },
+      },
       fiber: { state: "active" },
-      inject: (deps, cb) => { cb({ settings: {} }); },
+      inject: (deps, cb) => {
+        cb({ settings: {} });
+      },
       effect: (fn) => {
         const d = fn();
         return typeof d === "function" ? d : () => {};
       },
     };
-    await apply(ctx, { adapter: badFile, autoReload: true, apiKey: "sk-test", apiEndpoint: "http://127.0.0.1:9" });
+    await apply(ctx, {
+      adapter: badFile,
+      autoReload: true,
+      apiKey: "sk-test",
+      apiEndpoint: "http://127.0.0.1:9",
+    });
     applied = true;
   });
 
@@ -405,7 +533,9 @@ describe("7) dispose 清理全分支（含 hotReloaders + sseClients）", () => 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-dispose-"));
     const goodFile = join(dir, "dispose.mjs");
-    writeFileSync(goodFile, `
+    writeFileSync(
+      goodFile,
+      `
 export const version = 2;
 export const name = "dispose-test";
 export const label = "Dispose";
@@ -413,7 +543,9 @@ export const providers = ["${OPENCODE_GO_PROVIDER}"];
 export async function fetchData() { return { v: 1 }; }
 export function formatCapsule() { return "<span>ok</span>"; }
 export function formatPanel() { return "<p>p</p>"; }
-`, "utf8");
+`,
+      "utf8",
+    );
 
     const disposers = [];
     const errors = [];
@@ -425,19 +557,33 @@ export function formatPanel() { return "<p>p</p>"; }
     const ctx = {
       logger: { warn: () => {} },
       webServer: {
-        register(route) { routes.push(route); return () => {}; },
+        register(route) {
+          routes.push(route);
+          return () => {};
+        },
       },
       on: onStub,
-      llm: { listProviders() { return []; } },
+      llm: {
+        listProviders() {
+          return [];
+        },
+      },
       fiber: { state: "active" },
-      inject: (deps, cb) => { cb({ settings: {} }); },
+      inject: (deps, cb) => {
+        cb({ settings: {} });
+      },
       effect: (fn) => {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return d;
       },
     };
-    await apply(ctx, { adapter: goodFile, autoReload: true, apiKey: "sk-test", apiEndpoint: "http://127.0.0.1:9" });
+    await apply(ctx, {
+      adapter: goodFile,
+      autoReload: true,
+      apiKey: "sk-test",
+      apiEndpoint: "http://127.0.0.1:9",
+    });
 
     // 订阅 SSE（通过 events 路由 handler 添加 SSE 客户端）
     evRoute = routes.find((r) => r.path === ROUTES.events);
@@ -445,7 +591,9 @@ export function formatPanel() { return "<p>p</p>"; }
     evRoute?.handler(fakeReq({ method: "GET" }), {
       writeHead: (code, headers) => {},
       write: (chunk) => {},
-      on: (evt, cb) => { if (evt === "close") sseRes = { close: cb }; },
+      on: (evt, cb) => {
+        if (evt === "close") sseRes = { close: cb };
+      },
     });
 
     // 执行所有 disposer（包括内层 ctx.effect 的 disposer）
@@ -474,18 +622,33 @@ describe("8) 确保 warmupTimer 被清理（disposer 中）", () => {
     const routes = [];
     const ctx = {
       logger: { warn: () => {} },
-      webServer: { register(route) { routes.push(route); return () => {}; } },
+      webServer: {
+        register(route) {
+          routes.push(route);
+          return () => {};
+        },
+      },
       on: onStub,
-      llm: { listProviders() { return []; } },
+      llm: {
+        listProviders() {
+          return [];
+        },
+      },
       fiber: { state: "active" },
-      inject: (deps, cb) => { cb({ settings: {} }); },
+      inject: (deps, cb) => {
+        cb({ settings: {} });
+      },
       effect: (fn) => {
         const d = fn();
         if (typeof d === "function") disposers.push(d);
         return typeof d === "function" ? d : () => {};
       },
     };
-    await apply(ctx, { warmupIntervalMs: 60000, apiKey: "sk-test", apiEndpoint: "http://127.0.0.1:9" });
+    await apply(ctx, {
+      warmupIntervalMs: 60000,
+      apiKey: "sk-test",
+      apiEndpoint: "http://127.0.0.1:9",
+    });
     for (const d of disposers) {
       if (typeof d === "function") d();
     }
@@ -525,7 +688,9 @@ describe("#301：apply 内部恢复隔离坏状态且诊断单次可见", () => 
       const { ctx, routes, disposers } = makeCtx();
       const warnings: string[] = [];
       const originalWarn = console.warn;
-      console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(" ")); };
+      console.warn = (...args: unknown[]) => {
+        warnings.push(args.map(String).join(" "));
+      };
       try {
         await apply(ctx, {
           autoReload: false,
@@ -537,19 +702,34 @@ describe("#301：apply 内部恢复隔离坏状态且诊断单次可见", () => 
         console.warn = originalWarn;
       }
 
-      const health = routes.find((route) => route.path === ROUTES.health) as { handler: (req: unknown, res: unknown) => void };
+      const health = routes.find((route) => route.path === ROUTES.health) as {
+        handler: (req: unknown, res: unknown) => void;
+      };
       const response = makeRes();
       health.handler(fakeReq(), response);
-      const errors = (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> }).errors ?? [];
+      const errors =
+        (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> })
+          .errors ?? [];
       warnCounts.push(warnings.filter((line) => line.includes(entry.marker)).length);
-      healthHit.push(errors.some((error) => error.key === "adapter-state" && error.message.includes(entry.marker)));
+      healthHit.push(
+        errors.some(
+          (error) => error.key === "adapter-state" && error.message.includes(entry.marker),
+        ),
+      );
       fileMoved.push(existsSync(stateFile));
       const backup = readdirSync(historyDir)
         .filter((name) => name.startsWith("adapter-state.json.bak-"))
-        .find((name) => !backups.includes(name) && readFileSync(join(historyDir, name), "utf8") === entry.raw);
+        .find(
+          (name) =>
+            !backups.includes(name) && readFileSync(join(historyDir, name), "utf8") === entry.raw,
+        );
       backupFound.push(backup !== undefined);
       backups.push(backup ?? "missing");
-      for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }
+      for (const dispose of [...disposers].reverse()) {
+        try {
+          dispose();
+        } catch {}
+      }
     }
     for (const [index, backup] of backups.entries()) {
       backupRaw.push(readFileSync(join(historyDir, backup), "utf8") === cases[index]?.raw);
@@ -597,7 +777,9 @@ describe("#301：恢复缺失候选可见 + 写入失败可见且串行链可恢
     const { ctx, routes, disposers } = makeCtx();
     const restoreWarnings: string[] = [];
     const originalWarn = console.warn;
-    console.warn = (...args: unknown[]) => { restoreWarnings.push(args.map(String).join(" ")); };
+    console.warn = (...args: unknown[]) => {
+      restoreWarnings.push(args.map(String).join(" "));
+    };
     try {
       await apply(ctx, {
         autoReload: false,
@@ -608,29 +790,52 @@ describe("#301：恢复缺失候选可见 + 写入失败可见且串行链可恢
     } finally {
       console.warn = originalWarn;
     }
-    const health = routes.find((route) => route.path === ROUTES.health) as { handler: (req: unknown, res: unknown) => void };
-    const select = routes.find((route) => route.path === ROUTES.select) as { handler: (req: unknown, res: unknown) => Promise<void> };
+    const health = routes.find((route) => route.path === ROUTES.health) as {
+      handler: (req: unknown, res: unknown) => void;
+    };
+    const select = routes.find((route) => route.path === ROUTES.select) as {
+      handler: (req: unknown, res: unknown) => Promise<void>;
+    };
     const healthErrors = (): Array<{ key: string; message: string }> => {
       const response = makeRes();
       health.handler(fakeReq(), response);
-      return (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> }).errors ?? [];
+      return (
+        (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> })
+          .errors ?? []
+      );
     };
 
-    healthDiagHit = healthErrors().some((entry) =>
-      entry.key === "adapter-state" && entry.message.includes("missing-adapter") && entry.message.includes("不在当前候选"));
-    warnOnce = restoreWarnings.filter((line) =>
-      line.includes("missing-adapter") && line.includes("不在当前候选")).length;
+    healthDiagHit = healthErrors().some(
+      (entry) =>
+        entry.key === "adapter-state" &&
+        entry.message.includes("missing-adapter") &&
+        entry.message.includes("不在当前候选"),
+    );
+    warnOnce = restoreWarnings.filter(
+      (line) => line.includes("missing-adapter") && line.includes("不在当前候选"),
+    ).length;
 
     // 成功路径：发布物实际调度链写出合法 JSON、无 tmp 残留，POSIX 权限为 0600。
     let response = makeRes();
-    await select.handler(fakeReq({
-      method: "POST",
-      body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: OPENCODE_GO_ADAPTER_ID }),
-    }), response);
+    await select.handler(
+      fakeReq({
+        method: "POST",
+        body: JSON.stringify({
+          provider: OPENCODE_GO_PROVIDER,
+          adapterName: OPENCODE_GO_ADAPTER_ID,
+        }),
+      }),
+      response,
+    );
     persisted = await pollUntil(() => {
       try {
-        return JSON.parse(readFileSync(stateFile, "utf8"))[OPENCODE_GO_PROVIDER] === OPENCODE_GO_ADAPTER_ID;
-      } catch { return false; }
+        return (
+          JSON.parse(readFileSync(stateFile, "utf8"))[OPENCODE_GO_PROVIDER] ===
+          OPENCODE_GO_ADAPTER_ID
+        );
+      } catch {
+        return false;
+      }
     });
     tmpLeft = readdirSync(historyDir).filter((name) => name.endsWith(".tmp"));
     posixMode = process.platform !== "win32" ? statSync(stateFile).mode & 0o777 : undefined;
@@ -640,16 +845,27 @@ describe("#301：恢复缺失候选可见 + 写入失败可见且串行链可恢
     response = makeRes();
     const writeErrors: string[] = [];
     const originalError = console.error;
-    console.error = (...args: unknown[]) => { writeErrors.push(args.map(String).join(" ")); };
+    console.error = (...args: unknown[]) => {
+      writeErrors.push(args.map(String).join(" "));
+    };
     surfaced = false;
     try {
-      await select.handler(fakeReq({
-        method: "POST",
-        body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: OPENCODE_GO_ADAPTER_ID }),
-      }), response);
+      await select.handler(
+        fakeReq({
+          method: "POST",
+          body: JSON.stringify({
+            provider: OPENCODE_GO_PROVIDER,
+            adapterName: OPENCODE_GO_ADAPTER_ID,
+          }),
+        }),
+        response,
+      );
       selectCode = response._code();
-      surfaced = await pollUntil(() => healthErrors().some((entry) =>
-        entry.key === "adapter-state" && entry.message.includes("启用选择落盘失败")));
+      surfaced = await pollUntil(() =>
+        healthErrors().some(
+          (entry) => entry.key === "adapter-state" && entry.message.includes("启用选择落盘失败"),
+        ),
+      );
     } finally {
       console.error = originalError;
     }
@@ -657,17 +873,32 @@ describe("#301：恢复缺失候选可见 + 写入失败可见且串行链可恢
 
     rmSync(stateFile, { recursive: true, force: true });
     response = makeRes();
-    await select.handler(fakeReq({
-      method: "POST",
-      body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: OPENCODE_GO_ADAPTER_ID }),
-    }), response);
+    await select.handler(
+      fakeReq({
+        method: "POST",
+        body: JSON.stringify({
+          provider: OPENCODE_GO_PROVIDER,
+          adapterName: OPENCODE_GO_ADAPTER_ID,
+        }),
+      }),
+      response,
+    );
     recovered = await pollUntil(() => {
       try {
-        return JSON.parse(readFileSync(stateFile, "utf8"))[OPENCODE_GO_PROVIDER] === OPENCODE_GO_ADAPTER_ID;
-      } catch { return false; }
+        return (
+          JSON.parse(readFileSync(stateFile, "utf8"))[OPENCODE_GO_PROVIDER] ===
+          OPENCODE_GO_ADAPTER_ID
+        );
+      } catch {
+        return false;
+      }
     });
 
-    for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }
+    for (const dispose of [...disposers].reverse()) {
+      try {
+        dispose();
+      } catch {}
+    }
   });
 
   it("启动恢复 select(false) 进入 health 诊断，不再静默回退默认启用者", () => {
@@ -709,110 +940,140 @@ describe("#301：恢复缺失候选可见 + 写入失败可见且串行链可恢
 
 // ---------------------------------------------------------------- #301：rename 已提交后的目录 fsync 失败仅报耐久性告警
 
-describe.skipIf(process.platform === "win32")("#301：rename 已提交后的目录 fsync 失败仅报耐久性告警", () => {
-  let selectCode, directorySyncAttempts, committed, surfaced, warnOnce, writeErrList, healthPolluted;
+describe.skipIf(process.platform === "win32")(
+  "#301：rename 已提交后的目录 fsync 失败仅报耐久性告警",
+  () => {
+    let selectCode,
+      directorySyncAttempts,
+      committed,
+      surfaced,
+      warnOnce,
+      writeErrList,
+      healthPolluted;
 
-  beforeAll(async () => {
-    const dir = mkdtempSync(join(tmpdir(), "dou-state-301-post-rename-"));
-    const historyDir = join(dir, "history");
-    const stateFile = adapterStateFile(historyDir);
-    const { ctx, routes, disposers } = makeCtx();
-    await apply(ctx, {
-      autoReload: false,
-      apiKey: "sk-test",
-      apiEndpoint: "http://127.0.0.1:9",
-      historyDir,
+    beforeAll(async () => {
+      const dir = mkdtempSync(join(tmpdir(), "dou-state-301-post-rename-"));
+      const historyDir = join(dir, "history");
+      const stateFile = adapterStateFile(historyDir);
+      const { ctx, routes, disposers } = makeCtx();
+      await apply(ctx, {
+        autoReload: false,
+        apiKey: "sk-test",
+        apiEndpoint: "http://127.0.0.1:9",
+        historyDir,
+      });
+
+      const health = routes.find((route) => route.path === ROUTES.health) as {
+        handler: (req: unknown, res: unknown) => void;
+      };
+      const select = routes.find((route) => route.path === ROUTES.select) as {
+        handler: (req: unknown, res: unknown) => Promise<void>;
+      };
+      const healthErrors = (): Array<{ key: string; message: string }> => {
+        const response = makeRes();
+        health.handler(fakeReq(), response);
+        return (
+          (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> })
+            .errors ?? []
+        );
+      };
+
+      const originalOpen = fs.promises.open;
+      directorySyncAttempts = 0;
+      fs.promises.open = async (path, flags, ...rest) => {
+        if (String(path) === historyDir && flags === "r") {
+          directorySyncAttempts += 1;
+          const error = new Error(
+            "simulated parent directory fsync failure",
+          ) as NodeJS.ErrnoException;
+          error.code = "EIO";
+          throw error;
+        }
+        return originalOpen(path, flags, ...rest);
+      };
+      syncBuiltinESMExports();
+
+      const warnings: string[] = [];
+      const writeErrors: string[] = [];
+      const originalWarn = console.warn;
+      const originalError = console.error;
+      console.warn = (...args: unknown[]) => {
+        warnings.push(args.map(String).join(" "));
+      };
+      console.error = (...args: unknown[]) => {
+        writeErrors.push(args.map(String).join(" "));
+      };
+      let response = makeRes();
+      surfaced = false;
+      committed = false;
+      try {
+        await select.handler(
+          fakeReq({
+            method: "POST",
+            body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: null }),
+          }),
+          response,
+        );
+        selectCode = response._code();
+        surfaced = await pollUntil(() =>
+          healthErrors().some(
+            (entry) => entry.key === "adapter-state" && entry.message.includes("耐久性未完全确认"),
+          ),
+        );
+        committed = await pollUntil(() => {
+          try {
+            return JSON.parse(readFileSync(stateFile, "utf8"))[OPENCODE_GO_PROVIDER] === null;
+          } catch {
+            return false;
+          }
+        });
+      } finally {
+        console.warn = originalWarn;
+        console.error = originalError;
+        fs.promises.open = originalOpen;
+        syncBuiltinESMExports();
+      }
+
+      warnOnce = warnings.filter((line) => line.includes("耐久性未完全确认")).length;
+      writeErrList = writeErrors.filter((line) => line.includes("启用选择落盘失败"));
+      healthPolluted = healthErrors().some((entry) => entry.message.includes("启用选择落盘失败"));
+
+      for (const dispose of [...disposers].reverse()) {
+        try {
+          dispose();
+        } catch {}
+      }
     });
 
-    const health = routes.find((route) => route.path === ROUTES.health) as {
-      handler: (req: unknown, res: unknown) => void;
-    };
-    const select = routes.find((route) => route.path === ROUTES.select) as {
-      handler: (req: unknown, res: unknown) => Promise<void>;
-    };
-    const healthErrors = (): Array<{ key: string; message: string }> => {
-      const response = makeRes();
-      health.handler(fakeReq(), response);
-      return (JSON.parse(response._body()) as { errors?: Array<{ key: string; message: string }> }).errors ?? [];
-    };
+    it("内存中的显式停用仍成功响应", () => {
+      expect(selectCode).toBe(200);
+    });
 
-    const originalOpen = fs.promises.open;
-    directorySyncAttempts = 0;
-    fs.promises.open = async (path, flags, ...rest) => {
-      if (String(path) === historyDir && flags === "r") {
-        directorySyncAttempts += 1;
-        const error = new Error("simulated parent directory fsync failure") as NodeJS.ErrnoException;
-        error.code = "EIO";
-        throw error;
-      }
-      return originalOpen(path, flags, ...rest);
-    };
-    syncBuiltinESMExports();
+    it("故障注入精确命中 rename 后的父目录 fsync", () => {
+      expect(directorySyncAttempts).toBe(1);
+    });
 
-    const warnings: string[] = [];
-    const writeErrors: string[] = [];
-    const originalWarn = console.warn;
-    const originalError = console.error;
-    console.warn = (...args: unknown[]) => { warnings.push(args.map(String).join(" ")); };
-    console.error = (...args: unknown[]) => { writeErrors.push(args.map(String).join(" ")); };
-    let response = makeRes();
-    surfaced = false;
-    committed = false;
-    try {
-      await select.handler(fakeReq({
-        method: "POST",
-        body: JSON.stringify({ provider: OPENCODE_GO_PROVIDER, adapterName: null }),
-      }), response);
-      selectCode = response._code();
-      surfaced = await pollUntil(() => healthErrors().some((entry) =>
-        entry.key === "adapter-state" && entry.message.includes("耐久性未完全确认")));
-      committed = await pollUntil(() => {
-        try {
-          return JSON.parse(readFileSync(stateFile, "utf8"))[OPENCODE_GO_PROVIDER] === null;
-        } catch { return false; }
-      });
-    } finally {
-      console.warn = originalWarn;
-      console.error = originalError;
-      fs.promises.open = originalOpen;
-      syncBuiltinESMExports();
-    }
+    it("目录 fsync 失败时原子 rename 的新状态仍已提交", () => {
+      expect(committed).toBe(true);
+    });
 
-    warnOnce = warnings.filter((line) => line.includes("耐久性未完全确认")).length;
-    writeErrList = writeErrors.filter((line) => line.includes("启用选择落盘失败"));
-    healthPolluted = healthErrors().some((entry) => entry.message.includes("启用选择落盘失败"));
+    it("post-commit 失败进入 health 的独立耐久性诊断", () => {
+      expect(surfaced).toBe(true);
+    });
 
-    for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }
-  });
+    it("post-commit 失败恰好输出一次 console.warn", () => {
+      expect(warnOnce).toBe(1);
+    });
 
-  it("内存中的显式停用仍成功响应", () => {
-    expect(selectCode).toBe(200);
-  });
+    it("post-commit 失败不误报 console.error 写入失败", () => {
+      expect(writeErrList).toEqual([]);
+    });
 
-  it("故障注入精确命中 rename 后的父目录 fsync", () => {
-    expect(directorySyncAttempts).toBe(1);
-  });
-
-  it("目录 fsync 失败时原子 rename 的新状态仍已提交", () => {
-    expect(committed).toBe(true);
-  });
-
-  it("post-commit 失败进入 health 的独立耐久性诊断", () => {
-    expect(surfaced).toBe(true);
-  });
-
-  it("post-commit 失败恰好输出一次 console.warn", () => {
-    expect(warnOnce).toBe(1);
-  });
-
-  it("post-commit 失败不误报 console.error 写入失败", () => {
-    expect(writeErrList).toEqual([]);
-  });
-
-  it("post-commit 失败不污染 health 为写入失败", () => {
-    expect(healthPolluted).toBe(false);
-  });
-});
+    it("post-commit 失败不污染 health 为写入失败", () => {
+      expect(healthPolluted).toBe(false);
+    });
+  },
+);
 
 // ---------------------------------------------------------------- stats/history 路由围栏与数据面
 
@@ -825,8 +1086,10 @@ describe("stats/history 路由围栏与数据面", () => {
     writeFileSync(goodFile, adapterMjs("stats-adp"), "utf8");
     const { ctx, routes } = makeCtx();
     await apply(ctx, {
-      adapter: goodFile, autoReload: false,
-      apiKey: "sk", apiEndpoint: "http://127.0.0.1:9",
+      adapter: goodFile,
+      autoReload: false,
+      apiKey: "sk",
+      apiEndpoint: "http://127.0.0.1:9",
       historyDir: join(dir, "hist"),
     });
 
@@ -915,7 +1178,9 @@ describe("getStats：跨 provider 并行 / 锁内二次校验 / 未配置", () =
     //   提供「全程仅一次真实取数」的证据载体；
     // - fast：60ms 延迟 + 起止时间戳写 globalThis 探针——提供跨 provider 并行的窗口证据。
     const slowFile = join(dir, "slow.mjs");
-    writeFileSync(slowFile, `
+    writeFileSync(
+      slowFile,
+      `
 export const version = ${ADAPTER_CONTRACT_VERSION};
 export const name = "slow-adp";
 export const providers = ["prov-slow"];
@@ -930,9 +1195,13 @@ export async function fetchData() {
 }
 export function formatCapsule(input) { return "<span>" + input.data.v + "</span>"; }
 export function formatPanel() { return "<p>s</p>"; }
-`, "utf8");
+`,
+      "utf8",
+    );
     const fastFile = join(dir, "fast.mjs");
-    writeFileSync(fastFile, `
+    writeFileSync(
+      fastFile,
+      `
 export const version = ${ADAPTER_CONTRACT_VERSION};
 export const name = "fast-adp";
 export const providers = ["prov-fast"];
@@ -945,26 +1214,37 @@ export async function fetchData() {
 }
 export function formatCapsule(input) { return "<span>" + input.data.v + "</span>"; }
 export function formatPanel() { return "<p>f</p>"; }
-`, "utf8");
+`,
+      "utf8",
+    );
     // 清单写入 historyRoot（本块显式传了 historyDir → user-adapters.json 从那里读取）
     mkdirSync(join(dir, "hist"), { recursive: true });
-    writeFileSync(userAdaptersFile(join(dir, "hist")), JSON.stringify({
-      adapters: [
-        { id: "slow-adp", label: "Slow", providers: ["prov-slow"], file: slowFile },
-        { id: "fast-adp", label: "Fast", providers: ["prov-fast"], file: fastFile },
-      ],
-    }), "utf8");
+    writeFileSync(
+      userAdaptersFile(join(dir, "hist")),
+      JSON.stringify({
+        adapters: [
+          { id: "slow-adp", label: "Slow", providers: ["prov-slow"], file: slowFile },
+          { id: "fast-adp", label: "Fast", providers: ["prov-fast"], file: fastFile },
+        ],
+      }),
+      "utf8",
+    );
     delete globalThis.__pp120;
 
     try {
       const { ctx, routes, disposers } = makeCtx();
       await apply(ctx, {
         autoReload: false,
-        apiKey: "sk", apiEndpoint: "http://127.0.0.1:9",
+        apiKey: "sk",
+        apiEndpoint: "http://127.0.0.1:9",
         historyDir: join(dir, "hist"),
       });
-      const stats = routeOf(routes, ROUTES.stats) as { handler: (req: unknown, res: unknown) => Promise<void> };
-      const selectR = routeOf(routes, ROUTES.select) as { handler: (req: unknown, res: unknown) => Promise<void> };
+      const stats = routeOf(routes, ROUTES.stats) as {
+        handler: (req: unknown, res: unknown) => Promise<void>;
+      };
+      const selectR = routeOf(routes, ROUTES.select) as {
+        handler: (req: unknown, res: unknown) => Promise<void>;
+      };
       const askStats = async (provider: string): Promise<Record<string, unknown>> => {
         const r = makeRes();
         await stats.handler(fakeReq({ url: `${ROUTES.stats}?provider=${provider}` }), r);
@@ -983,7 +1263,12 @@ export function formatPanel() { return "<p>f</p>"; }
       bSlow = both[1];
 
       // 场景1 断言：slow/fast 取数时间窗重叠 = 无全局队头阻塞
-      const probe = (globalThis.__pp120 ?? []) as Array<{ n: string; t: number; k: string; seq?: number }>;
+      const probe = (globalThis.__pp120 ?? []) as Array<{
+        n: string;
+        t: number;
+        k: string;
+        seq?: number;
+      }>;
       const win = (n: string): { s: number; e: number } => ({
         s: probe.find((e) => e.n === n && e.k === "s")?.t ?? Number.NaN,
         e: probe.find((e) => e.n === n && e.k === "e")?.t ?? Number.NaN,
@@ -1001,13 +1286,20 @@ export function formatPanel() { return "<p>f</p>"; }
       landed = await pollUntil(() => existsSync(histDir) && readdirSync(histDir).length > 0);
 
       // 场景4 no-enabled-adapter：候选存在但被显式清空（select 清空路径，clearing 不预热）
-      await selectR.handler(fakeReq({
-        method: "POST",
-        body: JSON.stringify({ provider: "prov-slow", adapterName: null }),
-      }), makeRes());
+      await selectR.handler(
+        fakeReq({
+          method: "POST",
+          body: JSON.stringify({ provider: "prov-slow", adapterName: null }),
+        }),
+        makeRes(),
+      );
       bNoEn = await askStats("prov-slow");
 
-      for (const d of [...disposers].reverse()) { try { d(); } catch {} }
+      for (const d of [...disposers].reverse()) {
+        try {
+          d();
+        } catch {}
+      }
     } finally {
       if (savedDshHome === undefined) delete process.env.DSH_HOME;
       else process.env.DSH_HOME = savedDshHome;
@@ -1101,7 +1393,10 @@ describe("fetchWithTimeout 边界（#150 二阶段）", () => {
       // 默认参数形态：省略 timeoutMs 与 init 仍完成调用
       // （与 fast/slow 同理用下界断言：飞行中的外部异步可能泄漏进窗口调用全局 fetch）
       let defCalls = 0;
-      set(async () => { defCalls += 1; return { status: 204 }; });
+      set(async () => {
+        defCalls += 1;
+        return { status: 204 };
+      });
       await fetchWithTimeout("https://gw.test/def");
       defCallsAtLeast1 = defCalls >= 1;
     });
@@ -1156,14 +1451,23 @@ describe("#534：通知类型注入（可选 notifier 探测 + 动态 kind 注�
     process.env.DSH_HOME = join(dir, "dshhome");
     mkdirSync(process.env.DSH_HOME, { recursive: true });
 
-    const baseCfg = { autoReload: false, apiKey: "sk-test", apiEndpoint: "http://127.0.0.1:9", historyDir };
+    const baseCfg = {
+      autoReload: false,
+      apiKey: "sk-test",
+      apiEndpoint: "http://127.0.0.1:9",
+      historyDir,
+    };
 
     // 1) ctx 无 get（fake ctx 未提供探测面）：降级不注册、apply 正常挂载不抛
     {
       const { ctx, routes, disposers } = makeCtx();
       await apply(ctx, baseCfg);
       noNotifierMounted = routes.some((r) => r.path === ROUTES.health);
-      for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }
+      for (const dispose of [...disposers].reverse()) {
+        try {
+          dispose();
+        } catch {}
+      }
     }
 
     // 2) ctx.get 命中 wingsky.notifier（notifier 已加载）：挂载即注册 provider-usage:report
@@ -1174,7 +1478,11 @@ describe("#534：通知类型注入（可选 notifier 探测 + 动态 kind 注�
       mountedKinds = kinds.length;
       mountedKindsId = kinds[0]?.id;
       mountedKindsLabel = kinds[0]?.label;
-      for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }
+      for (const dispose of [...disposers].reverse()) {
+        try {
+          dispose();
+        } catch {}
+      }
     }
 
     // 3) internal/service 事件补注册：notifier 后加载/HMR 重建后 kindRegistry 为空，
@@ -1192,7 +1500,11 @@ describe("#534：通知类型注入（可选 notifier 探测 + 动态 kind 注�
       }
       postEventKindCount = kinds.length;
       reRegisteredId = kinds[1]?.id;
-      for (const dispose of [...disposers].reverse()) { try { dispose(); } catch {} }
+      for (const dispose of [...disposers].reverse()) {
+        try {
+          dispose();
+        } catch {}
+      }
     }
   });
 
@@ -1233,4 +1545,3 @@ describe("#534：通知类型注入（可选 notifier 探测 + 动态 kind 注�
     expect(reRegisteredId).toBe("provider-usage:report");
   });
 });
-

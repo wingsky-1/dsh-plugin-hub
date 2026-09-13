@@ -70,7 +70,7 @@ export interface CapsuleInput {
   /** fetchData 返回的原始数据。 */
   data: Record<string, unknown>;
   /** 数据状态：fresh=新取，cached=缓存命中，stale=降级陈旧。 */
-  status: 'fresh' | 'cached' | 'stale';
+  status: "fresh" | "cached" | "stale";
   /** status=stale 时的错误信息。 */
   error?: string;
   /** HTML 转义助手：将字符串中的 & < > " ' 转义为实体。 */
@@ -116,52 +116,57 @@ export interface UsageStatsAdapter {
 
 /** 将字符串中的 & < > " ' 转义为 HTML 实体。 */
 export function esc(s: unknown): string {
-  if (s === null || s === undefined) return '';
-  const str = typeof s === 'string' ? s : String(s);
+  if (s === null || s === undefined) return "";
+  const str = typeof s === "string" ? s : String(s);
   return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 // ------------------------------------------------------------------ 校验
 
 /** 校验 v2 适配器结构。 */
 export function isUsageStatsAdapter(v: unknown): v is UsageStatsAdapter {
-  if (typeof v !== 'object' || v === null) return false;
+  if (typeof v !== "object" || v === null) return false;
   const a = v as Record<string, unknown>;
   return (
     a.version === ADAPTER_CONTRACT_VERSION &&
-    typeof a.name === 'string' && (a.name as string).length >= 2 &&
+    typeof a.name === "string" &&
+    (a.name as string).length >= 2 &&
     /^[A-Za-z0-9_-]{2,64}$/.test(a.name as string) &&
     Array.isArray(a.providers) &&
     a.providers.length > 0 &&
-    a.providers.every((p: unknown) => typeof p === 'string' && p.length > 0) &&
-    typeof a.fetchData === 'function' &&
-    typeof a.formatCapsule === 'function' &&
-    typeof a.formatPanel === 'function'
+    a.providers.every((p: unknown) => typeof p === "string" && p.length > 0) &&
+    typeof a.fetchData === "function" &&
+    typeof a.formatCapsule === "function" &&
+    typeof a.formatPanel === "function"
   );
 }
 
 /** v2 适配器形状问题明细（通过校验返回 null）。 */
 export function describeUsageStatsAdapterShape(v: unknown): string | null {
-  if (typeof v !== 'object' || v === null) return `导出不是对象（${v === null ? 'null' : typeof v}）`;
+  if (typeof v !== "object" || v === null)
+    return `导出不是对象（${v === null ? "null" : typeof v}）`;
   const a = v as Record<string, unknown>;
   const missing: string[] = [];
-  if (a.version !== ADAPTER_CONTRACT_VERSION) missing.push(`version 必须 === ${ADAPTER_CONTRACT_VERSION}（实际 ${String(a.version)}）`);
-  if (typeof a.name !== 'string' || !/^[A-Za-z0-9_-]{2,64}$/.test(a.name as string)) missing.push('name（2-64 位字母数字下划线连字符）');
-  if (!Array.isArray(a.providers) || a.providers.length === 0) missing.push('providers（非空字符串数组）');
-  if (typeof a.fetchData !== 'function') missing.push('fetchData（函数）');
-  if (typeof a.formatCapsule !== 'function') missing.push('formatCapsule（函数）');
-  if (typeof a.formatPanel !== 'function') missing.push('formatPanel（函数）');
-  return missing.length > 0 ? missing.join('、') : null;
+  if (a.version !== ADAPTER_CONTRACT_VERSION)
+    missing.push(`version 必须 === ${ADAPTER_CONTRACT_VERSION}（实际 ${String(a.version)}）`);
+  if (typeof a.name !== "string" || !/^[A-Za-z0-9_-]{2,64}$/.test(a.name as string))
+    missing.push("name（2-64 位字母数字下划线连字符）");
+  if (!Array.isArray(a.providers) || a.providers.length === 0)
+    missing.push("providers（非空字符串数组）");
+  if (typeof a.fetchData !== "function") missing.push("fetchData（函数）");
+  if (typeof a.formatCapsule !== "function") missing.push("formatCapsule（函数）");
+  if (typeof a.formatPanel !== "function") missing.push("formatPanel（函数）");
+  return missing.length > 0 ? missing.join("、") : null;
 }
 
 /** 路径安全段：只保留字母数字下划线连字符，防目录穿越。 */
 export function safeSegment(s: string): string {
-  return s.replace(/[^A-Za-z0-9._-]/g, '_') || 'unknown';
+  return s.replace(/[^A-Za-z0-9._-]/g, "_") || "unknown";
 }
 
 // ==================================================================
@@ -192,7 +197,7 @@ export interface ProviderUsage {
 }
 
 /** @deprecated 使用 v2 formatCapsule 返回的 HTML */
-export type SummaryLevel = 'ok' | 'warn' | 'err' | 'off';
+export type SummaryLevel = "ok" | "warn" | "err" | "off";
 
 /** @deprecated 使用 v2 formatCapsule */
 export interface ProviderSummary {
@@ -279,50 +284,59 @@ export interface DshUsageGlobal {
 }
 
 /** @deprecated */
-export const USAGE_GLOBAL_KEY = '__DSH_USAGE__';
+export const USAGE_GLOBAL_KEY = "__DSH_USAGE__";
 
 // ------------------------------------------------------------------ v1 校验（deprecated）
 
 /** @deprecated */
 export function isHostProviderAdapter(v: unknown): v is HostProviderAdapter {
-  if (typeof v !== 'object' || v === null) return false;
+  if (typeof v !== "object" || v === null) return false;
   const a = v as Record<string, unknown>;
   return (
     a.version === ADAPTER_CONTRACT_VERSION_V1 &&
-    typeof a.id === 'string' && (a.id as string).length > 0 &&
-    typeof a.label === 'string' && (a.label as string).length > 0 &&
+    typeof a.id === "string" &&
+    (a.id as string).length > 0 &&
+    typeof a.label === "string" &&
+    (a.label as string).length > 0 &&
     Array.isArray(a.providers) &&
     a.providers.length > 0 &&
-    a.providers.every((p: unknown) => typeof p === 'string' && p.length > 0) &&
-    typeof a.fetchUsage === 'function'
+    a.providers.every((p: unknown) => typeof p === "string" && p.length > 0) &&
+    typeof a.fetchUsage === "function"
   );
 }
 
 /** @deprecated */
 export function describeAdapterShape(v: unknown): string | null {
-  if (typeof v !== 'object' || v === null) return `导出不是对象（${v === null ? 'null' : typeof v}）`;
+  if (typeof v !== "object" || v === null)
+    return `导出不是对象（${v === null ? "null" : typeof v}）`;
   const a = v as Record<string, unknown>;
   const missing: string[] = [];
-  if (a.version !== ADAPTER_CONTRACT_VERSION_V1) missing.push(`version 必须 === ${ADAPTER_CONTRACT_VERSION_V1}（实际 ${String(a.version)}）`);
-  if (typeof a.id !== 'string' || (a.id as string).length === 0) missing.push('id（非空字符串）');
-  if (typeof a.label !== 'string' || (a.label as string).length === 0) missing.push('label（非空字符串）');
-  if (!Array.isArray(a.providers) || a.providers.length === 0 || !a.providers.every((p: unknown) => typeof p === 'string' && p.length > 0)) {
-    missing.push('providers（非空字符串数组）');
+  if (a.version !== ADAPTER_CONTRACT_VERSION_V1)
+    missing.push(`version 必须 === ${ADAPTER_CONTRACT_VERSION_V1}（实际 ${String(a.version)}）`);
+  if (typeof a.id !== "string" || (a.id as string).length === 0) missing.push("id（非空字符串）");
+  if (typeof a.label !== "string" || (a.label as string).length === 0)
+    missing.push("label（非空字符串）");
+  if (
+    !Array.isArray(a.providers) ||
+    a.providers.length === 0 ||
+    !a.providers.every((p: unknown) => typeof p === "string" && p.length > 0)
+  ) {
+    missing.push("providers（非空字符串数组）");
   }
-  if (typeof a.fetchUsage !== 'function') missing.push('fetchUsage（函数）');
-  return missing.length > 0 ? missing.join('、') : null;
+  if (typeof a.fetchUsage !== "function") missing.push("fetchUsage（函数）");
+  return missing.length > 0 ? missing.join("、") : null;
 }
 
 /** @deprecated */
 export function isClientProviderRenderer(v: unknown): v is ClientProviderRenderer {
-  if (typeof v !== 'object' || v === null) return false;
+  if (typeof v !== "object" || v === null) return false;
   const a = v as Record<string, unknown>;
   return (
     a.version === ADAPTER_CONTRACT_VERSION_V1 &&
     Array.isArray(a.providers) &&
     a.providers.length > 0 &&
-    a.providers.every((p: unknown) => typeof p === 'string' && p.length > 0) &&
-    typeof a.render === 'function'
+    a.providers.every((p: unknown) => typeof p === "string" && p.length > 0) &&
+    typeof a.render === "function"
   );
 }
 
@@ -332,7 +346,7 @@ export function isClientProviderRenderer(v: unknown): v is ClientProviderRendere
 export function usageError(
   provider: string,
   error: string | null,
-  label = '未知提供商',
+  label = "未知提供商",
   fetchedAt = Date.now(),
 ): ProviderUsage {
   return { ok: false, provider, label, fetchedAt, error };
@@ -350,23 +364,23 @@ export function usageOk(
 
 /** @deprecated */
 export function summarizeTextFromWindows(windows: UsageWindow[] | undefined): string {
-  if (!Array.isArray(windows) || windows.length === 0) return '';
+  if (!Array.isArray(windows) || windows.length === 0) return "";
   return windows
-    .map((w) => `${w.name} ${typeof w.percent === 'number' ? `${w.percent}%` : '--'}`)
-    .join(' · ');
+    .map((w) => `${w.name} ${typeof w.percent === "number" ? `${w.percent}%` : "--"}`)
+    .join(" · ");
 }
 
 /** @deprecated */
 export function levelFromWindows(windows: UsageWindow[] | undefined): SummaryLevel {
-  if (!Array.isArray(windows)) return 'off';
+  if (!Array.isArray(windows)) return "off";
   let worst: number | null = null;
   for (const w of windows) {
-    if (typeof w.percent === 'number' && (worst === null || w.percent > worst)) worst = w.percent;
+    if (typeof w.percent === "number" && (worst === null || w.percent > worst)) worst = w.percent;
   }
-  if (worst === null) return 'off';
-  if (worst >= 95) return 'err';
-  if (worst >= 80) return 'warn';
-  return 'ok';
+  if (worst === null) return "off";
+  if (worst >= 95) return "err";
+  if (worst >= 80) return "warn";
+  return "ok";
 }
 
 /** @deprecated */
@@ -375,10 +389,10 @@ export interface UsageAdapterSpec {
   id: string;
   label: string;
   providers: string[];
-  windows: Array<Omit<UsageWindow, 'percent'>>;
+  windows: Array<Omit<UsageWindow, "percent">>;
   fetchUsage(ctx: HostFetchContext): Promise<ProviderUsage>;
   summarizeText?(windows: UsageWindow[]): string;
-  retryPolicy?: HostProviderAdapter['retryPolicy'];
+  retryPolicy?: HostProviderAdapter["retryPolicy"];
 }
 
 /** @deprecated 使用 v2 直接实现 UsageStatsAdapter */
@@ -400,7 +414,7 @@ export function defineUsageAdapter(spec: UsageAdapterSpec): HostProviderAdapter 
       ...(w.resetPeriodMs !== undefined ? { resetPeriodMs: w.resetPeriodMs } : {}),
     }));
     const values = usage.windows.map((w) =>
-      typeof w.percent === 'number' && Number.isFinite(w.percent) ? w.percent : null,
+      typeof w.percent === "number" && Number.isFinite(w.percent) ? w.percent : null,
     );
     if (cols.length !== values.length) return null;
     return { cols, values };
@@ -409,14 +423,14 @@ export function defineUsageAdapter(spec: UsageAdapterSpec): HostProviderAdapter 
     const usage = ctx.usage ?? null;
     const windows = usage?.windows;
     const text =
-      typeof spec.summarizeText === 'function'
+      typeof spec.summarizeText === "function"
         ? spec.summarizeText(windows ?? [])
         : summarizeTextFromWindows(windows);
     return {
       ok: true,
       provider: ctx.provider,
       label: adapter.label,
-      text: text !== '' ? text : adapter.label,
+      text: text !== "" ? text : adapter.label,
       level: levelFromWindows(windows),
       hasAdapter: true,
       fetchedAt: Date.now(),

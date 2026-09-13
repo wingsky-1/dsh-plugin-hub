@@ -15,10 +15,7 @@
 console.error("EVAL-ORDER-TAG: SIGNAL-LOCK");
 import { afterAll, describe, expect, it } from "vitest";
 import { getEventListeners } from "node:events";
-import {
-  runV2Pipeline,
-  safeFetchData,
-} from "../../../src/apply/index.ts";
+import { runV2Pipeline, safeFetchData } from "../../../src/apply/index.ts";
 
 /** 构造满足 v2 契约的最小适配器（format 函数恒返回占位）。 */
 function mkAdapter(name, provider, fetchData) {
@@ -74,10 +71,11 @@ describe("硬性1：超时后底层 fetch 收到 abort", () => {
       config: {},
       staticPath: "",
       timeoutMs: 25,
-      fetchImpl: (_url, init) => new Promise((_res, rej) => {
-        seen.fromFetch = init.signal;
-        init.signal.addEventListener("abort", () => rej(new Error("aborted")), { once: true });
-      }),
+      fetchImpl: (_url, init) =>
+        new Promise((_res, rej) => {
+          seen.fromFetch = init.signal;
+          init.signal.addEventListener("abort", () => rej(new Error("aborted")), { once: true });
+        }),
     });
     return { r, seen };
   };
@@ -120,13 +118,28 @@ describe("硬性1：超时后底层 fetch 收到 abort", () => {
   // opencode-go 监听形态：fetchData 监听 ctx.signal 做补偿取消，超时后同样被触发
   const probeListenModeTimeout = async () => {
     let notified = false;
-    const adapter = mkAdapter("sig-listen", "p-sig-l", (ctx) => new Promise((_res, rej) => {
-      ctx.signal.addEventListener("abort", () => {
-        notified = true;
-        rej(new Error("aborted"));
-      }, { once: true });
-    }));
-    const r = await runV2Pipeline({ adapter, provider: "p-sig-l", config: {}, staticPath: "", timeoutMs: 25 });
+    const adapter = mkAdapter(
+      "sig-listen",
+      "p-sig-l",
+      (ctx) =>
+        new Promise((_res, rej) => {
+          ctx.signal.addEventListener(
+            "abort",
+            () => {
+              notified = true;
+              rej(new Error("aborted"));
+            },
+            { once: true },
+          );
+        }),
+    );
+    const r = await runV2Pipeline({
+      adapter,
+      provider: "p-sig-l",
+      config: {},
+      staticPath: "",
+      timeoutMs: 25,
+    });
     return { r, notified };
   };
 
@@ -143,11 +156,19 @@ describe("硬性1：超时后底层 fetch 收到 abort", () => {
 
 describe("硬性2：0 参 fetchData 兼容不受影响", () => {
   // 形参 0 个的 fetchData（旧版常见声明）：不读入参、不依赖 signal，走正常 fresh 通道
-  const zeroArg = function zero() { return Promise.resolve({ visits: 9 }); };
+  const zeroArg = function zero() {
+    return Promise.resolve({ visits: 9 });
+  };
 
   const probeZeroArg = async () => {
     const adapter = mkAdapter("zero-adp", "p-zero", zeroArg);
-    const r = await runV2Pipeline({ adapter, provider: "p-zero", config: {}, staticPath: "", timeoutMs: 1000 });
+    const r = await runV2Pipeline({
+      adapter,
+      provider: "p-zero",
+      config: {},
+      staticPath: "",
+      timeoutMs: 1000,
+    });
     return r;
   };
 
@@ -177,7 +198,13 @@ describe("硬性3：超时失败不当 fresh 落历史", () => {
   // ——上层 append 门控（result.ok && status==='fresh' && rawData!==undefined）绝不放行
   const probeSlowFailFrame = async () => {
     const adapter = mkAdapter("slow-adp", "p-hist", () => new Promise(() => {}));
-    return await runV2Pipeline({ adapter, provider: "p-hist", config: {}, staticPath: "", timeoutMs: 25 });
+    return await runV2Pipeline({
+      adapter,
+      provider: "p-hist",
+      config: {},
+      staticPath: "",
+      timeoutMs: 25,
+    });
   };
 
   it("超时帧 ok=false（门控条件1破）", async () => {
@@ -203,7 +230,13 @@ describe("硬性3：超时失败不当 fresh 落历史", () => {
   // 对照组：fresh 成功帧携带 rawData——证明「无 rawData」是超时路径特有而非通用形状
   const probeFastFreshFrame = async () => {
     const adapter = mkAdapter("fast-adp", "p-hist-ok", async () => ({ v: 1 }));
-    return await runV2Pipeline({ adapter, provider: "p-hist-ok", config: {}, staticPath: "", timeoutMs: 1000 });
+    return await runV2Pipeline({
+      adapter,
+      provider: "p-hist-ok",
+      config: {},
+      staticPath: "",
+      timeoutMs: 1000,
+    });
   };
 
   it("对照组 fresh", async () => {
@@ -288,9 +321,18 @@ describe("外部信号合流（手动级联，node>=20 兼容）", () => {
     };
     process.once("unhandledRejection", onUnhandled);
     try {
-      const pending = safeFetchData((_signal) => new Promise((_res, rej) => {
-        external.signal.addEventListener("abort", () => rej(new Error("AbortError: canceled")), { once: true });
-      }), 10_000, external.signal);
+      const pending = safeFetchData(
+        (_signal) =>
+          new Promise((_res, rej) => {
+            external.signal.addEventListener(
+              "abort",
+              () => rej(new Error("AbortError: canceled")),
+              { once: true },
+            );
+          }),
+        10_000,
+        external.signal,
+      );
       setTimeout(() => external.abort(), 5); // 触发用定时器：驱动外部 abort 事件（非等待语义）
       const r = await pending;
       expect(r.error).toBe("fetchData 已被取消");
@@ -306,8 +348,17 @@ describe("fail-fast：管道内部组装断言", () => {
   // 不新增配置项、不是对用户适配器的契约约束（#120 P2 判定点=管道组装）
   const probeBadTimeout = async (bad) => {
     let called = false;
-    const adapter = mkAdapter("ff-adp", "p-ff", async () => { called = true; return {}; });
-    const r = await runV2Pipeline({ adapter, provider: "p-ff", config: {}, staticPath: "", timeoutMs: bad });
+    const adapter = mkAdapter("ff-adp", "p-ff", async () => {
+      called = true;
+      return {};
+    });
+    const r = await runV2Pipeline({
+      adapter,
+      provider: "p-ff",
+      config: {},
+      staticPath: "",
+      timeoutMs: bad,
+    });
     return { r, called };
   };
 

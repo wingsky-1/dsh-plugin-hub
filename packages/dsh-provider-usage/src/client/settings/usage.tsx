@@ -30,12 +30,17 @@ function statusLabel(status: string | undefined): string {
 /** 状态 → 颜色（主题变量 + 浅色回退）。 */
 function statusColor(status: string | undefined): string {
   if (status === "stale") return "var(--dsw-alias-state-warn-primary,#c9820b)";
-  if (status === "fresh" || status === "cached") return "var(--dsw-alias-state-success-primary,#0f9d6e)";
+  if (status === "fresh" || status === "cached")
+    return "var(--dsw-alias-state-success-primary,#0f9d6e)";
   return "var(--dsw-alias-state-error-primary,#d64545)";
 }
 
 /** 用量可视化区：各启用 provider 的状态点 + 胶囊内容（宿主端渲染 HTML）。 */
-export function UsageSection({ statsByProvider }: { statsByProvider: Record<string, StatsView | null> }): React.ReactElement {
+export function UsageSection({
+  statsByProvider,
+}: {
+  statsByProvider: Record<string, StatsView | null>;
+}): React.ReactElement {
   const providers = Object.keys(statsByProvider);
   return (
     <div style={sectionStyle}>
@@ -60,7 +65,8 @@ export function UsageSection({ statsByProvider }: { statsByProvider: Record<stri
             />
           );
           // 适配器名与 provider 同名时省略，避免「rjkrjk」式连读
-          const adapterPart = s?.adapterName && s.adapterName !== provider ? `${s.adapterName} · ` : "";
+          const adapterPart =
+            s?.adapterName && s.adapterName !== provider ? `${s.adapterName} · ` : "";
           const meta = `${adapterPart}${statusLabel(s?.status)}${
             typeof s?.fetchedAt === "number"
               ? ` · ${t("updatedAt", { t: new Date(s.fetchedAt).toLocaleTimeString("zh-CN", { hour12: false }) })}`
@@ -71,14 +77,26 @@ export function UsageSection({ statsByProvider }: { statsByProvider: Record<stri
               <div style={{ marginBottom: 4 }}>
                 {dot}
                 <span style={{ fontWeight: 600 }}>{provider}</span>
-                <span style={{ color: "var(--dsw-alias-label-tertiary,#9aa0ab)", marginLeft: 8, fontSize: 11 }}>{meta}</span>
+                <span
+                  style={{
+                    color: "var(--dsw-alias-label-tertiary,#9aa0ab)",
+                    marginLeft: 8,
+                    fontSize: 11,
+                  }}
+                >
+                  {meta}
+                </span>
               </div>
               {s?.capsuleHtml ? (
                 <div dangerouslySetInnerHTML={{ __html: s.capsuleHtml }} />
               ) : s?.error ? (
-                <div style={{ color: "var(--dsw-alias-state-error-primary,#d64545)" }}>{String(s.error)}</div>
+                <div style={{ color: "var(--dsw-alias-state-error-primary,#d64545)" }}>
+                  {String(s.error)}
+                </div>
               ) : (
-                <div style={{ color: "var(--dsw-alias-label-tertiary,#9aa0ab)" }}>{t("noData")}</div>
+                <div style={{ color: "var(--dsw-alias-label-tertiary,#9aa0ab)" }}>
+                  {t("noData")}
+                </div>
               )}
             </div>
           );

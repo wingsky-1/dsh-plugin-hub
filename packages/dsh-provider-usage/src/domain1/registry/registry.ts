@@ -60,7 +60,9 @@ export type ReplaceFileResult =
  * @param opts.diag - 诊断收集器（缺省 console.warn）。
  * @param opts.sanitizePath - 错误消息路径脱敏（把绝对路径归约为 `~` 形态，信息面最小披露）。
  */
-export function makeAdapterRegistry(opts: { diag?: (m: string) => void; sanitizePath?: (s: string) => string } = {}) {
+export function makeAdapterRegistry(
+  opts: { diag?: (m: string) => void; sanitizePath?: (s: string) => string } = {},
+) {
   const diag = opts.diag ?? ((m: string): void => console.warn("[dsh-provider-usage]", m));
   const sanitizePath = opts.sanitizePath ?? ((s: string): string => s);
   /** provider → 有序候选条目。 */
@@ -101,7 +103,12 @@ export function makeAdapterRegistry(opts: { diag?: (m: string) => void; sanitize
    * @param enabledHint - 配置显式给出的启停（undefined = 默认启用；false = 禁用候选）。
    * @returns 是否注册成功。
    */
-  function register(adapter: unknown, source: AdapterSource, file?: string, enabledHint?: boolean): boolean {
+  function register(
+    adapter: unknown,
+    source: AdapterSource,
+    file?: string,
+    enabledHint?: boolean,
+  ): boolean {
     if (!isUsageStatsAdapter(adapter)) {
       const detail = describeUsageStatsAdapterShape(adapter) ?? "未知形状问题";
       if (file === undefined) {
@@ -113,7 +120,11 @@ export function makeAdapterRegistry(opts: { diag?: (m: string) => void; sanitize
     }
     const a = adapter as UsageStatsAdapter;
     if (registeredNames.has(a.name)) {
-      recordError(`file:${file ? basename(file) : a.name}`, "load", `适配器 name 重复：${a.name}，忽略重复注册`);
+      recordError(
+        `file:${file ? basename(file) : a.name}`,
+        "load",
+        `适配器 name 重复：${a.name}，忽略重复注册`,
+      );
       return false;
     }
     registeredNames.add(a.name);
@@ -256,7 +267,11 @@ export function makeAdapterRegistry(opts: { diag?: (m: string) => void; sanitize
   function replaceByFile(file: string, next: unknown): ReplaceFileResult {
     if (!isUsageStatsAdapter(next)) {
       const detail = describeUsageStatsAdapterShape(next) ?? "未知形状问题";
-      return { ok: false, code: "invalid-adapter", detail: `契约校验失败（${detail}），已保留旧条目` };
+      return {
+        ok: false,
+        code: "invalid-adapter",
+        detail: `契约校验失败（${detail}），已保留旧条目`,
+      };
     }
     const a = next;
     // 收集本文件旧条目（同一条目可出现在多个 provider 桶，按 name 去重）
@@ -268,7 +283,11 @@ export function makeAdapterRegistry(opts: { diag?: (m: string) => void; sanitize
     }
     // 冲突预检：新 name 不属于本文件旧名、却已被其他来源占用 → 拒绝，旧条目原样保留
     if (!oldEntries.has(a.name) && registeredNames.has(a.name)) {
-      return { ok: false, code: "duplicate-name", detail: `适配器 name 冲突：${a.name}（已被其他适配器占用，旧条目保留）` };
+      return {
+        ok: false,
+        code: "duplicate-name",
+        detail: `适配器 name 冲突：${a.name}（已被其他适配器占用，旧条目保留）`,
+      };
     }
     // 记录旧启用状态：本文件旧条目在其认领的每个 provider 上是否是当前启用者
     const wasEnabledProviders = new Set<string>();

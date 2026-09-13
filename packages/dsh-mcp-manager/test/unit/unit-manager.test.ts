@@ -94,12 +94,19 @@ describe("McpManager.add", () => {
   it("重复名抛错（already exists）", async () => {
     const { manager } = fixture();
     await manager.add({ name: "srv-a", transport: "stdio", command: "echo" });
-    await expect(manager.add({ name: "srv-a", transport: "stdio", command: "echo" })).rejects.toThrow(/already exists/);
+    await expect(
+      manager.add({ name: "srv-a", transport: "stdio", command: "echo" }),
+    ).rejects.toThrow(/already exists/);
   });
 
   it("enabled:false 不报错且返回 enabled:false", async () => {
     const { manager } = fixture();
-    const disabled = await manager.add({ name: "srv-off", transport: "stdio", command: "echo", enabled: false });
+    const disabled = await manager.add({
+      name: "srv-off",
+      transport: "stdio",
+      command: "echo",
+      enabled: false,
+    });
     expect(disabled.enabled).toBe(false);
   });
 
@@ -112,7 +119,10 @@ describe("McpManager.add", () => {
   it("project scope 有 projectStore 时写入项目级（返回值）", async () => {
     const { manager } = fixture();
     await attachProjectStore(manager, "dsh-mcp-manager-proj-");
-    const projServer = await manager.add({ name: "proj-srv", transport: "stdio", command: "echo" }, SCOPE_PROJECT);
+    const projServer = await manager.add(
+      { name: "proj-srv", transport: "stdio", command: "echo" },
+      SCOPE_PROJECT,
+    );
     expect(projServer.name).toBe("proj-srv");
   });
 
@@ -200,7 +210,9 @@ describe("通过 apply 间接覆盖 installSettingsNamespace 降级分支", () =
       systemPrompt: { section: () => () => {} },
     };
     const dir = makeTempDir("dsh-mcp-manager-ni-");
-    await expect(apply(noInjectCtx, { enabled: false, storePath: join(dir, "mcp.json") })).resolves.toBeUndefined();
+    await expect(
+      apply(noInjectCtx, { enabled: false, storePath: join(dir, "mcp.json") }),
+    ).resolves.toBeUndefined();
   });
 
   it("settings.register 抛错时降级（不抛）", async () => {
@@ -211,7 +223,9 @@ describe("通过 apply 间接覆盖 installSettingsNamespace 降级分支", () =
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings: {
-              register: () => { throw new Error("register failed"); },
+              register: () => {
+                throw new Error("register failed");
+              },
             },
             effect: () => () => {},
           });
@@ -225,7 +239,9 @@ describe("通过 apply 间接覆盖 installSettingsNamespace 降级分支", () =
       systemPrompt: { section: () => () => {} },
     };
     const dir = makeTempDir("dsh-mcp-manager-sf-");
-    await expect(apply(failSettingsCtx, { enabled: false, storePath: join(dir, "mcp.json") })).resolves.toBeUndefined();
+    await expect(
+      apply(failSettingsCtx, { enabled: false, storePath: join(dir, "mcp.json") }),
+    ).resolves.toBeUndefined();
   });
 
   it("settings 缺少 register 时降级（不抛）", async () => {
@@ -248,6 +264,8 @@ describe("通过 apply 间接覆盖 installSettingsNamespace 降级分支", () =
       systemPrompt: { section: () => () => {} },
     };
     const dir = makeTempDir("dsh-mcp-manager-nr-");
-    await expect(apply(noRegCtx, { enabled: false, storePath: join(dir, "mcp.json") })).resolves.toBeUndefined();
+    await expect(
+      apply(noRegCtx, { enabled: false, storePath: join(dir, "mcp.json") }),
+    ).resolves.toBeUndefined();
   });
 });

@@ -30,13 +30,23 @@ export interface ApplyOptions {
 
 /** 解析 storePath（显式配置优先，回落默认路径）。 */
 export function resolveStorePath(config: Record<string, unknown> | undefined): string {
-  return typeof config?.storePath === "string" && config.storePath !== "" ? config.storePath : defaultStorePath();
+  return typeof config?.storePath === "string" && config.storePath !== ""
+    ? config.storePath
+    : defaultStorePath();
 }
 
 /** 解析 debug 配置。 */
-export function resolveDebugConfig(config: Record<string, unknown> | undefined, settingsSource?: unknown): DebugConfig {
-  const settings = typeof settingsSource === "object" && settingsSource !== null ? (settingsSource as Record<string, unknown>).debug : undefined;
-  const rawDebug = (typeof settings === "object" && settings !== null ? settings : config?.debug) as Record<string, unknown> | undefined;
+export function resolveDebugConfig(
+  config: Record<string, unknown> | undefined,
+  settingsSource?: unknown,
+): DebugConfig {
+  const settings =
+    typeof settingsSource === "object" && settingsSource !== null
+      ? (settingsSource as Record<string, unknown>).debug
+      : undefined;
+  const rawDebug = (
+    typeof settings === "object" && settings !== null ? settings : config?.debug
+  ) as Record<string, unknown> | undefined;
   return {
     callStats: rawDebug?.callStats === true,
     statsFile: typeof rawDebug?.statsFile === "string" ? rawDebug.statsFile : "",
@@ -44,11 +54,16 @@ export function resolveDebugConfig(config: Record<string, unknown> | undefined, 
 }
 
 /** 解析全部布尔/数值/策略配置（兜底链引用具名常量，单一事实源）。 */
-export function resolveApplyOptions(config: Record<string, unknown> | undefined, settingsSource?: unknown): ApplyOptions {
-  const announceCatalog = (config?.announceCatalog as boolean | undefined) ?? DEFAULT_ANNOUNCE_CATALOG;
-  const catalogMaxEntries = Number.isFinite(config?.catalogMaxEntries) && (config?.catalogMaxEntries as number) > 0
-    ? Math.floor(config?.catalogMaxEntries as number)
-    : DEFAULT_CATALOG_MAX_ENTRIES;
+export function resolveApplyOptions(
+  config: Record<string, unknown> | undefined,
+  settingsSource?: unknown,
+): ApplyOptions {
+  const announceCatalog =
+    (config?.announceCatalog as boolean | undefined) ?? DEFAULT_ANNOUNCE_CATALOG;
+  const catalogMaxEntries =
+    Number.isFinite(config?.catalogMaxEntries) && (config?.catalogMaxEntries as number) > 0
+      ? Math.floor(config?.catalogMaxEntries as number)
+      : DEFAULT_CATALOG_MAX_ENTRIES;
   return {
     enabled: config?.enabled !== false,
     announceToAgent: config?.announceToAgent !== false,
@@ -61,14 +76,17 @@ export function resolveApplyOptions(config: Record<string, unknown> | undefined,
 }
 
 /** 解析中间层模式（settings 持久化值优先，回落 config 默认 project，#389 M2）。 */
-export function resolveMiddlewareMode(manager: McpManager, fallbackRaw: string | undefined): ReturnType<typeof normalizeMiddlewareMode> {
+export function resolveMiddlewareMode(
+  manager: McpManager,
+  fallbackRaw: string | undefined,
+): ReturnType<typeof normalizeMiddlewareMode> {
   const settingsSource = manager.uiConfigSource();
   const persistedMiddleware =
     typeof settingsSource === "object" && settingsSource !== null
       ? (settingsSource as Record<string, unknown>).middleware
       : undefined;
   return normalizeMiddlewareMode(
-    typeof persistedMiddleware === "string" ? persistedMiddleware : fallbackRaw ?? "project",
+    typeof persistedMiddleware === "string" ? persistedMiddleware : (fallbackRaw ?? "project"),
   );
 }
 
@@ -107,7 +125,15 @@ export function injectSettingsSink(ctx: Context, manager: McpManager): void {
   if (typeof ctx.inject !== "function") return;
   ctx.inject(["settings"], (sctx) => {
     // sctx 注入 settings 服务（cordis 类型面未声明该服务，经 unknown 中转取最小面）。
-    const settings = (sctx as unknown as { settings?: { update?: (ns: string, patch: Record<string, unknown>) => Promise<unknown> } } | undefined)?.settings;
+    const settings = (
+      sctx as unknown as
+        | {
+            settings?: {
+              update?: (ns: string, patch: Record<string, unknown>) => Promise<unknown>;
+            };
+          }
+        | undefined
+    )?.settings;
     if (settings && typeof settings.update === "function") {
       // settings.update 是 cordis 服务方法，不绑 this（内部访问 this.write）——直接
       // 解构后调用会丢 this → this.write undefined（回归 #125 保存 400）。这里保留

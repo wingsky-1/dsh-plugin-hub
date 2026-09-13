@@ -35,7 +35,12 @@ export const DEFAULT_UI_CONFIG: UiPlacementConfig = {
   zIndexBase: DEFAULT_Z_INDEX_BASE,
 };
 
-const UI_PLACEMENTS: UiPlacementConfig["placement"][] = ["top-right", "top-left", "bottom-right", "bottom-left"];
+const UI_PLACEMENTS: UiPlacementConfig["placement"][] = [
+  "top-right",
+  "top-left",
+  "bottom-right",
+  "bottom-left",
+];
 
 /** 校验并归一化客户端提交的 UI 配置（非法值回退默认；offset 限制 0–2000）。 */
 export function normalizeUiConfig(raw: unknown): UiPlacementConfig {

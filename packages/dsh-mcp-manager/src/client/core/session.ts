@@ -50,7 +50,9 @@ export function bindSession(ctx: any, state: McpState, actions: UiActions): () =
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ cwd: typeof cwd === "string" ? cwd : "" }),
-    }).then(() => actions.refresh()).catch(() => {});
+    })
+      .then(() => actions.refresh())
+      .catch(() => {});
   };
   sync();
   if (typeof list.subscribe === "function") return list.subscribe(sync);

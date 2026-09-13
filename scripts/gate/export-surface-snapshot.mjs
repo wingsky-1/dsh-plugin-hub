@@ -94,7 +94,12 @@ import { spawnSync } from "node:child_process";
 import { dirname, join, posix, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkExportFaces, loadExportFaces } from "../lib/export-faces-lib.ts";
-import { attributeEmitFiles, declBlockName, extractDeclBlocks, extractExports } from "../lib/surface-extract-lib.ts";
+import {
+  attributeEmitFiles,
+  declBlockName,
+  extractDeclBlocks,
+  extractExports,
+} from "../lib/surface-extract-lib.ts";
 import { listExportTypesEntries, stripLibPrefix } from "../lib/exports-types-lib.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -109,9 +114,15 @@ if (!pkgName) {
 
 const tsconfigIdx = ARGV.indexOf("--tsconfig");
 const baselineIdx = ARGV.indexOf("--baseline");
-const baselinePath = baselineIdx >= 0 ? ARGV[baselineIdx + 1] : join(ROOT, "scripts", "data", `${pkgName}-export-surface.json`);
+const baselinePath =
+  baselineIdx >= 0
+    ? ARGV[baselineIdx + 1]
+    : join(ROOT, "scripts", "data", `${pkgName}-export-surface.json`);
 const facesIdx = ARGV.indexOf("--faces");
-const facesPath = facesIdx >= 0 ? ARGV[facesIdx + 1] : join(ROOT, "scripts", "data", `${pkgName}-export-faces.json`);
+const facesPath =
+  facesIdx >= 0
+    ? ARGV[facesIdx + 1]
+    : join(ROOT, "scripts", "data", `${pkgName}-export-faces.json`);
 const pkgDir = join(ROOT, "packages", pkgName);
 const tsconfigPath = tsconfigIdx >= 0 ? ARGV[tsconfigIdx + 1] : join(pkgDir, "tsconfig.json");
 
@@ -134,9 +145,13 @@ function collectDts(dir, acc = []) {
 function emitDeclarations() {
   const outDir = mkdtempSync(join(tmpdir(), "export-surface-"));
   const tsc = join(ROOT, "node_modules", "typescript", "bin", "tsc");
-  const res = spawnSync(process.execPath, [tsc, "-p", tsconfigPath, "--declaration", "--emitDeclarationOnly", "--outDir", outDir], {
-    encoding: "utf8",
-  });
+  const res = spawnSync(
+    process.execPath,
+    [tsc, "-p", tsconfigPath, "--declaration", "--emitDeclarationOnly", "--outDir", outDir],
+    {
+      encoding: "utf8",
+    },
+  );
   if (res.status !== 0) {
     rmSync(outDir, { recursive: true, force: true });
     console.error(`[export-surface-snapshot] tsc --declaration 失败：\n${res.stdout}${res.stderr}`);
@@ -145,7 +160,10 @@ function emitDeclarations() {
   const perFile = new Map();
   for (const f of collectDts(outDir)) {
     const text = readFileSync(f, "utf8");
-    perFile.set(relative(outDir, f).split(sep).join("/"), { text, blocks: extractDeclBlocks(text) });
+    perFile.set(relative(outDir, f).split(sep).join("/"), {
+      text,
+      blocks: extractDeclBlocks(text),
+    });
   }
   rmSync(outDir, { recursive: true, force: true });
   return { perFile };
@@ -201,42 +219,56 @@ for (const { subpath, types } of listExportTypesEntries(pkgDir)) {
   const dir = posix.dirname(typesTarget);
   entrySpecs.push({ subpath, types, typesTarget, prefix: dir === "." ? "" : dir });
 }
-if (entrySpecs.length === 0) problems.push("包 exports 无任何带 types 条件的子路径——入口模型退化为「无约束」，拒绝放行");
+if (entrySpecs.length === 0)
+  problems.push("包 exports 无任何带 types 条件的子路径——入口模型退化为「无约束」，拒绝放行");
 {
   const seenTarget = new Map();
   for (const e of entrySpecs) {
     if (seenTarget.has(e.typesTarget)) {
-      problems.push(`入口 ${e.subpath} 与 ${seenTarget.get(e.typesTarget)} 的 typesTarget 相同（${e.typesTarget}）——入口归属有歧义`);
+      problems.push(
+        `入口 ${e.subpath} 与 ${seenTarget.get(e.typesTarget)} 的 typesTarget 相同（${e.typesTarget}）——入口归属有歧义`,
+      );
     } else {
       seenTarget.set(e.typesTarget, e.subpath);
     }
   }
 }
-const { byEntry, orphans, conflicts } = attributeEmitFiles(allFiles, entrySpecs.map((e) => ({ subpath: e.subpath, prefix: e.prefix })));
+const { byEntry, orphans, conflicts } = attributeEmitFiles(
+  allFiles,
+  entrySpecs.map((e) => ({ subpath: e.subpath, prefix: e.prefix })),
+);
 for (const o of orphans) problems.push(`emit 产物未被任何入口前缀归属（不得静默丢弃）：${o}`);
 for (const c of conflicts) problems.push(`emit 产物入口归属不唯一（同长度多命中）：${c}`);
 
 for (const e of entrySpecs) {
   const owned = byEntry[e.subpath] ?? [];
-  if (owned.length === 0) problems.push(`入口 ${e.subpath} 未辖任何 emit .d.ts（typesTarget=${e.typesTarget}）`);
+  if (owned.length === 0)
+    problems.push(`入口 ${e.subpath} 未辖任何 emit .d.ts（typesTarget=${e.typesTarget}）`);
   const file = perFile.get(e.typesTarget);
   if (file === undefined) {
     problems.push(`入口 ${e.subpath} 的 typesTarget 不在本次 emit 产物中：${e.typesTarget}`);
   }
   const blocks = owned.flatMap((f) => perFile.get(f).blocks);
-  if (blocks.length === 0) problems.push(`入口 ${e.subpath} 辖内声明块为 0（前缀 ${e.prefix === "" ? "<根>" : e.prefix}）`);
+  if (blocks.length === 0)
+    problems.push(
+      `入口 ${e.subpath} 辖内声明块为 0（前缀 ${e.prefix === "" ? "<根>" : e.prefix}）`,
+    );
   const exportList = file === undefined ? [] : extractExports(file.text);
-  if (exportList.length === 0) problems.push(`入口 ${e.subpath} 的导出面为空（typesTarget=${e.typesTarget}）`);
+  if (exportList.length === 0)
+    problems.push(`入口 ${e.subpath} 的导出面为空（typesTarget=${e.typesTarget}）`);
   const grouped = groupBlocks(blocks);
   if (UNNAMED_BLOCK_KEY in grouped) {
-    problems.push(`入口 ${e.subpath} 辖内有无法识别声明名的块（提取器与 tsc 产物形态脱节）：${grouped[UNNAMED_BLOCK_KEY][0].slice(0, 120)}`);
+    problems.push(
+      `入口 ${e.subpath} 辖内有无法识别声明名的块（提取器与 tsc 产物形态脱节）：${grouped[UNNAMED_BLOCK_KEY][0].slice(0, 120)}`,
+    );
   }
   entries[e.subpath] = { types: e.types, exports: exportList, blocks: grouped };
 }
 
 // 兼容字段口径（v1 语义逐字不变）：exports = 主入口导出面；declBlocks = 全部块多重集。
 const mainEntry = entries["."];
-if (mainEntry === undefined) problems.push('包 exports 缺主入口（"." 无 types 条件）——兼容字段 exports 无从取值');
+if (mainEntry === undefined)
+  problems.push('包 exports 缺主入口（"." 无 types 条件）——兼容字段 exports 无从取值');
 const surface = {
   package: pkgName,
   exports: mainEntry === undefined ? [] : mainEntry.exports,
@@ -252,14 +284,19 @@ const surface = {
   if (JSON.stringify(union) !== JSON.stringify(surface.declBlocks)) {
     problems.push("自洽断言失败：各入口块的多重集并集 ≠ declBlocks（归属丢块/重复）——双源漂移");
   }
-  if (mainEntry !== undefined && JSON.stringify(surface.exports) !== JSON.stringify(mainEntry.exports)) {
+  if (
+    mainEntry !== undefined &&
+    JSON.stringify(surface.exports) !== JSON.stringify(mainEntry.exports)
+  ) {
     problems.push('自洽断言失败：兼容字段 exports ≠ entries["."].exports——双源漂移');
   }
 }
 
 if (isSnapshot) {
   if (problems.length > 0) {
-    console.log(`[export-surface-snapshot] 拒绝写入基线：入口模型/自洽断言未通过（${problems.length} 处）`);
+    console.log(
+      `[export-surface-snapshot] 拒绝写入基线：入口模型/自洽断言未通过（${problems.length} 处）`,
+    );
     for (const p of problems) console.log(`  ${p}`);
     process.exit(1);
   }
@@ -276,7 +313,9 @@ if (!existsSync(baselinePath)) {
 }
 const baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
 if (baseline.entries === undefined) {
-  console.error("[export-surface-snapshot] 基线为 v1 形态（无 entries）——入口模型无法比对，请先跑 --snapshot 重冻结基线");
+  console.error(
+    "[export-surface-snapshot] 基线为 v1 形态（无 entries）——入口模型无法比对，请先跑 --snapshot 重冻结基线",
+  );
   process.exit(2);
 }
 
@@ -286,10 +325,13 @@ if (baseline.entries === undefined) {
 function compareExportSet(baseExports, curExports, subpath) {
   const base = new Map(baseExports.map((e) => [`${e.isType ? "type " : ""}${e.name}`, e]));
   const cur = new Map(curExports.map((e) => [`${e.isType ? "type " : ""}${e.name}`, e]));
-  for (const key of base.keys()) if (!cur.has(key)) problems.push(`  入口 ${subpath} 缺失导出（基线有、现在无）：${key}`);
-  for (const key of cur.keys()) if (!base.has(key)) problems.push(`  入口 ${subpath} 新增导出（现在有、基线无）：${key}`);
+  for (const key of base.keys())
+    if (!cur.has(key)) problems.push(`  入口 ${subpath} 缺失导出（基线有、现在无）：${key}`);
+  for (const key of cur.keys())
+    if (!base.has(key)) problems.push(`  入口 ${subpath} 新增导出（现在有、基线无）：${key}`);
   for (const key of base.keys()) {
-    if (cur.has(key) && base.get(key).isType !== cur.get(key).isType) problems.push(`  入口 ${subpath} 导出形态变化（值⇄类型）：${key}`);
+    if (cur.has(key) && base.get(key).isType !== cur.get(key).isType)
+      problems.push(`  入口 ${subpath} 导出形态变化（值⇄类型）：${key}`);
   }
 }
 
@@ -303,10 +345,15 @@ for (const e of entrySpecs) {
   compareExportSet(base.exports ?? [], cur.exports, e.subpath);
   // 按**该入口**导出面名字集过滤后比块多重集：域内/非导出面符号不参与（盲区②④），
   // 跨入口同名符号（apply/inject）各归各入口——这是本修复的核心收益。
-  const baseFiltered = filterBlocksByName(base.blocks ?? {}, new Set((base.exports ?? []).map((x) => x.name)));
+  const baseFiltered = filterBlocksByName(
+    base.blocks ?? {},
+    new Set((base.exports ?? []).map((x) => x.name)),
+  );
   const curFiltered = filterBlocksByName(cur.blocks, new Set(cur.exports.map((x) => x.name)));
-  for (const b of multisetDiff(baseFiltered, curFiltered)) problems.push(`  入口 ${e.subpath} 声明块丢失：${b.slice(0, 200)}`);
-  for (const b of multisetDiff(curFiltered, baseFiltered)) problems.push(`  入口 ${e.subpath} 声明块新增：${b.slice(0, 200)}`);
+  for (const b of multisetDiff(baseFiltered, curFiltered))
+    problems.push(`  入口 ${e.subpath} 声明块丢失：${b.slice(0, 200)}`);
+  for (const b of multisetDiff(curFiltered, baseFiltered))
+    problems.push(`  入口 ${e.subpath} 声明块新增：${b.slice(0, 200)}`);
 }
 for (const key of Object.keys(baseline.entries)) {
   if (entries[key] === undefined) problems.push(`  入口 ${key} 在基线内、现在无（入口被删除）`);
@@ -318,7 +365,9 @@ for (const key of Object.keys(baseline.entries)) {
 {
   const registry = loadExportFaces(facesPath);
   if (registry.package !== undefined && registry.package !== pkgName) {
-    problems.push(`分类登记文件的 package 字段（${registry.package}）与 --package（${pkgName}）不一致`);
+    problems.push(
+      `分类登记文件的 package 字段（${registry.package}）与 --package（${pkgName}）不一致`,
+    );
   }
   for (const p of checkExportFaces({
     exports: surface.exports.map((e) => e.name),
@@ -331,9 +380,13 @@ for (const key of Object.keys(baseline.entries)) {
 }
 
 if (problems.length > 0) {
-  console.log(`[export-surface-snapshot] FAIL ${pkgName} 导出面与基线有 ${problems.length} 处差异：`);
+  console.log(
+    `[export-surface-snapshot] FAIL ${pkgName} 导出面与基线有 ${problems.length} 处差异：`,
+  );
   for (const p of problems) console.log(p);
-  console.log("  若为有意变更（PR2 行为重构等），先更新基线：node scripts/gate/export-surface-snapshot.mjs --package dsh-notifier --snapshot");
+  console.log(
+    "  若为有意变更（PR2 行为重构等），先更新基线：node scripts/gate/export-surface-snapshot.mjs --package dsh-notifier --snapshot",
+  );
   process.exit(1);
 }
 // 门禁自述必须与事实一致（#733 M2c R4-2）：declBlocks 是「全部 .d.ts 的顶层声明块」

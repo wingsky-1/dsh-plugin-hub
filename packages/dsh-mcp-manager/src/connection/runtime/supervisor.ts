@@ -13,7 +13,12 @@ import { createTransport } from "./transport.ts";
 import type { StdioTransport, HttpTransport } from "./transport.ts";
 import { SCOPE_GLOBAL, SCOPE_PROJECT } from "../../workspace/interface.ts";
 import { MCPClient } from "./protocol.ts";
-import { defaultCallResultFallbackText, projectCallToolResult, createRedactor, msgOf } from "../../pipeline/interface.ts";
+import {
+  defaultCallResultFallbackText,
+  projectCallToolResult,
+  createRedactor,
+  msgOf,
+} from "../../pipeline/interface.ts";
 import { RECONNECT_DEFAULTS, resolveReconnect, type ReconnectPolicy } from "../interface.ts";
 import type { McpStatsCollector } from "../../stats/interface.ts";
 import type { ServerConfig, ManagerLite } from "../../types/interface.ts";
@@ -42,7 +47,10 @@ export function publicToolName(serverName: string, rawName: string): string {
   const joined = `mcp__${serverName}__${rawName}`;
   const normalized = joined.replace(INVALID_NAME_CHARS, "_");
   if (normalized === joined && normalized.length <= MAX_PUBLIC_NAME_LENGTH) return normalized;
-  const hash = createHash("sha256").update(`${serverName}\0${rawName}`).digest("hex").slice(0, HASH_LENGTH);
+  const hash = createHash("sha256")
+    .update(`${serverName}\0${rawName}`)
+    .digest("hex")
+    .slice(0, HASH_LENGTH);
   return `${normalized.slice(0, MAX_PUBLIC_NAME_LENGTH - HASH_LENGTH - 1)}_${hash}`;
 }
 
@@ -108,20 +116,42 @@ export function truncateText(text: unknown, maxBytes: number): unknown {
  *    剥键会改变语义且与官方校验规则存在偏差。
  */
 const SCHEMA_TYPES = ["object", "array", "string", "number", "integer", "boolean", "null"];
-const SCHEMA_CONSTRAINT_KEYS = new Set(["type", "oneOf", "properties", "required", "additionalProperties", "items", "enum", "const"]);
+const SCHEMA_CONSTRAINT_KEYS = new Set([
+  "type",
+  "oneOf",
+  "properties",
+  "required",
+  "additionalProperties",
+  "items",
+  "enum",
+  "const",
+]);
 const SCHEMA_ANNOTATION_KEYS = new Set(["description", "title", "default", "examples"]);
 /** 与 oneOf 互斥的兄弟关键字。 */
-const SCHEMA_ONE_OF_SIBLING_KEYS = ["properties", "required", "additionalProperties", "items", "enum", "const"];
+const SCHEMA_ONE_OF_SIBLING_KEYS = [
+  "properties",
+  "required",
+  "additionalProperties",
+  "items",
+  "enum",
+  "const",
+];
 
 /** 标量是否匹配声明的 schema 类型（与 dsh-tools scalarMatches 一致）。 */
 function scalarMatchesType(type: string, value: unknown): boolean {
   switch (type) {
-    case "string": return typeof value === "string";
-    case "number": return typeof value === "number" && Number.isFinite(value);
-    case "integer": return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value);
-    case "boolean": return typeof value === "boolean";
-    case "null": return value === null;
-    default: return false;
+    case "string":
+      return typeof value === "string";
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "integer":
+      return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value);
+    case "boolean":
+      return typeof value === "boolean";
+    case "null":
+      return value === null;
+    default:
+      return false;
   }
 }
 
@@ -157,19 +187,38 @@ function checkSchemaNode(node: Record<string, unknown>, depth: number, seen: Set
     if (typeof type !== "string" || !SCHEMA_TYPES.includes(type)) return false;
     if (type === "object") {
       if (Object.hasOwn(node, "properties")) {
-        if (typeof node.properties !== "object" || node.properties === null || Array.isArray(node.properties)) return false;
+        if (
+          typeof node.properties !== "object" ||
+          node.properties === null ||
+          Array.isArray(node.properties)
+        )
+          return false;
         for (const value of Object.values(node.properties)) {
           if (!checkSchemaNode(value as Record<string, unknown>, depth + 1, seen)) return false;
         }
       }
       if (Object.hasOwn(node, "required")) {
-        if (!Array.isArray(node.required) || node.required.some((entry) => typeof entry !== "string")) return false;
-        const declared = Object.hasOwn(node, "properties") ? (node.properties as Record<string, unknown>) : {};
+        if (
+          !Array.isArray(node.required) ||
+          node.required.some((entry) => typeof entry !== "string")
+        )
+          return false;
+        const declared = Object.hasOwn(node, "properties")
+          ? (node.properties as Record<string, unknown>)
+          : {};
         for (const key of node.required) if (!Object.hasOwn(declared, key)) return false; // required 必须在 properties 中
       }
-      if (Object.hasOwn(node, "additionalProperties") && typeof node.additionalProperties !== "boolean") return false;
+      if (
+        Object.hasOwn(node, "additionalProperties") &&
+        typeof node.additionalProperties !== "boolean"
+      )
+        return false;
     } else if (type === "array") {
-      if (Object.hasOwn(node, "items") && !checkSchemaNode(node.items as Record<string, unknown>, depth + 1, seen)) return false;
+      if (
+        Object.hasOwn(node, "items") &&
+        !checkSchemaNode(node.items as Record<string, unknown>, depth + 1, seen)
+      )
+        return false;
     } else {
       if (Object.hasOwn(node, "enum")) {
         if (!Array.isArray(node.enum)) return false;
@@ -215,10 +264,17 @@ export function buildToolDefinition(
   // 绝不拼连接状态，保证 tools 数组稳定、provider 工具缓存可命中）。
   const rawDescription = (tool.description as string | undefined) ?? "";
   let description = rawDescription;
-  if (enhanceEmpty && (rawDescription === "" || rawDescription.trim() === "") && typeof server.description === "string" && server.description !== "") {
+  if (
+    enhanceEmpty &&
+    (rawDescription === "" || rawDescription.trim() === "") &&
+    typeof server.description === "string" &&
+    server.description !== ""
+  ) {
     description = `[${server.description}]`;
   }
-  const resultTruncateBytes = Number.isFinite(opts.resultTruncateBytes) ? (opts.resultTruncateBytes as number) : DEFAULT_RESULT_TRUNCATE_BYTES;
+  const resultTruncateBytes = Number.isFinite(opts.resultTruncateBytes)
+    ? (opts.resultTruncateBytes as number)
+    : DEFAULT_RESULT_TRUNCATE_BYTES;
   const renderText = (text: unknown) => truncateText(text, resultTruncateBytes);
   return {
     name: publicToolName(server.name, rawName),
@@ -237,7 +293,9 @@ export function buildToolDefinition(
         additionalProperties: false,
       },
       render(_args: unknown, value?: unknown) {
-        const content = Array.isArray(value && (value as { content?: unknown }).content) ? (value as { content?: unknown[] }).content as unknown[] : [];
+        const content = Array.isArray(value && (value as { content?: unknown }).content)
+          ? ((value as { content?: unknown[] }).content as unknown[])
+          : [];
         return [{ type: "text", text: renderText(extractText(content, rawName)) as string }];
       },
     },
@@ -251,10 +309,14 @@ export function buildToolDefinition(
         opts.stats?.recordCall?.(server.name, rawName, Date.now() - startedAt, success, errorMsg);
       };
       try {
-        const result = await client.callTool(rawName, typeof args === "object" && args !== null ? args : {}, {
-          signal: exec.signal,
-          timeoutMs,
-        });
+        const result = await client.callTool(
+          rawName,
+          typeof args === "object" && args !== null ? args : {},
+          {
+            signal: exec.signal,
+            timeoutMs,
+          },
+        );
         // #512：结果投影收敛到 pipeline/project.ts 单一事实源（isError 判定 + 白名单
         // 清洗 + 无 content 兜底），与 middleware（ws_mcp_call）/ 官方
         // dsh-mcp-client createExecutor 同一契约；本侧差异面 = 文本截断与
@@ -360,7 +422,9 @@ export class ConnectionSupervisor {
       this.failedAttempts = 0;
       this.connectedAt = Date.now();
       this.setStatus("connected");
-      this.manager.logger.info(`dsh-mcp-manager(${server.name}): connected, ${this.tools.length} tool(s) registered`);
+      this.manager.logger.info(
+        `dsh-mcp-manager(${server.name}): connected, ${this.tools.length} tool(s) registered`,
+      );
     } catch (error) {
       if (this.disposed || this.client !== client) return;
       // B8：连接失败日志脱敏（本 server 配置的凭据形状；错误消息可能含 URL 用户
@@ -413,12 +477,22 @@ export class ConnectionSupervisor {
         this.tools = [];
         this.toolMeta = new Map();
       });
-      this.setStatus("failed", new Error(`reconnect gave up after ${policy.maxAttempts} attempts: ${error instanceof Error ? error.message : String(error)}`));
+      this.setStatus(
+        "failed",
+        new Error(
+          `reconnect gave up after ${policy.maxAttempts} attempts: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
       return;
     }
-    const delayMs = Math.min(policy.maxDelayMs, policy.initialDelayMs * 2 ** (this.failedAttempts - 1));
+    const delayMs = Math.min(
+      policy.maxDelayMs,
+      policy.initialDelayMs * 2 ** (this.failedAttempts - 1),
+    );
     this.setStatus("reconnecting", error instanceof Error ? error : new Error(String(error)));
-    this.manager.logger.warn(`dsh-mcp-manager(${this.server.name}): reconnect in ${delayMs}ms (attempt ${this.failedAttempts}/${policy.maxAttempts})`);
+    this.manager.logger.warn(
+      `dsh-mcp-manager(${this.server.name}): reconnect in ${delayMs}ms (attempt ${this.failedAttempts}/${policy.maxAttempts})`,
+    );
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
       this.client = undefined;
@@ -444,11 +518,15 @@ export class ConnectionSupervisor {
       for (const definition of wrapped) {
         const rawName = typeof definition?.name === "string" ? definition.name : "";
         if (rawName === "") {
-          throw new Error(`server "${this.server.name}" has a toolDefinition without a name — invalid wrapped tool list`);
+          throw new Error(
+            `server "${this.server.name}" has a toolDefinition without a name — invalid wrapped tool list`,
+          );
         }
         const publicName = publicToolName(this.server.name, rawName);
         if (definitions.has(publicName)) {
-          throw new Error(`server "${this.server.name}" has duplicate wrapped tool "${rawName}" — invalid wrapped tool list`);
+          throw new Error(
+            `server "${this.server.name}" has duplicate wrapped tool "${rawName}" — invalid wrapped tool list`,
+          );
         }
         // 复制并改写 name 为公开名（mcp__ 前缀）：ctx.tools.register 按
         // definition.name 注册，调用方封装定义本身保持裸名不被改动。
@@ -463,14 +541,27 @@ export class ConnectionSupervisor {
         const responseObj = response as { tools?: unknown[]; nextCursor?: unknown } | undefined;
         const tools = responseObj?.tools ?? [];
         for (const tool of tools) {
-          const publicName = publicToolName(this.server.name, (tool as Record<string, unknown>).name as string);
+          const publicName = publicToolName(
+            this.server.name,
+            (tool as Record<string, unknown>).name as string,
+          );
           if (definitions.has(publicName)) {
-            throw new Error(`server "${this.server.name}" listed tool "${(tool as Record<string, unknown>).name}" more than once — invalid tool list`);
+            throw new Error(
+              `server "${this.server.name}" listed tool "${(tool as Record<string, unknown>).name}" more than once — invalid tool list`,
+            );
           }
-          definitions.set(publicName, buildToolDefinition(client, tool as Record<string, unknown>, this.server, { ...this.manager.enhancement, stats: this.manager.stats }));
+          definitions.set(
+            publicName,
+            buildToolDefinition(client, tool as Record<string, unknown>, this.server, {
+              ...this.manager.enhancement,
+              stats: this.manager.stats,
+            }),
+          );
           // 工具描述元数据（保留供 GUI 展示；不再用于能力目录——目录是纯静态数据源，
           // 聚合连接后数据会让 digest 随连接状态抖动而反复注入）。
-          toolMeta.set(publicName, { description: (tool as Record<string, unknown>).description ?? "" });
+          toolMeta.set(publicName, {
+            description: (tool as Record<string, unknown>).description ?? "",
+          });
         }
         cursor = responseObj?.nextCursor as string | undefined;
       } while (cursor !== undefined && cursor !== null && cursor !== "");
@@ -483,7 +574,9 @@ export class ConnectionSupervisor {
       }
     } catch (error) {
       for (const dispose of disposers.values()) dispose();
-      this.manager.logger.error(`dsh-mcp-manager(${this.server.name}): tool registration failed, no tools registered: ${String(error)}`);
+      this.manager.logger.error(
+        `dsh-mcp-manager(${this.server.name}): tool registration failed, no tools registered: ${String(error)}`,
+      );
       if (startup) throw error;
       return;
     }

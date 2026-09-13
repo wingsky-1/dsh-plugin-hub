@@ -32,17 +32,23 @@ describe("refreshStats 取数前 provider 复检外壳（issue #71 方案 A1）"
     });
 
     it("refreshStats 取数前先复检 provider（A1 主接线）", () => {
-      expect(/async function refreshStats[\s\S]*?await revalidateProvider\(\)/.test(src)).toBeTruthy();
+      expect(
+        /async function refreshStats[\s\S]*?await revalidateProvider\(\)/.test(src),
+      ).toBeTruthy();
     });
 
     it("detect 复检变化 → 立即重拉（切换会话即时跟随）", () => {
       // detect 变化分支 → onProviderChanged 立即重拉；未变分支 → renderPill 后仅 current
       // 会话切换时补刷（#419 diff 语义：投影/运行态噪声帧不刷，收敛高频 /stats 调用）
-      expect(/const changed = await revalidateProvider\(\);[\s\S]*?onProviderChanged\(\)/.test(src)).toBeTruthy();
+      expect(
+        /const changed = await revalidateProvider\(\);[\s\S]*?onProviderChanged\(\)/.test(src),
+      ).toBeTruthy();
     });
 
     it("detect 未变分支按 current diff 判定是否补刷（#419 去高频）", () => {
-      expect(/renderPill\(\);[\s\S]*?currentSessionId\(sessions\)[\s\S]*?lastDetectCurrent/.test(src)).toBeTruthy();
+      expect(
+        /renderPill\(\);[\s\S]*?currentSessionId\(sessions\)[\s\S]*?lastDetectCurrent/.test(src),
+      ).toBeTruthy();
     });
 
     it("客户端持有 catalog 缓存实例", () => {
@@ -66,12 +72,16 @@ describe("refreshStats 取数前 provider 复检外壳（issue #71 方案 A1）"
 
     beforeAll(() => {
       try {
-        stdout = execFileSync(process.execPath, [join(pkgDir, "test/client-revalidate.worker.mjs")], {
-          encoding: "utf8",
-          timeout: 30000,
-          stdio: ["ignore", "pipe", "pipe"],
-          env: { ...process.env, NODE_NO_WARNINGS: "1" },
-        });
+        stdout = execFileSync(
+          process.execPath,
+          [join(pkgDir, "test/client-revalidate.worker.mjs")],
+          {
+            encoding: "utf8",
+            timeout: 30000,
+            stdio: ["ignore", "pipe", "pipe"],
+            env: { ...process.env, NODE_NO_WARNINGS: "1" },
+          },
+        );
         workerFailed = false;
       } catch (error) {
         workerFailed = true;

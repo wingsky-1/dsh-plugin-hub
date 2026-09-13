@@ -12,7 +12,10 @@ import { sectionStyle, titleStyle } from "./shared.ts";
 
 /** 胶囊位置配置区：锚点 + 偏移输入，保存即热更新（宿主落盘 + SSE 广播）。
  *  label 存字典 key（i18n：渲染期经 t 求值，模块加载时 t 尚未装配）。 */
-const PLACEMENT_OPTIONS: Array<{ value: UiPlacementConfig["placement"]; key: ProviderUsageLocaleKey }> = [
+const PLACEMENT_OPTIONS: Array<{
+  value: UiPlacementConfig["placement"];
+  key: ProviderUsageLocaleKey;
+}> = [
   { value: "top-right", key: "posTopRight" },
   { value: "top-left", key: "posTopLeft" },
   { value: "bottom-right", key: "posBottomRight" },
@@ -36,7 +39,8 @@ export function UiSection(): React.ReactElement | null {
 
   if (cfg === null) return null; // 未加载完成不渲染，避免表单闪烁
 
-  const set = (patch: Partial<UiPlacementConfig>): void => setCfg((c) => (c !== null ? { ...c, ...patch } : c));
+  const set = (patch: Partial<UiPlacementConfig>): void =>
+    setCfg((c) => (c !== null ? { ...c, ...patch } : c));
 
   const save = async (): Promise<void> => {
     setSaving(true);
@@ -45,13 +49,21 @@ export function UiSection(): React.ReactElement | null {
       await saveUiConfig(cfg);
       setMsg({ ok: true, text: t("uiSavedOk") });
     } catch (e) {
-      setMsg({ ok: false, text: t("uiSaveFail", { msg: e instanceof Error ? e.message : String(e) }) });
+      setMsg({
+        ok: false,
+        text: t("uiSaveFail", { msg: e instanceof Error ? e.message : String(e) }),
+      });
     }
     setSaving(false);
   };
 
   // 层级基准与偏移量分开钳制：层级 1-9000，偏移维持 0-2000。
-  const numInput = (key: "offsetX" | "offsetY" | "panelOffsetY" | "zIndexBase", label: string, min = 0, max = 2000): React.ReactNode =>
+  const numInput = (
+    key: "offsetX" | "offsetY" | "panelOffsetY" | "zIndexBase",
+    label: string,
+    min = 0,
+    max = 2000,
+  ): React.ReactNode => (
     <label style={{ marginRight: 12, whiteSpace: "nowrap" }}>
       {label}
       <input
@@ -59,13 +71,22 @@ export function UiSection(): React.ReactElement | null {
         min={min}
         max={max}
         value={String(cfg[key])}
-        style={{ width: 64, marginLeft: 6, padding: "2px 6px", border: "1px solid var(--dsw-alias-border-l2,#e8eaf0)", borderRadius: 4 }}
+        style={{
+          width: 64,
+          marginLeft: 6,
+          padding: "2px 6px",
+          border: "1px solid var(--dsw-alias-border-l2,#e8eaf0)",
+          borderRadius: 4,
+        }}
         onChange={(e: unknown) => {
           const v = Number((e as { target: { value: string } }).target.value);
-          set({ [key]: Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : min } as Partial<UiPlacementConfig>);
+          set({
+            [key]: Number.isFinite(v) ? Math.min(max, Math.max(min, Math.round(v))) : min,
+          } as Partial<UiPlacementConfig>);
         }}
       />
-    </label>;
+    </label>
+  );
 
   return (
     <div style={sectionStyle}>
@@ -74,11 +95,22 @@ export function UiSection(): React.ReactElement | null {
         {t("uiAnchor")}
         <select
           value={cfg.placement}
-          style={{ marginLeft: 6, padding: "2px 6px", border: "1px solid var(--dsw-alias-border-l2,#e8eaf0)", borderRadius: 4 }}
-          onChange={(e: unknown) => set({ placement: (e as { target: { value: UiPlacementConfig["placement"] } }).target.value })}
+          style={{
+            marginLeft: 6,
+            padding: "2px 6px",
+            border: "1px solid var(--dsw-alias-border-l2,#e8eaf0)",
+            borderRadius: 4,
+          }}
+          onChange={(e: unknown) =>
+            set({
+              placement: (e as { target: { value: UiPlacementConfig["placement"] } }).target.value,
+            })
+          }
         >
           {PLACEMENT_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{t(o.key)}</option>
+            <option key={o.value} value={o.value}>
+              {t(o.key)}
+            </option>
           ))}
         </select>
       </div>
@@ -100,7 +132,14 @@ export function UiSection(): React.ReactElement | null {
         {saving ? t("savingNow") : t("save")}
       </button>
       {msg !== null ? (
-        <span style={{ marginLeft: 10, color: msg.ok ? "var(--dsw-alias-state-success-primary,#0f9d6e)" : "var(--dsw-alias-state-error-primary,#d64545)" }}>
+        <span
+          style={{
+            marginLeft: 10,
+            color: msg.ok
+              ? "var(--dsw-alias-state-success-primary,#0f9d6e)"
+              : "var(--dsw-alias-state-error-primary,#d64545)",
+          }}
+        >
           {msg.text}
         </span>
       ) : null}

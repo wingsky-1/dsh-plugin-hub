@@ -21,7 +21,13 @@ import {
   DEFAULT_CLIENT_UI_CONFIG,
   FALLBACK_PROVIDER,
 } from "./core.ts";
-import type { SessionsServiceLike, RemoteLike, StatsResponseV2, HistoryResponseV2, UiPlacementConfig } from "./core.ts";
+import type {
+  SessionsServiceLike,
+  RemoteLike,
+  StatsResponseV2,
+  HistoryResponseV2,
+  UiPlacementConfig,
+} from "./core.ts";
 import { SettingsPage } from "./settings/index.tsx";
 import { t, bindLocale } from "../../../../shared/client/i18n.js";
 // 样式注入收敛 shared/client/ensure-style.js：head 缺失由 shared
@@ -53,7 +59,7 @@ const NS = "providerUsage";
 declare module "@deepseek-ai/dsh-client-ui-slots" {
   interface LocaleNamespaceMap {
     /** dsh-provider-usage 胶囊/面板/设置 tab 文案。 */
-    "providerUsage": ProviderUsageLocaleKey;
+    providerUsage: ProviderUsageLocaleKey;
   }
 }
 
@@ -65,7 +71,11 @@ const MAX_HISTORY_DAYS = 30; // 历史请求天数
 // ------------------------------------------------------------------ 工具
 
 /** el() helper：children / attrs.children、dataset、onX、class/text 等。 */
-function el(tag: string, attrs: Record<string, unknown> | undefined, children?: unknown): HTMLElement {
+function el(
+  tag: string,
+  attrs: Record<string, unknown> | undefined,
+  children?: unknown,
+): HTMLElement {
   const node = document.createElement(tag);
   if (attrs !== undefined && attrs !== null) {
     let kids = attrs.children;
@@ -74,7 +84,8 @@ function el(tag: string, attrs: Record<string, unknown> | undefined, children?: 
       if (key === "children" || value === undefined || value === null) continue;
       if (key === "class") node.className = String(value);
       else if (key === "text") node.textContent = String(value);
-      else if (key === "style" && typeof value === "object") Object.assign(node.style, value as Partial<CSSStyleDeclaration>);
+      else if (key === "style" && typeof value === "object")
+        Object.assign(node.style, value as Partial<CSSStyleDeclaration>);
       else if (key === "hidden") node.hidden = Boolean(value);
       else if (key.startsWith("on") && typeof value === "function") {
         node.addEventListener(key.slice(2).toLowerCase(), value as EventListener);
@@ -161,7 +172,11 @@ function repositionPill(pill: HTMLElement, target: HTMLElement): void {
   if (isBottom && bp !== "wide") {
     const seat = document.querySelector<HTMLElement>("[data-composer-seat]");
     const seatRect = seat !== null ? seat.getBoundingClientRect() : null;
-    bottomEdge = bottomAnchorEdge(rect.bottom, seatRect?.top ?? null, composerDockedAtBottom(seatRect, rect));
+    bottomEdge = bottomAnchorEdge(
+      rect.bottom,
+      seatRect?.top ?? null,
+      composerDockedAtBottom(seatRect, rect),
+    );
   }
   const rawTop = isBottom
     ? Math.max(6, bottomEdge - pill.offsetHeight - uiConfig.offsetY)
@@ -169,8 +184,12 @@ function repositionPill(pill: HTMLElement, target: HTMLElement): void {
   // 终坐标视口 clamp（safe-area 语义：宿主无 viewport-fit=cover → inset 恒 0，
   // 自然退化为普通 clamp，桌面行为不回归）。
   const point = clampPointToViewport(
-    rawLeft, rawTop, pill.offsetWidth, pill.offsetHeight,
-    window.innerWidth, window.innerHeight,
+    rawLeft,
+    rawTop,
+    pill.offsetWidth,
+    pill.offsetHeight,
+    window.innerWidth,
+    window.innerHeight,
   );
   pill.style.left = `${Math.round(point.x)}px`;
   pill.style.top = `${Math.round(point.y)}px`;
@@ -195,9 +214,9 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 function conversationHost(): HTMLElement {
   return (
-    document.querySelector("[data-conversation-scroll]")
-    ?? document.querySelector('[data-pane="conversation"]')
-    ?? document.body
+    document.querySelector("[data-conversation-scroll]") ??
+    document.querySelector('[data-pane="conversation"]') ??
+    document.body
   );
 }
 
@@ -318,28 +337,36 @@ async function refreshHistory(): Promise<void> {
 /** 错误码/原因 → 面板提示文案（覆盖 error 码与 reason 降级码）。 */
 function errorMessage(code: string | undefined | null): string {
   switch (code) {
-    case "no-api-key": return t("errNoApiKey", { p: "{PROVIDER}" });
-    case "unauthorized": return t("errUnauthorized");
-    case "timeout": return t("errTimeout");
-    case "network": return t("errNetwork");
+    case "no-api-key":
+      return t("errNoApiKey", { p: "{PROVIDER}" });
+    case "unauthorized":
+      return t("errUnauthorized");
+    case "timeout":
+      return t("errTimeout");
+    case "network":
+      return t("errNetwork");
     case "bad-data":
-    case "bad-json": return t("errBadData");
-    case "adapter-load-failed": return t("errAdapterLoadFailed");
+    case "bad-json":
+      return t("errBadData");
+    case "adapter-load-failed":
+      return t("errAdapterLoadFailed");
     // reason 降级码（error 为 null 但 ok=false 的形态）
-    case "busy": return t("errBusy");
-    case "no-enabled-adapter": return t("errNoEnabledAdapter");
-    case "no-adapter": return t("errNoAdapter");
+    case "busy":
+      return t("errBusy");
+    case "no-enabled-adapter":
+      return t("errNoEnabledAdapter");
+    case "no-adapter":
+      return t("errNoAdapter");
     default:
-      if (typeof code === "string" && code.startsWith("http-")) return t("errHttpStatus", { code: code.slice(5) });
+      if (typeof code === "string" && code.startsWith("http-"))
+        return t("errHttpStatus", { code: code.slice(5) });
       return t("errGeneric", { code: code || t("noDataShort") });
   }
 }
 
 /** 无启用适配器引导（v1 D11 语义）：说明文案 + 复制一句话指令，让 Agent 按文档自主接入。 */
 function showNoAdapterGuide(box: HTMLElement): void {
-  box.appendChild(
-    el("p", { class: PILL_PREFIX + "error", text: t("noAdapterTitle") }),
-  );
+  box.appendChild(el("p", { class: PILL_PREFIX + "error", text: t("noAdapterTitle") }));
   box.appendChild(
     el("p", {
       class: PILL_PREFIX + "hint",
@@ -354,9 +381,15 @@ function showNoAdapterGuide(box: HTMLElement): void {
     onClick: () => {
       void navigator.clipboard
         .writeText(guide)
-        .then(() => { btn.textContent = t("copied"); })
-        .catch(() => { btn.textContent = t("copyFail"); });
-      setTimeout(() => { btn.textContent = t("copyGuide"); }, 2000);
+        .then(() => {
+          btn.textContent = t("copied");
+        })
+        .catch(() => {
+          btn.textContent = t("copyFail");
+        });
+      setTimeout(() => {
+        btn.textContent = t("copyGuide");
+      }, 2000);
     },
   });
   box.appendChild(btn);
@@ -371,7 +404,14 @@ function renderPanel(): void {
   floatPanel.appendChild(
     el("div", { class: PILL_PREFIX + "head" }, [
       el("h3", { class: PILL_PREFIX + "title", text: t("panelTitle", { provider: label }) }),
-      el("button", { class: PILL_PREFIX + "btn", type: "button", text: t("refresh"), onClick: () => { void refreshStats(); } }),
+      el("button", {
+        class: PILL_PREFIX + "btn",
+        type: "button",
+        text: t("refresh"),
+        onClick: () => {
+          void refreshStats();
+        },
+      }),
     ]),
   );
 
@@ -390,16 +430,25 @@ function renderPanel(): void {
   if (hasPanelHtml) {
     panelContentBox.innerHTML = lastHistory!.panelHtml ?? "";
     if (lastHistory!.error) {
-      panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "hint", text: t("hintPrefix") + errorMessage(lastHistory!.error) }));
+      panelContentBox.appendChild(
+        el("p", {
+          class: PILL_PREFIX + "hint",
+          text: t("hintPrefix") + errorMessage(lastHistory!.error),
+        }),
+      );
     }
   } else if (unconfigured) {
     showNoAdapterGuide(panelContentBox);
   } else if (lastHistory !== undefined && lastHistory !== null && lastHistory.error) {
-    panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "error", text: errorMessage(lastHistory.error) }));
+    panelContentBox.appendChild(
+      el("p", { class: PILL_PREFIX + "error", text: errorMessage(lastHistory.error) }),
+    );
   } else if (stats !== null && stats.ok === false) {
     // stats 取数失败：error 有值给具体文案；无值的 reason 态（busy 等）也给明确提示
     const reason = (stats as { reason?: string | null }).reason;
-    panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "error", text: errorMessage(stats.error || reason) }));
+    panelContentBox.appendChild(
+      el("p", { class: PILL_PREFIX + "error", text: errorMessage(stats.error || reason) }),
+    );
   } else {
     panelContentBox.appendChild(el("p", { class: PILL_PREFIX + "hint", text: t("loading") }));
   }
@@ -465,8 +514,12 @@ function placePanel(): void {
     ? Math.max(10, Math.round(rect.left))
     : Math.max(10, Math.round(rect.right - floatPanel.offsetWidth));
   const point = clampPointToViewport(
-    rawLeft, rawTop, floatPanel.offsetWidth, floatPanel.offsetHeight,
-    window.innerWidth, window.innerHeight,
+    rawLeft,
+    rawTop,
+    floatPanel.offsetWidth,
+    floatPanel.offsetHeight,
+    window.innerWidth,
+    window.innerHeight,
   );
   floatPanel.style.left = `${Math.round(point.x)}px`;
   floatPanel.style.top = `${Math.round(point.y)}px`;
@@ -475,12 +528,18 @@ function placePanel(): void {
 
 function mountFloat(): () => void {
   ensureStyle({ id: STYLE_ID, cssText: STYLE });
-  const pill = el("button", { type: "button", class: PILL_PREFIX + "float", "aria-label": t("ariaPill") });
+  const pill = el("button", {
+    type: "button",
+    class: PILL_PREFIX + "float",
+    "aria-label": t("ariaPill"),
+  });
   pill.dataset.douFloat = "";
   pill.hidden = true; // 初始隐藏，首次数据到达后显示
   pill.appendChild(el("span", { class: PILL_PREFIX + "dot dou-dot-off" }));
   pill.appendChild(el("span", { class: PILL_PREFIX + "label", text: "" }));
-  pill.addEventListener("click", () => { toggleFloat(); });
+  pill.addEventListener("click", () => {
+    toggleFloat();
+  });
 
   const panel = el("div", { class: PILL_PREFIX + "panel" });
   panel.hidden = true;
@@ -503,12 +562,22 @@ function mountFloat(): () => void {
     });
   };
   // orientationchange 后延迟一帧重算：横竖屏切换瞬间 rect 尚未更新。
-  const onOrientationChange = (): void => { scheduleReposition(); };
+  const onOrientationChange = (): void => {
+    scheduleReposition();
+  };
   // 软键盘弹出/收起：visualViewport resize 监听（iOS 13+ 全支持），fixed 元素跟随视口。
-  const onVisualViewportResize = (): void => { scheduleReposition(); };
+  const onVisualViewportResize = (): void => {
+    scheduleReposition();
+  };
 
   const attachListeners = (target: HTMLElement): void => {
-    for (const stop of listeners) { try { stop(); } catch { /* 忽略 */ } }
+    for (const stop of listeners) {
+      try {
+        stop();
+      } catch {
+        /* 忽略 */
+      }
+    }
     listeners.length = 0;
     target.addEventListener("scroll", scheduleReposition, { passive: true });
     window.addEventListener("resize", scheduleReposition);
@@ -575,7 +644,9 @@ function mountFloat(): () => void {
         uiConfig = cfg;
         applyUiPlacement();
       })
-      .catch(() => { /* 网络/超时：保留旧配置，下次轮询重试 */ });
+      .catch(() => {
+        /* 网络/超时：保留旧配置，下次轮询重试 */
+      });
   };
   syncUiConfig();
 
@@ -593,9 +664,21 @@ function mountFloat(): () => void {
 
   return () => {
     observer.disconnect();
-    for (const stop of listeners) { try { stop(); } catch { /* 忽略 */ } }
-    if (placeRafId !== 0) { cancelAnimationFrame(placeRafId); placeRafId = 0; }
-    if (observerRafId !== 0) { cancelAnimationFrame(observerRafId); observerRafId = 0; }
+    for (const stop of listeners) {
+      try {
+        stop();
+      } catch {
+        /* 忽略 */
+      }
+    }
+    if (placeRafId !== 0) {
+      cancelAnimationFrame(placeRafId);
+      placeRafId = 0;
+    }
+    if (observerRafId !== 0) {
+      cancelAnimationFrame(observerRafId);
+      observerRafId = 0;
+    }
     if (refreshTimer !== null) {
       clearInterval(refreshTimer);
       refreshTimer = null;
@@ -654,7 +737,13 @@ export function apply(ctx: any): void {
             // label 传 thunk（SlotLabel = string | (() => string)）：宿主 nav rows 每次读取经
             // resolveSlotLabel 求值 + shell 订阅 locale 重渲染，切语言即跟随；
             // 注册期求值字符串快照是旧行为）。thunk 保持最小 t(key) 形态，不包任何可能抛错的逻辑。
-            { name: "settings.section", id: "dsh-provider-usage", order: 90, label: () => t("settingsTab"), locale: NS },
+            {
+              name: "settings.section",
+              id: "dsh-provider-usage",
+              order: 90,
+              label: () => t("settingsTab"),
+              locale: NS,
+            },
             function () {
               return <SettingsPage />;
             },
@@ -706,22 +795,29 @@ export function apply(ctx: any): void {
     }
     void detect();
 
-    ctx.effect(() => () => {
-      if (disposeSettingsSection !== undefined) {
-        try { disposeSettingsSection(); } catch { /* 忽略 */ }
-        disposeSettingsSection = undefined;
-      }
-      if (unsubSessions !== undefined) unsubSessions();
-      if (unsubLocale !== undefined) unsubLocale();
-      disposeFloat();
-      renderGeneration += 1;
-      detectedProvider = undefined;
-      providerUnknown = false;
-      lastDetectCurrent = undefined;
-      catalogCache.reset(); // 失效目录缓存：热卸载/重挂载后兜底目录重拉
-      sessions = undefined;
-      remote = undefined;
-    }, "dsh-provider-usage: float");
+    ctx.effect(
+      () => () => {
+        if (disposeSettingsSection !== undefined) {
+          try {
+            disposeSettingsSection();
+          } catch {
+            /* 忽略 */
+          }
+          disposeSettingsSection = undefined;
+        }
+        if (unsubSessions !== undefined) unsubSessions();
+        if (unsubLocale !== undefined) unsubLocale();
+        disposeFloat();
+        renderGeneration += 1;
+        detectedProvider = undefined;
+        providerUnknown = false;
+        lastDetectCurrent = undefined;
+        catalogCache.reset(); // 失效目录缓存：热卸载/重挂载后兜底目录重拉
+        sessions = undefined;
+        remote = undefined;
+      },
+      "dsh-provider-usage: float",
+    );
   } catch (error) {
     console.warn("[dsh-provider-usage] 悬浮框挂载失败", error);
   }

@@ -10,14 +10,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-const {
-  apply,
-  makeRoutes,
-  ROUTES,
-  McpStore,
-  McpManager,
-  normalizeServer,
-} = await import("../../src/index.ts");
+const { apply, makeRoutes, ROUTES, McpStore, McpManager, normalizeServer } =
+  await import("../../src/index.ts");
 
 let tempDirs = [];
 
@@ -39,7 +33,10 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
     store.data = { version: 1, servers: [] };
     // 添加一个测试服务器（不真实连接，只验证路由 handler 可被调用）
     store.upsert(normalizeServer({ name: "route-test", transport: "stdio", command: "echo" }));
-    const manager = new McpManager({ logger: { warn: () => {}, info: () => {}, error: () => {} } }, store);
+    const manager = new McpManager(
+      { logger: { warn: () => {}, info: () => {}, error: () => {} } },
+      store,
+    );
 
     const routes = makeRoutes(manager);
     return { routes, find: (path) => routes.find((r) => r.path === path) };
@@ -51,7 +48,11 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
       method,
       url,
       socket: { remoteAddress: "127.0.0.1" },
-      headers: { host: "localhost:3080", origin: "http://localhost:3080", "sec-fetch-site": "same-origin" },
+      headers: {
+        host: "localhost:3080",
+        origin: "http://localhost:3080",
+        "sec-fetch-site": "same-origin",
+      },
       async *[Symbol.asyncIterator]() {
         if (body !== undefined) yield Buffer.from(JSON.stringify(body));
       },
@@ -62,9 +63,16 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
     const state = { status: 200, body: "", headers: {} };
     return {
       state,
-      writeHead: (s, h) => { state.status = s; if (h) state.headers = h; },
-      write: (chunk) => { state.body += chunk.toString(); },
-      end: (chunk) => { if (chunk) state.body += chunk.toString(); },
+      writeHead: (s, h) => {
+        state.status = s;
+        if (h) state.headers = h;
+      },
+      write: (chunk) => {
+        state.body += chunk.toString();
+      },
+      end: (chunk) => {
+        if (chunk) state.body += chunk.toString();
+      },
       setHeader: () => {},
       on: () => {},
       destroy: () => {},
@@ -95,7 +103,10 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
   it("disconnect 合法 name → 200", async () => {
     const { find } = makeRoutesFixture();
     const res = fakeRes();
-    await find(ROUTES.disconnect).handler(fakeReq("POST", `${ROUTES.disconnect}?name=route-test`), res);
+    await find(ROUTES.disconnect).handler(
+      fakeReq("POST", `${ROUTES.disconnect}?name=route-test`),
+      res,
+    );
     expect(res.state.status).toBe(200);
   });
 
@@ -109,7 +120,10 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
   it("reconnect 合法 name → 200", async () => {
     const { find } = makeRoutesFixture();
     const res = fakeRes();
-    await find(ROUTES.reconnect).handler(fakeReq("POST", `${ROUTES.reconnect}?name=route-test`), res);
+    await find(ROUTES.reconnect).handler(
+      fakeReq("POST", `${ROUTES.reconnect}?name=route-test`),
+      res,
+    );
     expect(res.state.status).toBe(200);
   });
 
@@ -152,8 +166,12 @@ describe("apply 完整 settings 生命周期（isUnloading 覆盖）", () => {
             settings: {
               register: (ns, schema, opts) => {
                 return {
-                  get: () => ({ ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } } }),
-                  watch: (cb) => { refs.watchCb = cb; },
+                  get: () => ({
+                    ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } },
+                  }),
+                  watch: (cb) => {
+                    refs.watchCb = cb;
+                  },
                 };
               },
             },
@@ -166,7 +184,12 @@ describe("apply 完整 settings 生命周期（isUnloading 覆盖）", () => {
         return () => {};
       },
       on: () => () => {},
-      effect: (fn) => { const d = fn(); return () => { d(); }; },
+      effect: (fn) => {
+        const d = fn();
+        return () => {
+          d();
+        };
+      },
     };
 
     await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });
@@ -222,7 +245,12 @@ describe("apply 的 agent/pre-step 在 announceCatalog=true 时注册", () => {
         if (evt === "agent/pre-step") refs.preHandler = handler;
         return () => {};
       },
-      effect: (fn) => { const d = fn(); return () => { d(); }; },
+      effect: (fn) => {
+        const d = fn();
+        return () => {
+          d();
+        };
+      },
     };
 
     await apply(ctx, { enabled: true, announceCatalog: true, storePath: join(dir, "mcp.json") });
@@ -238,7 +266,11 @@ describe("apply 的 agent/pre-step 在 announceCatalog=true 时注册", () => {
     const refs = await applyWithPreStep();
     // 调用 handler: reject 透传
     const rejectResult = await refs.preHandler(
-      { agent: { session: { header: { cwd: "/tmp" } } }, messages: [], signal: { aborted: false, throwIfAborted: () => {} } },
+      {
+        agent: { session: { header: { cwd: "/tmp" } } },
+        messages: [],
+        signal: { aborted: false, throwIfAborted: () => {} },
+      },
       async () => ({ kind: "reject" }),
     );
     expect(rejectResult.kind).toBe("reject");
@@ -267,7 +299,9 @@ describe("apply 的 SSE broadcast 与 route disposer", () => {
       on: () => () => {},
       effect: (fn) => {
         const d = fn();
-        refs.effectDisposer = () => { d(); };
+        refs.effectDisposer = () => {
+          d();
+        };
         return () => {};
       },
     };
@@ -306,7 +340,9 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings: {
-              update: function(ns, patch) { return Promise.resolve(); },
+              update: function (ns, patch) {
+                return Promise.resolve();
+              },
               register: () => {
                 registerCalled = true;
                 return { get: () => ({}), watch: () => {} };
@@ -318,7 +354,12 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
         return () => {};
       },
       on: () => () => {},
-      effect: (fn) => { const d = fn(); return () => { d(); }; },
+      effect: (fn) => {
+        const d = fn();
+        return () => {
+          d();
+        };
+      },
     };
 
     await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });

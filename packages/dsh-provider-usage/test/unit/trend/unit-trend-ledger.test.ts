@@ -33,7 +33,13 @@
  * （合法 dir 经 resolveCwd 净化、缺失归 TREND_UNIDENTIFIED）、跨天（DAY0/DAY1 逐日对账）。
  */
 import { afterAll, describe, expect, it } from "vitest";
-import { TrendCollector, TrendAggregator, dayKey, sumToken, TREND_UNIDENTIFIED } from "../../../src/apply/index.ts";
+import {
+  TrendCollector,
+  TrendAggregator,
+  dayKey,
+  sumToken,
+  TREND_UNIDENTIFIED,
+} from "../../../src/apply/index.ts";
 
 // ---------------------------------------------------------------- 工具（与 unit-trend.test.ts 同口径）
 
@@ -53,7 +59,12 @@ const HOUR = 3600_000;
 function ev(type, data, time, seq = 1) {
   if (type === "assistant/chunk") {
     if (data?.chunk?.type !== "usage") {
-      return { type: "assistant/attempt", seq, time, data: { turn: data?.turn, step: data?.step, stream: [] } };
+      return {
+        type: "assistant/attempt",
+        seq,
+        time,
+        data: { turn: data?.turn, step: data?.step, stream: [] },
+      };
     }
     return {
       type: "assistant/message",
@@ -69,12 +80,23 @@ function ev(type, data, time, seq = 1) {
   }
   return { type, seq, time, data };
 }
-const HEADER = (provider, model) => ({ header: { config: { provider, model } }, reason: "initial" });
+const HEADER = (provider, model) => ({
+  header: { config: { provider, model } },
+  reason: "initial",
+});
 /** usage chunk：cacheRead/cacheWrite 省略时为 undefined → parseTokens 记 null（缺失维度语义）。 */
 const USAGE = (turn, step, input, output, cacheRead, cacheWrite) => ({
   turn,
   step,
-  chunk: { type: "usage", usage: { inputTokens: input, outputTokens: output, cacheReadTokens: cacheRead, cacheWriteTokens: cacheWrite } },
+  chunk: {
+    type: "usage",
+    usage: {
+      inputTokens: input,
+      outputTokens: output,
+      cacheReadTokens: cacheRead,
+      cacheWriteTokens: cacheWrite,
+    },
+  },
 });
 /** assistant/message：source 缺省 = 无副源（归属缺失路径）；usage 为 null = 零 usage 补记。 */
 const MESSAGE = (turn, step, usage, opts = {}) => ({
@@ -88,7 +110,8 @@ const MESSAGE = (turn, step, usage, opts = {}) => ({
 function makeCollector(resolveCwd) {
   const emitted = [];
   const collector = new TrendCollector({ now: () => T0, resolveCwd, emit: (e) => emitted.push(e) });
-  const send = (session, event) => collector.handleEvent(typeof session === "string" ? session : session?.id, event);
+  const send = (session, event) =>
+    collector.handleEvent(typeof session === "string" ? session : session?.id, event);
   return { collector, emitted, send };
 }
 
@@ -103,17 +126,47 @@ const { emitted, send } = makeCollector(resolveCwd);
 send("s1", ev("request/header", HEADER("deepseek", "deepseek-chat"), T0, 1)); // 归属主源折叠
 send("s1", ev("assistant/chunk", USAGE(1, 1, 100, 50, 10, 5), T0 + 1000, 2)); // 定稿 call#1（retry1）
 send("s1", ev("assistant/chunk", USAGE(1, 1, 120, 60, 0, 0), T0 + 2000, 3)); // 同调用重复 usage → correct
-send("s1", ev("assistant/message", MESSAGE(1, 1, { inputTokens: 200, outputTokens: 80, cacheReadTokens: 2, cacheWriteTokens: 1 }), T0 + 3000, 4)); // 已定稿 message → correct（覆盖）
+send(
+  "s1",
+  ev(
+    "assistant/message",
+    MESSAGE(1, 1, { inputTokens: 200, outputTokens: 80, cacheReadTokens: 2, cacheWriteTokens: 1 }),
+    T0 + 3000,
+    4,
+  ),
+); // 已定稿 message → correct（覆盖）
 send("s1", ev("request/header", HEADER("deepseek", "deepseek-chat"), T0 + 5000, 5)); // 重试边界
 send("s1", ev("assistant/chunk", USAGE(1, 1, 70, 30), T0 + 6000, 6)); // retry2 逐次入账
-send("s1", ev("tool/call", { turn: 1, step: 1, callId: "c1", name: "bash", arguments: "{}" }, T0 + 7000, 7)); // counter toolCalls
-send("s1", ev("tool/call", { turn: 1, step: 1, callId: "c2", name: "bash", arguments: "{}" }, T0 + 8000, 8)); // counter toolCalls
+send(
+  "s1",
+  ev("tool/call", { turn: 1, step: 1, callId: "c1", name: "bash", arguments: "{}" }, T0 + 7000, 7),
+); // counter toolCalls
+send(
+  "s1",
+  ev("tool/call", { turn: 1, step: 1, callId: "c2", name: "bash", arguments: "{}" }, T0 + 8000, 8),
+); // counter toolCalls
 send("s1", ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0 + 9000, 9)); // counter turns
 
 // DAY0 —— s2：归属缺失（无 header 无 source）+ interrupted 补记 + 后续 usage（未识别桶）
-send("s2", ev("assistant/message", MESSAGE(1, 1, { inputTokens: 30, outputTokens: 20 }, { interrupted: true }), T0 + 10000, 10)); // 补记 call（interrupted）
+send(
+  "s2",
+  ev(
+    "assistant/message",
+    MESSAGE(1, 1, { inputTokens: 30, outputTokens: 20 }, { interrupted: true }),
+    T0 + 10000,
+    10,
+  ),
+); // 补记 call（interrupted）
 send("s2", ev("assistant/chunk", USAGE(2, 1, 10, 5), T0 + 11000, 11)); // 未识别 call
-send("s2", ev("tool/call", { turn: 1, step: 1, callId: "c1", name: "bash", arguments: "{}" }, T0 + 12000, 12)); // counter toolCalls（未识别）
+send(
+  "s2",
+  ev(
+    "tool/call",
+    { turn: 1, step: 1, callId: "c1", name: "bash", arguments: "{}" },
+    T0 + 12000,
+    12,
+  ),
+); // counter toolCalls（未识别）
 send("s2", ev("turn/end", { turn: 1, reason: { kind: "completed" } }, T0 + 13000, 13)); // counter turns（未识别）
 
 // DAY1 —— s3：合法 dir（proj-b）+ 零 usage 补记；s4：目录缺失归未识别 + 合法归属
@@ -135,7 +188,15 @@ const agg = new TrendAggregator();
 for (const e of emitted) agg.apply(e);
 
 // ---- 期望值：Σ事件（a 视角）——fold 键最终 tokens（correct 覆盖语义）+ counter 计数 ----
-const ZERO = () => ({ input: null, output: null, cacheRead: null, cacheWrite: null, calls: 0, turns: 0, toolCalls: 0 });
+const ZERO = () => ({
+  input: null,
+  output: null,
+  cacheRead: null,
+  cacheWrite: null,
+  calls: 0,
+  turns: 0,
+  toolCalls: 0,
+});
 const TOKEN_FIELDS = ["input", "output", "cacheRead", "cacheWrite"];
 const NUM_FIELDS = ["calls", "turns", "toolCalls"];
 const ALL_FIELDS = [...TOKEN_FIELDS, ...NUM_FIELDS];
@@ -157,7 +218,11 @@ const finalByKey = new Map();
 for (const e of emitted) {
   if (e.type === "call") {
     const r = e.record;
-    finalByKey.set(`${r.session}\u0000${r.turn}\u0000${r.step}\u0000${r.retry}`, { day: dayKey(r.time), dir: r.dir, tokens: r.tokens });
+    finalByKey.set(`${r.session}\u0000${r.turn}\u0000${r.step}\u0000${r.retry}`, {
+      day: dayKey(r.time),
+      dir: r.dir,
+      tokens: r.tokens,
+    });
   } else if (e.type === "correct") {
     const r = e.record;
     const cur = finalByKey.get(`${r.session}\u0000${r.turn}\u0000${r.step}\u0000${r.retry}`);
@@ -209,7 +274,10 @@ for (const c of counters) {
 // ---- 对账断言（失败消息给出视角 / 日 / 键 / 期望与实得，精确缺账多账定位）----
 function assertEqualTotals(label, expected, actual) {
   for (const f of ALL_FIELDS) {
-    expect(actual[f], `${label}：字段 ${f} 不守恒——期望 ${expected[f]}，实得 ${actual[f]}（${expected[f] === null || actual[f] === null ? "null 语义参与" : `差 ${actual[f] - expected[f]}`}）`).toBe(expected[f]);
+    expect(
+      actual[f],
+      `${label}：字段 ${f} 不守恒——期望 ${expected[f]}，实得 ${actual[f]}（${expected[f] === null || actual[f] === null ? "null 语义参与" : `差 ${actual[f] - expected[f]}`}）`,
+    ).toBe(expected[f]);
   }
 }
 
@@ -281,9 +349,17 @@ describe("emitted 结构 sanity（0.1.5：一次结算一条 call；counter 独�
   });
 
   it("#633 目录归属两条线：合法 basename 与缺失归未识别均落盘", () => {
-    expect(calls.map((c) => c.dir).sort()).toEqual(
-      [TREND_UNIDENTIFIED, TREND_UNIDENTIFIED, TREND_UNIDENTIFIED, "proj-a", "proj-a", "proj-a", "proj-a", "proj-b", "proj-b"],
-    );
+    expect(calls.map((c) => c.dir).sort()).toEqual([
+      TREND_UNIDENTIFIED,
+      TREND_UNIDENTIFIED,
+      TREND_UNIDENTIFIED,
+      "proj-a",
+      "proj-a",
+      "proj-a",
+      "proj-a",
+      "proj-b",
+      "proj-b",
+    ]);
   });
 
   it("身份快照键数 == call 事件数（correct 不新增）", () => {
@@ -316,11 +392,19 @@ describe("台账守恒对账（a→b→c→d 四视角逐日）", () => {
     const byDir = expectByDayDir.get(day);
     for (const [dir, expectedDir] of byDir) {
       it(`[${day}] dir=${dir}（rollupSnapshot 折算）`, () => {
-        assertEqualTotals(`[${day}] dir=${dir}（rollupSnapshot 折算）`, expectedDir, dirRowsOfDirTotals(day, dir));
+        assertEqualTotals(
+          `[${day}] dir=${dir}（rollupSnapshot 折算）`,
+          expectedDir,
+          dirRowsOfDirTotals(day, dir),
+        );
       });
 
       it(`[${day}] dir=${dir}（dirRows() 快照）`, () => {
-        assertEqualTotals(`[${day}] dir=${dir}（dirRows() 快照）`, expectedDir, dirSnapshotOfDirTotals(day, dir));
+        assertEqualTotals(
+          `[${day}] dir=${dir}（dirRows() 快照）`,
+          expectedDir,
+          dirSnapshotOfDirTotals(day, dir),
+        );
       });
     }
 
@@ -347,5 +431,7 @@ describe("台账守恒链完整表达式（终态抽查）", () => {
 });
 
 afterAll(() => {
-  console.log(`unit-trend-ledger: DAY0/DAY1 四视角台账守恒全部通过（calls=${expectByDay.get(DAY0).calls + expectByDay.get(DAY1).calls}，corrects=${corrects.length}，counters=${counters.length}）`);
+  console.log(
+    `unit-trend-ledger: DAY0/DAY1 四视角台账守恒全部通过（calls=${expectByDay.get(DAY0).calls + expectByDay.get(DAY1).calls}，corrects=${corrects.length}，counters=${counters.length}）`,
+  );
 });

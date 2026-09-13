@@ -4,13 +4,21 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename } from "node:path";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
-import { guardLoopbackMethod, readJsonBodyOutcome, writeJson } from "../../../../../shared/host-utils.js";
+import {
+  guardLoopbackMethod,
+  readJsonBodyOutcome,
+  writeJson,
+} from "../../../../../shared/host-utils.js";
 import { ADAPTER_CONTRACT_VERSION } from "../../shared/interface.ts";
 import type { LayerErrorSurface } from "../common/interface.ts";
 import type { StatsService } from "../../domain1/pipeline/interface.ts";
 import type { TrendTracker } from "../aggregate/interface.ts";
 import { TREND_DIR_MAX } from "../collect/interface.ts";
-import { normalizeUiConfig, writeUiConfig, type UiPlacementConfig } from "../../shared/interface.ts";
+import {
+  normalizeUiConfig,
+  writeUiConfig,
+  type UiPlacementConfig,
+} from "../../shared/interface.ts";
 
 /** UiRoutesContext 依赖装配形状（路由 context 类的构造入口）。 */
 export interface UiRoutesContextOptions {
@@ -48,10 +56,19 @@ export class UiRoutesContext {
 const TREND_WINDOW: Record<string, number> = { day: 30, week: 12, month: 12 };
 const TREND_METRICS = new Set(["total", "input", "output", "cacheRead", "cacheWrite", "calls"]);
 
-export function clampTrendN(raw: string | null, gran: "day" | "week" | "month", retention: number): number {
-  const cap = gran === "day" ? retention : gran === "week" ? Math.ceil(retention / 7) : Math.ceil(retention / 30);
+export function clampTrendN(
+  raw: string | null,
+  gran: "day" | "week" | "month",
+  retention: number,
+): number {
+  const cap =
+    gran === "day"
+      ? retention
+      : gran === "week"
+        ? Math.ceil(retention / 7)
+        : Math.ceil(retention / 30);
   const parsed = raw === null || raw === "" ? NaN : Number(raw);
-  const n = Number.isInteger(parsed) && parsed > 0 ? parsed : TREND_WINDOW[gran] ?? 30;
+  const n = Number.isInteger(parsed) && parsed > 0 ? parsed : (TREND_WINDOW[gran] ?? 30);
   return Math.min(n, cap);
 }
 
@@ -103,7 +120,8 @@ export function handleTrend(
     ? (m as "total" | "input" | "output" | "cacheRead" | "cacheWrite" | "calls")
     : "total";
   const providerParam = url.searchParams.get("provider") ?? "";
-  const provider = providerParam.length > 0 && providerParam.length <= 128 ? providerParam : undefined;
+  const provider =
+    providerParam.length > 0 && providerParam.length <= 128 ? providerParam : undefined;
   // 可选目录过滤（GET query，风格与 provider 参数一致）——
   // 非空且不超数据层上限（TREND_DIR_MAX，与 isValidDirKey 同一事实源）按目录键过滤
   // （basename 净化值或未识别桶键）；未传/非法（空串/超长）→ undefined = 全目录聚合，
@@ -121,7 +139,11 @@ export function handleTrend(
   // （dir 行无 provider 关联，既定数据边界）。
   const byDirAll = dir === undefined && url.searchParams.get("byDir") === "1";
   const byModel = url.searchParams.get("byModel") === "1";
-  const n = clampTrendN(url.searchParams.get("n"), granularity, statsService.config.trendRetentionDays);
+  const n = clampTrendN(
+    url.searchParams.get("n"),
+    granularity,
+    statsService.config.trendRetentionDays,
+  );
   const byDir = dir !== undefined || byDirAll;
   // dir 面与 provider 面的 stack 形状归一（两分支字段并集）——
   // 未过滤分支响应含 providers 图例（现状形状零变化），过滤分支含 dirs 目录图例。
@@ -130,11 +152,18 @@ export function handleTrend(
   // 候选与 provider 面图例同源（seriesStacked 窗口内 distinct），series 不受影响
   // （dir 行无 provider 关联的既定数据边界不变，加性返回不破坏「未传参数零变化」）。
   // dir 过滤面保持空 providers（既有形状，过滤面选中态下适配器已互斥清空）。
-  const dirStack = { ...trend.dirStacked(n, granularity, metric, dir), providers: [] as Array<{ provider: string; model: string | null }> };
-  if (byDirAll) dirStack.providers = trend.seriesStacked(n, granularity, metric, undefined, false).providers;
+  const dirStack = {
+    ...trend.dirStacked(n, granularity, metric, dir),
+    providers: [] as Array<{ provider: string; model: string | null }>,
+  };
+  if (byDirAll)
+    dirStack.providers = trend.seriesStacked(n, granularity, metric, undefined, false).providers;
   const stack = byDir
     ? dirStack
-    : { ...trend.seriesStacked(n, granularity, metric, provider, byModel), dirs: [] as Array<{ dir: string }> };
+    : {
+        ...trend.seriesStacked(n, granularity, metric, provider, byModel),
+        dirs: [] as Array<{ dir: string }>,
+      };
   const summary = byDir
     ? trend.dirWindowSummary(n, granularity, metric, dir, stack.series)
     : trend.windowSummary(n, granularity, metric, provider, byModel ? undefined : stack.series);

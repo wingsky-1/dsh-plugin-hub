@@ -19,7 +19,13 @@ describe("ctx.inject 不可用", () => {
   it("ctx.inject 不可用应 warn", () => {
     let warned = "";
     installSettingsNamespace(
-      { logger: { warn: (m) => { warned = m; } } },
+      {
+        logger: {
+          warn: (m) => {
+            warned = m;
+          },
+        },
+      },
       "test-ns",
       {},
       {},
@@ -39,7 +45,11 @@ describe("settings 服务缺失", () => {
   it("settings 服务缺失应 warn", () => {
     let warned = "";
     const ctx = {
-      logger: { warn: (m) => { warned = m; } },
+      logger: {
+        warn: (m) => {
+          warned = m;
+        },
+      },
       inject: (keys, cb) => {
         if (Array.isArray(keys) && keys.includes("settings")) cb({});
         return () => {};
@@ -54,10 +64,21 @@ describe("settings.register 抛错", () => {
   it("register 抛错应 warn", () => {
     let warned = "";
     const ctx = {
-      logger: { warn: (m) => { warned = m; } },
+      logger: {
+        warn: (m) => {
+          warned = m;
+        },
+      },
       inject: (keys, cb) => {
         if (Array.isArray(keys) && keys.includes("settings")) {
-          cb({ settings: { register: () => { throw new Error("duplicate ns"); } }, effect: () => () => {} });
+          cb({
+            settings: {
+              register: () => {
+                throw new Error("duplicate ns");
+              },
+            },
+            effect: () => () => {},
+          });
         }
         return () => {};
       },
@@ -83,7 +104,9 @@ function installActiveLifecycle() {
 
   const scope = {
     get: () => ({ from: "scope" }),
-    watch: (cb) => { state.watchCb = cb; },
+    watch: (cb) => {
+      state.watchCb = cb;
+    },
   };
   state.scope = scope;
 
@@ -101,15 +124,26 @@ function installActiveLifecycle() {
     fiber: { state: "active" },
     logger: { warn: () => {} },
     inject: (keys, cb) => {
-      if (Array.isArray(keys) && keys.includes("settings")) cb({ settings, effect: settings.effect });
+      if (Array.isArray(keys) && keys.includes("settings"))
+        cb({ settings, effect: settings.effect });
       return () => {};
     },
   };
 
-  installSettingsNamespace(ctx, "test-ns", {}, { from: "entry" }, {
-    setSource: (fn) => { state.sourceMode = fn().from; },
-    onChange: () => { state.onChangeCount += 1; },
-  });
+  installSettingsNamespace(
+    ctx,
+    "test-ns",
+    {},
+    { from: "entry" },
+    {
+      setSource: (fn) => {
+        state.sourceMode = fn().from;
+      },
+      onChange: () => {
+        state.onChangeCount += 1;
+      },
+    },
+  );
 
   return state;
 }
@@ -168,20 +202,34 @@ describe("onScope（#436）：register 成功后、setSource 之前回调", () =
       logger: { warn: () => {} },
       inject: (keys, cb) => {
         if (Array.isArray(keys) && keys.includes("settings")) {
-          cb({ settings, effect: (fn) => { fn(); return () => {}; } });
+          cb({
+            settings,
+            effect: (fn) => {
+              fn();
+              return () => {};
+            },
+          });
         }
         return () => {};
       },
     };
-    installSettingsNamespace(ctx, "test-ns", {}, { from: "entry" }, {
-      setSource: () => { state.order.push("setSource"); },
-      onChange: () => {},
-      onScope: (s, svc) => {
-        state.scopeSeen = s;
-        state.serviceSeen = svc;
-        state.order.push("onScope");
+    installSettingsNamespace(
+      ctx,
+      "test-ns",
+      {},
+      { from: "entry" },
+      {
+        setSource: () => {
+          state.order.push("setSource");
+        },
+        onChange: () => {},
+        onScope: (s, svc) => {
+          state.scopeSeen = s;
+          state.serviceSeen = svc;
+          state.order.push("onScope");
+        },
       },
-    });
+    );
     return state;
   }
 
@@ -207,7 +255,9 @@ describe("isUnloading 短路：卸载态 disposer / watch 不动作", () => {
     const seen = { onChangeCount: 0, watchCb: null, disposer: null };
     const scope = {
       get: () => ({ from: "scope" }),
-      watch: (cb) => { seen.watchCb = cb; },
+      watch: (cb) => {
+        seen.watchCb = cb;
+      },
     };
     const ctx = {
       fiber: { state },
@@ -225,10 +275,18 @@ describe("isUnloading 短路：卸载态 disposer / watch 不动作", () => {
         return () => {};
       },
     };
-    installSettingsNamespace(ctx, "test-ns", {}, { from: "entry" }, {
-      setSource: () => {},
-      onChange: () => { seen.onChangeCount += 1; },
-    });
+    installSettingsNamespace(
+      ctx,
+      "test-ns",
+      {},
+      { from: "entry" },
+      {
+        setSource: () => {},
+        onChange: () => {
+          seen.onChangeCount += 1;
+        },
+      },
+    );
     return seen;
   }
 
@@ -251,7 +309,9 @@ describe("总开关：fiber 非对象 / 无 fiber / 无 state 的容错", () => 
     let disposer = null;
     const scope = {
       get: () => null,
-      watch: (cb) => { watchCb = cb; },
+      watch: (cb) => {
+        watchCb = cb;
+      },
     };
     const ctx = {
       fiber,
@@ -260,7 +320,10 @@ describe("总开关：fiber 非对象 / 无 fiber / 无 state 的容错", () => 
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings: { register: () => scope },
-            effect: (fn) => { disposer = fn(); return () => {}; },
+            effect: (fn) => {
+              disposer = fn();
+              return () => {};
+            },
           });
         }
         return () => {};

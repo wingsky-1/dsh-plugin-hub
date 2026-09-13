@@ -6,7 +6,12 @@
  */
 
 /** 等待带超时（race 兜底）。 */
-export function withTimeout<T>(promise: Promise<T>, ms: number, message: string, signal?: AbortSignal): Promise<T> {
+export function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string,
+  signal?: AbortSignal,
+): Promise<T> {
   if (signal?.aborted === true) return Promise.reject(signal.reason ?? new Error("aborted"));
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {

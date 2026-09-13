@@ -81,8 +81,10 @@ describe("normalizeScope", () => {
 });
 
 describe("createTransport 分派 + StdioTransport 配置缺省", () => {
-  const makeStdio = () => createTransport({ transport: "stdio", command: "echo", url: "http://ignored/" });
-  const makeWithArgs = () => new StdioTransport({ command: "node", args: ["-v"], env: { K: "v" }, cwd: "/tmp" });
+  const makeStdio = () =>
+    createTransport({ transport: "stdio", command: "echo", url: "http://ignored/" });
+  const makeWithArgs = () =>
+    new StdioTransport({ command: "node", args: ["-v"], env: { K: "v" }, cwd: "/tmp" });
 
   it("stdio 配置 → StdioTransport", () => {
     expect(makeStdio() instanceof StdioTransport).toBeTruthy();
@@ -177,7 +179,11 @@ describe("HttpTransport headers ${ENV} 展开（经 SDK requestInit 面）", () 
     process.env.DSH_MUT_TOK = "tk";
   });
 
-  const makeHttp = () => new HttpTransport("http://localhost:2/mcp", { Authorization: "Bearer ${DSH_MUT_TOK}", Plain: "p" });
+  const makeHttp = () =>
+    new HttpTransport("http://localhost:2/mcp", {
+      Authorization: "Bearer ${DSH_MUT_TOK}",
+      Plain: "p",
+    });
 
   it("SDK requestInit 存在", () => {
     const init = makeHttp().sdk._requestInit;
@@ -203,14 +209,9 @@ describe("HttpTransport headers ${ENV} 展开（经 SDK requestInit 面）", () 
 describe("parseSsePayload", () => {
   const two = 'data: {"id":1,"m":"a"}\r\n\r\ndata: {"id":2,"m":"b"}\n\n';
   // 多行 data join + 非 data 行忽略 + 坏 JSON 事件跳过。
-  const mixed = [
-    "event: x",
-    "data: not-json",
-    "",
-    "data: {\"id\":3,",
-    "data:  \"ok\":true}",
-    "",
-  ].join("\r\n");
+  const mixed = ["event: x", "data: not-json", "", 'data: {"id":3,', 'data:  "ok":true}', ""].join(
+    "\r\n",
+  );
 
   it("id 匹配第一个事件", () => {
     expect(parseSsePayload(two, 1).m).toBe("a");
@@ -257,7 +258,10 @@ describe("MCPClient.initialize：失败路径（命令不存在，stderrTail 空
   it("stderrTail 为空时不附 stderr 后缀", async () => {
     const transport = new StdioTransport({ command: "dsh-mcp-missing-cmd-xyz" });
     const client = new MCPClient(transport);
-    const err = await client.initialize().then(() => null, (e) => e);
+    const err = await client.initialize().then(
+      () => null,
+      (e) => e,
+    );
     expect(err).toBeInstanceOf(Error);
     expect(/\(stderr:/.test(err.message)).toBe(false);
   });
@@ -319,7 +323,10 @@ describe("listTools / callTool：参数构造（fake client 记录 request 入�
 
   it("callTool 对象 args 构造", async () => {
     const { calls } = await runSequence();
-    expect(calls[2].params).toEqual({ method: "tools/call", params: { name: "t1", arguments: { a: 1 } } });
+    expect(calls[2].params).toEqual({
+      method: "tools/call",
+      params: { name: "t1", arguments: { a: 1 } },
+    });
   });
 
   it("无 args 时省略 arguments 键", async () => {

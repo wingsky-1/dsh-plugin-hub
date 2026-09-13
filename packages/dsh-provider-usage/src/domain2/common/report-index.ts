@@ -20,7 +20,8 @@ export function parseReportIndexLines(raw: string): ReportMeta[] {
     try {
       const obj = JSON.parse(s) as ReportMeta | null;
       if (
-        obj !== null && typeof obj === "object" &&
+        obj !== null &&
+        typeof obj === "object" &&
         typeof obj.key === "string" &&
         (obj.period === "daily" || obj.period === "weekly" || obj.period === "monthly")
       ) {

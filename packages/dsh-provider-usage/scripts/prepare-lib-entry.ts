@@ -13,30 +13,32 @@
  * 产物的相对引用结构一致）：.mjs/.d.mts 不被 tsc emit，而 lib/apply/index.js 的
  * `export * from "../domain1/adapters/xxx.mjs"` 与 index.d.ts 的类型解析都需要它们在位。
  */
-import { cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { cpSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const pkgDir = dirname(dirname(fileURLToPath(import.meta.url)))
-const srcAdapters = join(pkgDir, 'src', 'domain1', 'adapters')
-const libAdapters = join(pkgDir, 'lib', 'domain1', 'adapters')
-const libDir = join(pkgDir, 'lib')
+const pkgDir = dirname(dirname(fileURLToPath(import.meta.url)));
+const srcAdapters = join(pkgDir, "src", "domain1", "adapters");
+const libAdapters = join(pkgDir, "lib", "domain1", "adapters");
+const libDir = join(pkgDir, "lib");
 
 // 1. 适配器产物归位（与 tsc 输出结构对齐，替代共享 bundle-host 中 src/adapters 硬编码）
 if (existsSync(srcAdapters)) {
-  mkdirSync(libAdapters, { recursive: true })
+  mkdirSync(libAdapters, { recursive: true });
   for (const f of readdirSync(srcAdapters)) {
-    if (/\.(mjs|d\.mts)$/.test(f)) cpSync(join(srcAdapters, f), join(libAdapters, f))
+    if (/\.(mjs|d\.mts)$/.test(f)) cpSync(join(srcAdapters, f), join(libAdapters, f));
   }
 }
 
 // 2. 产物入口薄转发（保持 lib/index.js / lib/index.d.ts 发布面）
 writeFileSync(
-  join(libDir, 'index.js'),
+  join(libDir, "index.js"),
   '// 阶段四目录化产物入口转发（组合根 src/apply/index.ts -> lib/apply/index.js；bundle-host 递归内联后等价）\nexport * from "./apply/index.js";\n',
-)
+);
 writeFileSync(
-  join(libDir, 'index.d.ts'),
+  join(libDir, "index.d.ts"),
   '// 阶段四目录化类型入口转发（发布面 lib/index.d.ts 锚定不变）\nexport * from "./apply/index.js";\n',
-)
-console.log('[prepare-lib-entry] 适配器产物归位 lib/domain1/adapters/ 与入口转发 lib/index.js|d.ts 完成')
+);
+console.log(
+  "[prepare-lib-entry] 适配器产物归位 lib/domain1/adapters/ 与入口转发 lib/index.js|d.ts 完成",
+);

@@ -196,9 +196,11 @@ export interface ConnStats {
  */
 export function isCompressible(contentType: unknown): boolean {
   const type = String(contentType).split(";", 1)[0].trim().toLowerCase();
-  return type.startsWith("application/json")
-    || type.endsWith("+json")
-    || (type.startsWith("text/") && type !== "text/event-stream");
+  return (
+    type.startsWith("application/json") ||
+    type.endsWith("+json") ||
+    (type.startsWith("text/") && type !== "text/event-stream")
+  );
 }
 
 /** 压缩预设档位 → compression 中间件选项（gzip 与 Brotli 双生效）。 */
@@ -228,7 +230,10 @@ export const DEFAULT_DEFLATE_POLICY: Readonly<DeflatePolicy> = Object.freeze({
  * @param policy 协商策略（缺省按放行处理）。
  * @param userAgent 入站 `user-agent` 请求头（可缺失）。
  */
-export function deflateAllowedByPolicy(policy: DeflatePolicy | undefined, userAgent: string | undefined): boolean {
+export function deflateAllowedByPolicy(
+  policy: DeflatePolicy | undefined,
+  userAgent: string | undefined,
+): boolean {
   if (policy?.browser === false) return false;
   const deny = policy?.uaDeny;
   if (deny === undefined || deny.length === 0) return true;
@@ -282,20 +287,26 @@ export function hostnameAllowed(authority: string | undefined): boolean {
     return false;
   }
   if (hostname === "localhost" || hostname === "[::1]") return true;
-  const bare = hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+  const bare =
+    hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
   return isIP(bare) !== 0;
 }
 
 /** 出站转发目标仅允许回环（防开放转发/SSRF）。targetHost 本应只指向回环 web 服务器。 */
 export function isLoopbackTarget(host: string): boolean {
   const bare = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
-  return host === "localhost" || bare === "127.0.0.1" || bare === "::1" || bare === "::ffff:127.0.0.1";
+  return (
+    host === "localhost" || bare === "127.0.0.1" || bare === "::1" || bare === "::ffff:127.0.0.1"
+  );
 }
 
 /**
  * 为上游一跳重建请求头（Host/Origin 重写）。导出供纯函数单测锁定行为；
  *  实际转发路径上作为 http-proxy 的每请求 headers 覆盖传入（前置校验不外移）。 */
-export function rewriteHeaders(headers: IncomingHttpHeaders, targetAuthority: string): IncomingHttpHeaders {
+export function rewriteHeaders(
+  headers: IncomingHttpHeaders,
+  targetAuthority: string,
+): IncomingHttpHeaders {
   const out = { ...headers };
   out.host = targetAuthority;
   if (out.origin !== undefined) out.origin = `http://${targetAuthority}`;
@@ -324,7 +335,11 @@ const DSH_AUTH_COOKIE_PREFIX = "dsh-auth-";
  * 导出供纯函数单测。
  */
 export function hasDshAuthCookie(cookieHeader: string | string[] | undefined): boolean {
-  const segments = Array.isArray(cookieHeader) ? cookieHeader : cookieHeader !== undefined ? [cookieHeader] : [];
+  const segments = Array.isArray(cookieHeader)
+    ? cookieHeader
+    : cookieHeader !== undefined
+      ? [cookieHeader]
+      : [];
   for (const head of segments) {
     for (const segment of head.split(";")) {
       const eq = segment.indexOf("=");
@@ -373,10 +388,19 @@ export function withLaunchToken(url: string | undefined, token: string): string 
  * 请求侧可达头（hop-by-hop + WS 握手请求头）。
  */
 const BRIDGE_UPSTREAM_HEADER_DENY: ReadonlySet<string> = new Set([
-  "connection", "upgrade", "keep-alive", "proxy-connection", "proxy-authorization", "proxy-authenticate",
-  "te", "trailer", "transfer-encoding",
-  "sec-websocket-extensions", "sec-websocket-key",
-  "sec-websocket-protocol", "sec-websocket-version",
+  "connection",
+  "upgrade",
+  "keep-alive",
+  "proxy-connection",
+  "proxy-authorization",
+  "proxy-authenticate",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "sec-websocket-extensions",
+  "sec-websocket-key",
+  "sec-websocket-protocol",
+  "sec-websocket-version",
 ]);
 
 /**
@@ -395,7 +419,10 @@ const BRIDGE_UPSTREAM_HEADER_DENY: ReadonlySet<string> = new Set([
  * @param targetAuthority 回环目标 authority（host:port）。
  * @returns 上游连接请求头（ws 库 headers 选项的键值面）。
  */
-export function bridgeUpstreamHeaders(headers: IncomingHttpHeaders, targetAuthority: string): Record<string, string> {
+export function bridgeUpstreamHeaders(
+  headers: IncomingHttpHeaders,
+  targetAuthority: string,
+): Record<string, string> {
   const out: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
     const lower = key.toLowerCase();
@@ -414,7 +441,12 @@ export function bridgeUpstreamHeaders(headers: IncomingHttpHeaders, targetAuthor
  * 注意：cordis.patch.yml 中的 port: 3081 属 bundle 层显式配置，与默认值
  * 保持一致即可，修改默认值需同步该文件注释。
  */
-export const DEFAULT_OPTIONS = Object.freeze({ host: "0.0.0.0", port: 3081, httpsPort: 3443, targetHost: "127.0.0.1" });
+export const DEFAULT_OPTIONS = Object.freeze({
+  host: "0.0.0.0",
+  port: 3081,
+  httpsPort: 3443,
+  targetHost: "127.0.0.1",
+});
 
 /** 上游 keep-alive 连接池上限（并发上游连接数；超出排队）。 */
 const MAX_UPSTREAM_SOCKETS = 64;
@@ -426,7 +458,10 @@ const MAX_UPSTREAM_SOCKETS = 64;
  * @param url 原始请求 URL（可能带查询串）。
  * @returns 是否命中。
  */
-export function compressWsPath(paths: readonly string[] | undefined, url: string | undefined): boolean {
+export function compressWsPath(
+  paths: readonly string[] | undefined,
+  url: string | undefined,
+): boolean {
   if (!paths || paths.length === 0 || typeof url !== "string" || url.length === 0) return false;
   const pathname = url.split("?")[0];
   return paths.includes(pathname);
@@ -543,7 +578,9 @@ function attachBridgeProbes(
   // 半开判死日志：与既有 upstream error warn 同通道、可按文案区分
   // 「半开判死强拆」与「正常关闭/业务错误」（issue #268 复核闸修补 2）。
   const onHalfOpen = (intervalMs: number) => {
-    target.logger?.warn?.(`lan-proxy: ws-bridge half-open detected, terminating (intervalMs=${intervalMs})`);
+    target.logger?.warn?.(
+      `lan-proxy: ws-bridge half-open detected, terminating (intervalMs=${intervalMs})`,
+    );
     target.onDisconnect?.("halfOpen");
   };
   const stopBrowserProbe = attachWsLivenessProbe(browserWs, probeIntervalMs, onHalfOpen);
@@ -588,13 +625,21 @@ function wireBridgeTeardown(
     untrackBridges();
     stopAllProbes();
     report("close");
-    try { upstreamWs.close(); } catch { /* 已关闭 */ }
+    try {
+      upstreamWs.close();
+    } catch {
+      /* 已关闭 */
+    }
   });
   browserWs.on("error", () => {
     untrackBridges();
     stopAllProbes();
     report("error");
-    try { upstreamWs.close(); } catch { /* 已关闭 */ }
+    try {
+      upstreamWs.close();
+    } catch {
+      /* 已关闭 */
+    }
   });
 }
 
@@ -626,7 +671,10 @@ export function bridgeCompressedWs(
     const upstreamUrl = `ws://${formatAuthority(target.targetHost, target.targetPort)}${req.url}`;
     const upstreamWs = new WsClient(upstreamUrl, {
       perMessageDeflate: false,
-      headers: bridgeUpstreamHeaders(req.headers, formatAuthority(target.targetHost, target.targetPort)),
+      headers: bridgeUpstreamHeaders(
+        req.headers,
+        formatAuthority(target.targetHost, target.targetPort),
+      ),
     });
     // 登记活动桥接（issue #552 收口加固）：转发器 close() 借此显式 terminate，
     // 不依赖「浏览器端 close → 上游 close()」握手级联（上游不响应会滞留）。
@@ -700,7 +748,8 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
   // 本地直接生成的响应（403 围栏 / PNA 预检 / 502 网关错误）标记：不进入压缩
   // 协商计数，避免 health 诊断数字被非转发流量污染（实测 403+预检即 +2）。
   const LOCAL_RESPONSE = Symbol("lan-proxy.localResponse");
-  let compressMiddleware: ((req: IncomingMessage, res: ServerResponse, next: () => void) => void) | undefined;
+  let compressMiddleware:
+    ((req: IncomingMessage, res: ServerResponse, next: () => void) => void) | undefined;
   if (options.httpCompress?.enabled) {
     // @types/compression 的中间件签名用 express Request/Response 泛型；本处只传
     // node:http 原生对象（compression 运行时仅使用其上存在的字段），做一次收窄。
@@ -724,7 +773,8 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
   /** 压缩启用时包一层中间件，否则原样透传（零开销路径）。 */
   const withCompress = (handler: (req: IncomingMessage, res: ServerResponse) => void) =>
     compressMiddleware
-      ? (req: IncomingMessage, res: ServerResponse) => compressMiddleware!(req, res, () => handler(req, res))
+      ? (req: IncomingMessage, res: ServerResponse) =>
+          compressMiddleware!(req, res, () => handler(req, res))
       : handler;
   /**
    * 本服务器接受过的全部 socket（含 WebSocket 升级后的 socket）。Node 的
@@ -758,7 +808,7 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     // extend 进出站头对象，不做窄化处理，运行时无需收窄。
     headers: rewriteHeaders(req.headers, targetAuthority) as Record<string, string>,
   });
-  // #308 断连传播：客户端提前断开（移动端切后台系统静默掐断 TCP / fetch abort / 
+  // #308 断连传播：客户端提前断开（移动端切后台系统静默掐断 TCP / fetch abort /
   // 超时中断）时，http-proxy@1.18 只监听 req 'aborted'——请求体被消费完成后该
   // 事件永不触发，上游（dsh web）收不到中断信号，宿主端 handler 继续跑完
   // （锁内取数最长 5s 才释放），且 agent keep-alive 槽位被半开连接占用、累积后
@@ -873,7 +923,10 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     // 私网 WebSocket"会先发 OPTIONS 预检（带 access-control-request-private-network），
     // 服务器必须回放行头，否则预检 404 → WS 握手被拖慢/拒绝。
     // 页面与 WS 经 lan-proxy 同源，这里直接放行预检。
-    if (req.method === "OPTIONS" && req.headers["access-control-request-private-network"] !== undefined) {
+    if (
+      req.method === "OPTIONS" &&
+      req.headers["access-control-request-private-network"] !== undefined
+    ) {
       markLocal(res);
       res.writeHead(204, {
         "access-control-allow-origin": req.headers.origin ?? "*",
@@ -926,8 +979,11 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     //         其余透传（兼容 smoke/unit 现有无参/旧参 createLanProxy 调用）。
     const bridgeEnabled = options.wsBridge?.enabled;
     const compressEnabled = options.wsCompress?.enabled !== false;
-    const shouldBridge = bridgeEnabled === true
-      || (bridgeEnabled === undefined && compressEnabled && compressWsPath(options.wsCompress?.paths, req.url));
+    const shouldBridge =
+      bridgeEnabled === true ||
+      (bridgeEnabled === undefined &&
+        compressEnabled &&
+        compressWsPath(options.wsCompress?.paths, req.url));
     if (shouldBridge) {
       // 压缩仅作用于「压缩白名单命中且压缩开关开」的桥接路径；其余桥接明文
       // （保活不丢、压缩按需，issue #552——清空白名单/关压缩不再丢保活）。
@@ -948,7 +1004,12 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
     // sec-websocket-extensions——上游（DSH）不确认压缩则浏览器段不会启用压缩。
     // 仅对 UA 命中 deny 的端删（桌面 Chrome 等保留压缩协商，不影响省流量）。
     const opts = forwardOptions(req);
-    if (!deflateAllowedByPolicy(options.wsDeflatePolicy ?? DEFAULT_DEFLATE_POLICY, req.headers["user-agent"])) {
+    if (
+      !deflateAllowedByPolicy(
+        options.wsDeflatePolicy ?? DEFAULT_DEFLATE_POLICY,
+        req.headers["user-agent"],
+      )
+    ) {
       delete opts.headers["sec-websocket-extensions"];
     }
     // 透传路径断连观测（issue #308）：TCP 字节流看不到 WS close 帧，以 socket
@@ -969,7 +1030,10 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
   /** HTTPS 监听器（仅当同时提供 httpsPort 与 tls 时创建）。 */
   let httpsServer: HttpsServer | undefined;
   if (options.httpsPort !== undefined && options.tls !== undefined) {
-    httpsServer = createHttpsServer({ key: options.tls.key, cert: options.tls.cert }, withCompress(handleRequest));
+    httpsServer = createHttpsServer(
+      { key: options.tls.key, cert: options.tls.cert },
+      withCompress(handleRequest),
+    );
     httpsServer.on("upgrade", handleUpgrade);
     httpsServer.on("connection", trackSocket);
   }
@@ -1000,7 +1064,9 @@ export function createLanProxy(options: LanProxyOptions, logger: LanLogger = con
         });
         httpsServer.listen(httpsPort, host, () => {
           httpsSettled = true;
-          httpsServer.on("error", (err) => logger.error?.(`lan-proxy: https server error: ${err.message}`));
+          httpsServer.on("error", (err) =>
+            logger.error?.(`lan-proxy: https server error: ${err.message}`),
+          );
           resolve({ httpPort, httpsPort: (httpsServer.address() as AddressInfo).port });
         });
       });

@@ -26,7 +26,8 @@ export const RECONNECT_DEFAULTS = Object.freeze({
 export function resolveReconnect(config: Record<string, unknown> | undefined): ReconnectPolicy {
   return {
     enabled: (config?.enabled as boolean | undefined) ?? RECONNECT_DEFAULTS.enabled,
-    initialDelayMs: (config?.initialDelayMs as number | undefined) ?? RECONNECT_DEFAULTS.initialDelayMs,
+    initialDelayMs:
+      (config?.initialDelayMs as number | undefined) ?? RECONNECT_DEFAULTS.initialDelayMs,
     maxDelayMs: (config?.maxDelayMs as number | undefined) ?? RECONNECT_DEFAULTS.maxDelayMs,
     maxAttempts: (config?.maxAttempts as number | undefined) ?? RECONNECT_DEFAULTS.maxAttempts,
   };

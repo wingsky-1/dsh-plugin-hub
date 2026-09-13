@@ -29,7 +29,7 @@ export async function safeFetchData(
   // 已 abort 的外部信号：入口同步短路（不建 controller、不发起 fn），
   // 避免「abort 早于 race 监听器注册」的事件错失悬挂
   if (externalSignal !== undefined && externalSignal.aborted) {
-    return { error: 'fetchData 已被取消' };
+    return { error: "fetchData 已被取消" };
   }
   const controller = new AbortController();
   let done = false;
@@ -40,7 +40,7 @@ export async function safeFetchData(
     if (!done) controller.abort();
   };
   if (externalSignal !== undefined) {
-    externalSignal.addEventListener('abort', cascadeAbort, { once: true });
+    externalSignal.addEventListener("abort", cascadeAbort, { once: true });
   }
   const timer = setTimeout(() => {
     if (!done) {
@@ -58,16 +58,20 @@ export async function safeFetchData(
     const raw = await Promise.race([
       userP,
       new Promise<never>((_, reject) => {
-        controller.signal.addEventListener('abort', () => {
-          reject(new Error(timedOut ? 'fetchData 超时' : 'fetchData 已被取消'));
-        }, { once: true });
+        controller.signal.addEventListener(
+          "abort",
+          () => {
+            reject(new Error(timedOut ? "fetchData 超时" : "fetchData 已被取消"));
+          },
+          { once: true },
+        );
       }),
     ]);
     // 序列化校验：确保可写入 JSONL / 下发客户端
     const json = JSON.stringify(raw);
     const parsed: unknown = JSON.parse(json);
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      return { error: 'fetchData 必须返回对象' };
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return { error: "fetchData 必须返回对象" };
     }
     return { data: parsed as Record<string, unknown> };
   } catch (e: unknown) {
@@ -78,7 +82,7 @@ export async function safeFetchData(
     clearTimeout(timer);
     // 摘除外部信号上的级联监听（取数已结束，后续外部 abort 与本次调用无关）
     if (externalSignal !== undefined) {
-      externalSignal.removeEventListener('abort', cascadeAbort);
+      externalSignal.removeEventListener("abort", cascadeAbort);
     }
   }
 }
@@ -100,12 +104,16 @@ export async function safeFormat(
     const html = await Promise.race([
       Promise.resolve().then(fn),
       new Promise<never>((_, reject) => {
-        controller.signal.addEventListener('abort', () => {
-          reject(new Error(`${name} 超时`));
-        }, { once: true });
+        controller.signal.addEventListener(
+          "abort",
+          () => {
+            reject(new Error(`${name} 超时`));
+          },
+          { once: true },
+        );
       }),
     ]);
-    if (typeof html !== 'string') return { error: `${name} 必须返回字符串` };
+    if (typeof html !== "string") return { error: `${name} 必须返回字符串` };
     return { html };
   } catch (e: unknown) {
     return { error: e instanceof Error ? e.message : String(e) };

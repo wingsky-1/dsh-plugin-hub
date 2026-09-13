@@ -25,12 +25,36 @@ export const API = {
 
 /** 状态分组排序（按优先级降序；titleKey 为字典 key，渲染期 t(titleKey)）。 */
 export const STATUS_ORDER = [
-  { key: "connected", titleKey: "stConnected" as McpLocaleKey, dot: "var(--dsw-alias-state-success-primary,#0f9d6e)" },
-  { key: "connecting", titleKey: "stConnecting" as McpLocaleKey, dot: "var(--dsw-alias-state-business-primary,#2f7bf6)" },
-  { key: "reconnecting", titleKey: "stReconnecting" as McpLocaleKey, dot: "var(--dsw-alias-state-warn-primary,#e08b1e)" },
-  { key: "stopped", titleKey: "stStopped" as McpLocaleKey, dot: "var(--dsw-alias-label-tertiary,#9aa1ad)" },
-  { key: "disabled", titleKey: "stDisabled" as McpLocaleKey, dot: "var(--dsw-alias-label-tertiary,#9aa1ad)" },
-  { key: "failed", titleKey: "stFailed" as McpLocaleKey, dot: "var(--dsw-alias-state-error-primary,#e0483e)" },
+  {
+    key: "connected",
+    titleKey: "stConnected" as McpLocaleKey,
+    dot: "var(--dsw-alias-state-success-primary,#0f9d6e)",
+  },
+  {
+    key: "connecting",
+    titleKey: "stConnecting" as McpLocaleKey,
+    dot: "var(--dsw-alias-state-business-primary,#2f7bf6)",
+  },
+  {
+    key: "reconnecting",
+    titleKey: "stReconnecting" as McpLocaleKey,
+    dot: "var(--dsw-alias-state-warn-primary,#e08b1e)",
+  },
+  {
+    key: "stopped",
+    titleKey: "stStopped" as McpLocaleKey,
+    dot: "var(--dsw-alias-label-tertiary,#9aa1ad)",
+  },
+  {
+    key: "disabled",
+    titleKey: "stDisabled" as McpLocaleKey,
+    dot: "var(--dsw-alias-label-tertiary,#9aa1ad)",
+  },
+  {
+    key: "failed",
+    titleKey: "stFailed" as McpLocaleKey,
+    dot: "var(--dsw-alias-state-error-primary,#e0483e)",
+  },
 ];
 
 /** 状态 → 字典 key 映射（渲染期 t(STATUS_TEXT[status])；未知状态回落原始 key 显示）。 */

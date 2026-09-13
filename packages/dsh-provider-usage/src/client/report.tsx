@@ -23,7 +23,8 @@ const REPORT_CONFIG_URL = __DSH_ROUTES__?.reportConfig ?? "/api/dsh-provider-usa
 const REPORT_MODELS_URL = __DSH_ROUTES__?.reportModels ?? "/api/dsh-provider-usage/report-models";
 const REPORTS_URL = __DSH_ROUTES__?.reports ?? "/api/dsh-provider-usage/reports";
 const REPORT_DETAIL_URL = __DSH_ROUTES__?.reportDetail ?? "/api/dsh-provider-usage/reports/detail";
-const REPORT_GENERATE_URL = __DSH_ROUTES__?.reportGenerate ?? "/api/dsh-provider-usage/reports/generate";
+const REPORT_GENERATE_URL =
+  __DSH_ROUTES__?.reportGenerate ?? "/api/dsh-provider-usage/reports/generate";
 
 /** 轮询退避：1s → 2s → 4s 封顶 5s；上限约 2 分钟。 */
 const POLL_INITIAL_DELAY_MS = 1_000;
@@ -125,9 +126,7 @@ function ratioBadge(ratio: number | null): React.ReactElement {
   const pct = Math.round(Math.abs(ratio - 1) * 100);
   return (
     <span className={`dou-heroRatio ${up ? "dou-heroRatioUp" : "dou-heroRatioDown"}`}>
-      {up ? "↑" : "↓"}
-      {" "}
-      {pct === 0 ? t("reportRatioFlat") : t("reportRatioPct", { n: pct })}
+      {up ? "↑" : "↓"} {pct === 0 ? t("reportRatioFlat") : t("reportRatioPct", { n: pct })}
     </span>
   );
 }
@@ -138,12 +137,17 @@ function reportHero(s: NonNullable<ReportMetaView["summary"]>): React.ReactEleme
     [t("reportHeroCalls"), `${s.calls.toLocaleString("en-US")}`],
     [t("reportHeroActive"), `${s.activeDays} / ${s.windowDays}`],
     [t("reportHeroStreak"), `${s.longestStreak}`],
-    [t("reportHeroPeak"), s.peakDay !== null ? `${(s.peakDay.total ?? 0).toLocaleString("en-US")}` : "—"],
+    [
+      t("reportHeroPeak"),
+      s.peakDay !== null ? `${(s.peakDay.total ?? 0).toLocaleString("en-US")}` : "—",
+    ],
   ];
   return (
     <div className="dou-hero">
       <div className="dou-heroBig">
-        <span className="dou-heroNum">{s.total !== null ? s.total.toLocaleString("en-US") : "—"}</span>
+        <span className="dou-heroNum">
+          {s.total !== null ? s.total.toLocaleString("en-US") : "—"}
+        </span>
         <span className="dou-heroNumUnit">{t("reportHeroTotal")}</span>
         {ratioBadge(s.wowRatio)}
       </div>
@@ -165,7 +169,11 @@ const rowIdOf = (m: ReportMetaView): string => `${m.period}:${m.key}`;
 const PERIODS: ReportPeriodView[] = ["daily", "weekly", "monthly"];
 
 const periodLabel = (period: ReportPeriodView): string =>
-  period === "daily" ? t("reportPeriodDaily") : period === "weekly" ? t("reportPeriodWeekly") : t("reportPeriodMonthly");
+  period === "daily"
+    ? t("reportPeriodDaily")
+    : period === "weekly"
+      ? t("reportPeriodWeekly")
+      : t("reportPeriodMonthly");
 
 // ---------------------------------------------------------------- 组件
 
@@ -187,13 +195,24 @@ export function ReportSection(): React.ReactElement {
   const [genForce, setGenForce] = React.useState(false);
   // 轮询卸载保护：组件卸载后停止轮询，不再 setState
   const disposedRef = React.useRef(false);
-  React.useEffect(() => () => { disposedRef.current = true; }, []);
+  React.useEffect(
+    () => () => {
+      disposedRef.current = true;
+    },
+    [],
+  );
   const [list, setList] = React.useState<ReportMetaView[] | null>(null);
   const [listFailed, setListFailed] = React.useState(false);
   const [openId, setOpenId] = React.useState<string | null>(null);
-  const [detail, setDetail] = React.useState<{ id: string; html: string; meta: ReportMetaView } | null>(null);
+  const [detail, setDetail] = React.useState<{
+    id: string;
+    html: string;
+    meta: ReportMetaView;
+  } | null>(null);
   // 模型候选：按 provider 缓存（null = 已请求且失败/为空 → 降级手填；undefined = 未请求）
-  const [modelsCache, setModelsCache] = React.useState<Record<string, ReportModelOption[] | null>>({});
+  const [modelsCache, setModelsCache] = React.useState<Record<string, ReportModelOption[] | null>>(
+    {},
+  );
   // 三周期提示词：当前编辑的周期 tab + 宿主默认模板（「恢复默认」数据源）
   const [promptTab, setPromptTab] = React.useState<ReportPeriodView>("daily");
   const [promptDefaults, setPromptDefaults] = React.useState<ReportPromptsView | null>(null);
@@ -203,9 +222,18 @@ export function ReportSection(): React.ReactElement {
   /** 读配置与 provider 候选（失败展示错误行，不阻塞历史列表）。 */
   const loadConfig = React.useCallback(async (): Promise<void> => {
     try {
-      const res = await fetchTimeout(REPORT_CONFIG_URL, { headers: { Accept: "application/json" }, cache: "no-store" });
+      const res = await fetchTimeout(REPORT_CONFIG_URL, {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json()) as { ok?: boolean; config?: ReportConfigView; providers?: ReportProviderOption[]; dirs?: Array<{ dir?: string | null }>; promptDefaults?: ReportPromptsView };
+      const body = (await res.json()) as {
+        ok?: boolean;
+        config?: ReportConfigView;
+        providers?: ReportProviderOption[];
+        dirs?: Array<{ dir?: string | null }>;
+        promptDefaults?: ReportPromptsView;
+      };
       if (body.config !== undefined) {
         setDraft(body.config);
         setConfigFailed(false);
@@ -215,7 +243,8 @@ export function ReportSection(): React.ReactElement {
       if (Array.isArray(body.dirs)) {
         setDirOptions([...new Set(body.dirs.map((d) => dirStackId(d.dir)))]);
       }
-      if (body.promptDefaults !== null && body.promptDefaults !== undefined) setPromptDefaults(body.promptDefaults);
+      if (body.promptDefaults !== null && body.promptDefaults !== undefined)
+        setPromptDefaults(body.promptDefaults);
     } catch {
       setConfigFailed(true);
     }
@@ -224,7 +253,10 @@ export function ReportSection(): React.ReactElement {
   /** 读历史索引（倒序）。 */
   const loadReports = React.useCallback(async (): Promise<void> => {
     try {
-      const res = await fetchTimeout(REPORTS_URL, { headers: { Accept: "application/json" }, cache: "no-store" });
+      const res = await fetchTimeout(REPORTS_URL, {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as { ok?: boolean; reports?: ReportMetaView[] };
       setList(Array.isArray(body.reports) ? body.reports : []);
@@ -248,11 +280,17 @@ export function ReportSection(): React.ReactElement {
   React.useEffect(() => {
     if (effectiveProvider === "" || modelsCache[effectiveProvider] !== undefined) return;
     let live = true;
-    fetchTimeout(`${REPORT_MODELS_URL}?provider=${encodeURIComponent(effectiveProvider)}`, { headers: { Accept: "application/json" }, cache: "no-store" })
+    fetchTimeout(`${REPORT_MODELS_URL}?provider=${encodeURIComponent(effectiveProvider)}`, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    })
       .then((res) => res.json() as Promise<{ ok?: boolean; models?: ReportModelOption[] }>)
       .then((body) => {
         if (!live) return;
-        setModelsCache((c) => ({ ...c, [effectiveProvider]: body?.ok === true && Array.isArray(body.models) ? body.models : null }));
+        setModelsCache((c) => ({
+          ...c,
+          [effectiveProvider]: body?.ok === true && Array.isArray(body.models) ? body.models : null,
+        }));
       })
       .catch(() => {
         if (live) setModelsCache((c) => ({ ...c, [effectiveProvider]: null }));
@@ -263,7 +301,10 @@ export function ReportSection(): React.ReactElement {
   }, [effectiveProvider, modelsCache]);
 
   /** 单周期字段更新（draft 空时忽略——输入未就绪不可交互）。 */
-  const patchPeriod = (period: ReportPeriodView, patch: Partial<ReportPeriodConfigView & { weekStartsOn: 0 | 1 } & { dayOfMonth: number }>): void => {
+  const patchPeriod = (
+    period: ReportPeriodView,
+    patch: Partial<ReportPeriodConfigView & { weekStartsOn: 0 | 1 } & { dayOfMonth: number }>,
+  ): void => {
     setDraft((d) => (d === null ? d : { ...d, [period]: { ...d[period], ...patch } }));
     setSaveState("idle");
   };
@@ -284,14 +325,20 @@ export function ReportSection(): React.ReactElement {
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(draft),
       });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; config?: ReportConfigView; error?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        config?: ReportConfigView;
+        error?: string;
+      };
       if (!res.ok || body.config === undefined) throw new Error(body.error ?? `HTTP ${res.status}`);
       setDraft(body.config);
       setSaveState("saved");
     } catch (e) {
       setSaveState("fail");
       setGenError(null);
-      console.warn(`[dsh-provider-usage] 报告配置保存失败：${e instanceof Error ? e.message : String(e)}`);
+      console.warn(
+        `[dsh-provider-usage] 报告配置保存失败：${e instanceof Error ? e.message : String(e)}`,
+      );
     } finally {
       setSaving(false);
     }
@@ -305,7 +352,9 @@ export function ReportSection(): React.ReactElement {
    * 组件卸载（disposedRef）后立即中止。
    * reused 透传——executor 侧幂等短路复用与 200 直接复用路径提示对称。
    */
-  const pollReportTask = async (taskId: string): Promise<{ meta: ReportMetaView; reused: boolean }> => {
+  const pollReportTask = async (
+    taskId: string,
+  ): Promise<{ meta: ReportMetaView; reused: boolean }> => {
     let delay = POLL_INITIAL_DELAY_MS;
     for (let i = 0; i < POLL_MAX_ROUNDS; i += 1) {
       await sleep(delay);
@@ -316,7 +365,13 @@ export function ReportSection(): React.ReactElement {
       );
       if (res.status === 404) throw new PollInProgressError(); // 任务已修剪：转「仍在生成」
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; status?: string; meta?: ReportMetaView; reused?: boolean; error?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        status?: string;
+        meta?: ReportMetaView;
+        reused?: boolean;
+        error?: string;
+      };
       if (body.status === "done") {
         if (body.meta === undefined) throw new Error("bad-task-result");
         return { meta: body.meta, reused: body.reused === true };
@@ -411,7 +466,10 @@ export function ReportSection(): React.ReactElement {
     setDetail(null);
     try {
       const params = new URLSearchParams({ period: m.period, key: m.key });
-      const res = await fetchTimeout(`${REPORT_DETAIL_URL}?${params.toString()}`, { headers: { Accept: "application/json" }, cache: "no-store" });
+      const res = await fetchTimeout(`${REPORT_DETAIL_URL}?${params.toString()}`, {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = (await res.json()) as { ok?: boolean; html?: string; meta?: ReportMetaView };
       if (typeof body.html !== "string" || body.meta === undefined) throw new Error("bad-detail");
@@ -436,7 +494,11 @@ export function ReportSection(): React.ReactElement {
                 <input
                   type="checkbox"
                   checked={draft[period].enabled}
-                  onChange={(e: unknown) => patchPeriod(period, { enabled: (e as { target: { checked: boolean } }).target.checked })}
+                  onChange={(e: unknown) =>
+                    patchPeriod(period, {
+                      enabled: (e as { target: { checked: boolean } }).target.checked,
+                    })
+                  }
                 />
                 {periodLabel(period)}
               </label>
@@ -446,7 +508,9 @@ export function ReportSection(): React.ReactElement {
                 className="dou-reportTime"
                 aria-label={`${periodLabel(period)} ${t("reportTime")}`}
                 value={draft[period].time}
-                onChange={(e: unknown) => patchPeriod(period, { time: (e as { target: { value: string } }).target.value })}
+                onChange={(e: unknown) =>
+                  patchPeriod(period, { time: (e as { target: { value: string } }).target.value })
+                }
               />
               {period === "weekly" ? (
                 <label className="dou-reportInline">
@@ -454,7 +518,12 @@ export function ReportSection(): React.ReactElement {
                   <select
                     className="dou-reportSelect"
                     value={String(draft.weekly.weekStartsOn)}
-                    onChange={(e: unknown) => patchPeriod("weekly", { weekStartsOn: (e as { target: { value: string } }).target.value === "0" ? 0 : 1 })}
+                    onChange={(e: unknown) =>
+                      patchPeriod("weekly", {
+                        weekStartsOn:
+                          (e as { target: { value: string } }).target.value === "0" ? 0 : 1,
+                      })
+                    }
                   >
                     <option value="1">{t("reportWeekMonday")}</option>
                     <option value="0">{t("reportWeekSunday")}</option>
@@ -472,7 +541,9 @@ export function ReportSection(): React.ReactElement {
                     value={draft.monthly.dayOfMonth}
                     onChange={(e: unknown) => {
                       const n = Number((e as { target: { value: string } }).target.value);
-                      patchPeriod("monthly", { dayOfMonth: Number.isInteger(n) ? n : draft.monthly.dayOfMonth });
+                      patchPeriod("monthly", {
+                        dayOfMonth: Number.isInteger(n) ? n : draft.monthly.dayOfMonth,
+                      });
                     }}
                   />
                 </label>
@@ -486,11 +557,15 @@ export function ReportSection(): React.ReactElement {
               <select
                 className="dou-reportSelect"
                 value={draft.provider}
-                onChange={(e: unknown) => patchTop({ provider: (e as { target: { value: string } }).target.value })}
+                onChange={(e: unknown) =>
+                  patchTop({ provider: (e as { target: { value: string } }).target.value })
+                }
               >
                 <option value="">{t("reportProviderDefault")}</option>
                 {providers.map((p) => (
-                  <option key={p.id} value={p.id}>{typeof p.name === "string" && p.name.length > 0 ? `${p.name} (${p.id})` : p.id}</option>
+                  <option key={p.id} value={p.id}>
+                    {typeof p.name === "string" && p.name.length > 0 ? `${p.name} (${p.id})` : p.id}
+                  </option>
                 ))}
               </select>
             </label>
@@ -502,14 +577,24 @@ export function ReportSection(): React.ReactElement {
                 <select
                   className="dou-reportSelect"
                   value={draft.model}
-                  onChange={(e: unknown) => patchTop({ model: (e as { target: { value: string } }).target.value })}
+                  onChange={(e: unknown) =>
+                    patchTop({ model: (e as { target: { value: string } }).target.value })
+                  }
                 >
-                  <option key="" value="">{t("reportModelDefault")}</option>
+                  <option key="" value="">
+                    {t("reportModelDefault")}
+                  </option>
                   {draft.model !== "" && !models!.some((m) => m.id === draft.model) ? (
-                    <option key="__kept" value={draft.model}>{t("reportModelKept", { v: draft.model })}</option>
+                    <option key="__kept" value={draft.model}>
+                      {t("reportModelKept", { v: draft.model })}
+                    </option>
                   ) : null}
                   {models!.map((m) => (
-                    <option key={m.id} value={m.id}>{typeof m.name === "string" && m.name.length > 0 ? `${m.name} (${m.id})` : m.id}</option>
+                    <option key={m.id} value={m.id}>
+                      {typeof m.name === "string" && m.name.length > 0
+                        ? `${m.name} (${m.id})`
+                        : m.id}
+                    </option>
                   ))}
                 </select>
               ) : (
@@ -518,12 +603,16 @@ export function ReportSection(): React.ReactElement {
                   className="dou-reportInput"
                   placeholder={t("reportModelHint")}
                   value={draft.model}
-                  onChange={(e: unknown) => patchTop({ model: (e as { target: { value: string } }).target.value })}
+                  onChange={(e: unknown) =>
+                    patchTop({ model: (e as { target: { value: string } }).target.value })
+                  }
                 />
               )}
             </label>
           </div>
-          {models !== null && !haveModels ? <div className="dou-reportHint">{t("reportModelFallback")}</div> : null}
+          {models !== null && !haveModels ? (
+            <div className="dou-reportHint">{t("reportModelFallback")}</div>
+          ) : null}
           {/* 目录范围多选（默认全部；空数组 = 全部目录语义）。
               与 provider/model 范围控件同级同风格（dou-reportRow + dou-reportInline）；
               候选 = GET dirs（含未识别桶，恒「未识别」有标签 + 口径注释）；已保存值
@@ -531,14 +620,23 @@ export function ReportSection(): React.ReactElement {
           <div className="dou-reportCol">
             <div className="dou-reportRow">
               <span className="dou-reportLabel">{t("reportDirectories")}</span>
-              <label className="dou-reportInline" style={dirOptions.length === 0 ? { opacity: 0.55 } : undefined}>
+              <label
+                className="dou-reportInline"
+                style={dirOptions.length === 0 ? { opacity: 0.55 } : undefined}
+              >
                 {/* 候选空时禁用（无候选可取消全选，空 = 全部语义不变；视觉弱化
                     提示不可交互，防点击无反馈） */}
                 <input
                   type="checkbox"
                   disabled={dirOptions.length === 0}
                   checked={draft.directories.length === 0}
-                  onChange={(e: unknown) => { patchTop({ directories: (e as { target: { checked: boolean } }).target.checked ? [] : draft.directories }); }}
+                  onChange={(e: unknown) => {
+                    patchTop({
+                      directories: (e as { target: { checked: boolean } }).target.checked
+                        ? []
+                        : draft.directories,
+                    });
+                  }}
                 />
                 {t("reportDirectoriesAll")}
               </label>
@@ -547,14 +645,18 @@ export function ReportSection(): React.ReactElement {
                   <button
                     type="button"
                     className="dou-reportPromptReset"
-                    onClick={() => { patchTop({ directories: [...dirOptions] }); }}
+                    onClick={() => {
+                      patchTop({ directories: [...dirOptions] });
+                    }}
                   >
                     {t("reportDirectoriesSelectAll")}
                   </button>
                   <button
                     type="button"
                     className="dou-reportPromptReset"
-                    onClick={() => { patchTop({ directories: [] }); }}
+                    onClick={() => {
+                      patchTop({ directories: [] });
+                    }}
                   >
                     {t("reportDirectoriesClear")}
                   </button>
@@ -592,7 +694,11 @@ export function ReportSection(): React.ReactElement {
               <span className="dou-reportHint">{t("reportDirectoriesEmpty")}</span>
             )}
             {/* 保存后影响报告口径的提示（沿用既有 dou-reportHint 提示模式） */}
-            <span className="dou-reportHint">{draft.directories.length === 0 ? t("reportDirectoriesHintAll") : t("reportDirectoriesHintScoped")}</span>
+            <span className="dou-reportHint">
+              {draft.directories.length === 0
+                ? t("reportDirectoriesHintAll")
+                : t("reportDirectoriesHintScoped")}
+            </span>
           </div>
           {/* 提示词模板（三周期各自独立模板 + 周期切换 tab + 恢复默认） */}
           <div className="dou-reportCol">
@@ -613,7 +719,11 @@ export function ReportSection(): React.ReactElement {
                 <button
                   type="button"
                   className="dou-reportPromptReset"
-                  onClick={() => patchTop({ prompts: { ...draft.prompts, [promptTab]: promptDefaults[promptTab] } })}
+                  onClick={() =>
+                    patchTop({
+                      prompts: { ...draft.prompts, [promptTab]: promptDefaults[promptTab] },
+                    })
+                  }
                 >
                   {t("reportPromptReset")}
                 </button>
@@ -623,7 +733,14 @@ export function ReportSection(): React.ReactElement {
               className="dou-reportTextarea"
               rows={7}
               value={draft.prompts[promptTab]}
-              onChange={(e: unknown) => patchTop({ prompts: { ...draft.prompts, [promptTab]: (e as { target: { value: string } }).target.value } })}
+              onChange={(e: unknown) =>
+                patchTop({
+                  prompts: {
+                    ...draft.prompts,
+                    [promptTab]: (e as { target: { value: string } }).target.value,
+                  },
+                })
+              }
             />
             <span className="dou-reportHint">{t("reportPromptHint")}</span>
           </div>
@@ -633,7 +750,11 @@ export function ReportSection(): React.ReactElement {
               <input
                 type="checkbox"
                 checked={draft.push.enabled}
-                onChange={(e: unknown) => patchTop({ push: { enabled: (e as { target: { checked: boolean } }).target.checked } })}
+                onChange={(e: unknown) =>
+                  patchTop({
+                    push: { enabled: (e as { target: { checked: boolean } }).target.checked },
+                  })
+                }
               />
               {t("reportPush")}
             </label>
@@ -648,126 +769,151 @@ export function ReportSection(): React.ReactElement {
             {saveState === "saved" ? (
               <span className="dou-reportSaved">{t("reportSaved")}</span>
             ) : saveState === "fail" ? (
-              <span className="dou-reportSaveFail">{t("reportSaveFail", { msg: "HTTP error" })}</span>
+              <span className="dou-reportSaveFail">
+                {t("reportSaveFail", { msg: "HTTP error" })}
+              </span>
             ) : null}
           </div>
         </div>
       ) : null}
-    {/* ---- 手动生成 ---- */}
-    <div className="dou-reportRow dou-reportGenRow">
-      <select
-        className="dou-reportSelect"
-        value={genPeriod}
-        aria-label={t("reportPeriodSelect")}
-        onChange={(e: unknown) => setGenPeriod((e as { target: { value: string } }).target.value as ReportPeriodView)}
-      >
-        {PERIODS.map((p) => (
-          <option key={p} value={p}>{periodLabel(p)}</option>
-        ))}
-      </select>
-      <button
-        type="button"
-        className="dou-reportGenBtn"
-        disabled={generating}
-        onClick={() => void onGenerate()}
-      >
-        {generating ? t("reportGenerating") : t("reportGenerate")}
-      </button>
-      <label className="dou-reportGenForce">
-        <input
-          type="checkbox"
-          checked={genForce}
+      {/* ---- 手动生成 ---- */}
+      <div className="dou-reportRow dou-reportGenRow">
+        <select
+          className="dou-reportSelect"
+          value={genPeriod}
+          aria-label={t("reportPeriodSelect")}
+          onChange={(e: unknown) =>
+            setGenPeriod((e as { target: { value: string } }).target.value as ReportPeriodView)
+          }
+        >
+          {PERIODS.map((p) => (
+            <option key={p} value={p}>
+              {periodLabel(p)}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          className="dou-reportGenBtn"
           disabled={generating}
-          onChange={(e: unknown) => setGenForce((e as { target: { checked: boolean } }).target.checked)}
-        />
-        {t("reportForceRegen")}
-      </label>
-      {genError !== null ? <span className="dou-reportGenError">{genError}</span> : null}
-      {genNotice !== null ? <span className="dou-reportGenNotice">{genNotice}</span> : null}
-    </div>
-    {/* ---- 历史列表 ---- */}
-    <h3 className="dou-reportListTitle">{t("reportHistory")}</h3>
-    {list === null
-      ? null
-      : list.length === 0
-        ? <div className="dou-reportEmpty">{t("reportEmpty")}</div>
-        : (
-            <ul className="dou-reportList">
-              {list.map((m) => {
-                const id = rowIdOf(m);
-                // 展开态详情（局部组装，避免深嵌套三元）：HTML 已由宿主双层净化
-                let detailNode: React.ReactNode = null;
-                if (openId === id) {
-                  const parts: React.ReactNode[] = [];
-                  if (detail !== null && detail.id === id) {
-                    const tokens = detail.meta.tokens;
-                    if (tokens !== null && tokens !== undefined && tokens.totalTokens !== null) {
-                      parts.push(
-                        <div className="dou-reportDetailMeta" key="meta">
-                          {t("reportDetailTokens", { n: tokens.totalTokens.toLocaleString("en-US") })}
-                        </div>,
-                      );
-                    }
-                    // 年报 hero：meta.summary 存在时渲染大数字 + 环比 + 活跃统计
-                    const summary = detail.meta.summary;
-                    if (summary !== null && summary !== undefined) {
-                      parts.push(reportHero(summary));
-                    }
-                    if (detail.meta.noData === true) {
-                      parts.push(<div className="dou-reportGenNotice" key="nodata">{t("reportNoData")}</div>);
-                    } else {
-                      parts.push(
-                        detail.html.length > 0 ? (
-                          // 数据源为本插件宿主端产物：落盘 escape-then-transform 白名单标签
-                          // 第一层 + 读侧 sanitizeHtml 第二层
-                          <div
-                            className="dou-reportDetailBody"
-                            key="body"
-                            dangerouslySetInnerHTML={{ __html: detail.html }}
-                          />
-                        ) : (
-                          <div className="dou-reportFetchFail" key="empty">
-                            {detail.meta.error ?? t("reportFetchFail")}
-                          </div>
-                        ),
-                      );
-                    }
-                    parts.push(
-                      <button
-                        type="button"
-                        className="dou-reportCollapse"
-                        key="collapse"
-                        onClick={() => { setOpenId(null); setDetail(null); }}
-                      >
-                        {t("reportCollapse")}
-                      </button>,
-                    );
-                  } else {
-                    parts.push(<div className="dou-reportLoading" key="loading">{t("loading")}</div>);
-                  }
-                  detailNode = <div className="dou-reportDetail">{parts}</div>;
+          onClick={() => void onGenerate()}
+        >
+          {generating ? t("reportGenerating") : t("reportGenerate")}
+        </button>
+        <label className="dou-reportGenForce">
+          <input
+            type="checkbox"
+            checked={genForce}
+            disabled={generating}
+            onChange={(e: unknown) =>
+              setGenForce((e as { target: { checked: boolean } }).target.checked)
+            }
+          />
+          {t("reportForceRegen")}
+        </label>
+        {genError !== null ? <span className="dou-reportGenError">{genError}</span> : null}
+        {genNotice !== null ? <span className="dou-reportGenNotice">{genNotice}</span> : null}
+      </div>
+      {/* ---- 历史列表 ---- */}
+      <h3 className="dou-reportListTitle">{t("reportHistory")}</h3>
+      {list === null ? null : list.length === 0 ? (
+        <div className="dou-reportEmpty">{t("reportEmpty")}</div>
+      ) : (
+        <ul className="dou-reportList">
+          {list.map((m) => {
+            const id = rowIdOf(m);
+            // 展开态详情（局部组装，避免深嵌套三元）：HTML 已由宿主双层净化
+            let detailNode: React.ReactNode = null;
+            if (openId === id) {
+              const parts: React.ReactNode[] = [];
+              if (detail !== null && detail.id === id) {
+                const tokens = detail.meta.tokens;
+                if (tokens !== null && tokens !== undefined && tokens.totalTokens !== null) {
+                  parts.push(
+                    <div className="dou-reportDetailMeta" key="meta">
+                      {t("reportDetailTokens", { n: tokens.totalTokens.toLocaleString("en-US") })}
+                    </div>,
+                  );
                 }
-                return (
-                  <li className="dou-reportItem" key={id}>
-                    <button
-                      type="button"
-                      className="dou-reportItemHead"
-                      aria-expanded={openId === id}
-                      onClick={() => void toggleDetail(m)}
-                    >
-                      <span className="dou-reportItemPeriod">{periodLabel(m.period)}</span>
-                      <span className="dou-reportItemKey">{m.key}</span>
-                      <span className={m.ok ? "dou-reportBadge dou-reportBadgeOk" : "dou-reportBadge dou-reportBadgeFail"}>
-                        {m.ok ? t("reportOk") : t("reportFailed")}
-                      </span>
-                      <span className="dou-reportItemTime">{new Date(m.generatedAt).toLocaleString()}</span>
-                    </button>
-                    {detailNode}
-                  </li>
+                // 年报 hero：meta.summary 存在时渲染大数字 + 环比 + 活跃统计
+                const summary = detail.meta.summary;
+                if (summary !== null && summary !== undefined) {
+                  parts.push(reportHero(summary));
+                }
+                if (detail.meta.noData === true) {
+                  parts.push(
+                    <div className="dou-reportGenNotice" key="nodata">
+                      {t("reportNoData")}
+                    </div>,
+                  );
+                } else {
+                  parts.push(
+                    detail.html.length > 0 ? (
+                      // 数据源为本插件宿主端产物：落盘 escape-then-transform 白名单标签
+                      // 第一层 + 读侧 sanitizeHtml 第二层
+                      <div
+                        className="dou-reportDetailBody"
+                        key="body"
+                        dangerouslySetInnerHTML={{ __html: detail.html }}
+                      />
+                    ) : (
+                      <div className="dou-reportFetchFail" key="empty">
+                        {detail.meta.error ?? t("reportFetchFail")}
+                      </div>
+                    ),
+                  );
+                }
+                parts.push(
+                  <button
+                    type="button"
+                    className="dou-reportCollapse"
+                    key="collapse"
+                    onClick={() => {
+                      setOpenId(null);
+                      setDetail(null);
+                    }}
+                  >
+                    {t("reportCollapse")}
+                  </button>,
                 );
-              })}
-            </ul>
-          )}
+              } else {
+                parts.push(
+                  <div className="dou-reportLoading" key="loading">
+                    {t("loading")}
+                  </div>,
+                );
+              }
+              detailNode = <div className="dou-reportDetail">{parts}</div>;
+            }
+            return (
+              <li className="dou-reportItem" key={id}>
+                <button
+                  type="button"
+                  className="dou-reportItemHead"
+                  aria-expanded={openId === id}
+                  onClick={() => void toggleDetail(m)}
+                >
+                  <span className="dou-reportItemPeriod">{periodLabel(m.period)}</span>
+                  <span className="dou-reportItemKey">{m.key}</span>
+                  <span
+                    className={
+                      m.ok
+                        ? "dou-reportBadge dou-reportBadgeOk"
+                        : "dou-reportBadge dou-reportBadgeFail"
+                    }
+                  >
+                    {m.ok ? t("reportOk") : t("reportFailed")}
+                  </span>
+                  <span className="dou-reportItemTime">
+                    {new Date(m.generatedAt).toLocaleString()}
+                  </span>
+                </button>
+                {detailNode}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }

@@ -14,7 +14,11 @@ import { dshHome } from "../../../../shared/dsh-home.js";
 import type { McpMiddleware } from "../connection/interface.ts";
 import type { ServerConfig } from "../types/interface.ts";
 import { readCatalogServerFromDisk } from "../config/store/interface.ts";
-import { normalizedProjectRoot, SCOPE_PROJECT, MIDDLEWARE_GLOBAL_ROOT } from "../workspace/interface.ts";
+import {
+  normalizedProjectRoot,
+  SCOPE_PROJECT,
+  MIDDLEWARE_GLOBAL_ROOT,
+} from "../workspace/interface.ts";
 import { summarizeToolDescriptions } from "./entries.ts";
 import type { CatalogCache } from "./entries.ts";
 
@@ -61,12 +65,19 @@ export type CatalogViewResolver = (
  * 持有：防 pre-step 每轮重复读盘解析（目录文件最大 ~256KB，JSON parse 有成本）。
  */
 export function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver {
-  const diskCatalogSummaryCache = new Map<string, Map<string, { mtimeMs: number; summary: string | undefined }>>();
+  const diskCatalogSummaryCache = new Map<
+    string,
+    Map<string, { mtimeMs: number; summary: string | undefined }>
+  >();
 
   /** 查中间层单服务器目录摘要：内存单元优先，单元缺失/无该服务器 → 磁盘
    * last-good 兜底（带 mtime 缓存，防 pre-step 每轮读盘）。返回 undefined
    * 表示中间层无此服务器数据（调用方保留 B 兜底）。 */
-  const middlewareCatalogSummary = async (mw: McpMiddleware, root: string, name: string): Promise<string | undefined> => {
+  const middlewareCatalogSummary = async (
+    mw: McpMiddleware,
+    root: string,
+    name: string,
+  ): Promise<string | undefined> => {
     const unit = mw.units.get(root);
     const catalog = unit?.catalog.get(name);
     const tools = catalog?.tools;
@@ -108,7 +119,10 @@ export function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver {
     const mw = host.getMiddleware();
     if (mw === undefined || host.getMiddlewareMode() === "off") return view;
     // 项目 root 只解析一次（所有 project scope 服务器共用；空 cwd → 无项目单元）。
-    const cwdRoot = cwd === undefined || cwd === null || cwd === "" ? undefined : await normalizedProjectRoot(cwd);
+    const cwdRoot =
+      cwd === undefined || cwd === null || cwd === ""
+        ? undefined
+        : await normalizedProjectRoot(cwd);
     for (const [name, { scope }] of servers) {
       if (name === "") continue;
       // root 解析：project scope → 项目 root；global scope → @global（all 权威，

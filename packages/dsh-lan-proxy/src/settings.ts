@@ -39,7 +39,9 @@ export interface OwnerScopeLike {
 /** settings 服务最小类型面（register/describe）。 */
 export interface SettingsServiceLike {
   register(ns: string, schema: unknown, options?: { base?: unknown }): OwnerScopeLike;
-  describe(options?: { redactSecrets?: boolean }): Array<{ ns: string; user?: unknown; revision: number }>;
+  describe(options?: {
+    redactSecrets?: boolean;
+  }): Array<{ ns: string; user?: unknown; revision: number }>;
 }
 
 /** installLanProxySettings 的 hooks 面（含 onScope：attach 后交出 owner scope）。 */
@@ -62,7 +64,11 @@ export interface LanProxySettingsHooks {
  * @param entry - 组合层配置，作为命名空间的 base 层。
  * @param hooks - source 收藏、变更通知与 scope 移交。
  */
-export function installLanProxySettings(ctx: Context, entry: LanProxyConfig, hooks: LanProxySettingsHooks): void {
+export function installLanProxySettings(
+  ctx: Context,
+  entry: LanProxyConfig,
+  hooks: LanProxySettingsHooks,
+): void {
   installSettingsNamespace(ctx, SETTINGS_NS, Config, entry, {
     setSource: hooks.setSource,
     onChange: hooks.onChange,

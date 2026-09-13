@@ -14,7 +14,13 @@
 import { dirname } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import type { PreStepDecision } from "@deepseek-ai/dsh-agent";
-import type { CatalogCache, CatalogDecision, CatalogMessage, SupervisorLite, CatalogAgent } from "../catalog/interface.ts";
+import type {
+  CatalogCache,
+  CatalogDecision,
+  CatalogMessage,
+  SupervisorLite,
+  CatalogAgent,
+} from "../catalog/interface.ts";
 import { resolveCatalogInjection } from "../catalog/interface.ts";
 import { normalizeMiddlewareMode } from "../workspace/interface.ts";
 import type { McpManager } from "../connection/interface.ts";
@@ -34,7 +40,13 @@ export interface ApplyDisposers {
 
 export function createEmptyDisposers(): ApplyDisposers {
   const noop = () => {};
-  return { disposeRoutes: noop, disposeSection: noop, disposeInjection: noop, disposeMiddleware: noop, watchCleanup: noop };
+  return {
+    disposeRoutes: noop,
+    disposeSection: noop,
+    disposeInjection: noop,
+    disposeMiddleware: noop,
+    watchCleanup: noop,
+  };
 }
 
 /**
@@ -120,7 +132,9 @@ export function setupRoutesAndBroadcast(ctx: Context, manager: McpManager): () =
   const routes = makeRoutes(manager);
   const eventsRoute = makeEventsRoute(manager);
   const healthRoute = makeHealthRoute(manager);
-  const disposers = [...routes, eventsRoute, healthRoute].map((route) => ctx.webServer.register(route));
+  const disposers = [...routes, eventsRoute, healthRoute].map((route) =>
+    ctx.webServer.register(route),
+  );
   const unsubscribeStatus = manager.onStatus(() => {
     manager.sseHub?.broadcast(sseData({ type: "summary" }));
   });
@@ -206,5 +220,3 @@ export async function setupConfigWatchersAsync(manager: McpManager): Promise<() 
     return () => {};
   }
 }
-
-

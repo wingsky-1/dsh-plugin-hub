@@ -36,7 +36,19 @@
  *
  * 执行前请先停掉 dsh web：正在写入的会话日志不保证可安全重写。
  */
-import { copyFileSync, existsSync, openSync, closeSync, fsyncSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  openSync,
+  closeSync,
+  fsyncSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { constants as zlibConstants, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -69,7 +81,8 @@ export function scanFrames(buffer) {
   while (offset < buffer.length) {
     const start = offset;
     if (buffer.length - offset < 4) throw new Error(`incomplete frame header at byte ${offset}`);
-    if (buffer.readUInt32LE(offset) !== ZSTD_MAGIC) throw new Error(`invalid frame magic at byte ${offset}`);
+    if (buffer.readUInt32LE(offset) !== ZSTD_MAGIC)
+      throw new Error(`invalid frame magic at byte ${offset}`);
     offset += 4;
     if (offset === buffer.length) throw new Error(`incomplete frame header at byte ${start}`);
     const descriptor = buffer.readUInt8(offset);
@@ -81,7 +94,8 @@ export function scanFrames(buffer) {
     const dictionaryBytes = dictionaryFlag === 3 ? 4 : dictionaryFlag;
     const contentSizeBytes = contentSizeFlag === 0 ? (singleSegment ? 1 : 0) : 1 << contentSizeFlag;
     const remainingHeaderBytes = (singleSegment ? 0 : 1) + dictionaryBytes + contentSizeBytes;
-    if (buffer.length - offset < remainingHeaderBytes) throw new Error(`incomplete frame header at byte ${start}`);
+    if (buffer.length - offset < remainingHeaderBytes)
+      throw new Error(`incomplete frame header at byte ${start}`);
     offset += remainingHeaderBytes;
     for (;;) {
       if (buffer.length - offset < 3) throw new Error(`incomplete block header at byte ${start}`);
@@ -92,7 +106,8 @@ export function scanFrames(buffer) {
       const blockSize = blockHeader >>> 3;
       if (blockType === 3) throw new Error(`reserved block type at byte ${offset - 3}`);
       const payloadBytes = blockType === 1 ? 1 : blockSize;
-      if (buffer.length - offset < payloadBytes) throw new Error(`incomplete block payload at byte ${start}`);
+      if (buffer.length - offset < payloadBytes)
+        throw new Error(`incomplete block payload at byte ${start}`);
       offset += payloadBytes;
       if (lastBlock) break;
     }
@@ -120,7 +135,8 @@ export function decodeLines(buffer) {
 export function encodeFrames(lines) {
   const [header, ...rest] = lines;
   const frames = [zstdCompressSync(Buffer.from(`${header}\n`, "utf8"), CHECKSUM_OPTIONS)];
-  if (rest.length > 0) frames.push(zstdCompressSync(Buffer.from(`${rest.join("\n")}\n`, "utf8"), CHECKSUM_OPTIONS));
+  if (rest.length > 0)
+    frames.push(zstdCompressSync(Buffer.from(`${rest.join("\n")}\n`, "utf8"), CHECKSUM_OPTIONS));
   return Buffer.concat(frames);
 }
 
@@ -130,7 +146,10 @@ export function encodeFrames(lines) {
  * 内容 byte 级一致）；取不到正文时按旧 source 的条目合成，至少不丢信息。
  */
 export function rewriteCatalogSource(source, messageText) {
-  const text = typeof messageText === "string" && messageText.length > 0 ? messageText : legacySourceText(source);
+  const text =
+    typeof messageText === "string" && messageText.length > 0
+      ? messageText
+      : legacySourceText(source);
   return {
     kind: "plugin",
     plugin: CATALOG_SOURCE_PLUGIN,
@@ -144,7 +163,13 @@ function messageTextOf(message) {
   const content = message?.content;
   if (!Array.isArray(content)) return undefined;
   for (const block of content) {
-    if (typeof block === "object" && block !== null && block.type === "text" && typeof block.text === "string") return block.text;
+    if (
+      typeof block === "object" &&
+      block !== null &&
+      block.type === "text" &&
+      typeof block.text === "string"
+    )
+      return block.text;
   }
   return undefined;
 }
@@ -186,7 +211,13 @@ export function rewriteRow(row, stats = { sources: 0 }) {
     if (!isLegacyCatalogSource(row.data.source)) return { row, changed: false };
     stats.sources += 1;
     return {
-      row: { ...row, data: { ...row.data, source: rewriteCatalogSource(row.data.source, messageTextOf(row.data)) } },
+      row: {
+        ...row,
+        data: {
+          ...row.data,
+          source: rewriteCatalogSource(row.data.source, messageTextOf(row.data)),
+        },
+      },
       changed: true,
     };
   }
@@ -229,7 +260,12 @@ export function planSession(sessionDir) {
     const parsed = JSON.parse(line);
     rows.push(rewriteRow(parsed, stats).row);
   }
-  return { status: stats.sources > 0 ? "needs-repair" : "clean", sources: stats.sources, file: candidate.file, rows };
+  return {
+    status: stats.sources > 0 ? "needs-repair" : "clean",
+    sources: stats.sources,
+    file: candidate.file,
+    rows,
+  };
 }
 
 /** 落盘：备份 + 临时文件 + fsync + 原子 rename，随后自检。 */
@@ -262,7 +298,8 @@ export function verifyRepaired(buffer) {
   if (lines.length === 0) throw new Error("repaired log has no rows");
   for (const line of lines) JSON.parse(line);
   const leftover = lines.filter((line) => line.includes(`"kind":"${LEGACY_CATALOG_KIND}"`)).length;
-  if (leftover > 0) throw new Error(`repaired log still carries ${leftover} legacy catalog source(s)`);
+  if (leftover > 0)
+    throw new Error(`repaired log still carries ${leftover} legacy catalog source(s)`);
   return { rows: lines.length };
 }
 
@@ -284,7 +321,11 @@ export function listSessionDirs(dshHome) {
 
 /** CLI 参数解析。 */
 export function parseArgs(argv) {
-  const options = { apply: false, session: undefined, home: process.env.DSH_HOME ?? join(homedir(), ".dsh") };
+  const options = {
+    apply: false,
+    session: undefined,
+    home: process.env.DSH_HOME ?? join(homedir(), ".dsh"),
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--apply") options.apply = true;
@@ -300,8 +341,12 @@ export function parseArgs(argv) {
 function main() {
   const options = parseArgs(process.argv.slice(2));
   const home = resolve(options.home);
-  const dirs = listSessionDirs(home).filter((dir) => options.session === undefined || basename(dir) === options.session);
-  console.log(`[repair-mcp-catalog] DSH_HOME=${home}，会话目录 ${dirs.length} 个，模式=${options.apply ? "apply" : "dry-run（加 --apply 落盘）"}`);
+  const dirs = listSessionDirs(home).filter(
+    (dir) => options.session === undefined || basename(dir) === options.session,
+  );
+  console.log(
+    `[repair-mcp-catalog] DSH_HOME=${home}，会话目录 ${dirs.length} 个，模式=${options.apply ? "apply" : "dry-run（加 --apply 落盘）"}`,
+  );
   let affected = 0;
   let changedFiles = 0;
   let sources = 0;
@@ -310,16 +355,22 @@ function main() {
     if (plan.status !== "needs-repair") continue;
     affected += 1;
     sources += plan.sources;
-    console.log(`${options.apply ? "修复" : "待修复"} ${basename(dir)} (${plan.file})：${plan.sources} 处目录 source`);
+    console.log(
+      `${options.apply ? "修复" : "待修复"} ${basename(dir)} (${plan.file})：${plan.sources} 处目录 source`,
+    );
     if (options.apply) {
       const backup = applyRepair(dir, plan.file, plan.rows);
       changedFiles += 1;
       console.log(`  备份 ${basename(backup)}`);
     }
   }
-  console.log(`[repair-mcp-catalog] 受影响会话 ${affected} 个 / 目录 source ${sources} 处；实际落盘 ${changedFiles} 个文件`);
-  if (!options.apply && affected > 0) console.log("[repair-mcp-catalog] 预演完成，确认无误后加 --apply 落盘（请先停掉 dsh web）");
+  console.log(
+    `[repair-mcp-catalog] 受影响会话 ${affected} 个 / 目录 source ${sources} 处；实际落盘 ${changedFiles} 个文件`,
+  );
+  if (!options.apply && affected > 0)
+    console.log("[repair-mcp-catalog] 预演完成，确认无误后加 --apply 落盘（请先停掉 dsh web）");
   if (dirs.length === 0) console.log("[repair-mcp-catalog] 未找到会话目录，检查 --home / DSH_HOME");
 }
 
-if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href)
+  main();

@@ -37,7 +37,11 @@ export function bareServerName(name: string): string {
 
 /** 归一化中间层工具的 tool 参数（模型可能传 mcp__<server>__<tool> 全名）。
  * @param caller 调用方工具名（错误文案前缀；ws_mcp_call / ws_mcp_detail 复用）。 */
-export function normalizeToolName(serverName: string, toolName: string, caller = "ws_mcp_call"): string {
+export function normalizeToolName(
+  serverName: string,
+  toolName: string,
+  caller = "ws_mcp_call",
+): string {
   const prefix = `mcp__${serverName}__`;
   let name = toolName;
   if (name.startsWith("mcp__")) {

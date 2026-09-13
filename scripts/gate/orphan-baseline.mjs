@@ -29,10 +29,10 @@
  *       （拒绝以空基线继续——写路径上这意味着删段，见 #718）
  *     - 取到后浅拉取（fetch --depth=1）并把 incremental-*.json 与 manifest.json 恢复到 coverage/mutation/
  */
-import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   BASELINE_FILE_RE,
@@ -41,13 +41,13 @@ import {
   decideRestoreOutcome,
   expectedBaselineFiles,
   planArchive,
-} from './baseline-archive.mjs';
-import { buildManifest, hashFile, pushBaselineTree } from './baseline-push.mjs';
+} from "./baseline-archive.mjs";
+import { buildManifest, hashFile, pushBaselineTree } from "./baseline-push.mjs";
 
 const action = process.argv[2];
-const BRANCH = 'baseline/mutation';
-const CONF_DIR = join(process.cwd(), 'stryker.conf.d');
-const TARGET_DIR = join(process.cwd(), 'coverage', 'mutation');
+const BRANCH = "baseline/mutation";
+const CONF_DIR = join(process.cwd(), "stryker.conf.d");
+const TARGET_DIR = join(process.cwd(), "coverage", "mutation");
 const MAX_BUFFER = 64 * 1024 * 1024; // 64MB，防止巨型基线 JSON 突破 Node 默认 1MB maxBuffer
 const PROBE_ATTEMPTS = 3;
 // 环境故障（远端不可达）可能瞬时，按与 fetch 同规格的退避重试；测试用 0 秒避免拖慢套件。
@@ -56,17 +56,17 @@ const RETRY_DELAY_MS = Number(process.env.ORPHAN_BASELINE_RETRY_DELAY_MS ?? 2000
 function runGit(args, options = {}) {
   const { input, env, ignoreError = false } = options;
   try {
-    return execFileSync('git', args, {
-      encoding: 'utf8',
-      stdio: [input ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+    return execFileSync("git", args, {
+      encoding: "utf8",
+      stdio: [input ? "pipe" : "ignore", "pipe", "pipe"],
       input,
       maxBuffer: MAX_BUFFER,
       env: { ...process.env, ...env },
     }).trim();
   } catch (err) {
     if (ignoreError) return null;
-    const stderr = err.stderr ? String(err.stderr).trim() : '';
-    throw new Error(`git ${args.join(' ')} failed: ${stderr || err.message}`);
+    const stderr = err.stderr ? String(err.stderr).trim() : "";
+    throw new Error(`git ${args.join(" ")} failed: ${stderr || err.message}`);
   }
 }
 
@@ -76,19 +76,19 @@ function runGit(args, options = {}) {
  */
 function runGitProbe(args) {
   try {
-    const stdout = execFileSync('git', args, {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
+    const stdout = execFileSync("git", args, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
       maxBuffer: MAX_BUFFER,
       // 无 TTY 时凭据缺失会让 git 挂起等待输入，显式关掉交互提示。
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
     }).trim();
     return { ok: true, code: 0, stdout };
   } catch (err) {
     return {
       ok: false,
-      code: typeof err.status === 'number' ? err.status : null,
-      stdout: err.stdout ? String(err.stdout).trim() : '',
+      code: typeof err.status === "number" ? err.status : null,
+      stdout: err.stdout ? String(err.stdout).trim() : "",
     };
   }
 }
@@ -101,7 +101,7 @@ function sleep(ms) {
 function remoteTarget() {
   const token = process.env.OBSERVE_PAT || process.env.GITHUB_TOKEN;
   const repo = process.env.GITHUB_REPOSITORY;
-  return token && repo ? `https://x-access-token:${token}@github.com/${repo}.git` : 'origin';
+  return token && repo ? `https://x-access-token:${token}@github.com/${repo}.git` : "origin";
 }
 
 /**
@@ -114,31 +114,41 @@ function remoteTarget() {
  * 不该因探针的假阴性把「可恢复」判成「判红」——decideRestoreOutcome 把 fetchOk 放在第一位。
  */
 function probeAndFetchBaseline() {
-  let probeStatus = 'unreachable';
+  let probeStatus = "unreachable";
   for (let attempt = 1; attempt <= PROBE_ATTEMPTS; attempt++) {
-    const res = runGitProbe(['ls-remote', '--exit-code', '--heads', 'origin', `refs/heads/${BRANCH}`]);
+    const res = runGitProbe([
+      "ls-remote",
+      "--exit-code",
+      "--heads",
+      "origin",
+      `refs/heads/${BRANCH}`,
+    ]);
     probeStatus = classifyRemoteProbe({ ok: res.ok, code: res.code });
-    if (probeStatus !== 'unreachable') break;
+    if (probeStatus !== "unreachable") break;
     if (attempt < PROBE_ATTEMPTS) {
-      console.warn(`[orphan-baseline] ls-remote 探测基线分支失败，第 ${attempt}/${PROBE_ATTEMPTS} 次重试...`);
+      console.warn(
+        `[orphan-baseline] ls-remote 探测基线分支失败，第 ${attempt}/${PROBE_ATTEMPTS} 次重试...`,
+      );
       sleep(RETRY_DELAY_MS);
     }
   }
 
   let fetched = false;
-  if (probeStatus !== 'absent') {
+  if (probeStatus !== "absent") {
     for (let attempt = 1; attempt <= PROBE_ATTEMPTS; attempt++) {
       const res = runGit(
-        ['fetch', '--depth=1', 'origin', `refs/heads/${BRANCH}`],
+        ["fetch", "--depth=1", "origin", `refs/heads/${BRANCH}`],
         // 与探针一致：无 TTY 时不让 git 挂起等待凭据输入。
-        { ignoreError: true, env: { GIT_TERMINAL_PROMPT: '0' } },
+        { ignoreError: true, env: { GIT_TERMINAL_PROMPT: "0" } },
       );
       if (res !== null) {
         fetched = true;
         break;
       }
       if (attempt < PROBE_ATTEMPTS) {
-        console.warn(`[orphan-baseline] Fetch 孤立分支失败，第 ${attempt}/${PROBE_ATTEMPTS} 次重试...`);
+        console.warn(
+          `[orphan-baseline] Fetch 孤立分支失败，第 ${attempt}/${PROBE_ATTEMPTS} 次重试...`,
+        );
         sleep(RETRY_DELAY_MS);
       }
     }
@@ -160,7 +170,7 @@ function baselineFilesIn(dir) {
  */
 function expectedFromConfDir() {
   const confNames = existsSync(CONF_DIR)
-    ? readdirSync(CONF_DIR).filter((f) => f.startsWith('dsh-') && f.endsWith('.json'))
+    ? readdirSync(CONF_DIR).filter((f) => f.startsWith("dsh-") && f.endsWith(".json"))
     : [];
   const expected = expectedBaselineFiles(confNames);
   if (expected.length === 0) {
@@ -178,14 +188,15 @@ function expectedFromConfDir() {
  * `sizes` 与 `blobs` 另有用途：远端 manifest 缺条目时按二者就地重算（见 archive 分支）。
  */
 function readRemoteTree() {
-  const treeOutput = runGit(['ls-tree', '-r', '-l', 'FETCH_HEAD'], { ignoreError: true });
-  if (!treeOutput) return { files: [], blobs: new Map(), sizes: new Map(), manifest: {}, entries: 0 };
+  const treeOutput = runGit(["ls-tree", "-r", "-l", "FETCH_HEAD"], { ignoreError: true });
+  if (!treeOutput)
+    return { files: [], blobs: new Map(), sizes: new Map(), manifest: {}, entries: 0 };
 
   const files = [];
   const blobs = new Map();
   const sizes = new Map();
   let entries = 0;
-  for (const line of treeOutput.split('\n').filter(Boolean)) {
+  for (const line of treeOutput.split("\n").filter(Boolean)) {
     entries++;
     const match = line.match(/^100644\s+blob\s+([0-9a-f]{40})\s+(\d+)\t(.+)$/);
     if (!match) continue;
@@ -207,12 +218,16 @@ function readRemoteTree() {
   }
 
   let manifest = {};
-  const rawManifest = runGit(['show', `FETCH_HEAD:${BASELINE_MANIFEST_FILE}`], { ignoreError: true });
+  const rawManifest = runGit(["show", `FETCH_HEAD:${BASELINE_MANIFEST_FILE}`], {
+    ignoreError: true,
+  });
   if (rawManifest) {
     try {
       manifest = JSON.parse(rawManifest);
     } catch {
-      console.error('[orphan-baseline] 远端 manifest.json 非法 JSON（拒绝沿用不可信的陈旧判据，fail-loud）');
+      console.error(
+        "[orphan-baseline] 远端 manifest.json 非法 JSON（拒绝沿用不可信的陈旧判据，fail-loud）",
+      );
       process.exit(1);
     }
   }
@@ -221,11 +236,11 @@ function readRemoteTree() {
 
 /** 远端 blob 内容的 sha256——按**原始字节**读，不能用 runGit（它会 trim，哈希会与实际内容不符）。 */
 function sha256OfBlob(blobSha) {
-  const buf = execFileSync('git', ['cat-file', 'blob', blobSha], { maxBuffer: MAX_BUFFER });
-  return createHash('sha256').update(buf).digest('hex');
+  const buf = execFileSync("git", ["cat-file", "blob", blobSha], { maxBuffer: MAX_BUFFER });
+  return createHash("sha256").update(buf).digest("hex");
 }
 
-if (action === 'push') {
+if (action === "push") {
   if (!existsSync(TARGET_DIR)) {
     console.error(`[orphan-baseline] 源目录不存在: ${TARGET_DIR}`);
     process.exit(1);
@@ -233,7 +248,9 @@ if (action === 'push') {
 
   const baselineFiles = baselineFilesIn(TARGET_DIR);
   if (baselineFiles.length === 0) {
-    console.error('[orphan-baseline] 未找到任何 incremental-*.json 基线文件，变异测试未产生可用基线');
+    console.error(
+      "[orphan-baseline] 未找到任何 incremental-*.json 基线文件，变异测试未产生可用基线",
+    );
     process.exit(1);
   }
 
@@ -242,12 +259,12 @@ if (action === 'push') {
     branch: BRANCH,
     entries: baselineFiles.map((f) => ({ name: f, blobSha: hashFile(join(TARGET_DIR, f)) })),
     manifest: buildManifest(TARGET_DIR, baselineFiles),
-    subject: 'chore(ci): update mutation baseline snapshot [skip ci]',
+    subject: "chore(ci): update mutation baseline snapshot [skip ci]",
     manifestPath: join(TARGET_DIR, BASELINE_MANIFEST_FILE),
-    label: 'orphan-baseline',
+    label: "orphan-baseline",
     log: console.log,
   });
-} else if (action === 'archive') {
+} else if (action === "archive") {
   if (!existsSync(TARGET_DIR)) {
     console.error(`[orphan-baseline] 源目录不存在: ${TARGET_DIR}`);
     process.exit(1);
@@ -255,20 +272,22 @@ if (action === 'push') {
 
   const produced = baselineFilesIn(TARGET_DIR);
   if (produced.length === 0) {
-    console.error('[orphan-baseline] 未找到任何 incremental-*.json 基线文件，变异测试未产生可用基线');
+    console.error(
+      "[orphan-baseline] 未找到任何 incremental-*.json 基线文件，变异测试未产生可用基线",
+    );
     process.exit(1);
   }
   const expected = expectedFromConfDir();
 
   const { outcome, fetched } = probeAndFetchBaseline();
-  if (outcome.action === 'fail') {
+  if (outcome.action === "fail") {
     // 并集语义下「取不到远端」等于「沿用集合未知」：以空沿用集合推送 = 删段。故一律 fail-loud。
     console.error(`[orphan-baseline] ${outcome.reason}（fail-loud，拒绝以空沿用集合入档）`);
     process.exit(1);
   }
 
   const remote = fetched ? readRemoteTree() : { files: [], blobs: new Map(), manifest: {} };
-  if (outcome.action === 'bootstrap') console.log(`::notice::${outcome.reason}`);
+  if (outcome.action === "bootstrap") console.log(`::notice::${outcome.reason}`);
 
   const plan = planArchive({ expected, produced, carried: remote.files });
   const total = expected.length;
@@ -276,13 +295,15 @@ if (action === 'push') {
     `[orphan-baseline] 归档对账（期望 ${total} 段）：新算 ${plan.newlyMeasured.length} / 沿用 ${plan.carriedOver.length} / 缺 ${plan.missing.length} / 退役 ${plan.retired.length}`,
   );
   if (plan.retired.length > 0) {
-    console.log(`[orphan-baseline] 退役段（配置已不在期望集合，从归档移除）：${plan.retired.join(' ')}`);
+    console.log(
+      `[orphan-baseline] 退役段（配置已不在期望集合，从归档移除）：${plan.retired.join(" ")}`,
+    );
   }
   if (plan.missing.length > 0) {
     // 告警而非判红：段首次入档（拆段当夜）本就无基线可沿用，判红会让每次拆段必然红一夜。
     // 真·数据丢失由 workflow 的段报告齐备性校验与台账 --check 兜底判红。
     console.warn(
-      `::warning::归档缺段 ${plan.missing.length} 个（本次未产出且远端无沿用——查实例是否超时/被杀）：${plan.missing.join(' ')}`,
+      `::warning::归档缺段 ${plan.missing.length} 个（本次未产出且远端无沿用——查实例是否超时/被杀）：${plan.missing.join(" ")}`,
     );
   }
 
@@ -308,7 +329,7 @@ if (action === 'push') {
   }
   if (recomputed.length > 0) {
     console.warn(
-      `::warning::远端 manifest 缺 ${recomputed.length} 个沿用段条目，已按远端 blob 重算（mtime 记 null）：${recomputed.join(' ')}`,
+      `::warning::远端 manifest 缺 ${recomputed.length} 个沿用段条目，已按远端 blob 重算（mtime 记 null）：${recomputed.join(" ")}`,
     );
   }
 
@@ -317,48 +338,50 @@ if (action === 'push') {
     branch: BRANCH,
     entries: kept.map((f) =>
       // 沿用文件直接复用远端 blob sha：不做内容往返，字节级一致因而零新对象。
-      plan.carriedOver.includes(f) ? { name: f, blobSha: remote.blobs.get(f) } : { name: f, blobSha: hashFile(join(TARGET_DIR, f)) },
+      plan.carriedOver.includes(f)
+        ? { name: f, blobSha: remote.blobs.get(f) }
+        : { name: f, blobSha: hashFile(join(TARGET_DIR, f)) },
     ),
     // manifest 必须覆盖**树里的全部基线文件**（新算 + 沿用都算）：漏掉沿用段会让 manifest
     // 与树不对齐——2026-09-12 生产实测就这么漏过 2 条（本行的 kept 曾误写成 newlyMeasured）。
     manifest: buildManifest(TARGET_DIR, kept, preserved),
     subject: `chore(ci): archive mutation baseline（并集入档 新算${plan.newlyMeasured.length}/沿用${plan.carriedOver.length}/缺${plan.missing.length}）[skip ci]`,
-    label: 'orphan-baseline',
+    label: "orphan-baseline",
     log: console.log,
   });
-} else if (action === 'restore') {
+} else if (action === "restore") {
   mkdirSync(TARGET_DIR, { recursive: true });
 
   const { outcome, fetched } = probeAndFetchBaseline();
 
-  if (outcome.action === 'fail') {
+  if (outcome.action === "fail") {
     console.error(`[orphan-baseline] ${outcome.reason}（fail-loud，本次未执行变异测试）`);
     process.exit(1);
   }
-  if (outcome.action === 'bootstrap') {
+  if (outcome.action === "bootstrap") {
     console.log(`::notice::${outcome.reason}`);
     process.exit(0);
   }
   if (!fetched) {
-    console.error('[orphan-baseline] 恢复结果与探针不一致（fail-loud）');
+    console.error("[orphan-baseline] 恢复结果与探针不一致（fail-loud）");
     process.exit(1);
   }
 
   // 遍历远端 commit 中的文件并写回目标目录
-  const treeOutput = runGit(['ls-tree', '-r', 'FETCH_HEAD'], { ignoreError: true });
+  const treeOutput = runGit(["ls-tree", "-r", "FETCH_HEAD"], { ignoreError: true });
   if (!treeOutput) {
-    console.log('::notice::孤立分支基线树为空，本次安全降级为全量变异');
+    console.log("::notice::孤立分支基线树为空，本次安全降级为全量变异");
     process.exit(0);
   }
 
-  const lines = treeOutput.split('\n').filter(Boolean);
+  const lines = treeOutput.split("\n").filter(Boolean);
   let restored = 0;
   for (const line of lines) {
     const match = line.match(/^100644\s+blob\s+[0-9a-f]{40}\t(.+)$/);
     if (!match) continue;
     const fileName = match[1];
     if (BASELINE_FILE_RE.test(fileName) || fileName === BASELINE_MANIFEST_FILE) {
-      const content = runGit(['show', `FETCH_HEAD:${fileName}`]);
+      const content = runGit(["show", `FETCH_HEAD:${fileName}`]);
       writeFileSync(join(TARGET_DIR, fileName), content);
       restored++;
     }

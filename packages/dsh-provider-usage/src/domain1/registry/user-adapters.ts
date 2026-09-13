@@ -119,7 +119,8 @@ async function moveToBackupNoClobber(file: string, backupBase: string): Promise<
     } catch (linkError: unknown) {
       const linkCode = errorCode(linkError);
       if (linkCode === "EEXIST") continue;
-      if (!["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV"].includes(linkCode ?? "")) throw linkError;
+      if (!["EPERM", "ENOTSUP", "EOPNOTSUPP", "ENOSYS", "EXDEV"].includes(linkCode ?? ""))
+        throw linkError;
       try {
         // 不支持 hard-link 的文件系统退化为 exclusive copy；原文件仅在完整复制后移除。
         await copyFile(file, candidate, constants.COPYFILE_EXCL);
@@ -133,7 +134,9 @@ async function moveToBackupNoClobber(file: string, backupBase: string): Promise<
       await unlink(file);
     } catch (unlinkError: unknown) {
       // candidate 已完整保留证据；原文件也仍在，调用方会 fail-closed，禁止后续写入覆盖。
-      throw new Error(`备份已留存在 ${basename(candidate)}，但移除原文件失败：${thrownDetail(unlinkError)}`);
+      throw new Error(
+        `备份已留存在 ${basename(candidate)}，但移除原文件失败：${thrownDetail(unlinkError)}`,
+      );
     }
     return candidate;
   }
@@ -156,7 +159,9 @@ async function rotateAdapterStateBackups(
   try {
     names = await readdir(directory);
   } catch (error: unknown) {
-    diagnostic(`adapter-state.json 取证备份轮转扫描失败（${thrownDetail(error)}）；现有备份保持不变`);
+    diagnostic(
+      `adapter-state.json 取证备份轮转扫描失败（${thrownDetail(error)}）；现有备份保持不变`,
+    );
     return;
   }
 
@@ -174,16 +179,16 @@ async function rotateAdapterStateBackups(
   const protectedPath = resolve(protectedBackup);
   const removable = backups
     .filter((entry) => resolve(entry.file) !== protectedPath)
-    .sort((left, right) =>
-      left.timestamp - right.timestamp
-      || left.suffix - right.suffix);
+    .sort((left, right) => left.timestamp - right.timestamp || left.suffix - right.suffix);
   const removeCount = Math.max(0, removable.length - (ADAPTER_STATE_BACKUP_LIMIT - 1));
   for (const entry of removable.slice(0, removeCount)) {
     try {
       await unlink(entry.file);
     } catch (error: unknown) {
       if (errorCode(error) === "ENOENT") continue;
-      diagnostic(`adapter-state.json 旧取证备份 ${basename(entry.file)} 轮转失败（${thrownDetail(error)}）；现有备份保持不变`);
+      diagnostic(
+        `adapter-state.json 旧取证备份 ${basename(entry.file)} 轮转失败（${thrownDetail(error)}）；现有备份保持不变`,
+      );
     }
   }
 }

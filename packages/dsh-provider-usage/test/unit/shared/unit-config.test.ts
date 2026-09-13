@@ -161,7 +161,9 @@ describe("normalizeConfig 边界覆盖", () => {
   });
 
   it("warmupIntervalMs 非法丢弃", () => {
-    expect(normalizeConfig({ warmupIntervalMs: "x" }).warmupIntervalMs).toBe(DEFAULT_CONFIG.warmupIntervalMs);
+    expect(normalizeConfig({ warmupIntervalMs: "x" }).warmupIntervalMs).toBe(
+      DEFAULT_CONFIG.warmupIntervalMs,
+    );
   });
 
   it("cacheDurationMs 下限 5000", () => {
@@ -173,7 +175,9 @@ describe("normalizeConfig 边界覆盖", () => {
   });
 
   it("cacheDurationMs 非法丢弃", () => {
-    expect(normalizeConfig({ cacheDurationMs: "x" }).cacheDurationMs).toBe(DEFAULT_CONFIG.cacheDurationMs);
+    expect(normalizeConfig({ cacheDurationMs: "x" }).cacheDurationMs).toBe(
+      DEFAULT_CONFIG.cacheDurationMs,
+    );
   });
 
   // #198 H1/H2：默认缓存由 60000 下调至 30000；显式配置语义与下限 clamp 保持
@@ -292,9 +296,13 @@ describe("resolveProviderConfig 全链", () => {
       const authLocal = join(authDir, ".local", "share", "opencode");
       mkdirSync(authLocal, { recursive: true });
       restore = isolateCredEnv(authDir);
-      writeFileSync(join(authLocal, "auth.json"), JSON.stringify({
-        "opencode-go": { type: "api", key: "sk-auth-json" },
-      }), "utf8");
+      writeFileSync(
+        join(authLocal, "auth.json"),
+        JSON.stringify({
+          "opencode-go": { type: "api", key: "sk-auth-json" },
+        }),
+        "utf8",
+      );
       resolved = await resolveProviderConfig("opencode-go");
     });
 
@@ -314,9 +322,13 @@ describe("resolveProviderConfig 全链", () => {
       const authLocal = join(authDir, ".local", "share", "opencode");
       mkdirSync(authLocal, { recursive: true });
       restore = isolateCredEnv(authDir);
-      writeFileSync(join(authLocal, "auth.json"), JSON.stringify({
-        "opencode": { type: "api", key: "sk-auth-legacy" },
-      }), "utf8");
+      writeFileSync(
+        join(authLocal, "auth.json"),
+        JSON.stringify({
+          opencode: { type: "api", key: "sk-auth-legacy" },
+        }),
+        "utf8",
+      );
       resolved = await resolveProviderConfig("opencode-go");
     });
 
@@ -333,11 +345,11 @@ describe("resolveProviderConfig 全链", () => {
 
     beforeAll(async () => {
       restore = isolateCredEnv();
-      writeFileSync(join(process.env.DSH_HOME, ".credentials.yaml"), [
-        "version: 1",
-        "refs:",
-        "  OPENCODE_GO_API_KEY: sk-from-yaml",
-      ].join("\n"), "utf8");
+      writeFileSync(
+        join(process.env.DSH_HOME, ".credentials.yaml"),
+        ["version: 1", "refs:", "  OPENCODE_GO_API_KEY: sk-from-yaml"].join("\n"),
+        "utf8",
+      );
       resolved = await resolveProviderConfig("opencode-go");
     });
 
@@ -373,9 +385,13 @@ describe("resolveProviderConfig 全链", () => {
       const authLocal = join(authDir, ".local", "share", "opencode");
       mkdirSync(authLocal, { recursive: true });
       restore = isolateCredEnv(authDir);
-      writeFileSync(join(authLocal, "auth.json"), JSON.stringify({
-        "opencode-go": { type: "api", key: "sk-auth-json" },
-      }), "utf8");
+      writeFileSync(
+        join(authLocal, "auth.json"),
+        JSON.stringify({
+          "opencode-go": { type: "api", key: "sk-auth-json" },
+        }),
+        "utf8",
+      );
       process.env.OPENCODE_GO_API_KEY = "sk-from-env";
       resolved = await resolveProviderConfig("opencode-go");
     });
@@ -417,9 +433,13 @@ describe("resolveProviderConfig 全链", () => {
       const authLocal = join(authDir, ".local", "share", "opencode");
       mkdirSync(authLocal, { recursive: true });
       restore = isolateCredEnv(authDir);
-      writeFileSync(join(authLocal, "auth.json"), JSON.stringify({
-        "opencode-go": { type: "api", key: "sk-auth-json" },
-      }), "utf8");
+      writeFileSync(
+        join(authLocal, "auth.json"),
+        JSON.stringify({
+          "opencode-go": { type: "api", key: "sk-auth-json" },
+        }),
+        "utf8",
+      );
       resolved = await resolveProviderConfig("anthropic");
     });
 
@@ -453,15 +473,21 @@ describe("normalizeConfig 全字段矩阵（#150 二阶段）", () => {
 
   // fetchTimeoutMs 固定 5s 不可配置（#206 配套：远端慢时 2s 频繁超时；warmup 与 /stats 同限）
   it("fetchTimeoutMs 固定 5s 不可配置", () => {
-    expect(normalizeConfig({ fetchTimeoutMs: 400 }).fetchTimeoutMs).toBe(DEFAULT_CONFIG.fetchTimeoutMs);
+    expect(normalizeConfig({ fetchTimeoutMs: 400 }).fetchTimeoutMs).toBe(
+      DEFAULT_CONFIG.fetchTimeoutMs,
+    );
   });
 
   it("fetchTimeoutMs 固定 5s 不可配置（上限值也忽略）", () => {
-    expect(normalizeConfig({ fetchTimeoutMs: 30000 }).fetchTimeoutMs).toBe(DEFAULT_CONFIG.fetchTimeoutMs);
+    expect(normalizeConfig({ fetchTimeoutMs: 30000 }).fetchTimeoutMs).toBe(
+      DEFAULT_CONFIG.fetchTimeoutMs,
+    );
   });
 
   it("fetchTimeoutMs 非法输入保持默认", () => {
-    expect(normalizeConfig({ fetchTimeoutMs: "x" }).fetchTimeoutMs).toBe(DEFAULT_CONFIG.fetchTimeoutMs);
+    expect(normalizeConfig({ fetchTimeoutMs: "x" }).fetchTimeoutMs).toBe(
+      DEFAULT_CONFIG.fetchTimeoutMs,
+    );
   });
 
   // maxAgeDays 上限 365、下限正整数（#184：<=0 或非整数回落默认，避免 maybePrune 下界落在未来全量清史）
@@ -503,7 +529,9 @@ describe("normalizeConfig 全字段矩阵（#150 二阶段）", () => {
   });
 
   it("warmupIntervalMs 数组丢弃（Number.isFinite([]) 为 false）", () => {
-    expect(normalizeConfig({ warmupIntervalMs: [] }).warmupIntervalMs).toBe(DEFAULT_CONFIG.warmupIntervalMs);
+    expect(normalizeConfig({ warmupIntervalMs: [] }).warmupIntervalMs).toBe(
+      DEFAULT_CONFIG.warmupIntervalMs,
+    );
   });
 
   // cacheDurationMs 下限
@@ -512,7 +540,9 @@ describe("normalizeConfig 全字段矩阵（#150 二阶段）", () => {
   });
 
   it("cacheDurationMs 数组丢弃", () => {
-    expect(normalizeConfig({ cacheDurationMs: [] }).cacheDurationMs).toBe(DEFAULT_CONFIG.cacheDurationMs);
+    expect(normalizeConfig({ cacheDurationMs: [] }).cacheDurationMs).toBe(
+      DEFAULT_CONFIG.cacheDurationMs,
+    );
   });
 
   // maxSizeMB 上限
@@ -556,7 +586,9 @@ describe("parseUserAdapters 字段级异型值分支（#150 二阶段）", () =>
 
   // id 异型但 length>0：原实现按非字符串丢弃，变异为直通时输出会带数组 id
   it("id 为 length>0 数组拒绝", () => {
-    expect(parseUserAdapters('{"adapters":[{"id":["x","y"],"providers":["p"],"file":"/f"}]}')).toEqual([]);
+    expect(
+      parseUserAdapters('{"adapters":[{"id":["x","y"],"providers":["p"],"file":"/f"}]}'),
+    ).toEqual([]);
   });
 
   it("id 为对象拒绝", () => {
@@ -565,26 +597,36 @@ describe("parseUserAdapters 字段级异型值分支（#150 二阶段）", () =>
 
   // label 异型：回退 id（label||id 语义），不采纳异型值本身
   it("label 为数组时回退 id（不被异型值污染）", () => {
-    const out = parseUserAdapters('{"adapters":[{"id":"a","label":["L"],"providers":["p1"],"file":"/f"}]}');
+    const out = parseUserAdapters(
+      '{"adapters":[{"id":"a","label":["L"],"providers":["p1"],"file":"/f"}]}',
+    );
     expect(out).toEqual([{ id: "a", label: "a", providers: ["p1"], file: "/f" }]);
   });
 
   // providers 元素异型过滤：全部被滤掉后 providers 空 → 条目整体拒绝
   it("providers 元素全为数组被滤空后条目拒绝", () => {
-    expect(parseUserAdapters('{"adapters":[{"id":"a","providers":[["x"],[2]],"file":"/f"}]}')).toEqual([]);
+    expect(
+      parseUserAdapters('{"adapters":[{"id":"a","providers":[["x"],[2]],"file":"/f"}]}'),
+    ).toEqual([]);
   });
 
   it("providers 元素为类数组对象被滤空后条目拒绝", () => {
-    expect(parseUserAdapters('{"adapters":[{"id":"a","providers":[{"length":1}],"file":"/f"}]}')).toEqual([]);
+    expect(
+      parseUserAdapters('{"adapters":[{"id":"a","providers":[{"length":1}],"file":"/f"}]}'),
+    ).toEqual([]);
   });
 
   it("providers 为非数组拒绝", () => {
-    expect(parseUserAdapters('{"adapters":[{"id":"a","providers":"pstr","file":"/f"}]}')).toEqual([]);
+    expect(parseUserAdapters('{"adapters":[{"id":"a","providers":"pstr","file":"/f"}]}')).toEqual(
+      [],
+    );
   });
 
   // file 异型但 length>0：原实现按非字符串置空 → 条目拒绝
   it("file 为 length>0 数组拒绝", () => {
-    expect(parseUserAdapters('{"adapters":[{"id":"a","providers":["p"],"file":["/f"]}]}')).toEqual([]);
+    expect(parseUserAdapters('{"adapters":[{"id":"a","providers":["p"],"file":["/f"]}]}')).toEqual(
+      [],
+    );
   });
 
   // data 顶层异型 JSON
@@ -618,15 +660,19 @@ describe("readAdapterState 全分支（#150 二阶段）", () => {
     bakFiles = readdirSync(root).filter((name) => name.startsWith("adapter-state.json.bak-"));
 
     // 合法映射 + null 显式清空 + 各非法形态逐个区分
-    writeFileSync(join(root, "adapter-state.json"), JSON.stringify({
-      p1: "a",
-      p2: null,
-      p3: "",
-      p4: 42,
-      p5: ["a"],
-      p6: {},
-      "": "empty-key",
-    }), "utf8");
+    writeFileSync(
+      join(root, "adapter-state.json"),
+      JSON.stringify({
+        p1: "a",
+        p2: null,
+        p3: "",
+        p4: 42,
+        p5: ["a"],
+        p6: {},
+        "": "empty-key",
+      }),
+      "utf8",
+    );
     legalState = await readAdapterState(root);
 
     // #184：顶层非 plain object（字符串/数字/null/数组）一律拒绝 → 空对象（与「无有效状态」同形态）
@@ -750,7 +796,9 @@ describe("UI 配置与面板锚点纯函数矩阵（#150 二阶段）", () => {
   });
 
   it("panelOffsetY Infinity 回退默认", () => {
-    expect(normalizeUiConfig({ panelOffsetY: Number.POSITIVE_INFINITY }).panelOffsetY).toBe(DEFAULT_UI_CONFIG.panelOffsetY);
+    expect(normalizeUiConfig({ panelOffsetY: Number.POSITIVE_INFINITY }).panelOffsetY).toBe(
+      DEFAULT_UI_CONFIG.panelOffsetY,
+    );
   });
 
   it("panelOffsetY 小数四舍五入", () => {
@@ -759,8 +807,15 @@ describe("UI 配置与面板锚点纯函数矩阵（#150 二阶段）", () => {
 
   // 完整合法配置原样归一
   it("完整合法配置透传（缺省层级基准回退默认）", () => {
-    expect(normalizeUiConfig({ placement: "bottom-left", offsetX: 10, offsetY: 20, panelOffsetY: 30 }))
-      .toEqual({ placement: "bottom-left", offsetX: 10, offsetY: 20, panelOffsetY: 30, zIndexBase: DEFAULT_UI_CONFIG.zIndexBase });
+    expect(
+      normalizeUiConfig({ placement: "bottom-left", offsetX: 10, offsetY: 20, panelOffsetY: 30 }),
+    ).toEqual({
+      placement: "bottom-left",
+      offsetX: 10,
+      offsetY: 20,
+      panelOffsetY: 30,
+      zIndexBase: DEFAULT_UI_CONFIG.zIndexBase,
+    });
   });
 
   // #128 zIndexBase clamp 矩阵：非法回退默认 / 越界压边界 / 合法透传
@@ -793,7 +848,9 @@ describe("UI 配置与面板锚点纯函数矩阵（#150 二阶段）", () => {
   });
 
   it("NaN 回退默认", () => {
-    expect(normalizeUiConfig({ zIndexBase: Number.NaN }).zIndexBase).toBe(DEFAULT_UI_CONFIG.zIndexBase);
+    expect(normalizeUiConfig({ zIndexBase: Number.NaN }).zIndexBase).toBe(
+      DEFAULT_UI_CONFIG.zIndexBase,
+    );
   });
 
   it("子浮层派生扩展点 base+30（B5，主面板与胶囊取配置值）", () => {

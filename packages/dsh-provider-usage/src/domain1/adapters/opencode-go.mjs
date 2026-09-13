@@ -31,21 +31,47 @@ export const DEFAULT_BASE_URL = "https://opencode.ai/zen/go/v1/usage";
 
 /** [key, 中文名, 短名, 颜色, 展示限额, x 轴观察周期(ms), 重置周期(ms)]。 */
 const CHART_SERIES = [
-  ["rolling", "5h 滚动", "5h", "var(--dsw-alias-state-business-primary,#3b82f6)", 12, 12 * 3600000, 5 * 3600000],
-  ["weekly", "每周", "周", "var(--dsw-alias-state-warn-primary,#c9820b)", 30, 7 * 86400000, 7 * 86400000],
-  ["monthly", "每月", "月", "var(--dsw-alias-state-success-primary,#0f9d6e)", 60, 30 * 86400000, 30 * 86400000],
+  [
+    "rolling",
+    "5h 滚动",
+    "5h",
+    "var(--dsw-alias-state-business-primary,#3b82f6)",
+    12,
+    12 * 3600000,
+    5 * 3600000,
+  ],
+  [
+    "weekly",
+    "每周",
+    "周",
+    "var(--dsw-alias-state-warn-primary,#c9820b)",
+    30,
+    7 * 86400000,
+    7 * 86400000,
+  ],
+  [
+    "monthly",
+    "每月",
+    "月",
+    "var(--dsw-alias-state-success-primary,#0f9d6e)",
+    60,
+    30 * 86400000,
+    30 * 86400000,
+  ],
 ];
 
 const CHART_MAX_POINTS = 300; // 降采样上限（约每像素一点）
 
 /** 三窗口配置（供 fetchData 解析与 format 对齐）。 */
-export const OPENCODE_GO_WINDOWS = CHART_SERIES.map(([key, name, short, , limit, , resetPeriodMs]) => ({
-  key,
-  name,
-  short,
-  limit: Number(limit),
-  resetPeriodMs,
-}));
+export const OPENCODE_GO_WINDOWS = CHART_SERIES.map(
+  ([key, name, short, , limit, , resetPeriodMs]) => ({
+    key,
+    name,
+    short,
+    limit: Number(limit),
+    resetPeriodMs,
+  }),
+);
 
 // ------------------------------------------------------------------ 图表兜底副本（自 charts.ts 同源，需同步；正常路径经注入 utils 消费）
 
@@ -53,7 +79,12 @@ function fmtReset(iso) {
   if (typeof iso !== "string" || iso === "") return "未知";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function miniAreaSvgFallback(opts) {
@@ -79,19 +110,31 @@ function miniAreaSvgFallback(opts) {
   const resets = resetTicksFallback(resetsAt, resetPeriodMs, t0, t1);
   for (const rr of resets) {
     const rx = xOf(rr);
-    parts.push(`<line x1="${rx.toFixed(1)}" y1="${PT}" x2="${rx.toFixed(1)}" y2="${(PT + plotH).toFixed(1)}" style="stroke:var(--dsw-alias-label-tertiary,#9aa0ab);stroke-width:1;stroke-dasharray:2 3;stroke-opacity:.55"><title>窗口重置点</title></line>`);
-    parts.push(`<path d="M ${rx.toFixed(1)} ${PT} l 3.5 3.5 l -7 0 z" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.55"/>`);
+    parts.push(
+      `<line x1="${rx.toFixed(1)}" y1="${PT}" x2="${rx.toFixed(1)}" y2="${(PT + plotH).toFixed(1)}" style="stroke:var(--dsw-alias-label-tertiary,#9aa0ab);stroke-width:1;stroke-dasharray:2 3;stroke-opacity:.55"><title>窗口重置点</title></line>`,
+    );
+    parts.push(
+      `<path d="M ${rx.toFixed(1)} ${PT} l 3.5 3.5 l -7 0 z" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.55"/>`,
+    );
   }
   const gridVals = [lo, (lo + hi) / 2, hi];
   for (const gv of gridVals) {
     const gy = yOf(gv);
-    parts.push(`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${(W - PR)}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;stroke-dasharray:3 3"/>`);
-    parts.push(`<text x="${(PL - 4)}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:${fs}px">${fmtPctTickFallback(gv)}</text>`);
+    parts.push(
+      `<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W - PR}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;stroke-dasharray:3 3"/>`,
+    );
+    parts.push(
+      `<text x="${PL - 4}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:${fs}px">${fmtPctTickFallback(gv)}</text>`,
+    );
   }
   if (lo <= 100 && 100 <= hi && hi - lo > 0.01) {
     const ly = yOf(100);
-    parts.push(`<line x1="${PL}" y1="${ly.toFixed(1)}" x2="${(W - PR)}" y2="${ly.toFixed(1)}" style="stroke:var(--dsw-alias-state-error-primary,#d64545);stroke-width:1;stroke-dasharray:4 3;stroke-opacity:.65"/>`);
-    parts.push(`<text x="${(W - PR - 2)}" y="${(ly - 3).toFixed(1)}" text-anchor="end" style="fill:var(--dsw-alias-state-error-primary,#d64545);font-size:${fs100}px">100%</text>`);
+    parts.push(
+      `<line x1="${PL}" y1="${ly.toFixed(1)}" x2="${W - PR}" y2="${ly.toFixed(1)}" style="stroke:var(--dsw-alias-state-error-primary,#d64545);stroke-width:1;stroke-dasharray:4 3;stroke-opacity:.65"/>`,
+    );
+    parts.push(
+      `<text x="${W - PR - 2}" y="${(ly - 3).toFixed(1)}" text-anchor="end" style="fill:var(--dsw-alias-state-error-primary,#d64545);font-size:${fs100}px">100%</text>`,
+    );
   }
   const line = [];
   for (const s of samples) {
@@ -106,8 +149,12 @@ function miniAreaSvgFallback(opts) {
     const bottom = PT + plotH;
     const areaD = `${d} L ${lastPt.x.toFixed(1)} ${bottom} L ${first.x.toFixed(1)} ${bottom} Z`;
     parts.push(`<path d="${areaD}" style="fill:${color};fill-opacity:.13"/>`);
-    parts.push(`<path d="${d}" style="fill:none;stroke:${color};stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round"/>`);
-    parts.push(`<circle cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="2.6" style="fill:${color};stroke:var(--dsw-alias-bg-base,#fdfdfd);stroke-width:1.2"/>`);
+    parts.push(
+      `<path d="${d}" style="fill:none;stroke:${color};stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round"/>`,
+    );
+    parts.push(
+      `<circle cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="2.6" style="fill:${color};stroke:var(--dsw-alias-bg-base,#fdfdfd);stroke-width:1.2"/>`,
+    );
   }
   const labelPx = axisLabelWidthPxFallback(spanMs, fs, dateOnly);
   const minGapMs = (labelPx * spanMs) / xw;
@@ -115,7 +162,9 @@ function miniAreaSvgFallback(opts) {
   for (let k = 0; k < ticks.length; k += 1) {
     const tx = xOf(ticks[k]);
     const anchor = k === 0 ? "start" : k === ticks.length - 1 ? "end" : "middle";
-    parts.push(`<text x="${tx.toFixed(1)}" y="${(H - 4)}" text-anchor="${anchor}" style="font-size:${fs}px">${fmtAxisTimeFallback(ticks[k], spanMs, dateOnly)}</text>`);
+    parts.push(
+      `<text x="${tx.toFixed(1)}" y="${H - 4}" text-anchor="${anchor}" style="font-size:${fs}px">${fmtAxisTimeFallback(ticks[k], spanMs, dateOnly)}</text>`,
+    );
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">${parts.join("")}</svg>`;
 }
@@ -221,8 +270,16 @@ function timeTicksFallback(t0, t1, minGapMs) {
 function trendOfFallback(pcts) {
   let first = null;
   let last = null;
-  for (const v of pcts) if (typeof v === "number") { first = v; break; }
-  for (let j = pcts.length - 1; j >= 0; j -= 1) if (typeof pcts[j] === "number") { last = pcts[j]; break; }
+  for (const v of pcts)
+    if (typeof v === "number") {
+      first = v;
+      break;
+    }
+  for (let j = pcts.length - 1; j >= 0; j -= 1)
+    if (typeof pcts[j] === "number") {
+      last = pcts[j];
+      break;
+    }
   if (first === null || last === null) return null;
   const d = last - first;
   return { delta: Math.round(d * 10) / 10, up: d > 0.05, down: d < -0.05 };
@@ -408,11 +465,10 @@ export const openCodeGoAdapter = {
   formatCapsule(input) {
     const e = input.esc || escFallback;
     const text =
-      OPENCODE_GO_WINDOWS
-        .map((w) => {
-          const v = (input.data[w.key] ?? { percent: null });
-          return { w, v };
-        })
+      OPENCODE_GO_WINDOWS.map((w) => {
+        const v = input.data[w.key] ?? { percent: null };
+        return { w, v };
+      })
         .filter(({ v }) => typeof v.percent === "number")
         .map(({ w, v }) => `${w.short} ${v.percent}%`)
         .join(" · ") || "无数据";
@@ -454,13 +510,14 @@ export const openCodeGoAdapter = {
           return true;
         })
         .map((en) => {
-          const v = (en.data[key] ?? { percent: null });
+          const v = en.data[key] ?? { percent: null };
           return typeof v.percent === "number" && Number.isFinite(v.percent) ? v.percent : null;
         });
       const hasPoint = pcts.some((v) => typeof v === "number");
 
       // 卡片头
-      const resetText = resetsAt !== undefined && resetsAt !== "" ? `重置 ${fmtReset(resetsAt)}` : "";
+      const resetText =
+        resetsAt !== undefined && resetsAt !== "" ? `重置 ${fmtReset(resetsAt)}` : "";
       const trend = trendOf(pcts);
       const trendHtml =
         trend === null
@@ -485,7 +542,7 @@ export const openCodeGoAdapter = {
       const tail = input.entries[input.entries.length - 1].time;
       for (const en of input.entries) {
         if (obsMs > 0 && en.time < tail - obsMs) continue;
-        const v = (en.data[key] ?? { percent: null });
+        const v = en.data[key] ?? { percent: null };
         if (typeof v.percent === "number" && Number.isFinite(v.percent)) {
           points.push({ x: en.time, y: v.percent });
         }

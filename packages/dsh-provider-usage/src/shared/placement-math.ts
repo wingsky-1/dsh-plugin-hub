@@ -27,7 +27,11 @@ export {
   bottomAnchorEdge,
   panelAnchorForPlacement,
 } from "../../../../shared/placement-math.js";
-export type { FloatBreakpoint, ViewportPoint, RectLike } from "../../../../shared/placement-math.js";
+export type {
+  FloatBreakpoint,
+  ViewportPoint,
+  RectLike,
+} from "../../../../shared/placement-math.js";
 
 /**
  * 面板内子浮层层级派生纯函数（主面板与胶囊 computed z-index 一律取

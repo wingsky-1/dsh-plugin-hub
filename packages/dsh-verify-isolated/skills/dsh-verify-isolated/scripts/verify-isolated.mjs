@@ -119,21 +119,31 @@
  */
 import { spawn, spawnSync, execFileSync } from "node:child_process";
 import {
-  appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync,
-  readdirSync, rmSync, statSync, writeFileSync,
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
 } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import {
-  EXIT, findFreePort, jsonOut, pidAlive, readDshPort, readDshUrl, resolvePkgArg, waitPidExit,
+  EXIT,
+  findFreePort,
+  jsonOut,
+  pidAlive,
+  readDshPort,
+  readDshUrl,
+  resolvePkgArg,
+  waitPidExit,
 } from "./lib/verify-core.mjs";
-import {
-  findWelcomeNoticeVersion, welcomeSettingsDocument,
-} from "./lib/onboarding.mjs";
-import {
-  isInside, runAudit, scanSnapshot, SKIP_DEEP, WHITELIST_V,
-} from "./lib/audit.mjs";
+import { findWelcomeNoticeVersion, welcomeSettingsDocument } from "./lib/onboarding.mjs";
+import { isInside, runAudit, scanSnapshot, SKIP_DEEP, WHITELIST_V } from "./lib/audit.mjs";
 
 const SCRIPT_DIR = import.meta.dirname; // Node >= 22 全程可用
 const DRIVER = join(SCRIPT_DIR, "browser-driver.mjs");
@@ -223,17 +233,33 @@ function parseCli(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--") break;
-    if (a === "--json") { jsonDetected = true; break; }
-    if (a.startsWith("--json=")) { jsonDetected = a.slice("--json=".length) === "true"; break; }
+    if (a === "--json") {
+      jsonDetected = true;
+      break;
+    }
+    if (a.startsWith("--json=")) {
+      jsonDetected = a.slice("--json=".length) === "true";
+      break;
+    }
   }
   jsonMode = jsonDetected;
   const f = {
-    dsh: null, port: DEFAULT_PORT, browser: false, keep: false,
-    noBuild: false, evidenceDir: null, audit: false, auditExtraDirs: [],
-    skipOnboarding: true, json: jsonMode, help: false,
+    dsh: null,
+    port: DEFAULT_PORT,
+    browser: false,
+    keep: false,
+    noBuild: false,
+    evidenceDir: null,
+    audit: false,
+    auditExtraDirs: [],
+    skipOnboarding: true,
+    json: jsonMode,
+    help: false,
   };
   const pkgs = [];
-  const bad = (msg) => { throw new CliError(msg, EXIT.USAGE); };
+  const bad = (msg) => {
+    throw new CliError(msg, EXIT.USAGE);
+  };
   const val = (i, opt) => {
     const v = argv[i + 1];
     if (v === undefined || v.startsWith("--")) bad(`错误: ${opt} 需要一个参数`);
@@ -241,13 +267,19 @@ function parseCli(argv) {
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--") { pkgs.push(...argv.slice(i + 1)); break; }
+    if (a === "--") {
+      pkgs.push(...argv.slice(i + 1));
+      break;
+    }
     if (a.startsWith("--")) {
       const eq = a.indexOf("=");
       const key = eq === -1 ? a.slice(2) : a.slice(2, eq);
       const inline = eq === -1 ? null : a.slice(eq + 1);
       switch (key) {
-        case "dsh": f.dsh = inline ?? val(i, "--dsh"); if (inline === null) i++; break;
+        case "dsh":
+          f.dsh = inline ?? val(i, "--dsh");
+          if (inline === null) i++;
+          break;
         case "port": {
           const raw = inline ?? val(i, "--port");
           if (inline === null) i++;
@@ -258,25 +290,45 @@ function parseCli(argv) {
           f.port = p;
           break;
         }
-        case "browser": f.browser = true; break;
-        case "keep": f.keep = true; break;
-        case "no-build": f.noBuild = true; break;
-        case "evidence-dir": f.evidenceDir = inline ?? val(i, "--evidence-dir"); if (inline === null) i++; break;
-        case "audit": f.audit = true; break;
-        case "audit-extra-dirs": f.auditExtraDirs.push(inline ?? val(i, "--audit-extra-dirs")); if (inline === null) i++; break;
-        case "no-skip-onboarding": f.skipOnboarding = false; break;
+        case "browser":
+          f.browser = true;
+          break;
+        case "keep":
+          f.keep = true;
+          break;
+        case "no-build":
+          f.noBuild = true;
+          break;
+        case "evidence-dir":
+          f.evidenceDir = inline ?? val(i, "--evidence-dir");
+          if (inline === null) i++;
+          break;
+        case "audit":
+          f.audit = true;
+          break;
+        case "audit-extra-dirs":
+          f.auditExtraDirs.push(inline ?? val(i, "--audit-extra-dirs"));
+          if (inline === null) i++;
+          break;
+        case "no-skip-onboarding":
+          f.skipOnboarding = false;
+          break;
         case "json": {
           // --json=<v> 显式布尔（true/false），非法值参数错误
           if (inline !== null) {
-            if (inline !== "true" && inline !== "false") bad(`错误: --json 只接受 true/false: ${inline}`);
+            if (inline !== "true" && inline !== "false")
+              bad(`错误: --json 只接受 true/false: ${inline}`);
             f.json = inline === "true";
           } else {
             f.json = true;
           }
           break;
         }
-        case "help": f.help = true; break;
-        default: bad(`未知选项: ${a}`);
+        case "help":
+          f.help = true;
+          break;
+        default:
+          bad(`未知选项: ${a}`);
       }
     } else if (a.startsWith("-") && a !== "-") {
       bad(`未知选项: ${a}`);
@@ -294,12 +346,15 @@ function checkExecutable(p) {
     if (!st.isFile()) return null;
     if (process.platform === "win32") return resolve(p); // Windows 无可执行位语义
     return (st.mode & 0o111) !== 0 ? resolve(p) : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function resolveDsh(candidate) {
   if (!candidate) return null;
-  const hasSep = candidate.includes("/") || (process.platform === "win32" && candidate.includes("\\"));
+  const hasSep =
+    candidate.includes("/") || (process.platform === "win32" && candidate.includes("\\"));
   if (isAbsolute(candidate) || hasSep) return checkExecutable(candidate);
   // PATH 查找（等价 command -v）。win32 三坑之 1 兑现：优先 .exe，仅剩
   // .cmd/.bat 时返回该路径，由 readDshVersion / runDsh / spawnDsh 统一
@@ -331,7 +386,9 @@ function readDshVersion(abs) {
       ...(isWinScript(abs) ? { shell: true } : {}),
     });
     return (raw.split("\n")[0] || "").trim();
-  } catch { return "unknown"; }
+  } catch {
+    return "unknown";
+  }
 }
 
 // --- dsh 子进程管理（Windows 三坑集中在此） ---
@@ -340,10 +397,15 @@ function killDsh(child, signal) {
   if (process.platform === "win32") {
     // 坑 2/3：无 POSIX 信号 + child.kill 只杀壳进程；统一 taskkill /T 清进程树
     try {
-      execFileSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+      execFileSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+        stdio: "ignore",
+        windowsHide: true,
+      });
     } catch {}
   } else {
-    try { process.kill(child.pid, signal); } catch {}
+    try {
+      process.kill(child.pid, signal);
+    } catch {}
   }
 }
 
@@ -409,7 +471,12 @@ function writeVerdictRunning() {
 
 function writeVerdictTerminal() {
   const done = readyOk && (exiting?.code ?? EXIT.FAIL) === 0;
-  writeVerdict({ ok: done, ready: readyOk, readyAt: readyIso, cleanup: flags?.keep ? "kept" : "done" });
+  writeVerdict({
+    ok: done,
+    ready: readyOk,
+    readyAt: readyIso,
+    cleanup: flags?.keep ? "kept" : "done",
+  });
 }
 
 // --- 插件处理（参数归一化 + 构建 / --no-build 校验 / add） ---
@@ -417,11 +484,18 @@ function newestMtime(dir) {
   let m = 0;
   const walk = (d) => {
     let es;
-    try { es = readdirSync(d, { withFileTypes: true }); } catch { return; }
+    try {
+      es = readdirSync(d, { withFileTypes: true });
+    } catch {
+      return;
+    }
     for (const e of es) {
       const p = join(d, e.name);
       if (e.isDirectory()) walk(p);
-      else if (e.isFile()) { const t = statSync(p).mtimeMs; if (t > m) m = t; }
+      else if (e.isFile()) {
+        const t = statSync(p).mtimeMs;
+        if (t > m) m = t;
+      }
     }
   };
   walk(dir);
@@ -431,7 +505,9 @@ function newestMtime(dir) {
 function hasBuildScript(pkgAbs) {
   try {
     return !!JSON.parse(readFileSync(join(pkgAbs, "package.json"), "utf8")).scripts?.build;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 function setupPlugins(pkgs) {
@@ -446,12 +522,19 @@ function setupPlugins(pkgs) {
       continue;
     }
     if (flags.noBuild) {
-      const prods = ["lib", "dist"].map((d) => join(it.abs, d))
-        .filter((d) => { try { return statSync(d).isDirectory(); } catch { return false; } });
+      const prods = ["lib", "dist"]
+        .map((d) => join(it.abs, d))
+        .filter((d) => {
+          try {
+            return statSync(d).isDirectory();
+          } catch {
+            return false;
+          }
+        });
       if (prods.length === 0) {
         throw new CliError(
           `错误: --no-build 但缺少构建产物（lib/ 或 dist/）: ${it.abs}\n` +
-          "       请先 pnpm build，或去掉 --no-build 让脚本自动构建",
+            "       请先 pnpm build，或去掉 --no-build 让脚本自动构建",
           EXIT.USAGE,
         );
       }
@@ -472,7 +555,8 @@ function setupPlugins(pkgs) {
         timeout: 600000,
       });
       if (jsonMode && r.stdout) process.stderr.write(String(r.stdout)); // 不污染 stdout
-      if (r.status !== 0) throw new CliError(`错误: pnpm build 失败（退出码 ${r.status}）: ${it.abs}`, EXIT.FAIL);
+      if (r.status !== 0)
+        throw new CliError(`错误: pnpm build 失败（退出码 ${r.status}）: ${it.abs}`, EXIT.FAIL);
     } else {
       out(`跳过构建（无 build 脚本）: ${it.abs}`);
     }
@@ -495,7 +579,9 @@ function presetWelcomeNotice() {
   const settingsPath = join(isolatedHome, "settings.yaml");
   const found = findWelcomeNoticeVersion(dshAbs);
   if (!found) {
-    outWarn("警告: 未能从 dsh 产物提取内测声明版本（布局或客户端常量变化？）——首启「内测声明」弹窗保留，由 browser-driver 导航后兜底跳过");
+    outWarn(
+      "警告: 未能从 dsh 产物提取内测声明版本（布局或客户端常量变化？）——首启「内测声明」弹窗保留，由 browser-driver 导航后兜底跳过",
+    );
     return { skip: true, source: "unavailable", version: null, settingsFile: settingsPath };
   }
   if (existsSync(settingsPath)) {
@@ -506,11 +592,27 @@ function presetWelcomeNotice() {
     // 0o600：设置文档含用户偏好，与 verdict/browser.state/dsh.log 同级保护
     writeFileSync(settingsPath, welcomeSettingsDocument(found.version), { mode: 0o600 });
   } catch (e) {
-    outWarn(`警告: 首启弹窗预置写入失败（${e.message}）——首启「内测声明」弹窗保留，由 browser-driver 兜底跳过`);
-    return { skip: true, source: "write-failed", version: found.version, settingsFile: settingsPath, error: e.message };
+    outWarn(
+      `警告: 首启弹窗预置写入失败（${e.message}）——首启「内测声明」弹窗保留，由 browser-driver 兜底跳过`,
+    );
+    return {
+      skip: true,
+      source: "write-failed",
+      version: found.version,
+      settingsFile: settingsPath,
+      error: e.message,
+    };
   }
-  out(`首启弹窗预置: 内测声明版本 ${found.version} → ${settingsPath}（--no-skip-onboarding 可关闭）`);
-  return { skip: true, source: "preset", version: found.version, clientFile: found.file, settingsFile: settingsPath };
+  out(
+    `首启弹窗预置: 内测声明版本 ${found.version} → ${settingsPath}（--no-skip-onboarding 可关闭）`,
+  );
+  return {
+    skip: true,
+    source: "preset",
+    version: found.version,
+    clientFile: found.file,
+    settingsFile: settingsPath,
+  };
 }
 
 // --- 就绪断言：轮询 HTTP 可达 + 进程存活核对 ---
@@ -523,7 +625,9 @@ async function waitReady(port, pid) {
     try {
       const r = await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(1500) });
       if (r.status < 500) return "ready";
-    } catch { /* 连接拒绝 / 超时：继续等 */ }
+    } catch {
+      /* 连接拒绝 / 超时：继续等 */
+    }
     if (Date.now() >= deadline) return "timeout";
     await new Promise((r) => setTimeout(r, 250));
   }
@@ -554,7 +658,10 @@ async function settle() {
     if (flags?.browser && browserState && existsSync(browserState)) {
       out("清理浏览器实例（browser-driver quit）...");
       try {
-        spawnSync(process.execPath, [DRIVER, "quit", "--state", browserState, "--json"], { stdio: "ignore", timeout: 20000 });
+        spawnSync(process.execPath, [DRIVER, "quit", "--state", browserState, "--json"], {
+          stdio: "ignore",
+          timeout: 20000,
+        });
       } catch {}
     }
     // 3. 隔离审计（B4，--audit）：t1 终态扫描 → 白名单 diff + symlink 防逃逸 →
@@ -637,7 +744,12 @@ async function settle() {
         errorPayload.audit = auditResult ?? null;
         jsonOut(errorPayload);
       } else {
-        jsonOut(makeVerdict({ ok: readyOk && (exiting?.code ?? EXIT.FAIL) === 0, cleanup: flags?.keep ? "kept" : "done" }));
+        jsonOut(
+          makeVerdict({
+            ok: readyOk && (exiting?.code ?? EXIT.FAIL) === 0,
+            cleanup: flags?.keep ? "kept" : "done",
+          }),
+        );
       }
     }
     process.exit(exiting?.code ?? EXIT.FAIL);
@@ -699,15 +811,14 @@ async function main() {
   // B4：extra dir 不得与隔离 DSH_HOME 重叠（同树重复审计 + 判定基准歧义）
   for (const dir of extraDirsAbs) {
     if (isInside(dir, isolatedHome) || isInside(isolatedHome, dir)) {
-      throw new CliError(
-        `错误: --audit-extra-dirs 与隔离 DSH_HOME 重叠: ${dir}`,
-        EXIT.USAGE,
-      );
+      throw new CliError(`错误: --audit-extra-dirs 与隔离 DSH_HOME 重叠: ${dir}`, EXIT.USAGE);
     }
   }
   // dsh.log 含隔离实例访问 token（dsh web URL 行）——与 verdict/browser.state
   // 一致 0o600 初始化（仅本用户可读，防同机其他用户窥探）。
-  try { writeFileSync(dshLogPath, "", { mode: 0o600 }); } catch {}
+  try {
+    writeFileSync(dshLogPath, "", { mode: 0o600 });
+  } catch {}
   // B7：证据目录默认 $ISOLATED_HOME/evidence/；显式 --evidence-dir 外部化时建
   // <dir>/evidence-<profile>/ 子目录（recursive 幂等，绝不动外部目录本体）
   evidenceDir = f.evidenceDir
@@ -720,12 +831,20 @@ async function main() {
   //     验证开始前必须先手工点掉（且刷新后重现）。--no-skip-onboarding 保留原生态。
   onboardingPreset = f.skipOnboarding
     ? presetWelcomeNotice()
-    : { skip: false, source: "disabled", version: null, settingsFile: join(isolatedHome, "settings.yaml") };
+    : {
+        skip: false,
+        source: "disabled",
+        version: null,
+        settingsFile: join(isolatedHome, "settings.yaml"),
+      };
 
   // 2. 初始化独立 profile（显式 plugin list；失败 fail loudly 给可操作错误）
   const init = runDsh(["plugin", "--profile", profile, "list"], true);
   if (init.status !== 0) {
-    throw new CliError(`错误: profile 初始化失败（dsh plugin --profile ${profile} list）——检查 dsh 入口与版本`, EXIT.FAIL);
+    throw new CliError(
+      `错误: profile 初始化失败（dsh plugin --profile ${profile} list）——检查 dsh 入口与版本`,
+      EXIT.FAIL,
+    );
   }
 
   // 3. 注入内置 web-app bundle（按名从 dsh 安装目录解析，不走 npm）
@@ -747,18 +866,31 @@ async function main() {
   if (f.browser) {
     const launch = spawnSync(
       process.execPath,
-      [DRIVER, "launch", "--state", browserState, "--user-data-dir", join(isolatedHome, "browser-profile"), "--json"],
+      [
+        DRIVER,
+        "launch",
+        "--state",
+        browserState,
+        "--user-data-dir",
+        join(isolatedHome, "browser-profile"),
+        "--json",
+      ],
       { stdio: ["ignore", "pipe", "inherit"], timeout: 60000 },
     );
     if (launch.status !== 0) {
       const detail = (launch.stdout || "").toString().trim();
-      throw new CliError(`错误: 浏览器实例启动失败（browser-driver launch, 退出码 ${launch.status}）${detail ? `\n${detail}` : ""}`, EXIT.FAIL);
+      throw new CliError(
+        `错误: 浏览器实例启动失败（browser-driver launch, 退出码 ${launch.status}）${detail ? `\n${detail}` : ""}`,
+        EXIT.FAIL,
+      );
     }
     // 非 --json：透传 launch 的 JSON 输出（bash 版行为）；--json 时 stdout 归零
     if (!jsonMode && launch.stdout) process.stdout.write(String(launch.stdout));
     try {
       browserPort = JSON.parse(readFileSync(browserState, "utf8")).port ?? null;
-    } catch { browserPort = null; }
+    } catch {
+      browserPort = null;
+    }
     out(`浏览器实例就绪: state=${browserState}（操作命令见 browser-driver.mjs --help）`);
   }
 
@@ -775,7 +907,9 @@ async function main() {
       const st = JSON.parse(readFileSync(browserState, "utf8"));
       st.dshWebPort = dshWebPort;
       writeFileSync(browserState, JSON.stringify(st, null, 2));
-    } catch { /* state 解析失败不阻断启动 */ }
+    } catch {
+      /* state 解析失败不阻断启动 */
+    }
   }
 
   out(`隔离环境就绪: DSH_HOME=${isolatedHome}  profile=${profile}`);
@@ -784,11 +918,15 @@ async function main() {
   // 8. 启动（后台子进程 + 显式回环 + 遥测禁用）。spawn env 显式带 DSH_HOME 与
   //    DSH_TELEMETRY_DISABLED（等价 bash 启动行前缀）；dsh stdout/stderr 收集到
   //    $ISOLATED_HOME/dsh.log（限长缓冲防背压 + B6 parsed 端口解析源）。
-  dshChild = spawnDsh(dshAbs, ["--profile", profile, "--host", "127.0.0.1", "--port", String(dshWebPort), "--no-open"], {
-    ...process.env,
-    DSH_HOME: isolatedHome,
-    DSH_TELEMETRY_DISABLED: "1",
-  });
+  dshChild = spawnDsh(
+    dshAbs,
+    ["--profile", profile, "--host", "127.0.0.1", "--port", String(dshWebPort), "--no-open"],
+    {
+      ...process.env,
+      DSH_HOME: isolatedHome,
+      DSH_TELEMETRY_DISABLED: "1",
+    },
+  );
 
   let logTail = ""; // 4096 限长滚动缓冲（防背压先例）
   // dsh.log 文件侧无限增长说明：dsh web 输出量极小（实测启动仅一行 URL），
@@ -796,7 +934,9 @@ async function main() {
   // 不设文件侧滚动；内存侧 logTail 4096 限长防背压是唯一防膨胀约束。
   const onDshData = (chunk) => {
     const s = String(chunk);
-    try { appendFileSync(dshLogPath, s); } catch {}
+    try {
+      appendFileSync(dshLogPath, s);
+    } catch {}
     logTail += s;
     if (logTail.length > LOG_TAIL_LIMIT) logTail = logTail.slice(logTail.length - LOG_TAIL_LIMIT);
     // parsed 通道：dsh.log 端口行（chunk 可能在行中截断，故对滚动缓冲整体匹配）。
@@ -805,7 +945,10 @@ async function main() {
     // 而不是就绪瞬间一锤定音；终态 verdict 以 parsed 为准。
     if (!actualPort || portSource !== "parsed") {
       const p = readDshPort(logTail);
-      if (p) { actualPort = p; portSource = "parsed"; }
+      if (p) {
+        actualPort = p;
+        portSource = "parsed";
+      }
     }
   };
   dshChild.stdout.on("data", onDshData);
@@ -822,8 +965,12 @@ async function main() {
   //（bash 版 wait 透传同语义，头部退出码表括号行措辞与此一致）。
   dshChild.once("exit", (code, signal) => {
     if (exiting) return;
-    if (!readyOk) { childExitBeforeReady = { code, signal }; return; }
-    const mapped = signal === "SIGINT" ? EXIT.SIGINT : signal === "SIGTERM" ? EXIT.SIGTERM : (code ?? EXIT.FAIL);
+    if (!readyOk) {
+      childExitBeforeReady = { code, signal };
+      return;
+    }
+    const mapped =
+      signal === "SIGINT" ? EXIT.SIGINT : signal === "SIGTERM" ? EXIT.SIGTERM : (code ?? EXIT.FAIL);
     requestExit(mapped, null);
   });
 
@@ -839,8 +986,8 @@ async function main() {
     const tail = logTail.slice(-LOG_TAIL_LIMIT).trim();
     throw new CliError(
       `错误: dsh web 进程在就绪前退出${detail}（可能端口被占/EADDRINUSE/插件加载失败）\n` +
-      `--- dsh 输出尾部（内存缓冲；完整 dsh.log 仅 --keep 保留: ${dshLogPath}）---\n` +
-      `${tail || "（无输出）"}`,
+        `--- dsh 输出尾部（内存缓冲；完整 dsh.log 仅 --keep 保留: ${dshLogPath}）---\n` +
+        `${tail || "（无输出）"}`,
       EXIT.FAIL,
     );
   }
@@ -848,8 +995,8 @@ async function main() {
     const tail = logTail.slice(-LOG_TAIL_LIMIT).trim();
     throw new CliError(
       `错误: dsh web 15s 内未就绪（端口 ${verdictPort}）\n` +
-      `--- dsh 输出尾部（内存缓冲；完整 dsh.log 仅 --keep 保留: ${dshLogPath}）---\n` +
-      `${tail || "（无输出）"}`,
+        `--- dsh 输出尾部（内存缓冲；完整 dsh.log 仅 --keep 保留: ${dshLogPath}）---\n` +
+        `${tail || "（无输出）"}`,
       EXIT.FAIL,
     );
   }
@@ -861,7 +1008,10 @@ async function main() {
   // 无匹配则落 asserted/probed）。
   try {
     const p = readDshPort(readFileSync(dshLogPath, "utf8"));
-    if (p) { actualPort = p; portSource = "parsed"; }
+    if (p) {
+      actualPort = p;
+      portSource = "parsed";
+    }
   } catch {}
   if (!actualPort) {
     actualPort = verdictPort;
@@ -877,12 +1027,16 @@ async function main() {
   // 就绪即读会稳定落空——那会把「必须带令牌」的引导降级成一句无用警告。
   const urlDeadline = Date.now() + URL_WAIT_MS;
   for (;;) {
-    try { webUrl = readDshUrl(readFileSync(dshLogPath, "utf8")); } catch {}
+    try {
+      webUrl = readDshUrl(readFileSync(dshLogPath, "utf8"));
+    } catch {}
     if (webUrl || Date.now() >= urlDeadline) break;
     await new Promise((r) => setTimeout(r, 200));
   }
   if (!webUrl) {
-    outWarn(`警告: 未从 dsh 输出解析到带令牌的访问 URL（dsh.log 行格式变化？）——浏览器命令请自行从 ${dshLogPath} 取 URL`);
+    outWarn(
+      `警告: 未从 dsh 输出解析到带令牌的访问 URL（dsh.log 行格式变化？）——浏览器命令请自行从 ${dshLogPath} 取 URL`,
+    );
   } else {
     out(`访问 URL（含访问令牌，GUI 鉴权必需）: ${webUrl}`);
   }
@@ -892,7 +1046,9 @@ async function main() {
       if (webUrl) st.dshWebUrl = webUrl;
       writeFileSync(browserState, JSON.stringify(st, null, 2));
       if (webUrl) out("浏览器命令: 用 `--url state` 取该带令牌 URL（示例见 SKILL.md §3.1）");
-    } catch { /* state 解析失败不阻断启动 */ }
+    } catch {
+      /* state 解析失败不阻断启动 */
+    }
   }
 
   // B4：t0 基线快照（--audit）——位置在**就绪断言成功之后**、verdict 中间态

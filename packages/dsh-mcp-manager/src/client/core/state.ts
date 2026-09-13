@@ -126,7 +126,13 @@ export function createState(): McpState {
     currentCwd: undefined,
     projectRoot: undefined,
     updateFloatState: undefined,
-    mcpUiConfig: { position: "top-right", offsetX: 8, offsetY: 8, blankY: 40, zIndexBase: DEFAULT_Z_INDEX_BASE },
+    mcpUiConfig: {
+      position: "top-right",
+      offsetX: 8,
+      offsetY: 8,
+      blankY: 40,
+      zIndexBase: DEFAULT_Z_INDEX_BASE,
+    },
     API: { ...API },
   };
 }

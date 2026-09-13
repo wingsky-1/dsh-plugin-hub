@@ -22,10 +22,19 @@ import { basename, join } from "node:path";
 import { createServer } from "node:http";
 
 import {
-  pluginDir, sanitizeSettings, validateSettings,
-  migrateFileConfig, MIGRATED_BAK_NAME, applyConfigPatch, SETTINGS_NS,
-  ROUTES, normalizeLegacyWsCompressPaths, DEFAULT_WSS_COMPRESS_PATHS,
-  buildConfigRoutes, apply, Config,
+  pluginDir,
+  sanitizeSettings,
+  validateSettings,
+  migrateFileConfig,
+  MIGRATED_BAK_NAME,
+  applyConfigPatch,
+  SETTINGS_NS,
+  ROUTES,
+  normalizeLegacyWsCompressPaths,
+  DEFAULT_WSS_COMPRESS_PATHS,
+  buildConfigRoutes,
+  apply,
+  Config,
 } from "../../src/index.ts";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -37,7 +46,12 @@ const basePatchDeps = (over = {}) => ({
   writable: () => true,
   update: async () => {},
   replace: async () => {},
-  compress: () => ({ httpCompressEnabled: true, httpCompressLevel: 1, httpCompressMounted: false, httpCompressStats: { compressed: 0, passthrough: 0 } }),
+  compress: () => ({
+    httpCompressEnabled: true,
+    httpCompressLevel: 1,
+    httpCompressMounted: false,
+    httpCompressStats: { compressed: 0, passthrough: 0 },
+  }),
   ...over,
 });
 
@@ -90,15 +104,21 @@ describe("sanitizeSettings 更多边界", () => {
 // ===== normalizeLegacyWsCompressPaths（#395 M2 存量白名单归一化纯函数） =====
 describe("normalizeLegacyWsCompressPaths（#395 M2 存量白名单归一化纯函数）", () => {
   it("旧默认正序 → remote.mux", () => {
-    expect(normalizeLegacyWsCompressPaths(["/api/events.mux", "/api/events.host"])).toEqual(["/api/remote.mux"]);
+    expect(normalizeLegacyWsCompressPaths(["/api/events.mux", "/api/events.host"])).toEqual([
+      "/api/remote.mux",
+    ]);
   });
 
   it("旧默认乱序同样等价 → remote.mux", () => {
-    expect(normalizeLegacyWsCompressPaths(["/api/events.host", "/api/events.mux"])).toEqual(["/api/remote.mux"]);
+    expect(normalizeLegacyWsCompressPaths(["/api/events.host", "/api/events.mux"])).toEqual([
+      "/api/remote.mux",
+    ]);
   });
 
   it("归一化目标与 DEFAULT_WSS_COMPRESS_PATHS 同源", () => {
-    expect(normalizeLegacyWsCompressPaths(["/api/events.mux", "/api/events.host"])).toEqual([...DEFAULT_WSS_COMPRESS_PATHS]);
+    expect(normalizeLegacyWsCompressPaths(["/api/events.mux", "/api/events.host"])).toEqual([
+      ...DEFAULT_WSS_COMPRESS_PATHS,
+    ]);
   });
 
   it("自定义白名单原样", () => {
@@ -106,11 +126,17 @@ describe("normalizeLegacyWsCompressPaths（#395 M2 存量白名单归一化纯�
   });
 
   it("含废弃端点的自定义组合原样", () => {
-    expect(normalizeLegacyWsCompressPaths(["/api/events.mux", "/api/custom/ws"])).toEqual(["/api/events.mux", "/api/custom/ws"]);
+    expect(normalizeLegacyWsCompressPaths(["/api/events.mux", "/api/custom/ws"])).toEqual([
+      "/api/events.mux",
+      "/api/custom/ws",
+    ]);
   });
 
   it("重复元素非等价原样", () => {
-    expect(normalizeLegacyWsCompressPaths(["/api/events.mux", "/api/events.mux"])).toEqual(["/api/events.mux", "/api/events.mux"]);
+    expect(normalizeLegacyWsCompressPaths(["/api/events.mux", "/api/events.mux"])).toEqual([
+      "/api/events.mux",
+      "/api/events.mux",
+    ]);
   });
 
   it("undefined 原样", () => {
@@ -160,7 +186,11 @@ describe("migrateFileConfig 边界（#110）", () => {
     // 非 object JSON：只改名标记、不写入。
     const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mig-"));
     writeFileSync(join(dir, "config.json"), JSON.stringify(123));
-    outcome = await migrateFileConfig(dir, { async update() { throw new Error("must not be called"); } });
+    outcome = await migrateFileConfig(dir, {
+      async update() {
+        throw new Error("must not be called");
+      },
+    });
     bakExists = existsSync(join(dir, MIGRATED_BAK_NAME));
     configGone = existsSync(join(dir, "config.json"));
     rmSync(dir, { recursive: true, force: true });
@@ -168,7 +198,11 @@ describe("migrateFileConfig 边界（#110）", () => {
     // sanitize 拒绝（含非法值）：整体不写。
     const dir2 = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mig2-"));
     writeFileSync(join(dir2, "config.json"), JSON.stringify({ port: 99999 }));
-    outcome2 = await migrateFileConfig(dir2, { async update() { throw new Error("must not be called"); } });
+    outcome2 = await migrateFileConfig(dir2, {
+      async update() {
+        throw new Error("must not be called");
+      },
+    });
     rmSync(dir2, { recursive: true, force: true });
   });
 
@@ -204,7 +238,12 @@ describe("applyConfigPatch 错误路径（#110）", () => {
     // handler 内抛异常 → 500，details 固定文案（P2-2），原文走 logWarn
     const logWarns = [];
     broken = await applyConfigPatch(
-      basePatchDeps({ update: async () => { throw new Error("broken-secret"); }, logWarn: (m) => logWarns.push(m) }),
+      basePatchDeps({
+        update: async () => {
+          throw new Error("broken-secret");
+        },
+        logWarn: (m) => logWarns.push(m),
+      }),
       { patch: { port: 3000 } },
     );
     logWarnHit = logWarns.some((m) => m.includes("broken-secret"));
@@ -258,17 +297,26 @@ describe("applyConfigPatch tls 成对形态（P2-1）", () => {
     }
   });
 
-  const titled = tlsPatches.map((patch, i) => ({ title: `patch=${JSON.stringify(patch)} 应被拒`, i }));
+  const titled = tlsPatches.map((patch, i) => ({
+    title: `patch=${JSON.stringify(patch)} 应被拒`,
+    i,
+  }));
   it.each(titled)("$title", ({ i }) => {
     expect(mixedResults[i].ok).toBe(false);
   });
 
-  const titledCode = tlsPatches.map((patch, i) => ({ title: `patch=${JSON.stringify(patch)} code=tls-pair`, i }));
+  const titledCode = tlsPatches.map((patch, i) => ({
+    title: `patch=${JSON.stringify(patch)} code=tls-pair`,
+    i,
+  }));
   it.each(titledCode)("$title", ({ i }) => {
     expect(mixedResults[i].code).toBe("tls-pair");
   });
 
-  const titledStatus = tlsPatches.map((patch, i) => ({ title: `patch=${JSON.stringify(patch)} status=400`, i }));
+  const titledStatus = tlsPatches.map((patch, i) => ({
+    title: `patch=${JSON.stringify(patch)} status=400`,
+    i,
+  }));
   it.each(titledStatus)("$title", ({ i }) => {
     expect(mixedResults[i].status).toBe(400);
   });
@@ -298,10 +346,21 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     const scopeWatchCbs = [];
 
     const scope = {
-      _val: { port: 0, wsCompressEnabled: false, httpCompressEnabled: false, wsCompressPaths: ["/api/events.host", "/api/events.mux"] },
-      get() { return this._val; },
-      async update(patch) { Object.assign(this._val, patch); },
-      async replace(section) { this._val = { ...section }; },
+      _val: {
+        port: 0,
+        wsCompressEnabled: false,
+        httpCompressEnabled: false,
+        wsCompressPaths: ["/api/events.host", "/api/events.mux"],
+      },
+      get() {
+        return this._val;
+      },
+      async update(patch) {
+        Object.assign(this._val, patch);
+      },
+      async replace(section) {
+        this._val = { ...section };
+      },
       watch(cb) {
         scopeWatchCbs.push(cb);
         // 立即触发一次，使 isUnloading(ctx) 被调用
@@ -310,18 +369,40 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
       },
     };
     const settingsService = {
-      register(ns, schema, opts) { return scope; },
-      describe() { return [{ ns: SETTINGS_NS, user: {}, revision: 1 }]; },
+      register(ns, schema, opts) {
+        return scope;
+      },
+      describe() {
+        return [{ ns: SETTINGS_NS, user: {}, revision: 1 }];
+      },
     };
 
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
-      webServer: { port: 3080, register(route) { routes.push(route); return () => {}; }, tapIndex() { return () => {}; } },
+      webServer: {
+        port: 3080,
+        register(route) {
+          routes.push(route);
+          return () => {};
+        },
+        tapIndex() {
+          return () => {};
+        },
+      },
       inject(services, fn) {
         if (services.includes("connection")) {
           const connectionCtx = {
-            connection: { rpc: { handle(channel, h, opts) { rpcHandles.push({ channel, h, opts }); return () => {}; } } },
-            effect(fn2) { return fn2(); },
+            connection: {
+              rpc: {
+                handle(channel, h, opts) {
+                  rpcHandles.push({ channel, h, opts });
+                  return () => {};
+                },
+              },
+            },
+            effect(fn2) {
+              return fn2();
+            },
           };
           fn(connectionCtx);
         }
@@ -338,12 +419,24 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
           fn(sctx);
         }
       },
-      effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
+      effect(fn) {
+        const d = fn();
+        if (typeof d === "function") disposers.push(d);
+        return d;
+      },
     };
 
     // httpsPort 显式传 0：不传会落到产品默认值 3443 并**真实监听**（端口审计实测），
     // 并发或残留进程下即 EADDRINUSE（#690 S2c 端口治理）。
-    apply(ctx, { host: "127.0.0.1", port: 0, httpsPort: 0, httpsEnabled: true, printBanner: false, wsCompressEnabled: false, httpCompressEnabled: false });
+    apply(ctx, {
+      host: "127.0.0.1",
+      port: 0,
+      httpsPort: 0,
+      httpsEnabled: true,
+      printBanner: false,
+      wsCompressEnabled: false,
+      httpCompressEnabled: false,
+    });
 
     await sleep(100);
 
@@ -356,8 +449,18 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     // 触发 setSource 后调用 health handler → resolve() → current 已切到 scope.get()
     let healthBody = "";
     healthRoute.handler(
-      { method: "GET", socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" }, url: ROUTES.health },
-      { writeHead: () => {}, end: (c) => { healthBody = String(c); } },
+      {
+        method: "GET",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080" },
+        url: ROUTES.health,
+      },
+      {
+        writeHead: () => {},
+        end: (c) => {
+          healthBody = String(c);
+        },
+      },
     );
     const hp = JSON.parse(healthBody);
     hpOk = hp.ok;
@@ -368,15 +471,27 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     scope._val.wsCompressPaths = ["/api/custom/ws", "/api/events.mux"];
     let healthBody2 = "";
     healthRoute.handler(
-      { method: "GET", socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" }, url: ROUTES.health },
-      { writeHead: () => {}, end: (c) => { healthBody2 = String(c); } },
+      {
+        method: "GET",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080" },
+        url: ROUTES.health,
+      },
+      {
+        writeHead: () => {},
+        end: (c) => {
+          healthBody2 = String(c);
+        },
+      },
     );
     const hp2 = JSON.parse(healthBody2);
     hp2WsCompressPaths = hp2.wsCompressPaths;
 
     // 执行 lifecycle 清理：触发 scope.watch 的 disposer 与 isUnloading
     for (const d of [...disposers].reverse()) {
-      try { d(); } catch {}
+      try {
+        d();
+      } catch {}
     }
     cleanupCompleted = true;
 
@@ -430,18 +545,46 @@ describe("apply：settings 服务缺少 register → warn 路径", () => {
     const disposers = [];
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
-      webServer: { port: 3080, register() { return () => {}; }, tapIndex() { return () => {}; } },
+      webServer: {
+        port: 3080,
+        register() {
+          return () => {};
+        },
+        tapIndex() {
+          return () => {};
+        },
+      },
       inject(services, fn) {
         if (services.includes("settings")) {
           // settings 存在但缺少 register → warn 被调用
-          fn({ settings: { noRegister: true }, effect(fn2) { return fn2(); } });
+          fn({
+            settings: { noRegister: true },
+            effect(fn2) {
+              return fn2();
+            },
+          });
         }
       },
-      effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
+      effect(fn) {
+        const d = fn();
+        if (typeof d === "function") disposers.push(d);
+        return d;
+      },
     };
-    apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false, printBanner: false, wsCompressEnabled: false, httpCompressEnabled: false });
+    apply(ctx, {
+      host: "127.0.0.1",
+      port: 0,
+      httpsEnabled: false,
+      printBanner: false,
+      wsCompressEnabled: false,
+      httpCompressEnabled: false,
+    });
     await sleep(50);
-    for (const d of [...disposers].reverse()) { try { d(); } catch {} }
+    for (const d of [...disposers].reverse()) {
+      try {
+        d();
+      } catch {}
+    }
     warnPathCompleted = true;
     process.env.DSH_HOME = prevHome;
     rmSync(applyHome, { recursive: true, force: true });
@@ -473,28 +616,74 @@ describe("apply：监听端口被占 → listen() reject → catch 分支", () =
     const disposers = [];
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
-      webServer: { port: 3080, register(route) { routes.push(route); return () => {}; }, tapIndex() { return () => {}; } },
+      webServer: {
+        port: 3080,
+        register(route) {
+          routes.push(route);
+          return () => {};
+        },
+        tapIndex() {
+          return () => {};
+        },
+      },
       inject(services, fn) {
         if (services.includes("connection")) {
-          fn({ connection: { rpc: { handle(ch, h, o) { rpcHandles.push({ch,h,o}); return () => {}; } } }, effect(fn2) { return fn2(); } });
+          fn({
+            connection: {
+              rpc: {
+                handle(ch, h, o) {
+                  rpcHandles.push({ ch, h, o });
+                  return () => {};
+                },
+              },
+            },
+            effect(fn2) {
+              return fn2();
+            },
+          });
         }
       },
-      effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
+      effect(fn) {
+        const d = fn();
+        if (typeof d === "function") disposers.push(d);
+        return d;
+      },
     };
-    apply(ctx, { host: "127.0.0.1", port: occupiedPort, httpsEnabled: false, printBanner: false, wsCompressEnabled: false, httpCompressEnabled: false });
+    apply(ctx, {
+      host: "127.0.0.1",
+      port: occupiedPort,
+      httpsEnabled: false,
+      printBanner: false,
+      wsCompressEnabled: false,
+      httpCompressEnabled: false,
+    });
     await sleep(200); // 等 listen 异步 reject
     // health 路由存在，但 listening: false
     const healthRoute = routes.find((r) => r.path === ROUTES.health);
     healthRouteFound = Boolean(healthRoute);
     let healthBody = "";
     healthRoute.handler(
-      { method: "GET", socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" }, url: ROUTES.health },
-      { writeHead: () => {}, end: (c) => { healthBody = String(c); } },
+      {
+        method: "GET",
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080" },
+        url: ROUTES.health,
+      },
+      {
+        writeHead: () => {},
+        end: (c) => {
+          healthBody = String(c);
+        },
+      },
     );
     const hp = JSON.parse(healthBody);
     hpListening = hp.listening;
     // 清理
-    for (const d of [...disposers].reverse()) { try { d(); } catch {} }
+    for (const d of [...disposers].reverse()) {
+      try {
+        d();
+      } catch {}
+    }
     occupied.close();
     process.env.DSH_HOME = prevHome;
     rmSync(applyHome, { recursive: true, force: true });
@@ -521,9 +710,20 @@ describe("apply：enabled=false 仍注册路由与迁移（#110 P0-2）", () => 
     const routes = [];
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
-      webServer: { port: 3080, register(route) { routes.push(route); return () => {}; }, tapIndex() { return () => {}; } },
+      webServer: {
+        port: 3080,
+        register(route) {
+          routes.push(route);
+          return () => {};
+        },
+        tapIndex() {
+          return () => {};
+        },
+      },
       inject() {},
-      effect(fn) { return fn(); },
+      effect(fn) {
+        return fn();
+      },
     };
     apply(ctx, { enabled: false, httpsEnabled: false });
     healthFound = Boolean(routes.find((r) => r.path === ROUTES.health));
@@ -575,7 +775,9 @@ describe("applyConfigPatch 成功语义与 tls 清除（#110，接续 #147 口�
     // tls 空串清空语义：raw 显式 "" → replace 整节剔除该键
     state.user.tlsCertFile = "/a.pem";
     state.user.tlsKeyFile = "/b.pem";
-    clearTls = await applyConfigPatch(deps, { patch: { tlsCertFile: "", tlsKeyFile: "", printBanner: false } });
+    clearTls = await applyConfigPatch(deps, {
+      patch: { tlsCertFile: "", tlsKeyFile: "", printBanner: false },
+    });
     replacesLenAtClear = state.replaces.length;
     tlsKeysRemovedAtClear = !("tlsCertFile" in state.user) && !("tlsKeyFile" in state.user);
     printBannerAtClear = state.user.printBanner;
@@ -623,7 +825,10 @@ describe("applyConfigPatch 成功语义与 tls 清除（#110，接续 #147 口�
 // ===== validateSettings 字段级边界矩阵（#147 变异加固） =====
 describe("validateSettings 字段级边界矩阵（#147 变异加固）", () => {
   // 非 object payload（数组按 object 形态处理、无字段可校验故通过——锁定现状）
-  const nonObjectPayloads = [null, 42, "x"].map((bad) => ({ title: `非对象 ${JSON.stringify(bad)} 报 payload 错`, bad }));
+  const nonObjectPayloads = [null, 42, "x"].map((bad) => ({
+    title: `非对象 ${JSON.stringify(bad)} 报 payload 错`,
+    bad,
+  }));
   it.each(nonObjectPayloads)("$title", ({ bad }) => {
     expect(validateSettings(bad)?.key).toBe("(payload)");
   });
@@ -634,7 +839,10 @@ describe("validateSettings 字段级边界矩阵（#147 变异加固）", () => 
 
   // 数组也是 object——但仍是合法载体形态，逐字段校验通过后返回 null
   // 端口类边界：0 / 负数 / 小数 / 超 65535
-  const badPorts = [0, -1, 3.5, 65536, "80"].map((p) => ({ title: `port=${JSON.stringify(p)} 非法`, p }));
+  const badPorts = [0, -1, 3.5, 65536, "80"].map((p) => ({
+    title: `port=${JSON.stringify(p)} 非法`,
+    p,
+  }));
   it.each(badPorts)("$title", ({ p }) => {
     expect(validateSettings({ port: p })?.key).toBe("port");
   });
@@ -728,7 +936,9 @@ describe("sanitizeSettings 清洗语义（#147 变异加固）", () => {
   });
 
   it("其余键不受影响", () => {
-    expect(sanitizeSettings({ tlsCertFile: "", tlsKeyFile: "", httpsEnabled: true }).httpsEnabled).toBe(true);
+    expect(
+      sanitizeSettings({ tlsCertFile: "", tlsKeyFile: "", httpsEnabled: true }).httpsEnabled,
+    ).toBe(true);
   });
 
   // 非法值整体拒绝
@@ -739,11 +949,19 @@ describe("sanitizeSettings 清洗语义（#147 变异加固）", () => {
 
 // ===== validateSettings 全字段类型矩阵（#147 变异加固接续：布尔/字符串/数组类逐字段） =====
 describe("validateSettings 全字段类型矩阵（#147 变异加固接续）", () => {
-  const boolKeys = ["enabled", "httpsEnabled", "printBanner", "wsCompressEnabled", "httpCompressEnabled"];
+  const boolKeys = [
+    "enabled",
+    "httpsEnabled",
+    "printBanner",
+    "wsCompressEnabled",
+    "httpCompressEnabled",
+  ];
   const badBoolValues = ["true", 1, 0];
 
   // 布尔类字段：字符串/数字形态一律非法
-  const boolIllegal = boolKeys.flatMap((key) => badBoolValues.map((bad) => ({ title: `${key}=${JSON.stringify(bad)} 非法`, key, bad })));
+  const boolIllegal = boolKeys.flatMap((key) =>
+    badBoolValues.map((bad) => ({ title: `${key}=${JSON.stringify(bad)} 非法`, key, bad })),
+  );
   it.each(boolIllegal)("$title", ({ key, bad }) => {
     expect(validateSettings({ [key]: bad })?.key).toBe(key);
   });
@@ -815,18 +1033,36 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
     const disposers = [];
     const routes = [];
     const ctx = {
-      logger: over.logger !== undefined ? over.logger : { info: () => {}, warn: () => {}, error: () => {} },
+      logger:
+        over.logger !== undefined
+          ? over.logger
+          : { info: () => {}, warn: () => {}, error: () => {} },
       webServer: {
         port: 3080,
-        register(route) { routes.push(route); return () => {}; },
-        tapIndex() { return () => {}; },
+        register(route) {
+          routes.push(route);
+          return () => {};
+        },
+        tapIndex() {
+          return () => {};
+        },
       },
       inject() {},
-      effect(fn) { const d = fn(); if (typeof d === "function") disposers.push(d); return d; },
+      effect(fn) {
+        const d = fn();
+        if (typeof d === "function") disposers.push(d);
+        return d;
+      },
       ...over,
-      get _routes() { return routes; },
+      get _routes() {
+        return routes;
+      },
       [Symbol.for("dispose")]() {
-        for (const d of [...disposers].reverse()) { try { d(); } catch {} }
+        for (const d of [...disposers].reverse()) {
+          try {
+            d();
+          } catch {}
+        }
       },
     };
     cleanupFns.push(ctx[Symbol.for("dispose")]);
@@ -839,7 +1075,11 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
   });
 
   afterAll(() => {
-    for (const fn of [...cleanupFns].reverse()) { try { fn(); } catch {} }
+    for (const fn of [...cleanupFns].reverse()) {
+      try {
+        fn();
+      } catch {}
+    }
     process.env.DSH_HOME = prevHome;
     rmSync(blockHome, { recursive: true, force: true });
   });
@@ -853,13 +1093,17 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
     beforeAll(() => {
       for (const logger of loggers) {
         const ctx = makeCtx({ enabled: false, httpsEnabled: false });
-        if (logger === undefined) delete ctx.logger; else ctx.logger = logger;
+        if (logger === undefined) delete ctx.logger;
+        else ctx.logger = logger;
         apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false, enabled: true });
         results.push(Boolean(ctx._routes.find((r) => r.path === ROUTES.health)));
       }
     }, 30000);
 
-    const titled = loggers.map((logger, i) => ({ title: `logger=${JSON.stringify(logger)} 降级不阻断注册`, i }));
+    const titled = loggers.map((logger, i) => ({
+      title: `logger=${JSON.stringify(logger)} 降级不阻断注册`,
+      i,
+    }));
     it.each(titled)("$title", ({ i }) => {
       expect(results[i]).toBeTruthy();
     });
@@ -877,7 +1121,14 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       const services = [
         { label: "missing", service: undefined },
         { label: "no-register", service: {} },
-        { label: "throws", service: { register() { throw new Error("dup"); } } },
+        {
+          label: "throws",
+          service: {
+            register() {
+              throw new Error("dup");
+            },
+          },
+        },
       ];
       let results = [];
 
@@ -885,7 +1136,13 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         for (const { service } of services) {
           const ctx = makeCtx({
             inject(services2, fn) {
-              if (services2.includes("settings")) fn({ settings: service, effect(fn2) { return fn2(); } });
+              if (services2.includes("settings"))
+                fn({
+                  settings: service,
+                  effect(fn2) {
+                    return fn2();
+                  },
+                });
             },
           });
           apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false, enabled: true });
@@ -893,7 +1150,10 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         }
       }, 30000);
 
-      const titled = services.map((s, i) => ({ title: `service 异常态（${s.label}#${i}）不阻断 health/config 注册`, i }));
+      const titled = services.map((s, i) => ({
+        title: `service 异常态（${s.label}#${i}）不阻断 health/config 注册`,
+        i,
+      }));
       it.each(titled)("$title", ({ i }) => {
         expect(results[i]).toBe(true);
       });
@@ -906,8 +1166,15 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         return {
           st,
           scope: {
-            get() { return { port: 4321 }; },
-            watch(cb) { st.watchCbs.push(cb); return () => { st.disposed = true; }; },
+            get() {
+              return { port: 4321 };
+            },
+            watch(cb) {
+              st.watchCbs.push(cb);
+              return () => {
+                st.disposed = true;
+              };
+            },
             async update() {},
             async replace() {},
           },
@@ -921,10 +1188,23 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         const s = makeScope();
         const fiberStates = [];
         const ctx = makeCtx({
-          get fiber() { return { state: fiberStates[fiberStates.length - 1] }; },
+          get fiber() {
+            return { state: fiberStates[fiberStates.length - 1] };
+          },
           inject(services, fn) {
             if (services.includes("settings")) {
-              fn({ settings: { register(ns) { nsSeen = ns; return s.scope; } }, effect(fn2) { const d = fn2(); return d; } });
+              fn({
+                settings: {
+                  register(ns) {
+                    nsSeen = ns;
+                    return s.scope;
+                  },
+                },
+                effect(fn2) {
+                  const d = fn2();
+                  return d;
+                },
+              });
             }
           },
         });
@@ -954,7 +1234,13 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
   // ---- C. migrateFileConfig 全分支 outcome 精确断言（含中断重放四分支）----
   describe("C. migrateFileConfig 全分支 outcome 精确断言", () => {
-    const okScope = () => ({ updates: [], async update(p) { this.updates.push(p); return Promise.resolve(); } });
+    const okScope = () => ({
+      updates: [],
+      async update(p) {
+        this.updates.push(p);
+        return Promise.resolve();
+      },
+    });
 
     // C1: 双文件都不存在 → idle 六字段全 false。
     describe("C1: 双文件都不存在 → idle", () => {
@@ -967,7 +1253,13 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       });
 
       it("idle outcome 全 false", () => {
-        expect(idleOut).toEqual({ performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, resumed: false });
+        expect(idleOut).toEqual({
+          performed: false,
+          migrated: false,
+          rolledBack: false,
+          skippedCorrupt: false,
+          resumed: false,
+        });
       });
     });
 
@@ -975,11 +1267,61 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
     //     非对象 JSON；sanitize null；空对象 sanitized（keys=0 → skippedCorrupt）。
     describe("C2: 迁移 outcome 分支矩阵", () => {
       const cases = [
-        { name: "success", raw: JSON.stringify({ port: 4082 }), expected: { performed: true, migrated: true, rolledBack: false, skippedCorrupt: false, resumed: false } },
-        { name: "broken-json", raw: "{oops", expected: { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false } },
-        { name: "non-object", raw: JSON.stringify([1]), expected: { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false } },
-        { name: "invalid-value", raw: JSON.stringify({ port: "x" }), expected: { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false } },
-        { name: "empty-object", raw: JSON.stringify({}), expected: { performed: true, migrated: false, rolledBack: false, skippedCorrupt: true, resumed: false } },
+        {
+          name: "success",
+          raw: JSON.stringify({ port: 4082 }),
+          expected: {
+            performed: true,
+            migrated: true,
+            rolledBack: false,
+            skippedCorrupt: false,
+            resumed: false,
+          },
+        },
+        {
+          name: "broken-json",
+          raw: "{oops",
+          expected: {
+            performed: true,
+            migrated: false,
+            rolledBack: false,
+            skippedCorrupt: true,
+            resumed: false,
+          },
+        },
+        {
+          name: "non-object",
+          raw: JSON.stringify([1]),
+          expected: {
+            performed: true,
+            migrated: false,
+            rolledBack: false,
+            skippedCorrupt: true,
+            resumed: false,
+          },
+        },
+        {
+          name: "invalid-value",
+          raw: JSON.stringify({ port: "x" }),
+          expected: {
+            performed: true,
+            migrated: false,
+            rolledBack: false,
+            skippedCorrupt: true,
+            resumed: false,
+          },
+        },
+        {
+          name: "empty-object",
+          raw: JSON.stringify({}),
+          expected: {
+            performed: true,
+            migrated: false,
+            rolledBack: false,
+            skippedCorrupt: true,
+            resumed: false,
+          },
+        },
       ];
       let records = [];
 
@@ -990,7 +1332,11 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
           const scope = okScope();
           const out = await migrateFileConfig(dir, scope);
           // bak 标记必须在 rmSync 之前观测（目录随即被回收）
-          records.push({ out, bakExists: existsSync(join(dir, MIGRATED_BAK_NAME)), updates: scope.updates });
+          records.push({
+            out,
+            bakExists: existsSync(join(dir, MIGRATED_BAK_NAME)),
+            updates: scope.updates,
+          });
           rmSync(dir, { recursive: true, force: true });
         }
       });
@@ -1009,7 +1355,9 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         expect(records[0].updates).toEqual([{ port: 4082 }]);
       });
 
-      const titledNoWrite = cases.slice(1).map((c) => ({ title: `case=${c.name} 不写入`, i: cases.indexOf(c) }));
+      const titledNoWrite = cases
+        .slice(1)
+        .map((c) => ({ title: `case=${c.name} 不写入`, i: cases.indexOf(c) }));
       it.each(titledNoWrite)("$title", ({ i }) => {
         expect(records[i].updates.length).toBe(0);
       });
@@ -1023,13 +1371,23 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       beforeAll(async () => {
         const dir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-rollback-"));
         writeFileSync(join(dir, "config.json"), JSON.stringify({ port: 4083 }));
-        out = await migrateFileConfig(dir, { async update() { throw new Error("io"); } });
+        out = await migrateFileConfig(dir, {
+          async update() {
+            throw new Error("io");
+          },
+        });
         configRestored = existsSync(join(dir, "config.json"));
         rmSync(dir, { recursive: true, force: true });
       });
 
       it("写入失败 → rolledBack outcome", () => {
-        expect(out).toEqual({ performed: true, migrated: false, rolledBack: true, skippedCorrupt: false, resumed: false });
+        expect(out).toEqual({
+          performed: true,
+          migrated: false,
+          rolledBack: true,
+          skippedCorrupt: false,
+          resumed: false,
+        });
       });
 
       it("回滚后 config.json 还原", () => {
@@ -1068,31 +1426,53 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
         const failDir = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-mut-resume-fail-"));
         writeFileSync(join(failDir, MIGRATED_BAK_NAME), JSON.stringify({ port: 4084 }));
-        failOut = await migrateFileConfig(failDir, { async update() { throw new Error("io"); } });
+        failOut = await migrateFileConfig(failDir, {
+          async update() {
+            throw new Error("io");
+          },
+        });
         failBakKept = existsSync(join(failDir, MIGRATED_BAK_NAME));
         rmSync(failDir, { recursive: true, force: true });
       });
 
       it("bak 重放成功 outcome（resumed=true）", () => {
-        expect(good).toEqual({ performed: false, migrated: true, rolledBack: false, skippedCorrupt: false, resumed: true });
+        expect(good).toEqual({
+          performed: false,
+          migrated: true,
+          rolledBack: false,
+          skippedCorrupt: false,
+          resumed: true,
+        });
       });
 
       it("bak 重放成功写入键集", () => {
         expect(goodUpdates).toEqual([{ printBanner: false }]);
       });
 
-      const titledResumed = badBakCases.map((c, i) => ({ title: `resume bad (${c.raw}) resumed`, i }));
+      const titledResumed = badBakCases.map((c, i) => ({
+        title: `resume bad (${c.raw}) resumed`,
+        i,
+      }));
       it.each(titledResumed)("$title", ({ i }) => {
         expect(badRecords[i].out.resumed).toBe(true);
       });
 
-      const titledMigrated = badBakCases.map((c, i) => ({ title: `resume bad (${c.raw}) migrated`, i }));
+      const titledMigrated = badBakCases.map((c, i) => ({
+        title: `resume bad (${c.raw}) migrated`,
+        i,
+      }));
       it.each(titledMigrated)("$title", ({ i }) => {
         expect(badRecords[i].out.migrated).toBe(badBakCases[i].expectMigrated);
       });
 
       it("重放失败不回滚（bak 保留）", () => {
-        expect(failOut).toEqual({ performed: false, migrated: false, rolledBack: false, skippedCorrupt: false, resumed: true });
+        expect(failOut).toEqual({
+          performed: false,
+          migrated: false,
+          rolledBack: false,
+          skippedCorrupt: false,
+          resumed: true,
+        });
       });
 
       it("重放失败 bak 标记仍在", () => {
@@ -1108,11 +1488,23 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       const box = { lastWrite: null };
       const d = {
         resolve: () => ({ enabled: true }),
-        readUser: () => ({ user: { tlsCertFile: "/a.pem", tlsKeyFile: "/b.pem", port: 3000 }, revision: 9 }),
+        readUser: () => ({
+          user: { tlsCertFile: "/a.pem", tlsKeyFile: "/b.pem", port: 3000 },
+          revision: 9,
+        }),
         writable: () => true,
-        update: async (patch, rev) => { box.lastWrite = { kind: "update", patch, rev }; },
-        replace: async (section, rev) => { box.lastWrite = { kind: "replace", section, rev }; },
-        compress: () => ({ httpCompressEnabled: true, httpCompressLevel: 1, httpCompressMounted: false, httpCompressStats: { compressed: 0, passthrough: 0 } }),
+        update: async (patch, rev) => {
+          box.lastWrite = { kind: "update", patch, rev };
+        },
+        replace: async (section, rev) => {
+          box.lastWrite = { kind: "replace", section, rev };
+        },
+        compress: () => ({
+          httpCompressEnabled: true,
+          httpCompressLevel: 1,
+          httpCompressMounted: false,
+          httpCompressStats: { compressed: 0, passthrough: 0 },
+        }),
         ...over,
       };
       return { d, box };
@@ -1129,24 +1521,38 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         }
       });
 
-      const titledRejected = payloads.map((p, i) => ({ title: `payload=${JSON.stringify(p)} 拒绝`, i }));
+      const titledRejected = payloads.map((p, i) => ({
+        title: `payload=${JSON.stringify(p)} 拒绝`,
+        i,
+      }));
       it.each(titledRejected)("$title", ({ i }) => {
         expect(results[i].ok).toBe(false);
       });
 
-      const titledStatus = payloads.map((p, i) => ({ title: `payload=${JSON.stringify(p)} status=400`, i }));
+      const titledStatus = payloads.map((p, i) => ({
+        title: `payload=${JSON.stringify(p)} status=400`,
+        i,
+      }));
       it.each(titledStatus)("$title", ({ i }) => {
         expect(results[i].status).toBe(400);
       });
 
-      const titledCode = payloads.map((p, i) => ({ title: `payload=${JSON.stringify(p)} code=invalid`, i }));
+      const titledCode = payloads.map((p, i) => ({
+        title: `payload=${JSON.stringify(p)} code=invalid`,
+        i,
+      }));
       it.each(titledCode)("$title", ({ i }) => {
         expect(results[i].code).toBe("invalid");
       });
 
-      const titledDetails = payloads.map((p, i) => ({ title: `payload=${JSON.stringify(p)} details 指明载体形态`, i }));
+      const titledDetails = payloads.map((p, i) => ({
+        title: `payload=${JSON.stringify(p)} details 指明载体形态`,
+        i,
+      }));
       it.each(titledDetails)("$title", ({ i }) => {
-        expect(results[i].details.includes("(payload)") || results[i].details.includes("需为配置对象")).toBe(true);
+        expect(
+          results[i].details.includes("(payload)") || results[i].details.includes("需为配置对象"),
+        ).toBe(true);
       });
     });
 
@@ -1194,7 +1600,11 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
 
       beforeAll(async () => {
         r = await applyConfigPatch(
-          mkDeps({ update: async () => { throw Object.assign(new Error("stale"), { code: "SETTINGS_CONFLICT" }); } }).d,
+          mkDeps({
+            update: async () => {
+              throw Object.assign(new Error("stale"), { code: "SETTINGS_CONFLICT" });
+            },
+          }).d,
           { patch: { port: 3101 } },
         );
       });
@@ -1217,7 +1627,11 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       let r;
 
       beforeAll(async () => {
-        const { d } = mkDeps({ update: async () => { throw new Error("boom"); } });
+        const { d } = mkDeps({
+          update: async () => {
+            throw new Error("boom");
+          },
+        });
         delete d.logWarn;
         r = await applyConfigPatch(d, { patch: { port: 3102 } });
       });
@@ -1275,32 +1689,68 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
   // ---- E. buildConfigRoutes 路由面（围栏/方法白名单/快照字段/readBody）----
   describe("E. buildConfigRoutes 路由面", () => {
     const deps = {
-      resolve: () => ({ enabled: true, host: "0.0.0.0", port: 3200, httpsEnabled: true, httpsPort: 3443, targetHost: "127.0.0.1", printBanner: true, wsCompressEnabled: true, wsCompressPaths: [], httpCompressEnabled: true, httpCompressLevel: 1 }),
+      resolve: () => ({
+        enabled: true,
+        host: "0.0.0.0",
+        port: 3200,
+        httpsEnabled: true,
+        httpsPort: 3443,
+        targetHost: "127.0.0.1",
+        printBanner: true,
+        wsCompressEnabled: true,
+        wsCompressPaths: [],
+        httpCompressEnabled: true,
+        httpCompressLevel: 1,
+      }),
       readUser: () => ({ user: { port: 3200 }, revision: 11 }),
       writable: () => true,
       update: async () => {},
       replace: async () => {},
-      compress: () => ({ httpCompressEnabled: true, httpCompressLevel: 1, httpCompressMounted: false, httpCompressStats: { compressed: 2, passthrough: 3 } }),
+      compress: () => ({
+        httpCompressEnabled: true,
+        httpCompressLevel: 1,
+        httpCompressMounted: false,
+        httpCompressStats: { compressed: 2, passthrough: 3 },
+      }),
     };
     const route = buildConfigRoutes(deps)[0];
 
     const callRoute = async (method, overrides = {}, body) => {
       const EventEmitter = (await import("node:events")).EventEmitter;
       const stream = new EventEmitter();
-      Object.assign(stream, { method, socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" }, ...overrides });
+      Object.assign(stream, {
+        method,
+        socket: { remoteAddress: "127.0.0.1" },
+        headers: { host: "127.0.0.1:3080" },
+        ...overrides,
+      });
       let status = 0;
       const chunks = [];
       const res = {
-        writeHead(c) { status = c; },
-        end(c) { if (c !== undefined) chunks.push(String(c)); },
-        getHeader() { return undefined; },
+        writeHead(c) {
+          status = c;
+        },
+        end(c) {
+          if (c !== undefined) chunks.push(String(c));
+        },
+        getHeader() {
+          return undefined;
+        },
         setHeader() {},
       };
-      const done = body === undefined ? Promise.resolve() : new Promise((r) => process.nextTick(() => {
-        stream.emit("data", Buffer.from(typeof body === "string" ? body : JSON.stringify(body)));
-        stream.emit("end");
-        r();
-      }));
+      const done =
+        body === undefined
+          ? Promise.resolve()
+          : new Promise((r) =>
+              process.nextTick(() => {
+                stream.emit(
+                  "data",
+                  Buffer.from(typeof body === "string" ? body : JSON.stringify(body)),
+                );
+                stream.emit("end");
+                r();
+              }),
+            );
       await route.handler(stream, res);
       await done;
       return { status, body: chunks.join("") };
@@ -1384,7 +1834,9 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       let badJson;
 
       beforeAll(async () => {
-        okPut = JSON.parse((await callRoute("PUT", {}, { patch: { port: 3201 }, expectedRevision: 11 })).body);
+        okPut = JSON.parse(
+          (await callRoute("PUT", {}, { patch: { port: 3201 }, expectedRevision: 11 })).body,
+        );
         badPut = JSON.parse((await callRoute("PUT", {}, { patch: { port: 99999 } })).body);
         badJson = JSON.parse((await callRoute("PUT", {}, "{not-json")).body);
       });
@@ -1411,15 +1863,32 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         const roRoute = buildConfigRoutes(roDeps)[0];
         const EventEmitter = (await import("node:events")).EventEmitter;
         const stream = new EventEmitter();
-        Object.assign(stream, { method: "PUT", socket: { remoteAddress: "127.0.0.1" }, headers: { host: "127.0.0.1:3080" } });
+        Object.assign(stream, {
+          method: "PUT",
+          socket: { remoteAddress: "127.0.0.1" },
+          headers: { host: "127.0.0.1:3080" },
+        });
         let s = 0;
         const chunks = [];
-        const done = new Promise((r) => process.nextTick(() => {
-          stream.emit("data", Buffer.from(JSON.stringify({ patch: { port: 1 } })));
-          stream.emit("end");
-          r();
-        }));
-        await roRoute.handler(stream, { writeHead(c) { s = c; }, end(c) { if (c !== undefined) chunks.push(String(c)); }, getHeader() { return undefined; }, setHeader() {} });
+        const done = new Promise((r) =>
+          process.nextTick(() => {
+            stream.emit("data", Buffer.from(JSON.stringify({ patch: { port: 1 } })));
+            stream.emit("end");
+            r();
+          }),
+        );
+        await roRoute.handler(stream, {
+          writeHead(c) {
+            s = c;
+          },
+          end(c) {
+            if (c !== undefined) chunks.push(String(c));
+          },
+          getHeader() {
+            return undefined;
+          },
+          setHeader() {},
+        });
         await done;
         status = s;
       });

@@ -12,4 +12,4 @@
  * 不变式：`service-contract-wiring.test.ts` 的 SUITES 必须被本清单覆盖——该用例自带
  * 断言，新增编译面套件却忘记登记时会在 test:scripts 内判红（fail-closed）。
  */
-export const PREREQ_PACKAGES = ['dsh-notifier', 'dsh-mcp-manager']
+export const PREREQ_PACKAGES = ["dsh-notifier", "dsh-mcp-manager"];

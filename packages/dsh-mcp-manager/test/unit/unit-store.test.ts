@@ -79,7 +79,10 @@ describe("load：正常读取 + mtime 基线", () => {
   async function loadedFixture() {
     const dir = tempDir();
     const path = join(dir, "mcp.json");
-    writeFileSync(path, JSON.stringify({ version: 1, servers: [{ name: "a", transport: "stdio", command: "echo" }] }));
+    writeFileSync(
+      path,
+      JSON.stringify({ version: 1, servers: [{ name: "a", transport: "stdio", command: "echo" }] }),
+    );
     const store = new McpStore(path);
     await store.load();
     return { store, path };
@@ -91,7 +94,10 @@ describe("load：正常读取 + mtime 基线", () => {
     const future = Date.now() / 1000 + 10;
     utimesSync(path, future, future);
     if (rewrite) {
-      writeFileSync(path, JSON.stringify({ version: 1, servers: [{ name: "b", transport: "stdio", command: "x" }] }));
+      writeFileSync(
+        path,
+        JSON.stringify({ version: 1, servers: [{ name: "b", transport: "stdio", command: "x" }] }),
+      );
       utimesSync(path, future, future);
     }
     return { store, path };
@@ -315,12 +321,20 @@ describe("fromClaudeEntry：http / sse / stdio 全分支", () => {
   });
 
   it("headers 合入条目", () => {
-    const withHeaders = fromClaudeEntry("h2", { url: "http://h/", headers: { Authorization: "Bearer ${T}" }, env: { A: "1" } });
+    const withHeaders = fromClaudeEntry("h2", {
+      url: "http://h/",
+      headers: { Authorization: "Bearer ${T}" },
+      env: { A: "1" },
+    });
     expect(withHeaders.headers).toEqual({ Authorization: "Bearer ${T}" });
   });
 
   it("http 条目 env 记录来源 keys", () => {
-    const withHeaders = fromClaudeEntry("h2", { url: "http://h/", headers: { Authorization: "Bearer ${T}" }, env: { A: "1" } });
+    const withHeaders = fromClaudeEntry("h2", {
+      url: "http://h/",
+      headers: { Authorization: "Bearer ${T}" },
+      env: { A: "1" },
+    });
     expect(withHeaders.sourceEnv).toEqual(["A"]);
   });
 
@@ -330,27 +344,52 @@ describe("fromClaudeEntry：http / sse / stdio 全分支", () => {
   });
 
   it("stdio transport 映射", () => {
-    const stdio = fromClaudeEntry("c", { command: "npx", args: ["-y", 42], cwd: "/w", env: { K: 1, N: null } });
+    const stdio = fromClaudeEntry("c", {
+      command: "npx",
+      args: ["-y", 42],
+      cwd: "/w",
+      env: { K: 1, N: null },
+    });
     expect(stdio.transport).toBe("stdio");
   });
 
   it("stdio command 映射", () => {
-    const stdio = fromClaudeEntry("c", { command: "npx", args: ["-y", 42], cwd: "/w", env: { K: 1, N: null } });
+    const stdio = fromClaudeEntry("c", {
+      command: "npx",
+      args: ["-y", 42],
+      cwd: "/w",
+      env: { K: 1, N: null },
+    });
     expect(stdio.command).toBe("npx");
   });
 
   it("args map String", () => {
-    const stdio = fromClaudeEntry("c", { command: "npx", args: ["-y", 42], cwd: "/w", env: { K: 1, N: null } });
+    const stdio = fromClaudeEntry("c", {
+      command: "npx",
+      args: ["-y", 42],
+      cwd: "/w",
+      env: { K: 1, N: null },
+    });
     expect(stdio.args).toEqual(["-y", "42"]);
   });
 
   it("stdio cwd 映射", () => {
-    const stdio = fromClaudeEntry("c", { command: "npx", args: ["-y", 42], cwd: "/w", env: { K: 1, N: null } });
+    const stdio = fromClaudeEntry("c", {
+      command: "npx",
+      args: ["-y", 42],
+      cwd: "/w",
+      env: { K: 1, N: null },
+    });
     expect(stdio.cwd).toBe("/w");
   });
 
   it("env 值 String 化", () => {
-    const stdio = fromClaudeEntry("c", { command: "npx", args: ["-y", 42], cwd: "/w", env: { K: 1, N: null } });
+    const stdio = fromClaudeEntry("c", {
+      command: "npx",
+      args: ["-y", 42],
+      cwd: "/w",
+      env: { K: 1, N: null },
+    });
     expect(stdio.env).toEqual({ K: "1", N: "null" });
   });
 
@@ -436,7 +475,10 @@ describe("B17：save 失败时 tmp 残留必须清理", () => {
     const victimPath = join(dir, "victim");
     mkdirSync(victimPath);
     const store = new McpStore(victimPath);
-    store.data = { version: 1, servers: [{ name: "s1", transport: "stdio", command: "echo", enabled: true }] };
+    store.data = {
+      version: 1,
+      servers: [{ name: "s1", transport: "stdio", command: "echo", enabled: true }],
+    };
     return { victimPath, store };
   }
 

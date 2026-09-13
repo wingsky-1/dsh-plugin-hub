@@ -90,7 +90,11 @@ export class ReportTaskQueue {
    */
   submit(input: ReportTaskInput): { taskId: string; existing: boolean } {
     for (const t of this.tasks.values()) {
-      if ((t.status === "queued" || t.status === "running") && t.period === input.period && t.key === input.key) {
+      if (
+        (t.status === "queued" || t.status === "running") &&
+        t.period === input.period &&
+        t.key === input.key
+      ) {
         if (input.force === true && t.force === false) t.force = true;
         return { taskId: t.id, existing: true };
       }
@@ -146,7 +150,8 @@ export class ReportTaskQueue {
   private prune(): void {
     const cutoff = this.now() - this.ttlMs;
     for (const [id, t] of this.tasks) {
-      if ((t.status === "done" || t.status === "failed") && t.updatedAt < cutoff) this.tasks.delete(id);
+      if ((t.status === "done" || t.status === "failed") && t.updatedAt < cutoff)
+        this.tasks.delete(id);
     }
     while (this.tasks.size > this.maxTasks) {
       let oldest: string | null = null;

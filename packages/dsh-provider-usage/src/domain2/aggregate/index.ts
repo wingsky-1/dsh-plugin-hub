@@ -94,7 +94,10 @@ export class TrendTracker {
       warn: opts.warn ?? ((msg: string) => console.warn(`[dsh-provider-usage] trend: ${msg}`)),
       resolveCwd: opts.resolveCwd,
     };
-    const tracker = new TrendTracker(resolved, new TrendStore({ root: opts.root, warn: resolved.warn }));
+    const tracker = new TrendTracker(
+      resolved,
+      new TrendStore({ root: opts.root, warn: resolved.warn }),
+    );
     await tracker.rebuildFromDisk();
     return tracker;
   }
@@ -143,14 +146,20 @@ export class TrendTracker {
    * try/catch 吞掉（单事件失败不连坐）。
    */
   handleEvent(session: unknown, event: Parameters<TrendCollector["handleEvent"]>[1]): void {
-    const id = session !== null && typeof session === "object" ? safeId((session as { id?: unknown }).id) : null;
+    const id =
+      session !== null && typeof session === "object"
+        ? safeId((session as { id?: unknown }).id)
+        : null;
     if (id === null) return;
     this.collector.handleEvent(id, event);
   }
 
   /** session/disposed 入口：per-session 状态清理（缓冲 GC 三重保险之一）。 */
   handleDisposed(session: unknown): void {
-    const id = session !== null && typeof session === "object" ? safeId((session as { id?: unknown }).id) : null;
+    const id =
+      session !== null && typeof session === "object"
+        ? safeId((session as { id?: unknown }).id)
+        : null;
     if (id === null) return;
     this.collector.handleDisposed(id);
   }
@@ -203,7 +212,12 @@ export class TrendTracker {
       try {
         // 折算与消费取同一份身份快照——下面三个 await 期间新到达的同日行既不入
         // 本次折算、也不被消费，留待下一轮压实（旧实现按日键删除会连带丢掉这些行）。
-        const { consumed, aggRows: pendingAgg, dirRows: pendingDir, hourRows: pendingHour } = this.aggregator.rollupSnapshot(day);
+        const {
+          consumed,
+          aggRows: pendingAgg,
+          dirRows: pendingDir,
+          hourRows: pendingHour,
+        } = this.aggregator.rollupSnapshot(day);
         // 既有聚合分片全量取回（agg+dir+hour 混存）——若仍走
         // readAggShard（只取 agg 行），整日原子重写会把分片内既有 dir/hour 行抹掉；
         // 三组必须各自与既有行合并后一起重写（迟到旧日行二次压实防丢防重——
@@ -262,17 +276,29 @@ export class TrendTracker {
   // ---------------------------------------------------------------- 查询
 
   /** 日序列（近 n 日）。 */
-  seriesDays(n: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null }> {
+  seriesDays(
+    n: number,
+    metric: TrendMetric,
+    provider?: string,
+  ): Array<{ day: string; value: number | null }> {
     return this.aggregator.seriesDays(n, this.now(), metric, provider);
   }
 
   /** 周序列（近 n 周，周一起点）。 */
-  seriesWeeks(n: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null }> {
+  seriesWeeks(
+    n: number,
+    metric: TrendMetric,
+    provider?: string,
+  ): Array<{ day: string; value: number | null }> {
     return this.aggregator.seriesWeeks(n, this.now(), metric, provider);
   }
 
   /** 月序列（近 n 月）。 */
-  seriesMonths(n: number, metric: TrendMetric, provider?: string): Array<{ day: string; value: number | null }> {
+  seriesMonths(
+    n: number,
+    metric: TrendMetric,
+    provider?: string,
+  ): Array<{ day: string; value: number | null }> {
     return this.aggregator.seriesMonths(n, this.now(), metric, provider);
   }
 
@@ -311,7 +337,11 @@ export class TrendTracker {
   }
 
   /** 目录窗口总量表（报告快照目录范围过滤数据源）。 */
-  dirTotals(startDay: string, endDay: string, metric: TrendMetric = "total"): Array<{ dir: string; calls: number; total: number | null }> {
+  dirTotals(
+    startDay: string,
+    endDay: string,
+    metric: TrendMetric = "total",
+  ): Array<{ dir: string; calls: number; total: number | null }> {
     return this.aggregator.dirTotals(startDay, endDay, metric);
   }
 
@@ -339,7 +369,13 @@ export class TrendTracker {
    * 窗口摘要（趋势页汇总卡）。stackSeries 可选传入路由已算的堆叠序列复用遍历
    * （须与 n/gran/metric/provider 同参，见 aggregator.windowSummary）。
    */
-  windowSummary(n: number, gran: TrendGranularity, metric: TrendMetric, provider?: string, stackSeries?: TrendStackPoint[]): TrendWindowSummary {
+  windowSummary(
+    n: number,
+    gran: TrendGranularity,
+    metric: TrendMetric,
+    provider?: string,
+    stackSeries?: TrendStackPoint[],
+  ): TrendWindowSummary {
     return this.aggregator.windowSummary(n, gran, metric, provider, this.now(), stackSeries);
   }
 
@@ -350,7 +386,12 @@ export class TrendTracker {
   }
 
   /** 健康观测（/health 附带）。 */
-  stats(): { days: number; pendingRows: number; unpersistedRows: number; lastFlushAt: number | null } {
+  stats(): {
+    days: number;
+    pendingRows: number;
+    unpersistedRows: number;
+    lastFlushAt: number | null;
+  } {
     return { ...this.aggregator.stats(), lastFlushAt: this.lastFlushAt };
   }
 }

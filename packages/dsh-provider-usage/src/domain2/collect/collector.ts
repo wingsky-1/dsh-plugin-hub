@@ -172,7 +172,8 @@ function parseTokens(v: unknown): TrendTokens | null {
 function lastUsageFromStream(stream: unknown): unknown {
   if (!Array.isArray(stream)) return undefined;
   for (let i = stream.length - 1; i >= 0; i -= 1) {
-    const rec = stream[i] as { type?: unknown; chunk?: { type?: unknown; usage?: unknown } } | undefined;
+    const rec = stream[i] as
+      { type?: unknown; chunk?: { type?: unknown; usage?: unknown } } | undefined;
     if (rec?.type === "chunk" && rec.chunk?.type === "usage") return rec.chunk.usage;
   }
   return undefined;
@@ -197,7 +198,12 @@ export class TrendCollector {
   private stateOf(session: string): SessionFoldState {
     let s = this.sessions.get(session);
     if (s === undefined) {
-      s = { attribution: null, dir: undefined, done: new Map<string, number>(), lastTouch: this.now() };
+      s = {
+        attribution: null,
+        dir: undefined,
+        done: new Map<string, number>(),
+        lastTouch: this.now(),
+      };
       this.sessions.set(session, s);
     }
     return s;
@@ -285,7 +291,10 @@ export class TrendCollector {
     }
   }
 
-  private onHeader(state: SessionFoldState, event: SessionEvent & { type: "request/header" }): void {
+  private onHeader(
+    state: SessionFoldState,
+    event: SessionEvent & { type: "request/header" },
+  ): void {
     // 归属主源：逐会话折叠最新 header（含 mid-session 切换的 series 语义——取最新即可）
     const config = (event.data as { header?: { config?: unknown } } | undefined)?.header?.config;
     const next = parseAttribution(config);
@@ -325,7 +334,10 @@ export class TrendCollector {
         if (alt !== null) {
           if (state.attribution === null) {
             state.attribution = alt;
-          } else if (state.attribution.provider !== alt.provider || state.attribution.model !== alt.model) {
+          } else if (
+            state.attribution.provider !== alt.provider ||
+            state.attribution.model !== alt.model
+          ) {
             this.onAnomaly?.(
               `归属不一致（session=${session} turn=${turn} step=${step}）：主源 ${state.attribution.provider}/${state.attribution.model ?? "null"} 与 message.source ${alt.provider}/${alt.model} 不同，保留主源`,
             );
@@ -348,7 +360,8 @@ export class TrendCollector {
     const settled = state.done.get(key);
     const retry = settled === undefined ? 1 : settled + 1;
     rememberDone(state.done, key, retry);
-    const time = typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
+    const time =
+      typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
     const { provider, model } = this.providerOf(state);
     const dir = this.dirOf(state, session);
     this.emit({
@@ -368,21 +381,37 @@ export class TrendCollector {
     });
   }
 
-  private onTurnEnd(state: SessionFoldState, session: string, event: SessionEvent & { type: "turn/end" }): void {
+  private onTurnEnd(
+    state: SessionFoldState,
+    session: string,
+    event: SessionEvent & { type: "turn/end" },
+  ): void {
     void state;
     // counter 记账时间取事件 time（防时钟回拨时 counter 落错日桶），非有限数回落 now
-    const time = typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
+    const time =
+      typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
     const { provider, model } = this.providerOf(state);
     const dir = this.dirOf(state, session);
-    this.emit({ type: "counter", record: { time, session, provider, model, dir, turns: 1, toolCalls: 0 } });
+    this.emit({
+      type: "counter",
+      record: { time, session, provider, model, dir, turns: 1, toolCalls: 0 },
+    });
   }
 
-  private onToolCall(state: SessionFoldState, session: string, event: SessionEvent & { type: "tool/call" }): void {
+  private onToolCall(
+    state: SessionFoldState,
+    session: string,
+    event: SessionEvent & { type: "tool/call" },
+  ): void {
     // 同 onTurnEnd：counter 记账时间取事件 time，非有限数回落 now（口径与 onSettled 一致）
-    const time = typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
+    const time =
+      typeof event.time === "number" && Number.isFinite(event.time) ? event.time : this.now();
     const { provider, model } = this.providerOf(state);
     const dir = this.dirOf(state, session);
-    this.emit({ type: "counter", record: { time, session, provider, model, dir, turns: 0, toolCalls: 1 } });
+    this.emit({
+      type: "counter",
+      record: { time, session, provider, model, dir, turns: 0, toolCalls: 1 },
+    });
   }
 
   private foldKey(turn: unknown, step: unknown): string {

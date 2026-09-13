@@ -22,7 +22,17 @@
  * 「动作 → 断言 → 新动作」的交错块在 beforeAll 内保留原动作顺序、在每个原断言位置
  * 取观测快照（取拷贝不存引用），it 只断言快照——后置动作不会污染前置断言。
  */
-import { mkdtempSync, existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, renameSync, utimesSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  appendFileSync,
+  renameSync,
+  utimesSync,
+  rmSync,
+} from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -94,12 +104,13 @@ import {
 const T0 = new Date(2026, 8, 4, 12, 0, 0).getTime();
 const HOUR = 3600_000;
 
-const CFG = (over = {}) => normalizeReportConfig({
-  daily: { enabled: true, time: "22:00" },
-  weekly: { enabled: true, time: "09:00", weekStartsOn: 1 },
-  monthly: { enabled: true, time: "09:00", dayOfMonth: 1 },
-  ...over,
-});
+const CFG = (over = {}) =>
+  normalizeReportConfig({
+    daily: { enabled: true, time: "22:00" },
+    weekly: { enabled: true, time: "09:00", weekStartsOn: 1 },
+    monthly: { enabled: true, time: "09:00", dayOfMonth: 1 },
+    ...over,
+  });
 
 const CHUNKS = [
   { type: "text-delta", index: 0, text: "第一段。" },
@@ -121,8 +132,15 @@ function fakeLlm(chunks = CHUNKS, opts = {}) {
         yield* chunks;
       })();
     },
-    listProviders: () => (opts.noProviders ? [] : [{ id: "prov-a", name: "A" }, { id: "prov-b", name: "B" }]),
-    listModels: async () => (opts.noModels ? [] : [{ provider: "prov-a", id: "model-a", name: "A" }]),
+    listProviders: () =>
+      opts.noProviders
+        ? []
+        : [
+            { id: "prov-a", name: "A" },
+            { id: "prov-b", name: "B" },
+          ],
+    listModels: async () =>
+      opts.noModels ? [] : [{ provider: "prov-a", id: "model-a", name: "A" }],
   };
   return { llm, seen };
 }
@@ -144,7 +162,9 @@ const GEN = (over = {}) => ({
 
 describe("schedule：daily 未过锚点（now 12:00 早于当日 22:00）", () => {
   let due;
-  beforeAll(() => { due = candidateWindow("daily", CFG(), T0); });
+  beforeAll(() => {
+    due = candidateWindow("daily", CFG(), T0);
+  });
 
   it("daily 未过锚点 → 前日全天", () => {
     expect(due.key).toBe("2026-09-02");
@@ -161,7 +181,9 @@ describe("schedule：daily 未过锚点（now 12:00 早于当日 22:00）", () =
 
 describe("schedule：daily 已过锚点（now 23:00 晚于当日 22:00）", () => {
   let due;
-  beforeAll(() => { due = candidateWindow("daily", CFG(), T0 + 11 * HOUR); });
+  beforeAll(() => {
+    due = candidateWindow("daily", CFG(), T0 + 11 * HOUR);
+  });
 
   it("daily 已过锚点 → 昨日全天", () => {
     expect(due.key).toBe("2026-09-03");
@@ -178,7 +200,9 @@ describe("schedule：daily 已过锚点（now 23:00 晚于当日 22:00）", () =
 
 describe("schedule：previousClosedWindow 手动生成（恒定昨日，消灭凌晨漂移）", () => {
   let manualDue;
-  beforeAll(() => { manualDue = previousClosedWindow("daily", CFG(), T0); });
+  beforeAll(() => {
+    manualDue = previousClosedWindow("daily", CFG(), T0);
+  });
 
   it("手动生成恒为昨日全天", () => {
     expect(manualDue.key).toBe("2026-09-03");
@@ -195,7 +219,9 @@ describe("schedule：previousClosedWindow 手动生成（恒定昨日，消灭�
 
 describe("schedule：weekly 候选窗口（周五，本周锚点已过）", () => {
   let due;
-  beforeAll(() => { due = candidateWindow("weekly", CFG(), T0); });
+  beforeAll(() => {
+    due = candidateWindow("weekly", CFG(), T0);
+  });
 
   it("weekly 候选键=周起点-7（[runDay-7, runDay-1] 闭区间 7 天）", () => {
     expect(due.key).toBe("2026-08-24");
@@ -212,7 +238,9 @@ describe("schedule：weekly 候选窗口（周五，本周锚点已过）", () =
 
 describe("schedule：monthly 候选窗口（9-1 锚点已过）", () => {
   let due;
-  beforeAll(() => { due = candidateWindow("monthly", CFG(), T0); });
+  beforeAll(() => {
+    due = candidateWindow("monthly", CFG(), T0);
+  });
 
   it("monthly 候选键=上一自然月", () => {
     expect(due.key).toBe("2026-08");
@@ -235,10 +263,18 @@ describe("schedule：幂等与补跑", () => {
   beforeAll(() => {
     const cfg = CFG();
     firstMount = pendingReports(cfg, T0, {});
-    allRecorded = pendingReports(cfg, T0, { daily: "2026-09-02", weekly: "2026-08-24", monthly: "2026-08" });
+    allRecorded = pendingReports(cfg, T0, {
+      daily: "2026-09-02",
+      weekly: "2026-08-24",
+      monthly: "2026-08",
+    });
     laterRecorded = pendingReports(cfg, T0, { daily: "2026-09-10" });
     nextRun = pendingReports(CFG(), T0 + 11 * HOUR, { daily: "2026-09-02" });
-    weeklyOff = pendingReports(CFG({ weekly: { enabled: false, time: "09:00", weekStartsOn: 1 } }), T0, {});
+    weeklyOff = pendingReports(
+      CFG({ weekly: { enabled: false, time: "09:00", weekStartsOn: 1 } }),
+      T0,
+      {},
+    );
   });
 
   it("lastRun 空 → 三期全部补生成", () => {
@@ -283,7 +319,10 @@ describe("schedule：#531 首次启用扣期预置", () => {
     later = pendingReports(CFG(), T0 + 25 * HOUR, r1.lastRun);
     r2 = presetLastRunForNewlyEnabled(CFG(), CFG(), T0, {});
     r3 = presetLastRunForNewlyEnabled(allOff, CFG(), T0, { daily: "2026-08-01" });
-    const onlyMonthly = CFG({ daily: { enabled: false, time: "22:00" }, weekly: { enabled: false, time: "09:00", weekStartsOn: 1 } });
+    const onlyMonthly = CFG({
+      daily: { enabled: false, time: "22:00" },
+      weekly: { enabled: false, time: "09:00", weekStartsOn: 1 },
+    });
     r4 = presetLastRunForNewlyEnabled(allOff, onlyMonthly, T0, {});
   });
 
@@ -325,7 +364,10 @@ describe("schedule：#531 首次启用扣期预置", () => {
 describe("config：parseHHMM / normalizeReportConfig 归一化", () => {
   let n;
   beforeAll(() => {
-    n = normalizeReportConfig({ daily: { enabled: true, time: "99:99" }, monthly: { dayOfMonth: 31 } });
+    n = normalizeReportConfig({
+      daily: { enabled: true, time: "99:99" },
+      monthly: { dayOfMonth: 31 },
+    });
   });
 
   it("22:00 合法", () => {
@@ -380,7 +422,13 @@ describe("generate：成功路径（正文拼接 / token 元数据 / 空串跟�
   });
 
   it("usage chunk 记元数据", () => {
-    expect(r.meta.tokens).toEqual({ inputTokens: 10, outputTokens: 5, totalTokens: 15, cacheReadTokens: null, cacheWriteTokens: null });
+    expect(r.meta.tokens).toEqual({
+      inputTokens: 10,
+      outputTokens: 5,
+      totalTokens: 15,
+      cacheReadTokens: null,
+      cacheWriteTokens: null,
+    });
   });
 
   it("空 provider → 注册序首个", () => {
@@ -449,7 +497,9 @@ describe("generate：失败路径（流异常 / 取消 / 空正文 / 路由不�
     ac.abort();
     r2 = await generateReport(GEN({ llm: fakeLlm().llm, signal: ac.signal }));
     // 空正文 → 失败
-    r3 = await generateReport(GEN({ llm: fakeLlm([{ type: "usage", usage: { inputTokens: 1, outputTokens: 1 } }]).llm }));
+    r3 = await generateReport(
+      GEN({ llm: fakeLlm([{ type: "usage", usage: { inputTokens: 1, outputTokens: 1 } }]).llm }),
+    );
     // 路由不可解析 → 失败
     r4 = await generateReport(GEN({ llm: fakeLlm(CHUNKS, { noProviders: true }).llm }));
     r5 = await generateReport(GEN({ llm: fakeLlm(CHUNKS, { noModels: true }).llm }));
@@ -505,13 +555,33 @@ describe("generate：{stats} 模板替换", () => {
 describe("buildStatsSnapshot：窗口过滤 / totals 聚合 / byProvider 降序 / 环比基准", () => {
   let s;
   beforeAll(() => {
-    const cell = (calls, input) => ({ input, output: null, cacheRead: null, cacheWrite: null, calls, turns: calls, toolCalls: 0 });
+    const cell = (calls, input) => ({
+      input,
+      output: null,
+      cacheRead: null,
+      cacheWrite: null,
+      calls,
+      turns: calls,
+      toolCalls: 0,
+    });
     const buckets = [
       { day: "2026-09-02", providers: [{ provider: "p1", model: "m1", cell: cell(2, 100) }] },
-      { day: "2026-09-03", providers: [{ provider: "p1", model: "m1", cell: cell(1, 50) }, { provider: "p2", model: null, cell: cell(3, 30) }] },
+      {
+        day: "2026-09-03",
+        providers: [
+          { provider: "p1", model: "m1", cell: cell(1, 50) },
+          { provider: "p2", model: null, cell: cell(3, 30) },
+        ],
+      },
       { day: "2026-09-10", providers: [{ provider: "p1", model: "m1", cell: cell(9, 999) }] }, // 窗口外
     ];
-    s = buildStatsSnapshot({ period: "daily", startDay: "2026-09-02", endDay: "2026-09-03", buckets, prevTotal: 120 });
+    s = buildStatsSnapshot({
+      period: "daily",
+      startDay: "2026-09-02",
+      endDay: "2026-09-03",
+      buckets,
+      prevTotal: 120,
+    });
   });
 
   it("窗口内 calls 聚合（2+1+3）", () => {
@@ -523,7 +593,10 @@ describe("buildStatsSnapshot：窗口过滤 / totals 聚合 / byProvider 降序 
   });
 
   it("逐日总量（窗口外不计）", () => {
-    expect(s.byDay).toEqual([{ day: "2026-09-02", total: 100 }, { day: "2026-09-03", total: 80 }]);
+    expect(s.byDay).toEqual([
+      { day: "2026-09-02", total: 100 },
+      { day: "2026-09-03", total: 80 },
+    ]);
   });
 
   it("byProvider calls 降序（p1:3）", () => {
@@ -587,21 +660,60 @@ describe("#532 派生维度：空窗口 / 除零 / 跨月连续 / 名称防御",
   let empty, zeroPrev, crossMonth, hostile;
 
   beforeAll(() => {
-    const cell = (calls, input) => ({ input, output: null, cacheRead: null, cacheWrite: null, calls, turns: calls, toolCalls: 0 });
+    const cell = (calls, input) => ({
+      input,
+      output: null,
+      cacheRead: null,
+      cacheWrite: null,
+      calls,
+      turns: calls,
+      toolCalls: 0,
+    });
     // 空窗口：全 null/0，wowRatio null（防 Infinity），不抛
-    empty = buildStatsSnapshot({ period: "weekly", startDay: "2026-09-01", endDay: "2026-09-07", buckets: [], prevTotal: null });
+    empty = buildStatsSnapshot({
+      period: "weekly",
+      startDay: "2026-09-01",
+      endDay: "2026-09-07",
+      buckets: [],
+      prevTotal: null,
+    });
     // 除零：prevTotal=0 → null（防 Infinity 被 JSON.stringify 静默转 null 的语义错误）
-    zeroPrev = buildStatsSnapshot({ period: "daily", startDay: "2026-09-02", endDay: "2026-09-02", buckets: [{ day: "2026-09-02", providers: [{ provider: "p1", model: "m1", cell: cell(1, 50) }] }], prevTotal: 0 });
+    zeroPrev = buildStatsSnapshot({
+      period: "daily",
+      startDay: "2026-09-02",
+      endDay: "2026-09-02",
+      buckets: [
+        { day: "2026-09-02", providers: [{ provider: "p1", model: "m1", cell: cell(1, 50) }] },
+      ],
+      prevTotal: 0,
+    });
     // 跨月连续：01-31 → 02-01 日历日差=1（streak=2，非字典序判断）
-    crossMonth = buildStatsSnapshot({ period: "weekly", startDay: "2026-01-31", endDay: "2026-02-01", buckets: [
-      { day: "2026-01-31", providers: [{ provider: "p1", model: "m1", cell: cell(1, 10) }] },
-      { day: "2026-02-01", providers: [{ provider: "p1", model: "m1", cell: cell(1, 20) }] },
-    ], prevTotal: null });
+    crossMonth = buildStatsSnapshot({
+      period: "weekly",
+      startDay: "2026-01-31",
+      endDay: "2026-02-01",
+      buckets: [
+        { day: "2026-01-31", providers: [{ provider: "p1", model: "m1", cell: cell(1, 10) }] },
+        { day: "2026-02-01", providers: [{ provider: "p1", model: "m1", cell: cell(1, 20) }] },
+      ],
+      prevTotal: null,
+    });
     // provider/model 名防御：控制字符剥离（C0 + DEL + C1）+ 80 字符截断
     const longName = "x".repeat(100);
-    hostile = buildStatsSnapshot({ period: "daily", startDay: "2026-09-02", endDay: "2026-09-02", buckets: [
-      { day: "2026-09-02", providers: [{ provider: `a\u0000b${longName}`, model: `m\nevil\u009b`, cell: cell(1, 10) }] },
-    ], prevTotal: null });
+    hostile = buildStatsSnapshot({
+      period: "daily",
+      startDay: "2026-09-02",
+      endDay: "2026-09-02",
+      buckets: [
+        {
+          day: "2026-09-02",
+          providers: [
+            { provider: `a\u0000b${longName}`, model: `m\nevil\u009b`, cell: cell(1, 10) },
+          ],
+        },
+      ],
+      prevTotal: null,
+    });
   });
 
   it("空窗口 peakDay=null", () => {
@@ -761,7 +873,13 @@ describe("#662 时段维度：覆盖不足 → 整段降级 null（防「1/7 天
       prevTotal: null,
     });
     // 无 hour 事实（旧数据物理缺失）：全 null、coveredDays=0
-    none = buildStatsSnapshot({ period: "daily", startDay: "2026-09-02", endDay: "2026-09-02", buckets: [], prevTotal: null });
+    none = buildStatsSnapshot({
+      period: "daily",
+      startDay: "2026-09-02",
+      endDay: "2026-09-02",
+      buckets: [],
+      prevTotal: null,
+    });
   });
 
   it("部分覆盖 coveredDays=1", () => {
@@ -803,7 +921,9 @@ const NEW_PROMPTS = { daily: "日模板{stats}", weekly: "周模板{stats}", mon
 
 describe("#532 per-period 提示词：prompts 新格式直读", () => {
   let n;
-  beforeAll(() => { n = normalizeReportConfig({ prompts: NEW_PROMPTS }); });
+  beforeAll(() => {
+    n = normalizeReportConfig({ prompts: NEW_PROMPTS });
+  });
 
   it("prompts 新格式直读", () => {
     expect(n.prompts).toEqual(NEW_PROMPTS);
@@ -816,7 +936,9 @@ describe("#532 per-period 提示词：prompts 新格式直读", () => {
 
 describe("#532 per-period 提示词：旧默认模板 → 升级三份新默认", () => {
   let legacyDefault;
-  beforeAll(() => { legacyDefault = normalizeReportConfig({ promptTemplate: LEGACY_PROMPT_TEMPLATE }); });
+  beforeAll(() => {
+    legacyDefault = normalizeReportConfig({ promptTemplate: LEGACY_PROMPT_TEMPLATE });
+  });
 
   it("旧默认 → 升级日报新默认", () => {
     expect(legacyDefault.prompts.daily).toBe(DEFAULT_DAILY_PROMPT);
@@ -833,10 +955,16 @@ describe("#532 per-period 提示词：旧默认模板 → 升级三份新默认"
 
 describe("#532 per-period 提示词：自定义旧模板三周期继承", () => {
   let custom;
-  beforeAll(() => { custom = normalizeReportConfig({ promptTemplate: "我的自定义模板 {stats}" }); });
+  beforeAll(() => {
+    custom = normalizeReportConfig({ promptTemplate: "我的自定义模板 {stats}" });
+  });
 
   it("自定义旧模板三周期继承", () => {
-    expect(custom.prompts).toEqual({ daily: "我的自定义模板 {stats}", weekly: "我的自定义模板 {stats}", monthly: "我的自定义模板 {stats}" });
+    expect(custom.prompts).toEqual({
+      daily: "我的自定义模板 {stats}",
+      weekly: "我的自定义模板 {stats}",
+      monthly: "我的自定义模板 {stats}",
+    });
   });
 });
 
@@ -941,11 +1069,18 @@ describe("#532 per-period 提示词：V3 落盘 round-trip（绕过写侧归一�
     const v3Root = mkdtempSync(join(tmpdir(), "dou-report-v3-migrate-"));
     const reportsDir = join(v3Root, "reports");
     mkdirSync(reportsDir, { recursive: true });
-    writeFileSync(join(reportsDir, "config.json"), JSON.stringify({
-      daily: { enabled: true, time: "09:30" },
-      prompts: { daily: LEGACY_DAILY_PROMPT_V3, weekly: LEGACY_WEEKLY_PROMPT_V3, monthly: LEGACY_MONTHLY_PROMPT_V3 },
-      push: { enabled: false },
-    }));
+    writeFileSync(
+      join(reportsDir, "config.json"),
+      JSON.stringify({
+        daily: { enabled: true, time: "09:30" },
+        prompts: {
+          daily: LEGACY_DAILY_PROMPT_V3,
+          weekly: LEGACY_WEEKLY_PROMPT_V3,
+          monthly: LEGACY_MONTHLY_PROMPT_V3,
+        },
+        push: { enabled: false },
+      }),
+    );
     loaded = await readReportConfig(v3Root);
     rmSync(v3Root, { recursive: true, force: true });
   });
@@ -1050,25 +1185,38 @@ describe("#532 per-period 提示词：用户自定义保留 + 非法值回退", 
 
 describe("#532 per-period 提示词：promptFor 按周期取模板", () => {
   it("promptFor daily", () => {
-    expect(promptFor(normalizeReportConfig({ prompts: NEW_PROMPTS }), "daily")).toBe("日模板{stats}");
+    expect(promptFor(normalizeReportConfig({ prompts: NEW_PROMPTS }), "daily")).toBe(
+      "日模板{stats}",
+    );
   });
 
   it("promptFor weekly", () => {
-    expect(promptFor(normalizeReportConfig({ prompts: NEW_PROMPTS }), "weekly")).toBe("周模板{stats}");
+    expect(promptFor(normalizeReportConfig({ prompts: NEW_PROMPTS }), "weekly")).toBe(
+      "周模板{stats}",
+    );
   });
 
   it("promptFor monthly", () => {
-    expect(promptFor(normalizeReportConfig({ prompts: NEW_PROMPTS }), "monthly")).toBe("月模板{stats}");
+    expect(promptFor(normalizeReportConfig({ prompts: NEW_PROMPTS }), "monthly")).toBe(
+      "月模板{stats}",
+    );
   });
 });
 
 describe("#532 per-period 提示词：三份默认模板形态", () => {
   it("三默认模板含 {stats}", () => {
-    expect(DEFAULT_DAILY_PROMPT.includes("{stats}") && DEFAULT_WEEKLY_PROMPT.includes("{stats}") && DEFAULT_MONTHLY_PROMPT.includes("{stats}")).toBeTruthy();
+    expect(
+      DEFAULT_DAILY_PROMPT.includes("{stats}") &&
+        DEFAULT_WEEKLY_PROMPT.includes("{stats}") &&
+        DEFAULT_MONTHLY_PROMPT.includes("{stats}"),
+    ).toBeTruthy();
   });
 
   it("三默认模板互不相同", () => {
-    expect(DEFAULT_DAILY_PROMPT !== DEFAULT_WEEKLY_PROMPT && DEFAULT_WEEKLY_PROMPT !== DEFAULT_MONTHLY_PROMPT).toBeTruthy();
+    expect(
+      DEFAULT_DAILY_PROMPT !== DEFAULT_WEEKLY_PROMPT &&
+        DEFAULT_WEEKLY_PROMPT !== DEFAULT_MONTHLY_PROMPT,
+    ).toBeTruthy();
   });
 
   it("DEFAULT_PROMPTS 表与单常量一致", () => {
@@ -1121,7 +1269,9 @@ describe("#532 渲染管线（escape-then-transform）：结构 / XSS 向量集 
 
   beforeAll(() => {
     // 基本结构：## → h3、- 组 ul/li、普通行 → p、空行断段
-    html = reportBodyToHtml("## 数据亮点\n- 第一项\n- 第二项\n\n正文段落，**强调**收尾。\n## 结语\n只此一句。");
+    html = reportBodyToHtml(
+      "## 数据亮点\n- 第一项\n- 第二项\n\n正文段落，**强调**收尾。\n## 结语\n只此一句。",
+    );
     // XSS 向量集：转义在前，注入内容恒为实体文本
     x1 = reportBodyToHtml("## x onerror=alert(1)");
     x2 = reportBodyToHtml('**a" onclick=b**');
@@ -1138,7 +1288,12 @@ describe("#532 渲染管线（escape-then-transform）：结构 / XSS 向量集 
   });
 
   it("连续 - 组包 ul/li", () => {
-    expect(html.includes("<ul>") && html.includes("<li>第一项</li>") && html.includes("<li>第二项</li>") && html.includes("</ul>")).toBeTruthy();
+    expect(
+      html.includes("<ul>") &&
+        html.includes("<li>第一项</li>") &&
+        html.includes("<li>第二项</li>") &&
+        html.includes("</ul>"),
+    ).toBeTruthy();
   });
 
   it("普通行 → p + **x** → strong", () => {
@@ -1178,7 +1333,9 @@ describe("#532 渲染管线（escape-then-transform）：结构 / XSS 向量集 
   });
 
   it("落盘 → 读侧往返白名单标签存活", () => {
-    expect(sanitized.includes("<h3>") && sanitized.includes("<ul>") && sanitized.includes("<strong>")).toBeTruthy();
+    expect(
+      sanitized.includes("<h3>") && sanitized.includes("<ul>") && sanitized.includes("<strong>"),
+    ).toBeTruthy();
   });
 });
 
@@ -1199,7 +1356,9 @@ describe("生成不入统计前提（方案 §2.3）", () => {
 
 describe("scheduler：lastRun 读写 roundtrip", () => {
   let root;
-  beforeEach(() => { root = mkdtempSync(join(tmpdir(), "dou-report-sched-")); });
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "dou-report-sched-"));
+  });
 
   it("缺失文件 → 空表", async () => {
     expect(await readLastRun(root)).toEqual({});
@@ -1219,7 +1378,14 @@ describe("scheduler：lastRun 读写 roundtrip", () => {
 // ---------------------------------------------------------------- ReportTaskQueue：串行单飞 + 入队去重（#625/#626）
 
 describe("ReportTaskQueue：串行单飞 + 入队去重（#625/#626）", () => {
-  let firstId, secondId, thirdId, forceUpgraded, callsAtLeastOne, maxConcurrentSeen, statusAfterFail, fourthId;
+  let firstId,
+    secondId,
+    thirdId,
+    forceUpgraded,
+    callsAtLeastOne,
+    maxConcurrentSeen,
+    statusAfterFail,
+    fourthId;
 
   beforeAll(async () => {
     let calls = 0;
@@ -1236,7 +1402,12 @@ describe("ReportTaskQueue：串行单飞 + 入队去重（#625/#626）", () => {
       },
       warn: () => {},
     });
-    const due = { period: "daily", key: "2026-09-04", startDay: "2026-09-04", endDay: "2026-09-04" };
+    const due = {
+      period: "daily",
+      key: "2026-09-04",
+      startDay: "2026-09-04",
+      endDay: "2026-09-04",
+    };
     // 同一窗口连续提交（模拟 tick 60s 一次 vs 手动并发）→ 只应有一个 queued/running（P0 入队去重）
     const first = queue.submit(due);
     const second = queue.submit(due);
@@ -1306,13 +1477,26 @@ describe("tick→队列：失败不推进 lastRun + 下轮重试同窗", () => {
         const lastRun = await readLastRun(root);
         lastRun[input.period] = input.key;
         await writeLastRun(root, lastRun);
-        return { meta: { period: input.period, key: input.key, startDay: input.startDay, endDay: input.endDay, generatedAt: Date.now(), ok: true } };
+        return {
+          meta: {
+            period: input.period,
+            key: input.key,
+            startDay: input.startDay,
+            endDay: input.endDay,
+            generatedAt: Date.now(),
+            ok: true,
+          },
+        };
       },
       warn: () => {},
     });
     const scheduler = ReportScheduler.start({
       root,
-      config: CFG({ daily: { enabled: true, time: "00:00" }, weekly: { enabled: false, time: "09:00", weekStartsOn: 1 }, monthly: { enabled: false, time: "09:00", dayOfMonth: 1 } }),
+      config: CFG({
+        daily: { enabled: true, time: "00:00" },
+        weekly: { enabled: false, time: "09:00", weekStartsOn: 1 },
+        monthly: { enabled: false, time: "09:00", dayOfMonth: 1 },
+      }),
       onDue: (due) => {
         queue.submit(due);
         return Promise.resolve();
@@ -1354,10 +1538,16 @@ describe("scheduler：dispose 停 tick（#629 P3：事件驱动，无固定 slee
     const root = mkdtempSync(join(tmpdir(), "dou-report-dispose-"));
     let calls = 0;
     let gate = () => {};
-    const gated = new Promise((r) => { gate = r; });
+    const gated = new Promise((r) => {
+      gate = r;
+    });
     const scheduler = ReportScheduler.start({
       root,
-      config: CFG({ daily: { enabled: true, time: "00:00" }, weekly: { enabled: false, time: "09:00", weekStartsOn: 1 }, monthly: { enabled: false, time: "09:00", dayOfMonth: 1 } }),
+      config: CFG({
+        daily: { enabled: true, time: "00:00" },
+        weekly: { enabled: false, time: "09:00", weekStartsOn: 1 },
+        monthly: { enabled: false, time: "09:00", dayOfMonth: 1 },
+      }),
       // 模拟 apply 接线的最小推进语义（onDue 提交 → 执行 → lastRun 推进）
       onDue: async (due) => {
         calls += 1;
@@ -1392,7 +1582,13 @@ describe("scheduler：dispose 停 tick（#629 P3：事件驱动，无固定 slee
 // ---------------------------------------------------------------- #624 lastRun 推导/闭环判定（纯函数）
 
 describe("#624 lastRun 推导/闭环判定（纯函数）", () => {
-  const closed = (period, key, generatedAt, endDay) => ({ period, key, generatedAt, endDay, ok: true });
+  const closed = (period, key, generatedAt, endDay) => ({
+    period,
+    key,
+    generatedAt,
+    endDay,
+    ok: true,
+  });
   // 本地时刻 2026-09-07 06:00 → dayKey = "2026-09-07"
   const t607 = new Date(2026, 8, 7, 6, 0, 0).getTime();
   // 旧语义「当天」daily 记录：发起日 = endDay 当天（09-06 06:00 生成当天窗口）→ 未闭环（#624 根因记录）
@@ -1448,7 +1644,8 @@ describe("#624 lastRun 推导/闭环判定（纯函数）", () => {
 describe("#624 ensureLastRunMigrated：迁移写回 + 自愈 + 可重放", () => {
   const t607 = new Date(2026, 8, 7, 6, 0, 0).getTime();
   const t606 = new Date(2026, 8, 6, 6, 0, 0).getTime();
-  const line = (period, key, generatedAt, endDay) => JSON.stringify({ period, key, startDay: endDay, endDay, generatedAt, ok: true });
+  const line = (period, key, generatedAt, endDay) =>
+    JSON.stringify({ period, key, startDay: endDay, endDay, generatedAt, ok: true });
 
   let res, res2, res3, res4, res5, migrated, kept, kept5;
 
@@ -1460,7 +1657,15 @@ describe("#624 ensureLastRunMigrated：迁移写回 + 自愈 + 可重放", () =>
     const indexFile = join(reports, "index.jsonl");
 
     // 场景 1：旧 schema + 旧语义污染键（#624 根因现场）→ 校准写回 schema:2
-    writeFileSync(lastFile, JSON.stringify({ daily: "2026-09-06", weekly: "2026-08-24", monthly: "2026-08", updatedAt: 1 }));
+    writeFileSync(
+      lastFile,
+      JSON.stringify({
+        daily: "2026-09-06",
+        weekly: "2026-08-24",
+        monthly: "2026-08",
+        updatedAt: 1,
+      }),
+    );
     writeFileSync(
       indexFile,
       [
@@ -1477,13 +1682,24 @@ describe("#624 ensureLastRunMigrated：迁移写回 + 自愈 + 可重放", () =>
     res2 = await ensureLastRunMigrated(root, () => {});
 
     // 场景 3：schema:2 被旧污染键遮蔽（P0-4 自愈）→ 仍校准
-    writeFileSync(lastFile, JSON.stringify({ daily: "2026-09-06", weekly: "2026-08-31", monthly: "2026-08", schema: LAST_RUN_SCHEMA }));
+    writeFileSync(
+      lastFile,
+      JSON.stringify({
+        daily: "2026-09-06",
+        weekly: "2026-08-31",
+        monthly: "2026-08",
+        schema: LAST_RUN_SCHEMA,
+      }),
+    );
     res3 = await ensureLastRunMigrated(root, () => {});
 
     // 场景 4：无 index（事实源缺失）→ 不动 lastRun
     const root2 = mkdtempSync(join(tmpdir(), "dou-report-migrate2-"));
     mkdirSync(join(root2, "reports"), { recursive: true });
-    writeFileSync(join(root2, "reports", "last-run.json"), JSON.stringify({ daily: "2026-09-06", schema: 1 }));
+    writeFileSync(
+      join(root2, "reports", "last-run.json"),
+      JSON.stringify({ daily: "2026-09-06", schema: 1 }),
+    );
     res4 = await ensureLastRunMigrated(root2, () => {});
     kept = JSON.parse(readFileSync(join(root2, "reports", "last-run.json"), "utf8"));
 
@@ -1493,8 +1709,19 @@ describe("#624 ensureLastRunMigrated：迁移写回 + 自愈 + 可重放", () =>
     const reports3 = join(root3, "reports");
     mkdirSync(reports3, { recursive: true });
     // 模拟：保存配置时 #531 预置 daily/weekly/monthly 键（index 均无记录），之后手动生成过 weekly
-    writeFileSync(join(reports3, "last-run.json"), JSON.stringify({ daily: "2026-09-06", weekly: "2026-08-31", monthly: "2026-08", schema: LAST_RUN_SCHEMA }));
-    writeFileSync(join(reports3, "index.jsonl"), [line("weekly", "2026-08-31", t607, "2026-09-06")].join("\n") + "\n");
+    writeFileSync(
+      join(reports3, "last-run.json"),
+      JSON.stringify({
+        daily: "2026-09-06",
+        weekly: "2026-08-31",
+        monthly: "2026-08",
+        schema: LAST_RUN_SCHEMA,
+      }),
+    );
+    writeFileSync(
+      join(reports3, "index.jsonl"),
+      [line("weekly", "2026-08-31", t607, "2026-09-06")].join("\n") + "\n",
+    );
     res5 = await ensureLastRunMigrated(root3, () => {});
     const raw5 = JSON.parse(readFileSync(join(reports3, "last-run.json"), "utf8"));
     kept5 = { daily: raw5.daily, weekly: raw5.weekly, monthly: raw5.monthly };
@@ -1563,7 +1790,16 @@ describe("#626 读侧投影：一行/窗口=最新版 + 坏行防御", () => {
     const reports = join(root, "reports");
     mkdirSync(reports, { recursive: true });
     const indexFile = join(reports, "index.jsonl");
-    const line = (generatedAt, key, extra = {}) => JSON.stringify({ period: "daily", key, startDay: key, endDay: key, generatedAt, ok: true, ...extra });
+    const line = (generatedAt, key, extra = {}) =>
+      JSON.stringify({
+        period: "daily",
+        key,
+        startDay: key,
+        endDay: key,
+        generatedAt,
+        ok: true,
+        ...extra,
+      });
     writeFileSync(
       indexFile,
       [
@@ -1575,7 +1811,9 @@ describe("#626 读侧投影：一行/窗口=最新版 + 坏行防御", () => {
     );
     list = await readReportIndex(root);
     d06Id = list.find((m) => m.key === "2026-09-06").id;
-    parsedLen = parseReportIndexLines("bad\n" + JSON.stringify({ period: "weekly", key: "2026-08-31", generatedAt: 1, ok: true })).length;
+    parsedLen = parseReportIndexLines(
+      "bad\n" + JSON.stringify({ period: "weekly", key: "2026-08-31", generatedAt: 1, ok: true }),
+    ).length;
   });
 
   it("同窗口去重为一行", () => {
@@ -1607,7 +1845,14 @@ describe("#629 P1 readReportIndex 解析记忆化（mtime 感知缓存）", () =
     const reports = join(root, "reports");
     mkdirSync(reports, { recursive: true });
     const indexFile = join(reports, "index.jsonl");
-    const metaA = { period: "daily", key: "2026-09-05", startDay: "2026-09-05", endDay: "2026-09-05", generatedAt: 100, ok: true };
+    const metaA = {
+      period: "daily",
+      key: "2026-09-05",
+      startDay: "2026-09-05",
+      endDay: "2026-09-05",
+      generatedAt: 100,
+      ok: true,
+    };
     __clearReportIndexCacheForTests(); // 隔离：清同进程其他块可能残留的缓存与计数
 
     // 缺失文件 → 空表（不缓存）
@@ -1629,7 +1874,10 @@ describe("#629 P1 readReportIndex 解析记忆化（mtime 感知缓存）", () =
     stats = { hits: s.hits, misses: s.misses };
 
     // append 一行（size/mtime 双变）→ 重新解析读到新行
-    appendFileSync(indexFile, `${JSON.stringify({ ...metaA, key: "2026-09-06", generatedAt: 200 })}\n`);
+    appendFileSync(
+      indexFile,
+      `${JSON.stringify({ ...metaA, key: "2026-09-06", generatedAt: 200 })}\n`,
+    );
     const third = await readReportIndex(root);
     thirdLen = third.length;
     thirdFirstKey = third[0].key;
@@ -1637,7 +1885,10 @@ describe("#629 P1 readReportIndex 解析记忆化（mtime 感知缓存）", () =
     // 原子替换改写（size 不变场景：同字节数内容替换 + utimes 显式设置不同 mtime，
     // 规避同毫秒粒度）→ mtime 变化独立失效
     const tmpSwap = `${indexFile}.swap`;
-    writeFileSync(tmpSwap, `${JSON.stringify({ ...metaA, generatedAt: 999 })}\n${JSON.stringify({ ...metaA, key: "2026-09-06", generatedAt: 200 })}\n`);
+    writeFileSync(
+      tmpSwap,
+      `${JSON.stringify({ ...metaA, generatedAt: 999 })}\n${JSON.stringify({ ...metaA, key: "2026-09-06", generatedAt: 200 })}\n`,
+    );
     utimesSync(tmpSwap, /* atime */ new Date(), /* mtime */ new Date(1_700_000_000_000)); // 显式旧 mtime：与 append 时刻必然不同
     renameSync(tmpSwap, indexFile);
     const fourth = await readReportIndex(root);
@@ -1732,7 +1983,9 @@ describe("#629 P2 updateLastRun：链上串行 + 写前重读（patch 挂起期�
   beforeAll(async () => {
     const rootA = mkdtempSync(join(tmpdir(), "dou-report-lra-"));
     let releaseA = () => {};
-    const gateA = new Promise((r) => { releaseA = r; });
+    const gateA = new Promise((r) => {
+      releaseA = r;
+    });
     let enteredA = false;
     const pa = updateLastRun(rootA, async (cur) => {
       enteredA = true;
@@ -1771,8 +2024,11 @@ describe("#629 P2 updateLastRun：既有字段不被后续更新覆盖（写前�
   });
 
   it("三字段并存：后续更新不覆盖既有字段（lost-update 不再发生）", () => {
-    expect({ daily: afterC.daily, weekly: afterC.weekly, monthly: afterC.monthly })
-      .toEqual({ daily: "2026-09-05", weekly: "2026-08-31", monthly: "2026-08" });
+    expect({ daily: afterC.daily, weekly: afterC.weekly, monthly: afterC.monthly }).toEqual({
+      daily: "2026-09-05",
+      weekly: "2026-08-31",
+      monthly: "2026-08",
+    });
   });
 });
 
@@ -1782,7 +2038,9 @@ describe("#629 P2 updateLastRun：同任务交错窗实证（preset vs 任务完
   beforeAll(async () => {
     const root4 = mkdtempSync(join(tmpdir(), "dou-report-lrrace-"));
     let releasePreset = () => {};
-    const gatePreset = new Promise((r) => { releasePreset = r; });
+    const gatePreset = new Promise((r) => {
+      releasePreset = r;
+    });
     let presetEntered = false;
     // 保存配置路径：preset 挂起（模拟 readLastRun IO 慢）
     const pPreset = updateLastRun(root4, async (cur) => {
@@ -1816,13 +2074,16 @@ describe("#629 P2 updateLastRun：并发风暴（10 并发各写各字段）", (
   beforeAll(async () => {
     const root3 = mkdtempSync(join(tmpdir(), "dou-report-lrstorm-"));
     const writes = Array.from({ length: 10 }, (_, i) =>
-      updateLastRun(root3, (cur) => ({ ...cur, [`f${i}`]: `v${i}` })));
+      updateLastRun(root3, (cur) => ({ ...cur, [`f${i}`]: `v${i}` })),
+    );
     await Promise.all(writes);
     await __lastRunChainForTests(root3);
     // readLastRun 只透出 daily/weekly/monthly 白名单键（schema:1 兼容过滤），
     // f0..f9 断言须读原始落盘文件观察
     const final = JSON.parse(readFileSync(join(root3, "reports", "last-run.json"), "utf8"));
-    keptCount = Array.from({ length: 10 }, (_, i) => final[`f${i}`]).filter((v) => v !== undefined).length;
+    keptCount = Array.from({ length: 10 }, (_, i) => final[`f${i}`]).filter(
+      (v) => v !== undefined,
+    ).length;
     schema = final.schema;
   });
 
@@ -1838,12 +2099,18 @@ describe("#629 P2 updateLastRun：并发风暴（10 并发各写各字段）", (
 describe("#629 P2 updateLastRun：patch 抛错不阻塞链上后续", () => {
   it("patch 抛错向调用方透传", async () => {
     const root5 = mkdtempSync(join(tmpdir(), "dou-report-lrerr-"));
-    await expect(updateLastRun(root5, () => { throw new Error("boom-patch"); })).rejects.toThrow(/boom-patch/);
+    await expect(
+      updateLastRun(root5, () => {
+        throw new Error("boom-patch");
+      }),
+    ).rejects.toThrow(/boom-patch/);
   });
 
   it("抛错的更新不落盘且不阻塞后续更新", async () => {
     const root5 = mkdtempSync(join(tmpdir(), "dou-report-lrerr-"));
-    await updateLastRun(root5, () => { throw new Error("boom-patch"); }).catch(() => {});
+    await updateLastRun(root5, () => {
+      throw new Error("boom-patch");
+    }).catch(() => {});
     await updateLastRun(root5, (cur) => ({ ...cur, daily: "2026-09-04" }));
     expect((await readLastRun(root5)).daily).toBe("2026-09-04");
   });
@@ -1858,14 +2125,33 @@ describe("#629 P2 executor 复用 → 队列记录 + status 响应透传 reused"
     // executor 幂等短路（返回 reused:true）→ task.done 且 task.reused=true →
     // handleReportStatus 响应携带 reused（客户端轮询路径「已复用」提示的数据源）
     const queue = new ReportTaskQueue({
-      executor: async () => ({ meta: { period: "daily", key: "2026-09-05", startDay: "2026-09-05", endDay: "2026-09-05", generatedAt: 1, ok: true }, reused: true }),
+      executor: async () => ({
+        meta: {
+          period: "daily",
+          key: "2026-09-05",
+          startDay: "2026-09-05",
+          endDay: "2026-09-05",
+          generatedAt: 1,
+          ok: true,
+        },
+        reused: true,
+      }),
       warn: () => {},
     });
-    const sub = queue.submit({ period: "daily", key: "2026-09-05", startDay: "2026-09-05", endDay: "2026-09-05" });
-    const task = await pollUntil(() => {
-      const t = queue.get(sub.taskId);
-      return t?.status === "done" ? t : undefined;
-    }, 5000, 2);
+    const sub = queue.submit({
+      period: "daily",
+      key: "2026-09-05",
+      startDay: "2026-09-05",
+      endDay: "2026-09-05",
+    });
+    const task = await pollUntil(
+      () => {
+        const t = queue.get(sub.taskId);
+        return t?.status === "done" ? t : undefined;
+      },
+      5000,
+      2,
+    );
     taskDefined = task !== undefined;
     taskReused = task?.reused;
     // status 路由响应透传 reused（直调 handler：包 {handler} 适配 helpers.callHandler
@@ -1884,10 +2170,24 @@ describe("#629 P2 executor 复用 → 队列记录 + status 响应透传 reused"
 
     // 对照：非复用任务（reused 缺省）不携带 reused 字段
     const queue2 = new ReportTaskQueue({
-      executor: async () => ({ meta: { period: "daily", key: "2026-09-06", startDay: "2026-09-06", endDay: "2026-09-06", generatedAt: 2, ok: true } }),
+      executor: async () => ({
+        meta: {
+          period: "daily",
+          key: "2026-09-06",
+          startDay: "2026-09-06",
+          endDay: "2026-09-06",
+          generatedAt: 2,
+          ok: true,
+        },
+      }),
       warn: () => {},
     });
-    const sub2 = queue2.submit({ period: "daily", key: "2026-09-06", startDay: "2026-09-06", endDay: "2026-09-06" });
+    const sub2 = queue2.submit({
+      period: "daily",
+      key: "2026-09-06",
+      startDay: "2026-09-06",
+      endDay: "2026-09-06",
+    });
     await pollUntil(() => queue2.get(sub2.taskId)?.status === "done", 5000, 2);
     const payload2 = await callHandler(
       { handler: (req, res) => handleReportStatus(req, res, { reportQueue: queue2 }) },
@@ -1947,11 +2247,53 @@ describe("#633 分片 a D1：旧格式（无 cwd/dir 键）报告生成链路回
     mkdirSync(detDir, { recursive: true });
     const today = dayKey(T0); // 2026-09-04
     // 旧格式行（无 dir 键；形态同 unit-trend A2 fixture）：过去日 agg 权威行 + 当日明细/计数行
-    const legacyAgg = { v: TREND_ROW_VERSION, kind: "agg", day: "2026-09-03", provider: "deepseek", model: "deepseek-chat", input: 5000, output: 800, cacheRead: 120, cacheWrite: 10, calls: 30, turns: 12, toolCalls: 40 };
-    const legacyDetail = { v: TREND_ROW_VERSION, kind: "detail", time: T0 - HOUR, day: today, session: "旧会话-甲", turn: 3, step: 2, retry: 1, provider: "deepseek", model: "deepseek-chat", input: 1200, output: 300, cacheRead: 45, cacheWrite: 6, calls: 1 };
-    const legacyCounter = { v: TREND_ROW_VERSION, kind: "counter", time: T0 - HOUR, day: today, session: "旧会话-甲", provider: "deepseek", model: "deepseek-chat", turns: 1, toolCalls: 1 };
+    const legacyAgg = {
+      v: TREND_ROW_VERSION,
+      kind: "agg",
+      day: "2026-09-03",
+      provider: "deepseek",
+      model: "deepseek-chat",
+      input: 5000,
+      output: 800,
+      cacheRead: 120,
+      cacheWrite: 10,
+      calls: 30,
+      turns: 12,
+      toolCalls: 40,
+    };
+    const legacyDetail = {
+      v: TREND_ROW_VERSION,
+      kind: "detail",
+      time: T0 - HOUR,
+      day: today,
+      session: "旧会话-甲",
+      turn: 3,
+      step: 2,
+      retry: 1,
+      provider: "deepseek",
+      model: "deepseek-chat",
+      input: 1200,
+      output: 300,
+      cacheRead: 45,
+      cacheWrite: 6,
+      calls: 1,
+    };
+    const legacyCounter = {
+      v: TREND_ROW_VERSION,
+      kind: "counter",
+      time: T0 - HOUR,
+      day: today,
+      session: "旧会话-甲",
+      provider: "deepseek",
+      model: "deepseek-chat",
+      turns: 1,
+      toolCalls: 1,
+    };
     writeFileSync(join(aggDir, "2026-09-03.jsonl"), `${JSON.stringify(legacyAgg)}\n`);
-    writeFileSync(join(detDir, `${today}.jsonl`), `${JSON.stringify(legacyDetail)}\n${JSON.stringify(legacyCounter)}\n`);
+    writeFileSync(
+      join(detDir, `${today}.jsonl`),
+      `${JSON.stringify(legacyDetail)}\n${JSON.stringify(legacyCounter)}\n`,
+    );
     // 链路 1/2（启动重建 + 统计/趋势查询面）：不抛错、两日全量入内存
     const tracker = await TrendTracker.start({ root, now: () => T0, flushDebounceMs: 60000 });
     const buckets = tracker.buckets();
@@ -1960,10 +2302,41 @@ describe("#633 分片 a D1：旧格式（无 cwd/dir 键）报告生成链路回
     // 本节手搓 dirRows 只用于验证 buildStatsSnapshot 自身的窗口裁剪与聚合（窗口外
     // dir 行不计）；真实链路的 dirRows 形态见紧随其后的残差投影端到端断言。
     const dirRows = [
-      { v: TREND_ROW_VERSION, kind: "dir", day: today, dir: TREND_UNIDENTIFIED, input: 22, output: 11, cacheRead: null, cacheWrite: null, calls: 1, turns: 1, toolCalls: 0 },
-      { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-10", dir: "窗口外", input: 999, output: 999, cacheRead: null, cacheWrite: null, calls: 9, turns: 9, toolCalls: 9 },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: today,
+        dir: TREND_UNIDENTIFIED,
+        input: 22,
+        output: 11,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 1,
+        turns: 1,
+        toolCalls: 0,
+      },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: "2026-09-10",
+        dir: "窗口外",
+        input: 999,
+        output: 999,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 9,
+        turns: 9,
+        toolCalls: 9,
+      },
     ];
-    const s = buildStatsSnapshot({ period: "weekly", startDay: "2026-09-03", endDay: today, buckets, dirRows, prevTotal: null });
+    const s = buildStatsSnapshot({
+      period: "weekly",
+      startDay: "2026-09-03",
+      endDay: today,
+      buckets,
+      dirRows,
+      prevTotal: null,
+    });
     sByDirectory = JSON.parse(JSON.stringify(s.byDirectory));
     sTotalsCalls = s.totals.calls;
     sTotalsTotal = s.totals.total;
@@ -1972,11 +2345,24 @@ describe("#633 分片 a D1：旧格式（无 cwd/dir 键）报告生成链路回
     // （修复前此处为空数组：历史在报告里也消失）。手搓 dirRows 掩盖过这一差异。
     const live = tracker.dirRows();
     liveProjection = live.map((r) => [r.day, r.dir, r.calls]).sort();
-    const sLive = buildStatsSnapshot({ period: "weekly", startDay: "2026-09-03", endDay: today, buckets, dirRows: live, prevTotal: null });
+    const sLive = buildStatsSnapshot({
+      period: "weekly",
+      startDay: "2026-09-03",
+      endDay: today,
+      buckets,
+      dirRows: live,
+      prevTotal: null,
+    });
     sLiveByDirectory = JSON.parse(JSON.stringify(sLive.byDirectory));
     sByDay = JSON.parse(JSON.stringify(s.byDay));
     // 零回归：同 buckets 无 dir 维度（dirRows 缺省）时既有字段逐字段完全一致
-    const s0 = buildStatsSnapshot({ period: "weekly", startDay: "2026-09-03", endDay: today, buckets, prevTotal: null });
+    const s0 = buildStatsSnapshot({
+      period: "weekly",
+      startDay: "2026-09-03",
+      endDay: today,
+      buckets,
+      prevTotal: null,
+    });
     s0ByDirectory = JSON.parse(JSON.stringify(s0.byDirectory));
     const strip = (snap) => {
       const clone = { ...snap };
@@ -1987,9 +2373,20 @@ describe("#633 分片 a D1：旧格式（无 cwd/dir 键）报告生成链路回
     stripS0 = JSON.parse(JSON.stringify(strip(s0)));
     // {stats} 注入 → generateReport（fake llm）不抛错且成功，byDirectory 进注入面
     const { llm, seen } = fakeLlm();
-    const r = await generateReport(GEN({ llm, period: "weekly", key: "2026-09-03", startDay: "2026-09-03", endDay: today, statsJson: JSON.stringify(s) }));
+    const r = await generateReport(
+      GEN({
+        llm,
+        period: "weekly",
+        key: "2026-09-03",
+        startDay: "2026-09-03",
+        endDay: today,
+        statsJson: JSON.stringify(s),
+      }),
+    );
     rMetaOk = r.meta.ok;
-    injectedHasDirBucket = seen.options.messages[0].content[0].text.includes(JSON.stringify(s.byDirectory[0]));
+    injectedHasDirBucket = seen.options.messages[0].content[0].text.includes(
+      JSON.stringify(s.byDirectory[0]),
+    );
     await tracker.dispose();
     // dir 键防御（与 provider/model 名同口径）：控制字符剥离 + 80 字符截断
     const hostile = buildStatsSnapshot({
@@ -1997,7 +2394,21 @@ describe("#633 分片 a D1：旧格式（无 cwd/dir 键）报告生成链路回
       startDay: today,
       endDay: today,
       buckets: [],
-      dirRows: [{ v: TREND_ROW_VERSION, kind: "dir", day: today, dir: `a\nb${"x".repeat(100)}`, input: 1, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 }],
+      dirRows: [
+        {
+          v: TREND_ROW_VERSION,
+          kind: "dir",
+          day: today,
+          dir: `a\nb${"x".repeat(100)}`,
+          input: 1,
+          output: null,
+          cacheRead: null,
+          cacheWrite: null,
+          calls: 1,
+          turns: 0,
+          toolCalls: 0,
+        },
+      ],
       prevTotal: null,
     });
     hostileDir = hostile.byDirectory[0].dir;
@@ -2020,7 +2431,10 @@ describe("#633 分片 a D1：旧格式（无 cwd/dir 键）报告生成链路回
   });
 
   it("真实 dirRows：旧 agg-only 日经残差补入未识别桶（当日明细行亦归未识别）", () => {
-    expect(liveProjection).toEqual([["2026-09-03", TREND_UNIDENTIFIED, 30], [todayKey, TREND_UNIDENTIFIED, 1]]);
+    expect(liveProjection).toEqual([
+      ["2026-09-03", TREND_UNIDENTIFIED, 30],
+      [todayKey, TREND_UNIDENTIFIED, 1],
+    ]);
   });
 
   it("报告链路端到端：byDirectory 覆盖全窗口（= totals 口径，历史不再从报告消失）", () => {
@@ -2028,7 +2442,10 @@ describe("#633 分片 a D1：旧格式（无 cwd/dir 键）报告生成链路回
   });
 
   it("byDay 旧数据完整（两日总量一致）", () => {
-    expect(sByDay).toEqual([{ day: "2026-09-03", total: 5930 }, { day: todayKey, total: 1551 }]);
+    expect(sByDay).toEqual([
+      { day: "2026-09-03", total: 5930 },
+      { day: todayKey, total: 1551 },
+    ]);
   });
 
   it("无 dir 行 → byDirectory 空数组（加性可选维度，不补造）", () => {
@@ -2079,9 +2496,17 @@ describe("#633 分片 b C2：脱敏出口逐条断言（basename 化 + 三出口
     endDay: "2026-09-03",
     buckets: [],
     dirRows: MALICIOUS_DIRS.map((dir, i) => ({
-      v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir,
-      input: MALICIOUS_INPUTS[i], output: null, cacheRead: null, cacheWrite: null,
-      calls: 1, turns: 0, toolCalls: 0,
+      v: TREND_ROW_VERSION,
+      kind: "dir",
+      day: "2026-09-03",
+      dir,
+      input: MALICIOUS_INPUTS[i],
+      output: null,
+      cacheRead: null,
+      cacheWrite: null,
+      calls: 1,
+      turns: 0,
+      toolCalls: 0,
     })),
     prevTotal: null,
   });
@@ -2089,7 +2514,13 @@ describe("#633 分片 b C2：脱敏出口逐条断言（basename 化 + 三出口
   // 出口 1：{stats} 注入 JSON（快照即注入形态；applyPromptTemplate 全文断言）
   const injected = applyPromptTemplate("统计：{stats}", JSON.stringify(snap));
   // 出口 1.5：无 dir 事实（dirRows 缺省）时 byDirectory 空数组、注入面无目录句
-  const noDirSnap = buildStatsSnapshot({ period: "daily", startDay: "2026-09-03", endDay: "2026-09-03", buckets: [], prevTotal: null });
+  const noDirSnap = buildStatsSnapshot({
+    period: "daily",
+    startDay: "2026-09-03",
+    endDay: "2026-09-03",
+    buckets: [],
+    prevTotal: null,
+  });
 
   let rMetaOk, promptText, htmlText, metaText, sentLen, pushBody;
 
@@ -2113,7 +2544,11 @@ describe("#633 分片 b C2：脱敏出口逐条断言（basename 化 + 三出口
     // 出口 3：notifier 推送摘要（notifyReport 捕获 send 请求体）
     const sent = [];
     const fakeCtx = {
-      get: () => ({ send: async (req) => { sent.push(req); } }),
+      get: () => ({
+        send: async (req) => {
+          sent.push(req);
+        },
+      }),
     };
     notifyReport(fakeCtx, CFG({ push: { enabled: true } }), r.meta, snap, (s) => s);
     sentLen = sent.length;
@@ -2148,7 +2583,9 @@ describe("#633 分片 b C2：脱敏出口逐条断言（basename 化 + 三出口
 
   it("控制字符剥除 + 截断 80 形态（剥后残留字面字符保留）", () => {
     const hostileDir = allDirs.find((d) => d.startsWith("x"));
-    expect(hostileDir !== undefined && hostileDir.length <= 80 && !/[\u0000-\u001f]/.test(hostileDir)).toBeTruthy();
+    expect(
+      hostileDir !== undefined && hostileDir.length <= 80 && !/[\u0000-\u001f]/.test(hostileDir),
+    ).toBeTruthy();
   });
 
   it("注入 JSON 全文不含原始绝对路径", () => {
@@ -2175,7 +2612,10 @@ describe("#633 分片 b C2：脱敏出口逐条断言（basename 化 + 三出口
     expect(promptText.includes("secret-project") && promptText.includes("repo")).toBeTruthy();
   });
 
-  const artifacts = [["HTML", () => htmlText], ["meta", () => metaText]];
+  const artifacts = [
+    ["HTML", () => htmlText],
+    ["meta", () => metaText],
+  ];
 
   for (const [name, getArtifact] of artifacts) {
     it(`报告产物（${name}）不含绝对路径`, () => {
@@ -2231,7 +2671,10 @@ describe("#633 分片 b C3：注入面声明与 README 收敛（源码字面断�
 
   it("buildStatsSnapshot 出口 basename 化实现在场（lastIndexOf 切分）", () => {
     // 出口实现哨兵：byDirectory 出口必须含 basename 化（两系分隔符切分），不回退
-    expect(genSrc.includes("lastIndexOf(\", c.lastIndexOf(\"\\\\\")") || /Math\.max\([^)]*lastIndexOf/.test(genSrc)).toBeTruthy();
+    expect(
+      genSrc.includes('lastIndexOf(", c.lastIndexOf("\\\\")') ||
+        /Math\.max\([^)]*lastIndexOf/.test(genSrc),
+    ).toBeTruthy();
   });
 
   it("剥/切后空串归并未识别桶键（防空标签）", () => {
@@ -2255,14 +2698,25 @@ describe("#633 分片 b C3：注入面声明与 README 收敛（源码字面断�
   });
 
   // 模板目录硬规则哨兵（C1 模板升级防回退）
-  for (const sentinel of ["byDirectory 第一位", "工作分散在 N 个目录", "目录版图", "绝不展开为路径、绝不推测目录内容"]) {
+  for (const sentinel of [
+    "byDirectory 第一位",
+    "工作分散在 N 个目录",
+    "目录版图",
+    "绝不展开为路径、绝不推测目录内容",
+  ]) {
     it(`三周期模板目录硬规则哨兵在场：${sentinel}`, () => {
       expect(cfgSrc.includes(sentinel)).toBeTruthy();
     });
   }
 
   // #662 时段硬规则哨兵（C1 模板升级防回退：时段红线 + 时段句式在场）
-  for (const sentinel of ["时段一笔（可选）", "时段观察一笔（可选）", "时段版图（可选一节）", "绝不把时段与行为、场景、情绪关联", "绝不与 byDirectory 交叉关联"]) {
+  for (const sentinel of [
+    "时段一笔（可选）",
+    "时段观察一笔（可选）",
+    "时段版图（可选一节）",
+    "绝不把时段与行为、场景、情绪关联",
+    "绝不与 byDirectory 交叉关联",
+  ]) {
     it(`三周期模板时段硬规则哨兵在场：${sentinel}`, () => {
       expect(cfgSrc.includes(sentinel)).toBeTruthy();
     });
@@ -2342,16 +2796,62 @@ describe("#633 分片 b C1：三周期模板硬规则断言（fake llm 抓 promp
     period: "daily",
     startDay: "2026-09-03",
     endDay: "2026-09-03",
-    buckets: [{ day: "2026-09-03", providers: [{ provider: "p", model: "m", cell: { input: 300, output: null, cacheRead: null, cacheWrite: null, calls: 3, turns: 3, toolCalls: 0 } }] }],
+    buckets: [
+      {
+        day: "2026-09-03",
+        providers: [
+          {
+            provider: "p",
+            model: "m",
+            cell: {
+              input: 300,
+              output: null,
+              cacheRead: null,
+              cacheWrite: null,
+              calls: 3,
+              turns: 3,
+              toolCalls: 0,
+            },
+          },
+        ],
+      },
+    ],
     dirRows: [
-      { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: "alpha", input: 200, output: null, cacheRead: null, cacheWrite: null, calls: 2, turns: 0, toolCalls: 0 },
-      { v: TREND_ROW_VERSION, kind: "dir", day: "2026-09-03", dir: TREND_UNIDENTIFIED, input: 100, output: null, cacheRead: null, cacheWrite: null, calls: 1, turns: 0, toolCalls: 0 },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: "2026-09-03",
+        dir: "alpha",
+        input: 200,
+        output: null,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 2,
+        turns: 0,
+        toolCalls: 0,
+      },
+      {
+        v: TREND_ROW_VERSION,
+        kind: "dir",
+        day: "2026-09-03",
+        dir: TREND_UNIDENTIFIED,
+        input: 100,
+        output: null,
+        cacheRead: null,
+        cacheWrite: null,
+        calls: 1,
+        turns: 0,
+        toolCalls: 0,
+      },
     ],
     prevTotal: null,
   });
 
   it("快照 byDirectory calls 降序（占比素材）", () => {
-    expect(dirSnap.byDirectory).toEqual([{ dir: "alpha", calls: 2, total: 200 }, { dir: TREND_UNIDENTIFIED, calls: 1, total: 100 }]);
+    expect(dirSnap.byDirectory).toEqual([
+      { dir: "alpha", calls: 2, total: 200 },
+      { dir: TREND_UNIDENTIFIED, calls: 1, total: 100 },
+    ]);
   });
 
   for (const period of periods) {
@@ -2360,7 +2860,17 @@ describe("#633 分片 b C1：三周期模板硬规则断言（fake llm 抓 promp
 
       beforeAll(async () => {
         const { llm, seen } = fakeLlm();
-        const r = await generateReport(GEN({ llm, period, key: "2026-09-03", startDay: "2026-09-03", endDay: "2026-09-03", promptTemplate: promptFor(CFG(), period), statsJson: JSON.stringify(dirSnap) }));
+        const r = await generateReport(
+          GEN({
+            llm,
+            period,
+            key: "2026-09-03",
+            startDay: "2026-09-03",
+            endDay: "2026-09-03",
+            promptTemplate: promptFor(CFG(), period),
+            statsJson: JSON.stringify(dirSnap),
+          }),
+        );
         rMetaOk = r.meta.ok;
         text = seen.options.messages[0].content[0].text;
       });
@@ -2407,7 +2917,9 @@ describe("#633 分片 b B4：目录范围归一化（非法形态回退 / basena
 
   // basename 归一（与 C2 出口同口径）：反斜杠/正斜杠路径取末段，控制字符剥除
   it("目录范围项 basename 化（两系分隔符）", () => {
-    expect(normalizeReportConfig({ directories: ["/home/u/proj", "C:\\w\\repo"] }).directories).toEqual(["proj", "repo"]);
+    expect(
+      normalizeReportConfig({ directories: ["/home/u/proj", "C:\\w\\repo"] }).directories,
+    ).toEqual(["proj", "repo"]);
   });
 
   it("目录范围项控制字符剥除", () => {
@@ -2415,7 +2927,10 @@ describe("#633 分片 b B4：目录范围归一化（非法形态回退 / basena
   });
 
   it("目录范围项 C1 控制字符剥除（复核 P1-2）", () => {
-    expect(normalizeReportConfig({ directories: ["pro\u009bj", "x\u0080y"] }).directories).toEqual(["proj", "xy"]);
+    expect(normalizeReportConfig({ directories: ["pro\u009bj", "x\u0080y"] }).directories).toEqual([
+      "proj",
+      "xy",
+    ]);
   });
 
   // 去重 + 上限 32（按归一化后的字面值去重；空白不 trim——basename 精确保留）
@@ -2424,7 +2939,10 @@ describe("#633 分片 b B4：目录范围归一化（非法形态回退 / basena
   });
 
   it("目录范围上限 32 项", () => {
-    expect(normalizeReportConfig({ directories: Array.from({ length: 40 }, (_, i) => `d${i}`) }).directories.length).toBe(32);
+    expect(
+      normalizeReportConfig({ directories: Array.from({ length: 40 }, (_, i) => `d${i}`) })
+        .directories.length,
+    ).toBe(32);
   });
 
   // 超长项跳过（而非截断）：与数据层 isValidDirKey/TREND_DIR_MAX 同口径——截断会造出
@@ -2434,11 +2952,15 @@ describe("#633 分片 b B4：目录范围归一化（非法形态回退 / basena
   });
 
   it("超长项跳过、合法项保留", () => {
-    expect(normalizeReportConfig({ directories: ["ok", `x${"y".repeat(300)}`] }).directories).toEqual(["ok"]);
+    expect(
+      normalizeReportConfig({ directories: ["ok", `x${"y".repeat(300)}`] }).directories,
+    ).toEqual(["ok"]);
   });
 
   it("上限内（256）的目录项保留", () => {
-    expect(normalizeReportConfig({ directories: ["x".repeat(256)] }).directories[0].length).toBe(256);
+    expect(normalizeReportConfig({ directories: ["x".repeat(256)] }).directories[0].length).toBe(
+      256,
+    );
   });
 });
 
@@ -2447,7 +2969,10 @@ describe("#633 分片 b B4：目录范围持久化 round-trip 与存量配置兼
 
   beforeAll(async () => {
     const rootDir = mkdtempSync(join(tmpdir(), "dou-report-b4-"));
-    const saved = normalizeReportConfig({ directories: ["proj", "repo"], push: { enabled: false } });
+    const saved = normalizeReportConfig({
+      directories: ["proj", "repo"],
+      push: { enabled: false },
+    });
     await writeReportConfig(rootDir, saved);
     loadedDirs = [...(await readReportConfig(rootDir)).directories];
     // 未配置 directories 的存量配置文件读回 → 默认空数组（不缺键报错）
@@ -2486,14 +3011,68 @@ describe("#633 分片 b B4：口径影响（reportCfg.directories 非空 → 快
       flushDebounceMs: 60000,
       resolveCwd: (session) => (session === "s1" ? "/w/alpha" : "/w/beta"),
     });
-    tracker.handleEvent({ id: "s1" }, { type: "request/header", seq: 1, time: T0, data: { header: { config: { provider: "p", model: "m" } } } });
-    tracker.handleEvent({ id: "s1" }, { type: "assistant/message", seq: 2, time: T0, data: { turn: 1, step: 1, usage: { inputTokens: 100, outputTokens: 50 } } });
-    tracker.handleEvent({ id: "s2" }, { type: "request/header", seq: 3, time: T0, data: { header: { config: { provider: "p", model: "m" } } } });
-    tracker.handleEvent({ id: "s2" }, { type: "assistant/message", seq: 4, time: T0, data: { turn: 1, step: 1, usage: { inputTokens: 7, outputTokens: 3 } } });
-    const fakeCtx = { llm: { stream: () => (async function* () { yield* CHUNKS; })(), listProviders: () => [{ id: "p" }], listModels: async () => [{ id: "m" }] } };
-    const due = { period: "daily", key: "2026-09-03", startDay: "2026-09-03", endDay: "2026-09-03", force: true };
+    tracker.handleEvent(
+      { id: "s1" },
+      {
+        type: "request/header",
+        seq: 1,
+        time: T0,
+        data: { header: { config: { provider: "p", model: "m" } } },
+      },
+    );
+    tracker.handleEvent(
+      { id: "s1" },
+      {
+        type: "assistant/message",
+        seq: 2,
+        time: T0,
+        data: { turn: 1, step: 1, usage: { inputTokens: 100, outputTokens: 50 } },
+      },
+    );
+    tracker.handleEvent(
+      { id: "s2" },
+      {
+        type: "request/header",
+        seq: 3,
+        time: T0,
+        data: { header: { config: { provider: "p", model: "m" } } },
+      },
+    );
+    tracker.handleEvent(
+      { id: "s2" },
+      {
+        type: "assistant/message",
+        seq: 4,
+        time: T0,
+        data: { turn: 1, step: 1, usage: { inputTokens: 7, outputTokens: 3 } },
+      },
+    );
+    const fakeCtx = {
+      llm: {
+        stream: () =>
+          (async function* () {
+            yield* CHUNKS;
+          })(),
+        listProviders: () => [{ id: "p" }],
+        listModels: async () => [{ id: "m" }],
+      },
+    };
+    const due = {
+      period: "daily",
+      key: "2026-09-03",
+      startDay: "2026-09-03",
+      endDay: "2026-09-03",
+      force: true,
+    };
     // 全部（空数组）：两目录都在
-    const allSnap = await runDueReport({ due, trend: tracker, ctx: fakeCtx, reportCfg: normalizeReportConfig({ push: { enabled: false }, directories: [] }), historyRoot: root, sanitizeDiagnostic: (s) => s });
+    const allSnap = await runDueReport({
+      due,
+      trend: tracker,
+      ctx: fakeCtx,
+      reportCfg: normalizeReportConfig({ push: { enabled: false }, directories: [] }),
+      historyRoot: root,
+      sanitizeDiagnostic: (s) => s,
+    });
     allSnapOk = allSnap.ok === true;
     // 限定单目录（persistReport 已落盘，用 trend.dirRows 直接断言过滤口径）：
     const scoped = normalizeReportConfig({ directories: ["alpha"] }).directories;

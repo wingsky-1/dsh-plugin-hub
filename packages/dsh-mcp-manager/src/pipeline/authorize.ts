@@ -8,21 +8,33 @@
  * （禁用表三层解析）并入 config/store/middleware-state.ts（状态域）。
  */
 
-import { fullServerName, parseFullServerName, bareServerName, MIDDLEWARE_GLOBAL_ROOT } from "../workspace/interface.ts";
+import {
+  fullServerName,
+  parseFullServerName,
+  bareServerName,
+  MIDDLEWARE_GLOBAL_ROOT,
+} from "../workspace/interface.ts";
 import type { MiddlewarePolicy, DisabledToolsMap } from "../types/interface.ts";
 
 /** 工具名匹配 glob（* 通配）。 */
 export function globMatch(pattern: string, name: string): boolean {
   if (pattern === "*") return true;
   if (!pattern.includes("*")) return pattern === name;
-  const escaped = pattern.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*");
+  const escaped = pattern
+    .split("*")
+    .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
+    .join(".*");
   return new RegExp(`^${escaped}$`).test(name);
 }
 
 // ------------------------------------------------------------ 策略裁决
 
 /** 策略裁决：deny 优先。serverKey 支持全名（@root/server）或裸名——全名优先匹配（工作空间隔离），未命中回落裸名。返回 true = 允许。 */
-export function policyAllows(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): boolean {
+export function policyAllows(
+  policy: MiddlewarePolicy | undefined,
+  serverKey: string,
+  tool: string,
+): boolean {
   if (policy === undefined) return true;
   const fullDeny = policy.denyTools?.[serverKey];
   if (fullDeny !== undefined && fullDeny.some((pattern) => globMatch(pattern, tool))) return false;
@@ -81,7 +93,11 @@ export function isToolDenied(
 }
 
 /** 策略拒绝原因（供 denialReason 提示）。 */
-export function policyDenialReason(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): string | undefined {
+export function policyDenialReason(
+  policy: MiddlewarePolicy | undefined,
+  serverKey: string,
+  tool: string,
+): string | undefined {
   if (policyAllows(policy, serverKey, tool)) return undefined;
   const deny = policy?.denyTools?.[serverKey] ?? policy?.denyTools?.[bareServerName(serverKey)];
   if (deny !== undefined && deny.some((pattern) => globMatch(pattern, tool))) {

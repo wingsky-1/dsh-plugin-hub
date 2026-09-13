@@ -33,11 +33,17 @@ describe("客户端 fetch 超时兜底外壳（issue #268 P1）", () => {
     });
 
     it("无 caller signal 时注入 AbortSignal.timeout 兜底（#268 主接线）", () => {
-      expect(/return fetch\(url, \{ \.\.\.init, signal: AbortSignal\.timeout\(timeoutMs\) \}\);/.test(src)).toBeTruthy();
+      expect(
+        /return fetch\(url, \{ \.\.\.init, signal: AbortSignal\.timeout\(timeoutMs\) \}\);/.test(
+          src,
+        ),
+      ).toBeTruthy();
     });
 
     it("caller 自带 signal 时透传不兜底（#111 同款语义）", () => {
-      expect(/if \(init\?\.signal !== undefined\) return fetch\(url, init\);/.test(src)).toBeTruthy();
+      expect(
+        /if \(init\?\.signal !== undefined\) return fetch\(url, init\);/.test(src),
+      ).toBeTruthy();
     });
   });
 
@@ -77,12 +83,16 @@ describe("客户端 fetch 超时兜底外壳（issue #268 P1）", () => {
 
     beforeAll(() => {
       try {
-        stdout = execFileSync(process.execPath, [join(pkgDir, "test/client-fetch-timeout.worker.mjs")], {
-          encoding: "utf8",
-          timeout: 30000,
-          stdio: ["ignore", "pipe", "pipe"],
-          env: { ...process.env, NODE_NO_WARNINGS: "1" },
-        });
+        stdout = execFileSync(
+          process.execPath,
+          [join(pkgDir, "test/client-fetch-timeout.worker.mjs")],
+          {
+            encoding: "utf8",
+            timeout: 30000,
+            stdio: ["ignore", "pipe", "pipe"],
+            env: { ...process.env, NODE_NO_WARNINGS: "1" },
+          },
+        );
         workerFailed = false;
       } catch (error) {
         workerFailed = true;

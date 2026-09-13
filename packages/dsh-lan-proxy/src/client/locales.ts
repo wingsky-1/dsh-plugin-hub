@@ -73,7 +73,8 @@ export const en: Record<LanProxyLocaleKey, string> = {
   wsBridge: "WebSocket bridge (keep-alive, on by default)",
   wsCompress: "WebSocket compression (event stream)",
   wsPaths: "Compression paths (comma-separated)",
-  wsPathsHint: "Controls compression scope only; empty = bridged without compression, keep-alive unaffected (no more frequent mobile reconnects)",
+  wsPathsHint:
+    "Controls compression scope only; empty = bridged without compression, keep-alive unaffected (no more frequent mobile reconnects)",
   httpCompress: "HTTP response compression (Brotli/gzip)",
   compressLevel: "Compression level",
   level0: "Default (gzip 6 / br 4)",

@@ -46,7 +46,12 @@ export async function api(path: any, options: any = {}): Promise<any> {
   const timeoutMs = options.timeoutMs ?? 10_000;
   const hasCallerSignal = options.signal !== undefined;
   const controller = new AbortController();
-  const timer = hasCallerSignal ? undefined : setTimeout(() => controller.abort(new Error(`request timed out (${timeoutMs}ms)`)), timeoutMs);
+  const timer = hasCallerSignal
+    ? undefined
+    : setTimeout(
+        () => controller.abort(new Error(`request timed out (${timeoutMs}ms)`)),
+        timeoutMs,
+      );
   const merged = { ...options, signal: options.signal ?? controller.signal };
   try {
     const response = await fetch(path, merged);

@@ -112,7 +112,9 @@ export async function fetchData(ctx) {
     try {
       const u = new URL(ep);
       if (u.protocol === "https:" || u.protocol === "http:") host = u.origin;
-    } catch { /* 非法端点回落默认主机 */ }
+    } catch {
+      /* 非法端点回落默认主机 */
+    }
   }
   const url = host.replace(/\/+$/, "") + QUOTA_PATH;
 
@@ -128,7 +130,7 @@ export async function fetchData(ctx) {
   const body = await getJson(url, apiKey, controller.signal, finish);
   // 业务码校验：网关对未知路径也回 HTTP 200 + {code:404,...}
   if (!body || body.code !== OK_CODE) throw new Error("bad-data");
-  const data = (body.data && typeof body.data === "object") ? body.data : null;
+  const data = body.data && typeof body.data === "object" ? body.data : null;
   if (data === null || !Array.isArray(data.limits)) throw new Error("bad-data");
 
   const level = typeof data.level === "string" ? data.level : undefined;
@@ -207,9 +209,16 @@ function miniAreaSvgFallback(opts) {
   const t0 = samples[0].x;
   const t1 = samples[samples.length - 1].x;
   const spanMs = t1 > t0 ? t1 - t0 : 60000;
-  const W = 320, H = 100, PL = 34, PR = 6, PT = 14, PB = 16;
-  const xw = W - PL - PR, plotH = H - PT - PB;
-  const fs = 9.5, fs100 = 9;
+  const W = 320,
+    H = 100,
+    PL = 34,
+    PR = 6,
+    PT = 14,
+    PB = 16;
+  const xw = W - PL - PR,
+    plotH = H - PT - PB;
+  const fs = 9.5,
+    fs100 = 9;
   const xOf = (ts) => PL + ((ts - t0) / spanMs) * xw;
   const yOf = (pct) => PT + ((hi - pct) / (hi - lo)) * plotH;
   const parts = [];
@@ -220,23 +229,38 @@ function miniAreaSvgFallback(opts) {
       const marks = [];
       if (r >= t0 && r <= t1) marks.push(r);
       let ts = r - resetPeriodMs;
-      for (let guard = 0; guard < 40 && ts >= t0; guard += 1) { marks.push(ts); ts -= resetPeriodMs; }
+      for (let guard = 0; guard < 40 && ts >= t0; guard += 1) {
+        marks.push(ts);
+        ts -= resetPeriodMs;
+      }
       for (const rr of marks) {
         const rx = xOf(rr);
-        parts.push(`<line x1="${rx.toFixed(1)}" y1="${PT}" x2="${rx.toFixed(1)}" y2="${(PT + plotH).toFixed(1)}" style="stroke:var(--dsw-alias-label-tertiary,#9aa0ab);stroke-width:1;stroke-dasharray:2 3;stroke-opacity:.55"><title>窗口重置点</title></line>`);
-        parts.push(`<path d="M ${rx.toFixed(1)} ${PT} l 3.5 3.5 l -7 0 z" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.55"/>`);
+        parts.push(
+          `<line x1="${rx.toFixed(1)}" y1="${PT}" x2="${rx.toFixed(1)}" y2="${(PT + plotH).toFixed(1)}" style="stroke:var(--dsw-alias-label-tertiary,#9aa0ab);stroke-width:1;stroke-dasharray:2 3;stroke-opacity:.55"><title>窗口重置点</title></line>`,
+        );
+        parts.push(
+          `<path d="M ${rx.toFixed(1)} ${PT} l 3.5 3.5 l -7 0 z" style="fill:var(--dsw-alias-label-tertiary,#9aa0ab);fill-opacity:.55"/>`,
+        );
       }
     }
   }
   for (const gv of [lo, (lo + hi) / 2, hi]) {
     const gy = yOf(gv);
-    parts.push(`<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${(W - PR)}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;stroke-dasharray:3 3"/>`);
-    parts.push(`<text x="${(PL - 4)}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:${fs}px">${(Number.isInteger(gv) ? String(gv) : gv.toFixed(1)) + "%"}</text>`);
+    parts.push(
+      `<line x1="${PL}" y1="${gy.toFixed(1)}" x2="${W - PR}" y2="${gy.toFixed(1)}" style="stroke:var(--dsw-alias-border-l2,#e8eaf0);stroke-width:1;stroke-dasharray:3 3"/>`,
+    );
+    parts.push(
+      `<text x="${PL - 4}" y="${(gy + 3).toFixed(1)}" text-anchor="end" style="font-size:${fs}px">${(Number.isInteger(gv) ? String(gv) : gv.toFixed(1)) + "%"}</text>`,
+    );
   }
   if (lo <= 100 && 100 <= hi && hi - lo > 0.01) {
     const ly = yOf(100);
-    parts.push(`<line x1="${PL}" y1="${ly.toFixed(1)}" x2="${(W - PR)}" y2="${ly.toFixed(1)}" style="stroke:var(--dsw-alias-state-error-primary,#d64545);stroke-width:1;stroke-dasharray:4 3;stroke-opacity:.65"/>`);
-    parts.push(`<text x="${(W - PR - 2)}" y="${(ly - 3).toFixed(1)}" text-anchor="end" style="fill:var(--dsw-alias-state-error-primary,#d64545);font-size:${fs100}px">100%</text>`);
+    parts.push(
+      `<line x1="${PL}" y1="${ly.toFixed(1)}" x2="${W - PR}" y2="${ly.toFixed(1)}" style="stroke:var(--dsw-alias-state-error-primary,#d64545);stroke-width:1;stroke-dasharray:4 3;stroke-opacity:.65"/>`,
+    );
+    parts.push(
+      `<text x="${W - PR - 2}" y="${(ly - 3).toFixed(1)}" text-anchor="end" style="fill:var(--dsw-alias-state-error-primary,#d64545);font-size:${fs100}px">100%</text>`,
+    );
   }
   const line = [];
   for (const s of samples) {
@@ -248,9 +272,15 @@ function miniAreaSvgFallback(opts) {
     const first = lpts[0];
     const lastPt = lpts[lpts.length - 1];
     const bottom = PT + plotH;
-    parts.push(`<path d="${d} L ${lastPt.x.toFixed(1)} ${bottom} L ${first.x.toFixed(1)} ${bottom} Z" style="fill:${color};fill-opacity:.13"/>`);
-    parts.push(`<path d="${d}" style="fill:none;stroke:${color};stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round"/>`);
-    parts.push(`<circle cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="2.6" style="fill:${color};stroke:var(--dsw-alias-bg-base,#fdfdfd);stroke-width:1.2"/>`);
+    parts.push(
+      `<path d="${d} L ${lastPt.x.toFixed(1)} ${bottom} L ${first.x.toFixed(1)} ${bottom} Z" style="fill:${color};fill-opacity:.13"/>`,
+    );
+    parts.push(
+      `<path d="${d}" style="fill:none;stroke:${color};stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round"/>`,
+    );
+    parts.push(
+      `<circle cx="${lastPt.x.toFixed(1)}" cy="${lastPt.y.toFixed(1)}" r="2.6" style="fill:${color};stroke:var(--dsw-alias-bg-base,#fdfdfd);stroke-width:1.2"/>`,
+    );
   }
   // x 轴时间刻度（简化：固定 5 等分标签）
   const stepMs = spanMs / 5;
@@ -264,7 +294,9 @@ function miniAreaSvgFallback(opts) {
         ? `${d.getMonth() + 1}-${String(d.getDate()).padStart(2, "0")}`
         : `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
     const anchor = k === 0 ? "start" : k === 5 ? "end" : "middle";
-    parts.push(`<text x="${tx.toFixed(1)}" y="${(H - 4)}" text-anchor="${anchor}" style="font-size:${fs}px">${label}</text>`);
+    parts.push(
+      `<text x="${tx.toFixed(1)}" y="${H - 4}" text-anchor="${anchor}" style="font-size:${fs}px">${label}</text>`,
+    );
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">${parts.join("")}</svg>`;
 }
@@ -340,7 +372,8 @@ export const zaiCodingCnAdapter = {
     if (typeof data.level === "string" && data.level !== "") {
       parts.push(data.level.charAt(0).toUpperCase() + data.level.slice(1).toLowerCase());
     }
-    const staleMark = input.status === "stale" ? `<span style="opacity:.6;margin-left:6px">(缓存)</span>` : "";
+    const staleMark =
+      input.status === "stale" ? `<span style="opacity:.6;margin-left:6px">(缓存)</span>` : "";
     return `<span>${e(parts.join(" · "))}</span>${staleMark}`;
   },
 
@@ -361,13 +394,15 @@ export const zaiCodingCnAdapter = {
     for (const w of windows) {
       const key = w.key;
       const name = key === "5h" ? "5h 滚动" : key === "week" ? "每周" : key;
-      const color = key === "5h"
-        ? "var(--dsw-alias-state-business-primary,#3b82f6)"
-        : "var(--dsw-alias-state-warn-primary,#c9820b)";
+      const color =
+        key === "5h"
+          ? "var(--dsw-alias-state-business-primary,#3b82f6)"
+          : "var(--dsw-alias-state-warn-primary,#c9820b)";
       const pct = typeof w.percent === "number" ? w.percent : null;
-      const resetText = w.nextResetTime !== undefined && w.nextResetTime !== null
-        ? `重置 ${fmtReset(w.nextResetTime)}`
-        : "";
+      const resetText =
+        w.nextResetTime !== undefined && w.nextResetTime !== null
+          ? `重置 ${fmtReset(w.nextResetTime)}`
+          : "";
 
       // 采样序列（v2 数据形态：entries[].data.windows[].percent）
       const pcts = input.entries.map((en) => {
@@ -448,7 +483,12 @@ export const zaiCodingCnAdapter = {
 function fmtReset(ts) {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return "未知";
-  return d.toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 /** 窗口周期估计（ms）：优先 nextResetTime − now；缺失按 key 语义兜底。 */

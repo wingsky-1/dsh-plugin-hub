@@ -26,17 +26,33 @@ function boot() {
     head: headNodes,
     body: { appendChild() {}, style: {} },
     fullscreenElement: null,
-    contains() { return false; },
-    getElementById(id) { return byId.get(id) ?? null; },
-    querySelector() { return null; },
+    contains() {
+      return false;
+    },
+    getElementById(id) {
+      return byId.get(id) ?? null;
+    },
+    querySelector() {
+      return null;
+    },
     createElement() {
       return {
-        id: "", textContent: "", dataset: {}, style: {},
-        appendChild() {}, remove() {},
+        id: "",
+        textContent: "",
+        dataset: {},
+        style: {},
+        appendChild() {},
+        remove() {},
         classList: { add() {}, remove() {}, toggle() {} },
-        setAttribute() {}, getAttribute() { return null; },
-        querySelector() { return null; },
-        addEventListener() {}, removeEventListener() {},
+        setAttribute() {},
+        getAttribute() {
+          return null;
+        },
+        querySelector() {
+          return null;
+        },
+        addEventListener() {},
+        removeEventListener() {},
       };
     },
     addEventListener(type, handler) {
@@ -65,19 +81,36 @@ function boot() {
   class NodeStub {}
   const sandbox = {
     console: { ...console, warn: () => {} },
-    Symbol, Object, Array, JSON, Math, Date, Promise, Number, String, RegExp, Error, URL, Response,
+    Symbol,
+    Object,
+    Array,
+    JSON,
+    Math,
+    Date,
+    Promise,
+    Number,
+    String,
+    RegExp,
+    Error,
+    URL,
+    Response,
     Element: ElementStub,
     Node: NodeStub,
     HTMLElement: ElementStub,
     Event: class {},
-    setTimeout, clearTimeout,
+    setTimeout,
+    clearTimeout,
     document: documentStub,
     localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
   };
   sandbox.window = sandbox;
   sandbox.fetch = originalFetch;
   sandbox.window.matchMedia = undefined;
-  sandbox.window.__ModuleLoader__ = { load(handoff) { loadedFactory = handoff.factory; } };
+  sandbox.window.__ModuleLoader__ = {
+    load(handoff) {
+      loadedFactory = handoff.factory;
+    },
+  };
   sandbox.window.isSecureContext = false;
   sandbox.window.open = () => null;
   vm.createContext(sandbox);
@@ -140,13 +173,23 @@ describe("「打开文件」重定向拦截（issue #698）", () => {
       locale: undefined,
       sessions: { list: { getSnapshot: () => ({ current: "s1", byId: { s1: { cwd: "/w" } } }) } },
       remote: undefined,
-      sidebarRight: { openResource(address) { opened.push(address); } },
-      effect(fn) { const d = fn(); disposers.push(d); return d; },
+      sidebarRight: {
+        openResource(address) {
+          opened.push(address);
+        },
+      },
+      effect(fn) {
+        const d = fn();
+        disposers.push(d);
+        return d;
+      },
     };
     handle.mod.apply(ctx);
 
     const fetchOf = () => handle.sandbox.window.fetch;
-    const click = (target) => { for (const h of handle.listeners.get("click") ?? []) h({ target }); };
+    const click = (target) => {
+      for (const h of handle.listeners.get("click") ?? []) h({ target });
+    };
     const call = (input, init) => fetchOf()(input, init);
 
     wrappedAfterApply = fetchOf() !== handle.originalFetch;
@@ -174,14 +217,18 @@ describe("「打开文件」重定向拦截（issue #698）", () => {
     openedAfterMention = opened.at(-1);
 
     fetchCallsBeforeReplay = handle.fetchCalls.length;
-    ctx.sidebarRight.openResource = () => { throw new Error("no registered tab type claims"); };
+    ctx.sidebarRight.openResource = () => {
+      throw new Error("no registered tab type claims");
+    };
     await call("/api/present.open?sessionId=s1&seq=3&index=0", { method: "POST" });
     fetchCallsAfterReplay = handle.fetchCalls.length;
 
     // 重复 apply（HMR / 二次挂载）：包装叠加在旧包装之上，收口仍须生效。
     handle.mod.apply(ctx);
     wrappedAfterSecondApply = fetchOf() !== handle.originalFetch;
-    ctx.sidebarRight.openResource = (address) => { opened.push(address); };
+    ctx.sidebarRight.openResource = (address) => {
+      opened.push(address);
+    };
     click(cardFor("/w/twice.md"));
     await call("/api/present.open?sessionId=s1&seq=9&index=0", { method: "POST" });
     openedAfterSecondApplyHit = opened.at(-1);

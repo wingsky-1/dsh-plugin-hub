@@ -1,497 +1,447 @@
 {
-    "$testLayers": {
-        "$comment": "测试分层与变异面登记的单一事实源（#690 S2b / #713 T1–T3）。runner 层 = test/**/*.test.ts 的全集（vitest include 的 glob 即此口径）；mutation 层 = unit + integration（in-process，可进变异面）；exclude 层 = client（断言对象是构建产物 lib/client.js，而 mutate 面本身排除 src/client/**，登记进变异面测试清单只会增加每个段的 dry run 成本、杀灭贡献为零）+ e2e（真实端口/子进程/真机系统调用）。support 不入任何层：test/helpers.ts、test/smoke-lib.ts、test/smoke-pure.ts、test/*.worker.mjs 是支撑模块，不是测试条目。unitExemptions 是单元层内「写了单元测试但刻意不进变异面」的逐条裁决（每条必须写明理由；gate 校验其非空且真实存在于 unit 层）。gate 判据：每个 test/**/*.test.ts 必须落入某一层的 glob 或某条排除 glob（无第三条路），故新增测试文件必须显式决定其层归属，不能靠「没写进清单」逃逸。",
-        "layers": {
-            "unit": "test/unit/**/*.test.ts",
-            "integration": "test/integration/**/*.test.ts",
-            "client": "test/client/**/*.test.ts",
-            "e2e": "test/e2e/**/*.test.ts"
-        },
-        "mutationLayers": [
-            "unit",
-            "integration"
-        ],
-        "mutationExcludeLayers": [
-            "client",
-            "e2e"
-        ]
+  "$testLayers": {
+    "$comment": "测试分层与变异面登记的单一事实源（#690 S2b / #713 T1–T3）。runner 层 = test/**/*.test.ts 的全集（vitest include 的 glob 即此口径）；mutation 层 = unit + integration（in-process，可进变异面）；exclude 层 = client（断言对象是构建产物 lib/client.js，而 mutate 面本身排除 src/client/**，登记进变异面测试清单只会增加每个段的 dry run 成本、杀灭贡献为零）+ e2e（真实端口/子进程/真机系统调用）。support 不入任何层：test/helpers.ts、test/smoke-lib.ts、test/smoke-pure.ts、test/*.worker.mjs 是支撑模块，不是测试条目。unitExemptions 是单元层内「写了单元测试但刻意不进变异面」的逐条裁决（每条必须写明理由；gate 校验其非空且真实存在于 unit 层）。gate 判据：每个 test/**/*.test.ts 必须落入某一层的 glob 或某条排除 glob（无第三条路），故新增测试文件必须显式决定其层归属，不能靠「没写进清单」逃逸。",
+    "layers": {
+      "unit": "test/unit/**/*.test.ts",
+      "integration": "test/integration/**/*.test.ts",
+      "client": "test/client/**/*.test.ts",
+      "e2e": "test/e2e/**/*.test.ts"
     },
-    "$noMutationPackages": {
-        "$comment": "磁盘上有测试文件、但刻意不登记变异面的包（逐个写明理由）。登记在此的包仍受 `--check` 判据 ③（--min == runner glob 实际文件数）约束——「不登记变异面」不等于「不受门禁」；漏登且未在此声明的包一律判红。",
-        "dsh-verify-isolated": "仅 test/e2e/smoke.test.ts（真实端口 + spawn 子进程的隔离环境冒烟），不进变异面；且 CI 的 ci-matrix 按「无变异配置」把该包排除出变异切片。源码覆盖断言（verify-dir-imports）尚未覆盖该包，属 #690 S6/S8 范围。"
-    },
-    "sharedDefaults": {
-        "testRunner": "vitest",
-        "concurrency": 16,
-        "timeoutMS": 60000,
-        "dryRunTimeoutMinutes": 5,
-        "reporters": [
-            "progress",
-            "clear-text",
-            "json"
-        ],
-        "coverageAnalysis": "perTest",
-        "tempDirName": ".stryker-tmp",
-        "cleanTempDir": true,
-        "excludedMutations": [
-            "StringLiteral",
-            "ArrayLiteral",
-            "ObjectLiteral",
-            "TemplateLiteral"
-        ],
-        "vitest": {
-            "related": false
-        }
-    },
-    "packages": {
-        "dsh-lan-proxy": {
-            "concurrency": 16,
-            "timeoutMS": 60000,
-            "segments": {
-                "1": {
-                    "mutate": [
-                        "packages/dsh-lan-proxy/src/proxy.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-lan-proxy/src/client/**",
-                        "!packages/dsh-lan-proxy/src/types.ts"
-                    ],
-                    "comment": "#276 方案 A：src 级文件组分段（1）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-                },
-                "2": {
-                    "mutate": [
-                        "packages/dsh-lan-proxy/src/apply.ts",
-                        "packages/dsh-lan-proxy/src/config.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-lan-proxy/src/client/**",
-                        "!packages/dsh-lan-proxy/src/types.ts"
-                    ],
-                    "comment": "#276 方案 A：src 级文件组分段（2）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-                },
-                "3": {
-                    "mutate": [
-                        "packages/dsh-lan-proxy/src/config-routes.ts",
-                        "packages/dsh-lan-proxy/src/migrate.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-lan-proxy/src/client/**",
-                        "!packages/dsh-lan-proxy/src/types.ts"
-                    ],
-                    "comment": "#276 方案 A：src 级文件组分段（3）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-                },
-                "4": {
-                    "mutate": [
-                        "packages/dsh-lan-proxy/src/settings.ts",
-                        "packages/dsh-lan-proxy/src/cert.ts",
-                        "packages/dsh-lan-proxy/src/index.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-lan-proxy/src/client/**",
-                        "!packages/dsh-lan-proxy/src/types.ts"
-                    ],
-                    "comment": "#276 方案 A：src 级文件组分段（4）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-                }
-            },
-            "testLayers": {}
-        },
-        "dsh-mcp-manager": {
-            "concurrency": 16,
-            "timeoutMS": 60000,
-            "segments": {
-                "entry": {
-                    "mutate": [
-                        "packages/dsh-mcp-manager/src/index.ts",
-                        "packages/dsh-mcp-manager/src/workspace/**/*.ts",
-                        "packages/dsh-mcp-manager/src/config/model/**/*.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-mcp-manager/src/client/**",
-                        "!packages/dsh-mcp-manager/src/types/**",
-                        "!packages/dsh-mcp-manager/src/integration/**",
-                        "!packages/dsh-mcp-manager/src/placement-math.ts"
-                    ],
-                    "comment": "#664 阶段6重画：entry——index+workspace（工作空间路由域）+config/model（归一化/导入/schema）；阶段1–5变异盲区（workspace/新文件）在本阶段随集中搬移一并纳入重画（v3 C4/C-DIR）；types/integration（type-only）与 placement-math.ts（shared 薄转发）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
-                },
-                "manager": {
-                    "mutate": [
-                        "packages/dsh-mcp-manager/src/connection/orchestrator/**/*.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-mcp-manager/src/client/**",
-                        "!packages/dsh-mcp-manager/src/types/**",
-                        "!packages/dsh-mcp-manager/src/integration/**",
-                        "!packages/dsh-mcp-manager/src/placement-math.ts"
-                    ],
-                    "comment": "#664 阶段6重画：manager——connection/orchestrator（McpManager 类主体+展示投影 tool-names，原 manager.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
-                },
-                "middleware": {
-                    "mutate": [
-                        "packages/dsh-mcp-manager/src/connection/runtime/middleware.ts",
-                        "packages/dsh-mcp-manager/src/connection/runtime/limits.ts",
-                        "packages/dsh-mcp-manager/src/inject/**/*.ts",
-                        "packages/dsh-mcp-manager/src/pipeline/authorize.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-mcp-manager/src/client/**",
-                        "!packages/dsh-mcp-manager/src/types/**",
-                        "!packages/dsh-mcp-manager/src/integration/**",
-                        "!packages/dsh-mcp-manager/src/placement-math.ts"
-                    ],
-                    "comment": "#664 阶段6重画：middleware——中间层池（runtime/middleware）+limits（原 middleware-const）+工具注册面（inject/）+策略裁决族（pipeline/authorize，原 middleware-utils 并入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
-                },
-                "routes": {
-                    "mutate": [
-                        "packages/dsh-mcp-manager/src/api/**/*.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-mcp-manager/src/client/**",
-                        "!packages/dsh-mcp-manager/src/types/**",
-                        "!packages/dsh-mcp-manager/src/integration/**",
-                        "!packages/dsh-mcp-manager/src/placement-math.ts"
-                    ],
-                    "comment": "#664 阶段6重画：routes——api 层（routes 装配/端点控制器/查询辅助，原 routes*.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
-                },
-                "supervisor": {
-                    "mutate": [
-                        "packages/dsh-mcp-manager/src/connection/runtime/supervisor.ts",
-                        "packages/dsh-mcp-manager/src/connection/runtime/reconnect.ts",
-                        "packages/dsh-mcp-manager/src/config/store/**/*.ts",
-                        "packages/dsh-mcp-manager/src/stats/**/*.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-mcp-manager/src/client/**",
-                        "!packages/dsh-mcp-manager/src/types/**",
-                        "!packages/dsh-mcp-manager/src/integration/**",
-                        "!packages/dsh-mcp-manager/src/placement-math.ts"
-                    ],
-                    "comment": "#664 阶段6重画：supervisor——连接监督器（runtime/supervisor+reconnect）+状态持久化（config/store，原 middleware-state/store 迁入）+统计（stats）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
-                },
-                "runtime": {
-                    "mutate": [
-                        "packages/dsh-mcp-manager/src/bootstrap/**/*.ts",
-                        "packages/dsh-mcp-manager/src/connection/runtime/transport.ts",
-                        "packages/dsh-mcp-manager/src/connection/runtime/protocol.ts",
-                        "shared/placement-math.js",
-                        "packages/dsh-mcp-manager/src/pipeline/**/*.ts",
-                        "packages/dsh-mcp-manager/src/catalog/**/*.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-mcp-manager/src/client/**",
-                        "!packages/dsh-mcp-manager/src/types/**",
-                        "!packages/dsh-mcp-manager/src/integration/**",
-                        "!packages/dsh-mcp-manager/src/placement-math.ts"
-                    ],
-                    "comment": "#664 阶段6重画：runtime——组合根（bootstrap/，原 apply*.ts 迁入）+transport/protocol+shared/placement-math（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析）+pipeline（执行管道域，阶段1–5变异盲区随迁纳入）+catalog（目录域，原 catalog.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
-                }
-            },
-            "testLayers": {
-                "unitExemptions": {
-                    "packages/dsh-mcp-manager/test/unit/unit-shared.test.ts": "被测对象是 workspace 根 shared/settings-namespace.ts（不在本包 mutate 面内），登记它零杀灭、只增加各段 dry run 执行面"
-                },
-                "coverageExcludes": [
-                    "!packages/dsh-mcp-manager/src/**/interface.ts"
-                ],
-                "testMutationExemptions": {
-                    "unit": {
-                        "packages/dsh-mcp-manager/test/unit/unit-shared.test.ts": "被测对象是 workspace 根 shared/settings-namespace.ts（不在本包 mutate 面内），登记它零杀灭、只增加各段 dry run 执行面"
-                    },
-                    "integration": {
-                        "packages/dsh-mcp-manager/test/integration/service-contract.test.ts": "契约编译面用例：静态读取 src/bootstrap/apply-services.ts 的源文本比对 provide 方法集；在 Stryker 沙箱内被测源码已插桩，源文本断言必然失败（CI 实测 2026-09-11：Mutation gate (dsh-mcp-manager · runtime) dry run 报 apply.ts provide(\"mcpManager\") 方法名集合应与契约清单一致）。该用例的价值是类型/编译面与契约清单漂移，不产生变异杀灭，故不进变异面（随 pnpm test:scripts 的 service-contract-wiring 与 pnpm typecheck 生效）"
-                    }
-                }
-            }
-        },
-        "dsh-notifier": {
-            "$comment": "#733 按域重写（v3）：源码从「text/config/events/channels/stores/pipeline/server」平铺面改为「按域 <域>/{interface.ts,deps.ts,impl/<块>/}」形态，故 mutate 面按域重划为 9 段（新增 shared 段；sdk 段沿用 #669 口径并入根 index.ts）。测试目录在重写期间整体删除，test/** 现为空——层归属与 testMutationExemptions 待测试重建时重新登记（届时 pnpm stryker:gen 会补回 vitest.stryker.d/dsh-notifier.config.ts，并需 --sync-test-min 补 package.json 的 --min）。重写前 integration 层有一条豁免（test/integration/real-context.test.ts：Stryker 沙箱内 dry run 失败，实测 2026-09-11，属 #712 沙箱语义族，修复路径见 #713），随测试目录删除一并注销，测试重建时需重新评估。gauntlet 里 60% 阈值与 74.13% 基线随 mutate 面整体更换而作废，须由 observe 夜间全量班重建。段耗时台账（mutation-segment-ledger.json）同步处置：旧 10 段（含 #720 拆出的 config 三段）已在 superseded 登记取代关系，api/shared/upgrade 三段登记进 unmeasured；但 channels/config/events/pipeline/sdk/stores 六个同名段的 wallSeconds 来自重写前的文件面，mutation-plan 会把它们当作本段实测值去定超时——首轮重建前不得采信，新面耗时须由夜间全量班重测。",
-            "concurrency": 16,
-            "timeoutMS": 60000,
-            "segments": {
-                "api": {
-                    "mutate": [
-                        "packages/dsh-notifier/src/server/api/**/*.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-notifier/src/client/**",
-                        "!packages/dsh-notifier/src/types.ts"
-                    ],
-                    "comment": "#733 按域重写：api——HTTP 端点域（journal/kinds/probe/route/service/settings/stream）。loopback 围栏在 route 块内，端点自身只做「解析请求 → 调 pipeline/sdk 端口 → 序列化响应」，不含业务裁决。"
-                },
-                "channels": {
-                    "mutate": [
-                        "packages/dsh-notifier/src/server/channels/**/*.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-notifier/src/client/**",
-                        "!packages/dsh-notifier/src/types.ts"
-                    ],
-                    "comment": "#733 按域重写：channels——出口域（bark/browser/system/webhook 四出口 + deliver 共享投递阶段与 caps 截断；tones 为系统音色表）。边界：出口只回答「本次失败可不可重试」（DeliverResult.retryable），重试/退避/节流/在途上限一律不在本域，归 pipeline/impl/dispatch。"
-                },
-                "config": {
-                    "mutate": [
-                        "packages/dsh-notifier/src/server/config/**/*.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-notifier/src/client/**",
-                        "!packages/dsh-notifier/src/types.ts"
-                    ],
-                    "comment": "#733 按域重写：config——配置域（model 默认值与形状；input 解析/归一化/校验与键上限；service 读写、修订号与并发保护；redact 出站掩码）。#733 后期删除：内容脱敏规则表、错误合并窗口、完成聚合窗口、审批二次提醒（askRemindMin）四个设置面。"
-                },
-                "events": {
-                    "mutate": [
-                        "packages/dsh-notifier/src/server/events/**/*.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-notifier/src/client/**",
-                        "!packages/dsh-notifier/src/types.ts"
-                    ],
-                    "comment": "#733 按域重写：events——宿主事件域（listen 订阅装配；state 代理由 running/idle 矩阵驱动的状态机；session 完成判定证据读取；translate 事件→NotifyRequest，catalog 为内置 kind 文案表）。本域只产出请求，不做裁决。"
-                },
-                "pipeline": {
-                    "mutate": [
-                        "packages/dsh-notifier/src/server/pipeline/**/*.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-notifier/src/client/**",
-                        "!packages/dsh-notifier/src/types.ts"
-                    ],
-                    "comment": "#733 按域重写：pipeline——管线域（judge 三条裁决判据与抑制原因；route 目标解析与陈旧目标回收；finalize 严重度归一、标题截断与消息定稿；dispatch 重试/退避/节流/在途上限；service 编排与 kind 注册表）。重试状态机在本域是刻意的：出口保持无状态。"
-                },
-                "sdk": {
-                    "mutate": [
-                        "packages/dsh-notifier/src/index.ts",
-                        "packages/dsh-notifier/src/server/sdk/**/*.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-notifier/src/client/**",
-                        "!packages/dsh-notifier/src/types.ts"
-                    ],
-                    "comment": "#733 按域重写：sdk——服务面（registry 动态 kind 注册，service 对外 send/kinds，apiVersion 2）+ 根 index.ts 组合根并入（沿用 #669「装配层归服务面」口径：组合根单文件独立成段可杀性低、dry run 成本照付）。#733 收敛：wingsky-notify/sent 事件与 registerChannel 退役，send 返回 Promise<void>。"
-                },
-                "shared": {
-                    "mutate": [
-                        "packages/dsh-notifier/src/server/shared/**/*.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-notifier/src/client/**",
-                        "!packages/dsh-notifier/src/types.ts"
-                    ],
-                    "comment": "#733 按域重写：shared——包内共享层（logger 端口 / 原子文本读写 / 产品布局路径解析）。#733 收口：三个实现文件原被各域直引（30 条 missingInterface），现统一经 shared/interface.ts 门面。"
-                },
-                "stores": {
-                    "mutate": [
-                        "packages/dsh-notifier/src/server/stores/**/*.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-notifier/src/client/**",
-                        "!packages/dsh-notifier/src/types.ts"
-                    ],
-                    "comment": "#733 按域重写：stores——存储域（history 串行写队列与按行滚动；status 内存镜像与防抖落盘、LRU 上限）。"
-                },
-                "upgrade": {
-                    "mutate": [
-                        "packages/dsh-notifier/src/server/upgrade/**/*.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-notifier/src/client/**",
-                        "!packages/dsh-notifier/src/types.ts"
-                    ],
-                    "comment": "#733 按域重写：upgrade——存量迁移域（version 版本戳；chain 迁移链；legacy 旧位置读取；steps.storage-layout 存储布局搬迁）。"
-                }
-            },
-            "testLayers": {
-                "coverageExcludes": [
-                    "!packages/dsh-notifier/src/**/interface.ts",
-                    "!packages/dsh-notifier/src/**/deps.ts",
-                    "!packages/dsh-notifier/src/**/*.d.ts",
-                    "!packages/dsh-notifier/src/**/*.ps1"
-                ],
-                "testMutationExemptions": {}
-            }
-        },
-        "dsh-provider-usage": {
-            "concurrency": 16,
-            "timeoutMS": 60000,
-            "segments": {
-                "apply": {
-                    "mutate": [
-                        "packages/dsh-provider-usage/src/apply/apply.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-provider-usage/src/client/**",
-                        "!packages/dsh-provider-usage/src/types.ts"
-                    ],
-                    "comment": "#342 v4：src 级文件组分段（2）——apply 单列（#316 拆分后最重文件独立成段）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-                },
-                "errsurf": {
-                    "mutate": [
-                        "packages/dsh-provider-usage/src/domain2/common/errsurf.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-provider-usage/src/client/**",
-                        "!packages/dsh-provider-usage/src/types.ts"
-                    ],
-                    "comment": "#670 阶段三 B 新段：域2每层错误面——errsurf.ts（累计计数+最近 N 条环形缓冲+snapshot/noop）；testFiles 含 unit-errsurf（杀灭面）；apply 接线与 routes/ui health per-layer 段由既有 apply/routes 段覆盖（mutate 已含对应文件）。"
-                },
-                "contracts": {
-                    "mutate": [
-                        "packages/dsh-provider-usage/src/shared/contracts.ts",
-                        "packages/dsh-provider-usage/src/domain1/pipeline/guards.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-provider-usage/src/client/**",
-                        "!packages/dsh-provider-usage/src/types.ts"
-                    ],
-                    "comment": "#342 v4：src 级文件组分段（3）——contracts+domain1/pipeline/guards（契约面）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-                },
-                "entry": {
-                    "mutate": [
-                        "packages/dsh-provider-usage/src/apply/index.ts",
-                        "packages/dsh-provider-usage/src/domain1/registry/user-adapters.ts",
-                        "packages/dsh-provider-usage/src/shared/ui-config.ts",
-                        "packages/dsh-provider-usage/src/shared/config.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-provider-usage/src/client/**",
-                        "!packages/dsh-provider-usage/src/types.ts"
-                    ],
-                    "comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-                },
-                "pipeline": {
-                    "mutate": [
-                        "packages/dsh-provider-usage/src/domain1/history/history.ts",
-                        "packages/dsh-provider-usage/src/domain1/pipeline/v2.ts",
-                        "packages/dsh-provider-usage/src/domain1/registry/hotreload.ts",
-                        "shared/placement-math.js",
-                        "packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts",
-                        "packages/dsh-provider-usage/src/shared/client-logic.ts",
-                        "packages/dsh-provider-usage/src/domain1/registry/provider-config.ts",
-                        "packages/dsh-provider-usage/src/shared/charts.ts",
-                        "packages/dsh-provider-usage/src/domain1/pipeline/stats-service.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-provider-usage/src/client/**",
-                        "!packages/dsh-provider-usage/src/types.ts"
-                    ],
-                    "comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts/stats-service（历史/管线/热更/图表/C3 服务面；charts 纳入修复变异盲区；阶段零补 stats-service 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-                },
-                "registry": {
-                    "mutate": [
-                        "packages/dsh-provider-usage/src/domain1/registry/registry.ts",
-                        "packages/dsh-provider-usage/src/domain1/registry/user-adapter-loader.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-provider-usage/src/client/**",
-                        "!packages/dsh-provider-usage/src/types.ts"
-                    ],
-                    "comment": "#342 二期：功能命名段（registry）——registry+user-adapter-loader（注册表域，25s；阶段零补 loader 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-                },
-                "sanitize": {
-                    "mutate": [
-                        "packages/dsh-provider-usage/src/shared/sanitize.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-provider-usage/src/client/**",
-                        "!packages/dsh-provider-usage/src/types.ts"
-                    ],
-                    "comment": "#342 二期：功能命名段（sanitize）——sanitize（数据净化域，115s）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
-                },
-                "trend-aggregate": {
-                    "mutate": [
-                        "packages/dsh-provider-usage/src/domain2/aggregate/aggregator.ts",
-                        "packages/dsh-provider-usage/src/domain2/aggregate/aggregate-rows.ts",
-                        "packages/dsh-provider-usage/src/domain2/aggregate/aggregate-query.ts",
-                        "packages/dsh-provider-usage/src/domain2/aggregate/store.ts",
-                        "packages/dsh-provider-usage/src/domain2/aggregate/index.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-provider-usage/src/client/**",
-                        "!packages/dsh-provider-usage/src/types.ts"
-                    ],
-                    "comment": "阶段零新段（D17 分层变异）：E2 聚合/压实/存储面——aggregator+store+index；阶段三（#670 D2）aggregator 拆分为 aggregate-rows（压实转换纯函数）+ aggregate-query（查询投影纯函数），两新文件并入 mutate 面（防新文件变异盲区）；testFiles 含 unit-trend/unit-trend-ledger/unit-trend-view（杀灭面为该层测试，R8 台账守恒断言覆盖守恒链）；aggregator 单文件 5-8 分钟，独立段防超时。"
-                },
-                "trend-collect": {
-                    "mutate": [
-                        "packages/dsh-provider-usage/src/domain2/collect/collector.ts",
-                        "packages/dsh-provider-usage/src/domain2/collect/types.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-provider-usage/src/client/**",
-                        "!packages/dsh-provider-usage/src/types.ts"
-                    ],
-                    "comment": "阶段零新段（D17 分层变异）：E1 事件采集面——collector+types（折叠状态机/归属归一）；testFiles 含 unit-trend（杀灭面为该层测试）。"
-                },
-                "report-schedule": {
-                    "mutate": [
-                        "packages/dsh-provider-usage/src/domain2/schedule/config.ts",
-                        "packages/dsh-provider-usage/src/domain2/schedule/schedule.ts",
-                        "packages/dsh-provider-usage/src/domain2/schedule/scheduler.ts",
-                        "packages/dsh-provider-usage/src/domain2/schedule/tasks.ts",
-                        "packages/dsh-provider-usage/src/domain2/common/last-run.ts",
-                        "packages/dsh-provider-usage/src/apply/report-config-service.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-provider-usage/src/client/**",
-                        "!packages/dsh-provider-usage/src/types.ts"
-                    ],
-                    "comment": "阶段零新段（D17 分层变异）：E3 报告配置/调度面——config+schedule+scheduler+tasks；阶段二（D8）并入 last-run.ts（公共原语）与 report-config-service.ts（配置服务）；testFiles 含 unit-report/unit-report-executor。"
-                },
-                "report-execute": {
-                    "mutate": [
-                        "packages/dsh-provider-usage/src/domain2/execute/runner.ts",
-                        "packages/dsh-provider-usage/src/domain2/execute/generate.ts",
-                        "packages/dsh-provider-usage/src/domain2/execute/format.ts",
-                        "packages/dsh-provider-usage/src/domain2/common/report-index.ts",
-                        "packages/dsh-provider-usage/src/domain2/execute/executor.ts",
-                        "packages/dsh-provider-usage/src/domain2/execute/list-dirs.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-provider-usage/src/client/**",
-                        "!packages/dsh-provider-usage/src/types.ts"
-                    ],
-                    "comment": "阶段零新段（D17 分层变异）：E4 报告执行/产出面——runner+generate+format；阶段二（D8）并入 report-index.ts（公共解析）/executor.ts（执行器工厂）/list-dirs.ts（目录候选工厂）；testFiles 含 unit-report/unit-report-executor。"
-                },
-                "routes": {
-                    "mutate": [
-                        "packages/dsh-provider-usage/src/domain1/routes/stats.ts",
-                        "packages/dsh-provider-usage/src/domain1/routes/adapters.ts",
-                        "packages/dsh-provider-usage/src/domain2/routes/ui.ts",
-                        "packages/dsh-provider-usage/src/domain2/routes/reports.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-provider-usage/src/client/**",
-                        "!packages/dsh-provider-usage/src/types.ts"
-                    ],
-                    "comment": "阶段一新段（评审 P1-5 前置）：E5/C6 路由面——stats+adapters+ui+reports；先抽纯函数（clampTrendN/isReportPeriodValid/isReportKeyValid/isTaskIdValid）补 unit-routes 再开段；testFiles 含 unit-routes/unit-report/unit-apply。"
-                }
-            },
-            "testLayers": {
-                "coverageExcludes": [
-                    "!packages/dsh-provider-usage/src/**/interface.ts",
-                    "!packages/dsh-provider-usage/src/**/*.d.mts",
-                    "!packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.mjs",
-                    "!packages/dsh-provider-usage/src/domain1/adapters/opencode-go.mjs",
-                    "!packages/dsh-provider-usage/src/domain1/adapters/zai-coding-cn.mjs",
-                    "!packages/dsh-provider-usage/src/shared/placement-math.ts"
-                ]
-            }
-        },
-        "dsh-web-file-preview": {
-            "concurrency": 16,
-            "timeoutMS": 60000,
-            "segments": {
-                "_single": {
-                    "mutate": [
-                        "packages/dsh-web-file-preview/src/**/*.ts"
-                    ],
-                    "excludes": [
-                        "!packages/dsh-web-file-preview/src/client/**",
-                        "!packages/dsh-web-file-preview/src/types.ts"
-                    ],
-                    "comment": "#276 方案 A：src 级单段（mutate 直指 src，文件 glob 声明，无行号无漂移）；测试经 src 入口加载插桩代码；incremental 基线随 observe 夜间全量班重建。"
-                }
-            },
-            "testLayers": {}
-        }
+    "mutationLayers": ["unit", "integration"],
+    "mutationExcludeLayers": ["client", "e2e"]
+  },
+  "$noMutationPackages": {
+    "$comment": "磁盘上有测试文件、但刻意不登记变异面的包（逐个写明理由）。登记在此的包仍受 `--check` 判据 ③（--min == runner glob 实际文件数）约束——「不登记变异面」不等于「不受门禁」；漏登且未在此声明的包一律判红。",
+    "dsh-verify-isolated": "仅 test/e2e/smoke.test.ts（真实端口 + spawn 子进程的隔离环境冒烟），不进变异面；且 CI 的 ci-matrix 按「无变异配置」把该包排除出变异切片。源码覆盖断言（verify-dir-imports）尚未覆盖该包，属 #690 S6/S8 范围。"
+  },
+  "sharedDefaults": {
+    "testRunner": "vitest",
+    "concurrency": 16,
+    "timeoutMS": 60000,
+    "dryRunTimeoutMinutes": 5,
+    "reporters": ["progress", "clear-text", "json"],
+    "coverageAnalysis": "perTest",
+    "tempDirName": ".stryker-tmp",
+    "cleanTempDir": true,
+    "excludedMutations": ["StringLiteral", "ArrayLiteral", "ObjectLiteral", "TemplateLiteral"],
+    "vitest": {
+      "related": false
     }
+  },
+  "packages": {
+    "dsh-lan-proxy": {
+      "concurrency": 16,
+      "timeoutMS": 60000,
+      "segments": {
+        "1": {
+          "mutate": ["packages/dsh-lan-proxy/src/proxy.ts"],
+          "excludes": [
+            "!packages/dsh-lan-proxy/src/client/**",
+            "!packages/dsh-lan-proxy/src/types.ts"
+          ],
+          "comment": "#276 方案 A：src 级文件组分段（1）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "2": {
+          "mutate": ["packages/dsh-lan-proxy/src/apply.ts", "packages/dsh-lan-proxy/src/config.ts"],
+          "excludes": [
+            "!packages/dsh-lan-proxy/src/client/**",
+            "!packages/dsh-lan-proxy/src/types.ts"
+          ],
+          "comment": "#276 方案 A：src 级文件组分段（2）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "3": {
+          "mutate": [
+            "packages/dsh-lan-proxy/src/config-routes.ts",
+            "packages/dsh-lan-proxy/src/migrate.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-lan-proxy/src/client/**",
+            "!packages/dsh-lan-proxy/src/types.ts"
+          ],
+          "comment": "#276 方案 A：src 级文件组分段（3）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "4": {
+          "mutate": [
+            "packages/dsh-lan-proxy/src/settings.ts",
+            "packages/dsh-lan-proxy/src/cert.ts",
+            "packages/dsh-lan-proxy/src/index.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-lan-proxy/src/client/**",
+            "!packages/dsh-lan-proxy/src/types.ts"
+          ],
+          "comment": "#276 方案 A：src 级文件组分段（4）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        }
+      },
+      "testLayers": {}
+    },
+    "dsh-mcp-manager": {
+      "concurrency": 16,
+      "timeoutMS": 60000,
+      "segments": {
+        "entry": {
+          "mutate": [
+            "packages/dsh-mcp-manager/src/index.ts",
+            "packages/dsh-mcp-manager/src/workspace/**/*.ts",
+            "packages/dsh-mcp-manager/src/config/model/**/*.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-mcp-manager/src/client/**",
+            "!packages/dsh-mcp-manager/src/types/**",
+            "!packages/dsh-mcp-manager/src/integration/**",
+            "!packages/dsh-mcp-manager/src/placement-math.ts"
+          ],
+          "comment": "#664 阶段6重画：entry——index+workspace（工作空间路由域）+config/model（归一化/导入/schema）；阶段1–5变异盲区（workspace/新文件）在本阶段随集中搬移一并纳入重画（v3 C4/C-DIR）；types/integration（type-only）与 placement-math.ts（shared 薄转发）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+        },
+        "manager": {
+          "mutate": ["packages/dsh-mcp-manager/src/connection/orchestrator/**/*.ts"],
+          "excludes": [
+            "!packages/dsh-mcp-manager/src/client/**",
+            "!packages/dsh-mcp-manager/src/types/**",
+            "!packages/dsh-mcp-manager/src/integration/**",
+            "!packages/dsh-mcp-manager/src/placement-math.ts"
+          ],
+          "comment": "#664 阶段6重画：manager——connection/orchestrator（McpManager 类主体+展示投影 tool-names，原 manager.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+        },
+        "middleware": {
+          "mutate": [
+            "packages/dsh-mcp-manager/src/connection/runtime/middleware.ts",
+            "packages/dsh-mcp-manager/src/connection/runtime/limits.ts",
+            "packages/dsh-mcp-manager/src/inject/**/*.ts",
+            "packages/dsh-mcp-manager/src/pipeline/authorize.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-mcp-manager/src/client/**",
+            "!packages/dsh-mcp-manager/src/types/**",
+            "!packages/dsh-mcp-manager/src/integration/**",
+            "!packages/dsh-mcp-manager/src/placement-math.ts"
+          ],
+          "comment": "#664 阶段6重画：middleware——中间层池（runtime/middleware）+limits（原 middleware-const）+工具注册面（inject/）+策略裁决族（pipeline/authorize，原 middleware-utils 并入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+        },
+        "routes": {
+          "mutate": ["packages/dsh-mcp-manager/src/api/**/*.ts"],
+          "excludes": [
+            "!packages/dsh-mcp-manager/src/client/**",
+            "!packages/dsh-mcp-manager/src/types/**",
+            "!packages/dsh-mcp-manager/src/integration/**",
+            "!packages/dsh-mcp-manager/src/placement-math.ts"
+          ],
+          "comment": "#664 阶段6重画：routes——api 层（routes 装配/端点控制器/查询辅助，原 routes*.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+        },
+        "supervisor": {
+          "mutate": [
+            "packages/dsh-mcp-manager/src/connection/runtime/supervisor.ts",
+            "packages/dsh-mcp-manager/src/connection/runtime/reconnect.ts",
+            "packages/dsh-mcp-manager/src/config/store/**/*.ts",
+            "packages/dsh-mcp-manager/src/stats/**/*.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-mcp-manager/src/client/**",
+            "!packages/dsh-mcp-manager/src/types/**",
+            "!packages/dsh-mcp-manager/src/integration/**",
+            "!packages/dsh-mcp-manager/src/placement-math.ts"
+          ],
+          "comment": "#664 阶段6重画：supervisor——连接监督器（runtime/supervisor+reconnect）+状态持久化（config/store，原 middleware-state/store 迁入）+统计（stats）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+        },
+        "runtime": {
+          "mutate": [
+            "packages/dsh-mcp-manager/src/bootstrap/**/*.ts",
+            "packages/dsh-mcp-manager/src/connection/runtime/transport.ts",
+            "packages/dsh-mcp-manager/src/connection/runtime/protocol.ts",
+            "shared/placement-math.js",
+            "packages/dsh-mcp-manager/src/pipeline/**/*.ts",
+            "packages/dsh-mcp-manager/src/catalog/**/*.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-mcp-manager/src/client/**",
+            "!packages/dsh-mcp-manager/src/types/**",
+            "!packages/dsh-mcp-manager/src/integration/**",
+            "!packages/dsh-mcp-manager/src/placement-math.ts"
+          ],
+          "comment": "#664 阶段6重画：runtime——组合根（bootstrap/，原 apply*.ts 迁入）+transport/protocol+shared/placement-math（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析）+pipeline（执行管道域，阶段1–5变异盲区随迁纳入）+catalog（目录域，原 catalog.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+        }
+      },
+      "testLayers": {
+        "unitExemptions": {
+          "packages/dsh-mcp-manager/test/unit/unit-shared.test.ts": "被测对象是 workspace 根 shared/settings-namespace.ts（不在本包 mutate 面内），登记它零杀灭、只增加各段 dry run 执行面"
+        },
+        "coverageExcludes": ["!packages/dsh-mcp-manager/src/**/interface.ts"],
+        "testMutationExemptions": {
+          "unit": {
+            "packages/dsh-mcp-manager/test/unit/unit-shared.test.ts": "被测对象是 workspace 根 shared/settings-namespace.ts（不在本包 mutate 面内），登记它零杀灭、只增加各段 dry run 执行面"
+          },
+          "integration": {
+            "packages/dsh-mcp-manager/test/integration/service-contract.test.ts": "契约编译面用例：静态读取 src/bootstrap/apply-services.ts 的源文本比对 provide 方法集；在 Stryker 沙箱内被测源码已插桩，源文本断言必然失败（CI 实测 2026-09-11：Mutation gate (dsh-mcp-manager · runtime) dry run 报 apply.ts provide(\"mcpManager\") 方法名集合应与契约清单一致）。该用例的价值是类型/编译面与契约清单漂移，不产生变异杀灭，故不进变异面（随 pnpm test:scripts 的 service-contract-wiring 与 pnpm typecheck 生效）"
+          }
+        }
+      }
+    },
+    "dsh-notifier": {
+      "$comment": "#733 按域重写（v3）：源码从「text/config/events/channels/stores/pipeline/server」平铺面改为「按域 <域>/{interface.ts,deps.ts,impl/<块>/}」形态，故 mutate 面按域重划为 9 段（新增 shared 段；sdk 段沿用 #669 口径并入根 index.ts）。测试目录在重写期间整体删除，test/** 现为空——层归属与 testMutationExemptions 待测试重建时重新登记（届时 pnpm stryker:gen 会补回 vitest.stryker.d/dsh-notifier.config.ts，并需 --sync-test-min 补 package.json 的 --min）。重写前 integration 层有一条豁免（test/integration/real-context.test.ts：Stryker 沙箱内 dry run 失败，实测 2026-09-11，属 #712 沙箱语义族，修复路径见 #713），随测试目录删除一并注销，测试重建时需重新评估。gauntlet 里 60% 阈值与 74.13% 基线随 mutate 面整体更换而作废，须由 observe 夜间全量班重建。段耗时台账（mutation-segment-ledger.json）同步处置：旧 10 段（含 #720 拆出的 config 三段）已在 superseded 登记取代关系，api/shared/upgrade 三段登记进 unmeasured；但 channels/config/events/pipeline/sdk/stores 六个同名段的 wallSeconds 来自重写前的文件面，mutation-plan 会把它们当作本段实测值去定超时——首轮重建前不得采信，新面耗时须由夜间全量班重测。",
+      "concurrency": 16,
+      "timeoutMS": 60000,
+      "segments": {
+        "api": {
+          "mutate": ["packages/dsh-notifier/src/server/api/**/*.ts"],
+          "excludes": [
+            "!packages/dsh-notifier/src/client/**",
+            "!packages/dsh-notifier/src/types.ts"
+          ],
+          "comment": "#733 按域重写：api——HTTP 端点域（journal/kinds/probe/route/service/settings/stream）。loopback 围栏在 route 块内，端点自身只做「解析请求 → 调 pipeline/sdk 端口 → 序列化响应」，不含业务裁决。"
+        },
+        "channels": {
+          "mutate": ["packages/dsh-notifier/src/server/channels/**/*.ts"],
+          "excludes": [
+            "!packages/dsh-notifier/src/client/**",
+            "!packages/dsh-notifier/src/types.ts"
+          ],
+          "comment": "#733 按域重写：channels——出口域（bark/browser/system/webhook 四出口 + deliver 共享投递阶段与 caps 截断；tones 为系统音色表）。边界：出口只回答「本次失败可不可重试」（DeliverResult.retryable），重试/退避/节流/在途上限一律不在本域，归 pipeline/impl/dispatch。"
+        },
+        "config": {
+          "mutate": ["packages/dsh-notifier/src/server/config/**/*.ts"],
+          "excludes": [
+            "!packages/dsh-notifier/src/client/**",
+            "!packages/dsh-notifier/src/types.ts"
+          ],
+          "comment": "#733 按域重写：config——配置域（model 默认值与形状；input 解析/归一化/校验与键上限；service 读写、修订号与并发保护；redact 出站掩码）。#733 后期删除：内容脱敏规则表、错误合并窗口、完成聚合窗口、审批二次提醒（askRemindMin）四个设置面。"
+        },
+        "events": {
+          "mutate": ["packages/dsh-notifier/src/server/events/**/*.ts"],
+          "excludes": [
+            "!packages/dsh-notifier/src/client/**",
+            "!packages/dsh-notifier/src/types.ts"
+          ],
+          "comment": "#733 按域重写：events——宿主事件域（listen 订阅装配；state 代理由 running/idle 矩阵驱动的状态机；session 完成判定证据读取；translate 事件→NotifyRequest，catalog 为内置 kind 文案表）。本域只产出请求，不做裁决。"
+        },
+        "pipeline": {
+          "mutate": ["packages/dsh-notifier/src/server/pipeline/**/*.ts"],
+          "excludes": [
+            "!packages/dsh-notifier/src/client/**",
+            "!packages/dsh-notifier/src/types.ts"
+          ],
+          "comment": "#733 按域重写：pipeline——管线域（judge 三条裁决判据与抑制原因；route 目标解析与陈旧目标回收；finalize 严重度归一、标题截断与消息定稿；dispatch 重试/退避/节流/在途上限；service 编排与 kind 注册表）。重试状态机在本域是刻意的：出口保持无状态。"
+        },
+        "sdk": {
+          "mutate": [
+            "packages/dsh-notifier/src/index.ts",
+            "packages/dsh-notifier/src/server/sdk/**/*.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-notifier/src/client/**",
+            "!packages/dsh-notifier/src/types.ts"
+          ],
+          "comment": "#733 按域重写：sdk——服务面（registry 动态 kind 注册，service 对外 send/kinds，apiVersion 2）+ 根 index.ts 组合根并入（沿用 #669「装配层归服务面」口径：组合根单文件独立成段可杀性低、dry run 成本照付）。#733 收敛：wingsky-notify/sent 事件与 registerChannel 退役，send 返回 Promise<void>。"
+        },
+        "shared": {
+          "mutate": ["packages/dsh-notifier/src/server/shared/**/*.ts"],
+          "excludes": [
+            "!packages/dsh-notifier/src/client/**",
+            "!packages/dsh-notifier/src/types.ts"
+          ],
+          "comment": "#733 按域重写：shared——包内共享层（logger 端口 / 原子文本读写 / 产品布局路径解析）。#733 收口：三个实现文件原被各域直引（30 条 missingInterface），现统一经 shared/interface.ts 门面。"
+        },
+        "stores": {
+          "mutate": ["packages/dsh-notifier/src/server/stores/**/*.ts"],
+          "excludes": [
+            "!packages/dsh-notifier/src/client/**",
+            "!packages/dsh-notifier/src/types.ts"
+          ],
+          "comment": "#733 按域重写：stores——存储域（history 串行写队列与按行滚动；status 内存镜像与防抖落盘、LRU 上限）。"
+        },
+        "upgrade": {
+          "mutate": ["packages/dsh-notifier/src/server/upgrade/**/*.ts"],
+          "excludes": [
+            "!packages/dsh-notifier/src/client/**",
+            "!packages/dsh-notifier/src/types.ts"
+          ],
+          "comment": "#733 按域重写：upgrade——存量迁移域（version 版本戳；chain 迁移链；legacy 旧位置读取；steps.storage-layout 存储布局搬迁）。"
+        }
+      },
+      "testLayers": {
+        "coverageExcludes": [
+          "!packages/dsh-notifier/src/**/interface.ts",
+          "!packages/dsh-notifier/src/**/deps.ts",
+          "!packages/dsh-notifier/src/**/*.d.ts",
+          "!packages/dsh-notifier/src/**/*.ps1"
+        ],
+        "testMutationExemptions": {}
+      }
+    },
+    "dsh-provider-usage": {
+      "concurrency": 16,
+      "timeoutMS": 60000,
+      "segments": {
+        "apply": {
+          "mutate": ["packages/dsh-provider-usage/src/apply/apply.ts"],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "#342 v4：src 级文件组分段（2）——apply 单列（#316 拆分后最重文件独立成段）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "errsurf": {
+          "mutate": ["packages/dsh-provider-usage/src/domain2/common/errsurf.ts"],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "#670 阶段三 B 新段：域2每层错误面——errsurf.ts（累计计数+最近 N 条环形缓冲+snapshot/noop）；testFiles 含 unit-errsurf（杀灭面）；apply 接线与 routes/ui health per-layer 段由既有 apply/routes 段覆盖（mutate 已含对应文件）。"
+        },
+        "contracts": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/shared/contracts.ts",
+            "packages/dsh-provider-usage/src/domain1/pipeline/guards.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "#342 v4：src 级文件组分段（3）——contracts+domain1/pipeline/guards（契约面）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "entry": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/apply/index.ts",
+            "packages/dsh-provider-usage/src/domain1/registry/user-adapters.ts",
+            "packages/dsh-provider-usage/src/shared/ui-config.ts",
+            "packages/dsh-provider-usage/src/shared/config.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "pipeline": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/domain1/history/history.ts",
+            "packages/dsh-provider-usage/src/domain1/pipeline/v2.ts",
+            "packages/dsh-provider-usage/src/domain1/registry/hotreload.ts",
+            "shared/placement-math.js",
+            "packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts",
+            "packages/dsh-provider-usage/src/shared/client-logic.ts",
+            "packages/dsh-provider-usage/src/domain1/registry/provider-config.ts",
+            "packages/dsh-provider-usage/src/shared/charts.ts",
+            "packages/dsh-provider-usage/src/domain1/pipeline/stats-service.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts/stats-service（历史/管线/热更/图表/C3 服务面；charts 纳入修复变异盲区；阶段零补 stats-service 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "registry": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/domain1/registry/registry.ts",
+            "packages/dsh-provider-usage/src/domain1/registry/user-adapter-loader.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "#342 二期：功能命名段（registry）——registry+user-adapter-loader（注册表域，25s；阶段零补 loader 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "sanitize": {
+          "mutate": ["packages/dsh-provider-usage/src/shared/sanitize.ts"],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "#342 二期：功能命名段（sanitize）——sanitize（数据净化域，115s）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+        },
+        "trend-aggregate": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/domain2/aggregate/aggregator.ts",
+            "packages/dsh-provider-usage/src/domain2/aggregate/aggregate-rows.ts",
+            "packages/dsh-provider-usage/src/domain2/aggregate/aggregate-query.ts",
+            "packages/dsh-provider-usage/src/domain2/aggregate/store.ts",
+            "packages/dsh-provider-usage/src/domain2/aggregate/index.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "阶段零新段（D17 分层变异）：E2 聚合/压实/存储面——aggregator+store+index；阶段三（#670 D2）aggregator 拆分为 aggregate-rows（压实转换纯函数）+ aggregate-query（查询投影纯函数），两新文件并入 mutate 面（防新文件变异盲区）；testFiles 含 unit-trend/unit-trend-ledger/unit-trend-view（杀灭面为该层测试，R8 台账守恒断言覆盖守恒链）；aggregator 单文件 5-8 分钟，独立段防超时。"
+        },
+        "trend-collect": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/domain2/collect/collector.ts",
+            "packages/dsh-provider-usage/src/domain2/collect/types.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "阶段零新段（D17 分层变异）：E1 事件采集面——collector+types（折叠状态机/归属归一）；testFiles 含 unit-trend（杀灭面为该层测试）。"
+        },
+        "report-schedule": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/domain2/schedule/config.ts",
+            "packages/dsh-provider-usage/src/domain2/schedule/schedule.ts",
+            "packages/dsh-provider-usage/src/domain2/schedule/scheduler.ts",
+            "packages/dsh-provider-usage/src/domain2/schedule/tasks.ts",
+            "packages/dsh-provider-usage/src/domain2/common/last-run.ts",
+            "packages/dsh-provider-usage/src/apply/report-config-service.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "阶段零新段（D17 分层变异）：E3 报告配置/调度面——config+schedule+scheduler+tasks；阶段二（D8）并入 last-run.ts（公共原语）与 report-config-service.ts（配置服务）；testFiles 含 unit-report/unit-report-executor。"
+        },
+        "report-execute": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/domain2/execute/runner.ts",
+            "packages/dsh-provider-usage/src/domain2/execute/generate.ts",
+            "packages/dsh-provider-usage/src/domain2/execute/format.ts",
+            "packages/dsh-provider-usage/src/domain2/common/report-index.ts",
+            "packages/dsh-provider-usage/src/domain2/execute/executor.ts",
+            "packages/dsh-provider-usage/src/domain2/execute/list-dirs.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "阶段零新段（D17 分层变异）：E4 报告执行/产出面——runner+generate+format；阶段二（D8）并入 report-index.ts（公共解析）/executor.ts（执行器工厂）/list-dirs.ts（目录候选工厂）；testFiles 含 unit-report/unit-report-executor。"
+        },
+        "routes": {
+          "mutate": [
+            "packages/dsh-provider-usage/src/domain1/routes/stats.ts",
+            "packages/dsh-provider-usage/src/domain1/routes/adapters.ts",
+            "packages/dsh-provider-usage/src/domain2/routes/ui.ts",
+            "packages/dsh-provider-usage/src/domain2/routes/reports.ts"
+          ],
+          "excludes": [
+            "!packages/dsh-provider-usage/src/client/**",
+            "!packages/dsh-provider-usage/src/types.ts"
+          ],
+          "comment": "阶段一新段（评审 P1-5 前置）：E5/C6 路由面——stats+adapters+ui+reports；先抽纯函数（clampTrendN/isReportPeriodValid/isReportKeyValid/isTaskIdValid）补 unit-routes 再开段；testFiles 含 unit-routes/unit-report/unit-apply。"
+        }
+      },
+      "testLayers": {
+        "coverageExcludes": [
+          "!packages/dsh-provider-usage/src/**/interface.ts",
+          "!packages/dsh-provider-usage/src/**/*.d.mts",
+          "!packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.mjs",
+          "!packages/dsh-provider-usage/src/domain1/adapters/opencode-go.mjs",
+          "!packages/dsh-provider-usage/src/domain1/adapters/zai-coding-cn.mjs",
+          "!packages/dsh-provider-usage/src/shared/placement-math.ts"
+        ]
+      }
+    },
+    "dsh-web-file-preview": {
+      "concurrency": 16,
+      "timeoutMS": 60000,
+      "segments": {
+        "_single": {
+          "mutate": ["packages/dsh-web-file-preview/src/**/*.ts"],
+          "excludes": [
+            "!packages/dsh-web-file-preview/src/client/**",
+            "!packages/dsh-web-file-preview/src/types.ts"
+          ],
+          "comment": "#276 方案 A：src 级单段（mutate 直指 src，文件 glob 声明，无行号无漂移）；测试经 src 入口加载插桩代码；incremental 基线随 observe 夜间全量班重建。"
+        }
+      },
+      "testLayers": {}
+    }
+  }
 }

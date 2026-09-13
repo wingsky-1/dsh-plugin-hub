@@ -36,9 +36,14 @@ const fakeReq = (method, url, body, opts = {}) => ({
   method,
   url,
   socket: { remoteAddress: opts.remote ?? "127.0.0.1" },
-  headers: { host: "localhost:3080", origin: "http://localhost:3080", "sec-fetch-site": "same-origin" },
+  headers: {
+    host: "localhost:3080",
+    origin: "http://localhost:3080",
+    "sec-fetch-site": "same-origin",
+  },
   async *[Symbol.asyncIterator]() {
-    if (body !== undefined) yield Buffer.from(typeof body === "string" ? body : JSON.stringify(body));
+    if (body !== undefined)
+      yield Buffer.from(typeof body === "string" ? body : JSON.stringify(body));
   },
   on: () => {},
 });
@@ -81,7 +86,10 @@ function setup() {
   const store = new McpStore(join(dir, "mcp.json"));
   store.data = { version: 1, servers: [] };
   store.upsert(normalizeServer({ name: "dup-a", transport: "stdio", command: "echo" }));
-  const manager = new McpManager({ logger: { warn: () => {}, info: () => {}, error: () => {} } }, store);
+  const manager = new McpManager(
+    { logger: { warn: () => {}, info: () => {}, error: () => {} } },
+    store,
+  );
   manager.catalogCache.set("cached", { summary: "s" });
   managers.push(manager);
   return { dir, store, manager };
@@ -118,7 +126,11 @@ describe("帧格式", () => {
 describe("broadcastFrame", () => {
   function broadcastFixture() {
     const written = [];
-    const boom = { write: () => { throw new Error("EPIPE"); } };
+    const boom = {
+      write: () => {
+        throw new Error("EPIPE");
+      },
+    };
     const good1 = { write: (f) => written.push(["g1", f]) };
     const good2 = { write: (f) => written.push(["g2", f]) };
     return { written, conns: new Set([boom, good1, good2]) };
@@ -392,7 +404,15 @@ describe("health 路由", () => {
     manager.middlewareMode = "project";
     manager.middleware = {
       units: new Map([
-        ["/root-a", { connections: new Map([["x", { status: "connected" }], ["y", { status: "failed" }]]) }],
+        [
+          "/root-a",
+          {
+            connections: new Map([
+              ["x", { status: "connected" }],
+              ["y", { status: "failed" }],
+            ]),
+          },
+        ],
         ["/root-b", { connections: new Map() }],
       ]),
     };
@@ -492,11 +512,14 @@ describe("session / servers 边界", () => {
     expect(res.status).toBe(400);
   });
 
-  it.each(["PATCH", "DELETE"])("servers %s 缺 name 文案含 name query parameter is required", async (method) => {
-    const { find } = routesFixture();
-    const res = await callHandler(find(ROUTES.servers), fakeReq(method, ROUTES.servers));
-    expect(JSON.stringify(res.payload)).toMatch(/name query parameter is required/);
-  });
+  it.each(["PATCH", "DELETE"])(
+    "servers %s 缺 name 文案含 name query parameter is required",
+    async (method) => {
+      const { find } = routesFixture();
+      const res = await callHandler(find(ROUTES.servers), fakeReq(method, ROUTES.servers));
+      expect(JSON.stringify(res.payload)).toMatch(/name query parameter is required/);
+    },
+  );
 
   it("servers PUT → 405", async () => {
     const { find } = routesFixture();
@@ -506,13 +529,19 @@ describe("session / servers 边界", () => {
 
   it("DELETE 存在的服务器 → 200", async () => {
     const { find } = routesFixture();
-    const resDel = await callHandler(find(ROUTES.servers), fakeReq("DELETE", `${ROUTES.servers}?name=dup-a`));
+    const resDel = await callHandler(
+      find(ROUTES.servers),
+      fakeReq("DELETE", `${ROUTES.servers}?name=dup-a`),
+    );
     expect(resDel.status).toBe(200);
   });
 
   it("delete 返回 ok:true", async () => {
     const { find } = routesFixture();
-    const resDel = await callHandler(find(ROUTES.servers), fakeReq("DELETE", `${ROUTES.servers}?name=dup-a`));
+    const resDel = await callHandler(
+      find(ROUTES.servers),
+      fakeReq("DELETE", `${ROUTES.servers}?name=dup-a`),
+    );
     expect(resDel.payload.ok).toBe(true);
   });
 
@@ -551,27 +580,39 @@ describe("import/json：字段校验与 skip/overwrite", () => {
 
   it("body 缺 json 字符串 → 400", async () => {
     const { importRoute } = importFixture();
-    const badBody = await callHandler(importRoute, fakeReq("POST", ROUTES.importJson, { json: 42 }));
+    const badBody = await callHandler(
+      importRoute,
+      fakeReq("POST", ROUTES.importJson, { json: 42 }),
+    );
     expect(badBody.status).toBe(400);
   });
 
   it("缺 json 字符串文案含 must include a json string", async () => {
     const { importRoute } = importFixture();
-    const badBody = await callHandler(importRoute, fakeReq("POST", ROUTES.importJson, { json: 42 }));
+    const badBody = await callHandler(
+      importRoute,
+      fakeReq("POST", ROUTES.importJson, { json: 42 }),
+    );
     expect(JSON.stringify(badBody.payload)).toMatch(/must include a json string/);
   });
 
   it("同名默认跳过", async () => {
     const { importRoute } = importFixture();
     const payload = JSON.stringify({ "dup-a": { command: "echo2" }, fresh: { url: "http://f/" } });
-    const resSkip = await callHandler(importRoute, fakeReq("POST", ROUTES.importJson, { json: payload }));
+    const resSkip = await callHandler(
+      importRoute,
+      fakeReq("POST", ROUTES.importJson, { json: payload }),
+    );
     expect(resSkip.payload.skipped).toEqual(["dup-a"]);
   });
 
   it("新名导入", async () => {
     const { importRoute } = importFixture();
     const payload = JSON.stringify({ "dup-a": { command: "echo2" }, fresh: { url: "http://f/" } });
-    const resSkip = await callHandler(importRoute, fakeReq("POST", ROUTES.importJson, { json: payload }));
+    const resSkip = await callHandler(
+      importRoute,
+      fakeReq("POST", ROUTES.importJson, { json: payload }),
+    );
     expect(resSkip.payload.imported).toEqual(["fresh"]);
   });
 
@@ -588,19 +629,28 @@ describe("import/json：字段校验与 skip/overwrite", () => {
   it("overwrite 后配置更新", async () => {
     const { importRoute, manager } = importFixture();
     const payload = JSON.stringify({ "dup-a": { command: "echo2" }, fresh: { url: "http://f/" } });
-    await callHandler(importRoute, fakeReq("POST", ROUTES.importJson, { json: payload, overwrite: true }));
+    await callHandler(
+      importRoute,
+      fakeReq("POST", ROUTES.importJson, { json: payload, overwrite: true }),
+    );
     expect(manager.store.find("dup-a").command).toBe("echo2");
   });
 
   it("非法条目整体 400", async () => {
     const { importRoute } = importFixture();
-    const resInvalid = await callHandler(importRoute, fakeReq("POST", ROUTES.importJson, { json: '{"bad":1}' }));
+    const resInvalid = await callHandler(
+      importRoute,
+      fakeReq("POST", ROUTES.importJson, { json: '{"bad":1}' }),
+    );
     expect(resInvalid.status).toBe(400);
   });
 
   it("非法条目文案含 entry must be an object", async () => {
     const { importRoute } = importFixture();
-    const resInvalid = await callHandler(importRoute, fakeReq("POST", ROUTES.importJson, { json: '{"bad":1}' }));
+    const resInvalid = await callHandler(
+      importRoute,
+      fakeReq("POST", ROUTES.importJson, { json: '{"bad":1}' }),
+    );
     expect(JSON.stringify(resInvalid.payload)).toMatch(/entry must be an object/);
   });
 });
@@ -621,7 +671,10 @@ describe("B7：POST /config 非法 middleware → 400 拒绝", () => {
 
   async function postBogus() {
     const fixture = configFixture();
-    const res = await callHandler(fixture.configRoute, fakeReq("POST", ROUTES.config, { middleware: "bogus" }));
+    const res = await callHandler(
+      fixture.configRoute,
+      fakeReq("POST", ROUTES.config, { middleware: "bogus" }),
+    );
     return { ...fixture, res };
   }
 

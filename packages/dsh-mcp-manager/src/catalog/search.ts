@@ -14,7 +14,13 @@ import {
   MAX_TOOLS_PER_SERVER,
   MAX_TOTAL_CATALOG_BYTES,
 } from "../connection/interface.ts";
-import { fullServerName, parseFullServerName, bareServerName, MIDDLEWARE_GLOBAL_ROOT, normalizeToolName } from "../workspace/interface.ts";
+import {
+  fullServerName,
+  parseFullServerName,
+  bareServerName,
+  MIDDLEWARE_GLOBAL_ROOT,
+  normalizeToolName,
+} from "../workspace/interface.ts";
 import type {
   CatalogServer,
   CatalogTool,
@@ -37,14 +43,21 @@ function tokenize(text: string): string[] {
 /** 跨字段打分：query 词命中 server 名 / 工具名 / description / 参数名。
  * 中文（无空格分词）：query 连续中文串在原始描述中 substring 匹配即可命中
  * （修复：原实现把连续中文当单个 token，中文召回率接近零）。 */
-export function scoreTool(query: string, server: string, toolName: string, tool: CatalogTool): { score: number; matchedTerms: string[] } {
+export function scoreTool(
+  query: string,
+  server: string,
+  toolName: string,
+  tool: CatalogTool,
+): { score: number; matchedTerms: string[] } {
   if (query === "") return { score: 0, matchedTerms: [] };
   const haystack = [
     server,
     toolName,
     tool.description,
     JSON.stringify(Object.keys(tool.inputSchema ?? {})),
-  ].join(" ").toLowerCase();
+  ]
+    .join(" ")
+    .toLowerCase();
   // 中文子串匹配（连续中文段直接 substring 命中原始文本）
   const cjkQuery = query.match(/[\u4e00-\u9fff]+/gu) ?? [];
   if (cjkQuery.length > 0) {
@@ -82,7 +95,11 @@ export function searchCatalog(
   root: string,
   query: string,
   limit: number,
-): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string }>; truncated: boolean } {
+): {
+  results: SearchHit[];
+  unavailable: Array<{ server: string; reason: string }>;
+  truncated: boolean;
+} {
   const unit = units.get(root);
   if (unit === undefined) return { results: [], unavailable: [], truncated: false };
   const results: SearchHit[] = [];
@@ -94,7 +111,13 @@ export function searchCatalog(
       continue;
     }
     const fresh = Date.now() - catalog.discoveredAt <= CATALOG_TTL_MS;
-    const scored: Array<{ server: string; toolName: string; tool: CatalogTool; score: number; matchedTerms: string[] }> = [];
+    const scored: Array<{
+      server: string;
+      toolName: string;
+      tool: CatalogTool;
+      score: number;
+      matchedTerms: string[];
+    }> = [];
     for (const [toolName, tool] of catalog.tools) {
       const { score, matchedTerms } = scoreTool(query, serverName, toolName, tool);
       if (query !== "" && score === 0) continue;
@@ -126,7 +149,11 @@ export function searchCatalogMulti(
   roots: readonly string[],
   query: string,
   limit: number,
-): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string }>; truncated: boolean } {
+): {
+  results: SearchHit[];
+  unavailable: Array<{ server: string; reason: string }>;
+  truncated: boolean;
+} {
   if (roots.length === 1) {
     return searchCatalog(units, roots[0] as string, query, limit);
   }
@@ -165,7 +192,10 @@ export function listCatalog(
   emptyHint: string,
   disabledTools?: DisabledToolsMap,
 ): ListCatalogResult {
-  const safeLimit = Number.isFinite(toolLimit) && toolLimit > 0 ? Math.floor(toolLimit) : LIST_DEFAULT_TOOLS_PER_SERVER;
+  const safeLimit =
+    Number.isFinite(toolLimit) && toolLimit > 0
+      ? Math.floor(toolLimit)
+      : LIST_DEFAULT_TOOLS_PER_SERVER;
   let rootSet: Set<string> | undefined;
   if (serverFilter !== undefined && serverFilter.startsWith("@")) {
     const parsed = parseFullServerName(serverFilter);
@@ -184,7 +214,12 @@ export function listCatalog(
     const unit = units.get(root);
     if (unit === undefined) continue;
     for (const [serverName, catalog] of unit.catalog) {
-      if (serverFilter !== undefined && serverName !== serverFilter && fullServerName(root, serverName) !== serverFilter) continue;
+      if (
+        serverFilter !== undefined &&
+        serverName !== serverFilter &&
+        fullServerName(root, serverName) !== serverFilter
+      )
+        continue;
       const entry: ListServerEntry = {
         server: fullServerName(root, serverName),
         tools: [],
@@ -207,8 +242,13 @@ export function listCatalog(
           // lossless JSON 输出校验（dsh-util-values walkJsonValue）判非法
           // （#381：ws_mcp_list 报 "value is not lossless JSON"）。
           const rootTools = disabledTools?.get(root)?.get(serverName);
-          const globalTools = root === MIDDLEWARE_GLOBAL_ROOT ? undefined : disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(serverName);
-          const disabledByUser = (rootTools !== undefined && rootTools.has(toolName)) || (globalTools !== undefined && globalTools.has(toolName));
+          const globalTools =
+            root === MIDDLEWARE_GLOBAL_ROOT
+              ? undefined
+              : disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(serverName);
+          const disabledByUser =
+            (rootTools !== undefined && rootTools.has(toolName)) ||
+            (globalTools !== undefined && globalTools.has(toolName));
           const toolEntry: ListToolEntry = { tool: toolName, description: tool.description };
           if (disabledByUser) toolEntry.disabled = true;
           tools.push(toolEntry);
@@ -276,10 +316,14 @@ export function findToolDetail(
   const catalog = unit.catalog.get(parsed.server);
   if (catalog === undefined || catalog.tools.size === 0) {
     if (catalog?.unavailable !== undefined) {
-      throw new Error(`ws_mcp_detail: server 发现失败：${JSON.stringify(server)}（${catalog.unavailable}）`);
+      throw new Error(
+        `ws_mcp_detail: server 发现失败：${JSON.stringify(server)}（${catalog.unavailable}）`,
+      );
     }
     if (unit.userDisabled.has(parsed.server)) {
-      throw new Error(`ws_mcp_detail: server 未连接或未发现：${JSON.stringify(server)}（已被用户禁用）`);
+      throw new Error(
+        `ws_mcp_detail: server 未连接或未发现：${JSON.stringify(server)}（已被用户禁用）`,
+      );
     }
     throw new Error(`ws_mcp_detail: server 未连接或未发现：${JSON.stringify(server)}`);
   }
@@ -303,9 +347,11 @@ export function findToolDetail(
 /** 目录新鲜判定：有条目、无 unavailable 段、且发现时间在 TTL 内
  *  （discover 惰性重发现专用；纯时间比较，无副作用）。 */
 export function isCatalogFresh(catalog: CatalogServer | undefined): boolean {
-  return catalog !== undefined
-    && catalog.unavailable === undefined
-    && Date.now() - catalog.discoveredAt <= CATALOG_TTL_MS;
+  return (
+    catalog !== undefined &&
+    catalog.unavailable === undefined &&
+    Date.now() - catalog.discoveredAt <= CATALOG_TTL_MS
+  );
 }
 
 /** 单服务器目录装箱（discover 专用纯函数）：按限额收敛工具清单——
@@ -328,13 +374,19 @@ export function boundCatalogTools(
     if (Buffer.byteLength(desc, "utf8") > MAX_BYTES_PER_TOOL) {
       let bytes = 0;
       let cut = 0;
-      while (cut < desc.length && bytes + Buffer.byteLength(desc[cut], "utf8") <= MAX_BYTES_PER_TOOL) {
+      while (
+        cut < desc.length &&
+        bytes + Buffer.byteLength(desc[cut], "utf8") <= MAX_BYTES_PER_TOOL
+      ) {
         bytes += Buffer.byteLength(desc[cut], "utf8");
         cut += 1;
       }
       desc = desc.slice(0, cut);
     }
-    bounded.set(name, { description: desc, inputSchema: (tool.inputSchema ?? {}) as Record<string, unknown> });
+    bounded.set(name, {
+      description: desc,
+      inputSchema: (tool.inputSchema ?? {}) as Record<string, unknown>,
+    });
     // B9：totalBytes 全字节口径（JSON.stringify().length 按码元计，低估字节数）
     totalBytes +=
       Buffer.byteLength(desc, "utf8") +

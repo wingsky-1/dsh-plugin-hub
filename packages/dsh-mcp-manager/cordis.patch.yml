@@ -6,4 +6,4 @@
 # 配置走 schema 默认值（enabled / announceToAgent），行内不带 config。
 - insert:
     - id: ui-dsh-mcp-manager
-      name: '@wingsky-1/dsh-mcp-manager'
+      name: "@wingsky-1/dsh-mcp-manager"

@@ -16,8 +16,8 @@ export function normalizeArguments(raw: unknown): unknown {
     const trimmed = value.trim();
     if (trimmed.length === 0) return {};
     const head = trimmed.charCodeAt(0);
-    const isContainerJson = head === 123 /* { */ || head === 91 /* [ */;
-    const isQuotedJson = head === 34 /* " */;
+    const isContainerJson = head === 123 /* { */ || head === 91; /* [ */
+    const isQuotedJson = head === 34; /* " */
     if (!isContainerJson && !isQuotedJson) break;
     let parsed: unknown;
     try {

@@ -85,8 +85,12 @@ async function restoreSavedEnabledState(
   for (const [provider, name] of Object.entries(savedEnabled.state)) {
     const selected = registry.select(provider, name);
     if (!selected) {
-      const safeProvider = JSON.stringify(provider.length > 128 ? `${provider.slice(0, 125)}...` : provider);
-      const safeName = JSON.stringify(name === null || name.length <= 128 ? name : `${name.slice(0, 125)}...`);
+      const safeProvider = JSON.stringify(
+        provider.length > 128 ? `${provider.slice(0, 125)}...` : provider,
+      );
+      const safeName = JSON.stringify(
+        name === null || name.length <= 128 ? name : `${name.slice(0, 125)}...`,
+      );
       recordDiagnostic(
         `恢复启用选择失败：provider ${safeProvider} 保存的适配器 ${safeName} 不在当前候选中（可能文件缺失或加载失败），未改写当前启用关系`,
       );
@@ -116,8 +120,9 @@ function makeHotReloadManager(
         return;
       }
       if (hr.current !== null) {
-        const oldProviders = registry.snapshot().infos
-          .filter((i) => i.file === resolved)
+        const oldProviders = registry
+          .snapshot()
+          .infos.filter((i) => i.file === resolved)
           .flatMap((i) => i.providers);
         const replaced = registry.replaceByFile(resolved, hr.current);
         if (!replaced.ok) {
@@ -135,7 +140,11 @@ function makeHotReloadManager(
 
     const started = await hr.start();
     if (!started.ok && started.error !== undefined) {
-      registry.recordError(`file:${basename(resolved)}`, "load", `热更新启动失败：${started.error}`);
+      registry.recordError(
+        `file:${basename(resolved)}`,
+        "load",
+        `热更新启动失败：${started.error}`,
+      );
     }
     hotReloaders.push(hr);
   };
@@ -166,8 +175,12 @@ function startPruneTimer(
 ): ReturnType<typeof setInterval> {
   const PRUNE_INTERVAL_MS = 10 * 60 * 1000;
   const timer = setInterval(() => {
-    void history.pruneAll().catch((err) => console.warn("[dsh-provider-usage] 历史留存清理失败:", err));
-    void trend.prune().catch((err) => console.warn("[dsh-provider-usage] trend 留存清理失败:", err));
+    void history
+      .pruneAll()
+      .catch((err) => console.warn("[dsh-provider-usage] 历史留存清理失败:", err));
+    void trend
+      .prune()
+      .catch((err) => console.warn("[dsh-provider-usage] trend 留存清理失败:", err));
   }, PRUNE_INTERVAL_MS);
   (timer as { unref?: () => void }).unref?.();
   return timer;
@@ -193,12 +206,20 @@ function registerLifecycleCleanup(
       clearInterval(pruneTimer);
       for (const hr of hotReloaders) hr.stop();
       for (const res of sseClients) {
-        try { res.end(); } catch { /* 忽略 */ }
+        try {
+          res.end();
+        } catch {
+          /* 忽略 */
+        }
       }
       sseClients.clear();
       statsService.dispose();
       for (const dispose of trendDisposers) {
-        try { dispose(); } catch { /* 忽略 */ }
+        try {
+          dispose();
+        } catch {
+          /* 忽略 */
+        }
       }
       await trend.dispose();
       reportScheduler.dispose();
@@ -236,7 +257,8 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
 
   try {
     const migrated = await migrateLegacyV3(historyRoot, history);
-    if (migrated > 0) console.warn(`[dsh-provider-usage] 已迁移 ${migrated} 条旧 v3 历史采样到按天分片 JSONL`);
+    if (migrated > 0)
+      console.warn(`[dsh-provider-usage] 已迁移 ${migrated} 条旧 v3 历史采样到按天分片 JSONL`);
   } catch {
     /* 迁移失败不阻断启动 */
   }
@@ -317,7 +339,9 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     },
   });
   const trendDisposers: Array<() => void> = [];
-  trendDisposers.push(ctx.on("session/event", (session, event) => trend.handleEvent(session, event)));
+  trendDisposers.push(
+    ctx.on("session/event", (session, event) => trend.handleEvent(session, event)),
+  );
   trendDisposers.push(ctx.on("session/flush", () => trend.flushNow()));
   trendDisposers.push(ctx.on("session/disposed", (session) => trend.handleDisposed(session)));
 
@@ -371,13 +395,21 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     if (notifier !== null && typeof notifier.registerKind === "function") {
       try {
         notifier.registerKind({ id: "provider-usage:report", label: "用量报告" });
-      } catch { /* 推送为可选功能 */ }
+      } catch {
+        /* 推送为可选功能 */
+      }
     }
   }
   ensureReportKind();
-  trendDisposers.push(ctx.on("internal/service", (name) => {
-    if (name === "wingsky.notifier") ensureReportKind();
-  }, { global: true }));
+  trendDisposers.push(
+    ctx.on(
+      "internal/service",
+      (name) => {
+        if (name === "wingsky.notifier") ensureReportKind();
+      },
+      { global: true },
+    ),
+  );
 
   const uiConfig = await readUiConfig(historyRoot);
   const sseClients = new Set<ServerResponse>();
@@ -395,11 +427,21 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
   const routes = [
     ...createStatsRoutes({ stats: ROUTES.stats, history: ROUTES.history }, { statsService }),
     ...createAdapterRoutes(
-      { adapters: ROUTES.adapters, select: ROUTES.select, inspect: ROUTES.inspect, add: ROUTES.add },
+      {
+        adapters: ROUTES.adapters,
+        select: ROUTES.select,
+        inspect: ROUTES.inspect,
+        add: ROUTES.add,
+      },
       { ctx, statsService, ensureHotReload },
     ),
     ...createUiRoutes(
-      { health: ROUTES.health, trend: ROUTES.trend, uiConfig: ROUTES.uiConfig, events: ROUTES.events },
+      {
+        health: ROUTES.health,
+        trend: ROUTES.trend,
+        uiConfig: ROUTES.uiConfig,
+        events: ROUTES.events,
+      },
       { statsService, trend, uiConfig, sseClients, broadcastUiConfigChanged, layerErrors },
     ),
     ...createReportRoutes(
@@ -422,17 +464,18 @@ export async function apply(ctx: Context, rawConfig: Record<string, unknown> = {
     ),
   ];
 
-  const disposeRoutes = ctx.effect(
-    () => {
-      const routeDisposers = routes.map((r) => ctx.webServer.register(r));
-      return () => {
-        for (const dispose of routeDisposers) {
-          try { dispose(); } catch { /* 忽略 */ }
+  const disposeRoutes = ctx.effect(() => {
+    const routeDisposers = routes.map((r) => ctx.webServer.register(r));
+    return () => {
+      for (const dispose of routeDisposers) {
+        try {
+          dispose();
+        } catch {
+          /* 忽略 */
         }
-      };
-    },
-    "dsh-provider-usage: routes",
-  );
+      }
+    };
+  }, "dsh-provider-usage: routes");
 
   const warmupTimer = startWarmupTimer(config, registry, statsService);
   const pruneTimer = startPruneTimer(history, trend);

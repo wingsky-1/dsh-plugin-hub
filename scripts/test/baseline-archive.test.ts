@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-'use strict'
+"use strict";
 
 /**
  * 变异基线归档分支的纯函数回归（#714 后续修复）。
@@ -14,10 +14,10 @@
  *   gh api repos/.../actions/runs/34559972509/artifacts?per_page=100 → total_count 70、mutation-incremental 31
  * 本文件把「分页合并」「期望集合派生」「对账缺口」三件事钉死，避免再次静默丢段。
  */
-import { test } from 'node:test'
-import assert from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   ARCHIVE_SNAPSHOT_KEEP,
@@ -34,292 +34,370 @@ import {
   pruneSnapshotPlan,
   reconcileArchive,
   snapshotTagFor,
-} from '../gate/baseline-archive.mjs'
+} from "../gate/baseline-archive.mjs";
 
-const ROOT = join(import.meta.dirname, '..', '..')
+const ROOT = join(import.meta.dirname, "..", "..");
 
 /** 造一页 artifact API 响应。 */
 function page(names, totalCount) {
-  return { total_count: totalCount ?? names.length, artifacts: names.map((name) => ({ name })) }
+  return { total_count: totalCount ?? names.length, artifacts: names.map((name) => ({ name })) };
 }
 
-test('分页合并：单页已取满时一轮结束', () => {
-  const first = mergeArtifactPage([], page(['a', 'b'], 2), 1)
-  assert.equal(first.items.length, 2)
-  assert.equal(first.nextPage, null, '已取满 total_count 时不应再翻页')
-  assert.equal(first.done, true)
-})
+test("分页合并：单页已取满时一轮结束", () => {
+  const first = mergeArtifactPage([], page(["a", "b"], 2), 1);
+  assert.equal(first.items.length, 2);
+  assert.equal(first.nextPage, null, "已取满 total_count 时不应再翻页");
+  assert.equal(first.done, true);
+});
 
-test('分页合并：total_count 大于本页时给出下一页', () => {
-  const first = mergeArtifactPage([], page(Array.from({ length: 30 }, (_, i) => `a${i}`), 70), 1)
-  assert.equal(first.items.length, 30)
-  assert.equal(first.nextPage, 2, '应继续翻页（原缺陷就是在这里停住）')
+test("分页合并：total_count 大于本页时给出下一页", () => {
+  const first = mergeArtifactPage(
+    [],
+    page(
+      Array.from({ length: 30 }, (_, i) => `a${i}`),
+      70,
+    ),
+    1,
+  );
+  assert.equal(first.items.length, 30);
+  assert.equal(first.nextPage, 2, "应继续翻页（原缺陷就是在这里停住）");
 
-  const second = mergeArtifactPage(first.items, page(Array.from({ length: 40 }, (_, i) => `b${i}`), 70), 2)
-  assert.equal(second.items.length, 70, '两页应合并为 70 条')
-  assert.equal(second.nextPage, null, '取满 total_count 后终止')
-})
+  const second = mergeArtifactPage(
+    first.items,
+    page(
+      Array.from({ length: 40 }, (_, i) => `b${i}`),
+      70,
+    ),
+    2,
+  );
+  assert.equal(second.items.length, 70, "两页应合并为 70 条");
+  assert.equal(second.nextPage, null, "取满 total_count 后终止");
+});
 
-test('分页合并：空页终止（短页 + total_count 偏大时不重复请求同一页）', () => {
+test("分页合并：空页终止（短页 + total_count 偏大时不重复请求同一页）", () => {
   // 页号必须严格递增：用「已收条数 / perPage」反推会在短页时算回同一页。
-  const first = mergeArtifactPage([], page(Array.from({ length: 7 }, (_, i) => `c${i}`), 70), 1)
-  assert.equal(first.nextPage, 2, '短页但未达 total_count 时页号应 +1')
-  const second = mergeArtifactPage(first.items, page([], 70), 2)
-  assert.equal(second.nextPage, null, '空页应终止')
-  assert.equal(second.items.length, 7, '空页不得改变已合并结果')
-  assert.equal(second.done, true)
-})
+  const first = mergeArtifactPage(
+    [],
+    page(
+      Array.from({ length: 7 }, (_, i) => `c${i}`),
+      70,
+    ),
+    1,
+  );
+  assert.equal(first.nextPage, 2, "短页但未达 total_count 时页号应 +1");
+  const second = mergeArtifactPage(first.items, page([], 70), 2);
+  assert.equal(second.nextPage, null, "空页应终止");
+  assert.equal(second.items.length, 7, "空页不得改变已合并结果");
+  assert.equal(second.done, true);
+});
 
-test('分页合并：模拟真实两次请求的循环（30 + 40 = 70）并终止', () => {
+test("分页合并：模拟真实两次请求的循环（30 + 40 = 70）并终止", () => {
   const pages = [
-    page(Array.from({ length: 30 }, (_, i) => `p1-${i}`), 70),
-    page(Array.from({ length: 40 }, (_, i) => `p2-${i}`), 70),
-  ]
-  let items = []
-  let pageNo = 1
-  let rounds = 0
+    page(
+      Array.from({ length: 30 }, (_, i) => `p1-${i}`),
+      70,
+    ),
+    page(
+      Array.from({ length: 40 }, (_, i) => `p2-${i}`),
+      70,
+    ),
+  ];
+  let items = [];
+  let pageNo = 1;
+  let rounds = 0;
   for (;;) {
-    rounds++
-    const merged = mergeArtifactPage(items, pages[pageNo - 1] ?? page([], 70), pageNo)
-    items = merged.items
-    if (merged.nextPage === null) break
-    pageNo = merged.nextPage
-    assert.ok(rounds < 10, '不得死循环')
+    rounds++;
+    const merged = mergeArtifactPage(items, pages[pageNo - 1] ?? page([], 70), pageNo);
+    items = merged.items;
+    if (merged.nextPage === null) break;
+    pageNo = merged.nextPage;
+    assert.ok(rounds < 10, "不得死循环");
   }
-  assert.equal(rounds, 2, '两页数据应两轮取完')
-  assert.equal(items.length, 70)
-})
+  assert.equal(rounds, 2, "两页数据应两轮取完");
+  assert.equal(items.length, 70);
+});
 
-test('产物筛选：只认 mutation-incremental- 前缀，且容忍脏数据', () => {
+test("产物筛选：只认 mutation-incremental- 前缀，且容忍脏数据", () => {
   const picked = mutationArtifacts([
-    { name: 'mutation-incremental-dsh-mcp-manager-entry' },
-    { name: 'dsh-mcp-manager-entry.json' },
-    { name: 'coverage-self' },
+    { name: "mutation-incremental-dsh-mcp-manager-entry" },
+    { name: "dsh-mcp-manager-entry.json" },
+    { name: "coverage-self" },
     { name: null },
     {},
-    { name: 'mutation-incremental-dsh-notifier-sdk' },
-  ])
-  assert.deepEqual(picked.map((a) => a.name), [
-    'mutation-incremental-dsh-mcp-manager-entry',
-    'mutation-incremental-dsh-notifier-sdk',
-  ])
-})
-
-test('期望集合派生：dsh- 前缀剥离 + seg=0 单配置形态', () => {
+    { name: "mutation-incremental-dsh-notifier-sdk" },
+  ]);
   assert.deepEqual(
-    expectedBaselineFiles(['dsh-mcp-manager-entry.json', 'dsh-web-file-preview.json', 'dsh-notifier-sdk.json']),
-    ['incremental-mcp-manager-entry.json', 'incremental-notifier-sdk.json', 'incremental-web-file-preview.json'],
-  )
-  assert.deepEqual(expectedBaselineFiles(['README.md', null]), [], '非 .json 条目不得进期望集合')
-})
+    picked.map((a) => a.name),
+    ["mutation-incremental-dsh-mcp-manager-entry", "mutation-incremental-dsh-notifier-sdk"],
+  );
+});
 
-test('期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（32 段）', () => {
-  const confNames = readdirSync(join(ROOT, 'stryker.conf.d')).filter((f) => f.endsWith('.json'))
-  const expected = expectedBaselineFiles(confNames)
-  assert.equal(expected.length, confNames.length, '每个段配置都应对应一个基线文件')
+test("期望集合派生：dsh- 前缀剥离 + seg=0 单配置形态", () => {
+  assert.deepEqual(
+    expectedBaselineFiles([
+      "dsh-mcp-manager-entry.json",
+      "dsh-web-file-preview.json",
+      "dsh-notifier-sdk.json",
+    ]),
+    [
+      "incremental-mcp-manager-entry.json",
+      "incremental-notifier-sdk.json",
+      "incremental-web-file-preview.json",
+    ],
+  );
+  assert.deepEqual(expectedBaselineFiles(["README.md", null]), [], "非 .json 条目不得进期望集合");
+});
+
+test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（32 段）", () => {
+  const confNames = readdirSync(join(ROOT, "stryker.conf.d")).filter((f) => f.endsWith(".json"));
+  const expected = expectedBaselineFiles(confNames);
+  assert.equal(expected.length, confNames.length, "每个段配置都应对应一个基线文件");
   // 段数为显式哨兵：拆段/合段必须同时改这里（#720 把 dsh-notifier config 段拆三段 31 → 33；
   // #733 按域重写把 notifier 的 10 段重划为 9 段 33 → 32），否则新增段静默漏进归档期望集合也无人察觉。
-  assert.equal(expected.length, 32, `段数应为 32，实际 ${expected.length}`)
-  for (const f of expected) assert.match(f, BASELINE_FILE_RE, `文件名应匹配归档形态：${f}`)
-})
+  assert.equal(expected.length, 32, `段数应为 32，实际 ${expected.length}`);
+  for (const f of expected) assert.match(f, BASELINE_FILE_RE, `文件名应匹配归档形态：${f}`);
+});
 
-test('对账：既未覆盖也不在旧基线 → 报缺口（复现原缺陷的两段）', () => {
-  const expected = ['incremental-a.json', 'incremental-b.json', 'incremental-c.json']
+test("对账：既未覆盖也不在旧基线 → 报缺口（复现原缺陷的两段）", () => {
+  const expected = ["incremental-a.json", "incremental-b.json", "incremental-c.json"];
   const r = reconcileArchive({
     expected,
-    overlaid: ['incremental-a.json'],
-    carriedForward: ['incremental-b.json'],
-  })
-  assert.deepEqual(r.missing, ['incremental-c.json'], '只有两处都没有的段才算缺口')
-  assert.equal(r.overlaidCount, 1)
-  assert.equal(r.carriedCount, 1)
-})
+    overlaid: ["incremental-a.json"],
+    carriedForward: ["incremental-b.json"],
+  });
+  assert.deepEqual(r.missing, ["incremental-c.json"], "只有两处都没有的段才算缺口");
+  assert.equal(r.overlaidCount, 1);
+  assert.equal(r.carriedCount, 1);
+});
 
-test('对账：空归档（首次 overlay）不得误报为「数据丢失」之外的语义', () => {
-  const r = reconcileArchive({ expected: ['incremental-a.json'], overlaid: [], carriedForward: [] })
-  assert.deepEqual(r.missing, ['incremental-a.json'])
-})
-
-test('对账：全覆盖时缺口为空', () => {
+test("对账：空归档（首次 overlay）不得误报为「数据丢失」之外的语义", () => {
   const r = reconcileArchive({
-    expected: ['incremental-a.json', 'incremental-b.json'],
-    overlaid: ['incremental-a.json'],
-    carriedForward: ['incremental-b.json'],
-  })
-  assert.deepEqual(r.missing, [])
-})
+    expected: ["incremental-a.json"],
+    overlaid: [],
+    carriedForward: [],
+  });
+  assert.deepEqual(r.missing, ["incremental-a.json"]);
+});
 
-test('回归：旧实现（只读第 1 页）会丢段，新实现拿全 31 段', () => {
+test("对账：全覆盖时缺口为空", () => {
+  const r = reconcileArchive({
+    expected: ["incremental-a.json", "incremental-b.json"],
+    overlaid: ["incremental-a.json"],
+    carriedForward: ["incremental-b.json"],
+  });
+  assert.deepEqual(r.missing, []);
+});
+
+test("回归：旧实现（只读第 1 页）会丢段，新实现拿全 31 段", () => {
   // 用真实形状构造两页：page1 30 条里混入 14 个 mutation-incremental，page2 40 条里含其余 17 个。
-  const mutPage1 = Array.from({ length: 14 }, (_, i) => `mutation-incremental-pkg-${i}`)
+  const mutPage1 = Array.from({ length: 14 }, (_, i) => `mutation-incremental-pkg-${i}`);
   const mutPage2 = [
-    'mutation-incremental-dsh-provider-usage-errsurf',
-    'mutation-incremental-dsh-web-file-preview-0',
+    "mutation-incremental-dsh-provider-usage-errsurf",
+    "mutation-incremental-dsh-web-file-preview-0",
     ...Array.from({ length: 15 }, (_, i) => `mutation-incremental-pkg-${i + 14}`),
-  ]
-  const others = (n) => Array.from({ length: n }, (_, i) => `report-${i}`)
-  const page1 = [...mutPage1, ...others(16)]
-  const page2 = [...mutPage2, ...others(23)]
-  assert.equal(page1.length + page2.length, 70, 'fixture 应与真实 run 的 total_count 同形')
+  ];
+  const others = (n) => Array.from({ length: n }, (_, i) => `report-${i}`);
+  const page1 = [...mutPage1, ...others(16)];
+  const page2 = [...mutPage2, ...others(23)];
+  assert.equal(page1.length + page2.length, 70, "fixture 应与真实 run 的 total_count 同形");
 
-  let items = []
-  const first = mergeArtifactPage(items, page(page1, 70), 1)
-  const oldWay = mutationArtifacts(first.items) // 旧实现停在第 1 页
-  items = first.items
-  const second = mergeArtifactPage(items, page(page2, 70), 2)
-  const newWay = mutationArtifacts(second.items)
+  let items = [];
+  const first = mergeArtifactPage(items, page(page1, 70), 1);
+  const oldWay = mutationArtifacts(first.items); // 旧实现停在第 1 页
+  items = first.items;
+  const second = mergeArtifactPage(items, page(page2, 70), 2);
+  const newWay = mutationArtifacts(second.items);
 
-  assert.equal(oldWay.length, 14, '旧实现只看到 14 个（与实测一致）')
-  assert.equal(newWay.length, 31, '新实现应拿全 31 个')
-  for (const name of ['mutation-incremental-dsh-provider-usage-errsurf', 'mutation-incremental-dsh-web-file-preview-0']) {
-    assert.ok(!oldWay.some((a) => a.name === name), `旧实现应缺失 ${name}`)
-    assert.ok(newWay.some((a) => a.name === name), `新实现应包含 ${name}`)
+  assert.equal(oldWay.length, 14, "旧实现只看到 14 个（与实测一致）");
+  assert.equal(newWay.length, 31, "新实现应拿全 31 个");
+  for (const name of [
+    "mutation-incremental-dsh-provider-usage-errsurf",
+    "mutation-incremental-dsh-web-file-preview-0",
+  ]) {
+    assert.ok(!oldWay.some((a) => a.name === name), `旧实现应缺失 ${name}`);
+    assert.ok(
+      newWay.some((a) => a.name === name),
+      `新实现应包含 ${name}`,
+    );
   }
-})
+});
 
-test('脚本静态检查：两处 GitHub API 调用都显式带上分页参数', () => {
+test("脚本静态检查：两处 GitHub API 调用都显式带上分页参数", () => {
   // 防回归：任何新增的 actions API 调用若不带 per_page，就是同一个缺陷的复发。
-  const src = readFileSync(join(ROOT, 'scripts/gate/overlay-baseline.mjs'), 'utf8')
-  const apiCalls = (src.match(/['"]api['"],\s*\n?\s*`[^`]+`/g) ?? [])
-    .filter((call) => /actions\/runs/.test(call) || /artifacts/.test(call))
-  assert.ok(apiCalls.length >= 2, `应至少有两处 actions API 调用，实际 ${apiCalls.length}`)
+  const src = readFileSync(join(ROOT, "scripts/gate/overlay-baseline.mjs"), "utf8");
+  const apiCalls = (src.match(/['"]api['"],\s*\n?\s*`[^`]+`/g) ?? []).filter(
+    (call) => /actions\/runs/.test(call) || /artifacts/.test(call),
+  );
+  assert.ok(apiCalls.length >= 2, `应至少有两处 actions API 调用，实际 ${apiCalls.length}`);
   for (const call of apiCalls) {
-    assert.match(call, /per_page=/, `gh api 调用缺少分页参数（默认 30 条会截断）：${call}`)
+    assert.match(call, /per_page=/, `gh api 调用缺少分页参数（默认 30 条会截断）：${call}`);
   }
-})
+});
 
-test('#718: 远端探针三态 —— 用退出码而不是「stdout 是否为空」', () => {
+test("#718: 远端探针三态 —— 用退出码而不是「stdout 是否为空」", () => {
   // git ls-remote --exit-code：0=广告里有该 ref；2=广告里没有；其它(128 等)=环境故障。
-  assert.equal(classifyRemoteProbe({ ok: true, code: 0 }), 'present')
-  assert.equal(classifyRemoteProbe({ ok: false, code: 2 }), 'absent')
-  assert.equal(classifyRemoteProbe({ ok: false, code: 128 }), 'unreachable')
+  assert.equal(classifyRemoteProbe({ ok: true, code: 0 }), "present");
+  assert.equal(classifyRemoteProbe({ ok: false, code: 2 }), "absent");
+  assert.equal(classifyRemoteProbe({ ok: false, code: 128 }), "unreachable");
   // 拿不到退出码（信号终止等）一律按环境故障，不得当成「不存在」。
-  assert.equal(classifyRemoteProbe({ ok: false, code: null }), 'unreachable')
-})
+  assert.equal(classifyRemoteProbe({ ok: false, code: null }), "unreachable");
+});
 
-test('#718: restore 三态判定 —— 「取不到」与「不存在」必须走不同分支', () => {
+test("#718: restore 三态判定 —— 「取不到」与「不存在」必须走不同分支", () => {
   // 拿到就把远端树恢复回来（探针状态不再重要）。
-  assert.equal(decideRestoreOutcome({ probeStatus: 'present', fetchOk: true }).action, 'restore')
-  assert.equal(decideRestoreOutcome({ probeStatus: 'absent', fetchOk: true }).action, 'restore')
+  assert.equal(decideRestoreOutcome({ probeStatus: "present", fetchOk: true }).action, "restore");
+  assert.equal(decideRestoreOutcome({ probeStatus: "absent", fetchOk: true }).action, "restore");
 
   // 探针说「广告里没有」才是首夜，允许降级为全量变异。
-  const bootstrap = decideRestoreOutcome({ probeStatus: 'absent', fetchOk: false })
-  assert.equal(bootstrap.action, 'bootstrap')
-  assert.ok(bootstrap.reason.includes('安全降级为全量变异'), '首夜文案保持既有约定')
+  const bootstrap = decideRestoreOutcome({ probeStatus: "absent", fetchOk: false });
+  assert.equal(bootstrap.action, "bootstrap");
+  assert.ok(bootstrap.reason.includes("安全降级为全量变异"), "首夜文案保持既有约定");
 
   // ref 确实在、只是取不到 → 数据故障，任何调用方都不得放宽（写路径上意味着删段）。
-  const fetchFailed = decideRestoreOutcome({ probeStatus: 'present', fetchOk: false })
-  assert.equal(fetchFailed.action, 'fail', 'ref 存在但拉取失败必须 fail-loud')
+  const fetchFailed = decideRestoreOutcome({ probeStatus: "present", fetchOk: false });
+  assert.equal(fetchFailed.action, "fail", "ref 存在但拉取失败必须 fail-loud");
 
   // 环境故障 → 无法判定，必须 fail-loud；这正是 2026-09-11 05:18 的形态。
-  const unreachable = decideRestoreOutcome({ probeStatus: 'unreachable', fetchOk: false })
-  assert.equal(unreachable.action, 'fail', '远端不可达不得降级为首夜')
-  assert.notEqual(fetchFailed.reason, unreachable.reason, '两种 fail 原因应可区分，便于定位')
+  const unreachable = decideRestoreOutcome({ probeStatus: "unreachable", fetchOk: false });
+  assert.equal(unreachable.action, "fail", "远端不可达不得降级为首夜");
+  assert.notEqual(fetchFailed.reason, unreachable.reason, "两种 fail 原因应可区分，便于定位");
   for (const r of [fetchFailed, unreachable]) {
-    assert.ok(!r.reason.includes('安全降级'), 'fail 分支不得复用降级文案')
+    assert.ok(!r.reason.includes("安全降级"), "fail 分支不得复用降级文案");
   }
 
   // 未知状态属于编程错误：宁可判红，也不能默默降级。
-  assert.equal(decideRestoreOutcome({ probeStatus: 'bogus', fetchOk: false }).action, 'fail')
-})
+  assert.equal(decideRestoreOutcome({ probeStatus: "bogus", fetchOk: false }).action, "fail");
+});
 
 // ── #718 S1.2：并集入档对账 ──────────────────────────────────────────────────
 // 旧写入口是整树替换：本班次没产出的段直接在新树里消失，且没有任何日志说出来（实测 33 → 31）。
 // planArchive 把「本次没产出什么」变成一条显式记账，并把归档里不该留的遗留段点名退役。
 
-test('#718 S1.2: 并集对账 —— 未产出但远端有的段沿用，两边都没有的才算缺', () => {
-  const expected = ['incremental-a.json', 'incremental-b.json', 'incremental-c.json']
+test("#718 S1.2: 并集对账 —— 未产出但远端有的段沿用，两边都没有的才算缺", () => {
+  const expected = ["incremental-a.json", "incremental-b.json", "incremental-c.json"];
   const plan = planArchive({
     expected,
-    produced: ['incremental-a.json'],
-    carried: ['incremental-a.json', 'incremental-b.json'],
-  })
-  assert.deepEqual(plan.newlyMeasured, ['incremental-a.json'], '本次产出 = 新算')
-  assert.deepEqual(plan.carriedOver, ['incremental-b.json'], '未产出但远端有 = 沿用（不丢段）')
-  assert.deepEqual(plan.missing, ['incremental-c.json'], '两边都没有 = 缺（必须告警）')
+    produced: ["incremental-a.json"],
+    carried: ["incremental-a.json", "incremental-b.json"],
+  });
+  assert.deepEqual(plan.newlyMeasured, ["incremental-a.json"], "本次产出 = 新算");
+  assert.deepEqual(plan.carriedOver, ["incremental-b.json"], "未产出但远端有 = 沿用（不丢段）");
+  assert.deepEqual(plan.missing, ["incremental-c.json"], "两边都没有 = 缺（必须告警）");
   // 三类互斥且完备：并起来恰好等于期望集合，不多不少。
   assert.deepEqual(
     [...plan.newlyMeasured, ...plan.carriedOver, ...plan.missing].sort(),
     [...expected].sort(),
-    '三类必须互斥且完备，否则计数会掩盖丢段',
-  )
-  assert.deepEqual(plan.retired, [])
-})
+    "三类必须互斥且完备，否则计数会掩盖丢段",
+  );
+  assert.deepEqual(plan.retired, []);
+});
 
-test('#718 S1.2: 并集对账 —— 段被拆并/改名后的遗留文件必须退役，否则永远留在归档里', () => {
+test("#718 S1.2: 并集对账 —— 段被拆并/改名后的遗留文件必须退役，否则永远留在归档里", () => {
   // 真实形态：dsh-notifier-config 拆成 -normalize/-validate/-rest 三段后，旧文件仍在归档上。
   const plan = planArchive({
-    expected: ['incremental-notifier-config-normalize.json', 'incremental-notifier-config-rest.json'],
-    produced: ['incremental-notifier-config-rest.json'],
-    carried: ['incremental-notifier-config.json', 'incremental-notifier-config-normalize.json'],
-  })
-  assert.deepEqual(plan.retired, ['incremental-notifier-config.json'], '不在期望集合的遗留段要退役')
-  assert.deepEqual(plan.carriedOver, ['incremental-notifier-config-normalize.json'])
-  assert.deepEqual(plan.missing, [])
-})
+    expected: [
+      "incremental-notifier-config-normalize.json",
+      "incremental-notifier-config-rest.json",
+    ],
+    produced: ["incremental-notifier-config-rest.json"],
+    carried: ["incremental-notifier-config.json", "incremental-notifier-config-normalize.json"],
+  });
+  assert.deepEqual(
+    plan.retired,
+    ["incremental-notifier-config.json"],
+    "不在期望集合的遗留段要退役",
+  );
+  assert.deepEqual(plan.carriedOver, ["incremental-notifier-config-normalize.json"]);
+  assert.deepEqual(plan.missing, []);
+});
 
-test('#718 S1.2: 并集对账 —— 首次入档（无远端）时除本次产出外全为缺，且不得报退役', () => {
-  const plan = planArchive({ expected: ['incremental-a.json', 'incremental-b.json'], produced: ['incremental-a.json'] })
-  assert.deepEqual(plan.missing, ['incremental-b.json'], '首夜缺段是预期形态，靠告警而非判红')
-  assert.deepEqual(plan.retired, [], '本地产出都在期望集合内时不得报退役')
+test("#718 S1.2: 并集对账 —— 首次入档（无远端）时除本次产出外全为缺，且不得报退役", () => {
+  const plan = planArchive({
+    expected: ["incremental-a.json", "incremental-b.json"],
+    produced: ["incremental-a.json"],
+  });
+  assert.deepEqual(plan.missing, ["incremental-b.json"], "首夜缺段是预期形态，靠告警而非判红");
+  assert.deepEqual(plan.retired, [], "本地产出都在期望集合内时不得报退役");
   // 期望集合为空是编程/配置错误：此时每个文件都会被判退役，故调用方必须在此之前 fail-loud。
-  const degenerate = planArchive({ expected: [], produced: ['incremental-a.json'], carried: ['incremental-b.json'] })
-  assert.deepEqual(degenerate.retired, ['incremental-a.json', 'incremental-b.json'])
-})
+  const degenerate = planArchive({
+    expected: [],
+    produced: ["incremental-a.json"],
+    carried: ["incremental-b.json"],
+  });
+  assert.deepEqual(degenerate.retired, ["incremental-a.json", "incremental-b.json"]);
+});
 
-test('#718 S1.2: 回滚快照 tag —— 名字含旧 tip 短 sha，保留窗口按时间序裁剪', () => {
-  const tip = 'a'.repeat(40)
-  const tag = snapshotTagFor(tip, new Date('2026-09-12T09:40:00.000Z'))
-  assert.equal(tag, `baseline-snap-20260912T094000Z-${'a'.repeat(7)}`)
+test("#718 S1.2: 回滚快照 tag —— 名字含旧 tip 短 sha，保留窗口按时间序裁剪", () => {
+  const tip = "a".repeat(40);
+  const tag = snapshotTagFor(tip, new Date("2026-09-12T09:40:00.000Z"));
+  assert.equal(tag, `baseline-snap-20260912T094000Z-${"a".repeat(7)}`);
   // release.yml 由 `push: tags: v*` 触发：快照 tag 一旦以 v 开头就会误触发发布管线。
-  assert.ok(!tag.startsWith('v'), '快照 tag 不得以 v 开头（会命中 release.yml 的 v* 触发器）')
+  assert.ok(!tag.startsWith("v"), "快照 tag 不得以 v 开头（会命中 release.yml 的 v* 触发器）");
   // 同一秒内两次入档（旧 tip 不同）也必须区分得开，否则 tag 推送直接失败。
-  assert.notEqual(tag, snapshotTagFor('b'.repeat(40), new Date('2026-09-12T09:40:00.000Z')))
+  assert.notEqual(tag, snapshotTagFor("b".repeat(40), new Date("2026-09-12T09:40:00.000Z")));
 
-  const refs = Array.from({ length: ARCHIVE_SNAPSHOT_KEEP + 3 }, (_, i) =>
-    `refs/tags/baseline-snap-202609${String(i + 1).padStart(2, '0')}T000000Z-${'c'.repeat(7)}`,
-  )
+  const refs = Array.from(
+    { length: ARCHIVE_SNAPSHOT_KEEP + 3 },
+    (_, i) =>
+      `refs/tags/baseline-snap-202609${String(i + 1).padStart(2, "0")}T000000Z-${"c".repeat(7)}`,
+  );
   assert.deepEqual(
     pruneSnapshotPlan(refs),
     refs.slice(0, 3),
     `超出保留窗口的 ${3} 个（最旧）应被清理`,
-  )
-  assert.deepEqual(pruneSnapshotPlan(refs.slice(0, 2)), [], '未超窗口不得删任何快照')
+  );
+  assert.deepEqual(pruneSnapshotPlan(refs.slice(0, 2)), [], "未超窗口不得删任何快照");
   // 非本前缀的 tag（例如发布 tag）绝不能被这条清理逻辑碰到。
-  assert.deepEqual(pruneSnapshotPlan(['refs/tags/v1.2.3', 'refs/tags/baseline-snap-other']), [], '只清理自己的前缀')
-})
+  assert.deepEqual(
+    pruneSnapshotPlan(["refs/tags/v1.2.3", "refs/tags/baseline-snap-other"]),
+    [],
+    "只清理自己的前缀",
+  );
+});
 
 // ── #718 S2.1：overlay 的「产物过期」与「无产物」分流 ────────────────────────
 
-test('#718 S2.1: 「看不到变异产物」两态分流 —— 汇总判分 job 不得被误计为矩阵实例', () => {
+test("#718 S2.1: 「看不到变异产物」两态分流 —— 汇总判分 job 不得被误计为矩阵实例", () => {
   const lost = classifyMissingMutationProducts({
     jobNames: [
-      'Detect changed packages',
-      'Mutation gate (dsh-notifier · text)',
-      'Mutation gate (dsh-notifier · events)',
-      'Mutation gate verdict (aggregate)',
+      "Detect changed packages",
+      "Mutation gate (dsh-notifier · text)",
+      "Mutation gate (dsh-notifier · events)",
+      "Mutation gate verdict (aggregate)",
     ],
     expiredArtifactCount: 3,
-  })
-  assert.equal(lost.kind, 'lost', '有实例却看不到产物 ⇒ 只能是丢失')
-  assert.equal(lost.instanceCount, 2, '汇总判分 job「Mutation gate verdict (...)」不是矩阵实例，不得计入')
-  assert.ok(lost.reason.includes('产物已不可见'), '原因须点名「不可见」，与「没有产物」区分开')
-  assert.ok(lost.reason.includes('3'), '过期 artifact 计数作为旁证写进原因')
+  });
+  assert.equal(lost.kind, "lost", "有实例却看不到产物 ⇒ 只能是丢失");
+  assert.equal(
+    lost.instanceCount,
+    2,
+    "汇总判分 job「Mutation gate verdict (...)」不是矩阵实例，不得计入",
+  );
+  assert.ok(lost.reason.includes("产物已不可见"), "原因须点名「不可见」，与「没有产物」区分开");
+  assert.ok(lost.reason.includes("3"), "过期 artifact 计数作为旁证写进原因");
 
   const none = classifyMissingMutationProducts({
-    jobNames: ['Detect changed packages', 'Build / Test / Typecheck (dsh-notifier)'],
+    jobNames: ["Detect changed packages", "Build / Test / Typecheck (dsh-notifier)"],
     expiredArtifactCount: 0,
-  })
-  assert.equal(none.kind, 'none', '没跑过变异实例 ⇒ 正确的 no-op')
-  assert.equal(none.instanceCount, 0)
-  assert.ok(none.reason.includes('未运行任何变异矩阵实例'))
+  });
+  assert.equal(none.kind, "none", "没跑过变异实例 ⇒ 正确的 no-op");
+  assert.equal(none.instanceCount, 0);
+  assert.ok(none.reason.includes("未运行任何变异矩阵实例"));
 
   // 空 / 脏输入不得抛，且一律落到 no-op：这个分流用于**提高**报警灵敏度，
   // 宁可漏报一次，也不能因为上游返回形态异常把纯文档 PR 判红。
-  for (const input of [undefined, {}, { jobNames: null }, { jobNames: [1, null, ''] }]) {
-    assert.equal(classifyMissingMutationProducts(input).kind, 'none', `脏输入 ${JSON.stringify(input)} 应落 no-op`)
+  for (const input of [undefined, {}, { jobNames: null }, { jobNames: [1, null, ""] }]) {
+    assert.equal(
+      classifyMissingMutationProducts(input).kind,
+      "none",
+      `脏输入 ${JSON.stringify(input)} 应落 no-op`,
+    );
   }
 
-  assert.equal(MUTATION_GATE_JOB_RE.test('Mutation gate verdict (aggregate)'), false, '汇总 job 名不匹配实例形态')
-  assert.equal(MUTATION_GATE_JOB_RE.test('Mutation gate (dsh-notifier · text)'), true)
-})
+  assert.equal(
+    MUTATION_GATE_JOB_RE.test("Mutation gate verdict (aggregate)"),
+    false,
+    "汇总 job 名不匹配实例形态",
+  );
+  assert.equal(MUTATION_GATE_JOB_RE.test("Mutation gate (dsh-notifier · text)"), true);
+});

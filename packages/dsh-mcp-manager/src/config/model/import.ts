@@ -15,13 +15,15 @@ import type { ServerConfig } from "../../types/interface.ts";
 export function fromClaudeEntry(name: string, entry: Record<string, unknown>): ServerConfig {
   const type = entry.type;
   if (type === "http" || type === "sse" || entry.url !== undefined) {
-    if (typeof entry.url !== "string" || entry.url === "") throw new Error(`server "${name}": missing url`);
+    if (typeof entry.url !== "string" || entry.url === "")
+      throw new Error(`server "${name}": missing url`);
     const server: ServerConfig = {
       name,
       transport: "streamable-http",
       url: entry.url,
     };
-    if (typeof entry.headers === "object" && entry.headers !== null) server.headers = entry.headers as Record<string, string>;
+    if (typeof entry.headers === "object" && entry.headers !== null)
+      server.headers = entry.headers as Record<string, string>;
     if (typeof entry.env === "object" && entry.env !== null && Object.keys(entry.env).length > 0) {
       // http 传输不支持 env，合并进 headers 之外忽略——记录来源即可
       server.sourceEnv = Object.keys(entry.env);
@@ -39,7 +41,9 @@ export function fromClaudeEntry(name: string, entry: Record<string, unknown>): S
   if (Array.isArray(entry.args)) server.args = entry.args.map(String);
   if (typeof entry.cwd === "string" && entry.cwd !== "") server.cwd = entry.cwd;
   if (typeof entry.env === "object" && entry.env !== null) {
-    server.env = Object.fromEntries(Object.entries(entry.env).map(([key, value]) => [key, String(value)]));
+    server.env = Object.fromEntries(
+      Object.entries(entry.env).map(([key, value]) => [key, String(value)]),
+    );
   }
   return server;
 }
@@ -51,7 +55,8 @@ export function parseClaudeJson(text: string): ServerConfig[] {
     throw new Error("JSON must be an object of { serverName: config }");
   }
   return Object.entries(parsed as Record<string, unknown>).map(([name, entry]) => {
-    if (typeof entry !== "object" || entry === null) throw new Error(`server "${name}": entry must be an object`);
+    if (typeof entry !== "object" || entry === null)
+      throw new Error(`server "${name}": entry must be an object`);
     return fromClaudeEntry(name, entry as Record<string, unknown>);
   });
 }

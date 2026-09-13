@@ -5,7 +5,12 @@
  * 本文件手写导出声明，与实现保持同步；经 index.ts re-export 后供 TS 消费
  * （lib/index.d.ts 的 `export * from "./adapters/opencode-go.js"` 指向本声明）。
  */
-import type { UsageStatsAdapter, FetchContext, CapsuleInput, PanelInput } from "../../shared/interface.ts";
+import type {
+  UsageStatsAdapter,
+  FetchContext,
+  CapsuleInput,
+  PanelInput,
+} from "../../shared/interface.ts";
 
 /** 内置适配器的 provider 名（如 "opencode-go"）。 */
 export declare const OPENCODE_GO_PROVIDER: string;
@@ -31,12 +36,27 @@ export declare function pickWindow(
   key: string,
   name: string,
   limit: number,
-): { key: string; name: string; percent: number | null; raw?: string; limit: number; resetsAt?: string } | null;
+): {
+  key: string;
+  name: string;
+  percent: number | null;
+  raw?: string;
+  limit: number;
+  resetsAt?: string;
+} | null;
 
 /** 解析用量响应体（兼容 {usage:{...}} 与直接三键两种形状）。 */
-export declare function parseUsageResponse(
-  body: unknown,
-): Record<string, { key: string; name: string; percent: number | null; raw?: string; limit: number; resetsAt?: string }> | null;
+export declare function parseUsageResponse(body: unknown): Record<
+  string,
+  {
+    key: string;
+    name: string;
+    percent: number | null;
+    raw?: string;
+    limit: number;
+    resetsAt?: string;
+  }
+> | null;
 
 /** 调用官方用量接口（fetch 可注入，便于单测）。 */
 export declare function fetchOpenCodeGoV2(

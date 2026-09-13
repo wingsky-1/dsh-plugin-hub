@@ -15,13 +15,13 @@
  */
 
 /** 归档分支上参与对账的文件名形态（段级增量基线）。 */
-export const BASELINE_FILE_RE = /^incremental-.+\.json$/
+export const BASELINE_FILE_RE = /^incremental-.+\.json$/;
 
 /** mutation artifact 的命名前缀（ci.yml 的 upload-artifact name 约定）。 */
-export const MUTATION_ARTIFACT_PREFIX = 'mutation-incremental-'
+export const MUTATION_ARTIFACT_PREFIX = "mutation-incremental-";
 
 /** GitHub API 单页上限；请求时显式带上它，避免默认 30 条截断。 */
-export const GH_API_PER_PAGE = 100
+export const GH_API_PER_PAGE = 100;
 
 /**
  * 把「一页 artifact」合并进结果集，返回 { items, nextPage, done }。
@@ -35,11 +35,11 @@ export const GH_API_PER_PAGE = 100
  * 造成重复请求同一页（脚本侧另有 MAX_PAGES 硬上限兜底）。
  */
 export function mergeArtifactPage(items, page, pageNo = 1) {
-  const incoming = Array.isArray(page?.artifacts) ? page.artifacts : []
-  const merged = [...items, ...incoming]
-  const total = typeof page?.total_count === 'number' ? page.total_count : merged.length
-  const done = incoming.length === 0 || merged.length >= total
-  return { items: merged, nextPage: done ? null : pageNo + 1, done }
+  const incoming = Array.isArray(page?.artifacts) ? page.artifacts : [];
+  const merged = [...items, ...incoming];
+  const total = typeof page?.total_count === "number" ? page.total_count : merged.length;
+  const done = incoming.length === 0 || merged.length >= total;
+  return { items: merged, nextPage: done ? null : pageNo + 1, done };
 }
 
 /**
@@ -48,11 +48,13 @@ export function mergeArtifactPage(items, page, pageNo = 1) {
  * 而是等下载后按产物内**实际文件名**（`incremental-*.json`）判定。
  */
 export function mutationArtifacts(artifacts) {
-  return (artifacts ?? []).filter((a) => typeof a?.name === 'string' && a.name.startsWith(MUTATION_ARTIFACT_PREFIX))
+  return (artifacts ?? []).filter(
+    (a) => typeof a?.name === "string" && a.name.startsWith(MUTATION_ARTIFACT_PREFIX),
+  );
 }
 
 /** ci.yml 变异矩阵实例的 job 名形态：`Mutation gate (<pkg> · <seg>)`。 */
-export const MUTATION_GATE_JOB_RE = /^Mutation gate \(/
+export const MUTATION_GATE_JOB_RE = /^Mutation gate \(/;
 
 /**
  * 「看不到变异产物」的两态分流（#718 S2.1）。
@@ -67,21 +69,23 @@ export const MUTATION_GATE_JOB_RE = /^Mutation gate \(/
  * 旁证，不单独当判据——过期记录本身也可能已被清理，届时它同样是 0。
  */
 export function classifyMissingMutationProducts({ jobNames, expiredArtifactCount = 0 } = {}) {
-  const instances = (jobNames ?? []).filter((n) => typeof n === 'string' && MUTATION_GATE_JOB_RE.test(n))
+  const instances = (jobNames ?? []).filter(
+    (n) => typeof n === "string" && MUTATION_GATE_JOB_RE.test(n),
+  );
   if (instances.length > 0) {
     return {
-      kind: 'lost',
+      kind: "lost",
       instanceCount: instances.length,
       reason:
-        `CI 曾运行 ${instances.length} 个变异矩阵实例，但产物已不可见`
-        + `（过期或被删除；本次 run 中 ${expiredArtifactCount} 个 artifact 标记 expired）`,
-    }
+        `CI 曾运行 ${instances.length} 个变异矩阵实例，但产物已不可见` +
+        `（过期或被删除；本次 run 中 ${expiredArtifactCount} 个 artifact 标记 expired）`,
+    };
   }
   return {
-    kind: 'none',
+    kind: "none",
     instanceCount: 0,
-    reason: 'CI 未运行任何变异矩阵实例（纯文档 / 未触及变异切片）',
-  }
+    reason: "CI 未运行任何变异矩阵实例（纯文档 / 未触及变异切片）",
+  };
 }
 
 /**
@@ -91,19 +95,19 @@ export function classifyMissingMutationProducts({ jobNames, expiredArtifactCount
  */
 export function expectedBaselineFiles(confFileNames) {
   return (confFileNames ?? [])
-    .filter((f) => typeof f === 'string' && f.endsWith('.json'))
-    .map((f) => `incremental-${f.replace(/^dsh-/, '')}`)
-    .sort()
+    .filter((f) => typeof f === "string" && f.endsWith(".json"))
+    .map((f) => `incremental-${f.replace(/^dsh-/, "")}`)
+    .sort();
 }
 
 /** 归档分支上参与对账的 manifest 文件名（记录每份基线文件的 size/mtime/sha256）。 */
-export const BASELINE_MANIFEST_FILE = 'manifest.json'
+export const BASELINE_MANIFEST_FILE = "manifest.json";
 
 /** 回滚快照 tag 前缀。刻意不以 `v` 开头——release.yml 由 `push: tags: v*` 触发。 */
-export const ARCHIVE_SNAPSHOT_TAG_PREFIX = 'baseline-snap-'
+export const ARCHIVE_SNAPSHOT_TAG_PREFIX = "baseline-snap-";
 
 /** 保留的回滚快照个数（每次入档产生一个，超出即删最旧）。 */
-export const ARCHIVE_SNAPSHOT_KEEP = 10
+export const ARCHIVE_SNAPSHOT_KEEP = 10;
 
 /**
  * 入档对账（#718 S1.2 的核心判定，纯函数）。
@@ -121,17 +125,17 @@ export const ARCHIVE_SNAPSHOT_KEEP = 10
  *              否则并集语义会让它永远留在基线里（整树替换时代是被顺带清掉的）。
  */
 export function planArchive({ expected, produced, carried } = {}) {
-  const expectedSet = new Set(expected ?? [])
-  const producedSet = new Set(produced ?? [])
-  const carriedSet = new Set(carried ?? [])
-  const expectedList = expected ?? []
-  const newlyMeasured = expectedList.filter((f) => producedSet.has(f))
-  const carriedOver = expectedList.filter((f) => !producedSet.has(f) && carriedSet.has(f))
-  const missing = expectedList.filter((f) => !producedSet.has(f) && !carriedSet.has(f))
+  const expectedSet = new Set(expected ?? []);
+  const producedSet = new Set(produced ?? []);
+  const carriedSet = new Set(carried ?? []);
+  const expectedList = expected ?? [];
+  const newlyMeasured = expectedList.filter((f) => producedSet.has(f));
+  const carriedOver = expectedList.filter((f) => !producedSet.has(f) && carriedSet.has(f));
+  const missing = expectedList.filter((f) => !producedSet.has(f) && !carriedSet.has(f));
   const retired = [...new Set([...(carried ?? []), ...(produced ?? [])])]
     .filter((f) => !expectedSet.has(f))
-    .sort()
-  return { newlyMeasured, carriedOver, missing, retired }
+    .sort();
+  return { newlyMeasured, carriedOver, missing, retired };
 }
 
 /**
@@ -140,16 +144,21 @@ export function planArchive({ expected, produced, carried } = {}) {
  * 附短 sha 是为了同一秒内两次入档也不撞名（撞名会让 `git push <sha>:refs/tags/<t>` 直接失败）。
  */
 export function snapshotTagFor(tipSha, now = new Date()) {
-  const stamp = now.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')
-  return `${ARCHIVE_SNAPSHOT_TAG_PREFIX}${stamp}-${String(tipSha).slice(0, 7)}`
+  const stamp = now
+    .toISOString()
+    .replace(/[-:]/g, "")
+    .replace(/\.\d+Z$/, "Z");
+  return `${ARCHIVE_SNAPSHOT_TAG_PREFIX}${stamp}-${String(tipSha).slice(0, 7)}`;
 }
 
 /** 保留最近 keep 个快照 tag，返回应删除的 ref 全名（字典序即时间序）。 */
 export function pruneSnapshotPlan(refNames, keep = ARCHIVE_SNAPSHOT_KEEP) {
   const ours = (refNames ?? [])
-    .filter((r) => typeof r === 'string' && r.startsWith(`refs/tags/${ARCHIVE_SNAPSHOT_TAG_PREFIX}`))
-    .sort()
-  return ours.slice(0, Math.max(0, ours.length - keep))
+    .filter(
+      (r) => typeof r === "string" && r.startsWith(`refs/tags/${ARCHIVE_SNAPSHOT_TAG_PREFIX}`),
+    )
+    .sort();
+  return ours.slice(0, Math.max(0, ours.length - keep));
 }
 
 /**
@@ -160,9 +169,13 @@ export function pruneSnapshotPlan(refNames, keep = ARCHIVE_SNAPSHOT_KEEP) {
  *     让维护者知道要查上游（产物上传失败 / 分页截断 / 段配置漂移）。
  */
 export function reconcileArchive({ expected, overlaid, carriedForward }) {
-  const have = new Set([...(overlaid ?? []), ...(carriedForward ?? [])])
-  const missing = (expected ?? []).filter((f) => !have.has(f))
-  return { missing, carriedCount: (carriedForward ?? []).length, overlaidCount: (overlaid ?? []).length }
+  const have = new Set([...(overlaid ?? []), ...(carriedForward ?? [])]);
+  const missing = (expected ?? []).filter((f) => !have.has(f));
+  return {
+    missing,
+    carriedCount: (carriedForward ?? []).length,
+    overlaidCount: (overlaid ?? []).length,
+  };
 }
 
 /**
@@ -175,9 +188,9 @@ export function reconcileArchive({ expected, overlaid, carriedForward }) {
  * 「空 stdout」在这里不再承担判据职责，避免与「远端只广告了部分 ref」混淆。
  */
 export function classifyRemoteProbe({ ok, code }) {
-  if (ok) return 'present'
-  if (code === 2) return 'absent'
-  return 'unreachable'
+  if (ok) return "present";
+  if (code === 2) return "absent";
+  return "unreachable";
 }
 
 /**
@@ -198,15 +211,15 @@ export function classifyRemoteProbe({ ok, code }) {
  * `mutation-suites` outcome 门控已随 #718 S2.2 退役（并集语义不依赖「产物齐全」）。
  */
 export function decideRestoreOutcome({ probeStatus, fetchOk }) {
-  if (fetchOk) return { action: 'restore' }
-  if (probeStatus === 'present') {
-    return { action: 'fail', reason: '远端基线分支存在但拉取失败（拒绝以空基线覆盖）' }
+  if (fetchOk) return { action: "restore" };
+  if (probeStatus === "present") {
+    return { action: "fail", reason: "远端基线分支存在但拉取失败（拒绝以空基线覆盖）" };
   }
-  if (probeStatus === 'unreachable') {
-    return { action: 'fail', reason: '远端不可达，无法判定是否存在基线（拒绝以空基线继续）' }
+  if (probeStatus === "unreachable") {
+    return { action: "fail", reason: "远端不可达，无法判定是否存在基线（拒绝以空基线继续）" };
   }
-  if (probeStatus === 'absent') {
-    return { action: 'bootstrap', reason: '远端基线分支尚不存在，本次安全降级为全量变异' }
+  if (probeStatus === "absent") {
+    return { action: "bootstrap", reason: "远端基线分支尚不存在，本次安全降级为全量变异" };
   }
-  return { action: 'fail', reason: `未知的探针状态 ${String(probeStatus)}（拒绝以空基线继续）` }
+  return { action: "fail", reason: `未知的探针状态 ${String(probeStatus)}（拒绝以空基线继续）` };
 }
