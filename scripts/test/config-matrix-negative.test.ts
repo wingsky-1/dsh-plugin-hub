@@ -1,214 +1,294 @@
 #!/usr/bin/env node
 // @ts-nocheck
-'use strict'
+"use strict";
 
 /**
- * config-matrix-negative 负向自测（issue #471 P1-3：漏表方向注入 → 门禁红 +
- * 报错含键名）。
+ * config-matrix-negative 负向自测（issue #471 P1-3：漏表方向注入 → 门禁红 + 报错含键名）。
  *
- * 负向用例对**真实 src/config.ts / src/client/index.ts 的 mkdtemp 副本**注入
- * （删键 / 加假键），再跑与 contract-check 同一 runConfigMatrix(root)——副本
- * 等效性论证：矩阵提取器输入仅源文本（无 import 解析、无运行时、无 lib 产物
- * 依赖），复制文件即等价于真实文件；注入后断言矩阵 pass=false 且 problems
- * 含被注入键名。零污染：临时目录随测试结束 rmSync（#218 纪律）。
+ * #733 计划项 3.1.1 后 notifier 矩阵改为**声明驱动 + 运行时取值**：键集来自
+ * plugins-manifest.json 的 configSurfaces 所声明的模块导出。故副本除了配置域源码，还必须
+ * 复制该声明文件与 notifier 的 package.json——后者决定 .ts 走 ESM＋原生类型剥离。
  *
- * 覆盖方向（每方向至少一例，合计 ≥6）：
- *   lan-proxy ① 删 FILE_CONFIG_VALIDATORS 一键 → 红 ② DEFAULTS 增 schema 外键
- *     → 红 ③ 删 Config schema 键 → 红 ④ DEFAULTS 删非豁免键 → 红
- *   notifier ⑤ 删 DEFAULT_CONFIG 一键 → 红 ⑥ SETTING_HINTS 加假键 → 红
- *     ⑦ CONFIG_KEYS 漏布尔键 → 红 ⑧ normalizeConfig 漏归一化分支 → 红
- *     ⑨ 客户端 EVENT_KEYS 删事件键 → 红 ⑩ 客户端渲染 validators 外键 → 红
- *     ⑪ 客户端引用豁免键（豁免残留）→ 红
- * 另含「纯副本不改动 → pass」正对照（防注入函数自身破坏文件）。
+ * 覆盖方向：
+ *   lan-proxy ① 删 FILE_CONFIG_VALIDATORS 一键 → 红 ② DEFAULTS 增 schema 外键 → 红
+ *     ③ 删 Config schema 键 → 红 ④ DEFAULTS 删非豁免键 → 红
+ *   notifier ⑤ 删 DEFAULT_CONFIG 一键（normalizeConfig 仍显式写该键 → 键集不等）→ 红
+ *     ⑥ DEFAULT_CONFIG 加假键（normalizeConfig 不产出）→ 红
+ *     ⑦ 声明指向不存在的模块 → 红（本轮红因「路径硬编码腐烂」的回归守卫）
+ *     ⑧ 声明指向不存在的导出 → 红
+ *     ⑨ 声明里没有 notifier（挪进 pending）→ 红（门禁侧未登记即红）
+ *     ⑩ 两处都不登记 notifier → 红（manifest 自洽校验的双向断言）
+ * 另含「纯副本不改动 → pass」正对照与 README 缺键仅 warn 的用例。
  *
  * 运行：node --test scripts/test/config-matrix-negative.test.ts（随 pnpm test:scripts）
  */
-import { test } from 'node:test'
-import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, cpSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { runConfigMatrix } from '../lib/config-matrix-gate.ts'
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, cpSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { runConfigMatrix } from "../lib/config-matrix-gate.ts";
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const NOTIFIER_CONFIG_DIR = "packages/dsh-notifier/src/server/config";
 
-/** mkdtemp 副本仓库：复制两包矩阵输入面（lan-proxy 平铺 config.ts；notifier 配置域
- *  拆三文件 config/config.ts + validators + normalize，随 #669 PR1 目录树同步）。 */
+/** mkdtemp 副本仓库：复制矩阵的输入面（lan-proxy 平铺 config.ts；notifier 整个配置域）
+ *  加上声明文件与 package.json。 */
 function fakeRepo() {
-  const root = mkdtempSync(join(tmpdir(), 'cfgmtx-'))
+  const root = mkdtempSync(join(tmpdir(), "cfgmtx-"));
   try {
-    for (const pkg of ['dsh-lan-proxy', 'dsh-notifier']) {
-      mkdirSync(join(root, 'packages', pkg, 'src', 'client'), { recursive: true })
-      mkdirSync(join(root, 'packages', pkg, 'src', 'config'), { recursive: true })
-    }
-    const srcs = [
-      ['dsh-lan-proxy', 'config.ts'],
-      ['dsh-lan-proxy', 'client/index.ts'],
-      ['dsh-notifier', 'config/config.ts'],
-      ['dsh-notifier', 'config/validators.ts'],
-      ['dsh-notifier', 'config/normalize.ts'],
-      ['dsh-notifier', 'client/index.tsx'],
-    ]
-    for (const [pkg, rel] of srcs) {
-      copyLf(join(ROOT, 'packages', pkg, 'src', rel), join(root, 'packages', pkg, 'src', rel))
-    }
+    mkdirSync(join(root, "packages", "dsh-lan-proxy", "src", "client"), { recursive: true });
+    mkdirSync(join(root, "scripts", "data"), { recursive: true });
+    copyLf(
+      join(ROOT, "packages/dsh-lan-proxy/src/config.ts"),
+      join(root, "packages/dsh-lan-proxy/src/config.ts"),
+    );
+    copyLf(
+      join(ROOT, "packages/dsh-lan-proxy/src/client/index.ts"),
+      join(root, "packages/dsh-lan-proxy/src/client/index.ts"),
+    );
+    // 配置域整棵复制：运行时 require 要走完整 import 链（impl/input → ../model）。
+    cpSync(join(ROOT, NOTIFIER_CONFIG_DIR), join(root, NOTIFIER_CONFIG_DIR), { recursive: true });
+    // type: module 决定 .ts 按 ESM 解析；缺了它，require 会按 CJS 处理含 export 的源码。
+    copyLf(
+      join(ROOT, "packages/dsh-notifier/package.json"),
+      join(root, "packages/dsh-notifier/package.json"),
+    );
+    copyLf(
+      join(ROOT, "scripts/data/plugins-manifest.json"),
+      join(root, "scripts/data/plugins-manifest.json"),
+    );
   } catch (e) {
-    rmSync(root, { recursive: true, force: true })
-    throw e
+    rmSync(root, { recursive: true, force: true });
+    throw e;
   }
-  return root
+  return root;
 }
 
 // win32 checkout 常为 CRLF：变异正则按 LF 书写——副本统一归一化 LF，
 // 保证变异在两个平台等价生效（gate 解析对行尾不敏感）。
 function copyLf(srcPath, destPath) {
-  writeFileSync(destPath, readFileSync(srcPath, 'utf8').replace(/\r\n/g, '\n'))
+  writeFileSync(destPath, readFileSync(srcPath, "utf8").replace(/\r\n/g, "\n"));
 }
 
 function edit(root, pkg, rel, fn) {
-  const f = join(root, 'packages', pkg, 'src', rel)
-  writeFileSync(f, fn(readFileSync(f, 'utf8').replace(/\r\n/g, '\n')))
+  const f = join(root, "packages", pkg, "src", rel);
+  writeFileSync(f, fn(readFileSync(f, "utf8").replace(/\r\n/g, "\n")));
+}
+
+function editManifest(root, fn) {
+  const f = join(root, "scripts", "data", "plugins-manifest.json");
+  writeFileSync(f, fn(readFileSync(f, "utf8").replace(/\r\n/g, "\n")));
 }
 
 /** 通用断言：注入后矩阵红 + problems 含 expectKey；若 expectKey 为数组则逐一断言。 */
 function assertRed(label, mutate, expectKeys) {
-  const root = fakeRepo()
+  const root = fakeRepo();
   try {
-    mutate(root)
-    const r = runConfigMatrix(root)
-    assert.equal(r.pass, false, `${label}: 注入后门禁应红`)
-    const joined = r.problems.join('\n')
-    for (const k of (Array.isArray(expectKeys) ? expectKeys : [expectKeys])) {
-      assert.ok(joined.includes(k), `${label}: 报错应含键名 ${k}。实际: ${r.problems[0] ?? '(无)'}`)
+    mutate(root);
+    const r = runConfigMatrix(root);
+    assert.equal(r.pass, false, `${label}: 注入后门禁应红`);
+    const joined = r.problems.join("\n");
+    for (const k of Array.isArray(expectKeys) ? expectKeys : [expectKeys]) {
+      assert.ok(joined.includes(k), `${label}: 报错应含 ${k}。实际: ${r.problems[0] ?? "(无)"}`);
     }
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
 }
 
-test('正对照：纯副本不改动矩阵 pass', () => {
-  const root = fakeRepo()
+test("正对照：纯副本不改动矩阵 pass", () => {
+  const root = fakeRepo();
   try {
-    const r = runConfigMatrix(root)
-    assert.equal(r.pass, true, '真实文件副本矩阵应绿（存量 17/19 无洞）')
-    assert.ok(r.lines.some((l) => l.includes('lan-proxy 17 键')), 'lan-proxy 摘要含 17 键计数')
-    assert.ok(r.lines.some((l) => l.includes('notifier 22 键')), 'notifier 摘要含 22 键计数（T2-3 sanitizeContent 加键）')
+    const r = runConfigMatrix(root);
+    assert.equal(r.pass, true, `真实文件副本矩阵应绿。实际 problems: ${r.problems.join("; ")}`);
+    assert.ok(
+      r.lines.some((l) => l.includes("lan-proxy 17 键")),
+      "lan-proxy 摘要含 17 键计数",
+    );
+    assert.ok(
+      r.lines.some((l) => l.includes("notifier 18 键 × [defaults → normalizeConfig]")),
+      "notifier 摘要走运行时取值口径",
+    );
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});
 
 // ---- lan-proxy 方向 ----
 
-test('lan-proxy: 删 FILE_CONFIG_VALIDATORS 一键 → 红且报错含键名', () => {
-  assertRed('lan-proxy 删 validators.enabled', (root) => {
-    edit(root, 'dsh-lan-proxy', 'config.ts', (s) => s.replace(/  enabled: \(v\) => typeof v === "boolean",\n/, ''))
-  }, 'enabled')
-})
+test("lan-proxy: 删 FILE_CONFIG_VALIDATORS 一键 → 红且报错含键名", () => {
+  assertRed(
+    "lan-proxy 删 validators.enabled",
+    (root) => {
+      edit(root, "dsh-lan-proxy", "config.ts", (s) =>
+        s.replace(/  enabled: \(v\) => typeof v === "boolean",\n/, ""),
+      );
+    },
+    "enabled",
+  );
+});
 
-test('lan-proxy: DEFAULTS 增 schema 外键 → 红且报错含键名', () => {
-  assertRed('lan-proxy DEFAULTS 加 fakeKey', (root) => {
-    edit(root, 'dsh-lan-proxy', 'client/index.ts', (s) =>
-      s.replace('  var DEFAULTS: Record<string, any> = {', '  var DEFAULTS: Record<string, any> = {\n    fakeKey: 1,'))
-  }, 'fakeKey')
-})
+test("lan-proxy: DEFAULTS 增 schema 外键 → 红且报错含键名", () => {
+  assertRed(
+    "lan-proxy DEFAULTS 加 fakeKey",
+    (root) => {
+      edit(root, "dsh-lan-proxy", "client/index.ts", (s) =>
+        s.replace(
+          "  var DEFAULTS: Record<string, any> = {",
+          "  var DEFAULTS: Record<string, any> = {\n    fakeKey: 1,",
+        ),
+      );
+    },
+    "fakeKey",
+  );
+});
 
-test('lan-proxy: 删 Config schema 键 → 红且报错含键名', () => {
-  assertRed('lan-proxy 删 schema.host', (root) => {
-    edit(root, 'dsh-lan-proxy', 'config.ts', (s) => s.replace(/  host: z\.string\(\)\.default\(DEFAULT_OPTIONS\.host\),\n/, ''))
-  }, 'host')
-})
+test("lan-proxy: 删 Config schema 键 → 红且报错含键名", () => {
+  assertRed(
+    "lan-proxy 删 schema.host",
+    (root) => {
+      edit(root, "dsh-lan-proxy", "config.ts", (s) =>
+        s.replace(/  host: z\.string\(\)\.default\(DEFAULT_OPTIONS\.host\),\n/, ""),
+      );
+    },
+    "host",
+  );
+});
 
-test('lan-proxy: DEFAULTS 删非豁免可编辑键 → 红且报错含键名', () => {
-  assertRed('lan-proxy DEFAULTS 删 tlsCertFile', (root) => {
-    edit(root, 'dsh-lan-proxy', 'client/index.ts', (s) => s.replace(/    tlsCertFile: "",\n/, ''))
-  }, 'tlsCertFile')
-})
+test("lan-proxy: DEFAULTS 删非豁免可编辑键 → 红且报错含键名", () => {
+  assertRed(
+    "lan-proxy DEFAULTS 删 tlsCertFile",
+    (root) => {
+      edit(root, "dsh-lan-proxy", "client/index.ts", (s) =>
+        s.replace(/    tlsCertFile: "",\n/, ""),
+      );
+    },
+    "tlsCertFile",
+  );
+});
 
-// ---- notifier 方向 ----
+// ---- notifier 方向（#733 计划项 3.1.1：声明驱动 + 运行时取值）----
 
-test('notifier: 删 DEFAULT_CONFIG 一键 → 红且报错含键名', () => {
-  assertRed('notifier 删 DEFAULT_CONFIG.maxConnections', (root) => {
-    edit(root, 'dsh-notifier', 'config/config.ts', (s) => s.replace(/  maxConnections: 16,\n/, ''))
-  }, 'maxConnections')
-})
+test("notifier: 删 DEFAULT_CONFIG 一键 → 红且报错含键名", () => {
+  // normalizeConfig 的返回是显式键字面量（impl/input/index.ts:90-119），不会跟着少键，
+  // 故键集双向比较立刻不等——这正是两条平行事实源要防的漂移。
+  assertRed(
+    "notifier 删 DEFAULT_CONFIG.maxConnections",
+    (root) => {
+      edit(root, "dsh-notifier", "server/config/impl/model/index.ts", (s) =>
+        s.replace(/  maxConnections: 16,\n/, ""),
+      );
+    },
+    "maxConnections",
+  );
+});
 
-test('notifier: SETTING_HINTS 加假键 → 红且报错含键名', () => {
-  assertRed('notifier SETTING_HINTS 加 bogusKey', (root) => {
-    edit(root, 'dsh-notifier', 'config/validators.ts', (s) =>
-      s.replace('const SETTING_HINTS: Record<string, string> = {', 'const SETTING_HINTS: Record<string, string> = {\n  bogusKey: "x",'))
-  }, 'bogusKey')
-})
+test("notifier: DEFAULT_CONFIG 加假键 → 红且报错含键名", () => {
+  assertRed(
+    "notifier DEFAULT_CONFIG 加 bogusKey",
+    (root) => {
+      edit(root, "dsh-notifier", "server/config/impl/model/index.ts", (s) =>
+        s.replace(
+          "export const DEFAULT_CONFIG: NotifyConfig = {",
+          "export const DEFAULT_CONFIG: NotifyConfig = {\n  bogusKey: 1,",
+        ),
+      );
+    },
+    "bogusKey",
+  );
+});
 
-test('notifier: CONFIG_KEYS 漏布尔键 → 红且报错含键名', () => {
-  assertRed('notifier CONFIG_KEYS 删 notifySound', (root) => {
-    edit(root, 'dsh-notifier', 'config/config.ts', (s) => s.replace(/"notifySound", /, ''))
-  }, 'notifySound')
-})
+test("notifier: 声明指向不存在的模块 → 红（路径腐烂回归守卫）", () => {
+  assertRed(
+    "notifier 声明模块改为不存在的路径",
+    (root) => {
+      editManifest(root, (s) =>
+        s.replace(
+          "packages/dsh-notifier/src/server/config/impl/model/index.ts",
+          "packages/dsh-notifier/src/server/config/impl/model/NOT_THERE.ts",
+        ),
+      );
+    },
+    "模块加载失败",
+  );
+});
 
-test('notifier: normalizeConfig 漏归一化分支 → 红且报错含键名', () => {
-  assertRed('notifier normalize 漏 channels', (root) => {
-    edit(root, 'dsh-notifier', 'config/normalize.ts', (s) =>
-      // #508：channels 归一化已按类型分派为 normalizeChannels（bark/webhook），
-      // 注入目标随实现同步——负向测试锁定的是「漏归一化分支门禁必红」这一性质
-      s.replace(/  if \(Array\.isArray\(src\.channels\)\) base\.channels = normalizeChannels\(src\.channels\);\n/, ''))
-  }, 'channels')
-})
+test("notifier: 声明指向不存在的导出 → 红", () => {
+  assertRed(
+    "notifier 声明导出改为 NO_SUCH_EXPORT",
+    (root) => {
+      editManifest(root, (s) =>
+        s.replace('"export": "DEFAULT_CONFIG"', '"export": "NO_SUCH_EXPORT"'),
+      );
+    },
+    "声明的导出不存在",
+  );
+});
 
-test('notifier: normalizeConfig 漏安静时段内嵌子键分支 → 红', () => {
-  assertRed('notifier normalize 漏 qh.start 子键', (root) => {
-    edit(root, 'dsh-notifier', 'config/normalize.ts', (s) => {
-      // 整行删除：以 base.quietHours.start 赋值 + 前导行片段为锚
-      const lines = s.split('\n')
-      const idx = lines.findIndex((l) => l.includes('base.quietHours.start = qh.start'))
-      assert.notEqual(idx, -1, 'fixture 应含 quietHours.start 归一化行')
-      lines.splice(idx, 1)
-      return lines.join('\n')
-    })
-  }, 'start')
-})
+test("notifier: 配置面只登记在 pending（configSurfaces 无它）→ 红（未登记即红）", () => {
+  assertRed(
+    "notifier 移出 configSurfaces",
+    (root) => {
+      editManifest(root, (s) => {
+        const m = JSON.parse(s);
+        m.configSurfaces = m.configSurfaces.filter((x) => x.package !== "dsh-notifier");
+        m.configSurfacesPending.push({
+          package: "dsh-notifier",
+          reason: "测试用",
+          reviewBy: "2027-03-31",
+        });
+        return JSON.stringify(m, null, 2);
+      });
+    },
+    "未在 scripts/data/plugins-manifest.json 的 configSurfaces 声明配置面",
+  );
+});
 
-test('notifier: 客户端 EVENT_KEYS 删事件键 → 红且报错含键名', () => {
-  assertRed('notifier 客户端删 notifyTurnEnd', (root) => {
-    edit(root, 'dsh-notifier', 'client/index.tsx', (s) => s.replace(/    \["notifyTurnEnd", "evtTurnEnd"\],\n/, ''))
-  }, 'notifyTurnEnd')
-})
-
-test('notifier: 客户端渲染 validators 外键 → 红且报错含键名', () => {
-  assertRed('notifier 客户端 settings.ghostKey', (root) => {
-    edit(root, 'dsh-notifier', 'client/index.tsx', (s) =>
-      s.replace('    var qh = settings.quietHours || {};', '    var ghost = settings.ghostKey || {};\n    var qh = settings.quietHours || {};'))
-  }, 'ghostKey')
-})
-
-test('notifier: 客户端引用豁免键（豁免残留）→ 红且报错含豁免键名', () => {
-  assertRed('notifier 客户端引用 allowKinds', (root) => {
-    edit(root, 'dsh-notifier', 'client/index.tsx', (s) =>
-      s.replace('    var qh = settings.quietHours || {};', '    var ak = settings.allowKinds || [];\n    var qh = settings.quietHours || {};'))
-  }, 'allowKinds')
-})
+test("notifier: 两处都不登记 → 红（manifest 自洽的双向断言）", () => {
+  assertRed(
+    "notifier 完全未登记配置面",
+    (root) => {
+      editManifest(root, (s) => {
+        const m = JSON.parse(s);
+        m.configSurfaces = m.configSurfaces.filter((x) => x.package !== "dsh-notifier");
+        return JSON.stringify(m, null, 2);
+      });
+    },
+    "configSurfaces 缺 dsh-notifier",
+  );
+});
 
 // 量级 #12：README 键集一致性仅 warn 不判红（缺文档键 → warnings 含键名，pass 仍 true）
-test('量级: README 配置表缺键 → warn 不红（pass 仍 true）', () => {
-  const root = fakeRepo()
+test("量级: README 配置表缺键 → warn 不红（pass 仍 true）", () => {
+  const root = fakeRepo();
   try {
     // 复制真实 README 进副本（矩阵 README warn 需要文件存在）
-    copyLf(join(ROOT, 'packages/dsh-lan-proxy/README.md'), join(root, 'packages/dsh-lan-proxy/README.md'))
-    copyLf(join(ROOT, 'packages/dsh-notifier/README.md'), join(root, 'packages/dsh-notifier/README.md'))
+    copyLf(
+      join(ROOT, "packages/dsh-lan-proxy/README.md"),
+      join(root, "packages/dsh-lan-proxy/README.md"),
+    );
+    copyLf(
+      join(ROOT, "packages/dsh-notifier/README.md"),
+      join(root, "packages/dsh-notifier/README.md"),
+    );
     // 基线（README 与代码键集一致）：零 warn
-    let r = runConfigMatrix(root)
-    assert.equal(r.pass, true)
-    assert.deepEqual(r.warnings, [], 'README 与代码键集一致时应零 warn')
+    let r = runConfigMatrix(root);
+    assert.equal(r.pass, true, r.problems.join("; "));
+    assert.deepEqual(r.warnings, [], "README 与代码键集一致时应零 warn");
     // 注入：删 lan-proxy README 配置表一行（enabled）→ warn 含键名、pass 仍 true
-    const readmePath = join(root, 'packages/dsh-lan-proxy/README.md')
-    const text = readFileSync(readmePath, 'utf8')
-    writeFileSync(readmePath, text.replace(/^\| `enabled` \| `true` \| 总开关.*\n/m, ''))
-    r = runConfigMatrix(root)
-    assert.equal(r.pass, true, 'README 缺键仅 warn，不判红')
-    assert.ok(r.warnings.some((w) => w.includes('enabled') && w.includes('lan-proxy')), `warn 应含键名 enabled: ${r.warnings.join(';')}`)
-    assert.ok(r.problems.length === 0, 'README 缺键不应产生 problems')
+    const readmePath = join(root, "packages/dsh-lan-proxy/README.md");
+    const text = readFileSync(readmePath, "utf8");
+    writeFileSync(readmePath, text.replace(/^\| `enabled` \| `true` \| 总开关.*\n/m, ""));
+    r = runConfigMatrix(root);
+    assert.equal(r.pass, true, "README 缺键仅 warn，不判红");
+    assert.ok(
+      r.warnings.some((w) => w.includes("enabled") && w.includes("lan-proxy")),
+      `warn 应含键名 enabled: ${r.warnings.join(";")}`,
+    );
+    assert.ok(r.problems.length === 0, "README 缺键不应产生 problems");
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true });
   }
-})
+});

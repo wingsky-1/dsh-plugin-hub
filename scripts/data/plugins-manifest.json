@@ -8,6 +8,46 @@
     "dsh-web-file-preview"
   ],
   "standalone": [],
+  "configSurfaces": [
+    {
+      "package": "dsh-notifier",
+      "defaults": {
+        "module": "packages/dsh-notifier/src/server/config/impl/model/index.ts",
+        "export": "DEFAULT_CONFIG"
+      },
+      "normalizer": {
+        "module": "packages/dsh-notifier/src/server/config/impl/input/index.ts",
+        "export": "normalizeConfig"
+      }
+    }
+  ],
+  "configSurfacesPending": [
+    {
+      "package": "dsh-lan-proxy",
+      "reason": "现有 L1/L2 断言仍按 packages/dsh-lan-proxy/src/config.ts 硬编码提取；迁到声明驱动见 #733 计划项 3.1.1 的「按包逐个开」",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "package": "dsh-mcp-manager",
+      "reason": "尚未纳入配置矩阵（#733 计划项 3.1.1 按包逐个开）",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "package": "dsh-provider-usage",
+      "reason": "尚未纳入配置矩阵（#733 计划项 3.1.1 按包逐个开）",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "package": "dsh-verify-isolated",
+      "reason": "尚未纳入配置矩阵（#733 计划项 3.1.1 按包逐个开）",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "package": "dsh-web-file-preview",
+      "reason": "尚未纳入配置矩阵（#733 计划项 3.1.1 按包逐个开）",
+      "reviewBy": "2027-03-31"
+    }
+  ],
   "retired": [
     {
       "name": "dsh-gzip",

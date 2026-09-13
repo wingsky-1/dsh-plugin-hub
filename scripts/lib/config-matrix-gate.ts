@@ -18,22 +18,26 @@
  *   L2 lan-proxy：client DEFAULTS ⊆ schema；schema − DEFAULTS 差集 ==
  *      LAN_PROXY_UI_EXEMPT；豁免带原因注释 + 单包 ≤8；豁免残留（键已 UI 化）
  *      亦红
- *   N1 notifier：DEFAULT_CONFIG / SETTING_VALIDATORS / SETTING_HINTS 全等
- *      （双向，现 19）
- *   N2 notifier：CONFIG_KEYS == DEFAULT_CONFIG 全部布尔键（现 10/10）
- *   N3 notifier：normalizeConfig 分支目标键（显式分支 ∪ qh 子键 ∪ 排除表
- *      判定 ∪ CONFIG_KEYS）⊇ DEFAULT_CONFIG；quietHours 嵌套子键
- *      enabled/start/end/allowKinds ∈ 分支目标
- *   N4 notifier：客户端 UI 引用键 ⊆ SETTING_VALIDATORS；反向差集 ==
- *      NOTIFIER_UI_EXEMPT（豁免带注释 + ≤8；豁免残留亦红）
+ *   N1 notifier：configSurfaces 声明的 defaults 导出必须是非空对象（声明驱动，取代旧
+ *      硬编码路径 src/config/{config,validators,normalize}.ts——#733 配置域搬到
+ *      src/server/config/impl/** 后那三条路径全部 ENOENT，路径硬编码本身就是红因）
+ *   N2 notifier：normalizeConfig({}) 的键集**双向等于** DEFAULT_CONFIG 键集
+ *      （丢键 / 凭空造键都红）——本包当前唯一有实质约束力的行为断言
+ *   N3 notifier：README 配置键集一致性，缺键仅 warn（量级 #12）
+ * 旧 N2（CONFIG_KEYS == 布尔键）与旧 N4（客户端 UI ⊆ SETTING_VALIDATORS）在新树上
+ * 已无输入：CONFIG_KEYS 现在是 Object.keys(DEFAULT_CONFIG) 的同义反复，
+ * SETTING_VALIDATORS/SETTING_HINTS 只存在于旧门禁。BOOLEAN_KEYS/COUNT_LIMITS 未导出，
+ * 运行时取不到——该缺口如实登记在 runNotifier 的注释里，不假装门禁比实际强。
  */
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import {
   parseTs, findTopVar, findTopFn, objectKeysOf, booleanKeysOfObject,
   collectNormalizeBranchKeys, collectClientUiKeys, diffKeys, sourceLineOf,
   extractReadmeConfigKeys,
 } from './config-matrix-lib.ts'
+import { loadManifest } from './plugins-manifest-lib.ts'
 
 // 豁免白名单（P1-2 三条件收敛：服务端/组合层键或客户端不渲染键；单包 ≤8；
 // 每条带「文件:行 + 理由」原因注释——结构自检缺失即红）。
@@ -176,120 +180,87 @@ function runLanProxy(root) {
   return { problems, warnings, lines }
 }
 
-/** notifier 矩阵；返回 { problems, lines }。 */
-function runNotifier(root) {
-  const problems = []
-  const lines = []
-  // #669 PR1 目录树搬家：notifier 配置域拆三文件——DEFAULT_CONFIG/CONFIG_KEYS
-  // 在 config/config.ts、SETTING_VALIDATORS/SETTING_HINTS 在 config/validators.ts、
-  // normalizeConfig 在 config/normalize.ts（矩阵输入文件随事实源位置同步）。
-  const cfgPath = join(root, 'packages/dsh-notifier/src/config/config.ts')
-  const validatorsPath = join(root, 'packages/dsh-notifier/src/config/validators.ts')
-  const normalizePath = join(root, 'packages/dsh-notifier/src/config/normalize.ts')
-  const clientPath = join(root, 'packages/dsh-notifier/src/client/index.tsx')
-
-  const def = loadTable(cfgPath, 'DEFAULT_CONFIG', 'object')
-  const validators = loadTable(validatorsPath, 'SETTING_VALIDATORS', 'object')
-  const hints = loadTable(validatorsPath, 'SETTING_HINTS', 'object')
-  const configKeys = loadTable(cfgPath, 'CONFIG_KEYS', 'arrayStrings')
-  const failed = [def, validators, hints, configKeys].filter((t) => t.err)
-  if (failed.length > 0) {
-    for (const t of failed) problems.push(t.err)
-    return { problems, lines }
+/**
+ * 按 configSurfaces 声明加载一个配置面并取真实导出值。任何失败都转成 problem 并返回
+ * undefined（fail-closed）。require 锚点放在 root 内，使各包 package.json 的 type 字段
+ * 参与解析（各包是 type: module，走 Node 的 require(esm)＋原生类型剥离，
+ * 故这里能同步拿到 .ts 模块的导出）。同一 root 只加载一次；负例测试每次用新的 mkdtemp
+ * 路径，ESM loader 缓存不串味。
+ */
+function loadSurfaceExport(root, face, label, problems) {
+  if (typeof face?.module !== 'string' || typeof face.export !== 'string') {
+    problems.push(`notifier configSurfaces.${label} 声明结构不合法（须含 module/export 字符串）`)
+    return undefined
   }
-  const base = def.keys
-
-  // N1：三表两两全等（19 键）
-  const pairs = [
-    ['DEFAULT_CONFIG', def, 'SETTING_VALIDATORS', validators],
-    ['DEFAULT_CONFIG', def, 'SETTING_HINTS', hints],
-    ['SETTING_VALIDATORS', validators, 'SETTING_HINTS', hints],
-  ]
-  for (const [na, ta, nb, tb] of pairs) {
-    problems.push(...diffProblems('notifier', nb, cfgPath, tb.line, diffKeys(ta.keys, tb.keys), `与 ${na} 不一致`))
-    problems.push(...diffProblems('notifier', na, cfgPath, ta.line, diffKeys(tb.keys, ta.keys), `与 ${nb} 不一致`))
-  }
-
-  // N2：CONFIG_KEYS == DEFAULT_CONFIG 全部布尔键（从 DEFAULT_CONFIG 字面量推导）
-  const boolKeys = booleanKeysOfObject(def.init)
-  const d2a = diffKeys(boolKeys, configKeys.keys)
-  for (const k of d2a.missing) problems.push(`notifier CONFIG_KEYS 漏布尔键: ${k} @ ${cfgPath}:${configKeys.line}（新增布尔键忘进 CONFIG_KEYS）`)
-  for (const k of d2a.extra) problems.push(`notifier CONFIG_KEYS 多键（非布尔键）: ${k} @ ${cfgPath}:${configKeys.line}`)
-  const d2b = diffKeys(configKeys.keys, boolKeys)
-  for (const k of d2b.missing) problems.push(`notifier DEFAULT_CONFIG 布尔键未入 CONFIG_KEYS: ${k} @ ${cfgPath}:${def.line}`)
-
-  // N3：normalizeConfig 分支目标键 ⊇ DEFAULT_CONFIG（CONFIG_KEYS ∪ 显式分支 ∪ M2）
-  //（#669 PR1 后 normalizeConfig 在 config/normalize.ts，单独读文件解析）
-  let normalizeText = null
-  try { normalizeText = readFileSync(normalizePath, 'utf8') } catch { normalizeText = null }
-  const fnNode = (normalizeText === null) ? null : findTopFn(parseTs(normalizeText, 'ts'), 'normalizeConfig')
-  const normalizeLine = normalizeText === null ? null : sourceLineOf(normalizeText, 'normalizeConfig')
-  if (!fnNode) {
-    problems.push(`notifier normalizeConfig 声明缺失 @ ${normalizePath}${normalizeLine ? `:${normalizeLine}` : ''}`)
-  } else {
-    const branch = collectNormalizeBranchKeys(fnNode)
-    // 归一化「真实发生」的静态证据 = base.<key> 赋值键（显式分支把归一化结果写回
-    // base）∪ CONFIG_KEYS（布尔键经 base[key]=src[key] 动态索引，静态只见键数组）。
-    // src.<key> 读取与排除表 === 字面量只证明「读过/排除过」，不证明归一化赋值——
-    // 不作为覆盖证据（防删归一化行仍假绿），仅用于下方孤儿键诊断。
-    const baseKeys = new Set(branch.members.base ?? [])
-    const target = new Set([...baseKeys, ...configKeys.keys])
-    const d3 = diffKeys(base, [...target])
-    for (const k of d3.missing) {
-      problems.push(`notifier normalizeConfig 漏分支键: ${k} @ ${normalizePath}:${normalizeLine ?? '?'}（base.<key> 归一化赋值 ∪ CONFIG_KEYS 未覆盖该键）`)
-    }
-    // 排除表孤儿键：=== "键" 判定列出的**配置键名**（∈ DEFAULT_CONFIG 全集，typeof
-    // 类型串 object/boolean/string 天然不在键集内不参与）既不在 base 赋值也不在
-    // CONFIG_KEYS = 该键已不再归一化却仍在排除表（会被丢弃而非透传），属行为级洞
-    const baseSet = new Set(base)
-    for (const k of branch.eqLiterals) {
-      if (!baseSet.has(k)) continue // 非配置键名的 === 字面量（typeof 判定等）忽略
-      if (!baseKeys.has(k) && !configKeys.keys.includes(k)) {
-        problems.push(`notifier normalizeConfig 透传排除表孤儿键: ${k} @ ${normalizePath}:${normalizeLine ?? '?'}（排除表列了不再归一化的键）`)
-      }
-    }
-    // quietHours 嵌套子键不变量（enabled/start/end/allowKinds 均须有 qh 分支目标）
-    const qhMembers = branch.members.qh ?? []
-    for (const q of ['enabled', 'start', 'end', 'allowKinds']) {
-      if (!qhMembers.includes(q)) problems.push(`notifier normalizeConfig quietHours 漏子键分支: ${q} @ ${normalizePath}:${normalizeLine ?? '?'}`)
-    }
-  }
-
-  // N4：客户端 UI 引用键 ⊆ SETTING_VALIDATORS；反向差集 == 豁免（allowKinds）
-  let clientText
   try {
-    clientText = readFileSync(clientPath, 'utf8')
+    const req = createRequire(join(root, 'scripts', 'data', 'plugins-manifest.json'))
+    const mod = req(join(root, face.module))
+    if (mod === null || mod === undefined || mod[face.export] === undefined) {
+      problems.push(`notifier configSurfaces.${label} 声明的导出不存在: ${face.module} → ${face.export}`)
+      return undefined
+    }
+    return mod[face.export]
   } catch (e) {
-    problems.push(`notifier 客户端文件不可读: ${clientPath}（${e.message}）`)
-    return { problems, lines }
+    problems.push(`notifier configSurfaces.${label} 模块加载失败: ${face.module}（${String(e.message).split('\n')[0]}）`)
+    return undefined
   }
-  // 客户端入口为 .tsx（issue #584 分片 a）：JSX 源码经 esbuild tsx loader 编译
-  // 为 createElement 调用后再 parse（loader 缺省 ts 解析不了 JSX 标签）
-  const cAst = parseTs(clientText, 'tsx')
-  const uiKeys = collectClientUiKeys(cAst)
-  const exempt = NOTIFIER_UI_EXEMPT
-  problems.push(...checkExempts('notifier', exempt))
-  const exemptKeys = Object.keys(exempt)
-  // 客户端出现 validators 之外键（新增客户端键忘进服务端表）→ 红
-  const d4 = diffKeys(validators.keys, uiKeys)
-  for (const k of d4.extra) {
-    problems.push(`notifier 客户端 UI 引用键不在 SETTING_VALIDATORS: ${k} @ ${clientPath}（新增客户端键须同步服务端表）`)
-  }
-  // validators 键未在客户端引用：除豁免外 → 红（漏 UI 化/渲染）
-  const missingUi = diffKeys(validators.keys, uiKeys).missing
-  for (const k of missingUi) {
-    if (!exemptKeys.includes(k)) problems.push(`notifier 客户端 UI 未引用配置键 ${k} @ ${clientPath}（非豁免键漏渲染/编辑面）`)
-  }
-  // 豁免残留：豁免键已在客户端引用 → 红
-  for (const k of exemptKeys) {
-    if (!missingUi.includes(k)) problems.push(`notifier 豁免键 ${k} 已在客户端引用（豁免残留，应移除）`)
+}
+
+/**
+ * notifier 矩阵：**声明驱动 + 运行时取值**（#733 计划项 3.1.1）。
+ *
+ * 旧实现在这里硬编码三条包内路径并从源码文本抠字面量；#733 把配置域搬到
+ * src/server/config/impl/** 之后那三条路径全部 ENOENT，门禁以「文件不可读」判红——
+ * 路径硬编码本身就是这次红因。现改为从 plugins-manifest.json 的 configSurfaces 取模块
+ * specifier、加载模块取真实导出值：键集从运行时派生，包内结构再调整也不必改门禁。
+ *
+ * 断言集随事实源重建（旧 N1/N2/N3 的输入在新树上已不存在，不是「放宽」而是重建）：
+ *   N1 声明的 defaults 导出必须是非空对象；
+ *   N2 normalizeConfig({}) 的键集双向等于 DEFAULT_CONFIG 键集（丢键 / 凭空造键都红）；
+ *   N3 README 配置表缺键仅 warn（量级 #12，保留）。
+ *
+ * 已知缺口（如实登记，不假装门禁比实际强）：BOOLEAN_KEYS 与 COUNT_LIMITS 在
+ * impl/input/index.ts 里**未导出**，运行时取不到，故「布尔键清单」「计数上界清单」这两层
+ * 约束在本批无法恢复；恢复前提是 notifier 侧导出它们，而那是 #733 另一会话的写入面。
+ */
+function runNotifier(root, surface) {
+  const problems = []
+  const warnings = []
+  const lines = []
+
+  if (!surface) {
+    problems.push('notifier 未在 scripts/data/plugins-manifest.json 的 configSurfaces 声明配置面（#733 计划项 3.1.1：未登记即红）')
+    return { problems, warnings, lines }
   }
 
-  const summary = `notifier ${base.length} 键 × [default/validators/hints] 全等 + CONFIG_KEYS ${configKeys.keys.length}/${boolKeys.length} + normalize 覆盖 + client UI 覆盖 ${uiKeys.length}(豁免 ${exemptKeys.length})`
-  lines.push(summary)
+  const defaults = loadSurfaceExport(root, surface.defaults, 'defaults', problems)
+  const normalizer = loadSurfaceExport(root, surface.normalizer, 'normalizer', problems)
+  if (defaults === undefined || normalizer === undefined) return { problems, warnings, lines }
+
+  const base = Object.keys(defaults)
+  if (base.length === 0) {
+    problems.push(`notifier configSurfaces.defaults 的导出键集为空：${surface.defaults.module} → ${surface.defaults.export}`)
+    return { problems, warnings, lines }
+  }
+
+  let normalized
+  try {
+    normalized = normalizer({})
+  } catch (e) {
+    problems.push(`notifier normalizeConfig({}) 执行失败：${String(e.message).split('\n')[0]}`)
+    return { problems, warnings, lines }
+  }
+  const d2 = diffKeys(base, Object.keys(normalized ?? {}))
+  for (const k of d2.missing) {
+    problems.push(`notifier normalizeConfig 丢键: ${k}（DEFAULT_CONFIG 有该键，normalizeConfig({}) 结果里没有）`)
+  }
+  for (const k of d2.extra) {
+    problems.push(`notifier normalizeConfig 多键: ${k}（不在 DEFAULT_CONFIG 中——归一化凭空造键）`)
+  }
+
+  lines.push(`notifier ${base.length} 键 × [defaults → normalizeConfig] 运行时取值全等`)
 
   // 量级 #12：README JSON 样例键集一致性——代码键缺文档仅 warn 不判红
-  const warnings = []
   const readmePath = join(root, 'packages/dsh-notifier/README.md')
   let readmeText = null
   try { readmeText = readFileSync(readmePath, 'utf8') } catch { readmeText = null }
@@ -310,8 +281,19 @@ export function runConfigMatrix(root) {
   const problems = []
   const warnings = []
   const lines = []
-  for (const run of [runLanProxy, runNotifier]) {
-    const r = run(root)
+  // 配置面声明来自 manifest（#733 计划项 3.1.1）：读不到/结构不合法即红——
+  // 声明是门禁的输入面，它坏掉不能退化成「没有声明就跳过 notifier 段」。
+  let surfaces = []
+  try {
+    surfaces = loadManifest(root).configSurfaces ?? []
+  } catch (e) {
+    problems.push(`读取 configSurfaces 声明失败（scripts/data/plugins-manifest.json）：${e.message}`)
+  }
+  const results = [
+    runLanProxy(root),
+    runNotifier(root, surfaces.find((s) => s.package === 'dsh-notifier')),
+  ]
+  for (const r of results) {
     problems.push(...r.problems)
     warnings.push(...(r.warnings ?? []))
     lines.push(...r.lines)

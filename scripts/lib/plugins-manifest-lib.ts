@@ -115,7 +115,49 @@ export function loadManifest(root) {
     if (seenActive.has(item.name)) fail(`${item.name} 同时出现在 active 与 retired`)
     if (seenStandalone.has(item.name)) fail(`${item.name} 同时出现在 standalone 与 retired`)
   }
-  return { active: [...seenActive], standalone: [...seenStandalone], retired: json.retired.map((r) => ({ ...r })) }
+  // configSurfaces / configSurfacesPending（#733 计划项 3.1.1）：配置面 SSOT 的声明处，
+  // 供 config-matrix 门禁「运行时取值」而不硬编码包内路径。二者合起来必须**恰好覆盖**
+  // active ∪ standalone——未登记即红（新包不登记就红），已接管的在 configSurfaces、
+  // 尚未接管的在 configSurfacesPending（后者带 reason + reviewBy，是显式待办而不是豁免）。
+  const knownPackages = [...seenActive, ...seenStandalone]
+  const surfaces = Array.isArray(json.configSurfaces) ? json.configSurfaces : []
+  const pending = Array.isArray(json.configSurfacesPending) ? json.configSurfacesPending : []
+  const declared = new Set()
+  const claimSurface = (item, where) => {
+    if (typeof item !== 'object' || item === null) fail(`${where} 含非对象项`)
+    checkName(item.package, where)
+    if (!knownPackages.includes(item.package)) {
+      fail(`${where} 声明了不在 active ∪ standalone 的包：${item.package}`)
+    }
+    if (declared.has(item.package)) fail(`configSurfaces 与 configSurfacesPending 重复登记：${item.package}`)
+    declared.add(item.package)
+  }
+  for (const item of surfaces) {
+    claimSurface(item, 'configSurfaces')
+    for (const field of ['defaults', 'normalizer']) {
+      const face = item[field]
+      if (typeof face !== 'object' || face === null) fail(`configSurfaces.${item.package}.${field} 缺声明对象`)
+      if (typeof face.module !== 'string' || face.module.length === 0) fail(`configSurfaces.${item.package}.${field}.module 缺失`)
+      if (typeof face.export !== 'string' || face.export.length === 0) fail(`configSurfaces.${item.package}.${field}.export 缺失`)
+    }
+  }
+  for (const item of pending) {
+    claimSurface(item, 'configSurfacesPending')
+    if (typeof item.reason !== 'string' || item.reason.length === 0) fail(`configSurfacesPending.${item.package} 缺 reason`)
+    if (typeof item.reviewBy !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(item.reviewBy)) {
+      fail(`configSurfacesPending.${item.package}.reviewBy 须形如 2027-03-31（当前 ${JSON.stringify(item.reviewBy)}）`)
+    }
+  }
+  for (const name of knownPackages) {
+    if (!declared.has(name)) fail(`configSurfaces 缺 ${name} 的配置面声明 —— active ∪ standalone 的每个包都必须登记（未登记即红）`)
+  }
+  return {
+    active: [...seenActive],
+    standalone: [...seenStandalone],
+    retired: json.retired.map((r) => ({ ...r })),
+    configSurfaces: surfaces.map((s) => ({ ...s })),
+    configSurfacesPending: pending.map((p) => ({ ...p })),
+  }
 }
 
 /**
