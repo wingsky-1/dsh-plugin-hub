@@ -269,7 +269,7 @@ jobs:
         if: steps.reports.outputs.count != '0'
         run: |
           set -e
-          node scripts/gate/observe-check.mjs --body-file observe-body.md --marker-file observe-marker.txt
+          node scripts/gate/observe-check.mjs --body-file observe-body.md --marker-file observe-marker.txt --status-file observe-status.json
           # 报告与回落标记均以文件传递（#204：$GITHUB_OUTPUT 多行值在中文+换行内容下
           # 触发 "Matching delimiter not found" 解析失败；GitHub 官方文档明示值不可控时
           # 应写文件而非用 delimiter 格式）。下游步骤直接读 observe-body.md /
@@ -290,22 +290,41 @@ jobs:
         run: node scripts/gate/orphan-baseline.mjs archive
 
       - name: Create/update observe issue（幂等：同日重跑不重复建；回落即追评）
-        if: always() && steps.report.outcome == 'success'
+        # #765 G1：原条件 `steps.report.outcome == 'success'` 恰好把**违约夜**排除在外——
+        # 违约正是判分 exit 1 的那一刻，于是只剩正常夜有工单（实测最后一张 = #683 /
+        # 2026-09-09，其后违约夜零工单）。改为只看「本班是否产出了段报告」，并按判分状态
+        # 文件走三态：无正文 → 诊断工单；有正文 → 正常建/追评。
+        if: always() && steps.reports.outputs.count != '0'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
           TITLE="chore(observe): 夜间质量报告 $(date -u +%Y-%m-%d)"
+          BODY=observe-body.md
+          if [ ! -s "$BODY" ]; then
+            echo "::error::判分未产出报告正文（$BODY 缺失或为空）—— 以诊断工单留痕"
+            {
+              echo "## 夜间质量报告（判分无数据）"
+              echo
+              echo "本班次判分未产出报告正文，无法给出覆盖率 / 变异率结论。判分状态文件："
+              echo
+              echo '```json'
+              cat observe-status.json 2>/dev/null || echo '(状态文件亦缺失)'
+              echo '```'
+            } > "$BODY"
+          fi
           EXISTING=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')
           if [ -n "$EXISTING" ]; then
             echo "issue #$EXISTING 已存在，跳过创建"
           else
-            gh issue create --title "$TITLE" --body-file observe-body.md
+            gh issue create --title "$TITLE" --body-file "$BODY"
           fi
-          # F6 回落闭环：标记文件非空 = 存在指标回落 → 在当日 issue 上追加警示评论
+          # F6 回落闭环：标记文件非空 = 存在指标回落 → 在当日 issue 上追加警示评论。
+          # bash 陷阱：`if ...; then ...; fi` 整体实测 exit 0，`set -e` 不会传播 gh 的失败，
+          # 故这里显式告警——评论失败不该让整班变红，但也不能无声吞掉。
           if [ -s observe-marker.txt ]; then
             NUM=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')
-            gh issue comment "$NUM" --body-file observe-marker.txt || true
+            gh issue comment "$NUM" --body-file observe-marker.txt || echo "::warning::回落评论追加失败（issue #$NUM）"
           fi
 
       - name: Upload artifacts（coverage / mutation 报告留档）

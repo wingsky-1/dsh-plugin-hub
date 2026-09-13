@@ -18,9 +18,9 @@
  *         1 = 对应 gauntlet.config.json 中 strict=true 且存在 threshold 违约；
  *         2 = 环境/数据缺失错误
  */
-import { readFileSync, existsSync, writeFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { readMutationReport, readMutationReportsAgg } from '../lib/mutation-report-lib.mjs';
+import { readFileSync, existsSync, writeFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { readMutationReport, readMutationReportsAgg } from "../lib/mutation-report-lib.mjs";
 
 const repoRoot = process.cwd();
 const argv = process.argv.slice(2);
@@ -28,13 +28,41 @@ const argOf = (flag) => {
   const i = argv.indexOf(flag);
   return i >= 0 ? argv[i + 1] : undefined;
 };
-const bodyFile = argOf('--body-file');
-const markerFile = argOf('--marker-file');
+const bodyFile = argOf("--body-file");
+const markerFile = argOf("--marker-file");
+const statusFile = argOf("--status-file");
 
-const gauntletPath = join(repoRoot, 'scripts', 'data', 'gauntlet.config.json');
+/**
+ * 判分状态文件（#765 G1）。违约时本脚本 exit 非 0，而 workflow 侧原先用
+ * `steps.report.outcome == 'success'` 决定要不要建工单——那恰好把**违约夜**排除在外，
+ * 结果只剩正常夜有工单（实测最后一张夜间报告 issue = #683 / 2026-09-09）。
+ * 改为在任何退出路径都覆盖写本文件：先落 started 占位（早于下面任何可能抛错的读文件），
+ * 再由 exit 钩子收尾，workflow 侧只据此走三态，不再看步骤成败。
+ * 它只是诊断面不是判据面，故写失败绝不反过来影响判分结果。
+ */
+let statusCounts = { violations: 0, regressions: 0, packages: 0 };
+function writeStatus(status, extra = {}) {
+  if (statusFile === undefined) return;
+  try {
+    writeFileSync(
+      statusFile,
+      `${JSON.stringify({ status, ...statusCounts, ...extra }, null, 2)}\n`,
+    );
+  } catch {
+    /* 诊断面写不进去不改变判分结论 */
+  }
+}
+writeStatus("started");
+// exit 1 = 判分完成但有阈值违约；其它非零 = 脚本自身故障（读文件失败等），两者要能分开，
+// 否则"脚本崩了"会伪装成"指标不达标"。
+process.on("exit", (code) =>
+  writeStatus(code === 0 ? "scored" : code === 1 ? "failed" : "crashed", { exitCode: code }),
+);
+
+const gauntletPath = join(repoRoot, "scripts", "data", "gauntlet.config.json");
 let gauntlet;
 try {
-  gauntlet = JSON.parse(readFileSync(gauntletPath, 'utf8'));
+  gauntlet = JSON.parse(readFileSync(gauntletPath, "utf8"));
 } catch (err) {
   console.error(`observe-check: gauntlet.config.json 解析失败：${err.message}`);
   process.exit(2);
@@ -49,14 +77,20 @@ let coveragePct = null;
 
 // 源码覆盖率（供报告展示；阈值硬校验已由 vitest 的 coverage.thresholds 在 pnpm cov
 // 内 fail-closed 执行——#722 阶段三起口径为 src，分母不含 vendor 与 lib 产物）
-const coverageSummaryPath = join(repoRoot, 'coverage', 'coverage-summary.json');
+const coverageSummaryPath = join(repoRoot, "coverage", "coverage-summary.json");
 if (existsSync(coverageSummaryPath)) {
   try {
-    const total = JSON.parse(readFileSync(coverageSummaryPath, 'utf8'))?.total ?? null;
+    const total = JSON.parse(readFileSync(coverageSummaryPath, "utf8"))?.total ?? null;
     coveragePct = total
-      ? { lines: total.lines?.pct ?? null, functions: total.functions?.pct ?? null, branches: total.branches?.pct ?? null }
+      ? {
+          lines: total.lines?.pct ?? null,
+          functions: total.functions?.pct ?? null,
+          branches: total.branches?.pct ?? null,
+        }
       : null;
-  } catch { /* 展示性字段，缺失不致命 */ }
+  } catch {
+    /* 展示性字段，缺失不致命 */
+  }
 }
 
 // #220 B 方案：包可拆分为段式配置（<pkg>-<后缀>.json，后缀即功能段名，
@@ -64,8 +98,8 @@ if (existsSync(coverageSummaryPath)) {
 // 段报告；此处按 conf 目录枚举段后缀，聚合为包级口径（mutant 位置键去重，
 // 与 mutation-gate.mjs 同一 lib 函数）。未拆分包仍读单报告 <pkg>.json。
 // 缺任一段报告 = 该包未完整执行，fail-closed。
-const confDir = join(repoRoot, 'stryker.conf.d');
-const reportDir = join(repoRoot, 'coverage', 'mutation');
+const confDir = join(repoRoot, "stryker.conf.d");
+const reportDir = join(repoRoot, "coverage", "mutation");
 const segNamesByPkg = new Map(); // pkg → 段后缀数组（未排序）
 for (const f of readdirSync(confDir)) {
   const m = f.match(/^(dsh-[a-z0-9-]+)-(.+)\.json$/);
@@ -85,7 +119,8 @@ for (const [pkg, cfg] of Object.entries(packages)) {
       const p = join(reportDir, `${pkg}-${n}.json`);
       if (!existsSync(p)) {
         rows.push({ pkg, missing: true, missingLabel: `段 ${n} 未执行` });
-        if (mutationStrict) violations.push(`${pkg}: 段 ${n} 变异报告缺失（${pkg}-${n}.json 不存在——该段未执行）`);
+        if (mutationStrict)
+          violations.push(`${pkg}: 段 ${n} 变异报告缺失（${pkg}-${n}.json 不存在——该段未执行）`);
         r = null;
         break;
       }
@@ -94,8 +129,9 @@ for (const [pkg, cfg] of Object.entries(packages)) {
     if (segPaths.length === expectedSegs.length) {
       r = readMutationReportsAgg(segPaths);
       if (!r) {
-        rows.push({ pkg, missing: true, missingLabel: '报告损坏' });
-        if (mutationStrict) violations.push(`${pkg}: 段式报告不可解析（共 ${expectedSegs.length} 段）`);
+        rows.push({ pkg, missing: true, missingLabel: "报告损坏" });
+        if (mutationStrict)
+          violations.push(`${pkg}: 段式报告不可解析（共 ${expectedSegs.length} 段）`);
         continue;
       }
     } else {
@@ -106,25 +142,28 @@ for (const [pkg, cfg] of Object.entries(packages)) {
     // 缺失与损坏分开标注（#178）：逐包容错记账后单包失败不再中断整夜，
     // 「文件不存在」= 该包本次未执行（非崩溃），「存在但解析失败」= 报告损坏
     if (!existsSync(reportPath)) {
-      rows.push({ pkg, missing: true, missingLabel: '未执行' });
+      rows.push({ pkg, missing: true, missingLabel: "未执行" });
       // F4 fail-closed：strict 开启后报告缺失 = 门禁被静默跳过，必须判红
       if (mutationStrict) violations.push(`${pkg}: 变异报告缺失（${pkg}.json 不存在——该包未执行）`);
       continue;
     }
     r = readMutationReport(reportPath);
     if (!r) {
-      rows.push({ pkg, missing: true, missingLabel: '报告损坏' });
+      rows.push({ pkg, missing: true, missingLabel: "报告损坏" });
       if (mutationStrict) violations.push(`${pkg}: 变异报告损坏（${pkg}.json 存在但不可解析）`);
       continue;
     }
   }
-  const threshold = typeof cfg.threshold === 'number' ? cfg.threshold : null;
+  const threshold = typeof cfg.threshold === "number" ? cfg.threshold : null;
   // F8：notifier 的 baselineCovered=1.33 是 bridge 修正前的试点原始记录（legacyNote），
   // 真实加固后基线在 fixedCovered——回退链 fixedCovered ?? baselineCovered：
   // 有 fixed 字段说明该包经历过修正后重校准，回落检测必须以新基线为准
-  const baseline = typeof cfg.fixedCovered === 'number'
-    ? cfg.fixedCovered
-    : (typeof cfg.baselineCovered === 'number' ? cfg.baselineCovered : null);
+  const baseline =
+    typeof cfg.fixedCovered === "number"
+      ? cfg.fixedCovered
+      : typeof cfg.baselineCovered === "number"
+        ? cfg.baselineCovered
+        : null;
   const belowThreshold = threshold !== null && r.coveredScore < threshold;
   // 回落判据：较入库基线下降超过 1pp
   const regressed = baseline !== null && r.coveredScore < baseline - 1;
@@ -134,8 +173,8 @@ for (const [pkg, cfg] of Object.entries(packages)) {
   if (regressed) {
     regressions.push(
       `**${pkg}** 变异 covered 回落：${baseline}% → ${r.coveredScore}%（Δ${(r.coveredScore - baseline).toFixed(2)}pp）。\n` +
-      `请排查最近合入 main 的改动（killed ${r.killed}+timeout ${r.timeout} / covered ${r.killed + r.timeout + r.survived}），` +
-      `必要时补充边界断言或在原 issue 内说明口径调整理由。`,
+        `请排查最近合入 main 的改动（killed ${r.killed}+timeout ${r.timeout} / covered ${r.killed + r.timeout + r.survived}），` +
+        `必要时补充边界断言或在原 issue 内说明口径调整理由。`,
     );
   }
 }
@@ -145,41 +184,58 @@ for (const [pkg, cfg] of Object.entries(packages)) {
 const today = new Date().toISOString().slice(0, 10);
 const lines = [];
 lines.push(`## 夜间质量观察报告 ${today}`);
-lines.push('');
+lines.push("");
 if (coveragePct !== null) {
-  lines.push(`源码覆盖率（vitest/istanbul，分母仅 src，不含 vendor 与 lib 产物）：`
-    + `lines **${coveragePct.lines}%** / functions ${coveragePct.functions}% / branches ${coveragePct.branches}%`
-    + `（阈值唯一事实源 vitest.config.ts 的 coverage.thresholds）`);
-  lines.push('');
+  lines.push(
+    `源码覆盖率（vitest/istanbul，分母仅 src，不含 vendor 与 lib 产物）：` +
+      `lines **${coveragePct.lines}%** / functions ${coveragePct.functions}% / branches ${coveragePct.branches}%` +
+      `（阈值唯一事实源 vitest.config.ts 的 coverage.thresholds）`,
+  );
+  lines.push("");
 }
-lines.push('| 包 | covered | threshold | 基线 | Δ vs 基线 | killed | survived | noCov |');
-lines.push('|---|---|---|---|---|---|---|---|');
+lines.push("| 包 | covered | threshold | 基线 | Δ vs 基线 | killed | survived | noCov |");
+lines.push("|---|---|---|---|---|---|---|---|");
 for (const r of rows) {
   if (r.missing) {
     lines.push(`| ${r.pkg} | ⚠️ ${r.missingLabel} | — | — | — | — | — | — |`);
     continue;
   }
-  const delta = r.baseline === null ? '—' : (r.coveredScore - r.baseline).toFixed(2);
-  const flags = [r.belowThreshold && '`低阈`', r.regressed && '`回落`'].filter(Boolean).join(' ');
+  const delta = r.baseline === null ? "—" : (r.coveredScore - r.baseline).toFixed(2);
+  const flags = [r.belowThreshold && "`低阈`", r.regressed && "`回落`"].filter(Boolean).join(" ");
   lines.push(
-    `| ${r.pkg}${flags ? ' ' + flags : ''} | ${r.coveredScore}% | ${r.threshold ?? '—'} | ${r.baseline ?? '—'}% | ${delta}pp | ${r.killed} | ${r.survived} | ${r.noCoverage} |`,
+    `| ${r.pkg}${flags ? " " + flags : ""} | ${r.coveredScore}% | ${r.threshold ?? "—"} | ${r.baseline ?? "—"}% | ${delta}pp | ${r.killed} | ${r.survived} | ${r.noCoverage} |`,
   );
 }
-lines.push('');
-lines.push(`mutation.strict = **${mutationStrict}**（false 时低阈仅标注不判红；provider-usage 二阶段达标后开启）`);
-lines.push('');
-lines.push('> 数据来源：`coverage/mutation/*.json`（Stryker JSON reporter）与本仓 `gauntlet.config.json` 基线；covered 口径 = (killed+timeout)/(killed+timeout+survived)。');
+lines.push("");
+lines.push(
+  `mutation.strict = **${mutationStrict}**（false 时低阈仅标注不判红；provider-usage 二阶段达标后开启）`,
+);
+lines.push("");
+lines.push(
+  "> 数据来源：`coverage/mutation/*.json`（Stryker JSON reporter）与本仓 `gauntlet.config.json` 基线；covered 口径 = (killed+timeout)/(killed+timeout+survived)。",
+);
 
-const body = lines.join('\n') + '\n';
+const body = lines.join("\n") + "\n";
 
 let exitCode = 0;
 if (violations.length > 0) {
-  console.error(`observe-check: threshold 违约（strict=${mutationStrict}）：\n  - ${violations.join('\n  - ')}`);
+  console.error(
+    `observe-check: threshold 违约（strict=${mutationStrict}）：\n  - ${violations.join("\n  - ")}`,
+  );
   if (mutationStrict) exitCode = 1;
 }
 
 if (bodyFile) writeFileSync(bodyFile, body);
-if (markerFile) writeFileSync(markerFile, regressions.join('\n\n'));
+if (markerFile) writeFileSync(markerFile, regressions.join("\n\n"));
 
-console.log(`observe-check: ${rows.length} 包处理完毕，violation=${violations.length} regression=${regressions.length}`);
+// exit 钩子要用到计数，故在退出前更新（钩子读的是这份快照）。
+statusCounts = {
+  violations: violations.length,
+  regressions: regressions.length,
+  packages: rows.length,
+};
+
+console.log(
+  `observe-check: ${rows.length} 包处理完毕，violation=${violations.length} regression=${regressions.length}`,
+);
 process.exit(exitCode);
