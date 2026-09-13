@@ -234,25 +234,38 @@ test("#742 阶段 1: combo 携带逐段超时（口径与夜间 mutation-plan �
     },
     rootDir: ROOT,
   });
-  const plan = JSON.parse(
+  // 期望值取自夜间班 CLI 的**真实产物**（临时 GITHUB_OUTPUT 文件），不是它的 stdout：
+  // 该脚本在有 GITHUB_OUTPUT 时只往文件写、stdout 换成一行提示，而 CI 的每个 run 步骤
+  // 都带这个变量——按 stdout 解析会在本地绿、在 CI 必红（评审实测：GITHUB_OUTPUT 存在时
+  // `.find(l => l.startsWith("shards="))` 得 undefined 并抛 TypeError）。这里直接走 CI 的
+  // 同一条路径：给一个临时 GITHUB_OUTPUT，再从文件里读。
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "ci-matrix-shards-"));
+  const outFile = path.join(outDir, "github-output.txt");
+  try {
     execFileSync(process.execPath, ["scripts/gate/mutation-plan.mjs"], {
       cwd: ROOT,
       encoding: "utf8",
-    })
+      env: { ...process.env, GITHUB_OUTPUT: outFile },
+    });
+    const line = fs
+      .readFileSync(outFile, "utf8")
       .split("\n")
-      .find((l) => l.startsWith("shards="))
-      .slice("shards=".length),
-  );
-  const expected = new Map(plan.map((s) => [s.seg, s.timeoutMinutes]));
-  assert.ok(expected.size > 20, `夜间矩阵段数异常（${expected.size}）`);
-  for (const c of res.mutationCombos) {
-    // ci-matrix 的 seg="0" 指包级 conf（<pkg>.json），台账里的段名就是包名
-    const key = c.seg === "0" ? c.package : `${c.package}-${c.seg}`;
-    assert.equal(
-      c.timeoutMinutes,
-      expected.get(key),
-      `${key} 的超时必须与夜间 mutation-plan 派生值一致（两处各写一份公式必然漂移）`,
-    );
+      .find((l) => l.startsWith("shards="));
+    assert.ok(line, "mutation-plan 必须把 shards 写入 GITHUB_OUTPUT（CI 的真实消费路径）");
+    const plan = JSON.parse(line.slice("shards=".length));
+    const expected = new Map(plan.map((s) => [s.seg, s.timeoutMinutes]));
+    assert.ok(expected.size > 20, `夜间矩阵段数异常（${expected.size}）`);
+    for (const c of res.mutationCombos) {
+      // ci-matrix 的 seg="0" 指包级 conf（<pkg>.json），台账里的段名就是包名
+      const key = c.seg === "0" ? c.package : `${c.package}-${c.seg}`;
+      assert.equal(
+        c.timeoutMinutes,
+        expected.get(key),
+        `${key} 的超时必须与夜间 mutation-plan 派生值一致（两处各写一份公式必然漂移）`,
+      );
+    }
+  } finally {
+    fs.rmSync(outDir, { recursive: true, force: true });
   }
   // 单段内建阈值不足的老形态：固定 30 分钟曾把 1819s 的实例砍掉，这里锁住「不是全局常数」
   assert.ok(
@@ -385,6 +398,10 @@ test("ci-matrix: 场景 f - CLI 命令行与 --json 参数验证", () => {
   const ret = spawnSync(process.execPath, [scriptPath, "--json"], {
     cwd: ROOT,
     encoding: "utf8",
+    // 隔离 GITHUB_OUTPUT（#218 产物零污染）：CI 的每个 run 步骤都带这个变量，子进程会把它
+    // 当成自己的输出文件往里追加 6 行（本地不设该变量所以看不到）。本用例只断言 stdout 的
+    // --json 形态，关掉写入面即可。
+    env: { ...process.env, GITHUB_OUTPUT: "" },
   });
   assert.equal(ret.status, 0, `CLI 执行失败: ${ret.stderr}`);
   const parsed = JSON.parse(ret.stdout);

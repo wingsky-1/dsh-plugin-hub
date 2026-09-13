@@ -34,9 +34,10 @@
  *        · mutation-verdict：必须 success（skipped = 门禁绕过，cancelled = 未完成判分，
  *          failure = 判分未通过）。#742 阶段 1.2 起不再以 coverage success 为运行前提——
  *          覆盖率失败不再吞掉整份变异判分，两者由本表分别点名；
- *      - hasMutations='false'（空切片合法缺席）：coverage 只收 skipped；矩阵与
- *        verdict 收 skipped/failure（GitHub 对零实例动态矩阵实测回报 failure 而非
- *        官方口径 skipped，实证 run 32802575298，宽容仅防御平台行为漂移）；
+ *      - hasMutations='false'（空切片合法缺席）：coverage / 矩阵 / verdict 三者都必须
+ *        skipped。矩阵 if 上的 hasMutations 条件使空切片时 job 根本不实例化，故 #742
+ *        阶段 1 起不再宽容 #217 时代的「零实例动态矩阵回报 failure」形态（实证
+ *        run 32802575298 属旧设计），任何非 skipped 都判红；
  *   5) 非 pull_request 事件（push / workflow_dispatch / 未来新增触发器）→ fullGate
  *      必须为 'false'，且 coverage / 变异矩阵 / verdict 三者全部必须 skipped。这是
  *      #187 触发面收敛不变量的 #217 扩展：主干覆盖与变异覆盖归 observe.yml 夜间全量、
@@ -179,11 +180,11 @@ export function evaluateGate(input) {
       };
     }
 
-    // ── 空切片（合法缺席）：GitHub 对零实例动态矩阵实测回报 'failure' 而非官方
-    // 口径 'skipped'——实证 run 32802575298（commit 3012980）。#217 后矩阵 if
-    // 含 hasMutations，空切片时整个 job 直接 skipped，零实例 failure 形态理论
-    // 上不再触发；保留宽容仅为防御平台结果上报行为漂移。success/cancelled
-    // 仍属契约异常照旧判红。
+    // ── 空切片（合法缺席）：两个 job 的 if 都含 hasMutations，空切片时必然 skipped。
+    // #217 时代这里宽容过 'failure'，理由是「GitHub 对零实例动态矩阵实测回报 failure 而非
+    // 官方口径 skipped」（实证 run 32802575298）；该形态已被 if 上的 hasMutations 条件消除
+    // （job 级 if 为假 → 矩阵根本不实例化 → 结论只能是 skipped），故 #742 阶段 1 起收紧为
+    // 只收 skipped：failure/success/cancelled 都说明契约被改坏，属纵深防御。
     if (coverage !== "skipped") {
       return {
         ok: false,
@@ -195,11 +196,11 @@ export function evaluateGate(input) {
       ["mutation-gate", mutation],
       ["mutation-verdict", verdict],
     ]) {
-      if (result !== "skipped" && result !== "failure") {
+      if (result !== "skipped") {
         return {
           ok: false,
           code: 1,
-          reason: `空切片却得到 ${name} 结果 ${result}（期望 skipped/failure）—— 动态矩阵契约破坏`,
+          reason: `空切片却得到 ${name} 结果 ${result}（期望 skipped）—— 无变异对象包却跑了变异链，ci.yml if 的切片条件疑似失效`,
         };
       }
     }

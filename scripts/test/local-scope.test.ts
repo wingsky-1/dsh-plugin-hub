@@ -26,6 +26,7 @@ import {
   matchFilterBlock,
   parseFilterBlock,
   planChangedScope,
+  shouldEscalateChangedTier,
 } from "../gate/local-scope.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -177,4 +178,56 @@ test("planChangedScope：全局面命中回退全量；单包改动只命中该�
   } finally {
     rmSync(tmpRoot, { recursive: true, force: true });
   }
+});
+
+test("#742 2.1: 本地快线升档判据（全局面 + 空切片的非文档改动升档，纯文档不升）", () => {
+  const esc = shouldEscalateChangedTier;
+  assert.equal(
+    esc({ globalHit: true, hitPackages: [], files: ["docs/a.md"] }),
+    true,
+    "命中全局面必须升档——本地快线覆盖不到静态闸",
+  );
+  assert.equal(
+    esc({
+      globalHit: false,
+      hitPackages: ["dsh-notifier"],
+      files: ["packages/dsh-notifier/src/a.ts"],
+    }),
+    false,
+    "有命中包面就走快线，不升档",
+  );
+  assert.equal(
+    esc({
+      globalHit: false,
+      hitPackages: [],
+      files: ["scripts/maintenance/scan-actions-concurrency.mjs"],
+    }),
+    true,
+    "白名单外的 scripts 条目必须升档：收窄前它们命中的是全局面，若本地就此 exit 0，" +
+      "「本地绿而 CI 红」就回来了（消费方是 CI 上恒跑的 lint/format/test:scripts）",
+  );
+  assert.equal(
+    esc({
+      globalHit: false,
+      hitPackages: [],
+      files: ["scripts/test/foo.test.ts", "tools/lint/bin/lint.mjs"],
+    }),
+    true,
+    "其它豁免条目同理（scripts/test/**、tools/**）",
+  );
+  assert.equal(
+    esc({
+      globalHit: false,
+      hitPackages: [],
+      files: ["docs/a.md", "README.md", ".dsh/skills/x/SKILL.md"],
+    }),
+    false,
+    "纯文档 diff 不升档（收窄前也不命中任何面，不是本次引入的落差）",
+  );
+  assert.equal(esc({ globalHit: false, hitPackages: [], files: [] }), false, "空 diff 不升档");
+  assert.equal(
+    esc({ globalHit: false, hitPackages: [], files: null }),
+    false,
+    "取不到文件清单时不升档（该路径已 fail-closed 回退全量包，快线照样跑全包）",
+  );
 });

@@ -51,7 +51,10 @@ function trackedFiles() {
 /** packages/ 之外的全部 tracked 文件 = 本断言的 universe。 */
 const UNIVERSE = trackedFiles().filter((f) => !f.startsWith("packages/"));
 
-/** 安全 glob 匹配：非法 glob 视为命中（放大判红面，不静默放过）。 */
+/**
+ * 安全 glob 匹配。catch 只兜非字符串一类的调用错误（实测 Node 对畸形 glob 返回 false 而不抛）：
+ * 畸形 pattern 因此表现为「不命中」，会被「悬空条目」与「死 glob」两条断言判红——这正是我们要的。
+ */
 function hits(file, pattern) {
   try {
     return matchesGlob(file, pattern);
@@ -119,6 +122,58 @@ test("#742 2.3: 面覆盖——登记的面必须在 ci.yml 里真的接上（�
     }
   }
   assert.deepEqual(gaps, [], `归属登记与 filters 不一致：\n${gaps.join("\n")}`);
+});
+
+test("#742 2.3: 反向核对——filters 每条 glob 命中的面外文件都必须由声明了该面的条目覆盖", () => {
+  // 正向（上一条）只能发现「登记了但没接上」；发现不了「包面被悄悄扩大」——给某个包面加一条
+  // 覆盖面外文件的 glob，所有声明都还成立，但那个文件从此会触发一个语义上不属于它的包。
+  // 两个方向都锁住，「filters == 注册表」才是真契约。
+  const gaps = [];
+  for (const [face, globs] of Object.entries(FILTERS)) {
+    for (const g of globs) {
+      for (const file of UNIVERSE) {
+        if (!hits(file, g)) continue;
+        const declared = REGISTRY.entries.some((e) => e.faces.includes(face) && hits(file, e.path));
+        if (!declared) gaps.push(`${face} 面的 glob「${g}」命中了未声明该面的文件 ${file}`);
+      }
+    }
+  }
+  assert.deepEqual(
+    gaps,
+    [],
+    `filters 的面边界与注册表不一致（包面被静默扩大/错配）：\n${gaps.join("\n")}`,
+  );
+});
+
+test("#742 1.7: invalidatesBaseline 只能标在声明了包面的条目上（否则不产生任何效果）", () => {
+  const flagged = REGISTRY.entries.filter((e) => e.invalidatesBaseline !== undefined);
+  assert.ok(flagged.length > 0, "至少要有一条带该字段的条目——否则 1.7 只剩 test/** 一条来源");
+  for (const e of flagged) {
+    assert.equal(
+      typeof e.invalidatesBaseline,
+      "boolean",
+      `${e.path} 的 invalidatesBaseline 必须是布尔`,
+    );
+    if (e.invalidatesBaseline) {
+      assert.ok(
+        e.faces.length > 0 && !e.faces.includes("global"),
+        `${e.path} 标了 invalidatesBaseline 却声明为豁免/全局面——失基线判据只认包面，它会成为死数据`,
+      );
+    }
+  }
+  // 回归锚：段配置与包级测试面配置必须带标记（它们定义「哪些测试在杀 mutant」）
+  for (const p of [
+    "test/smoke-lib.ts",
+    "vitest.stryker.d/dsh-notifier.config.ts",
+    "stryker.conf.d/dsh-notifier*.json",
+  ]) {
+    const e = REGISTRY.entries.find((x) => x.path === p);
+    assert.equal(
+      e?.invalidatesBaseline,
+      true,
+      `${p} 必须带 invalidatesBaseline：改它会改变变异测试面，static mutant 盲区要靠它失基线`,
+    );
+  }
 });
 
 test("#742 2.3: 无死 glob——ci.yml 每条 filters glob 必须命中至少一个 tracked 文件", () => {

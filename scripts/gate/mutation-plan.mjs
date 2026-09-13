@@ -30,7 +30,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CONF_DIR = join(ROOT, "stryker.conf.d");
 const LEDGER_PATH = join(ROOT, "scripts", "data", "mutation-segment-ledger.json");
 
-/** 无全量实测时的保守超时（与 ci.yml 的 mutation-gate 一致，该 job 已覆盖过最坏冷跑）。 */
+/**
+ * 无全量实测时的保守超时。ci.yml 的 mutation-gate 与 observe.yml 的 shards 都从这里取值
+ * （#742 阶段 1 起 PR 侧也走逐段派生，不再有独立的固定值）。
+ */
 export const DEFAULT_TIMEOUT_MINUTES = 30;
 /** #718 整合版规定的下限：低于它会让短段在正常的 runner 抖动下擦边。 */
 /**
@@ -60,7 +63,15 @@ export function listSegments(confDir = CONF_DIR) {
     .sort();
 }
 
-/** 从台账抽取每段在 `scope=full` 下的最长实测墙钟（秒）；无实测的段不出现在结果里。 */
+/**
+ * 从台账抽取每段在 `scope=full` 下的最长实测墙钟（秒）；无实测的段不出现在结果里。
+ *
+ * 按段名取 max，不区分文件面代际：#733 之类重写会让同一个段名先后对应不同文件面
+ * （如 dsh-notifier-config 旧面 2365 mutant / 615.6s、新面 941 mutant / 117.5s），而台账的
+ * superseded 条目提醒「历史 wallSeconds 描述的是旧文件面，不得用于新面的定标」。取 max 是
+ * 安全侧：它可能把超时定得比新面所需更长（多等几分钟），但绝不会把新面定得比旧面更短——
+ * 反之（拿旧的小值去定一个变大了的新面）才是会误杀的方向。
+ */
 export function fullScopePeaks(ledger) {
   const peaks = new Map();
   for (const m of ledger?.measurements ?? []) {

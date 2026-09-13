@@ -1,5 +1,5 @@
 {
-  "$comment": "packages/ 之外每个 tracked 文件的 CI 归属登记（#742 阶段 2.3）。为什么需要：paths-filter 是 fail-open 的——把文件从所有面里删掉不会让任何断言变红，只会让它静默不再触发任何切片。本表把「归属」变成可断言的完整性契约：scripts/test/ci-face-coverage.test.ts 用真实 git ls-files 与 ci.yml 的 filters 双向核对（未登记即红、悬空条目即红、声明的面未被 filters 覆盖即红）。faces 语义：\"global\" = global 面；包名 = 该包面；空数组 = 显式豁免（消费方是每个 PR 都常驻的静态闸，如 test:scripts / lint / format:check / docs:check，故无需包面）。同一条路径被多条命中时按并集判定：每条声明的面都必须被 ci.yml 覆盖，豁免条目不产生约束。packages/** 不在本表内：它们由 workflow-assert 的「filters 键集合 == manifest.active ∪ standalone ∪ 聚合包」加逐包 packages/<pkg>/** 断言守着。",
+  "$comment": "packages/ 之外每个 tracked 文件的 CI 归属登记（#742 阶段 2.3）。另有可选字段 invalidatesBaseline：#742 阶段 1.7 会让改了它就必须失效该包增量基线的条目置 true（测试面输入——共享测试库、stryker 段配置、包级 stryker 测试面配置），因为 Stryker 的 static mutant 没有覆盖信息、测试侧变更对它们不可见。为什么需要：paths-filter 是 fail-open 的——把文件从所有面里删掉不会让任何断言变红，只会让它静默不再触发任何切片。本表把「归属」变成可断言的完整性契约：scripts/test/ci-face-coverage.test.ts 用真实 git ls-files 与 ci.yml 的 filters 双向核对（未登记即红、悬空条目即红、声明的面未被 filters 覆盖即红）。faces 语义：\"global\" = global 面；包名 = 该包面；空数组 = 显式豁免（消费方是每个 PR 都常驻的静态闸，如 test:scripts / lint / format:check / docs:check，故无需包面）。核对是双向的：条目声明的面必须在 filters 里接上，且 filters 每条 glob 命中的文件也必须由声明了该面的条目覆盖（否则包面可以被静默扩到未声明的文件）。同一条路径被多条命中时按并集判定：每条声明的面都必须被 ci.yml 覆盖，豁免条目不产生约束。新增本表自身这类「消费方是常驻闸」的数据文件时，要先把条目写进本表再提交——完整性断言会先判红一次（顺序陷阱，不是缺陷）。packages/** 不在本表内：它们由 workflow-assert 的「filters 键集合 == manifest.active ∪ standalone ∪ 聚合包」加逐包 packages/<pkg>/** 断言守着。",
   "entries": [
     {
       "path": ".github/**",
@@ -109,7 +109,7 @@
     {
       "path": "scripts/data/dsh-notifier-*.json",
       "faces": ["dsh-notifier"],
-      "why": "包级数据资产（导出面与导出面准入清单），只被本包的导出面准入断言与包内 consumer-types 测试消费。"
+      "why": "包级数据资产：dsh-notifier-export-surface.json 被包内 consumer-types 集成测试消费（该测试在 vitest.stryker.d/dsh-notifier.config.ts 的变异面 include 里），dsh-notifier-export-faces.json 被常驻的 export-faces-admission 脚本测试消费——两者都是本包资产，故归本包面。"
     },
     {
       "path": "scripts/data/dsh-lan-proxy-ui-exempt.json",
@@ -118,56 +118,67 @@
     },
     {
       "path": "stryker.conf.d/dsh-notifier*.json",
+      "invalidatesBaseline": true,
       "faces": ["dsh-notifier"],
       "why": "段配置是变异切片的单一事实源：包级 <pkg>.json 与段级 <pkg>-<段名>.json 统一由 <pkg>*.json 覆盖。"
     },
     {
       "path": "stryker.conf.d/dsh-web-file-preview*.json",
+      "invalidatesBaseline": true,
       "faces": ["dsh-web-file-preview"],
       "why": "同上（本包为包级单配置形态）。"
     },
     {
       "path": "stryker.conf.d/dsh-mcp-manager*.json",
+      "invalidatesBaseline": true,
       "faces": ["dsh-mcp-manager"],
       "why": "同上。"
     },
     {
       "path": "stryker.conf.d/dsh-provider-usage*.json",
+      "invalidatesBaseline": true,
       "faces": ["dsh-provider-usage"],
       "why": "同上。"
     },
     {
       "path": "stryker.conf.d/dsh-lan-proxy*.json",
+      "invalidatesBaseline": true,
       "faces": ["dsh-lan-proxy"],
       "why": "同上。"
     },
     {
       "path": "vitest.stryker.d/dsh-notifier.config.ts",
+      "invalidatesBaseline": true,
       "faces": ["dsh-notifier"],
       "why": "包级 stryker 测试面配置：定义该包进变异面的测试文件清单，此前完全不在任何 filters 内（#742 阶段 2.2）。"
     },
     {
       "path": "vitest.stryker.d/dsh-web-file-preview.config.ts",
+      "invalidatesBaseline": true,
       "faces": ["dsh-web-file-preview"],
       "why": "同上。"
     },
     {
       "path": "vitest.stryker.d/dsh-mcp-manager.config.ts",
+      "invalidatesBaseline": true,
       "faces": ["dsh-mcp-manager"],
       "why": "同上。"
     },
     {
       "path": "vitest.stryker.d/dsh-provider-usage.config.ts",
+      "invalidatesBaseline": true,
       "faces": ["dsh-provider-usage"],
       "why": "同上。"
     },
     {
       "path": "vitest.stryker.d/dsh-lan-proxy.config.ts",
+      "invalidatesBaseline": true,
       "faces": ["dsh-lan-proxy"],
       "why": "同上。"
     },
     {
       "path": "test/smoke-lib.ts",
+      "invalidatesBaseline": true,
       "faces": [
         "dsh-lan-proxy",
         "dsh-mcp-manager",
@@ -264,8 +275,8 @@
     },
     {
       "path": "LICENSE",
-      "faces": [],
-      "why": "许可证文本：构建期由 scripts/build 归集进产物，本体改动无消费方。"
+      "faces": ["global"],
+      "why": "根许可证文本被 scripts/build 的 bundle-host 复制进每个包的产物根，pack:check 逐包断言其存在——是全体包的构建输入，归全局面（#742 阶段 2.3 归属盘点时补入）。"
     }
   ]
 }

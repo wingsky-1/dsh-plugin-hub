@@ -269,6 +269,7 @@ test("#733 E1: paths-filter 的 glob 内容集合相等（防「留键删行」�
     entries.get("global").slice().sort(),
     [
       ".github/**",
+      "LICENSE",
       "agents/**",
       "package.json",
       "pnpm-lock.yaml",
@@ -1014,7 +1015,8 @@ test("#217+#187+#722: repo-gate-assert 判定表全组合锁定（事件 × full
   //   - PR + hasMutations=true（#742 阶段 1 起变异与标签解耦）：矩阵∈{success,failure} 且
   //     verdict==success；coverage 按标签分叉——打了标签必须 success，未打标签必须 skipped
   //     （#742 阶段 1.5：覆盖率不进 PR 默认路径，两侧都是 fail-closed）
-  //   - PR + 空切片：coverage==skipped && 矩阵/verdict∈{skipped,failure} 才绿
+  //   - PR + 空切片：三段全部 skipped 才绿（#742 阶段 1 收紧：if 上的 hasMutations 条件让
+  //     空切片时 job 根本不实例化，不再有「零实例动态矩阵回报 failure」那种形态）
   const expectOf = (event, full, hm, cov, mut, verd) => {
     if (event !== "pull_request") {
       return full === "false" && allSkipped(cov, mut, verd) ? 0 : 1;
@@ -1023,11 +1025,7 @@ test("#217+#187+#722: repo-gate-assert 判定表全组合锁定（事件 × full
       const covOk = full === "true" ? cov === "success" : cov === "skipped";
       return covOk && (mut === "success" || mut === "failure") && verd === "success" ? 0 : 1;
     }
-    return cov === "skipped" &&
-      (mut === "skipped" || mut === "failure") &&
-      (verd === "skipped" || verd === "failure")
-      ? 0
-      : 1;
+    return allSkipped(cov, mut, verd) ? 0 : 1;
   };
 
   // PR 全量路径（gate:full）：hasMutations × coverage × 矩阵 × verdict 全组合（2×4×4×4 = 128 case）

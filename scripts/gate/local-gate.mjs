@@ -31,7 +31,7 @@ import process from "node:process";
 
 import { computeCiMatrix } from "../ci/ci-matrix.mjs";
 import { PREREQ_PACKAGES } from "../test/script-test-prereqs.mjs";
-import { planChangedScope } from "./local-scope.mjs";
+import { planChangedScope, shouldEscalateChangedTier } from "./local-scope.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const PNPM = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
@@ -163,26 +163,29 @@ function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel }) {
         });
       }
     }
-    steps.push(
-      {
-        label: `contract（${scopeLabel}）`,
-        cmd: "node",
-        args: ["scripts/gate/contract-check.ts", "--packages", scopeArg],
-      },
-      {
-        label: `pack:check（${scopeLabel}）`,
-        cmd: "node",
-        args: ["scripts/gate/pack-check.ts", "--packages", scopeArg],
-      },
-      {
-        label: `verify:npmlayout（${scopeLabel}）`,
-        cmd: "node",
-        args: ["scripts/gate/verify-npm-layout.ts", "--packages", scopeArg],
-      },
-      ...cheapGlobal,
-      prereqStep,
-      scriptsSelfTest,
-    );
+    // 产物闸按切片跑；零命中包时**不**拼空口径（#742 阶段 2.1 起「白名单外的 scripts 改动」
+    // 会走到这里：它们的消费方是常驻静态闸，跑一个 `--packages ""` 的产物闸既无意义又可能
+    // 因空切片判红）。此时 pr 档退化为「廉价全仓一致性闸 + test:scripts」，正是那些常驻闸。
+    if (hitPackages.length > 0) {
+      steps.push(
+        {
+          label: `contract（${scopeLabel}）`,
+          cmd: "node",
+          args: ["scripts/gate/contract-check.ts", "--packages", scopeArg],
+        },
+        {
+          label: `pack:check（${scopeLabel}）`,
+          cmd: "node",
+          args: ["scripts/gate/pack-check.ts", "--packages", scopeArg],
+        },
+        {
+          label: `verify:npmlayout（${scopeLabel}）`,
+          cmd: "node",
+          args: ["scripts/gate/verify-npm-layout.ts", "--packages", scopeArg],
+        },
+      );
+    }
+    steps.push(...cheapGlobal, prereqStep, scriptsSelfTest);
     return steps;
   }
 
@@ -255,8 +258,19 @@ function main(argv) {
   }
 
   // 全局面命中（改 shared/scripts/.github/包管理文件）时，changed 快线不足以覆盖静态闸，升到 pr
+  // 升档判据是纯函数（local-scope.shouldEscalateChangedTier，带回归用例）：#722 的全局面升档
+  // 加 #742 阶段 2.1 的空切片升档——白名单外条目的消费方是 CI 上恒跑的静态闸，本地不能空转。
   let effectiveTier = tier;
-  if (tier === "changed" && plan.globalHit) effectiveTier = "pr";
+  if (
+    tier === "changed" &&
+    shouldEscalateChangedTier({
+      globalHit: plan.globalHit,
+      hitPackages: plan.hitPackages,
+      files,
+    })
+  ) {
+    effectiveTier = "pr";
+  }
 
   const scopeLabel =
     plan.hitPackages.length === allPackages.length
@@ -283,7 +297,7 @@ function main(argv) {
   }
   if (steps.length === 0) {
     console.log(
-      "[local-gate] 无命中包面且已升级未触发 —— 纯文档/meta 改动，本地无需跑包级门禁（CI 静态闸仍会跑）",
+      "[local-gate] 无命中包面 —— 纯文档 diff 且无待跑步骤：本地快线不跑（CI 的 docs:check 等静态闸仍会跑）",
     );
     return 0;
   }
