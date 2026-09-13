@@ -9,8 +9,10 @@
  * 是为了防「用扩展名或目录名白名单代替发布物面」的实现回潮——那种实现会在
  * `test/fixtures/*.bin` 上假红、又在真正 vendored 的二进制上假绿。
  *
- * 覆盖：分发面判定（files 字面/glob/缺省/退役目录/否定条目/尾斜杠归一化/npm 强制包含集）、
- * 内容嗅探窗口（头尾双段采样、UTF-8 字符边界、纯文本不假红）、登记表双向 fail-closed（未登记、
+ * 覆盖：分发面判定（files 字面/glob/缺省/退役目录/否定条目/尾斜杠归一化/npm 强制包含集，
+ * 含一条**已登记偏离**：无斜杠否定不按 npm 的 matchBase 语义排除任意深度）、
+ * 内容嗅探窗口（头段 512 字节边界、文件头形态、**只在尾段出现的 NUL**、UTF-8 字符边界、
+ * 纯文本与带 BOM 的 UTF-16 不假红）、登记表双向 fail-closed（未登记、
  * 哈希漂移、license 缺失/空/不在分发面、内容已非二进制、字段非法/kind 非法、重复、登记表不可读）、
  * 第一方资产形态（first-party 只需 path+sha256+kind）、非普通文件（软链目录）与未构建声明条目的
  * 报告、CLI 退出码与未登记命中的 sha256、pack-check 随包断言、以及**接线钉**（ci.yml 未被注释的
@@ -329,14 +331,43 @@ test("files 否定条目：否定不覆盖 npm 强制包含集（实测 `!README
   assert.match(result.problems[0], /README\.bin/);
 });
 
+test("已登记偏离：无斜杠否定（`!*.exe`）不按 npm 的 matchBase 语义排除任意深度", () => {
+  // npm 实测：`files:["lib","!*.exe"]` 跑 `npm pack --dry-run --json` 时 lib/top.exe 与
+  // lib/sub/tool.exe 都被排除（npm 对无斜杠模式按 basename 匹配任意深度）；本实现用
+  // path.matchesGlob，`*.exe` 不跨 `/`（只有 `**/*.exe` 才跨），故两者都仍在分发面内 ⇒ 多报。
+  // 为什么不照 npm 实现：过匹配会把「多报」翻成静默漏报，而漏报正是本门禁存在的理由。
+  // 将来真有包用上无斜杠否定，先按该包的 `npm pack --dry-run` 实测口径实现，并补一条正例。
+  const { result } = judge({
+    files: ["lib", "!*.exe"],
+    tree: { "lib/a.txt": "text\n", "lib/top.exe": BINARY, "lib/sub/tool.exe": BINARY },
+  });
+  assert.equal(result.hits, 2, "今天的口径是「一条都不排除」——这是有意登记的偏离");
+  assert.match(join2(result.problems), /packages\/dsh-demo\/lib\/top\.exe/);
+  assert.match(join2(result.problems), /packages\/dsh-demo\/lib\/sub\/tool\.exe/);
+});
+
 // ---------- 一之三、内容嗅探窗口：二进制不在前 512 字节也不能漏 ----------
 // isbinaryfile 只看喂入缓冲的前 512 字节（MAX_BYTES），故「前 512 字节纯 ASCII、二进制在其后」
-// 是实测过的假阴性；两条用例分别锚住 512 字节边界与「正文之前还有文件头」的形态。
+// 是实测过的假阴性；用例分别锚住 512 字节边界、文件头形态与「头段采样之外的尾段」。
 
 test("内容嗅探：前 512 字节纯 ASCII、其后才是 NUL → 仍判为二进制", () => {
   const payload = Buffer.concat([Buffer.alloc(512, 0x41), Buffer.alloc(512, 0)]);
   const { result } = judge({ files: ["lib"], tree: { "lib/payload.bin": payload } });
   assert.equal(result.hits, 1, "512 字节窗口外的 NUL 必须被尾部采样命中");
+  assert.match(result.problems[0], /packages\/dsh-demo\/lib\/payload\.bin/);
+});
+
+test("内容嗅探：NUL 只落在尾段（>8 KiB 纯 ASCII 前缀）也必须命中——头段哨兵的盲区", () => {
+  // 头段采样只有 8 KiB：12 KiB 纯 ASCII 前缀 + 尾部 NUL 的文件，头段与 isbinaryfile 的 512
+  // 字节窗口都看不见二进制，**只有尾段采样能发现它**。删掉尾段就是静默漏报（合规缺口）——
+  // 实测把尾段换成空缓冲时，此前整套用例全绿。
+  const payload = Buffer.concat([
+    Buffer.alloc(12 * 1024, 0x41),
+    Buffer.from([0]),
+    Buffer.alloc(512, 0x41),
+  ]);
+  const { result } = judge({ files: ["lib"], tree: { "lib/payload.bin": payload } });
+  assert.equal(result.hits, 1, "头段之外的 NUL 必须被尾段采样命中");
   assert.match(result.problems[0], /packages\/dsh-demo\/lib\/payload\.bin/);
 });
 
