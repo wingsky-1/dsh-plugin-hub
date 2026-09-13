@@ -72,11 +72,14 @@ function writeFakeGh(
     runs = '[{"name":"CI","conclusion":"success","id":12345}]',
     artifactsOk = false,
     artifacts = "[]",
+    jobsOk = true,
+    jobs = [PRODUCTIVE_MUTATION_JOB],
   } = {},
 ) {
   const head = `[{"number":7,"merged_at":"2026-01-01T00:00:00Z","head":{"sha":"${"b".repeat(40)}"}}]`;
   const script = `#!/bin/sh
 case "$2" in
+  --paginate) ${jobsOk ? `printf '%s\\n' ${tsvJobs(jobs)}; exit 0` : `echo 'jobs boom' >&2; exit 1`} ;;
   *commits/*/pulls) ${pullsOk ? `printf '%s' '${head}'; exit 0` : `echo 'pulls boom' >&2; exit 1`} ;;
   *artifacts*) ${artifactsOk ? `printf '%s' '${artifacts}'; exit 0` : `echo 'artifacts boom' >&2; exit 1`} ;;
   *actions/runs*) ${runsOk ? `printf '%s' '${runs}'; exit 0` : `echo 'runs boom' >&2; exit 1`} ;;
@@ -106,6 +109,17 @@ exec "${real}" "$@"
 /** 假 gh 的 artifacts 分支返回 1 个变异产物，使 overlay 走到恢复段（第 5 步）。 */
 const ONE_MUTATION_ARTIFACT =
   '{"total_count":1,"artifacts":[{"name":"mutation-incremental-dsh-x"}]}';
+
+/**
+ * 假 gh 的 `--paginate` 分支 = overlay 的 jobs 查询，返回 `@tsv` 形态（name <TAB> conclusion）。
+ * 默认给一条**成功执行**的变异实例（#718 S2.1 第二版）：只有在「有 success 实例」时 overlay
+ * 才会继续走产物段，否则会在选 run 那一步直接 no-op。
+ */
+const PRODUCTIVE_MUTATION_JOB = ["Mutation gate (dsh-notifier · api)", "success"];
+
+function tsvJobs(jobs) {
+  return jobs.map(([name, conclusion]) => `'${name}\t${conclusion}'`).join(" ");
+}
 
 test("#572: orphan-baseline restore 在远端可达但无基线分支时优雅降级（exit 0 + notice）", () => {
   const tmp = mkdtempSync(join(tmpdir(), "orphan-test-restore-"));
@@ -534,16 +548,18 @@ test("#718 S1.2: archive 期望集合为空必须 fail-loud（防把整棵基线
   }
 });
 
-// ── #718 S2.1：overlay 的「产物过期」与「无产物」分流 ────────────────────────
-// 旧实现把两件相反的事压成同一句「未产生任何增量变异产物，安全跳过」：真·无产物（正确的 no-op）
-// 与产物已过期/被删（该 PR 命中段的新基线永远进不了归档）。日志里两者完全同形，事后无法区分。
+// ── #718 S2.1：overlay 的「该有产物却没有」三态分流（第二版）──────────────────
+// 第一版把「真·无产物」与「产物丢了」压成同一个静默 no-op；第二版只看 job 名，把 `if` 为假时
+// GHA 仍返回的**未展开占位 job**（结论 skipped）也算成实例 ⇒ 每次没打 gate:full 的合并都判
+// 「产物丢失」（实测连续 6 次假红）。故判据改为「job 名 × 结论」，且只有 success 实例才算
+// 「本该有产物」。下面 5 条把四种形态与一处查询失败全部钉住。
 
 /**
  * S2.1 用的假 gh：在既有 pulls/runs/artifacts 分流之上支持 jobs 查询。
  * jobs 走 `gh api --paginate <url> --jq ...` 形态，故 `$2` 是 `--paginate`、URL 落在 `$3`——
- * 与 `$2` 是 URL 的既有三条分流天然不冲突（假 gh 不做 jq，直接输出脚本已烘焙好的结果）。
+ * 与 `$2` 是 URL 的既有三条分流天然不冲突（假 gh 不做 jq，直接输出脚本已烘焙好的 TSV 结果）。
  */
-function writeFakeGhForOverlay(dir, { jobNames = [], artifacts = "[]" } = {}) {
+function writeFakeGhForOverlay(dir, { jobs = [PRODUCTIVE_MUTATION_JOB], artifacts = "[]" } = {}) {
   const head = `[{"number":7,"merged_at":"2026-01-01T00:00:00Z","head":{"sha":"${"b".repeat(40)}"}}]`;
   const runs = '[{"name":"CI","conclusion":"success","id":12345}]';
   const script = `#!/bin/sh
@@ -551,7 +567,7 @@ case "$2" in
   *commits/*/pulls) printf '%s' '${head}'; exit 0 ;;
   *artifacts*) printf '%s' '${artifacts}'; exit 0 ;;
   *actions/runs*) printf '%s' '${runs}'; exit 0 ;;
-  --paginate) printf '%s\\n' ${jobNames.map((n) => `'${n}'`).join(" ")}; exit 0 ;;
+  --paginate) printf '%s\\n' ${tsvJobs(jobs)}; exit 0 ;;
 esac
 echo "unexpected gh args: $*" >&2; exit 1
 `;
@@ -573,21 +589,21 @@ function runOverlayWithFakeGh(tmp, options) {
   });
 }
 
-test("#718 S2.1: 变异产物已丢失必须 fail-loud（CI 跑过变异实例却看不到产物）", () => {
+test("#718 S2.1: 成功实例存在却看不到产物必须 fail-loud（exit 1）", () => {
   const tmp = mkdtempSync(join(tmpdir(), "overlay-s21-lost-"));
   try {
     const r = runOverlayWithFakeGh(tmp, {
-      // run 里确实有变异矩阵实例（且汇总判分 job 不得被误计），但产物列表里一份变异产物都没有：
-      // 上传步骤是实例内 if: success() 门控，实例存在 ⇒ 产物产出过 ⇒ 只能解释为过期/被删。
-      jobNames: [
-        "Detect changed packages",
-        "Mutation gate (dsh-notifier · text)",
-        "Mutation gate verdict (aggregate)",
+      // run 里有一条**成功执行**的变异实例（且汇总判分 job 不得被误计），但产物列表里一份变异
+      // 产物都没有：上传步骤是实例内 if: success() 门控 ⇒ 成功实例本该产出过 ⇒ 只能解释为丢失。
+      jobs: [
+        ["Detect changed packages", "success"],
+        ["Mutation gate (dsh-notifier · api)", "success"],
+        ["Mutation gate verdict (aggregate)", "success"],
       ],
       artifacts: '{"total_count":1,"artifacts":[{"name":"observe-reports","expired":true}]}',
     });
     assert.equal(r.status, 1, `产物丢失必须 exit 1，实际 ${r.status}: ${r.out}`);
-    assert.match(r.out, /产物已不可见/, "须点名「曾运行变异实例但看不到产物」");
+    assert.match(r.out, /本该产出增量产物/, "须点名「成功实例本该有产物」这个判据依据");
     assert.match(r.out, /未进归档/, "须说明后果（该 PR 命中段的新基线未进归档）");
     assert.match(r.out, /retention-days/, "须给出可执行的处置方向");
     assert.doesNotMatch(r.out, /安全跳过 \(No-op\)/, "不得与「真·无产物」同形");
@@ -596,13 +612,61 @@ test("#718 S2.1: 变异产物已丢失必须 fail-loud（CI 跑过变异实例�
   }
 });
 
+test("#718 S2.1: 未展开的 skipped 占位 job 不得被判成产物丢失（生产真实形态）", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "overlay-s21-skipped-"));
+  try {
+    // 这是生产上每一次合并都在发生的形态：PR 没打 gate:full ⇒ job 级 if 为假 ⇒ GHA 仍返回一条
+    // 条目，名字保持未展开的 `Mutation gate (${{ … }})`、结论 skipped。旧判据只看名字，于是
+    // 每个 PR 合并都把 main 判红（实测连续 6 次 failure）。
+    const r = runOverlayWithFakeGh(tmp, {
+      jobs: [
+        ["Detect changed packages", "success"],
+        ["Mutation gate (${{ matrix.combo.package }} · ${{ matrix.combo.seg }})", "skipped"],
+        ["Mutation gate verdict (aggregate)", "skipped"],
+      ],
+      artifacts: '{"total_count":0,"artifacts":[]}',
+    });
+    assert.equal(r.status, 0, `没跑过变异 ⇒ 必须 no-op，实际 ${r.status}: ${r.out}`);
+    assert.match(r.out, /未运行任何变异矩阵实例/, "须明说判据是「没跑过变异实例」");
+    assert.match(r.out, /安全跳过 \(No-op\)/);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test("#718 S2.1: 实例跑过但未成功 = 可解释的缺席（warn + exit 0，不得判红）", () => {
+  const tmp = mkdtempSync(join(tmpdir(), "overlay-s21-incomplete-"));
+  try {
+    // cancelled 是 job 超时的实际形态（#742 §0.5），failure 是判分/沙箱失败。两者都跑过变异，
+    // 但上传步骤 if: success() 决定它们**结构上不可能**有产物，故属可解释的缺席：告警 + 放行。
+    for (const conclusion of ["cancelled", "failure", "timed_out"]) {
+      const r = runOverlayWithFakeGh(tmp, {
+        jobs: [
+          ["Detect changed packages", "success"],
+          ["Mutation gate (dsh-notifier · api)", conclusion],
+        ],
+        artifacts: '{"total_count":0,"artifacts":[]}',
+      });
+      assert.equal(r.status, 0, `${conclusion} 不得判红，实际 ${r.status}: ${r.out}`);
+      assert.match(r.out, /::warning::/, "须留告警");
+      assert.match(r.out, /本就不产出增量产物/, "须说明为何不产出");
+      assert.doesNotMatch(r.out, /安全跳过 \(No-op\)/, "不得与「没跑过」同形");
+    }
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test("#718 S2.1: 真·无产物仍是合法 no-op（CI 未运行任何变异实例）", () => {
   const tmp = mkdtempSync(join(tmpdir(), "overlay-s21-none-"));
   try {
-    // 与上一条同形（都看不到变异产物），区别只在 run 里没有变异矩阵实例 = 纯文档 PR。
+    // 与上两条同形（都看不到变异产物），区别只在 run 里没有任何变异实例 = 纯文档 PR。
     // 分流必须把这一支保留为 no-op，否则每个纯文档 PR 合并都会把 main 判红。
     const r = runOverlayWithFakeGh(tmp, {
-      jobNames: ["Detect changed packages", "Build / Test / Typecheck (dsh-notifier)"],
+      jobs: [
+        ["Detect changed packages", "success"],
+        ["Build / Test / Typecheck (dsh-notifier)", "success"],
+      ],
       artifacts: '{"total_count":0,"artifacts":[]}',
     });
     assert.equal(r.status, 0, `真·无产物必须 exit 0，实际 ${r.status}: ${r.out}`);
@@ -613,16 +677,17 @@ test("#718 S2.1: 真·无产物仍是合法 no-op（CI 未运行任何变异实�
   }
 });
 
-test("#718 S2.1: jobs 查询失败不得把纯文档 PR 误判为产物丢失", () => {
+test("#718 S2.1: jobs 查询失败必须 fail-loud（不得静默降级为 no-op）", () => {
   const tmp = mkdtempSync(join(tmpdir(), "overlay-s21-jobsfail-"));
-  const bin = mkdtempSync(join(tmpdir(), "overlay-s21-bin-"));
   try {
-    // 用 git shim 之外的手段不奏效（这里要坏的是 gh 的 jobs 分支），故写一个只让 --paginate 失败的假 gh。
+    // 契约反转：第一版取不到 jobs 就返回空数组（= 判为「真·无产物」），把「查不了」静默算成了
+    // 「没有」——与本缺陷要修的静默 no-op 是同一个错。现与同文件 runs/artifacts 两处同纪律。
     writeFakeGh(tmp, {
       pullsOk: true,
       runsOk: true,
       artifactsOk: true,
       artifacts: '{"total_count":0,"artifacts":[]}',
+      jobsOk: false,
     });
     const r = runScript(overlayScriptPath, [], {
       cwd: tmp,
@@ -633,12 +698,12 @@ test("#718 S2.1: jobs 查询失败不得把纯文档 PR 误判为产物丢失", 
         GH_TOKEN: "dummy",
       },
     });
-    assert.equal(r.status, 0, `jobs 查询失败应降级为 no-op 而非判红，实际 ${r.status}: ${r.out}`);
-    assert.match(r.out, /查询 run jobs 失败/, "须点名 jobs 查询失败（分流灵敏度降级，但不误伤）");
-    assert.match(r.out, /安全跳过 \(No-op\)/, "降级为 no-op");
+    assert.equal(r.status, 1, `jobs 查询失败必须 exit 1，实际 ${r.status}: ${r.out}`);
+    assert.match(r.out, /查询 run .* 的 jobs 失败/, "须点名 jobs 查询这一站");
+    assert.match(r.out, /fail-loud/, "输出须点名 fail-loud");
+    assert.doesNotMatch(r.out, /安全跳过 \(No-op\)/, "不得把「查不了」当成「没有」");
   } finally {
     rmSync(tmp, { recursive: true, force: true });
-    rmSync(bin, { recursive: true, force: true });
   }
 });
 
@@ -655,6 +720,7 @@ case "$2" in
   *commits/*/pulls) printf '%s' '${head}'; exit 0 ;;
   *artifacts*) printf '%s' '${artifacts}'; exit 0 ;;
   *actions/runs*) printf '%s' '${runs}'; exit 0 ;;
+  --paginate) printf '%s\\n' ${tsvJobs([PRODUCTIVE_MUTATION_JOB])}; exit 0 ;;
 esac
 case "$1" in
   run)

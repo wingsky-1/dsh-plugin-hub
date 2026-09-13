@@ -31,6 +31,10 @@ import { readFileSync, readdirSync, existsSync, globSync } from "node:fs";
 import { join, basename } from "node:path";
 import { spawnSync } from "node:child_process";
 
+// overlay 的实例判据用正则认 ci.yml 的变异矩阵 job 名——改名会让判据静默失配，
+// 故契约在下方 #572 用例里双向锁定（本文件是 workflow 文本断言的归属地）。
+import { MUTATION_GATE_JOB_RE } from "../gate/baseline-archive.mjs";
+
 const ROOT = join(import.meta.dirname, "../..");
 // win32 checkout 常为 CRLF：断言子串按 LF 书写——读取层统一归一化 LF。
 const lf = (p) => readFileSync(p, "utf8").replace(/\r\n/g, "\n");
@@ -856,6 +860,29 @@ test("#572: baseline-overlay.yml 主干合入秒级差量覆盖基线工作流�
   assert.ok(
     CI.includes("mutation-incremental-"),
     "artifact 命名格式为 mutation-incremental-<pkg>-<seg>",
+  );
+  // #718 S2.1 契约锁：overlay 用 MUTATION_GATE_JOB_RE 认矩阵实例，靠的正是这条 job 名。
+  // 单向锁挡不住「正则被放宽」（放宽后正向仍绿，却会把汇总判分 job 也算成实例），故双向：
+  // 命中恰好 1 条 + 汇总 job 必须不命中。改名/改形态会在这里红，而不是让判据静默失配。
+  const jobNameLines = CI.split("\n").filter((l) => /^ {4}name: /.test(l));
+  assert.ok(
+    jobNameLines.length >= 5,
+    `ci.yml 的 job 级 name 行应当存在（实际 ${jobNameLines.length} 条）`,
+  );
+  const instanceNameLines = jobNameLines.filter((l) =>
+    MUTATION_GATE_JOB_RE.test(l.replace(/^ {4}name: /, "")),
+  );
+  assert.equal(
+    instanceNameLines.length,
+    1,
+    "MUTATION_GATE_JOB_RE 必须恰好命中 1 条 job 名（实际命中 " +
+      `${instanceNameLines.length} 条：${instanceNameLines.map((l) => l.trim()).join(" / ")}）——` +
+      "漏认会让 overlay 恒判「没跑」，放宽会把汇总判分 job 也算成实例",
+  );
+  assert.equal(
+    MUTATION_GATE_JOB_RE.test("Mutation gate verdict (aggregate)"),
+    false,
+    "汇总判分 job 不得被认成矩阵实例（实例数虚高会让三态判词失真）",
   );
 });
 

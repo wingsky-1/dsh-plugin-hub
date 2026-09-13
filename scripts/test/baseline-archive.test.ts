@@ -25,6 +25,7 @@ import {
   GH_API_PER_PAGE,
   MUTATION_GATE_JOB_RE,
   classifyMissingMutationProducts,
+  classifyMutationInstances,
   classifyRemoteProbe,
   decideRestoreOutcome,
   expectedBaselineFiles,
@@ -355,38 +356,106 @@ test("#718 S1.2: 回滚快照 tag —— 名字含旧 tip 短 sha，保留窗口
   );
 });
 
-// ── #718 S2.1：overlay 的「产物过期」与「无产物」分流 ────────────────────────
+// ── #718 S2.1 第二版：overlay 的「本该有产物却没有」三态分流 ──────────────────
 
-test("#718 S2.1: 「看不到变异产物」两态分流 —— 汇总判分 job 不得被误计为矩阵实例", () => {
-  const lost = classifyMissingMutationProducts({
-    jobNames: [
-      "Detect changed packages",
-      "Mutation gate (dsh-notifier · text)",
-      "Mutation gate (dsh-notifier · events)",
-      "Mutation gate verdict (aggregate)",
-    ],
-    expiredArtifactCount: 3,
-  });
-  assert.equal(lost.kind, "lost", "有实例却看不到产物 ⇒ 只能是丢失");
-  assert.equal(
-    lost.instanceCount,
-    2,
-    "汇总判分 job「Mutation gate verdict (...)」不是矩阵实例，不得计入",
+/** `/jobs` 返回的条目形态——只有 name 与 conclusion 两列对本判据有意义。 */
+const job = (name, conclusion) => ({ name, conclusion });
+/** 实测形态（PR #778 的成功 CI run）：job 级 if 为假时 GHA 仍返回条目，名字保持未展开。 */
+const SKIPPED_PLACEHOLDER = "Mutation gate (${{ matrix.combo.package }} · ${{ matrix.combo.seg }})";
+
+test("#718 S2.1: 实例判据 = job 名 × 结论 —— 未展开的 skipped 占位 job 不得算实例", () => {
+  // 旧判据只看名字，把这条占位 job 算成「曾运行 1 个实例」，于是每次没打 gate:full 的合并都判
+  // 「产物丢失」（实测连续 6 次假红，连引入它的那次合并都没放过）。
+  assert.deepEqual(
+    classifyMutationInstances([job(SKIPPED_PLACEHOLDER, "skipped")]),
+    { productive: [], incomplete: [] },
+    "skipped 占位 job 既不是「本该有产物」也不是「跑过但没产出」",
   );
-  assert.ok(lost.reason.includes("产物已不可见"), "原因须点名「不可见」，与「没有产物」区分开");
-  assert.ok(lost.reason.includes("3"), "过期 artifact 计数作为旁证写进原因");
+
+  const done = classifyMutationInstances([
+    job("Detect changed packages", "success"),
+    job("Mutation gate (dsh-notifier · api)", "success"),
+    job("Mutation gate (dsh-notifier · events)", "cancelled"),
+    job("Mutation gate (dsh-notifier · sdk)", "timed_out"),
+    job("Mutation gate (dsh-notifier · stores)", "failure"),
+    job("Mutation gate verdict (aggregate)", "failure"),
+    job("Build / Test / Typecheck (dsh-notifier)", "success"),
+  ]);
+  assert.deepEqual(
+    done.productive,
+    ["Mutation gate (dsh-notifier · api)"],
+    "只有 success 的实例「本该产出产物」（实例内上传步骤是 if: success() 门控）",
+  );
+  assert.deepEqual(
+    done.incomplete,
+    [
+      "Mutation gate (dsh-notifier · events)",
+      "Mutation gate (dsh-notifier · sdk)",
+      "Mutation gate (dsh-notifier · stores)",
+    ],
+    "failure/cancelled/timed_out 跑过但结构上无产物",
+  );
+});
+
+test("#718 S2.1: 非「执行过」的结论一律不算实例（含未完成与未知取值）", () => {
+  // null = 未完成（queued/in_progress）；neutral/action_required 与将来新增的结论值都算「没跑」：
+  // fail-safe 的方向是少报丢失（那段下次重算一遍即可），而不是把每次合并都判红。
+  for (const conclusion of [
+    null,
+    undefined,
+    "",
+    "neutral",
+    "action_required",
+    "some_future_value",
+  ]) {
+    assert.deepEqual(
+      classifyMutationInstances([job("Mutation gate (dsh-notifier · api)", conclusion)]),
+      { productive: [], incomplete: [] },
+      `结论 ${JSON.stringify(conclusion)} 不得算作执行过的实例`,
+    );
+  }
+  // 脏输入不得抛
+  for (const input of [
+    undefined,
+    null,
+    [],
+    [1, null, "", {}],
+    [{ name: 42, conclusion: "success" }],
+  ]) {
+    assert.deepEqual(classifyMutationInstances(input), { productive: [], incomplete: [] });
+  }
+});
+
+test("#718 S2.1: 「看不到变异产物」三态分流", () => {
+  const lost = classifyMissingMutationProducts({
+    jobs: [
+      job("Detect changed packages", "success"),
+      job("Mutation gate (dsh-notifier · api)", "success"),
+      job("Mutation gate verdict (aggregate)", "success"),
+    ],
+  });
+  assert.equal(lost.kind, "lost", "success 实例存在却看不到产物 ⇒ 只能是丢失");
+  assert.equal(lost.instanceCount, 1, "汇总判分 job 不是矩阵实例，不得计入");
+  assert.ok(lost.reason.includes("本该产出增量产物"), "原因须点明「本该有产物」的依据");
+
+  const incomplete = classifyMissingMutationProducts({
+    jobs: [
+      job(SKIPPED_PLACEHOLDER, "skipped"),
+      job("Mutation gate (dsh-notifier · api)", "cancelled"),
+    ],
+  });
+  assert.equal(incomplete.kind, "incomplete", "跑过但没成功 ⇒ 可解释的缺席，不得判丢失");
+  assert.equal(incomplete.instanceCount, 1);
+  assert.ok(incomplete.reason.includes("本就不产出增量产物"));
 
   const none = classifyMissingMutationProducts({
-    jobNames: ["Detect changed packages", "Build / Test / Typecheck (dsh-notifier)"],
-    expiredArtifactCount: 0,
+    jobs: [job("Detect changed packages", "success"), job(SKIPPED_PLACEHOLDER, "skipped")],
   });
   assert.equal(none.kind, "none", "没跑过变异实例 ⇒ 正确的 no-op");
   assert.equal(none.instanceCount, 0);
   assert.ok(none.reason.includes("未运行任何变异矩阵实例"));
 
-  // 空 / 脏输入不得抛，且一律落到 no-op：这个分流用于**提高**报警灵敏度，
-  // 宁可漏报一次，也不能因为上游返回形态异常把纯文档 PR 判红。
-  for (const input of [undefined, {}, { jobNames: null }, { jobNames: [1, null, ""] }]) {
+  for (const input of [undefined, {}, { jobs: null }, { jobs: [1, null, ""] }]) {
     assert.equal(
       classifyMissingMutationProducts(input).kind,
       "none",

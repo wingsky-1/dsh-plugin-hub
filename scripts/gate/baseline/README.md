@@ -68,19 +68,37 @@
     `node scripts/gate/orphan-baseline.mjs restore`
   - 注意：本地若没有可用的 `origin`（或远端不可达），该命令会**非零退出**，不再静默降级（见下节）。
 
-### 「产物过期」与「无产物」分流（#718 S2.1）
+### 「该有产物却没有」与「本就不产出产物」（#718 S2.1，第二版）
 
-overlay 原来只有一句「未产生任何增量变异产物，安全跳过」，把两件相反的事压成同一个静默 no-op：
+overlay 原来只有一句「未产生任何增量变异产物，安全跳过」，把三件不同的事压成同一个静默 no-op。
+第一版分流只看 job **名**、漏了 job **状态**，结果引入恒假红：GHA 对 `if` 为假的 job 也会返回
+一条条目，名字是**未展开**的 `Mutation gate (${{ matrix.combo.package }} · ${{ matrix.combo.seg }})`、
+结论 `skipped` —— 正则该正则 ⇒ 判「曾运行 1 个实例」⇒ 恒判丢失。实测该形态连续 6 次 failure
+（history success=102 / failure=9），连引入它的那次合并都没放过，而 `gate:full` 自那以后没被任何
+PR 用过。
 
-| 形态 | 事实 | 正确处置 |
+现判据 = job 名 × 结论（`classifyMutationInstances`）：
+
+| 形态 | 事实 | 处置 |
 |---|---|---|
-| 真·无产物 | PR 没触及变异切片，overlay 无事可做 | no-op（`exit 0`） |
-| 产物丢失 | CI 确实跑过变异矩阵实例，但产物已过期/被删 | 该 PR 命中段的新基线**永远**进不了归档 → **fail-loud** |
+| `success` 实例存在却看不到产物 | 上传步骤是实例内 `if: success()` 门控 ⇒ 成功实例本该产出产物 | 真丢失 → **fail-loud** |
+| 只有 `failure`/`cancelled`/`timed_out` | 实例跑过但没成功，**结构上不可能**有产物 | 可解释的缺席 → warn（重跑即可） |
+| 只有 `skipped` / 未执行 / 未知结论 | PR 没触及变异切片 | no-op（`exit 0`） |
 
-两者在旧日志里完全同形，事后无法区分。判据取「该 CI run 里有没有变异矩阵实例」
-（`classifyMissingMutationProducts`）：实例存在 ⇒ 产物必定产出过（上传步骤是实例内 `if: success()`
-门控），所以「看不到产物」只能解释为丢失。汇总判分 job `Mutation gate verdict (...)` 不计入实例数。
-*jobs 查询本身失败时降级为 no-op*——这个分流用于**提高**报警灵敏度，不该因为多一次查询失败把纯文档 PR 判红。
+为什么只有 `success` 算「本该有产物」：`if: success()` 的语义是**实例不成功就没有产物**，所以
+「实例存在」推不出「产物本该存在」——第一版的推理恰好是反的（原代码注释与本节同错，已一并改正）。
+另外 `ci.yml` 的上传是 `if-no-files-found: ignore`，成功实例也不保证 artifact 被创建，故判词只说
+「本该产出」而不说「必定产出过」。
+
+汇总判分 job `Mutation gate verdict (...)` 不计入实例数；job 名与 ci.yml `name:` 行的契约由
+`scripts/test/workflow-assert.test.ts` 双向锁定（命中恰好 1 条 + 汇总 job 不命中）。
+`expiredArtifactCount` 不再是判据入参：过期 artifact 仍留在 `/artifacts` 列表里（实测过期 3 天
+仍在列），能走到分类函数时它结构性恒为 0。jobs 查询本身失败改为 **fail-loud**——此前它返回空数组，
+把「查不了」静默算成「没有」，与本节要修的静默 no-op 是同一个错。
+
+选 run 的判据同步收严：同一 `head_sha` 可以有多次成功 run 且变异面各不相同（实测 `856de702`：
+2 success + 1 cancelled，只有其中一次真的跑了变异），故取「按 `created_at` 降序、第一个含
+`success` 变异实例的成功 run」，而不是「第一个成功 run」。
 
 同一类静默降级还有一处：**有产物却一个都没覆盖成功**（下载/解析全线失败，或产物全部过期）原本也是
 `exit 0`。现在同样 fail-loud 并点名是「已过期 N 个」还是「下载或解析全部失败」。

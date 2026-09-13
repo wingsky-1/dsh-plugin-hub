@@ -82,27 +82,82 @@ function probeArchiveRef() {
 }
 
 /**
- * 该 CI run 的 job 名清单（#718 S2.1）。只在「看不到变异产物」这一支调用——正常路径不为它多付
- * 一次 API 往返。取不到就返回空数组（= 判为「真·无产物」）：这个分流是为了**提高**报警灵敏度，
- * 不该因为多一次查询失败而把正常的纯文档 PR 判红。
+ * 该 CI run 的 job 清单（只取 `{name, conclusion}` 两列，`@tsv` 保证值内的制表符被转义）。
+ *
+ * 取不到就红（#718 S2.1 第二版）：本函数的输出决定「这次合并该不该有产物」这个结论，与同文件
+ * runs / artifacts 两处查询同一纪律。旧实现取不到就返回空数组（= 判为「真·无产物」），把
+ * 「查不了」静默算成了「没有」——与它要修的静默 no-op 是同一个错，只是方向相反。
  */
-function fetchRunJobNames(runId) {
+function fetchRunJobs(runId) {
   try {
-    return runGh([
+    const lines = runGh([
       "api",
       "--paginate",
       `repos/${repo}/actions/runs/${runId}/jobs?per_page=${GH_API_PER_PAGE}`,
       "--jq",
-      ".jobs[].name",
+      '.jobs[] | [.name, (.conclusion // "")] | @tsv',
     ])
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean);
+    return lines.map((line) => {
+      const [name, conclusion] = line.split("\t");
+      return { name, conclusion: conclusion === "" ? null : conclusion };
+    });
   } catch (err) {
-    console.warn(
-      `[overlay-baseline] 查询 run jobs 失败，无法分流「产物过期」与「无产物」: ${err.message}`,
+    console.error(
+      `[overlay-baseline] 查询 run ${runId} 的 jobs 失败，无法判定产物该不该存在（fail-loud）: ${err.message}`,
     );
-    return [];
+    process.exit(1);
+  }
+}
+
+/**
+ * 该 CI run 的 artifact 清单。必须分页取全：默认 30 条会截断，而实测一次 PR CI 有 70 个
+ * artifact（第 1 页只含 14 个 mutation-incremental）——截断后强推会把其余段的旧基线固化。
+ * 取不到就红：「查不到产物」与「确实没有产物」是两回事，静默当后者会把归档缺口固化。
+ */
+function fetchRunArtifacts(runId) {
+  try {
+    let items = [];
+    let page = 1;
+    let expectedTotal = null;
+    // 硬上限：翻页条件用「已收条数 < total_count」，若上游返回短页且 total_count 偏大，
+    // 没有上限就会无限重复请求同一页。20 页 × 100 条 = 2000，远超单次 run 的产物规模。
+    const MAX_PAGES = 20;
+    for (let guard = 0; guard < MAX_PAGES; guard++) {
+      const raw = runGh([
+        "api",
+        `repos/${repo}/actions/runs/${runId}/artifacts?per_page=${GH_API_PER_PAGE}&page=${page}`,
+      ]);
+      const body = JSON.parse(raw);
+      if (expectedTotal === null && typeof body.total_count === "number")
+        expectedTotal = body.total_count;
+      const merged = mergeArtifactPage(items, body, page);
+      items = merged.items;
+      if (merged.nextPage === null) break;
+      page = merged.nextPage;
+      if (guard === MAX_PAGES - 1) {
+        throw new Error(
+          `artifact 分页超过 ${MAX_PAGES} 页仍未取完（拿到 ${items.length} / total_count ${expectedTotal}）`,
+        );
+      }
+    }
+    if (expectedTotal !== null && items.length < expectedTotal) {
+      throw new Error(`artifact 分页取全失败：拿到 ${items.length} / total_count ${expectedTotal}`);
+    }
+    console.log(
+      `[overlay-baseline] run ${runId} artifact 分页取全：${items.length} / total_count ${expectedTotal ?? items.length}`,
+    );
+    return items;
+  } catch (err) {
+    // fail-loud（#690 门禁纪律：环境/数据获取失败不得静默降级为成功）。
+    // 「查不到产物」与「确实没有产物」是两回事：前者说明归档没同步，必须让合并后的
+    // baseline-overlay 步骤红，否则缺口会被静默固化（本缺陷的历史形态）。
+    console.error(
+      `[overlay-baseline] 查询 run ${runId} 的 Artifacts 列表失败，未执行归档（fail-loud）: ${err.message}`,
+    );
+    process.exit(1);
   }
 }
 
@@ -140,7 +195,7 @@ async function main() {
   const prHeadSha = pr.head.sha;
   console.log(`[overlay-baseline] 锁定已合并 PR #${pr.number} (head: ${prHeadSha.slice(0, 8)})`);
 
-  // 2. 定位 PR 在 ci.yml 中的最新成功 Run
+  // 2. 拉取该 PR 的全部已完成 Run（ci.yml 的成功 run 在下方再筛）
   let runs;
   try {
     const raw = runGh([
@@ -158,66 +213,38 @@ async function main() {
     process.exit(1);
   }
 
-  const successfulCiRun = runs.find((r) => r.name === "CI" && r.conclusion === "success");
-  if (!successfulCiRun) {
+  // 2. 定位「带着变异增量产物」的成功 Run（#718 S2.1 第二版）
+  //    判据取「产物在哪个 run 里」，而不是「哪个 run 的实例状态最全」：产物只可能由成功执行的
+  //    实例上传（上传步骤 if: success() 门控），所以有产物 ⇒ 那次确实跑过变异，且产物与本次
+  //    合并的提交同源。为什么不能只取第一个成功 run：同一 head_sha 可以有多次成功 run 且变异面
+  //    各不相同（实测 856de702：2 success + 1 cancelled），取错那次会漏掉本次该覆盖的段。
+  const ciRuns = (Array.isArray(runs) ? runs : []).filter(
+    (r) => r?.name === "CI" && r?.conclusion === "success",
+  );
+  if (ciRuns.length === 0) {
     console.log(`[overlay-baseline] PR #${pr.number} 未找到成功状态的 CI Run，跳过基线覆盖`);
     process.exit(0);
   }
 
-  // 3. 检查是否有变异增量产物（必须分页取全：默认 30 条会截断，实测一次 PR CI 有 70 个 artifact，
-  //    第 1 页只含 14 个 mutation-incremental —— 截断后强推会把其余段的旧基线固化，见 baseline-archive.mjs 头注释）
+  // 3. 逐个候选 run 取产物，取到变异产物即选定；一个都没有时才去判「为什么没有」
+  let chosenRun = null;
   let artifacts = [];
-  try {
-    let page = 1;
-    let expectedTotal = null;
-    // 硬上限：翻页条件用「已收条数 < total_count」，若上游返回短页且 total_count 偏大，
-    // 没有上限就会无限重复请求同一页。20 页 × 100 条 = 2000，远超单次 run 的产物规模。
-    const MAX_PAGES = 20;
-    for (let guard = 0; guard < MAX_PAGES; guard++) {
-      const raw = runGh([
-        "api",
-        `repos/${repo}/actions/runs/${successfulCiRun.id}/artifacts?per_page=${GH_API_PER_PAGE}&page=${page}`,
-      ]);
-      const body = JSON.parse(raw);
-      if (expectedTotal === null && typeof body.total_count === "number")
-        expectedTotal = body.total_count;
-      const merged = mergeArtifactPage(artifacts, body, page);
-      artifacts = merged.items;
-      if (merged.nextPage === null) break;
-      page = merged.nextPage;
-      if (guard === MAX_PAGES - 1) {
-        throw new Error(
-          `artifact 分页超过 ${MAX_PAGES} 页仍未取完（拿到 ${artifacts.length} / total_count ${expectedTotal}）`,
-        );
-      }
+  let mutArtifacts = [];
+  for (const run of ciRuns) {
+    artifacts = fetchRunArtifacts(run.id);
+    mutArtifacts = mutationArtifacts(artifacts);
+    if (mutArtifacts.length > 0) {
+      chosenRun = run;
+      break;
     }
-    if (expectedTotal !== null && artifacts.length < expectedTotal) {
-      throw new Error(
-        `artifact 分页取全失败：拿到 ${artifacts.length} / total_count ${expectedTotal}`,
-      );
-    }
-    console.log(
-      `[overlay-baseline] artifact 分页取全：${artifacts.length} / total_count ${expectedTotal ?? artifacts.length}`,
-    );
-  } catch (err) {
-    // fail-loud（#690 门禁纪律：环境/数据获取失败不得静默降级为成功）。
-    // 「查不到产物」与「确实没有产物」是两回事：前者说明归档没同步，必须让合并后的
-    // baseline-overlay 步骤红，否则缺口会被静默固化（本缺陷的历史形态）。
-    console.error(
-      `[overlay-baseline] 查询 Artifacts 列表失败，未执行归档（fail-loud）: ${err.message}`,
-    );
-    process.exit(1);
   }
 
-  const mutArtifacts = mutationArtifacts(artifacts);
-  const expiredArtifacts = artifacts.filter((a) => a?.expired === true);
-  if (mutArtifacts.length === 0) {
-    // #718 S2.1：分流「真·无产物」与「产物已过期/被删」。后者若也走静默 no-op，该 PR 命中段的
-    // 新基线就永远进不了归档，而日志与前者完全同形（这是本缺陷此前无法从日志发现的原因）。
-    const verdict = classifyMissingMutationProducts({
-      jobNames: fetchRunJobNames(successfulCiRun.id),
-      expiredArtifactCount: expiredArtifacts.length,
-    });
+  if (chosenRun === null) {
+    // 三个形态在「一个变异产物都没有」时同形，必须靠 job 名 × 结论分开；正常路径（有产物）
+    // 不为此多付一次 jobs 查询，也就不引入新的瞬时失败面。
+    const allJobs = [];
+    for (const run of ciRuns) allJobs.push(...fetchRunJobs(run.id));
+    const verdict = classifyMissingMutationProducts({ jobs: allJobs });
     if (verdict.kind === "lost") {
       console.error(
         `[overlay-baseline] ${verdict.reason} —— 该 PR 命中段的新基线未进归档（fail-loud）`,
@@ -228,23 +255,33 @@ async function main() {
       );
       process.exit(1);
     }
+    if (verdict.kind === "incomplete") {
+      console.warn(
+        `[overlay-baseline] ::warning::PR #${pr.number} ${verdict.reason}` +
+          "—— 这些段的新基线未随本次合并更新（重跑该 PR 的 CI 即可补上）",
+      );
+      process.exit(0);
+    }
     console.log(`[overlay-baseline] PR #${pr.number} ${verdict.reason}，安全跳过 (No-op)`);
     process.exit(0);
   }
-  if (expiredArtifacts.length > 0) {
+
+  // 只统计变异产物的过期：覆盖率等非变异 artifact 过期与「哪些段没被覆盖」无关。
+  const expiredMutArtifacts = mutArtifacts.filter((a) => a?.expired === true);
+  if (expiredMutArtifacts.length > 0) {
     // 部分过期：产物还在，能覆盖的先覆盖；但必须点名，否则「哪些段没被覆盖」只能靠人的记忆。
     console.warn(
-      `[overlay-baseline] ::warning::本次 CI 有 ${expiredArtifacts.length} 个 artifact 已过期` +
-        `（${expiredArtifacts
+      `[overlay-baseline] ::warning::本次 CI 有 ${expiredMutArtifacts.length} 个变异产物已过期` +
+        `（${expiredMutArtifacts
           .slice(0, 5)
           .map((a) => a.name)
-          .join(", ")}${expiredArtifacts.length > 5 ? " …" : ""}）` +
+          .join(", ")}${expiredMutArtifacts.length > 5 ? " …" : ""}）` +
         "—— 其对应的段不会被本次覆盖",
     );
   }
 
   console.log(
-    `[overlay-baseline] 发现 ${mutArtifacts.length} / ${artifacts.length} 个增量产物，准备执行差量覆盖 (Overlay)...`,
+    `[overlay-baseline] 采用 CI Run ${chosenRun.id}：发现 ${mutArtifacts.length} / ${artifacts.length} 个增量产物，准备执行差量覆盖 (Overlay)...`,
   );
 
   // 4. 创建隔离的临时目录工作区
@@ -311,7 +348,7 @@ async function main() {
       mkdirSync(downloadPath, { recursive: true });
 
       try {
-        runGh(["run", "download", String(successfulCiRun.id), "-n", art.name, "-D", downloadPath]);
+        runGh(["run", "download", String(chosenRun.id), "-n", art.name, "-D", downloadPath]);
       } catch (err) {
         console.warn(`[overlay-baseline] 下载产物 ${art.name} 失败，跳过该项: ${err.message}`);
         continue;
@@ -354,7 +391,7 @@ async function main() {
     if (overlayCount === 0) {
       // #718 S2.1：有产物却一个都没覆盖成功 = 下载/解析全线失败或产物全部过期。旧实现只打印一句
       // 「跳过推送」就 exit 0，与「真·无产物」同形——整次合并的基线就这么静默丢掉了。
-      const expiredNames = mutArtifacts.filter((a) => a?.expired === true).map((a) => a.name);
+      const expiredNames = expiredMutArtifacts.map((a) => a.name);
       console.error(
         `[overlay-baseline] 发现 ${mutArtifacts.length} 个变异产物但无一覆盖成功（` +
           (expiredNames.length > 0

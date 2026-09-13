@@ -53,32 +53,76 @@ export function mutationArtifacts(artifacts) {
   );
 }
 
-/** ci.yml 变异矩阵实例的 job 名形态：`Mutation gate (<pkg> · <seg>)`。 */
+/**
+ * ci.yml 变异矩阵实例的 job 名形态：`Mutation gate (<pkg> · <seg>)`。
+ *
+ * 它与 ci.yml 的 `name:` 行是一对契约：job 改名会让这里静默失配（漏认 ⇒ 恒判「没跑」；
+ * 正则放宽 ⇒ 把汇总判分 job 也算成实例）。契约由 `scripts/test/workflow-assert.test.ts`
+ * 双向锁定：ci.yml 的 job 级 `name:` 行里命中者恰好 1 条，且 `Mutation gate verdict (...)`
+ * 不命中。
+ */
 export const MUTATION_GATE_JOB_RE = /^Mutation gate \(/;
 
 /**
- * 「看不到变异产物」的两态分流（#718 S2.1）。
+ * 唯一「本该产出增量产物」的 job 结论（#718 S2.1 第二版）。
  *
- * 旧实现只有一句「未产生任何增量变异产物，安全跳过」，把两件相反的事压成同一个静默 no-op：
- *   · 真·无产物：PR 没触及变异切片，overlay 本就无事可做——正确的 no-op；
- *   · 产物丢了：CI 确实跑过变异实例，但产物已过期/被删——该 PR 命中段的新基线**永远**进不了
- *     归档，而日志只说了一句「没有产物」，与前者完全同形，事后无法区分。
- *
- * 判据取「该 CI run 里有没有变异矩阵实例」：实例存在 ⇒ 产物必定产出过（上传步骤是实例内
- * `if: success()` 门控），所以「看不到产物」只能解释为丢失。`expiredArtifactCount` 只作原因里的
- * 旁证，不单独当判据——过期记录本身也可能已被清理，届时它同样是 0。
+ * 依据是 ci.yml 里实例内的上传步骤 `if: success()`：**实例不成功就没有产物**。反过来讲，
+ * 只有 success 的实例才谈得上「产物本该存在」。第一版把「job 名匹配」当成「执行过」，
+ * 于是 `skipped` 的占位 job（`if` 为假时 GHA 仍返回条目、名字保持未展开形态）被算成实例，
+ * 恒判产物丢失。
  */
-export function classifyMissingMutationProducts({ jobNames, expiredArtifactCount = 0 } = {}) {
-  const instances = (jobNames ?? []).filter(
-    (n) => typeof n === "string" && MUTATION_GATE_JOB_RE.test(n),
-  );
-  if (instances.length > 0) {
+const PRODUCTIVE_CONCLUSION = "success";
+
+/** 跑过但结构上不产出产物的结论：缺席可解释，处置是重跑而不是查丢失。 */
+const INCOMPLETE_CONCLUSIONS = new Set(["failure", "cancelled", "timed_out"]);
+
+/**
+ * 按「job 名 × 结论」把一次 CI run 的变异实例分成两拨（纯函数，供 overlay 与自测共用）。
+ *
+ * 既不是 `success` 也不在 `incomplete` 里的（`skipped` / `null` / `neutral` / 未知取值）
+ * 一律**不算实例**：判据的形状是「确实执行过」，将来 GitHub 新增结论值时默认落到「没跑」。
+ * fail-safe 的方向是少报丢失（那段下次重算一遍即可），而不是把每次合并都判红。
+ */
+export function classifyMutationInstances(jobs) {
+  const productive = [];
+  const incomplete = [];
+  for (const job of jobs ?? []) {
+    if (typeof job?.name !== "string" || !MUTATION_GATE_JOB_RE.test(job.name)) continue;
+    if (job.conclusion === PRODUCTIVE_CONCLUSION) productive.push(job.name);
+    else if (INCOMPLETE_CONCLUSIONS.has(job.conclusion)) incomplete.push(job.name);
+  }
+  return { productive, incomplete };
+}
+
+/**
+ * 「看不到变异产物」的三态分流（#718 S2.1 第二版）。
+ *
+ * 第一版把「真·无产物」与「产物丢了」压成同一个静默 no-op；第二版按 job **名**筛实例却漏了
+ * 状态，把「根本没跑」的 skipped 占位 job 也算成实例 ⇒ **恒判丢失**（实测该形态连续 6 次
+ * 假红，连引入它的那次合并都没放过）。故判据改为「执行过**且**本该产出产物」。
+ *
+ * `expiredArtifactCount` 不再是入参：过期的 artifact 仍留在 `/artifacts` 列表里（实测过期
+ * 3 天后仍在列），能走到本函数时它结构性恒为 0，是零信息量的旁证。过期导致「有产物却一个都
+ * 没覆盖成功」的情形，由 overlay-baseline.mjs 的另一条 fail-loud 分支承担。
+ */
+export function classifyMissingMutationProducts({ jobs } = {}) {
+  const { productive, incomplete } = classifyMutationInstances(jobs);
+  if (productive.length > 0) {
     return {
       kind: "lost",
-      instanceCount: instances.length,
+      instanceCount: productive.length,
       reason:
-        `CI 曾运行 ${instances.length} 个变异矩阵实例，但产物已不可见` +
-        `（过期或被删除；本次 run 中 ${expiredArtifactCount} 个 artifact 标记 expired）`,
+        `CI 有 ${productive.length} 个变异实例成功执行（上传步骤 if: success() 门控，本该产出增量产物），` +
+        "但本次 run 的 artifact 列表里一个变异产物都没有",
+    };
+  }
+  if (incomplete.length > 0) {
+    return {
+      kind: "incomplete",
+      instanceCount: incomplete.length,
+      reason:
+        `CI 有 ${incomplete.length} 个变异实例跑过但未成功（failure/cancelled/timed_out）——` +
+        "实例内上传步骤为 if: success()，本就不产出增量产物",
     };
   }
   return {
