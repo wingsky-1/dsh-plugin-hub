@@ -19,7 +19,16 @@
  * （根 devDependency：内容判据、零运行时依赖、不制造环境前提）。
  */
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  fstatSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  statSync,
+} from "node:fs";
 import { join, matchesGlob } from "node:path";
 import { isBinaryFileSync } from "isbinaryfile";
 
@@ -116,6 +125,65 @@ function parseEntry(raw) {
 function matchesNegation(rel, pattern) {
   if (GLOB_CHARS.test(pattern)) return matchesGlob(rel, pattern);
   return rel === pattern || rel.startsWith(`${pattern}/`);
+}
+
+/** 内容嗅探的采样窗口：头 8 KiB 覆盖文件头特征，尾 1 KiB 覆盖「正文之后才是二进制」的形态。 */
+const HEAD_BYTES = 8 * 1024;
+const TAIL_BYTES = 1024;
+
+/** 读文件头/尾两段采样（不整文件读入：vendored 二进制动辄数十 MB）。 */
+function readHeadTail(absPath) {
+  const fd = openSync(absPath, "r");
+  try {
+    const size = fstatSync(fd).size;
+    const headLen = Math.min(size, HEAD_BYTES);
+    const head = Buffer.alloc(headLen);
+    if (headLen > 0) readSync(fd, head, 0, headLen, 0);
+    const tailLen = Math.min(size, TAIL_BYTES);
+    const tail = Buffer.alloc(tailLen);
+    if (tailLen > 0) readSync(fd, tail, 0, tailLen, size - tailLen);
+    return [head, alignUtf8Start(tail)];
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * 把采样起点挪到 UTF-8 字符边界（跳过被截断字符的续字节 10xxxxxx）。截断的多字节序列会被
+ * isbinaryfile 计成可疑字节，纯中文文本（本仓生成的 `.d.ts`）因此会被判成二进制——采样窗口
+ * 不能制造新的假阳性。尾部终点是 EOF，天然落在字符边界上。
+ */
+function alignUtf8Start(buf) {
+  let cut = 0;
+  while (cut < buf.length - 1 && (buf[cut] & 0xc0) === 0x80) cut++;
+  return buf.subarray(cut);
+}
+
+/** 文本编码 BOM：带 BOM 的 UTF-16/32 文本自身含 NUL，与 isbinaryfile 的豁免口径保持一致。 */
+function hasTextBom(buf) {
+  return (
+    (buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) ||
+    (buf[0] === 0xff && buf[1] === 0xfe) ||
+    (buf[0] === 0xfe && buf[1] === 0xff) ||
+    (buf[0] === 0x00 && buf[1] === 0x00 && buf[2] === 0xfe && buf[3] === 0xff)
+  );
+}
+
+/**
+ * 内容嗅探：头尾各采一段，任一判为二进制即真。
+ *
+ * 为什么不直接 `isBinaryFileSync(路径)`：它只看文件前 512 字节（isbinaryfile 的 MAX_BYTES），
+ * 「前 512 字节纯 ASCII、二进制在其后」会被判成文本，真分发出去的副本因此不登记、不附许可
+ * 文本。采样段还要整段过一遍 NUL——喂进 isbinaryfile 的缓冲同样只扫前 512 字节，尾段开头与
+ * 头部重叠的字节会被再扫一次，边界之后的 NUL 依旧落在窗口外；NUL 检测本就是它的核心判据，
+ * 这里只是把窗口放大到整段采样。其余启发式（PNG / UTF-16 / 高字节）仍交给 isbinaryfile。
+ */
+function sniffBinary(absPath, isBinary = isBinaryFileSync) {
+  return readHeadTail(absPath).some((buf) => sniffSample(buf, isBinary));
+}
+
+function sniffSample(buf, isBinary) {
+  return isBinary(buf) || (!hasTextBom(buf) && buf.includes(0));
 }
 
 /** bin 字段的值形态：单个字符串，或 `名 → 字符串 | 字符串数组` 的映射。 */
@@ -232,14 +300,17 @@ export function distributionSurface(root) {
   return surface;
 }
 
-/** 扫出**发布物面内**内容为二进制的文件（仓库相对路径，排序）。 */
+/**
+ * 扫出**发布物面内**内容为二进制的文件（仓库相对路径，排序）。
+ * `isBinary` 是内容嗅探器：接收**采样缓冲**、返回是否二进制（缺省 isbinaryfile，见 sniffBinary）。
+ */
 export function scanVendoredBinaries(root, { isBinary = isBinaryFileSync } = {}) {
   const hits = [];
   for (const pkg of packageDirs(root)) {
     const pkgDirAbs = join(root, "packages", pkg);
     for (const rel of distributionPaths(pkgDirAbs)) {
       const repoRel = `packages/${pkg}/${rel}`;
-      if (isBinary(join(root, repoRel))) hits.push(repoRel);
+      if (sniffBinary(join(root, repoRel), isBinary)) hits.push(repoRel);
     }
   }
   return hits.sort();
@@ -308,7 +379,7 @@ export function verifyVendoredBinaries(root, { registryPath, isBinary = isBinary
     } else {
       if (!surface.has(e.path))
         problems.push(`${e.path} 不在发布物面内（登记它不产生任何合规效果）`);
-      if (!isBinary(abs))
+      if (!sniffBinary(abs, isBinary))
         problems.push(`${e.path} 内容已不是二进制（嗅探未命中）：登记表与事实脱钩`);
       if (hashable.has(e)) {
         const actual = sha256File(abs);

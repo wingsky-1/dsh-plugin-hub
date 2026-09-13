@@ -280,6 +280,53 @@ test("files 否定条目：否定不覆盖 npm 强制包含集（实测 `!README
   assert.match(result.problems[0], /README\.bin/);
 });
 
+// ---------- 一之三、内容嗅探窗口：二进制不在前 512 字节也不能漏 ----------
+// isbinaryfile 只看喂入缓冲的前 512 字节（MAX_BYTES），故「前 512 字节纯 ASCII、二进制在其后」
+// 是实测过的假阴性；两条用例分别锚住 512 字节边界与「正文之前还有文件头」的形态。
+
+test("内容嗅探：前 512 字节纯 ASCII、其后才是 NUL → 仍判为二进制", () => {
+  const payload = Buffer.concat([Buffer.alloc(512, 0x41), Buffer.alloc(512, 0)]);
+  const { result } = judge({ files: ["lib"], tree: { "lib/payload.bin": payload } });
+  assert.equal(result.hits, 1, "512 字节窗口外的 NUL 必须被尾部采样命中");
+  assert.match(result.problems[0], /packages\/dsh-demo\/lib\/payload\.bin/);
+});
+
+test("内容嗅探：512 字节 ASCII + 文件头 + 大段 NUL → 仍判为二进制", () => {
+  const payload = Buffer.concat([Buffer.alloc(512, 0x41), BINARY, Buffer.alloc(4096, 0)]);
+  const { result } = judge({ files: ["lib"], tree: { "lib/payload.bin": payload } });
+  assert.equal(result.hits, 1);
+  assert.match(result.problems[0], /packages\/dsh-demo\/lib\/payload\.bin/);
+});
+
+test("内容嗅探：纯 ASCII 文本不因放大采样窗口而假红", () => {
+  const text = Buffer.from("a".repeat(20 * 1024));
+  const { result } = judge({ files: ["lib"], tree: { "lib/plain.txt": text } });
+  assert.equal(result.hits, 0);
+  assert.deepEqual(result.problems, []);
+});
+
+test("内容嗅探：采样块起点落在 UTF-8 字符边界（截断多字节序列会被误判成二进制）", () => {
+  // 尾段起点落在字符中间时，isbinaryfile 会把截断的多字节序列计成可疑字节，纯中文文本
+  // （本仓生成的 `.d.ts` 就是）被判成二进制。这里直接钉住喂给嗅探器的采样块起点，不依赖
+  // isbinaryfile 的内容启发式（那让用例变得碰运气）。
+  const root = makeRoot({
+    files: ["lib"],
+    tree: { "lib/zh.txt": Buffer.from("中".repeat(400)) }, // 1200 字节；尾段起点 176 落在字符内部
+  });
+  const starts: number[] = [];
+  scanVendoredBinaries(root, {
+    isBinary: (buf) => {
+      starts.push(buf[0]);
+      return false;
+    },
+  });
+  assert.ok(starts.length >= 2, "头尾两段都要喂给嗅探器");
+  assert.ok(
+    starts.every((b) => (b & 0xc0) !== 0x80),
+    "采样块不得以 UTF-8 续字节开头",
+  );
+});
+
 test("退役残留目录不参与扫描（manifest.retired）", () => {
   const root = makeRoot({
     files: ["lib"],
