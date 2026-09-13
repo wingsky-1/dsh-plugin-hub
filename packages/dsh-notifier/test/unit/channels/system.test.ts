@@ -379,35 +379,86 @@ describe("shouldSelfPlay：静音优先，其余按平台分叉", () => {
 });
 
 describe("音色与文件候选", () => {
-  // 候选路径拼错或顺序反了，本机明明有声音文件也放不出来。
-  it("平台 × 音色 → 绝对路径候选（首存在者胜）：win32 用反斜杠拼，未知音色不猜默认音", () => {
-    const table: ReadonlyArray<readonly [string, string, readonly string[]]> = [
-      ["win32", "ding", [String.raw`C:\Windows\Media\Windows Ding.wav`]],
+  // 候选路径拼错或顺序反了，本机明明有声音文件也放不出来；而「某个音色在某个平台的素材决定
+  // 漏了或写错」更难发现——把 `bell.linuxFile` 换成别的 oga、把 `ding.darwinSound` 换成
+  // "Pop"，听觉上只是放错音，或让有主题文件的宿主干脆不响（正是 #783 的现场）。所以这张表
+  // 按「每个音色 × 三个平台」逐行手写字面量期望，`[]` 也是显式一行（确实无素材），
+  // 覆盖断言再把「漏一行」变成红。
+  const PLATFORM_TONE_EXPECTATIONS: ReadonlyArray<readonly [string, string, readonly string[]]> = [
+    ["linux", "default", ["/usr/share/sounds/freedesktop/stereo/message-new-instant.oga"]],
+    ["linux", "ding", ["/usr/share/sounds/freedesktop/stereo/message-new-instant.oga"]],
+    ["linux", "bell", ["/usr/share/sounds/freedesktop/stereo/bell.oga"]],
+    [
+      "linux",
+      "chime",
       [
-        "win32",
-        "default",
-        [
-          String.raw`C:\Windows\Media\Windows Notify System Generic.wav`,
-          String.raw`C:\Windows\Media\Windows Ding.wav`,
-        ],
+        "/usr/share/sounds/freedesktop/stereo/complete.oga",
+        "/usr/share/sounds/freedesktop/stereo/dialog-information.oga",
       ],
-      ["linux", "ding", ["/usr/share/sounds/freedesktop/stereo/message-new-instant.oga"]],
+    ],
+    [
+      "linux",
+      "pop",
       [
-        "linux",
-        "chime",
-        [
-          "/usr/share/sounds/freedesktop/stereo/complete.oga",
-          "/usr/share/sounds/freedesktop/stereo/dialog-information.oga",
-        ],
+        "/usr/share/sounds/freedesktop/stereo/message.oga",
+        "/usr/share/sounds/freedesktop/stereo/dialog-information.oga",
       ],
-      ["darwin", "chime", ["/System/Library/Sounds/Sosumi.aiff"]],
-      ["darwin", "default", ["/System/Library/Sounds/Glass.aiff"]],
-      ["linux", "不存在的音色", []],
-      ["freebsd", "ding", []],
-    ];
-    for (const [platform, tone, expected] of table) {
+    ],
+    ["darwin", "default", ["/System/Library/Sounds/Glass.aiff"]],
+    ["darwin", "ding", ["/System/Library/Sounds/Glass.aiff"]],
+    ["darwin", "bell", ["/System/Library/Sounds/Tink.aiff"]],
+    ["darwin", "chime", ["/System/Library/Sounds/Sosumi.aiff"]],
+    ["darwin", "pop", ["/System/Library/Sounds/Pop.aiff"]],
+    [
+      "win32",
+      "default",
+      [
+        String.raw`C:\Windows\Media\Windows Notify System Generic.wav`,
+        String.raw`C:\Windows\Media\Windows Ding.wav`,
+      ],
+    ],
+    ["win32", "ding", [String.raw`C:\Windows\Media\Windows Ding.wav`]],
+    ["win32", "bell", [String.raw`C:\Windows\Media\Windows Chimes.wav`]],
+    [
+      "win32",
+      "chime",
+      [
+        String.raw`C:\Windows\Media\Windows Chord.wav`,
+        String.raw`C:\Windows\Media\Windows Notify System Generic.wav`,
+      ],
+    ],
+    [
+      "win32",
+      "pop",
+      [
+        String.raw`C:\Windows\Media\Windows Balloon.wav`,
+        String.raw`C:\Windows\Media\Windows Notify System Generic.wav`,
+      ],
+    ],
+  ];
+
+  it("平台 × 音色 → 绝对路径候选（首存在者胜）：win32 用反斜杠拼", () => {
+    for (const [platform, tone, expected] of PLATFORM_TONE_EXPECTATIONS) {
       expect(toneFileCandidates(platform, tone), `${platform}/${tone}`).toEqual(expected);
     }
+  });
+
+  // 「音色有而素材没写」与「素材写了但是空」必须是两种可见状态：这条同时接管了被删掉的
+  // synthToneGaps 所守的那件事（每个可选音色在三平台都有明确的素材决定），且不退回现算期望。
+  it("每个音色在三平台都有显式素材决定：表漏一行、或 TONES 新增音色没跟上，即红", () => {
+    const covered = PLATFORM_TONE_EXPECTATIONS.map(
+      ([platform, tone]) => `${platform}/${tone}`,
+    ).sort();
+    const required = ["linux", "darwin", "win32"]
+      .flatMap((platform) => Object.keys(TONES).map((tone) => `${platform}/${tone}`))
+      .sort();
+    expect(covered).toEqual(required);
+  });
+
+  it("未知音色与未知平台给不出候选：不猜一个默认音顶替", () => {
+    expect(toneFileCandidates("linux", "不存在的音色")).toEqual([]);
+    expect(toneFileCandidates("freebsd", "ding")).toEqual([]);
+    expect(toneFileCandidates("freebsd", "default")).toEqual([]);
   });
 
   // spawn 一个空 argv 会抛错，调用方就拿不到「本平台放不出声」这个可判断的结论。
@@ -1092,6 +1143,8 @@ describe("synth.ts：主题文件缺失时的自包含合成音（#783）", () =
       channels: wav.readUInt16LE(22),
       sampleRate: wav.readUInt32LE(24),
       byteRate: wav.readUInt32LE(28),
+      fmtSize: wav.readUInt32LE(16),
+      blockAlign: wav.readUInt16LE(32),
       bitsPerSample: wav.readUInt16LE(34),
       dataChunk: wav.toString("ascii", 36, 40),
       dataBytes: wav.readUInt32LE(40),
@@ -1110,6 +1163,10 @@ describe("synth.ts：主题文件缺失时的自包含合成音（#783）", () =
    *  判自己——改坏 AMPLITUDE / FADE_MS 都仍然绿（复核实测这两个变异体存活）。 */
   const FADE_SAMPLES = 353;
   const FULL_SCALE = 14745;
+  /** chime 重叠区（0.15s–0.3s）里两分量精确反相的样本下标：660Hz 音（起始 0）与 880Hz 音
+   *  （起始 0.15s）在此处相位相反，正确实现相加后相消为 0；只把其中一个分量反相（或让后一
+   *  个音覆盖前一个）时该点会升到满幅量级。 */
+  const OPPOSITE_PHASE_SAMPLE = 9135;
 
   /**
    * 每个音色的手写事实：总时长、估计窗口与其中测得的主频、有声段数。**不从 TONES 现算**：
@@ -1195,6 +1252,10 @@ describe("synth.ts：主题文件缺失时的自包含合成音（#783）", () =
       expect(p.sampleRate).toBe(SAMPLE_RATE);
       expect(p.bitsPerSample).toBe(16);
       expect(p.byteRate).toBe(p.sampleRate * 2);
+      // fmt 块长度写成 0 时解码器不认这段头；块对齐写成 0/32 会按错步长读样本——
+      // 两者都不会被 declared/dataBytes 那两条长度断言发现（aplay/ffplay 静默失败）
+      expect(p.fmtSize).toBe(16);
+      expect(p.blockAlign).toBe(2);
       expect(p.dataChunk).toBe("data");
       // 头里声明的长度必须与真实字节一致：长度字段写错时 aplay/ffplay 会当成截断文件
       expect(p.declared).toBe(p.total - 8);
@@ -1235,7 +1296,7 @@ describe("synth.ts：主题文件缺失时的自包含合成音（#783）", () =
     ).toBe(true);
   });
 
-  it("时间上重叠的音符按采样相加：chime 重叠区峰值显著高于单音区", () => {
+  it("时间上重叠的音符按采样相加：峰值高于单音区，且反相样本相消", () => {
     // 客户端 Web Audio 是多个振荡器同时响；服务端若让后一个音覆盖前一个，同一份 notes
     // 会在两端听出两种旋律
     const samples = samplesOf("chime");
@@ -1243,6 +1304,17 @@ describe("synth.ts：主题文件缺失时的自包含合成音（#783）", () =
     const overlap = Math.max(...samples.slice(6615, 13230).map((v) => Math.abs(v)));
     expect(single).toBeGreaterThan(FULL_SCALE * 0.9);
     expect(overlap).toBeGreaterThan(single * 1.5);
+    // 上面那条峰值判据对「相加」与「相减」同时成立（相消干涉的峰值同样接近两倍单音），
+    // 反相点才分得开：9135 由两分量正弦的离线公式求得（不调用被测实现），660Hz 音（起始 0）
+    // 与 880Hz 音（起始 0.15s）在该下标处精确反相，只把其中一个分量反相就会变成约
+    // 2×0.975×满幅（实测：这条判据单独红的形态）。
+    //
+    // 登记（等价变异体，不可杀，勿再为它加断言）：synth.ts 的 `mix[start + i] += …` 被
+    // Stryker 换成一元的 `-=` 时**不是缺陷**——写入点只有一处且初值为 0，实测两者产出的
+    // 样本序列逐样本精确相反（5 个音色全部 a[i]+b[i]==0），即整段波形反相 180°：听觉不变，
+    // 幅度类/零穿越类判据都不变，两分量之间的相对相位也没变（相消点仍是 0）。
+    const opposite = Math.abs(samples[OPPOSITE_PHASE_SAMPLE] ?? Number.NaN);
+    expect(opposite, `K=${OPPOSITE_PHASE_SAMPLE} 应相消`).toBeLessThan(FULL_SCALE * 0.2);
   });
 
   it("首尾淡入淡出：样本上界由线性包络决定，而不是「首样本为 0」这种恒真断言", () => {
