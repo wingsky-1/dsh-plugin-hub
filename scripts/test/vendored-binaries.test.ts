@@ -724,11 +724,14 @@ test("CLI：未登记的命中直接打印 sha256（登记表 note 的「先跑�
   );
 });
 
-test("真实仓库：发布物面内零命中，登记表为空即合规", () => {
+test("真实仓库：登记表与扫描面一致（登记第一项后这条仍应绿）", () => {
   const result = verifyVendoredBinaries(ROOT);
   assert.deepEqual(result.problems, []);
-  assert.equal(result.registered, 0);
   assert.ok(result.scanned > 0, "扫描面不应为空");
+  // 不钉 registered === 0：那会把「今天的真空」写死，第一次真登记时这条必然红，正确动作
+  // 反而变成改测试。结构性不变量是「登记条数 == 扫描命中条数」（登记表与事实一一对应：
+  // 少登记一项、多登记一项都已由 problems 判红）。
+  assert.equal(result.registered, result.hits, "登记条数必须等于扫描命中条数");
 });
 
 // ---------- 五、接线钉：三个执行点必须同时存在 ----------
