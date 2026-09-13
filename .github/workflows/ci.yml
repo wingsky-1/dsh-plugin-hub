@@ -769,3 +769,5 @@ jobs:
         run: node scripts/gate/verify-scripts-index.mjs
       - name: Coverage scope（#733 3.4：覆盖率面单一事实源 + 面完整性 + 条目腐烂）
         run: node scripts/gate/verify-coverage-scope.mjs
+      - name: Vendored binaries（批 2b：发布物面内裸二进制须登记 + 哈希一致 + 许可随包）
+        run: node scripts/gate/verify-vendored-binaries.mjs

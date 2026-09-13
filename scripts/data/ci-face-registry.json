@@ -107,6 +107,11 @@
       "why": "包集合的单一事实源：增删包即改变切片全集与产物闸清单。"
     },
     {
+      "path": "scripts/data/vendored-binaries.json",
+      "faces": [],
+      "why": "发布物面内 vendored 裸二进制的登记表（批 2b）：消费方是 repo-gate 恒跑段与本地 cheapGlobal 里的 verify:vendored-binaries，改动在本 PR 上即被消费；它只声明「哪些随包分发的副本已登记许可」，不改变任何 filters，与 scripts/data/ci-face-registry.json 自身同类。"
+    },
+    {
       "path": "scripts/data/dsh-notifier-*.json",
       "faces": ["dsh-notifier"],
       "why": "包级数据资产：dsh-notifier-export-surface.json 被包内 consumer-types 集成测试消费（该测试在 vitest.stryker.d/dsh-notifier.config.ts 的变异面 include 里），dsh-notifier-export-faces.json 被常驻的 export-faces-admission 脚本测试消费——两者都是本包资产，故归本包面。"

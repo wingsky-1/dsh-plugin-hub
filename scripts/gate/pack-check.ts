@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { executeClient } from "../lib/client-contract-lib.ts";
 import { extractInlinedPackages, readMermaidChunkRefs } from "../build/collect-licenses.ts";
 import { listResources } from "../build/build-client.ts";
+import { checkVendoredTarball, vendoredEntriesFor } from "../lib/vendored-binaries-lib.mjs";
 import {
   AGGREGATE_NAME,
   checkAggregateConsistency,
@@ -222,6 +223,21 @@ for (const p of targets) {
             if (!lic.includes(n)) problems.push(`THIRD-PARTY-LICENSES 未覆盖被内联库 ${n}`);
           }
         }
+      }
+    }
+
+    // vendored 裸二进制的随包断言（批 2b）：源码面判据只保证「登记项与发布物面一致」，
+    // 这里保证**最终 tarball 真的带了它的许可文本**——注释提取器对随包分发的 .exe/.node
+    // 副本失明，缺的正是这一段。两处互补，任缺一环都是合规缺口。
+    {
+      let vendored = [];
+      try {
+        vendored = vendoredEntriesFor(ROOT, `packages/${p}`);
+      } catch (e) {
+        problems.push(`vendored 登记表不可读：${String(e.message).split("\n")[0]}`);
+      }
+      for (const problem of checkVendoredTarball(pkgRoot, `packages/${p}`, vendored)) {
+        problems.push(problem);
       }
     }
 

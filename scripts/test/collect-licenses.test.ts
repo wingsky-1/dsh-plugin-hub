@@ -120,3 +120,81 @@ test("collectForPackage：无第三方内联 → 返回空且不写文件；缺 
     cleanup();
   }
 });
+
+/** 造 vendored 登记表（批 2b）：治理数据在 fixture 根的 scripts/data 下。 */
+function vendoredRegistry(root, entries) {
+  mkdirSync(join(root, "scripts", "data"), { recursive: true });
+  writeFileSync(
+    join(root, "scripts", "data", "vendored-binaries.json"),
+    JSON.stringify({ version: 1, entries }),
+  );
+}
+
+test("collectForPackage：vendored 裸二进制（无内联）→ 许可文本并入归集并返回其路径", () => {
+  const { dir, cleanup } = tempRepo();
+  try {
+    fixturePackage(dir, { name: "dsh-vendored", indexSource: "export const apply = () => {}" });
+    const pkg = join(dir, "packages", "dsh-vendored");
+    writeFileSync(join(pkg, "lib", "tool.exe"), Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0, 0]));
+    writeFileSync(
+      join(pkg, "lib", "tool.exe.LICENSE"),
+      "Vendored MIT License\n\nCopyright (c) upstream",
+    );
+    vendoredRegistry(dir, [
+      {
+        path: "packages/dsh-vendored/lib/tool.exe",
+        sha256: "a".repeat(64),
+        license: "MIT",
+        source: "https://example.invalid/upstream@1.0.0",
+        licenseFile: "packages/dsh-vendored/lib/tool.exe.LICENSE",
+      },
+    ]);
+
+    const names = collectForPackage("packages/dsh-vendored", dir);
+    assert.deepEqual(names, ["packages/dsh-vendored/lib/tool.exe"]);
+    const out = readFileSync(join(pkg, "lib", "THIRD-PARTY-LICENSES"), "utf8");
+    // 头部必须写出 path：pack-check 对 tarball 的覆盖断言以它为证据（两边同源）
+    assert.match(out, /vendored 二进制：packages\/dsh-vendored\/lib\/tool\.exe/);
+    assert.match(out, /来源：https:\/\/example\.invalid\/upstream@1\.0\.0/);
+    assert.match(out, /Vendored MIT License/);
+  } finally {
+    cleanup();
+  }
+});
+
+test("collectForPackage：登记项的 license 文本缺失 → fail-loud（不许静默少收一段）", () => {
+  const { dir, cleanup } = tempRepo();
+  try {
+    fixturePackage(dir, { name: "dsh-broken", indexSource: "export const apply = () => {}" });
+    writeFileSync(
+      join(dir, "packages", "dsh-broken", "lib", "tool.exe"),
+      Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0, 0]),
+    );
+    vendoredRegistry(dir, [
+      {
+        path: "packages/dsh-broken/lib/tool.exe",
+        sha256: "a".repeat(64),
+        license: "MIT",
+        source: "https://example.invalid/upstream@1.0.0",
+        licenseFile: "packages/dsh-broken/lib/gone.LICENSE",
+      },
+    ]);
+    assert.throws(
+      () => collectForPackage("packages/dsh-broken", dir),
+      /license 文本不存在：packages\/dsh-broken\/lib\/gone\.LICENSE/,
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("collectForPackage：登记表缺失按空集处理（不然 fixture 仓库与未用该机制的包都构建不了）", () => {
+  const { dir, cleanup } = tempRepo();
+  try {
+    fixturePackage(dir, { name: "dsh-noreg", indexSource: "export const apply = () => {}" });
+    assert.deepEqual(collectForPackage("packages/dsh-noreg", dir), []);
+    assert.ok(!existsSync(join(dir, "packages", "dsh-noreg", "lib", "THIRD-PARTY-LICENSES")));
+  } finally {
+    cleanup();
+  }
+});
