@@ -9,10 +9,12 @@
  * 是为了防「用扩展名或目录名白名单代替发布物面」的实现回潮——那种实现会在
  * `test/fixtures/*.bin` 上假红、又在真正 vendored 的二进制上假绿。
  *
- * 覆盖：分发面判定（files 字面/glob/缺省/退役目录）、登记表双向 fail-closed（未登记、
- * 哈希漂移、license 缺失/空/不在分发面、内容已非二进制、字段非法、重复、登记表不可读）、
- * CLI 退出码、pack-check 随包断言、以及**接线钉**（ci.yml 步骤 + local-gate cheapGlobal +
- * package.json script 三处必须同时存在——门禁没有执行点等于没有门禁）。
+ * 覆盖：分发面判定（files 字面/glob/缺省/退役目录/否定条目/尾斜杠归一化/npm 强制包含集）、
+ * 内容嗅探窗口（头尾双段采样、UTF-8 字符边界、纯文本不假红）、登记表双向 fail-closed（未登记、
+ * 哈希漂移、license 缺失/空/不在分发面、内容已非二进制、字段非法/kind 非法、重复、登记表不可读）、
+ * 第一方资产形态（first-party 只需 path+sha256+kind）、非普通文件（软链目录）与未构建声明条目的
+ * 报告、CLI 退出码与未登记命中的 sha256、pack-check 随包断言、以及**接线钉**（ci.yml 未被注释的
+ * 执行步骤 + local-gate --dry-run 计划里的命令 + package.json script——门禁没有执行点等于没有门禁）。
  */
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
