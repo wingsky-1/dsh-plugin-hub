@@ -43,8 +43,12 @@ import { walkFiles } from "./walk-files.ts";
 
 export const REGISTRY_REL = join("scripts", "data", "vendored-binaries.json");
 
-/** 登记项字段与形态（语义判据由 verifyVendoredBinaries 逐条报 problem，此处只声明）。 */
+/** vendored（第三方副本）登记项必填字段；语义判据由 verifyVendoredBinaries 逐条报 problem。 */
 export const ENTRY_FIELDS = ["path", "sha256", "license", "source", "licenseFile"];
+/** first-party（本仓自有二进制资产）只要求哈希绑定：没有第三方许可义务可言。 */
+const FIRST_PARTY_FIELDS = ["path", "sha256"];
+/** 登记项类别：缺省 vendored（第三方副本）。 */
+const KINDS = new Set(["vendored", "first-party"]);
 const HEX64 = /^[0-9a-f]{64}$/;
 const PKG_PATH = /^packages\/dsh-[a-z0-9-]+\//;
 /** 通配符字符：命中即走 glob 展开（否则按字面路径处理，目录则整棵递归）。 */
@@ -336,18 +340,36 @@ export function scanVendoredBinaries(root, { isBinary = isBinaryFileSync } = {})
   return hits.sort();
 }
 
+/**
+ * 登记项类别。缺省 vendored（第三方副本，有许可随包义务）；first-party = 本仓自有的
+ * 二进制资产（随包图标这类），它没有第三方许可义务——不给这个形态，第一方资产出现时只能
+ * 伪造 source/license 才能消红，还会被写进第三方许可段。
+ */
+export function kindOf(entry) {
+  return entry?.kind === "first-party" ? "first-party" : "vendored";
+}
+
 /** 校验单条登记项的字段形态，返回问题列表（空 = 合法）。 */
 function checkEntryShape(e, index) {
   const problems = [];
   const where = `entries[${index}]`;
   if (e === null || typeof e !== "object" || Array.isArray(e)) return [`${where} 不是对象`];
-  const missing = ENTRY_FIELDS.filter((f) => typeof e[f] !== "string" || e[f].trim() === "");
+  if (e.kind !== undefined && !KINDS.has(e.kind)) {
+    problems.push(
+      `${where}（${e.path ?? "无 path"}）kind 非法：${String(e.kind)}（可选 ${[...KINDS].join(" / ")}）`,
+    );
+  }
+  const required = kindOf(e) === "first-party" ? FIRST_PARTY_FIELDS : ENTRY_FIELDS;
+  const missing = required.filter((f) => typeof e[f] !== "string" || e[f].trim() === "");
   if (missing.length > 0) {
-    return [`${where}（${e.path ?? "无 path"}）字段缺失或非字符串：${missing.join(", ")}`];
+    return [
+      ...problems,
+      `${where}（${e.path ?? "无 path"}）字段缺失或非字符串：${missing.join(", ")}`,
+    ];
   }
   if (!PKG_PATH.test(e.path))
     problems.push(`${e.path} 不在 packages/<包>/ 下（登记表只登记发布物面内的包内文件）`);
-  if (!PKG_PATH.test(e.licenseFile))
+  if (kindOf(e) !== "first-party" && !PKG_PATH.test(e.licenseFile))
     problems.push(`${e.path} 的 licenseFile 不在 packages/<包>/ 下`);
   if (!HEX64.test(e.sha256)) problems.push(`${e.path} 的 sha256 形态非法（须 64 位小写十六进制）`);
   return problems;
@@ -417,6 +439,8 @@ export function verifyVendoredBinaries(root, { registryPath, isBinary = isBinary
       }
     }
     // license 文本必须随包发布：vendored 一个副本却只把许可放在 docs/（不分发）等于没附。
+    // first-party 资产没有第三方许可义务，不该被要求附一段「来源 + 许可」。
+    if (kindOf(e) === "first-party") continue;
     if (typeof e.licenseFile !== "string" || e.licenseFile.trim() === "") continue;
     const licAbs = join(root, e.licenseFile);
     if (!existsSync(licAbs)) {
@@ -458,6 +482,8 @@ export function checkVendoredTarball(pkgRoot, pkgDirRel, entries) {
   const prefix = `${pkgDirRel}/`;
   for (const e of entries) {
     if (!e.path.startsWith(prefix)) continue;
+    // first-party 资产不进第三方许可段，也就没有「tarball 里许可是否覆盖」可断言。
+    if (kindOf(e) === "first-party") continue;
     if (!existsSync(join(pkgRoot, e.path.slice(prefix.length)))) {
       problems.push(`登记的分发面二进制未随包发布：${e.path}`);
       continue;

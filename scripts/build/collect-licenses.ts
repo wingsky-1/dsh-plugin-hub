@@ -33,7 +33,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { filterOutRetiredDirs, listPluginDirs, loadManifest } from "../lib/plugins-manifest-lib.ts";
-import { REGISTRY_REL, vendoredEntriesFor } from "../lib/vendored-binaries-lib.mjs";
+import { REGISTRY_REL, kindOf, vendoredEntriesFor } from "../lib/vendored-binaries-lib.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -44,10 +44,13 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
  * 是门禁 verify-vendored-binaries 的判据（缺表即 exit 2）。在构建链里重复一份 fail-loud
  * 只会把同一件事报两遍，还会让 fixture 仓库无法单独构建。表存在但非法则照抛——那是配置
  * 错误，不是「本仓没用这个机制」。
+ *
+ * first-party 资产（本仓自有二进制）没有第三方许可文本可归集：把它并进第三方许可段等于给
+ * 自有的东西编一个「来源 + 许可证」，是错的信息，pack-check 的覆盖断言也无从满足。
  */
 function vendoredFor(root, pkgDir) {
   if (!existsSync(join(root, REGISTRY_REL))) return [];
-  return vendoredEntriesFor(root, pkgDir);
+  return vendoredEntriesFor(root, pkgDir).filter((e) => kindOf(e) !== "first-party");
 }
 
 /**

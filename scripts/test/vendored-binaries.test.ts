@@ -36,6 +36,12 @@ const BINARY = Buffer.from([
   0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
 ]);
 const LICENSE_TEXT = "MIT License\n\nCopyright (c) 2026 Example\n";
+/** 第一方资产用真实形态的样本：1x1 PNG（图形资源是最典型的第一方二进制资产）。 */
+const PNG = Buffer.from(
+  "89504e470d0a1a0a0000000d4948445200000001000000010806000000" +
+    "1f15c4890000000a49444154789c6300010000050001",
+  "hex",
+);
 
 const TMP = [];
 function mkTmp(prefix) {
@@ -101,6 +107,15 @@ function entryOf(root, rel, { licenseFile = `${rel}.LICENSE`, ...over } = {}) {
 }
 
 const join2 = (p) => p.join("\n");
+
+/** 合法第一方登记项：只有 path/sha256/kind——自有二进制资产没有第三方许可义务。 */
+function firstPartyOf(root, rel) {
+  return {
+    path: `packages/${PKG}/${rel}`,
+    sha256: sha256File(join(root, "packages", PKG, rel)),
+    kind: "first-party",
+  };
+}
 
 // ---------- 一、分发面判定：判据是「会不会随发布物分发」 ----------
 
@@ -448,6 +463,60 @@ test("反例：许可文本缺失 / 为空 / 不在分发面 → 三种都判红
     entries: (r) => [entryOf(r, "lib/tool.exe", { licenseFile: "docs/tool.exe.LICENSE" })],
   });
   assert.match(join2(outside.result.problems), /不在发布物面内：vendored 了副本却没随包附许可文本/);
+});
+
+// ---------- 二之二、登记项类别：第一方资产 vs 第三方副本 ----------
+
+test("first-party 资产：只给 path+sha256+kind 即合规（不必伪造 source/license）", () => {
+  const { result } = judge({
+    files: ["lib"],
+    tree: { "lib/logo.png": PNG },
+    entries: (r) => [firstPartyOf(r, "lib/logo.png")],
+  });
+  assert.deepEqual(result.problems, []);
+  assert.equal(result.registered, 1);
+});
+
+test("first-party 资产：sha256 仍是硬绑定，内容漂移判红", () => {
+  const root = makeRoot({ files: ["lib"], tree: { "lib/logo.png": PNG } });
+  const before = firstPartyOf(root, "lib/logo.png");
+  assert.deepEqual(
+    verifyVendoredBinaries(root, { registryPath: writeRegistry([before]) }).problems,
+    [],
+  );
+  writeFileSync(join(root, "packages", PKG, "lib", "logo.png"), Buffer.from([...PNG, 0x01]));
+  const drifted = verifyVendoredBinaries(root, { registryPath: writeRegistry([before]) });
+  assert.match(join2(drifted.problems), /sha256 漂移/);
+});
+
+test("first-party 资产：即使带了 licenseFile 也不按第三方副本审许可随包", () => {
+  // 第一方资产没有第三方许可义务；若这里退化成「凡有 licenseFile 就查」，一个从 vendored
+  // 条目改过来的第一方条目会因为残留字段被判红，正确动作又变成删字段迁就实现。
+  const { result } = judge({
+    files: ["lib"],
+    tree: { "lib/logo.png": PNG },
+    entries: (r) => [
+      { ...firstPartyOf(r, "lib/logo.png"), licenseFile: `packages/${PKG}/lib/gone.LICENSE` },
+    ],
+  });
+  assert.deepEqual(result.problems, []);
+});
+
+test("登记项 kind 非法 → 判红（不认识的类别不得静默当 vendored 放过）", () => {
+  const { result } = judge({
+    files: ["lib"],
+    tree: { "lib/tool.exe": BINARY, "lib/tool.exe.LICENSE": LICENSE_TEXT },
+    entries: (r) => [{ ...entryOf(r, "lib/tool.exe"), kind: "third-party" }],
+  });
+  assert.match(join2(result.problems), /kind 非法：third-party/);
+});
+
+test("first-party 资产不进 pack-check 的第三方许可覆盖断言", () => {
+  const tarballRoot = mkTmp("vendored-firstparty-tar-");
+  mkdirSync(join(tarballRoot, "lib"), { recursive: true });
+  writeFileSync(join(tarballRoot, "lib", "logo.png"), PNG);
+  const entry = { path: `packages/${PKG}/lib/logo.png`, kind: "first-party" };
+  assert.deepEqual(checkVendoredTarball(tarballRoot, `packages/${PKG}`, [entry]), []);
 });
 
 test("反例：登记项内容已不是二进制 / 不在分发面 → 登记表腐坏两个方向", () => {

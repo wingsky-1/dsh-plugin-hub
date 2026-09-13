@@ -188,6 +188,26 @@ test("collectForPackage：登记项的 license 文本缺失 → fail-loud（不�
   }
 });
 
+test("collectForPackage：first-party 登记项不进第三方许可段（自有资产没有许可文本可归集）", () => {
+  const { dir, cleanup } = tempRepo();
+  try {
+    fixturePackage(dir, { name: "dsh-firstparty", indexSource: "export const apply = () => {}" });
+    const pkg = join(dir, "packages", "dsh-firstparty");
+    writeFileSync(join(pkg, "lib", "logo.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0]));
+    vendoredRegistry(dir, [
+      { path: "packages/dsh-firstparty/lib/logo.png", sha256: "b".repeat(64), kind: "first-party" },
+    ]);
+
+    assert.deepEqual(collectForPackage("packages/dsh-firstparty", dir), []);
+    assert.ok(
+      !existsSync(join(pkg, "lib", "THIRD-PARTY-LICENSES")),
+      "第一方资产不该出现在第三方许可段（那等于给它编一个来源与许可证）",
+    );
+  } finally {
+    cleanup();
+  }
+});
+
 test("collectForPackage：登记表缺失按空集处理（不然 fixture 仓库与未用该机制的包都构建不了）", () => {
   const { dir, cleanup } = tempRepo();
   try {
