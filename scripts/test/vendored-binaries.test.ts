@@ -17,7 +17,7 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -358,6 +358,49 @@ test("CLI：声明但缺失的条目打印 NOTE 且 exit 0（报告不是判据�
   });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /NOTE \| .*packages\/dsh-demo\/lib/);
+});
+
+test("发布物面内的软链目录：给出可读文案而不是 exit 2（无法嗅探不等于环境错误）", () => {
+  // walkFiles 按 dirent 分类，符号链接既不是目录也不会被递归，于是它以「文件」身份进入
+  // 发布物面；嗅探器对目录抛 `Path provided was not a file!`，整条判据退化成 exit 2。
+  const root = makeRoot({
+    files: ["lib"],
+    tree: { "lib/index.js": "text\n", "real/x.js": "text\n" },
+  });
+  symlinkSync(
+    join(root, "packages", PKG, "real"),
+    join(root, "packages", PKG, "lib", "linked"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  assert.deepEqual(scanVendoredBinaries(root), [], "软链目录不参与嗅探，且 scan 不抛错");
+
+  const r = spawnSync(process.execPath, [SCRIPT, "--root", root, "--registry", writeRegistry([])], {
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0, `不该退化成 exit 2：${r.stderr}`);
+  assert.match(r.stdout, /NOTE \| .*lib\/linked.*非普通文件/);
+});
+
+test("登记项指向非普通文件（软链目录）→ 判红并给出可读文案", () => {
+  const root = makeRoot({ files: ["lib"], tree: { "real/x.js": "text\n" } });
+  mkdirSync(join(root, "packages", PKG, "lib"), { recursive: true });
+  symlinkSync(
+    join(root, "packages", PKG, "real"),
+    join(root, "packages", PKG, "lib", "linked"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  const result = verifyVendoredBinaries(root, {
+    registryPath: writeRegistry([
+      {
+        path: `packages/${PKG}/lib/linked`,
+        sha256: "a".repeat(64),
+        license: "MIT",
+        source: "https://example.invalid/x",
+        licenseFile: `packages/${PKG}/lib/linked.LICENSE`,
+      },
+    ]),
+  });
+  assert.match(join2(result.problems), /登记项不是普通文件/);
 });
 
 test("退役残留目录不参与扫描（manifest.retired）", () => {

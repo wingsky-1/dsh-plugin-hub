@@ -334,7 +334,12 @@ export function scanVendoredBinaries(root, { isBinary = isBinaryFileSync } = {})
     const pkgDirAbs = join(root, "packages", pkg);
     for (const rel of distributionPaths(pkgDirAbs)) {
       const repoRel = `packages/${pkg}/${rel}`;
-      if (sniffBinary(join(root, repoRel), isBinary)) hits.push(repoRel);
+      const abs = join(root, repoRel);
+      // 软链目录会被 walkFiles 当文件收进面内，而嗅探器对目录抛错（Path provided was not a
+      // file!）——整条判据因此退化成 exit 2 的「环境错误」。它不是随包分发的普通文件
+      // （npm 不跟随软链目录），跳过嗅探；报告由 verify 用可读文案给出。
+      if (!isRegularFile(abs)) continue;
+      if (sniffBinary(abs, isBinary)) hits.push(repoRel);
     }
   }
   return hits.sort();
@@ -413,6 +418,16 @@ export function verifyVendoredBinaries(root, { registryPath, isBinary = isBinary
         `本闸判据面是源码树，构建产物由 pack-check 的 tarball 断言覆盖`,
     );
   }
+  // 非普通文件（软链目录/悬空软链）：内容嗅探对它抛错，而 npm 发布物也不跟随软链目录。
+  // 不判红（方向是「多报」时才安全，这里是面里混进了非分发物），但必须给出可读文案，
+  // 否则整条判据只会以 exit 2 的「Path provided was not a file!」收场。
+  for (const rel of surface) {
+    if (isRegularFile(join(root, rel))) continue;
+    reports.push(
+      `${rel} 是发布物面内的非普通文件（软链目录/悬空软链），不做内容嗅探——` +
+        `npm 发布物不跟随软链目录；若它本应随包发布，请改成真实文件`,
+    );
+  }
 
   const registered = new Set(withPath.map((e) => e.path));
   for (const hit of hits) {
@@ -427,6 +442,9 @@ export function verifyVendoredBinaries(root, { registryPath, isBinary = isBinary
     const abs = join(root, e.path);
     if (!existsSync(abs)) {
       problems.push(`${e.path} 登记项文件不存在（登记表与仓库脱钩）`);
+    } else if (!isRegularFile(abs)) {
+      // 登记项必须指向真实文件：软链目录读不了哈希、也无法嗅探，登记它不产生任何合规效果。
+      problems.push(`${e.path} 登记项不是普通文件（软链目录/悬空软链无法做内容嗅探与哈希）`);
     } else {
       if (!surface.has(e.path))
         problems.push(`${e.path} 不在发布物面内（登记它不产生任何合规效果）`);
@@ -443,7 +461,7 @@ export function verifyVendoredBinaries(root, { registryPath, isBinary = isBinary
     if (kindOf(e) === "first-party") continue;
     if (typeof e.licenseFile !== "string" || e.licenseFile.trim() === "") continue;
     const licAbs = join(root, e.licenseFile);
-    if (!existsSync(licAbs)) {
+    if (!existsSync(licAbs) || !isRegularFile(licAbs)) {
       problems.push(`${e.path} 的 license 文本不存在：${e.licenseFile}`);
     } else {
       if (!surface.has(e.licenseFile)) {
