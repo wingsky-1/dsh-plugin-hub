@@ -127,6 +127,10 @@ function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel }) {
       label: "verify:scripts-index（scripts 索引：存在性 + 引用即登记）",
       args: ["verify:scripts-index"],
     },
+    {
+      label: "verify:coverage-scope（覆盖率面：单一事实源 + 面完整性）",
+      args: ["verify:coverage-scope"],
+    },
     { label: "lint（ESLint 复杂度门禁，阈值见 gauntlet.config.json）", args: ["lint"] },
   ];
   const prereqStep = {

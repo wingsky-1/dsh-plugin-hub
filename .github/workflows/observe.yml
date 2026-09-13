@@ -34,7 +34,7 @@ on:
   schedule:
     # 每日全量变异与基线刷新（#276 方案 A + #433 调度重设计）：北京次日 04:00
     # = UTC 20:00，避开整点 Actions 高峰（增量班已于 #718 S2.2 退役）
-    - cron: '0 20 * * *'
+    - cron: "0 20 * * *"
   workflow_dispatch:
 
 permissions:
@@ -127,6 +127,11 @@ jobs:
 
       # CRAP 于 #722 阶段五完成 src 口径重建（复杂度取自 ESLint 的 complexity 规则，
       # 覆盖率取自同一份 src 口径产物，两者行号可比），恢复接入本班次。
+      # 覆盖率面交叉断言：产物（coverage/coverage-final.json）已产出，此时验「产物 keys ⊆ include
+      # 面」才有意义——PR 组 A 跑本闸时产物还不存在，那里的执行点只覆盖结构与面完整性。
+      - name: Coverage scope（产物交叉断言）
+        run: node scripts/gate/verify-coverage-scope.mjs
+
       - name: CRAP（热点报告；strict 见 gauntlet.config.json 的 crap.strict）
         run: pnpm crap
 

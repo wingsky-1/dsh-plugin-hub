@@ -104,9 +104,11 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'tsconfig.base.json'
-              # #722 阶段三：根级测试与覆盖率配置是阈值/分母的唯一事实源，
-              # 与 stryker.conf.d/*.json 同理——不映射则配置类 PR 不触发任何
-              # job，改动无法自证（阈值降线也会绕过全部切片）。
+              # 根级测试与覆盖率配置：#733 计划项 3.4 起**阈值/分母的唯一事实源是
+              # scripts/data/coverage.config.json**（vitest.config.ts 只 import 它），
+              # 测试分层 glob 在 scripts/data/mutation-topology.json——两者都在 `scripts/**`
+              # 面内，故不重复列出（global 面的 glob 清单有等值断言守着，塞冗余项只会稀释它）。
+              # vitest.config.ts 必须显式列出：它在根级、不属任何包面。
               - 'vitest.config.ts'
             dsh-notifier:
               - 'packages/dsh-notifier/**'
@@ -494,7 +496,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          fetch-depth: 0   # 阈值单调性校验需读 origin/main 的 config（F3）
+          fetch-depth: 0 # 阈值单调性校验需读 origin/main 的 config（F3）
 
       - name: Fail-closed gate assertion（F2：任何上游非 success 即红）
         # #187：判定逻辑收敛到 scripts/gate/repo-gate-assert.mjs（可被单元测试
@@ -654,3 +656,5 @@ jobs:
         run: pnpm docs:check
       - name: Scripts index（#733 3.3 E2：索引项存在 + 被调用的脚本必须登记）
         run: node scripts/gate/verify-scripts-index.mjs
+      - name: Coverage scope（#733 3.4：覆盖率面单一事实源 + 面完整性 + 条目腐烂）
+        run: node scripts/gate/verify-coverage-scope.mjs

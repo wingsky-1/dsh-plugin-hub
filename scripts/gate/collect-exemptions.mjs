@@ -32,10 +32,14 @@ function argValue(argv, flag, fallback) {
   return idx !== -1 && argv[idx + 1] !== undefined ? argv[idx + 1] : fallback;
 }
 
-/** 条目的可读标识：取几个通用候选字段，都没有则如实说明（不编造）。 */
+/**
+ * 条目的可读标识：取几个通用候选字段，都没有则如实说明（不编造）。
+ * `pattern` 在列：覆盖率面的临时排除项（#733 3.4 起 coverage.config.json 的 exclude）用它标识，
+ * 少了它台账只会打印「(无标识字段)」——到期复核的人得自己回文件里数第几条。
+ */
 function describeEntry(node) {
   const parts = [];
-  for (const field of ["gate", "package", "path", "name", "key"]) {
+  for (const field of ["gate", "package", "pattern", "path", "name", "key"]) {
     if (typeof node[field] === "string") parts.push(`${field}=${node[field]}`);
   }
   return parts.length > 0 ? parts.join("  ") : "(无标识字段)";

@@ -67,3 +67,11 @@ test("pr 档：含 scripts 索引判据（#733 E2 的引用即登记，恒跑规
     "pr 档必须含 verify:scripts-index —— 它属恒跑的规则面",
   );
 });
+
+test("pr 档：含覆盖率面判据（#733 3.4：单一事实源 + 面完整性）", () => {
+  const out = plannedSteps("pr");
+  assert.ok(
+    out.includes("verify:coverage-scope（覆盖率面：单一事实源 + 面完整性）"),
+    "pr 档必须含 verify:coverage-scope",
+  );
+});

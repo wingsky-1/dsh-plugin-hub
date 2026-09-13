@@ -1,0 +1,250 @@
+#!/usr/bin/env node
+// @ts-nocheck
+/**
+ * verify-coverage-scope 自测（#733 计划项 3.4）：单一事实源、条目结构、面完整性、条目腐烂、产物交叉断言。
+ *
+ * 每条判据都有正反例：这些口径（哪些 kind 合法、哪些字段只允许 pending-project、什么算「逃逸」）
+ * 是本次新增的约定，约定只有写成断言才不会被下一个人无意改掉。
+ */
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+
+const ROOT = join(import.meta.dirname, "..", "..");
+const SCRIPT = join(ROOT, "scripts", "gate", "verify-coverage-scope.mjs");
+
+/** vitest.config.ts 的最小形态：引用数据文件（正例口径）。 */
+const VITEST_OK = [
+  "import coverage from './scripts/data/coverage.config.json' with { type: 'json' }",
+  "export default { test: {",
+  "  projects: [{ test: { name: 'unit', include: ['packages/*/test/unit/**/*.test.ts'] } }],",
+  "  coverage: {",
+  "    provider: 'istanbul',",
+  "    include: coverage.include,",
+  "    exclude: coverage.exclude.map((e) => e.pattern),",
+  "    thresholds: coverage.thresholds,",
+  "  },",
+  "} }",
+  "",
+].join("\n");
+
+const BASE_CONFIG = {
+  version: 1,
+  note: "fixture",
+  include: ["packages/*/src/**/*.{ts,tsx}", "shared/**/*.js"],
+  exclude: [{ pattern: "**/*.d.ts", kind: "type-only", reason: "声明文件无运行时代码" }],
+  thresholds: { lines: 80, functions: 80, statements: 78, branches: 70 },
+};
+
+/**
+ * 构造最小 fixture 仓库：源文件 + 数据配置 + vitest.config.ts。
+ * sourceFiles 默认给一个已分类的宿主端源码（落在 include 面内）。
+ */
+function fixture(config = BASE_CONFIG, { sourceFiles, vitest = VITEST_OK } = {}) {
+  const root = mkdtempSync(join(tmpdir(), "cov-scope-"));
+  const files = sourceFiles ?? [
+    { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+    // 声明文件：让默认的 `**/*.d.ts` 条目在覆盖率根内真的命中一个文件（否则条目腐烂判红）
+    { rel: "packages/dsh-fake/src/types.d.ts", content: "export type T = 1\n" },
+    { rel: "shared/x.js", content: "export const x = 1\n" },
+  ];
+  for (const { rel, content } of files) {
+    const p = join(root, rel);
+    mkdirSync(join(p, ".."), { recursive: true });
+    writeFileSync(p, content);
+  }
+  mkdirSync(join(root, "scripts/data"), { recursive: true });
+  writeFileSync(join(root, "scripts/data/coverage.config.json"), JSON.stringify(config, null, 2));
+  writeFileSync(join(root, "vitest.config.ts"), vitest);
+  return root;
+}
+
+function run(root) {
+  try {
+    return spawnSync(process.execPath, [SCRIPT, "--root", root], { encoding: "utf8" });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("正例：universe 全部被 include/exclude 分类 → exit 0", () => {
+  const r = run(fixture());
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /verify-coverage-scope: OK/);
+  assert.match(r.stdout, /universe 3 文件/);
+});
+
+test("面完整性：src 下新形态文件既不在 include 也不在 exclude → 红（静默逃逸）", () => {
+  const r = run(
+    fixture(BASE_CONFIG, {
+      sourceFiles: [
+        { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+        { rel: "packages/dsh-fake/src/types.d.ts", content: "export type T = 1\n" },
+        { rel: "shared/x.js", content: "export const x = 1\n" },
+        { rel: "packages/dsh-fake/src/notify.ps1", content: "Write-Host hi\n" },
+      ],
+    }),
+  );
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /notify\.ps1 既不在 include 也不在任何 exclude 条目里/);
+});
+
+test("非源码资源登记为 not-source 后放行（同一文件，加条目即绿）", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      ...BASE_CONFIG.exclude,
+      { pattern: "**/*.ps1", kind: "not-source", reason: "脚本资源，非 JS 源码" },
+    ],
+  };
+  const r = run(
+    fixture(config, {
+      sourceFiles: [
+        { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+        { rel: "packages/dsh-fake/src/types.d.ts", content: "export type T = 1\n" },
+        { rel: "shared/x.js", content: "export const x = 1\n" },
+        { rel: "packages/dsh-fake/src/notify.ps1", content: "Write-Host hi\n" },
+      ],
+    }),
+  );
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test("条目结构：exclude 缺 reason → 红（排除即缩小判据面，必须写明理由）", () => {
+  const config = { ...BASE_CONFIG, exclude: [{ pattern: "**/*.d.ts", kind: "type-only" }] };
+  const r = run(fixture(config));
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /exclude 条目缺 reason/);
+});
+
+test("条目结构：kind 越界 → 红（值域三值，无第三条路）", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [{ pattern: "**/*.d.ts", kind: "whatever", reason: "理由够长了" }],
+  };
+  const r = run(fixture(config));
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /kind 须为 type-only \/ not-source \/ pending-project 之一/);
+});
+
+test("条目结构：非 pending-project 携带 reviewBy → 红（给永久事实编到期日即假条目）", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      { pattern: "**/*.d.ts", kind: "type-only", reason: "理由够长了", reviewBy: "2027-03-31" },
+    ],
+  };
+  const r = run(fixture(config));
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /字段 reviewBy 只允许 pending-project 携带/);
+});
+
+test("条目结构：pending-project 的 reviewBy 形态错 → 红", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      {
+        pattern: "**/client/**",
+        kind: "pending-project",
+        reason: "理由够长了",
+        reviewBy: "2027/03/31",
+      },
+    ],
+  };
+  const r = run(fixture(config));
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /reviewBy 须形如 2027-03-31/);
+});
+
+test("条目结构：重复 pattern → 红（两处声明同一排除）", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      { pattern: "**/*.d.ts", kind: "type-only", reason: "理由够长了" },
+      { pattern: "**/*.d.ts", kind: "not-source", reason: "理由够长了" },
+    ],
+  };
+  const r = run(fixture(config));
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /重复 pattern/);
+});
+
+test("条目腐烂：模式在覆盖率根内命中 0 个文件 → 红", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [{ pattern: "**/*.gone", kind: "not-source", reason: "指向已不存在的形态" }],
+  };
+  const r = run(fixture(config));
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /exclude 模式在覆盖率根内命中 0 个文件（条目腐烂）/);
+});
+
+test("单一事实源：coverage 块内联 thresholds 对象字面量 → 红", () => {
+  const vitest = VITEST_OK.replace(
+    "thresholds: coverage.thresholds,",
+    "thresholds: { lines: 80, functions: 80, statements: 78, branches: 70 },",
+  );
+  const r = run(fixture(BASE_CONFIG, { vitest }));
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /coverage 块内联了 thresholds 对象字面量/);
+});
+
+test("单一事实源：coverage 块内联 include 数组字面量 → 红", () => {
+  const vitest = VITEST_OK.replace(
+    "include: coverage.include,",
+    "include: ['packages/*/src/**/*.{ts,tsx}'],",
+  );
+  const r = run(fixture(BASE_CONFIG, { vitest }));
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /coverage 块内联了 include 数组字面量/);
+});
+
+test("回归：projects[].test.include 是测试面，不得被判成第二个事实源", () => {
+  const r = run(fixture());
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test("单一事实源：缺 coverage 块 → 红", () => {
+  const vitest = "export default { test: { projects: [] } }\n";
+  const r = run(fixture(BASE_CONFIG, { vitest }));
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /缺 coverage 块/);
+});
+
+test("fail-closed：include 为空数组 → exit 2（分母为空是配置错误）", () => {
+  const r = run(fixture({ ...BASE_CONFIG, include: [] }));
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /缺非空 include/);
+});
+
+test("产物交叉断言：产物比配置新且含面外 key → 红", () => {
+  const root = fixture();
+  mkdirSync(join(root, "coverage"), { recursive: true });
+  writeFileSync(
+    join(root, "coverage/coverage-final.json"),
+    JSON.stringify({
+      [`${root}/packages/dsh-fake/src/a.ts`]: {},
+      [`${root}/packages/dsh-fake/src/stray.ts`]: {},
+    }),
+  );
+  // 产物必须比配置新，交叉断言才会执行（旧产物反映的是旧的面）
+  const future = Date.now() / 1000 + 60;
+  utimesSync(join(root, "coverage/coverage-final.json"), future, future);
+  try {
+    const r = spawnSync(process.execPath, [SCRIPT, "--root", root], { encoding: "utf8" });
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stderr, /stray\.ts 出现在覆盖率产物里但不在当前 include 面内/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("本仓真实快照：面完整、无逃逸 → exit 0 且打印面计数", () => {
+  const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /universe \d+ 文件 = include \d+ − exclude \d+ → 计分 \d+/);
+  assert.match(r.stdout, /阈值键 lines\/functions\/statements\/branches/);
+});
