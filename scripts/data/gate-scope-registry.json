@@ -48,7 +48,7 @@
       "script": "scripts/gate/verify-vendored-binaries.mjs",
       "scopeFrom": "tree",
       "packages": "dsh-*",
-      "why": "批 2b：发布物面内的 vendored 裸二进制必须登记（sha256 + 随包许可文本）。范围**不由目录结构派生，而由各包 package.json 的 files 白名单派生**——判据轴是「会不会随发布物分发」；包名枚举在这里不构成范围，故该闸不吃 --package，与 forbid-src-tests 同属按树扫描。登记在此是为了让「本仓有哪些路径受限门禁」保持唯一答案。"
+      "why": "批 2b：发布物面内的 vendored 裸二进制必须登记（sha256 + 随包许可文本）。范围**不由目录结构派生，而由各包 package.json 的 files 白名单 ∪ npm 强制包含集派生**（bin/main/bundledDependencies/根级 README|LICENSE|CHANGELOG|NOTICE/package.json）——判据轴是「会不会随发布物分发」；包名枚举在这里不构成范围，故该闸不吃 --package，与 forbid-src-tests 同属按树扫描。登记在此是为了让「本仓有哪些路径受限门禁」保持唯一答案。"
     }
   ]
 }

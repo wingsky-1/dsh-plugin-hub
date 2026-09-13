@@ -1,5 +1,5 @@
 {
   "version": 1,
-  "note": "发布物面内 vendored 裸二进制登记表（#784 遗留 D 项 / 批 2b）。判据轴是「会不会随发布物分发」——分发面的唯一事实源是各包 package.json 的 files 白名单，本表只登记落在该面内、因而**随包分发**的二进制副本（内联 = 分发副本 = 合规义务）。每条须给出 sha256 与随包 license 文本路径：哈希绑定、license 文本存在性与「license 也必须随包发布」由 scripts/gate/verify-vendored-binaries.mjs 断言；license 文本由 scripts/build/collect-licenses.ts 并入 lib/THIRD-PARTY-LICENSES，由 scripts/gate/pack-check.ts 对最终 tarball 断言覆盖。新增一项时先跑 `pnpm verify:vendored-binaries` 取实际 sha256，不要手抄。",
+  "note": "发布物面内 vendored 裸二进制登记表（#784 遗留 D 项 / 批 2b）。判据轴是「会不会随发布物分发」——分发面 = 各包 package.json 的 files 白名单 ∪ npm 无论 files 都强制包含的位置（package.json、根级 README*/LICENSE*/CHANGELOG*/NOTICE*、bin、main、bundledDependencies 展开出的包内 node_modules 子树），本表只登记落在该面内、因而**随包分发**的二进制副本（内联 = 分发副本 = 合规义务）。kind 缺省 vendored（第三方副本）：须给出 sha256 与随包 license 文本路径，哈希绑定、license 文本存在性与「license 也必须随包发布」由 scripts/gate/verify-vendored-binaries.mjs 断言，license 文本由 scripts/build/collect-licenses.ts 并入 lib/THIRD-PARTY-LICENSES，由 scripts/gate/pack-check.ts 对最终 tarball 断言覆盖。kind 为 first-party（本仓自有二进制资产）时只要求 path + sha256 + kind，不进第三方许可段。新增一项时先跑 `pnpm verify:vendored-binaries`：未登记命中的问题文案里直接带 sha256，不要手抄。",
   "entries": []
 }

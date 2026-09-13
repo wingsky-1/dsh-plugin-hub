@@ -53,7 +53,7 @@
 
 - `gate/verify-coverage-scope.mjs` — 覆盖率面判据（#733 计划项 3.4）：`vitest.config.ts` 不得内联 `include`/`exclude`/`thresholds`；exclude 条目须带 `reason` 与 `kind`（`reviewBy`/`exitCriteria` 只允许 `pending-project`）；物理枚举的每个源文件必须落在 include 或某条 exclude 里（未分类即红）；模式命中 0 文件即红；产物 keys ⊆ include 面（产物比配置新时才执行）。
 
-- `gate/verify-vendored-binaries.mjs` — 发布物面内 vendored 裸二进制判据（批 2b，来源 #784 遗留 D 项）：扫描面由**各包 `package.json` 的 `files` 白名单**派生（判据轴是「会不会随发布物分发」，不是「文件是不是二进制」，故 `docs/` 下的 PNG 不算、`test/fixtures/*.bin` 只在被 `files` 包含时才算）；面内的内容嗅探命中必须已在 `data/vendored-binaries.json` 登记且 sha256 一致，许可文本必须存在、非空且**同样在发布物面内**。双向 fail-closed：未登记即红，登记项消失/哈希漂移/内容已非二进制/登记表不可读（exit 2）也红——防「登记表腐坏后判据静默失效」。
+- `gate/verify-vendored-binaries.mjs` — 发布物面内 vendored 裸二进制判据（批 2b，来源 #784 遗留 D 项）：扫描面 = 各包 `package.json` 的 `files` 白名单（含 `!` 否定条目）∪ npm 无论 `files` 都强制包含的位置（`package.json`、根级 `README*`/`LICENSE*`/`CHANGELOG*`/`NOTICE*`、`bin`、`main`、`bundledDependencies` 展开出的包内 `node_modules` 子树）；判据轴是「会不会随发布物分发」，不是「文件是不是二进制」，故 `docs/` 下的 PNG 不算、`test/fixtures/*.bin` 只在被 `files` 包含时才算。**判据面是源码树（随包分发的源文件）**：未构建的工作副本扫描面会变小，构建产物由 `pack:check` 的 tarball 断言覆盖。面内的内容嗅探命中（头 8 KiB + 尾 1 KiB 双段采样）必须已在 `data/vendored-binaries.json` 登记且 sha256 一致；`kind: "vendored"`（缺省）另要求许可文本存在、非空且**同样在发布物面内**，`kind: "first-party"`（本仓自有资产）只要求哈希绑定。双向 fail-closed：未登记即红（问题文案直接带 sha256，便于登记），登记项消失/哈希漂移/内容已非二进制/登记表不可读（exit 2）也红——防「登记表腐坏后判据静默失效」；`files` 声明了但磁盘上不存在的条目与面内非普通文件（软链目录）只以 `NOTE` 报告，不判红。
 
 ## maintenance/（一次性维护脚本，按需手工执行）
 
@@ -76,7 +76,7 @@
 - `lib/package-scope.ts` — 产物闸（contract / pack-check / verify-npmlayout）的包级切片参数解析（#722 门禁分层）。
 - `lib/rewrite-dts-paths.ts` — bundle-host d.ts X1 2a 段「shared 相对引用改写」共享库（issue #478）。
 - `lib/walk-files.ts` — 递归收集目录下满足谓词的文件（构建复制 d.ts X1 2b 段与 pack-check 随包断言共用同一遍历）。
-- `lib/vendored-binaries-lib.mjs` — 发布物面判定 + 内容嗅探 + 登记表校验（批 2b）：发布物面的唯一事实源是各包 `package.json` 的 `files` 白名单（不维护硬编码排除表），供 `gate/verify-vendored-binaries.mjs`、`build/collect-licenses.ts`、`gate/pack-check.ts` 三处共用同一套判据。
+- `lib/vendored-binaries-lib.mjs` — 发布物面判定 + 内容嗅探 + 登记表校验（批 2b）：发布物面 = 各包 `package.json` 的 `files` 白名单 ∪ npm 强制包含集（不维护硬编码排除表），供 `gate/verify-vendored-binaries.mjs`、`build/collect-licenses.ts`、`gate/pack-check.ts` 三处共用同一套判据。
 
 ## release/（发布/周期 CI 专用）
 
@@ -110,7 +110,7 @@
 - `data/dir-imports-baseline.json` — 目录导入门禁的单调基线（#690 / #733 A）：结构型计数由 `--write-baseline` 登记，`quality` 段存质量型**证据集合**（边 `from|to|kind`、环签名、未覆盖源文件）。
 - `data/gate-exemptions.json` — 路径受限门禁的豁免台账（#733 计划项 3.1.2 / 3.2.2）：文件级条目 + 可选 `reviewBy`（**有** = 临时、自动进到期台账；**无** = 长期设计事实）；机制实现见 `lib/exemption-gate.ts`。
 - `data/gate-scope-registry.json` — 路径受限门禁的扫描范围登记（#733 计划项 3.2.1）：`scopeFrom` 三值（registry / cli / tree）+ `packages`；**未登记即红**（运行时与自测两处执行）。
-- `data/vendored-binaries.json` — 发布物面内 vendored 裸二进制登记表（批 2b，`{path, sha256, license, source, licenseFile}`）：判据与接线见 `gate/verify-vendored-binaries.mjs`；许可文本由 `build/collect-licenses.ts` 并入随包的 `lib/THIRD-PARTY-LICENSES`，再由 `gate/pack-check.ts` 对最终 tarball 断言覆盖。**今天为空**（实测 `packages/*/` 排除 `docs/`、`lib/`、`node_modules` 后 477 个文件零命中），它是为将来上的锁。
+- `data/vendored-binaries.json` — 发布物面内 vendored 裸二进制登记表（批 2b，`{path, sha256, kind?, license?, source?, licenseFile?}`；`kind` 缺省 `vendored`，`first-party` 只要求 `path`+`sha256`）：判据与接线见 `gate/verify-vendored-binaries.mjs`；`vendored` 条的许可文本由 `build/collect-licenses.ts` 并入随包的 `lib/THIRD-PARTY-LICENSES`，再由 `gate/pack-check.ts` 对最终 tarball 断言覆盖（第一方资产不进第三方许可段）。**今天为空**，它是为将来上的锁——这里不写死命中数：扫描面随各包 `files` 白名单与工作副本是否构建而漂移，写下来的数字会过期。
 - `data/dsh-lan-proxy-ui-exempt.json` — lan-proxy 客户端 UI 豁免表（#733 计划项 3.2.2）：哪些配置键有值但 GUI 不渲染，逐键给原因；条目数上限是**策略**，留在门禁代码里。
 - `data/dsh-notifier-export-surface.json` — dsh-notifier 的导出面清单（消费者可见的类型/值面）：被包内 `consumer-types` 集成测试消费，该测试在 `vitest.stryker.d/dsh-notifier.config.ts` 的变异面 include 内。
 - `data/dsh-notifier-export-faces.json` — dsh-notifier 的导出面准入清单：被常驻的 `test/export-faces-admission.test.ts` 消费（改这两个文件会命中 dsh-notifier 面，见 `data/ci-face-registry.json`）。
