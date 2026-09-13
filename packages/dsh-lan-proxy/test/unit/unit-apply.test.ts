@@ -101,6 +101,90 @@ describe("sanitizeSettings 更多边界", () => {
   });
 });
 
+// ===== 校验器的**边界**口径（#775 阶 0：杀掉有覆盖却存活的变异体）=====
+// 为什么单独成块：FILE_CONFIG_VALIDATORS 里的上下界此前只被「非法值 → null」这一类用例
+// 覆盖（如 -1 / "yes"），而边界本身（0、恰好等于上界、上界 +1、非整数）没有任何断言——
+// 于是一整簇条件变异体（`> 0`→`>= 0`、`<= 65535`→`< 65535`、`Number.isInteger` 被短路）
+// 全都能存活：把上界改成不含等号、或把整数校验去掉，测试照样绿。
+describe("sanitizeSettings 校验器边界（端口 / 压缩档位 / 回环 / 证书清除）", () => {
+  it("port 边界：0 / 65535 / 65536 / 非整数 / 字符串", () => {
+    expect(sanitizeSettings({ port: 0 })).toBe(null);
+    expect(sanitizeSettings({ port: 65535 })).toEqual({ port: 65535 });
+    expect(sanitizeSettings({ port: 65536 })).toBe(null);
+    expect(sanitizeSettings({ port: 1.5 })).toBe(null);
+    expect(sanitizeSettings({ port: "3081" })).toBe(null);
+  });
+
+  it("httpsPort 与 port 同口径（含非整数）", () => {
+    expect(sanitizeSettings({ httpsPort: 0 })).toBe(null);
+    expect(sanitizeSettings({ httpsPort: 65535 })).toEqual({ httpsPort: 65535 });
+    expect(sanitizeSettings({ httpsPort: 65536 })).toBe(null);
+    expect(sanitizeSettings({ httpsPort: 2.5 })).toBe(null);
+  });
+
+  it("targetPort 与 port 同口径，且必须同时通过回环 targetHost", () => {
+    expect(sanitizeSettings({ targetPort: 0 })).toBe(null);
+    expect(sanitizeSettings({ targetPort: 65535, targetHost: "127.0.0.1" })).toEqual({
+      targetPort: 65535,
+      targetHost: "127.0.0.1",
+    });
+    expect(sanitizeSettings({ targetPort: 65536 })).toBe(null);
+    expect(sanitizeSettings({ targetPort: 3.5 })).toBe(null);
+  });
+
+  it("targetHost 只接受回环（内联 isLoopbackTarget）", () => {
+    expect(sanitizeSettings({ targetHost: "192.168.1.5" })).toBe(null);
+    expect(sanitizeSettings({ targetHost: "example.com" })).toBe(null);
+    expect(sanitizeSettings({ targetHost: "127.0.0.1" })).toEqual({ targetHost: "127.0.0.1" });
+    expect(sanitizeSettings({ targetHost: "localhost" })).toEqual({ targetHost: "localhost" });
+  });
+
+  it("httpCompressLevel：下界 0 含等号，旧档位 4..9 迁移为 3，10 非法", () => {
+    expect(sanitizeSettings({ httpCompressLevel: 0 })).toEqual({ httpCompressLevel: 0 });
+    expect(sanitizeSettings({ httpCompressLevel: 3 })).toEqual({ httpCompressLevel: 3 });
+    expect(sanitizeSettings({ httpCompressLevel: 4 })).toEqual({ httpCompressLevel: 3 });
+    expect(sanitizeSettings({ httpCompressLevel: 9 })).toEqual({ httpCompressLevel: 3 });
+    expect(sanitizeSettings({ httpCompressLevel: 10 })).toBe(null);
+  });
+
+  it("wsCompressPaths：每项都必须是字符串（不是只判数组）", () => {
+    expect(sanitizeSettings({ wsCompressPaths: ["/a", "/b"] })).toEqual({
+      wsCompressPaths: ["/a", "/b"],
+    });
+    expect(sanitizeSettings({ wsCompressPaths: ["/a", 1] })).toBe(null);
+    expect(sanitizeSettings({ wsCompressPaths: [] })).toEqual({ wsCompressPaths: [] });
+  });
+
+  it("wsDeflatePolicy：允许缺省字段，但给了就必须是对的类型", () => {
+    expect(sanitizeSettings({ wsDeflatePolicy: {} })).toEqual({ wsDeflatePolicy: {} });
+    expect(sanitizeSettings({ wsDeflatePolicy: { browser: true } })).toEqual({
+      wsDeflatePolicy: { browser: true },
+    });
+    expect(sanitizeSettings({ wsDeflatePolicy: { browser: "yes" } })).toBe(null);
+    expect(sanitizeSettings({ wsDeflatePolicy: { uaDeny: ["curl"] } })).toEqual({
+      wsDeflatePolicy: { uaDeny: ["curl"] },
+    });
+    expect(sanitizeSettings({ wsDeflatePolicy: { uaDeny: "curl" } })).toBe(null);
+  });
+
+  it("空字符串证书路径被剔除（清除语义），非空则保留", () => {
+    expect(sanitizeSettings({ tlsCertFile: "" })).toEqual({});
+    expect(sanitizeSettings({ tlsKeyFile: "" })).toEqual({});
+    expect(sanitizeSettings({ tlsCertFile: "/tmp/x.pem" })).toEqual({ tlsCertFile: "/tmp/x.pem" });
+  });
+
+  it("未知键被忽略而不是整体拒绝（净化只认已知键）", () => {
+    expect(sanitizeSettings({ unknownKey: 1 })).toEqual({});
+    expect(sanitizeSettings({ unknownKey: 1, port: 3081 })).toEqual({ port: 3081 });
+  });
+
+  it("null / 非对象 payload → null", () => {
+    expect(sanitizeSettings(null)).toBe(null);
+    expect(sanitizeSettings("nope")).toBe(null);
+    expect(sanitizeSettings(42)).toBe(null);
+  });
+});
+
 // ===== normalizeLegacyWsCompressPaths（#395 M2 存量白名单归一化纯函数） =====
 describe("normalizeLegacyWsCompressPaths（#395 M2 存量白名单归一化纯函数）", () => {
   it("旧默认正序 → remote.mux", () => {
