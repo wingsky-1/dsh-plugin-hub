@@ -29,6 +29,10 @@ import { zh, en, type NotifierLocaleKey } from "./locales.ts";
 // 必须是同一条口径，两处各写一遍就等于把降级行为分叉。
 import { deliveryViewOf, reasonText } from "./reason-text.ts";
 import type { DeliveryView } from "./reason-text.ts";
+// 能力自检面的投影（宿主面归一化 + 浏览器面判定）收在同一处：判定与文案必须同源，
+// 两处各写一遍就等于把「未知不该被渲染成可用」这条口径分叉。
+import { clientDiagnosticsOf } from "./capabilities.ts";
+import type { ClientFacts } from "./capabilities.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
@@ -239,6 +243,7 @@ var ROUTES = {
   config: "/api/dsh-notifier/config",
   events: "/api/dsh-notifier/events",
   health: "/api/dsh-notifier/health",
+  diagnostics: "/api/dsh-notifier/diagnostics",
   test: "/api/dsh-notifier/test",
   history: "/api/dsh-notifier/history",
   status: "/api/dsh-notifier/status",
@@ -258,7 +263,8 @@ var hostPlatform: string | null = null;
 var STYLE_ID = "dsh-notifier-style";
 // 每次样式契约变更后 bump（版本号单调递增，保证 ensureStyle 判定为新版本并重注入）
 // 声音行/三态/试听样式加入时再次 bump。
-var CSS_VERSION = "640-1";
+// 能力自检行（dn-ch-diag）加入时再次 bump。
+var CSS_VERSION = "784-1";
 // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
 var NOTIFY_ICON =
   "data:image/svg+xml;utf8," +
@@ -479,20 +485,46 @@ function systemNotificationUsable() {
 }
 
 var audioCtx: any = null;
+/** 前缀化的老 Safari 构造名不在标准 DOM 类型里；取用点收在这里，能力自检与解锁共用同一判据。 */
+type AudioContextCtor = new () => AudioContext;
+
+function audioContextCtor(): AudioContextCtor | undefined {
+  var legacy = (window as unknown as { webkitAudioContext?: AudioContextCtor }).webkitAudioContext;
+  return window.AudioContext || legacy;
+}
 
 /** 解锁音频（必须在用户手势内调用）：后台播放提示音需要已解锁的 AudioContext。 */
 function unlockAudio() {
   try {
     if (audioCtx === null) {
-      var AC = window.AudioContext || (window as any).webkitAudioContext;
+      var AC = audioContextCtor();
       if (!AC) return;
       audioCtx = new AC();
     }
-    if (audioCtx.state === "suspended") audioCtx.resume();
-    var buffer = audioCtx.createBuffer(1, 1, 22050);
-    var source = audioCtx.createBufferSource();
+    // 两个事实（是否跑到过 running / resume 是否被拒绝）记在上下文实例上（__dshRan /
+    // __dshResumeRejected）：它们的生命周期与那个上下文严格相同——构造之前必然「从没跑过」——
+    // 而给它们单开模块级变量会让页面多一份跨挂载共享的可变状态。
+    var ctx = audioCtx;
+    if (ctx.state === "suspended") {
+      var resumed = ctx.resume();
+      // resume() 的结果只在异步回调里可见：记下它，能力自检面才说得出「没解锁」与
+      // 「被浏览器挂起」的区别（两者的下一步动作不同）。
+      if (resumed && typeof resumed.then === "function") {
+        resumed.then(
+          function () {
+            ctx.__dshRan = true;
+          },
+          function () {
+            ctx.__dshResumeRejected = true;
+          },
+        );
+      }
+    }
+    if (ctx.state === "running") ctx.__dshRan = true;
+    var buffer = ctx.createBuffer(1, 1, 22050);
+    var source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.connect(audioCtx.destination);
+    source.connect(ctx.destination);
     source.start(0);
   } catch (error) {
     // 音频不可用不阻塞通知
@@ -562,6 +594,26 @@ function playPreview(tone: string | undefined) {
   } catch (error) {
     // 忽略
   }
+}
+
+/**
+ * 本页的能力事实。判定与文案都在 capabilities.ts（纯函数、不碰 DOM）：
+ * 这里只负责把浏览器里的现状读出来，读法本身没有可断言的分支。
+ */
+function clientFacts(): ClientFacts {
+  var hasApi = "Notification" in window;
+  return {
+    notificationApi: hasApi,
+    secureContext: isSecureContext(),
+    // 权限值只作数据带过去（值域外的取值由判定侧按「无法判定」处理）
+    permission: hasApi ? String(Notification.permission) : "unknown",
+    audio: {
+      supported: audioContextCtor() !== undefined,
+      state: audioCtx === null ? null : audioCtx.state,
+      hasEverRun: audioCtx !== null && audioCtx.__dshRan === true,
+      resumeRejected: audioCtx !== null && audioCtx.__dshResumeRejected === true,
+    },
+  };
 }
 
 var savedTitle: any = null;
@@ -859,6 +911,29 @@ function fetchKinds(): Promise<any[]> {
     });
 }
 
+/**
+ * 拉取宿主能力自检（GET /diagnostics）。15s 超时兜底：服务端首次探测要起子进程，可能慢；
+ * 超时与失败一律静默降级成「读不到」，由调用方把那块整体不渲染——诊断面缺席不该让设置页报错。
+ */
+function fetchDiagnostics(): Promise<unknown> {
+  var ctrl: AbortController | null =
+    typeof AbortController !== "undefined" ? new AbortController() : null;
+  var timer: ReturnType<typeof setTimeout> | null = ctrl
+    ? setTimeout(function () {
+        ctrl!.abort();
+      }, 15000)
+    : null;
+  var init: RequestInit = { headers: { accept: "application/json" } };
+  if (ctrl) init.signal = ctrl.signal;
+  return fetch(ROUTES.diagnostics, init)
+    .then(function (r) {
+      return r.json() as Promise<unknown>;
+    })
+    .finally(function () {
+      if (timer !== null) clearTimeout(timer);
+    });
+}
+
 /** 动态 kind 确认（POST /kinds {kind, confirmed}）。 */
 function postKind(kind: string, confirmed: boolean): Promise<any> {
   return fetch(ROUTES.kinds, {
@@ -930,6 +1005,11 @@ function SettingsCard() {
   var kindsDraft = useState([] as any[]);
   var kindsList = kindsDraft[0];
   var setKindsList = kindsDraft[1];
+  // 宿主能力自检载荷（/diagnostics 原样收下；归一化与文案在 capabilities.ts）。
+  // null = 还没拉到或拉取失败 → 诊断块整体不渲染（旧服务端没有这条路由也走这条路径）。
+  var diagnosticsDraft = useState(null as unknown);
+  var diagnostics = diagnosticsDraft[0];
+  var setDiagnostics = diagnosticsDraft[1];
   // 频道删除两段确认（实例 id）。路由编辑展开行（openRoute）随 chips
   // 直点形态移除——chips 无展开层，routeToggle 直接落草稿。
   var delArmedDraft = useState(null as string | null);
@@ -1008,6 +1088,15 @@ function SettingsCard() {
       .catch(function () {});
   }
 
+  function loadDiagnostics(alive: { value: boolean }) {
+    // 失败与超时都不提示：自检面缺席时界面少一块，而不是多一条用户无法处置的错误
+    fetchDiagnostics()
+      .then(function (body) {
+        if (alive.value) setDiagnostics(body);
+      })
+      .catch(function () {});
+  }
+
   function loadCard(alive: { value: boolean }) {
     fetchConfig()
       .then(function (v: any) {
@@ -1037,6 +1126,7 @@ function SettingsCard() {
     loadHistory(alive);
     loadStatus(alive);
     loadKinds(alive);
+    loadDiagnostics(alive);
     return function () {
       alive.value = false;
     };
@@ -1771,8 +1861,12 @@ function SettingsCard() {
           ) : null}
           {/* 浏览器通知权限状态行归入浏览器频道卡（权限授权入口同卡就近可达） */}
           {ch.type === "browser" ? browserPermLine() : null}
+          {/* 浏览器面自检行：宿主侧接口看不到本页的权限与音频解锁状态 */}
+          {ch.type === "browser" ? browserDiagnosticsLine() : null}
           {/* 系统卡平台提示（/health platform 消费；宿主 OS 与浏览器 OS 可异机） */}
           {ch.type === "system" ? systemPlatformHint() : null}
+          {/* 宿主能力自检（/diagnostics）：结论 + 处置建议 + 明细折叠 */}
+          {ch.type === "system" ? hostDiagnosticsBlock() : null}
           <div className="dn-ch-actions">{testBtn(channelId)}</div>
         </div>
       </details>
@@ -1788,6 +1882,58 @@ function SettingsCard() {
     else if (hostPlatform === "linux") text = t("sysPlatformLinux");
     else text = t("sysPlatformOther");
     return <div className="dn-set-note-inline">{text}</div>;
+  }
+
+  /**
+   * 宿主能力自检块（系统频道卡体）。为什么落在卡体而不是卡头 `.dn-ch-statusTxt`：窄屏下
+   * 卡头那行被 display:none 收起，而手机恰是最需要知道「为什么没响」的地方。
+   * 这里只做机械投影——结论、处置建议、明细的文案都来自 capabilities.ts。
+   */
+  function hostDiagnosticsBlock() {
+    var view = diag.host;
+    if (!view) return null;
+    return (
+      <div className={"dn-ch-diag dn-ch-diag-" + view.tone}>
+        <span className="dn-ch-diagText">{view.line}</span>
+        {view.unknownLine ? <span className="dn-ch-diagText">{view.unknownLine}</span> : null}
+        {view.remediationLines.length === 0 ? null : (
+          <div>
+            <span className="dn-ch-diagCap">{view.remediationTitle}</span>
+            <ul className="dn-ch-diagItems">
+              {view.remediationLines.map(function (text, i) {
+                return <li key={"rem-" + i}>{text}</li>;
+              })}
+            </ul>
+          </div>
+        )}
+        {/* 明细折叠（沿用通知记录里 dn-ch-reasonRaw 的折叠范式）；来源标注在展开区首行 */}
+        <details className="dn-ch-reasonRaw">
+          <summary>{view.detailsLabel}</summary>
+          <div className="dn-ch-reasonRawText">
+            <div className="dn-ch-diagSrc">{view.sourceLabel}</div>
+            {view.details.map(function (row, i) {
+              return (
+                <div className="dn-ch-diagDetail" key={"det-" + i}>
+                  <span className="dn-ch-diagDetailCap">{row.label}</span>
+                  <span>{row.value}</span>
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      </div>
+    );
+  }
+
+  /** 浏览器面自检行（浏览器频道卡体）：宿主算不出来的那几个事实（权限、音频解锁）在这里成一句话。 */
+  function browserDiagnosticsLine() {
+    var view = diag.browser;
+    return (
+      <div className={"dn-ch-diag dn-ch-diag-" + view.tone}>
+        <span className="dn-ch-diagText">{view.line}</span>
+        <span className="dn-ch-diagSrc">{view.sourceLabel}</span>
+      </div>
+    );
   }
 
   /** 内置音色选项（4 音色；label 字典键）。 */
@@ -2595,6 +2741,10 @@ function SettingsCard() {
       {kindsList.length === 0 ? <div className="dn-set-note">{t("kindsEmpty")}</div> : kindRows}
     </div>,
   );
+
+  // 能力自检的渲染模型：宿主面（读服务端载荷）+ 浏览器面（读本页事实）合成一次，
+  // 下面所有卡片只投影它——JSX 里不再出现任何「这个状态算不算好」的判断。
+  var diag = clientDiagnosticsOf(diagnostics, clientFacts(), t);
 
   // 频道区：`channels` 逐项按类型分派（内置两卡 + bark/webhook 实例卡）+ 添加按钮。
   // 先按**真实下标**遍历再分派：chPatch / chRemove 都按下标操作，先 filter 会让编辑打到隔壁条目。

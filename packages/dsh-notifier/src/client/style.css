@@ -729,6 +729,59 @@
 .dn-set-card .dn-ch-permText {
   line-height: 1.5;
 }
+/* 能力自检行（落在频道卡**卡体**：卡头的 .dn-ch-statusTxt 在窄屏被 display:none 收起，
+   而手机恰是最需要「为什么没响」这句话的地方）。着色只走主题 token，不硬编码红——
+   暗色主题下硬编码的红色对比度会掉到读不出来。 */
+.dn-set-card .dn-ch-diag {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-left: 3px solid var(--dsw-alias-border-l2, #d3d8df);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.dn-set-card .dn-ch-diag-error {
+  border-left-color: var(--dsw-alias-state-error-primary, #d92d20);
+}
+.dn-set-card .dn-ch-diag-error .dn-ch-diagText {
+  color: var(--dsw-alias-state-error-primary, #d92d20);
+}
+.dn-set-card .dn-ch-diag-warn {
+  border-left-color: var(--dsw-alias-state-warning-primary, #f79009);
+}
+.dn-set-card .dn-ch-diag-ok {
+  border-left-color: var(--dsw-alias-state-success-primary, #0f9d6e);
+}
+.dn-set-card .dn-ch-diagText {
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  overflow-wrap: anywhere;
+}
+.dn-set-card .dn-ch-diagCap {
+  color: var(--dsw-alias-label-tertiary, #6d7480);
+}
+.dn-set-card .dn-ch-diagItems {
+  margin: 2px 0 0;
+  padding-left: 16px;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+}
+.dn-set-card .dn-ch-diagSrc {
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary, #6d7480);
+}
+.dn-set-card .dn-ch-diagDetail {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.dn-set-card .dn-ch-diagDetailCap {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary, #6d7480);
+}
 .dn-set-card .dn-ch-onEdge {
   border-left: 3px solid var(--dsw-alias-state-success-primary, #0f9d6e);
 }

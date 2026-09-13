@@ -247,7 +247,7 @@ test("本仓真实快照：client/index.tsx 的 21 处模块级 var 全部走登
   // 锚点的行号随客户端源码增删而移动（豁免台账本身是文件级、不跟行号），改到 `t` 所在行即可。
   assert.match(
     r.stdout,
-    /packages\/dsh-notifier\/src\/client\/index\.tsx:233 \[模块级 var（t）\] 登记豁免 #762（reviewBy 2027-03-31）/,
+    /packages\/dsh-notifier\/src\/client\/index\.tsx:237 \[模块级 var（t）\] 登记豁免 #762（reviewBy 2027-03-31）/,
   );
 });
 

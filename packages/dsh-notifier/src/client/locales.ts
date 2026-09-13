@@ -239,6 +239,54 @@ export const zh = {
     "{{priority}} 由服务端按频道映射渲染（ntfy：info→default / success→low / warning→high / failure→urgent）；文本占位符 JSON-aware 转义，{{ts}} 数字直出",
   whTemplateFailHint: "模板非法或渲染失败按该频道投递失败落记录，不阻断其他频道",
   whTplRestore: "恢复预设模板",
+  // ===== 能力自检（宿主能力面读 /diagnostics，浏览器面在本页本地判定）=====
+  diagHostLine: "宿主能力自检：{verdict} · 弹窗 {popup} · 声音 {sound}",
+  diagVerdictOk: "可用",
+  diagVerdictDegraded: "降级可用",
+  diagVerdictUnreachable: "不可用",
+  diagVerdictUnknown: "无法判定",
+  diagDimPopup: "弹窗",
+  diagDimSound: "声音",
+  diagUnknownLine: "以下维度无法判定：{dimensions}",
+  diagRemediationTitle: "处置建议",
+  diagRemediationUnknown: "宿主给出了一条本版本客户端不认识的处置建议，请升级插件后重试",
+  diagRemHostNoDbusSession:
+    "宿主没有 D-Bus 会话总线：系统弹窗需要桌面会话（图形登录）或由 dbus-launch 提供的会话总线",
+  diagRemHostPopupNoDaemon:
+    "宿主有 notify-send 但没有通知守护进程：安装并启动一个桌面通知服务（如 dunst、mako）后弹窗才可见",
+  diagRemHostNoSoundServerAndPlayer:
+    "宿主既没有声音服务也没有可用播放器：安装 {packages}（{packagemanager}）后可自播默认事件音",
+  diagRemHostNoSoundServerAndPlayerNoPkg:
+    "宿主既没有声音服务也没有可用播放器：安装一个提供 aplay 的最小音频工具包后可自播默认事件音",
+  diagRemHostNoPlayer: "宿主有声音服务但缺少播放器：安装对应播放器后可自播默认事件音",
+  diagRemHostNoToneFile: "宿主缺少默认事件音色文件：安装 freedesktop 声音主题后可自播",
+  diagRemHostManagedByOthers:
+    "弹窗与发声都已由宿主上的其他组件接管：本插件的系统通道在这台机器上会静默跳过，请改用浏览器通知或移动端推送",
+  diagDetailsLabel: "探测明细与来源",
+  diagSourceHost: "来源：宿主能力自检（GET /api/dsh-notifier/diagnostics，服务端所在机器）",
+  diagSourceBrowser: "来源：本页浏览器本地判定",
+  diagCheckedLabel: "已探测",
+  diagPlayersLabel: "候选播放器",
+  diagToneFileLabel: "音色文件",
+  diagToneFileYes: "已就位",
+  diagToneFileNo: "缺失",
+  diagNone: "无",
+  diagCheckedNotifySend: "notify-send 命令",
+  diagCheckedDbusNameOwner: "D-Bus 名称所有者",
+  diagCheckedDbusActivatable: "D-Bus 可激活服务",
+  diagCheckedSessionBus: "会话总线",
+  diagCheckedPlayers: "播放器候选",
+  diagCheckedToneFile: "音色文件",
+  diagBrowserLine: "本页浏览器：弹窗 {popup} · 声音 {sound}",
+  diagBrowserNoNotificationApi: "此浏览器没有通知 API，系统级弹窗不可用",
+  diagBrowserInsecureContext: "非安全上下文（明文 HTTP），浏览器禁止系统级弹窗",
+  diagBrowserPermissionDenied: "通知权限已被拒绝，请在浏览器站点设置中允许",
+  diagBrowserPermissionDefault: "通知权限尚未请求，可点「请求通知权限」授权",
+  diagBrowserAudioNeverUnlocked: "音频尚未解锁：页面还没有过用户点击，点击页面后即可自播",
+  diagBrowserAudioAutoSuspended:
+    "音频上下文被浏览器挂起：曾经解锁过，或本次恢复被浏览器拒绝，下次用户交互时会再尝试",
+  diagBrowserAudioClosed: "音频上下文已关闭，本页生命周期内无法再自播提示音",
+  diagBrowserAudioUnsupported: "此浏览器不支持 Web Audio，插件无法自播提示音",
 } as const;
 
 /** 字典 key 并集（LocaleNamespaceMap 声明合并用）。 */
@@ -468,4 +516,61 @@ export const en: Record<NotifierLocaleKey, string> = {
   whTemplateFailHint:
     "Invalid template or render failure counts as a failed delivery for this channel only; other channels are unaffected",
   whTplRestore: "Reset preset template",
+  diagHostLine: "Host capability self-check: {verdict} · popup {popup} · sound {sound}",
+  diagVerdictOk: "available",
+  diagVerdictDegraded: "degraded",
+  diagVerdictUnreachable: "unavailable",
+  diagVerdictUnknown: "undetermined",
+  diagDimPopup: "Popup",
+  diagDimSound: "Sound",
+  diagUnknownLine: "These capabilities could not be determined: {dimensions}",
+  diagRemediationTitle: "Suggested fixes",
+  diagRemediationUnknown:
+    "The host reported a fix this client version does not recognize; update the plugin and retry",
+  diagRemHostNoDbusSession:
+    "The host has no D-Bus session bus: system popups need a desktop session (graphical login) or a session bus from dbus-launch",
+  diagRemHostPopupNoDaemon:
+    "The host has notify-send but no notification daemon: install and start a desktop notification service (e.g. dunst, mako) for popups to appear",
+  diagRemHostNoSoundServerAndPlayer:
+    "The host has neither a sound server nor a usable player: install {packages} ({packagemanager}) to play the default event sound",
+  diagRemHostNoSoundServerAndPlayerNoPkg:
+    "The host has neither a sound server nor a usable player: install a minimal audio tool package providing aplay to play the default event sound",
+  diagRemHostNoPlayer:
+    "The host has a sound server but no player: install a matching player to play the default event sound",
+  diagRemHostNoToneFile:
+    "The host is missing the default event sound file: install the freedesktop sound theme to play it",
+  diagRemHostManagedByOthers:
+    "Popup and sound are already handled by other components on the host: this plugin's system channel silently skips on this machine, so use browser notifications or mobile push instead",
+  diagDetailsLabel: "Probe details and source",
+  diagSourceHost:
+    "Source: host capability self-check (GET /api/dsh-notifier/diagnostics, the machine running the server)",
+  diagSourceBrowser: "Source: judged locally in this browser page",
+  diagCheckedLabel: "checked",
+  diagPlayersLabel: "Player candidates",
+  diagToneFileLabel: "Tone file",
+  diagToneFileYes: "present",
+  diagToneFileNo: "missing",
+  diagNone: "none",
+  diagCheckedNotifySend: "notify-send command",
+  diagCheckedDbusNameOwner: "D-Bus name owner",
+  diagCheckedDbusActivatable: "D-Bus activatable service",
+  diagCheckedSessionBus: "Session bus",
+  diagCheckedPlayers: "Player candidates",
+  diagCheckedToneFile: "Tone file",
+  diagBrowserLine: "This browser page: popup {popup} · sound {sound}",
+  diagBrowserNoNotificationApi:
+    "this browser has no notification API, so system popups are unavailable",
+  diagBrowserInsecureContext: "insecure context (plain HTTP), the browser blocks system popups",
+  diagBrowserPermissionDenied:
+    "notification permission was denied; allow it in the browser site settings",
+  diagBrowserPermissionDefault:
+    'notification permission has not been requested; click "Request permission" to grant it',
+  diagBrowserAudioNeverUnlocked:
+    "audio is not unlocked yet: the page has not seen a user click; a click enables self-playback",
+  diagBrowserAudioAutoSuspended:
+    "the audio context is suspended by the browser: it was unlocked before, or this resume was refused; the next user interaction retries",
+  diagBrowserAudioClosed:
+    "the audio context is closed; this page cannot self-play sounds for the rest of its lifetime",
+  diagBrowserAudioUnsupported:
+    "this browser does not support Web Audio, so the plugin cannot self-play sounds",
 };
