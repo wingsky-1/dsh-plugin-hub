@@ -132,7 +132,8 @@ describe("请求构造", () => {
       targetOf({ extras: { volume: 5, call: "1", title: "顶掉标题", body: "顶掉正文" } }),
       messageOf({ title: "原标题", body: "原正文" }),
     );
-    const body = bodyOf(calls[0]!);
+    // 透传键不在 `BarkPushBody` 的声明里（它描述的是**已知**键的形状），故按开放视图看整份 body。
+    const body = wire<Record<string, unknown>>(bodyOf(calls[0]!));
     expect(body.volume).toBe(5);
     expect(body.call).toBe("1");
     expect(body.title).toBe("原标题");
