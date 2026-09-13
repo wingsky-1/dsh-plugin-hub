@@ -35,7 +35,7 @@ import {
   submit,
 } from "../../../src/server/pipeline/interface.ts";
 import type { NotifyRequest } from "../../../src/server/pipeline/interface.ts";
-import { makeLogger } from "../../helpers.ts";
+import { makeLogger, settleMicrotasks } from "../../helpers.ts";
 
 /** 出站频道配置与帧载荷：经设置模型 / 域依赖声明可达，不必请别的块再导出一个名字。 */
 type ChannelConfig = NotifyConfig["channels"][number];
@@ -90,15 +90,6 @@ function systemOnly(patch: Partial<NotifyConfig> = {}): Partial<NotifyConfig> {
     systemSound: false,
     ...patch,
   };
-}
-
-/**
- * 把纯微任务链推到终态。为什么不复用 `pollUntil`：`vi.setSystemTime` 会连 `Date.now()` 一起钉住，
- * 而 pollUntil 的截止时间读的正是它——谓词不成立时它永远不会超时，红就变成了挂。
- * `setImmediate` 是真实宏任务，微任务队列在它之前必然排空，且不受 `toFake` 白名单影响。
- */
-function settleMicrotasks(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
 }
 
 function assemble(over: Partial<PipelineDeps> = {}): Harness {

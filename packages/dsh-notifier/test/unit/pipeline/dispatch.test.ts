@@ -11,6 +11,9 @@
  * 时间纪律：重试用例用假时钟推进（真等是 3 秒/例），节流用例只用 `vi.setSystemTime` 钉住
  * 「现在」——它单独用只换掉 `globalThis.Date`，不碰事件循环。时钟被钉住时不能用 `pollUntil`
  * （它的截止时间读 `Date.now()`，谓词不成立就永不超时），故那两处用 `settleMicrotasks`。
+ * 「首投递未完成」那条同样钉住「现在」（两条提交必须落在同一节流窗内），等终态一律用
+ * `settleMicrotasks`——判据不能落在「两次调用之间真实耗时小于 1 秒」上：CI 与 Stryker 并发
+ * 下的停顿会把确定性判据变成偶发假红。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -29,7 +32,7 @@ import {
   submit,
 } from "../../../src/server/pipeline/interface.ts";
 import type { NotifyRequest } from "../../../src/server/pipeline/interface.ts";
-import { makeLogger, pollUntil } from "../../helpers.ts";
+import { makeLogger, pollUntil, settleMicrotasks } from "../../helpers.ts";
 
 /** 出站频道配置：经设置模型可达，不必请别的块再导出一个名字。 */
 type ChannelConfig = NotifyConfig["channels"][number];
@@ -91,11 +94,6 @@ function webhookChannel(over: Partial<WebhookConfig> = {}): WebhookConfig {
 /** 只留 system 出口的设置：节流用例要「唯一目标」才数得清投递次数。 */
 function systemOnly(): Partial<NotifyConfig> {
   return { ...BUILTINS_OFF, systemNotify: true, systemSound: false, channels: [] };
-}
-
-/** 把纯微任务链推到终态（理由见文件头：钉住时钟后 `pollUntil` 的截止时间不再前进）。 */
-function settleMicrotasks(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
 }
 
 function assemble(): Harness {
@@ -363,6 +361,53 @@ describe("节奏：节流与在途门", () => {
     submit(requestOf());
     await settleMicrotasks();
     expect(attempts).toBe(2);
+  });
+
+  // 首投递还在途时没有任何失败证据：跳过若把「还没结论」写成失败，用户连点测试按钮就会在状态页
+  // 看到一条不存在的故障。该路径要求第一次投递仍挂在未决 promise 上，故钉住「现在」让两条提交
+  // 落在同一节流窗内，等待一律走微任务排水。
+  it("首投递尚未完成时的节流跳过按假定成功透传：不产生第二次投递，也不凭空写一条失败", async () => {
+    const harness = assemble();
+    harness.useConfig(systemOnly());
+    const inFlight: Array<() => void> = [];
+    let attempts = 0;
+    harness.onDeliver(async (_message, targets) => {
+      attempts += targets.length;
+      await new Promise<void>((resolve) => {
+        inFlight.push(resolve);
+      });
+      return targets.map(() => ({
+        status: "failed" as const,
+        stage: "delivered" as const,
+        reason: "系统出口不可用",
+        retryable: false,
+      }));
+    });
+
+    vi.setSystemTime(new Date(2026, 0, 15, 12, 0, 0));
+    submit(requestOf({ title: "第一条" }));
+    await settleMicrotasks();
+    expect(attempts).toBe(1);
+    expect(inFlight).toHaveLength(1);
+
+    // 时钟没有前进：这条提交必然落在首条开启的 1 秒节流窗内，而首条仍未拿到结论。
+    submit(requestOf({ title: "第二条" }));
+    await settleMicrotasks();
+
+    // 跳过没有产生第二次投递，结论按「假定成功」透传——首条稍后实际失败也不影响这条的结论。
+    expect(attempts).toBe(1);
+    expect(harness.history[0]!.title).toBe("第二条");
+    expect(harness.history[0]!.channels).toEqual([{ channelId: "system", status: "ok" }]);
+    // 没有投递就没有结论可写：跳过不该在频道状态里补一条。
+    expect(harness.statuses).toEqual([]);
+
+    inFlight.shift()?.();
+    await settleMicrotasks();
+    expect(harness.history).toHaveLength(2);
+    expect(harness.history[1]!.title).toBe("第一条");
+    expect(harness.history[1]!.channels).toEqual([
+      { channelId: "system", status: "failed", reason: "系统出口不可用" },
+    ]);
   });
 
   // 无上限并发会把同一频道打爆；门形同虚设则慢出口会被并发踩。

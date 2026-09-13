@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import type { KindPort } from "../../../src/server/api/deps.ts";
 import { KindEndpoints } from "../../../src/server/api/impl/kinds/index.ts";
+import { jsonReq, makeRes } from "../../helpers.ts";
 
 /** 写面结果经能力面的签名可达，不请 sdk 域再多导出一个名字。 */
 type ConfirmResult = Awaited<ReturnType<KindPort["confirmKind"]>>;
@@ -23,42 +24,7 @@ const REGISTERED: RegisteredKind[] = [
 
 /** 假请求：body 由 async 迭代器吐出（`readJsonBody` 走的就是这条路）。 */
 function makeReq(options: { body?: unknown; rawBody?: string } = {}): IncomingMessage {
-  const text = options.rawBody ?? (options.body === undefined ? "" : JSON.stringify(options.body));
-  return {
-    method: "POST",
-    url: "/api/dsh-notifier/kinds",
-    headers: { host: "127.0.0.1:3080" },
-    socket: { remoteAddress: "127.0.0.1" },
-    async *[Symbol.asyncIterator]() {
-      if (text !== "") yield Buffer.from(text, "utf8");
-    },
-  } as unknown as IncomingMessage;
-}
-
-/** 假响应：把状态码、头与正文抓下来供断言。 */
-function makeRes() {
-  const rec = { status: 0, headers: {} as Record<string, string>, text: "", headersSent: false };
-  const res = {
-    get headersSent() {
-      return rec.headersSent;
-    },
-    writeHead(status: number, headers?: Record<string, string>) {
-      rec.status = status;
-      rec.headers = { ...(headers ?? {}) };
-      rec.headersSent = true;
-      return res;
-    },
-    end(chunk?: string) {
-      if (chunk !== undefined) rec.text += chunk;
-      rec.headersSent = true;
-      return res;
-    },
-  };
-  return {
-    res: res as unknown as ServerResponse,
-    rec,
-    json: (): Record<string, unknown> => JSON.parse(rec.text),
-  };
+  return jsonReq({ method: "POST", url: "/api/dsh-notifier/kinds", ...options });
 }
 
 /** 假 sdk 管理面：清单给固定两条，确认记账并按用例指定的结果作答。 */

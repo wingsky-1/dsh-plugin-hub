@@ -24,7 +24,7 @@ import {
   notifierFile,
   readTextFileSync,
 } from "../../../src/server/shared/interface.ts";
-import { makeLogger, pollUntil, tempDshHome } from "../../helpers.ts";
+import { jsonReq, makeLogger, pollUntil, tempDshHome } from "../../helpers.ts";
 
 const home = tempDshHome();
 const { installApi, releaseApi } = await import("../../../src/server/api/interface.ts");
@@ -46,12 +46,7 @@ afterAll(() => {
 
 /** 假请求：`url` 带 `?since=` 是补拉的关键。 */
 function makeReq(url: string): IncomingMessage {
-  return {
-    method: "GET",
-    url,
-    headers: { host: "127.0.0.1:3080" },
-    socket: { remoteAddress: "127.0.0.1" },
-  } as unknown as IncomingMessage;
+  return jsonReq({ method: "GET", url });
 }
 
 /** 假 SSE 响应：连接表要 `on`/`destroyed`/`destroy`，断言要 `text`。 */
@@ -96,10 +91,12 @@ function readSeqFromDisk(): number {
   return read.ok ? Number.parseInt(read.text.trim(), 10) || 0 : 0;
 }
 
-/** 装配一次 api 域，交出帧发布面（帧入口就是宿主接线的那一条）。 */
-function assemble() {
+/** 装配一次 api 域，交出帧发布面（帧入口就是宿主接线的那一条）。连接上限默认 8；用例可收紧它，
+ * 也可在装配后调小，验证上限是**实时读**的。 */
+function assemble(options: { readonly maxConnections?: number } = {}) {
   const routes: WebRoute[] = [];
   const frames: Array<(payload: OutgoingFrame) => void> = [];
+  const settings = { maxConnections: options.maxConnections ?? 8 };
   const deps: ApiDeps = {
     register: (route) => {
       routes.push(route);
@@ -113,7 +110,7 @@ function assemble() {
     },
     logger: makeLogger(),
     config: {
-      readConfig: () => ({ ...DEFAULT_CONFIG, maxConnections: 8 }),
+      readConfig: () => ({ ...DEFAULT_CONFIG, maxConnections: settings.maxConnections }),
       readSettingsView: () => VIEW,
       writeConfig: async () => ({ ok: true, view: VIEW }),
     },
@@ -129,7 +126,13 @@ function assemble() {
   const publish = (payload: OutgoingFrame): void => {
     for (const handler of frames) handler(payload);
   };
-  return { routes, publish };
+  return {
+    routes,
+    publish,
+    setMaxConnections: (value: number): void => {
+      settings.maxConnections = value;
+    },
+  };
 }
 
 /** 发布一帧并等序号落盘：写入是 fire-and-forget，不等就会串到下一个用例的装配里。 */
@@ -260,5 +263,66 @@ describe("广播：已连接的客户端立刻收到新帧", () => {
 
     await publishAndSettle(publish, frame({ title: "后来的" }));
     expect(framesOf(rec.text).map((event) => event.title)).toEqual(["后来的"]);
+  });
+});
+
+describe("回放缓冲：上限 200 条", () => {
+  // 缓冲无上限会随进程寿命线性涨；淘汰错对象（挤掉最新的那条）会让断线重连恰好丢掉最新一条通知，
+  // 多淘汰一条则窗口比声明的窄。窗口长度与「挤掉哪一头」都只有把边界算清才看得出来。
+  it("到上限不淘汰、超出即淘汰最旧的：200 条时首帧还在，第 201 条把首帧挤出窗口", async () => {
+    const { routes, publish } = assemble();
+    for (let index = 1; index <= 200; index += 1) {
+      await publishAndSettle(publish, frame({ title: `第 ${index} 条` }));
+    }
+
+    const atLimit = framesOf(connect(routes).rec.text);
+    expect(atLimit).toHaveLength(200);
+    expect(atLimit[0]!.seq).toBe(1);
+    expect(atLimit[0]!.title).toBe("第 1 条");
+    expect(atLimit.at(-1)!.seq).toBe(200);
+
+    await publishAndSettle(publish, frame({ title: "第 201 条" }));
+
+    const overLimit = framesOf(connect(routes).rec.text);
+    expect(overLimit).toHaveLength(200);
+    expect(overLimit[0]!.seq).toBe(2);
+    expect(overLimit[0]!.title).toBe("第 2 条");
+    expect(overLimit.map((event) => event.seq)).toEqual(
+      Array.from({ length: 200 }, (_item, index) => index + 2),
+    );
+  });
+});
+
+describe("连接上限：触顶淘汰", () => {
+  // 「恰好等于上限不淘汰」与「多接一条挤掉最旧」这两条语义已被 dsh-mcp-manager 的
+  // unit-routes-sse.test.ts（#515：连接上限 + 淘汰）覆盖，本域不重复。这里只补本域独有的一条：
+  // notifier 的上限是**每次收口现读设置**（mcp 那边传的是固定值），调小之后下一次淘汰就该按新值来；
+  // 装配期钉住旧值会让设置页调上限失灵，而没有任何用例会红。
+  it("上限实时读设置：调小之后的下一次收口按新值淘汰最旧，被淘汰的连接不再收广播", async () => {
+    const { routes, publish, setMaxConnections } = assemble({ maxConnections: 3 });
+    const first = connect(routes);
+    const second = connect(routes);
+    const third = connect(routes);
+    expect([first.rec.destroyed, second.rec.destroyed, third.rec.destroyed]).toEqual([
+      false,
+      false,
+      false,
+    ]);
+
+    setMaxConnections(2);
+    const fourth = connect(routes);
+    expect([
+      first.rec.destroyed,
+      second.rec.destroyed,
+      third.rec.destroyed,
+      fourth.rec.destroyed,
+    ]).toEqual([true, true, false, false]);
+
+    await publishAndSettle(publish, frame({ title: "收口之后" }));
+    // 已被淘汰的句柄不再参与广播：写它们只会把失败面摊大。
+    expect(framesOf(first.rec.text)).toEqual([]);
+    expect(framesOf(second.rec.text)).toEqual([]);
+    expect(framesOf(third.rec.text).map((event) => event.title)).toEqual(["收口之后"]);
+    expect(framesOf(fourth.rec.text).map((event) => event.title)).toEqual(["收口之后"]);
   });
 });

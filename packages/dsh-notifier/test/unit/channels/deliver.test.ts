@@ -19,7 +19,7 @@ import {
   displayCaps,
   truncateCodePoints,
 } from "../../../src/server/channels/impl/deliver/caps.ts";
-import { pollUntil } from "../../helpers.ts";
+import { pollUntil, wire } from "../../helpers.ts";
 
 /** 待投递消息：`ts` 写死不取 `Date.now()`，免得断言跟着运行时刻漂。 */
 function messageOf(over: Partial<NotifyMessage> = {}): NotifyMessage {
@@ -38,11 +38,6 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 /** 一个浏览器出口目标：`emitFrame` 由本用例给，用来观测编排何时触达出口。 */
 function browserTarget(emitFrame: (frame: NotifyFrame) => void): DeliveryTarget {
   return { type: "browser", pop: true, sound: false, emitFrame };
-}
-
-/** 跨边界非法值：出口联合只在编译期闭合，运行时守卫守的正是编译期管不到的那一侧。 */
-function wire<T>(value: unknown): T {
-  return value as T;
 }
 
 afterEach(() => {

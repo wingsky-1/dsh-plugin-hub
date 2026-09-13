@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import type { ConfigPort } from "../../../src/server/api/deps.ts";
 import { SettingsEndpoints } from "../../../src/server/api/impl/settings/index.ts";
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
+import { jsonReq } from "../../helpers.ts";
 
 /** 视图与写面结果经能力面的签名可达，不请 config 域再多导出一个名字。 */
 type SettingsView = ReturnType<ConfigPort["readSettingsView"]>;
@@ -26,16 +27,7 @@ const VIEW: SettingsView = {
 
 /** 假请求：body 由 async 迭代器吐出（`readJsonBody` 走的就是这条路）。 */
 function makeReq(options: { body?: unknown; rawBody?: string } = {}): IncomingMessage {
-  const text = options.rawBody ?? (options.body === undefined ? "" : JSON.stringify(options.body));
-  return {
-    method: "PUT",
-    url: "/api/dsh-notifier/config",
-    headers: { host: "127.0.0.1:3080" },
-    socket: { remoteAddress: "127.0.0.1" },
-    async *[Symbol.asyncIterator]() {
-      if (text !== "") yield Buffer.from(text, "utf8");
-    },
-  } as unknown as IncomingMessage;
+  return jsonReq({ method: "PUT", url: "/api/dsh-notifier/config", ...options });
 }
 
 /** 假响应：把状态码、头与正文抓下来供断言。 */

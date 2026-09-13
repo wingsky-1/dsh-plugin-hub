@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import type { StorePort } from "../../../src/server/api/deps.ts";
 import { JournalEndpoints } from "../../../src/server/api/impl/journal/index.ts";
+import { jsonReq, makeRes } from "../../helpers.ts";
 
 const HISTORY = [
   { ts: 1, kind: "done", title: "第一条", message: "正文", channels: [] },
@@ -22,38 +23,7 @@ const STATUS = {
 
 /** 假请求：三个端点都不读 body，只有方法不同。 */
 function makeReq(method: string): IncomingMessage {
-  return {
-    method,
-    url: "/api/dsh-notifier/history",
-    headers: { host: "127.0.0.1:3080" },
-    socket: { remoteAddress: "127.0.0.1" },
-  } as unknown as IncomingMessage;
-}
-
-/** 假响应：把状态码与正文抓下来供断言。 */
-function makeRes() {
-  const rec = { status: 0, headers: {} as Record<string, string>, text: "", headersSent: false };
-  const res = {
-    get headersSent() {
-      return rec.headersSent;
-    },
-    writeHead(status: number, headers?: Record<string, string>) {
-      rec.status = status;
-      rec.headers = { ...(headers ?? {}) };
-      rec.headersSent = true;
-      return res;
-    },
-    end(chunk?: string) {
-      if (chunk !== undefined) rec.text += chunk;
-      rec.headersSent = true;
-      return res;
-    },
-  };
-  return {
-    res: res as unknown as ServerResponse,
-    rec,
-    json: (): Record<string, unknown> => JSON.parse(rec.text),
-  };
+  return jsonReq({ method, url: "/api/dsh-notifier/history" });
 }
 
 /** 假 stores 端口：三个读面各自回带标记的值。 */

@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { registerEndpoints, sendJson } from "../../../src/server/api/impl/route/index.ts";
 import type { Endpoint, RouteHandler } from "../../../src/server/api/impl/route/type.ts";
-import { makeLogger, pollUntil } from "../../helpers.ts";
+import { jsonReq, makeLogger, makeRegister, pollUntil } from "../../helpers.ts";
 
 /** 假请求：默认是合法回环请求，`body` 由 async 迭代器吐出（`readJsonBody` 走的就是这条路）。 */
 function makeReq(
@@ -23,16 +23,14 @@ function makeReq(
     host?: string;
   } = {},
 ): IncomingMessage {
-  const text = options.rawBody ?? (options.body === undefined ? "" : JSON.stringify(options.body));
-  return {
+  return jsonReq({
     method: options.method ?? "GET",
     url: "/api/dsh-notifier/config",
-    headers: { host: options.host ?? "127.0.0.1:3080" },
-    socket: { remoteAddress: options.remoteAddress ?? "127.0.0.1" },
-    async *[Symbol.asyncIterator]() {
-      if (text !== "") yield Buffer.from(text, "utf8");
-    },
-  } as unknown as IncomingMessage;
+    body: options.body,
+    rawBody: options.rawBody,
+    remoteAddress: options.remoteAddress,
+    host: options.host,
+  });
 }
 
 /** 假响应：把状态码、头与正文抓下来供断言。 */
@@ -64,22 +62,6 @@ function makeRes() {
     },
   };
   return { res: res as unknown as ServerResponse, rec, json: (): unknown => JSON.parse(rec.text) };
-}
-
-/** 假注册口：记下路由表与摘除调用。 */
-function makeRegister() {
-  const routes: WebRoute[] = [];
-  const disposed: string[] = [];
-  return {
-    routes,
-    disposed,
-    register: (route: WebRoute): (() => void) => {
-      routes.push(route);
-      return () => {
-        disposed.push(route.path);
-      };
-    },
-  };
 }
 
 /** 一个端点组，handler 可替换：围栏用例只关心 handler 有没有被调到。 */

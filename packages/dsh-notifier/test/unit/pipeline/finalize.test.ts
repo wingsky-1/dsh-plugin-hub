@@ -14,6 +14,7 @@ import { BUILTIN_KINDS } from "../../../src/server/pipeline/impl/service/kinds.t
 import type { BuiltinKind } from "../../../src/server/pipeline/impl/service/kinds.ts";
 import type { NotifyRequest } from "../../../src/server/pipeline/impl/service/type.ts";
 import type { NotifySeverity } from "../../../src/server/pipeline/deps.ts";
+import { wire } from "../../helpers.ts";
 
 /**
  * 内置 kind → 缺省强度。独立写一遍而不是从源码导：值表漂移必须在这里红，抄源码就恒真了。
@@ -28,11 +29,6 @@ const KIND_SEVERITY_EXPECTED: ReadonlyArray<readonly [BuiltinKind, NotifySeverit
   ["turn-end", "info"],
   ["test", "info"],
 ];
-
-/** 跨边界非法值：类型联合只在编译期存在，运行时守卫守的正是编译期管不到的那一侧。 */
-function wire<T>(value: unknown): T {
-  return value as T;
-}
 
 function requestOf(over: Partial<NotifyRequest> = {}): NotifyRequest {
   return { kind: "done", title: "标题", body: "正文", ...over };

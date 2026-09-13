@@ -13,48 +13,18 @@ import type { NotifyRequest, PipelinePort } from "../../../src/server/api/deps.t
 import { ProbeEndpoints } from "../../../src/server/api/impl/probe/index.ts";
 import { streamHub } from "../../../src/server/api/impl/stream/index.ts";
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
-import { makeLogger } from "../../helpers.ts";
+import { jsonReq, makeLogger, makeRes } from "../../helpers.ts";
 
 /** 假请求：body 由 async 迭代器吐出（`readJsonBody` 走的就是这条路）。 */
 function makeReq(
   options: { method?: string; body?: unknown; rawBody?: string } = {},
 ): IncomingMessage {
-  const text = options.rawBody ?? (options.body === undefined ? "" : JSON.stringify(options.body));
-  return {
+  return jsonReq({
     method: options.method ?? "POST",
     url: "/api/dsh-notifier/test",
-    headers: { host: "127.0.0.1:3080" },
-    socket: { remoteAddress: "127.0.0.1" },
-    async *[Symbol.asyncIterator]() {
-      if (text !== "") yield Buffer.from(text, "utf8");
-    },
-  } as unknown as IncomingMessage;
-}
-
-/** 假响应：把状态码与正文抓下来供断言。 */
-function makeRes() {
-  const rec = { status: 0, headers: {} as Record<string, string>, text: "", headersSent: false };
-  const res = {
-    get headersSent() {
-      return rec.headersSent;
-    },
-    writeHead(status: number, headers?: Record<string, string>) {
-      rec.status = status;
-      rec.headers = { ...(headers ?? {}) };
-      rec.headersSent = true;
-      return res;
-    },
-    end(chunk?: string) {
-      if (chunk !== undefined) rec.text += chunk;
-      rec.headersSent = true;
-      return res;
-    },
-  };
-  return {
-    res: res as unknown as ServerResponse,
-    rec,
-    json: (): Record<string, unknown> => JSON.parse(rec.text),
-  };
+    body: options.body,
+    rawBody: options.rawBody,
+  });
 }
 
 /** 假裁决管线：只记下提交体（该不该发、发去哪都是管线的事）。 */

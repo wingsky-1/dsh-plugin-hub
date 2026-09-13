@@ -15,7 +15,7 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 
 import type { ApiDeps, OutgoingFrame } from "../../../src/server/api/deps.ts";
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
-import { makeLogger, pollUntil, tempDshHome } from "../../helpers.ts";
+import { jsonReq, makeLogger, makeRegister, pollUntil, tempDshHome } from "../../helpers.ts";
 
 const home = tempDshHome();
 const { installApi, releaseApi } = await import("../../../src/server/api/interface.ts");
@@ -55,16 +55,7 @@ afterAll(() => {
 
 /** 假请求：合法回环，body 由 async 迭代器吐出（`readJsonBody` 走的就是这条路）。 */
 function makeReq(options: { method?: string; url: string; body?: unknown }): IncomingMessage {
-  const text = options.body === undefined ? "" : JSON.stringify(options.body);
-  return {
-    method: options.method ?? "GET",
-    url: options.url,
-    headers: { host: "127.0.0.1:3080" },
-    socket: { remoteAddress: "127.0.0.1" },
-    async *[Symbol.asyncIterator]() {
-      if (text !== "") yield Buffer.from(text, "utf8");
-    },
-  } as unknown as IncomingMessage;
+  return jsonReq({ method: options.method ?? "GET", url: options.url, body: options.body });
 }
 
 /** 假响应：JSON 端点与 SSE 端点共用（SSE 需要 `on`/`destroy` 才能被连接表收下）。 */
@@ -115,22 +106,6 @@ function makeRes() {
     res: res as unknown as ServerResponse,
     rec,
     json: (): Record<string, unknown> => JSON.parse(rec.text),
-  };
-}
-
-/** 假注册口：记下路由表与摘除调用。 */
-function makeRegister() {
-  const routes: WebRoute[] = [];
-  const disposed: string[] = [];
-  return {
-    routes,
-    disposed,
-    register: (route: WebRoute): (() => void) => {
-      routes.push(route);
-      return () => {
-        disposed.push(route.path);
-      };
-    },
   };
 }
 

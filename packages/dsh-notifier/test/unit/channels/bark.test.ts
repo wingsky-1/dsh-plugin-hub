@@ -16,55 +16,15 @@ import type {
   NotifyMessage,
   NotifySeverity,
 } from "../../../src/server/channels/impl/deliver/type.ts";
-import { pollUntil } from "../../helpers.ts";
+import { pollUntil, reasonOf, stubFetch, wire } from "../../helpers.ts";
+import type { FetchCall } from "../../helpers.ts";
 
 /** 出口结果的形状经签名可达，不必请 impl 再导出一个名字。 */
 type DeliverResult = Awaited<ReturnType<typeof sendBark>>;
 
-/** 桩记下的一次请求：断言面要的是「发了什么」，`RequestInit` 的宽类型无法直接索引。 */
-interface FetchCall {
-  url: string;
-  method: string | undefined;
-  headers: Record<string, string>;
-  body: string;
-  signal: AbortSignal | null | undefined;
-}
-
-/**
- * 换掉全局 fetch 并记录每次调用；`afterEach` 的 `unstubAllGlobals` 负责还原。
- * 桩体经 `Promise.resolve().then(...)` 求值：真 fetch 的网络失败是 reject 而不是同步 throw，
- * 同步 throw 会绕过被测代码 `await fetch(...)` 那一层的语义。
- */
-function stubFetch(respond: (call: FetchCall) => Response | Promise<Response>): FetchCall[] {
-  const calls: FetchCall[] = [];
-  vi.stubGlobal("fetch", (input: unknown, init?: RequestInit) => {
-    const call: FetchCall = {
-      url: String(input),
-      method: init?.method,
-      headers: { ...(init?.headers as Record<string, string> | undefined) },
-      body: typeof init?.body === "string" ? init.body : "",
-      signal: init?.signal,
-    };
-    calls.push(call);
-    return Promise.resolve().then(() => respond(call));
-  });
-  return calls;
-}
-
 /** 2xx JSON 响应。 */
 function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status });
-}
-
-/** 跨边界非法值：宿主 / 未类型化调用方传来的值不受编译期联合约束，而运行时守卫守的正是那一侧。 */
-function wire<T>(value: unknown): T {
-  return value as T;
-}
-
-/** 失败结果的失败原因；非失败直接判红，免得每个用例都写一遍收窄。 */
-function reasonOf(result: DeliverResult): string {
-  if (result.status !== "failed") throw new Error(`期望失败，实际 ${result.status}`);
-  return result.reason;
 }
 
 /** 失败结果的可重试标记；非失败直接判红（与 `reasonOf` 同款收窄）。 */
