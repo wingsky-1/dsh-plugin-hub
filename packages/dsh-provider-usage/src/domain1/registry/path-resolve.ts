@@ -2,7 +2,9 @@
  * dsh-provider-usage — 路径解析工具（M2 用户适配器注入）。
  *
  * 解析规则（同计划 3.2）：
- * 1. `~`/`~user` 前缀 → 当前用户 home 展开。
+ * 1. 行首 `~` / `~/`（含 Windows 反斜杠）→ 当前用户 home 展开（走 shared/dsh-home.js 接缝）。
+ *    **`~user` 形态不展开**（见 expandHomePath）——它不是「当前用户 home」，展开它必须读真实
+ *    home，会绕过 DSH_HOME 隔离。
  * 2. 绝对路径 → 原样。
  * 3. 相对路径 → 依次尝试相对 `DSH_HOME`（默认 `~/.dsh`）与相对插件 home
  *    （`~/.dsh/plugins/<plugin>`），先命中者胜。
@@ -11,11 +13,6 @@
 import { existsSync, statSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { dshHome as dshHomeBase, userHome } from "../../../../../shared/dsh-home.js";
-// ~ 展开复用成熟开源实现 untildify（devDependency + 构建期 esbuild 内联，
-// 发布物零运行时依赖）。
-// 行为边界：仅展开开头的 `~`；`~user/...` 形态不展开、原样返回（旧手写实现把
-// ~user 误展开到当前用户 home 的权宜语义一并移除——UI placeholder 只承诺 ~/.dsh/...）。
-import untildify from "untildify";
 
 /**
  * 插件 home 目录（host 文件逻辑归属区 ~/.dsh/plugins/provider-usage）。
@@ -30,15 +27,21 @@ export function pluginHome(base = dshHomeBase()): string {
 /**
  * `~` 前缀展开（单一事实源：resolvePath 与 resolveAddAdapterFile 共用，
  * 保证「UI 承诺支持 ~ 路径」与校验行为一致）。
+ *
+ * 为什么自己展开而不复用 untildify（v6）：它除裸 `~` 外还展开 `~<当前登录用户>`——
+ * 走 `os.homedir()` + `os.userInfo().username`，两者都读**进程级** environ/系统调用，
+ * 绕开 shared/dsh-home.js 的接缝：隔离验证把 `HOME`/`DSH_HOME` 换掉之后，`~me/x` 仍会
+ * 落到真实 home。这既违反本模块原本就写明的语义边界（`~user` 不展开、原样返回），
+ * 也正是 `forbid-homedir-src` 门禁要拦的形态（该门禁一度为这一行开了豁免）。
+ * `~user` 因此**一律原样返回**：它会被当作相对路径解析，解析不到就拒绝——UI placeholder
+ * 只承诺 `~/.dsh/...`。
+ * @param p - 原始路径。
+ * @returns 展开后的路径（`~user` 与无前缀形态原样返回）。
  */
 export function expandHomePath(p: string): string {
-  // 裸 `~` / `~/` 走共享接缝 userHome()：untildify 会把 os.homedir() 的首次结果
-  // 模块级固化，而 os.homedir() 读进程级 environ、在 worker_threads 下拿不到测试的
-  // process.env.HOME 隔离（见 shared/dsh-home.js 的 userHome 注释）。展开语义等价
-  // （同一取值次序），故行为不变而可测性恢复。
+  // 取值次序与 shared/dsh-home.js 的 userHome() 一致：env 优先、空串视同未设置。
   if (/^~(?=$|[/\\])/.test(p)) return userHome() + p.slice(1);
-  // dsh-gate:allow-homedir #87 其余形态（`~user` 等）交 untildify 透传，不读 home 值
-  return untildify(p);
+  return p;
 }
 
 /**

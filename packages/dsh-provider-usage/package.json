@@ -74,8 +74,7 @@
     "@deepseek-ai/dsh-llm": "catalog:",
     "@deepseek-ai/dsh-session": "catalog:",
     "async-mutex": "^0.5.0",
-    "schemastery": "^3.18.0",
-    "untildify": "^6.0.0"
+    "schemastery": "^3.18.0"
   },
   "repository": {
     "type": "git",
