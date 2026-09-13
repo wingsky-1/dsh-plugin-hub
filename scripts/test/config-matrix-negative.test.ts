@@ -59,6 +59,11 @@ function fakeRepo() {
       join(ROOT, "scripts/data/plugins-manifest.json"),
       join(root, "scripts/data/plugins-manifest.json"),
     );
+    // lan-proxy UI 豁免表（#733 3.2.2 起门禁读数据面而非内嵌常量）。
+    copyLf(
+      join(ROOT, "scripts/data/lan-proxy-ui-exempt.json"),
+      join(root, "scripts/data/lan-proxy-ui-exempt.json"),
+    );
   } catch (e) {
     rmSync(root, { recursive: true, force: true });
     throw e;
@@ -322,6 +327,90 @@ test("notifier: COUNT_LIMITS 上界低于 DEFAULT_CONFIG 默认值 → 红（默
       });
     },
     ["maxConnections", "超过 COUNT_LIMITS"],
+  );
+});
+
+// ---- UI 豁免表（#733 3.2.2 数据化）：门禁读数据面，数据面坏掉必须 fail-closed ----
+
+/** 编辑副本里的数据文件（豁免表）。 */
+function editData(root, rel, fn) {
+  const f = join(root, "scripts", "data", rel);
+  writeFileSync(f, fn(readFileSync(f, "utf8").replace(/\r\n/g, "\n")));
+}
+
+test("UI 豁免表: 文件缺失 → 红（fail-closed，不得退化成「没有豁免可用」）", () => {
+  const root = fakeRepo();
+  try {
+    rmSync(join(root, "scripts/data/lan-proxy-ui-exempt.json"));
+    const r = runConfigMatrix(root);
+    assert.equal(r.pass, false, "豁免表缺失应红");
+    assert.ok(
+      r.problems.some((p) => p.includes("UI 豁免表不可读")),
+      `报错应指明豁免表不可读: ${r.problems.join("; ")}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("UI 豁免表: 条目超上限（>8）→ 红（上限是策略，数据面不得自放宽）", () => {
+  assertRed(
+    "豁免表塞进 9 条",
+    (root) => {
+      editData(root, "lan-proxy-ui-exempt.json", (s) => {
+        const json = JSON.parse(s);
+        for (let i = 0; i < 5; i++) {
+          json.exemptKeys.push({
+            key: `extra${i}`,
+            reason: "packages/dsh-lan-proxy/src/config.ts:1 注入用例",
+          });
+        }
+        return `${JSON.stringify(json, null, 2)}\n`;
+      });
+    },
+    ["豁免表 9 键 > 8"],
+  );
+});
+
+test("UI 豁免表: 条目缺 reason → 红并点名键（结构自检不得静默跳过）", () => {
+  assertRed(
+    "豁免表删掉一条 reason",
+    (root) => {
+      editData(root, "lan-proxy-ui-exempt.json", (s) => {
+        const json = JSON.parse(s);
+        delete json.exemptKeys[0].reason;
+        return `${JSON.stringify(json, null, 2)}\n`;
+      });
+    },
+    ["host", "缺 reason"],
+  );
+});
+
+test("UI 豁免表: 重复键 → 红（重复即两处事实源）", () => {
+  assertRed(
+    "豁免表复制一条 host",
+    (root) => {
+      editData(root, "lan-proxy-ui-exempt.json", (s) => {
+        const json = JSON.parse(s);
+        json.exemptKeys.push({ ...json.exemptKeys[0] });
+        return `${JSON.stringify(json, null, 2)}\n`;
+      });
+    },
+    ["重复键", "host"],
+  );
+});
+
+test("UI 豁免表: 豁免键已出现在客户端 DEFAULTS → 红（豁免残留，键已 UI 化）", () => {
+  assertRed(
+    "客户端 DEFAULTS 补上 host",
+    (root) => {
+      edit(root, "dsh-lan-proxy", "client/index.ts", (s) => {
+        const after = s.replace(/^(\s*)enabled: true,$/m, '$1enabled: true,\n$1host: "127.0.0.1",');
+        assert.notEqual(after, s, "fixture 应含 `enabled: true,`（源码改动后请同步本注入）");
+        return after;
+      });
+    },
+    ["豁免键 host 已在客户端 DEFAULTS 中"],
   );
 });
 

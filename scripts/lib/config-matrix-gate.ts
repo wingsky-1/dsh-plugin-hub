@@ -15,19 +15,17 @@
  * 断言清单（对齐 issue #471 v2 验收 2/3/4/5/6/7）：
  *   L1 lan-proxy：Config / FILE_CONFIG_VALIDATORS / SETTING_FIELD_HINTS 三表
  *      键集全等（双向，现 16）
- *   L2 lan-proxy：client DEFAULTS ⊆ schema；schema − DEFAULTS 差集 ==
- *      LAN_PROXY_UI_EXEMPT；豁免带原因注释 + 单包 ≤8；豁免残留（键已 UI 化）
- *      亦红
+ *   L2 lan-proxy：client DEFAULTS ⊆ schema；schema − DEFAULTS 差集 == UI 豁免表
+ *      （scripts/data/lan-proxy-ui-exempt.json，门禁不再内嵌条目）；豁免带原因
+ *      「文件:行」+ 单包 ≤8（条目数是策略，留代码）；豁免残留（键已 UI 化）亦红
  *   N1 notifier：configSurfaces 声明的 defaults 导出必须是非空对象（声明驱动，取代旧
  *      硬编码路径 src/config/{config,validators,normalize}.ts——#733 配置域搬到
  *      src/server/config/impl/** 后那三条路径全部 ENOENT，路径硬编码本身就是红因）
  *   N2 notifier：normalizeConfig({}) 的键集**双向等于** DEFAULT_CONFIG 键集
  *      （丢键 / 凭空造键都红）——本包当前唯一有实质约束力的行为断言
- *   N3 notifier：README 配置键集一致性，缺键仅 warn（量级 #12）
- * 旧 N2（CONFIG_KEYS == 布尔键）与旧 N4（客户端 UI ⊆ SETTING_VALIDATORS）在新树上
- * 已无输入：CONFIG_KEYS 现在是 Object.keys(DEFAULT_CONFIG) 的同义反复，
- * SETTING_VALIDATORS/SETTING_HINTS 只存在于旧门禁。BOOLEAN_KEYS/COUNT_LIMITS 未导出，
- * 运行时取不到——该缺口如实登记在 runNotifier 的注释里，不假装门禁比实际强。
+ *   N3 notifier：BOOLEAN_KEYS ⊆ 配置键，且默认值确是布尔（客户端 UI 按布尔键渲染开关）
+ *   N4 notifier：COUNT_LIMITS ⊆ 配置键、上界是非负整数，且默认值不越界（上界必须真的箍住默认值）
+ *   N5 notifier：README 配置表缺键仅 warn（量级 #12，不判红）
  */
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -38,30 +36,59 @@ import {
 } from './config-matrix-lib.ts'
 import { loadManifest } from './plugins-manifest-lib.ts'
 
-// 豁免白名单（P1-2 三条件收敛：服务端/组合层键或客户端不渲染键；单包 ≤8；
-// 每条带「文件:行 + 理由」原因注释——结构自检缺失即红）。
-export const LAN_PROXY_UI_EXEMPT = {
-  // 原因: 组合层装配键（绑定地址默认取 DEFAULT_OPTIONS.host，见 config.ts:80）；
-  //   GUI 卡片不渲染绑定地址，README 安全模型说明。
-  host: 'packages/dsh-lan-proxy/src/config.ts:80 组合层装配键（绑定地址），GUI 卡片不编辑',
-  // 原因: 组合层装配键（回环上游主机；转发安全红线仅允许回环，见 config.ts:96）。
-  targetHost: 'packages/dsh-lan-proxy/src/config.ts:96 组合层装配键（回环上游），GUI 卡片不编辑',
-  // 原因: 组合层装配键（上游端口缺省随 web 端口，见 config.ts:97-102 注释）。
-  targetPort: 'packages/dsh-lan-proxy/src/config.ts:102 组合层装配键（上游端口随 web 端口），GUI 卡片不编辑',
-  // 原因: 服务端 WS 压缩协商策略键（browser/uaDeny 子结构，见 config.ts:119）；
-  //   GUI 无对应控件（wsCompressPaths 白名单已可编辑）。
-  wsDeflatePolicy: 'packages/dsh-lan-proxy/src/config.ts:119 服务端策略键（协商子结构），GUI 无控件',
+// lan-proxy 客户端 UI 豁免表（#733 计划项 3.2.2 数据化）：条目（哪些键、为什么）是**事实**，
+// 在 scripts/data/lan-proxy-ui-exempt.json；条目数上限与「超限即红」是**策略**，留在代码里
+// ——把上限放进被约束的数据文件等于让被约束方自己改约束。
+const UI_EXEMPT_REL = 'scripts/data/lan-proxy-ui-exempt.json'
+const UI_EXEMPT_MAX = 8
+
+/**
+ * 读取 UI 豁免表（键 → 原因）。只做**结构**加载：IO / JSON / 数组形态 / 键与原因的存在性 /
+ * 重复键。策略检查（≤8、原因含「文件:行」）留给 checkExempts，避免同一判据两处实现。
+ * 任何结构错误都转 problem：豁免机制失效不能表现为「没有豁免」——那会把合法差集报成
+ * 「漏 UI」，把修复方向指错。
+ */
+function loadUiExempt(root, problems) {
+  const filePath = join(root, UI_EXEMPT_REL)
+  let json
+  try {
+    json = JSON.parse(readFileSync(filePath, 'utf8'))
+  } catch (e) {
+    problems.push(`lan-proxy UI 豁免表不可读（${UI_EXEMPT_REL}）：${String(e.message).split('\n')[0]}`)
+    return {}
+  }
+  if (!Array.isArray(json.exemptKeys)) {
+    problems.push(`lan-proxy UI 豁免表缺 exemptKeys 数组（${UI_EXEMPT_REL}）`)
+    return {}
+  }
+  const out = {}
+  for (const item of json.exemptKeys) {
+    if (item === null || typeof item !== 'object' || typeof item.key !== 'string' || item.key.length === 0) {
+      problems.push(`lan-proxy UI 豁免表条目缺 key（${UI_EXEMPT_REL}）`)
+      continue
+    }
+    if (typeof item.reason !== 'string' || item.reason.length === 0) {
+      problems.push(`lan-proxy UI 豁免键 ${item.key} 缺 reason（${UI_EXEMPT_REL}）`)
+      continue
+    }
+    if (out[item.key] !== undefined) {
+      problems.push(`lan-proxy UI 豁免表存在重复键：${item.key}`)
+      continue
+    }
+    out[item.key] = item.reason
+  }
+  return out
 }
 
-/** 豁免白名单结构自检：≤8 键 + 每条原因注释（含「文件:行」+ 一句理由）。 */
+/** 豁免表结构自检：≤8 键 + 每条原因含「文件:行」+ 一句理由。 */
 function checkExempts(pkg, exempt) {
   const problems = []
-  if (Object.keys(exempt).length > 8) {
-    problems.push(`${pkg} 豁免白名单 ${Object.keys(exempt).length} 键 > 8（超限即红，强制走评审）`)
+  if (Object.keys(exempt).length > UI_EXEMPT_MAX) {
+    problems.push(`${pkg} 豁免表 ${Object.keys(exempt).length} 键 > ${UI_EXEMPT_MAX}（超限即红，强制走评审）`)
   }
   for (const [k, reason] of Object.entries(exempt)) {
     if (typeof reason !== 'string' || reason.length === 0 || !/:\d+/.test(reason)) {
-      problems.push(`${pkg} 豁免键 ${k} 缺原因注释（须含「文件:行 + 一句理由」）`)
+      problems.push(`${pkg} 豁免键 ${k} 缺原因（须含「文件:行 + 一句理由」）`)
     }
   }
   return problems
@@ -131,8 +158,8 @@ function runLanProxy(root) {
     problems.push(...diffProblems('lan-proxy', na, cfgPath, ta.line, diffKeys(tb.keys, ta.keys), `与 ${nb} 不一致`))
   }
 
-  // L2：DEFAULTS ⊆ schema；schema − DEFAULTS == 豁免；豁免结构自检
-  const exempt = LAN_PROXY_UI_EXEMPT
+  // L2：DEFAULTS ⊆ schema；schema − DEFAULTS == 豁免；豁免表结构自检
+  const exempt = loadUiExempt(root, problems)
   problems.push(...checkExempts('lan-proxy', exempt))
   const exemptKeys = Object.keys(exempt)
   const d = diffKeys(schema.keys, defaults.keys)
@@ -202,7 +229,7 @@ function loadSurfaceExport(root, face, label, problems) {
  * 断言集随事实源重建（旧 N1/N2/N3 的输入在新树上已不存在，不是「放宽」而是重建）：
  *   N1 声明的 defaults 导出必须是非空对象；
  *   N2 normalizeConfig({}) 的键集双向等于 DEFAULT_CONFIG 键集（丢键 / 凭空造键都红）；
- *   N3 README 配置表缺键仅 warn（量级 #12，保留）。
+ *   N5 README 配置表缺键仅 warn（量级 #12，保留）。
  *
  * N3 BOOLEAN_KEYS 的每个键都是真实配置键，且其在 DEFAULT_CONFIG 中的默认值是布尔
  *    （反向不成立：browserSound / systemSound 的默认值也是 true，但类型是
