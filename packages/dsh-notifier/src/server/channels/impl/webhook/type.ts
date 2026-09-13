@@ -7,11 +7,9 @@ import type { NotifySeverity } from "../deliver/type.ts";
 /** 预设：决定默认 body 模板与 {{priority}} 映射（配置层的 custom 即投递层的 raw）。 */
 export type WebhookPreset = "raw" | "ntfy" | "gotify";
 
-/** 已解析的凭据：与配置层存的「认证方式」不是同一个形状。 */
+/** 已解析的凭据：与配置层存的「认证方式」不是同一个形状；只走请求头。 */
 type WebhookAuth =
-  | { kind: "bearer"; token: string }
-  | { kind: "basic"; user: string; password: string }
-  | { kind: "query"; name: string; value: string };
+  { kind: "bearer"; token: string } | { kind: "basic"; user: string; password: string };
 
 /** webhook 出口。 */
 export interface WebhookTarget {

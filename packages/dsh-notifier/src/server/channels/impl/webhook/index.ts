@@ -118,29 +118,20 @@ export async function sendWebhook(
 
   const headers: Record<string, string> = { ...target.headers };
   setHeader(headers, "content-type", "application/json; charset=utf-8");
-  let url = target.url;
   const auth = target.auth;
+  // 枚举之外的认证方式（跨边界值）一律不套用：凭据只走请求头，拼进 URL 会留在对端访问日志里。
   if (auth !== undefined) {
     if (auth.kind === "bearer") {
       setHeader(headers, "authorization", `Bearer ${auth.token}`);
     } else if (auth.kind === "basic") {
       const pair = Buffer.from(`${auth.user}:${auth.password}`).toString("base64");
       setHeader(headers, "authorization", `Basic ${pair}`);
-    } else {
-      try {
-        const endpoint = new URL(url);
-        endpoint.searchParams.set(auth.name, auth.value);
-        url = endpoint.toString();
-      } catch (cause) {
-        const reason = cause instanceof Error ? cause.message : String(cause);
-        return failed(`webhook URL 非法: ${reason}`);
-      }
     }
   }
 
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await fetch(target.url, {
       method: "POST",
       headers,
       body,

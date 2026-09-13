@@ -266,8 +266,8 @@ describe("归档：发出与压制只在载荷上分叉", () => {
     expect(entry.kind).toBe("done");
   });
 
-  // stale 不告警，用户改过配置后只能看到通知凭空消失。
-  it("kindRoutes 指向已删除频道：warn 一条并记 skipped，不静默（改过配置后最难查的就是这种丢失）", () => {
+  // 日志口径与归档口径不同词，排查时「按日志找记录」这一步就对不上。
+  it("kindRoutes 指向已删除频道：warn 与归档同一口径（suppressed:no-target），不静默也不自称 skipped", () => {
     const harness = assemble();
     harness.useConfig({
       channels: [],
@@ -280,9 +280,34 @@ describe("归档：发出与压制只在载荷上分叉", () => {
     submit(requestOf());
 
     expect(harness.delivered).toEqual([]);
+    const archived = harness.history[0]!.suppressed;
+    expect(archived).toBe("no-target");
     expect(harness.logger.warns).toHaveLength(1);
     expect(harness.logger.warns[0]).toContain("kindRoutes[done]");
     expect(harness.logger.warns[0]).toContain("bark:gone");
+    // 日志点名的那条口径就是历史里记下的那条：`SuppressReason` 里没有 skipped 这个词。
+    expect(harness.logger.warns[0]).toContain(`suppressed:${archived}`);
+    expect(harness.logger.warns[0]).not.toContain("skipped");
+  });
+
+  // 有别的目标时通知照常发出，此时谎称「本条按 suppressed 归档」会把排查引向一条不存在的记录。
+  it("stale 但仍有其它目标：其余目标照常投递，warn 不谎称本条通知按 suppressed 归档", async () => {
+    const harness = assemble();
+    harness.useConfig({
+      channels: [barkChannel()],
+      kindRoutes: { done: ["bark:gone", "bark:a"] },
+      browserNotify: false,
+      browserSound: false,
+      systemNotify: false,
+      systemSound: false,
+    });
+    submit(requestOf());
+    await settleMicrotasks();
+
+    expect(harness.history[0]!.channels).toEqual([{ channelId: "bark:a", status: "ok" }]);
+    expect(harness.logger.warns).toHaveLength(1);
+    expect(harness.logger.warns[0]).toContain("bark:gone");
+    expect(harness.logger.warns[0]).not.toContain("suppressed:");
   });
 
   // 节奏状态跨装配期存活，会把上一次运行窗口的节流带进新一次装配。

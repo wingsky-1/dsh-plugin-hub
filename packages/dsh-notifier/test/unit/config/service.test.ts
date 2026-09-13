@@ -75,6 +75,11 @@ function onDisk(): Record<string, RawSettingValue> {
   return JSON.parse(readFileSync(configFile, "utf8"));
 }
 
+/** 磁盘上的频道数组；存储层形状不受契约约束，故按原始值看。 */
+function diskChannels(): Array<Record<string, RawSettingValue>> {
+  return (onDisk().channels ?? []) as Array<Record<string, RawSettingValue>>;
+}
+
 /** 装配一次并取该文件的修订号；先释放再写文件，避免把上一个快照带进来。 */
 function revisionOfFile(text: string): number {
   releaseConfig();
@@ -301,5 +306,51 @@ describe("写面的合并与凭据", () => {
     expect(channelsOf(onDisk())[0].deviceKey).toBe("key-1");
     if (!result.ok) throw new Error("应当写入成功");
     expect(channelsOf(result.view.user)[0].deviceKey).toBe(MASK);
+  });
+});
+
+describe("写面：频道的可选键（缺省即合法，显式非法仍拦）", () => {
+  it("bark 缺 level / webhook 缺 preset 的提交写入成功：落盘不带这两个键，消费方拿到可用缺省", async () => {
+    assemble();
+    const result = await writeConfig({
+      channels: [
+        { type: "bark", id: "bark:phone", baseUrl: "https://api.day.app", deviceKey: "key-1" },
+        { type: "webhook", id: "webhook:hook", url: "https://example.test/hook", auth: "none" },
+      ],
+    });
+    expect(result.ok).toBe(true);
+
+    const stored = diskChannels();
+    expect(stored).toHaveLength(2);
+    expect(stored[0]!.level).toBeUndefined();
+    expect(stored[1]!.preset).toBeUndefined();
+    expect(stored[0]!.deviceKey).toBe("key-1");
+
+    const effective = readConfig().channels;
+    const bark = effective[0];
+    if (bark?.type !== "bark") throw new Error("期望归一化出一个 bark 频道");
+    expect("level" in bark).toBe(false);
+    const webhook = effective[1];
+    if (webhook?.type !== "webhook") throw new Error("期望归一化出一个 webhook 频道");
+    expect(webhook.preset).toBe("custom");
+    expect(webhook.auth).toBe("none");
+  });
+
+  it("显式提交非法 level / preset 仍判非法且不落盘（缺省放行不等于不校验）", async () => {
+    assemble();
+    const badLevel = await writeConfig({
+      channels: [
+        { type: "bark", id: "bark:phone", baseUrl: "https://x", deviceKey: "k", level: "urgent" },
+      ],
+    });
+    expect(invalidOf(badLevel).hint).toContain("level");
+
+    const badPreset = await writeConfig({
+      channels: [
+        { type: "webhook", id: "webhook:hook", url: "https://x", auth: "none", preset: "slack" },
+      ],
+    });
+    expect(invalidOf(badPreset).hint).toContain("preset");
+    expect(existsSync(configFile)).toBe(false);
   });
 });

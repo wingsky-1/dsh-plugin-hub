@@ -69,7 +69,8 @@ describe("旧文件归位", () => {
 
     expect(readFileSync(notifierFile(HISTORY_FILE_NAME), "utf8")).toBe("");
     expect(readFileSync(notifierFile(STATUS_FILE_NAME), "utf8")).toBe("{}\n");
-    expect(readFileSync(notifierFile(SEQ_FILE_NAME), "utf8")).toBe("{}\n");
+    // 序号文件的初始形态与流侧落盘同形（流侧写 `${seq}\n`）：首次读取要得到 0。
+    expect(readFileSync(notifierFile(SEQ_FILE_NAME), "utf8")).toBe("0\n");
   });
 
   it("目标已存在时只归档旧文件、不覆盖目标（用户可能已经在新位置改过东西，拿历史盖回去就是用旧盖新）", () => {

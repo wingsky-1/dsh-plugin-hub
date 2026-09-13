@@ -17,6 +17,9 @@ const MIGRATED_SUFFIX = ".migrated.bak";
 /** 空 JSON 对象的落盘形态。 */
 const EMPTY_OBJECT = "{}\n";
 
+/** 序号文件的初始形态：与流侧落盘同形（流侧写 `${seq}\n`），首次读取直接得到 0。 */
+const ZERO_SEQ = "0\n";
+
 /** 存储布局的一项。 */
 interface StorageEntry {
   /** 旧文件名（DSH home 根目录下）。 */
@@ -41,7 +44,7 @@ const LAYOUT: readonly StorageEntry[] = [
   {
     legacy: "notifier-seq.json",
     target: SEQ_FILE_NAME,
-    initial: EMPTY_OBJECT,
+    initial: ZERO_SEQ,
   },
 ];
 

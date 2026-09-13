@@ -35,6 +35,8 @@ export async function deliverImpl(
  */
 async function deliverOne(target: DeliveryTarget, message: NotifyMessage): Promise<DeliverResult> {
   try {
+    // 出口类型是跨边界数据：编译期的联合穷举不代表运行时的值也在枚举里，故留一份原始值给守卫。
+    const kind: string = target.type;
     switch (target.type) {
       case "bark":
         return await sendBark(target, message);
@@ -45,6 +47,9 @@ async function deliverOne(target: DeliveryTarget, message: NotifyMessage): Promi
       case "system":
         return await sendSystem(target, message);
     }
+    // 枚举之外的出口没有实现可派发；落成空元素会让下游读 `result.status` 当场 TypeError，
+    // 整批结果连同一起来到这一步的出口一起丢，所以这里按「本目标失败」收口。
+    return unknownTarget(kind);
   } catch (cause) {
     return {
       status: "failed",
@@ -53,4 +58,17 @@ async function deliverOne(target: DeliveryTarget, message: NotifyMessage): Promi
       retryable: false,
     };
   }
+}
+
+/**
+ * 未知出口类型的失败明细：形状与出口违约那条完全一致，好让调用方只认一套结果。
+ * `stage` 取 `accepted`、`retryable` 为假——这个目标根本没被派发出去，没有任何证据可依据。
+ */
+function unknownTarget(kind: string): DeliverResult {
+  return {
+    status: "failed",
+    stage: "accepted",
+    reason: `未知投递目标类型: ${kind}`,
+    retryable: false,
+  };
 }

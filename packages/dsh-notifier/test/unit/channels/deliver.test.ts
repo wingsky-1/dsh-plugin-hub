@@ -40,6 +40,11 @@ function browserTarget(emitFrame: (frame: NotifyFrame) => void): DeliveryTarget 
   return { type: "browser", pop: true, sound: false, emitFrame };
 }
 
+/** 跨边界非法值：出口联合只在编译期闭合，运行时守卫守的正是编译期管不到的那一侧。 */
+function wire<T>(value: unknown): T {
+  return value as T;
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -83,6 +88,28 @@ describe("deliver：并发投递，逐目标 fail-soft", () => {
       status: "failed",
       stage: "accepted",
       reason: "帧出口已断开",
+      retryable: false,
+    });
+    expect(results[1]).toEqual({ status: "ok", stage: "accepted" });
+    expect(emitted).toHaveLength(1);
+  });
+
+  // 未知出口类型若落成空元素，下游读 `result.status` 会当场 TypeError，整批结果连同一起来到
+  // 这一步的出口一起丢；跨边界值不受编译期联合约束，故判的是这一侧的行为。
+  it("未知投递目标类型：该目标收成一条失败明细，其余目标照常投递，结果里不出现空元素", async () => {
+    const emitted: NotifyFrame[] = [];
+    const results = await deliver(messageOf(), [
+      wire<DeliveryTarget>({ type: "slack" }),
+      browserTarget((frame) => {
+        emitted.push(frame);
+      }),
+    ]);
+
+    expect(results).toHaveLength(2);
+    expect(results[0]).toEqual({
+      status: "failed",
+      stage: "accepted",
+      reason: "未知投递目标类型: slack",
       retryable: false,
     });
     expect(results[1]).toEqual({ status: "ok", stage: "accepted" });

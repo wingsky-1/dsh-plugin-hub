@@ -5,7 +5,7 @@
  * 而存量配置的迁移只能等宿主 settings 服务就绪（那个服务可能晚到、也可能根本不来）。两件事的时序
  * 都不能靠「反正快了」蒙过去：前者判「装配返回时磁盘已是当前形态」，后者判「服务不来就不写」。
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
@@ -138,6 +138,22 @@ describe("装配期跑链", () => {
     expect(caught).toBeInstanceOf(Error);
     expect((caught as Error).message).toContain(`存储升级到 ${newestTarget()} 失败`);
     expect(legacy.handlers).toEqual([]);
+  });
+
+  it("链失败后重试装配会真正重跑链（失败不该占住「已装配」，否则启动失败一次就再也装不上）", () => {
+    // 包私有目录的位置被一个同名文件占住：第一次装配必然在写盘那一步失败。
+    mkdirSync(join(home.dir, "@wingsky-1"), { recursive: true });
+    const blocker = join(home.dir, "@wingsky-1", "dsh-notifier");
+    writeFileSync(blocker, "", "utf8");
+    expect(() => assemble()).toThrow(/存储升级到 .* 失败/u);
+
+    rmSync(blocker, { force: true });
+
+    // 障碍已清：刻度文件此刻还不存在，只有第二次装配真的从头跑完链，它才会落到目标版本。
+    const legacy = makeLegacy();
+    expect(() => assemble({ legacy })).not.toThrow();
+    expect(readFileSync(notifierFile(VERSION_FILE_NAME), "utf8").trim()).toBe(newestTarget());
+    expect(legacy.handlers).toHaveLength(1);
   });
 });
 

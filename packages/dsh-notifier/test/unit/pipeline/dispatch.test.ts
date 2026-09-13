@@ -58,6 +58,8 @@ interface Harness {
   readonly logger: ReturnType<typeof makeLogger>;
   readonly useConfig: (patch?: Partial<NotifyConfig>) => void;
   readonly onDeliver: (deliver: ChannelsPort["deliver"]) => void;
+  /** 让某个频道的状态写面违约（状态文件不可写）：观测面自己坏掉时的行为另算一档。 */
+  readonly breakStatusWrites: (channelId: string) => void;
 }
 
 function requestOf(over: Partial<NotifyRequest> = {}): NotifyRequest {
@@ -101,6 +103,7 @@ function assemble(): Harness {
   const statuses: Harness["statuses"][number][] = [];
   const frames: OutgoingFrame[] = [];
   const logger = makeLogger();
+  const brokenStatus = new Set<string>();
   const state: { config: NotifyConfig; deliver: ChannelsPort["deliver"] } = {
     config: DEFAULT_CONFIG,
     deliver: async (_message: NotifyMessage, targets: DeliveryTarget[]) =>
@@ -120,6 +123,7 @@ function assemble(): Harness {
         history.push(entry);
       },
       recordStatus: (channelId, status, error) => {
+        if (brokenStatus.has(channelId)) throw new Error("状态写面违约");
         statuses.push({ channelId, status, error });
       },
     },
@@ -135,6 +139,9 @@ function assemble(): Harness {
     },
     onDeliver: (deliver) => {
       state.deliver = deliver;
+    },
+    breakStatusWrites: (channelId) => {
+      brokenStatus.add(channelId);
     },
   };
 }
@@ -260,8 +267,8 @@ describe("逐频道归位", () => {
     ]);
   });
 
-  // 一次违约让整批归档消失，健康频道的投递记录也跟着丢。
-  it("出口违约不牵连同批：另一频道照常投递并写状态，违约只记一条 warn（宿主事件链不能断）", async () => {
+  // 一次违约让整批一起拒绝，健康频道的明细与状态跟着消失——故障时最需要的那条证据正好没有。
+  it("出口违约不牵连同批：违约频道出一条 failed 明细，健康频道照常投递并写状态，整批不拒绝", async () => {
     const harness = assemble();
     harness.useConfig({
       ...BUILTINS_OFF,
@@ -279,12 +286,54 @@ describe("逐频道归位", () => {
     });
 
     submit(requestOf());
-    await pollUntil(() => harness.logger.warns.length === 1, "违约要出声");
-    await pollUntil(() => harness.statuses.length === 1, "健康频道要写状态");
-    expect(harness.logger.warns[0]).toContain("投递失败");
+    await settleMicrotasks();
+
+    // 明细与 `targets` 同序：违约落在它自己的频道上，健康频道照常留痕。
+    expect(harness.history[0]!.channels).toEqual([
+      { channelId: "bark:a", status: "failed", reason: "出口实现违约" },
+      { channelId: "bark:b", status: "ok" },
+    ]);
+    // 频道状态按完成顺序落（两个出口并发），故只按频道身份查证结论。
+    const statusOf = (channelId: string) =>
+      harness.statuses.find((entry) => entry.channelId === channelId);
+    expect(statusOf("bark:a")?.status).toBe("failed");
+    expect(statusOf("bark:a")?.error).toBe("出口实现违约");
+    expect(statusOf("bark:b")?.status).toBe("ok");
+    // 整批没有拒绝：调用方那条「投递失败」的兜底 warn 不该被触发（它一响，说明明细已经丢了）。
+    expect(harness.logger.warns).toEqual([]);
+  });
+
+  // 状态只是观测面：它自己违约若升级成抛出，明细已经拿到手也会被整批带走，等于观测面反过来吃掉事实。
+  it("违约频道的状态写面再次违约也不抛出：failed 明细照常进归档，原因仍是出口那条", async () => {
+    const harness = assemble();
+    harness.useConfig({
+      ...BUILTINS_OFF,
+      channels: [
+        barkChannel({ id: "a", deviceKey: "dk-a" }),
+        barkChannel({ id: "b", deviceKey: "dk-b" }),
+      ],
+    });
+    harness.breakStatusWrites("bark:a");
+    harness.onDeliver(async (_message, targets) => {
+      const target = targets[0]!;
+      if (target.type === "bark" && target.deviceKey === "dk-a") {
+        throw new Error("出口实现违约");
+      }
+      return targets.map(() => ({ status: "ok", stage: "delivered" }));
+    });
+
+    submit(requestOf());
+    await settleMicrotasks();
+
+    // 状态写不进去只少一条观测记录，不被状态层的错盖掉、也不改变本次投递的结论。
+    expect(harness.history[0]!.channels).toEqual([
+      { channelId: "bark:a", status: "failed", reason: "出口实现违约" },
+      { channelId: "bark:b", status: "ok" },
+    ]);
     expect(harness.statuses.map((entry) => `${entry.channelId}:${entry.status}`)).toEqual([
       "bark:b:ok",
     ]);
+    expect(harness.logger.warns).toEqual([]);
   });
 });
 

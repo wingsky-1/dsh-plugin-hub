@@ -15,8 +15,9 @@ class UpgradeRunner {
   /** 装配：先跑链，再把存量迁移挂上。 */
   install(deps: UpgradeDeps): void {
     if (this.installed) throw new Error("dsh-notifier: upgrade 域只能装配一次");
-    this.installed = true;
+    // 链在标记装配完成之前跑：它抛错时这次装配等于没发生，宿主重试装配才有机会重跑链（链是幂等的）。
     runUpgradeChain(deps.logger);
+    this.installed = true;
     this.detach = deps.legacySettings.whenReady((settings) => {
       this.migrateLegacy(settings, deps);
     });

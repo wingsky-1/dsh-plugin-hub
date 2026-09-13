@@ -205,6 +205,32 @@ describe("投递：凭据只走请求头，失败即终态", () => {
     expect(calls[1]!.body).not.toContain("pass");
   });
 
+  // 跨边界喂入未知认证形状：类型围栏只在编译期，运行时仍可能到；凭据一旦拼进 URL 就会留在
+  // 对端访问日志、代理与浏览器历史里（请求头不会）。
+  it("未知认证形状：凭据不进 URL 与查询串，请求仍照发（已删掉的 query 成员不得复活）", async () => {
+    const calls = stubFetch(() => new Response("{}", { status: 200 }));
+    const secret = "query-secret-9f2a";
+    const result = await sendWebhook(
+      targetOf({
+        auth: wire<NonNullable<WebhookTarget["auth"]>>({
+          kind: "query",
+          name: "token",
+          value: secret,
+        }),
+      }),
+      messageOf(),
+    );
+
+    expect(result.status).toBe("ok");
+    expect(calls).toHaveLength(1);
+    // 判的是实际发出的 URL，而不是「没抛错」：拼进查询串的凭据在 URL 上，等于写进对端日志。
+    expect(calls[0]!.url).not.toContain(secret);
+    expect(calls[0]!.url).not.toContain("token");
+    expect(new URL(calls[0]!.url).search).toBe("");
+    expect(calls[0]!.headers["authorization"]).toBeUndefined();
+    expect(calls[0]!.body).not.toContain(secret);
+  });
+
   // 抛穿会把一次投递失败升级成批次失败，还可能让调用方重试整批。
   it("模板渲染失败落成这次投递的失败且不发请求（retryable=false）：坏 body 不如不发", async () => {
     const calls = stubFetch(() => new Response("{}", { status: 200 }));

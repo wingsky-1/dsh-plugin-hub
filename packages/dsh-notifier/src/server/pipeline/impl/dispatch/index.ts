@@ -80,7 +80,42 @@ class Dispatcher {
   async dispatch(message: NotifyMessage, targets: RoutedTarget[]): Promise<ChannelDelivery[]> {
     // 能力在入口取一次：卸载可能发生在本次投递完成之前。
     const port = this.port;
-    return Promise.all(targets.map((routed) => this.dispatchOne(port, message, routed)));
+    return Promise.all(targets.map((routed) => this.dispatchSafely(port, message, routed)));
+  }
+
+  /**
+   * 单目标的违约收口：一个目标违约只产出它自己的失败明细。
+   * 违约若冒给 `dispatch` 里的 `Promise.all`，整批一起拒绝，调用方连健康频道的明细都拿不到，
+   * 只能记一条「投递失败」——一次出口打洞就抹掉整批故障现场。
+   */
+  private async dispatchSafely(
+    port: DispatchPort,
+    message: NotifyMessage,
+    routed: RoutedTarget,
+  ): Promise<ChannelDelivery> {
+    try {
+      return await this.dispatchOne(port, message, routed);
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      this.recordFailure(port, routed.channelId, reason);
+      return deliveryOf(routed.channelId, {
+        status: "failed",
+        // 违约的出口没给出任何证据，与通道层收违约时的口径一致。
+        stage: "accepted",
+        reason,
+        // 出口承诺把失败做成返回值，抛出来说明它有洞；再投一次只是把同一个洞踩第二遍。
+        retryable: false,
+      });
+    }
+  }
+
+  /** 违约频道的状态写面：状态只是观测面，它自己违约也不能再升级为抛出——明细已经成立。 */
+  private recordFailure(port: DispatchPort, channelId: string, reason: string): void {
+    try {
+      port.stores.recordStatus(channelId, "failed", reason);
+    } catch {
+      // 状态写不进去不该改变这次投递的结论
+    }
   }
 
   /** 单目标：节流 → 在途门 → 重试，然后写频道状态并返回归档明细。 */

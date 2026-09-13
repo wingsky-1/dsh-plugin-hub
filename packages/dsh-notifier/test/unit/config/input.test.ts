@@ -24,12 +24,18 @@ import type {
   RawSettingValue,
   SettingInvalid,
   SettingsPatch,
+  StoredSettings,
   WebhookChannelConfig,
 } from "../../../src/server/config/impl/model/type.ts";
 
 /** 绕过类型构造运行时真实存在、类型层却排除掉的脏值（`null` 不在 `RawSettingValue` 里）。 */
 function raw(value: unknown): RawSettingValue {
   return value as RawSettingValue;
+}
+
+/** 同上，用于净化面：那里的入参类型是 `StoredSettings`，标量与空值同样落不进去。 */
+function stored(value: unknown): StoredSettings {
+  return value as StoredSettings;
 }
 
 /** 取校验失败载荷；放行即当场失败（否则断言会落在一个不存在的事实上）。 */
@@ -157,6 +163,23 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
     expect(partial.start).toBe("22:00");
     expect(partial.end).toBe("08:00");
     expect(partial.allowKinds).toEqual([]);
+  });
+
+  it("整块回落交出的是副本：调用方就地改写它不该污染全局默认表（默认值被改过之后，此后每个读者拿到的都不是默认）", () => {
+    const pristine = { ...DEFAULT_CONFIG.quietHours };
+    const fallback = normalizeConfig({ quietHours: "22:00" }).quietHours;
+    try {
+      fallback.enabled = true;
+      fallback.start = "00:00";
+
+      const again = normalizeConfig({ quietHours: "22:00" }).quietHours;
+      expect(again.enabled).toBe(pristine.enabled);
+      expect(again.start).toBe(pristine.start);
+      expect(again.end).toBe(pristine.end);
+    } finally {
+      // 修复前这一改动落在默认表本体上：还原它，同文件后面的用例才不会继承一个被改过的默认值。
+      Object.assign(DEFAULT_CONFIG.quietHours, pristine);
+    }
   });
 
   it("字符串数组剔除非字符串项而保留其余（一项脏值不该连累整份名单）", () => {
@@ -314,6 +337,25 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
     }
   });
 
+  it("quietHours.allowKinds 的元素类型与顶层同一口径：错位元素与混合数组都判非法，合法名单放行", () => {
+    const wrongElement: SettingsPatch = {
+      quietHours: { enabled: true, start: "22:00", end: "08:00", allowKinds: [1] },
+    };
+    const mixed: SettingsPatch = {
+      quietHours: { enabled: true, start: "22:00", end: "08:00", allowKinds: ["error", 3] },
+    };
+    for (const patch of [wrongElement, mixed]) {
+      const error = invalidOf(patch);
+      expect(error.key, JSON.stringify(patch)).toBe("quietHours");
+      expect(error.hint, JSON.stringify(patch)).toContain("allowKinds");
+    }
+
+    const legal: SettingsPatch = {
+      quietHours: { enabled: true, start: "22:00", end: "08:00", allowKinds: ["error"] },
+    };
+    expect(validateSettings(legal)).toEqual({ ok: true });
+  });
+
   it("边界值与整份合法提交放行（闸门把用户正常保存拦住，比放过一个非法值更糟）", () => {
     expect(validateSettings({ historyMaxAgeDays: 0, maxConnections: 0 })).toEqual({ ok: true });
     expect(validateSettings({ historyMaxAgeDays: 3_650, maxConnections: 1_024 })).toEqual({
@@ -361,5 +403,13 @@ describe("sanitizeSettings：只留认识的键，且不归一化", () => {
 
   it("一个认识的键都没有时得到空设置（「都不认识」与「没有键」对调用方是同一件事）", () => {
     expect(sanitizeSettings({ a: 1, b: [2] })).toEqual({});
+  });
+
+  it("输入不是对象时得到空设置（空值走到索引取值会直接抛，与「一个键都不认识」的承诺不符）", () => {
+    for (const value of [null, undefined, [], "notifyAsk", 3, true]) {
+      expect(sanitizeSettings(stored(value)), String(value)).toEqual({});
+    }
+
+    expect(sanitizeSettings(stored({ notifyAsk: false, future: 1 }))).toEqual({ notifyAsk: false });
   });
 });

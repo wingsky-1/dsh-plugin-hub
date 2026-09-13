@@ -86,10 +86,15 @@ class NotificationPipeline {
     }
 
     const route = routeTargets({ frames, logger }, snapshot, request);
+    const noTargets = route.targets.length === 0;
     for (const id of route.stale) {
-      logger.warn(`dsh-notifier: kindRoutes[${request.kind}] 指向已删除频道 ${id}，记 skipped`);
+      // 归档只认 `SuppressReason` 的词表：日志按同一口径说这条路由项的去向，不另造归档里查不到的词。
+      const fate = noTargets
+        ? "本条通知归档 suppressed:no-target"
+        : "该目标已丢弃，其余目标照常投递";
+      logger.warn(`dsh-notifier: kindRoutes[${request.kind}] 指向已删除频道 ${id}，${fate}`);
     }
-    if (route.targets.length === 0) {
+    if (noTargets) {
       this.archive(stores, request, ts, { suppressed: "no-target" });
       return;
     }

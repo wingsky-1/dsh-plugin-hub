@@ -43,8 +43,13 @@ const CLOCK_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
  */
 const CONFIG_KEYS: readonly string[] = Object.keys(DEFAULT_CONFIG);
 
-/** 只接受布尔值的键。 */
-const BOOLEAN_KEYS: readonly string[] = [
+/**
+ * 只接受布尔值的键。
+ *
+ * 导出而非私有：门禁 `config-matrix` 要按真实取值断言「这份清单是默认设置的子集且值都是布尔」，
+ * 让它读定义处才是唯一事实源——照抄一份给门禁，两边迟早各说各话。
+ */
+export const BOOLEAN_KEYS: readonly string[] = [
   "notifyAsk",
   "notifyQuestion",
   "notifyTaskDone",
@@ -156,9 +161,7 @@ function validateOne(key: string, raw: RawSettingValue): ValidationResult {
   if (key === "channels") return validateChannels(raw);
   if (key === "kindRoutes") return validateKindRoutes(raw);
   if (key === "allowKinds") {
-    return Array.isArray(raw) && raw.every((item) => typeof item === "string")
-      ? { ok: true }
-      : reject(key, "需要字符串数组");
+    return isStringArray(raw) ? { ok: true } : reject(key, "需要字符串数组");
   }
   return { ok: true };
 }
@@ -170,7 +173,7 @@ function validateQuietHours(raw: RawSettingValue): ValidationResult {
     return reject("quietHours", "start 需要 HH:MM");
   if (typeof raw.end !== "string" || !CLOCK_PATTERN.test(raw.end))
     return reject("quietHours", "end 需要 HH:MM");
-  if ("allowKinds" in raw && !Array.isArray(raw.allowKinds))
+  if ("allowKinds" in raw && !isStringArray(raw.allowKinds))
     return reject("quietHours", "allowKinds 需要字符串数组");
   return { ok: true };
 }
@@ -184,6 +187,8 @@ function validateChannels(raw: RawSettingValue): ValidationResult {
   return { ok: true };
 }
 
+/** `level` 与 `preset` 是可选键：缺省各有明确语义（前者让「severity → level」映射生效，后者归一到 custom），
+ * 客户端新建频道时本就不带它们——照必填拦下等于让用户的合法提交保存不了。 */
 function validateChannel(raw: RawSettingValue): ValidationResult {
   if (!isRecord(raw)) return reject("channels", "频道项需要对象");
   if (typeof raw.id !== "string" || raw.id === "") return reject("channels", "频道缺少 id");
@@ -192,7 +197,7 @@ function validateChannel(raw: RawSettingValue): ValidationResult {
       return reject("channels", `bark 频道 ${raw.id} 缺少 baseUrl`);
     if (typeof raw.deviceKey !== "string" || raw.deviceKey === "")
       return reject("channels", `bark 频道 ${raw.id} 缺少 deviceKey`);
-    if (!isMember(raw.level, BARK_LEVELS))
+    if (raw.level !== undefined && !isMember(raw.level, BARK_LEVELS))
       return reject("channels", `bark 频道 ${raw.id} 的 level 非法`);
     return { ok: true };
   }
@@ -201,7 +206,7 @@ function validateChannel(raw: RawSettingValue): ValidationResult {
       return reject("channels", `webhook 频道 ${raw.id} 缺少 url`);
     if (!isMember(raw.auth, WEBHOOK_AUTHS))
       return reject("channels", `webhook 频道 ${raw.id} 的 auth 非法`);
-    if (!isMember(raw.preset, WEBHOOK_PRESETS))
+    if (raw.preset !== undefined && !isMember(raw.preset, WEBHOOK_PRESETS))
       return reject("channels", `webhook 频道 ${raw.id} 的 preset 非法`);
     return { ok: true };
   }
@@ -235,6 +240,7 @@ function reject(key: string, hint: string): ValidationResult {
  */
 export function sanitizeSettings(raw: StoredSettings): Partial<NotifyConfig> {
   const kept: Record<string, RawSettingValue> = {};
+  if (!isRecord(raw)) return kept;
   for (const key of CONFIG_KEYS) {
     const value = raw[key];
     if (value === undefined) continue;
@@ -257,6 +263,11 @@ function isMember<T extends string>(raw: RawSettingValue, allowed: readonly T[])
 
 function isSoundId(raw: RawSettingValue): raw is SoundId {
   return isMember(raw, SOUND_IDS);
+}
+
+/** 字符串数组：元素逐个看，非字符串即不算（与归一化侧「剔除非字符串项」是同一口径的两面）。 */
+function isStringArray(raw: RawSettingValue): boolean {
+  return Array.isArray(raw) && raw.every((item) => typeof item === "string");
 }
 
 function asBoolean(raw: RawSettingValue, fallback: boolean): boolean {
@@ -286,7 +297,8 @@ function asStrings(raw: RawSettingValue): string[] {
 }
 
 function asQuietHours(raw: RawSettingValue, fallback: QuietHoursConfig): QuietHoursConfig {
-  if (!isRecord(raw)) return fallback;
+  // 回落交出副本：默认表是共享的，调用方就地改写它会污染此后每一个读者。
+  if (!isRecord(raw)) return { ...fallback };
   return {
     enabled: asBoolean(raw.enabled, fallback.enabled),
     start: asClock(raw.start, fallback.start),
