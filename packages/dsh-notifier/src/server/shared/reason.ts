@@ -46,6 +46,9 @@ export const REASON_CODES = [
   // 投递编排
   "reasonUnknownTarget",
   "reasonChannelThrew",
+  // 节流命中：本次**没有投递**。把它记成上一次的结论，等于让归档替一次没发生的投递背书——
+  // 通知记录是用户唯一能逐条看的投递面，那一行必须是这一次的事实。
+  "reasonThrottled",
 ] as const;
 
 export type ReasonCode = (typeof REASON_CODES)[number];

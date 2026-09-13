@@ -2,6 +2,7 @@
  * 比别的域杂，但组成一样：域能力面（按提供方分组）+ 只有组合根够得着的两样（路由注册口、帧入口）。 */
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type * as configApi from "../config/interface.ts";
+import type * as channelsApi from "../channels/interface.ts";
 import type * as pipelineApi from "../pipeline/interface.ts";
 import type * as sdkApi from "../sdk/interface.ts";
 import type * as storesApi from "../stores/interface.ts";
@@ -20,7 +21,11 @@ export type PipelinePort = Pick<typeof pipelineApi, "submit">;
  * 替别人登记种类，也不代人发送通知。 */
 export type KindPort = Pick<typeof sdkApi, "confirmKind" | "listKinds">;
 
+/** channels 域给浏览器的能力面：只读能力自检与平台事实。**不含** `deliver`——api 域不该能伪造通知。 */
+export type ChannelPort = Pick<typeof channelsApi, "probeCapabilities" | "hostPlatform">;
+
 export type { NotifyFrame } from "../channels/interface.ts";
+export type { HostCapabilities } from "../channels/interface.ts";
 export type { LoggerPort } from "../shared/interface.ts";
 export type { RawSettingValue } from "../config/interface.ts";
 export type { NotifyRequest } from "../pipeline/interface.ts";
@@ -51,4 +56,6 @@ export interface ApiDeps {
   pipeline: PipelinePort;
   /** 动态种类的管理面：设置页看清单、替用户确认。 */
   kinds: KindPort;
+  /** channels 域的能力面：能力自检与平台事实。api 域**不投递**通知，投递由管线承担。 */
+  channels: ChannelPort;
 }

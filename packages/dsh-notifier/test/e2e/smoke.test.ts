@@ -43,6 +43,7 @@ import type { Fiber } from "@deepseek-ai/cordis";
 import WebServer from "@deepseek-ai/dsh-host-webserver";
 
 import { dshHome } from "../../../../shared/dsh-home.js";
+import type { HostCapabilities } from "../../src/server/channels/interface.ts";
 import type { NotifierService } from "../../src/index.ts";
 import { pollUntil, tempDshHome, withEnv } from "../helpers.ts";
 
@@ -68,6 +69,7 @@ const notifier = await import("../../src/index.ts");
 const apiApi = await import("../../src/server/api/interface.ts");
 const sharedApi = await import("../../src/server/shared/interface.ts");
 const systemApi = await import("../../src/server/channels/impl/system/index.ts");
+const systemDepsApi = await import("../../src/server/channels/impl/system/deps.ts");
 
 const storageDir = join(home.dir, "@wingsky-1", "dsh-notifier");
 const configFile = sharedApi.notifierFile(sharedApi.CONFIG_FILE_NAME);
@@ -83,6 +85,7 @@ const ROUTE_PATHS: readonly string[] = [
   "/api/dsh-notifier/kinds",
   "/api/dsh-notifier/test",
   "/api/dsh-notifier/health",
+  "/api/dsh-notifier/diagnostics",
   "/api/dsh-notifier/events",
 ];
 
@@ -315,6 +318,31 @@ interface HistoryLine {
   channels?: ReadonlyArray<{ channelId: string; status: string }>;
 }
 
+/** 四态值域：结论取决于跑测机器，判据只能落在「落在闭集里」。 */
+const VERDICTS: readonly string[] = ["ok", "degraded", "unreachable", "unknown"];
+
+/** `/health` 的响应：能力面是**摘要**（每维度只有状态），故这里不能写 checked/players。 */
+interface HealthBody {
+  ok: boolean;
+  plugin: string;
+  platform: string;
+  sseEvicts: Record<string, number>;
+  capabilities: {
+    host: {
+      verdict: string;
+      unknownDimensions: string[];
+      popup: { state: string };
+      sound: { state: string };
+    };
+  };
+}
+
+/** `/diagnostics` 的响应：完整面。 */
+interface DiagnosticsBody {
+  platform: string;
+  capabilities: { host: HostCapabilities };
+}
+
 function historyLines(): HistoryLine[] {
   let text: string;
   try {
@@ -421,26 +449,61 @@ describe("真实 HTTP 面（真实宿主 + 真实 loopback socket）", () => {
     expect(parseBody<{ error: string }>(wrongMethod.body).error).toBe("method not allowed: DELETE");
   });
 
-  it("GET /health：真实 socket 上给出插件名、宿主平台与回收计数（形状精确，键集不与实现分叉）", async () => {
+  it("GET /health：真实 socket 上给出插件名、宿主平台、回收计数与能力面摘要（键集不与实现分叉）", async () => {
     const { port } = await mount();
     const res = await send(port, "/api/dsh-notifier/health");
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toBe("application/json; charset=utf-8");
     expect(res.headers["cache-control"]).toBe("no-store");
-    expect(parseBody<Record<string, unknown>>(res.body)).toEqual({
-      ok: true,
-      plugin: "dsh-notifier",
-      platform: process.platform,
-      sseEvicts: {
-        close: 0,
-        error: 0,
-        limit: 0,
-        stalled: 0,
-        maxage: 0,
-        destroyed: 0,
-        dispose: 0,
-      },
+    const body = parseBody<HealthBody>(res.body);
+    // 键集精确：多一个少一个都说明客户端与实现分叉了。
+    expect(Object.keys(body).sort()).toEqual(
+      ["capabilities", "ok", "platform", "plugin", "sseEvicts"].sort(),
+    );
+    expect(body.ok).toBe(true);
+    expect(body.plugin).toBe("dsh-notifier");
+    expect(body.platform).toBe(process.platform);
+    expect(body.sseEvicts).toEqual({
+      close: 0,
+      error: 0,
+      limit: 0,
+      stalled: 0,
+      maxage: 0,
+      destroyed: 0,
+      dispose: 0,
     });
+    // 能力面结论取决于跑测机器有没有桌面会话，钉死具体值只会得到一条跟环境跑的假判据；
+    // 这里判值域与形状，明细面（checked/players/remediation）由 /diagnostics 的用例判。
+    expect(VERDICTS).toContain(body.capabilities.host.verdict);
+    expect(Array.isArray(body.capabilities.host.unknownDimensions)).toBe(true);
+    expect(Object.keys(body.capabilities.host).sort()).toEqual(
+      ["popup", "sound", "unknownDimensions", "verdict"].sort(),
+    );
+    expect(Object.keys(body.capabilities.host.popup)).toEqual(["state"]);
+    expect(Object.keys(body.capabilities.host.sound)).toEqual(["state"]);
+  });
+
+  it("GET /diagnostics：完整面给的是同一份缓存结果，且一条明细都不缺", async () => {
+    const { port } = await mount();
+    const health = await send(port, "/api/dsh-notifier/health");
+    const diagnostics = await send(port, "/api/dsh-notifier/diagnostics");
+    expect(diagnostics.status).toBe(200);
+
+    const summary = parseBody<HealthBody>(health.body).capabilities.host;
+    const full = parseBody<DiagnosticsBody>(diagnostics.body).capabilities.host;
+    // 两条路由共用同一次探测：结论必须一致，摘要必须是完整面的投影。
+    expect(full.verdict).toBe(summary.verdict);
+    expect(full.unknownDimensions).toEqual(summary.unknownDimensions);
+    expect(full.popup.state).toBe(summary.popup.state);
+    expect(full.sound.state).toBe(summary.sound.state);
+    // 明细只在完整面上：探测了哪些维度、缺哪个包。
+    expect(Array.isArray(full.popup.checked)).toBe(true);
+    expect(Array.isArray(full.sound.checked)).toBe(true);
+    expect(Array.isArray(full.sound.players)).toBe(true);
+    expect(Array.isArray(full.remediation)).toBe(true);
+    // 播放器只报可执行文件名、音色只报布尔：绝对路径正是 lan-proxy 已披露的那类泄露。
+    expect(JSON.stringify(full)).not.toContain("/usr/share/sounds");
+    expect(JSON.stringify(full)).not.toContain("/System/Library");
   });
 
   it("GET /health 的 sseEvicts 是真实计数：断开一条 SSE 后 close ≥ 1（写死的零会被这条判红）", async () => {
@@ -719,6 +782,9 @@ describe("Linux 系统通知（平台相关）", () => {
   it("平台相关（linux）：桩 notify-send 被探测命中，并以逐字 argv 收到通知", async (ctx) => {
     ctx.skip(process.platform !== "linux", "本用例守的是 buildSystemCommand 的 linux 分支");
     rmSync(stubLog, { force: true });
+    // 本用例刚把桩日志清空，而平台探测在进程内只缓存一次：不复位缓存，`--version` 那一次就留在了
+    // 前一个用例的日志窗口里，这条判据会变成「看谁先跑」（`/health` 的用例现在也会触发探测）。
+    systemDepsApi.releaseSystemDeps();
     seed(SYSTEM_ONLY);
     const { port } = await mount();
 

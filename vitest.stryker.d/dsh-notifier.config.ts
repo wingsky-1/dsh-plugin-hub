@@ -20,6 +20,7 @@ export default defineConfig({
       'packages/dsh-notifier/test/unit/api/stream.test.ts',
       'packages/dsh-notifier/test/unit/channels/bark.test.ts',
       'packages/dsh-notifier/test/unit/channels/browser.test.ts',
+      'packages/dsh-notifier/test/unit/channels/capabilities.test.ts',
       'packages/dsh-notifier/test/unit/channels/deliver.test.ts',
       'packages/dsh-notifier/test/unit/channels/system.test.ts',
       'packages/dsh-notifier/test/unit/channels/webhook.test.ts',

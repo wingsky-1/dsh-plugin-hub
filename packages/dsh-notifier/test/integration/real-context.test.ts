@@ -61,7 +61,7 @@ function seededConfig(): string {
   return `${JSON.stringify(BASE_SETTINGS, null, 2)}\n`;
 }
 
-/** 宿主契约冻结的 7 条浏览器端点（客户端锁定，独立抄写才守得住改路径）。 */
+/** 宿主契约冻结的 8 条浏览器端点（客户端锁定，独立抄写才守得住改路径）。 */
 const ROUTE_PATHS: readonly string[] = [
   "/api/dsh-notifier/config",
   "/api/dsh-notifier/history",
@@ -69,6 +69,7 @@ const ROUTE_PATHS: readonly string[] = [
   "/api/dsh-notifier/kinds",
   "/api/dsh-notifier/test",
   "/api/dsh-notifier/health",
+  "/api/dsh-notifier/diagnostics",
   "/api/dsh-notifier/events",
 ];
 
@@ -433,7 +434,7 @@ describe("装配与暴露", () => {
 
     root.provide("settings", fakeSettings({}));
     await fiber.await();
-    expect(host.routes.map((route) => route.path)).toHaveLength(7);
+    expect(host.routes.map((route) => route.path)).toHaveLength(8);
     expect(root.get("wingsky.notifier", false)?.apiVersion).toBe(2);
   });
 
@@ -474,7 +475,7 @@ describe("装配与暴露", () => {
 });
 
 describe("宿主路由注册与摘除", () => {
-  it("apply 期间宿主收到恰好 7 条 exact 路由，路径集合就是客户端锁定的那一份", async () => {
+  it("apply 期间宿主收到恰好 8 条 exact 路由，路径集合就是客户端锁定的那一份", async () => {
     const { host, unmount } = await mount({});
     expect(host.routes.map((route) => route.path).sort()).toEqual([...ROUTE_PATHS].sort());
     expect(host.routes.every((route) => route.kind === "exact")).toBe(true);
@@ -482,7 +483,7 @@ describe("宿主路由注册与摘除", () => {
     await unmount();
   });
 
-  it("卸载摘除全部 7 条路由，重复卸载不再摘第二次（卸载链可能走到不止一次）", async () => {
+  it("卸载摘除全部 8 条路由，重复卸载不再摘第二次（卸载链可能走到不止一次）", async () => {
     const { host, fiber, unmount } = await mount({});
     await unmount();
     expect(host.removals.map((removal) => removal.path).sort()).toEqual([...ROUTE_PATHS].sort());

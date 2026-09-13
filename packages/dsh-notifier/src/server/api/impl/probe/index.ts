@@ -5,7 +5,7 @@ import {
   type JsonBodyInvalidReason,
   readJsonBodyOutcome,
 } from "../../../../../../../shared/host-utils.js";
-import type { NotifyRequest, PipelinePort } from "../../deps.ts";
+import type { ChannelPort, HostCapabilities, NotifyRequest, PipelinePort } from "../../deps.ts";
 import { sendFailure, sendJson } from "../route/index.ts";
 import type { RouteHandler } from "../route/type.ts";
 import { streamHub } from "../stream/index.ts";
@@ -32,7 +32,19 @@ const TEST_NOTIFICATION: NotifyRequest = {
 
 /** 自检端点。能力在装配期接上，此后每个请求只读实例字段。 */
 export class ProbeEndpoints {
-  constructor(private readonly pipeline: PipelinePort) {}
+  /** 能力自检的共享缓存。两条路由共用同一次探测：探测会起子进程，每请求各探一次就是拿用户机器当靶场。 */
+  private hostCapabilities?: Promise<HostCapabilities>;
+
+  constructor(
+    private readonly pipeline: PipelinePort,
+    private readonly channels: ChannelPort,
+  ) {}
+
+  /** 取（必要时首次发起）能力自检。首请求最多等一次探测超时，此后再读同一个 Promise。 */
+  private capabilities(): Promise<HostCapabilities> {
+    this.hostCapabilities ??= this.channels.probeCapabilities();
+    return this.hostCapabilities;
+  }
 
   /**
    * POST /test：造一条 `test` 通知交给裁决管线。只承诺「已受理」：`submit` 不返回结果，投递结果
@@ -70,14 +82,46 @@ export class ProbeEndpoints {
     sendJson(res, 200, { ok: true, sseConnections: streamHub.size() });
   };
 
-  /** GET /health：宿主平台 + 连接回收计数。平台值供客户端写系统通道提示（不能拿浏览器 OS 猜）；
-   * `sseEvicts` 是 README 承诺的 churn 排障面——只有聚合计数（常量大小），per-conn 明细不上这里。 */
-  readonly health: RouteHandler = (_req: IncomingMessage, res: ServerResponse): void => {
+  /**
+   * GET /health：宿主平台 + 连接回收计数 + 能力面**摘要**。平台值供客户端写系统通道提示（不能拿浏览器 OS 猜）；
+   * `sseEvicts` 是 README 承诺的 churn 排障面——只有聚合计数（常量大小），per-conn 明细不上这里。
+   * 能力面同样只给结论与维度状态（常量大小），明细（探测了哪些维度、缺哪个包）归 `/diagnostics`。
+   */
+  readonly health: RouteHandler = async (
+    _req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> => {
+    const host = await this.capabilities();
     sendJson(res, 200, {
       ok: true,
       plugin: "dsh-notifier",
-      platform: process.platform,
+      platform: this.channels.hostPlatform(),
       sseEvicts: streamHub.evictStats(),
+      capabilities: { host: hostSummary(host) },
     });
+  };
+
+  /** GET /diagnostics：完整探测面。与 `/health` **共用同一次探测**，不在这里各探各的。 */
+  readonly diagnostics: RouteHandler = async (
+    _req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> => {
+    const host = await this.capabilities();
+    sendJson(res, 200, {
+      ok: true,
+      plugin: "dsh-notifier",
+      platform: this.channels.hostPlatform(),
+      capabilities: { host },
+    });
+  };
+}
+
+/** `/health` 的能力面摘要：只留结论与维度状态。`checked`/`players`/`remediation` 不上聚合面。 */
+function hostSummary(host: HostCapabilities): unknown {
+  return {
+    verdict: host.verdict,
+    unknownDimensions: host.unknownDimensions,
+    popup: { state: host.popup.state },
+    sound: { state: host.sound.state },
   };
 }

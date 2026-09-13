@@ -1,7 +1,7 @@
 /**
  * dsh-notifier api 域 service 块 —— 装配面：路径表（对客户端的完整承诺）、接线、生命周期。
  *
- * 这一层只有装配面看得见的东西才值得测：哪 7 条路径被挂上、每条路径认哪些方法、四个端点各拿到
+ * 这一层只有装配面看得见的东西才值得测：哪 8 条路径被挂上、每条路径认哪些方法、四个端点各拿到
  * 的是哪份能力面（把 stores 接到设置端点是编译期拦不住的错位）、卸载时路由与帧订阅是否真的收回。
  * 单条端点的判据在各自的块里测，这里不重复。
  *
@@ -13,9 +13,9 @@ import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 
-import type { ApiDeps, OutgoingFrame } from "../../../src/server/api/deps.ts";
+import type { ApiDeps, HostCapabilities, OutgoingFrame } from "../../../src/server/api/deps.ts";
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
-import { jsonReq, makeLogger, makeRegister, pollUntil, tempDshHome } from "../../helpers.ts";
+import { jsonReq, makeLogger, makeRegister, pollUntil, tempDshHome, wire } from "../../helpers.ts";
 
 const home = tempDshHome();
 const { installApi, releaseApi } = await import("../../../src/server/api/interface.ts");
@@ -31,8 +31,23 @@ const PATHS = [
   "/api/dsh-notifier/kinds",
   "/api/dsh-notifier/test",
   "/api/dsh-notifier/health",
+  "/api/dsh-notifier/diagnostics",
   "/api/dsh-notifier/events",
 ] as const;
+
+/** 能力面夹具：本文件只验「两个自检端点拿到的是 channels 域给的那一份」，形状细节归 api/probe 的用例。 */
+const CAPABILITIES: HostCapabilities = {
+  verdict: "degraded",
+  unknownDimensions: [],
+  popup: { state: "ok", checked: ["notify-send", "dbus-name-owner", "session-bus"] },
+  sound: {
+    state: "degraded",
+    players: ["pw-play"],
+    toneFileAvailable: false,
+    checked: ["players", "tone-file"],
+  },
+  remediation: [{ code: "host-no-tone-file" }],
+};
 
 /** 路径 → 它认的方法。`allow` 头会把这行字逐条回给客户端，故它同时是 405 判据的期望值。 */
 const METHOD_TABLE: ReadonlyArray<readonly [string, readonly string[]]> = [
@@ -42,6 +57,7 @@ const METHOD_TABLE: ReadonlyArray<readonly [string, readonly string[]]> = [
   ["/api/dsh-notifier/kinds", ["GET", "POST"]],
   ["/api/dsh-notifier/test", ["POST"]],
   ["/api/dsh-notifier/health", ["GET"]],
+  ["/api/dsh-notifier/diagnostics", ["GET"]],
   ["/api/dsh-notifier/events", ["GET"]],
 ];
 
@@ -172,6 +188,10 @@ function assemble() {
         view: { user: {}, revision: 9, writable: true, effective: {} },
       }),
     },
+    channels: {
+      probeCapabilities: () => Promise.resolve(CAPABILITIES),
+      hostPlatform: () => "linux",
+    },
   };
   installApi(deps);
   return { hub, frames, logger, submitted };
@@ -196,7 +216,7 @@ async function request(routes: WebRoute[], path: string, req: IncomingMessage) {
 }
 
 describe("路径表：对客户端的完整承诺", () => {
-  it("恰好 7 条路径，且全部按 exact 注册（多一条就是多开一个浏览器入口）", () => {
+  it("恰好 8 条路径，且全部按 exact 注册（多一条就是多开一个浏览器入口）", () => {
     const { hub } = assemble();
     expect([...hub.routes.map((route) => route.path)].sort()).toEqual([...PATHS].sort());
     expect([...new Set(hub.routes.map((route) => route.kind))]).toEqual(["exact"]);
@@ -243,6 +263,24 @@ describe("接线：端点与能力面一一对应", () => {
     );
     expect(test.rec.status).toBe(200);
     expect(submitted.map((entry) => entry.kind)).toEqual(["test"]);
+
+    // 两个自检端点都要拿到 channels 域那一份：接错线（少传 `channels`）在编译期是合法的。
+    const health = await request(
+      hub.routes,
+      "/api/dsh-notifier/health",
+      makeReq({ url: "/api/dsh-notifier/health" }),
+    );
+    const healthHost = wire<{ capabilities: { host: { verdict: string } } }>(health.json());
+    expect(healthHost.capabilities.host.verdict).toBe("degraded");
+
+    const diagnostics = await request(
+      hub.routes,
+      "/api/dsh-notifier/diagnostics",
+      makeReq({ url: "/api/dsh-notifier/diagnostics" }),
+    );
+    const diagnosticsHost = wire<{ capabilities: { host: HostCapabilities } }>(diagnostics.json());
+    // 摘要与完整面必须同源：`/diagnostics` 给的就是装配接上的那一份（含 checked 与 remediation）。
+    expect(diagnosticsHost.capabilities.host).toEqual(CAPABILITIES);
   });
 
   it("装配同时接上帧入口：帧经 /events 回放给新连接（接线断了页面永远收不到通知）", async () => {
@@ -286,7 +324,7 @@ describe("生命周期", () => {
     releaseApi();
     releaseApi();
     // 只断「没抛」不够：装上了与**静默空转**都不抛（实测把 install 改成见标记即 return，这条照样绿）。
-    // 再装配的实质是「7 条路由又被挂回去」，就判这个。
+    // 再装配的实质是「8 条路由又被挂回去」，就判这个。
     const again = assemble();
     expect(again.hub.routes.map((route) => route.path).sort()).toEqual([...PATHS].sort());
   });

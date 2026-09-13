@@ -26,6 +26,10 @@ import type {
   SpawnOptions,
   SystemDeps,
 } from "../../../src/server/channels/impl/system/deps.ts";
+import type {
+  NotificationNameProbe,
+  OsReleaseProbe,
+} from "../../../src/server/channels/impl/system/type.ts";
 import {
   buildSoundCommand,
   buildSystemCommand,
@@ -118,6 +122,10 @@ interface FakeConfig {
   available: readonly string[];
   /** `existsSync` 为真的路径。 */
   present: readonly string[];
+  /** 通知守护进程名的探测结论。 */
+  nameProbe?: NotificationNameProbe;
+  /** `/etc/os-release` 的读取结论。 */
+  osRelease?: OsReleaseProbe;
 }
 
 /** 起进程的记录：逐字 argv 与选项都要它。 */
@@ -151,11 +159,15 @@ class FakeDeps implements SystemDeps {
 
   private readonly available: readonly string[];
   private readonly present: readonly string[];
+  private readonly nameProbe: NotificationNameProbe;
+  private readonly osRelease: OsReleaseProbe;
 
   constructor(config: FakeConfig) {
     this.platform = config.platform;
     this.available = config.available;
     this.present = config.present;
+    this.nameProbe = config.nameProbe ?? { kind: "absent" };
+    this.osRelease = config.osRelease ?? { ok: false };
   }
 
   spawn(command: readonly string[], options: SpawnOptions): ChildHandle {
@@ -183,6 +195,14 @@ class FakeDeps implements SystemDeps {
   existsSync(path: string): boolean {
     this.checked.push(path);
     return this.present.includes(path);
+  }
+
+  probeNotificationName(): Promise<NotificationNameProbe> {
+    return Promise.resolve(this.nameProbe);
+  }
+
+  readOsRelease(): OsReleaseProbe {
+    return this.osRelease;
   }
 }
 

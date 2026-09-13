@@ -4,8 +4,8 @@
  * 判据为什么是这些：
  *  - 重试次数与退避时刻是**出口不可见**的承诺：出口只说「可不可重试」，把 4xx 重投三次或把
  *    网络失败丢掉，用户看到的都是「通知有时来有时不来」；
- *  - system 出口的 1 秒节流挡的是连点测试按钮刷屏，跳过时要把上一次结论透传，否则会在历史里
- *    凭空多出一条「失败」；
+ *  - system 出口的 1 秒节流挡的是连点测试按钮刷屏；跳过的那一次**没有投递**，归档必须如实说这一条，
+ *    把上一次的结论透传给本次会让两行都变成无可追溯的，而通知记录是用户唯一能逐条看的投递面；
  *  - 在途门与逐频道归位决定「慢出口会不会被并发踩」以及「失败记到谁头上」。
  *
  * 时间纪律：重试用例用假时钟推进（真等是 3 秒/例），节流用例只用 `vi.setSystemTime` 钉住
@@ -422,8 +422,9 @@ describe("逐频道归位", () => {
 });
 
 describe("节奏：节流与在途门", () => {
-  // 节流跳过时凭空造一条失败，用户会在状态页看到不存在的故障。
-  it("system 出口 1 秒节流：窗口内跳过投递并把上一次结论透传给本次（不产生假故障）", async () => {
+  // 跳过时凭空造一条失败，用户会在状态页看到不存在的故障；照抄上一次的结论，则是替一次没发生的
+  // 投递背书。两者都不行：唯一诚实的那条记录是「本次没投递，因为节流」。
+  it("system 出口 1 秒节流：窗口内不投递并如实记一条 skipped（不照抄上一次的结论）", async () => {
     const harness = assemble();
     harness.useConfig(systemOnly());
     let attempts = 0;
@@ -440,8 +441,11 @@ describe("节奏：节流与在途门", () => {
     submit(requestOf());
     await settleMicrotasks();
     expect(attempts).toBe(1);
-    // 跳过也要归档，且结论沿用上一次的 ok——凭空多一条失败记录会让用户以为通知坏了。
-    expect(harness.history[1]!.channels).toEqual([{ channelId: "system", status: "ok" }]);
+    expect(harness.history[1]!.channels).toEqual([
+      { channelId: "system", status: "skipped", reason: { code: "reasonThrottled" } },
+    ]);
+    // 上一次那一条不能被改写：它的结论属于它自己那一次投递。
+    expect(harness.history[0]!.channels).toEqual([{ channelId: "system", status: "ok" }]);
 
     vi.setSystemTime(new Date(2026, 0, 15, 12, 0, 1));
     submit(requestOf());
@@ -452,7 +456,7 @@ describe("节奏：节流与在途门", () => {
   // 首投递还在途时没有任何失败证据：跳过若把「还没结论」写成失败，用户连点测试按钮就会在状态页
   // 看到一条不存在的故障。该路径要求第一次投递仍挂在未决 promise 上，故钉住「现在」让两条提交
   // 落在同一节流窗内，等待一律走微任务排水。
-  it("首投递尚未完成时的节流跳过按假定成功透传：不产生第二次投递，也不凭空写一条失败", async () => {
+  it("首投递尚未完成时的节流跳过：不产生第二次投递，也不替首条预支结论", async () => {
     const harness = assemble();
     harness.useConfig(systemOnly());
     const inFlight: Array<() => void> = [];
@@ -480,10 +484,12 @@ describe("节奏：节流与在途门", () => {
     submit(requestOf({ title: "第二条" }));
     await settleMicrotasks();
 
-    // 跳过没有产生第二次投递，结论按「假定成功」透传——首条稍后实际失败也不影响这条的结论。
+    // 跳过就是跳过：首条此刻还没有结论，这一条既不能宣称成功（假定成功）也不能宣称失败。
     expect(attempts).toBe(1);
     expect(harness.history[0]!.title).toBe("第二条");
-    expect(harness.history[0]!.channels).toEqual([{ channelId: "system", status: "ok" }]);
+    expect(harness.history[0]!.channels).toEqual([
+      { channelId: "system", status: "skipped", reason: { code: "reasonThrottled" } },
+    ]);
     // 没有投递就没有结论可写：跳过不该在频道状态里补一条。
     expect(harness.statuses).toEqual([]);
 

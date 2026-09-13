@@ -37,6 +37,7 @@ const REASON_KEYS = {
   reasonWebhookHttp: "reasonWebhookHttp",
   reasonUnknownTarget: "reasonUnknownTarget",
   reasonChannelThrew: "reasonChannelThrew",
+  reasonThrottled: "reasonThrottled",
 } satisfies Record<ReasonCode, NotifierLocaleKey>;
 
 /**

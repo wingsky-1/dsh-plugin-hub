@@ -9,11 +9,46 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { NotifyRequest, PipelinePort } from "../../../src/server/api/deps.ts";
+import type {
+  ChannelPort,
+  HostCapabilities,
+  NotifyRequest,
+  PipelinePort,
+} from "../../../src/server/api/deps.ts";
 import { ProbeEndpoints } from "../../../src/server/api/impl/probe/index.ts";
 import { streamHub } from "../../../src/server/api/impl/stream/index.ts";
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
-import { jsonReq, makeLogger, makeRes } from "../../helpers.ts";
+import { jsonReq, makeLogger, makeRes, wire } from "../../helpers.ts";
+
+/** 假能力面：调用次数要能被数（缓存判据靠它），平台值可注入（三平台格靠它）。 */
+function fakeChannels(options: { hostPlatform?: () => string } = {}) {
+  let calls = 0;
+  const port: ChannelPort = {
+    probeCapabilities: () => {
+      calls += 1;
+      return Promise.resolve(CAPABILITIES);
+    },
+    hostPlatform: options.hostPlatform ?? (() => "linux"),
+  };
+  return { port, probeCalls: () => calls };
+}
+
+/** 完整能力面夹具（含明细）：摘要与完整面的差异必须能被断言。 */
+const CAPABILITIES: HostCapabilities = {
+  verdict: "degraded",
+  unknownDimensions: ["popup"],
+  popup: {
+    state: "unknown",
+    checked: ["notify-send", "dbus-name-owner", "dbus-activatable", "session-bus"],
+  },
+  sound: {
+    state: "degraded",
+    players: ["pw-play"],
+    toneFileAvailable: false,
+    checked: ["players", "tone-file"],
+  },
+  remediation: [{ code: "host-no-tone-file" }],
+};
 
 /** 假请求：body 由 async 迭代器吐出（`readJsonBody` 走的就是这条路）。 */
 function makeReq(
@@ -42,7 +77,7 @@ function fakePipeline() {
 async function postWith(req: IncomingMessage) {
   const pipeline = fakePipeline();
   const { res, rec, json } = makeRes();
-  await new ProbeEndpoints(pipeline.port).test(req, res);
+  await new ProbeEndpoints(pipeline.port, fakeChannels().port).test(req, res);
   return { rec, json, pipeline };
 }
 
@@ -206,15 +241,20 @@ describe("POST /test：body 读不出来时 fail-closed（不许当成「没给 
   });
 });
 
-describe("GET /health：报宿主平台与连接回收计数", () => {
-  it("platform 取宿主进程的真实平台值（客户端据此写系统通道提示，不能拿浏览器 OS 猜），sseEvicts 形状与真实枢纽逐键一致", () => {
+describe("GET /health：报宿主平台、连接回收计数与能力面摘要", () => {
+  it("platform 取 channels 域的平台事实（客户端据此写系统通道提示，不能拿浏览器 OS 猜），sseEvicts 形状与真实枢纽逐键一致", async () => {
     const { res, rec, json } = makeRes();
-    new ProbeEndpoints(fakePipeline().port).health(makeReq({ method: "GET" }), res);
+    const channels = fakeChannels({ hostPlatform: () => "darwin" });
+    await new ProbeEndpoints(fakePipeline().port, channels.port).health(
+      makeReq({ method: "GET" }),
+      res,
+    );
     expect(rec.status).toBe(200);
     expect(json()).toEqual({
       ok: true,
       plugin: "dsh-notifier",
-      platform: process.platform,
+      // 端口注入的值而不是 process.platform：api 域直读进程全局会让这一格在 CI 上永远只有 linux 可达
+      platform: "darwin",
       // 未装配占位：形状（键集）必须与真实枢纽一致，否则「未装配」与「装好但没淘汰过」在 /health 上长得不一样
       sseEvicts: {
         close: 0,
@@ -225,6 +265,47 @@ describe("GET /health：报宿主平台与连接回收计数", () => {
         destroyed: 0,
         dispose: 0,
       },
+      // 摘要：只给结论与维度状态，明细（checked / players / remediation）归 /diagnostics
+      capabilities: {
+        host: {
+          verdict: "degraded",
+          unknownDimensions: ["popup"],
+          popup: { state: "unknown" },
+          sound: { state: "degraded" },
+        },
+      },
     });
+  });
+
+  it("能力自检只探一次：连续两次请求共用同一个 Promise（每请求各探一次就是拿用户机器当靶场）", async () => {
+    const channels = fakeChannels();
+    const endpoints = new ProbeEndpoints(fakePipeline().port, channels.port);
+
+    await endpoints.health(makeReq({ method: "GET" }), makeRes().res);
+    await endpoints.health(makeReq({ method: "GET" }), makeRes().res);
+
+    expect(channels.probeCalls()).toBe(1);
+    // 摘要不得泄漏明细：客户端要靠 /diagnostics 才拿得到“下一步该干什么”
+    const summary = makeRes();
+    await endpoints.health(makeReq({ method: "GET" }), summary.res);
+    expect(JSON.stringify(summary.json())).not.toContain("host-no-tone-file");
+  });
+});
+
+describe("GET /diagnostics：完整探测面", () => {
+  it("给的是 channels 域那一份完整能力面（checked / players / remediation 都在）", async () => {
+    const { res, rec, json } = makeRes();
+    const channels = fakeChannels();
+    await new ProbeEndpoints(fakePipeline().port, channels.port).diagnostics(
+      makeReq({ method: "GET" }),
+      res,
+    );
+    expect(rec.status).toBe(200);
+    const body = wire<{ platform: string; capabilities: { host: HostCapabilities } }>(json());
+    expect(body.platform).toBe("linux");
+    expect(body.capabilities.host).toEqual(CAPABILITIES);
+    // 宿主原文与绝对路径都不得进响应体：这一面经 lan-proxy 转发后对局域网可见
+    expect(JSON.stringify(body)).not.toContain("/usr/share/sounds");
+    expect(JSON.stringify(body)).not.toContain("ID=");
   });
 });

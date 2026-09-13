@@ -281,6 +281,7 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
     stores: storesApi,
     pipeline: pipelineApi,
     kinds: sdkApi,
+    channels: channelsApi,
   });
   disposers.push(apiApi.releaseApi);
 

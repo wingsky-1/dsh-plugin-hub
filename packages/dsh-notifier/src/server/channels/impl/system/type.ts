@@ -28,6 +28,22 @@ export interface PlatformProbe {
   players: readonly string[];
 }
 
+/**
+ * 通知守护进程名的探测结论。三种 CLI（`gdbus`/`dbus-send`/`busctl`）的输出格式差异封在端口实现内，
+ * 调用方只面对这五种语义——否则每个消费点都要认三种格式，且 `ListActivatableNames` 的输出一旦被
+ * 按「尾部多少字节」截断就会漏项，把可激活的服务误判成不存在。
+ */
+export type NotificationNameProbe =
+  | { kind: "owner" }
+  | { kind: "activatable" }
+  | { kind: "absent" }
+  | { kind: "no-session-bus" }
+  | { kind: "probe-failed"; detail: string };
+
+/** `/etc/os-release` 的读取结论。**never-throw**：与本端口其余成员同族（调用侧没有 `try/catch`），
+ * 只取 `ID=` 一行——整份文件是宿主原文，不得进响应体。 */
+export type OsReleaseProbe = { ok: true; id: string } | { ok: false };
+
 /** 弹窗命令的构造参数。 */
 export interface SystemCommandOptions {
   sound: ToneSetting;

@@ -4,7 +4,7 @@
  * 节奏状态按 `channelId` 键控，跨配置变更延续。
  */
 import type { ProducedReason } from "../../../shared/interface.ts";
-import { reasonFromCause } from "../../../shared/interface.ts";
+import { reason, reasonFromCause } from "../../../shared/interface.ts";
 import type { ChannelDelivery, DeliveryTarget, NotifyMessage } from "../../deps.ts";
 import type { RoutedTarget } from "../route/type.ts";
 import type { ChannelRhythm, DeliverOutcome, DispatchPolicy, DispatchPort } from "./type.ts";
@@ -16,13 +16,6 @@ const POLICIES: Record<DeliveryTarget["type"], DispatchPolicy> = {
   browser: { maxRetries: 0, backoffMs: 0, maxInflight: 0, throttleMs: 0 },
   system: { maxRetries: 0, backoffMs: 0, maxInflight: 0, throttleMs: 1000 },
 };
-
-/**
- * 首投递还没有上一次结论时透传的值：视为成功。
- * 只有「首次投递尚未完成时又来了第二条」会读到它；旧实现同口径——没有失败证据就不报
- * 失败，免得连点测试按钮时报出一条不存在的故障。
- */
-const ASSUMED_OK: DeliverOutcome = { status: "ok", stage: "delivered" };
 
 /** 未装配时的占位：真被读到应当当场暴露，而不是静默丢通知。 */
 const NOT_INSTALLED = "dsh-notifier: 投递块尚未装配";
@@ -51,6 +44,14 @@ function deliveryOf(channelId: string, result: DeliverOutcome): ChannelDelivery 
 /** 出口违约的失败理由：宿主原文进 `detail`，文案归客户端字典。 */
 function reasonOf(cause: unknown): ProducedReason {
   return reasonFromCause("reasonChannelThrew", cause);
+}
+
+/**
+ * 节流命中：本次**没有投递**。归档如实说这一条，而不是把上一次的结论挂到这一次头上——
+ * 上一次的结论已经在它自己那一行里了，透传只会让两行都变成无可追溯的。
+ */
+function throttled(channelId: string): ChannelDelivery {
+  return { channelId, status: "skipped", reason: reason("reasonThrottled") };
 }
 
 /** 线性退避等待。 */
@@ -136,13 +137,12 @@ class Dispatcher {
     if (policy.throttleMs > 0) {
       // 时间戳在投递开始前写入：并发的第二条在本次完成前就该被拦下（旧实现同序）。
       const now = Date.now();
-      if (now - rhythm.lastAt < policy.throttleMs) return deliveryOf(routed.channelId, rhythm.last);
+      if (now - rhythm.lastAt < policy.throttleMs) return throttled(routed.channelId);
       rhythm.lastAt = now;
     }
     const result = await this.withGate(rhythm, policy.maxInflight, () =>
       this.deliverWithRetry(port, message, routed.target, policy),
     );
-    rhythm.last = result;
     return this.settle(port, routed.channelId, result);
   }
 
@@ -150,7 +150,7 @@ class Dispatcher {
   private rhythmOf(channelId: string): ChannelRhythm {
     const existing = this.rhythms.get(channelId);
     if (existing !== undefined) return existing;
-    const fresh: ChannelRhythm = { lastAt: 0, last: ASSUMED_OK, inflight: 0, queue: [] };
+    const fresh: ChannelRhythm = { lastAt: 0, inflight: 0, queue: [] };
     this.rhythms.set(channelId, fresh);
     return fresh;
   }

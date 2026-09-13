@@ -23,8 +23,6 @@ export interface DispatchPolicy {
 export interface ChannelRhythm {
   /** 上一次投递的开始时点（毫秒）；0 = 还没投递过。 */
   lastAt: number;
-  /** 上一次的结论：节流跳过时原样透传给本次。 */
-  last: DeliverOutcome;
   inflight: number;
   /** 等在门外的投递（队列无上限）。 */
   queue: Array<() => void>;
