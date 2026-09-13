@@ -23,6 +23,7 @@ import { dirname, join } from "node:path";
 
 import {
   checkVendoredTarball,
+  distributionPaths,
   scanVendoredBinaries,
   sha256File,
   verifyVendoredBinaries,
@@ -47,11 +48,11 @@ after(() => {
 });
 
 /** 造 fixture 库：`files` 为白名单（缺省=不写该字段，即 npm「整包」语义）。 */
-function makeRoot({ files, tree = {}, manifest } = {}) {
+function makeRoot({ files, tree = {}, manifest, pkgExtra = {} } = {}) {
   const root = mkTmp("vendored-root-");
   const pkgDir = join(root, "packages", PKG);
   mkdirSync(pkgDir, { recursive: true });
-  const pkgJson = { name: "@wingsky-1/dsh-demo", version: "1.0.0" };
+  const pkgJson = { name: "@wingsky-1/dsh-demo", version: "1.0.0", ...pkgExtra };
   if (files !== undefined) pkgJson.files = files;
   writeFileSync(join(pkgDir, "package.json"), JSON.stringify(pkgJson));
   for (const [rel, content] of Object.entries(tree)) {
@@ -165,6 +166,67 @@ test("files 缺省（npm「整包」语义）：整包视为分发面，但 node
   assert.equal(result.hits, 1);
   assert.equal(result.problems.length, 1);
   assert.match(result.problems[0], /lib\/tool\.exe/);
+});
+
+// ---------- 一之二、npm 强制包含集：files 之外仍然随包分发的四种形态 ----------
+// 只读 files 会把这四种判成「不分发」→ 假阴性。每条都用 `npm pack --dry-run` 实测过
+// npm 确实打包该二进制（见提交信息），不是从 npm 文档猜的。
+
+test("npm 强制包含：bin 指向的二进制在 files 之外也必须登记", () => {
+  const { result } = judge({
+    files: ["lib"],
+    pkgExtra: { bin: { tool: "bin/tool.exe" } },
+    tree: { "lib/index.js": "text\n", "bin/tool.exe": BINARY },
+  });
+  assert.equal(result.hits, 1);
+  assert.match(join2(result.problems), /packages\/dsh-demo\/bin\/tool\.exe/);
+});
+
+test("npm 强制包含：main 指向的二进制在 files 之外也必须登记", () => {
+  const { result } = judge({
+    files: ["lib"],
+    pkgExtra: { main: "native/loader.node" },
+    tree: { "lib/index.js": "text\n", "native/loader.node": BINARY },
+  });
+  assert.equal(result.hits, 1);
+  assert.match(join2(result.problems), /packages\/dsh-demo\/native\/loader\.node/);
+});
+
+test("npm 强制包含：bundledDependencies 子树里的二进制在 files 之外也必须登记", () => {
+  const { result } = judge({
+    files: ["lib"],
+    pkgExtra: { dependencies: { dep: "1.0.0" }, bundledDependencies: ["dep"] },
+    tree: {
+      "lib/index.js": "text\n",
+      "node_modules/dep/package.json": "{}\n",
+      "node_modules/dep/addon.node": BINARY,
+    },
+  });
+  assert.equal(result.hits, 1);
+  assert.match(join2(result.problems), /packages\/dsh-demo\/node_modules\/dep\/addon\.node/);
+});
+
+test("npm 强制包含：根级 README*/LICENSE* 与 package.json 在面内，非根级同名文件不在", () => {
+  const root = makeRoot({
+    files: ["lib"],
+    tree: {
+      "lib/index.js": "text\n",
+      "docs/README": "text\n",
+      "README.bin": BINARY,
+      LICENSE: BINARY,
+    },
+  });
+  const surface = distributionPaths(join(root, "packages", PKG));
+  for (const rel of ["package.json", "README.bin", "LICENSE"]) {
+    assert.ok(surface.includes(rel), `${rel} 应随包分发`);
+  }
+  // 强制包含的 README/LICENSE 只认根级：`docs/` 不在 files 里，其 README 不随包分发
+  assert.ok(!surface.includes("docs/README"), "非根级 README 不随包分发，算进来是多报");
+
+  const result = verifyVendoredBinaries(root, { registryPath: writeRegistry([]) });
+  assert.equal(result.hits, 2);
+  assert.match(join2(result.problems), /README\.bin/);
+  assert.match(join2(result.problems), /packages\/dsh-demo\/LICENSE/);
 });
 
 test("退役残留目录不参与扫描（manifest.retired）", () => {

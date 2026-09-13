@@ -7,9 +7,12 @@
  * 产物的 node_modules 路径注释——它对 vendored 裸二进制（.exe/.node/.dll）完全失明，
  * 于是「分发了一个副本却没附许可文本」可以一路静默到用户手里（#104 khroma 漏收同类）。
  *
- * 分发面的**唯一事实源是各包 package.json 的 files 白名单**：不另维护「排除
- * docs/lib/node_modules」这类硬编码排除表——那是第二份事实源（改包结构时不会同步），
- * 且会对 `test/fixtures/*.bin` 这种不分发的二进制产生假阳性，逼出门禁的逃生分支。
+ * 分发面 = 各包 package.json 的 files 白名单 **∪ npm 无论 files 都强制包含的位置**
+ * （package.json、根级 README/LICENSE/CHANGELOG/NOTICE 变体、bin、main、
+ * bundledDependencies 展开出的包内 node_modules 子树）：只读 files 会把「确实随包分发」
+ * 的二进制判成不分发（实测 npm pack）。不另维护「排除 docs/lib/node_modules」这类硬编码
+ * 排除表——那是第二份事实源（改包结构时不会同步），且会对 `test/fixtures/*.bin` 这种
+ * 不分发的二进制产生假阳性，逼出门禁的逃生分支。
  *
  * 登记表是**数据**（scripts/data/vendored-binaries.json）：登记与豁免不得内嵌在门禁
  * 代码里（仓库硬约束）。哈希绑定用 node:crypto；内容嗅探用 isbinaryfile
@@ -39,6 +42,8 @@ const PKG_PATH = /^packages\/dsh-[a-z0-9-]+\//;
 const GLOB_CHARS = /[*?[\]{}]/;
 /** npm 缺省 files 语义下不外发的顶层条目。 */
 const DEFAULT_EXCLUDES = new Set(["node_modules", ".git"]);
+/** npm 根级强制包含的松散文件名（README/LICENSE/CHANGELOG/NOTICE 的大小写与后缀变体）。 */
+const FORCED_ROOT_FILE = /^(readme|licen[cs]e|changelog|notice)(\.[^/]*)?$/i;
 
 /** 读登记表。结构非法（文件缺失 / 非法 JSON / 缺 entries）抛单行错误，不返回半成品。 */
 export function loadVendoredRegistry(registryPath) {
@@ -70,13 +75,71 @@ export function packageDirs(root) {
   return filterOutRetiredDirs(dirs, loadManifest(root)).kept.sort();
 }
 
-/** 读某包的 files 字段（缺省返回 undefined，由展开逻辑按 npm 缺省语义处理）。 */
-function readFilesField(pkgDirAbs) {
+/** 读某包的 package.json（缺失或非法返回 undefined，由展开逻辑按 npm 缺省语义处理）。 */
+function readPackageJson(pkgDirAbs) {
   try {
-    return JSON.parse(readFileSync(join(pkgDirAbs, "package.json"), "utf8")).files;
+    return JSON.parse(readFileSync(join(pkgDirAbs, "package.json"), "utf8"));
   } catch {
     return undefined;
   }
+}
+
+/** 是否为普通文件：软链指向的目录不是，内容嗅探与读取会抛错（见 verify 的非文件报告）。 */
+function isRegularFile(absPath) {
+  try {
+    return statSync(absPath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** bin 字段的值形态：单个字符串，或 `名 → 字符串 | 字符串数组` 的映射。 */
+function binPaths(bin) {
+  const values =
+    typeof bin === "string" ? [bin] : bin && typeof bin === "object" ? Object.values(bin) : [];
+  return values
+    .flatMap((v) => (Array.isArray(v) ? v : [v]))
+    .filter((v) => typeof v === "string" && v.trim() !== "");
+}
+
+/** bundledDependencies / bundleDependencies 里的依赖名（数组形态；legacy `true` 不展开）。 */
+function bundledNames(pkgJson) {
+  const raw = pkgJson.bundledDependencies ?? pkgJson.bundleDependencies;
+  return Array.isArray(raw) ? raw.filter((n) => typeof n === "string" && n.trim() !== "") : [];
+}
+
+/**
+ * npm「无论 files 都强制包含」的位置：package.json、根级 README/LICENSE/CHANGELOG/NOTICE
+ * 变体、bin、main，以及 bundledDependencies 展开出的包内 `node_modules/<dep>` 子树。
+ *
+ * 只认**根级** README/LICENSE：npm 不打包 `lib/README`、`sub/README`（实测 npm pack），
+ * 把子目录同名文件算进来是多报，会逼出逃生分支。只收磁盘上真实存在的普通文件——`files`
+ * 之外的位置若不存在就不是分发物，不该扩大扫描面。
+ */
+function forcedPaths(pkgDirAbs) {
+  const out = new Set();
+  if (isRegularFile(join(pkgDirAbs, "package.json"))) out.add("package.json");
+  for (const name of readdirSync(pkgDirAbs)) {
+    if (FORCED_ROOT_FILE.test(name) && isRegularFile(join(pkgDirAbs, name))) out.add(name);
+  }
+  const pkgJson = readPackageJson(pkgDirAbs) ?? {};
+  const declared = [
+    ...binPaths(pkgJson.bin),
+    ...(typeof pkgJson.main === "string" ? [pkgJson.main] : []),
+  ];
+  for (const raw of declared) {
+    const rel = String(raw).trim().replace(/^\.\//, "");
+    if (rel !== "" && isRegularFile(join(pkgDirAbs, rel))) out.add(rel);
+  }
+  for (const dep of bundledNames(pkgJson)) {
+    for (const p of expandEntry(pkgDirAbs, `node_modules/${dep}`)) out.add(p);
+  }
+  return out;
+}
+
+/** 读某包的 files 字段（缺省返回 undefined，由展开逻辑按 npm 缺省语义处理）。 */
+function readFilesField(pkgDirAbs) {
+  return readPackageJson(pkgDirAbs)?.files;
 }
 
 /**
@@ -121,6 +184,8 @@ export function distributionPaths(pkgDirAbs, filesField = readFilesField(pkgDirA
     if (entry === "") continue;
     for (const p of expandEntry(pkgDirAbs, entry)) positives.add(p);
   }
+  // npm 的强制包含集不受 files 约束（实测 `!README.bin` 也挡不住 README 随包），故并集在后。
+  for (const p of forcedPaths(pkgDirAbs)) positives.add(p);
   return [...positives].sort();
 }
 
