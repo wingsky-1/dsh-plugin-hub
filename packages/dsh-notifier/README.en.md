@@ -493,7 +493,7 @@ across types):
 | `/api/dsh-notifier/status` | GET | Channel delivery status (per-channel latest delivery terminal state + consecutive failure count; the failure reason is a structured object `{code, params?, detail?}` whose `detail` is truncated as-is to 300 chars, with no credential replacement) |
 | `/api/dsh-notifier/kinds` | GET / POST | GET the dynamic kind list (including confirmation state); POST `{kind, confirmed}` writes a confirmation (persisted to `allowKinds`); the 200 response carries `revision` (for the client to sync its optimistic-concurrency version) |
 | `/api/dsh-notifier/health` | GET | Health check (`{ok, plugin, platform, sseEvicts, capabilities}`; `capabilities.host` is a **summary** — the verdict plus the state of the two dimensions, constant size) |
-| `/api/dsh-notifier/diagnostics` | GET | Full capability self-check ( `capabilities.host` with per-dimension `checked`, the player list, tone-file availability and the `remediation` advice). It **shares the one probe** with `/health` instead of probing again |
+| `/api/dsh-notifier/diagnostics` | GET | Full capability self-check (`capabilities.host` with per-dimension `checked`, the player list, tone-file availability and the `remediation` advice). It **shares the one probe** with `/health` (one probe per process, cache reads afterwards); the **first** request may wait up to one probe timeout (3s) — a known cost |
 
 Error mapping (PUT /config): invalid config key → 400 (`{ok:false, error:{error:"配置校验失败: <key>", hint}}`); stale `expectedRevision` conflict → 409 (`code:"SETTINGS_CONFLICT"`); settings service unavailable → 503 (`code:"settings-unavailable"`); write failure → 500 (root cause only in server logs).
 

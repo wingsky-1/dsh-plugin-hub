@@ -397,7 +397,7 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 | `/api/dsh-notifier/status` | GET | 频道投递状态（per-channel 最近投递终态 + 连续失败计数；失败理由为结构化对象 `{code, params?, detail?}`，`detail` 按原文截断 300 字符，不做凭据替换） |
 | `/api/dsh-notifier/kinds` | GET / POST | GET 动态 kind 清单（含确认态）；POST `{kind, confirmed}` 写确认（持久化到 `allowKinds`），200 响应带 `revision`（供客户端同步乐观并发版本） |
 | `/api/dsh-notifier/health` | GET | 健康检查（`{ok, plugin, platform, sseEvicts, capabilities}`；`capabilities.host` 是**摘要**：结论与两个维度的状态，常量大小） |
-| `/api/dsh-notifier/diagnostics` | GET | 完整能力自检面（`capabilities.host` 含逐维度 `checked`、播放器清单、音色就位与 `remediation` 处置建议）。与 `/health` **共用同一次探测**，不各探各的 |
+| `/api/dsh-notifier/diagnostics` | GET | 完整能力自检面（`capabilities.host` 含逐维度 `checked`、播放器清单、音色就位与 `remediation` 处置建议）。与 `/health` **共用同一次探测**（进程内只探一次，此后读缓存）；**首次**请求最多等一次探测超时（3s），这是已知代价 |
 
 错误映射（PUT /config）：非法配置键 → 400（`{ok:false, error:{error:"配置校验失败: <键>", hint}}`）；版本冲突（`expectedRevision` 过期）→ 409（`code:"SETTINGS_CONFLICT"`）；settings 服务缺失 → 503（`code:"settings-unavailable"`）；写入异常 → 500（底层原因只进服务端日志）。
 
