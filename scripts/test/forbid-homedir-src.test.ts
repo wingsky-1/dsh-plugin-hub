@@ -398,3 +398,33 @@ test("#733 3.2.2：台账结构不合法（reviewBy 形态）→ fail-closed，�
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("#733 3.2.1：范围注册表未登记本闸 → 判红（未登记即红）", () => {
+  const dir = fixture([{ rel: "a.ts", content: "export const a = 1\n" }]);
+  const regDir = mkdtempSync(join(tmpdir(), "gate-scope-registry-"));
+  const registry = join(regDir, "gate-scope-registry.json");
+  writeFileSync(
+    registry,
+    JSON.stringify({
+      version: 1,
+      gates: [
+        {
+          gate: "some-other-gate",
+          script: "x.mjs",
+          scopeFrom: "tree",
+          packages: "dsh-*",
+          why: "占位",
+        },
+      ],
+    }),
+  );
+  try {
+    const r = spawnSync(process.execPath, [SCRIPT, "--root", dir, "--registry", registry], {
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stderr, /未在范围注册表登记/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -241,11 +241,80 @@ test("扫描面：.tsx 也在扫描面内（客户端入口形态）", () => {
 test("本仓真实快照：client/index.tsx 的 22 处模块级 var 全部走登记豁免 → exit 0", () => {
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /OK（扫描 \d+ 文件，包 dsh-notifier（v1），登记豁免 22 处）/);
+  assert.match(r.stdout, /OK（扫描 \d+ 文件，包 dsh-notifier，登记豁免 22 处）/);
   // 22 处与豁免台账是同一个数字的两面：客户端 var 数量变了、或台账条目被删，
   // 此断言先红并提示同步台账（scripts/data/gate-exemptions.json）与 #762。
   assert.match(
     r.stdout,
     /packages\/dsh-notifier\/src\/client\/index\.tsx:229 \[模块级 var（t）\] 登记豁免 #762（reviewBy 2027-03-31）/,
   );
+});
+
+/** 写一份范围注册表临时文件，返回其路径（--registry 注入）。 */
+function registryFile(gates) {
+  const dir = mkdtempSync(join(tmpdir(), "gate-scope-registry-"));
+  const p = join(dir, "gate-scope-registry.json");
+  writeFileSync(p, JSON.stringify({ version: 1, gates }));
+  return p;
+}
+
+test("#733 3.2.1：范围注册表未登记本闸 → 判红（未登记即红，运行时也拦）", () => {
+  const dir = fixture([{ rel: "a.ts", content: "let x = 1\nexport const peek = () => x\n" }]);
+  const registry = registryFile([
+    { gate: "some-other-gate", script: "x.mjs", scopeFrom: "tree", packages: "dsh-*", why: "占位" },
+  ]);
+  try {
+    const r = spawnSync(process.execPath, [SCRIPT, "--root", dir, "--registry", registry], {
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stderr, /未在范围注册表登记/);
+    assert.match(r.stderr, /未登记即红/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#733 3.2.1：范围为空（注册表登记了别的包）→ 判红，不退化为「零违规」", () => {
+  const dir = fixture([{ rel: "a.ts", content: "let x = 1\nexport const peek = () => x\n" }]);
+  const registry = registryFile([
+    {
+      gate: "forbid-module-state-src",
+      script: "scripts/gate/forbid-module-state-src.mjs",
+      scopeFrom: "registry",
+      packages: ["dsh-other"],
+      why: "范围写错包名",
+    },
+  ]);
+  try {
+    const r = spawnSync(process.execPath, [SCRIPT, "--root", dir, "--registry", registry], {
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stderr, /未发现任何扫描目标/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#733 3.2.1：范围注册表结构不合法（packages 非空数组/通配）→ fail-closed", () => {
+  const dir = fixture([{ rel: "a.ts", content: "let x = 1\nexport const peek = () => x\n" }]);
+  const registry = registryFile([
+    {
+      gate: "forbid-module-state-src",
+      script: "scripts/gate/forbid-module-state-src.mjs",
+      scopeFrom: "registry",
+      packages: [],
+      why: "空范围",
+    },
+  ]);
+  try {
+    const r = spawnSync(process.execPath, [SCRIPT, "--root", dir, "--registry", registry], {
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stderr, /packages 须为/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

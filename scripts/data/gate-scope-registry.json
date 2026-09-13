@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "note": "路径受限门禁的**扫描范围**登记（#733 计划项 3.2.1）。为什么需要：门禁的范围此前散在各自脚本里（module-state 的 PACKAGES 常量、homedir 的隐式 packages/dsh-* 遍历、CI 里 verify-dir-imports 的 --package 调用点），范围本身成了不可审的代码细节——改范围与改判据混在同一个 diff 里。`scopeFrom` 说明该门的范围**从哪来**，并决定它受哪种断言约束（值域只有三种，无第三条路）：`registry`=脚本运行时读本文件（改范围必须改数据 + 该门自测会红）；`cli`=调用点 --package 指定（本文件登记值必须等于调用点并集，漂移即红）；`tree`=遍历 packages 树，范围由目录结构派生。`sunset`（临时收窄到某日）**不在本文件**：临时项的唯一登记处是 scripts/data/gate-exemptions.json 的 reviewBy（有=临时/无=长期），collect-exemptions 会扫全部 data 文件——在这里再造一个到期结构就是第二个事实源（原则 ①/④），也是把永久全包闸逼出 null 逃生分支的老路。",
+  "gates": [
+    {
+      "gate": "forbid-homedir-src",
+      "script": "scripts/gate/forbid-homedir-src.mjs",
+      "scopeFrom": "registry",
+      "packages": "dsh-*",
+      "why": "永久全包闸：DSH_HOME 隔离语义对所有插件包都成立，没有「只对某包生效」的版本。范围此前是脚本内的隐式遍历（packages 下所有 dsh-* 目录），现改为读本文件——范围与判据解耦，扩包/收包是数据面的显式改动，且该门自测会因 scope 断言先红。"
+    },
+    {
+      "gate": "forbid-module-state-src",
+      "script": "scripts/gate/forbid-module-state-src.mjs",
+      "scopeFrom": "registry",
+      "packages": ["dsh-notifier"],
+      "why": "判据源自 #733 宪法第 1 条，当前只对 dsh-notifier 生效（该包是重写目标，存量已清零或登记豁免）。范围此前是脚本内的 PACKAGES 常量 + PACKAGES_V 版本号，现改为读本文件；扩包前必须先实测该包在新口径下的存量（照抄历史数字会误判）。"
+    },
+    {
+      "gate": "forbid-src-tests",
+      "script": "scripts/gate/forbid-src-tests.mjs",
+      "scopeFrom": "tree",
+      "packages": "dsh-*",
+      "why": "禁止遗留 *.src.test.ts 回潮（#423 方案 A）。它按**文件形态**扫整棵 packages 树、不枚举包名，故范围天然由目录结构派生；登记在此是为了让「本仓有哪些路径受限门禁」这一问有唯一答案，而不是靠散落的 grep。"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "script": "scripts/gate/verify-dir-imports.mjs",
+      "scopeFrom": "cli",
+      "packages": ["dsh-mcp-manager", "dsh-notifier", "dsh-provider-usage"],
+      "why": "目录 interface.ts 门面 + 依赖图尺子（#664/#670/#690）。范围由调用点 --package 累加：contract-check.ts 里 dsh-mcp-manager 与 dsh-notifier 是硬判、dsh-provider-usage 加 --soft（软报告只改打印标签，基线与全覆盖断言一视同仁）。脚本缺省（无 --package）只覆盖 dsh-mcp-manager，CI 与本地门禁一律显式传参，故登记值取**调用点并集**——自测会断言本字段等于调用点并集，两边漂移即红。"
+    },
+    {
+      "gate": "export-surface-snapshot",
+      "script": "scripts/gate/export-surface-snapshot.mjs",
+      "scopeFrom": "cli",
+      "packages": ["dsh-notifier"],
+      "why": "包导出面快照（符号集 + 导出符号定义块与入库基线零 diff）。必须显式 --package（缺参直接 exit 2），当前唯一调用点在 contract-check.ts 且只覆盖 dsh-notifier——其余包的导出面尚无基线，属未纳入而非未受限，扩面要先产出基线。"
+    }
+  ]
+}

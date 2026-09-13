@@ -28,18 +28,20 @@
  * 本轮不能动的面；登记在数据文件里同样是 PR diff 可见的单一可审阅点。调用点注释仍被识别，
  * 但**不能替代登记**——只有注释而没有登记条目一律判红（防「加了注释就以为豁免了」）。
  *
- * 扫描面（版本化常量，**按包限定**）：本判据源自 #733 宪法且当前只对 dsh-notifier 生效。
- * 扩包是一次显式改动（PACKAGES 常量 + 该包存量清零或登记豁免），扩包前须先实测该包在新口径
- * 下的存量，不要照抄历史数字。
+ * 扫描面：由 `scripts/data/gate-scope-registry.json` 声明（本闸 scopeFrom = registry），脚本内
+ * 不再硬编码包名——范围是治理数据，改动应当是一次显式且可审的数据 diff。扩包前须先实测该包
+ * 在新口径下的存量，不要照抄历史数字。
  *
- * fail-closed：文件解析失败、扫描面为空、豁免台账不可读或结构不合法，一律判红。
- * 用法：node scripts/gate/forbid-module-state-src.mjs [--root <dir>] [--exemptions <file>]
+ * fail-closed：文件解析失败、扫描面为空、豁免台账或范围注册表不可读/结构不合法、本闸未登记
+ * 范围，一律判红。
+ * 用法：node scripts/gate/forbid-module-state-src.mjs [--root <dir>] [--exemptions <file>] [--registry <file>]
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { transform } from "esbuild";
 import * as acorn from "acorn";
 import { SourceMap } from "node:module";
+import { loadScopeRegistry, scopePackages } from "../lib/gate-scope-registry.ts";
 import {
   argValue,
   collectSrcFiles,
@@ -54,10 +56,7 @@ const ROOT = join(import.meta.dirname, "../..");
 const GATE_NAME = "forbid-module-state-src";
 const LEDGER_DISPLAY = "scripts/data/gate-exemptions.json";
 const EXEMPTIONS_PATH = join(ROOT, "scripts", "data", "gate-exemptions.json");
-
-/** 扫描面（版本化常量）：只扫这些包的 src。 */
-const PACKAGES_V = 1;
-const PACKAGES = ["dsh-notifier"];
+const REGISTRY_PATH = join(ROOT, "scripts", "data", "gate-scope-registry.json");
 
 /**
  * 豁免策略：登记**必需**、调用点 marker **非必需**（识别但不作成要件）——marker 写在被扫
@@ -132,6 +131,17 @@ async function scanFile(file) {
 async function main() {
   const root = argValue(process.argv, "--root", ROOT);
   const exemptionsPath = argValue(process.argv, "--exemptions", EXEMPTIONS_PATH);
+  const registryPath = argValue(process.argv, "--registry", REGISTRY_PATH);
+
+  let registry;
+  let packages;
+  try {
+    registry = loadScopeRegistry(registryPath);
+    packages = scopePackages(root, registry, GATE_NAME);
+  } catch (e) {
+    console.error(`forbid-module-state-src: ${e.message} —— 范围/豁免机制失效，fail-closed`);
+    process.exit(1);
+  }
 
   let ledger;
   try {
@@ -141,10 +151,10 @@ async function main() {
     process.exit(1);
   }
 
-  const files = collectSrcFiles(root, PACKAGES);
+  const files = collectSrcFiles(root, packages);
   if (files.length === 0) {
     console.error(
-      `forbid-module-state-src: 未发现任何扫描目标（${PACKAGES.join(", ")} 的 src 空，fail-closed）`,
+      `forbid-module-state-src: 未发现任何扫描目标（${packages.join(", ")} 的 src 空，fail-closed）`,
     );
     process.exit(1);
   }
@@ -198,12 +208,12 @@ async function main() {
   }
   if (legitExemptions.length > 0) {
     console.log(
-      `forbid-module-state-src: OK（扫描 ${files.length} 文件，包 ${PACKAGES.join(", ")}（v${PACKAGES_V}），登记豁免 ${legitExemptions.length} 处）：`,
+      `forbid-module-state-src: OK（扫描 ${files.length} 文件，包 ${packages.join(", ")}，登记豁免 ${legitExemptions.length} 处）：`,
     );
     for (const l of legitExemptions) console.log(`  - ${l}`);
   } else {
     console.log(
-      `forbid-module-state-src: OK（扫描 ${files.length} 文件，包 ${PACKAGES.join(", ")}（v${PACKAGES_V}）无模块级可变状态）`,
+      `forbid-module-state-src: OK（扫描 ${files.length} 文件，包 ${packages.join(", ")} 无模块级可变状态）`,
     );
   }
 }

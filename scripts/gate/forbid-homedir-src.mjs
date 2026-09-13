@@ -28,24 +28,26 @@
  *   2. `scripts/data/gate-exemptions.json` 里 `gate` 为本门禁名的条目（文件级）。
  *   三态：无命中（OK）/ 双源齐备豁免（OK，汇总输出）/ 违规或不合法豁免（FAIL）。
  *
- * 扫描范围：packages 下各 dsh-* 包 src 目录的 .ts/.tsx/.mts/.mjs（含未跟踪文件；
+ * 扫描范围：由 `scripts/data/gate-scope-registry.json` 声明（本闸 scopeFrom = registry，当前为
+ * packages 下各 dsh-* 包），脚本内不再自行枚举——范围是治理数据。扫描面为这些包 src 目录的
+ * .ts/.tsx/.mts/.mjs（含未跟踪文件；
  * `.d.ts`/`.d.mts` 类型声明、`*.test.*` 跳过——§1 测试义务用 homedir 锁默认路径契约
  * 是合法的）。**`.tsx` 自 3.2.2 起纳入**：旧过滤漏掉它，而客户端入口基本都是 `.tsx`
  * （仓内 10 个），那是一处潜伏盲区（当前实测零命中，纳入即净收紧）。
  * fail-closed：任何文件解析失败直接判红。
- * 用法：node scripts/gate/forbid-homedir-src.mjs [--root <dir>] [--exemptions <file>]
+ * 用法：node scripts/gate/forbid-homedir-src.mjs [--root <dir>] [--exemptions <file>] [--registry <file>]
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { transform } from "esbuild";
 import * as acorn from "acorn";
 import { SourceMap } from "node:module";
+import { loadScopeRegistry, scopePackages } from "../lib/gate-scope-registry.ts";
 import {
   argValue,
   collectSrcFiles,
   hasExemptionMarker,
   judgeHit,
-  listPackageNames,
   loadLedger,
   relPath,
   rotDetails,
@@ -55,6 +57,7 @@ const ROOT = join(import.meta.dirname, "../..");
 const GATE_NAME = "forbid-homedir-src";
 const LEDGER_DISPLAY = "scripts/data/gate-exemptions.json";
 const EXEMPTIONS_PATH = join(ROOT, "scripts", "data", "gate-exemptions.json");
+const REGISTRY_PATH = join(ROOT, "scripts", "data", "gate-scope-registry.json");
 
 /**
  * 豁免策略：**双源**——文件级登记（数据面）与调用点紧邻注释缺一判红。本门禁扫的是全仓
@@ -210,20 +213,15 @@ async function scanFile(file) {
 async function main() {
   const root = argValue(process.argv, "--root", ROOT);
   const exemptionsPath = argValue(process.argv, "--exemptions", EXEMPTIONS_PATH);
+  const registryPath = argValue(process.argv, "--registry", REGISTRY_PATH);
 
   let ledger;
-  try {
-    ledger = loadLedger(exemptionsPath, GATE_NAME);
-  } catch (e) {
-    console.error(`forbid-homedir-src: ${e.message} —— 豁免机制失效，fail-closed`);
-    process.exit(1);
-  }
-
   let packages;
   try {
-    packages = listPackageNames(root, "dsh-");
-  } catch {
-    console.error(`forbid-homedir-src: 无法读取 ${join(root, "packages")}（fail-closed）`);
+    ledger = loadLedger(exemptionsPath, GATE_NAME);
+    packages = scopePackages(root, loadScopeRegistry(registryPath), GATE_NAME);
+  } catch (e) {
+    console.error(`forbid-homedir-src: ${e.message} —— 范围/豁免机制失效，fail-closed`);
     process.exit(1);
   }
   const files = collectSrcFiles(root, packages);
