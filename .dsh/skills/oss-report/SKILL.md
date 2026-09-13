@@ -13,7 +13,7 @@ description: >
    `.github/workflows/health-report.yml`，每周一 UTC 02:17 调度 + 手动 dispatch，GitHub 侧已 active）；
    若该 issue 尚未生成（首跑未到 / 无人手动触发），降级为本地自采，且必须在报告头标注
    `数据源：本地采集（health-report.yml 已启用，health issue 暂无）`，避免与未来 CI 口径混淆
-1. **质量指标**：本地跑五连门禁取可得指标——smoke 用例数 / typecheck 结论 /
+1. **质量指标**：本地跑 `pnpm gate:pr` 取可得指标——smoke 用例数 / typecheck 结论 /
    各包构建产物体积变化；coverage 与变异测试基建启用后升级为
    coverage / CRAP 分布 / mutation score（不主动触发全量 Stryker）
 2. **CI 历史**：`gh run list --workflow ci --limit 20 --json conclusion,createdAt`
@@ -41,7 +41,7 @@ description: >
 
 ```markdown
 ## 机器信号段（自动生成，勿改）
-- 五连门禁：最近一次全绿结论 + 耗时；smoke 用例数 N
+- 门禁：最近一次 `gate:pr` 全绿结论 + 耗时；smoke 用例数 N
 - 近两周 ci 失败率：N/M 次，集中在 <步骤>
 - 挣扎信号：<有则列出证据链接>
 - 零命中规则：<列表>

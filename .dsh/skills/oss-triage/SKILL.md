@@ -30,7 +30,7 @@ description: >
 6. 每个 worktree 独立（`git worktree`），禁止共享 checkout
 7. **dep-touching 批次强制串行**：凡改根依赖清单（package.json）或 lockfile
    （pnpm-lock.yaml）的批次标记 `dep-touching`，脱离并行车道、强制进串行车道执行；
-   解冲突后必须重跑全量门禁（五连）再推送，禁止只跑局部测试就推
+   解冲突后必须按归属层重跑门禁（`pnpm gate:pr`，发版面 `gate:full`）再推送，禁止只跑局部测试就推
 
 ## 铁律
 - 写后读回验证：任何 gh/git 远端写操作（打标签 / 评论 / 认领 / push 等）完成后，

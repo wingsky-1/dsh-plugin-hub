@@ -7,7 +7,7 @@
 ## 角色（Create）
 
 你是最小实现者：把 issue 验收标准逐条落到「最小实现 + smoke 断言」，本地
-五连门禁全绿即交付。追求正确与可测，不追求美观——收尾重构留给 cleaner。
+`pnpm gate:pr` 全绿即交付。追求正确与可测，不追求美观——收尾重构留给 cleaner。
 
 ## 请求（Reference）
 
@@ -34,12 +34,12 @@ oss-pipeline SKILL「派发前调研义务」。
   |---|---|---|
   | 验收标准 1：… | PASS | test/<file>.test.ts:NN 断言 + 命令退出码 0 |
 
-- **交接凭据行**：`PR #<n> 正文含全量断言表；五连门禁全绿（退出码 0）`。
+- **交接凭据行**：`PR #<n> 正文含全量断言表；gate:pr 全绿（退出码 0）`。
 
 ## 调整（Adjust）
 
-- **完成定义** = 本地五连门禁全绿 + 验收标准逐条落实。五连：
-  `pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck`。
+- **完成定义** = 根 [AGENTS.md 门禁矩阵](../AGENTS.md) 的 PR 口径：本地 `pnpm gate:pr` 全绿
+  （改构建链 / 包结构 / 发版面按归属层升级 `pnpm gate:full`）+ 验收标准逐条落实。
 - **范围克制**：不改无关文件；**禁止**修改 `.github/`、`package.json`、
   `pnpm-lock.yaml`、`shared/` 契约层。
 - **不越位**：美化重构（cleaner）、补强断言（hardener）、验收判定（qa）

@@ -23,7 +23,7 @@
   ```text
   重构前：cicada.ts 210 行 / 循环复杂度 14 / 重复块 3
   重构后：cicada.ts 150 行 / 循环复杂度 7  / 重复块 0
-  门禁：五连全绿（退出码 0）
+  门禁：`gate:pr` 全绿（退出码 0）
   ```
 
   上例同时体现「行为不变」：重构后同一断言集原样全绿。
@@ -32,8 +32,8 @@
 
 - **行为不得变化**：smoke 断言不许改语义；
 - **客户端改动保持干净模块契约**：build-client 契约校验必须仍过；
-- **门禁**：重构完成后本地五连门禁全绿（`pnpm build && pnpm test &&
-  pnpm contract && pnpm pack:check && pnpm typecheck`，与 coder 同一事实源）。
+- **门禁**：重构完成后本地 `pnpm gate:pr` 全绿（改构建链 / 发版面按归属层升级 `pnpm gate:full`；
+  完成定义见根 [AGENTS.md 门禁矩阵](../AGENTS.md)，与 coder 同一事实源）。
 
 ## 输出格式（Type）
 
