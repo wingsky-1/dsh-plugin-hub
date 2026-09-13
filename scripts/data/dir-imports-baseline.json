@@ -2,6 +2,40 @@
   "$comment": "S0 门禁基线（#690 / #733 后续）：结构型计数由 verify-dir-imports.mjs --write-baseline 登记；quality 段存质量型**证据集合**（边 from|to|kind、环签名、未覆盖源文件），新增证据判红、消失即清理、kind 降级（type→value）判红，放宽须 --accept-quality-new --reason 并记入 $acceptances。",
   "version": 2,
   "packages": {
+    "dsh-notifier": {
+      "modules": 9,
+      "scannedSrcFiles": 87,
+      "allSrcTsFiles": 91,
+      "interfaceFacades": 9,
+      "leafValueEdges": 5,
+      "fileValueEdges": 71,
+      "crossModuleRefs": 65,
+      "quality": {
+        "leafModuleCycles": [],
+        "fileCycles": [],
+        "raLegacy": [
+          "server/api/impl/stream/index.ts|server/shared/interface.ts|value",
+          "server/channels/impl/system/index.ts|server/shared/interface.ts|type",
+          "server/channels/impl/system/type.ts|server/shared/interface.ts|type",
+          "server/config/impl/service/index.ts|server/shared/interface.ts|value",
+          "server/events/impl/state/type.ts|server/shared/interface.ts|type",
+          "server/pipeline/impl/route/index.ts|server/shared/interface.ts|value",
+          "server/pipeline/impl/route/type.ts|server/shared/interface.ts|type",
+          "server/stores/impl/history/index.ts|server/shared/interface.ts|value",
+          "server/stores/impl/history/type.ts|server/shared/interface.ts|type",
+          "server/stores/impl/status/index.ts|server/shared/interface.ts|value",
+          "server/stores/impl/status/type.ts|server/shared/interface.ts|type",
+          "server/upgrade/impl/chain/index.ts|server/shared/interface.ts|type",
+          "server/upgrade/impl/legacy/index.ts|server/shared/interface.ts|value",
+          "server/upgrade/impl/steps/storage-layout.ts|server/shared/interface.ts|value",
+          "server/upgrade/impl/version/index.ts|server/shared/interface.ts|value"
+        ],
+        "implToOtherImpl": [],
+        "missingInterface": [],
+        "directImpl": [],
+        "uncoveredSrcFiles": []
+      }
+    },
     "dsh-lan-proxy": {
       "modules": 0,
       "scannedSrcFiles": 8,
@@ -139,40 +173,6 @@
         "directImpl": [
           "connection/interface.ts|connection/orchestrator/tool-names.ts"
         ],
-        "uncoveredSrcFiles": []
-      }
-    },
-    "dsh-notifier": {
-      "modules": 9,
-      "scannedSrcFiles": 86,
-      "allSrcTsFiles": 90,
-      "interfaceFacades": 9,
-      "leafValueEdges": 5,
-      "fileValueEdges": 70,
-      "crossModuleRefs": 65,
-      "quality": {
-        "leafModuleCycles": [],
-        "fileCycles": [],
-        "raLegacy": [
-          "server/api/impl/stream/index.ts|server/shared/interface.ts|value",
-          "server/channels/impl/system/index.ts|server/shared/interface.ts|type",
-          "server/channels/impl/system/type.ts|server/shared/interface.ts|type",
-          "server/config/impl/service/index.ts|server/shared/interface.ts|value",
-          "server/events/impl/state/type.ts|server/shared/interface.ts|type",
-          "server/pipeline/impl/route/index.ts|server/shared/interface.ts|value",
-          "server/pipeline/impl/route/type.ts|server/shared/interface.ts|type",
-          "server/stores/impl/history/index.ts|server/shared/interface.ts|value",
-          "server/stores/impl/history/type.ts|server/shared/interface.ts|type",
-          "server/stores/impl/status/index.ts|server/shared/interface.ts|value",
-          "server/stores/impl/status/type.ts|server/shared/interface.ts|type",
-          "server/upgrade/impl/chain/index.ts|server/shared/interface.ts|type",
-          "server/upgrade/impl/legacy/index.ts|server/shared/interface.ts|value",
-          "server/upgrade/impl/steps/storage-layout.ts|server/shared/interface.ts|value",
-          "server/upgrade/impl/version/index.ts|server/shared/interface.ts|value"
-        ],
-        "implToOtherImpl": [],
-        "missingInterface": [],
-        "directImpl": [],
         "uncoveredSrcFiles": []
       }
     },

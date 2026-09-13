@@ -1,27 +1,51 @@
 /**
- * dsh-notifier channels 域 system 出口 —— 命令构造与自播判定。
- *
- * 只测**构造与判定**这两层纯函数，不测 `sendSystem`：它先探平台能力（`execFile` 探测
- * notify-send / pw-play），再 `spawn` 真命令，且音色文件是否存在由 `existsSync` 决定——在本机
- * 跑它会真的弹通知或放声音，在 CI 上又会因环境不同给出不同结论。缺的是「注入探测结果与
- * spawn」的接缝，本文件不替它造一个（报告里登记为未覆盖面）。
+ * dsh-notifier channels 域 system 出口 —— 命令构造、平台探测、自播判定与执行编排。
  *
  * 判据为什么是这些：命令一律 `[bin, ...args]` 且用户文本只经 base64 载荷进 PowerShell——这条
  * 一旦退化成拼命令串，通知标题里的一个引号就是本机命令执行；自播判定错了则要么响两声、要么
- * 「只响不弹」静默变成一次无声的失败。
+ * 「只响不弹」静默变成一次无声的失败；探测与执行错了则平台分支、探测失败、杀进程超时、退出码
+ * 异常这些出口在真机上全都不可复现。
+ *
+ * 平台事实与子进程经 `impl/system/deps.ts` 的手写假端口驱动：真机上三条平台分支只有一条可达，
+ * 而在本机真的起 `notify-send` / `afplay` 既弹窗又发声，且结论随环境而变。
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type {
+  DeliverResult,
+  NotifyMessage,
+} from "../../../src/server/channels/impl/deliver/type.ts";
+import {
+  installSystemDeps,
+  releaseSystemDeps,
+  systemDeps,
+} from "../../../src/server/channels/impl/system/deps.ts";
+import type {
+  ChildHandle,
+  ProcessExit,
+  SpawnOptions,
+  SystemDeps,
+} from "../../../src/server/channels/impl/system/deps.ts";
 import {
   buildSoundCommand,
   buildSystemCommand,
+  probePlatform,
+  sendSystem,
   shouldSelfPlay,
 } from "../../../src/server/channels/impl/system/index.ts";
 import { toneFileCandidates } from "../../../src/server/channels/impl/system/tones.ts";
 import type {
   PlatformProbe,
   SystemCommandOptions,
+  SystemTarget,
 } from "../../../src/server/channels/impl/system/type.ts";
+import { makeLogger, pollUntil } from "../../helpers.ts";
+
+afterEach(() => {
+  // 端口与探测缓存都是模块级单例：不复位就把平台事实漏给下一个用例（单跑绿、连跑红）。
+  releaseSystemDeps();
+  vi.useRealTimers();
+});
 
 function probeOf(over: Partial<PlatformProbe> = {}): PlatformProbe {
   return {
@@ -45,6 +69,188 @@ function payloadOf(command: readonly string[]): Record<string, unknown> {
     string,
     unknown
   >;
+}
+
+// ---------------------------------------------------------------- 假进程事实端口
+
+/** 假子进程：三个出口都由用例显式驱动，不依赖真实进程的调度。 */
+class FakeChild implements ChildHandle {
+  /** 兜底杀进程的次数（超时用例断言它）。 */
+  killCount = 0;
+
+  private readonly exits: Array<(exit: ProcessExit) => void> = [];
+  private readonly errors: Array<(cause: Error) => void> = [];
+  private readonly stderrs: Array<(chunk: Buffer) => void> = [];
+
+  onStderr(handler: (chunk: Buffer) => void): void {
+    this.stderrs.push(handler);
+  }
+
+  onExit(handler: (exit: ProcessExit) => void): void {
+    this.exits.push(handler);
+  }
+
+  onError(handler: (cause: Error) => void): void {
+    this.errors.push(handler);
+  }
+
+  kill(): void {
+    this.killCount += 1;
+  }
+
+  emitStderr(text: string): void {
+    for (const handler of this.stderrs) handler(Buffer.from(text, "utf8"));
+  }
+
+  emitExit(exit: ProcessExit): void {
+    for (const handler of this.exits) handler(exit);
+  }
+
+  emitError(cause: Error): void {
+    for (const handler of this.errors) handler(cause);
+  }
+}
+
+/** 假端口的现场：用例只写关心的那几项，其余走 `fakeDeps()` 的缺省。 */
+interface FakeConfig {
+  platform: string;
+  /** 探测得到回应的命令（`--version` 以退出码 0 结束）。 */
+  available: readonly string[];
+  /** `existsSync` 为真的路径。 */
+  present: readonly string[];
+}
+
+/** 起进程的记录：逐字 argv 与选项都要它。 */
+interface SpawnRecord {
+  readonly command: readonly string[];
+  readonly options: SpawnOptions;
+}
+
+/** 探测的记录：命令、参数与超时都要它。 */
+interface ProbeRecord {
+  readonly bin: string;
+  readonly args: readonly string[];
+  readonly timeout: number;
+}
+
+/** 假进程事实端口：记下每一次调用，子进程交回可由用例驱动的假句柄。 */
+class FakeDeps implements SystemDeps {
+  readonly platform: string;
+  readonly spawned: SpawnRecord[] = [];
+  readonly children: FakeChild[] = [];
+  readonly probed: ProbeRecord[] = [];
+  readonly checked: string[] = [];
+  /** 非空 = `spawn` 同步抛出这个消息（真机上对应 argv 非法、权限不足）。 */
+  spawnFailure = "";
+  /** 假 = 抛出的不是 `Error`（跨边界值仍要留下可读的原因）。 */
+  spawnFailureIsError = true;
+  /** 假 = 子进程的结局由用例驱动（超时、stderr 尾部、双出口竞争这些用例要它）。 */
+  autoExit = true;
+  /** 自动退出用的退出码。 */
+  exitCode = 0;
+
+  private readonly available: readonly string[];
+  private readonly present: readonly string[];
+
+  constructor(config: FakeConfig) {
+    this.platform = config.platform;
+    this.available = config.available;
+    this.present = config.present;
+  }
+
+  spawn(command: readonly string[], options: SpawnOptions): ChildHandle {
+    this.spawned.push({ command, options });
+    if (this.spawnFailure !== "") {
+      throw this.spawnFailureIsError ? new Error(this.spawnFailure) : this.spawnFailure;
+    }
+    const child = new FakeChild();
+    this.children.push(child);
+    // 出口监听在同一个 tick 里挂上，故微任务里的自动退出不会漏事件
+    if (this.autoExit) queueMicrotask(() => child.emitExit({ exited: true, code: this.exitCode }));
+    return child;
+  }
+
+  execFile(
+    bin: string,
+    args: readonly string[],
+    options: { readonly timeout: number },
+    done: (failed: boolean) => void,
+  ): void {
+    this.probed.push({ bin, args, timeout: options.timeout });
+    done(!this.available.includes(bin));
+  }
+
+  existsSync(path: string): boolean {
+    this.checked.push(path);
+    return this.present.includes(path);
+  }
+}
+
+/** 造一份假端口；缺省是「linux 上什么都没有」。 */
+function fakeDeps(over: Partial<FakeConfig> = {}): FakeDeps {
+  return new FakeDeps({ platform: "linux", available: [], present: [], ...over });
+}
+
+/** 通知脚本路径（内容无关，只作探测与 argv 的身份）。 */
+const TOAST_SCRIPT = "/tmp/notifier/toast.ps1";
+/** Linux ding 的自播文件（freedesktop 基线包内的绝对路径）。 */
+const LINUX_DING_FILE = "/usr/share/sounds/freedesktop/stereo/message-new-instant.oga";
+/** 待投递消息：`ts` 写死不取 `Date.now()`，免得断言跟着运行时刻漂。 */
+const MESSAGE: NotifyMessage = { title: "标题", body: "正文", kind: "done", ts: 1_700_000_000_000 };
+
+/** 一次系统投递的现场：目标可覆盖，warn 文案收集在一处供断言。 */
+class SystemDelivery {
+  private readonly logger = makeLogger();
+  private readonly target: SystemTarget;
+
+  constructor(over: Partial<SystemTarget> = {}) {
+    this.target = {
+      type: "system",
+      pop: true,
+      sound: false,
+      toastScript: TOAST_SCRIPT,
+      logger: this.logger,
+      ...over,
+    };
+  }
+
+  get warns(): readonly string[] {
+    return this.logger.warns;
+  }
+
+  send(message: NotifyMessage = MESSAGE): Promise<DeliverResult> {
+    return sendSystem(this.target, message);
+  }
+}
+
+/** 等真实子进程的第一次退出事实。 */
+function exitOf(handle: ChildHandle): Promise<ProcessExit> {
+  return new Promise((resolve) => {
+    handle.onExit(resolve);
+  });
+}
+
+/** 等真实子进程的第一段 stderr 文本。 */
+function stderrOf(handle: ChildHandle): Promise<string> {
+  return new Promise((resolve) => {
+    handle.onStderr((chunk) => {
+      resolve(chunk.toString("utf8"));
+    });
+  });
+}
+
+/** 等真实子进程的启动失败事实。 */
+function errorOf(handle: ChildHandle): Promise<Error> {
+  return new Promise((resolve) => {
+    handle.onError(resolve);
+  });
+}
+
+/** 真实端口探一次命令；`failed` 即命令不可用。 */
+function probeFailed(bin: string, args: readonly string[]): Promise<boolean> {
+  return new Promise((resolve) => {
+    systemDeps().execFile(bin, args, { timeout: 3000 }, resolve);
+  });
 }
 
 describe("buildSystemCommand", () => {
@@ -189,5 +395,565 @@ describe("音色与文件候选", () => {
     expect(
       buildSoundCommand(probeOf({ platform: "freebsd", players: ["pw-play"] }), "ding"),
     ).toEqual([]);
+  });
+});
+
+describe("probePlatform：平台分支与探测", () => {
+  // linux 的播放器顺序反了会优先用老的 PulseAudio；多探一个则是白起一个进程。
+  it("linux：notify-send 命中、pw-play 优先（只探到首个可用者为止，探测参数与超时逐字）", async () => {
+    const fake = fakeDeps({
+      available: ["notify-send", "pw-play", "paplay"],
+      present: [TOAST_SCRIPT],
+    });
+    installSystemDeps(fake);
+
+    expect(await probePlatform(TOAST_SCRIPT)).toEqual({
+      platform: "linux",
+      toastScriptAvailable: true,
+      notifySendAvailable: true,
+      players: ["pw-play"],
+    });
+    expect(fake.probed).toEqual([
+      { bin: "notify-send", args: ["--version"], timeout: 3000 },
+      { bin: "pw-play", args: ["--version"], timeout: 3000 },
+    ]);
+    expect(fake.checked).toEqual([TOAST_SCRIPT]);
+  });
+
+  // PipeWire 缺失的主力发行版只有 paplay；两个都缺时自播必须判成「放不出声」而不是硬发一条命令。
+  it("linux：pw-play 缺失回落 paplay，两个都缺则播放器列表为空", async () => {
+    const pulseOnly = fakeDeps({ available: ["notify-send", "paplay"] });
+    installSystemDeps(pulseOnly);
+    expect((await probePlatform(TOAST_SCRIPT)).players).toEqual(["paplay"]);
+    expect(pulseOnly.probed.map((record) => record.bin)).toEqual([
+      "notify-send",
+      "pw-play",
+      "paplay",
+    ]);
+
+    const none = fakeDeps({ available: ["notify-send"] });
+    installSystemDeps(none);
+    const probe = await probePlatform(TOAST_SCRIPT);
+    expect(probe.players).toEqual([]);
+    expect(probe.toastScriptAvailable).toBe(false);
+  });
+
+  // notify-send 探测不到时 linux 弹窗命令为空：这条结论错了会变成每次投递白起一个必败的进程。
+  it("linux：notify-send 探测不到 → notifySendAvailable 为假", async () => {
+    const fake = fakeDeps({ available: [] });
+    installSystemDeps(fake);
+    expect((await probePlatform(TOAST_SCRIPT)).notifySendAvailable).toBe(false);
+  });
+
+  // darwin 的弹窗走 osascript、发声走 afplay，都不依赖 notify-send：探测它是白起进程。
+  it("darwin：afplay 直给、不探 notify-send（探测一次都不该发生）", async () => {
+    const fake = fakeDeps({ platform: "darwin", available: ["notify-send", "pw-play"] });
+    installSystemDeps(fake);
+
+    expect(await probePlatform(TOAST_SCRIPT)).toEqual({
+      platform: "darwin",
+      toastScriptAvailable: false,
+      notifySendAvailable: false,
+      players: ["afplay"],
+    });
+    expect(fake.probed).toEqual([]);
+  });
+
+  // win32 经 PowerShell 播放，播放器列表为空；它真正要问的是 toast 脚本在不在（打包缺陷的判据）。
+  it("win32：播放器列表为空、不探 notify-send，只问脚本在不在", async () => {
+    const fake = fakeDeps({ platform: "win32", available: ["notify-send", "pw-play"] });
+    installSystemDeps(fake);
+
+    expect(await probePlatform(TOAST_SCRIPT)).toEqual({
+      platform: "win32",
+      toastScriptAvailable: false,
+      notifySendAvailable: false,
+      players: [],
+    });
+    expect(fake.probed).toEqual([]);
+
+    const packed = fakeDeps({ platform: "win32", present: [TOAST_SCRIPT] });
+    installSystemDeps(packed);
+    expect((await probePlatform(TOAST_SCRIPT)).toastScriptAvailable).toBe(true);
+  });
+
+  // 未知平台不给候选播放器（猜一个就是替别的平台决定怎么发声），但 notify-send 仍按 linux 那支探。
+  it("未知平台：播放器列表为空，notify-send 仍要探", async () => {
+    const fake = fakeDeps({ platform: "freebsd", available: ["notify-send"] });
+    installSystemDeps(fake);
+
+    expect(await probePlatform(TOAST_SCRIPT)).toEqual({
+      platform: "freebsd",
+      toastScriptAvailable: false,
+      notifySendAvailable: true,
+      players: [],
+    });
+    expect(fake.probed.map((record) => record.bin)).toEqual(["notify-send"]);
+  });
+});
+
+describe("探测缓存：同端口只探一次，换端口必复位", () => {
+  // 探测结论是进程级事实，每次投递重探等于给每条通知加三个子进程。
+  it("同一端口的第二次投递复用探测结果：探测与文件存在性判断都不重来", async () => {
+    const fake = fakeDeps({ available: ["notify-send"] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery();
+
+    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(fake.probed.length).toBe(3);
+    expect(fake.checked.length).toBe(1);
+
+    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(fake.probed.length).toBe(3);
+    expect(fake.checked.length).toBe(1);
+    // 复用的是探测结论，不是投递：弹窗两次都真的起了进程。
+    expect(fake.spawned.length).toBe(2);
+  });
+
+  // 缓存不清，第二个用例拿到上一个用例的平台结论——症状是单跑绿、连跑红。
+  it("换端口后重探：上一个端口的平台结论不会漏进下一次投递", async () => {
+    const linux = fakeDeps({ available: ["notify-send"], present: [TOAST_SCRIPT] });
+    installSystemDeps(linux);
+    expect(await new SystemDelivery().send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(linux.spawned.length).toBe(1);
+
+    const win = fakeDeps({ platform: "win32", present: [] });
+    installSystemDeps(win);
+    const second = new SystemDelivery();
+    expect(await second.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(second.warns).toEqual([
+      `dsh-notifier: 系统通知脚本缺失，Windows 弹窗未发出：${TOAST_SCRIPT}`,
+    ]);
+    expect(win.spawned.length).toBe(0);
+  });
+
+  // 卸下端口必须把真实进程事实还回来，否则同一个进程里的后续投递会继续用假件。
+  it("releaseSystemDeps：端口还给真实进程事实", () => {
+    installSystemDeps(fakeDeps({ platform: "win32" }));
+    expect(systemDeps().platform).toBe("win32");
+
+    releaseSystemDeps();
+    expect(systemDeps().platform).toBe(process.platform);
+  });
+});
+
+describe("命令执行：任何结局都收敛成投递结果", () => {
+  // spawn 抛错时没人接住就是宿主进程崩；弹窗半边只记日志，「只响不弹」才是这次投递失败。
+  it("spawn 同步抛错：弹窗半边只记日志，只响不弹时判投递失败", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
+    fake.spawnFailure = "argv 非法";
+    installSystemDeps(fake);
+
+    const pop = new SystemDelivery();
+    expect(await pop.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(pop.warns).toEqual(["dsh-notifier: 命令启动失败（notify-send）: argv 非法"]);
+
+    const soundOnly = new SystemDelivery({ pop: false, sound: "ding" });
+    expect(await soundOnly.send()).toEqual({
+      status: "failed",
+      stage: "delivered",
+      reason: "系统命令执行失败",
+      retryable: false,
+    });
+    expect(soundOnly.warns).toEqual(["dsh-notifier: 命令启动失败（pw-play）: argv 非法"]);
+  });
+
+  // 抛出物不一定是 Error（跨边界值）：原因若印成 undefined，日志里就只剩「启动失败」四个字。
+  it("spawn 抛出非 Error：启动失败的原因仍然可读", async () => {
+    const fake = fakeDeps({ available: ["notify-send"] });
+    fake.spawnFailure = "argv 非法";
+    fake.spawnFailureIsError = false;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery();
+
+    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(delivery.warns).toEqual(["dsh-notifier: 命令启动失败（notify-send）: argv 非法"]);
+  });
+
+  // 退出码 0 是唯一成功判据：把「起来了」当成功会让只响不弹在播放失败时也报 ok。
+  it("退出码 0：投递成功，且不留任何日志", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ pop: false, sound: "ding" });
+
+    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(delivery.warns).toEqual([]);
+    expect(fake.spawned.map((record) => record.command)).toEqual([["pw-play", LINUX_DING_FILE]]);
+  });
+
+  // stderr 尾部是 Windows PS 诊断的唯一载体；无上限收集会被一条长诊断撑爆，全量进日志会刷屏。
+  it("退出码非 0：warn 带 stderr 尾部（收集封顶 512、进日志截到 300）", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
+    fake.autoExit = false;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ pop: false, sound: "ding" });
+
+    const pending = delivery.send();
+    await pollUntil(() => fake.children.length > 0, "假端口应起出子进程");
+    fake.children[0]!.emitStderr("前".repeat(600));
+    fake.children[0]!.emitStderr("后".repeat(100));
+    fake.children[0]!.emitExit({ exited: true, code: 3 });
+
+    expect(await pending).toEqual({
+      status: "failed",
+      stage: "delivered",
+      reason: "系统命令执行失败",
+      retryable: false,
+    });
+    // 600 字的尾部已越过收集上限，第二段不再进缓冲；进日志的是截到 300 字的那一段。
+    expect(delivery.warns).toEqual([
+      `dsh-notifier: 命令退出码异常（pw-play exit 3）：${"前".repeat(300)}`,
+    ]);
+  });
+
+  // 没有 stderr 时不该留一个空的冒号尾巴（读日志的人会以为诊断被吞了）。
+  it("退出码非 0 但没有 stderr：warn 只报退出码", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
+    fake.autoExit = false;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ pop: false, sound: "ding" });
+
+    const pending = delivery.send();
+    await pollUntil(() => fake.children.length > 0, "假端口应起出子进程");
+    fake.children[0]!.emitExit({ exited: true, code: 3 });
+
+    expect((await pending).status).toBe("failed");
+    expect(delivery.warns).toEqual(["dsh-notifier: 命令退出码异常（pw-play exit 3）"]);
+  });
+
+  // 原生二进制缺失走的是 error 事件而不是退出码：不接住它宿主进程会直接被打挂。
+  it("error 事件：warn「命令不可用」并判失败，不外抛", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
+    fake.autoExit = false;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ pop: false, sound: "ding" });
+
+    const pending = delivery.send();
+    await pollUntil(() => fake.children.length > 0, "假端口应起出子进程");
+    fake.children[0]!.emitError(new Error("spawn pw-play ENOENT"));
+
+    expect(await pending).toEqual({
+      status: "failed",
+      stage: "delivered",
+      reason: "系统命令执行失败",
+      retryable: false,
+    });
+    expect(delivery.warns).toEqual(["dsh-notifier: 命令不可用（pw-play）: spawn pw-play ENOENT"]);
+  });
+
+  // 被杀多数是我们自己的超时兜底：那是主动行为，按异常刷屏会淹掉真正的失败。
+  it("被信号杀死：不刷 warn，但「只响不弹」仍按失败收敛", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
+    fake.autoExit = false;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ pop: false, sound: "ding" });
+
+    const pending = delivery.send();
+    await pollUntil(() => fake.children.length > 0, "假端口应起出子进程");
+    fake.children[0]!.emitExit({ exited: false });
+
+    expect((await pending).status).toBe("failed");
+    expect(delivery.warns).toEqual([]);
+  });
+
+  // 两个出口都到达时先到的那个说了算：后到的若再结算一次，结论会被反转。
+  it("exit 与 error 都到达：只结算先到的那个", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
+    fake.autoExit = false;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ pop: false, sound: "ding" });
+
+    const pending = delivery.send();
+    await pollUntil(() => fake.children.length > 0, "假端口应起出子进程");
+    fake.children[0]!.emitExit({ exited: false });
+    fake.children[0]!.emitError(new Error("迟到的 error"));
+
+    expect((await pending).status).toBe("failed");
+    expect(delivery.warns).toEqual([]);
+
+    // 反过来的顺序同样只结算一次：晚到的退出码不该再补一条异常日志
+    const reversed = fakeDeps({
+      available: ["notify-send", "pw-play"],
+      present: [LINUX_DING_FILE],
+    });
+    reversed.autoExit = false;
+    installSystemDeps(reversed);
+    const late = new SystemDelivery({ pop: false, sound: "ding" });
+    const lateExit = late.send();
+    await pollUntil(() => reversed.children.length > 0, "假端口应起出子进程");
+    reversed.children[0]!.emitError(new Error("先到的 error"));
+    reversed.children[0]!.emitExit({ exited: true, code: 3 });
+
+    expect((await lateExit).status).toBe("failed");
+    expect(late.warns).toEqual(["dsh-notifier: 命令不可用（pw-play）: 先到的 error"]);
+  });
+
+  // Windows 的 PS 诊断只在 stderr 上，故只有它接管道；探测与执行必须给同一条平台的选项。
+  it("win32 起进程接 stderr 管道，其它平台不接", async () => {
+    const linux = fakeDeps({ available: ["notify-send"] });
+    installSystemDeps(linux);
+    expect(await new SystemDelivery().send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(linux.spawned.map((record) => record.options)).toEqual([{ collectStderr: false }]);
+
+    const win = fakeDeps({ platform: "win32", present: [TOAST_SCRIPT] });
+    installSystemDeps(win);
+    expect(await new SystemDelivery().send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(win.spawned.map((record) => record.options)).toEqual([{ collectStderr: true }]);
+  });
+});
+
+describe("兜底杀进程（假时钟，不真等 8 秒）", () => {
+  // 卡住的子进程会一直占着投递：超时兜底不生效就是通知链路被一个死进程拖住。
+  it("卡满 8 秒即杀：7999ms 不杀、8000ms 杀且只杀一次", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const fake = fakeDeps({ available: ["notify-send"] });
+    fake.autoExit = false;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery();
+
+    const pending = delivery.send();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.children.length).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(7999);
+    expect(fake.children[0]!.killCount).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fake.children[0]!.killCount).toBe(1);
+
+    fake.children[0]!.emitExit({ exited: true, code: 0 });
+    expect(await pending).toEqual({ status: "ok", stage: "delivered" });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fake.children[0]!.killCount).toBe(1);
+  });
+
+  // 结局已到的子进程不该在 8 秒后再被「杀」一次：定时器不清，进程早已回收而回调照样打进来。
+  it("结局先到（退出或 error）：定时器被清掉，不再有杀进程动作", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+
+    const exited = fakeDeps({ available: ["notify-send"] });
+    exited.autoExit = false;
+    installSystemDeps(exited);
+    const first = new SystemDelivery().send();
+    await vi.advanceTimersByTimeAsync(0);
+    exited.children[0]!.emitExit({ exited: true, code: 0 });
+    expect(await first).toEqual({ status: "ok", stage: "delivered" });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(exited.children[0]!.killCount).toBe(0);
+
+    const errored = fakeDeps({ available: ["notify-send"] });
+    errored.autoExit = false;
+    installSystemDeps(errored);
+    const second = new SystemDelivery().send();
+    await vi.advanceTimersByTimeAsync(0);
+    errored.children[0]!.emitError(new Error("ENOENT"));
+    expect((await second).status).toBe("ok");
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(errored.children[0]!.killCount).toBe(0);
+  });
+});
+
+describe("sendSystem：弹窗与自播的编排", () => {
+  // 顺序反了会先响后弹；自播的静音标志漏了则响两声。
+  it("linux 弹窗 + 自播：先弹（恒静音）再响，两条命令都真的执行", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ pop: true, sound: "ding" });
+
+    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(fake.spawned.map((record) => record.command)).toEqual([
+      ["notify-send", "-h", "boolean:suppress-sound:true", "标题", "正文"],
+      ["pw-play", LINUX_DING_FILE],
+    ]);
+    expect(delivery.warns).toEqual([]);
+  });
+
+  // 无桌面会话、无 notify-send 是常态环境：这里不是失败，也不该留日志。
+  it("linux 探测不到 notify-send：不弹也不留 warn，投递仍是成功", async () => {
+    const fake = fakeDeps({ available: [] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ pop: true, sound: false });
+
+    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(fake.spawned).toEqual([]);
+    expect(delivery.warns).toEqual([]);
+  });
+
+  // 脚本缺失是打包缺陷而非环境常态：命令都没构造出来，得留一条能查的痕迹。
+  it("win32 脚本缺失：留一条 warn 说明弹窗未发出", async () => {
+    const fake = fakeDeps({ platform: "win32", present: [] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ pop: true, sound: false });
+
+    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(delivery.warns).toEqual([
+      `dsh-notifier: 系统通知脚本缺失，Windows 弹窗未发出：${TOAST_SCRIPT}`,
+    ]);
+    expect(fake.spawned).toEqual([]);
+  });
+
+  // 用户文本一旦进 argv 就是命令注入面；stderr 管道漏接则 PS 的诊断全丢。
+  it("win32 脚本存在：弹窗走 PowerShell base64 载荷并接 stderr", async () => {
+    const fake = fakeDeps({ platform: "win32", present: [TOAST_SCRIPT] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ pop: true, sound: false });
+
+    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(fake.spawned.map((record) => record.command.slice(0, 7))).toEqual([
+      [
+        "powershell",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        TOAST_SCRIPT,
+      ],
+    ]);
+    expect(payloadOf(fake.spawned[0]!.command)).toEqual({
+      title: "标题",
+      message: "正文",
+      silent: true,
+    });
+    expect(fake.spawned.map((record) => record.options)).toEqual([{ collectStderr: true }]);
+  });
+
+  // darwin 的弹窗自带声音，只响不弹时才轮到 afplay；这条命令错了就是彻底无声。
+  it("darwin 只响不弹：afplay 自播，弹窗半边没有命令", async () => {
+    const fake = fakeDeps({ platform: "darwin", present: ["/System/Library/Sounds/Glass.aiff"] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ pop: false, sound: true });
+
+    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(fake.spawned.map((record) => record.command)).toEqual([
+      ["afplay", "/System/Library/Sounds/Glass.aiff"],
+    ]);
+    expect(delivery.warns).toEqual([]);
+  });
+
+  // 管线不会给出这种目标，但出口不该在这里凭空造一个失败（没有可失败的环节）。
+  it("pop=false 且静音：什么都不做也算投递成功", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ pop: false, sound: false });
+
+    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(fake.spawned).toEqual([]);
+    expect(delivery.warns).toEqual([]);
+  });
+
+  // 只响不弹时声音是唯一动作：放不出声就是这次投递失败，且重投还是同样结论（不可重试）。
+  it("只响不弹但平台放不出声：判失败并给出原因，且不可重试", async () => {
+    const fake = fakeDeps({ available: ["notify-send"] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ pop: false, sound: true });
+
+    expect(await delivery.send()).toEqual({
+      status: "failed",
+      stage: "delivered",
+      reason: "本平台没有可用的系统通知通道",
+      retryable: false,
+    });
+    expect(fake.spawned).toEqual([]);
+  });
+
+  // 音色文件在、播放器一个都没有（探测全落空）：同样判「放不出声」，而不是 spawn 一个空 argv。
+  it("只响不弹且没有任何播放器：判失败，不起空命令", async () => {
+    const fake = fakeDeps({ available: ["notify-send"], present: [LINUX_DING_FILE] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ pop: false, sound: "ding" });
+
+    expect(await delivery.send()).toEqual({
+      status: "failed",
+      stage: "delivered",
+      reason: "本平台没有可用的系统通知通道",
+      retryable: false,
+    });
+    expect(fake.spawned).toEqual([]);
+  });
+
+  // win32 的播放骨架读 $args[0]：路径若拼进命令串，白名单就形同虚设。
+  it("win32 只响不弹：PowerShell SoundPlayer 播白名单 wav（路径作独立 argv）", async () => {
+    const wav = String.raw`C:\Windows\Media\Windows Ding.wav`;
+    const fake = fakeDeps({ platform: "win32", present: [wav] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ pop: false, sound: "ding" });
+
+    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(fake.spawned.map((record) => record.command)).toEqual([
+      [
+        "powershell",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$p=$args[0]; (New-Object System.Media.SoundPlayer $p).PlaySync()",
+        wav,
+      ],
+    ]);
+  });
+
+  // 截断上限是出口之间的展示约定：漏截就是给命令行塞一条超长文本，截错档位会砍掉有效信息。
+  it("弹窗文本按展示上限截断（标题 64、正文 256）后才进命令", async () => {
+    const fake = fakeDeps({ available: ["notify-send"] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ pop: true, sound: false });
+
+    expect(
+      await delivery.send({ ...MESSAGE, title: "标".repeat(70), body: "正".repeat(300) }),
+    ).toEqual({ status: "ok", stage: "delivered" });
+    expect(fake.spawned.map((record) => record.command)).toEqual([
+      ["notify-send", "-h", "boolean:suppress-sound:true", "标".repeat(64), "正".repeat(256)],
+    ]);
+  });
+});
+
+describe("默认真实端口：生产路径逐字不变", () => {
+  // 默认值接错（比如写死一个平台）在生产里只有真机才看得出来，故直接对进程事实。
+  it("platform 与 existsSync 直取进程事实", () => {
+    expect(systemDeps().platform).toBe(process.platform);
+    expect(systemDeps().existsSync(process.execPath)).toBe(true);
+    expect(systemDeps().existsSync("/__dsh_notifier_absent__")).toBe(false);
+  });
+
+  // 探测的成败判据反了会把「命令可用」读成不可用：投影到出口就是「本平台放不出声」。
+  it("execFile 探测：跑得起来的命令可用，缺失的命令不可用", async () => {
+    expect(await probeFailed(process.execPath, ["--version"])).toBe(false);
+    expect(await probeFailed("__dsh_notifier_absent__", [])).toBe(true);
+  });
+
+  // 真子进程这一层要接住三件事：argv 传对、stderr 接上、退出码如实上报。
+  it("spawn 起真实子进程：退出码与 stderr 都落到真进程上", async () => {
+    const child = systemDeps().spawn(
+      [process.execPath, "-e", "process.stderr.write('诊断标记'); process.exit(5)"],
+      { collectStderr: true },
+    );
+    const stderr = stderrOf(child);
+    const exit = exitOf(child);
+
+    expect(await stderr).toContain("诊断标记");
+    expect(await exit).toEqual({ exited: true, code: 5 });
+  });
+
+  // 没人接住的 error 事件会把宿主进程打挂（历史版本在 macOS 上直接 spawn 缺失的 powershell 崩过）。
+  it("spawn 起不存在的命令：error 事件到达而不是打挂宿主", async () => {
+    const child = systemDeps().spawn(["__dsh_notifier_absent__"], { collectStderr: false });
+
+    expect((await errorOf(child)).message).toContain("ENOENT");
+  });
+
+  // 被信号杀死与「退出码非 0」是两种事实：混成一种就会给超时兜底刷一条假异常。
+  it("spawn 被 kill：收到的是「被信号杀死」而不是退出码", async (ctx) => {
+    ctx.skip(
+      process.platform === "win32",
+      "Windows 的 kill 不给信号退出语义（本用例守 posix 那一支）",
+    );
+    const child = systemDeps().spawn([process.execPath, "-e", "setTimeout(() => {}, 60_000)"], {
+      collectStderr: false,
+    });
+    const exit = exitOf(child);
+
+    child.kill();
+    expect(await exit).toEqual({ exited: false });
   });
 });

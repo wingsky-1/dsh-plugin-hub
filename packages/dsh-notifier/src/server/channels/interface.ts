@@ -1,7 +1,8 @@
 /**
  * dsh-notifier channels 域 —— **对外契约**。
  * 只做一件事：把一条通知投递出去——不裁决发给谁、不读配置、不落史，只回答「送到没有、
- * 为什么没送到」；跨端帧交给帧出口即完成职责。本域对其它域零依赖，故没有 deps.ts。
+ * 为什么没送到」；跨端帧交给帧出口即完成职责。本域对其它域零依赖，故没有域级 deps.ts
+ * （`impl/system/deps.ts` 收的是本进程事实，不是别的域的注入面）。
  */
 import { deliverImpl } from "./impl/deliver/index.ts";
 import type { DeliveryTarget } from "./impl/deliver/index.ts";
