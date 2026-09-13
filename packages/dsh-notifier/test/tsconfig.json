@@ -1,0 +1,17 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "rewriteRelativeImportExtensions": true,
+    "allowImportingTsExtensions": true,
+    // 产物面消费方夹具（integration/consumer-product-face.ts）按**包名**导入，映射到
+    // 构建产物 lib/index.d.ts：这是「声明合并是否随包可达」的唯一判据面——映射到
+    // src/index.ts 会让源码直接进编译程序，从而掩盖「合并只写在源面」的缺陷（#733 宪法第 3 条）。
+    // 前置：本文件被编译前必须先 `pnpm --filter @wingsky-1/dsh-notifier build`。
+    "paths": {
+      "@wingsky-1/dsh-notifier": ["../lib/index.d.ts"]
+    }
+  },
+  "include": ["./**/*.ts"]
+}
