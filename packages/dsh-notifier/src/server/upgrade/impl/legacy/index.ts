@@ -4,15 +4,18 @@
  * V1 从**宿主文档文件**直接读：`describe()` 只列已注册的命名空间，而本插件不再注册它（见 `type.ts` 的说明），
  * 服务面那条路读不到存量的 user 层——把它留在后面只作非文件型 provider 的兜底。 */
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { legacyFile, settingsDocument } from "../../../shared/interface.ts";
+import { dshHome } from "../../../../../../../shared/dsh-home.js";
+import { legacyFile } from "../../../shared/interface.ts";
 import type { RawSettingValue } from "../../deps.ts";
 import type { LegacySettingsFace, LegacyStoredSettings } from "./type.ts";
 
 /** 本插件在官方 settings 服务里的命名空间（0.2.3 用的那个）。 */
 const SETTINGS_NS = "dsh-notifier";
 
-/** settings 文档的候选文件名：`.yaml` 是官方文件型 provider 的缺省，`.json` 是它支持的另一种扩展名。 */
+/** settings 文档的候选文件名：`.yaml` 是官方文件型 provider 的缺省，`.json` 是它支持的另一种扩展名。
+ * 名字与位置都是**宿主**的约定、本包只在割接时读一次，不属本包存储布局，故随本块而不进共享层。 */
 const SETTINGS_DOC_FILES: readonly string[] = ["settings.yaml", "settings.json"];
 
 /** V0 的两个候选文件名，按优先级。`…migrated.bak` 是 0.2.3 迁移完成后改的名，内容与改名前的 json 逐字相同，所以
@@ -59,11 +62,11 @@ function readFromDocument(documentPath: string | undefined): LegacyStoredSetting
   return {};
 }
 
-/** 候选文档路径：provider 自报的优先；它没有文件（或没给出路径）时按官方缺省名找——非文件型 provider 读不到，
- * 也就自然落到下一环（服务面）。 */
+/** 候选文档路径：provider 自报的优先；它没有文件（或没给出路径）时按官方缺省名在 DSH home 根下找——非文件型
+ * provider 读不到，也就自然落到下一环（服务面）。 */
 function documentCandidates(documentPath: string | undefined): readonly string[] {
   if (typeof documentPath === "string" && documentPath.trim().length > 0) return [documentPath];
-  return SETTINGS_DOC_FILES.map((name) => settingsDocument(name));
+  return SETTINGS_DOC_FILES.map((name) => join(dshHome(), name));
 }
 
 /** 读一份文档并取本插件的分节：文件不存在、读不动、解析失败、分节不是普通对象，一律算「没有存量」。 */

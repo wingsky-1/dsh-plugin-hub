@@ -10,7 +10,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { legacyFile, settingsDocument } from "../../../src/server/shared/interface.ts";
+import { legacyFile } from "../../../src/server/shared/interface.ts";
 import { readLegacySettings } from "../../../src/server/upgrade/impl/legacy/index.ts";
 import type { LegacySettingsFace } from "../../../src/server/upgrade/impl/legacy/type.ts";
 import { tempDshHome, wire } from "../../helpers.ts";
@@ -139,12 +139,13 @@ describe("宿主文档文件：未注册命名空间的存量也读得到", () =
   });
 
   it("provider 没自报路径时按 DSH home 下的 settings.yaml 兜底", () => {
-    writeFileSync(settingsDocument("settings.yaml"), "dsh-notifier:\n  customKey: 42\n", "utf8");
+    // 路径由夹具自己拼（不走实现的任何 helper）：兜底名与兜底位置都得被独立钉住。
+    writeDocument("dsh-notifier:\n  customKey: 42\n", "settings.yaml");
     expect(readLegacySettings(makeSettings([]))).toEqual({ customKey: 42 });
   });
 
   it("文档是 JSON 时同样能读（官方 provider 支持 .json 扩展名）", () => {
-    writeFileSync(settingsDocument("settings.json"), `{"${NS}":{"notifyAsk":true}}`, "utf8");
+    writeDocument(`{"${NS}":{"notifyAsk":true}}`, "settings.json");
     expect(readLegacySettings(makeSettings([]))).toEqual({ notifyAsk: true });
   });
 
