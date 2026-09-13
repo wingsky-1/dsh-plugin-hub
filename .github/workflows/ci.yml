@@ -640,6 +640,13 @@ jobs:
       - name: Lint（ESLint 复杂度门禁；阈值唯一事实源 gauntlet.config.json 的 complexity 段）
         run: pnpm lint
 
+      # #733 计划项 3.5：形态（Prettier）此前**没有任何 CI 执行点**——只有 pre-commit
+      # 钩子，而钩子可被 --no-verify 绕过、且只作用于 staged 文件，形态因此是可以长期
+      # 腐坏而无人报红的判据。面由 .prettierignore 显式圈定（只代码面），所以
+      # `format:check` 即「代码面全量」，与 lint 同为零产物依赖的秒级全仓闸。
+      - name: Format check（Prettier 形态；面见 .prettierignore）
+        run: pnpm format:check
+
       - name: Forbid legacy src tests（#423：变异测试单份维护，*.src.test.ts 全仓禁现）
         run: node scripts/gate/forbid-src-tests.mjs
 

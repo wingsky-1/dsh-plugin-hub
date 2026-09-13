@@ -132,6 +132,9 @@ function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel }) {
       args: ["verify:coverage-scope"],
     },
     { label: "lint（ESLint 复杂度门禁，阈值见 gauntlet.config.json）", args: ["lint"] },
+    // #733 计划项 3.5：形态的 CI 执行点在 ci.yml（repo-gate 恒跑段），本地同款接入——
+    // 否则「本地全绿、CI 红在 format」这种落差会天天发生。面见 .prettierignore。
+    { label: "format:check（Prettier 形态，代码面全量）", args: ["format:check"] },
   ];
   const prereqStep = {
     label: `build 编译面前置包（test:scripts 依赖：${PREREQ_PACKAGES.join(", ")}）`,

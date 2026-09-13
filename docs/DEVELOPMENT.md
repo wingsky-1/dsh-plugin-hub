@@ -91,8 +91,10 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
      组 A（廉价全仓闸，恒跑）：判定脚本 `repo-gate-assert.mjs`、`threshold-monotonic`、
      `aggregate:check`、`stryker:check`、`test:scripts`、`forbid-src-tests`、
      `forbid-homedir-src`、`forbid-module-state-src`、`verify-scripts-index`、
-     `verify-coverage-scope`、`docs:check`
-     （`test:scripts` 的编译面前置包清单见
+     `verify-coverage-scope`、`docs:check`、`lint`、`format:check`
+     （`format:check` 是形态的唯一执行点：面由 `.prettierignore` 显式圈定，只格式化代码面，
+     文档 / `.github/` / 生成器写入的数据与派生物被排除并各带理由；
+     `test:scripts` 的编译面前置包清单见
      `scripts/test/script-test-prereqs.mjs`，CI 与本地门禁同源读取；
      `verify-scripts-index` 的判据见 `scripts/README.md` 顶部说明——**索引边界是「仓库会调用
      什么」**：索引项必须存在，被调用点引用的脚本必须登记）；
