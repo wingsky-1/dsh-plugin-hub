@@ -18,8 +18,8 @@ export const displayCaps: Readonly<Record<DeliveryTarget["type"], DisplayCaps>> 
 /** 失败原因上限：状态页只有一行，原因是摘要不是全文（0.2.3 同值）。 */
 export const FAILURE_REASON_MAX = 300;
 
-/** 按码点截断（超长才截）：按 UTF-16 截会腰斩 emoji 代理对，显示成替换符。 */
-export function truncateCodePoints(text: string, max: number): string {
-  const chars = Array.from(text);
-  return chars.length > max ? chars.slice(0, max).join("") : text;
-}
+/** 失败原因里附带的响应体摘要上限：各出口自己拼文案，摘要长度是同一条口径。 */
+export const RESPONSE_DETAIL_MAX = 200;
+
+/** 按码点截断：定稿与四个出口共用同一份（实现在共享层，这里只是转发，不是第二份副本）。 */
+export { truncateCodePoints } from "../../../shared/interface.ts";

@@ -3,7 +3,12 @@
  * device_key 走 JSON body 不进 URL（反代访问日志默认只记 URL 与 header）；成功判定双查
  * 2xx 且响应体 code===200；失败只分类不重试，重试与节奏归管线。
  */
-import { FAILURE_REASON_MAX, displayCaps, truncateCodePoints } from "../deliver/caps.ts";
+import {
+  FAILURE_REASON_MAX,
+  RESPONSE_DETAIL_MAX,
+  displayCaps,
+  truncateCodePoints,
+} from "../deliver/caps.ts";
 import type { DeliverResult, NotifyMessage, NotifySeverity } from "../deliver/type.ts";
 import type { BarkPushBody, BarkPushResponse, BarkTarget } from "./type.ts";
 
@@ -18,7 +23,6 @@ const SEVERITY_LEVEL: Readonly<Record<NotifySeverity, string>> = {
   info: "passive",
 };
 
-/** 投递一条消息到 bark 实例。 */
 export async function sendBark(target: BarkTarget, message: NotifyMessage): Promise<DeliverResult> {
   const body = barkBodyOf(target, message);
 
@@ -87,7 +91,7 @@ function barkBodyOf(target: BarkTarget, message: NotifyMessage): BarkPushBody {
 /** 非 2xx 的响应体摘要；读不到就是空串——状态码本身已是完整原因。 */
 async function errorDetailOf(response: Response): Promise<string> {
   try {
-    return truncateCodePoints(await response.text(), 200);
+    return truncateCodePoints(await response.text(), RESPONSE_DETAIL_MAX);
   } catch {
     return "";
   }

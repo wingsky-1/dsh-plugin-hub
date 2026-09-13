@@ -1698,7 +1698,7 @@ function SettingsCard() {
         ? t("chStateSound")
         : t("chStateOn");
     var extras: any[] = [];
-    extras.push(chRow(t("chPopup"), switchControl(popupKey, t("chPopup") + "：" + label)));
+    extras.push(chRow(t("chPopup"), switchControl(popupKey, t("chPopup") + " " + label)));
     if (channelId === "browser") {
       extras.push(
         chRow(t("chWhenVisible"), switchControl("notifyWhenVisible", t("chWhenVisible"))),

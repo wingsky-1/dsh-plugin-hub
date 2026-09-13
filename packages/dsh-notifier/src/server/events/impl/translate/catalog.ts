@@ -4,7 +4,8 @@
  */
 import type { KindText, NotifyDetail } from "./type.ts";
 
-/** 毫秒 → 人类可读耗时（如 "45 秒" / "2 分 15 秒" / "1 小时 2 分 5 秒"）。 */
+/** 毫秒 → 人类可读耗时（如 "45 秒" / "2 分 15 秒" / "1 小时 2 分 5 秒"）。
+ *  导出是为了让这条口径可表驱动：它的产物是纯字符串，走宿主事件断言要造一整条事件链。 */
 export function formatDuration(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(Number(ms) / 1000));
   const hours = Math.floor(totalSeconds / 3600);
@@ -51,7 +52,7 @@ const TOOL_LABELS: Record<string, string> = {
 
 /**
  * 工具名美化：常见工具查上表；`mcp__server__tool` 展开成「MCP 服务器 "server" 的工具 "tool"」；
- * 其余原样。
+ * 其余原样。导出是为了让映射表可表驱动：它不是事件的产物，而是文案口径。
  */
 export function prettyToolName(name?: string): string {
   const text = name ?? "?";

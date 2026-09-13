@@ -4,7 +4,7 @@
  */
 import type { ApiDeps } from "../../deps.ts";
 import { JournalEndpoints } from "../journal/index.ts";
-import { KindEndpoints } from "../kinds/index.ts";
+import { KindsEndpoints } from "../kinds/index.ts";
 import { ProbeEndpoints } from "../probe/index.ts";
 import { registerEndpoints } from "../route/index.ts";
 import type { Endpoint } from "../route/type.ts";
@@ -27,7 +27,7 @@ class ApiService {
     const settings = new SettingsEndpoints(deps.config);
     const journal = new JournalEndpoints(deps.stores);
     const probe = new ProbeEndpoints(deps.pipeline);
-    const kinds = new KindEndpoints(deps.kinds);
+    const kinds = new KindsEndpoints(deps.kinds);
     const endpoints: Endpoint[] = [
       { path: "/api/dsh-notifier/config", methods: { GET: settings.read, PUT: settings.write } },
       { path: "/api/dsh-notifier/history", methods: { GET: journal.read, DELETE: journal.clear } },

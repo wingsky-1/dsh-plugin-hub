@@ -3,7 +3,12 @@
  * 模板走两步法防注入：先替换裸值 {{ts}}、JSON.parse 整份模板，再对字符串值做占位符替换
  * 后重新序列化，替换内容因此逃不出字符串。任何失败都不重试。
  */
-import { FAILURE_REASON_MAX, displayCaps, truncateCodePoints } from "../deliver/caps.ts";
+import {
+  FAILURE_REASON_MAX,
+  RESPONSE_DETAIL_MAX,
+  displayCaps,
+  truncateCodePoints,
+} from "../deliver/caps.ts";
 import type { DeliverResult, NotifyMessage, NotifySeverity } from "../deliver/type.ts";
 import type {
   WebhookPreset,
@@ -31,9 +36,6 @@ const PRIORITY: Readonly<Record<WebhookPreset, Readonly<Record<NotifySeverity, s
 const MIN_TIMEOUT_SEC = 1;
 const MAX_TIMEOUT_SEC = 60;
 const DEFAULT_TIMEOUT_SEC = 10;
-
-/** 响应体进失败原因的摘要长度（码点）。 */
-const RESPONSE_DETAIL_MAX = 200;
 
 /** 占位符（`{{ts}}` 不在其中：它只在文本层替换，见 renderWebhookBody）。 */
 const TOKEN_RE = /\{\{\s*(title|message|kind|severity|priority|source)\s*\}\}/g;
@@ -96,7 +98,7 @@ function renderTree(
   return node;
 }
 
-/** 投递一条消息到 webhook 端点；失败即 failed，不重试。 */
+/** 请求体由模板渲染；任何失败都不重试（模板或凭据写错，重投三次还是同样的结论）。 */
 export async function sendWebhook(
   target: WebhookTarget,
   message: NotifyMessage,

@@ -196,7 +196,7 @@ function run(command: readonly string[], logger: LoggerPort, platform: string): 
   });
 }
 
-/** 投递一条系统通知（弹窗 + 可选提示音）。 */
+/** 弹窗与提示音是两个独立动作：弹窗那半边的失败只记日志，「只响不弹」时自播失败才算这次失败。 */
 export async function sendSystem(
   target: SystemTarget,
   message: NotifyMessage,

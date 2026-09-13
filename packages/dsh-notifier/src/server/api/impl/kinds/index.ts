@@ -16,7 +16,7 @@ const BODY_LIMIT = 4 * 1024;
 type ConfirmOutcome = Awaited<ReturnType<KindPort["confirmKind"]>>;
 
 /** 动态种类端点。能力在装配期接上，此后每个请求只读实例字段。 */
-export class KindEndpoints {
+export class KindsEndpoints {
   constructor(private readonly kinds: KindPort) {}
 
   /** GET /kinds：清单（登记项 × 确认态）。 */

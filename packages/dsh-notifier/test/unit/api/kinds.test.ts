@@ -10,7 +10,7 @@ import type { IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
 
 import type { KindPort } from "../../../src/server/api/deps.ts";
-import { KindEndpoints } from "../../../src/server/api/impl/kinds/index.ts";
+import { KindsEndpoints } from "../../../src/server/api/impl/kinds/index.ts";
 import { jsonReq, makeRes } from "../../helpers.ts";
 
 /** 写面结果经能力面的签名可达，不请 sdk 域再多导出一个名字。 */
@@ -49,7 +49,7 @@ function fakeKinds(result?: ConfirmResult, listed: RegisteredKind[] = REGISTERED
 function get(listed: RegisteredKind[] = REGISTERED) {
   const kinds = fakeKinds(undefined, listed);
   const { res, rec, json } = makeRes();
-  new KindEndpoints(kinds.port).read(makeReq(), res);
+  new KindsEndpoints(kinds.port).read(makeReq(), res);
   return { rec, json, kinds };
 }
 
@@ -57,7 +57,7 @@ function get(listed: RegisteredKind[] = REGISTERED) {
 async function post(request: { body?: unknown; rawBody?: string }, result?: ConfirmResult) {
   const kinds = fakeKinds(result);
   const { res, rec, json } = makeRes();
-  await new KindEndpoints(kinds.port).confirm(makeReq(request), res);
+  await new KindsEndpoints(kinds.port).confirm(makeReq(request), res);
   return { rec, json, kinds };
 }
 
@@ -129,7 +129,7 @@ describe("POST /kinds：写面四态 → 四个状态码（与设置端点同款
     };
     const { res } = makeRes();
     await expect(
-      new KindEndpoints(port).confirm(makeReq({ body: { kind: "demo:x", confirmed: true } }), res),
+      new KindsEndpoints(port).confirm(makeReq({ body: { kind: "demo:x", confirmed: true } }), res),
     ).rejects.toThrow("写盘炸了");
   });
 
