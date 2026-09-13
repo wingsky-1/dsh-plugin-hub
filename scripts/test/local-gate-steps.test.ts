@@ -58,3 +58,12 @@ test("full 档：pr 档的全部 + 豁免到期台账收集", () => {
   assert.match(out, /threshold-monotonic（阈值只许升不许降，基准 origin\/main）/, "full 档同 pr");
   assert.match(out, /contract（全仓口径）/, "full 档同 pr");
 });
+
+test("pr 档：含 scripts 索引判据（#733 E2 的引用即登记，恒跑规则面）", () => {
+  const out = plannedSteps("pr");
+  // 用 includes 而非正则：标签里的 ` + ` 在正则里是量词，会把断言写成永远不匹配
+  assert.ok(
+    out.includes("verify:scripts-index（scripts 索引：存在性 + 引用即登记）"),
+    "pr 档必须含 verify:scripts-index —— 它属恒跑的规则面",
+  );
+});

@@ -83,8 +83,11 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
   2. `repo-gate` 分两组——
      组 A（廉价全仓闸，恒跑）：判定脚本 `repo-gate-assert.mjs`、`threshold-monotonic`、
      `aggregate:check`、`stryker:check`、`test:scripts`、`forbid-src-tests`、
-     `forbid-homedir-src`、`docs:check`（`test:scripts` 的编译面前置包清单见
-     `scripts/test/script-test-prereqs.mjs`，CI 与本地门禁同源读取）；
+     `forbid-homedir-src`、`forbid-module-state-src`、`verify-scripts-index`、`docs:check`
+     （`test:scripts` 的编译面前置包清单见
+     `scripts/test/script-test-prereqs.mjs`，CI 与本地门禁同源读取；
+     `verify-scripts-index` 的判据见 `scripts/README.md` 顶部说明——**索引边界是「仓库会调用
+     什么」**：索引项必须存在，被调用点引用的脚本必须登记）；
      组 B（产物闸，按 `fullGate` 切口径）：`contract` / `pack:check` / `verify:npmlayout`
      —— 默认只验命中包（`--packages <命中清单>`），`gate:full` 时验全仓；
   3. `coverage` / `mutation-gate` / `mutation-verdict`（全量链路）：只在 `gate:full` 的

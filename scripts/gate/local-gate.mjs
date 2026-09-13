@@ -123,6 +123,10 @@ function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel }) {
     // 于本地增量档不可见；现与兄弟闸一致（CI 侧同为直接步骤）。
     { label: "gate:module-state（src 禁模块级可变状态）", args: ["gate:module-state"] },
     { label: "docs:check（README/链接）", args: ["docs:check"] },
+    {
+      label: "verify:scripts-index（scripts 索引：存在性 + 引用即登记）",
+      args: ["verify:scripts-index"],
+    },
     { label: "lint（ESLint 复杂度门禁，阈值见 gauntlet.config.json）", args: ["lint"] },
   ];
   const prereqStep = {

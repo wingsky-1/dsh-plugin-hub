@@ -652,3 +652,5 @@ jobs:
 
       - name: Docs check（README/链接/占位符）
         run: pnpm docs:check
+      - name: Scripts index（#733 3.3 E2：索引项存在 + 被调用的脚本必须登记）
+        run: node scripts/gate/verify-scripts-index.mjs
