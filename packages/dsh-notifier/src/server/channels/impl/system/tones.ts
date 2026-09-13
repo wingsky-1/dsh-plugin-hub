@@ -12,8 +12,13 @@ export const MAC_SOUND_NAMES: Readonly<Record<string, string>> = {
   pop: "Pop",
 };
 
-/** Linux freedesktop 声音事件文件候选（sound-theme-freedesktop 基线包内；首存在者胜）。 */
-const LINUX_TONE_FILES: Readonly<Record<string, readonly string[]>> = {
+/**
+ * Linux freedesktop 声音事件文件候选（sound-theme-freedesktop 基线包内；首存在者胜）。
+ *
+ * 导出给 synth.ts 对键集：主题文件缺失时改用运行时合成音，两侧音色键必须一一对应，否则会
+ * 出现「某音色在有主题的宿主上能响、没主题的宿主上永远不响」（#783）。
+ */
+export const LINUX_TONE_FILES: Readonly<Record<string, readonly string[]>> = {
   ding: ["message-new-instant.oga"],
   bell: ["bell.oga"],
   chime: ["complete.oga", "dialog-information.oga"],
