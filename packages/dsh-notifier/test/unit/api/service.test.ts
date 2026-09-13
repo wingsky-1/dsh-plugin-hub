@@ -191,6 +191,7 @@ function assemble() {
     channels: {
       probeCapabilities: () => Promise.resolve(CAPABILITIES),
       hostPlatform: () => "linux",
+      undeterminedCapabilities: () => CAPABILITIES,
     },
   };
   installApi(deps);

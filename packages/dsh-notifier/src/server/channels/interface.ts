@@ -7,7 +7,7 @@
 import { deliverImpl } from "./impl/deliver/index.ts";
 import type { DeliveryTarget } from "./impl/deliver/index.ts";
 import type { DeliverResult, NotifyMessage } from "./impl/deliver/type.ts";
-import { probeHostCapabilities } from "./impl/capabilities/index.ts";
+import { probeHostCapabilities, undeterminedCapabilities } from "./impl/capabilities/index.ts";
 import { systemDeps } from "./impl/system/deps.ts";
 import type { HostCapabilities } from "./impl/capabilities/type.ts";
 
@@ -51,3 +51,10 @@ export async function probeCapabilities(): Promise<HostCapabilities> {
 export function hostPlatform(): string {
   return systemDeps().platform;
 }
+
+/**
+ * 探测没能给出结论时的诚实回答（两个维度都「无法判定」）。
+ * 出口在这里，是为了让「探测失败/超预算」的兜底形状只有一份：调用方各自就地拼一个字面量，
+ * 很快就会漂成三种形状，而客户端只认得其中一种。
+ */
+export { undeterminedCapabilities };

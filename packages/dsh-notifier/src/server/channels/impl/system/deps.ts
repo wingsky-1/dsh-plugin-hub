@@ -108,7 +108,11 @@ const OS_RELEASE_PATH = "/etc/os-release";
 /** 只读查询的 stdout 上限：`ListActivatableNames` 在真实桌面总线上常有上百项，按字节截断会把
  * 可激活的服务漏判成不存在（假警报），故超限一律报失败而不是截断。 */
 const QUERY_STDOUT_LIMIT = 64 * 1024;
-const QUERY_TIMEOUT_MS = 3000;
+/**
+ * 单条只读查询的超时。**比平台命令探测的 3s 短**：这是本机总线上的两次问答，正常是毫秒级；总线地址在
+ * 而 socket 已死时我们想尽快换下一条 CLI，而不是每条都等满 3 秒——那台机器上能力面会等十几秒。
+ */
+const QUERY_TIMEOUT_MS = 1200;
 
 /** 一条只读查询的结论。启动失败、超时、非零退出、stdout 超限四种成因对本端口是同一个答案
  * 「这条路径问不出来」，区分它们只会让调用方多一层用不上的分支。 */
@@ -237,10 +241,16 @@ async function probeNotificationNameReal(): Promise<NotificationNameProbe> {
   return { kind: "probe-failed", detail: "gdbus/dbus-send/busctl 均不可用" };
 }
 
-/** 只取 `ID=` 一行：整份文件是宿主原文，任何一行都不该进响应体。 */
-function readOsReleaseReal(): OsReleaseProbe {
+/**
+ * 只取 `ID=` 一行：整份文件是宿主原文，任何一行都不该进响应体。
+ *
+ * 路径是入参而不是闭包里的常量：**never-throw 是端口的契约**（调用侧没有 `try/catch`），而这份契约
+ * 只有「文件缺失」与「读取抛错」两条路都能被注入才判得住——写死路径的那一版在 CI 上永远读到真文件，
+ * 把 `try/catch` 整段删掉都没有一条用例会红。
+ */
+export function readOsReleaseFile(path: string): OsReleaseProbe {
   try {
-    const matched = /^ID=(.*)$/mu.exec(readFileSync(OS_RELEASE_PATH, "utf8"))?.[1] ?? "";
+    const matched = /^ID=(.*)$/mu.exec(readFileSync(path, "utf8"))?.[1] ?? "";
     const id = matched.trim().replace(/^"|"$/gu, "");
     return id === "" ? { ok: false } : { ok: true, id };
   } catch {
@@ -255,7 +265,7 @@ const REAL_DEPS: SystemDeps = {
   execFile: probeWithExecFile,
   existsSync: (path) => existsSync(path),
   probeNotificationName: probeNotificationNameReal,
-  readOsRelease: readOsReleaseReal,
+  readOsRelease: () => readOsReleaseFile(OS_RELEASE_PATH),
 };
 
 /** 平台能力缓存：探一次即复用（同进程内通知脚本路径固定）。 */

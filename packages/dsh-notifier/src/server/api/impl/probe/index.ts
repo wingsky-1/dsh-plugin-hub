@@ -5,7 +5,13 @@ import {
   type JsonBodyInvalidReason,
   readJsonBodyOutcome,
 } from "../../../../../../../shared/host-utils.js";
-import type { ChannelPort, HostCapabilities, NotifyRequest, PipelinePort } from "../../deps.ts";
+import type {
+  ChannelPort,
+  HostCapabilities,
+  LoggerPort,
+  NotifyRequest,
+  PipelinePort,
+} from "../../deps.ts";
 import { sendFailure, sendJson } from "../route/index.ts";
 import type { RouteHandler } from "../route/type.ts";
 import { streamHub } from "../stream/index.ts";
@@ -30,6 +36,32 @@ const TEST_NOTIFICATION: NotifyRequest = {
   body: "通知链路工作正常（此通知来自测试按钮）",
 };
 
+/**
+ * 能力自检的总预算（毫秒）。探测是串行的（先跑平台命令探测，再逐个试 D-Bus CLI），单次超时叠加起来
+ * 最坏可以到十几秒，而 `/health` 是「随时可打」的探活面——超过预算就如实回「无法判定」，并且把这条
+ * 结论缓存下来：不缓存会让每个请求都重新等一遍，那是拿用户机器当靶场。
+ */
+const CAPABILITY_BUDGET_MS = 8000;
+
+/** 给一个 Promise 套总预算；超时即拒绝（调用方按「无法判定」兜底）。 */
+function withBudget<T>(work: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`能力自检超出 ${ms}ms 预算`)), ms);
+    // 预算是兜底不是任务：它不该拖住进程退出（测试里尤其明显）
+    timer.unref();
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (cause: unknown) => {
+        clearTimeout(timer);
+        reject(cause instanceof Error ? cause : new Error(String(cause)));
+      },
+    );
+  });
+}
+
 /** 自检端点。能力在装配期接上，此后每个请求只读实例字段。 */
 export class ProbeEndpoints {
   /** 能力自检的共享缓存。两条路由共用同一次探测：探测会起子进程，每请求各探一次就是拿用户机器当靶场。 */
@@ -38,12 +70,28 @@ export class ProbeEndpoints {
   constructor(
     private readonly pipeline: PipelinePort,
     private readonly channels: ChannelPort,
+    private readonly logger: LoggerPort,
   ) {}
 
-  /** 取（必要时首次发起）能力自检。首请求最多等一次探测超时，此后再读同一个 Promise。 */
+  /**
+   * 取（必要时首次发起）能力自检。
+   *
+   * 兜底必须在**这里**：`/health` 是探活面，探测失败若继续往上抛，端点会连 `ok`/`platform`/`sseEvicts`
+   * 一起丢掉，一个诊断附属面把主面拖成 500——那比「暂时不知道宿主能力」糟得多。
+   */
   private capabilities(): Promise<HostCapabilities> {
-    this.hostCapabilities ??= this.channels.probeCapabilities();
+    this.hostCapabilities ??= this.probeWithinBudget();
     return this.hostCapabilities;
+  }
+
+  private async probeWithinBudget(): Promise<HostCapabilities> {
+    try {
+      return await withBudget(this.channels.probeCapabilities(), CAPABILITY_BUDGET_MS);
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      this.logger.warn(`dsh-notifier: 能力自检未给出结论（${reason}），按「无法判定」上报`);
+      return this.channels.undeterminedCapabilities();
+    }
   }
 
   /**

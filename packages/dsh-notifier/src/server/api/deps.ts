@@ -22,7 +22,10 @@ export type PipelinePort = Pick<typeof pipelineApi, "submit">;
 export type KindPort = Pick<typeof sdkApi, "confirmKind" | "listKinds">;
 
 /** channels 域给浏览器的能力面：只读能力自检与平台事实。**不含** `deliver`——api 域不该能伪造通知。 */
-export type ChannelPort = Pick<typeof channelsApi, "probeCapabilities" | "hostPlatform">;
+export type ChannelPort = Pick<
+  typeof channelsApi,
+  "probeCapabilities" | "hostPlatform" | "undeterminedCapabilities"
+>;
 
 export type { NotifyFrame } from "../channels/interface.ts";
 export type { HostCapabilities } from "../channels/interface.ts";

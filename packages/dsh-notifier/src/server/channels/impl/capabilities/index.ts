@@ -134,6 +134,13 @@ function popupChecked(platform: string, name: NotificationNameProbe): readonly C
   return allowed(platform, "popup", queried);
 }
 
+/**
+ * 把「问过的维度」收进本格的允许集。
+ *
+ * 如实说明：生产路径上它**不过滤掉任何东西**——各分支派生出的集合本就是允许集的子集，所以把它整段
+ * 删掉也不会有一条用例变红（实测过）。保留它是兜底而不是判据：真正的保证在测试侧的**精确取值**断言
+ * （多一个词就红）与「产出 ⊆ 允许集」断言，本函数只保证实现自己不越界。
+ */
 function allowed(
   platform: string,
   dimension: CapabilityDimension,
@@ -161,7 +168,23 @@ function soundCapability(probe: PlatformProbe, tone: ToneFacts): SoundCapability
   if (probe.platform === "linux" || isSystemToolPlatform(probe.platform)) {
     return { state: tone.toneFileAvailable ? "ok" : "degraded", ...base };
   }
-  return { state: "unreachable", ...base };
+  // 认不出的平台（freebsd 等）上 `probePlatform` 压根不探播放器，`players` 空是「没查」而不是「没有」：
+  // 报 unreachable 是拿一次没做过的探测当结论，报 unknown 才是实情。
+  return { state: "unknown", ...base };
+}
+
+/**
+ * 探测没能给出结论时的诚实回答：两个维度都「无法判定」，也不给任何处置建议。
+ * 单独成函数而不是就地写字面量，是为了让「无法判定」在所有调用方眼里都是同一份形状。
+ */
+export function undeterminedCapabilities(): HostCapabilities {
+  return {
+    verdict: "unknown",
+    unknownDimensions: ["popup", "sound"],
+    popup: { state: "unknown", checked: [] },
+    sound: { state: "unknown", players: [], toneFileAvailable: false, checked: [] },
+    remediation: [],
+  };
 }
 
 interface RemediationInput {

@@ -7,7 +7,7 @@
  * 会让 Windows 用户看到 Linux 的安装引导。
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
   ChannelPort,
@@ -20,18 +20,38 @@ import { streamHub } from "../../../src/server/api/impl/stream/index.ts";
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
 import { jsonReq, makeLogger, makeRes, wire } from "../../helpers.ts";
 
-/** 假能力面：调用次数要能被数（缓存判据靠它），平台值可注入（三平台格靠它）。 */
-function fakeChannels(options: { hostPlatform?: () => string } = {}) {
+/** 假能力面：调用次数要能被数（缓存判据靠它），平台值可注入（三平台格靠它），探测结论可注入失败。 */
+function fakeChannels(
+  options: { hostPlatform?: () => string; probe?: () => Promise<HostCapabilities> } = {},
+) {
   let calls = 0;
   const port: ChannelPort = {
     probeCapabilities: () => {
       calls += 1;
-      return Promise.resolve(CAPABILITIES);
+      return options.probe === undefined ? Promise.resolve(CAPABILITIES) : options.probe();
     },
     hostPlatform: options.hostPlatform ?? (() => "linux"),
+    undeterminedCapabilities: () => UNDETERMINED,
   };
   return { port, probeCalls: () => calls };
 }
+
+/** `/health` 上「无法判定」的**摘要**形状：能力面摘要是完整面的投影，不是同一个对象。 */
+const UNDETERMINED_SUMMARY = {
+  verdict: "unknown",
+  unknownDimensions: ["popup", "sound"],
+  popup: { state: "unknown" },
+  sound: { state: "unknown" },
+};
+
+/** 「无法判定」的兜底形状（与服务端 `undeterminedCapabilities()` 同形，独立抄写才守得住漂移）。 */
+const UNDETERMINED: HostCapabilities = {
+  verdict: "unknown",
+  unknownDimensions: ["popup", "sound"],
+  popup: { state: "unknown", checked: [] },
+  sound: { state: "unknown", players: [], toneFileAvailable: false, checked: [] },
+  remediation: [],
+};
 
 /** 完整能力面夹具（含明细）：摘要与完整面的差异必须能被断言。 */
 const CAPABILITIES: HostCapabilities = {
@@ -77,7 +97,7 @@ function fakePipeline() {
 async function postWith(req: IncomingMessage) {
   const pipeline = fakePipeline();
   const { res, rec, json } = makeRes();
-  await new ProbeEndpoints(pipeline.port, fakeChannels().port).test(req, res);
+  await new ProbeEndpoints(pipeline.port, fakeChannels().port, makeLogger()).test(req, res);
   return { rec, json, pipeline };
 }
 
@@ -245,7 +265,7 @@ describe("GET /health：报宿主平台、连接回收计数与能力面摘要",
   it("platform 取 channels 域的平台事实（客户端据此写系统通道提示，不能拿浏览器 OS 猜），sseEvicts 形状与真实枢纽逐键一致", async () => {
     const { res, rec, json } = makeRes();
     const channels = fakeChannels({ hostPlatform: () => "darwin" });
-    await new ProbeEndpoints(fakePipeline().port, channels.port).health(
+    await new ProbeEndpoints(fakePipeline().port, channels.port, makeLogger()).health(
       makeReq({ method: "GET" }),
       res,
     );
@@ -279,7 +299,7 @@ describe("GET /health：报宿主平台、连接回收计数与能力面摘要",
 
   it("能力自检只探一次：连续两次请求共用同一个 Promise（每请求各探一次就是拿用户机器当靶场）", async () => {
     const channels = fakeChannels();
-    const endpoints = new ProbeEndpoints(fakePipeline().port, channels.port);
+    const endpoints = new ProbeEndpoints(fakePipeline().port, channels.port, makeLogger());
 
     await endpoints.health(makeReq({ method: "GET" }), makeRes().res);
     await endpoints.health(makeReq({ method: "GET" }), makeRes().res);
@@ -292,11 +312,52 @@ describe("GET /health：报宿主平台、连接回收计数与能力面摘要",
   });
 });
 
+describe("能力自检的兜底：诊断附属面不许把探活面拖下水", () => {
+  it("探测抛错时 /health 不 500：既有键全在，能力面按「无法判定」上报并留恰好一条 warn", async () => {
+    const channels = fakeChannels({ probe: () => Promise.reject(new Error("探测炸了")) });
+    const logger = makeLogger();
+    const endpoints = new ProbeEndpoints(fakePipeline().port, channels.port, logger);
+    const { res, rec, json } = makeRes();
+    await endpoints.health(makeReq({ method: "GET" }), res);
+
+    expect(rec.status).toBe(200);
+    const body = wire<{ ok: boolean; platform: string; capabilities: { host: HostCapabilities } }>(
+      json(),
+    );
+    expect(body.ok).toBe(true);
+    expect(body.platform).toBe("linux");
+    expect(body.capabilities.host).toEqual(UNDETERMINED_SUMMARY);
+    expect(logger.warns).toHaveLength(1);
+
+    // 失败结论同样进缓存：不缓存会让每个请求都重新等一遍注定失败的探测
+    await endpoints.health(makeReq({ method: "GET" }), makeRes().res);
+    expect(channels.probeCalls()).toBe(1);
+  });
+
+  it("探测超过总预算即按「无法判定」上报（预算兜底必须真的会到点）", async () => {
+    vi.useFakeTimers();
+    try {
+      const channels = fakeChannels({ probe: () => new Promise<HostCapabilities>(() => {}) });
+      const endpoints = new ProbeEndpoints(fakePipeline().port, channels.port, makeLogger());
+      const { res, json } = makeRes();
+      const pending = endpoints.health(makeReq({ method: "GET" }), res);
+      // 不引用具体预算值（引用它就等于把常量抄成第二份）：只要求它在 10s 内到点
+      await vi.advanceTimersByTimeAsync(10_000);
+      await pending;
+      expect(wire<{ capabilities: { host: unknown } }>(json()).capabilities.host).toEqual(
+        UNDETERMINED_SUMMARY,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("GET /diagnostics：完整探测面", () => {
   it("给的是 channels 域那一份完整能力面（checked / players / remediation 都在）", async () => {
     const { res, rec, json } = makeRes();
     const channels = fakeChannels();
-    await new ProbeEndpoints(fakePipeline().port, channels.port).diagnostics(
+    await new ProbeEndpoints(fakePipeline().port, channels.port, makeLogger()).diagnostics(
       makeReq({ method: "GET" }),
       res,
     );
@@ -304,8 +365,8 @@ describe("GET /diagnostics：完整探测面", () => {
     const body = wire<{ platform: string; capabilities: { host: HostCapabilities } }>(json());
     expect(body.platform).toBe("linux");
     expect(body.capabilities.host).toEqual(CAPABILITIES);
-    // 宿主原文与绝对路径都不得进响应体：这一面经 lan-proxy 转发后对局域网可见
-    expect(JSON.stringify(body)).not.toContain("/usr/share/sounds");
-    expect(JSON.stringify(body)).not.toContain("ID=");
+    // 「响应体零原文」不在这层判：这里注入的是模块常量，`expect(JSON).not.toContain(...)` 结构上永远
+    // 成立（一次实现改动都打不红）。真正的判据在域层——`remediation.params` 只由数据表产生，
+    // 注入敌意 os-release 时域层用例会红。
   });
 });

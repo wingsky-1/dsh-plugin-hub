@@ -25,6 +25,7 @@ import type {
 } from "../../../src/server/channels/impl/capabilities/type.ts";
 import {
   installSystemDeps,
+  readOsReleaseFile,
   releaseSystemDeps,
   systemDeps,
 } from "../../../src/server/channels/impl/system/deps.ts";
@@ -169,6 +170,50 @@ describe("平台 × 维度矩阵：结论与 checked 都要落在该格允许集
     }
   });
 
+  // 只判「落在允许集内」是恒真的：实现里那层过滤一旦删掉，问过的集合照样等于允许集。故逐格钉死
+  // 精确取值——darwin/win32 的允许集为空，过滤一删这两格立刻多出 POSIX 的词。
+  it("逐格钉死 checked 的精确取值（去过滤层必须判红）", async () => {
+    const owner = await probeWith({
+      platform: "linux",
+      available: ["notify-send", "pw-play"],
+      present: [LINUX_TONE],
+      nameProbe: { kind: "owner" },
+    });
+    expect(owner.host.popup.checked).toEqual(["notify-send", "dbus-name-owner", "session-bus"]);
+    expect(owner.host.sound.checked).toEqual(["players", "tone-file"]);
+
+    // 无会话总线：只问过总线这一件事；声音那半边播放器仍然探过（平台探测与总线无关）
+    const noBus = await probeWith({ platform: "linux", nameProbe: { kind: "no-session-bus" } });
+    expect(noBus.host.popup.checked).toEqual(["session-bus"]);
+    expect(noBus.host.sound.checked).toEqual(["players", "tone-file"]);
+
+    const darwin = await probeWith({ platform: "darwin", present: [DARWIN_TONE] });
+    expect(darwin.host.popup.checked).toEqual([]);
+    expect(darwin.host.sound.checked).toEqual(["tone-file"]);
+
+    const win32 = await probeWith({
+      platform: "win32",
+      present: [WIN_TONE, toastScriptPath()],
+    });
+    expect(win32.host.popup.checked).toEqual([]);
+    expect(win32.host.sound.checked).toEqual(["tone-file"]);
+  });
+
+  // `probePlatform` 只在 linux 上探播放器，别的 POSIX 平台 players 恒空——那是「没查」不是「没有」。
+  // 报 unreachable 等于拿一次没做过的探测当结论；规格又明写 unknown 不得降级为 ok。
+  it("认不出的平台（freebsd）：声音记 unknown（没探过），不得猜成 unreachable", async () => {
+    const { host } = await probeWith({
+      platform: "freebsd",
+      available: ["notify-send"],
+      nameProbe: { kind: "owner" },
+    });
+    expect(host.popup.state).toBe("ok");
+    expect(host.sound.state).toBe("unknown");
+    expect(host.sound.checked).toEqual([]);
+    expect(host.unknownDimensions).toEqual(["sound"]);
+    expect(host.verdict).toBe("unknown");
+  });
+
   // 闭集之外的取值由类型系统在编译期拒绝（本文件根本写不出 `toast-script` —— 那比运行时判红更强），
   // 故这里判的是「合法取值放错格子」：跨维度与跨平台两种错法都必须判红。
   it("合法性子集本身判红：合法取值放错维度或放错平台都不行", () => {
@@ -230,6 +275,34 @@ describe("popup 五态与优先级", () => {
     expect(noNotifySend.host.remediation.map((item) => item.code)).not.toContain(
       "host-popup-no-daemon",
     );
+  });
+
+  // 组级聚合最危险的错法不是「取错了最严重者」，而是把 unknown 当成 ok：那一格里弹窗其实无法判定，
+  // 报 ok 会让用户以为通知能用。这条与下面那条方向相反，两条一起才把 SEVERITY 表钉住。
+  it("popup 未知 + sound 正常 ⇒ 组级必须是 unknown，不得降级成 ok", async () => {
+    const { host } = await probeWith({
+      platform: "linux",
+      available: ["notify-send", "pw-play"],
+      present: [LINUX_TONE],
+      nameProbe: { kind: "activatable" },
+    });
+    expect(host.popup.state).toBe("unknown");
+    expect(host.sound.state).toBe("ok");
+    expect(host.verdict).toBe("unknown");
+    expect(host.unknownDimensions).toEqual(["popup"]);
+  });
+
+  // 规格 §4.2 定的序是 unreachable > unknown > degraded > ok：`unknown` 压在 `degraded` 之上。
+  // 客户端有同序的对应判据，两端任一侧改序都会红（这一格曾经分叉过）。
+  it("unknown 压在 degraded 之上：popup 未知 + sound 部分可用 ⇒ 组级 unknown", async () => {
+    const { host } = await probeWith({
+      platform: "linux",
+      available: ["notify-send", "paplay"],
+      nameProbe: { kind: "activatable" },
+    });
+    expect(host.popup.state).toBe("unknown");
+    expect(host.sound.state).toBe("degraded");
+    expect(host.verdict).toBe("unknown");
   });
 
   it("组级 verdict 取最严重者，且被吞掉的 unknown 维度必须出现在 unknownDimensions 里", async () => {
@@ -423,6 +496,17 @@ const flatArgs = (calls: readonly string[][]): string[] => calls.flat();
 
 const BUS = { DBUS_SESSION_BUS_ADDRESS: "unix:path=/tmp/bus" };
 
+/**
+ * 副作用纪律的公共判据：**三种 CLI 的每一条路径**都不得出现会触发服务激活的 argv。
+ * 只在 gdbus 那条用例里断言是不够的——往 dbus-send/busctl 的骨架里塞 `list`/`status`，被测面上零红。
+ */
+function expectNoActivation(calls: readonly string[][]): void {
+  const forbidden = flatArgs(calls).filter(
+    (arg) => /^(status|list|--activate)$/u.test(arg) || arg.includes("StartServiceByName"),
+  );
+  expect(forbidden).toEqual([]);
+}
+
 describe("真端口：D-Bus 查询的解析与副作用纪律", () => {
   it("无会话总线时一次子进程都不起（起了必然失败，白等一次超时）", async () => {
     const { calls, result } = await realProbe({
@@ -446,11 +530,7 @@ describe("真端口：D-Bus 查询的解析与副作用纪律", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]![0]).toBe("gdbus");
     expect(calls[0]!.some((arg) => arg.includes("NameHasOwner"))).toBe(true);
-    // 只允许这两个只读方法：status/list 会问出更多东西，StartServiceByName/--activate 直接拉起服务
-    const forbidden = flatArgs(calls).filter(
-      (arg) => /^(status|list|--activate)$/u.test(arg) || arg.includes("StartServiceByName"),
-    );
-    expect(forbidden).toEqual([]);
+    expectNoActivation(calls);
   });
 
   it("gdbus 说没有 owner 时再问可激活清单，命中即 activatable（两种问法都要发出去）", async () => {
@@ -466,14 +546,16 @@ describe("真端口：D-Bus 查询的解析与副作用纪律", () => {
     expect(result.kind).toBe("activatable");
     expect(calls).toHaveLength(2);
     expect(calls[1]!.some((arg) => arg.includes("ListActivatableNames"))).toBe(true);
+    expectNoActivation(calls);
   });
 
   it("可激活清单里没有目标名 ⇒ absent", async () => {
-    const { result } = await realProbe({
+    const { calls, result } = await realProbe({
       env: BUS,
       tools: [{ bin: "gdbus", stdout: "(['org.freedesktop.systemd1'],)\n" }],
     });
     expect(result.kind).toBe("absent");
+    expectNoActivation(calls);
   });
 
   it("gdbus 问不出来时退到 dbus-send（`boolean true` 形态）", async () => {
@@ -487,6 +569,27 @@ describe("真端口：D-Bus 查询的解析与副作用纪律", () => {
     expect(result.kind).toBe("owner");
     expect(calls[0]![0]).toBe("gdbus");
     expect(calls[1]![0]).toBe("dbus-send");
+    expectNoActivation(calls);
+  });
+
+  it("dbus-send 说没有 owner 时，它自己的可激活清单那条命令也受同一条纪律约束", async () => {
+    const { calls, result } = await realProbe({
+      env: BUS,
+      tools: [
+        { bin: "gdbus", stdout: "", code: 127 },
+        {
+          bin: "dbus-send",
+          stdout:
+            'method return\n   boolean false\n   array [\n      string "org.freedesktop.portal.Desktop"\n   ]\n',
+        },
+      ],
+    });
+    expect(result.kind).toBe("absent");
+    // 第二条命令才是可激活清单：不走这一格，往 dbus-send 骨架里塞 `list` 就没有判据能红
+    expect(calls.some((call) => call.some((arg) => arg.includes("ListActivatableNames")))).toBe(
+      true,
+    );
+    expectNoActivation(calls);
   });
 
   it("busctl 形态（`b false` + `as` 列表）能判出 absent", async () => {
@@ -500,6 +603,7 @@ describe("真端口：D-Bus 查询的解析与副作用纪律", () => {
     });
     expect(result.kind).toBe("absent");
     expect(calls[calls.length - 1]![0]).toBe("busctl");
+    expectNoActivation(calls);
   });
 
   it("三种 CLI 都不可用时报 probe-failed（不许猜成 absent）", async () => {
@@ -515,7 +619,41 @@ describe("真端口：D-Bus 查询的解析与副作用纪律", () => {
       ],
     });
     expect(failing.result.kind).toBe("probe-failed");
+    expectNoActivation(failing.calls);
     // detail 只提命令名，不回显宿主原文（它要进 HTTP 响应）
     expect(JSON.stringify(failing.result)).not.toContain("\n");
+  });
+});
+
+describe("os-release 端口：never-throw 与「只取一行」都要有判据", () => {
+  it("文件缺失 ⇒ {ok:false}；目录路径（readFileSync 抛 EISDIR）⇒ 同样兜住，不冒泡", () => {
+    // 调用侧没有 try/catch：这里抛出去就是一次未捕获拒绝
+    expect(readOsReleaseFile(join(tmpdir(), "dsh-notifier-不存在/os-release"))).toEqual({
+      ok: false,
+    });
+    expect(readOsReleaseFile(tmpdir())).toEqual({ ok: false });
+  });
+
+  it("只取 ID 一行：其余行是宿主原文，一个字符都不外泄", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-notifier-osrelease-"));
+    try {
+      const file = join(dir, "os-release");
+      writeFileSync(file, 'NAME="Secret Distro"\nID=ubuntu\nVERSION="24.04 LTS"\n');
+      expect(readOsReleaseFile(file)).toEqual({ ok: true, id: "ubuntu" });
+      expect(JSON.stringify(readOsReleaseFile(file))).not.toContain("Secret");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("没有 ID 行 ⇒ {ok:false}：认不出来就不给包管理器族，不猜一个发行版", () => {
+    const dir = mkdtempSync(join(tmpdir(), "dsh-notifier-osrelease-"));
+    try {
+      const file = join(dir, "os-release");
+      writeFileSync(file, 'NAME="Whatever"\nID_LIKE=debian\n');
+      expect(readOsReleaseFile(file)).toEqual({ ok: false });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

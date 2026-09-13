@@ -128,6 +128,9 @@ function assemble(options: { readonly maxConnections?: number } = {}) {
     channels: {
       probeCapabilities: () => Promise.reject(new Error("流块不该碰能力面")),
       hostPlatform: () => "linux",
+      undeterminedCapabilities: () => {
+        throw new Error("流块不碰能力面");
+      },
     },
   };
   installApi(deps);
