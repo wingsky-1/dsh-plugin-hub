@@ -308,7 +308,9 @@ function main(argv) {
     return 0;
   }
   console.log("[local-gate] 计划步骤：");
-  for (const s of steps) console.log(`  - ${s.label}`);
+  // 连同将要执行的命令一起打印：只打标签的话，「标签没改、args 被换成别的闸」这种漂移在
+  // --dry-run 的计划输出上完全看不出来（自测判据因此钉不住 args）。
+  for (const s of steps) console.log(`  - ${s.label}  →  ${[s.cmd ?? PNPM, ...s.args].join(" ")}`);
   if (dryRun) {
     console.log("[local-gate] --dry-run：未执行");
     return 0;

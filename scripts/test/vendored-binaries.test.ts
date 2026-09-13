@@ -733,19 +733,39 @@ test("真实仓库：发布物面内零命中，登记表为空即合规", () =>
 
 // ---------- 五、接线钉：三个执行点必须同时存在 ----------
 
-test("接线：ci.yml 步骤 + local-gate cheapGlobal + package.json script 三处同时在", () => {
+/** local-gate 某一档的计划步骤（--dry-run 不执行任何步骤；机制同 local-gate-steps.test.ts）。 */
+function plannedSteps(tier) {
+  const r = spawnSync(
+    process.execPath,
+    [join(ROOT, "scripts", "gate", "local-gate.mjs"), "--tier", tier, "--dry-run"],
+    { cwd: ROOT, encoding: "utf8" },
+  );
+  assert.equal(r.status, 0, `--tier ${tier} --dry-run 应 exit 0：${r.stderr}`);
+  return r.stdout;
+}
+
+test("接线：ci.yml 有未被注释的执行步骤 + local-gate 计划步骤含该闸 + package.json script", () => {
   const ci = readFileSync(join(ROOT, ".github", "workflows", "ci.yml"), "utf8");
+  // 子串断言会被注释掉的执行点满足：把 run 行注释掉后 561 个用例仍全绿（复核实测）。
+  // 先剥掉注释行，再按「一步的 run:」形态断言存在性。
+  const stepLines = ci
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l !== "" && !l.startsWith("#"));
   assert.ok(
-    ci.includes("node scripts/gate/verify-vendored-binaries.mjs"),
-    "ci.yml 缺执行点：门禁不进 CI 等于没有门禁",
+    stepLines.some((l) => /^run:\s*node scripts\/gate\/verify-vendored-binaries\.mjs$/.test(l)),
+    "ci.yml 缺（未被注释的）执行点：门禁不进 CI 等于没有门禁",
   );
-  const localGate = readFileSync(join(ROOT, "scripts", "gate", "local-gate.mjs"), "utf8");
-  // 断言到 args 行而不是标签文字：只匹配 label 的话，把 args 换成别的闸仍然全绿
-  // （实测变异 M15 就是这么活下来的）。
-  assert.ok(
-    localGate.includes('args: ["verify:vendored-binaries"]'),
-    "local-gate.mjs 的 cheapGlobal 缺该闸：本地档看不到，本地绿而 CI 红的落差由此产生",
+
+  // local-gate 的步骤表走仓库自己的 --dry-run 计划输出，不读源码子串；断言到「将要执行的
+  // 命令」而不是标签：只匹配标签的话，把 args 换成别的闸仍然全绿（原实现就是这么活下来的）。
+  const plan = plannedSteps("pr");
+  assert.match(
+    plan,
+    /\n {2}- verify:vendored-binaries（发布物面内裸二进制：登记 \+ 哈希绑定 \+ 许可随包） {2}→ {2}\S+ verify:vendored-binaries$/m,
+    "local-gate 的 cheapGlobal 缺该闸（或标签与 args 脱钩）：本地档看不到，本地绿而 CI 红的落差由此产生",
   );
+
   const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
   assert.equal(
     pkg.scripts["verify:vendored-binaries"],
