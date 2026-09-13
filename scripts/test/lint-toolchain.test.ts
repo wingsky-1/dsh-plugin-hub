@@ -18,6 +18,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { existsSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
 const ROOT = join(import.meta.dirname, "..", "..");
@@ -99,4 +100,81 @@ test("#722 阶段五：复杂度阈值唯一事实源在 gauntlet.config.json，
     /gauntlet\.config\.json/,
     "eslint.config.js 必须显式读取 gauntlet.config.json 作为阈值来源",
   );
+});
+
+test("#764 A1：失效的 eslint-disable 注释判 error（flat 默认只到 warn）", async () => {
+  const { ESLint } = requireLint("eslint");
+  const eslint = new ESLint({
+    cwd: ROOT,
+    overrideConfigFile: join(ROOT, "tools", "lint", "eslint.config.js"),
+  });
+
+  // ① 配置层：生效级别必须是 error。warn 级会被 600+ 条存量警告淹没，等于没有这条判据。
+  const cfg = await eslint.calculateConfigForFile(join(ROOT, "scripts", "gate", "local-gate.mjs"));
+  const level = cfg.linterOptions?.reportUnusedDisableDirectives;
+  assert.ok(
+    level === 2 || level === "error",
+    `reportUnusedDisableDirectives 必须是 error 级，实际 ${JSON.stringify(level)}`,
+  );
+
+  // ② 行为层：一条指向**从未启用**的规则的 disable 注释必须产出 error。用 lintText 而不是
+  // 造临时文件——判据不该为了让门禁看见自己而往仓库里落产物（测试纪律 #218）。
+  const [result] = await eslint.lintText(
+    "// eslint-disable-next-line no-control-regex\nexport const probe = /a/;\n",
+    { filePath: join(ROOT, "scripts", "gate", "lint-probe.ts") },
+  );
+  assert.ok(
+    result.messages.some(
+      (m) => m.severity === 2 && /Unused eslint-disable directive/.test(m.message),
+    ),
+    `失效 disable 必须按 error 报，实际：${JSON.stringify(result.messages)}`,
+  );
+});
+
+test("#764 A2：警告预算的事实源与消费点", () => {
+  const gauntlet = JSON.parse(
+    readFileSync(join(ROOT, "scripts", "data", "gauntlet.config.json"), "utf8"),
+  );
+  const budget = gauntlet.lint?.maxWarnings;
+  assert.ok(
+    Number.isInteger(budget) && budget >= 0,
+    `gauntlet.config.json 必须有 lint.maxWarnings（非负整数），实际 ${JSON.stringify(budget)}`,
+  );
+
+  // 预算必须由 lint 入口消费：ESLint 自带的 --max-warnings 在本仓会被 argv 过滤静默丢弃，
+  // 照抄 CLI 用法等于没有预算——这正是本判据存在的原因。
+  const lintSrc = readFileSync(join(ROOT, "tools", "lint", "bin", "lint.mjs"), "utf8");
+  assert.match(
+    lintSrc,
+    /lint\?\.maxWarnings|lint\.maxWarnings|readBudget/,
+    "lint.mjs 必须读取 gauntlet 的 lint.maxWarnings",
+  );
+  assert.match(lintSrc, /problems > budget/, "lint.mjs 必须把问题总数与预算比较并据此判红");
+  assert.match(
+    lintSrc,
+    /process\.exit\(2\)/,
+    "预算读不到时必须 fail-closed（exit 2），不得静默放行",
+  );
+});
+
+test("#764 A2：超出预算时 lint 入口判红（实跑退出码）", () => {
+  // 用 .d.mts 制造一条**结构性**警告：它命中 eslint.config.js 的忽略面，ESLint 必报
+  // "File ignored because of a matching ignore pattern"。该警告只取决于扩展名是否在忽略清单里，
+  // 与文件内容无关，故这条判据不会随业务代码改动而漂移。
+  const probe = join(
+    ROOT,
+    "packages",
+    "dsh-provider-usage",
+    "src",
+    "domain1",
+    "adapters",
+    "deepseek-official.d.mts",
+  );
+  assert.ok(existsSync(probe), `${probe} 必须存在（本判据的结构性警告来源）`);
+  const r = spawnSync(process.execPath, ["tools/lint/bin/lint.mjs", "--max-warnings=0", probe], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 1, `问题数超出预算必须 exit 1（实际 ${r.status}）`);
+  assert.match(r.stderr, /超出预算/, "报错须点明超出预算");
 });

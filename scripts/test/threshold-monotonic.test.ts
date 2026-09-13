@@ -16,13 +16,13 @@ import {
 const ROOT = join(import.meta.dirname, "../..");
 
 /** 构造一个带基线 commit 的临时 git 仓库；返回其路径与 git 调用器。 */
-function gitFixture(baseVitestConfig) {
+function gitFixture(
+  baseVitestConfig,
+  baseGauntlet = { mutation: { packages: { "dsh-x": { threshold: 60 } } } },
+) {
   const dir = mkdtempSync(join(tmpdir(), "threshold-monotonic-test-"));
   mkdirSync(join(dir, "scripts/data"), { recursive: true });
-  writeFileSync(
-    join(dir, "scripts/data/gauntlet.config.json"),
-    JSON.stringify({ mutation: { packages: { "dsh-x": { threshold: 60 } } } }),
-  );
+  writeFileSync(join(dir, "scripts/data/gauntlet.config.json"), JSON.stringify(baseGauntlet));
   writeFileSync(join(dir, "vitest.config.ts"), baseVitestConfig);
   const git = (...args) => spawnSync("git", args, { cwd: dir, encoding: "utf8" });
   git("init", "-q");
@@ -211,4 +211,71 @@ test("#733: perFile 一类非阈值选项被忽略，不误判为 scoped", () =>
   const parsed = parseCoverageThresholds("thresholds: { perFile: true, lines: 80 }");
   assert.deepEqual(parsed.global, { lines: 80 });
   assert.deepEqual(parsed.scoped, []);
+});
+
+// ── #764 落地项 A2：lint 警告预算的单调性（同一份 gauntlet 事实源，同一套只许降治理）──
+
+const gauntletWith = (budget) => ({
+  mutation: { packages: { "dsh-x": { threshold: 60 } } },
+  ...(budget === null ? {} : { lint: { maxWarnings: budget } }),
+});
+
+test("#764 A2: lint.maxWarnings 上调判红（预算只许降）", () => {
+  const dir = gitFixture(vitestText(80), gauntletWith(671));
+  try {
+    writeFileSync(
+      join(dir, "scripts/data/gauntlet.config.json"),
+      JSON.stringify(gauntletWith(700)),
+    );
+    const r = runThresholdMonotonic(["HEAD"], { repoRoot: dir });
+    assert.equal(r.exitCode, 1, "671 → 700 属放宽，必须判红");
+    assert.equal(r.failures, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#764 A2: lint.maxWarnings 删键判红（等价于摘除预算）", () => {
+  const dir = gitFixture(vitestText(80), gauntletWith(671));
+  try {
+    writeFileSync(
+      join(dir, "scripts/data/gauntlet.config.json"),
+      JSON.stringify(gauntletWith(null)),
+    );
+    const r = runThresholdMonotonic(["HEAD"], { repoRoot: dir });
+    assert.equal(r.exitCode, 1, "删键后 lint.mjs 会 fail-closed，但阈值层面也必须显式拦一次");
+    assert.equal(r.failures, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#764 A2: lint.maxWarnings 下调放行（收紧方向正确）", () => {
+  const dir = gitFixture(vitestText(80), gauntletWith(671));
+  try {
+    writeFileSync(
+      join(dir, "scripts/data/gauntlet.config.json"),
+      JSON.stringify(gauntletWith(600)),
+    );
+    const r = runThresholdMonotonic(["HEAD"], { repoRoot: dir });
+    assert.equal(r.exitCode, 0, "收紧不得被拦（否则棘轮会锁死存量清理）");
+    assert.equal(r.failures, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#764 A2: 首次引入 lint.maxWarnings（基准无该键）放行，不得误判为降线", () => {
+  const dir = gitFixture(vitestText(80));
+  try {
+    writeFileSync(
+      join(dir, "scripts/data/gauntlet.config.json"),
+      JSON.stringify(gauntletWith(671)),
+    );
+    const r = runThresholdMonotonic(["HEAD"], { repoRoot: dir });
+    assert.equal(r.exitCode, 0, "基准侧没有该键 = 首次引入，不是「降线」");
+    assert.equal(r.failures, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -4558,7 +4558,6 @@ describe("#633 分片 b2 D2：双目录全链路", () => {
     obs.cfgDirsWithSeparator = cfgBody.dirs
       .filter((d) => d.dir.includes("/") || d.dir.includes("\\"))
       .map((d) => d.dir);
-    // eslint-disable-next-line no-control-regex
     obs.cfgDirsWithControlChars = cfgBody.dirs
       .filter((d) => /[\u0000-\u001f\u007f-\u009f]/.test(d.dir))
       .map((d) => d.dir);

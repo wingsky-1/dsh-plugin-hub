@@ -69,6 +69,13 @@ const LEGACY_WARN = {
 
 export default [
   { ignores: IGNORES },
+  {
+    // 失效的 `eslint-disable` 注释按 error 报（#764 落地项 A1）。flat config 默认只到 warn，
+    // 于是一条规则被关掉/改名后，遗留的抑制注释会永久沉默——它看起来仍在保护代码，实则早已
+    // 不生效。存量唯一一处（provider-usage smoke 里的 no-control-regex，该规则本仓从未开启）
+    // 已随本次清理删除，故升级零成本。
+    linterOptions: { reportUnusedDisableDirectives: "error" },
+  },
   ...tseslint.configs.recommended,
   {
     files: TS_SOURCES,

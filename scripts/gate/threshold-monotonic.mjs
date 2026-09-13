@@ -7,7 +7,8 @@
  *     **#733 计划项 3.4 起事实源迁到 scripts/data/coverage.config.json**。迁移期**双读**：
  *     某一侧有该 JSON 就用它，没有则回落到同侧的 vitest.config.ts——否则「基准侧还没有 JSON」
  *     会被读成「首次引入，跳过对比」，把一次性静默降线的窗口留在迁移 PR 里；
- *   - scripts/data/gauntlet.config.json 的 mutation.packages.<pkg>.threshold。
+ *   - scripts/data/gauntlet.config.json 的 mutation.packages.<pkg>.threshold；
+ *   - scripts/data/gauntlet.config.json 的 lint.maxWarnings（#764 落地项 A2 的警告预算）。
  * 降线必须走原 issue 内 approved 流程改基线，而不是悄悄调低阈值。
  *
  * 为什么用文本提取而非 import 基准版本：基准取自 git 对象，import 它等于执行历史
@@ -285,6 +286,28 @@ export function runThresholdMonotonic(
       ) {
         console.error(
           `[FAIL] mutation.packages.${pkg}.threshold 降线：${oldThreshold} → ${newThreshold}`,
+        );
+        failures += 1;
+      }
+    }
+  }
+
+  // ── 维度三：lint 警告预算（gauntlet.config.json 的 lint.maxWarnings，只许降）──
+  // 与变异阈值同一份事实源、同一套治理（#764 落地项 A2）。删键同样判红：预算缺失时 lint.mjs
+  // 会 fail-closed，但那是运行期兜底；这里在阈值层面显式拦一次，避免「删掉预算」看起来像
+  // 一次无关紧要的整理。
+  if (oldCfg !== null) {
+    const oldBudget = oldCfg?.lint?.maxWarnings;
+    const newBudget = newCfg?.lint?.maxWarnings;
+    if (typeof oldBudget === "number") {
+      if (typeof newBudget !== "number") {
+        console.error(
+          `[FAIL] lint.maxWarnings 被移除（基准 ${oldBudget}）—— 删键等价于摘除警告预算，须原 issue 内 approved 后方可移除`,
+        );
+        failures += 1;
+      } else if (newBudget > oldBudget) {
+        console.error(
+          `[FAIL] lint.maxWarnings 上调：${oldBudget} → ${newBudget}（警告预算只许降，须原 issue 内 approved）`,
         );
         failures += 1;
       }
