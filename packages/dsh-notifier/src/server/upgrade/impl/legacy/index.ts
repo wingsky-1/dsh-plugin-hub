@@ -38,6 +38,10 @@ const LEGACY_SOUND_KEY = "notifySound";
 /** 两个按出口的声音键：旧键有值而它们缺失时按旧键补齐，让用户原来的选择不作废。 */
 const SOUND_KEYS: readonly string[] = ["browserSound", "systemSound"];
 
+/** 原型链上的危险键名：JSON 文本能造出自有键，展开进设置对象就会改写原型。与 config 域写面同一份口径——
+ * 这几条在写面本来就进不来，迁移更不该把它们搬进新配置。 */
+const UNSAFE_KEYS: readonly string[] = ["__proto__", "constructor", "prototype"];
+
 /** 读存量设置：V1（宿主文档文件 → 已注册命名空间）优先，回退 V0。
  * @returns 已做语义转换的设置；空对象 = 旧版本没有可迁的东西，它同时是「读不到」与「读到了但一个键都没有」的答案。 */
 export function readLegacySettings(settings: LegacySettingsFace): LegacyStoredSettings {
@@ -164,11 +168,12 @@ function readFromFile(): LegacyStoredSettings {
 }
 
 /** 旧配置语义 → 当前配置语义：剔掉装配键、把旧的全局声音键摊到两个出口键上。契约不认识的键**原样保留**——它们可能
- * 是用户手写的、也可能是更高版本留下的，迁移没有资格替他们决定哪些该丢。 */
+ * 是用户手写的、也可能是更高版本留下的，迁移没有资格替他们决定哪些该丢；原型链上的危险键名除外，它们在写面本来
+ * 就进不来（config 域同一份口径），搬过去只会让读出来的对象带上一个别人给的原型。 */
 function convert(stored: LegacyStoredSettings): LegacyStoredSettings {
   const next: Record<string, RawSettingValue> = {};
   for (const key of Object.keys(stored)) {
-    if (ENTRY_KEYS.includes(key)) continue;
+    if (ENTRY_KEYS.includes(key) || UNSAFE_KEYS.includes(key)) continue;
     next[key] = stored[key];
   }
   const legacySound = next[LEGACY_SOUND_KEY];

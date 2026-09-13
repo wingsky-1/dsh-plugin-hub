@@ -215,7 +215,8 @@ function scopeRejecting<K extends keyof Events>(): ScopedThis<K> {
 
 /**
  * 假 settings 服务：本插件读存量有**两条路**——provider 自报的宿主文档路径（`documentPath`）与已注册命名空间的服务面
- * （`describe`）。真实宿主里新架构不再注册该命名空间，故 `user` 缺省表示「服务面里没有这一条」，存量只能从文档读到。
+ * （`describe`）。`describe()` 在真实宿主里只列**已注册**的命名空间，所以这里的 `user` 用三种取值对应三种真实形态：
+ * `undefined` = 没注册这条命名空间（新架构的常态，服务面读不到）；`{}` = 注册了但 user 层为空；有键 = 注册且用户设过。
  */
 function fakeSettings(
   user: Record<string, unknown> | undefined,

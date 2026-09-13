@@ -85,7 +85,7 @@ describe("读取优先级：V1 优先，V0 兜底", () => {
     }
   });
 
-  it("读存量设置时要求脱敏（不要求脱敏会把密钥类设置读进内存并原样搬进新配置）", () => {
+  it("读服务面时要求脱敏（脱敏开关只管服务面出口；文档那条路拿到的本来就是原文）", () => {
     const calls: Array<FakeDescribeOptions | undefined> = [];
     const settings: LegacySettingsFace = {
       describe: (options) => {
@@ -183,7 +183,8 @@ describe("宿主文档文件：未注册命名空间的存量也读得到", () =
     expect(readLegacySettings(settings)).toEqual({ notifyAsk: false });
   });
 
-  it("文档解释不了时回退服务面与 V0（坏文件、缺分节、分节不是对象都不能把存量吃掉）", () => {
+  it("文档解释不了时回退服务面，服务面也读不到时回退 V0（坏文件、缺分节、分节不是对象都不能把存量吃掉）", () => {
+    writeLegacyFile("dsh-notifier.json", { notifyAsk: false });
     const broken = [
       "dsh-notifier:\n\tnotifyAsk: false\n",
       "other-plugin:\n  notifyAsk: false\n",
@@ -194,7 +195,46 @@ describe("宿主文档文件：未注册命名空间的存量也读得到", () =
       expect(
         readLegacySettings(makeSettings([{ ns: NS, user: { notifyAsk: true } }], false, doc)),
       ).toEqual({ notifyAsk: true });
+      // 服务面也给不出东西时，这一环同样不能把 V0 吃掉。
+      expect(readLegacySettings(makeSettings([], false, doc))).toEqual({ notifyAsk: false });
     }
+  });
+
+  it("两个候选文件同时存在时 `.yaml` 优先（官方缺省名在前）", () => {
+    writeDocument("dsh-notifier:\n  notifyAsk: false\n", "settings.yaml");
+    writeDocument(`{"${NS}":{"notifyAsk":true}}`, "settings.json");
+    expect(readLegacySettings(makeSettings([]))).toEqual({ notifyAsk: false });
+  });
+
+  it("documentPath 是空白串时按「没给出路径」处理，回到 DSH home 兜底", () => {
+    writeDocument("dsh-notifier:\n  notifyAsk: false\n", "settings.yaml");
+    for (const blank of ["", "   ", "\t"]) {
+      expect(readLegacySettings(makeSettings([], false, blank))).toEqual({ notifyAsk: false });
+    }
+  });
+
+  it("自报的路径指向不存在的文件时只回退服务面，不拿缺省名去猜（用户配过自定义路径）", () => {
+    writeDocument("dsh-notifier:\n  notifyAsk: false\n", "settings.yaml");
+    const missing = join(home.dir, "custom", "settings.yaml");
+    expect(readLegacySettings(makeSettings([], false, missing))).toEqual({});
+    expect(
+      readLegacySettings(makeSettings([{ ns: NS, user: { notifyAsk: true } }], false, missing)),
+    ).toEqual({ notifyAsk: true });
+  });
+
+  it("`.yml` 扩展名的文档按 YAML 解析（provider 支持它，只是缺省名是 yaml）", () => {
+    const doc = writeDocument("dsh-notifier:\n  notifyAsk: false\n", "settings.yml");
+    expect(readLegacySettings(makeSettings([], false, doc))).toEqual({ notifyAsk: false });
+  });
+
+  it("原型链上的危险键名不搬运（与 config 域写面同一份口径）", () => {
+    const doc = writeDocument(
+      `{"${NS}":{"notifyAsk":true,"__proto__":{"polluted":true},"constructor":"x","prototype":"y"}}`,
+      "settings.json",
+    );
+    const out = readLegacySettings(makeSettings([], false, doc));
+    expect(out).toEqual({ notifyAsk: true });
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
   });
 
   it("文档来源同样做语义转换：装配键剔除、旧全局音效键摊到两个出口", () => {

@@ -37,7 +37,7 @@
 ```mermaid
 flowchart TD
     S(["dsh web 启动 ⇢ apply(ctx)"]) --> A["bindHost：logger / FrameBus / register /<br/>events / agents / legacySettings / expose"]
-    A --> B["installUpgrade：先读一次旧位置<br/>(0.2.3 settings 命名空间 → 更早的自建 json)"]
+    A --> B["installUpgrade：先读一次旧位置<br/>(宿主 settings 文档 → 服务面 → 更早的自建 json)"]
     B --> C["installConfig：设配域自持 config.json"]
     C --> D["installStores：history / status"]
     D --> E["installPipeline：裁决 + 路由 + 定稿 + 投递"]
@@ -156,7 +156,8 @@ flowchart TD
 | `/api/dsh-notifier/kinds` | GET/POST | 动态 kind 清单与确认（确认结果持久化进 `allowKinds`） |
 | `/api/dsh-notifier/health` | GET | 健康检查 |
 
-**升级链**（`upgrade` 域）：启动时读一次旧位置——0.2.3 的官方 settings 命名空间优先、更早的自建 json 回退；
+**升级链**（`upgrade` 域）：启动时读一次旧位置——**宿主 settings 文档文件**优先（`describe()` 只列**已注册**的
+命名空间，而本插件 0.2.4 起不再注册它，服务面那条路读不到存量的 user 层，故退为兜底），更早的自建 json 最后；
 读到的用户层写进 `config.json`，此后只有这一个读写面。旧存储位置（`DSH_HOME` 根目录下的文件）由
 `impl/steps/storage-layout` 搬到包私有目录，并在 `version` 里留下刻度。
 
