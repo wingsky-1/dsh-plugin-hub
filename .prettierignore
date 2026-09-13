@@ -16,3 +16,26 @@ pnpm-lock.yaml
 # 而重新生成又会把 Prettier 的排版顶回去，两者只能有一个说了算，这里让给生成器。
 stryker.conf.d/
 vitest.stryker.d/
+
+# ── 文档面：不格式化（#733 计划项 3.5，维护者裁决）────────────────────────────
+# 理由：Prettier 会按 printWidth 重排散文换行，docs/ 与各 README 是手写排版；
+# 格式化它们产生数百行纯排版 diff（实测 49 + 3 个文件），没有判定价值却会掩盖真实改动。
+docs/
+*.md
+.dsh/
+# .github/ 下是 workflow 与 PR 模板：workflow 的形态被 scripts/test/workflow-assert.test.ts
+# 按**文本**断言（步骤名 / run 命令 / 12 空格缩进定位），格式化会把这些断言变成形态判据，
+# 与 #733 原则 ③（判据与形态解耦）相抵；要格式化得先把那些断言改成语义断言。
+.github/
+
+# ── 生成器写的机器数据：形态归生成器（同 stryker 派生配置的理由）──────────────
+# 这三个文件由 --write-baseline / --snapshot / mutation-ledger 以 `JSON.stringify(v, null, 2)`
+# 写回，判据读的是解析后的结构，不依赖排版；格式化它们只会让下一次重生成与 Prettier 打架。
+scripts/data/dir-imports-baseline.json
+scripts/data/dsh-notifier-export-surface.json
+scripts/data/mutation-segment-ledger.json
+# 聚合 patch 由 scripts/gate/aggregate.ts 生成，且 `--check` 对生成内容做**逐字节**比对
+# （aggregate.ts:102 `readFileSync(PATCH_PATH)`）——格式化它 = 该门禁恒红。
+# 各独立包的 cordis.patch.yml 是手写的，仍在格式化面内（它们的内容会被逐字拼进聚合文件，
+# 故重新生成聚合 patch 是格式化后的必要动作）。
+packages/dsh-plugins-all/cordis.patch.yml
