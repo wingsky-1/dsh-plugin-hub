@@ -57,6 +57,7 @@
     "acorn": "^8.18.0",
     "esbuild": "^0.28.2",
     "happy-dom": "^20.14.3",
+    "isbinaryfile": "^6.0.0",
     "lefthook": "2.1.12",
     "lint-staged": "17.5.1",
     "prettier": "3.9.6",
