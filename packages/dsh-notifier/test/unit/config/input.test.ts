@@ -274,6 +274,8 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
       normalizeConfig({ channels: [{ ...WEBHOOK, futureKey: "v", retries: 2 }] }).channels,
     );
     expect(hook.extras).toEqual({ futureKey: "v", retries: 2 });
+    // 没有未知键时不该凭空多出一个空 extras（两类频道同一口径）。
+    expect("extras" in normalizeConfig({ channels: [BARK, WEBHOOK] }).channels[1]!).toBe(false);
   });
 
   it("保留键在归一化里也剔除：手改过的配置文件不经过写入口径，一条手写的 device_key 就能绕开「凭据只走已知字段」", () => {
