@@ -149,6 +149,34 @@ describe("宿主文档文件：未注册命名空间的存量也读得到", () =
     expect(readLegacySettings(makeSettings([]))).toEqual({ notifyAsk: true });
   });
 
+  it("`.json` 判定按扩展名而不是「碰巧 YAML 也读得动」", () => {
+    // 重复键：YAML 解析器直接抛错，`JSON.parse` 取后者——只有真的走了 JSON 那条分支才读得出来。
+    writeDocument(`{"${NS}":{"notifyAsk":true},"${NS}":{"notifyAsk":false}}`, "settings.json");
+    expect(readLegacySettings(makeSettings([]))).toEqual({ notifyAsk: false });
+  });
+
+  it("provider 取文档路径就抛错时按没有文件处理（与服务面同形的失败处理）", () => {
+    const settings: LegacySettingsFace = {
+      describe: () =>
+        [{ ns: NS, user: { notifyAsk: true } }] as unknown as ReturnType<
+          LegacySettingsFace["describe"]
+        >,
+      get documentPath(): string | undefined {
+        throw new Error("provider 取文档路径失败");
+      },
+    };
+    expect(readLegacySettings(settings)).toEqual({ notifyAsk: true });
+  });
+
+  it("循环引用的分节按读不动处理（割接要把它序列化进 config.json）", () => {
+    // YAML 别名可以自指：这样的分节落盘时会让 `JSON.stringify` 抛错，读的时候就得当它读不动、回退下一环。
+    const doc = writeDocument("dsh-notifier: &self\n  notifyTaskDone: false\n  self: *self\n");
+    expect(
+      readLegacySettings(makeSettings([{ ns: NS, user: { notifyAsk: true } }], false, doc)),
+    ).toEqual({ notifyAsk: true });
+    expect(readLegacySettings(makeSettings([], false, doc))).toEqual({});
+  });
+
   it("文档与服务面都有时以文档为准（它是用户提交的原始层，服务面给的是解析值）", () => {
     const doc = writeDocument("dsh-notifier:\n  notifyAsk: false\n");
     const settings = makeSettings([{ ns: NS, user: { notifyAsk: true } }], false, doc);

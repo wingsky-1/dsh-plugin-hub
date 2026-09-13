@@ -41,11 +41,21 @@ const SOUND_KEYS: readonly string[] = ["browserSound", "systemSound"];
 /** 读存量设置：V1（宿主文档文件 → 已注册命名空间）优先，回退 V0。
  * @returns 已做语义转换的设置；空对象 = 旧版本没有可迁的东西，它同时是「读不到」与「读到了但一个键都没有」的答案。 */
 export function readLegacySettings(settings: LegacySettingsFace): LegacyStoredSettings {
-  const fromDocument = readFromDocument(settings.documentPath);
+  const fromDocument = readFromDocument(documentPathOf(settings));
   if (Object.keys(fromDocument).length > 0) return fromDocument;
   const fromSettings = readFromSettings(settings);
   if (Object.keys(fromSettings).length > 0) return fromSettings;
   return readFromFile();
+}
+
+/** provider 自报的文档路径。它由 provider 实现（文件型 provider 是个 getter），取它本身就可能在对方那一侧失败——
+ * 与 `describe()` 同形按「没有文件」处理：读存量不该因为 provider 的实现问题拦住插件启动。 */
+function documentPathOf(settings: LegacySettingsFace): string | undefined {
+  try {
+    return settings.documentPath;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -69,7 +79,7 @@ function documentCandidates(documentPath: string | undefined): readonly string[]
   return SETTINGS_DOC_FILES.map((name) => join(dshHome(), name));
 }
 
-/** 读一份文档并取本插件的分节：文件不存在、读不动、解析失败、分节不是普通对象，一律算「没有存量」。 */
+/** 读一份文档并取本插件的分节：文件不存在、读不动、解析失败、分节不是普通对象、分节序列化不了，一律算「没有存量」。 */
 function readDocumentSection(path: string): LegacyStoredSettings | undefined {
   if (!existsSync(path)) return undefined;
   let text: string;
@@ -82,7 +92,20 @@ function readDocumentSection(path: string): LegacyStoredSettings | undefined {
   const document = parseDocumentText(text, path);
   const section = document === undefined ? undefined : document[SETTINGS_NS];
   if (section === undefined) return undefined;
-  return isPlainRecord(section) ? section : undefined;
+  if (!isPlainRecord(section)) return undefined;
+  // YAML 别名能造出循环引用，而割接最终要把存量序列化进 config.json：序列化不了的分节按读不动处理（回退下一环），
+  // 而不是让落盘时的 TypeError 把这次装配拖下水。
+  return isSerializable(section) ? section : undefined;
+}
+
+/** 存量最终要经 `JSON.stringify` 落进 config.json——能不能序列化，是它作为「可搬迁存量」的准入条件。 */
+function isSerializable(raw: RawSettingValue): boolean {
+  try {
+    JSON.stringify(raw);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** 按扩展名分派解析：`.json` 用 JSON，其余按 YAML（官方 provider 只认 .yaml / .yml / .json）；坏文本算解释不了。 */

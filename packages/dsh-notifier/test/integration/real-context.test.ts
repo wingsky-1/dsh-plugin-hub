@@ -362,6 +362,10 @@ beforeEach(() => {
   // 单例的落盘路径跨用例不变，能重置的只有文件：不重置的话上一个用例的配置/历史就是本用例的起点。
   rmSync(historyFile, { force: true });
   rmSync(configFile, { force: true });
+  // 宿主 settings 文档也落在这个共享的临时 DSH_HOME 里，而割接的兜底读路径正是这两个名字：上一个用例留下的
+  // 文档会被下一个用例当存量读走，它的服务面判据就此空转（实测：留下文档后，下一个用例读到的是文档）。
+  rmSync(join(home.dir, "settings.yaml"), { force: true });
+  rmSync(join(home.dir, "settings.json"), { force: true });
   seedSeqAnchor();
   seed(BASE_SETTINGS);
 });
