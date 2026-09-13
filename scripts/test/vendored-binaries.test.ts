@@ -649,6 +649,10 @@ test("pack-check：随包发布了二进制却没附许可文本 → 判红；�
   const tarballRoot = mkTmp("vendored-tar-");
   mkdirSync(join(tarballRoot, "lib"), { recursive: true });
   const entry = { path: `packages/${PKG}/lib/tool.exe` };
+  // 与 collect-licenses 的 vendoredSection 同格式：两行 = 夹住段头，许可正文在其后
+  const licenseList = (body) =>
+    `THIRD-PARTY LICENSES\n\n${"=".repeat(69)}\nvendored 二进制：${entry.path}\n` +
+    `MIT — 来源：https://example.invalid/upstream@1.0.0\n${"=".repeat(69)}\n\n${body}\n`;
 
   // 二进制没进 tarball（被 files 裁剪）→ 发布物与登记表脱钩
   assert.match(join2(checkVendoredTarball(tarballRoot, `packages/${PKG}`, [entry])), /未随包发布/);
@@ -665,10 +669,14 @@ test("pack-check：随包发布了二进制却没附许可文本 → 判红；�
     /未覆盖 vendored 二进制/,
   );
 
-  writeFileSync(
-    join(tarballRoot, "lib", "THIRD-PARTY-LICENSES"),
-    `THIRD-PARTY LICENSES\n\n${entry.path} — MIT\n`,
+  // 只有段头字符串、正文为空：`lic.includes(path)` 会通过，等于没断言「许可随包」
+  writeFileSync(join(tarballRoot, "lib", "THIRD-PARTY-LICENSES"), licenseList("   "));
+  assert.match(
+    join2(checkVendoredTarball(tarballRoot, `packages/${PKG}`, [entry])),
+    /正文为空（段头字符串不等于附了许可文本）/,
   );
+
+  writeFileSync(join(tarballRoot, "lib", "THIRD-PARTY-LICENSES"), licenseList("MIT License text"));
   assert.deepEqual(checkVendoredTarball(tarballRoot, `packages/${PKG}`, [entry]), []);
 
   // 别的包的登记项与本包无关

@@ -493,9 +493,31 @@ export function vendoredEntriesFor(root, pkgDirRel, registryPath) {
 }
 
 /**
+ * 取许可清单里某 vendored 段的正文。段格式由 collect-licenses 的 vendoredSection 定义：
+ * 两行 `=` 夹住段头（path + 许可名 + 来源），许可正文在其后、直到下一个段头。
+ * 返回 null = 没有该段。
+ *
+ * 为什么不能只用 `lic.includes(path)`：段头字符串自己就能满足它——把许可正文删空、只留
+ * `vendored 二进制：<path>` 一行，覆盖断言照样通过，等于没断言「最终发布物带了许可」。
+ */
+function vendoredSectionBody(text, path) {
+  const lines = text.split("\n");
+  const head = lines.findIndex((l) => l.trim() === `vendored 二进制：${path}`);
+  if (head === -1) return null;
+  const close = lines.findIndex((l, i) => i > head && /^={5,}\s*$/.test(l));
+  if (close === -1) return null;
+  const body = [];
+  for (let i = close + 1; i < lines.length; i++) {
+    if (/^={5,}\s*$/.test(lines[i])) break;
+    body.push(lines[i]);
+  }
+  return body.join("\n");
+}
+
+/**
  * 随包断言（pack-check 消费）：登记项若真的进了 tarball，其许可文本必须出现在随包的
- * lib/THIRD-PARTY-LICENSES 里。与源码面判据互补——源码面保证「登记与分发面一致」，
- * 这里保证「最终发布物真的带了许可」。
+ * lib/THIRD-PARTY-LICENSES 里，且**该段的许可正文非空**。与源码面判据互补——源码面保证
+ * 「登记与分发面一致」，这里保证「最终发布物真的带了许可」。
  */
 export function checkVendoredTarball(pkgRoot, pkgDirRel, entries) {
   const problems = [];
@@ -513,8 +535,15 @@ export function checkVendoredTarball(pkgRoot, pkgDirRel, entries) {
       problems.push(`随包发布了 vendored 二进制（${e.path}）但缺 lib/THIRD-PARTY-LICENSES`);
       continue;
     }
-    if (!readFileSync(licPath, "utf8").includes(e.path)) {
-      problems.push(`lib/THIRD-PARTY-LICENSES 未覆盖 vendored 二进制 ${e.path}`);
+    const body = vendoredSectionBody(readFileSync(licPath, "utf8"), e.path);
+    if (body === null) {
+      problems.push(
+        `lib/THIRD-PARTY-LICENSES 未覆盖 vendored 二进制 ${e.path}（缺 vendored 段头）`,
+      );
+    } else if (body.trim() === "") {
+      problems.push(
+        `lib/THIRD-PARTY-LICENSES 的 vendored 段 ${e.path} 正文为空（段头字符串不等于附了许可文本）`,
+      );
     }
   }
   return problems;
