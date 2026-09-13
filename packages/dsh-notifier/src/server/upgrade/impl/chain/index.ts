@@ -3,6 +3,7 @@
  * 启动随之中止**（存储没升完就被按错误形态解释，比不启动糟得多）；步骤按**目标版本**排序执行，不按声明顺序。
  */
 import type { LoggerPort } from "../../../shared/interface.ts";
+import type { UpgradeDeps } from "../../deps.ts";
 import { STEPS } from "../steps/index.ts";
 import {
   compareVersions,
@@ -16,10 +17,10 @@ import type { UpgradeStep } from "./type.ts";
  * 装配前跑一遍升级链（组合根在 `apply` 期调用）。必须在各域装配**之前**：升级会重写配置文件与存储文件，
  * 先装配就等于让各域先读到旧形态，再让它们带着旧形态继续跑。
  */
-export function runUpgradeChain(logger: LoggerPort): void {
+export function runUpgradeChain(deps: UpgradeDeps): void {
   const recorded = readStoredVersion();
-  for (const step of pendingSteps(recorded)) applyStep(step);
-  reportGap(readStoredVersion(), pluginVersion(), logger);
+  for (const step of pendingSteps(recorded)) applyStep(step, deps);
+  reportGap(readStoredVersion(), pluginVersion(), deps.logger);
 }
 
 /** 刻度还停在这一步起点或更早的步骤，按目标版本升序。 */
@@ -33,9 +34,9 @@ function pendingSteps(recorded: string): UpgradeStep[] {
  * 执行一步，成功后回写刻度。回写在 `run` 之后而不是之前：刻度是「这一步做完了」的凭证，先写刻度等于把凭证
  * 发给一件还没做完的事。失败时抛出的错误带上目标版本，是为了让「哪一步」出现在启动失败的现场。
  */
-function applyStep(step: UpgradeStep): void {
+function applyStep(step: UpgradeStep, deps: UpgradeDeps): void {
   try {
-    step.run();
+    step.run(deps);
   } catch (cause) {
     throw new Error(
       `dsh-notifier: 存储升级到 ${step.targetVersion} 失败 — ${cause instanceof Error ? cause.message : "未知原因"}`,

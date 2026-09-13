@@ -86,8 +86,35 @@ export type WebhookChannelConfig = Omit<WebhookTarget, "type" | "auth" | "preset
   template?: string;
 };
 
-/** 出站频道实例联合；新增频道类型扩此联合。 */
-export type ChannelConfig = BarkChannelConfig | WebhookChannelConfig;
+/** 内置频道类型：只有这两个，且身份由 `type` 唯一确定——实例才需要 id 消歧。 */
+export type BuiltinChannelType = "browser" | "system";
+
+/** 浏览器频道（内置）：浏览器通知的展示形态。这些字段就是「发什么」的判据，由频道自己解释——裁决管线只认 `enabled`。 */
+export type BrowserChannelConfig = {
+  type: "browser";
+  /** 内置频道的 id 恒等于 `type`：与实例的 `type:id` 规则同源，`browser` 与 `browser:<id>` 不会撞。 */
+  id: "browser";
+  /** 发不发：本频道唯一的投递闸门。 */
+  enabled: boolean;
+  /** 弹不弹；关掉而声音开着 = 只响不弹。 */
+  popup: boolean;
+  sound: SoundSetting;
+  /** 页面可见时是否也弹（随帧下发给浏览器出口）。 */
+  whenVisible: boolean;
+};
+
+/** 系统频道（内置）：原生 toast 与提示音。 */
+export type SystemChannelConfig = {
+  type: "system";
+  id: "system";
+  enabled: boolean;
+  popup: boolean;
+  sound: SoundSetting;
+};
+
+/** 频道联合：出站实例 + 内置频道。新增类型扩此联合，`channels` 数组与设置页都按 `type` 分派。 */
+export type ChannelConfig =
+  BarkChannelConfig | WebhookChannelConfig | BrowserChannelConfig | SystemChannelConfig;
 
 // ---------------------------------------------------------------- 设置
 
@@ -103,21 +130,11 @@ export type NotifyConfig = {
   notifyTurnEnd: boolean;
 
   // 投递形态
-  /** 系统通道开关（发不发）：内置渠道唯一的投递闸门，关掉就是完全不投递。 */
-  systemEnabled: boolean;
-  /** 浏览器通道开关（发不发）：与 `systemEnabled` 同语义。 */
-  browserEnabled: boolean;
-  /** 系统通道弹窗开关（弹不弹）：关掉而声音开着 = 只响不弹。 */
-  systemNotify: boolean;
-  /** 浏览器通道弹窗开关（弹不弹）：与 `systemNotify` 同语义。 */
-  browserNotify: boolean;
-  /** 页面可见时是否也弹浏览器通知。 */
-  notifyWhenVisible: boolean;
-  /** @deprecated 只读兼容别名；读取由回落链消费，新写入一律用下面两个键。 */
-  notifySound: boolean;
-  browserSound: SoundSetting;
-  systemSound: SoundSetting;
+  // 渠道的开关、弹窗与声音都住在 `channels` 的条目里（两条内置 + 实例），这里没有第二处表达。
+  // 0.2.3 的顶层渠道键（`browserEnabled` / `notifySound` 那一批）由 upgrade 域在装配期搬进条目并
+  // **删除**——本契约不认识它们；读面只为「还没割接的文件」保留消费它们的物化输入。
   quietHours: QuietHoursConfig;
+  /** 全部频道：内置恒在最前（browser、system），实例随后；读面保证两条内置条目恒在场。 */
   channels: ChannelConfig[];
   /** kind → channelId[] 稀疏路由；缺省 = 广播全部启用频道。 */
   kindRoutes: Record<string, string[]>;

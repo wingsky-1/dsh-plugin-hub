@@ -206,7 +206,7 @@ class SystemDelivery {
   constructor(over: Partial<SystemTarget> = {}) {
     this.target = {
       type: "system",
-      pop: true,
+      popup: true,
       sound: false,
       toastScript: TOAST_SCRIPT,
       logger: this.logger,
@@ -548,7 +548,7 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
     expect(await pop.send()).toEqual({ status: "ok", stage: "delivered" });
     expect(pop.warns).toEqual(["dsh-notifier: 命令启动失败（notify-send）: argv 非法"]);
 
-    const soundOnly = new SystemDelivery({ pop: false, sound: "ding" });
+    const soundOnly = new SystemDelivery({ popup: false, sound: "ding" });
     expect(await soundOnly.send()).toEqual({
       status: "failed",
       stage: "delivered",
@@ -574,7 +574,7 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
   it("退出码 0：投递成功，且不留任何日志", async () => {
     const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
     installSystemDeps(fake);
-    const delivery = new SystemDelivery({ pop: false, sound: "ding" });
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
 
     expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
     expect(delivery.warns).toEqual([]);
@@ -586,7 +586,7 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
     const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
     fake.autoExit = false;
     installSystemDeps(fake);
-    const delivery = new SystemDelivery({ pop: false, sound: "ding" });
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
 
     const pending = delivery.send();
     await pollUntil(() => fake.children.length > 0, "假端口应起出子进程");
@@ -611,7 +611,7 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
     const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
     fake.autoExit = false;
     installSystemDeps(fake);
-    const delivery = new SystemDelivery({ pop: false, sound: "ding" });
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
 
     const pending = delivery.send();
     await pollUntil(() => fake.children.length > 0, "假端口应起出子进程");
@@ -626,7 +626,7 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
     const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
     fake.autoExit = false;
     installSystemDeps(fake);
-    const delivery = new SystemDelivery({ pop: false, sound: "ding" });
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
 
     const pending = delivery.send();
     await pollUntil(() => fake.children.length > 0, "假端口应起出子进程");
@@ -646,7 +646,7 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
     const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
     fake.autoExit = false;
     installSystemDeps(fake);
-    const delivery = new SystemDelivery({ pop: false, sound: "ding" });
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
 
     const pending = delivery.send();
     await pollUntil(() => fake.children.length > 0, "假端口应起出子进程");
@@ -661,7 +661,7 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
     const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
     fake.autoExit = false;
     installSystemDeps(fake);
-    const delivery = new SystemDelivery({ pop: false, sound: "ding" });
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
 
     const pending = delivery.send();
     await pollUntil(() => fake.children.length > 0, "假端口应起出子进程");
@@ -678,7 +678,7 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
     });
     reversed.autoExit = false;
     installSystemDeps(reversed);
-    const late = new SystemDelivery({ pop: false, sound: "ding" });
+    const late = new SystemDelivery({ popup: false, sound: "ding" });
     const lateExit = late.send();
     await pollUntil(() => reversed.children.length > 0, "假端口应起出子进程");
     reversed.children[0]!.emitError(new Error("先到的 error"));
@@ -757,7 +757,7 @@ describe("sendSystem：弹窗与自播的编排", () => {
   it("linux 弹窗 + 自播：先弹（恒静音）再响，两条命令都真的执行", async () => {
     const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
     installSystemDeps(fake);
-    const delivery = new SystemDelivery({ pop: true, sound: "ding" });
+    const delivery = new SystemDelivery({ popup: true, sound: "ding" });
 
     expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
     expect(fake.spawned.map((record) => record.command)).toEqual([
@@ -771,7 +771,7 @@ describe("sendSystem：弹窗与自播的编排", () => {
   it("linux 探测不到 notify-send：不弹也不留 warn，投递仍是成功", async () => {
     const fake = fakeDeps({ available: [] });
     installSystemDeps(fake);
-    const delivery = new SystemDelivery({ pop: true, sound: false });
+    const delivery = new SystemDelivery({ popup: true, sound: false });
 
     expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
     expect(fake.spawned).toEqual([]);
@@ -782,7 +782,7 @@ describe("sendSystem：弹窗与自播的编排", () => {
   it("win32 脚本缺失：留一条 warn 说明弹窗未发出", async () => {
     const fake = fakeDeps({ platform: "win32", present: [] });
     installSystemDeps(fake);
-    const delivery = new SystemDelivery({ pop: true, sound: false });
+    const delivery = new SystemDelivery({ popup: true, sound: false });
 
     expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
     expect(delivery.warns).toEqual([
@@ -795,7 +795,7 @@ describe("sendSystem：弹窗与自播的编排", () => {
   it("win32 脚本存在：弹窗走 PowerShell base64 载荷并接 stderr", async () => {
     const fake = fakeDeps({ platform: "win32", present: [TOAST_SCRIPT] });
     installSystemDeps(fake);
-    const delivery = new SystemDelivery({ pop: true, sound: false });
+    const delivery = new SystemDelivery({ popup: true, sound: false });
 
     expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
     expect(fake.spawned.map((record) => record.command.slice(0, 7))).toEqual([
@@ -821,7 +821,7 @@ describe("sendSystem：弹窗与自播的编排", () => {
   it("darwin 只响不弹：afplay 自播，弹窗半边没有命令", async () => {
     const fake = fakeDeps({ platform: "darwin", present: ["/System/Library/Sounds/Glass.aiff"] });
     installSystemDeps(fake);
-    const delivery = new SystemDelivery({ pop: false, sound: true });
+    const delivery = new SystemDelivery({ popup: false, sound: true });
 
     expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
     expect(fake.spawned.map((record) => record.command)).toEqual([
@@ -830,14 +830,21 @@ describe("sendSystem：弹窗与自播的编排", () => {
     expect(delivery.warns).toEqual([]);
   });
 
-  // 管线不会给出这种目标，但出口不该在这里凭空造一个失败（没有可失败的环节）。
-  it("pop=false 且静音：什么都不做也算投递成功", async () => {
+  // 管线的唯一判据是 `enabled`，所以「弹窗与声音都关」的目标确实会到达出口；出口的回答是
+  // 「这一次没有可发的内容」——记成 ok 会让历史里多出一条没发生过的成功，而顺手做一次平台探测
+  // 等于给一个空动作白起子进程。
+  it("popup=false 且静音：不起进程、不做探测，收成 skipped 而不是一次投递成功", async () => {
     const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
     installSystemDeps(fake);
-    const delivery = new SystemDelivery({ pop: false, sound: false });
+    const delivery = new SystemDelivery({ popup: false, sound: false });
 
-    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(await delivery.send()).toEqual({
+      status: "skipped",
+      reason: "系统频道：弹窗与声音都已关闭",
+    });
     expect(fake.spawned).toEqual([]);
+    expect(fake.probed).toEqual([]);
+    expect(fake.checked).toEqual([]);
     expect(delivery.warns).toEqual([]);
   });
 
@@ -845,7 +852,7 @@ describe("sendSystem：弹窗与自播的编排", () => {
   it("只响不弹但平台放不出声：判失败并给出原因，且不可重试", async () => {
     const fake = fakeDeps({ available: ["notify-send"] });
     installSystemDeps(fake);
-    const delivery = new SystemDelivery({ pop: false, sound: true });
+    const delivery = new SystemDelivery({ popup: false, sound: true });
 
     expect(await delivery.send()).toEqual({
       status: "failed",
@@ -860,7 +867,7 @@ describe("sendSystem：弹窗与自播的编排", () => {
   it("只响不弹且没有任何播放器：判失败，不起空命令", async () => {
     const fake = fakeDeps({ available: ["notify-send"], present: [LINUX_DING_FILE] });
     installSystemDeps(fake);
-    const delivery = new SystemDelivery({ pop: false, sound: "ding" });
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
 
     expect(await delivery.send()).toEqual({
       status: "failed",
@@ -876,7 +883,7 @@ describe("sendSystem：弹窗与自播的编排", () => {
     const wav = String.raw`C:\Windows\Media\Windows Ding.wav`;
     const fake = fakeDeps({ platform: "win32", present: [wav] });
     installSystemDeps(fake);
-    const delivery = new SystemDelivery({ pop: false, sound: "ding" });
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
 
     expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
     expect(fake.spawned.map((record) => record.command)).toEqual([
@@ -897,7 +904,7 @@ describe("sendSystem：弹窗与自播的编排", () => {
   it("弹窗文本按展示上限截断（标题 64、正文 256）后才进命令", async () => {
     const fake = fakeDeps({ available: ["notify-send"] });
     installSystemDeps(fake);
-    const delivery = new SystemDelivery({ pop: true, sound: false });
+    const delivery = new SystemDelivery({ popup: true, sound: false });
 
     expect(
       await delivery.send({ ...MESSAGE, title: "标".repeat(70), body: "正".repeat(300) }),

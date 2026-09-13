@@ -22,6 +22,9 @@ type UnmaskedChannel = { ok: true; channel: RawSettingValue } | { ok: false };
 const CHANNEL_SECRET_FIELDS: Record<ChannelConfig["type"], readonly string[]> = {
   bark: ["deviceKey"],
   webhook: ["token", "password", "headerValue"],
+  // 内置频道没有任何凭据字段；它们在表里必须出现（Record 强制穷尽），值就是空清单。
+  browser: [],
+  system: [],
 };
 
 /** 读出口脱敏：深拷贝后把密钥字段掩码。拷贝而非原地改，是因为它作用于**即将外发的视图**，而同一份设置在域内还要以

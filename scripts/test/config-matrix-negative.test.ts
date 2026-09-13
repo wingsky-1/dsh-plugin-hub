@@ -113,7 +113,7 @@ test("正对照：纯副本不改动矩阵 pass", () => {
       "lan-proxy 摘要含 17 键计数",
     );
     assert.ok(
-      r.lines.some((l) => l.includes("notifier 20 键 × [defaults → normalizeConfig]")),
+      r.lines.some((l) => l.includes("notifier 12 键 × [defaults → normalizeConfig]")),
       "notifier 摘要走运行时取值口径",
     );
   } finally {

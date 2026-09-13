@@ -98,7 +98,8 @@ class ConfigStore {
    * 写：掩码还原 → 校验 → 合并 → 落盘 → 刷新快照。
    *
    * 顺序不可换：掩码不是合法密钥值，未还原就被校验拦死；校验早于落盘，否则非法值会先写进文件。
-   * 校验与合并之间不净化：陌生键是透传保留的，一次保存不该把它们抹掉。
+   * 校验与合并之间不净化：陌生键是透传保留的，一次保存不该把它们抹掉。0.2.3 的顶层渠道键已由
+   * upgrade 域在装配期搬走，写面收到它们会被校验直接拒（退役键清单），不在这里做二次翻译。
    */
   async write(patch: SettingsPatch, expectedRevision?: number): Promise<WriteResult> {
     const restored = this.restoreSecrets(patch);

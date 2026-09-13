@@ -1,19 +1,24 @@
 /**
  * dsh-notifier pipeline 域 —— 路由：这条通知该发给谁（纯函数，判据全来自设置）。
  * 目标身份由客户端锁定：`bark:<id>` / `webhook:<id>` / 内置 `browser`、`system`。
+ *
+ * 本块对每个频道**只有一个判断：`enabled`**（发不发）。发什么——弹窗、声音、只响不弹、还是什么都
+ * 不发——由出口按传到手上的配置自己决定；管线只搬配置，不预设形态。
  */
 import type { EffectiveConfig } from "../../deps.ts";
-import { toastScriptPath, type LoggerPort } from "../../../shared/interface.ts";
+import { toastScriptPath } from "../../../shared/interface.ts";
 import type { NotifyKind } from "../service/kinds.ts";
 import type { NotifyRequest } from "../service/type.ts";
 import type {
   BarkConfig,
   BarkTarget,
   BarkTextKey,
+  BrowserConfig,
   ChannelConfig,
   RouteDeps,
   RouteOutcome,
   RoutedTarget,
+  SystemConfig,
   WebhookConfig,
   WebhookTarget,
 } from "./type.ts";
@@ -28,11 +33,14 @@ const PRESET_MAP: Record<NonNullable<WebhookConfig["preset"]>, WebhookTarget["pr
   custom: "raw",
 };
 
-/**
- * 路由：按 kind 与设置选出本次要投递的目标。
- * 内置频道先看**渠道开关**（发不发），再看「有没有提醒方式」——弹窗与声音都关掉时进池也只是
- * 一条什么都不做的投递；弹窗关而声音开就是只响不弹。
- */
+/** 频道对外 id：内置取 `type`，实例取 `type:id`——客户端有一条同名规则，两端必须逐字一致。 */
+export function channelIdOf(channel: ChannelConfig): string {
+  return channel.type === "browser" || channel.type === "system"
+    ? channel.type
+    : `${channel.type}:${channel.id}`;
+}
+
+/** 路由：按 kind 与设置选出本次要投递的目标。 */
 export function routeTargets(
   deps: RouteDeps,
   config: EffectiveConfig,
@@ -41,61 +49,70 @@ export function routeTargets(
   return narrowRoutes(config, request, resolvePool(deps, config, request.kind));
 }
 
-/** 投递池：本次请求可用的全部目标（路由收窄之前的全集），顺序为内置在前、出站随后。 */
+/**
+ * 投递池：本次请求可用的全部目标（路由收窄之前的全集），顺序即 `channels` 顺序（内置恒在最前）。
+ *
+ * 唯一的判据是 `enabled`：弹窗与声音都关掉的频道照样进池，由出口回答「这次没有可发的内容」
+ * ——那既不是在这里替出口判形态，也不会被伪装成一次投递成功。
+ *
+ * 整段包在 try 里：读配置 fail-soft，一个脏项不该吃掉整条通知（配置坏与出口失败是两回事——
+ * 后者是返回值，前者只能在这里拦住）。已收进池的目标照常投递。
+ */
 function resolvePool(deps: RouteDeps, config: EffectiveConfig, kind: NotifyKind): RoutedTarget[] {
   const pool: RoutedTarget[] = [];
-  const browserSound = config.browserSound;
-  if (config.browserEnabled && (config.browserNotify || browserSound !== false)) {
-    pool.push({
-      channelId: BUILTIN_CHANNELS.browser,
-      target: {
-        type: "browser",
-        pop: config.browserNotify === true,
-        sound: browserSound,
-        // kind 随帧一起出去：客户端靠它选图标与颜色。
-        emitFrame: (frame) => deps.frames.emit({ kind, frame }),
-      },
-    });
-  }
-  const systemSound = config.systemSound;
-  if (config.systemEnabled && (config.systemNotify || systemSound !== false)) {
-    pool.push({
-      channelId: BUILTIN_CHANNELS.system,
-      target: {
-        type: "system",
-        pop: config.systemNotify === true,
-        sound: systemSound,
-        toastScript: toastScriptPath(),
-        logger: deps.logger,
-      },
-    });
-  }
-  pool.push(...outboundTargets(config.channels, kind, deps.logger));
-  return pool;
-}
-
-/** 出站频道池：只收启用实例；读配置 fail-soft，一个坏项不该吃掉整条通知。 */
-function outboundTargets(
-  channels: ChannelConfig[],
-  kind: NotifyKind,
-  logger: LoggerPort,
-): RoutedTarget[] {
-  const targets: RoutedTarget[] = [];
   try {
-    for (const channel of channels) {
+    for (const channel of config.channels) {
       if (!channel.enabled) continue;
-      if (channel.type === "bark") {
-        targets.push({ channelId: `bark:${channel.id}`, target: barkTarget(channel, kind) });
-      } else {
-        targets.push({ channelId: `webhook:${channel.id}`, target: webhookTarget(channel) });
+      switch (channel.type) {
+        case "browser":
+          pool.push(browserTarget(channel, deps, kind));
+          break;
+        case "system":
+          pool.push(systemTarget(channel, deps));
+          break;
+        case "bark":
+          pool.push({ channelId: channelIdOf(channel), target: barkTarget(channel, kind) });
+          break;
+        case "webhook":
+          pool.push({ channelId: channelIdOf(channel), target: webhookTarget(channel) });
+          break;
       }
     }
   } catch (cause) {
-    logger.warn(
-      `dsh-notifier: 出站频道读取失败（fail-soft 跳过）: ${cause instanceof Error ? cause.message : String(cause)}`,
+    deps.logger.warn(
+      `dsh-notifier: 频道读取失败（fail-soft 跳过）: ${cause instanceof Error ? cause.message : String(cause)}`,
     );
   }
-  return targets;
+  return pool;
+}
+
+/** 浏览器内置频道 → 目标：配置原样搬运，播放决议由出口解析。 */
+function browserTarget(channel: BrowserConfig, deps: RouteDeps, kind: NotifyKind): RoutedTarget {
+  return {
+    channelId: BUILTIN_CHANNELS.browser,
+    target: {
+      type: "browser",
+      popup: channel.popup,
+      sound: channel.sound,
+      whenVisible: channel.whenVisible,
+      // kind 随帧一起出去：客户端靠它选图标与颜色。
+      emitFrame: (frame) => deps.frames.emit({ kind, frame }),
+    },
+  };
+}
+
+/** 系统内置频道 → 目标；脚本路径由组合层推导后传入，出口不做路径猜测。 */
+function systemTarget(channel: SystemConfig, deps: RouteDeps): RoutedTarget {
+  return {
+    channelId: BUILTIN_CHANNELS.system,
+    target: {
+      type: "system",
+      popup: channel.popup,
+      sound: channel.sound,
+      toastScript: toastScriptPath(),
+      logger: deps.logger,
+    },
+  };
 }
 
 /** bark 配置 → 投递参数；空串是归一化表达「没配置」，投递层的缺省才是真缺省。 */
@@ -202,7 +219,9 @@ function narrowRoutes(
 
 /** 已存在的频道 id：内置两个 + 配置里的全部实例（含停用的）。 */
 function knownChannelIds(config: EffectiveConfig): Set<string> {
-  const known = new Set<string>([BUILTIN_CHANNELS.browser, BUILTIN_CHANNELS.system]);
-  for (const channel of config.channels) known.add(`${channel.type}:${channel.id}`);
+  const known = new Set<string>();
+  // 内置条目与实例走同一条 id 规则（`channelIdOf` 对内置取裸 `type`），这里不为它们开分支：
+  // 归一化保证两条内置条目恒在场，所以 `browser` / `system` 一定被收进来。
+  for (const channel of config.channels) known.add(channelIdOf(channel));
   return known;
 }

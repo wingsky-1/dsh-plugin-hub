@@ -319,6 +319,15 @@ function channelIdFor(cfg: Record<string, any>): string {
 }
 
 /**
+ * 频道对外 id：内置取 `type`，实例取 `type:id`——宿主侧有一条同名规则，两端必须逐字一致。
+ * 各自维护一份而不是共享：客户端与宿主没有共享模块；一致性由路由往返判据（chips ↔ kindRoutes）锁住。
+ */
+function channelIdOf(cfg: Record<string, any>): string {
+  var type = String(cfg.type || "");
+  return type === "browser" || type === "system" ? type : channelIdFor(cfg);
+}
+
+/**
  * webhook 频道预设：选择预设填充认证方式与消息模板；URL 不自动
  * 覆盖（避免丢用户已填内容——「仅空值填充」的变体：URL 只在为空时
  * 由用户填写，模板/认证随预设走且可再改）。模板渲染契约见 channel-webhook.ts：
@@ -620,10 +629,10 @@ function showBanner(kind: any, title: any, message: any) {
 }
 
 /**
- * 通知展示总入口（声音策略为帧级权威，取代布尔快照）：
+ * 通知展示总入口（声音策略为帧级权威）：
  * @param opts.sound 服务端解析的声音策略 {mode, tone}——
  *   silent（静音）/ system（跟随系统默认，交给 OS）/ selfplay（页内自播，系统弹窗 silent 防双响）；
- *   缺省（旧服务端无 sound 字段）回落 runtimeConfig 快照语义（notifySound !== false）。
+ *   缺省（0.2.3 服务端发的帧没有 sound 字段）按 system 处理。
  * @param opts.playOnly 只响不弹：不弹实体、仅按需自播（服务端弹窗关 + 声音开）。
  */
 function showNotification(
@@ -634,9 +643,9 @@ function showNotification(
 ) {
   var frame = opts.sound;
   if (!frame || typeof frame !== "object") {
-    // 回落快照：旧服务端帧无 sound 字段 → notifySound 布尔语义
-    var legacyOn = !(runtimeConfig && runtimeConfig.notifySound === false);
-    frame = legacyOn ? { mode: "system", tone: undefined } : { mode: "silent", tone: undefined };
+    // 0.2.3 的帧没有 sound 字段：按「跟随系统默认」处理。旧全局声音键随 0.2.4 的配置割接删除，
+    // 这里没有可回查的开关了。
+    frame = { mode: "system", tone: undefined };
   }
   var selfPlay = frame.mode === "selfplay";
   var silent = frame.mode === "silent" || selfPlay;
@@ -683,9 +692,6 @@ function showNotification(
   if (selfPlay && playGate()) playTone(tone);
 }
 
-// ---- 运行时配置镜像（GET /config 的 effective；SSE 展示与可见性判定用）----
-var runtimeConfig: any = null;
-
 function handleNotifyFrame(payload: any) {
   // 测试通知：无条件提醒（验证链路是它的目的，与可见性/权限之外的开关无关）。
   if (payload.kind === "test") {
@@ -695,11 +701,9 @@ function handleNotifyFrame(payload: any) {
     });
     return;
   }
-  // 页面聚焦时不提醒（用户在界面中）；除非配置了「页面可见时也弹」。
-  if (
-    document.visibilityState !== "hidden" &&
-    !(runtimeConfig && runtimeConfig.notifyWhenVisible === true)
-  ) {
+  // 页面聚焦时不提醒（用户在界面中）；除非这一帧说「可见时也弹」——判定归宿主出口，帧自带结论，
+  // 页面不必回查配置（0.2.3 的帧没有这个字段，按「可见时不弹」处理）。
+  if (document.visibilityState !== "hidden" && payload.whenVisible !== true) {
     // 只响不弹（playOnly）不依赖可见性——它不打扰界面，纯声音提醒
     if (payload.playOnly !== true) return;
   }
@@ -1012,7 +1016,6 @@ function SettingsCard() {
         };
         metaRef.current = nextMeta;
         setMeta(nextMeta);
-        runtimeConfig = effective; // SSE 展示面同步
         if (v.writable === false) setSaved(t("settingsUnavailable"), true);
       })
       .catch(function (e: any) {
@@ -1110,7 +1113,6 @@ function SettingsCard() {
     };
     metaRef.current = nextMeta;
     setMeta(nextMeta);
-    runtimeConfig = latest.effective;
     setSaved("");
   }
 
@@ -1265,7 +1267,6 @@ function SettingsCard() {
     };
     metaRef.current = nextMeta;
     setMeta(nextMeta);
-    runtimeConfig = latest.effective;
     setConflict(null);
     setSaved("");
     // 用最新 revision 重提（quiet 补发语义：diff 由合并后的 settings 计算）
@@ -1279,7 +1280,6 @@ function SettingsCard() {
   function discardChanges() {
     if (baselineRef.current) {
       commitSettings(Object.assign({}, baselineRef.current));
-      runtimeConfig = baselineRef.current;
     }
     setConflict(null);
     setSaved("");
@@ -1399,15 +1399,19 @@ function SettingsCard() {
     });
   }
 
-  /** 当前「跟随默认」投递面（路由 id 列表）：内置频道看**启用**（发不发），实例频道看 enabled。
-   *  chips 点亮态（无条目时）与首次切换物化的快照都以本函数为准——所见即所得。
-   *  实例频道 id 经 channelIdFor（type:id）生成，bark/webhook 通用。 */
+  /** 频道显示名：内置用固定文案（它们的 name 不参与配置），实例用 name 回退 id。 */
+  function channelLabel(c: any): string {
+    if (c.type === "browser") return t("chBrowserNotify");
+    if (c.type === "system") return t("chSystemNotify");
+    return c.name || String(c.id);
+  }
+
+  /** 当前「跟随默认」投递面（路由 id 列表）：内置与实例同一判据——`enabled`（发不发）。
+   *  chips 点亮态（无条目时）与首次切换物化的快照都以本函数为准——所见即所得。 */
   function defaultRouteIds(prev: any): string[] {
     var ids: string[] = [];
-    if (prev.browserEnabled === true) ids.push("browser");
-    if (prev.systemEnabled === true) ids.push("system");
     (prev.channels || []).forEach(function (c: any) {
-      if (c.enabled === true) ids.push(channelIdFor(c));
+      if (c.enabled === true) ids.push(channelIdOf(c));
     });
     return ids;
   }
@@ -1415,15 +1419,11 @@ function SettingsCard() {
   /** 路由候选（含停用频道——保留显示以呈现「已配置但未启用」；未启用者置灰
    *  禁点——投递面 = 启用频道 ∩ 路由，未启用频道即使点亮也不投递，假点亮误导。
    *  enabled 标志供 chips 置灰/title 提示；已勾选未启用频道不自动清除，
-   *  用户启用后即恢复有效）。 */
+   *  用户启用后即恢复有效）。候选顺序即 `channels` 顺序：内置恒在最前。 */
   function routeOptions(prev: any): Array<{ id: string; label: string; enabled: boolean }> {
-    var inst = (prev.channels || []).map(function (c: any) {
-      return { id: channelIdFor(c), label: c.name || String(c.id), enabled: c.enabled === true };
+    return (prev.channels || []).map(function (c: any) {
+      return { id: channelIdOf(c), label: channelLabel(c), enabled: c.enabled === true };
     });
-    return [
-      { id: "browser", label: t("chBrowserNotify"), enabled: prev.browserEnabled === true },
-      { id: "system", label: t("chSystemNotify"), enabled: prev.systemEnabled === true },
-    ].concat(inst);
   }
 
   /**
@@ -1681,16 +1681,16 @@ function SettingsCard() {
    * 「怎么发」（弹窗关而声音开 = 只响不弹；两者都关 = 本频道不会有任何提醒，卡体给出提示）。
    * 三态摘要：启用开 + 弹窗开 = 启用；启用开 + 弹窗关 + 声音开 = 仅声音；启用关 = 已停用。
    */
-  function builtinCard(
-    enableKey: string,
-    popupKey: string,
-    soundKey: string,
-    label: string,
-    channelId: string,
-  ) {
-    var enabled = settings[enableKey] === true;
-    var popup = settings[popupKey] === true;
-    var soundOn = soundIsOn(settings[soundKey]);
+  /**
+   * 内置频道卡：与实例卡同源——它们都是 `settings.channels` 里的一项，只是不渲染删除入口、也没有凭据。
+   * 卡头 = 图标 + 名称 + 内置徽标 + 状态摘要 + 状态点 + 失败徽标 + 启用 switch；卡体 = 弹窗行 +
+   * （浏览器另有「页面可见时也弹」）+ 声音行 + 权限/平台提示 + 测试按钮。
+   */
+  function builtinCard(index: number, ch: any, label: string) {
+    var channelId = channelIdOf(ch);
+    var enabled = ch.enabled === true;
+    var popup = ch.popup === true;
+    var soundOn = soundIsOn(ch.sound);
     var stateCls = !enabled ? " dn-ch-off" : !popup && soundOn ? " dn-ch-sound" : " dn-ch-onEdge";
     var summaryState = !enabled
       ? t("chStateOff")
@@ -1698,13 +1698,33 @@ function SettingsCard() {
         ? t("chStateSound")
         : t("chStateOn");
     var extras: any[] = [];
-    extras.push(chRow(t("chPopup"), switchControl(popupKey, t("chPopup") + " " + label)));
-    if (channelId === "browser") {
+    extras.push(
+      chRow(
+        t("chPopup"),
+        switchToggle(
+          popup,
+          function (v: boolean) {
+            chPatch(index, { popup: v });
+          },
+          t("chPopup") + " " + label,
+        ),
+      ),
+    );
+    if (ch.type === "browser") {
       extras.push(
-        chRow(t("chWhenVisible"), switchControl("notifyWhenVisible", t("chWhenVisible"))),
+        chRow(
+          t("chWhenVisible"),
+          switchToggle(
+            ch.whenVisible === true,
+            function (v: boolean) {
+              chPatch(index, { whenVisible: v });
+            },
+            t("chWhenVisible") + " " + label,
+          ),
+        ),
       );
     }
-    extras.push(soundRow(soundKey, label));
+    extras.push(soundRow(index, ch, label));
     return (
       <details
         className={"dn-ch-card" + stateCls}
@@ -1712,7 +1732,7 @@ function SettingsCard() {
         open={enabled}
       >
         <summary>
-          {iconEl(channelId)}
+          {iconEl(String(ch.type))}
           <span className="dn-ch-name">{label}</span>
           <span className="dn-ch-type">{t("chTypeBuiltin")}</span>
           <span className="dn-ch-stateTxt">{summaryState}</span>
@@ -1725,9 +1745,7 @@ function SettingsCard() {
             {switchToggle(
               enabled,
               function (v: boolean) {
-                var p: Record<string, any> = {};
-                p[enableKey] = v;
-                patch(p);
+                chPatch(index, { enabled: v });
               },
               (enabled ? t("chToggleOff") : t("chToggleOn")) + label,
             )}
@@ -1742,9 +1760,9 @@ function SettingsCard() {
             <div className="dn-set-note-inline dn-soundOnly">{t("chPopupSoundOffNote")}</div>
           ) : null}
           {/* 浏览器通知权限状态行归入浏览器频道卡（权限授权入口同卡就近可达） */}
-          {channelId === "browser" ? browserPermLine() : null}
+          {ch.type === "browser" ? browserPermLine() : null}
           {/* 系统卡平台提示（/health platform 消费；宿主 OS 与浏览器 OS 可异机） */}
-          {channelId === "system" ? systemPlatformHint() : null}
+          {ch.type === "system" ? systemPlatformHint() : null}
           <div className="dn-ch-actions">{testBtn(channelId)}</div>
         </div>
       </details>
@@ -1774,8 +1792,8 @@ function SettingsCard() {
    *  开关语义：off=false（静音）；on=true（跟随系统默认）；on 后选择音色 =
    *  SoundId（显式音色）。交互全部显式 unlockAudio 兜底（autoplay 策略下
    *  纯后台页面自播需此前任意手势解锁；试听点击本身即手势）。 */
-  function soundRow(soundKey: string, channelLabel: string) {
-    var soundVal = settings[soundKey];
+  function soundRow(index: number, ch: any, channelLabel: string) {
+    var soundVal = ch.sound;
     var soundOn = soundIsOn(soundVal);
     var toneValue =
       typeof soundVal === "string" && SOUND_IDS.indexOf(soundVal) !== -1 ? soundVal : "";
@@ -1793,7 +1811,7 @@ function SettingsCard() {
       }),
     );
     return (
-      <div className="dn-ch-row" key={"sound-" + soundKey}>
+      <div className="dn-ch-row" key={"sound-" + channelIdOf(ch)}>
         <span className="dn-ch-cap">{t("chSound")}</span>
         <span className="dn-ch-ctl">
           {switchToggle(
@@ -1801,9 +1819,7 @@ function SettingsCard() {
             function (v: boolean) {
               // 用户手势：解锁音频（开启声音后隐藏页面自播才可能发声）
               unlockAudio();
-              var p: Record<string, any> = {};
-              p[soundKey] = v; // false / true
-              patch(p);
+              chPatch(index, { sound: v }); // false / true
             },
             t("chSound") + " " + channelLabel,
           )}
@@ -1814,9 +1830,7 @@ function SettingsCard() {
               aria-label={t("chSoundTone")}
               onChange={function (e: any) {
                 unlockAudio();
-                var p: Record<string, any> = {};
-                p[soundKey] = e.target.value === "" ? true : e.target.value;
-                patch(p);
+                chPatch(index, { sound: e.target.value === "" ? true : e.target.value });
               }}
             >
               {toneOpts}
@@ -2572,15 +2586,16 @@ function SettingsCard() {
     </div>,
   );
 
-  // 频道区：内置两卡 + 实例卡（bark / webhook 按类型分派）+ 添加按钮
-  var channelsChildren: any[] = [
-    builtinCard("browserEnabled", "browserNotify", "browserSound", t("chBrowserNotify"), "browser"),
-    builtinCard("systemEnabled", "systemNotify", "systemSound", t("chSystemNotify"), "system"),
-  ].concat(
-    (settings.channels || []).map(function (c: any, i: number) {
-      return String(c.type) === "webhook" ? webhookCard(c, i) : barkCard(c, i);
-    }),
-  );
+  // 频道区：`channels` 逐项按类型分派（内置两卡 + bark/webhook 实例卡）+ 添加按钮。
+  // 先按**真实下标**遍历再分派：chPatch / chRemove 都按下标操作，先 filter 会让编辑打到隔壁条目。
+  var channelsChildren: any[] = [];
+  (settings.channels || []).forEach(function (c: any, i: number) {
+    if (c.type === "browser" || c.type === "system") {
+      channelsChildren.push(builtinCard(i, c, channelLabel(c)));
+      return;
+    }
+    channelsChildren.push(String(c.type) === "webhook" ? webhookCard(c, i) : barkCard(c, i));
+  });
   channelsChildren.push(
     <div className="dn-ch-add" key="ch-add">
       <button
@@ -3075,14 +3090,6 @@ export function apply(ctx: any) {
       }
     }
     document.addEventListener("visibilitychange", onVisibilityChange);
-    // 运行时配置预取：可见性判定与通知展示要用 notifyWhenVisible / notifySound
-    fetchConfig()
-      .then(function (v: any) {
-        if (v && v.effective) runtimeConfig = v.effective;
-      })
-      .catch(function () {
-        // 失败静默（卡片打开时再拉）
-      });
     // 宿主平台预取：/health platform 驱动系统卡平台提示（系统通道弹在
     // 宿主机器，浏览器 OS 与宿主 OS 可异机——不要拿 navigator.platform 猜）
     fetch(ROUTES.health, { headers: { accept: "application/json" } })

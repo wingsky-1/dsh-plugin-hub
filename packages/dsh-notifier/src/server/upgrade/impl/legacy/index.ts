@@ -38,7 +38,7 @@ export function readLegacySettings(settings: LegacySettingsFace): LegacyStoredSe
 
 /** 读官方 settings 里那个命名空间的 user 层。服务在、但调用失败时按「没有存量」处理。 */
 function readFromSettings(settings: LegacySettingsFace): LegacyStoredSettings {
-  let entries: ReadonlyArray<{ ns: string; user?: RawSettingValue }>;
+  let entries: ReturnType<LegacySettingsFace["describe"]>;
   try {
     entries = settings.describe({ redactSecrets: true });
   } catch {
@@ -48,6 +48,7 @@ function readFromSettings(settings: LegacySettingsFace): LegacyStoredSettings {
   }
   for (const entry of entries) {
     if (entry.ns !== SETTINGS_NS) continue;
+    // settings 对自己的 `user` 只承诺「有值」，形状判断归读它的人：不是普通对象就按没有存量处理。
     const user = entry.user;
     if (typeof user !== "object" || user === null || Array.isArray(user)) return {};
     return convert(user as LegacyStoredSettings);

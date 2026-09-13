@@ -238,11 +238,11 @@ test("扫描面：.tsx 也在扫描面内（客户端入口形态）", () => {
   assert.match(r.stderr, /模块级 let（shared）/);
 });
 
-test("本仓真实快照：client/index.tsx 的 22 处模块级 var 全部走登记豁免 → exit 0", () => {
+test("本仓真实快照：client/index.tsx 的 21 处模块级 var 全部走登记豁免 → exit 0", () => {
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /OK（扫描 \d+ 文件，包 dsh-notifier，登记豁免 22 处）/);
-  // 22 处与豁免台账是同一个数字的两面：客户端 var 数量变了、或台账条目被删，
+  assert.match(r.stdout, /OK（扫描 \d+ 文件，包 dsh-notifier，登记豁免 21 处）/);
+  // 21 处与豁免台账是同一个数字的两面：客户端 var 数量变了、或台账条目被删，
   // 此断言先红并提示同步台账（scripts/data/gate-exemptions.json）与 #762。
   assert.match(
     r.stdout,

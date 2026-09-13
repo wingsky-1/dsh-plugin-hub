@@ -13,7 +13,11 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { BOOLEAN_KEYS, validateSettings } from "../../../src/server/config/impl/input/index.ts";
+import {
+  BOOLEAN_KEYS,
+  normalizeConfig,
+  validateSettings,
+} from "../../../src/server/config/impl/input/index.ts";
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
 import type { RawSettingValue } from "../../../src/server/config/impl/model/type.ts";
 
@@ -26,16 +30,12 @@ const EXPECTED_DEFAULTS = {
   notifyTaskError: true,
   notifyTurnEnd: false,
 
-  systemEnabled: true,
-  browserEnabled: true,
-  systemNotify: true,
-  browserNotify: true,
-  notifyWhenVisible: false,
-  notifySound: true,
-  browserSound: true,
-  systemSound: true,
   quietHours: { enabled: false, start: "22:00", end: "08:00" },
-  channels: [],
+  // 两条内置频道是默认形态的一部分：读面靠它们才谈得上「与默认表逐字一致」，权威形态也住在它们身上。
+  channels: [
+    { type: "browser", id: "browser", enabled: true, popup: true, sound: true, whenVisible: false },
+    { type: "system", id: "system", enabled: true, popup: true, sound: true },
+  ],
   kindRoutes: {},
   allowKinds: [],
 
@@ -51,17 +51,15 @@ const BOOLEAN_SETTING_KEYS: readonly string[] = [
   "notifySubagentDone",
   "notifyTaskError",
   "notifyTurnEnd",
-  "systemEnabled",
-  "browserEnabled",
-  "systemNotify",
-  "browserNotify",
-  "notifyWhenVisible",
-  "notifySound",
 ];
 
 describe("DEFAULT_CONFIG：默认形态以手写字面量为准，不由实现自述", () => {
-  it("整份默认设置等于手写形态：14 个布尔的偏置与计数/列表类默认值逐个锚住（改坏一行不该悄无声息）", () => {
+  it("整份默认设置等于手写形态：布尔偏置、两条内置条目与计数/列表类默认值逐个锚住（改坏一行不该悄无声息）", () => {
     expect(DEFAULT_CONFIG).toEqual(EXPECTED_DEFAULTS);
+  });
+
+  it("空输入归一化后与默认表逐字相等：默认表同时是读面的物化基准（两侧不等就说明物化补了默认表没有的东西）", () => {
+    expect(normalizeConfig({})).toEqual(DEFAULT_CONFIG);
   });
 
   it("quietHours 只有 enabled / start / end：allowKinds 缺省表示「时段内不额外放行谁」（整体相等看不出多出来的键值是 undefined）", () => {

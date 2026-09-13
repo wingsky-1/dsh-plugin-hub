@@ -37,7 +37,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 
 /** 一个浏览器出口目标：`emitFrame` 由本用例给，用来观测编排何时触达出口。 */
 function browserTarget(emitFrame: (frame: NotifyFrame) => void): DeliveryTarget {
-  return { type: "browser", pop: true, sound: false, emitFrame };
+  return { type: "browser", popup: true, sound: false, whenVisible: false, emitFrame };
 }
 
 afterEach(() => {

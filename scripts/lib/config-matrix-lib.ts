@@ -195,13 +195,15 @@ export function collectNormalizeBranchKeys(fnNode) {
 /**
  * 客户端 UI 引用键收集（notifier 形态；lan-proxy 由 DEFAULTS 单表承载不适用）：
  *  = 顶层 EVENT_KEYS 二维数组首列（事件开关渲染）
- *  ∪ builtinCard("…", "…") / switchControl("…") 调用参数字符串（内置卡弹窗键 +
- *    声音键（builtinCard 第二参，#640/#641）/行为参数）
- *  ∪ patch({…}) 字面量对象键（顶层配置键增量提交；chPatch 为 Bark 频道子键，
+ *  ∪ switchControl("…") 调用参数字符串（顶层设置键的行为参数）
+ *  ∪ patch({…}) 字面量对象键（顶层配置键增量提交；chPatch 为频道子键，
  *    刻意不收——与 SETTING_VALIDATORS 顶层键不同面）
  *  ∪ settings.<静态键> MemberExpression（渲染/读取面）。
  * 覆盖全模块（esbuild 提升后 var 已顶层；函数内 var settings 仍可被遍历到——
  *  全树扫描不依赖作用域分析，收集的是「键引用面」而非绑定语义）。
+ *
+ * 内置频道卡不再贡献键面：它们的开关与声音住在 `channels` 的两条内置条目里，卡片按条目渲染
+ * （`builtinCard(index, ch, label)` 的实参是下标与对象，没有配置键字面量可收）。
  */
 export function collectClientUiKeys(ast) {
   const keys = new Set()
@@ -209,13 +211,7 @@ export function collectClientUiKeys(ast) {
     if (!n || typeof n.type !== 'string') return
     if (n.type === 'CallExpression' && n.callee?.type === 'Identifier') {
       const callee = n.callee.name
-      if (callee === 'builtinCard') {
-        // builtinCard("browserNotify", "browserSound", …)：首参弹窗键、第二参声音键
-        for (const argIdx of [0, 1]) {
-          const a = n.arguments[argIdx]
-          if (a?.type === 'Literal' && typeof a.value === 'string') keys.add(a.value)
-        }
-      } else if (callee === 'switchControl' && n.arguments[0]?.type === 'Literal' && typeof n.arguments[0].value === 'string') {
+      if (callee === 'switchControl' && n.arguments[0]?.type === 'Literal' && typeof n.arguments[0].value === 'string') {
         keys.add(n.arguments[0].value)
       }
       if (callee === 'patch' && n.arguments[0]?.type === 'ObjectExpression') {

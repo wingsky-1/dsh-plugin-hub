@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   BARK_RESERVED_KEYS,
+  RETIRED_KEYS,
   WEBHOOK_RESERVED_KEYS,
   normalizeConfig,
   parseJsonObject,
@@ -21,12 +22,14 @@ import {
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
 import type {
   BarkChannelConfig,
+  BrowserChannelConfig,
   ChannelConfig,
   NotifyConfig,
   RawSettingValue,
   SettingInvalid,
   SettingsPatch,
   StoredSettings,
+  SystemChannelConfig,
   WebhookChannelConfig,
 } from "../../../src/server/config/impl/model/type.ts";
 
@@ -47,18 +50,51 @@ function invalidOf(patch: SettingsPatch): SettingInvalid {
   return verdict.error;
 }
 
-/** 取归一化后的第一个频道并收窄到 bark（判别键在归一化里就分好了支，收窄失败即夹具写错）。 */
+/** 取归一化后的第一个出站频道并收窄到 bark（内置两条恒在最前，故按类型找而不是按下标）。 */
 function barkOf(channels: readonly ChannelConfig[]): BarkChannelConfig {
-  const channel = channels[0];
+  const channel = channels.find((item) => item.type === "bark");
   if (channel?.type !== "bark") throw new Error("期望归一化出一个 bark 频道");
   return channel;
 }
 
-/** 取归一化后的第一个频道并收窄到 webhook。 */
+/** 取归一化后的第一个出站频道并收窄到 webhook。 */
 function webhookOf(channels: readonly ChannelConfig[]): WebhookChannelConfig {
-  const channel = channels[0];
+  const channel = channels.find((item) => item.type === "webhook");
   if (channel?.type !== "webhook") throw new Error("期望归一化出一个 webhook 频道");
   return channel;
+}
+
+/** 取归一化后的浏览器内置条目。 */
+function browserOf(channels: readonly ChannelConfig[]): BrowserChannelConfig {
+  const channel = channels.find((item) => item.type === "browser");
+  if (channel?.type !== "browser") throw new Error("期望归一化出一个浏览器内置条目");
+  return channel;
+}
+
+/** 取归一化后的系统内置条目。 */
+function systemOf(channels: readonly ChannelConfig[]): SystemChannelConfig {
+  const channel = channels.find((item) => item.type === "system");
+  if (channel?.type !== "system") throw new Error("期望归一化出一个系统内置条目");
+  return channel;
+}
+
+/** 内置两条的合法提交形态：写面要求显式提交的 `channels` 仍然带着它们。 */
+const BUILTINS = [
+  { type: "browser", id: "browser", enabled: true, popup: true, sound: false, whenVisible: false },
+  { type: "system", id: "system", enabled: false, popup: false, sound: false },
+] as const;
+
+/** 出站频道提交体补上两条内置条目：内置不能删除，缺了它们提交会先被那条规则拦下。 */
+function withBuiltins(list: readonly Record<string, unknown>[]): RawSettingValue[] {
+  return [...BUILTINS, ...list] as unknown as RawSettingValue[];
+}
+
+/** 一条内置条目，只带被测字段：缺的字段由归一化沿「存量别名 → 默认表」补齐。 */
+function builtinWithSound(
+  type: "browser" | "system",
+  sound: RawSettingValue,
+): Record<string, RawSettingValue> {
+  return { type, id: type, sound };
 }
 
 /** 合法 bark 频道：单项守卫用例以它为基底，只改被测字段。 */
@@ -100,10 +136,6 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
       ["notifySubagentDone", raw(null)],
       ["notifyTaskError", []],
       ["notifyTurnEnd", {}],
-      ["systemNotify", "off"],
-      ["browserNotify", raw(null)],
-      ["notifyWhenVisible", "true"],
-      ["notifySound", 0],
       ["quietHours", "22:00"],
       ["channels", {}],
       ["kindRoutes", []],
@@ -144,13 +176,15 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
       [3, true],
     ];
     for (const [input, expected] of rows) {
+      // 权威形态在条目字段上：两条内置频道各自的 `sound` 是三态语义的唯一入口，投影键由它派生。
       expect(
-        normalizeConfig({ browserSound: input }).browserSound,
-        `browserSound=${String(input)}`,
+        browserOf(normalizeConfig({ channels: [builtinWithSound("browser", input)] }).channels)
+          .sound,
+        `browser sound=${String(input)}`,
       ).toEqual(expected);
       expect(
-        normalizeConfig({ systemSound: input }).systemSound,
-        `systemSound=${String(input)}`,
+        systemOf(normalizeConfig({ channels: [builtinWithSound("system", input)] }).channels).sound,
+        `system sound=${String(input)}`,
       ).toEqual(expected);
     }
   });
@@ -245,7 +279,12 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
         raw(null),
       ],
     }).channels;
-    expect(channels.map((channel) => channel.id)).toEqual(["bark:phone", "webhook:hook"]);
+    expect(channels.map((channel) => channel.id)).toEqual([
+      "browser",
+      "system",
+      "bark:phone",
+      "webhook:hook",
+    ]);
   });
 
   it("bark 频道：level 非法即缺字段而不是兜成 active（兜底会让 error 通知永远发不出 timeSensitive）", () => {
@@ -275,7 +314,9 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
     );
     expect(hook.extras).toEqual({ futureKey: "v", retries: 2 });
     // 没有未知键时不该凭空多出一个空 extras（两类频道同一口径）。
-    expect("extras" in normalizeConfig({ channels: [BARK, WEBHOOK] }).channels[1]!).toBe(false);
+    expect("extras" in webhookOf(normalizeConfig({ channels: [BARK, WEBHOOK] }).channels)).toBe(
+      false,
+    );
   });
 
   it("保留键在归一化里也剔除：手改过的配置文件不经过写入口径，一条手写的 device_key 就能绕开「凭据只走已知字段」", () => {
@@ -289,22 +330,33 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
     expect(JSON.stringify(channel)).not.toContain("leak");
   });
 
-  it("只写过旧全局键 notifySound 的存量：读面回落到它（当时关掉的提示音不该因新键缺省 true 而复活成有声）", () => {
+  it("只写过旧全局键 notifySound 的存量：读面把它并进两条内置条目的 sound（当时关掉的提示音不该复活成有声）", () => {
     const quiet = normalizeConfig({ notifySound: false });
-    expect(quiet.browserSound).toBe(false);
-    expect(quiet.systemSound).toBe(false);
-    // 显式的新键优先于旧键：回落只补缺，不覆盖用户后来的选择。
-    const mixed = normalizeConfig({ notifySound: false, browserSound: "ding" });
-    expect(mixed.browserSound).toBe("ding");
-    expect(mixed.systemSound).toBe(false);
+    expect(browserOf(quiet.channels).sound).toBe(false);
+    expect(systemOf(quiet.channels).sound).toBe(false);
+    // 显式写下的条目字段优先于旧键：回落只补缺，不覆盖用户后来的选择。
+    const mixed = normalizeConfig({
+      notifySound: false,
+      channels: [builtinWithSound("browser", "ding"), BUILTINS[1]],
+    });
+    expect(browserOf(mixed.channels).sound).toBe("ding");
+    expect(systemOf(mixed.channels).sound).toBe(false);
+  });
+
+  it("存量出口音效键接受完整声音域：存过的音色名不能被吞成默认值（旧全局键只认布尔）", () => {
+    const toned = normalizeConfig({ browserSound: "ding", systemSound: "chime" });
+    expect(browserOf(toned.channels).sound).toBe("ding");
+    expect(systemOf(toned.channels).sound).toBe("chime");
+    // 旧全局键当年只有开关语义：音色名这类值不该经它流进配置（回落默认，而不是把它当音色用）
+    expect(browserOf(normalizeConfig({ notifySound: "ding" }).channels).sound).toBe(true);
   });
 
   it("频道缺省不启用：出站授权须用户显式授予（两类频道同一口径——webhook 只是把同样的授权换成一次外发请求）", () => {
-    expect(normalizeConfig({ channels: [BARK] }).channels[0].enabled).toBe(false);
-    expect(normalizeConfig({ channels: [{ ...BARK, enabled: true }] }).channels[0].enabled).toBe(
-      true,
-    );
-    expect(normalizeConfig({ channels: [WEBHOOK] }).channels[0].enabled).toBe(false);
+    expect(barkOf(normalizeConfig({ channels: [BARK] }).channels).enabled).toBe(false);
+    expect(
+      barkOf(normalizeConfig({ channels: [{ ...BARK, enabled: true }] }).channels).enabled,
+    ).toBe(true);
+    expect(webhookOf(normalizeConfig({ channels: [WEBHOOK] }).channels).enabled).toBe(false);
   });
 
   it("bark 的 levels 稀疏映射剔除非白名单值（按 kind 的紧急度命中优先于 level）", () => {
@@ -379,24 +431,60 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
   });
 
   it("未知键的写入口径：只放行 string/number（对象/布尔/数组的透传值会让下游分不清「有值」与「没值」）", () => {
-    expect(validateSettings({ channels: [{ ...BARK, volume: 5, call: "1" }] })).toEqual({
-      ok: true,
-    });
-    expect(invalidOf({ channels: [{ ...BARK, nested: { a: 1 } }] }).hint).toContain("nested");
-    expect(invalidOf({ channels: [{ ...BARK, flag: true }] }).hint).toContain("flag");
-    expect(invalidOf({ channels: [{ ...BARK, list: [1] }] }).hint).toContain("list");
+    expect(
+      validateSettings({ channels: withBuiltins([{ ...BARK, volume: 5, call: "1" }]) }),
+    ).toEqual({ ok: true });
+    expect(invalidOf({ channels: withBuiltins([{ ...BARK, nested: { a: 1 } }]) }).hint).toContain(
+      "nested",
+    );
+    expect(invalidOf({ channels: withBuiltins([{ ...BARK, flag: true }]) }).hint).toContain("flag");
+    expect(invalidOf({ channels: withBuiltins([{ ...BARK, list: [1] }]) }).hint).toContain("list");
+  });
+
+  it("内置渠道不能删除：显式提交的 channels 少一条内置条目即 400，提示点名缺的那一条（其余一律按普通条目处理）", () => {
+    const browser = { type: "browser", id: "browser" };
+    const system = { type: "system", id: "system" };
+    // 两条都在场即放行：内置没有别的特殊之处，出站频道照旧按各自规则校验。
+    expect(validateSettings({ channels: [browser, system, BARK] })).toEqual({ ok: true });
+
+    const missingSystem = invalidOf({ channels: [browser, BARK] });
+    expect(missingSystem.key).toBe("channels");
+    expect(missingSystem.hint).toContain("内置渠道不能删除");
+    expect(missingSystem.hint).toContain("system");
+
+    const missingBrowser = invalidOf({ channels: [system, BARK] });
+    expect(missingBrowser.key).toBe("channels");
+    expect(missingBrowser.hint).toContain("browser");
+  });
+
+  // 内置身份由 type 唯一确定：id 只是回显，写了别的值说明提交方在自造身份（归一化会强制改写它，
+  // 写面必须当场拒，否则用户以为改掉了而实际没有）。
+  it("内置条目的 id 必须与 type 一致：写了别的 id 一律 400", () => {
+    const wrongId = invalidOf({ channels: [{ ...BUILTINS[0], id: "chrome" }, BUILTINS[1]] });
+    expect(wrongId.key).toBe("channels");
+    expect(wrongId.hint).toContain("id 只能是");
+  });
+
+  // 这一批键在 0.2.4 被搬进渠道条目并删除。当陌生键放行会让停在升级前页面上的旧客户端以为存上了
+  // （200 + 什么都不发生），所以写面必须拒——提示里给出出路（刷新），用户知道下一步做什么。
+  it("退役键写拒：0.2.3 的顶层渠道键提交一律 400，与值无关且指名刷新", () => {
+    for (const key of RETIRED_KEYS) {
+      const verdict = validateSettings({ [key]: true } as SettingsPatch);
+      expect(verdict.ok, key).toBe(false);
+      expect(verdict.ok ? "" : verdict.error.key).toBe(key);
+      expect(verdict.ok ? "" : verdict.error.hint).toContain("已移入渠道条目");
+    }
+    // 合法布尔值也一样拒：拒的是键本身，不是值
+    expect(validateSettings({ browserNotify: true } as SettingsPatch).ok).toBe(false);
   });
 
   it("逐键类型闸门：每个非法值都指向它自己那个键，且提示指向真正拦下它的那条分支（键对了、提示指向别处，等于把用户引到另一个字段）", () => {
     const rows: ReadonlyArray<readonly [SettingsPatch, string, string]> = [
       [{ notifyAsk: "false" }, "notifyAsk", "true 或 false"],
-      [{ systemNotify: 1 }, "systemNotify", "true 或 false"],
       [{ historyMaxAgeDays: -1 }, "historyMaxAgeDays", "0 到 3650"],
       [{ historyMaxAgeDays: 3_651 }, "historyMaxAgeDays", "0 到 3650"],
       [{ maxConnections: 1.5 }, "maxConnections", "0 到 1024"],
       [{ maxConnections: "8" }, "maxConnections", "0 到 1024"],
-      [{ browserSound: "mp3" }, "browserSound", "内置音色名"],
-      [{ systemSound: 3 }, "systemSound", "内置音色名"],
       [{ allowKinds: "error" }, "allowKinds", "字符串数组"],
       [{ allowKinds: ["a", 1] }, "allowKinds", "字符串数组"],
       // quietHours：「不是对象」与「缺了哪个子键」是不同分支，提示分不开用户就改不对。
@@ -533,14 +621,9 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
       notifySubagentDone: true,
       notifyTaskError: false,
       notifyTurnEnd: true,
-      systemNotify: true,
-      browserNotify: false,
-      notifyWhenVisible: true,
-      notifySound: false,
-      browserSound: "chime",
-      systemSound: false,
       quietHours: { enabled: true, start: "23:00", end: "07:00", allowKinds: ["error"] },
       channels: [
+        ...BUILTINS,
         { ...BARK, enabled: true, level: "critical", levels: { error: "critical" } },
         { ...WEBHOOK, enabled: false, auth: "header", preset: "gotify", headerName: "X-Token" },
       ],

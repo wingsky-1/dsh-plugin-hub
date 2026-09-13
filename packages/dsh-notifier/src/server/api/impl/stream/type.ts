@@ -15,6 +15,9 @@ export type StreamEvent =
       sound: NotifyFrame["sound"];
       /** 只响不弹。缺席即「照常弹」——客户端判的是 `=== true`，不是真假值。 */
       playOnly?: true;
+      /** 页面可见时是否也弹：可见性只有页面自己知道，故随帧下发，渲染端不必回查可能已变的配置。
+       *  0.2.3 的帧没有这个字段，不读它的旧客户端不受影响。 */
+      whenVisible: boolean;
     }
   | { type: "ping" };
 

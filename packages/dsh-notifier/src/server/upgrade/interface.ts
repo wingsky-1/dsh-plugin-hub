@@ -3,13 +3,14 @@
 import type { UpgradeDeps } from "./deps.ts";
 import { upgradeRunner } from "./impl/service/index.ts";
 
-/** 装配升级域。升级链**同步跑完**，任何一步失败即抛出、`apply` 随之失败——带半完成迁移的存储比不启动危险得多；
- * 存量配置的迁移挂在宿主 settings 服务就绪的回调上，等不到就不做。抛出的那一步不回写刻度，下次启动从同一步重跑。 */
+/** 装配升级域。升级链**同步跑完**（存储布局归位 + 配置形态割接），任何一步失败即抛出、`apply` 随之失败
+ * ——带半完成迁移的存储比不启动危险得多。存量配置的读取面由组合根以显式依赖注入（宿主保证服务就绪才装配），
+ * 所以割接在同一趟装配里完成，没有等待回调。抛出的那一步不回写刻度，下次启动从同一步重跑。 */
 export function installUpgrade(deps: UpgradeDeps): void {
   upgradeRunner.install(deps);
 }
 
-/** 卸载升级域。只退订那一次等待：升级链本身没有留下需要释放的东西——它写的是文件。 */
+/** 卸载升级域。只复位装配标记：升级链没有留下需要释放的东西——它写的是文件。 */
 export function releaseUpgrade(): void {
   upgradeRunner.release();
 }

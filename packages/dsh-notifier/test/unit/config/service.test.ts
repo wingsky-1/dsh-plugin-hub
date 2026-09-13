@@ -44,6 +44,22 @@ const BARK = {
   level: "active",
 };
 
+/** 两条内置条目：显式提交 `channels` 时必须带着它们（内置渠道不能删除）。 */
+const BUILTINS = [
+  { type: "browser", id: "browser", enabled: true, popup: true, sound: false, whenVisible: false },
+  { type: "system", id: "system", enabled: false, popup: false, sound: false },
+] as const;
+
+/** 按类型取条目：内置两条恒在最前，按下标取到的就不再是出站频道。 */
+function channelOfType(
+  list: Array<Record<string, RawSettingValue>>,
+  type: string,
+): Record<string, RawSettingValue> {
+  const channel = list.find((item) => item.type === type);
+  if (channel === undefined) throw new Error(`期望配置里有一个 ${type} 频道`);
+  return channel;
+}
+
 /** 装配一次并交出日志出口（DSH_HOME 已在模块顶部指向临时目录）。 */
 function assemble() {
   const logger = makeLogger();
@@ -332,21 +348,45 @@ describe("写面的合并与凭据", () => {
 
   it("凭据往返：视图出掩码、域内读面出明文；把掩码提交回来即保留原值（没改密码不该把密码改成 8 个星号）", async () => {
     assemble();
-    expect((await writeConfig({ channels: [BARK] })).ok).toBe(true);
+    expect((await writeConfig({ channels: [...BUILTINS, BARK] })).ok).toBe(true);
 
     const view = readSettingsView();
-    expect(channelsOf(view.user)[0].deviceKey).toBe(MASK);
-    expect(channelsOf(view.effective)[0].deviceKey).toBe(MASK);
-    expect(channelsOf(readConfig())[0].deviceKey).toBe("key-1");
+    expect(channelOfType(channelsOf(view.user), "bark").deviceKey).toBe(MASK);
+    expect(channelOfType(channelsOf(view.effective), "bark").deviceKey).toBe(MASK);
+    expect(channelOfType(channelsOf(readConfig()), "bark").deviceKey).toBe("key-1");
 
     // 用户只改了显示名，凭据字段原样回显提交。
     const submitted = channelsOf(view.user).map((channel) => ({ ...channel, name: "手机" }));
     const result = await writeConfig({ channels: submitted }, view.revision);
     expect(result.ok).toBe(true);
-    expect(channelsOf(readConfig())[0].name).toBe("手机");
-    expect(channelsOf(onDisk())[0].deviceKey).toBe("key-1");
+    expect(channelOfType(channelsOf(readConfig()), "bark").name).toBe("手机");
+    expect(channelOfType(diskChannels(), "bark").deviceKey).toBe("key-1");
     if (!result.ok) throw new Error("应当写入成功");
-    expect(channelsOf(result.view.user)[0].deviceKey).toBe(MASK);
+    expect(channelOfType(channelsOf(result.view.user), "bark").deviceKey).toBe(MASK);
+  });
+
+  // 旧顶层键在 0.2.4 被搬进条目并删除。写面必须拒它们：当陌生键放行会让停在升级前页面上的
+  // 旧客户端以为存上了（200 + 什么都不发生），而它改的其实是已经不存在的键。
+  it("退役键写拒：0.2.3 的顶层渠道键提交返回 invalid 且不落盘、不改动生效设置", async () => {
+    assemble();
+    // 先落一次合法写入：下面「文件逐字未变」这条断言才有东西可比。
+    expect((await writeConfig({ maxConnections: 5 })).ok).toBe(true);
+    const before = readFileSync(configFile, "utf8");
+    const effectiveBefore = readConfig();
+
+    const result = await writeConfig({ browserNotify: false } as unknown as SettingsPatch);
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "invalid",
+      error: {
+        key: "browserNotify",
+        hint: "该键在 0.2.4 升级时已移入渠道条目；页面停留在升级前时，刷新后重试",
+      },
+    });
+    // 拒绝发生在落盘之前：生效设置与文件都不该有任何变化
+    expect(readConfig()).toEqual(effectiveBefore);
+    expect(readFileSync(configFile, "utf8")).toBe(before);
   });
 });
 
@@ -355,6 +395,7 @@ describe("写面：频道的可选键（缺省即合法，显式非法仍拦）"
     assemble();
     const result = await writeConfig({
       channels: [
+        ...BUILTINS,
         { type: "bark", id: "bark:phone", baseUrl: "https://api.day.app", deviceKey: "key-1" },
         { type: "webhook", id: "webhook:hook", url: "https://example.test/hook", auth: "none" },
       ],
@@ -362,17 +403,17 @@ describe("写面：频道的可选键（缺省即合法，显式非法仍拦）"
     expect(result.ok).toBe(true);
 
     const stored = diskChannels();
-    expect(stored).toHaveLength(2);
-    expect(stored[0]!.level).toBeUndefined();
-    expect(stored[1]!.preset).toBeUndefined();
-    expect(stored[0]!.deviceKey).toBe("key-1");
+    expect(stored).toHaveLength(BUILTINS.length + 2);
+    const storedBark = channelOfType(stored, "bark");
+    const storedWebhook = channelOfType(stored, "webhook");
+    expect(storedBark.level).toBeUndefined();
+    expect(storedWebhook.preset).toBeUndefined();
+    expect(storedBark.deviceKey).toBe("key-1");
 
-    const effective = readConfig().channels;
-    const bark = effective[0];
-    if (bark?.type !== "bark") throw new Error("期望归一化出一个 bark 频道");
+    const effective = channelsOf(readConfig());
+    const bark = channelOfType(effective, "bark");
     expect("level" in bark).toBe(false);
-    const webhook = effective[1];
-    if (webhook?.type !== "webhook") throw new Error("期望归一化出一个 webhook 频道");
+    const webhook = channelOfType(effective, "webhook");
     expect(webhook.preset).toBe("custom");
     expect(webhook.auth).toBe("none");
   });

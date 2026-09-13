@@ -80,14 +80,32 @@ function barkChannel(over: Partial<BarkConfig> = {}): BarkConfig {
   };
 }
 
+/** 默认表里的内置频道：泛型只为把「按 type 找到的那条」收窄成对应型号——查找条件就是 type 相等。 */
+function builtinOf<T extends "browser" | "system">(type: T): Extract<ChannelConfig, { type: T }> {
+  const found = DEFAULT_CONFIG.channels.find((channel) => channel.type === type);
+  if (found === undefined) throw new Error(`默认表里缺内置频道 ${type}`);
+  return found as Extract<ChannelConfig, { type: T }>;
+}
+
+/**
+ * 两条内置出口都停用：`channels` 是唯一关得掉它们的地方——顶层 `browserNotify` / `systemSound`
+ * 一类键现在只是读面派生出来的只读投影，改它们不会让内置出口少投一次。
+ */
+function builtinsOff(): ChannelConfig[] {
+  return [
+    { ...builtinOf("browser"), enabled: false },
+    { ...builtinOf("system"), enabled: false },
+  ];
+}
+
 /** 只留 system 出口的设置：节流用例要「唯一目标」才数得清投递次数。 */
 function systemOnly(patch: Partial<NotifyConfig> = {}): Partial<NotifyConfig> {
   return {
-    channels: [],
-    browserNotify: false,
-    browserSound: false,
-    systemNotify: true,
-    systemSound: false,
+    // 内置两频道恒在 `channels` 里：停用 browser，只留 system（弹窗开、声音关，这一次有实际动作）。
+    channels: [
+      { ...builtinOf("browser"), enabled: false },
+      { ...builtinOf("system"), enabled: true, popup: true, sound: false },
+    ],
     ...patch,
   };
 }
@@ -216,13 +234,7 @@ describe("归档：发出与压制只在载荷上分叉", () => {
   // 频道全关是合法配置，把它记成发送成功会掩盖「一条都没发出去」。
   it("一个目标都没有：记 suppressed=no-target，而不是一条空的成功记录", () => {
     const harness = assemble();
-    harness.useConfig({
-      channels: [],
-      browserNotify: false,
-      browserSound: false,
-      systemNotify: false,
-      systemSound: false,
-    });
+    harness.useConfig({ channels: builtinsOff() });
     submit(requestOf());
 
     expect(harness.delivered).toEqual([]);
@@ -232,13 +244,7 @@ describe("归档：发出与压制只在载荷上分叉", () => {
   // 两处各取一次时刻，就会出现「历史 12:00:00、收到的通知 12:00:01」。
   it("发出归档：投递载荷与历史记录共用同一个 ts，文案逐字一致", async () => {
     const harness = assemble();
-    harness.useConfig({
-      channels: [barkChannel()],
-      browserNotify: false,
-      browserSound: false,
-      systemNotify: false,
-      systemSound: false,
-    });
+    harness.useConfig({ channels: [...builtinsOff(), barkChannel()] });
     const before = Date.now();
     submit(requestOf({ title: "标题", body: "正文" }));
     await settleMicrotasks();
@@ -260,14 +266,7 @@ describe("归档：发出与压制只在载荷上分叉", () => {
   // 日志口径与归档口径不同词，排查时「按日志找记录」这一步就对不上。
   it("kindRoutes 指向已删除频道：warn 与归档同一口径（suppressed:no-target），不静默也不自称 skipped", () => {
     const harness = assemble();
-    harness.useConfig({
-      channels: [],
-      kindRoutes: { done: ["bark:gone"] },
-      browserNotify: false,
-      browserSound: false,
-      systemNotify: false,
-      systemSound: false,
-    });
+    harness.useConfig({ channels: builtinsOff(), kindRoutes: { done: ["bark:gone"] } });
     submit(requestOf());
 
     expect(harness.delivered).toEqual([]);
@@ -285,12 +284,8 @@ describe("归档：发出与压制只在载荷上分叉", () => {
   it("stale 但仍有其它目标：其余目标照常投递，warn 不谎称本条通知按 suppressed 归档", async () => {
     const harness = assemble();
     harness.useConfig({
-      channels: [barkChannel()],
+      channels: [...builtinsOff(), barkChannel()],
       kindRoutes: { done: ["bark:gone", "bark:a"] },
-      browserNotify: false,
-      browserSound: false,
-      systemNotify: false,
-      systemSound: false,
     });
     submit(requestOf());
     await settleMicrotasks();

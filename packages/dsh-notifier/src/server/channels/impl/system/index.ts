@@ -5,7 +5,7 @@
  */
 import type { LoggerPort } from "../../../shared/interface.ts";
 import { FAILURE_REASON_MAX, displayCaps, truncateCodePoints } from "../deliver/caps.ts";
-import type { DeliverResult, NotifyMessage } from "../deliver/type.ts";
+import type { DeliverResult, NotifyMessage, ToneSetting } from "../deliver/type.ts";
 import { platformCapabilities, systemDeps } from "./deps.ts";
 import type { ChildHandle } from "./deps.ts";
 import { MAC_SOUND_NAMES, toneFileCandidates } from "./tones.ts";
@@ -201,11 +201,16 @@ export async function sendSystem(
   target: SystemTarget,
   message: NotifyMessage,
 ): Promise<DeliverResult> {
+  // 弹窗与提示音都关：投递发生过，但本次没有可执行的动作——「要不要投递」在管线（只看 `enabled`），
+  // 这里是本出口对「发什么」的回答，所以不弹不响不该被记成一次投递成功。早退顺带省掉一次平台探测。
+  if (!target.popup && target.sound === false) {
+    return { status: "skipped", reason: "系统频道：弹窗与声音都已关闭" };
+  }
   const probe = await platformCapabilities.get(target.toastScript, probePlatform);
-  const selfPlay = shouldSelfPlay(target.pop, target.sound, probe.platform);
+  const selfPlay = shouldSelfPlay(target.popup, target.sound, probe.platform);
   const play = selfPlay ? buildSoundCommand(probe, toneOf(target.sound)) : [];
 
-  if (target.pop) {
+  if (target.popup) {
     const pop = buildSystemCommand(
       probe,
       truncateCodePoints(message.title, displayCaps.system.titleMax),
@@ -224,7 +229,7 @@ export async function sendSystem(
     return { status: "ok", stage: "delivered" };
   }
   if (!selfPlay) {
-    // 既不弹也不响：请求里没有任何动作（管线不会给出这种目标），没有可失败的环节
+    // 既不弹也不响：上面那道早退之后这里已不可达，留作「没有可失败环节」的兜底
     return { status: "ok", stage: "delivered" };
   }
   // 只响不弹：声音是唯一动作，平台放不出声或播放失败都是这次投递的失败
@@ -234,7 +239,7 @@ export async function sendSystem(
 }
 
 /** 声音选择 → 自播目标音色（true = 各平台的跟随系统默认音）。 */
-function toneOf(sound: boolean | string): string {
+function toneOf(sound: ToneSetting): string {
   return typeof sound === "string" ? sound : "default";
 }
 

@@ -6,6 +6,8 @@ import { DEFAULT_CONFIG } from "../model/index.ts";
 import type {
   BarkChannelConfig,
   BarkLevel,
+  BrowserChannelConfig,
+  BuiltinChannelType,
   ChannelConfig,
   NotifyConfig,
   QuietHoursConfig,
@@ -14,6 +16,7 @@ import type {
   SoundId,
   SoundSetting,
   StoredSettings,
+  SystemChannelConfig,
   WebhookAuth,
   WebhookChannelConfig,
   WebhookPreset,
@@ -24,6 +27,9 @@ import type { ValidationResult } from "./type.ts";
 
 /** 内置音色白名单；顺序即设置页的展示顺序。 */
 const SOUND_IDS: readonly SoundId[] = ["ding", "bell", "chime", "pop"];
+
+/** 内置频道类型；顺序即卡片顺序。它们恒在场，是 `channels` 里唯一不可删除的项——身份由 `type` 唯一确定。 */
+const BUILTIN_TYPES: readonly BuiltinChannelType[] = ["browser", "system"];
 
 /** bark 紧急度白名单。 */
 const BARK_LEVELS: readonly BarkLevel[] = ["active", "timeSensitive", "passive", "critical"];
@@ -115,12 +121,23 @@ export const BOOLEAN_KEYS: readonly string[] = [
   "notifySubagentDone",
   "notifyTaskError",
   "notifyTurnEnd",
+];
+
+/**
+ * 0.2.3 及更早的顶层渠道键：0.2.4 起由 upgrade 域在装配期搬进 `channels` 的内置条目并**删除**。
+ *
+ * 写面**拒绝**它们而不是当陌生键放行：陌生键是留给未来版本的空间，而这一批是**已经搬走**的键——
+ * 静默放行会让停留在升级前页面上的旧客户端以为保存成功了。提示里直接给出出路（刷新）。
+ */
+export const RETIRED_KEYS: readonly string[] = [
   "systemEnabled",
   "browserEnabled",
   "systemNotify",
   "browserNotify",
   "notifyWhenVisible",
   "notifySound",
+  "browserSound",
+  "systemSound",
 ];
 
 /**
@@ -157,6 +174,9 @@ export function parseJsonObject(text: string): StoredSettings {
  */
 export function normalizeConfig(input: StoredSettings): NotifyConfig {
   const fallback = DEFAULT_CONFIG;
+  // 渠道形态只有 `channels` 一处输出：内置两条先物化，取值链是「条目字段 → 存量的旧顶层键 → 默认表」。
+  const browser = asBrowserChannel(builtinRaw(input.channels, "browser"), input);
+  const system = asSystemChannel(builtinRaw(input.channels, "system"), input);
   return {
     notifyAsk: asBoolean(input.notifyAsk, fallback.notifyAsk),
     notifyQuestion: asBoolean(input.notifyQuestion, fallback.notifyQuestion),
@@ -165,19 +185,8 @@ export function normalizeConfig(input: StoredSettings): NotifyConfig {
     notifyTaskError: asBoolean(input.notifyTaskError, fallback.notifyTaskError),
     notifyTurnEnd: asBoolean(input.notifyTurnEnd, fallback.notifyTurnEnd),
 
-    systemEnabled: asBoolean(input.systemEnabled, fallback.systemEnabled),
-    browserEnabled: asBoolean(input.browserEnabled, fallback.browserEnabled),
-    systemNotify: asBoolean(input.systemNotify, fallback.systemNotify),
-    browserNotify: asBoolean(input.browserNotify, fallback.browserNotify),
-    notifyWhenVisible: asBoolean(input.notifyWhenVisible, fallback.notifyWhenVisible),
-    notifySound: asBoolean(input.notifySound, fallback.notifySound),
-    browserSound: asSound(
-      input.browserSound,
-      legacySound(input.notifySound, fallback.browserSound),
-    ),
-    systemSound: asSound(input.systemSound, legacySound(input.notifySound, fallback.systemSound)),
     quietHours: asQuietHours(input.quietHours, fallback.quietHours),
-    channels: asChannels(input.channels),
+    channels: [browser, system, ...outboundChannels(input.channels)],
     kindRoutes: asKindRoutes(input.kindRoutes),
     allowKinds: asStrings(input.allowKinds),
 
@@ -204,6 +213,8 @@ export function normalizeConfig(input: StoredSettings): NotifyConfig {
 export function validateSettings(raw: SettingsPatch): ValidationResult {
   for (const [key, value] of Object.entries(raw)) {
     if (value === undefined) continue;
+    if (RETIRED_KEYS.includes(key))
+      return reject(key, "该键在 0.2.4 升级时已移入渠道条目；页面停留在升级前时，刷新后重试");
     if (!CONFIG_KEYS.includes(key)) continue;
     const verdict = validateOne(key, value);
     if (!verdict.ok) return verdict;
@@ -214,7 +225,6 @@ export function validateSettings(raw: SettingsPatch): ValidationResult {
 /** 单键校验；分支与归一化的取值助手一一对应，两处判断的是同一件事。 */
 function validateOne(key: string, raw: RawSettingValue): ValidationResult {
   if (BOOLEAN_KEYS.includes(key)) return requireBoolean(key, raw);
-  if (key === "browserSound" || key === "systemSound") return requireSoundSetting(key, raw);
   const limit = COUNT_LIMITS[key];
   if (Number.isFinite(limit)) return requireCount(key, raw, limit);
   if (key === "quietHours") return validateQuietHours(raw);
@@ -265,6 +275,25 @@ function validateChannels(raw: RawSettingValue): ValidationResult {
     const verdict = validateChannel(item);
     if (!verdict.ok) return verdict;
   }
+  return requireBuiltinsPresent(raw);
+}
+
+/**
+ * 内置频道不能删除：显式提交的 `channels` 必须仍然带着它们——这是内置频道**唯一**的特殊之处，
+ * 其余一律按普通条目处理。
+ *
+ * 做成 400 而不是静默补回：静默补回会让「我删掉了它」与「它还在」在同一份界面上各说各话。代价是
+ * 停留在升级前页面上的旧客户端（草稿里没有内置条目）会被拒一次，故提示直接给出刷新的出路。
+ */
+function requireBuiltinsPresent(list: readonly RawSettingValue[]): ValidationResult {
+  const types = new Set<RawSettingValue>();
+  for (const item of list) {
+    if (isRecord(item)) types.add(item.type);
+  }
+  for (const type of BUILTIN_TYPES) {
+    if (types.has(type)) continue;
+    return reject("channels", `内置渠道不能删除：缺少 ${type}（页面停留在升级前时，刷新后重试）`);
+  }
   return { ok: true };
 }
 
@@ -272,10 +301,25 @@ function validateChannels(raw: RawSettingValue): ValidationResult {
  * 客户端新建频道时本就不带它们——照必填拦下等于让用户的合法提交保存不了。 */
 function validateChannel(raw: RawSettingValue): ValidationResult {
   if (!isRecord(raw)) return reject("channels", "频道项需要对象");
+  if (raw.type === "browser" || raw.type === "system") return validateBuiltinChannel(raw, raw.type);
   if (typeof raw.id !== "string" || raw.id === "") return reject("channels", "频道缺少 id");
   if (raw.type === "bark") return validateBarkChannel(raw, raw.id);
   if (raw.type === "webhook") return validateWebhookChannel(raw, raw.id);
-  return reject("channels", "频道 type 需要 bark 或 webhook");
+  return reject("channels", "频道 type 需要 bark、webhook、browser 或 system");
+}
+
+/** 内置频道：身份由 `type` 唯一确定（`id` 只是回显，写了就必须一致），开关与声音逐个按各自值域校验。 */
+function validateBuiltinChannel(
+  raw: Record<string, RawSettingValue>,
+  type: BuiltinChannelType,
+): ValidationResult {
+  if (raw.id !== undefined && raw.id !== type)
+    return reject("channels", `内置频道 ${type} 的 id 只能是 ${type}`);
+  for (const key of ["enabled", "popup", "whenVisible"]) {
+    if (raw[key] === undefined || typeof raw[key] === "boolean") continue;
+    return reject("channels", `内置频道 ${type} 的 ${key} 需要 true 或 false`);
+  }
+  return raw.sound === undefined ? { ok: true } : requireSoundSetting("channels", raw.sound);
 }
 
 /** bark 频道：`baseUrl` 与 `deviceKey` 是投递必需；`level` 缺省时让 severity 映射生效，故可省。 */
@@ -450,10 +494,12 @@ function asKindRoutes(raw: RawSettingValue): Record<string, string[]> {
 type ChannelRead = { ok: true; channel: ChannelConfig } | { ok: false };
 
 /**
- * 频道数组：逐项归一化，**认不出的项直接丢弃**——一个没写 id、没写 url、没写凭据的「频道」
+ * 出站实例数组：逐项归一化，**认不出的项直接丢弃**——一个没写 id、没写 url、没写凭据的「频道」
  * 没有任何可投递的目标，补成空壳只会在投递时制造一次必然失败的尝试。
+ *
+ * 内置条目在这里被跳过：它们由 `asBrowserChannel` / `asSystemChannel` 单独物化，且恒排在最前。
  */
-function asChannels(raw: RawSettingValue): ChannelConfig[] {
+function outboundChannels(raw: RawSettingValue): ChannelConfig[] {
   const channels: ChannelConfig[] = [];
   if (!Array.isArray(raw)) return channels;
   for (const item of raw) {
@@ -461,6 +507,89 @@ function asChannels(raw: RawSettingValue): ChannelConfig[] {
     if (read.ok) channels.push(read.channel);
   }
   return channels;
+}
+
+/** 输入数组里首个指定类型的内置条目（原始形态）；同类型的后来者被丢弃——内置身份由 `type` 唯一确定。 */
+function builtinRaw(
+  raw: RawSettingValue,
+  type: BuiltinChannelType,
+): Record<string, RawSettingValue> | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  for (const item of raw) {
+    if (isRecord(item) && item.type === type) return item;
+  }
+  return undefined;
+}
+
+/**
+ * 浏览器频道物化：条目字段 → 存量投影键（0.2.3 的顶层键）→ 默认表。
+ *
+ * 别名只在这条链的末端参与，所以「用户已在新页面改过条目」与「文件里还躺着旧顶层键」不会互相覆盖
+ * ——前者恒赢。这也是同一件事在文件里有两处表达却不打架的原因。
+ */
+function asBrowserChannel(
+  raw: Record<string, RawSettingValue> | undefined,
+  input: StoredSettings,
+): BrowserChannelConfig {
+  const fallback = builtinDefault("browser");
+  const source: Record<string, RawSettingValue> = raw ?? {};
+  return {
+    type: "browser",
+    id: "browser",
+    enabled: asBoolean(source.enabled, asBoolean(input.browserEnabled, fallback.enabled)),
+    popup: asBoolean(source.popup, asBoolean(input.browserNotify, fallback.popup)),
+    sound: asSound(source.sound, outletSoundOf(input, input.browserSound, fallback.sound)),
+    whenVisible: asBoolean(
+      source.whenVisible,
+      asBoolean(input.notifyWhenVisible, fallback.whenVisible),
+    ),
+  };
+}
+
+/** 系统频道物化：链与浏览器频道同构，只是没有 `whenVisible`——那是浏览器出口独有的展示条件。 */
+function asSystemChannel(
+  raw: Record<string, RawSettingValue> | undefined,
+  input: StoredSettings,
+): SystemChannelConfig {
+  const fallback = builtinDefault("system");
+  const source: Record<string, RawSettingValue> = raw ?? {};
+  return {
+    type: "system",
+    id: "system",
+    enabled: asBoolean(source.enabled, asBoolean(input.systemEnabled, fallback.enabled)),
+    popup: asBoolean(source.popup, asBoolean(input.systemNotify, fallback.popup)),
+    sound: asSound(source.sound, outletSoundOf(input, input.systemSound, fallback.sound)),
+  };
+}
+
+/**
+ * 默认表里的内置条目：物化的最后一级回落。
+ *
+ * 断言只为把「按 type 找到的那条」收窄成对应型号——查找条件就是 type 相等。默认表是本模块的常量，
+ * 两条内置条目必然在场；真缺了当场抛错比静默降级好（那是编码错误，不是用户输入的问题）。
+ */
+function builtinDefault<T extends BuiltinChannelType>(
+  type: T,
+): Extract<ChannelConfig, { type: T }> {
+  for (const channel of DEFAULT_CONFIG.channels) {
+    if (channel.type === type) return channel as Extract<ChannelConfig, { type: T }>;
+  }
+  throw new Error(`dsh-notifier: 默认设置里缺少内置频道 ${type}`);
+}
+
+/**
+ * 存量音效的物化：按出口的键（`browserSound` / `systemSound`）优先，其次旧的全局键 `notifySound`。
+ *
+ * 两者的值域不同，不能合在一层收窄：出口键当年就存音色名（完整声音域），全局键只有开关语义（只认布尔）
+ * ——用同一个助手处理会把存量音色名吞成默认值。
+ */
+function outletSoundOf(
+  input: StoredSettings,
+  outlet: RawSettingValue,
+  fallback: SoundSetting,
+): SoundSetting {
+  if (outlet !== undefined) return asSound(outlet, fallback);
+  return legacySound(input.notifySound, fallback);
 }
 
 function asChannel(raw: RawSettingValue): ChannelRead {

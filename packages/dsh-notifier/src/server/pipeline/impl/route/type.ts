@@ -5,10 +5,12 @@
 import type { DeliveryTarget, EffectiveConfig, FramePort } from "../../deps.ts";
 import type { LoggerPort } from "../../../shared/interface.ts";
 
-/** 配置里的出站频道实例（bark / webhook）。 */
+/** 配置里的频道（出站实例 + 内置频道）。 */
 export type ChannelConfig = EffectiveConfig["channels"][number];
 export type BarkConfig = Extract<ChannelConfig, { type: "bark" }>;
 export type WebhookConfig = Extract<ChannelConfig, { type: "webhook" }>;
+export type BrowserConfig = Extract<ChannelConfig, { type: "browser" }>;
+export type SystemConfig = Extract<ChannelConfig, { type: "system" }>;
 
 /** 出站频道的投递参数。 */
 export type BarkTarget = Extract<DeliveryTarget, { type: "bark" }>;

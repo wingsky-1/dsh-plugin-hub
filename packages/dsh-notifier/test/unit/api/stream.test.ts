@@ -152,7 +152,14 @@ function frame(
 ): OutgoingFrame {
   return {
     kind,
-    frame: { pop: true, sound: { mode: "system" }, title: "标题", body: "正文", ...over },
+    frame: {
+      pop: true,
+      sound: { mode: "system" },
+      whenVisible: false,
+      title: "标题",
+      body: "正文",
+      ...over,
+    },
   };
 }
 

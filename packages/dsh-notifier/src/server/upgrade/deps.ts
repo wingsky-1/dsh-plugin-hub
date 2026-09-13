@@ -1,22 +1,20 @@
 /** upgrade 域依赖声明：本域只声明「我需要外部什么」，装配由组合根完成；契约与实现都经本文件引用。 */
-import type * as configApi from "../config/interface.ts";
 import type { LoggerPort } from "../shared/interface.ts";
-import type { LegacySettingsPort } from "./impl/legacy/type.ts";
+import type { LegacySettingsFace } from "./impl/legacy/type.ts";
 
 /** 装配入参：本域依赖的全部外部。 */
 export interface UpgradeDeps {
   /** 升级链的诊断出口（失败与版本落差都在这里出声）。 */
   logger: LoggerPort;
-  /** 旧配置的读取面（0.2.3 及更早把配置存在官方 settings 服务里）：唯一**不能**在装配期完成的动作——那个
-   * 服务可能晚到，也可能根本不来。 */
-  legacySettings: LegacySettingsPort;
-  /** config 域的写面：存量设置最终要落进当前配置文件。走它的写入口而不是自己往磁盘上写——掩码还原、校验、
-   * 合并、原子落盘都在那里，另开一条路等于让「什么算合法设置」有两个答案。 */
-  config: ConfigPort;
+  /** 旧配置的读取面（0.2.3 及更早把配置存在官方 settings 服务里）。它是**显式依赖**：组合根把 `settings`
+   * 写进插件的 `inject`，宿主保证服务就绪后才装配本插件，所以这里是一次同步读取——没有就绪回调、没有重试。 */
+  legacySettings: LegacySettingsFace;
 }
 
-/** config 域给本域的能力面。 */
-export type ConfigPort = Pick<typeof configApi, "writeConfig">;
-
-export type { LegacySettingsFace, LegacySettingsPort } from "./impl/legacy/type.ts";
-export type { RawSettingValue, SettingsPatch } from "../config/interface.ts";
+/**
+ * 本域与 config 域只剩**类型**往来（`RawSettingValue` 表达「任意 JSON」），没有运行时依赖：存量设置由本域
+ * 直接读写配置文件。割接只做结构搬运——不校验、不补默认值——所以「什么算合法设置」仍旧只有 config 域
+ * 归一化一个答案；config 域装配在本域之后，读到的正是割接后的形态。
+ */
+export type { RawSettingValue } from "../config/interface.ts";
+export type { LegacySettingsFace } from "./impl/legacy/type.ts";

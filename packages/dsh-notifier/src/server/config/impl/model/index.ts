@@ -13,16 +13,13 @@ export const DEFAULT_CONFIG: NotifyConfig = {
   notifyTaskError: true,
   notifyTurnEnd: false,
 
-  systemEnabled: true,
-  browserEnabled: true,
-  systemNotify: true,
-  browserNotify: true,
-  notifyWhenVisible: false,
-  notifySound: true,
-  browserSound: true,
-  systemSound: true,
+  // 渠道形态只有一处表达：下面两条内置条目。0.2.3 的顶层渠道键在升级时被搬进条目并删除。
   quietHours: { enabled: false, start: "22:00", end: "08:00" },
-  channels: [],
+  // 内置频道恒在场且恒在最前：默认表就带它们，读面物化才有「与默认表逐字一致」的比对基准。
+  channels: [
+    { type: "browser", id: "browser", enabled: true, popup: true, sound: true, whenVisible: false },
+    { type: "system", id: "system", enabled: true, popup: true, sound: true },
+  ],
   kindRoutes: {},
   allowKinds: [],
 

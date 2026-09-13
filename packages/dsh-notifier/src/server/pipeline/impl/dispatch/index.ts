@@ -39,11 +39,11 @@ const UNINSTALLED: DispatchPort = {
   },
 };
 
-/** 投递结果 → 归档明细；失败原因只在失败那一支上。 */
+/** 投递结果 → 归档明细：失败与空动作各自的理由只落在它们那一支上。 */
 function deliveryOf(channelId: string, result: DeliverOutcome): ChannelDelivery {
-  return result.status === "failed"
-    ? { channelId, status: "failed", reason: result.reason }
-    : { channelId, status: "ok" };
+  if (result.status === "failed") return { channelId, status: "failed", reason: result.reason };
+  if (result.status === "skipped") return { channelId, status: "skipped", reason: result.reason };
+  return { channelId, status: "ok" };
 }
 
 /** 线性退避等待。 */
@@ -211,7 +211,8 @@ class Dispatcher {
   /** 写频道状态并返回归档明细。 */
   private settle(port: DispatchPort, channelId: string, result: DeliverOutcome): ChannelDelivery {
     if (result.status === "failed") port.stores.recordStatus(channelId, "failed", result.reason);
-    else port.stores.recordStatus(channelId, "ok");
+    // `skipped` 不写状态：出口这次什么都没做，没有「最后一次投递结论」可言——写 ok 等于替它宣称成功。
+    else if (result.status === "ok") port.stores.recordStatus(channelId, "ok");
     return deliveryOf(channelId, result);
   }
 }

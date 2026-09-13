@@ -5,6 +5,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type {} from "@deepseek-ai/dsh-agent";
 import type {} from "@deepseek-ai/dsh-session";
+import type {} from "@deepseek-ai/dsh-settings";
 import type {} from "@deepseek-ai/dsh-user-approval";
 import type {} from "@deepseek-ai/dsh-user-questions";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
@@ -15,7 +16,7 @@ import * as eventsApi from "./server/events/interface.ts";
 import type { AgentRegistryPort, HostEventPort } from "./server/events/interface.ts";
 import * as pipelineApi from "./server/pipeline/interface.ts";
 import type { OutgoingFrame } from "./server/pipeline/interface.ts";
-import type { LegacySettingsPort } from "./server/upgrade/deps.ts";
+import type { LegacySettingsFace } from "./server/upgrade/deps.ts";
 import type { ExposePort } from "./server/sdk/deps.ts";
 import * as sdkApi from "./server/sdk/interface.ts";
 import type { NotifierService } from "./server/sdk/interface.ts";
@@ -35,8 +36,11 @@ const SETTINGS_SERVICE = "settings";
 /** 稳定的 cordis 插件名。 */
 export const name = "notifier";
 
-/** 依赖的宿主服务。 */
-export const inject = ["webServer"];
+/**
+ * 依赖的宿主服务。`settings` 是**必需**依赖而不是可选探测：0.2.3 把配置存在它那里，装配期要读一次存量。
+ * 声明成依赖之后，宿主保证服务就绪才装配本插件——顺序由框架保证，比「先试一次、再监听晚到的」可靠。
+ */
+export const inject = ["webServer", SETTINGS_SERVICE];
 
 /**
  * 组合层入口配置（插件挂载点传入）。只有总开关：设置项全部住在本插件自己的配置文件里，
@@ -104,9 +108,9 @@ interface HostPort {
   readonly agents: AgentRegistryPort;
   /**
    * 宿主 settings 服务：0.2.3 把配置存在那里，新架构搬走后仍需读它一次。
-   * 它是**可选**的：服务可能晚于本插件就绪，宿主也可以根本不装它。
+   * 只声明本域要用的 `describe`——窄面让「本域不认识 settings 的其余能力」成为类型事实。
    */
-  readonly legacySettings: LegacySettingsPort;
+  readonly legacySettings: LegacySettingsFace;
   /** 宿主出口：把服务面挂上上下文。服务名是 sdk 域的 ABI，组合根不参与命名。 */
   readonly expose: ExposePort;
 }
@@ -130,21 +134,8 @@ function bindHost(ctx: Context): HostPort {
   return {
     logger: ctx.logger,
     frames: new FrameBus(),
-    // 先试一次（服务可能已经在）再监听晚到的：只监听会漏掉「注册之前就已 provide」的顺序，
-    // 只试一次会漏掉晚到的——两个都要。
-    legacySettings: {
-      whenReady: (handler) => {
-        const existing = ctx.get("settings", false);
-        if (existing) handler(existing);
-        return ctx.on(
-          "internal/service",
-          (name, value) => {
-            if (name === SETTINGS_SERVICE) handler(value);
-          },
-          GLOBAL_LISTEN,
-        );
-      },
-    },
+    // 依赖已由 `inject` 声明，服务就绪才轮到本插件装配：这里直接取用，没有探测、也没有迟到分支。
+    legacySettings: ctx.settings,
     register: (route) => ctx.webServer.register(route),
     // 名字取自 sdk 域（ABI 的定义处）。显式类型参数是道保险：谁把那里退回硬编码字面量，
     // 少了它就静默失败——`ctx.provide` 的 `(name: string, value?: any)` 重载会兜住任意字符串。
@@ -240,9 +231,9 @@ function bindHost(ctx: Context): HostPort {
 function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void> {
   const disposers: Array<() => void> = [];
 
-  // 0. 存储形态迁移：动的是磁盘，必须早于任何读文件的域。
-  //    它的存量配置那一路要等宿主 settings 服务就绪，所以装的是回调而不是一次同步动作。
-  installUpgrade({ logger: host.logger, legacySettings: host.legacySettings, config: configApi });
+  // 0. 存储与配置形态迁移：动的是磁盘（存储三个文件 + 配置文件），必须早于任何读文件的域。
+  //    存量配置由 settings 的显式依赖保证在装配期可读，所以整条链是同步的。
+  installUpgrade({ logger: host.logger, legacySettings: host.legacySettings });
   disposers.push(releaseUpgrade);
 
   // 1. 设置：读面在装配返回时即可用，后续各域不必等加载。

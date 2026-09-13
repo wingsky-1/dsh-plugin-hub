@@ -142,6 +142,8 @@ class StreamHub {
       message: frame.body,
       ts: Date.now(),
       sound: frame.sound,
+      // 可见性判定归浏览器出口，帧自描述：客户端拿到就能执行，不必回查自己那份可能已过期的配置快照。
+      whenVisible: frame.whenVisible,
     };
     // 缺席而不是 `false`：客户端判的是 `=== true`，而缺席让不认识这个字段的旧客户端收到的帧
     // 与从前逐字节一致。

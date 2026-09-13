@@ -9,14 +9,20 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { legacyFile } from "../../../src/server/shared/interface.ts";
 import { readLegacySettings } from "../../../src/server/upgrade/impl/legacy/index.ts";
-import type {
-  LegacySettingsEntry,
-  LegacySettingsFace,
-} from "../../../src/server/upgrade/impl/legacy/type.ts";
+import type { LegacySettingsFace } from "../../../src/server/upgrade/impl/legacy/type.ts";
 import { tempDshHome, wire } from "../../helpers.ts";
 
 /** 本插件 0.2.3 在官方 settings 服务里用的命名空间。 */
 const NS = "dsh-notifier";
+
+/**
+ * 假描述符：本域只读 `ns` 与 `user` 两项，官方描述符的其余字段（schema / revision / applies）
+ * 与判据无关，也就没必要在这里拼出来——拼一份假的反倒成了第二个事实源。
+ */
+type FakeDescriptor = { ns: string; user?: unknown };
+
+/** settings 的描述选项：只关心脱敏开关，其余键不参与判据。 */
+type FakeDescribeOptions = { redactSecrets?: boolean };
 
 let home: { readonly dir: string; dispose: () => void };
 
@@ -29,14 +35,11 @@ afterEach(() => {
 });
 
 /** 假 settings 读面：`describe` 给固定条目，或按需抛错（服务在但调用失败）。 */
-function makeSettings(
-  entries: ReadonlyArray<LegacySettingsEntry>,
-  throws = false,
-): LegacySettingsFace {
+function makeSettings(entries: readonly FakeDescriptor[], throws = false): LegacySettingsFace {
   return {
     describe: () => {
       if (throws) throw new Error("settings 服务拒绝了这次调用");
-      return entries;
+      return entries as unknown as ReturnType<LegacySettingsFace["describe"]>;
     },
   };
 }
@@ -62,17 +65,19 @@ describe("读取优先级：V1 优先，V0 兜底", () => {
   it("V1 条目存在但 user 不是对象时同样回退 V0 文件（脏条目不能把存量配置吃掉）", () => {
     writeLegacyFile("dsh-notifier.json", { notifyAsk: true });
     // 数组只是脏的一种：标量（typeof 不是 object）与 null（typeof 是 object 但取键会抛）都要挡住。
-    for (const user of [["notifyAsk"], "notifyAsk", 42, wire<LegacySettingsEntry["user"]>(null)]) {
+    for (const user of [["notifyAsk"], "notifyAsk", 42, wire<FakeDescriptor["user"]>(null)]) {
       expect(readLegacySettings(makeSettings([{ ns: NS, user }]))).toEqual({ notifyAsk: true });
     }
   });
 
   it("读存量设置时要求脱敏（不要求脱敏会把密钥类设置读进内存并原样搬进新配置）", () => {
-    const calls: Array<{ redactSecrets: boolean }> = [];
+    const calls: Array<FakeDescribeOptions | undefined> = [];
     const settings: LegacySettingsFace = {
       describe: (options) => {
         calls.push(options);
-        return [{ ns: NS, user: { notifyAsk: false } }];
+        return [{ ns: NS, user: { notifyAsk: false } }] as unknown as ReturnType<
+          LegacySettingsFace["describe"]
+        >;
       },
     };
 

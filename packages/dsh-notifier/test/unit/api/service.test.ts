@@ -250,7 +250,13 @@ describe("接线：端点与能力面一一对应", () => {
     expect(frames.handlers).toHaveLength(1);
     frames.handlers[0]!({
       kind: "done",
-      frame: { pop: true, sound: { mode: "system" }, title: "标题", body: "正文" },
+      frame: {
+        pop: true,
+        sound: { mode: "system" },
+        whenVisible: false,
+        title: "标题",
+        body: "正文",
+      },
     });
 
     const { rec } = await request(

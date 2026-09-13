@@ -127,11 +127,11 @@
     },
     "dsh-notifier": {
       "modules": 9,
-      "scannedSrcFiles": 88,
-      "allSrcTsFiles": 92,
+      "scannedSrcFiles": 89,
+      "allSrcTsFiles": 93,
       "interfaceFacades": 9,
       "leafValueEdges": 6,
-      "fileValueEdges": 74,
+      "fileValueEdges": 76,
       "crossModuleRefs": 67,
       "quality": {
         "leafModuleCycles": [],
@@ -152,6 +152,7 @@
           "server/stores/impl/status/type.ts|server/shared/interface.ts|type",
           "server/upgrade/impl/chain/index.ts|server/shared/interface.ts|type",
           "server/upgrade/impl/legacy/index.ts|server/shared/interface.ts|value",
+          "server/upgrade/impl/steps/config-shape.ts|server/shared/interface.ts|value",
           "server/upgrade/impl/steps/storage-layout.ts|server/shared/interface.ts|value",
           "server/upgrade/impl/version/index.ts|server/shared/interface.ts|value"
         ],
@@ -310,6 +311,15 @@
         "server/pipeline/impl/finalize/index.ts|server/shared/interface.ts|value"
       ],
       "reason": "A1 条理性修复：truncateCodePoints 从 channels/pipeline 两份逐字副本收口到共享层（新增 server/shared/text.ts + caps.ts/finalize 各一条对共享门面的值边）",
+      "date": "2026-09-13"
+    },
+    {
+      "package": "dsh-notifier",
+      "metric": "raLegacy",
+      "items": [
+        "server/upgrade/impl/steps/config-shape.ts|server/shared/interface.ts|value"
+      ],
+      "reason": "dsh-notifier 0.2.4 配置形态割接：新增 steps/config-shape.ts 直接读写配置文件，与 storage-layout.ts 同源地引用 shared/interface.ts 的路径与原子写门面",
       "date": "2026-09-13"
     }
   ]

@@ -89,22 +89,39 @@ const ROUTE_PATHS: readonly string[] = [
 /**
  * 浏览器出口开、系统出口关：HTTP 与 SSE 用例不该在开发机上弹真实系统通知，也不该让 system 通道的
  * 1 秒节流把 Linux 用例挡掉（节流状态住 dispatch 单例里，跨用例存活）。
+ *
+ * 关的是**渠道开关**（`enabled`），不是弹窗 / 声音键：后两者只决定出口有没有事可做，关掉它们渠道
+ * 照样进池并留下一条 skipped 明细。两条内置频道的形态显式写出来，割接便不会再去改这份种子。
  */
 const BROWSER_ONLY = {
-  systemNotify: false,
-  systemSound: false,
-  browserNotify: true,
-  browserSound: false,
+  channels: [
+    {
+      type: "browser",
+      id: "browser",
+      enabled: true,
+      popup: true,
+      sound: false,
+      whenVisible: false,
+    },
+    { type: "system", id: "system", enabled: false, popup: false, sound: false },
+  ],
   historyMaxAgeDays: 0,
   kindRoutes: {},
 } as const;
 
 /** 系统出口单开（只弹不响）：声音关掉才不会真去 `pw-play` / `paplay` 播一遍。 */
 const SYSTEM_ONLY = {
-  systemNotify: true,
-  systemSound: false,
-  browserNotify: false,
-  browserSound: false,
+  channels: [
+    {
+      type: "browser",
+      id: "browser",
+      enabled: false,
+      popup: false,
+      sound: false,
+      whenVisible: false,
+    },
+    { type: "system", id: "system", enabled: true, popup: true, sound: false },
+  ],
   notifyTaskDone: true,
   historyMaxAgeDays: 0,
 } as const;
@@ -153,11 +170,17 @@ interface Mounted {
 /** 已挂载但用例没显式卸载的实例：`afterEach` 兜底收掉，免得路由与 SSE 连接漏到下一个用例。 */
 let live: Mounted | null = null;
 
-/** 按宿主的真实挂载顺序装配：先起真实 WebServer 服务，再 `ctx.plugin(本体)`。 */
+/**
+ * 按宿主的真实挂载顺序装配：先起真实 WebServer 服务与 settings 服务，再 `ctx.plugin(本体)`。
+ *
+ * `settings` 是本插件的**显式依赖**（组合根的 `inject`），宿主保证它在装配前就绪；本层用不到存量
+ * 命名空间，所以给一个没有命名空间的假服务。
+ */
 async function mount(): Promise<Mounted> {
   const root = new Context();
+  root.provide("settings", { describe: () => [] });
   const webServer: Fiber = await root.plugin(WebServer, { host: "127.0.0.1", port: 0 });
-  // 组合根的 `inject = ["webServer"]` 由 cordis 兜住，`await()` 返回时 7 条路由已经挂上。
+  // 组合根的 `inject = ["webServer", "settings"]` 由 cordis 兜住，`await()` 返回时 7 条路由已经挂上。
   const plugin: Fiber = await root.plugin(notifier);
   await plugin.await();
   const mounted: Mounted = {
@@ -224,7 +247,10 @@ function parseBody<T>(text: string): T {
   return JSON.parse(text) as unknown as T;
 }
 
-/** 线协议里的一帧（`data:` 行）。`sound` 是播放决议对象而不是布尔（客户端据 `mode` 决定谁来发声）。 */
+/**
+ * 线协议里的一帧（`data:` 行）。`sound` 是播放决议对象而不是布尔（客户端据 `mode` 决定谁来发声）；
+ * `whenVisible` 是浏览器出口的展示条件，由服务端随帧下发——客户端不查配置就能决定「可见时弹不弹」。
+ */
 interface SseFrame {
   readonly type: string;
   readonly seq?: number;
@@ -232,6 +258,7 @@ interface SseFrame {
   readonly title?: string;
   readonly message?: string;
   readonly sound?: { readonly mode: string; readonly tone?: string };
+  readonly whenVisible?: boolean;
 }
 
 interface SseConnection {
@@ -446,8 +473,11 @@ describe("真实 HTTP 面（真实宿主 + 真实 loopback socket）", () => {
     }>(first.body);
     expect(view.ok).toBe(true);
     expect(view.writable).toBe(true);
-    expect(view.effective.browserNotify, "种下的设置读得回来").toBe(true);
-    expect(view.effective.systemNotify).toBe(false);
+    // 渠道形态只有 `channels` 一处表达（0.2.3 的顶层渠道键已被升级割接搬走并删除）。
+    const effectiveChannels = view.effective.channels as ReadonlyArray<Record<string, unknown>>;
+    const builtin = (type: string) => effectiveChannels.find((channel) => channel.type === type);
+    expect(builtin("browser")?.popup, "种下的设置读得回来").toBe(true);
+    expect(builtin("system")?.popup).toBe(false);
 
     const saved = await send(port, "/api/dsh-notifier/config", {
       method: "PUT",
@@ -648,6 +678,8 @@ describe("真实 SSE 面", () => {
         message: "端到端正文",
         ts: expect.any(Number) as unknown as number,
         sound: { mode: "silent" },
+        // 种下的浏览器条目 `whenVisible:false`：展示条件随帧下发，值就是条目里那一个。
+        whenVisible: false,
       });
     } finally {
       connection.close();

@@ -6,8 +6,9 @@ import type { LoggerPort } from "../../../shared/interface.ts";
 export interface ChannelDelivery {
   /** 频道实例 id：配置里的身份，也是设置页定位那一行的键。 */
   channelId: string;
-  status: "ok" | "failed";
-  /** 失败原因（不含凭据）；只在失败那一支上。 */
+  /** `skipped` = 出口按配置判定这次没有可发的内容：既不是失败，也不该被读成投递成功。 */
+  status: "ok" | "failed" | "skipped";
+  /** 失败原因或跳过原因（不含凭据）；`ok` 那一支上没有。 */
   reason?: string;
 }
 

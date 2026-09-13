@@ -37,7 +37,7 @@ import {
   assertEventReachability,
   assertRealCordisContextSemantics,
 } from "../../../../test/smoke-lib.ts";
-import { pollUntil, tempDshHome } from "../helpers.ts";
+import { pollUntil, settleMicrotasks, tempDshHome } from "../helpers.ts";
 
 // DSH_HOME 必须先于被测模块求值：三个单例的落盘路径在构造时定下，而静态 import 会在任何语句
 // 之前执行——顺序反了，本节全部落盘就写进真实 `~/.dsh`。
@@ -54,6 +54,12 @@ const storageDir = join(home.dir, "@wingsky-1", "dsh-notifier");
 const configFile = sharedApi.notifierFile(sharedApi.CONFIG_FILE_NAME);
 const historyFile = sharedApi.notifierFile(sharedApi.HISTORY_FILE_NAME);
 const seqFile = sharedApi.notifierFile(sharedApi.SEQ_FILE_NAME);
+const versionFile = sharedApi.notifierFile(sharedApi.VERSION_FILE_NAME);
+
+/** 种下的那份配置的原文：否定判据用它比对「一个字节都没动过」。 */
+function seededConfig(): string {
+  return `${JSON.stringify(BASE_SETTINGS, null, 2)}\n`;
+}
 
 /** 宿主契约冻结的 7 条浏览器端点（客户端锁定，独立抄写才守得住改路径）。 */
 const ROUTE_PATHS: readonly string[] = [
@@ -71,13 +77,22 @@ const ROUTE_PATHS: readonly string[] = [
  *
  * 系统出口在 Linux 会真的 spawn `notify-send`——测试不该在开发机上弹通知；浏览器出口的帧则
  * 经组合根的 `FrameBus` 进 api 域的流（只写 `seq.json`），是本文件观察「帧走出去了」的唯一手段。
+ * 两条内置频道的形态**显式写出来**：`enabled` 是频道唯一的投递闸门，靠 `systemNotify:false`
+ * 之类的弹窗键关不掉它（那只让出口无事可做，仍会留下一条 skipped 明细）。
  * `historyMaxAgeDays` 取**非默认值**：逆序释放那条判据要一个与默认值不同的可辨读数。
  */
 const BASE_SETTINGS = {
-  systemNotify: false,
-  systemSound: false,
-  browserNotify: true,
-  browserSound: false,
+  channels: [
+    {
+      type: "browser",
+      id: "browser",
+      enabled: true,
+      popup: true,
+      sound: false,
+      whenVisible: false,
+    },
+    { type: "system", id: "system", enabled: false, popup: false, sound: false },
+  ],
   historyMaxAgeDays: 7,
 } as const;
 
@@ -270,8 +285,9 @@ let live: Fiber | null = null;
 /**
  * 按宿主的真实挂载顺序装配：先 provide 宿主服务，再 `ctx.plugin(插件)`。
  *
- * `settings` 传 `undefined` = 宿主不装那个服务（本插件必须照常起来）；传对象 = 服务**先于**本插件
- * 就绪（存量迁移走 `ctx.get` 那条路）；装配之后再 provide 走 `internal/service` 那条路。
+ * `settings` 是本插件的**显式依赖**（组合根的 `inject`）：宿主保证它在插件装配前就绪，所以这里
+ * 总是先 provide 一个假的；`settings` 的值就是那份 0.2.3 存量命名空间的 user 层（缺省 = 有服务
+ * 但没存量）。「服务没来」这条分支已不属于本插件——它变成 cordis 的 inject 门（见 inject 门用例）。
  * `services` 是其余宿主服务（如 `agents`）——装与不装是两条不同的判定路径。
  */
 async function mount(options: {
@@ -280,7 +296,7 @@ async function mount(options: {
   services?: Record<string, unknown>;
 }): Promise<Mounted> {
   const root = new Context();
-  if (options.settings !== undefined) root.provide("settings", fakeSettings(options.settings));
+  root.provide("settings", fakeSettings(options.settings ?? {}));
   for (const [name, value] of Object.entries(options.services ?? {})) root.provide(name, value);
   const warns = captureWarnings(root);
   const host = fakeWebServer(() => ({
@@ -385,7 +401,7 @@ describe("装配与暴露", () => {
     expect(root.get("wingsky.notifier", false)).toBeUndefined();
   });
 
-  it("inject 门：宿主 webServer 未就绪时不装配，服务就绪后自动装配并挂上 7 条路由", async () => {
+  it("inject 门：两条宿主服务（webServer / settings）都就绪才装配，缺一条都不跑", async () => {
     const root = new Context();
     const host = fakeWebServer(() => ({ configDays: 0, serviceAlive: false }));
     const fiber = await root.plugin(notifier);
@@ -395,7 +411,13 @@ describe("装配与暴露", () => {
     expect(host.routes).toHaveLength(0);
     expect(root.get("wingsky.notifier", false)).toBeUndefined();
 
+    // 只补一条还不够：settings 是显式依赖（存量配置的读取面），缺它时装配体一步都不该走。
     root.provide("webServer", host.service);
+    await settleMicrotasks();
+    expect(host.routes).toHaveLength(0);
+    expect(root.get("wingsky.notifier", false)).toBeUndefined();
+
+    root.provide("settings", fakeSettings({}));
     await fiber.await();
     expect(host.routes.map((route) => route.path)).toHaveLength(7);
     expect(root.get("wingsky.notifier", false)?.apiVersion).toBe(2);
@@ -462,6 +484,7 @@ describe("waterfall 契约（审批 / 提问）", () => {
     const calls: string[] = [];
     const host = fakeWebServer(() => ({ configDays: 0, serviceAlive: false }));
     root.provide("webServer", host.service);
+    root.provide("settings", fakeSettings({}));
     // 宿主的形态：内置 answerer 在本插件之前注册，并且**不调 next()**（GUI 应答后即短路）。
     await mountApprovalAnswerer(root, calls, "rejected");
     const fiber = await root.plugin(notifier);
@@ -495,6 +518,7 @@ describe("waterfall 契约（审批 / 提问）", () => {
     const answer: AskUserQuestionAnswer = { answers: [{ id: "q1", selected: ["是"] }] };
     const host = fakeWebServer(() => ({ configDays: 0, serviceAlive: false }));
     root.provide("webServer", host.service);
+    root.provide("settings", fakeSettings({}));
     await mountQuestionAnswerer(root, calls, answer);
     const fiber = await root.plugin(notifier);
     live = fiber;
@@ -520,6 +544,7 @@ describe("waterfall 契约（审批 / 提问）", () => {
     const answer: AskUserQuestionAnswer = { answers: [{ id: "q1", selected: ["是"] }] };
     const host = fakeWebServer(() => ({ configDays: 0, serviceAlive: false }));
     root.provide("webServer", host.service);
+    root.provide("settings", fakeSettings({}));
     await mountQuestionAnswerer(root, calls, answer);
     const fiber = await root.plugin(notifier);
     live = fiber;
@@ -783,46 +808,72 @@ describe("宿主 agent 注册表（子代理归属）", () => {
   });
 });
 
-describe("晚到的宿主 settings 服务", () => {
-  it("服务先于插件就绪：装配期经 ctx.get 读到存量并迁进当前配置文件", async () => {
-    const { root, unmount } = await mount({
+describe("宿主 settings 服务：装配期同步割接存量配置", () => {
+  it("服务先于插件就绪：装配期读到存量并割接进当前配置文件（同步，没有「等一会儿」的窗口）", async () => {
+    // 0.2.4 那一步只在刻度未到的装机上跑：真实升级场景就是把刻度退回起点；而 0.2.3 的装机
+    // 没有这份配置文件（配置住在宿主 settings 里），割接就落在这一份新文件上。
+    rmSync(versionFile, { force: true });
+    rmSync(configFile, { force: true });
+    const { unmount } = await mount({
       settings: { notifyTaskDone: false, notifySound: false, configFile: "/legacy/config.json" },
     });
-    // 这是一条**时序**断言（瞬时态）：迁移要走异步落盘，`apply` 返回时读面必然还是默认值。
-    // 任何「让时间快进」的方案都会把它变成恒真——别在这里引入假时钟。
-    expect(configApi.readConfig().notifyTaskDone).toBe(true);
 
-    await pollUntil(() => configApi.readConfig().notifyTaskDone === false, "存量设置迁进读面");
-    // 落盘走 config 域的写面：新布局文件里出现转换后的键，装配键（configFile）不进新配置。
+    // 割接在装配期同步走完：装配返回时读面已经是割接后的形态，不需要轮询。
+    expect(configApi.readConfig().notifyTaskDone).toBe(false);
     const stored = JSON.parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
     expect(stored.notifyTaskDone).toBe(false);
-    expect(stored.notifySound).toBe(false);
+    // 旧键搬完即删：文件里只留条目一处表达
+    expect("notifySound" in stored).toBe(false);
+    // 两条内置条目被割接出来，旧的全局音效键摊到各自的 `sound` 上。
+    expect(stored.channels).toEqual([
+      { type: "browser", id: "browser", sound: false },
+      { type: "system", id: "system", sound: false },
+    ]);
+    // 装配键（configFile）不进新配置：它在旧格式里就属于组合层的启动参数。
     expect("configFile" in stored).toBe(false);
     await unmount();
   });
 
-  it("服务晚到：apply 之后再 provide 仍触发迁移（internal/service 那条路）", async () => {
-    const { root, unmount } = await mount({});
-    // 同为时序断言：provide 之前读面必须是默认值（迁移由这次 provide 触发，不是装配期就有的）。
-    expect(configApi.readConfig().notifyTaskDone).toBe(true);
+  it("服务缺席即不装配：缺 settings 的 inject 门一步都不走，配置原样躺着；就绪后同一次装配里割接", async () => {
+    rmSync(versionFile, { force: true });
+    const root = new Context();
+    const host = fakeWebServer(() => ({ configDays: 0, serviceAlive: false }));
+    root.provide("webServer", host.service);
+    const fiber = await root.plugin(notifier);
+    live = fiber;
+    await settleMicrotasks();
 
+    // 缺依赖：装配没跑，也就没有人去读写配置——种下的那份逐字未动。
+    expect(host.routes).toHaveLength(0);
+    expect(root.get("wingsky.notifier", false)).toBeUndefined();
+    expect(readFileSync(configFile, "utf8")).toBe(seededConfig());
+
+    // 服务随后就绪：装配开始，割接与它同一次走完。
     root.provide("settings", fakeSettings({ notifyTaskDone: false }));
-    await pollUntil(() => configApi.readConfig().notifyTaskDone === false, "晚到服务触发的迁移");
+    await fiber.await();
+    expect(host.routes).toHaveLength(ROUTE_PATHS.length);
     const stored = JSON.parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
     expect(stored.notifyTaskDone).toBe(false);
-    await unmount();
   });
 
-  it("服务始终不来 / 名字对不上 / 卸载后才来：都不写配置", async () => {
-    const { root, unmount } = await mount({});
+  it("名字对不上与卸载后到来的服务都不触发割接（inject 认的是服务名，不是形状）", async () => {
+    rmSync(versionFile, { force: true });
+    const root = new Context();
+    const host = fakeWebServer(() => ({ configDays: 0, serviceAlive: false }));
+    root.provide("webServer", host.service);
+    const fiber = await root.plugin(notifier);
 
-    // ① 名字对不上：宿主另一个服务的形状恰好也能读出名空间——`name === "settings"` 是唯一的分辨依据，
-    //    少了它，任何一个带 describe 的服务就绪都会触发一次「存量迁移」。
+    // ① 名字对不上：另一个恰好也带 describe 的服务不满足 inject，装配一步都不走。
     root.provide("otherHostService", fakeSettings({ notifyTaskDone: false }));
+    await settleMicrotasks();
+    expect(host.routes).toHaveLength(0);
 
-    // ② 卸载之后才来的服务：releaseUpgrade 已退订那次等待，这里 provide 不该有任何动作。
-    await unmount();
+    // ② 卸载之后才来的真服务：装配体已卸载，不会再被拉起来。
+    await fiber.dispose();
     root.provide("settings", fakeSettings({ notifyTaskDone: false }));
+    await settleMicrotasks();
+    expect(host.routes).toHaveLength(0);
+    expect(root.get("wingsky.notifier", false)).toBeUndefined();
 
     // 否定判据要一个界碑：config 域的写队列串行，本用例自己排一次队，它的落盘即此前全部落盘。
     const written = await configApi.writeConfig({ maxConnections: 5 });
@@ -884,6 +935,7 @@ describe("释放", () => {
     const root = new Context();
     const host = fakeWebServer(() => ({ configDays: 0, serviceAlive: false }));
     const webServer = root.provide("webServer", host.service);
+    root.provide("settings", fakeSettings({}));
     const fiber = await root.plugin(notifier);
     live = fiber;
     expect(host.routes).toHaveLength(ROUTE_PATHS.length);
@@ -903,6 +955,7 @@ describe("释放", () => {
     // pipeline / stores / config——否则一次清理失败就拖垮整条卸载链。
     const host = fakeWebServer(() => ({ configDays: 0, serviceAlive: false }), { failAt: 3 });
     root.provide("webServer", host.service);
+    root.provide("settings", fakeSettings({}));
     const fiber = await root.plugin(notifier);
     live = fiber;
 

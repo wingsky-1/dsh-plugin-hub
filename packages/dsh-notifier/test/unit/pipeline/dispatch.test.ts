@@ -42,13 +42,25 @@ type WebhookConfig = Extract<ChannelConfig, { type: "webhook" }>;
 /** 投递目标的形状经端口签名可达。 */
 type DeliveryTarget = Parameters<ChannelsPort["deliver"]>[1][number];
 
-/** 关掉两条内置出口：本块要数的是出站频道的投递次数与节奏。 */
-const BUILTINS_OFF: Partial<NotifyConfig> = {
-  browserNotify: false,
-  browserSound: false,
-  systemNotify: false,
-  systemSound: false,
-};
+/** 默认表里的内置频道：泛型只为把「按 type 找到的那条」收窄成对应型号——查找条件就是 type 相等。 */
+function builtinOf<T extends "browser" | "system">(type: T): Extract<ChannelConfig, { type: T }> {
+  const found = DEFAULT_CONFIG.channels.find((channel) => channel.type === type);
+  if (found === undefined) throw new Error(`默认表里缺内置频道 ${type}`);
+  return found as Extract<ChannelConfig, { type: T }>;
+}
+
+/**
+ * 关掉两条内置出口：本块要数的是出站频道的投递次数与节奏。
+ *
+ * 停用只能写在 `channels` 的条目上：`browserNotify` 一类顶层键现在是读面派生出来的只读投影，
+ * 改它们不会让内置出口少投一次，计数用例会凭空多出两次投递。
+ */
+function builtinsOff(): ChannelConfig[] {
+  return [
+    { ...builtinOf("browser"), enabled: false },
+    { ...builtinOf("system"), enabled: false },
+  ];
+}
 
 /** 装配面夹具：只伪 `pipeline/deps.ts` 声明的那几个端口，顺手记下四件观测物。 */
 interface Harness {
@@ -93,7 +105,12 @@ function webhookChannel(over: Partial<WebhookConfig> = {}): WebhookConfig {
 
 /** 只留 system 出口的设置：节流用例要「唯一目标」才数得清投递次数。 */
 function systemOnly(): Partial<NotifyConfig> {
-  return { ...BUILTINS_OFF, systemNotify: true, systemSound: false, channels: [] };
+  return {
+    channels: [
+      { ...builtinOf("browser"), enabled: false },
+      { ...builtinOf("system"), enabled: true, popup: true, sound: false },
+    ],
+  };
 }
 
 function assemble(): Harness {
@@ -158,7 +175,7 @@ describe("重试与退避（假时钟推进，不真等 3 秒）", () => {
   // 退避时刻写错（例如固定 0ms）会把可重试失败变成对上游的连打。
   it("bark 重试 2 次、退避 1000/2000ms：次数与时刻都由管线说了算", async () => {
     const harness = assemble();
-    harness.useConfig({ ...BUILTINS_OFF, channels: [barkChannel()] });
+    harness.useConfig({ channels: [...builtinsOff(), barkChannel()] });
     let attempts = 0;
     harness.onDeliver(async (_message, targets) => {
       attempts += targets.length;
@@ -190,7 +207,7 @@ describe("重试与退避（假时钟推进，不真等 3 秒）", () => {
   // 也全绿——而那样第二条已送达的通知会被再投两遍，并在归档里被记成失败。
   it("重试中途成功即停止：第二次成功不再重投，也不写失败", async () => {
     const harness = assemble();
-    harness.useConfig({ ...BUILTINS_OFF, channels: [barkChannel()] });
+    harness.useConfig({ channels: [...builtinsOff(), barkChannel()] });
     let attempts = 0;
     harness.onDeliver(async (_message, targets) => {
       attempts += targets.length;
@@ -222,7 +239,7 @@ describe("重试与退避（假时钟推进，不真等 3 秒）", () => {
   // 出口说不可重试却重投，等于让对端把同一条通知处理多遍。
   it("出口标 retryable=false 时一次也不多投：分类是出口的责任，管线照办", async () => {
     const harness = assemble();
-    harness.useConfig({ ...BUILTINS_OFF, channels: [barkChannel()] });
+    harness.useConfig({ channels: [...builtinsOff(), barkChannel()] });
     let attempts = 0;
     harness.onDeliver(async (_message, targets) => {
       attempts += targets.length;
@@ -242,7 +259,7 @@ describe("重试与退避（假时钟推进，不真等 3 秒）", () => {
   // webhook 不幂等，策略表漏了 maxRetries=0 就会重投。
   it("webhook 零重试：即便出口标了 retryable 也不重投（策略表 maxRetries=0）", async () => {
     const harness = assemble();
-    harness.useConfig({ ...BUILTINS_OFF, channels: [webhookChannel()] });
+    harness.useConfig({ channels: [...builtinsOff(), webhookChannel()] });
     let attempts = 0;
     harness.onDeliver(async (_message, targets) => {
       attempts += targets.length;
@@ -265,8 +282,7 @@ describe("逐频道归位", () => {
   it("终态写频道状态并按频道归位进历史明细：失败原因只在失败那一支上", async () => {
     const harness = assemble();
     harness.useConfig({
-      ...BUILTINS_OFF,
-      channels: [barkChannel({ id: "a" }), webhookChannel({ id: "w" })],
+      channels: [...builtinsOff(), barkChannel({ id: "a" }), webhookChannel({ id: "w" })],
     });
     harness.onDeliver(async (_message, targets) =>
       targets.map((target) =>
@@ -302,8 +318,8 @@ describe("逐频道归位", () => {
   it("出口违约不牵连同批：违约频道出一条 failed 明细，健康频道照常投递并写状态，整批不拒绝", async () => {
     const harness = assemble();
     harness.useConfig({
-      ...BUILTINS_OFF,
       channels: [
+        ...builtinsOff(),
         barkChannel({ id: "a", deviceKey: "dk-a" }),
         barkChannel({ id: "b", deviceKey: "dk-b" }),
       ],
@@ -338,8 +354,8 @@ describe("逐频道归位", () => {
   it("违约频道的状态写面再次违约也不抛出：failed 明细照常进归档，原因仍是出口那条", async () => {
     const harness = assemble();
     harness.useConfig({
-      ...BUILTINS_OFF,
       channels: [
+        ...builtinsOff(),
         barkChannel({ id: "a", deviceKey: "dk-a" }),
         barkChannel({ id: "b", deviceKey: "dk-b" }),
       ],
@@ -365,6 +381,24 @@ describe("逐频道归位", () => {
       "bark:b:ok",
     ]);
     expect(harness.logger.warns).toEqual([]);
+  });
+
+  // 出口按配置判定「这次没有可发的内容」时，结果既不是成功也不是失败：状态面不该因此多出一条
+  // 「最后一次投递结论」（写 ok 等于替出口宣称投递成功），而历史必须如实留下这次跳过。
+  it("出口报 skipped：历史如实记一条跳过与原因，频道状态不被写（没有结论可言）", async () => {
+    const harness = assemble();
+    const reason = "浏览器频道：弹窗与声音都已关闭";
+    harness.onDeliver(async (_message, targets) =>
+      targets.map(() => ({ status: "skipped" as const, reason })),
+    );
+
+    submit(requestOf());
+    await pollUntil(() => harness.history.length === 1, "skipped 落史");
+    expect(harness.history[0]!.channels).toEqual([
+      { channelId: "browser", status: "skipped", reason },
+      { channelId: "system", status: "skipped", reason },
+    ]);
+    expect(harness.statuses).toEqual([]);
   });
 });
 
@@ -447,7 +481,7 @@ describe("节奏：节流与在途门", () => {
   // 表现为「这个频道从此再也不发通知」，而通道本身没有任何错误。
   it("出口违约会放开它在途槽位：两次违约之后第三条照常开投（漏释放即该频道永久卡死）", async () => {
     const harness = assemble();
-    harness.useConfig({ ...BUILTINS_OFF, channels: [barkChannel()] });
+    harness.useConfig({ channels: [...builtinsOff(), barkChannel()] });
     let calls = 0;
     harness.onDeliver(async (_message, targets) => {
       calls += targets.length;
@@ -468,7 +502,7 @@ describe("节奏：节流与在途门", () => {
   // 无上限并发会把同一频道打爆；门形同虚设则慢出口会被并发踩。
   it("在途门：同频道并发上限 2，第 3 条排队到有槽位才开投（慢出口不该被无限并发踩）", async () => {
     const harness = assemble();
-    harness.useConfig({ ...BUILTINS_OFF, channels: [barkChannel()] });
+    harness.useConfig({ channels: [...builtinsOff(), barkChannel()] });
     const pending: Array<() => void> = [];
     let started = 0;
     harness.onDeliver(async (_message, targets) => {
