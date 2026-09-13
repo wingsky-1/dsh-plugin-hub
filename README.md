@@ -69,7 +69,10 @@ node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply  # 落盘：先
 
 - 默认只读 `<DSH_HOME>`（`--home <dir>` / `DSH_HOME` 可覆盖）；`--session <id>` 只处理单个会话
 - 幂等；写后自检（帧结构 + 逐行 JSON + 零遗留旧 kind）；回滚 = 用 `.bak-<时间戳>` 覆盖回去
-- 不产出 v3 产物：修复后仍由 dsh 自己完成迁移
+- **v3 会话默认一起修**：v3 里同样可能两种 kind 并存（升级前创建、升级后继续写入），
+  宿主将来给 v3→v4 迁移加同类闸门时会重演这次的永久拒载；改写只换 source 元数据，
+  v3 语义零变化。`--legacy-only` 可退回只修 v0/v1/v2
+- 不产出 v3 产物：v0/v1/v2 修复后仍由 dsh 自己完成迁移
 - 细节与验证证据见 [dsh-mcp-manager README](packages/dsh-mcp-manager/README.md#723-修复方案) 与
   [issue #723](https://github.com/wingsky-1/dsh-plugin-hub/issues/723)
 

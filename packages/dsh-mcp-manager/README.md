@@ -288,7 +288,12 @@ node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply
   可只处理一个会话
 - 幂等：已修复的产物不会再次命中；写后自检（帧结构 + 逐行 JSON + 零遗留旧 kind）
 - 回滚：用同名 `.bak-<时间戳>` 覆盖回 `session.jsonl.zstd` 即可
-- 脚本只处理 v0/v1/v2 产物（v3 会话无此问题）；**不产出** v3 文件
+- **v3 产物默认一起修**：v3 读取路径不校验 `message.source`，所以含旧 kind 的 v3 会话
+  现在照常加载；但升级前创建、升级后又被增量写入的 v3 会话里会**两种 kind 并存**，
+  宿主将来给 v3→v4 迁移加同类闸门时会重演这次的永久拒载。修复只换 source 元数据，
+  v3 自身零语义变化（实测严格恢复 + `Session.fromRestore` 通过）
+- `--legacy-only` 可退回只修 v0/v1/v2；**不产出** v3 文件（v0/v1/v2 修完仍由 dsh 自己迁移）
+- 末尾 torn frame（写入中崩溃）按宿主恢复语义前缀解码；末行被截断则丢弃
 
 ## 验证
 

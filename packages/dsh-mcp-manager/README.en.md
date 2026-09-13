@@ -331,7 +331,13 @@ node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply
 - Idempotent: repaired artifacts no longer match; every write is self-checked (frame structure,
   per-line JSON, zero leftover legacy kinds)
 - Rollback: overwrite `session.jsonl.zstd` with the matching `.bak-<timestamp>`
-- Only v0/v1/v2 artifacts are processed (v3 sessions are unaffected); it never writes a v3 file
+- **v3 artifacts are repaired by default too**: the v3 read path does not validate
+  `message.source`, so v3 sessions with the legacy kind load fine today — but a v3 session created
+  before the upgrade and written incrementally afterwards carries **both kinds**, and a future
+  v3-to-v4 migration with a similar gate would repeat this outage. The repair only swaps source
+  metadata, so v3 semantics are unchanged (verified with strict restore + `Session.fromRestore`)
+- `--legacy-only` limits the run to v0/v1/v2; it never writes a v3 file (DSH performs the migration itself)
+- A trailing torn frame (crash during write) is prefix-decoded with the host's recovery semantics; a truncated last line is dropped
 
 ## Verification
 

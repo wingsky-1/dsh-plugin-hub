@@ -28,6 +28,7 @@ import {
   parseArgs,
   planSession,
   rewriteRow,
+  scanContainer,
   scanFrames,
   verifyRepaired,
 } from "../maintenance/repair-mcp-catalog-sessions.mjs";
@@ -84,6 +85,36 @@ function writeV0Log(dir, { spliced = false, source = LEGACY_SOURCE } = {}) {
       : { type: "user/message", seq: 2, time: 3, data: message, surfaceOp: "append" },
   ];
   const path = join(dir, "session.jsonl.zstd");
+  writeFileSync(path, encodeFrames(rows.map((row) => JSON.stringify(row))));
+  return path;
+}
+
+/** 造一份 v3 产物（header version=3；用于 --include-v3 与 v3 不动断言）。 */
+function writeV3Log(dir) {
+  const header = {
+    type: "session",
+    version: 3,
+    id: "session-test",
+    createdAt: 1789101518091,
+    delegationDepth: 0,
+    cwd: "/tmp",
+  };
+  const message = {
+    id: "msg-1",
+    role: "user",
+    content: [{ type: "text", text: CATALOG_TEXT }],
+    source: LEGACY_SOURCE,
+  };
+  const rows = [
+    header,
+    {
+      type: "agent/inbox/spliced",
+      seq: 0,
+      time: 3,
+      data: { target: "next-turn", start: 0, inserted: [message] },
+    },
+  ];
+  const path = join(dir, "session.v3.jsonl.zstd");
   writeFileSync(path, encodeFrames(rows.map((row) => JSON.stringify(row))));
   return path;
 }
@@ -269,6 +300,44 @@ test("planSession/applyRepair：干跑不动盘、落盘带备份、再跑幂等
 
     assert.equal(planSession(sessionDir).status, "clean", "已修复的产物不得再次命中");
   });
+});
+
+test("planSession：v3 默认也修（未来 v3→v4 同款闸门前置），--legacy-only 才不动 v3", () => {
+  withSession(({ sessionDir }) => {
+    const path = writeV3Log(sessionDir);
+    const before = readFileSync(path);
+    // --legacy-only：v3 不在目标面 → already-v3，零改动
+    const legacyPlan = planSession(sessionDir, { legacyOnly: true });
+    assert.equal(legacyPlan.status, "already-v3");
+    assert.equal(legacyPlan.sources, 0);
+    assert.deepEqual(readFileSync(path), before);
+    // 默认：v3 里残留的旧 source 命中（v3 里两种 kind 并存正是 v3→v4 的隐患）
+    const planV3 = planSession(sessionDir);
+    assert.equal(planV3.status, "needs-repair");
+    assert.equal(planV3.sources, 1);
+    assert.equal(planV3.file, "session.v3.jsonl.zstd");
+    assert.equal(planV3.rows[0].version, 3, "header 原样保留");
+    assert.deepEqual(readFileSync(path), before, "规划阶段不动盘");
+    // 落盘后：新形态、仍是 v3、可被宿主严格恢复、再跑幂等
+    applyRepair(sessionDir, planV3.file, planV3.rows);
+    const after = decodeLines(readFileSync(path));
+    assert.equal(after[0].includes('"version":3'), true);
+    assert.equal(after.filter((line) => line.includes('"kind":"mcp-catalog"')).length, 0);
+    assert.equal(after.filter((line) => line.includes(CATALOG_SOURCE_PLUGIN)).length, 1);
+    assert.equal(planSession(sessionDir).status, "clean");
+  });
+});
+
+test("torn frame：末尾不完整帧按宿主恢复语义前缀解码，不抛错", () => {
+  const whole = encodeFrames(['{"type":"session"}', '{"seq":1,"source":{"kind":"mcp-catalog"}}']);
+  const scanned = scanContainer(whole);
+  assert.equal(scanned.tornStart, undefined);
+  // 截掉最后一帧的校验和尾部 → 模拟写入中崩溃
+  const torn = whole.subarray(0, whole.length - 3);
+  const decoded = decodeLines(torn);
+  assert.equal(decoded[0], '{"type":"session"}', "完整帧照常解出");
+  assert.equal(decoded.length, 2, "torn 帧解出已落盘前缀（末行被截断则丢弃）");
+  assert.throws(() => scanFrames(torn), /incomplete final frame/, "严格扫描仍拒绝 torn 容器");
 });
 
 test("verifyRepaired：遗留旧 kind 判红", () => {
