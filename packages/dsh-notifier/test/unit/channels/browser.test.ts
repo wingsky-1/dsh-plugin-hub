@@ -79,7 +79,11 @@ describe("sendBrowser", () => {
     const { frames, targetOf } = collector();
     const result = sendBrowser(targetOf({ popup: false, sound: false }), messageOf());
 
-    expect(result).toEqual({ status: "skipped", reason: "浏览器频道：弹窗与声音都已关闭" });
+    // 成因经 code 带出去（与 system 出口同一个 code）：两个出口的「用户都关了」是同一件事
+    expect(result).toEqual({
+      status: "skipped",
+      reason: { code: "reasonSkipConfig" },
+    });
     expect(frames).toEqual([]);
   });
 });

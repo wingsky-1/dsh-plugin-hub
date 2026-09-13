@@ -3,6 +3,8 @@
  * 重试、退避、在途上限与 system 的 1 秒节流都在这里（出口只回答「可不可重试」）；
  * 节奏状态按 `channelId` 键控，跨配置变更延续。
  */
+import type { ProducedReason } from "../../../shared/interface.ts";
+import { reasonFromCause } from "../../../shared/interface.ts";
 import type { ChannelDelivery, DeliveryTarget, NotifyMessage } from "../../deps.ts";
 import type { RoutedTarget } from "../route/type.ts";
 import type { ChannelRhythm, DeliverOutcome, DispatchPolicy, DispatchPort } from "./type.ts";
@@ -44,6 +46,11 @@ function deliveryOf(channelId: string, result: DeliverOutcome): ChannelDelivery 
   if (result.status === "failed") return { channelId, status: "failed", reason: result.reason };
   if (result.status === "skipped") return { channelId, status: "skipped", reason: result.reason };
   return { channelId, status: "ok" };
+}
+
+/** 出口违约的失败理由：宿主原文进 `detail`，文案归客户端字典。 */
+function reasonOf(cause: unknown): ProducedReason {
+  return reasonFromCause("reasonChannelThrew", cause);
 }
 
 /** 线性退避等待。 */
@@ -96,13 +103,13 @@ class Dispatcher {
     try {
       return await this.dispatchOne(port, message, routed);
     } catch (cause) {
-      const reason = cause instanceof Error ? cause.message : String(cause);
-      this.recordFailure(port, routed.channelId, reason);
+      const failure = reasonOf(cause);
+      this.recordFailure(port, routed.channelId, failure);
       return deliveryOf(routed.channelId, {
         status: "failed",
         // 违约的出口没给出任何证据，与通道层收违约时的口径一致。
         stage: "accepted",
-        reason,
+        reason: failure,
         // 出口承诺把失败做成返回值，抛出来说明它有洞；再投一次只是把同一个洞踩第二遍。
         retryable: false,
       });
@@ -110,9 +117,9 @@ class Dispatcher {
   }
 
   /** 违约频道的状态写面：状态只是观测面，它自己违约也不能再升级为抛出——明细已经成立。 */
-  private recordFailure(port: DispatchPort, channelId: string, reason: string): void {
+  private recordFailure(port: DispatchPort, channelId: string, failure: ProducedReason): void {
     try {
-      port.stores.recordStatus(channelId, "failed", reason);
+      port.stores.recordStatus(channelId, "failed", failure);
     } catch {
       // 状态写不进去不该改变这次投递的结论
     }

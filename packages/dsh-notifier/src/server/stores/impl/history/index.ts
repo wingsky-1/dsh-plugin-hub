@@ -4,8 +4,13 @@
  * 保留天数每次读时现取：装配期取快照会在用户改设置后失效。
  */
 import { readFile } from "node:fs/promises";
-import { writeTextAtomic, HISTORY_FILE_NAME, notifierFile } from "../../../shared/interface.ts";
-import type { HistoryDeps, HistoryEntry, ParsedHistoryLine } from "./type.ts";
+import {
+  writeTextAtomic,
+  HISTORY_FILE_NAME,
+  normalizeReason,
+  notifierFile,
+} from "../../../shared/interface.ts";
+import type { ChannelDelivery, HistoryDeps, HistoryEntry, ParsedHistoryLine } from "./type.ts";
 
 /** 通知历史滚动上限（行数；超出后从尾部截断重写）。 */
 const HISTORY_LIMIT = 200;
@@ -137,13 +142,42 @@ function withinRetention(line: string, cutoff: number): boolean {
 /** 解析一行 jsonl：只把 JSON 对象算作读到一行——非对象的合法 JSON 取字段会抛，当坏行处理。 */
 function parseLine(line: string): ParsedHistoryLine {
   try {
-    const parsed = JSON.parse(line) as HistoryEntry;
-    return typeof parsed === "object" && parsed !== null
-      ? { ok: true, entry: parsed }
-      : { ok: false };
+    const parsed = JSON.parse(line) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
+      return { ok: false };
+    return { ok: true, entry: normalizeEntry(parsed as HistoryEntry) };
   } catch {
     return { ok: false };
   }
+}
+
+/**
+ * 归一化一条历史记录：只重写 `channels` 里的理由——升级前的行存的是散文，之后存结构化对象，
+ * 客户端不该为「同一字段两种形态」各写一遍渲染。其余字段原样透传：历史是持久格式，可能躺着
+ * 早已退役的种类，本域不认识不等于该丢。
+ */
+function normalizeEntry(entry: HistoryEntry): HistoryEntry {
+  if (!Array.isArray(entry.channels)) return entry;
+  const channels: ChannelDelivery[] = [];
+  for (const delivery of entry.channels) {
+    const normalized = normalizeDelivery(delivery);
+    if (normalized !== undefined) channels.push(normalized);
+  }
+  return { ...entry, channels };
+}
+
+/** 逐出口明细的值域校验：陌生状态与读不出的理由都不该透传到设置页（那里直接渲染它们）。 */
+function normalizeDelivery(value: unknown): ChannelDelivery | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  if (typeof source.channelId !== "string") return undefined;
+  if (source.status !== "ok" && source.status !== "failed" && source.status !== "skipped") {
+    return undefined;
+  }
+  const delivery: ChannelDelivery = { channelId: source.channelId, status: source.status };
+  const reason = normalizeReason(source.reason);
+  if (reason !== undefined) delivery.reason = reason;
+  return delivery;
 }
 
 /** 本域唯一的存储实例：类不外放，外面 `new` 不出第二份写队列。 */

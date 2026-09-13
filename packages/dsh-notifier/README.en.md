@@ -371,10 +371,29 @@ subagent completions stay quiet":
 
 Delivery reliability: 10 s hard timeout, network errors / 5xx retried ×2 (4xx not retried), at
 most 2 in-flight deliveries per instance (built-in channels are unlimited); success requires
-both HTTP 2xx and a response body with `code===200`. Terminal delivery states (success/failure
-+ error summary) are persisted to this plugin's status file (see "Storage layout" below), and
+both HTTP 2xx and a response body with `code===200`. Terminal delivery states
+are persisted to this plugin's status file (see "Storage layout" below), and
 the settings-page channel-card status row is refreshed on card load and after sending a test
 via `GET /api/dsh-notifier/status` (no polling, the D20 stance).
+
+**Three terminal states with different meanings (0.2.4)**: `ok` = a channel really executed an
+action and it succeeded; `failed` = an action was executed and it failed (there is failure
+evidence, so the status row is written); `skipped` = there was **no executable action at all**
+(popup and sound are both off, or this host cannot produce the command). The system channel treats popup
+and sound as two independent actions: **once the popup has gone out, a sound failure is best-effort and
+does not change the terminal state** (sound is no longer the only action); a popup failure still flips it. `skipped` **does not
+write the status row** — the channel did nothing, so there is no "latest delivery outcome" to
+speak of, and writing success would claim success on its behalf. A green status row therefore does
+not mean this particular notification arrived: every entry in the **History tab** carries its
+per-channel delivery detail (which channel, which outcome, which reason), and that is the only
+per-notification visible surface.
+
+**Delivery reasons are structured (0.2.4)**: `{ code, params?, detail? }` — `code` is rendered into
+the current language by the client dictionary, and `detail` holds raw host output (HTTP response
+body, stderr tail, JSON.parse error) and is **never the primary text**; the UI folds it away behind
+a "Raw host output" label. The upgrade folds pre-0.2.4 prose reasons in `status.json` /
+`history.jsonl` into `code: "reasonLegacy"` with the original sentence in `detail` (idempotent; the
+read side is tolerant as well, so a hand-edited file cannot make the UI show `undefined`).
 
 > **Storage layout (#733 convergence)**: configuration, notification history, channel status, the SSE
 > seq counter and the storage version marker all live under `DSH_HOME/@wingsky-1/dsh-notifier/` —
@@ -446,8 +465,8 @@ with your topic name before delivering.
 
 Delivery reliability: timeout 1-60 s (default 10); **failures are never retried
 automatically** — 4xx / 5xx / network errors / render failures all end as a terminal
-failure recorded in the status file and the notification history (the error summary is
-truncated as-is, see "Security & boundaries");
+failure recorded in the status file and the notification history (the raw host text is
+truncated as-is into the reason's `detail`, see "Security & boundaries");
 re-send via "Send test notification" to verify. Reference channels in `kindRoutes` as
 `webhook:<id>` (same `type:id` shape as `bark:<id>`).
 
@@ -466,8 +485,8 @@ across types):
 | `/api/dsh-notifier/config` | GET/PUT | **GET** returns `{ok, user, revision, effective, writable}` (`user` = official settings user layer, `revision` for optimistic concurrency, `effective` = resolved config; **credential fields (bark `deviceKey` / webhook `token`·`password`·`headerValue`) are always masked**); **PUT** accepts `{patch, expectedRevision?}` (incremental patch, optional `expectedRevision` for optimistic concurrency), returns `{ok, user, revision}` (also masked) |
 | `/api/dsh-notifier/events` | GET | SSE notification frames (browser EventSource subscription; `?since=<seq>` replays missed frames after reconnect) |
 | `/api/dsh-notifier/test` | POST | Test notification (funnels through the service pipeline, bypasses Do-Not-Disturb; optional body `{channelId}` to test a single channel) |
-| `/api/dsh-notifier/history` | GET / **DELETE** | GET recent notification records (up to 200, filtered by `historyMaxAgeDays`; entries suppressed by DND are flagged `suppressed`); **DELETE clears** |
-| `/api/dsh-notifier/status` | GET | Channel delivery status (per-channel latest delivery terminal state + consecutive failure count; error summaries truncated as-is, with no credential replacement) |
+| `/api/dsh-notifier/history` | GET / **DELETE** | GET recent notification records (up to 200, filtered by `historyMaxAgeDays`; entries suppressed by DND are flagged `suppressed`; every record carries per-channel delivery detail `channels[]` whose `reason` is a structured reason); **DELETE clears** |
+| `/api/dsh-notifier/status` | GET | Channel delivery status (per-channel latest delivery terminal state + consecutive failure count; the failure reason is a structured object `{code, params?, detail?}` whose `detail` is truncated as-is to 300 chars, with no credential replacement) |
 | `/api/dsh-notifier/kinds` | GET / POST | GET the dynamic kind list (including confirmation state); POST `{kind, confirmed}` writes a confirmation (persisted to `allowKinds`); the 200 response carries `revision` (for the client to sync its optimistic-concurrency version) |
 | `/api/dsh-notifier/health` | GET | Health check |
 
@@ -490,9 +509,9 @@ be able to resolve these official packages (skipping type checking is unaffected
 - Notification text only contains metadata such as task title / tool name / request reason — **never tool parameters** (prevents sensitive info leakage)
 - **Notification body and title are no longer masked (#733 convergence)**: the old `sanitizeContent` rule table (paths / PEM private keys / connection-string credentials / tokens / emails …) has been deleted — notifications, history writes (including suppressed entries) and delivery all carry the original text; the body is not truncated here, and length is capped by each delivery channel's display limit. Deployments that need "a given kind of text never appears in logs" must handle it at the event source
 - **The only remaining credential masking is in the settings view**: channel credentials in `GET /config`'s `user` + `effective` and in `PUT` success responses (bark `deviceKey`, webhook `token` / `password` / `headerValue`) are always masked as `********`; submitting the full mask = keep the original value (backfilled aligned by instance id so a reordering never swaps credentials between instances); a mask submitted for a new instance returns 400 (`CHANNEL_SECRET_FIELDS` is the per-channel-type single source of truth)
-- **Outbound error reasons no longer replace credential literals (measured risk, documented as-is)**: Bark 4xx response bodies echo the device key, and webhook non-2xx response bodies echo the credentials they received — failure reasons are now only truncated (webhook response body 200 chars; status entry 300 chars), with **no guarantee that credentials stay out of the error text**. Those texts go to server logs and to the status file (`status.json`), and reach the settings page via `GET /status`; deployments sensitive to error-text exposure should act on the bullet above
+- **Outbound error reasons no longer replace credential literals (measured risk, documented as-is)**: Bark 4xx response bodies echo the device key, and webhook non-2xx response bodies echo the credentials they received — failure reasons are only truncated (webhook response body 200 chars; status entry 300 chars), with **no guarantee that credentials stay out of the error text**. Those texts live in the reason's `detail` field (reasons are structured as of 0.2.4, see "Delivery reliability"), and go to server logs, the status file (`status.json`) and the notification history (`history.jsonl`), reaching the settings page via `GET /status` and `GET /history`; deployments sensitive to error-text exposure should act on the bullet above
 - Server-side internal errors still return fixed wording (root causes only go to server logs)
-- System notification failures are silent (logs only), and do not affect the main flow; a missing / non-executable native binary (ENOENT etc.) is caught by the `error` event and **never bubbles up as an unhandled error that crashes the host process** (see issue #1)
+- System notification failures are no longer silent: when a channel **executed an action and it failed**, the status row is written as `failed` and the per-channel detail appears in the notification history; when **no command can be constructed at all**, the outcome is `skipped` plus exactly one warn (as of 0.2.4 linux / darwin emit that log too — previously only the win32 branch did). A missing / non-executable native binary (ENOENT etc.) is caught by the `error` event and **never bubbles up as an unhandled error that crashes the host process** (see issue #1)
 - **The two channels are delivered to different machines (don't confuse them)**:
   - **Browser notifications** are pushed to **the browser client you are actually using** (your Mac / phone both count), and pop a native notification via the browser's Notification API; they require permission and by default only pop when the page is hidden (the settings card can enable "also when visible"). No matter which machine dsh web runs on, as long as browser notifications are allowed you receive them on your own Mac.
   - **System notifications (host toast)** are popped on the desktop of **the machine dsh web runs on**: if dsh web runs on a Linux server (headless, no desktop session) or some other machine, the toast appears on **that server**, not your Mac — the settings card / health reflects whether the channel is available. To also get the system toast on your Mac, run dsh web directly on your Mac (it then uses macOS `osascript`); macOS has no `notify-send`, and the system notification is already implemented via `osascript` (zero dependencies, nothing to install)
@@ -511,7 +530,7 @@ be able to resolve these official packages (skipping type checking is unaffected
   - **Credential masking funneled via `CHANNEL_SECRET_FIELDS`**: the masked-field list is a per-channel-type single source of truth (bark → `deviceKey`, webhook → `token`/`password`/`headerValue`); GET /config (user + effective) and PUT success responses always mask `********`, submitting the full mask = keep the original value (backfilled aligned by instance id so a reordering never swaps credentials between instances); a mask submitted for a new instance returns 400
   - **Reserved keys block config bypass (`WEBHOOK_RESERVED_KEYS`)**: credential alias keys such as `auth_token` / `access_token` / `bearer_token` / `api_key` / `apikey` / `client_secret` / `secret` / `password_hash` are always stripped / rejected on write — legitimate credentials can only enter via the known secret fields (masked end to end)
   - **JSON injection protection**: the template renders JSON-aware in two steps (value-level substitution + uniform re-serialization escaping); notification content cannot break out of a string to inject extra JSON fields
-  - **Outbound errors do not replace credentials**: same as Bark — non-2xx response bodies are truncated to 200 chars and enter the error summary as-is, with no credential-literal replacement and no rule table (see "Security & boundaries")
+  - **Outbound errors do not replace credentials**: same as Bark — non-2xx response bodies are truncated to 200 chars and enter the reason's `detail` as-is, with no credential-literal replacement and no rule table (see "Security & boundaries")
   - **URL SSRF posture (same normalize as Bark)**: http/https schemes only, credential URLs (`user:pass@host`) rejected, query/hash stripped; no domain allowlist — an intranet self-hosted gateway is a legitimate use case; custom header names forbid end-to-end headers (`content-type`/`content-length`/`host`/`cookie`/`authorization`) against request smuggling / JSON body corruption
   - **No retry on failure**: a failed delivery is terminal (4xx/5xx/network/render) — no retry-driven outbound amplification
   - Webhook is an **additive channel type**: the semantics and compatibility commitments of existing channels and notification outputs (SSE frames / system notifications / history jsonl) are unchanged

@@ -960,6 +960,74 @@
   overflow-wrap: anywhere;
 }
 
+/* --- 通知记录：逐出口投递明细（状态 + 结构化理由；宿主原文折叠） ---
+   「推成功却没声音」这类结论此前完全不可见（状态行在 skipped 后不变），故这里承担唯一的
+   可见落点：状态带文字而不是只靠颜色，理由读得出来，宿主原文折叠在它自己的一行里。 */
+.dn-set-card .dn-set-historyChannels {
+  margin-top: 6px;
+  padding-left: 8px;
+  border-left: 2px solid var(--dsw-alias-bg-layer-2, #eceef2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dn-set-card .dn-ch-delivery {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.dn-set-card .dn-ch-deliveryName {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary, #6d7480);
+  background: var(--dsw-alias-bg-layer-1, #f5f6f8);
+  border: 1px solid var(--dsw-alias-border-l1, #e2e5ea);
+  border-radius: 6px;
+  padding: 0 5px;
+  flex: none;
+}
+.dn-set-card .dn-ch-deliveryStatus {
+  flex: none;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+}
+.dn-set-card .dn-ch-delivery-ok .dn-ch-deliveryStatus {
+  color: var(--dsw-alias-state-success-primary, #0f9d6e);
+}
+.dn-set-card .dn-ch-delivery-failed .dn-ch-deliveryStatus {
+  color: var(--dsw-alias-state-error-primary, #d92d20);
+}
+.dn-set-card .dn-ch-delivery-skipped .dn-ch-deliveryStatus {
+  color: var(--dsw-alias-state-warning-primary, #f79009);
+}
+.dn-set-card .dn-ch-deliveryReason {
+  flex: 1 1 160px;
+  min-width: 0;
+  color: var(--dsw-alias-label-secondary, #5f6672);
+  overflow-wrap: anywhere;
+}
+.dn-set-card .dn-ch-reasonRaw {
+  flex-basis: 100%;
+  min-width: 0;
+}
+.dn-set-card .dn-ch-reasonRaw > summary {
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary, #6d7480);
+  user-select: none;
+}
+.dn-set-card .dn-ch-reasonRawText {
+  margin-top: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary, #6d7480);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 /* --- 底部保存栏（脏状态） --- */
 .dn-set-card .dn-set-foot {
   display: flex;

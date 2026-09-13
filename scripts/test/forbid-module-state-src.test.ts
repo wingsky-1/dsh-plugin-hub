@@ -244,9 +244,10 @@ test("本仓真实快照：client/index.tsx 的 21 处模块级 var 全部走登
   assert.match(r.stdout, /OK（扫描 \d+ 文件，包 dsh-notifier，登记豁免 21 处）/);
   // 21 处与豁免台账是同一个数字的两面：客户端 var 数量变了、或台账条目被删，
   // 此断言先红并提示同步台账（scripts/data/gate-exemptions.json）与 #762。
+  // 锚点的行号随客户端源码增删而移动（豁免台账本身是文件级、不跟行号），改到 `t` 所在行即可。
   assert.match(
     r.stdout,
-    /packages\/dsh-notifier\/src\/client\/index\.tsx:229 \[模块级 var（t）\] 登记豁免 #762（reviewBy 2027-03-31）/,
+    /packages\/dsh-notifier\/src\/client\/index\.tsx:233 \[模块级 var（t）\] 登记豁免 #762（reviewBy 2027-03-31）/,
   );
 });
 

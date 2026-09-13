@@ -25,6 +25,10 @@ import * as React from "react";
 // i18n：复用官方 dsh-client-locale——zh/en 双语字典，LocaleNamespaceMap
 // 声明合并进官方 ui-slots 类型面；仅 import type（编译期擦除，无运行时依赖）。
 import { zh, en, type NotifierLocaleKey } from "./locales.ts";
+// 投递理由的渲染收在同一处：状态行与通知记录都要用，文案来源与「认不出的 code 怎么回退」
+// 必须是同一条口径，两处各写一遍就等于把降级行为分叉。
+import { deliveryViewOf, reasonText } from "./reason-text.ts";
+import type { DeliveryView } from "./reason-text.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
@@ -1605,7 +1609,8 @@ function SettingsCard() {
     var st = statusMap[channelKey];
     if (!st || !st.lastTs) return t("chNeverSent");
     if (st.lastStatus === "ok") return t("chLastOk") + " · " + padTime(st.lastTs);
-    return t("chLastFail") + " · " + padTime(st.lastTs) + (st.lastError ? "：" + st.lastError : "");
+    var why = reasonText(st.lastError, t);
+    return t("chLastFail") + " · " + padTime(st.lastTs) + (why ? "：" + why : "");
   }
   function statusDotClass(channelKey: string): string {
     var st = statusMap[channelKey];
@@ -2823,6 +2828,43 @@ function SettingsCard() {
     );
   }
 
+  /**
+   * 逐出口投递明细：状态标签 + 主理由 + 宿主原文（原文折叠，并标注它的来源）。
+   * 数据本来就随 `/history` 到了客户端（`archive(..., { channels })`），此前只是没人渲染——
+   * 「投递成功却没声音」这类结论因此完全不可见，状态行在 `skipped` 后还不会变。
+   */
+  function deliveryLines(r: { channels?: unknown }) {
+    var list: unknown[] = Array.isArray(r.channels) ? r.channels : [];
+    var views: DeliveryView[] = [];
+    list.forEach(function (delivery: unknown) {
+      var view = deliveryViewOf(delivery, t);
+      if (view) views.push(view);
+    });
+    if (views.length === 0) return null;
+    return (
+      <div className="dn-set-historyChannels">
+        {views.map(function (view, j: number) {
+          return (
+            <div
+              className={"dn-ch-delivery dn-ch-delivery-" + view.status}
+              key={view.channelId + "-" + j}
+            >
+              <span className="dn-ch-deliveryName">{view.channelId}</span>
+              <span className="dn-ch-deliveryStatus">{view.statusText}</span>
+              {view.reason ? <span className="dn-ch-deliveryReason">{view.reason}</span> : null}
+              {view.detail ? (
+                <details className="dn-ch-reasonRaw">
+                  <summary>{t("reasonDetailLabel")}</summary>
+                  <div className="dn-ch-reasonRawText">{view.detail}</div>
+                </details>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   // 通知记录 tab（历史独立成 tab；清理/发送测试/刷新并排工具行；
   // 请求权限按钮随权限状态行一起归入「浏览器通知」频道卡）
   var historyPane = (
@@ -2883,6 +2925,7 @@ function SettingsCard() {
                     ) : null}
                   </div>
                   <div className="dn-set-historyText">{r.title + "：" + r.message}</div>
+                  {deliveryLines(r)}
                 </div>
               </li>
             );

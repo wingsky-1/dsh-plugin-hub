@@ -3,6 +3,8 @@
  * 模板走两步法防注入：先替换裸值 {{ts}}、JSON.parse 整份模板，再对字符串值做占位符替换
  * 后重新序列化，替换内容因此逃不出字符串。任何失败都不重试。
  */
+import type { ReasonCode, ReasonParams } from "../../../shared/interface.ts";
+import { clampReasonDetail, reason } from "../../../shared/interface.ts";
 import {
   FAILURE_REASON_MAX,
   RESPONSE_DETAIL_MAX,
@@ -114,8 +116,8 @@ export async function sendWebhook(
       ts: message.ts,
     });
   } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : String(cause);
-    return failed(reason);
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    return failed("reasonWebhookTemplateInvalid", { detail });
   }
 
   const headers: Record<string, string> = { ...target.headers };
@@ -140,8 +142,8 @@ export async function sendWebhook(
       signal: AbortSignal.timeout(clampTimeoutSec(target.timeoutSec) * 1000),
     });
   } catch (cause) {
-    const reason = cause instanceof Error ? cause.message : String(cause);
-    return failed(`webhook 请求失败: ${reason}`);
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    return failed("reasonWebhookRequestFailed", { detail });
   }
   if (!response.ok) {
     let detail = "";
@@ -150,7 +152,7 @@ export async function sendWebhook(
     } catch {
       // 读不到响应体：状态码本身已是完整原因
     }
-    return failed(`webhook HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+    return failed("reasonWebhookHttp", { params: { status: response.status }, detail });
   }
   return { status: "ok", stage: "delivered" };
 }
@@ -177,12 +179,15 @@ export function clampTimeoutSec(value?: number): number {
   return Math.min(MAX_TIMEOUT_SEC, Math.max(MIN_TIMEOUT_SEC, Math.round(value)));
 }
 
-/** 失败结果：原因按展示上限截断（截断是展示语义，不是脱敏）。 */
-function failed(reason: string): DeliverResult {
+/** 失败结果：code 出文案、detail 存宿主原文；截断是展示语义，不是脱敏。 */
+function failed(
+  code: ReasonCode,
+  options: { readonly params?: ReasonParams; readonly detail?: string } = {},
+): DeliverResult {
   return {
     status: "failed",
     stage: "delivered",
-    reason: truncateCodePoints(reason, FAILURE_REASON_MAX),
+    reason: clampReasonDetail(reason(code, options), FAILURE_REASON_MAX),
     // 零重试是硬约束：失败即终态，交回管线也没有第二次
     retryable: false,
   };

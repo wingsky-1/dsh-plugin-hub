@@ -8,6 +8,16 @@ export type { FileWrite } from "./file-io.ts";
 export { readTextFileSync, writeTextAtomic, writeTextAtomicSync } from "./file-io.ts";
 export type { LoggerPort } from "./type.ts";
 export { truncateCodePoints } from "./text.ts";
+export type { DeliverReason, ProducedReason, ReasonCode, ReasonParams } from "./reason.ts";
+export {
+  REASON_CODES,
+  REASON_LEGACY,
+  clampReasonDetail,
+  normalizeReason,
+  reason,
+  reasonFromCause,
+  sameReasonShape,
+} from "./reason.ts";
 export {
   CONFIG_FILE_NAME,
   HISTORY_FILE_NAME,

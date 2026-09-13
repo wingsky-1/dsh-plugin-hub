@@ -3,12 +3,15 @@
 import type { UpgradeDeps } from "../../deps.ts";
 import type { UpgradeStep } from "../chain/type.ts";
 import { migrateConfigShape } from "./config-shape.ts";
+import { migrateReasonShape } from "./reason-shape.ts";
 import { migrateStorageLayout } from "./storage-layout.ts";
 
-/** 0.2.3 → 0.2.4：存储布局归位 + 配置形态割接——同一次版本迁移的两半，合成一步。 */
+/** 0.2.3 → 0.2.4：存储布局归位 + 配置形态割接 + 投递理由形态割接——同一次版本迁移的三半，合成一步。 */
 function migrateToNewLayout(deps: UpgradeDeps): void {
+  // 顺序有意义：布局归位先建出新位置的初始形态，理由割接才有文件可读（旧位置的文件已被搬走）。
   migrateStorageLayout();
   migrateConfigShape(deps.legacySettings);
+  migrateReasonShape();
 }
 
 /** 按目标版本升序维护；执行顺序由链驱动排序决定，此处顺序只为便于阅读。 */

@@ -82,7 +82,7 @@ describe("deliver：并发投递，逐目标 fail-soft", () => {
     expect(results[0]).toEqual({
       status: "failed",
       stage: "accepted",
-      reason: "帧出口已断开",
+      reason: { code: "reasonChannelThrew", detail: "帧出口已断开" },
       retryable: false,
     });
     expect(results[1]).toEqual({ status: "ok", stage: "accepted" });
@@ -104,7 +104,7 @@ describe("deliver：并发投递，逐目标 fail-soft", () => {
     expect(results[0]).toEqual({
       status: "failed",
       stage: "accepted",
-      reason: "未知投递目标类型: slack",
+      reason: { code: "reasonUnknownTarget", params: { kind: "slack" } },
       retryable: false,
     });
     expect(results[1]).toEqual({ status: "ok", stage: "accepted" });

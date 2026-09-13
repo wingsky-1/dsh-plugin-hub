@@ -7,8 +7,11 @@ import {
   readTextFileSync,
   writeTextAtomic,
   STATUS_FILE_NAME,
+  clampReasonDetail,
+  normalizeReason,
   notifierFile,
 } from "../../../shared/interface.ts";
+import type { ProducedReason } from "../../../shared/interface.ts";
 import type { ChannelStatusEntry, StatusDeps } from "./type.ts";
 
 /** 未装配时的占位：装配是必经路径，占位只是让字段不必每个使用点判空。 */
@@ -20,9 +23,9 @@ const STATUS_MAX_ENTRIES = 64;
 /** 落盘 debounce 窗口（毫秒）：窗口内的多次 record 合并为一次整文件写。 */
 const STATUS_DEBOUNCE_MS = 500;
 
-/** 错误摘要上限（字符）：摘要会随 GET /status 出到设置页，够定位问题即可。 */
+/** 宿主原文（`detail`）上限（字符）：摘要会随 GET /status 出到设置页，够定位问题即可。
+ * `code` / `params` 不受这条上限约束——它们是固定短标识，没有撑爆页面的风险。 */
 const STATUS_ERROR_LIMIT = 300;
-
 /** 待落盘状态：有改动尚未落盘时才持有定时器。 */
 type PendingFlush = { pending: false } | { pending: true; timer: ReturnType<typeof setTimeout> };
 
@@ -55,7 +58,7 @@ class StatusStore {
   }
 
   /** 记录一次投递终态：内存立即更新，落盘延后合并（失败仅经日志出口告警）。 */
-  record(channelId: string, status: "ok" | "failed", error?: string): void {
+  record(channelId: string, status: "ok" | "failed", error?: ProducedReason): void {
     this.loadFromDisk();
     const prev = this.mirror[channelId];
     const entry: ChannelStatusEntry = {
@@ -64,8 +67,8 @@ class StatusStore {
       // 连续失败计数跨重启延续：冷启动已把文件读进镜像，「上一次」因此就在 prev 里。
       failStreak: status === "ok" ? 0 : (prev === undefined ? 0 : prev.failStreak) + 1,
     };
-    if (status === "failed" && error !== undefined && error.length > 0) {
-      entry.lastError = error.slice(0, STATUS_ERROR_LIMIT);
+    if (status === "failed" && error !== undefined) {
+      entry.lastError = clampReasonDetail(error, STATUS_ERROR_LIMIT);
     }
     // 删了再插 = 移到表尾：镜像键序即最近使用序。频道 id 形如 `bark:<id>` 或内置通道名，
     // 不是整数样键——整数样键在对象里恒按数值升序枚举，回插改不动位置。
@@ -93,9 +96,10 @@ class StatusStore {
     const read = readTextFileSync(this.file);
     if (!read.ok) return;
     try {
-      const stored = JSON.parse(read.text) as Record<string, ChannelStatusEntry>;
+      const stored = JSON.parse(read.text) as Record<string, unknown>;
       for (const [channelId, entry] of Object.entries(stored)) {
-        if (isStatusEntry(entry)) this.mirror[channelId] = entry;
+        const normalized = normalizeEntry(entry);
+        if (normalized !== undefined) this.mirror[channelId] = normalized;
       }
     } catch {
       // 半截 JSON：从空表开始，下一次落盘会用完整内容覆盖它。
@@ -141,9 +145,27 @@ class StatusStore {
   }
 }
 
-/** 磁盘内容不受契约约束：只收「看起来是状态条目」的项，其余（陌生形态、半截值）丢掉。 */
-function isStatusEntry(entry: ChannelStatusEntry): boolean {
-  return typeof entry === "object" && entry !== null && typeof entry.lastTs === "number";
+/**
+ * 磁盘内容不受契约约束：只收「看起来是状态条目」的项，其余（陌生形态、半截值）丢掉。
+ *
+ * 值域也要校验，不能只看字段类型：`lastStatus` 是客户端直接画红绿的判据，把不认识的值透传出去
+ * 之后，旧客户端会把任何 ≠ `"ok"` 的值渲染成「最近投递失败 + 红点」——一次降级就凭空多出一条
+ * 故障。`lastError` 的旧形态（升级前写下的散文）在这里收编成结构化理由，读面因此不必再判两态。
+ */
+function normalizeEntry(entry: unknown): ChannelStatusEntry | undefined {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return undefined;
+  const source = entry as Record<string, unknown>;
+  if (typeof source.lastTs !== "number") return undefined;
+  if (source.lastStatus !== "ok" && source.lastStatus !== "failed") return undefined;
+  const normalized: ChannelStatusEntry = {
+    lastTs: source.lastTs,
+    lastStatus: source.lastStatus,
+    // 计数缺失（早于本字段的形态）按 0 起算：它只用于展示连续失败次数，不是判据。
+    failStreak: typeof source.failStreak === "number" ? source.failStreak : 0,
+  };
+  const lastError = normalizeReason(source.lastError);
+  if (lastError !== undefined) normalized.lastError = lastError;
+  return normalized;
 }
 
 /** 本域唯一的存储实例：类不外放，外面 `new` 不出第二份内存镜像。 */

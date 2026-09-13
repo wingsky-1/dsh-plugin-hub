@@ -3,6 +3,7 @@
  * 帧构造是本域唯一的跨端产物（散出去就有了第二份事实源）；帧交给出口即 accepted——
  * 页面弹没弹不是本域能证明的事。
  */
+import { reason } from "../../../shared/interface.ts";
 import { displayCaps, truncateCodePoints } from "../deliver/caps.ts";
 import type { DeliverResult, NotifyMessage, ToneSetting } from "../deliver/type.ts";
 import type { BrowserSound, BrowserTarget, NotifyFrame } from "./type.ts";
@@ -36,7 +37,7 @@ function buildFrame(message: NotifyMessage, target: BrowserTarget): NotifyFrame 
  */
 export function sendBrowser(target: BrowserTarget, message: NotifyMessage): DeliverResult {
   if (!target.popup && target.sound === false) {
-    return { status: "skipped", reason: "浏览器频道：弹窗与声音都已关闭" };
+    return { status: "skipped", reason: reason("reasonSkipConfig") };
   }
   target.emitFrame(buildFrame(message, target));
   return { status: "ok", stage: "accepted" };

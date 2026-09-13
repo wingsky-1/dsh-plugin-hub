@@ -1,10 +1,13 @@
 /**
  * dsh-notifier channels 域 —— 系统出口：探测平台能力、构造命令、执行命令。
- * 命令一律 `[bin, ...args]` 参数数组（零 shell 拼接）；弹窗半边的失败只记日志不翻转
- * 终态，「只响不弹」时自播失败才是这次投递失败。1 秒节流不在这里（归管线）。
+ * 命令一律 `[bin, ...args]` 参数数组（零 shell 拼接）。1 秒节流不在这里（归管线）。
+ *
+ * 终态判据分两条，不再用「零动作」当统一口径：**执行过动作而它失败了**就是失败（有失败证据）；
+ * **一条命令都构造不出来**是空动作（没有可失败环节），成因经 `reason` 的 code 带出去。
  */
-import type { LoggerPort } from "../../../shared/interface.ts";
-import { FAILURE_REASON_MAX, displayCaps, truncateCodePoints } from "../deliver/caps.ts";
+import type { LoggerPort, ReasonCode, ReasonParams } from "../../../shared/interface.ts";
+import { reason } from "../../../shared/interface.ts";
+import { displayCaps, truncateCodePoints } from "../deliver/caps.ts";
 import type { DeliverResult, NotifyMessage, ToneSetting } from "../deliver/type.ts";
 import { platformCapabilities, systemDeps } from "./deps.ts";
 import type { ChildHandle } from "./deps.ts";
@@ -196,46 +199,93 @@ function run(command: readonly string[], logger: LoggerPort, platform: string): 
   });
 }
 
-/** 弹窗与提示音是两个独立动作：弹窗那半边的失败只记日志，「只响不弹」时自播失败才算这次失败。 */
+/**
+ * 弹窗与提示音是两个独立动作，但**终态只有一个**：执行过动作而它失败了就翻转终态，一条命令都
+ * 构造不出来才是空动作。弹窗场景下自播失败不改终态——toast 已经出去了，声音是尽力而为。
+ */
 export async function sendSystem(
   target: SystemTarget,
   message: NotifyMessage,
 ): Promise<DeliverResult> {
   // 弹窗与提示音都关：投递发生过，但本次没有可执行的动作——「要不要投递」在管线（只看 `enabled`），
   // 这里是本出口对「发什么」的回答，所以不弹不响不该被记成一次投递成功。早退顺带省掉一次平台探测。
+  // 不留 warn：这是用户显式写下的意图，不是环境没能力；成因经 code 带出去，别把日志刷成噪声。
   if (!target.popup && target.sound === false) {
-    return { status: "skipped", reason: "系统频道：弹窗与声音都已关闭" };
+    return { status: "skipped", reason: reason("reasonSkipConfig") };
   }
   const probe = await platformCapabilities.get(target.toastScript, probePlatform);
   const selfPlay = shouldSelfPlay(target.popup, target.sound, probe.platform);
   const play = selfPlay ? buildSoundCommand(probe, toneOf(target.sound)) : [];
 
-  if (target.popup) {
-    const pop = buildSystemCommand(
-      probe,
-      truncateCodePoints(message.title, displayCaps.system.titleMax),
-      truncateCodePoints(message.body, displayCaps.system.bodyMax),
-      { sound: target.sound, selfPlay, toastScript: target.toastScript },
-    );
-    // 弹窗半边的 spawn 结果只记日志（run 内 warn）：无桌面会话、无 notify-send 是常态
-    // 环境，不是投递失败；弹窗场景下自播失败也忽略（toast 已出去，声音尽力而为）
-    if (pop.length === 0 && probe.platform === "win32" && !probe.toastScriptAvailable) {
-      // 脚本缺失是打包缺陷而非环境常态：命令都没构造出来，得留一条痕迹
-      const reason = `dsh-notifier: 系统通知脚本缺失，Windows 弹窗未发出：${target.toastScript}`;
-      target.logger.warn(reason);
-    }
-    if (pop.length > 0) await run(pop, target.logger, probe.platform);
-    if (play.length > 0) await run(play, target.logger, probe.platform);
-    return { status: "ok", stage: "delivered" };
+  if (!target.popup) {
+    // 只响不弹：声音是唯一动作。`!selfPlay` 只可能是枚举外的平台（三平台里 linux 恒自播，
+    // darwin / win32 在 `!pop` 时都自播）；它和「放不出声」是同一件事：本次没有可执行的动作。
+    if (!selfPlay || play.length === 0) return unexecutable(target, probe);
+    return (await run(play, target.logger, probe.platform))
+      ? delivered()
+      : failed("reasonSystemSoundFailed", { bin: commandNameOf(play) });
   }
-  if (!selfPlay) {
-    // 既不弹也不响：上面那道早退之后这里已不可达，留作「没有可失败环节」的兜底
-    return { status: "ok", stage: "delivered" };
-  }
-  // 只响不弹：声音是唯一动作，平台放不出声或播放失败都是这次投递的失败
-  if (play.length === 0) return failed("本平台没有可用的系统通知通道");
-  const played = await run(play, target.logger, probe.platform);
-  return played ? { status: "ok", stage: "delivered" } : failed("系统命令执行失败");
+
+  const pop = buildSystemCommand(
+    probe,
+    truncateCodePoints(message.title, displayCaps.system.titleMax),
+    truncateCodePoints(message.body, displayCaps.system.bodyMax),
+    { sound: target.sound, selfPlay, toastScript: target.toastScript },
+  );
+  // 两条都跑：弹窗失败不该顺手把声音也丢掉（用户至少还能听见）。顺序是先弹后响。
+  const popRan = pop.length > 0;
+  const popOk = popRan ? await run(pop, target.logger, probe.platform) : true;
+  const playRan = play.length > 0;
+  const playOk = playRan ? await run(play, target.logger, probe.platform) : true;
+
+  // 空动作优先判：一条命令都没构造出来时，下面两条「失败」都无从谈起。这一格旧实现在
+  // linux / darwin 上是零输出、零状态、零日志——正是本次要修的静默。
+  const nothingRan = !popRan && !playRan;
+  if (nothingRan) return unexecutable(target, probe);
+  // 弹窗没构造出来而声音还在跑：win32 的脚本缺失是**打包缺陷**，不能被「这次还有声音」盖掉
+  // ——旧实现在这一格是无条件出声的。与上面的空动作互斥，故两者相加仍是恰好一条。
+  if (!popRan && toastScriptMissing(probe)) target.logger.warn(toastScriptMissingWarn(target));
+  // 弹窗命令非空说明工具确实在：它的非零退出是真失败，不再是「无桌面会话」那类常态环境
+  // （后者走的是 `!notifySendAvailable`，命令根本构造不出来）。
+  if (!popOk) return failed("reasonSystemPopupFailed", { bin: commandNameOf(pop) });
+  // 声音只在它是本次唯一动作时才翻转终态；toast 已经出去时声音是尽力而为。
+  if (!playOk && !popRan) return failed("reasonSystemSoundFailed", { bin: commandNameOf(play) });
+  return delivered();
+}
+
+/**
+ * 空动作的收口：本次没有可执行的动作，留**恰好一条** warn。旧实现把这条 warn 硬编码在 win32
+ * 分支上，于是 linux / darwin 的同一格完全静默——「推成功却没声音」的最直接来源。
+ */
+function unexecutable(target: SystemTarget, probe: PlatformProbe): DeliverResult {
+  target.logger.warn(
+    toastScriptMissing(probe)
+      ? toastScriptMissingWarn(target)
+      : `dsh-notifier: 系统频道没有可执行的动作，通知未发出（平台 ${probe.platform}）`,
+  );
+  // 成因分两种：脚本缺失是插件自己的打包缺陷，其余是宿主环境没能力。两者都不该被当成
+  // 「用户自己关的」，但让它们共用一个 code 会把打包缺陷说成环境问题，故分开。
+  return {
+    status: "skipped",
+    reason: reason(
+      toastScriptMissing(probe) ? "reasonSystemToastScriptMissing" : "reasonSkipEnvironment",
+    ),
+  };
+}
+
+/** win32 的 toast 脚本不在：命令根本构造不出来。它是打包缺陷，不是用户的桌面环境问题。 */
+function toastScriptMissing(probe: PlatformProbe): boolean {
+  return probe.platform === "win32" && !probe.toastScriptAvailable;
+}
+
+/** 打包缺陷的告警文案：要指向那个文件，否则「弹窗没出来」无从查起。 */
+function toastScriptMissingWarn(target: SystemTarget): string {
+  return `dsh-notifier: 系统通知脚本缺失，Windows 弹窗未发出：${target.toastScript}`;
+}
+
+/** 命令的 bin 名：失败理由带上它，设置页才看得出是哪条命令没跑成。 */
+function commandNameOf(command: readonly string[]): string {
+  return command[0] ?? "unknown";
 }
 
 /** 声音选择 → 自播目标音色（true = 各平台的跟随系统默认音）。 */
@@ -243,13 +293,20 @@ function toneOf(sound: ToneSetting): string {
   return typeof sound === "string" ? sound : "default";
 }
 
-/** 失败结果：原因按展示上限截断（截断是展示语义，不是脱敏）。 */
-function failed(reason: string): DeliverResult {
+/** 成功结果：两个分支共用同一形状。 */
+function delivered(): DeliverResult {
+  return { status: "ok", stage: "delivered" };
+}
+
+/**
+ * 失败结果：有失败证据就必须翻转终态。不可重试——平台能力与命令退出码不会因为重投而改变，
+ * 换一次投递还是同样的结论。
+ */
+function failed(code: ReasonCode, params?: ReasonParams): DeliverResult {
   return {
     status: "failed",
     stage: "delivered",
-    reason: truncateCodePoints(reason, FAILURE_REASON_MAX),
-    // 平台能力与命令退出码不会因为重投而改变：换一次投递还是同样的结论
+    reason: reason(code, params === undefined ? undefined : { params }),
     retryable: false,
   };
 }

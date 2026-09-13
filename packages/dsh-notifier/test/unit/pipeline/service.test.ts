@@ -15,6 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
 import type { NotifyConfig } from "../../../src/server/config/impl/model/type.ts";
+import type { DeliverReason } from "../../../src/server/shared/interface.ts";
 import type {
   ChannelsPort,
   HistoryEntry,
@@ -48,7 +49,7 @@ interface Harness {
   readonly statuses: Array<{
     channelId: string;
     status: "ok" | "failed";
-    error: string | undefined;
+    error: DeliverReason | undefined;
   }>;
   readonly delivered: Array<{ message: NotifyMessage; targets: readonly DeliveryTarget[] }>;
   readonly frames: OutgoingFrame[];

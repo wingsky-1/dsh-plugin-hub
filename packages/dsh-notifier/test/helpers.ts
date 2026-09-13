@@ -16,7 +16,7 @@ import type { Agent } from "@deepseek-ai/dsh-agent";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { DeliverResult } from "../src/server/channels/impl/deliver/type.ts";
 import type { AgentRegistryPort } from "../src/server/events/deps.ts";
-import type { LoggerPort } from "../src/server/shared/interface.ts";
+import type { DeliverReason, LoggerPort } from "../src/server/shared/interface.ts";
 
 /**
  * 临时改写环境变量，返回还原函数。
@@ -176,7 +176,8 @@ export function makeRegister(): {
 }
 
 /** 取失败明细的 reason。成功结果说明用例前提不成立：当场炸掉，别让断言落在一个不存在的事实上。 */
-export function reasonOf(result: DeliverResult): string {
+/** 取失败结果的结构化理由；非失败同上处理。断言打在 code / params / detail 上，不打在散文上。 */
+export function reasonOf(result: DeliverResult): DeliverReason {
   if (result.status !== "failed") throw new Error(`期望失败，实际 ${result.status}`);
   return result.reason;
 }

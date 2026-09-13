@@ -13,7 +13,7 @@ export interface SystemTarget {
   sound: ToneSetting;
   /** 系统通知脚本路径（由调用方推导后传入）。 */
   toastScript: string;
-  /** 日志出口：弹窗那半边的失败只记日志，不翻转终态。 */
+  /** 日志出口：命令的失败细节（bin、退出码、stderr 尾部）只经这里出声，不另存一份。 */
   logger: LoggerPort;
 }
 

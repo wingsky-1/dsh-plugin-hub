@@ -23,7 +23,8 @@
   },
   "dsh": {
     "bundle": {
-      "patch": "./cordis.patch.yml"
+      "patch": "./cordis.patch.yml",
+      "bannerJs": "import { createRequire as __notifierRequire } from \"node:module\";\nconst require = __notifierRequire(import.meta.url);"
     },
     "client": {
       "inject": [

@@ -197,7 +197,10 @@ describe("投递：凭据只走请求头，失败即终态", () => {
     const result = await sendWebhook(targetOf({ template: "{" }), messageOf());
     expect(result.status).toBe("failed");
     expect(retryableOf(result)).toBe(false);
-    expect(reasonOf(result)).toContain("webhook 模板不是合法 JSON");
+    const reason = reasonOf(result);
+    expect(reason.code).toBe("reasonWebhookTemplateInvalid");
+    // 宿主原文（JSON.parse 的报错）不作主文案，但必须留下来供定位
+    expect(reason.detail).toContain("webhook 模板不是合法 JSON");
     expect(calls).toHaveLength(0);
   });
 
@@ -206,14 +209,21 @@ describe("投递：凭据只走请求头，失败即终态", () => {
     stubFetch(() => new Response("nope", { status: 401 }));
     const unauthorized = await sendWebhook(targetOf(), messageOf());
     expect(unauthorized).toMatchObject({ status: "failed", stage: "delivered", retryable: false });
-    expect(reasonOf(unauthorized)).toBe("webhook HTTP 401: nope");
+    expect(reasonOf(unauthorized)).toEqual({
+      code: "reasonWebhookHttp",
+      params: { status: 401 },
+      detail: "nope",
+    });
 
     stubFetch(() => {
       throw new Error("ECONNREFUSED");
     });
     const offline = await sendWebhook(targetOf(), messageOf());
     expect(retryableOf(offline)).toBe(false);
-    expect(reasonOf(offline)).toBe("webhook 请求失败: ECONNREFUSED");
+    expect(reasonOf(offline)).toEqual({
+      code: "reasonWebhookRequestFailed",
+      detail: "ECONNREFUSED",
+    });
   });
 
   // AbortSignal.timeout 只接受有限非负数：NaN 与负数都当场抛 RangeError，异常冒到 fetch 的
@@ -250,6 +260,7 @@ describe("投递：凭据只走请求头，失败即终态", () => {
       throw new Error("长".repeat(400));
     });
     const result = await sendWebhook(targetOf(), messageOf());
-    expect(Array.from(reasonOf(result))).toHaveLength(300);
+    expect(reasonOf(result).code).toBe("reasonWebhookRequestFailed");
+    expect(Array.from(reasonOf(result).detail ?? "")).toHaveLength(300);
   });
 });

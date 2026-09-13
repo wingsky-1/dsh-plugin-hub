@@ -194,7 +194,12 @@ describe("失败分类：只回答可不可重试，不自己重投", () => {
     );
     const rejected = await sendBark(targetOf(), messageOf());
     expect(rejected).toMatchObject({ status: "failed", stage: "delivered", retryable: true });
-    expect(reasonOf(rejected)).toBe("bark code 400: invalid device key");
+    // 业务码与宿主原文分开断言：文案归客户端字典，服务端只负责这两段数据不串味。
+    expect(reasonOf(rejected)).toEqual({
+      code: "reasonBarkRejected",
+      params: { code: "400" },
+      detail: "invalid device key",
+    });
     // 出口只投一次：重投决定权在管线（它看 retryable），出口自己不许偷偷重试。
     expect(businessCode).toHaveLength(1);
 
@@ -216,20 +221,32 @@ describe("失败分类：只回答可不可重试，不自己重投", () => {
     const client = stubFetch(() => new Response("bad token", { status: 400 }));
     const rejected = await sendBark(targetOf(), messageOf());
     expect(retryableOf(rejected)).toBe(false);
-    expect(reasonOf(rejected)).toBe("bark HTTP 400: bad token");
+    expect(reasonOf(rejected)).toEqual({
+      code: "reasonBarkHttp",
+      params: { status: 400 },
+      detail: "bad token",
+    });
     expect(client).toHaveLength(1);
 
     const server = stubFetch(() => new Response("boom", { status: 503 }));
     const serverError = await sendBark(targetOf(), messageOf());
     expect(retryableOf(serverError)).toBe(true);
-    expect(reasonOf(serverError)).toBe("bark HTTP 503: boom");
+    expect(reasonOf(serverError)).toEqual({
+      code: "reasonBarkHttp",
+      params: { status: 503 },
+      detail: "boom",
+    });
     expect(server).toHaveLength(1);
 
     // 边界取 500 本身：判据写成 `> 500` 会把恰好 500 的服务端故障当成终态，静默丢掉一次可恢复的失败。
     const exactly500 = stubFetch(() => new Response("boom", { status: 500 }));
     const serverFault = await sendBark(targetOf(), messageOf());
     expect(retryableOf(serverFault)).toBe(true);
-    expect(reasonOf(serverFault)).toBe("bark HTTP 500: boom");
+    expect(reasonOf(serverFault)).toEqual({
+      code: "reasonBarkHttp",
+      params: { status: 500 },
+      detail: "boom",
+    });
     expect(exactly500).toHaveLength(1);
 
     stubFetch(
@@ -240,7 +257,11 @@ describe("失败分类：只回答可不可重试，不自己重投", () => {
           text: () => Promise.reject(new Error("响应体读取中断")),
         }) as unknown as Response,
     );
-    expect(reasonOf(await sendBark(targetOf(), messageOf()))).toBe("bark HTTP 503");
+    // 读不到响应体时 detail 缺席（不是空串）：状态码本身已是完整原因
+    expect(reasonOf(await sendBark(targetOf(), messageOf()))).toEqual({
+      code: "reasonBarkHttp",
+      params: { status: 503 },
+    });
   });
 
   // 网络失败被判成终态就是静默丢通知；原因不封顶会把状态页撑爆。
@@ -251,8 +272,11 @@ describe("失败分类：只回答可不可重试，不自己重投", () => {
     const offline = await sendBark(targetOf(), messageOf());
     expect(offline.status).toBe("failed");
     expect(retryableOf(offline)).toBe(true);
-    expect(reasonOf(offline)).toBe("bark 请求失败: " + "长".repeat(289));
-    expect(reasonOf(offline)).toHaveLength(300);
+    expect(reasonOf(offline)).toEqual({
+      code: "reasonBarkRequestFailed",
+      detail: "长".repeat(300),
+    });
+    expect(reasonOf(offline).detail).toHaveLength(300);
 
     stubFetch(
       () =>
@@ -265,6 +289,9 @@ describe("失败分类：只回答可不可重试，不自己重投", () => {
     const interrupted = await sendBark(targetOf(), messageOf());
     expect(interrupted.status).toBe("failed");
     expect(retryableOf(interrupted)).toBe(true);
-    expect(reasonOf(interrupted)).toBe("bark 响应体读取失败: terminated");
+    expect(reasonOf(interrupted)).toEqual({
+      code: "reasonBarkBodyUnreadable",
+      detail: "terminated",
+    });
   });
 });

@@ -3,6 +3,7 @@
  * （滚动上限、按天过滤、内存镜像优先）也由本域兜住。契约里没有任何句柄：外面拿不到实例就造不出第二份写队列。
  */
 import type { StoreDeps } from "./deps.ts";
+import type { ProducedReason } from "../shared/interface.ts";
 import { historyStore } from "./impl/history/index.ts";
 import type { HistoryEntry } from "./impl/history/type.ts";
 import { statusStore } from "./impl/status/index.ts";
@@ -44,8 +45,12 @@ export async function clearHistory(): Promise<number> {
   return historyStore.clear();
 }
 
-/** 写入：记录一次频道投递终态（错误文本会落盘并被设置页读出，不要放凭据）。 */
-export function recordStatus(channelId: string, status: "ok" | "failed", error?: string): void {
+/** 写入：记录一次频道投递终态（失败理由会落盘并被设置页读出，不要放凭据）。 */
+export function recordStatus(
+  channelId: string,
+  status: "ok" | "failed",
+  error?: ProducedReason,
+): void {
   statusStore.record(channelId, status, error);
 }
 

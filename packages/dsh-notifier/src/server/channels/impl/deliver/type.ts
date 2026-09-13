@@ -1,4 +1,5 @@
 /** dsh-notifier channels 域 —— 投递的输入输出形状（消息与结果是投递这件事的两端）。 */
+import type { ProducedReason } from "../../../shared/interface.ts";
 
 /** 展示强度（severity 仅展示；过滤语义归 kind）。 */
 export type NotifySeverity = "info" | "success" | "warning" | "failure";
@@ -19,9 +20,9 @@ export type DeliverStage = "accepted" | "delivered";
 export type DeliverResult =
   | { status: "ok"; stage: DeliverStage }
   // 出口按配置判定「这一次没有可发的内容」：投递发生过，但没有动作，也没有可失败的环节
-  | { status: "skipped"; reason: string }
+  | { status: "skipped"; reason: ProducedReason }
   // retryable 是出口对失败的分类，不是它自己去重试：次数、退避与在途上限全在管线
-  | { status: "failed"; stage: DeliverStage; reason: string; retryable: boolean };
+  | { status: "failed"; stage: DeliverStage; reason: ProducedReason; retryable: boolean };
 
 /**
  * 铃声设置（投递层词汇）：false = 不发声；true = 跟随系统默认；字符串 = 指定音色。

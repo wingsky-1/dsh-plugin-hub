@@ -116,7 +116,13 @@ describe("读取语义", () => {
     const written = entry({
       kind: "demo:report",
       suppressed: "quiet",
-      channels: [{ channelId: "bark:phone", status: "failed", reason: "timeout" }],
+      channels: [
+        {
+          channelId: "bark:phone",
+          status: "failed",
+          reason: { code: "reasonBarkRequestFailed", detail: "timeout" },
+        },
+      ],
     });
     appendHistory(written);
     await pollUntil(() => lines().some((line) => line.includes("demo:report")), "历史记录落盘");
@@ -131,7 +137,57 @@ describe("读取语义", () => {
     expect(records[0].message).toBe("正文");
     expect(records[0].suppressed).toBe("quiet");
     expect(records[0].channels?.[0]?.channelId).toBe("bark:phone");
-    expect(records[0].channels?.[0]?.reason).toBe("timeout");
+    expect(records[0].channels?.[0]?.reason).toEqual({
+      code: "reasonBarkRequestFailed",
+      detail: "timeout",
+    });
+  });
+
+  // 升级前的行存的是散文。读面必须把它收编成结构化理由，否则客户端要为「同一字段两种形态」
+  // 各写一遍渲染，而任何一处漏判都会让界面显示 undefined。
+  it("旧行（reason 是散文）读回时收编成 reasonLegacy + detail：客户端只认一种形态", async () => {
+    assemble();
+    writeHistoryFile(
+      `${JSON.stringify({
+        ts: Date.now(),
+        kind: "done",
+        title: "旧",
+        message: "正文",
+        channels: [{ channelId: "bark:phone", status: "failed", reason: "timeout" }],
+      })}\n`,
+    );
+
+    const records = await readHistory();
+    expect(records).toHaveLength(1);
+    expect(records[0].channels?.[0]?.reason).toEqual({
+      code: "reasonLegacy",
+      detail: "timeout",
+    });
+  });
+
+  // 值域校验分两层：`status` 是判据，值域外整条丢；`reason` 只是解释，读不出就只丢解释，
+  // 明细本身仍然如实交出去（把一条真发生过的失败整条抹掉，比少一句解释糟得多）。
+  it("读面校验值域：陌生 status 整条丢，读不出 code 的理由只丢理由", async () => {
+    assemble();
+    writeHistoryFile(
+      `${JSON.stringify({
+        ts: Date.now(),
+        kind: "done",
+        title: "旧",
+        message: "正文",
+        channels: [
+          { channelId: "bark:phone", status: "unknown" },
+          { channelId: "bark:other", status: "failed", reason: { noCode: true } },
+          { channelId: "bark:ok", status: "ok" },
+        ],
+      })}\n`,
+    );
+
+    const records = await readHistory();
+    expect(records[0].channels).toEqual([
+      { channelId: "bark:other", status: "failed" },
+      { channelId: "bark:ok", status: "ok" },
+    ]);
   });
 
   it("连续 append 不互相覆盖、顺序保持（写队列串行化的唯一理由：并发「读-改-写」会丢记录）", async () => {

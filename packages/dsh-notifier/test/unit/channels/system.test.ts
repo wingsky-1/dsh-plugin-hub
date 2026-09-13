@@ -520,7 +520,10 @@ describe("探测缓存：同端口只探一次，换端口必复位", () => {
     const win = fakeDeps({ platform: "win32", present: [] });
     installSystemDeps(win);
     const second = new SystemDelivery();
-    expect(await second.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(await second.send()).toEqual({
+      status: "skipped",
+      reason: { code: "reasonSystemToastScriptMissing" },
+    });
     expect(second.warns).toEqual([
       `dsh-notifier: 系统通知脚本缺失，Windows 弹窗未发出：${TOAST_SCRIPT}`,
     ]);
@@ -538,21 +541,28 @@ describe("探测缓存：同端口只探一次，换端口必复位", () => {
 });
 
 describe("命令执行：任何结局都收敛成投递结果", () => {
-  // spawn 抛错时没人接住就是宿主进程崩；弹窗半边只记日志，「只响不弹」才是这次投递失败。
-  it("spawn 同步抛错：弹窗半边只记日志，只响不弹时判投递失败", async () => {
+  // spawn 抛错时没人接住就是宿主进程崩。命令构造出来了就说明那个工具确实在，它的启动失败是
+  // 真失败——旧实现把弹窗半边只记进日志，于是「推成功却没弹也没响」；bin 名进参数，设置页才指
+  // 得出是哪条命令没跑成。
+  it("spawn 同步抛错：弹窗命令失败判投递失败，只响不弹时同样判失败且带 bin 名", async () => {
     const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
     fake.spawnFailure = "argv 非法";
     installSystemDeps(fake);
 
     const pop = new SystemDelivery();
-    expect(await pop.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(await pop.send()).toEqual({
+      status: "failed",
+      stage: "delivered",
+      reason: { code: "reasonSystemPopupFailed", params: { bin: "notify-send" } },
+      retryable: false,
+    });
     expect(pop.warns).toEqual(["dsh-notifier: 命令启动失败（notify-send）: argv 非法"]);
 
     const soundOnly = new SystemDelivery({ popup: false, sound: "ding" });
     expect(await soundOnly.send()).toEqual({
       status: "failed",
       stage: "delivered",
-      reason: "系统命令执行失败",
+      reason: { code: "reasonSystemSoundFailed", params: { bin: "pw-play" } },
       retryable: false,
     });
     expect(soundOnly.warns).toEqual(["dsh-notifier: 命令启动失败（pw-play）: argv 非法"]);
@@ -566,7 +576,12 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
     installSystemDeps(fake);
     const delivery = new SystemDelivery();
 
-    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(await delivery.send()).toEqual({
+      status: "failed",
+      stage: "delivered",
+      reason: { code: "reasonSystemPopupFailed", params: { bin: "notify-send" } },
+      retryable: false,
+    });
     expect(delivery.warns).toEqual(["dsh-notifier: 命令启动失败（notify-send）: argv 非法"]);
   });
 
@@ -597,7 +612,7 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
     expect(await pending).toEqual({
       status: "failed",
       stage: "delivered",
-      reason: "系统命令执行失败",
+      reason: { code: "reasonSystemSoundFailed", params: { bin: "pw-play" } },
       retryable: false,
     });
     // 600 字的尾部已越过收集上限，第二段不再进缓冲；进日志的是截到 300 字的那一段。
@@ -635,7 +650,7 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
     expect(await pending).toEqual({
       status: "failed",
       stage: "delivered",
-      reason: "系统命令执行失败",
+      reason: { code: "reasonSystemSoundFailed", params: { bin: "pw-play" } },
       retryable: false,
     });
     expect(delivery.warns).toEqual(["dsh-notifier: 命令不可用（pw-play）: spawn pw-play ENOENT"]);
@@ -746,7 +761,9 @@ describe("兜底杀进程（假时钟，不真等 8 秒）", () => {
     const second = new SystemDelivery().send();
     await vi.advanceTimersByTimeAsync(0);
     errored.children[0]!.emitError(new Error("ENOENT"));
-    expect((await second).status).toBe("ok");
+    // 本用例守的是定时器：error 先到即清掉兜底杀进程。终态本身按新规则是失败
+    // （弹窗命令非空 ⇒ 工具在，error 事件就是它的真失败）。
+    expect((await second).status).toBe("failed");
     await vi.advanceTimersByTimeAsync(10_000);
     expect(errored.children[0]!.killCount).toBe(0);
   });
@@ -767,15 +784,38 @@ describe("sendSystem：弹窗与自播的编排", () => {
     expect(delivery.warns).toEqual([]);
   });
 
-  // 无桌面会话、无 notify-send 是常态环境：这里不是失败，也不该留日志。
-  it("linux 探测不到 notify-send：不弹也不留 warn，投递仍是成功", async () => {
+  // 无桌面会话、无 notify-send 是常态环境：不是投递失败，但也**不是成功**——本次一条命令都没
+  // 构造出来。旧实现既报 ok 又零日志，「推成功却没声音」由此完全不可查。
+  it("linux 探测不到 notify-send：收成 skipped(environment) 并留恰好一条 warn，不起进程", async () => {
     const fake = fakeDeps({ available: [] });
     installSystemDeps(fake);
     const delivery = new SystemDelivery({ popup: true, sound: false });
 
-    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(await delivery.send()).toEqual({
+      status: "skipped",
+      reason: { code: "reasonSkipEnvironment" },
+    });
     expect(fake.spawned).toEqual([]);
-    expect(delivery.warns).toEqual([]);
+    expect(delivery.warns).toEqual([
+      "dsh-notifier: 系统频道没有可执行的动作，通知未发出（平台 linux）",
+    ]);
+  });
+
+  // darwin 无桌面会话时 osascript 仍在但音色文件不在，同样是「一条命令都构造不出来」。
+  // warn 去平台硬编码之前，这一格在 darwin 上是**零输出**——与 linux 那格同一个成因。
+  it("darwin 只响不弹但音色文件缺失：同样收成 skipped 且留一条 warn（不再是零日志）", async () => {
+    const fake = fakeDeps({ platform: "darwin", present: [] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: false, sound: true });
+
+    expect(await delivery.send()).toEqual({
+      status: "skipped",
+      reason: { code: "reasonSkipEnvironment" },
+    });
+    expect(fake.spawned).toEqual([]);
+    expect(delivery.warns).toEqual([
+      "dsh-notifier: 系统频道没有可执行的动作，通知未发出（平台 darwin）",
+    ]);
   });
 
   // 脚本缺失是打包缺陷而非环境常态：命令都没构造出来，得留一条能查的痕迹。
@@ -784,11 +824,44 @@ describe("sendSystem：弹窗与自播的编排", () => {
     installSystemDeps(fake);
     const delivery = new SystemDelivery({ popup: true, sound: false });
 
-    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(await delivery.send()).toEqual({
+      status: "skipped",
+      // 打包缺陷有自己的 code：与「宿主环境没能力」共用一个会把插件的问题说成用户桌面环境的问题
+      reason: { code: "reasonSystemToastScriptMissing" },
+    });
+    // 恰好一条：这条平台专属文案与通用的「没有可执行的动作」互斥，同一个成因不许出两条日志
     expect(delivery.warns).toEqual([
       `dsh-notifier: 系统通知脚本缺失，Windows 弹窗未发出：${TOAST_SCRIPT}`,
     ]);
     expect(fake.spawned).toEqual([]);
+  });
+
+  // 回归保护：打包缺陷的 warn 不能被「这次还有声音可放」盖掉。旧实现在弹窗分支无条件出声，
+  // 改成「只在一条命令都没有时出声」后，这一格会退化成零日志——弹窗没出现而用户查不到原因。
+  it("win32 脚本缺失但指定音色能播：投递仍成功，脚本缺失的 warn 不得消失（恰好一条）", async () => {
+    const wav = String.raw`C:\Windows\Media\Windows Ding.wav`;
+    const fake = fakeDeps({ platform: "win32", present: [wav] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: true, sound: "ding" });
+
+    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(delivery.warns).toEqual([
+      `dsh-notifier: 系统通知脚本缺失，Windows 弹窗未发出：${TOAST_SCRIPT}`,
+    ]);
+    // 只有声音那条命令真的起了进程：弹窗命令根本没构造出来
+    expect(fake.spawned.map((record) => record.command[0])).toEqual(["powershell"]);
+    expect(fake.spawned.map((record) => record.command)).toEqual([
+      [
+        "powershell",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$p=$args[0]; (New-Object System.Media.SoundPlayer $p).PlaySync()",
+        wav,
+      ],
+    ]);
   });
 
   // 用户文本一旦进 argv 就是命令注入面；stderr 管道漏接则 PS 的诊断全丢。
@@ -840,42 +913,63 @@ describe("sendSystem：弹窗与自播的编排", () => {
 
     expect(await delivery.send()).toEqual({
       status: "skipped",
-      reason: "系统频道：弹窗与声音都已关闭",
+      reason: { code: "reasonSkipConfig" },
     });
     expect(fake.spawned).toEqual([]);
     expect(fake.probed).toEqual([]);
     expect(fake.checked).toEqual([]);
+    // config 成因不留 warn：那是用户写下的意图，不是环境没能力；留日志只会把日志刷成噪声。
+    // 它与 environment 的区分全在 code 上（两个成因必须分得开，见下一条断言）。
     expect(delivery.warns).toEqual([]);
   });
 
-  // 只响不弹时声音是唯一动作：放不出声就是这次投递失败，且重投还是同样结论（不可重试）。
-  it("只响不弹但平台放不出声：判失败并给出原因，且不可重试", async () => {
+  // 只响不弹但放不出声：本次**没有可执行的动作**（不是「执行过而失败」），故收成 skipped 而不是
+  // failed——终态判据是「有没有失败证据」，不是「用户期望落空」。成因写明是环境缺能力。
+  it("只响不弹但平台放不出声：收成 skipped(environment)，不起进程并留一条 warn", async () => {
     const fake = fakeDeps({ available: ["notify-send"] });
     installSystemDeps(fake);
     const delivery = new SystemDelivery({ popup: false, sound: true });
 
     expect(await delivery.send()).toEqual({
-      status: "failed",
-      stage: "delivered",
-      reason: "本平台没有可用的系统通知通道",
-      retryable: false,
+      status: "skipped",
+      reason: { code: "reasonSkipEnvironment" },
     });
     expect(fake.spawned).toEqual([]);
+    expect(delivery.warns).toEqual([
+      "dsh-notifier: 系统频道没有可执行的动作，通知未发出（平台 linux）",
+    ]);
   });
 
-  // 音色文件在、播放器一个都没有（探测全落空）：同样判「放不出声」，而不是 spawn 一个空 argv。
-  it("只响不弹且没有任何播放器：判失败，不起空命令", async () => {
+  // 枚举外的平台：`shouldSelfPlay` 在兜底行返回 false，popup 又是关的——一条动作都没有。
+  // 这一格旧实现走的是「既不弹也不响 → ok」，正是本次要修的那类假成功。
+  it("枚举外平台（freebsd）且只响不弹：走无人可执行的兜底，收成 skipped 而不是 ok", async () => {
+    const fake = fakeDeps({ platform: "freebsd", available: ["notify-send"] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: false, sound: true });
+
+    expect(await delivery.send()).toEqual({
+      status: "skipped",
+      reason: { code: "reasonSkipEnvironment" },
+    });
+    expect(fake.spawned).toEqual([]);
+    expect(delivery.warns).toEqual([
+      "dsh-notifier: 系统频道没有可执行的动作，通知未发出（平台 freebsd）",
+    ]);
+  });
+
+  // 音色文件在、播放器一个都没有（探测全落空）：命令构造不出来就是空动作，而不是 spawn 一个
+  // 空 argv，也不该报 failed（没有失败证据）。
+  it("只响不弹且没有任何播放器：收成 skipped(environment)，不起空命令", async () => {
     const fake = fakeDeps({ available: ["notify-send"], present: [LINUX_DING_FILE] });
     installSystemDeps(fake);
     const delivery = new SystemDelivery({ popup: false, sound: "ding" });
 
     expect(await delivery.send()).toEqual({
-      status: "failed",
-      stage: "delivered",
-      reason: "本平台没有可用的系统通知通道",
-      retryable: false,
+      status: "skipped",
+      reason: { code: "reasonSkipEnvironment" },
     });
     expect(fake.spawned).toEqual([]);
+    expect(delivery.warns).toHaveLength(1);
   });
 
   // win32 的播放骨架读 $args[0]：路径若拼进命令串，白名单就形同虚设。

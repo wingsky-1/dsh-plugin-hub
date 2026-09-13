@@ -311,8 +311,21 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 
 投递可靠性：10s 硬超时、网络错误/5xx 重试 ×2（4xx 不重试）、实例级在途并发 ≤2
 （内置频道不受限）；成功判定双查 HTTP 2xx + 响应体 `code===200`。
-投递终态（成功/失败 + 错误摘要）落盘到本插件的状态文件（见下「存储布局」），设置页
+投递终态落盘到本插件的状态文件（见下「存储布局」），设置页
 频道卡状态行在卡片加载与发送测试后经 `GET /api/dsh-notifier/status` 刷新（无轮询，D20 口径）。
+
+**终态有三种，判据不同（0.2.4）**：`ok` = 有出口真的执行了动作并成功；`failed` = 执行过动作
+而它失败（有失败证据，写状态行）；`skipped` = 这次**没有任何可执行的动作**（弹窗与声音都被关，
+或本机给不出命令）。系统频道的弹窗与提示音是两个独立动作：**弹窗已经出去之后，声音失败只算
+尽力而为，不改终态**（此时声音不是本次唯一动作）；反过来弹窗失败仍然翻转终态。`skipped` **不写状态行**——出口这次什么都没做，没有「最后一次投递结论」
+可言，写成功等于替它宣称成功。所以「状态行还是绿的」并不代表这一条送到了：**通知记录 tab**
+里每条记录都带逐出口投递明细（哪个出口、什么结论、什么理由），那是唯一的逐条可见面。
+
+**投递理由是结构化的（0.2.4）**：`{ code, params?, detail? }`——`code` 由客户端字典渲染成当前
+语言，`detail` 存宿主原文（HTTP 响应体、stderr 尾部、JSON.parse 报错）且**不作主文案**，界面上
+折叠展示并标注「来自宿主原文」。升级会把 `status.json` / `history.jsonl` 里升级前的散文理由
+收编成 `code: "reasonLegacy"` + 原句进 `detail`（幂等；读面同时容错，手改过的文件不会让界面
+显示 `undefined`）。
 
 > **存储布局（#733 收敛）**：配置、通知历史、频道状态、SSE 序号与存储版本号统一放在
 > `DSH_HOME/@wingsky-1/dsh-notifier/` 下——`config.json` / `history.jsonl` /
@@ -363,7 +376,7 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 
 渲染语义（JSON-aware 两步法）：先把 `{{ts}}` 替换为数字字面量 → 模板整体 `JSON.parse` → 树遍历仅对**字符串值**做占位符替换 → 重新 `JSON.stringify`。替换发生在已解析字符串内部、重新序列化时统一转义——通知内容含引号 / `"}}` 也无法逃逸出字符串注入额外字段（防注入收口）。模板不是合法 JSON = 该频道投递失败并落记录（不静默降级为文本，不影响其他频道）。`ntfy` 预设默认模板含 `"topic": "<topic>"` 占位，投递前改成你的主题名。
 
-投递可靠性：超时 1-60s（默认 10）；**失败不自动重试**——4xx / 5xx / 网络错误 / 渲染失败统一为失败终态，落 status 文件与通知历史（错误摘要按原文截断，见「安全与边界」），可经「发送测试通知」重发验证。`kindRoutes` 中以 `webhook:<id>` 引用（与 `bark:<id>` 同款 `type:id` 形态）。
+投递可靠性：超时 1-60s（默认 10）；**失败不自动重试**——4xx / 5xx / 网络错误 / 渲染失败统一为失败终态，落 status 文件与通知历史（宿主原文截断后进失败理由的 `detail`，见「安全与边界」），可经「发送测试通知」重发验证。`kindRoutes` 中以 `webhook:<id>` 引用（与 `bark:<id>` 同款 `type:id` 形态）。
 
 实例示例（与 Bark 实例同存于 `channels` 数组，id 跨类型去重）：
 
@@ -379,8 +392,8 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 | `/api/dsh-notifier/config` | GET/PUT | **GET** 返回 `{ok, user, revision, effective, writable}`（`user` 为官方 settings 用户层、`revision` 供乐观并发、`effective` 为生效配置；**凭据字段（bark `deviceKey` / webhook `token`·`password`·`headerValue`）一律掩码**）；**PUT** 接收 `{patch, expectedRevision?}`（增量 patch，`expectedRevision` 可选做乐观并发），返回 `{ok, user, revision}`（同样掩码） |
 | `/api/dsh-notifier/events` | GET | SSE 通知帧（浏览器 EventSource 订阅；`?since=<seq>` 断线补拉） |
 | `/api/dsh-notifier/test` | POST | 测试通知（收敛到 service 管线，绕过免打扰；body 可选 `{channelId}` 指定单频道测试） |
-| `/api/dsh-notifier/history` | GET / **DELETE** | GET 最近通知记录（最多 200 条，`historyMaxAgeDays` 过滤 / 被免打扰拦截的标记 `suppressed`）；**DELETE 清空** |
-| `/api/dsh-notifier/status` | GET | 频道投递状态（per-channel 最近投递终态 + 连续失败计数；错误摘要按原文截断，不做凭据替换） |
+| `/api/dsh-notifier/history` | GET / **DELETE** | GET 最近通知记录（最多 200 条，`historyMaxAgeDays` 过滤 / 被免打扰拦截的标记 `suppressed`；每条含逐出口投递明细 `channels[]`，其 `reason` 为结构化理由）；**DELETE 清空** |
+| `/api/dsh-notifier/status` | GET | 频道投递状态（per-channel 最近投递终态 + 连续失败计数；失败理由为结构化对象 `{code, params?, detail?}`，`detail` 按原文截断 300 字符，不做凭据替换） |
 | `/api/dsh-notifier/kinds` | GET / POST | GET 动态 kind 清单（含确认态）；POST `{kind, confirmed}` 写确认（持久化到 `allowKinds`），200 响应带 `revision`（供客户端同步乐观并发版本） |
 | `/api/dsh-notifier/health` | GET | 健康检查 |
 
@@ -401,9 +414,9 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 - 通知文本只含任务标题/工具名/申请理由等元信息，**不含工具参数**（防敏感信息外泄）
 - **通知正文与标题不再打码（#733 收敛）**：原 `sanitizeContent` 的规则表（路径 / PEM 私钥 / 连接串凭据 / 令牌 / 邮箱…）已删除——通知、历史落盘（含 suppressed 落史）与投递都是原文；正文不截断，长度由投递频道的展示上限截断。需要「日志里不出现某类文本」的部署，请自行在事件源侧处理
 - **仅存的凭据掩码在设置页视图**：`GET /config` 的 `user` + `effective` 与 `PUT` 成功响应中的频道凭据（bark `deviceKey`、webhook `token` / `password` / `headerValue`）一律掩码 `********`，提交整值掩码 = 保持原值（按实例 id 对齐回填，防数组序变化串凭据），新实例带掩码提交 400（`CHANNEL_SECRET_FIELDS` 按频道类型单一事实源）
-- **出口错误原因不再做凭据字面替换（实测风险，照实登记）**：Bark 4xx 响应体会回显 device key，webhook 的非 2xx 响应体也会回显收到的凭据——失败原因现在只做长度截断（webhook 响应体 200 字符；状态条目 300 字符），**不保证凭据不出现在错误文本里**。这些文本会进服务端日志与状态文件（`status.json`），并随 `GET /status` 出到设置页；对错误文本外泄敏感的部署请按上一条自行处置
+- **出口错误原因不再做凭据字面替换（实测风险，照实登记）**：Bark 4xx 响应体会回显 device key，webhook 的非 2xx 响应体也会回显收到的凭据——失败原因只做长度截断（webhook 响应体 200 字符；状态条目 300 字符），**不保证凭据不出现在错误文本里**。这些文本落在失败理由的 `detail` 字段里（0.2.4 起理由结构化，见「投递可靠性」），会进服务端日志、状态文件（`status.json`）与通知历史（`history.jsonl`），并随 `GET /status` 与 `GET /history` 出到设置页；对错误文本外泄敏感的部署请按上一条自行处置
 - server 内部错误仍只回固定文案（底层原因只进服务端日志）
-- 系统通知失败静默（仅日志），不影响主流程；原生二进制缺失/不可执行（ENOENT 等）
+- 系统通知失败不再静默：出口**执行过动作而失败**会写状态行（`failed`）并进通知记录的逐出口明细；**一条命令都构造不出来**时收成 `skipped` 且留一条 warn（0.2.4 起 linux / darwin 也有这条日志，此前只有 win32 分支有）。原生二进制缺失/不可执行（ENOENT 等）
   会被 `error` 事件接住，**绝不冒泡成 unhandled error 把宿主进程打挂**（见 issue #1）
 - **两个通道到达的机器不同（别混淆）**：
   - **浏览器通知**推到**你正在用的浏览器客户端**（Mac/手机都算），由浏览器 Notification API 弹出原生通知；需要授权、且默认页面隐藏时才弹（设置卡片可开「页面可见也弹」）。无论 dsh web 跑在哪台机器，只要浏览器通知允许，你都能在自己的 Mac 上收到。
@@ -424,7 +437,7 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
   - **凭据掩码收口（`CHANNEL_SECRET_FIELDS` 泛化）**：掩码字段清单按频道类型单一事实源化（bark→`deviceKey`、webhook→`token`/`password`/`headerValue`）；GET /config 的 user+effective 与 PUT 成功响应一律掩码 `********`，提交整值掩码 = 保持原值（按实例 id 对齐回填，防数组序变化串凭据），新实例带掩码提交 400
   - **保留键防配置绕过（`WEBHOOK_RESERVED_KEYS`）**：`auth_token` / `access_token` / `bearer_token` / `api_key` / `apikey` / `client_secret` / `secret` / `password_hash` 等凭据别名键一律剔除/写拒——合法凭据只能走已知 secret 字段（经掩码收口）
   - **JSON 注入防护**：模板渲染 JSON-aware 两步法（值级替换 + 重新序列化统一转义），通知内容无法逃逸出字符串注入额外 JSON 字段
-  - **错误出口不做凭据替换**：与 Bark 同款——非 2xx 响应体截断 200 字符后按原文进错误摘要，不再按凭据字面替换、不过规则表（详见「安全与边界」）
+  - **错误出口不做凭据替换**：与 Bark 同款——非 2xx 响应体截断 200 字符后按原文进失败理由的 `detail`，不再按凭据字面替换、不过规则表（详见「安全与边界」）
   - **URL SSRF 姿态（与 Bark 同款 normalize）**：scheme 限 http/https、拒绝带凭据 URL（`user:pass@host`）、去 query/hash；不做域名白名单——内网自建网关是合法场景；自定义头名禁端到端关键头（`content-type`/`content-length`/`host`/`cookie`/`authorization`）防请求走私/破坏 JSON body
   - **失败不重试**：投递失败即终态（4xx/5xx/网络错误/渲染失败），无自动重试带来的出站放大
   - webhook 为**增量频道类型**：不改变既有频道与通知出口（SSE 帧 / 系统通知 / 历史 jsonl）的语义与兼容承诺

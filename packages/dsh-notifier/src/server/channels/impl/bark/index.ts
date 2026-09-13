@@ -3,6 +3,8 @@
  * device_key 走 JSON body 不进 URL（反代访问日志默认只记 URL 与 header）；成功判定双查
  * 2xx 且响应体 code===200；失败只分类不重试，重试与节奏归管线。
  */
+import type { ReasonCode, ReasonParams } from "../../../shared/interface.ts";
+import { clampReasonDetail, reason } from "../../../shared/interface.ts";
 import {
   FAILURE_REASON_MAX,
   RESPONSE_DETAIL_MAX,
@@ -36,28 +38,35 @@ export async function sendBark(target: BarkTarget, message: NotifyMessage): Prom
     });
   } catch (cause) {
     // fetch 层失败（网络 / DNS / 超时）：POST 幂等，可重试
-    const reason = cause instanceof Error ? cause.message : String(cause);
-    return failed(`bark 请求失败: ${reason}`, true);
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    return failed("reasonBarkRequestFailed", { detail }, true);
   }
 
   if (!response.ok) {
     // 4xx 确定失败；5xx 与网络同属可重试面。响应体只取摘要——本域不做脱敏
     const detail = await errorDetailOf(response);
-    const reason = `bark HTTP ${response.status}${detail ? `: ${detail}` : ""}`;
-    return failed(reason, response.status >= 500);
+    return failed(
+      "reasonBarkHttp",
+      { params: { status: response.status }, detail },
+      response.status >= 500,
+    );
   }
 
   try {
     const parsed = (await response.json()) as BarkPushResponse;
     if (parsed !== null && typeof parsed === "object" && "code" in parsed && parsed.code !== 200) {
       // 业务码非 200：服务端拒绝，POST 幂等故按可重试面处理
-      return failed(`bark code ${String(parsed.code)}: ${String(parsed.message ?? "")}`, true);
+      return failed(
+        "reasonBarkRejected",
+        { params: { code: String(parsed.code) }, detail: String(parsed.message ?? "") },
+        true,
+      );
     }
   } catch (cause) {
     // 非 JSON 响应体：2xx 已足够；读取中断（超时等）按可重试处理
     if (!(cause instanceof SyntaxError)) {
-      const reason = cause instanceof Error ? cause.message : String(cause);
-      return failed(`bark 响应体读取失败: ${reason}`, true);
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      return failed("reasonBarkBodyUnreadable", { detail }, true);
     }
   }
   return { status: "ok", stage: "delivered" };
@@ -97,12 +106,16 @@ async function errorDetailOf(response: Response): Promise<string> {
   }
 }
 
-/** 失败结果：原因按展示上限截断（截断是展示语义，不是脱敏）。 */
-function failed(reason: string, retryable: boolean): DeliverResult {
+/** 失败结果：code 出文案、detail 存宿主原文；截断是展示语义，不是脱敏。 */
+function failed(
+  code: ReasonCode,
+  options: { readonly params?: ReasonParams; readonly detail?: string },
+  retryable: boolean,
+): DeliverResult {
   return {
     status: "failed",
     stage: "delivered",
-    reason: truncateCodePoints(reason, FAILURE_REASON_MAX),
+    reason: clampReasonDetail(reason(code, options), FAILURE_REASON_MAX),
     retryable,
   };
 }

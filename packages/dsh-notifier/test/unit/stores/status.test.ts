@@ -105,11 +105,11 @@ describe("内存镜像的读写", () => {
   it("同一频道连续记录：失败累加、成功清零并清掉 lastError（条目是覆盖而不是追加，键只有一个）", async () => {
     vi.setSystemTime(new Date(2026, 0, 15, 12, 0, 0));
     assemble();
-    recordStatus("bark:phone", "failed", "第一次");
-    recordStatus("bark:phone", "failed", "第二次");
+    recordStatus("bark:phone", "failed", { code: "reasonChannelThrew", detail: "第一次" });
+    recordStatus("bark:phone", "failed", { code: "reasonChannelThrew", detail: "第二次" });
     const failed = (await readStatus())["bark:phone"];
     expect(failed.failStreak).toBe(2);
-    expect(failed.lastError).toBe("第二次");
+    expect(failed.lastError).toEqual({ code: "reasonChannelThrew", detail: "第二次" });
     expect(failed.lastStatus).toBe("failed");
 
     vi.setSystemTime(new Date(2026, 0, 15, 12, 5, 0));
@@ -133,12 +133,23 @@ describe("内存镜像的读写", () => {
 
   it("错误摘要截断到 300 字符、空错误不落 lastError（摘要会随 GET /status 出到设置页）", async () => {
     assemble();
-    recordStatus("bark:phone", "failed", "x".repeat(400));
-    recordStatus("webhook:hook", "failed", "");
+    recordStatus("bark:phone", "failed", { code: "reasonChannelThrew", detail: "x".repeat(400) });
+    // 合法但没有宿主原文的理由：code 与参数仍在，只是没有 detail 可留
+    recordStatus("webhook:hook", "failed", { code: "reasonWebhookHttp", params: { status: 500 } });
+    // 标题承诺的另一半：失败但**根本没给理由**时不许落一个空壳（旧实现在这里靠 length>0 挡住，
+    // 改成结构化后必须由「有没有这个字段」来挡，否则设置页会出现一条空的失败说明）。
+    recordStatus("bark:noReason", "failed");
 
     const entries = await readStatus();
-    expect(entries["bark:phone"].lastError).toHaveLength(300);
-    expect("lastError" in entries["webhook:hook"]).toBe(false);
+    expect(entries["bark:phone"].lastError).toEqual({
+      code: "reasonChannelThrew",
+      detail: "x".repeat(300),
+    });
+    expect(entries["webhook:hook"].lastError).toEqual({
+      code: "reasonWebhookHttp",
+      params: { status: 500 },
+    });
+    expect("lastError" in entries["bark:noReason"]).toBe(false);
   });
 
   it("状态条目上限 64：超出时最旧先出（防已删频道残留键无限累积）", async () => {
@@ -174,7 +185,7 @@ describe("内存镜像的读写", () => {
   // 出到设置页，变成「上次成功」旁边挂着一条陈旧报错）。
   it("成功记录即使带上错误文本也不落 lastError", async () => {
     assemble();
-    recordStatus("bark:phone", "ok", "这条文本不该落盘");
+    recordStatus("bark:phone", "ok", { code: "reasonChannelThrew", detail: "这条理由不该落盘" });
 
     const entries = await readStatus();
     expect(entries["bark:phone"].lastStatus).toBe("ok");
@@ -186,19 +197,47 @@ describe("落盘与冷启动", () => {
   it("落盘延后合并但最终一致：文件里是该条目的完整 JSON（设置页重启后仍显示上次投递结果）", async () => {
     const logger = assemble();
     const before = Date.now();
-    recordStatus("bark:phone", "failed", "连接超时");
+    recordStatus("bark:phone", "failed", { code: "reasonBarkRequestFailed", detail: "连接超时" });
     const after = Date.now();
 
     await pollUntil(() => onDisk()?.["bark:phone"] !== undefined, "投递状态落盘");
     const stored = onDisk() ?? {};
     expect(Object.keys(stored)).toEqual(["bark:phone"]);
     expect(stored["bark:phone"].lastStatus).toBe("failed");
-    expect(stored["bark:phone"].lastError).toBe("连接超时");
+    expect(stored["bark:phone"].lastError).toEqual({
+      code: "reasonBarkRequestFailed",
+      detail: "连接超时",
+    });
     expect(stored["bark:phone"].failStreak).toBe(1);
     expect(stored["bark:phone"].lastTs).toBeGreaterThanOrEqual(before);
     expect(stored["bark:phone"].lastTs).toBeLessThanOrEqual(after);
     // 写成了就不许出声：只看「写坏了要告警」的话，告警写成恒真也绿。
     expect(logger.warns).toEqual([]);
+  });
+
+  // 读面值域校验是本次扩「持久字段形态」的前置条件：不认识的值必须被挡在镜像之外。旧实现只校验
+  // `lastTs` 是数字，于是任何 ≠ "ok" 的 lastStatus 都会被客户端画成「最近投递失败 + 红点」——
+  // 一次降级（或手改文件）就凭空多出一条故障。
+  it("冷启动读面校验值域：陌生 lastStatus 整条丢弃，lastError 的旧散文收编成 reasonLegacy", async () => {
+    assemble();
+    const file = notifierFile(STATUS_FILE_NAME);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(
+      file,
+      JSON.stringify({
+        "bark:legacy": { lastTs: 1, lastStatus: "failed", lastError: "连接超时", failStreak: 2 },
+        "bark:weird": { lastTs: 2, lastStatus: "skipped", failStreak: 1 },
+        "bark:noTs": { lastStatus: "ok" },
+      }),
+    );
+
+    const entries = await readStatus();
+    expect(Object.keys(entries)).toEqual(["bark:legacy"]);
+    expect(entries["bark:legacy"].lastError).toEqual({
+      code: "reasonLegacy",
+      detail: "连接超时",
+    });
+    expect(entries["bark:legacy"].failStreak).toBe(2);
   });
 
   // debounce 窗口走完后必须把「有待写」放回否，否则调度器被第一次落盘永久卡住：后续投递
@@ -208,7 +247,7 @@ describe("落盘与冷启动", () => {
     recordStatus("bark:phone", "ok");
     await pollUntil(() => onDisk()?.["bark:phone"] !== undefined, "第一次落盘");
 
-    recordStatus("bark:webhook", "failed", "第二次");
+    recordStatus("bark:webhook", "failed", { code: "reasonChannelThrew", detail: "第二次" });
     await pollUntil(() => onDisk()?.["bark:webhook"] !== undefined, "第二次落盘");
 
     expect(Object.keys(onDisk() ?? {})).toEqual(["bark:phone", "bark:webhook"]);
@@ -230,7 +269,7 @@ describe("落盘与冷启动", () => {
 
   it("冷启动从文件同步加载：连续失败计数跨重启延续（异步加载会与 fire-and-forget 的 record 抢跑）", async () => {
     assemble();
-    recordStatus("bark:phone", "failed", "连接超时");
+    recordStatus("bark:phone", "failed", { code: "reasonBarkRequestFailed", detail: "连接超时" });
     await pollUntil(() => onDisk()?.["bark:phone"] !== undefined, "投递状态落盘");
 
     releaseStores();
@@ -247,7 +286,7 @@ describe("落盘与冷启动", () => {
   // 计数从 1 退回 1——跨重启延续失效，而外部表现只是「连续失败次数比实际少」。
   it("record 自己先冷启动加载：重启后没读过一次也不丢连续失败计数", async () => {
     assemble();
-    recordStatus("bark:phone", "failed", "第一次");
+    recordStatus("bark:phone", "failed", { code: "reasonChannelThrew", detail: "第一次" });
     await pollUntil(() => onDisk()?.["bark:phone"] !== undefined, "投递状态落盘");
 
     releaseStores();

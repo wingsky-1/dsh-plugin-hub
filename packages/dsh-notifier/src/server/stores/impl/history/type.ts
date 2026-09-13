@@ -1,6 +1,6 @@
 /** dsh-notifier stores 域 —— 通知历史（jsonl）自己的形状：记录与装配入参。 */
 import type { ConfigPort } from "../../deps.ts";
-import type { LoggerPort } from "../../../shared/interface.ts";
+import type { DeliverReason, LoggerPort } from "../../../shared/interface.ts";
 
 /** 单出口投递明细：这一次通知送到了哪个出口、结果如何。 */
 export interface ChannelDelivery {
@@ -8,8 +8,8 @@ export interface ChannelDelivery {
   channelId: string;
   /** `skipped` = 出口按配置判定这次没有可发的内容：既不是失败，也不该被读成投递成功。 */
   status: "ok" | "failed" | "skipped";
-  /** 失败原因或跳过原因（不含凭据）；`ok` 那一支上没有。 */
-  reason?: string;
+  /** 失败或跳过理由（结构化：code 出文案、detail 存宿主原文；不含凭据处理）；`ok` 那一支上没有。 */
+  reason?: DeliverReason;
 }
 
 /**

@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
 import type { NotifyConfig } from "../../../src/server/config/impl/model/type.ts";
+import type { DeliverReason } from "../../../src/server/shared/interface.ts";
 import type {
   ChannelsPort,
   HistoryEntry,
@@ -68,7 +69,7 @@ interface Harness {
   readonly statuses: Array<{
     channelId: string;
     status: "ok" | "failed";
-    error: string | undefined;
+    error: DeliverReason | undefined;
   }>;
   readonly logger: ReturnType<typeof makeLogger>;
   readonly useConfig: (patch?: Partial<NotifyConfig>) => void;
@@ -182,7 +183,7 @@ describe("重试与退避（假时钟推进，不真等 3 秒）", () => {
       return targets.map(() => ({
         status: "failed",
         stage: "delivered",
-        reason: "上游 5xx",
+        reason: { code: "reasonBarkHttp", params: { status: 503 } },
         retryable: true,
       }));
     });
@@ -216,7 +217,7 @@ describe("重试与退避（假时钟推进，不真等 3 秒）", () => {
             {
               status: "failed" as const,
               stage: "delivered" as const,
-              reason: "上游 5xx",
+              reason: { code: "reasonBarkHttp", params: { status: 503 } },
               retryable: true,
             },
           ]
@@ -246,7 +247,7 @@ describe("重试与退避（假时钟推进，不真等 3 秒）", () => {
       return targets.map(() => ({
         status: "failed",
         stage: "delivered",
-        reason: "设备未注册",
+        reason: { code: "reasonBarkRejected", params: { code: "400" }, detail: "设备未注册" },
         retryable: false,
       }));
     });
@@ -266,7 +267,7 @@ describe("重试与退避（假时钟推进，不真等 3 秒）", () => {
       return targets.map(() => ({
         status: "failed",
         stage: "delivered",
-        reason: "上游 502",
+        reason: { code: "reasonWebhookHttp", params: { status: 502 } },
         retryable: true,
       }));
     });
@@ -290,7 +291,7 @@ describe("逐频道归位", () => {
           ? {
               status: "failed" as const,
               stage: "delivered" as const,
-              reason: "webhook HTTP 401",
+              reason: { code: "reasonWebhookHttp", params: { status: 401 } },
               retryable: false,
             }
           : { status: "ok" as const, stage: "delivered" as const },
@@ -307,10 +308,17 @@ describe("逐频道归位", () => {
     expect(statusOf("bark:a")?.status).toBe("ok");
     expect(statusOf("bark:a")?.error).toBeUndefined();
     expect(statusOf("webhook:w")?.status).toBe("failed");
-    expect(statusOf("webhook:w")?.error).toBe("webhook HTTP 401");
+    expect(statusOf("webhook:w")?.error).toEqual({
+      code: "reasonWebhookHttp",
+      params: { status: 401 },
+    });
     expect(harness.history[0]!.channels).toEqual([
       { channelId: "bark:a", status: "ok" },
-      { channelId: "webhook:w", status: "failed", reason: "webhook HTTP 401" },
+      {
+        channelId: "webhook:w",
+        status: "failed",
+        reason: { code: "reasonWebhookHttp", params: { status: 401 } },
+      },
     ]);
   });
 
@@ -337,14 +345,21 @@ describe("逐频道归位", () => {
 
     // 明细与 `targets` 同序：违约落在它自己的频道上，健康频道照常留痕。
     expect(harness.history[0]!.channels).toEqual([
-      { channelId: "bark:a", status: "failed", reason: "出口实现违约" },
+      {
+        channelId: "bark:a",
+        status: "failed",
+        reason: { code: "reasonChannelThrew", detail: "出口实现违约" },
+      },
       { channelId: "bark:b", status: "ok" },
     ]);
     // 频道状态按完成顺序落（两个出口并发），故只按频道身份查证结论。
     const statusOf = (channelId: string) =>
       harness.statuses.find((entry) => entry.channelId === channelId);
     expect(statusOf("bark:a")?.status).toBe("failed");
-    expect(statusOf("bark:a")?.error).toBe("出口实现违约");
+    expect(statusOf("bark:a")?.error).toEqual({
+      code: "reasonChannelThrew",
+      detail: "出口实现违约",
+    });
     expect(statusOf("bark:b")?.status).toBe("ok");
     // 整批没有拒绝：调用方那条「投递失败」的兜底 warn 不该被触发（它一响，说明明细已经丢了）。
     expect(harness.logger.warns).toEqual([]);
@@ -374,7 +389,11 @@ describe("逐频道归位", () => {
 
     // 状态写不进去只少一条观测记录，不被状态层的错盖掉、也不改变本次投递的结论。
     expect(harness.history[0]!.channels).toEqual([
-      { channelId: "bark:a", status: "failed", reason: "出口实现违约" },
+      {
+        channelId: "bark:a",
+        status: "failed",
+        reason: { code: "reasonChannelThrew", detail: "出口实现违约" },
+      },
       { channelId: "bark:b", status: "ok" },
     ]);
     expect(harness.statuses.map((entry) => `${entry.channelId}:${entry.status}`)).toEqual([
@@ -387,7 +406,7 @@ describe("逐频道归位", () => {
   // 「最后一次投递结论」（写 ok 等于替出口宣称投递成功），而历史必须如实留下这次跳过。
   it("出口报 skipped：历史如实记一条跳过与原因，频道状态不被写（没有结论可言）", async () => {
     const harness = assemble();
-    const reason = "浏览器频道：弹窗与声音都已关闭";
+    const reason = { code: "reasonSkipConfig" } as const;
     harness.onDeliver(async (_message, targets) =>
       targets.map(() => ({ status: "skipped" as const, reason })),
     );
@@ -446,7 +465,7 @@ describe("节奏：节流与在途门", () => {
       return targets.map(() => ({
         status: "failed" as const,
         stage: "delivered" as const,
-        reason: "系统出口不可用",
+        reason: { code: "reasonSystemPopupFailed", params: { bin: "notify-send" } },
         retryable: false,
       }));
     });
@@ -473,7 +492,11 @@ describe("节奏：节流与在途门", () => {
     expect(harness.history).toHaveLength(2);
     expect(harness.history[1]!.title).toBe("第一条");
     expect(harness.history[1]!.channels).toEqual([
-      { channelId: "system", status: "failed", reason: "系统出口不可用" },
+      {
+        channelId: "system",
+        status: "failed",
+        reason: { code: "reasonSystemPopupFailed", params: { bin: "notify-send" } },
+      },
     ]);
   });
 

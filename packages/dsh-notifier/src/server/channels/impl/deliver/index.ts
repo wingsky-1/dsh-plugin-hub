@@ -4,6 +4,7 @@
  * 本域实现层的唯一聚合点：声明「投递目标」这个联合，把每个目标分派给各自的出口实现。
  * 它不定义出口的形状，也不做业务——「该发给谁」是裁决层的问题。
  */
+import { reason, reasonFromCause } from "../../../shared/interface.ts";
 import { sendBark } from "../bark/index.ts";
 import type { BarkTarget } from "../bark/type.ts";
 import { sendBrowser } from "../browser/index.ts";
@@ -54,7 +55,7 @@ async function deliverOne(target: DeliveryTarget, message: NotifyMessage): Promi
     return {
       status: "failed",
       stage: "accepted",
-      reason: cause instanceof Error ? cause.message : String(cause),
+      reason: reasonFromCause("reasonChannelThrew", cause),
       retryable: false,
     };
   }
@@ -68,7 +69,7 @@ function unknownTarget(kind: string): DeliverResult {
   return {
     status: "failed",
     stage: "accepted",
-    reason: `未知投递目标类型: ${kind}`,
+    reason: reason("reasonUnknownTarget", { params: { kind } }),
     retryable: false,
   };
 }
