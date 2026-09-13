@@ -9,6 +9,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { LoggerPort } from "../src/server/shared/interface.ts";
+
 /**
  * 临时改写环境变量，返回还原函数。
  *
@@ -44,6 +46,37 @@ export function tempDshHome(): { readonly dir: string; dispose: () => void } {
     dispose: () => {
       restore();
       rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+/**
+ * 轮询直到谓词成立，超时抛错。
+ *
+ * 为什么不用固定 sleep：等 50ms 与「异步确实完成了」不是一回事，慢 runner 上就是 flake。
+ * 为什么超时**抛错**而不是返回 false：静默返回 false 会让调用方把「没等到」读成「条件不成立」，
+ * 于是用例继续往下断言一个从未发生的事实，红在离原因很远的地方。
+ */
+export async function pollUntil(
+  predicate: () => boolean,
+  label: string,
+  timeoutMs = 2000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (predicate()) return;
+    if (Date.now() > deadline) throw new Error(`pollUntil: ${label} 在 ${timeoutMs}ms 内未成立`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+/** 宿主日志出口的假实现：记下 warn 文案供断言，而不是让失败面消失在控制台里。 */
+export function makeLogger(): LoggerPort & { readonly warns: string[] } {
+  const warns: string[] = [];
+  return {
+    warns,
+    warn: (message: string) => {
+      warns.push(message);
     },
   };
 }

@@ -10,8 +10,8 @@ export default defineConfig({
     include: [
       "packages/dsh-notifier/test/integration/consumer-types.test.ts",
       "packages/dsh-notifier/test/integration/service-contract.test.ts",
-      "packages/dsh-notifier/test/unit/pipeline/unit-judge.test.ts",
-      "packages/dsh-notifier/test/unit/shared/unit-paths.test.ts",
+      "packages/dsh-notifier/test/unit/pipeline/judge.test.ts",
+      "packages/dsh-notifier/test/unit/shared/paths.test.ts",
     ],
     environment: "node",
     testTimeout: 60_000,

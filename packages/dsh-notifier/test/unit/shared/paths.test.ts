@@ -5,7 +5,9 @@
  * 陈旧路径与陈旧文件名都会静默丢数据——升级读空、旧文件留在原地、用户看到「通知记录没了」。
  * 路径随 `DSH_HOME` 走是另一半：隔离验证与测试换掉该变量即换掉全部落盘位置，漏一处就写进真实 `~/.dsh`。
  */
-import { join } from "node:path";
+import { globSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -66,12 +68,13 @@ describe("DSH_HOME 语义（与 shared/dsh-home.js、官方 resolveDshHome 同�
 });
 
 describe("系统通知脚本位置", () => {
-  it("以 channels/impl/system/toast.ps1 结尾", () => {
-    // 只断言尾形、不断言存在：该函数按**包入口所在目录**反推（产物形态是内联的 lib/index.js，
-    // 资源随 bundle-host 复制到 lib/server/channels/impl/system/）；直跑 src 时反推落点本就不存在，
-    // 断言「必须存在」会把运行形态差异写成假红。
-    expect(toastScriptPath().replaceAll("\\", "/")).toMatch(
-      /\/server\/channels\/impl\/system\/toast\.ps1$/u,
-    );
+  it("反推尾段与脚本在 src 下的真实位置一致（脚本搬家而函数没跟上即红）", () => {
+    // 该函数按**包入口所在目录**反推：产物形态是内联的 lib/index.js，资源随 bundle-host 按
+    // src 相对结构复制到 lib/ 下，故尾段必须等于脚本相对 src 的路径。断言「该路径存在」是假红
+    // ——直跑 src 时包入口在 src 顶层，反推落点本就不存在；断言写死字面量则要人肉同步。
+    const srcRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "src");
+    const scripts = globSync("**/*.ps1", { cwd: srcRoot });
+    expect(scripts).toHaveLength(1);
+    expect(toastScriptPath().replaceAll("\\", "/").endsWith(`/${scripts[0]!}`)).toBe(true);
   });
 });

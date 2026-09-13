@@ -100,13 +100,13 @@ afterEach(() => {
 });
 
 describe("装配面", () => {
-  it("装配后交出服务面：apiVersion 为 2，只有 send / registerKind 两个口", () => {
+  it("装配后交出服务面：apiVersion 为 2，且不夹带确认与清单（授权边界靠运行时形状守）", () => {
     const { service, expose } = assemble();
     expect(NOTIFIER_SERVICE).toBe("wingsky.notifier");
     expect(service.apiVersion).toBe(2);
     expect(expose.provided).toHaveLength(1);
-    expect(typeof service.send).toBe("function");
-    expect(typeof service.registerKind).toBe("function");
+    // 两个口的存在性由 `implements NotifierService` 在编译期保证，这里只守「不多给」：
+    // 多一个成员就是把本域的内部状态变成公共 API，而公共 API 从此不能再改。
     expect("confirmKind" in service).toBe(false);
     expect("listKinds" in service).toBe(false);
   });

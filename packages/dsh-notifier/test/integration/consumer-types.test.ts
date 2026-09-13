@@ -129,14 +129,8 @@ describe("运行时护栏：导出面确实可从包入口取到", () => {
     expect(Object.keys(entry).sort()).toEqual(expected);
   });
 
-  it("宿主端入口是函数、依赖清单非空（挂载点与宿主解析都靠它们）", () => {
-    expect(typeof apply).toBe("function");
+  it("宿主依赖清单由运行时值锁定（类型只管它是 string[]，管不到内容）", () => {
     expect(inject).toContain("webServer");
-    expect(name).toBe("notifier");
-  });
-
-  it("服务面槽位在运行时不由包入口提供（它由 ctx.provide 挂载，不是入口导出）", () => {
-    expect(Object.keys(entry)).not.toContain("NotifierService");
   });
 
   it("每个导出面类型导出都有一条 <名字>Shape 类型体锚（逐个覆盖不变式）", () => {
@@ -147,20 +141,16 @@ describe("运行时护栏：导出面确实可从包入口取到", () => {
     );
   });
 
-  it("头部注释声明的编译期锚条数与实际一致", () => {
+  it("头部自述与实际一致：锚条数与声明相符、编号连续且分母等于条数", () => {
     const declared = /本文件的编译期锚共 \*\*(\d+) 条\*\*/u.exec(self);
     expect(declared).not.toBeNull();
-    expect((self.match(/^type _[A-Za-z]+ = Expect</gmu) ?? []).length).toBe(Number(declared![1]));
-  });
+    const anchors = self.match(/^type _[A-Za-z]+ = Expect</gmu) ?? [];
+    expect(anchors.length).toBe(Number(declared![1]));
 
-  it("类型体锚编号自洽（序号连续、分母一致且等于条数）", () => {
     const numbered = [...self.matchAll(/^\/\*\* 类型 (\d+)\/(\d+)：/gmu)];
-    expect(numbered.length).toBeGreaterThan(0);
-    const totals = new Set(numbered.map((match) => match[2]));
-    expect([...totals]).toHaveLength(1);
-    expect(Number([...totals][0])).toBe(numbered.length);
     expect(numbered.map((match) => Number(match[1]))).toEqual(
       numbered.map((_, index) => index + 1),
     );
+    expect([...new Set(numbered.map((match) => match[2]))]).toEqual([String(anchors.length)]);
   });
 });
