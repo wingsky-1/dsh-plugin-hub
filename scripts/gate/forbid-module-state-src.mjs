@@ -8,35 +8,33 @@
  * `src/server/system-notifier.ts` 曾用模块级 `let lastSystemOutcome` 透传节流窗口内的
  * 「上一次决议」，两个 SystemNotifier 实例因此共享该状态。
  *
- * 检测语义（AST 级，口径 = 行首顶格形态）：**Program 顶层的** `let` / `var` 声明
- * （含 `export let` / `export var` 形态）**且该声明在源码里顶格**（`/^(?:export\s+)?(let|var)\s/`）
- * 即命中。AST 负责排除字符串/注释中的伪形态；顶格条件就是本判据的口径（见下「盲区」）。
- * 函数体内的 `let`/`var` 是正常局部状态，不命中；`declare let` 是环境声明（无运行时状态），
- * 经 esbuild 剥类型后不产生声明节点，不命中。
+ * 检测语义（纯 AST）：**Program 顶层的** `let` / `var` 声明（含 `export let` / `export var`
+ * 形态）即命中。字符串与注释里的伪形态由 AST 天然排除；函数体内的 `let`/`var` 是正常
+ * 局部状态，不命中；`declare let` 是环境声明（无运行时状态），经 esbuild 剥类型后不产生
+ * 声明节点，不命中。
  *
- * **盲区（如实登记，不判红但可观测）**：**缩进的**模块级声明不在判据面内——实测
- * `packages/dsh-notifier/src/client/index.tsx` 有 22 处缩进的模块级 `var`（历史形态，
- * 迁移自旧 IIFE 包装时保留了缩进）。它们是真的模块级可变状态，但：① 本判据的口径
- * 源自 #733 宪法（宿主端状态收进闭包/实例），客户端业务改动不在本轮范围；② 把它们纳入
- * 会让门禁在存量树上直接红 22 处。门禁每次运行都会打印该口径外计数（`口径外…` 行），
- * 使这个绕过口可观测；要纳入须另裁决（一次显式收紧 + 客户端整改）。
+ * 为什么不再按「顶格」过滤（#733 计划项 3.1.2）：旧实现额外要求声明在源码里顶格
+ * （`/^(?:export\s+)?(?:let|var)\s/`），缩进的模块级声明被计入「口径外」而不判红。实证
+ * `packages/dsh-notifier/src/client/index.tsx` 有 22 处缩进的模块级 `var`，它们是真的模块级
+ * 可变状态——旧实现因此留下一个**静默的**绕过口：把声明缩进一格即可逃出判据。声明的作用
+ * 域与它在源码里的缩进形态本就该解耦（原则 ③），现改为只看 AST 作用域。那 22 处按下面的
+ * 登记豁免处置，而不是继续留在判据之外。
  *
- * 解析器与解析失败策略同 forbid-homedir-src.mjs：typescript 7 已移除经典 JS AST API，
- * 故用 esbuild（既有 devDep）剥类型 + acorn（既有 devDep）estree 解析 + node:module
- * SourceMap 行映射回 TS 原文行号。
+ * 豁免的单一事实源：`scripts/data/gate-exemptions.json`（只取 `gate` 等于本门禁名的条目）。
+ * 条目是**文件级**的——该文件的所有命中都算合法豁免。每条必须带 `reason` 与
+ * `trackingIssue`（`#NNN`），并带 `reviewBy` 到期提示；到期机制落地前 `reviewBy` 只打印不判红
+ * （#733 计划项 3.2）。
  *
- * 扫描面（版本化常量，**按包限定**）：实测存量（顶格口径）notifier 1 / dsh-mcp-manager 1 /
- * dsh-lan-proxy 3 / dsh-provider-usage 18 / dsh-web-file-preview 0 —— 本判据源自 #733
- * 宪法且当前只对 dsh-notifier 生效；对其它包生效会一上来就红，且不在 #733 宪法范围内。
- * 扩包是一次显式改动（PACKAGES 常量 + 该包存量清零）。
+ * 为什么豁免不再要求「调用点紧邻注释」：那等于把豁免写进被扫描的源码里，而客户端源码恰是
+ * 本轮不能动的面；登记在数据文件里同样是 PR diff 可见的单一可审阅点。调用点注释仍被识别，
+ * 但**不能替代登记**——只有注释而没有登记条目一律判红（防「加了注释就以为豁免了」）。
  *
- * 豁免双源（缺一判红，三态输出）：
- *   1. 调用点紧邻注释：命中行行尾或上一行 `// dsh-gate:allow-module-state #NNN <理由>`；
- *   2. 本文件 WHITELIST 清单（文件级，版本化；初始为空）。
- *   三态：无命中（OK）/ 双源齐备豁免（OK，汇总输出）/ 违规或不合法豁免（FAIL）。
+ * 扫描面（版本化常量，**按包限定**）：本判据源自 #733 宪法且当前只对 dsh-notifier 生效。
+ * 扩包是一次显式改动（PACKAGES 常量 + 该包存量清零或登记豁免），扩包前须先实测该包在新口径
+ * 下的存量，不要照抄历史数字。
  *
- * fail-closed：任何文件解析失败直接判红。
- * 用法：node scripts/gate/forbid-module-state-src.mjs [--root <dir>]
+ * fail-closed：文件解析失败、扫描面为空、豁免台账不可读或结构不合法，一律判红。
+ * 用法：node scripts/gate/forbid-module-state-src.mjs [--root <dir>] [--exemptions <file>]
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -45,20 +43,58 @@ import * as acorn from "acorn";
 import { SourceMap } from "node:module";
 
 const ROOT = join(import.meta.dirname, "../..");
+const GATE_NAME = "forbid-module-state-src";
+const EXEMPTIONS_PATH = join(ROOT, "scripts", "data", "gate-exemptions.json");
 
 /** 扫描面（版本化常量）：只扫这些包的 src。 */
 const PACKAGES_V = 1;
 const PACKAGES = ["dsh-notifier"];
 
-/** 豁免清单（文件级，双源之二）。值 = 豁免理由（须含 issue 号）。 */
-const WHITELIST_V = 1;
-const WHITELIST = new Map([]);
-
 const EXEMPT_MARK = "dsh-gate:allow-module-state";
 const EXEMPT_RE = new RegExp(`\\s*${EXEMPT_MARK}\\s+([^\\n]*#\\d+[^\\n]*)`);
 
-/** 判据口径：模块级声明必须**顶格**（含 `export let`/`export var` 形态）。 */
-const TOP_LEVEL_FORM = /^(?:export\s+)?(?:let|var)\s/;
+/**
+ * 读取豁免台账，只保留本门禁的条目，按 path 索引。
+ * 任何 IO/结构错误都抛给调用方——台账坏掉等于豁免机制失效，不能当作「没有豁免」继续跑。
+ */
+function loadExemptions(path) {
+  let raw;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (e) {
+    throw new Error(`豁免台账不可读（${path}）：${e.message}`);
+  }
+  let json;
+  try {
+    json = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`豁免台账 JSON 语法错误（${path}）：${e.message}`);
+  }
+  if (!Array.isArray(json.exemptions)) throw new Error(`豁免台账缺 exemptions 数组（${path}）`);
+  const byFile = new Map();
+  for (const item of json.exemptions) {
+    if (item === null || typeof item !== "object")
+      throw new Error("豁免台账 exemptions 含非对象项");
+    if (item.gate !== GATE_NAME) continue;
+    if (typeof item.path !== "string" || item.path.length === 0)
+      throw new Error(`豁免条目缺 path：${JSON.stringify(item)}`);
+    if (typeof item.reason !== "string" || item.reason.length === 0)
+      throw new Error(`${item.path}：豁免缺 reason`);
+    if (typeof item.trackingIssue !== "string" || !/^#\d+$/.test(item.trackingIssue)) {
+      throw new Error(
+        `${item.path}：豁免 trackingIssue 须形如 #123（当前 ${JSON.stringify(item.trackingIssue)}）`,
+      );
+    }
+    if (typeof item.reviewBy !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(item.reviewBy)) {
+      throw new Error(
+        `${item.path}：豁免 reviewBy 须形如 2027-03-31（当前 ${JSON.stringify(item.reviewBy)}）`,
+      );
+    }
+    if (byFile.has(item.path)) throw new Error(`豁免台账存在重复条目：${item.path}`);
+    byFile.set(item.path, item);
+  }
+  return byFile;
+}
 
 /**
  * 提取行内的「真实」行注释文本——跳过字符串字面量中的 `//`（纯文本正则会把
@@ -74,8 +110,14 @@ function lineCommentText(line) {
       const q = ch;
       i++;
       while (i < n) {
-        if (line[i] === "\\") { i += 2; continue; }
-        if (line[i] === q) { i++; break; }
+        if (line[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (line[i] === q) {
+          i++;
+          break;
+        }
         i++;
       }
       continue;
@@ -99,7 +141,12 @@ function collectSrcFiles(root) {
     for (const e of entries) {
       const p = join(dir, e.name);
       if (e.isDirectory()) walk(p);
-      else if (e.isFile() && /\.(ts|tsx|mts|mjs)$/.test(e.name) && !/\.d\.(ts|mts)$/.test(e.name) && !/\.test\./.test(e.name)) {
+      else if (
+        e.isFile() &&
+        /\.(ts|tsx|mts|mjs)$/.test(e.name) &&
+        !/\.d\.(ts|mts)$/.test(e.name) &&
+        !/\.test\./.test(e.name)
+      ) {
         hits.push(p);
       }
     }
@@ -113,14 +160,26 @@ function detectInAst(ast) {
   const hits = [];
   for (const node of ast.body) {
     let decl = node;
-    if (node.type === "ExportNamedDeclaration" && node.declaration !== null && node.declaration !== undefined) {
+    if (
+      node.type === "ExportNamedDeclaration" &&
+      node.declaration !== null &&
+      node.declaration !== undefined
+    ) {
       decl = node.declaration;
     }
-    if (decl.type !== "VariableDeclaration" || (decl.kind !== "let" && decl.kind !== "var")) continue;
+    if (decl.type !== "VariableDeclaration" || (decl.kind !== "let" && decl.kind !== "var"))
+      continue;
     const names = decl.declarations
-      .map((d) => (d.id.type === "Identifier" ? d.id.name : d.id.type === "ObjectPattern" ? "{…}" : "[…]"))
+      .map((d) =>
+        d.id.type === "Identifier" ? d.id.name : d.id.type === "ObjectPattern" ? "{…}" : "[…]",
+      )
       .join(", ");
-    hits.push({ generatedLine: decl.loc.start.line - 1, generatedColumn: decl.loc.start.column, kind: decl.kind, names });
+    hits.push({
+      generatedLine: decl.loc.start.line - 1,
+      generatedColumn: decl.loc.start.column,
+      kind: decl.kind,
+      names,
+    });
   }
   return hits;
 }
@@ -140,10 +199,9 @@ async function scanFile(file) {
   }
   const ast = acorn.parse(js, { ecmaVersion: "latest", sourceType: "module", locations: true });
   const rawHits = detectInAst(ast);
-  if (rawHits.length === 0) return { hits: [], outOfScope: [], tsLines };
+  if (rawHits.length === 0) return { hits: [], tsLines };
   const map = mapJson ? new SourceMap(JSON.parse(mapJson)) : null;
   const hits = [];
-  const outOfScope = [];
   for (const h of rawHits) {
     let lineIdx = h.generatedLine;
     if (map) {
@@ -151,12 +209,9 @@ async function scanFile(file) {
       if (entry?.originalLine !== undefined) lineIdx = entry.originalLine;
     }
     const raw = tsLines[lineIdx] ?? "";
-    const record = { line: lineIdx + 1, kind: h.kind, names: h.names, text: raw.trim().slice(0, 90) };
-    // 顶格条件即口径：缩进的模块级声明进「口径外」计数（可观测但不判红，见自述盲区）
-    if (TOP_LEVEL_FORM.test(raw)) hits.push(record);
-    else outOfScope.push(record);
+    hits.push({ line: lineIdx + 1, kind: h.kind, names: h.names, text: raw.trim().slice(0, 90) });
   }
-  return { hits, outOfScope, tsLines };
+  return { hits, tsLines };
 }
 
 /** 命中行的豁免注释匹配：命中 TS 行行尾或上一行的**真实**注释含合法豁免标记。 */
@@ -171,25 +226,37 @@ function hasExemption(tsLines, lineIdx) {
   return null;
 }
 
+/** 取 `--flag value` / `--flag=value` 形式的参数值；未给出返回 fallback。 */
+function argValue(argv, flag, fallback) {
+  const eq = argv.find((a) => a.startsWith(`${flag}=`));
+  if (eq) return eq.slice(flag.length + 1);
+  const idx = argv.indexOf(flag);
+  return idx !== -1 && argv[idx + 1] !== undefined ? argv[idx + 1] : fallback;
+}
+
 async function main() {
-  const argv = process.argv;
-  const eq = argv.find((a) => a.startsWith("--root="));
-  const spacedIdx = argv.indexOf("--root");
-  const root = eq
-    ? eq.slice("--root=".length)
-    : spacedIdx !== -1
-      ? argv[spacedIdx + 1]
-      : ROOT;
+  const root = argValue(process.argv, "--root", ROOT);
+  const exemptionsPath = argValue(process.argv, "--exemptions", EXEMPTIONS_PATH);
+
+  let exemptions;
+  try {
+    exemptions = loadExemptions(exemptionsPath);
+  } catch (e) {
+    console.error(`forbid-module-state-src: ${e.message} —— 豁免机制失效，fail-closed`);
+    process.exit(1);
+  }
+
   const files = collectSrcFiles(root);
   if (files.length === 0) {
-    console.error(`forbid-module-state-src: 未发现任何扫描目标（${PACKAGES.join(", ")} 的 src 空，fail-closed）`);
+    console.error(
+      `forbid-module-state-src: 未发现任何扫描目标（${PACKAGES.join(", ")} 的 src 空，fail-closed）`,
+    );
     process.exit(1);
   }
   const violations = [];
   const badExemptions = [];
   const legitExemptions = [];
   const parseFailures = [];
-  const outOfScopeByFile = new Map();
   const hitRels = new Set();
   for (const file of files) {
     const rel = relative(root, file).split(sep).join("/");
@@ -200,60 +267,66 @@ async function main() {
       parseFailures.push(`${rel}: ${String(e.message).slice(0, 120)}`);
       continue;
     }
-    const { hits, outOfScope, tsLines } = result;
-    if (outOfScope.length > 0) outOfScopeByFile.set(rel, outOfScope.length);
-    if (hits.length > 0 && WHITELIST.has(rel)) hitRels.add(rel);
-    const whitelisted = WHITELIST.has(rel);
+    const { hits, tsLines } = result;
+    if (hits.length > 0) hitRels.add(rel);
+    const exempt = exemptions.get(rel);
     for (const h of hits) {
-      const reason = hasExemption(tsLines, h.line - 1);
-      const label = `模块级 ${h.kind}（${h.names}）`;
-      if (reason && whitelisted) {
-        legitExemptions.push(`${rel}:${h.line} [${label}] 豁免理由：${reason}`);
-      } else if (reason && !whitelisted) {
-        badExemptions.push(`${rel}:${h.line} [${label}] 有豁免注释但文件不在 WHITELIST（v${WHITELIST_V}）`);
-      } else if (!reason && whitelisted) {
-        violations.push(`${rel}:${h.line} [${label}] 在 WHITELIST 但该调用点缺紧邻豁免注释 ${EXEMPT_MARK}`);
+      const note = hasExemption(tsLines, h.line - 1);
+      const detail = `${rel}:${h.line} [模块级 ${h.kind}（${h.names}）]`;
+      if (exempt) {
+        legitExemptions.push(
+          `${detail} 登记豁免 ${exempt.trackingIssue}（reviewBy ${exempt.reviewBy}）`,
+        );
+      } else if (note) {
+        badExemptions.push(
+          `${detail} 有 ${EXEMPT_MARK} 注释但未在 scripts/data/gate-exemptions.json 登记（注释不能替代登记）`,
+        );
       } else {
-        violations.push(`${rel}:${h.line} [${label}] ${h.text}`);
+        violations.push(`${detail} ${h.text}`);
       }
     }
   }
-  // WHITELIST 反向校验（防清单腐烂）：磁盘上存在、且本次**确有命中**的文件才算「活的」
-  // 豁免条目——文件不存在（--root fixture / 包已整体移除）不判腐烂。
-  for (const k of WHITELIST.keys()) {
-    const onDisk = existsSync(join(root, k));
-    if (onDisk && !hitRels.has(k)) badExemptions.push(`${k}: WHITELIST 条目指向的文件本次零命中（已腐烂，应删除条目）`);
+  // 台账反向校验（防清单腐烂）：磁盘上存在、且本次**确有命中**的文件才算「活的」豁免条目——
+  // 文件不存在（--root fixture / 包已整体移除）不判腐烂。
+  for (const [p, item] of exemptions) {
+    const onDisk = existsSync(join(root, p));
+    if (onDisk && !hitRels.has(p)) {
+      badExemptions.push(
+        `${p}: 豁免条目指向的文件本次零命中（已腐烂，应删除条目 ${item.trackingIssue}）`,
+      );
+    }
   }
 
   const fail = violations.length > 0 || badExemptions.length > 0 || parseFailures.length > 0;
-  // 口径外计数（盲区可观测化）：缩进的模块级声明不判红，但每次运行都打印——静默的
-  // 绕过口比已知的绕过口危险（自述里已登记该盲区与它的裁决边界）。
-  if (outOfScopeByFile.size > 0) {
-    const total = [...outOfScopeByFile.values()].reduce((a, b) => a + b, 0);
-    console.log(`forbid-module-state-src: 口径外（缩进的模块级声明，不判红；见门禁自述「盲区」）：${total} 处`);
-    for (const [f, n] of outOfScopeByFile) console.log(`  - ${f}: ${n} 处`);
-  }
   if (parseFailures.length > 0) {
     console.error("forbid-module-state-src: 解析失败（fail-closed，一律判红）：");
     for (const p of parseFailures) console.error(`  - ${p}`);
   }
   if (badExemptions.length > 0) {
-    console.error("forbid-module-state-src: 存在豁免但不合法（三态之 FAIL）：");
+    console.error("forbid-module-state-src: 存在豁免但不合法：");
     for (const b of badExemptions) console.error(`  - ${b}`);
   }
   if (violations.length > 0) {
-    console.error(`forbid-module-state-src: 发现 ${violations.length} 处模块级可变状态（应收进闭包/实例，或逐点豁免）：`);
+    console.error(
+      `forbid-module-state-src: 发现 ${violations.length} 处模块级可变状态（应收进闭包/实例，或在 scripts/data/gate-exemptions.json 登记豁免）：`,
+    );
     for (const v of violations) console.error(`  - ${v}`);
   }
   if (fail) {
-    console.error(`forbid-module-state-src: FAIL（扫描 ${files.length} 文件，违规 ${violations.length} / 非法豁免 ${badExemptions.length} / 解析失败 ${parseFailures.length}）`);
+    console.error(
+      `forbid-module-state-src: FAIL（扫描 ${files.length} 文件，违规 ${violations.length} / 非法豁免 ${badExemptions.length} / 解析失败 ${parseFailures.length}）`,
+    );
     process.exit(1);
   }
   if (legitExemptions.length > 0) {
-    console.log(`forbid-module-state-src: OK（扫描 ${files.length} 文件，合法豁免 ${legitExemptions.length} 处，WHITELIST v${WHITELIST_V}）：`);
+    console.log(
+      `forbid-module-state-src: OK（扫描 ${files.length} 文件，包 ${PACKAGES.join(", ")}（v${PACKAGES_V}），登记豁免 ${legitExemptions.length} 处）：`,
+    );
     for (const l of legitExemptions) console.log(`  - ${l}`);
   } else {
-    console.log(`forbid-module-state-src: OK（扫描 ${files.length} 文件，包 ${PACKAGES.join(", ")}（v${PACKAGES_V}）无模块级可变状态）`);
+    console.log(
+      `forbid-module-state-src: OK（扫描 ${files.length} 文件，包 ${PACKAGES.join(", ")}（v${PACKAGES_V}）无模块级可变状态）`,
+    );
   }
 }
 
