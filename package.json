@@ -8,6 +8,7 @@
   "scripts": {
     "build": "pnpm -r --filter !dsh-plugin-hub build",
     "test": "pnpm -r --filter !dsh-plugin-hub test",
+    "test:contract": "vitest run --project contract",
     "contract": "node scripts/gate/contract-check.ts",
     "pack:check": "node scripts/gate/pack-check.ts",
     "verify:npmlayout": "node scripts/gate/verify-npm-layout.ts",
