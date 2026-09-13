@@ -62,8 +62,12 @@ export const BOOLEAN_KEYS: readonly string[] = [
   "notifySound",
 ];
 
-/** 非负整数键及其上界（越界视为非法而不是截断——静默改写用户的输入比拒绝更糟）。 */
-const COUNT_LIMITS: Record<string, number> = {
+/**
+ * 非负整数键及其上界（越界视为非法而不是截断——静默改写用户的输入比拒绝更糟）。
+ *
+ * 导出理由同 `BOOLEAN_KEYS`：门禁要按真实取值断言「每个键都在默认设置里且上界是非负整数」。
+ */
+export const COUNT_LIMITS: Record<string, number> = {
   historyMaxAgeDays: 3_650,
   maxConnections: 1_024,
 };
