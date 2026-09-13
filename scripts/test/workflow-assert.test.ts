@@ -958,7 +958,7 @@ test("#742 阶段 1: 变异矩阵逐段超时来自 combo（固定全局值必�
   assert.ok(
     /^    timeout-minutes: \$\{\{ matrix\.combo\.timeoutMinutes \}\}$/m.test(mg),
     "mutation-gate 的 timeout 必须取矩阵逐段值——固定 30 分钟小于台账派生的最长段超时" +
-      "（实测 20~42 min），已真实杀过一次：run 34628767342 的 dsh-notifier · config 1819s 被 canceled",
+      "（派生 30~42 min），已真实杀过一次：run 34628767342 的 dsh-notifier · config 1819s 被 canceled",
   );
   assert.ok(
     !/^    timeout-minutes: \d+$/m.test(mg),

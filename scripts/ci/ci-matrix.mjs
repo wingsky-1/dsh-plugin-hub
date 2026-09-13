@@ -141,7 +141,7 @@ export function computeCiMatrix(options = {}) {
 
   // 4b. 逐段超时与「test 变更失基线」（#742 阶段 1：1.1 的强制跑 + 1.7 的盲区处置）
   // 超时与夜间班同源（mutation-plan 的台账 + 公式）：PR 侧不再吃固定 30 分钟的全局值，
-  // 那小于台账派生的最长段超时（实测区间 20~42 min），已真实杀过一次（run 34628767342）。
+  // 那小于台账派生的最长段超时（派生区间 30~42 min），已真实杀过一次（run 34628767342）。
   const peaks = loadFullScopePeaks(rootDir);
   const testChanged = parseTestChangedPackages(env.TEST_CHANGED_PACKAGES);
 
