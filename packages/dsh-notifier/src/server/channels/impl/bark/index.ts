@@ -20,23 +20,7 @@ const SEVERITY_LEVEL: Readonly<Record<NotifySeverity, string>> = {
 
 /** 投递一条消息到 bark 实例。 */
 export async function sendBark(target: BarkTarget, message: NotifyMessage): Promise<DeliverResult> {
-  const body: BarkPushBody = {
-    device_key: target.deviceKey,
-    title: truncateCodePoints(message.title, displayCaps.bark.titleMax),
-    body: truncateCodePoints(message.body, displayCaps.bark.bodyMax),
-  };
-  // 显式 level 由调用方按 kind 算好，其次才是强度映射；两者都取不到就不写这个键
-  const mapped =
-    message.severity === undefined || !Object.hasOwn(SEVERITY_LEVEL, message.severity)
-      ? undefined
-      : SEVERITY_LEVEL[message.severity];
-  const level = target.level ?? mapped;
-  if (level !== undefined) body.level = level;
-  if (target.sound !== undefined) body.sound = target.sound;
-  if (target.group !== undefined) body.group = target.group;
-  if (target.icon !== undefined) body.icon = target.icon;
-  if (target.url !== undefined) body.url = target.url;
-  if (target.badge !== undefined) body.badge = target.badge;
+  const body = barkBodyOf(target, message);
 
   let response: Response;
   try {
@@ -54,12 +38,7 @@ export async function sendBark(target: BarkTarget, message: NotifyMessage): Prom
 
   if (!response.ok) {
     // 4xx 确定失败；5xx 与网络同属可重试面。响应体只取摘要——本域不做脱敏
-    let detail = "";
-    try {
-      detail = truncateCodePoints(await response.text(), 200);
-    } catch {
-      // 读不到响应体：状态码本身已是完整原因
-    }
+    const detail = await errorDetailOf(response);
     const reason = `bark HTTP ${response.status}${detail ? `: ${detail}` : ""}`;
     return failed(reason, response.status >= 500);
   }
@@ -78,6 +57,37 @@ export async function sendBark(target: BarkTarget, message: NotifyMessage): Prom
     }
   }
   return { status: "ok", stage: "delivered" };
+}
+
+/** 推送体：可选键「取不到就不写」，与服务端的缺省语义对齐。 */
+function barkBodyOf(target: BarkTarget, message: NotifyMessage): BarkPushBody {
+  const body: BarkPushBody = {
+    device_key: target.deviceKey,
+    title: truncateCodePoints(message.title, displayCaps.bark.titleMax),
+    body: truncateCodePoints(message.body, displayCaps.bark.bodyMax),
+  };
+  // 显式 level 由调用方按 kind 算好，其次才是强度映射；两者都取不到就不写这个键
+  const mapped =
+    message.severity === undefined || !Object.hasOwn(SEVERITY_LEVEL, message.severity)
+      ? undefined
+      : SEVERITY_LEVEL[message.severity];
+  const level = target.level ?? mapped;
+  if (level !== undefined) body.level = level;
+  if (target.sound !== undefined) body.sound = target.sound;
+  if (target.group !== undefined) body.group = target.group;
+  if (target.icon !== undefined) body.icon = target.icon;
+  if (target.url !== undefined) body.url = target.url;
+  if (target.badge !== undefined) body.badge = target.badge;
+  return body;
+}
+
+/** 非 2xx 的响应体摘要；读不到就是空串——状态码本身已是完整原因。 */
+async function errorDetailOf(response: Response): Promise<string> {
+  try {
+    return truncateCodePoints(await response.text(), 200);
+  } catch {
+    return "";
+  }
 }
 
 /** 失败结果：原因按展示上限截断（截断是展示语义，不是脱敏）。 */

@@ -146,14 +146,7 @@ class AgentStateMachine {
       best,
       snapshot,
       pushed,
-      source:
-        pushed !== undefined
-          ? "push"
-          : snapshot === undefined
-            ? "无"
-            : stale
-              ? "快照冻结"
-              : "快照兜底",
+      source: evidenceSourceOf(stale, pushed, snapshot),
       rememberedTurn,
       hasNewEnd: best !== undefined && (rememberedTurn === undefined || best.turn > rememberedTurn),
     };
@@ -169,6 +162,17 @@ class AgentStateMachine {
         `记忆turn=${rememberedTurn !== undefined ? String(rememberedTurn) : "-"}`,
     );
   }
+}
+
+/** 证据源标签：推送优先，其次快照（比基线旧的快照属于上一轮），都没有就是「无」。 */
+function evidenceSourceOf(
+  stale: boolean,
+  pushed?: TurnEndEvidence,
+  snapshot?: TurnEndEvidence,
+): string {
+  if (pushed !== undefined) return "push";
+  if (snapshot === undefined) return "无";
+  return stale ? "快照冻结" : "快照兜底";
 }
 
 /** 本域唯一的状态机实例：类不外放，外面 `new` 不出第二份。 */

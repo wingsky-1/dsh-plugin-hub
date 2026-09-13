@@ -143,27 +143,38 @@ export function validateSettings(raw: SettingsPatch): ValidationResult {
 
 /** 单键校验；分支与归一化的取值助手一一对应，两处判断的是同一件事。 */
 function validateOne(key: string, raw: RawSettingValue): ValidationResult {
-  if (BOOLEAN_KEYS.includes(key)) {
-    return typeof raw === "boolean" ? { ok: true } : reject(key, "需要 true 或 false");
-  }
-  if (key === "browserSound" || key === "systemSound") {
-    return typeof raw === "boolean" || isSoundId(raw)
-      ? { ok: true }
-      : reject(key, "需要 false、true 或内置音色名");
-  }
+  if (BOOLEAN_KEYS.includes(key)) return requireBoolean(key, raw);
+  if (key === "browserSound" || key === "systemSound") return requireSoundSetting(key, raw);
   const limit = COUNT_LIMITS[key];
-  if (Number.isFinite(limit)) {
-    return typeof raw === "number" && Number.isInteger(raw) && raw >= 0 && raw <= limit
-      ? { ok: true }
-      : reject(key, `需要 0 到 ${limit} 之间的整数`);
-  }
+  if (Number.isFinite(limit)) return requireCount(key, raw, limit);
   if (key === "quietHours") return validateQuietHours(raw);
   if (key === "channels") return validateChannels(raw);
   if (key === "kindRoutes") return validateKindRoutes(raw);
-  if (key === "allowKinds") {
-    return isStringArray(raw) ? { ok: true } : reject(key, "需要字符串数组");
-  }
+  if (key === "allowKinds") return requireStringArray(key, raw);
   return { ok: true };
+}
+
+/** 布尔闸门键：`"true"` 之类的同义写法不算数——设置页提交的就是字面 boolean。 */
+function requireBoolean(key: string, raw: RawSettingValue): ValidationResult {
+  return typeof raw === "boolean" ? { ok: true } : reject(key, "需要 true 或 false");
+}
+
+/** 声音键：false = 静音、true = 默认音、字符串 = 内置音色名，三者之外都非法。 */
+function requireSoundSetting(key: string, raw: RawSettingValue): ValidationResult {
+  return typeof raw === "boolean" || isSoundId(raw)
+    ? { ok: true }
+    : reject(key, "需要 false、true 或内置音色名");
+}
+
+/** 计数键：闭区间 `[0, 上界]`，小数与越界都拒绝（截断会静默改写用户的输入）。 */
+function requireCount(key: string, raw: RawSettingValue, limit: number): ValidationResult {
+  const inRange = typeof raw === "number" && Number.isInteger(raw) && raw >= 0 && raw <= limit;
+  return inRange ? { ok: true } : reject(key, `需要 0 到 ${limit} 之间的整数`);
+}
+
+/** 白名单字符串数组键。 */
+function requireStringArray(key: string, raw: RawSettingValue): ValidationResult {
+  return isStringArray(raw) ? { ok: true } : reject(key, "需要字符串数组");
 }
 
 function validateQuietHours(raw: RawSettingValue): ValidationResult {
@@ -192,25 +203,34 @@ function validateChannels(raw: RawSettingValue): ValidationResult {
 function validateChannel(raw: RawSettingValue): ValidationResult {
   if (!isRecord(raw)) return reject("channels", "频道项需要对象");
   if (typeof raw.id !== "string" || raw.id === "") return reject("channels", "频道缺少 id");
-  if (raw.type === "bark") {
-    if (typeof raw.baseUrl !== "string" || raw.baseUrl === "")
-      return reject("channels", `bark 频道 ${raw.id} 缺少 baseUrl`);
-    if (typeof raw.deviceKey !== "string" || raw.deviceKey === "")
-      return reject("channels", `bark 频道 ${raw.id} 缺少 deviceKey`);
-    if (raw.level !== undefined && !isMember(raw.level, BARK_LEVELS))
-      return reject("channels", `bark 频道 ${raw.id} 的 level 非法`);
-    return { ok: true };
-  }
-  if (raw.type === "webhook") {
-    if (typeof raw.url !== "string" || raw.url === "")
-      return reject("channels", `webhook 频道 ${raw.id} 缺少 url`);
-    if (!isMember(raw.auth, WEBHOOK_AUTHS))
-      return reject("channels", `webhook 频道 ${raw.id} 的 auth 非法`);
-    if (raw.preset !== undefined && !isMember(raw.preset, WEBHOOK_PRESETS))
-      return reject("channels", `webhook 频道 ${raw.id} 的 preset 非法`);
-    return { ok: true };
-  }
+  if (raw.type === "bark") return validateBarkChannel(raw, raw.id);
+  if (raw.type === "webhook") return validateWebhookChannel(raw, raw.id);
   return reject("channels", "频道 type 需要 bark 或 webhook");
+}
+
+/** bark 频道：`baseUrl` 与 `deviceKey` 是投递必需；`level` 缺省时让 severity 映射生效，故可省。 */
+function validateBarkChannel(raw: Record<string, RawSettingValue>, id: string): ValidationResult {
+  if (typeof raw.baseUrl !== "string" || raw.baseUrl === "")
+    return reject("channels", `bark 频道 ${id} 缺少 baseUrl`);
+  if (typeof raw.deviceKey !== "string" || raw.deviceKey === "")
+    return reject("channels", `bark 频道 ${id} 缺少 deviceKey`);
+  if (raw.level !== undefined && !isMember(raw.level, BARK_LEVELS))
+    return reject("channels", `bark 频道 ${id} 的 level 非法`);
+  return { ok: true };
+}
+
+/** webhook 频道：`url` 与 `auth` 是投递必需；`preset` 缺省归一到 custom，故可省。 */
+function validateWebhookChannel(
+  raw: Record<string, RawSettingValue>,
+  id: string,
+): ValidationResult {
+  if (typeof raw.url !== "string" || raw.url === "")
+    return reject("channels", `webhook 频道 ${id} 缺少 url`);
+  if (!isMember(raw.auth, WEBHOOK_AUTHS))
+    return reject("channels", `webhook 频道 ${id} 的 auth 非法`);
+  if (raw.preset !== undefined && !isMember(raw.preset, WEBHOOK_PRESETS))
+    return reject("channels", `webhook 频道 ${id} 的 preset 非法`);
+  return { ok: true };
 }
 
 function validateKindRoutes(raw: RawSettingValue): ValidationResult {

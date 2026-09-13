@@ -136,24 +136,34 @@ function webhookTarget(channel: WebhookConfig): WebhookTarget {
   }
   // 自定义头先落配置里的那份，认证头随后并入：同名时认证头是更强的事实。
   const headers = { ...channel.headers };
-  if (channel.auth === "bearer" && channel.token !== undefined && channel.token.length > 0) {
-    target.auth = { kind: "bearer", token: channel.token };
-  }
-  if (channel.auth === "basic" && channel.username !== undefined && channel.username.length > 0) {
-    target.auth = { kind: "basic", user: channel.username, password: channel.password ?? "" };
-  }
-  if (channel.auth === "header") {
-    const name = channel.headerName;
-    const value = channel.headerValue;
-    if (name !== undefined && name.length > 0 && value !== undefined && value.length > 0) {
-      headers[name] = value;
-    }
-  }
+  assignAuth(target, channel);
+  assignAuthHeader(headers, channel);
   if (Object.keys(headers).length > 0) target.headers = headers;
   if (channel.timeoutSec !== undefined && channel.timeoutSec > 0) {
     target.timeoutSec = channel.timeoutSec;
   }
   return target;
+}
+
+/** bearer / basic 凭据写进目标；空串与缺省同义（都没配），此时不带认证。 */
+function assignAuth(target: WebhookTarget, channel: WebhookConfig): void {
+  if (channel.auth === "bearer" && channel.token !== undefined && channel.token.length > 0) {
+    target.auth = { kind: "bearer", token: channel.token };
+    return;
+  }
+  if (channel.auth === "basic" && channel.username !== undefined && channel.username.length > 0) {
+    target.auth = { kind: "basic", user: channel.username, password: channel.password ?? "" };
+  }
+}
+
+/** header 认证的头并入自定义头；名或值为空即没配全，与「认证方式不是 header」一样不带。 */
+function assignAuthHeader(headers: Record<string, string>, channel: WebhookConfig): void {
+  if (channel.auth !== "header") return;
+  const name = channel.headerName;
+  const value = channel.headerValue;
+  if (name !== undefined && name.length > 0 && value !== undefined && value.length > 0) {
+    headers[name] = value;
+  }
 }
 
 /** 缺 preset 回落 `ntfy`：归一化后恒有值，这里是脏配置的兜底（与旧实现同口径）。 */
