@@ -57,7 +57,7 @@ export function makeDeriver() {
     lines = content.split("\n");
     anchors = scanAnchors(content);
     const results = [];
-    let cursor = 0; // 同名模块顺序消费的游标
+    const cursor = 0; // 同名模块顺序消费的游标
     for (const g of groups) {
       const fspec = parseSpec(g.from);
       let si = -1;

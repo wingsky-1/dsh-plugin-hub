@@ -335,7 +335,7 @@ export function buildWindowSummary(
   let calls = 0;
   let turns = 0;
   let toolCalls = 0;
-  let prevTotal: number | null = null;
+  const prevTotal: number | null = null;
   let peakKey: string | null = null;
   let peakVal = -1;
   let top: { provider: string; model: string | null; value: number } | null = null;

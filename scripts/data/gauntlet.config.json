@@ -15,7 +15,7 @@
     }
   },
   "lint": {
-    "note": "#764 落地项 A2：全仓 ESLint 警告预算（唯一事实源，由 tools/lint/bin/lint.mjs 消费）。为什么必须有：ESLint 自带的 --max-warnings 在本仓无效——入口走 Node API，CLI 参数会被静默丢弃，于是一千余条 warning 零约束力、只增不减。取值 = 落地时的实测值（含 error 与 warning 之和），只许降不许升；上调由 scripts/gate/threshold-monotonic.mjs 判红。",
+    "note": "#764 落地项 A2：全仓 ESLint 警告预算（唯一事实源，由 tools/lint/bin/lint.mjs 消费）。为什么必须有：ESLint 自带的 --max-warnings 在本仓无效——入口走 Node API，CLI 参数会被静默丢弃，于是一千余条 warning 零约束力、只增不减。取值 = 落地时的实测值（含 error 与 warning 之和），只许降不许升；上调由 scripts/gate/threshold-monotonic.mjs 判红。数值未随一轮 lint 面修正变动（#765）：忽略规则由 `**/lib/**` 收窄为 `packages/*/lib/**`，把被误吞的 scripts/lib 15 个源码文件放回面内（面 441 → 459 文件、新增 16 条 warning），同轮清掉 16 条可修存量对冲，故仍为 671 而非 687。",
     "maxWarnings": 671
   },
   "mutation": {

@@ -439,3 +439,39 @@ test("#765 第 6 项：no-var 不在降级集里，且在常规规则面按 erro
     "新写的 var 必须直接判红（而不是降级成警告去吃预算）",
   );
 });
+
+test("#722 阶段五：lint 面完整性——同名源码目录不得被构建产物忽略规则吞掉", async () => {
+  const { ESLint } = requireLint("eslint");
+  const eslint = new ESLint({
+    cwd: ROOT,
+    overrideConfigFile: join(ROOT, "tools", "lint", "eslint.config.js"),
+  });
+
+  // 为什么有这一测：忽略规则原先写作 `**/lib/**`（本意是 packages/*/lib 这类构建产物），
+  // 它同时匹配 `scripts/lib/**`——15 个文件的门禁共享实现（豁免台账校验器、config-matrix
+  // 提取器、导出面提取器…）因此整体落在 lint 面之外。失效形态是最难发现的那种：这些文件
+  // 不受复杂度门禁、不受 no-var、不受任何规则约束，命中数为 0 看起来像「很干净」。
+  // 故此处按**行为**（isPathIgnored）钉住两侧，而不是断言配置文件里的字面量。
+  const libDir = join(ROOT, "scripts", "lib");
+  const sources = existsSync(libDir)
+    ? readdirSync(libDir).filter((f) => /\.(ts|mts|cts|js|mjs|cjs)$/.test(f))
+    : [];
+  // 枚举而不是写死路径，但枚举为空即断言对象消失——必须显式失败，否则这一测会退化成空转。
+  assert.ok(sources.length > 0, `scripts/lib 下应有源码文件可断言（实得 ${sources.length} 个）`);
+  for (const name of sources) {
+    assert.equal(
+      await eslint.isPathIgnored(join(libDir, name)),
+      false,
+      `scripts/lib/${name} 必须参与 lint——它是源码不是构建产物`,
+    );
+  }
+
+  // 产物侧反向钉住：收窄忽略面不等于把 lib 目录一律放进来。
+  for (const rel of ["packages/dsh-notifier/lib/index.js", "packages/dsh-lan-proxy/lib/index.js"]) {
+    assert.equal(
+      await eslint.isPathIgnored(join(ROOT, rel)),
+      true,
+      `${rel} 是构建产物，必须留在 lint 面之外`,
+    );
+  }
+});

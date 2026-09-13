@@ -373,7 +373,7 @@ describe("applyConfigPatch tls 成对形态（P2-1）", () => {
     { tlsCertFile: "", tlsKeyFile: "/keep.pem" },
     { tlsCertFile: "/new.pem", tlsKeyFile: "" },
   ];
-  let mixedResults = [];
+  const mixedResults = [];
 
   beforeAll(async () => {
     for (const patch of tlsPatches) {
@@ -1172,7 +1172,7 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
   describe("A. warnLog 分支（ctx 形态降级不抛）", () => {
     // 经 apply 触发：ctx 无 logger 字段 / logger.warn 非 function —— 走降级路径不抛。
     const loggers = [{ warn: "not-a-function" }, undefined];
-    let results = [];
+    const results = [];
 
     beforeAll(() => {
       for (const logger of loggers) {
@@ -1214,7 +1214,7 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
           },
         },
       ];
-      let results = [];
+      const results = [];
 
       beforeAll(() => {
         for (const { service } of services) {
@@ -1407,7 +1407,7 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
           },
         },
       ];
-      let records = [];
+      const records = [];
 
       beforeAll(async () => {
         for (const { name, raw } of cases) {
@@ -1488,7 +1488,7 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
       ];
       let good;
       let goodUpdates;
-      let badRecords = [];
+      const badRecords = [];
       let failOut;
       let failBakKept;
 
@@ -1597,7 +1597,7 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
     // D1: payload 非对象 → body={} → patch undefined → payload 定位错误。
     describe("D1: payload 非对象", () => {
       const payloads = [null, "str", 42];
-      let results = [];
+      const results = [];
 
       beforeAll(async () => {
         for (const payload of payloads) {

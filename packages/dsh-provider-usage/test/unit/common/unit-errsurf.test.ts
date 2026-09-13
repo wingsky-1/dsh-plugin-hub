@@ -358,10 +358,8 @@ describe("4) schedule 层真实退出冒烟（ReportScheduler onDue 失败）", 
 });
 
 describe("5) apply 集成：装配接线后 /health 携带 layerErrors", () => {
-  let savedDshHome,
-    health,
-    payload,
-    disposers = [];
+  let savedDshHome, health, payload;
+  const disposers = [];
 
   beforeAll(async () => {
     const dir = mkdtempSync(join(tmpdir(), "dou-errsurf-apply-"));

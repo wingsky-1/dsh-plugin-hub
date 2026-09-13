@@ -153,7 +153,7 @@ export class HistoryStore {
       }
     }
     // 2. 总大小超限：从最旧文件逐个删（保留最后 1 个文件，防清零）
-    let remaining = jsonlFiles.filter((f) => {
+    const remaining = jsonlFiles.filter((f) => {
       const dayMs = Date.parse(f.slice(0, 10));
       return !(Number.isFinite(dayMs) && dayMs < cutoff);
     });

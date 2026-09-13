@@ -333,7 +333,7 @@ function analyzeInjectionFaces(srcDir) {
 /** 解析 `A, B as C, type D` 形具名列表 → [{ exported, local }]（exported=对外名）。 */
 function parseNameList(list) {
   const out = [];
-  for (let raw of list.split(",")) {
+  for (const raw of list.split(",")) {
     let name = raw.trim();
     if (name === "") continue;
     name = name.replace(/^type\s+/, ""); // 内联 `export { type A }` 形态

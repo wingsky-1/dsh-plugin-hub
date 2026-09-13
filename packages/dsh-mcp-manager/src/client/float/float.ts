@@ -434,7 +434,7 @@ export function mountFloat(ctx: any, state: McpState, actions: UiActions): () =>
   };
   state.updateFloatState = updateFloat;
 
-  let listeners: any[] = [];
+  const listeners: any[] = [];
 
   /** rAF 合并调度：同帧多次 scroll/resize/vv-resize 只重算一次（#128 第 7 条）。 */
   let rafId = 0;

@@ -1003,7 +1003,7 @@ describe.skipIf(process.platform === "win32")(
       console.error = (...args: unknown[]) => {
         writeErrors.push(args.map(String).join(" "));
       };
-      let response = makeRes();
+      const response = makeRes();
       surfaced = false;
       committed = false;
       try {

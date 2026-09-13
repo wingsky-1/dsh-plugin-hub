@@ -40,9 +40,14 @@ const TS_SOURCES = ["**/*.ts", "**/*.tsx", "**/*.mts", "**/*.cts"];
 const JS_SOURCES = ["**/*.js", "**/*.mjs", "**/*.cjs"];
 
 // 构建产物、依赖与本地草稿不参与 lint；声明文件没有实现体，复杂度门禁对其无意义。
+//
+// 构建产物按**具体位置**排除（`packages/*/lib/**`）而不是写成 `**/lib/**`：后者会把
+// `scripts/lib/**`（15 文件 / 2600 余行门禁共享实现，是源码不是产物）一并吞掉，且吞得
+// 无声——那些文件不受复杂度门禁、不受 no-var、不受任何规则约束，命中数为 0 看起来像
+// 「很干净」。判据见 scripts/test/lint-toolchain.test.ts 的面完整性一测。
 const IGNORES = [
   "**/node_modules/**",
-  "**/lib/**",
+  "packages/*/lib/**",
   "coverage/**",
   ".maintenance-drafts/**",
   "**/*.d.ts",
