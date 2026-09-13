@@ -80,7 +80,6 @@ function stringifyRow(value) {
   return text;
 }
 
-/** 严格扫描多帧 zstd 容器；返回每个完整帧的字节区间。 */
 /**
  * 扫描多帧 zstd 容器。
  *
