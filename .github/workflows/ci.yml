@@ -295,6 +295,9 @@ jobs:
     if: github.event_name == 'pull_request' && needs.changes.outputs.fullGate == 'true' && needs.changes.outputs.hasMutations == 'true'
     strategy:
       fail-fast: false
+      # 与夜间班（observe.yml）一致限流：gate:full 的 PR 会一次性实例化全部命中段，
+      # 不限并发会挤占同仓其它 workflow 的 runner 配额。
+      max-parallel: 5
       # #220 B 方案：combo = {package, seg}；改造后 seg=功能段名（数字段名亦兼容），
       # 多段包逐段并行实例化，未拆分包单实例（seg="0" 走包级配置 <pkg>.json）
       matrix:
@@ -640,6 +643,12 @@ jobs:
 
       - name: Forbid homedir in src（#517 B5：src 禁直连 HOME 来源 API，AST 扫描 fail-closed）
         run: node scripts/gate/forbid-homedir-src.mjs
+
+      # #733 计划项 3.1.2：本闸原先藏在 contract-check.ts 的 spawnSync 里，与两个兄弟闸的
+      # 执行点形态不一致（后果之一是 contract 段会先打印「客户端契约：全部通过」再 FAIL）。
+      # 统一成同款直接步骤；本地侧同步进 local-gate 的 cheapGlobal。
+      - name: Forbid module state in src（#733 N2a：src 禁模块级可变状态，AST 扫描 fail-closed）
+        run: node scripts/gate/forbid-module-state-src.mjs
 
       - name: Docs check（README/链接/占位符）
         run: pnpm docs:check

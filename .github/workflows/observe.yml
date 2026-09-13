@@ -130,6 +130,12 @@ jobs:
       - name: CRAP（热点报告；strict 见 gauntlet.config.json 的 crap.strict）
         run: pnpm crap
 
+      # #765：豁免/临时项到期台账（纯报告，脚本退出码恒 0，不会让本班变红）。
+      # 放夜间全量班而不是 PR 路径——它的用途是排期复核（人工裁决续期或收口），
+      # 每次 PR 都打印同一份存量台账只会变成噪音。
+      - name: Exemption ledger（豁免到期台账，仅报告）
+        run: node scripts/gate/collect-exemptions.mjs
+
       - name: Upload coverage summary（供 mutation-collect 的报告展示；#718 S1.5）
         # 报告正文同时含覆盖率与变异率，故覆盖率产物必须跨 job 传递。
         # 失败时不阻断收口：collect 侧的 observe-check 对该文件本就是可选的。

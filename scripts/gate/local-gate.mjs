@@ -106,6 +106,9 @@ function tierSteps(tier, { hitPackages, withCoverage }) {
     { label: "aggregate:check（聚合 patch 不漂移）", args: ["aggregate:check"] },
     { label: "test:src-tests（*.src.test.ts 禁现）", args: ["test:src-tests"] },
     { label: "gate:homedir（src 禁直连 HOME）", args: ["gate:homedir"] },
+    // #733 计划项 3.1.2：本闸原先只在 contract-check.ts 里 spawnSync，不进 cheapGlobal，
+    // 于本地增量档不可见；现与兄弟闸一致（CI 侧同为直接步骤）。
+    { label: "gate:module-state（src 禁模块级可变状态）", args: ["gate:module-state"] },
     { label: "docs:check（README/链接）", args: ["docs:check"] },
     { label: "lint（ESLint 复杂度门禁，阈值见 gauntlet.config.json）", args: ["lint"] },
   ];
