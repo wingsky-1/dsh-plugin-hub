@@ -5487,8 +5487,10 @@ describe("#654 集成级：压实 await 窗口内到达的过去日行不被连�
 
   beforeAll(async () => {
     // 集成级（#654 竞态）：压实 await 窗口内到达的过去日行不得被连带消费。
-    // 用 gate 卡住 readAggDayShard 的返回，把「迟到行」精确插入 await 窗口内；
-    // 等待用 setImmediate 轮询（不是固定 sleep），符合防 flake 纪律。
+    // 用 gate 卡住 readAggDayShard 的返回，把「迟到行」精确插入 await 窗口内。
+    // #771：窗口开启改由被测代码自己兑现（markEntered 在 readAggDayShard 的 promise
+    // resolve 之前同步调用）——原先靠 2000 次 setImmediate 轮询赌「轮次跑得比 fs 往返快」，
+    // 那次预算实测只值约 7ms 墙钟，CI 负载下耗尽即假红（Stryker dry run 整段 ConfigError）。
     const root = mkdtempSync(join(tmpdir(), "dou-trend-654-"));
     const nowMs = T0; // 当日 09-04，迟到行落 09-03（时钟回拨形态）
     const pastDay = dayKey(T0 - 24 * HOUR);
@@ -5504,11 +5506,16 @@ describe("#654 集成级：压实 await 窗口内到达的过去日行不被连�
     const gate = new Promise((r) => {
       release = r;
     });
+    let markEntered;
+    const enteredWindow = new Promise((resolve) => {
+      markEntered = resolve;
+    });
     let gateHit = false;
     store.readAggDayShard = async (day) => {
       const rows = await origReadAggDayShard(day);
       if (day === pastDay && !gateHit) {
         gateHit = true;
+        markEntered();
         await gate;
       }
       return rows;
@@ -5518,8 +5525,14 @@ describe("#654 集成级：压实 await 窗口内到达的过去日行不被连�
     tracker.handleEvent({ id: "sA" }, ev("assistant/chunk", USAGE(10, 5), T0 - 24 * HOUR, 2));
 
     const flushing = tracker.flushNow();
-    for (let i = 0; i < 2000 && !gateHit; i += 1) await new Promise((r) => setImmediate(r));
-    gateHitAtFlush = gateHit;
+    // 等待窗口开启：与「本轮压实跑完」竞速——窗口未开而压实已结束（实现回归）→ 记 false
+    // 判红而不是挂死；正常路径下压实必然先兑现 markEntered 才可能 settle，
+    // 故不存在「窗口已开却判 false」的假红路径。
+    const windowOpened = await Promise.race([
+      enteredWindow.then(() => true),
+      flushing.then(() => false),
+    ]);
+    gateHitAtFlush = windowOpened;
 
     // await 窗口内到达的迟到行（同过去日、未落盘）
     tracker.handleEvent({ id: "sB" }, ev("request/header", HEADER(), T0 - 24 * HOUR, 3));

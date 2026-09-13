@@ -605,6 +605,14 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
 3. **异步落盘用轮询替代固定 sleep**：断言持久化状态前必须 `poll-until` 满足条件再断言，
    严禁 `setTimeout(resolve, 50 / 300)` 这类「等够毫秒」的时序假设。参考 notifier 的
    `waitForHistory(route, predicate)` 辅助（轮询 GET 直到谓词成立，超时兜底返回当前态）。
+   **轮询不得设「轮次预算」**：`for (let i = 0; i < 2000 && !hit; i += 1) await new Promise((r) => setImmediate(r))`
+   这类**有界轮次上限**是伪装成轮询的墙钟预算——#771 实测 2000 次 `setImmediate` 只值
+   7.3ms 墙钟（3.67µs/轮）：无负载时 21 轮 / 2ms 命中，注入 10ms 的 fs 往返延迟即耗尽 2000 轮，
+   断言以 `expected false to be true` 假红，并让 Stryker dry run 整段 `ConfigError`
+   （该用例被 12/32 个变异段共用）。等待异步条件必须等**语义终点**：由被测代码在观测点
+   兑现的可注入同步点（deferred / barrier），或被测面提供的可等待句柄（`await flushNow()`）。
+   确需防挂死时，兜底只能挂在**失败路径**（如与「被测动作自身完成」竞速：窗口没开而动作
+   已结束即判红），且不得把兜底当成功判据，也不得用更大轮数 / 更长墙钟「再赌一次」。
 4. **e2e 不得以墙钟观察异步行为，必须驱动或注入**：等待异步动作生效（热更新、定时轮询、
    防抖落盘）时，禁止用「轮询墙钟直到断言成立」代替确定性驱动——那只是把 flake 从
    「窗口太小」换成「窗口随负载漂移」。#722 实证：provider-usage e2e 用 6s 窗口等 2s 热更新
