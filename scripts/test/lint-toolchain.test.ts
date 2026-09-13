@@ -17,7 +17,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { join, resolve } from "node:path";
 
@@ -225,9 +226,9 @@ test("#764 A4：基线抑制机制已接线（Node API 只应用，创建/修剪
   assert.match(lintSrc, /applySuppressions:\s*true/, "lint.mjs 必须应用官方基线抑制");
   assert.match(lintSrc, /suppressionsLocation/, "基线文件位置必须显式钉住，不靠默认值");
 
-  // 基线当前为空（三条规则的 9 处存量是直接修掉的，不是挂账），故文件允许不存在；
-  // 一旦存在就必须是官方结构：文件 → 规则 → { count }。结构错了官方实现会整份读不出，
-  // 表现为「抑制全部失效、存量一次性炸开」，所以在门禁里先钉一层。
+  // 基线允许不存在（存量修完并 prune 后就是空/无文件）；一旦存在就必须是官方结构：
+  // 文件 → 规则 → { count }。结构错了官方实现会整份读不出，表现为「抑制全部失效、
+  // 存量一次性炸开」，所以在门禁里先钉一层。
   const file = join(ROOT, "eslint-suppressions.json");
   if (!existsSync(file)) return;
   const data = JSON.parse(readFileSync(file, "utf8"));
@@ -240,5 +241,123 @@ test("#764 A4：基线抑制机制已接线（Node API 只应用，创建/修剪
         `${filePath} 的 ${rule} 必须带正整数 count，实际 ${JSON.stringify(entry)}`,
       );
     }
+  }
+});
+
+test("#764 A5：sonarjs/deprecation 在类型感知面生效；非类型感知面不配（已知盲区）", async () => {
+  const { ESLint } = requireLint("eslint");
+  const eslint = new ESLint({
+    cwd: ROOT,
+    overrideConfigFile: join(ROOT, "tools", "lint", "eslint.config.js"),
+  });
+  const level = (configured) => (Array.isArray(configured) ? configured[0] : configured);
+
+  const typedFace = await eslint.calculateConfigForFile(
+    join(ROOT, "packages", "dsh-provider-usage", "src", "shared", "contracts.ts"),
+  );
+  assert.ok(
+    level(typedFace.rules?.["sonarjs/deprecation"]) === 2 ||
+      level(typedFace.rules?.["sonarjs/deprecation"]) === "error",
+    `deprecation 必须在 packages/*/src 面为 error，实际 ${JSON.stringify(typedFace.rules?.["sonarjs/deprecation"])}`,
+  );
+  assert.equal(
+    typedFace.languageOptions?.parserOptions?.projectService,
+    true,
+    "deprecation 需要类型信息：必须与 projectService 同面（sonarjs 缺 program 时静默 return {}）",
+  );
+
+  // 面边界是刻意的：test/scripts 面没有 program，配上去只会让规则静默空转（假绿），
+  // 所以不配。这里把该事实钉住——将来要扩面，必须同时给那个面配 projectService。
+  const otherFace = await eslint.calculateConfigForFile(
+    join(ROOT, "packages", "dsh-provider-usage", "test", "helpers.ts"),
+  );
+  assert.equal(
+    otherFace.rules?.["sonarjs/deprecation"],
+    undefined,
+    "非类型感知面不得配 deprecation（没有 program 时它静默空转，属假绿）",
+  );
+});
+
+test("#764 A5：基线条目必须指向现存文件，且规则在该文件上确实是 error", async () => {
+  const file = join(ROOT, "eslint-suppressions.json");
+  if (!existsSync(file)) return;
+  const { ESLint } = requireLint("eslint");
+  const eslint = new ESLint({
+    cwd: ROOT,
+    overrideConfigFile: join(ROOT, "tools", "lint", "eslint.config.js"),
+  });
+  const data = JSON.parse(readFileSync(file, "utf8"));
+  for (const [relPath, rules] of Object.entries(data)) {
+    const abs = join(ROOT, relPath);
+    assert.ok(existsSync(abs), `基线条目指向的文件必须存在：${relPath}`);
+    const cfg = await eslint.calculateConfigForFile(abs);
+    for (const rule of Object.keys(rules)) {
+      const configured = cfg.rules?.[rule];
+      const lv = Array.isArray(configured) ? configured[0] : configured;
+      assert.ok(
+        lv === 2 || lv === "error",
+        `${relPath} 的基线条目 ${rule} 在该文件上必须是 error 级（否则官方不抑制，条目等于空挂）`,
+      );
+    }
+  }
+});
+
+test("#764 A5：基线的只许收缩棘轮（官方只在 CLI 侧检查，Node API 侧由 lint.mjs 自补）", () => {
+  // 三档实跑：count 恰好 / 多一条（存量已修掉，该 prune）/ 少一条（超基线，错误现形）。
+  // 为什么必须自己补这条：applySuppressions 把「未使用条目」算进 unused 返回，而 Node API 的
+  // lintFiles 直接丢弃它——不补就没人催收缩基线，挂账只增不减。
+  const probe = "packages/dsh-provider-usage/src/shared/contracts.ts";
+  const dir = mkdtempSync(join(tmpdir(), "lint-suppressions-"));
+  try {
+    const run = (count) => {
+      const base = join(dir, `base-${count}.json`);
+      writeFileSync(
+        base,
+        JSON.stringify({ [probe]: { "sonarjs/deprecation": { count } } }),
+        "utf8",
+      );
+      return spawnSync(
+        process.execPath,
+        ["tools/lint/bin/lint.mjs", `--suppressions=${base}`, probe],
+        { cwd: ROOT, encoding: "utf8" },
+      );
+    };
+
+    const exact = run(40);
+    assert.equal(exact.status, 0, `基线恰好应放行，实际 exit ${exact.status}：${exact.stdout}`);
+    assert.match(exact.stdout, /基线已抑制 40 处/);
+    assert.match(
+      exact.stdout,
+      /^lint: 检查/m,
+      "汇总行必须能在管道下存活（process.exitCode 而非 exit）",
+    );
+
+    const surplus = run(41);
+    assert.equal(surplus.status, 1, "基线多出条数 = 存量已修掉却没收缩，必须判红");
+    assert.match(surplus.stderr, /已经失效/);
+    assert.match(surplus.stderr, /--prune-suppressions/, "报错须给出可照抄的收缩命令");
+
+    const deficit = run(39);
+    assert.equal(deficit.status, 1, "基线少于实际违规 = 超出基线的错误必须现形");
+    assert.match(deficit.stdout, /error 40/, "超基线时该文件 40 处错误应全部报出");
+    assert.doesNotMatch(
+      deficit.stderr,
+      /已经失效/,
+      "超基线不得被说成「条目失效」——那会把修复方向指向 prune 而不是修代码",
+    );
+
+    // 子集运行 = pre-commit 只喂 staged 文件：**未被 lint 的文件不在判定范围内**。
+    // 少了这条口径，钩子会把其余文件的条目全判成失效并拦住提交——本回归正是被它拦出来的。
+    const subset = spawnSync(process.execPath, ["tools/lint/bin/lint.mjs", probe], {
+      cwd: ROOT,
+      encoding: "utf8",
+    });
+    assert.equal(
+      subset.status,
+      0,
+      `子集运行不得把未 lint 的基线条目判成失效，实际 exit ${subset.status}：${subset.stderr}`,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

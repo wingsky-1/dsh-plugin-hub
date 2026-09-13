@@ -37,6 +37,10 @@ docs/
 scripts/data/dir-imports-baseline.json
 scripts/data/dsh-notifier-export-surface.json
 scripts/data/mutation-segment-ledger.json
+# 存量抑制基线由 ESLint CLI（--suppress-all / --prune-suppressions）以
+# json-stable-stringify 写回：实测与 Prettier 只差一个结尾换行，但每次 prune 都会把换行顶掉，
+# 于是 format:check 在每次收缩基线后恒红——与上面三个数据文件同型，形态归生成器。
+eslint-suppressions.json
 # 聚合 patch 由 scripts/gate/aggregate.ts 生成，且 `--check` 对生成内容做**逐字节**比对
 # （aggregate.ts:102 `readFileSync(PATCH_PATH)`）——格式化它 = 该门禁恒红。
 # 各独立包的 cordis.patch.yml 是手写的，仍在格式化面内（它们的内容会被逐字拼进聚合文件，

@@ -528,6 +528,32 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
     全域实测最大值（cyclomatic 78 / cognitive 84），只拦新增劣化；收紧路线与目标见 issue #732。
   - **与 CRAP 的关系**：`pnpm crap` 的圈复杂度**取自同一条 ESLint 规则**（`Linter` API + 阈值 0
     枚举全部函数），不实现第二份算法——两者是同一事实源的消费方，不存在口径漂移面。
+  - **规则面与类型感知（#764）**：非类型感知的 `tseslint.configs.recommended` 打底；三条
+    type-checked 规则（`no-floating-promises` / `no-misused-promises` / `await-thenable`）与
+    `sonarjs/deprecation` 挂在 `packages/*/src/**`（`parserOptions.projectService`，用 `tools/lint`
+    里的真 TS 6）。**该面是刻意的最小面**：类型感知要建 program，成本随文件数走；更要紧的是
+    sonarjs 的 typed 规则**缺 program 时静默 `return {}`**（typescript-eslint 的
+    `getParserServices` 则会抛错），所以给一条 typed 规则配一个没有 program 的面 = 假绿。
+    扩面必须同时给那个面配 `projectService`。
+  - **警告预算是硬判据**：阈值在 `gauntlet.config.json` 的 `lint.maxWarnings`（只许降，上调由
+    `threshold-monotonic.mjs` 判红）；入口对 `errorCount + warningCount` 求和判定，**读不到预算
+    即 fail-closed**。ESLint 自带的 `--max-warnings` 在本仓无效（参数会被入口的参数过滤丢弃）。
+  - **存量基线与「只许收缩」棘轮**：`eslint-suppressions.json` 承载已登记为 error 的规则的存量
+    （当前只有 `sonarjs/deprecation` 的 52 处 v1→v2 迁移债）。官方 Bulk Suppressions 的两个硬
+    约束决定了流程：只有 **error** 级规则会被抑制，且**创建/修剪只能走 CLI**（Node API 只应用）。
+    维护动作（两条命令的口径都在这里，别处不再复述）：
+    - 收紧：`./tools/lint/node_modules/.bin/eslint --config tools/lint/eslint.config.js --prune-suppressions --suppressions-location eslint-suppressions.json <面>`
+    - 新增挂账：把上面的 `--prune-suppressions` 换成 `--suppress-all`（**只给确实要挂账的规则用**，
+      它会把该面上所有 error 全量入账）。
+    官方只在 CLI 侧检查「不再出现的条目」，Node API 的 `lintFiles` 会把 `unused` 直接丢弃——所以
+    `tools/lint/bin/lint.mjs` **自补了这条棘轮**：基线条目数 > 实际被抑制数即判红，并打印可照抄的
+    prune 命令。含义是「修掉存量必须同步收缩基线」，基线只能单向下行。
+  - **新规则的准入**（#764 A5 决议）：只收**实测零误报**的 correctness 规则，一次不进超过三条；
+    `sonarjs` 的非类型感知 problem 面**整体不启用**（实测 242 处命中经逐条复核真问题为 0：门禁脚本
+    调 `git`、`=== undefined` 防御判空、测试里的假 `/tmp/` 路径与负例夹具、字符串数组的确定性
+    排序……），且那批规则无任何配置项可收窄误报。**升级 `eslint-plugin-sonarjs` 时新增规则默认
+    不启用**，须先按上述标准实测（依据：Microsoft .NET warning waves 的 opt-in 语义，
+    typescript-eslint 对稳定配置的 semver 承诺——规则增删只在大版本）。
 - **本地提交门禁（#722 阶段五，lefthook）**：`pnpm install` 经 `prepare` 自动装钩子。
   - `pre-commit`：`lint-staged` 只把**本次 staged 的源文件**交给 `tools/lint/bin/lint.mjs`，
     秒级；复杂度超阈即拦下本次提交（staged 之外的存量超标函数不影响提交）。

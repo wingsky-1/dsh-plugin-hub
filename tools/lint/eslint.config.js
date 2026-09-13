@@ -111,6 +111,18 @@ export default [
       "@typescript-eslint/no-floating-promises": "error",
       "@typescript-eslint/no-misused-promises": "error",
       "@typescript-eslint/await-thenable": "error",
+      // sonarjs/deprecation（S1874，#764 A5 决议）：报「调用了被 @deprecated 标注的内部符号」。
+      // 这是本仓此前完全没有的信号——TypeScript 的 @deprecated 只让编辑器画删除线，不进构建，
+      // 于是一次 v1→v2 迁移可以在 CI 全绿的情况下长期留着几十处旧调用（实测 52 处）。
+      //
+      // 为什么放这一块而不是自己的块：它 requiresTypeChecking，必须和 projectService 同面。
+      // 更要紧的是 sonarjs 的 typed 规则**缺 program 时是静默 `return {}`**（不像 typescript-eslint
+      // 的 getParserServices 会抛错），所以「给它一个没有 program 的面」等于让它假装通过——
+      // 要扩面必须先给那个面配 projectService，否则是假绿。
+      //
+      // 存量 52 处走 A4 的官方基线抑制（eslint-suppressions.json），不进 warn：warn 级既挂不上
+      // 基线，又会撞穿零余量的警告预算（实测 warn 会让已有基线条目失效并 exit 2）。
+      "sonarjs/deprecation": "error",
     },
   },
   {
