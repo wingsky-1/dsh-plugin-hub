@@ -1,0 +1,305 @@
+/**
+ * dsh-notifier config 域 service 块 —— 装配面（读写设置）。
+ *
+ * 面口径：只经 `config/interface.ts` 的 `installConfig` / `releaseConfig` / `readConfig` /
+ * `readSettingsView` / `writeConfig`，只伪 `config/deps.ts` 声明的 `logger`。
+ *
+ * 导入顺序是硬性的：`configStore` 是模块级单例，落盘路径在**构造时**由 `notifierFile()` 定下，
+ * 而静态 import 会在任何语句之前求值——顺序反了，本节全部落盘就写进真实 `~/.dsh`（正在跑的
+ * `dsh web` 的 home）。故顶部先建临时 home，再动态导入被测模块；每个用例开跑前清掉配置文件，
+ * 让「装配」始终相当于一次冷启动。
+ *
+ * 掩码字面量独立写出（不从源码导入）：它是与设置页共享的跨端契约。
+ */
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
+import type {
+  NotifyConfig,
+  RawSettingValue,
+  SettingInvalid,
+  SettingsPatch,
+} from "../../../src/server/config/impl/model/type.ts";
+import type { WriteResult } from "../../../src/server/config/impl/service/type.ts";
+import { CONFIG_FILE_NAME, notifierFile } from "../../../src/server/shared/interface.ts";
+import { makeLogger, tempDshHome } from "../../helpers.ts";
+
+const home = tempDshHome();
+const configFile = notifierFile(CONFIG_FILE_NAME);
+const { installConfig, releaseConfig, readConfig, readSettingsView, writeConfig } =
+  await import("../../../src/server/config/interface.ts");
+
+/** 掩码占位：设置页把用户没改动的凭据原样提交回来，两侧字面量必须一致。 */
+const MASK = "********";
+
+/** 合法 bark 频道：写面要求 id / baseUrl / deviceKey 非空且 level 合法。 */
+const BARK = {
+  type: "bark",
+  id: "bark:phone",
+  name: "A",
+  baseUrl: "https://api.day.app",
+  deviceKey: "key-1",
+  level: "active",
+};
+
+/** 装配一次并交出日志出口（DSH_HOME 已在模块顶部指向临时目录）。 */
+function assemble() {
+  const logger = makeLogger();
+  installConfig({ logger });
+  return logger;
+}
+
+/** 取「非法」失败的载荷；不是 invalid（或竟然成功）即当场失败。 */
+function invalidOf(result: WriteResult): SettingInvalid {
+  if (result.ok || result.reason !== "invalid") {
+    throw new Error(`期望 invalid，实际 ${JSON.stringify(result)}`);
+  }
+  return result.error;
+}
+
+/** 取一份配置里的频道数组；存储层形状不受契约约束，故按原始值看。 */
+function channelsOf(config: Partial<NotifyConfig>): Array<Record<string, RawSettingValue>> {
+  return (config.channels ?? []) as unknown as Array<Record<string, RawSettingValue>>;
+}
+
+/** 手写配置文件：模拟用户或别的工具改过磁盘上那一份（目录可能还不存在）。 */
+function writeConfigFile(text: string): void {
+  mkdirSync(dirname(configFile), { recursive: true });
+  writeFileSync(configFile, text);
+}
+
+/** 磁盘上的 JSON（写面必须落成可重新解析的完整文件）。 */
+function onDisk(): Record<string, RawSettingValue> {
+  return JSON.parse(readFileSync(configFile, "utf8"));
+}
+
+/** 装配一次并取该文件的修订号；先释放再写文件，避免把上一个快照带进来。 */
+function revisionOfFile(text: string): number {
+  releaseConfig();
+  rmSync(configFile, { force: true });
+  writeConfigFile(text);
+  assemble();
+  return readSettingsView().revision;
+}
+
+beforeEach(() => {
+  // 冷启动：配置文件不存在与内容为空对读面是同一件事，这里统一成前者。
+  rmSync(configFile, { recursive: true, force: true });
+});
+
+afterEach(() => {
+  releaseConfig();
+});
+
+afterAll(() => {
+  home.dispose();
+});
+
+describe("装配与读面", () => {
+  it("无文件装配：install 返回时读面已是完整默认设置（异步读会开一个「拿到半份对象」的窗口）", () => {
+    assemble();
+    const config = readConfig();
+    for (const key of Object.keys(DEFAULT_CONFIG) as Array<keyof NotifyConfig>) {
+      expect(config[key], key).toEqual(DEFAULT_CONFIG[key]);
+    }
+    const view = readSettingsView();
+    expect(view.user).toEqual({});
+    expect(view.writable).toBe(true);
+  });
+
+  it("装配期同步读完文件：读面与用户层都已是文件里的值", () => {
+    writeConfigFile(
+      '{"notifyAsk":false,"quietHours":{"enabled":true,"start":"23:00","end":"07:00"}}',
+    );
+    assemble();
+    expect(readConfig().notifyAsk).toBe(false);
+    expect(readConfig().quietHours.enabled).toBe(true);
+    expect(readConfig().quietHours.start).toBe("23:00");
+    expect(readSettingsView().user.notifyAsk).toBe(false);
+  });
+
+  it("配置文件坏掉时回落默认而不是让装配失败，写一次即修好", async () => {
+    writeConfigFile("{ 半截");
+    assemble();
+    expect(readConfig().notifyAsk).toBe(DEFAULT_CONFIG.notifyAsk);
+    const result = await writeConfig({ notifyAsk: false });
+    expect(result.ok).toBe(true);
+    expect(onDisk().notifyAsk).toBe(false);
+  });
+
+  it("releaseConfig 后读面回落默认（下一个装配者不该继承上一个的用户层快照）", async () => {
+    assemble();
+    await writeConfig({ notifyAsk: false });
+    releaseConfig();
+    for (const key of Object.keys(DEFAULT_CONFIG) as Array<keyof NotifyConfig>) {
+      expect(readConfig()[key], key).toEqual(DEFAULT_CONFIG[key]);
+    }
+    expect(readSettingsView().user).toEqual({});
+  });
+
+  it("重复装配当场抛错、release 幂等且之后可再装配（单例语义，重复调用是编程错误）", () => {
+    assemble();
+    expect(() => assemble()).toThrow(/只能装配一次/u);
+    releaseConfig();
+    expect(() => releaseConfig()).not.toThrow();
+    assemble();
+    expect(readConfig().notifyAsk).toBe(DEFAULT_CONFIG.notifyAsk);
+  });
+});
+
+describe("写面：落盘、校验、版本", () => {
+  it("写一次即落盘：文件可被重新解析、目录里不留临时文件（半截 JSON 会被下一次装配当空设置）", async () => {
+    assemble();
+    const result = await writeConfig({ notifyTaskDone: false, maxConnections: 32 });
+    expect(result.ok).toBe(true);
+    expect(onDisk().notifyTaskDone).toBe(false);
+    expect(onDisk().maxConnections).toBe(32);
+    expect(readdirSync(dirname(configFile)).filter((name) => name.includes(".tmp-"))).toEqual([]);
+  });
+
+  it("写后再装配（进程重启）用户层从文件恢复：设置不丢", async () => {
+    assemble();
+    expect((await writeConfig({ notifyAsk: false })).ok).toBe(true);
+    releaseConfig();
+    assemble();
+    expect(readConfig().notifyAsk).toBe(false);
+  });
+
+  it("校验失败：不落盘、不改内存快照，并带上首个非法键（非法值先写进文件就没救了）", async () => {
+    assemble();
+    await writeConfig({ notifyAsk: false });
+    const before = readFileSync(configFile, "utf8");
+    const error = invalidOf(await writeConfig({ maxConnections: -1, notifyAsk: "yes" }));
+    expect(error.key).toBe("maxConnections");
+    expect(readFileSync(configFile, "utf8")).toBe(before);
+    expect(readConfig().maxConnections).toBe(DEFAULT_CONFIG.maxConnections);
+  });
+
+  it("新增频道提交掩码占位：判非法并指向 channels（掩码只表达「未修改」，新实例没有原值）", async () => {
+    assemble();
+    const error = invalidOf(
+      await writeConfig({
+        channels: [{ type: "bark", id: "bark:new", baseUrl: "https://x", deviceKey: MASK }],
+      }),
+    );
+    expect(error.key).toBe("channels");
+    expect(existsSync(configFile)).toBe(false);
+  });
+
+  it("expectedRevision 过期即冲突且不落盘；用当前修订号重试成功（乐观并发的意义就在这里）", async () => {
+    assemble();
+    const stale = readSettingsView().revision;
+    await writeConfig({ notifyAsk: false });
+    const before = readFileSync(configFile, "utf8");
+
+    const conflicted = await writeConfig({ notifyTaskDone: false }, stale);
+    if (conflicted.ok) throw new Error("应当冲突");
+    expect(conflicted.reason).toBe("conflict");
+    expect(readFileSync(configFile, "utf8")).toBe(before);
+
+    const retried = await writeConfig({ notifyTaskDone: false }, readSettingsView().revision);
+    expect(retried.ok).toBe(true);
+    expect(readConfig().notifyTaskDone).toBe(false);
+  });
+
+  it("同一修订号并发两次写：恰好一个成功、一个冲突（比对与写入之间被插入，乐观并发就形同虚设）", async () => {
+    assemble();
+    const revision = readSettingsView().revision;
+    const results = await Promise.all([
+      writeConfig({ notifyAsk: false }, revision),
+      writeConfig({ notifyTaskDone: false }, revision),
+    ]);
+    // 写队列 FIFO：先入队的那次赢，后一次看到的已是新修订号。
+    expect(results[0].ok).toBe(true);
+    expect(results[1].ok ? "ok" : results[1].reason).toBe("conflict");
+    expect(Object.keys(onDisk())).toEqual(["notifyAsk"]);
+  });
+
+  it("写失败经失败出口报告（unavailable + 日志），而不是静默成功", async () => {
+    const logger = assemble();
+    // 目标路径上放一个非空目录：原子写的 rename 必然失败。
+    mkdirSync(configFile, { recursive: true });
+    writeFileSync(join(configFile, "blocker"), "x");
+
+    const result = await writeConfig({ notifyAsk: false });
+    if (result.ok) throw new Error("应当写失败");
+    expect(result.reason).toBe("unavailable");
+    expect(logger.warns).toHaveLength(1);
+    expect(logger.warns[0]).toContain("配置写入失败");
+    expect(readConfig().notifyAsk).toBe(DEFAULT_CONFIG.notifyAsk);
+  });
+
+  it("修订号是用户层内容摘要：键序无关、内容不同则号不同（含嵌套——号不稳定会让每次保存都凭空冲突）", () => {
+    const first = revisionOfFile(
+      '{"notifyAsk":false,"quietHours":{"start":"22:00","enabled":true,"end":"08:00"}}',
+    );
+    // 同样的内容、顶层与嵌套键序都不同：不该算改动。
+    const reordered = revisionOfFile(
+      '{"quietHours":{"end":"08:00","enabled":true,"start":"22:00"},"notifyAsk":false}',
+    );
+    expect(reordered).toBe(first);
+    // 只改嵌套里的一个值：必须算改动，否则版本冲突漏判。
+    const nestedChanged = revisionOfFile(
+      '{"notifyAsk":false,"quietHours":{"start":"22:00","enabled":true,"end":"07:00"}}',
+    );
+    expect(nestedChanged).not.toBe(first);
+  });
+});
+
+describe("写面的合并与凭据", () => {
+  it("合并语义：未提及的顶层键保留、嵌套对象整体替换（不做深合并）、陌生键不被一次保存抹掉", async () => {
+    writeConfigFile('{"futureKey":{"mode":"x"},"notifyAsk":false}');
+    assemble();
+    await writeConfig({
+      quietHours: { enabled: true, start: "22:00", end: "08:00", allowKinds: ["error"] },
+    });
+    await writeConfig({ notifyTaskDone: false });
+
+    expect(onDisk().notifyAsk).toBe(false);
+    expect(onDisk().futureKey).toEqual({ mode: "x" });
+    expect(readConfig().notifyTaskDone).toBe(false);
+    expect(readConfig().quietHours.allowKinds).toEqual(["error"]);
+
+    await writeConfig({ quietHours: { enabled: false, start: "23:00", end: "07:00" } });
+    expect(readConfig().quietHours.enabled).toBe(false);
+    expect(readConfig().quietHours.allowKinds).toEqual([]);
+  });
+
+  it("提交里契约不认识的键原样写回文件（抹掉它们属于静默破坏）", async () => {
+    assemble();
+    const result = await writeConfig({ futureFlag: true } as unknown as SettingsPatch);
+    expect(result.ok).toBe(true);
+    expect(onDisk().futureFlag).toBe(true);
+  });
+
+  it("原型链危险键不写回文件（`__proto__` 等自有键经 JSON 提交是可能的，展开进设置对象就会改写原型）", async () => {
+    assemble();
+    const patch = JSON.parse(
+      '{"__proto__":{"pwned":true},"constructor":{"x":1},"prototype":{"y":1},"notifyAsk":false}',
+    ) as SettingsPatch;
+    const result = await writeConfig(patch);
+    expect(result.ok).toBe(true);
+    expect(Object.keys(onDisk())).toEqual(["notifyAsk"]);
+  });
+
+  it("凭据往返：视图出掩码、域内读面出明文；把掩码提交回来即保留原值（没改密码不该把密码改成 8 个星号）", async () => {
+    assemble();
+    expect((await writeConfig({ channels: [BARK] })).ok).toBe(true);
+
+    const view = readSettingsView();
+    expect(channelsOf(view.user)[0].deviceKey).toBe(MASK);
+    expect(channelsOf(view.effective)[0].deviceKey).toBe(MASK);
+    expect(channelsOf(readConfig())[0].deviceKey).toBe("key-1");
+
+    // 用户只改了显示名，凭据字段原样回显提交。
+    const submitted = channelsOf(view.user).map((channel) => ({ ...channel, name: "手机" }));
+    const result = await writeConfig({ channels: submitted }, view.revision);
+    expect(result.ok).toBe(true);
+    expect(channelsOf(readConfig())[0].name).toBe("手机");
+    expect(channelsOf(onDisk())[0].deviceKey).toBe("key-1");
+    if (!result.ok) throw new Error("应当写入成功");
+    expect(channelsOf(result.view.user)[0].deviceKey).toBe(MASK);
+  });
+});
