@@ -242,6 +242,19 @@ test("npm 强制包含：bundleDependencies 别名同样展开为分发面", () 
   assert.match(join2(result.problems), /packages\/dsh-demo\/node_modules\/dep\/addon\.node/);
 });
 
+test("npm 强制包含：声明的 bin/main 在磁盘上不存在时不进分发面（不制造幻影路径）", () => {
+  // 未构建或写错路径的 bin|main 不是分发物；把它当成分发面成员，扫描面与 NOTE 报告都会指向
+  // 一个不存在的路径。
+  const root = makeRoot({
+    files: ["lib"],
+    pkgExtra: { bin: { tool: "bin/gone.exe" }, main: "native/gone.node" },
+    tree: { "lib/index.js": "text\n" },
+  });
+  const surface = distributionPaths(join(root, "packages", PKG));
+  assert.ok(!surface.includes("bin/gone.exe"));
+  assert.ok(!surface.includes("native/gone.node"));
+});
+
 test("npm 强制包含：根级 README*/LICENSE* 与 package.json 在面内，非根级同名文件不在", () => {
   const root = makeRoot({
     files: ["lib"],
