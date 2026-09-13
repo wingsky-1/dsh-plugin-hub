@@ -38,8 +38,10 @@ jobs:
       hasMutations: ${{ steps.pkgs.outputs.hasMutations }}
       buildPackages: ${{ steps.pkgs.outputs.buildPackages }}
       # 全量门禁开关（#722 门禁分层）：PR 默认走增量——只跑命中包的构建/测试/产物闸；
-      # 打 gate:full 标签才跑覆盖率 + 变异 + 全仓产物闸。策略只在这里计算一处，
-      # 下游三个 job 的 if 与判定脚本共用它，避免「标签语义」散落在多处表达式里。
+      # 打 gate:full 标签再补覆盖率 + 全仓产物闸。策略只在这里计算一处，
+      # 下游 job 的 if 与判定脚本共用它，避免「标签语义」散落在多处表达式里。
+      # #742 阶段 1.1 起本开关**不再覆盖变异**：PR 上一律按命中切片强制跑变异，
+      # mutation-gate / mutation-verdict 的 if 已与它解耦——别把 fullGate 条件加回去。
       fullGate: ${{ steps.fullgate.outputs.fullGate }}
       # 全量包清单（单一事实源，从 plugins-manifest.json active + 聚合包派生）：
       # 供 repo-gate 产物齐备断言等下游消费，空清单 fail-closed
@@ -59,7 +61,7 @@ jobs:
             if printf '%s' "$LABELS" | grep -q '"gate:full"'; then FULL=true; fi
           fi
           echo "fullGate=$FULL" >> "$GITHUB_OUTPUT"
-          echo "::notice::fullGate=$FULL（false = 增量门禁：命中包构建/测试/产物闸 + 廉价全仓静态闸；true = 追加覆盖率 + 变异 + 全仓产物闸）"
+          echo "::notice::fullGate=$FULL（false = 增量门禁：命中包构建/测试/产物闸 + 廉价全仓静态闸；true = 追加覆盖率 + 全仓产物闸。变异自 #742 阶段 1 起两种形态下都按命中切片强制跑）"
 
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -91,47 +93,110 @@ jobs:
           filters: |
             global:
               - 'shared/**'
-              - 'scripts/**'
               - 'agents/**'
               - '.github/**'
               # docs/** 与 AGENTS.md 刻意不在 global 面（#220）：纯文档 PR 无需
               # 变异切片与 smoke/typecheck（release-notes 校验仅存在于 tag 触发的
-              # release.yml）。注意 #693 起 verify-docs（属 scripts/**）**会**消费
-              # AGENTS.md / .dsh/skills / docs 的相对链接与 pnpm 命令引用——但其
-              # 本体在 scripts/** 面内，故「改文档不触发、改脚本才触发」的语义成立，
-              # 无需把这两个路径加回 global。改动本约定须同步 workflow-assert 断言。
+              # release.yml）。注意 #693 起 verify-docs（属 scripts/gate/**）**会**消费
+              # AGENTS.md / .dsh/skills / docs 的相对链接与 pnpm 命令引用——但消费方
+              # 本体仍在 global 面内（#742 阶段 2.1 把整树 'scripts/**' 收窄为白名单时
+              # 已确认 scripts/gate/** 在白名单里），故「改文档不触发、改脚本才触发」
+              # 的语义仍然成立，无需把这两个路径加回 global。
+              # 改动本约定须同步 workflow-assert 断言。
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'tsconfig.base.json'
-              # 根级测试与覆盖率配置：#733 计划项 3.4 起**阈值/分母的唯一事实源是
-              # scripts/data/coverage.config.json**（vitest.config.ts 只 import 它），
-              # 测试分层 glob 在 scripts/data/mutation-topology.json——两者都在 `scripts/**`
-              # 面内，故不重复列出（global 面的 glob 清单有等值断言守着，塞冗余项只会稀释它）。
-              # vitest.config.ts 必须显式列出：它在根级、不属任何包面。
+              # 根级测试与覆盖率配置：阈值/分母的唯一事实源是
+              # scripts/data/coverage.config.json（vitest.config.ts 只 import 它），
+              # 测试分层 glob 在 scripts/data/mutation-topology.json——两者都在下方
+              # scripts/data 白名单里；vitest.config.ts 必须显式列出：它在根级、不属任何包面。
               - 'vitest.config.ts'
+              # #742 阶段 2.3 的归属盘点补入：根 LICENSE 由 scripts/build 的 bundle-host
+              # 复制进**每个包**的产物根（pack:check 逐包断言其存在），是全体包的构建输入，
+              # 原先不在任何面内 → 改它不触发任何切片。归 global 面。
+              - 'LICENSE'
+              # ── #742 阶段 2.1：整树 'scripts/**' 收窄为显式白名单 ──
+              # 为什么不再整树入面：scripts/** 混装了「门禁/构建/CI 切片本体」（改一行对
+              # 所有包生效）与「单一消费者资产」（改一行只影响一个包），整树入面把后者也
+              # 放大成 7 包全量构建 + 全量变异矩阵——实测近 14 个已合并 PR 有 14 个命中
+              # global 面，等于默认路径全程走最坏形态。
+              # 为什么可以放心逐条列举：归属完整性由 scripts/data/ci-face-registry.json
+              # 加 scripts/test/ci-face-coverage.test.ts 判红守着——scripts/ 下新增任何
+              # 一级子树/根级文件/data 文件而未登记即红，不会静默漏跑。
+              - 'scripts/build/**'
+              - 'scripts/ci/**'
+              - 'scripts/gate/**'
+              - 'scripts/lib/**'
+              # 全部 6 个带测试的包共用这一份 runner（其余 scripts/test/** 只服务
+              # 常驻的 test:scripts 静态闸，见注册表的豁免条目）
+              - 'scripts/test/run-vitest.mjs'
+              # 8 份全仓口径数据：改任一份都改变所有包的构建/测试/变异判据
+              - 'scripts/data/coverage.config.json'
+              - 'scripts/data/dir-imports-baseline.json'
+              - 'scripts/data/gate-exemptions.json'
+              - 'scripts/data/gate-scope-registry.json'
+              - 'scripts/data/gauntlet.config.json'
+              - 'scripts/data/mutation-segment-ledger.json'
+              - 'scripts/data/mutation-topology.json'
+              - 'scripts/data/plugins-manifest.json'
             dsh-notifier:
               - 'packages/dsh-notifier/**'
               # #322：stryker 段配置变更须命中本包面（段配置是 mutation 单一事实源，
-              # 不映射则配置类 PR 的 mutation 矩阵全 skip、无法自证）。模式遵循
-              # 包级 <pkg>.json 与段级 <pkg>-<n>.json 两种形态的通配覆盖
+              # 不映射则配置类 PR 的 mutation 矩阵全 skip、无法自证）。#742 阶段 2.4
+              # 起统一为 `<pkg>*.json` 单一形态：包级 <pkg>.json 与段级 <pkg>-<段名>.json
+              # 都被它覆盖，再没有「新增段配置漏映射」的第二种写法。
               - 'stryker.conf.d/dsh-notifier*.json'
+              # #742 阶段 2.2：段配置之外还有两类包级资产——包级 stryker 测试面配置
+              # （vitest.stryker.d/，此前完全不在任何 filters 内）与包级数据资产
+              # （scripts/data/dsh-<pkg>-*.json）
+              - 'vitest.stryker.d/dsh-notifier.config.ts'
+              - 'scripts/data/dsh-notifier-*.json'
+              # root test/smoke-lib.ts 被 5 个包的测试 import（名单与其一致性由
+              # ci-face-coverage 断言按真实 import 图核对，防第 6 个包静默漏面）
+              - 'test/smoke-lib.ts'
             dsh-web-file-preview:
               - 'packages/dsh-web-file-preview/**'
               - 'stryker.conf.d/dsh-web-file-preview*.json'
+              - 'vitest.stryker.d/dsh-web-file-preview.config.ts'
+              - 'test/smoke-lib.ts'
             dsh-mcp-manager:
               - 'packages/dsh-mcp-manager/**'
-              - 'stryker.conf.d/dsh-mcp-manager-*.json'
+              - 'stryker.conf.d/dsh-mcp-manager*.json'
+              - 'vitest.stryker.d/dsh-mcp-manager.config.ts'
+              - 'test/smoke-lib.ts'
             dsh-provider-usage:
               - 'packages/dsh-provider-usage/**'
-              - 'stryker.conf.d/dsh-provider-usage-*.json'
+              - 'stryker.conf.d/dsh-provider-usage*.json'
+              - 'vitest.stryker.d/dsh-provider-usage.config.ts'
+              - 'test/smoke-lib.ts'
             dsh-lan-proxy:
               - 'packages/dsh-lan-proxy/**'
-              - 'stryker.conf.d/dsh-lan-proxy-*.json'
+              - 'stryker.conf.d/dsh-lan-proxy*.json'
+              - 'vitest.stryker.d/dsh-lan-proxy.config.ts'
+              # #742 阶段 2.2 命名归位：原名 lan-proxy-ui-exempt.json 既不带 dsh- 前缀
+              # 也不带包名，只能靠人工记忆映射，改名后与本面其余资产同形
+              - 'scripts/data/dsh-lan-proxy-*.json'
+              - 'test/smoke-lib.ts'
             dsh-verify-isolated:
               - 'packages/dsh-verify-isolated/**'
             dsh-plugins-all:
               - 'packages/dsh-plugins-all/**'
+
+      - name: Detect changed test files（#742 阶段 1.7：static mutant 盲区）
+        id: testdiff
+        # 为什么另起一步用 git diff，而不是取 paths-filter 的命中文件清单：filters 的事实源
+        # 是「包面」，而「哪些文件属于测试面」是 diff 本身的性质、不是面。用 git diff 还能本地
+        # 完整复现与单测（同一个 BASE...HEAD 三点口径）。
+        # 判据两条来源：packages/<pkg>/test/** 的路径规则，加归属注册表里 invalidatesBaseline
+        # 的条目（共享测试库 test/smoke-lib.ts、stryker 段配置、包级 stryker 测试面配置）——
+        # 它们同样会改变「哪些测试在杀 mutant」。
+        # 基准缺失（push 的 force-push 形态）时跳过：非 PR 事件下变异矩阵本就不实例化，
+        # ci-matrix 收到空清单会按 fail-closed 处理（全部失基线，不静默当成「没改测试」）。
+        if: steps.base.outputs.base != ''
+        env:
+          BASE: ${{ steps.base.outputs.base }}
+        run: node scripts/ci/changed-test-packages.mjs
 
       - name: Compute hit packages
         id: pkgs
@@ -140,6 +205,7 @@ jobs:
           FILTER_OUTCOME: ${{ steps.filter.outcome }}
           BASE_SET: ${{ steps.base.outputs.base }}
           FILTER_OUTPUTS: ${{ toJson(steps.filter.outputs) }}
+          TEST_CHANGED_PACKAGES: ${{ steps.testdiff.outputs.testChangedPackages }}
         run: node scripts/ci/ci-matrix.mjs
 
   # ── 第 2 段：命中包并行 build + lib artifact + smoke/typecheck（#722 全切片）──
@@ -216,11 +282,9 @@ jobs:
   #
   # 拓扑（复核裁决采纳并行选项 b）：本 job 与 mutation-gate 矩阵平行
   # （wall-clock = max(install+cov, install+build+stryker)，严格优于串行）。
-  # fail-closed 链路（GHA needs 默认语义，勿「优化」掉）：coverage 失败/skip →
-  # mutation-verdict（if 显式要求本 job success）连带 skipped → repo-gate 判定表
-  # 对 hasMutations=true 的 PR 以 GATE_COVERAGE 维度优先点名「coverage 失败连坐」
-  # 整体判红。变异矩阵不受本 job 影响、独立跑完（报告照常产出），但整体仍红——
-  # 不存在「cov 挂了而门禁绿」的半通状态。
+  # 覆盖率与变异的连坐关系（#742 阶段 1.2 收窄）：verdict 不再以本 job success 为 if 前提，
+  # 故本 job 失败/skip 不会吞掉变异判分；覆盖率维度改由 repo-gate 判定表按 fullGate 裁决
+  # （跑了 gate:full 的 PR 仍要求 success）。整体仍红——不存在「cov 挂了而门禁绿」的半通状态。
   #
   # #722 阶段三：采集换为 vitest coverage（istanbul provider），阈值判分随之移入
   # vitest.config.ts 的 coverage.thresholds（未达标即非零退出，不再有独立判分脚本）；
@@ -228,8 +292,12 @@ jobs:
   coverage:
     name: Coverage collection (global single-run)
     needs: changes
-    # #722 门禁分层：覆盖率是「全仓分母」口径，PR 默认不跑（夜间 observe.yml 每班采集）；
-    # 只有 PR 打 gate:full 标签时才补跑。hasMutations 仍作为对象面判据保留。
+    # #722 门禁分层 + #742 阶段 1.5：覆盖率是「全仓分母」口径（单包 diff 对全仓分母的
+    # 余量实测仅 1.0~1.8pp，与「单次合入质量」的归因原则不符），PR 默认不跑；只有打
+    # gate:full 标签时才补跑（维护者裁决 4 维持该口径）。注意 #742 阶段 1 起变异已改为
+    # PR 强制，本 job 与全仓产物闸是该标签在 PR 侧仅有的效果面，故这个 fullGate 条件必须保留。
+    # 另含 hasMutations：覆盖率是对象面包级口径，纯文档 / 无变异配置包的 PR 即使打了标签也
+    # 不实例化本 job（空切片合法缺席，判定表按 skipped 收）。
     if: github.event_name == 'pull_request' && needs.changes.outputs.fullGate == 'true' && needs.changes.outputs.hasMutations == 'true'
     runs-on: ubuntu-latest
     # 10 分钟：新链路只剩 install + 采集（本机 8 核实测 47s），原 20 分钟是为
@@ -272,42 +340,64 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  # ── 第 3 段之二：增量变异矩阵（#178 v2 切片 + #187 触发面收敛 + #217 解耦）──
-  # - 仅对变异切片实例化（动态 matrix ← changes.mutationPackages）；hasMutations
+  # ── 第 3 段之二：PR 变异矩阵（#178 v2 切片 + #187 事件收敛 + #217 解耦 + #742 阶段 1）──
+  # - 仅对变异切片实例化（动态 matrix ← changes.mutationCombos）；hasMutations
   #   为 'false' 时 if 直接为假、矩阵不实例化（job result = skipped，零实例
   #   动态矩阵实测报 failure 的怪癖形态由此消除）
   # - 仅限 pull_request 触发（#187）：主干变异覆盖归 observe.yml 夜间全量、发版
   #   归 release.yml tag 管线；非 PR 事件下整体 skipped，由 repo-gate 判定脚本
   #   按事件语义显式放行
+  # - #742 阶段 1.1：PR 上一律按命中切片**强制**跑，不再等 gate:full 标签。原形态把
+  #   变异从「单次合入的质量判据」降级成「偶尔补跑」——默认 PR 的落地路径根本不验证
+  #   变异，与 #742 的强制执行目标相反。代价（PR 反馈时间）按维护者裁决 1.6-A「接受」
+  #   显式承担，上界口径见下方「成本上界」。
   # - #217 解耦：本 job 只做基线 restore + stryker run + 报告上传，不再各自跑
-  #   pnpm cov / 判分——变异率判分统一收敛到 mutation-verdict（#722 阶段三起覆盖率
-  #   维度已上移到 coverage job 的 vitest thresholds）；
-  #   与 coverage job 平行无依赖（复核裁决选项 b），cov 失败不影响本矩阵跑完，
-  #   由 verdict 缺席 + repo-gate 判定表兜底整体红
+  #   pnpm cov / 判分——变异率判分统一收敛到 mutation-verdict；
+  #   与 coverage job 平行无依赖（复核裁决选项 b），cov 失败不影响本矩阵跑完
   # - 基线来源（#572）：读孤立分支 refs/heads/baseline/mutation（git 协议
   #   天然跨 ref 可见，零 API 鉴权要求）；首夜/基线缺失时天然降级为全量变异，门禁语义不变仅变慢
+  # - #742 阶段 1.7：命中包的 test/** 有变更时**主动失效该段基线**（回退全量）。Stryker
+  #   的 static mutant 没有覆盖信息、测试变更对它们不可见（官方 Limitations），继续复用会
+  #   让「新增用例意图杀掉存活 mutant」拿到假绿；失效代价 = 该段一次全量，可控（维护者裁决 3）。
+  # - 成本上界（#742 阶段 1.6，裁决选 A「接受」）。口径必须分清「实测墙钟」与「超时上限」：
+  #   ① 基线命中良好（增量复用）：逐段实测墙钟 3~104 s（#718 S0.2 台账，
+  #      dsh-provider-usage-pipeline 段 10.1 s），是绝大多数 PR 的形态；
+  #   ② 基线失效/首夜（全量冷跑）：夜间实测逐段墙钟合计 12409 s（串行），5 槽 LPT 约 42 min；
+  #   ③ 逐段**超时上限**区间 30~42 min（台账派生值，见 timeout-minutes），不是实测墙钟；
+  #      极端上界 = 各段都跑满超时 ÷ 5 个并发槽 ≈ 3.3 小时，仅当全部实例卡死才会出现。
+  #   注意 PR 矩阵的 combo 顺序是包名+段名字典序（ci-matrix 的确定性排序），不按耗时降序——
+  #   耗时降序（LPT）只在夜间 mutation-plan 的 buildShardMatrix 里。长期超阈值再评估 1.6-B
+  #   （按 diff 行采样）——它的行号脆弱依赖会静默漏 mutant，不作默认。
   # 已知约束：GitHub Actions 的 matrix 不允许引用 env context，但可引用 needs outputs
   mutation-gate:
     name: Mutation gate (${{ matrix.combo.package }} · ${{ matrix.combo.seg }})
     needs: changes
     # 与 coverage job 平行（无 needs 依赖）；if 精确锁定事件面与显式布尔切片，
     # 空 slice 时 if 直接为假、矩阵不实例化（job result = skipped）。
-    # #722 门禁分层：变异段耗时最长（单段最坏约 20 分钟，#720），PR 默认不跑；
-    # 打 gate:full 标签时按命中切片补跑，全量变异仍归夜间 observe*.yml。
-    if: github.event_name == 'pull_request' && needs.changes.outputs.fullGate == 'true' && needs.changes.outputs.hasMutations == 'true'
+    # #742 阶段 1.1：去掉了 fullGate 条件——PR 上按切片强制跑，标签只留给覆盖率与
+    # 全仓产物闸（#722 的分层语义收窄到那两项）。
+    if: github.event_name == 'pull_request' && needs.changes.outputs.hasMutations == 'true'
     strategy:
       fail-fast: false
-      # 与夜间班（observe.yml）一致限流：gate:full 的 PR 会一次性实例化全部命中段，
-      # 不限并发会挤占同仓其它 workflow 的 runner 配额。
+      # 与夜间班（observe.yml）同值限流：账户并发实测上界 20（#718 S0.3），5 路变异
+      # 留足余量给同仓其它 workflow。
       max-parallel: 5
       # #220 B 方案：combo = {package, seg}；改造后 seg=功能段名（数字段名亦兼容），
-      # 多段包逐段并行实例化，未拆分包单实例（seg="0" 走包级配置 <pkg>.json）
+      # 多段包逐段并行实例化，未拆分包单实例（seg="0" 走包级配置 <pkg>.json）。
+      # #742 阶段 1：combo 另带 timeoutMinutes（逐段超时）与 invalidateBaseline
+      # （test/** 变更失基线），均由 scripts/ci/ci-matrix.mjs 从事实源派生。
       matrix:
         combo: ${{ fromJSON(needs.changes.outputs.mutationCombos) }}
     runs-on: ubuntu-latest
-    # cov 已剥离：最坏情形 = 基线缺失降级全量变异（lan-proxy 全量实测 7m36s）
-    # + install + 全量 build，30 分钟余量充足（原 45 分钟悬崖余量为 cov 所设）
-    timeout-minutes: 30
+    # #742 阶段 1：超时随段派生（与夜间 observe.yml 的 mutation-plan 同一份台账、同一套
+    # 公式），不再是全局固定值。固定 30 分钟在两个方向上都错：对 4 个长段（派生 32/36/40/42 min）
+    # 太小——run 34628767342（PR #730，gate:full，32 实例）的 dsh-notifier · config 跑到 1819s
+    # 被 canceled、连带判分 job failure、整个 run cancelled；对 28 个短段（实测 20.6~944.2 s）又白等。
+    # 口径提醒：那次 1819s 属于**旧文件面**（该段在 #733 重写前 2365 mutant，现 941 mutant /
+    # 全量实测 117.5 s），它的作用是证明「单一固定值不可能服务所有段」，**不**等于该段现在需要
+    # 30 分钟以上。派生值本身的证据是台账：32/32 段都有 scope=full 实测，且每段派生值都不低于
+    # 该段实测墙钟（mutation-ledger --check 判据）。
+    timeout-minutes: ${{ matrix.combo.timeoutMinutes }}
     steps:
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -355,11 +445,20 @@ jobs:
         # 彻底剥离 main 分支代码树巨型 JSON 与自动 PR 噪音。
         # 基线文件名随 combo 段号：incremental-<pkg>.json / incremental-<pkg>-<seg>.json。
         # 首夜/孤立分支基线缺失时天然降级为全量变异（notice 标注属预期，非缺陷）。
+        # #742 阶段 1.7：invalidateBaseline 为真时先删掉本段基线，复用「基线缺失 → 全量」
+        # 这条既有路径，不另立一套入口。判据来自 ci-matrix（paths-filter 的 <pkg>_files
+        # 清单里出现 test/ 前缀），本步骤不重新推路径规则。
         id: baseline
+        env:
+          INVALIDATE: ${{ matrix.combo.invalidateBaseline }}
         run: |
           set -e
           node scripts/gate/orphan-baseline.mjs restore
           SRC="coverage/mutation/${BASENAME}.json"
+          if [ "$INVALIDATE" = "true" ]; then
+            rm -f "$SRC"
+            echo '::notice::命中包的 test/** 有变更 —— 主动失效本段增量基线，本次全量变异（#742 阶段 1.7：static mutant 对测试变更不可见）'
+          fi
           if [ -f "$SRC" ]; then
             echo "incremental 基线命中：$SRC（孤立分支）"
           else
@@ -397,19 +496,19 @@ jobs:
   # ── 第 3 段之三：聚合判分收尾（artifact 汇合 + 逐包变异率判分，#217）──
   # - 各包 stryker 报告（mutation-gate 矩阵）在此汇合后逐包跑
   #   scripts/gate/mutation-gate.mjs 判分；
-  # - 覆盖率维度不在此判（#722 阶段三 D1）：阈值由 vitest 的 coverage.thresholds
-  #   在 coverage job 内 fail-closed，本 job 的 if 要求 needs.coverage.result ==
-  #   'success' 即为该维度的连坐入口；
+  # - #742 阶段 1.2：**不再**把 needs.coverage.result == 'success' 写进本 job 的 if。
+  #   原写法让覆盖率失败直接吞掉整份变异判分，PR 上既看不到变异结论、也分不清是变异不达标
+  #   还是覆盖率不达标；覆盖率维度仍由 repo-gate 判定表按 fullGate 裁决（跑了 gate:full 的
+  #   路径仍要求 coverage success），只是不再让 verdict 缺席。
   # - if 用 always() 组合：矩阵 failure（实例级 stryker 非零退出）时仍运行
   #   聚合判分——已产出报告的包照常计账、缺报告的包由脚本 exit 2 fail-closed；
-  #   coverage 非 success（失败/skip，本 job 是 fail-closed 链路的收敛点）或
   #   矩阵 skipped（空切片）时连带 skipped，交 repo-gate 判定表按维度裁决；
   # - 判分链为纯 Node 内置模块（gauntlet config + mutation-report-lib），
   #   无需 pnpm install。
   mutation-verdict:
     name: Mutation gate verdict (aggregate)
     needs: [changes, coverage, mutation-gate]
-    if: always() && needs.changes.outputs.fullGate == 'true' && needs.coverage.result == 'success' && needs.mutation-gate.result != 'skipped'
+    if: always() && needs.changes.outputs.hasMutations == 'true' && needs.mutation-gate.result != 'skipped'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

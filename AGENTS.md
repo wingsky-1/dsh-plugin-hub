@@ -67,7 +67,7 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
 | 快线     | `pnpm gate:changed`                       | 迭代中反复跑：只跑 diff 命中包的 build + test + typecheck。包面归属取自 `ci.yml` 的 paths-filter（**唯一事实源**，本地不重述路径规则）；命中全局面时自动升级为 `gate:pr`，解析失败一律回退全量（fail-closed）                                                                        |
 | 最小集   | `pnpm gate:pr`                            | 开 PR 前：快线 + **命中包**的产物闸（`contract` / `pack:check` / `verify:npmlayout` 按 `--packages` 切片）+ 廉价全仓一致性闸（`stryker:check`、`aggregate:check`、`test:src-tests`、`gate:homedir`、`docs:check`、`test:scripts`、`lint`、`format:check`，均秒级且不依赖 lib 产物）                  |
 | 收尾     | `pnpm gate:full`                          | 全仓口径（= 夜间班次口径）：全仓 build/test/typecheck + 全仓产物闸 + 全部静态闸；改过构建链、包结构或发版前跑一遍                                                                                                                                                                    |
-| 全量     | CI 夜间班次（`observe.yml`）              | 全仓产物闸 + 覆盖率 + 全量变异与基线并集入档（原每日四班次增量班已于 #718 S2.2 退役）。本地不默认跑，需要时 `pnpm gate:full --with-coverage`                                                                                                                                         |
+| 全量     | CI 夜间班次（`observe.yml`）              | 全仓产物闸 + 覆盖率 + 全量变异与基线并集入档（原每日四班次增量班已于 #718 S2.2 退役）。本地不默认跑，需要时 `pnpm gate:full --with-coverage`。**注意变异不止在夜间**：PR 上已按命中切片强制跑（见下方「变异不在本地任何档」）                                                                                                                          |
 | 提交钩子 | `lefthook`（`pre-commit` / `commit-msg`） | 提交瞬间的最内层：`pre-commit` 只对本次 **staged 源文件**跑 lint、`commit-msg` 校验提交信息为 Conventional Commits。**不替代上面任何一层**——它不做 build / typecheck / 变异 / 覆盖率。钩子由 `pnpm install` 的 `prepare` 自动安装；跳过用 `git commit --no-verify`（仅限确认无害时） |
 
 | 改动类型                                                                     | 归属层                                                                                         |
@@ -83,6 +83,10 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
 - 分层**不减少检查，只改变时机**：PR 与本地都走增量（命中包），只有"必须全仓才能判定"的
   口径（全仓产物闸、全仓覆盖率分母、全量变异基线）留夜间；高风险改动打 `gate:full` 标签
   在 PR 上补跑（方案见 #722）。
+- **变异不在本地任何档，但 PR 上强制跑**（#742 阶段 1）：命中变异切片的 PR 一律实例化该切片
+  的变异矩阵并聚合判分（`mutation-gate` / `mutation-verdict`，打不打 `gate:full` 标签都跑），
+  改的是命中包 `test/**` 时该包基线会被主动失效、退化为全量。因此**本地 `gate:*` 全绿不等于
+  CI 绿**——变异不达标只在 CI 上暴露。`gate:full` 标签在 PR 上追加的是**覆盖率**与**全仓产物闸**。
 - 结论里**逐条粘贴实际 exit code**；任一非 0 不得声称完成。
 - 新增 `homedir()` / `process.env.HOME` / `untildify()` 调用走**双源豁免**：
   `scripts/data/gate-exemptions.json` 的条目（`gate` 为 `forbid-homedir-src`，含 issue 号）

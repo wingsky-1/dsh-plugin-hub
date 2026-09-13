@@ -9,7 +9,8 @@
 
 ## ci/（CI 切片与矩阵派生）
 
-- `ci/ci-matrix.mjs` — CI 矩阵派生（#722）：从 `ci.yml` filters 的包面算 build / test / typecheck 的实例清单与空切片哨兵项（包面归属的唯一事实源仍是 `ci.yml`，本文件不重述路径规则）。
+- `ci/ci-matrix.mjs` — CI 矩阵派生（#722）：从 `ci.yml` filters 的包面算 build / test / typecheck 的实例清单与空切片哨兵项（包面归属的唯一事实源仍是 `ci.yml`，本文件不重述路径规则）；#742 起另为每个变异 combo 派生逐段超时（复用 `gate/mutation-plan.mjs` 的台账公式）与 `invalidateBaseline`。
+- `ci/changed-test-packages.mjs` — 本次 diff 里 `packages/<pkg>/test/**` 有变更的包清单（#742 阶段 1.7）：Stryker 的 static mutant 无覆盖信息、测试变更对它们不可见，命中包改了测试就主动失效该包基线（维护者裁决 3）。口径 = `BASE...HEAD` 三点 diff + `--no-renames`。
 
 ## build/（构建流水线，每个插件包 build 都会跑）
 
@@ -33,7 +34,7 @@
 - `gate/test-surface.mjs` / `gate/mutation-topology.mjs` — 测试分层与变异面登记校验（唯一事实源 `data/mutation-topology.json`）。
 - `gate/threshold-monotonic.mjs` — 阈值单调性校验（对比 `origin/main`，只许升不许降）：守护 `vitest.config.ts` 的 `coverage.thresholds`（#722 阶段三起的覆盖率唯一事实源）与 `gauntlet.config.json` 的变异阈值。
 - `gate/mutation-ledger.mjs` — 变异段实测台账（#718 S0.2）：从 Actions run 日志解析逐段 `wallSeconds`（真实执行时间，区别于会被增量班刷新的文件 mtime）与复用率/杀灭分布；`--check` 离线校验覆盖不变量（测量值 ∪ `unmeasured` == 当前 `stryker.conf.d` 段集合，消失的历史段须在 `superseded` 登记取代关系），由 `test:scripts` 调用。生成模式需 gh 与网络，故定位为维护者工具、不进 CI（进 CI 需改 `.github/`，属红线段）。
-- `gate/mutation-plan.mjs` — 夜间变异矩阵的段清单与逐段超时派生（#718 S1.1/S1.4）：段清单 glob `stryker.conf.d/dsh-*.json`（与 ci-matrix / mutation-gate 同源），超时按 `mutation-segment-ledger.json` 里该段 `scope=full` 的实测墙钟 × 1.5 + 构建开销派生、下限 20 分钟，无实测的段取保守默认；输出按**估计耗时降序**排列的 matrix JSON（长段先跑 = LPT：GHA 以 `max-parallel` 个槽位按声明顺序消费，实测同一份台账下字典序 makespan 52.9 min 对降序 41.6 min，下界 41.4）供 `observe.yml` 的动态矩阵消费（GHA 矩阵只能引用 needs output、不能读工作区文件，故单列一个秒级 plan job）。
+- `gate/mutation-plan.mjs` — 夜间变异矩阵的段清单与逐段超时派生（#718 S1.1/S1.4）：段清单 glob `stryker.conf.d/dsh-*.json`（与 ci-matrix / mutation-gate 同源），超时按 `mutation-segment-ledger.json` 里该段 `scope=full` 的实测墙钟 × 1.5 + 构建开销派生、下限 30 分钟，无实测的段取保守默认；输出按**估计耗时降序**排列的 matrix JSON（长段先跑 = LPT：GHA 以 `max-parallel` 个槽位按声明顺序消费，实测同一份台账下字典序 makespan 52.9 min 对降序 41.6 min，下界 41.4）供 `observe.yml` 的动态矩阵消费（GHA 矩阵只能引用 needs output、不能读工作区文件，故单列一个秒级 plan job）。
 - `gate/verify-dir-imports.mjs` — 目录 `interface.ts` 门面静态检查 + 依赖图尺子（#664 D10 / #670 C2 / #690 S0）：跨模块引用只许走目标模块的 `interface.ts`，单调基线（`data/dir-imports-baseline.json`）存**证据集合**，放宽须登记到 `data/gate-exemptions.json`（gate=`verify-dir-imports`，path=`<包名>:<证据项>`，与另两闸同一套台账）。
 - `gate/export-surface-snapshot.mjs` — 包导出面快照门禁（#669 M6）：`tsc --declaration` 产物与入库基线零 diff（符号集 + 导出符号定义块），必须显式 `--package`，基线更新须 `--snapshot` 并随 PR 提交。
 - `gate/local-scope.mjs` — 「这次改了什么 → 本地该跑哪些包」的纯函数（#722 门禁分层）：包面只从 `ci.yml` 的 filters 解析，不在本地重述路径规则；全局面命中即把 `gate:changed` 升到 pr。
@@ -106,7 +107,10 @@
 - `data/dir-imports-baseline.json` — 目录导入门禁的单调基线（#690 / #733 A）：结构型计数由 `--write-baseline` 登记，`quality` 段存质量型**证据集合**（边 `from|to|kind`、环签名、未覆盖源文件）。
 - `data/gate-exemptions.json` — 路径受限门禁的豁免台账（#733 计划项 3.1.2 / 3.2.2）：文件级条目 + 可选 `reviewBy`（**有** = 临时、自动进到期台账；**无** = 长期设计事实）；机制实现见 `lib/exemption-gate.ts`。
 - `data/gate-scope-registry.json` — 路径受限门禁的扫描范围登记（#733 计划项 3.2.1）：`scopeFrom` 三值（registry / cli / tree）+ `packages`；**未登记即红**（运行时与自测两处执行）。
-- `data/lan-proxy-ui-exempt.json` — lan-proxy 客户端 UI 豁免表（#733 计划项 3.2.2）：哪些配置键有值但 GUI 不渲染，逐键给原因；条目数上限是**策略**，留在门禁代码里。
+- `data/dsh-lan-proxy-ui-exempt.json` — lan-proxy 客户端 UI 豁免表（#733 计划项 3.2.2）：哪些配置键有值但 GUI 不渲染，逐键给原因；条目数上限是**策略**，留在门禁代码里。
+- `data/dsh-notifier-export-surface.json` — dsh-notifier 的导出面清单（消费者可见的类型/值面）：被包内 `consumer-types` 集成测试消费，该测试在 `vitest.stryker.d/dsh-notifier.config.ts` 的变异面 include 内。
+- `data/dsh-notifier-export-faces.json` — dsh-notifier 的导出面准入清单：被常驻的 `test/export-faces-admission.test.ts` 消费（改这两个文件会命中 dsh-notifier 面，见 `data/ci-face-registry.json`）。
+- `data/ci-face-registry.json` — `packages/` 之外每个 tracked 文件的 CI 归属登记（#742 阶段 2.3）：`faces`（`global` / 包名 / 空数组=显式豁免）+ `why`；`test/ci-face-coverage.test.ts` 用真实 `git ls-files` 与 ci.yml 的 filters 双向核对（未登记、悬空条目、面未接上、死 glob 四类都判红）。
 
 - `data/coverage.config.json` — **覆盖率面单一事实源**（#733 计划项 3.4）：`include` / `exclude`（结构化条目，带 kind 与 reason）/ `thresholds`；`vitest.config.ts` 只 import 它。
 

@@ -14,10 +14,10 @@
  *
  * 注意 pr/full 两档都是**全仓**对象面，与 CI 的「PR 默认增量」不同——本文件只把增量留给
  * changed 快线（CI 的增量由 paths-filter 切片承担，本地没有 PR 上下文可切）。因此本地 pr
- * ≈ CI 的 gate:full 减去覆盖率与变异（那两项归夜间）。
+ * ≈ CI 的 gate:full 减去覆盖率与变异。
  *
- * 必须全量的东西（全仓产物闸、覆盖率、变异）不在 PR 口径里：它们归 CI 夜间班次
- * （observe.yml），本地只在 --with-coverage 时按需补覆盖率。
+ * 本地不跑变异（#742 阶段 3.2 起更要点明）：变异自 #742 阶段 1 起在 PR 上按命中切片**强制**
+ * 跑，本地三档都覆盖不到它；覆盖率与全仓产物闸归 gate:full 标签与夜间 observe.yml。
  * 包面归属的唯一事实源是 ci.yml 的 filters 块（见 local-scope.mjs），本脚本不重述路径规则。
  *
  * 用法：
@@ -31,7 +31,7 @@ import process from "node:process";
 
 import { computeCiMatrix } from "../ci/ci-matrix.mjs";
 import { PREREQ_PACKAGES } from "../test/script-test-prereqs.mjs";
-import { planChangedScope } from "./local-scope.mjs";
+import { planChangedScope, shouldEscalateChangedTier } from "./local-scope.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const PNPM = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
@@ -163,26 +163,29 @@ function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel }) {
         });
       }
     }
-    steps.push(
-      {
-        label: `contract（${scopeLabel}）`,
-        cmd: "node",
-        args: ["scripts/gate/contract-check.ts", "--packages", scopeArg],
-      },
-      {
-        label: `pack:check（${scopeLabel}）`,
-        cmd: "node",
-        args: ["scripts/gate/pack-check.ts", "--packages", scopeArg],
-      },
-      {
-        label: `verify:npmlayout（${scopeLabel}）`,
-        cmd: "node",
-        args: ["scripts/gate/verify-npm-layout.ts", "--packages", scopeArg],
-      },
-      ...cheapGlobal,
-      prereqStep,
-      scriptsSelfTest,
-    );
+    // 产物闸按切片跑；零命中包时**不**拼空口径（#742 阶段 2.1 起「白名单外的 scripts 改动」
+    // 会走到这里：它们的消费方是常驻静态闸，跑一个 `--packages ""` 的产物闸既无意义又可能
+    // 因空切片判红）。此时 pr 档退化为「廉价全仓一致性闸 + test:scripts」，正是那些常驻闸。
+    if (hitPackages.length > 0) {
+      steps.push(
+        {
+          label: `contract（${scopeLabel}）`,
+          cmd: "node",
+          args: ["scripts/gate/contract-check.ts", "--packages", scopeArg],
+        },
+        {
+          label: `pack:check（${scopeLabel}）`,
+          cmd: "node",
+          args: ["scripts/gate/pack-check.ts", "--packages", scopeArg],
+        },
+        {
+          label: `verify:npmlayout（${scopeLabel}）`,
+          cmd: "node",
+          args: ["scripts/gate/verify-npm-layout.ts", "--packages", scopeArg],
+        },
+      );
+    }
+    steps.push(...cheapGlobal, prereqStep, scriptsSelfTest);
     return steps;
   }
 
@@ -255,8 +258,19 @@ function main(argv) {
   }
 
   // 全局面命中（改 shared/scripts/.github/包管理文件）时，changed 快线不足以覆盖静态闸，升到 pr
+  // 升档判据是纯函数（local-scope.shouldEscalateChangedTier，带回归用例）：#722 的全局面升档
+  // 加 #742 阶段 2.1 的空切片升档——白名单外条目的消费方是 CI 上恒跑的静态闸，本地不能空转。
   let effectiveTier = tier;
-  if (tier === "changed" && plan.globalHit) effectiveTier = "pr";
+  if (
+    tier === "changed" &&
+    shouldEscalateChangedTier({
+      globalHit: plan.globalHit,
+      hitPackages: plan.hitPackages,
+      files,
+    })
+  ) {
+    effectiveTier = "pr";
+  }
 
   const scopeLabel =
     plan.hitPackages.length === allPackages.length
@@ -283,7 +297,7 @@ function main(argv) {
   }
   if (steps.length === 0) {
     console.log(
-      "[local-gate] 无命中包面且已升级未触发 —— 纯文档/meta 改动，本地无需跑包级门禁（CI 静态闸仍会跑）",
+      "[local-gate] 无命中包面 —— 纯文档 diff 且无待跑步骤：本地快线不跑（CI 的 docs:check 等静态闸仍会跑）",
     );
     return 0;
   }
@@ -317,6 +331,15 @@ function main(argv) {
   const failed = results.some((r) => r.code !== 0);
   if (skipped > 0) console.log(`[local-gate] 因首个失败跳过 ${skipped} 步`);
   console.log(failed ? "[local-gate] 结果：FAIL" : "[local-gate] 结果：PASS");
+  if (!failed) {
+    // #742 阶段 3.2：本地三档都不跑变异，而 PR 上变异自 #742 阶段 1 起按命中切片**强制**跑
+    // （打不打 gate:full 标签都跑）。不点明的话「本地 PASS」很容易被读成「CI 也会绿」，
+    // 而这正是本地门禁最贵的一种误读——变异不达标只在 CI 上暴露。
+    console.log(
+      "[local-gate] 注意：本档不含变异与全仓覆盖率。变异在 PR 上按命中切片强制跑（#742 阶段 1），" +
+        "覆盖率与全仓产物闸归 gate:full 标签与夜间 observe.yml —— 本地 PASS 不等于 CI 绿。",
+    );
+  }
   return failed ? 1 : 0;
 }
 

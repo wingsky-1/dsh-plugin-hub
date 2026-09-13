@@ -4,6 +4,8 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { loadFullScopePeaks, timeoutForSegment } from "../gate/mutation-plan.mjs";
+
 /**
  * 空切片时 build-test 矩阵的哨兵项（#722）：见 computeCiMatrix 内 buildPackages 注释。
  * 取一个不可能成为包名的值，保证所有 `contains(hitPackages, matrix.package)` 条件为假。
@@ -11,8 +13,28 @@ import { fileURLToPath } from "node:url";
 export const NO_HIT_PACKAGE = "__no-hit-package__";
 
 /**
+ * 解析 changes job 传来的「`packages/<pkg>/test/**` 有变更的包」清单（#742 阶段 1.7）。
+ * unknown=true 表示清单缺失或不可解析 → 调用方一律失基线（fail-closed）：宁可让命中包多跑一次
+ * 全量，也不要在「测试改了却复用旧结果」这个方向上静默假绿（static mutant 无覆盖信息）。
+ */
+export function parseTestChangedPackages(raw) {
+  if (typeof raw !== "string" || raw.trim() === "") {
+    return { packages: new Set(), unknown: true };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { packages: new Set(), unknown: true };
+  }
+  if (!Array.isArray(parsed)) return { packages: new Set(), unknown: true };
+  return { packages: new Set(parsed.filter((p) => typeof p === "string")), unknown: false };
+}
+
+/**
  * 计算 CI 切片与变异矩阵
- * 100% 原生 Node.js 内置模块（node:fs, node:path, node:process），无任何外部依赖
+ * 原生 Node.js 内置模块（node:fs, node:path, node:process）+ 本仓的纯函数派生
+ * （scripts/gate/mutation-plan.mjs 的超时公式），无任何外部依赖
  *
  * @param {object} [options]
  * @param {object} [options.env] 环境变量注入，默认 process.env
@@ -22,7 +44,8 @@ export const NO_HIT_PACKAGE = "__no-hit-package__";
  *   hitPackages: string[],
  *   mutationPackages: string[],
  *   hasMutations: string,
- *   mutationCombos: Array<{ package: string, seg: string }>
+ *   mutationCombos: Array<{ package: string, seg: string, timeoutMinutes: number, invalidateBaseline: boolean }>,
+ *   testChangedPackages: string[]
  * }}
  */
 export function computeCiMatrix(options = {}) {
@@ -116,24 +139,37 @@ export function computeCiMatrix(options = {}) {
 
   const hasMutations = String(mutationPackages.length > 0);
 
+  // 4b. 逐段超时与「test 变更失基线」（#742 阶段 1：1.1 的强制跑 + 1.7 的盲区处置）
+  // 超时与夜间班同源（mutation-plan 的台账 + 公式）：PR 侧不再吃固定 30 分钟的全局值，
+  // 那小于台账派生的最长段超时（派生区间 30~42 min），已真实杀过一次（run 34628767342）。
+  const peaks = loadFullScopePeaks(rootDir);
+  const testChanged = parseTestChangedPackages(env.TEST_CHANGED_PACKAGES);
+
   // mutationCombos: 读取 stryker.conf.d/<pkg>-*.json 文件，展开组合，若只有单配置则 seg: "0"
   const mutationCombos = [];
   for (const pkg of mutationPackages) {
     const segFiles = confFiles.filter((f) => f.startsWith(`${pkg}-`));
+    const segs = [];
     if (segFiles.length > 0) {
-      const segNames = [];
       for (const file of segFiles) {
         const segName = file.slice(pkg.length + 1, -5); // 剥掉 `${pkg}-` 和 `.json`
         if (segName) {
-          segNames.push(segName);
+          segs.push(segName);
         }
       }
-      segNames.sort();
-      for (const seg of segNames) {
-        mutationCombos.push({ package: pkg, seg });
-      }
+      segs.sort();
     } else {
-      mutationCombos.push({ package: pkg, seg: "0" });
+      segs.push("0");
+    }
+    for (const seg of segs) {
+      // 台账的段名 = conf 文件基名：段级 <pkg>-<seg>.json、包级 <pkg>.json（对应 seg="0"）
+      const segKey = seg === "0" ? pkg : `${pkg}-${seg}`;
+      mutationCombos.push({
+        package: pkg,
+        seg,
+        timeoutMinutes: timeoutForSegment(segKey, peaks),
+        invalidateBaseline: testChanged.unknown || testChanged.packages.has(pkg),
+      });
     }
   }
 
@@ -157,6 +193,7 @@ export function computeCiMatrix(options = {}) {
     mutationPackages,
     hasMutations,
     mutationCombos,
+    testChangedPackages: [...testChanged.packages].sort(),
   };
 }
 
@@ -179,6 +216,7 @@ export function runCli(argv = process.argv, env = process.env) {
     mutationPackages,
     hasMutations,
     mutationCombos,
+    testChangedPackages,
   } = result;
   const isJson = argv.includes("--json");
 
@@ -191,6 +229,12 @@ export function runCli(argv = process.argv, env = process.env) {
     console.log(`变异包: ${JSON.stringify(mutationPackages)}`);
     console.log(`变异组合: ${JSON.stringify(mutationCombos)}`);
     console.log(`hasMutations: ${hasMutations}`);
+    console.log(
+      `test/ 有变更的包（失基线，跑全量）: ${JSON.stringify(testChangedPackages)}` +
+        (mutationCombos.some((c) => c.invalidateBaseline)
+          ? "（含清单不可解析的 fail-closed 形态）"
+          : ""),
+    );
   }
 
   if (env.GITHUB_OUTPUT) {

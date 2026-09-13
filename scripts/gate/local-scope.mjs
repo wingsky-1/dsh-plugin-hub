@@ -73,9 +73,43 @@ function safeMatchesGlob(file, glob) {
   try {
     return matchesGlob(file, glob);
   } catch {
-    // 非法 glob：宁可当作命中（放大跑的面），不可静默漏跑
+    // 仅防非字符串入参一类的调用错误：实测 Node 的 matchesGlob 对畸形 glob（`[`、`a{b` 等）
+    // 返回 false 而不抛，故「畸形 glob」表现为不命中，靠 ci-face-coverage 的死 glob / 悬空
+    // 条目断言判红，不靠这里兜底。真抛出来时宁可当作命中（放大跑的面），不可静默漏跑。
     return true;
   }
+}
+
+/** 纯文档 diff 的路径形态：它们收窄前也不命中任何面，不属 #742 引入的落差。 */
+const PURE_DOC_PREFIXES = [".dsh/"];
+
+function isPureDocPath(file) {
+  return (
+    file.startsWith("docs/") ||
+    file.endsWith(".md") ||
+    PURE_DOC_PREFIXES.some((p) => file.startsWith(p))
+  );
+}
+
+/**
+ * 本地快线（changed 档）是否升到 pr 档。
+ *
+ * 两种升档形态：
+ *   ① 命中全局面（#722 起）——本地快线覆盖不到静态闸，只能升档；
+ *   ② 空切片但有非文档改动（#742 阶段 2.1 补）——整树 scripts/** 收窄成白名单后，
+ *      `scripts/maintenance/**`、`scripts/release/**`、`scripts/test/**` 这类条目的改动不再命中
+ *      任何面；但它们的消费方正是 CI 上恒跑的静态闸（lint / format:check / test:scripts /
+ *      docs:check…），若本地就此 exit 0，就等于把「本地绿而 CI 红」重新引进来——**收窄前**这些
+ *      改动是会升档到 pr 的，故这里按「回归守卫」语义补上，而不是新立一套本地策略。
+ *      纯文档 diff（docs/**、`*.md`、.dsh/**）不升档：它们收窄前也不命中任何面。
+ *   文件清单取不到（git 不可用 / 基准失效）时按不升档处理——那条路径上 planChangedScope 已
+ *   经 fail-closed 回退成全量包，快线本来就会跑全包。
+ */
+export function shouldEscalateChangedTier({ globalHit, hitPackages, files }) {
+  if (globalHit) return true;
+  if (hitPackages.length > 0) return false;
+  if (files === null || files.length === 0) return false;
+  return !files.every(isPureDocPath);
 }
 
 /**

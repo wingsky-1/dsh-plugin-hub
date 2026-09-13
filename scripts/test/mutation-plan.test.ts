@@ -12,7 +12,7 @@
  *   1. 段清单口径与 ci-matrix / mutation-gate 同源（dsh- 前缀 + .json，去后缀）；
  *   2. 超时只认 `scope=full` 的实测（增量值不得参与定标）；
  *   3. 超时公式与下限不被静默放宽（下限 #718 整合版规定 10 分钟，实测证明不足，
- *      故 `TIMEOUT_FLOOR_MINUTES` 取 20——抬高不违反「最小值要求」，见 mutation-plan.mjs）；
+ *      故 `TIMEOUT_FLOOR_MINUTES` 取 30——抬高不违反「最小值要求」，见 mutation-plan.mjs）；
  *   4. 无实测的段必须落到保守默认值，而不是 0 或继承别的段的值。
  */
 import { test } from "node:test";

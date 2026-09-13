@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { spawnSync } from "node:child_process";
-import { computeCiMatrix, runCli } from "../ci/ci-matrix.mjs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { computeCiMatrix, parseTestChangedPackages, runCli } from "../ci/ci-matrix.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const MANIFEST = JSON.parse(
@@ -179,7 +179,8 @@ test("ci-matrix: 场景 c - 回退机制 (FILTER_OUTCOME!=success 或 BASE_SET �
 });
 
 test("ci-matrix: 场景 d - 变异段展开正确性 (单配置与多段配置)", () => {
-  // 单配置包 dsh-web-file-preview -> seg: "0"
+  // 单配置包 dsh-web-file-preview -> seg: "0"；#742 起 combo 另带逐段超时与失基线标志，
+  // 本用例只锁段展开，故按段投影比较（超时/失基线的专项断言见文件尾部的 #742 用例）
   const resSingle = computeCiMatrix({
     env: {
       GLOBAL_HIT: "false",
@@ -189,7 +190,10 @@ test("ci-matrix: 场景 d - 变异段展开正确性 (单配置与多段配置)"
     },
     rootDir: ROOT,
   });
-  assert.deepEqual(resSingle.mutationCombos, [{ package: "dsh-web-file-preview", seg: "0" }]);
+  assert.deepEqual(
+    resSingle.mutationCombos.map((c) => ({ package: c.package, seg: c.seg })),
+    [{ package: "dsh-web-file-preview", seg: "0" }],
+  );
 
   // 多个包组合排序
   const resMulti = computeCiMatrix({
@@ -202,18 +206,130 @@ test("ci-matrix: 场景 d - 变异段展开正确性 (单配置与多段配置)"
     rootDir: ROOT,
   });
   assert.deepEqual(resMulti.mutationPackages, ["dsh-notifier", "dsh-web-file-preview"]);
-  assert.deepEqual(resMulti.mutationCombos, [
-    { package: "dsh-notifier", seg: "api" },
-    { package: "dsh-notifier", seg: "channels" },
-    { package: "dsh-notifier", seg: "config" },
-    { package: "dsh-notifier", seg: "events" },
-    { package: "dsh-notifier", seg: "pipeline" },
-    { package: "dsh-notifier", seg: "sdk" },
-    { package: "dsh-notifier", seg: "shared" },
-    { package: "dsh-notifier", seg: "stores" },
-    { package: "dsh-notifier", seg: "upgrade" },
-    { package: "dsh-web-file-preview", seg: "0" },
-  ]);
+  assert.deepEqual(
+    resMulti.mutationCombos.map((c) => ({ package: c.package, seg: c.seg })),
+    [
+      { package: "dsh-notifier", seg: "api" },
+      { package: "dsh-notifier", seg: "channels" },
+      { package: "dsh-notifier", seg: "config" },
+      { package: "dsh-notifier", seg: "events" },
+      { package: "dsh-notifier", seg: "pipeline" },
+      { package: "dsh-notifier", seg: "sdk" },
+      { package: "dsh-notifier", seg: "shared" },
+      { package: "dsh-notifier", seg: "stores" },
+      { package: "dsh-notifier", seg: "upgrade" },
+      { package: "dsh-web-file-preview", seg: "0" },
+    ],
+  );
+});
+
+test("#742 阶段 1: combo 携带逐段超时（口径与夜间 mutation-plan 同源）且随段不同", () => {
+  const res = computeCiMatrix({
+    env: {
+      GLOBAL_HIT: "true",
+      FILTER_OUTCOME: "success",
+      BASE_SET: "origin/main",
+      FILTER_OUTPUTS: "{}",
+      TEST_CHANGED_PACKAGES: "[]",
+    },
+    rootDir: ROOT,
+  });
+  // 期望值取自夜间班 CLI 的**真实产物**（临时 GITHUB_OUTPUT 文件），不是它的 stdout：
+  // 该脚本在有 GITHUB_OUTPUT 时只往文件写、stdout 换成一行提示，而 CI 的每个 run 步骤
+  // 都带这个变量——按 stdout 解析会在本地绿、在 CI 必红（评审实测：GITHUB_OUTPUT 存在时
+  // `.find(l => l.startsWith("shards="))` 得 undefined 并抛 TypeError）。这里直接走 CI 的
+  // 同一条路径：给一个临时 GITHUB_OUTPUT，再从文件里读。
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "ci-matrix-shards-"));
+  const outFile = path.join(outDir, "github-output.txt");
+  try {
+    execFileSync(process.execPath, ["scripts/gate/mutation-plan.mjs"], {
+      cwd: ROOT,
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_OUTPUT: outFile },
+    });
+    const line = fs
+      .readFileSync(outFile, "utf8")
+      .split("\n")
+      .find((l) => l.startsWith("shards="));
+    assert.ok(line, "mutation-plan 必须把 shards 写入 GITHUB_OUTPUT（CI 的真实消费路径）");
+    const plan = JSON.parse(line.slice("shards=".length));
+    const expected = new Map(plan.map((s) => [s.seg, s.timeoutMinutes]));
+    assert.ok(expected.size > 20, `夜间矩阵段数异常（${expected.size}）`);
+    for (const c of res.mutationCombos) {
+      // ci-matrix 的 seg="0" 指包级 conf（<pkg>.json），台账里的段名就是包名
+      const key = c.seg === "0" ? c.package : `${c.package}-${c.seg}`;
+      assert.equal(
+        c.timeoutMinutes,
+        expected.get(key),
+        `${key} 的超时必须与夜间 mutation-plan 派生值一致（两处各写一份公式必然漂移）`,
+      );
+    }
+  } finally {
+    fs.rmSync(outDir, { recursive: true, force: true });
+  }
+  // 单段内建阈值不足的老形态：固定 30 分钟曾把 1819s 的实例砍掉，这里锁住「不是全局常数」
+  assert.ok(
+    new Set(res.mutationCombos.map((c) => c.timeoutMinutes)).size > 1,
+    "逐段超时必须随段变化——全相等说明退回了全局固定值",
+  );
+});
+
+test("#742 阶段 1.7: invalidateBaseline 由 test 变更清单决定，清单缺失一律失基线（fail-closed）", () => {
+  const envOf = (over) => ({
+    GLOBAL_HIT: "false",
+    FILTER_OUTCOME: "success",
+    BASE_SET: "dsh-notifier dsh-lan-proxy",
+    FILTER_OUTPUTS: "{}",
+    ...over,
+  });
+  const pick = (res) =>
+    Object.fromEntries(
+      res.mutationCombos.map((c) => [`${c.package}-${c.seg}`, c.invalidateBaseline]),
+    );
+
+  // 清单为空 → 全部保留基线（这正是绝大多数 PR 的形态）
+  const none = pick(
+    computeCiMatrix({ env: envOf({ TEST_CHANGED_PACKAGES: "[]" }), rootDir: ROOT }),
+  );
+  assert.ok(
+    Object.values(none).length > 0 && Object.values(none).every((v) => v === false),
+    "无 test 变更时不得失基线（否则每个 PR 都退化成全量变异）",
+  );
+
+  // 只有 dsh-notifier 的 test 变更 → 只失效该包的段
+  const one = pick(
+    computeCiMatrix({ env: envOf({ TEST_CHANGED_PACKAGES: '["dsh-notifier"]' }), rootDir: ROOT }),
+  );
+  for (const [key, v] of Object.entries(one)) {
+    assert.equal(v, key.startsWith("dsh-notifier-"), `${key} 的失基线判定必须只跟着本包 test 变更`);
+  }
+  assert.ok(
+    Object.values(one).some((v) => v === true) && Object.values(one).some((v) => v === false),
+  );
+
+  // 清单缺失/不可解析 → 一律失基线（宁可多跑一次全量，不要「测试改了却复用旧结果」的假绿）
+  for (const bad of [undefined, "", "not-json", '{"a":1}']) {
+    const res = computeCiMatrix({ env: envOf({ TEST_CHANGED_PACKAGES: bad }), rootDir: ROOT });
+    assert.ok(
+      res.mutationCombos.every((c) => c.invalidateBaseline === true),
+      `清单为 ${JSON.stringify(bad)} 时必须全部失基线（fail-closed）`,
+    );
+  }
+});
+
+test("#742 阶段 1.7: parseTestChangedPackages 的非法形态一律 unknown（调用方 fail-closed）", () => {
+  for (const bad of [undefined, null, "", "  ", "not-json", '{"a":1}', "1"]) {
+    const r = parseTestChangedPackages(bad);
+    assert.equal(r.unknown, true, `${JSON.stringify(bad)} 必须判为 unknown`);
+    assert.equal(r.packages.size, 0);
+  }
+  const ok = parseTestChangedPackages('["dsh-notifier","dsh-lan-proxy"]');
+  assert.equal(ok.unknown, false);
+  assert.deepEqual([...ok.packages].sort(), ["dsh-lan-proxy", "dsh-notifier"]);
+  // 数组里混入非字符串：过滤掉而不是整体判未知（清单本身可信，只是形状脏）
+  const mixed = parseTestChangedPackages('["dsh-notifier",1,null]');
+  assert.equal(mixed.unknown, false);
+  assert.deepEqual([...mixed.packages], ["dsh-notifier"]);
 });
 
 test("ci-matrix: 场景 e - 畸形输入与防御性回退", () => {
@@ -282,6 +398,10 @@ test("ci-matrix: 场景 f - CLI 命令行与 --json 参数验证", () => {
   const ret = spawnSync(process.execPath, [scriptPath, "--json"], {
     cwd: ROOT,
     encoding: "utf8",
+    // 隔离 GITHUB_OUTPUT（#218 产物零污染）：CI 的每个 run 步骤都带这个变量，子进程会把它
+    // 当成自己的输出文件往里追加 6 行（本地不设该变量所以看不到）。本用例只断言 stdout 的
+    // --json 形态，关掉写入面即可。
+    env: { ...process.env, GITHUB_OUTPUT: "" },
   });
   assert.equal(ret.status, 0, `CLI 执行失败: ${ret.stderr}`);
   const parsed = JSON.parse(ret.stdout);
