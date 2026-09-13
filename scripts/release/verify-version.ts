@@ -1,12 +1,11 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
  * verify-version — 发布门禁：校验每个包的 version 与当前 git tag（vX.Y.Z）一致。
  * tag 是版本唯一来源（与 dsh-web-ui 同策略）。CI release.yml 在发布前执行。
  *
- * 用法：node scripts/verify-version.mjs
+ * 用法：node scripts/release/verify-version.ts
  * 退出码：0 = 全部一致；1 = 存在不一致或非 tag 环境（CI 中由 release.yml 保证是 tag push）。
  */
 import { readFileSync, readdirSync } from "node:fs";

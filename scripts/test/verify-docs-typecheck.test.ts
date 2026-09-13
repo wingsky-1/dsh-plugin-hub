@@ -15,6 +15,10 @@
  * include 摘除该文件时接线器失联检测——tsc 面空转但 include 摘除会让
  * 断言失败，见 scripts/tsconfig.json include 注释）。
  *
+ * 面内条目现为两条：verify-docs.ts（#474）与 release/**（#776 C2a 第一批），两者各有
+ * 一条失联断言（见下）。注意 tsc 的 include **不支持** `{ts,mts,cts}` 花括号展开，
+ * 故 .mts/.cts 逐项枚举。
+ *
  * 为何自身仍带 @ts-nocheck（#474 R4 预防性声明）：本文件类型面为零——
  * 只 spawn tsc 子进程，不 import 被测物（verify-docs.ts）的任何类型，
  * 纳入 strict 面无检查增量；scripts/test/ 13 个测试统一此形态。scripts
@@ -44,6 +48,14 @@ test("verify-docs 编译面接线：scripts/tsconfig.json 被 tsc 真实编译�
     tsconfig,
     /"include"\s*:\s*\[[^\]]*"gate\/verify-docs\.ts"/,
     "scripts/tsconfig.json 的 include 面必须显式含 gate/verify-docs.ts——摘除即接线器失联（typecheck 面假锁）",
+  );
+  // #776 C2a：第二批入面（release/**）同款失联检测。该目录的 @ts-nocheck 已摘除，
+  // 一旦 include 条目被摘掉，release 脚本会静默退回「无 checker」而不报任何配置错
+  // （实测：空 include 才配置级红），正是 #776 要修的缺陷形态。
+  assert.match(
+    tsconfig,
+    /"include"\s*:\s*\[[^\]]*"release\/\*\*\/\*\.ts"/,
+    "scripts/tsconfig.json 的 include 面必须显式含 release/**/*.ts——摘除即 release/ 静默退回无 checker（#776 C2a）",
   );
   const result = spawnSync(process.execPath, [TSC, "-p", TSCONFIG, "--noEmit"], {
     cwd: ROOT,

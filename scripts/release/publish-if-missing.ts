@@ -1,12 +1,11 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
  * publish-if-missing — 幂等发布清单：对每个包检查 npm registry 是否已存在
  * name@version，输出「缺失（待发布）」的包名列表（每行一个，stdout）。
  *
- * 用法：node scripts/publish-if-missing.ts
+ * 用法：node scripts/release/publish-if-missing.ts
  *   stdout：待发布包名（依赖序：子包在前、聚合包最后）
  *   stderr：跳过/待发日志（供 CI 观测）
  *   退出码：0（registry 查询失败除外）
@@ -22,13 +21,16 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const packagesDir = join(ROOT, "packages");
 
+/** package.json 的最小形态（本脚本只读这三个字段）。 */
+type PkgJson = { name: string; version: string; private?: boolean };
+
 const pkgs = readdirSync(packagesDir)
   .filter((d) => d.startsWith("dsh-"))
-  .map((d) => JSON.parse(readFileSync(join(packagesDir, d, "package.json"), "utf8")))
+  .map((d) => JSON.parse(readFileSync(join(packagesDir, d, "package.json"), "utf8")) as PkgJson)
   .filter((p) => !p.private);
 
 // 依赖序：聚合包（dsh-plugins-all）依赖全部子包 → 子包在前、聚合包最后
-const isAgg = (p) => p.name.includes("dsh-plugins-all");
+const isAgg = (p: PkgJson) => p.name.includes("dsh-plugins-all");
 const ordered = [...pkgs.filter((p) => !isAgg(p)), ...pkgs.filter(isAgg)];
 
 const missing = [];
