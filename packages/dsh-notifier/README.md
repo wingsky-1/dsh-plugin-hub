@@ -74,11 +74,12 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-notifier
 - **双通道**：
   - 系统通知：Windows 原生 toast（内嵌 PowerShell WinRT 脚本）；macOS 用 `osascript`（display notification）；Linux 用 `notify-send`（存在才调用），均无需额外安装
   - 浏览器通知：SSE 推帧 + Notification API（仅在页面隐藏时弹出）
-- **每通道三个开关：启用 / 弹窗 / 声音**：浏览器与系统各自有「启用（发不发）」「弹窗（弹不弹）」
-  「声音（响不响、用什么音色）」——**启用关掉就是完全不投递**（声音也不发），这正是与旧行为的分界：
-  旧版只有一个键同时充当弹窗开关与启用开关，于是「弹窗关 + 声音开」还能发出声音。声音取值：
-  静音 / 跟随系统默认 / `ding`·`bell`·`chime`·`pop` 内置音色 + ▶ 试听；Linux 系统通知声音经宿主自播
-  freedesktop 事件音修复（原 notify-send 无声音 hint，DE 支持参差）；详见「配置 → 每通道声音」小节
+- **每通道三个开关：启用 / 弹窗 / 声音**：浏览器与系统各是 `channels` 里的一个**内置渠道条目**，
+  带「启用（发不发）」「弹窗（弹不弹）」「声音（响不响、用什么音色）」三个字段——**启用关掉就是
+  完全不投递**（声音也不发），这正是与旧行为的分界：旧版只有一个键同时充当弹窗开关与启用开关，
+  于是「弹窗关 + 声音开」还能发出声音。声音取值：静音 / 跟随系统默认 / `ding`·`bell`·`chime`·`pop`
+  内置音色 + ▶ 试听；Linux 系统通知声音经宿主自播 freedesktop 事件音修复（原 notify-send 无声音
+  hint，DE 支持参差）；详见「配置 → 每通道三个开关」小节
 - **非安全上下文降级**：局域网 HTTP 访问时浏览器禁止系统级弹窗——自动降级为「页面内横幅 + 提示音 + 标题提醒」
 - **免打扰时段**：支持跨午夜（如 22:00 → 08:00）；可设**紧急例外**（`quietHours.allowKinds`：免打扰期间仍提醒的事件）。默认候选为高频阻塞型（审批/提问/出错），设置页支持勾选**全部 6 个内置事件**（含任务完成/子任务完成/轮次完成）并一键「跟随已启用事件」或「恢复默认」；豁免与事件开关正交——关闭的事件即使豁免也不会收到通知（事件不产生），豁免项照常保留；未启用事件在设置页以弱化（降低透明度）样式展示，仍可勾选豁免。**升级提示**：放开白名单后，旧配置中原本会被过滤掉的 kind（如手改的 `done`/`turn-end`）会在免打扰期间恢复提醒——行为变化；如不希望这样，可在设置页豁免区自行调整
 - **设置卡片诊断**：设置 → 插件 → dsh-notifier 卡片显示浏览器通知授权状态与安全上下文提示，并含最近 10 条通知记录、发送测试通知与清理记录入口
@@ -117,9 +118,11 @@ context filter checks」）。取舍如下（issue #290）：
 配置由本插件自持，落在**包私有存储目录**的 `config.json`
 （`<DSH_HOME>/@wingsky-1/dsh-notifier/config.json`，默认 `~/.dsh`），经
 「设置 → 插件 → dsh-notifier」卡片或 `GET/PUT /api/dsh-notifier/config` 读写。
-升级时**启动读一次旧位置**（不在迁移期改写旧文件）：0.2.3 的官方 settings 命名空间
+升级时**装配期读一次旧位置，并顺手割接成新形态**：0.2.3 的官方 settings 命名空间
 `dsh-notifier` 优先，更早的自建 `dsh-notifier.json`（DSH_HOME 根目录，含此前迁移留下的
-`.migrated.bak`）回退；读到的用户层写进 `config.json`，此后只有这一个读写面。
+`.migrated.bak`）回退；读到的存量与当前 `config.json` 合并（存量覆盖文件，与旧写面同序），
+再把 8 个顶层渠道键搬进 `channels` 的两条内置条目并**删除旧键**（见「每通道三个开关」）。
+此后只有 `config.json` 一个读写面。
 
 **未知键语义（前向兼容，issue #470）**：dsh-notifier 对配置中**无法识别的键**
 采取「透传保留」策略——读取与写入口径一致，未知键不会被丢弃，也不会被校验
@@ -168,22 +171,24 @@ context filter checks」）。取舍如下（issue #290）：
   "notifySubagentDone": false,
   "notifyTaskError": true,
   "notifyTurnEnd": false,
-  "systemEnabled": true,
-  "browserEnabled": true,
-  "systemNotify": true,
-  "browserNotify": true,
-  "notifyWhenVisible": false,
-  "notifySound": true,
-  "browserSound": true,
-  "systemSound": true,
   "quietHours": { "enabled": false, "start": "22:00", "end": "08:00", "allowKinds": [] },
   "historyMaxAgeDays": 0,
   "maxConnections": 16,
-  "channels": [],
+  "channels": [
+    { "type": "browser", "id": "browser", "enabled": true, "popup": true, "sound": true, "whenVisible": false },
+    { "type": "system", "id": "system", "enabled": true, "popup": true, "sound": true }
+  ],
   "kindRoutes": {},
   "allowKinds": []
 }
 ```
+
+> 浏览器与系统通知就是 `channels` 里的两条**内置条目**：它们与 bark / webhook 实例同住一个数组、
+> 同一套渲染与判据，唯一特殊之处是**不能删除**（写面收到缺内置条目的 `channels` 会 400）。
+> 0.2.3 的 8 个顶层渠道键（`systemEnabled` / `browserEnabled` / `systemNotify` / `browserNotify` /
+> `notifyWhenVisible` / `notifySound` / `browserSound` / `systemSound`）在升级时被**搬进这两条条目
+> 并删除**——升级一次做完，不留「旧键还能读」的第二处表达。升级后再提交这些键会得到 400
+> （页面停留在升级前时，刷新后重试即可）。
 
 > `maxConnections`：SSE 连接表上限（默认 16，范围 1~1024）。含义为**服务端未释放句柄数**，
 > 非「在线设备数」——半开连接（设备息屏/切网/NAT 静默掐断）不发 FIN，close/error 不触发。
@@ -193,18 +198,31 @@ context filter checks」）。取舍如下（issue #290）：
 > （淘汰后客户端重连、再次被淘汰的 churn 循环），说明该值低于峰值并发连接数，应调大
 > 到不小于峰值再观察。连接回收路径计数见 `/api/dsh-notifier/health` 的 `sseEvicts`。
 
-### 每通道声音（#640 / #641）
+### 每通道三个开关（#640 / #641；0.2.4 起收进渠道条目）
 
-弹窗与声音按**通道独立**（浏览器 / 系统各一套），**「发不发」与「怎么发」分成两组键**——
-`*Enabled` 是唯一的投递闸门，`*Notify`（弹窗）与 `*Sound`（声音）只决定发出去之后长什么样：
+浏览器与系统通知是 `channels` 数组里的两个**内置渠道条目**，与 bark / webhook 实例同一份形状、
+同一套渲染与判据：
 
-| 键 | 类型 | 语义 |
+```json
+{ "type": "browser", "id": "browser", "enabled": true, "popup": true, "sound": true, "whenVisible": false }
+{ "type": "system",  "id": "system",  "enabled": true, "popup": true, "sound": true }
+```
+
+| 字段 | 类型 | 语义 |
 |---|---|---|
-| `browserEnabled` / `systemEnabled` | boolean | **渠道开关（发不发）**：关掉 = 完全不投递，声音也不发 |
-| `browserNotify` / `systemNotify` | boolean | **弹窗开关（弹不弹）**：关掉而声音开着 = 只响不弹 |
-| `browserSound` | `boolean \| 音色 id` | 浏览器通道声音（响不响、用什么音色） |
-| `systemSound` | `boolean \| 音色 id` | 系统通道声音 |
-| `notifySound` | boolean | **废弃只读别名**（见下） |
+| `enabled` | boolean | **渠道开关（发不发）**：每个渠道唯一的投递闸门，关掉 = 完全不投递 |
+| `popup` | boolean | **弹窗开关（弹不弹）**：关掉而声音开着 = 只响不弹 |
+| `sound` | `boolean \| 音色 id` | 声音（响不响、用什么音色） |
+| `whenVisible` | boolean | 页面可见时是否也弹（仅浏览器渠道；随帧下发给页面执行） |
+
+**「发什么」由渠道自己决定**：裁决管线对每个渠道只判 `enabled`，弹窗与声音原样交给渠道，由它决定
+这一次弹、响、只响不弹，还是什么都不发。所以「弹窗关 + 声音也关」的渠道**照样会被投递**——出口
+判定这次没有可发的内容，历史里如实记一条 `skipped`（既不伪装成投递成功，也不在管线里替出口判形态）。
+
+**旧顶层键在升级时被搬走并删除**：0.2.3 的 `systemEnabled` / `browserEnabled` / `systemNotify` /
+`browserNotify` / `notifyWhenVisible` / `notifySound` / `browserSound` / `systemSound` 会在 0.2.4
+的升级链里搬进上面两条内置条目，随后从配置文件里**删除**——渠道形态只有条目一处表达。升级后再提交
+这些键会得到 400（提示刷新），而不是静默无效。
 
 取值：`false` = 静音（弹窗仍可弹、不发声）；`true` = **跟随系统默认**；
 音色 id = 显式内置音色（`ding` / `bell` / `chime` / `pop`——4 音色全平台语义一致，
@@ -220,19 +238,18 @@ context filter checks」）。取舍如下（issue #290）：
 | 开 | 开 | `true` | 弹通知实体，发声交给系统默认 |
 | 开 | 开 | 音色 id | 弹通知实体；应用自播对应音色（系统通知静音防双响） |
 | 开 | 关 | `true`/音色 id | **只响不弹**：不弹实体、仅自播（页面存活 / 宿主自播） |
-| 开 | 关 | `false` | 不投递：这个渠道此刻没有任何提醒方式（设置卡会给出提示） |
+| 开 | 关 | `false` | 进池但**什么都不发**：历史记 `skipped`，设置卡给出提示 |
 
-- **`notifySound`（旧全局键）降级兼容别名**：仅保留读取与存量迁移，设置页不再写它；
-  读取时 `browserSound`/`systemSound` 缺失回落 `notifySound`，再缺省 `true`；
-  存量 legacy json 迁移会补写 `browserSound`/`systemSound` = 你的 `notifySound` 旧值
-  （settings user 层存量不迁移，读面回落 + 首次保存固化）。旧版关闭过提示音的存量
-  用户在升级后**仍保持静音**（新键按旧值等价初始化），不会「突然有声」。
+- **`notifySound`（旧全局键）随升级迁移**：它的值在 0.2.4 的升级里摊到两条内置条目的 `sound`
+  上（按出口的 `browserSound`/`systemSound` 有值时以它们为准），随后旧键被删除——旧版关闭过
+  提示音的存量用户在升级后**仍保持静音**，不会「突然有声」。设置页从 0.2.4 起只写条目，
+  不再有全局声音开关。
 - **浏览器声音解锁前提**：浏览器 `true`/音色自播需要页面音频已解锁——浏览器自动
   播放策略要求一次用户交互（打开通知中心 / 声音行任何交互都会解锁 AudioContext）；
   纯后台从未交互的页面，声音可能不可用（此时通知照常弹出、仅无声），属浏览器
   策略约束而非插件缺陷。
 - **Linux `true` 特例（#640 修复）**：Linux 桌面守护进程对声音 hint 支持参差
-  （GNOME 默认无声 / KDE 2025 才支持 / Xfce 依赖 libcanberra），`systemSound=true`
+  （GNOME 默认无声 / KDE 2025 才支持 / Xfce 依赖 libcanberra），系统渠道的 `sound: true`
   解释为「**默认事件音自播**」——宿主用 `pw-play`（PipeWire）或 `paplay`
   （PulseAudio）播 `message-new-instant` 事件音（freedesktop 声音主题），不依赖
   守护进程。headless（无桌面/音频会话）服务器静默。**存量 Linux 升级行为变化**：

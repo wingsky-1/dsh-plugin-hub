@@ -78,15 +78,15 @@ Pick one of the following access forms (both the settings card and the README su
 - **Dual channels**:
   - System notifications: native Windows toast (embedded PowerShell WinRT script, zero dependencies); macOS uses `osascript` (display notification, zero dependencies); Linux uses `notify-send` (only when available)
   - Browser notifications: SSE frame push + Notification API (only pops when the page is hidden)
-- **Three switches per channel: enabled / popup / sound**: the browser and system channels
-  each have "Enabled" (send or not), "Popup" (pop or not) and "Sound" (sound or not, which
-  tone). **Turning the channel switch off means no delivery at all** — not even sound.
-  That is the dividing line from the old behavior: a single key used to act as both popup
-  toggle and channel switch, so "popup off + sound on" still made noise. Sound values:
-  muted / follow the system default / built-in tones `ding`·`bell`·`chime`·`pop` with
-  ▶ Preview; Linux system notification sound is fixed by host self-play of freedesktop
-  event sounds (notify-send used to carry no sound hint and DE support varies); see
-  "Configuration → Per-channel sound".
+- **Three switches per channel: enabled / popup / sound**: the browser and system channels are
+  each a **built-in channel entry** in `channels`, carrying "Enabled" (send or not), "Popup"
+  (pop or not) and "Sound" (sound or not, which tone). **Turning the channel switch off means
+  no delivery at all** — not even sound. That is the dividing line from the old behavior: a
+  single key used to act as both popup toggle and channel switch, so "popup off + sound on"
+  still made noise. Sound values: muted / follow the system default / built-in tones
+  `ding`·`bell`·`chime`·`pop` with ▶ Preview; Linux system notification sound is fixed by host
+  self-play of freedesktop event sounds (notify-send used to carry no sound hint and DE support
+  varies); see "Configuration → Per-channel three switches".
 - **Insecure-context fallback**: on LAN HTTP access the browser blocks system-level popups — automatically falls back to "in-page banner + sound + title reminder"
 - **Do-not-disturb window**: supports crossing midnight (e.g. 22:00 → 08:00); an **urgent exception** can be set (`quietHours.allowKinds`: events still reminded during DND). The default candidates are the high-frequency blocking kinds (approval / question / error); the settings page lets you check **all 6 built-in events** (including task-done / subagent-done / turn-end) with one-click "Follow enabled events" or "Reset default". Exemption is orthogonal to the event toggles — a disabled event never produces notifications anyway, and the exemption entry stays intact; disabled events are shown dimmed (reduced opacity) on the settings page and can still be exempted. **Upgrade note**: now that the allow-list is open, kinds that older configurations used to filter out (e.g. hand-edited `done`/`turn-end`) will be reminded again during DND — a behavior change; adjust the exemptions on the settings page if you do not want that
 - **Settings-card diagnostics**: the plugin card under Settings → Plugins → dsh-notifier shows the browser notification permission status and a secure-context hint, plus the 10 most recent notification records, a "Send test notification" button, and a "Clear history" entry
@@ -129,11 +129,14 @@ The service surface is exposed on the host context as `ctx["wingsky.notifier"]`,
 Configuration is owned by the plugin itself and lives in `config.json` inside its **package-private
 storage directory** (`<DSH_HOME>/@wingsky-1/dsh-notifier/config.json`, `~/.dsh` by default), read and
 written through the plugin card under Settings → Plugins → dsh-notifier or via
-`GET/PUT /api/dsh-notifier/config`. On upgrade the **legacy locations are read once at startup**
-(old files are not rewritten during migration): the 0.2.3 official settings namespace `dsh-notifier`
-takes precedence, falling back to the older self-maintained `dsh-notifier.json` (DSH_HOME root,
-including the `.migrated.bak` left by an earlier migration); whatever user layer is read is written
-into `config.json`, and that becomes the only read/write path afterwards.
+`GET/PUT /api/dsh-notifier/config`. On upgrade the **legacy locations are read once during
+assembly, and the shape is migrated along the way**: the 0.2.3 official settings namespace
+`dsh-notifier` takes precedence (old files are not rewritten during migration), falling back to
+the older self-maintained `dsh-notifier.json` (DSH_HOME root, including the `.migrated.bak` left
+by an earlier migration); what is read is merged into the current `config.json` (legacy values
+override the file, the same precedence the old write path used), and the 8 top-level channel keys
+are then moved into the two built-in entries of `channels` and **deleted** (see "Per-channel three
+switches"). After that `config.json` is the only read/write path.
 
 **Unknown-key semantics (forward compatibility, issue #470)**: dsh-notifier applies a
 **"pass-through and preserve"** policy to configuration keys it does **not recognize** —
@@ -195,22 +198,27 @@ Example values (defaults; `channels` / `kindRoutes` / `allowKinds` are new M2 ke
   "notifySubagentDone": false,
   "notifyTaskError": true,
   "notifyTurnEnd": false,
-  "systemEnabled": true,
-  "browserEnabled": true,
-  "systemNotify": true,
-  "browserNotify": true,
-  "notifyWhenVisible": false,
-  "notifySound": true,
-  "browserSound": true,
-  "systemSound": true,
   "quietHours": { "enabled": false, "start": "22:00", "end": "08:00", "allowKinds": [] },
   "historyMaxAgeDays": 0,
   "maxConnections": 16,
-  "channels": [],
+  "channels": [
+    { "type": "browser", "id": "browser", "enabled": true, "popup": true, "sound": true, "whenVisible": false },
+    { "type": "system", "id": "system", "enabled": true, "popup": true, "sound": true }
+  ],
   "kindRoutes": {},
   "allowKinds": []
 }
 ```
+
+> The browser and system notifications are the two **built-in entries** in `channels`: they live in
+> the same array as bark / webhook instances and share the same rendering and decision logic; the
+> only thing special about them is that they **cannot be deleted** (a write whose `channels` lacks
+> a built-in entry returns 400). The 8 top-level channel keys of 0.2.3 (`systemEnabled` /
+> `browserEnabled` / `systemNotify` / `browserNotify` / `notifyWhenVisible` / `notifySound` /
+> `browserSound` / `systemSound`) are **moved into these two entries and deleted** during the
+> upgrade — the migration is done in one version, with no second place where the old keys still
+> read. Submitting them after the upgrade returns 400 (refresh the page if it was open before the
+> upgrade).
 
 > `maxConnections`: SSE connection-table cap (default 16, range 1–1024). It counts
 > **server-side unreleased handles**, not "online devices" — half-open connections
@@ -225,19 +233,36 @@ Example values (defaults; `channels` / `kindRoutes` / `allowKinds` are new M2 ke
 > raise it to at least the peak and observe again. Reclamation-path counters are exposed
 > as `sseEvicts` on `/api/dsh-notifier/health`.
 
-### Per-channel sound (#640 / #641)
+### Per-channel three switches (#640 / #641; folded into channel entries as of 0.2.4)
 
-Popup and sound are configured **independently per channel** (browser / system), and
-"sending or not" is separated from "how it looks/sounds": `*Enabled` is the only delivery
-gate, while `*Notify` (popup) and `*Sound` decide what the delivery looks like.
+The browser and system notifications are two **built-in channel entries** in the `channels`
+array, with the same shape, rendering and decision logic as bark / webhook instances:
 
-| Key | Type | Meaning |
+```json
+{ "type": "browser", "id": "browser", "enabled": true, "popup": true, "sound": true, "whenVisible": false }
+{ "type": "system",  "id": "system",  "enabled": true, "popup": true, "sound": true }
+```
+
+| Field | Type | Meaning |
 |---|---|---|
-| `browserEnabled` / `systemEnabled` | boolean | **channel switch (send or not)**: off = no delivery at all, not even sound |
-| `browserNotify` / `systemNotify` | boolean | **popup switch (pop or not)**: off with sound on = sound only |
-| `browserSound` | `boolean \| tone id` | browser channel sound (whether / which tone) |
-| `systemSound` | `boolean \| tone id` | system channel sound |
-| `notifySound` | boolean | **deprecated read-only alias** (below) |
+| `enabled` | boolean | **channel switch (send or not)**: the only delivery gate per channel; off = no delivery at all |
+| `popup` | boolean | **popup switch (pop or not)**: off with sound on = sound only |
+| `sound` | `boolean \| tone id` | sound (whether / which tone) |
+| `whenVisible` | boolean | whether to also pop while the page is visible (browser channel only; sent with the frame and executed by the page) |
+
+**What gets sent is up to the channel**: the decision pipeline judges `enabled` only, per
+channel; popup and sound are handed to the channel as-is, and it decides whether this one pops,
+sounds, sounds without popping, or sends nothing at all. So a channel with "popup off + sound
+off" **still receives the delivery** — the outlet determines there is nothing to send this time,
+and history records a `skipped` entry (neither disguising it as a successful delivery, nor
+judging the shape inside the pipeline on the outlet's behalf).
+
+**The old top-level keys are moved away and deleted during the upgrade**: the 0.2.3 keys
+`systemEnabled` / `browserEnabled` / `systemNotify` / `browserNotify` / `notifyWhenVisible` /
+`notifySound` / `browserSound` / `systemSound` are moved into the two built-in entries by the 0.2.4
+upgrade chain and then **deleted** from the configuration file — the channel shape is expressed in
+the entries alone. Submitting those keys after the upgrade returns 400 (with a hint to refresh)
+instead of silently doing nothing.
 
 Values: `false` = muted (a popup may still show, without sound); `true` = **follow the
 system default**; a tone id = an explicit built-in tone (`ding` / `bell` / `chime` /
@@ -256,16 +281,13 @@ and sound**; with it on, popup × sound decide the shape):
 | On | On | `true` | Show notification, OS-default sound |
 | On | On | tone id | Show notification; the app self-plays the tone (system notification silenced to avoid double sound) |
 | On | Off | `true`/tone id | **Sound only**: no popup, self-play only (page alive / host self-play) |
-| On | Off | `false` | No delivery: the channel currently has no way to remind you (the settings card says so) |
+| On | Off | `false` | Enters the pool but **sends nothing**: history records `skipped`, and the settings card says so |
 
-- **`notifySound` (old global key) is a deprecated compatibility alias**: kept for
-  reading and legacy migration only; the settings UI no longer writes it. When
-  `browserSound`/`systemSound` are missing they fall back to `notifySound`, then to
-  `true`. Legacy `dsh-notifier.json` migration writes `browserSound`/`systemSound`
-  equal to your old `notifySound` (settings user-layer leftovers are not migrated;
-  reading falls back and the first UI save fixes them). Users who had muted the old
-  sound stay muted after upgrade (new keys are initialized from the old value) —
-  no surprise sound.
+- **`notifySound` (old global key) is migrated by the upgrade**: its value is spread onto the two
+  built-in entries' `sound` by the 0.2.4 upgrade (an outlet key — `browserSound` / `systemSound` —
+  wins when present), and the old key is then deleted. Users who had muted the old sound therefore
+  **stay muted** after upgrade — no surprise sound. From 0.2.4 the settings UI only writes the
+  entries; there is no global sound switch any more.
 - **Browser sound unlock prerequisite**: browser `true`/tone self-play needs an
   unlocked page audio context — browser autoplay policy requires one user gesture
   (opening the notification center / any sound-row interaction unlocks the
@@ -274,9 +296,9 @@ and sound**; with it on, popup × sound decide the shape):
   not a plugin defect.
 - **Linux `true` special case (#640 fix)**: Linux desktop daemons differ widely in
   sound-hint support (GNOME silent by default / KDE only since 2025 / Xfce needs
-  libcanberra), so `systemSound=true` means "**self-play the default event sound**":
-  the host plays the `message-new-instant` event sound (freedesktop sound theme) via
-  `pw-play` (PipeWire) or `paplay` (PulseAudio) instead of relying on the daemon.
+  libcanberra), so the system channel's `sound: true` means "**self-play the default event
+  sound**": the host plays the `message-new-instant` event sound (freedesktop sound theme)
+  via `pw-play` (PipeWire) or `paplay` (PulseAudio) instead of relying on the daemon.
   Headless servers (no desktop/audio session) stay silent. **Behavior change for
   existing Linux installs**: system notifications used to be silent (notify-send had
   no sound hint); after this upgrade, sound-on self-plays the event sound (requires an
