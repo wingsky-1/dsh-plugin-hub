@@ -10,3 +10,9 @@ coverage/
 
 # 锁文件由 pnpm 写入，格式化它会与 pnpm 的写入格式互相打架
 pnpm-lock.yaml
+
+# stryker 派生配置：两份都入库，但形态由 scripts/gate/gen-stryker-conf.mjs 定义，
+# 且 pnpm stryker:check 对生成内容做逐字节比对——格式化它们会让该门禁恒红，
+# 而重新生成又会把 Prettier 的排版顶回去，两者只能有一个说了算，这里让给生成器。
+stryker.conf.d/
+vitest.stryker.d/
