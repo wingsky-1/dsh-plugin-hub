@@ -871,7 +871,11 @@ function sendTestReq(channelId?: string): Promise<any> {
     body: JSON.stringify(channelId ? { channelId: channelId } : {}),
   }).then(function (r: any) {
     return r.json().then(function (body: any) {
-      if (!r.ok) throw new Error((body && body.error) || "HTTP " + r.status);
+      if (!r.ok) {
+        var err = (body && body.error) || {};
+        // 围栏拒绝体的 error 是裸字符串；403 的 https 引导靠文案里的状态码识别，兜底不能去掉。
+        throw new Error(err.details || err.error || "HTTP " + r.status);
+      }
       return body;
     });
   });
