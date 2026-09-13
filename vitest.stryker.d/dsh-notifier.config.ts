@@ -24,6 +24,7 @@ export default defineConfig({
       'packages/dsh-notifier/test/unit/channels/system.test.ts',
       'packages/dsh-notifier/test/unit/channels/webhook.test.ts',
       'packages/dsh-notifier/test/unit/config/input.test.ts',
+      'packages/dsh-notifier/test/unit/config/model.test.ts',
       'packages/dsh-notifier/test/unit/config/redact.test.ts',
       'packages/dsh-notifier/test/unit/config/service.test.ts',
       'packages/dsh-notifier/test/unit/events/listen.test.ts',
