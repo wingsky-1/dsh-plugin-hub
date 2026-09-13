@@ -18,8 +18,13 @@
  *   新：{ kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager",
  *         form: "snapshot", sections: [{ name: "mcp-catalog", text: <原消息正文> }] }
  *
- * 只改 source 的元数据，正文与事件序列一律不动；改完的产物仍是合法 v0/v1/v2，
- * 由 dsh 自己在下次打开会话时完成迁移并写出 v3（本脚本**不产出** v3 产物）。
+ * 只改 source 的元数据，正文与事件序列一律不动：v0/v1/v2 修完仍由 dsh 自己完成迁移
+ * （本脚本**不产出** v3 产物）；v3 改完原地仍可被宿主读取路径完整恢复。
+ *
+ * v3 产物**默认也修**：v3 里同样可能残留旧 source（升级前创建、升级后又被增量写入的
+ * 会话，本机实测 224/272 个 v3 会话含旧 kind），而宿主**将来**给 v3→v4 迁移加同类闸门
+ * 时会重演这次的永久拒载。v3 读取路径不校验 message.source，所以这次改写**零语义变化**
+ * （只换 source 元数据，正文与事件序列不动）。`--legacy-only` 可退回只修 v0/v1/v2。
  *
  * 安全约束（红线）：
  *   - 默认 dry-run，`--apply` 才落盘；
@@ -29,8 +34,9 @@
  *   - 写后自检：帧结构严格扫描 + 每帧解码 + 全行 JSON 解析 + 零遗留旧 kind。
  *
  * 用法：
- *   node scripts/maintenance/repair-mcp-catalog-sessions.mjs                 # 预演（默认）
+ *   node scripts/maintenance/repair-mcp-catalog-sessions.mjs                 # 预演（默认：v0/v1/v2 + v3）
  *   node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply         # 落盘
+ *   node scripts/maintenance/repair-mcp-catalog-sessions.mjs --legacy-only   # 只修 v0/v1/v2，不动 v3
  *   node scripts/maintenance/repair-mcp-catalog-sessions.mjs --session <id>  # 只处理一个会话
  *   node scripts/maintenance/repair-mcp-catalog-sessions.mjs --home /tmp/dsh-home
  *
@@ -63,15 +69,23 @@ function stringifyRow(value) {
 }
 
 /** 严格扫描多帧 zstd 容器；返回每个完整帧的字节区间。 */
-export function scanFrames(buffer) {
+/**
+ * 扫描多帧 zstd 容器。
+ *
+ * 与宿主同语义（persistence-jsonl 的 `scanZstdFrames`）：**完整帧**逐一收下，
+ * 末尾若是不完整帧（写入中崩溃留下的 torn frame）则返回它的 `tornStart` 而**不抛错**
+ * ——宿主正是这样在下次打开会话时恢复已落盘前缀的，脚本必须能读这种产物。
+ * @returns {{frames: Array<{start: number, end: number}>, tornStart?: number}}
+ */
+export function scanContainer(buffer) {
   const frames = [];
   let offset = 0;
   while (offset < buffer.length) {
     const start = offset;
-    if (buffer.length - offset < 4) throw new Error(`incomplete frame header at byte ${offset}`);
+    if (buffer.length - offset < 4) return { frames, tornStart: start };
     if (buffer.readUInt32LE(offset) !== ZSTD_MAGIC) throw new Error(`invalid frame magic at byte ${offset}`);
     offset += 4;
-    if (offset === buffer.length) throw new Error(`incomplete frame header at byte ${start}`);
+    if (offset === buffer.length) return { frames, tornStart: start };
     const descriptor = buffer.readUInt8(offset);
     offset += 1;
     if ((descriptor & 24) !== 0) throw new Error(`reserved frame-header bit at byte ${offset - 1}`);
@@ -81,10 +95,10 @@ export function scanFrames(buffer) {
     const dictionaryBytes = dictionaryFlag === 3 ? 4 : dictionaryFlag;
     const contentSizeBytes = contentSizeFlag === 0 ? (singleSegment ? 1 : 0) : 1 << contentSizeFlag;
     const remainingHeaderBytes = (singleSegment ? 0 : 1) + dictionaryBytes + contentSizeBytes;
-    if (buffer.length - offset < remainingHeaderBytes) throw new Error(`incomplete frame header at byte ${start}`);
+    if (buffer.length - offset < remainingHeaderBytes) return { frames, tornStart: start };
     offset += remainingHeaderBytes;
     for (;;) {
-      if (buffer.length - offset < 3) throw new Error(`incomplete block header at byte ${start}`);
+      if (buffer.length - offset < 3) return { frames, tornStart: start };
       const blockHeader = buffer.readUIntLE(offset, 3);
       offset += 3;
       const lastBlock = (blockHeader & 1) !== 0;
@@ -92,26 +106,51 @@ export function scanFrames(buffer) {
       const blockSize = blockHeader >>> 3;
       if (blockType === 3) throw new Error(`reserved block type at byte ${offset - 3}`);
       const payloadBytes = blockType === 1 ? 1 : blockSize;
-      if (buffer.length - offset < payloadBytes) throw new Error(`incomplete block payload at byte ${start}`);
+      if (buffer.length - offset < payloadBytes) return { frames, tornStart: start };
       offset += payloadBytes;
       if (lastBlock) break;
     }
     const checksum = (descriptor & 4) !== 0;
     if (checksum) {
-      if (buffer.length - offset < 4) throw new Error(`incomplete frame checksum at byte ${start}`);
+      if (buffer.length - offset < 4) return { frames, tornStart: start };
       offset += 4;
     }
     frames.push({ start, end: offset });
   }
-  return frames;
+  return { frames };
 }
 
-/** 逐帧解码为 jsonl 行（保留原始行序）。 */
+/** 严格扫描（不允许 torn frame）；返回每个完整帧的字节区间。 */
+export function scanFrames(buffer) {
+  const scanned = scanContainer(buffer);
+  if (scanned.tornStart !== undefined) throw new Error(`incomplete final frame at byte ${scanned.tornStart}`);
+  return scanned.frames;
+}
+
+/**
+ * 逐帧解码为 jsonl 行（保留原始行序）。
+ *
+ * 末尾 torn frame 用宿主的恢复语义解出已落盘前缀（`ZSTD_e_flush`），并丢掉可能被截断
+ * 的最后一行 JSON——否则一个正在写入/曾崩溃的会话会让整个脚本抛错退出。
+ */
 export function decodeLines(buffer) {
+  const scanned = scanContainer(buffer);
   const values = [];
-  for (const { start, end } of scanFrames(buffer)) {
-    const text = zstdDecompressSync(buffer.subarray(start, end)).toString("utf8");
+  const push = (text) => {
     for (const line of text.split("\n")) if (line.length > 0) values.push(line);
+  };
+  for (const { start, end } of scanned.frames) push(zstdDecompressSync(buffer.subarray(start, end)).toString("utf8"));
+  if (scanned.tornStart !== undefined) {
+    const prefix = zstdDecompressSync(buffer.subarray(scanned.tornStart), { finishFlush: zlibConstants.ZSTD_e_flush }).toString("utf8");
+    push(prefix);
+    while (values.length > 0) {
+      try {
+        JSON.parse(values.at(-1));
+        break;
+      } catch {
+        values.pop();
+      }
+    }
   }
   return values;
 }
@@ -213,23 +252,33 @@ export function migrationCandidate(files) {
 
 /**
  * 处理一个会话目录。
- * @returns {{status: string, sources: number, file?: string}}
+ *
+ * 目标选择（#723 后续）：
+ * 1. 有 v0/v1/v2 产物 → 修它（不修就打不开，宿主会自己迁移）；
+ * 2. 否则看 v3 产物 → **默认也修**：v3 里同样可能残留旧 source（升级前就已存在、
+ *    又被增量写入的会话），而宿主**将来**给 v3→v4 迁移加同类闸门时会重演这次的
+ *    永久拒载；v3 修复本身零语义变化（只换 source 元数据，v3 读取路径不校验它）。
+ *    传 `legacyOnly` 可退回"只修 v0/v1/v2"。
+ * @param {string} sessionDir 会话目录。
+ * @param {{legacyOnly?: boolean}} [options] 只处理待迁移产物（不动 v3）。
+ * @returns {{status: string, sources: number, file?: string, rows?: unknown[]}}
  */
-export function planSession(sessionDir) {
+export function planSession(sessionDir, { legacyOnly = false } = {}) {
   const files = existsSync(sessionDir) ? readdirSync(sessionDir) : [];
   const candidate = migrationCandidate(files);
-  if (candidate === undefined) {
-    const migrated = files.some((file) => /^session\.v3\.jsonl\.zstd$/u.test(file));
-    return { status: migrated ? "already-v3" : "no-log", sources: 0 };
+  const v3 = files.filter((file) => /^session\.v3\.jsonl\.zstd$/u.test(file)).map((file) => ({ file, version: 3 }))[0];
+  const target = candidate ?? (legacyOnly ? undefined : v3);
+  if (target === undefined) {
+    return { status: v3 === undefined ? "no-log" : "already-v3", sources: 0 };
   }
-  const lines = decodeLines(readFileSync(join(sessionDir, candidate.file)));
+  const lines = decodeLines(readFileSync(join(sessionDir, target.file)));
   const stats = { sources: 0 };
   const rows = [];
   for (const line of lines) {
     const parsed = JSON.parse(line);
     rows.push(rewriteRow(parsed, stats).row);
   }
-  return { status: stats.sources > 0 ? "needs-repair" : "clean", sources: stats.sources, file: candidate.file, rows };
+  return { status: stats.sources > 0 ? "needs-repair" : "clean", sources: stats.sources, file: target.file, rows };
 }
 
 /** 落盘：备份 + 临时文件 + fsync + 原子 rename，随后自检。 */
@@ -284,10 +333,11 @@ export function listSessionDirs(dshHome) {
 
 /** CLI 参数解析。 */
 export function parseArgs(argv) {
-  const options = { apply: false, session: undefined, home: process.env.DSH_HOME ?? join(homedir(), ".dsh") };
+  const options = { apply: false, legacyOnly: false, session: undefined, home: process.env.DSH_HOME ?? join(homedir(), ".dsh") };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--apply") options.apply = true;
+    else if (arg === "--legacy-only") options.legacyOnly = true;
     else if (arg === "--session") options.session = argv[++index];
     else if (arg.startsWith("--session=")) options.session = arg.slice("--session=".length);
     else if (arg === "--home") options.home = argv[++index];
@@ -301,12 +351,12 @@ function main() {
   const options = parseArgs(process.argv.slice(2));
   const home = resolve(options.home);
   const dirs = listSessionDirs(home).filter((dir) => options.session === undefined || basename(dir) === options.session);
-  console.log(`[repair-mcp-catalog] DSH_HOME=${home}，会话目录 ${dirs.length} 个，模式=${options.apply ? "apply" : "dry-run（加 --apply 落盘）"}`);
+  console.log(`[repair-mcp-catalog] DSH_HOME=${home}，会话目录 ${dirs.length} 个，模式=${options.apply ? "apply" : "dry-run（加 --apply 落盘）"}，范围=${options.legacyOnly ? "仅 v0/v1/v2（--legacy-only）" : "v0/v1/v2 + v3"}`);
   let affected = 0;
   let changedFiles = 0;
   let sources = 0;
   for (const dir of dirs) {
-    const plan = planSession(dir);
+    const plan = planSession(dir, { legacyOnly: options.legacyOnly });
     if (plan.status !== "needs-repair") continue;
     affected += 1;
     sources += plan.sources;

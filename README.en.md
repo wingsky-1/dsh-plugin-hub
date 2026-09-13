@@ -80,7 +80,11 @@ node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply  # apply: .bak-
 
 - Reads `<DSH_HOME>` by default (`--home <dir>` / `DSH_HOME` overrides it); `--session <id>` limits it to one session
 - Idempotent; self-checked writes (frame structure + per-line JSON + zero leftover legacy kinds); rollback = restore the `.bak-<timestamp>`
-- Never writes a v3 artifact: DSH still performs the migration itself
+- **v3 sessions are repaired by default too**: a v3 session can carry both kinds (created before
+  the upgrade, written incrementally after it), and a future v3-to-v4 migration with a similar gate
+  would repeat this outage; the rewrite only swaps source metadata, leaving v3 semantics unchanged.
+  `--legacy-only` limits the run to v0/v1/v2
+- Never writes a v3 artifact: DSH still performs the migration itself for v0/v1/v2
 - Details and evidence: [dsh-mcp-manager README](packages/dsh-mcp-manager/README.en.md#723-repair) and
   [issue #723](https://github.com/wingsky-1/dsh-plugin-hub/issues/723)
 
