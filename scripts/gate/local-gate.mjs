@@ -8,9 +8,13 @@
  * 脚本把同一份包面归属搬到本地，并统一「PR 也走增量」的口径：
  *
  *   changed  命中包的 build + test + typecheck（迭代快线；命中全局面时自动升到 pr）
- *   pr       快线 + **命中包**产物闸（contract / pack:check / verify:npmlayout 切片）
- *            + 廉价全仓一致性闸（秒级静态检查，不依赖 lib 产物）
- *   full     全仓口径（= 夜间班次口径；发版前或改过构建链时跑）
+ *   pr       **全仓**口径：全仓 build + test + typecheck + 产物闸（contract / pack:check /
+ *            verify:npmlayout，均传全包包名）+ 廉价全仓一致性闸（秒级静态检查，不依赖 lib 产物）
+ *   full     同 pr（口径相同），另加豁免到期台账收集；`--with-coverage` 时补 cov / crap
+ *
+ * 注意 pr/full 两档都是**全仓**对象面，与 CI 的「PR 默认增量」不同——本文件只把增量留给
+ * changed 快线（CI 的增量由 paths-filter 切片承担，本地没有 PR 上下文可切）。因此本地 pr
+ * ≈ CI 的 gate:full 减去覆盖率与变异（那两项归夜间）。
  *
  * 必须全量的东西（全仓产物闸、覆盖率、变异）不在 PR 口径里：它们归 CI 夜间班次
  * （observe.yml），本地只在 --with-coverage 时按需补覆盖率。
@@ -74,7 +78,7 @@ function resolveChangedFiles(base) {
 }
 
 /** 每个步骤 = { label, args }；args 交给 pnpm。 */
-function tierSteps(tier, { hitPackages, withCoverage }) {
+function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel }) {
   const pkgFilters = hitPackages.map((p) => `./packages/${p}`);
   const scopedBuild = hitPackages.map((p) => `@wingsky-1/${p}...`);
   const scopeArg = hitPackages.join(",");
@@ -102,6 +106,15 @@ function tierSteps(tier, { hitPackages, withCoverage }) {
   // 廉价全仓一致性闸：不依赖 lib 产物、秒级，恒跑（不是「全量构建」类成本）。
   // test:scripts 不在此列——它有编译面用例依赖声明产物，需先满足前置包（见下方）。
   const cheapGlobal = [
+    // 阈值单调性原先只在 ci.yml 的 `if: pull_request` 下跑——本地三档都跑不到它，
+    // 「悄悄降线」要等 CI 才红（本地判绿的假象）。判据本身与 CI 同一入口，成本秒级。
+    // 基准取 --base（默认 origin/main，与 CI 的硬编码一致）；取不到该 ref 时判据自身
+    // fail-closed（exit 2），与本地其余步骤「取不到基准即按最严处理」的口径一致。
+    {
+      label: `threshold-monotonic（阈值只许升不许降，基准 ${base}）`,
+      cmd: "node",
+      args: ["scripts/gate/threshold-monotonic.mjs", base],
+    },
     { label: "stryker:check（变异配置与拓扑一致）", args: ["stryker:check"] },
     { label: "aggregate:check（聚合 patch 不漂移）", args: ["aggregate:check"] },
     { label: "test:src-tests（*.src.test.ts 禁现）", args: ["test:src-tests"] },
@@ -141,17 +154,17 @@ function tierSteps(tier, { hitPackages, withCoverage }) {
     }
     steps.push(
       {
-        label: `contract（切片 ${hitPackages.length} 包）`,
+        label: `contract（${scopeLabel}）`,
         cmd: "node",
         args: ["scripts/gate/contract-check.ts", "--packages", scopeArg],
       },
       {
-        label: `pack:check（切片 ${hitPackages.length} 包）`,
+        label: `pack:check（${scopeLabel}）`,
         cmd: "node",
         args: ["scripts/gate/pack-check.ts", "--packages", scopeArg],
       },
       {
-        label: `verify:npmlayout（切片 ${hitPackages.length} 包）`,
+        label: `verify:npmlayout（${scopeLabel}）`,
         cmd: "node",
         args: ["scripts/gate/verify-npm-layout.ts", "--packages", scopeArg],
       },
@@ -166,9 +179,9 @@ function tierSteps(tier, { hitPackages, withCoverage }) {
     { label: "build（全仓）", args: ["build"] },
     { label: "test（全仓）", args: ["test"] },
     { label: "typecheck（全仓）", args: ["typecheck"] },
-    { label: "contract（全仓）", args: ["contract"] },
-    { label: "pack:check（全仓）", args: ["pack:check"] },
-    { label: "verify:npmlayout（全仓）", args: ["verify:npmlayout"] },
+    { label: `contract（${scopeLabel}）`, args: ["contract"] },
+    { label: `pack:check（${scopeLabel}）`, args: ["pack:check"] },
+    { label: `verify:npmlayout（${scopeLabel}）`, args: ["verify:npmlayout"] },
     ...cheapGlobal,
     scriptsSelfTest,
     // 豁免/临时项到期台账：只在全量档收集打印（纯报告，退出码恒 0）。增量档不跑——
@@ -234,7 +247,16 @@ function main(argv) {
   let effectiveTier = tier;
   if (tier === "changed" && plan.globalHit) effectiveTier = "pr";
 
-  const steps = tierSteps(effectiveTier, { hitPackages: plan.hitPackages, withCoverage });
+  const scopeLabel =
+    plan.hitPackages.length === allPackages.length
+      ? "全仓口径"
+      : `切片 ${plan.hitPackages.length} 包：${plan.hitPackages.join(", ")}`;
+  const steps = tierSteps(effectiveTier, {
+    hitPackages: plan.hitPackages,
+    withCoverage,
+    base,
+    scopeLabel,
+  });
   const escalated = effectiveTier !== tier;
 
   console.log(
