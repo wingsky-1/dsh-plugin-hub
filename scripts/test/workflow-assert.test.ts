@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-'use strict'
+"use strict";
 
 /**
  * workflow-assert — CI workflow 结构静态断言（#85 v3 F2 防回归条款）。
@@ -25,242 +25,382 @@
  *
  * 运行：node --test scripts/test/workflow-assert.test.ts（或 pnpm test:scripts）
  */
-import test from 'node:test'
-import assert from 'node:assert/strict'
-import { readFileSync, readdirSync, existsSync, globSync } from 'node:fs'
-import { join, basename } from 'node:path'
-import { spawnSync } from 'node:child_process'
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync, readdirSync, existsSync, globSync } from "node:fs";
+import { join, basename } from "node:path";
+import { spawnSync } from "node:child_process";
 
-const ROOT = join(import.meta.dirname, '../..')
+const ROOT = join(import.meta.dirname, "../..");
 // win32 checkout 常为 CRLF：断言子串按 LF 书写——读取层统一归一化 LF。
-const lf = (p) => readFileSync(p, 'utf8').replace(/\r\n/g, '\n')
-const CI = lf(join(ROOT, '.github/workflows/ci.yml'))
-const OBSERVE = lf(join(ROOT, '.github/workflows/observe.yml'))
+const lf = (p) => readFileSync(p, "utf8").replace(/\r\n/g, "\n");
+const CI = lf(join(ROOT, ".github/workflows/ci.yml"));
+const OBSERVE = lf(join(ROOT, ".github/workflows/observe.yml"));
 // #718 S2.2 退役后不再读该文件（读会直接抛），只留路径给「不得回潮」断言。
-const OBSERVE_INC_PATH = join(ROOT, '.github/workflows/observe-incremental.yml')
-const OVERLAY = lf(join(ROOT, '.github/workflows/baseline-overlay.yml'))
-const RELEASE = readFileSync(join(ROOT, '.github/workflows/release.yml'), 'utf8')
-const HEALTH = readFileSync(join(ROOT, '.github/workflows/health-report.yml'), 'utf8')
-const GAUNTLET = JSON.parse(readFileSync(join(ROOT, 'scripts/data/gauntlet.config.json'), 'utf8'))
-const MANIFEST = JSON.parse(readFileSync(join(ROOT, 'scripts/data/plugins-manifest.json'), 'utf8'))
-const CI_MATRIX = readFileSync(join(ROOT, 'scripts/ci/ci-matrix.mjs'), 'utf8')
+const OBSERVE_INC_PATH = join(ROOT, ".github/workflows/observe-incremental.yml");
+const OVERLAY = lf(join(ROOT, ".github/workflows/baseline-overlay.yml"));
+const RELEASE = readFileSync(join(ROOT, ".github/workflows/release.yml"), "utf8");
+const HEALTH = readFileSync(join(ROOT, ".github/workflows/health-report.yml"), "utf8");
+const GAUNTLET = JSON.parse(readFileSync(join(ROOT, "scripts/data/gauntlet.config.json"), "utf8"));
+const MANIFEST = JSON.parse(readFileSync(join(ROOT, "scripts/data/plugins-manifest.json"), "utf8"));
+const CI_MATRIX = readFileSync(join(ROOT, "scripts/ci/ci-matrix.mjs"), "utf8");
 
 // 包集合单一事实源（#306 评审）：从 plugins-manifest.json 派生，消除手写漂移。
 //  - MATRIX_PACKAGES：build-test 矩阵全集 = active ∪ standalone ∪ 聚合包
 //    （build 无条件覆盖所有要发布产物的包，repo-gate 全局门禁依赖全集 lib）
 //  - SLICE_PACKAGES：切片清单 = active ∪ 聚合包（standalone 不进聚合、不参与切片）
 //  - MUTATION_PACKAGES：变异对象包 = gauntlet mutation.packages（含 standalone）
-const AGGREGATE = 'dsh-plugins-all'
-const MATRIX_PACKAGES = [...MANIFEST.active, ...(MANIFEST.standalone ?? []), AGGREGATE]
-const SLICE_PACKAGES = [...MANIFEST.active, AGGREGATE]
+const AGGREGATE = "dsh-plugins-all";
+const MATRIX_PACKAGES = [...MANIFEST.active, ...(MANIFEST.standalone ?? []), AGGREGATE];
+const SLICE_PACKAGES = [...MANIFEST.active, AGGREGATE];
 // 变异对象包：gauntlet mutation.packages（含 standalone，不含聚合/纯宿主 skill 包）
-const MUTATION_PACKAGES = Object.keys(GAUNTLET?.mutation?.packages ?? {})
+const MUTATION_PACKAGES = Object.keys(GAUNTLET?.mutation?.packages ?? {});
 
 // ── 段配置文件名归并（#342 二期：数字段名 s1/s2 废弃，改为功能段名；二者兼容）──
 // 包级单段配置 <pkg>.json 与段式配置 <pkg>-<后缀>.json（后缀=功能段名或数字段名）
 // 统一归并为基础包名：对已知包集合（gauntlet mutation.packages）做最长前缀匹配。
 // 所有需要「conf 文件集 ↔ 包集」一致的断言共用本函数，避免三处漂移（评审 P1-2）。
 function basePkgOfConf(f) {
-  const name = f.replace(/\.json$/, '')
-  const hit = MUTATION_PACKAGES
-    .filter((p) => name === p || name.startsWith(`${p}-`))
-    .sort((a, b) => b.length - a.length)
-  return hit[0]
+  const name = f.replace(/\.json$/, "");
+  const hit = MUTATION_PACKAGES.filter((p) => name === p || name.startsWith(`${p}-`)).sort(
+    (a, b) => b.length - a.length,
+  );
+  return hit[0];
 }
 // 段式配置的后缀（如 dsh-notifier-server.json → server；dsh-lan-proxy-1.json → 1）
 function segSuffixOfConf(f) {
-  const name = f.replace(/\.json$/, '')
-  const base = basePkgOfConf(f)
-  return base && name !== base ? name.slice(base.length + 1) : undefined
+  const name = f.replace(/\.json$/, "");
+  const base = basePkgOfConf(f);
+  return base && name !== base ? name.slice(base.length + 1) : undefined;
 }
 // 有 stryker 配置的包集合（conf 文件集归并；段式/包级统一）
 function strykerPkgs() {
-  return [...new Set(readdirSync(join(ROOT, 'stryker.conf.d'))
-    .filter((f) => f.endsWith('.json'))
-    .map(basePkgOfConf)
-    .filter(Boolean))].sort()
+  return [
+    ...new Set(
+      readdirSync(join(ROOT, "stryker.conf.d"))
+        .filter((f) => f.endsWith(".json"))
+        .map(basePkgOfConf)
+        .filter(Boolean),
+    ),
+  ].sort();
 }
 
-test('ci.yml: repo-gate 保持分支保护 required check 名', () => {
-  const m = /repo-gate:\s*\n\s*name: (.+)/.exec(CI)
-  assert.ok(m, '存在 repo-gate 作业且声明 name')
-  assert.equal(m[1].trim(), 'Build / Contract / Smoke / Pack',
-    'required check 名必须与旧单作业名一致（维护者分支保护无缝切换）')
-})
+test("ci.yml: repo-gate 保持分支保护 required check 名", () => {
+  const m = /repo-gate:\s*\n\s*name: (.+)/.exec(CI);
+  assert.ok(m, "存在 repo-gate 作业且声明 name");
+  assert.equal(
+    m[1].trim(),
+    "Build / Contract / Smoke / Pack",
+    "required check 名必须与旧单作业名一致（维护者分支保护无缝切换）",
+  );
+});
 
-test('ci.yml: repo-gate if always() 且 fail-closed 断言经判定脚本执行', () => {
-  const gate = CI.slice(CI.indexOf('\n  repo-gate:'))
-  assert.ok(/if: always\(\)/.test(gate), 'repo-gate 必须 always() 运行（上游失败时仍执行判红）')
-  assert.ok(/Fail-closed gate assertion/.test(gate), 'fail-closed 断言步骤在位')
+test("ci.yml: repo-gate if always() 且 fail-closed 断言经判定脚本执行", () => {
+  const gate = CI.slice(CI.indexOf("\n  repo-gate:"));
+  assert.ok(/if: always\(\)/.test(gate), "repo-gate 必须 always() 运行（上游失败时仍执行判红）");
+  assert.ok(/Fail-closed gate assertion/.test(gate), "fail-closed 断言步骤在位");
   // #187：内联 bash 收敛为可单测的判定脚本，env 三维注入（事件 × 切片 × 结果）
-  assert.ok(gate.includes('run: node scripts/gate/repo-gate-assert.mjs'),
-    'repo-gate fail-closed 判定必须调用 scripts/gate/repo-gate-assert.mjs')
-  for (const env of ['GATE_EVENT', 'GATE_CHANGES', 'GATE_BUILD_TEST', 'GATE_MUTATION', 'GATE_MUTATION_PKGS']) {
-    assert.ok(new RegExp(`${env}: \\$\\{\\{`).test(gate), `判定脚本 env ${env} 注入缺失`)
+  assert.ok(
+    gate.includes("run: node scripts/gate/repo-gate-assert.mjs"),
+    "repo-gate fail-closed 判定必须调用 scripts/gate/repo-gate-assert.mjs",
+  );
+  for (const env of [
+    "GATE_EVENT",
+    "GATE_CHANGES",
+    "GATE_BUILD_TEST",
+    "GATE_MUTATION",
+    "GATE_MUTATION_PKGS",
+  ]) {
+    assert.ok(new RegExp(`${env}: \\$\\{\\{`).test(gate), `判定脚本 env ${env} 注入缺失`);
   }
   // 时序约束（run #32800733630 教训）：脚本版断言依赖工作区文件，必须排在
   // Checkout 之后；旧内联 bash 无文件依赖曾掩盖该约束
-  const checkoutIdx = gate.indexOf('- name: Checkout')
-  const assertIdx = gate.indexOf('Fail-closed gate assertion')
-  assert.ok(checkoutIdx > 0, 'repo-gate 存在 Checkout 步骤')
-  assert.ok(assertIdx > checkoutIdx,
-    'fail-closed 断言步骤必须排在 Checkout 之后（脚本需要工作区存在 scripts/gate/）')
-})
+  const checkoutIdx = gate.indexOf("- name: Checkout");
+  const assertIdx = gate.indexOf("Fail-closed gate assertion");
+  assert.ok(checkoutIdx > 0, "repo-gate 存在 Checkout 步骤");
+  assert.ok(
+    assertIdx > checkoutIdx,
+    "fail-closed 断言步骤必须排在 Checkout 之后（脚本需要工作区存在 scripts/gate/）",
+  );
+});
 
-test('ci.yml: filter 失败 fallback 全量切片（fail-closed 双闸）', () => {
+test("ci.yml: filter 失败 fallback 全量切片（fail-closed 双闸）", () => {
   // #586：调度下沉至 scripts/ci/ci-matrix.mjs，ci.yml 注入 FILTER_OUTCOME 与 BASE_SET
-  const computeBlock = CI.slice(CI.indexOf('Compute hit packages'), CI.indexOf('build-test:'))
-  assert.ok(computeBlock.includes('FILTER_OUTCOME: ${{ steps.filter.outcome }}'),
-    'Compute hit packages 必须注入 FILTER_OUTCOME')
-  assert.ok(computeBlock.includes('BASE_SET: ${{ steps.base.outputs.base }}'),
-    'Compute hit packages 必须注入 BASE_SET')
-  assert.ok(CI_MATRIX.includes("filterOutcome !== 'success'"),
-    'ci-matrix 内部必须在 filter outcome failure/非 success 时触发全量切片 fallback')
-  assert.ok(/按全量处理/.test(CI), 'diff base 不可用时按全量处理（F4）')
-})
+  const computeBlock = CI.slice(CI.indexOf("Compute hit packages"), CI.indexOf("build-test:"));
+  assert.ok(
+    computeBlock.includes("FILTER_OUTCOME: ${{ steps.filter.outcome }}"),
+    "Compute hit packages 必须注入 FILTER_OUTCOME",
+  );
+  assert.ok(
+    computeBlock.includes("BASE_SET: ${{ steps.base.outputs.base }}"),
+    "Compute hit packages 必须注入 BASE_SET",
+  );
+  assert.ok(
+    CI_MATRIX.includes("filterOutcome !== 'success'"),
+    "ci-matrix 内部必须在 filter outcome failure/非 success 时触发全量切片 fallback",
+  );
+  assert.ok(/按全量处理/.test(CI), "diff base 不可用时按全量处理（F4）");
+});
 
-test('ci.yml: build-test 矩阵动态来自 buildPackages（哨兵防空实例）且各步骤仅命中包（#722）', () => {
-  const bt = CI.slice(CI.indexOf('\n  build-test:'), CI.indexOf('\n  repo-gate:'))
+test("ci.yml: build-test 矩阵动态来自 buildPackages（哨兵防空实例）且各步骤仅命中包（#722）", () => {
+  const bt = CI.slice(CI.indexOf("\n  build-test:"), CI.indexOf("\n  repo-gate:"));
   // #722：矩阵改为动态（来源 changes.buildPackages）。空切片时由 ci-matrix.mjs 填哨兵项，
   // 因为 GHA 对零实例动态矩阵实测回报 failure（实证 run 32802575298），会连坐判定表。
-  assert.ok(bt.includes('package: ${{ fromJSON(needs.changes.outputs.buildPackages) }}'),
-    'build-test 矩阵必须动态来自 changes.buildPackages')
-  assert.ok(!/^\s+- dsh-[a-z0-9-]+$/m.test(bt),
-    'build-test 不得再出现静态包名清单（清单 SSOT 已下沉 ci-matrix.mjs）')
+  assert.ok(
+    bt.includes("package: ${{ fromJSON(needs.changes.outputs.buildPackages) }}"),
+    "build-test 矩阵必须动态来自 changes.buildPackages",
+  );
+  assert.ok(
+    !/^\s+- dsh-[a-z0-9-]+$/m.test(bt),
+    "build-test 不得再出现静态包名清单（清单 SSOT 已下沉 ci-matrix.mjs）",
+  );
   // 全量包清单仍必须注入（gate:full 的产物齐备断言与快照消费都用它）
-  const computeBlock = CI.slice(CI.indexOf('Compute hit packages'), CI.indexOf('build-test:'))
-  assert.ok(computeBlock.includes('run: node scripts/ci/ci-matrix.mjs'),
-    'Compute hit packages 步骤已下沉至 ci-matrix.mjs')
+  const computeBlock = CI.slice(CI.indexOf("Compute hit packages"), CI.indexOf("build-test:"));
+  assert.ok(
+    computeBlock.includes("run: node scripts/ci/ci-matrix.mjs"),
+    "Compute hit packages 步骤已下沉至 ci-matrix.mjs",
+  );
   // 切片条件必须覆盖 install（哨兵实例零消耗）与 build（未命中包不构建）
-  for (const stepName of ['Install dependencies', 'Build package', 'Smoke tests', 'Typecheck']) {
-    const idx = bt.indexOf(`- name: ${stepName}`)
-    assert.ok(idx > 0, `${stepName} 步骤在位`)
-    const block = bt.slice(idx, bt.indexOf('- name:', idx + 10))
-    assert.ok(block.includes('contains(fromJSON(needs.changes.outputs.hitPackages), matrix.package)'),
-      `${stepName} 必须按命中清单切片`)
+  for (const stepName of ["Install dependencies", "Build package", "Smoke tests", "Typecheck"]) {
+    const idx = bt.indexOf(`- name: ${stepName}`);
+    assert.ok(idx > 0, `${stepName} 步骤在位`);
+    const block = bt.slice(idx, bt.indexOf("- name:", idx + 10));
+    assert.ok(
+      block.includes("contains(fromJSON(needs.changes.outputs.hitPackages), matrix.package)"),
+      `${stepName} 必须按命中清单切片`,
+    );
   }
   // 上传必须与 build 同步切片：未命中包无产物，if-no-files-found: error 会直接红
-  const uploadBlock = bt.slice(bt.indexOf('- name: Upload package outputs artifact'))
-  assert.ok(uploadBlock.slice(0, 300).includes('contains(fromJSON(needs.changes.outputs.hitPackages), matrix.package)'),
-    'artifact 上传必须与 build 同步切片（否则未命中包因无产物判红）')
-  for (const stepName of ['Smoke tests', 'Typecheck']) {
-    const idx = bt.indexOf(`- name: ${stepName}`)
-    const block = bt.slice(idx, bt.indexOf('- name:', idx + 10))
-    assert.ok(block.includes('--if-present'), `${stepName} 须 --if-present（聚合包无该脚本）`)
+  const uploadBlock = bt.slice(bt.indexOf("- name: Upload package outputs artifact"));
+  assert.ok(
+    uploadBlock
+      .slice(0, 300)
+      .includes("contains(fromJSON(needs.changes.outputs.hitPackages), matrix.package)"),
+    "artifact 上传必须与 build 同步切片（否则未命中包因无产物判红）",
+  );
+  for (const stepName of ["Smoke tests", "Typecheck"]) {
+    const idx = bt.indexOf(`- name: ${stepName}`);
+    const block = bt.slice(idx, bt.indexOf("- name:", idx + 10));
+    assert.ok(block.includes("--if-present"), `${stepName} 须 --if-present（聚合包无该脚本）`);
   }
-})
+});
 
-test('ci.yml: changes 步骤委托给 ci-matrix.mjs 且 paths-filter 完整覆盖 active ∪ standalone（#586）', () => {
-  const computeBlock = CI.slice(CI.indexOf('Compute hit packages'), CI.indexOf('build-test:'))
-  assert.ok(computeBlock.includes('run: node scripts/ci/ci-matrix.mjs'),
-    'Compute hit packages 步骤必须调用 node scripts/ci/ci-matrix.mjs')
-  for (const env of ['GLOBAL_HIT', 'FILTER_OUTCOME', 'BASE_SET', 'FILTER_OUTPUTS']) {
-    assert.ok(new RegExp(`${env}: \\$\\{\\{`).test(computeBlock),
-      `Compute hit packages 步骤缺环境变量 ${env}`)
+test("ci.yml: changes 步骤委托给 ci-matrix.mjs 且 paths-filter 完整覆盖 active ∪ standalone（#586）", () => {
+  const computeBlock = CI.slice(CI.indexOf("Compute hit packages"), CI.indexOf("build-test:"));
+  assert.ok(
+    computeBlock.includes("run: node scripts/ci/ci-matrix.mjs"),
+    "Compute hit packages 步骤必须调用 node scripts/ci/ci-matrix.mjs",
+  );
+  for (const env of ["GLOBAL_HIT", "FILTER_OUTCOME", "BASE_SET", "FILTER_OUTPUTS"]) {
+    assert.ok(
+      new RegExp(`${env}: \\$\\{\\{`).test(computeBlock),
+      `Compute hit packages 步骤缺环境变量 ${env}`,
+    );
   }
 
   // 双向一致性检查：断言 ci.yml 中的 dorny/paths-filter 规则完整包含了 plugins-manifest.json 中 active ∪ standalone 的所有包
-  const filtersBlock = CI.slice(CI.indexOf('filters: |'), CI.indexOf('- name: Compute hit packages'))
-  const allPlugins = [...MANIFEST.active, ...(MANIFEST.standalone ?? [])]
+  const filtersBlock = CI.slice(
+    CI.indexOf("filters: |"),
+    CI.indexOf("- name: Compute hit packages"),
+  );
+  const allPlugins = [...MANIFEST.active, ...(MANIFEST.standalone ?? [])];
   for (const pkg of allPlugins) {
     assert.ok(
-      new RegExp(`^\\s*${pkg}:`, 'm').test(filtersBlock),
-      `ci.yml paths-filter 规则缺失包 ${pkg}（active ∪ standalone 必须全量覆盖，防漏检）`
-    )
+      new RegExp(`^\\s*${pkg}:`, "m").test(filtersBlock),
+      `ci.yml paths-filter 规则缺失包 ${pkg}（active ∪ standalone 必须全量覆盖，防漏检）`,
+    );
   }
-  assert.ok(/^\s*dsh-plugins-all:/m.test(filtersBlock), 'paths-filter 规则必须覆盖聚合包 dsh-plugins-all')
-})
+  assert.ok(
+    /^\s*dsh-plugins-all:/m.test(filtersBlock),
+    "paths-filter 规则必须覆盖聚合包 dsh-plugins-all",
+  );
+});
 
-test('ci.yml/observe*/baseline-overlay/release/health-report.yml: 第三方与官方 action 一律 pin commit SHA', () => {
+test("#733 E1: paths-filter 的 glob 内容集合相等（防「留键删行」静默失检）", () => {
+  // 现状缺口：#322 只对「有 stryker 配置的包」断言 packages/<pkg>/** 行存在，而
+  // dsh-verify-isolated 与 dsh-plugins-all 没有段配置 → 删掉它们那一行（只留下键）无人拦，
+  // 该包从此不再被任何切片命中；global 面的 9 条 glob 此前同样没有任何断言。
+  const filtersBlock = CI.slice(
+    CI.indexOf("filters: |"),
+    CI.indexOf("- name: Compute hit packages"),
+  );
+  // 期望包面 = manifest.active ∪ standalone ∪ 聚合包（manifest 不含聚合包，filters 有）
+  const expectedPkgs = [
+    ...MANIFEST.active,
+    ...(MANIFEST.standalone ?? []),
+    "dsh-plugins-all",
+  ].sort();
+
+  // 解析：12 空格缩进的 `<key>:` 起一条，其下缩进的 `- '<glob>'` 归它
+  const entries = new Map();
+  let current = null;
+  for (const line of filtersBlock.split("\n")) {
+    const head = /^ {12}([a-z0-9-]+):\s*$/.exec(line);
+    if (head) {
+      current = head[1];
+      entries.set(current, []);
+      continue;
+    }
+    const glob = /^\s*-\s*'([^']+)'\s*$/.exec(line);
+    if (glob && current !== null) entries.get(current).push(glob[1]);
+  }
+
+  assert.deepEqual(
+    [...entries.keys()].sort(),
+    ["global", ...expectedPkgs].sort(),
+    "paths-filter 的键必须恰好是 global + active ∪ standalone + 聚合包（多一个少一个都红）",
+  );
+  for (const pkg of expectedPkgs) {
+    assert.ok(
+      entries.get(pkg).includes(`packages/${pkg}/**`),
+      `${pkg} 包面必须含 'packages/${pkg}/**' 这一行——留键删行会让该包永不被切片命中`,
+    );
+  }
+  // global 面没有派生源（它的条目与包内结构无关），故显式基线化：增删都必须同步此处。
+  assert.deepEqual(
+    entries.get("global").slice().sort(),
+    [
+      ".github/**",
+      "agents/**",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "scripts/**",
+      "shared/**",
+      "tsconfig.base.json",
+      "vitest.config.ts",
+    ].sort(),
+    "global 面的 glob 集合变了——确认是有意为之，并同步本基线",
+  );
+});
+
+test("ci.yml/observe*/baseline-overlay/release/health-report.yml: 第三方与官方 action 一律 pin commit SHA", () => {
   for (const [name, text] of [
-    ['ci.yml', CI], ['observe.yml', OBSERVE],
-    ['baseline-overlay.yml', OVERLAY], ['release.yml', RELEASE], ['health-report.yml', HEALTH],
+    ["ci.yml", CI],
+    ["observe.yml", OBSERVE],
+    ["baseline-overlay.yml", OVERLAY],
+    ["release.yml", RELEASE],
+    ["health-report.yml", HEALTH],
   ]) {
     // 逐行解析 uses: 值（避免贪婪 \S+ 吞掉 @ref，评审 F9）
-    const lines = text.split('\n').filter((l) => l.trim().startsWith('uses:'))
-    assert.ok(lines.length > 0, `${name} 存在 uses 步骤`)
+    const lines = text.split("\n").filter((l) => l.trim().startsWith("uses:"));
+    assert.ok(lines.length > 0, `${name} 存在 uses 步骤`);
     for (const line of lines) {
       // owner/repo 及其子 action 路径（如 actions/cache/restore，#178 引入）
-      const m = /^uses:\s*([\w.-]+(?:\/[\w.-]+)+)(?:@(\S+))?\s*(?:#.*)?$/.exec(line.trim())
-      assert.ok(m, `${name}: 无法解析的 uses 行："${line.trim()}"`)
-      assert.match(m[2] ?? '', /^[0-9a-f]{40}/, `${name}: ${m[1]} 未 pin 到 40 位 commit SHA`)
+      const m = /^uses:\s*([\w.-]+(?:\/[\w.-]+)+)(?:@(\S+))?\s*(?:#.*)?$/.exec(line.trim());
+      assert.ok(m, `${name}: 无法解析的 uses 行："${line.trim()}"`);
+      assert.match(m[2] ?? "", /^[0-9a-f]{40}/, `${name}: ${m[1]} 未 pin 到 40 位 commit SHA`);
     }
   }
-})
+});
 
-test('observe.yml: 夜间调度 + 硬门禁执行点 + issues 写权限', () => {
-  assert.ok(OBSERVE.includes('cron:'), 'schedule 触发器在位')
-  assert.ok(OBSERVE.includes('workflow_dispatch'), '支持手动 dispatch')
-  assert.ok(OBSERVE.includes('issues: write'), '自动建 issue 需要 issues:write')
+test("observe.yml: 夜间调度 + 硬门禁执行点 + issues 写权限", () => {
+  assert.ok(OBSERVE.includes("cron:"), "schedule 触发器在位");
+  assert.ok(OBSERVE.includes("workflow_dispatch"), "支持手动 dispatch");
+  assert.ok(OBSERVE.includes("issues: write"), "自动建 issue 需要 issues:write");
   // #722 阶段三：覆盖率硬校验并入 pnpm cov（vitest 的 coverage.thresholds 未达标即
   // 非零退出），原独立的 self-cov --check 执行点退役。两端一起锁：新执行点在位 +
   // 旧执行点不得回潮，防「切了一半」导致夜间覆盖率无人判红。
-  assert.ok(OBSERVE.includes('run: pnpm cov'), '覆盖率采集与阈值校验执行点在位（#722 阶段三）')
-  assert.ok(!OBSERVE.includes('self-cov.mjs'), 'self-cov 执行点已退役（阈值归 vitest coverage.thresholds）')
-  assert.ok(OBSERVE.includes('observe-check.mjs'), '阈值校验+回落检测脚本执行点（F1/F6）')
-})
+  assert.ok(OBSERVE.includes("run: pnpm cov"), "覆盖率采集与阈值校验执行点在位（#722 阶段三）");
+  assert.ok(
+    !OBSERVE.includes("self-cov.mjs"),
+    "self-cov 执行点已退役（阈值归 vitest coverage.thresholds）",
+  );
+  assert.ok(OBSERVE.includes("observe-check.mjs"), "阈值校验+回落检测脚本执行点（F1/F6）");
+});
 
-test('#220: docs 与 AGENTS.md 不在 ci.yml global 过滤面——文档 PR 不触发变异切片', () => {
+test("#220: docs 与 AGENTS.md 不在 ci.yml global 过滤面——文档 PR 不触发变异切片", () => {
   // #693 起 verify-docs（scripts/gate/）**确实消费** AGENTS.md、.dsh/skills 与 docs/
   // 的链接与命令引用——旧理由「gate 脚本均不消费其内容」已不成立。排除面仍然安全
   // 的真正依据是：消费方本体在 scripts/**/agents/** 面内，故「改文档不触发全量、
   // 改脚本才触发」的语义成立。下面第三条断言把该互斥关系锁死，防后人只改一半。
-  const filterBlock = CI.slice(CI.indexOf('filters: |'), CI.indexOf("dsh-notifier:"))
-  assert.ok(!/^.*-\s'docs\/\*\*'/m.test(filterBlock),
-    "docs/** 不得出现在 global 过滤组——纯文档 PR 不应触发全量切片")
-  assert.ok(!/^.*-\s'AGENTS\.md'/m.test(filterBlock),
-    "AGENTS.md 不得出现在 global 过滤组——改根级纯文档不应触发全量切片")
-  assert.ok(CI.includes('# docs/** 与 AGENTS.md 刻意不在 global 面'),
-    '过滤面旁必须保留理由注释（防后人「好心」加回）')
-  assert.ok(/^.*-\s'scripts\/\*\*'/m.test(filterBlock),
+  const filterBlock = CI.slice(CI.indexOf("filters: |"), CI.indexOf("dsh-notifier:"));
+  assert.ok(
+    !/^.*-\s'docs\/\*\*'/m.test(filterBlock),
+    "docs/** 不得出现在 global 过滤组——纯文档 PR 不应触发全量切片",
+  );
+  assert.ok(
+    !/^.*-\s'AGENTS\.md'/m.test(filterBlock),
+    "AGENTS.md 不得出现在 global 过滤组——改根级纯文档不应触发全量切片",
+  );
+  assert.ok(
+    CI.includes("# docs/** 与 AGENTS.md 刻意不在 global 面"),
+    "过滤面旁必须保留理由注释（防后人「好心」加回）",
+  );
+  assert.ok(
+    /^.*-\s'scripts\/\*\*'/m.test(filterBlock),
     "scripts/** 必须在 global 过滤组——消费 AGENTS.md/docs 的门禁脚本（如 verify-docs）" +
-    '改了就触发全量，这是排除 docs/AGENTS.md 成立的前提（#693）')
-})
+      "改了就触发全量，这是排除 docs/AGENTS.md 成立的前提（#693）",
+  );
+});
 
-test('#322: 每个带 stryker 配置的包在 path-filter 均有段配置通配映射（防回归）', () => {
+test("#322: 每个带 stryker 配置的包在 path-filter 均有段配置通配映射（防回归）", () => {
   // 有 stryker 配置的包 = stryker.conf.d 文件集归并出的基础包名（段式
   // <pkg>-<后缀>.json 与包级 <pkg>.json 归并到 <pkg>，功能段名/数字段名统一——
   // basePkgOfConf 共享函数），与 #220 段式三方一致测试同一口径
-  const basePkgs = strykerPkgs()
+  const basePkgs = strykerPkgs();
 
-  const filtersBlock = CI.slice(CI.indexOf('filters: |'), CI.indexOf('- name: Compute hit packages'))
+  const filtersBlock = CI.slice(
+    CI.indexOf("filters: |"),
+    CI.indexOf("- name: Compute hit packages"),
+  );
   for (const pkg of basePkgs) {
     // 定位包面条目：从 `<pkg>:` 到下一个 `            dsh-` 条目（filters 缩进 12 空格）
-    const start = filtersBlock.indexOf(`            ${pkg}:`)
-    assert.ok(start > 0, `ci.yml path-filter 缺包面条目 ${pkg}（#322：段配置变更需命中该包面）`)
-    const after = filtersBlock.indexOf('\n            dsh-', start + pkg.length)
-    const entry = filtersBlock.slice(start, after > 0 ? after : undefined)
+    const start = filtersBlock.indexOf(`            ${pkg}:`);
+    assert.ok(start > 0, `ci.yml path-filter 缺包面条目 ${pkg}（#322：段配置变更需命中该包面）`);
+    const after = filtersBlock.indexOf("\n            dsh-", start + pkg.length);
+    const entry = filtersBlock.slice(start, after > 0 ? after : undefined);
     // 现有 packages/<pkg>/** 映射必须保留（本断言只追加 stryker 段配置通配，不动 case 结构）
-    assert.ok(entry.includes(`- 'packages/${pkg}/**'`),
-      `${pkg} 包面必须保留 packages/${pkg}/** 行（#322 只追加不替换）`)
+    assert.ok(
+      entry.includes(`- 'packages/${pkg}/**'`),
+      `${pkg} 包面必须保留 packages/${pkg}/** 行（#322 只追加不替换）`,
+    );
     // stryker.conf.d 通配：包级 <pkg>.json 与段级 <pkg>-<n>.json 均以 <pkg> 前缀被覆盖
-    const hasGlob = entry.split('\n').some((l) => {
-      const m = /-\s'(stryker\.conf\.d\/[^']+)'/.exec(l.trim())
-      return !!m && m[1].startsWith(`stryker.conf.d/${pkg}`)
-    })
-    assert.ok(hasGlob,
-      `${pkg} 包面缺 stryker.conf.d 段配置通配映射（#322：改段配置必须触发该包 mutation，不得全 skip）`)
+    const hasGlob = entry.split("\n").some((l) => {
+      const m = /-\s'(stryker\.conf\.d\/[^']+)'/.exec(l.trim());
+      return !!m && m[1].startsWith(`stryker.conf.d/${pkg}`);
+    });
+    assert.ok(
+      hasGlob,
+      `${pkg} 包面缺 stryker.conf.d 段配置通配映射（#322：改段配置必须触发该包 mutation，不得全 skip）`,
+    );
   }
-})
+});
 
-test('#433+#572 调度重设计与孤立分支基线: observe 全量班（北京次日 04:00，强推孤立分支）+ 增量班不得回潮', () => {
+test("#433+#572 调度重设计与孤立分支基线: observe 全量班（北京次日 04:00，强推孤立分支）+ 增量班不得回潮", () => {
   // ── 全量班（observe.yml）：每日一次，北京次日 04:00 = UTC 20:00 ──
-  assert.ok(OBSERVE.includes("'0 20 * * *'"),
-    '全量班 cron 必须为每日一次 UTC 20:00（北京次日 04:00）')
+  assert.ok(
+    OBSERVE.includes("'0 20 * * *'"),
+    "全量班 cron 必须为每日一次 UTC 20:00（北京次日 04:00）",
+  );
   // #718 S1.1：全量班由「单 job 串行循环」改为「逐段矩阵」，段清单的单一事实源
   // 从 workflow 内联 glob 迁到 mutation-plan.mjs（仍 glob conf 目录，无 push 裁剪分支）
-  assert.ok(OBSERVE.includes('node scripts/gate/mutation-plan.mjs'),
-    '全量班段清单必须由 mutation-plan.mjs 派生（glob conf 目录为单一事实源，无 push 裁剪分支）')
-  assert.ok(!OBSERVE.includes('EVENT_NAME'), 'observe 不得再依赖 push/事件类型（#276 方案 A 已移除 push 触发）')
-  assert.ok(OBSERVE.includes("steps.reports.outputs.count != '0'"),
-    '全量班变异执行与 push 必须以「有段报告产出」为前提——空产物不跑 push（原 has_suites 语义的矩阵化等价物）')
-  assert.ok(!OBSERVE.includes('skip_pr=true'), '#572：全量班已迁移至孤立分支，日期闸与 PR 步骤已退役')
+  assert.ok(
+    OBSERVE.includes("node scripts/gate/mutation-plan.mjs"),
+    "全量班段清单必须由 mutation-plan.mjs 派生（glob conf 目录为单一事实源，无 push 裁剪分支）",
+  );
+  assert.ok(
+    !OBSERVE.includes("EVENT_NAME"),
+    "observe 不得再依赖 push/事件类型（#276 方案 A 已移除 push 触发）",
+  );
+  assert.ok(
+    OBSERVE.includes("steps.reports.outputs.count != '0'"),
+    "全量班变异执行与 push 必须以「有段报告产出」为前提——空产物不跑 push（原 has_suites 语义的矩阵化等价物）",
+  );
+  assert.ok(
+    !OBSERVE.includes("skip_pr=true"),
+    "#572：全量班已迁移至孤立分支，日期闸与 PR 步骤已退役",
+  );
   // #718 S1.2：全量班写入口由整树替换改为并集入档。整树替换下「段被失败实例吃掉」是静默
   // 丢段（实测 33 → 31），故这里同时锁正向（archive 在位）与反向（push 不得回流）。
-  assert.ok(OBSERVE.includes('orphan-baseline.mjs archive'),
-    '全量班必须走并集入档（#718 S1.2：先取回远端再叠加，缺段显式记账）')
-  assert.ok(!OBSERVE.includes('orphan-baseline.mjs push'),
-    '全量班不得回退为整树替换的 push（#718 S1.2：会静默丢段）')
+  assert.ok(
+    OBSERVE.includes("orphan-baseline.mjs archive"),
+    "全量班必须走并集入档（#718 S1.2：先取回远端再叠加，缺段显式记账）",
+  );
+  assert.ok(
+    !OBSERVE.includes("orphan-baseline.mjs push"),
+    "全量班不得回退为整树替换的 push（#718 S1.2：会静默丢段）",
+  );
 
   // ── 增量班（observe-incremental.yml）：#718 S2.2 已退役，断言反转为「不得回潮」 ──
   // 退役依据（实测，2026-09-12）：它的唯一独有价值是修复全量班整树替换丢掉的段，而 #718 S1.2
@@ -268,75 +408,94 @@ test('#433+#572 调度重设计与孤立分支基线: observe 全量班（北京
   // 两条路径承担。代价侧：它占着 mutation-baseline-sync 互斥锁（实测阻塞全量班 13 min），
   // 空闲班 8~12 min，需要修复时 43 min 险过 45 min 超时，近 20 次里 2 次在 45 min 被超时杀掉
   // （只跑完 12/31 段，一次修复都没完成）。
-  assert.ok(!existsSync(OBSERVE_INC_PATH),
-    '增量班必须保持退役：基线新鲜度由「合入 overlay + 夜间并集入档」承担；'
-    + '若确需复活，请先在 #718 内更新本断言并说明新的职责边界与互斥锁占用代价')
-})
+  assert.ok(
+    !existsSync(OBSERVE_INC_PATH),
+    "增量班必须保持退役：基线新鲜度由「合入 overlay + 夜间并集入档」承担；" +
+      "若确需复活，请先在 #718 内更新本断言并说明新的职责边界与互斥锁占用代价",
+  );
+});
 
-test('#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ gauntlet 包集', () => {
+test("#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ gauntlet 包集", () => {
   // 段清单必须以 `stryker.conf.d/` 为单一事实源（新增配置自动纳入）。#718 S1.1 后载体是
   // 逐段矩阵：段清单必须在 **workflow 之前** 派生（动态 matrix 只能引用 needs output，不能读
   // 工作区文件），故 glob 迁进 `scripts/gate/mutation-plan.mjs`；判据拆成「workflow 调用脚本
   // + 脚本内 glob」两段合取——强度不降（多锁一条脚本侧口径）。
   // 增量班（原第三个消费方）已随 #718 S2.2 退役。
-  assert.ok(OBSERVE.includes('node scripts/gate/mutation-plan.mjs'),
-    'observe.yml 段清单必须由 mutation-plan.mjs 派生')
-  assert.ok(OBSERVE.includes('shard: ${{ fromJSON(needs.mutation-plan.outputs.shards) }}'),
-    'observe.yml 矩阵必须消费 mutation-plan 的段清单（不得硬编码段列表）')
-  const planSrc = readFileSync(join(ROOT, 'scripts', 'gate', 'mutation-plan.mjs'), 'utf8')
-  assert.ok(planSrc.includes('stryker.conf.d') && planSrc.includes('readdirSync'),
-    'mutation-plan.mjs 必须以 stryker.conf.d/ 目录为段清单的单一事实源（新增配置自动纳入）')
-  assert.ok(planSrc.includes("startsWith('dsh-')"),
-    'mutation-plan.mjs 的段清单口径必须与 ci-matrix / mutation-gate 同源（dsh- 前缀 + .json 后缀）')
+  assert.ok(
+    OBSERVE.includes("node scripts/gate/mutation-plan.mjs"),
+    "observe.yml 段清单必须由 mutation-plan.mjs 派生",
+  );
+  assert.ok(
+    OBSERVE.includes("shard: ${{ fromJSON(needs.mutation-plan.outputs.shards) }}"),
+    "observe.yml 矩阵必须消费 mutation-plan 的段清单（不得硬编码段列表）",
+  );
+  const planSrc = readFileSync(join(ROOT, "scripts", "gate", "mutation-plan.mjs"), "utf8");
+  assert.ok(
+    planSrc.includes("stryker.conf.d") && planSrc.includes("readdirSync"),
+    "mutation-plan.mjs 必须以 stryker.conf.d/ 目录为段清单的单一事实源（新增配置自动纳入）",
+  );
+  assert.ok(
+    planSrc.includes("startsWith('dsh-')"),
+    "mutation-plan.mjs 的段清单口径必须与 ci-matrix / mutation-gate 同源（dsh- 前缀 + .json 后缀）",
+  );
 
   // stryker.conf.d 实际文件集 → 基础包名集合（段配置 <pkg>-<后缀>.json 与包级
   // <pkg>.json 统一归并到 <pkg>——功能段名/数字段名兼容，basePkgOfConf 共享函数）
-  const confDir = join(ROOT, 'stryker.conf.d')
-  const confFiles = readdirSync(confDir).filter((f) => f.endsWith('.json')).sort()
-  assert.ok(confFiles.length > 0, 'stryker.conf.d 非空')
-  const basePkgs = strykerPkgs()
+  const confDir = join(ROOT, "stryker.conf.d");
+  const confFiles = readdirSync(confDir)
+    .filter((f) => f.endsWith(".json"))
+    .sort();
+  assert.ok(confFiles.length > 0, "stryker.conf.d 非空");
+  const basePkgs = strykerPkgs();
 
   // gauntlet mutation.packages 与基础包名集一致
-  const gauntPkgs = Object.keys(GAUNTLET?.mutation?.packages ?? {}).sort()
-  assert.deepEqual(gauntPkgs, basePkgs,
-    'gauntlet mutation.packages 应覆盖全部带变异配置的功能插件包')
+  const gauntPkgs = Object.keys(GAUNTLET?.mutation?.packages ?? {}).sort();
+  assert.deepEqual(
+    gauntPkgs,
+    basePkgs,
+    "gauntlet mutation.packages 应覆盖全部带变异配置的功能插件包",
+  );
 
   // jsonReporter / incrementalFile 输出路径与配置文件名自洽
   for (const f of confFiles) {
-    const conf = JSON.parse(readFileSync(join(confDir, f), 'utf8'))
-    const out = conf?.jsonReporter?.fileName
-    assert.ok(out && out.endsWith(`coverage/mutation/${f}`),
-      `${f} 的 jsonReporter 输出应为 coverage/mutation/${f}（mutation-gate.mjs 按此约定读取）`)
-    const inc = conf?.incrementalFile ?? ''
-    assert.ok(inc.endsWith(`incremental-${f.replace(/^dsh-/, '').replace(/\.json$/, '')}.json`),
-      `${f} 的 incrementalFile 应为 incremental-${f.replace(/^dsh-/, '').replace(/\.json$/, '')}.json（CI restore 步骤按此推导）`)
+    const conf = JSON.parse(readFileSync(join(confDir, f), "utf8"));
+    const out = conf?.jsonReporter?.fileName;
+    assert.ok(
+      out && out.endsWith(`coverage/mutation/${f}`),
+      `${f} 的 jsonReporter 输出应为 coverage/mutation/${f}（mutation-gate.mjs 按此约定读取）`,
+    );
+    const inc = conf?.incrementalFile ?? "";
+    assert.ok(
+      inc.endsWith(`incremental-${f.replace(/^dsh-/, "").replace(/\.json$/, "")}.json`),
+      `${f} 的 incrementalFile 应为 incremental-${f.replace(/^dsh-/, "").replace(/\.json$/, "")}.json（CI restore 步骤按此推导）`,
+    );
   }
 
   // packages/ 目录集 ⊇ 基础包名集
   for (const p of basePkgs) {
-    assert.ok(existsSync(join(ROOT, 'packages', p)), `packages/${p} 目录存在`)
+    assert.ok(existsSync(join(ROOT, "packages", p)), `packages/${p} 目录存在`);
   }
-})
+});
 
-test('#572: stryker 配置生成器与拓扑清单一致性（SSOT + CodeGen 门禁）', () => {
-  const topoFile = join(ROOT, 'scripts/data/mutation-topology.json')
-  assert.ok(existsSync(topoFile), 'mutation-topology.json 单一事实源在位')
-  const topo = JSON.parse(readFileSync(topoFile, 'utf8'))
-  assert.ok(topo.sharedDefaults, '包含 sharedDefaults 通用模板')
-  assert.ok(topo.packages, '包含 packages 各包分段定义')
+test("#572: stryker 配置生成器与拓扑清单一致性（SSOT + CodeGen 门禁）", () => {
+  const topoFile = join(ROOT, "scripts/data/mutation-topology.json");
+  assert.ok(existsSync(topoFile), "mutation-topology.json 单一事实源在位");
+  const topo = JSON.parse(readFileSync(topoFile, "utf8"));
+  assert.ok(topo.sharedDefaults, "包含 sharedDefaults 通用模板");
+  assert.ok(topo.packages, "包含 packages 各包分段定义");
 
   // package.json 脚本在位
-  const pkgJson = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
-  assert.ok(pkgJson.scripts['stryker:gen'], 'package.json 包含 stryker:gen 命令')
-  assert.ok(pkgJson.scripts['stryker:check'], 'package.json 包含 stryker:check 命令')
+  const pkgJson = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+  assert.ok(pkgJson.scripts["stryker:gen"], "package.json 包含 stryker:gen 命令");
+  assert.ok(pkgJson.scripts["stryker:check"], "package.json 包含 stryker:check 命令");
 
   // 执行 gen-stryker-conf.mjs --check 校验磁盘与清单 100% 同步
-  const res = spawnSync('node', ['scripts/gate/gen-stryker-conf.mjs', '--check'], {
+  const res = spawnSync("node", ["scripts/gate/gen-stryker-conf.mjs", "--check"], {
     cwd: ROOT,
-    encoding: 'utf8',
-  })
-  assert.equal(res.status, 0, `gen-stryker-conf --check 失败:\n${res.stderr || res.stdout}`)
-})
+    encoding: "utf8",
+  });
+  assert.equal(res.status, 0, `gen-stryker-conf --check 失败:\n${res.stderr || res.stdout}`);
+});
 
 // ── #342 二期 §契约：功能段名唯一 + mutate 面防空段回归 ──
 // 段名唯一：combos_for 按 stryker.conf.d/<pkg>-*.json 文件名枚举后缀展开矩阵，
@@ -345,282 +504,409 @@ test('#572: stryker 配置生成器与拓扑清单一致性（SSOT + CodeGen 门
 // <pkg>-*.json）/跳号会让矩阵指向不存在配置或白跑孤儿全量，fail-closed 前先静态拦截。
 // 防空段：provider 空段实证（mutate 指向不存在的 adapters/*.ts，0 mutant）——
 // 每段 mutate 正向条目必须至少 glob 到 1 个现存文件。
-test('#342 二期: 各包 stryker 段文件名唯一且无孤儿段（防矩阵重名/孤儿全量）', () => {
-  const confDir = join(ROOT, 'stryker.conf.d')
-  const confFiles = readdirSync(confDir).filter((f) => f.endsWith('.json'))
-  assert.ok(confFiles.length > 0, 'stryker.conf.d 非空')
+test("#342 二期: 各包 stryker 段文件名唯一且无孤儿段（防矩阵重名/孤儿全量）", () => {
+  const confDir = join(ROOT, "stryker.conf.d");
+  const confFiles = readdirSync(confDir).filter((f) => f.endsWith(".json"));
+  assert.ok(confFiles.length > 0, "stryker.conf.d 非空");
   // 包级单段配置（<pkg>.json）走 seg="0"，不参与段名序列；段式配置 <pkg>-<后缀>.json 独立成组
-  const segSets = new Map() // base-pkg → Set<segName>
-  const hasPkgLevel = new Set()
+  const segSets = new Map(); // base-pkg → Set<segName>
+  const hasPkgLevel = new Set();
   for (const f of confFiles) {
-    const base = basePkgOfConf(f)
-    if (!base) continue
-    const seg = segSuffixOfConf(f)
+    const base = basePkgOfConf(f);
+    if (!base) continue;
+    const seg = segSuffixOfConf(f);
     if (seg) {
-      assert.ok(/^[a-z0-9-]+$/.test(seg),
-        `${f} 段名必须是 kebab-case 字母数字连字符（combos_for 以文件名枚举矩阵，非法字符会破坏路径拼接）`)
-      if (!segSets.has(base)) segSets.set(base, new Set())
-      segSets.get(base).add(seg)
+      assert.ok(
+        /^[a-z0-9-]+$/.test(seg),
+        `${f} 段名必须是 kebab-case 字母数字连字符（combos_for 以文件名枚举矩阵，非法字符会破坏路径拼接）`,
+      );
+      if (!segSets.has(base)) segSets.set(base, new Set());
+      segSets.get(base).add(seg);
     } else {
-      hasPkgLevel.add(base)
+      hasPkgLevel.add(base);
     }
   }
   for (const [base, segs] of segSets) {
-    assert.ok(segs.size === [...segs].length,
-      `${base} 段名必须唯一（文件名即矩阵实例，重名会让 combo 指向同一配置）`)
-    assert.ok(!hasPkgLevel.has(base),
-      `${base} 存在段式配置时不得残留包级孤儿 <pkg>.json（v4 §4.1：否则 observe 每班次白跑一段孤儿全量）`)
+    assert.ok(
+      segs.size === [...segs].length,
+      `${base} 段名必须唯一（文件名即矩阵实例，重名会让 combo 指向同一配置）`,
+    );
+    assert.ok(
+      !hasPkgLevel.has(base),
+      `${base} 存在段式配置时不得残留包级孤儿 <pkg>.json（v4 §4.1：否则 observe 每班次白跑一段孤儿全量）`,
+    );
   }
-})
+});
 
-test('#342: 每段 mutate 正向条目至少 glob 到 1 个现存文件（防空段回归）', () => {
-  const confDir = join(ROOT, 'stryker.conf.d')
-  for (const f of readdirSync(confDir).filter((x) => x.endsWith('.json'))) {
-    const conf = JSON.parse(readFileSync(join(confDir, f), 'utf8'))
-    const positives = (conf.mutate ?? []).filter((m) => !m.startsWith('!'))
-    assert.ok(positives.length > 0,
-      `${f} 无 mutate 正向条目（防空段回归：provider-2 空段即 mutate 指向不存在的 adapters/*.ts，0 mutant）`)
-    assert.ok(positives.some((m) => globSync(m, { cwd: ROOT }).length > 0),
-      `${f} mutate 正向条目全部 glob 不到现存文件（防空段回归：v4 §4.4）`)
+test("#342: 每段 mutate 正向条目至少 glob 到 1 个现存文件（防空段回归）", () => {
+  const confDir = join(ROOT, "stryker.conf.d");
+  for (const f of readdirSync(confDir).filter((x) => x.endsWith(".json"))) {
+    const conf = JSON.parse(readFileSync(join(confDir, f), "utf8"));
+    const positives = (conf.mutate ?? []).filter((m) => !m.startsWith("!"));
+    assert.ok(
+      positives.length > 0,
+      `${f} 无 mutate 正向条目（防空段回归：provider-2 空段即 mutate 指向不存在的 adapters/*.ts，0 mutant）`,
+    );
+    assert.ok(
+      positives.some((m) => globSync(m, { cwd: ROOT }).length > 0),
+      `${f} mutate 正向条目全部 glob 不到现存文件（防空段回归：v4 §4.4）`,
+    );
   }
-})
+});
 
-test('gauntlet: mutation.packages 全部带 threshold 字段且 ≥60（阶段一基线）', () => {
-  const pkgs = GAUNTLET?.mutation?.packages ?? {}
-  assert.ok(Object.keys(pkgs).length > 0, 'mutation.packages 非空')
+test("gauntlet: mutation.packages 全部带 threshold 字段且 ≥60（阶段一基线）", () => {
+  const pkgs = GAUNTLET?.mutation?.packages ?? {};
+  assert.ok(Object.keys(pkgs).length > 0, "mutation.packages 非空");
   for (const [pkg, cfg] of Object.entries(pkgs)) {
-    assert.equal(typeof cfg.threshold, 'number', `${pkg}.threshold 已落盘`)
-    assert.ok(cfg.threshold >= 60, `${pkg}.threshold=${cfg.threshold} 不低于阶段一基线 60`)
+    assert.equal(typeof cfg.threshold, "number", `${pkg}.threshold 已落盘`);
+    assert.ok(cfg.threshold >= 60, `${pkg}.threshold=${cfg.threshold} 不低于阶段一基线 60`);
   }
-})
+});
 
 // ── #178 v2 + #204 + #572：Stryker 增量模式接入（孤立分支基线存储 + PR 增量切片门禁）──
 // #572 修订：废除向 main 分支自动建 PR 提交数十万行 JSON（#204 历史方案 A），
 // 基线改走独立孤立分支 refs/heads/baseline/mutation，直接存单 commit 纯文本树，
 // PR 侧通过 orphan-baseline.mjs restore 浅拉取恢复。
 
-test('#178+#204+#572: 全量班使用孤立分支基线——不 restore、收口 job 单点并集入档', () => {
+test("#178+#204+#572: 全量班使用孤立分支基线——不 restore、收口 job 单点并集入档", () => {
   // #718 S2.2 起只剩全量班一个写入口（增量班已退役）
   for (const [name, wf, writeStep, writeCmd] of [
-    ['observe.yml', OBSERVE, 'Archive baseline to orphan branch', 'orphan-baseline.mjs archive'],
+    ["observe.yml", OBSERVE, "Archive baseline to orphan branch", "orphan-baseline.mjs archive"],
   ]) {
     assert.ok(
-      !wf.includes('actions/cache/restore'),
+      !wf.includes("actions/cache/restore"),
       `${name} 严禁出现 restore 缓存步骤——基线走孤立分支（勿"好心"补 actions/cache restore）`,
-    )
+    );
     assert.ok(
-      !wf.includes('actions/cache/save@'),
+      !wf.includes("actions/cache/save@"),
       `${name} 已改用孤立分支基线（#572），不得出现 cache/save 步骤`,
-    )
+    );
     assert.ok(
-      !wf.includes('create-pull-request@'),
+      !wf.includes("create-pull-request@"),
       `${name} #572 已废除基线自动开 PR 合入 main（杜绝 git 树与提交历史膨胀）`,
-    )
-    const pushIdx = wf.indexOf(writeStep)
-    assert.ok(pushIdx > 0, `${name} 基线写入步骤「${writeStep}」在位（增量基线 → 孤立分支 baseline/mutation）`)
-    const pushBlock = wf.slice(pushIdx, wf.indexOf('- name:', pushIdx + 10))
-    assert.ok(pushBlock.includes('if: always()'),
-      `${name} 基线写入步骤必须 if: always()（部分失败班次已产出的基线照常收集并强推）`)
-    assert.ok(pushBlock.includes(writeCmd), `${name} 基线写入必须调用 ${writeCmd}`)
-    assert.ok(wf.includes('contents: write'), `${name} permissions 需 contents: write（孤立分支推送需要）`)
-    assert.ok(wf.includes('mutation-baseline-sync'), `${name} concurrency 统一为 mutation-baseline-sync（防止覆盖踩踏）`)
+    );
+    const pushIdx = wf.indexOf(writeStep);
+    assert.ok(
+      pushIdx > 0,
+      `${name} 基线写入步骤「${writeStep}」在位（增量基线 → 孤立分支 baseline/mutation）`,
+    );
+    const pushBlock = wf.slice(pushIdx, wf.indexOf("- name:", pushIdx + 10));
+    assert.ok(
+      pushBlock.includes("if: always()"),
+      `${name} 基线写入步骤必须 if: always()（部分失败班次已产出的基线照常收集并强推）`,
+    );
+    assert.ok(pushBlock.includes(writeCmd), `${name} 基线写入必须调用 ${writeCmd}`);
+    assert.ok(
+      wf.includes("contents: write"),
+      `${name} permissions 需 contents: write（孤立分支推送需要）`,
+    );
+    assert.ok(
+      wf.includes("mutation-baseline-sync"),
+      `${name} concurrency 统一为 mutation-baseline-sync（防止覆盖踩踏）`,
+    );
   }
   // 全量班刻意不恢复任何基线——无增量基线即天然全量；恢复职责只剩 PR 门禁（ci.yml 的
   // mutation-gate 由下方 #178 用例单独锁定），故这里不再要求任何 workflow 含 restore 步骤。
-  assert.ok(!OBSERVE.includes('orphan-baseline.mjs restore'),
-    '全量班不得恢复基线（#572：无增量基线即天然全量，勿"好心"补 restore）')
-})
+  assert.ok(
+    !OBSERVE.includes("orphan-baseline.mjs restore"),
+    '全量班不得恢复基线（#572：无增量基线即天然全量，勿"好心"补 restore）',
+  );
+});
 
-test('#276 方案 A: src 级 mutate 退役产物行号机制——ci/observe 两班均不得再出现 sync/guard', () => {
-  for (const [name, wf] of [['ci.yml', CI], ['observe.yml', OBSERVE]]) {
-    assert.ok(!wf.includes('sync-mutate-segments.mjs'),
-      `${name} 不得再调用 sync-mutate-segments.mjs（src 级 mutate 无产物行号，已退役）`)
-    assert.ok(!wf.includes('mutate-scope-guard.mjs'),
-      `${name} 不得再调用 mutate-scope-guard.mjs（F5 守卫已随方案 A 退役）`)
+test("#276 方案 A: src 级 mutate 退役产物行号机制——ci/observe 两班均不得再出现 sync/guard", () => {
+  for (const [name, wf] of [
+    ["ci.yml", CI],
+    ["observe.yml", OBSERVE],
+  ]) {
+    assert.ok(
+      !wf.includes("sync-mutate-segments.mjs"),
+      `${name} 不得再调用 sync-mutate-segments.mjs（src 级 mutate 无产物行号，已退役）`,
+    );
+    assert.ok(
+      !wf.includes("mutate-scope-guard.mjs"),
+      `${name} 不得再调用 mutate-scope-guard.mjs（F5 守卫已随方案 A 退役）`,
+    );
   }
   // 退役文件不得残留
   for (const p of [
-    'scripts/gate/sync-mutate-segments.mjs',
-    'scripts/gate/mutate-scope-guard.mjs',
-    'scripts/data/mutation-segments.json',
+    "scripts/gate/sync-mutate-segments.mjs",
+    "scripts/gate/mutate-scope-guard.mjs",
+    "scripts/data/mutation-segments.json",
   ]) {
-    assert.ok(!existsSync(join(ROOT, p)), `${p} 应已删除（#276 方案 A 退役清点）`)
+    assert.ok(!existsSync(join(ROOT, p)), `${p} 应已删除（#276 方案 A 退役清点）`);
   }
   // 全部 conf 的 mutate 必须是源码路径（src/ 各包源码，或 shared/ 共享源码——
   // #378 起 trait 上移 shared/placement-math.js，js+d.ts 双写真源码；均非 lib/ 产物行号）
-  const confDir = join(ROOT, 'stryker.conf.d')
-  for (const f of readdirSync(confDir).filter((x) => x.endsWith('.json'))) {
-    const conf = JSON.parse(readFileSync(join(confDir, f), 'utf8'))
+  const confDir = join(ROOT, "stryker.conf.d");
+  for (const f of readdirSync(confDir).filter((x) => x.endsWith(".json"))) {
+    const conf = JSON.parse(readFileSync(join(confDir, f), "utf8"));
     for (const m of conf.mutate ?? []) {
-      assert.ok((m.includes('/src/') || m.startsWith('shared/')) && !m.includes('lib/index.js'),
-        `${f} 的 mutate "${m}" 必须是源码路径（src/ 或 shared/，方案 A：文件 glob 声明，无产物行号）`)
+      assert.ok(
+        (m.includes("/src/") || m.startsWith("shared/")) && !m.includes("lib/index.js"),
+        `${f} 的 mutate "${m}" 必须是源码路径（src/ 或 shared/，方案 A：文件 glob 声明，无产物行号）`,
+      );
     }
   }
   // #439：根 stryker.config.json 已退役——lib 级 mutate 与 CI 段配置（src 级）口径脱节，
   // 全仓 stryker 配置统一收敛到 stryker.conf.d/。防退役后回归：根配置不得存在、不得被 git 追踪。
-  const rootStryker = join(ROOT, 'stryker.config.json')
-  assert.ok(!existsSync(rootStryker), '根 stryker.config.json 应已删除（#439 退役：口径统一 src 级 conf.d，禁止裸 stryker run 依赖根配置）')
-  const ls = spawnSync('git', ['ls-files', 'stryker.config.json'], { cwd: ROOT, encoding: 'utf8' })
-  assert.strictEqual(ls.status, 0, 'git ls-files 应正常退出')
-  assert.strictEqual(ls.stdout.trim(), '', 'git ls-files stryker.config.json 应为空（根配置不得重新被版本库追踪，#439 防回归）')
-})
+  const rootStryker = join(ROOT, "stryker.config.json");
+  assert.ok(
+    !existsSync(rootStryker),
+    "根 stryker.config.json 应已删除（#439 退役：口径统一 src 级 conf.d，禁止裸 stryker run 依赖根配置）",
+  );
+  const ls = spawnSync("git", ["ls-files", "stryker.config.json"], { cwd: ROOT, encoding: "utf8" });
+  assert.strictEqual(ls.status, 0, "git ls-files 应正常退出");
+  assert.strictEqual(
+    ls.stdout.trim(),
+    "",
+    "git ls-files stryker.config.json 应为空（根配置不得重新被版本库追踪，#439 防回归）",
+  );
+});
 
-test('#423+#722: 变异测试单份维护——禁 *.src.test.ts 回潮 + 变异面测试直连 src', async () => {
-  assert.ok(CI.includes('Forbid legacy src tests'),
-    'ci.yml repo-gate 必须含 Forbid legacy src tests 步骤（#423 防双份回潮）')
-  assert.ok(CI.includes('run: node scripts/gate/forbid-src-tests.mjs'),
-    'Forbid legacy src tests 必须调用 scripts/gate/forbid-src-tests.mjs')
-  assert.ok(existsSync(join(ROOT, 'scripts/gate/forbid-src-tests.mjs')),
-    'forbid-src-tests.mjs 脚本必须存在')
+test("#423+#722: 变异测试单份维护——禁 *.src.test.ts 回潮 + 变异面测试直连 src", async () => {
+  assert.ok(
+    CI.includes("Forbid legacy src tests"),
+    "ci.yml repo-gate 必须含 Forbid legacy src tests 步骤（#423 防双份回潮）",
+  );
+  assert.ok(
+    CI.includes("run: node scripts/gate/forbid-src-tests.mjs"),
+    "Forbid legacy src tests 必须调用 scripts/gate/forbid-src-tests.mjs",
+  );
+  assert.ok(
+    existsSync(join(ROOT, "scripts/gate/forbid-src-tests.mjs")),
+    "forbid-src-tests.mjs 脚本必须存在",
+  );
   // #722 阶段五：lib→src 重定向 hook 两件套随 cov.mjs（cov:src）一并退役——变异面内的测试
   // 已直连 src/，Stryker 侧与覆盖率侧都不再需要解析期重定向。防回潮：不得重新引入。
   for (const p of [
-    'scripts/test/mutation-lib-to-src-hook.mjs',
-    'scripts/test/mutation-lib-to-src-loader.mjs',
+    "scripts/test/mutation-lib-to-src-hook.mjs",
+    "scripts/test/mutation-lib-to-src-loader.mjs",
   ]) {
-    assert.ok(!existsSync(join(ROOT, p)),
-      `${p} 应已删除（#722 阶段五退役：测试直连 src，无需解析期重定向）`)
+    assert.ok(
+      !existsSync(join(ROOT, p)),
+      `${p} 应已删除（#722 阶段五退役：测试直连 src，无需解析期重定向）`,
+    );
   }
 
-  const topology = JSON.parse(readFileSync(join(ROOT, 'scripts/data/mutation-topology.json'), 'utf8'))
-  const { projectTestSurface } = await import('../gate/test-surface.mjs')
-  const confDir = join(ROOT, 'stryker.conf.d')
-  const vitestConfDir = join(ROOT, 'vitest.stryker.d')
+  const topology = JSON.parse(
+    readFileSync(join(ROOT, "scripts/data/mutation-topology.json"), "utf8"),
+  );
+  const { projectTestSurface } = await import("../gate/test-surface.mjs");
+  const confDir = join(ROOT, "stryker.conf.d");
+  const vitestConfDir = join(ROOT, "vitest.stryker.d");
   for (const pkgName of Object.keys(topology.packages)) {
     // #722 方案 A 路径一：测试面由拓扑派生，落在该包专属的 vitest 配置 include 上；
     // Stryker conf 里**不得**再出现 testFiles —— 它是上游 #6144（static mutant 被判
     // runtime 激活 → 模块级变异体漏判）的唯一触发条件。
-    const projection = projectTestSurface(ROOT, topology, pkgName)
-    assert.deepEqual(projection.errors, [], `${pkgName} 测试面投影不应有错误：${projection.errors.join('; ')}`)
-    assert.ok(projection.testFiles.length > 0, `${pkgName} 变异面不得为空`)
+    const projection = projectTestSurface(ROOT, topology, pkgName);
+    assert.deepEqual(
+      projection.errors,
+      [],
+      `${pkgName} 测试面投影不应有错误：${projection.errors.join("; ")}`,
+    );
+    assert.ok(projection.testFiles.length > 0, `${pkgName} 变异面不得为空`);
 
-    const vitestConfPath = join(vitestConfDir, `${pkgName}.config.ts`)
-    assert.ok(existsSync(vitestConfPath), `${pkgName} 必须有派生的 vitest 测试面配置：${vitestConfPath}`)
-    const vitestConf = readFileSync(vitestConfPath, 'utf8')
+    const vitestConfPath = join(vitestConfDir, `${pkgName}.config.ts`);
+    assert.ok(
+      existsSync(vitestConfPath),
+      `${pkgName} 必须有派生的 vitest 测试面配置：${vitestConfPath}`,
+    );
+    const vitestConf = readFileSync(vitestConfPath, "utf8");
     for (const tf of projection.testFiles) {
-      assert.ok(vitestConf.includes(`'${tf}'`),
-        `${pkgName} 的 vitest 配置 include 必须逐条覆盖变异面文件：缺 ${tf}`)
-      assert.ok(!tf.includes('.src.test.ts'),
-        `${tf} 不得是 *.src.test.ts（#423 方案 A：复用单份 *.test.ts）`)
+      assert.ok(
+        vitestConf.includes(`'${tf}'`),
+        `${pkgName} 的 vitest 配置 include 必须逐条覆盖变异面文件：缺 ${tf}`,
+      );
+      assert.ok(
+        !tf.includes(".src.test.ts"),
+        `${tf} 不得是 *.src.test.ts（#423 方案 A：复用单份 *.test.ts）`,
+      );
       // 测试必须真的指向 src（效果判据）：import lib/ 产物会让变异跑在产物而非源码上
-      const body = readFileSync(join(ROOT, tf), 'utf8')
-      assert.ok(!/["']\.\.\/(?:\.\.\/)*lib\//.test(body),
-        `${tf}（${pkgName}）不得 import lib/——变异必须跑在源码上（#722）`)
+      const body = readFileSync(join(ROOT, tf), "utf8");
+      assert.ok(
+        !/["']\.\.\/(?:\.\.\/)*lib\//.test(body),
+        `${tf}（${pkgName}）不得 import lib/——变异必须跑在源码上（#722）`,
+      );
     }
-    const expectedRel = `vitest.stryker.d/${pkgName}.config.ts`
-    const confFiles = readdirSync(confDir).filter((x) => x.endsWith('.json') && (x === `${pkgName}.json` || x.startsWith(`${pkgName}-`)))
-    assert.ok(confFiles.length > 0, `${pkgName} 应有段配置`)
+    const expectedRel = `vitest.stryker.d/${pkgName}.config.ts`;
+    const confFiles = readdirSync(confDir).filter(
+      (x) => x.endsWith(".json") && (x === `${pkgName}.json` || x.startsWith(`${pkgName}-`)),
+    );
+    assert.ok(confFiles.length > 0, `${pkgName} 应有段配置`);
     for (const cf of confFiles) {
-      const conf = JSON.parse(readFileSync(join(confDir, cf), 'utf8'))
-      assert.equal(conf.testFiles, undefined,
-        `${cf} 不得再出现 Stryker 顶层 testFiles（触发上游 #6144：static mutant 被判 runtime 激活）`)
-      assert.equal(conf.vitest?.configFile, expectedRel,
-        `${cf} 的 vitest.configFile 必须指向本包派生的测试面配置（${expectedRel}）`)
+      const conf = JSON.parse(readFileSync(join(confDir, cf), "utf8"));
+      assert.equal(
+        conf.testFiles,
+        undefined,
+        `${cf} 不得再出现 Stryker 顶层 testFiles（触发上游 #6144：static mutant 被判 runtime 激活）`,
+      );
+      assert.equal(
+        conf.vitest?.configFile,
+        expectedRel,
+        `${cf} 的 vitest.configFile 必须指向本包派生的测试面配置（${expectedRel}）`,
+      );
     }
   }
-})
+});
 
-test('#517 B5: ci.yml homedir 门禁——Forbid homedir 步骤存在并调 forbid-homedir-src.mjs + 根 scripts 入口', () => {
-  assert.ok(CI.includes('Forbid homedir in src'),
-    'ci.yml repo-gate 必须含 Forbid homedir in src 步骤（#517 B5 防回归）')
-  assert.ok(CI.includes('run: node scripts/gate/forbid-homedir-src.mjs'),
-    'Forbid homedir in src 必须调用 scripts/gate/forbid-homedir-src.mjs')
-  assert.ok(existsSync(join(ROOT, 'scripts/gate/forbid-homedir-src.mjs')),
-    'forbid-homedir-src.mjs 脚本必须存在')
-  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
-  assert.equal(pkg.scripts['gate:homedir'], 'node scripts/gate/forbid-homedir-src.mjs',
-    '根 package.json 必须含 gate:homedir 本地入口（与 ci.yml 同一命令）')
-})
+test("#517 B5: ci.yml homedir 门禁——Forbid homedir 步骤存在并调 forbid-homedir-src.mjs + 根 scripts 入口", () => {
+  assert.ok(
+    CI.includes("Forbid homedir in src"),
+    "ci.yml repo-gate 必须含 Forbid homedir in src 步骤（#517 B5 防回归）",
+  );
+  assert.ok(
+    CI.includes("run: node scripts/gate/forbid-homedir-src.mjs"),
+    "Forbid homedir in src 必须调用 scripts/gate/forbid-homedir-src.mjs",
+  );
+  assert.ok(
+    existsSync(join(ROOT, "scripts/gate/forbid-homedir-src.mjs")),
+    "forbid-homedir-src.mjs 脚本必须存在",
+  );
+  const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+  assert.equal(
+    pkg.scripts["gate:homedir"],
+    "node scripts/gate/forbid-homedir-src.mjs",
+    "根 package.json 必须含 gate:homedir 本地入口（与 ci.yml 同一命令）",
+  );
+});
 
-test('#178+#204+#572: ci.yml PR 增量门禁——从孤立分支恢复基线 + 按命中包切片 + 并入 repo-gate', () => {
+test("#178+#204+#572: ci.yml PR 增量门禁——从孤立分支恢复基线 + 按命中包切片 + 并入 repo-gate", () => {
   // #572：从孤立分支拉取基线，替代旧的读 scripts/gate/baseline/ main 代码树文件
-  assert.ok(CI.includes('Restore incremental baseline from orphan branch'), 'mutation-gate 孤立分支基线读取步骤在位')
-  assert.ok(CI.includes('orphan-baseline.mjs restore'), 'mutation-gate 调用 orphan-baseline.mjs restore 恢复基线')
-  assert.ok(!CI.includes('scripts/gate/baseline/${BASENAME}.json'), 'ci.yml 不得再从 scripts/gate/baseline/ 读取基线')
-  assert.ok(!CI.includes('actions/cache/restore@'), 'ci.yml 不得再用 actions/cache/restore（#204 已废弃跨 ref 缓存通道）')
-  assert.ok(!CI.includes('actions/cache/save@'), 'ci.yml 禁止 save 缓存（PR 结果绝不回写夜间基线）')
-  assert.ok(!CI.includes('actions/cache/@'), 'ci.yml 禁用 actions/cache@ 主 action 形态')
+  assert.ok(
+    CI.includes("Restore incremental baseline from orphan branch"),
+    "mutation-gate 孤立分支基线读取步骤在位",
+  );
+  assert.ok(
+    CI.includes("orphan-baseline.mjs restore"),
+    "mutation-gate 调用 orphan-baseline.mjs restore 恢复基线",
+  );
+  assert.ok(
+    !CI.includes("scripts/gate/baseline/${BASENAME}.json"),
+    "ci.yml 不得再从 scripts/gate/baseline/ 读取基线",
+  );
+  assert.ok(
+    !CI.includes("actions/cache/restore@"),
+    "ci.yml 不得再用 actions/cache/restore（#204 已废弃跨 ref 缓存通道）",
+  );
+  assert.ok(
+    !CI.includes("actions/cache/save@"),
+    "ci.yml 禁止 save 缓存（PR 结果绝不回写夜间基线）",
+  );
+  assert.ok(!CI.includes("actions/cache/@"), "ci.yml 禁用 actions/cache@ 主 action 形态");
 
-  const gateIdx = CI.indexOf('\n  mutation-gate:')
-  assert.ok(gateIdx > 0, 'mutation-gate job 在位')
+  const gateIdx = CI.indexOf("\n  mutation-gate:");
+  assert.ok(gateIdx > 0, "mutation-gate job 在位");
   // #217 后矩阵只做基线 restore + stryker run + 报告上传，判分收敛到 mutation-verdict
-  const mg = CI.slice(gateIdx, CI.indexOf('\n  mutation-verdict:'))
-  assert.ok(mg.includes('combo: ${{ fromJSON(needs.changes.outputs.mutationCombos) }}'),
-    '动态 matrix ← changes.mutationCombos（#220 段式组合：[{package,seg}]，命中包按段实例化）')
-  assert.ok(mg.includes('coverage/mutation/${BASENAME}.json'),
-    '读恢复后基线文件路径 coverage/mutation/${BASENAME}.json')
-  assert.ok(mg.includes('PKG="${MATRIX_PKG#dsh-}"'), '矩阵包名 dsh-<pkg> → 基线短名的映射在位')
-  assert.ok(mg.includes('::notice::'), '基线缺失时须打 notice 标注全量降级（首夜属预期，防误判缺陷）')
+  const mg = CI.slice(gateIdx, CI.indexOf("\n  mutation-verdict:"));
+  assert.ok(
+    mg.includes("combo: ${{ fromJSON(needs.changes.outputs.mutationCombos) }}"),
+    "动态 matrix ← changes.mutationCombos（#220 段式组合：[{package,seg}]，命中包按段实例化）",
+  );
+  assert.ok(
+    mg.includes("coverage/mutation/${BASENAME}.json"),
+    "读恢复后基线文件路径 coverage/mutation/${BASENAME}.json",
+  );
+  assert.ok(mg.includes('PKG="${MATRIX_PKG#dsh-}"'), "矩阵包名 dsh-<pkg> → 基线短名的映射在位");
+  assert.ok(
+    mg.includes("::notice::"),
+    "基线缺失时须打 notice 标注全量降级（首夜属预期，防误判缺陷）",
+  );
   // build 必须全量（run #32790425132 教训）：mutate 区间行号锚定 esbuild 产物分段，
   // 产物结构依赖 workspace 内联链全集一致性
-  const mgBuildIdx = mg.indexOf('Build all packages')
-  assert.ok(mgBuildIdx > 0, 'mutation-gate 全量构建步骤在位')
-  const mgBuildBlock = mg.slice(mgBuildIdx, mg.indexOf('- name:', mgBuildIdx + 10))
-  assert.ok(/run: pnpm build\s*$/.test(mgBuildBlock), 'mutation-gate 构建步骤必须为全量 pnpm build')
-  assert.ok(!mgBuildBlock.includes('--filter'), 'mutation-gate 构建步骤禁止 --filter 单包切片')
+  const mgBuildIdx = mg.indexOf("Build all packages");
+  assert.ok(mgBuildIdx > 0, "mutation-gate 全量构建步骤在位");
+  const mgBuildBlock = mg.slice(mgBuildIdx, mg.indexOf("- name:", mgBuildIdx + 10));
+  assert.ok(
+    /run: pnpm build\s*$/.test(mgBuildBlock),
+    "mutation-gate 构建步骤必须为全量 pnpm build",
+  );
+  assert.ok(!mgBuildBlock.includes("--filter"), "mutation-gate 构建步骤禁止 --filter 单包切片");
 
   // 成败并入既有聚合闸，不新增分支保护 required check 名
-  assert.ok(/needs: \[changes, build-test, coverage, mutation-gate, mutation-verdict\]/.test(CI),
-    'repo-gate needs 纳入 coverage 与 mutation-gate/mutation-verdict（#217 五维聚合）')
+  assert.ok(
+    /needs: \[changes, build-test, coverage, mutation-gate, mutation-verdict\]/.test(CI),
+    "repo-gate needs 纳入 coverage 与 mutation-gate/mutation-verdict（#217 五维聚合）",
+  );
   // 聚合闸 fail-closed 判定脚本必须显式引用变异链结果（防聚合闸旁路）
-  const rg = CI.slice(CI.indexOf('\n  repo-gate:'))
-  assert.ok(rg.includes('needs.mutation-gate.result'),
-    'repo-gate fail-closed 判定脚本必须检查 needs.mutation-gate.result')
-})
+  const rg = CI.slice(CI.indexOf("\n  repo-gate:"));
+  assert.ok(
+    rg.includes("needs.mutation-gate.result"),
+    "repo-gate fail-closed 判定脚本必须检查 needs.mutation-gate.result",
+  );
+});
 
-test('#572: baseline-overlay.yml 主干合入秒级差量覆盖基线工作流在位', () => {
-  assert.ok(OVERLAY.includes('push:'), 'baseline-overlay 必须监听 push 事件')
-  assert.ok(OVERLAY.includes('branches:\n      - main'), 'baseline-overlay 仅对 main 分支生效')
-  assert.ok(OVERLAY.includes('group: mutation-baseline-sync'), 'baseline-overlay 必须与 observe 同步互斥锁')
-  assert.ok(OVERLAY.includes('cancel-in-progress: false'), '互斥锁必须排队执行（不可取消未完任务以防覆盖丢失）')
-  assert.ok(OVERLAY.includes('overlay-baseline.mjs'), '调用 overlay-baseline.mjs 脚本')
-  assert.ok(CI.includes('Upload incremental baseline artifact'), 'ci.yml 必须在变异成功时上传 incremental artifact')
-  assert.ok(CI.includes('mutation-incremental-'), 'artifact 命名格式为 mutation-incremental-<pkg>-<seg>')
-})
+test("#572: baseline-overlay.yml 主干合入秒级差量覆盖基线工作流在位", () => {
+  assert.ok(OVERLAY.includes("push:"), "baseline-overlay 必须监听 push 事件");
+  assert.ok(OVERLAY.includes("branches:\n      - main"), "baseline-overlay 仅对 main 分支生效");
+  assert.ok(
+    OVERLAY.includes("group: mutation-baseline-sync"),
+    "baseline-overlay 必须与 observe 同步互斥锁",
+  );
+  assert.ok(
+    OVERLAY.includes("cancel-in-progress: false"),
+    "互斥锁必须排队执行（不可取消未完任务以防覆盖丢失）",
+  );
+  assert.ok(OVERLAY.includes("overlay-baseline.mjs"), "调用 overlay-baseline.mjs 脚本");
+  assert.ok(
+    CI.includes("Upload incremental baseline artifact"),
+    "ci.yml 必须在变异成功时上传 incremental artifact",
+  );
+  assert.ok(
+    CI.includes("mutation-incremental-"),
+    "artifact 命名格式为 mutation-incremental-<pkg>-<seg>",
+  );
+});
 
 // ── #187 触发面收敛：mutation-gate 仅限 pull_request，主干变异归夜间全量 ──
 
-test('#187+#722: ci.yml mutation-gate if 收敛至「PR + gate:full 标签」（删除或改坏必红）', () => {
+test("#187+#722: ci.yml mutation-gate if 收敛至「PR + gate:full 标签」（删除或改坏必红）", () => {
   // build-test 不受收敛影响：push 时仍须全事件运行（repo-gate 静态闸依赖其切片产物）
-  const bt = CI.slice(CI.indexOf('\n  build-test:'), CI.indexOf('\n  mutation-gate:'))
-  assert.ok(bt.includes('if: always() && needs.changes.result == \'success\''),
-    'build-test 的 if 必须保持 always() 全事件语义')
+  const bt = CI.slice(CI.indexOf("\n  build-test:"), CI.indexOf("\n  mutation-gate:"));
+  assert.ok(
+    bt.includes("if: always() && needs.changes.result == 'success'"),
+    "build-test 的 if 必须保持 always() 全事件语义",
+  );
 
-  const mg = CI.slice(CI.indexOf('\n  mutation-gate:'), CI.indexOf('\n  mutation-verdict:'))
-  const m = /^    if: (.+)$/m.exec(mg)
-  assert.ok(m, 'mutation-gate 声明 job 级 if')
+  const mg = CI.slice(CI.indexOf("\n  mutation-gate:"), CI.indexOf("\n  mutation-verdict:"));
+  const m = /^    if: (.+)$/m.exec(mg);
+  assert.ok(m, "mutation-gate 声明 job 级 if");
   assert.equal(
     m[1].trim(),
     "github.event_name == 'pull_request' && needs.changes.outputs.fullGate == 'true' && needs.changes.outputs.hasMutations == 'true'",
-    'mutation-gate 的 if 必须精确为「仅 PR 且 gate:full 且 hasMutations 显式布尔」——'
-    + '#722 起变异段默认不在 PR 上跑（单段最坏约 20 分钟，#720），全量变异归夜间 observe*.yml；'
-    + '事件限制或 fullGate 条件被删除/改坏（退化 push 全量变异、或默认 PR 静默跑全量）均判红',
-  )
+    "mutation-gate 的 if 必须精确为「仅 PR 且 gate:full 且 hasMutations 显式布尔」——" +
+      "#722 起变异段默认不在 PR 上跑（单段最坏约 20 分钟，#720），全量变异归夜间 observe*.yml；" +
+      "事件限制或 fullGate 条件被删除/改坏（退化 push 全量变异、或默认 PR 静默跑全量）均判红",
+  );
   // 覆盖率与 verdict 必须共用同一开关，避免「变异跑了但覆盖率没跑」的半通状态
-  const cov = CI.slice(CI.indexOf('\n  coverage:'), CI.indexOf('\n  mutation-gate:'))
-  assert.ok(/^    if: .*needs\.changes\.outputs\.fullGate == 'true'.*$/m.test(cov),
-    'coverage job 的 if 必须含 fullGate 开关（与 mutation-gate 同源）')
-  const vd = CI.slice(CI.indexOf('\n  mutation-verdict:'), CI.indexOf('\n  repo-gate:'))
-  assert.ok(/^    if: .*needs\.changes\.outputs\.fullGate == 'true'.*$/m.test(vd),
-    'mutation-verdict 的 if 必须含 fullGate 开关（否则增量路径下会空跑判分）')
-})
+  const cov = CI.slice(CI.indexOf("\n  coverage:"), CI.indexOf("\n  mutation-gate:"));
+  assert.ok(
+    /^    if: .*needs\.changes\.outputs\.fullGate == 'true'.*$/m.test(cov),
+    "coverage job 的 if 必须含 fullGate 开关（与 mutation-gate 同源）",
+  );
+  const vd = CI.slice(CI.indexOf("\n  mutation-verdict:"), CI.indexOf("\n  repo-gate:"));
+  assert.ok(
+    /^    if: .*needs\.changes\.outputs\.fullGate == 'true'.*$/m.test(vd),
+    "mutation-verdict 的 if 必须含 fullGate 开关（否则增量路径下会空跑判分）",
+  );
+});
 
-test('#217+#187+#722: repo-gate-assert 判定表全组合锁定（事件 × fullGate × 切片 × coverage × 矩阵 × verdict）', async () => {
-  const { evaluateGate } = await import('../gate/repo-gate-assert.mjs')
+test("#217+#187+#722: repo-gate-assert 判定表全组合锁定（事件 × fullGate × 切片 × coverage × 矩阵 × verdict）", async () => {
+  const { evaluateGate } = await import("../gate/repo-gate-assert.mjs");
   const base = {
-    event: 'pull_request',
-    changes: 'success',
-    buildTest: 'success',
-    coverage: 'success',
-    mutation: 'success',
-    verdict: 'success',
-    hasMutations: 'true',
+    event: "pull_request",
+    changes: "success",
+    buildTest: "success",
+    coverage: "success",
+    mutation: "success",
+    verdict: "success",
+    hasMutations: "true",
     mutationPkgsJson: '["dsh-notifier"]',
-    fullRequested: 'true',
-  }
-  const run = (over) => evaluateGate({ ...base, ...over })
-  const RESULTS = ['success', 'failure', 'cancelled', 'skipped']
-  const allSkipped = (cov, mut, verd) => cov === 'skipped' && mut === 'skipped' && verd === 'skipped'
+    fullRequested: "true",
+  };
+  const run = (over) => evaluateGate({ ...base, ...over });
+  const RESULTS = ["success", "failure", "cancelled", "skipped"];
+  const allSkipped = (cov, mut, verd) =>
+    cov === "skipped" && mut === "skipped" && verd === "skipped";
 
   // 手写期望表（独立于实现成文，防同义反复；0=绿 1=红）：
   //   - 非 PR：fullGate 必须 false，且覆盖/变异三段全部 skipped 才绿（触发面收敛不变量）
@@ -629,45 +915,68 @@ test('#217+#187+#722: repo-gate-assert 判定表全组合锁定（事件 × full
   //     矩阵∈{success,failure} && verdict==success 才绿
   //   - PR + fullGate=true + 空切片：coverage==skipped && 矩阵/verdict∈{skipped,failure} 才绿
   const expectOf = (event, full, hm, cov, mut, verd) => {
-    if (event !== 'pull_request') {
-      return (full === 'false' && allSkipped(cov, mut, verd)) ? 0 : 1
+    if (event !== "pull_request") {
+      return full === "false" && allSkipped(cov, mut, verd) ? 0 : 1;
     }
-    if (full === 'false') {
-      return allSkipped(cov, mut, verd) ? 0 : 1
+    if (full === "false") {
+      return allSkipped(cov, mut, verd) ? 0 : 1;
     }
-    if (hm === 'true') {
-      return (cov === 'success' && (mut === 'success' || mut === 'failure') && verd === 'success') ? 0 : 1
+    if (hm === "true") {
+      return cov === "success" && (mut === "success" || mut === "failure") && verd === "success"
+        ? 0
+        : 1;
     }
-    return (cov === 'skipped'
-      && (mut === 'skipped' || mut === 'failure')
-      && (verd === 'skipped' || verd === 'failure')) ? 0 : 1
-  }
+    return cov === "skipped" &&
+      (mut === "skipped" || mut === "failure") &&
+      (verd === "skipped" || verd === "failure")
+      ? 0
+      : 1;
+  };
 
   // PR 全量路径（gate:full）：hasMutations × coverage × 矩阵 × verdict 全组合（2×4×4×4 = 128 case）
-  for (const hm of ['true', 'false']) {
-    const pkgsJson = hm === 'true' ? '["dsh-notifier"]' : '[]'
+  for (const hm of ["true", "false"]) {
+    const pkgsJson = hm === "true" ? '["dsh-notifier"]' : "[]";
     for (const cov of RESULTS) {
       for (const mut of RESULTS) {
         for (const verd of RESULTS) {
-          const expected = expectOf('pull_request', 'true', hm, cov, mut, verd)
-          const v = run({ hasMutations: hm, mutationPkgsJson: pkgsJson, coverage: cov, mutation: mut, verdict: verd })
-          assert.equal(v.code, expected,
-            `PR gate:full hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`)
+          const expected = expectOf("pull_request", "true", hm, cov, mut, verd);
+          const v = run({
+            hasMutations: hm,
+            mutationPkgsJson: pkgsJson,
+            coverage: cov,
+            mutation: mut,
+            verdict: verd,
+          });
+          assert.equal(
+            v.code,
+            expected,
+            `PR gate:full hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`,
+          );
         }
       }
     }
   }
 
   // PR 增量路径（默认，无标签）：三段必须全部 skipped；任何非 skipped 都是契约破坏
-  for (const hm of ['true', 'false']) {
-    const pkgsJson = hm === 'true' ? '["dsh-notifier"]' : '[]'
+  for (const hm of ["true", "false"]) {
+    const pkgsJson = hm === "true" ? '["dsh-notifier"]' : "[]";
     for (const cov of RESULTS) {
       for (const mut of RESULTS) {
         for (const verd of RESULTS) {
-          const expected = expectOf('pull_request', 'false', hm, cov, mut, verd)
-          const v = run({ fullRequested: 'false', hasMutations: hm, mutationPkgsJson: pkgsJson, coverage: cov, mutation: mut, verdict: verd })
-          assert.equal(v.code, expected,
-            `PR 增量 hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`)
+          const expected = expectOf("pull_request", "false", hm, cov, mut, verd);
+          const v = run({
+            fullRequested: "false",
+            hasMutations: hm,
+            mutationPkgsJson: pkgsJson,
+            coverage: cov,
+            mutation: mut,
+            verdict: verd,
+          });
+          assert.equal(
+            v.code,
+            expected,
+            `PR 增量 hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`,
+          );
         }
       }
     }
@@ -675,230 +984,366 @@ test('#217+#187+#722: repo-gate-assert 判定表全组合锁定（事件 × full
 
   // 非 PR 分支：三段结果全组合（2 事件 × 4×4×4 = 128 case）；push 真实形态
   // （GATE_MUTATION_PKGS 的 push 取值）为非空全集清单，数据校验须放行
-  for (const ev of ['push', 'workflow_dispatch']) {
+  for (const ev of ["push", "workflow_dispatch"]) {
     for (const cov of RESULTS) {
       for (const mut of RESULTS) {
         for (const verd of RESULTS) {
-          const expected = expectOf(ev, 'false', 'true', cov, mut, verd)
+          const expected = expectOf(ev, "false", "true", cov, mut, verd);
           const v = run({
             event: ev,
-            fullRequested: 'false',
-            hasMutations: 'true',
+            fullRequested: "false",
+            hasMutations: "true",
             mutationPkgsJson: JSON.stringify(MUTATION_PACKAGES),
             coverage: cov,
             mutation: mut,
             verdict: verd,
-          })
-          assert.equal(v.code, expected,
-            `${ev} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`)
+          });
+          assert.equal(
+            v.code,
+            expected,
+            `${ev} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`,
+          );
         }
       }
     }
   }
   // 非 PR 下 fullGate=true：全量门禁只允许在 PR 上按标签触发（#187 收敛不变量）
-  assert.equal(run({ event: 'push', mutationPkgsJson: JSON.stringify(MUTATION_PACKAGES) }).code, 1,
-    '非 PR 事件 fullGate=true 必须红（触发面收敛不变量）')
-  assert.match(run({ event: 'push', mutationPkgsJson: JSON.stringify(MUTATION_PACKAGES) }).reason, /收敛不变量/,
-    '非 PR + fullGate=true 的判词须点名收敛不变量')
+  assert.equal(
+    run({ event: "push", mutationPkgsJson: JSON.stringify(MUTATION_PACKAGES) }).code,
+    1,
+    "非 PR 事件 fullGate=true 必须红（触发面收敛不变量）",
+  );
+  assert.match(
+    run({ event: "push", mutationPkgsJson: JSON.stringify(MUTATION_PACKAGES) }).reason,
+    /收敛不变量/,
+    "非 PR + fullGate=true 的判词须点名收敛不变量",
+  );
 
   // ── reason 文案锚：区分「coverage 失败连坐」与「mutation 门禁绕过」（#217）──
-  assert.match(run({ coverage: 'failure' }).reason, /coverage 失败连坐/,
-    'coverage failure 判词必须点名「失败连坐」而非误报绕过')
-  assert.match(run({ coverage: 'cancelled' }).reason, /coverage 失败连坐/,
-    'coverage cancelled 同属失败连坐语义')
-  assert.match(run({ coverage: 'skipped' }).reason, /缺席/,
-    'coverage 缺席是结构性违约（if 契约被改坏），文案须与失败连坐区分')
-  assert.match(run({ mutation: 'skipped' }).reason, /门禁绕过/,
-    '矩阵该跑没跑判词必须点名「门禁绕过」')
-  assert.match(run({ verdict: 'skipped' }).reason, /门禁绕过/,
-    'verdict 该跑没跑同样按门禁绕过点名')
-  assert.match(run({ verdict: 'failure' }).reason, /双指标|判分未通过/,
-    'verdict failure 判词须点名判分未通过')
-  assert.match(run({ verdict: 'cancelled' }).reason, /被取消（未完成判分）/,
-    'verdict cancelled 判词须单列「被取消」，不得与判分未通过混用（复核小修）')
-  assert.match(run({ event: 'push', mutation: 'success' }).reason, /收敛不变量/,
-    '非 PR 下变异执行判词须点名收敛不变量')
+  assert.match(
+    run({ coverage: "failure" }).reason,
+    /coverage 失败连坐/,
+    "coverage failure 判词必须点名「失败连坐」而非误报绕过",
+  );
+  assert.match(
+    run({ coverage: "cancelled" }).reason,
+    /coverage 失败连坐/,
+    "coverage cancelled 同属失败连坐语义",
+  );
+  assert.match(
+    run({ coverage: "skipped" }).reason,
+    /缺席/,
+    "coverage 缺席是结构性违约（if 契约被改坏），文案须与失败连坐区分",
+  );
+  assert.match(
+    run({ mutation: "skipped" }).reason,
+    /门禁绕过/,
+    "矩阵该跑没跑判词必须点名「门禁绕过」",
+  );
+  assert.match(
+    run({ verdict: "skipped" }).reason,
+    /门禁绕过/,
+    "verdict 该跑没跑同样按门禁绕过点名",
+  );
+  assert.match(
+    run({ verdict: "failure" }).reason,
+    /双指标|判分未通过/,
+    "verdict failure 判词须点名判分未通过",
+  );
+  assert.match(
+    run({ verdict: "cancelled" }).reason,
+    /被取消（未完成判分）/,
+    "verdict cancelled 判词须单列「被取消」，不得与判分未通过混用（复核小修）",
+  );
+  assert.match(
+    run({ event: "push", mutation: "success" }).reason,
+    /收敛不变量/,
+    "非 PR 下变异执行判词须点名收敛不变量",
+  );
 
   // 防回归对照：矩阵 failure 在 hasMutations=true 下不单独判红（报告已下发、
   // 由 verdict 统一裁决），但 verdict 未通过时整体必红
-  assert.equal(run({ mutation: 'failure', verdict: 'success' }).code, 0,
-    '矩阵实例级 failure + verdict 达标 = 绿（聚合判分语义）')
-  assert.equal(run({ mutation: 'success', verdict: 'failure' }).code, 1,
-    '矩阵 success 但 verdict 判分未通过 = 红')
-  assert.equal(run({ mutation: 'failure', verdict: 'failure' }).code, 1,
-    '矩阵与 verdict 双红 = 红')
+  assert.equal(
+    run({ mutation: "failure", verdict: "success" }).code,
+    0,
+    "矩阵实例级 failure + verdict 达标 = 绿（聚合判分语义）",
+  );
+  assert.equal(
+    run({ mutation: "success", verdict: "failure" }).code,
+    1,
+    "矩阵 success 但 verdict 判分未通过 = 红",
+  );
+  assert.equal(
+    run({ mutation: "failure", verdict: "failure" }).code,
+    1,
+    "矩阵与 verdict 双红 = 红",
+  );
 
   // 前提闸：changes / build-test 非 success 一律红（含 cancelled / skipped）
-  for (const r of ['failure', 'cancelled', 'skipped']) {
-    assert.equal(run({ changes: r }).code, 1, `changes=${r} 必须红`)
-    assert.equal(run({ buildTest: r }).code, 1, `build-test=${r} 必须红`)
+  for (const r of ["failure", "cancelled", "skipped"]) {
+    assert.equal(run({ changes: r }).code, 1, `changes=${r} 必须红`);
+    assert.equal(run({ buildTest: r }).code, 1, `build-test=${r} 必须红`);
   }
 
   // 数据契约破坏：exit 2 —— 清单非法 JSON、hasMutations 非 'true'/'false'、
   // 显式布尔与切片非空性交叉矛盾
-  for (const bad of ['not-json', '{"a":1}', '"dsh-notifier"']) {
-    assert.equal(run({ mutationPkgsJson: bad }).code, 2, `切片清单非法（${bad}）必须 exit 2`)
+  for (const bad of ["not-json", '{"a":1}', '"dsh-notifier"']) {
+    assert.equal(run({ mutationPkgsJson: bad }).code, 2, `切片清单非法（${bad}）必须 exit 2`);
   }
-  for (const badHm of ['', 'TRUE', '1', 'null']) {
-    assert.equal(run({ hasMutations: badHm }).code, 2, `hasMutations="${badHm}" 必须 exit 2`)
+  for (const badHm of ["", "TRUE", "1", "null"]) {
+    assert.equal(run({ hasMutations: badHm }).code, 2, `hasMutations="${badHm}" 必须 exit 2`);
   }
-  for (const badFull of ['', 'TRUE', '1', 'null']) {
-    assert.equal(run({ fullRequested: badFull }).code, 2, `fullGate="${badFull}" 必须 exit 2（#722 数据契约）`)
+  for (const badFull of ["", "TRUE", "1", "null"]) {
+    assert.equal(
+      run({ fullRequested: badFull }).code,
+      2,
+      `fullGate="${badFull}" 必须 exit 2（#722 数据契约）`,
+    );
   }
-  assert.match(run({ fullRequested: 'false', coverage: 'success' }).reason, /增量门禁契约被破坏/,
-    '默认 PR 却跑了覆盖率：判词须点名「增量门禁契约被破坏」，不得混用连坐/绕过判词')
-  assert.equal(run({ hasMutations: 'true', mutationPkgsJson: '[]' }).code, 2,
-    'hasMutations=true 而切片为空 = 数据矛盾 exit 2')
-  assert.equal(run({ hasMutations: 'false', mutationPkgsJson: '["dsh-notifier"]' }).code, 2,
-    'hasMutations=false 而切片非空 = 数据矛盾 exit 2')
-})
+  assert.match(
+    run({ fullRequested: "false", coverage: "success" }).reason,
+    /增量门禁契约被破坏/,
+    "默认 PR 却跑了覆盖率：判词须点名「增量门禁契约被破坏」，不得混用连坐/绕过判词",
+  );
+  assert.equal(
+    run({ hasMutations: "true", mutationPkgsJson: "[]" }).code,
+    2,
+    "hasMutations=true 而切片为空 = 数据矛盾 exit 2",
+  );
+  assert.equal(
+    run({ hasMutations: "false", mutationPkgsJson: '["dsh-notifier"]' }).code,
+    2,
+    "hasMutations=false 而切片非空 = 数据矛盾 exit 2",
+  );
+});
 
-test('#217+#187: repo-gate-assert CLI 退出码转发（GitHub Actions 判红依据）', () => {
-  const script = join(ROOT, 'scripts/gate/repo-gate-assert.mjs')
+test("#217+#187: repo-gate-assert CLI 退出码转发（GitHub Actions 判红依据）", () => {
+  const script = join(ROOT, "scripts/gate/repo-gate-assert.mjs");
   const envOf = (over) => ({
-    GATE_EVENT: over.event ?? '',
-    GATE_CHANGES: over.changes ?? '',
-    GATE_BUILD_TEST: over.buildTest ?? '',
-    GATE_COVERAGE: over.coverage ?? '',
-    GATE_MUTATION: over.mutation ?? '',
-    GATE_VERDICT: over.verdict ?? '',
-    GATE_HAS_MUTATIONS: over.hasMutations ?? '',
-    GATE_MUTATION_PKGS: over.mutationPkgsJson ?? '',
-    GATE_FULL_REQUESTED: over.fullRequested ?? '',
-  })
+    GATE_EVENT: over.event ?? "",
+    GATE_CHANGES: over.changes ?? "",
+    GATE_BUILD_TEST: over.buildTest ?? "",
+    GATE_COVERAGE: over.coverage ?? "",
+    GATE_MUTATION: over.mutation ?? "",
+    GATE_VERDICT: over.verdict ?? "",
+    GATE_HAS_MUTATIONS: over.hasMutations ?? "",
+    GATE_MUTATION_PKGS: over.mutationPkgsJson ?? "",
+    GATE_FULL_REQUESTED: over.fullRequested ?? "",
+  });
   // 通过场景 exit 0：push 触发面收敛形态（非 PR → fullGate=false，三段全 skipped）
   const okRun = spawnSync(process.execPath, [script], {
-    encoding: 'utf8',
-    env: { ...process.env, ...envOf({
-      event: 'push', changes: 'success', buildTest: 'success',
-      coverage: 'skipped', mutation: 'skipped', verdict: 'skipped',
-      hasMutations: 'true', mutationPkgsJson: JSON.stringify(MUTATION_PACKAGES),
-      fullRequested: 'false',
-    }) },
-  })
-  assert.equal(okRun.status, 0, 'push + 三段全 skipped 场景 CLI 必须 exit 0')
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      ...envOf({
+        event: "push",
+        changes: "success",
+        buildTest: "success",
+        coverage: "skipped",
+        mutation: "skipped",
+        verdict: "skipped",
+        hasMutations: "true",
+        mutationPkgsJson: JSON.stringify(MUTATION_PACKAGES),
+        fullRequested: "false",
+      }),
+    },
+  });
+  assert.equal(okRun.status, 0, "push + 三段全 skipped 场景 CLI 必须 exit 0");
   // #722 增量路径 exit 0：默认 PR（无标签）三段全 skipped
   const incRun = spawnSync(process.execPath, [script], {
-    encoding: 'utf8',
-    env: { ...process.env, ...envOf({
-      event: 'pull_request', changes: 'success', buildTest: 'success',
-      coverage: 'skipped', mutation: 'skipped', verdict: 'skipped',
-      hasMutations: 'true', mutationPkgsJson: '["dsh-lan-proxy"]',
-      fullRequested: 'false',
-    }) },
-  })
-  assert.equal(incRun.status, 0, '默认 PR 增量路径（三段 skipped）CLI 必须 exit 0')
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      ...envOf({
+        event: "pull_request",
+        changes: "success",
+        buildTest: "success",
+        coverage: "skipped",
+        mutation: "skipped",
+        verdict: "skipped",
+        hasMutations: "true",
+        mutationPkgsJson: '["dsh-lan-proxy"]',
+        fullRequested: "false",
+      }),
+    },
+  });
+  assert.equal(incRun.status, 0, "默认 PR 增量路径（三段 skipped）CLI 必须 exit 0");
   // 违约场景 exit 1 且输出 ::error:: 可检索的判词：PR 该跑没跑（verdict skipped）
   const failRun = spawnSync(process.execPath, [script], {
-    encoding: 'utf8',
-    env: { ...process.env, ...envOf({
-      event: 'pull_request', changes: 'success', buildTest: 'success',
-      coverage: 'success', mutation: 'skipped', verdict: 'skipped',
-      hasMutations: 'true', mutationPkgsJson: '["dsh-lan-proxy"]',
-      fullRequested: 'true',
-    }) },
-  })
-  assert.equal(failRun.status, 1, 'PR 该跑没跑场景 CLI 必须 exit 1')
-  assert.match(failRun.stderr, /::error::/, '违约判词必须带 ::error:: 注解前缀（PR 页面可见）')
-  assert.match(failRun.stderr, /绕过/, '判词须点名门禁绕过语义')
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      ...envOf({
+        event: "pull_request",
+        changes: "success",
+        buildTest: "success",
+        coverage: "success",
+        mutation: "skipped",
+        verdict: "skipped",
+        hasMutations: "true",
+        mutationPkgsJson: '["dsh-lan-proxy"]',
+        fullRequested: "true",
+      }),
+    },
+  });
+  assert.equal(failRun.status, 1, "PR 该跑没跑场景 CLI 必须 exit 1");
+  assert.match(failRun.stderr, /::error::/, "违约判词必须带 ::error:: 注解前缀（PR 页面可见）");
+  assert.match(failRun.stderr, /绕过/, "判词须点名门禁绕过语义");
   // 连坐场景 exit 1 且判词区分「coverage 失败连坐」（#217 reason 分型）。
   // env 取值贴合并行拓扑真实形态（复核裁决选项 b）：矩阵与 coverage 平行、
   // cov 挂了矩阵照跑 success，verdict 因 if 要求 coverage success 连带 skipped
   const covFailRun = spawnSync(process.execPath, [script], {
-    encoding: 'utf8',
-    env: { ...process.env, ...envOf({
-      event: 'pull_request', changes: 'success', buildTest: 'success',
-      coverage: 'failure', mutation: 'success', verdict: 'skipped',
-      hasMutations: 'true', mutationPkgsJson: '["dsh-lan-proxy"]',
-      fullRequested: 'true',
-    }) },
-  })
-  assert.equal(covFailRun.status, 1, 'coverage 失败连坐场景 CLI 必须 exit 1')
-  assert.match(covFailRun.stderr, /::error::/, '连坐判词必须带 ::error:: 注解前缀')
-  assert.match(covFailRun.stderr, /coverage 失败连坐/, '连坐场景判词必须点名「coverage 失败连坐」，不得误报为门禁绕过')
-})
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      ...envOf({
+        event: "pull_request",
+        changes: "success",
+        buildTest: "success",
+        coverage: "failure",
+        mutation: "success",
+        verdict: "skipped",
+        hasMutations: "true",
+        mutationPkgsJson: '["dsh-lan-proxy"]',
+        fullRequested: "true",
+      }),
+    },
+  });
+  assert.equal(covFailRun.status, 1, "coverage 失败连坐场景 CLI 必须 exit 1");
+  assert.match(covFailRun.stderr, /::error::/, "连坐判词必须带 ::error:: 注解前缀");
+  assert.match(
+    covFailRun.stderr,
+    /coverage 失败连坐/,
+    "连坐场景判词必须点名「coverage 失败连坐」，不得误报为门禁绕过",
+  );
+});
 
-test('#306+#586+#722: ci.yml 包名清单 SSOT 下沉——workflow 内不得再有静态包名矩阵', () => {
+test("#306+#586+#722: ci.yml 包名清单 SSOT 下沉——workflow 内不得再有静态包名矩阵", () => {
   // 静态清单已彻底退役：build-test 矩阵来自 changes.buildPackages（ci-matrix.mjs 派生
   // 自 plugins-manifest.json），故 ci.yml 里不应再出现包名逐行列举（防清单漂移）。
-  const bt = CI.slice(CI.indexOf('\n  build-test:'), CI.indexOf('\n  repo-gate:'))
-  const matrixNames = [...bt.matchAll(/^\s*- (dsh-[a-z0-9-]+)\s*$/gm)].map((m) => m[1])
-  assert.deepEqual(matrixNames, [],
-    `build-test 段不得再列举动包名（发现：${matrixNames.join(',')}）——清单 SSOT 在 ci-matrix.mjs`)
+  const bt = CI.slice(CI.indexOf("\n  build-test:"), CI.indexOf("\n  repo-gate:"));
+  const matrixNames = [...bt.matchAll(/^\s*- (dsh-[a-z0-9-]+)\s*$/gm)].map((m) => m[1]);
+  assert.deepEqual(
+    matrixNames,
+    [],
+    `build-test 段不得再列举动包名（发现：${matrixNames.join(",")}）——清单 SSOT 在 ci-matrix.mjs`,
+  );
   // buildPackages 必须是 changes 的声明输出并被矩阵消费
-  assert.ok(CI.includes('buildPackages: ${{ steps.pkgs.outputs.buildPackages }}'),
-    'changes outputs 必须声明 buildPackages')
-  const computeBlock = CI.slice(CI.indexOf('Compute hit packages'), CI.indexOf('build-test:'))
-  assert.ok(computeBlock.includes('run: node scripts/ci/ci-matrix.mjs'),
-    'Compute hit packages 步骤已下沉至 ci-matrix.mjs')
-})
+  assert.ok(
+    CI.includes("buildPackages: ${{ steps.pkgs.outputs.buildPackages }}"),
+    "changes outputs 必须声明 buildPackages",
+  );
+  const computeBlock = CI.slice(CI.indexOf("Compute hit packages"), CI.indexOf("build-test:"));
+  assert.ok(
+    computeBlock.includes("run: node scripts/ci/ci-matrix.mjs"),
+    "Compute hit packages 步骤已下沉至 ci-matrix.mjs",
+  );
+});
 
-test('#306+#722: repo-gate 产物断言随门禁口径切换且空清单 fail-closed（防静默漏检）', () => {
-  const restoreBlock = CI.slice(CI.indexOf('- name: Restore package outputs'))
+test("#306+#722: repo-gate 产物断言随门禁口径切换且空清单 fail-closed（防静默漏检）", () => {
+  const restoreBlock = CI.slice(CI.indexOf("- name: Restore package outputs"));
   // 两个口径的清单都必须从 changes 输出动态注入（manifest 单一事实源，禁止静态包名）
-  assert.ok(/ALL_PACKAGES: \${{ needs\.changes\.outputs\.allPackages }}/.test(restoreBlock),
-    '产物断言必须注入 needs.changes.outputs.allPackages（gate:full 口径）')
-  assert.ok(/HIT_PACKAGES: \${{ needs\.changes\.outputs\.hitPackages }}/.test(restoreBlock),
-    '产物断言必须注入 needs.changes.outputs.hitPackages（#722 增量口径）')
-  assert.ok(/FULL_GATE: \${{ needs\.changes\.outputs\.fullGate }}/.test(restoreBlock),
-    '产物断言必须按 fullGate 选择口径（单一开关，禁止两套并行判据）')
-  assert.ok(/for pkg in \$WANT/.test(restoreBlock),
-    '产物断言必须从动态清单循环（禁止静态包名清单）')
+  assert.ok(
+    /ALL_PACKAGES: \${{ needs\.changes\.outputs\.allPackages }}/.test(restoreBlock),
+    "产物断言必须注入 needs.changes.outputs.allPackages（gate:full 口径）",
+  );
+  assert.ok(
+    /HIT_PACKAGES: \${{ needs\.changes\.outputs\.hitPackages }}/.test(restoreBlock),
+    "产物断言必须注入 needs.changes.outputs.hitPackages（#722 增量口径）",
+  );
+  assert.ok(
+    /FULL_GATE: \${{ needs\.changes\.outputs\.fullGate }}/.test(restoreBlock),
+    "产物断言必须按 fullGate 选择口径（单一开关，禁止两套并行判据）",
+  );
+  assert.ok(
+    /for pkg in \$WANT/.test(restoreBlock),
+    "产物断言必须从动态清单循环（禁止静态包名清单）",
+  );
   // 禁止回归为静态包名清单（评审发现：曾漏 verify-isolated 与 standalone）
-  assert.ok(!/for pkg in dsh-[a-z0-9-]+ dsh-[a-z0-9-]+/.test(restoreBlock),
-    '产物断言不得出现静态包名列表（曾漏 verify-isolated）')
+  assert.ok(
+    !/for pkg in dsh-[a-z0-9-]+ dsh-[a-z0-9-]+/.test(restoreBlock),
+    "产物断言不得出现静态包名列表（曾漏 verify-isolated）",
+  );
   // 空清单 fail-closed：全量口径下必须显式防空（禁止零断言假绿）；增量口径下空清单合法
-  assert.ok(/allPackages 为空（fail-closed/.test(restoreBlock),
-    '全量口径必须显式防空清单（fail-closed，防零断言通过）')
-  assert.ok(/SCOPE_DESC="命中包切片（增量）"/.test(restoreBlock),
-    '增量口径须在日志里标明产物判据范围（可审计）')
-})
+  assert.ok(
+    /allPackages 为空（fail-closed/.test(restoreBlock),
+    "全量口径必须显式防空清单（fail-closed，防零断言通过）",
+  );
+  assert.ok(
+    /SCOPE_DESC="命中包切片（增量）"/.test(restoreBlock),
+    "增量口径须在日志里标明产物判据范围（可审计）",
+  );
+});
 
-test('#306+#586: 全量列表动态化——fallback/GLOBAL_HIT 从 manifest 派生且空清单 fail-closed', () => {
+test("#306+#586: 全量列表动态化——fallback/GLOBAL_HIT 从 manifest 派生且空清单 fail-closed", () => {
   // #586：调度下沉至 ci-matrix.mjs，ci.yml 声明委托
-  assert.ok(CI.includes('run: node scripts/ci/ci-matrix.mjs'), 'ci.yml 必须委托给 ci-matrix.mjs')
+  assert.ok(CI.includes("run: node scripts/ci/ci-matrix.mjs"), "ci.yml 必须委托给 ci-matrix.mjs");
   // 单一事实源：从 plugins-manifest.json 读 active + standalone
-  assert.ok(/plugins-manifest\.json/.test(CI_MATRIX), 'ci-matrix 必须读 plugins-manifest.json')
-  assert.ok(/dsh-plugins-all/.test(CI_MATRIX), '聚合包手工补入清单')
+  assert.ok(/plugins-manifest\.json/.test(CI_MATRIX), "ci-matrix 必须读 plugins-manifest.json");
+  assert.ok(/dsh-plugins-all/.test(CI_MATRIX), "聚合包手工补入清单");
   // 空清单 fail-closed（防 manifest 读失败 → 空切片 → 假绿）
-  assert.ok(/包清单为空（fail-closed/.test(CI_MATRIX), 'ci-matrix 空清单必须显式 fail-closed')
-})
+  assert.ok(/包清单为空（fail-closed/.test(CI_MATRIX), "ci-matrix 空清单必须显式 fail-closed");
+});
 
-test('#306+#586: 切片面真静默防回归——每个 active/standalone 包都有切片消费路径', () => {
+test("#306+#586: 切片面真静默防回归——每个 active/standalone 包都有切片消费路径", () => {
   // #586：paths-filter 必须覆盖全量插件包（active ∪ standalone）；
   // ci-matrix 动态遍历全量包集，保证每个包在改动时均能命中切片。
-  const filtersBlock = CI.slice(CI.indexOf('filters: |'), CI.indexOf('- name: Compute hit packages'))
+  const filtersBlock = CI.slice(
+    CI.indexOf("filters: |"),
+    CI.indexOf("- name: Compute hit packages"),
+  );
   for (const pkg of [...MANIFEST.active, ...(MANIFEST.standalone ?? [])]) {
-    assert.ok(new RegExp(`^\\s*${pkg}:`, 'm').test(filtersBlock),
-      `paths-filter 缺 ${pkg} —— 改动时 smoke/typecheck 将永不执行（真静默）`)
+    assert.ok(
+      new RegExp(`^\\s*${pkg}:`, "m").test(filtersBlock),
+      `paths-filter 缺 ${pkg} —— 改动时 smoke/typecheck 将永不执行（真静默）`,
+    );
   }
-  assert.ok(CI_MATRIX.includes('manifest.active') && CI_MATRIX.includes('manifest.standalone'),
-    'ci-matrix.mjs 必须动态合并 active 与 standalone 全量包')
-})
+  assert.ok(
+    CI_MATRIX.includes("manifest.active") && CI_MATRIX.includes("manifest.standalone"),
+    "ci-matrix.mjs 必须动态合并 active 与 standalone 全量包",
+  );
+});
 
-test('#178: 六份 stryker 配置开增量且 incrementalFile 无点前缀', () => {
-  const confDir = join(ROOT, 'stryker.conf.d')
-  const confFiles = readdirSync(confDir).filter((f) => f.endsWith('.json')).sort()
-  assert.ok(confFiles.length > 0, 'stryker.conf.d 非空')
+test("#178: 六份 stryker 配置开增量且 incrementalFile 无点前缀", () => {
+  const confDir = join(ROOT, "stryker.conf.d");
+  const confFiles = readdirSync(confDir)
+    .filter((f) => f.endsWith(".json"))
+    .sort();
+  assert.ok(confFiles.length > 0, "stryker.conf.d 非空");
   for (const f of confFiles) {
-    const conf = JSON.parse(readFileSync(join(confDir, f), 'utf8'))
-    assert.equal(conf.incremental, true, `${f} 未开启 incremental`)
-    const inc = typeof conf.incrementalFile === 'string' ? conf.incrementalFile : ''
-    assert.match(inc, /^coverage\/mutation\/incremental-[a-z0-9-]+\.json$/,
-      `${f} incrementalFile 必须落在 coverage/mutation/ 下且命名 incremental-<pkg>.json`)
-    assert.ok(!basename(inc).startsWith('.'), `${f} incrementalFile 不得为 dotfile（upload-artifact v4 默认排除 hidden files，评审 P2#1）`)
-    const pkgShort = f.replace(/^dsh-/, '').replace(/\.json$/, '')
-    assert.ok(inc.endsWith(`incremental-${pkgShort}.json`), `${f} incrementalFile 包名段与配置文件名一致`)
+    const conf = JSON.parse(readFileSync(join(confDir, f), "utf8"));
+    assert.equal(conf.incremental, true, `${f} 未开启 incremental`);
+    const inc = typeof conf.incrementalFile === "string" ? conf.incrementalFile : "";
+    assert.match(
+      inc,
+      /^coverage\/mutation\/incremental-[a-z0-9-]+\.json$/,
+      `${f} incrementalFile 必须落在 coverage/mutation/ 下且命名 incremental-<pkg>.json`,
+    );
+    assert.ok(
+      !basename(inc).startsWith("."),
+      `${f} incrementalFile 不得为 dotfile（upload-artifact v4 默认排除 hidden files，评审 P2#1）`,
+    );
+    const pkgShort = f.replace(/^dsh-/, "").replace(/\.json$/, "");
+    assert.ok(
+      inc.endsWith(`incremental-${pkgShort}.json`),
+      `${f} incrementalFile 包名段与配置文件名一致`,
+    );
   }
-})
+});
 
-test('#178: 变异统计口径单一事实源——observe-check 与 mutation-gate 共用 lib', () => {
-  for (const f of ['scripts/gate/observe-check.mjs', 'scripts/gate/mutation-gate.mjs']) {
-    const src = readFileSync(join(ROOT, f), 'utf8')
-    assert.ok(src.includes("from '../lib/mutation-report-lib.mjs'"),
-      `${f} 须 import scripts/lib/mutation-report-lib.mjs 共享统计函数（防两处 covered 口径漂移）`)
+test("#178: 变异统计口径单一事实源——observe-check 与 mutation-gate 共用 lib", () => {
+  for (const f of ["scripts/gate/observe-check.mjs", "scripts/gate/mutation-gate.mjs"]) {
+    const src = readFileSync(join(ROOT, f), "utf8");
+    // 不硬编码引号形态：本判据要锁的是「两处共用同一个统计 lib」，而引号是 Prettier 说了算
+    // 的语法形态——lint-staged 会对 staged 源码跑 prettier --write，单引号变双引号就会让这条
+    // 纪律断言误红（#733 实测：observe-check.mjs 被格式化后即如此，而 mutation-gate.mjs 因
+    // 尚未被 staged 仍是单引号，同一断言在半边通过、半边失败）。
+    assert.ok(
+      /from ['"]\.\.\/lib\/mutation-report-lib\.mjs['"]/.test(src),
+      `${f} 须 import scripts/lib/mutation-report-lib.mjs 共享统计函数（防两处 covered 口径漂移）`,
+    );
   }
-})
+});
 
 // ── #217 变异/覆盖解耦：cov 全局单次采集 + artifact 跨 job 传递 + 聚合判分 ──
 // 三段式：coverage（全局单进程 vitest coverage，阈值判分在其退出码内）∥ mutation-gate 矩阵
@@ -907,185 +1352,266 @@ test('#178: 变异统计口径单一事实源——observe-check 与 mutation-ga
 // if 要求 coverage success：cov 失败时 verdict 连带缺席，repo-gate 判红兜底）。
 // flake 根因（矩阵 6 路并行各自全仓 smoke 的端口竞争与时序漂移）随剥离消除。
 
-test('#217+#586: changes 输出显式布尔 hasMutations（禁止脆弱空切片判定形态）', () => {
-  assert.ok(CI.includes('hasMutations: ${{ steps.pkgs.outputs.hasMutations }}'),
-    'changes outputs 必须声明并透传 hasMutations')
-  assert.ok(CI_MATRIX.includes('mutationPackages.length > 0'),
-    'hasMutations 必须在 ci-matrix.mjs 中由 mutationPackages 清单推导为显式布尔')
+test("#217+#586: changes 输出显式布尔 hasMutations（禁止脆弱空切片判定形态）", () => {
+  assert.ok(
+    CI.includes("hasMutations: ${{ steps.pkgs.outputs.hasMutations }}"),
+    "changes outputs 必须声明并透传 hasMutations",
+  );
+  assert.ok(
+    CI_MATRIX.includes("mutationPackages.length > 0"),
+    "hasMutations 必须在 ci-matrix.mjs 中由 mutationPackages 清单推导为显式布尔",
+  );
   // 下游一律精确比较布尔字符串；GHA 表达式无 length/管道，两种脆弱形态禁用
-  assert.ok(!/\|\s*length/.test(CI), 'ci.yml 禁止 fromJSON(...)|length 判空形态')
-  assert.ok(!CI.includes("'[]'"), 'ci.yml 禁止裸字符串比较 \'[]\' 判空形态')
-})
+  assert.ok(!/\|\s*length/.test(CI), "ci.yml 禁止 fromJSON(...)|length 判空形态");
+  assert.ok(!CI.includes("'[]'"), "ci.yml 禁止裸字符串比较 '[]' 判空形态");
+});
 
-test('#217: coverage job 全局单次采集——if 精确、步骤链与 artifact 上传契约', () => {
-  const covIdx = CI.indexOf('\n  coverage:')
-  assert.ok(covIdx > 0, 'coverage job 在位（非矩阵单实例）')
-  const cov = CI.slice(covIdx, CI.indexOf('\n  mutation-gate:'))
-  assert.ok(!cov.includes('matrix:'), 'coverage job 不得使用 matrix（全局单次语义）')
+test("#217: coverage job 全局单次采集——if 精确、步骤链与 artifact 上传契约", () => {
+  const covIdx = CI.indexOf("\n  coverage:");
+  assert.ok(covIdx > 0, "coverage job 在位（非矩阵单实例）");
+  const cov = CI.slice(covIdx, CI.indexOf("\n  mutation-gate:"));
+  assert.ok(!cov.includes("matrix:"), "coverage job 不得使用 matrix（全局单次语义）");
   assert.equal(
     /^    if: (.+)$/m.exec(cov)?.[1]?.trim(),
     "github.event_name == 'pull_request' && needs.changes.outputs.fullGate == 'true' && needs.changes.outputs.hasMutations == 'true'",
-    'coverage if 必须精确为「仅 PR 且 gate:full 且 hasMutations」（#722：覆盖率是全仓分母口径，归夜间/标签触发）',
-  )
+    "coverage if 必须精确为「仅 PR 且 gate:full 且 hasMutations」（#722：覆盖率是全仓分母口径，归夜间/标签触发）",
+  );
   // #722 阶段三步骤链：install → cov → upload。
   // build 已移除（unit/integration 直连 src，不消费 lib 产物）；self-cov 判分已并入
   // vitest 的 coverage.thresholds（未达标即非零退出，故 PR 侧不再「只落盘不判红」）。
-  const covRunIdx = cov.indexOf('run: pnpm cov')
-  const upIdx = cov.indexOf('Upload coverage artifact')
-  assert.ok(covRunIdx > 0, 'coverage 步骤 pnpm cov 在位')
-  assert.ok(upIdx > covRunIdx, 'coverage 步骤 upload artifact 在位且排在 pnpm cov 之后')
-  assert.ok(!cov.includes('- name: Build all packages'),
-    'coverage job 不得再全量构建（#722 阶段三：分母只含 packages/*/src + shared，不消费 lib）')
-  assert.ok(!cov.includes('node scripts/gate/self-cov.mjs'),
-    'self-cov 判分步骤已退役（阈值归 vitest coverage.thresholds，防两处判分并存）')
-  assert.ok(/^    timeout-minutes: 10$/m.test(cov),
-    'timeout 必须收敛为 10 分钟（新链路实测 ~47s；原 20 分钟是 build + c8 全仓 smoke + self-cov 三段口径）')
+  const covRunIdx = cov.indexOf("run: pnpm cov");
+  const upIdx = cov.indexOf("Upload coverage artifact");
+  assert.ok(covRunIdx > 0, "coverage 步骤 pnpm cov 在位");
+  assert.ok(upIdx > covRunIdx, "coverage 步骤 upload artifact 在位且排在 pnpm cov 之后");
+  assert.ok(
+    !cov.includes("- name: Build all packages"),
+    "coverage job 不得再全量构建（#722 阶段三：分母只含 packages/*/src + shared，不消费 lib）",
+  );
+  assert.ok(
+    !cov.includes("node scripts/gate/self-cov.mjs"),
+    "self-cov 判分步骤已退役（阈值归 vitest coverage.thresholds，防两处判分并存）",
+  );
+  assert.ok(
+    /^    timeout-minutes: 10$/m.test(cov),
+    "timeout 必须收敛为 10 分钟（新链路实测 ~47s；原 20 分钟是 build + c8 全仓 smoke + self-cov 三段口径）",
+  );
 
   // artifact 上传契约（fail-closed）
-  const uploadBlock = cov.slice(upIdx)
-  assert.ok(uploadBlock.includes('name: coverage'), 'artifact 名必须精确为 coverage')
-  assert.ok(uploadBlock.includes('path: coverage/coverage-summary.json'), '上传路径为覆盖摘要的固定产物路径')
-  assert.ok(uploadBlock.includes('if-no-files-found: error'), '产物缺失必须 error（防下游静默空判分）')
-  assert.ok(uploadBlock.includes('retention-days: 1'), '跨 job 传递产物 retention 收敛为 1 天')
-})
+  const uploadBlock = cov.slice(upIdx);
+  assert.ok(uploadBlock.includes("name: coverage"), "artifact 名必须精确为 coverage");
+  assert.ok(
+    uploadBlock.includes("path: coverage/coverage-summary.json"),
+    "上传路径为覆盖摘要的固定产物路径",
+  );
+  assert.ok(
+    uploadBlock.includes("if-no-files-found: error"),
+    "产物缺失必须 error（防下游静默空判分）",
+  );
+  assert.ok(uploadBlock.includes("retention-days: 1"), "跨 job 传递产物 retention 收敛为 1 天");
+});
 
-test('#217: mutation-gate 剥离 cov——与 coverage 平行（needs 仅 changes）、if 精确锁定', () => {
-  const mg = CI.slice(CI.indexOf('\n  mutation-gate:'), CI.indexOf('\n  mutation-verdict:'))
+test("#217: mutation-gate 剥离 cov——与 coverage 平行（needs 仅 changes）、if 精确锁定", () => {
+  const mg = CI.slice(CI.indexOf("\n  mutation-gate:"), CI.indexOf("\n  mutation-verdict:"));
   // 复核裁决选项 b：矩阵与 coverage 平行无依赖（wall-clock = max）；
   // cov 失败时矩阵照常跑完，由 verdict 缺席 + repo-gate 判定表兜底整体红
-  assert.ok(/^    needs: changes$/m.test(mg),
-    'mutation-gate needs 必须恰为 changes（不得挂 coverage 连坐——拓扑已裁决为并行）')
-  assert.ok(!mg.includes('needs: [changes, coverage'), '禁止恢复 mutation-gate → coverage 串行连坐拓扑')
-  const m = /^    if: (.+)$/m.exec(mg)
-  assert.ok(m, 'mutation-gate 声明 job 级 if')
+  assert.ok(
+    /^    needs: changes$/m.test(mg),
+    "mutation-gate needs 必须恰为 changes（不得挂 coverage 连坐——拓扑已裁决为并行）",
+  );
+  assert.ok(
+    !mg.includes("needs: [changes, coverage"),
+    "禁止恢复 mutation-gate → coverage 串行连坐拓扑",
+  );
+  const m = /^    if: (.+)$/m.exec(mg);
+  assert.ok(m, "mutation-gate 声明 job 级 if");
   assert.equal(
     m[1].trim(),
     "github.event_name == 'pull_request' && needs.changes.outputs.fullGate == 'true' && needs.changes.outputs.hasMutations == 'true'",
-    '矩阵 if 必须精确锁定事件面、gate:full 开关与显式布尔切片',
-  )
+    "矩阵 if 必须精确锁定事件面、gate:full 开关与显式布尔切片",
+  );
   // cov 已剥离出矩阵（每实例重复全仓 smoke 是 flake 根因）
-  assert.ok(!mg.includes('run: pnpm cov'), '矩阵不得再跑 pnpm cov（已收敛至 coverage job 单次）')
-  assert.ok(!mg.includes('self-cov.mjs'), '矩阵不得再跑 self-cov.mjs')
+  assert.ok(!mg.includes("run: pnpm cov"), "矩阵不得再跑 pnpm cov（已收敛至 coverage job 单次）");
+  assert.ok(!mg.includes("self-cov.mjs"), "矩阵不得再跑 self-cov.mjs");
   // 报告上传契约：失败实例的报告也下发聚合判分
-  const upIdx = mg.indexOf('Upload stryker report artifact')
-  assert.ok(upIdx > 0, 'stryker 报告上传步骤在位')
-  const upBlock = mg.slice(upIdx)
-  assert.ok(/if: always\(\)/.test(upBlock), '报告上传必须 if: always()（实例非零退出时报告照常下发统一判分）')
-  assert.ok(upBlock.includes('name: mutation-report-${{ matrix.combo.package }}-${{ matrix.combo.seg }}'),
-    '报告 artifact 名含 matrix.combo（package+seg）保证段实例唯一（pattern 下游可枚举）')
-  assert.ok(upBlock.includes('if-no-files-found: error'), '报告缺失必须 error（verdict 缺报告 fail-closed 的前提）')
-})
+  const upIdx = mg.indexOf("Upload stryker report artifact");
+  assert.ok(upIdx > 0, "stryker 报告上传步骤在位");
+  const upBlock = mg.slice(upIdx);
+  assert.ok(
+    /if: always\(\)/.test(upBlock),
+    "报告上传必须 if: always()（实例非零退出时报告照常下发统一判分）",
+  );
+  assert.ok(
+    upBlock.includes("name: mutation-report-${{ matrix.combo.package }}-${{ matrix.combo.seg }}"),
+    "报告 artifact 名含 matrix.combo（package+seg）保证段实例唯一（pattern 下游可枚举）",
+  );
+  assert.ok(
+    upBlock.includes("if-no-files-found: error"),
+    "报告缺失必须 error（verdict 缺报告 fail-closed 的前提）",
+  );
+});
 
-test('#217: mutation-verdict 聚合收尾——artifact 汇合 + 逐包变异率判分', () => {
-  const mv = CI.slice(CI.indexOf('\n  mutation-verdict:'), CI.indexOf('\n  repo-gate:'))
-  assert.ok(mv.length > 0, 'mutation-verdict job 在位')
-  assert.ok(/needs: \[changes, coverage, mutation-gate\]/.test(mv),
-    'verdict needs 三元：切片清单 + 覆盖产物 + 变异报告缺一不可')
+test("#217: mutation-verdict 聚合收尾——artifact 汇合 + 逐包变异率判分", () => {
+  const mv = CI.slice(CI.indexOf("\n  mutation-verdict:"), CI.indexOf("\n  repo-gate:"));
+  assert.ok(mv.length > 0, "mutation-verdict job 在位");
+  assert.ok(
+    /needs: \[changes, coverage, mutation-gate\]/.test(mv),
+    "verdict needs 三元：切片清单 + 覆盖产物 + 变异报告缺一不可",
+  );
   assert.equal(
     /^    if: (.+)$/m.exec(mv)?.[1]?.trim(),
     "always() && needs.changes.outputs.fullGate == 'true' && needs.coverage.result == 'success' && needs.mutation-gate.result != 'skipped'",
-    'verdict if 必须精确为「always() 且 gate:full 且 coverage success 且矩阵非 skipped」——'
-    + '矩阵 failure 时仍聚合判分（缺报告包 exit 2 fail-closed）；增量路径（无标签）下本 job 不实例化，'
-    + '由 repo-gate 判定表按 fullGate=false 要求三段全 skipped',
-  )
+    "verdict if 必须精确为「always() 且 gate:full 且 coverage success 且矩阵非 skipped」——" +
+      "矩阵 failure 时仍聚合判分（缺报告包 exit 2 fail-closed）；增量路径（无标签）下本 job 不实例化，" +
+      "由 repo-gate 判定表按 fullGate=false 要求三段全 skipped",
+  );
   // artifact 下载：#722 阶段三起只剩变异报告一条 pattern 通道——覆盖率维度已上移，
   // 其 fail-closed 由上面的 needs.coverage.result == 'success' 承担。锁定「下载步骤
   // 不得回潮」，否则会出现一个下载了却无人消费的 dead artifact。
-  assert.ok(!mv.includes('Download self-coverage artifact'),
-    'self-coverage 下载步骤已退役（覆盖率判分上移到 coverage job 的 vitest thresholds）')
-  assert.ok(mv.includes('pattern: mutation-report-*'), '各包 stryker 报告经 pattern 枚举下载')
-  assert.ok(mv.includes('node scripts/gate/mutation-gate.mjs'), '逐包判分脚本调用在位')
-  assert.ok(mv.includes("SLICE: ${{ needs.changes.outputs.mutationPackages }}"),
-    'verdict 以 changes 切片清单驱动逐包判分')
-})
+  assert.ok(
+    !mv.includes("Download self-coverage artifact"),
+    "self-coverage 下载步骤已退役（覆盖率判分上移到 coverage job 的 vitest thresholds）",
+  );
+  assert.ok(mv.includes("pattern: mutation-report-*"), "各包 stryker 报告经 pattern 枚举下载");
+  assert.ok(mv.includes("node scripts/gate/mutation-gate.mjs"), "逐包判分脚本调用在位");
+  assert.ok(
+    mv.includes("SLICE: ${{ needs.changes.outputs.mutationPackages }}"),
+    "verdict 以 changes 切片清单驱动逐包判分",
+  );
+});
 
-test('#217+#722: repo-gate 六维聚合 needs + 判定脚本 env 全维注入', () => {
-  const rg = CI.slice(CI.indexOf('\n  repo-gate:'))
-  for (const env of ['GATE_EVENT', 'GATE_CHANGES', 'GATE_BUILD_TEST',
-    'GATE_COVERAGE', 'GATE_MUTATION', 'GATE_VERDICT', 'GATE_HAS_MUTATIONS', 'GATE_MUTATION_PKGS',
-    'GATE_FULL_REQUESTED']) {
-    assert.ok(new RegExp(`${env}: \\$\\{\\{`).test(rg), `判定脚本 env ${env} 注入缺失`)
+test("#217+#722: repo-gate 六维聚合 needs + 判定脚本 env 全维注入", () => {
+  const rg = CI.slice(CI.indexOf("\n  repo-gate:"));
+  for (const env of [
+    "GATE_EVENT",
+    "GATE_CHANGES",
+    "GATE_BUILD_TEST",
+    "GATE_COVERAGE",
+    "GATE_MUTATION",
+    "GATE_VERDICT",
+    "GATE_HAS_MUTATIONS",
+    "GATE_MUTATION_PKGS",
+    "GATE_FULL_REQUESTED",
+  ]) {
+    assert.ok(new RegExp(`${env}: \\$\\{\\{`).test(rg), `判定脚本 env ${env} 注入缺失`);
   }
   // fullGate 是 #722 的新维度：由 changes job 一处计算，判定表与三个 job 的 if 共用同源输出
-  assert.ok(CI.includes('fullGate: ${{ steps.fullgate.outputs.fullGate }}'),
-    'changes outputs 必须声明并透传 fullGate（单一策略来源）')
+  assert.ok(
+    CI.includes("fullGate: ${{ steps.fullgate.outputs.fullGate }}"),
+    "changes outputs 必须声明并透传 fullGate（单一策略来源）",
+  );
   // #722：变异段默认不在 PR 上跑，conf ↔ 拓扑漂移必须仍能在增量路径被拦住
-  assert.ok(rg.includes('run: pnpm stryker:check'),
-    'repo-gate 组 A 必须含 stryker:check（增量路径下 conf↔拓扑漂移的唯一拦截点）')
+  assert.ok(
+    rg.includes("run: pnpm stryker:check"),
+    "repo-gate 组 A 必须含 stryker:check（增量路径下 conf↔拓扑漂移的唯一拦截点）",
+  );
   // 判定表实现侧同维锁定（env ↔ evaluateGate 输入一一对应）
-})
+});
 
-test('#722: 全仓产物闸在夜间班次落地（PR 改增量后全仓口径的唯一出处）', () => {
-  const sIdx = OBSERVE.indexOf('- name: Build all')
-  assert.ok(sIdx > 0, 'observe.yml 全量班 Build all 步骤在位')
-  const tail = OBSERVE.slice(sIdx)
+test("#722: 全仓产物闸在夜间班次落地（PR 改增量后全仓口径的唯一出处）", () => {
+  const sIdx = OBSERVE.indexOf("- name: Build all");
+  assert.ok(sIdx > 0, "observe.yml 全量班 Build all 步骤在位");
+  const tail = OBSERVE.slice(sIdx);
   for (const [cmd, why] of [
-    ['run: pnpm contract', '客户端契约'],
-    ['run: pnpm pack:check', '打包契约'],
-    ['run: pnpm verify:npmlayout', '解包布局'],
-    ['run: pnpm stryker:check', '变异配置与拓扑一致性'],
+    ["run: pnpm contract", "客户端契约"],
+    ["run: pnpm pack:check", "打包契约"],
+    ["run: pnpm verify:npmlayout", "解包布局"],
+    ["run: pnpm stryker:check", "变异配置与拓扑一致性"],
   ]) {
-    assert.ok(tail.includes(cmd), `observe.yml 必须跑全仓${why}（${cmd}）—— #722 后 PR 默认只验命中包，缺了就没有全仓口径`)
+    assert.ok(
+      tail.includes(cmd),
+      `observe.yml 必须跑全仓${why}（${cmd}）—— #722 后 PR 默认只验命中包，缺了就没有全仓口径`,
+    );
   }
-})
+});
 
-test('#217+#572: observe 全量班变异记账与入档区分整套 skip 与部分失败', () => {
+test("#217+#572: observe 全量班变异记账与入档区分整套 skip 与部分失败", () => {
   // 增量班那一支（「Mutation suites 步骤 + outcome != skipped」）随 #718 S2.2 退役，
   // 其语义由下方全量班收口 job 的「有段报告才入档」承担。
   // #718 S1.1/S1.5：全量班矩阵化后，「整套 skip vs 部分失败」由收口 job 的
   // 「有段报告才推送」承担——零报告 = 无产物 = 不推送；部分失败 = 有报告 = 照常提交，
   // 与原语义词一一对应。另锁「齐备性判定必须早于 push」这一时序（push 消费其 output）。
   {
-    const sIdx = OBSERVE.indexOf('\n  mutation-shards:')
-    assert.ok(sIdx > 0, 'observe.yml mutation-shards job 在位（原 Mutation suites 步骤的矩阵化替身）')
-    const cIdx = OBSERVE.indexOf('\n  mutation-collect:')
-    assert.ok(cIdx > 0, 'observe.yml mutation-collect job 在位（收口：判分 + 单点 push + 报告 + 工单）')
-    const pIdx = OBSERVE.indexOf('- name: Archive baseline to orphan branch', cIdx)
-    assert.ok(pIdx > cIdx, 'observe.yml 入档必须落在收口 job 内（单点写入，消除矩阵并发踩踏）')
-    const pBlock = OBSERVE.slice(pIdx, OBSERVE.indexOf('- name:', pIdx + 10))
-    assert.ok(pBlock.includes("if: always() && steps.reports.outputs.count != '0'"),
-      'observe.yml 入档条件必须区分零产物（不推送）与部分失败（有报告即照常提交）')
-    const rIdx = OBSERVE.indexOf('- name: Restore report layout', cIdx)
-    assert.ok(rIdx > cIdx && rIdx < pIdx, '报告齐备性判定必须排在 push 之前（push 依赖其 output）')
+    const sIdx = OBSERVE.indexOf("\n  mutation-shards:");
+    assert.ok(
+      sIdx > 0,
+      "observe.yml mutation-shards job 在位（原 Mutation suites 步骤的矩阵化替身）",
+    );
+    const cIdx = OBSERVE.indexOf("\n  mutation-collect:");
+    assert.ok(
+      cIdx > 0,
+      "observe.yml mutation-collect job 在位（收口：判分 + 单点 push + 报告 + 工单）",
+    );
+    const pIdx = OBSERVE.indexOf("- name: Archive baseline to orphan branch", cIdx);
+    assert.ok(pIdx > cIdx, "observe.yml 入档必须落在收口 job 内（单点写入，消除矩阵并发踩踏）");
+    const pBlock = OBSERVE.slice(pIdx, OBSERVE.indexOf("- name:", pIdx + 10));
+    assert.ok(
+      pBlock.includes("if: always() && steps.reports.outputs.count != '0'"),
+      "observe.yml 入档条件必须区分零产物（不推送）与部分失败（有报告即照常提交）",
+    );
+    const rIdx = OBSERVE.indexOf("- name: Restore report layout", cIdx);
+    assert.ok(rIdx > cIdx && rIdx < pIdx, "报告齐备性判定必须排在 push 之前（push 依赖其 output）");
   }
-})
+});
 
-test('#718 S1.1/S1.4/S1.5: observe 全量班三段式矩阵（plan / quality+shards 并行 / collect 收口）', () => {
+test("#718 S1.1/S1.4/S1.5: observe 全量班三段式矩阵（plan / quality+shards 并行 / collect 收口）", () => {
   // S1.1 矩阵化：段清单跨 job 传递，矩阵消费它（不得硬编码段列表）
-  assert.ok(OBSERVE.includes('shards: ${{ steps.plan.outputs.shards }}'),
-    'mutation-plan 必须把段清单作为 job output 暴露给矩阵')
-  assert.ok(OBSERVE.includes('shard: ${{ fromJSON(needs.mutation-plan.outputs.shards) }}'),
-    '矩阵必须以 fromJSON 消费段清单')
+  assert.ok(
+    OBSERVE.includes("shards: ${{ steps.plan.outputs.shards }}"),
+    "mutation-plan 必须把段清单作为 job output 暴露给矩阵",
+  );
+  assert.ok(
+    OBSERVE.includes("shard: ${{ fromJSON(needs.mutation-plan.outputs.shards) }}"),
+    "矩阵必须以 fromJSON 消费段清单",
+  );
   // S1.1 并行度 + S1.4 fail-fast：都在 strategy 块内断言（块内含解释性注释，
   // 用行锚定的局部切片而不是跨行正则，避免注释一变断言就假红）
-  const shardsStart = OBSERVE.indexOf('\n  mutation-shards:')
-  const stratIdx = OBSERVE.indexOf('    strategy:', shardsStart)
-  assert.ok(stratIdx > shardsStart, 'observe.yml mutation-shards 必须声明 strategy')
-  const stratBlock = OBSERVE.slice(stratIdx, OBSERVE.indexOf('\n    runs-on:', stratIdx))
-  assert.ok(/max-parallel:\s*5\s*$/m.test(stratBlock),
-    'observe.yml 矩阵必须声明 max-parallel: 5（#718 S1.1；S0.3 实测额度上界 20，取 5 留余量）')
-  assert.ok(/fail-fast:\s*false\s*$/m.test(stratBlock),
-    'observe.yml 矩阵必须 fail-fast: false（#718 S1.4：单段失败不连坐，可定向重跑）')
+  const shardsStart = OBSERVE.indexOf("\n  mutation-shards:");
+  const stratIdx = OBSERVE.indexOf("    strategy:", shardsStart);
+  assert.ok(stratIdx > shardsStart, "observe.yml mutation-shards 必须声明 strategy");
+  const stratBlock = OBSERVE.slice(stratIdx, OBSERVE.indexOf("\n    runs-on:", stratIdx));
+  assert.ok(
+    /max-parallel:\s*5\s*$/m.test(stratBlock),
+    "observe.yml 矩阵必须声明 max-parallel: 5（#718 S1.1；S0.3 实测额度上界 20，取 5 留余量）",
+  );
+  assert.ok(
+    /fail-fast:\s*false\s*$/m.test(stratBlock),
+    "observe.yml 矩阵必须 fail-fast: false（#718 S1.4：单段失败不连坐，可定向重跑）",
+  );
   // S1.4 逐段超时：必须引用矩阵携带的值，而不是全局常量
-  assert.ok(OBSERVE.includes('timeout-minutes: ${{ matrix.shard.timeoutMinutes }}'),
-    'observe.yml 矩阵超时必须逐段取自 matrix.shard.timeoutMinutes（#718 S1.4）')
-  assert.ok(!/timeout-minutes:\s*90\s*$/m.test(OBSERVE),
-    '整班 90 分钟超时必须退役（长段擦边即整班被杀的成因）')
+  assert.ok(
+    OBSERVE.includes("timeout-minutes: ${{ matrix.shard.timeoutMinutes }}"),
+    "observe.yml 矩阵超时必须逐段取自 matrix.shard.timeoutMinutes（#718 S1.4）",
+  );
+  assert.ok(
+    !/timeout-minutes:\s*90\s*$/m.test(OBSERVE),
+    "整班 90 分钟超时必须退役（长段擦边即整班被杀的成因）",
+  );
   // S1.5 job 边界：quality 与 mutation-shards 无相互依赖（并行），collect 收口两者
-  const qIdx = OBSERVE.indexOf('\n  quality:')
-  const shardsIdx = OBSERVE.indexOf('\n  mutation-shards:')
-  const collectIdx = OBSERVE.indexOf('\n  mutation-collect:')
-  assert.ok(qIdx > 0 && shardsIdx > qIdx && collectIdx > shardsIdx, 'job 顺序须为 quality → mutation-shards → mutation-collect')
-  const qBlock = OBSERVE.slice(qIdx, shardsIdx)
-  assert.ok(!/^\s{4}needs:/m.test(qBlock),
-    'quality 不得声明 needs——它必须与 mutation-shards 并行（#718 S1.5）')
-  const cBlock = OBSERVE.slice(collectIdx)
-  assert.ok(/needs:\s*\[mutation-plan, quality, mutation-shards\]/.test(cBlock),
-    'mutation-collect 必须 needs 三者（收口全部上游）')
-  assert.ok(/^\s{4}if:\s*always\(\)/m.test(cBlock),
-    'mutation-collect 必须 if: always()（上游失败/被杀时仍收口并留痕，#718 S1.3 的基础）')
+  const qIdx = OBSERVE.indexOf("\n  quality:");
+  const shardsIdx = OBSERVE.indexOf("\n  mutation-shards:");
+  const collectIdx = OBSERVE.indexOf("\n  mutation-collect:");
+  assert.ok(
+    qIdx > 0 && shardsIdx > qIdx && collectIdx > shardsIdx,
+    "job 顺序须为 quality → mutation-shards → mutation-collect",
+  );
+  const qBlock = OBSERVE.slice(qIdx, shardsIdx);
+  assert.ok(
+    !/^\s{4}needs:/m.test(qBlock),
+    "quality 不得声明 needs——它必须与 mutation-shards 并行（#718 S1.5）",
+  );
+  const cBlock = OBSERVE.slice(collectIdx);
+  assert.ok(
+    /needs:\s*\[mutation-plan, quality, mutation-shards\]/.test(cBlock),
+    "mutation-collect 必须 needs 三者（收口全部上游）",
+  );
+  assert.ok(
+    /^\s{4}if:\s*always\(\)/m.test(cBlock),
+    "mutation-collect 必须 if: always()（上游失败/被杀时仍收口并留痕，#718 S1.3 的基础）",
+  );
   // 单点 push：矩阵实例内不得出现 push（否则回到并发踩踏）
-  const shardsBlock = OBSERVE.slice(shardsIdx, collectIdx)
-  assert.ok(!shardsBlock.includes('orphan-baseline.mjs push'),
-    '矩阵实例内不得推送基线——推送必须单点落在收口 job')
-})
+  const shardsBlock = OBSERVE.slice(shardsIdx, collectIdx);
+  assert.ok(
+    !shardsBlock.includes("orphan-baseline.mjs push"),
+    "矩阵实例内不得推送基线——推送必须单点落在收口 job",
+  );
+});
