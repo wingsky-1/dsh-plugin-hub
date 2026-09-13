@@ -279,6 +279,9 @@ describe("生命周期", () => {
     expect(() => assemble()).toThrow(/只能装配一次/u);
     releaseApi();
     releaseApi();
-    expect(() => assemble()).not.toThrow();
+    // 只断「没抛」不够：装上了与**静默空转**都不抛（实测把 install 改成见标记即 return，这条照样绿）。
+    // 再装配的实质是「7 条路由又被挂回去」，就判这个。
+    const again = assemble();
+    expect(again.hub.routes.map((route) => route.path).sort()).toEqual([...PATHS].sort());
   });
 });

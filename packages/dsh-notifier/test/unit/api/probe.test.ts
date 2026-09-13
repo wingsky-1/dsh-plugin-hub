@@ -51,6 +51,19 @@ function post(request: { body?: unknown; rawBody?: string }) {
   return postWith(makeReq(request));
 }
 
+/** 块是字符串的请求（流被 `setEncoding` 过这类形态）：共享读取器承诺**不抛错**。 */
+function makeStringChunkReq(): IncomingMessage {
+  return {
+    method: "POST",
+    url: "/api/dsh-notifier/test",
+    headers: { host: "127.0.0.1:3080" },
+    socket: { remoteAddress: "127.0.0.1" },
+    async *[Symbol.asyncIterator]() {
+      yield '{"channelId":"bark:main"}';
+    },
+  } as unknown as IncomingMessage;
+}
+
 /** 读流中途出错的路由请求：客户端半途断开、socket 报错都长这样。 */
 function makeBrokenReq(): IncomingMessage {
   return {
@@ -166,6 +179,16 @@ describe("POST /test：body 读不出来时 fail-closed（不许当成「没给 
 
   it("读流中断 → 400 invalid-json：半途断开不等于「没给 body」", async () => {
     const { rec, json, pipeline } = await postWith(makeBrokenReq());
+    expect(rec.status).toBe(400);
+    expect(json()).toEqual({
+      ok: false,
+      error: { code: "invalid-json", details: "请求体读取失败" },
+    });
+    expect(pipeline.submitted).toEqual([]);
+  });
+
+  it("块不是 Buffer 时也不抛错：按「读不出来」落 400，异常不许打到调用方", async () => {
+    const { rec, json, pipeline } = await postWith(makeStringChunkReq());
     expect(rec.status).toBe(400);
     expect(json()).toEqual({
       ok: false,

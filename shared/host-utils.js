@@ -86,7 +86,14 @@ export async function readJsonBodyOutcome(req, limit = 2 * 1024 * 1024) {
   } catch {
     return { kind: "invalid", reason: "unreadable" };
   }
-  const text = Buffer.concat(chunks).toString("utf8");
+  let text;
+  try {
+    text = Buffer.concat(chunks).toString("utf8");
+  } catch {
+    // 块不是 Buffer（流被 setEncoding 成字符串之类）：与「读不出来」同义。这里必须在 try 内——
+    // 本函数对外的承诺是**不抛错**（宽版面 `readJsonBody` 是它的薄包装），抛出去会打到调用方。
+    return { kind: "invalid", reason: "unreadable" };
+  }
   // 空 body（含纯空白）与「没写 body」是同一件事：可选参数缺席，不是错误。
   if (text.trim() === "") return { kind: "absent" };
   let parsed;

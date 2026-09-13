@@ -674,11 +674,8 @@ describe("宿主事件可达性", () => {
     const events: SessionEvent[] = [];
     const agent = fakeAgent("itest-done", events);
 
-    // 只有 running 被看见过，idle 才算「一轮结束」：启动时的裸 idle 是常态，它不该弹完成通知。
-    root.emit("agent/status", { agent, status: "idle" });
-    await settleHistory();
-    expect(countKind("done")).toBe(0);
-
+    // 「只有 running 被看见过，idle 才算一轮结束」这条已由 test/unit/events/listen.test.ts 单测
+    // 守死（那边还多断了一条「不留诊断」），这里只走本层独有的两跳：running → turn/end → idle。
     root.emit("agent/status", { agent, status: "running" });
     events.push(turnEndEvent(1, "completed"));
     root.emit("agent/status", { agent, status: "idle" });
@@ -942,7 +939,13 @@ describe("落盘隔离", () => {
     expect(historyFile).toBe(join(storageDir, sharedApi.HISTORY_FILE_NAME));
     expect(configFile).toBe(join(storageDir, sharedApi.CONFIG_FILE_NAME));
     // 原子写会先落一个同目录临时文件（`<目标>.tmp-<pid>`），status 的防抖落盘可能正在飞：那是
-    // 实现的中间物，不是布局的一部分，剔掉再比对。
+    // 实现的中间物，不是布局的一部分，剔掉再比对。**要轮询**：清单在防抖窗口内本来就不齐，
+    // 直接比会读到「前一个用例留下的文件」而看不出状态落盘整条坏掉（实测：把 status 的 debounce
+    // 写改成永不执行，e2e 那条红、这条不轮询的版本全绿）。
+    await pollUntil(() => {
+      const names = readdirSync(storageDir).filter((name) => !name.includes(".tmp-"));
+      return names.length === 5 && names.includes(sharedApi.STATUS_FILE_NAME);
+    }, "五个存储文件落齐");
     expect(
       readdirSync(storageDir)
         .filter((name) => !name.includes(".tmp-"))
@@ -954,6 +957,16 @@ describe("落盘隔离", () => {
       sharedApi.STATUS_FILE_NAME,
       sharedApi.VERSION_FILE_NAME,
     ]);
+    // 内容也要对：路径存在不代表这次投递真的写进去了（status 是防抖落盘的，初值 `{}` 会先出现）。
+    await pollUntil(() => {
+      try {
+        return readFileSync(join(storageDir, sharedApi.STATUS_FILE_NAME), "utf8").includes(
+          "browser",
+        );
+      } catch {
+        return false;
+      }
+    }, "状态里出现本次投递的频道");
     // 配置读的是本用例种下的那份（临时目录里的），落的历史也是本次 run 写的。
     expect(configApi.readConfig().historyMaxAgeDays).toBe(7);
     expect(readFileSync(historyFile, "utf8")).toContain('"kind":"error"');

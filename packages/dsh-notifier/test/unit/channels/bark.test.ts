@@ -102,6 +102,18 @@ describe("请求构造", () => {
     expect(Object.keys(bodyOf(calls[1]!)).sort()).toEqual(["body", "device_key", "title"]);
   });
 
+  // 「只有 undefined 才省略」：空串是**有值**，要照发。这条区分了「没配置」与「配置成空」，
+  // 而它此前只由实现本身承担（把判据改成 `sound !== ""` 时全套用例不红）。
+  it("空串按「有值」写进 body：省略只针对 undefined", async () => {
+    const calls = stubFetch(() => jsonResponse({ code: 200 }));
+    await sendBark(targetOf({ sound: "", group: "", url: "", icon: "" }), messageOf());
+    const body = bodyOf(calls[0]!);
+    expect(body.sound).toBe("");
+    expect(body.group).toBe("");
+    expect(body.url).toBe("");
+    expect(body.icon).toBe("");
+  });
+
   // 正文上限只在出口（定稿层只截标题），出口不截就会把超长正文整条发出去。
   it("出口自己也要截断：标题 64 / 正文 4096 码点（定稿层只截标题，正文上限只在出口）", async () => {
     const calls = stubFetch(() => jsonResponse({ code: 200 }));
@@ -136,13 +148,24 @@ describe("请求构造", () => {
   // 同一刻中止——该频道从此每次都失败，而设置页上看不出任何异常。
   it("timeoutMs=0 视同未配置，回落出口自己的 10s 硬超时（0 不是「立刻超时」）", async () => {
     const calls = stubFetch(() => jsonResponse({ code: 200 }));
-    expect(await sendBark(targetOf({ timeoutMs: 0 }), messageOf())).toEqual({
-      status: "ok",
-      stage: "delivered",
-    });
-
-    // 0ms 的中止计时器若被建起来，这一刻早已触发；硬超时是 10s，信号不该中止。
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    // 钉「回落的是哪个数」，而不是「过了一小会儿还没中止」：`AbortSignal.timeout` 的 deadline 从外面
+    // 读不出来，而真实 sleep 只能证明「还没触发」（实测：把硬超时常量错落成 100ms，25ms 的等待照样全绿；
+    // 假时钟也管不到 `AbortSignal.timeout` 的原生计时器）。这里记账请求值，任何错落的时限都会现形。
+    const requested: number[] = [];
+    const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+    AbortSignal.timeout = (ms: number): AbortSignal => {
+      requested.push(ms);
+      return realTimeout(ms);
+    };
+    try {
+      expect(await sendBark(targetOf({ timeoutMs: 0 }), messageOf())).toEqual({
+        status: "ok",
+        stage: "delivered",
+      });
+    } finally {
+      AbortSignal.timeout = realTimeout;
+    }
+    expect(requested).toEqual([10_000]);
     expect(calls[0]!.signal?.aborted).toBe(false);
   });
 });

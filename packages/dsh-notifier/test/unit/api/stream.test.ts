@@ -16,7 +16,7 @@ import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ApiDeps, OutgoingFrame } from "../../../src/server/api/deps.ts";
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
@@ -25,7 +25,7 @@ import {
   notifierFile,
   readTextFileSync,
 } from "../../../src/server/shared/interface.ts";
-import { jsonReq, makeLogger, pollUntil, tempDshHome } from "../../helpers.ts";
+import { jsonReq, makeLogger, pollUntil, settleMicrotasks, tempDshHome } from "../../helpers.ts";
 
 const home = tempDshHome();
 const { installApi, releaseApi } = await import("../../../src/server/api/interface.ts");
@@ -230,8 +230,9 @@ describe("序号：落盘并跨装配接着数", () => {
 
   // 刻度文件是磁盘上的东西：断电截断、被别的工具写过都会留下脏值。负刻度若原样采纳，新帧的序号
   // 会接在负值后面（重连客户端 `since` 全是正数，于是每一帧都被当成旧的丢掉）；非数字与空白则
-  // 必须回落 0。表里只有 `-5` 那一档能杀掉「去掉 parsed > 0 守卫」的改写，另两档是口径的另外两侧。
-  it.each([["-5"], ["abc"], ["   "], [""]])(
+  // 必须回落 0。表里只有 `-5` 那一档能杀掉「去掉 parsed > 0 守卫」的改写；`abc` 一档代表
+  // 「非数字」（`"   "` 与它走同一条 `Number.isFinite` 分支，合成一档不丢信息），空文件是另一条读路径。
+  it.each([["-5"], ["abc"], [""]])(
     "刻度文件是脏值（%j）时从 0 起算：第一帧仍是 1，负值不被采纳",
     async (text) => {
       const file = notifierFile(SEQ_FILE_NAME);
@@ -335,9 +336,20 @@ describe("装配守卫：未装配与重复装配", () => {
     expect(refused.rec.status).toBe(503);
     expect(refused.rec.text).toBe("");
 
-    streamHub.publish(frame());
-    // 刻度文件是被 publish 创建的：等一小会儿仍不存在，才说明这次发布根本没落盘。
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    // 刻度文件是被 publish 创建的。这里**不能**用真实 sleep 当否定判据——它只证明「还没写」，
+    // 慢 runner 上假绿（实测：把落盘改成 120ms 后才发生的迟写，25ms 的等待照样全绿）。
+    // 假时钟必须在 publish **之前**装上：晚装的话，publish 时排下的真实定时器不在假时钟管辖内，
+    // 推进假时钟推不动它，「迟写」这类坏法照样漏过（这正是这条判据第一版没抓住的形态）。
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      streamHub.publish(frame());
+      // 假时钟让「排进定时器的写入」确定性触发；它触发的 fs 落在真实事件循环里，故再排空几轮队列
+      // 等它落地（有界的队列排水，不是等一个时长）。
+      await vi.advanceTimersByTimeAsync(1_000);
+      for (let turn = 0; turn < 10; turn += 1) await settleMicrotasks();
+    } finally {
+      vi.useRealTimers();
+    }
     expect(readSeqFromDisk()).toBe(0);
   });
 });

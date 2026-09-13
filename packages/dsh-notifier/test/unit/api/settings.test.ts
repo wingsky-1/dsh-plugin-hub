@@ -158,6 +158,24 @@ describe("PUT /config：形状把关", () => {
 });
 
 describe("PUT /config：写面四态 → 四个状态码", () => {
+  // 第四态（写入异常 → 500 + 固定文案、底层原因只进日志）由**路由层**的异常收口承担
+  // （`api/route.test.ts` 的两条 500 用例）。端点这一半的契约是「不吞异常」——吞成 503 会让用户
+  // 看到「设置服务不可用」而真正的原因进不了日志（实测：给端点加 `.catch(() => ({ok:false,
+  // reason:"unavailable"}))` 之后，原先没有任何用例会红）。
+  it("写面抛错 → 端点不吞，异常交给路由层收口成 500", async () => {
+    const port: ConfigPort = {
+      readConfig: () => ({ ...DEFAULT_CONFIG, maxConnections: 4 }),
+      readSettingsView: () => VIEW,
+      writeConfig: async () => {
+        throw new Error("写盘炸了");
+      },
+    };
+    const { res } = makeRes();
+    await expect(
+      new SettingsEndpoints(port).write(makeReq({ body: { patch: { notifyAsk: true } } }), res),
+    ).rejects.toThrow("写盘炸了");
+  });
+
   it("invalid → 400，并把出错的键与提示带回界面（界面要能定位到那一行）", async () => {
     const { rec, json } = await put(
       { body: { patch: { quietHours: "x" } } },

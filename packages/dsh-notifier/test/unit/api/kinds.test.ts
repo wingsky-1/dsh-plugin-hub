@@ -118,6 +118,21 @@ describe("POST /kinds：存在性在本块判", () => {
 });
 
 describe("POST /kinds：写面四态 → 四个状态码（与设置端点同款映射）", () => {
+  // 第四态（写入异常 → 500）由路由层的异常收口承担（`api/route.test.ts` 的两条 500 用例）；
+  // 端点这一半的契约是「不吞异常」，吞掉会让原因进不了日志、用户只看到 503。
+  it("写面抛错 → 端点不吞，异常交给路由层收口成 500", async () => {
+    const port: KindPort = {
+      listKinds: () => [...REGISTERED],
+      confirmKind: async () => {
+        throw new Error("写盘炸了");
+      },
+    };
+    const { res } = makeRes();
+    await expect(
+      new KindEndpoints(port).confirm(makeReq({ body: { kind: "demo:x", confirmed: true } }), res),
+    ).rejects.toThrow("写盘炸了");
+  });
+
   it("invalid → 400，带出错的键与提示", async () => {
     const { rec, json } = await post(
       { body: { kind: "demo:x", confirmed: true } },

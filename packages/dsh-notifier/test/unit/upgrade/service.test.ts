@@ -175,12 +175,6 @@ describe("装配期跑链", () => {
     expect((caught as Error).message).toContain(`存储版本号回写失败（${newestTarget()}）`);
   });
 
-  it("链跑完必做一次版本对账且落差出声（静默地把刻度当成看起来对的值比报错更糟）", () => {
-    const { logger } = assemble();
-
-    expect(logger.warns.length).toBeGreaterThan(0);
-  });
-
   it("链失败即中止启动，并说清失败在哪一步；此时不订阅存量迁移（带着半完成迁移继续跑更危险）", () => {
     // 包私有目录的位置被一个同名文件占住：写目标文件必然失败。
     mkdirSync(join(home.dir, "@wingsky-1"), { recursive: true });

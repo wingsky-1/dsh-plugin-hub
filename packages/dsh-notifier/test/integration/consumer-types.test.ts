@@ -141,16 +141,12 @@ describe("运行时护栏：导出面确实可从包入口取到", () => {
     );
   });
 
-  it("头部自述与实际一致：锚条数与声明相符、编号连续且分母等于条数", () => {
+  it("头部自述与实际一致：锚条数与声明相符", () => {
     const declared = /本文件的编译期锚共 \*\*(\d+) 条\*\*/u.exec(self);
     expect(declared).not.toBeNull();
     const anchors = self.match(/^type _[A-Za-z]+ = Expect</gmu) ?? [];
+    // 编号连续性与分母一致性（原先另两条断言）是**自涉**判据：它读的是这份文件自己的注释，
+    // 产品代码坏掉也不会红。锚条数这一条才是有效的（漏写一个锚 = 少一条编译期判据）。
     expect(anchors.length).toBe(Number(declared![1]));
-
-    const numbered = [...self.matchAll(/^\/\*\* 类型 (\d+)\/(\d+)：/gmu)];
-    expect(numbered.map((match) => Number(match[1]))).toEqual(
-      numbered.map((_, index) => index + 1),
-    );
-    expect([...new Set(numbered.map((match) => match[2]))]).toEqual([String(anchors.length)]);
   });
 });

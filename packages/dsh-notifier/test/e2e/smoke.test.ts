@@ -365,7 +365,8 @@ describe("真实 HTTP 面（真实宿主 + 真实 loopback socket）", () => {
   it("7 条端点全部挂在真实宿主上：兄弟路径 404、方法不在表里 405 并带 allow", async () => {
     const { port } = await mount();
 
-    // 每条端点都发一次真实请求：404 是宿主 fallback 的答复，它出现即说明这条路由没挂上。
+    // 每条端点都发一次真实请求，并断言**成功**：只断「不是 404」分不出「路由挂了且能用」与
+    // 「路由挂了但恒错」（实测：把 GET /status 改成恒 500，旧的 not.toBe(404) 照样绿）。
     // `/events` 常驻连接（SSE），它的「已认领」由下面 SSE 组的真实连接证明，这里不盲等它结束。
     for (const path of ROUTE_PATHS.filter((path) => path !== "/api/dsh-notifier/events")) {
       const res = await send(
@@ -373,7 +374,7 @@ describe("真实 HTTP 面（真实宿主 + 真实 loopback socket）", () => {
         path,
         path.endsWith("/test") ? { method: "POST", body: "{}" } : {},
       );
-      expect(res.status, `${path} 已被本插件认领`).not.toBe(404);
+      expect(res.status, `${path} 已被本插件认领且能正常回答`).toBe(200);
     }
 
     // 测试按钮的投递是 fire-and-forget 的：不等它落定，那笔迟到的归档会落进下一个用例的现场
