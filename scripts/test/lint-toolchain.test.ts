@@ -19,7 +19,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const requireRoot = createRequire(join(ROOT, "package.json"));
@@ -177,4 +177,68 @@ test("#764 A2：超出预算时 lint 入口判红（实跑退出码）", () => {
   });
   assert.equal(r.status, 1, `问题数超出预算必须 exit 1（实际 ${r.status}）`);
   assert.match(r.stderr, /超出预算/, "报错须点明超出预算");
+});
+
+test("#764 A3：三条类型感知规则在 src 面按 error 生效（分阶段第一步）", async () => {
+  const { ESLint } = requireLint("eslint");
+  const eslint = new ESLint({
+    cwd: ROOT,
+    overrideConfigFile: join(ROOT, "tools", "lint", "eslint.config.js"),
+  });
+  const cfg = await eslint.calculateConfigForFile(
+    join(ROOT, "packages", "dsh-mcp-manager", "src", "bootstrap", "apply.ts"),
+  );
+
+  // 为什么只判配置层、不做「喂一段浮空 Promise 看它报不报」的行为判据：这三条是 type-checked
+  // 规则，需要文件真的落在某个 tsconfig project 里——lintText 传不存在的路径直接 parsing
+  // error（实测），传已存在文件的路径又会让类型信息取自磁盘上的另一份内容。配置层 + 全仓实跑
+  // （探针复测 0 命中）合起来才是完整证据。
+  for (const rule of [
+    "@typescript-eslint/no-floating-promises",
+    "@typescript-eslint/no-misused-promises",
+    "@typescript-eslint/await-thenable",
+  ]) {
+    const configured = cfg.rules?.[rule];
+    const level = Array.isArray(configured) ? configured[0] : configured;
+    assert.ok(
+      level === 2 || level === "error",
+      `${rule} 必须在 packages/*/src 面为 error，实际 ${JSON.stringify(configured)}`,
+    );
+  }
+
+  // 类型感知的前提：parserOptions 必须指向真 TS program。缺了 projectService 这三条规则不会
+  // 报错，只会静默失效——本仓此前漏掉 9 处异步正确性问题正是这个形态。
+  assert.equal(
+    cfg.languageOptions?.parserOptions?.projectService,
+    true,
+    "必须开 projectService（否则 type-checked 规则静默失效）",
+  );
+  assert.equal(
+    resolve(String(cfg.languageOptions?.parserOptions?.tsconfigRootDir)),
+    ROOT,
+    "tsconfigRootDir 必须指向仓库根（决定解析哪套 tsconfig）",
+  );
+});
+
+test("#764 A4：基线抑制机制已接线（Node API 只应用，创建/修剪走 CLI）", () => {
+  const lintSrc = readFileSync(join(ROOT, "tools", "lint", "bin", "lint.mjs"), "utf8");
+  assert.match(lintSrc, /applySuppressions:\s*true/, "lint.mjs 必须应用官方基线抑制");
+  assert.match(lintSrc, /suppressionsLocation/, "基线文件位置必须显式钉住，不靠默认值");
+
+  // 基线当前为空（三条规则的 9 处存量是直接修掉的，不是挂账），故文件允许不存在；
+  // 一旦存在就必须是官方结构：文件 → 规则 → { count }。结构错了官方实现会整份读不出，
+  // 表现为「抑制全部失效、存量一次性炸开」，所以在门禁里先钉一层。
+  const file = join(ROOT, "eslint-suppressions.json");
+  if (!existsSync(file)) return;
+  const data = JSON.parse(readFileSync(file, "utf8"));
+  assert.equal(typeof data, "object", "eslint-suppressions.json 必须是对象");
+  for (const [filePath, rules] of Object.entries(data)) {
+    assert.equal(typeof rules, "object", `${filePath} 下必须是「规则 → { count }」`);
+    for (const [rule, entry] of Object.entries(rules)) {
+      assert.ok(
+        Number.isInteger(entry?.count) && entry.count > 0,
+        `${filePath} 的 ${rule} 必须带正整数 count，实际 ${JSON.stringify(entry)}`,
+      );
+    }
+  }
 });

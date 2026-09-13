@@ -105,7 +105,9 @@ export function SettingsPage(): React.ReactElement {
   /** 统一包装：请求期间置 busy，完成后刷新面板数据。 */
   function mutate(action: () => Promise<unknown>): void {
     setBusy(true);
-    action()
+    // 显式标注不等待：本包装是 fire-and-forget 语义（失败已被链内 catch 吞掉，只做复位），
+    // 调用方拿不到也不该拿到这条链。
+    void action()
       .catch(() => {})
       .then(() => reload())
       .finally(() => setBusy(false));

@@ -51,7 +51,10 @@ export const MCP_SECTION_ORDER = 160;
 
 /** enabled 分支装配产物（disposer 集合，顶层 effect 统一收口）。 */
 interface EnabledRuntimeDisposers {
-  disposeRoutes: () => void;
+  // ctx.effect 的 disposer 是异步签名（Disposable<Promise<void>>，见 cordis fiber 类型），
+  // 路由清理正来自它。声明成 `() => void` 会让类型与事实不符，并把异步性藏到调用点看不见
+  // （#764 的三条类型感知规则正是抓这类「签名撒谎」）。
+  disposeRoutes: () => void | Promise<void>;
   disposeSection: () => void;
   disposeInjection: () => void;
   disposeMiddleware: () => void;
@@ -137,7 +140,9 @@ export async function apply(
     () => () => {
       runtime.disposeInjection();
       runtime.disposeSection();
-      runtime.disposeRoutes();
+      // 显式不等待：本清理面是同步语义（其余 disposer 同步），路由清理的异步性由类型写明，
+      // 不在卸载路径上引入等待点。
+      void runtime.disposeRoutes();
       runtime.disposeMiddleware();
       runtime.watchCleanup();
       void manager.dispose();

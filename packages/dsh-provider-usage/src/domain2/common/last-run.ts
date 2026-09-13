@@ -76,7 +76,12 @@ const lastRunChainByRoot = new Map<string, Promise<void>>();
 
 export function updateLastRun(
   root: string,
-  patch: (prev: Partial<Record<ReportPeriod, string>>) => Partial<Record<ReportPeriod, string>>,
+  // 返回类型必须容纳 Promise：patch 允许实现成 async（用于模拟读-改-写之间的交错窗），
+  // 下面 await 它的结果。只声明同步形态属「签名撒谎」——await 非 Promise 不会报错也不会
+  // 等待，一旦有人照着类型写同步实现并依赖这里真的等了，就是静默的时序 bug（#764 命中）。
+  patch: (
+    prev: Partial<Record<ReportPeriod, string>>,
+  ) => Partial<Record<ReportPeriod, string>> | Promise<Partial<Record<ReportPeriod, string>>>,
 ): Promise<void> {
   const prev = lastRunChainByRoot.get(root) ?? Promise.resolve();
   const run = async (): Promise<void> => {

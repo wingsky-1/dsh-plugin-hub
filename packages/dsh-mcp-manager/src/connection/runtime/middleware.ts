@@ -414,7 +414,8 @@ export class McpMiddleware {
         `discovery timed out (${DISCOVERY_TIMEOUT_MS}ms)`,
       );
       unit.catalog.set(serverName, { discoveredAt: Date.now(), tools: boundCatalogTools(tools) });
-      this.persistCatalog(root);
+      // 落盘失败由外层 catch 收口报错；不 await 会让失败变成未处理拒绝而不是日志
+      await this.persistCatalog(root);
     } catch (error) {
       unit.catalog.set(serverName, {
         discoveredAt: 0,

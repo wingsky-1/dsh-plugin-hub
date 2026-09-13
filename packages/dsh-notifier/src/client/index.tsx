@@ -996,9 +996,12 @@ function SettingsCard() {
   }
 
   function loadKinds(alive: { value: boolean }) {
-    fetchKinds().then(function (list: any[]) {
-      if (alive.value) setKindsList(list);
-    });
+    // 与上面的 loadStatus 同款：失败保留已加载列表，不清空（瞬时抖动不该丢已展示内容）
+    fetchKinds()
+      .then(function (list: any[]) {
+        if (alive.value) setKindsList(list);
+      })
+      .catch(function () {});
   }
 
   function loadCard(alive: { value: boolean }) {
@@ -1231,7 +1234,9 @@ function SettingsCard() {
       return;
     }
     setSaving(true);
-    putAndCommit(payload, entry).finally(function () {
+    // 显式标注不等待：putAndCommit 内部已按契约分流处理失败（409 → handleConflict、
+    // 超时 / 其它 → setSaved 提示），它的返回链不会以拒绝收场；此处只补收尾的 UI 复位。
+    void putAndCommit(payload, entry).finally(function () {
       setSaving(false);
       var nextEntry = saveGuard.end();
       if (nextEntry !== null) saveFor(nextEntry, true); // trailing 补发（同入口，天然不循环）

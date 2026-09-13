@@ -189,7 +189,9 @@ function startPruneTimer(
 /** 注册插件生命周期销毁逻辑 */
 function registerLifecycleCleanup(
   ctx: Context,
-  disposeRoutes: () => void,
+  // 路由清理来自 ctx.effect，其 disposer 是异步签名（Disposable<Promise<void>>）；
+  // 声明成 `() => void` 与事实不符，也会让异步性在调用点不可见。
+  disposeRoutes: () => void | Promise<void>,
   warmupTimer: ReturnType<typeof setInterval> | null,
   pruneTimer: ReturnType<typeof setInterval>,
   hotReloaders: HotReloadableAdapter[],
@@ -201,7 +203,8 @@ function registerLifecycleCleanup(
 ): void {
   ctx.effect(
     () => async () => {
-      disposeRoutes();
+      // 不等待：本清理面其余步骤都是同步语义，声明里已写明 route disposer 可能是异步的
+      void disposeRoutes();
       if (warmupTimer !== null) clearInterval(warmupTimer);
       clearInterval(pruneTimer);
       for (const hr of hotReloaders) hr.stop();

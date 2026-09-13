@@ -442,13 +442,15 @@ export class ConnectionSupervisor {
     this.client = undefined;
     this.transport = undefined;
     if (client !== undefined) {
-      this.enqueueSync(async () => {
+      // 清理体没有 await，故不写 async（写了会多包一层 Promise）；enqueueSync 的返回值是
+      // 排队结果，捕获它的拒绝以免 teardown 路径冒出未处理拒绝。
+      this.enqueueSync(() => {
         if (this.disposed) return;
         for (const dispose of this.toolDisposers.values()) dispose();
         this.toolDisposers = new Map();
         this.tools = [];
         this.toolMeta = new Map();
-      });
+      }).catch(() => {});
       const transport = client.transport;
       if (transport !== undefined && typeof transport.close === "function") {
         transport.close().catch(() => {});
@@ -471,12 +473,12 @@ export class ConnectionSupervisor {
     this.connectedAt = undefined;
     this.failedAttempts += 1;
     if (this.failedAttempts > policy.maxAttempts) {
-      this.enqueueSync(async () => {
+      this.enqueueSync(() => {
         for (const dispose of this.toolDisposers.values()) dispose();
         this.toolDisposers = new Map();
         this.tools = [];
         this.toolMeta = new Map();
-      });
+      }).catch(() => {});
       this.setStatus(
         "failed",
         new Error(

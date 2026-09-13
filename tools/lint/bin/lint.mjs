@@ -75,6 +75,12 @@ const eslint = new ESLint({
   cwd: REPO_ROOT,
   overrideConfigFile: join(LINT_PKG, "eslint.config.js"),
   fix,
+  // #764 落地项 A4：应用官方 Bulk Suppressions 基线（存量挂账）。
+  // 两个硬约束决定了它只能这么接：① 只有 **error** 级规则会被抑制（降为 warn 的规则挂不上账）；
+  // ② 创建/修剪只能走 ESLint CLI（--suppress-all / --prune-suppressions），Node API 只负责应用。
+  // 基线文件缺失时官方实现按空基线处理，故此处无需存在性判断。
+  applySuppressions: true,
+  suppressionsLocation: join(REPO_ROOT, "eslint-suppressions.json"),
 });
 
 const results = await eslint.lintFiles(patterns.length > 0 ? patterns : DEFAULT_PATTERNS);

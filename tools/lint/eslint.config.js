@@ -18,9 +18,12 @@
  *      两处都能改格式的代价不是多改一次，而是「lint 说对、编辑器保存后又变回去」。
  */
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import tseslint from "typescript-eslint";
 import sonarjs from "eslint-plugin-sonarjs";
 import prettierConfig from "eslint-config-prettier/flat";
+
+const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 const gauntlet = JSON.parse(
   readFileSync(new URL("../../scripts/data/gauntlet.config.json", import.meta.url), "utf8"),
@@ -87,6 +90,28 @@ export default [
     files: JS_SOURCES,
     plugins: { sonarjs },
     rules: complexityRules,
+  },
+  {
+    // #764 落地项 A3：**类型感知分阶段**的第一步。只开三条「能抓 bug 且存量已清零」的规则：
+    // no-floating-promises / no-misused-promises / await-thenable。它们都属 type-checked 集合，
+    // 非类型感知的 recommended 里没有——本仓此前从未跑过，9 处异步正确性问题正是这样漏掉的
+    // （其中一处是 await 一个非 Promise 的「签名撒谎」，已连同其余 8 处一并修掉）。
+    //
+    // 为什么面先只到 packages/*/src：类型感知要建 program，成本随文件数走（本面实测 7.6s）。
+    // test / scripts / shared 面留待后续按同一路径扩，届时如出现存量，用 A4 的官方基线抑制
+    // 承接而不是把规则降级。
+    //
+    // 为什么 projectService 能直接用：tools/lint 里是真 TypeScript 6（带 compiler API），
+    // 根 typescript 是 tsgo（无 API）——这正是 lint 工具链放在独立包里的原因。
+    files: ["packages/*/src/**/*.ts", "packages/*/src/**/*.tsx"],
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: REPO_ROOT },
+    },
+    rules: {
+      "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/no-misused-promises": "error",
+      "@typescript-eslint/await-thenable": "error",
+    },
   },
   {
     // 未重写的老客户端：any 兜底与 ts-comment 是它既有的写法，降为 warn——不阻塞 CI，但仍然
