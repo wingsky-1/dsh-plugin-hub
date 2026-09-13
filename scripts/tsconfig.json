@@ -1,6 +1,7 @@
 {
-  // 增量收紧路径：本期仅 verify-docs.ts 入 typecheck 面；其余 gate/build
-  // 脚本入面属后续独立 issue（#474 非目标，勿一次性全量纳入）。
+  // 增量收紧路径：入面分两批——verify-docs.ts（#474）与 release/**（#776 C2a 第一批；
+  // 入面顺序是先修类型错误再摘 @ts-nocheck，否则摘了也没有 checker 覆盖）；
+  // 其余 gate/build/lib/test 脚本入面属后续独立批次（#474 非目标，勿一次性全量纳入）。
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     // 显式覆写 module 语义：scripts/ 无 package.json，module 语义依赖根
@@ -11,5 +12,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["gate/verify-docs.ts"]
+  "include": ["gate/verify-docs.ts", "release/**/*.ts"]
 }

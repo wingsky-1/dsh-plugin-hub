@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -22,13 +21,16 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const packagesDir = join(ROOT, "packages");
 
+/** package.json 的最小形态（本脚本只读这三个字段）。 */
+type PkgJson = { name: string; version: string; private?: boolean };
+
 const pkgs = readdirSync(packagesDir)
   .filter((d) => d.startsWith("dsh-"))
-  .map((d) => JSON.parse(readFileSync(join(packagesDir, d, "package.json"), "utf8")))
+  .map((d) => JSON.parse(readFileSync(join(packagesDir, d, "package.json"), "utf8")) as PkgJson)
   .filter((p) => !p.private);
 
 // 依赖序：聚合包（dsh-plugins-all）依赖全部子包 → 子包在前、聚合包最后
-const isAgg = (p) => p.name.includes("dsh-plugins-all");
+const isAgg = (p: PkgJson) => p.name.includes("dsh-plugins-all");
 const ordered = [...pkgs.filter((p) => !isAgg(p)), ...pkgs.filter(isAgg)];
 
 const missing = [];
