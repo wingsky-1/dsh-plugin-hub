@@ -83,6 +83,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-notifier
 - **非安全上下文降级**：局域网 HTTP 访问时浏览器禁止系统级弹窗——自动降级为「页面内横幅 + 提示音 + 标题提醒」
 - **免打扰时段**：支持跨午夜（如 22:00 → 08:00）；可设**紧急例外**（`quietHours.allowKinds`：免打扰期间仍提醒的事件）。默认候选为高频阻塞型（审批/提问/出错），设置页支持勾选**全部 6 个内置事件**（含任务完成/子任务完成/轮次完成）并一键「跟随已启用事件」或「恢复默认」；豁免与事件开关正交——关闭的事件即使豁免也不会收到通知（事件不产生），豁免项照常保留；未启用事件在设置页以弱化（降低透明度）样式展示，仍可勾选豁免。**升级提示**：放开白名单后，旧配置中原本会被过滤掉的 kind（如手改的 `done`/`turn-end`）会在免打扰期间恢复提醒——行为变化；如不希望这样，可在设置页豁免区自行调整
 - **设置卡片诊断**：设置 → 插件 → dsh-notifier 卡片显示浏览器通知授权状态与安全上下文提示，并含最近 10 条通知记录、发送测试通知与清理记录入口
+- **宿主能力自检（0.2.4 起）**：同一张卡片的**卡体**里显示一行宿主通道结论（弹窗/发声各自能否用 + 无法判定的维度），不可用时逐条给出处置建议（装哪个包、或改用浏览器通道）；明细（探测了哪些维度、探测到哪些播放器）折叠展示。浏览器通道那一半在**本端**计算，换设备结论会不同。数据源是 `GET /diagnostics`
 
 ## 事件订阅与 scope 语义（{global:true} 取舍）
 
@@ -395,7 +396,8 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 | `/api/dsh-notifier/history` | GET / **DELETE** | GET 最近通知记录（最多 200 条，`historyMaxAgeDays` 过滤 / 被免打扰拦截的标记 `suppressed`；每条含逐出口投递明细 `channels[]`，其 `reason` 为结构化理由）；**DELETE 清空** |
 | `/api/dsh-notifier/status` | GET | 频道投递状态（per-channel 最近投递终态 + 连续失败计数；失败理由为结构化对象 `{code, params?, detail?}`，`detail` 按原文截断 300 字符，不做凭据替换） |
 | `/api/dsh-notifier/kinds` | GET / POST | GET 动态 kind 清单（含确认态）；POST `{kind, confirmed}` 写确认（持久化到 `allowKinds`），200 响应带 `revision`（供客户端同步乐观并发版本） |
-| `/api/dsh-notifier/health` | GET | 健康检查 |
+| `/api/dsh-notifier/health` | GET | 健康检查（`{ok, plugin, platform, sseEvicts, capabilities}`；`capabilities.host` 是**摘要**：结论与两个维度的状态，常量大小） |
+| `/api/dsh-notifier/diagnostics` | GET | 完整能力自检面（`capabilities.host` 含逐维度 `checked`、播放器清单、音色就位与 `remediation` 处置建议）。与 `/health` **共用同一次探测**，不各探各的 |
 
 错误映射（PUT /config）：非法配置键 → 400（`{ok:false, error:{error:"配置校验失败: <键>", hint}}`）；版本冲突（`expectedRevision` 过期）→ 409（`code:"SETTINGS_CONFLICT"`）；settings 服务缺失 → 503（`code:"settings-unavailable"`）；写入异常 → 500（底层原因只进服务端日志）。
 
@@ -420,9 +422,13 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
   会被 `error` 事件接住，**绝不冒泡成 unhandled error 把宿主进程打挂**（见 issue #1）
 - **两个通道到达的机器不同（别混淆）**：
   - **浏览器通知**推到**你正在用的浏览器客户端**（Mac/手机都算），由浏览器 Notification API 弹出原生通知；需要授权、且默认页面隐藏时才弹（设置卡片可开「页面可见也弹」）。无论 dsh web 跑在哪台机器，只要浏览器通知允许，你都能在自己的 Mac 上收到。
-  - **系统通知（宿主 toast）**弹在 **dsh web 运行的宿主机器**桌面：若 dsh web 跑在 Linux 服务器（headless，无桌面会话）或别的机器上，toast 会出现在**那台服务器**而不是你的 Mac——设置卡片/health 会体现该通道是否可用。想让系统 toast 也出现在你的 Mac 上，需把 dsh web 直接跑在你的 Mac 上（此时走 macOS 的 `osascript`）；macOS 无 `notify-send`，系统通知已用系统自带的 `osascript` 实现（无需安装）
+  - **系统通知（宿主 toast）**弹在 **dsh web 运行的宿主机器**桌面：若 dsh web 跑在 Linux 服务器（headless，无桌面会话）或别的机器上，toast 会出现在**那台服务器**而不是你的 Mac——**系统通道可用性见 `/diagnostics`**（宿主端探测，带处置建议）；**浏览器通道可用性见设置卡片**（本端计算，换设备会不同）。想让系统 toast 也出现在你的 Mac 上，需把 dsh web 直接跑在你的 Mac 上（此时走 macOS 的 `osascript`）；macOS 无 `notify-send`，系统通知已用系统自带的 `osascript` 实现（无需安装）
 - **iOS 差异**：Safari 普通标签页无 Web Notifications API（「添加到主屏幕」的 PWA
   才有）；iOS 上可用通道为「页面可见时横幅 + 提示音」及 HTTPS+A2HS 后的系统通知
+- **能力自检面（0.2.4 起）暴露宿主软件栈的局部指纹，且经 `dsh-lan-proxy` 转发后对局域网可见**：`/health` 与 `/diagnostics` 的 `capabilities.host.sound.players` 会列出探测到的播放器可执行文件名（`pw-play` / `paplay` / `afplay`），`popup`/`sound` 的 `checked` 会暴露装了 `notify-send` 与否。这是**有意的设计取舍**——用户要能看见「宿主放不出声」才谈得上处置——但请知悉它与 lan-proxy 的既有姿态叠加后的含义（该插件 README 已自述「经本插件转发的请求按设计视为受信」）。**收敛手段**：只出可执行文件名、音色只出布尔，**绝不出绝对路径**，`remediation` 的 `params` 只由内置数据表产生、不经输入透传（响应体里不会出现 `/etc/os-release` 或任何命令原文）
+- **探测无副作用**：能力自检只向 `org.freedesktop.DBus` 发 `NameHasOwner` 与 `ListActivatableNames` 两个只读查询，**不触发任何服务激活**（不用 `busctl status`/`list`，不调 `StartServiceByName`）；`darwin`/`win32` 上连这个子进程都不起
+- **D-Bus 通知的残余信任面**：Linux 上的通知正文会交给 `org.freedesktop.Notifications` 的**当前 owner**。同一 UID 的进程先占住这个名字即可收到通知内容（跨 UID 抢占不成立：session bus 是每用户一个 socket）。对同机同用户下的进程隔离有要求的部署，请自行评估系统通道
+- **能力面契约演进**：`capabilities` 只增不删键；客户端**忽略不认识的组与不认识的 `verdict` 取值**（渲染为「未知」而不是报错）；旧服务端不带 `capabilities` 时设置页优雅降级。故升级服务端不需要同步升级客户端
 - 浏览器通知需要**安全上下文**（HTTPS 或 localhost）；局域网 HTTP 访问自动走降级通道（横幅/提示音/标题提醒）
 - 浏览器通知权限为手势内请求（设置 → 插件 → dsh-notifier 卡片的「请求通知权限」按钮）
 - Windows 系统通知通过 PowerShell WinRT 脚本实现，命令以参数数组传递、标题/正文打包为 base64(UTF-8 JSON) 经单一 payload 参数传入（无 shell 拼接面，且规避 PS 5.1 命令行参数解析歧义，见 issue #238）；脚本启动时幂等注册 AppUserModelId `DSH.dsh-notifier`（HKCU，无需管理员权限）——未注册的 AUMID 在 Win10/11 上 toast 会被系统静默丢弃。AUMID 采用 `Company.Product` 形态，避免在公共命名空间（`HKCU\SOFTWARE\Classes\AppUserModelId`）与其他同名软件冲突互覆；历史版本注册的旧键 `DSH` 残留无害（仅一个空注册表条目，不影响新 toast），如需清理可手动执行 `Remove-Item -Path "HKCU:\SOFTWARE\Classes\AppUserModelId\DSH"`
