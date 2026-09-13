@@ -91,43 +91,87 @@ jobs:
           filters: |
             global:
               - 'shared/**'
-              - 'scripts/**'
               - 'agents/**'
               - '.github/**'
               # docs/** 与 AGENTS.md 刻意不在 global 面（#220）：纯文档 PR 无需
               # 变异切片与 smoke/typecheck（release-notes 校验仅存在于 tag 触发的
-              # release.yml）。注意 #693 起 verify-docs（属 scripts/**）**会**消费
-              # AGENTS.md / .dsh/skills / docs 的相对链接与 pnpm 命令引用——但其
-              # 本体在 scripts/** 面内，故「改文档不触发、改脚本才触发」的语义成立，
-              # 无需把这两个路径加回 global。改动本约定须同步 workflow-assert 断言。
+              # release.yml）。注意 #693 起 verify-docs（属 scripts/gate/**）**会**消费
+              # AGENTS.md / .dsh/skills / docs 的相对链接与 pnpm 命令引用——但消费方
+              # 本体仍在 global 面内（#742 阶段 2.1 把整树 'scripts/**' 收窄为白名单时
+              # 已确认 scripts/gate/** 在白名单里），故「改文档不触发、改脚本才触发」
+              # 的语义仍然成立，无需把这两个路径加回 global。
+              # 改动本约定须同步 workflow-assert 断言。
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'tsconfig.base.json'
-              # 根级测试与覆盖率配置：#733 计划项 3.4 起**阈值/分母的唯一事实源是
-              # scripts/data/coverage.config.json**（vitest.config.ts 只 import 它），
-              # 测试分层 glob 在 scripts/data/mutation-topology.json——两者都在 `scripts/**`
-              # 面内，故不重复列出（global 面的 glob 清单有等值断言守着，塞冗余项只会稀释它）。
-              # vitest.config.ts 必须显式列出：它在根级、不属任何包面。
+              # 根级测试与覆盖率配置：阈值/分母的唯一事实源是
+              # scripts/data/coverage.config.json（vitest.config.ts 只 import 它），
+              # 测试分层 glob 在 scripts/data/mutation-topology.json——两者都在下方
+              # scripts/data 白名单里；vitest.config.ts 必须显式列出：它在根级、不属任何包面。
               - 'vitest.config.ts'
+              # ── #742 阶段 2.1：整树 'scripts/**' 收窄为显式白名单 ──
+              # 为什么不再整树入面：scripts/** 混装了「门禁/构建/CI 切片本体」（改一行对
+              # 所有包生效）与「单一消费者资产」（改一行只影响一个包），整树入面把后者也
+              # 放大成 7 包全量构建 + 全量变异矩阵——实测近 14 个已合并 PR 有 14 个命中
+              # global 面，等于默认路径全程走最坏形态。
+              # 为什么可以放心逐条列举：归属完整性由 scripts/data/ci-face-registry.json
+              # 加 scripts/test/ci-face-coverage.test.ts 判红守着——scripts/ 下新增任何
+              # 一级子树/根级文件/data 文件而未登记即红，不会静默漏跑。
+              - 'scripts/build/**'
+              - 'scripts/ci/**'
+              - 'scripts/gate/**'
+              - 'scripts/lib/**'
+              # 全部 6 个带测试的包共用这一份 runner（其余 scripts/test/** 只服务
+              # 常驻的 test:scripts 静态闸，见注册表的豁免条目）
+              - 'scripts/test/run-vitest.mjs'
+              # 8 份全仓口径数据：改任一份都改变所有包的构建/测试/变异判据
+              - 'scripts/data/coverage.config.json'
+              - 'scripts/data/dir-imports-baseline.json'
+              - 'scripts/data/gate-exemptions.json'
+              - 'scripts/data/gate-scope-registry.json'
+              - 'scripts/data/gauntlet.config.json'
+              - 'scripts/data/mutation-segment-ledger.json'
+              - 'scripts/data/mutation-topology.json'
+              - 'scripts/data/plugins-manifest.json'
             dsh-notifier:
               - 'packages/dsh-notifier/**'
               # #322：stryker 段配置变更须命中本包面（段配置是 mutation 单一事实源，
-              # 不映射则配置类 PR 的 mutation 矩阵全 skip、无法自证）。模式遵循
-              # 包级 <pkg>.json 与段级 <pkg>-<n>.json 两种形态的通配覆盖
+              # 不映射则配置类 PR 的 mutation 矩阵全 skip、无法自证）。#742 阶段 2.4
+              # 起统一为 `<pkg>*.json` 单一形态：包级 <pkg>.json 与段级 <pkg>-<段名>.json
+              # 都被它覆盖，再没有「新增段配置漏映射」的第二种写法。
               - 'stryker.conf.d/dsh-notifier*.json'
+              # #742 阶段 2.2：段配置之外还有两类包级资产——包级 stryker 测试面配置
+              # （vitest.stryker.d/，此前完全不在任何 filters 内）与包级数据资产
+              # （scripts/data/dsh-<pkg>-*.json）
+              - 'vitest.stryker.d/dsh-notifier.config.ts'
+              - 'scripts/data/dsh-notifier-*.json'
+              # root test/smoke-lib.ts 被 5 个包的测试 import（名单与其一致性由
+              # ci-face-coverage 断言按真实 import 图核对，防第 6 个包静默漏面）
+              - 'test/smoke-lib.ts'
             dsh-web-file-preview:
               - 'packages/dsh-web-file-preview/**'
               - 'stryker.conf.d/dsh-web-file-preview*.json'
+              - 'vitest.stryker.d/dsh-web-file-preview.config.ts'
+              - 'test/smoke-lib.ts'
             dsh-mcp-manager:
               - 'packages/dsh-mcp-manager/**'
-              - 'stryker.conf.d/dsh-mcp-manager-*.json'
+              - 'stryker.conf.d/dsh-mcp-manager*.json'
+              - 'vitest.stryker.d/dsh-mcp-manager.config.ts'
+              - 'test/smoke-lib.ts'
             dsh-provider-usage:
               - 'packages/dsh-provider-usage/**'
-              - 'stryker.conf.d/dsh-provider-usage-*.json'
+              - 'stryker.conf.d/dsh-provider-usage*.json'
+              - 'vitest.stryker.d/dsh-provider-usage.config.ts'
+              - 'test/smoke-lib.ts'
             dsh-lan-proxy:
               - 'packages/dsh-lan-proxy/**'
-              - 'stryker.conf.d/dsh-lan-proxy-*.json'
+              - 'stryker.conf.d/dsh-lan-proxy*.json'
+              - 'vitest.stryker.d/dsh-lan-proxy.config.ts'
+              # #742 阶段 2.2 命名归位：原名 lan-proxy-ui-exempt.json 既不带 dsh- 前缀
+              # 也不带包名，只能靠人工记忆映射，改名后与本面其余资产同形
+              - 'scripts/data/dsh-lan-proxy-*.json'
+              - 'test/smoke-lib.ts'
             dsh-verify-isolated:
               - 'packages/dsh-verify-isolated/**'
             dsh-plugins-all:

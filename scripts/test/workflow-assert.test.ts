@@ -224,7 +224,8 @@ test("ci.yml: changes 步骤委托给 ci-matrix.mjs 且 paths-filter 完整覆�
 test("#733 E1: paths-filter 的 glob 内容集合相等（防「留键删行」静默失检）", () => {
   // 现状缺口：#322 只对「有 stryker 配置的包」断言 packages/<pkg>/** 行存在，而
   // dsh-verify-isolated 与 dsh-plugins-all 没有段配置 → 删掉它们那一行（只留下键）无人拦，
-  // 该包从此不再被任何切片命中；global 面的 9 条 glob 此前同样没有任何断言。
+  // 该包从此不再被任何切片命中；global 面此前同样没有任何断言（#742 阶段 2.1 起它是 21 条
+  // 白名单，逐条都有意义）。
   const filtersBlock = CI.slice(
     CI.indexOf("filters: |"),
     CI.indexOf("- name: Compute hit packages"),
@@ -262,6 +263,8 @@ test("#733 E1: paths-filter 的 glob 内容集合相等（防「留键删行」�
     );
   }
   // global 面没有派生源（它的条目与包内结构无关），故显式基线化：增删都必须同步此处。
+  // #742 阶段 2.1 起它就是「白名单」而非整树：scripts/** 被逐条列举，脚本侧的新增归属
+  // 由 scripts/data/ci-face-registry.json + ci-face-coverage.test.ts 判红守着。
   assert.deepEqual(
     entries.get("global").slice().sort(),
     [
@@ -270,7 +273,19 @@ test("#733 E1: paths-filter 的 glob 内容集合相等（防「留键删行」�
       "package.json",
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",
-      "scripts/**",
+      "scripts/build/**",
+      "scripts/ci/**",
+      "scripts/data/coverage.config.json",
+      "scripts/data/dir-imports-baseline.json",
+      "scripts/data/gate-exemptions.json",
+      "scripts/data/gate-scope-registry.json",
+      "scripts/data/gauntlet.config.json",
+      "scripts/data/mutation-segment-ledger.json",
+      "scripts/data/mutation-topology.json",
+      "scripts/data/plugins-manifest.json",
+      "scripts/gate/**",
+      "scripts/lib/**",
+      "scripts/test/run-vitest.mjs",
       "shared/**",
       "tsconfig.base.json",
       "vitest.config.ts",
@@ -317,8 +332,9 @@ test("observe.yml: 夜间调度 + 硬门禁执行点 + issues 写权限", () => 
 test("#220: docs 与 AGENTS.md 不在 ci.yml global 过滤面——文档 PR 不触发变异切片", () => {
   // #693 起 verify-docs（scripts/gate/）**确实消费** AGENTS.md、.dsh/skills 与 docs/
   // 的链接与命令引用——旧理由「gate 脚本均不消费其内容」已不成立。排除面仍然安全
-  // 的真正依据是：消费方本体在 scripts/**/agents/** 面内，故「改文档不触发全量、
-  // 改脚本才触发」的语义成立。下面第三条断言把该互斥关系锁死，防后人只改一半。
+  // 的真正依据是：消费方本体在 scripts/gate/** 面内（#742 阶段 2.1 把整树 scripts/**
+  // 收窄成白名单时保留了它），故「改文档不触发全量、改脚本才触发」的语义成立。
+  // 下面第三条断言把该互斥关系锁死，防后人只改一半。
   const filterBlock = CI.slice(CI.indexOf("filters: |"), CI.indexOf("dsh-notifier:"));
   assert.ok(
     !/^.*-\s'docs\/\*\*'/m.test(filterBlock),
@@ -333,9 +349,9 @@ test("#220: docs 与 AGENTS.md 不在 ci.yml global 过滤面——文档 PR 不
     "过滤面旁必须保留理由注释（防后人「好心」加回）",
   );
   assert.ok(
-    /^.*-\s'scripts\/\*\*'/m.test(filterBlock),
-    "scripts/** 必须在 global 过滤组——消费 AGENTS.md/docs 的门禁脚本（如 verify-docs）" +
-      "改了就触发全量，这是排除 docs/AGENTS.md 成立的前提（#693）",
+    /^.*-\s'scripts\/gate\/\*\*'/m.test(filterBlock),
+    "scripts/gate/** 必须在 global 过滤组——消费 AGENTS.md/docs 的门禁脚本（verify-docs 等）" +
+      "改了就触发全量，这是排除 docs/AGENTS.md 成立的前提（#693；#742 阶段 2.1 收窄白名单时保留）",
   );
 });
 

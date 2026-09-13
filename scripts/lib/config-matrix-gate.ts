@@ -16,7 +16,7 @@
  *   L1 lan-proxy：Config / FILE_CONFIG_VALIDATORS / SETTING_FIELD_HINTS 三表
  *      键集全等（双向，现 16）
  *   L2 lan-proxy：client DEFAULTS ⊆ schema；schema − DEFAULTS 差集 == UI 豁免表
- *      （scripts/data/lan-proxy-ui-exempt.json，门禁不再内嵌条目）；豁免带原因
+ *      （scripts/data/dsh-lan-proxy-ui-exempt.json，门禁不再内嵌条目）；豁免带原因
  *      「文件:行」+ 单包 ≤8（条目数是策略，留代码）；豁免残留（键已 UI 化）亦红
  *   N1 notifier：configSurfaces 声明的 defaults 导出必须是非空对象（声明驱动，取代旧
  *      硬编码路径 src/config/{config,validators,normalize}.ts——#733 配置域搬到
@@ -41,9 +41,9 @@ import {
 import { loadManifest } from "./plugins-manifest-lib.ts";
 
 // lan-proxy 客户端 UI 豁免表（#733 计划项 3.2.2 数据化）：条目（哪些键、为什么）是**事实**，
-// 在 scripts/data/lan-proxy-ui-exempt.json；条目数上限与「超限即红」是**策略**，留在代码里
+// 在 scripts/data/dsh-lan-proxy-ui-exempt.json；条目数上限与「超限即红」是**策略**，留在代码里
 // ——把上限放进被约束的数据文件等于让被约束方自己改约束。
-const UI_EXEMPT_REL = "scripts/data/lan-proxy-ui-exempt.json";
+const UI_EXEMPT_REL = "scripts/data/dsh-lan-proxy-ui-exempt.json";
 const UI_EXEMPT_MAX = 8;
 
 /**

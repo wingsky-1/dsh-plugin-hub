@@ -14,6 +14,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -75,6 +76,34 @@ test("parseFilterBlock：块缺失/畸形一律返回 null（调用方 fail-clos
   );
 });
 
+test("#742 2.1: filters 只用两套匹配器语义一致的 glob 形态（否定/扩展语法即判红）", () => {
+  // 本地靠解析同一份 filters 推导切片，匹配用 node:path 的 matchesGlob；CI 侧 dorny/paths-filter
+  // 用 picomatch（dot:true）。两者只在两处分歧：`!` 否定前缀与扩展语法（{a,b} / ? / [abc]），
+  // 以及路径中的点号段。分歧方向是「本地少跑」= 本地绿而 CI 红，正是本地快线存在的意义所在，
+  // 所以不许出现——收窄白名单（#742 阶段 2.1）后 glob 数量从 9 条涨到 45 条，这个守卫必须显式。
+  const filters = parseFilterBlock(CI_YML);
+  const exotic = [];
+  for (const [face, globs] of Object.entries(filters)) {
+    for (const g of globs) {
+      if (/^!/.test(g) || /[{}?[\]]/.test(g)) exotic.push(`${face}: ${g}`);
+    }
+  }
+  assert.deepEqual(
+    exotic,
+    [],
+    "filters 出现否定前缀或扩展 glob 语法——两套匹配器语义分歧，本地切片会静默少跑",
+  );
+  // 点号段（如 packages/x/.y）：picomatch({dot:true}) 命中而 matchesGlob 不命中，同一类分歧
+  const dotted = execFileSync("git", ["ls-files", "-z"], { cwd: ROOT, encoding: "utf8" })
+    .split("\0")
+    .filter((f) => f.includes("/."));
+  assert.deepEqual(
+    dotted,
+    [],
+    "tracked 文件里出现点号开头的中段路径——两套 glob 引擎对它的判定不同，需先显式裁决再提交",
+  );
+});
+
 test("matchFilterBlock：包内改动命中该包；全局面命中 global；纯文档两者都不命中", () => {
   const filters = parseFilterBlock(CI_YML);
   assert.deepEqual(matchFilterBlock(filters, ["packages/dsh-notifier/src/text/sanitize.ts"]), {
@@ -115,9 +144,23 @@ test("planChangedScope：全局面命中回退全量；单包改动只命中该�
   assert.deepEqual(
     global.hitPackages,
     allPackages,
-    "改 scripts/** 必须回退全量（本地快线覆盖不到静态闸）",
+    "改 scripts/gate/** 必须回退全量（本地快线覆盖不到门禁脚本本体）",
   );
   assert.equal(global.globalHit, true);
+
+  // #742 阶段 2.1：整树 scripts/** 收窄为白名单后，白名单外的 scripts 条目不再升级为全量
+  // （它们的消费方是每个 PR 都常驻的静态闸，见 scripts/data/ci-face-registry.json 的豁免条目）
+  const exempt = planChangedScope({
+    root: ROOT,
+    files: ["scripts/maintenance/scan-actions-concurrency.mjs"],
+    allPackages,
+  });
+  assert.deepEqual(
+    exempt.hitPackages,
+    [],
+    "白名单外的 scripts 条目（如 scripts/maintenance/**）不得再回退全量——收窄的意义就在这里",
+  );
+  assert.equal(exempt.globalHit, false);
 
   // 解析失败：临时根里放一份没有 filters 块的 workflow
   const tmpRoot = mkdtempSync(join(tmpdir(), "local-scope-"));

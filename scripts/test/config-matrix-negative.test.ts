@@ -61,8 +61,8 @@ function fakeRepo() {
     );
     // lan-proxy UI 豁免表（#733 3.2.2 起门禁读数据面而非内嵌常量）。
     copyLf(
-      join(ROOT, "scripts/data/lan-proxy-ui-exempt.json"),
-      join(root, "scripts/data/lan-proxy-ui-exempt.json"),
+      join(ROOT, "scripts/data/dsh-lan-proxy-ui-exempt.json"),
+      join(root, "scripts/data/dsh-lan-proxy-ui-exempt.json"),
     );
   } catch (e) {
     rmSync(root, { recursive: true, force: true });
@@ -341,7 +341,7 @@ function editData(root, rel, fn) {
 test("UI 豁免表: 文件缺失 → 红（fail-closed，不得退化成「没有豁免可用」）", () => {
   const root = fakeRepo();
   try {
-    rmSync(join(root, "scripts/data/lan-proxy-ui-exempt.json"));
+    rmSync(join(root, "scripts/data/dsh-lan-proxy-ui-exempt.json"));
     const r = runConfigMatrix(root);
     assert.equal(r.pass, false, "豁免表缺失应红");
     assert.ok(
@@ -357,7 +357,7 @@ test("UI 豁免表: 条目超上限（>8）→ 红（上限是策略，数据面
   assertRed(
     "豁免表塞进 9 条",
     (root) => {
-      editData(root, "lan-proxy-ui-exempt.json", (s) => {
+      editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
         const json = JSON.parse(s);
         for (let i = 0; i < 5; i++) {
           json.exemptKeys.push({
@@ -376,7 +376,7 @@ test("UI 豁免表: 条目缺 reason → 红并点名键（结构自检不得静
   assertRed(
     "豁免表删掉一条 reason",
     (root) => {
-      editData(root, "lan-proxy-ui-exempt.json", (s) => {
+      editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
         const json = JSON.parse(s);
         delete json.exemptKeys[0].reason;
         return `${JSON.stringify(json, null, 2)}\n`;
@@ -390,7 +390,7 @@ test("UI 豁免表: 重复键 → 红（重复即两处事实源）", () => {
   assertRed(
     "豁免表复制一条 host",
     (root) => {
-      editData(root, "lan-proxy-ui-exempt.json", (s) => {
+      editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
         const json = JSON.parse(s);
         json.exemptKeys.push({ ...json.exemptKeys[0] });
         return `${JSON.stringify(json, null, 2)}\n`;

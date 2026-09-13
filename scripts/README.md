@@ -106,7 +106,8 @@
 - `data/dir-imports-baseline.json` — 目录导入门禁的单调基线（#690 / #733 A）：结构型计数由 `--write-baseline` 登记，`quality` 段存质量型**证据集合**（边 `from|to|kind`、环签名、未覆盖源文件）。
 - `data/gate-exemptions.json` — 路径受限门禁的豁免台账（#733 计划项 3.1.2 / 3.2.2）：文件级条目 + 可选 `reviewBy`（**有** = 临时、自动进到期台账；**无** = 长期设计事实）；机制实现见 `lib/exemption-gate.ts`。
 - `data/gate-scope-registry.json` — 路径受限门禁的扫描范围登记（#733 计划项 3.2.1）：`scopeFrom` 三值（registry / cli / tree）+ `packages`；**未登记即红**（运行时与自测两处执行）。
-- `data/lan-proxy-ui-exempt.json` — lan-proxy 客户端 UI 豁免表（#733 计划项 3.2.2）：哪些配置键有值但 GUI 不渲染，逐键给原因；条目数上限是**策略**，留在门禁代码里。
+- `data/dsh-lan-proxy-ui-exempt.json` — lan-proxy 客户端 UI 豁免表（#733 计划项 3.2.2）：哪些配置键有值但 GUI 不渲染，逐键给原因；条目数上限是**策略**，留在门禁代码里。
+- `data/ci-face-registry.json` — `packages/` 之外每个 tracked 文件的 CI 归属登记（#742 阶段 2.3）：`faces`（`global` / 包名 / 空数组=显式豁免）+ `why`；`test/ci-face-coverage.test.ts` 用真实 `git ls-files` 与 ci.yml 的 filters 双向核对（未登记、悬空条目、面未接上、死 glob 四类都判红）。
 
 - `data/coverage.config.json` — **覆盖率面单一事实源**（#733 计划项 3.4）：`include` / `exclude`（结构化条目，带 kind 与 reason）/ `thresholds`；`vitest.config.ts` 只 import 它。
 
