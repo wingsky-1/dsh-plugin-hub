@@ -948,7 +948,8 @@ it("#362 客户端：工具级禁用 checkbox + scope 分组 + project 全局提
   ).toBeTruthy();
   // #401 勾选 = 禁用：勾选态自绘为红色 ×（非原生蓝色 ✓），工具名同步标红。
   expect(
-    clientSrc.includes("appearance:none"),
+    // CSS 形态归 Prettier（style.css 在格式化面内），声明两侧的空白不作判据
+    /appearance\s*:\s*none/.test(clientSrc),
     "工具 checkbox 自绘（appearance:none）",
   ).toBeTruthy();
   expect(clientSrc.includes("input:checked::after"), "勾选态用 ::after 绘制 ×").toBeTruthy();
@@ -1020,8 +1021,19 @@ it("C2 SSE 轮询探测恢复：eventsRetired 后周期性探测重连（非永�
   ).toBeTruthy();
   expect(clientSrc, "轮询计数周期性触发探测（pollTicks % N）").toMatch(/pollTicks\s*%/);
 });
+/**
+ * style.css 的排版归 Prettier（该文件在格式化面内），而下面多处判据是按「无空格」的紧凑
+ * 形态写的。这里把声明两侧的空白归一化，让判据只认声明内容、不认排版形态。
+ */
+function styleCssCompact() {
+  return readFileSync(new URL("../../src/client/style.css", import.meta.url), "utf8").replace(
+    /\s*([{}:;,])\s*/g,
+    "$1",
+  );
+}
+
 it("C3 超长名溢出防护：服务器名/工具名 CSS overflow-wrap", () => {
-  const css = readFileSync(new URL("../../src/client/style.css", import.meta.url), "utf8");
+  const css = styleCssCompact();
   expect(css, "管理面板服务器名 overflow-wrap").toMatch(
     /\.dm-server \.dm-name\{[^}]*overflow-wrap:anywhere/,
   );
@@ -1157,7 +1169,7 @@ it("回前台强制重建 SSE + 受控重建连接（visibilitychange → rebind
 });
 
 it("设置卡片样式对齐官方风格（#219：12px 圆角 / bg-layer-3 底 / border-l2 / 15px 名称字 / 13px 描述字 / 14 16 padding / gap 4）", () => {
-  const css = readFileSync(new URL("../../src/client/style.css", import.meta.url), "utf8");
+  const css = styleCssCompact();
   expect(css, "卡片圆角对齐官方 12px").toMatch(/border-radius:12px/);
   expect(css, "卡片底色对齐官方 bg-layer-3").toMatch(
     /background:var\(--dsw-alias-bg-layer-3,#fbfbfc\)/,

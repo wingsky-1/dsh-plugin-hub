@@ -4753,10 +4753,12 @@ describe("#633 分片 b2 D2：客户端源码契约断言", () => {
 
   it("图例 title 与可见文本同源净化（不再直用原始键）", () => {
     expect(
-      clientContractObs.trendSource.includes(
-        'dirNeedsScopeNote(id) ? t("trendDirUnidentifiedNote") : dirDisplayLabel(id)',
-      ),
-    ).toBeTruthy();
+      // 换行归 Prettier（源码在格式化面内），三元表达式可被打断成多行——
+      // 判据只认「哪两个出口同源」，不绑单行形态
+      clientContractObs.trendSource,
+    ).toMatch(
+      /dirNeedsScopeNote\(id\)\s*\?\s*t\("trendDirUnidentifiedNote"\)\s*:\s*dirDisplayLabel\(id\)/,
+    );
   });
 
   it("locales 中英对称新增目录面 Top 标签", () => {
