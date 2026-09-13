@@ -94,6 +94,10 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
      `verify-coverage-scope`、`docs:check`、`lint`、`format:check`
      （`format:check` 是形态的唯一执行点：面由 `.prettierignore` 显式圈定，只格式化代码面，
      文档 / `.github/` / 生成器写入的数据与派生物被排除并各带理由；
+     **纯格式化提交必须登记到仓库根的 `.git-blame-ignore-revs`**：否则一次全仓重排会把数百个
+     文件的 blame 全部算到格式化提交上，真实作者与改动动机一起被淹没。GitHub 的 blame 视图
+     原生读该文件，本地需 `git config blame.ignoreRevsFile .git-blame-ignore-revs` 开一次；
+     混入语义改动的提交不得登记（会被整条跳过）；
      `test:scripts` 的编译面前置包清单见
      `scripts/test/script-test-prereqs.mjs`，CI 与本地门禁同源读取；
      `verify-scripts-index` 的判据见 `scripts/README.md` 顶部说明——**索引边界是「仓库会调用

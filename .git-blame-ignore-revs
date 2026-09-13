@@ -1,0 +1,19 @@
+# 全仓格式化提交登记（#762 第 4 条 / #707 同批）。
+#
+# 作用：`git blame` 默认把大规模重排算作「最后修改者」，一次格式化就能淹没数百个文件的真实
+# 作者与改动动机。本文件列出**纯格式化**提交，让 blame 跳过它们、回溯到上一次语义改动：
+#   - GitHub 的 blame 视图原生读取本文件（固定文件名、必须在仓库根目录），无需额外配置；
+#   - 本地要显式开一次：`git config blame.ignoreRevsFile .git-blame-ignore-revs`
+#     （或单次 `git blame --ignore-revs-file .git-blame-ignore-revs <file>`）。
+#
+# 只登记纯格式化提交：混入语义改动的提交**不能**进来——它会被整条跳过，真实改动一起消失。
+# 与 .gitignore 的语义相反：本文件必须入库。
+#
+# 按时间倒序登记；新增全仓格式化提交时在下方追加，并同步 docs/DEVELOPMENT.md 的格式面小节。
+
+# style: 全仓代码面按 Prettier 一次性格式化（285 文件，printWidth 100 落地）
+d820fc003e4a55145833ac8f4e32e3eea8e63581
+
+# style(dsh-notifier): #733 按新格式规则格式化重写涉及的文件（30 文件；这批文件在随后那次
+# 全仓格式化时已是目标形态，故其 blame 归属落在这里，不能只登记后者）
+40148fa19cc1a0424253dd6e708fb98141488870
