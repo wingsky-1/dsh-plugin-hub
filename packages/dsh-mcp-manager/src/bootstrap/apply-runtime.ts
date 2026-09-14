@@ -28,6 +28,8 @@ import { registerMiddlewareTools, registerDirectMcpGuard } from "../inject/inter
 import type { MiddlewareMode } from "../types/interface.ts";
 import { makeRoutes, makeEventsRoute, makeHealthRoute } from "../api/interface.ts";
 import { sseData } from "../../../../shared/host-utils.js";
+import { SSE_FRAMES } from "../shared/interface.ts";
+import type { SseFramePayload } from "../shared/interface.ts";
 
 /** apply 运行期装配产物的 disposer 集合（顶层 effect 统一收口）。 */
 export interface ApplyDisposers {
@@ -136,7 +138,7 @@ export function setupRoutesAndBroadcast(ctx: Context, manager: McpManager): () =
     ctx.webServer.register(route),
   );
   const unsubscribeStatus = manager.onStatus(() => {
-    manager.sseHub?.broadcast(sseData({ type: "summary" }));
+    manager.sseHub?.broadcast(sseData({ type: SSE_FRAMES.summary } satisfies SseFramePayload));
   });
   return () => {
     unsubscribeStatus();

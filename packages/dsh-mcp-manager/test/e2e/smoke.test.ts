@@ -1145,7 +1145,11 @@ it("客户端 watchdog：60s 失活重建 + 建连前先关旧（0.1.8 同款防
   ).toBeTruthy();
   expect(clientSrc, "收到数据帧即喂狗").toMatch(/lastActivity\s*=\s*Date\.now\(\)/);
   // 心跳 ping 帧喂狗后早退，不得落入 else 触发 scheduleRefresh（否则 SSE 退化为隐性 30s 轮询）。
-  expect(clientSrc, "ping 帧仅喂狗即早退").toMatch(/===\s*"ping"\)\s*return/);
+  // #767 B1.5a：帧名的物理定义在 src/shared/frames.ts，客户端产物须引用该常量而非自带字面量
+  // （帧名取值与两端一致由 test/e2e/cross-end-lock.test.ts 的冻结表判据盯）。
+  expect(clientSrc, "ping 帧仅喂狗即早退（帧名取自 shared 单点）").toMatch(
+    /===\s*SSE_FRAMES\.ping\)\s*return/,
+  );
   // 卸载清理：watchdog 定时器与 SSE 连接都要收掉（esbuild 产物 undefined 折叠为 void 0）。
   expect(clientSrc, "卸载清 watchdog").toMatch(
     /if\s*\(watchdog\s*!==\s*(?:void 0|undefined)\)\s*clearTimeout\(watchdog\)/,

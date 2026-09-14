@@ -17,6 +17,8 @@
 import { writeJson, sseData, guardLoopbackMethod } from "../../../../shared/host-utils.js";
 import { createSseHub } from "../../../../shared/sse-hub.js";
 import type { SseHub } from "../../../../shared/sse-hub.js";
+import { ROUTES, SSE_FRAMES, SERVER_STATES } from "../shared/interface.ts";
+import type { SseFramePayload } from "../shared/interface.ts";
 import type { ServerConfig, ClientUiConfig, RoutesManager } from "../types/interface.ts";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { ServerResponse } from "node:http";
@@ -37,20 +39,9 @@ import { queryParam } from "./routes-helpers.ts";
 
 // ------------------------------------------------------------ HTTP 路由
 
-/** 路由路径清单（与客户端一致）。 */
-export const ROUTES = {
-  servers: "/api/dsh-mcp/servers",
-  config: "/api/dsh-mcp/config",
-  session: "/api/dsh-mcp/session",
-  resume: "/api/dsh-mcp/resume",
-  connect: "/api/dsh-mcp/servers/connect",
-  disconnect: "/api/dsh-mcp/servers/disconnect",
-  reconnect: "/api/dsh-mcp/servers/reconnect",
-  importJson: "/api/dsh-mcp/import/json",
-  events: "/api/dsh-mcp/events",
-  health: "/api/dsh-mcp/health",
-  toolDisable: "/api/dsh-mcp/tool-disable",
-};
+// 路由路径清单的物理定义在 shared/routes.ts（两端同一份）；此处只转出，
+// api/interface.ts 与包入口的导出面不变。
+export { ROUTES };
 
 export { queryParam };
 
@@ -88,7 +79,7 @@ export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRout
 
 /** 配置变更 SSE 帧：客户端收到后重新 GET /api/dsh-mcp/config 就地更新浮窗位置。 */
 export function uiConfigChangedFrame(): string {
-  return sseData({ type: "ui-config-changed" });
+  return sseData({ type: SSE_FRAMES.uiConfigChanged } satisfies SseFramePayload);
 }
 
 /**
@@ -100,7 +91,7 @@ export function uiConfigChangedFrame(): string {
  */
 export const SSE_HEARTBEAT_MS = 30_000;
 /** 心跳 ping 帧（内容固定，模块级缓存避免逐次序列化；#515 起 hub 内置同帧）。 */
-export const SSE_PING_FRAME = sseData({ type: "ping" });
+export const SSE_PING_FRAME = sseData({ type: SSE_FRAMES.ping } satisfies SseFramePayload);
 
 /**
  * 向全部 SSE 连接写出一帧（#515 起收口到共享 hub；本函数保留兼容导出，
@@ -158,7 +149,7 @@ export function makeEventsRoute(
         connection: "keep-alive",
       });
       res.write(": connected\n\n");
-      res.write(sseData({ type: "summary" }));
+      res.write(sseData({ type: SSE_FRAMES.summary } satisfies SseFramePayload));
       hub.register(res);
     },
   };
@@ -176,7 +167,7 @@ export function makeHealthRoute(manager: RoutesManager): WebRoute {
       let tools = 0;
       for (const supervisor of manager.supervisors.values()) {
         servers += 1;
-        if (supervisor.status === "connected") connected += 1;
+        if (supervisor.status === SERVER_STATES.connected) connected += 1;
         tools += supervisor.tools.length;
       }
       // 中间层连接池计数（#228：项目级连接不在 supervisors，需单独投影诊断）。
@@ -187,7 +178,7 @@ export function makeHealthRoute(manager: RoutesManager): WebRoute {
         middlewareUnits += 1;
         for (const entry of unit.connections.values()) {
           middlewareConnections += 1;
-          if (entry.status === "connected") middlewareConnected += 1;
+          if (entry.status === SERVER_STATES.connected) middlewareConnected += 1;
         }
       }
       writeJson(res, 200, {

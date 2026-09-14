@@ -48,6 +48,7 @@ import {
 import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "../../types/interface.ts";
 import { McpStatsCollector } from "../../stats/interface.ts";
 import { createRedactor } from "../../pipeline/interface.ts";
+import { EMPTY_STATUS_COUNTS } from "../../shared/interface.ts";
 import { stripMcpPrefix } from "./interface.ts";
 
 /**
@@ -1084,14 +1085,9 @@ export class McpManager {
     for (const server of this.runtimeRegistry.values()) {
       servers.push(this.summarize(server, SCOPE_GLOBAL));
     }
-    const byStatus: Record<string, number> = {
-      connected: 0,
-      connecting: 0,
-      reconnecting: 0,
-      disabled: 0,
-      stopped: 0,
-      failed: 0,
-    };
+    // 六态计数键与键序的物理定义在 shared/status.ts（两端同一份）；必须展开成新对象，
+    // 否则下面的计数会就地改动共享单例。
+    const byStatus: Record<string, number> = { ...EMPTY_STATUS_COUNTS };
     for (const server of servers)
       byStatus[server.status as string] = (byStatus[server.status as string] ?? 0) + 1;
     return {

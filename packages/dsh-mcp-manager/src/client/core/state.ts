@@ -7,6 +7,7 @@
 
 import { API } from "./constants.ts";
 import { DEFAULT_Z_INDEX_BASE } from "../../shared/interface.ts";
+import type { ServerState } from "../../shared/interface.ts";
 
 /** 单台 MCP 服务器面向 UI 的摘要形态。 */
 export interface McpServerSummary {
@@ -29,15 +30,8 @@ export interface McpServerSummary {
   description?: string;
 }
 
-/** 各状态计数。 */
-export interface McpCounts {
-  connected?: number;
-  connecting?: number;
-  reconnecting?: number;
-  stopped?: number;
-  disabled?: number;
-  failed?: number;
-}
+/** 各状态计数（六态键的物理定义在 shared/status.ts，宿主与客户端同一份）。 */
+export type McpCounts = Partial<Record<ServerState, number>>;
 
 /** 浮窗 UI 配置（客户端扁平形态，与 host normalizeUiConfig 兼容）。 */
 export interface McpUiConfig {
@@ -93,7 +87,7 @@ export interface McpState {
   updateFloatState: any;
   mcpUiConfig: McpUiConfig;
 
-  // 与宿主 ROUTES 一致的路径（单一来源见 src/client/constants.ts）。
+  // 路径表（单一来源 src/shared/routes.ts，经 client/core/constants.ts 投影）。
   API: typeof API;
 }
 

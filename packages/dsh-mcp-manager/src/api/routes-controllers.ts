@@ -7,7 +7,7 @@
  * 数组装配（comp <= 15），每个控制器的分支彼此独立、可独立理解与测试。
  *
  * 行为约束（与拆分前逐字节等价）：
- * - 路由路径沿用 ROUTES 常量单一事实源；
+ * - 路由路径与围栏（方法白名单 / loopback 豁免）取自 shared/routes.ts 单点；
  * - loopback 围栏与 405 分流顺序不变（#473 R2：config GET 豁免 loopback，
  *   白名单外方法先于 loopback 直接 405）；
  * - JSON body 字节上限沿用 readJsonBody 默认行为（MAX_JSON_BODY_BYTES 保留
@@ -27,6 +27,8 @@ import {
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RoutesManager } from "../types/interface.ts";
+import { ROUTES, ROUTE_FENCE } from "../shared/interface.ts";
+import type { RouteName } from "../shared/interface.ts";
 import { queryParam } from "./routes-helpers.ts";
 
 /** 控制器共享 helpers（原 makeRoutes 闭包三件套，提升为显式参数）。 */
@@ -55,10 +57,10 @@ function requireNameParam(url: URL, res: Res): string | undefined {
 export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return {
     kind: "exact",
-    path: "/api/dsh-mcp/config",
+    path: ROUTES.config,
     handler: async (req: Req, res: Res) => {
       // GET：只读 UI 配置 + 中间层模式（允许非 loopback，供远程页面读取非敏感的展示配置）。
-      if (req.method === "GET") {
+      if (ROUTE_FENCE.config.loopbackExempt.includes(String(req.method))) {
         try {
           writeJson(res, 200, {
             ...manager.uiConfig(),
@@ -73,8 +75,8 @@ export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers):
       // （middleware: off/project/all）。写操作只对 loopback 开放；
       // 经设置命名空间落盘（Config.ui），触发 scope.watch → onChange → SSE 广播一帧，
       // 客户端收到后重新 GET /config 就地更新浮窗位置，无需重启/轮询。
-      if (req.method === "POST") {
-        if (!guardLoopbackMethod(req, res, ["POST"])) return;
+      if (ROUTE_FENCE.config.guarded.includes(String(req.method))) {
+        if (!guardLoopbackMethod(req, res, ROUTE_FENCE.config.guarded)) return;
         let body: unknown;
         try {
           body = await readJsonBody(req);
@@ -132,11 +134,11 @@ export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers):
 export function buildServersRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return {
     kind: "exact",
-    path: "/api/dsh-mcp/servers",
+    path: ROUTES.servers,
     handler: async (req: Req, res: Res) => {
       const url = new URL(req.url ?? "/", "http://localhost");
       const method = req.method ?? "GET";
-      if (!guardLoopbackMethod(req, res, ["GET", "POST", "PATCH", "DELETE"])) return;
+      if (!guardLoopbackMethod(req, res, ROUTE_FENCE.servers.guarded)) return;
       if (method === "GET") {
         try {
           // 变更点驱动（#111/#228）：GET /servers 是纯读快照，零副作用——
@@ -202,9 +204,9 @@ export function buildServersRoute(manager: RoutesManager, helpers: RouteHelpers)
 export function buildSessionRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return {
     kind: "exact",
-    path: "/api/dsh-mcp/session",
+    path: ROUTES.session,
     handler: async (req: Req, res: Res) => {
-      if (!guardLoopbackMethod(req, res, ["POST"])) return;
+      if (!guardLoopbackMethod(req, res, ROUTE_FENCE.session.guarded)) return;
       const body = await readJsonBody(req);
       if (body === undefined || typeof (body as Record<string, unknown>).cwd !== "string") {
         writeJson(res, 400, { error: "body must include a cwd string" });
@@ -224,9 +226,9 @@ export function buildSessionRoute(manager: RoutesManager, helpers: RouteHelpers)
 export function buildResumeRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return {
     kind: "exact",
-    path: "/api/dsh-mcp/resume",
+    path: ROUTES.resume,
     handler: async (req: Req, res: Res) => {
-      if (!guardLoopbackMethod(req, res, ["POST"])) return;
+      if (!guardLoopbackMethod(req, res, ROUTE_FENCE.resume.guarded)) return;
       try {
         if (typeof manager.resumeReconnect !== "function")
           throw new Error("resumeReconnect unavailable");
@@ -243,16 +245,16 @@ export function buildResumeRoute(manager: RoutesManager, helpers: RouteHelpers):
 
 /** 单服务器连接/断开/重连三兄弟路由（同构：name 必填 + maybeSession + scope）。 */
 function buildNameActionRoute(
-  path: string,
+  route: RouteName,
   action: (name: string, scope: string) => Promise<void>,
   manager: RoutesManager,
   helpers: RouteHelpers,
 ): WebRoute {
   return {
     kind: "exact",
-    path,
+    path: ROUTES[route],
     handler: async (req: Req, res: Res) => {
-      if (!guardLoopbackMethod(req, res, ["POST"])) return;
+      if (!guardLoopbackMethod(req, res, ROUTE_FENCE[route].guarded)) return;
       const url = new URL(req.url ?? "/", "http://localhost");
       const name = requireNameParam(url, res);
       if (name === undefined) return;
@@ -270,7 +272,7 @@ function buildNameActionRoute(
 /** POST /servers/connect：连接单服务器。 */
 export function buildConnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return buildNameActionRoute(
-    "/api/dsh-mcp/servers/connect",
+    "connect",
     (name, scope) => manager.connect(name, scope),
     manager,
     helpers,
@@ -280,7 +282,7 @@ export function buildConnectRoute(manager: RoutesManager, helpers: RouteHelpers)
 /** POST /servers/disconnect：断开单服务器。 */
 export function buildDisconnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return buildNameActionRoute(
-    "/api/dsh-mcp/servers/disconnect",
+    "disconnect",
     (name, scope) => manager.disconnect(name, scope),
     manager,
     helpers,
@@ -290,7 +292,7 @@ export function buildDisconnectRoute(manager: RoutesManager, helpers: RouteHelpe
 /** POST /servers/reconnect：重连单服务器。 */
 export function buildReconnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return buildNameActionRoute(
-    "/api/dsh-mcp/servers/reconnect",
+    "reconnect",
     (name, scope) => manager.reconnect(name, scope),
     manager,
     helpers,
@@ -303,9 +305,9 @@ export function buildReconnectRoute(manager: RoutesManager, helpers: RouteHelper
 export function buildImportJsonRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return {
     kind: "exact",
-    path: "/api/dsh-mcp/import/json",
+    path: ROUTES.importJson,
     handler: async (req: Req, res: Res) => {
-      if (!guardLoopbackMethod(req, res, ["POST"])) return;
+      if (!guardLoopbackMethod(req, res, ROUTE_FENCE.importJson.guarded)) return;
       const body = await readJsonBody(req);
       if (body === undefined || typeof (body as Record<string, unknown>).json !== "string") {
         writeJson(res, 400, { error: "body must include a json string" });
@@ -347,9 +349,9 @@ export function buildImportJsonRoute(manager: RoutesManager, helpers: RouteHelpe
 export function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return {
     kind: "exact",
-    path: "/api/dsh-mcp/tool-disable",
+    path: ROUTES.toolDisable,
     handler: async (req: Req, res: Res) => {
-      if (!guardLoopbackMethod(req, res, ["PATCH"])) return;
+      if (!guardLoopbackMethod(req, res, ROUTE_FENCE.toolDisable.guarded)) return;
       const url = new URL(req.url ?? "/", "http://localhost");
       const body = await readJsonBody(req);
       if (body === undefined || typeof body !== "object" || body === null) {
