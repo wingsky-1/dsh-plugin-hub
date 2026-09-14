@@ -315,6 +315,42 @@ test("ci.yml/observe*/baseline-overlay/release/health-report.yml: 第三方与�
   }
 });
 
+test("#718: health-report.yml 基线陈旧——观测在最前、幂等建单居中、unknown 判红在最末", () => {
+  // 为什么是结构断言：这套判据的价值全在**位置与语义**上，改错任何一处都不会有别的判据发现——
+  // 观测挪到采集之后 = 被上游失败连坐而不留痕；判红挪到建单之前 = 连坐吞掉周报与陈旧工单；
+  // 把 stale 也判红 = 「发现」被当成「失败」，告警疲劳。三处都由文本锚锁死。
+  const observe = HEALTH.indexOf("      - name: Baseline staleness（");
+  const weeklyIssue = HEALTH.indexOf("      - name: Create health issue");
+  const staleIssue = HEALTH.indexOf("      - name: Create/append baseline staleness issue");
+  const verdict = HEALTH.indexOf("      - name: Baseline staleness verdict");
+  assert.ok(observe !== -1, "基线观测步骤在位");
+  assert.ok(observe < HEALTH.indexOf("pnpm cov"), "观测必须在数据采集之前（只依赖 gh 与分支事实）");
+  assert.ok(
+    weeklyIssue !== -1 && staleIssue !== -1 && verdict !== -1,
+    "观测 / 两份建单 / 判红四步齐备",
+  );
+  assert.ok(verdict > weeklyIssue && verdict > staleIssue, "unknown 判红必须在两份建单留痕之后");
+  // 末步判据：verdict 之后不得再出现步骤头（自 +1 起算，免得把本行自身数进去）
+  assert.equal(
+    HEALTH.slice(verdict + 1).match(/^ {6}- name:/gm),
+    null,
+    "verdict 必须是最后一个步骤（其后不得再有步骤）",
+  );
+  const tail = HEALTH.slice(verdict);
+  assert.ok(tail.includes("if: always()"), "verdict 必须 always()：上游失败时也要给出结论");
+  assert.ok(tail.includes('"$STATUS" = "unknown"'), "unknown 必须判红（环境失败不得静默降级）");
+  assert.ok(tail.includes('"$STATUS" = "missing"'), "状态文件缺失（观测没跑成）同样判红");
+  assert.match(tail, /exit 1/);
+  assert.ok(!tail.includes('"$STATUS" = "stale"'), "stale 是「发现」不是「失败」，不得判红");
+  // 零权限变更（红线段：不得顺手加 contents: write）
+  assert.ok(
+    HEALTH.includes("contents: read") && HEALTH.includes("issues: write"),
+    "权限保持读代码 + 写工单",
+  );
+  assert.ok(!HEALTH.includes("contents: write"), "不得给 health-report 加 contents: write");
+  assert.ok(HEALTH.includes("in:title"), "工单幂等靠标题检索（稳定标题）");
+});
+
 test("observe.yml: 夜间调度 + 硬门禁执行点 + issues 写权限", () => {
   assert.ok(OBSERVE.includes("cron:"), "schedule 触发器在位");
   assert.ok(OBSERVE.includes("workflow_dispatch"), "支持手动 dispatch");

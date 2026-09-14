@@ -5,8 +5,14 @@
  * 的 src 口径）与 pnpm crap 产出的 coverage/crap-report.json（该脚本自阶段三起
  * fail-closed 停用，文件缺席时本报告自动省略 CRAP 段）。人工判断段由模板预留，
  * 结论永远留给人。
+ *
+ * #718：基线（baseline/mutation）新鲜度由 baseline-staleness.mjs 先行产出
+ * baseline-staleness.json，本脚本只把它翻译成机器信号段的一行——判定与措辞都不在这里，
+ * 免得同一句判据在两处漂移。
  */
 import { readFileSync, existsSync } from "node:fs";
+
+import { renderReportLine } from "./baseline-staleness.mjs";
 
 function readJson(path) {
   return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
@@ -15,6 +21,7 @@ function readJson(path) {
 const summary = readJson("coverage/coverage-summary.json");
 const crap = readJson("coverage/crap-report.json");
 const gauntlet = readJson("scripts/data/gauntlet.config.json");
+const staleness = readJson("baseline-staleness.json");
 const crapStrict = Boolean(crap?.strict ?? gauntlet?.crap?.strict);
 const crapMode = crapStrict ? "strict 判红" : "观察期（仅记录）";
 
@@ -48,6 +55,14 @@ if (crap) {
   }
 } else {
   lines.push("- CRAP：数据缺失");
+}
+
+// 基线新鲜度（#718 验收判据）：文件由 baseline-staleness.mjs 产出；缺席时不得静默省略——
+// 「检查过」与「没检查」在正文里必须可区分。
+if (staleness) {
+  lines.push(renderReportLine(staleness));
+} else {
+  lines.push("- 变异基线（`baseline/mutation`）龄：数据缺失（baseline-staleness.json 未产出）");
 }
 
 // 挣扎信号与零命中规则榜：基建启用后由 CI 补齐（见 issue #42 二期）
