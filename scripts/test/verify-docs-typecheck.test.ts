@@ -13,9 +13,17 @@
  *
  * 为什么断言程序集而不是 tsconfig 文本（#776 批 3）：include 由逐项枚举改为 glob 后，
  * 「文本里有某个条目」不再等价于「该文件真在编译面内」；且 tsc 对 include/exclude 漏掉
- * 具体文件静默绿（只有 include 全空才配置级报错），文本正则既漏检又易假绿。故改为对账
- * 两侧真实集合：磁盘上 scripts/ 下全部 .ts/.mts/.cts 减去 tsc --listFiles 报出的程序文件集，
- * 差额必须逐一等于 EXPECTED_TEMPORARY_EXCLUSIONS（显式清单，不写通配）。
+ * 具体文件静默绿（只有 include 全空才配置级报错），文本正则既漏检又易假绿。
+ *
+ * 三条互补判据：
+ * 1. tsc --listFiles 的程序集是「真被检查的文件」的权威口径；磁盘上 scripts/ 下的
+ *    .ts/.mts/.cts 减去它，每一项都必须落在 scripts/test/ 之下——非 test 脚本漏面即红。
+ * 2. exclude 集合恒等于 EXPECTED_EXCLUDE_SET：把非 test 文件或目录塞进 exclude 会先在
+ *    判据 1 判红，这条拦住的是「悄悄删掉某条 exclude（例如 test/**）后守卫面缩小」。
+ * 3. 差值集合非空：拦住「exclude 被清空 / 程序集解析异常」这类让判据 1 恒真的退化。
+ *
+ * 不用「逐条登记面外文件」的清单：那会让每个新增的 scripts/test/*.test.ts 都打红
+ * test:scripts，与并行往 test/ 加用例的分支互斥；前缀断言保护力等价而维护成本为零。
  *
  * 为何自身仍带 @ts-nocheck（#474 R4 预防性声明）：本文件只 spawn tsc 子进程并读它的输出，
  * 不 import 被测物的类型（walk-files.ts 仅作运行时遍历工具），纳入 strict 面无检查增量。
@@ -23,7 +31,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { walkFiles } from "../lib/walk-files.ts";
 
@@ -34,69 +42,55 @@ const SCRIPTS = join(ROOT, "scripts");
 const TSC = join(ROOT, "node_modules", "typescript", "bin", "tsc");
 const TSCONFIG = join(SCRIPTS, "tsconfig.json");
 
-/**
- * 编译面外的 scripts 文件全集（仓库根相对、/ 分隔）。本批只开非 test 全树，
- * scripts/test/** 的类型错误留待后续批次，故这里逐一登记当前被暂时排除的测试文件。
- *
- * 这是棘轮而非快照：新增一个 test 文件就会使「磁盘 - 程序」多出一项并判红，必须显式
- * 追加到本清单——排除面只能被有意识地扩大，不会被静默顺延。
- */
-const EXPECTED_TEMPORARY_EXCLUSIONS = [
-  "scripts/test/baseline-archive.test.ts",
-  "scripts/test/build-client.test.ts",
-  "scripts/test/bundle-host-x1.test.ts",
-  "scripts/test/catalog-peers.test.ts",
-  "scripts/test/changed-test-packages.test.ts",
-  "scripts/test/ci-face-coverage.test.ts",
-  "scripts/test/ci-matrix.test.ts",
-  "scripts/test/client-leak-gate.test.ts",
-  "scripts/test/collect-exemptions.test.ts",
-  "scripts/test/collect-licenses.test.ts",
-  "scripts/test/config-matrix-extractor.test.ts",
-  "scripts/test/config-matrix-negative.test.ts",
-  "scripts/test/crap-check-diff.test.ts",
-  "scripts/test/crap-check.test.ts",
-  "scripts/test/dts-cordis-merge-lib.test.ts",
-  "scripts/test/export-faces-admission.test.ts",
-  "scripts/test/forbid-homedir-src.test.ts",
-  "scripts/test/forbid-module-state-src.test.ts",
-  "scripts/test/gate-scope-registry.test.ts",
-  "scripts/test/lint-toolchain.test.ts",
-  "scripts/test/local-gate-steps.test.ts",
-  "scripts/test/local-scope.test.ts",
-  "scripts/test/mutation-ledger.test.ts",
-  "scripts/test/mutation-plan.test.ts",
-  "scripts/test/mutation-topology-coverage.test.ts",
-  "scripts/test/orphan-baseline.test.ts",
-  "scripts/test/package-scope.test.ts",
-  "scripts/test/pack-check-exports-types.test.ts",
-  "scripts/test/pack-check-scope.test.ts",
-  "scripts/test/plugins-manifest.test.ts",
-  "scripts/test/repair-mcp-catalog-sessions.test.ts",
-  "scripts/test/service-contract-wiring.test.ts",
-  "scripts/test/shared-client-ensure-style.test.ts",
-  "scripts/test/shared-client-i18n.test.ts",
-  "scripts/test/shared-dsh-home.test.ts",
-  "scripts/test/shared-dts.test.ts",
-  "scripts/test/shared-host-utils-guard.test.ts",
-  "scripts/test/shared-host-utils.test.ts",
-  "scripts/test/stryker-conf-layers.test.ts",
-  "scripts/test/surface-extract-lib.test.ts",
-  "scripts/test/threshold-monotonic.test.ts",
-  "scripts/test/vendored-binaries.test.ts",
-  "scripts/test/verify-coverage-scope.test.ts",
-  "scripts/test/verify-dir-imports-cycle.test.ts",
-  "scripts/test/verify-dir-imports-s0.test.ts",
-  "scripts/test/verify-docs-agent-docs.test.ts",
-  "scripts/test/verify-docs-typecheck.test.ts",
-  "scripts/test/verify-scripts-index.test.ts",
-  "scripts/test/workflow-assert.test.ts",
+/** scripts/ 下唯一允许暂时留在编译面外的目录（test 侧 @ts-nocheck 属后续批次）。 */
+const TEMPORARY_EXCLUSION_PREFIX = "scripts/test/";
+/** scripts/tsconfig.json 的 exclude 必须恰好是这四条；多一条即排除面被悄悄扩大。 */
+const EXPECTED_EXCLUDE_SET = [
+  "test/**",
+  "node_modules/**",
+  "bower_components/**",
+  "jspm_packages/**",
 ];
 
 const isTypeScript = (name) => /\.(ts|mts|cts)$/.test(name);
 const toPosix = (p) => p.split(sep).join("/");
 
-test("scripts 编译面接线：非 test 全树入面，排除集与 tsc 程序集双向对账（#474/#776）", () => {
+/**
+ * 读取 tsconfig.json 的原始字段。tsc 允许 JSONC（本文件顶部有注释），而 node_modules 里的
+ * typescript 7.x 是 native 端，只导出 version、无 readConfigFile/parseJsonText 可用，
+ * 故此处只剥行注释（按字符串状态机切分，字符串内的 // 不是注释），再交 JSON.parse。
+ * 解析失败会直接抛错判红——不存在「解析不了就静默放过」的路径。
+ */
+function readTsconfig() {
+  const raw = readFileSync(TSCONFIG, "utf8");
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+    if (inString) {
+      out += ch;
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      continue;
+    }
+    if (ch === "/" && raw[i + 1] === "/") {
+      while (i < raw.length && raw[i] !== "\n") i += 1;
+      out += "\n";
+      continue;
+    }
+    out += ch;
+  }
+  return JSON.parse(out);
+}
+
+test("scripts 编译面接线：非 test 全树入面，程序集与 exclude 双向对账（#474/#776）", () => {
   assert.ok(existsSync(TSC), `仓库 tsc 应存在（${TSC}）——pnpm install 后才有`);
   assert.ok(existsSync(TSCONFIG), `scripts/tsconfig.json 应存在（${TSCONFIG}）`);
 
@@ -124,23 +118,27 @@ test("scripts 编译面接线：非 test 全树入面，排除集与 tsc 程序�
     `tsc --listFiles 未解析出任何 scripts/ 程序文件——输出格式变了？\n${result.stdout}`,
   );
 
-  // 磁盘侧不做任何排除：程序集的补集即为「被漏在面外」的文件。
+  // 判据 1：磁盘侧不做任何排除，程序集的补集即「被漏在面外」的文件；非 test 脚本漏面即红。
   const onDisk = walkFiles(SCRIPTS, isTypeScript).map((rel) => `scripts/${rel}`);
-  const missingFromProgram = onDisk.filter((rel) => !program.has(rel)).sort();
+  const outOfFace = onDisk.filter((rel) => !program.has(rel)).sort();
+  for (const rel of outOfFace) {
+    assert.ok(
+      rel.startsWith(TEMPORARY_EXCLUSION_PREFIX),
+      `${rel} 不在 tsc 程序集内，且不在 scripts/test/ 之下——非 test 脚本必须入编译面（该文件被静默移出覆盖？）`,
+    );
+  }
 
-  assert.deepStrictEqual(
-    missingFromProgram,
-    [...EXPECTED_TEMPORARY_EXCLUSIONS].sort(),
-    "编译面外的 scripts 文件集合与 EXPECTED_TEMPORARY_EXCLUSIONS 不一致：漏面或新增未登记（tsc 对漏文件静默绿，必须在此判红）",
+  // 判据 3：差值非空，防「exclude 清空 / 程序集解析异常」让判据 1 退化为恒真。
+  assert.ok(
+    outOfFace.length > 0,
+    "磁盘集合 - 程序集为空：exclude 被清空或 --listFiles 解析异常，面外前缀判据退化为恒真（假绿）",
   );
 
-  // 双向断言：常量不得写成空集/陈旧集造成假绿——每一项都必须真实存在于磁盘，
-  // 且确实不在 tsc 程序集里（既不能漏登记，也不能登记已被覆盖的文件）。
-  for (const rel of EXPECTED_TEMPORARY_EXCLUSIONS) {
-    assert.ok(
-      onDisk.includes(rel),
-      `${rel} 登记在 EXPECTED_TEMPORARY_EXCLUSIONS 但磁盘上不存在（陈旧条目）`,
-    );
-    assert.ok(!program.has(rel), `${rel} 已在 tsc 程序集内却仍登记为排除项（假绿）`);
-  }
+  // 判据 2：exclude 集合恰好等于 EXPECTED_EXCLUDE_SET（顺序、重复不敏感）。
+  const tsconfig = readTsconfig();
+  assert.deepStrictEqual(
+    [...new Set(tsconfig.exclude ?? [])].sort(),
+    [...EXPECTED_EXCLUDE_SET].sort(),
+    "scripts/tsconfig.json 的 exclude 集合漂移：收敛排除面必须在 EXPECTED_EXCLUDE_SET 同步登记（不能悄悄删条目让守卫面缩小）",
+  );
 });
