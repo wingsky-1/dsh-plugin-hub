@@ -1,11 +1,11 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-mcp-manager/src/connection/runtime/transport.ts",
-    "packages/dsh-mcp-manager/src/connection/runtime/protocol.ts",
+    "packages/dsh-mcp-manager/src/server/connection/runtime/transport.ts",
+    "packages/dsh-mcp-manager/src/server/connection/runtime/protocol.ts",
     "shared/placement-math.js",
-    "packages/dsh-mcp-manager/src/pipeline/**/*.ts",
-    "packages/dsh-mcp-manager/src/catalog/**/*.ts",
+    "packages/dsh-mcp-manager/src/server/pipeline/**/*.ts",
+    "packages/dsh-mcp-manager/src/server/catalog/**/*.ts",
     "packages/dsh-mcp-manager/src/server/**/*.ts",
     "packages/dsh-mcp-manager/src/shared/**/*.ts",
     "!packages/dsh-mcp-manager/src/client/**",
@@ -14,7 +14,7 @@
     "!packages/dsh-mcp-manager/src/shared/placement-math.ts",
     "!packages/dsh-mcp-manager/src/**/interface.ts",
     "!packages/dsh-mcp-manager/src/server/*/deps.ts",
-    "!packages/dsh-mcp-manager/src/connection/runtime/deps.ts"
+    "!packages/dsh-mcp-manager/src/server/connection/runtime/deps.ts"
   ],
   "testRunner": "vitest",
   "mutator": {

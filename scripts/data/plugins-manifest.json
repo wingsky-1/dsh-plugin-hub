@@ -69,19 +69,19 @@
     {
       "package": "dsh-mcp-manager",
       "defaults": {
-        "module": "packages/dsh-mcp-manager/src/config/model/config-schema.ts",
+        "module": "packages/dsh-mcp-manager/src/server/config/config-schema.ts",
         "export": "DEFAULT_CONFIG"
       },
       "normalizer": {
-        "module": "packages/dsh-mcp-manager/src/config/model/config-schema.ts",
+        "module": "packages/dsh-mcp-manager/src/server/config/config-schema.ts",
         "export": "normalizeConfig"
       },
       "booleanKeys": {
-        "module": "packages/dsh-mcp-manager/src/config/model/config-schema.ts",
+        "module": "packages/dsh-mcp-manager/src/server/config/config-schema.ts",
         "export": "BOOLEAN_KEYS"
       },
       "countLimits": {
-        "module": "packages/dsh-mcp-manager/src/config/model/config-schema.ts",
+        "module": "packages/dsh-mcp-manager/src/server/config/config-schema.ts",
         "export": "COUNT_LIMITS"
       }
     },

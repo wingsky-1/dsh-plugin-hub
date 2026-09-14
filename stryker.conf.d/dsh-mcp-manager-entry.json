@@ -2,15 +2,15 @@
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
     "packages/dsh-mcp-manager/src/index.ts",
-    "packages/dsh-mcp-manager/src/workspace/**/*.ts",
-    "packages/dsh-mcp-manager/src/config/model/**/*.ts",
+    "packages/dsh-mcp-manager/src/server/workspace/**/*.ts",
+    "packages/dsh-mcp-manager/src/server/config/**/*.ts",
     "!packages/dsh-mcp-manager/src/client/**",
     "!packages/dsh-mcp-manager/src/types/**",
     "!packages/dsh-mcp-manager/src/integration/**",
     "!packages/dsh-mcp-manager/src/shared/placement-math.ts",
     "!packages/dsh-mcp-manager/src/**/interface.ts",
     "!packages/dsh-mcp-manager/src/server/*/deps.ts",
-    "!packages/dsh-mcp-manager/src/connection/runtime/deps.ts"
+    "!packages/dsh-mcp-manager/src/server/connection/runtime/deps.ts"
   ],
   "testRunner": "vitest",
   "mutator": {

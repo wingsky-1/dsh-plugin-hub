@@ -1,18 +1,18 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-mcp-manager/src/connection/runtime/middleware.ts",
-    "packages/dsh-mcp-manager/src/connection/runtime/limits.ts",
-    "packages/dsh-mcp-manager/src/connection/runtime/impl/**/*.ts",
-    "packages/dsh-mcp-manager/src/inject/**/*.ts",
-    "packages/dsh-mcp-manager/src/pipeline/authorize.ts",
+    "packages/dsh-mcp-manager/src/server/connection/runtime/middleware.ts",
+    "packages/dsh-mcp-manager/src/server/connection/runtime/limits.ts",
+    "packages/dsh-mcp-manager/src/server/connection/runtime/impl/**/*.ts",
+    "packages/dsh-mcp-manager/src/server/inject/**/*.ts",
+    "packages/dsh-mcp-manager/src/server/pipeline/authorize.ts",
     "!packages/dsh-mcp-manager/src/client/**",
     "!packages/dsh-mcp-manager/src/types/**",
     "!packages/dsh-mcp-manager/src/integration/**",
     "!packages/dsh-mcp-manager/src/shared/placement-math.ts",
     "!packages/dsh-mcp-manager/src/**/interface.ts",
     "!packages/dsh-mcp-manager/src/server/*/deps.ts",
-    "!packages/dsh-mcp-manager/src/connection/runtime/deps.ts"
+    "!packages/dsh-mcp-manager/src/server/connection/runtime/deps.ts"
   ],
   "testRunner": "vitest",
   "mutator": {
@@ -46,5 +46,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-middleware.json",
-  "_comment": "#664 阶段6重画：middleware——中间层池（runtime/middleware）+limits（原 middleware-const）+工具注册面（inject/）+策略裁决族（pipeline/authorize，原 middleware-utils 并入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。 #767 B2a-wire W8：追加 packages/dsh-mcp-manager/src/connection/runtime/impl/**/*.ts——该子层其余 glob 全是显式文件，W8 新建的端口持有者此前不在任何 mutate 段内（进 uncoveredSrcFiles）。"
+  "_comment": "#664 阶段6重画：middleware——中间层池（runtime/middleware）+limits（原 middleware-const）+工具注册面（inject/）+策略裁决族（pipeline/authorize，原 middleware-utils 并入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。 #767 B2a-wire W8：追加 packages/dsh-mcp-manager/src/server/connection/runtime/impl/**/*.ts——该子层其余 glob 全是显式文件，W8 新建的端口持有者此前不在任何 mutate 段内（进 uncoveredSrcFiles）。"
 }
