@@ -1720,8 +1720,8 @@ test("#718 S1.1/S1.4/S1.5: observe 全量班三段式矩阵（plan / quality+sha
   assert.ok(stratIdx > shardsStart, "observe.yml mutation-shards 必须声明 strategy");
   const stratBlock = OBSERVE.slice(stratIdx, OBSERVE.indexOf("\n    runs-on:", stratIdx));
   assert.ok(
-    /max-parallel:\s*5\s*$/m.test(stratBlock),
-    "observe.yml 矩阵必须声明 max-parallel: 5（#718 S1.1；S0.3 实测额度上界 20，取 5 留余量）",
+    /max-parallel:\s*8\s*$/m.test(stratBlock),
+    "observe.yml 矩阵必须声明 max-parallel: 8（#718 S1.1/P3；全量形态 8 档已饱和于最长段 trend-aggregate 25.4 min，S0.3 实测账户额度上界 20，10 档零收益只多占额度）",
   );
   assert.ok(
     /fail-fast:\s*false\s*$/m.test(stratBlock),

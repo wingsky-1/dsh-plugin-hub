@@ -23,8 +23,8 @@ name: Observe (nightly)
 #   为什么必须拆：原单 job 串行 90 分钟，任一长段擦边即整班被杀，且被杀点在报告步骤之前
 #   ⇒ 当夜无工单、无留痕、基线不更新（#718 两次事故 34536263640 / 34652766708 的形态）。
 # - **S1.1 矩阵化**：段清单由 `stryker.conf.d/*.json` 派生（`mutation-plan` job 秒级产出），
-#   每段一个矩阵实例；`max-parallel: 5`（S0.3 实测账户并发额度上界 20，留足余量给
-#   build-test 与其它 workflow）。
+#   每段一个矩阵实例；`max-parallel: 8`（取 8 的依据见下方 mutation-shards 的 strategy
+#   注释：全量形态 8 档已饱和于最长段、账户实测上界 20、与 ci.yml mutation-gate 同值限流）。
 # - **S1.4 逐段超时**：`timeout-minutes` 取 `matrix.shard.timeoutMinutes`，由
 #   `scripts/gate/mutation-plan.mjs` 按 `mutation-segment-ledger.json` 里该段 `scope=full`
 #   的实测墙钟 × 1.5 + 构建开销派生，下限 10 分钟（#718 整合版规定）；无实测的段取保守
@@ -160,9 +160,18 @@ jobs:
       # S1.4：单段失败不连坐——原串行实现的「单配置失败记账继续跑完」语义由矩阵天然承担，
       # 且失败段可用 `gh run rerun --failed` 定向重跑，无需整班重来。
       fail-fast: false
-      # S1.1：S0.3 实测账户并发额度上界 20（20 个 gate:full run 中 15 个精确触达且从未超过）。
-      # 取 5 留足余量给 build-test 矩阵与其它 workflow 的并发需求。
-      max-parallel: 5
+      # S1.1 + #718 P3（维护者 approved）：取 8，与 ci.yml mutation-gate 同值限流。依据：
+      # - 全量/失效形态 run 34764977606（12 段、合计 145.7 min）模拟：5 路 → 30.63 min、
+      #   8 路 → 25.35、10/12/16 路 → 25.35——8 档已饱和于最长段 trend-aggregate 25.4 min，
+      #   再加班位只多占账户额度、零墙钟收益；
+      # - 账户并发上界 20 为实测（S0.3 / PR #753，100 run 样本，20 个 gate:full run 峰值分布
+      #   20×15、19×4、18×1；scripts/maintenance/scan-actions-concurrency.mjs 可复现）；
+      # - 本仓峰值 = build-test（实测恒 7）+ max-parallel：8 档 → 15，gate:full 带 coverage
+      #   → 16；10 档 → 17~18，只剩 3 个余量给其它 workflow。
+      # docs/mutation-speedup-methodology.md §4.3 的三项核对对本项不适用：本项是 job 级并发
+      # （每 job 独立 runner VM），不改变 Stryker 段内 concurrency，故不存在「timeout 计入
+      # detected、虚增 score」的路径。
+      max-parallel: 8
       matrix:
         # 段清单与逐段超时均来自 mutation-plan（见该 job 与文件头注释）
         shard: ${{ fromJSON(needs.mutation-plan.outputs.shards) }}

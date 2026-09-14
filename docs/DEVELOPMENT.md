@@ -73,7 +73,7 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
   #572：彻底剥离 main 分支代码树与自动 PR 噪音；旧 #204 方案 A 的「收进仓库目录
   `scripts/gate/baseline/` + 自动开 PR」已废除）。班次结构为三段式（#718 S1.1/S1.5）：
   `mutation-plan` 派生段清单与逐段超时 → `quality`（cov/契约/打包闸）∥ `mutation-shards`
-  （逐段矩阵，`max-parallel: 5`、`fail-fast: false`、单段超时按实测校准）→
+  （逐段矩阵，`max-parallel: 8`、`fail-fast: false`、单段超时按实测校准）→
   `mutation-collect`（判分 + **单点并集入档** + 报告 + 工单，`if: always()` 收口）。
   逐包容错记账：单段失败不连坐，结尾统一非零退出。
   入档是**并集语义**（#718 S1.2）：先取回远端再叠加本次产物，本次未产出的段沿用远端文件，

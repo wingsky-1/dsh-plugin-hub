@@ -379,9 +379,18 @@ jobs:
     if: github.event_name == 'pull_request' && needs.changes.outputs.hasMutations == 'true'
     strategy:
       fail-fast: false
-      # 与夜间班（observe.yml）同值限流：账户并发实测上界 20（#718 S0.3），5 路变异
-      # 留足余量给同仓其它 workflow。
-      max-parallel: 5
+      # 与夜间班（observe.yml）同值限流，取 8（#718 P3，维护者 approved）。依据：
+      # - 全量/失效形态 run 34764977606（12 段、合计 145.7 min）模拟：5 路 → 30.63 min、
+      #   8 路 → 25.35、10/12/16 路 → 25.35——8 档已饱和于最长段 trend-aggregate 25.4 min，
+      #   再加班位只多占账户额度、零墙钟收益；
+      # - 账户并发上界 20 是实测值（#718 S0.3 / PR #753，100 run 样本；扫描器
+      #   scripts/maintenance/scan-actions-concurrency.mjs 在仓内可复现）。本仓峰值 =
+      #   build-test（实测恒 7）+ max-parallel：8 档 → 15，gate:full 带 coverage → 16；
+      #   10 档 → 17~18，只剩 3 个余量给同仓其它 workflow。
+      # docs/mutation-speedup-methodology.md §4.3 的三项核对（total mutant / timeout-error /
+      # score）对本项不适用：本项是 job 级并发（每 job 独立 runner VM），不改变 Stryker
+      # 段内 concurrency，故不存在「timeout 计入 detected、虚增 score」的路径。
+      max-parallel: 8
       # #220 B 方案：combo = {package, seg}；改造后 seg=功能段名（数字段名亦兼容），
       # 多段包逐段并行实例化，未拆分包单实例（seg="0" 走包级配置 <pkg>.json）。
       # #742 阶段 1：combo 另带 timeoutMinutes（逐段超时）与 invalidateBaseline
