@@ -123,7 +123,7 @@ On any of these failing the behaviour is **zero registration / fall back to offi
 - **No system-prompt injection**: the model is not told the tool exists beyond the tool list and result text. This is deliberate (no always-on prompt cost); discovery depends on the model inspecting its tools.
 - **Cannot write into the worktree under `workspace-write`** (see non-goals).
 - **One `dsh web` restart is needed after install or upgrade.**
-- **Per-session state is released only once the host snapshot really drops the session**: the client decides from three faces of the host snapshot (`ids` / `byId` / `current`) and prunes only when all three are readable and say "gone". If the host never removes a closed session from the snapshot, this release path never fires and that session's state lives until the plugin unloads (unverified; one isolated live observation is needed to settle it).
+- **Per-session state is released with the plugin itself**: the client no longer infers liveness (per-session pruning was removed together with the polling), and uses the snapshot only to rewrite the single field `byId[sessionId].cwd`; views and subscriptions live exactly as long as this plugin is mounted (`views.clear()` inside `ctx.effect`).
 - **A second assembly in the same process throws**: all five domains are in-process singletons (`install` / `release` pairs with an `installed` guard), so a second instance cannot mount and the second `install` throws instead of silently sharing state. If a profile mounts this package twice you get one explicit startup error; the old "two instances do not interfere" semantics is gone.
 
 ## Retirement criteria

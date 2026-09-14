@@ -89,7 +89,7 @@ async function assemble(
 
   try {
     // 1. 绑定域：其余三个域都读它，故最先装。
-    bindingApi.installBinding({ logger: host.logger, file: bindingsFile(), now: host.now });
+    bindingApi.installBinding({ logger: host.logger, file: bindingsFile() });
     disposers.push(bindingApi.releaseBinding);
 
     // 2. git 域：tools 的增删与 scope 的归属校验都要它。递进去的 exec 面是本域自带的常量，

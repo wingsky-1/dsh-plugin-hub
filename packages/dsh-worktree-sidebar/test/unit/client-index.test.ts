@@ -64,9 +64,9 @@ function settleMicrotasks(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-/** 一个会话还在册的快照。 */
+/** 一个会话在册的快照。 */
 function liveSnapshot(): SessionsSnapshotLike {
-  return { ids: [SESSION_ID], byId: { [SESSION_ID]: { title: "t" } }, current: SESSION_ID };
+  return { byId: { [SESSION_ID]: { title: "t" } } };
 }
 
 /** 我们注册的那条正文的 inject 面（已包装）。 */

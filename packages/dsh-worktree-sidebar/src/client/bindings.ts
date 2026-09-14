@@ -7,8 +7,8 @@
  */
 import type { ObservablePort, ReadBinding } from "./shared/ports.ts";
 
-/** 一个会话的绑定状态。 */
-export interface BindingState extends ObservablePort<string | null> {
+/** 一个会话的绑定状态。同块使用，故不从本模块转出（对照 source.ts 的 SessionsSource）。 */
+interface BindingState extends ObservablePort<string | null> {
   /** 拉一次宿主；失败保持上次成功态（G6）。 */
   refresh(): Promise<void>;
 }

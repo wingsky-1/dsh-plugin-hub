@@ -360,7 +360,7 @@ describe("installScope 的接管资格", () => {
   it("provider 已注册时**捕获官方 resolve** 并委托（不是委托我们自己的包装）", async () => {
     const { deps, configured } = scopeDeps({ descriptor: official });
     installScope(deps);
-    expect(scopeService.isInstalled()).toBe(true);
+    expect(scopeService.takeoverState()).toBe("live");
     expect(takeoverState()).toBe("live");
     expect(configured.length).toBe(1);
     expect(await configured[0]?.("s1")).toEqual({ sessionId: "s1", workspaceRoot: "/official" });
@@ -370,7 +370,7 @@ describe("installScope 的接管资格", () => {
     const { deps, configured } = scopeDeps();
     installScope(deps);
     expect(takeoverState()).toBe("waiting");
-    expect(scopeService.isInstalled()).toBe(false);
+    expect(scopeService.takeoverState()).not.toBe("live");
     expect(configured.length).toBe(0);
     expect(await scopeService.effectiveWorktree("s1")).toBeNull();
     expect(warns.filter((w) => w.includes("provider 尚未注册")).length).toBe(1);
@@ -409,7 +409,7 @@ describe("installScope 的接管资格", () => {
     });
     installScope(deps);
     expect(takeoverState()).toBe("abandoned");
-    expect(scopeService.isInstalled()).toBe(false);
+    expect(scopeService.takeoverState()).not.toBe("live");
     expect(configured.length).toBe(0);
     expect(warns.some((w) => w.includes("已有解析器，放弃接管"))).toBe(true);
     // 再来通知也不再试：重试只会反复撞同一个「已被占用」。
@@ -484,26 +484,26 @@ describe("二次装配守卫与 release 复位", () => {
   it("release 交还 resolver，且再次装配必须能重新接管", () => {
     const first = scopeDeps({ descriptor: official });
     installScope(first.deps);
-    expect(scopeService.isInstalled()).toBe(true);
+    expect(scopeService.takeoverState()).toBe("live");
     releaseScope();
     expect(first.isDisposed()).toBe(true);
-    expect(scopeService.isInstalled()).toBe(false);
+    expect(scopeService.takeoverState()).not.toBe("live");
     expect(takeoverState()).toBe("idle");
 
     const second = scopeDeps({ descriptor: official });
     installScope(second.deps);
-    expect(scopeService.isInstalled()).toBe(true);
+    expect(scopeService.takeoverState()).toBe("live");
     expect(second.configured.length).toBe(1);
   });
 
   it("「已被占用」是当次事实：上一次被占用不阻止 release 后的下一次接管", () => {
     const occupied = scopeDeps({ descriptor: official, configureThrows: true });
     installScope(occupied.deps);
-    expect(scopeService.isInstalled()).toBe(false);
+    expect(scopeService.takeoverState()).not.toBe("live");
     releaseScope();
     const free = scopeDeps({ descriptor: official });
     installScope(free.deps);
-    expect(scopeService.isInstalled()).toBe(true);
+    expect(scopeService.takeoverState()).toBe("live");
     expect(free.configured.length).toBe(1);
   });
 

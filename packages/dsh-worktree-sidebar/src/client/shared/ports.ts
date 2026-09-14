@@ -139,12 +139,10 @@ export type ReadBinding = (sessionId: string) => Promise<BindingResponse | undef
 /**
  * 会话快照的最小形状：我们只改写 `byId[sessionId].cwd` 这一个字段，其余原样透传。
  *
- * `ids` / `byId` / `current` 同时是装配根判断「这个会话还在不在」的三个证据面
- * （`index.ts` 的剪枝）。三项都声明成可选：宿主快照的形态与这份假设不一致时，
- * 剪枝整体放弃，而不是把读不到的字段当成「已消失」。
+ * 只声明真正读到的那一面：`ids` / `current` 曾经是「按会话剪枝」的证据面，剪枝随
+ * 去轮询一起删掉后它们没有读取点，留着只会让人以为还有一条存活性推断。
+ * `byId` 声明成可选：形态对不上时整体放弃改写，而不是凭空造出会话条目。
  */
 export interface SessionsSnapshotLike {
-  readonly ids?: readonly string[] | undefined;
   readonly byId?: Record<string, unknown> | undefined;
-  readonly current?: string | undefined;
 }

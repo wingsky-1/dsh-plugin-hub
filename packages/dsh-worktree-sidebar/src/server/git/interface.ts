@@ -9,8 +9,6 @@
 import type { GitDeps } from "./deps.ts";
 import { gitService } from "./impl/service/index.ts";
 
-export type { GitApi } from "./impl/service/index.ts";
-
 /** 真实的 git 执行面：它没有状态，故按常量转出而不是工厂。 */
 export { gitExec } from "./impl/exec/index.ts";
 

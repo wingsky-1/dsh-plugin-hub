@@ -36,7 +36,14 @@ function fakeHost(): FakeHost {
   const ctx = {
     logger: { warn: () => undefined },
     on: () => () => undefined,
-    agents: { list: () => [] },
+    agents: {
+      list: () => [],
+      // 组合根只允许用 list()：roots() 看不到子 agent，用它就等于子会话拿不到工具。
+      // 这里留一个会抛的同名方法，把这条约束变成有意判据（否则只靠「假件恰好没实现 roots」的偶然 TypeError）。
+      roots: () => {
+        throw new Error("组合根不该用 agents.roots()：子 agent 也要装工具");
+      },
+    },
     webServer: {
       register: (route: WebRoute) => {
         routes.push(route);

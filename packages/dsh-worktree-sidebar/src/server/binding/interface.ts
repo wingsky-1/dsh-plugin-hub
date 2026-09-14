@@ -10,9 +10,8 @@ import type { FileWrite } from "../shared/interface.ts";
 import type { BindingDeps } from "./deps.ts";
 import { bindingService } from "./impl/service/index.ts";
 
-export type { BindingApi } from "./impl/service/index.ts";
 export { BINDINGS_VERSION } from "./impl/model/type.ts";
-export type { BindingRecord, BindingsFile } from "./impl/model/type.ts";
+export type { BindingRecord } from "./impl/model/type.ts";
 
 /** 装配 binding 域（组合根在 `apply` 期调用一次）。重复装配是编程错误，当场抛错。 */
 export function installBinding(deps: BindingDeps): void {

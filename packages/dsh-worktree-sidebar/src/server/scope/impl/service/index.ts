@@ -37,9 +37,7 @@ export interface ScopeApi {
    * 浏览器路由读它，所以它与解析器给出的答案是同一个（G7）。
    */
   effectiveWorktree(sessionId: string): Promise<string | null>;
-  /** 是否成功接管。未接管时 `effectiveWorktree` 恒为 null。 */
-  isInstalled(): boolean;
-  /** 接管状态的诊断读数：只给 health 用，判定逻辑不看它。 */
+  /** 接管状态的诊断读数：只给 health 用，判定逻辑不看它。接管与否看它是否等于 `live`。 */
   takeoverState(): TakeoverState;
 }
 
@@ -92,10 +90,6 @@ class ScopeService implements ScopeApi {
     } catch {
       // 同上。
     }
-  }
-
-  isInstalled(): boolean {
-    return this.state === "live";
   }
 
   takeoverState(): TakeoverState {

@@ -41,10 +41,11 @@ function makeAgent(id: string, cwd: string | undefined) {
   return { agent, registered, disposed };
 }
 
-/** 宿主面假件：agent 枚举由用例给定，事件经 `emit` 手工派发。 */
-function fakeHost(agents: readonly HostAgentLike[]) {
+/** 宿主面假件：agent 枚举由用例给定，事件经 `emit` 手工派发，`remove` 模拟退场。 */
+function fakeHost(initial: readonly HostAgentLike[]) {
   const events: string[] = [];
   const handlers: Array<(payload: { agent: HostAgentLike }) => void> = [];
+  const agents = [...initial];
   const port: AgentHostPort = {
     on: (event, handler) => {
       events.push(event);
@@ -58,6 +59,10 @@ function fakeHost(agents: readonly HostAgentLike[]) {
     events,
     emit: (agent: HostAgentLike) => {
       for (const handler of handlers) handler({ agent });
+    },
+    remove: (agent: HostAgentLike) => {
+      const index = agents.indexOf(agent);
+      if (index >= 0) agents.splice(index, 1);
     },
   };
 }
@@ -130,6 +135,19 @@ describe("agent 注册面", () => {
     for (const face of seen) agents.publish(face, DEFINITIONS);
     expect(child.registered).toEqual([...DEFINITIONS]);
     expect(parent.registered).toEqual([...DEFINITIONS]);
+  });
+
+  it("退场后的 agent 不再能 publish：按 id 现查，不留永不释放的 agent 缓存", () => {
+    const a1 = makeAgent("a1", "/repo");
+    const host = fakeHost([a1.agent]);
+    const agents = bindAgents(host.port);
+    const faces = agents.list();
+    // 递出 face 之后、publish 之前该 agent 退场：必须抛错，而不是往一个已释放的作用域里注册。
+    // 这条判据同时钉住「不留缓存」——缓存过 agent 对象就永远不会走到这里。
+    host.remove(a1.agent);
+    expect(() => agents.publish(faces[0], DEFINITIONS)).toThrow(
+      "dsh-worktree-sidebar: agent a1 未注册，拒绝把工具装进未知作用域",
+    );
   });
 
   it("list() 枚举子代理：快照里没有顶层与子之分", () => {

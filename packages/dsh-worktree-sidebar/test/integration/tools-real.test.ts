@@ -40,7 +40,6 @@ function harness(): Harness {
   bindingApi.installBinding({
     logger: { warn: (m: string) => warns.push(m) },
     file,
-    now: () => "2026-09-14T00:00:00.000Z",
   });
   gitApi.installGit({ exec: gitApi.gitExec });
 

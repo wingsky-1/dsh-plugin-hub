@@ -32,9 +32,6 @@ export interface AgentHostPort {
 
 /** agent 注册面：工具域只看到「一个 agent 有 id、有 cwd、可以往里装工具」。 */
 export function bindAgents(host: AgentHostPort): AgentPort {
-  /** 订阅回调用的是发布时的 agent 对象；到 `publish` 时只能靠 id 找回它。 */
-  const live = new Map<string, HostAgentLike>();
-
   const faceOf = (agent: HostAgentLike): AgentFace => ({
     id: agent.id,
     cwd: agent.session.header.cwd,
@@ -47,16 +44,14 @@ export function bindAgents(host: AgentHostPort): AgentPort {
         // 该判断被**有意推翻**（不是删除时漏掉守卫）：子会话同样会点开侧边栏、同样需要把 worktree
         // 登记给自己那条会话，而工具装进各 agent 自己的 effect、随该 agent 一起释放，
         // 并不会改动调用方的工具面。子会话的展示语义见 README。
-        live.set(agent.id, agent);
         handler(faceOf(agent));
       }),
-    list: () =>
-      host.all().map((agent) => {
-        live.set(agent.id, agent);
-        return faceOf(agent);
-      }),
+    list: () => host.all().map(faceOf),
     publish: (face, definitions) => {
-      const agent = live.get(face.id);
+      // 按 id 现查而不是缓存 agent 对象：缓存要能覆盖「宣告过但已退场」的 id 就得永不删除，
+      // 而 agent 的 ctx 挂着它整个服务图——装给所有子 agent 之后那就是进程级的无界增长。
+      // 代价是「宣告与装配之间被释放」的窄竞态落到下面的抛错分支（tools 域本来就会 catch 出声）。
+      const agent = host.all().find((candidate) => candidate.id === face.id);
       if (agent === undefined) {
         // 「未装配的占位要抛错」而不是给空 disposer：`publish` 的调用点是自家 tools 域的同步
         // 调用，且只发生在 list/subscribe 递出同一个 face 之后，未知 id 只可能是组合根递错了

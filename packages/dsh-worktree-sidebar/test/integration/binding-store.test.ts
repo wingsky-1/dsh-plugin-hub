@@ -31,7 +31,6 @@ function makeDeps() {
     deps: {
       logger: { warn: (message: string) => warns.push(message) },
       file,
-      now: () => "2026-09-14T00:00:00.000Z",
     },
   };
 }
@@ -161,7 +160,6 @@ describe("写盘失败", () => {
     bindingApi.installBinding({
       logger: { warn: (message: string) => warns.push(message) },
       file,
-      now: () => "2026-09-14T00:00:00.000Z",
     });
     const result = await bindingApi.put("s1", record);
     expect(result.ok).toBe(false);
