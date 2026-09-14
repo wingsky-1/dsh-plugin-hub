@@ -131,6 +131,12 @@ Stryker 将 timeout 计入 detected，高并发导致调度延迟时边际 mutan
 - [ ] timeout / error 计数无异常抬升；
 - [ ] score 与基线口径一致。
 
+**读法说明**（界定本条中的「并发」指哪个旋钮，上面三条核对的判据一字不动）：本条中的
+**并发**指 **Stryker 段内 `concurrency`**——同一次 run 内的 test runner 进程数；只有它会改变
+mutant 的调度延迟，故 timeout 机制与本条同源。**job 级并行度**（GHA `max-parallel`：每个 job
+独立 runner VM、段内 `concurrency` 不变）不改段内并发，**timeout 机制不与本条同源**；但 job 级
+并发的变更**仍须核对** score 与基线口径一致（基线口径不随并发度变化，同一份报告即可复算）。
+
 （lan-proxy `timeoutMS=15000` 的敏感性为前车之鉴：放宽到 60s 曾使总时长冲到 15 分钟以上。）
 
 ### 4.4 纯配置改动与变异切片（#322 起已映射）

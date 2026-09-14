@@ -1719,9 +1719,11 @@ test("#718 S1.1/S1.4/S1.5: observe 全量班三段式矩阵（plan / quality+sha
   const stratIdx = OBSERVE.indexOf("    strategy:", shardsStart);
   assert.ok(stratIdx > shardsStart, "observe.yml mutation-shards 必须声明 strategy");
   const stratBlock = OBSERVE.slice(stratIdx, OBSERVE.indexOf("\n    runs-on:", stratIdx));
+  // 锚定「行首缩进 + 键名 + 值」，而不是 /max-parallel:\s*8\s*$/m：后者把块内任何以
+  // `max-parallel: 8` 结尾的注释行也算满足（真值仍是 5 也会假绿，复核实测 exit 0）。
   assert.ok(
-    /max-parallel:\s*5\s*$/m.test(stratBlock),
-    "observe.yml 矩阵必须声明 max-parallel: 5（#718 S1.1；S0.3 实测额度上界 20，取 5 留余量）",
+    /^[ \t]*max-parallel:[ \t]*8[ \t]*$/m.test(stratBlock),
+    "observe.yml 矩阵必须声明 max-parallel: 8（#718 S1.1/P3；依据是账户并发余量 + 与 ci.yml 同值限流，不是「8 档已饱和」）",
   );
   assert.ok(
     /fail-fast:\s*false\s*$/m.test(stratBlock),
@@ -1764,4 +1766,29 @@ test("#718 S1.1/S1.4/S1.5: observe 全量班三段式矩阵（plan / quality+sha
     !shardsBlock.includes("orphan-baseline.mjs push"),
     "矩阵实例内不得推送基线——推送必须单点落在收口 job",
   );
+});
+
+test("#718 P3: 两班变异矩阵 max-parallel 同值限流（ci.yml / observe.yml 各自钉 8）", () => {
+  // 为什么两侧分别钉 8、而不是断言「两处取值相等」：相等判定会让 5+5 也通过，把已批准的
+  // 档位决定退化成任何同值都能满足的弱判定。两侧都钉 8，才把「取 8」与「同值」一起编码。
+  // 为什么必须成对：ci.yml 的 mutation-gate 与 observe.yml 的 mutation-shards 共享同一个
+  // 账户并发额度，「与夜间班同值限流」是两处注释写明的依据（#718 P3）——只钉一侧时改另一侧
+  // 不会变红，依据可被静默分叉。
+  for (const [file, text, jobId] of [
+    ["ci.yml", CI, "mutation-gate"],
+    ["observe.yml", OBSERVE, "mutation-shards"],
+  ]) {
+    const jobStart = text.indexOf(`\n  ${jobId}:`);
+    assert.ok(jobStart > 0, `${file} 必须存在 ${jobId} job`);
+    const stratIdx = text.indexOf("    strategy:", jobStart);
+    assert.ok(stratIdx > jobStart, `${file} 的 ${jobId} 必须声明 strategy`);
+    // 与 observe 侧同款的行锚定局部切片（不用跨行正则）：strategy 块内含解释性注释，
+    // 注释一变不应假红。
+    const stratBlock = text.slice(stratIdx, text.indexOf("\n    runs-on:", stratIdx));
+    // 同款锚定：行首缩进 + 键名 + 值，行内不得再有其它内容（注释行、列表项都匹配不上）。
+    assert.ok(
+      /^[ \t]*max-parallel:[ \t]*8[ \t]*$/m.test(stratBlock),
+      `${file} 的 ${jobId} 矩阵必须声明 max-parallel: 8（与另一班同值限流——#718 P3：两处共享同一账户并发额度，分叉即失去依据）`,
+    );
+  }
 });
