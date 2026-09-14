@@ -717,6 +717,8 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 **B1 的连带面（切片 4 实跑补充，必须同一笔做）**：`mutation-topology.json` 六个段的 excludes 各有一条 `!packages/dsh-mcp-manager/src/placement-math.ts`（`:92/102/117/127/142/161`）。文件挪走后该 pattern **不再命中新路径**，而新路径落在 `runtime` 段的 `src/shared/**/*.ts` 超集里 → 这张薄 facade 会**进变异面**（与 provider-usage 对 `src/shared/placement-math.ts` 的 facade 排除先例相悖）。正确处置是**把该条 pattern 平移到新路径**（语义位移，不是新增证据），并重生成 6 份段 conf。
 
+> **B1 进度（2026-09-14）**：**B1.1 已完成**（`f21d44d`，含 ⑩）：建 `src/shared/interface.ts` 门面 + `placement-math.ts` 迁入 + 消费点改经门面 + 六条 pattern 平移；`dir-imports-baseline.json` 登记 7 类**结构型**计数位移（`quality` 段逐字节不变），公共导出面零变化。**B1.0（判据加固，见附录 G·G1）正在进行**：关掉 I8① 的裸包名自引用绕过路径。**未完**：`server/shared/paths.ts` + `file-io.ts`、`upgrade` 六件套、`src/server` 骨架与组合根、`src/shared` 另外五个文件。
+
 **commit 上限建议**：B0 ≤10、B1 ≤12、B2 ≤5/域、B3 ≤25；合计 ≤80。squash merge 下批次粒度只存在于分支，交付物（逐符号收缩表、对账表、exit code）必须落 PR 正文或持久文档。
 
 ---
@@ -740,7 +742,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | R14 | **I2① 今天没有执法点**，若 B0 忘了造，B2 的「域间值边 = 0」是空头验收 | B0⑨ 明确列为交付项；未落地则把 I2① 降级为报告项并同步改宪法 |
 | R15 | **掩码语义边界**（清空文本框 = 缺键 → 合并语义保留旧凭据，UI 无法删除凭据） | 本轮登记为已知限制（不改）；§6.1 纪律 5 写死三条语义，契约测试覆盖「掩码值恰为 `********`」与部分补丁 `{enabled}` |
 | R12 | 本包既决缺陷（#770 13 项）里有 5 项与边界同源 | §6 本轮修完凭据面；其余按 §10.2 逐条登记「本轮改 / 不改」 |
-| R16 | **基线「两级首次登记」的洗白路径**（删键 + `--write-baseline` 可把该类现状洗成基线） | 已评估为**可接受**：与手改基线 JSON 等价，护栏是 diff 审阅 + CI `--check`；类级首次登记在输出里逐条点名「须在 PR 内确认」；类内新增仍判红中止 |
+| R16 | **基线「两级首次登记」的洗白路径**（删键 + `--write-baseline` 可把该类现状洗成基线） | 已评估为**可接受**，但护栏描述经对抗复核**订正**（见附录 G）：**唯一护栏是人工 diff 审阅**——CI 只跑 plain check，**洗白后的基线在 check 模式按构造必然 PASS**（基线无 provenance，机器无法区分「刚被重写的键」与「原样保留的键」）。实测两条更宽的同族路径：删**整包**条目可一次洗 **10 类**且提示只报条数不报明细；**瞬态台账**（写基线时台账在、检查时不在）使被锁进基线的违规在仓内不留任何放宽记录。类级首次登记在输出里逐条点名「须在 PR 内确认」；类内新增仍判红中止 |
 
 ---
 
@@ -810,11 +812,12 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | 项 | 值 |
 |---|---|
 | 主 checkout（**只读，未改动**） | `/mnt/ssd/dev/dsh-plugin-hub`，HEAD `b490e87`（v0.2.4 发布点，与方案里的代码基线一致） |
-| 方案 worktree | `/mnt/ssd/worktree/dsh-plugin-hub-task-767-arch-v4`，分支 `task/767-arch-v4`，领先 `origin/main` **27 个提交**（B0 收尾后）、工作区干净 |
+| 方案 worktree | `/mnt/ssd/worktree/dsh-plugin-hub-task-767-arch-v4`，分支 `task/767-arch-v4`，领先 `origin/main` **30 个提交**（B0 收尾 + B1.1 落地后）、工作区干净 |
 | 提交（方案期） | `e356696` v5 定稿 / `4b1153e` 三视角复核修订 / `803b670``2ff9ff6` 交接状态 |
 | 提交（B0 实施） | `43229f6` 导出面基线冻结 · `d3a21d2` faces + 准入自测双包遍历 · `da83b36` 门禁接线 · `660dd0a` mcp 豁免 + 连带自测 · `f8ee6c5` ci.yml 数据面 glob（红线 1）· `8235e32` 两轮复核并入 · `ec3004c` 维护者裁决落地 · `cd44c90` 变异面 · `8fe5119` facade 计数修正 + §8.3 实测 |
 | 提交（B0 切片 3a/3b 与收口） | `58823bc`/`d6795ec` I2①/I2④/client 三判据 · `84a5941`/`8727cf0`/`1fb0af3` I8 判据与证据类文档同步 · `e35767d`/`edab5d0` 切片记录（含 I8 判据面按宪法原文收窄）· `0ad5a02`/`3565687` 契约三分类打标 · `6c5d150`/`9f7cc62`/`4dbf2a4` 附录 F 与交接状态 · `fd2f82d` B0⑦ 文案与产物断言 |
-| 交付物 | `packages/dsh-mcp-manager/docs/architecture-redesign-v5.md`（1086 行，含附录 A–F）+ `architecture-redesign-v4.md`（被取代，B3 归档时清理） |
+| 提交（B1） | `f21d44d` B1.1 建 `src/shared/` 门面 + `placement-math` 迁入 + 六条 facade 排除 pattern 平移 + 结构型基线登记 |
+| 交付物 | `packages/dsh-mcp-manager/docs/architecture-redesign-v5.md`（含附录 A–G）+ `architecture-redesign-v4.md`（被取代，B3 归档时清理） |
 | 工具链（**本会话实测，与旧交接说法相反**） | worktree **有** `node_modules`（`tsc` / `esbuild` / `vitest` / `stryker` 都在 `node_modules/.bin`），故依赖 build 的步骤（`export-surface-snapshot` / `forbid-module-state-src` / `test:scripts`）可在 worktree 内直接跑，无需安装 |
 | 参照实现 | `packages/dsh-notifier`（#733 / PR #777）。关键 commit：`2370774` 冻结基线 / `db1ce0f` 首笔砍到 4 导出 / `8df3950` 一次性重冻结 / `4c79ba0` 重写落地 / `8142b13` 行为变更登记模板 / `a748361` 恢复被静默删掉的能力 |
 
@@ -837,30 +840,34 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 15. **技术路线已定**（维护者问「全面删除重写 vs 模块搬迁」，裁决：**都不取极端**）：结构一次到位（零 shim）+ 实现逐块搬迁 + **只在必须换形的块重写**。依据：①「1073 组 A 级差分全绿的重写仍静默漏 4 项能力」已实证；②测试面 14796 行虽全绿但**零条**「出口不含明文」断言、且 13 个单测的断言面是旧形态私有字段，重写当天要么失红要么被迫删断言；③上一轮已做过纯搬迁，结果是把反模式写进了契约。分块判据：纯函数族 2074 行可重写（A 级差分有效）／四个巨型文件 3287 行（src 的 29.7%）必须搬迁 + 逐条对账（B 级）／旧形态即缺陷的面必须重写／目录门面导出面一次到位。**未采纳**「逐域删旧建新」的加固（与 D1 的一次性重冻结冲突，并存期只在 B2 内部且导出面在那笔之前一直红，属可见提醒）。
 16. **B0 切片 4 已完成**（`fd2f82d`，⑦）：`locales.ts:74/177` 的 `scopeGlobalOpt` 中英两行去掉宿主路径承诺 + `test/e2e/smoke.test.ts` 加「客户端产物不含 `~/.dsh`」断言（含正反两向自证：注入后 **exit 1**、还原后命中 0）。协调者独立复核：`src/client` 与 `lib/client.js` 的 `~/.dsh` 命中**均为 0**，项目级 `<项目>/.dsh/mcp.json` **合法保留**（正控真实存在）。**⑩ 主动回退移入 B1**（机理与连带面见 D.3）。
 17. **`pnpm gate:pr` 复跑 = exit 0**（`GATE_PR_EXIT=0`，日志 `/tmp/gate-pr.log`）：32 条门禁项**逐条 exit=0**，含 `stryker:check`、`pack:check`、`lint`（670/671 warning）、`test:scripts`、全包 build/test/typecheck。**本地 PASS ≠ CI 绿**：本地任何档都不跑变异。
+19. **B1 第一刀（B1.1）已完成**（`f21d44d`）：建 `src/shared/interface.ts` 门面 + `git mv` `placement-math.ts` 迁入（仓库根 `shared` 的相对深度 `../../../`→`../../../../`）+ 4 处消费点改经门面 + `style.css` 路径注释同步 + `mutation-topology.json` 六条 facade 排除 pattern **平移**到新路径并重生成 6 份段 conf。`dir-imports-baseline.json` 登记 **7 类结构型计数位移**（`modules`/`interfaceFacades` 14→15、`scannedSrcFiles` 63→64、`allSrcTsFiles` 78→79、`leafValueEdges` 33→34、`fileValueEdges` 116→117、`crossModuleRefs` 134→141），**`quality` 段逐字节不变**。主控独立复验：判据 exit 0、基线 diff 仅这 7 个数字、`quality` 段 JSON 与 HEAD 相同、`export-surface-snapshot` 零 diff、提交后 `gate:pr` **exit 0**（32 项逐条 exit=0，`/tmp/gate-pr-767-b11-c.log`，与提交前那次的逐项完全一致）。**别名陷阱**：`panelAnchorForPosition` 不能与其它 12 个符号同链转出（见附录 G·G8），改为用真实源名直连仓库根单源 + 就地注释。
 
 ### D.3 未完成与遗留（含状态订正）
 
-1. **B0 切片 4 已收口：⑦ 已落地（`fd2f82d`），⑩ 已按实测证据移入 B1**：
-   - **⑩ = 主动回退，不是被打断**。它实跑证明迁移在 B0 不可行（`verify-dir-imports` **exit 1** + `missingInterface`；`--write-baseline` 也 exit 1），唯一出路是建 `src/shared/interface.ts`（B1）或写豁免（禁止）→ **已改到 B1、与 `src/shared/` 门面同笔**（证据段在 §十二表后）。
-   - **⑦ 已落地**（`fd2f82d`）：`locales.ts:74/177` 两行降级 + `test/e2e/smoke.test.ts` 产物断言（正反两面自证，含人为注入后 exit 1）；协调者独立复核通过（diff 只增不删、无既有断言被削弱、无基线位移）。
-1b. **⑩ 的连带面（切片 4 实跑发现，B1 必须同笔做）**：`mutation-topology.json` 六个段的 excludes 各有一条 `!packages/dsh-mcp-manager/src/placement-math.ts`（`:92/102/117/127/142/161`）；挪到 `src/shared/` 后该 pattern 不再命中新路径，而新路径落在 `runtime` 段 `src/shared/**/*.ts` 超集内 → 薄 facade 会进变异面（与 provider-usage 对 `src/shared/placement-math.ts` 的 facade 排除先例相悖）。处置：**pattern 平移到新路径**（语义位移，不是新增证据）+ 重生成 6 份段 conf。**文档同步已完成**（`1fb0af3`：`scripts/README.md:38/111` 与 `docs/DEVELOPMENT.md` 已含四类证据与两级首次登记口径，故原 1b 已消解）。
-1c. **lint warning 余量告警**：切片 3a 把 warning 从 669 推到 **670**（预算 671），**余量仅剩 1**（新自测文件的 `@ts-nocheck`，与本仓 `scripts/test` 既有约定一致）——后续新增 scripts 测试会先撞这一条。
-2. **B0② 已完成**（见 D.2 第 13 条）。
-3. **B0 无遗留项**：①–⑪ 全部收口（⑩ 移入 B1）；`pnpm gate:pr` 两次实跑 exit 0。
-4. **红线状态（两条均已获授权）**：① `ci.yml` 数据面 glob 已落地（`f8ee6c5`）；② 公共 API 行为变更已于 2026-09-14 获维护者授权。**本轮不新增任何第三方依赖**。`approved` 标签按仓规**只能由维护者本人打**，代理不代打；B2 的 commit 正文「授权出处」引用 #767 + §10.1 清单。
-5. **测试面（B3 主体）未动**：16 个测试文件 / 14635 行尚未按域搬迁；`@ts-nocheck` 未清零。
-6. **PR-1（B0）尚未开**：分支领先 `origin/main` **27 笔**、工作区干净、**未推送**——该分支 upstream 指向 `origin/main`，**裸 `git push` 会打到 main**，要推必须 `git push -u origin task/767-arch-v4`。`approved` / `api-approved` 由维护者本人打，代理不代打。
+1. **B1 未完部分**：`server/shared/paths.ts`（mode 表）+ 自写 `file-io.ts` + `upgrade` 六件套 + `src/server/` 11 域骨架与组合根 + `src/shared/` 另外五个文件（`status`/`frames`/`dto`/`routes`/`service`）。切法与验收见 D.4。
+2. **B1.0 判据加固进行中**（附录 G·G1）：I8① 需认识「裸包名自引用」这一**等价写法**。存量实测 0，故要求**零基线位移**。
+3. **⑩ 已完结**（随 B1.1，`f21d44d`）：迁移与其连带面（6 条 mutation exclude pattern 平移 + 6 份段 conf 重生成）同笔完成。
+4. **基线写入纪律（附录 G·G5，必须遵守）**：`--write-baseline` **必须在 build 之后的树上跑**——`lib/**` 的证据 id 会随 `lib/foo.d.ts` 在不在而变（只有 `src/index.ts` 做了归一），而 CI 是「先 build 再 contract」，两者错位就换号判红。
+5. **已知放宽路径（登记，不修）**：R16 的三条同族路径（删键 / 删**整包**条目 / **瞬态台账**，见 §十三 R16 与附录 G·G2–G4）；豁免 `reviewBy` 无执法力、可静默删除转长期（G6）。
+6. **判据面与宪法正文的文字差待订正**（G9）：I2④ 正文（doc:124）未写「值」而实现判值面；I8① 正文（doc:165）只列两面而实现含 `src/client/**`（§8.1 与脚本头写全三面）。
+7. **「有文字无判据」清单**（G10，明细见附录 G）：I1 / I2③后半 / I2② 终态 / I3 / I4② / I5 / I6 / I7 **全靠人工**。其中最突出的是 **I2③ 后半「死声明 = 0」：只算不判、连默认输出都没有**。
+8. **仓库根 `shared/placement-math.d.ts:2` 有过期注释**（「各包 `src/placement-math.ts` 薄 facade」——provider-usage 与本包都已在 `src/shared/`）：既存、非本次弄脏，登记待清。
+9. **lint warning 余量**：**670 / 预算 671，余量 1**（不许抬 `gauntlet.config.json`）。
+10. **测试面（B3 主体）未动**：16 个测试文件 / 14635 行尚未按域搬迁；`@ts-nocheck` 未清零。
+11. **红线状态（两条均已获授权）**：① `ci.yml` 数据面 glob 已落地（`f8ee6c5`）；② 公共 API 行为变更已于 2026-09-14 获维护者授权。**本轮不新增任何第三方依赖**。`approved` / `api-approved` 按仓规**只能由维护者本人打**，代理不代打。
+12. **PR-1（B0）尚未开**：分支领先 `origin/main` **30 笔**、工作区干净、**未推送**——该分支 upstream 指向 `origin/main`，**裸 `git push` 会打到 main**，要推必须 `git push -u origin task/767-arch-v4`。**PR-1 的切分点 = B0 末笔 `aa02843`**，其后的 `f21d44d` 起属 PR-2（B1–B3）。
 
 ### D.4 下一步顺序
 
-**B0 已收口，下一个批次是 B1（骨架与迁移）**。建议按下列四刀切，每刀一个可独立验证的提交面（一次只放一个写者）：
+**B0 已收口；B1.1 已落地（`f21d44d`）；当前在 B1.0（判据加固，见附录 G·G1）。** B1 剩余按下表各刀切，每刀一个可独立验证的提交面（一次只放一个写者）：
 
-1. **B1.1 `src/shared/` 门面 + ⑩ 迁移**（最小、证据最硬的一刀）：建 `src/shared/` 与 `interface.ts`；`git mv src/placement-math.ts src/shared/`；改 4 处引用（`src/index.ts` / `src/config/model/config-schema.ts` / `src/client/core/state.ts` / `src/client/float/float.ts`，其中 client 两处改引 `src/shared/interface.ts`）；被移文件内仓库 `shared/placement-math.js` 的相对深度从 `../../../` 改 `../../../../`；mutation-topology 的 6 条 exclude pattern 平移到新路径 + 重生成 6 份段 conf。**验收**：`verify-dir-imports.mjs --package dsh-mcp-manager` 从 **exit 1 → exit 0**（这就是 ⑩ 在 B0 唯一的红）、`gen-stryker-conf.mjs --check` exit 0、`export-surface-snapshot` exit 0（导出面不变，纯位移）。
+1. ~~**B1.1 `src/shared/` 门面 + ⑩ 迁移**~~ **已完成（`f21d44d`）**；下面保留原始切法供回溯：建 `src/shared/` 与 `interface.ts`；`git mv src/placement-math.ts src/shared/`；改 4 处引用（`src/index.ts` / `src/config/model/config-schema.ts` / `src/client/core/state.ts` / `src/client/float/float.ts`，其中 client 两处改引 `src/shared/interface.ts`）；被移文件内仓库 `shared/placement-math.js` 的相对深度从 `../../../` 改 `../../../../`；mutation-topology 的 6 条 exclude pattern 平移到新路径 + 重生成 6 份段 conf。**验收**：`verify-dir-imports.mjs --package dsh-mcp-manager` 从 **exit 1 → exit 0**（这就是 ⑩ 在 B0 唯一的红）、`gen-stryker-conf.mjs --check` exit 0、`export-surface-snapshot` exit 0（导出面不变，纯位移）。
 2. **B1.2 `server/shared/` 落盘面**：`paths.ts` 单源（新路径 + `legacyFile` + 每文件 mode 表 + 插件自有目录 `0o700`）+ 自写 `file-io.ts`（唯一 tmp 名 → 显式 mode → `rename` → 失败清理；同路径 promise 队列；**不装进程级钩子**）+ 权限断言（7 个写点收敛到这一处）。
 3. **B1.3 `upgrade` 域**：六件套一次建齐（步骤表 / 链驱动 / 刻度 / 失败语义 / 对账 / 装配标记）+ 迁移**五态**测试（含目录型旧路径逐文件搬、用户显式 `storePath`/`statsFile` 不动）+ 刻度「推进与失败不推进」。
 4. **B1.4 `src/server/` 骨架与组合根**：11 域 `interface.ts`/`deps.ts` 骨架 + `bindHost`/`assemble`/逆序释放/`declare module`；探针证明 apply → install → release 各域标记复位。
-5. **B1 收尾**：`pnpm gate:pr` 全绿 + `pack:check` 绿 + `THIRD-PARTY-LICENSES` 相对基线**无新增**（本轮不新增任何依赖）→ 才进 B2。
-6. 每批完成后回写本附录的 D.2/D.3；每批验收含真实 `exit code` + 该批**全部登记文件**同步（§12 开头已写死）。
+5. **B1.5 `src/shared/` 另外五个文件**（`status` / `frames` / `dto` / `routes` / `service`）：必须与**两端改引同笔**——只建文件不接两端就是死代码，覆盖率面与变异面会先红。
+6. **B1 收尾**：`pnpm gate:pr` 全绿 + `pack:check` 绿 + `THIRD-PARTY-LICENSES` 相对基线**无新增**（本轮不新增任何依赖）→ 才进 B2。
+7. 每批完成后回写本附录的 D.2/D.3；每批验收含真实 `exit code` + 该批**全部登记文件**同步（§12 开头已写死）。
 
 ### D.5 新会话最该先做的三件事
 
@@ -1093,3 +1100,32 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 - ESLint 认知复杂度阈值 84：往 `verify-dir-imports.mjs` 里内联大段逻辑会撞线，需抽模块级函数（切片 3a 已因此抽过一次）。
 - `--write-baseline` 在「证据类首次登记」时会按当前事实写入（R16）——新增判据类时必须看逐类提示，并确认该类**只在键缺失那一次**生效。
 - 跨包 `trackingIssue` 的载体：仓库里**没有**覆盖 lan-proxy / web-file-preview 单元测试改动与 notifier client 边的独立 issue，本轮三条台账 + 两条豁免都挂 `#767`（`reviewBy 2027-03-31`）。若要独立跟踪需新开 issue。
+- **裸包名自引用绕过 I8①**（B0 对抗复核 P0，见附录 G·G1）：`resolveCandidates` 只吃 `.` 开头，故 `import ... from "@wingsky-1/dsh-x"` 在 `test/unit/**` 记 **0 条**证据——而它经 `exports` 真的解析到产物面。新增判据/改判据面时必须同时问「有没有另一种写法能写出同一件违规」。
+- **别名转出触发规则 4 假红**：`collectExports` 对 `export { A as B } from` 只登记源名 `A`，门面里对该别名再做**同名**转出会解析到空 → 必须用**真实源名**转出（见 `src/shared/interface.ts` 的就地注释）。
+
+---
+
+## 附录 G B0 门禁机制对抗复核（只读红队）的发现与处置
+
+**复核方式**：只读（禁跑 `build` / `gate:pr` / `--write-baseline`），全部复现实验在 `/tmp` 隔离根（`VERIFY_DIR_IMPORTS_ROOT`）完成，未在 worktree 落任何文件；判据实现文件 sha 在复核前后未变。**主控逐条复验了 G1 与 G2–G4 的代码路径与真实存量**，未采信转述。
+
+| # | 发现 | severity | 证据 | 处置 |
+|---|---|---|---|---|
+| **G1** | **裸包名自引用绕过 I8①**（零数据面改动就能造出等价违规） | **P0** | `resolveCandidates:187` 只吃 `.` 开头的 spec → 裸名返回空 → I8① 的 fallback 落到 `<pkg>/test/unit/@wingsky-1/dsh-x`，不匹配任一面 → **0 条证据**。但各包 `package.json` 的 `exports["."]` 指向 `./lib/index.js`、`tsconfig.base.json` 是 NodeNext，故该 import **真的解析到产物面**（可用 `import.meta.resolve` 亲验） | **修**（B1.0）：让 I8① 认识裸包名/子路径写法，且证据 id 与相对写法**规范化一致**。存量实测 **0**（`test/unit/**` 裸自引用 0 条；`src/**` 唯一命中在 JSDoc 内）→ 零基线位移 |
+| **G2** | **R16 的护栏描述不成立**：「CI 的 `--check`」不是护栏 | P1 | CI 只跑 plain check（`contract-check.ts:246-290`，无 `--write-baseline`）；洗白后的基线在 check 模式**按构造必然 PASS**；基线只有 `version`+`$comment`，无 provenance | **已订正 R16 文案**（§十三）：「唯一护栏是人工 diff 审阅」 |
+| **G3** | **删整包条目可一次洗 10 类**，提示只报条数、不含逐条明细 | P1 | 删 `baseline.packages[pkg]` → `--write-baseline` exit 0，输出「10 类，共 2 条」 | 记入 R16；「提示须列逐条明细」列为改进候选 |
+| **G4** | **瞬态台账**：台账只在写基线那一刻被读，无「基线证据→台账」对偶 | P1 | `:1329` 仅写入时查台账；`:1493-1504` 只有台账→证据单向。写入含证据的基线后清空 ledger → plain 仍 exit 0 | 记入 R16，登记为已知放宽路径 |
+| **G5** | **`lib/**` 证据 id 不 canonical**（只有 `src/index.ts` 做了归一） | P1 | 同一句 `import "../../../lib/foo"`：无 `lib/` 时 id=`lib/foo`；出现 `lib/foo.d.ts` 后 plain 与 `--write-baseline` **均判红** | **纪律**：`--write-baseline` 必须在 **build 之后**的树上跑（B0⑪ 对导出面已有同款要求）。机制层归一登记为候选 |
+| **G6** | **豁免到期无执法力**，`reviewBy` 可静默删除转长期 | P1 | `collect-exemptions.mjs:15` 明确「退出码恒为 0：它是报告不是门禁」；`verify-dir-imports` 从不读 `reviewBy`；删该字段即从到期台账消失 | 登记为已知限制（仓级豁免平台，超本包范围）。**粒度是单条证据**（`path=<包名>:<证据项>`），不存在「一条关整类」 |
+| **G7** | **解析不到的相对导入被整体 skip**（门面被删时判据反而 exit 0） | P2 | B1.1 反面 B：移走 `interface.ts` → `verify-dir-imports` **exit 0**，同态 `tsc` 报 **6 条 TS2307** | **不改**（组合门禁含 typecheck 兜住），登记 |
+| **G8** | **别名转出触发规则 4 假红** | P2 | `collectExports:411-417` 对 `export { A as B } from` **只登记源名 `A`**，门面里对该别名做同名转出即解析到空 | 已就地规避：`src/shared/interface.ts` 用**真实源名**直连仓库根单源 + 就地注释；并列入附录 F.3 撞坑清单 |
+| **G9** | **判据面与宪法正文的文字差** | P2 | I2④ 实现判「**值**引 `src/index.ts`」（`!r.isType`），宪法正文（doc:124）未加「值」；I8① 实现含 `src/client/**`，正文（doc:165）只列两面，而 §8.1 与脚本头写全三面 | 待订正（文字向实现对齐） |
+| **G10** | **「有文字无判据」清单** | P2 | 见下 | 登记（长期透明度） |
+
+**G1 的裁决边界（只修 I8①）**：§5.3 禁的是 `src/server/**`、I2④ 禁的是 `src/index.ts`；裸包名解析到 `lib/index.js`，**不是同一件事的等价写法**，属另一条规则——悄悄扩大一个已冻结判据的范围就是自行扩大授权，故**只登记、不实现**。
+
+**「有文字无判据」（只列有 grep/读码证据的）**：I1（无 Context 闸）、**I2③ 后半「死声明 = 0」**（计算在 `:823-847`，只在 `--graph` 打印，不进 metrics 也不进证据面 → 既不判红也不进基线，**连默认输出都没有**）、I2②（只判新增，存量 4+4 环仅棘轮，终态 0 未强制）、I3（脱敏/投影构造点 = 1、字段清单单点、拒绝文案单点）、I4②（每个 `interface.ts` 具名导出至少一个域外消费者）、I5（`shared/README` 登记与实测一致）、I6（`deps.ts` 无 `?:`、域内禁三种存在性守卫）、I7（`paths.ts` 是文件名/权限字面量唯一出处）。**结论：这些不变式今天全靠人工**；I8②③ 已在脚本头显式登记压后。
+
+**同一次复核的正面结论（对照面）**：四条新判据**不是空转**——把每条分别改成恒空后跑 `verify-dir-imports-criteria.test.ts`：原始 9/9 pass，四个变异分别打红 **2 / 2 / 1 / 2** 条用例且互不串扰；`--graph` 输出与基线口径逐条一致（mcp 33/0/0/13；notifier 的 2 条 clientServerImports 与两条豁免逐字同形）。
+
+**未构造出可达路径（不采信为结论）**：证据串被 `sort`/去重吞掉、`null` vs `[]` 判等、路径分隔符差异、台账跨类 key 碰撞——其中 `null` 反而 fail-closed。
