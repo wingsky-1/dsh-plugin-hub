@@ -419,3 +419,155 @@ test("§5.3：client → src/server 判红（普通 import 与 import type 都�
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+/**
+ * I8① 底座（#767 B0 切片 3b）：src 有域 a、共享层、客户端与组合根；test/unit/a/impl.test.ts
+ * 默认只直连本域 impl（合规）。另两层目录刻意一并造出来——判据必须只认 test/unit/**，
+ * test/e2e/** 与 test/integration/** 引组合根是合法形态（I8 判据的 ②③ 本轮不上线）。
+ */
+function unitFaceFixture(extra = {}) {
+  const pkg = "packages/" + PKG;
+  return {
+    [SRC + "/index.ts"]: 'export const ROOT = "组合根";\n',
+    [SRC + "/shared/interface.ts"]: 'export { S } from "./impl.ts";\n',
+    [SRC + "/shared/impl.ts"]: "export const S = 1;\n",
+    [SRC + "/a/interface.ts"]: 'export { A } from "./impl.ts";\n',
+    [SRC + "/a/impl.ts"]: "export const A = 1;\n",
+    [SRC + "/client/index.ts"]: "export const render = 1;\n",
+    [pkg + "/test/unit/a/impl.test.ts"]:
+      'import { A } from "../../../src/a/impl.ts";\nexport const t = A;\n',
+    ...extra,
+  };
+}
+
+/** I8① 的三类越界面：[证据目标, 相对单元测试文件的导入说明符]。 */
+const UNIT_FACE_BREACHES = [
+  ["src/index.ts", "../../../src/index.ts"],
+  ["lib/index.js", "../../../lib/index.js"],
+  ["src/client/index.ts", "../../../src/client/index.ts"],
+];
+
+const UNIT_TEST_FILE = "packages/" + PKG + "/test/unit/a/impl.test.ts";
+
+/** 断言一行在输出里逐字出现（路径类断言不用正则，免得转义盖过判据本身）。 */
+function assertLine(out, line) {
+  assert.ok(out.split("\n").includes(line), "输出缺少行 " + JSON.stringify(line) + "：\n" + out);
+}
+
+test("I8①：test/unit 只直连本域 impl 判绿；test/helpers、test/e2e、test/integration 显式放行", () => {
+  const pkg = "packages/" + PKG;
+  // 三处引组合根的**面外**文件：基础设施（test/helpers.ts）与另两层（e2e / integration）。
+  // 它们若被判红，说明判据越过了「只对 test/unit/** 生效」这条口径。
+  const root = makeFixtureRoot(
+    unitFaceFixture({
+      [pkg + "/test/helpers.ts"]:
+        'import { ROOT } from "../../src/index.ts";\nexport const h = ROOT;\n',
+      [pkg + "/test/e2e/smoke.test.ts"]:
+        'import { ROOT } from "../../../src/index.ts";\nexport const e = ROOT;\n',
+      [pkg + "/test/integration/flow.test.ts"]:
+        'import { ROOT } from "../../../src/index.ts";\nexport const i = ROOT;\n',
+    }),
+  );
+  try {
+    // D15 起无基线自身判红：先登记空集合（本 fixture 合规无存量）再判定。
+    assert.equal(runOn(root, ["--write-baseline"]).status, 0, "空集合登记应成功");
+    const green = runOn(root);
+    assert.equal(green.status, 0, "合规单元测试应判绿，实际 " + green.status + "：\n" + green.out);
+    assert.match(
+      green.out,
+      /单元层导入面越界（I8①，test\/unit → src\/index\.ts \/ lib \/ src\/client）0 条/,
+      "面外的三层引用不得计入：\n" + green.out,
+    );
+    // 写基线入库的存量集合为空（不是「登记了就不管」），且仍判绿。
+    assert.deepEqual(qualityOf(root).unitImportFaceViolations, [], "干净形态的存量集合必须为空");
+    assert.equal(runOn(root).status, 0, "登记空集合后仍应判绿");
+    const graphed = runOn(root, ["--graph"]);
+    assert.match(
+      graphed.out,
+      /单元层导入面（I8①，[^\n]*）：0 条/,
+      "graph 也应报 0 条：\n" + graphed.out,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("I8①：test/unit 引组合根 / lib / 客户端三面各自判红（无基线 fail-closed + graph 明细）", () => {
+  for (const [face, spec] of UNIT_FACE_BREACHES) {
+    const root = makeFixtureRoot(
+      unitFaceFixture({ [UNIT_TEST_FILE]: 'import "' + spec + '";\nexport const t = 1;\n' }),
+    );
+    try {
+      // 判据不认包名（fixture-pkg 不在任何范围登记里），随 --package 的调用面走。
+      const red = runOn(root);
+      assert.equal(
+        red.status,
+        1,
+        "test/unit → " + face + " 应判红，实际 " + red.status + "：\n" + red.out,
+      );
+      assert.match(
+        red.out,
+        /无基线 fail-closed：单元层导入面越界（test\/unit → src\/index\.ts \/ lib \/ src\/client） 1 个/,
+        "应点名 I8① 的 fail-closed：\n" + red.out,
+      );
+      // 判据不是只活在一句计数里：--graph 必须给出这条证据（含被引目标原样）。
+      const graphed = runOn(root, ["--graph"]);
+      assert.match(
+        graphed.out,
+        /单元层导入面（I8①，[^\n]*）：1 条/,
+        "graph 应报 1 条：\n" + graphed.out,
+      );
+      assertLine(graphed.out, "    test/unit/a/impl.test.ts|" + face);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("I8①：存量登记后新增同类越界仍判红，写基线中止；登记台账后才放行", () => {
+  const root = makeFixtureRoot(unitFaceFixture());
+  const evidence = "test/unit/a/impl.test.ts|src/index.ts";
+  try {
+    assert.equal(runOn(root, ["--write-baseline"]).status, 0);
+    assert.deepEqual(qualityOf(root).unitImportFaceViolations, []);
+    assert.equal(runOn(root).status, 0, "存量登记后应判绿");
+    writeFileSync(
+      join(root, UNIT_TEST_FILE),
+      'import { ROOT } from "../../../src/index.ts";\nexport const t = ROOT;\n',
+    );
+    const after = runOn(root);
+    assert.equal(after.status, 1, "新增越界应判红，实际 " + after.status + "：\n" + after.out);
+    assert.match(
+      after.out,
+      /\[质量型\] unitImportFaceViolations: 新增未登记证据 test\/unit\/a\/impl\.test\.ts\|src\/index\.ts/,
+      "应点名新增证据与类：\n" + after.out,
+    );
+    const refused = runOn(root, ["--write-baseline"]);
+    assert.equal(
+      refused.status,
+      1,
+      "未登记不得写入，实际 " + refused.status + "：\n" + refused.out,
+    );
+    assert.ok(
+      pendingLedgerKeys(refused.out).includes(PKG + ":" + evidence),
+      "台账键应为 <包名>:<证据项>：\n" + refused.out,
+    );
+    assert.deepEqual(
+      qualityOf(root).unitImportFaceViolations,
+      [],
+      "中止即不落盘：存量集合保持为空",
+    );
+    // 台账通道（I8 的跨包存量处置同形）：登记后写入成功、证据入库、判绿。
+    const ledger = writeLedger(root, [PKG + ":" + evidence]);
+    const accepted = runOn(root, ["--write-baseline", "--exemptions", ledger]);
+    assert.equal(accepted.status, 0, "按台账登记后应写入成功：\n" + accepted.out);
+    assert.deepEqual(
+      qualityOf(root).unitImportFaceViolations,
+      [evidence],
+      "证据应入库：\n" + accepted.out,
+    );
+    assert.equal(runOn(root, ["--exemptions", ledger]).status, 0, "登记后应判绿");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

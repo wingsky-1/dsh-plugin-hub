@@ -65,6 +65,20 @@
  *     写入存量并逐类提示（mcp 的 I2① 存量就是 33 条，逐条要求开豁免 = 把存量登记误当
  *     放宽通道）；类**内**新增证据仍一律不写入、判红、放宽须登记台账。
  *
+ * #767 B0 切片 3b（I8 测试导入面判据，本轮**只对 `test/unit/**` 生效**）：
+ *   - **I8①**：新增质量证据 `unitImportFaceViolations`——`test/unit/**` 下的文件不得 import
+ *     包根组合根 `src/index.ts`、构建产物面 `lib/**`、客户端面 `src/client/**`。单元层是
+ *     白盒直连 `src/server/<域>/impl/<块>/`（§8.1 的表），经组合根导入等于把装配顺序与服务面
+ *     带进单元测试，等于用产物入口测单模块：分层由**导入面**定义，不由文件名前缀定义。
+ *   - **面外显式放行**：`test/helpers.ts` 等测试基础设施不在 `test/unit/**` 内；判据也只认
+ *     `src/index.ts` / `lib/**` / `src/client/**` 三类目标，测试目录之间的互引一律不判。
+ *     `test/e2e/**` 与 `test/integration/**` 各有产物与浏览器语义，**本轮明确不判**（I8 判据的
+ *     ②③ 压后），故 `test/e2e/**` 引 `src/index.ts` 仍是合法形态。
+ *   - **存量两档**：本包 13 条（14 处引用按 `文件|目标` 去重）进单调基线，随 §12 的批次清零；
+ *     其他包 3 条（lan-proxy 2 / web-file-preview 1）同笔登记 `gate-exemptions.json`。
+ *   - **包范围**：不内嵌包常量——判据随 `--package` 的调用面走，范围登记在
+ *     `scripts/data/gate-scope-registry.json` 的 verify-dir-imports 条目（scopeFrom=cli）。
+ *
  * 豁免：
  *   - `src/client/`（index.ts 为 build-client 契约锚点）：from 侧完全豁免（规则 1–5 的
  *     扫描面与三套依赖图都不含它）；target 侧同样不入模块表与依赖图。**唯一例外**是
@@ -813,6 +827,52 @@ function collectClientServerImports(srcDir) {
   return [...new Set(out)].sort();
 }
 
+/**
+ * I8① 的三类面外目标判据（#767 B0 切片 3b）：入参是相对**包根**的目标路径，命中返回
+ * canonical 的证据目标，否则 null。
+ *
+ * 为什么只认这三类而不是「只允许 import 本域 impl」：§8.1 的表是单元层的**目标形态**
+ * （`src/server/<域>/` 由 B1 才铺出来），把「同域」一并落成硬判据会在 notifier / provider-usage
+ * 上判出大批既有合法用法（两包今天已按 `test/unit/<域>/` 组织，跨域取 `config/impl/model` 这类
+ * 底层域是它们的既有形态）——那是 B1–B3 的搬迁面，不是本判据的面。三类的共同点是**方向必错**：
+ * 组合根是装配面、`lib/` 是产物面、`src/client/` 是另一端，单元层取任何一个都不是白盒直连。
+ *
+ * 组合根目标归一成 `src/index.ts`：同一处的 `../src/index.js` 与 `../src/index.ts` 必须落成同一条
+ * 证据，否则换个后缀就能造出「第二条证据」来绕基线。
+ */
+function unitImportFaceTarget(pkgRel) {
+  if (pkgRel === "src" || /^src\/index\.(?:ts|tsx|mts|js|mjs|cjs|d\.ts|d\.mts)$/.test(pkgRel))
+    return "src/index.ts";
+  if (pkgRel === "lib" || pkgRel.startsWith("lib/")) return pkgRel;
+  if (pkgRel === "src/client" || pkgRel.startsWith("src/client/")) return pkgRel;
+  return null;
+}
+
+/**
+ * I8①（#767 B0 切片 3b）：单元层导入面判据——`test/unit/**` 下的文件不得 import 组合根
+ * `src/index.ts`、产物面 `lib/**`、客户端面 `src/client/**`（口径与理由见 unitImportFaceTarget
+ * 与文件头）。判据是**只许缩小**的集合（终态为空），故落质量证据面而不是结构型计数面。
+ *
+ * 返回**包相对**路径的 `from|to` 证据集合（与台账键 `<包名>:<证据项>` 同形）。抽成独立函数
+ * 与 `collectClientServerImports` 同因：内联会把 analyzePackage 的认知复杂度推过门禁阈值。
+ */
+function collectUnitImportFaceViolations(pkgDir) {
+  const unitDir = join(pkgDir, "test", "unit");
+  if (!existsSync(unitDir)) return [];
+  const out = [];
+  for (const fromFile of collectTsFiles(unitDir)) {
+    const text = stripComments(readFileSync(fromFile, "utf8"));
+    for (const { spec } of extractRefs(text)) {
+      // 目标不存在时（`lib/**` 还没构建、`.js` 后缀映射不到 `.ts`）退回**字面路径**：判据管的是
+      // 写下来的导入面，让「产物没构建」变成静默绕过才是这类门禁最典型的假绿。
+      const target = resolveTarget(fromFile, spec) ?? resolve(dirname(fromFile), spec);
+      const hit = unitImportFaceTarget(rel(pkgDir, target));
+      if (hit !== null) out.push(`${rel(pkgDir, fromFile)}|${hit}`);
+    }
+  }
+  return [...new Set(out)].sort();
+}
+
 /** 门面资格判定器：文件名是 interface.ts/deps.ts **且**所在目录就是一个模块目录。 */
 function makeFacadeCheck(modules) {
   /**
@@ -1089,6 +1149,9 @@ function analyzePackage(pkgName, topology) {
   // ESLint 复杂度门禁（sonarjs/cognitive-complexity），把无关的规则面一起拖红。
   const clientServerImportEvidence = collectClientServerImports(srcDir);
 
+  // I8①（#767 B0 切片 3b）：单元层导入面（`test/unit/**` → 组合根 / lib / client）。
+  const unitImportFaceEvidence = collectUnitImportFaceViolations(dirname(srcDir));
+
 
   const specs = collectMutationSpecs(topology, pkgName);
   // 「不适用」与「空集」的区分只在本函数内部；metrics 统一落数组（?? []），
@@ -1113,12 +1176,14 @@ function analyzePackage(pkgName, topology) {
     cycles: { top: graphs.top.cycles, leaf: graphs.leaf.cycles, file: graphs.file.cycles },
     deadDeclarations,
     depsValueImports,
-    // #767 B0 切片 3a 的三类新证据（集合形态；metrics 里只放条数，消费方见
-    // collectQualityEvidence）——I2① 域间值边 / I2④ 值引 src 根 index.ts / §5.3 client 面。
+    // #767 B0 切片 3a / 3b 的四类新证据（集合形态；metrics 里只放条数，消费方见
+    // collectQualityEvidence）——I2① 域间值边 / I2④ 值引 src 根 index.ts / §5.3 client 面 /
+    // I8① 单元层导入面。
     extraEvidence: {
       crossDomainValueEdges,
       rootIndexImports,
       clientServerImports: clientServerImportEvidence,
+      unitImportFaceViolations: unitImportFaceEvidence,
     },
     // 覆盖断言可判定性：包未登记拓扑时 uncoveredSrcFiles 恒为空，若不显式区分，
     // 「从拓扑里删掉一个包」就成了让覆盖断言消失的绕过路径（已复现的假绿向量）。
@@ -1154,6 +1219,7 @@ function analyzePackage(pkgName, topology) {
       crossDomainValueEdges: crossDomainValueEdges.length,
       rootIndexImports: rootIndexImports.length,
       clientServerImports: clientServerImportEvidence.length,
+      unitImportFaceViolations: unitImportFaceEvidence.length,
     },
   };
 }
@@ -1217,6 +1283,8 @@ const QUALITY_EVIDENCE_METRICS = [
   "crossDomainValueEdges",
   "rootIndexImports",
   "clientServerImports",
+  // #767 B0 切片 3b：I8① 单元层导入面（`test/unit/**` → src/index.ts / lib / src/client）。
+  "unitImportFaceViolations",
 ];
 /**
  * 仅作报告、**不入基线**的派生量：都能由结构计数或证据面重算，入库只会制造第二事实源。
@@ -1279,6 +1347,7 @@ function collectQualityEvidence(analysis) {
     crossDomainValueEdges: [...analysis.extraEvidence.crossDomainValueEdges].sort(),
     rootIndexImports: [...analysis.extraEvidence.rootIndexImports].sort(),
     clientServerImports: [...analysis.extraEvidence.clientServerImports].sort(),
+    unitImportFaceViolations: [...analysis.extraEvidence.unitImportFaceViolations].sort(),
   };
 }
 
@@ -1516,9 +1585,10 @@ function renderGraph(analysis) {
   lines.push(
     "（意图图 = 各模块 deps.ts；类型边 import type/export type 是声明即完整性，豁免死声明判定）",
   );
-  // #767 B0 切片 3a：三条新判据的明细。刻意排在全部既有段落之后——--graph 的既有消费者
-  // （自测按「叶子模块级值环…文件级值环」切段）不受新段落影响。
-  const { crossDomainValueEdges, rootIndexImports, clientServerImports } = analysis.extraEvidence;
+  // #767 B0 切片 3a / 3b：四条新判据的明细。刻意排在全部既有段落之后——--graph 的既有
+  // 消费者（自测按「叶子模块级值环…文件级值环」切段）不受新段落影响。
+  const { crossDomainValueEdges, rootIndexImports, clientServerImports, unitImportFaceViolations } =
+    analysis.extraEvidence;
   lines.push(
     `域间值边（I2①，目标非共享层的叶子模块值边，只许缩小）：${crossDomainValueEdges.length} 条`,
   );
@@ -1531,6 +1601,10 @@ function renderGraph(analysis) {
     `client 侧 import 面（§5.3，独立扫描、不入上方任何计数）：client → src/server ${clientServerImports.length} 条`,
   );
   for (const e of clientServerImports) lines.push(`  ${e}`);
+  lines.push(
+    `单元层导入面（I8①，test/unit 引组合根 src/index.ts / 产物 lib / 客户端 src/client，只许缩小）：${unitImportFaceViolations.length} 条`,
+  );
+  for (const e of unitImportFaceViolations) lines.push(`  ${e}`);
   return lines;
 }
 
@@ -2018,6 +2092,10 @@ for (const analysis of analyses) {
   summary.push(
     `${pkgName}: 域间值边（I2①，目标非共享层）${metrics.crossDomainValueEdges} 条、值引 src 根 index.ts（I2④）${metrics.rootIndexImports} 条、client → src/server import（§5.3）${metrics.clientServerImports} 条`,
   );
+  // #767 B0 切片 3b：I8① 单元层导入面的存量条数（质量证据，目标为空集；明细见 --graph）。
+  summary.push(
+    `${pkgName}: 单元层导入面越界（I8①，test/unit → src/index.ts / lib / src/client）${metrics.unitImportFaceViolations} 条`,
+  );
 
   if (state.mode === "compared") {
     if (state.rises.length === 0) {
@@ -2057,6 +2135,10 @@ for (const analysis of analyses) {
       ["crossDomainValueEdges", "域间值边（目标非共享层）"],
       ["rootIndexImports", "值引 src 根 index.ts"],
       ["clientServerImports", "client → src/server import"],
+      [
+        "unitImportFaceViolations",
+        "单元层导入面越界（test/unit → src/index.ts / lib / src/client）",
+      ],
     ]) {
       if (metrics[key] > 0)
         failures.push(`[${pkgName}] 无基线 fail-closed：${label} ${metrics[key]} 个（应为 0）`);
