@@ -119,12 +119,15 @@ flowchart TD
 
 | 出口 | 标题上限 | 正文上限 | 说明 |
 |---|---|---|---|
-| system | 64 | 256 | 宿主机器上弹原生 toast；Linux 经宿主自播 freedesktop 事件音 |
+| system | 64 | 256 | 宿主机器上弹原生 toast；Linux 经宿主自播事件音（主题音缺失时改用运行时合成的提示音） |
 | browser | 64 | 2048 | SSE 帧 → 浏览器 Notification（非安全上下文降级为页面横幅 + 提示音 + 标题） |
 | bark | 64 | 4096 | `POST {baseUrl}/push`，`device_key` 走 body 不落 URL；成功判定 = HTTP 2xx 且响应体 `code===200` |
 | webhook | 64 | 4096 | 两步法模板（预置 ntfy / gotify / custom），凭据只进 header/body |
 
 失败原因摘要单独截断到 300 码点——状态页只有一行，原因是摘要不是全文。
+
+系统出口的 Linux 自播回退链（链序、运行期判据、临时音频素材、能力面三态与未实测面）的
+设计依据见 [系统提示音功能设计](../../packages/dsh-notifier/docs/sound-playback-design.md)。
 
 ### 3.4 存储域与共享层
 
