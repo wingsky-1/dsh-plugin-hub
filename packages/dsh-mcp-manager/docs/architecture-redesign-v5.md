@@ -754,9 +754,10 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | 项 | 值 |
 |---|---|
 | 主 checkout（**只读，未改动**） | `/mnt/ssd/dev/dsh-plugin-hub`，HEAD `b490e87`（v0.2.4 发布点，与方案里的代码基线一致） |
-| 方案 worktree | `/mnt/ssd/worktree/dsh-plugin-hub-task-767-arch-v4`，分支 `task/767-arch-v4`，领先 `origin/main` **2 个提交**、工作区干净 |
-| 提交 | `e356696` 方案 v5（按 notifier 实证重定 D1–D8）；`4b1153e` v5 复核修订（三视角 4 P0 / 13 P1 并入） |
-| 交付物 | `packages/dsh-mcp-manager/docs/architecture-redesign-v5.md`（756 行）+ `architecture-redesign-v4.md`（被取代，B3 归档时清理） |
+| 方案 worktree | `/mnt/ssd/worktree/dsh-plugin-hub-task-767-arch-v4`，分支 `task/767-arch-v4`，领先 `origin/main` **3 个提交**、工作区干净 |
+| 提交 | `e356696` 方案 v5（按 notifier 实证重定 D1–D8）；`4b1153e` v5 复核修订（三视角 4 P0 / 13 P1 并入）；`803b670` 交接状态更新 |
+| 交付物 | `packages/dsh-mcp-manager/docs/architecture-redesign-v5.md`（788 行）+ `architecture-redesign-v4.md`（被取代，B3 归档时清理） |
+| 工具链（**本会话实测，与旧交接说法相反**） | worktree **有** `node_modules`（`tsc` / `esbuild` / `vitest` / `stryker` 都在 `node_modules/.bin`），故依赖 build 的步骤（`export-surface-snapshot` / `forbid-module-state-src` / `test:scripts`）可在 worktree 内直接跑，无需安装 |
 | 参照实现 | `packages/dsh-notifier`（#733 / PR #777）。关键 commit：`2370774` 冻结基线 / `db1ce0f` 首笔砍到 4 导出 / `8df3950` 一次性重冻结 / `4c79ba0` 重写落地 / `8142b13` 行为变更登记模板 / `a748361` 恢复被静默删掉的能力 |
 
 ### D.2 已完成
@@ -765,7 +766,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 2. **v5 重写**：按参照包实证把立场从「结构搬移、行为冻结」改为「一次做到最终形态 + 行为变更显式登记」，8 条决策见 §零。
 3. **v5 三视角复核**：机制可执行性 / 凭据单链闭合性 / 迁移与批次可行性，4 P0 / 13 P1，关键断言经协调者一手复跑 → 15 条修订全部并入，逐条见 **§0.1**。
 4. **维护者已拍**：跨端契约全量收进 `src/shared/`（D5 加强）；测试导入面判据上线（D6 加强，只限 `test/unit/**`）。
-5. **协调者已按默认拍的四条**（维护者可随时否决）：①撤回 `fast-redact`；②@B atomically 保留但带 B1 探针落地条件（`when-exit` 的宿主信号钩子）；③掩码还原用**显式源身份**，不可变 `id` 留后续；④stderr 尾巴收窄为结构化摘要/首行。
+5. **协调者已按默认拍的四条**（维护者可随时否决）：①撤回 `fast-redact`；②`atomically` 保留但带 B1 探针落地条件（`when-exit` 的宿主信号钩子）；③掩码还原用**显式源身份**，不可变 `id` 留后续；④stderr 尾巴收窄为结构化摘要/首行。
 
 ### D.3 未完成
 
@@ -773,6 +774,8 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 2. **`approved` 未取**：三条红线要一次打包授权——`.github/workflows/ci.yml` 的 mcp 数据面 glob、新增依赖 `atomically`（+ `stubborn-fs` / `stubborn-utils` / `when-exit`）、公共 API 行为变更（§10.1 的八条不保留项）。
 3. **B0 未开工**：`scripts/data/dsh-mcp-manager-export-surface.json` / `-export-faces.json` 尚未生成（`ls scripts/data | grep dsh-mcp-manager` 为空），门禁接入面一处未改。
 4. **代码一行未动**（按仓库红线流程，等 `approved`）。
+5. **B0④ 缺一步（本会话实测）**：把 `dsh-mcp-manager` 登记进 `gate-scope-registry.json` 的 `forbid-module-state-src` 之后，该包**已有 1 处存量违规**——`packages/dsh-mcp-manager/src/client/float/panel.ts:19` 的模块级 `let inflight`（探针：临时 registry + `node scripts/gate/forbid-module-state-src.mjs --registry /tmp/mcp-probe-registry.json`，**exit 1**）。该文件属 `src/client/**`（N1 本轮不重构结构），故 B0④ 必须**同笔**补 `gate-exemptions.json` 条目（`gate=forbid-module-state-src` + `trackingIssue` + `reviewBy`，照 notifier #762 形态），否则 I9 扩包当天即判红。**§二 I9 与 §十二 B0④ 的正文口径待同步**。
+6. **附录 A 第 1 条残留**：该条仍把 `fast-redact` 列为待授权的新增依赖，与第 5 条「撤回」自相矛盾，**待同步**。
 
 ### D.4 下一步顺序
 
@@ -785,4 +788,6 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 1. 读本文件 §零（立场与 8 条决策）与 **§0.1（第二轮复核修订台账）**——那 15 条是 v5 与初稿的差别所在，别按初稿口径理解。
 2. 抽查代码事实（不要全信文档）：`node scripts/gate/verify-dir-imports.mjs --package dsh-mcp-manager --graph`（应 14 叶子 / 33 值边 / 4+4 环）、`grep -rn '0o600' packages/dsh-mcp-manager/src`（应只有 `config/store/store.ts:66`）、`grep -c 'new McpManager' packages/dsh-mcp-manager/test/e2e/smoke.test.ts`（应为 9）、`ls scripts/data | grep dsh-mcp-manager`（应为空）。
-3. 记住三条「未实测」：门禁未实跑、`atomically` 未安装、掩码往返是静态推演——凡涉及它们，先跑探针再下结论。
+3. 记住三条「未实测」：`pnpm gate:pr` 未实跑、`atomically` 未安装、掩码往返是静态推演——凡涉及它们，先跑探针再下结论。
+4. 本会话已复跑的实测结果（可直接引用，不必重跑）：`verify-dir-imports --graph` **exit 0**（14 叶子 / 33 值边 / 4 模块级环 + 4 文件级环）、`grep -rn '0o600' packages/dsh-mcp-manager/src` 只有 `config/store/store.ts:66`、`grep -c 'new McpManager' test/e2e/smoke.test.ts` = 9、`scripts/data` 无 mcp 基线且 `export-surface-snapshot --package dsh-mcp-manager` **exit 2**（「基线不存在」）、`forbid-module-state-src` 在 worktree 跑 notifier **exit 0**（21 处豁免）。
+5. B0 开工前先把 D.3 第 5、6 两条的正文口径同步进 §二 I9、§十二 B0④ 与附录 A 第 1 条。
