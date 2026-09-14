@@ -88,10 +88,10 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
   改的是命中包 `test/**` 时该包基线会被主动失效、退化为全量。因此**本地 `gate:*` 全绿不等于
   CI 绿**——变异不达标只在 CI 上暴露。`gate:full` 标签在 PR 上追加的是**覆盖率**与**全仓产物闸**。
 - 结论里**逐条粘贴实际 exit code**；任一非 0 不得声称完成。
-- 新增 `homedir()` / `process.env.HOME` / `untildify()` 调用走**双源豁免**：
-  `scripts/data/gate-exemptions.json` 的条目（`gate` 为 `forbid-homedir-src`，含 issue 号）
-  - 调用点紧邻 `// dsh-gate:allow-homedir #<issue> <理由>`，缺一判红
-    （见 `scripts/gate/forbid-homedir-src.mjs`；豁免是**数据**不是代码，门禁不得内嵌豁免常量）。
+- 新增 `homedir()` / `process.env.HOME` / `untildify()` 调用**没有豁免通道**（#765：该面
+  已收口到零豁免，豁免机制随之一并删除）：一律改走 `shared/dsh-home.js` 的 `dshHome()` 接缝，
+  写在插件 src 里即判红（见 `scripts/gate/forbid-homedir-src.mjs`）。确有「DSH_HOME 域之外」的
+  合法场景时先在 #765 讨论，不得在闸内复活豁免常量或注释词法。
 - 质量指标 `pnpm cov` / `pnpm crap`。阈值事实源按维度分处：**覆盖率**在
   `scripts/data/coverage.config.json`（#733 计划项 3.4 起；`vitest.config.ts` 只 import 它，
   不得再内联 `include`/`exclude`/`thresholds`；降线由 `scripts/gate/threshold-monotonic.mjs`

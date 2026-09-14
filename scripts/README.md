@@ -47,7 +47,7 @@
 - `gate/orphan-baseline.mjs` — 变异基线孤立分支（`baseline/mutation`）的管理脚本（读 / 并集写 / 清理）。
 - `gate/overlay-baseline.mjs` — PR 增量变异产物合入后的秒级覆盖同步（#572）。
 - `gate/collect-exemptions.mjs` — 豁免/临时项的收口台账收集（#733 计划项 3.2，裁决见 #765）：递归扫 `data/` 下全部 `reviewBy`（到期日）与 `exitCriteria`（解除条件）并打印，恒 exit 0——它是**报告**不是判据，收口由人工裁决（不会冻结 PR）；只有到期日、没有解除条件的条目单独点名（日期只说明何时再看一眼，条件才说明凭什么能删）。
-- `gate/forbid-homedir-src.mjs` — #517 B5：插件 src 禁直连 HOME 来源 API（AST 扫描，`os.homedir` / `userInfo` / `process.env.HOME` / `untildify` 全形态），豁免要求**双源**（台账登记 + 调用点紧邻注释），解析失败 fail-closed。
+- `gate/forbid-homedir-src.mjs` — #517 B5：插件 src 禁直连 HOME 来源 API（AST 扫描，`os.homedir` / `userInfo` / `process.env.HOME` / `untildify` 全形态），**无豁免通道**（#765：本面收口到零豁免后机制一并删除，命中即违规），解析失败 fail-closed。
 - `gate/forbid-module-state-src.mjs` — #733 N2a：插件 src 禁**模块级可变状态**（只看 AST 作用域，缩进不再是绕过口），豁免走 `data/gate-exemptions.json` 登记。
 - `gate/verify-scripts-index.mjs` — 本文件的索引门禁（#733 计划项 3.3 E2）：① 索引项必须存在 ② 被调用点引用的脚本必须登记（棘轮）。未被任何调用点引用的文件只报告、不判红。
 
@@ -66,7 +66,7 @@
 - `lib/client-contract-lib.ts` — 客户端契约断言（stub/执行实现同源唯一事实源）。
 - `lib/plugins-manifest-lib.ts` — 插件清单单一事实源（issue #36）纯函数库。
 - `lib/mutation-ledger-lib.mjs` — 变异段台账的解析与覆盖对账纯函数（#718 S0.2，与 `gate/mutation-ledger.mjs` 同源实现，测试离线 import）。
-- `lib/exemption-gate.ts` — 路径受限门禁的**豁免机制**共享实现（#733 计划项 3.2.2）：真实行注释词法 / marker 匹配 / 双源三态裁决 / 台账反向腐烂校验 / 扫描面枚举；策略与扫描器留在各门禁自己手里。
+- `lib/exemption-gate.ts` — 路径受限门禁的共享实现（#733 计划项 3.2.2）：豁免机制（真实行注释词法 / marker 匹配 / 三态裁决 / 台账读取与反向腐烂校验）+ 扫描面与参数枚举（`isScannedSourceFile` / `collectSrcFiles` / `listPackageNames` / `relPath` / `argValue`）；策略与扫描器留在各门禁自己手里。豁免机制当前只剩 `gate/forbid-module-state-src.mjs` 一个用户（`gate/verify-dir-imports.mjs` 共用台账读取；homedir 面已无豁免通道，#765）。
 - `lib/gate-scope-registry.ts` — 路径受限门禁的**扫描范围**读取与通配展开（#733 计划项 3.2.1）：未登记 / 范围解析为空一律抛错（未登记即红）。
 - `lib/config-matrix-lib.ts` — 配置覆盖矩阵门禁的共享提取器与纯逻辑（issue #471）。
 - `lib/dts-cordis-merge-lib.ts` — 「cordis 声明合并必须落在包入口的声明闭包内」判据（#733 宪法第 3 条）。

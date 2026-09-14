@@ -5,8 +5,12 @@
  * 背景：DSH_HOME 语义收敛（#525 接缝 shared/dsh-home）后，插件 src 直连
  * `os.homedir()` / `process.env.HOME` / `untildify()` 会绕过 DSH_HOME 隔离语义，
  * 导致隔离验证（dsh-verify-isolated）与真实写面审计（B4）出现盲区。src 需要
- * home 路径时应走 `shared/dsh-home.js` 的 `dshHome()`；确属「DSH_HOME 域之外」
- * 的合法场景（外部工具凭据、用户输入 `~` 展开、展示层脱敏）须逐调用点豁免。
+ * home 路径时应走 `shared/dsh-home.js` 的 `dshHome()`。
+ *
+ * 本闸**没有豁免通道**（#765）：命中即违规。此前的双源豁免（台账登记 + 调用点
+ * `// dsh-gate:allow-homedir` 注释）在本面收口到零豁免后，连同机制一起删除——留一个零命中的
+ * 豁免入口，只会让下一处命中默认「先开豁免」而不是「先看接缝」。确有「DSH_HOME 域之外」的
+ * 合法场景时，不要在闸内复活豁免常量或注释词法：那是「要不要重建豁免机制」的决策，先走 #765。
  *
  * 检测语义（AST 级，防 text 扫描绕过）：
  *   - `homedir()` / `import { homedir as hd }` 别名调用（来自 node:os / os）；
@@ -16,17 +20,12 @@
  *   - `untildify(...)`（default import，含别名）；
  *   - 动态 import 命名空间形态：`const os = await import("node:os")` → `os.homedir()`
  *     （F3，含 `(await import("node:os")).homedir()` 直接形态）。
- * 已知局限（不为此增加复杂度，本仓无此形态；新增豁免机制兜底）：named 解构
+ * 已知局限（不为此增加复杂度，本仓无此形态）：named 解构
  * `const { homedir } = await import("node:os")`、`const { HOME } = process.env`
- * 解构形态、`const f = untildify` 值传递别名。
+ * 解构形态、`const f = untildify` 值传递别名——出现即按正常流程补检测，不走豁免。
  * 遮蔽免疫依赖 esbuild transform 对遮蔽绑定的自动重命名（同名 import 的参数/
  * 局部 const 会被改为 homedir2/os2 等，名称级检测不误报）——由自测中
  * 遮蔽回归用例锁定，若 esbuild 升级改变此行为，自测会先行暴露（F4）。
- *
- * 豁免双源（缺一判红，三态输出；机制实现在 scripts/lib/exemption-gate.ts）：
- *   1. 调用点紧邻注释：命中行行尾或上一行 `// dsh-gate:allow-homedir <理由含 #NNN>`；
- *   2. `scripts/data/gate-exemptions.json` 里 `gate` 为本门禁名的条目（文件级）。
- *   三态：无命中（OK）/ 双源齐备豁免（OK，汇总输出）/ 违规或不合法豁免（FAIL）。
  *
  * 扫描范围：由 `scripts/data/gate-scope-registry.json` 声明（本闸 scopeFrom = registry，当前为
  * packages 下各 dsh-* 包），脚本内不再自行枚举——范围是治理数据。扫描面为这些包 src 目录的
@@ -35,7 +34,7 @@
  * 是合法的）。**`.tsx` 自 3.2.2 起纳入**：旧过滤漏掉它，而客户端入口基本都是 `.tsx`
  * （仓内 10 个），那是一处潜伏盲区（当前实测零命中，纳入即净收紧）。
  * fail-closed：任何文件解析失败直接判红。
- * 用法：node scripts/gate/forbid-homedir-src.mjs [--root <dir>] [--exemptions <file>] [--registry <file>]
+ * 用法：node scripts/gate/forbid-homedir-src.mjs [--root <dir>] [--registry <file>]
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -43,32 +42,11 @@ import { transform } from "esbuild";
 import * as acorn from "acorn";
 import { SourceMap } from "node:module";
 import { loadScopeRegistry, scopePackages } from "../lib/gate-scope-registry.ts";
-import {
-  argValue,
-  collectSrcFiles,
-  hasExemptionMarker,
-  judgeHit,
-  loadLedger,
-  relPath,
-  rotDetails,
-} from "../lib/exemption-gate.ts";
+import { argValue, collectSrcFiles, relPath } from "../lib/exemption-gate.ts";
 
 const ROOT = join(import.meta.dirname, "../..");
 const GATE_NAME = "forbid-homedir-src";
-const LEDGER_DISPLAY = "scripts/data/gate-exemptions.json";
-const EXEMPTIONS_PATH = join(ROOT, "scripts", "data", "gate-exemptions.json");
 const REGISTRY_PATH = join(ROOT, "scripts", "data", "gate-scope-registry.json");
-
-/**
- * 豁免策略：**双源**——文件级登记（数据面）与调用点紧邻注释缺一判红。本门禁扫的是全仓
- * 所有包的 src，命中点分散，文件级登记不足以说明「这一处为什么安全」，故保留逐点 marker。
- */
-const POLICY = {
-  gate: GATE_NAME,
-  mark: "dsh-gate:allow-homedir",
-  markerRequired: true,
-  ledgerDisplay: LEDGER_DISPLAY,
-};
 
 /**
  * 从 estree AST 收集 HOME 来源 API 的本地绑定名。
@@ -180,7 +158,7 @@ function detectInAst(ast) {
   return hits;
 }
 
-/** 解析单个文件并检测。fail-closed：解析异常直接抛给调用方判红。 */
+/** 解析单个文件并检测，返回 [{ line, api, text }]（行号已映射回 TS 原文）。fail-closed：解析异常抛给调用方。 */
 async function scanFile(file) {
   const content = readFileSync(file, "utf8");
   const tsLines = content.split("\n");
@@ -195,10 +173,10 @@ async function scanFile(file) {
   }
   const ast = acorn.parse(js, { ecmaVersion: "latest", sourceType: "module", locations: true });
   const rawHits = detectInAst(ast);
-  if (rawHits.length === 0) return { hits: [], tsLines };
+  if (rawHits.length === 0) return [];
   // 映射回 TS 原文行号（.mjs 本身即原文）
   const map = mapJson ? new SourceMap(JSON.parse(mapJson)) : null;
-  const hits = rawHits.map((h) => {
+  return rawHits.map((h) => {
     let lineIdx = h.generatedLine;
     if (map) {
       const entry = map.findEntry(h.generatedLine, h.generatedColumn);
@@ -207,21 +185,17 @@ async function scanFile(file) {
     const text = (tsLines[lineIdx] ?? "").trim().slice(0, 90);
     return { line: lineIdx + 1, api: h.api, text };
   });
-  return { hits, tsLines };
 }
 
 async function main() {
   const root = argValue(process.argv, "--root", ROOT);
-  const exemptionsPath = argValue(process.argv, "--exemptions", EXEMPTIONS_PATH);
   const registryPath = argValue(process.argv, "--registry", REGISTRY_PATH);
 
-  let ledger;
   let packages;
   try {
-    ledger = loadLedger(exemptionsPath, GATE_NAME);
     packages = scopePackages(root, loadScopeRegistry(registryPath), GATE_NAME);
   } catch (e) {
-    console.error(`forbid-homedir-src: ${e.message} —— 范围/豁免机制失效，fail-closed`);
+    console.error(`forbid-homedir-src: ${e.message} —— 扫描范围失效，fail-closed`);
     process.exit(1);
   }
   const files = collectSrcFiles(root, packages);
@@ -230,61 +204,36 @@ async function main() {
     process.exit(1);
   }
   const violations = [];
-  const badExemptions = [];
-  const legitExemptions = [];
   const parseFailures = [];
-  const hitRels = new Set();
   for (const file of files) {
     const rel = relPath(root, file);
-    let result;
+    let hits;
     try {
-      result = await scanFile(file);
+      hits = await scanFile(file);
     } catch (e) {
       parseFailures.push(`${rel}: ${String(e.message).slice(0, 120)}`);
       continue;
     }
-    const { hits, tsLines } = result;
-    if (hits.length > 0) hitRels.add(rel);
-    for (const h of hits) {
-      const note = hasExemptionMarker(tsLines, h.line - 1, POLICY.mark);
-      const detail = `${rel}:${h.line} [${h.api}]`;
-      const verdict = judgeHit(POLICY, ledger, rel, note, detail, h.text);
-      if (verdict.kind === "legit") legitExemptions.push(verdict.detail);
-      else if (verdict.kind === "bad") badExemptions.push(verdict.detail);
-      else violations.push(verdict.detail);
-    }
+    for (const h of hits) violations.push(`${rel}:${h.line} [${h.api}] ${h.text}`);
   }
-  badExemptions.push(...rotDetails(POLICY, ledger, root, hitRels));
 
-  const fail = violations.length > 0 || badExemptions.length > 0 || parseFailures.length > 0;
   if (parseFailures.length > 0) {
     console.error("forbid-homedir-src: 解析失败（fail-closed，一律判红）：");
     for (const p of parseFailures) console.error(`  - ${p}`);
   }
-  if (badExemptions.length > 0) {
-    console.error("forbid-homedir-src: 存在豁免但不合法（三态之 FAIL）：");
-    for (const b of badExemptions) console.error(`  - ${b}`);
-  }
   if (violations.length > 0) {
     console.error(
-      `forbid-homedir-src: 发现 ${violations.length} 处 HOME 来源 API 直连（应走 shared/dsh-home 或双源豁免）：`,
+      `forbid-homedir-src: 发现 ${violations.length} 处 HOME 来源 API 直连（应走 shared/dsh-home 的 dshHome() 接缝）：`,
     );
     for (const v of violations) console.error(`  - ${v}`);
   }
-  if (fail) {
+  if (violations.length > 0 || parseFailures.length > 0) {
     console.error(
-      `forbid-homedir-src: FAIL（扫描 ${files.length} 文件，违规 ${violations.length} / 非法豁免 ${badExemptions.length} / 解析失败 ${parseFailures.length}）`,
+      `forbid-homedir-src: FAIL（扫描 ${files.length} 文件，违规 ${violations.length} / 解析失败 ${parseFailures.length}）`,
     );
     process.exit(1);
   }
-  if (legitExemptions.length > 0) {
-    console.log(
-      `forbid-homedir-src: OK（扫描 ${files.length} 文件，合法豁免 ${legitExemptions.length} 处，台账 ${LEDGER_DISPLAY}）：`,
-    );
-    for (const l of legitExemptions) console.log(`  - ${l}`);
-  } else {
-    console.log(`forbid-homedir-src: OK（扫描 ${files.length} 文件，无 HOME 来源 API 直连）`);
-  }
+  console.log(`forbid-homedir-src: OK（扫描 ${files.length} 文件，无 HOME 来源 API 直连）`);
 }
 
 main().catch((e) => {

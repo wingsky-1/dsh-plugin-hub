@@ -153,8 +153,9 @@ test("本仓真实快照：9 条在册（数字变即提示同步台账与 #765�
   //          + #767 三条 I8① test/unit → src/index.ts 跨包存量，均临时）
   //      + coverage.config.json 1（`**/client/**` 排除，pending-project，等 happy-dom project，3.4 新增）
   //      + gauntlet.config.json 1（crap.strict 观察期，仅解除条件、无到期日，#765 纳管）。
-  //     plugins-manifest 的 5 条 configSurfacesPending 已随 #774 全部转为 configSurfaces 声明
-  //     （含 2 条 surface: "none"），不再产生 reviewBy。
+  //     plugins-manifest 那批「尚未接管」的条目已随 #774 收口全部转为 configSurfaces 声明
+  //     （含 2 条 surface: "none"），pending 节连同它的 reviewBy 一并删除（#828 收尾），
+  //     故该来源不再贡献条目；本文件的 7 条 gate-exemptions 才是余下计数的主项。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /合计 9 条：已过期 0 /);

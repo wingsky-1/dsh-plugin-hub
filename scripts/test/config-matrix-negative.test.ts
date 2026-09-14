@@ -16,8 +16,7 @@
  *     ⑥ DEFAULT_CONFIG 加假键（normalizeConfig 不产出）→ 红
  *     ⑦ 声明指向不存在的模块 → 红（本轮红因「路径硬编码腐烂」的回归守卫）
  *     ⑧ 声明指向不存在的导出 → 红
- *     ⑨ 声明里没有 notifier（挪进 pending）→ 红（门禁侧未登记即红）
- *     ⑩ 两处都不登记 notifier → 红（manifest 自洽校验的双向断言）
+ *     ⑨ 声明里没有 notifier → 红（manifest 自洽校验：active ∪ standalone 未登记即红）
  * 另含「纯副本不改动 → pass」正对照与 README 缺键仅 warn 的用例。
  *
  * 运行：node --test scripts/test/config-matrix-negative.test.ts（随 pnpm test:scripts）
@@ -60,23 +59,22 @@ function fakeRepo() {
       join(root, "scripts/data/plugins-manifest.json"),
     );
     // 泛化后（#774）门禁对**每个**声明面都 require 真实模块（含各包依赖）。副本只复制了
-    // notifier 的配置域与 lan-proxy 的文本面，故把声明裁剪到本副本真正具备的包——否则
-    // 「正对照应绿」会因缺文件/缺 node_modules 而红，把 fixture 的完备性混进判据。
+    // notifier 的配置域与 lan-proxy 的文本面，其余包在这里加载不了——不改声明的话「正对照
+    // 应绿」会因缺文件/缺 node_modules 而红，把 fixture 的完备性混进判据。故把它们降级为
+    // `surface: "none"`（不判红、不 require），而不是从声明里删掉：manifest 自洽断言要求
+    // active ∪ standalone 每包都被登记，删掉会让正对照因清单不自洽而红——那是 fixture 的错，
+    // 不是矩阵的错。#774 收口前此处填的是 pending 节，该节已随机制删除。
     const manifestPath = join(root, "scripts/data/plugins-manifest.json");
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-    const dropped = manifest.configSurfaces.filter((s) => s.package !== "dsh-notifier");
-    manifest.configSurfaces = manifest.configSurfaces.filter((s) => s.package === "dsh-notifier");
-    // 被裁掉的包必须补进 pending：manifest 自洽断言要求 active ∪ standalone 每包都被登记，
-    // 只裁不补会让「正对照」因清单不自洽而红（那是 fixture 的错，不是矩阵的错）。
-    for (const s of dropped) {
-      if (!manifest.configSurfacesPending.some((p) => p.package === s.package)) {
-        manifest.configSurfacesPending.push({
-          package: s.package,
-          reason: "副本不具备该包的配置域源码与依赖（fixture 裁剪，见本文件注释）",
-          reviewBy: "2027-03-31",
-        });
-      }
-    }
+    manifest.configSurfaces = manifest.configSurfaces.map((s) =>
+      s.package === "dsh-notifier"
+        ? s
+        : {
+            package: s.package,
+            surface: "none",
+            reason: "fixture 副本不具备该包的配置域源码与依赖（见本文件 fakeRepo 注释）",
+          },
+    );
     writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
     // lan-proxy UI 豁免表（#733 3.2.2 起门禁读数据面而非内嵌常量）。
     copyLf(
@@ -251,33 +249,7 @@ test("notifier: 声明指向不存在的导出 → 红", () => {
   );
 });
 
-test("notifier: 移出 configSurfaces 改登记 pending → 不判红，但输出点名「未接管」", () => {
-  // #774 起「必须已接管」的固定包名不存在了：pending 是**显式待办**，判红只会把「尚未接管」
-  // 与「声明坏了」混成同一个红。所以此处判据换成「不判红 + 必须点名」——可见性由输出承担。
-  const root = fakeRepo();
-  try {
-    editManifest(root, (s) => {
-      const m = JSON.parse(s);
-      m.configSurfaces = m.configSurfaces.filter((x) => x.package !== "dsh-notifier");
-      m.configSurfacesPending.push({
-        package: "dsh-notifier",
-        reason: "测试用",
-        reviewBy: "2027-03-31",
-      });
-      return JSON.stringify(m, null, 2);
-    });
-    const r = runConfigMatrix(root);
-    assert.equal(r.pass, true, `pending 是显式待办，不该判红：${r.problems.join("; ")}`);
-    assert.ok(
-      r.lines.some((l) => l.includes("configSurfacesPending") && l.includes("dsh-notifier")),
-      `pending 必须在输出里点名：${r.lines.join(" | ")}`,
-    );
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("notifier: 两处都不登记 → 红（manifest 自洽的双向断言）", () => {
+test("notifier: 未登记配置面 → 红（manifest 自洽：active ∪ standalone 未登记即红）", () => {
   assertRed(
     "notifier 完全未登记配置面",
     (root) => {

@@ -168,50 +168,42 @@ function topologyShapeProblems(topology) {
   return problems;
 }
 
-function main() {
-  if (!existsSync(topologyPath)) {
-    console.error(`[gen-stryker-conf] 拓扑文件不存在: ${topologyPath}`);
-    return 1;
+/**
+ * 阶段 1：磁盘上「有测试的包」 ↔ 拓扑登记的对账（判据 ①/② 的输入面）。
+ * 为什么遍历磁盘而不是只遍历拓扑：漏登记的包必须能被发现，否则「不写进清单」就是逃逸口。
+ * 两个方向都判：磁盘有而清单无（漏登）、清单有而磁盘无（登记条目指向空集）。
+ */
+/** 单个已登记包的面投影：投影结果 + 登记完整性 ② 判词（testFiles 条目必须真实存在）。 */
+function projectRegisteredPackage(topology, pkgName) {
+  const projection = projectTestSurface(repoRoot, topology, pkgName);
+  const errors = projection.errors.map((e) => `[${pkgName}] ${e}`);
+  for (const f of projection.testFiles) {
+    if (!existsSync(join(repoRoot, f))) {
+      errors.push(`[${pkgName}] 登记完整性 ②：testFiles 条目不存在于磁盘：${f}`);
+    }
   }
-  const topology = JSON.parse(readFileSync(topologyPath, "utf8"));
-  const { sharedDefaults, packages } = topology;
-  // 未登记变异面但允许存在的包（如 dsh-verify-isolated 只有 e2e smoke）：必须逐条写明理由，
-  // 且仍受判据 ③（--min 同步）约束——「不登记」不等于「不受门禁」。
-  const noMutationPackages = topology.$noMutationPackages ?? {};
+  return { projection, errors };
+}
 
-  // ── 0. 拓扑形状判据（fail-closed，任何模式都先过） ────────────────────
-  // 形状不对的两种形态都不该继续派生：包登记为 null 会让 `pkgDef.segments` 抛栈崩掉；
-  // 覆盖排除条目形状不对会被取值函数跳过（静默缩小判据面），而 --check 只会报
-  // 「与拓扑派生不一致」——把形状错误误诊成同步问题。故在此直接判红、给判词。
-  const shapeProblems = topologyShapeProblems(topology);
-  if (shapeProblems.length > 0) {
-    console.error(
-      "[gen-stryker-conf] 拓扑形状不合法（包登记必须是对象；coverageExcludes 条目须写成" +
-        " { pattern, reason, kind }：pattern 含 ! 前缀、reason 不少于 10 字、kind 取" +
-        " COVERAGE_EXCLUDE_KINDS 之一）：\n" +
-        shapeProblems.map((p) => `  ${p}`).join("\n"),
-    );
-    return 1;
-  }
+/** 磁盘上有测试但清单未登记的判词（含「$noMutationPackages 也未说明理由」这一逃逸口）。 */
+function missingRegistrationProblem(pkgName) {
+  return (
+    `[${pkgName}] 磁盘上有测试文件但未在 mutation-topology.json 登记` +
+    "（也未在 $noMutationPackages 说明理由）—— 源码覆盖与测试面登记都无法判定（fail-closed）"
+  );
+}
 
-  // ── 1. 遍历磁盘上有测试的包（不是只遍历拓扑声明） ────────────────
+function reconcileRegistrations(topology, packages, noMutationPackages) {
   const discovered = discoverTestPackages(repoRoot);
   const errors = [];
   const projections = new Map();
   for (const { pkgName } of discovered) {
     if (packages[pkgName] !== undefined) {
-      const p = projectTestSurface(repoRoot, topology, pkgName);
-      projections.set(pkgName, p);
-      for (const e of p.errors) errors.push(`[${pkgName}] ${e}`);
-      for (const f of p.testFiles) {
-        if (!existsSync(join(repoRoot, f)))
-          errors.push(`[${pkgName}] 登记完整性 ②：testFiles 条目不存在于磁盘：${f}`);
-      }
+      const projected = projectRegisteredPackage(topology, pkgName);
+      projections.set(pkgName, projected.projection);
+      errors.push(...projected.errors);
     } else if (noMutationPackages[pkgName] === undefined) {
-      errors.push(
-        `[${pkgName}] 磁盘上有测试文件但未在 mutation-topology.json 登记` +
-          "（也未在 $noMutationPackages 说明理由）—— 源码覆盖与测试面登记都无法判定（fail-closed）",
-      );
+      errors.push(missingRegistrationProblem(pkgName));
     }
   }
   for (const pkgName of Object.keys(packages)) {
@@ -219,14 +211,19 @@ function main() {
       errors.push(`[${pkgName}] 已在拓扑登记但磁盘上没有 test/ 下的 *.test.ts —— 登记条目指向空集`);
     }
   }
+  return { discovered, errors, projections };
+}
 
-  // ── 2. 派生全部配置文件（stryker conf + 每包一份 vitest 测试面 config）──
+/**
+ * 阶段 2：派生全部配置内容（stryker conf + 每包一份 vitest 测试面 config）。
+ * `?? {}` 是纵深防御：形状判据（topologyShapeProblems）已在 main 入口拦下缺 segments 的登记，
+ * 但派生函数被单独调用时不该再裸解引用。
+ */
+function deriveAllConfigs(packages, sharedDefaults, projections) {
   const derivedConfigs = new Map();
   const derivedVitestConfigs = new Map();
   for (const [pkgName, pkgDef] of Object.entries(packages)) {
     const testFiles = projections.get(pkgName)?.testFiles ?? [];
-    // `?? {}` 是纵深防御：形状判据（topologyShapeProblems）已在 main 入口拦下缺 segments 的登记，
-    // 但派生函数被单独调用时不该再裸解引用。
     for (const [segKey, segDef] of Object.entries(pkgDef.segments ?? {})) {
       const { confFileName, content } = deriveConfig(
         sharedDefaults,
@@ -241,160 +238,238 @@ function main() {
       derivedVitestConfigs.set(vitestConfigPath(pkgName), deriveVitestConfig(pkgName, testFiles));
     }
   }
+  return { derivedConfigs, derivedVitestConfigs };
+}
 
-  // ── 3. `--min` 同步（判据 ③，覆盖所有有测试的包） ────────────────
+/** 阶段 3：判据 ③ 的差异集——每个有测试的包 `--min` 与实际 runner 面文件数必须相等。 */
+function collectMinMismatches(discovered) {
   const minMismatches = [];
   for (const { pkgName, runFileCount } of discovered) {
     const { min } = readTestMin(repoRoot, pkgName);
     if (min !== runFileCount) minMismatches.push({ pkgName, min, actual: runFileCount });
   }
+  return minMismatches;
+}
 
-  if (isSyncMin) {
-    let synced = 0;
-    let unsyncable = 0;
-    for (const { pkgName, min, actual } of minMismatches) {
-      if (min === null) {
-        console.error(
-          `[gen-stryker-conf] ${pkgName} 的 test 脚本缺少 \`--min <n>\`，无法自动同步 —— 请手工补上 --min ${actual}`,
-        );
-        unsyncable++;
-        continue;
-      }
-      const pkgJsonPath = join(repoRoot, "packages", pkgName, "package.json");
-      const raw = readFileSync(pkgJsonPath, "utf8");
-      // 与 test-surface.mjs 的 readTestMin 共用同一契约：只锚 test 脚本里的 `--min <n>`，不绑 runner 名。
-      writeFileSync(
-        pkgJsonPath,
-        raw.replace(/("test"\s*:\s*"node [^"]*--min )\d+/, `$1${actual}`),
-        "utf8",
+/**
+ * `--sync-test-min`：把各包 test 脚本的 `--min` 写为实际值。
+ * 只跑 `--sync-test-min` 时也必须对「无法同步」判非零：否则调用方会把未同步当成已完成。
+ */
+function syncTestMin(minMismatches) {
+  let synced = 0;
+  let unsyncable = 0;
+  for (const { pkgName, min, actual } of minMismatches) {
+    if (min === null) {
+      console.error(
+        `[gen-stryker-conf] ${pkgName} 的 test 脚本缺少 \`--min <n>\`，无法自动同步 —— 请手工补上 --min ${actual}`,
       );
-      console.log(`[gen-stryker-conf] ${pkgName} --min ${min} → ${actual}`);
-      synced++;
+      unsyncable++;
+      continue;
     }
-    console.log(
-      `[gen-stryker-conf] --min 同步完成：${synced} 个包${unsyncable > 0 ? `，${unsyncable} 个无法同步` : ""}`,
+    const pkgJsonPath = join(repoRoot, "packages", pkgName, "package.json");
+    const raw = readFileSync(pkgJsonPath, "utf8");
+    // 与 test-surface.mjs 的 readTestMin 共用同一契约：只锚 test 脚本里的 `--min <n>`，不绑 runner 名。
+    writeFileSync(
+      pkgJsonPath,
+      raw.replace(/("test"\s*:\s*"node [^"]*--min )\d+/, `$1${actual}`),
+      "utf8",
     );
-    // 只跑 --sync-test-min 时也必须对「无法同步」判非零：否则调用方会把未同步当成已完成。
-    if (unsyncable > 0) process.exitCode = 1;
+    console.log(`[gen-stryker-conf] ${pkgName} --min ${min} → ${actual}`);
+    synced++;
+  }
+  console.log(
+    `[gen-stryker-conf] --min 同步完成：${synced} 个包${unsyncable > 0 ? `，${unsyncable} 个无法同步` : ""}`,
+  );
+  if (unsyncable > 0) process.exitCode = 1;
+}
+
+/** 文件集双向比对：派生有而磁盘无、磁盘有而派生无，两个方向都是漂移。 */
+function fileSetProblems(derivedNames, diskNames, missingLabel, strayLabel) {
+  const problems = [];
+  for (const f of derivedNames.filter((x) => !diskNames.includes(x))) {
+    problems.push(`${missingLabel}: ${f}`);
+  }
+  for (const f of diskNames.filter((x) => !derivedNames.includes(x))) {
+    problems.push(`${strayLabel}: ${f}`);
+  }
+  return problems;
+}
+
+/**
+ * 拓扑形状不合法时的判词（fail-closed 的第一道关）。两类形状错误都不该继续派生：
+ * 包登记为 null 会让 `pkgDef.segments` 抛栈崩掉；覆盖排除条目形状不对会被取值函数跳过
+ * （静默缩小判据面），而 `--check` 只会报「与拓扑派生不一致」——把形状错误误诊成同步问题。
+ */
+function reportShapeProblems(shapeProblems) {
+  console.error(
+    "[gen-stryker-conf] 拓扑形状不合法（包登记必须是对象；coverageExcludes 条目须写成" +
+      " { pattern, reason, kind }：pattern 含 ! 前缀、reason 不少于 10 字、kind 取" +
+      " COVERAGE_EXCLUDE_KINDS 之一）：\n" +
+      shapeProblems.map((p) => `  ${p}`).join("\n"),
+  );
+}
+
+/** 派生内容 ↔ 磁盘内容逐份严格比对（生成物入库，故不接受任何差异）。 */
+function contentProblems(entries, dir, label) {
+  const problems = [];
+  for (const [file, expectedContent] of entries) {
+    const filePath = join(dir, file);
+    if (existsSync(filePath) && readFileSync(filePath, "utf8") !== expectedContent) {
+      problems.push(`${label}与拓扑派生不一致: ${file} (请运行 pnpm stryker:gen 同步)`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * conf 不得回退到 Stryker 顶层 `testFiles`：它是上游 #6144 的触发条件（static mutant 被判
+ * runtime 激活 → 模块级变异体漏判）。派生内容比对已能拦住，此处显式点名以便定位。
+ */
+function topLevelTestFilesProblems(derivedConfigs) {
+  const problems = [];
+  for (const [file, content] of derivedConfigs.entries()) {
+    if (JSON.parse(content).testFiles !== undefined) {
+      problems.push(
+        `${file} 出现了 Stryker 顶层 testFiles —— 该字段会触发上游 #6144（#722 方案 A 已迁至 vitest include）`,
+      );
+    }
+  }
+  return problems;
+}
+
+/** `--check` 的全部判据：登记完整性 + 磁盘 ↔ 派生一致（conf 与 vitest 测试面两份生成物）。 */
+function checkModeProblems(ctx) {
+  const { errors, minMismatches, derivedConfigs, derivedVitestConfigs } = ctx;
+  const vitestDir = join(repoRoot, VITEST_CONF_DIR);
+  const diskVitest = existsSync(vitestDir)
+    ? readdirSync(vitestDir)
+        .filter((f) => f.endsWith(".config.ts"))
+        .map((f) => `${VITEST_CONF_DIR}/${f}`)
+        .sort()
+    : [];
+  const diskConf = readdirSync(confDir)
+    .filter((f) => f.endsWith(".json"))
+    .sort();
+  return [
+    ...errors.map((e) => `登记完整性：${e}`),
+    ...minMismatches.map(
+      ({ pkgName, min, actual }) =>
+        `登记完整性 ③：${pkgName} 的 --min ${min === null ? "缺失" : min} != 实际测试文件数 ${actual}` +
+        " —— 请运行 node scripts/gate/gen-stryker-conf.mjs --sync-test-min 同步",
+    ),
+    ...fileSetProblems(
+      [...derivedConfigs.keys()].sort(),
+      diskConf,
+      "磁盘缺少以下派生配置文件",
+      "磁盘存在未在拓扑中定义的游离配置文件",
+    ),
+    ...contentProblems(derivedConfigs, confDir, "配置文件内容"),
+    ...fileSetProblems(
+      [...derivedVitestConfigs.keys()].sort(),
+      diskVitest,
+      "磁盘缺少派生的 vitest 测试面配置",
+      "磁盘存在未在拓扑中定义的游离 vitest 配置",
+    ),
+    ...contentProblems(derivedVitestConfigs, repoRoot, "vitest 测试面配置"),
+    ...topLevelTestFilesProblems(derivedConfigs),
+  ];
+}
+
+/** `--check` 通过时的汇总行。 */
+function printCheckPassed(ctx) {
+  const { derivedConfigs, derivedVitestConfigs, projections, packages, noMutationPackages } = ctx;
+  const totalFiles = [...projections.values()].reduce((n, p) => n + p.testFiles.length, 0);
+  const skipNames = Object.keys(noMutationPackages).filter((k) => !k.startsWith("$"));
+  const skipNote =
+    skipNames.length > 0 ? `；按 $noMutationPackages 不登记变异面：${skipNames.join(", ")}` : "";
+  console.log(
+    `[gen-stryker-conf] --check 通过：${derivedConfigs.size} 份配置与拓扑严格一致；` +
+      `${derivedVitestConfigs.size} 份 vitest 测试面配置（${VITEST_CONF_DIR}/）与拓扑严格一致；` +
+      `${Object.keys(packages).length} 个包共 ${totalFiles} 个测试文件登记进变异面；` +
+      `--min 与磁盘上 ${ctx.discovered.length} 个有测试的包全部同步${skipNote}`,
+  );
+}
+
+/** 默认模式：把派生内容写盘，并逐包回显面大小。 */
+function writeDerivedConfigs(derivedConfigs, derivedVitestConfigs, projections) {
+  for (const [file, content] of derivedConfigs.entries()) {
+    writeFileSync(join(confDir, file), content, "utf8");
+  }
+  mkdirSync(join(repoRoot, VITEST_CONF_DIR), { recursive: true });
+  for (const [file, content] of derivedVitestConfigs.entries()) {
+    writeFileSync(join(repoRoot, file), content, "utf8");
+  }
+  console.log(
+    `[gen-stryker-conf] 成功派生生成全部 ${derivedConfigs.size} 份 Stryker 配置文件至 stryker.conf.d/`,
+  );
+  console.log(
+    `[gen-stryker-conf] 成功派生生成 ${derivedVitestConfigs.size} 份 vitest 测试面配置至 ${VITEST_CONF_DIR}/`,
+  );
+  for (const [pkgName, p] of projections) {
+    console.log(
+      `[gen-stryker-conf]   ${pkgName}: runner 面 ${p.runFiles.length} 个测试文件，变异面 ${p.testFiles.length} 个` +
+        `（排除 client/e2e 层与逐条豁免共 ${p.excludedFiles.length} 个）`,
+    );
+  }
+}
+
+function main() {
+  if (!existsSync(topologyPath)) {
+    console.error(`[gen-stryker-conf] 拓扑文件不存在: ${topologyPath}`);
+    return 1;
+  }
+  const topology = JSON.parse(readFileSync(topologyPath, "utf8"));
+  const { sharedDefaults, packages } = topology;
+  // 未登记变异面但允许存在的包（如 dsh-verify-isolated 只有 e2e smoke）：必须逐条写明理由，
+  // 且仍受判据 ③（--min 同步）约束——「不登记」不等于「不受门禁」。
+  const noMutationPackages = topology.$noMutationPackages ?? {};
+
+  // ── 0. 拓扑形状判据（fail-closed，任何模式都先过） ────────────────────
+  const shapeProblems = topologyShapeProblems(topology);
+  if (shapeProblems.length > 0) {
+    reportShapeProblems(shapeProblems);
+    return 1;
   }
 
+  // ── 1–3. 登记对账 → 派生配置 → `--min` 差异（各阶段见上方同名函数） ──────
+  const { discovered, errors, projections } = reconcileRegistrations(
+    topology,
+    packages,
+    noMutationPackages,
+  );
+  const { derivedConfigs, derivedVitestConfigs } = deriveAllConfigs(
+    packages,
+    sharedDefaults,
+    projections,
+  );
+  const minMismatches = collectMinMismatches(discovered);
+
+  if (isSyncMin) syncTestMin(minMismatches);
+
   if (isCheckMode) {
-    let hasError = false;
-    for (const e of errors) {
-      console.error(`[gen-stryker-conf] 登记完整性：${e}`);
-      hasError = true;
-    }
-    for (const { pkgName, min, actual } of minMismatches) {
-      console.error(
-        `[gen-stryker-conf] 登记完整性 ③：${pkgName} 的 --min ${min === null ? "缺失" : min} != 实际测试文件数 ${actual}` +
-          " —— 请运行 node scripts/gate/gen-stryker-conf.mjs --sync-test-min 同步",
-      );
-      hasError = true;
-    }
-
-    // 磁盘 ↔ 派生一致性
-    const diskFiles = readdirSync(confDir)
-      .filter((f) => f.endsWith(".json"))
-      .sort();
-    const derivedFileNames = [...derivedConfigs.keys()].sort();
-    for (const f of derivedFileNames.filter((x) => !diskFiles.includes(x))) {
-      console.error(`[gen-stryker-conf] 磁盘缺少以下派生配置文件: ${f}`);
-      hasError = true;
-    }
-    for (const f of diskFiles.filter((x) => !derivedFileNames.includes(x))) {
-      console.error(`[gen-stryker-conf] 磁盘存在未在拓扑中定义的游离配置文件: ${f}`);
-      hasError = true;
-    }
-    for (const [file, expectedContent] of derivedConfigs.entries()) {
-      const filePath = join(confDir, file);
-      if (existsSync(filePath) && readFileSync(filePath, "utf8") !== expectedContent) {
-        console.error(
-          `[gen-stryker-conf] 配置文件内容与拓扑派生不一致: ${file} (请运行 pnpm stryker:gen 同步)`,
-        );
-        hasError = true;
-      }
-    }
-
-    // vitest 测试面配置：磁盘 ↔ 派生一致（生成物同样入库，故同样受严格比对）
-    const vitestDir = join(repoRoot, VITEST_CONF_DIR);
-    const diskVitest = existsSync(vitestDir)
-      ? readdirSync(vitestDir)
-          .filter((f) => f.endsWith(".config.ts"))
-          .map((f) => `${VITEST_CONF_DIR}/${f}`)
-          .sort()
-      : [];
-    const derivedVitestNames = [...derivedVitestConfigs.keys()].sort();
-    for (const f of derivedVitestNames.filter((x) => !diskVitest.includes(x))) {
-      console.error(`[gen-stryker-conf] 磁盘缺少派生的 vitest 测试面配置: ${f}`);
-      hasError = true;
-    }
-    for (const f of diskVitest.filter((x) => !derivedVitestNames.includes(x))) {
-      console.error(`[gen-stryker-conf] 磁盘存在未在拓扑中定义的游离 vitest 配置: ${f}`);
-      hasError = true;
-    }
-    for (const [file, expectedContent] of derivedVitestConfigs.entries()) {
-      const filePath = join(repoRoot, file);
-      if (existsSync(filePath) && readFileSync(filePath, "utf8") !== expectedContent) {
-        console.error(
-          `[gen-stryker-conf] vitest 测试面配置与拓扑派生不一致: ${file} (请运行 pnpm stryker:gen 同步)`,
-        );
-        hasError = true;
-      }
-    }
-    // conf 不得回退到 Stryker 顶层 testFiles：它是上游 #6144 的触发条件（static mutant
-    // 被判 runtime 激活 → 模块级变异体漏判）。派生内容比对已能拦住，此处显式点名以便定位。
-    for (const [file, content] of derivedConfigs.entries()) {
-      if (JSON.parse(content).testFiles !== undefined) {
-        console.error(
-          `[gen-stryker-conf] ${file} 出现了 Stryker 顶层 testFiles —— 该字段会触发上游 #6144（#722 方案 A 已迁至 vitest include）`,
-        );
-        hasError = true;
-      }
-    }
-
-    if (hasError) {
+    const ctx = {
+      errors,
+      minMismatches,
+      derivedConfigs,
+      derivedVitestConfigs,
+      projections,
+      packages,
+      noMutationPackages,
+      discovered,
+    };
+    const problems = checkModeProblems(ctx);
+    for (const p of problems) console.error(`[gen-stryker-conf] ${p}`);
+    if (problems.length > 0) {
       console.error(
         "[gen-stryker-conf] --check 失败：配置文件 / 测试面登记 / --min 与单一事实源脱节",
       );
       return 1;
     }
-    const totalFiles = [...projections.values()].reduce((n, p) => n + p.testFiles.length, 0);
-    const skipNames = Object.keys(noMutationPackages).filter((k) => !k.startsWith("$"));
-    const skipNote =
-      skipNames.length > 0 ? `；按 $noMutationPackages 不登记变异面：${skipNames.join(", ")}` : "";
-    console.log(
-      `[gen-stryker-conf] --check 通过：${derivedConfigs.size} 份配置与拓扑严格一致；` +
-        `${derivedVitestConfigs.size} 份 vitest 测试面配置（${VITEST_CONF_DIR}/）与拓扑严格一致；` +
-        `${Object.keys(packages).length} 个包共 ${totalFiles} 个测试文件登记进变异面；` +
-        `--min 与磁盘上 ${discovered.length} 个有测试的包全部同步${skipNote}`,
-    );
+    printCheckPassed(ctx);
     return 0;
   }
 
-  if (!isSyncMin) {
-    let written = 0;
-    for (const [file, content] of derivedConfigs.entries()) {
-      writeFileSync(join(confDir, file), content, "utf8");
-      written++;
-    }
-    const vitestDir = join(repoRoot, VITEST_CONF_DIR);
-    mkdirSync(vitestDir, { recursive: true });
-    for (const [file, content] of derivedVitestConfigs.entries()) {
-      writeFileSync(join(repoRoot, file), content, "utf8");
-    }
-    console.log(
-      `[gen-stryker-conf] 成功派生生成全部 ${written} 份 Stryker 配置文件至 stryker.conf.d/`,
-    );
-    console.log(
-      `[gen-stryker-conf] 成功派生生成 ${derivedVitestConfigs.size} 份 vitest 测试面配置至 ${VITEST_CONF_DIR}/`,
-    );
-    for (const [pkgName, p] of projections) {
-      console.log(
-        `[gen-stryker-conf]   ${pkgName}: runner 面 ${p.runFiles.length} 个测试文件，变异面 ${p.testFiles.length} 个` +
-          `（排除 client/e2e 层与逐条豁免共 ${p.excludedFiles.length} 个）`,
-      );
-    }
-  }
+  if (!isSyncMin) writeDerivedConfigs(derivedConfigs, derivedVitestConfigs, projections);
   return process.exitCode ?? 0;
 }
 

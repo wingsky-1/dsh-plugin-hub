@@ -96,7 +96,6 @@
       "reason": "本插件没有用户配置面：宿主半边无路由、不读文件、不注入服务，客户端只有「打开文件 → 官方右侧栏预览」的重定向逻辑（PENDING_TTL_MS 是内部 TTL 常量，不对外配置）。"
     }
   ],
-  "configSurfacesPending": [],
   "retired": [
     {
       "name": "dsh-gzip",

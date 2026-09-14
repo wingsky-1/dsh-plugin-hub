@@ -290,8 +290,8 @@ function loadSurfaceExport(root, pkg, face, label, problems) {
  * specifier、加载模块取真实导出值：键集从运行时派生，包内结构再调整也不必改门禁。
  *
  * #774 之前本函数只被 dsh-notifier 调用（`surfaces.find(...)` 硬编码包名），其余 5 包停在
- * configSurfacesPending 上「只登记不断言」。现在对声明面里的**每个**包逐个执行同一套断言——
- * 门禁强度不再取决于包名。
+ * 一份「只登记不断言」的 pending 清单上。收口后 pending 节与它的点名输出一并删除，声明成为
+ * 唯一入口——门禁强度不再取决于包名，也不再有「登记了但没接管」的中途态。
  *
  * 断言集随事实源重建（旧 N1/N2/N3 的输入在新树上已不存在，不是「放宽」而是重建）：
  *   N1 声明的 defaults 导出必须是非空对象；
@@ -320,13 +320,6 @@ function runSurface(root, surface) {
   const problems = [];
   const warnings = [];
   const lines = [];
-
-  if (!surface) {
-    problems.push(
-      `${pkg} 未在 scripts/data/plugins-manifest.json 的 configSurfaces 声明配置面（#733 计划项 3.1.1：未登记即红）`,
-    );
-    return { problems, warnings, lines };
-  }
 
   const defaults = loadSurfaceExport(root, pkg, surface.defaults, "defaults", problems);
   const normalizer = loadSurfaceExport(root, pkg, surface.normalizer, "normalizer", problems);
@@ -447,11 +440,9 @@ export function runConfigMatrix(root) {
   // 配置面声明来自 manifest（#733 计划项 3.1.1）：读不到/结构不合法即红——
   // 声明是门禁的输入面，它坏掉不能退化成「没有声明就跳过 notifier 段」。
   let surfaces = [];
-  let pending = [];
   try {
     const manifest = loadManifest(root);
     surfaces = manifest.configSurfaces ?? [];
-    pending = manifest.configSurfacesPending ?? [];
   } catch (e) {
     problems.push(
       `读取 configSurfaces 声明失败（scripts/data/plugins-manifest.json）：${e.message}`,
@@ -463,13 +454,6 @@ export function runConfigMatrix(root) {
     problems.push(...r.problems);
     warnings.push(...(r.warnings ?? []));
     lines.push(...r.lines);
-  }
-  // pending 是**显式待办**（#774 的收口目标是把它们清零），只点名不判红——否则「尚未接管」
-  // 与「声明坏了」混成同一个红，收口方向就看不出来了。
-  if (pending.length > 0) {
-    lines.push(
-      `  configSurfacesPending（未接管配置面，${pending.length}）：${pending.map((p) => p.package).join(", ")}`,
-    );
   }
   return { pass: problems.length === 0, problems, warnings, lines };
 }
