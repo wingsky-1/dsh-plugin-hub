@@ -30,11 +30,11 @@
     },
     "dsh-mcp-manager": {
       "modules": 17,
-      "scannedSrcFiles": 86,
-      "allSrcTsFiles": 101,
+      "scannedSrcFiles": 87,
+      "allSrcTsFiles": 102,
       "interfaceFacades": 16,
-      "leafValueEdges": 37,
-      "fileValueEdges": 141,
+      "leafValueEdges": 36,
+      "fileValueEdges": 142,
       "crossModuleRefs": 165,
       "quality": {
         "leafModuleCycles": [],
@@ -68,8 +68,7 @@
           "inject|catalog",
           "inject|connection/runtime",
           "inject|pipeline",
-          "inject|workspace",
-          "pipeline|workspace"
+          "inject|workspace"
         ],
         "rootIndexImports": [],
         "clientServerImports": [],

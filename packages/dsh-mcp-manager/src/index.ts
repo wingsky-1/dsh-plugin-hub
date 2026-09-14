@@ -27,6 +27,7 @@ import type {} from "@deepseek-ai/dsh-system-prompt";
 import type {} from "@deepseek-ai/dsh-tools";
 import type { McpManagerService } from "./integration/interface.ts";
 import { installCatalog } from "./catalog/interface.ts";
+import { installPipeline } from "./pipeline/interface.ts";
 import * as connectionApi from "./connection/interface.ts";
 import * as storeApi from "./config/store/interface.ts";
 import * as workspaceApi from "./workspace/interface.ts";
@@ -36,6 +37,10 @@ import * as workspaceApi from "./workspace/interface.ts";
 // 严格相等——由 verify-dir-imports 的注入面对账强制；调用点必须落在入口，写在别处该对账会
 // 静默空转（附录 G·G20）。
 installCatalog({ store: storeApi, connection: connectionApi, workspace: workspaceApi });
+
+// 执行管道域的静态端口装配。同上：实参必须是可解析的对象字面量、键集与 pipeline/deps.ts 的
+// PipelineDeps 严格相等，且调用点必须落在入口（written elsewhere → 该对账静默空转，附录 G·G20）。
+installPipeline({ workspace: workspaceApi });
 
 /** 稳定的 cordis 插件名。 */
 export const name = "mcp-manager";
