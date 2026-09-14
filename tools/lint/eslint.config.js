@@ -86,11 +86,10 @@ const UNUSED_VARS_RULE = [
   { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
 ];
 
-// 客户端 `var` 的豁免面（#765 第 2 项「收窄」）：**当前实际含 var 的文件**，是事实快照而非
-// 白名单。判据见上面对 files 的说明；某文件不再含 var 即由自测判红，届时删条目。
-// lan-proxy 的客户端于 #765 清零（3 处模块级常量改 const、1 处零读取死赋值删除、4 处函数内
-// 局部改 let/const），故从本清单移除——移除靠代码清零，不是把条目改成通配或留着腐烂。
-const CLIENT_VAR_EXEMPT_FILES = ["packages/dsh-notifier/src/client/index.tsx"];
+// 客户端 `var` 的豁免面（#765 第 2 项「收窄」）已于 #769 阶段 3 清零：lan-proxy 在 #765 清完，
+// notifier 客户端入口的 210 处 var 在 #769 转换完（8 处 let、其余 const），故清单为空、下面的
+// 规则块一并删除。留这段说明是为了让下一个人看到「这里曾有一份豁免」，以及它是**靠代码清零**
+// 移除的，而不是靠通配或留着腐烂。
 
 // dsh-worktree-sidebar 客户端的四个块文件（装配根 index.ts 与纯类型面 shared/ports.ts 不在内）。
 // 它们共用一个"块间零互引"的判据，见下面的 no-restricted-imports 块。
@@ -210,19 +209,6 @@ export default [
     files: [...TS_SOURCES, ...JS_SOURCES],
     ignores: ["packages/dsh-notifier/src/server/**"],
     rules: LEGACY_WARN,
-  },
-  {
-    // 老客户端里 `no-var` 关掉而不是降级——降级仍会被 `--fix` 改写，而 var→let/const 的等价
-    // 改写超出重写范围（客户端不在本次重写内，且 var 与 let 在闭包捕获上并非处处等价）。
-    //
-    // #765 第 2 项「收窄」：面从 `packages/*/src/client/**` 通配收窄为**当前实际含 var 的文件**。
-    // 通配的代价是判据面随目录增长而变宽——以后任何新客户端文件写 var 都会被静默豁免，而且它与
-    // 登记台账不同源（`gate-exemptions.json` 只登记了 notifier 那个文件的 7 处**真·可变绑定**，
-    // 其余是函数内局部 var）。收窄后新增文件立刻可见：非豁免面走 LEGACY_WARN 或下面的 error。
-    // 这份清单是**事实快照**，不是白名单：某一项不再含 var 时，`scripts/test/lint-toolchain.test.ts`
-    // 会因「条目零命中」判红，届时删条目即可（反向腐烂校验）。
-    files: CLIENT_VAR_EXEMPT_FILES,
-    rules: { "no-var": "off" },
   },
   {
     // CommonJS 文件里 `require` 是唯一可用的加载方式（.cjs 不能写 ESM import），该规则在此

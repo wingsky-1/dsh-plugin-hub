@@ -65,7 +65,7 @@ import { createSaveGuard } from "./settings/save-guard.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
-import type { LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
+import type { LocaleNamespaceMap as _LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
 
 declare module "@deepseek-ai/dsh-client-ui-slots" {
   interface LocaleNamespaceMap {
@@ -256,7 +256,7 @@ function requestPermission(onDone: any) {
       .catch(function () {
         if (onDone) onDone();
       });
-  } catch (error) {
+  } catch {
     if (onDone) onDone();
   }
 }
@@ -2870,7 +2870,7 @@ export function apply(ctx: any) {
           unsubLocale = locale.subscribe(function () {
             try {
               bindTranslate(locale.bind(NS) as Translate);
-            } catch (e) {
+            } catch {
               /* 忽略 */
             }
           });

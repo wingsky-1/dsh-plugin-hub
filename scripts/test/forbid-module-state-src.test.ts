@@ -238,7 +238,7 @@ test("扫描面：.tsx 也在扫描面内（客户端入口形态）", () => {
   assert.match(r.stderr, /模块级 let（shared）/);
 });
 
-test("本仓真实快照：client/index.tsx 的 7 处模块级 var 全部走登记豁免 → exit 0", () => {
+test("本仓真实快照：两个客户端包均零模块级可变状态（豁免台账已清空）", () => {
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   // 扫描面按注册表（单一事实源）逐字回显，故期望值也从注册表取：把包名写死在这里，
@@ -249,16 +249,13 @@ test("本仓真实快照：client/index.tsx 的 7 处模块级 var 全部走登�
   const scope = registry.gates.find((g) => g.gate === "forbid-module-state-src");
   assert.match(
     r.stdout,
-    new RegExp(`OK（扫描 \\d+ 文件，包 ${scope.packages.join(", ")}，登记豁免 7 处）`),
+    new RegExp(`OK（扫描 \\d+ 文件，包 ${scope.packages.join(", ")} 无模块级可变状态）`),
   );
-  // 7 处与豁免台账是同一个数字的两面：客户端 var 数量变了、或台账条目被删，
-  // 此断言先红并提示同步台账（scripts/data/gate-exemptions.json）与 #762。
-  // #765 批次已把同文件的 14 处常量 var 改 const，故从 21 降到 7（余下皆为真·可变绑定）。
-  // 锚点的行号随客户端源码增删而移动（豁免台账本身是文件级、不跟行号），改到 `t` 所在行即可。
-  assert.match(
-    r.stdout,
-    /packages\/dsh-notifier\/src\/client\/index\.tsx:241 \[模块级 var（t）\] 登记豁免 #762（reviewBy 2027-03-31）/,
-  );
+  // 豁免台账已随 #769 的客户端重构清空（gate-exemptions.json 的 exemptions 为 []）：
+  // 原 7 处模块级 var 全被拆进闭包/实例，判据没有放松——再有人写模块级 let/var，
+  // 门禁会在同一格判红（见上方「反例：模块级 let → exit 1」）。台账条目被删或 var 回流，
+  // 此断言先红以提示复核 gate-exemptions.json 与客户端源码。
+  assert.doesNotMatch(r.stdout, /登记豁免/);
 });
 
 /** 写一份范围注册表临时文件，返回其路径（--registry 注入）。 */
