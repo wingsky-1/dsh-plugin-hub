@@ -5,7 +5,7 @@
  * 与状态通知。全局服务器常连；项目级服务器（<项目根>/.dsh/mcp.json）只在
  * 当前会话 cwd 属于该项目时连接（跟随会话切换）。
  *
- * 类型自 types.ts 取；manager.ts 不 import apply.ts / index.ts（防循环引用）。
+ * 类型自 types 域门面取；manager.ts 不 import apply.ts / index.ts（防循环引用）。
  */
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
@@ -15,40 +15,19 @@ import type { SseHub } from "../../../../../shared/sse-hub.js";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type { ServerConfig, ClientUiConfig } from "../../types/interface.ts";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
-import type { CatalogCache } from "../../catalog/interface.ts";
-import { normalizeServer } from "../../config/model/interface.ts";
-import { normalizeUiConfig, buildConfigUiPatch } from "../../config/model/interface.ts";
-import { McpStore } from "../../config/store/interface.ts";
-import { ConnectionSupervisor } from "../runtime/interface.ts";
+import type { CatalogCache, CatalogViewResolver } from "../../catalog/interface.ts";
+import type { McpStore } from "../../config/store/interface.ts";
+import type { McpStatsCollector } from "../../stats/interface.ts";
+import type { ConnectionSupervisor, McpMiddleware } from "../runtime/interface.ts";
+import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "../../types/interface.ts";
 import {
+  EMPTY_STATUS_COUNTS,
+  MIDDLEWARE_GLOBAL_ROOT,
   SCOPE_GLOBAL,
   SCOPE_PROJECT,
-  normalizeScope,
-  MIDDLEWARE_GLOBAL_ROOT,
-  findProjectRoot,
-  normalizedProjectRoot,
-} from "../../workspace/interface.ts";
-import {
-  catalogCacheFile,
-  summarizeToolDescriptions,
-  makeCatalogViewFor,
-} from "../../catalog/interface.ts";
-import type { CatalogViewResolver } from "../../catalog/interface.ts";
-import { McpMiddleware } from "../runtime/interface.ts";
-import { msgOf } from "../../pipeline/interface.ts";
-import {
-  userStateFile,
-  loadUserState,
-  saveUserState,
-  catalogCacheFileFor,
-  loadDisabledTools,
-  saveDisabledTools,
-} from "../../config/store/interface.ts";
-import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "../../types/interface.ts";
-import { McpStatsCollector } from "../../stats/interface.ts";
-import { createRedactor } from "../../pipeline/interface.ts";
-import { EMPTY_STATUS_COUNTS } from "../../shared/interface.ts";
+} from "../../shared/interface.ts";
 import { stripMcpPrefix } from "./tool-names.ts";
+import { orchestratorPorts } from "./impl/service/index.ts";
 
 /**
  * 管理器：持有全局存储 + 当前会话项目的项目级存储、每个服务器的监督器
@@ -91,10 +70,11 @@ export class McpManager {
   runtimeRegistry: Map<string, ServerConfig>;
   /** registerServer 串行队列（防 reconcileBusy 吞注册；多插件并发注册排队）。 */
   private registerQueue: Promise<void>;
-  /** 注入端目录缓存视图解析器（catalog/cache-view.ts 工厂闭包；含 mtime 缓存）。 */
+  /** 注入端目录缓存视图解析器（catalog/impl/cache-view/index.ts 工厂闭包；含 mtime 缓存）。 */
   private catalogViewResolver: CatalogViewResolver;
 
   constructor(ctx: Context, store: McpStore) {
+    const { catalog, configStore, stats } = orchestratorPorts.get();
     this.ctx = ctx;
     this.store = store;
     this.supervisors = new Map();
@@ -111,9 +91,9 @@ export class McpManager {
     this.enhancement = {};
     // 目录缓存：serverName → { summary }（磁盘持久化，digest 的稳定数据源）。
     this.catalogCache = new Map();
-    this.catalogCachePath = catalogCacheFile();
+    this.catalogCachePath = catalog.catalogCacheFile();
     // 目录视图解析器：host 面用读取器（middleware/模式热切换后取最新引用）。
-    this.catalogViewResolver = makeCatalogViewFor({
+    this.catalogViewResolver = catalog.makeCatalogViewFor({
       getCatalogCache: () => this.catalogCache,
       getMiddleware: () => this.middleware,
       getMiddlewareMode: () => this.middlewareMode,
@@ -122,15 +102,15 @@ export class McpManager {
     this.uiConfigSource = () => ({ position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
     this.middlewareMode = "off";
     this.middleware = undefined;
-    this.userStatePath = userStateFile();
-    this.stats = new McpStatsCollector({ logger: ctx.logger });
+    this.userStatePath = configStore.userStateFile();
+    this.stats = new stats.McpStatsCollector({ logger: ctx.logger });
     this.runtimeRegistry = new Map();
     this.registerQueue = Promise.resolve();
   }
 
   /** 读取 settings 命名空间中的 MCP UI 配置（供 /api/dsh-mcp/config 返回）。 */
   uiConfig(): ClientUiConfig {
-    return normalizeUiConfig(this.uiConfigSource());
+    return orchestratorPorts.get().configModel.normalizeUiConfig(this.uiConfigSource());
   }
 
   /**
@@ -143,7 +123,7 @@ export class McpManager {
     if (typeof this.uiUpdate !== "function") {
       throw new Error("ui config is not writable: settings service unavailable");
     }
-    await this.uiUpdate({ ui: buildConfigUiPatch(raw) });
+    await this.uiUpdate({ ui: orchestratorPorts.get().configModel.buildConfigUiPatch(raw) });
     return this.uiConfig();
   }
 
@@ -179,7 +159,7 @@ export class McpManager {
     serverName: string,
     toolMeta: Map<string, { description?: unknown }>,
   ): Promise<void> {
-    const summary = summarizeToolDescriptions(toolMeta);
+    const summary = orchestratorPorts.get().catalog.summarizeToolDescriptions(toolMeta);
     const current = this.catalogCache.get(serverName)?.summary;
     if (summary === undefined || summary === current) return;
     this.catalogCache.set(serverName, { summary });
@@ -205,7 +185,7 @@ export class McpManager {
   private redactError(error: unknown): string {
     const servers: ServerConfig[] = [...this.store.data.servers];
     for (const server of this.runtimeRegistry.values()) servers.push(server);
-    return createRedactor(servers)(error);
+    return orchestratorPorts.get().pipeline.createRedactor(servers)(error);
   }
 
   /** coalesce 定时器（同一 tick 内多次状态变化合并为一次广播）。 */
@@ -265,12 +245,12 @@ export class McpManager {
 
   /** 中间层宿主：持久化 userDisabled。 */
   async saveUserState(units: Map<string, ProjectUnit>): Promise<void> {
-    await saveUserState(this.userStatePath, units);
+    await orchestratorPorts.get().configStore.saveUserState(this.userStatePath, units);
   }
 
   /** 中间层宿主：root 的目录缓存文件路径。 */
   catalogCachePathFor(root: string): string {
-    return catalogCacheFileFor(root);
+    return orchestratorPorts.get().configStore.catalogCacheFileFor(root);
   }
 
   /** 初始化中间层（apply 时按模式调用；幂等）。 */
@@ -278,15 +258,16 @@ export class McpManager {
     mode: MiddlewareMode,
     policy: Record<string, unknown>,
   ): Promise<McpMiddleware> {
+    const { runtime, configStore, workspace } = orchestratorPorts.get();
     this.middlewareMode = mode;
     if (this.middleware !== undefined) return this.middleware;
-    const mw = new McpMiddleware(
+    const mw = new runtime.McpMiddleware(
       {
         ctx: this.ctx,
         logger: this.logger,
         projectServersFor: (root) => this.projectServersFor(root),
         globalServers: () => this.globalServers(),
-        normalizedProjectRoot: (cwd) => normalizedProjectRoot(cwd),
+        normalizedProjectRoot: (cwd) => workspace.normalizedProjectRoot(cwd),
         saveUserState: (units) => this.saveUserState(units),
         emitStatus: () => this.emitStatus(),
         catalogCachePath: (root) => this.catalogCachePathFor(root),
@@ -300,10 +281,10 @@ export class McpManager {
     );
     try {
       // 加载 userDisabled 并注入中间层实例（单元创建时合并；重启不丢）。
-      this.disabledByRoot = await loadUserState(this.userStatePath);
+      this.disabledByRoot = await configStore.loadUserState(this.userStatePath);
       mw.disabledByRoot = this.disabledByRoot;
       // 加载工具级禁用（三层结构；合并式写盘，绝不整表覆盖）。
-      this.disabledTools = await loadDisabledTools(this.userStatePath);
+      this.disabledTools = await configStore.loadDisabledTools(this.userStatePath);
       mw.disabledTools = this.disabledTools;
     } catch (error) {
       // #392 遗留⑤：加载失败时清理半初始化状态——this.middleware 保持未赋值
@@ -342,6 +323,7 @@ export class McpManager {
     tool: string,
     disabled: boolean,
   ): Promise<void> {
+    const { configStore } = orchestratorPorts.get();
     const tools = this.disabledTools.get(root) ?? new Map<string, Set<string>>();
     const set = tools.get(server) ?? new Set<string>();
     if (disabled) set.add(tool);
@@ -350,16 +332,17 @@ export class McpManager {
     else tools.delete(server);
     if (tools.size > 0) this.disabledTools.set(root, tools);
     else this.disabledTools.delete(root);
-    await saveDisabledTools(this.userStatePath, this.disabledTools);
+    await configStore.saveDisabledTools(this.userStatePath, this.disabledTools);
     this.emitStatus();
   }
 
   /** 读取/复用某项目根的 store（工作区缓存命中直接返回，不重复读盘）。 */
   async projectStoreFor(root: string | undefined): Promise<McpStore | undefined> {
     if (typeof root !== "string" || root === "") return undefined;
+    const { configStore } = orchestratorPorts.get();
     let store = this.projectStores.get(root);
     if (store === undefined) {
-      store = new McpStore(join(root, ".dsh", "mcp.json"));
+      store = new configStore.McpStore(join(root, ".dsh", "mcp.json"));
       await store.load();
       this.projectStores.set(root, store);
     } else {
@@ -401,8 +384,11 @@ export class McpManager {
       if (server.enabled === false) continue;
       servers.set(name, { server, scope: SCOPE_GLOBAL });
     }
+    const { workspace } = orchestratorPorts.get();
     const root =
-      cwd === undefined || cwd === null || cwd === "" ? undefined : await findProjectRoot(cwd);
+      cwd === undefined || cwd === null || cwd === ""
+        ? undefined
+        : await workspace.findProjectRoot(cwd);
     const store = root === undefined ? undefined : await this.projectStoreFor(root);
     if (store !== undefined) {
       for (const server of store.data.servers) {
@@ -415,7 +401,7 @@ export class McpManager {
   }
 
   /**
-   * 合成注入端目录缓存视图（#569 修复核心）：实现在 catalog/cache-view.ts
+   * 合成注入端目录缓存视图（#569 修复核心）：实现在 catalog/impl/cache-view/index.ts
    * （makeCatalogViewFor 工厂闭包，含磁盘 last-good mtime 缓存），本方法为
    * 薄桥接（C-DIR：catalogViewFor 迁出 catalog 域，宿主最小面）。
    * @param cwd 会话 cwd（与 catalogServersFor 同源解析项目 root）。
@@ -437,8 +423,11 @@ export class McpManager {
    * middleware=project/all 时项目级连接由中间层池常驻，切走不断开。
    */
   async setSession(cwd: string | undefined): Promise<void> {
+    const { workspace } = orchestratorPorts.get();
     const root =
-      cwd === undefined || cwd === null || cwd === "" ? undefined : await findProjectRoot(cwd);
+      cwd === undefined || cwd === null || cwd === ""
+        ? undefined
+        : await workspace.findProjectRoot(cwd);
     if (root === this.projectRoot && this.projectStore !== undefined) return;
     // 本就没有活动项目且新会话同样无项目（空 cwd）：保持幂等，避免反复
     // emitStatus → SSE → 客户端 refresh 的广播循环。
@@ -675,6 +664,7 @@ export class McpManager {
       else this.touchGlobalUnit(name);
       return;
     }
+    const { runtime } = orchestratorPorts.get();
     const existing = this.supervisors.get(name);
     if (existing !== undefined && existing.client !== undefined) {
       // 已连接：若现有 config 与直传 config 不同（runtime 注入覆盖 store），重建。
@@ -684,7 +674,7 @@ export class McpManager {
         // start 保持同步：void disconnect() 的清理与新代际 syncTools 在各自
         // syncChain 上先后落定（D2：旧清理先于新注册）。
         void existing.disconnect();
-        const supervisor = new ConnectionSupervisor(this, directConfig, scope);
+        const supervisor = new runtime.ConnectionSupervisor(this, directConfig, scope);
         this.supervisors.set(name, supervisor);
         void supervisor.connect();
       }
@@ -699,7 +689,7 @@ export class McpManager {
     }
     // B5：未连接旧代际同样走 disconnect 语义（清 reconnectTimer + 注销残留工具）。
     if (existing !== undefined) void existing.disconnect();
-    const supervisor = new ConnectionSupervisor(this, server, scope);
+    const supervisor = new runtime.ConnectionSupervisor(this, server, scope);
     this.supervisors.set(name, supervisor);
     void supervisor.connect();
   }
@@ -845,7 +835,7 @@ export class McpManager {
     options: Record<string, unknown>,
   ): Promise<{ name: string; existing: boolean }> {
     const { toolDefinitions, ...rest } = options;
-    const config = normalizeServer(rest);
+    const config = orchestratorPorts.get().configModel.normalizeServer(rest);
     if (Array.isArray(toolDefinitions))
       config.toolDefinitions = toolDefinitions as ToolDefinition[];
     const run = this.registerQueue.then(async () => {
@@ -902,7 +892,7 @@ export class McpManager {
   }
 
   async add(server: Record<string, unknown>, scope: string = SCOPE_GLOBAL): Promise<ServerConfig> {
-    const config = normalizeServer(server);
+    const config = orchestratorPorts.get().configModel.normalizeServer(server);
     const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
     if (store.find(config.name) !== undefined) {
       throw new Error(`server "${config.name}" already exists in ${scope} scope`);
@@ -921,10 +911,11 @@ export class McpManager {
     patch: Record<string, unknown>,
     scope: string = SCOPE_GLOBAL,
   ): Promise<ServerConfig> {
+    const { configModel } = orchestratorPorts.get();
     const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
     const existing = store.find(name);
     if (existing === undefined) throw new Error(`server "${name}" not found in ${scope} scope`);
-    const merged = normalizeServer({ ...existing, ...patch, name });
+    const merged = configModel.normalizeServer({ ...existing, ...patch, name });
     store.upsert(merged);
     await store.save();
     this.stop(name);
@@ -1000,7 +991,8 @@ export class McpManager {
     // B5：connect 替换分支复用 disconnect 语义（清 reconnectTimer + 注销残留工具），
     // await 保证旧代际清理先于新代际建立（与 start 分支同口径）。
     if (existing !== undefined) await existing.disconnect();
-    const supervisor = new ConnectionSupervisor(this, server, scope);
+    const { runtime } = orchestratorPorts.get();
+    const supervisor = new runtime.ConnectionSupervisor(this, server, scope);
     this.supervisors.set(name, supervisor);
     await supervisor.connect();
   }
@@ -1016,7 +1008,7 @@ export class McpManager {
     // 拆连接前关 transport（此前直接 delete 丢 entry，stdio 子进程/socket 泄漏）。
     if (this.middlewareMode !== "off" && this.middleware !== undefined) {
       let targetUnit: ProjectUnit | undefined;
-      const scoped = normalizeScope(scope ?? "");
+      const scoped = orchestratorPorts.get().workspace.normalizeScope(scope ?? "");
       if (scoped === SCOPE_PROJECT) {
         // 项目级：定位当前项目 root 单元（同名跨 scope 修正——此前 all 模式
         // 误用全局 store 定位 @global，同名项目级服务器被写错单元）。
@@ -1117,6 +1109,7 @@ export class McpManager {
     // 中间层模式（#228 回归修复）：被中间层接管的服务器从连接池 + 目录缓存
     // 投影状态与工具列表——此前只读 supervisors，项目级无 supervisor 条目恒
     // 兜底 "stopped"，浮窗/summary 与真实连接态脱节。返回形状不变。
+    const { pipeline } = orchestratorPorts.get();
     const unit = this.middlewareUnitFor(server.name, scope);
     if (unit !== undefined) {
       const entry = unit.connections.get(server.name);
@@ -1139,7 +1132,7 @@ export class McpManager {
           scope,
           status: entry.status,
           // 目录发现失败（unavailable）时透出原因：解释 connected 却 0 工具。
-          error: entry.error !== undefined ? msgOf(entry.error) : catalog?.unavailable,
+          error: entry.error !== undefined ? pipeline.msgOf(entry.error) : catalog?.unavailable,
           tools,
           disabledTools: disabledList.length > 0 ? disabledList : undefined,
         };

@@ -27,10 +27,13 @@ import type {} from "@deepseek-ai/dsh-system-prompt";
 import type {} from "@deepseek-ai/dsh-tools";
 import type { McpManagerService } from "./integration/interface.ts";
 import { installInject } from "./inject/interface.ts";
+import { installOrchestrator } from "./connection/orchestrator/interface.ts";
 import * as catalogApi from "./catalog/interface.ts";
+import * as configModelApi from "./config/model/interface.ts";
 import * as connectionApi from "./connection/interface.ts";
 import * as pipelineApi from "./pipeline/interface.ts";
 import * as runtimeApi from "./connection/runtime/interface.ts";
+import * as statsApi from "./stats/interface.ts";
 import * as storeApi from "./config/store/interface.ts";
 import * as workspaceApi from "./workspace/interface.ts";
 
@@ -50,6 +53,19 @@ installInject({
   catalog: catalogApi,
   runtime: runtimeApi,
   pipeline: pipelineApi,
+  workspace: workspaceApi,
+});
+
+// 连接编排子层的静态端口装配。同上：实参必须是可解析的对象字面量、键集与
+// connection/orchestrator/deps.ts 的 OrchestratorDeps 严格相等，且调用点必须落在入口
+// （written elsewhere → 该对账静默空转，附录 G·G20）。
+installOrchestrator({
+  catalog: catalogApi,
+  configModel: configModelApi,
+  configStore: storeApi,
+  runtime: runtimeApi,
+  pipeline: pipelineApi,
+  stats: statsApi,
   workspace: workspaceApi,
 });
 
