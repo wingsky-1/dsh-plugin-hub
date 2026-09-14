@@ -13,8 +13,8 @@
       "gate": "forbid-module-state-src",
       "script": "scripts/gate/forbid-module-state-src.mjs",
       "scopeFrom": "registry",
-      "packages": ["dsh-notifier"],
-      "why": "判据源自 #733 宪法第 1 条，当前只对 dsh-notifier 生效（该包是重写目标，存量已清零或登记豁免）。范围此前是脚本内的 PACKAGES 常量 + PACKAGES_V 版本号，现改为读本文件；扩包前必须先实测该包在新口径下的存量（照抄历史数字会误判）。"
+      "packages": ["dsh-lan-proxy", "dsh-notifier"],
+      "why": "判据源自 #733 宪法第 1 条。dsh-notifier 是重写目标，存量已清零或登记豁免；dsh-lan-proxy 于 #765 扩入——扩包前先实测该包在新口径下的存量（照抄历史数字会误判），实测其客户端 4 处模块级 var 中 3 处是常量、1 处（disposed）是零读取的死赋值，故先清零代码再扩面，扩面时零新增豁免。范围此前是脚本内的 PACKAGES 常量 + PACKAGES_V 版本号，现改为读本文件。"
     },
     {
       "gate": "forbid-src-tests",

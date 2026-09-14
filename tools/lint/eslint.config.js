@@ -78,12 +78,11 @@ const LEGACY_WARN = {
   "@typescript-eslint/no-wrapper-object-types": "warn",
 };
 
-// 客户端 `var` 的豁免面（#765 第 2 项「收窄」）：**当前实际含 var 的两个文件**，是事实快照
-// 而非白名单。判据见上面对 files 的说明；某文件不再含 var 即由自测判红，届时删条目。
-const CLIENT_VAR_EXEMPT_FILES = [
-  "packages/dsh-notifier/src/client/index.tsx",
-  "packages/dsh-lan-proxy/src/client/index.ts",
-];
+// 客户端 `var` 的豁免面（#765 第 2 项「收窄」）：**当前实际含 var 的文件**，是事实快照而非
+// 白名单。判据见上面对 files 的说明；某文件不再含 var 即由自测判红，届时删条目。
+// lan-proxy 的客户端于 #765 清零（3 处模块级常量改 const、1 处零读取死赋值删除、4 处函数内
+// 局部改 let/const），故从本清单移除——移除靠代码清零，不是把条目改成通配或留着腐烂。
+const CLIENT_VAR_EXEMPT_FILES = ["packages/dsh-notifier/src/client/index.tsx"];
 
 export default [
   { ignores: IGNORES },
