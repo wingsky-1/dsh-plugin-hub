@@ -54,6 +54,7 @@
 - `gate/verify-coverage-scope.mjs` — 覆盖率面判据（#733 计划项 3.4）：`vitest.config.ts` 不得内联 `include`/`exclude`/`thresholds`；exclude 条目须带 `reason` 与 `kind`（`reviewBy`/`exitCriteria` 只允许 `pending-project`）；物理枚举的每个源文件必须落在 include 或某条 exclude 里（未分类即红）；模式命中 0 文件即红；产物 keys ⊆ include 面（产物比配置新时才执行）。
 
 - `gate/verify-vendored-binaries.mjs` — 发布物面内 vendored 裸二进制判据（批 2b，来源 #784 遗留 D 项）：扫描面 = 各包 `package.json` 的 `files` 白名单（含 `!` 否定条目）∪ npm 无论 `files` 都强制包含的位置（`package.json`、根级 `README*`/`LICENSE*`/`CHANGELOG*`/`NOTICE*`、`bin`、`main`、`bundledDependencies` 展开出的包内 `node_modules` 子树）；判据轴是「会不会随发布物分发」，不是「文件是不是二进制」，故 `docs/` 下的 PNG 不算、`test/fixtures/*.bin` 只在被 `files` 包含时才算。**判据面是源码树（随包分发的源文件）**：未构建的工作副本扫描面会变小，构建产物由 `pack:check` 的 tarball 断言覆盖。面内的内容嗅探命中（头 8 KiB + 尾 1 KiB 双段采样）必须已在 `data/vendored-binaries.json` 登记且 sha256 一致；`kind: "vendored"`（缺省）另要求许可文本存在、非空且**同样在发布物面内**，`kind: "first-party"`（本仓自有资产）只要求哈希绑定。双向 fail-closed：未登记即红（问题文案直接带 sha256，便于登记），登记项消失/哈希漂移/内容已非二进制/登记表不可读（exit 2）也红——防「登记表腐坏后判据静默失效」；`files` 声明了但磁盘上不存在的条目与面内非普通文件（软链目录）只以 `NOTE` 报告，不判红。
+- `gate/verify-shared-fanin.mjs` — 仓库根 shared/ 的跨包扇入判据（#792 跨包档收口，把 shared/README.md 准入规则 1 从文档变成判据）：扫 `packages/<pkg>/src` 的**直接**相对 import（生产口径，test/** 不计入消费者）得「shared 模块 → 消费包集合」；值面模块 < 2 包判红、类型面模块（只有 .d.ts）单列（≥ 1 包）、退役不豁免下限（标 DEPRECATED 仍按同一下限判，见 shared/README.md 准入规则 7）、悬空引用判红。执行点在 contract-check，README 不再维护人肉消费方快照；同一输出即消费方的实时派生来源。
 
 ## maintenance/（一次性维护脚本，按需手工执行）
 
@@ -99,6 +100,7 @@
 - `test/mutation-ledger.test.ts` — 变异段台账自测（#718 S0.2：GHA 日志解析口径含单空格前缀与 ANSI 剥离、未闭合段宁缺勿造、`wallSeconds` 正数不变量、覆盖全部段对账、历史段 `superseded` 登记）。
 - `test/mutation-plan.test.ts` — 变异矩阵段清单与超时派生自测（#718 S1.1/S1.4：段清单口径同源、超时只用 `scope=full` 实测、公式与下限不被放宽、无实测落保守默认）。
 - `test/pack-check-scope.test.ts` — pack-check 聚合段切片口径自测（#722/#751：增量切片下不得对未构建的聚合包假红；全仓口径必须仍执行该段，缺产物 fail-loud 且 exit 与判定自洽；切片用例取 `script-test-prereqs.mjs` 的 PREREQ 包——取清单外的包会把假红从 pack:check 搬进 test:scripts）。
+- `test/verify-shared-fanin.test.ts` — 跨包扇入门禁自测（#792）：说明符提取口径、fixture 正反例（值面 2/1/0 包、类型面下限、标 DEPRECATED 仍判红、悬空引用、test/ 引用不计入、端内门面转出计入、shared 内部依赖不传递）、真实仓库锚与登记链断言。
 - `test/script-test-prereqs.mjs` — `test:scripts` 里依赖**编译产物**的用例前置包清单（#722）：CI（repo-gate 构建步骤）与本地门禁（`gate/local-gate.mjs`）同源读取，避免「少建一个包 → 门禁假红」。
 - `test/mutation-probe.mjs` — 变异度量可信度探针（#722）：变异得分依赖测试运行器的覆盖分辨率，本探针用实测说明该依赖的边界。
 

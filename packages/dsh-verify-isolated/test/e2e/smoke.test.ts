@@ -69,7 +69,39 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
-import { parseFrontmatter } from "../../../../shared/frontmatter.js";
+
+/**
+ * 极简 frontmatter 顶层标量解析（本测试自用，非共享模块）。
+ *
+ * 为什么内联：原实现是 shared/frontmatter.js，生产扇入为 0（#792 跨包档收口判定退役并移除），
+ * 本文件对它的全部依赖只是「读出 name / description 两个顶层标量」。为一个测试把整套解析器
+ * 留在共享层，会让共享层的准入判据（>=2 生产消费者）形同虚设。块标量按 SKILL.md 的实际写法
+ * 覆盖 `>` 折叠与 `|` 字面两形态，断言口径不变（下面的 it 一条未改）。
+ */
+function parseFrontmatter(content) {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(content);
+  if (match === null) return {};
+  const lines = match[1].split(/\r?\n/);
+  const out = {};
+  for (let i = 0; i < lines.length; i += 1) {
+    const kv = /^([A-Za-z][\w-]*):\s*(.*)$/.exec(lines[i]);
+    // 缩进行属于上方块标量，顶层键循环只认行首无缩进的 key:
+    if (kv === null) continue;
+    const key = kv[1];
+    const rest = kv[2].trim();
+    if (rest !== "" && !/^[>|][-+]?$/.test(rest)) {
+      out[key] = rest;
+      continue;
+    }
+    const block = [];
+    while (i + 1 < lines.length && /^\s+\S/.test(lines[i + 1])) {
+      block.push(lines[i + 1].trim());
+      i += 1;
+    }
+    out[key] = rest.startsWith("|") ? block.join("\n") : block.join(" ");
+  }
+  return out;
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = join(HERE, "..", "..");

@@ -309,4 +309,25 @@ console.log(failed === 0 ? "客户端契约：全部通过" : `客户端契约�
 // 后果之一是本脚本会先打印「客户端契约：全部通过」再 FAIL（判定表与汇总行被自己打脸）。
 // 现统一为：CI 里同款直接步骤（ci.yml 的 Forbid module state in src）、本地进 local-gate 的
 // cheapGlobal（pnpm gate:module-state）。此处不再重复执行同一个判据。
+
+// #792 跨包档收口：仓库根 shared/ 的跨包扇入判据（准入规则 1）——shared 模块必须有 >= 2 个
+// 生产消费包，类型面模块单列（单消费者合规），退役走 DEPRECATED 两步走（观察期在报告里单列）。
+// 判据本体是独立脚本（可单独跑），执行点并入本 contract 段：本仓纪律是不新增 workflow、
+// 执法点唯一，与 verify-dir-imports / export-surface-snapshot 同形。
+{
+  const faninGate = spawnSync(
+    process.execPath,
+    [join(ROOT, "scripts/gate/verify-shared-fanin.mjs")],
+    { encoding: "utf8" },
+  );
+  for (const line of (faninGate.stdout ?? "").split("\n"))
+    if (line.trim() !== "") console.log(line);
+  if (faninGate.status !== 0) {
+    // 结构错误路径（exit 2）只写 stderr，不转发就等于判红却无原因
+    for (const line of (faninGate.stderr ?? "").split("\n"))
+      if (line.trim() !== "") console.log(line);
+    console.log(`verify-shared-fanin | FAIL exit=${faninGate.status}`);
+    failed++;
+  }
+}
 process.exit(failed === 0 ? 0 : 1);
