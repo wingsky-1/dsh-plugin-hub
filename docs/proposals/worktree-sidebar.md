@@ -196,7 +196,8 @@ packages/dsh-worktree-sidebar/
   src/server/api/impl/service/       单例：已挂路由 disposer 链 + installed 守卫
   src/server/shared/{interface,type,paths,file-io}.ts  共享层门面 / 窄类型 / DSH_HOME 路径 / 原子写
   src/client/index.ts                干净模块：apply/inject + ctx.effect，装配窄面 + 逐会话剪枝
-  src/client/takeover.ts             探测官方 files entry to 注册 body/title/kind，并在本 entry 的 hooks.sessions 上接改写源；失败即 dispose
+  src/client/takeover.ts             探测官方 files entry to 注册 body/title/kind + teardown/evaluate/订阅；失败即 dispose（inject 面的改写见 inject.ts）
+  src/client/inject.ts               官方 entry inject 面的改写：给定官方 inject 面与会话 id，产出 hooks.sessions 指向改写源的新面
   src/client/source.ts               本 entry 的 sessions 快照源（改写 cwd，getSnapshot/subscribe 引用稳定）
   src/client/bindings.ts             拉绑定与 revision
   src/client/ports.ts                客户端窄端口类型面（运行时真实面为准；未规定成 interface.ts）
@@ -255,9 +256,9 @@ notifier / mcp-manager 给的都只是**单文件**分位数（中位 44/58、p9
 | 组合根 src/index.ts | 300 | 160（S3 拆出 `src/host/` 三个适配器后 260 到 160） | 合规 |
 | 域 impl 单文件 | 250 | 最大 154（git/impl/service） | 合规 |
 | 纯逻辑模块 | 120 | 最大 110（scope/impl/resolve） | 合规 |
-| 客户端单文件 | 250 | 最大 212（client/takeover；B1 恢复 `wrapInject` 后 174 到 212） | 合规 |
+| 客户端单文件 | 250 | 最大 186（client/index；B7 第 2 条拆出 `inject.ts` 后 takeover 212 到 182、inject 38） | 合规 |
 | 域 interface/deps | 80 | interface 19/45/24/21/59（api/binding/scope/tools/git）、deps 32/12/18/55/78 | 合规（C1 后门面 = install/release + 能力转发，不再是 8–11 行的纯转出） |
-| 全包 src | —（已撤销） | 44 文件 / 2978 行（均值 68） | 指标不存在 |
+| 全包 src | —（已撤销） | 45 文件 / 3002 行（均值 67；B7 拆出 `inject.ts` 后重测） | 指标不存在 |
 
 **历史偏离已消失，不再有「偏离」可议**：
 
@@ -267,13 +268,13 @@ notifier / mcp-manager 给的都只是**单文件**分位数（中位 44/58、p9
   `deps.ts` 是纯类型面（最大 `scope/deps.ts` 78 行，是端口与形状字段的逐条声明，只有一个修改理由）。
   当时提的两种修法（接受 150 / 再拆一层）都不必执行。
 - **全包合计**这个指标本身已撤销（见 §9），`2800` / `3000` 一类建议值一并作废，不要再出现在任何判据里。
-  当前实测 **44 文件 / 2978 行、均值 68**（旧表的 `2535` 是 `src/host/` 拆分前的读数，已过期）。
+  当前实测 **45 文件 / 3002 行、均值 67**（旧表的 `2535` 是 `src/host/` 拆分前的读数，已过期；`44/2978` 是 B7 拆出 `inject.ts` 之前的读数）。
 
 ## 10. 债务清单与最小化
 
 | 债务 | 最小化做法 |
 |---|---|
-| 借用 inspection 面（StoredEntry.component） | 探测收敛在 src/client/inject.ts；用 get("files")?.id 定位而非内联 id；结构不符即零注册；加负向契约测试 |
+| 借用 inspection 面（StoredEntry.component） | 探测收敛在 src/client/takeover.ts（inject.ts 只负责 inject 面改写）；用 get("files")?.id 定位而非内联 id；结构不符即零注册；加负向契约测试 |
 | configure 是全局替换 | **实测：官方用 `lookups.register`（providers 表），我们 `configure` 写的是另一张 resolvers 表（dsh-typert-registry/lib/index.js:158-160），两者不冲突**。`configure` 前捕获 `lookups.get("workspaceFileScope")?.resolve` 并委托（此时它正是官方 resolve），**捕获必须在 configure 之前**——configure 之后 `get()` 只回我们的包装，官方 resolve 不再可达。若安装时 provider 尚未注册（`get()` 为 undefined）则用等价实现兜底（只依赖 sessions.header / sessionPersistence.stat / header.cwd ?? sandboxPolicy.workspaceRoot）。类型层亦确认「配置可先于 provider 注册，dispose 时恢复 provider 默认解析器」（dsh-typert-protocol/lib/types/types.d.ts:381、412） |
 | 伪造 sessions 源 | 只改写 byId[id].cwd 一个字段、其余透传；按 entry×binding 缓存，保证引用稳定 |
 | 双端 revision 契约 | src/contract.ts 单点定义；GET 回 {revision, worktreePath|null} |
@@ -798,7 +799,11 @@ node scripts/gate/export-surface-snapshot.mjs --package dsh-worktree-sidebar --s
 
 **B7 结构动作表的执行状态（如实登记）**：§18.2-B7 那张「具体结构动作」表里，第 1 条（拆
 `src/host/{agents,typert,defaults}.ts`）已落地（`c3fb83d`），第 4 条（删掉全包合计指标）已落地（`ec42113`），
-第 3 条是「**不拆**」。**第 2 条（B1 之后拆 `client/inject.ts`）本轮未执行**：B1 恢复的 `wrapInject`
-留在 `client/takeover.ts`（实测 212 行，仍在本文件类型的 250 行提问线内），所以 §8 的客户端清单是
-5 个文件（`index` / `takeover` / `source` / `bindings` / `ports`）、没有 `inject.ts`。这是本轮
-如实留下的结构项，不是已完成项；要动它属于下一次代码改动（会触发 `--min`/`stryker` 面与全量门禁）。
+第 3 条是「**不拆**」。**第 2 条（B1 之后拆 `client/inject.ts`）已落地（`ae8983c`）**：`wrapInject`
+从 `client/takeover.ts` 移进新块 `client/inject.ts`（`createInjectWrapper(sourceFor)`，只回答「给定官方
+inject 面与会话 id，产出 `hooks.sessions` 指向改写源的新面」），`takeover.ts` 212 到 182 行，只留探测、
+三步注册、teardown/evaluate、订阅与退订、`findEntry`。两块零互引：跨块形状（`InjectFactory` /
+`SourceFor` / `WrapInject`）落在纯类型面 `ports.ts`，装配根 `index.ts` 把改写器接进 `TakeoverDeps.wrapInject`；
+ESLint 的 `no-restricted-imports` 块间规则同步纳入 `inject.ts`。§8 的客户端清单因此是 6 个文件
+（`index` / `takeover` / `inject` / `source` / `bindings` / `ports`）。行为不变：13 文件 / 174 用例全绿，
+打红实验（拿掉 `hooks.sessions` 那一项）只红在 inject 面判据上，还原后 sha256 一致。
