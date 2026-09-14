@@ -153,7 +153,8 @@ function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel }) {
   if (tier === "pr") {
     // 步骤表按 hitPackages 生成：直接 `--tier pr` 时 main() 已把包面置为全部包（本地没有 PR
     // 上下文可切，与 full 同对象面、只少豁免到期台账），此处即全仓；只有从 changed 升档才拿到真
-    // 切片（全局面命中或空切片）。覆盖率与变异归 CI 标签与夜间，本地不在任何档跑。
+    // 切片（全局面命中或空切片）。覆盖率与变异**默认**不在本地任何档跑——覆盖率可由
+    // `gate:full --with-coverage` 补，变异只在 CI（PR 按切片强制 + 夜间全量）。
     const steps = [];
     if (hitPackages.length > 0) {
       steps.push({

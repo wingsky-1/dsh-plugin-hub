@@ -18,8 +18,12 @@ description: >
 > （`ci.yml` 的 needs 已并入 build-test / coverage / mutation-gate / mutation-verdict，并有 fail-closed 断言）
 > ——它绿只说明这条链没红，**不等于完成定义满足**。
 > **CI 在 PR 上**的 `build` / `test` 按命中包切片（`ci.yml` 的 paths-filter），不是 `pnpm build && pnpm test`
-> 的全仓口径；全仓 build / test / typecheck 与全仓产物闸不在 CI 的 PR 默认路径，只在 `gate:full` 标签与
-> 夜间班次跑（本地 `pnpm gate:pr` 本身就是全仓对象面，见根 AGENTS.md 门禁矩阵）。
+> 的全仓口径。三个维度在 CI 上落点不同：**全仓 build 在默认 PR 路径就会跑**（命中变异切片时
+> `mutation-gate` 先全量构建）；**全仓产物闸只在 `gate:full` 标签、夜间班次与 tag 触发的
+> `release.yml` 跑**；**全仓 test / typecheck 没有 CI 聚合口径**——`ci.yml` 只按命中包逐包跑
+> （命中全局面或 fail-closed 回退时该矩阵才覆盖全部包），聚合 `pnpm test` 只在 tag 触发的
+> `release.yml`，聚合 `pnpm typecheck` 只在本地 `pnpm gate:pr` / `gate:full`。故完成定义不读作
+> 「CI 已验全仓 test」（见根 AGENTS.md 门禁矩阵）。
 > 旧称「五连门禁」= 全仓 `pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck`，
 > **已整体并入 `pnpm gate:pr`**（本地 pr 即全仓口径；`gate:full` 在其上只多「豁免到期台账」收集，
 > `--with-coverage` 再补 cov / crap）。
