@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 /**
  * dir-imports-spec — import specifier 三分类纯函数（#792 方案 A9 取数层）。
  *
