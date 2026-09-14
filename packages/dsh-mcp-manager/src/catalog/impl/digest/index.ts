@@ -1,5 +1,5 @@
 /**
- * dsh-mcp-manager — catalog/digest.ts：目录条目 digest（#664 阶段 5）。
+ * dsh-mcp-manager — catalog/impl/digest/index.ts：目录条目 digest（#664 阶段 5）。
  *
  * 自 src/catalog.ts 拆出（digest 域）：sha256 摘要，**只含服务器集合（name），
  * 不含描述文本**——工具描述不稳定（按需注册/动态描述），含描述会永远追不上
@@ -7,7 +7,7 @@
  */
 
 import { createHash } from "node:crypto";
-import type { CatalogEntry } from "./entries.ts";
+import type { CatalogEntry } from "../entries/index.ts";
 
 /**
  * 目录条目 digest（sha256）——**只含服务器集合（name），不含描述文本**。
