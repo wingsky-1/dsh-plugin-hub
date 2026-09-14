@@ -1,6 +1,6 @@
 {
   "name": "@wingsky-1/dsh-web-file-preview",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "把对话内「用默认应用打开」的文件请求改写成官方右侧栏预览：客户端拦截 POST /api/present.open 并转 ctx.sidebarRight.openResource，不注册官方扩展点、不修改官方源码",
   "type": "module",
   "main": "lib/index.js",
