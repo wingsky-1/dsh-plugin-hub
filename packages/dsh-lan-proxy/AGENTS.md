@@ -61,6 +61,10 @@ issue #110 起不再使用自建 config.json）。
 
 ## 验证（提交前全跑）
 
+> 完成定义以根 [AGENTS.md 门禁矩阵](../../AGENTS.md) 为**单一事实源**：下列五条是该矩阵
+> `pnpm gate:full` 档的真子集，本清单只作提交前自查，不替代该矩阵的分层门槛。本文件是新增
+> 包级 `AGENTS.md` 的模板（根 AGENTS.md 指定），新包照此保留该指针。
+
 ```sh
 pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck
 ```

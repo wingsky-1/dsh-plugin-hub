@@ -80,6 +80,9 @@ IIFE 工厂、Symbol.toStringTag 装配、**load id === 包名** define 注入�
 
 ## 5. 门禁与阶段提交（改动提交前全跑，在仓库根执行）
 
+> 完成定义以根 [AGENTS.md 门禁矩阵](../../../AGENTS.md) 为**单一事实源**：下列五条是该矩阵
+> `pnpm gate:full` 档的真子集，本清单只作迭代内自查，不替代该矩阵的分层门槛。
+
 ```sh
 pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck
 ```
