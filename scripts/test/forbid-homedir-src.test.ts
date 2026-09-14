@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // @ts-nocheck
-/** forbid-homedir-src.mjs 自测（#517 B5）：正反例 + 三态 + fail-closed 全组合。 */
+/** forbid-homedir-src.mjs 自测（#517 B5）：正反例 + 无豁免通道 + fail-closed 全组合。 */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -29,6 +29,14 @@ function run(root) {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+/** 构造豁免台账临时文件（--exemptions 注入），返回其路径——用于锁定「本闸不读台账」。 */
+function exemptionsFile(entries) {
+  const dir = mkdtempSync(join(tmpdir(), "gate-exemptions-"));
+  const p = join(dir, "gate-exemptions.json");
+  writeFileSync(p, JSON.stringify({ version: 1, exemptions: entries }));
+  return p;
 }
 
 test("正例：干净 src（无任何 HOME 来源 API）→ exit 0", () => {
@@ -135,7 +143,9 @@ test("反例：.mjs 文件同样受扫（adapters 旁路防护）→ exit 1", ()
   assert.match(r.stderr, /homedir\(\)（node:os homedir 别名调用）/);
 });
 
-test("豁免三态：有注释但未在台账登记 → FAIL（不合法豁免）", () => {
+// ---- 无豁免通道（#765）：本闸命中即违规，登记与注释都不构成豁免 ----
+
+test("#765：调用点带 dsh-gate:allow-homedir 注释 → 仍判违规（注释不再是豁免通道）", () => {
   const dir = fixture([
     {
       rel: "a.ts",
@@ -145,27 +155,39 @@ test("豁免三态：有注释但未在台账登记 → FAIL（不合法豁免�
   ]);
   const r = run(dir);
   assert.equal(r.status, 1);
-  assert.match(
-    r.stderr,
-    /有 dsh-gate:allow-homedir 注释但未在 scripts\/data\/gate-exemptions\.json 登记/,
-  );
+  assert.match(r.stderr, /违规 1 /);
+  assert.ok(!r.stderr.includes("豁免"), `输出不应再出现豁免语义：${r.stderr}`);
 });
 
-test("豁免三态：豁免注释缺 issue 号 → 不算合法豁免，按违规报", () => {
+test("#765：台账登记 + --exemptions 注入 → 仍判违规（本闸不读台账，参数已不存在）", () => {
   const dir = fixture([
     {
       rel: "a.ts",
       content:
-        'import { homedir } from "node:os"\n// dsh-gate:allow-homedir 随手一豁\nexport const p = homedir()\n',
+        'import { homedir } from "node:os"\n// dsh-gate:allow-homedir #999 测试理由\nexport const p = homedir()\n',
     },
   ]);
-  const r = run(dir);
-  assert.equal(r.status, 1);
-  // 无 #NNN → 豁免标记不成立 → 该命中未在台账登记 → 违规
-  assert.match(r.stderr, /违规 1 /);
+  const ledger = exemptionsFile([
+    {
+      gate: "forbid-homedir-src",
+      path: "packages/dsh-fake/src/a.ts",
+      reason: "测试用登记：本闸已无豁免通道",
+      trackingIssue: "#999",
+    },
+  ]);
+  try {
+    const r = spawnSync(process.execPath, [SCRIPT, "--root", dir, "--exemptions", ledger], {
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stderr, /违规 1 /);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(dirname(ledger), { recursive: true, force: true });
+  }
 });
 
-test("F1：字符串字面量里的伪豁免注释不生效（真实注释词法识别）→ 判违规", () => {
+test("F1：字符串字面量里的伪豁免注释不生效 → 判违规且不回显字符串内容", () => {
   const dir = fixture([
     {
       rel: "a.ts",
@@ -177,37 +199,6 @@ test("F1：字符串字面量里的伪豁免注释不生效（真实注释词法
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /违规 1 /);
   assert.ok(!r.stderr.includes("字符串伪造"), "字符串内容不得被当作豁免理由");
-});
-
-test("F2：台账条目文件存在但本次零命中 → 报已腐烂（非死代码）", () => {
-  // 为什么改用注入台账（--exemptions）而不是锚定真实台账：本用例的判定面是「反向腐烂
-  // 校验」这条机制，与真实台账里此刻有几条无关。原先锚定真实条目，结果是台账一收紧
-  // （~user 透传那条被 provider-usage 自己去掉后，homedir 面已零豁免）本用例就跟着红，
-  // 属于把机制判据绑在了数据现状上。
-  const dir = mkdtempSync(join(tmpdir(), "forbid-homedir-rot-"));
-  mkdirSync(join(dir, "packages/dsh-provider-usage/src/domain1/registry"), { recursive: true });
-  writeFileSync(
-    join(dir, "packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts"),
-    "export const clean = 1\n",
-  ); // 台账含此文件，但零命中（反向腐烂校验的判定面）
-  const ledger = exemptionsFile([
-    {
-      gate: "forbid-homedir-src",
-      path: "packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts",
-      reason: "测试用登记：文件存在但零命中",
-      trackingIssue: "#999",
-    },
-  ]);
-  try {
-    const r = spawnSync(process.execPath, [SCRIPT, "--root", dir, "--exemptions", ledger], {
-      encoding: "utf8",
-    });
-    assert.equal(r.status, 1, r.stderr);
-    assert.match(r.stderr, /已腐烂，应删除条目/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-    rmSync(dirname(ledger), { recursive: true, force: true });
-  }
 });
 
 test('F3：dynamic import 命名空间形态（await import("node:os")）→ 判违规', () => {
@@ -261,15 +252,17 @@ test("fail-closed：语法损坏文件（TS 不可解析）→ exit 1 且指明�
   assert.match(r.stderr, /解析失败（fail-closed，一律判红）/);
 });
 
-test("本仓真实快照：homedir 面零豁免 → exit 0 且无任何已登记条目", () => {
+test("本仓真实快照：homedir 面零命中 → exit 0 且输出不含任何豁免语义", () => {
   // 收紧史：#722 起 provider-config.ts 与 apply.ts 改走 shared/dsh-home.js 的 userHome 接缝，
   // 两条台账条目随之腐烂删除；此后仅剩 path-resolve.ts 的 `~user` 透传一处。该处已由
   // provider-usage 自己去掉——`~user` 一律原样返回（untildify v6 会经 os.homedir() +
   // os.userInfo() 展开 `~<当前登录用户>`，既绕过 DSH_HOME 接缝，也违反本模块写明的语义边界）。
-  // 于是本面**零豁免**：这条断言从此是「门禁面不许再长出豁免」的守卫，而非台账清单。
+  // 于是本面**零豁免**，闸内的豁免机制也随后删除（#765）：这条断言从此是「本面不许再长出
+  // 豁免，也不许把机制装回来」的守卫。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /无 HOME 来源 API 直连/);
+  assert.ok(!r.stdout.includes("豁免"), `输出不应出现豁免语义：${r.stdout}`);
   for (const f of [
     "packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts",
     "packages/dsh-provider-usage/src/apply/apply.ts",
@@ -277,14 +270,6 @@ test("本仓真实快照：homedir 面零豁免 → exit 0 且无任何已登记
   ])
     assert.ok(!r.stdout.includes(f), `${f} 不应再出现在豁免台账中（该面已零豁免）`);
 });
-
-/** 构造豁免台账临时文件（--exemptions 注入），返回其路径。 */
-function exemptionsFile(entries) {
-  const dir = mkdtempSync(join(tmpdir(), "gate-exemptions-"));
-  const p = join(dir, "gate-exemptions.json");
-  writeFileSync(p, JSON.stringify({ version: 1, exemptions: entries }));
-  return p;
-}
 
 test("#733 3.2.2：.tsx 纳入扫描面——客户端入口不再是对本判据的盲区", () => {
   // 旧过滤是 /\.(ts|mts|mjs)$/，不含 .tsx；客户端入口基本都是 .tsx（仓内 10 个）。
@@ -297,119 +282,6 @@ test("#733 3.2.2：.tsx 纳入扫描面——客户端入口不再是对本判�
   const r = run(dir);
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /homedir\(\)（node:os homedir 别名调用）/);
-});
-
-test("#733 3.2.2：双源齐备（登记 + 调用点注释）→ 合法豁免，exit 0", () => {
-  const dir = fixture([
-    {
-      rel: "a.ts",
-      content:
-        'import { homedir } from "node:os"\n// dsh-gate:allow-homedir #999 测试理由\nexport const p = homedir()\n',
-    },
-  ]);
-  const ledger = exemptionsFile([
-    {
-      gate: "forbid-homedir-src",
-      path: "packages/dsh-fake/src/a.ts",
-      reason: "测试用登记",
-      trackingIssue: "#999",
-      reviewBy: "2027-03-31",
-    },
-  ]);
-  try {
-    const r = spawnSync(process.execPath, [SCRIPT, "--root", dir, "--exemptions", ledger], {
-      encoding: "utf8",
-    });
-    assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /登记豁免 #999（reviewBy 2027-03-31）/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("#733 3.2.2：双源缺一（登记了但调用点无注释）→ 判违规——本闸是双源闸", () => {
-  const dir = fixture([
-    {
-      rel: "a.ts",
-      content: 'import { homedir } from "node:os"\nexport const p = homedir()\n',
-    },
-  ]);
-  const ledger = exemptionsFile([
-    {
-      gate: "forbid-homedir-src",
-      path: "packages/dsh-fake/src/a.ts",
-      reason: "测试用登记",
-      trackingIssue: "#999",
-    },
-  ]);
-  try {
-    const r = spawnSync(process.execPath, [SCRIPT, "--root", dir, "--exemptions", ledger], {
-      encoding: "utf8",
-    });
-    assert.equal(r.status, 1, r.stderr);
-    assert.match(
-      r.stderr,
-      /已登记在 scripts\/data\/gate-exemptions\.json 但该调用点缺紧邻豁免注释/,
-    );
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("#733 3.2.2：台账条目按 gate 作用域隔离——他闸条目不豁免本闸", () => {
-  // 两闸共用同一个台账文件，条目串闸（写错 gate）必须表现为「没登记」而不是「已豁免」。
-  const dir = fixture([
-    {
-      rel: "a.ts",
-      content:
-        'import { homedir } from "node:os"\n// dsh-gate:allow-homedir #999 测试理由\nexport const p = homedir()\n',
-    },
-  ]);
-  const ledger = exemptionsFile([
-    {
-      gate: "forbid-module-state-src",
-      path: "packages/dsh-fake/src/a.ts",
-      reason: "写错 gate 的条目",
-      trackingIssue: "#999",
-    },
-  ]);
-  try {
-    const r = spawnSync(process.execPath, [SCRIPT, "--root", dir, "--exemptions", ledger], {
-      encoding: "utf8",
-    });
-    assert.equal(r.status, 1, r.stderr);
-    assert.match(r.stderr, /未在 scripts\/data\/gate-exemptions\.json 登记/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("#733 3.2.2：台账结构不合法（reviewBy 形态）→ fail-closed，不当作「无豁免」继续跑", () => {
-  const dir = fixture([
-    {
-      rel: "a.ts",
-      content:
-        'import { homedir } from "node:os"\n// dsh-gate:allow-homedir #999 测试理由\nexport const p = homedir()\n',
-    },
-  ]);
-  const ledger = exemptionsFile([
-    {
-      gate: "forbid-homedir-src",
-      path: "packages/dsh-fake/src/a.ts",
-      reason: "日期形态错误",
-      trackingIssue: "#999",
-      reviewBy: "2027/03/31",
-    },
-  ]);
-  try {
-    const r = spawnSync(process.execPath, [SCRIPT, "--root", dir, "--exemptions", ledger], {
-      encoding: "utf8",
-    });
-    assert.equal(r.status, 1, r.stderr);
-    assert.match(r.stderr, /reviewBy 须形如 2027-03-31/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
 });
 
 test("#733 3.2.1：范围注册表未登记本闸 → 判红（未登记即红）", () => {
