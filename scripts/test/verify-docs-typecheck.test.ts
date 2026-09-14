@@ -3,7 +3,7 @@
 "use strict";
 
 /**
- * scripts 编译面接线器（issue #474 起，issue #776 批 3 改为程序覆盖断言）。
+ * scripts 编译面接线器（issue #474 起；#776 批 3 改为程序覆盖断言，批 4 收敛判据 1）。
  *
  * 为什么存在：scripts/tsconfig.json 是 scripts/ 唯一的 strict 编译面，但 pnpm typecheck 是
  * `pnpm -r --if-present run typecheck`（只进各包，不进根 scripts/），pnpm build/test 也编
@@ -16,20 +16,23 @@
  * 具体文件静默绿（只有 include 全空才配置级报错），文本正则既漏检又易假绿。程序集口径
  * 直接来自 tsc --listFiles，是「真被检查的文件」的权威答案，不需要另读、另解析配置文本。
  *
- * 两条互补判据：
- * 1. 磁盘上 scripts/ 下的 .ts/.mts/.cts 减去程序集，每一项都必须落在 scripts/test/ 之下
- *    ——非 test 的 .ts/.mts/.cts 漏面即红（把 lib/** 之类写进 exclude，文件离开程序集同样命中）。
+ * 判据（#776 批 4 起，test/** 已入面，故白名单不再有正当例外）：
+ * 1. 磁盘上 scripts/ 下的 .ts/.mts/.cts 减去程序集必须为**空集**——任何文件漏面即红，
+ *    无论它落在哪个子目录（把 lib/** 或 test/** 写进 exclude 同样命中）。批 3 的
+ *    「面外文件必须落在 scripts/test/ 下」前缀白名单随 test 面入面一起删除。
  * 2. 磁盘枚举非空：拦住「磁盘枚举失效」这类让判据 1 恒真的退化（空程序集由上面的
  *    program.size 断言拦住，不再靠差值非空间接判定）。
  *
- * 不用「逐条登记面外文件」的清单：那会让每个新增的 scripts/test/*.test.ts 都打红
- * test:scripts，与并行往 test/ 加用例的分支互斥；前缀断言保护力等价而维护成本为零。
+ * 口径边界（#776 批 4）：scripts/tsconfig.json 开了 allowJs（让被 import 的 .mjs 进入程序集
+ * 以提供**推断**类型），程序集里因此也会出现 .mjs；但 isTypeScript 只认 .ts/.mts/.cts，
+ * 本文件的两条判据**只覆盖 TS 后缀**——「.mjs 本体是否已被类型检查」不是本守卫的判据
+ * （checkJs 未开，那是 #776 的未决独立项）。
  *
  * 只 spawn 一次 tsc（--noEmit 与 --listFiles 同时给出），exit code 即 tsc 的真实退出码；
  * 编译结果与程序集一次取全，不做第二次全量编译。
  *
- * 为何自身仍带 @ts-nocheck（#474 R4 预防性声明）：本文件只 spawn tsc 子进程并读它的输出，
- * 不 import 被测物的类型（walk-files.ts 仅作运行时遍历工具），纳入 strict 面无检查增量。
+ * 为何自身仍带 @ts-nocheck：本文件只 spawn tsc 子进程并读它的输出，不 import 被测物的类型
+ * （walk-files.ts 仅作运行时遍历工具）；它与其余 64 处 @ts-nocheck 一起由后续批次逐个摘除。
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -45,17 +48,10 @@ const SCRIPTS = join(ROOT, "scripts");
 const TSC = join(ROOT, "node_modules", "typescript", "bin", "tsc");
 const TSCONFIG = join(SCRIPTS, "tsconfig.json");
 
-/**
- * scripts/ 下唯一允许暂时留在编译面外的前缀（test 侧 @ts-nocheck 属后续批次）。
- * 粒度是整棵子树：scripts/test/ 下的任何文件都会被放行，包括误放进去的生产脚本——
- * 这是既定口径边界，守卫只防「test/ 之外漏面」。
- */
-const TEMPORARY_EXCLUSION_PREFIX = "scripts/test/";
-
 const isTypeScript = (name) => /\.(ts|mts|cts)$/.test(name);
 const toPosix = (p) => p.split(sep).join("/");
 
-test("scripts 编译面接线：非 test 的 .ts/.mts/.cts 全树入面，程序集与磁盘集合对账（#474/#776）", () => {
+test("scripts 编译面接线：scripts/ 全树 .ts/.mts/.cts 入面，面外集合必须为空（#474/#776）", () => {
   assert.ok(existsSync(TSC), `仓库 tsc 应存在（${TSC}）——pnpm install 后才有`);
   assert.ok(existsSync(TSCONFIG), `scripts/tsconfig.json 应存在（${TSCONFIG}）`);
 
@@ -83,16 +79,16 @@ test("scripts 编译面接线：非 test 的 .ts/.mts/.cts 全树入面，程序
     `tsc --listFiles 未解析出任何 scripts/ 程序文件——输出格式变了？\n${result.stdout}`,
   );
 
-  // 判据 1：磁盘侧不做任何排除，程序集的补集即「被漏在面外」的文件；非 test 脚本漏面即红。
+  // 判据 1：磁盘侧不做任何排除，程序集的补集即「被漏在面外」的文件；test/** 入面后不再有例外。
   const onDisk = walkFiles(SCRIPTS, isTypeScript).map((rel) => `scripts/${rel}`);
   const outOfFace = onDisk.filter((rel) => !program.has(rel)).sort();
-  for (const rel of outOfFace) {
-    assert.ok(
-      rel.startsWith(TEMPORARY_EXCLUSION_PREFIX),
-      `${rel} 不在 tsc 程序集内，且不在 scripts/test/ 之下——非 test 的 .ts/.mts/.cts 必须入编译面（该文件被静默移出覆盖？）`,
-    );
-  }
+  assert.deepEqual(
+    outOfFace,
+    [],
+    "下列文件不在 tsc 程序集内：所有 scripts/ 下的 .ts/.mts/.cts 都必须在 tsc 程序集内" +
+      `（被静默移出覆盖？请检查 scripts/tsconfig.json 的 exclude）：\n${outOfFace.join("\n")}`,
+  );
 
   // 判据 2：磁盘枚举非空，防「磁盘枚举失效」让判据 1 退化为恒真。
-  assert.ok(onDisk.length > 0, "磁盘枚举为空（walkFiles 失效）：面外前缀判据退化为恒真（假绿）");
+  assert.ok(onDisk.length > 0, "磁盘枚举为空（walkFiles 失效）：面外判据退化为恒真（假绿）");
 });
