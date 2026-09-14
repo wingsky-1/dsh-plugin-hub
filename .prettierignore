@@ -20,6 +20,14 @@ pnpm-lock.yaml
 stryker.conf.d/
 vitest.stryker.d/
 
+# 导出面快照基线：同样是「脚本生成 + 门禁逐字节比对」的形态，同因同上。
+# scripts/gate/export-surface-snapshot.mjs 用 JSON.stringify(_, null, 2) 写出，
+# 不带 printWidth 概念，而 Prettier 会把偏长的单元素数组展开成多行——两者对同一份
+# 数据给出不同排版。此前只有 dsh-notifier 一份基线且恰好没踩到展开阈值，故未暴露；
+# #826 给 dsh-lan-proxy 冻结基线时命中（50 个符号里有单元素长声明块数组）。
+# 让给生成器：格式化它只会让下一次 --snapshot 把排版顶回去。
+scripts/data/*-export-surface.json
+
 # ── 文档面：不格式化（#733 计划项 3.5，维护者裁决）────────────────────────────
 # 理由：Prettier 会按 printWidth 重排散文换行，docs/ 与各 README 是手写排版；
 # 格式化它们产生数百行纯排版 diff（实测 49 + 3 个文件），没有判定价值却会掩盖真实改动。

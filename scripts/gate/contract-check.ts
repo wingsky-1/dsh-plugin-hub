@@ -291,6 +291,8 @@ console.log(failed === 0 ? "客户端契约：全部通过" : `客户端契约�
 // M6（#669 PR1）：包导出面快照——tsc --declaration 产物与入库基线零 diff
 // （符号集 + 导出符号定义块），重构期导出面漂移（增删改符号/定义改写）判红。
 // 基线变更须显式 --snapshot 更新并随 PR 提交（脚本同目录 verify-dir-imports）。
+// 两处调用点刻意写成字面量而不是循环：scripts/test/gate-scope-registry.test.ts 按静态
+// 文本派生「谁受 --package 限制」，变量形式会让那份清单静默漏项（实测该自测会红）。
 {
   const surfaceGate = spawnSync(
     process.execPath,
@@ -300,7 +302,22 @@ console.log(failed === 0 ? "客户端契约：全部通过" : `客户端契约�
   for (const line of (surfaceGate.stdout ?? "").split("\n"))
     if (line.trim() !== "") console.log(line);
   if (surfaceGate.status !== 0) {
-    console.log(`export-surface-snapshot | FAIL exit=${surfaceGate.status}`);
+    console.log(`export-surface-snapshot(dsh-notifier) | FAIL exit=${surfaceGate.status}`);
+    failed++;
+  }
+}
+// #826 起 lan-proxy 也冻结基线：它的「零行为变更」由人工一次性比对升级为可重复判据，
+// 覆盖主入口（.）与客户端入口（./client）两处导出面。
+{
+  const surfaceGate = spawnSync(
+    process.execPath,
+    [join(ROOT, "scripts/gate/export-surface-snapshot.mjs"), "--package", "dsh-lan-proxy"],
+    { encoding: "utf8" },
+  );
+  for (const line of (surfaceGate.stdout ?? "").split("\n"))
+    if (line.trim() !== "") console.log(line);
+  if (surfaceGate.status !== 0) {
+    console.log(`export-surface-snapshot(dsh-lan-proxy) | FAIL exit=${surfaceGate.status}`);
     failed++;
   }
 }

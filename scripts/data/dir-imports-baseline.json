@@ -5,7 +5,7 @@
     "dsh-lan-proxy": {
       "modules": 5,
       "scannedSrcFiles": 16,
-      "allSrcTsFiles": 21,
+      "allSrcTsFiles": 23,
       "interfaceFacades": 5,
       "leafValueEdges": 3,
       "fileValueEdges": 25,

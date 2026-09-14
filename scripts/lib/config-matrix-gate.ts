@@ -159,7 +159,7 @@ function runLanProxy(root) {
   const problems = [];
   const lines = [];
   const cfgPath = join(root, "packages/dsh-lan-proxy/src/server/config/impl/model.ts");
-  const clientPath = join(root, "packages/dsh-lan-proxy/src/client/index.ts");
+  const clientPath = join(root, "packages/dsh-lan-proxy/src/client/shared/defaults.ts");
 
   const schema = loadTable(cfgPath, "Config", "object");
   const validators = loadTable(cfgPath, "FILE_CONFIG_VALIDATORS", "object");

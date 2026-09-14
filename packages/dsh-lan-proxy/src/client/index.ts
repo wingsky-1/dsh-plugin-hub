@@ -27,6 +27,7 @@ import * as React from "react";
 import { zh, en, type LanProxyLocaleKey } from "./locales.ts";
 import { bindLocale } from "../../../../shared/client/i18n.js";
 import { SettingsCard } from "./settings-card.tsx";
+import { DEFAULTS } from "./shared/interface.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
@@ -45,23 +46,6 @@ const NS = "settings.lanProxy";
 
 const STYLE_ID = "dsh-lan-proxy-style";
 const CSS_VERSION = "4";
-
-/** 展示缺省值（与宿主 DEFAULT_OPTIONS 同构；用户层未保存的键回落这些值）。 */
-const DEFAULTS: Record<string, any> = {
-  enabled: true,
-  port: 3081,
-  httpsEnabled: true,
-  httpsPort: 3443,
-  tlsCertFile: "",
-  tlsKeyFile: "",
-  printBanner: true,
-  wsBridgeEnabled: true,
-  wsCompressEnabled: true,
-  wsCompressPaths: ["/api/remote.mux"],
-  httpCompressEnabled: true,
-  httpCompressLevel: 1,
-  injectToken: true,
-};
 
 // ------------------------------------------------------------ 装配
 
