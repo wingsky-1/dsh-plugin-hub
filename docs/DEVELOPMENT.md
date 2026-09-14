@@ -430,12 +430,20 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
     （`leafModuleCycles` / `fileCycles` 的环签名、`raLegacy` / `implToOtherImpl` 的
     `from|to|kind` 边、`missingInterface` / `directImpl` 边、`uncoveredSrcFiles` 清单）——
     新增证据判红、证据消失视为改善（写入时自动清理）、`kind` 由 value→type 视为收口、
-    type→value 判红；**放宽的唯一通道**是登记到 `scripts/data/gate-exemptions.json`
-    （`gate=verify-dir-imports`，`path=<包名>:<证据项>`，必填 reason 与 trackingIssue，
-    可选 reviewBy）——与另两闸共用同一份台账、同一个校验器与同一条到期台账（#765 收口：
-    原先的 `--accept-quality-new` / 基线内 `$acceptances` 是本闸私有的第二套豁免机制，
-    没有 trackingIssue、reviewBy 与腐烂校验，故删除）。
+    type→value 判红。质量证据的**放宽只有一条通道**：登记到
+    `scripts/data/gate-exemptions.json`（`gate=verify-dir-imports`，
+    `path=<包名>:<证据项>`，必填 reason 与 trackingIssue，可选 reviewBy）——与另两闸共用
+    同一份台账、同一个校验器与同一条到期台账（#765 收口：原先的 `--accept-quality-new` /
+    基线内 `$acceptances` 是本闸私有的第二套豁免机制，没有 trackingIssue、reviewBy 与
+    腐烂校验，故删除）。**另有一条数据层通道，它与「放宽」是两回事**：把包登记进
+    `scripts/data/mutation-topology.json` 的 `$noMutationPackages`（语义是「该包不进
+    变异面」），其效果是源码全覆盖断言**不适用**，而不是判据被放宽——该包没有可判定的
+    变异面，登记本身即对该事实的声明（跟踪 #690 S6/S8 / #773，见 #773 批 B / #710 §2-2）。
+    它与台账无关、不进到期台账，故不经 reason/reviewBy 收口；两处都未登记的包仍是 fail-closed。
     另含 `src ⊆ ∪mutate ∪ ∪excludes` 全覆盖断言（新增 src 未被变异面或排除面覆盖即红）。
+    `$noMutationPackages` 成员**不适用**该断言；其 `dir-imports-baseline.json` 里的
+    `uncoveredSrcFiles: []` 是「未登记拓扑时该字段恒为空」造成的已知假绿，不是「已覆盖」的
+    证据——判绿输出会显式声明「源码全覆盖断言不适用」，不得读作已验证全覆盖。
     死声明判据为**值面判死、类型面豁免**：`deps.ts` 的 `import type` 是声明即完整性，不参与
     死声明计算（#733 M0a）。**可见度边界**：只管依赖方向与环路，不管符号签名。
   - **导出面门禁（`scripts/gate/export-surface-snapshot.mjs`；#669 PR1 / #733 M0+M2a / N0(B)）**：
