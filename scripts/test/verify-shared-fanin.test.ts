@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -15,6 +14,10 @@
  *
  * fixture 一律建在 mkdtempSync 的临时根（仓库零污染纪律）：本仓被禁的正是
  * 「为测试在仓库里造包目录」这类写法。
+ *
+ * 类型面（#792 CI 修复）：本文件在 scripts/tsconfig.json 的 strict 编译面内，故**不用**
+ * `// @ts-nocheck`——那会多出一条 ban-ts-comment 警告（预算只许降不许升）。门禁是 .mjs，
+ * 靠 allowJs 从实现推断类型，下面用最小的一组接口把推断结果归一，断言本身不做类型体操。
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -32,28 +35,72 @@ import {
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-function fixtureDir() {
+/** 模块判定行（.mjs 推断出的形状，这里显式写出以免断言落在 any 上）。 */
+interface FaninRow {
+  base: string;
+  kind: string;
+  file: string;
+  consumers: string[];
+  floor: number;
+  failed: boolean;
+}
+
+/** shared/ 模块清单项。 */
+interface SharedModule {
+  base: string;
+  kind: string;
+  file: string;
+}
+
+/** 判定结果：成功（rows/dangling）与结构错误（error）归一为可选字段。 */
+interface FaninReport {
+  rows?: FaninRow[];
+  dangling?: string[];
+  error?: string;
+}
+
+interface Fixture {
+  dir: string;
+  cleanup: () => void;
+}
+
+function fixtureDir(): Fixture {
   const dir = mkdtempSync(join(tmpdir(), "shared-fanin-"));
   return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
 /** 在 fixture 根下写一个文件（自动建父目录）——fixture 的形状就是被测的目录结构。 */
-function write(root, rel, content) {
+function write(root: string, rel: string, content: string): void {
   const abs = join(root, rel);
   mkdirSync(dirname(abs), { recursive: true });
   writeFileSync(abs, content);
 }
 
 /** 声明一个 shared 模块只被哪些包的 src 引用（消费者面与实现面分离，便于组合反例）。 */
-function useShared(root, pkg, sharedRel, sub) {
+function useShared(root: string, pkg: string, sharedRel: string, sub?: string): void {
   const rel = sub === undefined ? "src/use.ts" : sub;
   write(root, "packages/" + pkg + "/" + rel, 'import { x } from "' + sharedRel + '";\n');
 }
 
-/** 取某模块的判定行（不存在即断言失败，避免 undefined 静默通过）。 */
-function rowOf(result, base) {
-  const row = result.rows.find((r) => r.base === base);
-  assert.ok(row, "result 里应有模块 " + base);
+/** 判定结果（把 .mjs 的联合归一到本文件的接口）。 */
+function fanin(root: string): FaninReport {
+  return evaluateFanin(root);
+}
+
+/** 报告行（把原始返回值直接喂给 renderReport，保持两边同一类型）。 */
+function reportLines(root: string): string[] {
+  return renderReport(evaluateFanin(root));
+}
+
+/** shared/ 模块清单（shared/ 不可读时返回空表，由专门的 fail-closed 用例覆盖）。 */
+function modulesOf(root: string): SharedModule[] {
+  return (listSharedModules(root) ?? []) as SharedModule[];
+}
+
+/** 取某模块的判定行（不存在即抛，避免 undefined 静默通过）。 */
+function rowOf(result: FaninReport, base: string): FaninRow {
+  const row = (result.rows ?? []).find((r) => r.base === base);
+  if (row === undefined) throw new Error("result 里应有模块 " + base);
   return row;
 }
 
@@ -89,9 +136,8 @@ test("listSharedModules：值面 / 类型面按同基名聚合（.js + .d.ts 是
     write(dir, "shared/alpha.js", "export const a = 1;\n");
     write(dir, "shared/alpha.d.ts", "export declare const a: number;\n");
     write(dir, "shared/beta.d.ts", "export declare const b: number;\n");
-    const rows = listSharedModules(dir);
     assert.deepEqual(
-      rows.map((r) => [r.base, r.kind, r.file]),
+      modulesOf(dir).map((m) => [m.base, m.kind, m.file]),
       [
         ["alpha", "value", "alpha.js"],
         ["beta", "type", "beta.d.ts"],
@@ -107,12 +153,9 @@ test("结构 fail-closed：shared/ 缺失 / 空目录都判环境错误", () => 
   const empty = fixtureDir();
   try {
     assert.equal(listSharedModules(missing.dir), null, "shared/ 不存在 → null（结构错误）");
-    assert.ok(evaluateFanin(missing.dir).error, "shared/ 不存在 → error");
+    assert.ok(fanin(missing.dir).error, "shared/ 不存在 → error");
     mkdirSync(join(empty.dir, "shared"), { recursive: true });
-    assert.ok(
-      evaluateFanin(empty.dir).error,
-      "shared/ 存在但无 .js / .d.ts → 枚举口径失效，fail-closed",
-    );
+    assert.ok(fanin(empty.dir).error, "shared/ 存在但无 .js / .d.ts → 枚举口径失效，fail-closed");
   } finally {
     missing.cleanup();
     empty.cleanup();
@@ -127,15 +170,15 @@ test("正例：值面 2 包 + 类型面 1 包 → 全部合规，报告无 FAIL"
     useShared(dir, "pkg-a", "../../../shared/value.js", "src/value-use.ts");
     useShared(dir, "pkg-b", "../../../shared/value.js");
     useShared(dir, "pkg-a", "../../../shared/types.js", "src/types-use.ts");
-    const result = evaluateFanin(dir);
+    const result = fanin(dir);
     assert.deepEqual(
-      result.rows.map((r) => r.failed),
+      (result.rows ?? []).map((r) => r.failed),
       [false, false],
     );
     assert.deepEqual(rowOf(result, "value").consumers, ["pkg-a", "pkg-b"]);
     assert.deepEqual(rowOf(result, "types").consumers, ["pkg-a"]);
     assert.deepEqual(result.dangling, []);
-    assert.ok(!renderReport(result).some((l) => l.startsWith("FAIL")), "无违规时不得有 FAIL 行");
+    assert.ok(!reportLines(dir).some((l) => l.startsWith("FAIL")), "无违规时不得有 FAIL 行");
   } finally {
     cleanup();
   }
@@ -146,11 +189,10 @@ test("反例：值面模块只有 1 个消费包 → 判红（准入规则 1）"
   try {
     write(dir, "shared/solo.js", "export const s = 1;\n");
     useShared(dir, "pkg-a", "../../../shared/solo.js");
-    const result = evaluateFanin(dir);
-    assert.equal(rowOf(result, "solo").failed, true);
-    assert.deepEqual(rowOf(result, "solo").consumers, ["pkg-a"]);
+    assert.equal(rowOf(fanin(dir), "solo").failed, true);
+    assert.deepEqual(rowOf(fanin(dir), "solo").consumers, ["pkg-a"]);
     assert.ok(
-      renderReport(result).some((l) => l.startsWith("FAIL") && l.includes("solo.js")),
+      reportLines(dir).some((l) => l.startsWith("FAIL") && l.includes("solo.js")),
       "单消费者模块必须出 FAIL 行",
     );
   } finally {
@@ -164,7 +206,7 @@ test("反例：值面模块 0 消费包（退役候选）→ 判红", () => {
     write(dir, "shared/orphan.js", "export const o = 1;\n");
     useShared(dir, "pkg-a", "../../../shared/other.js");
     write(dir, "shared/other.js", "export const z = 1;\n");
-    const result = evaluateFanin(dir);
+    const result = fanin(dir);
     assert.equal(rowOf(result, "orphan").failed, true);
     assert.deepEqual(rowOf(result, "orphan").consumers, []);
   } finally {
@@ -176,7 +218,7 @@ test("反例：类型面模块 0 消费包 → 判红；单列口径的下限是
   const { dir, cleanup } = fixtureDir();
   try {
     write(dir, "shared/lonely.d.ts", "export declare const l: number;\n");
-    const result = evaluateFanin(dir);
+    const result = fanin(dir);
     assert.equal(rowOf(result, "lonely").floor, 1);
     assert.equal(rowOf(result, "lonely").failed, true);
   } finally {
@@ -193,10 +235,10 @@ test("退役不豁免下限：模块头标 DEPRECATED 但只有 1 个消费包 �
       "// DEPRECATED: 观察期保留，下一步连同消费方一起移除\nexport const r = 1;\n",
     );
     useShared(dir, "pkg-a", "../../../shared/retiring.js");
-    const result = evaluateFanin(dir);
+    const result = fanin(dir);
     assert.equal(rowOf(result, "retiring").failed, true);
     assert.deepEqual(rowOf(result, "retiring").consumers, ["pkg-a"]);
-    const report = renderReport(result);
+    const report = reportLines(dir);
     assert.ok(
       report.some((l) => l.startsWith("FAIL") && l.includes("retiring.js")),
       "标 DEPRECATED 不得让模块退出扇入下限（维护者裁决 #792 D-A：不要豁免机制）",
@@ -212,11 +254,11 @@ test("悬空引用：src 引 shared/ 下不存在的模块 → 报告 dangling",
   try {
     write(dir, "shared/real.js", "export const a = 1;\n");
     useShared(dir, "pkg-a", "../../../shared/ghost.js", "src/ghost-use.ts");
-    const result = evaluateFanin(dir);
+    const result = fanin(dir);
     assert.deepEqual(result.dangling, [
       "packages/pkg-a/src/ghost-use.ts → ../../../shared/ghost.js（shared/ 下无此模块）",
     ]);
-    assert.ok(renderReport(result).some((l) => l.startsWith("FAIL 悬空引用")));
+    assert.ok(reportLines(dir).some((l) => l.startsWith("FAIL 悬空引用")));
   } finally {
     cleanup();
   }
@@ -229,8 +271,7 @@ test("生产口径：只有 test/ 引用的包不算消费者（frontmatter 正�
     useShared(dir, "pkg-a", "../../../shared/m.js");
     // 只在 test/ 里引用：不构成「插件实际使用」
     write(dir, "packages/pkg-a/test/smoke.test.ts", 'import { m } from "../../../shared/m.js";\n');
-    const result = evaluateFanin(dir);
-    assert.deepEqual(rowOf(result, "m").consumers, ["pkg-a"]);
+    assert.deepEqual(rowOf(fanin(dir), "m").consumers, ["pkg-a"]);
   } finally {
     cleanup();
   }
@@ -248,7 +289,7 @@ test("经端内 shared 门面转出计入消费：门面在 src/ 里，同一套
     );
     write(dir, "packages/pkg-a/src/user.ts", 'import { h } from "./shared/facade.ts";\n');
     useShared(dir, "pkg-b", "../../../shared/hub.js");
-    assert.deepEqual(rowOf(evaluateFanin(dir), "hub").consumers, ["pkg-a", "pkg-b"]);
+    assert.deepEqual(rowOf(fanin(dir), "hub").consumers, ["pkg-a", "pkg-b"]);
   } finally {
     cleanup();
   }
@@ -262,7 +303,7 @@ test("不传递 shared 内部依赖：host-utils 引 loopback 不使 loopback �
     useShared(dir, "pkg-a", "../../../shared/host-utils.js");
     useShared(dir, "pkg-b", "../../../shared/host-utils.js");
     useShared(dir, "pkg-c", "../../../shared/host-utils.js");
-    const result = evaluateFanin(dir);
+    const result = fanin(dir);
     assert.deepEqual(rowOf(result, "host-utils").consumers, ["pkg-a", "pkg-b", "pkg-c"]);
     assert.deepEqual(
       rowOf(result, "loopback").consumers,
@@ -275,18 +316,18 @@ test("不传递 shared 内部依赖：host-utils 引 loopback 不使 loopback �
 });
 
 test("真实仓库：扇入全部达标、无悬空引用", () => {
-  const result = evaluateFanin(ROOT);
+  const result = fanin(ROOT);
   assert.equal(result.error, undefined);
   assert.deepEqual(result.dangling, []);
   assert.deepEqual(
-    result.rows.filter((r) => r.failed).map((r) => r.file),
+    (result.rows ?? []).filter((r) => r.failed).map((r) => r.file),
     [],
     "shared/ 值面模块必须 >=2 消费包、类型面 >=1（准入规则 1）",
   );
 });
 
-test("#792 PR2 登记偏差修正：four rows 以派生结果为准", () => {
-  const result = evaluateFanin(ROOT);
+test("#792 PR2 登记偏差修正：四行登记以派生结果为准", () => {
+  const result = fanin(ROOT);
   // loopback：原快照登 4 包，实测 2 包——lan-proxy / provider-usage 是经 host-utils 间接用，
   // 属 host-utils 的消费者关系，不构成 loopback 的扇入
   assert.deepEqual(rowOf(result, "loopback").consumers, ["dsh-mcp-manager", "dsh-notifier"]);
@@ -311,14 +352,14 @@ test("#792 PR2 登记偏差修正：four rows 以派生结果为准", () => {
 });
 
 test("#792 PR2：frontmatter 已从共享层移除（不再出现在派生清单里）", () => {
-  const result = evaluateFanin(ROOT);
+  const result = fanin(ROOT);
   assert.equal(
-    result.rows.find((r) => r.base === "frontmatter"),
+    (result.rows ?? []).find((r) => r.base === "frontmatter"),
     undefined,
     "frontmatter 生产扇入为 0，已按准入规则退役移除；它回来即红",
   );
   assert.ok(
-    !listSharedModules(ROOT).some((m) => m.base.startsWith("frontmatter")),
+    !modulesOf(ROOT).some((m) => m.base.startsWith("frontmatter")),
     "shared/ 下不得再有 frontmatter 实现/声明",
   );
 });
@@ -334,9 +375,9 @@ test("登记链：scripts/README.md 登记本门（引用即登记棘轮）", ()
 test("登记链：gate-scope-registry.json 以 tree 口径登记本门（仓库固定面）", () => {
   const registry = JSON.parse(
     readFileSync(join(ROOT, "scripts", "data", "gate-scope-registry.json"), "utf8"),
-  );
+  ) as { gates: { gate: string; script: string; scopeFrom: string; packages: unknown }[] };
   const entry = registry.gates.find((g) => g.gate === "verify-shared-fanin");
-  assert.ok(entry, "本门必须登记扫描范围（未登记即红）");
+  if (entry === undefined) throw new Error("本门必须登记扫描范围（未登记即红）");
   assert.equal(entry.script, "scripts/gate/verify-shared-fanin.mjs");
   assert.equal(entry.scopeFrom, "tree", "范围由 packages 目录结构派生，不吃 --package");
   assert.equal(entry.packages, "dsh-*");

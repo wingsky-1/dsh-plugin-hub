@@ -40,6 +40,18 @@ import { argValue } from "../lib/exemption-gate.ts";
 
 const DEFAULT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
+/**
+ * 导出面的类型形状（JSDoc typedef）。
+ *
+ * 为什么写在这里：本文件是 .mjs，唯一进 scripts/ strict 编译面的方式是 allowJs 推断；
+ * 不给形状，`{ ...m }` 这类展开在调用方（scripts/test/verify-shared-fanin.test.ts）会退化成
+ * 缺字段的推断结果，消费方只能靠断言绕过——那正是「类型面靠 @ts-nocheck 过关」的老路。
+ *
+ * @typedef {{ base: string, kind: "value"|"type", file: string }} SharedModule
+ * @typedef {{ base: string, kind: "value"|"type", file: string, consumers: string[], floor: number, failed: boolean }} FaninRow
+ * @typedef {{ rows?: FaninRow[], dangling?: string[], error?: string }} FaninResult
+ */
+
 /** 生产源码扩展名（.d.ts 是声明、不是消费者代码）。 */
 const SRC_FILE_RE = /\.(?:ts|tsx|mts|cts)$/;
 /** 值面 / 类型面各自的扇入下限（准入规则 1）。 */
@@ -79,7 +91,8 @@ export function importSpecifiers(text) {
 
 /**
  * 枚举仓库根 shared/ 下的模块：按基名聚合 js + d.ts 两份，判定值面 / 类型面。
- * @returns {Array<object>|null} null = shared/ 不可读（调用方按结构错误 fail-closed）
+ * @param {string} root 仓库根
+ * @returns {SharedModule[]|null} null = shared/ 不可读（调用方按结构错误 fail-closed）
  */
 export function listSharedModules(root) {
   const sharedRoot = join(root, "shared");
@@ -133,7 +146,11 @@ export function collectConsumers(root) {
   return { consumers, dangling };
 }
 
-/** 逐模块判定扇入，返回可直接渲染的行与汇总。 */
+/**
+ * 逐模块判定扇入，返回可直接渲染的行与汇总。
+ * @param {string} root 仓库根
+ * @returns {FaninResult} error 非空 = 结构错误（调用方 fail-closed）
+ */
 export function evaluateFanin(root) {
   const modules = listSharedModules(root);
   if (modules === null) return { error: `shared/ 目录不存在或不可读：${join(root, "shared")}` };
@@ -156,7 +173,11 @@ export function evaluateFanin(root) {
   return { rows, dangling };
 }
 
-/** 渲染报告行（无副作用，供 CLI 与自测共用）。 */
+/**
+ * 渲染报告行（无副作用，供 CLI 与自测共用）。
+ * @param {FaninResult} result evaluateFanin 的返回值
+ * @returns {string[]} 报告行
+ */
 export function renderReport(result) {
   if (result.error !== undefined) return [`verify-shared-fanin: ${result.error}`];
   const lines = [];
