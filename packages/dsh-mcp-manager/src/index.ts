@@ -26,6 +26,16 @@ import type {} from "@deepseek-ai/dsh-agent";
 import type {} from "@deepseek-ai/dsh-system-prompt";
 import type {} from "@deepseek-ai/dsh-tools";
 import type { McpManagerService } from "./integration/interface.ts";
+import { installCatalog } from "./catalog/interface.ts";
+import * as connectionApi from "./connection/interface.ts";
+import * as storeApi from "./config/store/interface.ts";
+import * as workspaceApi from "./workspace/interface.ts";
+
+// 目录域的静态端口装配。三组 Port 全是静态模块引用（不需要宿主 ctx 或配置），故写在入口
+// 顶层、模块求值期写定。实参必须是可解析的对象字面量、键集与 catalog/deps.ts 的 CatalogDeps
+// 严格相等——由 verify-dir-imports 的注入面对账强制；调用点必须落在入口，写在别处该对账会
+// 静默空转（附录 G·G20）。
+installCatalog({ store: storeApi, connection: connectionApi, workspace: workspaceApi });
 
 /** 稳定的 cordis 插件名。 */
 export const name = "mcp-manager";

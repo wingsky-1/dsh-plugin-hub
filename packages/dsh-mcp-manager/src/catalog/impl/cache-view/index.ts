@@ -13,12 +13,7 @@ import { join } from "node:path";
 import { dshHome } from "../../../../../../shared/dsh-home.js";
 import type { McpMiddleware } from "../../../connection/interface.ts";
 import type { ServerConfig } from "../../../types/interface.ts";
-import { readCatalogServerFromDisk } from "../../../config/store/interface.ts";
-import {
-  normalizedProjectRoot,
-  SCOPE_PROJECT,
-  MIDDLEWARE_GLOBAL_ROOT,
-} from "../../../workspace/interface.ts";
+import { catalogPorts } from "../service/index.ts";
 import { summarizeToolDescriptions } from "../entries/index.ts";
 import type { CatalogCache } from "../entries/index.ts";
 
@@ -78,6 +73,9 @@ export function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver {
     root: string,
     name: string,
   ): Promise<string | undefined> => {
+    const {
+      store: { readCatalogServerFromDisk },
+    } = catalogPorts.get();
     const unit = mw.units.get(root);
     const catalog = unit?.catalog.get(name);
     const tools = catalog?.tools;
@@ -113,6 +111,9 @@ export function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver {
   };
 
   return async (cwd, servers): Promise<CatalogCache> => {
+    const {
+      workspace: { normalizedProjectRoot, SCOPE_PROJECT, MIDDLEWARE_GLOBAL_ROOT },
+    } = catalogPorts.get();
     const catalogCache = host.getCatalogCache();
     const view: CatalogCache = new Map();
     for (const [name, entry] of catalogCache) view.set(name, { summary: entry.summary });

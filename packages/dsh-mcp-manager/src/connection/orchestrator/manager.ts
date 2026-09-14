@@ -48,7 +48,7 @@ import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "../../types/
 import { McpStatsCollector } from "../../stats/interface.ts";
 import { createRedactor } from "../../pipeline/interface.ts";
 import { EMPTY_STATUS_COUNTS } from "../../shared/interface.ts";
-import { stripMcpPrefix } from "./interface.ts";
+import { stripMcpPrefix } from "./tool-names.ts";
 
 /**
  * 管理器：持有全局存储 + 当前会话项目的项目级存储、每个服务器的监督器

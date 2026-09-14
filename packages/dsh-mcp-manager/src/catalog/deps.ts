@@ -13,9 +13,9 @@
  * 口径取「实际使用」而非「import 面」（附录 E.6 第 3 条的建议）：search 对 bareServerName
  * 是死导入（决策⑦ 登记、B2 本域重写时自然消失），端口不为它开口。
  *
- * **只许类型依赖**：本文件出现值 import 会被 verify-dir-imports 硬判红。端口等「本域改成
- * install(deps)」那一笔接线；届时三条域间值边（catalog|config/store、catalog|connection、
- * catalog|workspace）随直接值引改经端口取数而消失。
+ * **只许类型依赖**：本文件出现值 import 会被 verify-dir-imports 硬判红。三条域间值边
+ * （catalog|config/store、catalog|connection、catalog|workspace）已随 W4 接线消失——域内取数
+ * 一律经 `impl/service` 的 `catalogPorts.get()`，写入只由组合根在 `src/index.ts` 顶层完成。
  */
 import type * as storeApi from "../config/store/interface.ts";
 import type * as connectionApi from "../connection/interface.ts";
@@ -44,3 +44,16 @@ export type WorkspacePort = Pick<
   | "parseFullServerName"
   | "normalizeToolName"
 >;
+
+/**
+ * 装配入参：本域依赖的全部外部。键集与组合根 `installCatalog` 的实参字面量由
+ * verify-dir-imports 的注入面对账强制**严格相等**（多一个键、少一个键都判红）。
+ */
+export interface CatalogDeps {
+  /** store 域：磁盘 last-good 目录缓存读面。 */
+  store: StorePort;
+  /** connection 域：目录 TTL 与检索/装箱限额常量。 */
+  connection: ConnectionPort;
+  /** workspace 域：全名解析、工具名归一与全局虚拟 root 常量。 */
+  workspace: WorkspacePort;
+}
