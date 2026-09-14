@@ -5,8 +5,9 @@
   // 用 glob 而非逐项枚举：枚举清单在新增脚本时会静默漏面，glob 让「新增即入面」成为默认，
   // 漏面只能由显式 exclude 造成，而任何 exclude 都被上面那条对账断言逮住。
   //
-  // allowJs（批 4 新增）：scripts/ 的实现主体是 37 个 .mjs，此前没有任何 pragma-free 的 .ts
-  // 导入过它们（唯二导入方 gate/pack-check.ts、build/collect-licenses.ts 都带 @ts-nocheck），
+  // allowJs（批 4 新增）：scripts/ 的实现主体是 .mjs（数量以源码树为准，本注释不复述这一派生
+  // 事实），此前没有任何 pragma-free 的 .ts 导入过它们（唯二导入方 gate/pack-check.ts、
+  // build/collect-licenses.ts 都带 @ts-nocheck），
   // 故「.mjs 无类型声明」这个缺口一直没在编译面上暴露（TS7016）。开 allowJs 后被 import 的
   // .mjs 进入程序集，消费方拿到的是**从实现推断**出来的类型——单一事实源，改实现即改类型，
   // 不需要另写一份声明文件。
