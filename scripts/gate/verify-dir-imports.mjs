@@ -57,13 +57,18 @@
  *   - **I2④ 值引组合根**：新增质量证据 `rootIndexImports`——`fileValueEdges` 面上目标为
  *     src 根 `index.ts` 的值边（域取组合根的常量即成文件级值环；`import type` 编译期
  *     擦除，不入此面）。该形态此前只在不巧构成环时才可见。
- *   - 两类都是**新的证据类**：`--write-baseline` 对「基线里没有这个键」的类按首次登记
+ *   - **§5.3 client 侧 import 面**：新增质量证据 `clientServerImports`——`src/client/**`
+ *     不得 import `src/server/**`。**独立一遍扫描**：client 子树照旧不进 `files` /
+ *     `leafValueEdges` / `fileValueEdges` / `crossModuleRefs`，故各包既有基线零位移。
+ *     证据 id 用**包相对**路径（`src/client/…|src/server/…`），与 §5.3 登记的台账键同形。
+ *   - 三类都是**新的证据类**：`--write-baseline` 对「基线里没有这个键」的类按首次登记
  *     写入存量并逐类提示（mcp 的 I2① 存量就是 33 条，逐条要求开豁免 = 把存量登记误当
  *     放宽通道）；类**内**新增证据仍一律不写入、判红、放宽须登记台账。
  *
  * 豁免：
- *   - `src/client/`（index.ts 为 build-client 契约锚点）：from 侧完全豁免；
- *     target 侧同样不入模块表与依赖图。
+ *   - `src/client/`（index.ts 为 build-client 契约锚点）：from 侧完全豁免（规则 1–5 的
+ *     扫描面与三套依赖图都不含它）；target 侧同样不入模块表与依赖图。**唯一例外**是
+ *     §5.3 的 `clientServerImports`——它按 client 侧 import 面单独扫一遍，不参与其余计数。
  *   - 跨包 shared/ 共享层、lib/ 产物、node_modules、client/ 内部资源不在检查范围。
  *
  * 模式（#710 F11：措辞必须区分「有基线 / 无基线」两态，否则会误读成 --soft 也判红）：
@@ -780,6 +785,34 @@ function collectModuleIds(modules) {
   return [...modules.values()].sort();
 }
 
+/**
+ * §5.3（#767 B0 切片 3a）：client 侧 import 面的**独立一遍扫描**——`src/client/**` 不得
+ * import `src/server/**`。刻意不并入 analyzePackage 的主扫描：client 子树一旦进
+ * scannedSrcFiles / leafValueEdges / fileValueEdges / crossModuleRefs，notifier 等包的既有
+ * 基线会整体换号（这正是「新增独立一遍」的全部理由）。返回**包相对**路径的 `from|to` 证据
+ * 集合，与 §5.3 登记的台账键同形。
+ *
+ * 面含 .d.ts：该判据管的是 client 的 import 面，而 .d.ts 正是类型耦合最容易藏身处；主扫描
+ * 排 .d.ts 的理由是「不做运行时值图 from 侧」，本扫描不喂那些计数，故两个口径不同。
+ */
+function collectClientServerImports(srcDir) {
+  const serverDir = join(srcDir, "server");
+  const clientDir = join(srcDir, "client");
+  if (!existsSync(clientDir)) return [];
+  const pkgRel = (p) => rel(dirname(srcDir), p);
+  const out = [];
+  for (const fromFile of collectTsFiles(clientDir)) {
+    const text = stripComments(readFileSync(fromFile, "utf8"));
+    for (const { spec } of extractRefs(text)) {
+      const target = resolveTarget(fromFile, spec);
+      if (target === null) continue;
+      if (target !== serverDir && !target.startsWith(serverDir + sep)) continue;
+      out.push(`${pkgRel(fromFile)}|${pkgRel(target)}`);
+    }
+  }
+  return [...new Set(out)].sort();
+}
+
 /** 门面资格判定器：文件名是 interface.ts/deps.ts **且**所在目录就是一个模块目录。 */
 function makeFacadeCheck(modules) {
   /**
@@ -1051,6 +1084,12 @@ function analyzePackage(pkgName, topology) {
     ),
   ].sort();
 
+  // §5.3（#767 B0 切片 3a）：client 侧 import 面的独立一遍扫描（见 collectClientServerImports）。
+  // 抽成独立函数不只是可读性：它的分支若内联在这里，analyzePackage 的认知复杂度会越过
+  // ESLint 复杂度门禁（sonarjs/cognitive-complexity），把无关的规则面一起拖红。
+  const clientServerImportEvidence = collectClientServerImports(srcDir);
+
+
   const specs = collectMutationSpecs(topology, pkgName);
   // 「不适用」与「空集」的区分只在本函数内部；metrics 统一落数组（?? []），
   // 对外判据是 topologyRegistered / noMutationReason。
@@ -1074,11 +1113,12 @@ function analyzePackage(pkgName, topology) {
     cycles: { top: graphs.top.cycles, leaf: graphs.leaf.cycles, file: graphs.file.cycles },
     deadDeclarations,
     depsValueImports,
-    // #767 B0 切片 3a 的两类新证据（集合形态；metrics 里只放条数，消费方见
-    // collectQualityEvidence）——I2① 域间值边 / I2④ 值引 src 根 index.ts。
+    // #767 B0 切片 3a 的三类新证据（集合形态；metrics 里只放条数，消费方见
+    // collectQualityEvidence）——I2① 域间值边 / I2④ 值引 src 根 index.ts / §5.3 client 面。
     extraEvidence: {
       crossDomainValueEdges,
       rootIndexImports,
+      clientServerImports: clientServerImportEvidence,
     },
     // 覆盖断言可判定性：包未登记拓扑时 uncoveredSrcFiles 恒为空，若不显式区分，
     // 「从拓扑里删掉一个包」就成了让覆盖断言消失的绕过路径（已复现的假绿向量）。
@@ -1113,6 +1153,7 @@ function analyzePackage(pkgName, topology) {
       uncoveredSrcFiles: uncoveredSrcFiles ?? [],
       crossDomainValueEdges: crossDomainValueEdges.length,
       rootIndexImports: rootIndexImports.length,
+      clientServerImports: clientServerImportEvidence.length,
     },
   };
 }
@@ -1158,9 +1199,9 @@ const STRUCTURAL_METRICS = [
  * 是这种），于是合规写法反而要逐条开豁免——机制该默认放行的事，不该靠记录放行。
  * 它仍照常统计与展示（见 DERIVED_REPORT_ONLY_METRICS 与 summary/--graph）。
  *
- * #767 B0 切片 3a 新增两类（`crossDomainValueEdges` / `rootIndexImports`）：
- * 判据本身就是「这个集合只许缩小」，故只能落证据面，不能落计数面（计数只判上升，而这两条
- * 的目标是**空集**）。它们与既有类的唯一差别在入库路径：基线里
+ * #767 B0 切片 3a 新增三类（`crossDomainValueEdges` / `rootIndexImports` /
+ * `clientServerImports`）：判据本身就是「这个集合只许缩小」，故只能落证据面，不能落计数面
+ * （计数只判上升，而这三条的目标是**空集**）。它们与既有类的唯一差别在入库路径：基线里
  * **没有这个键**时按「证据类首次登记」写入存量（否则 mcp 的 33 条 I2① 存量会被逐条要求
  * 开豁免，把存量登记误当放宽通道）；键已存在时一切照旧——类内新增证据判红、不写入。
  */
@@ -1171,10 +1212,11 @@ const QUALITY_EVIDENCE_METRICS = [
   "missingInterface",
   "directImpl",
   "uncoveredSrcFiles",
-  // #767 B0 切片 3a：两条今天没有执法点的宪法判据的执法点（§二 I2①/④）。
-  // 两者都只判「这一集合有没有新增/是否为空」，不判计数升降——与结构型计数相反。
+  // #767 B0 切片 3a：三条今天没有执法点的宪法判据的执法点（§二 I2①/④、§5.3）。
+  // 三者都只判「这一集合有没有新增/是否为空」，不判计数升降——与结构型计数相反。
   "crossDomainValueEdges",
   "rootIndexImports",
+  "clientServerImports",
 ];
 /**
  * 仅作报告、**不入基线**的派生量：都能由结构计数或证据面重算，入库只会制造第二事实源。
@@ -1232,10 +1274,11 @@ function collectQualityEvidence(analysis) {
     missingInterface: analysis.rules.missingInterface.map((r) => edge(r, false)).sort(),
     directImpl: analysis.rules.directImpl.map((r) => edge(r, false)).sort(),
     uncoveredSrcFiles: [...analysis.metrics.uncoveredSrcFiles].sort(),
-    // #767 B0 切片 3a：两类新证据已在 analyzePackage 里算成 canonical 字符串集合并排好序
-    // （模块 id 边、src 相对文件边），此处只做拷贝入库。
+    // #767 B0 切片 3a：三类新证据已在 analyzePackage 里算成 canonical 字符串集合并排好序
+    // （模块 id 边、src 相对文件边、包相对文件边），此处只做拷贝入库。
     crossDomainValueEdges: [...analysis.extraEvidence.crossDomainValueEdges].sort(),
     rootIndexImports: [...analysis.extraEvidence.rootIndexImports].sort(),
+    clientServerImports: [...analysis.extraEvidence.clientServerImports].sort(),
   };
 }
 
@@ -1473,9 +1516,9 @@ function renderGraph(analysis) {
   lines.push(
     "（意图图 = 各模块 deps.ts；类型边 import type/export type 是声明即完整性，豁免死声明判定）",
   );
-  // #767 B0 切片 3a：两条新判据的明细。刻意排在全部既有段落之后——--graph 的既有消费者
+  // #767 B0 切片 3a：三条新判据的明细。刻意排在全部既有段落之后——--graph 的既有消费者
   // （自测按「叶子模块级值环…文件级值环」切段）不受新段落影响。
-  const { crossDomainValueEdges, rootIndexImports } = analysis.extraEvidence;
+  const { crossDomainValueEdges, rootIndexImports, clientServerImports } = analysis.extraEvidence;
   lines.push(
     `域间值边（I2①，目标非共享层的叶子模块值边，只许缩小）：${crossDomainValueEdges.length} 条`,
   );
@@ -1484,6 +1527,10 @@ function renderGraph(analysis) {
     `值引 src 根 index.ts（I2④，域取组合根常量即文件级值环）：${rootIndexImports.length} 条`,
   );
   for (const e of rootIndexImports) lines.push(`  ${e}`);
+  lines.push(
+    `client 侧 import 面（§5.3，独立扫描、不入上方任何计数）：client → src/server ${clientServerImports.length} 条`,
+  );
+  for (const e of clientServerImports) lines.push(`  ${e}`);
   return lines;
 }
 
@@ -1967,9 +2014,9 @@ for (const analysis of analyses) {
   summary.push(
     `${pkgName}: R-A 语义切换前 ${metrics.raLegacy}（值 ${metrics.raLegacyValue} / type ${metrics.raLegacyType}）→ 切换后（impl 引用他域实现文件）${metrics.implToOtherImpl}`,
   );
-  // #767 B0 切片 3a：两条新判据的存量条数（质量证据，目标都是空集；明细见 --graph）。
+  // #767 B0 切片 3a：三条新判据的存量条数（质量证据，目标都是空集；明细见 --graph）。
   summary.push(
-    `${pkgName}: 域间值边（I2①，目标非共享层）${metrics.crossDomainValueEdges} 条、值引 src 根 index.ts（I2④）${metrics.rootIndexImports} 条`,
+    `${pkgName}: 域间值边（I2①，目标非共享层）${metrics.crossDomainValueEdges} 条、值引 src 根 index.ts（I2④）${metrics.rootIndexImports} 条、client → src/server import（§5.3）${metrics.clientServerImports} 条`,
   );
 
   if (state.mode === "compared") {
@@ -2009,6 +2056,7 @@ for (const analysis of analyses) {
       ["implToOtherImpl", "impl 引用他域实现文件"],
       ["crossDomainValueEdges", "域间值边（目标非共享层）"],
       ["rootIndexImports", "值引 src 根 index.ts"],
+      ["clientServerImports", "client → src/server import"],
     ]) {
       if (metrics[key] > 0)
         failures.push(`[${pkgName}] 无基线 fail-closed：${label} ${metrics[key]} 个（应为 0）`);

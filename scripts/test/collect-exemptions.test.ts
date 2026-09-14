@@ -163,10 +163,12 @@ test("本仓真实快照：6 条在册（数字变即提示同步台账与 #765�
   assert.match(r.stdout, /exitCriteria 超阈 hotspots 计数降为 0/);
   assert.doesNotMatch(r.stdout, /mutation\.packages\.dsh-worktree-sidebar#anchor/);
   assert.doesNotMatch(r.stdout, /trackingIssue #847/);
+
   // #767 B0：扩包后新增的存量豁免同样必须在台账里——只判红不登记，或只登记不进台账，
   // 都会让「到期复核」失去输入（这一条是台账完整性的锚，不是计数装饰）
   assert.match(r.stdout, /\$\.exemptions\[0\] {2}gate=forbid-module-state-src/);
   assert.match(r.stdout, /trackingIssue #770/);
+
   // 覆盖率面的临时排除项也必须在台账里（它是「到期复核」的输入，不该只活在配置里）
   // 索引 5 = 前五条是 type-only / not-source 的永久事实（d.ts / d.mts / ps1 / md / css），
   // 第六条起才是带 reviewBy 的临时排除项。
