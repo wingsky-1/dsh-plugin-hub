@@ -43,7 +43,7 @@ function fakeRepo() {
     });
     mkdirSync(join(root, "scripts", "data"), { recursive: true });
     // 矩阵只读这一份配置域入口文本（Config / FILE_CONFIG_VALIDATORS / SETTING_FIELD_HINTS
-    // 同居其中，见 scripts/lib/config-matrix-gate.ts 的 runLanProxy），故不必复制整个 server 树。
+    // 同居其中，见 config-matrix-gate 的 runLanProxy），故不必复制整个 server 树。
     copyLf(
       join(ROOT, "packages/dsh-lan-proxy/src/server/config/impl/model.ts"),
       join(root, "packages/dsh-lan-proxy/src/server/config/impl/model.ts"),
