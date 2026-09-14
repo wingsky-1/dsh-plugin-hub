@@ -905,6 +905,11 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
     - 两刀都再次复现 **G12**：给 `installXxx` 加 `async` 会让注入面对账整段静默消失，且会**连同「多接一个键」这种必红形态一起放行** —— 至此「install 签名不得带 `async`」已是 W4/W5/W6/W7 **四次独立复现**的硬约束。
     - 累计（W1→W7 + W3b）：I2① **33 → 14**、叶子环 **4 → 0**、文件环 **4 → 0**、`directImpl` **1 → 0**；公开导出面始终**零 diff**。
 
+48. **W8 已落地（`f0e4535`，主控独立复核通过）——本会话第一次改动「度量面机制」，已逐行审毕**：connection/runtime 装端口（新建 `runtime/deps.ts` + `impl/service/index.ts`，3 个 Port）。**实测**：I2① **14→11**（消失 `connection/runtime|catalog`/`|pipeline`/`|workspace`）、两类环 **0→0**、`directImpl` 0、`uncoveredSrcFiles` **0→0**、导出面零 diff、`gate:pr` 32/32、lint 508/508；基线质量段只删 3 条、结构计数逐键归因；TDZ 复核通过（无模块求值期读 deps）。
+    - **本刀发现并处置了一处我们没预见的面**：`connection/runtime` 子层的 mutate glob **全是显式文件**（middleware/limits/supervisor/reconnect/transport/protocol），故不仅 `deps.ts`（D.3·23 已预见）**连新建的 `impl/service/index.ts` 也不在任何段内**（实测两处同时判红）。处置**只加面、不放宽**：① `deps.ts` → `coverageExcludes` 加 `!.../connection/runtime/deps.ts`（`kind: type-only`，照 B0 先例）；② holder **含真实运行时代码、不能按 type-only 排除** → 把 `connection/runtime/impl/**/*.ts` 精确追加进 `middleware` 段 mutate；③ 连带同笔：mcp `coverageExcludes` 2→3、总数 14→15（`mutation-topology-coverage.test.ts` 的计数断言**加严而非放宽**，附解释）、`gen-stryker-conf` 重生成 6 份 mcp 段 conf。反例 5 证明**两条登记都承重**（各自删掉即判红）。
+    - **⚠️ 由此产生的一条 CI 风险（须写进 PR 描述）**：5 个端口持有者（catalog/pipeline/inject/orchestrator/runtime 的 `impl/service/index.ts`）的**装配错误分支无仓内测试覆盖**（只有主控侧探针），而它们现在**已进入变异面** → CI 的 `middleware` 切片**变异杀灭分可能下降**。本地任何档都不跑变异，只能在 PR 的 CI 上看到；处置选项（补 5 个持有者的最小单测 / 或观察 CI）留待维护者裁决，**不得**为了方便把含运行时代码的文件按 type-only 排除（那是放宽）。
+    - **可推广的规则（D.3·41）**：新建 `impl/**` 文件时，**先实测它落在哪个 mutate 段**——子层的 glob 若是「显式文件枚举」而不是 `**` 通配，就必须同笔登记，否则 `uncoveredSrcFiles` 判红；登记时**含运行时代码的走 mutate 面、纯类型面才走 `type-only` 排除**。
+
 ### D.3 未完成与遗留（含状态订正）
 
 1. **B1 全部切片已完成**（B1.0–B1.5b，见 D.2·19–26）。**B1 收尾已完成**：主控实跑 `gate:pr` = **32 项逐条 exit=0 + PASS**（清单与上一轮逐项一致）、`THIRD-PARTY-LICENSES` 相对 `origin/main` **零改动**、依赖面零新增、44 笔。**未推送**（理由见 D.3·17）。**B2.1 已完成**（`0fb3bab`：零位移、零台账、`gate:pr` 32 条全绿）。**B2.2 已完成**（`8628110`）。**B2.3 已完成**（`6bf9457`，含建 `deps.ts` 后模板订正口径的首次落地）。**B2.4（`catalog` 域）进行中**。切法与验收见 D.4。**两条显式收窄 + 一条落点裁量**见 §十二 表后（不建 10 个空域骨架；B1.4 不路由既有装配；机制落 `server/shared/` 而非入口）。**接线顺序**：`upgrade` 的启用必须与「读者改读新布局」同一笔（B2），否则归档旧文件而旧读者读空 = 静默丢配置（见 §十二 表后）。
