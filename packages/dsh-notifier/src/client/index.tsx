@@ -26,6 +26,7 @@ import { ensureStyle } from "../../../../shared/client/ensure-style.js";
 // 跑出判据。音色单点仍在 src/shared/interface.ts，改由 notify/audio.ts 消费。
 import { createAudioEngine, type AudioContextLike } from "./notify/audio.ts";
 import { claimMaster as claimMasterLease, MASTER_KEY } from "./notify/lease.ts";
+import { startNotifySession, type EventSourceLike, type NotifySession } from "./notify/session.ts";
 import {
   displayChannelOf,
   fallbackChannelOf,
@@ -414,92 +415,11 @@ function handleNotifyFrame(payload: any) {
 
 // ------------------------------------------------------------ SSE 半区
 
-// 当前 SSE 句柄（visibilitychange 回前台重建时引用；卸载时置 null）
-var eventsHandle: { close: () => void; reconnect: () => void } | null = null;
-
-/** SSE 半开连接看门狗：60s 无任何帧（notify 或心跳 ping）→ 主动重建。 */
-var WATCHDOG_MS = 60000;
-function startEvents() {
-  var source: any = null;
-  var lastActivity = 0;
-  var lastSeq = 0;
-  var watchdog: any = null;
-  var lastReconnectAt = 0;
-
-  function armWatchdog() {
-    if (watchdog !== null) clearTimeout(watchdog);
-    watchdog = setTimeout(function () {
-      if (Date.now() - lastActivity > WATCHDOG_MS) {
-        forceReconnect();
-      } else {
-        armWatchdog();
-      }
-    }, WATCHDOG_MS + 5000);
-  }
-
-  function forceReconnect() {
-    var now = Date.now();
-    if (now - lastReconnectAt < 5000) return;
-    lastReconnectAt = now;
-    closeSource();
-    connect();
-  }
-
-  function closeSource() {
-    if (source !== null) {
-      try {
-        source.close();
-      } catch (error) {
-        console.warn("[dsh-notifier] 关闭旧 SSE 连接失败：", error);
-      }
-      source = null;
-    }
-  }
-
-  function connect() {
-    closeSource();
-    try {
-      // 重连带 since：服务端先回放缓冲中 seq 更大的帧（断线补拉，不丢事件）
-      var url = ROUTES.events + (lastSeq > 0 ? "?since=" + lastSeq : "");
-      source = new EventSource(url);
-      lastActivity = Date.now();
-      source.onmessage = function (event: any) {
-        try {
-          var data = JSON.parse(event.data);
-          lastActivity = Date.now();
-          if (data.type === "ping") return;
-          if (data.type === "notify") {
-            if (typeof data.seq === "number") {
-              if (lastSeq > 0 && data.seq <= lastSeq) return;
-              lastSeq = data.seq;
-            }
-            handleNotifyFrame(data);
-          }
-        } catch (error) {
-          console.warn("[dsh-notifier] 帧解析失败：", error);
-        }
-      };
-      source.onerror = function () {
-        // 主动重建（带 since 补拉）：EventSource 自动重连不带 query，无法回放
-        forceReconnect();
-      };
-      armWatchdog();
-    } catch (error) {
-      console.warn("[dsh-notifier] EventSource 不可用：", error);
-    }
-  }
-
-  connect();
-  var handle = {
-    close: function () {
-      if (watchdog !== null) clearTimeout(watchdog);
-      closeSource();
-    },
-    reconnect: forceReconnect,
-  };
-  eventsHandle = handle;
-  return handle;
-}
+/**
+ * 当前会话句柄。用一个 const 容器而不是模块级 let：容器本身不变，变的是它指向的会话——
+ * 也让「谁该把它清空」这件事有身份可比（disposer 只在仍指向自己的会话时才清）。
+ */
+const eventsHandle: { current: NotifySession | null } = { current: null };
 
 // ------------------------------------------------------------ 设置卡片
 
@@ -2945,16 +2865,30 @@ export function apply(ctx: any) {
     }
 
     // 通知半区（SSE / 浏览器通知）：不依赖任何插件 DOM，直接启动
-    var disposeEvents: { close: () => void; reconnect: () => void } | null = startEvents();
+    const session = startNotifySession(
+      {
+        url: ROUTES.events,
+        createSource: (url) => new EventSource(url) as unknown as EventSourceLike,
+        now: () => Date.now(),
+        setTimer: (fn, ms) => window.setTimeout(fn, ms),
+        clearTimer: (handle) => {
+          window.clearTimeout(handle);
+        },
+        warn: (message, cause) => {
+          console.warn("[dsh-notifier] " + message + "：", cause);
+        },
+      },
+      handleNotifyFrame,
+    );
+    eventsHandle.current = session;
     // 页面重新可见时：还原标题 + 强制重建 SSE（iOS 后台挂起后连接可能已失效，
     // 重建自动带 since 补拉，避免断线窗口漏通知）。
     // 具名 handler 在 apply 内注册、disposer 移除（对齐 mcp-manager
-    // onVisible 范式）——匿名模块体注册无卸载路径，重复 apply/热更会累积
-    // 旧监听、可能操作已置 null 的 SSE 句柄。
+    // onVisible 范式）——匿名模块体注册无卸载路径，重复 apply/热更会累积旧监听。
     function onVisibilityChange() {
       if (document.visibilityState === "visible") {
         restoreTitle();
-        if (eventsHandle && eventsHandle.reconnect) eventsHandle.reconnect();
+        eventsHandle.current?.reconnect();
       }
     }
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -2970,15 +2904,14 @@ export function apply(ctx: any) {
         // 失败静默：平台提示回落通用文案
       });
 
-    // 首次任意点击解锁音频（浏览器自动播放策略要求手势）
-    document.addEventListener(
-      "click",
-      function onFirstClick() {
-        audioEngine.unlock();
-        document.removeEventListener("click", onFirstClick);
-      },
-      { capture: true },
-    );
+    // 首次任意点击解锁音频（浏览器自动播放策略要求手势）。具名 + disposer 摘除：
+    // 从未点击就被卸载时，匿名监听会永久留在 document 上，且下次点击会在插件已卸载后
+    // 构造一个 AudioContext。
+    function onFirstClick() {
+      audioEngine.unlock();
+      document.removeEventListener("click", onFirstClick, { capture: true });
+    }
+    document.addEventListener("click", onFirstClick, { capture: true });
 
     // 设置面板独立 tab「通知中心」（settings.section）。
     // 参照 dsh-provider-usage「用量统计」tab 的接线（slots.inject + register，
@@ -3022,11 +2955,11 @@ export function apply(ctx: any) {
           unsubLocale();
           unsubLocale = undefined;
         }
-        if (disposeEvents) {
-          disposeEvents.close();
-          disposeEvents = null;
-          eventsHandle = null;
-        }
+        session.close();
+        // 只在仍指向自己的会话时才清空：重复 apply 时后装的实例才是当前句柄，
+        // 无条件置 null 会让存活实例的回前台重连静默失效（跨实例串味）。
+        if (eventsHandle.current === session) eventsHandle.current = null;
+        document.removeEventListener("click", onFirstClick, { capture: true });
         for (var i = 0; i < notified.length; i += 1) {
           try {
             notified[i].close();
