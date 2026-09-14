@@ -15,22 +15,12 @@
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./client": {
-      "types": "./lib/client/index.d.ts",
-      "default": "./lib/client.js"
-    },
     "./package.json": "./package.json"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml",
       "bannerJs": "import { createRequire as __worktreeSidebarRequire } from \"node:module\";\nconst require = __worktreeSidebarRequire(import.meta.url);"
-    },
-    "client": {
-      "inject": [
-        "@deepseek-ai/dsh-client-ui-sidebar-right"
-      ],
-      "platform": "web"
     }
   },
   "files": [
