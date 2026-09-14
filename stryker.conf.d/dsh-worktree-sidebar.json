@@ -1,0 +1,40 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-worktree-sidebar/src/**/*.ts",
+    "!packages/dsh-worktree-sidebar/src/client/**"
+  ],
+  "testRunner": "vitest",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.stryker.d/dsh-worktree-sidebar.config.ts"
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-worktree-sidebar.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-worktree-sidebar.json",
+  "_comment": "#276 方案 A：src 级单段。客户端 src/client/** 排除——它的断言对象是官方 slots 运行时与构建产物 lib/client.js，mutate 面对它没有可杀灭的语义（与 dsh-web-file-preview 同口径）。incremental 基线随 observe 夜间全量班重建。"
+}

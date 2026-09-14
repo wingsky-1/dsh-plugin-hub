@@ -1382,7 +1382,9 @@
       ]
     }
   ],
-  "unmeasured": {},
+  "unmeasured": {
+    "dsh-worktree-sidebar": "新增 dsh-worktree-sidebar 单段（worktree 侧边栏适配层首次登记变异面），历史上无同名段，尚无实测；待 observe 夜间全量班重建。"
+  },
   "superseded": {
     "dsh-notifier-config": {
       "replacedBy": [

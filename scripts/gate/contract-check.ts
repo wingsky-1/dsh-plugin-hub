@@ -256,6 +256,8 @@ console.log(failed === 0 ? "客户端契约：全部通过" : `客户端契约�
       "dsh-lan-proxy",
       "--package",
       "dsh-web-file-preview",
+      "--package",
+      "dsh-worktree-sidebar",
     ],
     { encoding: "utf8" },
   );

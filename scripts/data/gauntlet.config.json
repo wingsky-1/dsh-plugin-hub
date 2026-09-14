@@ -50,6 +50,12 @@
         "threshold": 60,
         "scope": "src 级全量（#276 方案 A）；基线为 src 口径，由 observe 夜间全量班重建"
       },
+      "dsh-worktree-sidebar": {
+        "config": "stryker.conf.d/dsh-worktree-sidebar.json",
+        "threshold": 60,
+        "scope": "src 级单段（#276 方案 A）：mutate = packages/dsh-worktree-sidebar/src/**/*.ts，排除 src/client/**（断言对象是官方 slots 运行时与 lib/client.js 产物，无可杀灭语义）",
+        "baselineScope": "新包，尚无实测基线：夜间 observe 全量班首次跑完后回填 baselineScore / baselineCovered / baselineDate。在那之前 observe-check 的基线列显示 —，不参与回落判据。"
+      },
       "dsh-mcp-manager": {
         "baselineScore": 58.74,
         "baselineCovered": 74.66,

@@ -7,7 +7,7 @@
     "dsh-verify-isolated",
     "dsh-web-file-preview"
   ],
-  "standalone": [],
+  "standalone": ["dsh-worktree-sidebar"],
   "configSurfaces": [
     {
       "package": "dsh-lan-proxy",
@@ -94,6 +94,11 @@
       "package": "dsh-web-file-preview",
       "surface": "none",
       "reason": "本插件没有用户配置面：宿主半边无路由、不读文件、不注入服务，客户端只有「打开文件 → 官方右侧栏预览」的重定向逻辑（PENDING_TTL_MS 是内部 TTL 常量，不对外配置）。"
+    },
+    {
+      "package": "dsh-worktree-sidebar",
+      "surface": "none",
+      "reason": "本插件没有用户配置面：唯一的 enabled 是挂载点总开关（由 cordis.patch.yml 传入，不落盘、不进设置层），宿主侧没有配置文件形态的可配置项。"
     }
   ],
   "retired": [

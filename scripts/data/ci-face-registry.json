@@ -152,6 +152,18 @@
       "why": "同上。"
     },
     {
+      "path": "stryker.conf.d/dsh-worktree-sidebar*.json",
+      "invalidatesBaseline": true,
+      "faces": ["dsh-worktree-sidebar"],
+      "why": "同上（本包为包级单配置形态）。"
+    },
+    {
+      "path": "vitest.stryker.d/dsh-worktree-sidebar.config.ts",
+      "invalidatesBaseline": true,
+      "faces": ["dsh-worktree-sidebar"],
+      "why": "同上。"
+    },
+    {
       "path": "vitest.stryker.d/dsh-notifier.config.ts",
       "invalidatesBaseline": true,
       "faces": ["dsh-notifier"],

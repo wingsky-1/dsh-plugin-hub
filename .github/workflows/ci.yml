@@ -160,6 +160,12 @@ jobs:
               - 'stryker.conf.d/dsh-web-file-preview*.json'
               - 'vitest.stryker.d/dsh-web-file-preview.config.ts'
               - 'test/smoke-lib.ts'
+            # 本包测试不 import root test/smoke-lib.ts，故不登记该行——
+            # ci-face-coverage 按真实 import 图双向核对，多登记一行同样判红。
+            dsh-worktree-sidebar:
+              - 'packages/dsh-worktree-sidebar/**'
+              - 'stryker.conf.d/dsh-worktree-sidebar*.json'
+              - 'vitest.stryker.d/dsh-worktree-sidebar.config.ts'
             dsh-mcp-manager:
               - 'packages/dsh-mcp-manager/**'
               - 'stryker.conf.d/dsh-mcp-manager*.json'

@@ -89,10 +89,12 @@ test("ci-matrix: 场景 a - 正常命中单一 active 包 (via BASE_SET 空格�
 });
 
 test("ci-matrix: 场景 b - 退役的 standalone 包不再进入全量清单", () => {
-  // dsh-codegraph / dsh-mem0 退役后 standalone 清空（#691）；断言两条不被静默遗忘：
-  // 既不在 CI 全量清单里，也必须在 manifest.retired 留痕。
-  assert.deepEqual(MANIFEST.standalone, [], "standalone 应为空（两项均已退役）");
+  // dsh-codegraph / dsh-mem0 退役后 standalone 一度清空（#691）。原断言写的是「standalone 应为空」，
+  // 那是当时的数据状态而不是不变量——本仓现有刻意不进聚合包的活跃 standalone 包
+  // （dsh-worktree-sidebar），该断言会把它误判成回归。真正要守的是「已退役包不复现」：
+  // 既不得回到 standalone，也不得进入 CI 全量清单，且必须在 manifest.retired 留痕。
   for (const pkg of ["dsh-codegraph", "dsh-mem0"]) {
+    assert.ok(!(MANIFEST.standalone ?? []).includes(pkg), `${pkg} 已退役，不得回到 standalone`);
     assert.ok(!EXPECTED_ALL.includes(pkg), `${pkg} 已退役，不得再进入 CI 全量清单`);
     assert.ok(
       MANIFEST.retired.some((r) => r.name === pkg),
