@@ -1,11 +1,10 @@
 /**
- * mcp-manager 核心服务类型面（单一事实源）。
+ * dsh-mcp-manager — 跨端服务类型单点（D5，#767 B1.5b）。
  *
- * 供 mcp-manager 提供方（src/service.ts re-export + declare module 合并）
- * 与消费方插件引用——消费方**从 mcp-manager 包引类型**
- * （`import type { McpManagerService } from "@wingsky-1/dsh-mcp-manager"`），
- * 本文件是类型定义的唯一事实源，mcp-manager 包 re-export 之。纯类型，
- * esbuild 构建期内联、随包复制（d.ts X1）。
+ * ctx.mcpManager 的类型面：宿主提供方（bootstrap/apply-services.ts）按它装配，
+ * 兄弟插件**从本包入口引类型**（\`import type { McpManagerService } from
+ * "@wingsky-1/dsh-mcp-manager"\`）——入口的声明合并让 ctx.mcpManager 在消费方
+ * 类型面可达。物理定义只在本文件（原仓库级 shared/mcp-manager-service.d.ts 已退回包内）。
  *
  * 服务面（通用 MCP 能力 + 运行时注入专用面）：
  * - 注入面：registerServer / unregisterServer（内存态不落盘，同名幂等；
@@ -17,26 +16,16 @@
  *   过度裁剪，查询面是消费方感知服务状态所必需）。
  */
 
-/** 封装工具定义（官方 dsh-tools 契约；类型面引用，编译期擦除）。 */
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 
-/** 服务器连接状态（与 manager summarize 投影一致）。 */
-export type McpServerStatus =
-  "connected" | "connecting" | "reconnecting" | "disabled" | "stopped" | "failed";
+import type { McpServerSummary } from "./dto.ts";
+import type { ServerState } from "./status.ts";
+
+/** 服务器连接状态（六态键集合的物理定义在 shared/status.ts，此处只取它的值域）。 */
+export type McpServerStatus = ServerState;
 
 /** 作用域。 */
 export type McpScope = "global" | "project";
-
-/** 某服务器的实时摘要（配置 + 状态 + 工具 + 错误）。 */
-export interface McpServerSummary {
-  name: string;
-  transport: "stdio" | "streamable-http";
-  scope: McpScope;
-  status: McpServerStatus;
-  error?: string;
-  tools: string[];
-  enabled: boolean;
-}
 
 /** 某服务器的工具条目（查询面，返回名称 + 描述）。 */
 export interface McpToolInfo {

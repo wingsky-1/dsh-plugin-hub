@@ -1,9 +1,9 @@
 /**
  * mcp-manager 核心化 service 类型（官方 storageDomain 模式）。
  *
- * 类型面唯一事实源在 shared/mcp-manager-service.d.ts（本包 re-export 之）；
- * 本文件只做类型 re-export。消费方插件**从本包引类型**
- * （`import type { McpManagerService } from "@wingsky-1/dsh-mcp-manager"`），
+ * 类型面唯一事实源在 src/shared/service.ts（DTO 形状在 src/shared/dto.ts，经
+ * src/shared/interface.ts 门面统一转出）；本文件只做类型 re-export。消费方插件
+ * **从本包引类型**（`import type { McpManagerService } from "@wingsky-1/dsh-mcp-manager"`），
  * 依赖经 package.json workspace:* 声明 + inject。
  *
  * cordis Context 的声明合并**不在本文件**：它是全局增强，入口声明面不可达时产物里就没有它
@@ -22,4 +22,4 @@ export type {
   McpServerStatus,
   McpServerSummary,
   McpToolInfo,
-} from "../../../../shared/mcp-manager-service.js";
+} from "../shared/interface.ts";
