@@ -9,6 +9,94 @@
       "trackingIssue": "#770",
       "reviewBy": "2027-03-31",
       "exitCriteria": "#769 落地到 dsh-mcp-manager 客户端、panel.ts 的 inflight 单飞句柄收进面板实例（届时删本条）"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-lan-proxy:test/unit/unit-apply.test.ts|src/index.ts",
+      "reason": "#767 B0 切片 3b 上线 I8① 判据（test/unit 不得 import 包根组合根 src/index.ts）后暴露的跨包存量：该单元用例经包入口导入全部被测符号（包入口契约测试，见该文件「包入口契约」用例），等于用产物入口测单模块。修法是改为直连 src/<域>/ 的实现面，属该包自己的测试面调整，不在 #767 的施工面。按**证据级**登记而不是把 lan-proxy 排除在判据外：后者会让跨包存量从可数事实退化成口径外特例（同批 unit-proxy 条与 wfp 条已随主干演进消除：前者测试已改直连，后者包已退役，故不登记）。",
+      "trackingIssue": "#767",
+      "reviewBy": "2027-03-31",
+      "exitCriteria": "unit-apply.test.ts 改直连 src/<域>/ 实现面、不再经包入口导入后删本条"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-worktree-sidebar:test/unit/client-bindings.test.ts|src/client/bindings.ts",
+      "reason": "#767 B0 切片 3b 上线 I8① 判据后暴露的 sidebar 包存量：sidebar 的客户端单测直接 import src/client/** 实现面，属单元层取了另一端的面。修法是把客户端单测迁出 test/unit 或改直连白盒允许面，属 sidebar 包自己的测试面调整，跟踪见 #847（sidebar 遗留清单）。按**证据级**逐条登记：只许缩小，随该包测试面调整清零。",
+      "trackingIssue": "#847",
+      "reviewBy": "2027-03-31",
+      "exitCriteria": "对应单测迁出 test/unit 或不再直引客户端实现面后删本条"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-worktree-sidebar:test/unit/client-index.test.ts|src/client/index.ts",
+      "reason": "#767 B0 切片 3b 上线 I8① 判据后暴露的 sidebar 包存量：sidebar 的客户端单测直接 import src/client/** 实现面，属单元层取了另一端的面。修法是把客户端单测迁出 test/unit 或改直连白盒允许面，属 sidebar 包自己的测试面调整，跟踪见 #847（sidebar 遗留清单）。按**证据级**逐条登记：只许缩小，随该包测试面调整清零。",
+      "trackingIssue": "#847",
+      "reviewBy": "2027-03-31",
+      "exitCriteria": "对应单测迁出 test/unit 或不再直引客户端实现面后删本条"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-worktree-sidebar:test/unit/client-index.test.ts|src/client/shared/ports.ts",
+      "reason": "#767 B0 切片 3b 上线 I8① 判据后暴露的 sidebar 包存量：sidebar 的客户端单测直接 import src/client/** 实现面，属单元层取了另一端的面。修法是把客户端单测迁出 test/unit 或改直连白盒允许面，属 sidebar 包自己的测试面调整，跟踪见 #847（sidebar 遗留清单）。按**证据级**逐条登记：只许缩小，随该包测试面调整清零。",
+      "trackingIssue": "#847",
+      "reviewBy": "2027-03-31",
+      "exitCriteria": "对应单测迁出 test/unit 或不再直引客户端实现面后删本条"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-worktree-sidebar:test/unit/client-index.test.ts|src/client/takeover.ts",
+      "reason": "#767 B0 切片 3b 上线 I8① 判据后暴露的 sidebar 包存量：sidebar 的客户端单测直接 import src/client/** 实现面，属单元层取了另一端的面。修法是把客户端单测迁出 test/unit 或改直连白盒允许面，属 sidebar 包自己的测试面调整，跟踪见 #847（sidebar 遗留清单）。按**证据级**逐条登记：只许缩小，随该包测试面调整清零。",
+      "trackingIssue": "#847",
+      "reviewBy": "2027-03-31",
+      "exitCriteria": "对应单测迁出 test/unit 或不再直引客户端实现面后删本条"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-worktree-sidebar:test/unit/client-source.test.ts|src/client/source.ts",
+      "reason": "#767 B0 切片 3b 上线 I8① 判据后暴露的 sidebar 包存量：sidebar 的客户端单测直接 import src/client/** 实现面，属单元层取了另一端的面。修法是把客户端单测迁出 test/unit 或改直连白盒允许面，属 sidebar 包自己的测试面调整，跟踪见 #847（sidebar 遗留清单）。按**证据级**逐条登记：只许缩小，随该包测试面调整清零。",
+      "trackingIssue": "#847",
+      "reviewBy": "2027-03-31",
+      "exitCriteria": "对应单测迁出 test/unit 或不再直引客户端实现面后删本条"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-worktree-sidebar:test/unit/client-takeover.test.ts|src/client/inject.ts",
+      "reason": "#767 B0 切片 3b 上线 I8① 判据后暴露的 sidebar 包存量：sidebar 的客户端单测直接 import src/client/** 实现面，属单元层取了另一端的面。修法是把客户端单测迁出 test/unit 或改直连白盒允许面，属 sidebar 包自己的测试面调整，跟踪见 #847（sidebar 遗留清单）。按**证据级**逐条登记：只许缩小，随该包测试面调整清零。",
+      "trackingIssue": "#847",
+      "reviewBy": "2027-03-31",
+      "exitCriteria": "对应单测迁出 test/unit 或不再直引客户端实现面后删本条"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-worktree-sidebar:test/unit/client-takeover.test.ts|src/client/shared/ports.ts",
+      "reason": "#767 B0 切片 3b 上线 I8① 判据后暴露的 sidebar 包存量：sidebar 的客户端单测直接 import src/client/** 实现面，属单元层取了另一端的面。修法是把客户端单测迁出 test/unit 或改直连白盒允许面，属 sidebar 包自己的测试面调整，跟踪见 #847（sidebar 遗留清单）。按**证据级**逐条登记：只许缩小，随该包测试面调整清零。",
+      "trackingIssue": "#847",
+      "reviewBy": "2027-03-31",
+      "exitCriteria": "对应单测迁出 test/unit 或不再直引客户端实现面后删本条"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-worktree-sidebar:test/unit/client-takeover.test.ts|src/client/takeover.ts",
+      "reason": "#767 B0 切片 3b 上线 I8① 判据后暴露的 sidebar 包存量：sidebar 的客户端单测直接 import src/client/** 实现面，属单元层取了另一端的面。修法是把客户端单测迁出 test/unit 或改直连白盒允许面，属 sidebar 包自己的测试面调整，跟踪见 #847（sidebar 遗留清单）。按**证据级**逐条登记：只许缩小，随该包测试面调整清零。",
+      "trackingIssue": "#847",
+      "reviewBy": "2027-03-31",
+      "exitCriteria": "对应单测迁出 test/unit 或不再直引客户端实现面后删本条"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-worktree-sidebar:test/unit/inject-attach.test.ts|src/client/inject.ts",
+      "reason": "#767 B0 切片 3b 上线 I8① 判据后暴露的 sidebar 包存量：sidebar 的客户端单测直接 import src/client/** 实现面，属单元层取了另一端的面。修法是把客户端单测迁出 test/unit 或改直连白盒允许面，属 sidebar 包自己的测试面调整，跟踪见 #847（sidebar 遗留清单）。按**证据级**逐条登记：只许缩小，随该包测试面调整清零。",
+      "trackingIssue": "#847",
+      "reviewBy": "2027-03-31",
+      "exitCriteria": "对应单测迁出 test/unit 或不再直引客户端实现面后删本条"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-worktree-sidebar:test/unit/inject-attach.test.ts|src/client/shared/ports.ts",
+      "reason": "#767 B0 切片 3b 上线 I8① 判据后暴露的 sidebar 包存量：sidebar 的客户端单测直接 import src/client/** 实现面，属单元层取了另一端的面。修法是把客户端单测迁出 test/unit 或改直连白盒允许面，属 sidebar 包自己的测试面调整，跟踪见 #847（sidebar 遗留清单）。按**证据级**逐条登记：只许缩小，随该包测试面调整清零。",
+      "trackingIssue": "#847",
+      "reviewBy": "2027-03-31",
+      "exitCriteria": "对应单测迁出 test/unit 或不再直引客户端实现面后删本条"
     }
   ]
 }
