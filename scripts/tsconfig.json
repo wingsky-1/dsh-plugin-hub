@@ -7,10 +7,9 @@
   //
   // 为什么必须有程序覆盖断言：tsc 对「include/exclude 漏掉某个文件」静默绿（只有 include
   // 全空才配置级报错），故在面文件靠测试里的程序集对账兜底，而非靠 include 文本正则。
-  // 守卫三条判据（scripts/test/verify-docs-typecheck.test.ts）：面外文件必须全部落在
-  // scripts/test/ 下（非 test 脚本被移出覆盖即红）；本文件 exclude 集合恒等于
-  // EXPECTED_EXCLUDE_SET；面外集合非空（防 exclude 清空后判据恒真）。
-  // 收敛排除面（例如 test 侧补齐后删掉 test/**）必须同步更新该测试的 EXPECTED_EXCLUDE_SET。
+  // 守卫两条判据（scripts/test/verify-docs-typecheck.test.ts）：面外文件必须全部落在
+  // scripts/test/ 下（把非 test 文件或目录写进 exclude 即红）；面外集合非空
+  // （防程序集解析异常 / 磁盘枚举为空时判据恒真）。
   //
   // #474 R2（保留）：显式覆写 module 语义——scripts/ 无 package.json，module 语义依赖根
   // type:module 向上回溯（运气依赖，未来 scripts/ 放 package.json 或 base 改动即整面翻红），

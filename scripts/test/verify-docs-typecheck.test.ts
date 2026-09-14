@@ -13,17 +13,19 @@
  *
  * 为什么断言程序集而不是 tsconfig 文本（#776 批 3）：include 由逐项枚举改为 glob 后，
  * 「文本里有某个条目」不再等价于「该文件真在编译面内」；且 tsc 对 include/exclude 漏掉
- * 具体文件静默绿（只有 include 全空才配置级报错），文本正则既漏检又易假绿。
+ * 具体文件静默绿（只有 include 全空才配置级报错），文本正则既漏检又易假绿。程序集口径
+ * 直接来自 tsc --listFiles，是「真被检查的文件」的权威答案，不需要另读、另解析配置文本。
  *
- * 三条互补判据：
- * 1. tsc --listFiles 的程序集是「真被检查的文件」的权威口径；磁盘上 scripts/ 下的
- *    .ts/.mts/.cts 减去它，每一项都必须落在 scripts/test/ 之下——非 test 脚本漏面即红。
- * 2. exclude 集合恒等于 EXPECTED_EXCLUDE_SET：把非 test 文件或目录塞进 exclude 会先在
- *    判据 1 判红，这条拦住的是「悄悄删掉某条 exclude（例如 test/**）后守卫面缩小」。
- * 3. 差值集合非空：拦住「exclude 被清空 / 程序集解析异常」这类让判据 1 恒真的退化。
+ * 两条互补判据：
+ * 1. 磁盘上 scripts/ 下的 .ts/.mts/.cts 减去程序集，每一项都必须落在 scripts/test/ 之下
+ *    ——非 test 脚本漏面即红（把 lib/** 之类写进 exclude，文件离开程序集同样命中）。
+ * 2. 差值集合非空：拦住「程序集解析异常 / 磁盘枚举为空」这类让判据 1 恒真的退化。
  *
  * 不用「逐条登记面外文件」的清单：那会让每个新增的 scripts/test/*.test.ts 都打红
  * test:scripts，与并行往 test/ 加用例的分支互斥；前缀断言保护力等价而维护成本为零。
+ *
+ * 只 spawn 一次 tsc（--noEmit 与 --listFiles 同时给出），exit code 即 tsc 的真实退出码；
+ * 编译结果与程序集一次取全，不做第二次全量编译。
  *
  * 为何自身仍带 @ts-nocheck（#474 R4 预防性声明）：本文件只 spawn tsc 子进程并读它的输出，
  * 不 import 被测物的类型（walk-files.ts 仅作运行时遍历工具），纳入 strict 面无检查增量。
@@ -31,7 +33,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { walkFiles } from "../lib/walk-files.ts";
 
@@ -44,53 +46,11 @@ const TSCONFIG = join(SCRIPTS, "tsconfig.json");
 
 /** scripts/ 下唯一允许暂时留在编译面外的目录（test 侧 @ts-nocheck 属后续批次）。 */
 const TEMPORARY_EXCLUSION_PREFIX = "scripts/test/";
-/** scripts/tsconfig.json 的 exclude 必须恰好是这四条；多一条即排除面被悄悄扩大。 */
-const EXPECTED_EXCLUDE_SET = [
-  "test/**",
-  "node_modules/**",
-  "bower_components/**",
-  "jspm_packages/**",
-];
 
 const isTypeScript = (name) => /\.(ts|mts|cts)$/.test(name);
 const toPosix = (p) => p.split(sep).join("/");
 
-/**
- * 读取 tsconfig.json 的原始字段。tsc 允许 JSONC（本文件顶部有注释），而 node_modules 里的
- * typescript 7.x 是 native 端，只导出 version、无 readConfigFile/parseJsonText 可用，
- * 故此处只剥行注释（按字符串状态机切分，字符串内的 // 不是注释），再交 JSON.parse。
- * 解析失败会直接抛错判红——不存在「解析不了就静默放过」的路径。
- */
-function readTsconfig() {
-  const raw = readFileSync(TSCONFIG, "utf8");
-  let out = "";
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < raw.length; i += 1) {
-    const ch = raw[i];
-    if (inString) {
-      out += ch;
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') {
-      inString = true;
-      out += ch;
-      continue;
-    }
-    if (ch === "/" && raw[i + 1] === "/") {
-      while (i < raw.length && raw[i] !== "\n") i += 1;
-      out += "\n";
-      continue;
-    }
-    out += ch;
-  }
-  return JSON.parse(out);
-}
-
-test("scripts 编译面接线：非 test 全树入面，程序集与 exclude 双向对账（#474/#776）", () => {
+test("scripts 编译面接线：非 test 全树入面，程序集与磁盘集合对账（#474/#776）", () => {
   assert.ok(existsSync(TSC), `仓库 tsc 应存在（${TSC}）——pnpm install 后才有`);
   assert.ok(existsSync(TSCONFIG), `scripts/tsconfig.json 应存在（${TSCONFIG}）`);
 
@@ -128,17 +88,9 @@ test("scripts 编译面接线：非 test 全树入面，程序集与 exclude 双
     );
   }
 
-  // 判据 3：差值非空，防「exclude 清空 / 程序集解析异常」让判据 1 退化为恒真。
+  // 判据 2：差值非空，防「程序集解析异常 / 磁盘枚举为空」让判据 1 退化为恒真。
   assert.ok(
     outOfFace.length > 0,
-    "磁盘集合 - 程序集为空：exclude 被清空或 --listFiles 解析异常，面外前缀判据退化为恒真（假绿）",
-  );
-
-  // 判据 2：exclude 集合恰好等于 EXPECTED_EXCLUDE_SET（顺序、重复不敏感）。
-  const tsconfig = readTsconfig();
-  assert.deepStrictEqual(
-    [...new Set(tsconfig.exclude ?? [])].sort(),
-    [...EXPECTED_EXCLUDE_SET].sort(),
-    "scripts/tsconfig.json 的 exclude 集合漂移：收敛排除面必须在 EXPECTED_EXCLUDE_SET 同步登记（不能悄悄删条目让守卫面缩小）",
+    "磁盘集合 - 程序集为空：--listFiles 解析异常或磁盘枚举为空，面外前缀判据退化为恒真（假绿）",
   );
 });

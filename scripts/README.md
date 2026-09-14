@@ -86,7 +86,7 @@
 
 ## scripts/ 根
 
-- `tsconfig.json` — `scripts/` 的 typecheck 面（非 test 全树入面；`test/**` 的类型错误属后续批次，见 `scripts/tsconfig.json` 顶部注释）。在面与否由 `test/verify-docs-typecheck.test.ts` 的三条判据守：面外文件必须全在 `test/` 下（非 test 脚本漏面即红）、排除集非空、`exclude` 集合恒定。
+- `tsconfig.json` — `scripts/` 的 typecheck 面（非 test 全树入面；`test/**` 的类型错误属后续批次，见 `scripts/tsconfig.json` 顶部注释）。在面与否由 `test/verify-docs-typecheck.test.ts` 的两条判据守：面外文件必须全在 `test/` 下（非 test 脚本漏面即红）、面外集合非空。
 
 ## test/（脚本自测，`pnpm test:scripts`）
 
