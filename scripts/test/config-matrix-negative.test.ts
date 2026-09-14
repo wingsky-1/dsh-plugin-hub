@@ -32,16 +32,21 @@ import { runConfigMatrix } from "../lib/config-matrix-gate.ts";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const NOTIFIER_CONFIG_DIR = "packages/dsh-notifier/src/server/config";
 
-/** mkdtemp 副本仓库：复制矩阵的输入面（lan-proxy 平铺 config.ts；notifier 整个配置域）
+/** mkdtemp 副本仓库：复制矩阵的输入面（lan-proxy 配置域入口 model.ts；notifier 整个配置域）
  *  加上声明文件与 package.json。 */
 function fakeRepo() {
   const root = mkdtempSync(join(tmpdir(), "cfgmtx-"));
   try {
     mkdirSync(join(root, "packages", "dsh-lan-proxy", "src", "client"), { recursive: true });
+    mkdirSync(join(root, "packages", "dsh-lan-proxy", "src", "server", "config", "impl"), {
+      recursive: true,
+    });
     mkdirSync(join(root, "scripts", "data"), { recursive: true });
+    // 矩阵只读这一份配置域入口文本（Config / FILE_CONFIG_VALIDATORS / SETTING_FIELD_HINTS
+    // 同居其中，见 scripts/lib/config-matrix-gate.ts 的 runLanProxy），故不必复制整个 server 树。
     copyLf(
-      join(ROOT, "packages/dsh-lan-proxy/src/config.ts"),
-      join(root, "packages/dsh-lan-proxy/src/config.ts"),
+      join(ROOT, "packages/dsh-lan-proxy/src/server/config/impl/model.ts"),
+      join(root, "packages/dsh-lan-proxy/src/server/config/impl/model.ts"),
     );
     copyLf(
       join(ROOT, "packages/dsh-lan-proxy/src/client/index.ts"),
@@ -144,7 +149,7 @@ test("lan-proxy: 删 FILE_CONFIG_VALIDATORS 一键 → 红且报错含键名", (
   assertRed(
     "lan-proxy 删 validators.enabled",
     (root) => {
-      edit(root, "dsh-lan-proxy", "config.ts", (s) =>
+      edit(root, "dsh-lan-proxy", "server/config/impl/model.ts", (s) =>
         s.replace(/  enabled: \(v\) => typeof v === "boolean",\n/, ""),
       );
     },
@@ -170,7 +175,7 @@ test("lan-proxy: 删 Config schema 键 → 红且报错含键名", () => {
   assertRed(
     "lan-proxy 删 schema.host",
     (root) => {
-      edit(root, "dsh-lan-proxy", "config.ts", (s) =>
+      edit(root, "dsh-lan-proxy", "server/config/impl/model.ts", (s) =>
         s.replace(/  host: z\.string\(\)\.default\(DEFAULT_OPTIONS\.host\),\n/, ""),
       );
     },
@@ -399,7 +404,7 @@ test("UI 豁免表: 条目超上限（>8）→ 红（上限是策略，数据面
         for (let i = 0; i < 5; i++) {
           json.exemptKeys.push({
             key: `extra${i}`,
-            reason: "packages/dsh-lan-proxy/src/config.ts:1 注入用例",
+            reason: "packages/dsh-lan-proxy/src/server/config/impl/model.ts:1 注入用例",
           });
         }
         return `${JSON.stringify(json, null, 2)}\n`;

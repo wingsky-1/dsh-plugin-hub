@@ -20,13 +20,13 @@
       }
     },
     "dsh-lan-proxy": {
-      "modules": 0,
-      "scannedSrcFiles": 8,
-      "allSrcTsFiles": 13,
-      "interfaceFacades": 0,
-      "leafValueEdges": 0,
-      "fileValueEdges": 17,
-      "crossModuleRefs": 0,
+      "modules": 5,
+      "scannedSrcFiles": 15,
+      "allSrcTsFiles": 20,
+      "interfaceFacades": 5,
+      "leafValueEdges": 4,
+      "fileValueEdges": 25,
+      "crossModuleRefs": 34,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],

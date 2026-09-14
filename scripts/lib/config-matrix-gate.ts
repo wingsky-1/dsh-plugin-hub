@@ -9,8 +9,8 @@
  * 结果 { pass, problems: string[], lines: string[] }——不直接 console/exit，
  * 由调用方（contract-check.ts 追加段 / 负向自测）决定输出与退出码；文件树以
  * root 参数化，负向测试可对 mkdtemp 副本注入后复用同一逻辑（副本等效性：
- * 矩阵输入仅 src/config.ts / src/client/index.ts 文本，无 import 解析、
- * 无 lib 产物依赖）。
+ * 矩阵输入仅 src/server/config/impl/model.ts / src/client/index.ts 文本，无 import
+ * 解析、无 lib 产物依赖）。
  *
  * 断言清单（对齐 issue #471 v2 验收 2/3/4/5/6/7）：
  *   L1 lan-proxy：Config / FILE_CONFIG_VALIDATORS / SETTING_FIELD_HINTS 三表
@@ -158,7 +158,7 @@ function diffProblems(scope, tableName, filePath, line, d, hint = "") {
 function runLanProxy(root) {
   const problems = [];
   const lines = [];
-  const cfgPath = join(root, "packages/dsh-lan-proxy/src/config.ts");
+  const cfgPath = join(root, "packages/dsh-lan-proxy/src/server/config/impl/model.ts");
   const clientPath = join(root, "packages/dsh-lan-proxy/src/client/index.ts");
 
   const schema = loadTable(cfgPath, "Config", "object");

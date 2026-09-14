@@ -95,11 +95,11 @@
         "baselineErrors": 0,
         "baselineDate": "2026-08-25",
         "baselineDuration": "7m50s",
-        "baselineScope": "packages/dsh-lan-proxy/lib/index.js:35657-35911+35912-35972+36058-36643（self-written 三段，对应 src/proxy.ts+cert.ts+index.ts 尾段；排除 esbuild 垫片、cosmokit/schemastery/ws/http-proxy/node-forge/selfsigned 内联 vendor、shared 契约层内联副本）",
-        "config": "stryker.conf.d/dsh-lan-proxy-{1..4}.json（#220 B 段拆分，区间原样四段；s1 proxy 单文件不可细分维持现状）",
+        "baselineScope": "src 级四段口径（#826 域归位重排后重画，段面见下 scope 字段），不再锚定 lib 产物行号——旧基线曾记 packages/dsh-lan-proxy/lib/index.js:35657-35911+35912-35972+36058-36643（自研三段，对应旧根 src/proxy.ts+cert.ts+index.ts）的行号区间，该口径随目录重排与段面换路径一并作废；baselineScore / baselineCovered 描述的仍是重排前的 mutate 面，只作留档、不得再作回落判据，新基线待 observe 夜间全量班按新段面重建",
+        "config": "stryker.conf.d/dsh-lan-proxy-{1..4}.json（#220 B 段拆分，段键 1..4 不变；s1 仍是 proxy 域单一实现文件 server/proxy/impl/proxy.ts 不可细分，维持现状；#826 域归位后段面路径随重排更新）",
         "hardeningNote": "#147 变异加固轮：covered 由 49.75% 提升至 62.52%，60% 第一阶达标",
         "threshold": 60,
-        "scope": "src 级四段（#276 方案 A）：seg1 proxy / seg2 apply+config / seg3 config-routes+migrate / seg4 settings+cert+index；基线为 src 口径，由 observe 夜间全量班重建"
+        "scope": "src 级四段（#826 域归位重画，段键保持 1..4）：seg1 server/proxy（interface + impl/proxy，原根 proxy.ts）/ seg2 server/apply + server/shared（装配与包内共享）/ seg3 server/config（interface + impl/*，model 原根 config.ts、routes 原根 config-routes.ts、namespace 原根 settings.ts）/ seg4 根 index.ts + server/tls（原根 cert.ts）+ server/migrate（原根 migrate.ts）；基线为 src 口径，由 observe 夜间全量班重建"
       }
     }
   }

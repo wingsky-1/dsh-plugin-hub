@@ -1,11 +1,11 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-lan-proxy/src/settings.ts",
-    "packages/dsh-lan-proxy/src/cert.ts",
     "packages/dsh-lan-proxy/src/index.ts",
+    "packages/dsh-lan-proxy/src/server/tls/impl/index.ts",
+    "packages/dsh-lan-proxy/src/server/migrate/impl/file/index.ts",
     "!packages/dsh-lan-proxy/src/client/**",
-    "!packages/dsh-lan-proxy/src/types.ts"
+    "!packages/dsh-lan-proxy/src/**/interface.ts"
   ],
   "testRunner": "vitest",
   "mutator": {
@@ -39,5 +39,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-lan-proxy-4.json",
-  "_comment": "#276 方案 A：src 级文件组分段（4）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+  "_comment": "#826 域归位重画：入口与基础设施——根 index.ts（宿主唯一入口，须留在 src 根）+ tls 域（impl/index.ts 原根 cert.ts）+ migrate 域（impl/file/index.ts 原根 migrate.ts）；两个门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
 }

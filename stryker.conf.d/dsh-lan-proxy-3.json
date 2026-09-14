@@ -1,10 +1,9 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-lan-proxy/src/config-routes.ts",
-    "packages/dsh-lan-proxy/src/migrate.ts",
+    "packages/dsh-lan-proxy/src/server/config/impl/*.ts",
     "!packages/dsh-lan-proxy/src/client/**",
-    "!packages/dsh-lan-proxy/src/types.ts"
+    "!packages/dsh-lan-proxy/src/**/interface.ts"
   ],
   "testRunner": "vitest",
   "mutator": {
@@ -38,5 +37,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-lan-proxy-3.json",
-  "_comment": "#276 方案 A：src 级文件组分段（3）——mutate 为源文件名清单，密度均衡声明，无行号无漂移；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
+  "_comment": "#826 域归位重画：config 域 impl（model 原根 config.ts / routes 原根 config-routes.ts / namespace 原根 settings.ts）；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
 }
