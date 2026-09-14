@@ -7,7 +7,7 @@
  * 本该有文件根的会话上凭空回 undefined。
  */
 import type { SessionId } from "@deepseek-ai/dsh-session";
-import type { DefaultScopePort } from "../server/scope/deps.ts";
+import type { DefaultScopePort } from "../scope/deps.ts";
 
 /** 官方 sandboxPolicy 的窄面：只取工作区根。 */
 export interface SandboxPolicyFace {

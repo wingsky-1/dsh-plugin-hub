@@ -165,10 +165,11 @@
 packages/dsh-worktree-sidebar/
   AGENTS.md  cordis.patch.yml  package.json  tsconfig.json  README.md  README.en.md
   src/index.ts                       组合根：收窄宿主上下文 + assemble + 逆序 dispose，零业务
-  src/contract.ts                    双端共享契约：ROUTES（客户端经构建期 __DSH_ROUTES__ 取）/ 响应字段名
-  src/host/agents.ts                 宿主适配：agent 事件面（subscribe / list / publish）收窄
-  src/host/typert.ts                 宿主适配：typert lookups 收窄
-  src/host/defaults.ts               宿主适配：sandboxPolicy / sessionPersistence / liveSession 收窄
+  src/shared/interface.ts            双端共享的收口面（门禁要求：目录被引用必须有 interface.ts，见 §19.3）
+  src/shared/contract.ts             双端共享契约：ROUTES（客户端经构建期 __DSH_ROUTES__ 取）/ 响应字段名
+  src/server/host/agents.ts          宿主适配：agent 事件面（subscribe / list / publish）收窄
+  src/server/host/typert.ts          宿主适配：typert lookups 收窄
+  src/server/host/defaults.ts        宿主适配：sandboxPolicy / sessionPersistence / liveSession 收窄
   src/server/binding/interface.ts    绑定域入口：install/release 成对 + revision/get/put/drop
   src/server/binding/deps.ts         依赖声明（LoggerPort、文件路径、时钟）
   src/server/binding/impl/model/     纯逻辑与存储形状：校验、revision 递增、按会话索引
@@ -195,12 +196,12 @@ packages/dsh-worktree-sidebar/
   src/server/api/impl/handlers/      GET bindings / GET health 两个端点的形状
   src/server/api/impl/service/       单例：已挂路由 disposer 链 + installed 守卫
   src/server/shared/{interface,type,paths,file-io}.ts  共享层门面 / 窄类型 / DSH_HOME 路径 / 原子写
-  src/client/index.ts                干净模块：apply/inject + ctx.effect，装配窄面 + 逐会话剪枝
+  src/client/index.ts                干净模块：apply/inject + ctx.effect，装配窄面 + 每会话一个 SessionView
   src/client/takeover.ts             探测官方 files entry to 注册 body/title/kind + teardown/evaluate/订阅；失败即 dispose（inject 面的改写见 inject.ts）
   src/client/inject.ts               官方 entry inject 面的改写：给定官方 inject 面与会话 id，产出 hooks.sessions 指向改写源的新面
   src/client/source.ts               本 entry 的 sessions 快照源（改写 cwd，getSnapshot/subscribe 引用稳定）
   src/client/bindings.ts             拉绑定与 revision
-  src/client/ports.ts                客户端窄端口类型面（运行时真实面为准；未规定成 interface.ts）
+  src/client/shared/ports.ts         客户端块间窄端口类型面（运行时真实面为准；client/ 整目录门禁豁免）
   test/unit/**  test/integration/**
 ```
 
@@ -210,6 +211,8 @@ packages/dsh-worktree-sidebar/
 - 域三件套：`interface.ts`（唯一对外引用面，install/release 成对）+ `deps.ts`（只类型）+ `impl/**`。
 - 跨域只注入窄能力（用 Pick / 派生类型），域间禁止直引实现。
 - `server/shared/` 叶子化：不依赖任何域。
+- 三个同名 `shared` 不同层，别互相搬：`src/shared/` = **双端**共享（宿主与浏览器都必须一致）、
+  `src/server/shared/` = 宿主内部叶子、`src/client/shared/` = 客户端块间类型面。
 - disposer 归域：域导出 releaseXxx，组合根只收集与逆序调用。
 
 客户端架构纪律（同样按域审视，不是只写一个文件）：
@@ -249,16 +252,16 @@ notifier / mcp-manager 给的都只是**单文件**分位数（中位 44/58、p9
 
 参照：notifier src 中位数 44 / p90 186 / max 3229（客户端单文件，属反例）；mcp-manager p50 58 / p90 373 / max 1208。
 
-### 9.1 现状对照（第四轮收尾重测；历史偏离已消失）
+### 9.1 现状对照（第五轮 S6 后重测；历史偏离已消失）
 
-| 文件类型 | review 提问线 | 实测（第四轮收尾，`wc -l`） | 结论 |
+| 文件类型 | review 提问线 | 实测（S6 后，`wc -l`） | 结论 |
 |---|---|---|---|
-| 组合根 src/index.ts | 300 | 160（S3 拆出 `src/host/` 三个适配器后 260 到 160） | 合规 |
-| 域 impl 单文件 | 250 | 最大 154（git/impl/service） | 合规 |
+| 组合根 src/index.ts | 300 | 160 | 合规 |
+| 域 impl 单文件 | 250 | 最大 160（server/git/impl/service） | 合规 |
 | 纯逻辑模块 | 120 | 最大 110（scope/impl/resolve） | 合规 |
-| 客户端单文件 | 250 | 最大 186（client/index；B7 第 2 条拆出 `inject.ts` 后 takeover 212 到 182、inject 38） | 合规 |
-| 域 interface/deps | 80 | interface 19/45/24/21/59（api/binding/scope/tools/git）、deps 32/12/18/55/78 | 合规（C1 后门面 = install/release + 能力转发，不再是 8–11 行的纯转出） |
-| 全包 src | —（已撤销） | 45 文件 / 3002 行（均值 67；B7 拆出 `inject.ts` 后重测） | 指标不存在 |
+| 客户端单文件 | 250 | 最大 182（takeover；inject 150、shared/ports 145、index 117、source 76、bindings 46） | 合规 |
+| 域 interface/deps | 80 | interface 19/45/24/21/60（api/binding/scope/tools/git）+ `shared/interface` 8、`server/shared/interface` 11；deps 32/12/18/78/55 | 合规（C1 后门面 = install/release + 能力转发，不再是 8–11 行的纯转出） |
+| 全包 src | —（已撤销） | 46 文件 / 3081 行（均值 67；S6 新增 `src/shared/interface.ts` 后 +1 文件） | 指标不存在 |
 
 **历史偏离已消失，不再有「偏离」可议**：
 
@@ -268,7 +271,7 @@ notifier / mcp-manager 给的都只是**单文件**分位数（中位 44/58、p9
   `deps.ts` 是纯类型面（最大 `scope/deps.ts` 78 行，是端口与形状字段的逐条声明，只有一个修改理由）。
   当时提的两种修法（接受 150 / 再拆一层）都不必执行。
 - **全包合计**这个指标本身已撤销（见 §9），`2800` / `3000` 一类建议值一并作废，不要再出现在任何判据里。
-  当前实测 **45 文件 / 3002 行、均值 67**（旧表的 `2535` 是 `src/host/` 拆分前的读数，已过期；`44/2978` 是 B7 拆出 `inject.ts` 之前的读数）。
+  当前实测 **46 文件 / 3081 行、均值 67**（旧表的 `2535` 是 `src/host/` 拆分前的读数、`44/2978` 是 B7 拆出 `inject.ts` 之前、`45/3002` 是 S6 之前，均已过期）。
 
 ## 10. 债务清单与最小化
 

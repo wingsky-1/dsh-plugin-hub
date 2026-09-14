@@ -8,7 +8,7 @@
  *    消费方会看到被我们改过的世界。
  * 3. **未绑定即原样**：没有绑定就直接回真实快照，不制造副本——那时我们的存在应当完全不可见。
  */
-import type { ObservablePort, SessionsSnapshotLike } from "./ports.ts";
+import type { ObservablePort, SessionsSnapshotLike } from "./shared/ports.ts";
 
 /** 一个会话的改写源。 */
 interface SessionsSource extends ObservablePort<SessionsSnapshotLike> {

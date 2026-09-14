@@ -9,8 +9,8 @@
  */
 import type { Endpoint } from "../route/index.ts";
 import type { EffectiveWorktreePort, RevisionPort } from "../../deps.ts";
-import { ROUTES } from "../../../../contract.ts";
-import type { BindingResponse } from "../../../../contract.ts";
+import { ROUTES } from "../../../../shared/interface.ts";
+import type { BindingResponse } from "../../../../shared/interface.ts";
 import { writeJson } from "../../../../../../../shared/host-utils.js";
 
 /** 从 `req.url` 取 query 参数。返回 undefined 表示缺席或空串（两者对调用方同义）。 */

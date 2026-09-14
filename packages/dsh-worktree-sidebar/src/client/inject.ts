@@ -14,7 +14,7 @@
  * 作用域仍是**本 entry**：只改我们注册的那条正文。探测官方 entries 与三步注册在 `takeover.ts`；
  * 两块零互引（ESLint 块间隔离），装配根把 `viewFor` 接进来、再把产出接到那边的 `wrapInject` 上。
  */
-import type { SessionContribution, SessionView, ViewFor, WrapInject } from "./ports.ts";
+import type { SessionContribution, SessionView, ViewFor, WrapInject } from "./shared/ports.ts";
 
 /** 官方 files face 里被我们覆盖的两个方法（其余成员原样透传）。 */
 type FaceStart = (tabId: string, root: string, signal?: AbortSignal) => void;

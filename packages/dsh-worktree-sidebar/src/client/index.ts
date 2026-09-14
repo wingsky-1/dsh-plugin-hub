@@ -7,8 +7,8 @@
  * **没有定时轮询**：请求只在三个用户可感知的时机发出——打开 Files 页签、点官方刷新按钮、
  * 窗口重新可见/获得焦点（三处都在 `inject.ts` 的播种面里）；cwd 的改写只在 Files 正文内生效。
  */
-import type { BindingResponse } from "../contract.ts";
-import { ROUTES } from "../contract.ts";
+import type { BindingResponse } from "../shared/interface.ts";
+import { ROUTES } from "../shared/interface.ts";
 import { createBindingState } from "./bindings.ts";
 import { createInjectWrapper } from "./inject.ts";
 import type {
@@ -19,7 +19,7 @@ import type {
   SessionsSnapshotLike,
   TabsPort,
   ViewFor,
-} from "./ports.ts";
+} from "./shared/ports.ts";
 import { createSessionsSource } from "./source.ts";
 import { installTakeover } from "./takeover.ts";
 
@@ -28,7 +28,7 @@ import { installTakeover } from "./takeover.ts";
  *
  * 兜底必须写成 `typeof` 守卫：`declare const` 只活在类型层，非 bundle 环境（源码直接 import、
  * 单测、构建期收集）里这个标识符根本不存在，裸引用会当场 ReferenceError。所以契约常量留在
- * `src/contract.ts` 根，注入缺失时用它——也是本包路由的单一事实源。
+ * `src/shared/contract.ts` 根，注入缺失时用它——也是本包路由的单一事实源。
  */
 declare const __DSH_ROUTES__: Record<string, string> | undefined;
 const ROUTES_INJECTED = typeof __DSH_ROUTES__ !== "undefined" ? __DSH_ROUTES__ : ROUTES;

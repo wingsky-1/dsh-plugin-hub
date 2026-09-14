@@ -2,18 +2,18 @@
  * 宿主端组合根：收窄宿主上下文、按依赖顺序装配各域、卸载逆序释放。
  *
  * `ctx` 的知识只在这里出现——三个宿主适配器各自的官方形状收窄都写在下面对应的 `bind*` 调用里，
- * 适配逻辑住 `src/host/`（宿主 rc 演进时只动那几个小文件）。五个域因此都拿不到 `ctx`，
+ * 适配逻辑住 `src/server/host/`（宿主 rc 演进时只动那几个小文件）。五个域因此都拿不到 `ctx`，
  * 也都能脱离 cordis 被单测驱动。
  */
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { SessionId } from "@deepseek-ai/dsh-session";
 import type {} from "@deepseek-ai/dsh-typert-protocol";
-import { ROUTES } from "./contract.ts";
-import { bindAgents } from "./host/agents.ts";
-import { bindDefaults } from "./host/defaults.ts";
-import type { SandboxPolicyFace, SessionPersistenceFace } from "./host/defaults.ts";
-import { bindTypert } from "./host/typert.ts";
+import { ROUTES } from "./shared/interface.ts";
+import { bindAgents } from "./server/host/agents.ts";
+import { bindDefaults } from "./server/host/defaults.ts";
+import type { SandboxPolicyFace, SessionPersistenceFace } from "./server/host/defaults.ts";
+import { bindTypert } from "./server/host/typert.ts";
 import * as apiApi from "./server/api/interface.ts";
 import * as bindingApi from "./server/binding/interface.ts";
 import * as gitApi from "./server/git/interface.ts";

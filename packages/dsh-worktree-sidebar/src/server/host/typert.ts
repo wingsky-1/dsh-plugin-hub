@@ -11,7 +11,7 @@
 import type { WorkspaceFileScope } from "@deepseek-ai/dsh-api-workspace-files";
 import type { SessionId } from "@deepseek-ai/dsh-session";
 import type { TypertLookupRegistry } from "@deepseek-ai/dsh-typert-protocol";
-import type { FileScope, TypertPort } from "../server/scope/deps.ts";
+import type { FileScope, TypertPort } from "../scope/deps.ts";
 
 /** 查找表窄面：本插件只读当前描述符与配置自己那一个键，其余能力（register/definitions）不开。 */
 export type TypertLookupsPort = Pick<TypertLookupRegistry, "get" | "configure">;

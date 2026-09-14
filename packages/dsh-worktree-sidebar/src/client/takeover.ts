@@ -21,7 +21,7 @@ import type {
   TabDefinitionLike,
   TabsPort,
   WrapInject,
-} from "./ports.ts";
+} from "./shared/ports.ts";
 
 /** 我们接管的 kind。 */
 export const FILES_KIND = "files";

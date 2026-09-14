@@ -5,7 +5,7 @@
  * 两边各判一次就是 G7 说的那种分叉：客户端认为还绑着、宿主已经按 cwd 解析，
  * 用户看到的是持续的 outside-workspace 报错。所以这里只负责搬运与保持上次成功态。
  */
-import type { ObservablePort, ReadBinding } from "./ports.ts";
+import type { ObservablePort, ReadBinding } from "./shared/ports.ts";
 
 /** 一个会话的绑定状态。 */
 export interface BindingState extends ObservablePort<string | null> {

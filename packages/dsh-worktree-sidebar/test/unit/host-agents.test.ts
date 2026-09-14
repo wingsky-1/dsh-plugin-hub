@@ -1,5 +1,5 @@
 /**
- * 宿主 agent 适配器（src/host/agents.ts）—— 白盒用例：递手写窄端口直接驱动 `bindAgents`。
+ * 宿主 agent 适配器（src/server/host/agents.ts）—— 白盒用例：递手写窄端口直接驱动 `bindAgents`。
  *
  * 为什么必须白盒：适配器的输入是宿主 `ctx`，而 `publish` 的未知 id 分支在真机上不可达
  * （tools 域只会拿 list/subscribe 刚递出去的 face 回来）。把它拆成窄端口之后，这条分支
@@ -9,8 +9,8 @@
  */
 import { describe, expect, it } from "vitest";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
-import { bindAgents } from "../../src/host/agents.ts";
-import type { AgentHostPort, HostAgentLike } from "../../src/host/agents.ts";
+import { bindAgents } from "../../src/server/host/agents.ts";
+import type { AgentHostPort, HostAgentLike } from "../../src/server/host/agents.ts";
 import type { AgentFace } from "../../src/server/tools/deps.ts";
 
 /** 一个 agent 作用域的最小假件：适配器只读 id 与 session.header.cwd。 */

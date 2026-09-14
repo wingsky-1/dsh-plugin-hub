@@ -14,7 +14,7 @@
  * 写成事实，并据此把接缝换成 session 作用域。官方 `bindInjectSources` 恰恰会把 entry inject 面的
  * `hooks.<name>` 变成 `use<Name>` props——被读，且覆盖框架注入。所以本包用 entry 级接缝。
  */
-import type { BindingResponse } from "../contract.ts";
+import type { BindingResponse } from "../../shared/interface.ts";
 
 /** 官方座位上的一条已登记项（运行时形状即 dsh-client-ui-slots 的 StoredEntry）。 */
 export interface StoredEntryLike {

@@ -19,7 +19,7 @@ import type {
   StoredEntryLike,
   TabDefinitionLike,
   TabsPort,
-} from "../../src/client/ports.ts";
+} from "../../src/client/shared/ports.ts";
 import { createInjectWrapper } from "../../src/client/inject.ts";
 import {
   BODY_SLOT,

@@ -2,7 +2,7 @@
  * binding 域的存储形状：`bindings.json` 的版本与记录。
  *
  * 它是域内契约而不是双端契约——宿主与客户端都不直接读这个文件，客户端只经 api 域的
- * 路由读 `revision` 与 `worktreePath`（见根 `contract.ts` 的 `BindingResponse`）。
+ * 路由读 `revision` 与 `worktreePath`（见 `src/shared/contract.ts` 的 `BindingResponse`）。
  * 物理定义放在这里，域外经 `binding/interface.ts` 取用。
  */
 

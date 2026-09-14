@@ -12,7 +12,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ROUTES } from "../../src/contract.ts";
+import { ROUTES } from "../../src/shared/interface.ts";
 import { apply } from "../../src/index.ts";
 import * as apiApi from "../../src/server/api/interface.ts";
 import * as bindingApi from "../../src/server/binding/interface.ts";

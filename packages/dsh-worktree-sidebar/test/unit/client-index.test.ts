@@ -5,7 +5,7 @@
  * 不递假面就无法驱动它。
  *
  * 静态 import 本身就是一条判据：非 bundle 环境里没有构建期注入的 `__DSH_ROUTES__`，
- * 装配根靠 `typeof` 守卫回落到 `src/contract.ts` 的 `ROUTES`，模块求值得当场成功。
+ * 装配根靠 `typeof` 守卫回落到 `src/shared/contract.ts` 的 `ROUTES`，模块求值得当场成功。
  * 先往 globalThis 挂一个桩再 import，会把这条判据遮掉。
  *
  * 为什么允许打桩 `globalThis.fetch`：读宿主绑定的唯一出口就是它，不桩会真的发出网络请求
@@ -25,7 +25,7 @@ import type {
   StoredEntryLike,
   TabDefinitionLike,
   TabsPort,
-} from "../../src/client/ports.ts";
+} from "../../src/client/shared/ports.ts";
 import { BODY_SLOT, FILES_KIND } from "../../src/client/takeover.ts";
 
 const OFFICIAL_ID = "@deepseek-ai/dsh-client-ui-sidebar-files/files";
@@ -272,7 +272,7 @@ describe("树根播种：只在用户可感知的时机读绑定（没有定时�
 });
 
 /**
- * 路由字面量哨兵：客户端只认 `src/contract.ts` 的 `ROUTES`（构建期由 bundle-host 注入
+ * 路由字面量哨兵：客户端只认 `src/shared/contract.ts` 的 `ROUTES`（构建期由 bundle-host 注入
  * `__DSH_ROUTES__`）。客户端里任何一处手写 `/api/...` 都会在宿主改路由时静默漂移，
  * 而两端各自的单测都不会红——所以这条扫源码文本，守的是真实的双端 ABI，不是代码风格。
  */

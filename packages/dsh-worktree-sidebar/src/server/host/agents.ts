@@ -5,7 +5,7 @@
  * 它只认下面这个窄端口，因此不需要起 cordis 就能被白盒驱动。
  */
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
-import type { AgentFace, AgentPort } from "../server/tools/deps.ts";
+import type { AgentFace, AgentPort } from "../tools/deps.ts";
 
 /**
  * 适配器真正用到的宿主 agent 面。刻意与官方 `Agent` 解耦：公开的 `Agent` 面要求一个真的

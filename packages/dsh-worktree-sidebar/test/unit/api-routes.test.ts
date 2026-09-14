@@ -9,7 +9,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { afterEach, describe, expect, it } from "vitest";
-import { ROUTES } from "../../src/contract.ts";
+import { ROUTES } from "../../src/shared/interface.ts";
 import { installApi, releaseApi } from "../../src/server/api/interface.ts";
 
 /** 捕获注册的路由，并按真实语义提供摘除器。 */
