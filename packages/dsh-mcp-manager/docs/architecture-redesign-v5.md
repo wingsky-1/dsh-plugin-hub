@@ -702,7 +702,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 > **PR 切分**：PR-1 = **B0**（契约冻结 + 门禁接线，必须早于第一个结构 commit）；PR-2 = **B1–B3**。硬约束：**每个 commit 只做一件事**（搬移或改行为），行为变更按 §10.2 登记。
 >
-> **登记面与结构同提交**（参照教训：notifier 的 76 个未覆盖文件红与导出面红各自悬了一整个窗口期）：每个批次的验收必须包含 `pnpm gate:pr` 全绿 + 该批涉及的**全部登记文件**同步（baseline / faces / `gate-scope-registry` / `ci-face-registry` / `mutation-topology` / `coverage.config` / `dir-imports-baseline`）。
+> **登记面与结构同提交**（参照教训：notifier 的 76 个未覆盖文件红与导出面红各自悬了一整个窗口期）：每个批次的验收必须包含 `pnpm gate:pr` 全绿 + 该批涉及的**全部登记文件**同步（baseline / faces / `gate-scope-registry` / `ci-face-registry` / `mutation-topology` / `coverage.config` / `dir-imports-baseline`）。**B1.2 实测补两项**：`packages/<pkg>/package.json` 的 `test --min`（测试文件数下限）与 `vitest.stryker.d/<pkg>.config.ts` 的**显式测试文件清单**——新增测试文件就必须同笔抬 `--min` 并 `pnpm stryker:gen`，否则 `gen-stryker-conf --check` 与 test 下限会判红（`stryker.conf.d/**` 变异面本身**不需要**改，`src/server/**` 超集已覆盖新文件）。
 >
 > **B0 进度（2026-09-14）**：①③④⑤⑧⑨ 与 §5.3 的 client 判据**已完成**——③ `43229f6`/`d3a21d2`、④ `da83b36`/`660dd0a`/`f8ee6c5`、⑤ `cd44c90`/`8fe5119`、⑨ + client 判据 `58823bc`/`d6795ec`。**⑥ 的 I8 判据已完成**（`84a5941`/`8727cf0`/`1fb0af3`，含证据类文档同步；判据面边界见 §二 I8 末条）。**② 打标已完成**（`0ad5a02`/`3565687`）。**⑦ 已完成**（`fd2f82d`，含产物断言正反两面）。**⑩ 已按实测证据移入 B1**（见本表后）。**⑧ 评估为 no-op**（`--min` 已在上限）。**`pnpm gate:pr` 已两次实跑 = exit 0**（32 条门禁项逐条 exit=0 + `GATE_PR_EXIT=0`）。**B0 全部项已收口**；`docs/DEVELOPMENT.md` 与 `scripts/README.md` 的四类证据同步已完成（`1fb0af3`）。
 
@@ -717,7 +717,9 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 **B1 的连带面（切片 4 实跑补充，必须同一笔做）**：`mutation-topology.json` 六个段的 excludes 各有一条 `!packages/dsh-mcp-manager/src/placement-math.ts`（`:92/102/117/127/142/161`）。文件挪走后该 pattern **不再命中新路径**，而新路径落在 `runtime` 段的 `src/shared/**/*.ts` 超集里 → 这张薄 facade 会**进变异面**（与 provider-usage 对 `src/shared/placement-math.ts` 的 facade 排除先例相悖）。正确处置是**把该条 pattern 平移到新路径**（语义位移，不是新增证据），并重生成 6 份段 conf。
 
-> **B1 进度（2026-09-14）**：**B1.1 已完成**（`f21d44d`，含 ⑩）：建 `src/shared/interface.ts` 门面 + `placement-math.ts` 迁入 + 消费点改经门面 + 六条 pattern 平移；`dir-imports-baseline.json` 登记 7 类**结构型**计数位移（`quality` 段逐字节不变），公共导出面零变化。**B1.0 判据加固已完成**（`4f94f65`，见附录 G·G1）：关掉 I8① 的裸包名自引用绕过路径。**B1.2（落盘面）进行中**。**未完**：`server/shared/paths.ts` + `file-io.ts`、`upgrade` 六件套、`src/server` 骨架与组合根、`src/shared` 另外五个文件。
+> **B1 进度（2026-09-14）**：**B1.1 已完成**（`f21d44d`，含 ⑩）：建 `src/shared/interface.ts` 门面 + `placement-math.ts` 迁入 + 消费点改经门面 + 六条 pattern 平移；`dir-imports-baseline.json` 登记 7 类**结构型**计数位移（`quality` 段逐字节不变），公共导出面零变化。**B1.0 判据加固已完成**（`4f94f65`，见附录 G·G1）：关掉 I8① 的裸包名自引用绕过路径。**B1.2（落盘面）进行中**。**B1.2 已完成**（`dfd6577`）：`server/shared/` 三文件（`paths.ts` 的 mode 表 + 自写 `file-io.ts` 原子写与同路径队列 + 门面）+ 17 条单测；`dir-imports-baseline` 仅 5 个数字（`quality` 段与其余 5 包 byte-identical）。**B1.3（`upgrade` 六件套）进行中**。**未完**：`upgrade` 域、`src/server` 骨架与组合根、`src/shared` 另外五个文件。
+
+> **接线顺序约束（B2 必须遵守，来自代码事实）**：`upgrade` 的 `storage-layout` 步骤会把旧文件 `rename` 成 `*.migrated.bak`；而各域今天仍读旧路径（`config/store/store.ts` 读 `<DSH_HOME>/dsh-mcp.json`、`catalog/cache-view.ts` 读 `dsh-mcp-catalog.json`、`middleware-state.ts` 读 `dsh-mcp-user-state.json`）。**先接线迁移、后改读者 = 归档旧文件而旧读者读空 = 静默丢用户配置**。故 `upgrade` 的启用与「读者改读新布局」必须**同一笔**（B2）；B1 只交付可直接调用并单测的域，不接线。
 
 **commit 上限建议**：B0 ≤10、B1 ≤12、B2 ≤5/域、B3 ≤25；合计 ≤80。squash merge 下批次粒度只存在于分支，交付物（逐符号收缩表、对账表、exit code）必须落 PR 正文或持久文档。
 
@@ -842,11 +844,12 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 17. **`pnpm gate:pr` 复跑 = exit 0**（`GATE_PR_EXIT=0`，日志 `/tmp/gate-pr.log`）：32 条门禁项**逐条 exit=0**，含 `stryker:check`、`pack:check`、`lint`（670/671 warning）、`test:scripts`、全包 build/test/typecheck。**本地 PASS ≠ CI 绿**：本地任何档都不跑变异。
 19. **B1 第一刀（B1.1）已完成**（`f21d44d`）：建 `src/shared/interface.ts` 门面 + `git mv` `placement-math.ts` 迁入（仓库根 `shared` 的相对深度 `../../../`→`../../../../`）+ 4 处消费点改经门面 + `style.css` 路径注释同步 + `mutation-topology.json` 六条 facade 排除 pattern **平移**到新路径并重生成 6 份段 conf。`dir-imports-baseline.json` 登记 **7 类结构型计数位移**（`modules`/`interfaceFacades` 14→15、`scannedSrcFiles` 63→64、`allSrcTsFiles` 78→79、`leafValueEdges` 33→34、`fileValueEdges` 116→117、`crossModuleRefs` 134→141），**`quality` 段逐字节不变**。主控独立复验：判据 exit 0、基线 diff 仅这 7 个数字、`quality` 段 JSON 与 HEAD 相同、`export-surface-snapshot` 零 diff、提交后 `gate:pr` **exit 0**（32 项逐条 exit=0，`/tmp/gate-pr-767-b11-c.log`，与提交前那次的逐项完全一致）。**别名陷阱**：`panelAnchorForPosition` 不能与其它 12 个符号同链转出（见附录 G·G8），改为用真实源名直连仓库根单源 + 就地注释。
 20. **B1.0 判据加固已完成**（`4f94f65`）：关掉 I8① 的裸包名自引用绕过路径（附录 G·G1）。`resolveCandidates`/`resolveTarget` 未动、存量 0、`dir-imports-baseline.json` **零位移**；`test:scripts` 641 pass（基线 637 + 新增 4）；`pnpm lint` 670 warning；`pnpm gate:pr` exit 0。主控独立复验：判据在 mcp/notifier 均 exit 0、基线零 diff、7 个包都有 `package.json`、我自测的 `test/unit/**` 裸自引用存量确为 0。
+21. **B1.2 落盘面原语已完成**（`dfd6577`，8 文件 +549/−6）：`server/shared/` 三文件 —— `paths.ts`（目标布局 + `legacyFile` 同处声明 + §7.1 的 mode 表 + 目录 `0o700`，HOME 只经仓库 `shared/dsh-home.js`）、`file-io.ts`（唯一 tmp 名 → 显式 mode → `rename` → 失败清理并上抛；**同路径 promise 队列**；**不装进程级钩子**；未登记路径抛错不回落默认 mode）、`interface.ts` 门面；17 条单测（18 文件 / 1156 通过）。登记面：`dir-imports-baseline` **仅 5 个数字**（`modules` 15→16、`scannedSrcFiles` 64→67、`allSrcTsFiles` 79→82、`fileValueEdges` 117→120、`crossModuleRefs` 141→142；`interfaceFacades`/`leafValueEdges` **未位移**），**`quality` 段与其余 5 个包 byte-identical**（主控独立比对）；另新增两处此前未登记的登记面：`test --min` 16→18 与 `vitest.stryker.d` 测试面 +2 文件。**两条反例均「改前必红」**：去掉显式 mode → mode 断言红（0o600 实得 0o664）；去掉同路径队列 → 并发用例红（`expected 'first' to be 'second'`，即 R11 要防的「旧数据覆盖新数据」）。`pnpm gate:pr` exit 0（32 项逐条 exit=0，`/tmp/gate-pr-767-b12-final.log`，主控独立核验）。**命名发现**：新模块的 `userStateFile()` 与包入口既有导出**同名**（`src/index.ts:145` 仍导出旧实现）——会被 `export-surface-snapshot` 判成「入口 `.` 声明块新增」，且在迁移期造成「两个同名函数分别返回新旧两条路径」的不可判读；改名 `userStatePath()` 并就地注释，导出面保持零 diff。
 
 ### D.3 未完成与遗留（含状态订正）
 
-1. **B1 未完部分**：`server/shared/paths.ts`（mode 表）+ 自写 `file-io.ts` + `upgrade` 六件套 + `src/server/` 11 域骨架与组合根 + `src/shared/` 另外五个文件（`status`/`frames`/`dto`/`routes`/`service`）。切法与验收见 D.4。
-2. **B1.2 进行中**（落盘面原语：`server/shared/paths.ts` 的 mode 表 + 自写 `file-io.ts` + 门面 + 单测）。**B1.0 已完成**（`4f94f65`，附录 G·G1）；其遗留的两条 id 不一致见 **G1b**（登记不修）。
+1. **B1 未完部分**：`upgrade` 六件套（B1.3 进行中）+ `src/server/` 11 域骨架与组合根 + `src/shared/` 另外五个文件（`status`/`frames`/`dto`/`routes`/`service`）。切法与验收见 D.4。**接线顺序**：`upgrade` 的启用必须与「读者改读新布局」同一笔（B2），否则归档旧文件而旧读者读空 = 静默丢配置（见 §十二 表后）。
+2. **B1.3 进行中**（`upgrade` 六件套 + 布局迁移步骤，**不接线**）。**B1.2 已完成**（`dfd6577`）；**B1.0 已完成**（`4f94f65`，附录 G·G1），其遗留的两条 id 不一致见 **G1b**（登记不修）；I9 判据只覆盖顶层 `let/var` 的缺口见 **G11**。
 3. **⑩ 已完结**（随 B1.1，`f21d44d`）：迁移与其连带面（6 条 mutation exclude pattern 平移 + 6 份段 conf 重生成）同笔完成。
 4. **基线写入纪律（附录 G·G5，必须遵守）**：`--write-baseline` **必须在 build 之后的树上跑**——`lib/**` 的证据 id 会随 `lib/foo.d.ts` 在不在而变（只有 `src/index.ts` 做了归一），而 CI 是「先 build 再 contract」，两者错位就换号判红。
 5. **已知放宽路径（登记，不修）**：R16 的三条同族路径（删键 / 删**整包**条目 / **瞬态台账**，见 §十三 R16 与附录 G·G2–G4）；豁免 `reviewBy` 无执法力、可静默删除转长期（G6）。
@@ -860,10 +863,10 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 ### D.4 下一步顺序
 
-**B0 已收口；B1.1（`f21d44d`）与 B1.0 判据加固（`4f94f65`）已落地；当前在 B1.2（落盘面原语）。** B1 剩余按下表各刀切，每刀一个可独立验证的提交面（一次只放一个写者）：
+**B0 已收口；B1.1（`f21d44d`）、B1.0 判据加固（`4f94f65`）、B1.2 落盘面（`dfd6577`）已落地；当前在 B1.3（`upgrade` 六件套）。** B1 剩余按下表各刀切，每刀一个可独立验证的提交面（一次只放一个写者）：
 
 1. ~~**B1.1 `src/shared/` 门面 + ⑩ 迁移**~~ **已完成（`f21d44d`）**；下面保留原始切法供回溯：建 `src/shared/` 与 `interface.ts`；`git mv src/placement-math.ts src/shared/`；改 4 处引用（`src/index.ts` / `src/config/model/config-schema.ts` / `src/client/core/state.ts` / `src/client/float/float.ts`，其中 client 两处改引 `src/shared/interface.ts`）；被移文件内仓库 `shared/placement-math.js` 的相对深度从 `../../../` 改 `../../../../`；mutation-topology 的 6 条 exclude pattern 平移到新路径 + 重生成 6 份段 conf。**验收**：`verify-dir-imports.mjs --package dsh-mcp-manager` 从 **exit 1 → exit 0**（这就是 ⑩ 在 B0 唯一的红）、`gen-stryker-conf.mjs --check` exit 0、`export-surface-snapshot` exit 0（导出面不变，纯位移）。
-2. **B1.2 `server/shared/` 落盘面**：`paths.ts` 单源（新路径 + `legacyFile` + 每文件 mode 表 + 插件自有目录 `0o700`）+ 自写 `file-io.ts`（唯一 tmp 名 → 显式 mode → `rename` → 失败清理；同路径 promise 队列；**不装进程级钩子**）+ 权限断言（7 个写点收敛到这一处）。
+2. ~~**B1.2 `server/shared/` 落盘面**~~ **已完成（`dfd6577`）**；下面保留原始切法供回溯：`paths.ts` 单源（新路径 + `legacyFile` + 每文件 mode 表 + 插件自有目录 `0o700`）+ 自写 `file-io.ts`（唯一 tmp 名 → 显式 mode → `rename` → 失败清理；同路径 promise 队列；**不装进程级钩子**）+ 权限断言（7 个写点收敛到这一处）。
 3. **B1.3 `upgrade` 域**：六件套一次建齐（步骤表 / 链驱动 / 刻度 / 失败语义 / 对账 / 装配标记）+ 迁移**五态**测试（含目录型旧路径逐文件搬、用户显式 `storePath`/`statsFile` 不动）+ 刻度「推进与失败不推进」。
 4. **B1.4 `src/server/` 骨架与组合根**：11 域 `interface.ts`/`deps.ts` 骨架 + `bindHost`/`assemble`/逆序释放/`declare module`；探针证明 apply → install → release 各域标记复位。
 5. **B1.5 `src/shared/` 另外五个文件**（`status` / `frames` / `dto` / `routes` / `service`）：必须与**两端改引同笔**——只建文件不接两端就是死代码，覆盖率面与变异面会先红。
@@ -1123,6 +1126,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | **G8** | **别名转出触发规则 4 假红** | P2 | `collectExports:411-417` 对 `export { A as B } from` **只登记源名 `A`**，门面里对该别名做同名转出即解析到空 | 已就地规避：`src/shared/interface.ts` 用**真实源名**直连仓库根单源 + 就地注释；并列入附录 F.3 撞坑清单 |
 | **G9** | **判据面与宪法正文的文字差** | P2 | I2④ 实现判「**值**引 `src/index.ts`」（`!r.isType`），宪法正文（doc:124）未加「值」；I8① 实现含 `src/client/**`，正文（doc:165）只列两面，而 §8.1 与脚本头写全三面 | 待订正（文字向实现对齐） |
 | **G10** | **「有文字无判据」清单** | P2 | 见下 | 登记（长期透明度） |
+| **G11** | **I9 判据只覆盖顶层 `let/var`**：`const Map` + 就地 mutate 是**同一种**模块级可变状态却逃过判据 | P2 | B1.2 实测：`file-io.ts` 的同路径串行链必须是模块级 `const Map`（串行语义要跨调用点），而 `forbid-module-state-src` 只判顶层 `let/var`——B0④ 为 `client/float/panel.ts` 的 `let inflight` 写过豁免，说明该不变式的**意图**正是禁这类跨调用状态 | 当前为**显式例外**（已就地注释）；登记。扩判据会牵动全仓 module-level 缓存/Map（高连带），须单独裁决，不在 B1 范围 |
 
 **G1 的裁决边界（只修 I8①）**：§5.3 禁的是 `src/server/**`、I2④ 禁的是 `src/index.ts`；裸包名解析到 `lib/index.js`，**不是同一件事的等价写法**，属另一条规则——悄悄扩大一个已冻结判据的范围就是自行扩大授权，故**只登记、不实现**。
 
