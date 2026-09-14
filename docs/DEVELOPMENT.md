@@ -464,8 +464,9 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
     `$noMutationPackages` 成员**不适用**该断言；其 `dir-imports-baseline.json` 里的
     `uncoveredSrcFiles: []` 是「未登记拓扑时该字段恒为空」造成的已知假绿，不是「已覆盖」的
     证据——判绿输出会显式声明「源码全覆盖断言不适用」，不得读作已验证全覆盖。两处都未登记的包
-    仍是 fail-closed——**前提是拓扑文件在位**：该文件整份缺失时本判据不生效，兜底是
-    `scripts/test/workflow-assert.test.ts` 的「单一事实源在位」断言（follow-up 见 #773）。
+    仍是 fail-closed；拓扑文件整份缺失或内容非对象时本门禁自身判红（无从判定，输出
+    `[topology] 变异拓扑单一事实源缺失` / `…顶层不是对象` 并 exit 1），
+    `scripts/test/workflow-assert.test.ts` 的「单一事实源在位」断言保留为冗余兜底，不再是唯一兜底。
     死声明判据为**值面判死、类型面豁免**：`deps.ts` 的 `import type` 是声明即完整性，不参与
     死声明计算（#733 M0a）。**可见度边界**：只管依赖方向与环路，不管符号签名。
   - **导出面门禁（`scripts/gate/export-surface-snapshot.mjs`；#669 PR1 / #733 M0+M2a / N0(B)）**：

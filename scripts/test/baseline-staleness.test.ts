@@ -142,3 +142,17 @@ test("CLI 接线：fresh 不落 issue 文件；stale 落且带 ::error::；unkno
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("CLI 接线：--threshold-hours 非正数一律 exit 2（fail-closed，不落状态文件）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "baseline-staleness-"));
+  try {
+    for (const bad of ["0", "48h"]) {
+      const result = runCli(dir, ["--threshold-hours", bad]);
+      assert.equal(result.status, 2, `${bad}：阈值非正数必须 exit 2（参数校验在写任何文件之前）`);
+      assert.match(result.stderr, /--threshold-hours 需要正数/);
+      assert.equal(existsSync(join(dir, "status.json")), false, `${bad}：参数非法不得落状态文件`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
