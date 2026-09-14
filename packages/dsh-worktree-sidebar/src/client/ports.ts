@@ -96,7 +96,15 @@ export type ReadBinding = (
   sessionId: string,
 ) => Promise<{ revision: number; worktreePath: string | null } | undefined>;
 
-/** 会话快照的最小形状：我们只改写 `byId[sessionId].cwd` 这一个字段，其余原样透传。 */
+/**
+ * 会话快照的最小形状：我们只改写 `byId[sessionId].cwd` 这一个字段，其余原样透传。
+ *
+ * `ids` / `byId` / `current` 同时是装配根判断「这个会话还在不在」的三个证据面
+ * （`index.ts` 的剪枝）。三项都声明成可选：宿主快照的形态与这份假设不一致时，
+ * 剪枝整体放弃，而不是把读不到的字段当成「已消失」。
+ */
 export interface SessionsSnapshotLike {
+  readonly ids?: readonly string[] | undefined;
   readonly byId?: Record<string, unknown> | undefined;
+  readonly current?: string | undefined;
 }

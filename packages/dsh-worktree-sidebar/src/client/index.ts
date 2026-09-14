@@ -43,6 +43,31 @@ const readBinding: ReadBinding = async (sessionId) => {
   }
 };
 
+/** 一个会话的改写源，以及它对应的释放动作。 */
+interface LiveSource {
+  readonly source: ObservablePort<SessionsSnapshotLike>;
+  /** 释放 state 到改写源的通知订阅；剪枝时调用，否则这条订阅随状态一起留在内存里。 */
+  readonly release: () => void;
+}
+
+/**
+ * 「该会话已从宿主快照里消失」的保守判据：三项都是存活证据，三项都读得到且都说「不在」才成立。
+ *
+ * 任一项缺失或形态不符一律返回 false——把「读不到」当成「已消失」会让一次快照形态变化把
+ * 在册会话全剪掉，而渲染器按源缓存订阅，剪掉就得重建。
+ */
+function isGone(sessionId: string, snapshot: SessionsSnapshotLike): boolean {
+  const ids = snapshot.ids;
+  if (!Array.isArray(ids)) return false;
+  const byId: unknown = snapshot.byId;
+  if (byId === null || typeof byId !== "object") return false;
+  // 键存在而值为 undefined（当前没有寻址任何会话）是有效读数；键整个缺失才是读不到。
+  if (!("current" in snapshot)) return false;
+  const current = snapshot.current;
+  if (current !== undefined && typeof current !== "string") return false;
+  return !ids.includes(sessionId) && !(sessionId in byId) && sessionId !== current;
+}
+
 /**
  * 浏览器端上下文的窄面。刻意不用 `any`：这几个面正是 `inject` 声明的那几个，
  * 写成结构类型之后，「多用一个服务却忘了声明」会在类型层先露出来。
@@ -58,7 +83,7 @@ interface ClientContext {
 export function apply(ctx: ClientContext): void {
   try {
     const states = new Map<string, BindingState>();
-    const sources = new Map<string, ObservablePort<SessionsSnapshotLike>>();
+    const sources = new Map<string, LiveSource>();
 
     const stateFor = (sessionId: string): BindingState => {
       let state = states.get(sessionId);
@@ -71,18 +96,17 @@ export function apply(ctx: ClientContext): void {
 
     /** 每个会话一条改写源；绑定刷新时通知它重算快照。同一 id 恒回同一对象（渲染器按源缓存订阅）。 */
     const sourceFor = (sessionId: string): ObservablePort<SessionsSnapshotLike> => {
-      let source = sources.get(sessionId);
-      if (source === undefined) {
+      let live = sources.get(sessionId);
+      if (live === undefined) {
         const state = stateFor(sessionId);
         const created = createSessionsSource(ctx.sessions.list, sessionId, () =>
           state.getSnapshot(),
         );
-        state.subscribe(() => created.notify());
-        sources.set(sessionId, created);
-        source = created;
+        live = { source: created, release: state.subscribe(() => created.notify()) };
+        sources.set(sessionId, live);
         void state.refresh();
       }
-      return source;
+      return live.source;
     };
 
     const restore = installTakeover({
@@ -92,7 +116,38 @@ export function apply(ctx: ClientContext): void {
       sourceFor,
     });
 
+    /**
+     * 剪掉宿主快照里已经消失的会话：曾 materialize 过的会话否则永久占一份状态，
+     * 并让下面的定时器永久每 5s 为它拉一次路由。
+     *
+     * 两个 Map 一一对应（state 只在 sourceFor 里连同它的源一起入册），所以按源剪一遍即可；
+     * 仍然在册的 id 一律不动——同一 id 必须恒回同一对象（渲染器按源缓存订阅）。
+     */
+    const pruneGone = (): void => {
+      let snapshot: SessionsSnapshotLike;
+      try {
+        snapshot = ctx.sessions.list.getSnapshot();
+      } catch {
+        // 读不到快照时保持现状：剪枝是回收，不是正确性前提。
+        return;
+      }
+      // 端口声明了返回对象，运行时不归它管：非对象的读数一律不剪，也不让定时器抛。
+      if (!snapshot) return;
+      for (const [sessionId, live] of [...sources]) {
+        if (!isGone(sessionId, snapshot)) continue;
+        sources.delete(sessionId);
+        states.delete(sessionId);
+        try {
+          live.release();
+        } catch {
+          // 释放失败不阻断其余剪枝：这条状态已经不在册。
+        }
+      }
+    };
+
     const timer = setInterval(() => {
+      // 同一个 tick 里先剪枝再刷新：被剪掉的会话不该再为这一轮贡献一次拉取。
+      pruneGone();
       for (const state of states.values()) void state.refresh();
     }, REFRESH_MS);
 

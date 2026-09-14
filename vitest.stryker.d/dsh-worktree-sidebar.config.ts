@@ -13,6 +13,7 @@ export default defineConfig({
       'packages/dsh-worktree-sidebar/test/integration/tools-real.test.ts',
       'packages/dsh-worktree-sidebar/test/unit/api-routes.test.ts',
       'packages/dsh-worktree-sidebar/test/unit/binding-model.test.ts',
+      'packages/dsh-worktree-sidebar/test/unit/client-index.test.ts',
       'packages/dsh-worktree-sidebar/test/unit/client-source.test.ts',
       'packages/dsh-worktree-sidebar/test/unit/client-takeover.test.ts',
       'packages/dsh-worktree-sidebar/test/unit/git-inspect.test.ts',
