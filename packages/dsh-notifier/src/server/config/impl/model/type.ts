@@ -1,6 +1,7 @@
 /** 设置模型（本域形状）。模型即跨端契约：设置页与宿主端读同一份形状，字段名两侧同源，改动即两端同改；这里只放
  * 「设置长什么样」。全篇用类型别名而非接口——只有类型别名带隐式索引签名，能落进「原始值」这层宽类型。 */
 import type { BarkTarget, WebhookTarget } from "../../deps.ts";
+import type { SoundId } from "../../../../shared/interface.ts";
 
 // ---------------------------------------------------------------- 原始输入
 
@@ -18,8 +19,9 @@ export type StoredSettings = { readonly [key: string]: RawSettingValue };
 
 // ---------------------------------------------------------------- 声音
 
-/** 内置音色 id：全平台语义一致的白名单；「跟随系统」由 true 承担，不占 id。 */
-export type SoundId = "ding" | "bell" | "chime" | "pop";
+/** 内置音色 id：事实源在 src/shared/sounds.ts（两端共享面）——白名单与设置页的选项同源。
+ *  「跟随系统」由 true 承担，不占 id。 */
+export type { SoundId };
 
 /** 声音设置：false = 静音；true = 跟随系统默认；SoundId = 显式内置音色。 */
 export type SoundSetting = boolean | SoundId;

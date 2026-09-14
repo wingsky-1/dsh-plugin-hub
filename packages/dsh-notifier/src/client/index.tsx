@@ -61,6 +61,17 @@ import {
   rebaseSettings,
 } from "./settings/diff.ts";
 import { createSaveGuard } from "./settings/save-guard.ts";
+// 音色白名单与通知类型表的事实源在 src/shared/interface.ts（两端共享面）：客户端只消费，
+// 不再各写一份副本。该目录的模块必须零 import（或同目录相对），判据见
+// scripts/test/shared-leaf-imports.test.ts。
+import {
+  KIND_SEVERITY,
+  KIND_SWITCHES,
+  SOUND_IDS,
+  isBuiltinKind,
+  isSoundId,
+} from "../shared/interface.ts";
+import type { NotifySeverity, SoundId } from "../shared/interface.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
@@ -86,13 +97,10 @@ const ROUTES = {
   status: "/api/dsh-notifier/status",
   kinds: "/api/dsh-notifier/kinds",
 };
-/** 内置音色 id（与服务端 config.ts SOUND_IDS 同源复制——客户端不 import 宿主
- *  模块，两处由各自测试锁定；定稿口径 ding/bell/chime/pop）。 */
-const SOUND_IDS: readonly string[] = ["ding", "bell", "chime", "pop"];
 /** 声音设置是否处于「开」：true 与内置音色 id 都算开，false 与脏值算关。
  *  三态摘要、卡体提示、声音行开关三处共用这一条口径——各判一遍就会出现「卡片说有声、开关说没有」。 */
 function soundIsOn(value: any): boolean {
-  return value === true || (typeof value === "string" && SOUND_IDS.indexOf(value) !== -1);
+  return value === true || isSoundId(value);
 }
 const STYLE_ID = "dsh-notifier-style";
 // 每次样式契约变更后 bump（版本号单调递增，保证 ensureStyle 判定为新版本并重注入）
@@ -115,18 +123,16 @@ const EVENT_KEYS = [
   ["notifyTaskError", "evtTaskError"],
   ["notifyTurnEnd", "evtTurnEnd"],
 ];
-/** 事件开关键 → 通知 kind（单一事实源；免打扰豁免候选/「跟随已启用」由此派生，
- *  与服务端 EVENT_KEYS 对应的事件源 kind 一致：ask/question/done/subagent-done/
- *  error/turn-end）。 */
-const EVENT_KIND_MAP: Record<string, string> = {
-  notifyAsk: "ask",
-  notifyQuestion: "question",
-  notifyTaskDone: "done",
-  notifySubagentDone: "subagent-done",
-  notifyTaskError: "error",
-  notifyTurnEnd: "turn-end",
-};
-/** kind → 字典 key（未知 kind 回落 kind 本体显示，数据不翻译）。 */
+/** 事件开关键 → 通知 kind：由 shared 的 kind → 开关键表**反转**得到（单一事实源，
+ *  免打扰豁免候选/「跟随已启用」由此派生；收口前这里是一份两端各写的副本）。 */
+const EVENT_KIND_MAP: Record<string, string> = Object.fromEntries(
+  Object.entries(KIND_SWITCHES).map(function (entry): [string, string] {
+    return [entry[1], entry[0]];
+  }),
+);
+/** kind → 字典 key（未知 kind 回落 kind 本体显示，数据不翻译）。刻意留在客户端：
+ *  这是「kind → i18n 文案 key」，文案属客户端面，宿主端没有翻译。键集 = shared 的
+ *  BUILTIN_KINDS（含 test——自检通知没有事件开关，但历史行要显示它）。 */
 const KIND_KEYS: Record<string, string> = {
   ask: "kAsk",
   question: "kQuestion",
@@ -138,19 +144,15 @@ const KIND_KEYS: Record<string, string> = {
 };
 
 /**
- * kind → 展示强度（severity）css 修饰符（事件行/历史行色点）。
- * 与服务端 service.ts KIND_SEVERITY 同源复制（客户端不 import 宿主端模块——
- * 干净模块边界），两处由各自测试锁定；新增 kind 时同步维护。
+ * kind → 展示强度（severity）css 修饰符（事件行/历史行色点）。事实源在 src/shared/kinds.ts
+ * （两端共享面），与宿主端定稿读同一张表。
+ *
+ * 未知 kind（外部注册）回落 info：收口前是 `KIND_SEV[kind] || "info"`，而那张表的键集
+ * 恰好等于内置 kind 全集，故「是内置 kind 就查表、否则 info」与它是同一条判据。
  */
-const KIND_SEV: Record<string, string> = {
-  ask: "warning",
-  question: "info",
-  done: "success",
-  "subagent-done": "info",
-  error: "failure",
-  "turn-end": "info",
-  test: "info",
-};
+function severityOf(kind: string): NotifySeverity {
+  return isBuiltinKind(kind) ? KIND_SEVERITY[kind] : "info";
+}
 
 /**
  * 频道实例 → 路由 id（channelId 前缀单点化）。
@@ -1521,10 +1523,12 @@ function SettingsCard() {
     );
   }
 
-  /** 内置音色选项（4 音色；label 字典键）。 */
+  /** 内置音色选项（label 字典键）。刻意留在客户端而不搬进 shared：这是「音色 → UI 文案 key」，
+   *  文案属客户端面。类型锚在 shared 的 `SoundId` 上，键集因此与 SOUND_IDS 逐项对齐——
+   *  新增音色漏配文案是编译错误，而不是下拉框里渲染出 `t(undefined)`。 */
   // 常量表：每次渲染重建一份是原实现的形态，这里只把声明关键字收正（改成 const 不会改变
   // 取值时机——引用它的 soundRow 只在更深处的 JSX 构造期被调用）
-  const SOUND_OPTION_KEYS: Record<string, string> = {
+  const SOUND_OPTION_KEYS: Record<SoundId, string> = {
     ding: "toneDing",
     bell: "toneBell",
     chime: "toneChime",
@@ -1538,8 +1542,7 @@ function SettingsCard() {
   function soundRow(index: number, ch: any, channelLabel: string) {
     const soundVal = ch.sound;
     const soundOn = soundIsOn(soundVal);
-    const toneValue =
-      typeof soundVal === "string" && SOUND_IDS.indexOf(soundVal) !== -1 ? soundVal : "";
+    const toneValue = isSoundId(soundVal) ? soundVal : "";
     const toneOpts: any[] = [
       <option value="" key="sys">
         {t("chSoundFollow")}
@@ -2270,7 +2273,7 @@ function SettingsCard() {
     const key = kv[0],
       labelKey = kv[1];
     const kindId = EVENT_KIND_MAP[key];
-    const sev = KIND_SEV[kindId] || "info";
+    const sev = severityOf(kindId);
     eventChildren.push(
       <div className="dn-evt" key={"ev-" + key}>
         <div className="dn-evt-head">
@@ -2651,7 +2654,7 @@ function SettingsCard() {
               return n < 10 ? "0" + n : String(n);
             };
             const time = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
-            const sev = KIND_SEV[r.kind] || "info";
+            const sev = severityOf(r.kind);
             return (
               <li className="dn-set-historyItem" key={String(r.ts) + "-" + i}>
                 <span

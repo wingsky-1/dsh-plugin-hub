@@ -1,8 +1,12 @@
 /** dsh-notifier channels 域 —— 投递的输入输出形状（消息与结果是投递这件事的两端）。 */
 import type { ProducedReason } from "../../../shared/interface.ts";
+import type { NotifySeverity } from "../../../../shared/interface.ts";
 
-/** 展示强度（severity 仅展示；过滤语义归 kind）。 */
-export type NotifySeverity = "info" | "success" | "warning" | "failure";
+/**
+ * 展示强度（severity 仅展示；过滤语义归 kind）。事实源在 src/shared/kinds.ts（两端共享面）：
+ * 设置页历史行的色点与服务端定稿读的是同一个联合，此前两处各写一份。
+ */
+export type { NotifySeverity };
 
 /** 待投递消息：正文已渲染；无出口身份，`kind` / `ts` 是「这是什么、何时发生」而非收件人。 */
 export interface NotifyMessage {

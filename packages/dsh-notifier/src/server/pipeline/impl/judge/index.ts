@@ -3,20 +3,11 @@
  * 判据不实现为抛错：本块挂在活的调用链上。
  */
 import type { EffectiveConfig } from "../../deps.ts";
+import { KIND_SWITCHES } from "../../../../shared/interface.ts";
 import { isBuiltinKind } from "../service/kinds.ts";
 import type { BuiltinKind, NotifyKind } from "../service/kinds.ts";
 import type { NotifyRequest } from "../service/type.ts";
-import type { KindSwitchKey, SuppressReason, Verdict } from "./type.ts";
-
-/** 内置种类的开关；`test` 不在表里——它不对应任何宿主事件，也就没有开关。 */
-const KIND_SWITCHES: Record<Exclude<BuiltinKind, "test">, KindSwitchKey> = {
-  ask: "notifyAsk",
-  question: "notifyQuestion",
-  done: "notifyTaskDone",
-  "subagent-done": "notifySubagentDone",
-  error: "notifyTaskError",
-  "turn-end": "notifyTurnEnd",
-};
+import type { SuppressReason, Verdict } from "./type.ts";
 
 /** `"HH:MM"` → 当日分钟数；形状非法或越界返回 NaN。 */
 function parseClock(text: string): number {

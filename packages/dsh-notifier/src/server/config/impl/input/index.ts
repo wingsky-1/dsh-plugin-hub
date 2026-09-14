@@ -2,6 +2,7 @@
  * config 域：外部输入 → 合法设置。三个来源（磁盘配置文件、组合层 entry、HTTP patch）都**不受信**，这里是它们进入
  * 设置模型的唯一闸门。三道工序不可互换：归一化**永不失败**、校验**只审显式提交**（缺键不是错误）、净化**只留认识的键**。
  */
+import { isSoundId } from "../../../../shared/interface.ts";
 import { DEFAULT_CONFIG } from "../model/index.ts";
 import type {
   BarkChannelConfig,
@@ -13,7 +14,6 @@ import type {
   QuietHoursConfig,
   RawSettingValue,
   SettingsPatch,
-  SoundId,
   SoundSetting,
   StoredSettings,
   SystemChannelConfig,
@@ -25,12 +25,9 @@ import type { ValidationResult } from "./type.ts";
 
 // ---------------------------------------------------------------- 合法域
 
-/**
- * 内置音色白名单；顺序即设置页的展示顺序。
- * 导出是为了让「白名单 ⊆ 音色表」这条断言有第二个集合可比（音色表在同包的 `shared/interface.ts`；
- * 两边都改才算真的加了一个音色）。
- */
-export const SOUND_IDS: readonly SoundId[] = ["ding", "bell", "chime", "pop"];
+// 内置音色白名单的事实源在 src/shared/sounds.ts（两端共享面），本域只消费：
+// 写入口径与设置页的选项必须是同一份白名单，各写一份就会出现「页面选得到、宿主拒收」。
+// 「白名单 ⊆ 音色表」这条不变量由 test/unit/shared/sounds.test.ts 守着。
 
 /** 内置频道类型；顺序即卡片顺序。它们恒在场，是 `channels` 里唯一不可删除的项——身份由 `type` 唯一确定。 */
 const BUILTIN_TYPES: readonly BuiltinChannelType[] = ["browser", "system"];
@@ -416,10 +413,6 @@ function isRecord(raw: RawSettingValue): raw is Record<string, RawSettingValue> 
 /** 命中白名单则保留，其余（含缺键）回落。 */
 function isMember<T extends string>(raw: RawSettingValue, allowed: readonly T[]): raw is T {
   return typeof raw === "string" && allowed.some((item) => item === raw);
-}
-
-function isSoundId(raw: RawSettingValue): raw is SoundId {
-  return isMember(raw, SOUND_IDS);
 }
 
 /** 字符串数组：元素逐个看，非字符串即不算（与归一化侧「剔除非字符串项」是同一口径的两面）。 */

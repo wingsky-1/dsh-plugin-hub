@@ -50,12 +50,12 @@
     },
     "dsh-notifier": {
       "modules": 10,
-      "scannedSrcFiles": 99,
-      "allSrcTsFiles": 116,
+      "scannedSrcFiles": 101,
+      "allSrcTsFiles": 118,
       "interfaceFacades": 10,
-      "leafValueEdges": 7,
-      "fileValueEdges": 103,
-      "crossModuleRefs": 89,
+      "leafValueEdges": 9,
+      "fileValueEdges": 108,
+      "crossModuleRefs": 96,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],

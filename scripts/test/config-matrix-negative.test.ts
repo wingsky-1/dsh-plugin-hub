@@ -31,6 +31,7 @@ import { runConfigMatrix } from "../lib/config-matrix-gate.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const NOTIFIER_CONFIG_DIR = "packages/dsh-notifier/src/server/config";
+const NOTIFIER_SHARED_DIR = "packages/dsh-notifier/src/shared";
 
 /** mkdtemp 副本仓库：复制矩阵的输入面（lan-proxy 平铺 config.ts；notifier 整个配置域）
  *  加上声明文件与 package.json。 */
@@ -47,8 +48,11 @@ function fakeRepo() {
       join(ROOT, "packages/dsh-lan-proxy/src/client/index.ts"),
       join(root, "packages/dsh-lan-proxy/src/client/index.ts"),
     );
-    // 配置域整棵复制：运行时 require 要走完整 import 链（impl/input → ../model）。
+    // 配置域整棵复制：运行时 require 要走完整 import 链（impl/input → ../model → ../../../../shared）。
     cpSync(join(ROOT, NOTIFIER_CONFIG_DIR), join(root, NOTIFIER_CONFIG_DIR), { recursive: true });
+    // 两端共享面（src/shared）也是这条链的终点：音色白名单与通知类型表收口后只剩这一份事实源，
+    // 缺了它 require 直接失败，正对照会红。
+    cpSync(join(ROOT, NOTIFIER_SHARED_DIR), join(root, NOTIFIER_SHARED_DIR), { recursive: true });
     // type: module 决定 .ts 按 ESM 解析；缺了它，require 会按 CJS 处理含 export 的源码。
     copyLf(
       join(ROOT, "packages/dsh-notifier/package.json"),
