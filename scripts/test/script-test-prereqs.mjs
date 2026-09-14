@@ -11,5 +11,9 @@
  *
  * 不变式：`service-contract-wiring.test.ts` 的 SUITES 必须被本清单覆盖——该用例自带
  * 断言，新增编译面套件却忘记登记时会在 test:scripts 内判红（fail-closed）。
+ *
+ * 成员由「是否被某个 SUITES 接线」决定，不由「是否真的读 lib 产物」决定：
+ * dsh-worktree-sidebar 的 test/tsconfig.json 只引 src、不需要产物，仍必须登记——断言
+ * 上看不出这个差异，漏登就是红。多建一个包是这里刻意接受的成本。
  */
-export const PREREQ_PACKAGES = ["dsh-notifier", "dsh-mcp-manager"];
+export const PREREQ_PACKAGES = ["dsh-notifier", "dsh-mcp-manager", "dsh-worktree-sidebar"];

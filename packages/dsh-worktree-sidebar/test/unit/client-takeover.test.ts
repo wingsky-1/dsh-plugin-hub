@@ -13,6 +13,8 @@
 import { describe, expect, it } from "vitest";
 import type {
   ClientSlotsPort,
+  ObservablePort,
+  SessionsSnapshotLike,
   StoredEntryLike,
   TabDefinitionLike,
   TabsPort,
@@ -48,6 +50,15 @@ const BODY: StoredEntryLike = {
   store: { kind: "store" },
 };
 const TITLE: StoredEntryLike = { component: { name: "FilesTitle" }, options: { key: OFFICIAL_ID } };
+
+/**
+ * `TakeoverDeps.sourceFor` 的假件：本文件的注册/释放用例不经过 inject，读不到会话快照，
+ * 递一个引用稳定的空源即可（它不承载任何判据）。
+ */
+const STABLE_SOURCE: ObservablePort<SessionsSnapshotLike> = {
+  getSnapshot: () => ({}),
+  subscribe: () => () => undefined,
+};
 
 function harness(options: { bodyFails?: boolean; kindFails?: boolean } = {}) {
   const regs: Reg[] = [];
@@ -140,6 +151,7 @@ function harness(options: { bodyFails?: boolean; kindFails?: boolean } = {}) {
         slots,
         tabs,
         logger: { warn: (message: string) => warns.push(message) },
+        sourceFor: () => STABLE_SOURCE,
       }),
   };
 }
@@ -173,6 +185,7 @@ describe("抓不到官方正文时零注册", () => {
         },
       },
       logger: { warn: () => undefined },
+      sourceFor: () => STABLE_SOURCE,
     });
     expect(registered).toBe(0);
   });
