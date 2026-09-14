@@ -1,16 +1,25 @@
 {
-  // 入面口径（#776 批 3「开面」）：scripts/ 非 test 的全树 .ts/.mts/.cts（build/ gate/ lib/
-  // release/）入面。
-  // 用 glob 而非逐项枚举：枚举清单在新增脚本时会静默漏面，glob 让「新增即入面」成为
-  // 默认，漏面只能由显式 exclude 造成，而任何 exclude 都被
-  // scripts/test/verify-docs-typecheck.test.ts 的「磁盘集合 - 程序集合」对账断言逮住。
-  // scripts/test/** 仍排除：本批不摘 test 侧 @ts-nocheck，纳入会引入其类型错误（后续独立批次）。
+  // 入面口径（#776 批 4「test 面入面」）：scripts/ 下**全部** .ts/.mts/.cts（build/ ci/ gate/
+  // lib/ release/ test/）都在编译面内，无例外——守卫 scripts/test/verify-docs-typecheck.test.ts
+  // 的「磁盘集合 - 程序集合 = 空集」断言把「任何文件被静默移出覆盖」变成红。
+  // 用 glob 而非逐项枚举：枚举清单在新增脚本时会静默漏面，glob 让「新增即入面」成为默认，
+  // 漏面只能由显式 exclude 造成，而任何 exclude 都被上面那条对账断言逮住。
+  //
+  // allowJs（批 4 新增）：scripts/ 的实现主体是 37 个 .mjs，此前没有任何 pragma-free 的 .ts
+  // 导入过它们（唯二导入方 gate/pack-check.ts、build/collect-licenses.ts 都带 @ts-nocheck），
+  // 故「.mjs 无类型声明」这个缺口一直没在编译面上暴露（TS7016）。开 allowJs 后被 import 的
+  // .mjs 进入程序集，消费方拿到的是**从实现推断**出来的类型——单一事实源，改实现即改类型，
+  // 不需要另写一份声明文件。
+  // **不设 checkJs**：那会把 .mjs 本体（含全部门禁）的错误一起拉进来，超出本批范围。
+  // 口径边界如实记：本面做的是「.mjs 供类型推断」，不是「.mjs 已被类型检查」——.mjs 本体的
+  // 类型检查（checkJs）是 #776 的未决独立项；本面的覆盖范围仍是 .ts/.mts/.cts（守卫的
+  // isTypeScript 只认这三个后缀）。
   //
   // 为什么必须有程序覆盖断言：tsc 对「include/exclude 漏掉某个文件」静默绿（只有 include
   // 全空才配置级报错），故在面文件靠测试里的程序集对账兜底，而非靠 include 文本正则。
-  // 守卫两条判据（scripts/test/verify-docs-typecheck.test.ts）：面外文件必须全部落在
-  // scripts/test/ 下（把非 test 文件或目录写进 exclude 即红）；磁盘枚举非空
-  // （防枚举失效时面外前缀判据恒真；空程序集由守卫的 program.size 断言拦）。
+  // 守卫两条判据（scripts/test/verify-docs-typecheck.test.ts）：面外集合必须为空（任何
+  // scripts/ 下的 .ts/.mts/.cts 被 exclude 掉即红）；磁盘枚举非空（防枚举失效时面外判据恒真；
+  // 空程序集由守卫的 program.size 断言拦）。
   //
   // #474 R2（保留）：显式覆写 module 语义——scripts/ 无 package.json，module 语义依赖根
   // type:module 向上回溯（运气依赖，未来 scripts/ 放 package.json 或 base 改动即整面翻红），
@@ -24,11 +33,12 @@
     "moduleResolution": "nodenext",
     "types": ["node"],
     "noEmit": true,
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "allowJs": true
   },
   "include": ["**/*.ts", "**/*.mts", "**/*.cts"],
   // 防御性列出：实测 **/*.ts 本身也不下探这三类目录（显式列出与不列出时程序集逐字节
   // 相同）；显式 exclude 真正替换掉的只有 outDir 的内置排除，而本面 noEmit 且未配
   // outDir，故这三项只是对未来同名目录的兜底声明。
-  "exclude": ["test/**", "node_modules/**", "bower_components/**", "jspm_packages/**"]
+  "exclude": ["node_modules/**", "bower_components/**", "jspm_packages/**"]
 }
