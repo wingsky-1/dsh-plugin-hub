@@ -51,7 +51,6 @@ jobs:
       # 工单；「检查根本没做成」（unknown）由本 job **最末**的 verdict 步骤判红——放最末才不会
       # 按 GHA 语义连坐吞掉下面的建单留痕（#765 G1 形态）。
       - name: Baseline staleness（基线陈旧检查；阈值与判定见 scripts/release/baseline-staleness.mjs）
-        id: baseline-staleness
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
