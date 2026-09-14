@@ -1,5 +1,5 @@
 /**
- * dsh-mcp-manager — workspace/scope.ts：scope 常量与归一化（单一事实源）。
+ * dsh-mcp-manager — workspace/impl/scope/index.ts：scope 常量与归一化（单一事实源）。
  *
  * 历史：scope 字符串 "global"/"project" 曾在宿主/监督器/路由硬编码 25+ 处，
  * 新增 scope 类型需多处协调。独立成模块以避免 index.js ↔ supervisor/routes

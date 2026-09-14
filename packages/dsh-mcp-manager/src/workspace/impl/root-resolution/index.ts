@@ -1,5 +1,5 @@
 /**
- * dsh-mcp-manager — workspace/root-resolution.ts：项目根发现与执行路由解析。
+ * dsh-mcp-manager — workspace/impl/root-resolution/index.ts：项目根发现与执行路由解析。
  *
  * 阶段 4 自 src/manager.ts（findProjectRoot/normalizedProjectRoot 方法）与
  * src/apply-runtime.ts（makeResolveRoot）迁入工作空间路由域，纯函数化
@@ -9,9 +9,9 @@
 
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { dshHome } from "../../../../shared/dsh-home.js";
-import type { McpManager } from "../connection/interface.ts";
-import { MIDDLEWARE_GLOBAL_ROOT } from "./constants.ts";
+import { dshHome } from "../../../../../../shared/dsh-home.js";
+import type { McpManager } from "../../../connection/interface.ts";
+import { MIDDLEWARE_GLOBAL_ROOT } from "../constants.ts";
 
 /** DSH 全局家目录（shared/dsh-home.js 语义：DSH_HOME 非空白原样采用、空白
  *  视同未设置回落 ~/.dsh；#517 收敛）。resolve 为本处 .dsh 标记排除的对比
