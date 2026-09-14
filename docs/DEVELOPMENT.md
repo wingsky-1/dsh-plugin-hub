@@ -46,10 +46,12 @@ pnpm typecheck    # 全仓类型检查
 > 不再有独立判分步骤；PR 的 `gate:full` 标签与 `observe.yml` 夜间班次共用这一执行点。
 >
 > **client 面暂排除在分母外**（`coverage.config.json` 里 `kind: pending-project` 的条目，
-> 带 `reviewBy` 与 `exitCriteria`，会进 `collect-exemptions` 的到期台账）：其直连 src 的测试
-> （happy-dom project）尚未落地，现有 `test/client/**` 是读 lib 产物的契约测试。计入分母会让
-> 这批恒 0% 的文件（规模见 `coverage.config.json` 的 `**/client/**` 条目）把全局值稀释约 22pp、阈值失去约束力，且 happy-dom project 落地时分子跳升、
-> 必须二次基线化。**待该 project 建立时移除排除项并一次性重新基线化。**
+> 带 `reviewBy` 与 `exitCriteria`，会进 `collect-exemptions` 的到期台账）：直连 src 的判据目前
+> 只覆盖 DOM 面模块（`test/client-dom/**` 的 happy-dom 层，见下）与客户端纯逻辑面
+> （`test/client-unit/**`），`index.tsx` 一类需要 react 渲染的面仍无判据，现有 `test/client/**`
+> 是读 lib 产物的契约测试。计入分母会让未覆盖部分（规模见 `coverage.config.json` 里对应的
+> `pending-project` 条目）把全局值稀释到约 60%、阈值失去约束力，且扩面时分子跳升、必须二次
+> 基线化。**待 client 源码整体有直连 src 的判据时移除排除项并一次性重新基线化。**
 >
 > **`pnpm crap` 现状（#722 阶段五已重建为 src 口径）**：圈复杂度取 ESLint 内置
 > `complexity` 规则，覆盖率取同一份 src 口径产物（`coverage/coverage-final.json`），
@@ -292,8 +294,9 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   `node scripts/gate/aggregate.ts` 重新生成聚合 patch。
 - **测试**：`pnpm test` 直跑（包内实现为 `node ../../scripts/test/run-vitest.mjs --min <N>`）。
   运行器由 vitest 承载：根 `vitest.config.ts` 从 `scripts/data/mutation-topology.json` 的
-  `$testLayers.layers` 派生四个 project（`test/unit` → `unit`、
-  `test/integration` → `integration`、`test/e2e` → `e2e`、`test/client` → `contract`；
+  `$testLayers.layers` 派生五个 project（`test/unit` → `unit`、
+  `test/integration` → `integration`、`test/e2e` → `e2e`、`test/client` → `contract`、
+  `test/client-dom` → `client-dom`（happy-dom 环境，直连 src 的 DOM 单测）；
   层 glob 与 `--min` 口径因此同源，不再三处声明），
   每个测试文件独立环境（per-file 隔离），包级调用按 cwd 自动收窄到本包；
   乱序验证用 `--sequence.shuffle` 透传。
