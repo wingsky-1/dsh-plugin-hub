@@ -1719,9 +1719,11 @@ test("#718 S1.1/S1.4/S1.5: observe 全量班三段式矩阵（plan / quality+sha
   const stratIdx = OBSERVE.indexOf("    strategy:", shardsStart);
   assert.ok(stratIdx > shardsStart, "observe.yml mutation-shards 必须声明 strategy");
   const stratBlock = OBSERVE.slice(stratIdx, OBSERVE.indexOf("\n    runs-on:", stratIdx));
+  // 锚定「行首缩进 + 键名 + 值」，而不是 /max-parallel:\s*8\s*$/m：后者把块内任何以
+  // `max-parallel: 8` 结尾的注释行也算满足（真值仍是 5 也会假绿，复核实测 exit 0）。
   assert.ok(
-    /max-parallel:\s*8\s*$/m.test(stratBlock),
-    "observe.yml 矩阵必须声明 max-parallel: 8（#718 S1.1/P3；全量形态 8 档已饱和于最长段 trend-aggregate 25.4 min，S0.3 实测账户额度上界 20，10 档零收益只多占额度）",
+    /^[ \t]*max-parallel:[ \t]*8[ \t]*$/m.test(stratBlock),
+    "observe.yml 矩阵必须声明 max-parallel: 8（#718 S1.1/P3；依据是账户并发余量 + 与 ci.yml 同值限流，不是「8 档已饱和」）",
   );
   assert.ok(
     /fail-fast:\s*false\s*$/m.test(stratBlock),
@@ -1783,8 +1785,9 @@ test("#718 P3: 两班变异矩阵 max-parallel 同值限流（ci.yml / observe.y
     // 与 observe 侧同款的行锚定局部切片（不用跨行正则）：strategy 块内含解释性注释，
     // 注释一变不应假红。
     const stratBlock = text.slice(stratIdx, text.indexOf("\n    runs-on:", stratIdx));
+    // 同款锚定：行首缩进 + 键名 + 值，行内不得再有其它内容（注释行、列表项都匹配不上）。
     assert.ok(
-      /max-parallel:\s*8\s*$/m.test(stratBlock),
+      /^[ \t]*max-parallel:[ \t]*8[ \t]*$/m.test(stratBlock),
       `${file} 的 ${jobId} 矩阵必须声明 max-parallel: 8（与另一班同值限流——#718 P3：两处共享同一账户并发额度，分叉即失去依据）`,
     );
   }
