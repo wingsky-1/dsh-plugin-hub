@@ -12,6 +12,12 @@
  * 与「恰好同时有 20 个 job 就绪」。额度饱和的特征是峰值处**长时间维持**且新增只会发生在
  * 有 job 结束之后——脚本按事件序列打印该形态，供人工判读。
  *
+ * 为什么必须按 conclusion 而非时间戳剔除被取消的 run：取消发生在**排队阶段**时，这些 job
+ * 从未真正执行，却和正常执行的 job 一样带有 started_at / completed_at——它们覆盖的是「等待被
+ * 调度」的窗口，与真实占用额度的窗口不可区分。把这些窗口叠加进事件序列会把排队深度算成运行
+ * 并发，峰值因此虚高（复核实测：同一 run 裸算 max=35，剔除后 11）。时间戳上没有任何字段能区分
+ * 这两种窗口，所以判据只能是 conclusion === "cancelled"。
+ *
  * 定位：维护者/本地工具，需 gh 与网络，**不进 CI**（进 CI 属 `.github/` 红线段）。
  *
  * 用法：
@@ -47,10 +53,15 @@ function ghJson(args) {
  *   1. 峰值在多个相互独立的 run 上完全一致；
  *   2. 峰值维持一段时间（不是瞬时尖峰）；
  *   3. 峰值之后运行数**从未超过**峰值——新 job 只能等旧 job 让位。
+ *
+ * @param {Array<{ name?: string, conclusion?: string | null, started_at?: string | null, completed_at?: string | null }>} jobs
+ *   `gh api .../jobs` 的原始条目子集；缺时间戳或被取消的条目不参与计数。
+ * @returns {{ peak: number, peakAt: number | null, peakUntil: number | null, countedJobs: number, maxAfterPeak: number, heldSeconds: number }}
  */
 export function peakConcurrency(jobs) {
   const events = [];
   for (const j of jobs) {
+    if (j.conclusion === "cancelled") continue; // 被取消的 run 其 job 也带起止时间，见文件头
     if (!j.started_at || !j.completed_at) continue;
     const s = Date.parse(j.started_at);
     const e = Date.parse(j.completed_at);
