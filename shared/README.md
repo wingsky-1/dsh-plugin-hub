@@ -33,7 +33,7 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
   `pnpm typecheck`（shared 双写 d.ts 与消费方类型一致性）。
 - **js + d.ts 双写**（tsc rootDir 硬约束）：shared 实现一律 `.js` + `.d.ts`（不可 TS 化），
   类型经 d.ts 解析、实现经 esbuild 内联；client 侧同理（`shared/client/`）。
-- 新增 shared 模块须满足下方准入规则；废弃走 DEPRECATED 两步走。
+- 新增 shared 模块须满足下方准入规则；退役按规则 7 一次做完（迁消费方 + 删模块与声明）。
 - **发布面**：`.d.ts` 声明经 bundle-host **d.ts X1**（2a 引用改写 + 2b 副本随包）随每个
   消费包发布，pack:check 双向断言（查缺 + 查多 retired 残留）兜底——机制说明见
   [DEVELOPMENT.md d.ts X1 小节](../docs/DEVELOPMENT.md#user-content-dts-x1)，此处不重复。
@@ -42,8 +42,8 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
 
 1. **≥2 稳定消费者**：至少两个插件包实际使用；单一消费者留在包内，不进 shared。
    由 `scripts/gate/verify-shared-fanin.mjs` 按生产 src 口径判红（类型面模块单列，
-   单消费者合规）。退役走 DEPRECATED 两步走时，模块头标注 `DEPRECATED` 可退出该判据，
-   进入观察期——观察期一过就应连同消费方一起移除，不得长期滞留。
+   单消费者合规）。**退役不豁免该下限**（维护者裁决 #792 D-A）：模块头标注 DEPRECATED
+   不改变判据，退役中的模块照样按同一下限判——先把消费方迁走，再连同模块与声明一起移除。
 2. **无包级常量依赖**：核心逻辑不得闭包引用包级常量（如 `DEFAULT_Z_INDEX_BASE`
    10 vs 40）；包差异经参数化（`panelZIndexFor(base, dflt)`）或薄 facade 注入。
 3. **跨 apply 状态语义明确**（允许模块级可变状态的唯一形态——bundle 私有活绑定，
@@ -55,7 +55,10 @@ DSH 插件家族共用的模块（构建期 esbuild 内联进各插件包，不�
 5. **登记行为契约**：本表登记行为契约（如「未装配回落 key 本体」），
    smoke/单测锁定行为；消费方不在本表登记（由 `verify-shared-fanin` 实时派生）。
 6. **独立测试**：新增模块须带独立单测（如 `scripts/test/shared-client-i18n.test.ts`）。
-7. **显式废弃两步走**：先在模块头标注 DEPRECATED 并观察期保留，再移除并迁移全部消费方。
+7. **退役一次做完（无观察期豁免）**：不存在「标注 DEPRECATED 后就地保留一段时间」这条口子
+   ——观察期不改变扇入下限（判据同规则 1），因此正确顺序是**先迁移全部消费方**、**再连同
+   `.js` 与 `.d.ts` 一起移除**，两步落在同一个改动里；不允许标注后长期留在共享层。
+   与规则 1 的判据冲突时以判据为准：`pnpm contract` 的扇入段不看 DEPRECATED。
 
 > ⚠️ 活绑定语义依赖 **esbuild 同 bundle 内联**（每 bundle 独立副本、import 侧即时可见
 > 重绑）。若未来客户端构建改为共享 chunk / 跨包复用产物，须重新验证该假设

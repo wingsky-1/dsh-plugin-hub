@@ -8,7 +8,7 @@
  * 三层断言，缺一不可：
  *   1. 纯函数口径——说明符提取（静态 / export-from / 动态）、注释里的假引用不算、
  *      相对路径必须解析进仓库根 shared/ 才算；
- *   2. fixture 正反例——值面 2 包绿 / 1 包红 / 0 包红，类型面 1 包绿，退役观察期豁免，
+ *   2. fixture 正反例——值面 2 包绿 / 1 包红 / 0 包红，类型面 1 包绿，退役不豁免下限，
  *      悬空引用判红，test/ 引用不计入，端内门面转出计入，shared/ 内部依赖不传递；
  *   3. 真实仓库锚——PR2 修正过的四行登记偏差与 frontmatter 移除必须以派生结果为准，
  *      并锁住登记链（scripts/README.md / gate-scope-registry.json / contract-check.ts 接入）。
@@ -184,7 +184,7 @@ test("反例：类型面模块 0 消费包 → 判红；单列口径的下限是
   }
 });
 
-test("退役观察期：模块头标注 DEPRECATED 的单消费者模块不判红，但报告单列 SKIP", () => {
+test("退役不豁免下限：模块头标 DEPRECATED 但只有 1 个消费包 → 仍判红（无豁免口）", () => {
   const { dir, cleanup } = fixtureDir();
   try {
     write(
@@ -194,24 +194,14 @@ test("退役观察期：模块头标注 DEPRECATED 的单消费者模块不判�
     );
     useShared(dir, "pkg-a", "../../../shared/retiring.js");
     const result = evaluateFanin(dir);
-    assert.equal(rowOf(result, "retiring").retired, true);
-    assert.equal(rowOf(result, "retiring").failed, false);
+    assert.equal(rowOf(result, "retiring").failed, true);
+    assert.deepEqual(rowOf(result, "retiring").consumers, ["pkg-a"]);
+    const report = renderReport(result);
     assert.ok(
-      renderReport(result).some((l) => l.startsWith("SKIP") && l.includes("退役观察期")),
-      "退役观察期必须在报告里可见",
+      report.some((l) => l.startsWith("FAIL") && l.includes("retiring.js")),
+      "标 DEPRECATED 不得让模块退出扇入下限（维护者裁决 #792 D-A：不要豁免机制）",
     );
-  } finally {
-    cleanup();
-  }
-});
-
-test("退役标记只认模块头：正文里提到 DEPRECATED 不放行", () => {
-  const { dir, cleanup } = fixtureDir();
-  try {
-    const body = "export const x = 1;\n".repeat(60) + "// 本模块取代了标 DEPRECATED 的旧实现\n";
-    write(dir, "shared/talky.js", body);
-    useShared(dir, "pkg-a", "../../../shared/talky.js");
-    assert.equal(rowOf(evaluateFanin(dir), "talky").retired, false);
+    assert.ok(!report.some((l) => l.startsWith("SKIP")), "报告里不得再有退役观察期豁免通道");
   } finally {
     cleanup();
   }

@@ -24,8 +24,9 @@
  * 判据：
  *   - 值面模块（有同基名 .js）：扇入 ≥ 2 包。
  *   - 类型面模块（只有 .d.ts，无实现可复用）：单列口径，≥ 1 包即合规。
- *   - 模块头标注 DEPRECATED 的走退役观察期（准入规则 7 两步走的第一步），退出上述下限，
- *     但在报告里单列——观察期不是免死金牌，它必须一直可见。
+ *   - **退役不豁免下限**（维护者裁决 D-A）：模块头标注 DEPRECATED 不改变判据——退役模块与
+ *     普通模块同一下限，不满足即红。退役的正确做法是先把消费方迁走、再连同声明一起移除，
+ *     不允许「标个 DEPRECATED 就长期留在共享层」这种形态存在。
  *   - shared/ 下不存在的模块被 src 引用（悬空引用）判红：那是构建期就会炸的引用。
  *
  * 用法：node scripts/gate/verify-shared-fanin.mjs [--root <dir>]
@@ -41,10 +42,6 @@ const DEFAULT_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 /** 生产源码扩展名（.d.ts 是声明、不是消费者代码）。 */
 const SRC_FILE_RE = /\.(?:ts|tsx|mts|cts)$/;
-/** 退役标记只认模块头：正文里提到 DEPRECATED（例如说明它取代了什么）不该改变判据。 */
-const HEADER_LINES = 40;
-const HEADER_MARKER = /DEPRECATED/;
-
 /** 值面 / 类型面各自的扇入下限（准入规则 1）。 */
 const FLOOR = { value: 2, type: 1 };
 
@@ -65,15 +62,6 @@ function modulePresent(sharedRoot, base) {
 function moduleBase(rel) {
   if (rel.endsWith(".d.ts")) return rel.slice(0, -".d.ts".length);
   return rel.replace(/\.(?:js|mjs|cjs|ts|tsx|mts|cts)$/, "");
-}
-
-/** 模块头是否标注 DEPRECATED（退役观察期，准入规则 7）。 */
-function isRetired(sharedRoot, base, hasJs) {
-  const file = join(sharedRoot, hasJs ? `${base}.js` : `${base}.d.ts`);
-  if (!existsSync(file) || !statSync(file).isFile()) return false;
-  return HEADER_MARKER.test(
-    readFileSync(file, "utf8").split("\n").slice(0, HEADER_LINES).join("\n"),
-  );
 }
 
 /** 提取一段源码里的模块说明符（静态 import / export-from / 动态 import）。 */
@@ -108,7 +96,6 @@ export function listSharedModules(root) {
       base: rec.base,
       kind: rec.hasJs ? "value" : "type",
       file: rec.hasJs ? `${rec.base}.js` : `${rec.base}.d.ts`,
-      retired: isRetired(sharedRoot, rec.base, rec.hasJs),
     }))
     .sort((a, b) => a.base.localeCompare(b.base));
 }
@@ -163,7 +150,7 @@ export function evaluateFanin(root) {
       ...m,
       consumers: consumerPackages,
       floor,
-      failed: !m.retired && consumerPackages.length < floor,
+      failed: consumerPackages.length < floor,
     };
   });
   return { rows, dangling };
@@ -176,15 +163,14 @@ export function renderReport(result) {
   for (const row of result.rows) {
     const face = row.kind === "value" ? "值面" : "类型面";
     const pkgs = row.consumers.length === 0 ? "（无）" : row.consumers.join(", ");
-    const mark = row.retired ? "SKIP" : row.failed ? "FAIL" : "PASS";
-    const detail = row.retired
-      ? `退役观察期（模块头 DEPRECATED，下限 ${row.floor} 包暂不适用）`
-      : `${row.consumers.length} 包（下限 ${row.floor}）`;
-    lines.push(`${mark} ${face} ${row.file} | ${detail}：${pkgs}`);
+    const mark = row.failed ? "FAIL" : "PASS";
+    lines.push(
+      `${mark} ${face} ${row.file} | ${row.consumers.length} 包（下限 ${row.floor}）：${pkgs}`,
+    );
     if (row.failed) {
       lines.push(
-        `     单一消费者/无消费者的共享模块应留在消费包内（shared/README.md 准入规则 1）——` +
-          `确需退役时在模块头标注 DEPRECATED 走两步走，或连同消费方一起移除`,
+        `     单一消费者/无消费者的共享模块应留在消费包内（shared/README.md 准入规则 1）；` +
+          `退役不豁免下限——须先迁移全部消费方，再连同模块与声明一起移除`,
       );
     }
   }
@@ -207,9 +193,8 @@ function main(argv) {
   const failed = result.rows.filter((r) => r.failed).length + result.dangling.length;
   const value = result.rows.filter((r) => r.kind === "value").length;
   const type = result.rows.filter((r) => r.kind === "type").length;
-  const retired = result.rows.filter((r) => r.retired).length;
   console.log(
-    `verify-shared-fanin: 值面 ${value} 个（下限 ${FLOOR.value} 包）、类型面 ${type} 个（下限 ${FLOOR.type} 包）、退役观察期 ${retired} 个`,
+    `verify-shared-fanin: 值面 ${value} 个（下限 ${FLOOR.value} 包）、类型面 ${type} 个（下限 ${FLOOR.type} 包）`,
   );
   if (failed > 0) {
     console.log(`verify-shared-fanin: FAIL（${failed} 项）`);
