@@ -17,7 +17,6 @@ import {
 import {
   fullServerName,
   parseFullServerName,
-  bareServerName,
   MIDDLEWARE_GLOBAL_ROOT,
   normalizeToolName,
 } from "../workspace/interface.ts";

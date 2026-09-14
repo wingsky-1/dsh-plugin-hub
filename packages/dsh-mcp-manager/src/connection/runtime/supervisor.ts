@@ -11,7 +11,7 @@
 import { createHash } from "node:crypto";
 import { createTransport } from "./transport.ts";
 import type { StdioTransport, HttpTransport } from "./transport.ts";
-import { SCOPE_GLOBAL, SCOPE_PROJECT } from "../../workspace/interface.ts";
+import { SCOPE_GLOBAL } from "../../workspace/interface.ts";
 import { MCPClient } from "./protocol.ts";
 import {
   defaultCallResultFallbackText,
@@ -19,7 +19,7 @@ import {
   createRedactor,
   msgOf,
 } from "../../pipeline/interface.ts";
-import { RECONNECT_DEFAULTS, resolveReconnect, type ReconnectPolicy } from "../interface.ts";
+import { resolveReconnect, type ReconnectPolicy } from "./reconnect.ts";
 import type { McpStatsCollector } from "../../stats/interface.ts";
 import type { ServerConfig, ManagerLite } from "../../types/interface.ts";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
