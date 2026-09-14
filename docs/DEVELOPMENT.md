@@ -82,6 +82,13 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
   丢掉的段，而并集入档后该职责消失；基线新鲜度由「PR 合入即 overlay
   （baseline-overlay.yml，秒级复用该 PR CI 产出的 incremental 产物，不重跑变异）」+
   「夜间并集入档」两条路径承担。
+  **基线陈旧可被观测（#718 验收判据）**：health-report.yml 周报（独立班次，监控者与被监控者
+  分离）在数据采集前读基线分支**最后提交时间**这一事实，超 48 h（连续两夜未入档）即输出
+  `::error::` 注解并按稳定标题幂等建/追工单，未超阈则在周报正文留一行基线龄；判定与阈值见
+  `scripts/release/baseline-staleness.mjs`。**发现与失败分开判**：stale（检查做成了）由工单承接、
+  run 保持绿；unknown（gh api 失败 / 分支被改名或删除 / 响应缺字段，含状态文件缺失）由本 job **最末**
+  的 verdict 步骤判红——「环境失败不得静默降级」，放最末才不会连坐吞掉周报与陈旧工单两份留痕。
+  **刻意不放进 observe**：observe 正是更新基线的一方，它整体没跑时那里的新鲜度检查会一起沉默。
 - **PR 门禁分层**（ci.yml，#722）：默认走**增量**，只有给 PR 打 `gate:full` 标签才跑全量链路
   （`pull_request.types` 含 `labeled`/`unlabeled`，打标签即触发重跑）。策略由 `changes`
   job 一处计算为 `fullGate` 输出，判定表与三个全量 job 的 `if` 共用同源布尔。
