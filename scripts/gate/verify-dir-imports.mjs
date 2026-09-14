@@ -47,6 +47,19 @@
  *     合法上升并由 `--write-baseline` 更新；质量型一律不得被自动放宽——写入只清理
  *     已消失的证据，新增证据必须显式接受并留痕（理由与条目入库）。
  *
+ * #767 B0 切片 3a（两条今天没有执法点的宪法判据）：
+ *   - **I2① 域间值边**：新增质量证据 `crossDomainValueEdges`——叶子模块粒度下**目标不是
+ *     共享层**（`shared/**`、`server/shared/**`、仓库 `shared/`）的值边集合。它与
+ *     `leafValueEdges` 不是同一条判据：后者含指向共享层的边、是**结构型计数**（新增
+ *     文件/目录时合法上升），前者是**质量型证据**（新增判红、只许缩小、终态为空）。
+ *     缺了它，I2① 只剩 `--graph` 的打印，B2 的「域间值边 = 0」是无执法点的空头验收。
+ *   - **I2④ 值引组合根**：新增质量证据 `rootIndexImports`——`fileValueEdges` 面上目标为
+ *     src 根 `index.ts` 的值边（域取组合根的常量即成文件级值环；`import type` 编译期
+ *     擦除，不入此面）。该形态此前只在不巧构成环时才可见。
+ *   - 两类都是**新的证据类**：`--write-baseline` 对「基线里没有这个键」的类按首次登记
+ *     写入存量并逐类提示（mcp 的 I2① 存量就是 33 条，逐条要求开豁免 = 把存量登记误当
+ *     放宽通道）；类**内**新增证据仍一律不写入、判红、放宽须登记台账。
+ *
  * 豁免：
  *   - `src/client/`（index.ts 为 build-client 契约锚点）：from 侧完全豁免；
  *     target 侧同样不入模块表与依赖图。
@@ -511,6 +524,24 @@ function rel(base, p) {
 }
 
 /**
+ * I2① 的例外面：目标模块是不是**共享层**——包内 `server/shared/**`、跨端 `src/shared/**`
+ * （模块 id 相对 `src/`，故形如 `shared` / `shared/…`）。仓库根 `shared/**` 落在包 src
+ * 之外、根本不进叶子模块图，列在这里只为把 I2 的口径写全，不是可达分支。
+ *
+ * 为什么是「白名单 + 集合判据」而不是「值边 = 0」：指向共享层的值边是 I2 明确**允许**的
+ * 出口（域消费共享实现），拿 `leafValueEdges` 当 I2① 的执法点会把合规写法判成违规
+ * （notifier 的 7 条值边全指向 `shared/`，按「值边 = 0」读就是全红）。
+ */
+function isSharedLayerModule(id) {
+  return (
+    id === "shared" ||
+    id.startsWith("shared/") ||
+    id === "server/shared" ||
+    id.startsWith("server/shared/")
+  );
+}
+
+/**
  * 源码全覆盖断言的未覆盖清单：src 下每个文件必须落在 ∪mutate ∪ ∪excludes 内。
  *
  * 返回 `null` 表示「断言不适用」（包未登记变异面，含 $noMutationPackages 成员），
@@ -647,6 +678,36 @@ function analyzePackage(pkgName, topology) {
   const leafCycles = findCycles(leafValueEdges);
   const fileCycles = findCycles(fileValueEdges);
 
+  // I2①（#767 B0 切片 3a）：**目标非共享层**的叶子模块值边——「域与域之间不得发生运行时
+  // 直接值引用」。它与 leafValueEdges 的区别是双重的：①剔除指向共享层的边（那是 I2 允许
+  // 的出口，见 isSharedLayerModule）；②它是质量型**证据集合**（新增判红、只许缩小、终态
+  // 为空），而 leafValueEdges 是结构型计数（新增文件/目录时合法上升，只判不升）。
+  const crossDomainValueEdges = [];
+  for (const [from, targets] of leafValueEdges) {
+    for (const to of targets) {
+      if (!isSharedLayerModule(to)) crossDomainValueEdges.push(`${from}|${to}`);
+    }
+  }
+  crossDomainValueEdges.sort();
+
+  // I2④（§0.1 第 5 条的「第三判据」）：域内文件**值引** src 根 index.ts。组合根是装配面，
+  // 域取它的常量必然与根文件构成文件级值环——而这条形态原先只在不巧成环时才可见（根文件
+  // 不回引时完全无判据）。`import type` 编译期擦除，不在此面（与 fileValueEdges 同口径）。
+  const rootIndexImports = [
+    ...new Set(
+      refs
+        .filter(
+          (r) =>
+            !r.isType &&
+            r.targetInSrc &&
+            r.fromFile !== r.target &&
+            dirname(r.target) === srcDir &&
+            basename(r.target) === "index.ts",
+        )
+        .map((r) => `${rel(srcDir, r.fromFile)}|index.ts`),
+    ),
+  ].sort();
+
   // 死声明（意图 - 事实）：deps.ts 声明依赖某模块，而本模块 deps.ts **之外**的
   // 实现/门面文件并无对应事实边。deps.ts 自身的边属意图声明，不能自证为事实。
   //
@@ -703,6 +764,12 @@ function analyzePackage(pkgName, topology) {
     cycles: { top: topCycles, leaf: leafCycles, file: fileCycles },
     deadDeclarations,
     depsValueImports,
+    // #767 B0 切片 3a 的两类新证据（集合形态；metrics 里只放条数，消费方见
+    // collectQualityEvidence）——I2① 域间值边 / I2④ 值引 src 根 index.ts。
+    extraEvidence: {
+      crossDomainValueEdges,
+      rootIndexImports,
+    },
     // 覆盖断言可判定性：包未登记拓扑时 uncoveredSrcFiles 恒为空，若不显式区分，
     // 「从拓扑里删掉一个包」就成了让覆盖断言消失的绕过路径（已复现的假绿向量）。
     // $noMutationPackages 登记**不等于**可判定——它只是把「不适用」显式化，故
@@ -734,6 +801,8 @@ function analyzePackage(pkgName, topology) {
       missingInterface: missingInterface.length,
       directImpl: directImpl.length,
       uncoveredSrcFiles: uncoveredSrcFiles ?? [],
+      crossDomainValueEdges: crossDomainValueEdges.length,
+      rootIndexImports: rootIndexImports.length,
     },
   };
 }
@@ -778,6 +847,12 @@ const STRUCTURAL_METRICS = [
  * 它把「impl 直接引用共享层门面」这类**架构允许**的引用也记成待登记证据（本仓 168 条里 167 条
  * 是这种），于是合规写法反而要逐条开豁免——机制该默认放行的事，不该靠记录放行。
  * 它仍照常统计与展示（见 DERIVED_REPORT_ONLY_METRICS 与 summary/--graph）。
+ *
+ * #767 B0 切片 3a 新增两类（`crossDomainValueEdges` / `rootIndexImports`）：
+ * 判据本身就是「这个集合只许缩小」，故只能落证据面，不能落计数面（计数只判上升，而这两条
+ * 的目标是**空集**）。它们与既有类的唯一差别在入库路径：基线里
+ * **没有这个键**时按「证据类首次登记」写入存量（否则 mcp 的 33 条 I2① 存量会被逐条要求
+ * 开豁免，把存量登记误当放宽通道）；键已存在时一切照旧——类内新增证据判红、不写入。
  */
 const QUALITY_EVIDENCE_METRICS = [
   "leafModuleCycles",
@@ -786,6 +861,10 @@ const QUALITY_EVIDENCE_METRICS = [
   "missingInterface",
   "directImpl",
   "uncoveredSrcFiles",
+  // #767 B0 切片 3a：两条今天没有执法点的宪法判据的执法点（§二 I2①/④）。
+  // 两者都只判「这一集合有没有新增/是否为空」，不判计数升降——与结构型计数相反。
+  "crossDomainValueEdges",
+  "rootIndexImports",
 ];
 /**
  * 仅作报告、**不入基线**的派生量：都能由结构计数或证据面重算，入库只会制造第二事实源。
@@ -843,6 +922,10 @@ function collectQualityEvidence(analysis) {
     missingInterface: analysis.rules.missingInterface.map((r) => edge(r, false)).sort(),
     directImpl: analysis.rules.directImpl.map((r) => edge(r, false)).sort(),
     uncoveredSrcFiles: [...analysis.metrics.uncoveredSrcFiles].sort(),
+    // #767 B0 切片 3a：两类新证据已在 analyzePackage 里算成 canonical 字符串集合并排好序
+    // （模块 id 边、src 相对文件边），此处只做拷贝入库。
+    crossDomainValueEdges: [...analysis.extraEvidence.crossDomainValueEdges].sort(),
+    rootIndexImports: [...analysis.extraEvidence.rootIndexImports].sort(),
   };
 }
 
@@ -1033,6 +1116,17 @@ function renderGraph(analysis) {
   lines.push(
     "（意图图 = 各模块 deps.ts；类型边 import type/export type 是声明即完整性，豁免死声明判定）",
   );
+  // #767 B0 切片 3a：两条新判据的明细。刻意排在全部既有段落之后——--graph 的既有消费者
+  // （自测按「叶子模块级值环…文件级值环」切段）不受新段落影响。
+  const { crossDomainValueEdges, rootIndexImports } = analysis.extraEvidence;
+  lines.push(
+    `域间值边（I2①，目标非共享层的叶子模块值边，只许缩小）：${crossDomainValueEdges.length} 条`,
+  );
+  for (const e of crossDomainValueEdges) lines.push(`  ${e}`);
+  lines.push(
+    `值引 src 根 index.ts（I2④，域取组合根常量即文件级值环）：${rootIndexImports.length} 条`,
+  );
+  for (const e of rootIndexImports) lines.push(`  ${e}`);
   return lines;
 }
 
@@ -1045,7 +1139,10 @@ function renderGraph(analysis) {
  *     （value → type）的条目更新为当前形态。**新增证据默认不写入**：只有已在
  *     `gate-exemptions.json`（gate = `verify-dir-imports`，key = `<包名>:<证据项>`）
  *     登记的条目才允许写入，其余中止写入并列出（exit 1）。
- *   - 首次登记（旧基线无该包，或旧基线为数字口径 = 迁移）按当前证据写入并单独提示。
+ *   - 首次登记有**两级**，都按当前证据写入并单独提示：①包级（旧基线无该包，或旧基线为
+ *     数字口径 = 迁移）；②证据**类**级（#767 B0 切片 3a：基线里没有这个证据键 = 本次新增
+ *     了一类证据）。类级是「新增一类判据」与「已有类里冒出新增证据」的分界：前者是存量
+ *     登记（逐条开豁免会把存量误当放宽），后者仍一律中止写入。
  *
  * @returns `{ baseline, qualityPruned, qualityFirst, qualityNeedsAcceptance, qualityAccepted }`
  */
@@ -1066,9 +1163,20 @@ function buildBaseline(analyses, previous, ledger) {
     let firstCount = 0;
     for (const key of QUALITY_EVIDENCE_METRICS) {
       const cur = evidence[key] ?? [];
-      if (prevQuality === undefined) {
+      // 首次登记有**两级**：整个 `quality` 段缺失 = 包级（旧基线是数字口径，或本包新入库）；
+      // 单个证据键缺失 = 证据**类**级（本次改动新增了一类证据）。两级都必须能写入，否则
+      // 「新增一类证据」会被逐条判成「新增未登记证据」：mcp 的 I2① 存量就是 33 条，逐条
+      // 走台账 = 把存量登记误当放宽通道（台账是放宽通道，存量登记处是基线）。类级首次
+      // 登记在成功输出里逐条点名，且**只在键缺失的那一次**生效——键一旦存在，类内新增
+      // 证据仍一律不写入、判红。
+      if (prevQuality === undefined || prevQuality[key] === undefined) {
         quality[key] = cur;
         firstCount += cur.length;
+        if (prevQuality !== undefined) {
+          qualityFirst.push(
+            `${a.package}.${key}: 证据类首次登记（存量 ${cur.length} 条，按当前事实写入，须在 PR 内确认）`,
+          );
+        }
         continue;
       }
       const prevById = new Map(
@@ -1399,6 +1507,10 @@ for (const analysis of analyses) {
   summary.push(
     `${pkgName}: R-A 语义切换前 ${metrics.raLegacy}（值 ${metrics.raLegacyValue} / type ${metrics.raLegacyType}）→ 切换后（impl 引用他域实现文件）${metrics.implToOtherImpl}`,
   );
+  // #767 B0 切片 3a：两条新判据的存量条数（质量证据，目标都是空集；明细见 --graph）。
+  summary.push(
+    `${pkgName}: 域间值边（I2①，目标非共享层）${metrics.crossDomainValueEdges} 条、值引 src 根 index.ts（I2④）${metrics.rootIndexImports} 条`,
+  );
 
   if (state.mode === "compared") {
     if (state.rises.length === 0) {
@@ -1421,6 +1533,8 @@ for (const analysis of analyses) {
       ["leafModuleCycles", "叶子模块级值环"],
       ["fileCycles", "文件级值环"],
       ["implToOtherImpl", "impl 引用他域实现文件"],
+      ["crossDomainValueEdges", "域间值边（目标非共享层）"],
+      ["rootIndexImports", "值引 src 根 index.ts"],
     ]) {
       if (metrics[key] > 0)
         failures.push(`[${pkgName}] 无基线 fail-closed：${label} ${metrics[key]} 个（应为 0）`);

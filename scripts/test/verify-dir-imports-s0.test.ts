@@ -103,6 +103,33 @@ function runOn(root, args = []) {
   return { status: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
 
+/**
+ * fixture 存量登记（#767 B0 切片 3a）：I2① 的证据类是**域间值边集合**，而 fixture 里
+ * 「b 引 a」这类跨模块值引恰好落在这个集合里——于是「断言某形态放行」的用例若直接跑，
+ * 会被**与该用例无关**的无基线 fail-closed 判红。故先写一次基线（= 把 fixture 的存量
+ * 登记下来）再跑被判定的那一次。
+ *
+ * 登记的同时断言**规则类证据为空**（directImpl / missingInterface）：写基线不判规则 1/2
+ * （规则在主循环里判），所以「exit 0」有退化成「违规被顺手登记成存量」的可能。这条断言把
+ * 该退化路径钉死——本 helper 是用例判据强度的**加固**，不是绕行。带故意违规 fixture 的
+ * 用例（见 kind 语义用例）不适用本 helper，自己显式写基线。
+ */
+function registerFixtureStock(root) {
+  const r = runOn(root, ["--write-baseline"]);
+  assert.equal(r.status, 0, `fixture 存量登记应成功：\n${r.out}`);
+  const quality = readFixtureBaseline(root).packages[PKG].quality;
+  assert.deepEqual(
+    quality.directImpl,
+    [],
+    `存量登记不得掩盖「直引他域实现文件」：${JSON.stringify(quality.directImpl)}`,
+  );
+  assert.deepEqual(
+    quality.missingInterface,
+    [],
+    `存量登记不得掩盖「目标目录缺门面」：${JSON.stringify(quality.missingInterface)}`,
+  );
+}
+
 /** 三域链式依赖体（a → b → c），`prefix` 决定平铺还是移入分组层。 */
 function chainFixture(prefix) {
   const p = prefix === "" ? "" : `${prefix}/`;
@@ -120,6 +147,8 @@ test("叶子粒度：三域平铺与移入分组层 src/server/ 报出相同模�
   const flat = makeFixtureRoot(chainFixture(""));
   const nested = makeFixtureRoot(chainFixture("server"));
   try {
+    registerFixtureStock(flat);
+    registerFixtureStock(nested);
     const a = runOn(flat);
     const b = runOn(nested);
     assert.equal(a.status, 0, `平铺形态应 PASS，实际 ${a.status}：\n${a.out}`);
@@ -161,6 +190,7 @@ test("deps.ts 判据：跨模块引用他域 deps.ts 放行（D-2 出口面）",
     [`${SRC}/b/impl.ts`]: 'import { A } from "../a/deps.ts";\nexport const B = A;\n',
   });
   try {
+    registerFixtureStock(root);
     const { status, out } = runOn(root);
     assert.equal(status, 0, `引用他域 deps.ts 应放行（exit 0），实际 ${status}：\n${out}`);
     assert.match(out, /叶子模块 2 个、值边 1 条/, `应报 2 模块 / 1 值边：\n${out}`);
@@ -435,7 +465,20 @@ test("kind 语义：值→类型收口放行并自动采纳，类型→值降级
       0,
       `value → type 应放行，实际 ${improved.status}：\n${improved.out}`,
     );
-    assert.match(improved.out, /质量证据改善 1 条/, `应报告改善：\n${improved.out}`);
+    // #767 B0 切片 3a 起，同一个收口在**两个**证据类上同时消失（implToOtherImpl 的边与
+    // I2① 的域间值边），故这里不再只钉一个总数，而是逐条点名两处已消除——比原来的计数锚
+    // 更强：计数相同但收口只发生在一处时，点名断言会红。
+    assert.match(improved.out, /质量证据改善 2 条/, `应报告两处改善：\n${improved.out}`);
+    assert.match(
+      improved.out,
+      /implToOtherImpl: b\/impl\.ts\|a\/impl\.ts 值 → 类型（收口）/,
+      `应收口 implToOtherImpl 证据（kind 收口，不是消除）：\n${improved.out}`,
+    );
+    assert.match(
+      improved.out,
+      /crossDomainValueEdges: b\|a 已消除/,
+      `应收口 I2① 域间值边证据：\n${improved.out}`,
+    );
     assert.equal(
       runOn(root, ["--write-baseline"]).status,
       0,
@@ -607,6 +650,7 @@ test("--zones：R-A 双口径计数与明细（合法跨域引用：旧口径 2 
       'import { A } from "../a/interface.ts";\nimport type { TA } from "../a/interface.ts";\nexport const B: TA = A;\n',
   });
   try {
+    registerFixtureStock(root);
     const { status, out } = runOn(root, ["--zones"]);
     assert.equal(status, 0, `引用他域 interface.ts 应 PASS，实际 ${status}：\n${out}`);
     assert.match(
@@ -655,6 +699,7 @@ test("--zones：impl 直引他域实现文件在新口径下计数为 1", () => 
 test("--graph：依赖矩阵与扇入扇出报出叶子模块边", () => {
   const root = makeFixtureRoot(chainFixture(""));
   try {
+    registerFixtureStock(root);
     const { status, out } = runOn(root, ["--graph"]);
     assert.equal(status, 0, `--graph 应 PASS，实际 ${status}：\n${out}`);
     assert.match(
@@ -737,6 +782,7 @@ test('引用提取：类型查询 import("…") 不产生值边，await import()
     const t = runOn(typed);
     assert.equal(t.status, 0, `类型查询互引不应造出幻影值环，实际 ${t.status}：\n${t.out}`);
     assert.match(t.out, /值边 0 条、模块级值环 0 个/, `类型查询不应计入值边：\n${t.out}`);
+    registerFixtureStock(dynamic);
     const d = runOn(dynamic);
     assert.equal(d.status, 0, `await import 应正常解析：\n${d.out}`);
     assert.match(d.out, /值边 1 条/, `await import() 是值依赖，应计 1 条值边：\n${d.out}`);
@@ -870,6 +916,7 @@ test("规则 4：export { default as A } from 不假报虚导出（F8）", () =>
     [`${SRC}/b/impl.ts`]: 'import { A } from "../a/interface.ts";\nexport const B = A;\n',
   });
   try {
+    registerFixtureStock(root);
     const { status, out } = runOn(root);
     assert.equal(status, 0, `default re-export 应可解析，实际 ${status}：\n${out}`);
     assert.doesNotMatch(out, /虚导出/, `不得误报虚导出：\n${out}`);
@@ -1164,6 +1211,7 @@ test("全覆盖断言：#710 §2-2 / #773：$noMutationPackages 成员被 --pack
     }),
   });
   try {
+    registerFixtureStock(root);
     const { status, out } = runOn(root);
     assert.equal(status, 0, `$noMutationPackages 成员应放行（exit 0），实际 ${status}：\n${out}`);
     assert.match(out, /\$noMutationPackages/, `声明须点名登记处：\n${out}`);
