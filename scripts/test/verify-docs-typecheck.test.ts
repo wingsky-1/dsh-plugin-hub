@@ -18,7 +18,7 @@
  *
  * 两条互补判据：
  * 1. 磁盘上 scripts/ 下的 .ts/.mts/.cts 减去程序集，每一项都必须落在 scripts/test/ 之下
- *    ——非 test 脚本漏面即红（把 lib/** 之类写进 exclude，文件离开程序集同样命中）。
+ *    ——非 test 的 .ts/.mts/.cts 漏面即红（把 lib/** 之类写进 exclude，文件离开程序集同样命中）。
  * 2. 磁盘枚举非空：拦住「磁盘枚举失效」这类让判据 1 恒真的退化（空程序集由上面的
  *    program.size 断言拦住，不再靠差值非空间接判定）。
  *
@@ -45,13 +45,17 @@ const SCRIPTS = join(ROOT, "scripts");
 const TSC = join(ROOT, "node_modules", "typescript", "bin", "tsc");
 const TSCONFIG = join(SCRIPTS, "tsconfig.json");
 
-/** scripts/ 下唯一允许暂时留在编译面外的目录（test 侧 @ts-nocheck 属后续批次）。 */
+/**
+ * scripts/ 下唯一允许暂时留在编译面外的前缀（test 侧 @ts-nocheck 属后续批次）。
+ * 粒度是整棵子树：scripts/test/ 下的任何文件都会被放行，包括误放进去的生产脚本——
+ * 这是既定口径边界，守卫只防「test/ 之外漏面」。
+ */
 const TEMPORARY_EXCLUSION_PREFIX = "scripts/test/";
 
 const isTypeScript = (name) => /\.(ts|mts|cts)$/.test(name);
 const toPosix = (p) => p.split(sep).join("/");
 
-test("scripts 编译面接线：非 test 全树入面，程序集与磁盘集合对账（#474/#776）", () => {
+test("scripts 编译面接线：非 test 的 .ts/.mts/.cts 全树入面，程序集与磁盘集合对账（#474/#776）", () => {
   assert.ok(existsSync(TSC), `仓库 tsc 应存在（${TSC}）——pnpm install 后才有`);
   assert.ok(existsSync(TSCONFIG), `scripts/tsconfig.json 应存在（${TSCONFIG}）`);
 
@@ -85,7 +89,7 @@ test("scripts 编译面接线：非 test 全树入面，程序集与磁盘集合
   for (const rel of outOfFace) {
     assert.ok(
       rel.startsWith(TEMPORARY_EXCLUSION_PREFIX),
-      `${rel} 不在 tsc 程序集内，且不在 scripts/test/ 之下——非 test 脚本必须入编译面（该文件被静默移出覆盖？）`,
+      `${rel} 不在 tsc 程序集内，且不在 scripts/test/ 之下——非 test 的 .ts/.mts/.cts 必须入编译面（该文件被静默移出覆盖？）`,
     );
   }
 
