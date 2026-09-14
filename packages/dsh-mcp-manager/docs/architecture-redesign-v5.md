@@ -727,6 +727,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 > ② **B1.4 不重写 `bootstrap/apply.ts` 的既有装配、不把既有装配路由进 `assemble`**：本刀只交付机制 + 宿主能力面 + `declare module` 迁入 + 探针，插件保持今天的行为可用；把真实域接进 `assemble` 是 **B2**（那时域才存在），否则就是二次重写。
 > ③ **组合根机制的物理落点是 `server/shared/`，不是 §3.1 字面的 `src/index.ts`**（B1.4 落点裁量，两条硬要求不可兼得时的取舍）：入口加任何新导出都会让 `export-surface-snapshot --package dsh-mcp-manager` 判红（判词「入口 . 新增导出」），而写在入口又不导出的函数测试不可达——「入口导出面零 diff」与「夹具域驱动的探针」只能同时满足于「机制住在可 `import` 的内部模块」。**入口仍是组合根**：B2 由 `src/index.ts` 调 `bindHost(ctx)` → `assemble(host, domains)` → `ctx.effect(() => () => safeDisposeAll(disposers))` 接真实域；`Context` 的引用面因此仍只有两处（`host-faces.ts` 的类型 + 入口）。**连带收益**：`assemble` 对每个 `install` 一律 `await`，B1.3 记的「`installUpgrade` 返回 Promise、B2 必须 `await`」由机制兜住，接线方漏写不会有第二次机会。
 > ④ **主控裁定（2026-09-14）：③ 接受**，并补一条子 agent 未提、但必须记账的**准入面事实**——`compose.ts` 落 `server/shared/` 与 **I5 的准入规则不符**（函数与值面要求 **≥2 域消费**，且 §二 I5 明文写「**单一消费者留包内**」），而它今天**只有组合根一个消费者**。接受的理由：另一条路要么**放宽入口导出面**（判据让步），要么**放弃探针**（机制不可测），两者都比「准入面记一笔」更差。**B2 复查项**：导出面在「删除那一笔」重冻结后，机制应回到入口（此时它可作为「4 符号组合根」的一部分被导出），或证明它确有 ≥2 消费者；否则 `server/shared` 的准入面等于被放宽过一次，须在 B3 的准入核对里如实记账。
+> ⑤ **B2 的编排修正（2026-09-14，来自 B2.1 的实测拦截）**：把 `src/stats/` 搬到 `src/server/stats/` 后，`crossDomainValueEdges` 里同一条值边的 id 由 `connection/orchestrator|stats` 变成 `connection/orchestrator|server/stats`——门禁把「旧 id 消失」记为改善、把「新 id 出现」记为**新增未登记证据**并判红，`--write-baseline` 也拒绝写入（基线零改动）。**根因是证据 id 路径派生**（模块 id = 相对 `src` 的目录路径），不是违规。**处置是不制造这次位移**：B2a **就地**重构成 `src/stats/{interface.ts, deps.ts, impl/**}`（模块 id 仍是 `stats`，quality 段逐字节不变、零台账）；**`server/` 前缀并入 B2b 那一笔原子变更**（方案本来就有一笔「删除 `bootstrap/` + 导出面重冻结」）。**前提**：B2b 之前 `crossDomainValueEdges` 与两类环应收到 **0**（I2①/I2② 终态）——**0 条的集合做重命名不产生位移**；若未到 0，残余单独裁决。**明确不采纳**「逐域搬迁 + 逐条台账豁免」：那会让台账成为 B2 的常规放宽通道（见附录 G·G16）。
 
 > **接线顺序约束（B2 必须遵守，来自代码事实）**：`upgrade` 的 `storage-layout` 步骤会把旧文件 `rename` 成 `*.migrated.bak`；而各域今天仍读旧路径（`config/store/store.ts` 读 `<DSH_HOME>/dsh-mcp.json`、`catalog/cache-view.ts` 读 `dsh-mcp-catalog.json`、`middleware-state.ts` 读 `dsh-mcp-user-state.json`）。**先接线迁移、后改读者 = 归档旧文件而旧读者读空 = 静默丢用户配置**。故 `upgrade` 的启用与「读者改读新布局」必须**同一笔**（B2）；B1 只交付可直接调用并单测的域，不接线。
 
@@ -866,7 +867,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 ### D.3 未完成与遗留（含状态订正）
 
-1. **B1 全部切片已完成**（B1.0–B1.5b，见 D.2·19–26）。**待做**：B1 收尾（主控跑 `gate:pr` + `pack:check` + `THIRD-PARTY-LICENSES` 无新增 → 推送）。切法与验收见 D.4。**两条显式收窄 + 一条落点裁量**见 §十二 表后（不建 10 个空域骨架；B1.4 不路由既有装配；机制落 `server/shared/` 而非入口）。**接线顺序**：`upgrade` 的启用必须与「读者改读新布局」同一笔（B2），否则归档旧文件而旧读者读空 = 静默丢配置（见 §十二 表后）。
+1. **B1 全部切片已完成**（B1.0–B1.5b，见 D.2·19–26）。**B1 收尾已完成**：主控实跑 `gate:pr` = **32 项逐条 exit=0 + PASS**（清单与上一轮逐项一致）、`THIRD-PARTY-LICENSES` 相对 `origin/main` **零改动**、依赖面零新增、44 笔。**未推送**（理由见 D.3·17）。**B2.1（`stats` 域）进行中**。切法与验收见 D.4。**两条显式收窄 + 一条落点裁量**见 §十二 表后（不建 10 个空域骨架；B1.4 不路由既有装配；机制落 `server/shared/` 而非入口）。**接线顺序**：`upgrade` 的启用必须与「读者改读新布局」同一笔（B2），否则归档旧文件而旧读者读空 = 静默丢配置（见 §十二 表后）。
 2. **B1.5b 已完成**（`dto.ts` / `service.ts` 类型面 + 仓库根 `shared/mcp-manager-service.d.ts` 退回包内 + 跨端 DTO 一致性锁；两处登记面 `--min` / stryker 测试面**无位移**，理由见提交正文）。**B1.5a 已完成**（`a9e897c`：状态键 / 帧名 / 路由路径三族进 `src/shared` 单点 + 永久跨端一致性锁）。**B1.4 已完成**（`b032294`：组合根机制 + `host-faces.ts` + `declare module` 迁入 + 9 条真实 Context 探针；机制落点裁量见 §十二 表后 ③，主控裁定与 I5 准入记录见 ④）。**B1.3 已完成**（`4bd6af6`，不接线）；**B1.2 已完成**（`dfd6577`）；**B1.0 已完成**（`4f94f65`，附录 G·G1），其遗留的两条 id 不一致见 **G1b**（登记不修）；I9 判据只覆盖顶层 `let/var` 的缺口见 **G11**。
 3. **⑩ 已完结**（随 B1.1，`f21d44d`）：迁移与其连带面（6 条 mutation exclude pattern 平移 + 6 份段 conf 重生成）同笔完成。
 4. **基线写入纪律（附录 G·G5，必须遵守）**：`--write-baseline` **必须在 build 之后的树上跑**——`lib/**` 的证据 id 会随 `lib/foo.d.ts` 在不在而变（只有 `src/index.ts` 做了归一），而 CI 是「先 build 再 contract」，两者错位就换号判红。
@@ -883,6 +884,9 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 15. **宿主状态机字面量未收口（B1.5a 的刻意残留）**：`supervisor.ts` / `middleware.ts` 里约 20 处状态机字面量仍是字面量（单端内部状态，不是跨端契约面），且 `src/types/status.ts` 的 `state: string` 未收紧成 `ServerState`——收紧属**公开类型变更**，与「机械抽取、值/ABI 不变」冲突。若要做「宿主六态字面量清零」，须单独立项（会牵动热路径与类型契约）。
 16. **跨包帧名存在第三处物理定义**：仓库根 `shared/sse-hub.js:45` 的 `PING_FRAME`（本包禁改面）。本包 `SSE_FRAMES.ping` 与它值相同，但**跨包漂移无判据**（见附录 G·G14）。
+
+17. **推送 / PR 待维护者决定（事实已查明）**：`.github/workflows/ci.yml` 只在 `pull_request`（与 push 到 `main`）触发 → **推一个特性分支不产生任何 CI 信号**。而**变异与覆盖率只在 CI 上跑**（本地任何档都不跑），是至今**唯一未被验证**的面。故：只推分支 = 零收益；要拿信号必须**开 PR**（方案原定 PR-1 = B0 切点 `aa02843`、PR-2 = B1–B3）。主控建议开 PR-1 + PR-2，但**开 PR 属维护者流程，代理不代开**。
+18. **B2 的编排已按实测修正**（见 §十二 表后 ⑤ 与附录 G·G16）：域搬迁**分两段**——B2a 就地重构（模块 id 不变、零证据位移）、B2b 一笔原子变更（加 `server/` 前缀 + 路径切换 + 启用 `upgrade` + 导出面重冻结）。
 
 ### D.4 下一步顺序
 
@@ -1154,6 +1158,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | **G13** | **`--write-baseline --package X` 会把 X 的条目挪到 `packages` 首位** | P2 | B1.3 实测：生成器先写被分析包、再补旧基线其余包 → 产生 order-only churn（该包条目 31 行纯位移）。判据不受影响（JSON 解析不看键序），但会污染 diff | B1.3 按 HEAD 包序手工还原键序（语义零变化、plain check exit 0）。**推荐做法**：写基线一律用**不带 `--package` 的全量 `--write-baseline`**（B1.2 即如此，得到最小 5 行 diff）；生成器保持既有键序列为改进候选 |
 | **G14** | **跨包帧名存在第三处物理定义且无判据**：本包 `src/shared/frames.ts` 与仓库根 `shared/sse-hub.js:45` 各写一份 `ping` 帧 | P2 | B1.5a 实测：hub 侧 `const PING_FRAME = 'data: {"type":"ping"}\n\n'`，与本包 `SSE_FRAMES.ping` 值逐字相同；一致性锁的判据面**刻意不含**仓库根 `shared/`（它是跨包共享层，不是本包内部实现） | 登记。**本轮不修**（仓库根 `shared/` 是 N4 禁改面）；跨包一致性属 `#706` 的仓级共享层议题，届时一并收口 |
 | **G15** | **产物 `.d.ts` 的可解析性没有任何判据**：仓库默认 `skipLibCheck: true` 使 `.d.ts` 里的 `TS2307` **静默降级成 any**，消费方按包名引类型时拿到空类型而门禁全绿 | **P1** | B1.5b 实测：X1 修正**前**，`lib/{api/routes,integration/service,types/ui,client/core/state}.d.ts` 出现 `TS2307 Cannot find module '../../shared/interface.js'`；只有 `--skipLibCheck false` 探针看得见（修复后 0 条）。既有闸（`verify-dir-imports` / `export-surface-snapshot` / `pack-check`）当时**都看不见**；`pack-check` 只在「缺 shared 声明副本」的窗口偶然判红，跑一次 build 即回归绿 | 已由 `fd908b1` 修掉**触发源**，但**判据缺口仍在**（下一处同类缺陷照样静默）。**建议**：把「产物 `lib/**/*.d.ts` 在 `--skipLibCheck false` 下零诊断」纳入判据（`pack-check` 扩展或独立闸），否则「按包名引类型」这条对外契约永远只靠人工。属机制变更，须单独裁决 |
+| **G16** | **质量证据 id 是路径派生的 → 纯结构搬迁会被判成「新增未登记证据」** | **P1（编排级）** | B2.1 实测：`src/stats/` → `src/server/stats/` 使 `crossDomainValueEdges` 由 `connection/orchestrator|stats` 变为 `connection/orchestrator|server/stats`；plain check **exit 1**（判词「新增未登记证据」）、`--write-baseline` 同样 **exit 1**（基线零改动）。规模实测：`crossDomainValueEdges` **33 条**、`leafModuleCycles`/`fileCycles` 各 **4 条**，全为路径派生；B2 要搬 **11 个域**，逐域搬迁会把以该域为端点的每条边都变成「旧消失 + 新出现」 | **不改判据**（把「一进一出」自动配成位移会削弱「新增即红」这条保守红线）。**处置靠排序**：就地重构（模块 id 不变）+ 把 `server/` 前缀并入 B2b 原子变更（前提是值边与环已到 0）。**明确不采纳**「逐条台账豁免」——那会让台账成为 B2 的常规放宽通道，与 R16/G2–G4/G6 同族。若 B2b 时仍有残余，再单独裁决 |
 
 **G1 的裁决边界（只修 I8①）**：§5.3 禁的是 `src/server/**`、I2④ 禁的是 `src/index.ts`；裸包名解析到 `lib/index.js`，**不是同一件事的等价写法**，属另一条规则——悄悄扩大一个已冻结判据的范围就是自行扩大授权，故**只登记、不实现**。
 
