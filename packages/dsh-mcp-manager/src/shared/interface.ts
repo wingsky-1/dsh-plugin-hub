@@ -1,8 +1,10 @@
 /**
- * dsh-mcp-manager — shared/interface.ts：跨端共享域门面（D5，#767 B1）。
+ * dsh-mcp-manager — shared/interface.ts：跨端层门面（D5，#767 B1）。
  *
- * shared 域 = 浮窗定位/层级/断点纯函数薄 facade（placement-math），宿主端（src/index.ts
- * re-export 供 smoke 断言）与客户端（src/client/*）都从这里引用，两端共用同一份实现。
+ * shared 域是两端唯一的跨端语言落点：浮窗定位/层级/断点纯函数（placement-math）、
+ * 六态键与计数投影（status）、SSE 帧名与负载形状（frames）、路由路径与围栏（routes）。
+ * 宿主端与客户端都从这里引用同一份物理定义——凡「两端必须一致」的规范常量不得在别处
+ * 再写一遍（一致性锁 test/e2e/cross-end-lock.test.ts 判红）。
  * 目录外模块**只能**从这里引用（verify-dir-imports 静态强制）。
  */
 export {
@@ -24,3 +26,10 @@ export {
 // 转出会解析到空（interface.ts 虚导出，规则 4 硬判红）。故别名直连仓库根单源。
 export { panelAnchorForPlacement as panelAnchorForPosition } from "../../../../shared/placement-math.js";
 export type { FloatBreakpoint, ViewportPoint, RectLike } from "./placement-math.ts";
+
+export { SERVER_STATES, EMPTY_STATUS_COUNTS } from "./status.ts";
+export type { ServerState } from "./status.ts";
+export { SSE_FRAMES } from "./frames.ts";
+export type { SseFrame, SseFramePayload } from "./frames.ts";
+export { ROUTES, ROUTE_FENCE } from "./routes.ts";
+export type { RouteName, RouteFence } from "./routes.ts";
