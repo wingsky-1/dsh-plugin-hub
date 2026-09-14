@@ -381,6 +381,24 @@ describe("tools 域的装配与释放", () => {
     expect(agents.published).toEqual([]);
   });
 
+  it("判定期间出错时出声，不静默丢掉这个 agent", async () => {
+    const agents = fakeAgents([{ id: "a5", cwd: repo }]);
+    const { deps, warns } = fakeDeps({ agents: agents.port });
+    const exploding: ToolsDeps = {
+      ...deps,
+      git: {
+        ...deps.git,
+        commonDir: async () => {
+          throw new Error("git exploded");
+        },
+      },
+    };
+    installTools(exploding);
+    await settle();
+    expect(agents.published).toEqual([]);
+    expect(warns.some((w) => w.includes("工具注册失败") && w.includes("git exploded"))).toBe(true);
+  });
+
   it("没有 cwd 的 agent 不装（猜一个会给出错的工具）", async () => {
     const agents = fakeAgents([{ id: "a4", cwd: undefined }]);
     const { deps } = fakeDeps({ agents: agents.port });
