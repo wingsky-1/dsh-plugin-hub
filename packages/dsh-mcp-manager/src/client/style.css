@@ -69,7 +69,7 @@
   font-size: 12px;
 }
 /* #128 移动端档位样式：由客户端按 conversationHost rect 宽度判定并写 data-dm-bp
- * （JS 判定，非 @media——防桌面窄窗 / iPad Slide Over 误触发）；阈值见 src/placement-math.ts。
+ * （JS 判定，非 @media——防桌面窄窗 / iPad Slide Over 误触发）；阈值见 src/shared/placement-math.ts。
  * dvh 级联回退：先声明 vh 兜底，再以 dvh 覆写（软键盘弹出时随 visualViewport 收缩）。 */
 .dm-float-panel[data-dm-bp="narrow"] {
   width: calc(100vw - 16px);
