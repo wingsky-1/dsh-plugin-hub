@@ -34,6 +34,7 @@ export interface RemediationParams {
 export type RemediationCode =
   | "host-no-dbus-session"
   | "host-popup-no-daemon"
+  | "host-no-notify-send"
   | "host-no-sound-server-and-player"
   | "host-only-sound-server-players"
   | "host-no-player"

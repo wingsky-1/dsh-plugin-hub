@@ -224,6 +224,15 @@ function remediationOf(input: RemediationInput): readonly Remediation[] {
     else if (input.name.kind === "absent" && input.probe.notifySendAvailable) {
       out.push({ code: "host-popup-no-daemon" });
     }
+    // 平台护栏不可省：darwin/win32 压根不探 notify-send（`notifySendAvailable` 恒 false），
+    // 少了它，win32 上 toast 脚本缺失导致的不可达会被说成「宿主缺 notify-send」——方向正好反了。
+    else if (
+      input.probe.platform === "linux" &&
+      input.name.kind === "absent" &&
+      !input.probe.notifySendAvailable
+    ) {
+      out.push({ code: "host-no-notify-send" });
+    }
   }
   if (input.sound.state === "unreachable" && input.probe.platform === "linux") {
     out.push(packageRemedy(input.osRelease, "host-no-sound-server-and-player"));

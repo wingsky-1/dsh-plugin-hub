@@ -358,6 +358,17 @@ describe("popup 五态与优先级", () => {
     expect(noNotifySend.host.remediation.map((item) => item.code)).not.toContain(
       "host-popup-no-daemon",
     );
+    // 同理，「没有 notify-send」也不能零出路：它不是「装个守护进程」，但它有自己的该装之物。
+    // 只判「不产出前一条」是缺口的来源——一条建议被正确排除不等于这一格有出路。
+    expect(noNotifySend.host.remediation.map((item) => item.code)).toContain("host-no-notify-send");
+  });
+
+  // 平台护栏的判据：win32 的 popup 不可达只可能来自随包 toast 脚本缺失，与 notify-send 无关
+  // （darwin/win32 从不探这个命令）。少了护栏，这条建议会被发给一台根本不使用 notify-send 的机器。
+  it("win32 且 toast 脚本缺失 ⇒ popup unreachable，但不得建议安装 notify-send", async () => {
+    const { host } = await probeWith({ platform: "win32", present: [WIN_TONE] });
+    expect(host.popup.state).toBe("unreachable");
+    expect(host.remediation.map((item) => item.code)).not.toContain("host-no-notify-send");
   });
 
   // 组级聚合最危险的错法不是「取错了最严重者」，而是把 unknown 当成 ok：那一格里弹窗其实无法判定，
@@ -499,6 +510,7 @@ describe("remediation code 闭集：客户端映射必须覆盖得了", () => {
     const closed: readonly RemediationCode[] = [
       "host-no-dbus-session",
       "host-popup-no-daemon",
+      "host-no-notify-send",
       "host-no-sound-server-and-player",
       "host-only-sound-server-players",
       "host-no-player",
@@ -508,6 +520,8 @@ describe("remediation code 闭集：客户端映射必须覆盖得了", () => {
     const cells: readonly PortConfig[] = [
       { platform: "linux", nameProbe: { kind: "no-session-bus" } },
       { platform: "linux", available: ["notify-send"], nameProbe: { kind: "absent" } },
+      // 缺 notify-send 那一格：闭集清单必须真的会被它命中，否则新 code 只在类型里存在
+      { platform: "linux", nameProbe: { kind: "absent" } },
       { platform: "linux", available: ["notify-send", "paplay"], nameProbe: { kind: "owner" } },
       { platform: "linux", available: ["notify-send", "ffplay"], nameProbe: { kind: "owner" } },
       { platform: "darwin" },

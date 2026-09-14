@@ -79,6 +79,7 @@ const CHECKED_KEYS = {
 const REMEDIATION_KEYS = {
   "host-no-dbus-session": "diagRemHostNoDbusSession",
   "host-popup-no-daemon": "diagRemHostPopupNoDaemon",
+  "host-no-notify-send": "diagRemHostNoNotifySend",
   "host-no-sound-server-and-player": "diagRemHostNoSoundServerAndPlayer",
   "host-only-sound-server-players": "diagRemHostOnlySoundServerPlayers",
   "host-no-player": "diagRemHostNoPlayer",

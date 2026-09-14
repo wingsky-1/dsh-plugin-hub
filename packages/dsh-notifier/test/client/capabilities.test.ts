@@ -222,6 +222,7 @@ describe("remediationTextOf：处置建议文案", () => {
   const CODES = [
     "host-no-dbus-session",
     "host-popup-no-daemon",
+    "host-no-notify-send",
     "host-no-sound-server-and-player",
     "host-only-sound-server-players",
     "host-no-player",
@@ -526,7 +527,7 @@ describe("clientDiagnosticsOf：界面只做机械投影", () => {
 describe("双语：新增 key 两边齐备", () => {
   it("zh 的每个 diag* key 在 en 都有非空文案，且不回落成 key 本体", () => {
     const keys = (Object.keys(zh) as NotifierLocaleKey[]).filter((key) => key.startsWith("diag"));
-    // 这一面至少要有四个 verdict、两个维度、七条出路（含两条无包名变体）、九条浏览器态与来源标注
+    // 这一面至少要有四个 verdict、两个维度、八条出路（含两条无包名变体）、九条浏览器态与来源标注
     expect(keys.length).toBeGreaterThanOrEqual(32);
     for (const key of keys) {
       expect(en[key], `en 缺 ${key}`).toBeTypeOf("string");
@@ -536,7 +537,7 @@ describe("双语：新增 key 两边齐备", () => {
     }
   });
 
-  it("契约要求的那几组 key 一个都不少（verdict 四态 / 维度 / 七条出路 / 浏览器各态）", () => {
+  it("契约要求的那几组 key 一个都不少（verdict 四态 / 维度 / 八条出路 / 浏览器各态）", () => {
     const required = [
       "diagVerdictOk",
       "diagVerdictDegraded",
@@ -550,6 +551,7 @@ describe("双语：新增 key 两边齐备", () => {
       "diagSourceBrowser",
       "diagRemHostNoDbusSession",
       "diagRemHostPopupNoDaemon",
+      "diagRemHostNoNotifySend",
       "diagRemHostNoSoundServerAndPlayer",
       "diagRemHostNoSoundServerAndPlayerNoPkg",
       "diagRemHostOnlySoundServerPlayers",

@@ -255,6 +255,8 @@ export const zh = {
     "宿主没有 D-Bus 会话总线：系统弹窗需要桌面会话（图形登录）或由 dbus-launch 提供的会话总线",
   diagRemHostPopupNoDaemon:
     "宿主有 notify-send 但没有通知守护进程：安装并启动一个桌面通知服务（如 dunst、mako）后弹窗才可见",
+  diagRemHostNoNotifySend:
+    "宿主缺少 notify-send：安装提供它的通知工具（Debian/Ubuntu 上是 libnotify-bin，Fedora/Arch 上是 libnotify）后弹窗才可见",
   diagRemHostNoSoundServerAndPlayer:
     "宿主没有探测到任何可用播放器：安装 {packages}（{packagemanager}）后可自播默认事件音（dnf 系上 ffmpeg 来自 RPM Fusion）",
   diagRemHostNoSoundServerAndPlayerNoPkg:
@@ -539,6 +541,8 @@ export const en: Record<NotifierLocaleKey, string> = {
     "The host has no D-Bus session bus: system popups need a desktop session (graphical login) or a session bus from dbus-launch",
   diagRemHostPopupNoDaemon:
     "The host has notify-send but no notification daemon: install and start a desktop notification service (e.g. dunst, mako) for popups to appear",
+  diagRemHostNoNotifySend:
+    "The host is missing notify-send: install a notification tool that provides it (libnotify-bin on Debian/Ubuntu, libnotify on Fedora/Arch) and popups become visible",
   diagRemHostNoSoundServerAndPlayer:
     "The host exposed no usable player: install {packages} ({packagemanager}) to self-play the default event sound (on dnf-family hosts ffmpeg comes from RPM Fusion)",
   diagRemHostNoSoundServerAndPlayerNoPkg:
