@@ -205,14 +205,17 @@ B2 必须补的探针（每条都要**正例 + 反例**，反例用于证明断�
 
 ```
 packages/dsh-mcp-manager/src/
-  index.ts                组合根：bindHost(收窄 ctx) + assemble(顺序装配) + 逆序释放
+  index.ts                组合根：接各域（bindHost(ctx) → assemble(domains) →
+                          ctx.effect(() => () => safeDisposeAll(disposers))）
                           + declare module 声明合并 + 包导出面（唯一汇聚点，目标 = 三面）
+                          ——机制的物理落点在 server/shared/compose.ts，理由见 §十二 表后 ③
   server/
     shared/               包内共享层（叶子，无归属的宿主侧设施）
       interface.ts        门面：类型 ≥3 域消费 / 函数与值 ≥2 域消费才准入（I5）
       paths.ts            存储布局单一事实源：新路径 + legacyFile(旧路径) + 每文件 mode（I7）
       file-io.ts          原子写 / 容错读 / 同路径串行（自写，见 §7.5）
       host-faces.ts       宿主能力面类型（I1 白名单点名的能力类型定义处）
+      compose.ts          组合根机制：bindHost 收窄 / assemble 成对装配 / safeDisposeAll 逆序释放
     upgrade/              { interface.ts, deps.ts, impl/{version, chain, steps} }   ← 无 `legacy/`：本包无旧**内容**语义要转换（§7.2 纯字节迁移），旧**路径**按 I7 归 `server/shared/paths.ts`（B1.3 已裁定，建空块会违反「impl/ 根只放聚合器与跨块值文件」）
     store/                { interface.ts, deps.ts, impl/{user-state, catalog-cache, stats-file} }
     stats/                { interface.ts, deps.ts, impl/collector }
@@ -717,11 +720,12 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 **B1 的连带面（切片 4 实跑补充，必须同一笔做）**：`mutation-topology.json` 六个段的 excludes 各有一条 `!packages/dsh-mcp-manager/src/placement-math.ts`（`:92/102/117/127/142/161`）。文件挪走后该 pattern **不再命中新路径**，而新路径落在 `runtime` 段的 `src/shared/**/*.ts` 超集里 → 这张薄 facade 会**进变异面**（与 provider-usage 对 `src/shared/placement-math.ts` 的 facade 排除先例相悖）。正确处置是**把该条 pattern 平移到新路径**（语义位移，不是新增证据），并重生成 6 份段 conf。
 
-> **B1 进度（2026-09-14）**：**B1.1 已完成**（`f21d44d`，含 ⑩）：建 `src/shared/interface.ts` 门面 + `placement-math.ts` 迁入 + 消费点改经门面 + 六条 pattern 平移；`dir-imports-baseline.json` 登记 7 类**结构型**计数位移（`quality` 段逐字节不变），公共导出面零变化。**B1.0 判据加固已完成**（`4f94f65`，见附录 G·G1）：关掉 I8① 的裸包名自引用绕过路径。**B1.2（落盘面）进行中**。**B1.2 已完成**（`dfd6577`）：`server/shared/` 三文件（`paths.ts` 的 mode 表 + 自写 `file-io.ts` 原子写与同路径队列 + 门面）+ 17 条单测；`dir-imports-baseline` 仅 5 个数字（`quality` 段与其余 5 包 byte-identical）。**B1.3（`upgrade` 六件套）进行中**。**B1.3 已完成**（`4bd6af6`，15 文件 +1231）：`upgrade` 域六件套（步骤表/链驱动/刻度/失败语义/对账/装配标记）+ `storage-layout` 一步 + 43 条单测；**未接线**（被禁面 grep 0 命中）；`dir-imports-baseline` 仅 7 个数字、`quality` 段与其余 5 包 byte-identical。**B1.4（组合根）进行中**。**未完**：组合根、`src/shared` 另外五个文件。
+> **B1 进度（2026-09-14）**：**B1.1 已完成**（`f21d44d`，含 ⑩）：建 `src/shared/interface.ts` 门面 + `placement-math.ts` 迁入 + 消费点改经门面 + 六条 pattern 平移；`dir-imports-baseline.json` 登记 7 类**结构型**计数位移（`quality` 段逐字节不变），公共导出面零变化。**B1.0 判据加固已完成**（`4f94f65`，见附录 G·G1）：关掉 I8① 的裸包名自引用绕过路径。**B1.2（落盘面）进行中**。**B1.2 已完成**（`dfd6577`）：`server/shared/` 三文件（`paths.ts` 的 mode 表 + 自写 `file-io.ts` 原子写与同路径队列 + 门面）+ 17 条单测；`dir-imports-baseline` 仅 5 个数字（`quality` 段与其余 5 包 byte-identical）。**B1.3（`upgrade` 六件套）进行中**。**B1.3 已完成**（`4bd6af6`，15 文件 +1231）：`upgrade` 域六件套（步骤表/链驱动/刻度/失败语义/对账/装配标记）+ `storage-layout` 一步 + 43 条单测；**未接线**（被禁面 grep 0 命中）；`dir-imports-baseline` 仅 7 个数字、`quality` 段与其余 5 包 byte-identical。**B1.4 组合根已完成**（本刀）：机制 + 宿主能力面 + `declare module` 迁入 + 探针。新增 `src/server/shared/host-faces.ts`（宿主能力面的**类型定义处**，I1 第二白名单点：`HostContextPort = Pick<Context, …>` + 六条按 E.2 实测落定的能力面 `logger / register / tools / prompt / expose / events`；`settings` 是晚到服务、`sessions` 实测零命中，两条都**不预置**，理由就地写明）与 `src/server/shared/compose.ts`（组合根机制 `bindHost / assemble / safeDisposeAll`，经 `server/shared/interface.ts` 门面转出）；入口迁入声明合并（键引用 `MCP_MANAGER_SERVICE as const`，非导出常量）；`test/integration/real-context.test.ts` 9 条**真实 Context** 探针（装配顺序 / 释放严格逆序 / 标记复位 / 重复装配当场抛 / 能力面收窄 / 入口契约 + 编译期声明合并锁）。登记面：`test --min` 21→22、`vitest.stryker.d` 测试面 +1、`dir-imports-baseline` **仅 3 个数字**（`scannedSrcFiles` 75→77、`allSrcTsFiles` 90→92、`fileValueEdges` 127→128；`quality` 段与其余 5 包 byte-identical）、入口导出面**零 diff**、`pack:check` 声明合并可达性仍绿。**未完**：`src/shared` 另外五个文件。
 
-> **两条显式收窄（B1.3/B1.4，主控裁定，理由在方案自身）**：
+> **两条显式收窄 + 一条落点裁量（B1.3/B1.4，主控裁定，理由在方案自身）**：
 > ① **不建 10 个空域骨架**（`store/stats/pipeline/config/workspace/catalog/connection/inject/api/sdk` 的 `interface.ts`/`deps.ts`）。依据是**决策⑥**：`deps.ts` 的口径是「**运行时能力消费**」的**实测**产物（附录 E 已证 workspace 静态 0 边但运行期 2 条对象成员边），域代码不存在时写它只能是猜；10 个空门面只会往登记面加 10 个模块、零行为收益。**各域随 B2 重写时与其真实代码同笔生成**。
 > ② **B1.4 不重写 `bootstrap/apply.ts` 的既有装配、不把既有装配路由进 `assemble`**：本刀只交付机制 + 宿主能力面 + `declare module` 迁入 + 探针，插件保持今天的行为可用；把真实域接进 `assemble` 是 **B2**（那时域才存在），否则就是二次重写。
+> ③ **组合根机制的物理落点是 `server/shared/`，不是 §3.1 字面的 `src/index.ts`**（B1.4 落点裁量，两条硬要求不可兼得时的取舍）：入口加任何新导出都会让 `export-surface-snapshot --package dsh-mcp-manager` 判红（判词「入口 . 新增导出」），而写在入口又不导出的函数测试不可达——「入口导出面零 diff」与「夹具域驱动的探针」只能同时满足于「机制住在可 `import` 的内部模块」。**入口仍是组合根**：B2 由 `src/index.ts` 调 `bindHost(ctx)` → `assemble(host, domains)` → `ctx.effect(() => () => safeDisposeAll(disposers))` 接真实域；`Context` 的引用面因此仍只有两处（`host-faces.ts` 的类型 + 入口）。**连带收益**：`assemble` 对每个 `install` 一律 `await`，B1.3 记的「`installUpgrade` 返回 Promise、B2 必须 `await`」由机制兜住，接线方漏写不会有第二次机会。
 
 > **接线顺序约束（B2 必须遵守，来自代码事实）**：`upgrade` 的 `storage-layout` 步骤会把旧文件 `rename` 成 `*.migrated.bak`；而各域今天仍读旧路径（`config/store/store.ts` 读 `<DSH_HOME>/dsh-mcp.json`、`catalog/cache-view.ts` 读 `dsh-mcp-catalog.json`、`middleware-state.ts` 读 `dsh-mcp-user-state.json`）。**先接线迁移、后改读者 = 归档旧文件而旧读者读空 = 静默丢用户配置**。故 `upgrade` 的启用与「读者改读新布局」必须**同一笔**（B2）；B1 只交付可直接调用并单测的域，不接线。
 
@@ -850,17 +854,19 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 20. **B1.0 判据加固已完成**（`4f94f65`）：关掉 I8① 的裸包名自引用绕过路径（附录 G·G1）。`resolveCandidates`/`resolveTarget` 未动、存量 0、`dir-imports-baseline.json` **零位移**；`test:scripts` 641 pass（基线 637 + 新增 4）；`pnpm lint` 670 warning；`pnpm gate:pr` exit 0。主控独立复验：判据在 mcp/notifier 均 exit 0、基线零 diff、7 个包都有 `package.json`、我自测的 `test/unit/**` 裸自引用存量确为 0。
 21. **B1.2 落盘面原语已完成**（`dfd6577`，8 文件 +549/−6）：`server/shared/` 三文件 —— `paths.ts`（目标布局 + `legacyFile` 同处声明 + §7.1 的 mode 表 + 目录 `0o700`，HOME 只经仓库 `shared/dsh-home.js`）、`file-io.ts`（唯一 tmp 名 → 显式 mode → `rename` → 失败清理并上抛；**同路径 promise 队列**；**不装进程级钩子**；未登记路径抛错不回落默认 mode）、`interface.ts` 门面；17 条单测（18 文件 / 1156 通过）。登记面：`dir-imports-baseline` **仅 5 个数字**（`modules` 15→16、`scannedSrcFiles` 64→67、`allSrcTsFiles` 79→82、`fileValueEdges` 117→120、`crossModuleRefs` 141→142；`interfaceFacades`/`leafValueEdges` **未位移**），**`quality` 段与其余 5 个包 byte-identical**（主控独立比对）；另新增两处此前未登记的登记面：`test --min` 16→18 与 `vitest.stryker.d` 测试面 +2 文件。**两条反例均「改前必红」**：去掉显式 mode → mode 断言红（0o600 实得 0o664）；去掉同路径队列 → 并发用例红（`expected 'first' to be 'second'`，即 R11 要防的「旧数据覆盖新数据」）。`pnpm gate:pr` exit 0（32 项逐条 exit=0，`/tmp/gate-pr-767-b12-final.log`，主控独立核验）。**命名发现**：新模块的 `userStateFile()` 与包入口既有导出**同名**（`src/index.ts:145` 仍导出旧实现）——会被 `export-surface-snapshot` 判成「入口 `.` 声明块新增」，且在迁移期造成「两个同名函数分别返回新旧两条路径」的不可判读；改名 `userStatePath()` 并就地注释，导出面保持零 diff。
 22. **B1.3 `upgrade` 域已完成**（`4bd6af6`，15 文件 +1231）：六件套一次建齐（`impl/{version, chain, steps}` + `service` + `deps.ts` + `interface.ts`）+ `storage-layout` 一步（逐文件搬目录型旧路径、纯字节不解析、幂等归档 `*.migrated.bak`、IO 失败抛错、用户显式 `storePath`/`statsFile` 不动）+ 43 条单测（21 文件 / 1199 用例）。**未接线**（主控独立核：`src/index.ts`/`bootstrap/`/`coverage.config.json`/`mutation-topology.json` 零命中；`lib/index.js` 里 `upgradeRunner`/`LEGACY_LAYOUT` 命中 0）。基线**恰好 7 个数字**、键序仍 `$comment,version,packages`、`quality` 与其余 5 包不变（主控独立复验）。**三条反例均「改前必红」**：归档改覆盖 → 4 条红；刻度回写挪到 `run` 之前 → 失败不推进用例红；目录型走整目录 `rename` → mode 断言红（0o664 vs 0o644）+ `ENOTEMPTY`/`ENOENT`。**设计裁定**：`installUpgrade` **返回 Promise**（`file-io` 只有异步面）且在 B1.4/B2 接线时**必须 `await`**；签名故意写成非 `async` 的 `export function`（`analyzeInjectionFaces` 的正则漏 `async`，见附录 G·G12）；`STEPS` = `0.0.0 → 0.2.5`（存储形态代际，发版号若不是 0.2.5 须同步该表，否则对账持续 warn——**这是设计内信号，未放宽断言掩掉**）。
+23. **B1.4 组合根已完成**（本刀）：`src/server/shared/host-faces.ts`（I1 第二白名单点：宿主能力面的**类型定义处**，六条按附录 E.2 实测落定）+ `compose.ts`（`bindHost` 收窄 / `assemble` 成对装配 / `safeDisposeAll` 逆序释放；每个 `install` 一律 `await`，把 B1.3 记的「接线必须 await」由机制兜住）+ 门面转出 + 入口迁入声明合并（键 `MCP_MANAGER_SERVICE as const`，`integration/service.ts` 的同名合并删除）+ `test/integration/real-context.test.ts`（9 条真实 Context 探针：装配顺序 / 释放严格逆序 / 每域标记复位 / 重复装配当场抛 / 同名域出现两次抛 / 单域释放失败不阻断 / 能力面逐条转发与「面里没有 ctx」/ `onPreStep` 摘除 / 入口契约 + 编译期声明合并锁）。**门禁**：入口导出面 **零 diff**（`export-surface-snapshot` exit 0）、`pack:check` 声明合并可达性 exit 0、`test --min` 21→22、`vitest.stryker.d` +1 文件、`dir-imports-baseline` **仅 3 个数字**（`scannedSrcFiles` 75→77、`allSrcTsFiles` 90→92、`fileValueEdges` 127→128；`quality` 段与其余 5 包 byte-identical）、`pnpm lint` 670 warning（余量 1 未动）。**三条反例均「改前必红」**：`safeDisposeAll` 改成正序 → 逆序断言红；夹具域去掉「只能装配一次」→ 重复装配用例红；去掉释放里的标记复位 → 复位/复用断言红（每条改完 `git diff --exit-code` = 0）。**未接线**（真实域接进 `assemble` 是 B2）；**落点裁量**见 §十二 表后 ③。**连带面（`gate:pr` 实测发现）**：R6 的迁入打破了 `scripts/test/dts-cordis-merge-lib.test.ts` 里一条以 mcp 为「**间接形态**现实反例」的自测（它断言产物入口**不含**合并）；迁入后仓内已无间接形态的真实主体，该条改为断言当下的直接形态（源面命中只落包入口 + 产物入口直接含合并），间接形态继续由合成 fixture 的合规/违规成对用例覆盖——判据面不变，`test:scripts` 641 条全绿。
+24. **ABI 名仍是两处定义**（B1.4 登记，B1.5/B2 收口）：入口的 `MCP_MANAGER_SERVICE` 常量与 `bootstrap/apply-services.ts` 的 `provide("mcpManager", …)` 字面量各写一次。统一它要同笔改 `service-contract.test.ts` 的源文本 marker（既有断言的锚点，改锚要单独评审），且 `src/shared/service.ts` 属 B1.5——本刀不做。
 
 ### D.3 未完成与遗留（含状态订正）
 
-1. **B1 未完部分**：组合根（B1.4 进行中）+ `src/shared/` 另外五个文件（`status`/`frames`/`dto`/`routes`/`service`）。切法与验收见 D.4。**两条显式收窄**见 §十二 表后（不建 10 个空域骨架；B1.4 不路由既有装配）。**接线顺序**：`upgrade` 的启用必须与「读者改读新布局」同一笔（B2），否则归档旧文件而旧读者读空 = 静默丢配置（见 §十二 表后）。
-2. **B1.4 进行中**（组合根机制 + `host-faces.ts` + `declare module` 迁入 + 探针）。**B1.3 已完成**（`4bd6af6`，不接线）；**B1.2 已完成**（`dfd6577`）；**B1.0 已完成**（`4f94f65`，附录 G·G1），其遗留的两条 id 不一致见 **G1b**（登记不修）；I9 判据只覆盖顶层 `let/var` 的缺口见 **G11**。
+1. **B1 未完部分**：`src/shared/` 另外五个文件（`status`/`frames`/`dto`/`routes`/`service`）。组合根（B1.4）已完成，见 D.2·23。切法与验收见 D.4。**两条显式收窄 + 一条落点裁量**见 §十二 表后（不建 10 个空域骨架；B1.4 不路由既有装配；机制落 `server/shared/` 而非入口）。**接线顺序**：`upgrade` 的启用必须与「读者改读新布局」同一笔（B2），否则归档旧文件而旧读者读空 = 静默丢配置（见 §十二 表后）。
+2. **B1.4 已完成**（组合根机制 + `host-faces.ts` + `declare module` 迁入 + 9 条真实 Context 探针；机制落点裁量见 §十二 表后 ③）。**B1.3 已完成**（`4bd6af6`，不接线）；**B1.2 已完成**（`dfd6577`）；**B1.0 已完成**（`4f94f65`，附录 G·G1），其遗留的两条 id 不一致见 **G1b**（登记不修）；I9 判据只覆盖顶层 `let/var` 的缺口见 **G11**。
 3. **⑩ 已完结**（随 B1.1，`f21d44d`）：迁移与其连带面（6 条 mutation exclude pattern 平移 + 6 份段 conf 重生成）同笔完成。
 4. **基线写入纪律（附录 G·G5，必须遵守）**：`--write-baseline` **必须在 build 之后的树上跑**——`lib/**` 的证据 id 会随 `lib/foo.d.ts` 在不在而变（只有 `src/index.ts` 做了归一），而 CI 是「先 build 再 contract」，两者错位就换号判红。
 5. **已知放宽路径（登记，不修）**：R16 的三条同族路径（删键 / 删**整包**条目 / **瞬态台账**，见 §十三 R16 与附录 G·G2–G4）；豁免 `reviewBy` 无执法力、可静默删除转长期（G6）。
 6. **判据面与宪法正文的文字差待订正**（G9）：I2④ 正文（doc:124）未写「值」而实现判值面；I8① 正文（doc:165）只列两面而实现含 `src/client/**`（§8.1 与脚本头写全三面）。
 7. **「有文字无判据」清单**（G10，明细见附录 G）：I1 / I2③后半 / I2② 终态 / I3 / I4② / I5 / I6 / I7 **全靠人工**。其中最突出的是 **I2③ 后半「死声明 = 0」：只算不判、连默认输出都没有**。
-8. **仓库根 `shared/placement-math.d.ts:2` 有过期注释**（「各包 `src/placement-math.ts` 薄 facade」——provider-usage 与本包都已在 `src/shared/`）：既存、非本次弄脏，登记待清。
+8. **仓库根 `shared/` 两处过期注释**：① `shared/placement-math.d.ts:2`（「各包 `src/placement-math.ts` 薄 facade」——provider-usage 与本包都已在 `src/shared/`）：既存、非本次弄脏；② `shared/mcp-manager-service.d.ts:4`（「src/service.ts re-export + declare module 合并」——声明合并已随 B1.4 迁入包入口）：**仓库根 `shared/` 是本刀禁改面**，两处均登记待清。
 9. **发版号依赖（待维护者知悉）**：`upgrade` 的步骤表是 `0.0.0 → 0.2.5`。接线（B2）后若 `package.json` 仍是 0.2.4，对账会报「步骤表与 `package.json` 不同步」——这是 §7.4 #5 的**设计内落差信号**（只 warn 不中止）。**代理不改版本号**：发版时若不是 0.2.5，须同步该步骤表。
 10. **lint warning 余量**：**670 / 预算 671，余量 1**（不许抬 `gauntlet.config.json`）。
 11. **测试面（B3 主体）未动**：16 个测试文件 / 14635 行尚未按域搬迁；`@ts-nocheck` 未清零。
@@ -869,12 +875,12 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 ### D.4 下一步顺序
 
-**B0 已收口；B1.1（`f21d44d`）、B1.0 判据加固（`4f94f65`）、B1.2 落盘面（`dfd6577`）、B1.3 `upgrade` 六件套（`4bd6af6`）已落地；当前在 B1.4（组合根机制）。** B1 剩余按下表各刀切，每刀一个可独立验证的提交面（一次只放一个写者）：
+**B0 已收口；B1.1（`f21d44d`）、B1.0 判据加固（`4f94f65`）、B1.2 落盘面（`dfd6577`）、B1.3 `upgrade` 六件套（`4bd6af6`）、B1.4 组合根（本刀）已落地；当前在 B1.5（`src/shared/` 另外五个文件）。** B1 剩余按下表各刀切，每刀一个可独立验证的提交面（一次只放一个写者）：
 
 1. ~~**B1.1 `src/shared/` 门面 + ⑩ 迁移**~~ **已完成（`f21d44d`）**；下面保留原始切法供回溯：建 `src/shared/` 与 `interface.ts`；`git mv src/placement-math.ts src/shared/`；改 4 处引用（`src/index.ts` / `src/config/model/config-schema.ts` / `src/client/core/state.ts` / `src/client/float/float.ts`，其中 client 两处改引 `src/shared/interface.ts`）；被移文件内仓库 `shared/placement-math.js` 的相对深度从 `../../../` 改 `../../../../`；mutation-topology 的 6 条 exclude pattern 平移到新路径 + 重生成 6 份段 conf。**验收**：`verify-dir-imports.mjs --package dsh-mcp-manager` 从 **exit 1 → exit 0**（这就是 ⑩ 在 B0 唯一的红）、`gen-stryker-conf.mjs --check` exit 0、`export-surface-snapshot` exit 0（导出面不变，纯位移）。
 2. ~~**B1.2 `server/shared/` 落盘面**~~ **已完成（`dfd6577`）**；下面保留原始切法供回溯：`paths.ts` 单源（新路径 + `legacyFile` + 每文件 mode 表 + 插件自有目录 `0o700`）+ 自写 `file-io.ts`（唯一 tmp 名 → 显式 mode → `rename` → 失败清理；同路径 promise 队列；**不装进程级钩子**）+ 权限断言（7 个写点收敛到这一处）。
 3. ~~**B1.3 `upgrade` 域**~~ **已完成（`4bd6af6`）**；下面保留原始切法供回溯：六件套一次建齐（步骤表 / 链驱动 / 刻度 / 失败语义 / 对账 / 装配标记）+ 迁移**五态**测试（含目录型旧路径逐文件搬、用户显式 `storePath`/`statsFile` 不动）+ 刻度「推进与失败不推进」。
-4. **B1.4 组合根机制（进行中）**：`bindHost`/`assemble`/逆序释放/`declare module` 迁入 + `host-faces.ts`；探针证明 apply → install → release 各域标记复位。**11 域空骨架已裁掉**（各域随 B2 重写与其真实代码同笔生成，理由见 §十二 表后）；**既有装配本刀不路由**（B2 接通）。
+4. ~~**B1.4 组合根机制**~~ **已完成（本刀）**；下面保留原始切法供回溯：`bindHost`/`assemble`/逆序释放/`declare module` 迁入 + `host-faces.ts`；探针证明 apply → install → release 各域标记复位。**11 域空骨架已裁掉**（各域随 B2 重写与其真实代码同笔生成，理由见 §十二 表后）；**既有装配本刀不路由**（B2 接通）。**落点裁量与实测证据**：机制落 `src/server/shared/compose.ts` + 门面（不是 `src/index.ts`）——入口加导出会让 `export-surface-snapshot` 判红，而入口的非导出函数测试不可达；B2 在入口调 `bindHost` → `assemble` → `safeDisposeAll`。
 5. **B1.5 `src/shared/` 另外五个文件**（`status` / `frames` / `dto` / `routes` / `service`）：必须与**两端改引同笔**——只建文件不接两端就是死代码，覆盖率面与变异面会先红。
 6. **B1 收尾**：`pnpm gate:pr` 全绿 + `pack:check` 绿 + `THIRD-PARTY-LICENSES` 相对基线**无新增**（本轮不新增任何依赖）→ 才进 B2。
 7. 每批完成后回写本附录的 D.2/D.3；每批验收含真实 `exit code` + 该批**全部登记文件**同步（§12 开头已写死）。
