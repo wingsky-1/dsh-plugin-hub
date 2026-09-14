@@ -135,7 +135,7 @@ Stryker 将 timeout 计入 detected，高并发导致调度延迟时边际 mutan
 **并发**指 **Stryker 段内 `concurrency`**——同一次 run 内的 test runner 进程数。本仓已识别的
 **主要**旋钮是段内 concurrency：它会改变 mutant 的调度延迟，故 timeout 机制主要与本条同源。
 **job 级并行度**（GHA `max-parallel`：每个 job 独立 runner VM、段内 `concurrency` 不变）不改
-段内并发，**timeout 机制不与本条同源**；但 job 级并发的变更**仍须核对** score 与基线口径一致
+段内并发，**timeout 机制不直接与本条同源**；但 job 级并发的变更**仍须核对** score 与基线口径一致
 （基线口径不随并发度变化，同一份报告即可复算）。**边界**：本条只讨论已识别的段内 concurrency
 旋钮；同账户 runner 共享池、机器负载等未识别因素同样可能影响调度延迟，不在本条讨论内。
 

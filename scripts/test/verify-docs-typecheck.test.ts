@@ -33,7 +33,7 @@
  *
  * 为何自身仍带 @ts-nocheck：本文件只 spawn tsc 子进程并读它的输出，不 import 被测物的类型
  * （walk-files.ts 仅作运行时遍历工具）；本文件与 scripts/ 下其余带 @ts-nocheck 的文件一起由后续
- * 批次逐个摘除（数量以源码树为准，本注释不复述）。
+ * 批次逐个摘除（数量以源码树为准）。
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
