@@ -916,6 +916,16 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
     - **W10 的一处偏离与主控裁决（接受 7、不追 8）**：`bootstrap/apply.ts` 的 `DEFAULT_RESULT_TRUNCATE_BYTES` 改从 **`server/shared/interface.ts`** 取（该常量的物理单源）。若路由经 `connection/runtime/interface.ts`，会把 `bootstrap|connection` **重签名**为 `bootstrap|connection/runtime` —— 判「新增未登记证据」且拒写基线，**且不是 G21 假新增**（改前基线确有前者、没有后者），登记豁免又被纪律禁止。**裁决依据**：§3.6/I2① 明确「指向共享层的值边是允许的出口」，从常量的物理定义处取数更正确；「8 条残余」原为**预测**，实测 **7 条且全是 `bootstrap|*`**，B2b 的前提「残余边**被删除**而非重签名」因此更干净。
     - **B2a-wire 最终账面**（主控逐刀复核）：I2① **33 → 7**、叶子环 **4 → 0**、文件环 **4 → 0**、`directImpl` **1 → 0**、`uncoveredSrcFiles` 0；**公开导出面自始至终零 diff**；每刀 `gate:pr` 32/32、`lint` 508/508（余量 0）。六个域端口（catalog/pipeline/inject/orchestrator/runtime/api）全部落地，并在入口以**字面量**装配（G20）。
 
+50. **W11（B2b）方案已由只读 agent 产出，主控拍板为三段执行**：
+    - **关键实测（方案给出，决定了不必强求一笔原子）**：残余 7 条值边**只由 `src/bootstrap/{apply,apply-config,apply-runtime}.ts` 承载**（`apply-services.ts` 只有类型 import、`apply-guidance.ts` 无 import）；**bootstrap 一解体，7 条整体消失（改善）**。此后 10 类质量证据**全空** → 任何**纯重命名零位移**。
+    - **拍板 ①：三段切法**。**W11a** = `bootstrap` 并入入口 + 路径切换 + 启用 `upgrade`（I2① 7→0）；**W11b** = 8 域加 `server/` 前缀 + `store` 提取（自 `config/store/`）+ `types`/`integration` 解体 + 14 处仓库根 `shared/*.js` 相对深度改写 + `plugins-manifest` + mutate 段重画；**W11c（块层重排）不在本轮**。依据：7 条是**删除**不是重签名；唯一耦合是「**先搬域后解体 bootstrap**」会重签名 → 故 bootstrap 必须先解体（或同笔）。
+    - **拍板 ②：`sdk` 不建空骨架**（实测无目录、无 `installSdk`）；`provideMcpManagerService` 随 `apply` 落 `src/index.ts`，`server/sdk` 留 D4/G19 那一笔。
+    - **拍板 ③：静态端口留模块求值期（D.3·30④），`assemble` 只驱动 `upgrade` 的生命周期**——把静态 `installXxx` 移进 `apply` 会撞持有者的「重复装配抛错」。
+    - **拍板 ④：本轮不发 release notes**（版本号与发版归维护者），只在文档登记这处刻意省略。
+    - **方案点名的三条最危险**：① `installUpgrade` 的 `storePath` 必须传**显式值**而非解析后的生效路径（生效路径会让 `takenOver` 恒真 → 迁移整段跳过、刻度推进 → **静默丢用户配置**）；② bootstrap 若「按域落位」而非并入入口，`bootstrap|api` 会重签名为 `server/*|server/*` → 新增未登记证据且拒写（G16 同族，**非 G21 假新增**）；③ 仓库根 `shared/*.js` 的相对深度必须同笔改对（14 文件），错则 `lib/**/*.d.ts` 出 TS2307 被 `skipLibCheck` 静默降级（G15，**既有闸全看不见**）——这是本方案唯一无法只读预验的面。
+    - **方案新发现的连带必改**：`scripts/data/plugins-manifest.json`（4 条 module 指向 `src/config/model/config-schema.ts`，`config-matrix-gate.ts:268` 会 `req()` 它）、`test/integration/service-contract.test.ts:224` 与 `scripts/test/lint-toolchain.test.ts:190` 的硬编码 bootstrap 路径。
+    - **已知代价**：入口并进 6 文件 690 行后约 **1005 行**（`src/` 顶层只允许四项 → 这是该约束的直接后果）；拆分的前置是各落点域端口化，留 W11c 或后续。
+
 ### D.3 未完成与遗留（含状态订正）
 
 1. **B1 全部切片已完成**（B1.0–B1.5b，见 D.2·19–26）。**B1 收尾已完成**：主控实跑 `gate:pr` = **32 项逐条 exit=0 + PASS**（清单与上一轮逐项一致）、`THIRD-PARTY-LICENSES` 相对 `origin/main` **零改动**、依赖面零新增、44 笔。**未推送**（理由见 D.3·17）。**B2.1 已完成**（`0fb3bab`：零位移、零台账、`gate:pr` 32 条全绿）。**B2.2 已完成**（`8628110`）。**B2.3 已完成**（`6bf9457`，含建 `deps.ts` 后模板订正口径的首次落地）。**B2.4（`catalog` 域）进行中**。切法与验收见 D.4。**两条显式收窄 + 一条落点裁量**见 §十二 表后（不建 10 个空域骨架；B1.4 不路由既有装配；机制落 `server/shared/` 而非入口）。**接线顺序**：`upgrade` 的启用必须与「读者改读新布局」同一笔（B2），否则归档旧文件而旧读者读空 = 静默丢配置（见 §十二 表后）。
