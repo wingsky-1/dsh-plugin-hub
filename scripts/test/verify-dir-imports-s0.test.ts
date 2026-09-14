@@ -14,6 +14,8 @@
  *   - 死声明判据（#733 M0a）：值面判死、类型面豁免；deps.ts 自身含值 import 硬判红；
  *   - 单调基线：写入基线后人为把某计数调高必须 exit 1（#733 M0b 起分结构型 / 质量型）；
  *   - 全覆盖断言：新增未被 mutate/excludes 覆盖的 src 文件必须 exit 1。
+ *   - $noMutationPackages（#773 批 B / #710 §2-2）：登记在册的「无变异面」包不再判
+ *     fail-closed，但必须在判绿输出里显式声明「覆盖断言不适用」；删掉登记即回到 exit 1。
  *
  * fixture 经 VERIFY_DIR_IMPORTS_ROOT 指向 mkdtemp 隔离目录（基线路径随根推导），
  * 不在仓库内造包目录（产物零污染纪律）。断言同时校验 exit code 与输出计数——
@@ -1032,6 +1034,86 @@ test("全覆盖断言：未覆盖清单之外的既有文件不会被误判（�
       `存量未覆盖文件不得判红，实际 ${before.status}：\n${before.out}`,
     );
     assert.match(before.out, /单调基线通过/, `存量应被基线接受：\n${before.out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/** $noMutationPackages 登记所需的拓扑：packages 面为空，只登记「无变异面」理由。 */
+function noMutationTopology(members) {
+  return JSON.stringify(
+    {
+      sharedDefaults: {},
+      $noMutationPackages: members,
+      packages: {},
+    },
+    null,
+    2,
+  );
+}
+
+test("全覆盖断言：#710 §2-2 / #773：$noMutationPackages 成员被 --package 点名 → exit 0 且显式声明", () => {
+  // 该包没有变异面，覆盖断言不适用——但判绿必须点名这件事，否则「未登记拓扑时
+  // uncoveredSrcFiles 恒为空」会让它静默变成一条干净的 PASS（已知假绿形态）。
+  const root = makeFixtureRoot({
+    ...chainFixture(""),
+    "scripts/data/mutation-topology.json": noMutationTopology({
+      [PKG]: "只有 e2e 冒烟，刻意不登记变异面",
+    }),
+  });
+  try {
+    const { status, out } = runOn(root);
+    assert.equal(status, 0, `$noMutationPackages 成员应放行（exit 0），实际 ${status}：\n${out}`);
+    assert.match(out, /\$noMutationPackages/, `声明须点名登记处：\n${out}`);
+    assert.match(
+      out,
+      /源码全覆盖断言不适用/,
+      `判绿必须显式声明覆盖断言不适用（不得静默判绿）：\n${out}`,
+    );
+    assert.match(out, /跟踪 #690 S6\/S8 \/ #773/, `声明须带跟踪来源：\n${out}`);
+    assert.doesNotMatch(
+      out,
+      /未在 scripts\/data\/mutation-topology\.json 登记/,
+      `不得再报「未登记」：\n${out}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("全覆盖断言：#710 §2-2 反证：把该包从 $noMutationPackages 删掉 → 回到 fail-closed exit 1", () => {
+  // fixture 形状与上一条完全相同，只删掉本包的登记键：若仍判绿，说明放行来自
+  // 「顺手放宽」而不是登记本身——登记必须是唯一凭据。
+  const root = makeFixtureRoot({
+    ...chainFixture(""),
+    "scripts/data/mutation-topology.json": noMutationTopology({
+      "other-pkg": "与本包无关的登记",
+    }),
+  });
+  try {
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `删掉登记后必须回到 fail-closed，实际 ${status}：\n${out}`);
+    assert.match(out, /未在 scripts\/data\/mutation-topology\.json 登记/, `应点名未登记：\n${out}`);
+    assert.doesNotMatch(out, /源码全覆盖断言不适用/, `不得再打印「不适用」声明：\n${out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("全覆盖断言：未登记在任何一处的包名仍 fail-closed（$noMutationPackages 存在≠全员放行）", () => {
+  // 真实拓扑的 $noMutationPackages 里带 $comment 元键；本用例固化「有该段但本包不在其中」
+  // 不构成放行凭据，也顺带锚定 $comment 不得被当成包名登记。
+  const root = makeFixtureRoot({
+    ...chainFixture(""),
+    "scripts/data/mutation-topology.json": noMutationTopology({
+      $comment: "元数据键不是包登记",
+      "dsh-verify-isolated": "另一包的登记",
+    }),
+  });
+  try {
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `未登记包必须 fail-closed，实际 ${status}：\n${out}`);
+    assert.match(out, /未在 scripts\/data\/mutation-topology\.json 登记/, `应点名未登记：\n${out}`);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
