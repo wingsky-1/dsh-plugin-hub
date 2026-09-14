@@ -165,7 +165,13 @@
         "unitExemptions": {
           "packages/dsh-mcp-manager/test/unit/unit-shared.test.ts": "被测对象是 workspace 根 shared/settings-namespace.ts（不在本包 mutate 面内），登记它零杀灭、只增加各段 dry run 执行面"
         },
-        "coverageExcludes": ["!packages/dsh-mcp-manager/src/**/interface.ts"],
+        "coverageExcludes": [
+          {
+            "pattern": "!packages/dsh-mcp-manager/src/**/interface.ts",
+            "kind": "type-only",
+            "reason": "各域对外门面（api/bootstrap/catalog/config/connection 等 14 个）：文件体只有 re-export 与类型出口，域内实现不在这里，目录外只能经它引用（verify-dir-imports 静态强制），自身不含可变异逻辑。"
+          }
+        ],
         "testMutationExemptions": {
           "unit": {
             "packages/dsh-mcp-manager/test/unit/unit-shared.test.ts": "被测对象是 workspace 根 shared/settings-namespace.ts（不在本包 mutate 面内），登记它零杀灭、只增加各段 dry run 执行面"
@@ -262,10 +268,26 @@
       },
       "testLayers": {
         "coverageExcludes": [
-          "!packages/dsh-notifier/src/**/interface.ts",
-          "!packages/dsh-notifier/src/**/deps.ts",
-          "!packages/dsh-notifier/src/**/*.d.ts",
-          "!packages/dsh-notifier/src/**/*.ps1"
+          {
+            "pattern": "!packages/dsh-notifier/src/**/interface.ts",
+            "kind": "type-only",
+            "reason": "各域对外契约门面（api/channels/config/events/pipeline/sdk/shared/stores/upgrade）：装配/卸载函数只转调域内 service，其余是类型与少量值出口；开关、免打扰、投递、落盘等判断都在 impl/ 与域内，门面自身不做裁决。"
+          },
+          {
+            "pattern": "!packages/dsh-notifier/src/**/deps.ts",
+            "kind": "type-only",
+            "reason": "各域依赖声明出口：文件体全是 import type / export type（能力面用 Pick 从对域 interface.ts 派生），编译期擦除、运行时代码为空；装配面口径由 verify-dir-imports 的注入面对账独立承载。"
+          },
+          {
+            "pattern": "!packages/dsh-notifier/src/**/*.d.ts",
+            "kind": "type-only",
+            "reason": "两处编译期类型 shim：client/css.d.ts 声明 .css 模块（verbatimModuleSyntax 下类型化 style.css 文本导入）、client/react-shim.d.ts 提供 react 类型（运行时由 dsh web 的 factory require 注入）；两者都不产出可执行代码。"
+          },
+          {
+            "pattern": "!packages/dsh-notifier/src/**/*.ps1",
+            "kind": "not-source",
+            "reason": "系统通知出口的 PowerShell 资源脚本 toast.ps1：构建期作为资源随包分发（WinRT 投影只有 powershell.exe 5.1 可用），宿主以子进程 -File 调用，不在 JS/TS 源码面内。"
+          }
         ],
         "testMutationExemptions": {}
       }
@@ -422,12 +444,36 @@
       },
       "testLayers": {
         "coverageExcludes": [
-          "!packages/dsh-provider-usage/src/**/interface.ts",
-          "!packages/dsh-provider-usage/src/**/*.d.mts",
-          "!packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.mjs",
-          "!packages/dsh-provider-usage/src/domain1/adapters/opencode-go.mjs",
-          "!packages/dsh-provider-usage/src/domain1/adapters/zai-coding-cn.mjs",
-          "!packages/dsh-provider-usage/src/shared/placement-math.ts"
+          {
+            "pattern": "!packages/dsh-provider-usage/src/**/interface.ts",
+            "kind": "type-only",
+            "reason": "13 个目录的对外门面（apply/domain1/domain2/shared）：逐个命名 re-export 实际被消费的类型与函数（显式禁 export * from），目录外的调用方一律经它消费，自身不含实现。"
+          },
+          {
+            "pattern": "!packages/dsh-provider-usage/src/**/*.d.mts",
+            "kind": "type-only",
+            "reason": "三个内置适配器（deepseek-official / opencode-go / zai-coding-cn）的手写声明层：只有 declare 出来的常量、函数与接口，运行时实现全在相邻 .mjs，声明层本身零可执行代码。"
+          },
+          {
+            "pattern": "!packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.mjs",
+            "kind": "not-mutated",
+            "reason": "内置 DeepSeek 官方余额适配器的权威实现（区间记账法 classifyIntervalDs/aggregateDaily、B2 断轴 balanceSvg、峰谷徽标）：构建期由 bundle-host 原样拷入 lib/adapters/（tsc 不 emit .mjs），变异面各段按 src/**/*.ts 域实现登记，本条属有意不度量，行为面由 test/unit/adapters/unit-deepseek-official.test.ts 直测。"
+          },
+          {
+            "pattern": "!packages/dsh-provider-usage/src/domain1/adapters/opencode-go.mjs",
+            "kind": "not-mutated",
+            "reason": "内置 opencode-go 用量适配器的权威实现（三窗口取数与迷你图卡片，图表/日界函数全走宿主注入的 utils，miniChartSvgMarkup 是给测试导入面的兼容导出）：与另两个内置适配器同批 mjs 化，构建期原样拷入 lib/adapters/，不进 .ts 域变异段。"
+          },
+          {
+            "pattern": "!packages/dsh-provider-usage/src/domain1/adapters/zai-coding-cn.mjs",
+            "kind": "not-mutated",
+            "reason": "内置智谱 Coding Plan (CN) 配额适配器的权威实现（端点与窗口判定按 2026-08-27 真 key 实测固化：CREDIT_LIMIT 按 unit 判 5h/周、percentage 取服务端权威口径、网关 200 加业务码 404 判 bad-data）：构建期原样拷入 lib/adapters/，不进 .ts 域变异段。"
+          },
+          {
+            "pattern": "!packages/dsh-provider-usage/src/shared/placement-math.ts",
+            "kind": "not-mutated",
+            "reason": "包级薄 facade：胶囊定位/层级/断点纯函数的单一事实源在 workspace 根 shared/placement-math.js（已在 pipeline 段的 mutate 面内），本文件只保留 DEFAULT_Z_INDEX_BASE 与 panelZIndexFor 的包级默认注入，重复登记只会把同一份实现的缺口算两遍。"
+          }
         ]
       }
     },

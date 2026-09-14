@@ -15,7 +15,14 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { collectMutationSpecs, defaultSegmentExcludes } from "../gate/mutation-topology.mjs";
+import {
+  COVERAGE_EXCLUDE_KINDS,
+  COVERAGE_EXCLUDE_MIN_REASON,
+  collectCoverageExcludePatterns,
+  collectMutationSpecs,
+  coverageExcludeProblems,
+  defaultSegmentExcludes,
+} from "../gate/mutation-topology.mjs";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const GENERATOR = join(ROOT, "scripts", "gate", "gen-stryker-conf.mjs");
@@ -89,9 +96,147 @@ test("F15 反证：落盘 conf 的 mutate 面与断言口径同源（含 coverag
   for (const g of specs.excludes) {
     assert.ok(confExcludes.includes(g), `段 conf 缺少断言口径里的排除 glob：${g}`);
   }
-  // coverageExcludes（S0 存量登记）必须真的落到 conf，否则覆盖断言与生成器再次脱节
-  for (const g of topology.packages["dsh-mcp-manager"].testLayers.coverageExcludes) {
+  // coverageExcludes（S0 存量登记）必须真的落到 conf，否则覆盖断言与生成器再次脱节；
+  // #773 R4 起条目是 { pattern, reason, kind }，取值只经共享的 collectCoverageExcludePatterns
+  for (const g of collectCoverageExcludePatterns(topology.packages["dsh-mcp-manager"])) {
     assert.ok(conf.mutate.includes(g), `coverageExcludes 未落盘到 conf：${g}`);
+  }
+});
+
+test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目（3 包共 11 条）", () => {
+  const topology = JSON.parse(readFileSync(TOPOLOGY_PATH, "utf8"));
+  // 规模断言：批 D 的形状变更范围就是这 11 条（dsh-mcp-manager 1 / dsh-notifier 4 /
+  // dsh-provider-usage 6）。数量变化必须是有意的登记动作，不能靠 diff 顺带溜过。
+  const expected = { "dsh-mcp-manager": 1, "dsh-notifier": 4, "dsh-provider-usage": 6 };
+  const allReasons = [];
+  let total = 0;
+  for (const [pkgName, count] of Object.entries(expected)) {
+    const pkgDef = topology.packages[pkgName];
+    const entries = pkgDef.testLayers.coverageExcludes;
+    assert.ok(Array.isArray(entries), `${pkgName} 的 coverageExcludes 必须是数组`);
+    assert.equal(
+      entries.length,
+      count,
+      `${pkgName} 的 coverageExcludes 条目数与登记不符（形状变更范围必须显式同步）`,
+    );
+    // 共享校验器：形状合法即零 problems（裸字符串 / 缺 pattern / reason 过短 / 未知 kind 都会红）
+    assert.deepEqual(
+      coverageExcludeProblems(pkgDef),
+      [],
+      `${pkgName} 的 coverageExcludes 形状不合法`,
+    );
+    for (const entry of entries) {
+      assert.equal(
+        typeof entry,
+        "object",
+        `${pkgName} 出现裸 glob 条目（旧形状已不合法）：${JSON.stringify(entry)}`,
+      );
+      assert.equal(
+        entry.glob,
+        undefined,
+        "键名是 pattern（与 vitest 面 coverage.config.json 同形同键名）",
+      );
+      assert.ok(entry.pattern.startsWith("!"), `pattern 必须是排除 glob：${entry.pattern}`);
+      assert.ok(
+        entry.reason.length >= COVERAGE_EXCLUDE_MIN_REASON,
+        `${entry.pattern} 的 reason 过短（下限 ${COVERAGE_EXCLUDE_MIN_REASON}）：${entry.reason}`,
+      );
+      assert.ok(
+        COVERAGE_EXCLUDE_KINDS.includes(entry.kind),
+        `${entry.pattern} 的 kind 不在值域内：${entry.kind}`,
+      );
+      allReasons.push(entry.reason);
+    }
+    total += entries.length;
+  }
+  assert.equal(total, 11, "coverageExcludes 共 11 条（#773 R4 的形状变更范围）");
+  assert.equal(
+    new Set(allReasons).size,
+    allReasons.length,
+    "每条排除都是独立裁决，reason 不得复制同一句",
+  );
+});
+
+test("#773 R4 反证：形状不合法必须判红（裸字符串 / 缺 pattern / reason 空或过短 / 未知 kind）", () => {
+  const valid = {
+    pattern: "!packages/x/src/a.ts",
+    reason: "这是一条足够长的理由说明",
+    kind: "type-only",
+  };
+  const cases = [
+    ["裸 glob 字符串（旧形状）", ["!packages/x/src/a.ts"], /非对象项/],
+    ["缺 pattern", [{ reason: "这是一条足够长的理由", kind: "type-only" }], /缺 pattern/],
+    [
+      "pattern 为空串",
+      [{ pattern: "", reason: "这是一条足够长的理由", kind: "type-only" }],
+      /缺 pattern/,
+    ],
+    ["reason 缺失", [{ pattern: "!packages/x/src/a.ts", kind: "type-only" }], /缺 reason/],
+    [
+      "reason 过短",
+      [{ pattern: "!packages/x/src/a.ts", reason: "太短", kind: "type-only" }],
+      /缺 reason/,
+    ],
+    ["kind 未知", [{ ...valid, kind: "whatever" }], /kind 须为/],
+    [
+      "缺 ! 前缀",
+      [{ pattern: "packages/x/src/a.ts", reason: "这是一条足够长的理由", kind: "not-mutated" }],
+      /!/,
+    ],
+    ["重复 pattern", [valid, { ...valid }], /重复 pattern/],
+    ["空数组", [], /非空数组/],
+    ["非数组", "!packages/x/src/a.ts", /非空数组/],
+  ];
+  for (const [name, entries, re] of cases) {
+    const problems = coverageExcludeProblems({ testLayers: { coverageExcludes: entries } });
+    assert.ok(problems.length > 0, `${name} 必须判红（这条判据不能恒绿）`);
+    assert.ok(
+      problems.some((p) => re.test(p)),
+      `${name} 的判词要能定位问题（实际：${problems.join(" | ")}）`,
+    );
+  }
+  // 对照组：合法条目零 problems —— 证明上面的红不是「凡输入皆红」
+  assert.deepEqual(coverageExcludeProblems({ testLayers: { coverageExcludes: [valid] } }), []);
+  // absent ≠ 空数组：未登记 coverageExcludes 的包不是形状错误
+  assert.deepEqual(coverageExcludeProblems({ testLayers: {} }), []);
+});
+
+test("#773 R4 反证：生成器遇旧形状（裸 glob）必须以判词退出，不得抛栈崩掉", () => {
+  const root = mkdtempSync(join(tmpdir(), "r4-shape-"));
+  try {
+    const dir = join(root, "scripts", "data");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "mutation-topology.json"),
+      `${JSON.stringify(
+        {
+          sharedDefaults: {},
+          packages: {
+            "fixture-pkg": {
+              testLayers: { coverageExcludes: ["!packages/fixture-pkg/src/a.ts"] },
+              segments: {},
+            },
+          },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    const res = spawnSync(process.execPath, [GENERATOR, "--check"], {
+      cwd: ROOT,
+      encoding: "utf8",
+      env: { ...process.env, GEN_STRYKER_ROOT: root },
+    });
+    assert.equal(res.status, 1, `旧形状必须判红：\n${res.stdout}${res.stderr}`);
+    assert.match(res.stderr, /非对象项/, "判词要点明「裸 glob 已不是合法形状」");
+    assert.doesNotMatch(
+      res.stderr,
+      /TypeError|not a function/,
+      `形状错误不得以抛栈形态出现（旧实现的失败形态）：\n${res.stderr}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
 

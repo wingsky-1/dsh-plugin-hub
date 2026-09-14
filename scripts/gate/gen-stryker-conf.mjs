@@ -35,7 +35,11 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { defaultSegmentExcludes } from "./mutation-topology.mjs";
+import {
+  collectCoverageExcludePatterns,
+  coverageExcludeProblems,
+  defaultSegmentExcludes,
+} from "./mutation-topology.mjs";
 import { discoverTestPackages, projectTestSurface, readTestMin } from "./test-surface.mjs";
 
 const repoRoot =
@@ -101,9 +105,10 @@ function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef) {
   const mutate = [
     ...segDef.mutate,
     ...(segDef.excludes ?? defaultSegmentExcludes(pkgName)),
-    // S0 覆盖断言的存量登记（#710 第二节）：门面/声明/资源类。追加在段自身 excludes 之后，
-    // 故不触动既有 excludes 数组，也不改变既有段的语义。
-    ...((pkgDef.testLayers ?? {}).coverageExcludes ?? []),
+    // S0 覆盖断言的存量登记（#710 第二节 / #773 R4 起为 { pattern, reason, kind } 结构化条目）：
+    // 门面/声明/资源/有意不度量四类。取值与断言侧同一份 collectCoverageExcludePatterns，
+    // 生成器不自己拆条目；追加在段自身 excludes 之后，故不改变既有段的语义。
+    ...collectCoverageExcludePatterns(pkgDef),
   ];
 
   const config = {
@@ -144,6 +149,22 @@ function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef) {
   return { confFileName, content: JSON.stringify(config, null, 2) + "\n" };
 }
 
+/**
+ * 全拓扑的覆盖排除面形状问题（逐条带包名前缀）。
+ *
+ * 独立成函数而不是内联进 main：main 的认知复杂度已贴着 lint 阈值，形状判据不该再往它身上
+ * 加嵌套分支；判词聚合是纯函数，也便于测试直接引用。
+ */
+function coverageExcludeShapeProblems(topology) {
+  const problems = [];
+  for (const [pkgName, pkgDef] of Object.entries(topology.packages ?? {})) {
+    for (const problem of coverageExcludeProblems(pkgDef)) {
+      problems.push(`[${pkgName}] ${problem}`);
+    }
+  }
+  return problems;
+}
+
 function main() {
   if (!existsSync(topologyPath)) {
     console.error(`[gen-stryker-conf] 拓扑文件不存在: ${topologyPath}`);
@@ -154,6 +175,19 @@ function main() {
   // 未登记变异面但允许存在的包（如 dsh-verify-isolated 只有 e2e smoke）：必须逐条写明理由，
   // 且仍受判据 ③（--min 同步）约束——「不登记」不等于「不受门禁」。
   const noMutationPackages = topology.$noMutationPackages ?? {};
+
+  // ── 0. 覆盖排除面的形状判据（fail-closed，任何模式都先过） ────────────
+  // 形状不合法的条目会被取值函数跳过，若继续派生，生成物只是少了一条排除（静默缩小判据面），
+  // 而 --check 的报错是「与拓扑派生不一致」——把形状错误误诊成同步问题。故在此直接判红。
+  const shapeProblems = coverageExcludeShapeProblems(topology);
+  if (shapeProblems.length > 0) {
+    console.error(
+      "[gen-stryker-conf] coverageExcludes 形状不合法（条目须写成 { pattern, reason, kind }：" +
+        "pattern 含 ! 前缀、reason 不少于 10 字、kind 取 COVERAGE_EXCLUDE_KINDS 之一）：\n" +
+        shapeProblems.map((p) => `  ${p}`).join("\n"),
+    );
+    return 1;
+  }
 
   // ── 1. 遍历磁盘上有测试的包（不是只遍历拓扑声明） ────────────────
   const discovered = discoverTestPackages(repoRoot);

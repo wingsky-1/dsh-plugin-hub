@@ -444,18 +444,27 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
     （`leafModuleCycles` / `fileCycles` 的环签名、`raLegacy` / `implToOtherImpl` 的
     `from|to|kind` 边、`missingInterface` / `directImpl` 边、`uncoveredSrcFiles` 清单）——
     新增证据判红、证据消失视为改善（写入时自动清理）、`kind` 由 value→type 视为收口、
-    type→value 判红。放宽质量证据**不止一条通道**，三条的可审计性不同：
+    type→value 判红。放宽质量证据**不止一条通道**，各通道的可审计性不同：
     - **台账通道**（唯一带到期复核）：登记到 `scripts/data/gate-exemptions.json`
       （`gate=verify-dir-imports`，`path=<包名>:<证据项>`，必填 reason 与 trackingIssue，
       可选 reviewBy）——与另两闸共用同一份台账、同一个校验器与同一条到期台账（#765 收口：
       原先的 `--accept-quality-new` / 基线内 `$acceptances` 是本闸私有的第二套豁免机制，
       没有 trackingIssue、reviewBy 与腐烂校验，故删除）。
-    - **数据层通道（两条，不经台账、无 reason/reviewBy、不进到期台账；「登记即声明」，
-      变更只能靠 diff 审阅）**：
+    - **数据层通道（不经台账、无 reason/reviewBy、不进到期台账；「登记即声明」，
+      变更只能靠 diff 审阅）**——下列并非穷举：段级 `segments.*.excludes` 同样进
+      `∪excludes`（它是变异面自身的定义面），因而同样能让文件退出 `uncoveredSrcFiles`：
       · `testLayers.coverageExcludes`：把文件写进该包的覆盖排除面 ⇒ 该文件退出
         `uncoveredSrcFiles` 质量证据，门禁输出称之为「质量证据改善（--write-baseline
         会清理入库）」。**当前实际在用的是这条**（dsh-mcp-manager / dsh-notifier /
-        dsh-provider-usage 均在使用），台账里 `gate=verify-dir-imports` 尚无条目。
+        dsh-provider-usage 均在使用，共 **11** 条），台账里 `gate=verify-dir-imports`
+        尚无条目。条目形状与 vitest 面 `coverage.config.json` 的 exclude **同形同键名**：
+        `{ pattern, reason, kind }`——`pattern` 带 `!` 前缀，`reason` 不少于 10 字
+        （与 `verify-coverage-scope.mjs` 同一下限），`kind` 取本面自己的值域
+        （`type-only`：无运行时代码；`not-source`：src 下的非源码资源；
+        `not-mutated`：是源码但有意不进变异面；定义在
+        `scripts/gate/mutation-topology.mjs`）。**裸 glob 即判红**：形状不合法由共享
+        校验器给出判词，不等 `--check` 的「与派生不一致」误诊，回归用例在
+        `scripts/test/mutation-topology-coverage.test.ts`。
       · `$noMutationPackages`：该包不进变异面 ⇒ 源码全覆盖断言**不适用**（不是「通过」）。
         该包没有可判定的变异面，登记本身即对该事实的声明（跟踪 #690 S6/S8 / #773，见
         #773 批 B / #710 §2-2）。

@@ -710,6 +710,10 @@ function analyzePackage(pkgName, topology) {
     // topologyRegistered 仍为 false，由 noMutationReason 承担另一条合法出口。
     topologyRegistered: specs !== null && !specs.noMutation,
     noMutationReason: specs?.noMutation === true ? specs.reason : null,
+    // 覆盖排除面（testLayers.coverageExcludes）的形状问题由共享模块携带出来：形状不合法时
+    // 条目会被取值处跳过，uncoveredSrcFiles 随之虚高，但真正该报的是形状本身——由主循环
+    // 落成硬违规，fail-closed 且不抛栈（旧形状的失败形态是取值处 TypeError 崩掉 contract 段）。
+    topologyProblems: specs?.problems ?? [],
     metrics: {
       modules: modules.size,
       // F14：两个口径必须自解释——scannedSrcFiles = 实际参与规则扫描的文件
@@ -1195,6 +1199,11 @@ for (const pkgName of applyPackages) {
   // 漏装某个域都只剩运行期空值），这条把它补回机器面。
   for (const problem of analyzeInjectionFaces(analysis.srcDir)) {
     failures.push(`[${pkgName}] 注入面对账：${problem}`);
+  }
+  for (const problem of analysis.topologyProblems) {
+    failures.push(
+      `[${pkgName}] ${problem}（testLayers.coverageExcludes 形状错误：见 scripts/gate/mutation-topology.mjs 的 COVERAGE_EXCLUDE_KINDS）`,
+    );
   }
   analysis.metrics.interfaceFacades = referencedInterfaces.size;
   analyses.push(analysis);
