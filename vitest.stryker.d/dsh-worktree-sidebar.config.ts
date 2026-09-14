@@ -18,6 +18,7 @@ export default defineConfig({
       'packages/dsh-worktree-sidebar/test/unit/client-source.test.ts',
       'packages/dsh-worktree-sidebar/test/unit/client-takeover.test.ts',
       'packages/dsh-worktree-sidebar/test/unit/git-inspect.test.ts',
+      'packages/dsh-worktree-sidebar/test/unit/host-agents.test.ts',
       'packages/dsh-worktree-sidebar/test/unit/scope.test.ts',
       'packages/dsh-worktree-sidebar/test/unit/tools.test.ts',
     ],
