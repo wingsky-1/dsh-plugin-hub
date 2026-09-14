@@ -8,6 +8,40 @@
  * 禁止在测试里自行写固定 sleep。
  */
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+/**
+ * 建一个隔离的 DSH_HOME（临时目录 + `DSH_HOME` 打桩），返回 `{ dir, dispose }`。
+ *
+ * 为什么必须打桩：落盘面（含迁移用例）会真的建目录、搬文件、改名，**绝不碰真实 `~/.dsh`**
+ * （#218 产物零污染）。`dshHome()` 每次调用都读环境变量，故桩随 dispose 还原即可。
+ */
+export function tempDshHome() {
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-home-"));
+  const previous = process.env.DSH_HOME;
+  process.env.DSH_HOME = dir;
+  return {
+    dir,
+    dispose() {
+      if (previous === undefined) delete process.env.DSH_HOME;
+      else process.env.DSH_HOME = previous;
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+/** 收集 warn 的假 logger：upgrade 域的诊断出口只用到 `warn`。 */
+export function makeLogger() {
+  const warns = [];
+  return {
+    warns,
+    warn(message) {
+      warns.push(message);
+    },
+  };
+}
 
 /** 伪造 node:http res：捕获 writeHead / end，供断言状态码与响应体。 */
 export function fakeRes() {
