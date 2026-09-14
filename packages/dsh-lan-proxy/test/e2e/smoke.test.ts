@@ -2340,18 +2340,35 @@ describe("unit: buildConfigRoutes（GET 快照 / PUT 写入 / 围栏）", () => 
   });
 });
 
-// ── Host 围栏必须先于 launch token 注入（#380 顺序约束）─────────────────────
-// 源码只在 handleRequest 的注释里声明这层顺序（注入块排在 hostnameAllowed 之后），
-// 这里用可观测量钉死：被围栏拒绝的请求不得触碰 token 提供者（getToken 调用次数 0）、
-// 也不得到达上游。把注入块挪到围栏之前，getToken 会先被调用一次 → 本用例红。
+// ── launch token 注入面与 Host 围栏顺序（#380 / #826）───────────────────────
+// 三条判据：1) 围栏先于注入——被拒请求不得触碰 token 提供者（getToken 计数 0）、
+// 也不得到达上游（把注入块挪到 hostnameAllowed 之前 → getToken 会先被调用 → 红）；
+// 2) 铸造正路——无会话 cookie 的 `GET /` 必须带 token 到达上游（注入块被整体删除
+// → 上游只收到裸 `/` → 红；原顺序用例对此不敏感）；3) 已带会话 cookie 绝不注入
+// （正确性必需：否则有效 cookie 用户每次都被注入 token，陷入无限 303）。
 // 观测面自建（独立 fake 上游 + 独立 proxy）：共享 upstream 夹具不记录请求，且其
 // 生命周期绑定在「e2e: 真实转发」描述的 beforeAll/afterAll 上。
-describe("e2e: Host 围栏先于 launch token 注入", () => {
+describe("e2e: launch token 注入面与 Host 围栏顺序", () => {
   let fenceProxy;
   let fenceUpstream;
   let fencePort;
   const upstreamUrls = [];
   let tokenReads = 0;
+
+  /** 经代理发一个 GET /（headers 决定围栏与注入分支）。 */
+  const getThroughFence = (headers) =>
+    new Promise((resolve, reject) => {
+      const req = httpRequest(
+        { hostname: "127.0.0.1", port: fencePort, path: "/", method: "GET", headers },
+        (r) => {
+          let body = "";
+          r.on("data", (c) => (body += c));
+          r.on("end", () => resolve({ status: r.statusCode, body }));
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
 
   beforeAll(async () => {
     fenceUpstream = createServer((req, res) => {
@@ -2382,29 +2399,29 @@ describe("e2e: Host 围栏先于 launch token 注入", () => {
   });
 
   it("非法域名 Host 的 GET / 得 403，且 token 未被读取、上游零请求", async () => {
-    const res = await new Promise((resolve, reject) => {
-      const req = httpRequest(
-        {
-          hostname: "127.0.0.1",
-          port: fencePort,
-          path: "/",
-          method: "GET",
-          headers: { host: "evil.example:3081" },
-        },
-        (r) => {
-          let body = "";
-          r.on("data", (c) => (body += c));
-          r.on("end", () => resolve({ status: r.statusCode, body }));
-        },
-      );
-      req.on("error", reject);
-      req.end();
-    });
+    const res = await getThroughFence({ host: "evil.example:3081" });
     expect(res.status).toBe(403);
     // 顺序判据（区分度最高）：围栏先返回 ⇒ token 提供者一次都没被调用
     expect(tokenReads).toBe(0);
     // 围栏判据：请求根本没到上游（自然也不存在带 token= 的上游请求）
     expect(upstreamUrls).toEqual([]);
+  });
+
+  it("无会话 cookie 的 GET / 带 launch token 到达上游（铸造正路）", async () => {
+    const res = await getThroughFence({ host: "127.0.0.1:3081" });
+    expect(res.status).toBe(200);
+    expect(upstreamUrls.at(-1)).toBe("/?token=launch-token-826");
+  });
+
+  it("已带 dsh 会话 cookie 的 GET / 绝不注入 token（防有效 cookie 无限 303）", async () => {
+    const before = upstreamUrls.length;
+    const res = await getThroughFence({
+      host: "127.0.0.1:3081",
+      cookie: "dsh-auth-web=still-valid",
+    });
+    expect(res.status).toBe(200);
+    expect(upstreamUrls.length).toBe(before + 1);
+    expect(upstreamUrls.at(-1)).toBe("/");
   });
 });
 
