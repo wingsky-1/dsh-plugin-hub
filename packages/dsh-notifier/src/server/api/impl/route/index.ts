@@ -4,6 +4,8 @@
  */
 import type { ServerResponse } from "node:http";
 import { isLoopbackRequest } from "../../../../../../../shared/loopback.js";
+import { REFUSAL_CODES } from "../../../../shared/interface.ts";
+import type { RefusalCode } from "../../../../shared/interface.ts";
 import type { LoggerPort, RegisterRoute } from "../../deps.ts";
 import type { Endpoint, HttpMethod } from "./type.ts";
 
@@ -51,16 +53,22 @@ export function sendFailure(
   sendJson(res, status, { ok: false, error: failure }, headers);
 }
 
-/** 围栏拒绝体：`error` 是**裸字符串**，与端点失败体的对象形状不同，这是刻意的——客户端读失败提示的顺序是
+/** 围栏拒绝体：`error` 是**裸字符串**，与端点失败体的对象形状不同，这是刻意的——旧客户端读失败提示的顺序是
  * 「`details` → `error` → `HTTP <status>`」，而它识别局域网直连只认最后那条兜底里的状态码。把 403 包成对象，
- * 提示文案就会变成「非回环请求」、状态码消失，「请改用 https 访问」的引导随之失效。 */
+ * 提示文案就会变成「非回环请求」、状态码消失，「请改用 https 访问」的引导随之失效。
+ *
+ * `code` / `status` 是与 `error` 并列的**新增 sibling 字段**（#769）：新客户端按结构化字段分流，
+ * 不再依赖「服务端必须永远保持 `error` 为裸字符串」这条隐式契约；旧客户端读不到它们，行为不变。
+ * 因此三者共存，而不是把 `error` 升级成对象——后者会让新旧客户端都退到兜底路径上去。
+ * `allow` 不进 body：它已是 405 的标准头（同一份事实两处声明，就有两处先腐烂）。 */
 function sendRefused(
   res: ServerResponse,
   status: number,
+  code: RefusalCode,
   reason: string,
   headers: Record<string, string> = {},
 ): void {
-  sendJson(res, status, { error: reason }, headers);
+  sendJson(res, status, { error: reason, code, status }, headers);
 }
 
 /** 注册端点组，返回摘除器清单（与装配顺序相反地释放）。 */
@@ -77,15 +85,22 @@ export function registerEndpoints(
         path: endpoint.path,
         handler: (req, res) => {
           if (!isLoopbackRequest(req)) {
-            sendRefused(res, 403, "forbidden: loopback-only");
+            sendRefused(res, 403, REFUSAL_CODES.FORBIDDEN_LOOPBACK, "forbidden: loopback-only");
             return;
           }
           const handle = endpoint.methods[(req.method ?? "") as HttpMethod];
           if (handle === undefined) {
-            // `allow` 是 405 该带的头，调用方不必回翻文档；状态码与文案仍与旧协议一致。
-            sendRefused(res, 405, `method not allowed: ${req.method}`, {
-              allow: Object.keys(endpoint.methods).join(", "),
-            });
+            // `allow` 是 405 该带的头，调用方不必回翻文档；状态码与文案仍与旧协议一致，
+            // 新增的只是与之并列的机读 code/status。
+            sendRefused(
+              res,
+              405,
+              REFUSAL_CODES.METHOD_NOT_ALLOWED,
+              `method not allowed: ${req.method}`,
+              {
+                allow: Object.keys(endpoint.methods).join(", "),
+              },
+            );
             return;
           }
           try {

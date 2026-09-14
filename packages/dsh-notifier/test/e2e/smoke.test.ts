@@ -705,8 +705,10 @@ describe("真实 HTTP 面（真实宿主 + 真实 loopback socket）", () => {
       headers: { host: "attacker.example" },
     });
     expect(rebound.status, "来源是回环但 Host 不是：D-Bus 式的诱饵必须被拒").toBe(403);
-    expect(parseBody<{ error: string }>(rebound.body)).toEqual({
+    expect(parseBody<{ error: string; code: string; status: number }>(rebound.body)).toEqual({
       error: "forbidden: loopback-only",
+      code: "FORBIDDEN_LOOPBACK",
+      status: 403,
     });
 
     const crossSite = await send(port, "/api/dsh-notifier/health", {
@@ -717,6 +719,32 @@ describe("真实 HTTP 面（真实宿主 + 真实 loopback socket）", () => {
     // 对照组：同一次装配里回环 Host 放行——否则上面的 403 可能只是路由没挂。
     const ok = await send(port, "/api/dsh-notifier/health");
     expect(ok.status).toBe(200);
+  });
+
+  it("围栏拒答体的机读字段：403 与 405 各自带稳定的 code/status，error 仍是裸字符串", async () => {
+    const { port } = await mount();
+
+    const forbidden = await send(port, "/api/dsh-notifier/health", {
+      headers: { host: "attacker.example" },
+    });
+    expect(forbidden.status).toBe(403);
+    const forbiddenBody = parseBody<{ error: unknown; code: string; status: number }>(
+      forbidden.body,
+    );
+    expect(forbiddenBody.code).toBe("FORBIDDEN_LOOPBACK");
+    expect(forbiddenBody.status).toBe(403);
+    // 向后兼容的关键：error 不能被升级成对象——旧客户端读失败提示的顺序是
+    // 「details → error → HTTP <status>」，它识别局域网直连只认最后那条兜底里的状态码。
+    expect(typeof forbiddenBody.error).toBe("string");
+
+    const notAllowed = await send(port, "/api/dsh-notifier/health", { method: "DELETE" });
+    expect(notAllowed.status).toBe(405);
+    const notAllowedBody = parseBody<{ error: unknown; code: string; status: number }>(
+      notAllowed.body,
+    );
+    expect(notAllowedBody.code).toBe("METHOD_NOT_ALLOWED");
+    expect(notAllowedBody.status).toBe(405);
+    expect(typeof notAllowedBody.error).toBe("string");
   });
 });
 

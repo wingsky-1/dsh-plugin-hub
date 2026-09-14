@@ -61,6 +61,9 @@ import {
   rebaseSettings,
 } from "./settings/diff.ts";
 import { createSaveGuard } from "./settings/save-guard.ts";
+// 一次失败请求的结构化结论（是否围栏拒答 / 引导文案 / 展示正文）与结构化字段挂载：
+// 判定顺序是两端契约（结构化优先、状态码与文案兜底），故收在纯函数模块里由单测直接打红。
+import { apiFailureOf, markHttpFailure } from "./api-error.ts";
 // 两端共享面 src/shared/interface.ts：音色白名单、通知类型表、频道 id 归一化、webhook 预设
 // （模板 / 认证白名单）与理由 code 的事实源都在这里，客户端只消费，不再各写一份副本——跨端
 // 漂移的症状是「设置页选得到、宿主拒收」与「勾了频道却收不到」。该目录的模块必须零 import
@@ -209,16 +212,6 @@ function iconEl(channelType: string) {
       </svg>
     </span>
   );
-}
-
-/**
- * 403（loopback 围栏拒绝）时的可操作引导文案，供各处 catch 复用。
- * 非 403 错误返回空串，避免给普通失败粘贴无关提示。
- */
-function accessHint(error: any) {
-  const text = String((error && error.message) || "");
-  if (text.indexOf("403") === -1) return "";
-  return t("lanAccessHint");
 }
 
 /**
@@ -381,13 +374,28 @@ const eventsHandle: { current: NotifySession | null } = { current: null };
 
 // ------------------------------------------------------------ 设置卡片
 
+/**
+ * 非 2xx 一律抛错，并把结构化字段挂到 Error 上（判定侧读它，见 api-error.ts）。
+ *
+ * 读路径此前完全不看 `r.ok`：403 的围栏体（`{error, code, status}`）被当数据用——历史读成空数组、
+ * 诊断面把拒答体当自检载荷。`body` 传的是已解析的响应体，围栏体的 code/status 才挂得上。
+ * 抛错不是给用户看的（各调用点的 catch 决定降级），是为了让「非 2xx」不再伪装成一份空数据。
+ */
+function assertOk(r: any, body: any): void {
+  if (!r.ok) throw markHttpFailure(new Error("HTTP " + r.status), r.status, body);
+}
+
 /** 加载 GET /config 包装体 → 结构化 {user, revision, effective, writable}。 */
 function fetchConfig(): Promise<any> {
   return fetch(ROUTES.config, { headers: { accept: "application/json" } }).then(function (r: any) {
     return r.json().then(function (body: any) {
       if (!r.ok) {
         const err = (body && body.error) || {};
-        throw new Error(err.details || err.error || "HTTP " + r.status);
+        throw markHttpFailure(
+          new Error(err.details || err.error || "HTTP " + r.status),
+          r.status,
+          body,
+        );
       }
       return body;
     });
@@ -396,36 +404,39 @@ function fetchConfig(): Promise<any> {
 
 /** 拉取最近历史记录（最近 10 条，倒序）。 */
 function fetchHistory(): Promise<any[]> {
-  return fetch(ROUTES.history, { headers: { accept: "application/json" } })
-    .then(function (r: any) {
-      return r.json();
-    })
-    .then(function (data: any) {
-      const records = (data && data.records) || [];
+  return fetch(ROUTES.history, { headers: { accept: "application/json" } }).then(function (r: any) {
+    return r.json().then(function (body: any) {
+      assertOk(r, body);
+      const records = (body && body.records) || [];
       return records.slice(-10).reverse();
     });
+  });
 }
 
 /** 拉取频道投递状态（per-channel 最近投递终态）。
  *  失败向上抛（调用方决定保留旧态而非清空状态行）。 */
 function fetchStatus(): Promise<any> {
-  return fetch(ROUTES.status, { headers: { accept: "application/json" } })
-    .then(function (r: any) {
-      return r.json();
-    })
-    .then(function (data: any) {
-      return (data && data.channels) || {};
+  return fetch(ROUTES.status, { headers: { accept: "application/json" } }).then(function (r: any) {
+    return r.json().then(function (body: any) {
+      assertOk(r, body);
+      return (body && body.channels) || {};
     });
+  });
 }
 
-/** 拉取动态 kind 清单（注册表 + 确认态）。 */
+/**
+ * 拉取动态 kind 清单（注册表 + 确认态）。
+ *
+ * 失败一律回落空清单（调用点的既有降级：清单区显示「暂无」），故这里自己吞掉 `assertOk` 抛出的
+ * 错误——判据仍在（非 2xx 的 body 不再被当清单读），只是不给用户报错。
+ */
 function fetchKinds(): Promise<any[]> {
   return fetch(ROUTES.kinds, { headers: { accept: "application/json" } })
     .then(function (r: any) {
-      return r.json();
-    })
-    .then(function (data: any) {
-      return (data && data.kinds) || [];
+      return r.json().then(function (body: any) {
+        assertOk(r, body);
+        return (body && body.kinds) || [];
+      });
     })
     .catch(function () {
       return [];
@@ -441,10 +452,10 @@ function fetchKinds(): Promise<any[]> {
 function fetchHealth(): Promise<string | null> {
   return fetch(ROUTES.health, { headers: { accept: "application/json" } })
     .then(function (r: any) {
-      return r.json();
-    })
-    .then(function (body: any) {
-      return typeof body.platform === "string" ? (body.platform as string) : null;
+      return r.json().then(function (body: any) {
+        assertOk(r, body);
+        return typeof body.platform === "string" ? (body.platform as string) : null;
+      });
     })
     .catch(function () {
       return null;
@@ -463,7 +474,10 @@ function fetchDiagnostics(): Promise<unknown> {
   if (ctrl) init.signal = ctrl.signal;
   return fetch(ROUTES.diagnostics, init)
     .then(function (r) {
-      return r.json() as Promise<unknown>;
+      return r.json().then(function (body: unknown) {
+        assertOk(r, body);
+        return body;
+      });
     })
     .finally(function () {
       if (timer !== null) clearTimeout(timer);
@@ -479,8 +493,12 @@ function postKind(kind: string, confirmed: boolean): Promise<any> {
   }).then(function (r: any) {
     return r.json().then(function (body: any) {
       if (!r.ok)
-        throw new Error(
-          (body && body.error && (body.error.details || body.error.error)) || "HTTP " + r.status,
+        throw markHttpFailure(
+          new Error(
+            (body && body.error && (body.error.details || body.error.error)) || "HTTP " + r.status,
+          ),
+          r.status,
+          body,
         );
       return body;
     });
@@ -497,8 +515,13 @@ function sendTestReq(channelId?: string): Promise<any> {
     return r.json().then(function (body: any) {
       if (!r.ok) {
         const err = (body && body.error) || {};
-        // 围栏拒绝体的 error 是裸字符串；403 的 https 引导靠文案里的状态码识别，兜底不能去掉。
-        throw new Error(err.details || err.error || "HTTP " + r.status);
+        // 围栏拒绝体的 error 是裸字符串；403 的 https 引导改由结构化 code/status 判定，
+        // 文案里的状态码只作旧宿主的兜底（见 api-error.ts），故两者都挂上。
+        throw markHttpFailure(
+          new Error(err.details || err.error || "HTTP " + r.status),
+          r.status,
+          body,
+        );
       }
       return body;
     });
@@ -680,7 +703,8 @@ function SettingsCard() {
       })
       .catch(function (e: any) {
         if (!alive.value) return;
-        setSaved(t("loadFail", { msg: (e && e.message) || e, hint: accessHint(e) }), true);
+        const failure = apiFailureOf(e, t);
+        setSaved(t("loadFail", { msg: failure.message, hint: failure.hint }), true);
       });
   }
 
@@ -809,11 +833,13 @@ function SettingsCard() {
             // 挂 code 供 catch 按契约分流：409 判定优先
             // err.code === "SETTINGS_CONFLICT"，不再依赖错误文案中文匹配
             // （文案是本地化/可改的，code 是契约字段）。文案保留进 message。
-            const throwErr = new Error(
-              err.error || err.details || err.code || "HTTP " + r.status,
-            ) as Error & { code?: string };
-            if (err.code !== undefined) throwErr.code = String(err.code);
-            throw throwErr;
+            // markHttpFailure 两种形状都取：SETTINGS_CONFLICT 在 `body.error.code`，
+            // 围栏拒答的 code 与 error 平铺（它同时补上 status，供失败判定用）。
+            throw markHttpFailure(
+              new Error(err.error || err.details || err.code || "HTTP " + r.status),
+              r.status,
+              body,
+            );
           }
           return body;
         });
@@ -838,9 +864,9 @@ function SettingsCard() {
         }, 2200);
       })
       .catch(function (e: any) {
-        const msg = (e && e.message) || e;
+        const failure = apiFailureOf(e, t);
         // 409 判定：code 契约优先，中文文案仅作旧服务端回退
-        if ((e && e.code === "SETTINGS_CONFLICT") || String(msg).indexOf("版本冲突") >= 0) {
+        if ((e && e.code === "SETTINGS_CONFLICT") || failure.message.indexOf("版本冲突") >= 0) {
           // 版本冲突：进入双动作恢复（不再仅提示手动关闭重开）
           handleConflict(entry);
           return;
@@ -851,7 +877,7 @@ function SettingsCard() {
           setSaved(t("saveTimeout"), true);
           return;
         }
-        setSaved(t("saveFail", { msg: msg }), true);
+        setSaved(t("saveFail", { msg: failure.message }), true);
       });
     if (timer !== null) {
       chain = chain.finally(function () {
@@ -963,7 +989,8 @@ function SettingsCard() {
         loadStatus({ value: true });
       })
       .catch(function (error: any) {
-        toast(t("testFail", { msg: error.message, hint: accessHint(error) }));
+        const failure = apiFailureOf(error, t);
+        toast(t("testFail", { msg: failure.message, hint: failure.hint }));
       });
   }
 
@@ -1151,8 +1178,9 @@ function SettingsCard() {
         toast(t("cleared", { n: data.removed || 0 }));
         loadHistory({ value: true });
       })
-      .catch(function (error) {
-        toast(t("clearFail", { msg: error.message, hint: accessHint(error) }));
+      .catch(function (error: any) {
+        const failure = apiFailureOf(error, t);
+        toast(t("clearFail", { msg: failure.message, hint: failure.hint }));
       });
   }
 

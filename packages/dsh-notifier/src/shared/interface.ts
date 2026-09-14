@@ -65,3 +65,5 @@ export type {
   SoundCapability,
   Verdict,
 } from "./capabilities.ts";
+export { REFUSAL_CODES } from "./refusal.ts";
+export type { RefusalCode } from "./refusal.ts";

@@ -57,7 +57,11 @@ describe("回环围栏：非回环一律 403", () => {
     const { res, rec, json } = makeRes();
     route.handler(makeReq({ remoteAddress: "192.168.1.5", host: "192.168.1.5:3080" }), res);
     expect(rec.status).toBe(403);
-    expect(json()).toEqual({ error: "forbidden: loopback-only" });
+    expect(json()).toEqual({
+      error: "forbidden: loopback-only",
+      code: "FORBIDDEN_LOOPBACK",
+      status: 403,
+    });
     expect(called).toBe(0);
   });
 
@@ -96,7 +100,11 @@ describe("方法围栏：表里没有的方法给 405 而不是 404", () => {
     route.handler(makeReq({ method }), res);
     expect(rec.status).toBe(405);
     expect(rec.headers.allow).toBe("GET");
-    expect(json()).toEqual({ error: `method not allowed: ${method}` });
+    expect(json()).toEqual({
+      error: `method not allowed: ${method}`,
+      code: "METHOD_NOT_ALLOWED",
+      status: 405,
+    });
     expect(called).toBe(0);
   });
 
@@ -108,7 +116,44 @@ describe("方法围栏：表里没有的方法给 405 而不是 404", () => {
       res,
     );
     expect(rec.status).toBe(403);
-    expect(json()).toEqual({ error: "forbidden: loopback-only" });
+    expect(json()).toEqual({
+      error: "forbidden: loopback-only",
+      code: "FORBIDDEN_LOOPBACK",
+      status: 403,
+    });
+  });
+});
+
+describe("拒答体的机读字段：新客户端按 code 分流，旧客户端只认裸字符串 error", () => {
+  it("403 与 405 各自带稳定的 code/status，且 error 仍是裸字符串（旧客户端的状态码兜底靠它）", () => {
+    let called = 0;
+    const { route } = install(() => {
+      called += 1;
+    });
+
+    const forbidden = makeRes();
+    route.handler(
+      makeReq({ remoteAddress: "192.168.1.5", host: "192.168.1.5:3080" }),
+      forbidden.res,
+    );
+    const forbiddenBody = forbidden.json();
+    expect(forbiddenBody).toEqual({
+      error: "forbidden: loopback-only",
+      code: "FORBIDDEN_LOOPBACK",
+      status: 403,
+    });
+    // 向后兼容的关键：error 不能被升级成对象——旧客户端读失败提示的顺序是
+    // 「details → error → HTTP <status>」，它识别局域网直连只认最后那条兜底里的状态码。
+    expect(typeof forbiddenBody.error).toBe("string");
+
+    const notAllowed = makeRes();
+    route.handler(makeReq({ method: "DELETE" }), notAllowed.res);
+    expect(notAllowed.json()).toEqual({
+      error: "method not allowed: DELETE",
+      code: "METHOD_NOT_ALLOWED",
+      status: 405,
+    });
+    expect(called).toBe(0);
   });
 });
 
