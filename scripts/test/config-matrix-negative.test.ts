@@ -291,6 +291,45 @@ test("notifier: 两处都不登记 → 红（manifest 自洽的双向断言）",
   );
 });
 
+test("surface: none 缺 reason → 红（它与「漏登记」的区别就是这条理由）", () => {
+  assertRed(
+    "none 缺 reason",
+    (root) => {
+      editManifest(root, (s) => {
+        const m = JSON.parse(s);
+        m.configSurfaces = m.configSurfaces.map((x) =>
+          x.package === "dsh-notifier" ? { package: "dsh-notifier", surface: "none" } : x,
+        );
+        return JSON.stringify(m, null, 2);
+      });
+    },
+    '声明 surface: "none" 时必填 reason',
+  );
+});
+
+test("surface: none 与四面对齐全形态互斥 → 红（不许拿「无配置面」当省略校验的旁路）", () => {
+  assertRed(
+    "none 带 defaults",
+    (root) => {
+      editManifest(root, (s) => {
+        const m = JSON.parse(s);
+        m.configSurfaces = m.configSurfaces.map((x) =>
+          x.package === "dsh-notifier"
+            ? {
+                package: "dsh-notifier",
+                surface: "none",
+                reason: "测试用",
+                defaults: { module: "packages/dsh-notifier/src/x.ts", export: "X" },
+              }
+            : x,
+        );
+        return JSON.stringify(m, null, 2);
+      });
+    },
+    "不得再带 defaults",
+  );
+});
+
 // ---- notifier 布尔键清单 / 计数上界清单（N3/N4；两张清单由 notifier 侧导出后恢复执行）----
 
 test("notifier: BOOLEAN_KEYS 加非配置键 → 红且报错含键名", () => {

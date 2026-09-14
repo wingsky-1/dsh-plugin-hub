@@ -308,6 +308,15 @@ function loadSurfaceExport(root, pkg, face, label, problems) {
  */
 function runSurface(root, surface) {
   const pkg = surface.package;
+  // 「无配置面」是显式声明（#774）：跳过 N1–N4 但必须回显理由——否则它与「漏登记」在输出里
+  // 无从区分，读者只能去翻 manifest。
+  if (surface.surface === "none") {
+    return {
+      problems: [],
+      warnings: [],
+      lines: [`  ${pkg} 无用户配置面（surface: none）：${surface.reason}`],
+    };
+  }
   const problems = [];
   const warnings = [];
   const lines = [];

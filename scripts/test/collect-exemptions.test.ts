@@ -126,13 +126,13 @@ test("非 JSON 文件不参与扫描（只看 scripts/data 下的 .json）", () 
   }
 });
 
-test("本仓真实快照：4 条 reviewBy 全部在册（数字变即提示同步台账与 #765）", () => {
-  // 4 = gate-exemptions.json 1（#762 客户端 var，临时）+ plugins-manifest 2（configSurfacesPending：
-  //     verify-isolated / web-file-preview；#774 已接管 lan-proxy / mcp-manager / provider-usage）
-  //     + coverage.config.json 1（`**/client/**` 排除，pending-project，等 happy-dom project，3.4 新增）
+test("本仓真实快照：2 条 reviewBy 全部在册（数字变即提示同步台账与 #765）", () => {
+  // 2 = gate-exemptions.json 1（#762 客户端 var，临时）+ coverage.config.json 1（`**/client/**`
+  //     排除，pending-project，等 happy-dom project）。plugins-manifest 的 5 条 configSurfacesPending
+  //     已随 #774 全部转为 configSurfaces 声明（含 2 条 surface: "none"），不再产生 reviewBy。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /合计 4 条：已过期 0 /);
+  assert.match(r.stdout, /合计 2 条：已过期 0 /);
   assert.match(r.stdout, /\$\.exemptions\[0\] {2}gate=forbid-module-state-src/);
   assert.match(r.stdout, /trackingIssue #762/);
   // 覆盖率面的临时排除项也必须在台账里（它是「到期复核」的输入，不该只活在配置里）
