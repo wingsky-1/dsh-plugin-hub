@@ -110,6 +110,9 @@ S6 三桶分诊。混合时先统一严重度标尺（见 S3 模板），避免�
 
 ## S1 门禁实证（先跑起来，再读码）
 
+> 「全量门禁」是旧称：下方五条是根 [AGENTS.md 门禁矩阵](../../../AGENTS.md) `pnpm gate:full` 档的
+> 真子集，完成定义以该矩阵的**改动归属层**为准；本清单只作评审期的实证基线，不替代该矩阵。
+
 1. **本地实跑全量门禁**（后台执行，期间继续 S2 读码）：
    `pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck`。
    PR body 声明「全门禁绿」时必须亲自复核，不能只信 CI。
