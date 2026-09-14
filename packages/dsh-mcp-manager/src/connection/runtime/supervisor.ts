@@ -6,23 +6,22 @@
  * （命名 / 文本投影 / 截断 / 输出 schema 校验 / buildToolDefinition），
  * 它们只被监督器的 syncTools 使用。
  * 由 lib/index.js 组合根 re-export。
+ *
+ * W8 端口接线：结果投影 / 超时兜底 / 取消息与脱敏经 `impl/service` 的 `runtimePorts.get()` 取；
+ * 跨端层 `SCOPE_GLOBAL` 与 `server/shared` 的两个默认值直取共享层门面，同子层的 reconnect/
+ * transport/protocol 直引——端口只承载跨域能力，不为零消费者的同子层符号开口。
  */
 
 import { createHash } from "node:crypto";
 import { createTransport } from "./transport.ts";
 import type { StdioTransport, HttpTransport } from "./transport.ts";
-import { SCOPE_GLOBAL } from "../../workspace/interface.ts";
+import { SCOPE_GLOBAL } from "../../shared/interface.ts";
 import {
   DEFAULT_RESULT_TRUNCATE_BYTES,
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
 } from "../../server/shared/interface.ts";
 import { MCPClient } from "./protocol.ts";
-import {
-  defaultCallResultFallbackText,
-  projectCallToolResult,
-  createRedactor,
-  msgOf,
-} from "../../pipeline/interface.ts";
+import { runtimePorts } from "./impl/service/index.ts";
 import { resolveReconnect, type ReconnectPolicy } from "./reconnect.ts";
 import type { McpStatsCollector } from "../../stats/interface.ts";
 import type { ServerConfig, ManagerLite } from "../../types/interface.ts";
@@ -258,6 +257,7 @@ export function buildToolDefinition(
     stats?: Pick<McpStatsCollector, "isEnabled" | "recordCall">;
   } = {},
 ): ToolDefinition {
+  const { pipeline } = runtimePorts.get();
   const rawName = tool.name as string;
   const structuredSchema = assertSupportedOutputSchema(tool.outputSchema);
   const enhanceEmpty = opts.enhanceEmptyDescriptions !== false;
@@ -322,14 +322,14 @@ export function buildToolDefinition(
         // 清洗 + 无 content 兜底），与 middleware（ws_mcp_call）/ 官方
         // dsh-mcp-client createExecutor 同一契约；本侧差异面 = 文本截断与
         // extractText 占位符渲染。
-        const projected = projectCallToolResult(result, {
+        const projected = pipeline.projectCallToolResult(result, {
           errorText: (content) => renderText(extractText(content, rawName)) as string,
-          fallbackText: (r) => renderText(defaultCallResultFallbackText(r)) as string,
+          fallbackText: (r) => renderText(pipeline.defaultCallResultFallbackText(r)) as string,
         });
         record(true);
         return projected;
       } catch (error) {
-        record(false, msgOf(error));
+        record(false, pipeline.msgOf(error));
         throw error;
       }
     },
@@ -431,7 +431,7 @@ export class ConnectionSupervisor {
       // B8：连接失败日志脱敏（本 server 配置的凭据形状；错误消息可能含 URL 用户
       // 信息/env 值等明文，supervisor 侧与 manager/API 同口径）。
       this.manager.logger.warn(
-        `dsh-mcp-manager(${server.name}): connection attempt failed: ${createRedactor([this.server])(error)}`,
+        `dsh-mcp-manager(${server.name}): connection attempt failed: ${runtimePorts.get().pipeline.createRedactor([this.server])(error)}`,
       );
       this.teardownGeneration(error, true);
     }
