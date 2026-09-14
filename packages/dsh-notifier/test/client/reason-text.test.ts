@@ -57,9 +57,12 @@ describe("产物契约：逐出口明细真的被渲染出来（判据 7 的判�
   // 纯函数的判据不能证明「界面真的挂了它」：删掉 historyPane 里那一行调用，纯函数用例照样全绿。
   // 故这里对源码形态与产物形态各判一次，三者互补（调用点 / 渲染体 / 构建是否真的带上了它）。
   it("历史条目挂上了 deliveryLines（源码契约：删掉这行调用即判红）+ 渲染体输出明细类名", () => {
+    // 调用点仍在卡片（index.tsx），渲染体已搬去 settings/parts/rows.tsx：两处各读各的文件，
+    // 判据强度不变——调用点被删或渲染体类名被改写，各自判红。
     const src = readFileSync(join(pkgDir, "src/client/index.tsx"), "utf8");
-    expect(src).toMatch(/\{deliveryLines\(r\)\}/u);
-    expect(src).toMatch(/className=\{"dn-ch-delivery dn-ch-delivery-" \+ view\.status\}/u);
+    expect(src).toMatch(/\{deliveryLines\(r, t\)\}/u);
+    const rows = readFileSync(join(pkgDir, "src/client/settings/parts/rows.tsx"), "utf8");
+    expect(rows).toMatch(/className=\{"dn-ch-delivery dn-ch-delivery-" \+ view\.status\}/u);
   });
 
   // 构建面：源码有而产物没有，说明那个模块没被打进 client.js（判据 7 会在用户侧归零）。

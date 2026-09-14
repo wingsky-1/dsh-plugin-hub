@@ -101,11 +101,20 @@ describe("产物契约：能力自检面真的被界面挂上（源码 + 产物�
   // 纯函数的判据不能证明「界面真的挂了它」：删掉 builtinCard 里那两行调用，上面的用例照样全绿。
   it("两张内置频道卡的卡体各挂了自己的诊断行，且都没有挤进卡头 summary", () => {
     const src = readFileSync(join(pkgDir, "src/client/index.tsx"), "utf8");
-    expect(src).toMatch(/\{ch\.type === "system" \? hostDiagnosticsBlock\(\) : null\}/u);
-    expect(src).toMatch(/\{ch\.type === "browser" \? browserDiagnosticsLine\(\) : null\}/u);
+    expect(src).toMatch(/\{ch\.type === "system" \? hostDiagnosticsBlock\(diag\) : null\}/u);
+    expect(src).toMatch(/\{ch\.type === "browser" \? browserDiagnosticsLine\(diag\) : null\}/u);
     expect(src).toMatch(/clientDiagnosticsOf\(diagnostics, clientFacts\(\), t\)/u);
-    // 卡头那行在窄屏 @media (max-width: 480px) 下 display:none——诊断结论必须落在卡体
-    const card = src.slice(src.indexOf("function builtinCard("), src.indexOf("function soundRow("));
+    // 卡头那行在窄屏 @media (max-width: 480px) 下 display:none——诊断结论必须落在卡体。
+    // 切片锚用 barkCard 而不是已搬走（去 settings/channels/sound-row.tsx）的 soundRow：同目录
+    // 锚一旦失效 indexOf 返回 -1，slice 会静默退化成「切到文件末尾」而照样全绿；两个锚都显式
+    // 判在位，锚消失即判红。barkCard 与 builtinCard 同属本文件的卡构造函数，切片范围不变。
+    const from = src.indexOf("function builtinCard(");
+    const to = src.indexOf("function barkCard(");
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    const card = src.slice(from, to);
+    expect(card).toContain("<summary>");
+    expect(card).toContain("</summary>");
     const summary = card.slice(card.indexOf("<summary>"), card.indexOf("</summary>"));
     expect(summary).not.toMatch(/hostDiagnosticsBlock|browserDiagnosticsLine/u);
     expect(card).toMatch(/className="dn-ch-body"/u);
@@ -113,7 +122,8 @@ describe("产物契约：能力自检面真的被界面挂上（源码 + 产物�
 
   // 权限状态行是显式契约锚点（style.css 头部登记），改结构会让既有窄屏/权限断言落空。
   it("权限状态行的结构没被改动（dn-ch-perm 锚点仍在）", () => {
-    const src = readFileSync(join(pkgDir, "src/client/index.tsx"), "utf8");
+    // browserPermLine 已搬去 settings/parts/diagnostics.tsx：只改读取路径，断言字面量不变。
+    const src = readFileSync(join(pkgDir, "src/client/settings/parts/diagnostics.tsx"), "utf8");
     expect(src).toContain('<div className="dn-ch-perm">');
     expect(src).toContain('<span className="dn-ch-permText">{text}</span>');
   });

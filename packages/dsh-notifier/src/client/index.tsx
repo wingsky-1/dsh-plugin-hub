@@ -40,10 +40,6 @@ import * as React from "react";
 // i18n：复用官方 dsh-client-locale——zh/en 双语字典，LocaleNamespaceMap
 // 声明合并进官方 ui-slots 类型面；仅 import type（编译期擦除，无运行时依赖）。
 import { zh, en, type NotifierLocaleKey } from "./locales.ts";
-// 投递理由的渲染收在同一处：状态行与通知记录都要用，文案来源与「认不出的 code 怎么回退」
-// 必须是同一条口径，两处各写一遍就等于把降级行为分叉。
-import { deliveryViewOf, reasonText } from "./reason-text.ts";
-import type { DeliveryView } from "./reason-text.ts";
 // 能力自检面的投影（宿主面归一化 + 浏览器面判定）收在同一处：判定与文案必须同源，
 // 两处各写一遍就等于把「未知不该被渲染成可用」这条口径分叉。
 import { clientDiagnosticsOf } from "./capabilities.ts";
@@ -64,6 +60,18 @@ import { createSaveGuard } from "./settings/save-guard.ts";
 // 一次失败请求的结构化结论（是否围栏拒答 / 引导文案 / 展示正文）与结构化字段挂载：
 // 判定顺序是两端契约（结构化优先、状态码与文案兜底），故收在纯函数模块里由单测直接打红。
 import { apiFailureOf, markHttpFailure } from "./api-error.ts";
+// 设置卡的渲染原子层：普通函数返回 JSX，依赖（t / statusMap / patch / sendTest / 平台 / 诊断
+// 视图）一律显式传参——原子层不读卡片状态，搬家不会让闭包静默捕获到旧 state。
+import { advRow, chRow, deliveryLines } from "./settings/parts/rows.tsx";
+import { numInput, switchControl, switchToggle, textInput } from "./settings/parts/controls.tsx";
+import { failBadge, statusDotClass, statusText, testBtn } from "./settings/parts/status.tsx";
+import {
+  browserDiagnosticsLine,
+  browserPermLine,
+  hostDiagnosticsBlock,
+  systemPlatformHint,
+} from "./settings/parts/diagnostics.tsx";
+import { soundRow } from "./settings/channels/sound-row.tsx";
 // 两端共享面 src/shared/interface.ts：音色白名单、通知类型表、频道 id 归一化、webhook 预设
 // （模板 / 认证白名单）与理由 code 的事实源都在这里，客户端只消费，不再各写一份副本——跨端
 // 漂移的症状是「设置页选得到、宿主拒收」与「勾了频道却收不到」。该目录的模块必须零 import
@@ -71,7 +79,6 @@ import { apiFailureOf, markHttpFailure } from "./api-error.ts";
 import {
   KIND_SEVERITY,
   KIND_SWITCHES,
-  SOUND_IDS,
   WEBHOOK_AUTHS,
   channelIdFor,
   channelIdOf,
@@ -79,7 +86,7 @@ import {
   isSoundId,
   webhookTemplateOf,
 } from "../shared/interface.ts";
-import type { NotifySeverity, SoundId } from "../shared/interface.ts";
+import type { NotifySeverity } from "../shared/interface.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
@@ -994,6 +1001,16 @@ function SettingsCard() {
       });
   }
 
+  /** 权限行的授权动作：手势内请求权限，完成后刷新状态行。
+   *  为什么留在卡片这层：requestPermission 的手势内调用与 setSaved/setPermTick 都是本组件的
+   *  闭包，诊断原子只收这一个回调，不反向读本组件状态。 */
+  function requestNotificationPermission() {
+    requestPermission(function () {
+      setSaved(t("permRequested"));
+      setPermTick(permTick + 1); // 触发重渲染刷新权限状态行
+    });
+  }
+
   // ---- 频道编辑（settings.channels 不可变操作；deviceKey 掩码语义见服务端）----
 
   /** 更新第 idx 个频道实例（字段经 assignChannelFields 合并——空串/undefined
@@ -1184,180 +1201,6 @@ function SettingsCard() {
       });
   }
 
-  /** 频道卡体行（cap + 控件 + 可选 hint；CSS dn-ch-row/dn-ch-cap/dn-ch-ctl）。 */
-  function chRow(cap: string, control: any, hint?: string) {
-    return (
-      <div className="dn-ch-row">
-        <span className="dn-ch-cap">{cap}</span>
-        <span className="dn-ch-ctl">{control}</span>
-        {hint ? <span className="dn-ch-hint">{hint}</span> : null}
-      </div>
-    );
-  }
-
-  /** 折叠区行（cap + 控件；CSS dn-adv-row）。 */
-  function advRow(cap: string, control: any) {
-    return (
-      <div className="dn-adv-row">
-        <span className="dn-adv-cap">{cap}</span>
-        {control}
-      </div>
-    );
-  }
-
-  /** switch 开关底层（track 40×22 + 透明 input 覆盖 44×32 触控区；
-   *  aria-label 提供可访问名——switch 无内联文本，WCAG 4.1.2）。 */
-  function switchToggle(checked: boolean, onChange: (v: boolean) => void, ariaLabel: string) {
-    return (
-      <label className="dn-switch">
-        <input
-          type="checkbox"
-          aria-label={ariaLabel}
-          checked={checked === true}
-          onChange={function (e: any) {
-            onChange(e.target.checked === true);
-          }}
-        />
-        <span className="dn-switch-track" />
-      </label>
-    );
-  }
-
-  /** 顶层布尔设置键的 switch（switchToggle 的设置键薄封装）。
-   *  统一走 patch 写入口（settingsRef 同步），不再裸 setSettings。 */
-  function switchControl(key: string, ariaLabel: string) {
-    return switchToggle(
-      settings[key] === true,
-      function (v: boolean) {
-        patch(function (prev: any) {
-          const next = Object.assign({}, prev);
-          next[key] = v;
-          return next;
-        });
-      },
-      ariaLabel,
-    );
-  }
-
-  function textInput(
-    value: any,
-    onChange: (v: string) => void,
-    opts?: { type?: string; placeholder?: string; ariaLabel?: string },
-  ) {
-    return (
-      <input
-        type={(opts && opts.type) || "text"}
-        className="dn-set-input dn-set-inputText"
-        value={value === undefined || value === null ? "" : String(value)}
-        placeholder={opts && opts.placeholder}
-        aria-label={(opts && opts.ariaLabel) || (opts && opts.placeholder) || undefined}
-        onChange={function (e: any) {
-          onChange(e.target.value);
-        }}
-      />
-    );
-  }
-
-  function numInput(
-    value: any,
-    onChange: (v: number | undefined) => void,
-    opts?: { ariaLabel?: string; min?: number; max?: number },
-  ) {
-    return (
-      <input
-        type="number"
-        step={1}
-        className="dn-set-input dn-set-numInput"
-        min={opts && opts.min}
-        max={opts && opts.max}
-        aria-label={opts && opts.ariaLabel}
-        value={value === undefined || value === null ? "" : String(value)}
-        onChange={function (e: any) {
-          onChange(e.target.value === "" ? undefined : Number(e.target.value));
-        }}
-      />
-    );
-  }
-
-  function padTime(ts: number) {
-    const d = new Date(ts);
-    const pad = function (n: number) {
-      return n < 10 ? "0" + n : String(n);
-    };
-    return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
-  }
-
-  /** 频道状态摘要（上提卡头 statusDot + statusTxt；完整错误经 title 提示）。 */
-  function statusText(channelKey: string): string {
-    const st = statusMap[channelKey];
-    if (!st || !st.lastTs) return t("chNeverSent");
-    if (st.lastStatus === "ok") return t("chLastOk") + " · " + padTime(st.lastTs);
-    const why = reasonText(st.lastError, t);
-    return t("chLastFail") + " · " + padTime(st.lastTs) + (why ? "：" + why : "");
-  }
-  function statusDotClass(channelKey: string): string {
-    const st = statusMap[channelKey];
-    if (!st || !st.lastTs) return "";
-    return st.lastStatus === "ok" ? "ok" : "fail";
-  }
-
-  function testBtn(channelId?: string) {
-    return (
-      <button
-        type="button"
-        className="dn-set-btn dn-set-btnSmall"
-        onClick={function () {
-          sendTest(channelId);
-        }}
-      >
-        {t("chTest")}
-      </button>
-    );
-  }
-
-  /** 投递失败徽标：最近投递失败时上提至卡头 summary 行，收起态仍可见。 */
-  function failBadge(channelKey: string) {
-    const st = statusMap[channelKey];
-    if (!st || !st.lastTs || st.lastStatus !== "failed") return null;
-    return <span className="dn-ch-failBadge">{t("chLastFail") + " · " + padTime(st.lastTs)}</span>;
-  }
-
-  /**
-   * 浏览器通知权限状态行（从全局降级区移入「浏览器通知」频道卡）。
-   * 三态文案 + 未授权时的「请求通知权限」按钮（手势内请求，完成后刷新状态）；
-   * 非安全上下文/无 Notification API 时返回 null（对应降级文案仍在全局 notes）。
-   */
-  function browserPermLine() {
-    if (!("Notification" in window) || !isSecureContext()) return null;
-    let text = "";
-    let pending = false;
-    if (Notification.permission === "granted") text = t("permGranted");
-    else if (Notification.permission === "denied") text = t("permDenied");
-    else {
-      text = t("permDefault");
-      pending = true;
-    }
-    return (
-      <div className="dn-ch-perm">
-        <span className="dn-ch-permText">{text}</span>
-        {pending ? (
-          <button
-            type="button"
-            className="dn-set-btn dn-set-btnSmall"
-            onClick={function () {
-              requestPermission(function () {
-                setSaved(t("permRequested"));
-                setPermTick(permTick + 1); // 触发重渲染刷新权限状态行
-              });
-            }}
-          >
-            {t("requestPerm")}
-          </button>
-        ) : null}
-      </div>
-    );
-  }
-
   /**
    * 内置频道卡（browser/system）：开关 + 行为参数 + 状态行 + per-channel 测试。
    * 整卡 details 可折叠——非受控 + key remount 形态（key 含 enabled，
@@ -1417,7 +1260,7 @@ function SettingsCard() {
         ),
       );
     }
-    extras.push(soundRow(index, ch, label));
+    extras.push(soundRow(index, ch, label, soundOn, t, chPatch, audioEngine));
     return (
       <details
         className={"dn-ch-card" + stateCls}
@@ -1429,11 +1272,11 @@ function SettingsCard() {
           <span className="dn-ch-name">{label}</span>
           <span className="dn-ch-type">{t("chTypeBuiltin")}</span>
           <span className="dn-ch-stateTxt">{summaryState}</span>
-          <span className={"dn-ch-statusDot " + statusDotClass(channelId)} />
-          <span className="dn-ch-statusTxt" title={statusText(channelId)}>
-            {statusText(channelId)}
+          <span className={"dn-ch-statusDot " + statusDotClass(channelId, statusMap)} />
+          <span className="dn-ch-statusTxt" title={statusText(channelId, statusMap, t)}>
+            {statusText(channelId, statusMap, t)}
           </span>
-          {failBadge(channelId)}
+          {failBadge(channelId, statusMap, t)}
           <span className="dn-ch-summaryRight">
             {switchToggle(
               enabled,
@@ -1453,158 +1296,18 @@ function SettingsCard() {
             <div className="dn-set-note-inline dn-soundOnly">{t("chPopupSoundOffNote")}</div>
           ) : null}
           {/* 浏览器通知权限状态行归入浏览器频道卡（权限授权入口同卡就近可达） */}
-          {ch.type === "browser" ? browserPermLine() : null}
+          {ch.type === "browser"
+            ? browserPermLine(t, isSecureContext(), requestNotificationPermission)
+            : null}
           {/* 浏览器面自检行：宿主侧接口看不到本页的权限与音频解锁状态 */}
-          {ch.type === "browser" ? browserDiagnosticsLine() : null}
+          {ch.type === "browser" ? browserDiagnosticsLine(diag) : null}
           {/* 系统卡平台提示（/health platform 消费；宿主 OS 与浏览器 OS 可异机） */}
-          {ch.type === "system" ? systemPlatformHint() : null}
+          {ch.type === "system" ? systemPlatformHint(hostPlatform, t) : null}
           {/* 宿主能力自检（/diagnostics）：结论 + 处置建议 + 明细折叠 */}
-          {ch.type === "system" ? hostDiagnosticsBlock() : null}
-          <div className="dn-ch-actions">{testBtn(channelId)}</div>
+          {ch.type === "system" ? hostDiagnosticsBlock(diag) : null}
+          <div className="dn-ch-actions">{testBtn(channelId, sendTest, t)}</div>
         </div>
       </details>
-    );
-  }
-
-  /** 平台提示行：宿主平台差异说明——Windows SoundPlayer 语义、macOS
-   *  NSSound、Linux 自播；/health 拉取失败/未知平台回落通用说明。 */
-  function systemPlatformHint() {
-    let text: string;
-    if (hostPlatform === "win32") text = t("sysPlatformWin");
-    else if (hostPlatform === "darwin") text = t("sysPlatformMac");
-    else if (hostPlatform === "linux") text = t("sysPlatformLinux");
-    else text = t("sysPlatformOther");
-    return <div className="dn-set-note-inline">{text}</div>;
-  }
-
-  /**
-   * 宿主能力自检块（系统频道卡体）。为什么落在卡体而不是卡头 `.dn-ch-statusTxt`：窄屏下
-   * 卡头那行被 display:none 收起，而手机恰是最需要知道「为什么没响」的地方。
-   * 这里只做机械投影——结论、处置建议、明细的文案都来自 capabilities.ts。
-   */
-  function hostDiagnosticsBlock() {
-    const view = diag.host;
-    if (!view) return null;
-    return (
-      <div className={"dn-ch-diag dn-ch-diag-" + view.tone}>
-        <span className="dn-ch-diagText">{view.line}</span>
-        {view.unknownLine ? <span className="dn-ch-diagText">{view.unknownLine}</span> : null}
-        {view.remediationLines.length === 0 ? null : (
-          <div>
-            <span className="dn-ch-diagCap">{view.remediationTitle}</span>
-            <ul className="dn-ch-diagItems">
-              {view.remediationLines.map(function (text, i) {
-                return <li key={"rem-" + i}>{text}</li>;
-              })}
-            </ul>
-          </div>
-        )}
-        {/* 明细折叠（沿用通知记录里 dn-ch-reasonRaw 的折叠范式）；来源标注在展开区首行 */}
-        <details className="dn-ch-reasonRaw">
-          <summary>{view.detailsLabel}</summary>
-          <div className="dn-ch-reasonRawText">
-            <div className="dn-ch-diagSrc">{view.sourceLabel}</div>
-            {view.details.map(function (row, i) {
-              return (
-                <div className="dn-ch-diagDetail" key={"det-" + i}>
-                  <span className="dn-ch-diagDetailCap">{row.label}</span>
-                  <span>{row.value}</span>
-                </div>
-              );
-            })}
-          </div>
-        </details>
-      </div>
-    );
-  }
-
-  /** 浏览器面自检行（浏览器频道卡体）：宿主算不出来的那几个事实（权限、音频解锁）在这里成一句话。 */
-  function browserDiagnosticsLine() {
-    const view = diag.browser;
-    return (
-      <div className={"dn-ch-diag dn-ch-diag-" + view.tone}>
-        <span className="dn-ch-diagText">{view.line}</span>
-        <span className="dn-ch-diagSrc">{view.sourceLabel}</span>
-      </div>
-    );
-  }
-
-  /** 内置音色选项（label 字典键）。刻意留在客户端而不搬进 shared：这是「音色 → UI 文案 key」，
-   *  文案属客户端面。类型锚在 shared 的 `SoundId` 上，键集因此与 SOUND_IDS 逐项对齐——
-   *  新增音色漏配文案是编译错误，而不是下拉框里渲染出 `t(undefined)`。 */
-  // 常量表：每次渲染重建一份是原实现的形态，这里只把声明关键字收正（改成 const 不会改变
-  // 取值时机——引用它的 soundRow 只在更深处的 JSX 构造期被调用）
-  const SOUND_OPTION_KEYS: Record<SoundId, string> = {
-    ding: "toneDing",
-    bell: "toneBell",
-    chime: "toneChime",
-    pop: "tonePop",
-  };
-
-  /** 单通道声音行：开关（false/true 切换）+ 展开音色下拉 + ▶试听。
-   *  开关语义：off=false（静音）；on=true（跟随系统默认）；on 后选择音色 =
-   *  SoundId（显式音色）。交互全部显式 audioEngine.unlock() 兜底（autoplay 策略下
-   *  纯后台页面自播需此前任意手势解锁；试听点击本身即手势）。 */
-  function soundRow(index: number, ch: any, channelLabel: string) {
-    const soundVal = ch.sound;
-    const soundOn = soundIsOn(soundVal);
-    const toneValue = isSoundId(soundVal) ? soundVal : "";
-    const toneOpts: any[] = [
-      <option value="" key="sys">
-        {t("chSoundFollow")}
-      </option>,
-    ].concat(
-      SOUND_IDS.map(function (id) {
-        return (
-          <option value={id} key={id}>
-            {t(SOUND_OPTION_KEYS[id])}
-          </option>
-        );
-      }),
-    );
-    return (
-      <div className="dn-ch-row" key={"sound-" + channelIdOf(ch)}>
-        <span className="dn-ch-cap">{t("chSound")}</span>
-        <span className="dn-ch-ctl">
-          {switchToggle(
-            soundOn,
-            function (v: boolean) {
-              // 用户手势：解锁音频（开启声音后隐藏页面自播才可能发声）
-              audioEngine.unlock();
-              chPatch(index, { sound: v }); // false / true
-            },
-            t("chSound") + " " + channelLabel,
-          )}
-          {soundOn ? (
-            <select
-              className="dn-set-input dn-set-select"
-              value={toneValue}
-              aria-label={t("chSoundTone")}
-              onChange={function (e: any) {
-                audioEngine.unlock();
-                chPatch(index, { sound: e.target.value === "" ? true : e.target.value });
-              }}
-            >
-              {toneOpts}
-            </select>
-          ) : null}
-          {soundOn ? (
-            <button
-              type="button"
-              className="dn-set-btn dn-set-btnSmall dn-tonePreview"
-              aria-label={t("chSoundPreview")}
-              onClick={function () {
-                audioEngine.playPreview(toneValue || undefined);
-              }}
-            >
-              ▶ {t("chSoundPreview")}
-            </button>
-          ) : null}
-          {toneValue === "" && soundOn ? (
-            <span className="dn-ch-hint">{t("chSoundFollowHint")}</span>
-          ) : null}
-        </span>
-      </div>
     );
   }
 
@@ -1724,11 +1427,11 @@ function SettingsCard() {
           {iconEl("bark")}
           <span className="dn-ch-name">{ch.name || ch.id}</span>
           <span className="dn-ch-type">bark</span>
-          <span className={"dn-ch-statusDot " + statusDotClass(channelKey)} />
-          <span className="dn-ch-statusTxt" title={statusText(channelKey)}>
-            {statusText(channelKey)}
+          <span className={"dn-ch-statusDot " + statusDotClass(channelKey, statusMap)} />
+          <span className="dn-ch-statusTxt" title={statusText(channelKey, statusMap, t)}>
+            {statusText(channelKey, statusMap, t)}
           </span>
-          {failBadge(channelKey)}
+          {failBadge(channelKey, statusMap, t)}
           <span className="dn-ch-summaryRight">
             {switchToggle(
               ch.enabled === true,
@@ -1878,7 +1581,7 @@ function SettingsCard() {
             </div>
           </details>
           <div className="dn-ch-actions">
-            {testBtn(channelKey)}
+            {testBtn(channelKey, sendTest, t)}
             <button
               type="button"
               className={"dn-set-btn dn-set-btnSmall" + (armed ? " dn-set-btnDanger" : "")}
@@ -2074,11 +1777,11 @@ function SettingsCard() {
           {iconEl("webhook")}
           <span className="dn-ch-name">{ch.name || ch.id}</span>
           <span className="dn-ch-type">webhook</span>
-          <span className={"dn-ch-statusDot " + statusDotClass(channelKey)} />
-          <span className="dn-ch-statusTxt" title={statusText(channelKey)}>
-            {statusText(channelKey)}
+          <span className={"dn-ch-statusDot " + statusDotClass(channelKey, statusMap)} />
+          <span className="dn-ch-statusTxt" title={statusText(channelKey, statusMap, t)}>
+            {statusText(channelKey, statusMap, t)}
           </span>
-          {failBadge(channelKey)}
+          {failBadge(channelKey, statusMap, t)}
           <span className="dn-ch-summaryRight">
             {switchToggle(
               ch.enabled === true,
@@ -2180,7 +1883,7 @@ function SettingsCard() {
             <span className="dn-ch-hint">{t("whTemplateFailHint")}</span>
           </div>
           <div className="dn-ch-actions">
-            {testBtn(channelKey)}
+            {testBtn(channelKey, sendTest, t)}
             <button
               type="button"
               className={"dn-set-btn dn-set-btnSmall" + (armed ? " dn-set-btnDanger" : "")}
@@ -2291,7 +1994,7 @@ function SettingsCard() {
           />
           <span className="dn-evt-name">{t(labelKey)}</span>
           <span className="dn-evt-kind">{kindId}</span>
-          {switchControl(key, t("evtSwitch", { name: t(labelKey) }))}
+          {switchControl(key, t("evtSwitch", { name: t(labelKey) }), settings, patch)}
         </div>
         {routeChipsRow(kindId)}
       </div>,
@@ -2583,43 +2286,6 @@ function SettingsCard() {
     );
   }
 
-  /**
-   * 逐出口投递明细：状态标签 + 主理由 + 宿主原文（原文折叠，并标注它的来源）。
-   * 数据本来就随 `/history` 到了客户端（`archive(..., { channels })`），此前只是没人渲染——
-   * 「投递成功却没声音」这类结论因此完全不可见，状态行在 `skipped` 后还不会变。
-   */
-  function deliveryLines(r: { channels?: unknown }) {
-    const list: unknown[] = Array.isArray(r.channels) ? r.channels : [];
-    const views: DeliveryView[] = [];
-    list.forEach(function (delivery: unknown) {
-      const view = deliveryViewOf(delivery, t);
-      if (view) views.push(view);
-    });
-    if (views.length === 0) return null;
-    return (
-      <div className="dn-set-historyChannels">
-        {views.map(function (view, j: number) {
-          return (
-            <div
-              className={"dn-ch-delivery dn-ch-delivery-" + view.status}
-              key={view.channelId + "-" + j}
-            >
-              <span className="dn-ch-deliveryName">{view.channelId}</span>
-              <span className="dn-ch-deliveryStatus">{view.statusText}</span>
-              {view.reason ? <span className="dn-ch-deliveryReason">{view.reason}</span> : null}
-              {view.detail ? (
-                <details className="dn-ch-reasonRaw">
-                  <summary>{t("reasonDetailLabel")}</summary>
-                  <div className="dn-ch-reasonRawText">{view.detail}</div>
-                </details>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
   // 通知记录 tab（历史独立成 tab；清理/发送测试/刷新并排工具行；
   // 请求权限按钮随权限状态行一起归入「浏览器通知」频道卡）
   const historyPane = (
@@ -2680,7 +2346,7 @@ function SettingsCard() {
                     ) : null}
                   </div>
                   <div className="dn-set-historyText">{r.title + "：" + r.message}</div>
-                  {deliveryLines(r)}
+                  {deliveryLines(r, t)}
                 </div>
               </li>
             );
