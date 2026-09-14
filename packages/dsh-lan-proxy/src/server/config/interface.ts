@@ -6,12 +6,8 @@
  * 因为「什么算合法配置」只有一个答案；迁移域经本域写面落盘。
  */
 export {
-  BOOLEAN_KEYS,
-  COUNT_LIMITS,
   Config,
-  DEFAULT_CONFIG,
   DEFAULT_WSS_COMPRESS_PATHS,
-  normalizeConfig,
   normalizeLegacyWsCompressPaths,
   sanitizeSettings,
   validateSettings,

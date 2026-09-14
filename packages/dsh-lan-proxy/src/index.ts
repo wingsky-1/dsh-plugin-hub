@@ -62,7 +62,8 @@ export { MIGRATED_BAK_NAME, migrateFileConfig } from "./server/migrate/interface
 export type { MigrationOutcome } from "./server/migrate/interface.ts";
 export { apply, pluginDir, DEFAULT_WSS_COMPRESS_PATHS } from "./server/apply.ts";
 
-// 测试面 re-export（smoke 只依赖主入口，避免发布物保留内部模块）
+// 既有包导出面（历史 ABI，冻结）：下列内部符号自 #276 拆分起就随 lib/index.js 发布，
+// 收窄属公共 API 变更（红线，需独立 PR 走导出面评审）；不得以「测试需要」为由继续追加。
 export {
   createLanProxy,
   hostnameAllowed,
