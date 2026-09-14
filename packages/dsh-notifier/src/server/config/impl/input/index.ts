@@ -2,7 +2,12 @@
  * config 域：外部输入 → 合法设置。三个来源（磁盘配置文件、组合层 entry、HTTP patch）都**不受信**，这里是它们进入
  * 设置模型的唯一闸门。三道工序不可互换：归一化**永不失败**、校验**只审显式提交**（缺键不是错误）、净化**只留认识的键**。
  */
-import { isSoundId } from "../../../../shared/interface.ts";
+import {
+  BUILTIN_CHANNEL_TYPES,
+  WEBHOOK_AUTHS,
+  WEBHOOK_PRESETS,
+  isSoundId,
+} from "../../../../shared/interface.ts";
 import { DEFAULT_CONFIG } from "../model/index.ts";
 import type {
   BarkChannelConfig,
@@ -17,9 +22,7 @@ import type {
   SoundSetting,
   StoredSettings,
   SystemChannelConfig,
-  WebhookAuth,
   WebhookChannelConfig,
-  WebhookPreset,
 } from "../model/type.ts";
 import type { ValidationResult } from "./type.ts";
 
@@ -29,17 +32,14 @@ import type { ValidationResult } from "./type.ts";
 // 写入口径与设置页的选项必须是同一份白名单，各写一份就会出现「页面选得到、宿主拒收」。
 // 「白名单 ⊆ 音色表」这条不变量由 test/unit/shared/sounds.test.ts 守着。
 
-/** 内置频道类型；顺序即卡片顺序。它们恒在场，是 `channels` 里唯一不可删除的项——身份由 `type` 唯一确定。 */
-const BUILTIN_TYPES: readonly BuiltinChannelType[] = ["browser", "system"];
+// 内置频道类型的事实源在 src/shared/channels.ts（顺序即卡片顺序）：它们恒在场，是 `channels` 里
+// 唯一不可删除的项——身份由 `type` 唯一确定。
 
 /** bark 紧急度白名单。 */
 const BARK_LEVELS: readonly BarkLevel[] = ["active", "timeSensitive", "passive", "critical"];
 
-/** webhook 认证方式白名单。 */
-const WEBHOOK_AUTHS: readonly WebhookAuth[] = ["none", "bearer", "basic", "header"];
-
-/** webhook 预设白名单。 */
-const WEBHOOK_PRESETS: readonly WebhookPreset[] = ["ntfy", "gotify", "custom"];
+// webhook 认证方式与预设白名单的事实源在 src/shared/webhooks.ts（两端共享面）：设置页的选项与
+// 写入口径必须是同一份，各写一份就会出现「页面选得到、宿主拒收」。
 
 /** `"HH:MM"` 二十四小时制。 */
 const CLOCK_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -285,7 +285,7 @@ function requireBuiltinsPresent(list: readonly RawSettingValue[]): ValidationRes
   for (const item of list) {
     if (isRecord(item)) types.add(item.type);
   }
-  for (const type of BUILTIN_TYPES) {
+  for (const type of BUILTIN_CHANNEL_TYPES) {
     if (types.has(type)) continue;
     return reject("channels", `内置渠道不能删除：缺少 ${type}（页面停留在升级前时，刷新后重试）`);
   }

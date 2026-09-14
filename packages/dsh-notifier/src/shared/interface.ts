@@ -33,3 +33,35 @@ export type {
   NotifyKind,
   NotifySeverity,
 } from "./kinds.ts";
+export {
+  BUILTIN_CHANNELS,
+  BUILTIN_CHANNEL_TYPES,
+  channelIdFor,
+  channelIdOf,
+  isBuiltinChannelType,
+} from "./channels.ts";
+export type { BuiltinChannelType } from "./channels.ts";
+export {
+  WEBHOOK_AUTHS,
+  WEBHOOK_DEFAULT_TEMPLATES,
+  WEBHOOK_DELIVERY_PRESETS,
+  WEBHOOK_PRESETS,
+  WEBHOOK_PRIORITY,
+  deliveryPresetOf,
+  webhookTemplateOf,
+} from "./webhooks.ts";
+export type { WebhookAuth, WebhookDeliveryPreset, WebhookPreset } from "./webhooks.ts";
+export { REASON_CODES, REASON_LEGACY } from "./reason-codes.ts";
+export type { ReasonCode, ReasonParams } from "./reason-codes.ts";
+export type {
+  CapabilityDimension,
+  CheckedDimension,
+  HostCapabilities,
+  PackageManager,
+  PopupCapability,
+  Remediation,
+  RemediationCode,
+  RemediationParams,
+  SoundCapability,
+  Verdict,
+} from "./capabilities.ts";

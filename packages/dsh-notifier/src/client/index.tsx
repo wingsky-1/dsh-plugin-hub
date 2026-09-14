@@ -61,15 +61,20 @@ import {
   rebaseSettings,
 } from "./settings/diff.ts";
 import { createSaveGuard } from "./settings/save-guard.ts";
-// 音色白名单与通知类型表的事实源在 src/shared/interface.ts（两端共享面）：客户端只消费，
-// 不再各写一份副本。该目录的模块必须零 import（或同目录相对），判据见
-// scripts/test/shared-leaf-imports.test.ts。
+// 两端共享面 src/shared/interface.ts：音色白名单、通知类型表、频道 id 归一化、webhook 预设
+// （模板 / 认证白名单）与理由 code 的事实源都在这里，客户端只消费，不再各写一份副本——跨端
+// 漂移的症状是「设置页选得到、宿主拒收」与「勾了频道却收不到」。该目录的模块必须零 import
+// （或同目录相对），判据见 scripts/test/shared-leaf-imports.test.ts。
 import {
   KIND_SEVERITY,
   KIND_SWITCHES,
   SOUND_IDS,
+  WEBHOOK_AUTHS,
+  channelIdFor,
+  channelIdOf,
   isBuiltinKind,
   isSoundId,
+  webhookTemplateOf,
 } from "../shared/interface.ts";
 import type { NotifySeverity, SoundId } from "../shared/interface.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
@@ -155,46 +160,19 @@ function severityOf(kind: string): NotifySeverity {
 }
 
 /**
- * 频道实例 → 路由 id（channelId 前缀单点化）。
- * 旧实现 "bark:"+id 三处硬编码（service resolveRoutes / 宿主 outboundChannels /
- * 客户端 routeToggle），webhook 频道引入后统一为 `type:id`——本 helper 为客户端
- * 单一事实源，宿主端同名单独维护（跨端无共享模块，注释互指）。
- */
-function channelIdFor(cfg: Record<string, any>): string {
-  return String(cfg.type || "") + ":" + String(cfg.id || "");
-}
-
-/**
- * 频道对外 id：内置取 `type`，实例取 `type:id`——宿主侧有一条同名规则，两端必须逐字一致。
- * 各自维护一份而不是共享：客户端与宿主没有共享模块；一致性由路由往返判据（chips ↔ kindRoutes）锁住。
- */
-function channelIdOf(cfg: Record<string, any>): string {
-  const type = String(cfg.type || "");
-  return type === "browser" || type === "system" ? type : channelIdFor(cfg);
-}
-
-/**
  * webhook 频道预设：选择预设填充认证方式与消息模板；URL 不自动
  * 覆盖（避免丢用户已填内容——「仅空值填充」的变体：URL 只在为空时
  * 由用户填写，模板/认证随预设走且可再改）。模板渲染契约见 channel-webhook.ts：
  * 文本占位符 JSON-aware 转义、{{ts}} 数字直出、{{priority}} 频道感知映射。
+ *
+ * 模板字面量取 src/shared/webhooks.ts（两端共享面，本模块不再抄第二份：宿主端出口渲染读的是
+ * 同一份，各写一份时的漂移症状是「设置页看到的模板与实际发出去的 body 不是同一份」）。
+ * 认证**默认值**留在这里：宿主端没有「套用预设」这个动作，没有对应物可共享。
  */
 const WEBHOOK_PRESETS: Record<string, { auth: string; template: string }> = {
-  ntfy: {
-    auth: "bearer",
-    template:
-      '{\n  "topic": "<topic>",\n  "title": "{{title}}",\n  "message": "{{message}}",\n  "tags": ["{{kind}}"],\n  "priority": "{{priority}}"\n}',
-  },
-  gotify: {
-    auth: "bearer",
-    template:
-      '{\n  "title": "{{title}}",\n  "message": "{{message}}",\n  "priority": "{{priority}}"\n}',
-  },
-  custom: {
-    auth: "header",
-    template:
-      '{\n  "event": "{{kind}}",\n  "title": "{{title}}",\n  "body": "{{message}}",\n  "severity": "{{severity}}",\n  "ts": {{ts}}\n}',
-  },
+  ntfy: { auth: "bearer", template: webhookTemplateOf("ntfy") },
+  gotify: { auth: "bearer", template: webhookTemplateOf("gotify") },
+  custom: { auth: "header", template: webhookTemplateOf("custom") },
 };
 
 /**
@@ -1905,8 +1883,10 @@ function SettingsCard() {
   function webhookCard(ch: any, idx: number) {
     const channelKey = channelIdFor(ch);
     const armed = delArmedId === ch.id;
+    // 白名单取 src/shared/webhooks.ts（两端共享面）：写入口径与设置页选项必须是同一份，
+    // 各写一份时的症状是「页面选得到、宿主拒收」。
     const authValue =
-      ["none", "bearer", "basic", "header"].indexOf(String(ch.auth || "none")) !== -1
+      (WEBHOOK_AUTHS as readonly string[]).indexOf(String(ch.auth || "none")) !== -1
         ? String(ch.auth || "none")
         : "none";
     const chId = String(ch.id);

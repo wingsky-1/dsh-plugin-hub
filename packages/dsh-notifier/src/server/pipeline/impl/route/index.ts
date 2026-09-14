@@ -6,6 +6,7 @@
  * 不发——由出口按传到手上的配置自己决定；管线只搬配置，不预设形态。
  */
 import type { EffectiveConfig } from "../../deps.ts";
+import { BUILTIN_CHANNELS, channelIdOf, deliveryPresetOf } from "../../../../shared/interface.ts";
 import { toastScriptPath } from "../../../shared/interface.ts";
 import type { NotifyKind } from "../service/kinds.ts";
 import type { NotifyRequest } from "../service/type.ts";
@@ -14,7 +15,6 @@ import type {
   BarkTarget,
   BarkTextKey,
   BrowserConfig,
-  ChannelConfig,
   RouteDeps,
   RouteOutcome,
   RoutedTarget,
@@ -23,22 +23,9 @@ import type {
   WebhookTarget,
 } from "./type.ts";
 
-/** 内置频道 id：与客户端频道卡同名（客户端已锁定）。 */
-const BUILTIN_CHANNELS = { browser: "browser", system: "system" } as const;
-
-/** 配置里的预设 → 投递层的预设：`custom` 在投递层叫 `raw`。 */
-const PRESET_MAP: Record<NonNullable<WebhookConfig["preset"]>, WebhookTarget["preset"]> = {
-  ntfy: "ntfy",
-  gotify: "gotify",
-  custom: "raw",
-};
-
-/** 频道对外 id：内置取 `type`，实例取 `type:id`——客户端有一条同名规则，两端必须逐字一致。 */
-export function channelIdOf(channel: ChannelConfig): string {
-  return channel.type === "browser" || channel.type === "system"
-    ? channel.type
-    : `${channel.type}:${channel.id}`;
-}
+// 内置频道 id、频道对外 id 规则与「配置层预设 → 投递层预设」的改名都是两端契约，事实源在
+// src/shared/{channels,webhooks}.ts（客户端消费同一份）：两端各写一份时的漂移症状是「用户勾了
+// 频道却收不到」与「设置页看到的模板不是实际发出去的那份」。
 
 /** 路由：按 kind 与设置选出本次要投递的目标。 */
 export function routeTargets(
@@ -191,7 +178,7 @@ function assignAuthHeader(headers: Record<string, string>, channel: WebhookConfi
 /** 缺 preset 回落 `ntfy`：归一化后恒有值，这里是脏配置的兜底（与旧实现同口径）。 */
 function presetOf(channel: WebhookConfig): WebhookTarget["preset"] {
   const preset = channel.preset;
-  return preset === undefined ? "ntfy" : PRESET_MAP[preset];
+  return preset === undefined ? "ntfy" : deliveryPresetOf(preset);
 }
 
 /**

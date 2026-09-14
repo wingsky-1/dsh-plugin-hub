@@ -8,7 +8,7 @@
  * 同样照 reason-text.test.ts 的范式：断言对象是**可发布的形态**（in-place esbuild 打包后再执行），
  * 顺带把「`import type` 真的被擦除、浏览器包里没有服务端代码」变成可判红的判据。
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuildBuild } from "esbuild";
@@ -140,6 +140,42 @@ describe("跨端形态：客户端模块自带实现，不夹带服务端代码"
       "node:child_process",
     ]) {
       expect(code, `产物夹带了 ${marker}`).not.toContain(marker);
+    }
+  });
+
+  // 干净模块的类型面此前直指 ../server/channels/impl/capabilities/type.ts 与 ../server/shared/reason.ts：
+  // 类型 import 编译期擦除，所以产物断言看不见它——但它是「客户端依赖宿主实现文件」这条不该存在的
+  // 依赖边的唯一入口（改一个字去掉 type 就变成运行时依赖）。故这里扫客户端源码本身，越界即红。
+  it("src/client/** 没有任何指向 ../server/ 的 import（类型面也一样）", () => {
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.tsx?$/u.test(entry.name)) files.push(full);
+      }
+    };
+    walk(join(pkgDir, "src/client"));
+    // 判据面自证：扫描真的跑过，且三个关键文件都在面内（面缩了这条先红，免得判据退化成恒绿）。
+    expect(files.length).toBeGreaterThan(0);
+    for (const known of ["capabilities.ts", "index.tsx", "reason-text.ts"]) {
+      expect(
+        files.some((file) => file.endsWith("/" + known)),
+        known,
+      ).toBe(true);
+    }
+    const offenders = files
+      .filter((file) => /from\s+["'][^"']*\/server\//u.test(readFileSync(file, "utf8")))
+      .map((file) => file.slice(pkgDir.length));
+    expect(offenders).toEqual([]);
+  });
+
+  // 两处历史违规的落点：类型面改指共享面后，值面与类型面都只剩 src/shared/interface.ts 一个入口。
+  it("能力面与理由面的类型 import 指向共享面", () => {
+    for (const rel of ["src/client/capabilities.ts", "src/client/reason-text.ts"]) {
+      expect(readFileSync(join(pkgDir, rel), "utf8"), rel).toMatch(
+        /from "\.\.\/shared\/interface\.ts"/u,
+      );
     }
   });
 });

@@ -9,7 +9,8 @@
  *
  * 为什么文案表写成**显式完整表** + `satisfies Record<…, NotifierLocaleKey>`：服务端加一个 code
  * 而这里漏配文案，必须在编译期就红，而不是等用户看到一行英文标识符（同 reason-text.ts 的范式）。
- * 类型只 `import type`（编译期擦除，浏览器包里没有服务端代码）。
+ * 类型只 `import type`（编译期擦除，浏览器包里没有服务端实现），且指向 src/shared/interface.ts
+ * 这个跨端共享面——干净模块的类型面不指向宿主实现目录。
  */
 import type {
   CapabilityDimension,
@@ -21,7 +22,7 @@ import type {
   RemediationParams,
   SoundCapability,
   Verdict,
-} from "../server/channels/impl/capabilities/type.ts";
+} from "../shared/interface.ts";
 import type { NotifierLocaleKey } from "./locales.ts";
 import type { ReasonTranslator } from "./reason-text.ts";
 
