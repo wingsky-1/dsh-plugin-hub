@@ -8,7 +8,8 @@
     "!packages/dsh-mcp-manager/src/types/**",
     "!packages/dsh-mcp-manager/src/integration/**",
     "!packages/dsh-mcp-manager/src/placement-math.ts",
-    "!packages/dsh-mcp-manager/src/**/interface.ts"
+    "!packages/dsh-mcp-manager/src/**/interface.ts",
+    "!packages/dsh-mcp-manager/src/server/*/deps.ts"
   ],
   "testRunner": "vitest",
   "mutator": {
