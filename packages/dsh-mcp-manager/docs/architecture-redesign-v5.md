@@ -863,13 +863,13 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 ### D.3 未完成与遗留（含状态订正）
 
 1. **B1 未完部分**：`src/shared/` 另外五个文件（`status`/`frames`/`dto`/`routes`/`service`）。组合根（B1.4）已完成，见 D.2·23。切法与验收见 D.4。**两条显式收窄 + 一条落点裁量**见 §十二 表后（不建 10 个空域骨架；B1.4 不路由既有装配；机制落 `server/shared/` 而非入口）。**接线顺序**：`upgrade` 的启用必须与「读者改读新布局」同一笔（B2），否则归档旧文件而旧读者读空 = 静默丢配置（见 §十二 表后）。
-2. **B1.5b 进行中**（`dto.ts` / `service.ts` 类型面，含仓库根 `shared/mcp-manager-service.d.ts` 退回包内）。**B1.5a 已完成**（`a9e897c`：状态键 / 帧名 / 路由路径三族进 `src/shared` 单点 + 永久跨端一致性锁）。**B1.4 已完成**（`b032294`：组合根机制 + `host-faces.ts` + `declare module` 迁入 + 9 条真实 Context 探针；机制落点裁量见 §十二 表后 ③，主控裁定与 I5 准入记录见 ④）。**B1.3 已完成**（`4bd6af6`，不接线）；**B1.2 已完成**（`dfd6577`）；**B1.0 已完成**（`4f94f65`，附录 G·G1），其遗留的两条 id 不一致见 **G1b**（登记不修）；I9 判据只覆盖顶层 `let/var` 的缺口见 **G11**。
+2. **B1.5b 已完成**（`dto.ts` / `service.ts` 类型面 + 仓库根 `shared/mcp-manager-service.d.ts` 退回包内 + 跨端 DTO 一致性锁；两处登记面 `--min` / stryker 测试面**无位移**，理由见提交正文）。**B1.5a 已完成**（`a9e897c`：状态键 / 帧名 / 路由路径三族进 `src/shared` 单点 + 永久跨端一致性锁）。**B1.4 已完成**（`b032294`：组合根机制 + `host-faces.ts` + `declare module` 迁入 + 9 条真实 Context 探针；机制落点裁量见 §十二 表后 ③，主控裁定与 I5 准入记录见 ④）。**B1.3 已完成**（`4bd6af6`，不接线）；**B1.2 已完成**（`dfd6577`）；**B1.0 已完成**（`4f94f65`，附录 G·G1），其遗留的两条 id 不一致见 **G1b**（登记不修）；I9 判据只覆盖顶层 `let/var` 的缺口见 **G11**。
 3. **⑩ 已完结**（随 B1.1，`f21d44d`）：迁移与其连带面（6 条 mutation exclude pattern 平移 + 6 份段 conf 重生成）同笔完成。
 4. **基线写入纪律（附录 G·G5，必须遵守）**：`--write-baseline` **必须在 build 之后的树上跑**——`lib/**` 的证据 id 会随 `lib/foo.d.ts` 在不在而变（只有 `src/index.ts` 做了归一），而 CI 是「先 build 再 contract」，两者错位就换号判红。
 5. **已知放宽路径（登记，不修）**：R16 的三条同族路径（删键 / 删**整包**条目 / **瞬态台账**，见 §十三 R16 与附录 G·G2–G4）；豁免 `reviewBy` 无执法力、可静默删除转长期（G6）。
 6. **判据面与宪法正文的文字差待订正**（G9）：I2④ 正文（doc:124）未写「值」而实现判值面；I8① 正文（doc:165）只列两面而实现含 `src/client/**`（§8.1 与脚本头写全三面）。
 7. **「有文字无判据」清单**（G10，明细见附录 G）：I1 / I2③后半 / I2② 终态 / I3 / I4② / I5 / I6 / I7 **全靠人工**。其中最突出的是 **I2③ 后半「死声明 = 0」：只算不判、连默认输出都没有**。
-8. **仓库根 `shared/` 两处过期注释**：① `shared/placement-math.d.ts:2`（「各包 `src/placement-math.ts` 薄 facade」——provider-usage 与本包都已在 `src/shared/`）：既存、非本次弄脏；② `shared/mcp-manager-service.d.ts:4`（「src/service.ts re-export + declare module 合并」——声明合并已随 B1.4 迁入包入口）：**仓库根 `shared/` 是本刀禁改面**，两处均登记待清。
+8. **仓库根 `shared/` 两处过期注释**：① `shared/placement-math.d.ts:2`（「各包 `src/placement-math.ts` 薄 facade」——provider-usage 与本包都已在 `src/shared/`）：既存、非本次弄脏；② ~~`shared/mcp-manager-service.d.ts:4`~~：**B1.5b 已随「退回包内」整文件删除**（类型定义住 `src/shared/service.ts`，过时注释随之消失）。
 9. **发版号依赖（待维护者知悉）**：`upgrade` 的步骤表是 `0.0.0 → 0.2.5`。接线（B2）后若 `package.json` 仍是 0.2.4，对账会报「步骤表与 `package.json` 不同步」——这是 §7.4 #5 的**设计内落差信号**（只 warn 不中止）。**代理不改版本号**：发版时若不是 0.2.5，须同步该步骤表。
 10. **lint warning 余量**：**670 / 预算 671，余量 1**（不许抬 `gauntlet.config.json`）。
 11. **测试面（B3 主体）未动**：16 个测试文件 / 14635 行尚未按域搬迁；`@ts-nocheck` 未清零。

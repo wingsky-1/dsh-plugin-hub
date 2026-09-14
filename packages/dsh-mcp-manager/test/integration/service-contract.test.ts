@@ -1,7 +1,7 @@
 /**
  * dsh-mcp-manager — 核心服务契约独立门禁（issue #476，service-contract）。
  *
- * 背景：`ctx.mcpManager` 服务类型面（shared/mcp-manager-service.d.ts）是单一
+ * 背景：`ctx.mcpManager` 服务类型面（src/shared/service.ts）是单一
  * 事实源，但提供方 apply.ts 的 provide 对象方法全是宽面签名（string /
  * Record<string, unknown>），与类型面无编译期锚点；此前「契约签名变更未同步
  * 测试」纯靠人工，改 shared 类型不触发任何检查（skipLibCheck + 消费方 import
@@ -24,15 +24,22 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-// 提供方视角（与 src/service.ts 同款相对路径）：shared 类型面单一事实源。
+// 提供方视角（与 src/integration/service.ts 同款相对路径）：shared 类型面单一事实源。
 import type {
+  ClientUiConfig,
   McpManagerServerInput,
   McpManagerService,
   McpScope,
   McpServerStatus,
   McpServerSummary,
   McpToolInfo,
-} from "../../../../shared/mcp-manager-service.js";
+} from "../../src/shared/interface.ts";
+// 客户端视角：同一份 DTO 的薄 re-export（客户端不得自带副本）。
+import type {
+  ClientUiConfig as ClientUiConfigView,
+  McpServerListEntry as ClientServerListEntry,
+} from "../../src/client/core/state.ts";
+import type { McpServerListEntry } from "../../src/shared/interface.ts";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 
 // ─────────────────────────── 编译期类型断言区 ───────────────────────────
@@ -50,7 +57,7 @@ type Equal<A, B> =
  */
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
-// 类型面：6 个导出类型自含清单（与 shared/mcp-manager-service.d.ts 逐项比对；
+// 类型面：6 个导出类型自含清单（与 src/shared/service.ts 逐项比对；
 // 结构漂移 → 编译红）。标量/联合用 Equal 精确锁，对象结构用 Same 双向锁。
 type _SvcStatus = Assert<
   Equal<
@@ -158,6 +165,27 @@ type _SummaryKeys = Assert<
     keyof McpServerSummary,
     "name" | "transport" | "scope" | "status" | "error" | "tools" | "enabled"
   >
+>;
+
+// ────────────────── 跨端 DTO 形状一致性锁（编译期，D5/#767 B1.5b） ──────────────────
+// 判据面两层：
+//   A 两端互赋：客户端转出的类型与 src/shared/dto.ts 的定义必须双向可赋值
+//     （任一方向子型关系破 = 某端的字段类型漂移）。
+//   B 键集相同：Same 对「多一个可选字段」不敏感，故键集另锁一层——客户端自带
+//     副本并增删字段时，只有 B 会红。
+// 客户端今天只是薄 re-export，A/B 因此恒真；它们的价值是**漂移时的判据**：
+// 任何人把 re-export 换回本地 interface，任一字段增删改都会在这里判红。
+// 这 5 条锁以 export 形式声明：lint 的 warning 预算已无余量（671 上限），而
+// 非导出的 type alias 每条都会记一次 no-unused-vars——断言的有效性由 tsc 编译面给出，
+// 与是否导出无关（接线见 scripts/test/service-contract-wiring.test.ts）。
+export type DtoListEntryMutual = Assert<Same<ClientServerListEntry, McpServerListEntry>>;
+export type DtoListEntryKeys = Assert<Equal<keyof ClientServerListEntry, keyof McpServerListEntry>>;
+export type DtoUiConfigMutual = Assert<Same<ClientUiConfigView, ClientUiConfig>>;
+export type DtoUiConfigKeys = Assert<Equal<keyof ClientUiConfigView, keyof ClientUiConfig>>;
+// DTO 抽象层不得反噬服务面：列表条目是服务摘要的**超集**（服务摘要 7 键都在列表条目里，
+// 且逐键类型可赋），故服务查询面的字段在列表载荷里取得到同名同型。
+export type DtoListCoversService = Assert<
+  McpServerSummary extends Pick<McpServerListEntry, keyof McpServerSummary> ? true : false
 >;
 
 // ─────────────────────────── 运行时方法面断言区 ───────────────────────────

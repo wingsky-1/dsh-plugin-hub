@@ -5,8 +5,9 @@
 /**
  * mcp-manager-service 契约测试编译面接线（issue #476 service-contract）。
  *
- * 为什么存在：shared/mcp-manager-service.d.ts 是 ctx.mcpManager 服务类型面的
- * 单一事实源，但提供方包的主 tsconfig（include src/**）不编译 test/，
+ * 为什么存在：packages/dsh-mcp-manager/src/shared/service.ts 是 ctx.mcpManager 服务
+ * 类型面的单一事实源（#767 B1.5b 起；此前在仓库级 shared/），但提供方包的主
+ * tsconfig（include src/**）不编译 test/，
  * `pnpm typecheck`/`pnpm build` 的 tsc 面到不了契约测试文件；而 `pnpm test`/
  * `pnpm test:scripts` 都是 Node 直跑 TS（type stripping 擦除类型断言）——若只
  * 靠直跑，编译期 Equal/Same 断言是「假锁」（方案评审 P0-A 已实证）。
