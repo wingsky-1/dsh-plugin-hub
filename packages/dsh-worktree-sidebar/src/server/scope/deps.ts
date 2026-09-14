@@ -49,11 +49,24 @@ export interface TypertPort {
   configure(resolver: (sessionId: string) => Promise<FileScope | undefined>): () => void;
 }
 
+/**
+ * 会话链只读面：本域只要「父会话是谁」这一个事实。
+ *
+ * 子 agent 的会话是**独立会话**——dsh-subagent 在创建它时只把父的 cwd 拷进子 header
+ * （dsh-subagent/lib/index.js:504-510），所以「子 agent 跟着父会话的 worktree」不会自动发生：
+ * 绑定记在父会话 id 上，子会话自己那条永远是空的，不问父链就永远看不到。
+ */
+export interface SessionChainPort {
+  /** 该会话的父会话 id；普通会话（无父）或会话不存在时返回 undefined。 */
+  parentOf(sessionId: string): string | undefined;
+}
+
 export interface ScopeDeps {
   readonly logger: LoggerPort;
   readonly binding: BindingPort;
   readonly git: GitPort;
   readonly typert: TypertPort;
+  readonly sessions: SessionChainPort;
   /**
    * 目录存在性判定。缺省直连 fs（`impl/resolve` 的 `directoryExists`）。
    * 注入点存在的理由不是「方便测试」，而是这条判据的两条分支（目录消失 / 读不了）在真实权限下无法稳定构造，

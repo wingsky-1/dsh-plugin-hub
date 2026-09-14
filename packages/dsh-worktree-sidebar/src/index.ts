@@ -10,11 +10,12 @@ import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type {} from "@deepseek-ai/dsh-typert-protocol";
 import { ROUTES } from "./shared/interface.ts";
 import { bindAgents } from "./server/host/agents.ts";
+import { bindSessions } from "./server/host/sessions.ts";
 import { bindTypert } from "./server/host/typert.ts";
 import * as apiApi from "./server/api/interface.ts";
 import * as bindingApi from "./server/binding/interface.ts";
 import * as gitApi from "./server/git/interface.ts";
-import type { TypertPort } from "./server/scope/deps.ts";
+import type { SessionChainPort, TypertPort } from "./server/scope/deps.ts";
 import * as scopeApi from "./server/scope/interface.ts";
 import type { AgentPort } from "./server/tools/deps.ts";
 import * as toolsApi from "./server/tools/interface.ts";
@@ -30,10 +31,11 @@ export const name = "worktree-sidebar";
 /**
  * 依赖的宿主服务。声明成依赖之后由框架保证服务就绪才轮到装配。
  *
- * `typert` 是接管 `workspaceFileScope` 的唯一入口；`sessions` / `sandboxPolicy` 曾经也在这一行，
- * 是「provider 缺失时自己复刻官方默认语义」那套兜底的输入——兜底删掉后它们没有消费方了。
+ * `typert` 是接管 `workspaceFileScope` 的唯一入口；`sessions` 只用来读**父链**（子 agent 继承父会话的
+ * 登记要靠它）。`sandboxPolicy` 曾经也在这里，是「provider 缺失时自己复刻官方默认语义」那套兜底的输入，
+ * 兜底删掉后它没有消费方了。
  */
-export const inject = ["webServer", "agents", "typert"];
+export const inject = ["webServer", "agents", "typert", "sessions"];
 
 /** 组合层入口配置。只有总开关：本插件没有用户配置文件。 */
 export interface WorktreeSidebarConfig {
@@ -47,6 +49,7 @@ interface HostPort {
   readonly register: (route: WebRoute) => () => void;
   readonly agents: AgentPort;
   readonly typert: TypertPort;
+  readonly sessions: SessionChainPort;
   readonly now: () => string;
 }
 
@@ -60,6 +63,7 @@ export async function apply(ctx: Context, config: WorktreeSidebarConfig = {}): P
       roots: () => ctx.agents.roots(),
     }),
     typert: bindTypert(ctx.typert.lookups),
+    sessions: bindSessions(ctx.sessions),
     now: () => new Date().toISOString(),
   };
   const disposers = await assemble(host, config);
@@ -100,6 +104,7 @@ async function assemble(
       binding: bindingApi,
       git: gitApi,
       typert: host.typert,
+      sessions: host.sessions,
     });
     disposers.push(scopeApi.releaseScope);
 

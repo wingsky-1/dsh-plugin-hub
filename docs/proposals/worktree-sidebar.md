@@ -169,6 +169,7 @@ packages/dsh-worktree-sidebar/
   src/shared/contract.ts             双端共享契约：ROUTES（客户端经构建期 __DSH_ROUTES__ 取）/ 响应字段名
   src/server/host/agents.ts          宿主适配：agent 事件面（subscribe / list / publish）收窄
   src/server/host/typert.ts          宿主适配：typert lookups 收窄（读 / 配置 / 订阅）
+  src/server/host/sessions.ts        宿主适配：会话父链（只读「父会话是谁」，子 agent 继承要用）
   src/server/binding/interface.ts    绑定域入口：install/release 成对 + revision/get/put/drop
   src/server/binding/deps.ts         依赖声明（LoggerPort、文件路径、时钟）
   src/server/binding/impl/model/     纯逻辑与存储形状：校验、revision 递增、按会话索引
@@ -180,8 +181,10 @@ packages/dsh-worktree-sidebar/
   src/server/git/impl/exec/          真实 execFile 实现
   src/server/git/impl/service/       单例：归属缓存 + installed 守卫
   src/server/scope/interface.ts      scope 域入口：install/release 成对 + effectiveWorktree
-  src/server/scope/deps.ts           注入 typert、binding、git、logger
-  src/server/scope/impl/resolve/     命中绑定 to worktree，否则委托捕获的官方默认
+  src/server/scope/deps.ts           注入 typert、binding、git、sessions、logger
+  src/server/scope/impl/own/         本会话自己的登记是否仍有效（目录没了 / 不是该仓库的 worktree 即摘掉）
+  src/server/scope/impl/inherit/     子 agent 自己没登记时沿父链继承（到顶即停 / 防环 / 父摘除即回退）
+  src/server/scope/impl/resolve/     合成生效根 + 委托捕获的官方默认 + 承诺永不抛出
   src/server/scope/impl/service/     单例：等 provider / 捕获 / 委托 / 释放 + 状态守卫（S8 起没有 fallback）
   src/server/tools/interface.ts      工具域入口：installTools/releaseTools
   src/server/tools/deps.ts           注入 binding、git、agents、logger、时钟
@@ -254,12 +257,12 @@ notifier / mcp-manager 给的都只是**单文件**分位数（中位 44/58、p9
 
 | 文件类型 | review 提问线 | 实测（S6 后，`wc -l`） | 结论 |
 |---|---|---|---|
-| 组合根 src/index.ts | 300 | 144 | 合规 |
+| 组合根 src/index.ts | 300 | 149 | 合规 |
 | 域 impl 单文件 | 250 | 最大 164（server/scope/impl/service；S8 的等待式接管换了原先的 fallback） | 合规 |
-| 纯逻辑模块 | 120 | 最大 110（scope/impl/resolve） | 合规 |
+| 纯逻辑模块 | 120 | 最大 117（tools/impl/remove）；S9 拆开后 scope 域三块 own 70 / inherit 29 / resolve 53 | 合规 |
 | 客户端单文件 | 250 | 最大 182（takeover；inject 150、shared/ports 145、index 117、source 76、bindings 46） | 合规 |
-| 域 interface/deps | 80 | interface 19/45/34/21/60（api/binding/scope/tools/git）+ `shared/interface` 8、`server/shared/interface` 11；deps 38/12/18/63/55 | 合规（C1 后门面 = install/release + 能力转发，不再是 8–11 行的纯转出） |
-| 全包 src | —（已撤销） | 44 文件 / 3068 行（均值 70；S6 加 `src/shared/interface.ts`、S8 删 `scope/impl/fallback` 与 `host/defaults`） | 指标不存在 |
+| 域 interface/deps | 80 | interface 19/45/34/21/60（api/binding/scope/tools/git）+ `shared/interface` 8、`server/shared/interface` 11；deps 38/12/18/76/55 | 合规（C1 后门面 = install/release + 能力转发，不再是 8–11 行的纯转出；scope/deps 76 是端口与形状的逐条声明） |
+| 全包 src | —（已撤销） | 47 文件 / 3151 行（均值 67；S6 加 `shared/interface.ts`、S8 删两块、S9 加 host/sessions 与 scope/impl 两块） | 指标不存在 |
 
 **历史偏离已消失，不再有「偏离」可议**：
 
@@ -269,7 +272,7 @@ notifier / mcp-manager 给的都只是**单文件**分位数（中位 44/58、p9
   `deps.ts` 是纯类型面（最大 `scope/deps.ts` 78 行，是端口与形状字段的逐条声明，只有一个修改理由）。
   当时提的两种修法（接受 150 / 再拆一层）都不必执行。
 - **全包合计**这个指标本身已撤销（见 §9），`2800` / `3000` 一类建议值一并作废，不要再出现在任何判据里。
-  当前实测 **44 文件 / 3068 行、均值 70**（旧表的 `2535` 是 `src/host/` 拆分前、`44/2978` 是 B7 拆出 `inject.ts` 之前、`45/3002` 是 S6 之前、`46/3081` 是 S8 之前，均已过期）。
+  当前实测 **47 文件 / 3151 行、均值 67**（旧表的 `2535` 是 `src/host/` 拆分前、`44/2978` 是 B7 拆出 `inject.ts` 之前、`45/3002` 是 S6 之前、`46/3081` 是 S8 之前、`44/3068` 是 S9 之前，均已过期）。
 
 ## 10. 债务清单与最小化
 

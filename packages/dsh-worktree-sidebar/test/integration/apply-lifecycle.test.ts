@@ -46,6 +46,7 @@ function fakeHost(): FakeHost {
         };
       },
     },
+    sessions: { get: () => undefined },
     typert: {
       lookups: {
         get: () => undefined,

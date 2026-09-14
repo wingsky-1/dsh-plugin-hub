@@ -8,11 +8,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { BindingRecord } from "../../src/server/binding/interface.ts";
 import type { FileScope, LookupDescriptorPort, ScopeDeps } from "../../src/server/scope/deps.ts";
-import {
-  directoryExists,
-  effectiveWorktree,
-  resolveScope,
-} from "../../src/server/scope/impl/resolve/index.ts";
+import { directoryExists } from "../../src/server/scope/impl/own/index.ts";
+import { effectiveWorktree, resolveScope } from "../../src/server/scope/impl/resolve/index.ts";
 import { scopeService } from "../../src/server/scope/impl/service/index.ts";
 import { installScope, releaseScope, takeoverState } from "../../src/server/scope/interface.ts";
 
@@ -66,10 +63,14 @@ function scopeDeps(
     configureThrows?: boolean;
     /** 官方 provider 恰好在 install 的 `subscribe` 调用**之中**注册（订阅与重读之间的那个窗口）。 */
     providerArrivesDuringSubscribe?: LookupDescriptorPort;
+    /** 会话链：子会话 id → 父会话 id（缺省没有父）。 */
+    parents?: Record<string, string>;
   } = {},
 ) {
   const table = new Map<string, BindingRecord>(Object.entries(options.binding ?? {}));
   const dropped: string[] = [];
+  /** 谁被查过登记：父链走错时这里会出现不存在的会话（或同一个 id 出现两次）。 */
+  const bindingGets: string[] = [];
   const configured: Array<(id: string) => Promise<FileScope | undefined>> = [];
   let disposed = false;
 
@@ -85,7 +86,10 @@ function scopeDeps(
   const deps: ScopeDeps = {
     logger,
     binding: {
-      get: (id) => table.get(id),
+      get: (id) => {
+        bindingGets.push(id);
+        return table.get(id);
+      },
       drop: async (id) => {
         if (options.dropOk === false) return { ok: false, reason: "disk full" };
         table.delete(id);
@@ -105,6 +109,7 @@ function scopeDeps(
         };
       },
     },
+    sessions: { parentOf: (id) => options.parents?.[id] },
     existsDirectory: () => options.exists !== false,
   };
 
@@ -112,6 +117,7 @@ function scopeDeps(
     deps,
     table,
     dropped,
+    bindingGets,
     configured,
     lookups,
     isDisposed: () => disposed,
@@ -184,6 +190,88 @@ describe("effectiveWorktree", () => {
     expect(await effectiveWorktree(deps, "s1")).toBeNull();
     expect(dropped.length).toBe(0);
     expect(warns.some((w) => w.includes("摘除失效绑定失败"))).toBe(true);
+  });
+});
+
+describe("子 agent 继承父会话的登记", () => {
+  const official: LookupDescriptorPort = {
+    resolve: async (id) => ({ sessionId: id, workspaceRoot: "/official" }),
+  };
+
+  it("本会话没登记时取父会话的生效根", async () => {
+    const { deps } = scopeDeps({
+      binding: { parent: record },
+      parents: { child: "parent" },
+      exists: true,
+      belongs: true,
+    });
+    expect(await effectiveWorktree(deps, "child")).toBe("/wt");
+  });
+
+  it("父链多级：本会话 → 父 → 祖父", async () => {
+    const { deps } = scopeDeps({
+      binding: { grand: record },
+      parents: { child: "parent", parent: "grand" },
+      exists: true,
+      belongs: true,
+    });
+    expect(await effectiveWorktree(deps, "child")).toBe("/wt");
+  });
+
+  it("自己登记了就不向上看（父的登记是另一个根）", async () => {
+    const own: BindingRecord = { ...record, worktreeRoot: "/wt-own" };
+    const { deps } = scopeDeps({
+      binding: { child: own, parent: record },
+      parents: { child: "parent" },
+      exists: true,
+      belongs: true,
+    });
+    expect(await effectiveWorktree(deps, "child")).toBe("/wt-own");
+  });
+
+  it("到顶（没有父）按未绑定处理，且不再向不存在的父会话查登记", async () => {
+    const { deps, bindingGets } = scopeDeps({
+      binding: { parent: record },
+      parents: {},
+      exists: true,
+      belongs: true,
+    });
+    expect(await effectiveWorktree(deps, "child")).toBeNull();
+    expect(bindingGets).toEqual(["child"]);
+  });
+
+  it("父链成环时停下（错数据不转圈，每个会话最多查一次）", async () => {
+    const { deps, bindingGets } = scopeDeps({ parents: { a: "b", b: "a" }, exists: true });
+    expect(await effectiveWorktree(deps, "a")).toBeNull();
+    expect(bindingGets).toEqual(["a", "b"]);
+  });
+
+  it("父会话的登记失效 → 摘掉它，仍按未绑定处理（回退自己的 cwd）", async () => {
+    const { deps, dropped, table } = scopeDeps({
+      binding: { parent: record },
+      parents: { child: "parent" },
+      exists: false,
+    });
+    expect(await effectiveWorktree(deps, "child")).toBeNull();
+    expect(dropped).toEqual(["parent"]);
+    expect(table.has("parent")).toBe(false);
+  });
+
+  it("路由与解析器读同一份继承结果（一处实现覆盖两端）", async () => {
+    const { deps, configured } = scopeDeps({
+      descriptor: official,
+      binding: { parent: record },
+      parents: { child: "parent" },
+      exists: true,
+      belongs: true,
+    });
+    installScope(deps);
+    // 路由那条（api 域读 effectiveWorktree）与 resolver 那条（官方 gateway 读它）必须同源。
+    expect(await scopeService.effectiveWorktree("child")).toBe("/wt");
+    expect(await configured[0]?.("child")).toEqual({
+      sessionId: "child",
+      workspaceRoot: "/wt",
+    });
   });
 });
 
