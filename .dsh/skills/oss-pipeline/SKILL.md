@@ -17,10 +17,12 @@ description: >
 > 分支保护的 required check 只有 `Build / Contract / Smoke / Pack` 一个，但它是**聚合闸**
 > （`ci.yml` 的 needs 已并入 build-test / coverage / mutation-gate / mutation-verdict，并有 fail-closed 断言）
 > ——它绿只说明这条链没红，**不等于完成定义满足**。
-> PR 上 `build` / `test` 按命中包切片，不是 `pnpm build && pnpm test` 的全仓口径；**全仓 build / test /
-> typecheck 与全仓产物闸已不在 PR 默认路径**，只在 `pnpm gate:full`、`gate:full` 标签与夜间班次跑。
+> **CI 在 PR 上**的 `build` / `test` 按命中包切片（`ci.yml` 的 paths-filter），不是 `pnpm build && pnpm test`
+> 的全仓口径；全仓 build / test / typecheck 与全仓产物闸不在 CI 的 PR 默认路径，只在 `gate:full` 标签与
+> 夜间班次跑（本地 `pnpm gate:pr` 本身就是全仓对象面，见根 AGENTS.md 门禁矩阵）。
 > 旧称「五连门禁」= 全仓 `pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck`，
-> **不是 `pnpm gate:pr` 的子集**（全仓 vs 命中切片）：其产物闸 / 静态闸已并入 `gate:pr`，全仓部分归 `gate:full`。
+> **已整体并入 `pnpm gate:pr`**（本地 pr 即全仓口径；`gate:full` 在其上只多「豁免到期台账」收集，
+> `--with-coverage` 再补 cov / crap）。
 > `agents/` 与其它 skill 沿用旧称处按本条理解（`agents/coder.md` 的旧「五连」清单已同步改为指向该矩阵）。
 > 前置条件（维护者一次性配置）：zone 系与 loop 系 label 已建、分支保护对 main 至少要求聚合闸
 > `Build / Contract / Smoke / Pack`；该闸未配齐前 `--auto` 只受 CI 状态约束，**此时「CI 绿」更不足以判定完成**。

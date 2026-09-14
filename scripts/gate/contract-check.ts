@@ -52,9 +52,9 @@ if (retiredDirs.length > 0) {
   );
 }
 
-// #722 门禁分层：**产物级**断言（读 lib/client.js）按 --packages 切片——单包 PR 只需
-// 验命中包，全仓口径留夜间（observe.yml）与本地 gate:full。仓库级静态扫描（下方运行时
-// 导入禁线、config matrix、catalog peers）不依赖产物，保持全仓恒跑。
+// #722 门禁分层：**产物级**断言（读 lib/client.js）按 --packages 切片——CI 的单包 PR 只需
+// 验命中包，全仓口径留夜间（observe.yml）与本地 gate:pr / gate:full。仓库级静态扫描（下方
+// 运行时导入禁线、config matrix、catalog peers）不依赖产物，保持全仓恒跑。
 // known 含聚合包：它不是宿主 bundle 包、不在本闸逐包循环内，出现在切片里不算未知包名
 // （否则全局面命中时假红），但会明示本闸不逐包检查它。
 const scoped = resolvePackageScopeOrExit(process.argv.slice(2), [...pluginDirs, AGGREGATE_NAME]);
