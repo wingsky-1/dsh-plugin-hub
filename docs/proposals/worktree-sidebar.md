@@ -399,18 +399,20 @@ console 报 `TypeError: real.getSnapshot is not a function`（栈顶是本包的
   （`dsh-client-ui-sidebar-files/lib/client.js:421`）。`useSessions` 由渲染器按 **session 作用域的
   `hooks.sessions` 源**合成（`dsh-client-ui-renderer` 的 `standardKit`：每个 `hooks.<name>` 源 → `use<Name>`
   选择器 hook，且会话作用域覆盖 root 的同名项）；注册口是 `ctx.uiSession.provide`（实测存在）。
-- 因此原来的做法——「往正文 inject face 里塞一个 `hooks.sessions`」——**必然无效**：渲染器的合成顺序是
-  `{...kit, ...injected, ...}`，官方正文只读框架注入的 `useSessions`，props 里多一个 `hooks` 键它根本不看。
-  这条与 P0-1 同型：接缝照假设写，而假件只证明「代码与假设一致」，不证明「假设与运行时一致」。
+- entry 的 inject face 里塞 `hooks.sessions` **是有效接缝**（渲染器的 `bindInjectSources` 会把它合成为
+  `useSessions`，且 `injected` 在 `kit` 之后展开因而覆盖它）；`ctx.uiSession.provide({hooks:["sessions"]})` 是
+  **作用域更宽**的另一条接缝（整个 session 作用域）。两条都可用，选哪条是设计取舍——见 16.1.1 与 17.3-B1。
 
-**修复**：
+**修复（两件事，性质不同）**：
 
-- 真实源改用 `ctx.sessions.list`；每会话的改写源经 `ctx.uiSession.provide({hooks: ["sessions"], resolve})`
-  贡献为 session 作用域的 `hooks.sessions`（新模块 `src/client/contribute.ts`）。
-- 接管的 `inject` 面**原样搬运**（删掉 `wrapInject` 与 `TakeoverDeps.sourceFor`），接管逻辑不再碰组件 props。
-- `inject` 增加 `uiSession`；未绑定会话仍由源自己原样透传（回的就是真实快照对象本身）。
-- 测试：新增 `test/unit/client-contribute.test.ts`（假 `uiSession` 复刻渲染器契约：名册静态、resolve 对**每个**
-  绑定都必须给出源）；`client-takeover.test.ts` 改为断言 inject 按**同一引用**透传。
+1. **真正修对的那一行**：真实源由 `ctx.sessions` 改用 `ctx.sessions.list`。P0 的根因只有这一个。
+2. **多余的接缝替换**：注入点从 entry 的 inject face（本文档 §4.2 第 4 条指定的形态）换成
+   `ctx.uiSession.provide` 的全 session 作用域贡献（新模块 `src/client/contribute.ts`），并因此删掉了
+   `wrapInject` 与 `TakeoverDeps.sourceFor`。这次替换**不是修 P0 所必需**，且与 §6 的非目标、
+   工具描述对模型的承诺、§4.2 第 2 条的降级语义三处冲突。是否回退：17.3-B1。
+3. 测试侧：`test/unit/client-contribute.test.ts` 随第 2 件而来（若回退则一并删除）；而
+   `src/client/index.ts` 里那一行**没有任何判据覆盖**——把它改回 `ctx.sessions`，全量 159 用例仍全绿
+   （探针实测），见 17.3-A2。
 
 **真机验证结果**（截图证据 `packages/dsh-worktree-sidebar/docs/archive/819-{bound,unbound}-*.png`）：
 
@@ -423,6 +425,33 @@ console 报 `TypeError: real.getSnapshot is not a function`（栈顶是本包的
 
 **仍未验证**：真机 HMR 重捕时序——官方客户端包住在 dsh 安装目录内，不写 DSH 源就无法触发官方包重载，
 本环境没有安全的触发手段。agent 工具的 LLM 回路端到端需要真实模型凭据，隔离环境没有，且不得借用用户凭据。
+
+### 16.1.1 更正：接缝论证被独立复核推翻（第三轮复核，2026-09-14）
+
+本节初版把「props 里塞 `hooks` 不被读」写成事实，并据此认为必须换接缝。**这是错的**。第三轮派了两个
+上下文独立的子 agent 做只读复核，其中「客户端修复与证据」那一路指出并被我逐条复现：
+
+- `dsh-client-ui-renderer/lib/client.js:333-339` `runInject` → `:341-356` `bindInjectSources`：
+  **entry 的 inject face 里 `hooks.<name>` 会被合成为 `use<Name>` 属性**（`standardHookPropName`）；
+- 同文件 `:640-650` `renderEntry`：`{...kit, ...injected, ...slotInjected.props, ...ownerProps}`，
+  `injected` 在 `kit` **之后**展开 ⇒ 覆盖；
+- 本文档 §3（本文件 `:73`）与 §4.2 第 4 条（`:110`）早就写对了这条机制，§6（`:143`）还把
+  「伪造只作用于本 entry」列为**显式非目标**。也就是说：设计文档没有错，是我读错了它，并擅自替换了
+  它指定的机制。
+
+**结论**：P0 的唯一根因是源对象用错（`ctx.sessions` 是 `ISessions`、没有 `getSnapshot`，数据在 `.list` 上）；
+接缝替换是多余动作，且扩大了改写面——session 作用域内的 `chat` / `conversation` / `deliverables` /
+`open-in-app` 等 `useSessions` 消费方都会看到 worktree cwd（读代码判断，C 级证据；`sidebar.right.pane.tab`
+是 session 作用域为实测）。
+
+**截图证据的因果归属同时降级**：`docs/archive/819-{bound,unbound}-*.png` 只能证明「右栏树根分别指向
+`fixture/wt` 与 `fixture/repo`，且 wt 那张多一个 worktree 专有文件」；**不能**证明会话身份/同一实例、
+**不能**区分「插件改写了 cwd」与「该会话真实 cwd 就是 wt」、**不能**证明 `TypeError` 消失。
+下面表格里「成立」一列只应读作「界面观察成立」，不等于「由本插件造成」。
+
+**另一条被独立复核指出的判据缺口**：把 `src/client/index.ts` 的 `ctx.sessions.list` 改回 `ctx.sessions`，
+全量 159 用例仍 exit 0——P0 的修复行零覆盖（见 17.3-A2）。
+
 ## 17. 当前状态与交接（2026-09-14）
 
 ### 17.1 代码现状
@@ -430,11 +459,11 @@ console 报 `TypeError: real.getSnapshot is not a function`（栈顶是本包的
 | 项 | 值 |
 |---|---|
 | 分支 / PR | `task/worktree-sidebar` / [#819](https://github.com/wingsky-1/dsh-plugin-hub/pull/819)（**draft，未合入**） |
-| 已推送提交 | `0c36a1a`（S0+S1）、`5e6b4df`（摘除未落地客户端导出）、`54ac2e6`（S2–S5）、`c762c66`（复核四项必修）、`6611f25`（状态记录） |
-| 测试 | 159 例 / 11 文件；含真 git 仓库上的 创建→绑定→摘除 端到端 |
-| 门禁 | `pnpm gate:pr`：全仓 build/test/typecheck 与产物闸全 exit 0，唯一非 0 项为 `format:check`（已修，见 17.2）；包级 11 项复跑全 exit 0 |
+| 已推送提交 | `0c36a1a`（S0+S1）、`5e6b4df`、`54ac2e6`（S2–S5）、`c762c66`（第二轮复核四项必修）、`6611f25`（状态记录）、`d490245`（真机 P0-3 + 导出面收口 + 实现下移 `impl/service`）、`13da7ca`（复用 notifier 同套门禁扫描） |
+| 测试 | 159 例 / 11 文件；含真 git 仓库上的 创建→绑定→摘除 端到端。其中 `client-contribute`（4 例）随 17.3-B1 的取舍可能删除 |
+| 门禁 | `pnpm gate:pr` **36 阶段全 exit 0**（在 `13da7ca` 上实测）；`test:scripts` 624 pass / 0 fail |
 | 导出面门禁 | 本包已接入 `export-surface-snapshot`（基线 + 分类登记入库，`contract-check` 逐包跑）；导出面 124 个符号全部有仓内消费者 |
-| 额外探针 | 把本包加进 `forbid-module-state-src` 范围 → exit 0、本包零条目（P1-3 已修） |
+| 模块级状态门 | 本包**已登记进扫描面**（原先只有 `dsh-notifier`，一次性探针的时代结束）：扫描 144 文件、exit 0、本包零条目零豁免 |
 
 ### 17.2 已完成
 
@@ -451,7 +480,9 @@ S0–S5 全部落地；独立复核（第二轮）的四项必修 P0-1 / P0-2 / 
 3. **接入导出面门禁**：`scripts/data/dsh-worktree-sidebar-export-surface.json`（基线，已按生成器形态从
    `format:check` 面排除）、`-export-faces.json`（4 个主入口值导出全部登记为安装面）、`contract-check.ts` 逐包调用、
    `ci-face-registry.json` 登记两个新数据文件。
-4. **修掉 P0-3**（真机验证暴露的会话快照源接错面），三条界面语义在隔离真机上全部成立，见 §16.1。
+4. **真机 P0 的源对象修对、接缝换错**：`ctx.sessions` → `ctx.sessions.list` 是 P0 的唯一根因（正确）；
+   但同批把注入点从 §4.2 指定的 entry 级换成了全 session 作用域（多余，且与 §6 的非目标冲突）。
+   真机三条界面语义的**观察**成立，但因果归属降级——见 §16.1 与 §16.1.1。
 5. 顺带修掉一处历史写入事故：`scope/impl/resolve/index.ts` 与本文档里残留的 `%BT%` 占位符（构建产物 `.d.ts` 里也有），
    以及本 PR 自建的 `test/tsconfig.json` 编译不过（46 处类型错误，测试目录不在包 typecheck 面内所以一直没暴露）。
 6. **门禁复用面收口（复用 notifier 同套扫描）**：`forbid-module-state-src` 的扫描面此前只有 `dsh-notifier`，
@@ -462,24 +493,74 @@ S0–S5 全部落地；独立复核（第二轮）的四项必修 P0-1 / P0-2 / 
    同时把 `ci-face-registry.json` 里那条从「豁免」改为本包面——此后改导出面基线会触发本包切片，
    与常驻的 `contract` 产物闸不冲突。实测：`gate-scope-registry` 5/5、`ci-face-coverage` 8/8、
    `workflow-assert` 43/43 全过。
+8. **第三轮独立复核（两个上下文独立的子 agent，只读）已完成**：一路审架构边界与导出面，一路复核客户端修复
+   与真机证据。对账结果、我的错误记录与分档见 §16.1.1 与 §17.3。两路都如实登记了「复核期间工作区出现
+   非其所做的未提交改动」——那是我按维护者授权在改门禁面（见 17.3-B7）。
 
-### 17.3 未完成（下一会话的待办，按建议顺序）
+### 17.3 待办分档（A 建议本 PR 内做 / B 待裁决 / C 建议不做）
 
-1. **真机 HMR 重捕时序**（计划 §13 第 5 项）：现为「官方正文消失即撤销、出现即重捕」，无去抖，窗口内有可见的撤销/重建。
-   **本环境实测不了**：触发它必须让官方客户端包重载，而官方包住在 dsh 安装目录内（写它是红线），
-   本环境没有安全的触发手段。要验它得先把官方包从安装目录里挪出去（换一个验证环境），不是本 PR 能附带完成的。
-2. **agent 工具在真机会话里的 LLM 回路端到端**：需要一次真实模型调用。隔离环境没有 provider 凭据，
-   且不得借用用户凭据，故未跑；现有的等价端到端是真 git 上直调插件实现。
-3. **行数预算裁决**（§9.1 / §16）：`interface/deps ≤80` 的 3 处偏离**已随「类型与装配下移 `impl/service`」消失**
+**A. 无取舍，建议本 PR 内做**
+
+1. **A1 记录更正**：三处源码注释（`client/ports.ts` 的 `UiSessionPort` 段、`client/contribute.ts` 头、
+   `client/takeover.ts` 头）里「props 里塞 hooks 不被读」的表述改成事实版本；本文档 §16.1.1 已记更正结果。
+2. **A2 补判据缺口**：`src/client/index.ts` 是 P0 修复行（`ctx.sessions.list`）所在处，**零覆盖**——
+   探针实测把该行改回 `ctx.sessions`，全量 159 用例仍 exit 0。要补一条驱动 `apply(ctx)` 的单测，
+   假 ctx 必须复刻真机面（`sessions = {list: {getSnapshot, subscribe}}`，服务对象**没有** `getSnapshot`）。
+3. **A3 补登记**：`shared/README.md:15` / `:18` 的消费方登记表补上本包（我们 import 了 `host-utils.js` 与
+   `dsh-home.js`，登记表只列了 4 个包；目前无门禁读它，但登记表失真会误导后来人）。
+4. **A4 消除静默空实现**：`src/index.ts:92-94` 的 `publish` 对未知 agent 回 `() => undefined`（refactor §4
+   要求未装配即抛错/出声）。当前调用路径不可达，属纪律项，2 行。
+
+**B. 待裁决（压缩会话后讨论）**
+
+1. **B1 接缝回退**（最重要）：回退到本文档 §4.2 第 4 条指定的 **entry 级** `hooks.sessions` 注入
+   （恢复 `wrapInject` / `TakeoverDeps.sourceFor`、删 `contribute.ts` 与 `client-contribute.test.ts`、
+   `inject` 去掉 `uiSession`、`--min` 回 10 并重生成 stryker 面），还是保留现在的**全 session 作用域**接缝，
+   并相应改写 §6 与工具描述？实测依据：两条接缝**都有效**（renderer `:333-356` / `:640-650`），
+   差别只在作用域与降级语义。背景与证据见 §16.1.1。
+2. **B2 contract.ts 拆法 + 双端响应体单一事实源 + 路由字面量兜底**：三方（我 + 两个独立复核）同指。
+   存储形状移进 binding 域、`ROUTES` 留根；`{revision, worktreePath}` 提为被两端真实消费的契约，并补
+   「改一侧就红」的判据；`client/index.ts:23` 的字面量兜底要么删、要么补构建期断言。
+3. **B3 api 域端口按提供方拆**：`api/deps.ts:15-20` 的 `BindingPort` 一半来自 binding（`revision`）、
+   一半来自 scope（`effectiveWorktree`），逼组合根手工拼匿名对象（`index.ts:233-236`），
+   违 refactor §3「一行一个提供方」。拆成两项即可。
+4. **B4 BindingApi.prune 的处置**：本文档 §8（`:149`）**声明了** binding 域有「剪枝」能力，
+   但全仓**没有任何调用点**（生产零消费者，只有 2 组测试）。是删掉这个能力，还是补一个触发
+   （例如会话释放时剪枝）？这不是收窄问题，是计划与实现的缺口。
+5. **B5 导出面收窄落实**（机械，但含删除）：本包 5 处「仅同文件消费者」的导出去掉 `export`
+   （已实测：5 处全去掉后 `tsc -p tsconfig.json` 声明发射 exit 0、159 用例全绿）；
+   `BindingApi.entries`、`git/impl/inspect` 的 `branchLabel`（**上一轮删 `describeWorktree` 时留下的孤儿**，
+   生产零消费者、只剩 5 条测试）与 `client/bindings.ts` 的 `lastRevision`（连测试都没有）删除；
+   门面 `ApiInstance` / `ScopeApi` 转出删除（消费者只有测试，测试改直引 `impl/service`）；
+   `git/interface.ts` 的 `GitExecPort` 转出删除（组合根可从 `git/deps.ts` 取，门禁规则 2 允许「入口或出口」）。
+6. **B6 两次装配的修法**：P1 已实测（同进程两个 `createBinding` 写同一文件 → 先写的绑定被静默丢弃、
+   两侧都报 revision=1；独立复现脚本见 §17.5）。选 (a) 进程内登记「同一 file 只能一个实例」并抛错
+   （先例 notifier `pipeline/impl/service/index.ts:56`，约 10 行），还是 (b) commit 前重读文件（约 20 行）？
+   无论选哪个，`index.ts:189-191` 与 `binding/impl/service:8-10` 的「两次装配不会互相污染」自述都要改。
+7. **B7 行数预算裁决**（§9.1 / §16）：`interface/deps ≤80` 的 3 处偏离**已随「类型与装配下移 `impl/service`」消失**
    （五个门面现在各 11–20 行，最大的是 `api/deps.ts` 30 行）。**仍未裁决的是全包 src 合计**：
    实测 2533 行 vs 既有上限 1200（2.1 倍）。复核建议把合计登记为观察阈值、并把 §9 语义改为
    「超限先问这文件里有几个决定」。**本文件未擅自改写 §9 的既有上限，等用户裁决。**
-4. **`.github/workflows/ci.yml` 的授权记录**：已落地（见 17.2 第 6、7 条）。第二次真机复核前我**没有**改 `.github/`；
-   导出面门禁的接入点当时放在 `scripts/gate/contract-check.ts`（属 `scripts/gate/**` 全局面）以回避红线。
-   维护者就「复用 notifier 同套门禁扫描」明确采纳后，才新增本包的
-   `scripts/data/dsh-worktree-sidebar-*.json` filters 行。**仍缺一条仓库规则要求的可审计记录**
-   （issue 内方案评论 + `needs-proposal-review` / `approved` 标签）：本次授权只有对话记录，
-   需要走完整流程的话请在 PR #819 内追一条说明评论。
+8. **B8 .github/workflows/ci.yml 的可审计记录**：复用 notifier 同套扫描已落地（见 17.2 第 6、7 条），
+   但仓库规则要求的可审计记录（issue 内方案评论 + `needs-proposal-review` / `approved` 标签）仍缺——
+   本次授权只有对话记录。需要走完整流程的话请在 PR #819 内追一条说明评论。
+
+**C. 建议不做（附理由）**
+
+1. 为「闭包工厂 vs class + 导出单例」重写五个域：skill §5 的明文形态是后者，但工厂把状态关在实例里、
+   deps 签名同样把「需要什么」摊开，形态差异的收益小于重写成本（独立复核也建议不做）。
+2. 把 `shared/file-io.ts` 搬回 binding 域：它只有 binding 一个消费者，但内容是领域无关的 fs 语义
+   （原子写 + 同步读）且被同域两个文件共用；`shared/paths.ts` 同理（单一消费者，但「路径只有一个事实源」
+   的收窄更有价值）。
+3. 把 `tools/impl/bind` 再切块（现 98 行装「解析校验 / 仓库查询 / 写绑定」三件事）：切开会把
+   「知道绑定表」的领域知识与其消费者拆开，跨块跳转从 1 跳变 2 跳。
+
+**仍未验证（不属 A/B/C，需换环境或凭据）**
+
+- 真机 HMR 重捕时序（计划 §13 第 5 项）：触发它必须让官方客户端包重载，而官方包住在 dsh 安装目录内
+  （写它是红线）。现设计是「官方正文消失即撤销、出现即重捕」，无去抖。
+- agent 工具在真机会话里的 LLM 回路端到端：需要真实模型凭证，隔离环境没有，且不得借用用户凭据。
+- 两次装配在生产是否真会发生：未读 dsh 的 profile / 插件装载模型（B6 的触发前提）。
 
 ### 17.4 方法论缺口（本轮明确暴露）
 
@@ -497,6 +578,15 @@ S0–S5 全部落地；独立复核（第二轮）的四项必修 P0-1 / P0-2 / 
 可推广的判据：**凡「我假定某个运行时对象长什么样」的地方，都要有一条真机取值证据**；
 类型声明只能证明编译期，假件只能证明「代码与假设一致」。
 
+**第四轮的教训（同一天内同型错误第三次，值得单独记）**：第三轮的两个独立复核推翻了我上一轮的**核心论证**
+（见 §16.1.1）。问题不是「不懂机制」，而是：**设计文档 §3 / §4.2 / §6 早已把机制与取舍写对，我没照它做，
+反而凭一次真机现象替换了它指定的接缝**。可推广的判据有两条：
+
+- 真机现象只能证明「某个假设不成立」，**不能**证明「我换上去的替代方案是设计意图」；改一个已被文档指定的
+  机制之前，先回去读那份文档的原文（本轮 §4.2 第 4 条与 §6 的非目标里就写着答案）。
+- **修一个 P0 时，至少要有一条判据落在「修对的那一行」上**：本轮 P0 的修复行（`ctx.sessions.list`）零覆盖，
+  把原回归改回去仍能让全部 159 个用例变绿（§17.3-A2）。
+
 ### 17.5 证据位置
 
 **第二轮复核者留下**：隔离 worktree `/mnt/ssd/worktree/dsh-plugin-hub-task-worktree-sidebar-review2`
@@ -509,3 +599,18 @@ S0–S5 全部落地；独立复核（第二轮）的四项必修 P0-1 / P0-2 / 
 - 隔离环境与复现脚本：`/tmp/pr819-verify/`（`cdp.mjs` 真机 CDP 小工具、`probe-reload.mjs` 运行时探针、
   `export-audit.mjs` 导出面消费者审计、`dsh2.log` 隔离实例日志）；临时 `DSH_HOME` `/tmp/dsh-verify-VQUvbs`。
 - 三条界面语义的实测结论与判据见 §16.1；运行时探针输出的原始 JSON 在同批 `/tmp/pr819-verify/` 文件里。
+
+**第三轮两个独立复核子 agent 的证据**（上下文独立、只读、未改任何仓库文件）：
+
+- 「架构边界与导出面」那一路：`/tmp/export-audit/{audit.mjs,audit-v2.mjs,export-audit-v2.txt,gate-outputs.txt,probe-double-assembly.mjs}`。
+- 「客户端修复与证据」那一路：自建探针 worktree `dsh-worktree-sidebar-probe-b`（已按规矩清理），实测表 M1–M10；
+  其中 **M9/M10 是两条「全绿」证据**——`index.ts` 的 per-id 源缓存与 `ctx.sessions.list` 那一行都没有判据（§17.3-A2 的来源）。
+
+**我对复核结论的独立复现**：
+
+- `/tmp/pr819-verify/repro-double.mjs`：同进程两个 `createBinding` 写同一 `bindings.json` → 先写的绑定被静默丢弃、
+  磁盘只剩后写的、两侧都报 revision=1（B6 的依据）。
+- 探针 worktree `dsh-worktree-sidebar-probe-e`（已清理）：复现 M10（改回 `ctx.sessions` → 159 用例全绿）；
+  并验证 B5 的 5 处 `export` 全部去掉后 `tsc -p tsconfig.json` 声明发射 exit 0、159 用例全绿。
+- 清理状态：`-probe-b` / `-probe-e` 及前几轮探针均已 `git worktree remove --force` + `prune`；
+  主 checkout `git status --porcelain` = 0 行（全程只读）。
