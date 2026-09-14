@@ -50,7 +50,11 @@ test("#572: orphan-baseline push 在空目录下防御", () => {
 });
 
 /** 跑脚本并连退出码一起拿到——断言必须放在 try/catch 之外，否则会退化成「进了 catch 就算过」。 */
-function runScript(script, args, options = {}) {
+function runScript(
+  script: string,
+  args: string[],
+  options: { cwd?: string; env?: Record<string, string> } = {},
+) {
   const r = spawnSync(process.execPath, [script, ...args], {
     encoding: "utf8",
     env: { ...process.env, ORPHAN_BASELINE_RETRY_DELAY_MS: "0", ...(options.env ?? {}) },
@@ -65,7 +69,7 @@ function runScript(script, args, options = {}) {
  * 两条分支会被同一条 glob 吞掉，「锁定 Runs 站点」就名不副实了。
  */
 function writeFakeGh(
-  dir,
+  dir: string,
   {
     pullsOk = true,
     runsOk = false,
@@ -92,7 +96,7 @@ echo "unexpected gh args: $*" >&2; exit 1
 }
 
 /** 造一个假 git：只拦 `ls-remote`（放行=present）与 `fetch`（强制失败），其余交给真 git。 */
-function writeGitShim(dir, { fetchFails = true } = {}) {
+function writeGitShim(dir: string, { fetchFails = true } = {}) {
   const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
   const script = `#!/bin/sh
 case "$1" in
@@ -115,9 +119,9 @@ const ONE_MUTATION_ARTIFACT =
  * 默认给一条**成功执行**的变异实例（#718 S2.1 第二版）：只有在「有 success 实例」时 overlay
  * 才会继续走产物段，否则会在选 run 那一步直接 no-op。
  */
-const PRODUCTIVE_MUTATION_JOB = ["Mutation gate (dsh-notifier · api)", "success"];
+const PRODUCTIVE_MUTATION_JOB: [string, string] = ["Mutation gate (dsh-notifier · api)", "success"];
 
-function tsvJobs(jobs) {
+function tsvJobs(jobs: Array<[string, string]>): string {
   return jobs.map(([name, conclusion]) => `'${name}\t${conclusion}'`).join(" ");
 }
 
@@ -559,7 +563,16 @@ test("#718 S1.2: archive 期望集合为空必须 fail-loud（防把整棵基线
  * jobs 走 `gh api --paginate <url> --jq ...` 形态，故 `$2` 是 `--paginate`、URL 落在 `$3`——
  * 与 `$2` 是 URL 的既有三条分流天然不冲突（假 gh 不做 jq，直接输出脚本已烘焙好的 TSV 结果）。
  */
-function writeFakeGhForOverlay(dir, { jobs = [PRODUCTIVE_MUTATION_JOB], artifacts = "[]" } = {}) {
+function writeFakeGhForOverlay(
+  dir: string,
+  {
+    jobs = [PRODUCTIVE_MUTATION_JOB],
+    artifacts = "[]",
+  }: {
+    jobs?: Array<[string, string]>;
+    artifacts?: string;
+  } = {},
+) {
   const head = `[{"number":7,"merged_at":"2026-01-01T00:00:00Z","head":{"sha":"${"b".repeat(40)}"}}]`;
   const runs = '[{"name":"CI","conclusion":"success","id":12345}]';
   const script = `#!/bin/sh
@@ -576,7 +589,7 @@ echo "unexpected gh args: $*" >&2; exit 1
   return p;
 }
 
-function runOverlayWithFakeGh(tmp, options) {
+function runOverlayWithFakeGh(tmp: string, options: Parameters<typeof writeFakeGhForOverlay>[1]) {
   writeFakeGhForOverlay(tmp, options);
   return runScript(overlayScriptPath, [], {
     cwd: tmp,
@@ -711,7 +724,10 @@ test("#718 S2.1: jobs 查询失败必须 fail-loud（不得静默降级为 no-op
  * 端到端假 gh：pulls / runs / artifacts 之外还支持 `gh run download`（真在目标目录落一份段文件）。
  * 只有这条用例会走到 overlay 的写路径，故下载必须真产出文件，否则测不到 push。
  */
-function writeFakeGhForOverlayPush(dir, { fileName, content }) {
+function writeFakeGhForOverlayPush(
+  dir: string,
+  { fileName, content }: { fileName: string; content: string },
+) {
   const head = `[{"number":7,"merged_at":"2026-01-01T00:00:00Z","head":{"sha":"${"b".repeat(40)}"}}]`;
   const runs = '[{"name":"CI","conclusion":"success","id":12345}]';
   const artifacts = '{"total_count":1,"artifacts":[{"name":"mutation-incremental-dsh-alpha"}]}';

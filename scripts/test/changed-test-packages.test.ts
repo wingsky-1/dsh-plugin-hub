@@ -94,7 +94,7 @@ test("#742 1.7: packagesToInvalidate 覆盖 test/** 之外的测试面输入（�
 
 test("#742 1.7: 三点 diff 口径在真实 git 仓库里成立（含改名到 test/ 的形态）", () => {
   const repo = mkdtempSync(join(tmpdir(), "changed-test-pkgs-"));
-  const git = (...args) =>
+  const git = (...args: string[]) =>
     execFileSync("git", args, { cwd: repo, encoding: "utf8", env: { ...process.env } });
   try {
     git("init", "-q", "-b", "main");

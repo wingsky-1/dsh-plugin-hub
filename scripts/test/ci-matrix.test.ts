@@ -7,9 +7,16 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { computeCiMatrix, parseTestChangedPackages, runCli } from "../ci/ci-matrix.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
+/** plugins-manifest.json 的消费面（结构完整性由别的门禁守，这里只声明本文件读到的字段）。 */
+interface PluginsManifest {
+  active: string[];
+  standalone?: string[];
+  retired: Array<{ name: string }>;
+}
+
 const MANIFEST = JSON.parse(
   fs.readFileSync(path.join(ROOT, "scripts/data/plugins-manifest.json"), "utf8"),
-);
+) as PluginsManifest;
 const EXPECTED_ALL = Array.from(
   new Set([...MANIFEST.active, ...(MANIFEST.standalone ?? []), "dsh-plugins-all"]),
 ).sort();
@@ -127,7 +134,7 @@ test("ci-matrix: 场景 c - 全局命中 (GLOBAL_HIT=true) 触发全量切片", 
   assert.deepEqual(res.hitPackages, EXPECTED_ALL);
   assert.equal(res.hasMutations, "true");
   // 必须包含 active + standalone + dsh-plugins-all
-  for (const p of [...MANIFEST.active, ...MANIFEST.standalone, "dsh-plugins-all"]) {
+  for (const p of [...MANIFEST.active, ...(MANIFEST.standalone ?? []), "dsh-plugins-all"]) {
     assert.ok(res.hitPackages.includes(p), `hitPackages 必须包含 ${p}`);
   }
 });
@@ -252,7 +259,10 @@ test("#742 阶段 1: combo 携带逐段超时（口径与夜间 mutation-plan �
       .split("\n")
       .find((l) => l.startsWith("shards="));
     assert.ok(line, "mutation-plan 必须把 shards 写入 GITHUB_OUTPUT（CI 的真实消费路径）");
-    const plan = JSON.parse(line.slice("shards=".length));
+    const plan = JSON.parse(line.slice("shards=".length)) as Array<{
+      seg: string;
+      timeoutMinutes: number;
+    }>;
     const expected = new Map(plan.map((s) => [s.seg, s.timeoutMinutes]));
     assert.ok(expected.size > 20, `夜间矩阵段数异常（${expected.size}）`);
     for (const c of res.mutationCombos) {
@@ -275,14 +285,15 @@ test("#742 阶段 1: combo 携带逐段超时（口径与夜间 mutation-plan �
 });
 
 test("#742 阶段 1.7: invalidateBaseline 由 test 变更清单决定，清单缺失一律失基线（fail-closed）", () => {
-  const envOf = (over) => ({
+  // over 允许 undefined：本文件有「TEST_CHANGED_PACKAGES 整键缺失」的用例（= 清单不可得）
+  const envOf = (over: Record<string, string | undefined>) => ({
     GLOBAL_HIT: "false",
     FILTER_OUTCOME: "success",
     BASE_SET: "dsh-notifier dsh-lan-proxy",
     FILTER_OUTPUTS: "{}",
     ...over,
   });
-  const pick = (res) =>
+  const pick = (res: ReturnType<typeof computeCiMatrix>) =>
     Object.fromEntries(
       res.mutationCombos.map((c) => [`${c.package}-${c.seg}`, c.invalidateBaseline]),
     );
