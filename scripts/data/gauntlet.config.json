@@ -3,7 +3,8 @@
   "crap": {
     "threshold": 16,
     "strict": false,
-    "note": "#722 阶段五已重建为 src 口径，此前「复杂度取自 lib 产物、覆盖率取自 src，行号不可比 → 入口自检 exit 2」的停用态**已不成立**：复杂度取自 ESLint 内置 `complexity` 规则（与 tools/lint 的复杂度门禁同源，不实现第二份算法），覆盖率取自 `coverage/coverage-final.json`（vitest/istanbul，src 口径），两处 join 的容差与残余项口径见 crap-check.mjs 头部。`strict: false` 是**观察期**语义：超阈热点只落盘 coverage/crap-report.json 并 exit 0；置 true 则超阈判红。该字段属治理决策（AGENTS.md 明写不得自行改动），开启时机与 #732 的复杂度阈值收紧同批，并在 #587 的「CRAP 增量防劣化接入」保留项里一并裁决。"
+    "exitCriteria": "超阈 hotspots 计数降为 0 后把 strict 置 true（当前 116 个，量化日 2026-09-14，阈值 16）；在此之前按只许降的预算管理，不得静默停在观察期。开启与 #732 的复杂度阈值收紧同批——阈值从 78/84 收到目标 10/15 的过程中高复杂度函数被拆分，热点随之下降。",
+    "note": "#722 阶段五已重建为 src 口径，此前「复杂度取自 lib 产物、覆盖率取自 src，行号不可比 → 入口自检 exit 2」的停用态**已不成立**：复杂度取自 ESLint 内置 `complexity` 规则（与 tools/lint 的复杂度门禁同源，不实现第二份算法），覆盖率取自 `coverage/coverage-final.json`（vitest/istanbul，src 口径），两处 join 的容差与残余项口径见 crap-check.mjs 头部。`strict: false` 是**观察期**语义：超阈热点只落盘 coverage/crap-report.json 并 exit 0；置 true 则超阈判红。该字段属治理决策（AGENTS.md 明写不得自行改动），开启时机与 #732 的复杂度阈值收紧同批，并在 #587 的「CRAP 增量防劣化接入」保留项里一并裁决。#765 裁决「目标是零豁免，台账只是过渡期手段」后，本字段补 exitCriteria：只写日期会逼出「到期了再讨论一次」，解除条件才说明凭什么能开。"
   },
   "complexity": {
     "note": "#722 阶段五：ESLint 复杂度门禁阈值（唯一事实源，由 tools/lint/eslint.config.js 消费）。起步值 = 全域实测最大值——锚定当前最坏函数，保证零存量命中、只拦新增劣化（量化表见 #732）；收紧路线与最终目标见 #732，target 仅记录目标值，门禁不读取。",

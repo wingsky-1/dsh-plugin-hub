@@ -46,7 +46,7 @@
 - `gate/baseline-push.mjs` — 归档分支写路径的共用管线（#718 S2.1）：夜间并集入档与对账共用一条写路径。
 - `gate/orphan-baseline.mjs` — 变异基线孤立分支（`baseline/mutation`）的管理脚本（读 / 并集写 / 清理）。
 - `gate/overlay-baseline.mjs` — PR 增量变异产物合入后的秒级覆盖同步（#572）。
-- `gate/collect-exemptions.mjs` — 豁免/临时项的到期台账收集（#733 计划项 3.2，裁决见 #765）：递归扫 `data/` 下全部 `reviewBy` 并打印，恒 exit 0——它是**报告**不是判据，到期由人工裁决（不会冻结 PR）。
+- `gate/collect-exemptions.mjs` — 豁免/临时项的收口台账收集（#733 计划项 3.2，裁决见 #765）：递归扫 `data/` 下全部 `reviewBy`（到期日）与 `exitCriteria`（解除条件）并打印，恒 exit 0——它是**报告**不是判据，收口由人工裁决（不会冻结 PR）；只有到期日、没有解除条件的条目单独点名（日期只说明何时再看一眼，条件才说明凭什么能删）。
 - `gate/forbid-homedir-src.mjs` — #517 B5：插件 src 禁直连 HOME 来源 API（AST 扫描，`os.homedir` / `userInfo` / `process.env.HOME` / `untildify` 全形态），豁免要求**双源**（台账登记 + 调用点紧邻注释），解析失败 fail-closed。
 - `gate/forbid-module-state-src.mjs` — #733 N2a：插件 src 禁**模块级可变状态**（只看 AST 作用域，缩进不再是绕过口），豁免走 `data/gate-exemptions.json` 登记。
 - `gate/verify-scripts-index.mjs` — 本文件的索引门禁（#733 计划项 3.3 E2）：① 索引项必须存在 ② 被调用点引用的脚本必须登记（棘轮）。未被任何调用点引用的文件只报告、不判红。

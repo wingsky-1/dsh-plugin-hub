@@ -86,10 +86,31 @@ test("分档：90 天内到期单列，其余归入合计", () => {
   assert.match(r.stdout, /合计 2 条：已过期 0 \/ 90 天内到期 1 \/ 其余 1/);
 });
 
-test("无 reviewBy 的数据文件不产生条目；空数据目录给明确说明而非静默", () => {
+test("收集：exitCriteria 与 reviewBy 平级入账；只有日期没有解除条件的条目被点名", () => {
+  const r = run(
+    fixture({
+      "x.json": {
+        dated: [{ path: "p/a.ts", reason: "r", reviewBy: "2027-01-01" }],
+        conditional: [
+          { pattern: "**/client/**", reason: "r", exitCriteria: "happy-dom project 落地" },
+        ],
+      },
+    }),
+    ["--today", "2026-01-01"],
+  );
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /exitCriteria happy-dom project 落地/);
+  assert.match(
+    r.stdout,
+    /合计 2 条：已过期 0 \/ 90 天内到期 0 \/ 其余 1 \/ 仅解除条件（无到期日）1/,
+  );
+  assert.match(r.stdout, /其中 1 条只有到期日、没有 exitCriteria/);
+});
+
+test("既无 reviewBy 也无 exitCriteria 的数据文件不产生条目；空目录给明确说明而非静默", () => {
   const r = run(fixture({ "x.json": { active: ["dsh-a"], retired: [] } }));
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /未发现带 reviewBy 的条目（扫描 1 个数据文件）/);
+  assert.match(r.stdout, /未发现带 reviewBy 或 exitCriteria 的条目（扫描 1 个数据文件）/);
 });
 
 test("坏 JSON 只跳过该文件并计数，不影响其余文件的收集", () => {
@@ -126,12 +147,17 @@ test("非 JSON 文件不参与扫描（只看 scripts/data 下的 .json）", () 
   }
 });
 
-test("本仓真实快照：7 条 reviewBy 全部在册（数字变即提示同步台账与 #765）", () => {
-  // 7 = gate-exemptions.json 1（#762 客户端 var，临时）+ plugins-manifest 5（configSurfacesPending）
+test("本仓真实快照：8 条在册（数字变即提示同步台账与 #765）", () => {
+  // 8 = gate-exemptions.json 1（#762 客户端 var，临时）+ plugins-manifest 5（configSurfacesPending）
   //     + coverage.config.json 1（`**/client/**` 排除，pending-project，等 happy-dom project，3.4 新增）
+  //     + gauntlet.config.json 1（crap.strict 观察期，仅解除条件、无到期日，#765 纳管）
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /合计 7 条：已过期 0 /);
+  assert.match(r.stdout, /合计 8 条：已过期 0 /);
+  assert.match(r.stdout, /仅解除条件（无到期日）1/);
+  // crap.strict 的解除条件必须在台账里（只写日期会逼出「到期了再讨论一次」）
+  assert.match(r.stdout, /\$\.crap {2}threshold=16/);
+  assert.match(r.stdout, /exitCriteria 超阈 hotspots 计数降为 0/);
   assert.match(r.stdout, /\$\.exemptions\[0\] {2}gate=forbid-module-state-src/);
   assert.match(r.stdout, /trackingIssue #762/);
   // 覆盖率面的临时排除项也必须在台账里（它是「到期复核」的输入，不该只活在配置里）

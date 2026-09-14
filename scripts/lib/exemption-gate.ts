@@ -132,9 +132,13 @@ export function relPath(root, file) {
  * 「恰好读它的那门禁」里才炸。任何 IO/结构错误都抛给调用方——台账坏掉等于豁免机制失效，
  * **不能当作「没有豁免」继续跑**（那会把已豁免的存量一次性判成违规，或反过来放过）。
  *
- * `reviewBy` 可选：**有**=临时豁免（进 §2.3b 的到期台账）；**无**=长期条目（如 `~user`
+ * `reviewBy` 可选：**有**=临时豁免（进 §2.3b 的收口台账）；**无**=长期条目（如 `~user`
  * 透传这类 DSH_HOME 域之外的设计事实）。强行为长期条目编一个到期日会逼出「永不续期」的
  * 假条目，反而不如如实区分。
+ *
+ * `exitCriteria` 可选且与 `reviewBy` 平级（#765 裁决「目标是零豁免，台账只是过渡期手段」）：
+ * 日期只说明何时再看一眼，条件才说明凭什么能删。本函数只做结构校验（非空字符串），语义由
+ * 写条目的人承担——它是给人读的判据，机器无法验证「条件是否真的达成了」。
  */
 export function loadLedger(path, gate) {
   let raw;
@@ -169,6 +173,13 @@ export function loadLedger(path, gate) {
       if (typeof item.reviewBy !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(item.reviewBy)) {
         throw new Error(
           `${item.gate}/${item.path}：豁免 reviewBy 须形如 2027-03-31（当前 ${JSON.stringify(item.reviewBy)}）`,
+        );
+      }
+    }
+    if (item.exitCriteria !== undefined) {
+      if (typeof item.exitCriteria !== "string" || item.exitCriteria.length === 0) {
+        throw new Error(
+          `${item.gate}/${item.path}：豁免 exitCriteria 须为非空字符串（当前 ${JSON.stringify(item.exitCriteria)}）`,
         );
       }
     }
