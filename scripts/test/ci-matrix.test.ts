@@ -84,7 +84,7 @@ test("ci-matrix: 场景 a - 正常命中单一 active 包 (via BASE_SET 空格�
   assert.equal(res.hasMutations, "true");
   assert.deepEqual(
     res.mutationCombos.map((c) => c.seg),
-    ["1", "2", "3", "4"],
+    ["config", "entry", "migrate", "proxy", "shared", "tls"],
   );
 });
 

@@ -1382,8 +1382,42 @@
       ]
     }
   ],
-  "unmeasured": {},
+  "unmeasured": {
+    "dsh-lan-proxy-config": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待改名后首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档（旧段历史值见 superseded.dsh-lan-proxy-3）。",
+    "dsh-lan-proxy-entry": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待改名后首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档（旧段历史值见 superseded.dsh-lan-proxy-2）。",
+    "dsh-lan-proxy-migrate": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待改名后首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档（旧段历史值见 superseded.dsh-lan-proxy-4）。",
+    "dsh-lan-proxy-proxy": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待改名后首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档（旧段历史值见 superseded.dsh-lan-proxy-1）。",
+    "dsh-lan-proxy-shared": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待改名后首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档（旧段历史值见 superseded.dsh-lan-proxy-2）。",
+    "dsh-lan-proxy-tls": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待改名后首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档（旧段历史值见 superseded.dsh-lan-proxy-4）。"
+  },
   "superseded": {
+    "dsh-lan-proxy-1": {
+      "replacedBy": [
+        "dsh-lan-proxy-proxy"
+      ],
+      "reason": "#826 域归位：段键由数字改为模块目录名，mutate 面同步收敛（根 proxy.ts → server/proxy/impl/proxy.ts）。历史 wallSeconds 描述的是旧文件面，不得用于新面的超时定标。"
+    },
+    "dsh-lan-proxy-2": {
+      "replacedBy": [
+        "dsh-lan-proxy-entry",
+        "dsh-lan-proxy-shared"
+      ],
+      "reason": "#826 域归位：原「装配 + 包内共享」混装段按模块目录拆为 entry（根 index.ts 未在内，本段旧面为 apply.ts）与 shared（server/shared/{defaults,deflate,net}.ts）两段。历史 wallSeconds 描述的是旧合并面。"
+    },
+    "dsh-lan-proxy-3": {
+      "replacedBy": [
+        "dsh-lan-proxy-config"
+      ],
+      "reason": "#826 域归位：段键改为模块目录名，mutate 面仍是 config 域 impl（原根 config.ts/config-routes.ts/settings.ts → server/config/impl/*）。历史 wallSeconds 描述的是旧文件路径。"
+    },
+    "dsh-lan-proxy-4": {
+      "replacedBy": [
+        "dsh-lan-proxy-entry",
+        "dsh-lan-proxy-migrate",
+        "dsh-lan-proxy-tls"
+      ],
+      "reason": "#826 域归位：原「入口 + 基础设施」混装段按模块目录拆为 entry（src/index.ts）、tls（server/tls/impl/index.ts）与 migrate（server/migrate/impl/file/index.ts）三段。历史 wallSeconds 描述的是旧合并面。"
+    },
     "dsh-notifier-config": {
       "replacedBy": [
         "dsh-notifier-config"

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-lan-proxy/src/server/config/impl/*.ts",
+    "packages/dsh-lan-proxy/src/server/tls/impl/index.ts",
     "!packages/dsh-lan-proxy/src/client/**",
     "!packages/dsh-lan-proxy/src/**/interface.ts"
   ],
@@ -33,9 +33,9 @@
     "configFile": "vitest.stryker.d/dsh-lan-proxy.config.ts"
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-lan-proxy-3.json"
+    "fileName": "coverage/mutation/dsh-lan-proxy-tls.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-lan-proxy-3.json",
-  "_comment": "#826 域归位重画：config 域 impl（model 原根 config.ts / routes 原根 config-routes.ts / namespace 原根 settings.ts）；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+  "incrementalFile": "coverage/mutation/incremental-lan-proxy-tls.json",
+  "_comment": "#826 域归位：tls 域（原根 cert.ts，自签证书签发与续期）；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
 }

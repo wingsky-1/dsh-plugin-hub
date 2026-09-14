@@ -120,7 +120,7 @@ test("matchFilterBlock：包内改动命中该包；全局面命中 global；纯
     packages: [],
   });
   // 段配置是变异单一事实源（#322）：改段配置必须命中该包
-  assert.deepEqual(matchFilterBlock(filters, ["stryker.conf.d/dsh-lan-proxy-2.json"]), {
+  assert.deepEqual(matchFilterBlock(filters, ["stryker.conf.d/dsh-lan-proxy-config.json"]), {
     globalHit: false,
     packages: ["dsh-lan-proxy"],
   });

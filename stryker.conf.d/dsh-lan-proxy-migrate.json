@@ -1,10 +1,7 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-lan-proxy/src/server/apply.ts",
-    "packages/dsh-lan-proxy/src/server/shared/defaults.ts",
-    "packages/dsh-lan-proxy/src/server/shared/deflate.ts",
-    "packages/dsh-lan-proxy/src/server/shared/net.ts",
+    "packages/dsh-lan-proxy/src/server/migrate/impl/file/index.ts",
     "!packages/dsh-lan-proxy/src/client/**",
     "!packages/dsh-lan-proxy/src/**/interface.ts"
   ],
@@ -36,9 +33,9 @@
     "configFile": "vitest.stryker.d/dsh-lan-proxy.config.ts"
   },
   "jsonReporter": {
-    "fileName": "coverage/mutation/dsh-lan-proxy-2.json"
+    "fileName": "coverage/mutation/dsh-lan-proxy-migrate.json"
   },
   "incremental": true,
-  "incrementalFile": "coverage/mutation/incremental-lan-proxy-2.json",
-  "_comment": "#826 域归位重画：装配与包内共享——apply.ts（组合根装配，原根 apply.ts）+ shared 的 defaults/deflate/net（重排时新提取的共用面；同域 interface.ts 是纯 re-export 门面，按 facade 口径进 coverageExcludes）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+  "incrementalFile": "coverage/mutation/incremental-lan-proxy-migrate.json",
+  "_comment": "#826 域归位：migrate 域（原根 migrate.ts，一次性 config.json 收编）；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
 }
