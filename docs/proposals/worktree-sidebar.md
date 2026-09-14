@@ -981,14 +981,28 @@ ESLint 的 `no-restricted-imports` 块间规则同步纳入 `inject.ts`。§8 �
 **需要维护者裁决（先记账，未动代码）**
 
 1. **【高】子会话结束后不再继承父会话的 worktree 根**（§20.4 第 6 条）。用户能在「N subagents」里选中的正是**已结束**的子会话，
-   所以这是 S9 承诺在 UI 上唯一可见状态下失效。候选（成本递增）：
+   所以这是 S9 承诺在 UI 上唯一可见状态下失效。
+   **根因（已定位）**：**父链的读取面选错了**。我们走 `src/server/host/sessions.ts:18-21` 的
+   `ctx.sessions.get(id).header.parentSession`，而官方 `dsh-session/lib/index.js:1550-1557` 的契约原文就是
+   *"Look up a live session"*（`return this.store.get(id)?.session`，store 只装活 entry）⇒ 会话一结束就拿不到 header。
+   父链本身是**持久事实**（会话日志 header 里的 `parentSession`）：官方自己的子代理列表就走持久 corpus
+   （`dsh-subagent/lib/index.js:2110` 用 `ctx.get("sessionQuery")`，`listChildren` 读 `record.header.parentSession`）。
+   **这是计划层面的错**：§19.2 的 S9 行原文就指定了 `ctx.sessions.get(id)?.header.parentSession`，实现只是照做。
+   候选（成本递增）：
    - **A. 只改承诺文案**：README 写明「继承只在子会话存活期间成立」，零代码、零新依赖。
    - **B. 换用官方持久父链**：`ctx.sessionQuery.traceSession(sessionId)`（`dsh-session-query/lib/types/index.d.ts:111-119`，
      `live`-preferred 且覆盖已结束会话）替掉 live-only 的 `sessions.get`。代价：新增一个**可选**服务面（缺席时降级回今天的
      live-only 行为）、`effectiveWorktree` 增加一次可能触发持久化列举的异步调用（需 TTL 缓存）、`sessionQuery` 是否在 web profile
      必定存在需实测。
    - **C. 自建「学到的父链」缓存**：只在会话存活期观察过才记得住，用户没在存活期打开过该子会话就无从得知 ⇒ 不可靠，不建议。
-2. **【中】子 agent 第一回合拿不到工具**（§20.4 第 6 条，异步判定的时序缺口）。候选：
+2. **【中】子 agent 第一回合拿不到工具**（§20.4 第 6 条，异步判定的时序缺口）。
+   **根因（已定位）**：**安装期门控是异步的，而官方是「发布后立刻开跑」**。`tools/impl/service/index.ts:75-89` 的
+   `consider()` 必须 `await repoOf()`（`tools/impl/bind/index.ts:94-98` → `git/impl/service/index.ts:86-95` 的 `commonDir`
+   **每次起一个 git 子进程、无缓存**；只有 `belongsTo` 带 30s TTL）才 `publish`；而 `dsh-agent/lib/index.js:428` 的
+   `create()` 契约是 *"@returns the handle after setup, rollback-covered publication, and **loop start complete**"*
+   ⇒ `agent/created` 与子会话首回合开跑之间几乎没有间隔。顶层会话不显形，只是因为「打开/新建会话」与「用户打字」
+   之间有秒级人耗，把这 ~10ms 的窗口盖住了。**这是 S3 起就埋着的时序假设，20.2 只是把它从不可观测变成可见。**
+   候选：
    - **A. 记「cwd → 是否仓库」的成功结果**，命中时同步 `publish`（跳过第一次 git 往返），只在冷 cwd 上走异步判定；
      域内改动，需定 TTL 与失效口径。
    - **B. 只记账**：子会话第一回合可能没有工具，第二回合起有。
@@ -1034,4 +1048,58 @@ ESLint 的 `no-restricted-imports` 块间规则同步纳入 `inject.ts`。§8 �
 
 1. `pack:check` 红：7 个包残留 `packages/*/shared/frontmatter.d.ts`——该副本是构建产物（`.gitignore:10` 忽略 `packages/*/shared/`），源 `shared/frontmatter.js` 已被 main 的 #824 删除。清掉这 7 个文件后复跑即 0。
 2. `verify:coverage-scope` 红：`coverage/coverage-final.json` 早于本次 rebase，里面仍含已删除的 `shared/frontmatter.js` 与已移动的 `packages/dsh-web-file-preview/src/present-open.ts`（#824/#827）。`pnpm cov` 重建产物后复检 `OK（universe 348 = include 330 − exclude 68 → 计分 280；面内 199 keys）`。
+
+### 20.7 修复方案（第六轮，**待独立复核**）
+
+针对 §20.5 第 1、2 条。目标：把两条从「记账」推进到「有实测依据、可直接实施的方案」。
+
+#### 20.7.1 #2 的 A/B 实验（决定修法形态，已跑完）
+
+同一套脚本与 mock LLM、两台各自独立启动的隔离实例；被测包为实验 worktree 里的副本（探针打在包内，**未改动本分支任何文件**）。
+探针：`consider()` 入口、异步发布完成、同步快路径发布各打一行 `console.error`（时间戳 ms）；模型请求到达时刻由 mock 记录。
+
+| 臂 | 子会话注册 | 子会话**首回合**模型请求 |
+|---|---|---|
+| **A″：命中缓存即同步发布** | `sync-publish` **399368**（同步，无 `await`、不进 chain） | **30 个工具 / 含三件套**（请求 399482） |
+| **对照：关掉快路径（异步门控现状）** | `consider` 578011 → `async-published` **578114**（103ms） | **27 个工具 / 无三件套**（请求 578330） |
+
+**决定性的一条**：对照臂里注册完成（578114）比请求到达（578330）**早 216ms**，请求里**依然没有工具**。
+⇒ 首回合的工具清单在**回合开始**时就定稿了，异步路径无论多快都赶不上；唯一的修法是「在 `agent/created` 处理器内**同步**装完」。
+这一条同时否掉了「把 git 判定做快一点」这类只在速度上做文章的方案。
+
+**另一个实测发现**：子会话的 cwd 由父 header 拷贝，而父必然先注册 ⇒ 缓存**必然已热**，子会话永远命中快路径。
+（对照实验里我试图构造「冷 cwd 的子会话」，结果父注册先把同一 cwd 写进了缓存，快路径照样命中——这本身就是结论。）
+
+#### 20.7.2 选定修法
+
+1. **#1 继承失效 → 选 B（持久父链）**
+   - 新增**可选**宿主面：`src/server/host/sessions.ts` 增一个走 `ctx.get("sessionQuery")?.traceSession(id)` 的 `parentOfAsync`，取**持久** lineage；
+     `sessionQuery` 缺席时**原样**保持今天的 live-only 行为（**不进 `inject`**，用 `ctx.get` 软取，避免把可选服务变成硬依赖）。
+   - `scope/impl/inherit` 改为「先问 live 同步面（快路径）→ 未命中再问持久 lineage」，其余边界（到顶、防环、父登记失效继续向上）不变。
+   - 已核实：`dsh-session-query` 由 `dsh-base` 依赖（标准组合里必然存在），官方自己的子代理列表就走它
+     （`dsh-subagent/lib/index.js:2110`）。
+   - 待定：lineage 的缓存粒度与 TTL（父链在会话生命周期内不变，唯一变化是父会话被摘除，而解析器本来就按当前绑定表判定）。
+2. **#2 首回合缺工具 → 选 A″（命中即同步发布）**
+   - `tools/impl/service` 增「cwd → 已确认在仓库里」的记忆；`consider()` 命中即**同步** `publish`，冷 cwd 仍走原来的异步链。
+   - 记忆在 `release()` 里清空（与 `perAgent` 同寿命）；**不加 TTL**——判错的后果只是「工具可见、执行期返回可读失败」，
+     而执行期本来就有一次兜底校验（`register`/`create`/`remove` 各自 `repoOf`）。
+   - 已知边界：若将来出现**与父不同 cwd** 的子会话（`dsh-subagent` 导出过 `resolveChildCwd` 一类配置），它仍会落回异步窗口。
+
+#### 20.7.3 验收与红绿计划（实施时执行）
+
+- 判据 1（#2）：同一份假 agent 面里，**先注册过 cwd=X**，再递一个 cwd=X 的新 agent ⇒ 断言它在**同一个同步调用栈里**就完成了 publish
+  （不等微任务）。突变：把快路径去掉 ⇒ 红。
+- 判据 2（#2）：冷 cwd 仍走异步且失败时不发布（沿用现有「非仓库不装」用例）。
+- 判据 3（#1）：`sessions.get` 返回 undefined（模拟已结束）但 `sessionQuery.traceSession` 给得出父链 ⇒ 继承仍成立；
+   `sessionQuery` 缺席 ⇒ 退回 live-only 且不抛。突变：把持久面接反/去掉 ⇒ 各自红。
+- 端到端（复跑本轮实验脚本）：子会话首回合模型请求里必须出现三件套；子会话结束后 `bindings?session=<子id>` 必须仍是父的 worktree。
+- 门禁：`pnpm gate:pr` 34/34；包测试用例数随之更新（`--min` 与 `pnpm stryker:gen` 面按新文件数同步）。
+
+#### 20.7.4 需要复核者重点挑战的点
+
+1. **A″ 的「同步」是否在任何情况下都安全**：在创建窗口内直接 `agent.ctx.tools.register(...)` 有无副作用（官方 `setup` 与 `restrict` 都在窗口内跑，我们这一步晚于它们）。
+2. **`traceSession` 的失败面与开销**：持久化列举、corrupt 会话、取消信号；`effectiveWorktree` 是请求路径上的调用。
+3. **缓存无 TTL 的语义**：仓库目录被删后，新 agent 仍会被发布（执行期兜底报错），这个取舍是否可接受。
+4. **实验本身的可信度**：mock 只决定模型输出；工具执行、会话创建、客户端渲染全真；但「首回合清单在回合开始定稿」这一条是从
+   「注册早于请求 216ms 仍缺工具」推断出来的，样本数为 1，且两臂在不同时刻跑（机器负载不同）。
 
