@@ -38,6 +38,8 @@ import { clientDiagnosticsOf } from "./capabilities.ts";
 import type { ClientFacts } from "./capabilities.ts";
 // 页面内即时反馈（横幅 / 短提示）：非安全上下文下唯一的降级提醒通道。
 import { showBanner, toast } from "./notify/display.ts";
+// 凭据掩码字段的编辑语义：服务端掩码不得作为可编辑字面量进输入框（见模块头）。
+import { credentialFieldKey, credentialFieldView } from "./settings/mask.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
@@ -958,6 +960,20 @@ function SettingsCard() {
   var revealDraft = useState({} as Record<string, boolean>);
   var revealMap = revealDraft[0];
   var setRevealMap = revealDraft[1];
+  // 凭据字段「已被用户编辑」的键集（键 = <channelId>:<field>）。未编辑的字段保持服务端掩码
+  // 原样提交、由服务端按严格相等还原；只有用户真的输入过才把新值写进草稿——把掩码渲染成
+  // 可编辑 value 会让「在圆点后追加一个字符」变成一次真凭据覆盖（见 settings/mask.ts）。
+  var secretEditedDraft = useState({} as Record<string, boolean>);
+  var secretEdited = secretEditedDraft[0];
+  var setSecretEdited = secretEditedDraft[1];
+
+  /** 标记某凭据字段已被用户编辑（幂等）。 */
+  function markSecretEdited(key: string) {
+    if (secretEdited[key] === true) return;
+    var nextEdited: Record<string, boolean> = Object.assign({}, secretEdited);
+    nextEdited[key] = true;
+    setSecretEdited(nextEdited);
+  }
   // 加载基线：保存时只提交与基线不同的键（增量 diff），未改动的键不提交。
   // 用 useRef 持久化：组件每次渲染局部变量会重置为 null，导致 save() 闭包里读不到
   // 基线而永远判定「无变化」。
@@ -1944,6 +1960,7 @@ function SettingsCard() {
   function barkCard(ch: any, idx: number) {
     var channelKey = channelIdFor(ch);
     var armed = delArmedId === ch.id;
+    var deviceKeyKey = credentialFieldKey(String(ch.id), "deviceKey");
     var levelOpts: any[] = [
       <option value="" key="auto">
         {t("chLevelAuto")}
@@ -2090,13 +2107,31 @@ function SettingsCard() {
           )}
           {chRow(
             t("chBarkDeviceKey"),
-            textInput(
-              ch.deviceKey,
-              function (v: string) {
-                chPatch(idx, { deviceKey: v });
-              },
-              { type: "password", placeholder: "********", ariaLabel: t("chBarkDeviceKey") },
-            ),
+            <span className="dn-secret" key="deviceKey">
+              <input
+                type="password"
+                className="dn-set-input dn-set-inputText"
+                value={
+                  credentialFieldView(
+                    ch.deviceKey,
+                    secretEdited[deviceKeyKey] === true,
+                    t("chBarkDeviceKeyPlaceholder"),
+                  ).value
+                }
+                placeholder={
+                  credentialFieldView(
+                    ch.deviceKey,
+                    secretEdited[deviceKeyKey] === true,
+                    t("chBarkDeviceKeyPlaceholder"),
+                  ).placeholder
+                }
+                aria-label={t("chBarkDeviceKey")}
+                onChange={function (e: any) {
+                  markSecretEdited(deviceKeyKey);
+                  chPatch(idx, { deviceKey: e.target.value });
+                }}
+              />
+            </span>,
             t("chBarkDeviceKeyHint"),
           )}
           <details className="dn-ch-adv" key={"adv-" + ch.id}>
@@ -2231,20 +2266,23 @@ function SettingsCard() {
       chPatch(idx, part);
     }
 
-    /** 凭据输入 + 显隐按钮（掩码值不回显，显隐只作用于正在输入的新值）。 */
+    /** 凭据输入 + 显隐按钮。value 走 maskedFieldValue：未编辑时为空（占位符给「已配置」提示），
+     *  服务端掩码不进 value——它一旦被改写就不再等于掩码，服务端会把它当新凭据落盘。 */
     function secretField(field: string, placeholderKey: string) {
-      var key = chId + ":" + field;
+      var key = credentialFieldKey(chId, field);
       var shown = revealMap[key] === true;
+      var fieldView = credentialFieldView(ch[field], secretEdited[key] === true, t(placeholderKey));
       var part: Record<string, any> = {};
       return (
         <span className="dn-secret" key={field}>
           <input
             type={shown ? "text" : "password"}
             className="dn-set-input dn-set-inputText"
-            value={ch[field] || ""}
-            placeholder={t(placeholderKey)}
+            value={fieldView.value}
+            placeholder={fieldView.placeholder}
             aria-label={t(placeholderKey)}
             onChange={function (e: any) {
+              markSecretEdited(key);
               part[field] = e.target.value;
               whPatch(part);
             }}
@@ -2752,10 +2790,13 @@ function SettingsCard() {
   function setAllowKinds(next: string[]) {
     patch({ quietHours: Object.assign({}, qh, { allowKinds: next }) });
   }
-  /** 跟随已启用事件：一键把当前 notifyXxx=true 的对应 kind 全选为豁免（函数式更新——
-   *  setSettings(prev=>...) 读最新快照计算，避免连点/同帧先改开关后旧闭包漏勾最新态）。 */
+  /** 跟随已启用事件：一键把当前 notifyXxx=true 的对应 kind 全选为豁免（函数式更新读最新
+   *  快照，避免连点/同帧先改开关后旧闭包漏勾最新态）。
+   *  必须走 patch 而不是裸 setSettings：patch 在 updater 内同步 settingsRef.current，而
+   *  diffPayload() 读的正是那个 ref——绕过它这次改动就进不了 diff，用户在未做其它编辑时
+   *  点保存会看到「未修改」，改动被静默丢弃。 */
   function allowFollowEnabled() {
-    setSettings(function (prev: any) {
+    patch(function (prev: any) {
       var nextQh = prev.quietHours || {};
       var next = EVENT_KEYS.filter(function (kv) {
         return prev[kv[0]] === true;
@@ -2766,7 +2807,6 @@ function SettingsCard() {
         quietHours: Object.assign({}, nextQh, { allowKinds: next }),
       });
     });
-    setSaved("");
   }
   /** 恢复默认豁免（ask/question/error——高频阻塞型，卡着的任务需要叫醒）。 */
   function allowResetDefault() {

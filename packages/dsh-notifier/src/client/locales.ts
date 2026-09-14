@@ -157,7 +157,8 @@ export const zh = {
   chBarkBaseUrl: "服务器地址",
   chBarkBaseUrlHint: "Bark 服务器地址（http/https），如 https://api.day.app 或自建地址",
   chBarkDeviceKey: "Device Key",
-  chBarkDeviceKeyHint: "Bark App 内查看；保存后仅显示掩码，留掩码即不修改",
+  chBarkDeviceKeyPlaceholder: "粘贴 Bark App 里的 Device Key",
+  chBarkDeviceKeyHint: "Bark App 内查看；留空即不修改已保存的值，输入新值将替换",
   chBarkSound: "铃声 sound",
   chBarkGroup: "分组 group",
   chBarkGroupHint: "同组通知在手机上折叠展示",
@@ -227,7 +228,7 @@ export const zh = {
   whAuthBasic: "Basic 用户名/密码",
   whAuthHeader: "自定义请求头",
   whAuthHint:
-    "凭据只走请求头（ntfy / Gotify 均支持 Authorization 头，不拼 URL）；仅存本机配置并掩码回显",
+    "凭据只走请求头（ntfy / Gotify 均支持 Authorization 头，不拼 URL）；仅存本机配置并掩码回显；留空即不修改已保存的凭据",
   whAuthToken: "访问令牌",
   whAuthUsername: "用户名",
   whAuthPassword: "密码",
@@ -440,7 +441,9 @@ export const en: Record<NotifierLocaleKey, string> = {
   chBarkBaseUrl: "Server URL",
   chBarkBaseUrlHint: "Bark server URL (http/https), e.g. https://api.day.app or self-hosted",
   chBarkDeviceKey: "Device Key",
-  chBarkDeviceKeyHint: "Shown as masked after saving; keep the mask to leave it unchanged",
+  chBarkDeviceKeyPlaceholder: "Paste the Device Key from the Bark app",
+  chBarkDeviceKeyHint:
+    "Find it in the Bark app; leave empty to keep the saved value, type a new one to replace it",
   chBarkSound: "Sound",
   chBarkGroup: "Group",
   chBarkGroupHint: "Notifications of the same group collapse on the phone",
@@ -511,7 +514,7 @@ export const en: Record<NotifierLocaleKey, string> = {
   whAuthBasic: "Basic username/password",
   whAuthHeader: "Custom header",
   whAuthHint:
-    "Credentials go in request headers only (ntfy / Gotify both support the Authorization header), never in the URL; stored locally and shown masked",
+    "Credentials go in request headers only (ntfy / Gotify both support the Authorization header), never in the URL; stored locally and shown masked; leave empty to keep the saved value",
   whAuthToken: "Access token",
   whAuthUsername: "Username",
   whAuthPassword: "Password",
