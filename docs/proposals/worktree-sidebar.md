@@ -146,7 +146,7 @@
 
 **可自动打红（宿主与契约层）**：
 
-1. binding：原子写、损坏文件当空表、revision 单调、按会话索引、剪枝。
+1. binding：原子写、损坏文件当空表、revision 单调、按会话索引。
 2. scope resolver：命中绑定返回 worktree；目录消失按未绑定；内部异常仍返回官方同形值；dispose 后官方默认恢复；二次 configure 场景放弃接管。
 3. git 域：worktree 归属查询（注入 exec 面，可断言 argv）。
 4. tools：schema 形状（output 必备）、agent 缺失时明确失败、argv 构造（branch 过 check-ref-format、positional 前加 --）、path 校验。
@@ -210,45 +210,54 @@ packages/dsh-worktree-sidebar/
 - 幂等与卸载：全部注册走 `ctx.effect`；重复 apply 不得摘除别人的包装。
 - 崩溃与失败归因：registrant 会指向本包，必须订阅 `ctx.slots.onEntryError` 辨识是否自己的 entry 并 warn；注册失败一律 catch+warn，dispose 即恢复 builtin，绝不 replace。
 
-## 9. 行数控制约定（本仓无 max-lines 门禁，靠 review 守）
+## 9. 行数控制约定（**review 提问线**，不是上限）
 
-| 文件类型 | 上限 |
+本仓**没有 max-lines 门禁**（`grep -rn 'max-lines' tools/lint scripts` 零命中，实测 2026-09-14），
+下表因此不是判红线，而是**review 时的提问线**：一行超线只触发一个问题——
+「这个文件里有几个修改理由？」依据是本仓成文的
+`.dsh/skills/dsh-plugin-hub-refactor/SKILL.md:53`「块按『回答不同问题』切，不按代码长度切……
+为了行数均衡把两个问题塞进一块，等于让它们共享一个修改理由」。
+**可判定的是「几个修改理由」，行数只是它的粗糙代理**。
+
+| 文件类型 | review 提问线 |
 |---|---|
 | 组合根 src/index.ts | 300 |
 | 域 interface/deps | 80 |
 | 域 impl 单文件 | 250 |
 | 纯逻辑模块 | 120 |
 | 客户端单文件 | 250 |
-| 全包 src 合计 | 1200 |
+
+机器强制的质量面交给本仓既有度量，不自造第二把尺子：`scripts/data/gauntlet.config.json` 的
+ESLint `complexity`（cyclomatic 78 / cognitive 84，起步值锚定当前最坏函数，收紧路线见 #732）、
+CRAP 阈值 16（观察期）、以及变异。本包当前无越界。
+
+**已撤销的指标：「全包 src 合计 1200」。** 它没有出处——只是本节当初拍的估算，参照系里
+notifier / mcp-manager 给的都只是**单文件**分位数（中位 44/58、p90 186/373、max 3229/1208），
+没有任何「全包合计」的先例或推导。它的性质是**功能数量的线性函数**（41 文件 x 均值 62），
+拿它当上限等于「功能不许长」；而拆分只把行数从 A 搬到 B，**合计不变**，所以它指向不了任何
+可执行动作。维护者裁定删除，本文件照办。
 
 参照：notifier src 中位数 44 / p90 186 / max 3229（客户端单文件，属反例）；mcp-manager p50 58 / p90 373 / max 1208。
 
-### 9.1 实施后的实测与两处偏离（待统一复核裁决）
+### 9.1 现状对照（2026-09-14 实测；历史偏离已消失）
 
-实施完成后的实测（`find src -name '*.ts'` 合计）：
-
-| 文件类型 | 上限 | 实测 | 结论 |
+| 文件类型 | review 提问线 | 实测 | 结论 |
 |---|---|---|---|
-| 组合根 src/index.ts | 300 | 255 | 合规 |
+| 组合根 src/index.ts | 300 | 256 | 合规 |
 | 域 impl 单文件 | 250 | 最大 117（tools/impl/remove） | 合规 |
 | 纯逻辑模块 | 120 | 最大 110（scope/impl/resolve） | 合规 |
-| 客户端单文件 | 250 | 最大 184（client/takeover） | 合规 |
-| 域 interface/deps | 80 | git/interface **140**、binding/interface **102**、scope/interface **82** | **偏离 3 处** |
-| 全包 src 合计 | 1200 | **2527** | **偏离（2.1 倍）** |
+| 客户端单文件 | 250 | 最大 174（client/takeover） | 合规 |
+| 域 interface/deps | 80 | interface 8/8/8/11/11（api/binding/scope/tools/git）、deps 30/12/18/55/78 | 合规 |
+| 全包 src | —（已撤销） | 41 文件 / 2535 行（均值 62） | 指标不存在 |
 
-两处偏离的性质不同，分开说：
+**历史偏离已消失，不再有「偏离」可议**：
 
-- **interface/deps 的 3 处偏离**：根因是这三个门面同时承担「对外引用面」与「install/release 的实现体」。
-  `git/interface.ts` 另外还持有 `GitApi` 的实现与归属校验的 TTL 缓存；`binding/interface.ts` 持有写盘串行链。
-  与计划 §8「域三件套：interface.ts（唯一对外引用面，install/release 成对）+ deps.ts + impl/**」并不冲突
-  （install/release 确实从门面出去），但它与本节的行数上限冲突。
-  可选修法是把三者各自再拆出一个 `impl/service`（notifier 的 api 域就是这个形状），门面变成 20–30 行的转发；
-  代价是三个域的间接层各多一层，而 `git` 的 140 行本身是一个内聚模块（类型 + 实现 + 缓存）。
-  **建议交统一复核裁决**：要么接受「小型域的 interface 允许到 150」，要么按上述拆法改造。
-- **全包合计 2527 vs 预算 1200**：这是预算本身定得不准，不是代码失控——四个宿主域 + 三个工具 + 两条路由 + 客户端接管，
-  在「每个非显然决定都写为什么」的注释口径下，2527 行对应 36 个源文件（均值 70 行）。
-  其中客户端 488 行、宿主 2039 行。**建议把合计上限改为 2800**，依据是本次实测而不是估计。
-  该数字同样**待统一复核裁决**，本文件不擅自把它当成已批准的新预算。
+- **interface/deps 的 3 处历史偏离**（git/interface 140、binding/interface 102、scope/interface 82）在
+  「类型与装配的物理定义下移 `impl/service`」之后消失——五个域现在同形：门面只做 re-export（8–11 行），
+  `deps.ts` 是纯类型面（最大 `scope/deps.ts` 78 行，是端口与形状字段的逐条声明，只有一个修改理由）。
+  当时提的两种修法（接受 150 / 再拆一层）都不必执行。
+- **全包合计**这个指标本身已撤销（见 §9），`2800` / `3000` 一类建议值一并作废，不要再出现在任何判据里。
+  当前实测 **41 文件 / 2535 行、均值 62**（旧表的 `2527` 是 36 文件时代的读数，已过期）。
 
 ## 10. 债务清单与最小化
 
@@ -365,7 +374,21 @@ packages/dsh-worktree-sidebar/
 | P0-1 | 客户端在真机 dsh 0.1.5-rc.1 上 `TypeError: deps.slots.isLive is not a function`，**零注册、S5 完全不生效** | 端口对着 `dsh-client-ui-slots` 的**类型包**写，而运行时 `ctx.slots` 是 `dsh-client-ui-renderer` 的 `SlotRegistry`（无 isLive）；假端口测试只证明「代码与假设一致」 | 删掉 `isLive`，改用 `entriesOfSlot` 的返回集合判存活；端口注释写明「必须对着运行时面写，不是对着类型包写」 |
 | P0-2 | 接管后官方 guide 条目归零：**所有会话**（含从未登记的）默认页签从 Files 变成空的 Guide | 注册的类型定义只写了 4 个字段，丢掉官方定义里的 `guide`，而官方注册表 refresh 后用**在册定义**重算 guide | 改为整份搬运 `{...官方定义, id, priority}`；补「guide 被原样搬运」与「撤销后 builtin 复位且 guide 回来」两条断言 |
 | P1-1 | G3「官方 entry 变化即重捕」在真实注册表语义下**恒不触发**（复用旧组件与旧 inject 闭包） | `tabs.get(kind).id` 在接管成功后返回的是**我们自己的** id，于是「官方条目还在不在」变成了问自己 | 首次发现时记下官方 key 并一直用它；测试的假注册表改为真实语义（extension 顶掉后 get 返回我们的 id） |
-| P1-3 | 新增 5 处模块级可变单例，且落在 module-state 门禁扫描面之外 | 四域 + tools service 各有一个 `let installed` | 五处全部改为工厂（`createBinding` / `createGit` / `createScope` / `createApi` / `createTools`），状态收进闭包或实例；组合根持有实例 |
+| P1-3 | 新增 5 处模块级可变单例，且落在 module-state 门禁扫描面之外 | 四域 + tools service 各有一个 `let installed` | ~~五处全部改为工厂~~ **第四轮反转**：改为门面 `install/release` + 能力转发（见下） |
+
+**第四轮对 P1-3 的反转（2026-09-14）**：工厂是**当轮**为避免模块级可变单例而选的形态，本轮按仓库 skill 与
+维护者裁决改掉，理由与代价都记账在此：
+
+- **依据一（明文形态）**：`.dsh/skills/dsh-plugin-hub-refactor/SKILL.md:112-115`「**有状态的才用 `class`**，配一个
+  导出单例（类不外放，外面 `new` 不出第二份）。无状态的用纯模块函数」「**不用闭包工厂**：能力经构造签名摊开，
+  而不是藏进词法环境」；`:215` 自检清单同样列着「宿主端没有……闭包工厂」。
+- **依据二（维护者裁决）**：「最小化暴露，不能暴露工厂，只暴露能力」。
+- **改成什么**：每个域的门面（`interface.ts`）出 `install<Domain>/release<Domain>` 成对动作 + 能力转发；
+  `class` 与其单例留在 `impl/service` 内部，不外放。参照 notifier：`config/interface.ts:7` 的单例只 import
+  不 re-export，门面出 `installConfig/releaseConfig` + 读写能力。
+- **代价（显式登记，SKILL §7.5）**：C1 作废「同进程两份实例互相独立」的三条既有用例及其语义，
+  生产语义由「互不污染」变为「**第二份挂不上并抛错**」。替代判据见 §5「被删除的保证与替代」，
+  完整分档见 §18。
 
 **验证**：把本包加进 `forbid-module-state-src` 范围后实跑探针 → exit 0、本包零条目（P1-3 修掉）。
 修复后 11 项门禁全 exit 0，测试 156 例（10 文件）。
@@ -376,10 +399,14 @@ packages/dsh-worktree-sidebar/
 **写盘失败时 ok:false、revision 仍 0、get() 为 undefined**（内存不前移成立）；
 S0 的三处既有断言修改均为**必需同步、非放宽**（ci-matrix 的真实不变量由 `plugins-manifest-lib.ts:110/120/169/236` 分守）。
 
-**行数预算（§9.1）复核裁决建议**：接受 `interface/deps ≤150`，不拆 `impl/service`——理由是评审成本的真实代理量是
-「一个文件里要同时理解几个决定」，而这三个文件各只含 1 个决定 + 若干转发；拆开只增加跨文件跳转。
-全包合计建议登记 **3000 作观察阈值**（而非改写预算），并把 §9 的语义改成
-「超限时先问『这文件里有几个决定』，再决定拆不拆」。**此裁决仍待用户确认，本文不擅自改写 §9 的既有上限。**
+**行数预算（§9.1）——第四轮裁决（推翻本条原建议）**：原建议「接受 `interface/deps ≤150`，不拆 `impl/service`」
+与「全包合计登记 3000 作观察阈值」**均已作废**：
+
+- **不拆 `impl/service` 这半句仍然成立，但前提变了**：`interface/deps ≤150` 这个放宽不再需要——历史偏离
+  随「类型与装配下移 `impl/service`」一起消失，五个门面实测 8/8/8/11/11 行，`deps.ts` 最大 78 行。
+  也就是说，当时的判断（各文件只含 1 个决定 + 若干转发）**已被现状证明**，不需要靠放宽上限来容纳。
+- **「全包合计 3000 作观察阈值」整条撤销**：该指标已从 §9 删除（无出处、拆分修不掉、指向不了动作），
+  观察阈值一并作废，`2800`/`3000` 这类数字不要再出现在任何判据里。
 
 **仍未验证**：三条界面语义（第 1、2 条因 P0-1 当时不生效而无法验证；第 3 条之所以成立是因为插件整个没跑，
 而 P0-2 表明它当时本来就会失败）；真机 HMR 时序；agent 工具在真机会话里的 LLM 回路端到端。
@@ -524,31 +551,56 @@ S0–S5 全部落地；独立复核（第二轮）的四项必修 P0-1 / P0-2 / 
 3. **B3 api 域端口按提供方拆**：`api/deps.ts:15-20` 的 `BindingPort` 一半来自 binding（`revision`）、
    一半来自 scope（`effectiveWorktree`），逼组合根手工拼匿名对象（`index.ts:233-236`），
    违 refactor §3「一行一个提供方」。拆成两项即可。
-4. **B4 BindingApi.prune 的处置**：本文档 §8（`:149`）**声明了** binding 域有「剪枝」能力，
-   但全仓**没有任何调用点**（生产零消费者，只有 2 组测试）。是删掉这个能力，还是补一个触发
-   （例如会话释放时剪枝）？这不是收窄问题，是计划与实现的缺口。
-5. **B5 导出面收窄落实**（机械，但含删除）：本包 5 处「仅同文件消费者」的导出去掉 `export`
-   （已实测：5 处全去掉后 `tsc -p tsconfig.json` 声明发射 exit 0、159 用例全绿）；
-   `BindingApi.entries`、`git/impl/inspect` 的 `branchLabel`（**上一轮删 `describeWorktree` 时留下的孤儿**，
-   生产零消费者、只剩 5 条测试）与 `client/bindings.ts` 的 `lastRevision`（连测试都没有）删除；
-   门面 `ApiInstance` / `ScopeApi` 转出删除（消费者只有测试，测试改直引 `impl/service`）；
-   `git/interface.ts` 的 `GitExecPort` 转出删除（组合根可从 `git/deps.ts` 取，门禁规则 2 允许「入口或出口」）。
+4. **B4 BindingApi.prune 的处置（已裁决 = 删）**：本文档 §7.1（`:149`）**声明了** binding 域有「剪枝」能力，
+   但全仓**没有任何调用点**（生产零消费者，只有 `test/unit/binding-model.test.ts:139-147` 与
+   `test/integration/binding-store.test.ts:121-126` 两组测试）。维护者裁决**删掉这个能力**，不再补触发
+   （补一个「会话释放时剪枝」会引入新的会话生命周期耦合，而当前没有任何消费者需要它）。
+   连带动作：删 `prune`（`binding/impl/service/index.ts:31,70`）与 `pruneTable`（`binding/impl/model/index.ts:86`）
+   及上述两组测试；同期已改 §7.1 的验收标准与 §8 的文件职责。
+5. **B5 导出面收窄落实（已复测，口径与性质更正）**：v1 写的「5 处仅同文件消费者」**复测为 0 处**。
+   消费口径必须写全：**值导出 ∧ 定义文件之外零导入者 ∧ 非包入口面 ∧ 不含 `test/`**。
+   原来的「仅同文件消费者」把两件事混在一句话里，所以得出的数量没有意义。逐条现状：
+
+   | 符号 | 定义处 | 性质 | 生产消费者 | 测试消费者 |
+   |---|---|---|---|---|
+   | `branchLabel` | `src/server/git/impl/inspect/index.ts:83` | 值导出 | 0 | `test/unit/git-inspect.test.ts:127-146`（4 例） |
+   | `BindingApi.entries` | `binding/impl/service/index.ts` | interface 成员 | 0 | `binding-store.test.ts:58,127,134` |
+   | `lastRevision` | `src/client/bindings.ts:15,26` | interface 成员 | 0 | 无 |
+   | `ApiInstance` / `ScopeApi` | 门面 `export type` 转出 | 转出 | 0 | 有（改直引 `impl/service`） |
+   | `GitExecPort` | `git/interface.ts` 转出 | 转出 | 0 | 组合根从 `git/deps.ts` 取（门禁规则 2 允许「入口或出口」） |
+
+   `branchLabel` 是上一轮删 `describeWorktree` 时留下的孤儿：生产零消费者、只剩测试在调它。
+   **另列（不动）**：测试专用的 `FILES_KIND` / `BODY_SLOT` / `TITLE_SLOT` / `OUR_TYPE_ID` / `emptyTable` /
+   `validateRecord` / `directoryExists` 是模块 ABI 面或同源期望锚点，不机械收窄。
 6. **B6 两次装配的修法**：P1 已实测（同进程两个 `createBinding` 写同一文件 → 先写的绑定被静默丢弃、
    两侧都报 revision=1；独立复现脚本见 §17.5）。选 (a) 进程内登记「同一 file 只能一个实例」并抛错
    （先例 notifier `pipeline/impl/service/index.ts:56`，约 10 行），还是 (b) commit 前重读文件（约 20 行）？
    无论选哪个，`index.ts:189-191` 与 `binding/impl/service:8-10` 的「两次装配不会互相污染」自述都要改。
-7. **B7 行数预算裁决**（§9.1 / §16）：`interface/deps ≤80` 的 3 处偏离**已随「类型与装配下移 `impl/service`」消失**
-   （五个门面现在各 11–20 行，最大的是 `api/deps.ts` 30 行）。**仍未裁决的是全包 src 合计**：
-   实测 2533 行 vs 既有上限 1200（2.1 倍）。复核建议把合计登记为观察阈值、并把 §9 语义改为
-   「超限先问这文件里有几个决定」。**本文件未擅自改写 §9 的既有上限，等用户裁决。**
-8. **B8 .github/workflows/ci.yml 的可审计记录**：复用 notifier 同套扫描已落地（见 17.2 第 6、7 条），
-   但仓库规则要求的可审计记录（issue 内方案评论 + `needs-proposal-review` / `approved` 标签）仍缺——
-   本次授权只有对话记录。需要走完整流程的话请在 PR #819 内追一条说明评论。
+7. **B7 行数预算裁决（已裁决 = 删除全包合计指标）**（§9 / §9.1 / §16）：
+   `interface/deps ≤80` 的 3 处历史偏离已随「类型与装配下移 `impl/service`」消失——**数字更正为实测值**
+   （2026-09-14，`wc -l`）：门面 `interface.ts` = api 8 / binding 8 / scope 8 / tools 11 / git 11；
+   `deps.ts` = api 30 / binding 12 / git 18 / tools 55 / **scope 78**。v1 与本条旧文写的「最大 `api/deps.ts` 30 行」
+   不成立：最大的是 `scope/deps.ts` 78，离 80 只差 2 行。
+   **全包 src 合计**：实测 **41 文件 / 2535 行**（均值 62），旧文写的「2533 行」是过期读数。
+   该指标本身已撤销（无出处、拆分修不掉合计、指向不了任何动作，见 §9），逐文件数字改称
+   **review 提问线**；「超限先问这文件里有几个决定」这条语义已写进 §9，不再需要观察阈值。
+8. **B8 .github/workflows/ci.yml 的可审计记录（维护者裁决：不发评论、不新开 issue）**：
+   复用 notifier 同套扫描已落地（见 17.2 第 6、7 条），仓库规则要求的可审计记录
+   （issue 内方案评论 + `needs-proposal-review` / `approved` 标签）**确认为缺失，但不再补**——
+   本次授权是维护者会话内直接授权。**记录落点 = PR #819 正文的「红线声明」段**：写明改了 `ci.yml` 的
+   paths-filter 键、依据哪条仓库规则、由谁在何时授权。仓库规则「不单开决策 issue」因此已满足，
+   不额外制造待办；本文件即该记账的第二处副本。
 
 **C. 建议不做（附理由）**
 
-1. 为「闭包工厂 vs class + 导出单例」重写五个域：skill §5 的明文形态是后者，但工厂把状态关在实例里、
-   deps 签名同样把「需要什么」摊开，形态差异的收益小于重写成本（独立复核也建议不做）。
+1. ~~为「闭包工厂 vs class + 导出单例」重写五个域：建议不做~~ → **第四轮改判：本轮做**。
+   改判依据两条：① `.dsh/skills/dsh-plugin-hub-refactor/SKILL.md:112-115` **明文形态**是「有状态的才用
+   `class`，配一个导出单例（类不外放）」+「**不用闭包工厂**」，`:215` 自检清单同样列着闭包工厂；
+   ② 维护者裁决「最小化暴露，不能暴露工厂，只暴露能力」。
+   原判断（「形态差异的收益小于重写成本」）不成立的地方在于：收益不是形态美学，而是**暴露面**——
+   工厂被门面转出后，调用方可以 `new` 出第二份、可以持有它，而这两件事正是 P1-3 当初要消灭的
+   「跨装配共享状态」的另一条路径；本轮把 `class` 与单例留在 `impl/service`，门面只出
+   `install/release` + 能力转发。
 2. 把 `shared/file-io.ts` 搬回 binding 域：它只有 binding 一个消费者，但内容是领域无关的 fs 语义
    （原子写 + 同步读）且被同域两个文件共用；`shared/paths.ts` 同理（单一消费者，但「路径只有一个事实源」
    的收窄更有价值）。
@@ -614,3 +666,72 @@ S0–S5 全部落地；独立复核（第二轮）的四项必修 P0-1 / P0-2 / 
   并验证 B5 的 5 处 `export` 全部去掉后 `tsc -p tsconfig.json` 声明发射 exit 0、159 用例全绿。
 - 清理状态：`-probe-b` / `-probe-e` 及前几轮探针均已 `git worktree remove --force` + `prune`；
   主 checkout `git status --porcelain` = 0 行（全程只读）。
+
+## 18. 第四轮（门面只出能力 + 客户端接缝回退 + 判据补齐）
+
+第四轮的输入是三个上下文独立的复核子 agent（架构合规 / 判据可打红 / 客户端对抗）与一个调研子 agent 的结论，
+加上维护者的 A/B/C 授权与三条裁决（C1 做、B4 删、B7 撤销合计指标）。执行方案（工作稿）不在仓库内；
+本节的数字与 `file:line` 全部在 `task/worktree-sidebar` 上重测过，不照抄方案稿。
+
+### 18.1 A 档裁决（无取舍，本轮做）
+
+| # | 裁决 | 依据（复核后的事实） | 状态 |
+|---|---|---|---|
+| A1 | 做：更正「props 里塞 hooks 不被读」的错误表述（源码注释四处） | 官方 `bindInjectSources` 把 entry inject 面里的 `hooks.<name>` 经 `standardHookPropName` 变成 `use<Name>` props（`dsh-client-ui-renderer/lib/client.js:342-357`）；展开序 `{...kit, ...injected, ...}` 在 `:644-650`（ContextualEntry）与 `:653-658`（renderEntry）两处，`injected` 在 `kit` 之后 ⇒ 覆盖 | S1a 落地（`takeover.ts` 头、`ports.ts` 段、`client-takeover.test.ts` 原 `:302-304`；`contribute.ts` 随删除消失） |
+| A2 | 做：为 P0 修复行 `ctx.sessions.list` 补判据 | 探针实测边界：把该行改回 `ctx.sessions`，**构造期不抛**、`typeof getSnapshot === "function"` 为 true，只有**调用** `getSnapshot()` 才 `TypeError: real.getSnapshot is not a function` ⇒「只驱动到注入对象生成」的写法是恒真断言 | 排 S3（新增 `test/unit/client-index.test.ts`，与 B1 的接缝断言同片） |
+| A3 | 做：补 `shared/README.md` 消费方登记 | `src/server/api/impl/route/index.ts:9`、`api/impl/handlers/index.ts:11` 取 `guardLoopbackMethod/writeJson`；`src/server/shared/paths.ts:6` 取 `dshHome` | 排 S4。**判据：无**（该表无门禁读），按 testing skill §7 显式登记为「靠自查」 |
+| A4 | 做（与 B7(b) 合并）：消除静默空实现 | `src/index.ts:92-94` 对未知 agent 回 `() => undefined`；但 `publish` 的唯一调用点 `tools/impl/service/index.ts:43` 拿到的 face 恒来自 `bindAgents` 先 `live.set` 过的同一条（`:84` list / `:85` subscribe）⇒ **该分支不可达**，`bindAgents` 又未导出（`src/index.ts:73`）⇒ 判据无处驱动 | 排 S3：拆 `src/host/{agents,typert,defaults}.ts` + 窄端口，`test/unit/host-agents.test.ts` 白盒断言「`publish(未知 id)` → 抛错」。先例与例外：refactor §4 要求「未装配即抛错」，notifier 有相反先例（挂宿主事件链的出口可静默），我们的 `publish` 是自家 tools 域**同步调用**，不属该例外 |
+
+### 18.2 B 档裁决（逐条）
+
+| # | 裁决 | 依据 | 状态 |
+|---|---|---|---|
+| B1 | 做：接缝回退到 **entry 级** `hooks.sessions` | 计划 §4.2 `:110` 指定的形态；§6 `:143`「伪造只作用于本 entry」是**显式非目标**；§8 `:190-192` 的客户端文件清单里没有 `contribute.ts`。两条接缝都有效（`renderer:333-356` / `:640-650`），差别只在作用域与降级语义；保留全 session 作用域会让工具描述对模型的承诺（`tools/impl/register/index.ts:19-24`「Only the Files tab follows the binding」）变成假话 | S1a：恢复 `wrapInject` + `TakeoverDeps.sourceFor`；删 `contribute.ts` 与 `client-contribute.test.ts`；`inject` 去掉 `uiSession`（`--min` 11→10 + `stryker:gen`）；改写原 `:301-325` 那条必红断言 |
+| B2 | 做：契约单一事实源（三段） | ① 存储形状 `BINDINGS_VERSION/BindingRecord/BindingsFile`（`contract.ts:19-38`）消费者是 binding 域 3 文件 + `tools/impl/bind` + 测试，**客户端零消费者** ⇒ 移进 binding 域；② 响应体 `{revision, worktreePath}` 由单点定义、两端真实 import（宿主 `api/impl/handlers/index.ts:34`、客户端 `client/index.ts:35`），删掉客户端那行手写的第二份形状；③ 判据方向更正：能红的是「**把某一端改回旧字面量 → 该端 `pnpm typecheck` 报错**」，且只在**类型层**成立（做成值常量连类型层都不红）；④ `__DSH_ROUTES__` 兜底实测失效（`node` 直接 import → `ReferenceError`；`?? "/literal"` 永不可达），正解是 `typeof __DSH_ROUTES__ !== "undefined" ? __DSH_ROUTES__ : ROUTES` | 排 S3。不修 ④ 会让 A2 的测试在收集期整文件失败 |
+| B3 | 做：api 端口按提供方拆 | `api/deps.ts:15-20` 的 `BindingPort` 一半来自 binding（`revision`）、一半来自 scope（`effectiveWorktree`），逼组合根手拼匿名对象（`index.ts:232-236`），违 refactor §3「一行一个提供方」 | 排 S3。判据：两个提供方对调 → `typecheck` 双处红 |
+| B4 | **已裁决 = 删** `BindingApi.prune` | 生产零消费者，只有 `binding-model.test.ts:139-147` 与 `binding-store.test.ts:121-126` 两组测试 | 排 S4。同期改 `§7.1` 验收与 `§8` 文件职责（已在本轮 S0 改 `§7.1`） |
+| B5 | 做：导出面收窄批（口径更正） | v1 的「5 处仅同文件消费者」**复测为 0 处**；正确口径 = 值导出 ∧ 定义文件之外零导入者 ∧ 非包入口面 ∧ 不含 `test/`。`branchLabel` 生产零消费者、只剩 4 条测试（`git-inspect.test.ts:127-146`）；测试专用的 `FILES_KIND` 等是 ABI 面或同源期望锚点，**不动** | 排 S4。判据只对「生产零消费者」这一条有效：审计 + `typecheck` + 测试改写。注意 C1 会让门面值导出**增加**（install/release + 能力转发），与收窄不矛盾（增的是能力、减的是工厂） |
+| B6 | 做：由 C1 的 `install` 守卫解决双装配 + 更正 6 处注释 | 同 fiber 内 cordis 先卸后装（`cordis/src/fiber.ts:675-696` 的 `_unload` 先 `await` 全部 disposer，再 `:692` `_reload`）；**并发双 fiber** 才可能两份实例。notifier 的守卫在 `pipeline/impl/service/index.ts:50`（`private installed = false`）与 `:55-57`（throw）。旧 repro（直接调两次 `createBinding`）**不是真机可达路径** | 排 S5。正确红绿实验是「删掉 `if (installed) throw` 那一行 → 只有该用例红」，「旧形态下是红的」不构成实验（旧形态没有 `installGit`，用例编译不过） |
+| B7 | **已裁决 = 撤销「全包 src 合计」指标**；逐文件数字改称 review 提问线 | 实测 **41 文件 / 2535 行**（均值 62）；门面 `interface.ts` = 8/8/8/11/11，`deps.ts` = 30/12/18/55/**78**（最大 `scope/deps.ts`）。该指标无出处（§9 只给了**单文件**分位数）、且拆分不改合计 ⇒ 指向不了动作。机器强制的质量面交给既有度量：ESLint `complexity`（78/84）+ CRAP 16（观察期）+ 变异 | S0 已改 §9/§9.1/§16；§9 语义改写 + 删除行。B7(b) 拆 `src/host/` 与 A4 合并排 S3 |
+| B8 | **裁决：不发评论、不新开 issue**，记录 = PR 正文红线声明段 | 仓库规则要求的可审计痕迹确认为缺失，但维护者裁定以 PR 正文的「红线声明」段承载（写明改了 `ci.yml` 的 paths-filter 键、依据哪条规则、由谁授权）；「不单开决策 issue」因此已满足 | S0 已改 §17.3-B8 |
+
+### 18.3 被删除的保证与替代（SKILL §7.5；C1 的代价显式登记）
+
+C1 把门面从「转出工厂」改成「出 `install/release` + 能力转发」后，**同进程第二份实例**不再可能，
+于是三条既有用例锁定的语义消失。替代判据必须**先写、后删**，否则这批改动净减少判据：
+
+| 删除的用例 | 原语义 | 替代判据 |
+|---|---|---|
+| `test/integration/binding-store.test.ts:61-72` | 两份实例互不干扰 | ① 同一 file 第二次 `install` 抛错（断言**完整消息**）② `await release()` → 再 `install` 后读到磁盘现状 |
+| `test/unit/scope.test.ts:358-368` | 两份都拿到自己的 configure，「不存在第二次装配抛已装配」 | ① release 后 depsA 的 disposer 被调 ② 再次 install 必须成功且 `isInstalled()=true` |
+| `test/integration/git-real.test.ts:112-120` | 缓存不共享 | ① install→install 抛错 ② release 后旧 exec 的缓存答案不再返回 |
+
+另有 `binding-store.test.ts:91-94` 的注释「新实例 = 重新读盘」要改成 `await release(); install();` 并同步改注释。
+
+**生产语义变化（要写进 README）**：同进程第二次装配由「互不污染」变为「**第二份挂不上并抛错**」。
+这正是 P1-3 当初要消灭的共享状态，在 C1 之后有了明确的、会出声的失败形态。
+
+**风险登记**：`forbid-module-state-src` 只认顶层 `let`/`var`，`export const gitService = new GitService()`
+**不会**被判红（复核用真脚本 fixture 实测）⇒「门禁绿」证明不了没有重新引入跨 apply 共享状态；
+这正是 C1 必须自带上面那些 release 判据的原因。
+
+### 18.4 两条仓库级门禁盲区（早于本包存在；本包不依赖、不新增豁免）
+
+1. **`readonly` 让注入面对账闸恒不生效**：`scripts/gate/verify-dir-imports.mjs` 的「注入面对账」
+   （为 notifier 的 install/release 形态专写的）对本包**恒不生效**——字段提取 `objectLiteralKeys` 对
+   `readonly logger: LoggerPort` 这类成员返回 `null`（key 文本 `"readonly logger"` 过不了标识符正则），
+   随后静默 `continue`。本包 5 个 `deps.ts` 全用 `readonly`。盲区早于本包存在（notifier 同样中招），
+   修它属 `scripts/` 改动（走 `gate:pr` + 正反 fixture），不在本轮、不承诺、不跟踪。
+2. **`verify-dir-imports` 硬编码豁免 client 子树**：`src/client/**` 双向豁免、无任何收紧通道
+   （5 处特判：模块表、目录名判据、from 侧、target 侧、历史口径；旋钮只许放宽）⇒ 客户端目录里的
+   跨块直引**不会被这道闸拦到**。同样是仓库级治理问题（要动 5 处特判并同时决定变异面与覆盖率面对
+   client 的口径），不在本轮。
+
+**本包的正确处置是三条**：① **不依赖**这两道闸（用运行期「未装配即抛错」+ 测试兜住）；
+② **不新增任何门禁豁免**——`scripts/data/gate-exemptions.json` 保持**本包零条目**
+（实测：全文件 1 条豁免，且是 `dsh-notifier/src/client/index.tsx`）；③ 在 PR #819 正文用一两句登记
+「已知盲区 + 我们的替代判据」，免得后来人以为这两道闸在守本包。
+
+**客户端侧另有两条口径登记**：变异面与覆盖率面**整个排除** `src/client/**`
+（`mutation-topology.json:506-507`、`coverage.config.json:31-37`，后者是 `pending-project` + reviewBy 2027-03-31）
+⇒ 客户端改动只能靠改坏实验留证，任何覆盖率/变异数字都不覆盖它。
