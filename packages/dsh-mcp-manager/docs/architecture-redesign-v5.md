@@ -33,12 +33,12 @@ v5 初稿写完后经三个只读视角复核（机制可执行性 / 凭据单�
 |---|---|---|
 | 1 | D3 说「summary 不含凭据字段」——但客户端编辑表单与卡片端点今天就是从 summary 读 `env/headers/url`（`client/float/servers.ts:18`、`quick-add.ts:95-120`），删键会打穿编辑面 | 改为**值域掩码（不删键）**：键保留、值换掩码、`url` 去 userinfo（host-only）。客户端**数据源零改动**（`parseKV` 会把掩码当值解析并原样提交） |
 | 2 | D3 的还原键写「name + scope」——但客户端改名走的是 **POST 新条目 + DELETE 旧条目**（`quick-add.ts:131-144`），payload 无源标识；project 级真实键是 (root, name) | 写请求携带**显式源身份**（`sourceName`/`sourceScope`/`sourceRoot`），只在源对象上取原值（细则 §6.1 纪律 3）；不可变 `id` 登记为后续演进（见附录 A 第 4 条） |
-| 3 | D3 的六条出口漏了两类：**校验期回显请求体凭据**（`normalize.ts:43` → `routes.ts:60`，已实测复现）与 **supervisor 直呼路径的工具错误返回 + stats 埋点**（`supervisor.ts:330-332` 原始 message，而 `middleware.ts:782-784` 有 `hostRedact`） | 出口清单升为**出口 × 载体矩阵**（7 类，§6.2）；①的修法补「请求体凭据不入错误文案」，新增 ⑦⑧ 两条 |
+| 3 | D3 的六条出口漏了两类：**校验期回显请求体凭据**（`normalize.ts:43` → `routes.ts:60`，已实测复现）与 **supervisor 直呼路径的工具错误返回 + stats 埋点**（`supervisor.ts:330-332` 原始 message，而 `middleware.ts:782-784` 有 `hostRedact`） | 出口清单升为**出口 × 载体矩阵**（§6.2 现有 **8 类**，本行初稿误写「7 类」）；①的修法补「请求体凭据不入错误文案」，新增 ⑦⑧ 两条 |
 | 4 | D3 说「类型即围栏」——实测 TS 对象展开携带额外字段赋给窄类型**不报错**（excess property check 不覆盖展开），`as unknown as` 更弱 | 删掉该论断；围栏改为**逐字段构造 + AST 断言（面 = 投影所在域）+ 禁 `as unknown as` + `NoCreds<T>` 排除类型** |
 | 5 | I2①「域间不得出现值边」**没有任何执法点**（`leafValueEdges` 属可合法上升的结构型计数，`--graph` 只打印矩阵） | B0 必须先给这条判据**造执法点**：新增一类质量证据（目标非 shared 的值边集合）；并补 I2 第三判据「域不得 import `src/index.ts`」 |
 | 6 | §3.6「常量归语义所有者 + 跨域消费经 Pick」——**模块求值期常量无法 Pick**（`config-schema.ts:143/147/156` 的 `.default()` 在 import 求值期取值，`:10-11` 值引 catalog/connection） | 改为按**消费域数**判：被 ≥2 域消费的值常量归 `server/shared`；单域常量的跨域消费才经 `Pick`。原写法会与 I2② 构成 config↔catalog 值环 |
 | 7 | §3.4「11 域全部建 deps.ts」——7 个域的「至少消费 logger」是设计意图不是实证（实测 logger 命中：connection 25 / stats 7，其余域含 `store` 全 0） | 表改为**预期对上依赖**，并写明「实测零依赖的域按判据不建，须在 PR 显式登记」（参照包 `channels` 先例） |
-| 8 | §3.5 Port 表与实测消费系统性不符（pipeline 是 3 函数 + 1 常量、catalog 缺 WorkspacePort、connection 缺 3 个 catalog 能力、inject 缺 limits 常量、api 实际 22 个 `manager.*` 而表列 14） | B0 冻结前用脚本从现状**反查**一张完整表；本文件的表降级为「示意，冻结前重算」 |
+| 8 | §3.5 Port 表与实测消费系统性不符（pipeline 是 3 函数 + 1 常量、catalog 缺 WorkspacePort、connection 缺 3 个 catalog 能力、inject 缺 limits 常量、api 实际 22 个 `manager.*` 而表列 14） | **已反查完成**（第三轮只读测量）：§3.5 示意表作废、替换表落**附录 E**；同时暴露 §3.5 一批名字实测 0 命中、`types` 域去向未定、4 处死导入、`workspace` 的静态/运行入口径冲突 |
 | 9 | B0⑤ 的 mutate 超集漏 `src/shared/**` → 新文件进 `uncoveredSrcFiles` 且 `--write-baseline` 拒绝接受新证据 → **硬挡 B1** | 超集改为 `src/server/**` + `src/shared/**`；并补 `mutation-topology-coverage.test.ts` 计数与 `gen-stryker-conf` 重生成 |
 | 10 | B2 删 `bootstrap/`/`McpManager`，B3 才重冻结导出面 → B1–B2 全程 `contract` 判红 | **重冻结落到 B2 的删除那一笔**（`--snapshot` + faces 手改 + mutate 段重画同笔），B3 只留测试/文档/注释——与参照包 `8df3950` 同形 |
 | 11 | §7.2 的 mtime 分支自称「照搬参照包」——参照包**无 mtime**（目标存在即无条件 `archive()`），且「不归档」会破坏幂等 | 归档一律执行（mtime 只影响 warn 文案）；并明确**迁移不解析内容**（纯字节搬移 → 迁移**四态**），坏文件交给各域容错读面 |
@@ -48,6 +48,22 @@ v5 初稿写完后经三个只读视角复核（机制可执行性 / 凭据单�
 | 15 | 脱敏器的**输入集**三处不同（`manager.ts:206-210` 缺 projectStore、`middleware.ts:787-793` 仅池内、`supervisor.ts:433` 仅自身）；且 ③ 的「运行时注册表」与 I9 冲突 | 输入集写成**能力** `credentialSecrets(): readonly string[]`（config 域从 global + 全部 projectStore + runtime 派生，含展开后真值），不得引入模块级可变注册表 |
 
 **红线授权路径（照搬 notifier 的正路）**：`.github/` 改动、新增第三方依赖、公共 API 行为变更，三条红线由**一次 #767 方案 `approved` 打包覆盖**（#733 的 7 笔 `.github/` 改动即由整包 approved 授权）。**不要引用 `yaml` 经 #781 合入的先例**（那次没有 approved，是维护者当次授权）。
+
+### 0.2 第三轮：凭据单链现状的独立复验（只读，已并入）
+
+v5 定稿后再派一个**只读**视角复验 §6 的**现状事实**（不给它方案结论、自行定位行号），结论由协调者一手复跑确认。要点：
+
+| # | 复验结论 | 对方案的影响 |
+|---|---|---|
+| 1 | 出口实为 **8 类**（§6.2 现 8 行） | §0.1 第 3 条原写的「7 类」是笔误，已改 |
+| 2 | `createRedactor` **4 个构造点**（`manager.ts:209` / `supervisor.ts:433` / `middleware.ts:452` / `middleware.ts:783`），**无一处**包含 `app` 展开后的真值；`projectStore` 只在 `middleware` 两处、且仅当该 root 单元已实例化；`manager.redactError` 完全看不到 `projectStore` | §0.1 第 15 条「输入集写成能力 `credentialSecrets()`」是**必需修正**而非优化 |
+| 3 | 端到端实测（真实 `makeRoutes` + 真实 `McpManager` + 真实 `normalizeServer`，唯一 stub 是 manager 且 `manager.ts:906` 在 `store.upsert` 前调 `normalizeServer`）：⑦ 400 body 回显 `s3cr3t`；①②⑤⑥⑧ 的明文 / stderr 尾注 / 工具文案全部外发；③ 展开真值 `REAL-EXPANDED-6` **穿过** redactor（配置字面量 `${MY_TOKEN}` 才会被替换） | 8 类出口**现状全红**，D3「本轮修完」有了可复跑的红的基线 |
+| 4 | 现状测试面 **1137 用例全绿，但零条**断言「出口不含明文」（`unit-manager2.test.ts:251-255` 只断言 `/invalid url/` 正则；`unit-middleware.test.ts:1714+` 只测 `createRedactor` 本体） | §6.2 验收的 `redaction-exits.test.ts` 不是补强，是**首次**建立该判据 |
+| 5 | 落盘权限：**1 处**带 mode（`store.ts:66`），**6 处**不传（`middleware-state.ts:57/174`、`middleware.ts:497/535`、`manager.ts:192`、`collector.ts:256`）；**6 处 `mkdir` 全部不传 mode**（目录 = `0777 & ~umask`） | §7.1 的「五个写点」应为**六个**，并新增**目录 mode 行** |
+| 6 | 行号漂移（§6 已按复验结果修正）：⑤ `:186`→**`:187`**；② `apply-services.ts:36`→**`:39`**；⑥ `this.error` 落点是 `435/461/467/482-487/494`（`469-472` 是退避判定）；⑧ `330-332` 的 catch **只有埋点**（`createRedactor([this.server])` 在 `:433` 的另一处 catch）；§6.1 纪律 5 的 `{enabled}` **不在** `routes-controllers.ts:175/211`（该文件无此分支；`{enabled}` 来自客户端 `float/float.ts:149/177`、`float/servers.ts:177/213`，宿主经 `:186-187` 的通用 `manager.update` 合并路径处理）；§6.3 `/health` 是 `routes.ts:168-209` | B2 引用行号以本节为准 |
+| 7 | `docs/architecture-contract.md:28-30` 声称 `makeRoutes` 注入 `api/redactor-factory.ts` 构建的 redactor、`handleError` 写 body 前先脱敏——**该文件与行为都不存在** | B0② 的三分类打标必须把这段判「作废」 |
+
+B2 必须补的探针（每条都要**正例 + 反例**，反例用于证明断言不是空转）：出口清单契约测试（8 类各一条）／`createRedactor` 构造点计数 == 1 且禁对 `ServerConfig` 展开出境的 AST 断言／400 明文探针／展开真值探针／stderr 尾注探针／`stats.json` 的 `lastError` 明文 + 文件 mode 断言／6 个落盘点 mode 显式化／掩码往返与缺源身份 400／两路径同构（`mcp__` 直呼与 `ws_mcp_call` 两侧文案都不含明文：现状 supervisor 侧红、middleware 侧绿）／防误伤负例（`/health`、三帧 SSE、`systemPrompt`、catalog 落盘）。
 
 ---
 
@@ -153,6 +169,7 @@ v5 初稿写完后经三个只读视角复核（机制可执行性 / 凭据单�
 
 - **不变式**：宿主端状态一律收进实例或闭包；模块级只允许常量表。
 - **判据**：`scripts/gate/forbid-module-state-src.mjs`——**本轮把 `dsh-mcp-manager` 登记进 `scripts/data/gate-scope-registry.json` 的 `packages` 字段**（该闸 `scopeFrom=registry`，现为 `["dsh-notifier"]`，CI 无参调用 `ci.yml:783`，故本包今天**不在扫描面内**）。
+- **存量（已实测，扩包前必读）**：本包在扫描面内**已有 1 处违规**——`src/client/float/panel.ts:19` 的模块级 `let inflight`（探针：把 registry 复制到临时文件并加入本包，`node scripts/gate/forbid-module-state-src.mjs --registry <tmp>` → **exit 1**）。该文件属 `src/client/**`（N1 本轮不重构结构），故扩包必须**同笔**在 `scripts/data/gate-exemptions.json` 登记文件级豁免（照 notifier #762 形态，`trackingIssue` 用 `#770`、`reviewBy` 与 notifier 条目一致），否则该闸扩包当天判红。
 - **现状**：达标以登记进扫描面后的实测为准；登记前不得写「本包 0 命中」。
 
 ### I10 状态与错误出口单链
@@ -278,6 +295,12 @@ packages/dsh-mcp-manager/src/
 **11 个域全部建 `deps.ts`。** 若实现时某域实测为零对上依赖（既不取他域能力也不取宿主能力），按判据**不建**，但必须在 PR 里显式登记该裁量与理由（参照包 `channels` 的做法：在 `interface.ts` 头注释写明「本域对其它域零依赖」）。
 
 ### 3.5 Port 面（开写前按实际消费反查）
+
+> **状态：已反查完成（第三轮只读测量交付）。** 本节原来的示意表**作废**——复核实测其中一批名字在 src 内 **0 命中**（`serversFor` / `saveServers` / `writeCatalog` / `catalogPathFor` / `globalRoot` / `refreshFromDisk` / `announceCatalogMaxEntries`，以及 api 行里的 `start` / `stop` / `healthCounts` / `serversForEdit` / `redactError` / `readUserState`），属按意图臆写而非实测。**替换表见附录 E**（域间值能力 100 行 / 宿主能力面 / 经对象成员消费 / 「不该建 deps.ts」判定），实测口径：消费点 = 剔除 import-export 语句后的标识符出现次数，0 = 死导入。
+>
+> 反查同时纠正了 §3.4 的三处：①logger 实测**四域非零**（connection 25 行 / stats 7 / **bootstrap 5** / **types 2**），且四者语义不同（connection 是 `ctx.logger`、stats 是本地结构类型参数、types 是 `LoggerService` 类型字段、bootstrap 是 `manager.logger` 转发）——**不能合并成一个能力**；②`types` 是今日 14 个叶子模块之一却不在这 11 域内，被 9 个域类型消费（`ServerConfig` 11 点等），**B0 冻结必须先给定它的去向**；③发现 **4 处死导入**（`pipeline/authorize.ts:12` `fullServerName`、`catalog/search.ts:20` `bareServerName`、`connection/runtime/middleware.ts:45` `bareServerName`、`connection/runtime/supervisor.ts:14` `SCOPE_PROJECT`），属 I4 与「Pick 越窄越好」的直接可清理项。
+>
+> **另有一处口径冲突必须由 B0 裁决**：`workspace` 静态 import 面零对上依赖，但运行时经 `McpManager` 取 `middlewareMode` / `projectServersFor`（`workspace/root-resolution.ts:66/71`）。建议**以运行时能力消费为准**判定「要不要建 deps.ts」（否则会出现「静态图合规、运行时直取对象」的漏洞，正是本轮要消灭的形态）。
 
 ```
 # 宿主能力（不属于任何域；由组合根 bindHost 收窄后递入，每个用到它的域自行声明）
@@ -418,7 +441,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 2. **凭据字段清单唯一**（`pipeline/impl/redact` 的一张 `Record<transport, readonly string[]>`，照 notifier 的 `CHANNEL_SECRET_FIELDS`）；未知传输给空清单而不是抛错（在脱敏处抛错会让整页 500）。
 3. **掩码还原按「显式源身份」，且只在源对象上取原值**（复核修正）：`PATCH` 的源身份 = URL 的 `name` + `scope`（实测 PATCH **不能改名**：`manager.ts:928` 的 `{ ...existing, ...patch, name }` 末位 `name` 来自路由参数）；**改名/改归属走的是客户端「POST 新条目 + DELETE 旧条目」**（`quick-add.ts:131-144`），其 payload **不含任何源标识** → 必须新增 `sourceName` / `sourceScope` / `sourceRoot` 三个请求字段（仅用于取原值，不参与写入目标）。**禁止跨对象 / 跨 scope / 跨 root 搜索原值**——那会把 A 的凭据回填到 B，正是参照包注释警告的事故（notifier 用提交体自带的**不可变 id**，见 `redact/index.ts:110-113/128-138`；mcp 无 id 字段，故用显式源身份替代）。掩码却无原值 = `ok:false` → 400。
 4. **逐字段构造，不靠类型**（复核修正）：实测 TS 的对象展开**逃过** excess property check（`const a: S = { ...c, status: "ok" }` → 0 诊断），故「类型即围栏」不成立。围栏 = 投影函数**逐字段构造**（禁止对 `ServerConfig` 展开）+ AST 断言 + 返回值加 `NoCreds<T>` 排除类型（`env?: never` 等）+ 出境类型处禁 `as unknown as`。
-5. **掩码语义三条写死**：①**仅当值等于掩码时**才还原（照 notifier `secretFieldsOf`）；②显式删除用「键缺失」表达、显式清空用空串（"未提交该字段" 与 "清空" 必须区分）；③`{enabled}` 这类部分补丁（`routes-controllers.ts:175/211`）不含凭据键，直接透传，不触发还原。注意现状：客户端清空文本框 = 缺键 → `{...existing, ...patch}` 保留旧值，即 **UI 无法删除凭据**（现状即如此，本轮不改，登记为已知限制）。
+5. **掩码语义三条写死**：①**仅当值等于掩码时**才还原（照 notifier `secretFieldsOf`）；②显式删除用「键缺失」表达、显式清空用空串（"未提交该字段" 与 "清空" 必须区分）；③`{enabled}` 这类部分补丁（来源是客户端 `float/float.ts:149/177` 与 `float/servers.ts:177/213`；宿主侧没有专门分支，走 `routes-controllers.ts:186-187` 的通用 `manager.update` 合并）不含凭据键，直接透传，不触发还原。注意现状：客户端清空文本框 = 缺键 → `{...existing, ...patch}` 保留旧值，即 **UI 无法删除凭据**（现状即如此，本轮不改，登记为已知限制）。
 6. **400 的恢复路径必须给用户**：掩码无原值时返回可读文案（「凭据已变更，请重新输入」）而非裸 400；这是安全设计的可用性闭环，不是可选项。
 
 ### 6.2 出口 × 载体矩阵（全部本轮修完）
@@ -426,15 +449,15 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | # | 出口 | 代码点 | 处置 |
 |---|---|---|---|
 | ① | 4xx 错误响应体（**9 处**响应体复用 `summary()`：`routes-controllers.ts:148/165/179/187/215/234/262/339/394`，修在投影函数即一次覆盖） | `api/routes.ts:59-60` 直出 `error.message`；`src/api/` 零 `createRedactor` | 经 `redactError`（能力由 `api/deps.ts` 声明）；**并且**校验期错误文案不得回显原值（见 ⑦） |
-| ② | `GET /servers` 响应体 + sdk 服务面 | `manager.ts:1143-1151`（`msgOf`）、`:1181-1184`（`supervisor.error.message`）；`apply-services.ts:36/56` 原样 `as McpServerSummary` | 改由 §6.1 的 `projectServerSummary` 构造 |
+| ② | `GET /servers` 响应体 + sdk 服务面 | `manager.ts:1143-1151`（`msgOf`）、`:1181-1184`（`supervisor.error.message`）；`apply-services.ts:39/56` 原样 `as unknown as McpServerSummary` | 改由 §6.1 的 `projectServerSummary` 构造 |
 | ③ | env 展开后的真值 | `transport.ts:25-30` 连接时才展开，`redact.ts:23-27` 只收配置字面量 | 展开时把真值注册进唯一清单（或展开前先脱敏） |
 | ④ | `stats.json` 的 `lastError` | `stats/collector.ts:165`（`slice(0,200)`）+ `:256` 落盘；两个 feeder：`inject/middleware-register.ts:323`、`connection/runtime/supervisor.ts:331` | 两个 feeder 一并收口（只改 collector 会改错层，它拿不到 server 配置） |
-| ⑤ | `POST /servers` 201 与 `PATCH /servers` 200 响应体 | `api/routes-controllers.ts:165`（201）/ `:186`（200）返回 `{ server, summary }`，`server` 来自 `manager.add/update` = 完整 `ServerConfig` | 响应体改为投影后的对象（结构性绕过消失） |
-| ⑥ | stdio stderr 尾巴 | `transport.ts:153` `slice(-4000)` → `protocol.ts:49-53` 拼尾注 → `supervisor.ts:469-472/484/494` 存入 `this.error` → 经 ② 直出。**注意 `new MCPClient(transport)`（`supervisor.ts:406`）不持有 `ServerConfig`** → 「过同一 redactor」没有落点 | **收窄**：尾巴只出**结构化摘要 / 首行**（如退出码 + 命令名），不出全文。理由：`buildChildEnv` 会把父进程里**未命中凭据正则**的变量（`transport.ts:22` 只覆盖 KEY/TOKEN/SECRET/PASSWORD/PASSWD/CREDENTIAL/AUTH，`GITHUB_PAT` 之类不命中）透传给子进程，stderr 回显这类值的通道**即使做了 ③ 也仍然漏**——只能靠收窄载体 |
+| ⑤ | `POST /servers` 201 与 `PATCH /servers` 200 响应体 | `api/routes-controllers.ts:165`（201）/ `:187`（200；`:186` 是 `manager.update` 调用）返回 `{ server, summary }`，`server` 来自 `manager.add/update` = 完整 `ServerConfig` | 响应体改为投影后的对象（结构性绕过消失） |
+| ⑥ | stdio stderr 尾巴 | `transport.ts:153` `slice(-4000)` → `protocol.ts:49-53` 拼尾注 → `supervisor.ts:435/461/467/482-487/494` 存入 `this.error`（`:469-472` 是退避窗口判定，不存 error）→ 经 ② 直出。**注意 `new MCPClient(transport)`（`supervisor.ts:406`）不持有 `ServerConfig`** → 「过同一 redactor」没有落点 | **收窄**：尾巴只出**结构化摘要 / 首行**（如退出码 + 命令名），不出全文。理由：`buildChildEnv` 会把父进程里**未命中凭据正则**的变量（`transport.ts:22` 只覆盖 KEY/TOKEN/SECRET/PASSWORD/PASSWD/CREDENTIAL/AUTH，`GITHUB_PAT` 之类不命中）透传给子进程，stderr 回显这类值的通道**即使做了 ③ 也仍然漏**——只能靠收窄载体 |
 | ⑦ | **校验期回显请求体凭据**（复核新增） | `config/model/normalize.ts:43` 的 `invalid url: <原值>` 文案（拼进 `src.url`）在 `store.upsert` **之前**抛出，`routes.ts:60` 原样写进 400 体（已实测复现 `invalid url: ht tp://user:s3cr3t@host/mcp`） | **结构化错误**：抛错时不回显原值（错误码 + 字段名，如 `invalid url: <redacted>`）；契约测试加正例「提交含明文凭据的非法配置 → 400 body 不含该值」。`redactError` 只认识**已存储**配置，结构上覆盖不到这条 |
-| ⑧ | **supervisor 直呼路径的工具错误返回 + stats 埋点**（复核新增） | `supervisor.ts:330-332` `record(false, msgOf(error)); throw error;`——同一条 message 既进 stats.json 又作为失败文案交给模型；而 `middleware.ts:782-784` 同类路径已有 `hostRedact` | 在 supervisor 边界收口（该 catch 已有 `createRedactor([this.server])` 与埋点），并把 throw 出去的对象换成**已脱敏的 Error**；契约测试覆盖「off/project 模式下直呼失败不含明文」正反例 |
+| ⑧ | **supervisor 直呼路径的工具错误返回 + stats 埋点**（复核新增） | `supervisor.ts:330-332` `record(false, msgOf(error)); throw error;`——同一条 message 既进 stats.json 又作为失败文案交给模型；而 `middleware.ts:782-784` 同类路径已有 `hostRedact` | 在 supervisor 边界收口（**注意**：`330-332` 的 catch 只有埋点、**没有** redactor——`createRedactor([this.server])` 在 `:433` 的另一个 catch），并把 throw 出去的对象换成**已脱敏的 Error**；契约测试覆盖「off/project 模式下直呼失败不含明文」正反例 |
 
-**验收**：`test/integration/redaction-exits.test.ts` 逐条断言六条出口不含明文（含「伪造含 URL 凭据的错误」正反例）；I10 判据②的文本/AST 断言判绿。
+**验收**：`test/integration/redaction-exits.test.ts` 逐条断言 **8 类**出口不含明文（每条**正例 + 反例**，「伪造含 URL 凭据的错误」的反例用于证明断言不空转）；`createRedactor` 构造点计数 == 1 的 AST 断言；6 个落盘点的 mode 断言；I10 判据②（本方案 §二 I10）的文本/AST 断言判绿。探针全清单见 §0.2 末段。
 
 ### 6.3 行为变更
 
@@ -444,7 +467,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 - **载荷形状不变、值域变**：`env/headers/url` 三个键仍在（掩码 + host-only），故 §5.2 的「不改线协议**语义**」应限定为「不改帧名与状态键语义」；**值域变更单独登记**，否则与本节自相矛盾。
 - **客户端回路必须写清**：读（GET /servers 的掩码视图）→ 提交（掩码原样回传 + 新增 `sourceName/sourceScope/sourceRoot`）→ 还原（仅源对象）/ 400（重新输入）。客户端的改动仅限「改名/改归属时带上源身份」，**不改数据源、不改 DTO 形状**。
-- **契约测试的负例清单（已核实干净，防止误伤）**：`GET /health` 纯计数无错误字段（`routes.ts:190-230`）；三个 SSE 帧零负载（`routes.ts:91/103/161`）；`systemPrompt` 是静态文案（`apply.ts:229-234`）；catalog 落盘只写 `tools.size > 0` 的条目，`unavailable` 原因不落盘（`middleware.ts:475-491`）。
+- **契约测试的负例清单（已核实干净，防止误伤）**：`GET /health` 纯计数无错误字段（`routes.ts:168-209`，响应体 `193-206`）；三个 SSE 帧零负载（`routes.ts:91/103/161`）；`systemPrompt` 是静态文案（`apply.ts:229-234`）；catalog 落盘只写 `tools.size > 0` 的条目，`unavailable` 原因不落盘（`middleware.ts:475-491`）。
 - **stats.json 的披露字段**（除 `lastError` 外还有 `disclosure.searches/lists/details`，`collector.ts:176-210`）与 **runtime 注入条目**（`manager.ts:1084-1086` 并入 summary）各加一条正例，避免契约测试按「六条」逐条断言而漏放。
 
 ---
@@ -465,7 +488,8 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 **mode 是本包新增决定（标注）**：参照包 `paths.ts` **没有 mode**、`file-io` 签名也没有 mode 参数，故这不是照搬。采纳理由：权限是**文件的属性**而不是写函数参数的属性，登记在 `paths.ts` 后权限决策从 5 个写点收敛到 1 处（满足 I3/I7）。落地约束与实测依据（复核补充）：
 
-- 五个写点现状：`config/store/store.ts:66` 是**唯一**带 mode 的（`0o600`）；`middleware-state.ts:57/174`、`middleware.ts:497/535`、`manager.ts:192`、`collector.ts:256` 都不传 mode。
+- **七个写点**现状（复核实测）：`config/store/store.ts:66` 是**唯一**带 mode 的（`0o600`）；`middleware-state.ts:57/174`、`middleware.ts:497/535`、`manager.ts:192`、`collector.ts:256` 六个都不传 mode。
+- **目录也要显式 mode（本包新增决定）**：现状 **6 处 `mkdir`** （`store.ts:62`、`manager.ts:189`、`middleware.ts:495`、`middleware-state.ts:55/172`、`collector.ts:252`）全部不传 mode → 目录权限 = `0777 & ~umask`。目标：插件自有目录显式 `0o700`（与 `config.json` 的 `0o600` 同族），避免同机其它用户列举/读取。参照包无 mode 概念，故这条不是照搬，理由同下条。
 - 写路径一律 tmp + rename（`store.ts:64-67` 等）→ **rename 会把目标 inode 换成 tmp inode，目标权限来自写调用，不继承旧目标权限**；不传 mode 时 = `0o666 & ~umask`。
 - 因此：**写函数总是显式传入登记值**（`atomically` 传了 mode 即 `chmod`，不吃 umask）；不依赖「默认复制旧文件 mode」语义。
 - **适用范围**：mode 表只适用于**经写函数落盘**的文件。**目录型旧路径搬家也必须逐文件过写函数**（`readSource → writeTarget`），不得对目录走整目录 `rename`——否则权限由历史分支决定，R3 的对冲在目录路径上失效。
@@ -657,7 +681,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 | 批 | 内容 | 验收（每条都要 exit code） |
 |---|---|---|
-| **B0 契约与接线** | ①目标公共面清单（三面分类，逐符号）写进方案/文档；②`architecture-contract.md` 三分类打标；③**用重构前那棵树生成** `scripts/data/dsh-mcp-manager-export-surface.json` + 手写 `-export-faces.json`（`legacy` = 当前主入口导出全集）；④门禁接线：`contract-check.ts` 加 mcp、`gate-scope-registry.json`（`export-surface-snapshot` 扩 mcp + `forbid-module-state-src` 扩 mcp）、`ci-face-registry.json` 两条数据文件条目、`ci.yml` 的 `dsh-mcp-manager` 面加 `scripts/data/dsh-mcp-manager-*.json` glob（**红线，随本方案 approved**）；⑤`mutation-topology.json`：`src/server/**` 超集段 + facade 重估 + `deps.ts` 的 `type-only` 条、`coverage.config.json` 重估；⑥I8 判据上线（脚本扩展 + 自测 + 数据面范围 + 3 条跨包豁免带 tracking issue）+ §5.3 的 client 判据（**先给 notifier 的 2 条存量写 `gate-exemptions.json` 再 `--write-baseline`**）；⑦`locales.ts` 两行文案降级 + 「客户端产物不含 `~/.dsh`」断言；⑧`--min` 上调；⑨**给 I2① 造执法点**（`verify-dir-imports` 新增质量证据类「目标非 shared 的值边集合」）；⑩`src/placement-math.ts` 迁 `src/shared/` + 客户端与宿主改引；⑪baseline 走 `--snapshot` **前先 build**（判据读 `lib/*.d.ts`），faces **手写**（无生成器） | `pnpm gate:pr` 全绿；`export-surface-snapshot --package dsh-mcp-manager` **exit 0**；`--graph` 基线与当前一致；新判据正反 fixture 双向断言；`test:scripts` 绿（含 `gate-scope-registry.test.ts` / `ci-face-coverage.test.ts`） |
+| **B0 契约与接线** | ①目标公共面清单（三面分类，逐符号）写进方案/文档；②`architecture-contract.md` 三分类打标；③**用重构前那棵树生成** `scripts/data/dsh-mcp-manager-export-surface.json` + 手写 `-export-faces.json`（`legacy` = 当前主入口导出全集）；④门禁接线：`contract-check.ts` 加 mcp、`gate-scope-registry.json`（`export-surface-snapshot` 扩 mcp + `forbid-module-state-src` 扩 mcp，后者**须同笔**在 `gate-exemptions.json` 登记 `src/client/float/panel.ts` 的模块级 `let inflight` 存量豁免——见 §二 I9）、`ci-face-registry.json` 两条数据文件条目、`ci.yml` 的 `dsh-mcp-manager` 面加 `scripts/data/dsh-mcp-manager-*.json` glob（**红线，随本方案 approved**）；⑤`mutation-topology.json`：`src/server/**` 超集段 + facade 重估 + `deps.ts` 的 `type-only` 条、`coverage.config.json` 重估；⑥I8 判据上线（脚本扩展 + 自测 + 数据面范围 + 3 条跨包豁免带 tracking issue）+ §5.3 的 client 判据（**先给 notifier 的 2 条存量写 `gate-exemptions.json` 再 `--write-baseline`**）；⑦`locales.ts` 两行文案降级 + 「客户端产物不含 `~/.dsh`」断言；⑧`--min` 上调；⑨**给 I2① 造执法点**（`verify-dir-imports` 新增质量证据类「目标非 shared 的值边集合」）；⑩`src/placement-math.ts` 迁 `src/shared/` + 客户端与宿主改引；⑪baseline 走 `--snapshot` **前先 build**（判据读 `lib/*.d.ts`），faces **手写**（无生成器） | `pnpm gate:pr` 全绿；`export-surface-snapshot --package dsh-mcp-manager` **exit 0**；`--graph` 基线与当前一致；新判据正反 fixture 双向断言；`test:scripts` 绿（含 `gate-scope-registry.test.ts` / `ci-face-coverage.test.ts`） |
 | **B1 骨架与迁移** | `src/server/` 目录 + 各域 `interface.ts` / `deps.ts` 骨架 + 组合根（`bindHost` / `assemble` / 逆序释放 / 声明合并）+ `upgrade` 六件套 + `paths.ts` 单源（含 mode 表）+ `src/shared/` 五文件 + IO 原语（`atomically`） | 探针证明链路通（apply → install → release 各域标记复位）；迁移测试**五态**；`version` 刻度推进与失败不推进；`pack:check` 对 mcp 判绿 + `THIRD-PARTY-LICENSES` 含 `atomically` / `stubborn-fs` / `stubborn-utils` / `when-exit` |
 | **B2 域重写** | 叶子域（`store/stats/pipeline/config/workspace`）→ 中枢域（`connection/catalog/inject`）→ 出口域（`api/sdk`）；`McpManager` 逐块搬空；**同期完成** D3（凭据单链，含客户端改名带源身份）、D4（取数源同源 + `apiVersion`）、D5（跨端引用改 `src/shared`）；删除 `bootstrap/`；**在删除那一笔内**用 `--snapshot` 重冻结导出面 + **手改 faces**（`legacy` 收缩到三面）+ mutate 段重画 + 72 个未覆盖文件修正**同一笔**（与参照包 `8df3950` 同形） | ①`node scripts/gate/verify-dir-imports.mjs --package dsh-mcp-manager` **exit 0**（含新增的「域间值边」证据项）；②`export-surface-snapshot --package dsh-mcp-manager` **exit 0**（新树、重冻结后）；③投影/脱敏**构造点 = 1** 的源码扫描断言（附正反 fixture）；④基线源码级逐条对账表（`manager/middleware/middleware-register/routes-controllers` 四文件）+ 定向变异；⑤`pnpm cov && pnpm crap --diff <base-ref>`（先声明基准 ref 与判红处置；注意 `strict:false` 下不带 `--diff` 恒 exit 0，且重写后 git 可能认不出 rename → 移动的文件按新增函数判，拆出的高复杂度函数可能判红，需预判） |
 | **B3 收口** | 测试按域落位 + I8 判据存量清零；**逐符号收缩说明**（收缩本身已在 B2 那笔完成，这里只补说明与 `legacy` 终态核对）；契约文档重写与包内 docs 清理（`docs/` 只留有效专项设计 + 归档）；README 中英 + release notes（存储迁移 + 凭据出境 + `apiVersion` + 常量收缩）；注释收口；同时删 `test-surface` 的 `testMutationExemptions` 登记 | `pnpm gate:full` 绿；`uncoveredSrcFiles` 全空；注释验收三条；`docs:check` 绿；导出面快照在**新树**上 exit 0 |
@@ -692,7 +716,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 见 §零 的 D1–D8 表。补充三条口径：
 
-1. **红线授权**：`.github/` 改动 + 新增第三方依赖（`atomically` / `fast-redact`）+ 公共 API 行为变更（§6 / §10.1）由一次 #767 `approved` 覆盖；不引用 `yaml`（#781）的无 approved 先例。
+1. **红线授权**：`.github/` 改动 + 新增第三方依赖（`atomically` 及其传递依赖）+ 公共 API 行为变更（§6 / §10.1）由一次 #767 `approved` 覆盖；`fast-redact` **已撤回**（第 5 条），不在红线清单内；不引用 `yaml`（#781）的无 approved 先例。
 2. **不做 shim**：无过渡 re-export 层，故 B3 只做一次基线重冻结。
 3. **API 版本位**：`ctx.mcpManager` 增 `apiVersion` 字面量（本包首个版本位），退役 / 变更项在 release notes 逐条列出。
 4. **掩码还原用「显式源身份」，不引入不可变 `id`**（本轮）：改名/改归属由客户端在 POST 里带 `sourceName/sourceScope/sourceRoot`，服务端只在源对象上取原值。理由：`id` 会牵动存储迁移（新增一步）、`ServerConfig` 形态、DTO、导出面与 ABI，而它今天的**唯一**消费者就是掩码往返；显式源身份语义更直白（「这个掩码来自哪个对象」）。参照包的不可变 id 是更强的机制，登记为**后续演进项**（若出现同 scope 内复制、批量迁移等需求再做）。
@@ -791,3 +815,200 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 3. 记住三条「未实测」：`pnpm gate:pr` 未实跑、`atomically` 未安装、掩码往返是静态推演——凡涉及它们，先跑探针再下结论。
 4. 本会话已复跑的实测结果（可直接引用，不必重跑）：`verify-dir-imports --graph` **exit 0**（14 叶子 / 33 值边 / 4 模块级环 + 4 文件级环）、`grep -rn '0o600' packages/dsh-mcp-manager/src` 只有 `config/store/store.ts:66`、`grep -c 'new McpManager' test/e2e/smoke.test.ts` = 9、`scripts/data` 无 mcp 基线且 `export-surface-snapshot --package dsh-mcp-manager` **exit 2**（「基线不存在」）、`forbid-module-state-src` 在 worktree 跑 notifier **exit 0**（21 处豁免）。
 5. B0 开工前先把 D.3 第 5、6 两条的正文口径同步进 §二 I9、§十二 B0④ 与附录 A 第 1 条。
+
+---
+
+## 附录 E Port 面与逐域依赖的实测表（第三轮只读测量交付，供 B0 冻结使用）
+
+来源：只读测量 agent 用一次性脚本（全在 `/tmp`，未入仓库）从 `src/**` 反查；方法 = 含 `interface.ts` 的最近祖先目录定义为域（与 §1.1 的「叶子模块 14」一致），消费点 = 剔除 import/export 语句与注释后的标识符出现次数，0 = 死导入。真实 exit code：主脚本 0 / 使用点统计 0 / 替换表 0（首版因域映射缺项 exit 1，补齐后 0）/ 宿主能力表 0；`git status --porcelain -- packages/dsh-mcp-manager/src` = 0 行（未写仓库）。
+
+**与 §3.5 的关系**：§3.5 的示意表作废，以本附录为准。组合根桶 `(root)` 与不存在的 `sdk` 域已从域间表剔除，另在末段单列。
+
+### E.1 域间值能力（100 行）
+| 使用方域 | 被消费方 | 能力名 | 形态 | 消费点 | 代表 文件:行 |
+|---|---|---|---|---|---|
+| api | config | parseClaudeJson | 函数 | 1 | api/routes-controllers.ts:321 |
+| api | workspace | MIDDLEWARE_GLOBAL_ROOT | 常量 | 1 | api/routes-controllers.ts:377 |
+| api | workspace | normalizeMiddlewareMode | 函数 | 1 | api/routes-controllers.ts:107 |
+| api | workspace | normalizeScope | 函数 | 2 | api/routes-controllers.ts:162 |
+| api | workspace | normalizeToolName | 函数 | 1 | api/routes-controllers.ts:392 |
+| api | workspace | parseFullServerName | 函数 | 1 | api/routes-controllers.ts:368 |
+| api | workspace | SCOPE_PROJECT | 常量 | 1 | api/routes-controllers.ts:320 |
+| catalog | connection | CATALOG_TTL_MS | 常量 | 3 | catalog/search.ts:113 |
+| catalog | connection | LIST_DEFAULT_TOOLS_PER_SERVER | 常量 | 1 | catalog/search.ts:198 |
+| catalog | connection | MAX_BYTES_PER_TOOL | 常量 | 2 | catalog/search.ts:374 |
+| catalog | connection | MAX_TOOLS_PER_SERVER | 常量 | 1 | catalog/search.ts:367 |
+| catalog | connection | MAX_TOTAL_CATALOG_BYTES | 常量 | 1 | catalog/search.ts:394 |
+| catalog | store | readCatalogServerFromDisk | 函数 | 1 | catalog/cache-view.ts:101 |
+| catalog | workspace | bareServerName | 函数 | 0（死导入） | catalog/search.ts:17 |
+| catalog | workspace | fullServerName | 函数 | 4 | catalog/search.ts:110 |
+| catalog | workspace | MIDDLEWARE_GLOBAL_ROOT | 常量 | 6 | catalog/cache-view.ts:130 |
+| catalog | workspace | normalizedProjectRoot | 函数 | 1 | catalog/cache-view.ts:125 |
+| catalog | workspace | normalizeToolName | 函数 | 1 | catalog/search.ts:330 |
+| catalog | workspace | parseFullServerName | 函数 | 6 | catalog/search.ts:201 |
+| catalog | workspace | SCOPE_PROJECT | 常量 | 1 | catalog/cache-view.ts:130 |
+| config | catalog | DEFAULT_ANNOUNCE_CATALOG | 常量 | 1 | config/model/config-schema.ts:143 |
+| config | catalog | DEFAULT_CATALOG_MAX_ENTRIES | 常量 | 1 | config/model/config-schema.ts:147 |
+| config | connection | DEFAULT_RESULT_TRUNCATE_BYTES | 常量 | 1 | config/model/config-schema.ts:156 |
+| config | connection | DEFAULT_TOOL_CALL_TIMEOUT_MS | 常量 | 1 | config/model/normalize.ts:58 |
+| config | src/shared（现 root） | clampZIndexBase | 函数 | 1 | config/model/config-schema.ts:89 |
+| config | src/shared（现 root） | DEFAULT_Z_INDEX_BASE | 常量 | 1 | config/model/config-schema.ts:22 |
+| connection | catalog | boundCatalogTools | 函数 | 1 | connection/runtime/middleware.ts:416 |
+| connection | catalog | catalogCacheFile | 函数 | 1 | connection/orchestrator/manager.ts:114 |
+| connection | catalog | isCatalogFresh | 函数 | 1 | connection/runtime/middleware.ts:409 |
+| connection | catalog | makeCatalogViewFor | 函数 | 1 | connection/orchestrator/manager.ts:117 |
+| connection | catalog | summarizeToolDescriptions | 函数 | 1 | connection/orchestrator/manager.ts:183 |
+| connection | config | buildConfigUiPatch | 函数 | 1 | connection/orchestrator/manager.ts:147 |
+| connection | config | normalizeServer | 函数 | 3 | connection/orchestrator/manager.ts:849 |
+| connection | config | normalizeUiConfig | 函数 | 1 | connection/orchestrator/manager.ts:134 |
+| connection | pipeline | createRedactor | 函数 | 7 | connection/runtime/middleware.ts:452 |
+| connection | pipeline | defaultCallResultFallbackText | 函数 | 4 | connection/runtime/middleware.ts:755 |
+| connection | pipeline | isToolDenied | 函数 | 1 | connection/runtime/middleware.ts:647 |
+| connection | pipeline | msgOf | 函数 | 15 | connection/runtime/middleware.ts:500 |
+| connection | pipeline | normalizeArguments | 函数 | 1 | connection/runtime/middleware.ts:665 |
+| connection | pipeline | policyAllows | 函数 | 1 | connection/runtime/middleware.ts:649 |
+| connection | pipeline | policyDenialReason | 函数 | 1 | connection/runtime/middleware.ts:650 |
+| connection | pipeline | projectCallToolResult | 函数 | 4 | connection/runtime/middleware.ts:745 |
+| connection | pipeline | toolDisabledReason | 函数 | 1 | connection/runtime/middleware.ts:655 |
+| connection | pipeline | withTimeout | 函数 | 5 | connection/runtime/middleware.ts:302 |
+| connection | stats | McpStatsCollector | 类 | 2 | connection/orchestrator/manager.ts:87 |
+| connection | store | catalogCacheFileFor | 函数 | 1 | connection/orchestrator/manager.ts:274 |
+| connection | store | loadDisabledTools | 函数 | 1 | connection/orchestrator/manager.ts:307 |
+| connection | store | loadUserState | 函数 | 1 | connection/orchestrator/manager.ts:304 |
+| connection | store | McpStore | 类 | 7 | connection/orchestrator/manager.ts:60 |
+| connection | store | saveDisabledTools | 函数 | 1 | connection/orchestrator/manager.ts:354 |
+| connection | store | saveUserState | 函数 | 6 | connection/orchestrator/manager.ts:268 |
+| connection | store | userStateFile | 函数 | 1 | connection/orchestrator/manager.ts:126 |
+| connection | workspace | bareServerName | 函数 | 0（死导入） | connection/runtime/middleware.ts:41 |
+| connection | workspace | findProjectRoot | 函数 | 2 | connection/orchestrator/manager.ts:406 |
+| connection | workspace | fullServerName | 函数 | 1 | connection/runtime/middleware.ts:646 |
+| connection | workspace | MIDDLEWARE_GLOBAL_ROOT | 常量 | 12 | connection/orchestrator/manager.ts:239 |
+| connection | workspace | normalizedProjectRoot | 函数 | 2 | connection/orchestrator/manager.ts:290 |
+| connection | workspace | normalizeScope | 函数 | 1 | connection/orchestrator/manager.ts:1020 |
+| connection | workspace | normalizeToolName | 函数 | 1 | connection/runtime/middleware.ts:644 |
+| connection | workspace | parseFullServerName | 函数 | 1 | connection/runtime/middleware.ts:602 |
+| connection | workspace | SCOPE_GLOBAL | 常量 | 18 | connection/orchestrator/manager.ts:398 |
+| connection | workspace | SCOPE_PROJECT | 常量 | 15 | connection/orchestrator/manager.ts:412 |
+| inject | catalog | findToolDetail | 函数 | 1 | inject/middleware-register.ts:628 |
+| inject | catalog | listCatalog | 函数 | 2 | inject/middleware-register.ts:476 |
+| inject | catalog | searchCatalogMulti | 函数 | 1 | inject/middleware-register.ts:188 |
+| inject | connection | CALL_TIMEOUT_MS | 常量 | 1 | inject/middleware-register.ts:368 |
+| inject | connection | CONNECT_TIMEOUT_MS | 常量 | 1 | inject/middleware-register.ts:368 |
+| inject | connection | DISCOVERY_TIMEOUT_MS | 常量 | 1 | inject/middleware-register.ts:368 |
+| inject | connection | LIST_DEFAULT_TOOLS_PER_SERVER | 常量 | 2 | inject/middleware-register.ts:431 |
+| inject | connection | LIST_MAX_TOOLS_PER_SERVER | 常量 | 2 | inject/middleware-register.ts:432 |
+| inject | pipeline | isToolDenied | 函数 | 2 | inject/middleware-register.ts:681 |
+| inject | pipeline | policyAllows | 函数 | 1 | inject/middleware-register.ts:682 |
+| inject | pipeline | policyDenialReason | 函数 | 1 | inject/middleware-register.ts:685 |
+| inject | pipeline | toolDisabledReason | 函数 | 3 | inject/middleware-register.ts:688 |
+| inject | pipeline | withTimeout | 函数 | 1 | inject/middleware-register.ts:67 |
+| inject | workspace | fullServerName | 函数 | 2 | inject/middleware-register.ts:680 |
+| inject | workspace | MIDDLEWARE_GLOBAL_ROOT | 常量 | 5 | inject/middleware-register.ts:102 |
+| inject | workspace | parseFullServerName | 函数 | 4 | inject/middleware-register.ts:98 |
+| pipeline | workspace | bareServerName | 函数 | 3 | pipeline/authorize.ts:41 |
+| pipeline | workspace | fullServerName | 函数 | 0（死导入） | pipeline/authorize.ts:11 |
+| pipeline | workspace | MIDDLEWARE_GLOBAL_ROOT | 常量 | 2 | pipeline/authorize.ts:87 |
+| pipeline | workspace | parseFullServerName | 函数 | 1 | pipeline/authorize.ts:82 |
+
+### E.1b 组合根桶 `(root)` 的出境边（清单单列，不属任何域）
+
+| 使用方 | 被消费方 | 能力名 | 形态 | 消费点 | 代表 文件:行 |
+|---|---|---|---|---|---|
+| index（组合根） | api | makeRoutes | 函数 | 1 | bootstrap/apply-runtime.ts:132 |
+| index（组合根） | api | makeEventsRoute | 函数 | 1 | bootstrap/apply-runtime.ts:133 |
+| index（组合根） | api | makeHealthRoute | 函数 | 1 | bootstrap/apply-runtime.ts:134 |
+| index（组合根） | api | uiConfigChangedFrame | 函数 | 1 | bootstrap/apply-config.ts:106 |
+| index（组合根） | catalog | DEFAULT_ANNOUNCE_CATALOG | 常量 | 1 | bootstrap/apply-config.ts:62 |
+| index（组合根） | catalog | DEFAULT_CATALOG_MAX_ENTRIES | 常量 | 1 | bootstrap/apply-config.ts:66 |
+| index（组合根） | catalog | resolveCatalogInjection | 函数 | 1 | bootstrap/apply-runtime.ts:114 |
+| index（组合根） | config | Config | schema | 1 | bootstrap/apply-config.ts:108 |
+| index（组合根） | config | DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS | 常量 | 0（死导入） | bootstrap/apply-config.ts:12 |
+| index（组合根） | connection | DEFAULT_RESULT_TRUNCATE_BYTES | 常量 | 2 | bootstrap/apply.ts:250 |
+| index（组合根） | connection | McpManager | 类 | 0（纯转发） | bootstrap/apply.ts:18 |
+| index（组合根） | inject | registerMiddlewareTools | 函数 | 4 | bootstrap/apply-runtime.ts:70 |
+| index（组合根） | inject | registerDirectMcpGuard | 函数 | 4 | bootstrap/apply-runtime.ts:76 |
+| index（组合根） | store | defaultStorePath | 函数 | 1 | bootstrap/apply-config.ts:35 |
+| index（组合根） | store | loadDisabledTools | 函数 | 1 | bootstrap/apply.ts:185 |
+| index（组合根） | store | McpStore | 类 | 1 | bootstrap/apply.ts:75 |
+| index（组合根） | workspace | makeResolveRoot | 函数 | 1 | bootstrap/apply.ts:172 |
+| index（组合根） | workspace | normalizeMiddlewareMode | 函数 | 15 | bootstrap/apply-config.ts:82 |
+
+注意：`stats` / `types` / `integration` 三域在**值**表上 **0 行**（stats 无跨域值边、types 与 integration 全是 type 边）——这正是 E.4 判它们「不该建 `deps.ts`」的依据；但这**不代表**它们可以省掉注入面：`types` 的 4 个宿主最小面必须在目标形态拆进各域 `deps.ts`。
+
+### E.2 宿主能力面（替代 §3.5 的 HostPorts 块）
+
+| 使用方域 | 宿主能力 | 命中行数 | 代表 文件:行 |
+|---|---|---|---|
+| catalog | HOME 来源 | 2 | catalog/cache-view.ts:13 |
+| connection | ctx / Context | 11 | connection/orchestrator/manager.ts:16 |
+| connection | logger | 25 | connection/orchestrator/manager.ts:63 |
+| connection | 宿主 settings | 1 | connection/orchestrator/manager.ts:145 |
+| connection | 宿主 tools | 6 | connection/orchestrator/manager.ts:18 |
+| connection | dispose | 36 | connection/orchestrator/manager.ts:802 |
+| index（组合根） | ctx / Context | 32 | bootstrap/apply-config.ts:9 |
+| index（组合根） | logger | 5 | bootstrap/apply-runtime.ts:83 |
+| index（组合根） | 宿主 agent 事件面 | 3 | bootstrap/apply-runtime.ts:16 |
+| index（组合根） | 宿主 settings | 19 | bootstrap/apply-config.ts:10 |
+| index（组合根） | 宿主 systemPrompt | 2 | index.ts:33 |
+| index（组合根） | 宿主事件 ctx.on | 1 | bootstrap/apply-runtime.ts:102 |
+| index（组合根） | 服务注册 provide | 4 | bootstrap/apply-services.ts:24 |
+| index（组合根） | dispose | 39 | bootstrap/apply-runtime.ts:34 |
+| index（组合根） | 路由注册 webServer | 2 | index.ts:33 |
+| inject | ctx / Context | 10 | inject/middleware-register.ts:11 |
+| inject | 宿主 agent 事件面 | 7 | inject/middleware-register.ts:12 |
+| inject | 宿主 tools | 2 | inject/middleware-register.ts:12 |
+| inject | 宿主事件 ctx.on | 2 | inject/middleware-register.ts:735 |
+| inject | dispose | 4 | inject/middleware-register.ts:818 |
+| stats | HOME 来源 | 2 | stats/collector.ts:14 |
+| stats | logger（本地结构类型参数，非宿主 LoggerService） | 7 | stats/collector.ts:29 |
+| stats | dispose | 1 | stats/collector.ts:265 |
+| store | HOME 来源 | 5 | config/store/middleware-state.ts:10 |
+| types | ctx / Context（type-only） | 4 | types/host-faces.ts:10 |
+| types | logger（`LoggerService` 类型字段） | 2 | types/host-faces.ts:22 |
+| types | 宿主 tools（type-only） | 1 | types/server.ts:9 |
+| types | dispose（type-only） | 1 | types/middleware-types.ts:53 |
+| workspace | HOME 来源 | 4 | workspace/root-resolution.ts:12 |
+
+四个 `logger` 命中语义不同、**不得合并成一个能力**：`connection` 是 `ctx.logger`（唯一真正从宿主取 logger 的点：`manager.ts:102` 的 `this.logger = ctx.logger`）、`stats` 是本地结构类型参数（由 `manager.ts:127` 的 `new McpStatsCollector({ logger: ctx.logger })` 注入）、`types` 是 `LoggerService` 类型字段、组合根是 `manager.logger` 转发。
+
+### E.3 经对象成员（非 import 符号）消费 —— 必须另立一类
+
+| 使用方域 | 提供方（对象） | 能力 | 形态 | 消费点 | 代表 文件:行 |
+|---|---|---|---|---|---|
+| connection | McpStatsCollector | recordCall | 方法 | 1 | connection/runtime/supervisor.ts:309 |
+| connection | McpStatsCollector | isEnabled | 方法 | 0（仅 Pick 类型） | types/host-faces.ts:30 / supervisor.ts:257 |
+| inject | McpStatsCollector | isEnabled | 方法 | 5 | inject/middleware-register.ts:174 |
+| inject | McpStatsCollector | recordCall | 方法 | 2 | inject/middleware-register.ts:312 |
+| catalog | McpMiddleware | getMiddleware / getCatalogCache | 方法 | 经 CatalogViewHost | catalog/cache-view.ts:31-32 |
+| workspace | McpManager | projectServersFor | 方法 | 1 | workspace/root-resolution.ts:71 |
+| workspace | McpManager | middlewareMode | 属性 | 1 | workspace/root-resolution.ts:66 |
+| api | McpManager / McpStore | 22 个成员（含 `uiUpdate` / `projectStoreOrThrow` / `store` / `sseHub` / `supervisors` / `middleware` / `catalogCache` 等裸对象直取） | 方法/属性 | 43 | api/routes-controllers.ts:148 等 |
+
+§3.5 line 322 已点名「裸对象不算契约」（`api` 直取 `manager.*`）；本表把同一问题在 `workspace`（经 `McpManager` 取两个成员）与 `inject`（经 `McpStatsCollector`）上也点出来——**静态 import 图看不见这一类边**，故 B1 的 `deps.ts` 判据必须以运行时能力消费为准。
+
+### E.4 「实测零对上依赖、因而不该建 `deps.ts`」的域
+
+判据（§3.1 规则 2）：有对上依赖 = 取他域运行时能力或宿主能力才建；仅类型边不算。
+
+| 域 | 他域值边 | 他域类型边 | 宿主包导入 | logger | 判定 |
+|---|---|---|---|---|---|
+| `store`（目标） | 0 | 1（types） | 0 | 0 | **不该建**。依赖 = `node:fs/path/crypto` + 仓库 `shared/dsh-home.ts`；无 `ctx`、无 logger、无他域值引 |
+| `stats` | 0 | 0 | 0 | 7 行（本地结构类型） | **不该建**。自己用 `node:fs` 落盘（`collector.ts:12-14`），不依赖 `store`——§3.4 写的「store（落盘）」实测不成立 |
+| `integration`（目标 `sdk` 的类型面） | 0 | 0 | 0 | 0 | **不该建**。仅 1 条仓库 `shared` 的 type-only 边 + `declare module`。注意 `sdk` 目标域还含服务注册面，今天不存在 |
+| `workspace` | 0 | 2（types、connection） | 0 | 0 | **静态图不该建、运行时该建**（`root-resolution.ts:66/71` 经 `McpManager` 取两个成员）——这是 E.3 的口径冲突点，B0 须先裁决判定口径 |
+| `types` | 0 | 3（stats、config/store、connection） | 3 条 type-only | 2 行 | 有宿主类型依赖；因 §3.4 的 11 域里没有 `types`，先不判，等 B0 定它的去向 |
+
+反之，**必须建 `deps.ts`** 的域：`pipeline`（workspace 3 函数 + 1 常量）／`catalog`（store 1 + connection 5 常量 + workspace 7）／`connection`（config 3 + store 7 + catalog 5 + stats 1 + pipeline 10 + workspace 10 + 宿主 ctx/logger/tools）／`inject`（catalog 3 + connection 5 常量 + pipeline 5 + workspace 3 + 宿主 tools/events/prompt）／`api`（config 1 + workspace 6 + 宿主 `WebRoute` 类型；宿主运行时面实测 0）／`config`（catalog 2 常量 + connection 2 常量 + 仓库 shared 2 值）。`bootstrap` 是装配根，目标并入 `index.ts`。
+
+### E.5 值面上无域外消费者的导出（I4 收口清单）
+
+恰好 3 个，与 §二 I4 的实测一致：`api/interface.ts:10` `queryParam`、`connection/interface.ts:12` `stripMcpPrefix`、`connection/orchestrator/interface.ts:7` `stripMcpPrefix`。其余无消费者导出全在类型面（catalog 4 / config-store 1 / integration 4）。
+
+### E.6 反查的不确定项（B0 需处理）
+
+1. `upgrade` 与 `sdk` 两域今日不存在，两行 `deps` 只能等 B1 建域后重算。
+2. 「消费点数量」用标识符出现次数（唯一可机器复算口径）；对纯 re-export 门面（`connection/interface.ts`）与组合根桶会大量计 0，故域间表已剔除组合根桶。
+3. `pipeline/authorize.ts:11-16` 的 4 个符号按**导入**计是「3 函数 + 1 常量」，按**实际使用**计是 2 函数 + 1 常量（`fullServerName` 死导入）——B0 需选定一个口径（建议按实际使用计，与 E.3 的运行时口径一致）。
+4. 域定义取「含 `interface.ts` 的最近祖先目录」，`client/**` 全程排除（14 个文件未统计）；如需 client 侧反查须另跑。
+5. 逐域 logger 命中给了行数与词出现数两套，只有行数口径能复现复核的 connection 25 / stats 7；本附录统一用行数口径。
+6. `types/host-faces.ts` 的 4 个宿主最小面（`ManagerLite` / `RoutesManager` / `MiddlewareHost` / `SupervisorLite`）是今日唯一把宿主能力写成类型的地方，目标形态要拆进各域 `deps.ts`——B0 冻结时应作为 `types` 域去向的输入。
