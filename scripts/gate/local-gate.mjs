@@ -343,10 +343,12 @@ function main(argv) {
   if (!failed) {
     // #742 阶段 3.2：本地三档都不跑变异，而 PR 上变异自 #742 阶段 1 起按命中切片**强制**跑
     // （打不打 gate:full 标签都跑）。不点明的话「本地 PASS」很容易被读成「CI 也会绿」，
-    // 而这正是本地门禁最贵的一种误读——变异不达标只在 CI 上暴露。
+    // 而这正是本地门禁最贵的一种误读——变异不达标只在 CI 上暴露。覆盖率同属本地默认缺口：
+    // 只有 full --with-coverage 才跑（全仓产物闸相反，pr / full 档内已经跑完）。
     console.log(
-      "[local-gate] 注意：本档不含变异与全仓覆盖率。变异在 PR 上按命中切片强制跑（#742 阶段 1），" +
-        "覆盖率与全仓产物闸归 gate:full 标签与夜间 observe.yml —— 本地 PASS 不等于 CI 绿。",
+      "[local-gate] 注意：本地任何档都不跑变异——变异在 PR 上按命中切片强制跑（#742 阶段 1）；" +
+        "覆盖率默认也不跑，要跑需显式 `pnpm gate:full --with-coverage`（CI 上归 gate:full 标签与" +
+        "夜间 observe.yml）。全仓产物闸不属该缺口：pr / full 档内已跑完。本地 PASS 不等于 CI 绿。",
     );
   }
   return failed ? 1 : 0;
