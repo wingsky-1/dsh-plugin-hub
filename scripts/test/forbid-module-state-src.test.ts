@@ -3,7 +3,7 @@
 /** forbid-module-state-src.mjs 自测（#733 M2c 后续 N2a）：正反例 + 登记豁免 + 台账腐烂 + fail-closed。 */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -241,8 +241,16 @@ test("扫描面：.tsx 也在扫描面内（客户端入口形态）", () => {
 test("本仓真实快照：client/index.tsx 的 7 处模块级 var 全部走登记豁免 → exit 0", () => {
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  // 包面含 dsh-lan-proxy（#765 扩面，实测零命中后才扩）：范围变了此断言先红，提示复核扩面依据。
-  assert.match(r.stdout, /OK（扫描 \d+ 文件，包 dsh-lan-proxy, dsh-notifier，登记豁免 7 处）/);
+  // 扫描面按注册表（单一事实源）逐字回显，故期望值也从注册表取：把包名写死在这里，
+  // 「往扫描面加一个包」会先红在形态上，而不是红在真正的判据上（本用例守的是下面两条）。
+  const registry = JSON.parse(
+    readFileSync(join(ROOT, "scripts", "data", "gate-scope-registry.json"), "utf8"),
+  );
+  const scope = registry.gates.find((g) => g.gate === "forbid-module-state-src");
+  assert.match(
+    r.stdout,
+    new RegExp(`OK（扫描 \\d+ 文件，包 ${scope.packages.join(", ")}，登记豁免 7 处）`),
+  );
   // 7 处与豁免台账是同一个数字的两面：客户端 var 数量变了、或台账条目被删，
   // 此断言先红并提示同步台账（scripts/data/gate-exemptions.json）与 #762。
   // #765 批次已把同文件的 14 处常量 var 改 const，故从 21 降到 7（余下皆为真·可变绑定）。

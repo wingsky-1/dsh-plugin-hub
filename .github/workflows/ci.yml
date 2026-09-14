@@ -166,6 +166,9 @@ jobs:
               - 'packages/dsh-worktree-sidebar/**'
               - 'stryker.conf.d/dsh-worktree-sidebar*.json'
               - 'vitest.stryker.d/dsh-worktree-sidebar.config.ts'
+              # #819：包级数据资产（导出面基线与分类登记）与 dsh-notifier 的
+              # scripts/data/dsh-notifier-*.json 同型，用同一 glob 形态收进本包面
+              - 'scripts/data/dsh-worktree-sidebar-*.json'
             dsh-mcp-manager:
               - 'packages/dsh-mcp-manager/**'
               - 'stryker.conf.d/dsh-mcp-manager*.json'

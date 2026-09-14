@@ -454,6 +454,14 @@ S0–S5 全部落地；独立复核（第二轮）的四项必修 P0-1 / P0-2 / 
 4. **修掉 P0-3**（真机验证暴露的会话快照源接错面），三条界面语义在隔离真机上全部成立，见 §16.1。
 5. 顺带修掉一处历史写入事故：`scope/impl/resolve/index.ts` 与本文档里残留的 `%BT%` 占位符（构建产物 `.d.ts` 里也有），
    以及本 PR 自建的 `test/tsconfig.json` 编译不过（46 处类型错误，测试目录不在包 typecheck 面内所以一直没暴露）。
+6. **门禁复用面收口（复用 notifier 同套扫描）**：`forbid-module-state-src` 的扫描面此前只有 `dsh-notifier`，
+   本包根本不在那条**常驻**判据里（P1-3 那 5 处模块级单例当初只被一次性手工探针发现，正是这个代价）。
+   现登记为 `["dsh-notifier", "dsh-worktree-sidebar"]`；实测扫描 103 → 144 文件、exit 0、本包零条目、无需任何豁免。
+7. **本包数据资产进 CI 包面**：`.github/workflows/ci.yml` 的 `dsh-worktree-sidebar` filters 补
+   `scripts/data/dsh-worktree-sidebar-*.json`（与 notifier 的 `scripts/data/dsh-notifier-*.json` 同型），
+   同时把 `ci-face-registry.json` 里那条从「豁免」改为本包面——此后改导出面基线会触发本包切片，
+   与常驻的 `contract` 产物闸不冲突。实测：`gate-scope-registry` 5/5、`ci-face-coverage` 8/8、
+   `workflow-assert` 43/43 全过。
 
 ### 17.3 未完成（下一会话的待办，按建议顺序）
 
@@ -466,9 +474,12 @@ S0–S5 全部落地；独立复核（第二轮）的四项必修 P0-1 / P0-2 / 
    （五个门面现在各 11–20 行，最大的是 `api/deps.ts` 30 行）。**仍未裁决的是全包 src 合计**：
    实测 2533 行 vs 既有上限 1200（2.1 倍）。复核建议把合计登记为观察阈值、并把 §9 语义改为
    「超限先问这文件里有几个决定」。**本文件未擅自改写 §9 的既有上限，等用户裁决。**
-4. **`.github/workflows/ci.yml` 的授权记录**：复核者指出该授权只存在于 PR 正文陈述，无法独立核实；
-   按仓库规则 `.github/` 属红线。本会话**没有新增任何 `.github/` 改动**（导出面门禁的接入点改在
-   `scripts/gate/contract-check.ts`，属 `scripts/gate/**` 的全局面），授权记录仍待补。
+4. **`.github/workflows/ci.yml` 的授权记录**：已落地（见 17.2 第 6、7 条）。第二次真机复核前我**没有**改 `.github/`；
+   导出面门禁的接入点当时放在 `scripts/gate/contract-check.ts`（属 `scripts/gate/**` 全局面）以回避红线。
+   维护者就「复用 notifier 同套门禁扫描」明确采纳后，才新增本包的
+   `scripts/data/dsh-worktree-sidebar-*.json` filters 行。**仍缺一条仓库规则要求的可审计记录**
+   （issue 内方案评论 + `needs-proposal-review` / `approved` 标签）：本次授权只有对话记录，
+   需要走完整流程的话请在 PR #819 内追一条说明评论。
 
 ### 17.4 方法论缺口（本轮明确暴露）
 

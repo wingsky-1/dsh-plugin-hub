@@ -118,8 +118,8 @@
     },
     {
       "path": "scripts/data/dsh-worktree-sidebar-*.json",
-      "faces": [],
-      "why": "包级数据资产（#819）：导出面基线与导出面分类登记，消费方都是常驻的产物闸 contract（scripts/gate/contract-check.ts spawn export-surface-snapshot.mjs），改动在本 PR 上即被消费；它不改变任何 filters，与 scripts/data/ci-face-registry.json 自身同类。"
+      "faces": ["dsh-worktree-sidebar"],
+      "why": "包级数据资产（#819）：导出面基线与导出面分类登记，与 dsh-notifier 的同类条目（scripts/data/dsh-notifier-*.json）同型。归本包面后，改基线即触发本包切片（ci.yml 的 dsh-worktree-sidebar filters 已登记 scripts/data/dsh-worktree-sidebar-*.json）；消费方仍是常驻的产物闸 contract（contract-check.ts spawn export-surface-snapshot.mjs），两者不冲突。"
     },
     {
       "path": "scripts/data/dsh-lan-proxy-ui-exempt.json",
