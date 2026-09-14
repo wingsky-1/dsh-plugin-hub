@@ -24,6 +24,9 @@ export function apply(): void {}
 
 // issue #698：「打开文件」→ 官方右侧栏预览的重定向纯逻辑（DOM-free，客户端装配经
 // src/client/present-open-redirect.ts 引用，此处透出供 smoke/单测直测）。
+//
+// 直引包内跨端共享面而非某个端内面：组合根是唯一装配点、不属任何域，没有「本端」可依托；
+// 这是四层引用链对组合根的显式例外，其余文件一律逐层向下。
 export {
   PRESENT_OPEN_PATH,
   PENDING_TTL_MS,
@@ -32,5 +35,5 @@ export {
   fileAddressFor,
   looksLikeFilePath,
   usablePending,
-} from "./present-open.ts";
-export type { PendingEntry } from "./present-open.ts";
+} from "./shared/interface.ts";
+export type { PendingEntry } from "./shared/interface.ts";
