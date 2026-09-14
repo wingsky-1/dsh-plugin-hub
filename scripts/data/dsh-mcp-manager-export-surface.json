@@ -1,0 +1,1909 @@
+{
+  "package": "dsh-mcp-manager",
+  "exports": [
+    {
+      "name": "BREAKPOINT_NARROW_MAX",
+      "isType": false
+    },
+    {
+      "name": "BREAKPOINT_TABLET_MAX",
+      "isType": false
+    },
+    {
+      "name": "CALL_TIMEOUT_MS",
+      "isType": false
+    },
+    {
+      "name": "CATALOG_ENTRY_MAX_CHARS",
+      "isType": false
+    },
+    {
+      "name": "CATALOG_LRU_MAX",
+      "isType": false
+    },
+    {
+      "name": "CATALOG_SECTION_NAME",
+      "isType": false
+    },
+    {
+      "name": "CATALOG_SOURCE_PLUGIN",
+      "isType": false
+    },
+    {
+      "name": "CATALOG_SUMMARY_MAX_CHARS",
+      "isType": false
+    },
+    {
+      "name": "CATALOG_SUMMARY_PER_TOOL_CHARS",
+      "isType": false
+    },
+    {
+      "name": "CATALOG_TTL_MS",
+      "isType": false
+    },
+    {
+      "name": "CONNECT_TIMEOUT_MS",
+      "isType": false
+    },
+    {
+      "name": "CallResultTextHandlers",
+      "isType": true
+    },
+    {
+      "name": "ClientUiConfig",
+      "isType": true
+    },
+    {
+      "name": "Config",
+      "isType": false
+    },
+    {
+      "name": "ConnectionSupervisor",
+      "isType": false
+    },
+    {
+      "name": "DEFAULT_ANNOUNCE_CATALOG",
+      "isType": false
+    },
+    {
+      "name": "DEFAULT_CATALOG_MAX_ENTRIES",
+      "isType": false
+    },
+    {
+      "name": "DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS",
+      "isType": false
+    },
+    {
+      "name": "DEFAULT_RESULT_TRUNCATE_BYTES",
+      "isType": false
+    },
+    {
+      "name": "DEFAULT_TOOL_CALL_TIMEOUT_MS",
+      "isType": false
+    },
+    {
+      "name": "DEFAULT_UI_CONFIG",
+      "isType": false
+    },
+    {
+      "name": "DEFAULT_Z_INDEX_BASE",
+      "isType": false
+    },
+    {
+      "name": "DISCOVERY_TIMEOUT_MS",
+      "isType": false
+    },
+    {
+      "name": "DebugConfig",
+      "isType": true
+    },
+    {
+      "name": "DisabledToolsMap",
+      "isType": true
+    },
+    {
+      "name": "FloatBreakpoint",
+      "isType": true
+    },
+    {
+      "name": "HttpTransport",
+      "isType": false
+    },
+    {
+      "name": "LIST_DEFAULT_TOOLS_PER_SERVER",
+      "isType": false
+    },
+    {
+      "name": "LIST_MAX_TOOLS_PER_SERVER",
+      "isType": false
+    },
+    {
+      "name": "ListCatalogResult",
+      "isType": true
+    },
+    {
+      "name": "ListServerEntry",
+      "isType": true
+    },
+    {
+      "name": "ListToolEntry",
+      "isType": true
+    },
+    {
+      "name": "MAX_BYTES_PER_TOOL",
+      "isType": false
+    },
+    {
+      "name": "MAX_TOOLS_PER_SERVER",
+      "isType": false
+    },
+    {
+      "name": "MAX_TOTAL_CATALOG_BYTES",
+      "isType": false
+    },
+    {
+      "name": "MCPClient",
+      "isType": false
+    },
+    {
+      "name": "MCP_GUIDANCE",
+      "isType": false
+    },
+    {
+      "name": "MCP_SECTION_ORDER",
+      "isType": false
+    },
+    {
+      "name": "MIDDLEWARE_GLOBAL_ROOT",
+      "isType": false
+    },
+    {
+      "name": "McpManager",
+      "isType": false
+    },
+    {
+      "name": "McpManagerServerInput",
+      "isType": true
+    },
+    {
+      "name": "McpManagerService",
+      "isType": true
+    },
+    {
+      "name": "McpMiddleware",
+      "isType": false
+    },
+    {
+      "name": "McpStatsCollector",
+      "isType": false
+    },
+    {
+      "name": "McpStatsSnapshot",
+      "isType": true
+    },
+    {
+      "name": "McpStore",
+      "isType": false
+    },
+    {
+      "name": "MiddlewareMode",
+      "isType": true
+    },
+    {
+      "name": "MiddlewarePolicy",
+      "isType": true
+    },
+    {
+      "name": "ProgressiveDisclosureStats",
+      "isType": true
+    },
+    {
+      "name": "ProjectUnit",
+      "isType": true
+    },
+    {
+      "name": "ProjectedCallResult",
+      "isType": true
+    },
+    {
+      "name": "RECONNECT_DEFAULTS",
+      "isType": false
+    },
+    {
+      "name": "ROUTES",
+      "isType": false
+    },
+    {
+      "name": "ReconnectPolicy",
+      "isType": true
+    },
+    {
+      "name": "RectLike",
+      "isType": true
+    },
+    {
+      "name": "SCOPE_GLOBAL",
+      "isType": false
+    },
+    {
+      "name": "SCOPE_PROJECT",
+      "isType": false
+    },
+    {
+      "name": "SERVER_NAME_PATTERN",
+      "isType": false
+    },
+    {
+      "name": "SSE_HEARTBEAT_MS",
+      "isType": false
+    },
+    {
+      "name": "SSE_PING_FRAME",
+      "isType": false
+    },
+    {
+      "name": "SearchHit",
+      "isType": true
+    },
+    {
+      "name": "ServerConfig",
+      "isType": true
+    },
+    {
+      "name": "ServerStats",
+      "isType": true
+    },
+    {
+      "name": "ServerStatus",
+      "isType": true
+    },
+    {
+      "name": "StdioTransport",
+      "isType": false
+    },
+    {
+      "name": "ToolCallMetric",
+      "isType": true
+    },
+    {
+      "name": "ToolDetail",
+      "isType": true
+    },
+    {
+      "name": "UiPlacementConfig",
+      "isType": true
+    },
+    {
+      "name": "ViewportPoint",
+      "isType": true
+    },
+    {
+      "name": "Z_INDEX_BASE_MAX",
+      "isType": false
+    },
+    {
+      "name": "Z_INDEX_BASE_MIN",
+      "isType": false
+    },
+    {
+      "name": "Z_INDEX_PANEL_DELTA",
+      "isType": false
+    },
+    {
+      "name": "apply",
+      "isType": false
+    },
+    {
+      "name": "assertSupportedOutputSchema",
+      "isType": false
+    },
+    {
+      "name": "bottomAnchorEdge",
+      "isType": false
+    },
+    {
+      "name": "boundCatalogTools",
+      "isType": false
+    },
+    {
+      "name": "breakpointForWidth",
+      "isType": false
+    },
+    {
+      "name": "broadcastFrame",
+      "isType": false
+    },
+    {
+      "name": "buildConfigUiPatch",
+      "isType": false
+    },
+    {
+      "name": "buildToolDefinition",
+      "isType": false
+    },
+    {
+      "name": "catalogCacheFile",
+      "isType": false
+    },
+    {
+      "name": "catalogCacheFileFor",
+      "isType": false
+    },
+    {
+      "name": "catalogHistory",
+      "isType": false
+    },
+    {
+      "name": "clampPointToViewport",
+      "isType": false
+    },
+    {
+      "name": "clampZIndexBase",
+      "isType": false
+    },
+    {
+      "name": "composeCatalogEntries",
+      "isType": false
+    },
+    {
+      "name": "composerDockedAtBottom",
+      "isType": false
+    },
+    {
+      "name": "createRedactor",
+      "isType": false
+    },
+    {
+      "name": "createTransport",
+      "isType": false
+    },
+    {
+      "name": "defaultCallResultFallbackText",
+      "isType": false
+    },
+    {
+      "name": "defaultStatsPath",
+      "isType": false
+    },
+    {
+      "name": "defaultStorePath",
+      "isType": false
+    },
+    {
+      "name": "digestCatalogEntries",
+      "isType": false
+    },
+    {
+      "name": "escapeCatalogText",
+      "isType": false
+    },
+    {
+      "name": "expandEnv",
+      "isType": false
+    },
+    {
+      "name": "findCatalogMessage",
+      "isType": false
+    },
+    {
+      "name": "findProjectRoot",
+      "isType": false
+    },
+    {
+      "name": "findToolDetail",
+      "isType": false
+    },
+    {
+      "name": "fromClaudeEntry",
+      "isType": false
+    },
+    {
+      "name": "fullServerName",
+      "isType": false
+    },
+    {
+      "name": "globMatch",
+      "isType": false
+    },
+    {
+      "name": "inject",
+      "isType": false
+    },
+    {
+      "name": "isCatalogFresh",
+      "isType": false
+    },
+    {
+      "name": "isCatalogSource",
+      "isType": false
+    },
+    {
+      "name": "isLoopbackRequest",
+      "isType": false
+    },
+    {
+      "name": "isToolDenied",
+      "isType": false
+    },
+    {
+      "name": "listCatalog",
+      "isType": false
+    },
+    {
+      "name": "loadDisabledTools",
+      "isType": false
+    },
+    {
+      "name": "loadUserState",
+      "isType": false
+    },
+    {
+      "name": "makeEventsRoute",
+      "isType": false
+    },
+    {
+      "name": "makeHealthRoute",
+      "isType": false
+    },
+    {
+      "name": "makeMiddlewareHotSwitch",
+      "isType": false
+    },
+    {
+      "name": "makeResolveRoot",
+      "isType": false
+    },
+    {
+      "name": "makeRoutes",
+      "isType": false
+    },
+    {
+      "name": "msgOf",
+      "isType": false
+    },
+    {
+      "name": "name",
+      "isType": false
+    },
+    {
+      "name": "normalizeArguments",
+      "isType": false
+    },
+    {
+      "name": "normalizeMiddlewareMode",
+      "isType": false
+    },
+    {
+      "name": "normalizeScope",
+      "isType": false
+    },
+    {
+      "name": "normalizeServer",
+      "isType": false
+    },
+    {
+      "name": "normalizeToolName",
+      "isType": false
+    },
+    {
+      "name": "normalizeUiConfig",
+      "isType": false
+    },
+    {
+      "name": "normalizedProjectRoot",
+      "isType": false
+    },
+    {
+      "name": "panelAnchorForPosition",
+      "isType": false
+    },
+    {
+      "name": "panelTopForAnchor",
+      "isType": false
+    },
+    {
+      "name": "panelZIndexFor",
+      "isType": false
+    },
+    {
+      "name": "parseClaudeJson",
+      "isType": false
+    },
+    {
+      "name": "parseDisabledTools",
+      "isType": false
+    },
+    {
+      "name": "parseFullServerName",
+      "isType": false
+    },
+    {
+      "name": "parseSsePayload",
+      "isType": false
+    },
+    {
+      "name": "policyAllows",
+      "isType": false
+    },
+    {
+      "name": "policyDenialReason",
+      "isType": false
+    },
+    {
+      "name": "projectCallToolResult",
+      "isType": false
+    },
+    {
+      "name": "publicToolName",
+      "isType": false
+    },
+    {
+      "name": "readCatalogEntries",
+      "isType": false
+    },
+    {
+      "name": "readCatalogServerFromDisk",
+      "isType": false
+    },
+    {
+      "name": "readJsonBody",
+      "isType": false
+    },
+    {
+      "name": "registerDirectMcpGuard",
+      "isType": false
+    },
+    {
+      "name": "registerMiddlewareTools",
+      "isType": false
+    },
+    {
+      "name": "renderMcpCatalogMessage",
+      "isType": false
+    },
+    {
+      "name": "renderMcpCatalogUpdate",
+      "isType": false
+    },
+    {
+      "name": "resolveCatalogEntries",
+      "isType": false
+    },
+    {
+      "name": "resolveCatalogInjection",
+      "isType": false
+    },
+    {
+      "name": "resolveDebugConfig",
+      "isType": false
+    },
+    {
+      "name": "resolveMiddlewareMode",
+      "isType": false
+    },
+    {
+      "name": "resolveReconnect",
+      "isType": false
+    },
+    {
+      "name": "saveDisabledTools",
+      "isType": false
+    },
+    {
+      "name": "saveUserState",
+      "isType": false
+    },
+    {
+      "name": "scoreTool",
+      "isType": false
+    },
+    {
+      "name": "searchCatalog",
+      "isType": false
+    },
+    {
+      "name": "searchCatalogMulti",
+      "isType": false
+    },
+    {
+      "name": "sseData",
+      "isType": false
+    },
+    {
+      "name": "summarizeToolDescriptions",
+      "isType": false
+    },
+    {
+      "name": "toolDisabledReason",
+      "isType": false
+    },
+    {
+      "name": "truncateText",
+      "isType": false
+    },
+    {
+      "name": "uiConfigChangedFrame",
+      "isType": false
+    },
+    {
+      "name": "userStateFile",
+      "isType": false
+    },
+    {
+      "name": "withTimeout",
+      "isType": false
+    },
+    {
+      "name": "writeJson",
+      "isType": false
+    }
+  ],
+  "declBlocks": [
+    "export declare class ConnectionSupervisor { manager: ManagerLite; server: ServerConfig; scope: string; client: MCPClient | undefined; transport: StdioTransport | HttpTransport | undefined; toolDisposers: Map<string, () => void>; reconnectTimer: NodeJS.Timeout | undefined; failedAttempts: number; connectedAt: number | undefined; disposed: boolean; status: string; error: unknown; tools: string[]; toolMeta: Map<string, { description?: unknown; }>; syncChain: Promise<unknown>; reconnectPolicy: ReconnectPolicy; constructor(manager: ManagerLite, server: ServerConfig, scope?: string); setStatus(status: string, error?: unknown): void; enqueueSync<T>(doSync: () => Promise<T> | T): Promise<T>; connect(opts?: { startup?: boolean; }): Promise<void>; teardownGeneration(error: unknown, schedule?: boolean): void; scheduleReconnect(error: unknown): void; syncTools(client: MCPClient, startup: boolean): Promise<void>; disconnect(): Promise<void>; }",
+    "export declare class HttpTransport { url: string; headers: Record<string, string>; readonly sdk: StreamableHTTPClientTransport; constructor(url: string, headers?: Record<string, string>); connect(): Promise<void>; onClose(handler: (error: Error) => void): void; close(): Promise<void>; }",
+    "export declare class MCPClient { transport: StdioTransport | HttpTransport; client: Client | undefined; constructor(transport: StdioTransport | HttpTransport); initialize(): Promise<unknown>; listTools(cursor?: string): Promise<{ [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; \"io.modelcontextprotocol/related-task\"?: { taskId: string; } | undefined; } | undefined; nextCursor?: string | undefined; tools: { description?: string | undefined; inputSchema: { [x: string]: unknown; type: \"object\"; properties?: Record<string, object> | undefined; required?: string[] | undefined; }; outputSchema?: { [x: string]: unknown; type: \"object\"; properties?: Record<string, object> | undefined; required?: string[] | undefined; } | undefined; annotations?: { title?: string | undefined; readOnlyHint?: boolean | undefined; destructiveHint?: boolean | undefined; idempotentHint?: boolean | undefined; openWorldHint?: boolean | undefined; } | undefined; execution?: { taskSupport?: \"forbidden\" | \"optional\" | \"required\" | undefined; } | undefined; _meta?: Record<string, unknown> | undefined; icons?: { src: string; mimeType?: string | undefined; sizes?: string[] | undefined; theme?: \"dark\" | \"light\" | undefined; }[] | undefined; name: string; title?: string | undefined; }[]; }>; callTool(rawName: string, args?: unknown, opts?: { signal?: AbortSignal; timeoutMs?: number; }): Promise<{ [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; \"io.modelcontextprotocol/related-task\"?: { taskId: string; } | undefined; } | undefined; }>; requireClient(): Client; }",
+    "export declare class McpManager { ctx: Context; store: McpStore; supervisors: Map<string, ConnectionSupervisor>; listeners: Set<() => void>; logger: LoggerService; projectRoot: string | undefined; projectStore: McpStore | undefined; reconcileBusy: boolean; projectStores: Map<string, McpStore>; enhancement: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number; }; catalogCache: CatalogCache; catalogCachePath: string; uiConfigSource: () => any; uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>; sseHub?: SseHub; middlewareMode: MiddlewareMode; middleware: McpMiddleware | undefined; userStatePath: string; stats: McpStatsCollector; runtimeRegistry: Map<string, ServerConfig>; private registerQueue; private catalogViewResolver; constructor(ctx: Context, store: McpStore); uiConfig(): ClientUiConfig; updateUiConfig(raw: unknown): Promise<ClientUiConfig>; loadCatalogCache(): Promise<void>; recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown; }>): Promise<void>; onStatus(handler: () => void): () => void; private redactError; private statusTimer; emitStatus(): void; projectStoreOrThrow(): Promise<McpStore>; projectServersFor(root: string): Promise<ServerConfig[] | undefined>; isRuntimeServer(name: string): boolean; isGlobalServer(name: string): boolean; globalServers(): ServerConfig[]; saveUserState(units: Map<string, ProjectUnit>): Promise<void>; catalogCachePathFor(root: string): string; initMiddleware(mode: MiddlewareMode, policy: Record<string, unknown>): Promise<McpMiddleware>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; setMiddlewareMode?: (mode: MiddlewareMode) => Promise<void>; setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void>; projectStoreFor(root: string | undefined): Promise<McpStore | undefined>; catalogServersFor(cwd: string | undefined): Promise<Map<string, { server: ServerConfig; scope: string; }>>; catalogViewFor(cwd: string | undefined, servers: Map<string, { server: ServerConfig; scope: string; }>): Promise<CatalogCache>; setSession(cwd: string | undefined): Promise<void>; resumeReconnect(): Promise<void>; refreshFromDisk(): Promise<void>; reconcileServers(): boolean; startAll(): Promise<void>; start(name: string, scope?: string, directConfig?: ServerConfig): void; private middlewareTakes; private touchGlobalUnit; private ensureMiddlewareServer; private dropMiddlewareConnection; stop(name: string): void; registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean; }>; unregisterServer(name: string): Promise<void>; add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>; update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>; remove(name: string, scope?: string): Promise<void>; connect(name: string, scope?: string, directConfig?: ServerConfig): Promise<void>; disconnect(name: string, scope?: string): Promise<void>; reconnect(name: string, scope?: string): Promise<void>; summary(): Record<string, unknown>; private middlewareUnitFor; summarize(server: ServerConfig, scope: string): Record<string, unknown>; dispose(): Promise<void>; }",
+    "export declare class McpMiddleware { host: MiddlewareHost; units: Map<string, ProjectUnit>; policy: MiddlewarePolicy; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; constructor(host: MiddlewareHost, policy?: MiddlewarePolicy); projectUnitFor(root: string | undefined): Promise<ProjectUnit | undefined>; ensureConnected(root: string, serverName: string, opts?: { force?: boolean; }): Promise<void>; abandonInFlight(serverName: string): void; private connectInternal; private scheduleReconnect; private scheduleProbeRetry; discover(root: string, serverName: string): Promise<void>; private projectWrappedCatalog; private redact; private listToolsAll; persistCatalog(root: string): Promise<void>; removeCatalogEntry(root: string, serverName: string): Promise<void>; loadCatalogCache(root: string): Promise<void>; callTool(fullName: string, toolRaw: string, rawArgs: unknown, signal: AbortSignal | undefined, agent?: unknown): Promise<unknown>; private hostRedact; private allServers; evictIfNeeded(maxUnits?: number): void; teardownUnit(root: string): void; dispose(): Promise<void>; }",
+    "export declare class McpStatsCollector { private enabled; private filePath; private logger?; private startedAt; private updatedAt; private servers; private disclosure; private flushTimer?; private isDirty; constructor(options?: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void; debug?: (msg: string) => void; }; }); configure(options: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void; }; }): void; isEnabled(): boolean; private loadExisting; recordCall(server: string, tool: string, durationMs: number, success: boolean, errorMsg?: string): void; recordSearch(query: string): void; recordList(serverFilter?: string): void; recordDetail(server: string, tool: string): void; snapshot(): McpStatsSnapshot; private scheduleFlush; flushSync(): void; dispose(): void; }",
+    "export declare class McpStore { path: string; data: { version: number; servers: ServerConfig[]; }; mtimeMs: number | undefined; constructor(path: string); load(): Promise<void>; save(): Promise<void>; changedOnDisk(): Promise<boolean>; reloadIfChanged(): Promise<boolean>; find(name: string): ServerConfig | undefined; upsert(server: ServerConfig): void; remove(name: string): void; }",
+    "export declare class StdioTransport { command: string; args: string[]; env: Record<string, unknown>; cwd: string | undefined; readonly sdk: StdioClientTransport; stderrTail: string; closeReason: Error; constructor(config: { command: string; args?: string[]; env?: Record<string, unknown>; cwd?: string; }); connect(): Promise<void>; onClose(handler: (error: Error) => void): void; close(): Promise<void>; }",
+    "export declare const API: { servers: string; connect: string; disconnect: string; reconnect: string; importJson: string; session: string; resume: string; config: string; events: string; health: string; toolDisable: string; };",
+    "export declare const CALL_TIMEOUT_MS = 30000;",
+    "export declare const CATALOG_ENTRY_MAX_CHARS = 180;",
+    "export declare const CATALOG_LRU_MAX = 16;",
+    "export declare const CATALOG_SECTION_NAME = \"mcp-catalog\";",
+    "export declare const CATALOG_SOURCE_PLUGIN = \"@wingsky-1/dsh-mcp-manager\";",
+    "export declare const CATALOG_SUMMARY_MAX_CHARS = 240;",
+    "export declare const CATALOG_SUMMARY_PER_TOOL_CHARS = 120;",
+    "export declare const CATALOG_TTL_MS: number;",
+    "export declare const CONNECT_TIMEOUT_MS = 10000;",
+    "export declare const Config: z<{ enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; enhanceEmptyDescriptions: boolean; resultTruncateBytes: number; middleware: \"off\" | \"project\" | \"all\"; middlewarePolicy: Record<string, unknown>; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; }",
+    "export declare const DEFAULT_ANNOUNCE_CATALOG = true;",
+    "export declare const DEFAULT_CATALOG_MAX_ENTRIES = 6;",
+    "export declare const DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS = true;",
+    "export declare const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;",
+    "export declare const DEFAULT_TOOL_CALL_TIMEOUT_MS = 15000;",
+    "export declare const DEFAULT_UI_CONFIG: UiPlacementConfig;",
+    "export declare const DEFAULT_Z_INDEX_BASE = 10;",
+    "export declare const DISCOVERY_TIMEOUT_MS = 10000;",
+    "export declare const LIST_DEFAULT_TOOLS_PER_SERVER = 50;",
+    "export declare const LIST_MAX_TOOLS_PER_SERVER = 500;",
+    "export declare const MAX_BYTES_PER_TOOL = 4096;",
+    "export declare const MAX_TOOLS_PER_SERVER = 512;",
+    "export declare const MAX_TOTAL_CATALOG_BYTES: number;",
+    "export declare const MCP_GUIDANCE: string;",
+    "export declare const MCP_SECTION_ORDER = 160;",
+    "export declare const MIDDLEWARE_GLOBAL_ROOT = \"@global\";",
+    "export declare const RECONNECT_DEFAULTS: Readonly<{ enabled: true; initialDelayMs: 500; maxDelayMs: 30000; maxAttempts: 10; }",
+    "export declare const ROUTES: { servers: string; config: string; session: string; resume: string; connect: string; disconnect: string; reconnect: string; importJson: string; events: string; health: string; toolDisable: string; };",
+    "export declare const SCOPE_GLOBAL = \"global\";",
+    "export declare const SCOPE_PROJECT = \"project\";",
+    "export declare const SERVER_NAME_PATTERN: RegExp;",
+    "export declare const SSE_HEARTBEAT_MS = 30000;",
+    "export declare const SSE_PING_FRAME: string;",
+    "export declare const STATUS_ORDER: { key: string; titleKey: McpLocaleKey; dot: string; }",
+    "export declare const STATUS_TEXT: Record<string, McpLocaleKey>;",
+    "export declare const en: Record<McpLocaleKey, string>;",
+    "export declare const inject: string[];",
+    "export declare const inject: string[];",
+    "export declare const name = \"mcp-manager\";",
+    "export declare const zh: { readonly stConnected: \"运行中\"; readonly stConnecting: \"连接中\"; readonly stReconnecting: \"重连中\"; readonly stStopped: \"未连接\"; readonly stDisabled: \"已停用\"; readonly stFailed: \"失败\"; readonly connect: \"连接\"; readonly disconnect: \"断开\"; readonly reconnect: \"重连\"; readonly enable: \"启用\"; readonly enableAndConnect: \"启用并连接\"; readonly disable: \"禁用\"; readonly edit: \"编辑\"; readonly delete: \"删除\"; readonly save: \"保存\"; readonly cancel: \"取消\"; readonly refresh: \"刷新\"; readonly close: \"关闭\"; readonly cancelEdit: \"取消编辑\"; readonly saveFail: \"保存失败：{msg}\"; readonly actionFail: \"操作失败：{msg}\"; readonly loadFail: \"加载失败：{msg}\"; readonly floatAriaLabel: \"MCP 管理器\"; readonly floatTitle: \"MCP 管理器（点击展开）\"; readonly floatManage: \"管理\"; readonly floatEmpty: \"没有 MCP 服务器，点「管理」添加\"; readonly floatGlobalSession: \"全局会话\"; readonly groupProject: \"项目级\"; readonly groupGlobal: \"全局\"; readonly badgeScopeProject: \"项目\"; readonly badgeScopeGlobal: \"全局\"; readonly globalToolHint: \"全局工具开关需在 all 模式（中间层全量接管）下管理——切 all 模式可管理全局工具\"; readonly serverMeta: \"{status} · {tools} 工具\"; readonly toolsCount: \"工具（{n}）\"; readonly toolsCountPlain: \"{n} 工具\"; readonly statusGroupCount: \"{status}（{n}）\"; readonly panelTitle: \"MCP 管理器\"; readonly tabServers: \"服务器\"; readonly tabQuickAdd: \"快速接入\"; readonly countsConnected: \"运行中 {n}\"; readonly countsConnecting: \"连接中 {n}\"; readonly countsFailed: \"失败 {n}\"; readonly countsSummary: \"共 {n} 台 · {parts}\"; readonly countsSummaryOnly: \"共 {n} 台\"; readonly addServer: \"添加服务器\"; readonly editServer: \"编辑服务器：{name}\"; readonly nameLabel: \"服务器名称（唯一，作为 mcp__<name>__ 前缀）\"; readonly ownershipLabel: \"归属\"; readonly transportLabel: \"传输类型\"; readonly commandLabel: \"命令（stdio）\"; readonly argsLabel: \"参数（逗号分隔）\"; readonly envLabel: \"环境变量（每行 KEY=VALUE，支持 ${ENV} 引用，值为空则继承父环境）\"; readonly cwdLabel: \"工作目录（可选）\"; readonly urlLabel: \"URL（streamable-http）\"; readonly headersLabel: \"请求头（每行 KEY: VALUE，支持 ${ENV} 引用）\"; readonly enabledLabel: \"启用（保存后立即连接）\"; readonly scopeProjectOpt: \"项目级（<项目>/.dsh/mcp.json，随会话切换）\"; readonly scopeGlobalOpt: \"全局（~/.dsh/dsh-mcp.json）\"; readonly transportStdioOpt: \"stdio（本地子进程）\"; readonly transportHttpOpt: \"streamable-http（远程）\"; readonly envPlaceholder: \"每行 KEY=VALUE，如\\nCONTEXT7_API_KEY=${CONTEXT7_API_KEY}\"; readonly headersPlaceholder: \"每行 KEY: VALUE，支持 ${ENV} 引用，如\\nAuthorization: Bearer ${CONTEXT7_API_KEY}\"; readonly cwdPlaceholder: \"可选工作目录\"; readonly pasteTitle: \"粘贴 mcpServers JSON 导入\"; readonly importJson: \"导入 JSON\"; readonly importedOk: \"已导入：{names}\"; readonly importedNone: \"（无）\"; readonly importSkipped: \"跳过（已存在）：{names}\"; readonly importFail: \"导入失败：{msg}\"; readonly serversEmpty: \"还没有配置 MCP 服务器。切到「快速接入」页添加，或粘贴 mcpServers JSON 导入。\"; readonly confirmDelete: \"删除 MCP 服务器「{name}」？\"; readonly settingsLoading: \"MCP 管理器：加载中…\"; readonly settingsName: \"MCP 管理器（dsh-mcp-manager）\"; readonly settingsDescription: \"浮窗位置 / 水平·垂直·空白偏移\"; readonly anchorLabel: \"锚点\"; readonly posTopRight: \"右上（top-right）\"; readonly posTopLeft: \"左上（top-left）\"; readonly posBottomRight: \"右下（bottom-right）\"; readonly posBottomLeft: \"左下（bottom-left）\"; readonly modeLabel: \"中间层模式\"; readonly modeProject: \"project（项目级走中间层，推荐）\"; readonly modeAll: \"all（全局也走中间层）\"; readonly modeOff: \"off（全部直呼 mcp__ 工具）\"; readonly offsetX: \"水平偏移\"; readonly offsetY: \"垂直偏移\"; readonly blankY: \"空白偏移\"; readonly zIndexBase: \"层级基准\"; readonly settingsHint: \"保存即热更新：浮窗位置即时生效；中间层模式切换即时生效并持久化（无需重启 dsh web）。\"; readonly savingNow: \"保存中…\"; readonly settingsSavedOk: \"已保存——浮窗位置与中间层模式即时生效（无需重启）\"; };",
+    "export declare function SettingsCard(): JSX.Element;",
+    "export declare function actionButton(label: any, onClick: any, primary?: boolean, danger?: boolean): any;",
+    "export declare function api(path: any, options?: any): Promise<any>;",
+    "export declare function apply(ctx: Context, config: Record<string, unknown> | undefined): Promise<void>;",
+    "export declare function apply(ctx: any): void;",
+    "export declare function assertSupportedOutputSchema(schema: unknown): unknown;",
+    "export declare function bareServerName(name: string): string;",
+    "export declare function beginEdit(state: McpState, actions: UiActions, server: any): void;",
+    "export declare function bindSession(ctx: any, state: McpState, actions: UiActions): () => void;",
+    "export declare function boundCatalogTools(tools: Iterable<{ name?: unknown; description?: unknown; inputSchema?: unknown; }",
+    "export declare function broadcastFrame(connections: SseHub | Set<ServerResponse> | undefined, frame: string): void;",
+    "export declare function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
+    "export declare function buildConfigUiPatch(raw: unknown): UiPlacementConfig;",
+    "export declare function buildConnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
+    "export declare function buildDisconnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
+    "export declare function buildImportJsonRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
+    "export declare function buildQuickAdd(state: McpState, actions: UiActions): any;",
+    "export declare function buildReconnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
+    "export declare function buildResumeRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
+    "export declare function buildServersRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
+    "export declare function buildSessionRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
+    "export declare function buildToolDefinition(client: MCPClient, tool: Record<string, unknown>, server: ServerConfig, opts?: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number; stats?: Pick<McpStatsCollector, \"isEnabled\" | \"recordCall\">; }",
+    "export declare function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
+    "export declare function catalogCacheFile(): string;",
+    "export declare function catalogCacheFileFor(root: string): string;",
+    "export declare function catalogHistory(agent: CatalogAgent | undefined): CatalogHistoryResult;",
+    "export declare function close(state: McpState): void;",
+    "export declare function composeCatalogEntries(supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache): CatalogEntry[];",
+    "export declare function conversationHost(): any;",
+    "export declare function createEmptyDisposers(): ApplyDisposers;",
+    "export declare function createRedactor(servers: readonly ServerConfig[]): (error: unknown) => string;",
+    "export declare function createState(): McpState;",
+    "export declare function createTransport(server: ServerConfig): StdioTransport | HttpTransport;",
+    "export declare function currentCwdBody(state: McpState): Record<string, string>;",
+    "export declare function cwdQueryOf(state: McpState): string;",
+    "export declare function defaultCallResultFallbackText(result: unknown): string;",
+    "export declare function defaultStatsPath(): string;",
+    "export declare function defaultStorePath(): string;",
+    "export declare function digestCatalogEntries(entries: CatalogEntry[]): string;",
+    "export declare function disposePanel(state: McpState): void;",
+    "export declare function el(tag: any, attrs?: any, children?: any): any;",
+    "export declare function endpointOf(server: any): string;",
+    "export declare function escapeCatalogText(value: unknown): string;",
+    "export declare function expandEnv(value: unknown): string;",
+    "export declare function fillForm(state: McpState, fill: any): void;",
+    "export declare function findCatalogMessage(messages: CatalogMessage[]): CatalogMessage | undefined;",
+    "export declare function findProjectRoot(cwd: string | undefined): Promise<string>;",
+    "export declare function findToolDetail(units: Map<string, ProjectUnit>, root: string, server: string, tool: string): ToolDetail;",
+    "export declare function floatTopOffset(ctx: any, state: McpState): number;",
+    "export declare function formScopeValue(state: McpState): string;",
+    "export declare function fromClaudeEntry(name: string, entry: Record<string, unknown>): ServerConfig;",
+    "export declare function fullServerName(root: string, server: string): string;",
+    "export declare function globMatch(pattern: string, name: string): boolean;",
+    "export declare function injectSettingsSink(ctx: Context, manager: McpManager): void;",
+    "export declare function installConfigSettings(ctx: Context, manager: McpManager, config: Record<string, unknown> | undefined, syncMiddlewareFromSettings: () => void): void;",
+    "export declare function isCatalogFresh(catalog: CatalogServer | undefined): boolean;",
+    "export declare function isCatalogSource(source: { kind?: unknown; plugin?: unknown; }",
+    "export declare function isToolDenied(disabledTools: DisabledToolsMap | undefined, policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): boolean;",
+    "export declare function listCatalog(units: Map<string, ProjectUnit>, roots: readonly string[], serverFilter: string | undefined, toolLimit: number, mode: string, emptyHint: string, disabledTools?: DisabledToolsMap): ListCatalogResult;",
+    "export declare function loadDisabledTools(file: string): Promise<DisabledToolsMap>;",
+    "export declare function loadUserState(file: string): Promise<Map<string, Set<string>>>;",
+    "export declare function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver;",
+    "export declare function makeEventsRoute(manager: RoutesManager, options?: { heartbeatMs?: number; maxConnections?: number; }",
+    "export declare function makeHealthRoute(manager: RoutesManager): WebRoute;",
+    "export declare function makeMiddlewareHotSwitch(manager: McpManager, middlewarePolicy: Record<string, unknown> | undefined, resolveRoot: (agent: unknown) => Promise<string | undefined>, dispose: { current: () => void; }",
+    "export declare function makeResolveRoot(manager: McpManager): (agent: unknown) => Promise<string | undefined>;",
+    "export declare function makeRoutes(manager: RoutesManager, cwd?: string): WebRoute[];",
+    "export declare function mountFloat(ctx: any, state: McpState, actions: UiActions): () => void;",
+    "export declare function msgOf(error: unknown): string;",
+    "export declare function normalizeArguments(raw: unknown): unknown;",
+    "export declare function normalizeMiddlewareMode(value: unknown): MiddlewareMode;",
+    "export declare function normalizeScope(value: string): \"global\" | \"project\";",
+    "export declare function normalizeServer(input: unknown): ServerConfig;",
+    "export declare function normalizeToolName(serverName: string, toolName: string, caller?: string): string;",
+    "export declare function normalizeUiConfig(raw: unknown): ClientUiConfig;",
+    "export declare function normalizedProjectRoot(cwd: string | undefined): Promise<string | undefined>;",
+    "export declare function panelHost(): any;",
+    "export declare function panelZIndexFor(base: number): number;",
+    "export declare function parseClaudeJson(text: string): ServerConfig[];",
+    "export declare function parseDisabledTools(raw: unknown): DisabledToolsMap;",
+    "export declare function parseFullServerName(name: string): { root: string; server: string; }",
+    "export declare function parseKV(text: any): Record<string, string>;",
+    "export declare function parseSsePayload(text: string, id: unknown): unknown;",
+    "export declare function placePanel(state: McpState): void;",
+    "export declare function policyAllows(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): boolean;",
+    "export declare function policyDenialReason(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): string | undefined;",
+    "export declare function projectCallToolResult(result: unknown, handlers?: CallResultTextHandlers): ProjectedCallResult;",
+    "export declare function provideMcpManagerService(ctx: Context, manager: McpManager): void;",
+    "export declare function publicToolName(serverName: string, rawName: string): string;",
+    "export declare function queryParam(url: URL, name: string): string | undefined;",
+    "export declare function readCatalogEntries(source: { entries?: unknown; }",
+    "export declare function readCatalogServerFromDisk(file: string, serverName: string): Promise<PersistedCatalogServer | undefined>;",
+    "export declare function readForm(state: McpState): any;",
+    "export declare function rebindSession(state: McpState): Promise<unknown>;",
+    "export declare function refresh(state: McpState, actions: UiActions): Promise<boolean>;",
+    "export declare function registerCatalogInjection(ctx: Context, manager: McpManager, catalogMaxEntries: number): () => void;",
+    "export declare function registerDirectMcpGuard(ctx: Context, disabledTools: DisabledToolsMap | undefined, resolveRoot: (agent: unknown) => Promise<string | undefined>): (() => void) | undefined;",
+    "export declare function registerMiddlewareTools(ctx: Context, mw: McpMiddleware, resolveRoot: (agent: unknown) => Promise<string | undefined>, mode?: MiddlewareMode, options?: { disabledTools?: DisabledToolsMap; stats?: McpStatsCollector; }",
+    "export declare function renderFloatPanel(state: McpState, actions: UiActions): void;",
+    "export declare function renderMcpCatalogMessage(entries: CatalogEntry[], mode?: string): CatalogMessage;",
+    "export declare function renderMcpCatalogUpdate(entries: CatalogEntry[], mode?: string): CatalogMessage;",
+    "export declare function renderPill(state: McpState): void;",
+    "export declare function renderServer(server: any, state: McpState, actions: UiActions, opts?: { tools: boolean; openTools?: Set<string>; }",
+    "export declare function renderServers(state: McpState, actions: UiActions): void;",
+    "export declare function resetForm(state: McpState): void;",
+    "export declare function resolveApplyOptions(config: Record<string, unknown> | undefined, settingsSource?: unknown): ApplyOptions;",
+    "export declare function resolveCatalogEntries(source: CatalogSourceLike | undefined): CatalogEntry[] | undefined;",
+    "export declare function resolveCatalogInjection(decision: CatalogDecision, messages: CatalogMessage[], supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache, agent?: CatalogAgent, mode?: string): CatalogDecision;",
+    "export declare function resolveDebugConfig(config: Record<string, unknown> | undefined, settingsSource?: unknown): DebugConfig;",
+    "export declare function resolveMiddlewareMode(manager: McpManager, fallbackRaw: string | undefined): ReturnType<typeof normalizeMiddlewareMode>;",
+    "export declare function resolveReconnect(config: Record<string, unknown> | undefined): ReconnectPolicy;",
+    "export declare function resolveStorePath(config: Record<string, unknown> | undefined): string;",
+    "export declare function saveDisabledTools(file: string, disabledTools: DisabledToolsMap): Promise<void>;",
+    "export declare function saveForm(state: McpState, actions: UiActions): Promise<void>;",
+    "export declare function saveUserState(file: string, units: Map<string, ProjectUnit>): Promise<void>;",
+    "export declare function scoreTool(query: string, server: string, toolName: string, tool: CatalogTool): { score: number; matchedTerms: string[]; };",
+    "export declare function searchCatalog(units: Map<string, ProjectUnit>, root: string, query: string, limit: number): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string; }>; truncated: boolean; };",
+    "export declare function searchCatalogMulti(units: Map<string, ProjectUnit>, roots: readonly string[], query: string, limit: number): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string; }>; truncated: boolean; };",
+    "export declare function setupConfigWatchersAsync(manager: McpManager): Promise<() => void>;",
+    "export declare function setupRoutesAndBroadcast(ctx: Context, manager: McpManager): () => void;",
+    "export declare function showPanel(state: McpState, actions: UiActions): void;",
+    "export declare function statusDot(status: string): string;",
+    "export declare function stripMcpPrefix(registeredName: string, serverName: string): string;",
+    "export declare function summarizeToolDescriptions(toolMeta: Map<string, { description?: unknown; }",
+    "export declare function switchTab(state: McpState, actions: UiActions, tab: any): void;",
+    "export declare function tStatus(status: string): string;",
+    "export declare function toggleFloat(state: McpState, actions: UiActions, force?: boolean): void;",
+    "export declare function toolDisableServerKey(server: any, state: McpState): string | undefined;",
+    "export declare function toolDisabledReason(serverKey: string, tool: string): string;",
+    "export declare function truncateText(text: unknown, maxBytes: number): unknown;",
+    "export declare function uiConfigChangedFrame(): string;",
+    "export declare function userStateFile(): string;",
+    "export declare function withTimeout<T>(promise: Promise<T>, ms: number, message: string, signal?: AbortSignal): Promise<T>;"
+  ],
+  "entries": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "exports": [
+        {
+          "name": "BREAKPOINT_NARROW_MAX",
+          "isType": false
+        },
+        {
+          "name": "BREAKPOINT_TABLET_MAX",
+          "isType": false
+        },
+        {
+          "name": "CALL_TIMEOUT_MS",
+          "isType": false
+        },
+        {
+          "name": "CATALOG_ENTRY_MAX_CHARS",
+          "isType": false
+        },
+        {
+          "name": "CATALOG_LRU_MAX",
+          "isType": false
+        },
+        {
+          "name": "CATALOG_SECTION_NAME",
+          "isType": false
+        },
+        {
+          "name": "CATALOG_SOURCE_PLUGIN",
+          "isType": false
+        },
+        {
+          "name": "CATALOG_SUMMARY_MAX_CHARS",
+          "isType": false
+        },
+        {
+          "name": "CATALOG_SUMMARY_PER_TOOL_CHARS",
+          "isType": false
+        },
+        {
+          "name": "CATALOG_TTL_MS",
+          "isType": false
+        },
+        {
+          "name": "CONNECT_TIMEOUT_MS",
+          "isType": false
+        },
+        {
+          "name": "CallResultTextHandlers",
+          "isType": true
+        },
+        {
+          "name": "ClientUiConfig",
+          "isType": true
+        },
+        {
+          "name": "Config",
+          "isType": false
+        },
+        {
+          "name": "ConnectionSupervisor",
+          "isType": false
+        },
+        {
+          "name": "DEFAULT_ANNOUNCE_CATALOG",
+          "isType": false
+        },
+        {
+          "name": "DEFAULT_CATALOG_MAX_ENTRIES",
+          "isType": false
+        },
+        {
+          "name": "DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS",
+          "isType": false
+        },
+        {
+          "name": "DEFAULT_RESULT_TRUNCATE_BYTES",
+          "isType": false
+        },
+        {
+          "name": "DEFAULT_TOOL_CALL_TIMEOUT_MS",
+          "isType": false
+        },
+        {
+          "name": "DEFAULT_UI_CONFIG",
+          "isType": false
+        },
+        {
+          "name": "DEFAULT_Z_INDEX_BASE",
+          "isType": false
+        },
+        {
+          "name": "DISCOVERY_TIMEOUT_MS",
+          "isType": false
+        },
+        {
+          "name": "DebugConfig",
+          "isType": true
+        },
+        {
+          "name": "DisabledToolsMap",
+          "isType": true
+        },
+        {
+          "name": "FloatBreakpoint",
+          "isType": true
+        },
+        {
+          "name": "HttpTransport",
+          "isType": false
+        },
+        {
+          "name": "LIST_DEFAULT_TOOLS_PER_SERVER",
+          "isType": false
+        },
+        {
+          "name": "LIST_MAX_TOOLS_PER_SERVER",
+          "isType": false
+        },
+        {
+          "name": "ListCatalogResult",
+          "isType": true
+        },
+        {
+          "name": "ListServerEntry",
+          "isType": true
+        },
+        {
+          "name": "ListToolEntry",
+          "isType": true
+        },
+        {
+          "name": "MAX_BYTES_PER_TOOL",
+          "isType": false
+        },
+        {
+          "name": "MAX_TOOLS_PER_SERVER",
+          "isType": false
+        },
+        {
+          "name": "MAX_TOTAL_CATALOG_BYTES",
+          "isType": false
+        },
+        {
+          "name": "MCPClient",
+          "isType": false
+        },
+        {
+          "name": "MCP_GUIDANCE",
+          "isType": false
+        },
+        {
+          "name": "MCP_SECTION_ORDER",
+          "isType": false
+        },
+        {
+          "name": "MIDDLEWARE_GLOBAL_ROOT",
+          "isType": false
+        },
+        {
+          "name": "McpManager",
+          "isType": false
+        },
+        {
+          "name": "McpManagerServerInput",
+          "isType": true
+        },
+        {
+          "name": "McpManagerService",
+          "isType": true
+        },
+        {
+          "name": "McpMiddleware",
+          "isType": false
+        },
+        {
+          "name": "McpStatsCollector",
+          "isType": false
+        },
+        {
+          "name": "McpStatsSnapshot",
+          "isType": true
+        },
+        {
+          "name": "McpStore",
+          "isType": false
+        },
+        {
+          "name": "MiddlewareMode",
+          "isType": true
+        },
+        {
+          "name": "MiddlewarePolicy",
+          "isType": true
+        },
+        {
+          "name": "ProgressiveDisclosureStats",
+          "isType": true
+        },
+        {
+          "name": "ProjectUnit",
+          "isType": true
+        },
+        {
+          "name": "ProjectedCallResult",
+          "isType": true
+        },
+        {
+          "name": "RECONNECT_DEFAULTS",
+          "isType": false
+        },
+        {
+          "name": "ROUTES",
+          "isType": false
+        },
+        {
+          "name": "ReconnectPolicy",
+          "isType": true
+        },
+        {
+          "name": "RectLike",
+          "isType": true
+        },
+        {
+          "name": "SCOPE_GLOBAL",
+          "isType": false
+        },
+        {
+          "name": "SCOPE_PROJECT",
+          "isType": false
+        },
+        {
+          "name": "SERVER_NAME_PATTERN",
+          "isType": false
+        },
+        {
+          "name": "SSE_HEARTBEAT_MS",
+          "isType": false
+        },
+        {
+          "name": "SSE_PING_FRAME",
+          "isType": false
+        },
+        {
+          "name": "SearchHit",
+          "isType": true
+        },
+        {
+          "name": "ServerConfig",
+          "isType": true
+        },
+        {
+          "name": "ServerStats",
+          "isType": true
+        },
+        {
+          "name": "ServerStatus",
+          "isType": true
+        },
+        {
+          "name": "StdioTransport",
+          "isType": false
+        },
+        {
+          "name": "ToolCallMetric",
+          "isType": true
+        },
+        {
+          "name": "ToolDetail",
+          "isType": true
+        },
+        {
+          "name": "UiPlacementConfig",
+          "isType": true
+        },
+        {
+          "name": "ViewportPoint",
+          "isType": true
+        },
+        {
+          "name": "Z_INDEX_BASE_MAX",
+          "isType": false
+        },
+        {
+          "name": "Z_INDEX_BASE_MIN",
+          "isType": false
+        },
+        {
+          "name": "Z_INDEX_PANEL_DELTA",
+          "isType": false
+        },
+        {
+          "name": "apply",
+          "isType": false
+        },
+        {
+          "name": "assertSupportedOutputSchema",
+          "isType": false
+        },
+        {
+          "name": "bottomAnchorEdge",
+          "isType": false
+        },
+        {
+          "name": "boundCatalogTools",
+          "isType": false
+        },
+        {
+          "name": "breakpointForWidth",
+          "isType": false
+        },
+        {
+          "name": "broadcastFrame",
+          "isType": false
+        },
+        {
+          "name": "buildConfigUiPatch",
+          "isType": false
+        },
+        {
+          "name": "buildToolDefinition",
+          "isType": false
+        },
+        {
+          "name": "catalogCacheFile",
+          "isType": false
+        },
+        {
+          "name": "catalogCacheFileFor",
+          "isType": false
+        },
+        {
+          "name": "catalogHistory",
+          "isType": false
+        },
+        {
+          "name": "clampPointToViewport",
+          "isType": false
+        },
+        {
+          "name": "clampZIndexBase",
+          "isType": false
+        },
+        {
+          "name": "composeCatalogEntries",
+          "isType": false
+        },
+        {
+          "name": "composerDockedAtBottom",
+          "isType": false
+        },
+        {
+          "name": "createRedactor",
+          "isType": false
+        },
+        {
+          "name": "createTransport",
+          "isType": false
+        },
+        {
+          "name": "defaultCallResultFallbackText",
+          "isType": false
+        },
+        {
+          "name": "defaultStatsPath",
+          "isType": false
+        },
+        {
+          "name": "defaultStorePath",
+          "isType": false
+        },
+        {
+          "name": "digestCatalogEntries",
+          "isType": false
+        },
+        {
+          "name": "escapeCatalogText",
+          "isType": false
+        },
+        {
+          "name": "expandEnv",
+          "isType": false
+        },
+        {
+          "name": "findCatalogMessage",
+          "isType": false
+        },
+        {
+          "name": "findProjectRoot",
+          "isType": false
+        },
+        {
+          "name": "findToolDetail",
+          "isType": false
+        },
+        {
+          "name": "fromClaudeEntry",
+          "isType": false
+        },
+        {
+          "name": "fullServerName",
+          "isType": false
+        },
+        {
+          "name": "globMatch",
+          "isType": false
+        },
+        {
+          "name": "inject",
+          "isType": false
+        },
+        {
+          "name": "isCatalogFresh",
+          "isType": false
+        },
+        {
+          "name": "isCatalogSource",
+          "isType": false
+        },
+        {
+          "name": "isLoopbackRequest",
+          "isType": false
+        },
+        {
+          "name": "isToolDenied",
+          "isType": false
+        },
+        {
+          "name": "listCatalog",
+          "isType": false
+        },
+        {
+          "name": "loadDisabledTools",
+          "isType": false
+        },
+        {
+          "name": "loadUserState",
+          "isType": false
+        },
+        {
+          "name": "makeEventsRoute",
+          "isType": false
+        },
+        {
+          "name": "makeHealthRoute",
+          "isType": false
+        },
+        {
+          "name": "makeMiddlewareHotSwitch",
+          "isType": false
+        },
+        {
+          "name": "makeResolveRoot",
+          "isType": false
+        },
+        {
+          "name": "makeRoutes",
+          "isType": false
+        },
+        {
+          "name": "msgOf",
+          "isType": false
+        },
+        {
+          "name": "name",
+          "isType": false
+        },
+        {
+          "name": "normalizeArguments",
+          "isType": false
+        },
+        {
+          "name": "normalizeMiddlewareMode",
+          "isType": false
+        },
+        {
+          "name": "normalizeScope",
+          "isType": false
+        },
+        {
+          "name": "normalizeServer",
+          "isType": false
+        },
+        {
+          "name": "normalizeToolName",
+          "isType": false
+        },
+        {
+          "name": "normalizeUiConfig",
+          "isType": false
+        },
+        {
+          "name": "normalizedProjectRoot",
+          "isType": false
+        },
+        {
+          "name": "panelAnchorForPosition",
+          "isType": false
+        },
+        {
+          "name": "panelTopForAnchor",
+          "isType": false
+        },
+        {
+          "name": "panelZIndexFor",
+          "isType": false
+        },
+        {
+          "name": "parseClaudeJson",
+          "isType": false
+        },
+        {
+          "name": "parseDisabledTools",
+          "isType": false
+        },
+        {
+          "name": "parseFullServerName",
+          "isType": false
+        },
+        {
+          "name": "parseSsePayload",
+          "isType": false
+        },
+        {
+          "name": "policyAllows",
+          "isType": false
+        },
+        {
+          "name": "policyDenialReason",
+          "isType": false
+        },
+        {
+          "name": "projectCallToolResult",
+          "isType": false
+        },
+        {
+          "name": "publicToolName",
+          "isType": false
+        },
+        {
+          "name": "readCatalogEntries",
+          "isType": false
+        },
+        {
+          "name": "readCatalogServerFromDisk",
+          "isType": false
+        },
+        {
+          "name": "readJsonBody",
+          "isType": false
+        },
+        {
+          "name": "registerDirectMcpGuard",
+          "isType": false
+        },
+        {
+          "name": "registerMiddlewareTools",
+          "isType": false
+        },
+        {
+          "name": "renderMcpCatalogMessage",
+          "isType": false
+        },
+        {
+          "name": "renderMcpCatalogUpdate",
+          "isType": false
+        },
+        {
+          "name": "resolveCatalogEntries",
+          "isType": false
+        },
+        {
+          "name": "resolveCatalogInjection",
+          "isType": false
+        },
+        {
+          "name": "resolveDebugConfig",
+          "isType": false
+        },
+        {
+          "name": "resolveMiddlewareMode",
+          "isType": false
+        },
+        {
+          "name": "resolveReconnect",
+          "isType": false
+        },
+        {
+          "name": "saveDisabledTools",
+          "isType": false
+        },
+        {
+          "name": "saveUserState",
+          "isType": false
+        },
+        {
+          "name": "scoreTool",
+          "isType": false
+        },
+        {
+          "name": "searchCatalog",
+          "isType": false
+        },
+        {
+          "name": "searchCatalogMulti",
+          "isType": false
+        },
+        {
+          "name": "sseData",
+          "isType": false
+        },
+        {
+          "name": "summarizeToolDescriptions",
+          "isType": false
+        },
+        {
+          "name": "toolDisabledReason",
+          "isType": false
+        },
+        {
+          "name": "truncateText",
+          "isType": false
+        },
+        {
+          "name": "uiConfigChangedFrame",
+          "isType": false
+        },
+        {
+          "name": "userStateFile",
+          "isType": false
+        },
+        {
+          "name": "withTimeout",
+          "isType": false
+        },
+        {
+          "name": "writeJson",
+          "isType": false
+        }
+      ],
+      "blocks": {
+        "buildConfigRoute": [
+          "export declare function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;"
+        ],
+        "buildConnectRoute": [
+          "export declare function buildConnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;"
+        ],
+        "buildDisconnectRoute": [
+          "export declare function buildDisconnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;"
+        ],
+        "buildImportJsonRoute": [
+          "export declare function buildImportJsonRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;"
+        ],
+        "buildReconnectRoute": [
+          "export declare function buildReconnectRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;"
+        ],
+        "buildResumeRoute": [
+          "export declare function buildResumeRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;"
+        ],
+        "buildServersRoute": [
+          "export declare function buildServersRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;"
+        ],
+        "buildSessionRoute": [
+          "export declare function buildSessionRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;"
+        ],
+        "buildToolDisableRoute": [
+          "export declare function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;"
+        ],
+        "queryParam": [
+          "export declare function queryParam(url: URL, name: string): string | undefined;"
+        ],
+        "ROUTES": [
+          "export declare const ROUTES: { servers: string; config: string; session: string; resume: string; connect: string; disconnect: string; reconnect: string; importJson: string; events: string; health: string; toolDisable: string; };"
+        ],
+        "SSE_HEARTBEAT_MS": ["export declare const SSE_HEARTBEAT_MS = 30000;"],
+        "SSE_PING_FRAME": ["export declare const SSE_PING_FRAME: string;"],
+        "broadcastFrame": [
+          "export declare function broadcastFrame(connections: SseHub | Set<ServerResponse> | undefined, frame: string): void;"
+        ],
+        "makeEventsRoute": [
+          "export declare function makeEventsRoute(manager: RoutesManager, options?: { heartbeatMs?: number; maxConnections?: number; }"
+        ],
+        "makeHealthRoute": [
+          "export declare function makeHealthRoute(manager: RoutesManager): WebRoute;"
+        ],
+        "makeRoutes": [
+          "export declare function makeRoutes(manager: RoutesManager, cwd?: string): WebRoute[];"
+        ],
+        "uiConfigChangedFrame": ["export declare function uiConfigChangedFrame(): string;"],
+        "injectSettingsSink": [
+          "export declare function injectSettingsSink(ctx: Context, manager: McpManager): void;"
+        ],
+        "installConfigSettings": [
+          "export declare function installConfigSettings(ctx: Context, manager: McpManager, config: Record<string, unknown> | undefined, syncMiddlewareFromSettings: () => void): void;"
+        ],
+        "resolveApplyOptions": [
+          "export declare function resolveApplyOptions(config: Record<string, unknown> | undefined, settingsSource?: unknown): ApplyOptions;"
+        ],
+        "resolveDebugConfig": [
+          "export declare function resolveDebugConfig(config: Record<string, unknown> | undefined, settingsSource?: unknown): DebugConfig;"
+        ],
+        "resolveMiddlewareMode": [
+          "export declare function resolveMiddlewareMode(manager: McpManager, fallbackRaw: string | undefined): ReturnType<typeof normalizeMiddlewareMode>;"
+        ],
+        "resolveStorePath": [
+          "export declare function resolveStorePath(config: Record<string, unknown> | undefined): string;"
+        ],
+        "MCP_GUIDANCE": ["export declare const MCP_GUIDANCE: string;"],
+        "createEmptyDisposers": ["export declare function createEmptyDisposers(): ApplyDisposers;"],
+        "makeMiddlewareHotSwitch": [
+          "export declare function makeMiddlewareHotSwitch(manager: McpManager, middlewarePolicy: Record<string, unknown> | undefined, resolveRoot: (agent: unknown) => Promise<string | undefined>, dispose: { current: () => void; }"
+        ],
+        "registerCatalogInjection": [
+          "export declare function registerCatalogInjection(ctx: Context, manager: McpManager, catalogMaxEntries: number): () => void;"
+        ],
+        "setupConfigWatchersAsync": [
+          "export declare function setupConfigWatchersAsync(manager: McpManager): Promise<() => void>;"
+        ],
+        "setupRoutesAndBroadcast": [
+          "export declare function setupRoutesAndBroadcast(ctx: Context, manager: McpManager): () => void;"
+        ],
+        "provideMcpManagerService": [
+          "export declare function provideMcpManagerService(ctx: Context, manager: McpManager): void;"
+        ],
+        "MCP_SECTION_ORDER": ["export declare const MCP_SECTION_ORDER = 160;"],
+        "apply": [
+          "export declare function apply(ctx: Context, config: Record<string, unknown> | undefined): Promise<void>;"
+        ],
+        "catalogCacheFile": ["export declare function catalogCacheFile(): string;"],
+        "makeCatalogViewFor": [
+          "export declare function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver;"
+        ],
+        "digestCatalogEntries": [
+          "export declare function digestCatalogEntries(entries: CatalogEntry[]): string;"
+        ],
+        "CATALOG_ENTRY_MAX_CHARS": ["export declare const CATALOG_ENTRY_MAX_CHARS = 180;"],
+        "CATALOG_SECTION_NAME": ["export declare const CATALOG_SECTION_NAME = \"mcp-catalog\";"],
+        "CATALOG_SOURCE_PLUGIN": [
+          "export declare const CATALOG_SOURCE_PLUGIN = \"@wingsky-1/dsh-mcp-manager\";"
+        ],
+        "CATALOG_SUMMARY_MAX_CHARS": ["export declare const CATALOG_SUMMARY_MAX_CHARS = 240;"],
+        "CATALOG_SUMMARY_PER_TOOL_CHARS": [
+          "export declare const CATALOG_SUMMARY_PER_TOOL_CHARS = 120;"
+        ],
+        "DEFAULT_ANNOUNCE_CATALOG": ["export declare const DEFAULT_ANNOUNCE_CATALOG = true;"],
+        "DEFAULT_CATALOG_MAX_ENTRIES": ["export declare const DEFAULT_CATALOG_MAX_ENTRIES = 6;"],
+        "composeCatalogEntries": [
+          "export declare function composeCatalogEntries(supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache): CatalogEntry[];"
+        ],
+        "escapeCatalogText": ["export declare function escapeCatalogText(value: unknown): string;"],
+        "findCatalogMessage": [
+          "export declare function findCatalogMessage(messages: CatalogMessage[]): CatalogMessage | undefined;"
+        ],
+        "isCatalogSource": [
+          "export declare function isCatalogSource(source: { kind?: unknown; plugin?: unknown; }"
+        ],
+        "readCatalogEntries": [
+          "export declare function readCatalogEntries(source: { entries?: unknown; }"
+        ],
+        "renderMcpCatalogMessage": [
+          "export declare function renderMcpCatalogMessage(entries: CatalogEntry[], mode?: string): CatalogMessage;"
+        ],
+        "renderMcpCatalogUpdate": [
+          "export declare function renderMcpCatalogUpdate(entries: CatalogEntry[], mode?: string): CatalogMessage;"
+        ],
+        "resolveCatalogEntries": [
+          "export declare function resolveCatalogEntries(source: CatalogSourceLike | undefined): CatalogEntry[] | undefined;"
+        ],
+        "summarizeToolDescriptions": [
+          "export declare function summarizeToolDescriptions(toolMeta: Map<string, { description?: unknown; }"
+        ],
+        "catalogHistory": [
+          "export declare function catalogHistory(agent: CatalogAgent | undefined): CatalogHistoryResult;"
+        ],
+        "resolveCatalogInjection": [
+          "export declare function resolveCatalogInjection(decision: CatalogDecision, messages: CatalogMessage[], supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache, agent?: CatalogAgent, mode?: string): CatalogDecision;"
+        ],
+        "boundCatalogTools": [
+          "export declare function boundCatalogTools(tools: Iterable<{ name?: unknown; description?: unknown; inputSchema?: unknown; }"
+        ],
+        "findToolDetail": [
+          "export declare function findToolDetail(units: Map<string, ProjectUnit>, root: string, server: string, tool: string): ToolDetail;"
+        ],
+        "isCatalogFresh": [
+          "export declare function isCatalogFresh(catalog: CatalogServer | undefined): boolean;"
+        ],
+        "listCatalog": [
+          "export declare function listCatalog(units: Map<string, ProjectUnit>, roots: readonly string[], serverFilter: string | undefined, toolLimit: number, mode: string, emptyHint: string, disabledTools?: DisabledToolsMap): ListCatalogResult;"
+        ],
+        "scoreTool": [
+          "export declare function scoreTool(query: string, server: string, toolName: string, tool: CatalogTool): { score: number; matchedTerms: string[]; };"
+        ],
+        "searchCatalog": [
+          "export declare function searchCatalog(units: Map<string, ProjectUnit>, root: string, query: string, limit: number): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string; }>; truncated: boolean; };"
+        ],
+        "searchCatalogMulti": [
+          "export declare function searchCatalogMulti(units: Map<string, ProjectUnit>, roots: readonly string[], query: string, limit: number): { results: SearchHit[]; unavailable: Array<{ server: string; reason: string; }>; truncated: boolean; };"
+        ],
+        "Config": [
+          "export declare const Config: z<{ enabled: boolean; announceToAgent: boolean; storePath: string; announceCatalog: boolean; catalogMaxEntries: number; enhanceEmptyDescriptions: boolean; resultTruncateBytes: number; middleware: \"off\" | \"project\" | \"all\"; middlewarePolicy: Record<string, unknown>; debug: { callStats: boolean; statsFile: string; }; ui: UiPlacementConfig; }"
+        ],
+        "DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS": [
+          "export declare const DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS = true;"
+        ],
+        "DEFAULT_UI_CONFIG": ["export declare const DEFAULT_UI_CONFIG: UiPlacementConfig;"],
+        "buildConfigUiPatch": [
+          "export declare function buildConfigUiPatch(raw: unknown): UiPlacementConfig;"
+        ],
+        "normalizeUiConfig": [
+          "export declare function normalizeUiConfig(raw: unknown): ClientUiConfig;"
+        ],
+        "fromClaudeEntry": [
+          "export declare function fromClaudeEntry(name: string, entry: Record<string, unknown>): ServerConfig;"
+        ],
+        "parseClaudeJson": [
+          "export declare function parseClaudeJson(text: string): ServerConfig[];"
+        ],
+        "SERVER_NAME_PATTERN": ["export declare const SERVER_NAME_PATTERN: RegExp;"],
+        "normalizeServer": [
+          "export declare function normalizeServer(input: unknown): ServerConfig;"
+        ],
+        "catalogCacheFileFor": [
+          "export declare function catalogCacheFileFor(root: string): string;"
+        ],
+        "loadDisabledTools": [
+          "export declare function loadDisabledTools(file: string): Promise<DisabledToolsMap>;"
+        ],
+        "loadUserState": [
+          "export declare function loadUserState(file: string): Promise<Map<string, Set<string>>>;"
+        ],
+        "parseDisabledTools": [
+          "export declare function parseDisabledTools(raw: unknown): DisabledToolsMap;"
+        ],
+        "readCatalogServerFromDisk": [
+          "export declare function readCatalogServerFromDisk(file: string, serverName: string): Promise<PersistedCatalogServer | undefined>;"
+        ],
+        "saveDisabledTools": [
+          "export declare function saveDisabledTools(file: string, disabledTools: DisabledToolsMap): Promise<void>;"
+        ],
+        "saveUserState": [
+          "export declare function saveUserState(file: string, units: Map<string, ProjectUnit>): Promise<void>;"
+        ],
+        "userStateFile": ["export declare function userStateFile(): string;"],
+        "McpStore": [
+          "export declare class McpStore { path: string; data: { version: number; servers: ServerConfig[]; }; mtimeMs: number | undefined; constructor(path: string); load(): Promise<void>; save(): Promise<void>; changedOnDisk(): Promise<boolean>; reloadIfChanged(): Promise<boolean>; find(name: string): ServerConfig | undefined; upsert(server: ServerConfig): void; remove(name: string): void; }"
+        ],
+        "defaultStorePath": ["export declare function defaultStorePath(): string;"],
+        "McpManager": [
+          "export declare class McpManager { ctx: Context; store: McpStore; supervisors: Map<string, ConnectionSupervisor>; listeners: Set<() => void>; logger: LoggerService; projectRoot: string | undefined; projectStore: McpStore | undefined; reconcileBusy: boolean; projectStores: Map<string, McpStore>; enhancement: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number; }; catalogCache: CatalogCache; catalogCachePath: string; uiConfigSource: () => any; uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>; sseHub?: SseHub; middlewareMode: MiddlewareMode; middleware: McpMiddleware | undefined; userStatePath: string; stats: McpStatsCollector; runtimeRegistry: Map<string, ServerConfig>; private registerQueue; private catalogViewResolver; constructor(ctx: Context, store: McpStore); uiConfig(): ClientUiConfig; updateUiConfig(raw: unknown): Promise<ClientUiConfig>; loadCatalogCache(): Promise<void>; recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown; }>): Promise<void>; onStatus(handler: () => void): () => void; private redactError; private statusTimer; emitStatus(): void; projectStoreOrThrow(): Promise<McpStore>; projectServersFor(root: string): Promise<ServerConfig[] | undefined>; isRuntimeServer(name: string): boolean; isGlobalServer(name: string): boolean; globalServers(): ServerConfig[]; saveUserState(units: Map<string, ProjectUnit>): Promise<void>; catalogCachePathFor(root: string): string; initMiddleware(mode: MiddlewareMode, policy: Record<string, unknown>): Promise<McpMiddleware>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; setMiddlewareMode?: (mode: MiddlewareMode) => Promise<void>; setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void>; projectStoreFor(root: string | undefined): Promise<McpStore | undefined>; catalogServersFor(cwd: string | undefined): Promise<Map<string, { server: ServerConfig; scope: string; }>>; catalogViewFor(cwd: string | undefined, servers: Map<string, { server: ServerConfig; scope: string; }>): Promise<CatalogCache>; setSession(cwd: string | undefined): Promise<void>; resumeReconnect(): Promise<void>; refreshFromDisk(): Promise<void>; reconcileServers(): boolean; startAll(): Promise<void>; start(name: string, scope?: string, directConfig?: ServerConfig): void; private middlewareTakes; private touchGlobalUnit; private ensureMiddlewareServer; private dropMiddlewareConnection; stop(name: string): void; registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean; }>; unregisterServer(name: string): Promise<void>; add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>; update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>; remove(name: string, scope?: string): Promise<void>; connect(name: string, scope?: string, directConfig?: ServerConfig): Promise<void>; disconnect(name: string, scope?: string): Promise<void>; reconnect(name: string, scope?: string): Promise<void>; summary(): Record<string, unknown>; private middlewareUnitFor; summarize(server: ServerConfig, scope: string): Record<string, unknown>; dispose(): Promise<void>; }"
+        ],
+        "stripMcpPrefix": [
+          "export declare function stripMcpPrefix(registeredName: string, serverName: string): string;"
+        ],
+        "CALL_TIMEOUT_MS": ["export declare const CALL_TIMEOUT_MS = 30000;"],
+        "CATALOG_LRU_MAX": ["export declare const CATALOG_LRU_MAX = 16;"],
+        "CATALOG_TTL_MS": ["export declare const CATALOG_TTL_MS: number;"],
+        "CONNECT_TIMEOUT_MS": ["export declare const CONNECT_TIMEOUT_MS = 10000;"],
+        "DISCOVERY_TIMEOUT_MS": ["export declare const DISCOVERY_TIMEOUT_MS = 10000;"],
+        "LIST_DEFAULT_TOOLS_PER_SERVER": [
+          "export declare const LIST_DEFAULT_TOOLS_PER_SERVER = 50;"
+        ],
+        "LIST_MAX_TOOLS_PER_SERVER": ["export declare const LIST_MAX_TOOLS_PER_SERVER = 500;"],
+        "MAX_BYTES_PER_TOOL": ["export declare const MAX_BYTES_PER_TOOL = 4096;"],
+        "MAX_TOOLS_PER_SERVER": ["export declare const MAX_TOOLS_PER_SERVER = 512;"],
+        "MAX_TOTAL_CATALOG_BYTES": ["export declare const MAX_TOTAL_CATALOG_BYTES: number;"],
+        "McpMiddleware": [
+          "export declare class McpMiddleware { host: MiddlewareHost; units: Map<string, ProjectUnit>; policy: MiddlewarePolicy; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; constructor(host: MiddlewareHost, policy?: MiddlewarePolicy); projectUnitFor(root: string | undefined): Promise<ProjectUnit | undefined>; ensureConnected(root: string, serverName: string, opts?: { force?: boolean; }): Promise<void>; abandonInFlight(serverName: string): void; private connectInternal; private scheduleReconnect; private scheduleProbeRetry; discover(root: string, serverName: string): Promise<void>; private projectWrappedCatalog; private redact; private listToolsAll; persistCatalog(root: string): Promise<void>; removeCatalogEntry(root: string, serverName: string): Promise<void>; loadCatalogCache(root: string): Promise<void>; callTool(fullName: string, toolRaw: string, rawArgs: unknown, signal: AbortSignal | undefined, agent?: unknown): Promise<unknown>; private hostRedact; private allServers; evictIfNeeded(maxUnits?: number): void; teardownUnit(root: string): void; dispose(): Promise<void>; }"
+        ],
+        "MCPClient": [
+          "export declare class MCPClient { transport: StdioTransport | HttpTransport; client: Client | undefined; constructor(transport: StdioTransport | HttpTransport); initialize(): Promise<unknown>; listTools(cursor?: string): Promise<{ [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; \"io.modelcontextprotocol/related-task\"?: { taskId: string; } | undefined; } | undefined; nextCursor?: string | undefined; tools: { description?: string | undefined; inputSchema: { [x: string]: unknown; type: \"object\"; properties?: Record<string, object> | undefined; required?: string[] | undefined; }; outputSchema?: { [x: string]: unknown; type: \"object\"; properties?: Record<string, object> | undefined; required?: string[] | undefined; } | undefined; annotations?: { title?: string | undefined; readOnlyHint?: boolean | undefined; destructiveHint?: boolean | undefined; idempotentHint?: boolean | undefined; openWorldHint?: boolean | undefined; } | undefined; execution?: { taskSupport?: \"forbidden\" | \"optional\" | \"required\" | undefined; } | undefined; _meta?: Record<string, unknown> | undefined; icons?: { src: string; mimeType?: string | undefined; sizes?: string[] | undefined; theme?: \"dark\" | \"light\" | undefined; }[] | undefined; name: string; title?: string | undefined; }[]; }>; callTool(rawName: string, args?: unknown, opts?: { signal?: AbortSignal; timeoutMs?: number; }): Promise<{ [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; \"io.modelcontextprotocol/related-task\"?: { taskId: string; } | undefined; } | undefined; }>; requireClient(): Client; }"
+        ],
+        "RECONNECT_DEFAULTS": [
+          "export declare const RECONNECT_DEFAULTS: Readonly<{ enabled: true; initialDelayMs: 500; maxDelayMs: 30000; maxAttempts: 10; }"
+        ],
+        "resolveReconnect": [
+          "export declare function resolveReconnect(config: Record<string, unknown> | undefined): ReconnectPolicy;"
+        ],
+        "ConnectionSupervisor": [
+          "export declare class ConnectionSupervisor { manager: ManagerLite; server: ServerConfig; scope: string; client: MCPClient | undefined; transport: StdioTransport | HttpTransport | undefined; toolDisposers: Map<string, () => void>; reconnectTimer: NodeJS.Timeout | undefined; failedAttempts: number; connectedAt: number | undefined; disposed: boolean; status: string; error: unknown; tools: string[]; toolMeta: Map<string, { description?: unknown; }>; syncChain: Promise<unknown>; reconnectPolicy: ReconnectPolicy; constructor(manager: ManagerLite, server: ServerConfig, scope?: string); setStatus(status: string, error?: unknown): void; enqueueSync<T>(doSync: () => Promise<T> | T): Promise<T>; connect(opts?: { startup?: boolean; }): Promise<void>; teardownGeneration(error: unknown, schedule?: boolean): void; scheduleReconnect(error: unknown): void; syncTools(client: MCPClient, startup: boolean): Promise<void>; disconnect(): Promise<void>; }"
+        ],
+        "DEFAULT_RESULT_TRUNCATE_BYTES": [
+          "export declare const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;"
+        ],
+        "DEFAULT_TOOL_CALL_TIMEOUT_MS": [
+          "export declare const DEFAULT_TOOL_CALL_TIMEOUT_MS = 15000;"
+        ],
+        "assertSupportedOutputSchema": [
+          "export declare function assertSupportedOutputSchema(schema: unknown): unknown;"
+        ],
+        "buildToolDefinition": [
+          "export declare function buildToolDefinition(client: MCPClient, tool: Record<string, unknown>, server: ServerConfig, opts?: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number; stats?: Pick<McpStatsCollector, \"isEnabled\" | \"recordCall\">; }"
+        ],
+        "publicToolName": [
+          "export declare function publicToolName(serverName: string, rawName: string): string;"
+        ],
+        "truncateText": [
+          "export declare function truncateText(text: unknown, maxBytes: number): unknown;"
+        ],
+        "HttpTransport": [
+          "export declare class HttpTransport { url: string; headers: Record<string, string>; readonly sdk: StreamableHTTPClientTransport; constructor(url: string, headers?: Record<string, string>); connect(): Promise<void>; onClose(handler: (error: Error) => void): void; close(): Promise<void>; }"
+        ],
+        "StdioTransport": [
+          "export declare class StdioTransport { command: string; args: string[]; env: Record<string, unknown>; cwd: string | undefined; readonly sdk: StdioClientTransport; stderrTail: string; closeReason: Error; constructor(config: { command: string; args?: string[]; env?: Record<string, unknown>; cwd?: string; }); connect(): Promise<void>; onClose(handler: (error: Error) => void): void; close(): Promise<void>; }"
+        ],
+        "createTransport": [
+          "export declare function createTransport(server: ServerConfig): StdioTransport | HttpTransport;"
+        ],
+        "expandEnv": ["export declare function expandEnv(value: unknown): string;"],
+        "parseSsePayload": [
+          "export declare function parseSsePayload(text: string, id: unknown): unknown;"
+        ],
+        "inject": ["export declare const inject: string[];"],
+        "name": ["export declare const name = \"mcp-manager\";"],
+        "registerDirectMcpGuard": [
+          "export declare function registerDirectMcpGuard(ctx: Context, disabledTools: DisabledToolsMap | undefined, resolveRoot: (agent: unknown) => Promise<string | undefined>): (() => void) | undefined;"
+        ],
+        "registerMiddlewareTools": [
+          "export declare function registerMiddlewareTools(ctx: Context, mw: McpMiddleware, resolveRoot: (agent: unknown) => Promise<string | undefined>, mode?: MiddlewareMode, options?: { disabledTools?: DisabledToolsMap; stats?: McpStatsCollector; }"
+        ],
+        "normalizeArguments": [
+          "export declare function normalizeArguments(raw: unknown): unknown;"
+        ],
+        "globMatch": ["export declare function globMatch(pattern: string, name: string): boolean;"],
+        "isToolDenied": [
+          "export declare function isToolDenied(disabledTools: DisabledToolsMap | undefined, policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): boolean;"
+        ],
+        "policyAllows": [
+          "export declare function policyAllows(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): boolean;"
+        ],
+        "policyDenialReason": [
+          "export declare function policyDenialReason(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): string | undefined;"
+        ],
+        "toolDisabledReason": [
+          "export declare function toolDisabledReason(serverKey: string, tool: string): string;"
+        ],
+        "msgOf": ["export declare function msgOf(error: unknown): string;"],
+        "defaultCallResultFallbackText": [
+          "export declare function defaultCallResultFallbackText(result: unknown): string;"
+        ],
+        "projectCallToolResult": [
+          "export declare function projectCallToolResult(result: unknown, handlers?: CallResultTextHandlers): ProjectedCallResult;"
+        ],
+        "createRedactor": [
+          "export declare function createRedactor(servers: readonly ServerConfig[]): (error: unknown) => string;"
+        ],
+        "withTimeout": [
+          "export declare function withTimeout<T>(promise: Promise<T>, ms: number, message: string, signal?: AbortSignal): Promise<T>;"
+        ],
+        "DEFAULT_Z_INDEX_BASE": ["export declare const DEFAULT_Z_INDEX_BASE = 10;"],
+        "panelZIndexFor": ["export declare function panelZIndexFor(base: number): number;"],
+        "McpStatsCollector": [
+          "export declare class McpStatsCollector { private enabled; private filePath; private logger?; private startedAt; private updatedAt; private servers; private disclosure; private flushTimer?; private isDirty; constructor(options?: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void; debug?: (msg: string) => void; }; }); configure(options: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void; }; }): void; isEnabled(): boolean; private loadExisting; recordCall(server: string, tool: string, durationMs: number, success: boolean, errorMsg?: string): void; recordSearch(query: string): void; recordList(serverFilter?: string): void; recordDetail(server: string, tool: string): void; snapshot(): McpStatsSnapshot; private scheduleFlush; flushSync(): void; dispose(): void; }"
+        ],
+        "defaultStatsPath": ["export declare function defaultStatsPath(): string;"],
+        "MIDDLEWARE_GLOBAL_ROOT": ["export declare const MIDDLEWARE_GLOBAL_ROOT = \"@global\";"],
+        "bareServerName": ["export declare function bareServerName(name: string): string;"],
+        "fullServerName": [
+          "export declare function fullServerName(root: string, server: string): string;"
+        ],
+        "normalizeToolName": [
+          "export declare function normalizeToolName(serverName: string, toolName: string, caller?: string): string;"
+        ],
+        "parseFullServerName": [
+          "export declare function parseFullServerName(name: string): { root: string; server: string; }"
+        ],
+        "normalizeMiddlewareMode": [
+          "export declare function normalizeMiddlewareMode(value: unknown): MiddlewareMode;"
+        ],
+        "findProjectRoot": [
+          "export declare function findProjectRoot(cwd: string | undefined): Promise<string>;"
+        ],
+        "makeResolveRoot": [
+          "export declare function makeResolveRoot(manager: McpManager): (agent: unknown) => Promise<string | undefined>;"
+        ],
+        "normalizedProjectRoot": [
+          "export declare function normalizedProjectRoot(cwd: string | undefined): Promise<string | undefined>;"
+        ],
+        "SCOPE_GLOBAL": ["export declare const SCOPE_GLOBAL = \"global\";"],
+        "SCOPE_PROJECT": ["export declare const SCOPE_PROJECT = \"project\";"],
+        "normalizeScope": [
+          "export declare function normalizeScope(value: string): \"global\" | \"project\";"
+        ]
+      }
+    },
+    "./client": {
+      "types": "./lib/client/index.d.ts",
+      "exports": [
+        {
+          "name": "apply",
+          "isType": false
+        },
+        {
+          "name": "inject",
+          "isType": false
+        }
+      ],
+      "blocks": {
+        "api": ["export declare function api(path: any, options?: any): Promise<any>;"],
+        "cwdQueryOf": ["export declare function cwdQueryOf(state: McpState): string;"],
+        "toolDisableServerKey": [
+          "export declare function toolDisableServerKey(server: any, state: McpState): string | undefined;"
+        ],
+        "API": [
+          "export declare const API: { servers: string; connect: string; disconnect: string; reconnect: string; importJson: string; session: string; resume: string; config: string; events: string; health: string; toolDisable: string; };"
+        ],
+        "STATUS_ORDER": [
+          "export declare const STATUS_ORDER: { key: string; titleKey: McpLocaleKey; dot: string; }"
+        ],
+        "STATUS_TEXT": ["export declare const STATUS_TEXT: Record<string, McpLocaleKey>;"],
+        "statusDot": ["export declare function statusDot(status: string): string;"],
+        "el": ["export declare function el(tag: any, attrs?: any, children?: any): any;"],
+        "tStatus": ["export declare function tStatus(status: string): string;"],
+        "bindSession": [
+          "export declare function bindSession(ctx: any, state: McpState, actions: UiActions): () => void;"
+        ],
+        "rebindSession": [
+          "export declare function rebindSession(state: McpState): Promise<unknown>;"
+        ],
+        "createState": ["export declare function createState(): McpState;"],
+        "conversationHost": ["export declare function conversationHost(): any;"],
+        "floatTopOffset": [
+          "export declare function floatTopOffset(ctx: any, state: McpState): number;"
+        ],
+        "mountFloat": [
+          "export declare function mountFloat(ctx: any, state: McpState, actions: UiActions): () => void;"
+        ],
+        "panelHost": ["export declare function panelHost(): any;"],
+        "placePanel": ["export declare function placePanel(state: McpState): void;"],
+        "renderFloatPanel": [
+          "export declare function renderFloatPanel(state: McpState, actions: UiActions): void;"
+        ],
+        "renderPill": ["export declare function renderPill(state: McpState): void;"],
+        "toggleFloat": [
+          "export declare function toggleFloat(state: McpState, actions: UiActions, force?: boolean): void;"
+        ],
+        "close": ["export declare function close(state: McpState): void;"],
+        "disposePanel": ["export declare function disposePanel(state: McpState): void;"],
+        "refresh": [
+          "export declare function refresh(state: McpState, actions: UiActions): Promise<boolean>;"
+        ],
+        "showPanel": [
+          "export declare function showPanel(state: McpState, actions: UiActions): void;"
+        ],
+        "switchTab": [
+          "export declare function switchTab(state: McpState, actions: UiActions, tab: any): void;"
+        ],
+        "beginEdit": [
+          "export declare function beginEdit(state: McpState, actions: UiActions, server: any): void;"
+        ],
+        "buildQuickAdd": [
+          "export declare function buildQuickAdd(state: McpState, actions: UiActions): any;"
+        ],
+        "currentCwdBody": [
+          "export declare function currentCwdBody(state: McpState): Record<string, string>;"
+        ],
+        "fillForm": ["export declare function fillForm(state: McpState, fill: any): void;"],
+        "formScopeValue": ["export declare function formScopeValue(state: McpState): string;"],
+        "parseKV": ["export declare function parseKV(text: any): Record<string, string>;"],
+        "readForm": ["export declare function readForm(state: McpState): any;"],
+        "resetForm": ["export declare function resetForm(state: McpState): void;"],
+        "saveForm": [
+          "export declare function saveForm(state: McpState, actions: UiActions): Promise<void>;"
+        ],
+        "actionButton": [
+          "export declare function actionButton(label: any, onClick: any, primary?: boolean, danger?: boolean): any;"
+        ],
+        "endpointOf": ["export declare function endpointOf(server: any): string;"],
+        "renderServer": [
+          "export declare function renderServer(server: any, state: McpState, actions: UiActions, opts?: { tools: boolean; openTools?: Set<string>; }"
+        ],
+        "renderServers": [
+          "export declare function renderServers(state: McpState, actions: UiActions): void;"
+        ],
+        "inject": ["export declare const inject: string[];"],
+        "apply": ["export declare function apply(ctx: any): void;"],
+        "en": ["export declare const en: Record<McpLocaleKey, string>;"],
+        "zh": [
+          "export declare const zh: { readonly stConnected: \"运行中\"; readonly stConnecting: \"连接中\"; readonly stReconnecting: \"重连中\"; readonly stStopped: \"未连接\"; readonly stDisabled: \"已停用\"; readonly stFailed: \"失败\"; readonly connect: \"连接\"; readonly disconnect: \"断开\"; readonly reconnect: \"重连\"; readonly enable: \"启用\"; readonly enableAndConnect: \"启用并连接\"; readonly disable: \"禁用\"; readonly edit: \"编辑\"; readonly delete: \"删除\"; readonly save: \"保存\"; readonly cancel: \"取消\"; readonly refresh: \"刷新\"; readonly close: \"关闭\"; readonly cancelEdit: \"取消编辑\"; readonly saveFail: \"保存失败：{msg}\"; readonly actionFail: \"操作失败：{msg}\"; readonly loadFail: \"加载失败：{msg}\"; readonly floatAriaLabel: \"MCP 管理器\"; readonly floatTitle: \"MCP 管理器（点击展开）\"; readonly floatManage: \"管理\"; readonly floatEmpty: \"没有 MCP 服务器，点「管理」添加\"; readonly floatGlobalSession: \"全局会话\"; readonly groupProject: \"项目级\"; readonly groupGlobal: \"全局\"; readonly badgeScopeProject: \"项目\"; readonly badgeScopeGlobal: \"全局\"; readonly globalToolHint: \"全局工具开关需在 all 模式（中间层全量接管）下管理——切 all 模式可管理全局工具\"; readonly serverMeta: \"{status} · {tools} 工具\"; readonly toolsCount: \"工具（{n}）\"; readonly toolsCountPlain: \"{n} 工具\"; readonly statusGroupCount: \"{status}（{n}）\"; readonly panelTitle: \"MCP 管理器\"; readonly tabServers: \"服务器\"; readonly tabQuickAdd: \"快速接入\"; readonly countsConnected: \"运行中 {n}\"; readonly countsConnecting: \"连接中 {n}\"; readonly countsFailed: \"失败 {n}\"; readonly countsSummary: \"共 {n} 台 · {parts}\"; readonly countsSummaryOnly: \"共 {n} 台\"; readonly addServer: \"添加服务器\"; readonly editServer: \"编辑服务器：{name}\"; readonly nameLabel: \"服务器名称（唯一，作为 mcp__<name>__ 前缀）\"; readonly ownershipLabel: \"归属\"; readonly transportLabel: \"传输类型\"; readonly commandLabel: \"命令（stdio）\"; readonly argsLabel: \"参数（逗号分隔）\"; readonly envLabel: \"环境变量（每行 KEY=VALUE，支持 ${ENV} 引用，值为空则继承父环境）\"; readonly cwdLabel: \"工作目录（可选）\"; readonly urlLabel: \"URL（streamable-http）\"; readonly headersLabel: \"请求头（每行 KEY: VALUE，支持 ${ENV} 引用）\"; readonly enabledLabel: \"启用（保存后立即连接）\"; readonly scopeProjectOpt: \"项目级（<项目>/.dsh/mcp.json，随会话切换）\"; readonly scopeGlobalOpt: \"全局（~/.dsh/dsh-mcp.json）\"; readonly transportStdioOpt: \"stdio（本地子进程）\"; readonly transportHttpOpt: \"streamable-http（远程）\"; readonly envPlaceholder: \"每行 KEY=VALUE，如\\nCONTEXT7_API_KEY=${CONTEXT7_API_KEY}\"; readonly headersPlaceholder: \"每行 KEY: VALUE，支持 ${ENV} 引用，如\\nAuthorization: Bearer ${CONTEXT7_API_KEY}\"; readonly cwdPlaceholder: \"可选工作目录\"; readonly pasteTitle: \"粘贴 mcpServers JSON 导入\"; readonly importJson: \"导入 JSON\"; readonly importedOk: \"已导入：{names}\"; readonly importedNone: \"（无）\"; readonly importSkipped: \"跳过（已存在）：{names}\"; readonly importFail: \"导入失败：{msg}\"; readonly serversEmpty: \"还没有配置 MCP 服务器。切到「快速接入」页添加，或粘贴 mcpServers JSON 导入。\"; readonly confirmDelete: \"删除 MCP 服务器「{name}」？\"; readonly settingsLoading: \"MCP 管理器：加载中…\"; readonly settingsName: \"MCP 管理器（dsh-mcp-manager）\"; readonly settingsDescription: \"浮窗位置 / 水平·垂直·空白偏移\"; readonly anchorLabel: \"锚点\"; readonly posTopRight: \"右上（top-right）\"; readonly posTopLeft: \"左上（top-left）\"; readonly posBottomRight: \"右下（bottom-right）\"; readonly posBottomLeft: \"左下（bottom-left）\"; readonly modeLabel: \"中间层模式\"; readonly modeProject: \"project（项目级走中间层，推荐）\"; readonly modeAll: \"all（全局也走中间层）\"; readonly modeOff: \"off（全部直呼 mcp__ 工具）\"; readonly offsetX: \"水平偏移\"; readonly offsetY: \"垂直偏移\"; readonly blankY: \"空白偏移\"; readonly zIndexBase: \"层级基准\"; readonly settingsHint: \"保存即热更新：浮窗位置即时生效；中间层模式切换即时生效并持久化（无需重启 dsh web）。\"; readonly savingNow: \"保存中…\"; readonly settingsSavedOk: \"已保存——浮窗位置与中间层模式即时生效（无需重启）\"; };"
+        ],
+        "SettingsCard": ["export declare function SettingsCard(): JSX.Element;"]
+      }
+    }
+  }
+}
