@@ -70,13 +70,19 @@ function makeFixtureRoot(files, { omitTopology = false } = {}) {
 }
 
 /** 对 fixture 根跑脚本，返回 { status, out }。 */
-/** 生成一份 fixture 台账（#765 统一形态：仍是 gate-exemptions.json 的条目，gate=verify-dir-imports）。 */
+/**
+ * 生成一份 fixture 台账（#765 统一形态：仍是 gate-exemptions.json 的条目，gate=verify-dir-imports）。
+ *
+ * 台账键是「包名:证据 id」而**不含指标名**，同一 id 可能同时出现在多个指标里（实测
+ * implToOtherImpl 与 directImpl 会命中同一条边），故先按 id 去重——重复条目的台账会被
+ * 校验判 exit 2，而不是被当成两条独立放宽。
+ */
 function writeLedger(dir, paths) {
   const p = join(dir, "exemptions-fixture.json");
   writeFileSync(
     p,
     JSON.stringify({
-      exemptions: paths.map((path) => ({
+      exemptions: [...new Set(paths)].map((path) => ({
         gate: "verify-dir-imports",
         path,
         reason: "用例：登记新增质量证据",
@@ -105,13 +111,54 @@ function runOn(root, args = []) {
 
 /**
  * 给 fixture 根登记一份基线（#843 D15 起的真实流程：包先被 --write-baseline 落库，
- * 闸才有单调基线可比——基线里没有本包条目现在**自身**判红）。仅用于「预期干净」的
- * fixture：写基线遇到阻断性错误（虚导出 / deps.ts 值 import / 拓扑坏）或未登记的新增
- * 质量证据会中止，那些形态由各自的用例覆盖。
+ * 闸才有单调基线可比——基线里没有本包条目现在**自身**判红）。仅用于「预期干净且无存量
+ * 质量证据」的 fixture：写基线遇到阻断性错误（虚导出 / deps.ts 值 import / 拓扑坏）或
+ * 未登记的新增质量证据会中止——有存量的改用 seedFixtureStock / registerFixtureStock，
+ * 那些形态由各自的用例覆盖。
  */
 function seedBaseline(root) {
   const written = runOn(root, ["--write-baseline"]);
   assert.equal(written.status, 0, `fixture 登记基线应成功：\n${written.out}`);
+}
+/**
+ * 无基线 fixture 的存量登记（#792 PR1 起首次登记同样只走台账通道）：先跑一次
+ * `--write-baseline` 让它中止并点名待登记的存量证据，登记成 fixture 台账后再按同一通道写入。
+ * 返回**成功那一次**的结果——调用方若要断言「首次登记」提示，必须是成功那次。
+ */
+function seedFixtureStock(root) {
+  const probe = runOn(root, ["--write-baseline"]);
+  if (probe.status === 0) return probe;
+  const keys = pendingLedgerKeys(probe.out);
+  assert.ok(keys.length > 0, `写基线中止应点名待登记证据（#792 PR1 通道）：\n${probe.out}`);
+  const ledger = writeLedger(root, keys);
+  const accepted = runOn(root, ["--write-baseline", "--exemptions", ledger]);
+  assert.equal(accepted.status, 0, `fixture 存量登记应成功：\n${accepted.out}`);
+  return accepted;
+}
+/**
+ * fixture 存量登记（#767 B0 切片 3a）：I2① 的证据类是**域间值边集合**，而 fixture 里
+ * 「b 引 a」这类跨模块值引恰好落在这个集合里——于是「断言某形态放行」的用例若直接跑，
+ * 会被**与该用例无关**的无基线 fail-closed 判红。故先经 seedFixtureStock 把存量登记
+ * 下来（首次登记走台账通道）再跑被判定的那一次。
+ *
+ * 登记的同时断言**规则类证据为空**（directImpl / missingInterface）：写基线不判规则 1/2
+ * （规则在主循环里判），所以「exit 0」有退化成「违规被顺手登记成存量」的可能。这条断言把
+ * 该退化路径钉死——本 helper 是用例判据强度的**加固**，不是绕行。带故意违规 fixture 的
+ * 用例（见 kind 语义用例）不适用本 helper，自己显式写基线。
+ */
+function registerFixtureStock(root) {
+  seedFixtureStock(root);
+  const quality = readFixtureBaseline(root).packages[PKG].quality;
+  assert.deepEqual(
+    quality.directImpl,
+    [],
+    `存量登记不得掩盖「直引他域实现文件」：${JSON.stringify(quality.directImpl)}`,
+  );
+  assert.deepEqual(
+    quality.missingInterface,
+    [],
+    `存量登记不得掩盖「目标目录缺门面」：${JSON.stringify(quality.missingInterface)}`,
+  );
 }
 
 /** 三域链式依赖体（a → b → c），`prefix` 决定平铺还是移入分组层。 */
@@ -131,8 +178,8 @@ test("叶子粒度：三域平铺与移入分组层 src/server/ 报出相同模�
   const flat = makeFixtureRoot(chainFixture(""));
   const nested = makeFixtureRoot(chainFixture("server"));
   try {
-    seedBaseline(flat);
-    seedBaseline(nested);
+    registerFixtureStock(flat);
+    registerFixtureStock(nested);
     const a = runOn(flat);
     const b = runOn(nested);
     assert.equal(a.status, 0, `平铺形态应 PASS，实际 ${a.status}：\n${a.out}`);
@@ -174,7 +221,7 @@ test("deps.ts 判据：跨模块引用他域 deps.ts 放行（D-2 出口面）",
     [`${SRC}/b/impl.ts`]: 'import { A } from "../a/deps.ts";\nexport const B = A;\n',
   });
   try {
-    seedBaseline(root);
+    registerFixtureStock(root);
     const { status, out } = runOn(root);
     assert.equal(status, 0, `引用他域 deps.ts 应放行（exit 0），实际 ${status}：\n${out}`);
     assert.match(out, /叶子模块 2 个、值边 1 条/, `应报 2 模块 / 1 值边：\n${out}`);
@@ -221,8 +268,7 @@ test("单调基线：写入基线后 PASS，人为把跨域引用计数调高即
   const files = chainFixture("");
   const root = makeFixtureRoot(files);
   try {
-    const written = runOn(root, ["--write-baseline"]);
-    assert.equal(written.status, 0, `写基线应成功：\n${written.out}`);
+    seedFixtureStock(root);
     const before = runOn(root);
     assert.equal(before.status, 0, `基线写入后应 PASS，实际 ${before.status}：\n${before.out}`);
     assert.match(before.out, /单调基线通过/, `应报基线通过：\n${before.out}`);
@@ -269,7 +315,7 @@ test("fail-closed（#843 D15）：基线无本包条目即判红，不得打印 
     assert.match(out, /--write-baseline/, `应给出登记指引：\n${out}`);
     assert.doesNotMatch(out, /PASS（跨模块引用全部走/, `不得同时判绿：\n${out}`);
     // 反向：登记基线后同一 fixture 必须绿——否则红因可能来自别的判据，本用例就没锁住缺条目。
-    seedBaseline(root);
+    seedFixtureStock(root);
     assert.equal(runOn(root).status, 0, "登记基线后应 PASS");
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -279,7 +325,7 @@ test("fail-closed（#843 D15）：基线无本包条目即判红，不得打印 
 test("fail-closed（#843 D15）：把已登记的条目从基线里删掉 → 回到判红", () => {
   const root = makeFixtureRoot(chainFixture(""));
   try {
-    seedBaseline(root);
+    seedFixtureStock(root);
     assert.equal(runOn(root).status, 0, "有基线时应 PASS");
     const baselinePath = join(root, "scripts/data/dir-imports-baseline.json");
     const json = JSON.parse(readFileSync(baselinePath, "utf8"));
@@ -342,7 +388,13 @@ test("fail-closed 豁免通道（#843 D15）：`<包名>:*` 专用于「本包�
   // 那个包根本走不通——没有证据项可指的包（质量六类证据全为空集）永远进不了台账。
   // `<包名>:*` 不声称证据，正是给这一态留的登记位；它的反向腐烂换成另一条事实：本包已有
   // 基线条目时，这条登记不再放宽任何东西。
-  const root = makeFixtureRoot(chainFixture(""));
+  // 底 fixture 必须是存量全空的单模块形态：chainFixture 自带 I2① 域间值边（a|b、b|c），
+  // 无基线 fail-closed 会先红在本用例无关的类上——那正是「有存量就该走逐条台账」的语义，
+  // 不是本用例要锁的 wildcard 行为。
+  const root = makeFixtureRoot({
+    [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
+  });
   try {
     const wildcard = writeLedger(root, [`${PKG}:*`]);
     const exempted = runOn(root, ["--exemptions", wildcard]);
@@ -372,7 +424,7 @@ test("fail-closed 豁免通道（#843 D15）：`<包名>:*` 专用于「本包�
     );
 
     // 反向腐烂：台账清掉后落库基线，同一登记必须判失效。
-    seedBaseline(root);
+    seedFixtureStock(root);
     const stale = runOn(root, ["--exemptions", wildcard]);
     assert.equal(
       stale.status,
@@ -454,7 +506,13 @@ test("--write-baseline 缺省范围取自范围注册表（#843 D15：不为无�
     [`packages/other-pkg/src/x/impl.ts`]: "export const X = 1;\n",
   });
   try {
-    const written = runRaw(root, ["--write-baseline"]);
+    // chainFixture 自带 I2① 域间值边存量：首次登记走台账通道。但本用例测的是缺省范围
+    // （不得带 --package），故用 runRaw 走同一通道：先探一次取键登记再写。
+    const probe = runRaw(root, ["--write-baseline"]);
+    const keys = pendingLedgerKeys(probe.out);
+    assert.ok(keys.length > 0, `写基线中止应点名待登记证据：\n${probe.out}`);
+    const ledger = writeLedger(root, keys);
+    const written = runRaw(root, ["--write-baseline", "--exemptions", ledger]);
     assert.equal(written.status, 0, `写基线应成功：\n${written.out}`);
     assert.deepEqual(
       Object.keys(readFixtureBaseline(root).packages),
@@ -490,8 +548,7 @@ test("--write-baseline 缺省范围不可解析 → fail-closed exit 2（#843 D1
 test("--write-baseline 只清理质量证据，新增证据不得被写入（#733 后续）", () => {
   const root = makeFixtureRoot(chainFixture(""));
   try {
-    const first = runOn(root, ["--write-baseline"]);
-    assert.equal(first.status, 0, `写基线应成功：\n${first.out}`);
+    const first = seedFixtureStock(root);
     // 首次登记（旧基线无该包 / 数字口径迁移）会按当前事实写入证据，必须显式提示——
     // 否则未来重构可把它变成「静默按当前值写入」＝静默放宽。
     assert.match(
@@ -628,7 +685,7 @@ test("--write-baseline 首次登记同样受台账约束（#792 PR1：不得一�
 test("质量型证据新增仍判红，且 --write-baseline 不放行（#733 后续）", () => {
   const root = makeFixtureRoot(chainFixture(""));
   try {
-    assert.equal(runOn(root, ["--write-baseline"]).status, 0);
+    seedFixtureStock(root);
     assert.equal(runOn(root).status, 0, "基线写入后应 PASS");
 
     addCyclicCrossReference(root);
@@ -704,7 +761,14 @@ test("kind 语义：值→类型收口放行并自动采纳，类型→值降级
   try {
     // #792 PR1 起首次登记同样要过台账：本用例验证的是 kind 语义，故先把初始 value 证据
     // 按台账放行入库，再分别验证收口（放行）与降级（判红）两个方向。
-    const ledger = writeLedger(root, [`${PKG}:b/impl.ts|a/impl.ts`]);
+    // 台账键逐条取自中止输出：本 fixture 同时带 I2① 的域间值边，手工只开一条会漏登记。
+    const probe = runOn(root, ["--write-baseline"]);
+    const keys = pendingLedgerKeys(probe.out);
+    assert.ok(
+      keys.includes(`${PKG}:b/impl.ts|a/impl.ts`),
+      `中止输出应点名 value 证据：\n${probe.out}`,
+    );
+    const ledger = writeLedger(root, keys);
     assert.equal(
       runOn(root, ["--write-baseline", "--exemptions", ledger]).status,
       0,
@@ -724,7 +788,20 @@ test("kind 语义：值→类型收口放行并自动采纳，类型→值降级
       0,
       `value → type 应放行，实际 ${improved.status}：\n${improved.out}`,
     );
-    assert.match(improved.out, /质量证据改善 1 条/, `应报告改善：\n${improved.out}`);
+    // #767 B0 切片 3a 起，同一个收口在**两个**证据类上同时消失（implToOtherImpl 的边与
+    // I2① 的域间值边），故这里不再只钉一个总数，而是逐条点名两处已消除——比原来的计数锚
+    // 更强：计数相同但收口只发生在一处时，点名断言会红。
+    assert.match(improved.out, /质量证据改善 2 条/, `应报告两处改善：\n${improved.out}`);
+    assert.match(
+      improved.out,
+      /implToOtherImpl: b\/impl\.ts\|a\/impl\.ts 值 → 类型（收口）/,
+      `应收口 implToOtherImpl 证据（kind 收口，不是消除）：\n${improved.out}`,
+    );
+    assert.match(
+      improved.out,
+      /crossDomainValueEdges: b\|a 已消除/,
+      `应收口 I2① 域间值边证据：\n${improved.out}`,
+    );
     assert.equal(
       runOn(root, ["--write-baseline"]).status,
       0,
@@ -753,7 +830,7 @@ test("kind 语义：值→类型收口放行并自动采纳，类型→值降级
 test("结构型计数上升 → --write-baseline 正常放行（#733 M0b）", () => {
   const root = makeFixtureRoot(chainFixture(""));
   try {
-    assert.equal(runOn(root, ["--write-baseline"]).status, 0);
+    seedFixtureStock(root);
     assert.equal(runOn(root).status, 0, "基线写入后应 PASS");
 
     // 新增一个叶子模块目录（modules / scannedSrcFiles / allSrcTsFiles 上升）。
@@ -897,7 +974,7 @@ test("--zones：R-A 双口径计数与明细（合法跨域引用：旧口径 2 
       'import { A } from "../a/interface.ts";\nimport type { TA } from "../a/interface.ts";\nexport const B: TA = A;\n',
   });
   try {
-    seedBaseline(root);
+    registerFixtureStock(root);
     const { status, out } = runOn(root, ["--zones"]);
     assert.equal(status, 0, `引用他域 interface.ts 应 PASS，实际 ${status}：\n${out}`);
     assert.match(
@@ -946,7 +1023,7 @@ test("--zones：impl 直引他域实现文件在新口径下计数为 1", () => 
 test("--graph：依赖矩阵与扇入扇出报出叶子模块边", () => {
   const root = makeFixtureRoot(chainFixture(""));
   try {
-    seedBaseline(root);
+    seedFixtureStock(root);
     const { status, out } = runOn(root, ["--graph"]);
     assert.equal(status, 0, `--graph 应 PASS，实际 ${status}：\n${out}`);
     assert.match(
@@ -988,7 +1065,7 @@ test("文件级值环：同模块内文件互引成环 → 计入文件级值环
 test("--soft：单调基线上升仍判红（CI 对 provider-usage 走 --soft）", () => {
   const root = makeFixtureRoot(chainFixture(""));
   try {
-    assert.equal(runOn(root, ["--write-baseline"]).status, 0);
+    seedFixtureStock(root);
     const clean = runOn(root, ["--soft"]);
     assert.equal(clean.status, 0, `无上升时 --soft 应 PASS，实际 ${clean.status}：\n${clean.out}`);
     // 人为把计数调高：--soft 只影响明细打印标签，不得成为绕过基线判红的开关。
@@ -1027,10 +1104,11 @@ test('引用提取：类型查询 import("…") 不产生值边，await import()
   });
   try {
     seedBaseline(typed);
-    seedBaseline(dynamic);
+    registerFixtureStock(dynamic);
     const t = runOn(typed);
     assert.equal(t.status, 0, `类型查询互引不应造出幻影值环，实际 ${t.status}：\n${t.out}`);
     assert.match(t.out, /值边 0 条、模块级值环 0 个/, `类型查询不应计入值边：\n${t.out}`);
+    registerFixtureStock(dynamic);
     const d = runOn(dynamic);
     assert.equal(d.status, 0, `await import 应正常解析：\n${d.out}`);
     assert.match(d.out, /值边 1 条/, `await import() 是值依赖，应计 1 条值边：\n${d.out}`);
@@ -1231,7 +1309,7 @@ test("规则 4：export { default as A } from 不假报虚导出（F8）", () =>
     [`${SRC}/b/impl.ts`]: 'import { A } from "../a/interface.ts";\nexport const B = A;\n',
   });
   try {
-    seedBaseline(root);
+    registerFixtureStock(root);
     const { status, out } = runOn(root);
     assert.equal(status, 0, `default re-export 应可解析，实际 ${status}：\n${out}`);
     assert.doesNotMatch(out, /虚导出/, `不得误报虚导出：\n${out}`);
@@ -1290,7 +1368,7 @@ test("--write-baseline --package 不抹掉其他包条目（F9）", () => {
     }),
   });
   try {
-    assert.equal(runOn(root, ["--write-baseline"]).status, 0);
+    seedFixtureStock(root);
     const written = JSON.parse(
       readFileSync(join(root, "scripts/data/dir-imports-baseline.json"), "utf8"),
     );
@@ -1427,8 +1505,7 @@ test("全覆盖断言：拓扑缺登记的新增 src 文件判红，登记后放
   };
   const root = makeFixtureRoot(files);
   try {
-    const written = runOn(root, ["--write-baseline"]);
-    assert.equal(written.status, 0, `写基线应成功：\n${written.out}`);
+    seedFixtureStock(root);
     const before = runOn(root);
     assert.equal(
       before.status,
@@ -1459,7 +1536,7 @@ test("全覆盖断言：非 .ts 孤儿（资源/声明类）同样判红，且�
     "scripts/data/mutation-topology.json": coverageTopology(["a", "b", "c"]),
   });
   try {
-    assert.equal(runOn(root, ["--write-baseline"]).status, 0);
+    seedFixtureStock(root);
     // .ps1 不是 TS：两个 TS 计数口径（#710 F14 拆分后的 scannedSrcFiles / allSrcTsFiles）
     // 都不变，故本次判红只可能来自覆盖断言（把红因隔离出来，否则新增 .ts 孤儿会同时抬高
     // 计数、断言被别的计数「代偿」成假绿）。
@@ -1531,7 +1608,7 @@ test("全覆盖断言：#710 §2-2 / #773：$noMutationPackages 成员被 --pack
     }),
   });
   try {
-    seedBaseline(root);
+    registerFixtureStock(root);
     const { status, out } = runOn(root);
     assert.equal(status, 0, `$noMutationPackages 成员应放行（exit 0），实际 ${status}：\n${out}`);
     assert.match(out, /\$noMutationPackages/, `声明须点名登记处：\n${out}`);

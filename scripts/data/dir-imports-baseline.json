@@ -16,7 +16,9 @@
         "implToOtherImpl": [],
         "missingInterface": [],
         "directImpl": [],
-        "uncoveredSrcFiles": []
+        "uncoveredSrcFiles": [],
+        "crossDomainValueEdges": [],
+        "rootIndexImports": []
       }
     },
     "dsh-mcp-manager": {
@@ -45,7 +47,43 @@
         "directImpl": [
           "connection/interface.ts|connection/orchestrator/tool-names.ts"
         ],
-        "uncoveredSrcFiles": []
+        "uncoveredSrcFiles": [],
+        "crossDomainValueEdges": [
+          "api|config/model",
+          "api|workspace",
+          "bootstrap|api",
+          "bootstrap|catalog",
+          "bootstrap|config/model",
+          "bootstrap|config/store",
+          "bootstrap|connection",
+          "bootstrap|connection/orchestrator",
+          "bootstrap|inject",
+          "bootstrap|workspace",
+          "catalog|config/store",
+          "catalog|connection",
+          "catalog|workspace",
+          "config/model|catalog",
+          "config/model|connection",
+          "connection/orchestrator|catalog",
+          "connection/orchestrator|config/model",
+          "connection/orchestrator|config/store",
+          "connection/orchestrator|connection/runtime",
+          "connection/orchestrator|pipeline",
+          "connection/orchestrator|stats",
+          "connection/orchestrator|workspace",
+          "connection/runtime|catalog",
+          "connection/runtime|connection",
+          "connection/runtime|pipeline",
+          "connection/runtime|workspace",
+          "connection|connection/orchestrator",
+          "connection|connection/runtime",
+          "inject|catalog",
+          "inject|connection/runtime",
+          "inject|pipeline",
+          "inject|workspace",
+          "pipeline|workspace"
+        ],
+        "rootIndexImports": []
       }
     },
     "dsh-notifier": {
@@ -62,7 +100,9 @@
         "implToOtherImpl": [],
         "missingInterface": [],
         "directImpl": [],
-        "uncoveredSrcFiles": []
+        "uncoveredSrcFiles": [],
+        "crossDomainValueEdges": [],
+        "rootIndexImports": []
       }
     },
     "dsh-provider-usage": {
@@ -87,7 +127,74 @@
         "directImpl": [
           "apply/report-config-service.ts|domain2/schedule/config.ts"
         ],
-        "uncoveredSrcFiles": []
+        "uncoveredSrcFiles": [],
+        "crossDomainValueEdges": [
+          "apply|domain1/adapters",
+          "apply|domain1/history",
+          "apply|domain1/pipeline",
+          "apply|domain1/registry",
+          "apply|domain1/routes",
+          "apply|domain2/aggregate",
+          "apply|domain2/collect",
+          "apply|domain2/common",
+          "apply|domain2/execute",
+          "apply|domain2/routes",
+          "apply|domain2/schedule",
+          "domain1/pipeline|domain1/registry",
+          "domain1/routes|domain1/registry",
+          "domain2/aggregate|domain2/collect",
+          "domain2/common|domain2/schedule",
+          "domain2/execute|domain2/aggregate",
+          "domain2/execute|domain2/collect",
+          "domain2/execute|domain2/common",
+          "domain2/execute|domain2/schedule",
+          "domain2/routes|domain2/collect",
+          "domain2/routes|domain2/common",
+          "domain2/routes|domain2/execute",
+          "domain2/routes|domain2/schedule",
+          "domain2/schedule|domain2/collect",
+          "domain2/schedule|domain2/common",
+          "shared|domain1/adapters"
+        ],
+        "rootIndexImports": []
+      }
+    },
+    "dsh-verify-isolated": {
+      "modules": 0,
+      "scannedSrcFiles": 1,
+      "allSrcTsFiles": 1,
+      "interfaceFacades": 0,
+      "leafValueEdges": 0,
+      "fileValueEdges": 0,
+      "crossModuleRefs": 0,
+      "quality": {
+        "leafModuleCycles": [],
+        "fileCycles": [],
+        "implToOtherImpl": [],
+        "missingInterface": [],
+        "directImpl": [],
+        "uncoveredSrcFiles": [],
+        "crossDomainValueEdges": [],
+        "rootIndexImports": []
+      }
+    },
+    "dsh-web-file-preview": {
+      "modules": 0,
+      "scannedSrcFiles": 2,
+      "allSrcTsFiles": 4,
+      "interfaceFacades": 0,
+      "leafValueEdges": 0,
+      "fileValueEdges": 1,
+      "crossModuleRefs": 0,
+      "quality": {
+        "leafModuleCycles": [],
+        "fileCycles": [],
+        "implToOtherImpl": [],
+        "missingInterface": [],
+        "directImpl": [],
+        "uncoveredSrcFiles": [],
+        "crossDomainValueEdges": [],
+        "rootIndexImports": []
       }
     },
     "dsh-worktree-sidebar": {
@@ -104,7 +211,9 @@
         "implToOtherImpl": [],
         "missingInterface": [],
         "directImpl": [],
-        "uncoveredSrcFiles": []
+        "uncoveredSrcFiles": [],
+        "crossDomainValueEdges": [],
+        "rootIndexImports": []
       }
     }
   }
