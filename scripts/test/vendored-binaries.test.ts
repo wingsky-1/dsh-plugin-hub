@@ -510,7 +510,7 @@ test("退役残留目录不参与扫描（manifest.retired）", () => {
       active: [PKG],
       standalone: [],
       retired: [{ name: "dsh-old", reason: "fixture" }],
-      configSurfacesPending: [{ package: PKG, reason: "fixture", reviewBy: "2027-01-01" }],
+      configSurfaces: [{ package: PKG, surface: "none", reason: "fixture" }],
     },
   });
   const oldDir = join(root, "packages", "dsh-old");

@@ -239,8 +239,9 @@ test("#8b standalone 校验：重名互斥 / 数组重复项 → 报错；缺省
       JSON.stringify({
         active: ["dsh-a"],
         retired: [],
-        // 配置面声明是必需节（#733 计划项 3.1.1：未登记即红），最小 manifest 也要覆盖其包。
-        configSurfacesPending: [{ package: "dsh-a", reason: "测试用", reviewBy: "2027-03-31" }],
+        // 配置面声明是必需节（#733 计划项 3.1.1：未登记即红），最小 manifest 也要覆盖其包；
+        // surface: "none" 是「确实没有用户配置面」的显式形态。
+        configSurfaces: [{ package: "dsh-a", surface: "none", reason: "测试用" }],
       }),
     );
     assert.deepEqual(loadManifest(dir).standalone, [], "缺 standalone 键应为空集");
