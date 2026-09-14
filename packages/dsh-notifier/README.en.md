@@ -301,28 +301,33 @@ and sound**; with it on, popup × sound decide the shape):
 - **Linux `true` special case (#640 fix)**: Linux desktop daemons differ widely in
   sound-hint support (GNOME silent by default / KDE only since 2025 / Xfce needs
   libcanberra), so the system channel's `sound: true` means "**self-play the default event
-  sound**": the host plays the `message-new-instant` event sound (freedesktop sound theme)
-  via `pw-play` (PipeWire) or `paplay` (PulseAudio) instead of relying on the daemon.
-  Headless servers (no desktop/audio session) stay silent. **Behavior change for
-  existing Linux installs**: system notifications used to be silent (notify-send had
-  no sound hint); after this upgrade, sound-on self-plays the event sound (requires an
-  audio session and `pw-play`/`paplay`; silently skipped when the player/event file is
-  missing — notifications are unaffected).
+  sound**": the host walks the fallback chain `paplay` → `pw-play` → `aplay` → `ffplay`
+  and **stops at the first success** (no double sound), instead of relying on the daemon.
+  When the freedesktop event sound is missing it now uses a **tone synthesized at runtime**
+  (as of 0.2.4), so a host without the sound theme no longer stays silent.
+  **Finding only sound-server players is a known degradation**: `paplay`/`pw-play` always
+  fail on a host without a sound server, so the capability face reports `degraded` with
+  `host-only-sound-server-players` — installing a player that talks to ALSA directly fixes
+  it (`alsa-utils` provides `aplay`, `ffmpeg` provides `ffplay`; on dnf-family hosts
+  `ffmpeg` comes from RPM Fusion). A host with no audio device still stays silent.
+  **Behavior change for existing Linux installs**: system notifications used to be silent
+  (notify-send had no sound hint); after this upgrade, sound-on self-plays the event sound.
 - **Tone × platform mapping (approximate, best-effort)**:
 
-| Tone | Browser (Web Audio) | macOS | Linux (freedesktop event) | Windows |
+| Tone | Browser (Web Audio) | macOS | Linux (event sound, synthesized when missing) | Windows |
 |---|---|---|---|---|
 | `ding` | double short high | Glass (NSSound) | `message-new-instant.oga` | `C:\Windows\Media\Windows Ding.wav` |
 | `bell` | single mid-high | Tink | `bell.oga` | `Windows Chimes.wav` |
 | `chime` | three-note ascent | Sosumi | `complete.oga` | `Windows Chord.wav` |
 | `pop` | short low | Pop | `message.oga` | `Windows Balloon.wav` |
-| `true` (system) | OS default (not silent) | Glass (kept) | default event self-play | toast default system sound; near-default wav for sound-only |
+| `true` (system) | OS default (not silent) | Glass (kept) | default event self-play (synthesized when missing) | toast default system sound; near-default wav for sound-only |
 
   macOS playback is subject to the system "Allow notification sounds" setting; Windows
   tones are played by the host `SoundPlayer` from built-in wav files (allow-listed
   paths, silent when missing); Linux event files are the oga files guaranteed to exist
   in the sound-theme-freedesktop base package under
-  `/usr/share/sounds/freedesktop/stereo/` (multi-path probing, silent when missing).
+  `/usr/share/sounds/freedesktop/stereo/` (multi-path probing, **falling back to a tone
+  synthesized at runtime when missing**).
   Self-play always uses argument-array spawning (no shell concatenation) and
   allow-listed file paths.
 - The host platform is exposed via the `platform` field of `/api/dsh-notifier/health`
@@ -521,8 +526,9 @@ be able to resolve these official packages (skipping type checking is unaffected
   - **Browser notifications** are pushed to **the browser client you are actually using** (your Mac / phone both count), and pop a native notification via the browser's Notification API; they require permission and by default only pop when the page is hidden (the settings card can enable "also when visible"). No matter which machine dsh web runs on, as long as browser notifications are allowed you receive them on your own Mac.
   - **System notifications (host toast)** are popped on the desktop of **the machine dsh web runs on**: if dsh web runs on a Linux server (headless, no desktop session) or some other machine, the toast appears on **that server**, not your Mac — see `/diagnostics` for system-channel availability and the settings card for browser-channel availability. To also get the system toast on your Mac, run dsh web directly on your Mac (it then uses macOS `osascript`); macOS has no `notify-send`, and the system notification is already implemented via `osascript` (zero dependencies, nothing to install)
 - **iOS difference**: Safari's normal tabs have no Web Notifications API (only the "Add to Home Screen" PWA does); on iOS the available channels are "in-page banner + sound when the page is visible" and system notifications after HTTPS + A2HS
-- **The capability self-check (as of 0.2.4) exposes a partial fingerprint of the host's software stack, and it is visible to the LAN once forwarded through `dsh-lan-proxy`**: `capabilities.host.sound.players` on `/health` and `/diagnostics` lists the matched player executable name (first available by priority: `pw-play` → `paplay`; always `afplay` on darwin), and the `checked` arrays reveal whether `notify-send` is installed. This is a **deliberate trade-off** — users cannot act on "the host cannot play sound" unless they can see it — but be aware of what it means combined with lan-proxy's existing posture (that plugin's README states that requests forwarded through it are considered trusted by design). **Containment**: executable names only, tone-file availability as a boolean, **never absolute paths**, and `remediation` `params` come solely from an internal data table (never passed through input), so no `/etc/os-release` content or raw command output can appear in a response
+- **The capability self-check (as of 0.2.4) exposes a partial fingerprint of the host's software stack, and it is visible to the LAN once forwarded through `dsh-lan-proxy`**: `capabilities.host.sound.players` on `/health` and `/diagnostics` lists the matched player executable names (in fallback-chain order, **all** matches: `paplay` → `pw-play` → `aplay` → `ffplay`; always `afplay` on darwin), and the `checked` arrays reveal whether `notify-send` is installed. This is a **deliberate trade-off** — users cannot act on "the host cannot play sound" unless they can see it — but be aware of what it means combined with lan-proxy's existing posture (that plugin's README states that requests forwarded through it are considered trusted by design). **Containment**: executable names only, tone-file availability as a boolean, **never absolute paths**, and `remediation` `params` come solely from an internal data table (never passed through input), so no `/etc/os-release` content or raw command output can appear in a response
 - **Probing has no side effects**: the capability self-check issues only two read-only queries to `org.freedesktop.DBus` (`NameHasOwner` and `ListActivatableNames`) and **never triggers service activation** (no `busctl status`/`list`, no `StartServiceByName`); on `darwin`/`win32` that child process is not even started
+- **Temporary audio files (as of 0.2.4)**: on Linux, when the themed event sound is missing, self-play creates a 0700 per-instance directory under the system temp directory and writes a 0600 WAV opened with `wx` (`wx` refuses pre-existing paths and symlinks); the file is deleted as soon as playback ends — only **this** delivery's file, so a concurrent delivery is unaffected — while the directory is removed when the process exits / the plugin unloads. On a read-only `/tmp` nothing is staged: a sound-only delivery is recorded as `skipped` (`reasonSystemToneUnwritable`), while popup+sound still counts as `ok` with one warn (the popup already went out, so sound is best-effort)
 - **Residual trust surface of D-Bus notifications**: on Linux the notification body is handed to the **current owner** of `org.freedesktop.Notifications`. Any process of the same UID that grabs the name first receives the content (cross-UID takeover does not work: the session bus is one socket per user). Deployments that need process isolation within the same user should evaluate the system channel themselves
 - **Capability contract evolution**: `capabilities` only gains keys, never loses them; the client **ignores unknown groups and unknown `verdict` values** (rendered as "unknown" rather than an error); with an older server that sends no `capabilities`, the settings page degrades gracefully. Upgrading the server therefore does not require upgrading the client
 - Browser notifications require a **secure context** (HTTPS or localhost); LAN HTTP access automatically routes through the fallback channel (banner / sound / title reminder)

@@ -35,6 +35,7 @@ export type RemediationCode =
   | "host-no-dbus-session"
   | "host-popup-no-daemon"
   | "host-no-sound-server-and-player"
+  | "host-only-sound-server-players"
   | "host-no-player"
   | "host-no-tone-file"
   | "host-managed-by-others";

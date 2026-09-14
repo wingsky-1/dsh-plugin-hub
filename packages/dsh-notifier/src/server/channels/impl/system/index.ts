@@ -74,6 +74,18 @@ async function probePlayers(): Promise<readonly string[]> {
   return probed.filter((bin): bin is string => bin !== undefined);
 }
 
+/**
+ * 该播放器是否**不依赖声音服务**（能力面据此把 linux 判成 `ok` / `degraded`）。
+ *
+ * 数据只有一处：`LINUX_PLAYERS` 那一行的 `needsServer`。表里没有的 bin 一律回 `false`——
+ * 「不在表里」不等于「不需要声音服务」，而 `ok` 的语义恰恰是「命中的播放器里至少有一个**已知**
+ * 能直连出声」；把不认识的算作 serverless，就是本增量要消灭的那种「把测不准的事写成 ok」。
+ * linux 上这一分支结构上不可达（`probePlayers` 探的就是这张表），故它只是一条不制造假 ok 的兜底。
+ */
+export function isServerlessPlayer(bin: string): boolean {
+  return playerSpec(bin)?.needsServer === false;
+}
+
 /** 一个候选的探测：表内参数按序试，任一跑得起来即命中（ffplay 的 `--version` 实测 exit 1）。 */
 async function probePlayer(player: PlayerSpec): Promise<boolean> {
   for (const args of player.probeArgs) {

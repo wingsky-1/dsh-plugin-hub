@@ -59,11 +59,15 @@ export const PACKAGE_FAMILIES: Readonly<Record<string, PackageManager>> = {
 };
 
 /**
- * 「既无声音服务也无可用播放器」时建议装的包。一律 `alsa-utils`：它提供的 `aplay` 直连 ALSA，
- * **不依赖 sound server**——正因如此才配得上这一格（装 `pipewire-bin` 在无声音服务的宿主上不解决问题）。
+ * 「没有可用的非服务型播放器」时建议装的包。两项都直连 ALSA、**不依赖 sound server**——正因如此才配得上
+ * 这一格（装 `pipewire-bin` 在无声音服务的宿主上不解决问题）：`alsa-utils` 提供 `aplay`，
+ * `ffmpeg` 提供 `ffplay`（回退链的最后一道，最不挑环境）。`alsa-utils` 保持第一项。
+ *
+ * `ffmpeg` 在 dnf 族（Fedora/RHEL 系）来自 **RPM Fusion**：默认仓库里装不上，用户可见文案必须说出来，
+ * 否则照抄这条建议会直接失败。
  */
 export const PLAYER_PACKAGES: Readonly<Record<PackageManager, readonly string[]>> = {
-  apt: ["alsa-utils"],
-  dnf: ["alsa-utils"],
-  pacman: ["alsa-utils"],
+  apt: ["alsa-utils", "ffmpeg"],
+  dnf: ["alsa-utils", "ffmpeg"],
+  pacman: ["alsa-utils", "ffmpeg"],
 };

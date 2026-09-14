@@ -29,6 +29,7 @@ import {
   releaseSystemDeps,
   systemDeps,
 } from "../../../src/server/channels/impl/system/deps.ts";
+import { isServerlessPlayer } from "../../../src/server/channels/impl/system/index.ts";
 import type { ChildHandle, SystemDeps } from "../../../src/server/channels/impl/system/deps.ts";
 import type {
   NotificationNameProbe,
@@ -117,16 +118,16 @@ afterEach(() => {
 });
 
 describe("平台 × 维度矩阵：结论与 checked 都要落在该格允许集内", () => {
-  it("linux：owner + 播放器 + 音色文件都在 ⇒ popup ok、sound ok", async () => {
+  it("linux：owner + 非服务型播放器 + 音色文件都在 ⇒ popup ok、sound ok", async () => {
     const { host } = await probeWith({
       platform: "linux",
-      available: ["notify-send", "pw-play"],
+      available: ["notify-send", "ffplay"],
       present: [LINUX_TONE],
       nameProbe: { kind: "owner" },
     });
     expect(host.popup.state).toBe("ok");
     expect(host.sound.state).toBe("ok");
-    expect(host.sound.players).toEqual(["pw-play"]);
+    expect(host.sound.players).toEqual(["ffplay"]);
     expect(host.verdict).toBe("ok");
     expect(host.unknownDimensions).toEqual([]);
     expect(host.popup.checked).toEqual(["notify-send", "dbus-name-owner", "session-bus"]);
@@ -241,6 +242,77 @@ describe("平台 × 维度矩阵：结论与 checked 都要落在该格允许集
   });
 });
 
+/**
+ * linux 的三态判据（#783 批 3 增量 2）：能力面必须区分「有播放器」与「播放器能出声」。只命中
+ * paplay/pw-play 时它们在无声音服务的宿主上必失败，而「有没有声音服务」探测不到（本机 /run/user/1000/pulse
+ * 存在但为空也会骗过任何存在性探针）——报 ok 就是把测不准的事写成事实。三条用例分别钉住三态，任一条
+ * 退回旧语义都会红。
+ */
+describe("linux sound 三态：非服务型播放器才算 ok", () => {
+  it("命中非服务型（ffplay）⇒ ok；音色文件缺失也不影响结论（主题缺失由合成兜底）", async () => {
+    const { host } = await probeWith({
+      platform: "linux",
+      available: ["notify-send", "ffplay"],
+      nameProbe: { kind: "owner" },
+    });
+    expect(host.sound.state).toBe("ok");
+    expect(host.sound.players).toEqual(["ffplay"]);
+    // 音色文件仍然被问过（保留为报告项），只是不再参与结论
+    expect(host.sound.checked).toEqual(["players", "tone-file"]);
+    expect(host.sound.toneFileAvailable).toBe(false);
+    expect(host.remediation.map((item) => item.code)).not.toContain("host-no-tone-file");
+  });
+
+  it("非服务型与服务型混合 ⇒ ok（有一个能直连出声就够）", async () => {
+    const { host } = await probeWith({
+      platform: "linux",
+      available: ["notify-send", "paplay", "aplay"],
+      nameProbe: { kind: "owner" },
+    });
+    expect(host.sound.players).toEqual(["paplay", "aplay"]);
+    expect(host.sound.state).toBe("ok");
+  });
+
+  it("只命中服务型（pw-play）⇒ degraded + 新 code（不得报 ok）", async () => {
+    const { host } = await probeWith({
+      platform: "linux",
+      available: ["notify-send", "pw-play"],
+      present: [LINUX_TONE],
+      nameProbe: { kind: "owner" },
+      osRelease: { ok: true, id: "ubuntu" },
+    });
+    expect(host.sound.state).toBe("degraded");
+    expect(host.remediation).toContainEqual({
+      code: "host-only-sound-server-players",
+      params: { packagemanager: "apt", packages: ["alsa-utils", "ffmpeg"] },
+    });
+    // 音色文件在位也救不了：服务型播放器照样要声音服务
+    expect(host.sound.toneFileAvailable).toBe(true);
+    expect(host.remediation.map((item) => item.code)).not.toContain("host-no-tone-file");
+  });
+
+  it("一个都没命中 ⇒ unreachable（优先于音色文件在位）", async () => {
+    const { host } = await probeWith({
+      platform: "linux",
+      available: ["notify-send"],
+      present: [LINUX_TONE],
+      nameProbe: { kind: "owner" },
+    });
+    expect(host.sound.state).toBe("unreachable");
+  });
+
+  // 谓词是 ok 的唯一凭据：只有表里明确登记 needsServer === false 的 bin 才算「不依赖声音服务」。
+  // 表外的名字（含 darwin 的 afplay）没有这条事实，算进 ok 就是拿没验过的东西报可用。
+  it("谓词只认表里登记过的非服务型播放器：表外的名字不制造 ok", () => {
+    expect(isServerlessPlayer("aplay")).toBe(true);
+    expect(isServerlessPlayer("ffplay")).toBe(true);
+    expect(isServerlessPlayer("paplay")).toBe(false);
+    expect(isServerlessPlayer("pw-play")).toBe(false);
+    expect(isServerlessPlayer("afplay")).toBe(false);
+    expect(isServerlessPlayer("mystery-player")).toBe(false);
+  });
+});
+
 describe("popup 五态与优先级", () => {
   const linuxWith = (nameProbe: NotificationNameProbe) => ({
     platform: "linux",
@@ -293,7 +365,9 @@ describe("popup 五态与优先级", () => {
   it("popup 未知 + sound 正常 ⇒ 组级必须是 unknown，不得降级成 ok", async () => {
     const { host } = await probeWith({
       platform: "linux",
-      available: ["notify-send", "pw-play"],
+      // 非服务型播放器才让 sound 真的落在 ok 上：这一条判的是「unknown 不被吞成 ok」，
+      // 半边必须是 ok 才有意义（服务型那条另有用例判 degraded）。
+      available: ["notify-send", "ffplay"],
       present: [LINUX_TONE],
       nameProbe: { kind: "activatable" },
     });
@@ -331,7 +405,7 @@ describe("popup 五态与优先级", () => {
 });
 
 describe("sound 维度", () => {
-  it("无播放器 ⇒ unreachable 并给装包建议；有播放器缺音色文件 ⇒ degraded", async () => {
+  it("无播放器 ⇒ unreachable 并给装包建议（alsa-utils 在前、ffmpeg 在后）", async () => {
     const noPlayer = await probeWith({
       platform: "linux",
       available: ["notify-send"],
@@ -341,16 +415,31 @@ describe("sound 维度", () => {
     expect(noPlayer.host.sound.state).toBe("unreachable");
     expect(noPlayer.host.remediation).toContainEqual({
       code: "host-no-sound-server-and-player",
-      params: { packagemanager: "apt", packages: ["alsa-utils"] },
+      params: { packagemanager: "apt", packages: ["alsa-utils", "ffmpeg"] },
     });
+  });
 
-    const noTone = await probeWith({
+  // linux 的 degraded 现在只有「只命中服务型播放器」一个成因，故 host-no-tone-file 只剩 darwin/win32：
+  // 这两条用例把两条路各自钉住，防止 linux 又回到「拿音色文件判 degraded」的旧语义。
+  it("darwin 缺音色文件 ⇒ degraded + host-no-tone-file（linux 已不再走这条）", async () => {
+    const noTone = await probeWith({ platform: "darwin" });
+    expect(noTone.host.sound.state).toBe("degraded");
+    expect(noTone.host.remediation.map((item) => item.code)).toContain("host-no-tone-file");
+  });
+
+  it("linux 只命中服务型且缺音色文件 ⇒ 装包建议而不是 host-no-tone-file", async () => {
+    const serverOnly = await probeWith({
       platform: "linux",
       available: ["notify-send", "paplay"],
       nameProbe: { kind: "owner" },
+      osRelease: { ok: true, id: "fedora" },
     });
-    expect(noTone.host.sound.state).toBe("degraded");
-    expect(noTone.host.remediation.map((item) => item.code)).toContain("host-no-tone-file");
+    expect(serverOnly.host.sound.state).toBe("degraded");
+    expect(serverOnly.host.remediation).toContainEqual({
+      code: "host-only-sound-server-players",
+      params: { packagemanager: "dnf", packages: ["alsa-utils", "ffmpeg"] },
+    });
+    expect(serverOnly.host.remediation.map((item) => item.code)).not.toContain("host-no-tone-file");
   });
 
   it("认不出包管理器族就不给包名：宁可少说一句，不给错的包名", async () => {
@@ -411,6 +500,7 @@ describe("remediation code 闭集：客户端映射必须覆盖得了", () => {
       "host-no-dbus-session",
       "host-popup-no-daemon",
       "host-no-sound-server-and-player",
+      "host-only-sound-server-players",
       "host-no-player",
       "host-no-tone-file",
       "host-managed-by-others",
@@ -419,6 +509,7 @@ describe("remediation code 闭集：客户端映射必须覆盖得了", () => {
       { platform: "linux", nameProbe: { kind: "no-session-bus" } },
       { platform: "linux", available: ["notify-send"], nameProbe: { kind: "absent" } },
       { platform: "linux", available: ["notify-send", "paplay"], nameProbe: { kind: "owner" } },
+      { platform: "linux", available: ["notify-send", "ffplay"], nameProbe: { kind: "owner" } },
       { platform: "darwin" },
       { platform: "win32" },
     ];
@@ -432,7 +523,20 @@ describe("remediation code 闭集：客户端映射必须覆盖得了", () => {
     const { host } = await probeWith({ platform: "linux", osRelease: { ok: true, id: "arch" } });
     const remedy = host.remediation.find((item) => item.code === "host-no-sound-server-and-player");
     expect(remedy?.params?.packagemanager).toBe("pacman");
-    expect(remedy?.params?.packages).toEqual(["alsa-utils"]);
+    expect(remedy?.params?.packages).toEqual(["alsa-utils", "ffmpeg"]);
+  });
+
+  // 两条装包建议共用同一份清单：只命中服务型播放器那一格也要能给出装什么包（同一份 PLAYER_PACKAGES），
+  // 否则客户端那条无包名文案就成了唯一可达的一条，带包名的反而永远不渲染。
+  it("只命中服务型播放器那条建议也由数据表产生（同族同清单）", async () => {
+    const { host } = await probeWith({
+      platform: "linux",
+      available: ["notify-send", "pw-play"],
+      osRelease: { ok: true, id: "manjaro" },
+    });
+    const remedy = host.remediation.find((item) => item.code === "host-only-sound-server-players");
+    expect(remedy?.params?.packagemanager).toBe("pacman");
+    expect(remedy?.params?.packages).toEqual(["alsa-utils", "ffmpeg"]);
   });
 });
 
