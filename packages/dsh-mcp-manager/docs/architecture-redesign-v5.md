@@ -595,6 +595,14 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | 测试文件下限 | `--min 16` | 随新增文件上调（该下限是**文件数**棘轮，防 include 漂移；参照包 40） |
 | `testLayers` 登记 | `unitExemptions` + `testMutationExemptions` 共 2 条 | 前者随搬迁重判，后者随源文本断言退役而删 |
 
+**B0 实测落地（切片 2，`cd44c90`）**：
+
+- **超集只挂一个段**（`runtime` 段追加 `src/server/**/*.ts` + `src/shared/**/*.ts`，旧 glob 全保留）：覆盖断言是**并集**属性（`mutation-topology.mjs:191-199` 汇总各段、`verify-dir-imports.mjs:521-531` 按文件判并集），单段即成立；6 段都挂会让 B1 新树的同一批文件被 6 段重复度量，与本仓「一个 src 文件只登记进一个段」的既有做法相悖（先例：notifier 的 `src/shared` 独立成段、provider-usage 的 `src/shared/*.ts` 各挂单一消费段）。B1 期间 `runtime` 段会承载全部新树变异体，B2 按域重画时收敛。
+- **facade 条保留 pattern、只重写 reason**（不删）：目标形态的门面共 **13 个**（11 域 + `server/shared` + `src/shared`），只转调域内 service、自身不做裁决，与参照包 notifier 的同类条同形；删条还会与附录 D.3 的计数（1→2 / 12→13）矛盾。**适用期止于 B2**——按域重画时逐条复核，若裁决逻辑真的上移到门面则删除本条。
+- **新增 `!.../src/server/*/deps.ts`（`kind=type-only`）**：只列 `server/<域>` 一层，按附录 E.4「6 域建（pipeline/catalog/connection/inject/api/config）、store/stats/integration 实测零对上依赖不建」；若某域 `deps.ts` 出现值实现（notifier `channels/impl/system/deps.ts` 先例），B2 须拆出单列 `not-mutated`。
+- **`coverage.config.json` 不改（已实测评估）**：include `packages/*/src/**/*.{ts,tsx}` 已结构性覆盖目标树（本包现有 77 个 src `.ts` 全在 include 面内，不在 = 0）；5 条 exclude 里**没有** facade 条（本节前面的更正属实）；且 `verify-coverage-scope.mjs:220-230` 对「模式在覆盖率根内命中 0 文件」判红，故 B0 **不得**预置空条目。
+- **`--min` 保持 16**：`gen-stryker-conf --sync-test-min` 实测输出「同步完成：0 个包」（本切片不新增测试文件，no-op）。
+
 ### 8.4 测试卫生
 
 | 项 | 现状 | 目标 |
