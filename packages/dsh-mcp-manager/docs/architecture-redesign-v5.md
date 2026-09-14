@@ -747,10 +747,42 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | **数字与行号卫生（v5 已核）** | 约 10 | 14800 → 14635（+helpers 161）；`RoutesManager` 24 / 5 → 23 / 8；`routes-controllers` 24 → 18；`smoke` 6 行号 → 9 处；`summary` / `summarize` 命名；`config-schema` / `host-faces` / `constants` / `statsFile` 等陈旧行号；`C-*` 13 → 6；`deps.ts`「0 / 14 域」→ 11 域 |
 | **流程项** | 2 | v5 文档入库；I8 与 `ci.yml` 属红线，随 #767 一次 approved |
 
-## 附录 D 交接状态
+## 附录 D 交接状态（会话压缩用）
 
-- **环境**：主 checkout `/mnt/ssd/dev/dsh-plugin-hub`（HEAD `b490e87`，**未改动**）；方案 worktree `/mnt/ssd/worktree/dsh-plugin-hub-task-767-arch-v4`（分支 `task/767-arch-v4`）。
-- **交付物**：本文件（v5）+ `architecture-redesign-v4.md`（被取代，B3 归档时清理）。
-- **状态**：v5 已按 D1–D8 定稿；**代码一行未动**（等 `approved`）。
-- **下一步**：①本方案落 #767 评论（`needs-proposal-review`）；②维护者 `approved`（覆盖 `.github/`、新增依赖、公共 API 行为变更）；③实施 B0 → B1 → B2 → B3，每批验收含 exit code 与该批全部登记文件同步。
-- **未决**：无（D1–D8 已全部裁定；附录 B.2 的三处对照数字纠错已并入 v5）。
+### D.1 环境与基线
+
+| 项 | 值 |
+|---|---|
+| 主 checkout（**只读，未改动**） | `/mnt/ssd/dev/dsh-plugin-hub`，HEAD `b490e87`（v0.2.4 发布点，与方案里的代码基线一致） |
+| 方案 worktree | `/mnt/ssd/worktree/dsh-plugin-hub-task-767-arch-v4`，分支 `task/767-arch-v4`，领先 `origin/main` **2 个提交**、工作区干净 |
+| 提交 | `e356696` 方案 v5（按 notifier 实证重定 D1–D8）；`4b1153e` v5 复核修订（三视角 4 P0 / 13 P1 并入） |
+| 交付物 | `packages/dsh-mcp-manager/docs/architecture-redesign-v5.md`（756 行）+ `architecture-redesign-v4.md`（被取代，B3 归档时清理） |
+| 参照实现 | `packages/dsh-notifier`（#733 / PR #777）。关键 commit：`2370774` 冻结基线 / `db1ce0f` 首笔砍到 4 导出 / `8df3950` 一次性重冻结 / `4c79ba0` 重写落地 / `8142b13` 行为变更登记模板 / `a748361` 恢复被静默删掉的能力 |
+
+### D.2 已完成
+
+1. **v4 四方复核**（主控一手 + 三视角）：3 P0 / 13 P1 / 约 20 P2 → 已归位（本文件附录 C）。
+2. **v5 重写**：按参照包实证把立场从「结构搬移、行为冻结」改为「一次做到最终形态 + 行为变更显式登记」，8 条决策见 §零。
+3. **v5 三视角复核**：机制可执行性 / 凭据单链闭合性 / 迁移与批次可行性，4 P0 / 13 P1，关键断言经协调者一手复跑 → 15 条修订全部并入，逐条见 **§0.1**。
+4. **维护者已拍**：跨端契约全量收进 `src/shared/`（D5 加强）；测试导入面判据上线（D6 加强，只限 `test/unit/**`）。
+5. **协调者已按默认拍的四条**（维护者可随时否决）：①撤回 `fast-redact`；②@B atomically 保留但带 B1 探针落地条件（`when-exit` 的宿主信号钩子）；③掩码还原用**显式源身份**，不可变 `id` 留后续；④stderr 尾巴收窄为结构化摘要/首行。
+
+### D.3 未完成
+
+1. **#767 方案评论未发**（摘要 + D1–D8 + 两轮复核结论尚未落到 issue）。
+2. **`approved` 未取**：三条红线要一次打包授权——`.github/workflows/ci.yml` 的 mcp 数据面 glob、新增依赖 `atomically`（+ `stubborn-fs` / `stubborn-utils` / `when-exit`）、公共 API 行为变更（§10.1 的八条不保留项）。
+3. **B0 未开工**：`scripts/data/dsh-mcp-manager-export-surface.json` / `-export-faces.json` 尚未生成（`ls scripts/data | grep dsh-mcp-manager` 为空），门禁接入面一处未改。
+4. **代码一行未动**（按仓库红线流程，等 `approved`）。
+
+### D.4 下一步顺序
+
+1. 起草 #767 方案评论（`needs-proposal-review`）→ 维护者过目后发出。
+2. 维护者 `approved`（覆盖上述三条红线）。
+3. **B0**（PR-1，尺子与接线，必须早于第一个结构 commit）→ **B1 → B2 → B3**；每批验收含 `exit code` + 该批**全部登记文件**同步（§12 开头已写死）。
+4. 每批完成后回写本附录的 D.2/D.3。
+
+### D.5 新会话最该先做的三件事
+
+1. 读本文件 §零（立场与 8 条决策）与 **§0.1（第二轮复核修订台账）**——那 15 条是 v5 与初稿的差别所在，别按初稿口径理解。
+2. 抽查代码事实（不要全信文档）：`node scripts/gate/verify-dir-imports.mjs --package dsh-mcp-manager --graph`（应 14 叶子 / 33 值边 / 4+4 环）、`grep -rn '0o600' packages/dsh-mcp-manager/src`（应只有 `config/store/store.ts:66`）、`grep -c 'new McpManager' packages/dsh-mcp-manager/test/e2e/smoke.test.ts`（应为 9）、`ls scripts/data | grep dsh-mcp-manager`（应为空）。
+3. 记住三条「未实测」：门禁未实跑、`atomically` 未安装、掩码往返是静态推演——凡涉及它们，先跑探针再下结论。
