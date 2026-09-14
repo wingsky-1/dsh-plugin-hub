@@ -1,17 +1,19 @@
 /**
  * dsh-worktree-sidebar 浏览器端入口（干净模块：只 apply/inject，外壳由构建链生成）。
  *
- * 这里只做适配：把 `ctx` 收窄成接管逻辑认得的三个窄面，把每会话的绑定状态与快照源接起来。
- * 判断本身都在 `takeover.ts` / `source.ts` / `bindings.ts` 里，那三个模块不需要浏览器。
+ * 这里只做适配：把 `ctx` 收窄成各模块认得的窄面，把每会话的绑定状态与快照源接起来。
+ * 判断本身都在 `takeover.ts` / `source.ts` / `bindings.ts` / `contribute.ts` 里，那四个模块不需要浏览器。
  */
 import { createBindingState } from "./bindings.ts";
 import type { BindingState } from "./bindings.ts";
+import { contributeSessions } from "./contribute.ts";
 import type {
   ClientSlotsPort,
   ObservablePort,
   ReadBinding,
   SessionsSnapshotLike,
   TabsPort,
+  UiSessionPort,
 } from "./ports.ts";
 import { createSessionsSource } from "./source.ts";
 import { installTakeover } from "./takeover.ts";
@@ -44,13 +46,15 @@ const readBinding: ReadBinding = async (sessionId) => {
 };
 
 /**
- * 浏览器端上下文的窄面。刻意不用 `any`：这四个面正是 `inject` 声明的那四个，
+ * 浏览器端上下文的窄面。刻意不用 `any`：这几个面正是 `inject` 声明的那几个，
  * 写成结构类型之后，「多用一个服务却忘了声明」会在类型层先露出来。
  */
 interface ClientContext {
   readonly slots: ClientSlotsPort;
   readonly sidebarRightTabs: TabsPort;
-  readonly sessions: ObservablePort<SessionsSnapshotLike>;
+  /** 服务对象本身**不是**快照源：数据在 `ISessions.list` 上（真机实测见 ports.ts 的注释）。 */
+  readonly sessions: { readonly list: ObservablePort<SessionsSnapshotLike> };
+  readonly uiSession: UiSessionPort;
   readonly effect: (execute: () => () => void, label?: string) => unknown;
 }
 
@@ -68,12 +72,14 @@ export function apply(ctx: ClientContext): void {
       return state;
     };
 
-    /** 每个会话一条改写源；绑定刷新时通知它重算快照。 */
+    /** 每个会话一条改写源；绑定刷新时通知它重算快照。同一 id 恒回同一对象（渲染器按源缓存订阅）。 */
     const sourceFor = (sessionId: string): ObservablePort<SessionsSnapshotLike> => {
       let source = sources.get(sessionId);
       if (source === undefined) {
         const state = stateFor(sessionId);
-        const created = createSessionsSource(ctx.sessions, sessionId, () => state.getSnapshot());
+        const created = createSessionsSource(ctx.sessions.list, sessionId, () =>
+          state.getSnapshot(),
+        );
         state.subscribe(() => created.notify());
         sources.set(sessionId, created);
         source = created;
@@ -86,8 +92,8 @@ export function apply(ctx: ClientContext): void {
       slots: ctx.slots,
       tabs: ctx.sidebarRightTabs,
       logger: { warn: (message: string) => console.warn(message) },
-      sourceFor,
     });
+    const unprovide = contributeSessions({ uiSession: ctx.uiSession, sourceFor });
 
     const timer = setInterval(() => {
       for (const state of states.values()) void state.refresh();
@@ -96,11 +102,12 @@ export function apply(ctx: ClientContext): void {
     ctx.effect(
       () => () => {
         clearInterval(timer);
+        unprovide();
         restore();
         states.clear();
         sources.clear();
       },
-      "dsh-worktree-sidebar: files 页签接管",
+      "dsh-worktree-sidebar: 会话快照源与 files 页签接管",
     );
   } catch (error) {
     // 挂载失败一律降级：不注册任何东西，右栏保持官方行为。可感知地什么都不做，好过静默显示错的地方。
@@ -109,8 +116,9 @@ export function apply(ctx: ClientContext): void {
 }
 
 /**
- * 客户端契约。`slots` / `sidebarRightTabs` 是接管的两个面，`sessions` 是真实快照的来源，
- * `locale` 随官方组件的完整装配面一起被继承（本包不自带文案）。漏声明会在属性访问处抛
- * "without inject"；`sidebarRightTabs` 不存在时整体不激活——那说明官方包不在，我们无话可说。
+ * 客户端契约。`slots` / `sidebarRightTabs` 是接管的两个面，`sessions.list` 是真实快照的来源，
+ * `uiSession` 是把改写源贡献成 `useSessions` 的注册口，`locale` 随官方组件的完整装配面一起被继承
+ * （本包不自带文案）。漏声明会在属性访问处抛 "without inject"；`sidebarRightTabs` 不存在时整体不激活——
+ * 那说明官方包不在，我们无话可说。
  */
-export const inject: string[] = ["slots", "sidebarRightTabs", "sessions", "locale"];
+export const inject: string[] = ["slots", "sidebarRightTabs", "sessions", "uiSession", "locale"];

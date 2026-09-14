@@ -7,6 +7,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import type { BindingRecord } from "../../src/contract.ts";
 import { createBinding } from "../../src/server/binding/interface.ts";
 import { createGit, createGitExec } from "../../src/server/git/interface.ts";
@@ -25,7 +26,7 @@ interface Harness {
   readonly root: string;
   readonly file: string;
   readonly deps: ToolsDeps;
-  readonly exec: unknown;
+  readonly exec: ToolRunContext;
 }
 
 function harness(): Harness {
@@ -53,14 +54,15 @@ function harness(): Harness {
       git: gitApi,
       agents: { subscribe: () => () => undefined, list: () => [], publish: () => () => undefined },
     },
-    exec: { agent: { session: { id: "s1", header: { cwd: repo } } } },
+    // 假执行上下文：被测代码只读 exec.agent.session，其余字段本插件一个都不碰。
+    exec: { agent: { session: { id: "s1", header: { cwd: repo } } } } as unknown as ToolRunContext,
   };
 }
 
 async function run(
-  tool: { execute: (a: unknown, e: unknown) => Promise<unknown> },
+  tool: ToolDefinition,
   args: unknown,
-  ctx: unknown,
+  ctx: ToolRunContext,
 ): Promise<ToolResultValue> {
   return (await tool.execute(args, ctx)) as ToolResultValue;
 }

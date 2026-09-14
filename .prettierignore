@@ -32,10 +32,12 @@ docs/
 .github/
 
 # ── 生成器写的机器数据：形态归生成器（同 stryker 派生配置的理由）──────────────
-# 这三个文件由 --write-baseline / --snapshot / mutation-ledger 以 `JSON.stringify(v, null, 2)`
+# 下面这些文件由 --write-baseline / --snapshot / mutation-ledger 以 `JSON.stringify(v, null, 2)`
 # 写回，判据读的是解析后的结构，不依赖排版；格式化它们只会让下一次重生成与 Prettier 打架。
+# 导出面基线逐包一条：本仓新增一个接入 export-surface-snapshot 的包，就要在这里补一行。
 scripts/data/dir-imports-baseline.json
 scripts/data/dsh-notifier-export-surface.json
+scripts/data/dsh-worktree-sidebar-export-surface.json
 scripts/data/mutation-segment-ledger.json
 # 存量抑制基线由 ESLint CLI（--suppress-all / --prune-suppressions）以
 # json-stable-stringify 写回：实测与 Prettier 只差一个结尾换行，但每次 prune 都会把换行顶掉，

@@ -6,12 +6,12 @@
  * 恰好是文件树的每次刷新。失败用返回值表达而不是抛出——调用方的处置一律是
  * 「保持上次成功态 + 出声」，异常在类型上就不该是控制流。
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
 /** 读取结果：「不存在」「不可读」「是目录」归为同一类——调用方对三者的处置都是回落空值。 */
-export type FileRead = { readonly ok: true; readonly text: string } | { readonly ok: false };
+type FileRead = { readonly ok: true; readonly text: string } | { readonly ok: false };
 
 /** 写入结果。 `reason` 是给日志用的原因文本，不含路径之外的额外事实。 */
 export type FileWrite = { readonly ok: true } | { readonly ok: false; readonly reason: string };
@@ -35,19 +35,6 @@ export async function writeTextAtomic(file: string, text: string): Promise<FileW
     return { ok: true };
   } catch (cause) {
     // 不清临时文件：同名临时文件会被下一次写入覆盖，不会累积。
-    return { ok: false, reason: cause instanceof Error ? cause.message : String(cause) };
-  }
-}
-
-/** 同步原子写。给「装配期就要落盘、且必须在返回前完成」的小文件用。 */
-export function writeTextAtomicSync(file: string, text: string): FileWrite {
-  const temporary = `${file}.tmp-${process.pid}`;
-  try {
-    mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(temporary, text, "utf8");
-    renameSync(temporary, file);
-    return { ok: true };
-  } catch (cause) {
     return { ok: false, reason: cause instanceof Error ? cause.message : String(cause) };
   }
 }

@@ -15,13 +15,13 @@ import { buildRegisterTool } from "../register/index.ts";
 import { repoOf } from "../bind/index.ts";
 
 /** tools 域实例。 */
-export interface ToolsInstance {
+interface ToolsInstance {
   /** 退订 + 摘掉每个 agent 的工具。幂等。 */
   dispose(): void;
 }
 
 /** 装配工具域。 */
-export function createToolsService(deps: ToolsDeps): ToolsInstance {
+export function createTools(deps: ToolsDeps): ToolsInstance {
   const perAgent = new Map<string, () => void>();
   let active = true;
 

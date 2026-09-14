@@ -6,11 +6,11 @@ import { statSync } from "node:fs";
 import type { FileScope, ScopeDeps } from "../../deps.ts";
 
 /** 存在性判定看到的形状。窄到只需要一个方法，测试才能用一个字面量替身驱动。 */
-export interface StatLike {
+interface StatLike {
   isDirectory(): boolean;
 }
 
-/** 默认实现：直连 fs。%BT%throwIfNoEntry%BT% 只把 ENOENT 变成 undefined，其余错误照抛。 */
+/** 默认实现：直连 fs。`throwIfNoEntry` 只把 ENOENT 变成 undefined，其余错误照抛。 */
 function realStat(path: string): StatLike | undefined {
   return statSync(path, { throwIfNoEntry: false });
 }
@@ -18,8 +18,8 @@ function realStat(path: string): StatLike | undefined {
 /**
  * 目录是否真的在。只有 ENOENT/ENOTDIR 才算「不在」；其它错误（EACCES、EIO）按存在处理。
  *
- * %BT%stat%BT% 是可注入的：这段「读不了不等于不存在」的语义正是最容易写错、也最不该靠真实权限去构造
- * 测试环境的地方（换成 %BT%return false%BT% 会把一次权限抖动变成永久摘掉用户的绑定）。
+ * `stat` 是可注入的：这段「读不了不等于不存在」的语义正是最容易写错、也最不该靠真实权限去构造
+ * 测试环境的地方（换成 `return false` 会把一次权限抖动变成永久摘掉用户的绑定）。
  */
 export function directoryExists(
   path: string,

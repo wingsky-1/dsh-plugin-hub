@@ -1,0 +1,11 @@
+{
+  "$comment": "包导出面分类登记（#733 宪法第 3 条 / M2a-3.5 准入门禁）：包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面。 符号集不在此文件里重复枚举——判据的输入是 export-surface-snapshot.mjs 同一次 emitDeclarations() 的产物（§9 禁止双轨）。 本包是 M2a 之后新建的包（#819），没有 legacy 存量白名单：主入口的值导出 4 个全部逐条显式分类， legacy 保持为空即「新符号无 legacy 通道」这条判据在它身上完整成立。 四个都归安装面：name/apply/inject 是干净模块契约，ROUTES 由 bundle-host 注入客户端构建， 三者合起来构成「这个包怎么被装上」的全部对外事实。 本包主入口唯一的类型导出 WorktreeSidebarConfig（装配配置）不在此表内：本门的提取器只认 export declare 块， tsc 对 interface 产出的是不带 declare 的 export interface，故类型不在其论域（门禁自述的盲区①）； 该类型的形状由 README 的配置段与 test/tsconfig 编译面守，不是被静默漏掉。 用法：node scripts/gate/export-surface-snapshot.mjs --package dsh-worktree-sidebar --verbose",
+  "package": "dsh-worktree-sidebar",
+  "faces": {
+    "ROUTES": "安装面",
+    "apply": "安装面",
+    "inject": "安装面",
+    "name": "安装面"
+  },
+  "legacy": []
+}

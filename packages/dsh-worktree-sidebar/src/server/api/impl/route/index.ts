@@ -7,10 +7,11 @@
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { guardLoopbackMethod, writeJson } from "../../../../../../../shared/host-utils.js";
-import type { LoggerPort, RegisterRoute } from "../../deps.ts";
+import type { LoggerPort } from "../../../shared/interface.ts";
+import type { RegisterRoute } from "../../deps.ts";
 
 /** 一个端点的处理器。 */
-export type RequestHandler = (req: IncomingMessage, res: ServerResponse) => void | Promise<void>;
+type RequestHandler = (req: IncomingMessage, res: ServerResponse) => void | Promise<void>;
 
 /** 一条路由：路径 + 方法白名单（方法名 → 处理器）。 */
 export interface Endpoint {

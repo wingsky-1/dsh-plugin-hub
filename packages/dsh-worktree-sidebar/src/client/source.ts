@@ -11,7 +11,7 @@
 import type { ObservablePort, SessionsSnapshotLike } from "./ports.ts";
 
 /** 一个会话的改写源。 */
-export interface SessionsSource extends ObservablePort<SessionsSnapshotLike> {
+interface SessionsSource extends ObservablePort<SessionsSnapshotLike> {
   /** 通知订阅者状态可能变了（由绑定刷新驱动）。 */
   notify(): void;
 }

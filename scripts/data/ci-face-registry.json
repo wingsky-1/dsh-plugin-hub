@@ -117,6 +117,11 @@
       "why": "包级数据资产：dsh-notifier-export-surface.json 被包内 consumer-types 集成测试消费（该测试在 vitest.stryker.d/dsh-notifier.config.ts 的变异面 include 里），dsh-notifier-export-faces.json 被常驻的 export-faces-admission 脚本测试消费——两者都是本包资产，故归本包面。"
     },
     {
+      "path": "scripts/data/dsh-worktree-sidebar-*.json",
+      "faces": [],
+      "why": "包级数据资产（#819）：导出面基线与导出面分类登记，消费方都是常驻的产物闸 contract（scripts/gate/contract-check.ts spawn export-surface-snapshot.mjs），改动在本 PR 上即被消费；它不改变任何 filters，与 scripts/data/ci-face-registry.json 自身同类。"
+    },
+    {
       "path": "scripts/data/dsh-lan-proxy-ui-exempt.json",
       "faces": ["dsh-lan-proxy"],
       "why": "包级资产：lan-proxy 客户端 UI 豁免表，由 config-matrix-gate 消费。原名 lan-proxy-ui-exempt.json 不带包名前缀，只能靠人工记忆映射（#742 阶段 2.2 改名归位）。"

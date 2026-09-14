@@ -239,7 +239,7 @@ packages/dsh-worktree-sidebar/
 两处偏离的性质不同，分开说：
 
 - **interface/deps 的 3 处偏离**：根因是这三个门面同时承担「对外引用面」与「install/release 的实现体」。
-  `git/interface.ts` 另外还持有 %BT%GitApi%BT% 的实现与归属校验的 TTL 缓存；`binding/interface.ts` 持有写盘串行链。
+  `git/interface.ts` 另外还持有 `GitApi` 的实现与归属校验的 TTL 缓存；`binding/interface.ts` 持有写盘串行链。
   与计划 §8「域三件套：interface.ts（唯一对外引用面，install/release 成对）+ deps.ts + impl/**」并不冲突
   （install/release 确实从门面出去），但它与本节的行数上限冲突。
   可选修法是把三者各自再拆出一个 `impl/service`（notifier 的 api 域就是这个形状），门面变成 20–30 行的转发；
@@ -385,40 +385,90 @@ S0 的三处既有断言修改均为**必需同步、非放宽**（ci-matrix 的
 而 P0-2 表明它当时本来就会失败）；真机 HMR 时序；agent 工具在真机会话里的 LLM 回路端到端。
 修复后需要**重跑一次隔离真机验证**才能给 S5 结论。
 
-## 17. 当前状态与交接（压缩会话前记录，2026-09-14）
+### 16.1 第三轮：真机验证暴露的 P0-3（会话快照源接错了面）
+
+隔离真机验证（临时 `DSH_HOME` + 独立 profile + 独立浏览器，dsh 0.1.5-rc.1）第一次把 S5 跑起来就红了：
+console 报 `TypeError: real.getSnapshot is not a function`（栈顶是本包的 client.js），右栏文件树空白。
+
+**运行时的真实事实**（探针取自运行中的页面，不是读类型包）：
+
+- `ctx.sessions` 是 `ISessions`（客户端会话服务），**没有** `getSnapshot`。快照数据在 `ctx.sessions.list` 上
+  （`ObservableSnapshot<SessionListState>`）：实测有 `getSnapshot` / `subscribe` / `update` / `set`，
+  且 `getSnapshot()` 回的确实是 `{ids, byId, current, phase, ...}`。
+- 官方 files 正文读的是 `const cwd = useSessions((s) => s.byId[sessionId]?.cwd)`
+  （`dsh-client-ui-sidebar-files/lib/client.js:421`）。`useSessions` 由渲染器按 **session 作用域的
+  `hooks.sessions` 源**合成（`dsh-client-ui-renderer` 的 `standardKit`：每个 `hooks.<name>` 源 → `use<Name>`
+  选择器 hook，且会话作用域覆盖 root 的同名项）；注册口是 `ctx.uiSession.provide`（实测存在）。
+- 因此原来的做法——「往正文 inject face 里塞一个 `hooks.sessions`」——**必然无效**：渲染器的合成顺序是
+  `{...kit, ...injected, ...}`，官方正文只读框架注入的 `useSessions`，props 里多一个 `hooks` 键它根本不看。
+  这条与 P0-1 同型：接缝照假设写，而假件只证明「代码与假设一致」，不证明「假设与运行时一致」。
+
+**修复**：
+
+- 真实源改用 `ctx.sessions.list`；每会话的改写源经 `ctx.uiSession.provide({hooks: ["sessions"], resolve})`
+  贡献为 session 作用域的 `hooks.sessions`（新模块 `src/client/contribute.ts`）。
+- 接管的 `inject` 面**原样搬运**（删掉 `wrapInject` 与 `TakeoverDeps.sourceFor`），接管逻辑不再碰组件 props。
+- `inject` 增加 `uiSession`；未绑定会话仍由源自己原样透传（回的就是真实快照对象本身）。
+- 测试：新增 `test/unit/client-contribute.test.ts`（假 `uiSession` 复刻渲染器契约：名册静态、resolve 对**每个**
+  绑定都必须给出源）；`client-takeover.test.ts` 改为断言 inject 按**同一引用**透传。
+
+**真机验证结果**（截图证据 `packages/dsh-worktree-sidebar/docs/archive/819-{bound,unbound}-*.png`）：
+
+| 语义 | 结果 | 实测 |
+|---|---|---|
+| 已登记会话的树列 worktree 内容 | 成立 | 树根 `/tmp/pr819-verify/fixture/wt`，含 `WORKTREE-ONLY.txt` |
+| 点开预览读 worktree 里的那一份 | 成立 | `SAME.txt` 预览内容为 `content-from-worktree`（同名的 cwd 副本写的是 `content-from-cwd`） |
+| 未登记会话与未装插件行为一致 | 成立 | **同一实例内**未登记会话的根仍是 `/tmp/pr819-verify/fixture/repo`（cwd），无 `WORKTREE-ONLY.txt` |
+| 挂载无异常 | 成立 | 页面重载后 console 捕获 0 条（修复前同一次重载必然出 TypeError） |
+
+**仍未验证**：真机 HMR 重捕时序——官方客户端包住在 dsh 安装目录内，不写 DSH 源就无法触发官方包重载，
+本环境没有安全的触发手段。agent 工具的 LLM 回路端到端需要真实模型凭据，隔离环境没有，且不得借用用户凭据。
+## 17. 当前状态与交接（2026-09-14）
 
 ### 17.1 代码现状
 
 | 项 | 值 |
 |---|---|
 | 分支 / PR | `task/worktree-sidebar` / [#819](https://github.com/wingsky-1/dsh-plugin-hub/pull/819)（**draft，未合入**） |
-| 已推送提交 | `0c36a1a`（S0+S1）、`5e6b4df`（摘除未落地客户端导出）、`54ac2e6`（S2–S5）、`c762c66`（复核四项必修） |
-| 测试 | 156 例 / 10 文件；含真 git 仓库上的 创建→绑定→摘除 端到端 |
-| 门禁 | 11 项全 exit 0：build / typecheck / test / contract / pack-check / verify-dir-imports / lint（0 error, 669/671 warning）/ format:check / docs:check / stryker:check / test:scripts |
+| 已推送提交 | `0c36a1a`（S0+S1）、`5e6b4df`（摘除未落地客户端导出）、`54ac2e6`（S2–S5）、`c762c66`（复核四项必修）、`6611f25`（状态记录） |
+| 测试 | 159 例 / 11 文件；含真 git 仓库上的 创建→绑定→摘除 端到端 |
+| 门禁 | `pnpm gate:pr`：全仓 build/test/typecheck 与产物闸全 exit 0，唯一非 0 项为 `format:check`（已修，见 17.2）；包级 11 项复跑全 exit 0 |
+| 导出面门禁 | 本包已接入 `export-surface-snapshot`（基线 + 分类登记入库，`contract-check` 逐包跑）；导出面 124 个符号全部有仓内消费者 |
 | 额外探针 | 把本包加进 `forbid-module-state-src` 范围 → exit 0、本包零条目（P1-3 已修） |
 
 ### 17.2 已完成
 
 S0–S5 全部落地；独立复核（第二轮）的四项必修 P0-1 / P0-2 / P1-1 / P1-3 已修并推送，见 §16。
 
+第三轮（本会话）：
+
+1. **导出面收口**。删掉零消费者符号 `describeWorktree` 与 `BindingQueryResponse`，删掉死代码 `writeTextAtomicSync`；
+   收掉 6 个无消费者的导出（`SessionsSource` / `TakeoverDeps` / `RequestHandler` / `StatLike` / 两个域的 `GitPort`）
+   与 3 处冗余转出（`FileScope`、`LoggerPort`×3）；审计脚本按「符号 × 消费者」逐条核对，现无仓内无消费者的导出。
+2. **类型与装配的物理定义下移到 `impl/service`**。四个域（git / binding / scope / api）各自新增 `impl/service/index.ts`，
+   门面收敛成 10–20 行的纯转出；tools 域删掉多余的转发函数（`createToolsService` → `createTools`）。
+   五个域现在是同一形状：门面只收口，`impl/service` 持有服务面与工厂。
+3. **接入导出面门禁**：`scripts/data/dsh-worktree-sidebar-export-surface.json`（基线，已按生成器形态从
+   `format:check` 面排除）、`-export-faces.json`（4 个主入口值导出全部登记为安装面）、`contract-check.ts` 逐包调用、
+   `ci-face-registry.json` 登记两个新数据文件。
+4. **修掉 P0-3**（真机验证暴露的会话快照源接错面），三条界面语义在隔离真机上全部成立，见 §16.1。
+5. 顺带修掉一处历史写入事故：`scope/impl/resolve/index.ts` 与本文档里残留的 `%BT%` 占位符（构建产物 `.d.ts` 里也有），
+   以及本 PR 自建的 `test/tsconfig.json` 编译不过（46 处类型错误，测试目录不在包 typecheck 面内所以一直没暴露）。
+
 ### 17.3 未完成（下一会话的待办，按建议顺序）
 
-1. **导出面收口（用户在本轮明确要求）**。现状实测：
-   - 无消费者符号 2 个：`describeWorktree`（`src/server/git/interface.ts`）、
-     `BindingQueryResponse`（`src/contract.ts`）——删除或降为模块私有。
-   - `scope/interface.ts` 的 `export type { FileScope }` 是冗余转出（真实消费者从 `deps.ts` 取）。
-   - 需要逐条核对每个门面转出是否有消费者；方法论的判据是
-     「只导出有真实消费者的符号，"将来可能有人用"不是理由」。
-2. **类型物理定义下移到 `impl/`**（重构方法论 §5/§1：类型的物理定义在 `impl/` 的块里，`interface.ts` 只 re-export）。
-   现状违反者：`BindingApi`、`GitApi`、`ScopeApi`、`ApiInstance`、`ToolsInstance` 都物理定义在门面里。
-3. **三条界面语义的隔离真机验证**（从未成功执行过）。第二轮复核者**拒绝**把「官方仍工作」当作通过证据；
-   P0-1 修复后必须重跑：树列 worktree 内容 / 点开预览读 worktree 文件 / 未登记会话与未装插件行为一致。
-4. **真机 HMR 时序**（计划 §13 第 5 项）：现为「官方正文消失即撤销、出现即重捕」，无去抖，窗口内有可见的撤销/重建。
-5. **agent 工具在真机会话里的 LLM 回路端到端**（需一次真实模型调用；目前只在真 git 上用插件实现跑了等价端到端）。
-6. **行数预算裁决**（§9.1 / §16）：复核建议 `interface/deps ≤150`、全包合计登记 3000 作观察阈值，
-   并把 §9 语义改为「超限先问这文件里有几个决定」。**本文件未擅自改写 §9 的既有上限，等用户裁决。**
-7. **`.github/workflows/ci.yml` 的授权记录**：复核者指出该授权只存在于 PR 正文陈述，无法独立核实；
-   按仓库规则 `.github/` 属红线，建议补一条可审计的记录。
+1. **真机 HMR 重捕时序**（计划 §13 第 5 项）：现为「官方正文消失即撤销、出现即重捕」，无去抖，窗口内有可见的撤销/重建。
+   **本环境实测不了**：触发它必须让官方客户端包重载，而官方包住在 dsh 安装目录内（写它是红线），
+   本环境没有安全的触发手段。要验它得先把官方包从安装目录里挪出去（换一个验证环境），不是本 PR 能附带完成的。
+2. **agent 工具在真机会话里的 LLM 回路端到端**：需要一次真实模型调用。隔离环境没有 provider 凭据，
+   且不得借用用户凭据，故未跑；现有的等价端到端是真 git 上直调插件实现。
+3. **行数预算裁决**（§9.1 / §16）：`interface/deps ≤80` 的 3 处偏离**已随「类型与装配下移 `impl/service`」消失**
+   （五个门面现在各 11–20 行，最大的是 `api/deps.ts` 30 行）。**仍未裁决的是全包 src 合计**：
+   实测 2533 行 vs 既有上限 1200（2.1 倍）。复核建议把合计登记为观察阈值、并把 §9 语义改为
+   「超限先问这文件里有几个决定」。**本文件未擅自改写 §9 的既有上限，等用户裁决。**
+4. **`.github/workflows/ci.yml` 的授权记录**：复核者指出该授权只存在于 PR 正文陈述，无法独立核实；
+   按仓库规则 `.github/` 属红线。本会话**没有新增任何 `.github/` 改动**（导出面门禁的接入点改在
+   `scripts/gate/contract-check.ts`，属 `scripts/gate/**` 的全局面），授权记录仍待补。
 
 ### 17.4 方法论缺口（本轮明确暴露）
 
@@ -431,9 +481,20 @@ S0–S5 全部落地；独立复核（第二轮）的四项必修 P0-1 / P0-2 / 
 - testing §3「夹具：假件要**真**、要窄、要露怯」→ 直接对应 P0-1：我的假 slots 端口对着错误的类型包造，
   假件与运行时不一致，于是 155 个全绿的用例没有一个能发现真机 `TypeError`。
 
-### 17.5 复核者的证据（可能已被 `/tmp` 清理，若无则需重跑）
+第三轮的 P0-3 是**同一个教训的第二次**，而这次两份清单都已经加载了：端口的形状最终是**真机探针**定的
+（把 `ctx.sessions` / `ctx.uiSession` / `ctx.sessions.list` 的键与 `typeof` 打出来），不是读类型声明推的。
+可推广的判据：**凡「我假定某个运行时对象长什么样」的地方，都要有一条真机取值证据**；
+类型声明只能证明编译期，假件只能证明「代码与假设一致」。
 
-隔离 worktree `/mnt/ssd/worktree/dsh-plugin-hub-task-worktree-sidebar-review2`（detached @54ac2e6，可清理）；
-证据 `/tmp/pr819-verify/{repro-guide.mjs, repro-takeover.mjs, repro-e2e.mjs, evidence/{console.json,right-panel.png}, logs/*}`。
-该隔离 worktree **仍然存在**，下一会话应先 `git worktree list` 查它，用完按仓库规矩
-`git worktree remove ... && git worktree prune` 清理。
+### 17.5 证据位置
+
+**第二轮复核者留下**：隔离 worktree `/mnt/ssd/worktree/dsh-plugin-hub-task-worktree-sidebar-review2`
+（detached @54ac2e6，本会话已按仓库规矩清理）；其复现脚本与截图在 `/tmp/pr819-verify/`（临时目录，可能已被清理）。
+
+**第三轮（本会话）**：
+
+- 真机截图（已入档）：`packages/dsh-worktree-sidebar/docs/archive/819-bound-session-worktree-tree.png`、
+  `819-unbound-session-cwd-tree.png`。
+- 隔离环境与复现脚本：`/tmp/pr819-verify/`（`cdp.mjs` 真机 CDP 小工具、`probe-reload.mjs` 运行时探针、
+  `export-audit.mjs` 导出面消费者审计、`dsh2.log` 隔离实例日志）；临时 `DSH_HOME` `/tmp/dsh-verify-VQUvbs`。
+- 三条界面语义的实测结论与判据见 §16.1；运行时探针输出的原始 JSON 在同批 `/tmp/pr819-verify/` 文件里。

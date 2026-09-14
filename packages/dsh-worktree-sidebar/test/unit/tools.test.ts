@@ -11,6 +11,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import type { BindingRecord } from "../../src/contract.ts";
 import type { ToolsDeps } from "../../src/server/tools/deps.ts";
 import { buildCreateTool } from "../../src/server/tools/impl/create/index.ts";
@@ -88,14 +89,31 @@ function fakeDeps(
   return { deps, table, gitCalls, writes, drops, warns };
 }
 
-const exec = () => ({ agent: { session: { id: "s1", header: { cwd: repo } } } });
+/**
+ * 假执行上下文。被测代码只读 `exec.agent.session`：身份、取消信号与上下文延迟这些字段
+ * 本插件一个都不碰，所以断言面刻意只收到那一个字段——补全其余字段只会让夹具和真实上下文
+ * 一样重，却不会让任何判据变强。
+ */
+interface FakeExec {
+  readonly agent?: {
+    readonly session?: {
+      readonly id: string;
+      readonly header: { readonly cwd: string | undefined };
+    };
+  };
+}
+
+const exec = (cwd: string = repo): FakeExec => ({
+  agent: { session: { id: "s1", header: { cwd } } },
+});
 
 async function run(
-  tool: { execute: (a: unknown, e: unknown) => Promise<unknown> },
+  tool: ToolDefinition,
   args: unknown,
-  ctx: unknown = exec(),
-) {
-  return (await tool.execute(args, ctx)) as ToolResultValue;
+  ctx: FakeExec = exec(),
+): Promise<ToolResultValue> {
+  // 唯一一处断言：把窄假件递给要求完整 ToolRunContext 的入口，收窄面见上面的 FakeExec。
+  return (await tool.execute(args, ctx as ToolRunContext)) as ToolResultValue;
 }
 
 describe("ws_worktree_register", () => {
@@ -148,7 +166,7 @@ describe("ws_worktree_register", () => {
     const value = await run(
       buildRegisterTool(deps),
       { worktree: existingWt },
-      { agent: { session: { id: "s1", header: { cwd: "/outside-root" } } } },
+      exec("/outside-root"),
     );
     expect(value.ok).toBe(false);
     expect(value.detail).toContain("not inside a git repository");
@@ -290,7 +308,10 @@ describe("返回文本", () => {
     const { deps } = fakeDeps();
     const tool = buildRegisterTool(deps);
     const value = await run(tool, { worktree: existingWt });
-    const rendered = tool.output.render(undefined, value) as Array<{ type: string; text: string }>;
+    const rendered = tool.output.render(undefined, { ...value }) as Array<{
+      type: string;
+      text: string;
+    }>;
     expect(rendered[0]?.type).toBe("text");
     expect(rendered[0]?.text).toContain("bound worktree: " + existingWt + " [feature]");
   });
@@ -299,7 +320,10 @@ describe("返回文本", () => {
     const { deps } = fakeDeps();
     const tool = buildRemoveTool(deps);
     const value = await run(tool, {});
-    const rendered = tool.output.render(undefined, value) as Array<{ type: string; text: string }>;
+    const rendered = tool.output.render(undefined, { ...value }) as Array<{
+      type: string;
+      text: string;
+    }>;
     expect(rendered[0]?.text.startsWith("no worktree bound to this session")).toBe(true);
   });
 });

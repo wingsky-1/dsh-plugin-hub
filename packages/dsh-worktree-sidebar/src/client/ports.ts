@@ -2,11 +2,13 @@
  * 客户端依赖面：全部是窄接口，浏览器对象与官方组件只出现在 `index.ts` 的适配层里。
  *
  * **这些窄接口必须逐条对着运行时的真实服务面写，不能对着某个类型包的声明写。**
- * 本项目踩过一次：`ctx.slots` 的运行时实现是 `dsh-client-ui-renderer` 的 `SlotRegistry`
- * （registry.d.ts:46 的 `class SlotRegistry extends Service`，:84 的 `register = SlotCore['register']`），
- * 而另一个同名类型包声明了一个 `isLive` 方法。照后者写出来的端口在真机上第一次求值就
- * `TypeError: slots.isLive is not a function`，而这个错误在自造端口的单测里永远看不见——
- * 假端口只证明「代码与我的假设一致」，不证明「假设与运行时一致」。
+ * 本项目踩过两次，形态完全一样（照假设写的端口在真机上第一次求值就 TypeError，而假端口单测全绿）：
+ * 1. `ctx.slots` 的运行时实现是 `dsh-client-ui-renderer` 的 `SlotRegistry`
+ *    （registry.d.ts:46 的 `class SlotRegistry extends Service`，:84 的 `register = SlotCore[%27register%27]`），
+ *    而另一个同名类型包声明了一个 `isLive` 方法。
+ * 2. `ctx.sessions` 是 `ISessions`（客户端的会话服务），快照数据在它的 `.list` 上
+ *    （`ObservableSnapshot<SessionListState>`），服务对象自己**没有** `getSnapshot`。
+ * 两次的教训是同一条：假端口只证明「代码与我的假设一致」，不证明「假设与运行时一致」。
  */
 
 /** 官方座位上的一条已登记项（运行时形状即 dsh-client-ui-slots 的 StoredEntry）。 */
@@ -18,7 +20,7 @@ export interface StoredEntryLike {
     readonly order?: number;
     readonly priority?: number;
   };
-  /** 官方组件的业务面工厂。我们搬运它、并在外面套一层改写 hooks。 */
+  /** 官方组件的业务面工厂。我们整份搬运它，不在外面套任何东西。 */
   readonly inject?: ((...args: unknown[]) => Record<string, unknown>) | undefined;
   readonly store?: unknown;
   readonly locale?: string | undefined;
@@ -67,10 +69,37 @@ export interface TabsPort {
   register(definition: TabDefinitionLike): () => void;
 }
 
-/** uSES 观察源。`getSnapshot` 必须返回引用稳定的快照，否则每次渲染都会触发更新。 */
+/** uSES 观察源：`getSnapshot` 必须返回引用稳定的快照，否则每次渲染都会触发更新。 */
 export interface ObservablePort<T> {
   getSnapshot(): T;
   subscribe(listener: () => void): () => void;
+}
+
+/** session 作用域的一个绑定。我们只需要它的会话 id。 */
+export interface SessionBindingLike {
+  readonly sessionId: string;
+}
+
+/** 一条 session 作用域标准源的贡献体：声明名册 + 按绑定解析。 */
+export interface SessionContribution {
+  readonly hooks: Readonly<Record<string, ObservablePort<unknown>>>;
+}
+
+/**
+ * `ctx.uiSession`：session 作用域标准源的注册口。
+ *
+ * 这是「让官方正文读到改写后的会话快照」的**唯一**正确接缝：渲染器把每个 `hooks.<name>` 源
+ * 合成为 `use<Name>` 选择器 hook，且会话作用域覆盖 root 作用域的同名项。往组件 props 里塞一个
+ * `sessions` 键没有任何效果——官方正文读的是框架注入的 `useSessions`，它根本不看那个键。
+ *
+ * `hooks` 名册是**静态**的：`resolve` 对每个绑定都必须给出名册里的每一项，
+ * 「没有绑定就不给源」会被渲染器当成配置错误抛出来。所以未绑定时的**原样透传**由源自己实现。
+ */
+export interface UiSessionPort {
+  provide(descriptor: {
+    readonly hooks: readonly string[];
+    readonly resolve: (binding: SessionBindingLike) => SessionContribution;
+  }): () => void;
 }
 
 /** 读一次宿主绑定。失败返回 undefined（调用方保持上次成功态）。 */

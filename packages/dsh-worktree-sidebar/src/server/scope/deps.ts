@@ -6,8 +6,6 @@ import type { BindingApi } from "../binding/interface.ts";
 import type { GitApi } from "../git/interface.ts";
 import type { LoggerPort } from "../shared/interface.ts";
 
-export type { LoggerPort } from "../shared/interface.ts";
-
 /** 与官方同形的文件根解析结果。 */
 export interface FileScope {
   readonly sessionId: string;
@@ -21,7 +19,7 @@ export interface FileScope {
 export type BindingPort = Pick<BindingApi, "get" | "drop">;
 
 /** git 域给本域的能力面：只要一个归属判定。 */
-export type GitPort = Pick<GitApi, "belongsTo">;
+type GitPort = Pick<GitApi, "belongsTo">;
 
 /** typert 查找表的一个描述符。`resolve` 是「当前生效的那一个」。 */
 export interface LookupDescriptorPort {

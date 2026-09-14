@@ -36,12 +36,3 @@ export interface BindingsFile {
   readonly revision: number;
   readonly bindings: Readonly<Record<string, BindingRecord>>;
 }
-
-/**
- * 单会话绑定查询的响应体。刻意**不回 repoRoot**：客户端只需要目录根，
- * 多回一个字段就多一份「客户端不该知道主仓库位置」的暴露面。
- */
-export interface BindingQueryResponse {
-  readonly revision: number;
-  readonly worktreePath: string | null;
-}

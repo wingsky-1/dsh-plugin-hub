@@ -1,40 +1,8 @@
 /**
- * api 域对外契约：**浏览器出口**。把宿主端的事实经 HTTP 送到页面；本域不判业务，也不写任何状态。
+ * api 域对外契约：**浏览器出口**。把宿主端的事实经 HTTP 送到页面。
  *
- * 它是本插件唯一的浏览器入口，所以围栏（回环判定、方法判定、异常收口）也只有一份实现，
- * 少写一处就是多开一个洞。
- *
- * 已挂路由的 disposer 住在实例里而不是模块里（#733 宪法第 1 条）。
+ * 本文件只做收口——`ApiInstance` 与 `createApi` 的物理定义在 `impl/service`，
+ * 围栏与端点注册在 `impl/route`，端点形状在 `impl/handlers`。
  */
-import type { ApiDeps } from "./deps.ts";
-import { bindingsEndpoint, healthEndpoint } from "./impl/handlers/index.ts";
-import { registerEndpoints } from "./impl/route/index.ts";
-
-/** api 域实例：装配的产物只对外给一个释放面。 */
-export interface ApiInstance {
-  /** 摘掉全部路由。幂等。 */
-  dispose(): void;
-}
-
-/** 装配浏览器出口（组合根在 apply 期调用一次）。 */
-export function createApi(deps: ApiDeps): ApiInstance {
-  const disposers = registerEndpoints(
-    deps.register,
-    [bindingsEndpoint(deps.binding), healthEndpoint(deps.binding)],
-    deps.logger,
-  );
-  let live = true;
-  return {
-    dispose: () => {
-      if (!live) return;
-      live = false;
-      for (const dispose of disposers) {
-        try {
-          dispose();
-        } catch {
-          // 卸载阶段不做失败上报：一个端点的摘除失败不该阻断其余，也不该掩盖首个异常。
-        }
-      }
-    },
-  };
-}
+export { createApi } from "./impl/service/index.ts";
+export type { ApiInstance } from "./impl/service/index.ts";

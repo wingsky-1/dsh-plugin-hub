@@ -385,7 +385,9 @@ if (problems.length > 0) {
   );
   for (const p of problems) console.log(p);
   console.log(
-    "  若为有意变更（PR2 行为重构等），先更新基线：node scripts/gate/export-surface-snapshot.mjs --package dsh-notifier --snapshot",
+    "  若为有意变更（行为重构等），先更新基线：node scripts/gate/export-surface-snapshot.mjs --package " +
+      pkgName +
+      " --snapshot",
   );
   process.exit(1);
 }

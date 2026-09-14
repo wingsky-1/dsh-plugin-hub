@@ -140,7 +140,6 @@ function harness(options: { bodyFails?: boolean; kindFails?: boolean } = {}) {
         slots,
         tabs,
         logger: { warn: (message: string) => warns.push(message) },
-        sourceFor: () => ({ getSnapshot: () => ({}), subscribe: () => () => undefined }),
       }),
   };
 }
@@ -174,7 +173,6 @@ describe("抓不到官方正文时零注册", () => {
         },
       },
       logger: { warn: () => undefined },
-      sourceFor: () => ({ getSnapshot: () => ({}), subscribe: () => () => undefined }),
     });
     expect(registered).toBe(0);
   });
@@ -300,18 +298,18 @@ describe("变化重评", () => {
   });
 });
 
-describe("业务面的 hooks 改写", () => {
-  it("保留官方 face 的其余字段，只替换 sessions", () => {
-    const officialFace = { useFiles: () => undefined, hooks: { other: "keep-me" } };
-    const source = { getSnapshot: () => ({}), subscribe: () => () => undefined };
-    let captured: ((...args: unknown[]) => Record<string, unknown>) | undefined;
+describe("正文的 inject 面原样搬运", () => {
+  // 改写目录根的落点不在这里：官方正文读的是框架按 session 作用域 hooks.sessions 合成的
+  // useSessions（见 contribute.ts）。往 props 里塞 hooks 是**曾经的真实缺陷**——真机上官方正文
+  // 根本不看那个键，接管看起来成功而树是空的。
+  it("注册正文时传的就是官方那一个 inject，不做任何包装", () => {
+    const officialFace = { useFiles: () => undefined };
+    const entry: StoredEntryLike = { ...BODY, inject: () => officialFace };
+    let captured: unknown;
     const slots: ClientSlotsPort = {
-      entriesOfSlot: (key) =>
-        key === BODY_SLOT ? [{ ...BODY, inject: () => officialFace }] : [TITLE],
-      // 只有正文那次注册带 inject；标题那次的 options 里没有 inject，
-      // 不按座位过滤就会把 captured 覆盖成 undefined。
+      entriesOfSlot: (key) => (key === BODY_SLOT ? [entry] : [TITLE]),
       register: (options) => {
-        if (options["name"] === BODY_SLOT) captured = options["inject"] as typeof captured;
+        if (options["name"] === BODY_SLOT) captured = options["inject"];
         return () => undefined;
       },
       subscribe: () => () => undefined,
@@ -321,33 +319,8 @@ describe("业务面的 hooks 改写", () => {
       slots,
       tabs: { get: () => OFFICIAL_DEFINITION, register: () => () => undefined },
       logger: { warn: () => undefined },
-      sourceFor: () => source,
     });
-    const face = captured?.("session-1", { actions: true });
-    expect(face?.["useFiles"]).toEqual(officialFace.useFiles);
-    expect(face?.["hooks"]).toEqual({ other: "keep-me", sessions: source });
-  });
-
-  it("取不到会话 id 时原样返回官方 face（不猜会话）", () => {
-    const officialFace = { hooks: { other: "keep-me" } };
-    let captured: ((...args: unknown[]) => Record<string, unknown>) | undefined;
-    const slots: ClientSlotsPort = {
-      entriesOfSlot: (key) =>
-        key === BODY_SLOT ? [{ ...BODY, inject: () => officialFace }] : [TITLE],
-      register: (options) => {
-        if (options["name"] === BODY_SLOT) captured = options["inject"] as typeof captured;
-        return () => undefined;
-      },
-      subscribe: () => () => undefined,
-      onEntryError: () => () => undefined,
-    };
-    installTakeover({
-      slots,
-      tabs: { get: () => OFFICIAL_DEFINITION, register: () => () => undefined },
-      logger: { warn: () => undefined },
-      sourceFor: () => ({ getSnapshot: () => ({}), subscribe: () => () => undefined }),
-    });
-    expect(captured?.(42, { actions: true })).toBe(officialFace);
+    expect(captured).toBe(entry.inject);
   });
 });
 

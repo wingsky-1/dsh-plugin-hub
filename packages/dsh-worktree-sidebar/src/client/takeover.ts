@@ -11,15 +11,11 @@
  * 第 3 步注册的是 `{...官方定义, id: 我们的 id, priority: "extension"}`——**整个定义原样搬运**。
  * 这不是「顺手多带几个字段」：官方注册表 refresh 后会用**在册定义**重算 guide 条目，
  * 丢掉 `guide` 会让所有会话（含从未登记的）默认页签从 Files 变成空的 Guide。
+ *
+ * 正文的 `inject` 面**原样搬运、不做任何包装**：改写目录根的落点在 `contribute.ts` 那条
+ * session 作用域标准源上。往 props 里塞东西是无效的——官方正文读框架注入的 `useSessions`。
  */
-import type {
-  ClientSlotsPort,
-  ObservablePort,
-  SessionsSnapshotLike,
-  StoredEntryLike,
-  TabDefinitionLike,
-  TabsPort,
-} from "./ports.ts";
+import type { ClientSlotsPort, StoredEntryLike, TabDefinitionLike, TabsPort } from "./ports.ts";
 
 /** 我们接管的 kind。 */
 export const FILES_KIND = "files";
@@ -30,12 +26,10 @@ export const TITLE_SLOT = "sidebar.right.pane.tab.title";
 /** 我们自己的类型 id（也是正文与标题在座位上的 key）。 */
 export const OUR_TYPE_ID = "@wingsky-1/dsh-worktree-sidebar/files";
 
-export interface TakeoverDeps {
+interface TakeoverDeps {
   readonly slots: ClientSlotsPort;
   readonly tabs: TabsPort;
   readonly logger: { warn(message: string): void };
-  /** 某个会话的改写源；注入而不是在域内造，接管逻辑因此不需要认识会话存储。 */
-  readonly sourceFor: (sessionId: string) => ObservablePort<SessionsSnapshotLike>;
 }
 
 /** 接管入口。返回值是完整释放函数；调用方把它放进 `ctx.effect` 的 disposer。 */
@@ -79,7 +73,7 @@ export function installTakeover(deps: TakeoverDeps): () => void {
             key: OUR_TYPE_ID,
             locale: body.locale,
             store: body.store,
-            inject: wrapInject(deps, body.inject),
+            inject: body.inject,
           },
           body.component,
         ),
@@ -177,25 +171,4 @@ function findEntry(
 ): StoredEntryLike | undefined {
   if (key === undefined) return undefined;
   return slots.entriesOfSlot(slot).find((entry) => entry.options.key === key);
-}
-
-/**
- * 把官方组件的业务面工厂包一层：保留官方的一切，只把 `sessions` 这个 hook 源换成改写过的。
- *
- * 取不到会话 id 时**原样返回**：宁可让树显示真实 cwd（用户能看出来不对），也不指向一个猜出来的目录。
- * renderer 的展开顺序是 `{...kit, ...injected, ...}`，所以我们放进 injected 的 hooks 会覆盖框架注入——这正是机制。
- */
-function wrapInject(deps: TakeoverDeps, official: StoredEntryLike["inject"]) {
-  return (...args: unknown[]): Record<string, unknown> => {
-    const face = official === undefined ? {} : official(...args);
-    const sessionId = args.find((arg): arg is string => typeof arg === "string");
-    if (sessionId === undefined) return face;
-    const existing = face["hooks"];
-    const hooks =
-      typeof existing === "object" && existing !== null
-        ? { ...(existing as Record<string, unknown>) }
-        : {};
-    hooks["sessions"] = deps.sourceFor(sessionId);
-    return { ...face, hooks };
-  };
 }

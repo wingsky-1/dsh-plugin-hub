@@ -9,7 +9,7 @@ import { dshHome } from "../../../../../shared/dsh-home.js";
 const PACKAGE_DIR = "@wingsky-1/dsh-worktree-sidebar";
 
 /** 绑定表文件名。 */
-export const BINDINGS_FILE_NAME = "bindings.json";
+const BINDINGS_FILE_NAME = "bindings.json";
 
 /** 绑定表完整路径。目录是否存在由写入方按需创建。 */
 export function bindingsFile(): string {

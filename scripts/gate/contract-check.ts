@@ -293,16 +293,19 @@ console.log(failed === 0 ? "客户端契约：全部通过" : `客户端契约�
 // M6（#669 PR1）：包导出面快照——tsc --declaration 产物与入库基线零 diff
 // （符号集 + 导出符号定义块），重构期导出面漂移（增删改符号/定义改写）判红。
 // 基线变更须显式 --snapshot 更新并随 PR 提交（脚本同目录 verify-dir-imports）。
-{
-  const surfaceGate = spawnSync(
-    process.execPath,
-    [join(ROOT, "scripts/gate/export-surface-snapshot.mjs"), "--package", "dsh-notifier"],
-    { encoding: "utf8" },
-  );
+// 接入面（#819）：一个包一条字面量调用点。**刻意不写成 "for (const pkg of [...]) { ..., "--package", pkg }"**——
+// scripts/test/gate-scope-registry.test.ts 靠字面量 `--package "pkg"` 机械派生范围，变量形式会让它
+// 「一个门禁都派生不出来」而判红（实测踩过）。缺基线或缺分类登记一律红：
+// 两者都在 scripts/data/<pkg>-export-{surface,faces}.json，不设缺省通道。
+for (const gateArgs of [
+  [join(ROOT, "scripts/gate/export-surface-snapshot.mjs"), "--package", "dsh-notifier"],
+  [join(ROOT, "scripts/gate/export-surface-snapshot.mjs"), "--package", "dsh-worktree-sidebar"],
+]) {
+  const surfaceGate = spawnSync(process.execPath, gateArgs, { encoding: "utf8" });
   for (const line of (surfaceGate.stdout ?? "").split("\n"))
     if (line.trim() !== "") console.log(line);
   if (surfaceGate.status !== 0) {
-    console.log(`export-surface-snapshot | FAIL exit=${surfaceGate.status}`);
+    console.log("export-surface-snapshot | FAIL exit=" + surfaceGate.status);
     failed++;
   }
 }

@@ -2,8 +2,6 @@
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { LoggerPort } from "../shared/interface.ts";
 
-export type { LoggerPort } from "../shared/interface.ts";
-
 /** 宿主路由注册口：与宿主契约同源，不在两侧各写一遍。 */
 export type RegisterRoute = (route: WebRoute) => () => void;
 

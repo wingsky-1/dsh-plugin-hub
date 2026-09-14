@@ -41,8 +41,8 @@
       "gate": "export-surface-snapshot",
       "script": "scripts/gate/export-surface-snapshot.mjs",
       "scopeFrom": "cli",
-      "packages": ["dsh-notifier"],
-      "why": "包导出面快照（符号集 + 导出符号定义块与入库基线零 diff）。必须显式 --package（缺参直接 exit 2），当前唯一调用点在 contract-check.ts 且只覆盖 dsh-notifier——其余包的导出面尚无基线，属未纳入而非未受限，扩面要先产出基线。"
+      "packages": ["dsh-notifier", "dsh-worktree-sidebar"],
+      "why": "包导出面快照（符号集 + 导出符号定义块与入库基线零 diff）。必须显式 --package（缺参直接 exit 2），调用点只在 contract-check.ts。#819 起扩到 dsh-worktree-sidebar（该包同时产出基线 scripts/data/dsh-worktree-sidebar-export-surface.json 与分类登记 -export-faces.json）；其余包的导出面尚无基线，属未纳入而非未受限，扩面要先产出基线。"
     },
     {
       "gate": "verify-vendored-binaries",

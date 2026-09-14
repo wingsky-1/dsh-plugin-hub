@@ -5,7 +5,7 @@
  * 才有可被门禁校验的答案，而不是散在各域对若干实现文件的直引里
  * （verify-dir-imports 的规则 1/2 判据）。
  */
-export type { FileRead, FileWrite } from "./file-io.ts";
-export { readTextFileSync, writeTextAtomic, writeTextAtomicSync } from "./file-io.ts";
+export type { FileWrite } from "./file-io.ts";
+export { readTextFileSync, writeTextAtomic } from "./file-io.ts";
 export type { LoggerPort } from "./type.ts";
-export { BINDINGS_FILE_NAME, bindingsFile } from "./paths.ts";
+export { bindingsFile } from "./paths.ts";
