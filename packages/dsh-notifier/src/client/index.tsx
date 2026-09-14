@@ -24,7 +24,10 @@ import { ensureStyle } from "../../../../shared/client/ensure-style.js";
 // 通知帧的展示策略（纯判定）、多标签租约、音频出口：外部事实（时钟 / storage /
 // AudioContext）都从端口进来，于是「未解锁 / 被挂起 / 被拒绝」与租约三分支都能在 node 里
 // 跑出判据。音色单点仍在 src/shared/interface.ts，改由 notify/audio.ts 消费。
+import { bindTranslate, t, type Translate } from "./locale.ts";
 import { createAudioEngine, type AudioContextLike } from "./notify/audio.ts";
+import { closeAllNotifications, trackNotification } from "./notify/registry.ts";
+import { titleFlasher } from "./notify/title.ts";
 import { claimMaster as claimMasterLease, MASTER_KEY } from "./notify/lease.ts";
 import { startNotifySession, type EventSourceLike, type NotifySession } from "./notify/session.ts";
 import {
@@ -74,13 +77,7 @@ declare module "@deepseek-ai/dsh-client-ui-slots" {
 /** 本插件字典命名空间（宿主 locale 服务注册用）。 */
 const NS = "notifier";
 
-/** i18n 翻译函数（apply 时由 ctx.locale.bind(NS) 装配；未装配回落 key 本体，行为零变化）。 */
-var t: any = function (key: string, params?: any) {
-  if (params === undefined) return key;
-  return String(key); // 未装配时占位插值忽略（正常路径早已装配）
-};
-
-var ROUTES = {
+const ROUTES = {
   config: "/api/dsh-notifier/config",
   events: "/api/dsh-notifier/events",
   health: "/api/dsh-notifier/health",
@@ -92,29 +89,26 @@ var ROUTES = {
 };
 /** 内置音色 id（与服务端 config.ts SOUND_IDS 同源复制——客户端不 import 宿主
  *  模块，两处由各自测试锁定；定稿口径 ding/bell/chime/pop）。 */
-var SOUND_IDS: readonly string[] = ["ding", "bell", "chime", "pop"];
+const SOUND_IDS: readonly string[] = ["ding", "bell", "chime", "pop"];
 /** 声音设置是否处于「开」：true 与内置音色 id 都算开，false 与脏值算关。
  *  三态摘要、卡体提示、声音行开关三处共用这一条口径——各判一遍就会出现「卡片说有声、开关说没有」。 */
 function soundIsOn(value: any): boolean {
   return value === true || (typeof value === "string" && SOUND_IDS.indexOf(value) !== -1);
 }
-/** 宿主平台（/health platform 拉取；服务端运行机器 OS——系统通道提示据此，
- *  防浏览器 OS 与宿主 OS 混淆。null = 未拉取/失败）。 */
-var hostPlatform: string | null = null;
-var STYLE_ID = "dsh-notifier-style";
+const STYLE_ID = "dsh-notifier-style";
 // 每次样式契约变更后 bump（版本号单调递增，保证 ensureStyle 判定为新版本并重注入）
 // 声音行/三态/试听样式加入时再次 bump。
 // 能力自检行（dn-ch-diag）加入时再次 bump。
-var CSS_VERSION = "784-1";
+const CSS_VERSION = "784-1";
 // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
-var NOTIFY_ICON =
+const NOTIFY_ICON =
   "data:image/svg+xml;utf8," +
   encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#0f9d6e"/><path fill="#fff" d="M12 4a1 1 0 0 1 1 1v.55A5.5 5.5 0 0 1 17.5 11v2.3l1.45 1.45a1 1 0 0 1-.7 1.7H5.75a1 1 0 0 1-.7-1.7L6.5 13.3V11A5.5 5.5 0 0 1 11 5.55V5a1 1 0 0 1 1-1zm-2.5 13a2.5 2.5 0 0 0 5 0h-5z"/></svg>',
   );
 
 // i18n：label 列存字典 key（渲染期 t 求值，模块加载时 t 尚未装配）。
-var EVENT_KEYS = [
+const EVENT_KEYS = [
   ["notifyAsk", "evtAsk"],
   ["notifyQuestion", "evtQuestion"],
   ["notifyTaskDone", "evtTaskDone"],
@@ -125,7 +119,7 @@ var EVENT_KEYS = [
 /** 事件开关键 → 通知 kind（单一事实源；免打扰豁免候选/「跟随已启用」由此派生，
  *  与服务端 EVENT_KEYS 对应的事件源 kind 一致：ask/question/done/subagent-done/
  *  error/turn-end）。 */
-var EVENT_KIND_MAP: Record<string, string> = {
+const EVENT_KIND_MAP: Record<string, string> = {
   notifyAsk: "ask",
   notifyQuestion: "question",
   notifyTaskDone: "done",
@@ -134,7 +128,7 @@ var EVENT_KIND_MAP: Record<string, string> = {
   notifyTurnEnd: "turn-end",
 };
 /** kind → 字典 key（未知 kind 回落 kind 本体显示，数据不翻译）。 */
-var KIND_KEYS: Record<string, string> = {
+const KIND_KEYS: Record<string, string> = {
   ask: "kAsk",
   question: "kQuestion",
   done: "kDone",
@@ -149,7 +143,7 @@ var KIND_KEYS: Record<string, string> = {
  * 与服务端 service.ts KIND_SEVERITY 同源复制（客户端不 import 宿主端模块——
  * 干净模块边界），两处由各自测试锁定；新增 kind 时同步维护。
  */
-var KIND_SEV: Record<string, string> = {
+const KIND_SEV: Record<string, string> = {
   ask: "warning",
   question: "info",
   done: "success",
@@ -184,7 +178,7 @@ function channelIdOf(cfg: Record<string, any>): string {
  * 由用户填写，模板/认证随预设走且可再改）。模板渲染契约见 channel-webhook.ts：
  * 文本占位符 JSON-aware 转义、{{ts}} 数字直出、{{priority}} 频道感知映射。
  */
-var WEBHOOK_PRESETS: Record<string, { auth: string; template: string }> = {
+const WEBHOOK_PRESETS: Record<string, { auth: string; template: string }> = {
   ntfy: {
     auth: "bearer",
     template:
@@ -270,8 +264,6 @@ function requestPermission(onDone: any) {
 // ------------------------------------------------------------ 通知显示（半区）
 
 /** 本页已弹出的系统通知（保留最近 5 条，超出即关最旧的）。 */
-const notified: Notification[] = [];
-
 /** 本标签页的租约身份：跨 apply 复用——重新挂载仍是同一个标签，不该被当成「另一个标签」
  *  而在 15 秒内静默（见 notify/lease.ts 的模块头）。 */
 const TAB_ID = Math.random().toString(36).slice(2);
@@ -327,18 +319,6 @@ function clientFacts(): ClientFacts {
   };
 }
 
-var savedTitle: any = null;
-function flashTitle(title: any) {
-  if (savedTitle === null) savedTitle = document.title;
-  document.title = "🔔 " + String(title).slice(0, 40);
-}
-function restoreTitle() {
-  if (savedTitle !== null) {
-    document.title = savedTitle;
-    savedTitle = null;
-  }
-}
-
 /**
  * 通知展示总入口。
  *
@@ -379,8 +359,7 @@ function showNotification(
         window.focus();
         notification.close();
       };
-      notified.push(notification);
-      notified.shift()?.close();
+      trackNotification(notification);
       // selfplay 模式：Notification 已 silent 防双响，页内补播
       if (policy.selfPlay && audioEngine.gate()) audioEngine.playTone(policy.tone);
       return;
@@ -391,7 +370,7 @@ function showNotification(
   // 降级通道 / 只响不弹：横幅或标题闪烁；声音按帧策略
   const fallback = fallbackChannelOf(playOnly, document.visibilityState);
   if (fallback === "banner") showBanner(kind, title, message);
-  else if (fallback === "title") flashTitle(title);
+  else if (fallback === "title") titleFlasher.flash(title);
   if (policy.selfPlay && audioEngine.gate()) audioEngine.playTone(policy.tone);
 }
 
@@ -478,6 +457,21 @@ function fetchKinds(): Promise<any[]> {
  * 拉取宿主能力自检（GET /diagnostics）。15s 超时兜底：服务端首次探测要起子进程，可能慢；
  * 超时与失败一律静默降级成「读不到」，由调用方把那块整体不渲染——诊断面缺席不该让设置页报错。
  */
+/** 宿主平台（/health platform）：服务端运行机器的 OS——系统通道弹在宿主机器上，浏览器 OS
+ *  与宿主 OS 可异机，所以不能拿 navigator.platform 猜。失败/未知一律 null，由渲染侧回落通用文案。 */
+function fetchHealth(): Promise<string | null> {
+  return fetch(ROUTES.health, { headers: { accept: "application/json" } })
+    .then(function (r: any) {
+      return r.json();
+    })
+    .then(function (body: any) {
+      return typeof body.platform === "string" ? (body.platform as string) : null;
+    })
+    .catch(function () {
+      return null;
+    });
+}
+
 function fetchDiagnostics(): Promise<unknown> {
   var ctrl: AbortController | null =
     typeof AbortController !== "undefined" ? new AbortController() : null;
@@ -573,6 +567,11 @@ function SettingsCard() {
   var diagnosticsDraft = useState(null as unknown);
   var diagnostics = diagnosticsDraft[0];
   var setDiagnostics = diagnosticsDraft[1];
+  // 宿主平台进 state 而不是模块变量：它是要渲染的数据。原先写成模块变量让抓取回调无法触发
+  // 重渲染——/health 晚于最后一次 setState 返回时，系统卡会一直显示通用文案直到用户再交互。
+  var hostPlatformDraft = useState(null as string | null);
+  var hostPlatform = hostPlatformDraft[0];
+  var setHostPlatform = hostPlatformDraft[1];
   // 频道删除两段确认（实例 id）。路由编辑展开行（openRoute）随 chips
   // 直点形态移除——chips 无展开层，routeToggle 直接落草稿。
   var delArmedDraft = useState(null as string | null);
@@ -665,6 +664,15 @@ function SettingsCard() {
       .catch(function () {});
   }
 
+  function loadHealth(alive: { value: boolean }) {
+    // 失败与未知都不提示：平台提示回落通用文案即可（用户无法处置「读不到宿主 OS」）
+    fetchHealth()
+      .then(function (platform) {
+        if (alive.value) setHostPlatform(platform);
+      })
+      .catch(function () {});
+  }
+
   function loadDiagnostics(alive: { value: boolean }) {
     // 失败与超时都不提示：自检面缺席时界面少一块，而不是多一条用户无法处置的错误
     fetchDiagnostics()
@@ -704,6 +712,7 @@ function SettingsCard() {
     loadStatus(alive);
     loadKinds(alive);
     loadDiagnostics(alive);
+    loadHealth(alive);
     return function () {
       alive.value = false;
     };
@@ -2849,11 +2858,12 @@ export function apply(ctx: any) {
     if (locale && typeof locale.register === "function") {
       try {
         locale.register(NS, { zh: zh, en: en });
-        t = locale.bind(NS);
+        // 宿主 bind 出的签名以本包字典键为参数，比端口声明的 string 更窄——收口在适配这一处
+        bindTranslate(locale.bind(NS) as Translate);
         if (typeof locale.subscribe === "function" && typeof locale.getSnapshot === "function") {
           unsubLocale = locale.subscribe(function () {
             try {
-              t = locale.bind(NS);
+              bindTranslate(locale.bind(NS) as Translate);
             } catch (e) {
               /* 忽略 */
             }
@@ -2887,23 +2897,11 @@ export function apply(ctx: any) {
     // onVisible 范式）——匿名模块体注册无卸载路径，重复 apply/热更会累积旧监听。
     function onVisibilityChange() {
       if (document.visibilityState === "visible") {
-        restoreTitle();
+        titleFlasher.restore();
         eventsHandle.current?.reconnect();
       }
     }
     document.addEventListener("visibilitychange", onVisibilityChange);
-    // 宿主平台预取：/health platform 驱动系统卡平台提示（系统通道弹在
-    // 宿主机器，浏览器 OS 与宿主 OS 可异机——不要拿 navigator.platform 猜）
-    fetch(ROUTES.health, { headers: { accept: "application/json" } })
-      .then(function (r: any) {
-        return r.json().then(function (body: any) {
-          if (typeof body.platform === "string") hostPlatform = body.platform;
-        });
-      })
-      .catch(function () {
-        // 失败静默：平台提示回落通用文案
-      });
-
     // 首次任意点击解锁音频（浏览器自动播放策略要求手势）。具名 + disposer 摘除：
     // 从未点击就被卸载时，匿名监听会永久留在 document 上，且下次点击会在插件已卸载后
     // 构造一个 AudioContext。
@@ -2946,11 +2944,9 @@ export function apply(ctx: any) {
     ctx.effect(function () {
       return function () {
         document.removeEventListener("visibilitychange", onVisibilityChange);
-        // 标题恢复（restoreTitle）原本只由 visibilitychange 回前台
-        // 触发；disposer 摘除监听后该路径关闭，若残留 flashTitle 的 savedTitle
-        // 缓存则标题永久卡死（复现路径：hidden 帧 → 卸载 → 标题不恢复）。
-        // 故卸载时主动恢复一次标题并清缓存。
-        restoreTitle();
+        // 标题恢复原本只由 visibilitychange 回前台触发；disposer 摘除监听后该路径关闭，
+        // 若残留恢复缓存则标题永久卡在「🔔 …」（复现路径：hidden 帧 → 卸载）。
+        titleFlasher.restore();
         if (unsubLocale !== undefined) {
           unsubLocale();
           unsubLocale = undefined;
@@ -2960,13 +2956,7 @@ export function apply(ctx: any) {
         // 无条件置 null 会让存活实例的回前台重连静默失效（跨实例串味）。
         if (eventsHandle.current === session) eventsHandle.current = null;
         document.removeEventListener("click", onFirstClick, { capture: true });
-        for (var i = 0; i < notified.length; i += 1) {
-          try {
-            notified[i].close();
-          } catch (error) {
-            // 忽略
-          }
-        }
+        closeAllNotifications();
         var style = document.getElementById(STYLE_ID);
         if (style) style.remove();
       };
