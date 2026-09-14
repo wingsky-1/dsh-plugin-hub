@@ -899,6 +899,12 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 46. **W5 已落地（`f1ad4f8`，主控独立复核通过）**：pipeline 域装端口（`PipelineDeps = {workspace: WorkspacePort}`，WorkspacePort 只列 `parseFullServerName`/`bareServerName`——`fullServerName` 本域从不引用、`MIDDLEWARE_GLOBAL_ROOT` 已在 W3b 迁共享层，故**不为它们开口**）+ 新增 `src/pipeline/impl/service/index.ts` 持有者 + 入口字面量 `installPipeline({ workspace: workspaceApi })`。**实测（主控复跑）**：I2① **26→25**（消失 `pipeline|workspace`）、叶子环 **0→0**、文件环 **0→0**、`directImpl` **0→0**、导出面 **零 diff**、`gate:pr` 32/32、lint 508/508；基线 quality 段**只有 1 条变化**（`pipeline|workspace` 消失），结构计数逐键归因（+1 文件；`leafValueEdges` 37→36；`fileValueEdges` 141→142；`crossModuleRefs` 164 不变 = −1 旧边 +1 入口 import）。**G12 再被复现一次**（W5 反例 4）：`installPipeline` 加 `async` → 注入面输出整段消失、连「async + 传变量」的必红形态也 PASS。W5 还订正了 `pipeline/deps.ts`/`interface.ts` 两处失效陈述（`fullServerName` 是上游 #822 清的未用 import，不是 W1；旧注释把账记错了对象）。
 
+47. **W6（`d2d016e`）与 W7（`928e88b`）已落地，主控均独立复核通过**：
+    - **W6 = inject 端口接线**（新建 `inject/deps.ts` + `inject/impl/service/index.ts`）：I2① **25→21**（消失 `inject|catalog`、`inject|connection/runtime`、`inject|pipeline`、`inject|workspace`），两类环 0/0、`directImpl` 0、导出面零 diff、`gate:pr` 32/32、lint 508/508。**W3b 的红利**：`LIST_DEFAULT_TOOLS_PER_SERVER` 与 `MIDDLEWARE_GLOBAL_ROOT` 已不在 Pick 里（改经共享层门面直取）。
+    - **W7 = connection/orchestrator 端口接线**（新建 `orchestrator/deps.ts` 七个 Port + `impl/service/index.ts`）：I2① **21→14**（消失 orchestrator 的 7 条出边，主控实测改前正好 7 条），两类环 0/0、`directImpl` 0、导出面零 diff、`gate:pr` 32/32。**mutate 覆盖面实测 = 未覆盖 0 个**（`connection/orchestrator/**/*.ts` 落在 `manager` 段的 mutate glob 内，故本刀**无需**动 `mutation-topology.json`）——**这与 D.3·23 对 `connection/runtime/deps.ts` 的判断相反**，W8 必须自己先实测（见 D.3·41）。
+    - 两刀都再次复现 **G12**：给 `installXxx` 加 `async` 会让注入面对账整段静默消失，且会**连同「多接一个键」这种必红形态一起放行** —— 至此「install 签名不得带 `async`」已是 W4/W5/W6/W7 **四次独立复现**的硬约束。
+    - 累计（W1→W7 + W3b）：I2① **33 → 14**、叶子环 **4 → 0**、文件环 **4 → 0**、`directImpl` **1 → 0**；公开导出面始终**零 diff**。
+
 ### D.3 未完成与遗留（含状态订正）
 
 1. **B1 全部切片已完成**（B1.0–B1.5b，见 D.2·19–26）。**B1 收尾已完成**：主控实跑 `gate:pr` = **32 项逐条 exit=0 + PASS**（清单与上一轮逐项一致）、`THIRD-PARTY-LICENSES` 相对 `origin/main` **零改动**、依赖面零新增、44 笔。**未推送**（理由见 D.3·17）。**B2.1 已完成**（`0fb3bab`：零位移、零台账、`gate:pr` 32 条全绿）。**B2.2 已完成**（`8628110`）。**B2.3 已完成**（`6bf9457`，含建 `deps.ts` 后模板订正口径的首次落地）。**B2.4（`catalog` 域）进行中**。切法与验收见 D.4。**两条显式收窄 + 一条落点裁量**见 §十二 表后（不建 10 个空域骨架；B1.4 不路由既有装配；机制落 `server/shared/` 而非入口）。**接线顺序**：`upgrade` 的启用必须与「读者改读新布局」同一笔（B2），否则归档旧文件而旧读者读空 = 静默丢配置（见 §十二 表后）。
