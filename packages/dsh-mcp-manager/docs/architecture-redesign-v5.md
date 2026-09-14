@@ -806,10 +806,10 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | 项 | 值 |
 |---|---|
 | 主 checkout（**只读，未改动**） | `/mnt/ssd/dev/dsh-plugin-hub`，HEAD `b490e87`（v0.2.4 发布点，与方案里的代码基线一致） |
-| 方案 worktree | `/mnt/ssd/worktree/dsh-plugin-hub-task-767-arch-v4`，分支 `task/767-arch-v4`，领先 `origin/main` **13 个提交**、工作区干净 |
+| 方案 worktree | `/mnt/ssd/worktree/dsh-plugin-hub-task-767-arch-v4`，分支 `task/767-arch-v4`，领先 `origin/main` **23 个提交**（切片 4 落地前）、工作区干净 |
 | 提交（方案期） | `e356696` v5 定稿 / `4b1153e` 三视角复核修订 / `803b670``2ff9ff6` 交接状态 |
 | 提交（B0 实施） | `43229f6` 导出面基线冻结 · `d3a21d2` faces + 准入自测双包遍历 · `da83b36` 门禁接线 · `660dd0a` mcp 豁免 + 连带自测 · `f8ee6c5` ci.yml 数据面 glob（红线 1）· `8235e32` 两轮复核并入 · `ec3004c` 维护者裁决落地 · `cd44c90` 变异面 · `8fe5119` facade 计数修正 + §8.3 实测 |
-| 交付物 | `packages/dsh-mcp-manager/docs/architecture-redesign-v5.md`（1037 行，含附录 A–E）+ `architecture-redesign-v4.md`（被取代，B3 归档时清理） |
+| 交付物 | `packages/dsh-mcp-manager/docs/architecture-redesign-v5.md`（1052 行，含附录 A–F）+ `architecture-redesign-v4.md`（被取代，B3 归档时清理） |
 | 工具链（**本会话实测，与旧交接说法相反**） | worktree **有** `node_modules`（`tsc` / `esbuild` / `vitest` / `stryker` 都在 `node_modules/.bin`），故依赖 build 的步骤（`export-surface-snapshot` / `forbid-module-state-src` / `test:scripts`）可在 worktree 内直接跑，无需安装 |
 | 参照实现 | `packages/dsh-notifier`（#733 / PR #777）。关键 commit：`2370774` 冻结基线 / `db1ce0f` 首笔砍到 4 导出 / `8df3950` 一次性重冻结 / `4c79ba0` 重写落地 / `8142b13` 行为变更登记模板 / `a748361` 恢复被静默删掉的能力 |
 
@@ -826,14 +826,17 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 9. **#767 提案评论已发**（核心思路 + 红线授权 + 更正评论：红线由三条降为两条）；**仓级落盘原语候选已登记**（#706 评论：实测 4 个包各自实现落盘，notifier 8 / mcp 8 / provider-usage 9 / lan-proxy 4 写点，权限语义不一致）。
 10. **B0 切片 3a 已完成**
 11. **B0 切片 3b 已完成**（`84a5941`/`8727cf0`/`1fb0af3`）：I8 判据上线（`unitImportFaceViolations`）+ 三类新证据的文档同步；存量两档 = 本包 13 进基线、跨包 3 进台账；判据面**按宪法原文收窄**（「本域 impl」归 B1–B3，实测理由见 §二 I8）。
-12. **B0 的 ⑥ 已完成**，B0 只剩 ② 文档打标 + ⑦⑩ 小项 + 收尾的 `pnpm gate:pr`。（`58823bc`/`d6795ec`）：I2① 执法点（`crossDomainValueEdges`）+ I2④（`rootIndexImports`）+ §5.3 client 判据（`clientServerImports`），三个新证据类正反 fixture 双向可证；协调者复跑 5 个包全 exit 0、mcp 结构型计数逐字未变、基线只增 3 键无位移、`test:scripts` 634 pass。**机制变更**已记入 §5.3 与 R16：`buildBaseline` 两级首次登记（类级只在键缺失那一次生效，类内新增仍判红中止）。
+12. **B0 的 ⑥ 已完成**（I8 判据 + 三类新证据的文档同步）。
+13. **B0② `architecture-contract.md` 三分类打标已完成**（`0ad5a02` + 笔误修正 `3565687`）：顶部加图例与 **16 节逐条裁定**（保留 / 作废 / 重述）+ 引用规则；就地纠正被证伪的 `api/redactor-factory.ts` 声明。四条重点：C-ERR 第 2 条**作废（已证伪）**、§3.1 的 T1「经 `lib/index.js` 断言」**正是 I8 禁的反模式**、§3.3「`interface.ts` 纳入 mutate」**与 B0 的 facade 排除条方向相反**、§2.5 的 `baselineCovered 74.66%`/`strict=true` **数字已过期**。
+14. **`pnpm gate:pr` 全仓口径已由主控实跑 = exit 0**（33 项门禁全绿，`[local-gate] 结果：PASS`）。注意：**本地 PASS ≠ CI 绿**——本地任何档都不跑变异，变异在 PR 上按命中切片强制跑。日志里的 `lan-proxy EADDRINUSE` 是端口占用的环境噪声，非判据问题。
+15. **技术路线已定**（维护者问「全面删除重写 vs 模块搬迁」，裁决：**都不取极端**）：结构一次到位（零 shim）+ 实现逐块搬迁 + **只在必须换形的块重写**。依据：①「1073 组 A 级差分全绿的重写仍静默漏 4 项能力」已实证；②测试面 14796 行虽全绿但**零条**「出口不含明文」断言、且 13 个单测的断言面是旧形态私有字段，重写当天要么失红要么被迫删断言；③上一轮已做过纯搬迁，结果是把反模式写进了契约。分块判据：纯函数族 2074 行可重写（A 级差分有效）／四个巨型文件 3287 行（src 的 29.7%）必须搬迁 + 逐条对账（B 级）／旧形态即缺陷的面必须重写／目录门面导出面一次到位。**未采纳**「逐域删旧建新」的加固（与 D1 的一次性重冻结冲突，并存期只在 B2 内部且导出面在那笔之前一直红，属可见提醒）。（`58823bc`/`d6795ec`）：I2① 执法点（`crossDomainValueEdges`）+ I2④（`rootIndexImports`）+ §5.3 client 判据（`clientServerImports`），三个新证据类正反 fixture 双向可证；协调者复跑 5 个包全 exit 0、mcp 结构型计数逐字未变、基线只增 3 键无位移、`test:scripts` 634 pass。**机制变更**已记入 §5.3 与 R16：`buildBaseline` 两级首次登记（类级只在键缺失那一次生效，类内新增仍判红中止）。
 
 ### D.3 未完成
 
-1. **B0 切片 3b 未发**（I8 测试导入面判据）：3a 已收口，现可发（同一 worktree，一次只放一个写者）。
+1. **B0 切片 4 在飞**（⑦ `locales.ts` 两行文案 + 「客户端产物不含 `~/.dsh`」断言；⑩ `src/placement-math.ts` → `src/shared/`）。**会话压缩时它尚未提交**——已知未提交改动：`src/placement-math.ts` → `src/shared/placement-math.ts`（rename）、`client/core/state.ts`、`client/float/float.ts`、`config/model/config-schema.ts`、`src/index.ts`。**新会话第一件事：读它的最终报告 + `git status` 确认工作区干净**；若它未能自证通过，按 §12「宁可推迟也不许放宽判据」处置（⑩ 本可推到 B1）。
 1b. **文档 follow-up（切片 3a 的写面限制留下）**：`docs/DEVELOPMENT.md` 与包内文档里列举「质量证据种类/现状」的段落需同步新增的三类证据（`crossDomainValueEdges` / `rootIndexImports` / `clientServerImports`）与两级首次登记口径。
 1c. **lint warning 余量告警**：切片 3a 把 warning 从 669 推到 **670**（预算 671），**余量仅剩 1**（新自测文件的 `@ts-nocheck`，与本仓 `scripts/test` 既有约定一致）——后续新增 scripts 测试会先撞这一条。
-2. **B0② `architecture-contract.md` 三分类打标**未做（硬输入已备：该文档 `:28-30` 声称的 `api/redactor-factory.ts` 与「`handleError` 写 body 前先脱敏」都不存在，判「作废」）。
+2. **B0② 已完成**（见 D.2 第 13 条）。
 3. **B0 其余项**：⑦ `locales.ts` 两行文案 + 「客户端产物不含 `~/.dsh`」断言；⑩ `src/placement-math.ts` 迁 `src/shared/`。
 4. **红线状态（两条均已获授权）**：① `ci.yml` 数据面 glob 已落地（`f8ee6c5`）；② 公共 API 行为变更已于 2026-09-14 获维护者授权。**本轮不新增任何第三方依赖**。`approved` 标签按仓规**只能由维护者本人打**，代理不代打；B2 的 commit 正文「授权出处」引用 #767 + §10.1 清单。
 5. **测试面（B3 主体）未动**：16 个测试文件 / 14635 行尚未按域搬迁；`@ts-nocheck` 未清零。
@@ -841,7 +844,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 ### D.4 下一步顺序
 
-1. 完成 B0 切片 3a → 复核 → 发 3b → 复核；同时做 B0② 文档打标与 B0 ⑦⑩。
+1. **收口切片 4**（读报告 + `git status` + 复核 `git diff` 是否只动文案与引用）→ 若 ⑪ 的闸连带影响被判定不划算，接受它推迟到 B1。
 2. **B0 收尾**跑 `pnpm gate:pr` 全仓口径（目前唯一未实测项）。
 3. 之后 **B1（骨架与迁移）→ B2（域重写：凭据单链 + ABI 同源 + 跨端搬家 + 导出面在**删除那一笔**重冻结）→ B3（测试面与收口）**；每批验收含真实 `exit code` + 该批**全部登记文件**同步（§12 开头已写死）。
 4. 每批完成后回写本附录的 D.2/D.3。
@@ -1050,3 +1053,30 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 4. 域定义取「含 `interface.ts` 的最近祖先目录」，`client/**` 全程排除（14 个文件未统计）；如需 client 侧反查须另跑。
 5. 逐域 logger 命中给了行数与词出现数两套，只有行数口径能复现复核的 connection 25 / stats 7；本附录统一用行数口径。
 6. `types/host-faces.ts` 的 4 个宿主最小面（`ManagerLite` / `RoutesManager` / `MiddlewareHost` / `SupervisorLite`）是今日唯一把宿主能力写成类型的地方，目标形态要拆进各域 `deps.ts`——B0 冻结时应作为 `types` 域去向的输入。
+---
+
+## 附录 F 子 agent 派发与复核规程（主控视角，本轮实证）
+
+本轮共派 **5 个实施子 agent + 3 个只读复核**，无一失败；后续以这个模式推进（维护者已定「后续主要派发子 agent 实施」）。
+
+### F.1 派发
+
+1. **一次只放一个写者**：同一 worktree 的 git index 是共享资源。实施与实施必须串行（本轮刻意把切片 3b 压到 3a 收口之后），只读复核可任意并行。主控自己写文档与实施并行时，**必须用 `git commit -F <msg> -- <path>` 显式路径提交**，否则会卷走对方的未提交改动。
+2. **每个 prompt 必含**：worktree 绝对路径；**upstream 指向 `origin/main`、禁止裸 `git push`**；「先读文档哪几节」；逐项交付面；逐条验收命令与期望 exit code；纪律（显式列路径暂存、禁 `-A`、不碰哪些面、不向下委派、跑不动就报）。
+3. **要求子 agent 自跑定位**，不要把自己的行号当事实给它。本轮两次验证：notifier 的 client→server 两条边、lan-proxy/web-file-preview 三处存量——它复跑后与我给的一致，但这正是「不采信转述」的价值所在。
+4. 明确写「**宁可推迟也不要放宽判据**」。本轮两次触发：切片 2 的「glob 命中 0 文件」风险、切片 4 的 ⑩ 迁移。
+5. **prompt 给「先读哪节」，不要给「我理解的口径」**——主控两次越界都被实施方按宪法原文纠正（把 §8.1 的目标形态表当成 I8 判据面；把「不得引他域 `impl`」当成本轮硬判据）。
+
+### F.2 复核（主控必做）
+
+1. **看它有没有删/改弱既有断言**：切片 3a/3b 各改了 2–3 处既有自测，逐条读 diff 原文，判「锚点选取方式改变、强度只增不减」。
+2. **看基线的「位移 vs 新增」**：`--write-baseline` 后必须确认既有键零位移、只多新键。
+3. **机制变更单独裁决**：切片 3a 把 `buildBaseline` 改成两级首次登记——这类改动不能只看「测试绿」，要看是否开出洗白路径（已登记为 R16）。
+4. **不采信「未实测」**：`pnpm gate:pr` 由主控在所有实施落地后自己跑（33 项全绿）；并且**本地 PASS ≠ CI 绿**（变异只在 PR 上跑）。
+
+### F.3 已知会反复撞的坑
+
+- `lint` warning 预算 **670/671，余量仅 1**（新增 `scripts/**` 测试即撞线；**不许擅自抬 `gauntlet.config.json`**）。
+- ESLint 认知复杂度阈值 84：往 `verify-dir-imports.mjs` 里内联大段逻辑会撞线，需抽模块级函数（切片 3a 已因此抽过一次）。
+- `--write-baseline` 在「证据类首次登记」时会按当前事实写入（R16）——新增判据类时必须看逐类提示，并确认该类**只在键缺失那一次**生效。
+- 跨包 `trackingIssue` 的载体：仓库里**没有**覆盖 lan-proxy / web-file-preview 单元测试改动与 notifier client 边的独立 issue，本轮三条台账 + 两条豁免都挂 `#767`（`reviewBy 2027-03-31`）。若要独立跟踪需新开 issue。
