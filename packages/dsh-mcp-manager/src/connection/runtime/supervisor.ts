@@ -19,7 +19,7 @@ import {
   createRedactor,
   msgOf,
 } from "../../pipeline/interface.ts";
-import { resolveReconnect, type ReconnectPolicy } from "../interface.ts";
+import { resolveReconnect, type ReconnectPolicy } from "./reconnect.ts";
 import type { McpStatsCollector } from "../../stats/interface.ts";
 import type { ServerConfig, ManagerLite } from "../../types/interface.ts";
 // 官方工具定义类型（仅 import type，编译期擦除；contract-check 禁止运行时值导入）。

@@ -30,7 +30,7 @@ import {
   createRedactor,
   normalizeArguments,
 } from "../../pipeline/interface.ts";
-import { resolveReconnect } from "../interface.ts";
+import { resolveReconnect } from "./reconnect.ts";
 import { createTransport } from "./transport.ts";
 import {
   CONNECT_TIMEOUT_MS,
