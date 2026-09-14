@@ -24,7 +24,7 @@
 > | 1 | **一、C-ERR 错误契约** | **保留 + 局部作废** | 「错误文案即契约」「body 与日志同口径脱敏」「日志脱敏全量覆盖」**保留**（并入 v5 §6）；但第 2 条声称的实现点 `api/redactor-factory.ts` **不存在**（V1 端到端实测：`src/api/` 零 `createRedactor` 命中、`handleError` 直写 `error.message`）→ **该条作废**；「落位阶段 2+1」→ **B2** |
 > | 2 | **一、C-EVT 事件契约** | **保留** | 两帧源集合 / `ui-config-changed` 独立链不 coalesce / **两帧零负载**——即 v5 §5.2 与 §10.1 保留项 ③；「落位阶段 3」→ **B2** |
 > | 3 | **一、C-CFG 配置演进兼容** | **保留** | schema 默认 = 首启形态、settings 持久化值 = 运行权威、三形态**读取兼容不迁移写回**、双源并存纪律——并入 v5 `config` 域边界 |
-> | 4 | **一、C-ABT AbortSignal 与超时面** | **保留** | `callTool` 选项面、`+2s[[/BT]] 半开兜底、「两路径差异面（timeout/redact/stale）显式排除」——并入 v5 §6.2 ⑧ 的两路径同构探针 |
+> | 4 | **一、C-ABT AbortSignal 与超时面** | **保留** | `callTool` 选项面、`+2s` 半开兜底、「两路径差异面（timeout/redact/stale）显式排除」——并入 v5 §6.2 ⑧ 的两路径同构探针 |
 > | 5 | **一、C-DTO 客户端-宿主 DTO** | **重述** | 六态键集合 / SSE 帧集合 / tool-disable 全名形态 `@@global/<name>`、`@<root>/<name>` **保留**（且 v5 §6.1 纪律 3 正是复用该地址形态）；但「DTO 集中 `types/`」**改**：跨端 DTO 归 `src/shared/`（D5）、域内形状归各域 `interface.ts`，`types` 域**解体**（v5 §0.1 第 16 条）。C13/C6/C7/C2 四条「实现回改」保留为事实记录 |
 > | 6 | **一、C-DIR 目录/归位缺口表** | **整表作废** | 目标位置是上一轮形态，本轮目标树见 v5 §3.1；其中「每目录 `interface.ts`（D10）」这一**门禁**保留并加强（I2/I4），但门面清单改为 `server/<11 域>` + `server/shared` + `src/shared` = **13 个** |
 > | 7 | **二 2.1 静态面清单** | **局部作废** | `service-contract.test.ts` 那条「阶段 1–5 禁止移动 `apply-services.ts`」**作废**（该文件与测试在 B2 一并重写/删除）；stryker 段与 `mutation-topology` 条目**保留**（B0 已按超集更新） |
