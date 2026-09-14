@@ -22,7 +22,7 @@ class ApiService {
   install(deps: ApiDeps): void {
     if (this.installed) throw new Error("dsh-notifier: api 域只能装配一次");
     this.installed = true;
-    streamHub.install({ logger: deps.logger, config: deps.config });
+    streamHub.install({ logger: deps.logger });
 
     const settings = new SettingsEndpoints(deps.config);
     const journal = new JournalEndpoints(deps.stores);

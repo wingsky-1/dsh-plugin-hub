@@ -142,8 +142,8 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
       ["allowKinds", "error"],
       ["historyMaxAgeDays", -1],
       ["historyMaxAgeDays", 3_651],
-      ["maxConnections", 1.5],
-      ["maxConnections", 4_096],
+      ["historyMaxAgeDays", 1.5],
+      ["historyMaxAgeDays", 4_096],
     ];
     for (const [key, value] of dirty) {
       expect(normalizeConfig({ [key]: value })[key], `${key}=${JSON.stringify(value)}`).toEqual(
@@ -153,17 +153,14 @@ describe("normalizeConfig：永不失败（读面在脏文件下也必须交出�
   });
 
   it("计数键：闭区间 [0, 上界] 内的整数原样保留（0 与上界都是有意义的取值，不该被当成越界让给默认值）", () => {
-    const kept = normalizeConfig({ historyMaxAgeDays: 30, maxConnections: 64 });
+    const kept = normalizeConfig({ historyMaxAgeDays: 30 });
     expect(kept.historyMaxAgeDays).toBe(30);
-    expect(kept.maxConnections).toBe(64);
 
-    const bounds = normalizeConfig({ historyMaxAgeDays: 3_650, maxConnections: 1_024 });
+    const bounds = normalizeConfig({ historyMaxAgeDays: 3_650 });
     expect(bounds.historyMaxAgeDays).toBe(3_650);
-    expect(bounds.maxConnections).toBe(1_024);
 
-    const zero = normalizeConfig({ historyMaxAgeDays: 0, maxConnections: 0 });
+    const zero = normalizeConfig({ historyMaxAgeDays: 0 });
     expect(zero.historyMaxAgeDays).toBe(0);
-    expect(zero.maxConnections).toBe(0);
   });
 
   it("声音三态：false 是显式静音、四个内置音色名保留、白名单外的字符串回落（音色名是跨端约定，不是自由文本）", () => {
@@ -410,11 +407,11 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
   });
 
   it("首个非法键即返回并带上界提示（一次只报一个：设置页的定位光标只能落在一个字段上）", () => {
-    expect(invalidOf({ maxConnections: -1, notifyAsk: "yes" }).key).toBe("maxConnections");
-    expect(invalidOf({ maxConnections: -1, notifyAsk: "yes" }).hint).toContain("1024");
-    expect(invalidOf({ notifyAsk: "yes", maxConnections: -1 }).key).toBe("notifyAsk");
+    expect(invalidOf({ historyMaxAgeDays: -1, notifyAsk: "yes" }).key).toBe("historyMaxAgeDays");
+    expect(invalidOf({ historyMaxAgeDays: -1, notifyAsk: "yes" }).hint).toContain("3650");
+    expect(invalidOf({ notifyAsk: "yes", historyMaxAgeDays: -1 }).key).toBe("notifyAsk");
     // 合法值不是出口：扫到它必须继续往下看，否则「合法键 + 非法键」的整份提交会被整体放行。
-    expect(invalidOf({ notifyAsk: true, maxConnections: -1 }).key).toBe("maxConnections");
+    expect(invalidOf({ notifyAsk: true, historyMaxAgeDays: -1 }).key).toBe("historyMaxAgeDays");
   });
 
   it("保留键写拒：凭据别名键命中即 400 且提示点名该键（静默剔除会让用户以为设置生效了）", () => {
@@ -483,8 +480,8 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
       [{ notifyAsk: "false" }, "notifyAsk", "true 或 false"],
       [{ historyMaxAgeDays: -1 }, "historyMaxAgeDays", "0 到 3650"],
       [{ historyMaxAgeDays: 3_651 }, "historyMaxAgeDays", "0 到 3650"],
-      [{ maxConnections: 1.5 }, "maxConnections", "0 到 1024"],
-      [{ maxConnections: "8" }, "maxConnections", "0 到 1024"],
+      [{ historyMaxAgeDays: 1.5 }, "historyMaxAgeDays", "0 到 3650"],
+      [{ historyMaxAgeDays: "8" }, "historyMaxAgeDays", "0 到 3650"],
       [{ allowKinds: "error" }, "allowKinds", "字符串数组"],
       [{ allowKinds: ["a", 1] }, "allowKinds", "字符串数组"],
       // quietHours：「不是对象」与「缺了哪个子键」是不同分支，提示分不开用户就改不对。
@@ -610,10 +607,8 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
   });
 
   it("边界值与整份合法提交放行（闸门把用户正常保存拦住，比放过一个非法值更糟）", () => {
-    expect(validateSettings({ historyMaxAgeDays: 0, maxConnections: 0 })).toEqual({ ok: true });
-    expect(validateSettings({ historyMaxAgeDays: 3_650, maxConnections: 1_024 })).toEqual({
-      ok: true,
-    });
+    expect(validateSettings({ historyMaxAgeDays: 0 })).toEqual({ ok: true });
+    expect(validateSettings({ historyMaxAgeDays: 3_650 })).toEqual({ ok: true });
     const full: SettingsPatch = {
       notifyAsk: false,
       notifyQuestion: true,
@@ -630,7 +625,6 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
       kindRoutes: { error: ["bark:phone"] },
       allowKinds: ["demo:report"],
       historyMaxAgeDays: 7,
-      maxConnections: 32,
     };
     expect(validateSettings(full)).toEqual({ ok: true });
   });
@@ -644,9 +638,9 @@ describe("sanitizeSettings：只留认识的键，且不归一化", () => {
   });
 
   it("值原样带出，不在这里归一化（顺手归一化会让写路径把用户的原始提交偷偷改写掉）", () => {
-    const kept = sanitizeSettings({ notifyAsk: "yes", maxConnections: -5 });
+    const kept = sanitizeSettings({ notifyAsk: "yes", historyMaxAgeDays: -5 });
     expect(kept.notifyAsk).toBe("yes");
-    expect(kept.maxConnections).toBe(-5);
+    expect(kept.historyMaxAgeDays).toBe(-5);
   });
 
   it("没有可认识的键时得到空设置：陌生键被剔除、输入根本不是对象（空值走到索引取值会直接抛），两条路对调用方是同一件事", () => {

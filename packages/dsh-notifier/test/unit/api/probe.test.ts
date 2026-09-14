@@ -17,7 +17,6 @@ import type {
 } from "../../../src/server/api/deps.ts";
 import { ProbeEndpoints } from "../../../src/server/api/impl/probe/index.ts";
 import { streamHub } from "../../../src/server/api/impl/stream/index.ts";
-import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
 import { jsonReq, makeLogger, makeRes, wire } from "../../helpers.ts";
 
 /** 假能力面：调用次数要能被数（缓存判据靠它），平台值可注入（三平台格靠它），探测结论可注入失败。 */
@@ -169,7 +168,7 @@ afterEach(() => {
 
 describe("POST /test：测试通知走同一条裁决管线", () => {
   it("没有 body 时按全频道测试：提交固定的 test 文案，并报出服务端真实的 SSE 句柄数", async () => {
-    streamHub.install({ logger: makeLogger(), config: { readConfig: () => DEFAULT_CONFIG } });
+    streamHub.install({ logger: makeLogger() });
     streamHub.handle(makeReq({ method: "GET" }), makeSseRes());
 
     const { rec, json, pipeline } = await post({});

@@ -32,7 +32,7 @@ const { installApi, releaseApi } = await import("../../../src/server/api/interfa
 // 动态导入而不是顶层静态 import：流实例的落盘路径在构造时定下，静态导入会先于上面的临时 home 求值。
 const { streamHub } = await import("../../../src/server/api/impl/stream/index.ts");
 
-/** 视图四件事实：流块只用 `readConfig`，其余两处给足形状即可。 */
+/** 视图四件事实：api 域只把它原样透传给设置端点，形状够用即可。 */
 const VIEW = { user: {}, revision: 1, writable: true, effective: {} };
 
 beforeEach(() => {
@@ -332,7 +332,6 @@ describe("装配守卫：未装配与重复装配", () => {
     expect(() =>
       streamHub.install({
         logger: makeLogger(),
-        config: { readConfig: () => DEFAULT_CONFIG },
       }),
     ).toThrow(/api 流只能装配一次/u);
   });

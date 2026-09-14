@@ -159,7 +159,7 @@ function assemble() {
     frames: frames.port,
     logger,
     config: {
-      readConfig: () => ({ ...DEFAULT_CONFIG, maxConnections: 4 }),
+      readConfig: () => ({ ...DEFAULT_CONFIG }),
       readSettingsView: () => ({
         user: { notifyAsk: false },
         revision: 7,

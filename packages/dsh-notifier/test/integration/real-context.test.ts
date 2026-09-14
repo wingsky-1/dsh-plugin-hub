@@ -914,11 +914,11 @@ describe("宿主 settings 服务：装配期同步割接存量配置", () => {
     expect(root.get("wingsky.notifier", false)).toBeUndefined();
 
     // 否定判据要一个界碑：config 域的写队列串行，本用例自己排一次队，它的落盘即此前全部落盘。
-    const written = await configApi.writeConfig({ maxConnections: 5 });
+    const written = await configApi.writeConfig({ historyMaxAgeDays: 5 });
     expect(written.ok).toBe(true);
     const stored = JSON.parse(readFileSync(configFile, "utf8")) as Record<string, unknown>;
     expect("notifyTaskDone" in stored).toBe(false);
-    expect(stored.maxConnections).toBe(5);
+    expect(stored.historyMaxAgeDays).toBe(5);
   });
 });
 

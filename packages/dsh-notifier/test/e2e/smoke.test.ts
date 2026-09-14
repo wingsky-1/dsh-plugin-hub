@@ -543,7 +543,7 @@ describe("真实 HTTP 面（真实宿主 + 真实 loopback socket）", () => {
 
     const saved = await send(port, "/api/dsh-notifier/config", {
       method: "PUT",
-      body: JSON.stringify({ patch: { maxConnections: 5 }, expectedRevision: view.revision }),
+      body: JSON.stringify({ patch: { historyMaxAgeDays: 5 }, expectedRevision: view.revision }),
     });
     expect(saved.status).toBe(200);
     const written = parseBody<{ ok: boolean; revision: number; user: Record<string, unknown> }>(
@@ -551,16 +551,16 @@ describe("真实 HTTP 面（真实宿主 + 真实 loopback socket）", () => {
     );
     expect(written.ok).toBe(true);
     expect(written.revision, "写入推进修订号").not.toBe(view.revision);
-    expect(written.user.maxConnections).toBe(5);
+    expect(written.user.historyMaxAgeDays).toBe(5);
     await pollUntil(
-      () => readFileSync(configFile, "utf8").includes('"maxConnections": 5'),
+      () => readFileSync(configFile, "utf8").includes('"historyMaxAgeDays": 5'),
       "配置写入真实落盘",
       10_000,
     );
 
     const conflict = await send(port, "/api/dsh-notifier/config", {
       method: "PUT",
-      body: JSON.stringify({ patch: { maxConnections: 6 }, expectedRevision: view.revision }),
+      body: JSON.stringify({ patch: { historyMaxAgeDays: 6 }, expectedRevision: view.revision }),
     });
     expect(conflict.status).toBe(409);
     expect(parseBody<{ error: { code: string } }>(conflict.body).error.code).toBe(

@@ -379,13 +379,13 @@ describe("存量设置的割接：装配期同步读，直接读写配置文件"
   it("配置文件已有内容时以文件为基底合并存量：存量覆盖同名键，文件里多出来的形状留住", () => {
     const file = notifierFile(CONFIG_FILE_NAME);
     mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, `${JSON.stringify({ notifyAsk: true, maxConnections: 32 })}\n`, "utf8");
+    writeFileSync(file, `${JSON.stringify({ notifyAsk: true, historyMaxAgeDays: 32 })}\n`, "utf8");
 
     assemble({ legacy: makeLegacy([{ ns: "dsh-notifier", user: { notifyAsk: false } }]) });
 
     const stored = configOnDisk();
     expect(stored.notifyAsk).toBe(false);
-    expect(stored.maxConnections).toBe(32);
+    expect(stored.historyMaxAgeDays).toBe(32);
   });
 
   it("落盘失败即抛并点名这一步（割接在装配路径上，半完成的迁移不该被当成启动成功）", () => {

@@ -129,16 +129,3 @@ export function assignChannelFields(
   }
   return out;
 }
-
-/**
- * maxConnections 软钳制：空串经 numInput 归一为 undefined → 不落 diff（保持原值）；
- * 非有限值（NaN 防御）同样归 undefined 不提交。
- *
- * 注意下界与服务端不一致：服务端 asCount 的判据是 raw >= 0，即 0 合法，而这里钳到 1。
- * 该键本身是「连接泄露」时代的权宜设置，待删除（#769 阶段 4）——届时本函数一并移除，
- * 现在不改钳制范围以免引入一次行为变更。
- */
-export function clampMaxConnections(value: number | undefined): number | undefined {
-  if (value === undefined || !Number.isFinite(value)) return undefined;
-  return Math.min(1024, Math.max(1, Math.round(value)));
-}

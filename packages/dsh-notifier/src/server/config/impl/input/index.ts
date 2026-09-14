@@ -151,7 +151,6 @@ export const RETIRED_KEYS: readonly string[] = [
  */
 export const COUNT_LIMITS: Record<string, number> = {
   historyMaxAgeDays: 3_650,
-  maxConnections: 1_024,
 };
 
 // ---------------------------------------------------------------- 解析
@@ -198,11 +197,6 @@ export function normalizeConfig(input: StoredSettings): NotifyConfig {
       input.historyMaxAgeDays,
       fallback.historyMaxAgeDays,
       COUNT_LIMITS.historyMaxAgeDays,
-    ),
-    maxConnections: asCount(
-      input.maxConnections,
-      fallback.maxConnections,
-      COUNT_LIMITS.maxConnections,
     ),
   };
 }

@@ -10,7 +10,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   assignChannelFields,
-  clampMaxConnections,
   diffSettingsPayload,
   domainPayload,
   rebaseSettings,
@@ -199,26 +198,5 @@ describe("rebaseSettings：以服务端最新为基底、本地变更键覆盖",
     const out = rebaseSettings({}, remote);
     expect(out).toEqual({ a: 1 });
     expect(out).not.toBe(remote);
-  });
-});
-
-describe("clampMaxConnections：只提交有限整数，且钳到 1..1024", () => {
-  it("undefined 与非有限值一律不提交（保持原值）", () => {
-    expect(clampMaxConnections(undefined)).toBeUndefined();
-    expect(clampMaxConnections(Number.NaN)).toBeUndefined();
-    expect(clampMaxConnections(Number.POSITIVE_INFINITY)).toBeUndefined();
-    expect(clampMaxConnections(Number.NEGATIVE_INFINITY)).toBeUndefined();
-  });
-
-  it("越界值钳回区间端点（0 与负值抬到 1，超上限压到 1024）", () => {
-    expect(clampMaxConnections(0)).toBe(1);
-    expect(clampMaxConnections(-5)).toBe(1);
-    expect(clampMaxConnections(1025)).toBe(1024);
-  });
-
-  it("区间内取整（四舍五入），端点保值", () => {
-    expect(clampMaxConnections(1)).toBe(1);
-    expect(clampMaxConnections(3.6)).toBe(4);
-    expect(clampMaxConnections(1024)).toBe(1024);
   });
 });

@@ -79,7 +79,6 @@ export const zh = {
   clearFail: "清空失败：{msg}{hint}",
   // 配置行
   historyRetention: "历史保留天数（0=不按天清理）",
-  maxConnections: "最大连接数（条，超出淘汰最老）",
   dndEnable: "启用免打扰",
   dndStart: "开始时间",
   dndEnd: "结束时间",
@@ -366,7 +365,6 @@ export const en: Record<NotifierLocaleKey, string> = {
   cleared: "Cleared {n} history entries",
   clearFail: "Clear failed: {msg}{hint}",
   historyRetention: "History retention (days, 0=no daily cleanup)",
-  maxConnections: "Max connections (evict oldest beyond)",
   dndEnable: "Enable do-not-disturb",
   dndStart: "Start time",
   dndEnd: "End time",

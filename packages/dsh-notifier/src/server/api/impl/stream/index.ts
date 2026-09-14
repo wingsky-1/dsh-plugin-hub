@@ -28,15 +28,9 @@ const CONNECTED = ": connected\n\n";
 /** 线协议里的通知事件（`ping` 之外的那一支）。 */
 type NotifyEvent = Extract<StreamEvent, { type: "notify" }>;
 
-/** 未装配时的占位。占位值不会被真正读到（`installed` 守卫），它的作用是让字段有确定的类型、不必每个使用点判空；
- * 能力占位成抛错而不是空实现：真被读到时应当场暴露，而不是静默按默认行为继续。 */
+/** 未装配时的占位。占位值不会被真正读到（`installed` 守卫），它的作用是让字段有确定的类型、不必每个使用点判空。 */
 const UNINSTALLED: StreamDeps = {
   logger: { warn: () => {} },
-  config: {
-    readConfig: () => {
-      throw new Error("dsh-notifier: api 流尚未装配");
-    },
-  },
 };
 
 /** 未装配的枢纽：连接表为空，`dispose` 幂等。返回形状必须与真实枢纽逐键一致，否则「未装配」与

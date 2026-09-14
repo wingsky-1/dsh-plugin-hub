@@ -56,7 +56,6 @@ import { credentialFieldKey, credentialFieldView } from "./settings/mask.ts";
 // 「保存什么」，因此必须是可判据的面（原先挂在公开 apply 上，实测零消费者）。
 import {
   assignChannelFields,
-  clampMaxConnections,
   diffSettingsPayload,
   domainPayload,
   rebaseSettings,
@@ -2409,27 +2408,6 @@ function SettingsCard() {
             value={settings.historyMaxAgeDays}
             onChange={function (e: any) {
               patch({ historyMaxAgeDays: Number(e.target.value) });
-            }}
-          />,
-        )}
-        {advRow(
-          t("maxConnections"),
-          <input
-            type="number"
-            min={1}
-            max={1024}
-            step={1}
-            className="dn-set-input dn-set-numInput"
-            aria-label={t("maxConnections")}
-            value={settings.maxConnections}
-            onChange={function (e: any) {
-              // 空串→undefined→diff 键被序列化丢弃→不提交保持原值；
-              // 非空软 clamp（1-1024）防 0→400 保存死锁（服务端 normalize 仍权威）
-              patch({
-                maxConnections: clampMaxConnections(
-                  e.target.value === "" ? undefined : Number(e.target.value),
-                ),
-              });
             }}
           />,
         )}

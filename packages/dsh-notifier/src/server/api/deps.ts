@@ -8,7 +8,7 @@ import type * as sdkApi from "../sdk/interface.ts";
 import type * as storesApi from "../stores/interface.ts";
 import type { LoggerPort } from "../shared/interface.ts";
 
-/** config 域给下游的能力面：设置页要读视图写设置，流枢纽要读连接上限。 */
+/** config 域给下游的能力面：设置页要读视图写设置，另含原始设置的只读面。 */
 export type ConfigPort = Pick<typeof configApi, "readConfig" | "readSettingsView" | "writeConfig">;
 
 /** stores 域给下游的能力面：通知记录与频道投递状态。 */

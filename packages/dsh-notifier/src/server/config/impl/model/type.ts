@@ -144,8 +144,6 @@ export type NotifyConfig = {
   // 资源上限
   /** 历史按天自动清理（0 = 只按行数滚动）。 */
   historyMaxAgeDays: number;
-  /** SSE 连接表上限（超限淘汰最老连接）。 */
-  maxConnections: number;
 };
 
 /** 设置提交体：键名受契约约束（写错键名是编译错误），值待校验——提交上来的东西在运行时不受类型约束。 */

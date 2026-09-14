@@ -24,5 +24,4 @@ export const DEFAULT_CONFIG: NotifyConfig = {
   allowKinds: [],
 
   historyMaxAgeDays: 0,
-  maxConnections: 16,
 };
