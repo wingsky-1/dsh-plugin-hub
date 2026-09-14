@@ -1049,57 +1049,92 @@ ESLint 的 `no-restricted-imports` 块间规则同步纳入 `inject.ts`。§8 �
 1. `pack:check` 红：7 个包残留 `packages/*/shared/frontmatter.d.ts`——该副本是构建产物（`.gitignore:10` 忽略 `packages/*/shared/`），源 `shared/frontmatter.js` 已被 main 的 #824 删除。清掉这 7 个文件后复跑即 0。
 2. `verify:coverage-scope` 红：`coverage/coverage-final.json` 早于本次 rebase，里面仍含已删除的 `shared/frontmatter.js` 与已移动的 `packages/dsh-web-file-preview/src/present-open.ts`（#824/#827）。`pnpm cov` 重建产物后复检 `OK（universe 348 = include 330 − exclude 68 → 计分 280；面内 199 keys）`。
 
-### 20.7 修复方案（第六轮，**待独立复核**）
+### 20.7 修复方案（第六轮；已过一轮独立复核，本节按复核结论更正）
 
-针对 §20.5 第 1、2 条。目标：把两条从「记账」推进到「有实测依据、可直接实施的方案」。
+#### 20.7.0 复核带来的更正（三条，含我自己的失误）
 
-#### 20.7.1 #2 的 A/B 实验（决定修法形态，已跑完）
+1. **证据纪律失误（如实登记）**：A″ 臂的原始日志（mock 请求 + 探针）被我**自己**在跑对照臂之前删掉了
+   （`rm -f /tmp/r6-verify/mock/mock.log`），两个隔离 `DSH_HOME` 与实验 worktree 随后也一并删除 ⇒ **那一臂的读数再也无法复核**。
+   只有对照臂的 mock 日志留存。从第三臂起改为**按臂留档**（路径见 §20.7.1）。
+2. **结论更正（重要）**：原文「唯一的修法是同步装完」**超出实验支持**——A″ 臂同时改了两件事（同步 + 跳过 git），
+   而真正要抢的窗口是「agent 创建 → 首个 `preStep`」的**微任务级**，不是「创建 → 模型请求到达」。
+   第三臂（§20.7.1）证实：**同步不是必需的**，只要不再起 git 子进程。
+3. **引用与措辞更正**：`create()` 的契约注释在 `dsh-agent/lib/index.js:415`（原文引的 `:428` 其实是 `resume()`）；
+   `traceSession` 在 `dsh-session-query/lib/types/index.d.ts:135`（原文引的 `:111-119` 是 `listEvents` / `filterEvents`）；
+   `dsh-base` 依赖的是 **`dsh-session-query-sqlite`**（它 peer 依赖 `dsh-session-query`），真正入口是
+   `dsh-base/cordis.patch.yml:129-130` 的 mount；#1 的措辞应为「**agent 被释放 / session detach**」而不是「会话一结束」；
+   「子会话永远命中快路径」应降级为「**本组装下**成立」（`resolveChildCwd` 那类 cwd 覆盖只影响 out-of-process 后端，
+   那些子进程不在本进程注册表）。
 
-同一套脚本与 mock LLM、两台各自独立启动的隔离实例；被测包为实验 worktree 里的副本（探针打在包内，**未改动本分支任何文件**）。
-探针：`consider()` 入口、异步发布完成、同步快路径发布各打一行 `console.error`（时间戳 ms）；模型请求到达时刻由 mock 记录。
+#### 20.7.1 三臂实验（决定性）
 
-| 臂 | 子会话注册 | 子会话**首回合**模型请求 |
-|---|---|---|
-| **A″：命中缓存即同步发布** | `sync-publish` **399368**（同步，无 `await`、不进 chain） | **30 个工具 / 含三件套**（请求 399482） |
-| **对照：关掉快路径（异步门控现状）** | `consider` 578011 → `async-published` **578114**（103ms） | **27 个工具 / 无三件套**（请求 578330） |
+同一套脚本与 mock LLM，三台各自独立启动的隔离实例；被测包为实验 worktree 里的副本（探针打在包内，**未改动本分支任何文件**）。
 
-**决定性的一条**：对照臂里注册完成（578114）比请求到达（578330）**早 216ms**，请求里**依然没有工具**。
-⇒ 首回合的工具清单在**回合开始**时就定稿了，异步路径无论多快都赶不上；唯一的修法是「在 `agent/created` 处理器内**同步**装完」。
-这一条同时否掉了「把 git 判定做快一点」这类只在速度上做文章的方案。
+| 臂 | 补丁语义 | 子会话注册 | 子会话**首回合**请求 | 证据 |
+|---|---|---|---|---|
+| 对照（现状异步门控） | 无（`EXP_NO_FASTPATH=1` 关掉快路径） | `consider` 578011 → `async-published` 578114（**103ms**） | **27 工具 / 无三件套**（请求 578330） | `/tmp/r6-verify/evidence-arms/armA-no-fastpath/mock.log`（探针日志已随环境丢失） |
+| A″ | **同步**发布 + 跳过 git | `sync-publish` 399368（同步） | 30 工具 / 含三件套（请求 399482） | **已被我删除，无法复核** |
+| **B（第三臂）** | **只跳过 git，仍留在 `this.chain` 里异步发布** | `chain-enter cached=true` 670896 → `published` 670904（**8ms**） | **30 工具 / 含三件套**（请求 671024） | `/tmp/r6-verify/evidence-arms/armB-cache-in-chain/{mock.log,dsh.log,verify.log}` |
 
-**另一个实测发现**：子会话的 cwd 由父 header 拷贝，而父必然先注册 ⇒ 缓存**必然已热**，子会话永远命中快路径。
-（对照实验里我试图构造「冷 cwd 的子会话」，结果父注册先把同一 cwd 写进了缓存，快路径照样命中——这本身就是结论。）
+**结论**：要抢的窗口是「agent 创建 → 首个 `preStep` 组装工具清单」，**只要发布落在窗口内即可**——
+第三臂 8ms（微任务级、无 git 子进程）就赢；对照臂 103ms（一次 git 子进程）就输。**同步并非必要。**
+「首回合清单在 `preStep` 定稿」由复核者从源码侧确认：`dsh-agent-loop/lib/index.js:890` →
+`dsh-system-prompt/lib/index.js:317-348` 当场遍历 tool providers → `:1030` 的 `buildRequest` 用这份快照
+（`toolsChanged` 会中途另开 request series）。⇒ **异步不是问题，慢才是问题。**
 
-#### 20.7.2 选定修法
+#### 20.7.2 选定修法（更正后）
 
-1. **#1 继承失效 → 选 B（持久父链）**
-   - 新增**可选**宿主面：`src/server/host/sessions.ts` 增一个走 `ctx.get("sessionQuery")?.traceSession(id)` 的 `parentOfAsync`，取**持久** lineage；
-     `sessionQuery` 缺席时**原样**保持今天的 live-only 行为（**不进 `inject`**，用 `ctx.get` 软取，避免把可选服务变成硬依赖）。
-   - `scope/impl/inherit` 改为「先问 live 同步面（快路径）→ 未命中再问持久 lineage」，其余边界（到顶、防环、父登记失效继续向上）不变。
-   - 已核实：`dsh-session-query` 由 `dsh-base` 依赖（标准组合里必然存在），官方自己的子代理列表就走它
-     （`dsh-subagent/lib/index.js:2110`）。
-   - 待定：lineage 的缓存粒度与 TTL（父链在会话生命周期内不变，唯一变化是父会话被摘除，而解析器本来就按当前绑定表判定）。
-2. **#2 首回合缺工具 → 选 A″（命中即同步发布）**
-   - `tools/impl/service` 增「cwd → 已确认在仓库里」的记忆；`consider()` 命中即**同步** `publish`，冷 cwd 仍走原来的异步链。
-   - 记忆在 `release()` 里清空（与 `perAgent` 同寿命）；**不加 TTL**——判错的后果只是「工具可见、执行期返回可读失败」，
-     而执行期本来就有一次兜底校验（`register`/`create`/`remove` 各自 `repoOf`）。
-   - 已知边界：若将来出现**与父不同 cwd** 的子会话（`dsh-subagent` 导出过 `resolveChildCwd` 一类配置），它仍会落回异步窗口。
+**#2（首回合缺工具）→ 让仓库判定不再起子进程；不做同步发布**
 
-#### 20.7.3 验收与红绿计划（实施时执行）
+- 首选 **S1**：给 git 域 `commonDir` 加 TTL 缓存（沿用 `git/impl/service/index.ts:24-33` 的 `belongsTo` 纪律：30s + 上限），
+  `repoOf`（`tools/impl/bind/index.ts:94-98`）在热 cwd 上不再起子进程。**不碰事件派发语义**。
+- 备选：tools 域自持 memo，但**保留 `this.chain`**（第三臂已证明够用）。
+- **因此不需要 M1**。但记一条**硬前提**：若将来改成**同步发布**（在 `agent/created` 回调里直接 `publish`），
+  就**必须**就地 try/catch —— 官方明文「Synchronous listener failure vetoes publication」
+  （`dsh-tool-cordis/lib/index.js:4955`），而 `dsh-agent/lib/index.js:544-556` 的 `announce` 只 catch promise 拒绝、
+  **同步抛错会穿透**，会把 `publish` 的「未知 id 抛错」（`src/server/host/agents.ts:61`）升级成**子会话创建失败**。
 
-- 判据 1（#2）：同一份假 agent 面里，**先注册过 cwd=X**，再递一个 cwd=X 的新 agent ⇒ 断言它在**同一个同步调用栈里**就完成了 publish
-  （不等微任务）。突变：把快路径去掉 ⇒ 红。
-- 判据 2（#2）：冷 cwd 仍走异步且失败时不发布（沿用现有「非仓库不装」用例）。
-- 判据 3（#1）：`sessions.get` 返回 undefined（模拟已结束）但 `sessionQuery.traceSession` 给得出父链 ⇒ 继承仍成立；
-   `sessionQuery` 缺席 ⇒ 退回 live-only 且不抛。突变：把持久面接反/去掉 ⇒ 各自红。
-- 端到端（复跑本轮实验脚本）：子会话首回合模型请求里必须出现三件套；子会话结束后 `bindings?session=<子id>` 必须仍是父的 worktree。
-- 门禁：`pnpm gate:pr` 34/34；包测试用例数随之更新（`--min` 与 `pnpm stryker:gen` 面按新文件数同步）。
+**#1（结束后不继承）→ 单会话持久读取 + 端口拆三态**
 
-#### 20.7.4 需要复核者重点挑战的点
+- 首选 **S2**：`sessionPersistence.stat(id, options)`（`dsh-session-persistence/lib/types/index.d.ts:149`，
+  「without reading its event log」、单会话定位；官方自家 provider 同做法见 `dsh-api-workspace-files/lib/index.js:380`）。
+  备选 `sessionQuery.traceSession`（`:135`，返回 `{target, ancestors, descendants, complete, root}`），
+  但它是**全量列举**（`dsh-session-query/lib/index.js:1176-1180`），必须按 sessionId 加 TTL 缓存与上限。
+- **M2 端口拆三态（必做）**：现状 `scope/deps.ts:59-62` + `host/sessions.ts:18-21` 用 `undefined` 同时表示「无父」与「不在册」。
+  若按 `undefined` 回落持久面，**每个无绑定的顶层会话**都会在请求路径上触发一次持久读取
+  （`effectiveWorktree` 在 RPC 边界：`dsh-api-workspace-files/lib/index.js:373-386`）。
+  三态：`parent(id)` / `root` / `not-live`，只有 `not-live` 才回落。
+- **M3 异常收口成「到顶」（必做）**：`stat` / `traceSession` 会抛 `NOT_FOUND` / `INVALID_LINEAGE`（环）/
+  `PERSISTENCE_FAILED` / `SOURCE_CONFLICT`；插件自己的 `seen` 防环在「直接抛错」时用不上，而 bindings 路由无 try/catch
+  （`api/impl/handlers/index.ts:36` 裸调，`api/impl/route/index.ts:39-44` 只兜 500）。`inheritedWorktree` 内 try/catch + 保留 seen。
+- **M4 软取必须按调用时刻取（必做）**：`ctx.get(name)` 的语义是「取当刻值，未提供回 undefined」（`cordis/lib/index.js:754-771`）
+  ⇒ **不能**在 `apply` 期取一次（provider 晚挂会永久退化成 live-only）；同时 `test/integration/apply-lifecycle.test.ts:33-69`
+  的假 ctx **没有 `get`**，会以偶然 TypeError 变红——按同文件 `:43-45` 的先例写成**有意判据**。
+- **S4**：`tools/impl/service:84-89` 的 definitions 构造不要复制两份，抽局部函数防漂移。
 
-1. **A″ 的「同步」是否在任何情况下都安全**：在创建窗口内直接 `agent.ctx.tools.register(...)` 有无副作用（官方 `setup` 与 `restrict` 都在窗口内跑，我们这一步晚于它们）。
-2. **`traceSession` 的失败面与开销**：持久化列举、corrupt 会话、取消信号；`effectiveWorktree` 是请求路径上的调用。
-3. **缓存无 TTL 的语义**：仓库目录被删后，新 agent 仍会被发布（执行期兜底报错），这个取舍是否可接受。
-4. **实验本身的可信度**：mock 只决定模型输出；工具执行、会话创建、客户端渲染全真；但「首回合清单在回合开始定稿」这一条是从
-   「注册早于请求 216ms 仍缺工具」推断出来的，样本数为 1，且两臂在不同时刻跑（机器负载不同）。
+**否决**：S3（取消安装期门控、只留执行期）——三个长 description 会进所有 agent 的所有请求，并推翻 README:26 与 §3.4 的承诺，
+省下的只是 M1 / S1 那二十行。
 
+#### 20.7.3 验收与红绿计划（按复核意见修订）
+
+1. **#2 主判据**（能打红）：同一个 cwd 先成功判定为仓库 ⇒ 再递一个同 cwd 的新 agent，断言**没有第二次 `commonDir` 调用**
+   （注入假 exec 记调用次数）。突变：去掉缓存 ⇒ 红。
+2. **#2 反向判据**（替换原方案——原方案的「冷 cwd 沿用现有用例」**是装饰性**，现有用例都 `await settle`）：
+   同一个 cwd **先判为非仓库** ⇒ 再递同 cwd 的新 agent，断言**未被发布**（缓存只记成功，不记失败）。突变：失败也入缓存 ⇒ 红。
+3. **#1 主判据**（能打红）：`sessions.get` 回 undefined + 持久面给出父链 ⇒ 继承成立；持久面缺席 ⇒ 退回 live-only 且不抛。
+4. **#1 补三个缺口**（复核者指出）：(a) 持久面抛错后仍到顶且不冒泡（三种错误码各一条）；(b) live 命中且**无父**时
+   **不得**查持久面（成本判据：断言持久面调用次数为 0）；(c) 组合根软取（`apply-lifecycle` 的假 ctx 按 M4 写法）。
+5. **端到端**（复跑本实验脚本，三臂同脚本）：子会话首回合模型请求必须含三件套；子会话结束后
+   `bindings?session=<子id>` 必须仍是父的 worktree；**证据必须落在隔离环境之外并按臂留档**（本轮教训）。
+6. **回归与记账**：`pnpm gate:pr` 34/34；用例数 / `--min` / `pnpm stryker:gen` 面随文件数同步（第 1 条若新增测试文件要一起改）。
+
+#### 20.7.4 仍未定 / 复核者未能核实
+
+1. `stat` 与 `traceSession` 的**真机开销未测**（真实 `~/.dsh/sessions` 量级下）。
+2. cordis 对「事件派发期间在 agent scope 上 `register`/`effect`」**没有契约文本**（只找到 `dsh-tool-cordis:4955` 那句）；
+   不过更正后的修法已不再依赖这一点。
+3. 三臂各只跑了 1 次，且两臂不同时刻（负载未控，`n=1`）；但第三臂与对照臂的差异（8ms vs 103ms、27 vs 30 工具）方向一致，
+   机制也由复核者从源码侧确认。
+4. 并发交错（「会不会装两遍 / 旧代 deps 装进新代」）只做了源码级分析、未做并发实验；结论是同步 check-and-set 在一个 JS turn
+   内原子、`release` 同步自增 generation 无交错窗口、异步分支的二次复检必须保留。
+5. 复核者未能核实：A″ 臂全部原始证据（见 §20.7.0 第 1 条）；它自己未做任何运行实验，故真机时序与持久面成本仍是源码推断。
