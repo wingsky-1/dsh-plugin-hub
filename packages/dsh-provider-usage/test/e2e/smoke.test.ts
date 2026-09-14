@@ -50,7 +50,6 @@ import {
   apply,
   inject,
   ROUTES,
-  candidateWindow,
   previousClosedWindow,
   ADAPTER_CONTRACT_VERSION,
   OPENCODE_GO_PROVIDER,
@@ -700,7 +699,7 @@ describe("卸载清理不抛错", () => {
 
   beforeAll(async () => {
     const disposers = [];
-    const { ctx, routes } = makeFakeCtx({
+    const { ctx } = makeFakeCtx({
       effect(fn) {
         const d = fn();
         disposers.push(d);
@@ -2366,7 +2365,7 @@ describe("#105① S2：select 切换/清空挂点失效（AC#4）", () => {
     const addRoute = routes.find((r) => r.path === ROUTES.add);
     const selectRoute = routes.find((r) => r.path === ROUTES.select);
 
-    const ha1 = await getHistory(historyRoute, "sel-prov", 7);
+    await getHistory(historyRoute, "sel-prov", 7);
     selAColdCalls = globalThis.__SPY_SEL_A;
 
     // 登记 sel-b（add 抢占成为启用者），按 sel-b 重算填其条目
@@ -4469,7 +4468,7 @@ describe("#633 分片 b2 D2：双目录全链路", () => {
       // 无 cwd 会话：store 有行但 header.cwd 缺失 → 未识别桶（B2 数据面）
       ["sess-d2-none", undefined],
     ]);
-    const fakeSession = (id) => ({
+    const fakeSession = (_id) => ({
       get(sid) {
         const key = String(sid);
         if (!cwdBySession.has(key)) return undefined;

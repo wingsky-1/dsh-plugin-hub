@@ -39,7 +39,8 @@ import type { ClientFacts } from "./capabilities.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
-import type { LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
+
+import type { LocaleNamespaceMap as _LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
 
 declare module "@deepseek-ai/dsh-client-ui-slots" {
   interface LocaleNamespaceMap {
@@ -242,7 +243,7 @@ var t: any = function (key: string, params?: any) {
   return String(key); // 未装配时占位插值忽略（正常路径早已装配）
 };
 
-var ROUTES = {
+const ROUTES = {
   config: "/api/dsh-notifier/config",
   events: "/api/dsh-notifier/events",
   health: "/api/dsh-notifier/health",
@@ -254,7 +255,7 @@ var ROUTES = {
 };
 /** 内置音色 id（与服务端 config.ts SOUND_IDS 同源复制——客户端不 import 宿主
  *  模块，两处由各自测试锁定；定稿口径 ding/bell/chime/pop）。 */
-var SOUND_IDS: readonly string[] = ["ding", "bell", "chime", "pop"];
+const SOUND_IDS: readonly string[] = ["ding", "bell", "chime", "pop"];
 /** 声音设置是否处于「开」：true 与内置音色 id 都算开，false 与脏值算关。
  *  三态摘要、卡体提示、声音行开关三处共用这一条口径——各判一遍就会出现「卡片说有声、开关说没有」。 */
 function soundIsOn(value: any): boolean {
@@ -263,20 +264,20 @@ function soundIsOn(value: any): boolean {
 /** 宿主平台（/health platform 拉取；服务端运行机器 OS——系统通道提示据此，
  *  防浏览器 OS 与宿主 OS 混淆。null = 未拉取/失败）。 */
 var hostPlatform: string | null = null;
-var STYLE_ID = "dsh-notifier-style";
+const STYLE_ID = "dsh-notifier-style";
 // 每次样式契约变更后 bump（版本号单调递增，保证 ensureStyle 判定为新版本并重注入）
 // 声音行/三态/试听样式加入时再次 bump。
 // 能力自检行（dn-ch-diag）加入时再次 bump。
-var CSS_VERSION = "784-1";
+const CSS_VERSION = "784-1";
 // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
-var NOTIFY_ICON =
+const NOTIFY_ICON =
   "data:image/svg+xml;utf8," +
   encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#0f9d6e"/><path fill="#fff" d="M12 4a1 1 0 0 1 1 1v.55A5.5 5.5 0 0 1 17.5 11v2.3l1.45 1.45a1 1 0 0 1-.7 1.7H5.75a1 1 0 0 1-.7-1.7L6.5 13.3V11A5.5 5.5 0 0 1 11 5.55V5a1 1 0 0 1 1-1zm-2.5 13a2.5 2.5 0 0 0 5 0h-5z"/></svg>',
   );
 
 // i18n：label 列存字典 key（渲染期 t 求值，模块加载时 t 尚未装配）。
-var EVENT_KEYS = [
+const EVENT_KEYS = [
   ["notifyAsk", "evtAsk"],
   ["notifyQuestion", "evtQuestion"],
   ["notifyTaskDone", "evtTaskDone"],
@@ -287,7 +288,7 @@ var EVENT_KEYS = [
 /** 事件开关键 → 通知 kind（单一事实源；免打扰豁免候选/「跟随已启用」由此派生，
  *  与服务端 EVENT_KEYS 对应的事件源 kind 一致：ask/question/done/subagent-done/
  *  error/turn-end）。 */
-var EVENT_KIND_MAP: Record<string, string> = {
+const EVENT_KIND_MAP: Record<string, string> = {
   notifyAsk: "ask",
   notifyQuestion: "question",
   notifyTaskDone: "done",
@@ -296,7 +297,7 @@ var EVENT_KIND_MAP: Record<string, string> = {
   notifyTurnEnd: "turn-end",
 };
 /** kind → 字典 key（未知 kind 回落 kind 本体显示，数据不翻译）。 */
-var KIND_KEYS: Record<string, string> = {
+const KIND_KEYS: Record<string, string> = {
   ask: "kAsk",
   question: "kQuestion",
   done: "kDone",
@@ -311,7 +312,7 @@ var KIND_KEYS: Record<string, string> = {
  * 与服务端 service.ts KIND_SEVERITY 同源复制（客户端不 import 宿主端模块——
  * 干净模块边界），两处由各自测试锁定；新增 kind 时同步维护。
  */
-var KIND_SEV: Record<string, string> = {
+const KIND_SEV: Record<string, string> = {
   ask: "warning",
   question: "info",
   done: "success",
@@ -346,7 +347,7 @@ function channelIdOf(cfg: Record<string, any>): string {
  * 由用户填写，模板/认证随预设走且可再改）。模板渲染契约见 channel-webhook.ts：
  * 文本占位符 JSON-aware 转义、{{ts}} 数字直出、{{priority}} 频道感知映射。
  */
-var WEBHOOK_PRESETS: Record<string, { auth: string; template: string }> = {
+const WEBHOOK_PRESETS: Record<string, { auth: string; template: string }> = {
   ntfy: {
     auth: "bearer",
     template:
@@ -435,7 +436,7 @@ function requestPermission(onDone: any) {
       .catch(function () {
         if (onDone) onDone();
       });
-  } catch (error) {
+  } catch {
     if (onDone) onDone();
   }
 }
@@ -447,9 +448,9 @@ var notified: any = [];
 // 多标签主从租约（仅「同 URL 的同浏览器多标签」有效；跨 host/IP、跨浏览器
 // 的 storage 域互不相交，去重自然失效）：收到通知帧的标签先 checkMaster：
 // 有效租约且属于自己 → 续租并展示；属于他人 → 静默；无主/已过期 → 抢占。
-var TAB_ID = Math.random().toString(36).slice(2);
-var MASTER_KEY = "dsh-notifier:master";
-var MASTER_LEASE_MS = 15000;
+const TAB_ID = Math.random().toString(36).slice(2);
+const MASTER_KEY = "dsh-notifier:master";
+const MASTER_LEASE_MS = 15000;
 function claimMaster() {
   try {
     var raw = localStorage.getItem(MASTER_KEY);
@@ -470,7 +471,7 @@ function claimMaster() {
     }
     localStorage.setItem(MASTER_KEY, JSON.stringify({ id: TAB_ID, ts: now }));
     return true;
-  } catch (error) {
+  } catch {
     return true;
   }
 }
@@ -529,7 +530,7 @@ function unlockAudio() {
     source.buffer = buffer;
     source.connect(ctx.destination);
     source.start(0);
-  } catch (error) {
+  } catch {
     // 音频不可用不阻塞通知
   }
 }
@@ -568,7 +569,7 @@ function playTone(tone: string | undefined) {
       osc.start(t + n.at);
       osc.stop(t + n.at + n.dur + 0.02);
     }
-  } catch (error) {
+  } catch {
     // 播放失败忽略
   }
 }
@@ -579,7 +580,7 @@ function playPreview(tone: string | undefined) {
   if (audioCtx === null || audioCtx.state !== "running") return;
   try {
     playTone(tone);
-  } catch (error) {
+  } catch {
     // 忽略
   }
 }
@@ -763,7 +764,7 @@ function handleNotifyFrame(payload: any) {
 var eventsHandle: { close: () => void; reconnect: () => void } | null = null;
 
 /** SSE 半开连接看门狗：60s 无任何帧（notify 或心跳 ping）→ 主动重建。 */
-var WATCHDOG_MS = 60000;
+const WATCHDOG_MS = 60000;
 function startEvents() {
   var source: any = null;
   var lastActivity = 0;
@@ -3252,7 +3253,7 @@ export function apply(ctx: any) {
           unsubLocale = locale.subscribe(function () {
             try {
               t = locale.bind(NS);
-            } catch (e) {
+            } catch {
               /* 忽略 */
             }
           });
@@ -3348,7 +3349,7 @@ export function apply(ctx: any) {
         for (var i = 0; i < notified.length; i += 1) {
           try {
             notified[i].close();
-          } catch (error) {
+          } catch {
             // 忽略
           }
         }

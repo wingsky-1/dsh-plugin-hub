@@ -11,7 +11,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ServerResponse } from "node:http";
 import type { SseHub } from "../../../../../shared/sse-hub.js";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type { ServerConfig, ClientUiConfig } from "../../types/interface.ts";
@@ -113,12 +112,11 @@ export class McpManager {
     this.catalogCache = new Map();
     this.catalogCachePath = catalogCacheFile();
     // 目录视图解析器：host 面用读取器（middleware/模式热切换后取最新引用）。
-    const self = this;
     this.catalogViewResolver = makeCatalogViewFor({
-      getCatalogCache: () => self.catalogCache,
-      getMiddleware: () => self.middleware,
-      getMiddlewareMode: () => self.middlewareMode,
-      catalogCachePathFor: (root) => self.catalogCachePathFor(root),
+      getCatalogCache: () => this.catalogCache,
+      getMiddleware: () => this.middleware,
+      getMiddlewareMode: () => this.middlewareMode,
+      catalogCachePathFor: (root) => this.catalogCachePathFor(root),
     });
     this.uiConfigSource = () => ({ position: "top-right", offsetX: 8, offsetY: 8, blankY: 40 });
     this.middlewareMode = "off";

@@ -43,7 +43,6 @@ import {
   panelTopForAnchor,
   Z_INDEX_BASE_MIN,
   Z_INDEX_BASE_MAX,
-  Z_INDEX_PANEL_DELTA,
   BREAKPOINT_NARROW_MAX,
   BREAKPOINT_TABLET_MAX,
   breakpointForWidth,

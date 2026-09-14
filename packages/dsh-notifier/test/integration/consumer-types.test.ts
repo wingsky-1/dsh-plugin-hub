@@ -97,12 +97,12 @@ type _ServiceSlotShape = Expect<Equal<Context["wingsky.notifier"], NotifierServi
 // 只在编译期存在：运行时不调用它们（`declare` / 未调用函数体），故不会在 vitest 里执行到。
 
 /** 消费方视角的读法：`ctx` 上的服务槽必须直接可用。 */
-function serviceFromContext(ctx: Context): NotifierService {
+function _serviceFromContext(ctx: Context): NotifierService {
   return ctx["wingsky.notifier"];
 }
 
 /** 授权边界（`@ts-expect-error` 指令本身受检：错误消失即报 unused）。 */
-function rejectedByType(service: NotifierService): void {
+function _rejectedByType(service: NotifierService): void {
   // @ts-expect-error 确认是设置页的授权动作，不在对外服务面上
   service.confirmKind("demo:report", true);
   // @ts-expect-error 清单同理

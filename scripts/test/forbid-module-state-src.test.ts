@@ -238,16 +238,18 @@ test("扫描面：.tsx 也在扫描面内（客户端入口形态）", () => {
   assert.match(r.stderr, /模块级 let（shared）/);
 });
 
-test("本仓真实快照：client/index.tsx 的 21 处模块级 var 全部走登记豁免 → exit 0", () => {
+test("本仓真实快照：client/index.tsx 的 7 处模块级 var 全部走登记豁免 → exit 0", () => {
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /OK（扫描 \d+ 文件，包 dsh-notifier，登记豁免 21 处）/);
-  // 21 处与豁免台账是同一个数字的两面：客户端 var 数量变了、或台账条目被删，
+  // 包面含 dsh-lan-proxy（#765 扩面，实测零命中后才扩）：范围变了此断言先红，提示复核扩面依据。
+  assert.match(r.stdout, /OK（扫描 \d+ 文件，包 dsh-lan-proxy, dsh-notifier，登记豁免 7 处）/);
+  // 7 处与豁免台账是同一个数字的两面：客户端 var 数量变了、或台账条目被删，
   // 此断言先红并提示同步台账（scripts/data/gate-exemptions.json）与 #762。
+  // #765 批次已把同文件的 14 处常量 var 改 const，故从 21 降到 7（余下皆为真·可变绑定）。
   // 锚点的行号随客户端源码增删而移动（豁免台账本身是文件级、不跟行号），改到 `t` 所在行即可。
   assert.match(
     r.stdout,
-    /packages\/dsh-notifier\/src\/client\/index\.tsx:240 \[模块级 var（t）\] 登记豁免 #762（reviewBy 2027-03-31）/,
+    /packages\/dsh-notifier\/src\/client\/index\.tsx:241 \[模块级 var（t）\] 登记豁免 #762（reviewBy 2027-03-31）/,
   );
 });
 

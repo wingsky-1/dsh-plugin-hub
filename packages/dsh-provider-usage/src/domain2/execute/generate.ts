@@ -23,7 +23,6 @@ import type {
   Message,
   MessageId,
   StreamChunk,
-  TokenUsage,
 } from "@deepseek-ai/dsh-llm";
 import { metricValue } from "../aggregate/interface.ts";
 import {

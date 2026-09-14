@@ -93,7 +93,7 @@ function partId(provider: string, model: string | null, byModel: boolean): strin
 
 // ---------------------------------------------------------------- 组件
 
-const cardStyle: Object = {
+const cardStyle = {
   flex: "1 1 120px",
   minWidth: 120,
   padding: "8px 10px",
@@ -102,7 +102,7 @@ const cardStyle: Object = {
   background: "var(--dsw-alias-bg-layer-1,#f8f9fb)",
 };
 
-const controlBtnStyle = (active: boolean): Object => ({
+const controlBtnStyle = (active: boolean) => ({
   padding: "3px 10px",
   fontSize: 12,
   borderRadius: 6,
@@ -112,13 +112,13 @@ const controlBtnStyle = (active: boolean): Object => ({
   color: "inherit",
 });
 
-const miniBtnStyle = (active: boolean): Object => ({
+const miniBtnStyle = (active: boolean) => ({
   ...controlBtnStyle(active),
   padding: "2px 8px",
   fontSize: 11,
 });
 
-const selectStyle: Object = {
+const selectStyle = {
   fontSize: 12,
   padding: "3px 6px",
   borderRadius: 6,
@@ -760,7 +760,7 @@ function dayKeyOf(t: number): string {
 }
 
 /** tooltip 浮层定位（贴边翻转）。 */
-function tipStyle(offsetX: number, containerWidth: number): Object {
+function tipStyle(offsetX: number, containerWidth: number) {
   const TIP_W = 210;
   let left = offsetX + 12;
   if (left + TIP_W > containerWidth && containerWidth > 0) left = offsetX - TIP_W - 8;

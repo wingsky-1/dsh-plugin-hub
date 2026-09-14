@@ -30,7 +30,8 @@ import { SettingsCard } from "./settings-card.tsx";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
-import type { LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
+
+import type { LocaleNamespaceMap as _LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
 
 declare module "@deepseek-ai/dsh-client-ui-slots" {
   interface LocaleNamespaceMap {
@@ -42,11 +43,11 @@ declare module "@deepseek-ai/dsh-client-ui-slots" {
 /** 本插件字典命名空间（宿主 locale 服务注册用）。 */
 const NS = "settings.lanProxy";
 
-var STYLE_ID = "dsh-lan-proxy-style";
-var CSS_VERSION = "4";
+const STYLE_ID = "dsh-lan-proxy-style";
+const CSS_VERSION = "4";
 
 /** 展示缺省值（与宿主 DEFAULT_OPTIONS 同构；用户层未保存的键回落这些值）。 */
-var DEFAULTS: Record<string, any> = {
+const DEFAULTS: Record<string, any> = {
   enabled: true,
   port: 3081,
   httpsEnabled: true,
@@ -62,13 +63,11 @@ var DEFAULTS: Record<string, any> = {
   injectToken: true,
 };
 
-var disposed = false;
-
 // ------------------------------------------------------------ 装配
 
 export function apply(ctx: any) {
   try {
-    var slots = ctx.get("slots");
+    const slots = ctx.get("slots");
     if (!slots) {
       console.warn("[dsh-lan-proxy] 缺少 slots 服务，设置面板未挂载");
       return;
@@ -77,8 +76,8 @@ export function apply(ctx: any) {
     ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
 
     // i18n（issue #348）：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
-    var locale: any = ctx.get("locale");
-    var unsubLocale: any = null;
+    const locale: any = ctx.get("locale");
+    let unsubLocale: any = null;
     if (locale && typeof locale.register === "function") {
       try {
         locale.register(NS, { zh: zh, en: en });
@@ -87,7 +86,7 @@ export function apply(ctx: any) {
           unsubLocale = locale.subscribe(function () {
             try {
               bindLocale(locale, NS);
-            } catch (e) {
+            } catch {
               /* 忽略 */
             }
           });
@@ -122,9 +121,8 @@ export function apply(ctx: any) {
     // ⚠️ 清理必须写在 ctx.effect 返回的 disposer 里。
     ctx.effect(function () {
       return function () {
-        disposed = true;
         if (unsubLocale) unsubLocale();
-        var style = document.getElementById(STYLE_ID);
+        const style = document.getElementById(STYLE_ID);
         if (style) style.remove();
       };
     }, "dsh-lan-proxy");

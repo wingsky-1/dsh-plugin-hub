@@ -3,7 +3,8 @@
   "crap": {
     "threshold": 16,
     "strict": false,
-    "note": "#722 阶段五已重建为 src 口径，此前「复杂度取自 lib 产物、覆盖率取自 src，行号不可比 → 入口自检 exit 2」的停用态**已不成立**：复杂度取自 ESLint 内置 `complexity` 规则（与 tools/lint 的复杂度门禁同源，不实现第二份算法），覆盖率取自 `coverage/coverage-final.json`（vitest/istanbul，src 口径），两处 join 的容差与残余项口径见 crap-check.mjs 头部。`strict: false` 是**观察期**语义：超阈热点只落盘 coverage/crap-report.json 并 exit 0；置 true 则超阈判红。该字段属治理决策（AGENTS.md 明写不得自行改动），开启时机与 #732 的复杂度阈值收紧同批，并在 #587 的「CRAP 增量防劣化接入」保留项里一并裁决。"
+    "exitCriteria": "超阈 hotspots 计数降为 0 后把 strict 置 true（当前 116 个，量化日 2026-09-14，阈值 16）；在此之前按只许降的预算管理，不得静默停在观察期。开启与 #732 的复杂度阈值收紧同批——阈值从 78/84 收到目标 10/15 的过程中高复杂度函数被拆分，热点随之下降。",
+    "note": "#722 阶段五已重建为 src 口径，此前「复杂度取自 lib 产物、覆盖率取自 src，行号不可比 → 入口自检 exit 2」的停用态**已不成立**：复杂度取自 ESLint 内置 `complexity` 规则（与 tools/lint 的复杂度门禁同源，不实现第二份算法），覆盖率取自 `coverage/coverage-final.json`（vitest/istanbul，src 口径），两处 join 的容差与残余项口径见 crap-check.mjs 头部。`strict: false` 是**观察期**语义：超阈热点只落盘 coverage/crap-report.json 并 exit 0；置 true 则超阈判红。该字段属治理决策（AGENTS.md 明写不得自行改动），开启时机与 #732 的复杂度阈值收紧同批，并在 #587 的「CRAP 增量防劣化接入」保留项里一并裁决。#765 裁决「目标是零豁免，台账只是过渡期手段」后，本字段补 exitCriteria：只写日期会逼出「到期了再讨论一次」，解除条件才说明凭什么能开。"
   },
   "complexity": {
     "note": "#722 阶段五：ESLint 复杂度门禁阈值（唯一事实源，由 tools/lint/eslint.config.js 消费）。起步值 = 全域实测最大值——锚定当前最坏函数，保证零存量命中、只拦新增劣化（量化表见 #732）；收紧路线与最终目标见 #732，target 仅记录目标值，门禁不读取。",
@@ -15,8 +16,8 @@
     }
   },
   "lint": {
-    "note": "#764 落地项 A2：全仓 ESLint 警告预算（唯一事实源，由 tools/lint/bin/lint.mjs 消费）。为什么必须有：ESLint 自带的 --max-warnings 在本仓无效——入口走 Node API，CLI 参数会被静默丢弃，于是一千余条 warning 零约束力、只增不减。取值 = 落地时的实测值（含 error 与 warning 之和），只许降不许升；上调由 scripts/gate/threshold-monotonic.mjs 判红。数值未随一轮 lint 面修正变动（#765）：忽略规则由 `**/lib/**` 收窄为 `packages/*/lib/**`，把被误吞的 scripts/lib 15 个源码文件放回面内（面 441 → 459 文件、新增 16 条 warning），同轮清掉 16 条可修存量对冲，故仍为 671 而非 687。",
-    "maxWarnings": 671
+    "note": "#764 落地项 A2：全仓 ESLint 警告预算（唯一事实源，由 tools/lint/bin/lint.mjs 消费）。为什么必须有：ESLint 自带的 --max-warnings 在本仓无效——入口走 Node API，CLI 参数会被静默丢弃，于是一千余条 warning 零约束力、只增不减。取值 = 落地时的实测值（含 error 与 warning 之和），只许降不许升；上调由 scripts/gate/threshold-monotonic.mjs 判红。数值未随一轮 lint 面修正变动（#765）：忽略规则由 `**/lib/**` 收窄为 `packages/*/lib/**`，把被误吞的 scripts/lib 15 个源码文件放回面内（面 441 → 459 文件、新增 16 条 warning），同轮清掉 16 条可修存量对冲，故仍为 671 而非 687。#765 批次降到 508：清掉 160 条可清项（未使用 import / 局部变量 / 形参、wrapper-object-types、this-alias、.cjs 里被误报的 require）里可清的 136 条，另 24 条由下划线前缀约定承接；no-unused-vars / prefer-const / no-wrapper-object-types / no-this-alias / no-require-imports五条已清零的规则从 LEGACY_WARN 摘除、回到常规面按 error 生效（#765 第 6 项同口径）。仍在降级集的只剩 ban-ts-comment（110 条，是 scripts/ 与 test/ 编译面的设计声明，见scripts/tsconfig.json 与 test/tsconfig.json）与 no-explicit-any（398 条，客户端 any 兜底风格，随 #769 客户端重构收掉）。",
+    "maxWarnings": 508
   },
   "mutation": {
     "note": "观察期仅记录不卡点；阶段三按 #42 二期校准后接入 ci.yml 硬卡点。score 为 Stryker 报告口径（分母含 noCoverage），covered 为官方 mutationScore 口径（(killed+timeout)/(total-noCoverage)）。#151 起 tap-runner 的 RuntimeError 分类缺陷曾由 scripts/test/mutation-tap-bridge.cjs 修正（未捕获异常转写 TAP not ok），error=0，自动口径与此前人工换算口径一致；#722 起 runner 换为 @stryker-mutator/vitest-runner，该桥接随 tap-runner 一并退役，未捕获异常改由 vitest runner 归入 errorsSet 并判该次运行 Error。",

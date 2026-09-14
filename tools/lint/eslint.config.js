@@ -68,22 +68,29 @@ const complexityRules = {
 // 两个客户端文件，走豁免关闭）。留在降级集里等于「把一条零命中的规则记成技术债」——既虚增
 // 存量清单，又让新写的 `var` 只拿到 warn。现改为在常规规则面按 **error** 生效：命中数不变
 // （0），但守卫从「warn + 吃预算」变成「直接红」。
+// #765 批次摘除五条已清零的规则（prefer-const / no-unused-vars / no-wrapper-object-types /
+// no-this-alias / no-require-imports）：命中为 0 的规则留在降级集里等于把不存在的债记成技术债，
+// 还让新写的违规只拿 warn（与 no-var 同理由）。它们回到常规规则面按 error 生效。
 const LEGACY_WARN = {
-  "prefer-const": "warn",
-  "@typescript-eslint/no-unused-vars": "warn",
   "@typescript-eslint/ban-ts-comment": "warn",
   "@typescript-eslint/no-explicit-any": "warn",
-  "@typescript-eslint/no-this-alias": "warn",
-  "@typescript-eslint/no-require-imports": "warn",
-  "@typescript-eslint/no-wrapper-object-types": "warn",
 };
 
-// 客户端 `var` 的豁免面（#765 第 2 项「收窄」）：**当前实际含 var 的两个文件**，是事实快照
-// 而非白名单。判据见上面对 files 的说明；某文件不再含 var 即由自测判红，届时删条目。
-const CLIENT_VAR_EXEMPT_FILES = [
-  "packages/dsh-notifier/src/client/index.tsx",
-  "packages/dsh-lan-proxy/src/client/index.ts",
+/**
+ * `_` 前缀是社区约定的「显式声明本意就是不使用」：编译期契约断言（如
+ * `type _SvcStatus = Assert<Equal<...>>` —— 类型不兼容时才红，名字本身从不被读）与刻意保留的
+ * 形参靠它表达意图。这不是豁免通道：去掉前缀一样判红。
+ */
+const UNUSED_VARS_RULE = [
+  "error",
+  { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
 ];
+
+// 客户端 `var` 的豁免面（#765 第 2 项「收窄」）：**当前实际含 var 的文件**，是事实快照而非
+// 白名单。判据见上面对 files 的说明；某文件不再含 var 即由自测判红，届时删条目。
+// lan-proxy 的客户端于 #765 清零（3 处模块级常量改 const、1 处零读取死赋值删除、4 处函数内
+// 局部改 let/const），故从本清单移除——移除靠代码清零，不是把条目改成通配或留着腐烂。
+const CLIENT_VAR_EXEMPT_FILES = ["packages/dsh-notifier/src/client/index.tsx"];
 
 export default [
   { ignores: IGNORES },
@@ -99,12 +106,20 @@ export default [
     files: TS_SOURCES,
     languageOptions: { parser: tseslint.parser, ecmaVersion: "latest", sourceType: "module" },
     plugins: { sonarjs },
-    rules: { ...complexityRules, "no-var": "error" },
+    rules: {
+      ...complexityRules,
+      "no-var": "error",
+      "@typescript-eslint/no-unused-vars": UNUSED_VARS_RULE,
+    },
   },
   {
     files: JS_SOURCES,
     plugins: { sonarjs },
-    rules: { ...complexityRules, "no-var": "error" },
+    rules: {
+      ...complexityRules,
+      "no-var": "error",
+      "@typescript-eslint/no-unused-vars": UNUSED_VARS_RULE,
+    },
   },
   {
     // #764 落地项 A3：**类型感知分阶段**的第一步。只开三条「能抓 bug 且存量已清零」的规则：
@@ -162,12 +177,18 @@ export default [
     //
     // #765 第 2 项「收窄」：面从 `packages/*/src/client/**` 通配收窄为**当前实际含 var 的文件**。
     // 通配的代价是判据面随目录增长而变宽——以后任何新客户端文件写 var 都会被静默豁免，而且它与
-    // 登记台账不同源（`gate-exemptions.json` 只登记了 notifier 那个文件的 22 处**模块级** var，
+    // 登记台账不同源（`gate-exemptions.json` 只登记了 notifier 那个文件的 7 处**真·可变绑定**，
     // 其余是函数内局部 var）。收窄后新增文件立刻可见：非豁免面走 LEGACY_WARN 或下面的 error。
     // 这份清单是**事实快照**，不是白名单：某一项不再含 var 时，`scripts/test/lint-toolchain.test.ts`
     // 会因「条目零命中」判红，届时删条目即可（反向腐烂校验）。
     files: CLIENT_VAR_EXEMPT_FILES,
     rules: { "no-var": "off" },
+  },
+  {
+    // CommonJS 文件里 `require` 是唯一可用的加载方式（.cjs 不能写 ESM import），该规则在此
+    // 属误报而非债——它拦的是 ESM 文件里的 require，不是「这个文件本该用 import」。
+    files: ["**/*.cjs"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
   },
   prettierConfig,
 ];

@@ -7,7 +7,6 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { ServerConfig } from "../types/interface.ts";
 import type { SupervisorLite } from "../types/interface.ts";
 import type { CatalogMessage } from "./injection.ts";
 

@@ -107,7 +107,6 @@ for (const p of targets) {
       stdio: "pipe",
     });
     const tgz = readdirSync(tmp).find((f) => f.endsWith(".tgz"));
-    const unpack = join(tmp, "unpack");
     execFileSync("tar", tarArgs(["-xzf", join(tmp, tgz), "-C", tmp]));
     const pkgRoot = join(tmp, "package");
 
@@ -247,7 +246,7 @@ for (const p of targets) {
     // 执行与 stub 实现来自 client-contract-lib（与 contract-check 同源）。
     const clientPath = join(pkgRoot, "lib", "client.js");
     if (existsSync(clientPath)) {
-      const { calls, factories, error } = executeClient(readFileSync(clientPath, "utf8"));
+      const { factories, error } = executeClient(readFileSync(clientPath, "utf8"));
       if (error) {
         problems.push(`client 产物执行失败: ${String(error.message).split("\n")[0]}`);
       } else if (!factories.has(name)) {

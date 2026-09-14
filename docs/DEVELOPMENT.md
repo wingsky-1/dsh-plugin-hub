@@ -445,11 +445,13 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
     `from|to|kind` 边、`missingInterface` / `directImpl` 边、`uncoveredSrcFiles` 清单）——
     新增证据判红、证据消失视为改善（写入时自动清理）、`kind` 由 value→type 视为收口、
     type→value 判红。放宽质量证据**不止一条通道**，各通道的可审计性不同：
-    - **台账通道**（唯一带到期复核）：登记到 `scripts/data/gate-exemptions.json`
+    - **台账通道**（唯一带收口复核）：登记到 `scripts/data/gate-exemptions.json`
       （`gate=verify-dir-imports`，`path=<包名>:<证据项>`，必填 reason 与 trackingIssue，
-      可选 reviewBy）——与另两闸共用同一份台账、同一个校验器与同一条到期台账（#765 收口：
-      原先的 `--accept-quality-new` / 基线内 `$acceptances` 是本闸私有的第二套豁免机制，
-      没有 trackingIssue、reviewBy 与腐烂校验，故删除）。
+      可选 reviewBy 与 exitCriteria）——与另两闸共用同一份台账、同一个校验器与同一条收口台账
+      （#765 收口：原先的 `--accept-quality-new` / 基线内 `$acceptances` 是本闸私有的第二套
+      豁免机制，没有 trackingIssue、reviewBy 与腐烂校验，故删除。#765 后续裁决「**目标是零豁免**，
+      台账只是过渡期手段」后，`exitCriteria`（凭什么能删）与 `reviewBy`（何时再看一眼）平级入账，
+      只有日期没有条件的条目会在台账里被单独点名）。
     - **数据层通道（不经台账、无 reason/reviewBy、不进到期台账；「登记即声明」，
       变更只能靠 diff 审阅）**——下列并非穷举：段级 `segments.*.excludes` 同样进
       `∪excludes`（它是变异面自身的定义面），因而同样能让文件退出 `uncoveredSrcFiles`：

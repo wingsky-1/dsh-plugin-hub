@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
-import { computeCiMatrix, parseTestChangedPackages, runCli } from "../ci/ci-matrix.mjs";
+import { computeCiMatrix, parseTestChangedPackages } from "../ci/ci-matrix.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 /** plugins-manifest.json 的消费面（结构完整性由别的门禁守，这里只声明本文件读到的字段）。 */

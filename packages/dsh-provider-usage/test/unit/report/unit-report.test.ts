@@ -95,7 +95,6 @@ import {
   reportMetaFile,
   notifyReport,
   runDueReport,
-  normalizeReportDirectories,
 } from "../../../src/apply/index.ts";
 
 // ---------------------------------------------------------------- 工具
@@ -2555,7 +2554,7 @@ describe("#633 分片 b C2：脱敏出口逐条断言（basename 化 + 三出口
     pushBody = sent.length > 0 ? `${sent[0].title} ${sent[0].body}` : "";
   });
 
-  for (const [i, d] of allDirs.entries()) {
+  for (const [, d] of allDirs.entries()) {
     it(`注入 JSON 目录键无路径分隔符：${JSON.stringify(d)}`, () => {
       expect(!d.includes("/") && !d.includes("\\")).toBeTruthy();
     });

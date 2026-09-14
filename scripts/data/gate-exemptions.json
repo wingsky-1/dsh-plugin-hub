@@ -1,12 +1,13 @@
 {
   "version": 1,
-  "note": "路径受限门禁的豁免台账（#733 计划项 3.1.2 / 3.2.2）。单一事实源：门禁不得再内嵌豁免常量（旧 forbid-homedir-src.mjs 的 WHITELIST、config-matrix-gate.ts 的 LAN_PROXY_UI_EXEMPT 均已迁入数据面）。机制实现在 scripts/lib/exemption-gate.ts：条目是**文件级**的，调用点粒度由各门禁的 marker 策略（markerRequired）决定。reviewBy 可选——**有**=临时豁免（自动进入全量门禁档的到期台账，见 scripts/gate/collect-exemptions.mjs 与 #765），**无**=长期条目（设计事实，不是待办）。到期**不判红**（#765 裁决：收集打印 + 汇总 issue，人工处理），因此台账不会在到期日冻结 PR。",
+  "note": "路径受限门禁的豁免台账（#733 计划项 3.1.2 / 3.2.2）。单一事实源：门禁不得再内嵌豁免常量（旧 forbid-homedir-src.mjs 的 WHITELIST、config-matrix-gate.ts 的 LAN_PROXY_UI_EXEMPT 均已迁入数据面）。机制实现在 scripts/lib/exemption-gate.ts：条目是**文件级**的，调用点粒度由各门禁的 marker 策略（markerRequired）决定。reviewBy 可选——**有**=临时豁免（自动进入全量门禁档的收口台账，见 scripts/gate/collect-exemptions.mjs 与 #765），**无**=长期条目（设计事实，不是待办）。exitCriteria 可选且与 reviewBy **平级入账**（#765 裁决「目标是零豁免，台账只是过渡期手段」：日期只说明何时再看一眼，条件才说明凭什么能删）。收口**不判红**（#765 裁决：收集打印 + 汇总 issue，人工处理），因此台账不会在到期日冻结 PR。",
   "exemptions": [
     {
       "gate": "forbid-module-state-src",
       "path": "packages/dsh-notifier/src/client/index.tsx",
-      "reason": "客户端入口迁移自旧 IIFE 包装，保留了 22 处模块级 var（真实模块级可变状态）。判据口径源自 #733 宪法第 1 条（宿主端状态收进闭包/实例），客户端业务改动不在本轮重写范围，故按登记豁免而非留在判据外——旧实现靠「顶格」形态把它们排除在判据之外，是一个缩进一格即可绕过的静默缺口。与 ESLint 侧 tools/lint/eslint.config.js 对 packages/*/src/client/** 的 no-var:off 是同一条存量债，收口时两处一并删除。",
+      "reason": "客户端入口迁移自旧 IIFE 包装，保留了模块级可变绑定。判据口径源自 #733 宪法第 1 条（宿主端状态收进闭包/实例），客户端业务改动不在本轮重写范围，故按登记豁免而非留在判据外——旧实现靠「顶格」形态把它们排除在判据之外，是一个缩进一格即可绕过的静默缺口。#765 批次已把同文件的 14 处常量 var 改为 const（常量不构成模块级可变状态，判据本就不该覆盖），余 7 处为真·可变绑定：t（i18n 绑定，apply 内按 locale 重绑）与 hostPlatform / notified / audioCtx / lastChimeAt / savedTitle / eventsHandle。这 7 处与 SettingsCard（约 2200 行 React 组件）及 20 余个模块级辅助函数互相引用，收进闭包等于客户端半区结构重构（#769），故不硬拆。与 ESLint 侧 tools/lint/eslint.config.js 的 CLIENT_VAR_EXEMPT_FILES 是同一条存量债，收口时两处一并删除。",
       "trackingIssue": "#762",
+      "exitCriteria": "7 处状态随 #769 客户端半区结构重构收进 apply 闭包或实例；届时删除本条目与 CLIENT_VAR_EXEMPT_FILES 的对应项（该清单自身的反向腐烂校验会逼出删除）。",
       "reviewBy": "2027-03-31"
     }
   ]

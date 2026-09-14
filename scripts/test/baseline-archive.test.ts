@@ -22,7 +22,6 @@ import { join } from "node:path";
 import {
   ARCHIVE_SNAPSHOT_KEEP,
   BASELINE_FILE_RE,
-  GH_API_PER_PAGE,
   MUTATION_GATE_JOB_RE,
   classifyMissingMutationProducts,
   classifyMutationInstances,

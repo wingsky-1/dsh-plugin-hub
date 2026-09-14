@@ -50,13 +50,7 @@ const MANIFEST = JSON.parse(readFileSync(join(ROOT, "scripts/data/plugins-manife
 const CI_MATRIX = readFileSync(join(ROOT, "scripts/ci/ci-matrix.mjs"), "utf8");
 
 // 包集合单一事实源（#306 评审）：从 plugins-manifest.json 派生，消除手写漂移。
-//  - MATRIX_PACKAGES：build-test 矩阵全集 = active ∪ standalone ∪ 聚合包
-//    （build 无条件覆盖所有要发布产物的包，repo-gate 全局门禁依赖全集 lib）
-//  - SLICE_PACKAGES：切片清单 = active ∪ 聚合包（standalone 不进聚合、不参与切片）
 //  - MUTATION_PACKAGES：变异对象包 = gauntlet mutation.packages（含 standalone）
-const AGGREGATE = "dsh-plugins-all";
-const MATRIX_PACKAGES = [...MANIFEST.active, ...(MANIFEST.standalone ?? []), AGGREGATE];
-const SLICE_PACKAGES = [...MANIFEST.active, AGGREGATE];
 // 变异对象包：gauntlet mutation.packages（含 standalone，不含聚合/纯宿主 skill 包）
 const MUTATION_PACKAGES = Object.keys(GAUNTLET?.mutation?.packages ?? {});
 

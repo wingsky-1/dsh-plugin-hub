@@ -39,14 +39,6 @@ function tempRepo() {
   return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-function fixtureRepo(manifestObj) {
-  const { dir, cleanup } = tempRepo();
-  mkdirSync(join(dir, "packages", "dsh-alpha"), { recursive: true });
-  mkdirSync(join(dir, "packages", "dsh-beta"), { recursive: true });
-  writeFileSync(join(dir, "scripts", "data", "plugins-manifest.json"), JSON.stringify(manifestObj));
-  return { dir, cleanup };
-}
-
 const EXPECTED_DEPS = {
   "@wingsky-1/dsh-alpha": "workspace:*",
   "@wingsky-1/dsh-beta": "workspace:*",

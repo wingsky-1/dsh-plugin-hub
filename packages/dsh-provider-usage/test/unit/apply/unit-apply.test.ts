@@ -11,9 +11,8 @@
  */
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 console.error("EVAL-ORDER-TAG: APPLY");
-import { join, dirname } from "node:path";
-import { tmpdir, homedir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import fs, { existsSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
@@ -177,13 +176,13 @@ describe("1) inject 回调：settings 正常注册", () => {
       inject: (deps, cb) => {
         const scope = {
           get: () => ({}),
-          watch: (fn) => {
+          watch: (_fn) => {
             settingsEvents.push("watch-registered");
           },
         };
         const sctx = {
           settings: {
-            register: (ns, schema, opts) => {
+            register: (_ns, _schema, _opts) => {
               settingsEvents.push("register-called");
               return scope;
             },
@@ -326,7 +325,6 @@ describe("5a) fiber.state=unloading → disposer 内 isUnloading=true 提前 ret
   let applied;
 
   beforeAll(async () => {
-    const setSourceCalls = [];
     const routes = [];
     const ctx = {
       logger: { warn: () => {} },
@@ -344,7 +342,7 @@ describe("5a) fiber.state=unloading → disposer 内 isUnloading=true 提前 ret
       },
       fiber: { state: "unloading" },
       inject: (deps, cb) => {
-        const scope = { get: () => ({}), watch: (fn) => {} };
+        const scope = { get: () => ({}), watch: (_fn) => {} };
         cb({
           settings: { register: () => scope },
           effect: (fn) => {
@@ -393,7 +391,7 @@ describe("5b) fiber.state=disposed → 同 unloading 分支", () => {
       },
       fiber: { state: "disposed" },
       inject: (deps, cb) => {
-        const scope = { get: () => ({}), watch: (fn) => {} };
+        const scope = { get: () => ({}), watch: (_fn) => {} };
         cb({
           settings: { register: () => scope },
           effect: (fn) => {
@@ -548,11 +546,9 @@ export function formatPanel() { return "<p>p</p>"; }
     );
 
     const disposers = [];
-    const errors = [];
     const routes = [];
 
     // 先订阅 SSE（使 sseClients 有成员）
-    const eventsRoute = { path: ROUTES.events };
     // 外部收集 disposer
     const ctx = {
       logger: { warn: () => {} },
@@ -587,12 +583,12 @@ export function formatPanel() { return "<p>p</p>"; }
 
     // 订阅 SSE（通过 events 路由 handler 添加 SSE 客户端）
     evRoute = routes.find((r) => r.path === ROUTES.events);
-    let sseRes;
+    let _sseRes;
     evRoute?.handler(fakeReq({ method: "GET" }), {
-      writeHead: (code, headers) => {},
-      write: (chunk) => {},
+      writeHead: (_code, _headers) => {},
+      write: (_chunk) => {},
       on: (evt, cb) => {
-        if (evt === "close") sseRes = { close: cb };
+        if (evt === "close") _sseRes = { close: cb };
       },
     });
 
@@ -1473,7 +1469,7 @@ describe("#534：通知类型注入（可选 notifier 探测 + 动态 kind 注�
     // 2) ctx.get 命中 wingsky.notifier（notifier 已加载）：挂载即注册 provider-usage:report
     {
       const kinds: Array<{ id: string; label: string }> = [];
-      const { ctx, routes, disposers } = makeCtx({ get: fakeNotifier(kinds) });
+      const { ctx, _routes, disposers } = makeCtx({ get: fakeNotifier(kinds) });
       await apply(ctx, baseCfg);
       mountedKinds = kinds.length;
       mountedKindsId = kinds[0]?.id;

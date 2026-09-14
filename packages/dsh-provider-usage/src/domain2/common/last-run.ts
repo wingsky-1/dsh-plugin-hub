@@ -7,7 +7,7 @@
  */
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { ReportConfig, ReportPeriod } from "../schedule/interface.ts";
+import type { ReportPeriod } from "../schedule/interface.ts";
 import {
   alignLastRun,
   deriveLastRun,

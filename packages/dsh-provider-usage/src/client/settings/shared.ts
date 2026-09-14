@@ -7,7 +7,7 @@ import * as React from "react";
 import { fetchTimeout } from "../core.ts";
 
 /** 设置页分区卡样式（浅色回退 + 主题变量）。 */
-export const sectionStyle: Object = {
+export const sectionStyle = {
   marginBottom: 16,
   padding: "10px 12px",
   border: "1px solid var(--dsw-alias-border-l1,#e2e5ea)",
@@ -18,7 +18,7 @@ export const sectionStyle: Object = {
 };
 
 /** 分区标题样式。 */
-export const titleStyle: Object = {
+export const titleStyle = {
   fontSize: 13,
   fontWeight: 600,
   margin: "0 0 6px",
