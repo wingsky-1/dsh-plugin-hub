@@ -799,9 +799,10 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | 项 | 值 |
 |---|---|
 | 主 checkout（**只读，未改动**） | `/mnt/ssd/dev/dsh-plugin-hub`，HEAD `b490e87`（v0.2.4 发布点，与方案里的代码基线一致） |
-| 方案 worktree | `/mnt/ssd/worktree/dsh-plugin-hub-task-767-arch-v4`，分支 `task/767-arch-v4`，领先 `origin/main` **3 个提交**、工作区干净 |
-| 提交 | `e356696` 方案 v5（按 notifier 实证重定 D1–D8）；`4b1153e` v5 复核修订（三视角 4 P0 / 13 P1 并入）；`803b670` 交接状态更新 |
-| 交付物 | `packages/dsh-mcp-manager/docs/architecture-redesign-v5.md`（788 行）+ `architecture-redesign-v4.md`（被取代，B3 归档时清理） |
+| 方案 worktree | `/mnt/ssd/worktree/dsh-plugin-hub-task-767-arch-v4`，分支 `task/767-arch-v4`，领先 `origin/main` **13 个提交**、工作区干净 |
+| 提交（方案期） | `e356696` v5 定稿 / `4b1153e` 三视角复核修订 / `803b670``2ff9ff6` 交接状态 |
+| 提交（B0 实施） | `43229f6` 导出面基线冻结 · `d3a21d2` faces + 准入自测双包遍历 · `da83b36` 门禁接线 · `660dd0a` mcp 豁免 + 连带自测 · `f8ee6c5` ci.yml 数据面 glob（红线 1）· `8235e32` 两轮复核并入 · `ec3004c` 维护者裁决落地 · `cd44c90` 变异面 · `8fe5119` facade 计数修正 + §8.3 实测 |
+| 交付物 | `packages/dsh-mcp-manager/docs/architecture-redesign-v5.md`（1037 行，含附录 A–E）+ `architecture-redesign-v4.md`（被取代，B3 归档时清理） |
 | 工具链（**本会话实测，与旧交接说法相反**） | worktree **有** `node_modules`（`tsc` / `esbuild` / `vitest` / `stryker` 都在 `node_modules/.bin`），故依赖 build 的步骤（`export-surface-snapshot` / `forbid-module-state-src` / `test:scripts`）可在 worktree 内直接跑，无需安装 |
 | 参照实现 | `packages/dsh-notifier`（#733 / PR #777）。关键 commit：`2370774` 冻结基线 / `db1ce0f` 首笔砍到 4 导出 / `8df3950` 一次性重冻结 / `4c79ba0` 重写落地 / `8142b13` 行为变更登记模板 / `a748361` 恢复被静默删掉的能力 |
 
@@ -814,30 +815,32 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 5. **维护者已按推荐方案裁决**（原文「按推荐方案走」）：①撤回 `fast-redact`；②**撤回 `atomically`**，改**自写 + 同路径队列**（四候选实测比较见 §7.5）——**红线由三条降为两条**；③掩码还原用**一个规范化地址**（复用 `@<root>/<name>` / `@@global/<name>`），不新造三个平铺字段，不可变 `id` 留后续；④stderr 改**两档**（默认摘要含首行 + 显式取全文过同一脱敏器）。另裁三项：⑤`types` 不设第 12 域、解体到三处；⑥「要不要建 `deps.ts`」以**运行时能力消费**为准；⑦4 处死导入不在 B0 清、B2 域重写时自然消失。
 6. **B0 切片 1 已完成**（导出面基线冻结 + faces + 门禁接线 + 豁免登记 + ci.yml glob，5 笔提交 `43229f6`/`d3a21d2`/`da83b36`/`660dd0a`/`f8ee6c5`）；协调者独立复跑 `export-surface-snapshot` / `forbid-module-state-src` / `verify-dir-imports --graph` 与 `pnpm test:scripts`（628 pass / 0 fail）**全部 exit 0**。
 7. **第三轮只读复验已并入**：凭据单链现状（§0.2，含端到端实测的红的基线 + 4 个脱敏器构造点 + 1137 用例零「出口不含明文」断言）与 Port 面实测表（附录 E，含 `types` 缺口、4 处死导入、静态/运行入口径冲突）。
+8. **B0 切片 2 已完成**（`cd44c90` + `8fe5119`）：变异面超集（**单段**挂 `runtime`）+ facade 条重估 + `deps.ts` 的 type-only 条 + 自测计数 `1→2`/`12→13` + 段 conf 重生成；`coverage.config.json` 实测评估后**不改**；`--min` no-op。
+9. **#767 提案评论已发**（核心思路 + 红线授权 + 更正评论：红线由三条降为两条）；**仓级落盘原语候选已登记**（#706 评论：实测 4 个包各自实现落盘，notifier 8 / mcp 8 / provider-usage 9 / lan-proxy 4 写点，权限语义不一致）。
 
 ### D.3 未完成
 
-1. **#767 方案评论未发**（摘要 + D1–D8 + 两轮复核结论尚未落到 issue）。
-2. **`approved` 未取**：红线 1（`.github/workflows/ci.yml` 的 mcp 数据面 glob）已由维护者放行并提交（`f8ee6c5`）；**剩余需 `approved` 的只有公共 API 行为变更**（§10.1 的八条不保留项）。**本轮不新增任何第三方依赖**（两个依赖候选均已撤回）。
-3. **B0 切片 2 未开工**：`mutation-topology.json`（`src/server/**` + `src/shared/**` 超集、facade 条重估、`deps.ts` 的 type-only 条）、连带三处（`mutation-topology-coverage.test.ts` 的 `1→2` 与 `12→13`、`gen-stryker-conf` 重生成、`--min` 上调）、`coverage.config.json` 重估，以及 I8 / §5.3 client / I2① 三条新判据与 `src/placement-math.ts` 迁移；**B0② `architecture-contract.md` 三分类打标**亦未做（该文档声称的 `api/redactor-factory.ts` 不存在，该段判「作废」）。
-4. **代码一行未动**（按仓库红线流程，等 `approved`）。
-5. **B0④ 缺一步（本会话实测）**：把 `dsh-mcp-manager` 登记进 `gate-scope-registry.json` 的 `forbid-module-state-src` 之后，该包**已有 1 处存量违规**——`packages/dsh-mcp-manager/src/client/float/panel.ts:19` 的模块级 `let inflight`（探针：临时 registry + `node scripts/gate/forbid-module-state-src.mjs --registry /tmp/mcp-probe-registry.json`，**exit 1**）。该文件属 `src/client/**`（N1 本轮不重构结构），故 B0④ 必须**同笔**补 `gate-exemptions.json` 条目（`gate=forbid-module-state-src` + `trackingIssue` + `reviewBy`，照 notifier #762 形态），否则 I9 扩包当天即判红。**§二 I9 与 §十二 B0④ 的正文口径待同步**。
-6. **附录 A 第 1 条残留**：该条仍把 `fast-redact` 列为待授权的新增依赖，与第 5 条「撤回」自相矛盾，**待同步**。
+1. **B0 切片 3 进行中**：3a（**I2① 执法点** + §5.3 client 判据，子 agent `7053ba5c`）在跑；3b（I8 测试导入面判据）**刻意压后**——它与 3a 都要写 `gate-exemptions.json`，同一 worktree 双写会撞 git index，等 3a 落地复核完再发。
+2. **B0② `architecture-contract.md` 三分类打标**未做（硬输入已备：该文档 `:28-30` 声称的 `api/redactor-factory.ts` 与「`handleError` 写 body 前先脱敏」都不存在，判「作废」）。
+3. **B0 其余项**：⑦ `locales.ts` 两行文案 + 「客户端产物不含 `~/.dsh`」断言；⑩ `src/placement-math.ts` 迁 `src/shared/`。
+4. **红线状态（两条均已获授权）**：① `ci.yml` 数据面 glob 已落地（`f8ee6c5`）；② 公共 API 行为变更已于 2026-09-14 获维护者授权。**本轮不新增任何第三方依赖**。`approved` 标签按仓规**只能由维护者本人打**，代理不代打；B2 的 commit 正文「授权出处」引用 #767 + §10.1 清单。
+5. **测试面（B3 主体）未动**：16 个测试文件 / 14635 行尚未按域搬迁；`@ts-nocheck` 未清零。
+6. **`pnpm gate:pr` 尚未实跑**（全仓口径，如实登记为未实测）。
 
 ### D.4 下一步顺序
 
-1. 起草 #767 方案评论（`needs-proposal-review`）→ 维护者过目后发出。
-2. 维护者 `approved`（覆盖上述三条红线）。
-3. **B0**（PR-1，尺子与接线，必须早于第一个结构 commit）→ **B1 → B2 → B3**；每批验收含 `exit code` + 该批**全部登记文件**同步（§12 开头已写死）。
+1. 完成 B0 切片 3a → 复核 → 发 3b → 复核；同时做 B0② 文档打标与 B0 ⑦⑩。
+2. **B0 收尾**跑 `pnpm gate:pr` 全仓口径（目前唯一未实测项）。
+3. 之后 **B1（骨架与迁移）→ B2（域重写：凭据单链 + ABI 同源 + 跨端搬家 + 导出面在**删除那一笔**重冻结）→ B3（测试面与收口）**；每批验收含真实 `exit code` + 该批**全部登记文件**同步（§12 开头已写死）。
 4. 每批完成后回写本附录的 D.2/D.3。
 
 ### D.5 新会话最该先做的三件事
 
 1. 读本文件 §零（立场与 8 条决策）与 **§0.1（第二轮复核修订台账）**——那 15 条是 v5 与初稿的差别所在，别按初稿口径理解。
-2. 抽查代码事实（不要全信文档）：`node scripts/gate/verify-dir-imports.mjs --package dsh-mcp-manager --graph`（应 14 叶子 / 33 值边 / 4+4 环）、`grep -rn '0o600' packages/dsh-mcp-manager/src`（应只有 `config/store/store.ts:66`）、`grep -c 'new McpManager' packages/dsh-mcp-manager/test/e2e/smoke.test.ts`（应为 9）、`ls scripts/data | grep dsh-mcp-manager`（应为空）。
+2. 抽查代码事实（不要全信文档）：`node scripts/gate/verify-dir-imports.mjs --package dsh-mcp-manager --graph`（应 14 叶子 / 33 值边 / 4+4 环）、`grep -rn '0o600' packages/dsh-mcp-manager/src`（应只有 `config/store/store.ts:66`）、`grep -c 'new McpManager' packages/dsh-mcp-manager/test/e2e/smoke.test.ts`（应为 9）、`ls scripts/data | grep dsh-mcp-manager`（现应有 `-export-surface.json` 与 `-export-faces.json` 两个基线文件）。
 3. 记住两条「未实测」：`pnpm gate:pr` 未实跑、掩码往返与 B1 的自写 IO 队列是静态推演——凡涉及它们，先跑探针再下结论（`atomically` 已撤回，不再是风险项）。
 4. 本会话已复跑的实测结果（可直接引用，不必重跑）：`verify-dir-imports --graph` **exit 0**（14 叶子 / 33 值边 / 4 模块级环 + 4 文件级环）、`grep -rn '0o600' packages/dsh-mcp-manager/src` 只有 `config/store/store.ts:66`、`grep -c 'new McpManager' test/e2e/smoke.test.ts` = 9、`scripts/data` 无 mcp 基线且 `export-surface-snapshot --package dsh-mcp-manager` **exit 2**（「基线不存在」）、`forbid-module-state-src` 在 worktree 跑 notifier **exit 0**（21 处豁免）。
-5. B0 开工前先把 D.3 第 5、6 两条的正文口径同步进 §二 I9、§十二 B0④ 与附录 A 第 1 条。
+5. 已完成的同步（勿重做）：§二 I9 与 §十二 B0④ 已写「扩 `forbid-module-state-src` 必须同笔登记 `panel.ts` 豁免」；附录 A 第 1 条已去 `fast-redact`、红线更新为两条且均已获授权。
 
 ---
 
