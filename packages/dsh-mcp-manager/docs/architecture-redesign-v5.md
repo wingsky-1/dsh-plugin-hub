@@ -893,6 +893,8 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 43. **已合并 origin/main（维护者裁决 A：现在合并；共两刀）**：`df0c08d`（双亲 `4994afa` + `c988f32`，吸收 #822/#823/#824/#825/#827，**12 个冲突**）+ `3ff9cc5`（双亲 `df0c08d` + `dd36fa6`，吸收 #828/#829，**1 个冲突**）。全部逐处人工收敛、两侧语义并保留；结果 `gate:pr 32/32 exit 0`、`pnpm lint 508/508`、全量 `--write-baseline` **基线零 diff**。**基点自此冻结**，`HEAD..origin/main` = 1（`191cddf` #832，只改 3 个非本包文件，留最终推送/PR 前那一刀）。**判据携带分歧的权威审计**（`diff 上游 vs 合并后`）：合并后 `scripts/gate/verify-dir-imports.mjs` **1830 行 vs 上游 1533 行**，分歧**全部是本项目 B0 的成果**——4 个新质量证据类（`crossDomainValueEdges` / `rootIndexImports` / `clientServerImports` / `unitImportFaceViolations`）+ 裸包名自引用加固；**上游每包的 `quality` 只有 6 类，我们 10 类**（合并后 6 个包全部补齐 10 类，见 G23）。**判据取数层修复（#825）对本包证据零影响**：主控在合并前的树上用上游判据复跑，四组数字完全相同；唯一差异是结构计数 `crossModuleRefs` 预期 157 **实测 155**——上游 #822 同笔删掉了本包多处未用的跨模块 import 绑定（该计数定义是 `refs.filter(crossModule).length`），方向安全且已登记。**导出面 2 行最小重冻结**：上游 #822 把未用形参 `cwd` 改名 `_cwd`（`no-unused-vars` 已升为 error，`_` 前缀是唯一合法写法，回退会直接 lint error），故只改 `scripts/data/dsh-mcp-manager-export-surface.json` 那两行声明串（主控已核 `2247b6c` 的 diff 原文，且 `export-faces.json` 未动）。**新增硬约束：lint 余量归零**（见 D.3·32）。
 
+44. **W4 已落地（`5ae082a`，主控独立复核通过）**：catalog 域装端口（`CatalogDeps = {store, connection, workspace}` + 新增 `catalog/impl/service/index.ts` 持有者，未装配即抛错、不回落默认值）+ 删 `connection/interface.ts` 的 `stripMcpPrefix` 值复导（唯一 `directImpl` 归零）+ `manager.ts` 改引 `./tool-names.ts` + 入口顶层字面量装配。**实测（主控复跑）**：叶子模块级值环 **2→0**、文件级值环 **2→0**（**两类环全零**）、I2① **30→26**（派单写 28，实测多消 `catalog|config/store` 与 `catalog|workspace`——它们正是本刀的接线目标）、`directImpl` **1→0**、模块值边 38→34、文件值边 136→134、`crossModuleRefs` 155→154；`export-surface-snapshot` **零 diff**（公开面未变）、`gate:pr` **32/32**、`lint` 508/508。基线同笔清理 9 条消失证据、其余 5 包零改动。**G12 的实测危险度比 G20 更高**（W4 反例 4）：把 `installCatalog` 签名加 `async` → 判据 **exit 0** 且输出里「注入面对账」整段**静默消失**；**async + 传变量**（本应命中「实参不是对象字面量」的必红形态）同样 **PASS** ——即 G12 会让 G20 的判据整体失效，故「install 签名不得带 `async`」必须写进每一刀的验收。另：新增的「重复装配抛错」分支**无测试覆盖**（归 B3）；W4 顺带订正了 `catalog/interface.ts` 头部的环成员失效断言。
+
 ### D.3 未完成与遗留（含状态订正）
 
 1. **B1 全部切片已完成**（B1.0–B1.5b，见 D.2·19–26）。**B1 收尾已完成**：主控实跑 `gate:pr` = **32 项逐条 exit=0 + PASS**（清单与上一轮逐项一致）、`THIRD-PARTY-LICENSES` 相对 `origin/main` **零改动**、依赖面零新增、44 笔。**未推送**（理由见 D.3·17）。**B2.1 已完成**（`0fb3bab`：零位移、零台账、`gate:pr` 32 条全绿）。**B2.2 已完成**（`8628110`）。**B2.3 已完成**（`6bf9457`，含建 `deps.ts` 后模板订正口径的首次落地）。**B2.4（`catalog` 域）进行中**。切法与验收见 D.4。**两条显式收窄 + 一条落点裁量**见 §十二 表后（不建 10 个空域骨架；B1.4 不路由既有装配；机制落 `server/shared/` 而非入口）。**接线顺序**：`upgrade` 的启用必须与「读者改读新布局」同一笔（B2），否则归档旧文件而旧读者读空 = 静默丢配置（见 §十二 表后）。
@@ -938,6 +940,13 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 31. **判据机制的携带分歧（主控审计，登记为 G23）**：合并后我们比上游多 4 个质量证据类与一条「**类级首登直写**」通道。该通道**是承重结构**：把一个新证据类并入既有包时，`quality` 段在、单个键缺——上游的包级台账门覆盖不到这条路径；若按「逐条过台账」处理，等于要给 mcp 的 33 条 I2① 存量逐条开豁免（B0 注释判定为「把存量登记误当放宽通道」）。**它同时是一个窄洞**：手工从基线里删掉某一个证据键 → 跑 `--write-baseline` → 该类当前证据被无条件写入（同族于 R16/G3 的「删条目洗白」，护栏仍是**人工 diff 审阅**）。**处置：保留**（已在输出里逐条点名「须在 PR 内确认」、且只在键缺失那一次生效），并记录：这条分歧随本分支合入 main 后会成为 main 的行为，维护者可决定是否上收。
 32. **lint 预算余量归零（新硬约束）**：上游 #822 把 `lint.maxWarnings` 从 671 降到 **508**，而合并后我们实测就是 **508/508**（顶格、余量 0；合并期间一度 509，多出的唯一一条是本项目 B0 新增测试文件的 `// @ts-nocheck`，已**真修**——摘 pragma + 补 9 处类型标注，`tsc -p scripts/tsconfig.json` 0 error、13/13 用例仍绿）。**含义**：W4–W11 期间**任何**新增/改动文件都不许多出哪怕 1 条 warning；不许抬 `gauntlet.config.json`、不许 `eslint-disable`。每刀派单必须写明这条。
+
+35. **W3b 裁决（主控，评审 A 建议 + 主控实测修正）**：在 **W4 之后、W5 之前**插入一刀，把「值常量被 ≥2 域消费」（§3.6 规则 6）的四条收口——但**落点按跨端性分开**：① `SCOPE_GLOBAL` / `SCOPE_PROJECT` / `MIDDLEWARE_GLOBAL_ROOT` → **`src/shared/`（跨端层）**，不是 `server/shared`。**主控实测依据**：客户端把这两个契约**以字面量重复实现**（`src/client/core/api.ts:18` 用 `"global"` 比较、并拼接 `"@@global/"` + 名字，即 `SCOPE_GLOBAL` 与 `"@" + MIDDLEWARE_GLOBAL_ROOT + "/"` 各写一份、无判据）——同族于 G14 的跨包字面量重复。评审 A 只按宿主消费域判（6 unit / 7 文件），漏了跨端这一面。② `LIST_DEFAULT_TOOLS_PER_SERVER`（纯宿主，catalog + inject 2 域）→ **`src/server/shared/constants.ts`**。③ 同笔收窄 `catalog/deps.ts` 的 `ConnectionPort`/`WorkspacePort` 与 `pipeline/deps.ts` 的 `WorkspacePort`（把已迁走的成员摘掉）；各域门面**继续 re-export** 以保导出面零 diff。④ **本刀只迁宿主侧**：客户端那两行字面量**先不改**（N1 明确本轮不重构客户端），登记为 #769 项——这样 `src/shared/` 成为唯一物理定义，客户端将来改引零成本。
+36. **入口导出面 159 → ≤5（红线，待维护者裁决）**：评审 A 实测 `src/index.ts` 的 159 项里**只有 5 项**是宿主/ABI 契约必需（`name`/`inject`/`apply`/`Config` + `McpManagerService`，后者有 `scripts/lib/dts-cordis-merge-lib.ts:26-29` 的声明合并可达性判据背书）；**106 项零消费者**、48 项仅被本包测试引用 → **154 项可删可移**。它还把 8 个内部类（`McpManager` 单块 3213 字符 / 78 个成员）连同 **28 个 `private` 成员名**冻进 `scripts/data/dsh-mcp-manager-export-surface.json`（主入口 `blocks` 139 键 / 21231 字符）。**收益**：删掉这 8 个类的转出后，此后任何域内重构都不再触发 `export-surface-snapshot` diff。**代价**：破坏性公开 API 变更（须 release notes + 版本策略），且 48 项仅测试引用的导出要与 I8① 的 13 条清零同批。**主控未自行开工**（红线），建议单开 issue 与 #769、I8① 清零并排。
+37. **`api/deps.ts` 的真实前置（评审 A 实测，订正 §3.5 示意表）**：§3.5 给 api 的 `ConnectionPort` **今天物理上开不出来**——`connection/interface.ts` 一个 manager 能力都没导出，api 与 connection 的耦合全在 `manager: RoutesManager` 的**结构参数类型**（22 成员、无 import 边，G19）；§3.5 表里那 30 个成员名在门面 grep **命中 0**。**故 W9 = `{ workspace, configModel }` 两份 Port（与只读 scout 结论一致），真实前置是 W10 把 22 个 `manager.*` 命名成能力对象**。§3.5 的表要标注为**示意**。
+38. **I7「`paths.ts` 是文件名唯一出处」实测为假（评审 A + 主控复核）**：`config/store/store.ts:18`（`"dsh-mcp.json"`）、`stats/impl/collector.ts:23`（`"mcp-stats.json"`）、`catalog/impl/cache-view/index.ts:27`（`"dsh-mcp-catalog.json"`）各自硬编码 `dshHome() + 字面量`，与 `server/shared/paths.ts` 的旧路径表重复。归「合并前 follow-up」（顺带让运行期写面改经 `paths.ts`，会把 `server/shared` 的 12 个「单消费者」变成 2 消费者，方向是让 I5 达标）。
+39. **两处失效注释（评审 A 实测，主控复核）**：`catalog/deps.ts` 头「search 对 `bareServerName` 是死导入」与 `pipeline/deps.ts` 头「authorize 对 `fullServerName` 是死导入」——**两个文件已完全不 import 这两个符号**（W1 已删），注释陈述的是不存在的状态（I12 违规 + G10 无判据）。W4 已顺带订正 `catalog/interface.ts` 的同类断言；这两处待订正。
+40. **两份只读评审的完整台账见附录 H**（暴露面 + 测试面，含三桶优先级与主控复核订正）。
 33. **覆盖退化（新识别，交测试面评审）**：本项目 B1.5b 按准入规则 7 退役 `shared/mcp-manager-service.d.ts` 后，`verify-shared-fanin` 的**类型面分支在本仓已无实例**（实测类型面 0 个模块），#824 新增的那条断言由「验证类型面下限（≥1 包）」退化为「验证该模块缺席」。合并时已如实改写断言（未弱化、未删除），但**该分支的判据覆盖已成空白**。
 34. **基点冻结与待吸收**：合并后 `HEAD..origin/main` = 1 笔（`191cddf` #832，删死掉的 `mutation-segments-lib.mjs` + 拆 `plugins-manifest-lib.ts`，只动 3 个非本包文件），按冻结策略**不吸收**，留最终推送/PR 前那一刀统一处理（届时须重跑一轮 `gate:pr`）。
 
@@ -1232,4 +1241,43 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 **同一次复核的正面结论（对照面）**：四条新判据**不是空转**——把每条分别改成恒空后跑 `verify-dir-imports-criteria.test.ts`：原始 9/9 pass，四个变异分别打红 **2 / 2 / 1 / 2** 条用例且互不串扰；`--graph` 输出与基线口径逐条一致（mcp 33/0/0/13；notifier 的 2 条 clientServerImports 与两条豁免逐字同形）。
 
-**未构造出可达路径（不采信为结论）**：证据串被 `sort`/去重吞掉、`null` vs `[]` 判等、路径分隔符差异、台账跨类 key 碰撞——其中 `null` 反而 fail-closed。
+**未构造出可达路径（不采信为结论）**：证据串被 `sort`/去重吞掉、`null` 与空数组判等、路径分隔符差异、台账跨类 key 碰撞——其中 `null` 反而 fail-closed。
+
+---
+
+## 附录 H B2a-wire 期的两份只读评审台账（主控复核后入档）
+
+**评审方式**：两个只读 agent（一个查**服务端暴露面**、一个查**测试面**），钉提交 `936c952`，全部用 `git show 936c952:<path>` 读文件（不读工作区，避免读到并行写者的半改状态），**禁跑任何 build/test/tsc/门禁**，临时脚本只在 `/tmp`，仓库零写入。**主控逐条抽验了各自最值钱的主张，并订正了 3 处误报**（见 H.3）。
+
+### H.1 服务端暴露面（A）
+
+1. **门面这一层已经收干净**：域间直引非门面文件的边 **0 条**（全仓 14 条此类边全部 from = `test/**`）；全包**真死导入 0 条**；域门面零消费者导出 35 项。
+2. **问题堆在两端**：入口 `src/index.ts`（见 D.3·36 的 159 项实测）与共享层。
+3. **共享层是「预置的终态」而非「在用的共享」**：`server/shared/interface.ts` 41 项导出里，I5 达标（≥2 消费 unit）只有 4 个常量（就是 W3 迁过来的那 4 个）；**12 个真对外契约只有 `server/upgrade` 一个消费者**；**零消费者 13 个**（7 个宿主端口类型里 6 个 + 6 个文件名常量 + `HostContextPort` 经门面即 0）；`compose.ts` 系列**确认仍为单消费者放宽**。`src/shared` 则是真正达标的跨端单源（`ROUTES`/`SERVER_STATES`/`SSE_FRAMES` 三族 + DTO/service 类型）。
+4. **端口面**：`catalog/deps.ts` 与 `pipeline/deps.ts` **逐成员 0 死项**；但 `MIDDLEWARE_GLOBAL_ROOT`/`SCOPE_PROJECT`/`LIST_DEFAULT_TOOLS_PER_SERVER` 被迫写进每个消费域的 Pick（→ D.3·35 的 W3b）；`CATALOG_LRU_MAX`/`createTransport`/`RECONNECT_DEFAULTS`/`resolveReconnect`/`ReconnectPolicy` 是**零消费者**，W7/W8 建端口时**不要为它们开口**。
+5. **死形参全量 = 1 条**：74 个导出函数里只有 `makeRoutes(manager, _cwd = process.cwd())`（`_cwd` 声明处外零出现）；其余逐形参出现次数 ≥2。**本 PR 修不掉**（`_` 前缀是过 `no-unused-vars` 的唯一合法写法），且**没有判据**（导出面只比字符串）→ G10 类。
+6. **类型/值面**：`HttpTransport`/`StdioTransport`/`MCPClient`/`McpMiddleware`/`McpManager` 的域外消费者**全是 `import type`**（域门面**可**降级为 `export type`），但它们在**入口是值导出**且 smoke 以值导入 → 降级 = 入口面变更（红线），两者必须一起改才有意义。两个默认常量是**单定义 + 5 跳 re-export 链**，非重复定义。
+
+### H.2 测试面（B）
+
+1. **形态**：B1 后新写的 8 个文件（file-io / queue / upgrade×3 / 契约 / 组合根）类型干净、判据密；13 个 #664 存量 unit 是「**经组合根取号 + `@ts-nocheck` + 大量 `toBeTruthy`/内部字段断言**」的老形态，I8① 那 13 条违规**正是这 13 个文件**，且**全部是动态 `await import("src/index.ts")`**。
+2. **收窄路径的硬约束**：`McpManager` 在 `connection/interface.ts` 是 **type-only** 转出，故 7 个文件**不能**只引域门面，必须直连 `connection/orchestrator/interface.ts`；评审给出逐文件「符号数 / 需门面数 / 目标模块」表（13 文件共 116 符号 → 47 条 import），可直接当 B3 作业单。**主控裁决：推迟到 B3**（B2b 会给 11 域加 `server/` 前缀，现在改要改两遍）。
+3. **`@ts-nocheck` 存量 18 个文件**（14 unit + `e2e/smoke` + `helpers.ts` + 2 个 integration——**评审漏了后两个，主控实测订正**）；掩盖两类：语句级无注解形参（可静态判定下界 **≥68** 条 TS7006）+ 假宿主/假 ctx 的结构不匹配。最省摘除顺序已给（workspace → call-stats → store → supervisor → apply → pipeline → hotspot → manager → catalog → routes-sse → manager2 → middleware → helpers → smoke）。
+4. **两处判据/文档缺口**：① `test/tsconfig.json:12` 的 `exclude: ["e2e/**"]` 注释理由（「该文件不产生类型诊断」）只对带 pragma 的 smoke 成立，**无 pragma 的 `e2e/cross-end-lock.test.ts` 因此不在任何编译面**（`package.json` 的 `typecheck` 只跑 src；唯一编译 test 面的是 `scripts/test/service-contract-wiring.test.ts`）；② `service-contract-wiring.test.ts:24-25` 那句「契约与单元测试文件无 `@ts-nocheck`」**与事实相反且两头都错**（14 个 unit + 2 个 integration 都带）。后者属**本 PR 内可改**（纯文案，主控自己改）。
+5. **断言强度**：`toBeTruthy()` **216**、`toBeUndefined()` **82**、快照式 **0**、`as any` 0、`ts-ignore` 0；`vi.mock` 全包唯一在 `unit-file-io-queue.test.ts`（是否纳入 skill 例外清单待裁决）。逐条弱断言与更强写法已列（manager2 内部字段直取 67 条、墙钟阈值 flake、只断「不抛」的 resolve 断言等）。
+6. **无值锚常量清单**（改值不会红任何用例；**9 条「同源期望」**（期望值取同一个常量）另计）：最高优先 = limits 族 5 个（`MAX_TOOLS_PER_SERVER`/`MAX_TOTAL_CATALOG_BYTES`/`DISCOVERY_TIMEOUT_MS`/`CATALOG_LRU_MAX`/`LIST_DEFAULT_TOOLS_PER_SERVER`）+ `DEFAULT_RESULT_TRUNCATE_BYTES` + `DEFAULT_Z_INDEX_BASE`；反例：`cross-end-lock` 的 4 条是**双源互校**（本仓最强判据之一），不算同源期望。
+7. **覆盖盲区**：最薄的是 `workspace`（仅 3 it / 79 行）与 `inject`/`config`（无独立文件）；`client` 侧 `float/*`/`settings/*`/`core/{api,dom,i18n,session}` **零测试文件**（归 #769）；`sdk` 域未落位故无测试（不是遗漏）。已落地机制的缺口：`file-io` 串行队列只有 2 条（缺「队列表清理守卫 / 不同路径不互阻 / 临时名唯一性」）、**掩码往返是「未落地」不是「未覆盖」**（`src/` 里 `mask` 零命中）、`upgrade` 四态齐但**装配接线零覆盖**（B2 落）、`compose.ts` 9 条驱动的是夹具域。
+8. **判据覆盖退化清单**：`verify-shared-fanin` 的**类型面分支**（本仓 shared/ 8 模块全有配对 `.js` → type 恒 0）与**悬空引用分支**；`verify-dir-imports` 的**裸包名映射分支**（仓内无实例，只有 fixture 跑）；mutation-topology 的 **0 命中 pattern**（G18 实例仍在）；本包基线里 **5 个恒空证据类**；`export-faces.json` 的 `faces` 为**空**（159 项全在 legacy，存量零分类）；I8②/I8③ 只有文字。
+9. **B3 按域重排切法已给**（逐文件目标域 + 跨域 it 表：manager2 12 / middleware 34 / apply 3 / routes-sse 2 / store 1 / hotspot 1 / catalog 0；风险点：依赖组合根装配的用例必须整段搬、`makeHost` 这类文件内夹具留域内）。
+
+### H.3 主控复核订正（3 处）
+
+1. **`@ts-nocheck` 是 18 个文件，不是 16**（评审 B 漏了 `integration/real-context.test.ts` 与 `integration/service-contract.test.ts`；主控 `grep -rl` 实测）。副作用：`service-contract-wiring.test.ts` 那句「契约与单元测试文件无 pragma」两头都错。
+2. **§8.2 不是「遗漏 5 个测试文件」**：评审 B 把 #664 遗留清单读成了全包清单。真相是**标题口径误导**——另 7 个文件由 B1 期新增且**已在目标位置**（`unit/upgrade/` 本身就是目标形态）。主控已订正标题与行数（`278c4e8`：全包 23 文件 / 16252 行 / 静态 `it(` 1169；`unit-middleware` 2109→2107、`service-contract` 338→366、`smoke` 3844/159it→3858/161it + 9 处 `new McpManager` 行号）。
+3. **跨端字面量重复（两份评审都没提，主控发现）**：`src/client/core/api.ts:18` 写死 scope 字面量与全局 root 前缀，即 `SCOPE_GLOBAL` 与 `MIDDLEWARE_GLOBAL_ROOT` 的重复实现，无判据 → 直接改变了 W3b 的落点裁定（D.3·35）。
+
+### H.4 三桶（两份评审合并，主控裁决后）
+
+**本 PR 内可改完**：① W3b 跨端常量收口（D.3·35）；② 两处失效注释订正（D.3·39）；③ `server/shared/interface.ts` 删 6 个零消费者端口类型的转出（不在入口 159 项内，零公开面影响）；④ `service-contract-wiring.test.ts` 注释订正（用实测 18）；⑤ `makeRoutes` 的 `_cwd` 在 PR 正文显式登记「公开签名不变、lint 靠 `_` 前缀」。
+**合并前 follow-up**：⑥ 摘 `@ts-nocheck`（分两批，先 4 个低风险文件）；⑦ 给 limits 族 + 两个默认值补字面量值锚；⑧ 弱断言升级（最小集合 unit-apply 7 + unit-hotspot 1 + unit-manager 5）；⑨ `test/tsconfig.json` 的 exclude 收窄（先用一次 `tsc -p test/tsconfig.json` 探明 `TS2717` 是否同样命中 `cross-end-lock`）；⑩ I7 的 3 处 legacy 字面量重复收口（D.3·38）；⑪ `server/shared` 单消费者放宽显式登记（`paths.ts`/`file-io.ts`/`compose.ts` 三族）。
+**遗留汇总（须单个 issue）**：⑫ **入口导出面 159 → ≤5**（D.3·36，红线，建议与 #769、I8① 清零并排）；⑬ I4②/I5/I7 三条不变式的**机器判据**（今天只算不判——没有判据，本次所有收窄都会被下一个会话漂回去）；⑭ smoke 的 88 处 `clientSrc` 源文本断言分类（与 §8.4「仅一处」口径冲突）；⑮ mutation-topology 的 0 命中 pattern 判据（G18 修法，归 B2b）；⑯ I8②/I8③ 执法点；⑰ `vi.mock("node:fs/promises")` 是否纳入 skill 例外清单；⑱ 测试导入面收窄（I8① 13→0，B3 作业单见 H.2·2）。
