@@ -13,6 +13,7 @@
   1. 全量门禁跑绿（hub 通用：`pnpm build && pnpm test && pnpm contract && pnpm pack:check`；
      本仓执行清单见 `.dsh/skills/dsh-plugin-hub-dev`，验证证据检核见
      [verify-checklist.md](verify-checklist.md)）；
+     **本仓**口径以根 [AGENTS.md 门禁矩阵](../../../../AGENTS.md) 为准。
   2. 工作树/产物核对（编入库的 `lib/` 与源码一致、无游离 css/临时文件）；
   3. **阶段 commit**（一句话改什么、为什么），不攒到最后一次性提交。
 - 好处：每阶段可审、可回滚、可单独验收；失败定位到阶段而非整批。
