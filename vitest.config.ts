@@ -12,8 +12,9 @@ import mutationTopology from "./scripts/data/mutation-topology.json" with { type
  * `scripts/gate/verify-coverage-scope.mjs` 会判红本文件里再出现 thresholds / include / exclude
  * 字面量：同一事实两处声明，就一定会有一处先腐烂。
  *
- * 分层即目录：test/unit、test/integration、test/e2e 直连 src 源码；test/client 是「读 lib 产物 +
- * vm 执行」的客户端契约测试。产物契约测试（读 lib/）不属于覆盖率口径。
+ * 分层即目录：test/unit、test/integration、test/e2e 与 test/client-dom 直连 src 源码
+ * （client-dom 是要 DOM 环境的那部分）；test/client 是「读 lib 产物 + vm 执行」的客户端契约测试。
+ * 产物契约测试（读 lib/）不属于覆盖率口径。
  */
 
 /** 各测试层的运行环境与超时（配置决策；层清单来自 mutation-topology 的 $testLayers）。 */
@@ -30,9 +31,14 @@ const LAYER_RUNTIME = {
   integration: { environment: "node", testTimeout: 60_000, hookTimeout: 60_000 },
   // e2e 走真实端口、文件系统与子进程，单文件最坏数百秒（mcp-manager smoke 实测 328s）
   e2e: { environment: "node", testTimeout: 600_000, hookTimeout: 600_000 },
-  // test/client/** 的现有形态是「读 lib 产物字符串 + vm 执行」，属产物契约断言，
-  // 不需要 DOM 环境；未来直连 src/client/** 的 DOM 单测另立 happy-dom project。
+  // test/client/** 的现有形态是「读 lib 产物字符串 + vm 执行」，属产物契约断言，不需要 DOM 环境。
+  // 直连 src/client/** 的 DOM 单测在 client-dom 层（见下），两层不能合并：client 层的用例会让
+  // import.meta.url 在 happy-dom 下变成 http 协议并抛「The URL must be of scheme file」。
   client: { environment: "node" },
+  // test/client-dom/** 直连 src/client/** 的 DOM 单测：被测模块在模块加载期即读写 document，
+  // 只能在 DOM 环境里跑（happy-dom 已在根 devDependencies，零新增依赖）。无子进程与真实 I/O，
+  // 30s 是防挂起的上界。
+  "client-dom": { environment: "happy-dom", testTimeout: 30_000, hookTimeout: 30_000 },
 };
 
 /** 层名 → project 名：`--project contract` 是既有 CLI 契约（release.yml / package.json 在用），保留别名。 */
