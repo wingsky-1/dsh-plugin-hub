@@ -26,6 +26,7 @@ import type {} from "@deepseek-ai/dsh-agent";
 import type {} from "@deepseek-ai/dsh-system-prompt";
 import type {} from "@deepseek-ai/dsh-tools";
 import type { McpManagerService } from "./integration/interface.ts";
+import * as apiApi from "./api/interface.ts";
 import { installInject } from "./inject/interface.ts";
 import { installOrchestrator } from "./connection/orchestrator/interface.ts";
 import * as catalogApi from "./catalog/interface.ts";
@@ -77,6 +78,12 @@ runtimeApi.installRuntime({
   pipeline: pipelineApi,
   workspace: workspaceApi,
 });
+
+// API 层域的静态端口装配。同上：实参必须是可解析的对象字面量、键集与 api/deps.ts 的
+// ApiDeps 严格相等，且调用点必须落在入口（written elsewhere → 该对账静默空转，附录 G·G20）。
+// 本刀只接 workspace 与 config/model 两条 Port——对 manager 的结构参数消费没有 import 边，
+// 命名能力对象归 W10（附录 G·G19）。
+apiApi.installApi({ workspace: workspaceApi, configModel: configModelApi });
 
 /** 稳定的 cordis 插件名。 */
 export const name = "mcp-manager";

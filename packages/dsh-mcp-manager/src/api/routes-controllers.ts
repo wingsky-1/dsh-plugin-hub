@@ -10,25 +10,21 @@
  * - 路由路径与围栏（方法白名单 / loopback 豁免）取自 shared/routes.ts 单点；
  * - loopback 围栏与 405 分流顺序不变（#473 R2：config GET 豁免 loopback，
  *   白名单外方法先于 loopback 直接 405）；
- * - JSON body 字节上限沿用 readJsonBody 默认行为（MAX_JSON_BODY_BYTES 保留
- *   兼容导出，历史上为显式上限占位）。
+ * - JSON body 字节上限沿用 readJsonBody 的默认行为（历史上那个显式上限
+ *   常量 MAX_JSON_BODY_BYTES 已不存在）。
+ *
+ * 跨域取数一律经 apiPorts（见 deps.ts 与 impl/service），值为模块求值期绑定：
+ * installApi 在包入口顶层完成，handler 内的 get() 取到的一定是装配后的能力。
  */
 
 import { writeJson, readJsonBody, guardLoopbackMethod } from "../../../../shared/host-utils.js";
-import { parseClaudeJson } from "../config/model/interface.ts";
-import {
-  SCOPE_PROJECT,
-  normalizeScope,
-  parseFullServerName,
-  normalizeToolName,
-  normalizeMiddlewareMode,
-  MIDDLEWARE_GLOBAL_ROOT,
-} from "../workspace/interface.ts";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RoutesManager } from "../types/interface.ts";
-import { ROUTES, ROUTE_FENCE } from "../shared/interface.ts";
+// 跨端契约常量取自共享层门面（物理定义在 shared/constants.ts），不再经 workspace 门面转出。
+import { MIDDLEWARE_GLOBAL_ROOT, SCOPE_PROJECT, ROUTES, ROUTE_FENCE } from "../shared/interface.ts";
 import type { RouteName } from "../shared/interface.ts";
+import { apiPorts } from "./impl/service/index.ts";
 import { queryParam } from "./routes-helpers.ts";
 
 /** 控制器共享 helpers（原 makeRoutes 闭包三件套，提升为显式参数）。 */
@@ -59,6 +55,7 @@ export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers):
     kind: "exact",
     path: ROUTES.config,
     handler: async (req: Req, res: Res) => {
+      const { workspace } = apiPorts.get();
       // GET：只读 UI 配置 + 中间层模式（允许非 loopback，供远程页面读取非敏感的展示配置）。
       if (ROUTE_FENCE.config.loopbackExempt.includes(String(req.method))) {
         try {
@@ -106,7 +103,9 @@ export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers):
               await manager.setMiddlewareMode(rec.middleware);
             }
             if (typeof manager.uiUpdate === "function") {
-              await manager.uiUpdate({ middleware: normalizeMiddlewareMode(rec.middleware) });
+              await manager.uiUpdate({
+                middleware: workspace.normalizeMiddlewareMode(rec.middleware),
+              });
             }
             writeJson(res, 200, {
               ...manager.uiConfig(),
@@ -136,6 +135,7 @@ export function buildServersRoute(manager: RoutesManager, helpers: RouteHelpers)
     kind: "exact",
     path: ROUTES.servers,
     handler: async (req: Req, res: Res) => {
+      const { workspace } = apiPorts.get();
       const url = new URL(req.url ?? "/", "http://localhost");
       const method = req.method ?? "GET";
       if (!guardLoopbackMethod(req, res, ROUTE_FENCE.servers.guarded)) return;
@@ -161,7 +161,7 @@ export function buildServersRoute(manager: RoutesManager, helpers: RouteHelpers)
         }
         try {
           const rec = body as Record<string, unknown>;
-          const scope = normalizeScope(rec.scope as string);
+          const scope = workspace.normalizeScope(rec.scope as string);
           if (typeof rec.cwd === "string" && rec.cwd !== "") await manager.setSession(rec.cwd);
           const server = await manager.add(rec, scope);
           writeJson(res, 201, { server, summary: manager.summary() });
@@ -307,6 +307,7 @@ export function buildImportJsonRoute(manager: RoutesManager, helpers: RouteHelpe
     kind: "exact",
     path: ROUTES.importJson,
     handler: async (req: Req, res: Res) => {
+      const { workspace, configModel } = apiPorts.get();
       if (!guardLoopbackMethod(req, res, ROUTE_FENCE.importJson.guarded)) return;
       const body = await readJsonBody(req);
       if (body === undefined || typeof (body as Record<string, unknown>).json !== "string") {
@@ -317,10 +318,10 @@ export function buildImportJsonRoute(manager: RoutesManager, helpers: RouteHelpe
       const skipped: string[] = [];
       try {
         const rec = body as Record<string, unknown>;
-        const scope = normalizeScope(rec.scope as string);
+        const scope = workspace.normalizeScope(rec.scope as string);
         if (typeof rec.cwd === "string" && rec.cwd !== "") await manager.setSession(rec.cwd);
         const store = scope === SCOPE_PROJECT ? await manager.projectStoreOrThrow() : manager.store;
-        const servers = parseClaudeJson(rec.json as string);
+        const servers = configModel.parseClaudeJson(rec.json as string);
         for (const server of servers) {
           if (store.find(server.name) !== undefined) {
             if (rec.overwrite !== true) {
@@ -351,6 +352,7 @@ export function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelp
     kind: "exact",
     path: ROUTES.toolDisable,
     handler: async (req: Req, res: Res) => {
+      const { workspace } = apiPorts.get();
       if (!guardLoopbackMethod(req, res, ROUTE_FENCE.toolDisable.guarded)) return;
       const url = new URL(req.url ?? "/", "http://localhost");
       const body = await readJsonBody(req);
@@ -367,7 +369,7 @@ export function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelp
         return;
       }
       // 路由一致性：server 全名 root 必须属于当前工作空间（或 all 模式 @global）。
-      const parsed = parseFullServerName(server);
+      const parsed = workspace.parseFullServerName(server);
       if (parsed === undefined) {
         writeJson(res, 400, { error: "server 格式非法，应为 @<root>/<server>" });
         return;
@@ -391,7 +393,7 @@ export function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelp
         // #392 遗留④：tool 参数先归一化（剥 mcp__<server>__ 前缀）再入禁用表——
         // 旧客户端/手工 API 可能提交带前缀名，此前原样存键导致 guard 层查裸名不命中、
         // 禁用静默无效。跨 server 前缀（剥后仍 mcp__ 开头）由 normalizeToolName 抛错。
-        const toolName = normalizeToolName(parsed.server, tool, "tool-disable");
+        const toolName = workspace.normalizeToolName(parsed.server, tool, "tool-disable");
         await manager.setToolDisabled(root, parsed.server, toolName, disabled);
         writeJson(res, 200, { ok: true, summary: manager.summary() });
       } catch (error) {
