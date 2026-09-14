@@ -2,15 +2,16 @@
  * dsh-mcp-manager — pipeline/impl/authorize/index.ts：执行授权纯函数（#664 阶段 2 迁入 + 阶段 6 收敛）。
  *
  * globMatch 阶段 2 迁入；策略裁决族（policyAllows / policyDenialReason /
- * isToolDenied / toolDisabledReason）依赖 parseFullServerName / bareServerName
- * （workspace 域）、MIDDLEWARE_GLOBAL_ROOT（跨端层 shared/constants.ts）与
- * globMatch，阶段 6 自 middleware-utils.ts 并入本文件（该文件随后删除）。
+ * isToolDenied / toolDisabledReason）经 `pipelinePorts` 取 parseFullServerName /
+ * bareServerName（workspace 端口，见 ../../deps.ts）与 MIDDLEWARE_GLOBAL_ROOT
+ * （跨端层 shared/constants.ts）+ globMatch，阶段 6 自 middleware-utils.ts 并入本文件
+ * （该文件随后删除）。
  * parseDisabledTools（禁用表三层解析）并入 config/store/middleware-state.ts（状态域）。
  */
 
 import { MIDDLEWARE_GLOBAL_ROOT } from "../../../shared/interface.ts";
-import { parseFullServerName, bareServerName } from "../../../workspace/interface.ts";
 import type { MiddlewarePolicy, DisabledToolsMap } from "../../../types/interface.ts";
+import { pipelinePorts } from "../service/index.ts";
 
 /** 工具名匹配 glob（* 通配）。 */
 export function globMatch(pattern: string, name: string): boolean {
@@ -31,6 +32,9 @@ export function policyAllows(
   serverKey: string,
   tool: string,
 ): boolean {
+  const {
+    workspace: { bareServerName },
+  } = pipelinePorts.get();
   if (policy === undefined) return true;
   const fullDeny = policy.denyTools?.[serverKey];
   if (fullDeny !== undefined && fullDeny.some((pattern) => globMatch(pattern, tool))) return false;
@@ -75,6 +79,9 @@ export function isToolDenied(
   serverKey: string,
   tool: string,
 ): boolean {
+  const {
+    workspace: { parseFullServerName },
+  } = pipelinePorts.get();
   const parsed = parseFullServerName(serverKey);
   if (parsed !== undefined) {
     const server = parsed.server;
@@ -95,6 +102,9 @@ export function policyDenialReason(
   tool: string,
 ): string | undefined {
   if (policyAllows(policy, serverKey, tool)) return undefined;
+  const {
+    workspace: { bareServerName },
+  } = pipelinePorts.get();
   const deny = policy?.denyTools?.[serverKey] ?? policy?.denyTools?.[bareServerName(serverKey)];
   if (deny !== undefined && deny.some((pattern) => globMatch(pattern, tool))) {
     return `ws_mcp_call: 工具 ${JSON.stringify(`${serverKey}/${tool}`)} 被 denyTools 策略拒绝`;
