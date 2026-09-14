@@ -63,6 +63,7 @@ function install(
   overrides: Partial<{
     revision: () => number;
     effectiveWorktree: (id: string) => Promise<string | null>;
+    takeoverState: () => "idle" | "waiting" | "live" | "abandoned";
   }> = {},
 ) {
   const reg = capturingRegister();
@@ -71,6 +72,7 @@ function install(
   const scope = {
     effectiveWorktree:
       overrides.effectiveWorktree ?? (async (id: string) => (id === "s1" ? "/wt" : null)),
+    takeoverState: overrides.takeoverState ?? (() => "live" as const),
   };
   installApi({ register: reg.register, logger, binding, scope });
   const route = (path: string): WebRoute => {
@@ -190,12 +192,26 @@ describe("绑定查询", () => {
 });
 
 describe("health", () => {
-  it("回 ok 与当前 revision", async () => {
+  it("回 ok、当前 revision 与接管状态", async () => {
     const { route } = install();
     const { captured, res } = fakeRes();
     route(ROUTES.health).handler(fakeReq(), res);
     expect(captured.status).toBe(200);
-    expect(jsonOf(captured)).toEqual({ ok: true, revision: 7 });
+    expect(jsonOf(captured)).toEqual({ ok: true, revision: 7, scopeTakeover: "live" });
+  });
+
+  it("接管状态读的是活值：provider 还没出现时报 waiting", async () => {
+    // 「文件根没换」的三种成因必须能从探针上分开，否则真机上只剩「不工作」一个结论。
+    let state: "waiting" | "live" = "waiting";
+    const { route } = install({ takeoverState: () => state });
+    const { captured, res } = fakeRes();
+    route(ROUTES.health).handler(fakeReq(), res);
+    expect(jsonOf(captured)["scopeTakeover"]).toBe("waiting");
+
+    state = "live";
+    const second = fakeRes();
+    route(ROUTES.health).handler(fakeReq(), second.res);
+    expect(jsonOf(second.captured)["scopeTakeover"]).toBe("live");
   });
 });
 

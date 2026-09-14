@@ -46,7 +46,13 @@ function fakeHost(): FakeHost {
         };
       },
     },
-    typert: { lookups: { get: () => undefined, configure: () => () => undefined } },
+    typert: {
+      lookups: {
+        get: () => undefined,
+        configure: () => () => undefined,
+        subscribe: () => () => undefined,
+      },
+    },
     effect: (body: () => () => unknown) => {
       const disposer = body();
       disposers.push(disposer);

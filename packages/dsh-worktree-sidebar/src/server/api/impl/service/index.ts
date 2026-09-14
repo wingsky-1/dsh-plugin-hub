@@ -32,7 +32,7 @@ class ApiService implements ApiInstance {
     this.installed = true;
     this.disposers = registerEndpoints(
       deps.register,
-      [bindingsEndpoint(deps.binding, deps.scope), healthEndpoint(deps.binding)],
+      [bindingsEndpoint(deps.binding, deps.scope), healthEndpoint(deps.binding, deps.scope)],
       deps.logger,
     );
     this.live = true;

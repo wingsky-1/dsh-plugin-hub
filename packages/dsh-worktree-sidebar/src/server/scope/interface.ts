@@ -1,8 +1,8 @@
 /**
  * scope 域对外契约：接管 `workspaceFileScope` 的解析，命中绑定就把会话的文件根指到 worktree。
  *
- * 本文件只做收口——单例与它的 `ScopeApi` 形状的物理定义都在 `impl/service`（形状不从门面转出），解析判定在 `impl/resolve`，
- * provider 未注册时的等价实现兜底在 `impl/fallback`。单例本身不出这道门：它一旦被转出就成了
+ * 本文件只做收口——单例与它的 `ScopeApi` 形状的物理定义都在 `impl/service`（形状不从门面转出），
+ * 解析判定在 `impl/resolve`。单例本身不出这道门：它一旦被转出就成了
  * 本域的第二张公开契约，调用方还能持有它、绕过释放。
  */
 import type { ScopeDeps } from "./deps.ts";
@@ -21,4 +21,14 @@ export function releaseScope(): void {
 /** 当前**生效**的 worktree 根；null 表示该会话按 cwd 走。 */
 export function effectiveWorktree(sessionId: string): Promise<string | null> {
   return scopeService.effectiveWorktree(sessionId);
+}
+
+/**
+ * 接管状态的诊断读数（`idle` / `waiting` / `live` / `abandoned`）。
+ *
+ * 只给 health 端点用：真实启动序里「provider 与插件谁先到」没有稳定保证，这个读数让
+ * 「文件根没换根」当场可分辨成「还没等到 provider」「被别人占了」「接管了但没命中绑定」三种。
+ */
+export function takeoverState(): ReturnType<typeof scopeService.takeoverState> {
+  return scopeService.takeoverState();
 }

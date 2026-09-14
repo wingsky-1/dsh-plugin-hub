@@ -168,8 +168,7 @@ packages/dsh-worktree-sidebar/
   src/shared/interface.ts            双端共享的收口面（门禁要求：目录被引用必须有 interface.ts，见 §19.3）
   src/shared/contract.ts             双端共享契约：ROUTES（客户端经构建期 __DSH_ROUTES__ 取）/ 响应字段名
   src/server/host/agents.ts          宿主适配：agent 事件面（subscribe / list / publish）收窄
-  src/server/host/typert.ts          宿主适配：typert lookups 收窄
-  src/server/host/defaults.ts        宿主适配：sandboxPolicy / sessionPersistence / liveSession 收窄
+  src/server/host/typert.ts          宿主适配：typert lookups 收窄（读 / 配置 / 订阅）
   src/server/binding/interface.ts    绑定域入口：install/release 成对 + revision/get/put/drop
   src/server/binding/deps.ts         依赖声明（LoggerPort、文件路径、时钟）
   src/server/binding/impl/model/     纯逻辑与存储形状：校验、revision 递增、按会话索引
@@ -181,10 +180,9 @@ packages/dsh-worktree-sidebar/
   src/server/git/impl/exec/          真实 execFile 实现
   src/server/git/impl/service/       单例：归属缓存 + installed 守卫
   src/server/scope/interface.ts      scope 域入口：install/release 成对 + effectiveWorktree
-  src/server/scope/deps.ts           注入 typert、binding、git、defaults、logger
+  src/server/scope/deps.ts           注入 typert、binding、git、logger
   src/server/scope/impl/resolve/     命中绑定 to worktree，否则委托捕获的官方默认
-  src/server/scope/impl/fallback/    官方默认策略等价实现（provider 晚注册时）
-  src/server/scope/impl/service/     单例：捕获 / 委托 / 释放 + installed 守卫
+  src/server/scope/impl/service/     单例：等 provider / 捕获 / 委托 / 释放 + 状态守卫（S8 起没有 fallback）
   src/server/tools/interface.ts      工具域入口：installTools/releaseTools
   src/server/tools/deps.ts           注入 binding、git、agents、logger、时钟
   src/server/tools/impl/session/     执行期兜底：从 exec 取 sessionId/agent
@@ -256,12 +254,12 @@ notifier / mcp-manager 给的都只是**单文件**分位数（中位 44/58、p9
 
 | 文件类型 | review 提问线 | 实测（S6 后，`wc -l`） | 结论 |
 |---|---|---|---|
-| 组合根 src/index.ts | 300 | 160 | 合规 |
-| 域 impl 单文件 | 250 | 最大 160（server/git/impl/service） | 合规 |
+| 组合根 src/index.ts | 300 | 144 | 合规 |
+| 域 impl 单文件 | 250 | 最大 164（server/scope/impl/service；S8 的等待式接管换了原先的 fallback） | 合规 |
 | 纯逻辑模块 | 120 | 最大 110（scope/impl/resolve） | 合规 |
 | 客户端单文件 | 250 | 最大 182（takeover；inject 150、shared/ports 145、index 117、source 76、bindings 46） | 合规 |
-| 域 interface/deps | 80 | interface 19/45/24/21/60（api/binding/scope/tools/git）+ `shared/interface` 8、`server/shared/interface` 11；deps 32/12/18/78/55 | 合规（C1 后门面 = install/release + 能力转发，不再是 8–11 行的纯转出） |
-| 全包 src | —（已撤销） | 46 文件 / 3081 行（均值 67；S6 新增 `src/shared/interface.ts` 后 +1 文件） | 指标不存在 |
+| 域 interface/deps | 80 | interface 19/45/34/21/60（api/binding/scope/tools/git）+ `shared/interface` 8、`server/shared/interface` 11；deps 38/12/18/63/55 | 合规（C1 后门面 = install/release + 能力转发，不再是 8–11 行的纯转出） |
+| 全包 src | —（已撤销） | 44 文件 / 3068 行（均值 70；S6 加 `src/shared/interface.ts`、S8 删 `scope/impl/fallback` 与 `host/defaults`） | 指标不存在 |
 
 **历史偏离已消失，不再有「偏离」可议**：
 
@@ -271,14 +269,14 @@ notifier / mcp-manager 给的都只是**单文件**分位数（中位 44/58、p9
   `deps.ts` 是纯类型面（最大 `scope/deps.ts` 78 行，是端口与形状字段的逐条声明，只有一个修改理由）。
   当时提的两种修法（接受 150 / 再拆一层）都不必执行。
 - **全包合计**这个指标本身已撤销（见 §9），`2800` / `3000` 一类建议值一并作废，不要再出现在任何判据里。
-  当前实测 **46 文件 / 3081 行、均值 67**（旧表的 `2535` 是 `src/host/` 拆分前的读数、`44/2978` 是 B7 拆出 `inject.ts` 之前、`45/3002` 是 S6 之前，均已过期）。
+  当前实测 **44 文件 / 3068 行、均值 70**（旧表的 `2535` 是 `src/host/` 拆分前、`44/2978` 是 B7 拆出 `inject.ts` 之前、`45/3002` 是 S6 之前、`46/3081` 是 S8 之前，均已过期）。
 
 ## 10. 债务清单与最小化
 
 | 债务 | 最小化做法 |
 |---|---|
 | 借用 inspection 面（StoredEntry.component） | 探测收敛在 src/client/takeover.ts（inject.ts 只负责 inject 面改写）；用 get("files")?.id 定位而非内联 id；结构不符即零注册；加负向契约测试 |
-| configure 是全局替换 | **实测：官方用 `lookups.register`（providers 表），我们 `configure` 写的是另一张 resolvers 表（dsh-typert-registry/lib/index.js:158-160），两者不冲突**。`configure` 前捕获 `lookups.get("workspaceFileScope")?.resolve` 并委托（此时它正是官方 resolve），**捕获必须在 configure 之前**——configure 之后 `get()` 只回我们的包装，官方 resolve 不再可达。若安装时 provider 尚未注册（`get()` 为 undefined）则用等价实现兜底（只依赖 sessions.header / sessionPersistence.stat / header.cwd ?? sandboxPolicy.workspaceRoot）。类型层亦确认「配置可先于 provider 注册，dispose 时恢复 provider 默认解析器」（dsh-typert-protocol/lib/types/types.d.ts:381、412） |
+| configure 是全局替换 | **实测：官方用 `lookups.register`（providers 表），我们 `configure` 写的是另一张 resolvers 表（dsh-typert-registry/lib/index.js:158-160），两者不冲突**。`configure` 前捕获 `lookups.get("workspaceFileScope")?.resolve` 并委托（此时它正是官方 resolve），**捕获必须在 configure 之前**——configure 之后 `get()` 只回我们的包装，官方 resolve 不再可达。若安装时 provider 尚未注册（`get()` 为 undefined）则**不自造等价实现**：订阅查找表等它出现（先订阅、再重读一次），等待期不接管（S8 决定；原 fallback 已删）。类型层亦确认「配置可先于 provider 注册，dispose 时恢复 provider 默认解析器」（dsh-typert-protocol/lib/types/types.d.ts:381、412） |
 | 伪造 sessions 源 | 只改写 byId[id].cwd 一个字段、其余透传；按 entry×binding 缓存，保证引用稳定 |
 | 双端 revision 契约 | src/contract.ts 单点定义；GET 回 {revision, worktreePath|null} |
 | 绑定与 git 漂移 | resolver 命中前做廉价校验（目录存在 + common dir 相同）带 mtime 缓存；失效即按未绑定、revision++ |

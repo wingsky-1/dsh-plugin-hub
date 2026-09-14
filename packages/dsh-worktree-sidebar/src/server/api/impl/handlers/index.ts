@@ -8,7 +8,7 @@
  * 两个事实来自两个域（修订号来自 binding、生效根来自 scope），故入参是两个窄端口而不是一个拼出来的对象。
  */
 import type { Endpoint } from "../route/index.ts";
-import type { EffectiveWorktreePort, RevisionPort } from "../../deps.ts";
+import type { EffectiveWorktreePort, RevisionPort, ScopeStatePort } from "../../deps.ts";
 import { ROUTES } from "../../../../shared/interface.ts";
 import type { BindingResponse } from "../../../../shared/interface.ts";
 import { writeJson } from "../../../../../../../shared/host-utils.js";
@@ -41,13 +41,22 @@ export function bindingsEndpoint(binding: RevisionPort, scope: EffectiveWorktree
   };
 }
 
-/** `GET /api/dsh-worktree-sidebar/health` —— 存活探针。带回 revision 让它同时是有用的状态查询。 */
-export function healthEndpoint(binding: RevisionPort): Endpoint {
+/**
+ * `GET /api/dsh-worktree-sidebar/health` —— 存活探针。带回 revision 与接管状态，让它同时是有用的状态查询。
+ *
+ * `scopeTakeover` 是「文件根为什么没换」的第一手证据：真实启动序里 provider 与插件的先后没有稳定保证，
+ * 只报「没换根」会让 waiting / abandoned / 未命中绑定三种成因长得一模一样。
+ */
+export function healthEndpoint(binding: RevisionPort, scope: ScopeStatePort): Endpoint {
   return {
     path: ROUTES.health,
     methods: {
       GET: (_req, res) => {
-        writeJson(res, 200, { ok: true, revision: binding.revision() });
+        writeJson(res, 200, {
+          ok: true,
+          revision: binding.revision(),
+          scopeTakeover: scope.takeoverState(),
+        });
       },
     },
   };

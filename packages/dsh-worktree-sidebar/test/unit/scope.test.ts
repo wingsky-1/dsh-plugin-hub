@@ -1,5 +1,5 @@
 /**
- * scope 域 —— 生效值、失效自愈、接管资格、官方默认的等价性与「解析器永不抛出」。
+ * scope 域 —— 生效值、失效自愈、接管资格（等待 / 捕获 / 放弃）与「解析器永不抛出」。
  *
  * 为什么这是最需要逐条断言的一片：这里的每个分支失效都不报错，只让文件根指向错的地方，
  * 或者更糟——让整个文件读取链路硬失败（resolver 抛异常会被官方 gateway 翻成 gateway/lookup-failed，
@@ -7,21 +7,14 @@
  */
 import { afterEach, describe, expect, it } from "vitest";
 import type { BindingRecord } from "../../src/server/binding/interface.ts";
-import type {
-  DefaultScopePort,
-  FileScope,
-  HeaderFace,
-  LookupDescriptorPort,
-  ScopeDeps,
-} from "../../src/server/scope/deps.ts";
-import { createFallback } from "../../src/server/scope/impl/fallback/index.ts";
+import type { FileScope, LookupDescriptorPort, ScopeDeps } from "../../src/server/scope/deps.ts";
 import {
   directoryExists,
   effectiveWorktree,
   resolveScope,
 } from "../../src/server/scope/impl/resolve/index.ts";
 import { scopeService } from "../../src/server/scope/impl/service/index.ts";
-import { installScope, releaseScope } from "../../src/server/scope/interface.ts";
+import { installScope, releaseScope, takeoverState } from "../../src/server/scope/interface.ts";
 
 const record: BindingRecord = {
   repoRoot: "/repo",
@@ -39,15 +32,40 @@ afterEach(() => {
   warns.splice(0);
 });
 
+/**
+ * 官方 provider 的假件：`registerProvider()` 复刻官方「注册即 emit 一次查找表变更」。
+ *
+ * 订阅语义必须是真的（订阅之前 emit 的事件不补发），否则「先订阅、再重读」这条判据会恒真。
+ */
+function fakeLookups(initialDescriptor?: LookupDescriptorPort) {
+  let descriptor = initialDescriptor;
+  const listeners = new Set<() => void>();
+  /** 注册一个 provider 并 emit：官方 register 的形状（dsh-typert-registry/lib/index.js:238-251）。 */
+  const registerProvider = (next: LookupDescriptorPort): void => {
+    descriptor = next;
+    for (const listener of [...listeners]) listener();
+  };
+  return {
+    current: () => descriptor,
+    registerProvider,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    listenerCount: () => listeners.size,
+  };
+}
+
 function scopeDeps(
   options: {
     binding?: Record<string, BindingRecord>;
     belongs?: boolean;
     dropOk?: boolean;
     exists?: boolean;
-    defaults?: Partial<DefaultScopePort>;
     descriptor?: LookupDescriptorPort;
     configureThrows?: boolean;
+    /** 官方 provider 恰好在 install 的 `subscribe` 调用**之中**注册（订阅与重读之间的那个窗口）。 */
+    providerArrivesDuringSubscribe?: LookupDescriptorPort;
   } = {},
 ) {
   const table = new Map<string, BindingRecord>(Object.entries(options.binding ?? {}));
@@ -55,11 +73,13 @@ function scopeDeps(
   const configured: Array<(id: string) => Promise<FileScope | undefined>> = [];
   let disposed = false;
 
-  const defaults: DefaultScopePort = {
-    live: () => undefined,
-    stored: async () => undefined,
-    sandboxRoot: () => undefined,
-    ...options.defaults,
+  const lookups = fakeLookups(options.descriptor);
+  const subscribe = (listener: () => void): (() => void) => {
+    if (options.providerArrivesDuringSubscribe !== undefined) {
+      // 事件在订阅**期间**发完：只有订阅之后的那次重读能看见它。
+      lookups.registerProvider(options.providerArrivesDuringSubscribe);
+    }
+    return lookups.subscribe(listener);
   };
 
   const deps: ScopeDeps = {
@@ -75,7 +95,8 @@ function scopeDeps(
     },
     git: { belongsTo: async () => options.belongs !== false },
     typert: {
-      current: () => options.descriptor,
+      current: () => lookups.current(),
+      subscribe,
       configure: (resolver) => {
         if (options.configureThrows === true) throw new Error("already configured");
         configured.push(resolver);
@@ -84,11 +105,19 @@ function scopeDeps(
         };
       },
     },
-    defaults,
     existsDirectory: () => options.exists !== false,
   };
 
-  return { deps, table, dropped, configured, isDisposed: () => disposed };
+  return {
+    deps,
+    table,
+    dropped,
+    configured,
+    lookups,
+    isDisposed: () => disposed,
+    /** 让官方 provider 出现（并 emit 一次），驱动本域的等待路径。 */
+    appear: (descriptor: LookupDescriptorPort) => lookups.registerProvider(descriptor),
+  };
 }
 
 describe("directoryExists 的默认语义", () => {
@@ -110,66 +139,6 @@ describe("directoryExists 的默认语义", () => {
         throw new Error("EACCES");
       }),
     ).toBe(true);
-  });
-});
-
-describe("官方默认的等价实现", () => {
-  function fallback(overrides: Partial<DefaultScopePort>) {
-    return createFallback({
-      live: () => undefined,
-      stored: async () => undefined,
-      sandboxRoot: () => undefined,
-      ...overrides,
-    });
-  }
-
-  it("有活会话时用它的 cwd", async () => {
-    const resolve = fallback({ live: () => ({ cwd: "/live" }) });
-    expect(await resolve("s1")).toEqual({ sessionId: "s1", workspaceRoot: "/live" });
-  });
-
-  it("有活会话时不查持久化（与官方同序）", async () => {
-    let storedCalls = 0;
-    const resolve = fallback({
-      live: () => ({ cwd: "/live" }),
-      stored: async () => {
-        storedCalls += 1;
-        return { cwd: "/stored" };
-      },
-    });
-    await resolve("s1");
-    expect(storedCalls).toBe(0);
-  });
-
-  it("无活会话时用持久化里的 cwd", async () => {
-    const resolve = fallback({ stored: async () => ({ cwd: "/stored" }) });
-    expect(await resolve("s2")).toEqual({ sessionId: "s2", workspaceRoot: "/stored" });
-  });
-
-  it("header 存在但 cwd 缺失时回落沙箱根（这条正是最容易写错的分支）", async () => {
-    const resolve = fallback({
-      live: () => ({ cwd: undefined }),
-      sandboxRoot: () => "/sandbox",
-    });
-    expect(await resolve("s3")).toEqual({ sessionId: "s3", workspaceRoot: "/sandbox" });
-  });
-
-  it("持久化 header 存在但 cwd 缺失时同样回落沙箱根", async () => {
-    const resolve = fallback({
-      stored: async () => ({ cwd: undefined }),
-      sandboxRoot: () => "/sandbox",
-    });
-    expect(await resolve("s3b")).toEqual({ sessionId: "s3b", workspaceRoot: "/sandbox" });
-  });
-
-  it("header 完全缺失时返回 undefined，**不**回落沙箱根（与官方同形）", async () => {
-    const resolve = fallback({ sandboxRoot: () => "/sandbox" });
-    expect(await resolve("s4")).toBeUndefined();
-  });
-
-  it("沙箱根也取不到时不返回 undefined 根（防御性收口）", async () => {
-    const resolve = fallback({ live: () => ({ cwd: undefined }) });
-    expect(await resolve("s5")).toEqual({ sessionId: "s5", workspaceRoot: "" });
   });
 });
 
@@ -296,63 +265,126 @@ describe("resolveScope 的委托与永不抛出", () => {
 });
 
 describe("installScope 的接管资格", () => {
+  const official: LookupDescriptorPort = {
+    resolve: async (id) => ({ sessionId: id, workspaceRoot: "/official" }),
+  };
+
   it("provider 已注册时**捕获官方 resolve** 并委托（不是委托我们自己的包装）", async () => {
-    const official: LookupDescriptorPort = {
-      resolve: async (id) => ({ sessionId: id, workspaceRoot: "/official" }),
-    };
-    const { deps, configured } = scopeDeps({
-      descriptor: official,
-      // 兜底会给出这个值；若捕获失败、误用兜底，断言就会看到它。
-      defaults: { live: () => ({ cwd: "/fallback-would-say-this" }) },
-    });
+    const { deps, configured } = scopeDeps({ descriptor: official });
     installScope(deps);
     expect(scopeService.isInstalled()).toBe(true);
+    expect(takeoverState()).toBe("live");
     expect(configured.length).toBe(1);
     expect(await configured[0]?.("s1")).toEqual({ sessionId: "s1", workspaceRoot: "/official" });
   });
 
-  it("provider 缺失时用等价实现兜底", async () => {
-    const { deps, configured } = scopeDeps({
-      defaults: { live: () => ({ cwd: "/live-cwd" }) },
-    });
+  it("provider 尚未注册时不接管、不 configure，只出声等它（文件根保持官方语义）", async () => {
+    const { deps, configured } = scopeDeps();
     installScope(deps);
-    expect(await configured[0]?.("s1")).toEqual({ sessionId: "s1", workspaceRoot: "/live-cwd" });
+    expect(takeoverState()).toBe("waiting");
+    expect(scopeService.isInstalled()).toBe(false);
+    expect(configured.length).toBe(0);
+    expect(await scopeService.effectiveWorktree("s1")).toBeNull();
+    expect(warns.filter((w) => w.includes("provider 尚未注册")).length).toBe(1);
   });
 
-  it("已被第三方 configure 时放弃接管并出声，不抢", () => {
-    const { deps, configured } = scopeDeps({ configureThrows: true });
+  it("provider 随后出现（查找表通知）→ 当场接管", async () => {
+    const { deps, configured, appear } = scopeDeps();
     installScope(deps);
+    appear(official);
+    expect(takeoverState()).toBe("live");
+    expect(configured.length).toBe(1);
+    expect(await configured[0]?.("s1")).toEqual({ sessionId: "s1", workspaceRoot: "/official" });
+  });
+
+  it("provider 恰好在订阅调用期间注册 → 订阅之后的那次重读必须看见它", () => {
+    // 事件在 subscribe 调用里就发完了（订阅者还没有登记），只靠通知会永久停在等待态。
+    const { deps, configured } = scopeDeps({ providerArrivesDuringSubscribe: official });
+    installScope(deps);
+    expect(takeoverState()).toBe("live");
+    expect(configured.length).toBe(1);
+  });
+
+  it("等待期的重复通知不重复出声，接管后也不再 configure", () => {
+    const { deps, configured, appear } = scopeDeps();
+    installScope(deps);
+    appear(official);
+    appear(official);
+    expect(configured.length).toBe(1);
+    expect(warns.filter((w) => w.includes("provider 尚未注册")).length).toBe(1);
+  });
+
+  it("已被第三方 configure 时放弃接管并出声，且此后不再试（终态）", () => {
+    const { deps, configured, appear } = scopeDeps({
+      descriptor: official,
+      configureThrows: true,
+    });
+    installScope(deps);
+    expect(takeoverState()).toBe("abandoned");
     expect(scopeService.isInstalled()).toBe(false);
     expect(configured.length).toBe(0);
     expect(warns.some((w) => w.includes("已有解析器，放弃接管"))).toBe(true);
+    // 再来通知也不再试：重试只会反复撞同一个「已被占用」。
+    appear(official);
+    expect(configured.length).toBe(0);
   });
 
-  it("未接管时 effectiveWorktree 恒为 null（客户端因此不动文件根）", async () => {
-    const { deps } = scopeDeps({ configureThrows: true });
-    installScope(deps);
+  it("未接管（等待中或已放弃）时 effectiveWorktree 恒为 null（客户端因此不动文件根）", async () => {
+    const waiting = scopeDeps();
+    installScope(waiting.deps);
+    expect(await scopeService.effectiveWorktree("s1")).toBeNull();
+    releaseScope();
+
+    const abandoned = scopeDeps({ descriptor: official, configureThrows: true });
+    installScope(abandoned.deps);
     expect(await scopeService.effectiveWorktree("s1")).toBeNull();
   });
 
   it("接管后 effectiveWorktree 反映当前绑定（路由与解析器读同一个值）", async () => {
-    const { deps } = scopeDeps({ binding: { s1: record }, exists: true, belongs: true });
+    const { deps } = scopeDeps({
+      descriptor: official,
+      binding: { s1: record },
+      exists: true,
+      belongs: true,
+    });
     installScope(deps);
     expect(await scopeService.effectiveWorktree("s1")).toBe("/wt");
     expect(await scopeService.effectiveWorktree("other")).toBeNull();
   });
 
-  it("release 调用 disposer（官方默认解析随之恢复），且幂等", () => {
-    const { deps, isDisposed } = scopeDeps();
+  it("release 之后官方那侧留着的闭包不再拿旧 deps 出结果（回 undefined）", async () => {
+    const { deps, configured } = scopeDeps({
+      descriptor: official,
+      binding: { s1: record },
+      exists: true,
+      belongs: true,
+    });
     installScope(deps);
+    expect(await configured[0]?.("s1")).toEqual({ sessionId: "s1", workspaceRoot: "/wt" });
+    releaseScope();
+    // 闭包按调用当刻读装配入参：释放之后它只能回 undefined，让 gateway 走 lookup-not-found。
+    expect(await configured[0]?.("s1")).toBeUndefined();
+  });
+
+  it("release 退订、调用 disposer（官方默认解析随之恢复），且幂等", () => {
+    const { deps, isDisposed, lookups } = scopeDeps({ descriptor: official });
+    installScope(deps);
+    expect(lookups.listenerCount()).toBe(1);
     releaseScope();
     expect(isDisposed()).toBe(true);
+    expect(lookups.listenerCount()).toBe(0);
     releaseScope();
     expect(isDisposed()).toBe(true);
   });
 });
 
 describe("二次装配守卫与 release 复位", () => {
+  const official: LookupDescriptorPort = {
+    resolve: async (id) => ({ sessionId: id, workspaceRoot: "/official" }),
+  };
+
   it("第二次装配当场抛错，不静默接管两份", () => {
-    const first = scopeDeps();
+    const first = scopeDeps({ descriptor: official });
     installScope(first.deps);
     // 说清是哪个域拒绝的：`/只能装配一次/` 这种宽判据在「装配体被整段短路」时也会绿。
     expect(() => installScope(scopeDeps().deps)).toThrow(
@@ -362,25 +394,26 @@ describe("二次装配守卫与 release 复位", () => {
   });
 
   it("release 交还 resolver，且再次装配必须能重新接管", () => {
-    const first = scopeDeps();
+    const first = scopeDeps({ descriptor: official });
     installScope(first.deps);
     expect(scopeService.isInstalled()).toBe(true);
     releaseScope();
     expect(first.isDisposed()).toBe(true);
     expect(scopeService.isInstalled()).toBe(false);
+    expect(takeoverState()).toBe("idle");
 
-    const second = scopeDeps();
+    const second = scopeDeps({ descriptor: official });
     installScope(second.deps);
     expect(scopeService.isInstalled()).toBe(true);
     expect(second.configured.length).toBe(1);
   });
 
   it("「已被占用」是当次事实：上一次被占用不阻止 release 后的下一次接管", () => {
-    const occupied = scopeDeps({ configureThrows: true });
+    const occupied = scopeDeps({ descriptor: official, configureThrows: true });
     installScope(occupied.deps);
     expect(scopeService.isInstalled()).toBe(false);
     releaseScope();
-    const free = scopeDeps();
+    const free = scopeDeps({ descriptor: official });
     installScope(free.deps);
     expect(scopeService.isInstalled()).toBe(true);
     expect(free.configured.length).toBe(1);
@@ -393,7 +426,3 @@ describe("二次装配守卫与 release 复位", () => {
     );
   });
 });
-
-/** 类型面哨兵：HeaderFace 的形状就是「cwd 可为 undefined」这一件事。 */
-const _headerShape: HeaderFace = { cwd: undefined };
-void _headerShape;

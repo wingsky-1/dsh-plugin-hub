@@ -19,6 +19,12 @@ export type RevisionPort = Pick<typeof bindingApi, "revision">;
  */
 export type EffectiveWorktreePort = Pick<typeof scopeApi, "effectiveWorktree">;
 
+/**
+ * scope 域给本域的**状态读数**面：health 用它把「文件根没换」的三种成因分开——
+ * 还没等到 provider（waiting）、接管权被别人占了（abandoned）、接管了但该会话没命中绑定。
+ */
+export type ScopeStatePort = Pick<typeof scopeApi, "takeoverState">;
+
 /** 装配入参：一个提供方一行，两个提供方互不搭界（一个给修订号，一个给生效根）。 */
 export interface ApiDeps {
   /** 宿主路由注册口：只有组合根够得着 `ctx.webServer`。 */
@@ -27,6 +33,6 @@ export interface ApiDeps {
   readonly logger: LoggerPort;
   /** 绑定表修订号。本域**不能**写任何状态，所以它不含 put/drop。 */
   readonly binding: RevisionPort;
-  /** 该会话当前生效的 worktree 根；null 表示按会话 cwd 走。 */
-  readonly scope: EffectiveWorktreePort;
+  /** 该会话当前生效的 worktree 根；null 表示按会话 cwd 走。两项读数同域同源。 */
+  readonly scope: EffectiveWorktreePort & ScopeStatePort;
 }

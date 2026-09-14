@@ -1,23 +1,20 @@
 /**
  * 宿主端组合根：收窄宿主上下文、按依赖顺序装配各域、卸载逆序释放。
  *
- * `ctx` 的知识只在这里出现——三个宿主适配器各自的官方形状收窄都写在下面对应的 `bind*` 调用里，
+ * `ctx` 的知识只在这里出现——两个宿主适配器各自的官方形状收窄都写在下面对应的 `bind*` 调用里，
  * 适配逻辑住 `src/server/host/`（宿主 rc 演进时只动那几个小文件）。五个域因此都拿不到 `ctx`，
  * 也都能脱离 cordis 被单测驱动。
  */
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
-import type { SessionId } from "@deepseek-ai/dsh-session";
 import type {} from "@deepseek-ai/dsh-typert-protocol";
 import { ROUTES } from "./shared/interface.ts";
 import { bindAgents } from "./server/host/agents.ts";
-import { bindDefaults } from "./server/host/defaults.ts";
-import type { SandboxPolicyFace, SessionPersistenceFace } from "./server/host/defaults.ts";
 import { bindTypert } from "./server/host/typert.ts";
 import * as apiApi from "./server/api/interface.ts";
 import * as bindingApi from "./server/binding/interface.ts";
 import * as gitApi from "./server/git/interface.ts";
-import type { DefaultScopePort, TypertPort } from "./server/scope/deps.ts";
+import type { TypertPort } from "./server/scope/deps.ts";
 import * as scopeApi from "./server/scope/interface.ts";
 import type { AgentPort } from "./server/tools/deps.ts";
 import * as toolsApi from "./server/tools/interface.ts";
@@ -32,10 +29,11 @@ export const name = "worktree-sidebar";
 
 /**
  * 依赖的宿主服务。声明成依赖之后由框架保证服务就绪才轮到装配。
- * `typert` / `sessions` / `sandboxPolicy` 是文件根接管与官方默认等价实现的前提，
- * 与官方 dsh-api-workspace-files 的注入面同源（它也是这四个）。
+ *
+ * `typert` 是接管 `workspaceFileScope` 的唯一入口；`sessions` / `sandboxPolicy` 曾经也在这一行，
+ * 是「provider 缺失时自己复刻官方默认语义」那套兜底的输入——兜底删掉后它们没有消费方了。
  */
-export const inject = ["webServer", "agents", "typert", "sessions", "sandboxPolicy"];
+export const inject = ["webServer", "agents", "typert"];
 
 /** 组合层入口配置。只有总开关：本插件没有用户配置文件。 */
 export interface WorktreeSidebarConfig {
@@ -49,7 +47,6 @@ interface HostPort {
   readonly register: (route: WebRoute) => () => void;
   readonly agents: AgentPort;
   readonly typert: TypertPort;
-  readonly defaults: DefaultScopePort;
   readonly now: () => string;
 }
 
@@ -63,19 +60,6 @@ export async function apply(ctx: Context, config: WorktreeSidebarConfig = {}): P
       roots: () => ctx.agents.roots(),
     }),
     typert: bindTypert(ctx.typert.lookups),
-    defaults: bindDefaults({
-      // 这两样都由官方服务提供，但它们的 Context 声明不住在我们依赖的类型包里（官方靠
-      // static inject 取用），所以按结构读一次；读不到回 undefined，让上游走它自己的
-      // lookup-not-found，而不是抛。
-      sandboxPolicy: () =>
-        ctx.get("sandboxPolicy" as never, false) as SandboxPolicyFace | undefined,
-      sessionPersistence: () =>
-        ctx.get("sessionPersistence" as never, false) as SessionPersistenceFace | undefined,
-      liveSession: (sessionId) => {
-        const session = ctx.sessions.get(sessionId as SessionId);
-        return session === undefined ? undefined : { header: session.header };
-      },
-    }),
     now: () => new Date().toISOString(),
   };
   const disposers = await assemble(host, config);
@@ -109,13 +93,13 @@ async function assemble(
     gitApi.installGit({ exec: gitApi.gitExec });
     disposers.push(gitApi.releaseGit);
 
-    // 3. scope 域：接管 workspaceFileScope。capture 必须在 configure 之前，由本域自己保证。
+    // 3. scope 域：接管 workspaceFileScope。capture 必须在 configure 之前、provider 缺席时就地等待，
+    //    两件事都由本域自己保证（它拿到的是查找表窄面，不是 ctx）。
     scopeApi.installScope({
       logger: host.logger,
       binding: bindingApi,
       git: gitApi,
       typert: host.typert,
-      defaults: host.defaults,
     });
     disposers.push(scopeApi.releaseScope);
 
