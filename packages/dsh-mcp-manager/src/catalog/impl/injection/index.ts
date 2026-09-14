@@ -1,5 +1,5 @@
 /**
- * dsh-mcp-manager — catalog/injection.ts：能力目录注入决策（#664 阶段 5）。
+ * dsh-mcp-manager — catalog/impl/injection/index.ts：能力目录注入决策（#664 阶段 5）。
  *
  * 自 src/catalog.ts 拆出（injection 域）：pre-step 监听器的目录注入决策纯函数，
  * 完全复刻官方 dsh-tool-skill 的 catalog 语义（根治重复注入）。
@@ -12,11 +12,11 @@ import {
   renderMcpCatalogMessage,
   renderMcpCatalogUpdate,
   DEFAULT_CATALOG_MAX_ENTRIES,
-} from "./entries.ts";
-import type { CatalogCache, SupervisorLite } from "./entries.ts";
-import { digestCatalogEntries } from "./digest.ts";
-import { catalogHistory } from "./history.ts";
-import type { CatalogAgent } from "./history.ts";
+} from "../entries/index.ts";
+import type { CatalogCache, SupervisorLite } from "../entries/index.ts";
+import { digestCatalogEntries } from "../digest/index.ts";
+import { catalogHistory } from "../history/index.ts";
+import type { CatalogAgent } from "../history/index.ts";
 
 /** 会话消息最小面（pre-step decision.messages / session.snapshotEvents()）。 */
 export interface CatalogMessage {

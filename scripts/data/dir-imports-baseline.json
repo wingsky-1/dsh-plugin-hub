@@ -28,12 +28,12 @@
     },
     "dsh-mcp-manager": {
       "modules": 17,
-      "scannedSrcFiles": 83,
-      "allSrcTsFiles": 98,
+      "scannedSrcFiles": 84,
+      "allSrcTsFiles": 99,
       "interfaceFacades": 16,
       "leafValueEdges": 38,
       "fileValueEdges": 135,
-      "crossModuleRefs": 155,
+      "crossModuleRefs": 158,
       "quality": {
         "leafModuleCycles": [
           "catalog|config/model|connection|connection/orchestrator",

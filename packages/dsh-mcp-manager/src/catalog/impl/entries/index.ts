@@ -1,5 +1,5 @@
 /**
- * dsh-mcp-manager — catalog/entries.ts：能力目录条目与渲染（#664 阶段 5）。
+ * dsh-mcp-manager — catalog/impl/entries/index.ts：能力目录条目与渲染（#664 阶段 5）。
  *
  * 自 src/catalog.ts 拆出（目录条目域）：条目类型/摘要常量/摘要计算/条目组装/
  * 消息渲染与转义/消息定位读取。digest 与 history 归同域兄弟文件；目录注入决策
@@ -7,9 +7,9 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { ServerConfig } from "../types/interface.ts";
-import type { SupervisorLite } from "../types/interface.ts";
-import type { CatalogMessage } from "./injection.ts";
+import type { ServerConfig } from "../../../types/interface.ts";
+import type { SupervisorLite } from "../../../types/interface.ts";
+import type { CatalogMessage } from "../injection/index.ts";
 
 /** 目录条目。 */
 export interface CatalogEntry {
@@ -20,7 +20,7 @@ export interface CatalogEntry {
 }
 
 /** supervisor 最小面（manager.supervisors 的条目；类型收敛于 types/host-faces.ts，此处 re-export）。 */
-export type { SupervisorLite } from "../types/interface.ts";
+export type { SupervisorLite } from "../../../types/interface.ts";
 
 /** 目录缓存（连接成功时持久化的工具描述摘要）。 */
 export type CatalogCache = Map<string, { summary: string }>;

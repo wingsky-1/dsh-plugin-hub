@@ -1,5 +1,5 @@
 /**
- * dsh-mcp-manager — catalog/cache-view.ts：注入端目录缓存视图（#664 阶段 5）。
+ * dsh-mcp-manager — catalog/impl/cache-view/index.ts：注入端目录缓存视图（#664 阶段 5）。
  *
  * 自 src/manager.ts 迁出（catalog 域）：合成注入端目录缓存视图——以 B
  * （supervisor 摘要缓存）为基底，逐服务器按「scope + 模式」用中间层目录摘要
@@ -10,17 +10,17 @@
 
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { dshHome } from "../../../../shared/dsh-home.js";
-import type { McpMiddleware } from "../connection/interface.ts";
-import type { ServerConfig } from "../types/interface.ts";
-import { readCatalogServerFromDisk } from "../config/store/interface.ts";
+import { dshHome } from "../../../../../../shared/dsh-home.js";
+import type { McpMiddleware } from "../../../connection/interface.ts";
+import type { ServerConfig } from "../../../types/interface.ts";
+import { readCatalogServerFromDisk } from "../../../config/store/interface.ts";
 import {
   normalizedProjectRoot,
   SCOPE_PROJECT,
   MIDDLEWARE_GLOBAL_ROOT,
-} from "../workspace/interface.ts";
-import { summarizeToolDescriptions } from "./entries.ts";
-import type { CatalogCache } from "./entries.ts";
+} from "../../../workspace/interface.ts";
+import { summarizeToolDescriptions } from "../entries/index.ts";
+import type { CatalogCache } from "../entries/index.ts";
 
 /** 目录缓存文件（连接成功时把工具描述摘要持久化于此；目录 digest 的稳定数据源）。 */
 export function catalogCacheFile() {

@@ -1,13 +1,13 @@
 /**
- * dsh-mcp-manager — catalog/history.ts：会话内目录历史定位（#664 阶段 5）。
+ * dsh-mcp-manager — catalog/impl/history/index.ts：会话内目录历史定位（#664 阶段 5）。
  *
  * 自 src/catalog.ts 拆出（history 域）：从会话持久化日志倒序找最后一条**可见**
  * 的能力目录消息——目录注入去重的权威来源。新旧两代 source 形态都认（#723）。
  */
 
-import { digestCatalogEntries } from "./digest.ts";
-import { isCatalogSource, resolveCatalogEntries } from "./entries.ts";
-import type { CatalogSourceLike } from "./entries.ts";
+import { digestCatalogEntries } from "../digest/index.ts";
+import { isCatalogSource, resolveCatalogEntries } from "../entries/index.ts";
+import type { CatalogSourceLike } from "../entries/index.ts";
 
 /** 目录历史查询结果。 */
 export interface CatalogHistoryResult {
