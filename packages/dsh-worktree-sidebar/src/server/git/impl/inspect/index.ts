@@ -6,8 +6,6 @@
  *
  * 一律用 `-C <dir>` 而不是依赖进程 cwd：cwd 是全局状态，并发调用会互相污染。
  */
-import { basename } from "node:path";
-
 /** 一个 worktree 在 `git worktree list --porcelain` 里的样子。 */
 export interface WorktreeEntry {
   readonly path: string;
@@ -77,13 +75,4 @@ export function parseWorktreeList(stdout: string): readonly WorktreeEntry[] {
     if (path !== undefined && path.length > 0) entries.push({ path, branch, detached });
   }
   return entries;
-}
-
-/** 分支显示名：`refs/heads/x` → `x`；detached 或无分支时回落路径末段而不是空串（工作区摘要需要点东西可读）。 */
-export function branchLabel(entry: WorktreeEntry): string {
-  if (entry.branch !== undefined && entry.branch.startsWith("refs/heads/")) {
-    return entry.branch.slice("refs/heads/".length);
-  }
-  if (entry.branch !== undefined && entry.branch.length > 0) return entry.branch;
-  return entry.detached ? "(detached)" : basename(entry.path);
 }

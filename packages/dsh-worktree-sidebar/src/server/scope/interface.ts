@@ -1,14 +1,12 @@
 /**
  * scope 域对外契约：接管 `workspaceFileScope` 的解析，命中绑定就把会话的文件根指到 worktree。
  *
- * 本文件只做收口——`ScopeApi` 与单例的物理定义在 `impl/service`，解析判定在 `impl/resolve`，
+ * 本文件只做收口——单例与它的 `ScopeApi` 形状的物理定义都在 `impl/service`（形状不从门面转出），解析判定在 `impl/resolve`，
  * provider 未注册时的等价实现兜底在 `impl/fallback`。单例本身不出这道门：它一旦被转出就成了
  * 本域的第二张公开契约，调用方还能持有它、绕过释放。
  */
 import type { ScopeDeps } from "./deps.ts";
 import { scopeService } from "./impl/service/index.ts";
-
-export type { ScopeApi } from "./impl/service/index.ts";
 
 /** 装配 scope 域（组合根在 `apply` 期调用一次）。重复装配是编程错误，当场抛错。 */
 export function installScope(deps: ScopeDeps): void {

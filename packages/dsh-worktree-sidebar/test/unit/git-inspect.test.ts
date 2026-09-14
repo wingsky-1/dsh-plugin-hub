@@ -8,7 +8,6 @@
 import { describe, expect, it } from "vitest";
 import {
   addWorktreeArgs,
-  branchLabel,
   checkRefFormatArgs,
   commonDirArgs,
   headBranchArgs,
@@ -121,27 +120,5 @@ describe("parseWorktreeList", () => {
 
   it("空输入返回空数组", () => {
     expect(parseWorktreeList("")).toEqual([]);
-  });
-});
-
-describe("branchLabel", () => {
-  it("去掉 refs/heads/ 前缀", () => {
-    expect(branchLabel({ path: "/wt", branch: "refs/heads/feature/x", detached: false })).toBe(
-      "feature/x",
-    );
-  });
-
-  it("detached 给出可读标记而不是空串", () => {
-    expect(branchLabel({ path: "/wt", branch: undefined, detached: true })).toBe("(detached)");
-  });
-
-  it("非 refs/heads 的分支名原样保留", () => {
-    expect(branchLabel({ path: "/wt", branch: "refs/tags/v1", detached: false })).toBe(
-      "refs/tags/v1",
-    );
-  });
-
-  it("无分支且非 detached 时回落路径末段", () => {
-    expect(branchLabel({ path: "/a/b/wt", branch: undefined, detached: false })).toBe("wt");
   });
 });

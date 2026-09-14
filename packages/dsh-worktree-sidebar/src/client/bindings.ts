@@ -11,8 +11,6 @@ import type { ObservablePort, ReadBinding } from "./ports.ts";
 export interface BindingState extends ObservablePort<string | null> {
   /** 拉一次宿主；失败保持上次成功态（G6）。 */
   refresh(): Promise<void>;
-  /** 已成功读到过的最后一个 revision；从未成功读过时为 -1。 */
-  lastRevision(): number;
 }
 
 /** 造一个会话的绑定状态。 */
@@ -23,7 +21,6 @@ export function createBindingState(read: ReadBinding, sessionId: string): Bindin
 
   return {
     getSnapshot: () => path,
-    lastRevision: () => revision,
     subscribe(listener: () => void): () => void {
       listeners.add(listener);
       return () => {

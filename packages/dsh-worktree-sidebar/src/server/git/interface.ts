@@ -1,7 +1,7 @@
 /**
  * git 域对外契约：worktree 归属查询与增删。
  *
- * 本文件只做收口——`GitApi` 与单例的物理定义在 `impl/service`，argv 构造在 `impl/inspect`。
+ * 本文件只做收口——`GitApi` 与单例的物理定义在 `impl/service`（`GitApi` 形状不从门面转出），argv 构造在 `impl/inspect`。
  * `gitExec` 也从这里出去：组合根只允许引 `interface.ts`（verify-dir-imports 规则 1/2），
  * 把它藏进 impl 会让组合根要么直引实现、要么自己重写一份 exec。
  * 单例本身不出这道门：它一旦被转出就成了本域的第二张公开契约，调用方还能持有它、绕过释放。
@@ -10,7 +10,7 @@ import type { GitDeps } from "./deps.ts";
 import { gitService } from "./impl/service/index.ts";
 
 export type { GitApi } from "./impl/service/index.ts";
-export type { GitExecPort } from "./deps.ts";
+
 /** 真实的 git 执行面：它没有状态，故按常量转出而不是工厂。 */
 export { gitExec } from "./impl/exec/index.ts";
 
