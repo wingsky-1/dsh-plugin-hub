@@ -35,7 +35,7 @@ v5 初稿写完后经三个只读视角复核（机制可执行性 / 凭据单�
 | 2 | D3 的还原键写「name + scope」——但客户端改名走的是 **POST 新条目 + DELETE 旧条目**（`quick-add.ts:131-144`），payload 无源标识；project 级真实键是 (root, name) | 写请求携带**一个规范化地址**（复用协议已有的 `@@global/<name>` / `@<root>/<name>`，客户端 `core/api.ts:17-22` 已在构造），只在源对象上取原值（细则 §6.1 纪律 3）；**不新造三个平铺字段**（那是身份的第二个物理定义）；不可变 `id` 登记为后续演进（见附录 A 第 4 条） |
 | 3 | D3 的六条出口漏了两类：**校验期回显请求体凭据**（`normalize.ts:43` → `routes.ts:60`，已实测复现）与 **supervisor 直呼路径的工具错误返回 + stats 埋点**（`supervisor.ts:330-332` 原始 message，而 `middleware.ts:782-784` 有 `hostRedact`） | 出口清单升为**出口 × 载体矩阵**（§6.2 现有 **8 类**，本行初稿误写「7 类」）；①的修法补「请求体凭据不入错误文案」，新增 ⑦⑧ 两条 |
 | 4 | D3 说「类型即围栏」——实测 TS 对象展开携带额外字段赋给窄类型**不报错**（excess property check 不覆盖展开），`as unknown as` 更弱 | 删掉该论断；围栏改为**逐字段构造 + AST 断言（面 = 投影所在域）+ 禁 `as unknown as` + `NoCreds<T>` 排除类型** |
-| 5 | I2①「域间不得出现值边」**没有任何执法点**（`leafValueEdges` 属可合法上升的结构型计数，`--graph` 只打印矩阵） | B0 必须先给这条判据**造执法点**：新增一类质量证据（目标非 shared 的值边集合）；并补 I2 第三判据「域不得 import `src/index.ts`」 |
+| 5 | I2①「域间不得出现值边」**没有任何执法点**（`leafValueEdges` 属可合法上升的结构型计数，`--graph` 只打印矩阵） | **已交付**（`58823bc`）：新增质量证据类 `crossDomainValueEdges` 与 `rootIndexImports`（I2④），正反 fixture 双向可证；存量基线 mcp 33 / provider-usage 26 / 其余 0，只许缩小 |
 | 6 | §3.6「常量归语义所有者 + 跨域消费经 Pick」——**模块求值期常量无法 Pick**（`config-schema.ts:143/147/156` 的 `.default()` 在 import 求值期取值，`:10-11` 值引 catalog/connection） | 改为按**消费域数**判：被 ≥2 域消费的值常量归 `server/shared`；单域常量的跨域消费才经 `Pick`。原写法会与 I2② 构成 config↔catalog 值环 |
 | 7 | §3.4「11 域全部建 deps.ts」——7 个域的「至少消费 logger」是设计意图不是实证（实测 logger 命中：connection 25 / stats 7，其余域含 `store` 全 0） | 表改为**预期对上依赖**，并写明「实测零依赖的域按判据不建，须在 PR 显式登记」（参照包 `channels` 先例） |
 | 8 | §3.5 Port 表与实测消费系统性不符（pipeline 是 3 函数 + 1 常量、catalog 缺 WorkspacePort、connection 缺 3 个 catalog 能力、inject 缺 limits 常量、api 实际 22 个 `manager.*` 而表列 14） | **已反查完成**（第三轮只读测量）：§3.5 示意表作废、替换表落**附录 E**；同时暴露 §3.5 一批名字实测 0 命中、`types` 域去向未定、4 处死导入、`workspace` 的静态/运行入口径冲突 |
@@ -124,6 +124,7 @@ B2 必须补的探针（每条都要**正例 + 反例**，反例用于证明断�
 - **判据**（`verify-dir-imports --graph` 的依赖矩阵；粒度：叶子模块）：①矩阵中除指向 `server/shared` 与 `shared` 的边外**不得出现值边**；②叶子模块级值环 = 0、文件级值环 = 0；③`deps.ts` 值 import = 0、死声明 = 0；④**域内文件不得 import `src/index.ts`**（`fileValueEdges` 含根文件，域取组合根常量会立即产生文件级值环）。
 - **判据①今天没有执法点（复核实证）**：`STRUCTURAL_METRICS` 里的 `leafValueEdges` 是「含指向 shared 的全部值边」且只判上升（`compareWithBaseline` 只在 `cur > base` 时判红），质量证据类里没有「域间值边」这一项，`--graph` 只打印矩阵。**故 B0 必须先给 I2① 造执法点**：新增一类质量证据「目标非 shared 的值边集合」并入 baseline；否则本条违反 §二 的立宪原则，应降级为报告项。
 - **现状**：违反。33 条值边、4 + 4 条值环、1 条 `directImpl`（`connection/interface.ts → connection/orchestrator/tool-names.ts`）。
+- **执法点已交付（`58823bc`）**：新增两类质量证据 `crossDomainValueEdges`（叶子模块级、目标非共享层的值边集合）与 `rootIndexImports`（域内文件**值引** `src/index.ts`；`import type` 不计）。基线现值 = **mcp 33 / provider-usage 26 / notifier 0 / lan-proxy 0 / web-file-preview 0 / verify-isolated 0**，语义是「只许缩小、终态为空」，B2 的验收面就是这份集合归零。**额外发现**：provider-usage 的集合含 `shared|domain1/adapters`——**共享层反向值引域**，比域间值边更重，已登记进 B2 对账清单。
 - **参照实证**：notifier 的依赖矩阵里域间**全是类型边**，7 条值边全部指向 `shared/`（故其 `leafValueEdges = 7`，不能用「值边 = 0」直接读该计数）。**v4 的「纯函数直接值引对方是合法边」在参照终态里不存在**——本包 `pipeline` 对 `workspace` 的实测是 **3 个函数 + 1 个常量**（`pipeline/authorize.ts:11-16`），改经 `WorkspacePort` 注入。
 - **装配面不需要例外**：`collectModules` 只递归子目录，根级 `src/index.ts` 不构成叶子模块、根目标放行，故组合根的 `installXxx` 值引不进矩阵。
 
@@ -414,7 +415,8 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
   初稿写的「只允许 `src/shared/**` 与 `src/client/**`」**不可实现**：全仓实测 client→仓库 `shared/` **21 条**（lan-proxy 3 / mcp 8 / notifier 1 / provider-usage 9，是既有合法共享层）、client→本包 src 其它文件 **3 条**（含 mcp 自己的 `client/core/state.ts:9` 与 `client/float/float.ts:23` → `src/placement-math.ts`）、client→`src/server` 仅 **2 条**（均在 dsh-notifier：`client/reason-text.ts:11` 的 `import type`、`client/capabilities.ts:24` 的普通 import）。
 - **mcp 的落点**：`src/placement-math.ts` 两端共用 → 按 D5 归 **`src/shared/placement-math.ts`**，客户端与宿主都从那里引；仓库 `shared/**` 的引用**不在判据面内**（它是跨包共享层，不是宿主内部实现）。
 - **实现**：扩展既有 `verify-dir-imports.mjs`——**新增独立一遍扫描**，保持现有三处硬排除（client 子树不进 `scannedSrcFiles/leafValueEdges/fileValueEdges/crossModuleRefs`）不动，否则 notifier 等包的基线全部位移；包范围登记在数据面。
-- **存量处置**：notifier 的 2 条先写 `gate-exemptions.json`（`gate=verify-dir-imports`，`path=dsh-notifier:src/client/...`，带 tracking issue）**再**跑 `--write-baseline`——否则「新增证据」会被拒绝写入；mcp 今天 0 条。
+- **存量处置（已落地，`d6795ec`）**：notifier 的 2 条**先**写 `gate-exemptions.json`（`gate=verify-dir-imports`、`path=dsh-notifier:src/client/<file>|src/server/<file>`（**包相对**路径）、`trackingIssue #769`、`reviewBy 2027-03-31`）**再**写基线；mcp 今天 0 条。
+- **机制变更（须知，实测落地）**：`buildBaseline` 改为**两级首次登记**——基线里**整个 `quality` 段缺失** = 包级首次登记；**单个证据键缺失** = 证据**类**级首次登记（本次新增一类判据）。类级只在**键缺失的那一次**生效：键一旦存在，**类内新增证据仍一律不写入、判红、中止写基线**。为什么必须这么改：三个新证据类的存量是 mcp **33** 条 + provider-usage **26** 条，逐条开豁免等于把「存量登记」伪装成「放宽」（台账的语义是放宽通道，基线的语义才是存量）。**已知并接受的残余风险**：删掉基线里的某个键再跑 `--write-baseline` 可把该类当下事实洗成基线——但这与**手改基线 JSON** 等价（后者今天也拦不住），真正的护栏仍是 diff 审阅 + CI 的 `--check`；且类级首次登记在输出里逐条点名「须在 PR 内确认」。
 - **为什么需要**：参照包的 client 直接 `import type` 服务端内部（`client/reason-text.ts:11` → `server/shared/reason.ts`；`client/capabilities.ts:24` → `server/channels/impl/capabilities/type.ts`）且**无任何判据**——D5 选择「加强」，就必须自己补上这条，否则 `src/shared` 是「约定不漂移」而不是「不可能漂移」。
 
 ---
@@ -699,6 +701,8 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 > **PR 切分**：PR-1 = **B0**（契约冻结 + 门禁接线，必须早于第一个结构 commit）；PR-2 = **B1–B3**。硬约束：**每个 commit 只做一件事**（搬移或改行为），行为变更按 §10.2 登记。
 >
 > **登记面与结构同提交**（参照教训：notifier 的 76 个未覆盖文件红与导出面红各自悬了一整个窗口期）：每个批次的验收必须包含 `pnpm gate:pr` 全绿 + 该批涉及的**全部登记文件**同步（baseline / faces / `gate-scope-registry` / `ci-face-registry` / `mutation-topology` / `coverage.config` / `dir-imports-baseline`）。
+>
+> **B0 进度（2026-09-14）**：①③④⑤⑧⑨ 与 §5.3 的 client 判据**已完成**——③ `43229f6`/`d3a21d2`、④ `da83b36`/`660dd0a`/`f8ee6c5`、⑤ `cd44c90`/`8fe5119`、⑨ + client 判据 `58823bc`/`d6795ec`。**未完**：② `architecture-contract.md` 打标；⑥ 的 **I8 判据**（刻意压后：与 ⑨ 同写 `gate-exemptions.json`，避免 git index 撞车）；⑦ `locales.ts` 文案与产物断言；⑩ `placement-math.ts` 迁移；**`pnpm gate:pr` 尚未实跑**（B0 收尾必跑）。**新增 follow-up**：`docs/DEVELOPMENT.md` 与包内文档里「质量证据种类」的段落需同步新增的三类证据。
 
 | 批 | 内容 | 验收（每条都要 exit code） |
 |---|---|---|
@@ -730,6 +734,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | R14 | **I2① 今天没有执法点**，若 B0 忘了造，B2 的「域间值边 = 0」是空头验收 | B0⑨ 明确列为交付项；未落地则把 I2① 降级为报告项并同步改宪法 |
 | R15 | **掩码语义边界**（清空文本框 = 缺键 → 合并语义保留旧凭据，UI 无法删除凭据） | 本轮登记为已知限制（不改）；§6.1 纪律 5 写死三条语义，契约测试覆盖「掩码值恰为 `********`」与部分补丁 `{enabled}` |
 | R12 | 本包既决缺陷（#770 13 项）里有 5 项与边界同源 | §6 本轮修完凭据面；其余按 §10.2 逐条登记「本轮改 / 不改」 |
+| R16 | **基线「两级首次登记」的洗白路径**（删键 + `--write-baseline` 可把该类现状洗成基线） | 已评估为**可接受**：与手改基线 JSON 等价，护栏是 diff 审阅 + CI `--check`；类级首次登记在输出里逐条点名「须在 PR 内确认」；类内新增仍判红中止 |
 
 ---
 
@@ -817,10 +822,13 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 7. **第三轮只读复验已并入**：凭据单链现状（§0.2，含端到端实测的红的基线 + 4 个脱敏器构造点 + 1137 用例零「出口不含明文」断言）与 Port 面实测表（附录 E，含 `types` 缺口、4 处死导入、静态/运行入口径冲突）。
 8. **B0 切片 2 已完成**（`cd44c90` + `8fe5119`）：变异面超集（**单段**挂 `runtime`）+ facade 条重估 + `deps.ts` 的 type-only 条 + 自测计数 `1→2`/`12→13` + 段 conf 重生成；`coverage.config.json` 实测评估后**不改**；`--min` no-op。
 9. **#767 提案评论已发**（核心思路 + 红线授权 + 更正评论：红线由三条降为两条）；**仓级落盘原语候选已登记**（#706 评论：实测 4 个包各自实现落盘，notifier 8 / mcp 8 / provider-usage 9 / lan-proxy 4 写点，权限语义不一致）。
+10. **B0 切片 3a 已完成**（`58823bc`/`d6795ec`）：I2① 执法点（`crossDomainValueEdges`）+ I2④（`rootIndexImports`）+ §5.3 client 判据（`clientServerImports`），三个新证据类正反 fixture 双向可证；协调者复跑 5 个包全 exit 0、mcp 结构型计数逐字未变、基线只增 3 键无位移、`test:scripts` 634 pass。**机制变更**已记入 §5.3 与 R16：`buildBaseline` 两级首次登记（类级只在键缺失那一次生效，类内新增仍判红中止）。
 
 ### D.3 未完成
 
-1. **B0 切片 3 进行中**：3a（**I2① 执法点** + §5.3 client 判据，子 agent `7053ba5c`）在跑；3b（I8 测试导入面判据）**刻意压后**——它与 3a 都要写 `gate-exemptions.json`，同一 worktree 双写会撞 git index，等 3a 落地复核完再发。
+1. **B0 切片 3b 未发**（I8 测试导入面判据）：3a 已收口，现可发（同一 worktree，一次只放一个写者）。
+1b. **文档 follow-up（切片 3a 的写面限制留下）**：`docs/DEVELOPMENT.md` 与包内文档里列举「质量证据种类/现状」的段落需同步新增的三类证据（`crossDomainValueEdges` / `rootIndexImports` / `clientServerImports`）与两级首次登记口径。
+1c. **lint warning 余量告警**：切片 3a 把预算从 669 推到 671，**余量仅剩 1**（新自测文件的 `@ts-nocheck`，与本仓 `scripts/test` 既有约定一致）——后续新增 scripts 测试会先撞这一条。
 2. **B0② `architecture-contract.md` 三分类打标**未做（硬输入已备：该文档 `:28-30` 声称的 `api/redactor-factory.ts` 与「`handleError` 写 body 前先脱敏」都不存在，判「作废」）。
 3. **B0 其余项**：⑦ `locales.ts` 两行文案 + 「客户端产物不含 `~/.dsh`」断言；⑩ `src/placement-math.ts` 迁 `src/shared/`。
 4. **红线状态（两条均已获授权）**：① `ci.yml` 数据面 glob 已落地（`f8ee6c5`）；② 公共 API 行为变更已于 2026-09-14 获维护者授权。**本轮不新增任何第三方依赖**。`approved` 标签按仓规**只能由维护者本人打**，代理不代打；B2 的 commit 正文「授权出处」引用 #767 + §10.1 清单。
