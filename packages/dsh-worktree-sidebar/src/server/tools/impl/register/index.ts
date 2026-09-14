@@ -18,7 +18,8 @@ export function buildRegisterTool(deps: ToolsDeps): ToolDefinition {
     name: "ws_worktree_register",
     description:
       "Bind an existing git worktree to THIS session, so the right-sidebar Files tab is rooted at that " +
-      "worktree. The session cwd does not change. Use ws_worktree_create instead when the worktree does " +
+      "worktree once you open or refresh it. The session cwd does not change. " +
+      "Use ws_worktree_create instead when the worktree does " +
       "not exist yet. Only the Files tab follows the binding: @ file references, present targets and the " +
       "skill catalog still resolve against the session cwd, and under the workspace-write file policy the " +
       "agent cannot write into the worktree.",

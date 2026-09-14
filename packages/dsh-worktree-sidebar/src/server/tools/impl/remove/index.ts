@@ -15,7 +15,8 @@ export function buildRemoveTool(deps: ToolsDeps): ToolDefinition {
   return {
     name: "ws_worktree_remove",
     description:
-      "Unbind the worktree from THIS session; the right-sidebar Files tab returns to the session cwd. " +
+      "Unbind the worktree from THIS session; the right-sidebar Files tab returns to the session cwd " +
+      "on its next open or refresh. " +
       "By default the worktree directory is left in place - pass removeDirectory: true to also run " +
       "git worktree remove, and force: true as well when it has uncommitted changes you accept losing. " +
       "The plugin never deletes directories itself.",
@@ -74,8 +75,8 @@ export function buildRemoveTool(deps: ToolsDeps): ToolDefinition {
         return resultOf(
           stateOf(deps, session.id),
           true,
-          "Unbound the worktree from this session. The directory was left in place; the Files tab " +
-            "returns to the session cwd.",
+          "Unbound the worktree from this session. The directory was left in place; open or refresh " +
+            "the Files tab to return to the session cwd.",
         );
       }
 

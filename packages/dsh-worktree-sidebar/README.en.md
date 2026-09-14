@@ -18,7 +18,10 @@ The plugin exposes three tools to the agent:
 | `ws_worktree_create` | Run `git worktree add` first, then bind (path and branch come from the caller; the plugin imposes no layout convention) |
 | `ws_worktree_remove` | Drop the binding; only removes the directory via `git worktree remove` when explicitly asked |
 
-Once bound, the Files tab lists the worktree, and opening a file previews the worktree's copy.
+Once bound, **open or refresh** the Files tab and it lists the worktree; opening a file previews the worktree's copy.
+The tab does **not** follow automatically: the plugin does not poll the host, and re-reads the binding only when you open the tab, hit the built-in refresh, or the window becomes visible/focused again.
+
+Subagent sessions inherit their parent's binding: a child session without a binding of its own roots its Files tab at the worktree its parent is registered to (the walk stops at the top, and falls back to the child's own cwd once the parent is unbound).
 
 Tools are exposed only to sessions inside a **git repository**, decided when the agent is created; a second check at execution time covers environments that changed in between. Each tool's result text states which worktree is bound and on which branch, so the model need not call another tool to confirm.
 

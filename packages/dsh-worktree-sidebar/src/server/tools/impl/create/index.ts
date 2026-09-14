@@ -11,7 +11,8 @@ export function buildCreateTool(deps: ToolsDeps): ToolDefinition {
     name: "ws_worktree_create",
     description:
       "Create a git worktree from this session's repository with git worktree add, then bind it to " +
-      "THIS session so the right-sidebar Files tab is rooted at it. The session cwd does not change. " +
+      "THIS session so the right-sidebar Files tab is rooted at it (open or refresh that tab to see " +
+      "the new root). The session cwd does not change. " +
       "Path and branch are yours to choose; the plugin imposes no layout convention. If git worktree add " +
       "succeeds but binding fails, the directory is left in place and the result says so.",
     parameters: {
@@ -103,8 +104,8 @@ export function buildCreateTool(deps: ToolsDeps): ToolDefinition {
       return {
         ...bound,
         detail:
-          "Created the worktree and bound this session to it. The right-sidebar Files tab now lists it; " +
-          "the session cwd is unchanged.",
+          "Created the worktree and bound this session to it. Open or refresh the right-sidebar Files " +
+          "tab to see it; the session cwd is unchanged.",
       };
     },
   };

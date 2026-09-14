@@ -141,23 +141,26 @@
 - 主 checkout 与 worktree 的同名文件在预览里**没有差异标记**。
 - 树根 = worktree、执行 cwd = 原目录：这是本方案的语义前提，不是缺陷。
 - 伪造 sessions 只作用于本 entry：其它 useSessions 消费方（预览、命令面板、@）仍显示真实 cwd。
+- **没有自动跟随**：客户端不再轮询宿主，右侧栏页签只在「打开 / 点官方刷新 / 窗口重新可见或获得焦点」
+  三种时机重读登记。因此「登记完树就自动变」不成立——工具文案与 README 一律写「打开或刷新 Files 页签」。
 
 ## 7. 验收标准
 
 **可自动打红（宿主与契约层）**：
 
 1. binding：原子写、损坏文件当空表、revision 单调、按会话索引。
-2. scope resolver：命中绑定返回 worktree；目录消失按未绑定；内部异常仍返回官方同形值；dispose 后官方默认恢复；二次 configure 场景放弃接管。
+2. scope resolver：命中绑定返回 worktree；目录消失按未绑定；内部异常仍返回官方同形值；dispose 后官方默认恢复；二次 configure 场景放弃接管；provider 未注册时**等待而不自造默认语义**；子 agent 会话在本会话无登记时继承父链上的生效根（到顶即停、防环、父登记失效即回退 cwd）。
 3. git 域：worktree 归属查询（注入 exec 面，可断言 argv）。
 4. tools：schema 形状（output 必备）、agent 缺失时明确失败、argv 构造（branch 过 check-ref-format、positional 前加 --）、path 校验。
 5. api：403（非回环）/405（方法错）/health；只回单会话且不回 repoRoot。
-6. client 契约：抓不到官方 entry 时**零注册**的负向断言；注册顺序（先 body 后 kind）。
+6. client 契约：抓不到官方 entry 时**零注册**的负向断言；以官方 id + 更低 priority 遮蔽正文（当值自检：不当值当场退位）。
 
 **只能靠隔离真机（dsh-verify-isolated，不在任何 gate:*，标为发布前人工证据）**：
 
-1. 文件树列 worktree 内容。
+1. 文件树列 worktree 内容（打开或刷新 Files 页签之后）。
 2. 点开文件预览读的是 worktree 里的文件。
 3. 未登记会话与未装插件时行为一致。
+4. 子 agent 会话的树根跟随父会话的登记。
 
 ## 8. 目录树与模块职责
 

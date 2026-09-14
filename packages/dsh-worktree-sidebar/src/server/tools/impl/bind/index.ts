@@ -85,7 +85,7 @@ export async function bindWorktree(
     after,
     true,
     "Bound this session to the worktree." +
-      " The right-sidebar Files tab now lists it; the session cwd is unchanged," +
+      " Open or refresh the right-sidebar Files tab to see it; the session cwd is unchanged," +
       " and @ references / present targets still resolve against the cwd.",
   );
 }
