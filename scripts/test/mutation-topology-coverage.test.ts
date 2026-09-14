@@ -106,18 +106,20 @@ test("F15 反证：落盘 conf 的 mutate 面与断言口径同源（含 coverag
   }
 });
 
-test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目（4 包共 14 条）", () => {
+test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目（4 包共 15 条）", () => {
   const topology = JSON.parse(readFileSync(TOPOLOGY_PATH, "utf8"));
-  // 规模断言：形状变更范围 14 条（dsh-mcp-manager 2 / dsh-notifier 5 / dsh-provider-usage 6 /
+  // 规模断言：形状变更范围 15 条（dsh-mcp-manager 3 / dsh-notifier 5 / dsh-provider-usage 6 /
   // dsh-web-file-preview 1）。
   // notifier 是 5 而不是 4：原 `**/deps.ts` 一条拆成两条——7 个纯类型域出口 + 含运行时
   // 实现的 system/deps.ts 单列（复核实测它转译后有运行时代码，不能与纯类型共用一条 reason）。
-  // mcp 是 2 而不是 1（#767 B0）：原 facade 条重估后保留（目标形态的门面转译后仍有运行时代码，
-  // 但只转调、不裁决，故不属 type-only），另新增目标树 `src/server/*/deps.ts` 的纯类型面出口条。
+  // mcp 是 3 而不是 1（#767 B0 + B2a-wire W8）：原 facade 条重估后保留（目标形态的门面转译后仍有
+  // 运行时代码，但只转调、不裁决，故不属 type-only）、新增目标树 `src/server/*/deps.ts` 的纯类型面
+  // 出口条，W8 再新增 `src/connection/runtime/deps.ts`（B2b 前首个落在 `src/<域>/` 顶层的 deps.ts，
+  // 该子层 mutate glob 全是显式文件，不登记就进 uncoveredSrcFiles）。
   // wfp 的 1 条来自 #792 PR3 目录重排：新增的纯 re-export 门面按同一 facade 口径排除。
   // 数量变化必须是有意的登记动作，不能靠 diff 顺带溜过。
   const expected = {
-    "dsh-mcp-manager": 2,
+    "dsh-mcp-manager": 3,
     "dsh-notifier": 5,
     "dsh-provider-usage": 6,
     "dsh-web-file-preview": 1,
@@ -165,8 +167,8 @@ test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目�
   }
   assert.equal(
     total,
-    14,
-    "coverageExcludes 共 14 条（#773 R4 的形状变更范围，含 notifier 的 deps.ts 拆分、#767 B0 的 mcp deps.ts 条与 wfp 的门面一条）",
+    15,
+    "coverageExcludes 共 15 条（#773 R4 的形状变更范围，含 notifier 的 deps.ts 拆分、#767 B0 的 server/*/deps.ts 条、W8 的 connection/runtime/deps.ts 条与 wfp 的门面一条）",
   );
   assert.equal(
     new Set(allReasons).size,

@@ -14,6 +14,11 @@
  *
  * 阶段 6 集中搬移：本文件归 connection/runtime/（中间层池），仅保留
  * McpMiddleware 类；原汇聚转发块删除（v3 §二：汇聚只留 src/index.ts）。
+ *
+ * W8 端口接线：跨域能力（catalog 新鲜判定与装箱、pipeline 投影/超时/取消息/脱敏/参数归一/
+ * 策略裁决、workspace 全名解析与拼装）一律经 `impl/service` 的 `runtimePorts.get()` 取；
+ * 同子层的 reconnect/transport/limits 与跨端层 shared 的 MIDDLEWARE_GLOBAL_ROOT 直取，
+ * 不占端口——端口只承载跨域能力。
  */
 
 import { mkdir, readFile, rename, writeFile, rm } from "node:fs/promises";
@@ -22,14 +27,6 @@ import { dirname } from "node:path";
 import type { ServerConfig } from "../../types/interface.ts";
 import type { ToolDefinition, ToolOutputDefinition } from "@deepseek-ai/dsh-tools";
 import { MCPClient } from "./protocol.ts";
-import {
-  defaultCallResultFallbackText,
-  projectCallToolResult,
-  withTimeout,
-  msgOf,
-  createRedactor,
-  normalizeArguments,
-} from "../../pipeline/interface.ts";
 import { resolveReconnect } from "./reconnect.ts";
 import { createTransport } from "./transport.ts";
 import {
@@ -38,19 +35,8 @@ import {
   CALL_TIMEOUT_MS,
   CATALOG_TTL_MS,
 } from "./limits.ts";
-import {
-  parseFullServerName,
-  normalizeToolName,
-  fullServerName,
-  MIDDLEWARE_GLOBAL_ROOT,
-} from "../../workspace/interface.ts";
-import {
-  policyAllows,
-  policyDenialReason,
-  isToolDenied,
-  toolDisabledReason,
-} from "../../pipeline/interface.ts";
-import { isCatalogFresh, boundCatalogTools } from "../../catalog/interface.ts";
+import { MIDDLEWARE_GLOBAL_ROOT } from "../../shared/interface.ts";
+import { runtimePorts } from "./impl/service/index.ts";
 import type {
   MiddlewareHost,
   ProjectUnit,
@@ -160,6 +146,7 @@ export class McpMiddleware {
     const unit = this.units.get(root);
     if (unit === undefined) return;
     const force = opts.force === true;
+    const { pipeline } = runtimePorts.get();
     const entry = unit.connections.get(serverName);
     // 非 force：已 connected/connecting 短路，防重复建连。
     // force（用户显式「连接」/切回前台恢复）：忽略当前状态，总是受控重建——
@@ -298,12 +285,12 @@ export class McpMiddleware {
     };
     if ("onClose" in transport && transport.onClose !== undefined) transport.onClose(closeHandler);
     try {
-      await withTimeout(
+      await pipeline.withTimeout(
         transport.connect(),
         CONNECT_TIMEOUT_MS,
         `connect timed out (${CONNECT_TIMEOUT_MS}ms)`,
       );
-      await withTimeout(
+      await pipeline.withTimeout(
         client.initialize(),
         CONNECT_TIMEOUT_MS,
         `initialize timed out (${CONNECT_TIMEOUT_MS}ms)`,
@@ -405,14 +392,18 @@ export class McpMiddleware {
     if (unit === undefined) return;
     const entry = unit.connections.get(serverName);
     if (entry === undefined || entry.client === undefined) return;
-    if (isCatalogFresh(unit.catalog.get(serverName))) return; // fresh
+    const { catalog, pipeline } = runtimePorts.get();
+    if (catalog.isCatalogFresh(unit.catalog.get(serverName))) return; // fresh
     try {
-      const tools = await withTimeout(
+      const tools = await pipeline.withTimeout(
         this.listToolsAll(entry.client),
         DISCOVERY_TIMEOUT_MS,
         `discovery timed out (${DISCOVERY_TIMEOUT_MS}ms)`,
       );
-      unit.catalog.set(serverName, { discoveredAt: Date.now(), tools: boundCatalogTools(tools) });
+      unit.catalog.set(serverName, {
+        discoveredAt: Date.now(),
+        tools: catalog.boundCatalogTools(tools),
+      });
       // 落盘失败由外层 catch 收口报错；不 await 会让失败变成未处理拒绝而不是日志
       await this.persistCatalog(root);
     } catch (error) {
@@ -448,7 +439,7 @@ export class McpMiddleware {
 
   /** 凭据脱敏（连接/发现/调用错误路径统一使用；P1 修复）。 */
   private redact(error: unknown): string {
-    return createRedactor(this.allServers())(error);
+    return runtimePorts.get().pipeline.createRedactor(this.allServers())(error);
   }
 
   private async listToolsAll(client: MCPClient): Promise<Array<Record<string, unknown>>> {
@@ -496,7 +487,9 @@ export class McpMiddleware {
       await writeFile(tmp, JSON.stringify({ version: 1, root, entries: payload }, null, 2), "utf8");
       await rename(tmp, file);
     } catch (error) {
-      this.host.logger.warn(`dsh-mcp-manager: catalog cache write failed: ${msgOf(error)}`);
+      this.host.logger.warn(
+        `dsh-mcp-manager: catalog cache write failed: ${runtimePorts.get().pipeline.msgOf(error)}`,
+      );
     }
   }
 
@@ -538,7 +531,9 @@ export class McpMiddleware {
       );
       await rename(tmp, file);
     } catch (error) {
-      this.host.logger.warn(`dsh-mcp-manager: catalog cache remove failed: ${msgOf(error)}`);
+      this.host.logger.warn(
+        `dsh-mcp-manager: catalog cache remove failed: ${runtimePorts.get().pipeline.msgOf(error)}`,
+      );
     }
   }
 
@@ -598,7 +593,8 @@ export class McpMiddleware {
     signal: AbortSignal | undefined,
     agent?: unknown,
   ): Promise<unknown> {
-    const parsed = parseFullServerName(fullName);
+    const { pipeline, workspace } = runtimePorts.get();
+    const parsed = workspace.parseFullServerName(fullName);
     if (parsed === undefined) {
       throw new Error(
         `ws_mcp_call: unknown server ${JSON.stringify(fullName)}; 格式应为 @<root>/<server>`,
@@ -640,18 +636,18 @@ export class McpMiddleware {
         `ws_mcp_call: server ${JSON.stringify(fullName)} 连接仍在进行，请稍后重试；连接完成后再调用`,
       );
     }
-    const tool = normalizeToolName(parsed.server, toolRaw);
+    const tool = workspace.normalizeToolName(parsed.server, toolRaw);
     // 工具级禁用（先查禁用表再查策略；P0-1 三入口统一走 isToolDenied）。
-    const policyKey = fullServerName(parsed.root, parsed.server);
-    if (isToolDenied(this.disabledTools, this.policy, policyKey, tool)) {
+    const policyKey = workspace.fullServerName(parsed.root, parsed.server);
+    if (pipeline.isToolDenied(this.disabledTools, this.policy, policyKey, tool)) {
       // 策略拒绝与禁用拒绝文案区分（策略拒绝附「调整 middlewarePolicy 配置」下一步）。
-      if (!policyAllows(this.policy, policyKey, tool)) {
-        const reason = policyDenialReason(this.policy, policyKey, tool);
+      if (!pipeline.policyAllows(this.policy, policyKey, tool)) {
+        const reason = pipeline.policyDenialReason(this.policy, policyKey, tool);
         throw new Error(
           `${reason ?? `ws_mcp_call: 工具 ${JSON.stringify(`${policyKey}/${tool}`)} 被策略拒绝`}；如需放行请调整 middlewarePolicy 配置`,
         );
       }
-      throw new Error(toolDisabledReason(policyKey, tool));
+      throw new Error(pipeline.toolDisabledReason(policyKey, tool));
     }
     const catalog = unit.catalog.get(parsed.server);
     const stale =
@@ -661,7 +657,7 @@ export class McpMiddleware {
     if (stale) {
       // stale：仍可调用（目录只是提示），但 schema 可能过期——在结果前置提示。
     }
-    const args = normalizeArguments(rawArgs);
+    const args = pipeline.normalizeArguments(rawArgs);
     // B18/D6：调用预算读 server.toolCallTimeoutMs（缺省 CALL_TIMEOUT_MS），
     // withTimeout 兜底统一 +2s——两路径（supervisor SDK timeoutMs 无兜底）预算
     // 差异写入两路径契约测试的差异面签名。
@@ -687,7 +683,7 @@ export class McpMiddleware {
         >[1];
         // #413 QA P2-2：封装 execute 补超时兜底（与远端分支同预算 callBudgetMs，
         // 封装实现挂起时不无限等待）。
-        const value = await withTimeout(
+        const value = await pipeline.withTimeout(
           def.execute(typeof args === "object" && args !== null ? args : {}, execCtx),
           callBudgetMs + 2000,
           `ws_mcp_call: 封装调用超时（${callBudgetMs}ms），可重试；若反复超时请检查插件状态`,
@@ -715,7 +711,7 @@ export class McpMiddleware {
         if (signal?.aborted === true) throw signal.reason;
         throw new Error(
           this.hostRedact(
-            `ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 封装调用失败：${msgOf(error)}`,
+            `ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 封装调用失败：${pipeline.msgOf(error)}`,
           ),
         );
       }
@@ -726,7 +722,7 @@ export class McpMiddleware {
       );
     }
     try {
-      const result = await withTimeout(
+      const result = await pipeline.withTimeout(
         entry.client.callTool(tool, typeof args === "object" && args !== null ? args : {}, {
           signal,
           timeoutMs: callBudgetMs,
@@ -741,17 +737,17 @@ export class McpMiddleware {
       // Python SDK 必带的 isError:false / _meta 等字段不再外泄进工具契约。
       // fallbackText（复核闸 F1）：content 键存在但非数组（协议违规形态）时
       // 保留远端原文（msgOf，与旧文案行为等价）；content 缺省走默认兜底。
-      const projected = projectCallToolResult(result, {
+      const projected = pipeline.projectCallToolResult(result, {
         errorText: (content) =>
-          `ws_mcp_call: 远端工具返回错误：${msgOf(content)}；可先用 ws_mcp_detail 核对参数 schema 后重试`,
+          `ws_mcp_call: 远端工具返回错误：${pipeline.msgOf(content)}；可先用 ws_mcp_detail 核对参数 schema 后重试`,
         fallbackText: (r) => {
           const raw =
             typeof r === "object" && r !== null && "content" in r
               ? (r as { content?: unknown }).content
               : undefined;
           return raw !== undefined && !Array.isArray(raw)
-            ? msgOf(raw)
-            : defaultCallResultFallbackText(r);
+            ? pipeline.msgOf(raw)
+            : pipeline.defaultCallResultFallbackText(r);
         },
       });
       if (stale) {
@@ -772,14 +768,14 @@ export class McpMiddleware {
       if (signal?.aborted === true) throw signal.reason;
       throw new Error(
         this.hostRedact(
-          `ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 调用失败：${msgOf(error)}`,
+          `ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 调用失败：${pipeline.msgOf(error)}`,
         ),
       );
     }
   }
 
   private hostRedact(text: string): string {
-    const redactor = createRedactor([...this.allServers()]);
+    const redactor = runtimePorts.get().pipeline.createRedactor([...this.allServers()]);
     return redactor(new Error(text));
   }
 

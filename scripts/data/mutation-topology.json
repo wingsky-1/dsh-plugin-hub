@@ -107,6 +107,7 @@
           "mutate": [
             "packages/dsh-mcp-manager/src/connection/runtime/middleware.ts",
             "packages/dsh-mcp-manager/src/connection/runtime/limits.ts",
+            "packages/dsh-mcp-manager/src/connection/runtime/impl/**/*.ts",
             "packages/dsh-mcp-manager/src/inject/**/*.ts",
             "packages/dsh-mcp-manager/src/pipeline/authorize.ts"
           ],
@@ -116,7 +117,7 @@
             "!packages/dsh-mcp-manager/src/integration/**",
             "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
-          "comment": "#664 阶段6重画：middleware——中间层池（runtime/middleware）+limits（原 middleware-const）+工具注册面（inject/）+策略裁决族（pipeline/authorize，原 middleware-utils 并入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+          "comment": "#664 阶段6重画：middleware——中间层池（runtime/middleware）+limits（原 middleware-const）+工具注册面（inject/）+策略裁决族（pipeline/authorize，原 middleware-utils 并入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。 #767 B2a-wire W8：追加 packages/dsh-mcp-manager/src/connection/runtime/impl/**/*.ts——该子层其余 glob 全是显式文件，W8 新建的端口持有者此前不在任何 mutate 段内（进 uncoveredSrcFiles）。"
         },
         "routes": {
           "mutate": ["packages/dsh-mcp-manager/src/api/**/*.ts"],
@@ -177,6 +178,11 @@
             "pattern": "!packages/dsh-mcp-manager/src/server/*/deps.ts",
             "kind": "type-only",
             "reason": "新增（#767 B0）：目标形态 src/server/<域>/deps.ts 是纯类型面依赖声明出口（import type 引 Port 与数据形状，转译后无运行时代码）——附录 E.4 实测 6 域建 deps.ts（pipeline/catalog/connection/inject/api/config），store/stats/integration 实测零对上依赖、按判据不建，故本条只列 server/<域> 一层；纯类型面文件没有可杀灭的变异体，故 type-only。若某域 deps.ts 出现值实现（notifier 的 channels/impl/system/deps.ts 先例），B2 须按该形态拆出单列 not-mutated 条。"
+          },
+          {
+            "pattern": "!packages/dsh-mcp-manager/src/connection/runtime/deps.ts",
+            "kind": "type-only",
+            "reason": "新增（#767 B2a-wire W8）：connection/runtime/deps.ts 只有 import type 与 export type/interface，转译后无运行时代码——它是本包第一个落在 src/<域>/ 顶层而非 src/server/<域>/ 的 deps.ts（B2b 才加 server/ 前缀），且该子层的 mutate glob 全是显式文件（middleware.ts / limits.ts / supervisor.ts / reconnect.ts / transport.ts / protocol.ts），故必须单独登记；同刀新建的 impl/service/index.ts 是端口持有者、含真实运行时代码，按反向口径不排除，已挂进 middleware 段的 impl/**/*.ts 面。"
           }
         ],
         "testMutationExemptions": {

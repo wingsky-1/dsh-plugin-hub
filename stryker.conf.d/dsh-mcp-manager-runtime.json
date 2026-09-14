@@ -14,7 +14,8 @@
     "!packages/dsh-mcp-manager/src/integration/**",
     "!packages/dsh-mcp-manager/src/shared/placement-math.ts",
     "!packages/dsh-mcp-manager/src/**/interface.ts",
-    "!packages/dsh-mcp-manager/src/server/*/deps.ts"
+    "!packages/dsh-mcp-manager/src/server/*/deps.ts",
+    "!packages/dsh-mcp-manager/src/connection/runtime/deps.ts"
   ],
   "testRunner": "vitest",
   "mutator": {

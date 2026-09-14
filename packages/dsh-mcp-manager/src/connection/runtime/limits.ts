@@ -1,9 +1,10 @@
 /**
  * dsh-mcp-manager — 中间层常量（执行域语义，单一事实源）。
  *
- * normalizeMiddlewareMode 阶段 4 迁至 src/workspace/middleware-mode.ts
- * （函数归工作空间路由域）；本文件保留 limits/超时/目录边界常量，
- * 阶段 6 归 connection/runtime/limits.ts（v3 C-DIR）。
+ * normalizeMiddlewareMode 阶段 4 迁至工作空间路由域（B2.2 后就地重构为
+ * src/workspace/impl/mode/index.ts，经 src/workspace/interface.ts 门面转出）；
+ * 本文件保留 limits/超时/目录边界常量，阶段 6 归
+ * connection/runtime/limits.ts（v3 C-DIR）。
  */
 
 /** 连接超时（ms）。 */
