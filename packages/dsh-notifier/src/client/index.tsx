@@ -40,6 +40,16 @@ import type { ClientFacts } from "./capabilities.ts";
 import { showBanner, toast } from "./notify/display.ts";
 // 凭据掩码字段的编辑语义：服务端掩码不得作为可编辑字面量进输入框（见模块头）。
 import { credentialFieldKey, credentialFieldView } from "./settings/mask.ts";
+// 设置草稿的纯逻辑与保存串行 guard：零 React 零 DOM，可被 node 直接 import——它们决定
+// 「保存什么」，因此必须是可判据的面（原先挂在公开 apply 上，实测零消费者）。
+import {
+  assignChannelFields,
+  clampMaxConnections,
+  diffSettingsPayload,
+  domainPayload,
+  rebaseSettings,
+} from "./settings/diff.ts";
+import { createSaveGuard } from "./settings/save-guard.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
@@ -55,191 +65,6 @@ declare module "@deepseek-ai/dsh-client-ui-slots" {
 
 /** 本插件字典命名空间（宿主 locale 服务注册用）。 */
 const NS = "notifier";
-
-/**
- * 基线 diff 纯函数：返回 settings 相对 baseLine 中
- * **值不同**的键集合（增量 patch，只提交变更键——防组合层 base 被默认值
- * 回写覆盖）。深比较用 JSON.stringify（值同序同即视为未变，UI 编辑对象字段
- * 时键序稳定）。settings 中不存在于 baseLine 的新增键（diff 语义下的新增）
- * 与值不同的既有键都会被提交；baseLine 中已删除的键不提交删除（增量 merge
- * patch 无删除语义）。
- *
- * 导出为纯函数供测试直测（与 save() 共用同一实现——routes.test 整链模拟不再
- * 手写近似）。
- * @param settings 当前 UI 编辑态（effective 深拷贝起点）。
- * @param baseLine 加载基线（loadCard 时的 effective 深拷贝）。
- */
-function diffSettingsPayload(
-  settings: Record<string, any>,
-  baseLine: Record<string, any> | null,
-): Record<string, any> {
-  var payload: Record<string, any> = {};
-  if (baseLine === null) return payload;
-  for (var key in settings) {
-    if (!Object.prototype.hasOwnProperty.call(settings, key)) continue;
-    var cur = settings[key];
-    var base = baseLine[key];
-    // channels 整组提交前对实例做空串可选字段剥除——存量配置（0.2.2 保存
-    // 失败前/手改 yaml/旧版本）可能残留 token:"" 等空串形态，UI 编辑任一字段都会
-    // 触发整组提交把残留一起带走 → 400 死锁。剥除与读面 normalize（空串按未配置
-    // 剥除）同语义，纯读不改草稿，用户后续输入仍经 assignChannelFields 正常写。
-    var value = key === "channels" && Array.isArray(cur) ? cur.map(stripChannelEmpties) : cur;
-    var same = JSON.stringify(value) === JSON.stringify(base);
-    if (!same) payload[key] = value;
-  }
-  return payload;
-}
-
-/**
- * 单个频道实例的空串可选字段剥除：对实例浅拷贝后删除值为空串的
- * 可选字段。必填字段（id/type/url/baseUrl/deviceKey/enabled/auth）不在清单内——
- * 它们缺失/为空由服务端写面校验 400（语义正确：必填不允许空）。只处理 string
- * 值，number/boolean/对象字段不触碰；非对象输入原样返回（防御数组/null）。
- * 模块级纯函数（apply 挂载 + vm 直测），对齐 diffSettingsPayload 先例。
- */
-/** 空串即「未配置」的可选 string 字段清单（bark/webhook 实例合集）。
- *  必填键（id/type/url/baseUrl/deviceKey/enabled/auth）不在清单内——为空由服务端
- *  写面校验 400 拦截（必填不允许空，语义正确）；非 string 值（number/boolean/
- *  levels 对象）不触碰。 */
-const CHANNEL_OPTIONAL_STRING_KEYS: readonly string[] = [
-  "name",
-  "token",
-  "username",
-  "password",
-  "headerName",
-  "headerValue",
-  "template",
-  "sound",
-  "group",
-  "icon",
-  "url",
-];
-
-function stripChannelEmpties(ch: unknown): unknown {
-  if (typeof ch !== "object" || ch === null || Array.isArray(ch)) return ch;
-  var out = Object.assign({}, ch as Record<string, unknown>);
-  for (var i = 0; i < CHANNEL_OPTIONAL_STRING_KEYS.length; i++) {
-    var key = CHANNEL_OPTIONAL_STRING_KEYS[i];
-    if (typeof out[key] === "string" && (out[key] as string).length === 0) delete out[key];
-  }
-  return out;
-}
-
-/**
- * 409 冲突「保留我的修改并覆盖」的 rebase 纯函数：
- * 以服务端最新 effective 为基底，把本地变更键的值覆盖上去（键级 last-write-wins，
- * 与 JSON Merge Patch / Firebase per-key merge 同语义）——本地变更键集合由调用方
- * 在用户触发「覆盖」动作时实时重算（非 409 时刻快照，横幅期间的新编辑不丢）。
- * 顶层浅拷贝即可（settings 不可变更新模式，patch 不原位改对象）。
- * @param localChanges 本地相对旧基线的变更键集合（域/全量均适用）。
- * @param remoteEffective 服务端最新 effective（GET /config 拉取）。
- * @returns rebase 后的新草稿（作为 setSettings 输入）。
- */
-function rebaseSettings(
-  localChanges: Record<string, any>,
-  remoteEffective: Record<string, any>,
-): Record<string, any> {
-  return Object.assign({}, remoteEffective, localChanges);
-}
-
-/**
- * 按保存入口从全量 diff 中取子集（域保存）：
- * - entry "all"：原样返回（foot 全量保存）；
- * - entry "channels"：仅保留 channels 键（频道域保存——事件/参数半成品草稿不
- *   随频道域保存提交）；
- * - 未知入口：返回空对象（保守不提交）。
- * 模块级纯函数（apply 挂载 + vm 直测），对齐 diffSettingsPayload 先例。
- */
-function domainPayload(diff: Record<string, any>, entry: string): Record<string, any> {
-  if (entry === "all") return diff;
-  if (entry === "channels") {
-    if (!Object.prototype.hasOwnProperty.call(diff, "channels")) return {};
-    return { channels: diff.channels };
-  }
-  return {};
-}
-
-/**
- * 频道实例字段合并：part 中**空串/undefined 值从 target 删除该键**，
- * 其余浅覆盖。空串在服务端写面校验中是「非法值」而非「未配置」——token/username/
- * password/headerValue 要求非空（length > 0）、headerName 过头名正则、name 要求
- * 非空，读面 normalize 却把空串剥除（等价未配置）。若把清空输入回写成 "" 提交，
- * 实例会带着空串残留被整组 400（「填了又删空」死锁的必现根因之一）——空串
- * 删键后提交面与读面同语义（键不存在 = 未配置）。单点收敛在 chPatch（bark/webhook
- * 实例所有字段写回共用此函数）。模块级纯函数（apply 挂载 + vm 直测），
- * 对齐 diffSettingsPayload 先例。
- */
-function assignChannelFields(
-  target: Record<string, any>,
-  part: Record<string, any>,
-): Record<string, any> {
-  var out = Object.assign({}, target);
-  Object.keys(part).forEach(function (key: string) {
-    var value = part[key];
-    if (value === "" || value === undefined) delete out[key];
-    else out[key] = value;
-  });
-  return out;
-}
-
-/**
- * 保存串行 guard：同一时刻仅一个在途保存请求。
- * exhaustMap + trailing 语义——在途期间再点保存不丢弃意图：记 pending（含
- * 入口标识），由调用方在本次在途结束（end）后按同一入口补发一次（补发是完整
- * 保存，是否仍有脏由调用方 saveFor() 的 diff 空检查兜底，天然不循环）。
- *
- * 为什么 pending 记入口而非布尔：有两个保存入口——foot 全量（"all"）
- * 与频道 tab 域保存（"channels"），语义不同。在途期间被拒的入口必须原样补发：
- * 若「保存频道」被拒却补发全量，会把事件 tab 的半成品草稿一并提交。同一次在途
- * 多次点击不同入口时记最后一次意图（end 只返回一个入口，天然不风暴）。
- *
- * 模块级纯工厂（无 React 依赖），对齐 diffSettingsPayload 先例：
- * apply 挂载 + vm materialize 直测，「测试即产品实现」。
- *
- * @returns {{ tryBegin(entry: string): boolean; isBusy(): boolean; end(): string | null }}
- * - tryBegin(entry): 空闲则占用并返回 true；在途则记 pending=entry 返回 false。
- * - end(): 释放占用；返回「在途期间最后一次被拒的入口」（调用方据此同入口补发
- *   一次）；无 pending 返回 null。必须与 tryBegin 成功一一配对（放 finally），
- *   任何路径都释放，防永久卡死。
- */
-function createSaveGuard(): {
-  tryBegin(entry: string): boolean;
-  isBusy(): boolean;
-  end(): string | null;
-} {
-  var busy = false;
-  var pending: string | null = null;
-  return {
-    tryBegin(entry: string): boolean {
-      if (busy) {
-        pending = entry;
-        return false;
-      }
-      busy = true;
-      return true;
-    },
-    isBusy(): boolean {
-      return busy;
-    },
-    end(): string | null {
-      busy = false;
-      var p = pending;
-      pending = null;
-      return p;
-    },
-  };
-}
-
-/**
- * maxConnections 软钳制：空串经 numInput 归一为 undefined → 不落
- * diff（保持原值）；非空值 clamp 到 1-1024 ——服务端写面 min=1（0 会 400，清空
- * 输入即死锁的唯一顶层数值键）。非有限值（NaN 防御）同样归 undefined 不提交。
- * 模块级纯函数（apply 挂载 + vm 直测），对齐 diffSettingsPayload 先例。
- */
-function clampMaxConnections(value: number | undefined): number | undefined {
-  if (value === undefined || !Number.isFinite(value)) return undefined;
-  return Math.min(1024, Math.max(1, Math.round(value)));
-}
 
 /** i18n 翻译函数（apply 时由 ctx.locale.bind(NS) 装配；未装配回落 key 本体，行为零变化）。 */
 var t: any = function (key: string, params?: any) {
@@ -3199,17 +3024,6 @@ function SettingsCard() {
 // ------------------------------------------------------------ 装配
 
 export function apply(ctx: any) {
-  // 测试直测挂载面：diffSettingsPayload 与
-  // createSaveGuard 是模块级纯函数，经 apply 暴露给 smoke 测试引用——
-  // 保证「测试即产品实现」而非手写近似。assignChannelFields /
-  // stripChannelEmpties（频道实例字段合并与空串剥除）同样挂载。
-  (apply as any).diffSettingsPayload = diffSettingsPayload;
-  (apply as any).createSaveGuard = createSaveGuard;
-  (apply as any).domainPayload = domainPayload;
-  (apply as any).rebaseSettings = rebaseSettings;
-  (apply as any).assignChannelFields = assignChannelFields;
-  (apply as any).stripChannelEmpties = stripChannelEmpties;
-  (apply as any).clampMaxConnections = clampMaxConnections;
   try {
     ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
 
