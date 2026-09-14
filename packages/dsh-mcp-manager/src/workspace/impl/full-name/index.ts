@@ -6,7 +6,7 @@
  * middleware-utils.ts（阶段 5 catalog 域迁出）。引用面经 workspace/interface.ts。
  */
 
-import { MIDDLEWARE_GLOBAL_ROOT } from "../constants.ts";
+import { MIDDLEWARE_GLOBAL_ROOT } from "../../../shared/interface.ts";
 
 /** server 全局唯一名：@<root>/<server>。 */
 export function fullServerName(root: string, server: string): string {

@@ -2,17 +2,14 @@
  * dsh-mcp-manager — pipeline/impl/authorize/index.ts：执行授权纯函数（#664 阶段 2 迁入 + 阶段 6 收敛）。
  *
  * globMatch 阶段 2 迁入；策略裁决族（policyAllows / policyDenialReason /
- * isToolDenied / toolDisabledReason）依赖 parseFullServerName /
- * MIDDLEWARE_GLOBAL_ROOT（workspace 域）与 globMatch，阶段 6 自
- * middleware-utils.ts 并入本文件（该文件随后删除）。parseDisabledTools
- * （禁用表三层解析）并入 config/store/middleware-state.ts（状态域）。
+ * isToolDenied / toolDisabledReason）依赖 parseFullServerName / bareServerName
+ * （workspace 域）、MIDDLEWARE_GLOBAL_ROOT（跨端层 shared/constants.ts）与
+ * globMatch，阶段 6 自 middleware-utils.ts 并入本文件（该文件随后删除）。
+ * parseDisabledTools（禁用表三层解析）并入 config/store/middleware-state.ts（状态域）。
  */
 
-import {
-  parseFullServerName,
-  bareServerName,
-  MIDDLEWARE_GLOBAL_ROOT,
-} from "../../../workspace/interface.ts";
+import { MIDDLEWARE_GLOBAL_ROOT } from "../../../shared/interface.ts";
+import { parseFullServerName, bareServerName } from "../../../workspace/interface.ts";
 import type { MiddlewarePolicy, DisabledToolsMap } from "../../../types/interface.ts";
 
 /** 工具名匹配 glob（* 通配）。 */

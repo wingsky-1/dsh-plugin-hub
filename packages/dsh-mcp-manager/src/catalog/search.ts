@@ -7,6 +7,8 @@
  * 口径随迁保持「恰好命中 limit 不误报」。
  */
 
+import { MIDDLEWARE_GLOBAL_ROOT } from "../shared/interface.ts";
+import { LIST_DEFAULT_TOOLS_PER_SERVER } from "../server/shared/interface.ts";
 import { catalogPorts } from "./impl/service/index.ts";
 import type {
   CatalogServer,
@@ -184,8 +186,7 @@ export function listCatalog(
   disabledTools?: DisabledToolsMap,
 ): ListCatalogResult {
   const {
-    connection: { LIST_DEFAULT_TOOLS_PER_SERVER },
-    workspace: { parseFullServerName, fullServerName, MIDDLEWARE_GLOBAL_ROOT },
+    workspace: { parseFullServerName, fullServerName },
   } = catalogPorts.get();
   const safeLimit =
     Number.isFinite(toolLimit) && toolLimit > 0

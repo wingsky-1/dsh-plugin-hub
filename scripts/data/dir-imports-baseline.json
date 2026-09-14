@@ -31,9 +31,9 @@
       "scannedSrcFiles": 86,
       "allSrcTsFiles": 101,
       "interfaceFacades": 16,
-      "leafValueEdges": 34,
-      "fileValueEdges": 134,
-      "crossModuleRefs": 154,
+      "leafValueEdges": 37,
+      "fileValueEdges": 141,
+      "crossModuleRefs": 164,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],

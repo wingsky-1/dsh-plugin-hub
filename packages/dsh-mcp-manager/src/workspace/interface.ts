@@ -3,7 +3,7 @@
  *
  * 工作空间路由域 = 项目根发现/归一化（root-resolution 块）+ server 全名与工具名
  * 解析（full-name 块）+ scope 常量（scope 块）+ 中间层模式归一化（mode 块）
- * + 全局虚拟 root 单源（impl/constants.ts，被前两个块消费）。目录外模块**只能**从这里引用
+ * + 全局虚拟 root 单源（shared/constants.ts，被前两个块消费）。目录外模块**只能**从这里引用
  * （verify-dir-imports 静态强制）。
  *
  * 本刀是就地重构，**不建 deps.ts**：静态 import 面零对上依赖（无 ctx/Context、无宿主能力、
@@ -25,4 +25,4 @@ export {
 } from "./impl/full-name/index.ts";
 export { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./impl/scope/index.ts";
 export { normalizeMiddlewareMode } from "./impl/mode/index.ts";
-export { MIDDLEWARE_GLOBAL_ROOT } from "./impl/constants.ts";
+export { MIDDLEWARE_GLOBAL_ROOT } from "../shared/interface.ts";

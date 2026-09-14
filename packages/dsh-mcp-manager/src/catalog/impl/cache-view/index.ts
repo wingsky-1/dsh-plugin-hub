@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { dshHome } from "../../../../../../shared/dsh-home.js";
 import type { McpMiddleware } from "../../../connection/interface.ts";
 import type { ServerConfig } from "../../../types/interface.ts";
+import { MIDDLEWARE_GLOBAL_ROOT, SCOPE_PROJECT } from "../../../shared/interface.ts";
 import { catalogPorts } from "../service/index.ts";
 import { summarizeToolDescriptions } from "../entries/index.ts";
 import type { CatalogCache } from "../entries/index.ts";
@@ -112,7 +113,7 @@ export function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver {
 
   return async (cwd, servers): Promise<CatalogCache> => {
     const {
-      workspace: { normalizedProjectRoot, SCOPE_PROJECT, MIDDLEWARE_GLOBAL_ROOT },
+      workspace: { normalizedProjectRoot },
     } = catalogPorts.get();
     const catalogCache = host.getCatalogCache();
     const view: CatalogCache = new Map();
