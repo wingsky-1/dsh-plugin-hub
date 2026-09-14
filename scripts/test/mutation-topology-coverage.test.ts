@@ -36,6 +36,7 @@ test("F15：段未显式写 excludes 时，collectMutationSpecs 仍返回默认�
     },
   };
   const specs = collectMutationSpecs(topology, "fixture-pkg");
+  assert.equal(specs.noMutation, false, "登记在 packages 的包不是「无变异面」态");
   assert.deepEqual(
     specs.excludes.sort(),
     [
@@ -54,6 +55,28 @@ test("F15：未登记包返回 null（调用方 fail-closed），默认值随包
     "!packages/dsh-x/src/client/**",
     "!packages/dsh-x/src/types.ts",
   ]);
+});
+
+test("#773 批 B：$noMutationPackages 成员返回「无变异面」态，未登记与元键仍为 null", () => {
+  const topology = {
+    packages: {},
+    $noMutationPackages: { $comment: "元数据键不是包登记", "ghost-pkg": "只有 e2e 冒烟" },
+  };
+  assert.deepEqual(
+    collectMutationSpecs(topology, "ghost-pkg"),
+    { noMutation: true, reason: "只有 e2e 冒烟" },
+    "登记在 $noMutationPackages 的包必须与「完全未登记」区分开，否则调用方无从显式声明",
+  );
+  assert.equal(collectMutationSpecs(topology, "$comment"), null, "$comment 元键不是包登记");
+  assert.equal(collectMutationSpecs(topology, "unregistered-pkg"), null, "两处都未登记仍是 null");
+  // 同时登记两处时以 packages 为准：只有它带得出可判定的 mutate/excludes 面。
+  const both = {
+    packages: { "ghost-pkg": { segments: { s: { mutate: ["packages/ghost-pkg/src/a.ts"] } } } },
+    $noMutationPackages: { "ghost-pkg": "无变异面" },
+  };
+  const specs = collectMutationSpecs(both, "ghost-pkg");
+  assert.equal(specs.noMutation, false);
+  assert.deepEqual(specs.mutate, ["packages/ghost-pkg/src/a.ts"]);
 });
 
 test("F15 反证：落盘 conf 的 mutate 面与断言口径同源（含 coverageExcludes 追加）", () => {
