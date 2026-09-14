@@ -7,7 +7,7 @@
 import { FOLLOW_SYSTEM_TONE } from "../../../../shared/interface.ts";
 import { toastScriptPath } from "../../../shared/interface.ts";
 import { platformCapabilities, systemDeps } from "../system/deps.ts";
-import { probePlatform } from "../system/index.ts";
+import { isServerlessPlayer, probePlatform } from "../system/index.ts";
 import { toneFileCandidates } from "../system/tones.ts";
 import type { NotificationNameProbe, OsReleaseProbe, PlatformProbe } from "../system/type.ts";
 import { ALLOWED_CHECKED, PACKAGE_FAMILIES, PLAYER_PACKAGES, POSIX_CHECKS } from "./table.ts";
@@ -18,6 +18,7 @@ import type {
   HostCapabilities,
   PopupCapability,
   Remediation,
+  RemediationCode,
   SoundCapability,
   Verdict,
 } from "./type.ts";
@@ -157,16 +158,29 @@ interface ToneFacts {
   toneFileProbed: boolean;
 }
 
-/** 声音维度。linux 只看播放器；darwin/win32 走系统播放路径，故只看音色文件。 */
+/**
+ * 声音维度。linux 只看播放器；darwin/win32 走系统播放路径，故只看音色文件。
+ *
+ * linux 为什么是三态而不是「有播放器就 ok」：`paplay`/`pw-play` 是**服务型**播放器，在没有声音服务的
+ * 宿主上必失败，而「有没有声音服务」探测不到——本机 `/run/user/1000/pulse` 存在但为空、无 pulse/pipewire
+ * 进程，D-Bus 会话总线却在，任何存在性探针都会把这种宿主误判成「有声音服务」。把测不准的事实在能力面上
+ * 写成 `ok`，用户就失去了唯一的排查线索；故只命中服务型候选时报 `degraded`——「命中的这些播放器都依赖
+ * 声音服务」是可判的事实，按它下结论不算猜。
+ *
+ * 音色文件在 linux 上不再参与结论：主题缺失时由运行时合成的 WAV 兜底，故它只作报告项留在 `checked` 里。
+ */
 function soundCapability(probe: PlatformProbe, tone: ToneFacts): SoundCapability {
   const checked = allowed(probe.platform, "sound", [
     ...(probe.platform === "linux" ? (["players"] as const) : []),
     ...(tone.toneFileProbed ? (["tone-file"] as const) : []),
   ]);
   const base = { players: probe.players, toneFileAvailable: tone.toneFileAvailable, checked };
-  if (probe.platform === "linux" && probe.players.length === 0)
-    return { state: "unreachable", ...base };
-  if (probe.platform === "linux" || isSystemToolPlatform(probe.platform)) {
+  if (probe.platform === "linux") {
+    if (probe.players.length === 0) return { state: "unreachable", ...base };
+    const serverless = probe.players.some(isServerlessPlayer);
+    return { state: serverless ? "ok" : "degraded", ...base };
+  }
+  if (isSystemToolPlatform(probe.platform)) {
     return { state: tone.toneFileAvailable ? "ok" : "degraded", ...base };
   }
   // 认不出的平台（freebsd 等）上 `probePlatform` 压根不探播放器，`players` 空是「没查」而不是「没有」：
@@ -199,6 +213,9 @@ interface RemediationInput {
 /**
  * 诊断出路。**不生产 `host-no-player`**：它要求「有声音服务但缺播放器」这个前提，而「有没有声音服务」
  * 要等批 3 的「运行期失败自证」才拿得到；在此之前生产它只能靠猜。闭集保留该 code，客户端映射齐备即可。
+ *
+ * `host-no-tone-file` 只剩 darwin / win32：linux 的 `degraded` 现在只有一个成因（只命中服务型播放器），
+ * 与音色文件无关（主题缺失由合成兜底）。
  */
 function remediationOf(input: RemediationInput): readonly Remediation[] {
   const out: Remediation[] = [];
@@ -207,11 +224,26 @@ function remediationOf(input: RemediationInput): readonly Remediation[] {
     else if (input.name.kind === "absent" && input.probe.notifySendAvailable) {
       out.push({ code: "host-popup-no-daemon" });
     }
+    // 平台护栏不可省：darwin/win32 压根不探 notify-send（`notifySendAvailable` 恒 false），
+    // 少了它，win32 上 toast 脚本缺失导致的不可达会被说成「宿主缺 notify-send」——方向正好反了。
+    else if (
+      input.probe.platform === "linux" &&
+      input.name.kind === "absent" &&
+      !input.probe.notifySendAvailable
+    ) {
+      out.push({ code: "host-no-notify-send" });
+    }
   }
   if (input.sound.state === "unreachable" && input.probe.platform === "linux") {
-    out.push(packageRemedy(input.osRelease));
+    out.push(packageRemedy(input.osRelease, "host-no-sound-server-and-player"));
   }
-  if (input.sound.state === "degraded") out.push({ code: "host-no-tone-file" });
+  if (input.sound.state === "degraded") {
+    out.push(
+      input.probe.platform === "linux"
+        ? packageRemedy(input.osRelease, "host-only-sound-server-players")
+        : { code: "host-no-tone-file" },
+    );
+  }
   // 弹窗与发声都不可达时，「装什么包」之外的出路是换通道——这一格才是「不归你管」的真实场景
   if (input.popup.state === "unreachable" && input.sound.state === "unreachable") {
     out.push({ code: "host-managed-by-others" });
@@ -219,12 +251,15 @@ function remediationOf(input: RemediationInput): readonly Remediation[] {
   return out;
 }
 
-/** 无播放器的装包建议。认不出包管理器族就不给包名：宁可少说一句，不给错的包名。 */
-function packageRemedy(osRelease: OsReleaseProbe): Remediation {
+/**
+ * 装包建议：两格共用一份清单——「一个播放器都没命中」与「只命中服务型播放器」缺的是同一样东西，
+ * 即一个不依赖声音服务的播放器。认不出包管理器族就不给包名：宁可少说一句，不给错的包名。
+ */
+function packageRemedy(osRelease: OsReleaseProbe, code: RemediationCode): Remediation {
   const family = osRelease.ok ? PACKAGE_FAMILIES[osRelease.id.toLowerCase()] : undefined;
-  if (family === undefined) return { code: "host-no-sound-server-and-player" };
+  if (family === undefined) return { code };
   return {
-    code: "host-no-sound-server-and-player",
+    code,
     params: { packagemanager: family, packages: PLAYER_PACKAGES[family] },
   };
 }

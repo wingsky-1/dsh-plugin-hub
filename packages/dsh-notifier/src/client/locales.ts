@@ -43,7 +43,7 @@ export const zh = {
   sysPlatformMac:
     "宿主平台 macOS：系统提示音经 osascript/NSSound（Glass/Tink/Sosumi/Pop 近似映射），受系统「允许通知声音」设置约束。",
   sysPlatformLinux:
-    "宿主平台 Linux：不依赖桌面守护进程的发声支持——声音由插件自播（pw-play/paplay 播 freedesktop 事件音），仅宿主有桌面/音频会话才响。",
+    "宿主平台 Linux：不依赖桌面守护进程的发声支持——声音由插件自播，按 paplay → pw-play → aplay → ffplay 依次回退且首个成功即停；主题事件音缺失时改用运行时合成的提示音。只命中 paplay/pw-play 时，没有声音服务的宿主听不到声音（两种情形都仍需宿主有音频设备）。",
   sysPlatformOther: "系统提示音随宿主平台尽力而为；此处试听为浏览器本地合成，仅作听感参考。",
   // kind 标签（历史列表）
   kAsk: "审批等待",
@@ -122,6 +122,7 @@ export const zh = {
   reasonSystemPopupFailed: "系统通知命令执行失败（{bin}）",
   reasonSystemSoundFailed: "提示音播放命令执行失败（{bin}）",
   reasonSystemToastScriptMissing: "插件自带的 Windows 通知脚本缺失（打包缺陷），本次未发出",
+  reasonSystemToneUnwritable: "系统提示音无法写入临时目录，本次未发声",
   reasonBarkRequestFailed: "Bark 请求失败（网络或超时）",
   reasonBarkHttp: "Bark 服务返回 HTTP {status}",
   reasonBarkRejected: "Bark 拒绝这次推送（业务码 {code}）",
@@ -254,12 +255,19 @@ export const zh = {
     "宿主没有 D-Bus 会话总线：系统弹窗需要桌面会话（图形登录）或由 dbus-launch 提供的会话总线",
   diagRemHostPopupNoDaemon:
     "宿主有 notify-send 但没有通知守护进程：安装并启动一个桌面通知服务（如 dunst、mako）后弹窗才可见",
+  diagRemHostNoNotifySend:
+    "宿主缺少 notify-send：安装提供它的通知工具（Debian/Ubuntu 上是 libnotify-bin，Fedora/Arch 上是 libnotify）后弹窗才可见",
   diagRemHostNoSoundServerAndPlayer:
-    "宿主既没有声音服务也没有可用播放器：安装 {packages}（{packagemanager}）后可自播默认事件音",
+    "宿主没有探测到任何可用播放器：安装 {packages}（{packagemanager}）后可自播默认事件音（dnf 系上 ffmpeg 来自 RPM Fusion）",
   diagRemHostNoSoundServerAndPlayerNoPkg:
-    "宿主既没有声音服务也没有可用播放器：安装一个提供 aplay 的最小音频工具包后可自播默认事件音",
+    "宿主没有探测到任何可用播放器：安装一个不依赖声音服务的播放器（如 alsa-utils 或 ffmpeg）后可自播默认事件音",
+  diagRemHostOnlySoundServerPlayers:
+    "宿主只探测到依赖声音服务的播放器（paplay / pw-play）：安装 {packages}（{packagemanager}）后可直连 ALSA 自播默认事件音（dnf 系上 ffmpeg 来自 RPM Fusion）",
+  diagRemHostOnlySoundServerPlayersNoPkg:
+    "宿主只探测到依赖声音服务的播放器（paplay / pw-play）：安装一个不依赖声音服务的播放器（如 alsa-utils 或 ffmpeg）后可直连 ALSA 自播默认事件音",
   diagRemHostNoPlayer: "宿主有声音服务但缺少播放器：安装对应播放器后可自播默认事件音",
-  diagRemHostNoToneFile: "宿主缺少默认事件音色文件：安装 freedesktop 声音主题后可自播",
+  diagRemHostNoToneFile:
+    "宿主缺少默认事件音色文件：补齐该平台的音色资源后可自播默认事件音（Linux 上主题缺失会改用合成提示音，不再走这条建议）",
   diagRemHostManagedByOthers:
     "弹窗与发声都已由宿主上的其他组件接管：本插件的系统通道在这台机器上会静默跳过，请改用浏览器通知或移动端推送",
   diagDetailsLabel: "探测明细与来源",
@@ -325,7 +333,7 @@ export const en: Record<NotifierLocaleKey, string> = {
   sysPlatformMac:
     'Host platform macOS: system sound goes through osascript/NSSound (Glass/Tink/Sosumi/Pop approximate mapping), subject to the system "Allow notification sounds" setting.',
   sysPlatformLinux:
-    "Host platform Linux: does not rely on desktop daemon sound support — the plugin self-plays (pw-play/paplay with freedesktop event sounds); audible only when the host has a desktop/audio session.",
+    "Host platform Linux: does not rely on desktop daemon sound support — the plugin self-plays, falling back through paplay → pw-play → aplay → ffplay and stopping at the first success; when the themed event sound is missing it uses a tone synthesized at runtime. When only paplay/pw-play are found, a host without a sound server stays silent (both cases still need an audio device on the host).",
   sysPlatformOther:
     "System sound is best-effort on the host platform; the preview here is synthesized locally in your browser as a listening reference.",
   kAsk: "Approval pending",
@@ -398,6 +406,8 @@ export const en: Record<NotifierLocaleKey, string> = {
   reasonSystemSoundFailed: "Sound playback command failed ({bin})",
   reasonSystemToastScriptMissing:
     "The plugin's bundled Windows notification script is missing (packaging defect); nothing was sent",
+  reasonSystemToneUnwritable:
+    "Could not write the synthesized tone to the temp directory; nothing was played",
   reasonBarkRequestFailed: "Bark request failed (network or timeout)",
   reasonBarkHttp: "Bark server returned HTTP {status}",
   reasonBarkRejected: "Bark rejected this push (business code {code})",
@@ -531,14 +541,20 @@ export const en: Record<NotifierLocaleKey, string> = {
     "The host has no D-Bus session bus: system popups need a desktop session (graphical login) or a session bus from dbus-launch",
   diagRemHostPopupNoDaemon:
     "The host has notify-send but no notification daemon: install and start a desktop notification service (e.g. dunst, mako) for popups to appear",
+  diagRemHostNoNotifySend:
+    "The host is missing notify-send: install a notification tool that provides it (libnotify-bin on Debian/Ubuntu, libnotify on Fedora/Arch) and popups become visible",
   diagRemHostNoSoundServerAndPlayer:
-    "The host has neither a sound server nor a usable player: install {packages} ({packagemanager}) to play the default event sound",
+    "The host exposed no usable player: install {packages} ({packagemanager}) to self-play the default event sound (on dnf-family hosts ffmpeg comes from RPM Fusion)",
   diagRemHostNoSoundServerAndPlayerNoPkg:
-    "The host has neither a sound server nor a usable player: install a minimal audio tool package providing aplay to play the default event sound",
+    "The host exposed no usable player: install a player that does not need a sound server (e.g. alsa-utils or ffmpeg) to self-play the default event sound",
+  diagRemHostOnlySoundServerPlayers:
+    "The host only exposed sound-server players (paplay / pw-play): install {packages} ({packagemanager}) to self-play the default event sound straight through ALSA (on dnf-family hosts ffmpeg comes from RPM Fusion)",
+  diagRemHostOnlySoundServerPlayersNoPkg:
+    "The host only exposed sound-server players (paplay / pw-play): install a player that does not need a sound server (e.g. alsa-utils or ffmpeg) to self-play the default event sound straight through ALSA",
   diagRemHostNoPlayer:
     "The host has a sound server but no player: install a matching player to play the default event sound",
   diagRemHostNoToneFile:
-    "The host is missing the default event sound file: install the freedesktop sound theme to play it",
+    "The host is missing the default event sound file: provide this platform's sound resources to self-play it (on Linux a missing theme now falls back to a synthesized tone, so this advice no longer applies there)",
   diagRemHostManagedByOthers:
     "Popup and sound are already handled by other components on the host: this plugin's system channel silently skips on this machine, so use browser notifications or mobile push instead",
   diagDetailsLabel: "Probe details and source",

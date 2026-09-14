@@ -231,7 +231,12 @@ function bindHost(ctx: Context): HostPort {
 function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void> {
   const disposers: Array<() => void> = [];
 
-  // 0. 存储与配置形态迁移：动的是磁盘（存储三个文件 + 配置文件），必须早于任何读文件的域。
+  // 0. 音频临时目录的释放面：通道域没有装配步骤，但临时目录必须有人收。放在链首 = 逆序释放时
+  //    最后执行——卸载瞬间若还有一笔自播在读那个文件，先删目录会让它复现「spawn 后立即 unlink」
+  //    的失败（实测播放器报 42B 的「打不开」）。
+  disposers.push(channelsApi.releaseSoundTemps);
+
+  // 1. 存储与配置形态迁移：动的是磁盘（存储三个文件 + 配置文件），必须早于任何读文件的域。
   //    存量配置由 settings 的显式依赖保证在装配期可读，所以整条链是同步的。
   installUpgrade({ logger: host.logger, legacySettings: host.legacySettings });
   disposers.push(releaseUpgrade);

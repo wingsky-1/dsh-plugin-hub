@@ -79,7 +79,9 @@ const CHECKED_KEYS = {
 const REMEDIATION_KEYS = {
   "host-no-dbus-session": "diagRemHostNoDbusSession",
   "host-popup-no-daemon": "diagRemHostPopupNoDaemon",
+  "host-no-notify-send": "diagRemHostNoNotifySend",
   "host-no-sound-server-and-player": "diagRemHostNoSoundServerAndPlayer",
+  "host-only-sound-server-players": "diagRemHostOnlySoundServerPlayers",
   "host-no-player": "diagRemHostNoPlayer",
   "host-no-tone-file": "diagRemHostNoToneFile",
   "host-managed-by-others": "diagRemHostManagedByOthers",
@@ -88,9 +90,12 @@ const REMEDIATION_KEYS = {
 /**
  * 认不出发行版（没有包管理器族）时的第二条文案。插值不上的占位符会被原样渲染成花括号，
  * 所以「少给一个参数」必须换一句文案，而不是让同一句话缺一格。
+ *
+ * 两条装包建议共用同一份包清单，故两者都要有无包名变体。
  */
 const NO_PACKAGE_KEYS: Readonly<Record<string, NotifierLocaleKey>> = {
   "host-no-sound-server-and-player": "diagRemHostNoSoundServerAndPlayerNoPkg",
+  "host-only-sound-server-players": "diagRemHostOnlySoundServerPlayersNoPkg",
 };
 
 /**

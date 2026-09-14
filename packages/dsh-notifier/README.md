@@ -253,25 +253,30 @@ context filter checks」）。取舍如下（issue #290）：
   策略约束而非插件缺陷。
 - **Linux `true` 特例（#640 修复）**：Linux 桌面守护进程对声音 hint 支持参差
   （GNOME 默认无声 / KDE 2025 才支持 / Xfce 依赖 libcanberra），系统渠道的 `sound: true`
-  解释为「**默认事件音自播**」——宿主用 `pw-play`（PipeWire）或 `paplay`
-  （PulseAudio）播 `message-new-instant` 事件音（freedesktop 声音主题），不依赖
-  守护进程。headless（无桌面/音频会话）服务器静默。**存量 Linux 升级行为变化**：
-  之前系统通知无声（notify-send 无声音 hint），升级后声音开 = 自播事件音（需宿主
-  有音频会话且安装 pw-play/paplay 之一；播放器/事件文件缺失时静默，不影响通知）。
+  解释为「**默认事件音自播**」——宿主按 `paplay` → `pw-play` → `aplay` → `ffplay`
+  的回退链依次尝试、**首个成功即停**（防双响），不依赖守护进程。freedesktop 事件音
+  缺失时改用**运行时合成的提示音**（0.2.4 起），不再因缺声音主题而静默。
+  **只探测到服务型播放器是一个已知降级**：`paplay`/`pw-play` 在**没有声音服务**的
+  宿主上必失败，故能力面报 `degraded` 并给 `host-only-sound-server-players`——装一个
+  直连 ALSA 的播放器即可（`alsa-utils` 提供 `aplay`、`ffmpeg` 提供 `ffplay`；
+  dnf 系上 `ffmpeg` 来自 RPM Fusion）。宿主没有音频设备时仍然无声。
+  **存量 Linux 升级行为变化**：之前系统通知无声（notify-send 无声音 hint），升级后
+  声音开 = 自播事件音。
 - **音色 × 平台映射（近似，尽力而为）**：
 
-| 音色 | 浏览器（Web Audio 合成） | macOS | Linux（freedesktop 事件音） | Windows |
+| 音色 | 浏览器（Web Audio 合成） | macOS | Linux（事件音，缺失时合成） | Windows |
 |---|---|---|---|---|
 | `ding` | 双短高音 | Glass（NSSound） | `message-new-instant.oga` | `C:\Windows\Media\Windows Ding.wav` |
 | `bell` | 单中高音 | Tink | `bell.oga` | `Windows Chimes.wav` |
 | `chime` | 三音上行 | Sosumi | `complete.oga` | `Windows Chord.wav` |
 | `pop` | 短促低音 | Pop | `message.oga` | `Windows Balloon.wav` |
-| `true`（跟随系统） | OS 默认（不 silent） | Glass（现状保留） | 默认事件音自播 | toast 默认系统音；只响不弹时近似默认音 wav |
+| `true`（跟随系统） | OS 默认（不 silent） | Glass（现状保留） | 默认事件音自播（缺失时合成） | toast 默认系统音；只响不弹时近似默认音 wav |
 
   macOS 发声受系统「允许通知声音」设置约束；Windows 音色经宿主 `SoundPlayer`
   播放系统内置 wav（白名单路径，缺失静默）；Linux 事件文件为
   `/usr/share/sounds/freedesktop/stereo/` 下基线包确定存在的 oga（多路径探测，
-  缺失静默）。自播一律数组传参（无 shell 拼接面），文件走白名单路径。
+  **缺失时改用运行时合成的提示音**）。自播一律数组传参（无 shell 拼接面），文件走
+  白名单路径。
 - 宿主平台见 `/api/dsh-notifier/health` 的 `platform` 字段（设置页系统卡按它显示
   平台提示——浏览器 OS 与宿主 OS 可能不同机，别混淆）。
 
@@ -425,8 +430,9 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
   - **系统通知（宿主 toast）**弹在 **dsh web 运行的宿主机器**桌面：若 dsh web 跑在 Linux 服务器（headless，无桌面会话）或别的机器上，toast 会出现在**那台服务器**而不是你的 Mac——**系统通道可用性见 `/diagnostics`**（宿主端探测，带处置建议）；**浏览器通道可用性见设置卡片**（本端计算，换设备会不同）。想让系统 toast 也出现在你的 Mac 上，需把 dsh web 直接跑在你的 Mac 上（此时走 macOS 的 `osascript`）；macOS 无 `notify-send`，系统通知已用系统自带的 `osascript` 实现（无需安装）
 - **iOS 差异**：Safari 普通标签页无 Web Notifications API（「添加到主屏幕」的 PWA
   才有）；iOS 上可用通道为「页面可见时横幅 + 提示音」及 HTTPS+A2HS 后的系统通知
-- **能力自检面（0.2.4 起）暴露宿主软件栈的局部指纹，且经 `dsh-lan-proxy` 转发后对局域网可见**：`/health` 与 `/diagnostics` 的 `capabilities.host.sound.players` 会列出探测命中的播放器可执行文件名（按优先级取首个可用者：`pw-play` → `paplay`；darwin 恒 `afplay`），`popup`/`sound` 的 `checked` 会暴露装了 `notify-send` 与否。这是**有意的设计取舍**——用户要能看见「宿主放不出声」才谈得上处置——但请知悉它与 lan-proxy 的既有姿态叠加后的含义（该插件 README 已自述「经本插件转发的请求按设计视为受信」）。**收敛手段**：只出可执行文件名、音色只出布尔，**绝不出绝对路径**，`remediation` 的 `params` 只由内置数据表产生、不经输入透传（响应体里不会出现 `/etc/os-release` 或任何命令原文）
+- **能力自检面（0.2.4 起）暴露宿主软件栈的局部指纹，且经 `dsh-lan-proxy` 转发后对局域网可见**：`/health` 与 `/diagnostics` 的 `capabilities.host.sound.players` 会列出探测命中的播放器可执行文件名（按回退链顺序给出**全部**命中者：`paplay` → `pw-play` → `aplay` → `ffplay`；darwin 恒 `afplay`），`popup`/`sound` 的 `checked` 会暴露装了 `notify-send` 与否。这是**有意的设计取舍**——用户要能看见「宿主放不出声」才谈得上处置——但请知悉它与 lan-proxy 的既有姿态叠加后的含义（该插件 README 已自述「经本插件转发的请求按设计视为受信」）。**收敛手段**：只出可执行文件名、音色只出布尔，**绝不出绝对路径**，`remediation` 的 `params` 只由内置数据表产生、不经输入透传（响应体里不会出现 `/etc/os-release` 或任何命令原文）
 - **探测无副作用**：能力自检只向 `org.freedesktop.DBus` 发 `NameHasOwner` 与 `ListActivatableNames` 两个只读查询，**不触发任何服务激活**（不用 `busctl status`/`list`，不调 `StartServiceByName`）；`darwin`/`win32` 上连这个子进程都不起
+- **临时音频文件（0.2.4 起）**：Linux 上主题事件音缺失时，自播会在系统临时目录下建一个 0700 的实例目录，写入 0600 且以 `wx` 打开的 WAV（`wx` 拒绝已存在的路径与符号链接）；播放结束立即删掉**本次**文件，并发的另一笔投递因此不受影响，目录留到进程退出 / 插件卸载时统一清理。`/tmp` 只读挂载时本次不落盘：只响不弹记为 `skipped`（`reasonSystemToneUnwritable`），弹+响仍算 `ok` 并留一条 warn（弹窗已经出去，声音属尽力而为）
 - **D-Bus 通知的残余信任面**：Linux 上的通知正文会交给 `org.freedesktop.Notifications` 的**当前 owner**。同一 UID 的进程先占住这个名字即可收到通知内容（跨 UID 抢占不成立：session bus 是每用户一个 socket）。对同机同用户下的进程隔离有要求的部署，请自行评估系统通道
 - **能力面契约演进**：`capabilities` 只增不删键；客户端**忽略不认识的组与不认识的 `verdict` 取值**（渲染为「未知」而不是报错）；旧服务端不带 `capabilities` 时设置页优雅降级。故升级服务端不需要同步升级客户端
 - 浏览器通知需要**安全上下文**（HTTPS 或 localhost）；局域网 HTTP 访问自动走降级通道（横幅/提示音/标题提醒）

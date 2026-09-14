@@ -222,7 +222,9 @@ describe("remediationTextOf：处置建议文案", () => {
   const CODES = [
     "host-no-dbus-session",
     "host-popup-no-daemon",
+    "host-no-notify-send",
     "host-no-sound-server-and-player",
+    "host-only-sound-server-players",
     "host-no-player",
     "host-no-tone-file",
     "host-managed-by-others",
@@ -261,6 +263,41 @@ describe("remediationTextOf：处置建议文案", () => {
     const text = remediationTextOf({ code: "host-no-sound-server-and-player" }, t);
     expect(text).toBe(zh.diagRemHostNoSoundServerAndPlayerNoPkg);
     expect(text).not.toContain("{");
+  });
+
+  // 新 code（只命中服务型播放器）与无播放器那条同族：带包名与不带包名两条都要真的可达，
+  // 否则带包名那条永远不渲染（服务端永远不给 params 时它就是死文案）。
+  it("只命中服务型播放器：带包名与无包名两条文案各自可达", () => {
+    const withParams = remediationTextOf(
+      {
+        code: "host-only-sound-server-players",
+        params: { packagemanager: "apt", packages: ["alsa-utils", "ffmpeg"] },
+      },
+      t,
+    );
+    expect(withParams).toBe(
+      zh.diagRemHostOnlySoundServerPlayers
+        .replace("{packages}", "alsa-utils ffmpeg")
+        .replace("{packagemanager}", "apt"),
+    );
+    expect(withParams).not.toContain("{");
+
+    // 服务端只给 code（认不出发行版）时换不带占位符的那一条
+    const sparse = remediationTextOf({ code: "host-only-sound-server-players" }, t);
+    expect(sparse).toBe(zh.diagRemHostOnlySoundServerPlayersNoPkg);
+    expect(sparse).not.toContain("{");
+  });
+
+  // 维护者裁决：ffmpeg 进了包清单，而 dnf 族上它来自 RPM Fusion——带包名的两条建议都必须说出来，
+  // 否则 Fedora/RHEL 用户照抄会直接装不上。文案措辞可以改，这句提示不能丢。
+  it("带包名的两条建议都提示 ffmpeg 需要 RPM Fusion（dnf 照抄会装不上）", () => {
+    for (const key of [
+      "diagRemHostNoSoundServerAndPlayer",
+      "diagRemHostOnlySoundServerPlayers",
+    ] as const) {
+      expect(zh[key], `zh 的 ${key} 没提 RPM Fusion`).toContain("RPM Fusion");
+      expect(en[key], `en 的 ${key} 没提 RPM Fusion`).toContain("RPM Fusion");
+    }
   });
 
   // 负例：更新版本的服务端写下的陌生 code——中性回退还不能把宿主侧参数端出来。
@@ -490,8 +527,8 @@ describe("clientDiagnosticsOf：界面只做机械投影", () => {
 describe("双语：新增 key 两边齐备", () => {
   it("zh 的每个 diag* key 在 en 都有非空文案，且不回落成 key 本体", () => {
     const keys = (Object.keys(zh) as NotifierLocaleKey[]).filter((key) => key.startsWith("diag"));
-    // 这一面至少要有四个 verdict、两个维度、六条出路、九条浏览器态与来源标注
-    expect(keys.length).toBeGreaterThanOrEqual(30);
+    // 这一面至少要有四个 verdict、两个维度、八条出路（含两条无包名变体）、九条浏览器态与来源标注
+    expect(keys.length).toBeGreaterThanOrEqual(32);
     for (const key of keys) {
       expect(en[key], `en 缺 ${key}`).toBeTypeOf("string");
       expect(en[key], `en 的 ${key} 为空`).not.toBe("");
@@ -500,7 +537,7 @@ describe("双语：新增 key 两边齐备", () => {
     }
   });
 
-  it("契约要求的那几组 key 一个都不少（verdict 四态 / 维度 / 六条出路 / 浏览器各态）", () => {
+  it("契约要求的那几组 key 一个都不少（verdict 四态 / 维度 / 八条出路 / 浏览器各态）", () => {
     const required = [
       "diagVerdictOk",
       "diagVerdictDegraded",
@@ -514,7 +551,11 @@ describe("双语：新增 key 两边齐备", () => {
       "diagSourceBrowser",
       "diagRemHostNoDbusSession",
       "diagRemHostPopupNoDaemon",
+      "diagRemHostNoNotifySend",
       "diagRemHostNoSoundServerAndPlayer",
+      "diagRemHostNoSoundServerAndPlayerNoPkg",
+      "diagRemHostOnlySoundServerPlayers",
+      "diagRemHostOnlySoundServerPlayersNoPkg",
       "diagRemHostNoPlayer",
       "diagRemHostNoToneFile",
       "diagRemHostManagedByOthers",

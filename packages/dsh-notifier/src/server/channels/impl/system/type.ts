@@ -24,9 +24,39 @@ export interface PlatformProbe {
   toastScriptAvailable: boolean;
   /** notify-send 是否可用（macOS / Windows 不走它，恒 false）。 */
   notifySendAvailable: boolean;
-  /** 播放器候选（首个可用者胜）；空 = 无候选——Windows 经 PowerShell 播放，不看这里。 */
+  /**
+   * 播放器候选：**按回退链顺序排列的全部已命中者**（探测并行跑全部候选，顺序 = 表序 = 尝试序）；
+   * 空 = 无候选——Windows 经 PowerShell 播放，不看这里。
+   */
   players: readonly string[];
 }
+
+/**
+ * 一条命令的结局：**只回原始事实**，不做任何成败判定（判据是音频路径的具名谓词，见 `players.ts`
+ * ——弹窗命令与它共用同一套事实，但判据不同）。
+ *
+ * `killed` 与 `timeout` 必须分开：前者是外部信号杀死（多数是我们自己的兜底，不当异常刷屏），
+ * 后者是兜底杀进程已经触发而子进程没有自己退出——那一格必须就地结算，否则 `await` 永久挂着。
+ */
+export type CommandOutcome =
+  | { readonly kind: "exit"; readonly code: number }
+  | { readonly kind: "killed" }
+  | { readonly kind: "timeout" }
+  | { readonly kind: "spawn-threw"; readonly cause: string }
+  | { readonly kind: "spawn-error"; readonly cause: string };
+
+/** 一条命令的原始事实：结局 + stderr 尾部（上限由收集侧决定）。 */
+export interface CommandFacts {
+  readonly outcome: CommandOutcome;
+  readonly stderr: string;
+}
+
+/**
+ * 临时音频文件的落盘结论。`/tmp` 只读挂载时回 `{ok:false,cause}`——本次没有可执行的动作，
+ * 终态因此是 `skipped` 而不是 `failed`（`failed` 的定义是「执行过动作而它失败了」）。
+ */
+export type ToneStage =
+  { readonly ok: true; readonly path: string } | { readonly ok: false; readonly cause: string };
 
 /**
  * 通知守护进程名的探测结论。三种 CLI（`gdbus`/`dbus-send`/`busctl`）的输出格式差异封在端口实现内，

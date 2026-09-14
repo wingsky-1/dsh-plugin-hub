@@ -58,3 +58,10 @@ export function hostPlatform(): string {
  * 很快就会漂成三种形状，而客户端只认得其中一种。
  */
 export { undeterminedCapabilities };
+
+/**
+ * 释放音频临时目录（自播合成音的落盘处）：组合根在卸载时调一次，端口侧在进程退出时也挂一次。
+ * 幂等、never-throw——它是本域唯一会把**目录**删掉的入口（按次删目录会让并发投递互踩，
+ * 故日常只 unlink 本次文件，目录留到这里）。
+ */
+export { releaseSoundTemps } from "./impl/system/tone-file.ts";
