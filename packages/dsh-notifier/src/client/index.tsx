@@ -21,9 +21,17 @@ import STYLE from "./style.css";
 // { id, cssText, version } 实参；STYLE_ID/CSS_VERSION 常量保留为调用实参来源，
 // disposer（getElementById(STYLE_ID)）沿用常量。
 import { ensureStyle } from "../../../../shared/client/ensure-style.js";
-// 音色单点：试听/自播与服务端合成、平台素材共用同一份 notes（src/shared/interface.ts）。
-// 此前两端各写一份，已实测出同一音色在试听与宿主上不是同一个音（#783）。
-import { FOLLOW_SYSTEM_TONE, TONES } from "../shared/interface.ts";
+// 通知帧的展示策略（纯判定）、多标签租约、音频出口：外部事实（时钟 / storage /
+// AudioContext）都从端口进来，于是「未解锁 / 被挂起 / 被拒绝」与租约三分支都能在 node 里
+// 跑出判据。音色单点仍在 src/shared/interface.ts，改由 notify/audio.ts 消费。
+import { createAudioEngine, type AudioContextLike } from "./notify/audio.ts";
+import { claimMaster as claimMasterLease, MASTER_KEY } from "./notify/lease.ts";
+import {
+  displayChannelOf,
+  fallbackChannelOf,
+  frameAccepted,
+  soundPolicyOf,
+} from "./notify/policy.ts";
 import * as React from "react";
 // i18n：复用官方 dsh-client-locale——zh/en 双语字典，LocaleNamespaceMap
 // 声明合并进官方 ui-slots 类型面；仅 import type（编译期擦除，无运行时依赖）。
@@ -53,8 +61,7 @@ import { createSaveGuard } from "./settings/save-guard.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
-
-import type { LocaleNamespaceMap as _LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
+import type { LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
 
 declare module "@deepseek-ai/dsh-client-ui-slots" {
   interface LocaleNamespaceMap {
@@ -72,7 +79,7 @@ var t: any = function (key: string, params?: any) {
   return String(key); // 未装配时占位插值忽略（正常路径早已装配）
 };
 
-const ROUTES = {
+var ROUTES = {
   config: "/api/dsh-notifier/config",
   events: "/api/dsh-notifier/events",
   health: "/api/dsh-notifier/health",
@@ -84,7 +91,7 @@ const ROUTES = {
 };
 /** 内置音色 id（与服务端 config.ts SOUND_IDS 同源复制——客户端不 import 宿主
  *  模块，两处由各自测试锁定；定稿口径 ding/bell/chime/pop）。 */
-const SOUND_IDS: readonly string[] = ["ding", "bell", "chime", "pop"];
+var SOUND_IDS: readonly string[] = ["ding", "bell", "chime", "pop"];
 /** 声音设置是否处于「开」：true 与内置音色 id 都算开，false 与脏值算关。
  *  三态摘要、卡体提示、声音行开关三处共用这一条口径——各判一遍就会出现「卡片说有声、开关说没有」。 */
 function soundIsOn(value: any): boolean {
@@ -93,20 +100,20 @@ function soundIsOn(value: any): boolean {
 /** 宿主平台（/health platform 拉取；服务端运行机器 OS——系统通道提示据此，
  *  防浏览器 OS 与宿主 OS 混淆。null = 未拉取/失败）。 */
 var hostPlatform: string | null = null;
-const STYLE_ID = "dsh-notifier-style";
+var STYLE_ID = "dsh-notifier-style";
 // 每次样式契约变更后 bump（版本号单调递增，保证 ensureStyle 判定为新版本并重注入）
 // 声音行/三态/试听样式加入时再次 bump。
 // 能力自检行（dn-ch-diag）加入时再次 bump。
-const CSS_VERSION = "784-1";
+var CSS_VERSION = "784-1";
 // 浏览器通知图标（内联 SVG data URL，零外部资源；铃铛造型）。
-const NOTIFY_ICON =
+var NOTIFY_ICON =
   "data:image/svg+xml;utf8," +
   encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#0f9d6e"/><path fill="#fff" d="M12 4a1 1 0 0 1 1 1v.55A5.5 5.5 0 0 1 17.5 11v2.3l1.45 1.45a1 1 0 0 1-.7 1.7H5.75a1 1 0 0 1-.7-1.7L6.5 13.3V11A5.5 5.5 0 0 1 11 5.55V5a1 1 0 0 1 1-1zm-2.5 13a2.5 2.5 0 0 0 5 0h-5z"/></svg>',
   );
 
 // i18n：label 列存字典 key（渲染期 t 求值，模块加载时 t 尚未装配）。
-const EVENT_KEYS = [
+var EVENT_KEYS = [
   ["notifyAsk", "evtAsk"],
   ["notifyQuestion", "evtQuestion"],
   ["notifyTaskDone", "evtTaskDone"],
@@ -117,7 +124,7 @@ const EVENT_KEYS = [
 /** 事件开关键 → 通知 kind（单一事实源；免打扰豁免候选/「跟随已启用」由此派生，
  *  与服务端 EVENT_KEYS 对应的事件源 kind 一致：ask/question/done/subagent-done/
  *  error/turn-end）。 */
-const EVENT_KIND_MAP: Record<string, string> = {
+var EVENT_KIND_MAP: Record<string, string> = {
   notifyAsk: "ask",
   notifyQuestion: "question",
   notifyTaskDone: "done",
@@ -126,7 +133,7 @@ const EVENT_KIND_MAP: Record<string, string> = {
   notifyTurnEnd: "turn-end",
 };
 /** kind → 字典 key（未知 kind 回落 kind 本体显示，数据不翻译）。 */
-const KIND_KEYS: Record<string, string> = {
+var KIND_KEYS: Record<string, string> = {
   ask: "kAsk",
   question: "kQuestion",
   done: "kDone",
@@ -141,7 +148,7 @@ const KIND_KEYS: Record<string, string> = {
  * 与服务端 service.ts KIND_SEVERITY 同源复制（客户端不 import 宿主端模块——
  * 干净模块边界），两处由各自测试锁定；新增 kind 时同步维护。
  */
-const KIND_SEV: Record<string, string> = {
+var KIND_SEV: Record<string, string> = {
   ask: "warning",
   question: "info",
   done: "success",
@@ -176,7 +183,7 @@ function channelIdOf(cfg: Record<string, any>): string {
  * 由用户填写，模板/认证随预设走且可再改）。模板渲染契约见 channel-webhook.ts：
  * 文本占位符 JSON-aware 转义、{{ts}} 数字直出、{{priority}} 频道感知映射。
  */
-const WEBHOOK_PRESETS: Record<string, { auth: string; template: string }> = {
+var WEBHOOK_PRESETS: Record<string, { auth: string; template: string }> = {
   ntfy: {
     auth: "bearer",
     template:
@@ -254,44 +261,35 @@ function requestPermission(onDone: any) {
       .catch(function () {
         if (onDone) onDone();
       });
-  } catch {
+  } catch (error) {
     if (onDone) onDone();
   }
 }
 
 // ------------------------------------------------------------ 通知显示（半区）
 
-var notified: any = [];
+/** 本页已弹出的系统通知（保留最近 5 条，超出即关最旧的）。 */
+const notified: Notification[] = [];
 
-// 多标签主从租约（仅「同 URL 的同浏览器多标签」有效；跨 host/IP、跨浏览器
-// 的 storage 域互不相交，去重自然失效）：收到通知帧的标签先 checkMaster：
-// 有效租约且属于自己 → 续租并展示；属于他人 → 静默；无主/已过期 → 抢占。
+/** 本标签页的租约身份：跨 apply 复用——重新挂载仍是同一个标签，不该被当成「另一个标签」
+ *  而在 15 秒内静默（见 notify/lease.ts 的模块头）。 */
 const TAB_ID = Math.random().toString(36).slice(2);
-const MASTER_KEY = "dsh-notifier:master";
-const MASTER_LEASE_MS = 15000;
-function claimMaster() {
-  try {
-    var raw = localStorage.getItem(MASTER_KEY);
-    var lease = raw ? JSON.parse(raw) : null;
-    var now = Date.now();
-    if (
-      lease &&
-      typeof lease.id === "string" &&
-      typeof lease.ts === "number" &&
-      now - lease.ts < MASTER_LEASE_MS
-    ) {
-      if (lease.id === TAB_ID) {
-        lease.ts = now;
-        localStorage.setItem(MASTER_KEY, JSON.stringify(lease));
-        return true;
-      }
-      return false;
-    }
-    localStorage.setItem(MASTER_KEY, JSON.stringify({ id: TAB_ID, ts: now }));
-    return true;
-  } catch {
-    return true;
-  }
+
+/**
+ * 跨实例共享的音频出口：AudioContext 与播放节流窗口必须全页一份，否则重复挂载会让同一帧
+ * 响两次或该响的不响。用 const 单例承载闭包状态，而不是模块级 let。
+ */
+const audioEngine = createAudioEngine({ ctor: audioContextCtorOf, now: () => Date.now() });
+
+/** 本页的主标签租约（storage 与时钟走端口，判定在 notify/lease.ts）。 */
+function claimMaster(): boolean {
+  return claimMasterLease(TAB_ID, {
+    now: () => Date.now(),
+    read: () => localStorage.getItem(MASTER_KEY),
+    write: (value) => {
+      localStorage.setItem(MASTER_KEY, value);
+    },
+  });
 }
 
 /** 页面是否处于安全上下文（HTTPS 或 localhost）——系统级 Notification 的前提。 */
@@ -306,101 +304,11 @@ function systemNotificationUsable() {
   return Notification.permission === "granted";
 }
 
-var audioCtx: any = null;
-/** 前缀化的老 Safari 构造名不在标准 DOM 类型里；取用点收在这里，能力自检与解锁共用同一判据。 */
-type AudioContextCtor = new () => AudioContext;
-
-function audioContextCtor(): AudioContextCtor | undefined {
-  var legacy = (window as unknown as { webkitAudioContext?: AudioContextCtor }).webkitAudioContext;
-  return window.AudioContext || legacy;
-}
-
-/** 解锁音频（必须在用户手势内调用）：后台播放提示音需要已解锁的 AudioContext。 */
-function unlockAudio() {
-  try {
-    if (audioCtx === null) {
-      var AC = audioContextCtor();
-      if (!AC) return;
-      audioCtx = new AC();
-    }
-    // 两个事实（是否跑到过 running / resume 是否被拒绝）记在上下文实例上（__dshRan /
-    // __dshResumeRejected）：它们的生命周期与那个上下文严格相同——构造之前必然「从没跑过」——
-    // 而给它们单开模块级变量会让页面多一份跨挂载共享的可变状态。
-    var ctx = audioCtx;
-    if (ctx.state === "suspended") {
-      var resumed = ctx.resume();
-      // resume() 的结果只在异步回调里可见：记下它，能力自检面才说得出「没解锁」与
-      // 「被浏览器挂起」的区别（两者的下一步动作不同）。
-      if (resumed && typeof resumed.then === "function") {
-        resumed.then(
-          function () {
-            ctx.__dshRan = true;
-          },
-          function () {
-            ctx.__dshResumeRejected = true;
-          },
-        );
-      }
-    }
-    if (ctx.state === "running") ctx.__dshRan = true;
-    var buffer = ctx.createBuffer(1, 1, 22050);
-    var source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-    source.start(0);
-  } catch {
-    // 音频不可用不阻塞通知
-  }
-}
-
-var lastChimeAt = 0;
-/** 统一播放节流（1.5s）：覆盖全部自播路径（通知音 + 只响不弹）；试听走
- *  playPreview 不经本门——用户手势直接试听不受节流限制。防通知风暴叠播。 */
-function playGate(): boolean {
-  var now = Date.now();
-  if (now - lastChimeAt < 1500) return false;
-  lastChimeAt = now;
-  return true;
-}
-
-/** 按音色合成短旋律（Web Audio）。音色事实（音符、频率、波形）只有一份，收在
- *  src/shared/interface.ts；未知音色与「跟随系统」都落到 FOLLOW_SYSTEM_TONE。
- *  试听与通知自播共用同一实现。 */
-function playTone(tone: string | undefined) {
-  if (audioCtx === null || audioCtx.state !== "running") return;
-  try {
-    var t = audioCtx.currentTime;
-    var spec =
-      tone !== undefined && Object.hasOwn(TONES, tone) ? TONES[tone] : TONES[FOLLOW_SYSTEM_TONE];
-    var notes = spec.notes;
-    for (var i = 0; i < notes.length; i += 1) {
-      var n = notes[i];
-      var osc = audioCtx.createOscillator();
-      var gain = audioCtx.createGain();
-      osc.type = n.type || "sine";
-      osc.frequency.value = n.freq;
-      gain.gain.setValueAtTime(0.0001, t + n.at);
-      gain.gain.exponentialRampToValueAtTime(0.18, t + n.at + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + n.at + n.dur);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start(t + n.at);
-      osc.stop(t + n.at + n.dur + 0.02);
-    }
-  } catch {
-    // 播放失败忽略
-  }
-}
-
-/** 试听（用户手势内）：显式解锁 + 强制播放（绕过统一节流）。 */
-function playPreview(tone: string | undefined) {
-  unlockAudio();
-  if (audioCtx === null || audioCtx.state !== "running") return;
-  try {
-    playTone(tone);
-  } catch {
-    // 忽略
-  }
+/** 平台 AudioContext 构造器：前缀化的老 Safari 名字不在标准 DOM 类型里，取用点收在这里，
+ *  能力自检与解锁共用同一判据。 */
+function audioContextCtorOf(): (new () => AudioContextLike) | undefined {
+  const legacy = (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext;
+  return (window.AudioContext ?? legacy) as (new () => AudioContextLike) | undefined;
 }
 
 /**
@@ -414,12 +322,7 @@ function clientFacts(): ClientFacts {
     secureContext: isSecureContext(),
     // 权限值只作数据带过去（值域外的取值由判定侧按「无法判定」处理）
     permission: hasApi ? String(Notification.permission) : "unknown",
-    audio: {
-      supported: audioContextCtor() !== undefined,
-      state: audioCtx === null ? null : audioCtx.state,
-      hasEverRun: audioCtx !== null && audioCtx.__dshRan === true,
-      resumeRejected: audioCtx !== null && audioCtx.__dshResumeRejected === true,
-    },
+    audio: audioEngine.facts(),
   };
 }
 
@@ -436,83 +339,72 @@ function restoreTitle() {
 }
 
 /**
- * 通知展示总入口（声音策略为帧级权威）：
- * @param opts.sound 服务端解析的声音策略 {mode, tone}——
- *   silent（静音）/ system（跟随系统默认，交给 OS）/ selfplay（页内自播，系统弹窗 silent 防双响）；
- *   缺省（0.2.3 服务端发的帧没有 sound 字段）按 system 处理。
- * @param opts.playOnly 只响不弹：不弹实体、仅按需自播（服务端弹窗关 + 声音开）。
+ * 通知展示总入口。
+ *
+ * 判定（走哪条通道、什么声音策略）在 notify/policy.ts 的纯函数里；这里只做三件事：过主标签
+ * 租约、执行判定给出的通道、按策略自播。顺序是刻意的——租约在构造 Notification 之前，副标签
+ * 连横幅都不弹；Notification 构造抛错则降级到页面内提醒（同一条降级判定重算一次）。
+ *
+ * @param opts.sound 服务端帧级声音策略；缺省（0.2.3 的帧没有这个字段）按「跟随系统默认」。
+ * @param opts.playOnly 只响不弹：不弹实体、仅按需自播。
  */
 function showNotification(
-  kind: any,
-  title: any,
-  message: any,
-  opts: { sound?: any; playOnly?: boolean },
+  kind: string,
+  title: string,
+  message: string,
+  opts: { sound?: unknown; playOnly?: boolean },
 ) {
-  var frame = opts.sound;
-  if (!frame || typeof frame !== "object") {
-    // 0.2.3 的帧没有 sound 字段：按「跟随系统默认」处理。旧全局声音键随 0.2.4 的配置割接删除，
-    // 这里没有可回查的开关了。
-    frame = { mode: "system", tone: undefined };
-  }
-  var selfPlay = frame.mode === "selfplay";
-  var silent = frame.mode === "silent" || selfPlay;
-  var tone = typeof frame.tone === "string" ? frame.tone : undefined;
-  // 只响不弹 + mode:"system"（旧服务端/升级窗口残留帧）：无弹窗实体 = OS 不会
-  // 发声，归一为自播默认旋律（服务端已改为下发 selfplay，
-  // 此处兜底旧帧防「0 弹 0 播纯静默」）
-  if (opts.playOnly === true && frame.mode === "system") {
-    selfPlay = true;
-    silent = true;
-  }
+  const playOnly = opts.playOnly === true;
+  const policy = soundPolicyOf(opts.sound, playOnly);
   // 多标签去重：弹实体与只响不弹自播一律先过主标签租约，副标签静默
   if (!claimMaster()) return;
-  if (!opts.playOnly && systemNotificationUsable()) {
+  const notificationUsable = systemNotificationUsable();
+  if (
+    displayChannelOf({
+      playOnly,
+      notificationUsable,
+      visibility: document.visibilityState,
+    }) === "notification"
+  ) {
     try {
-      var notification = new Notification(title, {
+      const notification = new Notification(title, {
         body: message,
         tag:
           "dsh-notifier-" + kind + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
         icon: NOTIFY_ICON,
-        silent: silent,
+        silent: policy.silent,
       });
-      notification.onclick = function () {
+      notification.onclick = () => {
         window.focus();
         notification.close();
       };
       notified.push(notification);
-      if (notified.length > 5) notified.shift().close();
-      // SoundId 自播（selfplay 模式）：Notification 已 silent 防双响，页内补播
-      if (selfPlay && playGate()) playTone(tone);
+      notified.shift()?.close();
+      // selfplay 模式：Notification 已 silent 防双响，页内补播
+      if (policy.selfPlay && audioEngine.gate()) audioEngine.playTone(policy.tone);
       return;
     } catch (error) {
       console.warn("[dsh-notifier] 浏览器通知失败，降级为页面内提醒：", error);
     }
   }
-  // 降级通道 / 只响不弹：banner 或标题闪烁；声音按帧策略
-  if (!opts.playOnly) {
-    if (document.visibilityState !== "hidden") {
-      showBanner(kind, title, message);
-    } else {
-      flashTitle(title);
-    }
-  }
-  if (selfPlay && playGate()) playTone(tone);
+  // 降级通道 / 只响不弹：横幅或标题闪烁；声音按帧策略
+  const fallback = fallbackChannelOf(playOnly, document.visibilityState);
+  if (fallback === "banner") showBanner(kind, title, message);
+  else if (fallback === "title") flashTitle(title);
+  if (policy.selfPlay && audioEngine.gate()) audioEngine.playTone(policy.tone);
 }
 
 function handleNotifyFrame(payload: any) {
-  // 测试通知：无条件提醒（验证链路是它的目的，与可见性/权限之外的开关无关）。
-  if (payload.kind === "test") {
-    showNotification(payload.kind, payload.title, payload.message, {
-      sound: payload.sound,
-      playOnly: payload.playOnly === true,
-    });
+  // 测试通知无条件提醒；其余帧在页面可见时不打扰，除非帧自带 whenVisible——判定见 notify/policy.ts
+  if (
+    !frameAccepted({
+      kind: payload.kind,
+      whenVisible: payload.whenVisible,
+      playOnly: payload.playOnly,
+      visibility: document.visibilityState,
+    })
+  ) {
     return;
-  }
-  // 页面聚焦时不提醒（用户在界面中）；除非这一帧说「可见时也弹」——判定归宿主出口，帧自带结论，
-  // 页面不必回查配置（0.2.3 的帧没有这个字段，按「可见时不弹」处理）。
-  if (document.visibilityState !== "hidden" && payload.whenVisible !== true) {
-    // 只响不弹（playOnly）不依赖可见性——它不打扰界面，纯声音提醒
-    if (payload.playOnly !== true) return;
   }
   showNotification(payload.kind, payload.title, payload.message, {
     sound: payload.sound,
@@ -526,7 +418,7 @@ function handleNotifyFrame(payload: any) {
 var eventsHandle: { close: () => void; reconnect: () => void } | null = null;
 
 /** SSE 半开连接看门狗：60s 无任何帧（notify 或心跳 ping）→ 主动重建。 */
-const WATCHDOG_MS = 60000;
+var WATCHDOG_MS = 60000;
 function startEvents() {
   var source: any = null;
   var lastActivity = 0;
@@ -1711,7 +1603,7 @@ function SettingsCard() {
 
   /** 单通道声音行：开关（false/true 切换）+ 展开音色下拉 + ▶试听。
    *  开关语义：off=false（静音）；on=true（跟随系统默认）；on 后选择音色 =
-   *  SoundId（显式音色）。交互全部显式 unlockAudio 兜底（autoplay 策略下
+   *  SoundId（显式音色）。交互全部显式 audioEngine.unlock() 兜底（autoplay 策略下
    *  纯后台页面自播需此前任意手势解锁；试听点击本身即手势）。 */
   function soundRow(index: number, ch: any, channelLabel: string) {
     var soundVal = ch.sound;
@@ -1739,7 +1631,7 @@ function SettingsCard() {
             soundOn,
             function (v: boolean) {
               // 用户手势：解锁音频（开启声音后隐藏页面自播才可能发声）
-              unlockAudio();
+              audioEngine.unlock();
               chPatch(index, { sound: v }); // false / true
             },
             t("chSound") + " " + channelLabel,
@@ -1750,7 +1642,7 @@ function SettingsCard() {
               value={toneValue}
               aria-label={t("chSoundTone")}
               onChange={function (e: any) {
-                unlockAudio();
+                audioEngine.unlock();
                 chPatch(index, { sound: e.target.value === "" ? true : e.target.value });
               }}
             >
@@ -1763,7 +1655,7 @@ function SettingsCard() {
               className="dn-set-btn dn-set-btnSmall dn-tonePreview"
               aria-label={t("chSoundPreview")}
               onClick={function () {
-                playPreview(toneValue || undefined);
+                audioEngine.playPreview(toneValue || undefined);
               }}
             >
               ▶ {t("chSoundPreview")}
@@ -3042,7 +2934,7 @@ export function apply(ctx: any) {
           unsubLocale = locale.subscribe(function () {
             try {
               t = locale.bind(NS);
-            } catch {
+            } catch (e) {
               /* 忽略 */
             }
           });
@@ -3082,7 +2974,7 @@ export function apply(ctx: any) {
     document.addEventListener(
       "click",
       function onFirstClick() {
-        unlockAudio();
+        audioEngine.unlock();
         document.removeEventListener("click", onFirstClick);
       },
       { capture: true },
@@ -3138,7 +3030,7 @@ export function apply(ctx: any) {
         for (var i = 0; i < notified.length; i += 1) {
           try {
             notified[i].close();
-          } catch {
+          } catch (error) {
             // 忽略
           }
         }
