@@ -134,6 +134,9 @@ jobs:
       - name: Export surface snapshot（dsh-worktree-sidebar 导出面与基线零 diff）
         run: node scripts/gate/export-surface-snapshot.mjs --package dsh-worktree-sidebar
 
+      - name: Export surface snapshot（dsh-mcp-manager 导出面与基线零 diff）
+        run: node scripts/gate/export-surface-snapshot.mjs --package dsh-mcp-manager
+
       - name: Verify shared fan-in（shared 模块跨包扇入；#792）
         run: node scripts/gate/verify-shared-fanin.mjs
 

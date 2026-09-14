@@ -169,6 +169,9 @@ jobs:
               - 'packages/dsh-mcp-manager/**'
               - 'stryker.conf.d/dsh-mcp-manager*.json'
               - 'vitest.stryker.d/dsh-mcp-manager.config.ts'
+              # #767 B0：导出面基线与分类登记（scripts/data/dsh-mcp-manager-*.json）是本包
+              # 资产，改动即改变本包导出面判据的输入（与 dsh-notifier 的同名条目同形）。
+              - 'scripts/data/dsh-mcp-manager-*.json'
               - 'test/smoke-lib.ts'
             dsh-provider-usage:
               - 'packages/dsh-provider-usage/**'
@@ -771,6 +774,11 @@ jobs:
 
       - name: Export surface snapshot（dsh-worktree-sidebar 导出面与基线零 diff）
         run: node scripts/gate/export-surface-snapshot.mjs --package dsh-worktree-sidebar
+      # #767 B0 起 mcp-manager 也冻结导出面基线：该包随架构重构进入导出面漂移的高风险窗口。
+      # 基线由重构前那棵树生成并入库，删除到位的那一笔才重冻结；不带 --snapshot。
+      # 必须是独立 step（脚本只读第一个 --package，同上）。
+      - name: Export surface snapshot（dsh-mcp-manager 导出面与基线零 diff）
+        run: node scripts/gate/export-surface-snapshot.mjs --package dsh-mcp-manager
       - name: Verify shared fan-in（shared 模块跨包扇入；#792）
         run: node scripts/gate/verify-shared-fanin.mjs
 

@@ -13,8 +13,8 @@
       "gate": "forbid-module-state-src",
       "script": "scripts/gate/forbid-module-state-src.mjs",
       "scopeFrom": "registry",
-      "packages": ["dsh-lan-proxy", "dsh-notifier"],
-      "why": "判据源自 #733 宪法第 1 条。dsh-notifier 是重写目标，存量已清零或登记豁免；dsh-lan-proxy 于 #765 扩入——扩包前先实测该包在新口径下的存量（照抄历史数字会误判），实测其客户端 4 处模块级 var 中 3 处是常量、1 处（disposed）是零读取的死赋值，故先清零代码再扩面，扩面时零新增豁免。范围此前是脚本内的 PACKAGES 常量 + PACKAGES_V 版本号，现改为读本文件。"
+      "packages": ["dsh-lan-proxy", "dsh-mcp-manager", "dsh-notifier"],
+      "why": "判据源自 #733 宪法第 1 条。dsh-notifier 是重写目标，存量已清零或登记豁免；dsh-lan-proxy 于 #765 扩入——扩包前先实测该包在新口径下的存量（照抄历史数字会误判），实测其客户端 4 处模块级 var 中 3 处是常量、1 处（disposed）是零读取的死赋值，故先清零代码再扩面，扩面时零新增豁免；dsh-mcp-manager 于 #767 B0 扩入——该包进入按域重写窗口，模块级可变状态与 I9 直接冲突，不登记进扫描面就等于没有判据，扩包前按本文件口径实测其存量 1 处（client/float/panel.ts 的模块级 let inflight），客户端结构改动归 #769，按文件级豁免登记。范围此前是脚本内的 PACKAGES 常量 + PACKAGES_V 版本号，现改为读本文件。"
     },
     {
       "gate": "forbid-raw-exit2",
@@ -22,6 +22,7 @@
       "scopeFrom": "tree",
       "packages": ["scripts/gate", "scripts/release"],
       "why": "门禁故障码（exit 2）不得绕开唯一出口（#843 P-2）。它按**路径**限定范围而不是按包：面是两个源码目录（scripts/gate/** 与 scripts/release/**，递归），由目录结构派生、不吃 --package、也不读本文件，故为 tree。登记在此是为了让「本仓有哪些路径受限门禁」保持唯一答案（守卫是 test/gate-scope-registry.test.ts 的「forbid-*.mjs 未登记即红」）。"
+
     },
     {
       "gate": "forbid-src-tests",
@@ -47,8 +48,8 @@
       "gate": "export-surface-snapshot",
       "script": "scripts/gate/export-surface-snapshot.mjs",
       "scopeFrom": "cli",
-      "packages": ["dsh-notifier", "dsh-lan-proxy", "dsh-worktree-sidebar"],
-      "why": "包导出面快照（符号集 + 导出符号定义块与入库基线零 diff）。必须显式 --package（缺参直接 exit 2），调用点在 ci.yml 的 repo-gate、observe.yml 的 quality 班次、release.yml 的发版链路与 gate/gate-steps.mjs（本地档位）。#826 给 dsh-lan-proxy 产出基线并接入：该 PR 的核心声明是「目录重排零行为变更」，此前只能靠人工一次性比对，接入后成为可重复判据（覆盖主入口 . 与客户端入口 ./client）。#847 为已入库但未执行的 dsh-worktree-sidebar 基线补齐四入口，每包独立命令（脚本只消费第一个 --package）；其余包扩面要先产出基线。"
+      "packages": ["dsh-notifier", "dsh-lan-proxy", "dsh-worktree-sidebar", "dsh-mcp-manager"],
+      "why": "包导出面快照（符号集 + 导出符号定义块与入库基线零 diff）。必须显式 --package（缺参直接 exit 2），调用点在 ci.yml 的 repo-gate、observe.yml 的 quality 班次、release.yml 的发版链路与 gate/gate-steps.mjs（本地档位）。#826 给 dsh-lan-proxy 产出基线并接入：该 PR 的核心声明是「目录重排零行为变更」，此前只能靠人工一次性比对，接入后成为可重复判据（覆盖主入口 . 与客户端入口 ./client）。#847 为已入库但未执行的 dsh-worktree-sidebar 基线补齐四入口，每包独立命令（脚本只消费第一个 --package）；#767 B0 起覆盖 dsh-mcp-manager（基线由重构前那棵树生成并入库，删除到位的那一笔才重冻结，执行点与其他包同形）；其余包扩面要先产出基线。"
     },
     {
       "gate": "verify-vendored-binaries",
