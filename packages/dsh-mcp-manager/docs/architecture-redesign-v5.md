@@ -166,6 +166,8 @@ B2 必须补的探针（每条都要**正例 + 反例**，反例用于证明断�
 - **存量处置**：其他包 3 处（`dsh-lan-proxy` 的 `unit-proxy.test.ts:38`、`unit-apply.test.ts:38`；`dsh-web-file-preview` 的 `unit-present-open.test.ts:21`）走 `scripts/data/gate-exemptions.json`（文件级 + tracking issue，缺 issue 号判红）；本包 13 处走**单调基线**（只许降），随 §12 的批次清零。
 - **成本与收益**：成本 = 一次脚本扩展 + 一条脚本自测 + 3 条豁免数据；收益 = 把「测试从产物入口导入」这条反模式从「约定」变成判据（v4 选 (b) 的代价是这条线交给时间腐化）。
 - **现状**：违反（13 个单元测试经 `src/index.ts`；`architecture-contract.md` §3.1 把该形态写成 T1 契约）。
+- **判据①已交付（`84a5941`/`8727cf0`）**：新增质量证据类 `unitImportFaceViolations`（扫 `test/unit/**`，命中 `src/index.(ts|tsx|mts|…)` / `lib/**` / `src/client/**` 即记 `测试文件|目标`）。存量两档：本包 **13** 条进单调基线，跨包 **3** 条（lan-proxy 2 + web-file-preview 1）进 `gate-exemptions.json`（`trackingIssue #767`、`reviewBy 2027-03-31`）。
+- **本轮判据面的边界（实测收窄，勿当遗漏）**：**不变式**里的「`test/unit/**` 白盒直连本域 `impl/`」**不作为本轮硬判据**——判据①②③的正文只写 `src/index.ts`/`lib/` 与 e2e/integration，且 R10 的存量数（13 + 3）正好等于 `src/index.ts` 导入者集合。硬判「不得引他域 `impl`」的实测代价：notifier **11 个 test/unit 文件 / 16 条边**、provider-usage **14 个文件 / 25 条边**跨域取用底层域（如 `test/unit/api/stream.test.ts` → `src/server/config/impl/model`），且 provider-usage 的树是 `src/domain1|domain2|apply`、**没有** `src/server/<域>` 树，规则无法表达。**该规则与判据②③一并归 B1–B3**（已在脚本头注释、JSDoc、`docs/DEVELOPMENT.md`、`scripts/README.md` 四处写明，不留隐性口径）。
 
 ### I9 零模块级可变状态
 
@@ -571,7 +573,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 | 层 | 目录 | 只允许 import | 测什么 |
 |---|---|---|---|
-| 单元 | `test/unit/<域>/<块>.test.ts` | `src/server/<域>/impl/<块>/` + 本域 `deps.ts` 的 Port fake | 模块内函数与状态机 |
+| 单元 | `test/unit/<域>/<块>.test.ts` | `src/server/<域>/impl/<块>/` + 本域 `deps.ts` 的 Port fake（**目标形态**；本轮上线的判据只覆盖「不得引 `src/index.ts`/`lib/`/`src/client/**`」，这条「本域」规则归 B1–B3——实测理由见 §二 I8 末条） | 模块内函数与状态机 |
 | 契约 | `test/integration/` | 域 `interface.ts` + `deps.ts` + 跨端线协议 | 接缝的形状与承诺 |
 | 集成 | `test/e2e/` | 包产物入口 + `apply()` | 端到端 user case |
 | 组合根 | `test/integration/real-context.test.ts` | `src/index.ts` + 真实 `Context` | 装配顺序、释放逆序、服务面、声明合并 |
@@ -702,7 +704,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 >
 > **登记面与结构同提交**（参照教训：notifier 的 76 个未覆盖文件红与导出面红各自悬了一整个窗口期）：每个批次的验收必须包含 `pnpm gate:pr` 全绿 + 该批涉及的**全部登记文件**同步（baseline / faces / `gate-scope-registry` / `ci-face-registry` / `mutation-topology` / `coverage.config` / `dir-imports-baseline`）。
 >
-> **B0 进度（2026-09-14）**：①③④⑤⑧⑨ 与 §5.3 的 client 判据**已完成**——③ `43229f6`/`d3a21d2`、④ `da83b36`/`660dd0a`/`f8ee6c5`、⑤ `cd44c90`/`8fe5119`、⑨ + client 判据 `58823bc`/`d6795ec`。**未完**：② `architecture-contract.md` 打标；⑥ 的 **I8 判据**（刻意压后：与 ⑨ 同写 `gate-exemptions.json`，避免 git index 撞车）；⑦ `locales.ts` 文案与产物断言；⑩ `placement-math.ts` 迁移；**`pnpm gate:pr` 尚未实跑**（B0 收尾必跑）。**新增 follow-up**：`docs/DEVELOPMENT.md` 与包内文档里「质量证据种类」的段落需同步新增的三类证据。
+> **B0 进度（2026-09-14）**：①③④⑤⑧⑨ 与 §5.3 的 client 判据**已完成**——③ `43229f6`/`d3a21d2`、④ `da83b36`/`660dd0a`/`f8ee6c5`、⑤ `cd44c90`/`8fe5119`、⑨ + client 判据 `58823bc`/`d6795ec`。**⑥ 的 I8 判据已完成**（`84a5941`/`8727cf0`/`1fb0af3`，含证据类文档同步；判据面边界见 §二 I8 末条）。**未完**：② `architecture-contract.md` 打标；⑦ `locales.ts` 文案与产物断言；⑩ `placement-math.ts` 迁移；**`pnpm gate:pr` 尚未实跑**（B0 收尾必跑）。**新增 follow-up**：`docs/DEVELOPMENT.md` 与包内文档里「质量证据种类」的段落需同步新增的三类证据。
 
 | 批 | 内容 | 验收（每条都要 exit code） |
 |---|---|---|
@@ -822,13 +824,15 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 7. **第三轮只读复验已并入**：凭据单链现状（§0.2，含端到端实测的红的基线 + 4 个脱敏器构造点 + 1137 用例零「出口不含明文」断言）与 Port 面实测表（附录 E，含 `types` 缺口、4 处死导入、静态/运行入口径冲突）。
 8. **B0 切片 2 已完成**（`cd44c90` + `8fe5119`）：变异面超集（**单段**挂 `runtime`）+ facade 条重估 + `deps.ts` 的 type-only 条 + 自测计数 `1→2`/`12→13` + 段 conf 重生成；`coverage.config.json` 实测评估后**不改**；`--min` no-op。
 9. **#767 提案评论已发**（核心思路 + 红线授权 + 更正评论：红线由三条降为两条）；**仓级落盘原语候选已登记**（#706 评论：实测 4 个包各自实现落盘，notifier 8 / mcp 8 / provider-usage 9 / lan-proxy 4 写点，权限语义不一致）。
-10. **B0 切片 3a 已完成**（`58823bc`/`d6795ec`）：I2① 执法点（`crossDomainValueEdges`）+ I2④（`rootIndexImports`）+ §5.3 client 判据（`clientServerImports`），三个新证据类正反 fixture 双向可证；协调者复跑 5 个包全 exit 0、mcp 结构型计数逐字未变、基线只增 3 键无位移、`test:scripts` 634 pass。**机制变更**已记入 §5.3 与 R16：`buildBaseline` 两级首次登记（类级只在键缺失那一次生效，类内新增仍判红中止）。
+10. **B0 切片 3a 已完成**
+11. **B0 切片 3b 已完成**（`84a5941`/`8727cf0`/`1fb0af3`）：I8 判据上线（`unitImportFaceViolations`）+ 三类新证据的文档同步；存量两档 = 本包 13 进基线、跨包 3 进台账；判据面**按宪法原文收窄**（「本域 impl」归 B1–B3，实测理由见 §二 I8）。
+12. **B0 的 ⑥ 已完成**，B0 只剩 ② 文档打标 + ⑦⑩ 小项 + 收尾的 `pnpm gate:pr`。（`58823bc`/`d6795ec`）：I2① 执法点（`crossDomainValueEdges`）+ I2④（`rootIndexImports`）+ §5.3 client 判据（`clientServerImports`），三个新证据类正反 fixture 双向可证；协调者复跑 5 个包全 exit 0、mcp 结构型计数逐字未变、基线只增 3 键无位移、`test:scripts` 634 pass。**机制变更**已记入 §5.3 与 R16：`buildBaseline` 两级首次登记（类级只在键缺失那一次生效，类内新增仍判红中止）。
 
 ### D.3 未完成
 
 1. **B0 切片 3b 未发**（I8 测试导入面判据）：3a 已收口，现可发（同一 worktree，一次只放一个写者）。
 1b. **文档 follow-up（切片 3a 的写面限制留下）**：`docs/DEVELOPMENT.md` 与包内文档里列举「质量证据种类/现状」的段落需同步新增的三类证据（`crossDomainValueEdges` / `rootIndexImports` / `clientServerImports`）与两级首次登记口径。
-1c. **lint warning 余量告警**：切片 3a 把预算从 669 推到 671，**余量仅剩 1**（新自测文件的 `@ts-nocheck`，与本仓 `scripts/test` 既有约定一致）——后续新增 scripts 测试会先撞这一条。
+1c. **lint warning 余量告警**：切片 3a 把 warning 从 669 推到 **670**（预算 671），**余量仅剩 1**（新自测文件的 `@ts-nocheck`，与本仓 `scripts/test` 既有约定一致）——后续新增 scripts 测试会先撞这一条。
 2. **B0② `architecture-contract.md` 三分类打标**未做（硬输入已备：该文档 `:28-30` 声称的 `api/redactor-factory.ts` 与「`handleError` 写 body 前先脱敏」都不存在，判「作废」）。
 3. **B0 其余项**：⑦ `locales.ts` 两行文案 + 「客户端产物不含 `~/.dsh`」断言；⑩ `src/placement-math.ts` 迁 `src/shared/`。
 4. **红线状态（两条均已获授权）**：① `ci.yml` 数据面 glob 已落地（`f8ee6c5`）；② 公共 API 行为变更已于 2026-09-14 获维护者授权。**本轮不新增任何第三方依赖**。`approved` 标签按仓规**只能由维护者本人打**，代理不代打；B2 的 commit 正文「授权出处」引用 #767 + §10.1 清单。
