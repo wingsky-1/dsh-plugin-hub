@@ -4,8 +4,8 @@
 #   pre-commit       只对本次 staged 的源文件跑 lint（秒级），拦「提交进去就晚了」的问题
 #   commit-msg       校验提交信息符合 Conventional Commits
 #   pnpm gate:changed  迭代中：命中包的 build + test + typecheck
-#   pnpm gate:pr       开 PR 前：快线 + 命中包产物闸 + 廉价全仓一致性闸（含全仓 lint）
-#   pnpm gate:full     全仓口径（= 夜间班次口径）
+#   pnpm gate:pr       开 PR 前：全仓 build/test/typecheck + 全仓产物闸 + 廉价全仓一致性闸（含全仓 lint）
+#   pnpm gate:full     全仓对象面：同 gate:pr + 豁免到期台账；--with-coverage 再补 cov / crap（夜间班次另含覆盖率与全量变异，两者不等价）
 # 本文件刻意不做 build / typecheck / 变异 / 覆盖率——那些成本高，归上面的分层门禁。
 pre-commit:
   parallel: true

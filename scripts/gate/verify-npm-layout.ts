@@ -72,9 +72,9 @@ for (const p of allPackages) {
   }
 }
 
-// #722 门禁分层：**解包级**断言（npm pack + 解包）按 --packages 切片——单包 PR 只需验
-// 命中包；全仓口径留夜间与本地 gate:full。上方的安装期脚本扫描是纯 package.json 读取，
-// 不依赖产物，保持全仓恒跑。
+// #722 门禁分层：**解包级**断言（npm pack + 解包）按 --packages 切片——CI 的单包 PR 只需验
+// 命中包；全仓口径留夜间与本地 gate:pr / gate:full。上方的安装期脚本扫描是纯 package.json
+// 读取，不依赖产物，保持全仓恒跑。
 const scoped = resolvePackageScopeOrExit(process.argv.slice(2), allPackages);
 const layoutTargets = scoped === null ? plugins : plugins.filter((p) => scoped.includes(p));
 if (scoped !== null) {

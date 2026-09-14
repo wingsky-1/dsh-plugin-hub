@@ -599,8 +599,8 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
   - **职责边界**：钩子是「提交瞬间的最内层」，不做 build / typecheck / 变异 / 覆盖率，
     **不替代** `gate:changed` / `gate:pr` / `gate:full`（分层口径见根
     [AGENTS.md 门禁矩阵](../AGENTS.md)）。钩子配置见根 `lefthook.yml`。
-- **新增/修改客户端后**：`pnpm gate:pr` 全绿再提交（= 命中包 build/test/typecheck + 命中包
-  产物闸 + 廉价全仓一致性闸；迭代中用 `pnpm gate:changed`，全仓口径用 `pnpm gate:full`。
+- **新增/修改客户端后**：`pnpm gate:pr` 全绿再提交（= 全仓 build/test/typecheck + 全仓
+  产物闸 + 廉价全仓一致性闸；迭代中用 `pnpm gate:changed`，`gate:full` 在其上另收豁免到期台账。
   分层口径与「改动类型 → 归属层」对照表见根 [AGENTS.md 门禁矩阵](../AGENTS.md)）。
 
 <a id="5-smoke-测试防-flake-纪律"></a><a id="user-content-5-smoke-测试防-flake-纪律"></a>
