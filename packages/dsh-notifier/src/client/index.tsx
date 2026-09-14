@@ -39,7 +39,7 @@ import {
 import * as React from "react";
 // i18n：复用官方 dsh-client-locale——zh/en 双语字典，LocaleNamespaceMap
 // 声明合并进官方 ui-slots 类型面；仅 import type（编译期擦除，无运行时依赖）。
-import { zh, en, KIND_KEYS, type NotifierLocaleKey } from "./locales.ts";
+import { zh, en, type NotifierLocaleKey } from "./locales.ts";
 // 能力自检面的投影（宿主面归一化 + 浏览器面判定）收在同一处：判定与文案必须同源，
 // 两处各写一遍就等于把「未知不该被渲染成可用」这条口径分叉。
 import { clientDiagnosticsOf } from "./capabilities.ts";
@@ -60,16 +60,14 @@ import { createSaveGuard } from "./settings/save-guard.ts";
 import { apiFailureOf, markHttpFailure } from "./api-error.ts";
 // 设置卡的渲染原子层：普通函数返回 JSX，依赖（t / statusMap / patch / sendTest / 平台 / 诊断
 // 视图）一律显式传参——原子层不读卡片状态，搬家不会让闭包静默捕获到旧 state。
-import { advRow, deliveryLines } from "./settings/parts/rows.tsx";
-import { switchControl, switchToggle } from "./settings/parts/controls.tsx";
-import { barkCard } from "./settings/channels/bark-card.tsx";
-import { builtinCard } from "./settings/channels/builtin-card.tsx";
-import { webhookCard } from "./settings/channels/webhook-card.tsx";
+import { channelsPane } from "./settings/panes/channels.tsx";
+import { eventsPane } from "./settings/panes/events.tsx";
+import { historyPane } from "./settings/panes/history.tsx";
 // 两端共享面 src/shared/interface.ts：音色白名单、通知类型表、频道 id 归一化、webhook 预设
 // （模板 / 认证白名单）与理由 code 的事实源都在这里，客户端只消费，不再各写一份副本——跨端
 // 漂移的症状是「设置页选得到、宿主拒收」与「勾了频道却收不到」。该目录的模块必须零 import
 // （或同目录相对），判据见 scripts/test/shared-leaf-imports.test.ts。
-import { KIND_SEVERITY, KIND_SWITCHES, channelIdOf, isBuiltinKind } from "../shared/interface.ts";
+import { KIND_SEVERITY, channelIdOf, isBuiltinKind } from "../shared/interface.ts";
 import type { NotifySeverity } from "../shared/interface.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
@@ -108,23 +106,6 @@ const NOTIFY_ICON =
   encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#0f9d6e"/><path fill="#fff" d="M12 4a1 1 0 0 1 1 1v.55A5.5 5.5 0 0 1 17.5 11v2.3l1.45 1.45a1 1 0 0 1-.7 1.7H5.75a1 1 0 0 1-.7-1.7L6.5 13.3V11A5.5 5.5 0 0 1 11 5.55V5a1 1 0 0 1 1-1zm-2.5 13a2.5 2.5 0 0 0 5 0h-5z"/></svg>',
   );
-
-// i18n：label 列存字典 key（渲染期 t 求值，模块加载时 t 尚未装配）。
-const EVENT_KEYS = [
-  ["notifyAsk", "evtAsk"],
-  ["notifyQuestion", "evtQuestion"],
-  ["notifyTaskDone", "evtTaskDone"],
-  ["notifySubagentDone", "evtSubagentDone"],
-  ["notifyTaskError", "evtTaskError"],
-  ["notifyTurnEnd", "evtTurnEnd"],
-];
-/** 事件开关键 → 通知 kind：由 shared 的 kind → 开关键表**反转**得到（单一事实源，
- *  免打扰豁免候选/「跟随已启用」由此派生；收口前这里是一份两端各写的副本）。 */
-const EVENT_KIND_MAP: Record<string, string> = Object.fromEntries(
-  Object.entries(KIND_SWITCHES).map(function (entry): [string, string] {
-    return [entry[1], entry[0]];
-  }),
-);
 
 /**
  * kind → 展示强度（severity）css 修饰符（事件行/历史行色点）。事实源在 src/shared/kinds.ts
@@ -1188,336 +1169,9 @@ function SettingsCard() {
     );
   }
 
-  // 事件区：内置事件卡（sev 色点 + kind 码 + switch + 路由 chips）
-  const eventChildren: any[] = [];
-  EVENT_KEYS.forEach(function (kv) {
-    const key = kv[0],
-      labelKey = kv[1];
-    const kindId = EVENT_KIND_MAP[key];
-    const sev = severityOf(kindId);
-    eventChildren.push(
-      <div className="dn-evt" key={"ev-" + key}>
-        <div className="dn-evt-head">
-          <span
-            className={"dn-sev" + (sev !== "info" ? " dn-sev-" + sev : "")}
-            title={"severity: " + sev}
-          />
-          <span className="dn-evt-name">{t(labelKey)}</span>
-          <span className="dn-evt-kind">{kindId}</span>
-          {switchControl(key, t("evtSwitch", { name: t(labelKey) }), settings, patch)}
-        </div>
-        {routeChipsRow(kindId)}
-      </div>,
-    );
-  });
-  // 动态 kind（插件提议的通知类型）：待确认 = 允许/拒绝 + 路由提示；已允许 = 同款
-  // 路由 chips（动态 kind 也支持配置投递频道——kindRoutes 天然支持动态
-  // kind id 作 key，与服务端 resolveRoutes 的 kind 无关路由解析一致）。
-  const kindRows: any[] = kindsList.map(function (k: any) {
-    const nameText = k.label && k.label !== k.id ? k.label : k.id;
-    if (k.confirmed) {
-      return (
-        <div className="dn-kinds dn-kinds-ok" key={k.id}>
-          <div className="dn-kinds-head">
-            <span className="dn-sev" />
-            <span className="dn-kinds-name">{nameText}</span>
-            <span className="dn-evt-kind">{k.id}</span>
-            <span className="dn-kinds-actions">
-              <button
-                type="button"
-                className="dn-set-btn dn-set-btnSmall"
-                onClick={function () {
-                  confirmOne(k.id, false);
-                }}
-              >
-                {t("kindRevoke")}
-              </button>
-            </span>
-          </div>
-          {routeChipsRow(k.id)}
-        </div>
-      );
-    }
-    return (
-      <div className="dn-kinds" key={k.id}>
-        <div className="dn-kinds-head">
-          <span className="dn-sev" />
-          <span className="dn-kinds-name">{nameText}</span>
-          <span className="dn-evt-kind">{k.id}</span>
-          <span className="dn-kinds-actions">
-            <button
-              type="button"
-              className="dn-set-btn dn-set-btnSmall dn-set-btnPrimary"
-              onClick={function () {
-                confirmOne(k.id, true);
-              }}
-            >
-              {t("kindAllow")}
-            </button>
-            <button
-              type="button"
-              className="dn-set-btn dn-set-btnSmall dn-set-btnGhostDanger"
-              onClick={function () {
-                confirmOne(k.id, false);
-              }}
-            >
-              {t("kindDeny")}
-            </button>
-          </span>
-        </div>
-        <div className="dn-kind-routeHint">{t("kindRouteHint")}</div>
-      </div>
-    );
-  });
-  eventChildren.push(
-    <div key="kinds">
-      <div className="dn-sec" style={{ marginTop: "14px" }}>
-        <span className="dn-sec-title">{t("kindsTitle")}</span>
-        <span className="dn-sec-hint">{t("kindsHint")}</span>
-      </div>
-      {kindsList.length === 0 ? <div className="dn-set-note">{t("kindsEmpty")}</div> : kindRows}
-    </div>,
-  );
-
   // 能力自检的渲染模型：宿主面（读服务端载荷）+ 浏览器面（读本页事实）合成一次，
   // 下面所有卡片只投影它——JSX 里不再出现任何「这个状态算不算好」的判断。
   const diag = clientDiagnosticsOf(diagnostics, clientFacts(), t);
-
-  // 频道区：`channels` 逐项按类型分派（内置两卡 + bark/webhook 实例卡）+ 添加按钮。
-  // 先按**真实下标**遍历再分派：chPatch / chRemove 都按下标操作，先 filter 会让编辑打到隔壁条目。
-  const channelsChildren: any[] = [];
-  (settings.channels || []).forEach(function (c: any, i: number) {
-    if (c.type === "browser" || c.type === "system") {
-      channelsChildren.push(
-        builtinCard(
-          i,
-          c,
-          channelLabel(c),
-          statusMap,
-          hostPlatform,
-          diag,
-          chPatch,
-          sendTest,
-          isSecureContext,
-          requestNotificationPermission,
-          audioEngine,
-          t,
-        ),
-      );
-      return;
-    }
-    channelsChildren.push(
-      String(c.type) === "webhook"
-        ? webhookCard(
-            c,
-            i,
-            delArmedId,
-            setDelArmedId,
-            revealMap,
-            setRevealMap,
-            secretEdited,
-            markSecretEdited,
-            chPatch,
-            chRemove,
-            sendTest,
-            statusMap,
-            t,
-          )
-        : barkCard(
-            c,
-            i,
-            kindsList,
-            delArmedId,
-            setDelArmedId,
-            levelsNew,
-            setLevelsNew,
-            secretEdited,
-            markSecretEdited,
-            chPatch,
-            chLevelsSet,
-            chRemove,
-            sendTest,
-            statusMap,
-            t,
-          ),
-    );
-  });
-  channelsChildren.push(
-    <div className="dn-ch-add" key="ch-add">
-      <button
-        type="button"
-        className="dn-set-btn"
-        onClick={function () {
-          chAdd("bark");
-        }}
-      >
-        {t("chAddBark")}
-      </button>
-      <button
-        type="button"
-        className="dn-set-btn dn-set-btnPrimary"
-        onClick={function () {
-          chAdd("webhook");
-        }}
-      >
-        {t("chAddWebhook")}
-      </button>
-    </div>,
-  );
-
-  // 资源上限折叠区（统一 dn-ch-adv 折叠形态 + dn-adv-row 行）
-  const dedupFold = (
-    <details className="dn-ch-adv dn-sec-adv" key="adv-params">
-      <summary>{t("secDedup")}</summary>
-      <div className="dn-ch-adv-body">
-        {advRow(
-          t("historyRetention"),
-          <input
-            type="number"
-            min={0}
-            step={1}
-            className="dn-set-input dn-set-numInput"
-            aria-label={t("historyRetention")}
-            value={settings.historyMaxAgeDays}
-            onChange={function (e: any) {
-              patch({ historyMaxAgeDays: Number(e.target.value) });
-            }}
-          />,
-        )}
-      </div>
-    </details>
-  );
-
-  const qh = settings.quietHours || {};
-  const allows = qh.allowKinds || [];
-  function setAllowKinds(next: string[]) {
-    patch({ quietHours: Object.assign({}, qh, { allowKinds: next }) });
-  }
-  /** 跟随已启用事件：一键把当前 notifyXxx=true 的对应 kind 全选为豁免（函数式更新读最新
-   *  快照，避免连点/同帧先改开关后旧闭包漏勾最新态）。
-   *  必须走 patch 而不是裸 setSettings：patch 在 updater 内同步 settingsRef.current，而
-   *  diffPayload() 读的正是那个 ref——绕过它这次改动就进不了 diff，用户在未做其它编辑时
-   *  点保存会看到「未修改」，改动被静默丢弃。 */
-  function allowFollowEnabled() {
-    patch(function (prev: any) {
-      const nextQh = prev.quietHours || {};
-      const next = EVENT_KEYS.filter(function (kv) {
-        return prev[kv[0]] === true;
-      }).map(function (kv) {
-        return EVENT_KIND_MAP[kv[0]];
-      });
-      return Object.assign({}, prev, {
-        quietHours: Object.assign({}, nextQh, { allowKinds: next }),
-      });
-    });
-  }
-  /** 恢复默认豁免（ask/question/error——高频阻塞型，卡着的任务需要叫醒）。 */
-  function allowResetDefault() {
-    setAllowKinds(["ask", "question", "error"]);
-  }
-  // 免打扰豁免候选（覆盖全部 6 个内置事件 kind，label 复用事件文案
-  // KIND_KEYS 字典；由 EVENT_KEYS + EVENT_KIND_MAP 派生，不新建平行表。
-  // chips 直点形态——未启用事件弱化沿用 dn-set-allowDim 锚点，勾选态保留照常
-  // 写入（服务端判定只看 quietHours.allowKinds.includes(kind)，不看开关）。
-  const quietAllowChoices = EVENT_KEYS.map(function (kv) {
-    const notifyKey = kv[0];
-    const kind = EVENT_KIND_MAP[notifyKey];
-    const enabled = settings[notifyKey] === true;
-    return {
-      kind: kind,
-      notifyKey: notifyKey,
-      enabled: enabled,
-      labelKey: KIND_KEYS[kind] || "k" + kind,
-    };
-  });
-  const allowChips = quietAllowChoices.map(function (c) {
-    const checked = allows.indexOf(c.kind) !== -1;
-    // 未启用事件：置灰禁点——事件开关关闭则不产生通知，豁免勾选无意义；
-    // 保留已勾选显示（不自动改配置），启用事件后恢复可点。禁点用原生 disabled。
-    return (
-      <button
-        type="button"
-        key={c.kind}
-        className={
-          "dn-route-chip" + (checked ? " is-on" : "") + (c.enabled ? "" : " dn-set-allowDim")
-        }
-        aria-pressed={checked ? "true" : "false"}
-        disabled={!c.enabled}
-        title={c.enabled ? undefined : t("allowDisabledHint")}
-        onClick={function () {
-          const next = allows.slice();
-          if (!checked && next.indexOf(c.kind) === -1) next.push(c.kind);
-          else if (checked && next.indexOf(c.kind) !== -1) next.splice(next.indexOf(c.kind), 1);
-          setAllowKinds(next);
-        }}
-      >
-        {t(c.labelKey)}
-        {c.enabled ? null : <span className="dn-set-allowHint">{t("allowDisabledHint")}</span>}
-      </button>
-    );
-  });
-  // 免打扰卡（开关 + 时段 + 豁免 chips + 快捷按钮）
-  const dndCard = (
-    <div className="dn-dnd" key="dnd">
-      <div className="dn-dnd-head">
-        <span className="dn-sev dn-sev-warning" />
-        <span className="dn-evt-name">{t("dndEnable")}</span>
-        {switchToggle(
-          qh.enabled === true,
-          function (v: boolean) {
-            patch({ quietHours: Object.assign({}, qh, { enabled: v }) });
-          },
-          t("dndEnable"),
-        )}
-      </div>
-      {qh.enabled === true ? (
-        <div>
-          <div className="dn-dnd-row">
-            <span className="dn-dnd-cap">{t("dndStart")}</span>
-            <input
-              type="time"
-              className="dn-set-input"
-              aria-label={t("dndStart")}
-              value={qh.start || "22:00"}
-              onChange={function (e: any) {
-                patch({ quietHours: Object.assign({}, qh, { start: e.target.value }) });
-              }}
-            />
-            <span className="dn-dnd-cap">{t("dndEnd")}</span>
-            <input
-              type="time"
-              className="dn-set-input"
-              aria-label={t("dndEnd")}
-              value={qh.end || "08:00"}
-              onChange={function (e: any) {
-                patch({ quietHours: Object.assign({}, qh, { end: e.target.value }) });
-              }}
-            />
-          </div>
-          <div className="dn-dnd-row" style={{ display: "block" }}>
-            <span className="dn-dnd-cap">{t("dndStillLabel") + "："}</span>
-            <div className="dn-set-allows">{allowChips}</div>
-            <div className="dn-set-allowActions">
-              <button
-                type="button"
-                className="dn-set-btn dn-set-btnSmall"
-                onClick={allowFollowEnabled}
-              >
-                {t("allowFollowEnabled")}
-              </button>
-              <button
-                type="button"
-                className="dn-set-btn dn-set-btnSmall"
-                onClick={allowResetDefault}
-              >
-                {t("allowResetDefault")}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
 
   // 三端降级文案（浏览器通知权限状态行已移入「浏览器通知」频道卡，
   // 这里只保留服务不可用 / 非安全上下文 / 平台不支持三条全局降级说明）
@@ -1544,76 +1198,6 @@ function SettingsCard() {
       </div>,
     );
   }
-
-  // 通知记录 tab（历史独立成 tab；清理/发送测试/刷新并排工具行；
-  // 请求权限按钮随权限状态行一起归入「浏览器通知」频道卡）
-  const historyPane = (
-    <div key="history">
-      <div className="dn-set-historyTools">
-        <button
-          type="button"
-          className={"dn-set-btn dn-set-btnSmall" + (clearArmedValue ? " dn-set-btnDanger" : "")}
-          onClick={confirmClear}
-        >
-          {clearArmedValue ? t("clearConfirm") : t("clearLabel")}
-        </button>
-        <button
-          type="button"
-          className="dn-set-btn dn-set-btnSmall"
-          onClick={function () {
-            sendTest();
-          }}
-        >
-          {t("sendTest")}
-        </button>
-        <button
-          type="button"
-          className="dn-set-btn dn-set-btnSmall"
-          onClick={function () {
-            loadHistory({ value: true });
-          }}
-        >
-          {t("refresh")}
-        </button>
-        <span className="dn-set-historyCount">{t("historyTitle")}</span>
-      </div>
-      {!history || history.length === 0 ? (
-        <div className="dn-set-note">{t("historyEmpty")}</div>
-      ) : (
-        <ul className="dn-set-history">
-          {history.map(function (r: any, i: number) {
-            const d = new Date(r.ts);
-            const pad = function (n: number) {
-              return n < 10 ? "0" + n : String(n);
-            };
-            const time = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
-            const sev = severityOf(r.kind);
-            return (
-              <li className="dn-set-historyItem" key={String(r.ts) + "-" + i}>
-                <span
-                  className={"dn-sev" + (sev !== "info" ? " dn-sev-" + sev : "")}
-                  title={"severity: " + sev}
-                />
-                <div className="dn-set-historyMain">
-                  <div className="dn-set-historyHead">
-                    <span className="dn-set-historyKind">
-                      {KIND_KEYS[r.kind] !== undefined ? t(KIND_KEYS[r.kind]) : r.kind}
-                    </span>
-                    <span className="dn-set-historyTime">{time}</span>
-                    {r.suppressed === "quiet" ? (
-                      <span className="dn-set-historySuppressed">{t("historySuppressed")}</span>
-                    ) : null}
-                  </div>
-                  <div className="dn-set-historyText">{r.title + "：" + r.message}</div>
-                  {deliveryLines(r, t)}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
 
   // ---- 卡内三 tab（通知事件 / 通知频道 / 通知记录）----
 
@@ -1656,43 +1240,61 @@ function SettingsCard() {
     </div>
   );
 
-  // 事件 tab 内容（历史移出，事件页聚焦事件路由与确认流）
-  const eventsPane = [eventChildren, dedupFold, dndCard];
-  // 频道 tab 内容：频道卡组（内置 + Bark + Webhook）+ 添加按钮 + 域保存行。
-  // 域保存：频道 tab 底部「保存频道」只提交 channels
-  // 键——与 foot 全量保存语义不同（域 vs 全量），不构成此前移除的「双份全量
-  // 保存」视觉重复；当初预留的「域级拆分后按域重排按钮位置」由本行兑现。
-  const channelsDomainSave = (
-    <div className="dn-ch-domainSave" key="ch-domain-save">
-      <span className="dn-ch-domainSaveHint">{t("channelsDomainHint")}</span>
-      <button
-        type="button"
-        className="dn-set-btn dn-set-btnPrimary dn-set-save"
-        disabled={saving}
-        onClick={function () {
-          saveFor("channels");
-        }}
-      >
-        {saving ? t("saving") : t("saveChannels")}
-      </button>
-    </div>
-  );
-  const channelsPane = [channelsChildren, channelsDomainSave];
-
   // 去掉设置卡 title/副标题；顶部直接是 tab 栏。
   // 底部保存栏 = 脏状态指示（diffSettingsPayload 键数）+ 放弃更改 + 保存。
   // foot 显示全量脏计数（含频道域）；「保存频道」按钮的域脏态不做单独
   // 计数——无频道域脏时点击走空 diff 的「未修改」提示（与 foot 保存同交互语义）。
   const dirtyCount = Object.keys(diffPayload()).length;
+
+  // 三个 pane 的**条件调用**（普通函数返回 JSX，非 active tab 根本不调用——保持既有条件渲染
+  // 语义；改成组件会引入挂载/卸载）。依赖一律显式传参，pane 模块内不读本组件闭包。
+  // 频道 tab 的依赖面（三张卡的并集）以单一对象传入：位置参数会退化成 25 项长表。
+  const channelsPaneDeps = {
+    settings,
+    statusMap,
+    hostPlatform,
+    diag,
+    channelLabel,
+    chPatch,
+    chRemove,
+    chLevelsSet,
+    chAdd,
+    sendTest,
+    isSecureContext,
+    requestNotificationPermission,
+    audioEngine,
+    kindsList,
+    delArmedId,
+    setDelArmedId,
+    levelsNew,
+    setLevelsNew,
+    revealMap,
+    setRevealMap,
+    secretEdited,
+    markSecretEdited,
+    saving,
+    saveFor,
+    t,
+  };
   return (
     <li className="dn-set-card">
       {tabbar}
       <div className="dn-set-body">
+        {/* 历史独立成 tab：清理/发送测试/刷新并排工具行；请求权限按钮随权限状态行归入
+            「浏览器通知」频道卡 */}
         {activeTab === "events"
-          ? eventsPane
+          ? eventsPane(settings, kindsList, patch, confirmOne, routeChipsRow, severityOf, t)
           : activeTab === "channels"
-            ? channelsPane
-            : historyPane}
+            ? channelsPane(channelsPaneDeps)
+            : historyPane(
+                history,
+                clearArmedValue,
+                confirmClear,
+                sendTest,
+                loadHistory,
+                severityOf,
+                t,
+              )}
         <div className="dn-set-notes">{degradation}</div>
         {/* 409 冲突双动作横幅（非模态：横幅期间可继续编辑；动作触发时
               实时重算本地变更）。「忽略」= 关闭横幅、草稿保留原样。 */}
