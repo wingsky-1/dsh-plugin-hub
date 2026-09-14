@@ -9,8 +9,9 @@
  * 「合规态跑出 PASS」——无法证明判红有效（假绿风险）。故用 mkdtemp 隔离 fixture 根
  * 做正反双向断言，覆盖五种形态：
  *   - 合规：合并写在包入口 `.ts` → 随产物进 `lib/index.d.ts` → 闭包命中；
- *   - 合规（间接）：合并物理在被入口 re-export 的域文件（dsh-mcp-manager 形态）
- *     → 经闭包可达，不得误判为红；
+ *   - 合规（间接）：合并物理在被入口 re-export 的域文件 → 经闭包可达，不得误判为红。
+ *     这一形态原先由真实包 dsh-mcp-manager 承载，R6（#767 B1.4）把它的合并迁进包入口后
+ *     仓内已无真实主体，故只由本合成 fixture 覆盖（真实包那两条改为断言当下的直接形态）；
  *   - 违规（源 `.d.ts` 形态）：合并写在 `src/service.d.ts`，tsc 不 emit 源 `.d.ts`
  *     → 闭包零命中（dsh-notifier 的原始缺陷形态）；
  *   - 违规（孤儿形态）：合并确实进了 `lib/`，但 `lib/index.d.ts` 不引用该文件
@@ -18,8 +19,8 @@
  *     缺了它，实现退化成「grep 一下 lib/ 有没有 declare module」也能全绿；
  *   - 违规（合并被整块删除）：适用性若只按「src 有没有写合并」判定，删掉合并即
  *     退化为「不适用」而假绿；产物侧的 `ctx.provide` 事实把这条路堵死。
- * 另加真实包正向断言（dsh-notifier 产物闭包命中、dsh-mcp-manager 间接可达），
- * 确保不断言一个永远为假的形态。
+ * 另加真实包正向断言（仓内两个声明合并的包：源面命中只落在包入口、产物闭包命中），
+ * 确保不断言一个永远为假的形态——R6 之后两包同为「入口直写」的直接形态。
  *
  * fixture 全部落 mkdtempSync 隔离目录（产物零污染纪律）。
  */
@@ -211,13 +212,20 @@ test("真实包：dsh-notifier 产物闭包命中合并（合并已迁入 src/in
   );
 });
 
-test("真实包：dsh-mcp-manager 的间接形态可达（防「只认直接出现」的误红）", () => {
+test("真实包：dsh-mcp-manager 的合并随 R6 落在包入口，产物入口直接可达", () => {
   const pkg = join(ROOT, "packages", "dsh-mcp-manager");
+  const srcHits = srcDeclaresCordisMerge(join(pkg, "src"));
+  assert.deepEqual(
+    srcHits.map((rel) => rel.slice(pkg.length + 1)),
+    ["src/index.ts"],
+    "R6（#767 B1.4）之后合并物理在包入口——不再有第二个承载它的文件",
+  );
   const merge = checkCordisMergeReachability(pkg, join(pkg, "lib"));
   assert.equal(merge.applicable, true, "dsh-mcp-manager 源面声明了 cordis 合并");
   assert.equal(merge.problem, null);
-  const direct = readFileSync(join(pkg, "lib", "index.d.ts"), "utf8").includes(
-    'declare module "@deepseek-ai/cordis"',
+  // 直接证据：产物入口文本内含合并（不只看函数返回值）。
+  assert.match(
+    readFileSync(join(pkg, "lib", "index.d.ts"), "utf8"),
+    /declare module "@deepseek-ai\/cordis"/u,
   );
-  assert.equal(direct, false, "该包入口不直接写合并——正是「必须走闭包」的现实反例");
 });

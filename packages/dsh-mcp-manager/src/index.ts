@@ -25,6 +25,7 @@
 import type {} from "@deepseek-ai/dsh-agent";
 import type {} from "@deepseek-ai/dsh-system-prompt";
 import type {} from "@deepseek-ai/dsh-tools";
+import type { McpManagerService } from "./integration/interface.ts";
 
 /** 稳定的 cordis 插件名。 */
 export const name = "mcp-manager";
@@ -134,10 +135,30 @@ export {
 } from "./pipeline/interface.ts";
 export type { CallResultTextHandlers, ProjectedCallResult } from "./pipeline/interface.ts";
 // 核心化 service（官方 storageDomain 模式）：ctx.mcpManager 类型面 + 声明合并。
-// 仅类型导出（无副作用导入）：消费方 import 类型时 tsc 会解析 service.d.ts，
-// 其内的 declare module 合并自动生效；副作用导入会让 stryker sandbox 解析
+// 仅类型导出（无副作用导入）：消费方 import 类型时 tsc 会解析 integration 门面，
+// 入口的 declare module 合并自动生效；副作用导入会让 stryker sandbox 解析
 // src/service.js 失败（sandbox 只有 .ts），也避免 .d.ts 里残留 .ts 引用。
 export type { McpManagerServerInput, McpManagerService } from "./integration/interface.ts";
+
+/**
+ * 服务名：本插件对兄弟插件开放的 ABI。声明合并的键引用它，而不是就地再写一遍字面量——两处字面量
+ * 在改名时只会有一处被改到，而症状（消费方 `ctx.get` 拿到空）出现在别的插件里。名字的所有权在
+ * 提供方（bootstrap/apply-services.ts），B2 落 sdk 域时并成一处定义。
+ *
+ * 它不进包导出面：入口对外只有声明合并本身，常量不外放。
+ */
+const MCP_MANAGER_SERVICE = "mcpManager" as const;
+
+/**
+ * 对外名字的声明合并。**必须写在包入口**：declare module 是全局增强，入口声明面不可达时
+ * `lib/index.d.ts` 里就没有它（`pack:check` 的「声明合并可达性」判据盯这条）。
+ */
+declare module "@deepseek-ai/cordis" {
+  interface Context {
+    /** mcp-manager 核心服务：其他插件运行时注入/控制/查询 MCP 服务器（官方 storageDomain 模式）。 */
+    [MCP_MANAGER_SERVICE]: McpManagerService;
+  }
+}
 
 // 存储与状态持久化（config/store：#664 阶段 6 落位）
 export { defaultStorePath, McpStore } from "./config/store/interface.ts";
