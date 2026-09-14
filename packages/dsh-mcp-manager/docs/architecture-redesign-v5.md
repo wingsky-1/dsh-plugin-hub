@@ -32,7 +32,7 @@ v5 初稿写完后经三个只读视角复核（机制可执行性 / 凭据单�
 | # | 初稿的问题 | 修订 |
 |---|---|---|
 | 1 | D3 说「summary 不含凭据字段」——但客户端编辑表单与卡片端点今天就是从 summary 读 `env/headers/url`（`client/float/servers.ts:18`、`quick-add.ts:95-120`），删键会打穿编辑面 | 改为**值域掩码（不删键）**：键保留、值换掩码、`url` 去 userinfo（host-only）。客户端**数据源零改动**（`parseKV` 会把掩码当值解析并原样提交） |
-| 2 | D3 的还原键写「name + scope」——但客户端改名走的是 **POST 新条目 + DELETE 旧条目**（`quick-add.ts:131-144`），payload 无源标识；project 级真实键是 (root, name) | 写请求携带**显式源身份**（`sourceName`/`sourceScope`/`sourceRoot`），只在源对象上取原值（细则 §6.1 纪律 3）；不可变 `id` 登记为后续演进（见附录 A 第 4 条） |
+| 2 | D3 的还原键写「name + scope」——但客户端改名走的是 **POST 新条目 + DELETE 旧条目**（`quick-add.ts:131-144`），payload 无源标识；project 级真实键是 (root, name) | 写请求携带**一个规范化地址**（复用协议已有的 `@@global/<name>` / `@<root>/<name>`，客户端 `core/api.ts:17-22` 已在构造），只在源对象上取原值（细则 §6.1 纪律 3）；**不新造三个平铺字段**（那是身份的第二个物理定义）；不可变 `id` 登记为后续演进（见附录 A 第 4 条） |
 | 3 | D3 的六条出口漏了两类：**校验期回显请求体凭据**（`normalize.ts:43` → `routes.ts:60`，已实测复现）与 **supervisor 直呼路径的工具错误返回 + stats 埋点**（`supervisor.ts:330-332` 原始 message，而 `middleware.ts:782-784` 有 `hostRedact`） | 出口清单升为**出口 × 载体矩阵**（§6.2 现有 **8 类**，本行初稿误写「7 类」）；①的修法补「请求体凭据不入错误文案」，新增 ⑦⑧ 两条 |
 | 4 | D3 说「类型即围栏」——实测 TS 对象展开携带额外字段赋给窄类型**不报错**（excess property check 不覆盖展开），`as unknown as` 更弱 | 删掉该论断；围栏改为**逐字段构造 + AST 断言（面 = 投影所在域）+ 禁 `as unknown as` + `NoCreds<T>` 排除类型** |
 | 5 | I2①「域间不得出现值边」**没有任何执法点**（`leafValueEdges` 属可合法上升的结构型计数，`--graph` 只打印矩阵） | B0 必须先给这条判据**造执法点**：新增一类质量证据（目标非 shared 的值边集合）；并补 I2 第三判据「域不得 import `src/index.ts`」 |
@@ -43,9 +43,10 @@ v5 初稿写完后经三个只读视角复核（机制可执行性 / 凭据单�
 | 10 | B2 删 `bootstrap/`/`McpManager`，B3 才重冻结导出面 → B1–B2 全程 `contract` 判红 | **重冻结落到 B2 的删除那一笔**（`--snapshot` + faces 手改 + mutate 段重画同笔），B3 只留测试/文档/注释——与参照包 `8df3950` 同形 |
 | 11 | §7.2 的 mtime 分支自称「照搬参照包」——参照包**无 mtime**（目标存在即无条件 `archive()`），且「不归档」会破坏幂等 | 归档一律执行（mtime 只影响 warn 文案）；并明确**迁移不解析内容**（纯字节搬移 → 迁移**四态**），坏文件交给各域容错读面 |
 | 12 | `fast-redact` 声称「本轮即有消费者」——三条出口分别由掩码/已知值替换/字段清单循环覆盖，无调用点 | **撤回**（附录 A 第 2 条） |
-| 13 | `atomically` 经 `when-exit` 在**宿主进程**装信号钩子（`import` 即 `process.once("`exit`")` + 逐信号 `once`，跑完 `process.kill(pid, signal)` 重发） | 保留依赖，但写进 §7.5 与行为变更登记；B1 用隔离 `DSH_HOME` 探针实测宿主 SIGINT/SIGTERM 路径，不可接受即退回自写原子写（附录 A 第 3 条） |
+| 13 | `atomically` 经 `when-exit` 在**宿主进程**装信号钩子（`import` 即 `process.once("exit", …)` + 逐信号 `once`，回调跑完还 `process.kill(pid, signal)` **重发信号**）——插件寄生在宿主进程内，改宿主退出语义是不可接受的长期风险，且消费方无法关闭 | **撤回该依赖**，改**自写 + 同路径 promise 队列**（现状 `store.ts:60` 的 `save()` 已是原子写 + 显式 mode，只缺串行，约 15 行）；四个候选的实测比较见 §7.5，决定见附录 A 第 6 条 |
 | 14 | 掩码语义边界未定义（清空即删除、字面量 `********`、`{enabled}` 部分补丁） | §6.1 纪律 5 写死三条 |
 | 15 | 脱敏器的**输入集**三处不同（`manager.ts:206-210` 缺 projectStore、`middleware.ts:787-793` 仅池内、`supervisor.ts:433` 仅自身）；且 ③ 的「运行时注册表」与 I9 冲突 | 输入集写成**能力** `credentialSecrets(): readonly string[]`（config 域从 global + 全部 projectStore + runtime 派生，含展开后真值），不得引入模块级可变注册表 |
+| 16 | 第三轮复验新增两项 **B0 必决**：① `types` 是今日 14 个叶子模块之一，却不在 §3.4 的 11 域内（被 9 个域类型消费，`ServerConfig` 11 点）；② 「要不要建 `deps.ts`」的判据在 `workspace` 上自相矛盾——静态 import 面零对上依赖，运行时却经 `McpManager` 取 `middlewareMode`/`projectServersFor` | **① `types` 不设第 12 域，解体到三处**：域内数据形状 → 各域 `interface.ts`；跨端 DTO → `src/shared`；4 个宿主最小面（`ManagerLite`/`RoutesManager`/`MiddlewareHost`/`SupervisorLite`）→ 各域 `deps.ts` + `server/shared`。**② 判据以「运行时能力消费」为准**（静态 import 图 ∪ 附录 E.3 的经对象成员边），否则会留下「静态合规、运行时直取对象」的漏洞——正是本轮要消灭的形态 |
 
 **红线授权路径（照搬 notifier 的正路）**：`.github/` 改动、新增第三方依赖、公共 API 行为变更，三条红线由**一次 #767 方案 `approved` 打包覆盖**（#733 的 7 笔 `.github/` 改动即由整包 approved 授权）。**不要引用 `yaml` 经 #781 合入的先例**（那次没有 approved，是维护者当次授权）。
 
@@ -207,7 +208,7 @@ packages/dsh-mcp-manager/src/
     shared/               包内共享层（叶子，无归属的宿主侧设施）
       interface.ts        门面：类型 ≥3 域消费 / 函数与值 ≥2 域消费才准入（I5）
       paths.ts            存储布局单一事实源：新路径 + legacyFile(旧路径) + 每文件 mode（I7）
-      file-io.ts          原子写 / 容错读（以 atomically 承接，见 §7.5）
+      file-io.ts          原子写 / 容错读 / 同路径串行（自写，见 §7.5）
       host-faces.ts       宿主能力面类型（I1 白名单点名的能力类型定义处）
     upgrade/              { interface.ts, deps.ts, impl/{version, chain, steps, legacy} }
     store/                { interface.ts, deps.ts, impl/{user-state, catalog-cache, stats-file} }
@@ -439,7 +440,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 1. **出口唯一**：所有出境对象由 §6.1 的三个函数之一构造；投影与脱敏的执行点必须落在这三个函数内（AST 断言面 = 投影所在域）。
 2. **凭据字段清单唯一**（`pipeline/impl/redact` 的一张 `Record<transport, readonly string[]>`，照 notifier 的 `CHANNEL_SECRET_FIELDS`）；未知传输给空清单而不是抛错（在脱敏处抛错会让整页 500）。
-3. **掩码还原按「显式源身份」，且只在源对象上取原值**（复核修正）：`PATCH` 的源身份 = URL 的 `name` + `scope`（实测 PATCH **不能改名**：`manager.ts:928` 的 `{ ...existing, ...patch, name }` 末位 `name` 来自路由参数）；**改名/改归属走的是客户端「POST 新条目 + DELETE 旧条目」**（`quick-add.ts:131-144`），其 payload **不含任何源标识** → 必须新增 `sourceName` / `sourceScope` / `sourceRoot` 三个请求字段（仅用于取原值，不参与写入目标）。**禁止跨对象 / 跨 scope / 跨 root 搜索原值**——那会把 A 的凭据回填到 B，正是参照包注释警告的事故（notifier 用提交体自带的**不可变 id**，见 `redact/index.ts:110-113/128-138`；mcp 无 id 字段，故用显式源身份替代）。掩码却无原值 = `ok:false` → 400。
+3. **掩码还原按「显式源身份」，且只在源对象上取原值**（复核修正）：`PATCH` 的源身份 = URL 的 `name` + `scope`（实测 PATCH **不能改名**：`manager.ts:928` 的 `{ ...existing, ...patch, name }` 末位 `name` 来自路由参数）；**改名/改归属走的是客户端「POST 新条目 + DELETE 旧条目」**（`quick-add.ts:131-144`），其 payload 不含源标识 → 改为携带**一个规范化地址字段**（形态复用协议里已有的 `@@global/<name>` 与 `@<root>/<name>`，即客户端 `core/api.ts:17-22` 已在构造、宿主 `parseFullServerName` 已唯一解析的那个地址）。**不新造 `sourceName`/`sourceScope`/`sourceRoot` 三个平铺字段**——那会成为「身份」的第二个物理定义（违 I3/I11），而客户端本来就持有 root 与 name，新字段是纯增熵；该字段仅用于取原值，不参与写入目标。**禁止跨对象 / 跨 scope / 跨 root 搜索原值**——那会把 A 的凭据回填到 B，正是参照包注释警告的事故（notifier 用提交体自带的**不可变 id**，见 `redact/index.ts:110-113/128-138`；mcp 无 id 字段，故用显式源身份替代）。掩码却无原值 = `ok:false` → 400。
 4. **逐字段构造，不靠类型**（复核修正）：实测 TS 的对象展开**逃过** excess property check（`const a: S = { ...c, status: "ok" }` → 0 诊断），故「类型即围栏」不成立。围栏 = 投影函数**逐字段构造**（禁止对 `ServerConfig` 展开）+ AST 断言 + 返回值加 `NoCreds<T>` 排除类型（`env?: never` 等）+ 出境类型处禁 `as unknown as`。
 5. **掩码语义三条写死**：①**仅当值等于掩码时**才还原（照 notifier `secretFieldsOf`）；②显式删除用「键缺失」表达、显式清空用空串（"未提交该字段" 与 "清空" 必须区分）；③`{enabled}` 这类部分补丁（来源是客户端 `float/float.ts:149/177` 与 `float/servers.ts:177/213`；宿主侧没有专门分支，走 `routes-controllers.ts:186-187` 的通用 `manager.update` 合并）不含凭据键，直接透传，不触发还原。注意现状：客户端清空文本框 = 缺键 → `{...existing, ...patch}` 保留旧值，即 **UI 无法删除凭据**（现状即如此，本轮不改，登记为已知限制）。
 6. **400 的恢复路径必须给用户**：掩码无原值时返回可读文案（「凭据已变更，请重新输入」）而非裸 400；这是安全设计的可用性闭环，不是可选项。
@@ -453,7 +454,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | ③ | env 展开后的真值 | `transport.ts:25-30` 连接时才展开，`redact.ts:23-27` 只收配置字面量 | 展开时把真值注册进唯一清单（或展开前先脱敏） |
 | ④ | `stats.json` 的 `lastError` | `stats/collector.ts:165`（`slice(0,200)`）+ `:256` 落盘；两个 feeder：`inject/middleware-register.ts:323`、`connection/runtime/supervisor.ts:331` | 两个 feeder 一并收口（只改 collector 会改错层，它拿不到 server 配置） |
 | ⑤ | `POST /servers` 201 与 `PATCH /servers` 200 响应体 | `api/routes-controllers.ts:165`（201）/ `:187`（200；`:186` 是 `manager.update` 调用）返回 `{ server, summary }`，`server` 来自 `manager.add/update` = 完整 `ServerConfig` | 响应体改为投影后的对象（结构性绕过消失） |
-| ⑥ | stdio stderr 尾巴 | `transport.ts:153` `slice(-4000)` → `protocol.ts:49-53` 拼尾注 → `supervisor.ts:435/461/467/482-487/494` 存入 `this.error`（`:469-472` 是退避窗口判定，不存 error）→ 经 ② 直出。**注意 `new MCPClient(transport)`（`supervisor.ts:406`）不持有 `ServerConfig`** → 「过同一 redactor」没有落点 | **收窄**：尾巴只出**结构化摘要 / 首行**（如退出码 + 命令名），不出全文。理由：`buildChildEnv` 会把父进程里**未命中凭据正则**的变量（`transport.ts:22` 只覆盖 KEY/TOKEN/SECRET/PASSWORD/PASSWD/CREDENTIAL/AUTH，`GITHUB_PAT` 之类不命中）透传给子进程，stderr 回显这类值的通道**即使做了 ③ 也仍然漏**——只能靠收窄载体 |
+| ⑥ | stdio stderr 尾巴 | `transport.ts:153` `slice(-4000)` → `protocol.ts:49-53` 拼尾注 → `supervisor.ts:435/461/467/482-487/494` 存入 `this.error`（`:469-472` 是退避窗口判定，不存 error）→ 经 ② 直出。**注意 `new MCPClient(transport)`（`supervisor.ts:406`）不持有 `ServerConfig`** → 「过同一 redactor」没有落点 | **两档（不单纯截断）**：**默认**只出结构化摘要——`exitCode` + **首行** + 尾部若干行 + 行数 + 字节数 + `truncated` 标志（注意现状 `transport.ts:153` 是 `slice(-4000)`，保留的是**尾部**，而启动失败线索在**首行**，现状取错了那一档）；**另留一条显式取全文的通道**（本地 UI 展开 / 诊断端点），且**必须复用 §6 的唯一脱敏器**——否则就是第二条未脱敏通道，§6 单链当场破功。不做永久丢弃：stderr 是 stdio server 起不来时的唯一线索，丢掉会把「连不上」变成无据可查的长期支持负担。理由：`buildChildEnv` 会把父进程里**未命中凭据正则**的变量（`transport.ts:22` 只覆盖 KEY/TOKEN/SECRET/PASSWORD/PASSWD/CREDENTIAL/AUTH，`GITHUB_PAT` 之类不命中）透传给子进程，stderr 回显这类值的通道**即使做了 ③ 也仍然漏**——只能靠收窄载体 |
 | ⑦ | **校验期回显请求体凭据**（复核新增） | `config/model/normalize.ts:43` 的 `invalid url: <原值>` 文案（拼进 `src.url`）在 `store.upsert` **之前**抛出，`routes.ts:60` 原样写进 400 体（已实测复现 `invalid url: ht tp://user:s3cr3t@host/mcp`） | **结构化错误**：抛错时不回显原值（错误码 + 字段名，如 `invalid url: <redacted>`）；契约测试加正例「提交含明文凭据的非法配置 → 400 body 不含该值」。`redactError` 只认识**已存储**配置，结构上覆盖不到这条 |
 | ⑧ | **supervisor 直呼路径的工具错误返回 + stats 埋点**（复核新增） | `supervisor.ts:330-332` `record(false, msgOf(error)); throw error;`——同一条 message 既进 stats.json 又作为失败文案交给模型；而 `middleware.ts:782-784` 同类路径已有 `hostRedact` | 在 supervisor 边界收口（**注意**：`330-332` 的 catch 只有埋点、**没有** redactor——`createRedactor([this.server])` 在 `:433` 的另一个 catch），并把 throw 出去的对象换成**已脱敏的 Error**；契约测试覆盖「off/project 模式下直呼失败不含明文」正反例 |
 
@@ -466,7 +467,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 **登记要点（复核实证补充）**：
 
 - **载荷形状不变、值域变**：`env/headers/url` 三个键仍在（掩码 + host-only），故 §5.2 的「不改线协议**语义**」应限定为「不改帧名与状态键语义」；**值域变更单独登记**，否则与本节自相矛盾。
-- **客户端回路必须写清**：读（GET /servers 的掩码视图）→ 提交（掩码原样回传 + 新增 `sourceName/sourceScope/sourceRoot`）→ 还原（仅源对象）/ 400（重新输入）。客户端的改动仅限「改名/改归属时带上源身份」，**不改数据源、不改 DTO 形状**。
+- **客户端回路必须写清**：读（GET /servers 的掩码视图）→ 提交（掩码原样回传 + 带上**规范化地址**）→ 还原（仅源对象）/ 400（重新输入）。客户端的改动仅限「改名/改归属时带上源地址」，**不改数据源、不改 DTO 形状**。
 - **契约测试的负例清单（已核实干净，防止误伤）**：`GET /health` 纯计数无错误字段（`routes.ts:168-209`，响应体 `193-206`）；三个 SSE 帧零负载（`routes.ts:91/103/161`）；`systemPrompt` 是静态文案（`apply.ts:229-234`）；catalog 落盘只写 `tools.size > 0` 的条目，`unavailable` 原因不落盘（`middleware.ts:475-491`）。
 - **stats.json 的披露字段**（除 `lastError` 外还有 `disclosure.searches/lists/details`，`collector.ts:176-210`）与 **runtime 注入条目**（`manager.ts:1084-1086` 并入 summary）各加一条正例，避免契约测试按「六条」逐条断言而漏放。
 
@@ -491,7 +492,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 - **七个写点**现状（复核实测）：`config/store/store.ts:66` 是**唯一**带 mode 的（`0o600`）；`middleware-state.ts:57/174`、`middleware.ts:497/535`、`manager.ts:192`、`collector.ts:256` 六个都不传 mode。
 - **目录也要显式 mode（本包新增决定）**：现状 **6 处 `mkdir`** （`store.ts:62`、`manager.ts:189`、`middleware.ts:495`、`middleware-state.ts:55/172`、`collector.ts:252`）全部不传 mode → 目录权限 = `0777 & ~umask`。目标：插件自有目录显式 `0o700`（与 `config.json` 的 `0o600` 同族），避免同机其它用户列举/读取。参照包无 mode 概念，故这条不是照搬，理由同下条。
 - 写路径一律 tmp + rename（`store.ts:64-67` 等）→ **rename 会把目标 inode 换成 tmp inode，目标权限来自写调用，不继承旧目标权限**；不传 mode 时 = `0o666 & ~umask`。
-- 因此：**写函数总是显式传入登记值**（`atomically` 传了 mode 即 `chmod`，不吃 umask）；不依赖「默认复制旧文件 mode」语义。
+- 因此：**写函数总是显式传入登记值**（写函数显式传 mode，不吃 umask；不依赖任何库的复制语义）；不依赖「默认复制旧文件 mode」语义。
 - **适用范围**：mode 表只适用于**经写函数落盘**的文件。**目录型旧路径搬家也必须逐文件过写函数**（`readSource → writeTarget`），不得对目录走整目录 `rename`——否则权限由历史分支决定，R3 的对冲在目录路径上失效。
 - 配逐文件权限断言（现状：`0o600` 仅 `config/store/store.ts:66` 一处，`user-state` / `catalog/*` / `catalog-summary` / `stats.json` 均未设 → 目标保持 0644）。
 
@@ -540,13 +541,25 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 ### 7.5 IO 原语
 
-`server/shared/file-io.ts` 以 `atomically`（MIT）承接，不再自写临时名 + `rename`：
+`server/shared/file-io.ts` **自写承接，不引入第三方依赖**（撤回初稿的 `atomically` 方案）：
 
-- 依赖形态：`devDependencies`（**根** `package.json`）+ 构建期 esbuild 内联 + 许可归集进 `lib/THIRD-PARTY-LICENSES`；本包 `package.json` **无 `dependencies` 字段**（不是空对象）。
-- **依赖链实测**：`atomically@2.1.1` 有 2 个直接依赖（`stubborn-fs` → `stubborn-utils`、`when-exit`），四个包全 MIT；`collect-licenses.ts` 从产物注释自动提取内联包，故许可面自动覆盖（无机制缺口），但 B1 验收必须含「build 后 `pack:check` 对 mcp 判绿 + `THIRD-PARTY-LICENSES` 含这四个包」。
-- `fsync` 默认开启会拖慢写盘 → 用 `fsyncWait: false`。
+- **写函数恒定四件事**：唯一临时名（pid + 时间戳 + 随机后缀）→ `writeFile(tmp, data, { mode })` **显式传 mode** → `rename(tmp, target)`（POSIX 原子替换）→ 失败时清理临时名并上抛原错误。
+- **同路径串行**：模块内一张 `Map<path, Promise>` 串起同目标路径的写（前一次 settle 才发起下一次），这是现状 `store.ts:60` 的 `save()` **唯一缺的东西**（约 15 行）。没有它，两次并发写虽然临时名唯一，但两次 `rename` 的先后无保证，旧数据可能覆盖新数据。
+- **不装进程级钩子**：不注册 `exit` / 信号监听，也不在退出时清理残留临时名——残留是惰性可清理的（临时名带 pid，启动时按 pid 判活清理），而改宿主退出路径是不可接受的代价。
+- **mode 从 `server/shared/paths.ts` 的登记表取值**（§7.1），写函数不做默认值兜底；缺登记即抛错（I6：不写静默降级）。
 - **撤回 `fast-redact`（复核）**：v5 初稿称「本轮即有消费者」不成立——§6.1 的三个出口分别由**掩码（唯一字段清单的一次循环）**、**已知 secret 值替换**、**逐字段构造**覆盖，没有一处需要「按 path 掩码嵌套对象再序列化」的能力。新增第三方依赖是红线，为一个不存在的调用点再走一次授权面不划算。若后续确有对象级掩码需求，另开裁决。
-- **`when-exit` 的宿主副作用必须登记（复核）**：`atomically` 依赖 `when-exit`，后者在**模块加载时**就执行 `hook()`——`process.once("exit", …)` + 对每个信号 `process.once(signal, …)`，回调跑完再 `process.kill(process.pid, signal)` **重发信号**。也就是说：**在 `dsh web` 宿主进程里 import 它，会改变宿主的 SIGINT/SIGTERM 退出路径**，且消费方无法关闭。落地条件：B1 用隔离 `DSH_HOME` 探针实测宿主退出路径（正常退出 + Ctrl-C + `SIGTERM`），输出留档；若二次触发导致宿主行为异常，**退回自写原子写**（约 40 行：tmp + rename + 同路径串行 + 显式 mode），并在 PR 登记该取舍。
+**为什么不用库（四个候选逐一实测后全部否决，决策见附录 A 第 6 条）**：
+
+| 候选 | 有队列 | 能传 mode | 宿主副作用 | 结论 |
+|---|---|---|---|---|
+| `atomically@2.1.1`（MIT，+3 传递依赖） | 有 | 有 | `when-exit` 在**模块加载期**就装 `exit` + 逐信号 `once` 钩子，回调跑完还 `process.kill(pid, signal)` **重发信号**——`dsh web` 宿主进程里 import 它即改变宿主 SIGINT/SIGTERM 退出路径，且消费方无法关闭 | **否决**（代价是宿主语义，不是本包语义） |
+| `write-file-atomic@8.0.0`（ISC，+1 依赖 `signal-exit`） | **无** | 有 | 仍装退出钩子（用于清理临时名） | **否决**（不满足同路径串行，相对现状净收益为零） |
+| `steno@4.0.2`（MIT，**零依赖**、有队列） | 有 | **无**（API 只有 `new Writer(file)` + `writer.write(data)`） | 无 | **否决**（`0o600` 是 §10.1 保留项；且它会**合并写**，与 `store` 的 `mtimeMs` 基线语义冲突） |
+| **自写** | 有（约 15 行） | 有 | 无 | **采纳** |
+
+现状 `config/store/store.ts:60` 的 `save()` 已经是「唯一临时名 + 显式 `mode: 0o600`（`:66`）+ `rename` + 失败清理」，**离目标只差一个串行队列**。初稿写「不再自写临时名 + `rename`」是把已有的可用实现换成一个带宿主副作用的依赖，方向是反的。
+
+**演进路径（与本仓 `#706` 对齐）**：本仓**没有**跟踪「全包读写能力统一」的 issue；`#706`（跨包共享机制演进——`core` 包评估）是它的天然载体，而其准入判据要求「≥3 个稳定消费者 + 已被 2 个以上包重复实现」——「落盘原语 + mode」恰是当前最接近该判据的候选。本包把落盘收口到 `server/shared/file-io.ts` **单点**，将来若 `#706` 产出仓库级原语，替换只发生在这一个文件（`#792` 定「跨端与跨包模块放哪」的载体，不涉及 IO 语义）。
 
 ---
 
@@ -637,7 +650,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 **保留（用户可见 / 跨插件 / 磁盘）**：① 存储布局迁移语义（含降级不兼容的 release note）；② HTTP 路由集合与 loopback 围栏（403 先于 405）；③ SSE 帧集合与零负载回拉 + 60s watchdog；④ `ctx.mcpManager` 的方法名与签名（除 D4 显式登记项）；⑤ `config.json` 的 `0o600`；⑥ **`getTools` 的键口径 = 注册名 `mcp__<server>__<tool>`**（D4 只改**取数源**，不改键口径——「同源」= 与查询出口共用同一份投影数据，不是改成裸名）。
 
-**不保留（内部，且现状是缺陷）**：① 凭据出境口径（§6）；② `getTools` 中间层接管时恒返回 `[]` 的行为（取数源修正的直接后果：返回**实际生效**的工具集）；③ 命名双份（`summary()` 与 `summarize()` 收敛为一个对外名，实现名可私有）；④ 内部符号的导出位置（I4）；⑤ 注释与文档形态（I12）；⑥ `summary` 载荷里 `env/headers` 的**值域**（改掩码）与 `url` 的 userinfo（去 userinfo，host-only）；⑦ stdio stderr 尾巴的全文外发（收窄为结构化摘要/首行）；⑧ 主入口公开导出的 19 个跨域常量（`src/index.ts:87-114` 的 limits / `DEFAULT_*` / `MIDDLEWARE_GLOBAL_ROOT` 等 → B3 逐符号收缩说明）。
+**不保留（内部，且现状是缺陷）**：① 凭据出境口径（§6）；② `getTools` 中间层接管时恒返回 `[]` 的行为（取数源修正的直接后果：返回**实际生效**的工具集）；③ 命名双份（`summary()` 与 `summarize()` 收敛为一个对外名，实现名可私有）；④ 内部符号的导出位置（I4）；⑤ 注释与文档形态（I12）；⑥ `summary` 载荷里 `env/headers` 的**值域**（改掩码）与 `url` 的 userinfo（去 userinfo，host-only）；⑦ stdio stderr 尾巴的全文**默认**外发（改为两档：默认结构化摘要含**首行**，全文走显式按需通道且过同一脱敏器）；⑧ 主入口公开导出的 19 个跨域常量（`src/index.ts:87-114` 的 limits / `DEFAULT_*` / `MIDDLEWARE_GLOBAL_ROOT` 等 → B3 逐符号收缩说明）。
 
 ### 10.2 交付形态（照搬 notifier 两件）
 
@@ -665,7 +678,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | N1 | 不重构 `src/client/**` 的**结构**（归 #769）；允许最小文案改动与取数路径改为引用 `src/shared` | 本轮责任面是宿主端与跨端**契约**的物理位置 |
 | N2 | 不新增 workflow 与门禁工具；**允许扩展既有脚本**（I8 / §5.3 判据）与更新既有登记文件（`gate-scope-registry` / `ci-face-registry` / `mutation-topology` / `coverage.config` / `ci.yml` 的包面 glob） | 门禁随设计走（D7）；不新增工具链 |
 | N3 | 不改 `ctx.mcpManager` 的方法名与签名（除 D4 显式登记项） | 跨插件 ABI |
-| N4 | 不动仓库 `shared/` 其它模块与相对路径引用方式；不新增仓库级 `shared/file-io` | IO 原语由 `atomically` 承接（§7.5） |
+| N4 | 不动仓库 `shared/` 其它模块与相对路径引用方式；不在本包内新增仓库级 `shared/file-io` | IO 原语由**自写**的 `server/shared/file-io.ts` 单点承接（§7.5）；仓级统一留给 `#706`（本仓暂无「全包读写能力统一」的 issue），届时替换只发生在这一个文件 |
 | N5 | 不改线协议**语义**（帧集合、六态计数含义、403 先于 405）；物理位置移到 `src/shared` 属结构变更 | 契约冻结 |
 | N6 | 不改 `.dsh/mcp.json`（项目级配置）的路径与格式 | 随项目走、可提交 git，是本插件唯一用户资产路径 |
 | N7 | 不为数字拆函数、不做与插件无关的通用工具库、不发运行时依赖 | 仓规与 refactor skill |
@@ -682,7 +695,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | 批 | 内容 | 验收（每条都要 exit code） |
 |---|---|---|
 | **B0 契约与接线** | ①目标公共面清单（三面分类，逐符号）写进方案/文档；②`architecture-contract.md` 三分类打标；③**用重构前那棵树生成** `scripts/data/dsh-mcp-manager-export-surface.json` + 手写 `-export-faces.json`（`legacy` = 当前主入口导出全集）；④门禁接线：`contract-check.ts` 加 mcp、`gate-scope-registry.json`（`export-surface-snapshot` 扩 mcp + `forbid-module-state-src` 扩 mcp，后者**须同笔**在 `gate-exemptions.json` 登记 `src/client/float/panel.ts` 的模块级 `let inflight` 存量豁免——见 §二 I9）、`ci-face-registry.json` 两条数据文件条目、`ci.yml` 的 `dsh-mcp-manager` 面加 `scripts/data/dsh-mcp-manager-*.json` glob（**红线，随本方案 approved**）；⑤`mutation-topology.json`：`src/server/**` 超集段 + facade 重估 + `deps.ts` 的 `type-only` 条、`coverage.config.json` 重估；⑥I8 判据上线（脚本扩展 + 自测 + 数据面范围 + 3 条跨包豁免带 tracking issue）+ §5.3 的 client 判据（**先给 notifier 的 2 条存量写 `gate-exemptions.json` 再 `--write-baseline`**）；⑦`locales.ts` 两行文案降级 + 「客户端产物不含 `~/.dsh`」断言；⑧`--min` 上调；⑨**给 I2① 造执法点**（`verify-dir-imports` 新增质量证据类「目标非 shared 的值边集合」）；⑩`src/placement-math.ts` 迁 `src/shared/` + 客户端与宿主改引；⑪baseline 走 `--snapshot` **前先 build**（判据读 `lib/*.d.ts`），faces **手写**（无生成器） | `pnpm gate:pr` 全绿；`export-surface-snapshot --package dsh-mcp-manager` **exit 0**；`--graph` 基线与当前一致；新判据正反 fixture 双向断言；`test:scripts` 绿（含 `gate-scope-registry.test.ts` / `ci-face-coverage.test.ts`） |
-| **B1 骨架与迁移** | `src/server/` 目录 + 各域 `interface.ts` / `deps.ts` 骨架 + 组合根（`bindHost` / `assemble` / 逆序释放 / 声明合并）+ `upgrade` 六件套 + `paths.ts` 单源（含 mode 表）+ `src/shared/` 五文件 + IO 原语（`atomically`） | 探针证明链路通（apply → install → release 各域标记复位）；迁移测试**五态**；`version` 刻度推进与失败不推进；`pack:check` 对 mcp 判绿 + `THIRD-PARTY-LICENSES` 含 `atomically` / `stubborn-fs` / `stubborn-utils` / `when-exit` |
+| **B1 骨架与迁移** | `src/server/` 目录 + 各域 `interface.ts` / `deps.ts` 骨架 + 组合根（`bindHost` / `assemble` / 逆序释放 / 声明合并）+ `upgrade` 六件套 + `paths.ts` 单源（含 mode 表）+ `src/shared/` 五文件 + IO 原语（**自写** `file-io.ts` + 同路径队列） | 探针证明链路通（apply → install → release 各域标记复位）；迁移测试**五态**；`version` 刻度推进与失败不推进；`pack:check` 对 mcp 判绿且 **`THIRD-PARTY-LICENSES` 相对基线无新增**（本轮不新增任何依赖） |
 | **B2 域重写** | 叶子域（`store/stats/pipeline/config/workspace`）→ 中枢域（`connection/catalog/inject`）→ 出口域（`api/sdk`）；`McpManager` 逐块搬空；**同期完成** D3（凭据单链，含客户端改名带源身份）、D4（取数源同源 + `apiVersion`）、D5（跨端引用改 `src/shared`）；删除 `bootstrap/`；**在删除那一笔内**用 `--snapshot` 重冻结导出面 + **手改 faces**（`legacy` 收缩到三面）+ mutate 段重画 + 72 个未覆盖文件修正**同一笔**（与参照包 `8df3950` 同形） | ①`node scripts/gate/verify-dir-imports.mjs --package dsh-mcp-manager` **exit 0**（含新增的「域间值边」证据项）；②`export-surface-snapshot --package dsh-mcp-manager` **exit 0**（新树、重冻结后）；③投影/脱敏**构造点 = 1** 的源码扫描断言（附正反 fixture）；④基线源码级逐条对账表（`manager/middleware/middleware-register/routes-controllers` 四文件）+ 定向变异；⑤`pnpm cov && pnpm crap --diff <base-ref>`（先声明基准 ref 与判红处置；注意 `strict:false` 下不带 `--diff` 恒 exit 0，且重写后 git 可能认不出 rename → 移动的文件按新增函数判，拆出的高复杂度函数可能判红，需预判） |
 | **B3 收口** | 测试按域落位 + I8 判据存量清零；**逐符号收缩说明**（收缩本身已在 B2 那笔完成，这里只补说明与 `legacy` 终态核对）；契约文档重写与包内 docs 清理（`docs/` 只留有效专项设计 + 归档）；README 中英 + release notes（存储迁移 + 凭据出境 + `apiVersion` + 常量收缩）；注释收口；同时删 `test-surface` 的 `testMutationExemptions` 登记 | `pnpm gate:full` 绿；`uncoveredSrcFiles` 全空；注释验收三条；`docs:check` 绿；导出面快照在**新树**上 exit 0 |
 
@@ -696,7 +709,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 |---|---|---|
 | R1 | **整模块重写静默丢能力**（§10.3 已实证） | 基线源码级逐条对账 + 组合根真实 Context 集成测试 + 能力清单随 PR 逐条勾 |
 | R2 | 存储迁移的降级不兼容 | 写进 release notes；旧文件归档 `.migrated.bak`；迁移五态测试 |
-| R3 | 权限被凭空改动 | §7.1 逐文件 mode 表 + **显式传值**（不依赖 `atomically` 的复制语义）+ 落盘权限断言 |
+| R3 | 权限被凭空改动 | §7.1 逐文件 mode 表 + **显式传值**（不依赖任何库的复制语义）+ 落盘权限断言 |
 | R4 | 覆盖率 / 变异基线回落 | `covered >= baseline - 1pp`；迁移 PR 走夜间重建豁免；`uncoveredSrcFiles` 全空 |
 | R5 | 复杂度热点搬家 | 先接缝后抽函数；`pnpm crap` 观察期记录；不为数字拆函数 |
 | R6 | `declare module` 的 mcp 特例（现住 `integration/service.ts`，带 stryker sandbox 注释） | 移到包入口（参照包）；判据用 `pack:check` 声明合并可达性 |
@@ -704,8 +717,8 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | R8 | `interface.ts` 纳入变异面后分母上升 | B0 重估排除面；`verify-coverage-scope` 守面完整性；宁可如实降分 |
 | R9 | 子 Agent 评审结论需交叉复核 | 每条结论附 `文件:行` 或命令输出；协调者一手复跑 |
 | R10 | **I8 判据上线会碰其他包** | 存量 3 处走 `gate-exemptions.json` + tracking issue；本包 13 处单调基线 |
-| R11 | **`atomically` 的依赖链（4 包：atomically + stubborn-fs + stubborn-utils + when-exit）与 `when-exit` 的宿主信号钩子** | 许可归集由 `collect-licenses` 从产物注释自动提取（无机制缺口），B1 验收含 `pack:check` 与 `THIRD-PARTY-LICENSES` 含四包；钩子写进 §7.5 与行为变更登记，B1 隔离 `DSH_HOME` 探针实测宿主退出路径，异常即退回自写原子写 |
-| R13 | **掩码往返在「改名/改归属」路径上必然 400**（客户端走 POST 新条目 + DELETE 旧条目，payload 无源标识） | §6.1 纪律 3 的显式源身份（`sourceName/sourceScope/sourceRoot`）+ B2 客户端最小改动 + 契约测试覆盖「改名含凭据的服务器」正例 |
+| R11 | **自写 IO 原语的队列正确性与残留临时名**（初稿的 `atomically` 依赖链与 `when-exit` 宿主钩子风险**已随撤回消失**，见 §7.5） | 同路径 promise 链配「两次并发 save，读回应为后写者」的并发用例；临时名带 pid，启动时按 pid 判活惰性清理；实现收口在 `file-io.ts` 单点，将来换 #706 的仓级原语只改此处 |
+| R13 | **掩码往返在「改名/改归属」路径上必然 400**（客户端走 POST 新条目 + DELETE 旧条目，payload 无源标识） | §6.1 纪律 3 的**规范化地址**（复用 `parseFullServerName` 语法）+ B2 客户端最小改动 + 契约测试覆盖「改名含凭据的服务器」正例 |
 | R14 | **I2① 今天没有执法点**，若 B0 忘了造，B2 的「域间值边 = 0」是空头验收 | B0⑨ 明确列为交付项；未落地则把 I2① 降级为报告项并同步改宪法 |
 | R15 | **掩码语义边界**（清空文本框 = 缺键 → 合并语义保留旧凭据，UI 无法删除凭据） | 本轮登记为已知限制（不改）；§6.1 纪律 5 写死三条语义，契约测试覆盖「掩码值恰为 `********`」与部分补丁 `{enabled}` |
 | R12 | 本包既决缺陷（#770 13 项）里有 5 项与边界同源 | §6 本轮修完凭据面；其余按 §10.2 逐条登记「本轮改 / 不改」 |
@@ -716,12 +729,12 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 见 §零 的 D1–D8 表。补充三条口径：
 
-1. **红线授权**：`.github/` 改动 + 新增第三方依赖（`atomically` 及其传递依赖）+ 公共 API 行为变更（§6 / §10.1）由一次 #767 `approved` 覆盖；`fast-redact` **已撤回**（第 5 条），不在红线清单内；不引用 `yaml`（#781）的无 approved 先例。
+1. **红线授权**：`.github/` 改动 + 公共 API 行为变更（§6 / §10.1）由一次 #767 `approved` 覆盖。**本轮不新增任何第三方依赖**——`fast-redact` 撤回（第 5 条）、`atomically` 也撤回（第 6 条），故红线由三条降为**两条**；不引用 `yaml`（#781）的无 approved 先例。
 2. **不做 shim**：无过渡 re-export 层，故 B3 只做一次基线重冻结。
 3. **API 版本位**：`ctx.mcpManager` 增 `apiVersion` 字面量（本包首个版本位），退役 / 变更项在 release notes 逐条列出。
-4. **掩码还原用「显式源身份」，不引入不可变 `id`**（本轮）：改名/改归属由客户端在 POST 里带 `sourceName/sourceScope/sourceRoot`，服务端只在源对象上取原值。理由：`id` 会牵动存储迁移（新增一步）、`ServerConfig` 形态、DTO、导出面与 ABI，而它今天的**唯一**消费者就是掩码往返；显式源身份语义更直白（「这个掩码来自哪个对象」）。参照包的不可变 id 是更强的机制，登记为**后续演进项**（若出现同 scope 内复制、批量迁移等需求再做）。
+4. **掩码还原用「一个规范化地址」，不引入不可变 `id`，也不加三个平铺字段**（本轮）：改名/改归属由客户端在 POST 里带上**协议已有的地址形态**（`@@global/<name>` / `@<root>/<name>`，即 `parseFullServerName` 的语法），服务端只在源对象上取原值。理由：`id` 会牵动存储迁移（新增一步）、`ServerConfig` 形态、DTO、导出面与 ABI，而它今天的**唯一**消费者就是掩码往返；显式源身份语义更直白（「这个掩码来自哪个对象」）。参照包的不可变 id 是更强的机制，登记为**后续演进项**（若出现同 scope 内复制、批量迁移等需求再做）。
 5. **`fast-redact` 撤回**（复核）：本轮无调用点，不为不存在的消费者走一次依赖红线；若后续确有对象级掩码需求，另开裁决。
-6. **`atomically` 保留但带落地条件**：B1 探针实测 `when-exit` 对宿主退出路径的影响，异常即退回自写原子写（约 40 行）；两条路都不改变 `paths.ts` 的 mode 表与显式传值约定。
+6. **`atomically` 撤回，改自写**（放弃「保留依赖 + B1 探针」的折中）：三个库候选逐一实测后全部否决——`atomically` 的 `when-exit` 在模块加载期就改宿主退出路径、`write-file-atomic` 无写队列、`steno` 不收 `mode` 且合并写（比较表见 §7.5）。自写只比现状多约 15 行串行队列，换来「不装进程级钩子 + 零依赖 + 显式 mode」。红线因此由三条降为两条。
 
 ## 附录 B notifier 对照表（本方案形态取舍的依据）
 
@@ -766,7 +779,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | 类别 | 条数 | 处置 |
 |---|---|---|
 | **因立场改变而在设计上消失** | 约 13 | P4 的 shim 与「导出面改口径」（D1 / D2 取消该动作）；P5 残留的 `testFiles` 策展与导入面清零（§8.3 / N2 重写）；`fast-redact` 无消费者（**已直接撤回，不再靠 D3 找消费者**）；A8 与 A14 互斥（D5 定死）；A13 原样搬移（D4 反转）；I10 的 J1 / J2 拆分（单链落地后是一条判据）；附录与 D 表口径不一致（v5 重写） |
-| **v5 初稿被复核推翻并已修订** | 15 | §0.1 逐条列出：掩码不删键 / 显式源身份 / 出口矩阵 7 类 / 删「类型即围栏」/ I2① 造执法点 + 第三判据 / 常量按消费域数归 `server/shared` / deps.ts 表诚实化 / Port 表降级为示意 / mutate 超集含 `src/shared/**` / 重冻结落到 B2 删除那一笔 / 归档一律执行 + 迁移不解析（四态）/ 撤回 `fast-redact` / 登记 `when-exit` 宿主钩子 / 掩码语义三条 / 脱敏输入集写成能力 |
+| **v5 初稿被复核推翻并已修订** | 15 | §0.1 逐条列出：掩码不删键 / 显式源身份 / 出口矩阵 8 类 / 删「类型即围栏」/ I2① 造执法点 + 第三判据 / 常量按消费域数归 `server/shared` / deps.ts 表诚实化 / Port 表降级为示意 / mutate 超集含 `src/shared/**` / 重冻结落到 B2 删除那一笔 / 归档一律执行 + 迁移不解析（四态）/ 撤回 `fast-redact` / 登记 `when-exit` 宿主钩子 / 掩码语义三条 / 脱敏输入集写成能力 |
 | **仍需修（已在 v5 内修）** | 3 | P0③ 指错文件 → §8.3 明确 `mutation-topology.json`；`ci.yml` 数据面 glob 与两处登记 → B0④；`deps.ts` 面登记漏项 → §8.3 |
 | **数字与行号卫生（v5 已核）** | 约 10 | 14800 → 14635（+helpers 161）；`RoutesManager` 24 / 5 → 23 / 8；`routes-controllers` 24 → 18；`smoke` 6 行号 → 9 处；`summary` / `summarize` 命名；`config-schema` / `host-faces` / `constants` / `statsFile` 等陈旧行号；`C-*` 13 → 6；`deps.ts`「0 / 14 域」→ 11 域 |
 | **流程项** | 2 | v5 文档入库；I8 与 `ci.yml` 属红线，随 #767 一次 approved |
@@ -790,13 +803,15 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 2. **v5 重写**：按参照包实证把立场从「结构搬移、行为冻结」改为「一次做到最终形态 + 行为变更显式登记」，8 条决策见 §零。
 3. **v5 三视角复核**：机制可执行性 / 凭据单链闭合性 / 迁移与批次可行性，4 P0 / 13 P1，关键断言经协调者一手复跑 → 15 条修订全部并入，逐条见 **§0.1**。
 4. **维护者已拍**：跨端契约全量收进 `src/shared/`（D5 加强）；测试导入面判据上线（D6 加强，只限 `test/unit/**`）。
-5. **协调者已按默认拍的四条**（维护者可随时否决）：①撤回 `fast-redact`；②`atomically` 保留但带 B1 探针落地条件（`when-exit` 的宿主信号钩子）；③掩码还原用**显式源身份**，不可变 `id` 留后续；④stderr 尾巴收窄为结构化摘要/首行。
+5. **维护者已按推荐方案裁决**（原文「按推荐方案走」）：①撤回 `fast-redact`；②**撤回 `atomically`**，改**自写 + 同路径队列**（四候选实测比较见 §7.5）——**红线由三条降为两条**；③掩码还原用**一个规范化地址**（复用 `@<root>/<name>` / `@@global/<name>`），不新造三个平铺字段，不可变 `id` 留后续；④stderr 改**两档**（默认摘要含首行 + 显式取全文过同一脱敏器）。另裁三项：⑤`types` 不设第 12 域、解体到三处；⑥「要不要建 `deps.ts`」以**运行时能力消费**为准；⑦4 处死导入不在 B0 清、B2 域重写时自然消失。
+6. **B0 切片 1 已完成**（导出面基线冻结 + faces + 门禁接线 + 豁免登记 + ci.yml glob，5 笔提交 `43229f6`/`d3a21d2`/`da83b36`/`660dd0a`/`f8ee6c5`）；协调者独立复跑 `export-surface-snapshot` / `forbid-module-state-src` / `verify-dir-imports --graph` 与 `pnpm test:scripts`（628 pass / 0 fail）**全部 exit 0**。
+7. **第三轮只读复验已并入**：凭据单链现状（§0.2，含端到端实测的红的基线 + 4 个脱敏器构造点 + 1137 用例零「出口不含明文」断言）与 Port 面实测表（附录 E，含 `types` 缺口、4 处死导入、静态/运行入口径冲突）。
 
 ### D.3 未完成
 
 1. **#767 方案评论未发**（摘要 + D1–D8 + 两轮复核结论尚未落到 issue）。
-2. **`approved` 未取**：三条红线要一次打包授权——`.github/workflows/ci.yml` 的 mcp 数据面 glob、新增依赖 `atomically`（+ `stubborn-fs` / `stubborn-utils` / `when-exit`）、公共 API 行为变更（§10.1 的八条不保留项）。
-3. **B0 未开工**：`scripts/data/dsh-mcp-manager-export-surface.json` / `-export-faces.json` 尚未生成（`ls scripts/data | grep dsh-mcp-manager` 为空），门禁接入面一处未改。
+2. **`approved` 未取**：红线 1（`.github/workflows/ci.yml` 的 mcp 数据面 glob）已由维护者放行并提交（`f8ee6c5`）；**剩余需 `approved` 的只有公共 API 行为变更**（§10.1 的八条不保留项）。**本轮不新增任何第三方依赖**（两个依赖候选均已撤回）。
+3. **B0 切片 2 未开工**：`mutation-topology.json`（`src/server/**` + `src/shared/**` 超集、facade 条重估、`deps.ts` 的 type-only 条）、连带三处（`mutation-topology-coverage.test.ts` 的 `1→2` 与 `12→13`、`gen-stryker-conf` 重生成、`--min` 上调）、`coverage.config.json` 重估，以及 I8 / §5.3 client / I2① 三条新判据与 `src/placement-math.ts` 迁移；**B0② `architecture-contract.md` 三分类打标**亦未做（该文档声称的 `api/redactor-factory.ts` 不存在，该段判「作废」）。
 4. **代码一行未动**（按仓库红线流程，等 `approved`）。
 5. **B0④ 缺一步（本会话实测）**：把 `dsh-mcp-manager` 登记进 `gate-scope-registry.json` 的 `forbid-module-state-src` 之后，该包**已有 1 处存量违规**——`packages/dsh-mcp-manager/src/client/float/panel.ts:19` 的模块级 `let inflight`（探针：临时 registry + `node scripts/gate/forbid-module-state-src.mjs --registry /tmp/mcp-probe-registry.json`，**exit 1**）。该文件属 `src/client/**`（N1 本轮不重构结构），故 B0④ 必须**同笔**补 `gate-exemptions.json` 条目（`gate=forbid-module-state-src` + `trackingIssue` + `reviewBy`，照 notifier #762 形态），否则 I9 扩包当天即判红。**§二 I9 与 §十二 B0④ 的正文口径待同步**。
 6. **附录 A 第 1 条残留**：该条仍把 `fast-redact` 列为待授权的新增依赖，与第 5 条「撤回」自相矛盾，**待同步**。
@@ -812,7 +827,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 1. 读本文件 §零（立场与 8 条决策）与 **§0.1（第二轮复核修订台账）**——那 15 条是 v5 与初稿的差别所在，别按初稿口径理解。
 2. 抽查代码事实（不要全信文档）：`node scripts/gate/verify-dir-imports.mjs --package dsh-mcp-manager --graph`（应 14 叶子 / 33 值边 / 4+4 环）、`grep -rn '0o600' packages/dsh-mcp-manager/src`（应只有 `config/store/store.ts:66`）、`grep -c 'new McpManager' packages/dsh-mcp-manager/test/e2e/smoke.test.ts`（应为 9）、`ls scripts/data | grep dsh-mcp-manager`（应为空）。
-3. 记住三条「未实测」：`pnpm gate:pr` 未实跑、`atomically` 未安装、掩码往返是静态推演——凡涉及它们，先跑探针再下结论。
+3. 记住两条「未实测」：`pnpm gate:pr` 未实跑、掩码往返与 B1 的自写 IO 队列是静态推演——凡涉及它们，先跑探针再下结论（`atomically` 已撤回，不再是风险项）。
 4. 本会话已复跑的实测结果（可直接引用，不必重跑）：`verify-dir-imports --graph` **exit 0**（14 叶子 / 33 值边 / 4 模块级环 + 4 文件级环）、`grep -rn '0o600' packages/dsh-mcp-manager/src` 只有 `config/store/store.ts:66`、`grep -c 'new McpManager' test/e2e/smoke.test.ts` = 9、`scripts/data` 无 mcp 基线且 `export-surface-snapshot --package dsh-mcp-manager` **exit 2**（「基线不存在」）、`forbid-module-state-src` 在 worktree 跑 notifier **exit 0**（21 处豁免）。
 5. B0 开工前先把 D.3 第 5、6 两条的正文口径同步进 §二 I9、§十二 B0④ 与附录 A 第 1 条。
 
