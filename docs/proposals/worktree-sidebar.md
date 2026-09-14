@@ -286,7 +286,7 @@ notifier / mcp-manager 给的都只是**单文件**分位数（中位 44/58、p9
 | 伪造 sessions 源 | 只改写 byId[id].cwd 一个字段、其余透传；按 entry×binding 缓存，保证引用稳定 |
 | 双端 revision 契约 | src/contract.ts 单点定义；GET 回 {revision, worktreePath|null} |
 | 绑定与 git 漂移 | resolver 命中前做廉价校验（目录存在 + common dir 相同）带 mtime 缓存；失效即按未绑定、revision++ |
-| kind 接管全会话生效 | 未绑定原样走默认；总开关；失败一律 dispose 回 builtin |
+| 遮蔽正文的作用域 | 只作用于 `files` 这一个页签（官方那条仍在账上，其余 kind 与未绑定会话原样走默认）；总开关；失败或不当值一律撤销自己那条 |
 | 工具双登记 | binding 域为唯一事实源、register 幂等（先例 mcp-manager middleware-register.ts:806-832） |
 
 ## 11. 实施顺序
@@ -295,7 +295,7 @@ notifier / mcp-manager 给的都只是**单文件**分位数（中位 44/58、p9
 1. 宿主纯逻辑：contract / shared / binding / git（注入 exec），全部单测、不依赖 cordis。
 2. api 域：loopback 围栏 + 403/405 + health。
 3. tools 域：三个工具（复用 mcp-manager 的注册与执行期解析先例）。
-4. scope 域：先落「捕获委托 + 等价实现」两路 fallback 与对照测试，再 configure；补降级注入用例（provider 缺失、二次 configure 抛错、resolver 抛错、目录消失）。
+4. scope 域：先落「捕获委托 + 等价实现」两路 fallback 与对照测试，再 configure；补降级注入用例（provider 缺失、二次 configure 抛错、resolver 抛错、目录消失）。（**已过期**：S8 把「等价实现兜底」换成「订阅等待 provider」，见 §19.6。）
 5. 客户端倒着写：先写「抓不到官方 entry 则零注册」的负向测试，再写接管；最后用 @wingsky-1/dsh-verify-isolated 实测。
 
 每片独立跑门禁 + 阶段 commit。
@@ -883,6 +883,25 @@ src/
 - **启动序**：真实 boot 里 provider 与插件 apply 的先后（决定 S8 的等待式是否走等待分支）。
 - **客户端接缝 P0 归因**：`0 次路由请求` 仍未在真机上分离出「客户端未加载 / 接管未成功 / entryKey 未指到我们」三种候选；S7 会消掉其中一族。
 
+
+### 19.6 实施登记（S6 到 S10 已落地；sha 为 rebase 到 origin/main `9ce46cf` 之后的）
+
+| 片 | 提交 | 内容 | 与 §19.2 的偏差（如实登记） |
+|---|---|---|---|
+| ① 归属缓存解耦 | `4eab440` | TTL 5s → 30s + 新判据 | 无 |
+| ② 去轮询换根 | `076a4db` | 树根按绑定播种，删轮询 / 剪枝 / `LiveSource` | 无 |
+| S6 | `bfdaf09` | 目录收敛为 `src/{shared,server,client}` + 收口面 | 无（`verify-dir-imports` 无基线、fail-closed 下仍 PASS） |
+| S7 | `3a04044` | 遮蔽式正文接管 | **多两处**：`ClientSlotsPort.entries()`（原始账视图，没有它看不见官方条目 HMR 换代）与 `refused` 守卫（首版实测到**微任务自旋**：登记与撤销各触发一次座位通知，不当值时会「再试 → 再失败 → 再撤销」永不收敛，用例挂死 exit 124） |
+| S8 | `ebc1b58` | 删 fallback，改「有则捕获，无则等」 | health 增 `scopeTakeover`（idle / waiting / live / abandoned 四态；计划只说「暴露是否已接管」）；`inject` 去掉 `sessions` / `sandboxPolicy`（兜底的输入） |
+| S9 | `27d8cd2` | 子 agent 继承父会话的生效根 | 计划只说加一个宿主只读面；实现时把 `scope/impl/resolve` 按「回答哪个问题」拆成 `own`（本会话登记是否仍有效）/ `inherit`（父链）/ `resolve`（合成 + 委托 + 永不抛）——原文件 132 行越过 §9 的 120 行提问线 |
+| S10 | `9d92e86` | 承诺文案改为「打开或刷新 Files 页签」 | 无 |
+
+**测试净变化**：测试文件数不变（13，`--min 13` 与 `pnpm stryker:gen` 面均未动）；用例 179 到 183
+（S7 重写接管用例集、S8 删 6 条 fallback 等价性用例、S9 加 7 条父链用例与 1 条两端同源用例）。
+
+**红绿纪律**：每片的判据都做了真突变并还原核对（S6 两条、S7 四条加自旋一次、S8 五条、S9 四条），
+每次都用 `cp` 备份 + `sha256sum -c` 验证还原后逐字节一致；突变脚本在模式未命中时**当场抛错**，
+避免把「没改上」误当成红。
 
 **B7 结构动作表的执行状态（如实登记）**：§18.2-B7 那张「具体结构动作」表里，第 1 条（拆
 `src/host/{agents,typert,defaults}.ts`）已落地（`c3fb83d`），第 4 条（删掉全包合计指标）已落地（`ec42113`），
