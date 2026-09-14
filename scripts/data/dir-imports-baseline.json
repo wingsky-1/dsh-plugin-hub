@@ -67,8 +67,8 @@
     },
     "dsh-provider-usage": {
       "modules": 13,
-      "scannedSrcFiles": 56,
-      "allSrcTsFiles": 69,
+      "scannedSrcFiles": 59,
+      "allSrcTsFiles": 75,
       "interfaceFacades": 13,
       "leafValueEdges": 35,
       "fileValueEdges": 123,
