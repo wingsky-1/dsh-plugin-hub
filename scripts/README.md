@@ -86,7 +86,7 @@
 
 ## scripts/ 根
 
-- `tsconfig.json` — `scripts/` 的**增量** typecheck 面（本期仅 `gate/verify-docs.ts` 入面，其余脚本入面属后续独立 issue，见 `scripts/tsconfig.json:1-2` 注释）。
+- `tsconfig.json` — `scripts/` 的 typecheck 面（非 test 全树入面；`test/**` 的类型错误属后续批次，见 `scripts/tsconfig.json` 顶部注释）。在面与否由 `test/verify-docs-typecheck.test.ts` 的程序集对账守：磁盘集合 - tsc `--listFiles` 程序集合 == 显式排除清单。
 
 ## test/（脚本自测，`pnpm test:scripts`）
 
