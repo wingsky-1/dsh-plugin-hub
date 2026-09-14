@@ -21,21 +21,21 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createServer } from "node:http";
 
+// 单元层导入面（ARCHITECTURE-METHOD §8）：同域白盒直连 impl，不经包 barrel。
+import { apply, pluginDir, DEFAULT_WSS_COMPRESS_PATHS } from "../../src/server/apply.ts";
 import {
-  pluginDir,
+  Config,
   sanitizeSettings,
   validateSettings,
-  migrateFileConfig,
-  MIGRATED_BAK_NAME,
-  applyConfigPatch,
-  SETTINGS_NS,
-  ROUTES,
   normalizeLegacyWsCompressPaths,
-  DEFAULT_WSS_COMPRESS_PATHS,
+} from "../../src/server/config/impl/model.ts";
+import { SETTINGS_NS } from "../../src/server/config/impl/namespace.ts";
+import {
+  ROUTES,
+  applyConfigPatch,
   buildConfigRoutes,
-  apply,
-  Config,
-} from "../../src/index.ts";
+} from "../../src/server/config/impl/routes.ts";
+import { MIGRATED_BAK_NAME, migrateFileConfig } from "../../src/server/migrate/impl/file/index.ts";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

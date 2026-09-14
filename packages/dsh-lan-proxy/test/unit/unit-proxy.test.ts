@@ -23,24 +23,26 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { WebSocket as WsClient, WebSocketServer } from "ws";
 
+// 单元层导入面（ARCHITECTURE-METHOD §8）：同域白盒直连 impl，不经包 barrel——
+// 经 barrel 会把内部符号钉在包导出面上，让「包 ABI 收窄」永远被测试消费方挡住。
 import {
   hostnameAllowed,
   formatAuthority,
   rewriteHeaders,
   bridgeUpstreamHeaders,
   createLanProxy,
-  isLoopbackTarget,
-  DEFAULT_OPTIONS,
   compressWsPath,
   isCompressible,
   resolveCompressionOptions,
-  ensureSelfSignedTls,
   deflateAllowedByPolicy,
-  DEFAULT_DEFLATE_POLICY,
   hasDshAuthCookie,
   isTokenMintCandidate,
   withLaunchToken,
-} from "../../src/index.ts";
+} from "../../src/server/proxy/impl/proxy.ts";
+import { isLoopbackTarget } from "../../src/server/shared/net.ts";
+import { DEFAULT_OPTIONS } from "../../src/server/shared/defaults.ts";
+import { DEFAULT_DEFLATE_POLICY } from "../../src/server/shared/deflate.ts";
+import { ensureSelfSignedTls } from "../../src/server/tls/impl/index.ts";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
