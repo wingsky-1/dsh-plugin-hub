@@ -2,8 +2,12 @@
  * dsh-mcp-manager — 中间层工具注册（ws_mcp_search / ws_mcp_call /
  * ws_mcp_list / ws_mcp_detail + 策略 guard）。
  *
- * 注册四个中间层工具与策略 guard 层；类型自 middleware-types.ts 取，
- * 连接池类（McpMiddleware）自 middleware.ts import type（防运行值环）。
+ * 注册四个中间层工具与策略 guard 层；类型面自 types/interface.ts（MiddlewareMode /
+ * DisabledToolsMap）与 stats/interface.ts（McpStatsCollector）取，连接池类 McpMiddleware 自
+ * connection/runtime/interface.ts 只作 `import type`（防运行值环）。跨域取数一律经
+ * `injectPorts.get()`（端口声明见 ../deps.ts）——catalog 检索族、runtime 限额常量、pipeline
+ * 裁决族与超时兜底、workspace 全名解析，本文件对四个提供域没有值 import。跨端契约常量
+ * MIDDLEWARE_GLOBAL_ROOT 与值常量 LIST_DEFAULT_TOOLS_PER_SERVER 直接取自共享层门面（W3b 迁移）。
  * all 模式全局可见性（评审 A）：search/list/detail 合并查询「项目 root 单元 +
  * @global 单元」；call 放行 @global root。off/project 模式行为不变。
  */
@@ -11,28 +15,11 @@
 import type { Context } from "@deepseek-ai/cordis";
 import type { ToolDefinition, PreToolDecision } from "@deepseek-ai/dsh-tools";
 import type { McpMiddleware } from "../connection/runtime/interface.ts";
-import {
-  CONNECT_TIMEOUT_MS,
-  DISCOVERY_TIMEOUT_MS,
-  CALL_TIMEOUT_MS,
-  LIST_DEFAULT_TOOLS_PER_SERVER,
-  LIST_MAX_TOOLS_PER_SERVER,
-} from "../connection/runtime/interface.ts";
-import { withTimeout } from "../pipeline/interface.ts";
-import {
-  policyAllows,
-  policyDenialReason,
-  isToolDenied,
-  toolDisabledReason,
-} from "../pipeline/interface.ts";
-import { searchCatalogMulti, listCatalog, findToolDetail } from "../catalog/interface.ts";
-import {
-  parseFullServerName,
-  fullServerName,
-  MIDDLEWARE_GLOBAL_ROOT,
-} from "../workspace/interface.ts";
-import type { MiddlewareMode, DisabledToolsMap } from "../types/interface.ts";
+import { LIST_DEFAULT_TOOLS_PER_SERVER } from "../server/shared/interface.ts";
+import { MIDDLEWARE_GLOBAL_ROOT } from "../shared/interface.ts";
 import type { McpStatsCollector } from "../stats/interface.ts";
+import type { MiddlewareMode, DisabledToolsMap } from "../types/interface.ts";
+import { injectPorts } from "./impl/service/index.ts";
 
 /** 工具执行与组装上下文。 */
 interface MiddlewareToolContext {
@@ -61,6 +48,9 @@ function visibleProjectServers(mw: McpMiddleware, root: string): string[] {
 async function waitForDiscovery(
   unit: NonNullable<Awaited<ReturnType<McpMiddleware["projectUnitFor"]>>>,
 ): Promise<void> {
+  const {
+    pipeline: { withTimeout },
+  } = injectPorts.get();
   const inflight = [...unit.inFlight.values()];
   if (inflight.length === 0) return;
   try {
@@ -95,6 +85,9 @@ async function checkMiddlewareRoot(
   mode: MiddlewareMode,
   mw: McpMiddleware,
 ): Promise<string | undefined> {
+  const {
+    workspace: { parseFullServerName },
+  } = injectPorts.get();
   const parsed = parseFullServerName(server);
   if (parsed === undefined) {
     throw new Error(`${caller}: server 参数格式非法，应为 @<root>/<server>`);
@@ -185,6 +178,9 @@ async function executeSearch(
     const visibleUnit = visible === root ? unit : await toolCtx.mw.projectUnitFor(visible);
     if (visibleUnit !== undefined) await waitForDiscovery(visibleUnit);
   }
+  const {
+    catalog: { searchCatalogMulti },
+  } = injectPorts.get();
   const { results, unavailable, truncated } = searchCatalogMulti(
     toolCtx.mw.units,
     roots,
@@ -283,6 +279,9 @@ async function executeCall(
   if (root === undefined) throw new Error("ws_mcp_call: 无法确定工作空间，请先选择工作区");
   const { server, tool, arguments: callArguments } = parseCallParams(args);
   if (server === "" || tool === "") throw new Error("ws_mcp_call: server 与 tool 均为必填");
+  const {
+    workspace: { parseFullServerName },
+  } = injectPorts.get();
   const parsed = parseFullServerName(server);
   if (parsed === undefined)
     throw new Error("ws_mcp_call: server 参数格式非法，应为 @<root>/<server>");
@@ -328,6 +327,9 @@ async function executeCall(
 }
 
 function buildCallTool(toolCtx: MiddlewareToolContext): ToolDefinition {
+  const {
+    runtime: { CONNECT_TIMEOUT_MS, DISCOVERY_TIMEOUT_MS, CALL_TIMEOUT_MS },
+  } = injectPorts.get();
   return {
     name: "ws_mcp_call",
     description:
@@ -422,6 +424,9 @@ function renderListOutput(_args: unknown, value: unknown) {
 }
 
 function parseListParams(args: unknown): { serverFilter?: string; toolLimit: number } {
+  const {
+    runtime: { LIST_MAX_TOOLS_PER_SERVER },
+  } = injectPorts.get();
   const params = (typeof args === "object" && args !== null ? args : {}) as Record<string, unknown>;
   const serverFilter =
     typeof params.server === "string" && params.server !== "" ? params.server : undefined;
@@ -459,6 +464,9 @@ async function resolveListWithoutUnit(
   serverFilter: string | undefined,
   toolLimit: number,
 ) {
+  const {
+    catalog: { listCatalog },
+  } = injectPorts.get();
   if (mode !== "all") {
     return {
       workspace: root,
@@ -506,6 +514,9 @@ async function executeList(
     const visibleUnit = visible === root ? unit : await toolCtx.mw.projectUnitFor(visible);
     if (visibleUnit !== undefined) await waitForDiscovery(visibleUnit);
   }
+  const {
+    catalog: { listCatalog },
+  } = injectPorts.get();
   const result = listCatalog(
     toolCtx.mw.units,
     roots,
@@ -523,6 +534,9 @@ async function executeList(
 }
 
 function buildListTool(toolCtx: MiddlewareToolContext): ToolDefinition {
+  const {
+    runtime: { LIST_MAX_TOOLS_PER_SERVER },
+  } = injectPorts.get();
   return {
     name: "ws_mcp_list",
     description:
@@ -607,6 +621,10 @@ async function executeDetail(
   if (root === undefined) throw new Error("ws_mcp_detail: 无法确定工作空间，请先选择工作区");
   const { server, tool } = parseDetailParams(args);
   if (server === "" || tool === "") throw new Error("ws_mcp_detail: server 与 tool 均为必填");
+  const {
+    workspace: { parseFullServerName },
+    catalog: { findToolDetail },
+  } = injectPorts.get();
   const parsed = parseFullServerName(server);
   if (toolCtx.stats?.isEnabled()) {
     toolCtx.stats.recordDetail(parsed?.server ?? server, tool);
@@ -674,6 +692,10 @@ function buildDetailTool(toolCtx: MiddlewareToolContext): ToolDefinition {
 // ---------------------------------------------------------------------------
 
 function handleCallGuard(args: unknown, mw: McpMiddleware): PreToolDecision | undefined {
+  const {
+    workspace: { parseFullServerName, fullServerName },
+    pipeline: { isToolDenied, policyAllows, policyDenialReason, toolDisabledReason },
+  } = injectPorts.get();
   const { server, tool } = parseCallParams(args);
   const parsed = parseFullServerName(server);
   if (parsed === undefined || parsed.server === "") return undefined;
@@ -696,6 +718,10 @@ async function handleDirectMcpGuard(
   disabledTools: DisabledToolsMap | undefined,
   resolveRoot: (agent: unknown) => Promise<string | undefined>,
 ): Promise<PreToolDecision | undefined> {
+  const {
+    workspace: { fullServerName },
+    pipeline: { isToolDenied, toolDisabledReason },
+  } = injectPorts.get();
   const rest = name.slice("mcp__".length);
   const separator = rest.indexOf("__");
   if (separator <= 0) return undefined;
