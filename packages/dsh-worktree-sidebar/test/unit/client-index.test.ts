@@ -14,6 +14,9 @@
  * 时间纪律：只假 `setInterval` / `clearInterval`（不钉 `Date`），异步等待用
  * `settleMicrotasks` 排空队列，不写真实 sleep。
  */
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { apply } from "../../src/client/index.ts";
 import type {
@@ -185,5 +188,25 @@ describe("按会话剪枝：宿主快照里消失的会话不再被拉取（P1 �
     // 剪枝时若不调用 state.subscribe 的退订，这条已在飞的绑定变化会经改写源通知出去。
     expect(notified).toBe(0);
     unsubscribe();
+  });
+});
+
+/**
+ * 路由字面量哨兵：客户端只认 `src/contract.ts` 的 `ROUTES`（构建期由 bundle-host 注入
+ * `__DSH_ROUTES__`）。客户端里任何一处手写 `/api/...` 都会在宿主改路由时静默漂移，
+ * 而两端各自的单测都不会红——所以这条扫源码文本，守的是真实的双端 ABI，不是代码风格。
+ */
+describe("路由单一事实源：客户端没有硬编码路由字面量", () => {
+  it("src/client/** 里 /api/ 出现次数为 0", () => {
+    const dir = fileURLToPath(new URL("../../src/client", import.meta.url));
+    const names = readdirSync(dir, { recursive: true, encoding: "utf8" }).filter((name) =>
+      name.endsWith(".ts"),
+    );
+    // 非空锚：扫描面真的走到了客户端目录（否则下一条断言会因为「一个文件都没扫」而恒真）。
+    expect(names).toContain("index.ts");
+    const withLiterals = names.filter((name) =>
+      readFileSync(join(dir, name), "utf8").includes("/api/"),
+    );
+    expect(withLiterals).toEqual([]);
   });
 });
