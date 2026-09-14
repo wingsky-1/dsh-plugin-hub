@@ -913,3 +913,50 @@ inject 面与会话 id，产出 `hooks.sessions` 指向改写源的新面」）�
 ESLint 的 `no-restricted-imports` 块间规则同步纳入 `inject.ts`。§8 的客户端清单因此是 6 个文件
 （`index` / `takeover` / `inject` / `source` / `bindings` / `ports`）。行为不变：13 文件 / 174 用例全绿，
 打红实验（拿掉 `hooks.sessions` 那一项）只红在 inject 面判据上，还原后 sha256 一致。
+
+## 20. 第六轮：状态快照、待实施计划与复核安排（2026-09-14）
+
+本节是**会话交接的状态快照**：写在这里的东西是压缩会话后唯一还能被读到的上下文。
+
+### 20.1 状态快照（写下时的实测值）
+
+- 分支与 PR：`task/worktree-sidebar` → **PR #819**（本插件的**唯一**一个 PR，draft、未合并、未打 tag）。第五轮收尾的一次 `--force-with-lease` 推送把它推到 `290125a`；此后只有本次的文档提交。
+- 基线：已 rebase 到 `origin/main`（当时 `9ce46cf`，33 个提交重放）。rebase 解了 5 处台账类冲突（`plugins-manifest.json` / `gate-scope-registry.json` / `collect-exemptions.test.ts` / `forbid-module-state-src.test.ts` / `eslint.config.js`），逐条口径见 PR #819 正文的「rebase 说明」。
+- 门禁（rebase 之后重跑）：`pnpm gate:pr` **34 步全 0**；`pnpm gate:full` **35 步全 0**（多「豁免到期台账」收集）；包测试 **13 文件 / 183 用例**；`typecheck` / `tsc -p test/tsconfig.json` / `prettier --check .` / `docs:check` / `verify-dir-imports --package` 全 0；`pnpm lint` **0 error、508 warning = 预算 508**（**本包自身 0 条**）；`test:scripts` 634 pass / 0 fail。
+- **预算的历史纠正**：分支一度显示 `maxWarnings: 671`，那不是本包抬的——是分支 base 继承来的旧值，main 已在 `2247b6c`(#822) 降到 508。S6–S10 的分片提交一行都没碰过该字段（`git log 4aac67a~1..HEAD -- scripts/data/gauntlet.config.json` 为空）。rebase 后自动取 main 的 508。
+- 已落地分片：① 归属缓存 TTL 解耦、② 去轮询换根、S6 目录重排、S7 遮蔽式接管、S8 删 fallback 改等待、S9 子 agent 继承、S10 承诺文案——逐条提交与偏差登记在 §19.6（sha 为 rebase 后的）。
+
+### 20.2 待实施：子 agent 也暴露工具（本轮唯一功能改动）
+
+- **行为**：三个工具从「只装进顶层 agent」改为「装进**所有 agent（含子 agent）**」；判定仍是同一条——该 agent 的 cwd 在 git 仓库里才装。
+- **官方依据**：`ctx.agents.list()` = 全部存活 agent（`dsh-agent/lib/types/index.d.ts:355`），`ctx.agents.roots()` = 仅顶层（`:362`）；`agent/created` 每次注册都发（`dsh-agent/lib/index.js:535-543`），现在被 `src/server/host/agents.ts:47` 的 `host.roots().includes(agent)` 挡掉。工具装进 `agent.ctx.tools` + `agent.ctx.effect`，生命周期随该 agent，子 agent 同样成立。
+- **改动面（8 个文件）**：`src/server/host/agents.ts`（`roots()` → `all()`、删过滤、注释留痕）、`src/index.ts`（`ctx.agents.list()`）、`src/server/tools/deps.ts` 与 `src/server/tools/impl/service/index.ts`（措辞与理由）、`test/unit/host-agents.test.ts`（反向用例倒过来）、`test/unit/tools.test.ts`（用例名/断言）、`test/integration/apply-lifecycle.test.ts`（假 ctx 的 `agents.roots()` → `list()`）、`README.md` / `README.en.md`、PR #819 正文同一句。
+- **语义（已与维护者确认，不改）**：子会话**自己没有登记**时沿父链取**最近祖先**的生效根；**自己登记了就展示自己那条**（`scope/impl/own` 优先于 `inherit`，S9 已实现）。
+- **影响面（要在注释/README/PR 留痕）**：这条改动改变**所有子 agent 的工具面**；原注释写的是「子代理的工具面由它的调用方决定，不该被本插件改变」——该判断被**有意推翻**，不是疏漏。
+
+### 20.3 复核安排（最终提交前）
+
+- 派一个子 agent 以**资深架构师**视角评审**双端架构与测试面**；宿主端重点：各模块**暴露面是否合理、还能不能收窄**——
+  每个 `interface.ts` 的门面导出、每份 `deps.ts` 里有没有用不到的端口成员、`impl/**` 里有没有该下沉到 `deps` 的类型、
+  `AgentPort` 三个方法（`subscribe`/`list`/`publish`）是否都还需要；客户端 `ClientSlotsPort`/`TabsPort`/`RootReader`/`ViewFor`/`WrapInject`/`InjectFactory` 的方法集是否最小、
+  `src/client/shared/ports.ts` 有没有混进实现细节；测试面按 `docs/ARCHITECTURE-METHOD.md` §8 与 `.dsh/skills/dsh-plugin-hub-testing` 的尺子逐条问「能不能被一次实现改动打红」。
+- 评审结论按「必修 / 建议 / 记录」三桶落地：能一条改动修完的当场修（每条都要红绿），其余写进 §20.5 遗留清单。
+- **顺序**：实施 20.2 → 跑门禁 → 派架构评审 → 按结论收敛 → **最终提交 + 推送**（只推 `task/worktree-sidebar`）。
+
+### 20.4 未验证项（截至本节，**不得预填**）
+
+§19.5 那一批仍然没有结论，另有本轮新增两条：
+
+1. 真机 U2：`priority < 0` 遮蔽是否稳定当值（含两次 HMR 重注册）。
+2. 真机 U3：树根指向 worktree 后 `list` 通过、点开文件读到的是 worktree 那一份。
+3. 真实启动序里 provider 与 apply 的先后（决定 S8 的等待分支会不会真的走到；health 的 `scopeTakeover` 可读数）。
+4. 客户端接缝 P0 的最终归因。
+5. `ctx.slots.entries()` 在真机客户端服务上的存在性（源码面已在 `renderer/lib/client.js:1189-1191` 核实，真机未验）。
+6. 子 agent 工具可见性 + 子会话「自己绑定优先、否则取最近祖先」的真机表现（20.2 落地后要重验）。
+
+本轮已派隔离环境实测子代理覆盖其中大部分；**结论回来后逐条回填「成立 / 不成立 / 无法验证」并附原始命令与 exit code**，不得把它的自述直接当成已验证。
+
+### 20.5 遗留清单（架构评审结论落地后回填）
+
+（空——待 §20.3 的架构评审结论出来后填写）
+
