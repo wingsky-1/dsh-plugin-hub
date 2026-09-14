@@ -717,7 +717,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 **B1 的连带面（切片 4 实跑补充，必须同一笔做）**：`mutation-topology.json` 六个段的 excludes 各有一条 `!packages/dsh-mcp-manager/src/placement-math.ts`（`:92/102/117/127/142/161`）。文件挪走后该 pattern **不再命中新路径**，而新路径落在 `runtime` 段的 `src/shared/**/*.ts` 超集里 → 这张薄 facade 会**进变异面**（与 provider-usage 对 `src/shared/placement-math.ts` 的 facade 排除先例相悖）。正确处置是**把该条 pattern 平移到新路径**（语义位移，不是新增证据），并重生成 6 份段 conf。
 
-> **B1 进度（2026-09-14）**：**B1.1 已完成**（`f21d44d`，含 ⑩）：建 `src/shared/interface.ts` 门面 + `placement-math.ts` 迁入 + 消费点改经门面 + 六条 pattern 平移；`dir-imports-baseline.json` 登记 7 类**结构型**计数位移（`quality` 段逐字节不变），公共导出面零变化。**B1.0（判据加固，见附录 G·G1）正在进行**：关掉 I8① 的裸包名自引用绕过路径。**未完**：`server/shared/paths.ts` + `file-io.ts`、`upgrade` 六件套、`src/server` 骨架与组合根、`src/shared` 另外五个文件。
+> **B1 进度（2026-09-14）**：**B1.1 已完成**（`f21d44d`，含 ⑩）：建 `src/shared/interface.ts` 门面 + `placement-math.ts` 迁入 + 消费点改经门面 + 六条 pattern 平移；`dir-imports-baseline.json` 登记 7 类**结构型**计数位移（`quality` 段逐字节不变），公共导出面零变化。**B1.0 判据加固已完成**（`4f94f65`，见附录 G·G1）：关掉 I8① 的裸包名自引用绕过路径。**B1.2（落盘面）进行中**。**未完**：`server/shared/paths.ts` + `file-io.ts`、`upgrade` 六件套、`src/server` 骨架与组合根、`src/shared` 另外五个文件。
 
 **commit 上限建议**：B0 ≤10、B1 ≤12、B2 ≤5/域、B3 ≤25；合计 ≤80。squash merge 下批次粒度只存在于分支，交付物（逐符号收缩表、对账表、exit code）必须落 PR 正文或持久文档。
 
@@ -841,11 +841,12 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 16. **B0 切片 4 已完成**（`fd2f82d`，⑦）：`locales.ts:74/177` 的 `scopeGlobalOpt` 中英两行去掉宿主路径承诺 + `test/e2e/smoke.test.ts` 加「客户端产物不含 `~/.dsh`」断言（含正反两向自证：注入后 **exit 1**、还原后命中 0）。协调者独立复核：`src/client` 与 `lib/client.js` 的 `~/.dsh` 命中**均为 0**，项目级 `<项目>/.dsh/mcp.json` **合法保留**（正控真实存在）。**⑩ 主动回退移入 B1**（机理与连带面见 D.3）。
 17. **`pnpm gate:pr` 复跑 = exit 0**（`GATE_PR_EXIT=0`，日志 `/tmp/gate-pr.log`）：32 条门禁项**逐条 exit=0**，含 `stryker:check`、`pack:check`、`lint`（670/671 warning）、`test:scripts`、全包 build/test/typecheck。**本地 PASS ≠ CI 绿**：本地任何档都不跑变异。
 19. **B1 第一刀（B1.1）已完成**（`f21d44d`）：建 `src/shared/interface.ts` 门面 + `git mv` `placement-math.ts` 迁入（仓库根 `shared` 的相对深度 `../../../`→`../../../../`）+ 4 处消费点改经门面 + `style.css` 路径注释同步 + `mutation-topology.json` 六条 facade 排除 pattern **平移**到新路径并重生成 6 份段 conf。`dir-imports-baseline.json` 登记 **7 类结构型计数位移**（`modules`/`interfaceFacades` 14→15、`scannedSrcFiles` 63→64、`allSrcTsFiles` 78→79、`leafValueEdges` 33→34、`fileValueEdges` 116→117、`crossModuleRefs` 134→141），**`quality` 段逐字节不变**。主控独立复验：判据 exit 0、基线 diff 仅这 7 个数字、`quality` 段 JSON 与 HEAD 相同、`export-surface-snapshot` 零 diff、提交后 `gate:pr` **exit 0**（32 项逐条 exit=0，`/tmp/gate-pr-767-b11-c.log`，与提交前那次的逐项完全一致）。**别名陷阱**：`panelAnchorForPosition` 不能与其它 12 个符号同链转出（见附录 G·G8），改为用真实源名直连仓库根单源 + 就地注释。
+20. **B1.0 判据加固已完成**（`4f94f65`）：关掉 I8① 的裸包名自引用绕过路径（附录 G·G1）。`resolveCandidates`/`resolveTarget` 未动、存量 0、`dir-imports-baseline.json` **零位移**；`test:scripts` 641 pass（基线 637 + 新增 4）；`pnpm lint` 670 warning；`pnpm gate:pr` exit 0。主控独立复验：判据在 mcp/notifier 均 exit 0、基线零 diff、7 个包都有 `package.json`、我自测的 `test/unit/**` 裸自引用存量确为 0。
 
 ### D.3 未完成与遗留（含状态订正）
 
 1. **B1 未完部分**：`server/shared/paths.ts`（mode 表）+ 自写 `file-io.ts` + `upgrade` 六件套 + `src/server/` 11 域骨架与组合根 + `src/shared/` 另外五个文件（`status`/`frames`/`dto`/`routes`/`service`）。切法与验收见 D.4。
-2. **B1.0 判据加固进行中**（附录 G·G1）：I8① 需认识「裸包名自引用」这一**等价写法**。存量实测 0，故要求**零基线位移**。
+2. **B1.2 进行中**（落盘面原语：`server/shared/paths.ts` 的 mode 表 + 自写 `file-io.ts` + 门面 + 单测）。**B1.0 已完成**（`4f94f65`，附录 G·G1）；其遗留的两条 id 不一致见 **G1b**（登记不修）。
 3. **⑩ 已完结**（随 B1.1，`f21d44d`）：迁移与其连带面（6 条 mutation exclude pattern 平移 + 6 份段 conf 重生成）同笔完成。
 4. **基线写入纪律（附录 G·G5，必须遵守）**：`--write-baseline` **必须在 build 之后的树上跑**——`lib/**` 的证据 id 会随 `lib/foo.d.ts` 在不在而变（只有 `src/index.ts` 做了归一），而 CI 是「先 build 再 contract」，两者错位就换号判红。
 5. **已知放宽路径（登记，不修）**：R16 的三条同族路径（删键 / 删**整包**条目 / **瞬态台账**，见 §十三 R16 与附录 G·G2–G4）；豁免 `reviewBy` 无执法力、可静默删除转长期（G6）。
@@ -855,11 +856,11 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 9. **lint warning 余量**：**670 / 预算 671，余量 1**（不许抬 `gauntlet.config.json`）。
 10. **测试面（B3 主体）未动**：16 个测试文件 / 14635 行尚未按域搬迁；`@ts-nocheck` 未清零。
 11. **红线状态（两条均已获授权）**：① `ci.yml` 数据面 glob 已落地（`f8ee6c5`）；② 公共 API 行为变更已于 2026-09-14 获维护者授权。**本轮不新增任何第三方依赖**。`approved` / `api-approved` 按仓规**只能由维护者本人打**，代理不代打。
-12. **PR-1（B0）尚未开**：分支领先 `origin/main` **30 笔**、工作区干净、**未推送**——该分支 upstream 指向 `origin/main`，**裸 `git push` 会打到 main**，要推必须 `git push -u origin task/767-arch-v4`。**PR-1 的切分点 = B0 末笔 `aa02843`**，其后的 `f21d44d` 起属 PR-2（B1–B3）。
+12. **PR-1（B0）尚未开**：分支领先 `origin/main` **30 笔**、工作区干净、**未推送**——该分支 upstream 指向 `origin/main`，**裸 `git push` 会打到 main**，要推必须 `git push -u origin task/767-arch-v4`。**PR-1 的切分点 = B0 末笔 `aa02843`**，其后的 `f21d44d` 起属 PR-2（B1–B3）。**维护者已授权「继续实施，最后推」**：B1 收尾时用 `git push -u origin task/767-arch-v4`（裸 `git push` 会打到 main，禁止）。
 
 ### D.4 下一步顺序
 
-**B0 已收口；B1.1 已落地（`f21d44d`）；当前在 B1.0（判据加固，见附录 G·G1）。** B1 剩余按下表各刀切，每刀一个可独立验证的提交面（一次只放一个写者）：
+**B0 已收口；B1.1（`f21d44d`）与 B1.0 判据加固（`4f94f65`）已落地；当前在 B1.2（落盘面原语）。** B1 剩余按下表各刀切，每刀一个可独立验证的提交面（一次只放一个写者）：
 
 1. ~~**B1.1 `src/shared/` 门面 + ⑩ 迁移**~~ **已完成（`f21d44d`）**；下面保留原始切法供回溯：建 `src/shared/` 与 `interface.ts`；`git mv src/placement-math.ts src/shared/`；改 4 处引用（`src/index.ts` / `src/config/model/config-schema.ts` / `src/client/core/state.ts` / `src/client/float/float.ts`，其中 client 两处改引 `src/shared/interface.ts`）；被移文件内仓库 `shared/placement-math.js` 的相对深度从 `../../../` 改 `../../../../`；mutation-topology 的 6 条 exclude pattern 平移到新路径 + 重生成 6 份段 conf。**验收**：`verify-dir-imports.mjs --package dsh-mcp-manager` 从 **exit 1 → exit 0**（这就是 ⑩ 在 B0 唯一的红）、`gen-stryker-conf.mjs --check` exit 0、`export-surface-snapshot` exit 0（导出面不变，纯位移）。
 2. **B1.2 `server/shared/` 落盘面**：`paths.ts` 单源（新路径 + `legacyFile` + 每文件 mode 表 + 插件自有目录 `0o700`）+ 自写 `file-io.ts`（唯一 tmp 名 → 显式 mode → `rename` → 失败清理；同路径 promise 队列；**不装进程级钩子**）+ 权限断言（7 个写点收敛到这一处）。
@@ -1111,7 +1112,8 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 | # | 发现 | severity | 证据 | 处置 |
 |---|---|---|---|---|
-| **G1** | **裸包名自引用绕过 I8①**（零数据面改动就能造出等价违规） | **P0** | `resolveCandidates:187` 只吃 `.` 开头的 spec → 裸名返回空 → I8① 的 fallback 落到 `<pkg>/test/unit/@wingsky-1/dsh-x`，不匹配任一面 → **0 条证据**。但各包 `package.json` 的 `exports["."]` 指向 `./lib/index.js`、`tsconfig.base.json` 是 NodeNext，故该 import **真的解析到产物面**（可用 `import.meta.resolve` 亲验） | **修**（B1.0）：让 I8① 认识裸包名/子路径写法，且证据 id 与相对写法**规范化一致**。存量实测 **0**（`test/unit/**` 裸自引用 0 条；`src/**` 唯一命中在 JSDoc 内）→ 零基线位移 |
+| **G1** | **裸包名自引用绕过 I8①**（零数据面改动就能造出等价违规） | **P0** | `resolveCandidates:187` 只吃 `.` 开头的 spec → 裸名返回空 → I8① 的 fallback 落到 `<pkg>/test/unit/@wingsky-1/dsh-x`，不匹配任一面 → **0 条证据**。但各包 `package.json` 的 `exports["."]` 指向 `./lib/index.js`、`tsconfig.base.json` 是 NodeNext，故该 import **真的解析到产物面**（可用 `import.meta.resolve` 亲验） | **修**（B1.0）：让 I8① 认识裸包名/子路径写法，且证据 id 与相对写法**规范化一致**。存量实测 **0**（`test/unit/**` 裸自引用 0 条；`src/**` 唯一命中在 JSDoc 内）→ 零基线位移。**已完成（`4f94f65`）**：新增 `selfReferenceLibTarget(pkgName, spec)` + `readPackageName(pkgDir)`，映射只落在 I8① 的采集函数内部，`resolveCandidates`/`resolveTarget` **一字未动**（主控已核：这两函数在 diff 里无任何 `+/-` 行，故 I2①/I2④/§5.3 判据面不变）；裸/相对 × `lib` 存在/不存在**四态落成同一条证据串**，且该映射与 Node 的包自引用解析实测一致（`import.meta.resolve` → `lib/index.js`） |
+| **G1b** | **G1 遗留的两条 id 不一致**（都不构成绕过） | P2 | ① 子路径按字面前缀映射：`<pkg>/client` → `lib/client`，而其相对等价写法落 `lib/client.js` → **两者都判红但 id 不同**，少了「换写法换不掉证据」的强度；② `<pkg>/package.json` → `lib/package.json` 是**理论假阳性**（导入本包 package.json 本身合法，相对写法不会被判）。另 `readPackageName` 读不到 `package.json` 时**静默**不做映射（既有 fixture 的合成根没有 package.json，故未 fail-closed） | 当前仓存量 0、无实际影响，故**登记不修**。推荐的将来修法：按本包 `exports` map **反解**子路径到真实落点再走 `unitImportFaceTarget`（可一并消掉 ①②，并让「读不到 package.json」变成显式提示而非静默） |
 | **G2** | **R16 的护栏描述不成立**：「CI 的 `--check`」不是护栏 | P1 | CI 只跑 plain check（`contract-check.ts:246-290`，无 `--write-baseline`）；洗白后的基线在 check 模式**按构造必然 PASS**；基线只有 `version`+`$comment`，无 provenance | **已订正 R16 文案**（§十三）：「唯一护栏是人工 diff 审阅」 |
 | **G3** | **删整包条目可一次洗 10 类**，提示只报条数、不含逐条明细 | P1 | 删 `baseline.packages[pkg]` → `--write-baseline` exit 0，输出「10 类，共 2 条」 | 记入 R16；「提示须列逐条明细」列为改进候选 |
 | **G4** | **瞬态台账**：台账只在写基线那一刻被读，无「基线证据→台账」对偶 | P1 | `:1329` 仅写入时查台账；`:1493-1504` 只有台账→证据单向。写入含证据的基线后清空 ledger → plain 仍 exit 0 | 记入 R16，登记为已知放宽路径 |
