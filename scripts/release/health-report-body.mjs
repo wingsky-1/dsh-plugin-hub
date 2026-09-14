@@ -18,10 +18,29 @@ function readJson(path) {
   return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
 }
 
+/**
+ * 基线状态文件的**宽容**读取：只有 status 为 fresh|stale 才算可用（与 workflow 最末 verdict
+ * 步骤的白名单同口径）。为什么不能直接把文件丢给 renderReportLine：它会走 default 抛 TypeError，
+ * 本步骤一红，下游「Create health issue」按 GHA 语义被跳过 ⇒ 周报工单不建——「留痕先于判红」
+ * 反而在这个输入下不成立。判红交给 verdict 步骤，这里只如实写「状态不可用」。
+ * 不可解析（写了一半 / 被改坏）与缺 status 字段归为同一类：两者都只说明「状态不可用」。
+ */
+function readStaleness(path) {
+  if (!existsSync(path)) return { kind: "missing" };
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    if (parsed?.status === "fresh" || parsed?.status === "stale")
+      return { kind: "usable", state: parsed };
+    return { kind: "unusable" };
+  } catch {
+    return { kind: "unusable" };
+  }
+}
+
 const summary = readJson("coverage/coverage-summary.json");
 const crap = readJson("coverage/crap-report.json");
 const gauntlet = readJson("scripts/data/gauntlet.config.json");
-const staleness = readJson("baseline-staleness.json");
+const staleness = readStaleness("baseline-staleness.json");
 const crapStrict = Boolean(crap?.strict ?? gauntlet?.crap?.strict);
 const crapMode = crapStrict ? "strict 判红" : "观察期（仅记录）";
 
@@ -57,10 +76,14 @@ if (crap) {
   lines.push("- CRAP：数据缺失");
 }
 
-// 基线新鲜度（#718 验收判据）：文件由 baseline-staleness.mjs 产出；缺席时不得静默省略——
-// 「检查过」与「没检查」在正文里必须可区分。
-if (staleness) {
-  lines.push(renderReportLine(staleness));
+// 基线新鲜度（#718 验收判据）：三种输入都要能落成正文一行，且措辞互不混淆——
+// 「检查过且可用」/「状态不可用」/「文件根本没产出」。
+if (staleness.kind === "usable") {
+  lines.push(renderReportLine(staleness.state));
+} else if (staleness.kind === "unusable") {
+  lines.push(
+    "- 变异基线（`baseline/mutation`）新鲜度：无法确定（状态不可用）—— 判红步骤已按「检查未做成」处理",
+  );
 } else {
   lines.push("- 变异基线（`baseline/mutation`）龄：数据缺失（baseline-staleness.json 未产出）");
 }
