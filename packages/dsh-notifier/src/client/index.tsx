@@ -39,15 +39,13 @@ import {
 import * as React from "react";
 // i18n：复用官方 dsh-client-locale——zh/en 双语字典，LocaleNamespaceMap
 // 声明合并进官方 ui-slots 类型面；仅 import type（编译期擦除，无运行时依赖）。
-import { zh, en, type NotifierLocaleKey } from "./locales.ts";
+import { zh, en, KIND_KEYS, type NotifierLocaleKey } from "./locales.ts";
 // 能力自检面的投影（宿主面归一化 + 浏览器面判定）收在同一处：判定与文案必须同源，
 // 两处各写一遍就等于把「未知不该被渲染成可用」这条口径分叉。
 import { clientDiagnosticsOf } from "./capabilities.ts";
 import type { ClientFacts } from "./capabilities.ts";
 // 页面内即时反馈（横幅 / 短提示）：非安全上下文下唯一的降级提醒通道。
 import { showBanner, toast } from "./notify/display.ts";
-// 凭据掩码字段的编辑语义：服务端掩码不得作为可编辑字面量进输入框（见模块头）。
-import { credentialFieldKey, credentialFieldView } from "./settings/mask.ts";
 // 设置草稿的纯逻辑与保存串行 guard：零 React 零 DOM，可被 node 直接 import——它们决定
 // 「保存什么」，因此必须是可判据的面（原先挂在公开 apply 上，实测零消费者）。
 import {
@@ -62,30 +60,16 @@ import { createSaveGuard } from "./settings/save-guard.ts";
 import { apiFailureOf, markHttpFailure } from "./api-error.ts";
 // 设置卡的渲染原子层：普通函数返回 JSX，依赖（t / statusMap / patch / sendTest / 平台 / 诊断
 // 视图）一律显式传参——原子层不读卡片状态，搬家不会让闭包静默捕获到旧 state。
-import { advRow, chRow, deliveryLines } from "./settings/parts/rows.tsx";
-import { numInput, switchControl, switchToggle, textInput } from "./settings/parts/controls.tsx";
-import { failBadge, statusDotClass, statusText, testBtn } from "./settings/parts/status.tsx";
-import {
-  browserDiagnosticsLine,
-  browserPermLine,
-  hostDiagnosticsBlock,
-  systemPlatformHint,
-} from "./settings/parts/diagnostics.tsx";
-import { soundRow } from "./settings/channels/sound-row.tsx";
+import { advRow, deliveryLines } from "./settings/parts/rows.tsx";
+import { switchControl, switchToggle } from "./settings/parts/controls.tsx";
+import { barkCard } from "./settings/channels/bark-card.tsx";
+import { builtinCard } from "./settings/channels/builtin-card.tsx";
+import { webhookCard } from "./settings/channels/webhook-card.tsx";
 // 两端共享面 src/shared/interface.ts：音色白名单、通知类型表、频道 id 归一化、webhook 预设
 // （模板 / 认证白名单）与理由 code 的事实源都在这里，客户端只消费，不再各写一份副本——跨端
 // 漂移的症状是「设置页选得到、宿主拒收」与「勾了频道却收不到」。该目录的模块必须零 import
 // （或同目录相对），判据见 scripts/test/shared-leaf-imports.test.ts。
-import {
-  KIND_SEVERITY,
-  KIND_SWITCHES,
-  WEBHOOK_AUTHS,
-  channelIdFor,
-  channelIdOf,
-  isBuiltinKind,
-  isSoundId,
-  webhookTemplateOf,
-} from "../shared/interface.ts";
+import { KIND_SEVERITY, KIND_SWITCHES, channelIdOf, isBuiltinKind } from "../shared/interface.ts";
 import type { NotifySeverity } from "../shared/interface.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
@@ -112,11 +96,7 @@ const ROUTES = {
   status: "/api/dsh-notifier/status",
   kinds: "/api/dsh-notifier/kinds",
 };
-/** 声音设置是否处于「开」：true 与内置音色 id 都算开，false 与脏值算关。
- *  三态摘要、卡体提示、声音行开关三处共用这一条口径——各判一遍就会出现「卡片说有声、开关说没有」。 */
-function soundIsOn(value: any): boolean {
-  return value === true || isSoundId(value);
-}
+
 const STYLE_ID = "dsh-notifier-style";
 // 每次样式契约变更后 bump（版本号单调递增，保证 ensureStyle 判定为新版本并重注入）
 // 声音行/三态/试听样式加入时再次 bump。
@@ -145,18 +125,6 @@ const EVENT_KIND_MAP: Record<string, string> = Object.fromEntries(
     return [entry[1], entry[0]];
   }),
 );
-/** kind → 字典 key（未知 kind 回落 kind 本体显示，数据不翻译）。刻意留在客户端：
- *  这是「kind → i18n 文案 key」，文案属客户端面，宿主端没有翻译。键集 = shared 的
- *  BUILTIN_KINDS（含 test——自检通知没有事件开关，但历史行要显示它）。 */
-const KIND_KEYS: Record<string, string> = {
-  ask: "kAsk",
-  question: "kQuestion",
-  done: "kDone",
-  "subagent-done": "kSubagentDone",
-  error: "kError",
-  "turn-end": "kTurnEnd",
-  test: "kTest",
-};
 
 /**
  * kind → 展示强度（severity）css 修饰符（事件行/历史行色点）。事实源在 src/shared/kinds.ts
@@ -167,58 +135,6 @@ const KIND_KEYS: Record<string, string> = {
  */
 function severityOf(kind: string): NotifySeverity {
   return isBuiltinKind(kind) ? KIND_SEVERITY[kind] : "info";
-}
-
-/**
- * webhook 频道预设：选择预设填充认证方式与消息模板；URL 不自动
- * 覆盖（避免丢用户已填内容——「仅空值填充」的变体：URL 只在为空时
- * 由用户填写，模板/认证随预设走且可再改）。模板渲染契约见 channel-webhook.ts：
- * 文本占位符 JSON-aware 转义、{{ts}} 数字直出、{{priority}} 频道感知映射。
- *
- * 模板字面量取 src/shared/webhooks.ts（两端共享面，本模块不再抄第二份：宿主端出口渲染读的是
- * 同一份，各写一份时的漂移症状是「设置页看到的模板与实际发出去的 body 不是同一份」）。
- * 认证**默认值**留在这里：宿主端没有「套用预设」这个动作，没有对应物可共享。
- */
-const WEBHOOK_PRESETS: Record<string, { auth: string; template: string }> = {
-  ntfy: { auth: "bearer", template: webhookTemplateOf("ntfy") },
-  gotify: { auth: "bearer", template: webhookTemplateOf("gotify") },
-  custom: { auth: "header", template: webhookTemplateOf("custom") },
-};
-
-/**
- * 频道类型图标（设计上刻意保留；内联 SVG 零外部资源）。
- * browser=地球 / system=显示器 / webhook=闪电 / 其余（bark）=铃铛。
- */
-function iconEl(channelType: string) {
-  let paths: any[];
-  if (channelType === "browser") {
-    paths = [
-      <circle cx={12} cy={12} r={9} key="c" />,
-      <path
-        d="M3 12h18M12 3c2.5 2.6 4 5.7 4 9s-1.5 6.4-4 9c-2.5-2.6-4-5.7-4-9s1.5-6.4 4-9z"
-        key="p"
-      />,
-    ];
-  } else if (channelType === "system") {
-    paths = [
-      <rect x={3} y={4} width={18} height={12} rx={2} key="r" />,
-      <path d="M8 20h8M12 16v4" key="p" />,
-    ];
-  } else if (channelType === "webhook") {
-    paths = [<path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l0-8z" key="p" strokeLinejoin="round" />];
-  } else {
-    paths = [
-      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" key="a" />,
-      <path d="M13.7 21a2 2 0 0 1-3.4 0" key="b" />,
-    ];
-  }
-  return (
-    <span className="dn-ch-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-        {paths}
-      </svg>
-    </span>
-  );
 }
 
 /**
@@ -1202,712 +1118,6 @@ function SettingsCard() {
   }
 
   /**
-   * 内置频道卡（browser/system）：开关 + 行为参数 + 状态行 + per-channel 测试。
-   * 整卡 details 可折叠——非受控 + key remount 形态（key 含 enabled，
-   * open 仅 mount 生效），未启用默认收起、启用默认展开；手动开合完全交 DOM，
-   * 无受控时序坑；启停切换重挂载重置折叠态（预期行为）。summary 内 enable
-   * checkbox 依赖 HTML 规范豁免（点击 interactive content 不触发 summary 激活）。
-   */
-  /**
-   * 内置频道卡（三开关：启用 / 弹窗 / 声音）：
-   * 卡头 = 类型图标 + 名称 + 类型徽标 + 状态点/摘要 + **启用** switch；卡体 = 弹窗行 + 声音行
-   * （开关 + 音色下拉 + ▶试听）+（浏览器）权限状态行 + 测试按钮。
-   *
-   * 谁决定什么：**启用**决定「发不发」（关掉 = 完全不投递，声音也不发）；**弹窗 + 声音**决定
-   * 「怎么发」（弹窗关而声音开 = 只响不弹；两者都关 = 本频道不会有任何提醒，卡体给出提示）。
-   * 三态摘要：启用开 + 弹窗开 = 启用；启用开 + 弹窗关 + 声音开 = 仅声音；启用关 = 已停用。
-   */
-  /**
-   * 内置频道卡：与实例卡同源——它们都是 `settings.channels` 里的一项，只是不渲染删除入口、也没有凭据。
-   * 卡头 = 图标 + 名称 + 内置徽标 + 状态摘要 + 状态点 + 失败徽标 + 启用 switch；卡体 = 弹窗行 +
-   * （浏览器另有「页面可见时也弹」）+ 声音行 + 权限/平台提示 + 测试按钮。
-   */
-  function builtinCard(index: number, ch: any, label: string) {
-    const channelId = channelIdOf(ch);
-    const enabled = ch.enabled === true;
-    const popup = ch.popup === true;
-    const soundOn = soundIsOn(ch.sound);
-    const stateCls = !enabled ? " dn-ch-off" : !popup && soundOn ? " dn-ch-sound" : " dn-ch-onEdge";
-    const summaryState = !enabled
-      ? t("chStateOff")
-      : !popup && soundOn
-        ? t("chStateSound")
-        : t("chStateOn");
-    const extras: any[] = [];
-    extras.push(
-      chRow(
-        t("chPopup"),
-        switchToggle(
-          popup,
-          function (v: boolean) {
-            chPatch(index, { popup: v });
-          },
-          t("chPopup") + " " + label,
-        ),
-      ),
-    );
-    if (ch.type === "browser") {
-      extras.push(
-        chRow(
-          t("chWhenVisible"),
-          switchToggle(
-            ch.whenVisible === true,
-            function (v: boolean) {
-              chPatch(index, { whenVisible: v });
-            },
-            t("chWhenVisible") + " " + label,
-          ),
-        ),
-      );
-    }
-    extras.push(soundRow(index, ch, label, soundOn, t, chPatch, audioEngine));
-    return (
-      <details
-        className={"dn-ch-card" + stateCls}
-        key={"ch-" + channelId + ":" + enabled + ":" + popup + ":" + soundOn}
-        open={enabled}
-      >
-        <summary>
-          {iconEl(String(ch.type))}
-          <span className="dn-ch-name">{label}</span>
-          <span className="dn-ch-type">{t("chTypeBuiltin")}</span>
-          <span className="dn-ch-stateTxt">{summaryState}</span>
-          <span className={"dn-ch-statusDot " + statusDotClass(channelId, statusMap)} />
-          <span className="dn-ch-statusTxt" title={statusText(channelId, statusMap, t)}>
-            {statusText(channelId, statusMap, t)}
-          </span>
-          {failBadge(channelId, statusMap, t)}
-          <span className="dn-ch-summaryRight">
-            {switchToggle(
-              enabled,
-              function (v: boolean) {
-                chPatch(index, { enabled: v });
-              },
-              (enabled ? t("chToggleOff") : t("chToggleOn")) + label,
-            )}
-          </span>
-        </summary>
-        <div className="dn-ch-body">
-          {extras}
-          {enabled && !popup && soundOn ? (
-            <div className="dn-set-note-inline dn-soundOnly">{t("chSoundOnlyNote")}</div>
-          ) : null}
-          {enabled && !popup && !soundOn ? (
-            <div className="dn-set-note-inline dn-soundOnly">{t("chPopupSoundOffNote")}</div>
-          ) : null}
-          {/* 浏览器通知权限状态行归入浏览器频道卡（权限授权入口同卡就近可达） */}
-          {ch.type === "browser"
-            ? browserPermLine(t, isSecureContext(), requestNotificationPermission)
-            : null}
-          {/* 浏览器面自检行：宿主侧接口看不到本页的权限与音频解锁状态 */}
-          {ch.type === "browser" ? browserDiagnosticsLine(diag) : null}
-          {/* 系统卡平台提示（/health platform 消费；宿主 OS 与浏览器 OS 可异机） */}
-          {ch.type === "system" ? systemPlatformHint(hostPlatform, t) : null}
-          {/* 宿主能力自检（/diagnostics）：结论 + 处置建议 + 明细折叠 */}
-          {ch.type === "system" ? hostDiagnosticsBlock(diag) : null}
-          <div className="dn-ch-actions">{testBtn(channelId, sendTest, t)}</div>
-        </div>
-      </details>
-    );
-  }
-
-  /**
-   * Bark 实例卡：卡头 = 图标 + 名称 + 类型徽标 + 状态点/摘要 +
-   * 失败徽标 + 启用 switch；卡体 = 基本行 + 高级参数折叠（含 levels 矩阵）+ 测试/删除。
-   * 整卡 details 可折叠（非受控 + key remount），未启用默认收起。
-   */
-  function barkCard(ch: any, idx: number) {
-    const channelKey = channelIdFor(ch);
-    const armed = delArmedId === ch.id;
-    const deviceKeyKey = credentialFieldKey(String(ch.id), "deviceKey");
-    const levelOpts: any[] = [
-      <option value="" key="auto">
-        {t("chLevelAuto")}
-      </option>,
-    ];
-    ["active", "timeSensitive", "passive", "critical"].forEach(function (lv: string) {
-      levelOpts.push(
-        <option value={lv} key={lv}>
-          {lv}
-        </option>,
-      );
-    });
-    // levels（kind→level）编辑：kind 建议 = 内置 7 kind + 动态已注册 kind；datalist id 按实例唯一
-    const suggestKinds: string[] = Object.keys(KIND_KEYS);
-    (kindsList || []).forEach(function (k: any) {
-      if (suggestKinds.indexOf(String(k.id)) === -1) suggestKinds.push(String(k.id));
-    });
-    const dlId = "dn-levels-suggest-" + String(ch.id);
-    const levels = ch.levels || {};
-    const levelKeys = Object.keys(levels);
-    const levelsRows: any[] = levelKeys.map(function (kind) {
-      return (
-        <div className="dn-levels-row" key={"lv-" + kind}>
-          <span className="dn-levels-kind">
-            {KIND_KEYS[kind] !== undefined ? t(KIND_KEYS[kind]) + " (" + kind + ")" : kind}
-          </span>
-          <select
-            className="dn-set-input dn-set-select"
-            value={levels[kind] || ""}
-            onChange={function (e: any) {
-              chLevelsSet(idx, kind, e.target.value);
-            }}
-          >
-            {levelOpts}
-          </select>
-          <button
-            type="button"
-            className="dn-set-btn dn-set-btnSmall"
-            onClick={function () {
-              chLevelsSet(idx, kind, "");
-            }}
-          >
-            {t("chLevelsRemove")}
-          </button>
-        </div>
-      );
-    });
-    const newRow = levelsNew[String(ch.id)] || { kind: "", level: "active" };
-    const newKindKnown = suggestKinds.indexOf(newRow.kind) !== -1;
-    const addRow = (
-      <div className="dn-levels-add" key="lv-add">
-        <input
-          type="text"
-          className="dn-set-input dn-set-inputText"
-          list={dlId}
-          placeholder={t("chLevelsKindPlaceholder")}
-          value={newRow.kind}
-          onChange={function (e: any) {
-            setLevelsNew(
-              Object.assign({}, levelsNew, {
-                [String(ch.id)]: { kind: e.target.value, level: newRow.level },
-              }),
-            );
-          }}
-        />
-        <select
-          className="dn-set-input dn-set-select"
-          value={newRow.level}
-          onChange={function (e: any) {
-            setLevelsNew(
-              Object.assign({}, levelsNew, {
-                [String(ch.id)]: { kind: newRow.kind, level: e.target.value },
-              }),
-            );
-          }}
-        >
-          {levelOpts}
-        </select>
-        <button
-          type="button"
-          className="dn-set-btn dn-set-btnSmall"
-          onClick={function () {
-            if (newRow.kind) {
-              chLevelsSet(idx, newRow.kind, newRow.level);
-              setLevelsNew(
-                Object.assign({}, levelsNew, { [String(ch.id)]: { kind: "", level: "active" } }),
-              );
-            }
-          }}
-        >
-          {t("chLevelsAdd")}
-        </button>
-        {newRow.kind && !newKindKnown ? (
-          <span className="dn-set-note-inline">{t("chLevelsUnknown")}</span>
-        ) : null}
-      </div>
-    );
-    return (
-      <details
-        className={"dn-ch-card" + (ch.enabled ? " dn-ch-onEdge" : " dn-ch-off")}
-        key={channelKey + ":" + (ch.enabled === true)}
-        open={ch.enabled === true}
-      >
-        <summary>
-          {iconEl("bark")}
-          <span className="dn-ch-name">{ch.name || ch.id}</span>
-          <span className="dn-ch-type">bark</span>
-          <span className={"dn-ch-statusDot " + statusDotClass(channelKey, statusMap)} />
-          <span className="dn-ch-statusTxt" title={statusText(channelKey, statusMap, t)}>
-            {statusText(channelKey, statusMap, t)}
-          </span>
-          {failBadge(channelKey, statusMap, t)}
-          <span className="dn-ch-summaryRight">
-            {switchToggle(
-              ch.enabled === true,
-              function (v: boolean) {
-                chPatch(idx, { enabled: v });
-              },
-              (ch.enabled ? t("chToggleOff") : t("chToggleOn")) + (ch.name || ch.id),
-            )}
-          </span>
-        </summary>
-        <div className="dn-ch-body">
-          {chRow(
-            t("chBarkName"),
-            textInput(
-              ch.name,
-              function (v: string) {
-                chPatch(idx, { name: v });
-              },
-              { placeholder: t("chBarkNamePlaceholder"), ariaLabel: t("chBarkName") },
-            ),
-          )}
-          {chRow(
-            t("chBarkBaseUrl"),
-            textInput(
-              ch.baseUrl,
-              function (v: string) {
-                chPatch(idx, { baseUrl: v });
-              },
-              { placeholder: "https://api.day.app", ariaLabel: t("chBarkBaseUrl") },
-            ),
-            t("chBarkBaseUrlHint"),
-          )}
-          {chRow(
-            t("chBarkDeviceKey"),
-            <span className="dn-secret" key="deviceKey">
-              <input
-                type="password"
-                className="dn-set-input dn-set-inputText"
-                value={
-                  credentialFieldView(
-                    ch.deviceKey,
-                    secretEdited[deviceKeyKey] === true,
-                    t("chBarkDeviceKeyPlaceholder"),
-                  ).value
-                }
-                placeholder={
-                  credentialFieldView(
-                    ch.deviceKey,
-                    secretEdited[deviceKeyKey] === true,
-                    t("chBarkDeviceKeyPlaceholder"),
-                  ).placeholder
-                }
-                aria-label={t("chBarkDeviceKey")}
-                onChange={function (e: any) {
-                  markSecretEdited(deviceKeyKey);
-                  chPatch(idx, { deviceKey: e.target.value });
-                }}
-              />
-            </span>,
-            t("chBarkDeviceKeyHint"),
-          )}
-          <details className="dn-ch-adv" key={"adv-" + ch.id}>
-            <summary>{t("chAdvanced")}</summary>
-            <div className="dn-ch-adv-body">
-              {advRow(
-                t("chBarkSound"),
-                textInput(
-                  ch.sound,
-                  function (v: string) {
-                    chPatch(idx, { sound: v });
-                  },
-                  { ariaLabel: t("chBarkSound") },
-                ),
-              )}
-              {advRow(
-                t("chBarkGroup"),
-                textInput(
-                  ch.group,
-                  function (v: string) {
-                    chPatch(idx, { group: v });
-                  },
-                  { ariaLabel: t("chBarkGroup") },
-                ),
-              )}
-              <div className="dn-set-note-inline">{t("chBarkGroupHint")}</div>
-              {advRow(
-                t("chBarkIcon"),
-                textInput(
-                  ch.icon,
-                  function (v: string) {
-                    chPatch(idx, { icon: v });
-                  },
-                  { ariaLabel: t("chBarkIcon") },
-                ),
-              )}
-              <div className="dn-set-note-inline">{t("chBarkIconHint")}</div>
-              {advRow(
-                t("chBarkUrl"),
-                textInput(
-                  ch.url,
-                  function (v: string) {
-                    chPatch(idx, { url: v });
-                  },
-                  { ariaLabel: t("chBarkUrl") },
-                ),
-              )}
-              {advRow(
-                t("chBarkBadge"),
-                numInput(
-                  ch.badge,
-                  function (v: number | undefined) {
-                    chPatch(idx, { badge: v });
-                  },
-                  { ariaLabel: t("chBarkBadge") },
-                ),
-              )}
-              {advRow(
-                t("chBarkLevel"),
-                <select
-                  className="dn-set-input dn-set-select"
-                  value={ch.level || ""}
-                  aria-label={t("chBarkLevel")}
-                  onChange={function (e: any) {
-                    chPatch(idx, { level: e.target.value || undefined });
-                  }}
-                >
-                  {levelOpts}
-                </select>,
-              )}
-              <div className="dn-set-note-inline">{t("chBarkLevelHint")}</div>
-              <div className="dn-set-note-inline">{t("chLevelsHint")}</div>
-              {levelKeys.length === 0 ? (
-                <div className="dn-set-note-inline">{t("chLevelsEmpty")}</div>
-              ) : (
-                levelsRows
-              )}
-              {addRow}
-              <datalist id={dlId}>
-                {suggestKinds.map(function (k) {
-                  return (
-                    <option value={k} key={k}>
-                      {k}
-                    </option>
-                  );
-                })}
-              </datalist>
-            </div>
-          </details>
-          <div className="dn-ch-actions">
-            {testBtn(channelKey, sendTest, t)}
-            <button
-              type="button"
-              className={"dn-set-btn dn-set-btnSmall" + (armed ? " dn-set-btnDanger" : "")}
-              onClick={function () {
-                if (armed) {
-                  chRemove(idx);
-                  setDelArmedId(null);
-                } else {
-                  setDelArmedId(ch.id);
-                  setTimeout(function () {
-                    setDelArmedId(null);
-                  }, 3000);
-                }
-              }}
-            >
-              {armed ? t("chDeleteConfirm") : t("chDelete")}
-            </button>
-          </div>
-        </div>
-      </details>
-    );
-  }
-
-  /**
-   * Webhook 实例卡（新增频道位，安卓经 ntfy / Gotify / 自建网关推送；默认停用）。
-   * 卡头同 Bark 实例卡形态；卡体：预设（填充认证/模板，URL 不覆盖）/ 名称 / 目标 URL /
-   * 认证（none|bearer|basic|header，动态字段凭据掩码）/ 投递超时（1-60s clamp）/
-   * JSON 模板编辑器（占位符 chips 光标处插入）。渲染契约见 channel-webhook.ts。
-   */
-  function webhookCard(ch: any, idx: number) {
-    const channelKey = channelIdFor(ch);
-    const armed = delArmedId === ch.id;
-    // 白名单取 src/shared/webhooks.ts（两端共享面）：写入口径与设置页选项必须是同一份，
-    // 各写一份时的症状是「页面选得到、宿主拒收」。
-    const authValue =
-      (WEBHOOK_AUTHS as readonly string[]).indexOf(String(ch.auth || "none")) !== -1
-        ? String(ch.auth || "none")
-        : "none";
-    const chId = String(ch.id);
-
-    /** webhook 字段 patch（函数式基于最新 channels，防同帧后写覆盖）。 */
-    function whPatch(part: Record<string, any>) {
-      chPatch(idx, part);
-    }
-
-    /** 凭据输入 + 显隐按钮。value 走 maskedFieldValue：未编辑时为空（占位符给「已配置」提示），
-     *  服务端掩码不进 value——它一旦被改写就不再等于掩码，服务端会把它当新凭据落盘。 */
-    function secretField(field: string, placeholderKey: string) {
-      const key = credentialFieldKey(chId, field);
-      const shown = revealMap[key] === true;
-      const fieldView = credentialFieldView(
-        ch[field],
-        secretEdited[key] === true,
-        t(placeholderKey),
-      );
-      const part: Record<string, any> = {};
-      return (
-        <span className="dn-secret" key={field}>
-          <input
-            type={shown ? "text" : "password"}
-            className="dn-set-input dn-set-inputText"
-            value={fieldView.value}
-            placeholder={fieldView.placeholder}
-            aria-label={t(placeholderKey)}
-            onChange={function (e: any) {
-              markSecretEdited(key);
-              part[field] = e.target.value;
-              whPatch(part);
-            }}
-          />
-          <button
-            type="button"
-            className="dn-secret-reveal"
-            onClick={function () {
-              const next: Record<string, boolean> = Object.assign({}, revealMap);
-              next[key] = !shown;
-              setRevealMap(next);
-            }}
-          >
-            {shown ? t("secretHide") : t("secretShow")}
-          </button>
-        </span>
-      );
-    }
-
-    /** 占位符插入模板（光标处；受控值经 whPatch 回写）。 */
-    function insertTpl(token: string) {
-      const ta = document.getElementById("dn-tpl-" + chId) as HTMLTextAreaElement | null;
-      if (!ta) {
-        whPatch({ template: (ch.template || "") + token });
-        return;
-      }
-      const at =
-        ta.selectionStart === null || ta.selectionStart === undefined
-          ? ta.value.length
-          : ta.selectionStart;
-      whPatch({ template: ta.value.slice(0, at) + token + ta.value.slice(at) });
-    }
-
-    const authCtl: any[] = [
-      <select
-        key="auth-select"
-        className="dn-set-input dn-set-select"
-        value={authValue}
-        aria-label={t("whAuth")}
-        onChange={function (e: any) {
-          whPatch({ auth: e.target.value });
-        }}
-      >
-        <option value="none">{t("whAuthNone")}</option>
-        <option value="bearer">{t("whAuthBearer")}</option>
-        <option value="basic">{t("whAuthBasic")}</option>
-        <option value="header">{t("whAuthHeader")}</option>
-      </select>,
-    ];
-    if (authValue === "bearer") authCtl.push(secretField("token", "whAuthToken"));
-    else if (authValue === "basic") {
-      authCtl.push(
-        <input
-          key="username"
-          type="text"
-          className="dn-set-input dn-set-inputText"
-          value={ch.username || ""}
-          placeholder={t("whAuthUsername")}
-          aria-label={t("whAuthUsername")}
-          onChange={function (e: any) {
-            whPatch({ username: e.target.value });
-          }}
-        />,
-      );
-      authCtl.push(secretField("password", "whAuthPassword"));
-    } else if (authValue === "header") {
-      authCtl.push(
-        <input
-          key="headerName"
-          type="text"
-          className="dn-set-input dn-set-inputText"
-          value={ch.headerName || ""}
-          placeholder={t("whAuthHeaderName")}
-          aria-label={t("whAuthHeaderName")}
-          onChange={function (e: any) {
-            whPatch({ headerName: e.target.value });
-          }}
-        />,
-      );
-      authCtl.push(secretField("headerValue", "whAuthHeaderValue"));
-    }
-
-    const textTokens = [
-      "{{title}}",
-      "{{message}}",
-      "{{kind}}",
-      "{{severity}}",
-      "{{priority}}",
-      "{{source}}",
-    ];
-    const tplChips: any[] = textTokens.map(function (tok: string) {
-      return (
-        <button
-          type="button"
-          key={tok}
-          className="dn-tpl-chip"
-          title={t("whTemplateHint")}
-          onClick={function () {
-            insertTpl(tok);
-          }}
-        >
-          {tok}
-        </button>
-      );
-    });
-    tplChips.push(
-      <button
-        type="button"
-        key="{{ts}}"
-        className="dn-tpl-chip is-raw"
-        title={"{{ts}} → " + String(Date.now()) + "（数字直出，不加引号）"}
-        onClick={function () {
-          insertTpl("{{ts}}");
-        }}
-      >
-        {"{{ts}}"}
-      </button>,
-    );
-
-    return (
-      <details
-        className={"dn-ch-card" + (ch.enabled ? " dn-ch-onEdge" : " dn-ch-off")}
-        key={channelKey + ":" + (ch.enabled === true)}
-        open={ch.enabled === true}
-      >
-        <summary>
-          {iconEl("webhook")}
-          <span className="dn-ch-name">{ch.name || ch.id}</span>
-          <span className="dn-ch-type">webhook</span>
-          <span className={"dn-ch-statusDot " + statusDotClass(channelKey, statusMap)} />
-          <span className="dn-ch-statusTxt" title={statusText(channelKey, statusMap, t)}>
-            {statusText(channelKey, statusMap, t)}
-          </span>
-          {failBadge(channelKey, statusMap, t)}
-          <span className="dn-ch-summaryRight">
-            {switchToggle(
-              ch.enabled === true,
-              function (v: boolean) {
-                whPatch({ enabled: v });
-              },
-              (ch.enabled ? t("chToggleOff") : t("chToggleOn")) + (ch.name || ch.id),
-            )}
-          </span>
-        </summary>
-        <div className="dn-ch-body">
-          {chRow(
-            t("whPreset"),
-            <select
-              className="dn-set-input dn-set-select"
-              value=""
-              aria-label={t("whPreset")}
-              onChange={function (e: any) {
-                const p = WEBHOOK_PRESETS[e.target.value];
-                if (!p) return;
-                // preset 落配置（{{priority}} 频道感知映射的依据）；认证与模板随预设填充，URL 不覆盖（防丢已填内容）
-                whPatch({ preset: e.target.value, auth: p.auth, template: p.template });
-              }}
-            >
-              <option value="">{t("whPreset")}</option>
-              <option value="ntfy">{t("whPresetNtfy")}</option>
-              <option value="gotify">{t("whPresetGotify")}</option>
-              <option value="custom">{t("whPresetCustom")}</option>
-            </select>,
-            t("whPresetHint"),
-          )}
-          {chRow(
-            t("chBarkName"),
-            textInput(
-              ch.name,
-              function (v: string) {
-                whPatch({ name: v });
-              },
-              { placeholder: t("chBarkNamePlaceholder"), ariaLabel: t("chBarkName") },
-            ),
-          )}
-          {chRow(
-            t("whUrl"),
-            textInput(
-              ch.url,
-              function (v: string) {
-                whPatch({ url: v });
-              },
-              { placeholder: t("whUrlPlaceholder"), ariaLabel: t("whUrl") },
-            ),
-            t("whUrlHint"),
-          )}
-          {chRow(t("whAuth"), <span className="dn-authFields">{authCtl}</span>, t("whAuthHint"))}
-          {chRow(
-            t("whTimeout"),
-            numInput(
-              ch.timeoutSec,
-              function (v: number | undefined) {
-                // UI 层先 clamp（1-60）；服务端 normalize 仍权威 clamp（防绕过 UI 的 PUT）
-                whPatch({
-                  timeoutSec:
-                    v === undefined ? undefined : Math.min(60, Math.max(1, Math.round(v))),
-                });
-              },
-              { ariaLabel: t("whTimeout"), min: 1, max: 60 },
-            ),
-            t("whTimeoutHint"),
-          )}
-          <div className="dn-ch-row" style={{ display: "block" }}>
-            <div className="dn-ch-cap" style={{ marginBottom: "6px" }}>
-              {t("whTemplate")}
-            </div>
-            <textarea
-              id={"dn-tpl-" + chId}
-              className="dn-tpl"
-              spellCheck={false}
-              aria-label={t("whTemplate")}
-              value={ch.template || ""}
-              onChange={function (e: any) {
-                whPatch({ template: e.target.value });
-              }}
-            />
-            <div className="dn-tplChips">
-              <span className="dn-tplCap">{t("routeCap") + ":"}</span>
-              {tplChips}
-              <button
-                type="button"
-                className="dn-set-btn dn-set-btnSmall"
-                onClick={function () {
-                  // 恢复为当前预设（ch.preset 由预设下拉落配置；缺省 ntfy 与服务端默认一致）的默认模板
-                  const p = WEBHOOK_PRESETS[String(ch.preset || "ntfy")];
-                  if (p) whPatch({ template: p.template });
-                }}
-              >
-                {t("whTplRestore")}
-              </button>
-            </div>
-            <span className="dn-ch-hint">{t("whTemplateHint")}</span>
-            <span className="dn-ch-hint">{t("whTemplateFailHint")}</span>
-          </div>
-          <div className="dn-ch-actions">
-            {testBtn(channelKey, sendTest, t)}
-            <button
-              type="button"
-              className={"dn-set-btn dn-set-btnSmall" + (armed ? " dn-set-btnDanger" : "")}
-              onClick={function () {
-                if (armed) {
-                  chRemove(idx);
-                  setDelArmedId(null);
-                } else {
-                  setDelArmedId(ch.id);
-                  setTimeout(function () {
-                    setDelArmedId(null);
-                  }, 3000);
-                }
-              }}
-            >
-              {armed ? t("chDeleteConfirm") : t("chDelete")}
-            </button>
-          </div>
-        </div>
-      </details>
-    );
-  }
-
-  /**
    * 事件/动态 kind 行的路由区（chips 直点形态）：
    * 候选 chips（点亮态真实反映投递面：无条目=defaultRouteIds，有条目=显式快照）
    * + stale 残留 chip（虚线删除线，title 说明）+ 状态标签（跟随默认 / 自定义·N·恢复默认）。
@@ -2078,10 +1288,59 @@ function SettingsCard() {
   const channelsChildren: any[] = [];
   (settings.channels || []).forEach(function (c: any, i: number) {
     if (c.type === "browser" || c.type === "system") {
-      channelsChildren.push(builtinCard(i, c, channelLabel(c)));
+      channelsChildren.push(
+        builtinCard(
+          i,
+          c,
+          channelLabel(c),
+          statusMap,
+          hostPlatform,
+          diag,
+          chPatch,
+          sendTest,
+          isSecureContext,
+          requestNotificationPermission,
+          audioEngine,
+          t,
+        ),
+      );
       return;
     }
-    channelsChildren.push(String(c.type) === "webhook" ? webhookCard(c, i) : barkCard(c, i));
+    channelsChildren.push(
+      String(c.type) === "webhook"
+        ? webhookCard(
+            c,
+            i,
+            delArmedId,
+            setDelArmedId,
+            revealMap,
+            setRevealMap,
+            secretEdited,
+            markSecretEdited,
+            chPatch,
+            chRemove,
+            sendTest,
+            statusMap,
+            t,
+          )
+        : barkCard(
+            c,
+            i,
+            kindsList,
+            delArmedId,
+            setDelArmedId,
+            levelsNew,
+            setLevelsNew,
+            secretEdited,
+            markSecretEdited,
+            chPatch,
+            chLevelsSet,
+            chRemove,
+            sendTest,
+            statusMap,
+            t,
+          ),
+    );
   });
   channelsChildren.push(
     <div className="dn-ch-add" key="ch-add">

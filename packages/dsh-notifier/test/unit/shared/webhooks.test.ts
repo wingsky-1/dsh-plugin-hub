@@ -113,9 +113,13 @@ describe("单点化：两端源文件里不再有第二份副本", () => {
   });
 
   it("客户端预设表只消费共享面（认证默认值按设计仍留客户端）", () => {
-    const src = read("src/client/index.tsx");
+    // 预设表随 webhookCard 搬到 settings/channels/webhook-card.tsx：读取对象改指卡文件，字面量与
+    // 判据强度不变。index.tsx 一并扫，防「搬走时顺手复制第二份」。
+    const src = read("src/client/settings/channels/webhook-card.tsx");
+    const entry = read("src/client/index.tsx");
     for (const template of [NTFY_TEMPLATE, GOTIFY_TEMPLATE, RAW_TEMPLATE]) {
       expect(src).not.toContain(template);
+      expect(entry).not.toContain(template);
     }
     expect(src).toMatch(/ntfy:\s*\{[^}]*template:\s*webhookTemplateOf\("ntfy"\)/u);
     expect(src).toMatch(
@@ -128,7 +132,8 @@ describe("单点化：两端源文件里不再有第二份副本", () => {
     expect(input).not.toMatch(/const WEBHOOK_PRESETS/u);
     expect(input).not.toMatch(/const WEBHOOK_AUTHS/u);
     expect(input).toMatch(/from "\.\.\/\.\.\/\.\.\/\.\.\/shared\/interface\.ts"/u);
-    const client = read("src/client/index.tsx");
+    // 白名单消费点随 webhookCard 搬到 settings/channels/webhook-card.tsx：只改读取对象。
+    const client = read("src/client/settings/channels/webhook-card.tsx");
     expect(client).not.toMatch(/\[\s*"none",\s*"bearer",\s*"basic",\s*"header"\s*\]/u);
     expect(client).toMatch(/WEBHOOK_AUTHS/u);
   });

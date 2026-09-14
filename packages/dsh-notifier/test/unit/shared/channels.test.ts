@@ -126,11 +126,21 @@ describe("单点化：两端不再各写一份实现", () => {
   const read = (rel: string) => readFileSync(join(pkgDir, rel), "utf8");
 
   it("客户端消费共享面，不再本地声明 channelIdFor / channelIdOf", () => {
-    const src = read("src/client/index.tsx");
-    expect(src).not.toMatch(/function channelIdOf/u);
-    expect(src).not.toMatch(/function channelIdFor/u);
-    expect(src).toMatch(/channelIdOf,/u);
-    expect(src).toMatch(/from "\.\.\/shared\/interface\.ts"/u);
+    // 消费点随频道卡搬到 settings/channels/*：逐个扫消费文件（字面量不变）——只判 index.tsx
+    // 会让 channelIdFor 那半条判据落空（index.tsx 已不再引用它）。
+    for (const rel of [
+      "src/client/index.tsx",
+      "src/client/settings/channels/builtin-card.tsx",
+      "src/client/settings/channels/bark-card.tsx",
+      "src/client/settings/channels/webhook-card.tsx",
+    ]) {
+      const src = read(rel);
+      expect(src, rel).not.toMatch(/function channelIdOf/u);
+      expect(src, rel).not.toMatch(/function channelIdFor/u);
+    }
+    const entry = read("src/client/index.tsx");
+    expect(entry).toMatch(/channelIdOf,/u);
+    expect(entry).toMatch(/from "\.\.\/shared\/interface\.ts"/u);
   });
 
   it("宿主路由块消费共享面，不再本地声明 id 规则与预设改名表", () => {

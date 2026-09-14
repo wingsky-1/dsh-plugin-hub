@@ -591,3 +591,16 @@ export const en: Record<NotifierLocaleKey, string> = {
   diagBrowserAudioUnsupported:
     "this browser does not support Web Audio, so the plugin cannot self-play sounds",
 };
+
+/** kind → 字典 key（未知 kind 回落 kind 本体显示，数据不翻译）。刻意留在客户端：
+ *  这是「kind → i18n 文案 key」，文案属客户端面，宿主端没有翻译。键集 = shared 的
+ *  BUILTIN_KINDS（含 test——自检通知没有事件开关，但历史行要显示它）。 */
+export const KIND_KEYS: Record<string, string> = {
+  ask: "kAsk",
+  question: "kQuestion",
+  done: "kDone",
+  "subagent-done": "kSubagentDone",
+  error: "kError",
+  "turn-end": "kTurnEnd",
+  test: "kTest",
+};

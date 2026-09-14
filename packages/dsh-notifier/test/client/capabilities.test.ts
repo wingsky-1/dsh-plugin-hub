@@ -101,18 +101,18 @@ describe("产物契约：能力自检面真的被界面挂上（源码 + 产物�
   // 纯函数的判据不能证明「界面真的挂了它」：删掉 builtinCard 里那两行调用，上面的用例照样全绿。
   it("两张内置频道卡的卡体各挂了自己的诊断行，且都没有挤进卡头 summary", () => {
     const src = readFileSync(join(pkgDir, "src/client/index.tsx"), "utf8");
-    expect(src).toMatch(/\{ch\.type === "system" \? hostDiagnosticsBlock\(diag\) : null\}/u);
-    expect(src).toMatch(/\{ch\.type === "browser" \? browserDiagnosticsLine\(diag\) : null\}/u);
     expect(src).toMatch(/clientDiagnosticsOf\(diagnostics, clientFacts\(\), t\)/u);
+    // builtinCard 已整体搬去 settings/channels/builtin-card.tsx（该文件整体即 builtinCard 本体），
+    // 故不再对 index.tsx 做 indexOf 切片：直接读卡文件。函数名锚显式判在位——锚一旦失效这条
+    // 先红，免得判据退化成「对着另一个文件恒绿」（原切片形态下 indexOf 返回 -1 会静默退化）。
+    const card = readFileSync(
+      join(pkgDir, "src/client/settings/channels/builtin-card.tsx"),
+      "utf8",
+    );
+    expect(card).toContain("export function builtinCard(");
+    expect(card).toMatch(/\{ch\.type === "system" \? hostDiagnosticsBlock\(diag\) : null\}/u);
+    expect(card).toMatch(/\{ch\.type === "browser" \? browserDiagnosticsLine\(diag\) : null\}/u);
     // 卡头那行在窄屏 @media (max-width: 480px) 下 display:none——诊断结论必须落在卡体。
-    // 切片锚用 barkCard 而不是已搬走（去 settings/channels/sound-row.tsx）的 soundRow：同目录
-    // 锚一旦失效 indexOf 返回 -1，slice 会静默退化成「切到文件末尾」而照样全绿；两个锚都显式
-    // 判在位，锚消失即判红。barkCard 与 builtinCard 同属本文件的卡构造函数，切片范围不变。
-    const from = src.indexOf("function builtinCard(");
-    const to = src.indexOf("function barkCard(");
-    expect(from).toBeGreaterThan(-1);
-    expect(to).toBeGreaterThan(from);
-    const card = src.slice(from, to);
     expect(card).toContain("<summary>");
     expect(card).toContain("</summary>");
     const summary = card.slice(card.indexOf("<summary>"), card.indexOf("</summary>"));
