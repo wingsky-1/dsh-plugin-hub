@@ -1,17 +1,17 @@
 /**
- * dsh-mcp-manager — workspace/impl/scope/index.ts：scope 常量与归一化（单一事实源）。
+ * dsh-mcp-manager — workspace/impl/scope/index.ts：scope 归一化（域内实现）。
  *
- * 历史：scope 字符串 "global"/"project" 曾在宿主/监督器/路由硬编码 25+ 处，
- * 新增 scope 类型需多处协调。独立成模块以避免 index.js ↔ supervisor/routes
- * 的循环依赖，Manager / supervisor / routes 统一从此 import。阶段 4 自
- * src/scope.ts 迁入 workspace 域（原文件删除，引用面经 workspace/interface.ts）。
+ * scope 常量 "global"/"project" 的**物理定义已上移 shared/constants.ts**：客户端把它们以
+ * 字面量重复实现（src/client/core/api.ts），故它们是跨端契约而非宿主内部常量（W3b）。本文件
+ * 保留 normalizeScope 并转出两个常量，目录外引用面仍经 workspace/interface.ts。
+ *
+ * 历史：scope 字符串曾在宿主/监督器/路由硬编码 25+ 处，独立成模块以避免
+ * index.js ↔ supervisor/routes 的循环依赖；阶段 4 自 src/scope.ts 迁入 workspace 域。
  */
 
-/** 全局作用域。 */
-export const SCOPE_GLOBAL = "global";
+import { SCOPE_GLOBAL, SCOPE_PROJECT } from "../../../shared/interface.ts";
 
-/** 项目级作用域。 */
-export const SCOPE_PROJECT = "project";
+export { SCOPE_GLOBAL, SCOPE_PROJECT };
 
 /** 归一化 scope（非法值回落 global）。 */
 export function normalizeScope(value: string): "global" | "project" {

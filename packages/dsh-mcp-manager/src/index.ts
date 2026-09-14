@@ -117,12 +117,7 @@ export {
 } from "./connection/interface.ts";
 export type { ReconnectPolicy } from "./connection/interface.ts";
 // 工作空间路由域（项目根发现 / 全名解析 / scope / 模式归一化；阶段 4 成形）
-export {
-  findProjectRoot,
-  normalizedProjectRoot,
-  makeResolveRoot,
-  MIDDLEWARE_GLOBAL_ROOT,
-} from "./workspace/interface.ts";
+export { findProjectRoot, normalizedProjectRoot, makeResolveRoot } from "./workspace/interface.ts";
 export {
   fullServerName,
   parseFullServerName,
@@ -256,7 +251,11 @@ export {
   SSE_HEARTBEAT_MS,
   SSE_PING_FRAME,
 } from "./api/interface.ts";
-export { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./workspace/interface.ts";
+export { normalizeScope } from "./workspace/interface.ts";
+// 跨端契约常量（物理定义在 shared/constants.ts）：入口经共享层门面取，与两端消费者同一份；
+// workspace 域门面仍为域内消费者转出同一份。客户端目前仍以字面量重复实现 scope 与全局 root
+// 前缀，改引属 #769。
+export { MIDDLEWARE_GLOBAL_ROOT, SCOPE_GLOBAL, SCOPE_PROJECT } from "./shared/interface.ts";
 // 仓库共享层（loopback 围栏 / writeJson / readJsonBody / sseData）
 export { isLoopbackRequest } from "../../../shared/loopback.js";
 export { writeJson, readJsonBody, sseData } from "../../../shared/host-utils.js";

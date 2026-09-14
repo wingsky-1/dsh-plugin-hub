@@ -22,7 +22,10 @@ export const MAX_TOOLS_PER_SERVER = 512;
 export const MAX_BYTES_PER_TOOL = 4096;
 /** 目录安全边界：目录总字节上限。 */
 export const MAX_TOTAL_CATALOG_BYTES = 256 * 1024;
-/** ws_mcp_list 每服务器工具条数默认上限。 */
-export const LIST_DEFAULT_TOOLS_PER_SERVER = 50;
 /** ws_mcp_list 每服务器工具条数硬上限（目录采集边界内）。 */
 export const LIST_MAX_TOOLS_PER_SERVER = 500;
+
+// 物理定义已上移 server/shared/constants.ts（catalog 与 inject 两域消费，§3.6 规则 6）：本文件
+// 保留转出，connection 门面与入口的 re-export 链、以及 inject 现有引用点均不变。转出必须经
+// server/shared 门面——直引 constants.ts 会被判「impl 引用他域实现文件」（directImpl）。
+export { LIST_DEFAULT_TOOLS_PER_SERVER } from "../../server/shared/interface.ts";

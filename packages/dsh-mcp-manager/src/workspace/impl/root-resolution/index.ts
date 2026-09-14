@@ -11,7 +11,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { dshHome } from "../../../../../../shared/dsh-home.js";
 import type { McpManager } from "../../../connection/interface.ts";
-import { MIDDLEWARE_GLOBAL_ROOT } from "../constants.ts";
+import { MIDDLEWARE_GLOBAL_ROOT } from "../../../shared/interface.ts";
 
 /** DSH 全局家目录（shared/dsh-home.js 语义：DSH_HOME 非空白原样采用、空白
  *  视同未设置回落 ~/.dsh；#517 收敛）。resolve 为本处 .dsh 标记排除的对比

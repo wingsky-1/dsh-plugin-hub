@@ -7,6 +7,10 @@
  * 就是 I2① 的跨域值边（config/model → catalog、config/model → connection）。唯一可行形态是
  * 「共享层单点定义 + 消费方从共享层取」。
  *
+ * LIST_DEFAULT_TOOLS_PER_SERVER 的落点依据是同一条值面门槛（I5：被 ≥2 域消费的值常量归共享层）：
+ * catalog（检索装箱）与 inject（ws_mcp_list 工具定义）两域消费它，留在 connection/runtime 就是两条
+ * 跨域值边。它不是模块求值期常量，落这里只为消除两条边并把定义收成一处。
+ *
  * 为什么本文件零 import：它落在 config/model 的模块求值路径上，本文件必须是**最先可求值**的
  * 叶子——任何依赖都会把初始化顺序与值环重新引回来。
  */
@@ -20,3 +24,5 @@ export const DEFAULT_CATALOG_MAX_ENTRIES = 6;
 export const DEFAULT_TOOL_CALL_TIMEOUT_MS = 15_000;
 /** 工具结果渲染截断上限（字节）。extractText 现状不截断，超长 JSON 全量进上下文。 */
 export const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;
+/** ws_mcp_list 每服务器工具条数默认上限（catalog 与 inject 两域消费，见本文件头注释）。 */
+export const LIST_DEFAULT_TOOLS_PER_SERVER = 50;
