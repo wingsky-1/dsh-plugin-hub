@@ -168,7 +168,7 @@ function channelIdFor(cfg: Record<string, any>): string {
  * 各自维护一份而不是共享：客户端与宿主没有共享模块；一致性由路由往返判据（chips ↔ kindRoutes）锁住。
  */
 function channelIdOf(cfg: Record<string, any>): string {
-  var type = String(cfg.type || "");
+  const type = String(cfg.type || "");
   return type === "browser" || type === "system" ? type : channelIdFor(cfg);
 }
 
@@ -201,7 +201,7 @@ const WEBHOOK_PRESETS: Record<string, { auth: string; template: string }> = {
  * browser=地球 / system=显示器 / webhook=闪电 / 其余（bark）=铃铛。
  */
 function iconEl(channelType: string) {
-  var paths: any[];
+  let paths: any[];
   if (channelType === "browser") {
     paths = [
       <circle cx={12} cy={12} r={9} key="c" />,
@@ -237,7 +237,7 @@ function iconEl(channelType: string) {
  * 非 403 错误返回空串，避免给普通失败粘贴无关提示。
  */
 function accessHint(error: any) {
-  var text = String((error && error.message) || "");
+  const text = String((error && error.message) || "");
   if (text.indexOf("403") === -1) return "";
   return t("lanAccessHint");
 }
@@ -309,7 +309,7 @@ function audioContextCtorOf(): (new () => AudioContextLike) | undefined {
  * 这里只负责把浏览器里的现状读出来，读法本身没有可断言的分支。
  */
 function clientFacts(): ClientFacts {
-  var hasApi = "Notification" in window;
+  const hasApi = "Notification" in window;
   return {
     notificationApi: hasApi,
     secureContext: isSecureContext(),
@@ -407,7 +407,7 @@ function fetchConfig(): Promise<any> {
   return fetch(ROUTES.config, { headers: { accept: "application/json" } }).then(function (r: any) {
     return r.json().then(function (body: any) {
       if (!r.ok) {
-        var err = (body && body.error) || {};
+        const err = (body && body.error) || {};
         throw new Error(err.details || err.error || "HTTP " + r.status);
       }
       return body;
@@ -422,7 +422,7 @@ function fetchHistory(): Promise<any[]> {
       return r.json();
     })
     .then(function (data: any) {
-      var records = (data && data.records) || [];
+      const records = (data && data.records) || [];
       return records.slice(-10).reverse();
     });
 }
@@ -473,14 +473,14 @@ function fetchHealth(): Promise<string | null> {
 }
 
 function fetchDiagnostics(): Promise<unknown> {
-  var ctrl: AbortController | null =
+  const ctrl: AbortController | null =
     typeof AbortController !== "undefined" ? new AbortController() : null;
-  var timer: ReturnType<typeof setTimeout> | null = ctrl
+  const timer: ReturnType<typeof setTimeout> | null = ctrl
     ? setTimeout(function () {
         ctrl!.abort();
       }, 15000)
     : null;
-  var init: RequestInit = { headers: { accept: "application/json" } };
+  const init: RequestInit = { headers: { accept: "application/json" } };
   if (ctrl) init.signal = ctrl.signal;
   return fetch(ROUTES.diagnostics, init)
     .then(function (r) {
@@ -517,7 +517,7 @@ function sendTestReq(channelId?: string): Promise<any> {
   }).then(function (r: any) {
     return r.json().then(function (body: any) {
       if (!r.ok) {
-        var err = (body && body.error) || {};
+        const err = (body && body.error) || {};
         // 围栏拒绝体的 error 是裸字符串；403 的 https 引导靠文案里的状态码识别，兜底不能去掉。
         throw new Error(err.details || err.error || "HTTP " + r.status);
       }
@@ -534,105 +534,105 @@ function sendTestReq(channelId?: string): Promise<any> {
  * 三端降级文案。保存走 PUT {patch, expectedRevision}（乐观并发，冲突提示刷新）。
  */
 function SettingsCard() {
-  var ReactHooks = React;
-  var useState = ReactHooks.useState;
-  var useEffect = ReactHooks.useEffect;
-  var draft = useState(null);
-  var settings = draft[0];
-  var setSettings = draft[1];
-  var meta = useState(null); // { user, revision, effective, writable }
-  var metaValue = meta[0];
-  var setMeta = meta[1];
+  const ReactHooks = React;
+  const useState = ReactHooks.useState;
+  const useEffect = ReactHooks.useEffect;
+  const draft = useState(null);
+  const settings = draft[0];
+  const setSettings = draft[1];
+  const meta = useState(null); // { user, revision, effective, writable }
+  const metaValue = meta[0];
+  const setMeta = meta[1];
   // 保存反馈（i18n 重构：msg + err 结构化状态，不能用文案内容判断错误态）
-  var savedDraft = useState(null);
-  var saved = savedDraft[0];
-  var setSaved = function (msg: string, err?: boolean) {
+  const savedDraft = useState(null);
+  const saved = savedDraft[0];
+  const setSaved = function (msg: string, err?: boolean) {
     savedDraft[1](msg ? { msg: msg, err: err === true } : null);
   };
-  var historyDraft = useState(null);
-  var history = historyDraft[0];
-  var setHistory = historyDraft[1];
-  var clearArmed = useState(false);
-  var clearArmedValue = clearArmed[0];
-  var setClearArmed = clearArmed[1];
+  const historyDraft = useState(null);
+  const history = historyDraft[0];
+  const setHistory = historyDraft[1];
+  const clearArmed = useState(false);
+  const clearArmedValue = clearArmed[0];
+  const setClearArmed = clearArmed[1];
   // 频道投递状态（/status channels map，键=bark:<id>）/ 动态 kind 清单（/kinds）
-  var statusDraft = useState({} as Record<string, any>);
-  var statusMap = statusDraft[0];
-  var setStatusMap = statusDraft[1];
-  var kindsDraft = useState([] as any[]);
-  var kindsList = kindsDraft[0];
-  var setKindsList = kindsDraft[1];
+  const statusDraft = useState({} as Record<string, any>);
+  const statusMap = statusDraft[0];
+  const setStatusMap = statusDraft[1];
+  const kindsDraft = useState([] as any[]);
+  const kindsList = kindsDraft[0];
+  const setKindsList = kindsDraft[1];
   // 宿主能力自检载荷（/diagnostics 原样收下；归一化与文案在 capabilities.ts）。
   // null = 还没拉到或拉取失败 → 诊断块整体不渲染（旧服务端没有这条路由也走这条路径）。
-  var diagnosticsDraft = useState(null as unknown);
-  var diagnostics = diagnosticsDraft[0];
-  var setDiagnostics = diagnosticsDraft[1];
+  const diagnosticsDraft = useState(null as unknown);
+  const diagnostics = diagnosticsDraft[0];
+  const setDiagnostics = diagnosticsDraft[1];
   // 宿主平台进 state 而不是模块变量：它是要渲染的数据。原先写成模块变量让抓取回调无法触发
   // 重渲染——/health 晚于最后一次 setState 返回时，系统卡会一直显示通用文案直到用户再交互。
-  var hostPlatformDraft = useState(null as string | null);
-  var hostPlatform = hostPlatformDraft[0];
-  var setHostPlatform = hostPlatformDraft[1];
+  const hostPlatformDraft = useState(null as string | null);
+  const hostPlatform = hostPlatformDraft[0];
+  const setHostPlatform = hostPlatformDraft[1];
   // 频道删除两段确认（实例 id）。路由编辑展开行（openRoute）随 chips
   // 直点形态移除——chips 无展开层，routeToggle 直接落草稿。
-  var delArmedDraft = useState(null as string | null);
-  var delArmedId = delArmedDraft[0];
-  var setDelArmedId = delArmedDraft[1];
+  const delArmedDraft = useState(null as string | null);
+  const delArmedId = delArmedDraft[0];
+  const setDelArmedId = delArmedDraft[1];
   // levels：每个频道「待添加映射」草稿（kind + level；按频道 id 键控）
-  var levelsNewDraft = useState({} as Record<string, { kind: string; level: string }>);
-  var levelsNew = levelsNewDraft[0];
-  var setLevelsNew = levelsNewDraft[1];
+  const levelsNewDraft = useState({} as Record<string, { kind: string; level: string }>);
+  const levelsNew = levelsNewDraft[0];
+  const setLevelsNew = levelsNewDraft[1];
   // 卡内三 tab（通知事件 / 通知频道 / 通知记录——历史独立成 tab）。
   // 切 tab 仅条件拼接 children——全部表单/瞬态 state 都在本组件顶层，切换零丢失。
-  var activeTabDraft = useState("events" as "events" | "channels" | "history");
-  var activeTab = activeTabDraft[0];
-  var setActiveTab = activeTabDraft[1];
+  const activeTabDraft = useState("events" as "events" | "channels" | "history");
+  const activeTab = activeTabDraft[0];
+  const setActiveTab = activeTabDraft[1];
   // 浏览器通知权限状态行在频道卡内——Notification.permission 非 React state，
   // 请求权限完成后 bump 一次触发重渲染刷新状态行文案/隐藏按钮。
-  var permTickDraft = useState(0);
-  var permTick = permTickDraft[0];
-  var setPermTick = permTickDraft[1];
+  const permTickDraft = useState(0);
+  const permTick = permTickDraft[0];
+  const setPermTick = permTickDraft[1];
   // webhook 凭据字段显隐态（键 = <channelId>:<field>；纯瞬态，不入配置、
   // 不影响基线 diff——掩码值本身不回显，显隐只影响「正在输入的新值」可见性）。
-  var revealDraft = useState({} as Record<string, boolean>);
-  var revealMap = revealDraft[0];
-  var setRevealMap = revealDraft[1];
+  const revealDraft = useState({} as Record<string, boolean>);
+  const revealMap = revealDraft[0];
+  const setRevealMap = revealDraft[1];
   // 凭据字段「已被用户编辑」的键集（键 = <channelId>:<field>）。未编辑的字段保持服务端掩码
   // 原样提交、由服务端按严格相等还原；只有用户真的输入过才把新值写进草稿——把掩码渲染成
   // 可编辑 value 会让「在圆点后追加一个字符」变成一次真凭据覆盖（见 settings/mask.ts）。
-  var secretEditedDraft = useState({} as Record<string, boolean>);
-  var secretEdited = secretEditedDraft[0];
-  var setSecretEdited = secretEditedDraft[1];
+  const secretEditedDraft = useState({} as Record<string, boolean>);
+  const secretEdited = secretEditedDraft[0];
+  const setSecretEdited = secretEditedDraft[1];
 
   /** 标记某凭据字段已被用户编辑（幂等）。 */
   function markSecretEdited(key: string) {
     if (secretEdited[key] === true) return;
-    var nextEdited: Record<string, boolean> = Object.assign({}, secretEdited);
+    const nextEdited: Record<string, boolean> = Object.assign({}, secretEdited);
     nextEdited[key] = true;
     setSecretEdited(nextEdited);
   }
   // 加载基线：保存时只提交与基线不同的键（增量 diff），未改动的键不提交。
   // 用 useRef 持久化：组件每次渲染局部变量会重置为 null，导致 save() 闭包里读不到
   // 基线而永远判定「无变化」。
-  var baselineRef = ReactHooks.useRef(null as Record<string, any> | null);
+  const baselineRef = ReactHooks.useRef(null as Record<string, any> | null);
   // settings / meta（revision）ref 收口——异步回调（保存成功 / trailing 补发）
   // 一律读 ref 而非渲染闭包值，杜绝「连点第二个 PUT 带旧 revision」「补发漏提交在途
   // 新编辑」两类陈旧闭包问题。settingsRef 由 patch（唯一写入口）在 updater 内同步。
-  var settingsRef = ReactHooks.useRef(null as Record<string, any> | null);
-  var metaRef = ReactHooks.useRef(null as any);
+  const settingsRef = ReactHooks.useRef(null as Record<string, any> | null);
+  const metaRef = ReactHooks.useRef(null as any);
   // 保存串行 guard（模块级纯工厂）——同一时刻仅一个在途 PUT。
-  var saveGuardRef = ReactHooks.useRef(null as ReturnType<typeof createSaveGuard> | null);
+  const saveGuardRef = ReactHooks.useRef(null as ReturnType<typeof createSaveGuard> | null);
   if (saveGuardRef.current === null) saveGuardRef.current = createSaveGuard();
-  var saveGuard = saveGuardRef.current;
+  const saveGuard = saveGuardRef.current;
   // 保存中 UI 态（按钮禁用 + 「保存中…」文案）
-  var savingDraft = useState(false);
-  var saving = savingDraft[0];
-  var setSaving = savingDraft[1];
+  const savingDraft = useState(false);
+  const saving = savingDraft[0];
+  const setSaving = savingDraft[1];
   // 409 冲突横幅态。null=无冲突；非 null={ entry, latest }——
   // latest 为冲突时拉取的服务端最新 {effective, revision}（「加载最新/覆盖」动作
   // 的数据源）。横幅期间用户可继续编辑（非模态），动作触发时实时重算本地变更。
-  var conflictDraft = useState(null as null | { entry: string; latest: any });
-  var conflict = conflictDraft[0];
-  var setConflict = conflictDraft[1];
+  const conflictDraft = useState(null as null | { entry: string; latest: any });
+  const conflict = conflictDraft[0];
+  const setConflict = conflictDraft[1];
 
   function loadHistory(alive: { value: boolean }) {
     fetchHistory()
@@ -686,10 +686,10 @@ function SettingsCard() {
     fetchConfig()
       .then(function (v: any) {
         if (!alive.value) return;
-        var effective = (v && v.effective) || {};
+        const effective = (v && v.effective) || {};
         commitSettings(Object.assign({}, effective));
         baselineRef.current = Object.assign({}, effective);
-        var nextMeta = {
+        const nextMeta = {
           user: v.user || {},
           revision: v.revision,
           effective: effective,
@@ -706,7 +706,7 @@ function SettingsCard() {
   }
 
   useEffect(function () {
-    var alive = { value: true };
+    const alive = { value: true };
     loadCard(alive);
     loadHistory(alive);
     loadStatus(alive);
@@ -733,7 +733,7 @@ function SettingsCard() {
    *  p 为对象时浅合并；为函数时以最新 prev 计算（prev => next）。 */
   function patch(p: any) {
     setSettings(function (prev: any) {
-      var next = typeof p === "function" ? p(prev) : Object.assign({}, prev, p);
+      const next = typeof p === "function" ? p(prev) : Object.assign({}, prev, p);
       settingsRef.current = next;
       return next;
     });
@@ -763,7 +763,7 @@ function SettingsCard() {
     fetchConfig()
       .then(function (v: any) {
         if (!v) return;
-        var latest = {
+        const latest = {
           effective: (v && v.effective) || {},
           revision: v && v.revision,
           user: (v && v.user) || {},
@@ -788,7 +788,7 @@ function SettingsCard() {
   function applyLatestQuiet(latest: any) {
     commitSettings(Object.assign({}, latest.effective));
     baselineRef.current = Object.assign({}, latest.effective);
-    var nextMeta = {
+    const nextMeta = {
       user: latest.user || {},
       revision: latest.revision,
       effective: Object.assign({}, latest.effective),
@@ -806,18 +806,18 @@ function SettingsCard() {
    *  AbortController 超时兜底：超时中断请求（服务端写入与否未知，UI 必须恢复），
    *  释放 guard 并提示重试。 */
   function putAndCommit(payload: Record<string, any>, entry: string) {
-    var expectedRevision =
+    const expectedRevision =
       metaRef.current && typeof metaRef.current.revision === "number"
         ? metaRef.current.revision
         : undefined;
-    var ctrl: AbortController | null =
+    const ctrl: AbortController | null =
       typeof AbortController !== "undefined" ? new AbortController() : null;
-    var timer: ReturnType<typeof setTimeout> | null = ctrl
+    const timer: ReturnType<typeof setTimeout> | null = ctrl
       ? setTimeout(function () {
           ctrl!.abort();
         }, 15000)
       : null;
-    var chain = fetch(ROUTES.config, {
+    let chain = fetch(ROUTES.config, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ patch: payload, expectedRevision: expectedRevision }),
@@ -826,11 +826,11 @@ function SettingsCard() {
       .then(function (r: any) {
         return r.json().then(function (body: any) {
           if (!r.ok) {
-            var err = (body && body.error) || {};
+            const err = (body && body.error) || {};
             // 挂 code 供 catch 按契约分流：409 判定优先
             // err.code === "SETTINGS_CONFLICT"，不再依赖错误文案中文匹配
             // （文案是本地化/可改的，code 是契约字段）。文案保留进 message。
-            var throwErr = new Error(
+            const throwErr = new Error(
               err.error || err.details || err.code || "HTTP " + r.status,
             ) as Error & { code?: string };
             if (err.code !== undefined) throwErr.code = String(err.code);
@@ -844,7 +844,7 @@ function SettingsCard() {
         // 键——若并入点击后的 settings 全量，在途期间的编辑会被固化为基线而丢失；
         // 键级并入后，在途新编辑（非 payload 键）仍在 diff 中，由 trailing 补发提交。
         baselineRef.current = Object.assign({}, baselineRef.current || {}, payload);
-        var nextMeta = {
+        const nextMeta = {
           user: (body && body.user) || {},
           revision: (body && body.revision) || undefined,
           effective: Object.assign({}, baselineRef.current),
@@ -859,7 +859,7 @@ function SettingsCard() {
         }, 2200);
       })
       .catch(function (e: any) {
-        var msg = (e && e.message) || e;
+        const msg = (e && e.message) || e;
         // 409 判定：code 契约优先，中文文案仅作旧服务端回退
         if ((e && e.code === "SETTINGS_CONFLICT") || String(msg).indexOf("版本冲突") >= 0) {
           // 版本冲突：进入双动作恢复（不再仅提示手动关闭重开）
@@ -899,7 +899,7 @@ function SettingsCard() {
    *  - guard.end() 放 finally：成功/失败/异常任何路径都释放，防按钮永久卡死。 */
   function saveFor(entry: string, quietIfEmpty?: boolean) {
     if (!saveGuard.tryBegin(entry)) return; // 在途：记 pending=entry，由在途 finally 补发
-    var payload: Record<string, any>;
+    let payload: Record<string, any>;
     try {
       payload = diffPayloadFor(entry);
     } catch (error) {
@@ -918,7 +918,7 @@ function SettingsCard() {
     // 超时 / 其它 → setSaved 提示），它的返回链不会以拒绝收场；此处只补收尾的 UI 复位。
     void putAndCommit(payload, entry).finally(function () {
       setSaving(false);
-      var nextEntry = saveGuard.end();
+      const nextEntry = saveGuard.end();
       if (nextEntry !== null) saveFor(nextEntry, true); // trailing 补发（同入口，天然不循环）
     });
   }
@@ -938,13 +938,13 @@ function SettingsCard() {
    *  （每次覆盖消费一次用户动作，天然收敛、无自动风暴）。 */
   function resolveConflictOverwrite() {
     if (!conflict) return;
-    var entry = conflict.entry;
-    var latest = conflict.latest;
-    var localChanges = diffPayloadFor(entry); // 实时重算（相对旧基线的当前脏）
-    var merged = rebaseSettings(localChanges, latest.effective || {});
+    const entry = conflict.entry;
+    const latest = conflict.latest;
+    const localChanges = diffPayloadFor(entry); // 实时重算（相对旧基线的当前脏）
+    const merged = rebaseSettings(localChanges, latest.effective || {});
     commitSettings(merged); // 同步写 ref：随后 saveFor 立即以 merged 计算 diff
     baselineRef.current = Object.assign({}, latest.effective || {});
-    var nextMeta = {
+    const nextMeta = {
       user: latest.user || {},
       revision: latest.revision,
       effective: Object.assign({}, latest.effective || {}),
@@ -994,7 +994,7 @@ function SettingsCard() {
    *  删键；函数式基于最新 channels，防后写覆盖）。 */
   function chPatch(idx: number, part: Record<string, any>) {
     patch(function (prev: any) {
-      var list = (prev.channels || []).slice();
+      const list = (prev.channels || []).slice();
       list[idx] = assignChannelFields(list[idx] || {}, part);
       return Object.assign({}, prev, { channels: list });
     });
@@ -1004,9 +1004,9 @@ function SettingsCard() {
   function chLevelsSet(idx: number, kind: string, level: string) {
     if (!kind || kind === "__proto__" || kind === "constructor" || kind === "prototype") return;
     patch(function (prev: any) {
-      var list = (prev.channels || []).slice();
-      var ch = Object.assign({}, list[idx]);
-      var levels = Object.assign({}, ch.levels || {});
+      const list = (prev.channels || []).slice();
+      const ch = Object.assign({}, list[idx]);
+      const levels = Object.assign({}, ch.levels || {});
       if (level) levels[kind] = level;
       else delete levels[kind];
       if (Object.keys(levels).length === 0) delete ch.levels;
@@ -1019,7 +1019,7 @@ function SettingsCard() {
   /** 删除第 idx 个频道实例（函数式基于最新 channels）。 */
   function chRemove(idx: number) {
     patch(function (prev: any) {
-      var list = (prev.channels || []).slice();
+      const list = (prev.channels || []).slice();
       list.splice(idx, 1);
       return Object.assign({}, prev, { channels: list });
     });
@@ -1034,16 +1034,16 @@ function SettingsCard() {
    *  服务端 normalize 兜底。 */
   function chAdd(kind: string) {
     patch(function (prev: any) {
-      var list = prev.channels || [];
-      var seq = 1;
-      var taken = new Set(
+      const list = prev.channels || [];
+      let seq = 1;
+      const taken = new Set(
         list.map(function (c: any) {
           return String(c.id);
         }),
       );
       while (taken.has(kind + "-" + seq)) seq += 1;
-      var id = kind + "-" + seq;
-      var base: Record<string, any> =
+      const id = kind + "-" + seq;
+      const base: Record<string, any> =
         kind === "webhook"
           ? {
               id: id,
@@ -1070,14 +1070,14 @@ function SettingsCard() {
 
   /** 当前 kind 的路由数组（undefined = 跟随默认广播）。 */
   function routeOf(kind: string): string[] | undefined {
-    var routes = settings.kindRoutes || {};
+    const routes = settings.kindRoutes || {};
     return routes[kind];
   }
 
   /** 写/清 kind 路由条目（ids=null 删除条目恢复默认；函数式基于最新 kindRoutes）。 */
   function routeSetKind(kind: string, ids: string[] | null) {
     patch(function (prev: any) {
-      var routes = Object.assign({}, prev.kindRoutes || {});
+      const routes = Object.assign({}, prev.kindRoutes || {});
       if (ids === null || ids.length === 0) delete routes[kind];
       else routes[kind] = ids;
       return Object.assign({}, prev, { kindRoutes: routes });
@@ -1094,7 +1094,7 @@ function SettingsCard() {
   /** 当前「跟随默认」投递面（路由 id 列表）：内置与实例同一判据——`enabled`（发不发）。
    *  chips 点亮态（无条目时）与首次切换物化的快照都以本函数为准——所见即所得。 */
   function defaultRouteIds(prev: any): string[] {
-    var ids: string[] = [];
+    const ids: string[] = [];
     (prev.channels || []).forEach(function (c: any) {
       if (c.enabled === true) ids.push(channelIdOf(c));
     });
@@ -1122,9 +1122,9 @@ function SettingsCard() {
    */
   function routeToggle(kind: string, oid: string, checked: boolean) {
     patch(function (prev: any) {
-      var routes = Object.assign({}, prev.kindRoutes || {});
-      var cur = routes[kind] === undefined ? defaultRouteIds(prev).slice() : routes[kind].slice();
-      var at = cur.indexOf(oid);
+      const routes = Object.assign({}, prev.kindRoutes || {});
+      const cur = routes[kind] === undefined ? defaultRouteIds(prev).slice() : routes[kind].slice();
+      const at = cur.indexOf(oid);
       if (checked && at === -1) cur.push(oid);
       else if (!checked && at !== -1) cur.splice(at, 1);
       if (cur.length === 0) delete routes[kind];
@@ -1140,9 +1140,9 @@ function SettingsCard() {
   function confirmOne(kind: string, confirmed: boolean) {
     postKind(kind, confirmed)
       .then(function (body: any) {
-        var freshRevision = body && typeof body.revision === "number" ? body.revision : undefined;
+        const freshRevision = body && typeof body.revision === "number" ? body.revision : undefined;
         if (freshRevision !== undefined && metaRef.current) {
-          var nextMeta = Object.assign({}, metaRef.current, { revision: freshRevision });
+          const nextMeta = Object.assign({}, metaRef.current, { revision: freshRevision });
           metaRef.current = nextMeta;
           setMeta(nextMeta);
         }
@@ -1223,7 +1223,7 @@ function SettingsCard() {
       settings[key] === true,
       function (v: boolean) {
         patch(function (prev: any) {
-          var next = Object.assign({}, prev);
+          const next = Object.assign({}, prev);
           next[key] = v;
           return next;
         });
@@ -1273,8 +1273,8 @@ function SettingsCard() {
   }
 
   function padTime(ts: number) {
-    var d = new Date(ts);
-    var pad = function (n: number) {
+    const d = new Date(ts);
+    const pad = function (n: number) {
       return n < 10 ? "0" + n : String(n);
     };
     return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
@@ -1282,14 +1282,14 @@ function SettingsCard() {
 
   /** 频道状态摘要（上提卡头 statusDot + statusTxt；完整错误经 title 提示）。 */
   function statusText(channelKey: string): string {
-    var st = statusMap[channelKey];
+    const st = statusMap[channelKey];
     if (!st || !st.lastTs) return t("chNeverSent");
     if (st.lastStatus === "ok") return t("chLastOk") + " · " + padTime(st.lastTs);
-    var why = reasonText(st.lastError, t);
+    const why = reasonText(st.lastError, t);
     return t("chLastFail") + " · " + padTime(st.lastTs) + (why ? "：" + why : "");
   }
   function statusDotClass(channelKey: string): string {
-    var st = statusMap[channelKey];
+    const st = statusMap[channelKey];
     if (!st || !st.lastTs) return "";
     return st.lastStatus === "ok" ? "ok" : "fail";
   }
@@ -1310,7 +1310,7 @@ function SettingsCard() {
 
   /** 投递失败徽标：最近投递失败时上提至卡头 summary 行，收起态仍可见。 */
   function failBadge(channelKey: string) {
-    var st = statusMap[channelKey];
+    const st = statusMap[channelKey];
     if (!st || !st.lastTs || st.lastStatus !== "failed") return null;
     return <span className="dn-ch-failBadge">{t("chLastFail") + " · " + padTime(st.lastTs)}</span>;
   }
@@ -1322,8 +1322,8 @@ function SettingsCard() {
    */
   function browserPermLine() {
     if (!("Notification" in window) || !isSecureContext()) return null;
-    var text = "";
-    var pending = false;
+    let text = "";
+    let pending = false;
     if (Notification.permission === "granted") text = t("permGranted");
     else if (Notification.permission === "denied") text = t("permDenied");
     else {
@@ -1373,17 +1373,17 @@ function SettingsCard() {
    * （浏览器另有「页面可见时也弹」）+ 声音行 + 权限/平台提示 + 测试按钮。
    */
   function builtinCard(index: number, ch: any, label: string) {
-    var channelId = channelIdOf(ch);
-    var enabled = ch.enabled === true;
-    var popup = ch.popup === true;
-    var soundOn = soundIsOn(ch.sound);
-    var stateCls = !enabled ? " dn-ch-off" : !popup && soundOn ? " dn-ch-sound" : " dn-ch-onEdge";
-    var summaryState = !enabled
+    const channelId = channelIdOf(ch);
+    const enabled = ch.enabled === true;
+    const popup = ch.popup === true;
+    const soundOn = soundIsOn(ch.sound);
+    const stateCls = !enabled ? " dn-ch-off" : !popup && soundOn ? " dn-ch-sound" : " dn-ch-onEdge";
+    const summaryState = !enabled
       ? t("chStateOff")
       : !popup && soundOn
         ? t("chStateSound")
         : t("chStateOn");
-    var extras: any[] = [];
+    const extras: any[] = [];
     extras.push(
       chRow(
         t("chPopup"),
@@ -1462,7 +1462,7 @@ function SettingsCard() {
   /** 平台提示行：宿主平台差异说明——Windows SoundPlayer 语义、macOS
    *  NSSound、Linux 自播；/health 拉取失败/未知平台回落通用说明。 */
   function systemPlatformHint() {
-    var text: string;
+    let text: string;
     if (hostPlatform === "win32") text = t("sysPlatformWin");
     else if (hostPlatform === "darwin") text = t("sysPlatformMac");
     else if (hostPlatform === "linux") text = t("sysPlatformLinux");
@@ -1476,7 +1476,7 @@ function SettingsCard() {
    * 这里只做机械投影——结论、处置建议、明细的文案都来自 capabilities.ts。
    */
   function hostDiagnosticsBlock() {
-    var view = diag.host;
+    const view = diag.host;
     if (!view) return null;
     return (
       <div className={"dn-ch-diag dn-ch-diag-" + view.tone}>
@@ -1513,7 +1513,7 @@ function SettingsCard() {
 
   /** 浏览器面自检行（浏览器频道卡体）：宿主算不出来的那几个事实（权限、音频解锁）在这里成一句话。 */
   function browserDiagnosticsLine() {
-    var view = diag.browser;
+    const view = diag.browser;
     return (
       <div className={"dn-ch-diag dn-ch-diag-" + view.tone}>
         <span className="dn-ch-diagText">{view.line}</span>
@@ -1523,7 +1523,9 @@ function SettingsCard() {
   }
 
   /** 内置音色选项（4 音色；label 字典键）。 */
-  var SOUND_OPTION_KEYS: Record<string, string> = {
+  // 常量表：每次渲染重建一份是原实现的形态，这里只把声明关键字收正（改成 const 不会改变
+  // 取值时机——引用它的 soundRow 只在更深处的 JSX 构造期被调用）
+  const SOUND_OPTION_KEYS: Record<string, string> = {
     ding: "toneDing",
     bell: "toneBell",
     chime: "toneChime",
@@ -1535,11 +1537,11 @@ function SettingsCard() {
    *  SoundId（显式音色）。交互全部显式 audioEngine.unlock() 兜底（autoplay 策略下
    *  纯后台页面自播需此前任意手势解锁；试听点击本身即手势）。 */
   function soundRow(index: number, ch: any, channelLabel: string) {
-    var soundVal = ch.sound;
-    var soundOn = soundIsOn(soundVal);
-    var toneValue =
+    const soundVal = ch.sound;
+    const soundOn = soundIsOn(soundVal);
+    const toneValue =
       typeof soundVal === "string" && SOUND_IDS.indexOf(soundVal) !== -1 ? soundVal : "";
-    var toneOpts: any[] = [
+    const toneOpts: any[] = [
       <option value="" key="sys">
         {t("chSoundFollow")}
       </option>,
@@ -1604,10 +1606,10 @@ function SettingsCard() {
    * 整卡 details 可折叠（非受控 + key remount），未启用默认收起。
    */
   function barkCard(ch: any, idx: number) {
-    var channelKey = channelIdFor(ch);
-    var armed = delArmedId === ch.id;
-    var deviceKeyKey = credentialFieldKey(String(ch.id), "deviceKey");
-    var levelOpts: any[] = [
+    const channelKey = channelIdFor(ch);
+    const armed = delArmedId === ch.id;
+    const deviceKeyKey = credentialFieldKey(String(ch.id), "deviceKey");
+    const levelOpts: any[] = [
       <option value="" key="auto">
         {t("chLevelAuto")}
       </option>,
@@ -1620,14 +1622,14 @@ function SettingsCard() {
       );
     });
     // levels（kind→level）编辑：kind 建议 = 内置 7 kind + 动态已注册 kind；datalist id 按实例唯一
-    var suggestKinds: string[] = Object.keys(KIND_KEYS);
+    const suggestKinds: string[] = Object.keys(KIND_KEYS);
     (kindsList || []).forEach(function (k: any) {
       if (suggestKinds.indexOf(String(k.id)) === -1) suggestKinds.push(String(k.id));
     });
-    var dlId = "dn-levels-suggest-" + String(ch.id);
-    var levels = ch.levels || {};
-    var levelKeys = Object.keys(levels);
-    var levelsRows: any[] = levelKeys.map(function (kind) {
+    const dlId = "dn-levels-suggest-" + String(ch.id);
+    const levels = ch.levels || {};
+    const levelKeys = Object.keys(levels);
+    const levelsRows: any[] = levelKeys.map(function (kind) {
       return (
         <div className="dn-levels-row" key={"lv-" + kind}>
           <span className="dn-levels-kind">
@@ -1654,9 +1656,9 @@ function SettingsCard() {
         </div>
       );
     });
-    var newRow = levelsNew[String(ch.id)] || { kind: "", level: "active" };
-    var newKindKnown = suggestKinds.indexOf(newRow.kind) !== -1;
-    var addRow = (
+    const newRow = levelsNew[String(ch.id)] || { kind: "", level: "active" };
+    const newKindKnown = suggestKinds.indexOf(newRow.kind) !== -1;
+    const addRow = (
       <div className="dn-levels-add" key="lv-add">
         <input
           type="text"
@@ -1899,13 +1901,13 @@ function SettingsCard() {
    * JSON 模板编辑器（占位符 chips 光标处插入）。渲染契约见 channel-webhook.ts。
    */
   function webhookCard(ch: any, idx: number) {
-    var channelKey = channelIdFor(ch);
-    var armed = delArmedId === ch.id;
-    var authValue =
+    const channelKey = channelIdFor(ch);
+    const armed = delArmedId === ch.id;
+    const authValue =
       ["none", "bearer", "basic", "header"].indexOf(String(ch.auth || "none")) !== -1
         ? String(ch.auth || "none")
         : "none";
-    var chId = String(ch.id);
+    const chId = String(ch.id);
 
     /** webhook 字段 patch（函数式基于最新 channels，防同帧后写覆盖）。 */
     function whPatch(part: Record<string, any>) {
@@ -1915,10 +1917,14 @@ function SettingsCard() {
     /** 凭据输入 + 显隐按钮。value 走 maskedFieldValue：未编辑时为空（占位符给「已配置」提示），
      *  服务端掩码不进 value——它一旦被改写就不再等于掩码，服务端会把它当新凭据落盘。 */
     function secretField(field: string, placeholderKey: string) {
-      var key = credentialFieldKey(chId, field);
-      var shown = revealMap[key] === true;
-      var fieldView = credentialFieldView(ch[field], secretEdited[key] === true, t(placeholderKey));
-      var part: Record<string, any> = {};
+      const key = credentialFieldKey(chId, field);
+      const shown = revealMap[key] === true;
+      const fieldView = credentialFieldView(
+        ch[field],
+        secretEdited[key] === true,
+        t(placeholderKey),
+      );
+      const part: Record<string, any> = {};
       return (
         <span className="dn-secret" key={field}>
           <input
@@ -1937,7 +1943,7 @@ function SettingsCard() {
             type="button"
             className="dn-secret-reveal"
             onClick={function () {
-              var next: Record<string, boolean> = Object.assign({}, revealMap);
+              const next: Record<string, boolean> = Object.assign({}, revealMap);
               next[key] = !shown;
               setRevealMap(next);
             }}
@@ -1950,19 +1956,19 @@ function SettingsCard() {
 
     /** 占位符插入模板（光标处；受控值经 whPatch 回写）。 */
     function insertTpl(token: string) {
-      var ta = document.getElementById("dn-tpl-" + chId) as HTMLTextAreaElement | null;
+      const ta = document.getElementById("dn-tpl-" + chId) as HTMLTextAreaElement | null;
       if (!ta) {
         whPatch({ template: (ch.template || "") + token });
         return;
       }
-      var at =
+      const at =
         ta.selectionStart === null || ta.selectionStart === undefined
           ? ta.value.length
           : ta.selectionStart;
       whPatch({ template: ta.value.slice(0, at) + token + ta.value.slice(at) });
     }
 
-    var authCtl: any[] = [
+    const authCtl: any[] = [
       <select
         key="auth-select"
         className="dn-set-input dn-set-select"
@@ -2011,7 +2017,7 @@ function SettingsCard() {
       authCtl.push(secretField("headerValue", "whAuthHeaderValue"));
     }
 
-    var textTokens = [
+    const textTokens = [
       "{{title}}",
       "{{message}}",
       "{{kind}}",
@@ -2019,7 +2025,7 @@ function SettingsCard() {
       "{{priority}}",
       "{{source}}",
     ];
-    var tplChips: any[] = textTokens.map(function (tok: string) {
+    const tplChips: any[] = textTokens.map(function (tok: string) {
       return (
         <button
           type="button"
@@ -2081,7 +2087,7 @@ function SettingsCard() {
               value=""
               aria-label={t("whPreset")}
               onChange={function (e: any) {
-                var p = WEBHOOK_PRESETS[e.target.value];
+                const p = WEBHOOK_PRESETS[e.target.value];
                 if (!p) return;
                 // preset 落配置（{{priority}} 频道感知映射的依据）；认证与模板随预设填充，URL 不覆盖（防丢已填内容）
                 whPatch({ preset: e.target.value, auth: p.auth, template: p.template });
@@ -2153,7 +2159,7 @@ function SettingsCard() {
                 className="dn-set-btn dn-set-btnSmall"
                 onClick={function () {
                   // 恢复为当前预设（ch.preset 由预设下拉落配置；缺省 ntfy 与服务端默认一致）的默认模板
-                  var p = WEBHOOK_PRESETS[String(ch.preset || "ntfy")];
+                  const p = WEBHOOK_PRESETS[String(ch.preset || "ntfy")];
                   if (p) whPatch({ template: p.template });
                 }}
               >
@@ -2196,21 +2202,21 @@ function SettingsCard() {
    * 由调用方无感（删除条目即恢复——状态标签随即回到默认态）。
    */
   function routeChipsRow(kind: string) {
-    var routes = routeOf(kind);
-    var options = routeOptions(settings);
-    var litIds = routes === undefined ? defaultRouteIds(settings) : routes.slice();
-    var litSet: Record<string, boolean> = {};
+    const routes = routeOf(kind);
+    const options = routeOptions(settings);
+    const litIds = routes === undefined ? defaultRouteIds(settings) : routes.slice();
+    const litSet: Record<string, boolean> = {};
     litIds.forEach(function (id: string) {
       litSet[id] = true;
     });
     // stale：条目残留但候选中不存在的频道 id（已删除频道；投递时自动跳过，保存时清理）
-    var staleIds = (routes || []).filter(function (id: string) {
+    const staleIds = (routes || []).filter(function (id: string) {
       return !options.some(function (o) {
         return o.id === id;
       });
     });
-    var chips = options.map(function (o) {
-      var on = litSet[o.id] === true;
+    const chips = options.map(function (o) {
+      const on = litSet[o.id] === true;
       // 未启用频道：置灰禁点——投递面 = 启用频道 ∩ 路由，停用频道点亮
       // 也不投递（假点亮）；title 说明「启用后可用」。已勾选未启用项保留勾选
       // 显示（不自动改用户配置），用户启用频道后该 chip 恢复可点/生效。
@@ -2237,7 +2243,7 @@ function SettingsCard() {
         </span>,
       );
     });
-    var isCustom = routes !== undefined;
+    const isCustom = routes !== undefined;
     chips.push(
       <button
         type="button"
@@ -2260,12 +2266,12 @@ function SettingsCard() {
   }
 
   // 事件区：内置事件卡（sev 色点 + kind 码 + switch + 路由 chips）
-  var eventChildren: any[] = [];
+  const eventChildren: any[] = [];
   EVENT_KEYS.forEach(function (kv) {
-    var key = kv[0],
+    const key = kv[0],
       labelKey = kv[1];
-    var kindId = EVENT_KIND_MAP[key];
-    var sev = KIND_SEV[kindId] || "info";
+    const kindId = EVENT_KIND_MAP[key];
+    const sev = KIND_SEV[kindId] || "info";
     eventChildren.push(
       <div className="dn-evt" key={"ev-" + key}>
         <div className="dn-evt-head">
@@ -2284,8 +2290,8 @@ function SettingsCard() {
   // 动态 kind（插件提议的通知类型）：待确认 = 允许/拒绝 + 路由提示；已允许 = 同款
   // 路由 chips（动态 kind 也支持配置投递频道——kindRoutes 天然支持动态
   // kind id 作 key，与服务端 resolveRoutes 的 kind 无关路由解析一致）。
-  var kindRows: any[] = kindsList.map(function (k: any) {
-    var nameText = k.label && k.label !== k.id ? k.label : k.id;
+  const kindRows: any[] = kindsList.map(function (k: any) {
+    const nameText = k.label && k.label !== k.id ? k.label : k.id;
     if (k.confirmed) {
       return (
         <div className="dn-kinds dn-kinds-ok" key={k.id}>
@@ -2352,11 +2358,11 @@ function SettingsCard() {
 
   // 能力自检的渲染模型：宿主面（读服务端载荷）+ 浏览器面（读本页事实）合成一次，
   // 下面所有卡片只投影它——JSX 里不再出现任何「这个状态算不算好」的判断。
-  var diag = clientDiagnosticsOf(diagnostics, clientFacts(), t);
+  const diag = clientDiagnosticsOf(diagnostics, clientFacts(), t);
 
   // 频道区：`channels` 逐项按类型分派（内置两卡 + bark/webhook 实例卡）+ 添加按钮。
   // 先按**真实下标**遍历再分派：chPatch / chRemove 都按下标操作，先 filter 会让编辑打到隔壁条目。
-  var channelsChildren: any[] = [];
+  const channelsChildren: any[] = [];
   (settings.channels || []).forEach(function (c: any, i: number) {
     if (c.type === "browser" || c.type === "system") {
       channelsChildren.push(builtinCard(i, c, channelLabel(c)));
@@ -2388,7 +2394,7 @@ function SettingsCard() {
   );
 
   // 资源上限折叠区（统一 dn-ch-adv 折叠形态 + dn-adv-row 行）
-  var dedupFold = (
+  const dedupFold = (
     <details className="dn-ch-adv dn-sec-adv" key="adv-params">
       <summary>{t("secDedup")}</summary>
       <div className="dn-ch-adv-body">
@@ -2431,8 +2437,8 @@ function SettingsCard() {
     </details>
   );
 
-  var qh = settings.quietHours || {};
-  var allows = qh.allowKinds || [];
+  const qh = settings.quietHours || {};
+  const allows = qh.allowKinds || [];
   function setAllowKinds(next: string[]) {
     patch({ quietHours: Object.assign({}, qh, { allowKinds: next }) });
   }
@@ -2443,8 +2449,8 @@ function SettingsCard() {
    *  点保存会看到「未修改」，改动被静默丢弃。 */
   function allowFollowEnabled() {
     patch(function (prev: any) {
-      var nextQh = prev.quietHours || {};
-      var next = EVENT_KEYS.filter(function (kv) {
+      const nextQh = prev.quietHours || {};
+      const next = EVENT_KEYS.filter(function (kv) {
         return prev[kv[0]] === true;
       }).map(function (kv) {
         return EVENT_KIND_MAP[kv[0]];
@@ -2462,10 +2468,10 @@ function SettingsCard() {
   // KIND_KEYS 字典；由 EVENT_KEYS + EVENT_KIND_MAP 派生，不新建平行表。
   // chips 直点形态——未启用事件弱化沿用 dn-set-allowDim 锚点，勾选态保留照常
   // 写入（服务端判定只看 quietHours.allowKinds.includes(kind)，不看开关）。
-  var quietAllowChoices = EVENT_KEYS.map(function (kv) {
-    var notifyKey = kv[0];
-    var kind = EVENT_KIND_MAP[notifyKey];
-    var enabled = settings[notifyKey] === true;
+  const quietAllowChoices = EVENT_KEYS.map(function (kv) {
+    const notifyKey = kv[0];
+    const kind = EVENT_KIND_MAP[notifyKey];
+    const enabled = settings[notifyKey] === true;
     return {
       kind: kind,
       notifyKey: notifyKey,
@@ -2473,8 +2479,8 @@ function SettingsCard() {
       labelKey: KIND_KEYS[kind] || "k" + kind,
     };
   });
-  var allowChips = quietAllowChoices.map(function (c) {
-    var checked = allows.indexOf(c.kind) !== -1;
+  const allowChips = quietAllowChoices.map(function (c) {
+    const checked = allows.indexOf(c.kind) !== -1;
     // 未启用事件：置灰禁点——事件开关关闭则不产生通知，豁免勾选无意义；
     // 保留已勾选显示（不自动改配置），启用事件后恢复可点。禁点用原生 disabled。
     return (
@@ -2488,7 +2494,7 @@ function SettingsCard() {
         disabled={!c.enabled}
         title={c.enabled ? undefined : t("allowDisabledHint")}
         onClick={function () {
-          var next = allows.slice();
+          const next = allows.slice();
           if (!checked && next.indexOf(c.kind) === -1) next.push(c.kind);
           else if (checked && next.indexOf(c.kind) !== -1) next.splice(next.indexOf(c.kind), 1);
           setAllowKinds(next);
@@ -2500,7 +2506,7 @@ function SettingsCard() {
     );
   });
   // 免打扰卡（开关 + 时段 + 豁免 chips + 快捷按钮）
-  var dndCard = (
+  const dndCard = (
     <div className="dn-dnd" key="dnd">
       <div className="dn-dnd-head">
         <span className="dn-sev dn-sev-warning" />
@@ -2564,7 +2570,7 @@ function SettingsCard() {
 
   // 三端降级文案（浏览器通知权限状态行已移入「浏览器通知」频道卡，
   // 这里只保留服务不可用 / 非安全上下文 / 平台不支持三条全局降级说明）
-  var degradation: any[] = [];
+  const degradation: any[] = [];
   if (metaValue && metaValue.writable === false) {
     degradation.push(
       <div className="dn-set-note" key="settings-unavailable">
@@ -2594,10 +2600,10 @@ function SettingsCard() {
    * 「投递成功却没声音」这类结论因此完全不可见，状态行在 `skipped` 后还不会变。
    */
   function deliveryLines(r: { channels?: unknown }) {
-    var list: unknown[] = Array.isArray(r.channels) ? r.channels : [];
-    var views: DeliveryView[] = [];
+    const list: unknown[] = Array.isArray(r.channels) ? r.channels : [];
+    const views: DeliveryView[] = [];
     list.forEach(function (delivery: unknown) {
-      var view = deliveryViewOf(delivery, t);
+      const view = deliveryViewOf(delivery, t);
       if (view) views.push(view);
     });
     if (views.length === 0) return null;
@@ -2627,7 +2633,7 @@ function SettingsCard() {
 
   // 通知记录 tab（历史独立成 tab；清理/发送测试/刷新并排工具行；
   // 请求权限按钮随权限状态行一起归入「浏览器通知」频道卡）
-  var historyPane = (
+  const historyPane = (
     <div key="history">
       <div className="dn-set-historyTools">
         <button
@@ -2662,12 +2668,12 @@ function SettingsCard() {
       ) : (
         <ul className="dn-set-history">
           {history.map(function (r: any, i: number) {
-            var d = new Date(r.ts);
-            var pad = function (n: number) {
+            const d = new Date(r.ts);
+            const pad = function (n: number) {
               return n < 10 ? "0" + n : String(n);
             };
-            var time = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
-            var sev = KIND_SEV[r.kind] || "info";
+            const time = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+            const sev = KIND_SEV[r.kind] || "info";
             return (
               <li className="dn-set-historyItem" key={String(r.ts) + "-" + i}>
                 <span
@@ -2698,12 +2704,12 @@ function SettingsCard() {
   // ---- 卡内三 tab（通知事件 / 通知频道 / 通知记录）----
 
   // 待确认动态 kind 计数（「通知事件」tab 徽标——确认流是安全设计，不可被 tab 埋没）
-  var pendingKinds = kindsList.filter(function (k: any) {
+  const pendingKinds = kindsList.filter(function (k: any) {
     return !k.confirmed;
   }).length;
 
   // tab 栏：三个普通 button（不引入 role=tablist 管理成本）
-  var tabbar = (
+  const tabbar = (
     <div className="dn-set-tabs">
       <button
         type="button"
@@ -2737,12 +2743,12 @@ function SettingsCard() {
   );
 
   // 事件 tab 内容（历史移出，事件页聚焦事件路由与确认流）
-  var eventsPane = [eventChildren, dedupFold, dndCard];
+  const eventsPane = [eventChildren, dedupFold, dndCard];
   // 频道 tab 内容：频道卡组（内置 + Bark + Webhook）+ 添加按钮 + 域保存行。
   // 域保存：频道 tab 底部「保存频道」只提交 channels
   // 键——与 foot 全量保存语义不同（域 vs 全量），不构成此前移除的「双份全量
   // 保存」视觉重复；当初预留的「域级拆分后按域重排按钮位置」由本行兑现。
-  var channelsDomainSave = (
+  const channelsDomainSave = (
     <div className="dn-ch-domainSave" key="ch-domain-save">
       <span className="dn-ch-domainSaveHint">{t("channelsDomainHint")}</span>
       <button
@@ -2757,13 +2763,13 @@ function SettingsCard() {
       </button>
     </div>
   );
-  var channelsPane = [channelsChildren, channelsDomainSave];
+  const channelsPane = [channelsChildren, channelsDomainSave];
 
   // 去掉设置卡 title/副标题；顶部直接是 tab 栏。
   // 底部保存栏 = 脏状态指示（diffSettingsPayload 键数）+ 放弃更改 + 保存。
   // foot 显示全量脏计数（含频道域）；「保存频道」按钮的域脏态不做单独
   // 计数——无频道域脏时点击走空 diff 的「未修改」提示（与 foot 保存同交互语义）。
-  var dirtyCount = Object.keys(diffPayload()).length;
+  const dirtyCount = Object.keys(diffPayload()).length;
   return (
     <li className="dn-set-card">
       {tabbar}
@@ -2849,12 +2855,12 @@ export function apply(ctx: any) {
     ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
 
     // i18n：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
-    var locale: any = ctx.get("locale");
+    const locale: any = ctx.get("locale");
     // 订阅取消函数供 disposer 卸载调用（守卫对齐 provider-usage/
     // mcp-manager 的 undefined 形态——不预设 subscribe 返回 null，防其返回
     // null 时 null 初始化遮蔽导致守卫失效），防重复 apply 后旧订阅持续重绑
     // 已停用实例。
-    var unsubLocale: (() => void) | undefined;
+    let unsubLocale: (() => void) | undefined;
     if (locale && typeof locale.register === "function") {
       try {
         locale.register(NS, { zh: zh, en: en });
@@ -2916,13 +2922,13 @@ export function apply(ctx: any) {
     // 独立顶层页）；label 为导航显示文本。旧运行时若不声明该插槽，inject
     // 回调不执行 → tab 不挂载、通知半区照常工作（与 provider-usage 同语义，
     // 不做 plugin.item 双插槽重复展示）。
-    var slots = ctx.get("slots");
+    const slots = ctx.get("slots");
     if (slots && typeof slots.inject === "function") {
       slots.inject("settings.section", function () {
         return slots.register(
           // label 传 thunk：宿主 nav rows 每次读取经 resolveSlotLabel
           // 求值 + shell 订阅 locale 重渲染，切语言即跟随（注册期求值字符串快照是旧行为）。
-          // t 为本模块 var 活绑定（apply 内 locale.subscribe 回调重绑），thunk 保持最小
+          // t 走 client/locale.ts 的当前绑定（locale.subscribe 回调重绑），thunk 保持最小
           // t(key) 形态、不包任何可能抛错的逻辑（thunk 抛错会炸宿主 nav 渲染）。
           {
             name: "settings.section",
@@ -2957,7 +2963,7 @@ export function apply(ctx: any) {
         if (eventsHandle.current === session) eventsHandle.current = null;
         document.removeEventListener("click", onFirstClick, { capture: true });
         closeAllNotifications();
-        var style = document.getElementById(STYLE_ID);
+        const style = document.getElementById(STYLE_ID);
         if (style) style.remove();
       };
     }, "dsh-notifier");
