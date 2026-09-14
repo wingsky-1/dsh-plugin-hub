@@ -1,18 +1,18 @@
 /** tools 域依赖声明：只声明「我需要外部什么」，声明面只有类型。 */
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
-import type { BindingApi } from "../binding/interface.ts";
-import type { GitApi } from "../git/interface.ts";
+import type * as bindingApi from "../binding/interface.ts";
+import type * as gitApi from "../git/interface.ts";
 import type { LoggerPort } from "../shared/interface.ts";
 
 /**
  * binding 域给工具的能力面。**工具是唯一的写入口**——api 域拿不到这三个方法，
  * 所以浏览器侧不存在任何写绑定的授权路径。
  */
-export type BindingPort = Pick<BindingApi, "get" | "put" | "drop">;
+export type BindingPort = Pick<typeof bindingApi, "get" | "put" | "drop">;
 
 /** git 域给工具的能力面。只列本域真正要用的方法，域内不认识 git 的其余能力。 */
 type GitPort = Pick<
-  GitApi,
+  typeof gitApi,
   | "commonDir"
   | "belongsTo"
   | "headBranch"

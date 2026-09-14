@@ -9,8 +9,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import type { BindingRecord } from "../../src/contract.ts";
-import { createBinding } from "../../src/server/binding/interface.ts";
-import { createGit, createGitExec } from "../../src/server/git/interface.ts";
+import * as bindingApi from "../../src/server/binding/interface.ts";
+import * as gitApi from "../../src/server/git/interface.ts";
 import type { ToolsDeps } from "../../src/server/tools/deps.ts";
 import { buildCreateTool } from "../../src/server/tools/impl/create/index.ts";
 import { buildRegisterTool } from "../../src/server/tools/impl/register/index.ts";
@@ -36,12 +36,13 @@ function harness(): Harness {
   initRepo(repo);
   const file = join(root, "dsh-home", "@wingsky-1", "dsh-worktree-sidebar", "bindings.json");
 
-  const binding = createBinding({
+  // 两个域都是进程内单例：装的是它们，递进工具域的是**门面命名空间对象**（消费方用 Pick 收窄）。
+  bindingApi.installBinding({
     logger: { warn: (m: string) => warns.push(m) },
     file,
     now: () => "2026-09-14T00:00:00.000Z",
   });
-  const gitApi = createGit({ exec: createGitExec() });
+  gitApi.installGit({ exec: gitApi.gitExec });
 
   return {
     repo,
@@ -50,7 +51,7 @@ function harness(): Harness {
     deps: {
       logger: { warn: (m: string) => warns.push(m) },
       now: () => "2026-09-14T00:00:00.000Z",
-      binding,
+      binding: bindingApi,
       git: gitApi,
       agents: { subscribe: () => () => undefined, list: () => [], publish: () => () => undefined },
     },
@@ -72,8 +73,10 @@ function bindingsOnDisk(file: string): Record<string, BindingRecord> {
     .bindings;
 }
 
-afterEach(() => {
-  // 没有全局单例需要释放：每个 harness 各自建实例，状态随它一起被回收。
+afterEach(async () => {
+  // 先释放两个域再删目录：binding 的 release 会等在飞的写盘落定，反过来那次写会把刚删的目录又建回来。
+  await bindingApi.releaseBinding();
+  gitApi.releaseGit();
   for (const dir of dirs.splice(0)) cleanup(dir);
   warns.splice(0);
 });

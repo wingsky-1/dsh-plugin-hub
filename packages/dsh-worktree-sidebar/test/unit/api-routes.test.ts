@@ -10,8 +10,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { afterEach, describe, expect, it } from "vitest";
 import { ROUTES } from "../../src/contract.ts";
-import { createApi } from "../../src/server/api/interface.ts";
-import type { ApiInstance } from "../../src/server/api/interface.ts";
+import { installApi, releaseApi } from "../../src/server/api/interface.ts";
 
 /** 捕获注册的路由，并按真实语义提供摘除器。 */
 function capturingRegister() {
@@ -61,24 +60,25 @@ const warns: string[] = [];
 const logger = { warn: (message: string) => warns.push(message) };
 
 function install(
-  bindingOverrides: Partial<{
+  overrides: Partial<{
     revision: () => number;
     effectiveWorktree: (id: string) => Promise<string | null>;
   }> = {},
 ) {
   const reg = capturingRegister();
-  const binding = {
-    revision: () => 7,
-    effectiveWorktree: async (id: string) => (id === "s1" ? "/wt" : null),
-    ...bindingOverrides,
+  // 两个事实来自两个域，故这里是两个互不搭界的窄端口（一个提供方一行）。
+  const binding = { revision: overrides.revision ?? (() => 7) };
+  const scope = {
+    effectiveWorktree:
+      overrides.effectiveWorktree ?? (async (id: string) => (id === "s1" ? "/wt" : null)),
   };
-  trackApi(createApi({ register: reg.register, logger, binding }));
+  installApi({ register: reg.register, logger, binding, scope });
   const route = (path: string): WebRoute => {
     const found = reg.routes.find((candidate) => candidate.path === path);
     if (found === undefined) throw new Error("未注册该路径：" + path);
     return found;
   };
-  return { reg, route, api: created[created.length - 1] as ApiInstance };
+  return { reg, route };
 }
 
 /** 调一次端点。注册的是**包装器**（含围栏与异常收口），所以这里也走包装器。 */
@@ -86,15 +86,9 @@ function jsonOf(captured: { body: string }): Record<string, unknown> {
   return JSON.parse(captured.body) as Record<string, unknown>;
 }
 
-/** 本文件建过的实例，逐个在 afterEach 释放（没有全局单例可依赖）。 */
-const created: ApiInstance[] = [];
-function trackApi(api: ApiInstance): ApiInstance {
-  created.push(api);
-  return api;
-}
-
+/** 域是进程内单例：每个用例装一次、afterEach 统一释放——漏掉会让下一个用例撞「只能装配一次」。 */
 afterEach(() => {
-  for (const api of created.splice(0)) api.dispose();
+  releaseApi();
   warns.splice(0);
 });
 
@@ -227,23 +221,31 @@ describe("异常收口与卸载", () => {
     expect(warns[0]).toContain("boom");
   });
 
-  it("dispose 摘掉全部路由且幂等", () => {
-    const { reg, api } = install();
+  it("release 摘掉全部路由且幂等", () => {
+    const { reg } = install();
     expect(reg.routes.length).toBe(2);
-    api.dispose();
+    releaseApi();
     expect(reg.routes.length).toBe(0);
-    api.dispose();
+    releaseApi();
     expect(reg.routes.length).toBe(0);
   });
+});
 
-  it("两份实例互相独立（没有模块级状态）", () => {
+describe("装配守卫与 release 复位", () => {
+  it("第二次装配当场抛错，不静默挂第二份路由", () => {
     const first = install();
-    const second = install();
+    // 说清是哪个域拒绝的：`/只能装配一次/` 这种宽判据在「装配体被整段短路」时也会绿。
+    expect(() => install()).toThrow("dsh-worktree-sidebar: api 域只能装配一次");
     expect(first.reg.routes.length).toBe(2);
-    expect(second.reg.routes.length).toBe(2);
-    first.api.dispose();
-    // 摘掉第一份不影响第二份。
+  });
+
+  it("release 之后再装配只注册一份路由（不叠加）", () => {
+    const first = install();
+    expect(first.reg.routes.length).toBe(2);
+    releaseApi();
     expect(first.reg.routes.length).toBe(0);
+    // 重新装配必须重新注册，而不是「反正已经挂过」——否则 release 之后页面就再也读不到数据。
+    const second = install();
     expect(second.reg.routes.length).toBe(2);
   });
 });

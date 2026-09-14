@@ -2,8 +2,8 @@
  * scope 域依赖声明。这里全部是本插件自己的窄类型——官方 typert 的类型体操留在组合根的适配层里，
  * 于是本域可以完全脱离 cordis 与官方类型被单测驱动。
  */
-import type { BindingApi } from "../binding/interface.ts";
-import type { GitApi } from "../git/interface.ts";
+import type * as bindingApi from "../binding/interface.ts";
+import type * as gitApi from "../git/interface.ts";
 import type { LoggerPort } from "../shared/interface.ts";
 
 /** 与官方同形的文件根解析结果。 */
@@ -16,10 +16,10 @@ export interface FileScope {
  * binding 域给本域的能力面。**含 `drop`**：检测到失效绑定时要摘掉它，
  * 好让客户端的 revision 缓存随之失效（见 G5 与 `impl/resolve` 的注释）。
  */
-export type BindingPort = Pick<BindingApi, "get" | "drop">;
+export type BindingPort = Pick<typeof bindingApi, "get" | "drop">;
 
 /** git 域给本域的能力面：只要一个归属判定。 */
-type GitPort = Pick<GitApi, "belongsTo">;
+type GitPort = Pick<typeof gitApi, "belongsTo">;
 
 /** typert 查找表的一个描述符。`resolve` 是「当前生效的那一个」。 */
 export interface LookupDescriptorPort {

@@ -8,28 +8,30 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createGit, createGitExec } from "../../src/server/git/interface.ts";
-import type { GitApi } from "../../src/server/git/interface.ts";
+import type { GitExecPort } from "../../src/server/git/deps.ts";
+import * as gitApi from "../../src/server/git/interface.ts";
 import { cleanup, initRepo, tempDir } from "../helpers.ts";
 
 const dirs: string[] = [];
 
-function fixture(): { repo: string; git: GitApi } {
+function fixture(): { repo: string } {
   const root = tempDir("git");
   dirs.push(root);
   const repo = join(root, "repo");
   initRepo(repo);
-  return { repo, git: createGit({ exec: createGitExec() }) };
+  gitApi.installGit({ exec: gitApi.gitExec });
+  return { repo };
 }
 
 afterEach(() => {
+  gitApi.releaseGit();
   for (const dir of dirs.splice(0)) cleanup(dir);
 });
 
 describe("仓库识别", () => {
   it("commonDir 返回绝对路径（git 自己会返回相对的 .git）", async () => {
-    const { repo, git } = fixture();
-    const dir = await git.commonDir(repo);
+    const { repo } = fixture();
+    const dir = await gitApi.commonDir(repo);
     expect(dir).toBeDefined();
     expect(dir?.startsWith("/")).toBe(true);
     expect(dir?.endsWith(".git")).toBe(true);
@@ -38,84 +40,108 @@ describe("仓库识别", () => {
   it("非仓库目录返回 undefined 而不是抛异常", async () => {
     const root = tempDir("norepo");
     dirs.push(root);
-    const { git } = fixture();
-    expect(await git.commonDir(root)).toBeUndefined();
+    fixture();
+    expect(await gitApi.commonDir(root)).toBeUndefined();
   });
 });
 
 describe("worktree 增删（argv 的真实可执行性）", () => {
   it("addWorktree 建出目录，belongsTo 认它，headBranch 报分支名", async () => {
-    const { repo, git } = fixture();
+    const { repo } = fixture();
     const wt = join(repo, "..", "wt-feature");
-    expect(await git.addWorktree(repo, wt, "feature")).toEqual({ ok: true });
+    expect(await gitApi.addWorktree(repo, wt, "feature")).toEqual({ ok: true });
 
     expect(existsSync(wt)).toBe(true);
-    expect(await git.belongsTo(wt, repo)).toBe(true);
-    expect(await git.headBranch(wt)).toBe("feature");
-    expect(await git.commonDir(wt)).toBe(await git.commonDir(repo));
+    expect(await gitApi.belongsTo(wt, repo)).toBe(true);
+    expect(await gitApi.headBranch(wt)).toBe("feature");
+    expect(await gitApi.commonDir(wt)).toBe(await gitApi.commonDir(repo));
   });
 
   it("listWorktrees 同时列出主仓库与新增的 worktree", async () => {
-    const { repo, git } = fixture();
+    const { repo } = fixture();
     const wt = join(repo, "..", "wt-two");
-    await git.addWorktree(repo, wt, "two");
-    const paths = (await git.listWorktrees(repo)).map((entry) => entry.path);
+    await gitApi.addWorktree(repo, wt, "two");
+    const paths = (await gitApi.listWorktrees(repo)).map((entry) => entry.path);
     expect(paths.length).toBe(2);
     expect(paths).toContain(repo);
     expect(paths).toContain(wt);
-    const branches = (await git.listWorktrees(repo)).map((entry) => entry.branch);
+    const branches = (await gitApi.listWorktrees(repo)).map((entry) => entry.branch);
     expect(branches).toContain("refs/heads/two");
   });
 
   it("分支名非法时 addWorktree 判失败并给出 git 的原因", async () => {
-    const { repo, git } = fixture();
+    const { repo } = fixture();
     const wt = join(repo, "..", "wt-bad");
-    expect(await git.checkRefFormat("bad name")).toBe(false);
-    expect(await git.checkRefFormat("good-name")).toBe(true);
-    const result = await git.addWorktree(repo, wt, "bad name");
+    expect(await gitApi.checkRefFormat("bad name")).toBe(false);
+    expect(await gitApi.checkRefFormat("good-name")).toBe(true);
+    const result = await gitApi.addWorktree(repo, wt, "bad name");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason.length).toBeGreaterThan(0);
     expect(existsSync(wt)).toBe(false);
   });
 
   it("removeWorktree 删掉 worktree，之后 belongsTo 为假", async () => {
-    const { repo, git } = fixture();
+    const { repo } = fixture();
     const wt = join(repo, "..", "wt-remove");
-    await git.addWorktree(repo, wt, "to-remove");
-    expect(await git.removeWorktree(repo, wt, false)).toEqual({ ok: true });
+    await gitApi.addWorktree(repo, wt, "to-remove");
+    expect(await gitApi.removeWorktree(repo, wt, false)).toEqual({ ok: true });
     expect(existsSync(wt)).toBe(false);
-    expect(await git.belongsTo(wt, repo)).toBe(false);
+    expect(await gitApi.belongsTo(wt, repo)).toBe(false);
   });
 
   it("删除不存在的工作区判失败而不是静默成功", async () => {
-    const { repo, git } = fixture();
-    const result = await git.removeWorktree(repo, join(repo, "..", "nope"), false);
+    const { repo } = fixture();
+    const result = await gitApi.removeWorktree(repo, join(repo, "..", "nope"), false);
     expect(result.ok).toBe(false);
   });
 
   it("belongsTo 把不同仓库判成假", async () => {
-    const { repo, git } = fixture();
+    const { repo } = fixture();
     const root = tempDir("other");
     dirs.push(root);
     const other = join(root, "other");
     initRepo(other);
-    expect(await git.belongsTo(other, repo)).toBe(false);
-    expect(await git.belongsTo(repo, other)).toBe(false);
+    expect(await gitApi.belongsTo(other, repo)).toBe(false);
+    expect(await gitApi.belongsTo(repo, other)).toBe(false);
   });
 
   it("belongsTo 对不存在的路径返回假而不是抛异常", async () => {
-    const { repo, git } = fixture();
-    expect(await git.belongsTo(join(repo, "..", "ghost"), repo)).toBe(false);
+    const { repo } = fixture();
+    expect(await gitApi.belongsTo(join(repo, "..", "ghost"), repo)).toBe(false);
   });
 });
 
-describe("装配守卫", () => {
-  it("两份实例互相独立（没有模块级状态）", async () => {
-    const first = fixture();
-    const second = fixture();
-    expect(await first.git.commonDir(first.repo)).toBeDefined();
-    expect(await second.git.commonDir(second.repo)).toBeDefined();
-    // 两个实例各自的仓库互不干扰；缓存也不共享。
-    expect(await first.git.belongsTo(second.repo, first.repo)).toBe(false);
+describe("装配守卫与 release 复位", () => {
+  it("第二次装配当场抛错，不静默建成第二份状态", () => {
+    fixture();
+    // 说清是哪个域拒绝的：`/只能装配一次/` 这种宽判据在「装配体被整段短路」时也会绿。
+    expect(() => gitApi.installGit({ exec: gitApi.gitExec })).toThrow(
+      "dsh-worktree-sidebar: git 域只能装配一次",
+    );
+  });
+
+  it("release 丢掉归属缓存：换了 exec 之后不再返回旧结论", async () => {
+    const { repo } = fixture();
+    const root = tempDir("other");
+    dirs.push(root);
+    const other = join(root, "other");
+    initRepo(other);
+    // 先让缓存记住一个假结论（两个不同仓库）。
+    expect(await gitApi.belongsTo(other, repo)).toBe(false);
+
+    gitApi.releaseGit();
+    // 换成「所有目录的公共 git 目录都一样」的执行面：缓存若没被丢掉，这里还会看到 false。
+    gitApi.installGit({ exec: sameCommonDirExec });
+    expect(await gitApi.belongsTo(other, repo)).toBe(true);
+  });
+
+  it("release 之后能力面当场失败，不拿旧 exec 出结果", async () => {
+    gitApi.releaseGit();
+    await expect(gitApi.commonDir("/")).rejects.toThrow("dsh-worktree-sidebar: git 域尚未装配");
   });
 });
+
+/** 所有目录都报同一个公共 git 目录的执行面：用来把「缓存里的旧结论」与「新 exec 的答案」分开。 */
+const sameCommonDirExec: GitExecPort = {
+  run: async () => ({ ok: true, stdout: "/shared/common\n", stderr: "" }),
+};

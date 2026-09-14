@@ -3,11 +3,11 @@
  *
  * 所有 argv 构造在 `impl/inspect`（纯函数，可逐字断言），本块只负责执行与把退出码翻译成答案。
  *
- * 状态（归属校验的 TTL 缓存）住在实例里而不是模块里（#733 宪法第 1 条）：缓存是一份加速设施，
- * 它不该跨装配共享，更不该让第二次装配抛「已装配」。
+ * 状态（归属校验的 TTL 缓存与装配入参）住在实例里；域是**进程内单例**，第二次 `install` 由
+ * `installed` 守卫**显式抛错**（响亮失败优于静默共享/丢数据）。
  */
 import { resolve } from "node:path";
-import type { GitDeps, GitRunResult } from "../../deps.ts";
+import type { GitDeps, GitExecPort, GitRunResult } from "../../deps.ts";
 import {
   addWorktreeArgs,
   checkRefFormatArgs,
@@ -25,6 +25,9 @@ const BELONGS_TTL_MS = 5_000;
 
 /** 缓存条目上限。超出即整表丢弃——这是一份加速缓存，不是需要保真的状态。 */
 const BELONGS_CACHE_MAX = 256;
+
+/** 未装配时能力面的失败文案：读到它就说明装配守卫有洞，当场暴露而不是拿旧 deps 出结果。 */
+const NOT_INSTALLED = "dsh-worktree-sidebar: git 域尚未装配";
 
 /** git 域的服务面。 */
 export interface GitApi {
@@ -52,60 +55,97 @@ export interface GitApi {
   ): Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
-/** 装配 git 域。 */
-export function createGit(deps: GitDeps): GitApi {
-  const belongsCache = new Map<string, { at: number; ok: boolean }>();
-  const run = (args: readonly string[]): Promise<GitRunResult> => deps.exec.run(args);
+/** git 域：唯一实例持有归属缓存与那一次 git 调用面。 */
+class GitService implements GitApi {
+  /** 是否已装配；单例实例重复装配是编程错误，当场暴露。 */
+  private installed = false;
+  /** 装配入参。释放即放开，能力面随之当场失败。 */
+  private deps: GitDeps | undefined;
+  private readonly belongsCache = new Map<string, { at: number; ok: boolean }>();
 
-  const commonDir = async (dir: string): Promise<string | undefined> => {
-    const result = await run(commonDirArgs(dir));
+  /** 装配 git 域。重复装配是编程错误，当场暴露。 */
+  install(deps: GitDeps): void {
+    if (this.installed) throw new Error("dsh-worktree-sidebar: git 域只能装配一次");
+    this.installed = true;
+    this.deps = deps;
+  }
+
+  /** 卸载：丢掉缓存与装配入参，复位装配标记——同进程的下一次 `install` 不该撞上「只能装配一次」。 */
+  release(): void {
+    this.installed = false;
+    this.belongsCache.clear();
+    this.deps = undefined;
+  }
+
+  async commonDir(dir: string): Promise<string | undefined> {
+    const result = await this.exec().run(commonDirArgs(dir));
     if (!result.ok) return undefined;
     const value = parseSingleLine(result.stdout);
     if (value === undefined) return undefined;
     // `--git-common-dir` 会返回相对 `dir` 的路径（实测是 `.git`），
     // 直接拿字符串比较会让「同一仓库的两个 worktree」判成不同仓库。
     return resolve(dir, value);
-  };
+  }
 
-  return {
-    commonDir,
-    async listWorktrees(dir) {
-      const result = await run(worktreeListArgs(dir));
-      if (!result.ok) return [];
-      return parseWorktreeList(result.stdout);
-    },
-    async belongsTo(dir, repoRoot) {
-      const key = dir + "\u0000" + repoRoot;
-      const hit = belongsCache.get(key);
-      const now = Date.now();
-      if (hit !== undefined && now - hit.at < BELONGS_TTL_MS) return hit.ok;
-      const [left, right] = await Promise.all([commonDir(dir), commonDir(repoRoot)]);
-      const ok = left !== undefined && right !== undefined && left === right;
-      if (belongsCache.size >= BELONGS_CACHE_MAX) belongsCache.clear();
-      belongsCache.set(key, { at: now, ok });
-      return ok;
-    },
-    async headBranch(dir) {
-      const result = await run(headBranchArgs(dir));
-      if (!result.ok) return undefined;
-      const value = parseSingleLine(result.stdout);
-      if (value === undefined || value === "HEAD") return undefined;
-      return value;
-    },
-    async checkRefFormat(branch) {
-      const result = await run(checkRefFormatArgs(branch));
-      return result.ok;
-    },
-    async addWorktree(repoRoot, path, branch) {
-      const result = await run(addWorktreeArgs(repoRoot, path, branch));
-      return result.ok ? { ok: true } : { ok: false, reason: reasonOf(result) };
-    },
-    async removeWorktree(repoRoot, path, force) {
-      const result = await run(removeWorktreeArgs(repoRoot, path, force));
-      return result.ok ? { ok: true } : { ok: false, reason: reasonOf(result) };
-    },
-  };
+  async listWorktrees(dir: string): Promise<readonly WorktreeEntry[]> {
+    const result = await this.exec().run(worktreeListArgs(dir));
+    if (!result.ok) return [];
+    return parseWorktreeList(result.stdout);
+  }
+
+  async belongsTo(dir: string, repoRoot: string): Promise<boolean> {
+    const key = dir + "\u0000" + repoRoot;
+    const hit = this.belongsCache.get(key);
+    const now = Date.now();
+    if (hit !== undefined && now - hit.at < BELONGS_TTL_MS) return hit.ok;
+    const [left, right] = await Promise.all([this.commonDir(dir), this.commonDir(repoRoot)]);
+    const ok = left !== undefined && right !== undefined && left === right;
+    if (this.belongsCache.size >= BELONGS_CACHE_MAX) this.belongsCache.clear();
+    this.belongsCache.set(key, { at: now, ok });
+    return ok;
+  }
+
+  async headBranch(dir: string): Promise<string | undefined> {
+    const result = await this.exec().run(headBranchArgs(dir));
+    if (!result.ok) return undefined;
+    const value = parseSingleLine(result.stdout);
+    if (value === undefined || value === "HEAD") return undefined;
+    return value;
+  }
+
+  async checkRefFormat(branch: string): Promise<boolean> {
+    const result = await this.exec().run(checkRefFormatArgs(branch));
+    return result.ok;
+  }
+
+  async addWorktree(
+    repoRoot: string,
+    path: string,
+    branch: string | undefined,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const result = await this.exec().run(addWorktreeArgs(repoRoot, path, branch));
+    return result.ok ? { ok: true } : { ok: false, reason: reasonOf(result) };
+  }
+
+  async removeWorktree(
+    repoRoot: string,
+    path: string,
+    force: boolean,
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const result = await this.exec().run(removeWorktreeArgs(repoRoot, path, force));
+    return result.ok ? { ok: true } : { ok: false, reason: reasonOf(result) };
+  }
+
+  /** 取执行面：未装配时当场失败，而不是拿一份空执行面跑出「git 说没有」这种假答案。 */
+  private exec(): GitExecPort {
+    const deps = this.deps;
+    if (deps === undefined) throw new Error(NOT_INSTALLED);
+    return deps.exec;
+  }
 }
+
+/** 本域唯一实例：类不外放，外面 `new` 不出第二份缓存。 */
+export const gitService = new GitService();
 
 /** 失败原因的取值口径只有这一处：git 的 stderr 优先，空则给退出码。 */
 function reasonOf(result: GitRunResult): string {

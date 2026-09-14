@@ -20,8 +20,8 @@ import {
   effectiveWorktree,
   resolveScope,
 } from "../../src/server/scope/impl/resolve/index.ts";
-import { createScope } from "../../src/server/scope/interface.ts";
-import type { ScopeApi } from "../../src/server/scope/interface.ts";
+import { scopeService } from "../../src/server/scope/impl/service/index.ts";
+import { installScope, releaseScope } from "../../src/server/scope/interface.ts";
 
 const record: BindingRecord = {
   repoRoot: "/repo",
@@ -33,15 +33,9 @@ const record: BindingRecord = {
 const warns: string[] = [];
 const logger = { warn: (message: string) => warns.push(message) };
 
-/** 本文件建过的实例，逐个在 afterEach 释放（没有全局单例可依赖）。 */
-const created: ScopeApi[] = [];
-function trackScope(api: ScopeApi): ScopeApi {
-  created.push(api);
-  return api;
-}
-
+/** 域是进程内单例：每个用例装一次、afterEach 统一释放——漏掉会让下一个用例撞「只能装配一次」。 */
 afterEach(() => {
-  for (const api of created.splice(0)) api.dispose();
+  releaseScope();
   warns.splice(0);
 });
 
@@ -311,8 +305,8 @@ describe("installScope 的接管资格", () => {
       // 兜底会给出这个值；若捕获失败、误用兜底，断言就会看到它。
       defaults: { live: () => ({ cwd: "/fallback-would-say-this" }) },
     });
-    const api = trackScope(createScope(deps));
-    expect(api.isInstalled()).toBe(true);
+    installScope(deps);
+    expect(scopeService.isInstalled()).toBe(true);
     expect(configured.length).toBe(1);
     expect(await configured[0]?.("s1")).toEqual({ sessionId: "s1", workspaceRoot: "/official" });
   });
@@ -321,50 +315,82 @@ describe("installScope 的接管资格", () => {
     const { deps, configured } = scopeDeps({
       defaults: { live: () => ({ cwd: "/live-cwd" }) },
     });
-    trackScope(createScope(deps));
+    installScope(deps);
     expect(await configured[0]?.("s1")).toEqual({ sessionId: "s1", workspaceRoot: "/live-cwd" });
   });
 
   it("已被第三方 configure 时放弃接管并出声，不抢", () => {
     const { deps, configured } = scopeDeps({ configureThrows: true });
-    const api = trackScope(createScope(deps));
-    expect(api.isInstalled()).toBe(false);
+    installScope(deps);
+    expect(scopeService.isInstalled()).toBe(false);
     expect(configured.length).toBe(0);
     expect(warns.some((w) => w.includes("已有解析器，放弃接管"))).toBe(true);
   });
 
   it("未接管时 effectiveWorktree 恒为 null（客户端因此不动文件根）", async () => {
     const { deps } = scopeDeps({ configureThrows: true });
-    const api = trackScope(createScope(deps));
-    expect(await api.effectiveWorktree("s1")).toBeNull();
+    installScope(deps);
+    expect(await scopeService.effectiveWorktree("s1")).toBeNull();
   });
 
   it("接管后 effectiveWorktree 反映当前绑定（路由与解析器读同一个值）", async () => {
     const { deps } = scopeDeps({ binding: { s1: record }, exists: true, belongs: true });
-    const api = trackScope(createScope(deps));
-    expect(await api.effectiveWorktree("s1")).toBe("/wt");
-    expect(await api.effectiveWorktree("other")).toBeNull();
+    installScope(deps);
+    expect(await scopeService.effectiveWorktree("s1")).toBe("/wt");
+    expect(await scopeService.effectiveWorktree("other")).toBeNull();
   });
 
-  it("dispose 调用 disposer（官方默认解析随之恢复），且幂等", () => {
+  it("release 调用 disposer（官方默认解析随之恢复），且幂等", () => {
     const { deps, isDisposed } = scopeDeps();
-    const api = trackScope(createScope(deps));
-    api.dispose();
+    installScope(deps);
+    releaseScope();
     expect(isDisposed()).toBe(true);
-    api.dispose();
+    releaseScope();
     expect(isDisposed()).toBe(true);
   });
+});
 
-  it("两份实例互相独立（没有模块级状态）", () => {
+describe("二次装配守卫与 release 复位", () => {
+  it("第二次装配当场抛错，不静默接管两份", () => {
     const first = scopeDeps();
-    const second = scopeDeps();
-    const a = trackScope(createScope(first.deps));
-    const b = trackScope(createScope(second.deps));
-    expect(a.isInstalled()).toBe(true);
-    expect(b.isInstalled()).toBe(true);
-    // 两份都拿到了自己的 configure；不存在「第二次装配抛已装配」。
+    installScope(first.deps);
+    // 说清是哪个域拒绝的：`/只能装配一次/` 这种宽判据在「装配体被整段短路」时也会绿。
+    expect(() => installScope(scopeDeps().deps)).toThrow(
+      "dsh-worktree-sidebar: scope 域只能装配一次",
+    );
     expect(first.configured.length).toBe(1);
+  });
+
+  it("release 交还 resolver，且再次装配必须能重新接管", () => {
+    const first = scopeDeps();
+    installScope(first.deps);
+    expect(scopeService.isInstalled()).toBe(true);
+    releaseScope();
+    expect(first.isDisposed()).toBe(true);
+    expect(scopeService.isInstalled()).toBe(false);
+
+    const second = scopeDeps();
+    installScope(second.deps);
+    expect(scopeService.isInstalled()).toBe(true);
     expect(second.configured.length).toBe(1);
+  });
+
+  it("「已被占用」是当次事实：上一次被占用不阻止 release 后的下一次接管", () => {
+    const occupied = scopeDeps({ configureThrows: true });
+    installScope(occupied.deps);
+    expect(scopeService.isInstalled()).toBe(false);
+    releaseScope();
+    const free = scopeDeps();
+    installScope(free.deps);
+    expect(scopeService.isInstalled()).toBe(true);
+    expect(free.configured.length).toBe(1);
+  });
+
+  it("release 之后能力面当场失败，不拿旧 deps 出结果", async () => {
+    releaseScope();
+    await expect(scopeService.effectiveWorktree("s1")).rejects.toThrow(
+      "dsh-worktree-sidebar: scope 域尚未装配",
+    );
   });
 });
 

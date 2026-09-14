@@ -13,22 +13,20 @@ const TIMEOUT_MS = 10_000;
 /** stdout 上限。超限按失败处理而不是截断——截断的 `worktree list` 会解析出一个残缺的仓库结构。 */
 const MAX_BUFFER = 4 * 1024 * 1024;
 
-/** 造一个 git 执行面。 */
-export function createGitExec(): GitExecPort {
-  return {
-    run: (args) =>
-      new Promise<GitRunResult>((resolve) => {
-        execFile(
-          "git",
-          [...args],
-          { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER, windowsHide: true },
-          (error, stdout, stderr) => {
-            // git 没装时 stderr 是空串，只有 error 知道原因（spawn git ENOENT）；
-            // 不把它折进来，上层看到的失败原因就是一句没有信息量的「退出码非零」。
-            const detail = stderr.length > 0 ? stderr : error === null ? "" : error.message;
-            resolve({ ok: error === null, stdout, stderr: detail });
-          },
-        );
-      }),
-  };
-}
+/** 真实的 git 执行面。它没有任何状态，故是常量而不是工厂——组合根没得选，测试换的是装配入参。 */
+export const gitExec: GitExecPort = {
+  run: (args) =>
+    new Promise<GitRunResult>((resolve) => {
+      execFile(
+        "git",
+        [...args],
+        { timeout: TIMEOUT_MS, maxBuffer: MAX_BUFFER, windowsHide: true },
+        (error, stdout, stderr) => {
+          // git 没装时 stderr 是空串，只有 error 知道原因（spawn git ENOENT）；
+          // 不把它折进来，上层看到的失败原因就是一句没有信息量的「退出码非零」。
+          const detail = stderr.length > 0 ? stderr : error === null ? "" : error.message;
+          resolve({ ok: error === null, stdout, stderr: detail });
+        },
+      );
+    }),
+};

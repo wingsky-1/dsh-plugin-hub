@@ -2,7 +2,7 @@
  * 宿主端组合根：收窄宿主上下文、按依赖顺序装配各域、卸载逆序释放。
  *
  * 两个适配层住在这里，因为它们是 `ctx` 知识的唯一收口处：`bindAgents`（谁算 agent、怎么把工具装进它的作用域）
- * 与 `bindTypert`（官方 typert 的类型体操）。四个域因此都拿不到 `ctx`，也都能脱离 cordis 被单测驱动。
+ * 与 `bindTypert`（官方 typert 的类型体操）。五个域因此都拿不到 `ctx`，也都能脱离 cordis 被单测驱动。
  */
 import type { Context } from "@deepseek-ai/cordis";
 import type { Agent } from "@deepseek-ai/dsh-agent";
@@ -44,7 +44,6 @@ export interface WorktreeSidebarConfig {
 interface HostPort {
   readonly logger: LoggerPort;
   readonly register: (route: WebRoute) => () => void;
-  readonly exec: gitApi.GitExecPort;
   readonly agents: AgentPort;
   readonly typert: TypertPort;
   readonly defaults: DefaultScopePort;
@@ -52,17 +51,16 @@ interface HostPort {
 }
 
 /** 挂载 dsh-worktree-sidebar。 */
-export function apply(ctx: Context, config: WorktreeSidebarConfig = {}): void {
+export async function apply(ctx: Context, config: WorktreeSidebarConfig = {}): Promise<void> {
   const host: HostPort = {
     logger: ctx.logger,
     register: (route) => ctx.webServer.register(route),
-    exec: gitApi.createGitExec(),
     agents: bindAgents(ctx),
     typert: bindTypert(ctx),
     defaults: bindDefaults(ctx),
     now: () => new Date().toISOString(),
   };
-  const disposers = assemble(host, config);
+  const disposers = await assemble(host, config);
   ctx.effect(() => () => safeDisposeAll(disposers));
 }
 
@@ -123,7 +121,7 @@ function bindAgents(ctx: Context): AgentPort {
  *    参数只出现在 `register` / `configure` 的重载上（dsh-typert-protocol/lib/types/types.d.ts:389）。
  *    运行时它确实是该键的描述符，所以这里按键的类型断言回来。
  * 2. 我们的 `FileScope.sessionId` 是 `string`，官方 wire 是品牌化的 `SessionId`——
- *    品牌只在边界上有意义，域内带着它只会让四个域都得认识官方类型。
+ *    品牌只在边界上有意义，域内带着它只会让五个域都得认识官方类型。
  */
 function bindTypert(ctx: Context): TypertPort {
   const lookups = ctx.typert.lookups;
@@ -187,68 +185,74 @@ function bindDefaults(ctx: Context): DefaultScopePort {
 /**
  * 装配：按依赖顺序接上各域，返回它们的释放函数。
  *
- * 四个域都是**工厂**（`createXxx` 返回实例），没有模块级状态：
- * 同进程装配两次不会互相污染，也不会在第二次抛「已装配」。组合根持有实例，域只管自己的闭包。
+ * 各域都是**进程内单例**（`installXxx` + `releaseXxx` 成对），域内状态住在实例里而不是模块里；
+ * 同进程装配两次由各域的 `installed` 守卫在第二次 `install` 时**显式抛错**——
+ * 响亮失败优于静默共享状态或丢数据。
  *
- * 中途失败必须把已经装上的域放掉再抛——否则一次装配失败会留下半装的域，
- * 而它的释放函数还没进 `disposers`，卸载时没人收。
+ * 一律「装一个就把它的释放动作推进链里」：中途失败必须把已经装上的域放掉再抛，
+ * 否则一次装配失败会留下半装的域，而它的释放函数还没进 `disposers`，卸载时没人收。
  */
-function assemble(host: HostPort, config: WorktreeSidebarConfig): Array<() => void> {
-  const disposers: Array<() => void> = [];
+async function assemble(
+  host: HostPort,
+  config: WorktreeSidebarConfig,
+): Promise<Array<() => void | Promise<void>>> {
+  const disposers: Array<() => void | Promise<void>> = [];
   if (config.enabled === false) return disposers;
 
   try {
-    // 1. 绑定域：其余三个域都读它，故最先建。它没有可释放的资源（状态随实例一起被回收）。
-    const binding = bindingApi.createBinding({
-      logger: host.logger,
-      file: bindingsFile(),
-      now: host.now,
-    });
+    // 1. 绑定域：其余三个域都读它，故最先装。
+    bindingApi.installBinding({ logger: host.logger, file: bindingsFile(), now: host.now });
+    disposers.push(bindingApi.releaseBinding);
 
-    // 2. git 域：tools 的增删与 scope 的归属校验都要它。
-    const git = gitApi.createGit({ exec: host.exec });
+    // 2. git 域：tools 的增删与 scope 的归属校验都要它。递进去的 exec 面是本域自带的常量，
+    //    它仍然走装配入参，因为测试要能换成假 exec（域内不起子进程）。
+    gitApi.installGit({ exec: gitApi.gitExec });
+    disposers.push(gitApi.releaseGit);
 
     // 3. scope 域：接管 workspaceFileScope。capture 必须在 configure 之前，由本域自己保证。
-    const scope = scopeApi.createScope({
+    scopeApi.installScope({
       logger: host.logger,
-      binding,
-      git,
+      binding: bindingApi,
+      git: gitApi,
       typert: host.typert,
       defaults: host.defaults,
     });
-    disposers.push(() => scope.dispose());
+    disposers.push(scopeApi.releaseScope);
 
     // 4. tools 域：写绑定的唯一入口。
-    const tools = toolsApi.createTools({
+    toolsApi.installTools({
       logger: host.logger,
-      binding,
-      git,
+      binding: bindingApi,
+      git: gitApi,
       agents: host.agents,
       now: host.now,
     });
-    disposers.push(() => tools.dispose());
+    disposers.push(toolsApi.releaseTools);
 
-    // 5. api 域：读 scope 的**生效值**（不是绑定表原文），最后建。
-    const api = apiApi.createApi({
+    // 5. api 域：读 scope 的**生效值**（不是绑定表原文），最后装。一个提供方一行：
+    //    修订号来自 binding、生效根来自 scope，本域不认识任何一个域的实现。
+    apiApi.installApi({
       register: host.register,
       logger: host.logger,
-      binding: { revision: binding.revision, effectiveWorktree: scope.effectiveWorktree },
+      binding: bindingApi,
+      scope: scopeApi,
     });
-    disposers.push(() => api.dispose());
+    disposers.push(apiApi.releaseApi);
   } catch (cause) {
-    safeDisposeAll(disposers);
+    await safeDisposeAll(disposers);
     throw cause;
   }
 
   return disposers;
 }
 
-/** 逐个释放；单个释放失败不阻断其余（否则一个域的清理会拖垮整条卸载链）。 */
-function safeDisposeAll(disposers: Array<() => void>): void {
+/** 逐个释放（逆序）；单个释放失败不阻断其余（否则一个域的清理会拖垮整条卸载链）。 */
+async function safeDisposeAll(disposers: Array<() => void | Promise<void>>): Promise<void> {
   // 逆序：后装的先释放，否则 api 域会在别人已放开的入参上继续服务。
+  // 逐个 await：binding 域的释放要等在飞的写盘落定，不等就会让下一次装配读到更旧的磁盘状态。
   for (const dispose of [...disposers].reverse()) {
     try {
-      dispose();
+      await dispose();
     } catch {
       // 忽略：卸载阶段不做失败上报，避免掩盖首个异常。
     }

@@ -10,10 +10,11 @@
  */
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import type { BindingRecord } from "../../src/contract.ts";
-import type { ToolsDeps } from "../../src/server/tools/deps.ts";
+import type { AgentFace, AgentPort, ToolsDeps } from "../../src/server/tools/deps.ts";
+import { installTools, releaseTools } from "../../src/server/tools/interface.ts";
 import { buildCreateTool } from "../../src/server/tools/impl/create/index.ts";
 import { buildRegisterTool } from "../../src/server/tools/impl/register/index.ts";
 import { buildRemoveTool } from "../../src/server/tools/impl/remove/index.ts";
@@ -35,7 +36,13 @@ beforeAll(() => {
 afterAll(() => cleanup(root));
 
 function fakeDeps(
-  options: { belongs?: boolean; putOk?: boolean; addOk?: boolean; removeOk?: boolean } = {},
+  options: {
+    belongs?: boolean;
+    putOk?: boolean;
+    addOk?: boolean;
+    removeOk?: boolean;
+    agents?: AgentPort;
+  } = {},
 ) {
   const table = new Map<string, BindingRecord>();
   const gitCalls: string[][] = [];
@@ -83,7 +90,11 @@ function fakeDeps(
         { path: existingWt, branch: "refs/heads/feature", detached: false },
       ],
     },
-    agents: { subscribe: () => () => undefined, list: () => [], publish: () => () => undefined },
+    agents: options.agents ?? {
+      subscribe: () => () => undefined,
+      list: () => [],
+      publish: () => () => undefined,
+    },
   };
 
   return { deps, table, gitCalls, writes, drops, warns };
@@ -300,6 +311,103 @@ describe("ws_worktree_remove", () => {
     expect(value.detail).toContain("contains modified files");
     expect(drops.length).toBe(0);
     expect(table.has("s1")).toBe(true);
+  });
+});
+
+/** 假的 agent 注册面：只记原始事实（订了几个、装给谁、退订了吗），不替被测代码做判断。 */
+function fakeAgents(initial: readonly AgentFace[]) {
+  const handlers: Array<(agent: AgentFace) => void> = [];
+  const published: string[] = [];
+  const released: string[] = [];
+  let unsubscribed = false;
+  const port: AgentPort = {
+    subscribe: (handler) => {
+      handlers.push(handler);
+      return () => {
+        unsubscribed = true;
+      };
+    },
+    list: () => initial,
+    publish: (agent) => {
+      published.push(agent.id);
+      return () => {
+        released.push(agent.id);
+      };
+    },
+  };
+  return {
+    port,
+    published,
+    released,
+    isUnsubscribed: () => unsubscribed,
+    emit: (agent: AgentFace) => {
+      for (const handler of handlers) handler(agent);
+    },
+  };
+}
+
+/** 排空一轮队列：工具域的判定链要走完一次 git 调用才会 publish。 */
+const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
+describe("tools 域的装配与释放", () => {
+  afterEach(() => releaseTools());
+
+  it("装配时给已经在跑的顶层 agent 装一次；release 摘掉工具并退订", async () => {
+    const agents = fakeAgents([{ id: "a1", cwd: repo }]);
+    const { deps } = fakeDeps({ agents: agents.port });
+    installTools(deps);
+    await settle();
+    expect(agents.published).toEqual(["a1"]);
+
+    releaseTools();
+    expect(agents.released).toEqual(["a1"]);
+    expect(agents.isUnsubscribed()).toBe(true);
+  });
+
+  it("装配之后新发布的 agent 也会被装上（订阅入口）", async () => {
+    const agents = fakeAgents([]);
+    const { deps } = fakeDeps({ agents: agents.port });
+    installTools(deps);
+    agents.emit({ id: "a2", cwd: repo });
+    await settle();
+    expect(agents.published).toEqual(["a2"]);
+  });
+
+  it("不在 git 仓库里的 agent 一个工具都不装", async () => {
+    const agents = fakeAgents([{ id: "a3", cwd: "/outside-root" }]);
+    const { deps } = fakeDeps({ agents: agents.port });
+    installTools(deps);
+    await settle();
+    expect(agents.published).toEqual([]);
+  });
+
+  it("没有 cwd 的 agent 不装（猜一个会给出错的工具）", async () => {
+    const agents = fakeAgents([{ id: "a4", cwd: undefined }]);
+    const { deps } = fakeDeps({ agents: agents.port });
+    installTools(deps);
+    await settle();
+    expect(agents.published).toEqual([]);
+  });
+
+  it("release 之后再装配，同一个 agent 必须能再装一次（映射已复位）", async () => {
+    const agents = fakeAgents([{ id: "a1", cwd: repo }]);
+    const { deps } = fakeDeps({ agents: agents.port });
+    installTools(deps);
+    await settle();
+    expect(agents.published).toEqual(["a1"]);
+
+    releaseTools();
+    installTools(deps);
+    await settle();
+    // perAgent 不复位的话这里会是 ["a1"]：工具永远装不上，而第二次装配一声不响。
+    expect(agents.published).toEqual(["a1", "a1"]);
+  });
+
+  it("第二次装配当场抛错，不静默建成第二份注册表", () => {
+    const { deps } = fakeDeps();
+    installTools(deps);
+    // 说清是哪个域拒绝的：`/只能装配一次/` 这种宽判据在「装配体被整段短路」时也会绿。
+    expect(() => installTools(deps)).toThrow("dsh-worktree-sidebar: tools 域只能装配一次");
   });
 });
 

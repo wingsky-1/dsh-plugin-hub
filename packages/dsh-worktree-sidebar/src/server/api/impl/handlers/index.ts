@@ -4,9 +4,11 @@
  * 两个刻意的取舍：
  * - 绑定查询**不回 repoRoot**。客户端只需要目录根，多回一个字段就多一份「客户端知道主仓库位置」的暴露面。
  * - 缺 `session` 参数判 400 而不是回空。前者是调用方出错（可修），后者会被误读成「该会话没有绑定」。
+ *
+ * 两个事实来自两个域（修订号来自 binding、生效根来自 scope），故入参是两个窄端口而不是一个拼出来的对象。
  */
 import type { Endpoint } from "../route/index.ts";
-import type { BindingPort } from "../../deps.ts";
+import type { EffectiveWorktreePort, RevisionPort } from "../../deps.ts";
 import { ROUTES } from "../../../../contract.ts";
 import { writeJson } from "../../../../../../../shared/host-utils.js";
 
@@ -19,7 +21,7 @@ function queryParam(url: string | undefined, name: string): string | undefined {
 }
 
 /** `GET /api/dsh-worktree-sidebar/bindings?session=<id>` —— 单会话文件根查询。 */
-export function bindingsEndpoint(binding: BindingPort): Endpoint {
+export function bindingsEndpoint(binding: RevisionPort, scope: EffectiveWorktreePort): Endpoint {
   return {
     path: ROUTES.bindings,
     methods: {
@@ -30,7 +32,7 @@ export function bindingsEndpoint(binding: BindingPort): Endpoint {
           return;
         }
         // 先生算出生效根、再读 revision：这样报出去的 revision 不会早于它所描述的那个事实。
-        const worktreePath = await binding.effectiveWorktree(session);
+        const worktreePath = await scope.effectiveWorktree(session);
         writeJson(res, 200, { revision: binding.revision(), worktreePath });
       },
     },
@@ -38,7 +40,7 @@ export function bindingsEndpoint(binding: BindingPort): Endpoint {
 }
 
 /** `GET /api/dsh-worktree-sidebar/health` —— 存活探针。带回 revision 让它同时是有用的状态查询。 */
-export function healthEndpoint(binding: BindingPort): Endpoint {
+export function healthEndpoint(binding: RevisionPort): Endpoint {
   return {
     path: ROUTES.health,
     methods: {
