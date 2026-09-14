@@ -90,6 +90,17 @@ function fakePort(config: PortConfig = {}): FakePort {
     },
     probeNotificationName: () => Promise.resolve(config.nameProbe ?? { kind: "absent" }),
     readOsRelease: () => config.osRelease ?? { ok: false },
+    // 音频临时文件与上面的 spawn 同一判据：能力自检只问不做，走到落盘/清理路径就是缺陷。
+    // 不静默 no-op、也不回兜底值——那会把「探针只问不做」这条保证悄悄放宽。
+    stageToneAudio: () => {
+      throw new Error("能力自检不该落临时音频文件");
+    },
+    unstageToneAudio: () => {
+      throw new Error("能力自检不该删临时音频文件");
+    },
+    releaseToneTemps: () => {
+      throw new Error("能力自检不该释放临时音频目录");
+    },
   };
   return { port, probed, checked, spawns: () => spawns };
 }
