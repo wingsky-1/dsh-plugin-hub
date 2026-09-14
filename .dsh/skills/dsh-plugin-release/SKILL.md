@@ -27,6 +27,8 @@ description: >
 
 1. 全量门禁绿：`pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck`
    + `pnpm aggregate:check && pnpm verify:npmlayout`（发版涉及全部包）。
+   > 该清单属根 [AGENTS.md 门禁矩阵](../../../AGENTS.md) 的**收尾（发版）档**（全仓口径）；
+   > 完整收尾口径以该矩阵为准，本清单只作发版前逐项核对。
 2. bump 全部包版本到目标 `vX.Y.Z`（含 peer 与 catalog 的锁步检查）。
 3. 写 `docs/release-notes/vX.Y.Z.md`（见 §2–§3），随 `chore(release): vX.Y.Z` 提交。
 4. 维护者推 tag：`git tag vX.Y.Z && git push origin vX.Y.Z`；随后核对 Release 页渲染。
