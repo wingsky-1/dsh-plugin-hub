@@ -582,11 +582,13 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | 组合根 | `test/integration/real-context.test.ts` | `src/index.ts` + 真实 `Context` | 装配顺序、释放逆序、服务面、声明合并 |
 | 客户端 | `test/client/` | `src/client/**` | UI 模块（归 #769） |
 
-判据见 **I8**（本轮上线；执法点 = 扩展既有脚本）。**规则（A10 的必然推论）**：凡直接 `new` 内部类 / 取内部符号的 e2e 用例一律改为 `test/unit/<域>` 的白盒用例；e2e 只保留 `apply()` + 产物入口的 user case（现状 `smoke.test.ts` 有 **9 处** `new McpManager`：`:592/897/1928/2016/2102/2979/2997/3568/3659`）。
+判据见 **I8**（本轮上线；执法点 = 扩展既有脚本）。**规则（A10 的必然推论）**：凡直接 `new` 内部类 / 取内部符号的 e2e 用例一律改为 `test/unit/<域>` 的白盒用例；e2e 只保留 `apply()` + 产物入口的 user case（现状 `smoke.test.ts` 有 **9 处** `new McpManager`，实测行号 `:604/907/1942/2030/2116/2993/3011/3582/3673`）。
 
-### 8.2 存量搬迁（16 个测试文件 / 14635 行）
+### 8.2 存量搬迁（**#664 遗留** 16 个测试文件 / 14635 行；全包实测 **23 文件 / 16252 行**）
 
-按域落到 `test/unit/<域>/`：`unit-manager2`(3142) → `{connection,catalog,config,sdk,workspace}`；`unit-middleware`(2109) → `{connection,inject}`；`unit-supervisor`(900) / `unit-transport`(356) / `unit-manager`(271) → `connection/`；`unit-catalog`(771) → `catalog/`；`unit-routes-sse`(705) → `api/`（帧契约下沉 `integration/`）；`unit-store`(501) → `{config,store}/`；`unit-apply`(412) → `integration/real-context.test.ts`；`unit-hotspot`(370) 按被测符号归域；`unit-shared`(338) 被测对象是仓库 `shared/settings-namespace` → 迁 `scripts/test/` 或保留并登记；`unit-call-stats`(296) → `stats/`；`unit-pipeline`(203) → `pipeline/`；`unit-workspace`(79) → `workspace/`；`integration/service-contract`(338) → **消费方编译夹具**（现为读源文本比对 marker，该文件在重写后消失）；`e2e/smoke`(3844 / 159 it) 按**导入面**分层；`test/helpers.ts`(161) 保留。
+**口径订正（评审复核 + 主控逐文件实测）**：本节列的 16 个是 **#664 遗留**文件（14 个扁平 `unit-*` + `integration/service-contract` + `e2e/smoke`），**不是全包清单**——所以「另外 5 个文件没有迁移落点」的读法不成立。另 7 个测试文件由 B1 期新增且**已在目标位置**、不需要搬迁落点：`e2e/cross-end-lock`(239)、`integration/real-context`(352)、`unit-file-io`(186)、`unit-file-io-queue`(90)、`unit/upgrade/{service(228),storage-layout(370),version(112)}`。全包实测 **23 文件 / 16252 行 / 静态 `it(` 1169 处**（runner 报 1222 用例 = 含 `it.each` 展开）。
+
+按域落到 `test/unit/<域>/`：`unit-manager2`(3142) → `{connection,catalog,config,sdk,workspace}`；`unit-middleware`(2107) → `{connection,inject}`；`unit-supervisor`(900) / `unit-transport`(356) / `unit-manager`(271) → `connection/`；`unit-catalog`(771) → `catalog/`；`unit-routes-sse`(705) → `api/`（帧契约下沉 `integration/`）；`unit-store`(501) → `{config,store}/`；`unit-apply`(412) → `integration/real-context.test.ts`；`unit-hotspot`(370) 按被测符号归域；`unit-shared`(338) 被测对象是仓库 `shared/settings-namespace` → 迁 `scripts/test/` 或保留并登记；`unit-call-stats`(296) → `stats/`；`unit-pipeline`(203) → `pipeline/`；`unit-workspace`(79) → `workspace/`；`integration/service-contract`(366) → **消费方编译夹具**（现为读源文本比对 marker，该文件在重写后消失）；`e2e/smoke`(3858 / 161 it) 按**导入面**分层；`test/helpers.ts`(161) 保留。
 
 **失锚断言的改写口径**（必须在 B3 前写死）：`unit-manager2` 对内部字段的耦合（`.supervisors` 45 / `.middleware` 45 / `.catalogCache` 24 / `.runtimeRegistry` 7）逐条映射到新域的 `interface.ts` 能力或 `deps.ts` 端口；找不到落点的断言按 §10.3 标 C 级并进 B2 的「被删能力」对账清单，**不得静默删除**（判据强度零放宽）。
 
