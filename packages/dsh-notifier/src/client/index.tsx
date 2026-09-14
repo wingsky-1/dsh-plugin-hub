@@ -36,6 +36,8 @@ import type { DeliveryView } from "./reason-text.ts";
 // 两处各写一遍就等于把「未知不该被渲染成可用」这条口径分叉。
 import { clientDiagnosticsOf } from "./capabilities.ts";
 import type { ClientFacts } from "./capabilities.ts";
+// 页面内即时反馈（横幅 / 短提示）：非安全上下文下唯一的降级提醒通道。
+import { showBanner, toast } from "./notify/display.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
@@ -401,17 +403,6 @@ function iconEl(channelType: string) {
   );
 }
 
-/** 页面内短提示（操作反馈）。 */
-function toast(message: any) {
-  var el = document.createElement("div");
-  el.className = "dn-toast";
-  el.textContent = message;
-  document.body.appendChild(el);
-  setTimeout(function () {
-    el.remove();
-  }, 3000);
-}
-
 /**
  * 403（loopback 围栏拒绝）时的可操作引导文案，供各处 catch 复用。
  * 非 403 错误返回空串，避免给普通失败粘贴无关提示。
@@ -615,62 +606,6 @@ function restoreTitle() {
     document.title = savedTitle;
     savedTitle = null;
   }
-}
-
-function el(tag: any, attrs: any, children: any = undefined) {
-  var node = document.createElement(tag);
-  if (attrs) {
-    for (var key in attrs) {
-      var value = attrs[key];
-      if (key === "class") node.className = value;
-      else if (key === "text") node.textContent = value;
-      else if (key === "dataset") Object.assign(node.dataset, value);
-      else if (key === "onClick") node.addEventListener("click", value);
-      else if (key === "style") node.style.cssText = value;
-      else if (key in node && key !== "list") node[key] = value;
-      else node.setAttribute(key, value);
-    }
-  }
-  if (children) {
-    for (var i = 0; i < children.length; i += 1) node.appendChild(children[i]);
-  }
-  return node;
-}
-
-/** 页面内横幅（非安全上下文降级通道；点击聚焦，8 秒自动消失，最多叠 3 条）。
- *  kind 可含任意字符（动态 kind 注册），旧实现把 kind 拼进 CSS 属性选择器，
- *  异常字符（引号/反斜杠）会让 querySelector 抛错 → 整帧静默丢弃。
- *  改遍历比对 dataset.kind（去重 + 计数同语义，不构造选择器）。 */
-function showBanner(kind: any, title: any, message: any) {
-  var banners = Array.prototype.slice.call(document.querySelectorAll(".dn-banner"));
-  for (var i = banners.length - 1; i >= 0; i -= 1) {
-    if (banners[i].dataset && banners[i].dataset.kind === String(kind)) {
-      banners.splice(i, 1)[0].remove();
-    }
-  }
-  while (banners.length >= 3) banners[0].remove();
-  var banner = el("div", {
-    class: "dn-banner",
-    dataset: { kind: kind },
-    onClick: function () {
-      window.focus();
-      banner.remove();
-    },
-  });
-  var head = el("div", { style: "display:flex;align-items:center;gap:6px" });
-  head.appendChild(el("span", { text: "🔔" }));
-  head.appendChild(el("span", { text: title, style: "font-weight:600" }));
-  banner.appendChild(head);
-  banner.appendChild(
-    el("div", {
-      text: message,
-      style: "margin-top:4px;font-size:12px;line-height:1.5;white-space:pre-line",
-    }),
-  );
-  document.body.appendChild(banner);
-  setTimeout(function () {
-    banner.remove();
-  }, 8000);
 }
 
 /**
