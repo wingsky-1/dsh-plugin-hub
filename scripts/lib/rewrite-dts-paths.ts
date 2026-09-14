@@ -35,7 +35,11 @@ export function rewriteDtsText(text, depth) {
   // 源码 .ts 后缀原样进入 lib/*.d.ts，会指向发布包内不存在的文件。统一改回 .js。
   // 对未启用该 flag / 未迁移的包无匹配，天然无操作。
   const TS_SUFFIX = /(from\s+|import\s*\(\s*)(["'])(\.\.?\/[^"'\s]+)\.ts\2/g;
-  return text.replace(/(?:\.\.\/)+shared\//g, `${prefix}shared/`).replace(TS_SUFFIX, "$1$2$3.js$2");
+  return text
+    .replace(/((?:\.\.\/)+)shared\//g, (match, dots) =>
+      dots.length / 3 <= depth ? match : `${prefix}shared/`,
+    )
+    .replace(TS_SUFFIX, "$1$2$3.js$2");
 }
 
 /**
