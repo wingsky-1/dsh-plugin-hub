@@ -704,7 +704,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 >
 > **登记面与结构同提交**（参照教训：notifier 的 76 个未覆盖文件红与导出面红各自悬了一整个窗口期）：每个批次的验收必须包含 `pnpm gate:pr` 全绿 + 该批涉及的**全部登记文件**同步（baseline / faces / `gate-scope-registry` / `ci-face-registry` / `mutation-topology` / `coverage.config` / `dir-imports-baseline`）。
 >
-> **B0 进度（2026-09-14）**：①③④⑤⑧⑨ 与 §5.3 的 client 判据**已完成**——③ `43229f6`/`d3a21d2`、④ `da83b36`/`660dd0a`/`f8ee6c5`、⑤ `cd44c90`/`8fe5119`、⑨ + client 判据 `58823bc`/`d6795ec`。**⑥ 的 I8 判据已完成**（`84a5941`/`8727cf0`/`1fb0af3`，含证据类文档同步；判据面边界见 §二 I8 末条）。**未完**：② `architecture-contract.md` 打标；⑦ `locales.ts` 文案与产物断言；⑩ `placement-math.ts` 迁移；**`pnpm gate:pr` 尚未实跑**（B0 收尾必跑）。**新增 follow-up**：`docs/DEVELOPMENT.md` 与包内文档里「质量证据种类」的段落需同步新增的三类证据。
+> **B0 进度（2026-09-14）**：①③④⑤⑧⑨ 与 §5.3 的 client 判据**已完成**——③ `43229f6`/`d3a21d2`、④ `da83b36`/`660dd0a`/`f8ee6c5`、⑤ `cd44c90`/`8fe5119`、⑨ + client 判据 `58823bc`/`d6795ec`。**⑥ 的 I8 判据已完成**（`84a5941`/`8727cf0`/`1fb0af3`，含证据类文档同步；判据面边界见 §二 I8 末条）。**② 打标已完成**（`0ad5a02`/`3565687`）。**⑦ 已完成**（`fd2f82d`，含产物断言正反两面）。**⑩ 已按实测证据移入 B1**（见本表后）。**⑧ 评估为 no-op**（`--min` 已在上限）。**`pnpm gate:pr` 已两次实跑 = exit 0**（32 条门禁项逐条 exit=0 + `GATE_PR_EXIT=0`）。**B0 全部项已收口**；`docs/DEVELOPMENT.md` 与 `scripts/README.md` 的四类证据同步已完成（`1fb0af3`）。
 
 | 批 | 内容 | 验收（每条都要 exit code） |
 |---|---|---|
@@ -714,6 +714,8 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | **B3 收口** | 测试按域落位 + I8 判据存量清零；**逐符号收缩说明**（收缩本身已在 B2 那笔完成，这里只补说明与 `legacy` 终态核对）；契约文档重写与包内 docs 清理（`docs/` 只留有效专项设计 + 归档）；README 中英 + release notes（存储迁移 + 凭据出境 + `apiVersion` + 常量收缩）；注释收口；同时删 `test-surface` 的 `testMutationExemptions` 登记 | `pnpm gate:full` 绿；`uncoveredSrcFiles` 全空；注释验收三条；`docs:check` 绿；导出面快照在**新树**上 exit 0 |
 
 **⑩ 由 B0 移入 B1：实测证据（不可在 B0 做）**。把 `src/placement-math.ts` 挪到 `src/shared/` 后实跑：`node scripts/gate/verify-dir-imports.mjs --package dsh-mcp-manager` → **exit 1**，判词 `missingInterface: config/model/config-schema.ts|shared/placement-math.ts`——因为 `src/shared/` 还没有 `interface.ts`，它就不是叶子模块，**域内文件引用它即被判「缺门面」**；`--write-baseline` 同样 **exit 1** 拒绝写入（基线零位移）。唯一出路是建 `src/shared/interface.ts`（B1 的活）或写 `gate-exemptions.json`（**放宽，禁止**）。**结论：`src/shared/` 的门面与 `placement-math.ts` 的迁移必须同一笔完成**——这同时验证了门面判据在 B0 是**真的带电**的。
+
+**B1 的连带面（切片 4 实跑补充，必须同一笔做）**：`mutation-topology.json` 六个段的 excludes 各有一条 `!packages/dsh-mcp-manager/src/placement-math.ts`（`:92/102/117/127/142/161`）。文件挪走后该 pattern **不再命中新路径**，而新路径落在 `runtime` 段的 `src/shared/**/*.ts` 超集里 → 这张薄 facade 会**进变异面**（与 provider-usage 对 `src/shared/placement-math.ts` 的 facade 排除先例相悖）。正确处置是**把该条 pattern 平移到新路径**（语义位移，不是新增证据），并重生成 6 份段 conf。
 
 **commit 上限建议**：B0 ≤10、B1 ≤12、B2 ≤5/域、B3 ≤25；合计 ≤80。squash merge 下批次粒度只存在于分支，交付物（逐符号收缩表、对账表、exit code）必须落 PR 正文或持久文档。
 
@@ -808,10 +810,11 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | 项 | 值 |
 |---|---|
 | 主 checkout（**只读，未改动**） | `/mnt/ssd/dev/dsh-plugin-hub`，HEAD `b490e87`（v0.2.4 发布点，与方案里的代码基线一致） |
-| 方案 worktree | `/mnt/ssd/worktree/dsh-plugin-hub-task-767-arch-v4`，分支 `task/767-arch-v4`，领先 `origin/main` **23 个提交**（切片 4 落地前）、工作区干净 |
+| 方案 worktree | `/mnt/ssd/worktree/dsh-plugin-hub-task-767-arch-v4`，分支 `task/767-arch-v4`，领先 `origin/main` **27 个提交**（B0 收尾后）、工作区干净 |
 | 提交（方案期） | `e356696` v5 定稿 / `4b1153e` 三视角复核修订 / `803b670``2ff9ff6` 交接状态 |
 | 提交（B0 实施） | `43229f6` 导出面基线冻结 · `d3a21d2` faces + 准入自测双包遍历 · `da83b36` 门禁接线 · `660dd0a` mcp 豁免 + 连带自测 · `f8ee6c5` ci.yml 数据面 glob（红线 1）· `8235e32` 两轮复核并入 · `ec3004c` 维护者裁决落地 · `cd44c90` 变异面 · `8fe5119` facade 计数修正 + §8.3 实测 |
-| 交付物 | `packages/dsh-mcp-manager/docs/architecture-redesign-v5.md`（1052 行，含附录 A–F）+ `architecture-redesign-v4.md`（被取代，B3 归档时清理） |
+| 提交（B0 切片 3a/3b 与收口） | `58823bc`/`d6795ec` I2①/I2④/client 三判据 · `84a5941`/`8727cf0`/`1fb0af3` I8 判据与证据类文档同步 · `e35767d`/`edab5d0` 切片记录（含 I8 判据面按宪法原文收窄）· `0ad5a02`/`3565687` 契约三分类打标 · `6c5d150`/`9f7cc62`/`4dbf2a4` 附录 F 与交接状态 · `fd2f82d` B0⑦ 文案与产物断言 |
+| 交付物 | `packages/dsh-mcp-manager/docs/architecture-redesign-v5.md`（1086 行，含附录 A–F）+ `architecture-redesign-v4.md`（被取代，B3 归档时清理） |
 | 工具链（**本会话实测，与旧交接说法相反**） | worktree **有** `node_modules`（`tsc` / `esbuild` / `vitest` / `stryker` 都在 `node_modules/.bin`），故依赖 build 的步骤（`export-surface-snapshot` / `forbid-module-state-src` / `test:scripts`）可在 worktree 内直接跑，无需安装 |
 | 参照实现 | `packages/dsh-notifier`（#733 / PR #777）。关键 commit：`2370774` 冻结基线 / `db1ce0f` 首笔砍到 4 导出 / `8df3950` 一次性重冻结 / `4c79ba0` 重写落地 / `8142b13` 行为变更登记模板 / `a748361` 恢复被静默删掉的能力 |
 
@@ -826,38 +829,44 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 7. **第三轮只读复验已并入**：凭据单链现状（§0.2，含端到端实测的红的基线 + 4 个脱敏器构造点 + 1137 用例零「出口不含明文」断言）与 Port 面实测表（附录 E，含 `types` 缺口、4 处死导入、静态/运行入口径冲突）。
 8. **B0 切片 2 已完成**（`cd44c90` + `8fe5119`）：变异面超集（**单段**挂 `runtime`）+ facade 条重估 + `deps.ts` 的 type-only 条 + 自测计数 `1→2`/`12→13` + 段 conf 重生成；`coverage.config.json` 实测评估后**不改**；`--min` no-op。
 9. **#767 提案评论已发**（核心思路 + 红线授权 + 更正评论：红线由三条降为两条）；**仓级落盘原语候选已登记**（#706 评论：实测 4 个包各自实现落盘，notifier 8 / mcp 8 / provider-usage 9 / lan-proxy 4 写点，权限语义不一致）。
-10. **B0 切片 3a 已完成**
+10. **B0 切片 3a 已完成**（`58823bc`/`d6795ec`）：I2① 执法点（`crossDomainValueEdges`）+ I2④（`rootIndexImports`）+ §5.3 client 判据（`clientServerImports`），三个新证据类正反 fixture 双向可证；协调者复跑 5 个包全 exit 0、mcp 结构型计数逐字未变、基线只增 3 键无位移、`test:scripts` 634 pass。**机制变更**已记入 §5.3 与 R16：`buildBaseline` 两级首次登记（类级只在键缺失那一次生效，类内新增仍判红中止）。
 11. **B0 切片 3b 已完成**（`84a5941`/`8727cf0`/`1fb0af3`）：I8 判据上线（`unitImportFaceViolations`）+ 三类新证据的文档同步；存量两档 = 本包 13 进基线、跨包 3 进台账；判据面**按宪法原文收窄**（「本域 impl」归 B1–B3，实测理由见 §二 I8）。
 12. **B0 的 ⑥ 已完成**（I8 判据 + 三类新证据的文档同步）。
 13. **B0② `architecture-contract.md` 三分类打标已完成**（`0ad5a02` + 笔误修正 `3565687`）：顶部加图例与 **16 节逐条裁定**（保留 / 作废 / 重述）+ 引用规则；就地纠正被证伪的 `api/redactor-factory.ts` 声明。四条重点：C-ERR 第 2 条**作废（已证伪）**、§3.1 的 T1「经 `lib/index.js` 断言」**正是 I8 禁的反模式**、§3.3「`interface.ts` 纳入 mutate」**与 B0 的 facade 排除条方向相反**、§2.5 的 `baselineCovered 74.66%`/`strict=true` **数字已过期**。
-14. **`pnpm gate:pr` 全仓口径已由主控实跑 = exit 0**（33 项门禁全绿，`[local-gate] 结果：PASS`）。注意：**本地 PASS ≠ CI 绿**——本地任何档都不跑变异，变异在 PR 上按命中切片强制跑。日志里的 `lan-proxy EADDRINUSE` 是端口占用的环境噪声，非判据问题。
-15. **技术路线已定**（维护者问「全面删除重写 vs 模块搬迁」，裁决：**都不取极端**）：结构一次到位（零 shim）+ 实现逐块搬迁 + **只在必须换形的块重写**。依据：①「1073 组 A 级差分全绿的重写仍静默漏 4 项能力」已实证；②测试面 14796 行虽全绿但**零条**「出口不含明文」断言、且 13 个单测的断言面是旧形态私有字段，重写当天要么失红要么被迫删断言；③上一轮已做过纯搬迁，结果是把反模式写进了契约。分块判据：纯函数族 2074 行可重写（A 级差分有效）／四个巨型文件 3287 行（src 的 29.7%）必须搬迁 + 逐条对账（B 级）／旧形态即缺陷的面必须重写／目录门面导出面一次到位。**未采纳**「逐域删旧建新」的加固（与 D1 的一次性重冻结冲突，并存期只在 B2 内部且导出面在那笔之前一直红，属可见提醒）。（`58823bc`/`d6795ec`）：I2① 执法点（`crossDomainValueEdges`）+ I2④（`rootIndexImports`）+ §5.3 client 判据（`clientServerImports`），三个新证据类正反 fixture 双向可证；协调者复跑 5 个包全 exit 0、mcp 结构型计数逐字未变、基线只增 3 键无位移、`test:scripts` 634 pass。**机制变更**已记入 §5.3 与 R16：`buildBaseline` 两级首次登记（类级只在键缺失那一次生效，类内新增仍判红中止）。
+14. **`pnpm gate:pr` 全仓口径首次实跑 = exit 0**（`[local-gate] 结果：PASS`）。**项数订正**：真实门禁项是 **32 条**；日志里的 `[gate:pr exit=0]` 是封装脚本的退出标记、不是门禁项——两次运行逐项 diff 仅差这一行，**无项被静默丢弃**。注意：**本地 PASS ≠ CI 绿**——本地任何档都不跑变异，变异在 PR 上按命中切片强制跑。日志里的 `lan-proxy EADDRINUSE` 是端口占用的环境噪声，非判据问题。
+15. **技术路线已定**（维护者问「全面删除重写 vs 模块搬迁」，裁决：**都不取极端**）：结构一次到位（零 shim）+ 实现逐块搬迁 + **只在必须换形的块重写**。依据：①「1073 组 A 级差分全绿的重写仍静默漏 4 项能力」已实证；②测试面 14796 行虽全绿但**零条**「出口不含明文」断言、且 13 个单测的断言面是旧形态私有字段，重写当天要么失红要么被迫删断言；③上一轮已做过纯搬迁，结果是把反模式写进了契约。分块判据：纯函数族 2074 行可重写（A 级差分有效）／四个巨型文件 3287 行（src 的 29.7%）必须搬迁 + 逐条对账（B 级）／旧形态即缺陷的面必须重写／目录门面导出面一次到位。**未采纳**「逐域删旧建新」的加固（与 D1 的一次性重冻结冲突，并存期只在 B2 内部且导出面在那笔之前一直红，属可见提醒）。
+16. **B0 切片 4 已完成**（`fd2f82d`，⑦）：`locales.ts:74/177` 的 `scopeGlobalOpt` 中英两行去掉宿主路径承诺 + `test/e2e/smoke.test.ts` 加「客户端产物不含 `~/.dsh`」断言（含正反两向自证：注入后 **exit 1**、还原后命中 0）。协调者独立复核：`src/client` 与 `lib/client.js` 的 `~/.dsh` 命中**均为 0**，项目级 `<项目>/.dsh/mcp.json` **合法保留**（正控真实存在）。**⑩ 主动回退移入 B1**（机理与连带面见 D.3）。
+17. **`pnpm gate:pr` 复跑 = exit 0**（`GATE_PR_EXIT=0`，日志 `/tmp/gate-pr.log`）：32 条门禁项**逐条 exit=0**，含 `stryker:check`、`pack:check`、`lint`（670/671 warning）、`test:scripts`、全包 build/test/typecheck。**本地 PASS ≠ CI 绿**：本地任何档都不跑变异。
 
-### D.3 未完成
+### D.3 未完成与遗留（含状态订正）
 
-1. **B0 切片 4：⑩ 已按实测证据移入 B1，⑦ 待落地**：
+1. **B0 切片 4 已收口：⑦ 已落地（`fd2f82d`），⑩ 已按实测证据移入 B1**：
    - **⑩ = 主动回退，不是被打断**。它实跑证明迁移在 B0 不可行（`verify-dir-imports` **exit 1** + `missingInterface`；`--write-baseline` 也 exit 1），唯一出路是建 `src/shared/interface.ts`（B1）或写豁免（禁止）→ **已改到 B1、与 `src/shared/` 门面同笔**（证据段在 §十二表后）。
-   - **⑦ 已落盘未提交**（`locales.ts` 两行 + `test/e2e/smoke.test.ts` 产物断言），agent id `46f4491d-6ee1-45ab-a308-ac0ccbc88d78`，它声称 5 分钟内 build + 跑 e2e 正反两面后提交（仅显式列它改的两个路径）。**新会话第一步**：`git log` 看有没有它的 ⑦ 提交——有则复核（断言强度只增不减 + 至少跑该 e2e 与 `gate:pr`）；没有则问它并 `git status` 确认工作树干净。
-1b. **文档 follow-up（切片 3a 的写面限制留下）**：`docs/DEVELOPMENT.md` 与包内文档里列举「质量证据种类/现状」的段落需同步新增的三类证据（`crossDomainValueEdges` / `rootIndexImports` / `clientServerImports`）与两级首次登记口径。
+   - **⑦ 已落地**（`fd2f82d`）：`locales.ts:74/177` 两行降级 + `test/e2e/smoke.test.ts` 产物断言（正反两面自证，含人为注入后 exit 1）；协调者独立复核通过（diff 只增不删、无既有断言被削弱、无基线位移）。
+1b. **⑩ 的连带面（切片 4 实跑发现，B1 必须同笔做）**：`mutation-topology.json` 六个段的 excludes 各有一条 `!packages/dsh-mcp-manager/src/placement-math.ts`（`:92/102/117/127/142/161`）；挪到 `src/shared/` 后该 pattern 不再命中新路径，而新路径落在 `runtime` 段 `src/shared/**/*.ts` 超集内 → 薄 facade 会进变异面（与 provider-usage 对 `src/shared/placement-math.ts` 的 facade 排除先例相悖）。处置：**pattern 平移到新路径**（语义位移，不是新增证据）+ 重生成 6 份段 conf。**文档同步已完成**（`1fb0af3`：`scripts/README.md:38/111` 与 `docs/DEVELOPMENT.md` 已含四类证据与两级首次登记口径，故原 1b 已消解）。
 1c. **lint warning 余量告警**：切片 3a 把 warning 从 669 推到 **670**（预算 671），**余量仅剩 1**（新自测文件的 `@ts-nocheck`，与本仓 `scripts/test` 既有约定一致）——后续新增 scripts 测试会先撞这一条。
 2. **B0② 已完成**（见 D.2 第 13 条）。
-3. **B0 其余项**：⑦ `locales.ts` 两行文案 + 「客户端产物不含 `~/.dsh`」断言；⑩ `src/placement-math.ts` 迁 `src/shared/`。
+3. **B0 无遗留项**：①–⑪ 全部收口（⑩ 移入 B1）；`pnpm gate:pr` 两次实跑 exit 0。
 4. **红线状态（两条均已获授权）**：① `ci.yml` 数据面 glob 已落地（`f8ee6c5`）；② 公共 API 行为变更已于 2026-09-14 获维护者授权。**本轮不新增任何第三方依赖**。`approved` 标签按仓规**只能由维护者本人打**，代理不代打；B2 的 commit 正文「授权出处」引用 #767 + §10.1 清单。
 5. **测试面（B3 主体）未动**：16 个测试文件 / 14635 行尚未按域搬迁；`@ts-nocheck` 未清零。
-6. **`pnpm gate:pr` 尚未实跑**（全仓口径，如实登记为未实测）。
+6. **PR-1（B0）尚未开**：分支领先 `origin/main` **27 笔**、工作区干净、**未推送**——该分支 upstream 指向 `origin/main`，**裸 `git push` 会打到 main**，要推必须 `git push -u origin task/767-arch-v4`。`approved` / `api-approved` 由维护者本人打，代理不代打。
 
 ### D.4 下一步顺序
 
-1. **收口切片 4**（读报告 + `git status` + 复核 `git diff` 是否只动文案与引用）→ 若 ⑪ 的闸连带影响被判定不划算，接受它推迟到 B1。
-2. **B0 收尾**跑 `pnpm gate:pr` 全仓口径（目前唯一未实测项）。
-3. 之后 **B1（骨架与迁移）→ B2（域重写：凭据单链 + ABI 同源 + 跨端搬家 + 导出面在**删除那一笔**重冻结）→ B3（测试面与收口）**；每批验收含真实 `exit code` + 该批**全部登记文件**同步（§12 开头已写死）。
-4. 每批完成后回写本附录的 D.2/D.3。
+**B0 已收口，下一个批次是 B1（骨架与迁移）**。建议按下列四刀切，每刀一个可独立验证的提交面（一次只放一个写者）：
+
+1. **B1.1 `src/shared/` 门面 + ⑩ 迁移**（最小、证据最硬的一刀）：建 `src/shared/` 与 `interface.ts`；`git mv src/placement-math.ts src/shared/`；改 4 处引用（`src/index.ts` / `src/config/model/config-schema.ts` / `src/client/core/state.ts` / `src/client/float/float.ts`，其中 client 两处改引 `src/shared/interface.ts`）；被移文件内仓库 `shared/placement-math.js` 的相对深度从 `../../../` 改 `../../../../`；mutation-topology 的 6 条 exclude pattern 平移到新路径 + 重生成 6 份段 conf。**验收**：`verify-dir-imports.mjs --package dsh-mcp-manager` 从 **exit 1 → exit 0**（这就是 ⑩ 在 B0 唯一的红）、`gen-stryker-conf.mjs --check` exit 0、`export-surface-snapshot` exit 0（导出面不变，纯位移）。
+2. **B1.2 `server/shared/` 落盘面**：`paths.ts` 单源（新路径 + `legacyFile` + 每文件 mode 表 + 插件自有目录 `0o700`）+ 自写 `file-io.ts`（唯一 tmp 名 → 显式 mode → `rename` → 失败清理；同路径 promise 队列；**不装进程级钩子**）+ 权限断言（7 个写点收敛到这一处）。
+3. **B1.3 `upgrade` 域**：六件套一次建齐（步骤表 / 链驱动 / 刻度 / 失败语义 / 对账 / 装配标记）+ 迁移**五态**测试（含目录型旧路径逐文件搬、用户显式 `storePath`/`statsFile` 不动）+ 刻度「推进与失败不推进」。
+4. **B1.4 `src/server/` 骨架与组合根**：11 域 `interface.ts`/`deps.ts` 骨架 + `bindHost`/`assemble`/逆序释放/`declare module`；探针证明 apply → install → release 各域标记复位。
+5. **B1 收尾**：`pnpm gate:pr` 全绿 + `pack:check` 绿 + `THIRD-PARTY-LICENSES` 相对基线**无新增**（本轮不新增任何依赖）→ 才进 B2。
+6. 每批完成后回写本附录的 D.2/D.3；每批验收含真实 `exit code` + 该批**全部登记文件**同步（§12 开头已写死）。
 
 ### D.5 新会话最该先做的三件事
 
 1. 读本文件 §零（立场与 8 条决策）与 **§0.1（第二轮复核修订台账）**——那 15 条是 v5 与初稿的差别所在，别按初稿口径理解。
 2. 抽查代码事实（不要全信文档）：`node scripts/gate/verify-dir-imports.mjs --package dsh-mcp-manager --graph`（应 14 叶子 / 33 值边 / 4+4 环）、`grep -rn '0o600' packages/dsh-mcp-manager/src`（应只有 `config/store/store.ts:66`）、`grep -c 'new McpManager' packages/dsh-mcp-manager/test/e2e/smoke.test.ts`（应为 9）、`ls scripts/data | grep dsh-mcp-manager`（现应有 `-export-surface.json` 与 `-export-faces.json` 两个基线文件）。
-3. 记住两条「未实测」：`pnpm gate:pr` 未实跑、掩码往返与 B1 的自写 IO 队列是静态推演——凡涉及它们，先跑探针再下结论（`atomically` 已撤回，不再是风险项）。
+3. 记住仍未实测的面：**掩码往返**、**B1 的自写 IO 队列与并发语义**、**CI 上的变异**（本地任何档都不跑）——凡涉及它们，先跑探针再下结论（`atomically` 已撤回，不再是风险项；`pnpm gate:pr` 已两次实跑 exit 0，不再是未实测项）。
 4. 本会话已复跑的实测结果（可直接引用，不必重跑）：`verify-dir-imports --graph` **exit 0**（14 叶子 / 33 值边 / 4 模块级环 + 4 文件级环）、`grep -rn '0o600' packages/dsh-mcp-manager/src` 只有 `config/store/store.ts:66`、`grep -c 'new McpManager' test/e2e/smoke.test.ts` = 9、`scripts/data` 无 mcp 基线且 `export-surface-snapshot --package dsh-mcp-manager` **exit 2**（「基线不存在」）、`forbid-module-state-src` 在 worktree 跑 notifier **exit 0**（21 处豁免）。
 5. 已完成的同步（勿重做）：§二 I9 与 §十二 B0④ 已写「扩 `forbid-module-state-src` 必须同笔登记 `panel.ts` 豁免」；附录 A 第 1 条已去 `fast-redact`、红线更新为两条且均已获授权。
 
