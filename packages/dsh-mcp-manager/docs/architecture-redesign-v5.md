@@ -833,7 +833,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 ### D.3 未完成
 
-1. **B0 切片 4 在飞**（⑦ `locales.ts` 两行文案 + 「客户端产物不含 `~/.dsh`」断言；⑩ `src/placement-math.ts` → `src/shared/`）。**会话压缩时它尚未提交**——已知未提交改动：`src/placement-math.ts` → `src/shared/placement-math.ts`（rename）、`client/core/state.ts`、`client/float/float.ts`、`config/model/config-schema.ts`、`src/index.ts`。**新会话第一件事：读它的最终报告 + `git status` 确认工作区干净**；若它未能自证通过，按 §12「宁可推迟也不许放宽判据」处置（⑩ 本可推到 B1）。
+1. **B0 切片 4 状态未定（压缩时刻仍在运行）**：⑦ `locales.ts` 两行文案 + 「客户端产物不含 `~/.dsh`」断言；⑩ `src/placement-math.ts` → `src/shared/`。**压缩时刻的观测事实**（主控实测）：工作树**干净**、`src/placement-math.ts` **仍在原位**、`git log` 里**没有它的任何提交**——它曾做出一次 rename + 4 个引用点改动（`client/core/state.ts`、`client/float/float.ts`、`config/model/config-schema.ts`、`src/index.ts`），随后按主控「不要把未验证的改动留在工作树里」的指令把工作树恢复干净。**新会话第一件事**：等它的报告或直接问它（agent id `46f4491d-6ee1-45ab-a308-ac0ccbc88d78`），先 `git status` 确认工作区干净再接手；若它未自证通过，按 §12「宁可推迟也不许放宽判据」处置——**⑩ 本可推到 B1，回退不算失败**。
 1b. **文档 follow-up（切片 3a 的写面限制留下）**：`docs/DEVELOPMENT.md` 与包内文档里列举「质量证据种类/现状」的段落需同步新增的三类证据（`crossDomainValueEdges` / `rootIndexImports` / `clientServerImports`）与两级首次登记口径。
 1c. **lint warning 余量告警**：切片 3a 把 warning 从 669 推到 **670**（预算 671），**余量仅剩 1**（新自测文件的 `@ts-nocheck`，与本仓 `scripts/test` 既有约定一致）——后续新增 scripts 测试会先撞这一条。
 2. **B0② 已完成**（见 D.2 第 13 条）。
