@@ -1,19 +1,34 @@
 {
-  // 增量收紧路径：入面分两批——verify-docs.ts（#474）与 release/**（#776 C2a 第一批；
-  // 入面顺序是先修类型错误再摘 @ts-nocheck，否则摘了也没有 checker 覆盖）；
-  // 其余 gate/build/lib/test 脚本入面属后续独立批次（#474 非目标，勿一次性全量纳入）。
-  // 每个 include 条目都有失联断言（scripts/test/verify-docs-typecheck.test.ts）：
-  // 条目被摘除时 tsc 不会配置级报错（只有 include 全空才红），故必须显式断言。
-  // 后缀逐项枚举至 .mts/.cts：tsc 的 include 不支持 {ts,mts,cts} 花括号展开（实测）。
+  // 入面口径（#776 批 3「开面」）：scripts/ 非 test 的全树 .ts/.mts/.cts（build/ gate/ lib/
+  // release/）入面。
+  // 用 glob 而非逐项枚举：枚举清单在新增脚本时会静默漏面，glob 让「新增即入面」成为
+  // 默认，漏面只能由显式 exclude 造成，而任何 exclude 都被
+  // scripts/test/verify-docs-typecheck.test.ts 的「磁盘集合 - 程序集合」对账断言逮住。
+  // scripts/test/** 仍排除：本批不摘 test 侧 @ts-nocheck，纳入会引入其类型错误（后续独立批次）。
+  //
+  // 为什么必须有程序覆盖断言：tsc 对「include/exclude 漏掉某个文件」静默绿（只有 include
+  // 全空才配置级报错），故在面文件靠测试里的程序集对账兜底，而非靠 include 文本正则。
+  // 守卫两条判据（scripts/test/verify-docs-typecheck.test.ts）：面外文件必须全部落在
+  // scripts/test/ 下（把非 test 文件或目录写进 exclude 即红）；磁盘枚举非空
+  // （防枚举失效时面外前缀判据恒真；空程序集由守卫的 program.size 断言拦）。
+  //
+  // #474 R2（保留）：显式覆写 module 语义——scripts/ 无 package.json，module 语义依赖根
+  // type:module 向上回溯（运气依赖，未来 scripts/ 放 package.json 或 base 改动即整面翻红），
+  // 此处显式固化防漂移。
+  // allowImportingTsExtensions：scripts/ 下 26 处相对 import 写全 .ts 后缀（Node 直接执行
+  // TS 的运行时要求），不开则该选项语义下摘 @ts-nocheck 时立刻 TS5097 翻红；实测开启后
+  // 本半区 0 新增 error（noEmit=true 满足该选项前置条件）。
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    // 显式覆写 module 语义：scripts/ 无 package.json，module 语义依赖根
-    // type:module 向上回溯（运气依赖，未来 scripts/ 放 package.json 或 base
-    // 改动即整面翻红）——此处显式固化防漂移（issue #474 R2）。
     "module": "nodenext",
     "moduleResolution": "nodenext",
     "types": ["node"],
-    "noEmit": true
+    "noEmit": true,
+    "allowImportingTsExtensions": true
   },
-  "include": ["gate/verify-docs.ts", "release/**/*.ts", "release/**/*.mts", "release/**/*.cts"]
+  "include": ["**/*.ts", "**/*.mts", "**/*.cts"],
+  // 防御性列出：实测 **/*.ts 本身也不下探这三类目录（显式列出与不列出时程序集逐字节
+  // 相同）；显式 exclude 真正替换掉的只有 outDir 的内置排除，而本面 noEmit 且未配
+  // outDir，故这三项只是对未来同名目录的兜底声明。
+  "exclude": ["test/**", "node_modules/**", "bower_components/**", "jspm_packages/**"]
 }
