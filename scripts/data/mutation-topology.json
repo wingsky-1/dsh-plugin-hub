@@ -271,7 +271,7 @@
           {
             "pattern": "!packages/dsh-notifier/src/**/interface.ts",
             "kind": "type-only",
-            "reason": "各域对外契约门面（api/channels/config/events/pipeline/sdk/shared/stores/upgrade）：装配/卸载函数只转调域内 service，其余是类型与少量值出口；开关、免打扰、投递、落盘等判断都在 impl/ 与域内，门面自身不做裁决。"
+            "reason": "对外契约门面共 10 个（server/ 下 9 个域 + src/shared 两端共享面）：装配/卸载函数只转调域内 service，其余是类型与少量值出口；开关、免打扰、投递、落盘等判断都在 impl/ 与域内，门面自身不做裁决。"
           },
           {
             "pattern": "!packages/dsh-notifier/src/**/deps.ts",
