@@ -238,7 +238,7 @@ test("扫描面：.tsx 也在扫描面内（客户端入口形态）", () => {
   assert.match(r.stderr, /模块级 let（shared）/);
 });
 
-test("本仓真实快照：两个客户端包均零模块级可变状态（豁免台账已清空）", () => {
+test("本仓真实快照：notifier/lan-proxy 零模块级可变状态，mcp 仅 panel 单飞句柄走登记豁免 → exit 0", () => {
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   // 扫描面按注册表（单一事实源）逐字回显，故期望值也从注册表取：把包名写死在这里，
@@ -249,13 +249,19 @@ test("本仓真实快照：两个客户端包均零模块级可变状态（豁�
   const scope = registry.gates.find((g) => g.gate === "forbid-module-state-src");
   assert.match(
     r.stdout,
-    new RegExp(`OK（扫描 \\d+ 文件，包 ${scope.packages.join(", ")} 无模块级可变状态）`),
+    new RegExp(`OK（扫描 \\d+ 文件，包 ${scope.packages.join(", ")}，登记豁免 1 处）`),
   );
-  // 豁免台账已随 #769 的客户端重构清空（gate-exemptions.json 的 exemptions 为 []）：
-  // 原 7 处模块级 var 全被拆进闭包/实例，判据没有放松——再有人写模块级 let/var，
-  // 门禁会在同一格判红（见上方「反例：模块级 let → exit 1」）。台账条目被删或 var 回流，
-  // 此断言先红以提示复核 gate-exemptions.json 与客户端源码。
-  assert.doesNotMatch(r.stdout, /登记豁免/);
+  // 锚点的行号随客户端源码增删而移动（豁免台账本身是文件级、不跟行号），改到 inflight 所在行即可。
+  assert.match(
+    r.stdout,
+    /packages\/dsh-mcp-manager\/src\/client\/float\/panel\.ts:19 \[模块级 let（inflight）\] 登记豁免 #770（reviewBy 2027-03-31）/,
+  );
+  // 台账现仅 mcp 一条（#770）：notifier/lan-proxy 存量已随 #769/#765 清零，判据没有放松——
+  // 再有人写模块级 let/var，门禁会在同一格判红（见上方「反例：模块级 let → exit 1」）。
+  // 台账条目被删、var 回流、或新增第二处豁免，此断言先红以提示复核 gate-exemptions.json 与客户端源码。
+  // 注：汇总行「登记豁免 1 处」本身也含该词，故按明细行（带 #issue 号）计数。
+  const exemptHits = r.stdout.split("\n").filter((l) => l.includes("登记豁免 #"));
+  assert.equal(exemptHits.length, 1, `应仅 panel.ts 一处登记豁免，实际 ${exemptHits.length}：\n${r.stdout}`);
 });
 
 /** 写一份范围注册表临时文件，返回其路径（--registry 注入）。 */

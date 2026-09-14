@@ -1,5 +1,14 @@
 {
   "version": 1,
   "note": "路径受限门禁的豁免台账（#733 计划项 3.1.2 / 3.2.2）。单一事实源：门禁不得再内嵌豁免常量（旧 forbid-homedir-src.mjs 的 WHITELIST、config-matrix-gate.ts 的 LAN_PROXY_UI_EXEMPT 均已迁入数据面）。机制实现在 scripts/lib/exemption-gate.ts：条目是**文件级**的，调用点粒度由各门禁的 marker 策略（markerRequired）决定。reviewBy 可选——**有**=临时豁免（自动进入全量门禁档的收口台账，见 scripts/gate/collect-exemptions.mjs 与 #765），**无**=长期条目（设计事实，不是待办）。exitCriteria 可选且与 reviewBy **平级入账**（#765 裁决「目标是零豁免，台账只是过渡期手段」：日期只说明何时再看一眼，条件才说明凭什么能删）。收口**不判红**（#765 裁决：收集打印 + 汇总 issue，人工处理），因此台账不会在到期日冻结 PR。",
-  "exemptions": []
+  "exemptions": [
+    {
+      "gate": "forbid-module-state-src",
+      "path": "packages/dsh-mcp-manager/src/client/float/panel.ts",
+      "reason": "客户端刷新单飞句柄（模块级 let inflight，单一 in-flight 拉取的去重状态）：它是真实的模块级可变状态，作用域在模块而非面板实例。判据口径源自 #733 宪法第 1 条，而本轮重构面是宿主端 src/server/**；把该句柄收进实例需要改客户端装配与 refresh 的调用约定，属 #769 的客户端结构改动，不在 767 B0 范围内。按文件级豁免登记而不是留在判据外——mcp 已在 B0 登记进扫描面，不登记就是当天判红的存量。",
+      "trackingIssue": "#770",
+      "reviewBy": "2027-03-31",
+      "exitCriteria": "#769 落地到 dsh-mcp-manager 客户端、panel.ts 的 inflight 单飞句柄收进面板实例（届时删本条）"
+    }
+  ]
 }
