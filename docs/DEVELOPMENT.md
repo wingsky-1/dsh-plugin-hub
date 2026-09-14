@@ -82,6 +82,20 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
   丢掉的段，而并集入档后该职责消失；基线新鲜度由「PR 合入即 overlay
   （baseline-overlay.yml，秒级复用该 PR CI 产出的 incremental 产物，不重跑变异）」+
   「夜间并集入档」两条路径承担。
+  **基线陈旧可被观测（#718 验收判据）**：health-report.yml 周报（独立班次）在数据采集前读基线分支
+  **最后提交时间**这一事实，超 48 h（连续两夜未入档）即输出 `::error::` 注解并按稳定标题幂等
+  建/追工单，未超阈则在周报正文留一行基线龄；判定与阈值见 `scripts/release/baseline-staleness.mjs`。
+  **发现与失败分开判**：stale（检查做成了）由工单承接、run 保持绿；unknown（gh api 失败 / 分支被改名
+  或删除 / 响应缺字段，含状态文件缺失或状态文件缺 `status` 字段）由本 job **最末**的 verdict 步骤
+  判红（白名单：只有 fresh|stale 绿，其余落兜底）——「环境失败不得静默降级」，放最末才不会连坐吞掉
+  周报与陈旧工单两份留痕。
+  **判据口径（勿说大）**：基线有两条写入路径——observe.yml 夜班并集入档
+  （`scripts/gate/orphan-baseline.mjs`）、baseline-overlay.yml 在 push main 时对增量基线做秒级
+  overlay（`scripts/gate/overlay-baseline.mjs`，两者共用 `scripts/gate/baseline-push.mjs` 写路径）。
+  故本判据的真实语义是「**两条入档路径都停了**」，不是「observe 单点停了」：**绿 != observe 健康**
+  ——夜班停摆但仍有触及变异切片的 PR 合入时，基线会被 overlay 持续刷新而恒 fresh；要单点观测
+  observe 需另看它自己最近一次 run，本判据不做这个代理。**落点依据**是「监控者不得是被监控者」：
+  本 workflow 独立于那两条写入路径，检查放进去会在它们停摆时一起沉默。
 - **PR 门禁分层**（ci.yml，#722）：默认走**增量**，只有给 PR 打 `gate:full` 标签才跑全量链路
   （`pull_request.types` 含 `labeled`/`unlabeled`，打标签即触发重跑）。策略由 `changes`
   job 一处计算为 `fullGate` 输出，判定表与三个全量 job 的 `if` 共用同源布尔。
