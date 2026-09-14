@@ -76,7 +76,8 @@ function checkName(name, where) {
  * 名字合规。IO/形状错误抛单行友好错误（调用方 catch 后 exit 非 0），
  * 禁止裸 SyntaxError 栈。
  */
-export function loadManifest(root) {
+/** 读取 manifest 文件并校验顶层形状；IO / 语法 / 缺节一律走单行友好错误。 */
+function readManifestJson(root) {
   let raw;
   try {
     raw = readFileSync(join(root, ...MANIFEST_PATH_SEGMENTS), "utf8");
@@ -95,30 +96,110 @@ export function loadManifest(root) {
   if (!Array.isArray(json.retired)) {
     fail("缺 retired 数组");
   }
-  // standalone：独立发包、不进聚合包的插件（demo 演进等）；可选，缺省空集。
-  const standalone = Array.isArray(json.standalone) ? json.standalone : [];
-  const seenActive = new Set();
-  for (const name of json.active) {
+  return json;
+}
+
+/** active 数组：逐个校验名字合规与重复项，返回名字集供下游互斥校验。 */
+function collectActive(active) {
+  const seen = new Set();
+  for (const name of active) {
     checkName(name, "active");
-    if (seenActive.has(name)) fail(`active 数组重复项：${name}`);
-    seenActive.add(name);
+    if (seen.has(name)) fail(`active 数组重复项：${name}`);
+    seen.add(name);
   }
-  const seenStandalone = new Set();
+  return seen;
+}
+
+/** standalone 数组（可选，缺省空集）：名字合规、自身不重复，且不与 active 重名。 */
+function collectStandalone(standalone, seenActive) {
+  const seen = new Set();
   for (const name of standalone) {
     checkName(name, "standalone");
-    if (seenStandalone.has(name)) fail(`standalone 数组重复项：${name}`);
+    if (seen.has(name)) fail(`standalone 数组重复项：${name}`);
     if (seenActive.has(name)) fail(`${name} 同时出现在 active 与 standalone`);
-    seenStandalone.add(name);
+    seen.add(name);
   }
-  const seenRetired = new Set();
-  for (const item of json.retired) {
+  return seen;
+}
+
+/** retired 数组：名字合规、自身不重复，且不与 active / standalone 重名。 */
+function checkRetired(retired, seenActive, seenStandalone) {
+  const seen = new Set();
+  for (const item of retired) {
     if (typeof item !== "object" || item === null) fail("retired 数组含非对象项");
     checkName(item.name, "retired");
-    if (seenRetired.has(item.name)) fail(`retired 数组重复项：${item.name}`);
-    seenRetired.add(item.name);
+    if (seen.has(item.name)) fail(`retired 数组重复项：${item.name}`);
+    seen.add(item.name);
     if (seenActive.has(item.name)) fail(`${item.name} 同时出现在 active 与 retired`);
     if (seenStandalone.has(item.name)) fail(`${item.name} 同时出现在 standalone 与 retired`);
   }
+}
+
+/** configSurfaces 的四个面字段（两种形态互斥时逐个检查「不得再带」）。 */
+const SURFACE_FACES = ["defaults", "normalizer", "booleanKeys", "countLimits"];
+
+/**
+ * 形态 ② `surface: "none"`（显式无配置面）：用于**确实没有用户配置面**的包。必填 reason——
+ * 它与「漏登记」在数据上长得一样，理由就是两者的区别；同时禁止再带任何面字段，否则
+ * 「无配置面」会被当成省略校验的旁路。
+ */
+function checkSurfaceNone(item) {
+  if (typeof item.reason !== "string" || item.reason.length === 0) {
+    fail(`configSurfaces.${item.package} 声明 surface: "none" 时必填 reason（为什么没有配置面）`);
+  }
+  for (const field of SURFACE_FACES) {
+    if (item[field] !== undefined) {
+      fail(
+        `configSurfaces.${item.package} 声明 surface: "none" 时不得再带 ${field}（两种形态互斥）`,
+      );
+    }
+  }
+}
+
+/**
+ * 形态 ① 四面对齐全（默认）：defaults（默认值/键集）、normalizer（归一化）、booleanKeys
+ * （只接受布尔值的键清单）、countLimits（非负整数键及其上界）。后两者在 #733 重写后一度
+ * 未导出、导致这两层约束无法在门禁侧恢复；notifier 侧导出后在此要求必备——没有的包应显式
+ * 声明空数组/空对象，而不是省略字段（省略会让门禁静默失去该维度）。
+ */
+function checkSurfaceFaces(item) {
+  for (const field of SURFACE_FACES) {
+    const face = item[field];
+    if (typeof face !== "object" || face === null)
+      fail(`configSurfaces.${item.package}.${field} 缺声明对象`);
+    if (typeof face.module !== "string" || face.module.length === 0)
+      fail(`configSurfaces.${item.package}.${field}.module 缺失`);
+    if (typeof face.export !== "string" || face.export.length === 0)
+      fail(`configSurfaces.${item.package}.${field}.export 缺失`);
+  }
+}
+
+/** 单个 configSurfaces 条目：包名归属、重复登记、两种形态二选一。 */
+function checkSurfaceEntry(item, knownPackages, declared) {
+  const where = "configSurfaces";
+  if (typeof item !== "object" || item === null) fail(`${where} 含非对象项`);
+  checkName(item.package, where);
+  if (!knownPackages.includes(item.package)) {
+    fail(`${where} 声明了不在 active ∪ standalone 的包：${item.package}`);
+  }
+  if (declared.has(item.package)) fail(`configSurfaces 数组重复登记：${item.package}`);
+  declared.add(item.package);
+  if (item.surface !== undefined && item.surface !== "none") {
+    fail(
+      `configSurfaces.${item.package}.surface 取值只能是 "none"（当前 ${JSON.stringify(item.surface)}）`,
+    );
+  }
+  if (item.surface === "none") checkSurfaceNone(item);
+  else checkSurfaceFaces(item);
+}
+
+export function loadManifest(root) {
+  const json = readManifestJson(root);
+  // standalone：独立发包、不进聚合包的插件（demo 演进等）；可选，缺省空集。
+  const standalone = Array.isArray(json.standalone) ? json.standalone : [];
+  const seenActive = collectActive(json.active);
+  const seenStandalone = collectStandalone(standalone, seenActive);
+  checkRetired(json.retired, seenActive, seenStandalone);
   // configSurfaces（#733 计划项 3.1.1）：配置面 SSOT 的声明处，供 config-matrix 门禁
   // 「运行时取值」而不硬编码包内路径。它必须**恰好覆盖** active ∪ standalone——未登记即红
   // （新包不登记就红）。#774 收口后「尚未接管」的 pending 节已删除：那批包全部转为正式声明，
@@ -126,60 +207,13 @@ export function loadManifest(root) {
   const knownPackages = [...seenActive, ...seenStandalone];
   const surfaces = Array.isArray(json.configSurfaces) ? json.configSurfaces : [];
   const declared = new Set();
-  const claimSurface = (item, where) => {
-    if (typeof item !== "object" || item === null) fail(`${where} 含非对象项`);
-    checkName(item.package, where);
-    if (!knownPackages.includes(item.package)) {
-      fail(`${where} 声明了不在 active ∪ standalone 的包：${item.package}`);
-    }
-    if (declared.has(item.package)) fail(`configSurfaces 数组重复登记：${item.package}`);
-    declared.add(item.package);
-  };
-  for (const item of surfaces) {
-    claimSurface(item, "configSurfaces");
-    // 两种形态互斥（#774）：
-    //  ① 四面对齐全（默认）：defaults（默认值/键集）、normalizer（归一化）、booleanKeys
-    //     （只接受布尔值的键清单）、countLimits（非负整数键及其上界）。后两者在 #733 重写后
-    //     一度未导出、导致这两层约束无法在门禁侧恢复；notifier 侧导出后在此要求必备——没有的
-    //     包应显式声明空数组/空对象，而不是省略字段（省略会让门禁静默失去该维度）。
-    //  ② `surface: "none"`（显式无配置面）：用于**确实没有用户配置面**的包。必填 reason——
-    //     它与「漏登记」在数据上长得一样，理由就是两者的区别；同时禁止再带任何面字段，否则
-    //     「无配置面」会被当成省略校验的旁路。
-    if (item.surface !== undefined && item.surface !== "none") {
-      fail(
-        `configSurfaces.${item.package}.surface 取值只能是 "none"（当前 ${JSON.stringify(item.surface)}）`,
-      );
-    }
-    if (item.surface === "none") {
-      if (typeof item.reason !== "string" || item.reason.length === 0) {
-        fail(
-          `configSurfaces.${item.package} 声明 surface: "none" 时必填 reason（为什么没有配置面）`,
-        );
-      }
-      for (const field of ["defaults", "normalizer", "booleanKeys", "countLimits"]) {
-        if (item[field] !== undefined) {
-          fail(
-            `configSurfaces.${item.package} 声明 surface: "none" 时不得再带 ${field}（两种形态互斥）`,
-          );
-        }
-      }
-      continue;
-    }
-    for (const field of ["defaults", "normalizer", "booleanKeys", "countLimits"]) {
-      const face = item[field];
-      if (typeof face !== "object" || face === null)
-        fail(`configSurfaces.${item.package}.${field} 缺声明对象`);
-      if (typeof face.module !== "string" || face.module.length === 0)
-        fail(`configSurfaces.${item.package}.${field}.module 缺失`);
-      if (typeof face.export !== "string" || face.export.length === 0)
-        fail(`configSurfaces.${item.package}.${field}.export 缺失`);
-    }
-  }
+  for (const item of surfaces) checkSurfaceEntry(item, knownPackages, declared);
   for (const name of knownPackages) {
-    if (!declared.has(name))
+    if (!declared.has(name)) {
       fail(
         `configSurfaces 缺 ${name} 的配置面声明 —— active ∪ standalone 的每个包都必须登记（未登记即红）`,
       );
+    }
   }
   return {
     active: [...seenActive],
@@ -198,18 +232,13 @@ export function loadManifest(root) {
  * @param {string[]} [expectedPatchIds]          期望的聚合 insert id 集；缺省回退「ui-<dir>」约定
  * @returns {string[]} 问题列表（空 = 通过）
  */
-export function checkAggregateConsistency({
-  dirNames,
-  manifest,
-  aggDeps,
-  aggPatchIds,
-  expectedPatchIds,
-}) {
+/**
+ * 目录集语义：active（进聚合）∪ standalone（独立发包）都必须真实存在；retired 包目录应删除，
+ * 不在此列——残留目录（T1）属清理债：告警不判红，但仍强制「新目录必须登记」守卫（方向 B）。
+ */
+function checkDirSets(manifest, dirNames) {
   const problems = [];
   const actual = new Set(dirNames);
-  // 目录集语义：active（进聚合）∪ standalone（独立发包）都必须真实存在；
-  // retired 包目录应删除，不在此列——残留目录（T1）属清理债：告警不判红，
-  // 但仍强制「新目录必须登记」守卫（见方向 B retired 豁免）。
   const expected = new Set([...manifest.active, ...(manifest.standalone ?? [])]);
   const retiredNames = new Set(manifest.retired.map((r) => r.name));
 
@@ -234,50 +263,75 @@ export function checkAggregateConsistency({
         `packages/ 存在 dsh-* 子包但未登记 manifest: ${d} —— 新插件必须加入 scripts/data/plugins-manifest.json 的 active 或 standalone`,
       );
   }
-
-  // #2 聚合包 dependencies 键集 == active 映射集（双向；只比键集合不比值——
-  //    开发态 workspace:*、发布时 pnpm 替换版本号，存在即认可）。第三方依赖不归本校验管。
-  if (aggDeps !== undefined) {
-    const own = Object.keys(aggDeps).filter((k) => k.startsWith(NPM_SCOPE));
-    const expectedDeps = new Set(manifest.active.map((d) => NPM_SCOPE + d));
-    const standaloneNames = new Set(manifest.standalone ?? []);
-    for (const dep of own) {
-      if (expectedDeps.has(dep)) continue;
-      const short = dep.slice(NPM_SCOPE.length);
-      if (standaloneNames.has(short)) {
-        problems.push(`deps 多出独立发包 ${dep} —— standalone 插件不进聚合包，请删除该依赖行`);
-      } else if (retiredNames.has(short)) {
-        problems.push(`deps 多出已退役包 ${dep} —— 请删除该依赖行`);
-      } else {
-        problems.push(
-          `deps 多出未收录包 ${dep} —— 既不在 active/standalone 也不在 retired，请检查拼写或在 manifest 登记`,
-        );
-      }
-    }
-    for (const dep of expectedDeps) {
-      if (!own.includes(dep))
-        problems.push(`deps 缺少 active 插件 ${dep} —— 请补 workspace:* 依赖行`);
-    }
-  }
-
-  // #3 聚合 patch insert id 集 == 期望集（双向）。期望集显式传入时以其为准
-  // （pack-check 读各 active 子包 patch 的实际 insert id——客户端插件 ui-<dir>、
-  // 纯宿主插件如 dsh-verify-isolated 用 skill- 前缀）；缺省回退历史「ui-<dir>」
-  // 约定（防「门禁假设所有插件都有客户端」的过强断言）。
-  if (aggPatchIds !== undefined) {
-    // 重复行检测（Set 去重会吞掉「同 id 多行」漂移，单独比对长度闭合该缺口）
-    const dupIds = aggPatchIds.filter((id, i) => aggPatchIds.indexOf(id) !== i);
-    if (dupIds.length > 0)
-      problems.push(`聚合 patch 存在重复 id 行: ${[...new Set(dupIds)].join(", ")}`);
-    const expectedIds = new Set(expectedPatchIds ?? manifest.active.map((d) => `ui-${d}`));
-    const actualIds = new Set(aggPatchIds);
-    for (const id of expectedIds) {
-      if (!actualIds.has(id)) problems.push(`聚合 patch 缺 ${id}（active 在册但无聚合行）`);
-    }
-    for (const id of aggPatchIds) {
-      if (!expectedIds.has(id)) problems.push(`聚合 patch 多出未知 id ${id}`);
-    }
-  }
-
   return problems;
+}
+
+/** 单个「多出」的聚合依赖 → 判词。三类各自的措辞是既有契约（自测按字面锁定），不合并措辞。 */
+function extraDepProblem(dep, short, standaloneNames, retiredNames) {
+  if (standaloneNames.has(short)) {
+    return `deps 多出独立发包 ${dep} —— standalone 插件不进聚合包，请删除该依赖行`;
+  }
+  if (retiredNames.has(short)) {
+    return `deps 多出已退役包 ${dep} —— 请删除该依赖行`;
+  }
+  return `deps 多出未收录包 ${dep} —— 既不在 active/standalone 也不在 retired，请检查拼写或在 manifest 登记`;
+}
+
+/**
+ * #2 聚合包 dependencies 键集 == active 映射集（双向；只比键集合不比值——开发态 workspace:*、
+ * 发布时 pnpm 替换版本号，存在即认可）。第三方依赖不归本校验管。
+ */
+function checkAggregateDeps(manifest, aggDeps) {
+  const problems = [];
+  const own = Object.keys(aggDeps).filter((k) => k.startsWith(NPM_SCOPE));
+  const expectedDeps = new Set(manifest.active.map((d) => NPM_SCOPE + d));
+  const standaloneNames = new Set(manifest.standalone ?? []);
+  const retiredNames = new Set(manifest.retired.map((r) => r.name));
+  for (const dep of own) {
+    if (expectedDeps.has(dep)) continue;
+    problems.push(extraDepProblem(dep, dep.slice(NPM_SCOPE.length), standaloneNames, retiredNames));
+  }
+  for (const dep of expectedDeps) {
+    if (!own.includes(dep))
+      problems.push(`deps 缺少 active 插件 ${dep} —— 请补 workspace:* 依赖行`);
+  }
+  return problems;
+}
+
+/**
+ * #3 聚合 patch insert id 集 == 期望集（双向）。期望集显式传入时以其为准（pack-check 读各
+ * active 子包 patch 的实际 insert id——客户端插件 ui-<dir>、纯宿主插件如 dsh-verify-isolated
+ * 用 skill- 前缀）；缺省回退历史「ui-<dir>」约定（防「门禁假设所有插件都有客户端」的过强断言）。
+ */
+function checkAggregatePatchIds(manifest, aggPatchIds, expectedPatchIds) {
+  const problems = [];
+  // 重复行检测（Set 去重会吞掉「同 id 多行」漂移，单独比对长度闭合该缺口）
+  const dupIds = aggPatchIds.filter((id, i) => aggPatchIds.indexOf(id) !== i);
+  if (dupIds.length > 0)
+    problems.push(`聚合 patch 存在重复 id 行: ${[...new Set(dupIds)].join(", ")}`);
+  const expectedIds = new Set(expectedPatchIds ?? manifest.active.map((d) => `ui-${d}`));
+  const actualIds = new Set(aggPatchIds);
+  for (const id of expectedIds) {
+    if (!actualIds.has(id)) problems.push(`聚合 patch 缺 ${id}（active 在册但无聚合行）`);
+  }
+  for (const id of aggPatchIds) {
+    if (!expectedIds.has(id)) problems.push(`聚合 patch 多出未知 id ${id}`);
+  }
+  return problems;
+}
+
+export function checkAggregateConsistency({
+  dirNames,
+  manifest,
+  aggDeps,
+  aggPatchIds,
+  expectedPatchIds,
+}) {
+  return [
+    ...checkDirSets(manifest, dirNames),
+    ...(aggDeps === undefined ? [] : checkAggregateDeps(manifest, aggDeps)),
+    ...(aggPatchIds === undefined
+      ? []
+      : checkAggregatePatchIds(manifest, aggPatchIds, expectedPatchIds)),
+  ];
 }
