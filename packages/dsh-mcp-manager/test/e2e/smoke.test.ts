@@ -179,6 +179,20 @@ it("client source contract（load id/IIFE/use strict/load once）", () =>
   assertClientSourceContract(pkgDir));
 it("client product contract（执行断言：arrive 可解析/apply/inject）", () =>
   assertClientProductContract(pkgDir));
+
+// #767 B0 / §7.3 A12：客户端产物不得出现宿主路径字面量 `~/.dsh`——存储布局迁移后客户端
+// 不应泄漏/承诺宿主路径。锚点只认 `~/.dsh` 这一个串：`scopeProjectOpt` 的项目级路径
+// （<项目>/.dsh/mcp.json）随项目走，是合法展示，不在本轮降级面内。
+const hostPathLiteralHits = (code) => code.match(/~\/\.dsh/g) ?? [];
+it("client 产物不含宿主路径字面量 ~/.dsh（#767 A12 存储布局迁移）", () => {
+  const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
+  const hits = hostPathLiteralHits(clientSrc);
+  expect(hits, `client 产物泄漏宿主路径字面量 ~/.dsh：${hits.length} 处`).toEqual([]);
+});
+it("宿主路径断言锚点有效性（反例：含 ~/.dsh 的产物必须被判出）", () => {
+  expect(hostPathLiteralHits('scopeGlobalOpt: "全局（~/.dsh/dsh-mcp.json）"')).toHaveLength(1);
+  expect(hostPathLiteralHits('scopeProjectOpt: "项目级（<项目>/.dsh/mcp.json）"')).toEqual([]);
+});
 it("中间层工具注册（ws_mcp_search / ws_mcp_call / ws_mcp_list / ws_mcp_detail + 路由一致性）", async () => {
   const { registerMiddlewareTools, McpMiddleware, fullServerName, parseFullServerName } =
     await import("../../lib/index.js");
