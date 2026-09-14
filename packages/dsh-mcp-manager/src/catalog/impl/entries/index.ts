@@ -9,6 +9,10 @@
 import { randomUUID } from "node:crypto";
 import type { SupervisorLite } from "../../../types/interface.ts";
 import type { CatalogMessage } from "../injection/index.ts";
+import {
+  DEFAULT_ANNOUNCE_CATALOG,
+  DEFAULT_CATALOG_MAX_ENTRIES,
+} from "../../../server/shared/interface.ts";
 
 /** 目录条目。 */
 export interface CatalogEntry {
@@ -26,10 +30,9 @@ export type CatalogCache = Map<string, { summary: string }>;
 
 // ------------------------------------------------- 感知增强（对抗性评审 v2）
 
-/** 能力目录默认开启。 */
-export const DEFAULT_ANNOUNCE_CATALOG = true;
-/** 能力目录最大条目数（防上下文膨胀）。 */
-export const DEFAULT_CATALOG_MAX_ENTRIES = 6;
+// 能力目录默认值的单一事实源已上移 server/shared/constants.ts：config/model 在模块求值期
+// 消费它们，端口注入到时尚未装配；此处只保留转出，维持 catalog 门面与入口的导出面不变。
+export { DEFAULT_ANNOUNCE_CATALOG, DEFAULT_CATALOG_MAX_ENTRIES };
 
 /**
  * 能力目录消息的来源身份（#723）：`source.kind` 只能是宿主已登记的通用值

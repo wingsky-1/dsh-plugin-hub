@@ -7,8 +7,14 @@
 
 import z from "schemastery";
 import { clampZIndexBase, DEFAULT_Z_INDEX_BASE } from "../../shared/interface.ts";
-import { DEFAULT_ANNOUNCE_CATALOG, DEFAULT_CATALOG_MAX_ENTRIES } from "../../catalog/interface.ts";
-import { DEFAULT_RESULT_TRUNCATE_BYTES } from "../../connection/interface.ts";
+// 三个默认值在**模块求值期**被下面的 z.object().default() 消费——端口注入要等装配完成，
+// 那时 schema 早已求值，只能取共享层的单一物理定义（I2①：不再产生 config/model → catalog /
+// connection 的值边）。
+import {
+  DEFAULT_ANNOUNCE_CATALOG,
+  DEFAULT_CATALOG_MAX_ENTRIES,
+  DEFAULT_RESULT_TRUNCATE_BYTES,
+} from "../../server/shared/interface.ts";
 import type { ClientUiConfig, UiPlacementConfig } from "../../types/interface.ts";
 
 /** 空 description 工具的条件拼接默认开启。 */

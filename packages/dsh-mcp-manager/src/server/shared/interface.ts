@@ -20,6 +20,14 @@ export type {
   RegisterPort,
   ToolsPort,
 } from "./host-faces.ts";
+// 跨域共享纯常量：单一物理定义在 constants.ts，目录外一律经本门面取——直接引
+// constants.ts 会被 verify-dir-imports 判「直引实现文件」（合法出口只有 interface.ts/deps.ts）。
+export {
+  DEFAULT_ANNOUNCE_CATALOG,
+  DEFAULT_CATALOG_MAX_ENTRIES,
+  DEFAULT_RESULT_TRUNCATE_BYTES,
+  DEFAULT_TOOL_CALL_TIMEOUT_MS,
+} from "./constants.ts";
 export {
   CATALOG_DIR_NAME,
   CATALOG_SUMMARY_FILE_NAME,

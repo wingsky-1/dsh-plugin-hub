@@ -12,6 +12,10 @@ import { createHash } from "node:crypto";
 import { createTransport } from "./transport.ts";
 import type { StdioTransport, HttpTransport } from "./transport.ts";
 import { SCOPE_GLOBAL } from "../../workspace/interface.ts";
+import {
+  DEFAULT_RESULT_TRUNCATE_BYTES,
+  DEFAULT_TOOL_CALL_TIMEOUT_MS,
+} from "../../server/shared/interface.ts";
 import { MCPClient } from "./protocol.ts";
 import {
   defaultCallResultFallbackText,
@@ -29,12 +33,10 @@ import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
  * tools 面取官方 Context，register 入参为官方 ToolDefinition。 */
 // --------------------------------------------------------- 工具命名 / 截断
 
-/** 默认单次工具调用超时（毫秒）。下探自 60s：死工具（服务器已断线但工具未注销）
- * 会让模型阻塞一整轮；15s 内快速失败并携带"服务器不可用"说明更划算。 */
-export const DEFAULT_TOOL_CALL_TIMEOUT_MS = 15_000;
-
-/** 工具结果渲染截断上限（字节）。extractText 现状不截断，超长 JSON 全量进上下文。 */
-export const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;
+// 两个默认值的单一事实源已上移 server/shared/constants.ts：config/model 在模块求值期
+// 消费它们，端口注入到时尚未装配；此处只保留转出，维持 runtime/connection 门面与入口的
+// 导出面不变。
+export { DEFAULT_RESULT_TRUNCATE_BYTES, DEFAULT_TOOL_CALL_TIMEOUT_MS };
 
 /** DeepSeek 函数名契约：最多 64 字符、仅 [A-Za-z0-9_-]。 */
 const MAX_PUBLIC_NAME_LENGTH = 64;

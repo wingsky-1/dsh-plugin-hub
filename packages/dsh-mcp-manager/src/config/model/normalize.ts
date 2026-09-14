@@ -7,7 +7,8 @@
  */
 
 import type { ServerConfig } from "../../types/interface.ts";
-import { DEFAULT_TOOL_CALL_TIMEOUT_MS } from "../../connection/interface.ts";
+// 默认超时取共享层单一物理定义（模块求值期消费，端口注入不可达；I2①）。
+import { DEFAULT_TOOL_CALL_TIMEOUT_MS } from "../../server/shared/interface.ts";
 
 /** MCP 服务器名命名空间约束（与官方 dsh-mcp-client 一致）。 */
 export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
