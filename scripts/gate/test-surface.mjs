@@ -59,11 +59,13 @@ export function projectTestSurface(root, topologyDoc, pkgName) {
       errors: [`包未在变异拓扑登记：${pkgName} —— 源码覆盖与测试面登记都无法判定（fail-closed）`],
     };
   }
-  // 形状不对（null / 数组 / 标量）时不能直接读 def.testLayers：那是第二条裸解引用路径
-  // （#773 R4 复核实测 packages.<name>=null 时 test-surface.mjs 抛栈）。判词复用
-  // mutation-topology.mjs 的包登记判据，避免两处各写一份。
-  if (def === null || typeof def !== "object" || Array.isArray(def)) {
-    return { ...empty, errors: packageEntryProblems(def) };
+  // 形状不对（null / 数组 / 标量，或 segments 缺失/null/非对象）时不能直接读 def.testLayers：
+  // 那是第二条与第三条裸解引用路径（#773 R4 复核实测 packages.<name>=null 抛栈、segments 缺失
+  // 退化成「一堆 uncoveredSrcFiles 噪声」）。判词复用 mutation-topology.mjs 的包登记判据，
+  // 一处定义、两处同源。
+  const entryProblems = packageEntryProblems(def);
+  if (entryProblems.length > 0) {
+    return { ...empty, errors: entryProblems };
   }
   const layers = topologyDoc?.$testLayers;
   if (layers === undefined) {

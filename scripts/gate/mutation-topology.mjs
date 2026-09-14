@@ -111,16 +111,32 @@ export function coverageExcludeProblems(pkgDef) {
 }
 
 /**
- * 包登记本身的形状判据：`packages.<name>` 必须是对象。
+ * 包登记本身的形状判据：`packages.<name>` 必须是对象，且其 `segments` 也必须是对象。
  *
  * 与 coverageExcludes 的形状判词同族：形状不对时**没有可判定的变异面**，必须给出可读判词，
  * 而不是让调用方在 `pkgDef.segments` 上抛栈崩掉整个 contract 段（已实测：登记为 `null` →
- * `TypeError: Cannot read properties of null (reading 'segments')`，门禁红是红了，但不是判红）。
+ * `TypeError: Cannot read properties of null (reading 'segments')`；登记为 `{}` 或
+ * `{ segments: null }` → `Object.entries` 的 `Cannot convert undefined or null to object`，
+ * 门禁红是红了，但不是判红）。
  */
 export function packageEntryProblems(pkgDef) {
   if (pkgDef === null || typeof pkgDef !== "object" || Array.isArray(pkgDef)) {
     return [
       `包登记必须是对象（当前 ${JSON.stringify(pkgDef)}）——形状不对时没有可判定的变异面，fail-closed`,
+    ];
+  }
+  // 包登记是对象还不够：`segments` 缺失 / null / 标量 / 数组都会让 `Object.entries(pkgDef.segments)`
+  // 抛栈（gen-stryker-conf 与 collectMutationSpecs 都读它）。缺了它就没有可判定的变异面，
+  // 故与「包登记不是对象」同族判红，而不是留给下游崩栈、或退化成「一堆 uncoveredSrcFiles 噪声」。
+  const segments = pkgDef.segments;
+  if (
+    segments === undefined ||
+    segments === null ||
+    typeof segments !== "object" ||
+    Array.isArray(segments)
+  ) {
+    return [
+      `包登记的 segments 必须是对象（当前 ${JSON.stringify(segments)}）——形状不对时没有可判定的变异面，fail-closed`,
     ];
   }
   return [];

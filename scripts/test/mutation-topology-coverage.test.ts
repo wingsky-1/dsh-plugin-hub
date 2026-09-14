@@ -274,60 +274,103 @@ test("#773 R4 反证：包登记为 null / 非对象时给可读判词，不得�
   assert.deepEqual(packageRegistrationProblems({ packages: { [pkgName]: { segments: {} } } }), []);
 });
 
-test("#773 R4 反证：生成器遇 packages.<pkg>=null 以判词退出，不得抛栈", () => {
-  const root = mkdtempSync(join(tmpdir(), "r4-null-pkg-"));
-  try {
-    const dir = join(root, "scripts", "data");
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(
-      join(dir, "mutation-topology.json"),
-      `${JSON.stringify({ sharedDefaults: {}, packages: { "fixture-pkg": null } }, null, 2)}\n`,
-      "utf8",
+test("#773 R4 反证：包登记的 segments 缺失 / null / 非对象 → 判词而非抛栈（复核 D1）", () => {
+  const pkgName = "fixture-pkg";
+  for (const bad of [undefined, null, "not-an-object", 42, []]) {
+    const pkgDef = bad === undefined ? {} : { segments: bad };
+    const topology = { packages: { [pkgName]: pkgDef } };
+    const problems = packageRegistrationProblems(topology);
+    assert.ok(
+      problems.some((p) => p.includes(pkgName) && p.includes("segments 必须是对象")),
+      `segments=${JSON.stringify(bad)} 必须判红且点名（实际：${problems.join(" | ")}）`,
     );
-    const res = spawnSync(process.execPath, [GENERATOR, "--check"], {
-      cwd: ROOT,
-      encoding: "utf8",
-      env: { ...process.env, GEN_STRYKER_ROOT: root },
-    });
-    assert.equal(res.status, 1, `null 包登记必须判红：\n${res.stdout}${res.stderr}`);
-    assert.match(res.stderr, /包登记必须是对象/, "判词要点名形状要求");
-    assert.doesNotMatch(
-      res.stderr,
-      /TypeError/,
-      `形状错误不得以抛栈形态出现（旧实现的失败形态）：\n${res.stderr}`,
-    );
-  } finally {
-    rmSync(root, { recursive: true, force: true });
+    // 关键：两个下游取值点都不得在 Object.entries(pkgDef.segments) 上抛栈
+    const specs = collectMutationSpecs(topology, pkgName);
+    assert.equal(specs.noMutation, false);
+    assert.deepEqual(specs.mutate, []);
+    assert.deepEqual(specs.excludes, []);
+    assert.deepEqual(specs.problems, [
+      `包登记的 segments 必须是对象（当前 ${JSON.stringify(bad)}）——形状不对时没有可判定的变异面，fail-closed`,
+    ]);
+  }
+  // 对照组：segments 是对象（含空对象）零 problems
+  assert.deepEqual(packageRegistrationProblems({ packages: { [pkgName]: { segments: {} } } }), []);
+});
+
+test("#773 R4 反证：生成器遇坏包登记（null / {} / segments:null）以判词退出，不得抛栈", () => {
+  const cases = [
+    [null, /包登记必须是对象/],
+    [{}, /segments 必须是对象/],
+    [{ segments: null }, /segments 必须是对象/],
+    [{ segments: "nope" }, /segments 必须是对象/],
+  ];
+  for (const [bad, re] of cases) {
+    const root = mkdtempSync(join(tmpdir(), "r4-bad-pkg-"));
+    try {
+      const dir = join(root, "scripts", "data");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, "mutation-topology.json"),
+        `${JSON.stringify({ sharedDefaults: {}, packages: { "fixture-pkg": bad } }, null, 2)}\n`,
+        "utf8",
+      );
+      const res = spawnSync(process.execPath, [GENERATOR, "--check"], {
+        cwd: ROOT,
+        encoding: "utf8",
+        env: { ...process.env, GEN_STRYKER_ROOT: root },
+      });
+      const out = `${res.stdout}${res.stderr}`;
+      assert.equal(res.status, 1, `包登记 ${JSON.stringify(bad)} 必须判红：\n${out}`);
+      assert.match(out, re, `判词要点名形状要求（${JSON.stringify(bad)}）\n${out}`);
+      assert.doesNotMatch(
+        out,
+        /TypeError|Cannot convert undefined or null to object/,
+        `形状错误不得以抛栈形态出现（旧实现的失败形态）：\n${out}`,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   }
 });
 
-test("#773 R4 反证：verify-dir-imports 遇 packages.<pkg>=null 判红而非抛栈", () => {
-  const root = mkdtempSync(join(tmpdir(), "r4-null-vi-"));
-  try {
-    const files = {
-      "packages/fixture-pkg/src/a.ts": "export const a = 1\n",
-      "scripts/data/mutation-topology.json": `${JSON.stringify(
-        { sharedDefaults: {}, packages: { "fixture-pkg": null } },
-        null,
-        2,
-      )}\n`,
-    };
-    for (const [rel, content] of Object.entries(files)) {
-      const abs = join(root, rel);
-      mkdirSync(dirname(abs), { recursive: true });
-      writeFileSync(abs, content, "utf8");
+test("#773 R4 反证：verify-dir-imports 遇坏包登记（null / {} / segments:null）判红而非抛栈", () => {
+  const cases = [
+    [null, /包登记必须是对象/],
+    [{}, /segments 必须是对象/],
+    [{ segments: null }, /segments 必须是对象/],
+  ];
+  for (const [bad, re] of cases) {
+    const root = mkdtempSync(join(tmpdir(), "r4-bad-vi-"));
+    try {
+      const files = {
+        "packages/fixture-pkg/src/a.ts": "export const a = 1\n",
+        "scripts/data/mutation-topology.json": `${JSON.stringify(
+          { sharedDefaults: {}, packages: { "fixture-pkg": bad } },
+          null,
+          2,
+        )}\n`,
+      };
+      for (const [rel, content] of Object.entries(files)) {
+        const abs = join(root, rel);
+        mkdirSync(dirname(abs), { recursive: true });
+        writeFileSync(abs, content, "utf8");
+      }
+      const res = spawnSync(process.execPath, [VERIFY_DIR_IMPORTS, "--package", "fixture-pkg"], {
+        cwd: ROOT,
+        encoding: "utf8",
+        env: { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root },
+      });
+      const out = `${res.stdout}${res.stderr}`;
+      assert.equal(res.status, 1, `包登记 ${JSON.stringify(bad)} 必须判红：\n${out}`);
+      assert.match(out, re, `判词要点名形状要求（${JSON.stringify(bad)}）\n${out}`);
+      assert.doesNotMatch(
+        out,
+        /TypeError|Cannot convert undefined or null to object/,
+        `形状错误不得以抛栈形态出现：\n${out}`,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
-    const res = spawnSync(process.execPath, [VERIFY_DIR_IMPORTS, "--package", "fixture-pkg"], {
-      cwd: ROOT,
-      encoding: "utf8",
-      env: { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root },
-    });
-    const out = `${res.stdout}${res.stderr}`;
-    assert.equal(res.status, 1, `null 包登记必须判红：\n${out}`);
-    assert.match(out, /包登记必须是对象/, "判词要点名形状要求");
-    assert.doesNotMatch(res.stderr, /TypeError/, `形状错误不得以抛栈形态出现：\n${out}`);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
   }
 });
 
@@ -341,32 +384,52 @@ test("#773 R4：notifier 的 deps.ts 拆成「7 个纯类型域出口 + system/d
   assert.equal(pure.kind, "type-only", "纯类型出口才配 type-only（真无运行时代码）");
   assert.ok(runtime, "system/deps.ts 必须单列：它的转译产物有运行时代码，不能与纯类型共用 reason");
   assert.equal(runtime.kind, "not-mutated");
-  // 两条的并集必须覆盖磁盘上全部 deps.ts —— 拆分只改登记方式，不得改变被判定面。
+  // 用**声明的那条 pattern** 直接匹配磁盘（不手写正则复刻 glob 语义——那等于第二份事实源）：
+  // 两条 pattern 的并集必须等于 `**/deps.ts` 的全集 —— 拆分只改登记方式，不得改变被判定面。
+  const matchedBy = (entry) => globSync(entry.pattern.replace(/^!/, ""), { cwd: ROOT }).sort();
+  const pureMatched = matchedBy(pure);
+  const runtimeMatched = matchedBy(runtime);
+  const union = [...new Set([...pureMatched, ...runtimeMatched])].sort();
   const all = globSync("packages/dsh-notifier/src/**/deps.ts", { cwd: ROOT }).sort();
-  const pureMatched = all.filter((p) =>
-    /^packages\/dsh-notifier\/src\/server\/[^/]+\/deps\.ts$/.test(p),
-  );
   assert.equal(all.length, 8, `notifier 的 deps.ts 数量变了（当前 ${all.length}）：拆分表要同步`);
-  assert.equal(pureMatched.length, 7, `纯类型 glob 应命中 7 个（当前 ${pureMatched.join(", ")}）`);
-  assert.ok(
-    all.includes("packages/dsh-notifier/src/server/channels/impl/system/deps.ts"),
-    "被单列的那个文件必须真实存在",
+  assert.deepEqual(
+    pureMatched,
+    [
+      "packages/dsh-notifier/src/server/api/deps.ts",
+      "packages/dsh-notifier/src/server/config/deps.ts",
+      "packages/dsh-notifier/src/server/events/deps.ts",
+      "packages/dsh-notifier/src/server/pipeline/deps.ts",
+      "packages/dsh-notifier/src/server/sdk/deps.ts",
+      "packages/dsh-notifier/src/server/stores/deps.ts",
+      "packages/dsh-notifier/src/server/upgrade/deps.ts",
+    ],
+    `纯类型 pattern 应恰好命中 7 个域出口（当前 ${pureMatched.join(", ")}）`,
   );
-  assert.equal(
-    pureMatched.length + 1,
-    all.length,
-    "pure glob + 单列条目必须**恰好**覆盖全部 deps.ts（既不能漏，也不能多出第三条）",
+  assert.deepEqual(
+    runtimeMatched,
+    ["packages/dsh-notifier/src/server/channels/impl/system/deps.ts"],
+    "单列 pattern 只应命中那个运行时段口",
   );
+  assert.deepEqual(union, all, "两条 pattern 的并集必须与全量 glob 逐字相同（不漏、不多）");
 });
 
-test("#773 R4 反证：projectTestSurface 遇 packages.<pkg>=null 给判词，不得抛栈", () => {
-  const topology = { $testLayers: {}, packages: { "fixture-pkg": null } };
-  const projection = projectTestSurface(ROOT, topology, "fixture-pkg");
-  assert.deepEqual(projection.testFiles, []);
-  assert.ok(
-    projection.errors.some((e) => e.includes("包登记必须是对象")),
-    `测试面投影必须给可读判词（实际：${projection.errors.join(" | ")}）`,
-  );
+test("#773 R4 反证：projectTestSurface 遇坏包登记给判词，不得抛栈", () => {
+  for (const [bad, re] of [
+    [null, /包登记必须是对象/],
+    [{}, /segments 必须是对象/],
+    [{ segments: null }, /segments 必须是对象/],
+  ]) {
+    const projection = projectTestSurface(
+      ROOT,
+      { $testLayers: {}, packages: { "fixture-pkg": bad } },
+      "fixture-pkg",
+    );
+    assert.deepEqual(projection.testFiles, []);
+    assert.ok(
+      projection.errors.some((e) => re.test(e)),
+      `测试面投影必须给可读判词（${JSON.stringify(bad)}，实际：${projection.errors.join(" | ")}）`,
+    );
+  }
   // 对照组：正常包登记不因形状判据报错（形状守卫不是「凡输入皆红」）
   assert.deepEqual(projectTestSurface(ROOT, { packages: {} }, "fixture-pkg").errors, [
     "包未在变异拓扑登记：fixture-pkg —— 源码覆盖与测试面登记都无法判定（fail-closed）",

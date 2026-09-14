@@ -225,7 +225,9 @@ function main() {
   const derivedVitestConfigs = new Map();
   for (const [pkgName, pkgDef] of Object.entries(packages)) {
     const testFiles = projections.get(pkgName)?.testFiles ?? [];
-    for (const [segKey, segDef] of Object.entries(pkgDef.segments)) {
+    // `?? {}` 是纵深防御：形状判据（topologyShapeProblems）已在 main 入口拦下缺 segments 的登记，
+    // 但派生函数被单独调用时不该再裸解引用。
+    for (const [segKey, segDef] of Object.entries(pkgDef.segments ?? {})) {
       const { confFileName, content } = deriveConfig(
         sharedDefaults,
         pkgName,
