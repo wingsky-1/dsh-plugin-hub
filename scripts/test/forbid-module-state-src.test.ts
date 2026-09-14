@@ -241,9 +241,20 @@ test("扫描面：.tsx 也在扫描面内（客户端入口形态）", () => {
 test("本仓真实快照：client/index.tsx 的 21 处模块级 var 全部走登记豁免 → exit 0", () => {
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /OK（扫描 \d+ 文件，包 dsh-notifier，登记豁免 21 处）/);
-  // 21 处与豁免台账是同一个数字的两面：客户端 var 数量变了、或台账条目被删，
-  // 此断言先红并提示同步台账（scripts/data/gate-exemptions.json）与 #762。
+  // #767 B0 起扫描面是两包（mcp 另有一处文件级豁免），故按行筛选后仍把 notifier 的
+  // 21 处钉死：数量变了、或台账条目被删，此处先红并提示同步台账与 #762。
+  const notifierHits = r.stdout
+    .split("\n")
+    .filter(
+      (l) =>
+        l.includes("packages/dsh-notifier/src/client/index.tsx:") && l.includes("登记豁免 #762"),
+    );
+  assert.equal(
+    notifierHits.length,
+    21,
+    `notifier 客户端模块级 var 应有 21 处走登记豁免，实际 ${notifierHits.length}：\n${r.stdout}`,
+  );
+  assert.match(r.stdout, /OK（扫描 \d+ 文件，包 .*\bdsh-notifier\b.*，登记豁免 \d+ 处）/);
   // 锚点的行号随客户端源码增删而移动（豁免台账本身是文件级、不跟行号），改到 `t` 所在行即可。
   assert.match(
     r.stdout,

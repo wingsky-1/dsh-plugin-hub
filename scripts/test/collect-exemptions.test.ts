@@ -126,14 +126,18 @@ test("非 JSON 文件不参与扫描（只看 scripts/data 下的 .json）", () 
   }
 });
 
-test("本仓真实快照：7 条 reviewBy 全部在册（数字变即提示同步台账与 #765）", () => {
-  // 7 = gate-exemptions.json 1（#762 客户端 var，临时）+ plugins-manifest 5（configSurfacesPending）
+test("本仓真实快照：8 条 reviewBy 全部在册（数字变即提示同步台账与 #765）", () => {
+  // 8 = gate-exemptions.json 2（#762 notifier 客户端 var + #770 mcp panel 单飞句柄，均临时）
+  //     + plugins-manifest 5（configSurfacesPending）
   //     + coverage.config.json 1（`**/client/**` 排除，pending-project，等 happy-dom project，3.4 新增）
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /合计 7 条：已过期 0 /);
+  assert.match(r.stdout, /合计 8 条：已过期 0 /);
   assert.match(r.stdout, /\$\.exemptions\[0\] {2}gate=forbid-module-state-src/);
   assert.match(r.stdout, /trackingIssue #762/);
+  // #767 B0：扩包后新增的存量豁免同样必须在台账里——只判红不登记，或只登记不进台账，
+  // 都会让「到期复核」失去输入（这一条是台账完整性的锚，不是计数装饰）
+  assert.match(r.stdout, /trackingIssue #770/);
   // 覆盖率面的临时排除项也必须在台账里（它是「到期复核」的输入，不该只活在配置里）
   assert.match(r.stdout, /\$\.exclude\[4\] {2}pattern=\*\*\/client\/\*\*/);
   assert.match(r.stdout, /reviewBy 2027-03-31/);

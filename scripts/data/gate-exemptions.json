@@ -8,6 +8,13 @@
       "reason": "客户端入口迁移自旧 IIFE 包装，保留了 22 处模块级 var（真实模块级可变状态）。判据口径源自 #733 宪法第 1 条（宿主端状态收进闭包/实例），客户端业务改动不在本轮重写范围，故按登记豁免而非留在判据外——旧实现靠「顶格」形态把它们排除在判据之外，是一个缩进一格即可绕过的静默缺口。与 ESLint 侧 tools/lint/eslint.config.js 对 packages/*/src/client/** 的 no-var:off 是同一条存量债，收口时两处一并删除。",
       "trackingIssue": "#762",
       "reviewBy": "2027-03-31"
+    },
+    {
+      "gate": "forbid-module-state-src",
+      "path": "packages/dsh-mcp-manager/src/client/float/panel.ts",
+      "reason": "客户端刷新单飞句柄（模块级 let inflight，单一 in-flight 拉取的去重状态）：它是真实的模块级可变状态，作用域在模块而非面板实例。判据口径源自 #733 宪法第 1 条，而本轮重构面是宿主端 src/server/**；把该句柄收进实例需要改客户端装配与 refresh 的调用约定，属 #769 的客户端结构改动，不在 767 B0 范围内。按文件级豁免登记而不是留在判据外——mcp 已在 B0 登记进扫描面，不登记就是当天判红的存量。",
+      "trackingIssue": "#770",
+      "reviewBy": "2027-03-31"
     }
   ]
 }
