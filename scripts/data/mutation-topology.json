@@ -172,7 +172,9 @@
             "packages/dsh-mcp-manager/src/connection/runtime/protocol.ts",
             "shared/placement-math.js",
             "packages/dsh-mcp-manager/src/pipeline/**/*.ts",
-            "packages/dsh-mcp-manager/src/catalog/**/*.ts"
+            "packages/dsh-mcp-manager/src/catalog/**/*.ts",
+            "packages/dsh-mcp-manager/src/server/**/*.ts",
+            "packages/dsh-mcp-manager/src/shared/**/*.ts"
           ],
           "excludes": [
             "!packages/dsh-mcp-manager/src/client/**",
@@ -180,7 +182,7 @@
             "!packages/dsh-mcp-manager/src/integration/**",
             "!packages/dsh-mcp-manager/src/placement-math.ts"
           ],
-          "comment": "#664 阶段6重画：runtime——组合根（bootstrap/，原 apply*.ts 迁入）+transport/protocol+shared/placement-math（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析）+pipeline（执行管道域，阶段1–5变异盲区随迁纳入）+catalog（目录域，原 catalog.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+          "comment": "#664 阶段6重画：runtime——组合根（bootstrap/，原 apply*.ts 迁入）+transport/protocol+shared/placement-math（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析）+pipeline（执行管道域，阶段1–5变异盲区随迁纳入）+catalog（目录域，原 catalog.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。 #767 B0 先修尺子：src/server/**（B1 新树）与 src/shared/** 以超集形式先挂本段（旧 glob 全保留）——目标树是全新顶层目录，不先纳入会让 B1 新文件进 uncoveredSrcFiles，而 --write-baseline 拒绝接受新证据、只能逐文件写豁免；B2 按域重画 mutate 时收敛（届时文件归各域段，本段只留组合根/transport/protocol/pipeline/catalog）。"
         }
       },
       "testLayers": {
@@ -191,7 +193,12 @@
           {
             "pattern": "!packages/dsh-mcp-manager/src/**/interface.ts",
             "kind": "facade",
-            "reason": "各域对外门面（api/bootstrap/catalog/config/connection 等 14 个）：文件体只有 re-export 与类型出口（integration 另有 Context 声明合并），域内实现不在这里，目录外只能经它引用（verify-dir-imports 静态强制），自身不含可变异逻辑。"
+            "reason": "重估（#767 B0）：目标形态的域门面也是 14 个（11 域 + server/shared），装配/卸载以 installXxx/releaseXxx 成对出现——落到 notifier 形态后转译仍有运行时代码，故不再按「只有 re-export 与类型出口」叙述、也不属 type-only；但它只转调域内 service、自身不做裁决，域内实现不在这里、目录外只能经它引用（verify-dir-imports 静态强制），故按门面整体退出变异面（kind 保持 facade）；B2 按域重画时逐条复核，若裁决逻辑真的上移到门面则删除本条。"
+          },
+          {
+            "pattern": "!packages/dsh-mcp-manager/src/server/*/deps.ts",
+            "kind": "type-only",
+            "reason": "新增（#767 B0）：目标形态 src/server/<域>/deps.ts 是纯类型面依赖声明出口（import type 引 Port 与数据形状，转译后无运行时代码）——附录 E.4 实测 6 域建 deps.ts（pipeline/catalog/connection/inject/api/config），store/stats/integration 实测零对上依赖、按判据不建，故本条只列 server/<域> 一层；纯类型面文件没有可杀灭的变异体，故 type-only。若某域 deps.ts 出现值实现（notifier 的 channels/impl/system/deps.ts 先例），B2 须按该形态拆出单列 not-mutated 条。"
           }
         ],
         "testMutationExemptions": {
