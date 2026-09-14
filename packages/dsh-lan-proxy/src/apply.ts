@@ -12,9 +12,11 @@ import { mkdirSync } from "node:fs";
 import type { Context } from "@deepseek-ai/cordis";
 import { writeJson, errorMessage, guardLoopbackMethod } from "../../../shared/host-utils.js";
 import { dshHome } from "../../../shared/dsh-home.js";
-import { createLanProxy, DEFAULT_OPTIONS, DEFAULT_DEFLATE_POLICY } from "./proxy.ts";
-import type { TlsMaterials, LanProxy } from "./proxy.ts";
-import { ensureSelfSignedTls, loadTlsFromFiles } from "./cert.ts";
+import { createLanProxy, DEFAULT_DEFLATE_POLICY } from "./server/proxy/interface.ts";
+import type { LanProxy } from "./server/proxy/interface.ts";
+import { DEFAULT_OPTIONS } from "./server/shared/interface.ts";
+import type { TlsMaterials } from "./server/tls/interface.ts";
+import { ensureSelfSignedTls, loadTlsFromFiles } from "./server/tls/interface.ts";
 // 配置层值依赖单向 apply → config：默认白名单常量（单一事实源）与存量归一化纯函数
 // 均定义于 config.ts，本模块消费并 re-export（保持 apply.ts 既有导出面不变）。
 import { normalizeLegacyWsCompressPaths, DEFAULT_WSS_COMPRESS_PATHS } from "./config.ts";

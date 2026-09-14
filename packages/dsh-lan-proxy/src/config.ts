@@ -8,12 +8,8 @@
  * config-routes.ts / settings.ts / migrate.ts / apply.ts。
  */
 import z from "schemastery";
-import {
-  DEFAULT_OPTIONS,
-  DEFAULT_DEFLATE_POLICY,
-  isLoopbackTarget,
-  type DeflatePolicy,
-} from "./proxy.ts";
+import { DEFAULT_DEFLATE_POLICY, type DeflatePolicy } from "./server/proxy/interface.ts";
+import { DEFAULT_OPTIONS, isLoopbackTarget } from "./server/shared/interface.ts";
 
 /**
  * WebSocket 压缩桥接默认路径白名单（dsh 0.1.2 起 api-gateway 拥有的 Remote 流
