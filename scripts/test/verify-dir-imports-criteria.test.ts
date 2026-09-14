@@ -19,6 +19,11 @@
  *
  * fixture 经 VERIFY_DIR_IMPORTS_ROOT 指向 mkdtemp 隔离目录（基线路径随根推导），不在仓库内造
  * 包目录（产物零污染纪律）。
+ *
+ * #767 B1.0 判据加固补一组「裸包名自引用」用例：I8① 原先只认相对说明符，而 \`import "<本包名>"\`
+ * 经各包 \`exports["."]\` 同样解析到产物面 \`lib/index.js\`——换个写法就能够到禁止面却零证据。
+ * 加固的核心属性是**证据 id 归一**：同一处违规的裸写法与相对写法必须落成同一条证据串，
+ * 否则改写法即可绕开单调基线（或凭空多出一条「新增证据」）。
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -31,6 +36,8 @@ const ROOT = join(import.meta.dirname, "..", "..");
 const SCRIPT = join(ROOT, "scripts", "gate", "verify-dir-imports.mjs");
 const PKG = "fixture-pkg";
 const SRC = "packages/" + PKG + "/src";
+const PKG_NAME = "@wingsky-1/fixture-pkg";
+const MANIFEST_REL = "packages/" + PKG + "/package.json";
 const TOPOLOGY_REL = "scripts/data/mutation-topology.json";
 
 /** fixture 默认拓扑：本包 src 全量入 mutate（client 排除），使覆盖断言不引入额外噪声。 */
@@ -47,10 +54,24 @@ function defaultTopology() {
   });
 }
 
-/** 在隔离根下造 fixture（含变异拓扑事实源），返回根路径（调用方负责清理）。 */
+/**
+ * 在隔离根下造 fixture（含变异拓扑事实源与本包 package.json），返回根路径（调用方负责清理）。
+ * package.json 是 I8① 裸自引用面的唯一包名来源（#767 B1.0）——真实包是 pnpm workspace 成员、
+ * 必然带着它，fixture 也必须带着，否则被验证的行为会被「包名读不到」盖住。
+ */
 function makeFixtureRoot(files) {
   const root = mkdtempSync(join(tmpdir(), "verify-dir-imports-criteria-"));
-  for (const [rel, content] of Object.entries({ [TOPOLOGY_REL]: defaultTopology(), ...files })) {
+  const manifest = JSON.stringify({
+    name: PKG_NAME,
+    version: "0.0.0",
+    type: "module",
+    exports: { ".": { types: "./lib/index.d.ts", default: "./lib/index.js" } },
+  });
+  for (const [rel, content] of Object.entries({
+    [TOPOLOGY_REL]: defaultTopology(),
+    [MANIFEST_REL]: manifest,
+    ...files,
+  })) {
     const full = join(root, rel);
     mkdirSync(dirname(full), { recursive: true });
     writeFileSync(full, content);
@@ -519,6 +540,20 @@ test("I8①：test/unit 引组合根 / lib / 客户端三面各自判红（无�
   }
 });
 
+/** 从 --graph 输出里取出 I8① 那一节的证据项（形态 `test/unit/…|目标`）；无该节返回 null。 */
+function unitFaceEvidence(out) {
+  const lines = out.split("\n");
+  const head = lines.findIndex((l) => l.includes("单元层导入面（I8①，test/unit 引组合根"));
+  if (head === -1) return null;
+  const items = [];
+  for (const line of lines.slice(head + 1)) {
+    const m = line.match(/^ {4}(test\/unit\/\S+)$/);
+    if (m === null) break;
+    items.push(m[1]);
+  }
+  return items;
+}
+
 test("I8①：存量登记后新增同类越界仍判红，写基线中止；登记台账后才放行", () => {
   const root = makeFixtureRoot(unitFaceFixture());
   const evidence = "test/unit/a/impl.test.ts|src/index.ts";
@@ -553,6 +588,164 @@ test("I8①：存量登记后新增同类越界仍判红，写基线中止；登
       "中止即不落盘：存量集合保持为空",
     );
     // 台账通道（I8 的跨包存量处置同形）：登记后写入成功、证据入库、判绿。
+    const ledger = writeLedger(root, [PKG + ":" + evidence]);
+    const accepted = runOn(root, ["--write-baseline", "--exemptions", ledger]);
+    assert.equal(accepted.status, 0, "按台账登记后应写入成功：\n" + accepted.out);
+    assert.deepEqual(
+      qualityOf(root).unitImportFaceViolations,
+      [evidence],
+      "证据应入库：\n" + accepted.out,
+    );
+    assert.equal(runOn(root, ["--exemptions", ledger]).status, 0, "登记后应判绿");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * #767 B1.0 判据加固：关掉 I8① 的「裸自引用」绕过路径。
+ *
+ * 为什么把「两种写法落成同一条证据」单独钉成断言：I8① 的判红只比对证据 id 集合（单调基线），
+ * 证据 id 一旦随写法漂移，同一处违规就能按写法在基线里长出第二条、或干脆零证据——前者会让
+ * 收紧判据的改动凭空产生「新增证据」，后者正是本条要堵的绕过路径。故四种状态（裸/相对 ×
+ * lib 存在/不存在）逐一断言同一个 id，并把等号本身写成断言。
+ */
+test("I8①（B1.0）：裸包名自引用与相对写法落成同一条证据（lib 存在 / 不存在两态），且判红", () => {
+  const bare = 'import { ROOT } from "' + PKG_NAME + '";\nexport const t = ROOT;\n';
+  const relative = 'import { ROOT } from "../../../lib/index.js";\nexport const t = ROOT;\n';
+  const libEntry = "packages/" + PKG + "/lib/index.js";
+  const roots = {
+    "裸包名 / lib 未构建": makeFixtureRoot(unitFaceFixture({ [UNIT_TEST_FILE]: bare })),
+    "裸包名 / lib 已构建": makeFixtureRoot(
+      unitFaceFixture({ [UNIT_TEST_FILE]: bare, [libEntry]: "export const ROOT = 1;\n" }),
+    ),
+    "相对写法 / lib 未构建": makeFixtureRoot(unitFaceFixture({ [UNIT_TEST_FILE]: relative })),
+    "相对写法 / lib 已构建": makeFixtureRoot(
+      unitFaceFixture({ [UNIT_TEST_FILE]: relative, [libEntry]: "export const ROOT = 1;\n" }),
+    ),
+  };
+  const expected = "test/unit/a/impl.test.ts|lib/index.js";
+  try {
+    for (const [label, root] of Object.entries(roots)) {
+      const graphed = runOn(root, ["--graph"]);
+      assert.deepEqual(
+        unitFaceEvidence(graphed.out),
+        [expected],
+        label + " 应落成 " + expected + "：\n" + graphed.out,
+      );
+      const red = runOn(root);
+      assert.equal(
+        red.status,
+        1,
+        label + " 应判红（exit 1），实际 " + red.status + "：\n" + red.out,
+      );
+      assert.match(
+        red.out,
+        /无基线 fail-closed：单元层导入面越界（test\/unit → src\/index\.ts \/ lib \/ src\/client） 1 个/,
+        label + " 应点名 I8① 的 fail-closed：\n" + red.out,
+      );
+    }
+    // 核心属性：同一处违规的两种写法，证据串逐字相等（不是各自一条）。
+    assert.deepEqual(
+      unitFaceEvidence(runOn(roots["裸包名 / lib 已构建"], ["--graph"]).out),
+      unitFaceEvidence(runOn(roots["相对写法 / lib 已构建"], ["--graph"]).out),
+      "裸包名自引用与相对写法必须是同一条证据 id",
+    );
+  } finally {
+    for (const root of Object.values(roots)) rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("I8①（B1.0）：<本包名>/<rest> 按同名映射落成 lib/<rest>，子路径写法不能绕过产物面", () => {
+  for (const [spec, face] of [
+    [PKG_NAME + "/client", "lib/client"],
+    [PKG_NAME + "/a/internal.js", "lib/a/internal.js"],
+  ]) {
+    const root = makeFixtureRoot(
+      unitFaceFixture({ [UNIT_TEST_FILE]: 'import "' + spec + '";\nexport const t = 1;\n' }),
+    );
+    try {
+      const red = runOn(root);
+      assert.equal(red.status, 1, spec + " 应判红，实际 " + red.status + "：\n" + red.out);
+      const graphed = runOn(root, ["--graph"]);
+      assert.deepEqual(
+        unitFaceEvidence(graphed.out),
+        ["test/unit/a/impl.test.ts|" + face],
+        spec + " 应映射到 " + face + "：\n" + graphed.out,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("I8①（B1.0）：非本包的裸包名（别的 dsh 包 / 宿主包 / 前缀碰撞）不得产出证据", () => {
+  const specs = [
+    "@wingsky-1/dsh-notifier",
+    "@wingsky-1/dsh-mcp-manager/client",
+    "@deepseek-ai/cordis",
+    "@deepseek-ai/dsh-agent",
+    "@wingsky-1/fixture-pkg-extra",
+    "@wingsky-1/fixture-pkg-extra/deep",
+    "some-other-pkg",
+  ];
+  for (const spec of specs) {
+    const root = makeFixtureRoot(
+      unitFaceFixture({
+        [UNIT_TEST_FILE]: 'import type { X } from "' + spec + '";\nexport const t = 1;\n',
+      }),
+    );
+    try {
+      const green = runOn(root);
+      assert.equal(green.status, 0, spec + " 不得判红，实际 " + green.status + "：\n" + green.out);
+      assert.match(
+        green.out,
+        /单元层导入面越界（I8①，test\/unit → src\/index\.ts \/ lib \/ src\/client）0 条/,
+        spec + " 不得计入 I8①：\n" + green.out,
+      );
+      assert.deepEqual(
+        unitFaceEvidence(runOn(root, ["--graph"]).out),
+        [],
+        spec + " 不得产出证据：\n" + green.out,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("I8①（B1.0）：裸包名写法进的是同一条基线面与台账键（存量后新增仍判红、写基线中止）", () => {
+  const root = makeFixtureRoot(unitFaceFixture());
+  const evidence = "test/unit/a/impl.test.ts|lib/index.js";
+  try {
+    assert.equal(runOn(root, ["--write-baseline"]).status, 0);
+    assert.deepEqual(qualityOf(root).unitImportFaceViolations, []);
+    assert.equal(runOn(root).status, 0, "存量登记后应判绿");
+    writeFileSync(
+      join(root, UNIT_TEST_FILE),
+      'import { ROOT } from "' + PKG_NAME + '";\nexport const t = ROOT;\n',
+    );
+    const after = runOn(root);
+    assert.equal(
+      after.status,
+      1,
+      "新增裸写法越界应判红，实际 " + after.status + "：\n" + after.out,
+    );
+    assert.match(
+      after.out,
+      /\[质量型\] unitImportFaceViolations: 新增未登记证据 test\/unit\/a\/impl\.test\.ts\|lib\/index\.js/,
+      "应点名新增证据与类（与相对写法同一条）：\n" + after.out,
+    );
+    const refused = runOn(root, ["--write-baseline"]);
+    assert.equal(
+      refused.status,
+      1,
+      "未登记不得写入，实际 " + refused.status + "：\n" + refused.out,
+    );
+    assert.ok(
+      pendingLedgerKeys(refused.out).includes(PKG + ":" + evidence),
+      "台账键应为 <包名>:<证据项>：\n" + refused.out,
+    );
     const ledger = writeLedger(root, [PKG + ":" + evidence]);
     const accepted = runOn(root, ["--write-baseline", "--exemptions", ledger]);
     assert.equal(accepted.status, 0, "按台账登记后应写入成功：\n" + accepted.out);

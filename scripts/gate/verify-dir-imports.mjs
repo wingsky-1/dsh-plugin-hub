@@ -69,6 +69,13 @@
  *     包根组合根 `src/index.ts`、构建产物面 `lib/**`、客户端面 `src/client/**`。单元层是
  *     白盒直连 `src/server/<域>/impl/<块>/`（§8.1 的表），经组合根导入等于把装配顺序与服务面
  *     带进单元测试，等于用产物入口测单模块：分层由**导入面**定义，不由文件名前缀定义。
+ *   - **裸包名自引用同样计入**（#767 B1.0 判据加固）：`import "<本包名>"` 与
+ *     `import "<本包名>/<rest>"` 分别按 `lib/index.js`、`lib/<rest>` 落进**同一个证据面**（包名
+ *     从本包 `package.json` 现读，不内嵌常量）。`resolveCandidates` 只吃 `.` 开头的说明符，不做
+ *     这层映射时这种写法**零候选**、`resolveTarget` 返回 null，而它经 `exports["."]` 真能解析到
+ *     `./lib/index.js`——「换个写法就能够到产物面却不留证据」正是本判据要堵的假绿。映射只落在
+ *     I8① 的采集函数内：放开 `resolveCandidates` 会顺带改写 I2①/I2④/§5.3 的判据面（那三条禁的
+ *     是 `src/server/**` 与 `src/index.ts`，不是本条的等价写法）。
  *   - **面外显式放行**：`test/helpers.ts` 等测试基础设施不在 `test/unit/**` 内；判据也只认
  *     `src/index.ts` / `lib/**` / `src/client/**` 三类目标，测试目录之间的互引一律不判。
  *     `test/e2e/**` 与 `test/integration/**` 各有产物与浏览器语义，**本轮明确不判**（I8 判据的
@@ -631,14 +638,52 @@ function unitImportFaceTarget(pkgRel) {
 }
 
 /**
+ * I8① 的**裸包名自引用**映射（#767 B1.0 判据加固）：`spec` 恰好是本包名时目标即产物入口
+ * `lib/index.js`，`<本包名>/<rest>` 时即 `lib/<rest>`——各包 `package.json` 的 `exports["."]`
+ * 指向 `./lib/index.js`，NodeNext 下裸包名解析得到的就是产物面（可 `node --input-type=module -e
+ * "console.log(import.meta.resolve('<包名>'))"` 亲验）。没有这层映射，`resolveCandidates` 的
+ * 首行 `!spec.startsWith(".")` 对这种写法一个候选都不给、`resolveTarget` 返回 null，采集函数里
+ * 的 fallback 得到 `<包>/test/unit/<包名>` 这种不存在的路径，`unitImportFaceTarget` 于是不匹配
+ * 任何面——引用真实够到产物面，判据却零证据。返回**包相对**路径（与 `rel(pkgDir,
+ * resolveTarget(…))` 同形，故两种写法落成同一条证据 id），非本包自引用返回 null。
+ *
+ * 为什么只在本采集函数内部补这一层、不放开 `resolveCandidates`：后者的口径是「相对说明符」，
+ * 放开会顺带扩大 I2① / I2④ / §5.3 的判据面（那三条禁的是 `src/server/**` 与 `src/index.ts`，
+ * 裸包名解析到 `lib/index.js` 不是同一件事的等价写法），而 I8① 本就把 `lib/**` 列为禁止面。
+ */
+function selfReferenceLibTarget(pkgName, spec) {
+  if (pkgName === null || !spec.startsWith(pkgName)) return null;
+  if (spec === pkgName) return "lib/index.js";
+  if (spec.startsWith(`${pkgName}/`)) return `lib/${spec.slice(pkgName.length + 1)}`;
+  return null;
+}
+
+/**
+ * 读本包 `package.json` 的 `name`——I8① 的裸自引用面靠它，不内嵌包名常量。
+ * 读不到时返回 null（该面按不可判定处理）：fixture 根可以没有 package.json，而真实包是
+ * pnpm workspace 成员、必然有；在此凭空判红会让既有 fixture 全部换号，超出本刀范围。
+ */
+function readPackageName(pkgDir) {
+  const manifestPath = join(pkgDir, "package.json");
+  if (!existsSync(manifestPath)) return null;
+  try {
+    const name = JSON.parse(readFileSync(manifestPath, "utf8")).name;
+    return typeof name === "string" && name !== "" ? name : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * I8①（#767 B0 切片 3b）：单元层导入面判据——`test/unit/**` 下的文件不得 import 组合根
  * `src/index.ts`、产物面 `lib/**`、客户端面 `src/client/**`（口径与理由见 unitImportFaceTarget
  * 与文件头）。判据是**只许缩小**的集合（终态为空），故落质量证据面而不是结构型计数面。
  *
  * 返回**包相对**路径的 `from|to` 证据集合（与台账键 `<包名>:<证据项>` 同形）。抽成独立函数
  * 与 `collectClientServerImports` 同因：内联会把 analyzePackage 的认知复杂度推过门禁阈值。
+ * `pkgName` 是本包 `package.json` 的 `name`（可为 null），只用于裸自引用映射。
  */
-function collectUnitImportFaceViolations(pkgDir) {
+function collectUnitImportFaceViolations(pkgDir, pkgName) {
   const unitDir = join(pkgDir, "test", "unit");
   if (!existsSync(unitDir)) return [];
   const out = [];
@@ -646,9 +691,12 @@ function collectUnitImportFaceViolations(pkgDir) {
     const text = stripComments(readFileSync(fromFile, "utf8"));
     for (const { spec } of extractRefs(text)) {
       // 目标不存在时（`lib/**` 还没构建、`.js` 后缀映射不到 `.ts`）退回**字面路径**：判据管的是
-      // 写下来的导入面，让「产物没构建」变成静默绕过才是这类门禁最典型的假绿。
-      const target = resolveTarget(fromFile, spec) ?? resolve(dirname(fromFile), spec);
-      const hit = unitImportFaceTarget(rel(pkgDir, target));
+      // 写下来的导入面，让「产物没构建」变成静默绕过才是这类门禁最典型的假绿。裸包名自引用先经
+      // selfReferenceLibTarget 映射到产物面——与相对写法落成同一条证据 id，换写法换不掉证据。
+      const target =
+        selfReferenceLibTarget(pkgName, spec) ??
+        rel(pkgDir, resolveTarget(fromFile, spec) ?? resolve(dirname(fromFile), spec));
+      const hit = unitImportFaceTarget(target);
       if (hit !== null) out.push(`${rel(pkgDir, fromFile)}|${hit}`);
     }
   }
@@ -807,7 +855,11 @@ function analyzePackage(pkgName, topology) {
   const clientServerImportEvidence = collectClientServerImports(srcDir);
 
   // I8①（#767 B0 切片 3b）：单元层导入面（`test/unit/**` → 组合根 / lib / client）。
-  const unitImportFaceEvidence = collectUnitImportFaceViolations(dirname(srcDir));
+  // 包名从本包 package.json 现读（#767 B1.0）：裸包名自引用按它映射到产物面。
+  const unitImportFaceEvidence = collectUnitImportFaceViolations(
+    dirname(srcDir),
+    readPackageName(dirname(srcDir)),
+  );
 
   // 死声明（意图 - 事实）：deps.ts 声明依赖某模块，而本模块 deps.ts **之外**的
   // 实现/门面文件并无对应事实边。deps.ts 自身的边属意图声明，不能自证为事实。
