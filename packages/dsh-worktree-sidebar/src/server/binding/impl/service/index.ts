@@ -11,7 +11,7 @@
 import type { BindingRecord, BindingsFile } from "../../../../contract.ts";
 import type { FileWrite } from "../../../shared/interface.ts";
 import type { BindingDeps } from "../../deps.ts";
-import { dropBinding, emptyTable, pruneTable, putBinding } from "../model/index.ts";
+import { dropBinding, emptyTable, putBinding } from "../model/index.ts";
 import { loadTable, saveTable } from "../store/index.ts";
 
 /** 未装配时能力面的失败文案：读到它就说明装配守卫有洞，当场暴露而不是拿旧 deps 出结果。 */
@@ -23,14 +23,10 @@ export interface BindingApi {
   revision(): number;
   /** 按会话取绑定。 */
   get(sessionId: string): BindingRecord | undefined;
-  /** 当前全部绑定（只读，供剪枝与排查）。 */
-  entries(): Readonly<Record<string, BindingRecord>>;
   /** 落一条绑定并持久化。 */
   put(sessionId: string, record: BindingRecord): Promise<FileWrite>;
   /** 摘一条绑定并持久化（幂等：本来就没有不算失败）。 */
   drop(sessionId: string): Promise<FileWrite>;
-  /** 剪枝掉不再活跃的会话。 */
-  prune(keep: (sessionId: string) => boolean): Promise<FileWrite>;
 }
 
 /** 绑定表：唯一实例持有内存快照与写盘串行链。 */
@@ -77,11 +73,6 @@ class BindingService implements BindingApi {
     return this.table.bindings[sessionId];
   }
 
-  entries(): Readonly<Record<string, BindingRecord>> {
-    this.requireInstalled();
-    return this.table.bindings;
-  }
-
   put(sessionId: string, record: BindingRecord): Promise<FileWrite> {
     this.requireInstalled();
     if (sessionId.length === 0) return Promise.resolve({ ok: false, reason: "空 sessionId" });
@@ -91,11 +82,6 @@ class BindingService implements BindingApi {
   drop(sessionId: string): Promise<FileWrite> {
     this.requireInstalled();
     return this.commit((current) => dropBinding(current, sessionId));
-  }
-
-  prune(keep: (sessionId: string) => boolean): Promise<FileWrite> {
-    this.requireInstalled();
-    return this.commit((current) => pruneTable(current, keep));
   }
 
   /**

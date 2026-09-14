@@ -81,18 +81,3 @@ export function dropBinding(table: BindingsFile, sessionId: string): BindingsFil
   delete bindings[sessionId];
   return { version: table.version, revision: table.revision + 1, bindings };
 }
-
-/** 剪枝：只保留 `keep` 判真的会话。与 `dropBinding` 同规则——没剪掉任何东西就不涨 revision。 */
-export function pruneTable(
-  table: BindingsFile,
-  keep: (sessionId: string) => boolean,
-): BindingsFile {
-  const bindings: Record<string, BindingRecord> = {};
-  let removed = false;
-  for (const [sessionId, record] of Object.entries(table.bindings)) {
-    if (keep(sessionId)) bindings[sessionId] = record;
-    else removed = true;
-  }
-  if (!removed) return table;
-  return { version: table.version, revision: table.revision + 1, bindings };
-}

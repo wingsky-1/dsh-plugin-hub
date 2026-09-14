@@ -32,11 +32,6 @@ export function get(sessionId: string): BindingRecord | undefined {
   return bindingService.get(sessionId);
 }
 
-/** 当前全部绑定（只读，供剪枝与排查）。 */
-export function entries(): Readonly<Record<string, BindingRecord>> {
-  return bindingService.entries();
-}
-
 /** 落一条绑定并持久化。 */
 export function put(sessionId: string, record: BindingRecord): Promise<FileWrite> {
   return bindingService.put(sessionId, record);
@@ -45,9 +40,4 @@ export function put(sessionId: string, record: BindingRecord): Promise<FileWrite
 /** 摘一条绑定并持久化（幂等：本来就没有不算失败）。 */
 export function drop(sessionId: string): Promise<FileWrite> {
   return bindingService.drop(sessionId);
-}
-
-/** 剪枝掉不再活跃的会话。 */
-export function prune(keep: (sessionId: string) => boolean): Promise<FileWrite> {
-  return bindingService.prune(keep);
 }

@@ -1,9 +1,9 @@
 /**
- * binding 域纯逻辑 —— 形状校验、revision 规则、剪枝。
+ * binding 域纯逻辑 —— 形状校验与 revision 规则。
  *
- * 为什么值得逐条断言：这四条规则每一条失效都对应一种「静默挂错目录」——
- * 损坏文件不回落空表、版本更高也照读、摘不存在的会话也涨 revision（客户端白刷）、
- * 剪枝把该留的剪掉。它们都不抛异常，只让文件树指向错的地方。
+ * 为什么值得逐条断言：这三条规则每一条失效都对应一种「静默挂错目录」——
+ * 损坏文件不回落空表、版本更高也照读、摘不存在的会话也涨 revision（客户端白刷）。
+ * 它们都不抛异常，只让文件树指向错的地方。
  */
 import { describe, expect, it } from "vitest";
 import { BINDINGS_VERSION } from "../../src/contract.ts";
@@ -11,7 +11,6 @@ import {
   dropBinding,
   emptyTable,
   parseTable,
-  pruneTable,
   putBinding,
   serializeTable,
   validateRecord,
@@ -133,20 +132,6 @@ describe("dropBinding", () => {
     expect(next.revision).toBe(2);
     expect(next.bindings["s1"]).toBeUndefined();
     expect(base.bindings["s1"]).toEqual(record);
-  });
-});
-
-describe("pruneTable", () => {
-  it("全部保留时原样返回同一对象", () => {
-    const base = putBinding(putBinding(emptyTable(), "s1", record), "s2", record);
-    expect(pruneTable(base, () => true)).toBe(base);
-  });
-
-  it("剪掉不保留的会话并递增 revision", () => {
-    const base = putBinding(putBinding(emptyTable(), "s1", record), "s2", record);
-    const next = pruneTable(base, (id) => id === "s1");
-    expect(next.revision).toBe(base.revision + 1);
-    expect(Object.keys(next.bindings)).toEqual(["s1"]);
   });
 });
 

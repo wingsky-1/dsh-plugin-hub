@@ -57,7 +57,7 @@ describe("installBinding", () => {
     writeFileSync(file, "{ 半个 json", "utf8");
     bindingApi.installBinding(deps);
     expect(bindingApi.revision()).toBe(0);
-    expect(bindingApi.entries()).toEqual({});
+    expect(bindingApi.get("s1")).toBeUndefined();
   });
 
   it("第二次装配当场抛错，不静默建成第二份状态", () => {
@@ -137,15 +137,6 @@ describe("put / drop 的持久化", () => {
     expect(() => readFileSync(file, "utf8")).toThrow();
   });
 
-  it("prune 剪掉不保留的会话", async () => {
-    const { deps } = makeDeps();
-    bindingApi.installBinding(deps);
-    await bindingApi.put("s1", record);
-    await bindingApi.put("s2", record);
-    expect(await bindingApi.prune((id) => id === "s1")).toEqual({ ok: true });
-    expect(Object.keys(bindingApi.entries())).toEqual(["s1"]);
-  });
-
   it("并发 put 不丢更新（写盘串行化）", async () => {
     const { deps } = makeDeps();
     bindingApi.installBinding(deps);
@@ -154,7 +145,7 @@ describe("put / drop 的持久化", () => {
       bindingApi.put("s2", record),
       bindingApi.put("s3", record),
     ]);
-    expect(Object.keys(bindingApi.entries()).sort()).toEqual(["s1", "s2", "s3"]);
+    expect(["s1", "s2", "s3"].map((id) => bindingApi.get(id))).toEqual([record, record, record]);
     expect(bindingApi.revision()).toBe(3);
   });
 });
