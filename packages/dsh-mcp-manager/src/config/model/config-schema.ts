@@ -207,7 +207,7 @@ export const BOOLEAN_KEYS: readonly string[] = [
 
 /**
  * 非负整数键及其上界：本包**没有产品上界**——catalogMaxEntries 与 resultTruncateBytes
- * 只被要求是正整数（见 bootstrap/apply-config.ts 的兜底链），上界是机器/内存极限而非产品
+ * 只被要求是正整数（见 src/index.ts 的兜底链），上界是机器/内存极限而非产品
  * 约束，编一个上界等于造假事实。空对象是显式声明而不是遗漏。
  */
 export const COUNT_LIMITS: Record<string, number> = {};

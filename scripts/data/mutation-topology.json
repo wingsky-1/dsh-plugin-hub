@@ -168,7 +168,6 @@
         },
         "runtime": {
           "mutate": [
-            "packages/dsh-mcp-manager/src/bootstrap/**/*.ts",
             "packages/dsh-mcp-manager/src/connection/runtime/transport.ts",
             "packages/dsh-mcp-manager/src/connection/runtime/protocol.ts",
             "shared/placement-math.js",
@@ -183,7 +182,7 @@
             "!packages/dsh-mcp-manager/src/integration/**",
             "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
-          "comment": "#664 阶段6重画：runtime——组合根（bootstrap/，原 apply*.ts 迁入）+transport/protocol+shared/placement-math（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析）+pipeline（执行管道域，阶段1–5变异盲区随迁纳入）+catalog（目录域，原 catalog.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。 #767 B0 先修尺子：src/server/**（B1 新树）与 src/shared/** 以超集形式先挂本段（旧 glob 全保留）——目标树是全新顶层目录，不先纳入会让 B1 新文件进 uncoveredSrcFiles，而 --write-baseline 拒绝接受新证据、只能逐文件写豁免；B2 按域重画 mutate 时收敛（届时文件归各域段，本段只留组合根/transport/protocol/pipeline/catalog）。"
+          "comment": "#664 阶段6重画：runtime——组合根已并入 src/index.ts（归 entry 段；#767 W11a 删掉 src/bootstrap/** 死 glob，原 apply*.ts 的变异面随之落到 entry）+transport/protocol+shared/placement-math（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析）+pipeline（执行管道域，阶段1–5变异盲区随迁纳入）+catalog（目录域，原 catalog.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。 #767 B0 先修尺子：src/server/**（B1 新树）与 src/shared/** 以超集形式先挂本段（旧 glob 全保留）——目标树是全新顶层目录，不先纳入会让 B1 新文件进 uncoveredSrcFiles，而 --write-baseline 拒绝接受新证据、只能逐文件写豁免；B2 按域重画 mutate 时收敛（届时文件归各域段，本段只留 transport/protocol/pipeline/catalog）。"
         }
       },
       "testLayers": {
@@ -212,7 +211,7 @@
             "packages/dsh-mcp-manager/test/unit/unit-shared.test.ts": "被测对象是 workspace 根 shared/settings-namespace.ts（不在本包 mutate 面内），登记它零杀灭、只增加各段 dry run 执行面"
           },
           "integration": {
-            "packages/dsh-mcp-manager/test/integration/service-contract.test.ts": "契约编译面用例：静态读取 src/bootstrap/apply-services.ts 的源文本比对 provide 方法集；在 Stryker 沙箱内被测源码已插桩，源文本断言必然失败（CI 实测 2026-09-11：Mutation gate (dsh-mcp-manager · runtime) dry run 报 apply.ts provide(\"mcpManager\") 方法名集合应与契约清单一致）。该用例的价值是类型/编译面与契约清单漂移，不产生变异杀灭，故不进变异面（随 pnpm test:scripts 的 service-contract-wiring 与 pnpm typecheck 生效）"
+            "packages/dsh-mcp-manager/test/integration/service-contract.test.ts": "契约编译面用例：静态读取 src/index.ts 的源文本比对 provide 方法集；在 Stryker 沙箱内被测源码已插桩，源文本断言必然失败（CI 实测 2026-09-11：Mutation gate (dsh-mcp-manager · runtime) dry run 报 apply.ts provide(\"mcpManager\") 方法名集合应与契约清单一致）。该用例的价值是类型/编译面与契约清单漂移，不产生变异杀灭，故不进变异面（随 pnpm test:scripts 的 service-contract-wiring 与 pnpm typecheck 生效）"
           }
         }
       }

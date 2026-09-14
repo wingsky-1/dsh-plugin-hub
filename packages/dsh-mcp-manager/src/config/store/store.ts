@@ -1,21 +1,24 @@
 /**
  * dsh-mcp-manager — 配置存储（独立模块，无内部依赖）。
  *
- * 服务器配置持久化在 `~/.dsh/dsh-mcp.json`（版本化，原子写入）。
- * 由 lib/index.js 组合根 re-export。
+ * 服务器配置持久化在本插件私有目录（路径的物理定义在 server/shared/paths.ts，版本化，
+ * 原子写入）。由 lib/index.js 组合根 re-export。
  */
 
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { dshHome } from "../../../../../shared/dsh-home.js";
+import { dirname } from "node:path";
+import { configFile } from "../../server/shared/interface.ts";
 import type { ServerConfig } from "../../types/interface.ts";
 
 // ------------------------------------------------------------------ 存储
 
-/** 默认配置存储路径。 */
+/**
+ * 默认配置存储路径。文件名与权限是迁移契约，只能来自 server/shared/paths.ts 的单点定义；
+ * 就地拼 DSH_HOME 与文件名会让迁移的读面与写面各持一份字面量（I7）。
+ */
 export function defaultStorePath() {
-  return join(dshHome(), "dsh-mcp.json");
+  return configFile();
 }
 
 /**

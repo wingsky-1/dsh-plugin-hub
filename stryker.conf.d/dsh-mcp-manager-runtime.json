@@ -1,7 +1,6 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-mcp-manager/src/bootstrap/**/*.ts",
     "packages/dsh-mcp-manager/src/connection/runtime/transport.ts",
     "packages/dsh-mcp-manager/src/connection/runtime/protocol.ts",
     "shared/placement-math.js",
@@ -49,5 +48,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-runtime.json",
-  "_comment": "#664 阶段6重画：runtime——组合根（bootstrap/，原 apply*.ts 迁入）+transport/protocol+shared/placement-math（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析）+pipeline（执行管道域，阶段1–5变异盲区随迁纳入）+catalog（目录域，原 catalog.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。 #767 B0 先修尺子：src/server/**（B1 新树）与 src/shared/** 以超集形式先挂本段（旧 glob 全保留）——目标树是全新顶层目录，不先纳入会让 B1 新文件进 uncoveredSrcFiles，而 --write-baseline 拒绝接受新证据、只能逐文件写豁免；B2 按域重画 mutate 时收敛（届时文件归各域段，本段只留组合根/transport/protocol/pipeline/catalog）。"
+  "_comment": "#664 阶段6重画：runtime——组合根已并入 src/index.ts（归 entry 段；#767 W11a 删掉 src/bootstrap/** 死 glob，原 apply*.ts 的变异面随之落到 entry）+transport/protocol+shared/placement-math（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析）+pipeline（执行管道域，阶段1–5变异盲区随迁纳入）+catalog（目录域，原 catalog.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。 #767 B0 先修尺子：src/server/**（B1 新树）与 src/shared/** 以超集形式先挂本段（旧 glob 全保留）——目标树是全新顶层目录，不先纳入会让 B1 新文件进 uncoveredSrcFiles，而 --write-baseline 拒绝接受新证据、只能逐文件写豁免；B2 按域重画 mutate 时收敛（届时文件归各域段，本段只留 transport/protocol/pipeline/catalog）。"
 }
