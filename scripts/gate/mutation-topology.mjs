@@ -29,7 +29,10 @@ export function defaultSegmentExcludes(pkgName) {
  *     源码全覆盖断言**不适用**（不是「通过」）。调用方必须把这件事显式声明出来，
  *     不得因「没有可判定的面」而静默判绿：该包在 dir-imports-baseline 里的
  *     `uncoveredSrcFiles: []` 是「未登记拓扑时该字段恒为空」的已知假绿，不是全覆盖的证据。
- *   - `null`：两处都未登记 → 调用方 fail-closed。
+ *   - `null`：两处都未登记 → 调用方 fail-closed。这是**对调用方的契约**，前提是调用方
+ *     真的读到了拓扑文件：文件整份缺失时本函数同样返回 `null`（入参不可用），
+ *     但「包未登记」与「拓扑不可用」不是同一件事，调用方须自行区分（见
+ *     verify-dir-imports.mjs 头部对缺失态的说明）。
  *
  * `$noMutationPackages` 的 `$comment` 元键不算登记（与 gen-stryker-conf 的过滤口径一致）；
  * 同时登记两处时以 `packages` 为准——只有它带得出可判定的 mutate/excludes 面。

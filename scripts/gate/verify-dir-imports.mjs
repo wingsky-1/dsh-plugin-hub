@@ -63,7 +63,11 @@
  *   - **$noMutationPackages 登记（#773 批 B / #710 §2-2）**：包登记在
  *     `scripts/data/mutation-topology.json` 的 `$noMutationPackages` 时，源码全覆盖断言
  *     **不适用**（该包没有变异面）——但不静默判绿：判绿输出里必须打印一条显式声明
- *     （含登记理由与跟踪 #690 S6/S8 / #773）。未登记在任何一处仍是 fail-closed。
+ *     （含登记理由与跟踪 #690 S6/S8 / #773）。两处都未登记仍是 fail-closed——前提是
+ *     拓扑文件在位：该文件整份缺失时本判据不生效（顶层 `existsSync` 无 else 分支，
+ *     不 push failure），此时「源码全覆盖断言」被整体静默，兜底是
+ *     `scripts/test/workflow-assert.test.ts` 的「单一事实源在位」断言；把缺失态改成
+ *     判红属行为变更，follow-up 见 #773。
  *
  * 适用包白名单：`--package <name>`（可多次）；缺省 = 仅 dsh-mcp-manager。
  * 用法：node scripts/gate/verify-dir-imports.mjs [--package <name>] [--soft] [--verbose]
