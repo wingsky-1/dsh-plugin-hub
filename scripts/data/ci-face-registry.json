@@ -190,6 +190,11 @@
       "why": "包级资产：导出面基线与分类登记。#847 接入 ci.yml / observe.yml / release.yml 各一条独立 step 与 gate-steps.mjs 本地 pr/full；export-surface-snapshot 按 --package 拼名读取两份数据，直接读取方 export-surface-wiring.test.ts 校验资产与独立执行点，丢任一入口即红。"
     },
     {
+      "path": "scripts/data/dsh-mcp-manager-*.json",
+      "faces": ["dsh-mcp-manager"],
+      "why": "包级数据资产（#767 B0 新建）：dsh-mcp-manager-export-surface.json 是本包重构前的导出面基线，由 contract-check 的 export-surface-snapshot 调用点与常驻的 test:scripts（export-faces-admission 逐包断言）消费；dsh-mcp-manager-export-faces.json 是该基线的分类登记，只被同一条准入判据消费。两者都是本包资产，故归本包面；改动任一份即改变本包的契约判据输入，必须触发本包切片。"
+    },
+    {
       "path": "scripts/data/dsh-lan-proxy-*.json",
       "faces": ["dsh-lan-proxy"],
       "why": "包级数据资产：ui-exempt（客户端 UI 豁免表，由 config-matrix-gate 消费）与 #826 冻结的 export-surface / export-faces（导出面基线与分类准入登记，由 export-surface-snapshot 消费，执行点见 ci.yml 的 Export surface snapshot 步骤）——三者都是本包资产，故用 glob 归本包面（与 scripts/data/dsh-notifier-*.json 同形）。原名 lan-proxy-ui-exempt.json 不带包名前缀，只能靠人工记忆映射（#742 阶段 2.2 改名归位）。",

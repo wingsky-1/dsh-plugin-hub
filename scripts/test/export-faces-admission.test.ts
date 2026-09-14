@@ -27,8 +27,12 @@ import { EXPORT_FACES, checkExportFaces, loadExportFaces } from "../lib/export-f
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const SCRIPT = join(ROOT, "scripts", "gate", "export-surface-snapshot.mjs");
-const REGISTRY = join(ROOT, "scripts", "data", "dsh-notifier-export-faces.json");
-const BASELINE = join(ROOT, "scripts", "data", "dsh-notifier-export-surface.json");
+// 逐包参数化：判据与登记形态由同一实现（export-faces-lib）驱动，接入一个新包只是加一条，
+// 而不是复制一份测试逻辑——双轨会让「测试绿而门禁红」无从裁决（§9）。dsh-mcp-manager 于
+// #767 B0 接入，其 legacy 是重构前那棵树的存量全集。
+const PACKAGES = ["dsh-notifier", "dsh-mcp-manager"];
+const registryPath = (pkg) => join(ROOT, "scripts", "data", `${pkg}-export-faces.json`);
+const baselinePath = (pkg) => join(ROOT, "scripts", "data", `${pkg}-export-surface.json`);
 
 /** 在隔离目录写一份登记文件并返回路径（用完即弃，产物零污染）。 */
 function writeRegistry(dir, payload) {
@@ -146,103 +150,109 @@ test("已知边界（如实登记）：新符号塞进 legacy 可绕过准入判
 
 // ---------------------------------------------------------------- 2) 真实仓库登记文件自洽
 
-test("真实登记文件：package 匹配且覆盖基线全部导出符号", () => {
-  const registry = loadExportFaces(REGISTRY);
-  const baselineExports = JSON.parse(readFileSync(BASELINE, "utf8")).exports.map((e) => e.name);
-  assert.equal(baselineExports.length > 0, true, "基线导出符号集必须非空（先断言集合非空）");
-  assert.equal(registry.package, "dsh-notifier");
-  const problems = checkExportFaces({
-    exports: baselineExports,
-    faces: registry.faces,
-    legacy: registry.legacy,
+for (const pkg of PACKAGES) {
+  test(`真实登记文件（${pkg}）：package 匹配且覆盖基线全部导出符号`, () => {
+    const registry = loadExportFaces(registryPath(pkg));
+    const baselineExports = JSON.parse(readFileSync(baselinePath(pkg), "utf8")).exports.map(
+      (e) => e.name,
+    );
+    assert.equal(baselineExports.length > 0, true, "基线导出符号集必须非空（先断言集合非空）");
+    assert.equal(registry.package, pkg);
+    const problems = checkExportFaces({
+      exports: baselineExports,
+      faces: registry.faces,
+      legacy: registry.legacy,
+    });
+    assert.deepEqual(problems, []);
+    assert.equal(
+      registry.legacy.length,
+      baselineExports.length,
+      "存量白名单条数应等于基线条数（两包在各自冻结时点全部为存量）",
+    );
   });
-  assert.deepEqual(problems, []);
-  assert.equal(
-    registry.legacy.length,
-    baselineExports.length,
-    "存量白名单条数应等于基线条数（M2a 时点全部为存量）",
-  );
-});
+}
 
 // ---------------------------------------------------------------- 3) 执法接线（真实脚本）
 
-test("端到端：合规登记 → 真实门禁脚本 exit 0", () => {
-  const result = spawnSync(process.execPath, [SCRIPT, "--package", "dsh-notifier"], {
-    cwd: ROOT,
-    encoding: "utf8",
-    timeout: 180000,
-  });
-  assert.equal(
-    result.status,
-    0,
-    `期望 exit 0，实际 ${result.status}\n${result.stdout}\n${result.stderr}`,
-  );
-  assert.match(result.stdout, /PASS dsh-notifier 导出面与基线零 diff/);
-});
-
-test("端到端：模拟新增未登记导出（把一个存量符号移出 legacy）→ 真实门禁脚本 exit 1", () => {
-  withTmp((dir) => {
-    const registry = JSON.parse(readFileSync(REGISTRY, "utf8"));
-    const dropped = registry.legacy[0];
-    registry.legacy = registry.legacy.slice(1);
-    const path = writeRegistry(dir, registry);
-    const result = spawnSync(
-      process.execPath,
-      [SCRIPT, "--package", "dsh-notifier", "--faces", path],
-      { cwd: ROOT, encoding: "utf8", timeout: 180000 },
-    );
+for (const pkg of PACKAGES) {
+  test(`端到端（${pkg}）：合规登记 → 真实门禁脚本 exit 0`, () => {
+    const result = spawnSync(process.execPath, [SCRIPT, "--package", pkg], {
+      cwd: ROOT,
+      encoding: "utf8",
+      timeout: 180000,
+    });
     assert.equal(
       result.status,
-      1,
-      `期望 exit 1，实际 ${result.status}\n${result.stdout}\n${result.stderr}`,
+      0,
+      `期望 exit 0，实际 ${result.status}\n${result.stdout}\n${result.stderr}`,
     );
-    assert.match(result.stdout, new RegExp(`新增导出未分类登记：${dropped}`));
-    // 判红必须来自分类登记判据，而不是被基线比对的红掩盖（两条判据各自独立发声）
-    assert.match(result.stdout, /\[导出面分类登记\]/);
+    assert.match(result.stdout, new RegExp(`PASS ${pkg} 导出面与基线零 diff`));
   });
-});
 
-test("端到端 --verbose：声明块分列「当前/基线」，且两侧不等时不得声称「与基线一致」（#733 M2c R4-2）", () => {
-  const baseBlocks = JSON.parse(readFileSync(BASELINE, "utf8")).declBlocks;
-  assert.equal(baseBlocks.length > 0, true, "基线声明块集必须非空（先断言集合非空）");
-  const result = spawnSync(process.execPath, [SCRIPT, "--package", "dsh-notifier", "--verbose"], {
-    cwd: ROOT,
-    encoding: "utf8",
-    timeout: 180000,
+  test(`端到端（${pkg}）：模拟新增未登记导出（把一个存量符号移出 legacy）→ 真实门禁脚本 exit 1`, () => {
+    withTmp((dir) => {
+      const registry = JSON.parse(readFileSync(registryPath(pkg), "utf8"));
+      const dropped = registry.legacy[0];
+      registry.legacy = registry.legacy.slice(1);
+      const path = writeRegistry(dir, registry);
+      const result = spawnSync(process.execPath, [SCRIPT, "--package", pkg, "--faces", path], {
+        cwd: ROOT,
+        encoding: "utf8",
+        timeout: 180000,
+      });
+      assert.equal(
+        result.status,
+        1,
+        `期望 exit 1，实际 ${result.status}\n${result.stdout}\n${result.stderr}`,
+      );
+      assert.match(result.stdout, new RegExp(`新增导出未分类登记：${dropped}`));
+      // 判红必须来自分类登记判据，而不是被基线比对的红掩盖（两条判据各自独立发声）
+      assert.match(result.stdout, /\[导出面分类登记\]/);
+    });
   });
-  assert.equal(
-    result.status,
-    0,
-    `期望 exit 0，实际 ${result.status}\n${result.stdout}\n${result.stderr}`,
-  );
-  const line = result.stdout.split("\n").find((l) => l.includes("声明块 当前"));
-  assert.ok(
-    line !== undefined,
-    `verbose 应分列「当前 / 基线」两个声明块计数，实际输出：\n${result.stdout}`,
-  );
-  const m = /声明块 当前 (\d+) \/ 基线 (\d+)/.exec(line);
-  assert.ok(m !== null, `计数格式不符：${line}`);
-  // 「基线」计数必须真取自基线文件——把当前值打印两遍会在此判红。
-  assert.equal(
-    Number(m[2]),
-    baseBlocks.length,
-    `「基线」计数应等于基线文件的 declBlocks 条数（${baseBlocks.length}）：${line}`,
-  );
-  // 旧文案（`${surface.declBlocks.length} 个声明块与基线一致`）的缺陷是**单向**的：它把
-  // 「当前值」说成与基线一致，无论两侧计数是否相等。故判据也取单向——**两侧不等时不得
-  // 出现该短语**。写成双向等价（`includes(...) === (m1===m2)`）会埋一条假红地雷：实现
-  // 永不再打印该短语，一旦基线被合法刷新到与现状相等（M2b 的待决事项），右式为 true 而
-  // 左式恒 false → 门禁正确却判红，最可能的"修法"是把断言改弱（#733 M2c 复核实测）。
-  if (Number(m[1]) !== Number(m[2])) {
+
+  test(`端到端（${pkg}）--verbose：声明块分列「当前/基线」，且两侧不等时不得声称「与基线一致」（#733 M2c R4-2）`, () => {
+    const baseBlocks = JSON.parse(readFileSync(baselinePath(pkg), "utf8")).declBlocks;
+    assert.equal(baseBlocks.length > 0, true, "基线声明块集必须非空（先断言集合非空）");
+    const result = spawnSync(process.execPath, [SCRIPT, "--package", pkg, "--verbose"], {
+      cwd: ROOT,
+      encoding: "utf8",
+      timeout: 180000,
+    });
     assert.equal(
-      line.includes("与基线一致"),
-      false,
-      `两侧计数不等时不得声称「与基线一致」：${line}`,
+      result.status,
+      0,
+      `期望 exit 0，实际 ${result.status}\n${result.stdout}\n${result.stderr}`,
     );
-  }
-  assert.equal(
-    line.includes("不等于判据实际比对的块集合"),
-    true,
-    `必须写明该计数与比对块集合的关系：${line}`,
-  );
-});
+    const line = result.stdout.split("\n").find((l) => l.includes("声明块 当前"));
+    assert.ok(
+      line !== undefined,
+      `verbose 应分列「当前 / 基线」两个声明块计数，实际输出：\n${result.stdout}`,
+    );
+    const m = /声明块 当前 (\d+) \/ 基线 (\d+)/.exec(line);
+    assert.ok(m !== null, `计数格式不符：${line}`);
+    // 「基线」计数必须真取自基线文件——把当前值打印两遍会在此判红。
+    assert.equal(
+      Number(m[2]),
+      baseBlocks.length,
+      `「基线」计数应等于基线文件的 declBlocks 条数（${baseBlocks.length}）：${line}`,
+    );
+    // 旧文案（`${surface.declBlocks.length} 个声明块与基线一致`）的缺陷是**单向**的：它把
+    // 「当前值」说成与基线一致，无论两侧计数是否相等。故判据也取单向——**两侧不等时不得
+    // 出现该短语**。写成双向等价（`includes(...) === (m1===m2)`）会埋一条假红地雷：实现
+    // 永不再打印该短语，一旦基线被合法刷新到与现状相等（M2b 的待决事项），右式为 true 而
+    // 左式恒 false → 门禁正确却判红，最可能的"修法"是把断言改弱（#733 M2c 复核实测）。
+    if (Number(m[1]) !== Number(m[2])) {
+      assert.equal(
+        line.includes("与基线一致"),
+        false,
+        `两侧计数不等时不得声称「与基线一致」：${line}`,
+      );
+    }
+    assert.equal(
+      line.includes("不等于判据实际比对的块集合"),
+      true,
+      `必须写明该计数与比对块集合的关系：${line}`,
+    );
+  });
+}
