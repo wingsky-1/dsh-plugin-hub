@@ -37,13 +37,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # #718 验收判据「基线陈旧可被观测」。落点刻意选本 workflow 而不是 observe.yml：
-      # **监控者与被监控者必须分离**——observe 正是更新 baseline/mutation 的那一方，把新鲜度
-      # 检查放进去，会在「observe 整体没跑」这一最需要告警的形态下一起沉默（dead-man's switch
-      # 的反面）。本 workflow 是独立班次、周期一周（不会告警疲劳），且已有 issues: write，
-      # 故本项**零权限变更**。
-      # 判据打在「基线分支最后提交时间」这一事实上，不是「observe 最近是否 success」这一代理：
-      # 后者漏掉「observe 成功但基线没入档」与「observe 整体没跑」两种形态。
+      # #718 验收判据「基线陈旧可被观测」。判据打在「基线分支最后提交时间」这一**事实**上，
+      # 不是「observe 最近是否 success」这一代理：后者在「班次成功但两条路径都没落盘」与
+      # 「班次根本没跑」两种形态下都会漏报。
+      # 基线有两条写入路径：observe.yml 夜班并集入档（orphan-baseline.mjs）、baseline-overlay.yml
+      # 在 push main 时对增量基线做秒级 overlay（overlay-baseline.mjs）。故本判据的真实语义是
+      # 「**两条入档路径都停了**」，不是「observe 单点停了」——**绿 != observe 健康**：夜班停摆
+      # 但仍有触及变异切片的 PR 合入时，基线会被 overlay 持续刷新而恒 fresh。
+      # 落点选本 workflow 的依据是「**监控者与被监控者必须分离**」：本 workflow 独立于那两条写入
+      # 路径、周期一周（不会告警疲劳），且已有 issues: write，故本项**零权限变更**。
       # 放在数据采集之前：它只依赖 gh 与分支事实，不该被上游采集失败连坐。
       # 观测步骤自身退出码恒 0：stale 是「检查做成了，发现基线旧了」，告警通道是 annotation +
       # 工单；「检查根本没做成」（unknown）由本 job **最末**的 verdict 步骤判红——放最末才不会

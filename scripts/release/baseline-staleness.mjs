@@ -2,15 +2,22 @@
 /**
  * 变异基线（`baseline/mutation`）新鲜度的观测与判定（#718 验收判据「基线陈旧可被观测」）。
  *
- * 判据打在**事实**上，不是代理上：读基线分支最后提交的时间。为什么不看「observe 最近一次
- * 是不是 success」——代理指标在两种最需要告警的形态下都会漏报：
- *   1. observe 成功、但基线没被更新（段实例全被杀 → 无报告 → 收口 job 的入档步骤整体跳过）；
- *   2. observe 整体没跑（调度失效 / workflow 被禁用 / 排队超时）——此时「最近一次 run」仍是旧的 success。
+ * 判据打在**事实**上，不是代理上：读基线分支最后提交的时间。基线有**两条写入路径**：
+ *   a. observe.yml 夜班（UTC 20:00）在收口 job 里并集入档（scripts/gate/orphan-baseline.mjs）；
+ *   b. baseline-overlay.yml 在 push main 时把该 PR 的增量基线秒级 overlay 上去
+ *      （scripts/gate/overlay-baseline.mjs，与 a 共用 scripts/gate/baseline-push.mjs 的写路径）。
+ * 代理指标（「observe 最近一次是不是 success」）在两种形态下都会漏报：班次成功但两条路径都没落盘
+ * （如段报告缺失 → 收口 job 的入档步骤整体跳过），以及班次根本没跑（此时「最近一次 run」仍是旧的
+ * success）。读分支 tip 的提交时间不受这两种形态影响。
  *
- * 为什么执行点在 health-report.yml 而不在 observe.yml：**监控者与被监控者必须分离**。
- * observe 正是更新基线的那一方，把新鲜度检查放进去，会在它整体没跑时一起沉默——那是
- * dead-man's switch 的反面。health-report 是独立 workflow、周期一周（不会告警疲劳），且已有
+ * 为什么执行点在 health-report.yml 而不在 observe.yml：**监控者与被监控者必须分离**——observe 是
+ * 写入方之一，把新鲜度检查放进去，会在它整体没跑时一起沉默（dead-man's switch 的反面）。
+ * health-report 是**独立于上述两条写入路径**的第三条班次、周期一周（不会告警疲劳），且已有
  * issues: write，故本项**零权限变更**：本脚本只读分支信息，建单在 workflow 侧用已有权限做。
+ *
+ * 判据的真实语义是「**两条入档路径都停了**」，不是「observe 单点停了」——故**绿 != observe 健康**：
+ * 夜班停摆但仍有触及变异切片的 PR 合入时，基线会被 overlay 在 48 h 内持续刷新而恒为 fresh。
+ * 要单点观测 observe，看它自己最近一次 run；本判据不做这个代理。
  *
  * 三个执行点参数化路径（--status-file / --issue-file），纯函数部分不碰 IO 也不发写请求。
  */
