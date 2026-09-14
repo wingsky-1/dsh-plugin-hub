@@ -31,7 +31,6 @@ import { installInject } from "./inject/interface.ts";
 import { installOrchestrator } from "./connection/orchestrator/interface.ts";
 import * as catalogApi from "./catalog/interface.ts";
 import * as configModelApi from "./config/model/interface.ts";
-import * as connectionApi from "./connection/interface.ts";
 import * as pipelineApi from "./pipeline/interface.ts";
 import * as runtimeApi from "./connection/runtime/interface.ts";
 import * as statsApi from "./stats/interface.ts";
@@ -42,7 +41,7 @@ import * as workspaceApi from "./workspace/interface.ts";
 // 顶层、模块求值期写定。实参必须是可解析的对象字面量、键集与 catalog/deps.ts 的 CatalogDeps
 // 严格相等——由 verify-dir-imports 的注入面对账强制；调用点必须落在入口，写在别处该对账会
 // 静默空转（附录 G·G20）。
-catalogApi.installCatalog({ store: storeApi, connection: connectionApi, workspace: workspaceApi });
+catalogApi.installCatalog({ store: storeApi, connection: runtimeApi, workspace: workspaceApi });
 
 // 执行管道域的静态端口装配。同上：实参必须是可解析的对象字面量、键集与 pipeline/deps.ts 的
 // PipelineDeps 严格相等，且调用点必须落在入口（written elsewhere → 该对账静默空转，附录 G·G20）。
@@ -81,8 +80,8 @@ runtimeApi.installRuntime({
 
 // API 层域的静态端口装配。同上：实参必须是可解析的对象字面量、键集与 api/deps.ts 的
 // ApiDeps 严格相等，且调用点必须落在入口（written elsewhere → 该对账静默空转，附录 G·G20）。
-// 本刀只接 workspace 与 config/model 两条 Port——对 manager 的结构参数消费没有 import 边，
-// 命名能力对象归 W10（附录 G·G19）。
+// 本域只接 workspace 与 config/model 两条 Port——对 manager 的结构参数消费没有 import 边，
+// 命名能力对象不在 W10 的施工面（附录 G·G19；D.3·37），归后续刀。
 apiApi.installApi({ workspace: workspaceApi, configModel: configModelApi });
 
 /** 稳定的 cordis 插件名。 */
@@ -131,7 +130,8 @@ export {
 } from "./config/model/interface.ts";
 export type { UiPlacementConfig, ClientUiConfig } from "./types/interface.ts";
 
-// 管理器 / 连接域（orchestrator+runtime：#664 阶段 6 集中搬移完成）
+// 管理器 / 连接域（orchestrator+runtime：#664 阶段 6 集中搬移完成）。runtime 的值面自 W10 起
+// 直接取自子层门面——connection/interface.ts 只留类型出口，不再转发值符号。
 export { McpManager } from "./connection/orchestrator/interface.ts";
 export {
   ConnectionSupervisor,
@@ -142,7 +142,7 @@ export {
   StdioTransport,
   createTransport,
   MCPClient,
-} from "./connection/interface.ts";
+} from "./connection/runtime/interface.ts";
 export {
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
   DEFAULT_RESULT_TRUNCATE_BYTES,
@@ -162,7 +162,7 @@ export {
   MAX_TOTAL_CATALOG_BYTES,
   LIST_DEFAULT_TOOLS_PER_SERVER,
   LIST_MAX_TOOLS_PER_SERVER,
-} from "./connection/interface.ts";
+} from "./connection/runtime/interface.ts";
 export type { ReconnectPolicy } from "./connection/interface.ts";
 // 工作空间路由域（项目根发现 / 全名解析 / scope / 模式归一化；阶段 4 成形）
 export { findProjectRoot, normalizedProjectRoot, makeResolveRoot } from "./workspace/interface.ts";

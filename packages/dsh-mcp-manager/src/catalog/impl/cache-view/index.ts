@@ -11,7 +11,7 @@
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { dshHome } from "../../../../../../shared/dsh-home.js";
-import type { McpMiddleware } from "../../../connection/interface.ts";
+import type { McpMiddleware } from "../../../connection/runtime/interface.ts";
 import type { ServerConfig } from "../../../types/interface.ts";
 import { MIDDLEWARE_GLOBAL_ROOT, SCOPE_PROJECT } from "../../../shared/interface.ts";
 import { catalogPorts } from "../service/index.ts";

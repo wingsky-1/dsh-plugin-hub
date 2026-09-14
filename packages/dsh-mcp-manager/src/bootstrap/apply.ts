@@ -245,6 +245,8 @@ async function assembleEnabledRuntime(
 // 具名常量（增强配置默认值）：DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS 从 config-schema
 // re-export（拆分前 apply.ts 直接 import；此处保持同值语义）。
 import { DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS } from "../config/model/interface.ts";
-import { DEFAULT_RESULT_TRUNCATE_BYTES } from "../connection/interface.ts";
+// 该默认值的**物理定义**在 server/shared（≥2 域消费，§3.6 规则 6；config/model 同法取值），
+// 故直接取自共享门面，不经 connection 门面转发（W10 已删该门面的值面）。
+import { DEFAULT_RESULT_TRUNCATE_BYTES } from "../server/shared/interface.ts";
 const DEFAULT_ENHANCE_EMPTY = DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS;
 const DEFAULT_TRUNCATE = DEFAULT_RESULT_TRUNCATE_BYTES;

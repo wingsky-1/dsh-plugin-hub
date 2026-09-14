@@ -33,9 +33,9 @@
       "scannedSrcFiles": 95,
       "allSrcTsFiles": 110,
       "interfaceFacades": 16,
-      "leafValueEdges": 23,
-      "fileValueEdges": 138,
-      "crossModuleRefs": 168,
+      "leafValueEdges": 22,
+      "fileValueEdges": 136,
+      "crossModuleRefs": 166,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -48,11 +48,9 @@
           "bootstrap|catalog",
           "bootstrap|config/model",
           "bootstrap|config/store",
-          "bootstrap|connection",
           "bootstrap|connection/orchestrator",
           "bootstrap|inject",
-          "bootstrap|workspace",
-          "connection|connection/runtime"
+          "bootstrap|workspace"
         ],
         "rootIndexImports": [],
         "clientServerImports": [],
