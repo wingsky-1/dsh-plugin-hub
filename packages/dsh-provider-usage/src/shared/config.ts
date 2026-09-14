@@ -32,6 +32,22 @@ export const DEFAULT_CONFIG = {
   trendRetentionDays: 180,
 };
 
+/** 只接受布尔值的配置键（客户端 UI 按它渲染开关）；与 schema 里的 `z.boolean()` 字段一一对应。 */
+export const BOOLEAN_KEYS: readonly string[] = ["autoReload"];
+
+/**
+ * 非负整数键及其上界（默认值不得越界）。上界取自下面 `normalizeConfig` 里的 `Math.min`——
+ * 两处都是声明，config-matrix 门禁的 N4 断言它们与 DEFAULT_CONFIG 一致，漂移即红。
+ *
+ * 只列**有产品上界**的键：`warmupIntervalMs` / `cacheDurationMs` 只有下界（60000 / 5000），
+ * 上界是机器极限而非产品约束，列进来等于编一个假上界；`fetchTimeoutMs` 固定不开放配置。
+ */
+export const COUNT_LIMITS: Record<string, number> = {
+  maxAgeDays: 365,
+  maxSizeMB: 500,
+  trendRetentionDays: 3650,
+};
+
 export interface NormalizedConfig {
   adapter: string;
   staticPath: string;

@@ -171,3 +171,37 @@ export const Config: z<{
   debug: DebugConfigSchema.disabled(true),
   ui: UiConfigSchema,
 });
+
+/** schema 的输入面（Config(...) 的入参类型）：空输入即「全部取默认值」。 */
+type ConfigInput = Parameters<typeof Config>[0];
+
+/**
+ * 默认配置（键集 = schema 中带 .default() 的字段）。从 schema 归一化**空输入**派生，
+ * 不手写第二份默认值——默认值只写在上面的 .default(...) 里，改一处即改两处。
+ * storePath 无默认值，故键集比 schema 字段数少 1（config-matrix 门禁的 N1/N2 锁这条不变式）。
+ */
+export const DEFAULT_CONFIG = Config({} as ConfigInput);
+
+/**
+ * 归一化：把外部输入按 schema 校验并补默认值。
+ * 与 normalizeUiConfig 分工不同：后者只处理 ui 子面（设置页提交的局部 patch），
+ * 本函数给出一份**完整**配置。
+ */
+export function normalizeConfig(input: unknown) {
+  return Config(input as ConfigInput | undefined);
+}
+
+/** 只接受布尔值的**顶层**配置键（客户端 UI 按它渲染开关）；嵌套的 debug.callStats 不是顶层键。 */
+export const BOOLEAN_KEYS: readonly string[] = [
+  "enabled",
+  "announceToAgent",
+  "announceCatalog",
+  "enhanceEmptyDescriptions",
+];
+
+/**
+ * 非负整数键及其上界：本包**没有产品上界**——catalogMaxEntries 与 resultTruncateBytes
+ * 只被要求是正整数（见 bootstrap/apply-config.ts 的兜底链），上界是机器/内存极限而非产品
+ * 约束，编一个上界等于造假事实。空对象是显式声明而不是遗漏。
+ */
+export const COUNT_LIMITS: Record<string, number> = {};
