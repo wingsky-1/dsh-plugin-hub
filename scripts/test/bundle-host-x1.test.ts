@@ -95,13 +95,35 @@ test("#3a 归一化极端：同文件内引用深度 ≠ 文件深度 → 全部
   assert.equal(out.split("\n").length, text.split("\n").length, "行数不变（只改前缀）");
 });
 
-test("#3b 归一化极端反向：深层文件内的浅引用 → 按文件深度（而非引用深度）归一", () => {
-  // d=2 文件内写浅引用 ../shared/x.js（防御输入）→ 仍归一为 ../../../shared/x.js
-  const out = rewriteDtsText("import { x } from '../shared/x.js';\n", 2);
+test("#3b 包内 shared 引用原样保留；仓库根 shared 引用仍按文件深度归一（#767 B1.5b）", () => {
+  // 「../ 层数 ≤ 文件深度」= 包内 src/shared/ 的引用（tsc 产物里恰好 depth 个 ../，指向
+  // lib/shared/**，本就解析得到）；改写会把它指向包根 shared/（只有仓库级副本，
+  // 没有 interface/dto/service）→ 消费方类型面静默降级 any。
+  assert.equal(
+    rewriteDtsText("import { x } from '../shared/x.js';\n", 1),
+    "import { x } from '../shared/x.js';\n",
+    "d=1 包内引用（1 个 ../）原样保留",
+  );
+  assert.equal(
+    rewriteDtsText("import { x } from '../../shared/x.js';\n", 2),
+    "import { x } from '../../shared/x.js';\n",
+    "d=2 包内引用（2 个 ../）原样保留",
+  );
+  assert.equal(
+    rewriteDtsText("import { x } from '../../shared/x.js';\n", 4),
+    "import { x } from '../../shared/x.js';\n",
+    "d=4 包内引用（4 个 ../）原样保留",
+  );
+  // 仓库根 shared/ 的引用从 lib/<d1>/…/<dn>/ 出发总比包内多 3 级 → 仍归一为包内副本前缀。
   assert.match(
-    out,
-    /from '\.\.\/\.\.\/\.\.\/shared\/x\.js'/,
-    "d=2 → 3 个 ../（按文件深度而非引用深度）",
+    rewriteDtsText("import { x } from '../../../../shared/x.js';\n", 1),
+    /from '\.\.\/\.\.\/shared\/x\.js'/,
+    "d=1 仓库根引用（4 个 ../）→ ../ 归一到 depth+1",
+  );
+  assert.match(
+    rewriteDtsText("import { x } from '../../../../../../shared/x.js';\n", 3),
+    /from '\.\.\/\.\.\/\.\.\/\.\.\/shared\/x\.js'/,
+    "d=3 仓库根引用（6 个 ../）→ ../ 归一到 depth+1",
   );
 });
 
