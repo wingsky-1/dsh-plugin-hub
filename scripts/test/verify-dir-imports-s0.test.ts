@@ -16,6 +16,8 @@
  *   - 全覆盖断言：新增未被 mutate/excludes 覆盖的 src 文件必须 exit 1。
  *   - $noMutationPackages（#773 批 B / #710 §2-2）：登记在册的「无变异面」包不再判
  *     fail-closed，但必须在判绿输出里显式声明「覆盖断言不适用」；删掉登记即回到 exit 1。
+ *   - 拓扑缺失判红（#773 R3）：`scripts/data/mutation-topology.json` 整份缺失时门禁自己
+ *     fail-closed exit 1（与「解析失败」「包未登记」并列的第三种事实，不得静默判绿）。
  *
  * fixture 经 VERIFY_DIR_IMPORTS_ROOT 指向 mkdtemp 隔离目录（基线路径随根推导），
  * 不在仓库内造包目录（产物零污染纪律）。断言同时校验 exit code 与输出计数——
@@ -33,10 +35,33 @@ const SCRIPT = join(ROOT, "scripts", "gate", "verify-dir-imports.mjs");
 const PKG = "fixture-pkg";
 const SRC = `packages/${PKG}/src`;
 
+const TOPOLOGY_REL = "scripts/data/mutation-topology.json";
+
+/**
+ * fixture 默认拓扑：变异拓扑是段/层定义的单一事实源，而门禁对它的缺失态已 fail-closed
+ * （#773 R3），故除刻意验证缺失 / 未登记 / 解析失败三态的用例外，fixture 根必须自带这份
+ * 事实源，否则被验证的行为会被缺失告警盖住。默认登记本包并把 src 全量纳入 mutate
+ * （client 排除），使覆盖断言不引入额外噪声；需要其它形态的用例在 files 里显式给出，
+ * 显式值优先。
+ */
+function defaultTopology() {
+  return JSON.stringify({
+    sharedDefaults: {},
+    packages: {
+      [PKG]: {
+        segments: {
+          s1: { mutate: [SRC + "/**/*.ts"], excludes: ["!" + SRC + "/client/**"] },
+        },
+      },
+    },
+  });
+}
+
 /** 在隔离根下造任意相对路径文件，返回根路径（调用方负责清理）。 */
-function makeFixtureRoot(files) {
+function makeFixtureRoot(files, { omitTopology = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), "verify-dir-imports-s0-"));
-  for (const [rel, content] of Object.entries(files)) {
+  const all = omitTopology ? files : { [TOPOLOGY_REL]: defaultTopology(), ...files };
+  for (const [rel, content] of Object.entries(all)) {
     const full = join(root, rel);
     mkdirSync(dirname(full), { recursive: true });
     writeFileSync(full, content);
@@ -950,6 +975,37 @@ test("全覆盖断言：包未登记变异拓扑 → fail-closed 判红（封堵
     const { status, out } = runOn(root);
     assert.equal(status, 1, `包未登记拓扑应 fail-closed 判红，实际 ${status}：\n${out}`);
     assert.match(out, /未在 scripts\/data\/mutation-topology\.json 登记/, `应点名未登记：\n${out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("全覆盖断言：#773 R3：拓扑文件整份缺失 → fail-closed 判红（不得静默 PASS）", () => {
+  // 第三种事实（与「解析失败」「包未登记」并列）：缺失时未覆盖清单恒为空，只看 exit code
+  // 会把「无法判定」读成「已覆盖」，故必须由门禁自己判红，不依赖 workflow-assert 的
+  // 「单一事实源在位」断言兜底。
+  const root = makeFixtureRoot(chainFixture(""), { omitTopology: true });
+  try {
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `拓扑缺失应 fail-closed 判红，实际 ${status}：\n${out}`);
+    assert.match(out, /单一事实源缺失/, `应点名单一事实源缺失：\n${out}`);
+    assert.match(out, /scripts\/data\/mutation-topology\.json/, `应给出缺失文件路径：\n${out}`);
+    assert.doesNotMatch(out, /PASS（跨模块引用全部走/, `缺失态不得判绿：\n${out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("全覆盖断言：#773 R3 反证：拓扑损坏报「解析失败」，不得混同「单一事实源缺失」", () => {
+  const root = makeFixtureRoot({
+    ...chainFixture(""),
+    "scripts/data/mutation-topology.json": "{ not json",
+  });
+  try {
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `拓扑损坏应判红，实际 ${status}：\n${out}`);
+    assert.match(out, /变异拓扑解析失败/, `损坏态应报解析失败：\n${out}`);
+    assert.doesNotMatch(out, /单一事实源缺失/, `损坏态不得报「缺失」（两种事实不合并）：\n${out}`);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

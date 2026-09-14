@@ -63,11 +63,10 @@
  *   - **$noMutationPackages 登记（#773 批 B / #710 §2-2）**：包登记在
  *     `scripts/data/mutation-topology.json` 的 `$noMutationPackages` 时，源码全覆盖断言
  *     **不适用**（该包没有变异面）——但不静默判绿：判绿输出里必须打印一条显式声明
- *     （含登记理由与跟踪 #690 S6/S8 / #773）。两处都未登记仍是 fail-closed——前提是
- *     拓扑文件在位：该文件整份缺失时本判据不生效（顶层 `existsSync` 无 else 分支，
- *     不 push failure），此时「源码全覆盖断言」被整体静默，兜底是
- *     `scripts/test/workflow-assert.test.ts` 的「单一事实源在位」断言；把缺失态改成
- *     判红属行为变更，follow-up 见 #773。
+ *     （含登记理由与跟踪 #690 S6/S8 / #773）。两处都未登记仍是 fail-closed；拓扑文件
+ *     **整份缺失**（#773 R3）同样 fail-closed：缺失时未覆盖清单恒为空、判据整体失去依据，
+ *     故门禁自身在这条 push failure（与「解析失败」「包未登记」并列的第三种事实，不合并
+ *     语义），`scripts/test/workflow-assert.test.ts` 的「单一事实源在位」断言保留为冗余兜底。
  *
  * 适用包白名单：`--package <name>`（可多次）；缺省 = 仅 dsh-mcp-manager。
  * 用法：node scripts/gate/verify-dir-imports.mjs [--package <name>] [--soft] [--verbose]
@@ -1158,6 +1157,13 @@ if (existsSync(TOPOLOGY_PATH)) {
     // 拓扑损坏时不能抛栈崩掉整个 contract 段：显式判红并保持其余检查可读。
     failures.push(`[topology] 变异拓扑解析失败：${TOPOLOGY_PATH}（${e.message}）`);
   }
+} else {
+  // 「文件缺失」与「解析失败」是两种不同事实，故不并入上面那条：缺失时无法区分
+  // 「包未登记」与「拓扑整份丢失」，源码全覆盖断言随之整体失去判定依据（未覆盖清单
+  // 恒为空），而调用点拿到的仍是一条干净的 PASS——正是本门禁宣称要防的假绿。
+  failures.push(
+    `[topology] 变异拓扑单一事实源缺失：${TOPOLOGY_PATH} —— 无法判定源码全覆盖，fail-closed`,
+  );
 }
 const applyPackages = resolvePackages();
 const analyses = [];
