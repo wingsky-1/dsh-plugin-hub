@@ -58,7 +58,7 @@
 ## maintenance/（一次性维护脚本，按需手工执行）
 
 - `maintenance/repair-mcp-catalog-sessions.mjs` — #723 一次性修复：把 dsh-mcp-manager 0.2.x 及更早写入的旧目录 source（`kind: "mcp-catalog"`）改写成宿主词表内的通用形态，救回升级 dsh 后无法加载的历史会话（默认 dry-run，`--apply` 落盘并留 `.bak-<时间戳>` 备份）。根脚本别名：`pnpm repair:mcp-catalog`。
-- `maintenance/scan-actions-concurrency.mjs` — Actions 并发峰值扫描（#718 S0.3）：从 run 日志的 job 起止时间算并发峰值，供「夜间变异段并发上限」这类决策取实测依据（不读工作区、需 gh 与网络，故不进 CI）。
+- `maintenance/scan-actions-concurrency.mjs` — Actions 并发峰值扫描（#718 S0.3）：从 run 日志的 job 起止时间算并发峰值，供「夜间变异段并发上限」这类决策取实测依据（不读工作区、需 gh 与网络，故不进 CI；已过滤被取消 run 的作业——其排队窗口也带起止时间，会叠加成虚高峰值）。
 
 ## lib/（纯共享库，只被 import，不被 `node` 直接调用）
 
