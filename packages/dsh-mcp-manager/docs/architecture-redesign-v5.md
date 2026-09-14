@@ -910,6 +910,12 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
     - **⚠️ 由此产生的一条 CI 风险（须写进 PR 描述）**：5 个端口持有者（catalog/pipeline/inject/orchestrator/runtime 的 `impl/service/index.ts`）的**装配错误分支无仓内测试覆盖**（只有主控侧探针），而它们现在**已进入变异面** → CI 的 `middleware` 切片**变异杀灭分可能下降**。本地任何档都不跑变异，只能在 PR 的 CI 上看到；处置选项（补 5 个持有者的最小单测 / 或观察 CI）留待维护者裁决，**不得**为了方便把含运行时代码的文件按 type-only 排除（那是放宽）。
     - **可推广的规则（D.3·41）**：新建 `impl/**` 文件时，**先实测它落在哪个 mutate 段**——子层的 glob 若是「显式文件枚举」而不是 `**` 通配，就必须同笔登记，否则 `uncoveredSrcFiles` 判红；登记时**含运行时代码的走 mutate 面、纯类型面才走 `type-only` 排除**。
 
+49. **W9（`e252851`）与 W10（`ef9ee53`）已落地，主控均独立复核通过 —— B2a-wire 到此收口**：
+    - **W9 = api 端口接线**（新建 `api/deps.ts` + `impl/service/index.ts`）：I2① **11→9**（消失 `api|config/model`/`api|workspace`），两类环 0/0、`directImpl` 0、`uncoveredSrcFiles` 0、导出面零 diff、`gate:pr` 32/32。**未碰 `manager` 能力面**（G19/D.3·37），并用 liveness 探针证明 `uncoveredSrcFiles` 判据非空转。**D.3·37 已被实测坐实**：api 只开 `{workspace, configModel}`，不许为 `manager` 开 Port。
+    - **W10 = connection 门面对 runtime 的 26 符号值透传收口**：删掉 `connection/interface.ts` 的整块值透传（终态只剩 `McpManager` 与 `ReconnectPolicy` 两条类型出口），消费者全部改指 `connection/runtime/interface.ts`。**实测**：I2① **9→7**、环 0/0、`directImpl` 0、**导出面零 diff（坐实了「再导出来源路径不进快照判据」，本刀零重冻结）**、`gate:pr` 32/32。
+    - **W10 的一处偏离与主控裁决（接受 7、不追 8）**：`bootstrap/apply.ts` 的 `DEFAULT_RESULT_TRUNCATE_BYTES` 改从 **`server/shared/interface.ts`** 取（该常量的物理单源）。若路由经 `connection/runtime/interface.ts`，会把 `bootstrap|connection` **重签名**为 `bootstrap|connection/runtime` —— 判「新增未登记证据」且拒写基线，**且不是 G21 假新增**（改前基线确有前者、没有后者），登记豁免又被纪律禁止。**裁决依据**：§3.6/I2① 明确「指向共享层的值边是允许的出口」，从常量的物理定义处取数更正确；「8 条残余」原为**预测**，实测 **7 条且全是 `bootstrap|*`**，B2b 的前提「残余边**被删除**而非重签名」因此更干净。
+    - **B2a-wire 最终账面**（主控逐刀复核）：I2① **33 → 7**、叶子环 **4 → 0**、文件环 **4 → 0**、`directImpl` **1 → 0**、`uncoveredSrcFiles` 0；**公开导出面自始至终零 diff**；每刀 `gate:pr` 32/32、`lint` 508/508（余量 0）。六个域端口（catalog/pipeline/inject/orchestrator/runtime/api）全部落地，并在入口以**字面量**装配（G20）。
+
 ### D.3 未完成与遗留（含状态订正）
 
 1. **B1 全部切片已完成**（B1.0–B1.5b，见 D.2·19–26）。**B1 收尾已完成**：主控实跑 `gate:pr` = **32 项逐条 exit=0 + PASS**（清单与上一轮逐项一致）、`THIRD-PARTY-LICENSES` 相对 `origin/main` **零改动**、依赖面零新增、44 笔。**未推送**（理由见 D.3·17）。**B2.1 已完成**（`0fb3bab`：零位移、零台账、`gate:pr` 32 条全绿）。**B2.2 已完成**（`8628110`）。**B2.3 已完成**（`6bf9457`，含建 `deps.ts` 后模板订正口径的首次落地）。**B2.4（`catalog` 域）进行中**。切法与验收见 D.4。**两条显式收窄 + 一条落点裁量**见 §十二 表后（不建 10 个空域骨架；B1.4 不路由既有装配；机制落 `server/shared/` 而非入口）。**接线顺序**：`upgrade` 的启用必须与「读者改读新布局」同一笔（B2），否则归档旧文件而旧读者读空 = 静默丢配置（见 §十二 表后）。
