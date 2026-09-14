@@ -1,6 +1,9 @@
 /**
  * git 域对外契约：worktree 归属查询与增删。所有 argv 构造在 `impl/inspect`（纯函数，可逐字断言），
  * 本文件只负责「执行 + 把退出码翻译成答案」。
+ *
+ * 状态（归属校验的 TTL 缓存）住在实例里而不是模块里（#733 宪法第 1 条）：缓存是一份加速设施，
+ * 它不该跨装配共享，更不该让第二次装配抛「已装配」。
  */
 import { resolve } from "node:path";
 import type { GitDeps, GitRunResult } from "./deps.ts";
@@ -55,47 +58,23 @@ export interface GitApi {
   ): Promise<{ ok: true } | { ok: false; reason: string }>;
 }
 
-let installed: GitDeps | null = null;
-const belongsCache = new Map<string, { at: number; ok: boolean }>();
-
 /** 装配 git 域。 */
-export function installGit(deps: GitDeps): GitApi {
-  if (installed !== null) throw new Error("dsh-worktree-sidebar: git 域已装配");
-  installed = deps;
-  belongsCache.clear();
-  return api();
-}
+export function createGit(deps: GitDeps): GitApi {
+  const belongsCache = new Map<string, { at: number; ok: boolean }>();
+  const run = (args: readonly string[]): Promise<GitRunResult> => deps.exec.run(args);
 
-/** 卸载 git 域。幂等。 */
-export function releaseGit(): void {
-  installed = null;
-  belongsCache.clear();
-}
-
-function requireDeps(): GitDeps {
-  if (installed === null) throw new Error("dsh-worktree-sidebar: git 域未装配");
-  return installed;
-}
-
-/** 失败原因的取值口径只有这一处：git 的 stderr 优先，空则给退出码。 */
-function reasonOf(result: GitRunResult): string {
-  const text = result.stderr.trim();
-  return text.length > 0 ? text : "git 退出码非零";
-}
-
-function api(): GitApi {
-  const run = (args: readonly string[]): Promise<GitRunResult> => requireDeps().exec.run(args);
+  const commonDir = async (dir: string): Promise<string | undefined> => {
+    const result = await run(commonDirArgs(dir));
+    if (!result.ok) return undefined;
+    const value = parseSingleLine(result.stdout);
+    if (value === undefined) return undefined;
+    // `--git-common-dir` 会返回相对 `dir` 的路径（实测是 `.git`），
+    // 直接拿字符串比较会让「同一仓库的两个 worktree」判成不同仓库。
+    return resolve(dir, value);
+  };
 
   return {
-    async commonDir(dir) {
-      const result = await run(commonDirArgs(dir));
-      if (!result.ok) return undefined;
-      const value = parseSingleLine(result.stdout);
-      if (value === undefined) return undefined;
-      // `--git-common-dir` 会返回相对 `dir` 的路径（实测是 `.git`），
-      // 直接拿字符串比较会让「同一仓库的两个 worktree」判成不同仓库。
-      return resolve(dir, value);
-    },
+    commonDir,
     async listWorktrees(dir) {
       const result = await run(worktreeListArgs(dir));
       if (!result.ok) return [];
@@ -106,7 +85,7 @@ function api(): GitApi {
       const hit = belongsCache.get(key);
       const now = Date.now();
       if (hit !== undefined && now - hit.at < BELONGS_TTL_MS) return hit.ok;
-      const [left, right] = await Promise.all([this.commonDir(dir), this.commonDir(repoRoot)]);
+      const [left, right] = await Promise.all([commonDir(dir), commonDir(repoRoot)]);
       const ok = left !== undefined && right !== undefined && left === right;
       if (belongsCache.size >= BELONGS_CACHE_MAX) belongsCache.clear();
       belongsCache.set(key, { at: now, ok });
@@ -132,6 +111,12 @@ function api(): GitApi {
       return result.ok ? { ok: true } : { ok: false, reason: reasonOf(result) };
     },
   };
+}
+
+/** 失败原因的取值口径只有这一处：git 的 stderr 优先，空则给退出码。 */
+function reasonOf(result: GitRunResult): string {
+  const text = result.stderr.trim();
+  return text.length > 0 ? text : "git 退出码非零";
 }
 
 /** 供日志与工具返回文本使用：把一个 worktree 条目渲染成一行摘要。 */

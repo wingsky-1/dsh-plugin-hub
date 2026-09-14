@@ -8,8 +8,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { BindingRecord } from "../../src/contract.ts";
-import { installBinding, releaseBinding } from "../../src/server/binding/interface.ts";
-import { createGitExec, installGit, releaseGit } from "../../src/server/git/interface.ts";
+import { createBinding } from "../../src/server/binding/interface.ts";
+import { createGit, createGitExec } from "../../src/server/git/interface.ts";
 import type { ToolsDeps } from "../../src/server/tools/deps.ts";
 import { buildCreateTool } from "../../src/server/tools/impl/create/index.ts";
 import { buildRegisterTool } from "../../src/server/tools/impl/register/index.ts";
@@ -35,12 +35,12 @@ function harness(): Harness {
   initRepo(repo);
   const file = join(root, "dsh-home", "@wingsky-1", "dsh-worktree-sidebar", "bindings.json");
 
-  const binding = installBinding({
+  const binding = createBinding({
     logger: { warn: (m: string) => warns.push(m) },
     file,
     now: () => "2026-09-14T00:00:00.000Z",
   });
-  const gitApi = installGit({ exec: createGitExec() });
+  const gitApi = createGit({ exec: createGitExec() });
 
   return {
     repo,
@@ -71,8 +71,7 @@ function bindingsOnDisk(file: string): Record<string, BindingRecord> {
 }
 
 afterEach(() => {
-  releaseBinding();
-  releaseGit();
+  // 没有全局单例需要释放：每个 harness 各自建实例，状态随它一起被回收。
   for (const dir of dirs.splice(0)) cleanup(dir);
   warns.splice(0);
 });

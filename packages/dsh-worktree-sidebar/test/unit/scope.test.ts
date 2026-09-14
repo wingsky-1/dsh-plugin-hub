@@ -20,7 +20,8 @@ import {
   effectiveWorktree,
   resolveScope,
 } from "../../src/server/scope/impl/resolve/index.ts";
-import { installScope, releaseScope } from "../../src/server/scope/interface.ts";
+import { createScope } from "../../src/server/scope/interface.ts";
+import type { ScopeApi } from "../../src/server/scope/interface.ts";
 
 const record: BindingRecord = {
   repoRoot: "/repo",
@@ -32,8 +33,15 @@ const record: BindingRecord = {
 const warns: string[] = [];
 const logger = { warn: (message: string) => warns.push(message) };
 
+/** 本文件建过的实例，逐个在 afterEach 释放（没有全局单例可依赖）。 */
+const created: ScopeApi[] = [];
+function trackScope(api: ScopeApi): ScopeApi {
+  created.push(api);
+  return api;
+}
+
 afterEach(() => {
-  releaseScope();
+  for (const api of created.splice(0)) api.dispose();
   warns.splice(0);
 });
 
@@ -303,7 +311,7 @@ describe("installScope 的接管资格", () => {
       // 兜底会给出这个值；若捕获失败、误用兜底，断言就会看到它。
       defaults: { live: () => ({ cwd: "/fallback-would-say-this" }) },
     });
-    const api = installScope(deps);
+    const api = trackScope(createScope(deps));
     expect(api.isInstalled()).toBe(true);
     expect(configured.length).toBe(1);
     expect(await configured[0]?.("s1")).toEqual({ sessionId: "s1", workspaceRoot: "/official" });
@@ -313,13 +321,13 @@ describe("installScope 的接管资格", () => {
     const { deps, configured } = scopeDeps({
       defaults: { live: () => ({ cwd: "/live-cwd" }) },
     });
-    installScope(deps);
+    trackScope(createScope(deps));
     expect(await configured[0]?.("s1")).toEqual({ sessionId: "s1", workspaceRoot: "/live-cwd" });
   });
 
   it("已被第三方 configure 时放弃接管并出声，不抢", () => {
     const { deps, configured } = scopeDeps({ configureThrows: true });
-    const api = installScope(deps);
+    const api = trackScope(createScope(deps));
     expect(api.isInstalled()).toBe(false);
     expect(configured.length).toBe(0);
     expect(warns.some((w) => w.includes("已有解析器，放弃接管"))).toBe(true);
@@ -327,29 +335,36 @@ describe("installScope 的接管资格", () => {
 
   it("未接管时 effectiveWorktree 恒为 null（客户端因此不动文件根）", async () => {
     const { deps } = scopeDeps({ configureThrows: true });
-    const api = installScope(deps);
+    const api = trackScope(createScope(deps));
     expect(await api.effectiveWorktree("s1")).toBeNull();
   });
 
   it("接管后 effectiveWorktree 反映当前绑定（路由与解析器读同一个值）", async () => {
     const { deps } = scopeDeps({ binding: { s1: record }, exists: true, belongs: true });
-    const api = installScope(deps);
+    const api = trackScope(createScope(deps));
     expect(await api.effectiveWorktree("s1")).toBe("/wt");
     expect(await api.effectiveWorktree("other")).toBeNull();
   });
 
-  it("release 调用 disposer（官方默认解析随之恢复），且幂等", () => {
+  it("dispose 调用 disposer（官方默认解析随之恢复），且幂等", () => {
     const { deps, isDisposed } = scopeDeps();
-    installScope(deps);
-    releaseScope();
+    const api = trackScope(createScope(deps));
+    api.dispose();
     expect(isDisposed()).toBe(true);
-    releaseScope();
+    api.dispose();
     expect(isDisposed()).toBe(true);
   });
 
-  it("重复装配抛错", () => {
-    installScope(scopeDeps().deps);
-    expect(() => installScope(scopeDeps().deps)).toThrow(/已装配/);
+  it("两份实例互相独立（没有模块级状态）", () => {
+    const first = scopeDeps();
+    const second = scopeDeps();
+    const a = trackScope(createScope(first.deps));
+    const b = trackScope(createScope(second.deps));
+    expect(a.isInstalled()).toBe(true);
+    expect(b.isInstalled()).toBe(true);
+    // 两份都拿到了自己的 configure；不存在「第二次装配抛已装配」。
+    expect(first.configured.length).toBe(1);
+    expect(second.configured.length).toBe(1);
   });
 });
 

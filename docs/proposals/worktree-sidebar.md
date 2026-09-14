@@ -71,7 +71,8 @@
 - entry 级 hooks 的展开顺序 `{...kit, ...injected, ...slotInjected.props, ...ownerProps}` 使得 injected 覆盖框架注入（renderer lib/client.js:644-650）——这是覆盖 `useSessions` 的机制。
 - hooks 源契约 = uSES `{getSnapshot(), subscribe(fn)}`（ui-slots renderer.d.ts:32-33）；**getSnapshot 必须返回引用稳定的缓存快照**，否则每次渲染都触发更新。
 - root hook `sessions` 受 `copyUnique` 保护、全局唯一（renderer lib/client.js:1379-1387）⇒ 伪造**只作用于本 entry**，预览/命令面板/@ 等其它 useSessions 消费方仍拿真实 cwd。
-- 订阅与健壮性 API：`ctx.slots.subscribe(key, fn)`（registry.d.ts:191-197）、`ctx.slots.entriesOfSlot(key)`（lib/client.js:1200-1202）、`ctx.slots.isLive(entry)`（ui-slots index.d.ts:605-612）、`ctx.slots.onEntryError`（registry.d.ts:171-184）。
+- 订阅与健壮性 API：`ctx.slots.subscribe(key, fn)`（dsh-client-ui-renderer/lib/types/client/registry.d.ts:197）、`ctx.slots.entriesOfSlot(key)`（同文件 :164）、`ctx.slots.onEntryError`（同文件 :182）。
+  **本文原先在这里写的 `ctx.slots.isLive(entry)`（引 `dsh-client-ui-slots` 的 index.d.ts:605-612）是错的**：运行时的 `ctx.slots` 是 `dsh-client-ui-renderer` 的 `SlotRegistry`（同文件 :46 `class SlotRegistry extends Service`、:84 `register = SlotCore['register']`），公开面**没有 isLive**。照那个类型包写出来的客户端在真机上第一次求值就 `TypeError: slots.isLive is not a function`。存活性判据就是 `entriesOfSlot` 的返回集合本身——它给的是「每个 cell 当前生效（非 abdicated）的那一条」。
 
 ### 3.4 工具与可见性
 
@@ -352,3 +353,34 @@ packages/dsh-worktree-sidebar/
 - **存在性判定做成可注入的**（`ScopeDeps.existsDirectory`）：它的两条分支（目录消失 / 读不了）
   在真实权限下无法稳定构造，而「读不了不等于不存在」直接决定用户会不会被永久摘掉绑定。
   默认实现仍是直连 fs，注入点只为让这条语义可被单测打红。
+
+## 16. 独立复核与修复（2026-09-14 第二轮）
+
+复核由一个独立子 agent 执行：自建 worktree（detached @54ac2e6）、自跑全部门禁、真机隔离环境实测。
+结论：**门禁逐条属实**（含 lint 669/671、155 用例、624 pass、fail-closed 模式；另补跑 `pnpm gate:pr` 为 PASS），
+但**不可合并**，发现 4 项必修：
+
+| # | 发现 | 根因 | 修复 |
+|---|---|---|---|
+| P0-1 | 客户端在真机 dsh 0.1.5-rc.1 上 `TypeError: deps.slots.isLive is not a function`，**零注册、S5 完全不生效** | 端口对着 `dsh-client-ui-slots` 的**类型包**写，而运行时 `ctx.slots` 是 `dsh-client-ui-renderer` 的 `SlotRegistry`（无 isLive）；假端口测试只证明「代码与假设一致」 | 删掉 `isLive`，改用 `entriesOfSlot` 的返回集合判存活；端口注释写明「必须对着运行时面写，不是对着类型包写」 |
+| P0-2 | 接管后官方 guide 条目归零：**所有会话**（含从未登记的）默认页签从 Files 变成空的 Guide | 注册的类型定义只写了 4 个字段，丢掉官方定义里的 `guide`，而官方注册表 refresh 后用**在册定义**重算 guide | 改为整份搬运 `{...官方定义, id, priority}`；补「guide 被原样搬运」与「撤销后 builtin 复位且 guide 回来」两条断言 |
+| P1-1 | G3「官方 entry 变化即重捕」在真实注册表语义下**恒不触发**（复用旧组件与旧 inject 闭包） | `tabs.get(kind).id` 在接管成功后返回的是**我们自己的** id，于是「官方条目还在不在」变成了问自己 | 首次发现时记下官方 key 并一直用它；测试的假注册表改为真实语义（extension 顶掉后 get 返回我们的 id） |
+| P1-3 | 新增 5 处模块级可变单例，且落在 module-state 门禁扫描面之外 | 四域 + tools service 各有一个 `let installed` | 五处全部改为工厂（`createBinding` / `createGit` / `createScope` / `createApi` / `createTools`），状态收进闭包或实例；组合根持有实例 |
+
+**验证**：把本包加进 `forbid-module-state-src` 范围后实跑探针 → exit 0、本包零条目（P1-3 修掉）。
+修复后 11 项门禁全 exit 0，测试 156 例（10 文件）。
+
+**复核者独立实测成立的主张**（作者原先只在纸面上断言）：
+`--` 位置真被 git 接受；`--git-common-dir` 在仓库根返回相对路径、在 linked worktree 返回绝对；
+`git check-ref-format --branch` 拒绝 `-` 开头且非仓库 cwd 可用；创建→绑定→摘除端到端与 bindings.json 内容一致；
+**写盘失败时 ok:false、revision 仍 0、get() 为 undefined**（内存不前移成立）；
+S0 的三处既有断言修改均为**必需同步、非放宽**（ci-matrix 的真实不变量由 `plugins-manifest-lib.ts:110/120/169/236` 分守）。
+
+**行数预算（§9.1）复核裁决建议**：接受 `interface/deps ≤150`，不拆 `impl/service`——理由是评审成本的真实代理量是
+「一个文件里要同时理解几个决定」，而这三个文件各只含 1 个决定 + 若干转发；拆开只增加跨文件跳转。
+全包合计建议登记 **3000 作观察阈值**（而非改写预算），并把 §9 的语义改成
+「超限时先问『这文件里有几个决定』，再决定拆不拆」。**此裁决仍待用户确认，本文不擅自改写 §9 的既有上限。**
+
+**仍未验证**：三条界面语义（第 1、2 条因 P0-1 当时不生效而无法验证；第 3 条之所以成立是因为插件整个没跑，
+而 P0-2 表明它当时本来就会失败）；真机 HMR 时序；agent 工具在真机会话里的 LLM 回路端到端。
+修复后需要**重跑一次隔离真机验证**才能给 S5 结论。

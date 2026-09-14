@@ -187,6 +187,9 @@ function bindDefaults(ctx: Context): DefaultScopePort {
 /**
  * 装配：按依赖顺序接上各域，返回它们的释放函数。
  *
+ * 四个域都是**工厂**（`createXxx` 返回实例），没有模块级状态：
+ * 同进程装配两次不会互相污染，也不会在第二次抛「已装配」。组合根持有实例，域只管自己的闭包。
+ *
  * 中途失败必须把已经装上的域放掉再抛——否则一次装配失败会留下半装的域，
  * 而它的释放函数还没进 `disposers`，卸载时没人收。
  */
@@ -195,45 +198,43 @@ function assemble(host: HostPort, config: WorktreeSidebarConfig): Array<() => vo
   if (config.enabled === false) return disposers;
 
   try {
-    // 1. 绑定域：其余三个域都读它，故最先装。
-    const binding = bindingApi.installBinding({
+    // 1. 绑定域：其余三个域都读它，故最先建。它没有可释放的资源（状态随实例一起被回收）。
+    const binding = bindingApi.createBinding({
       logger: host.logger,
       file: bindingsFile(),
       now: host.now,
     });
-    disposers.push(bindingApi.releaseBinding);
 
     // 2. git 域：tools 的增删与 scope 的归属校验都要它。
-    const git = gitApi.installGit({ exec: host.exec });
-    disposers.push(gitApi.releaseGit);
+    const git = gitApi.createGit({ exec: host.exec });
 
     // 3. scope 域：接管 workspaceFileScope。capture 必须在 configure 之前，由本域自己保证。
-    const scope = scopeApi.installScope({
+    const scope = scopeApi.createScope({
       logger: host.logger,
       binding,
       git,
       typert: host.typert,
       defaults: host.defaults,
     });
-    disposers.push(scopeApi.releaseScope);
+    disposers.push(() => scope.dispose());
 
     // 4. tools 域：写绑定的唯一入口。
-    toolsApi.installTools({
+    const tools = toolsApi.createTools({
       logger: host.logger,
       binding,
       git,
       agents: host.agents,
       now: host.now,
     });
-    disposers.push(toolsApi.releaseTools);
+    disposers.push(() => tools.dispose());
 
-    // 5. api 域：读 scope 的**生效值**（不是绑定表原文），最后装。
-    apiApi.installApi({
+    // 5. api 域：读 scope 的**生效值**（不是绑定表原文），最后建。
+    const api = apiApi.createApi({
       register: host.register,
       logger: host.logger,
       binding: { revision: binding.revision, effectiveWorktree: scope.effectiveWorktree },
     });
-    disposers.push(apiApi.releaseApi);
+    disposers.push(() => api.dispose());
   } catch (cause) {
     safeDisposeAll(disposers);
     throw cause;

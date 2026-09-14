@@ -10,7 +10,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import { afterEach, describe, expect, it } from "vitest";
 import { ROUTES } from "../../src/contract.ts";
-import { installApi, releaseApi } from "../../src/server/api/interface.ts";
+import { createApi } from "../../src/server/api/interface.ts";
+import type { ApiInstance } from "../../src/server/api/interface.ts";
 
 /** 捕获注册的路由，并按真实语义提供摘除器。 */
 function capturingRegister() {
@@ -71,13 +72,13 @@ function install(
     effectiveWorktree: async (id: string) => (id === "s1" ? "/wt" : null),
     ...bindingOverrides,
   };
-  installApi({ register: reg.register, logger, binding });
+  trackApi(createApi({ register: reg.register, logger, binding }));
   const route = (path: string): WebRoute => {
     const found = reg.routes.find((candidate) => candidate.path === path);
     if (found === undefined) throw new Error("未注册该路径：" + path);
     return found;
   };
-  return { reg, route };
+  return { reg, route, api: created[created.length - 1] as ApiInstance };
 }
 
 /** 调一次端点。注册的是**包装器**（含围栏与异常收口），所以这里也走包装器。 */
@@ -85,8 +86,15 @@ function jsonOf(captured: { body: string }): Record<string, unknown> {
   return JSON.parse(captured.body) as Record<string, unknown>;
 }
 
+/** 本文件建过的实例，逐个在 afterEach 释放（没有全局单例可依赖）。 */
+const created: ApiInstance[] = [];
+function trackApi(api: ApiInstance): ApiInstance {
+  created.push(api);
+  return api;
+}
+
 afterEach(() => {
-  releaseApi();
+  for (const api of created.splice(0)) api.dispose();
   warns.splice(0);
 });
 
@@ -219,21 +227,23 @@ describe("异常收口与卸载", () => {
     expect(warns[0]).toContain("boom");
   });
 
-  it("releaseApi 摘掉全部路由且幂等", () => {
-    const { reg } = install();
+  it("dispose 摘掉全部路由且幂等", () => {
+    const { reg, api } = install();
     expect(reg.routes.length).toBe(2);
-    releaseApi();
+    api.dispose();
     expect(reg.routes.length).toBe(0);
-    releaseApi();
+    api.dispose();
     expect(reg.routes.length).toBe(0);
   });
 
-  it("重复装配抛错", () => {
-    const first = capturingRegister();
-    const binding = { revision: () => 0, effectiveWorktree: async () => null };
-    installApi({ register: first.register, logger, binding });
-    expect(() => installApi({ register: capturingRegister().register, logger, binding })).toThrow(
-      /已装配/,
-    );
+  it("两份实例互相独立（没有模块级状态）", () => {
+    const first = install();
+    const second = install();
+    expect(first.reg.routes.length).toBe(2);
+    expect(second.reg.routes.length).toBe(2);
+    first.api.dispose();
+    // 摘掉第一份不影响第二份。
+    expect(first.reg.routes.length).toBe(0);
+    expect(second.reg.routes.length).toBe(2);
   });
 });

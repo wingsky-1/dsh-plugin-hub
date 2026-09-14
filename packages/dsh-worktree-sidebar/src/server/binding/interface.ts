@@ -4,6 +4,10 @@
  * 内存快照是刻意的：scope 域的解析器与 api 域的路由读同一个对象，两端 revision 因此不可能
  * 各说各话（降级预案 G7）。落盘只是它的持久化副本——写盘失败时内存不前移，
  * 因为「内存说已登记、磁盘说没有」在重启后会变成一次静默的换根失败。
+ *
+ * **状态住在实例里，不住在模块里**（#733 宪法第 1 条）：`createBinding` 每次调用都给出一份独立的
+ * 状态，所以同进程里跑两份装配（两个 profile、测试夹具）不会互相污染，也不会在第二次装配时抛「已装配」。
+ * 域门禁 `forbid-module-state-src` 判的就是这件事。
  */
 import type { BindingRecord, BindingsFile } from "../../contract.ts";
 import type { FileWrite } from "../shared/interface.ts";
@@ -27,76 +31,42 @@ export interface BindingApi {
   prune(keep: (sessionId: string) => boolean): Promise<FileWrite>;
 }
 
-/** 已装配的域状态。未装配为 null——重复装配是装配错误，不是可容忍状态。 */
-interface BindingState {
-  readonly deps: BindingDeps;
-  table: BindingsFile;
-  /** 写盘串行链：两次并发修改都基于同一份旧表时，后写的那次会静默吞掉前一次的绑定。 */
-  writes: Promise<unknown>;
-}
-
-let installed: BindingState | null = null;
-
 /** 装配绑定域：把 bindings.json 读进内存（损坏回落空表，见 model 域）。 */
-export function installBinding(deps: BindingDeps): BindingApi {
-  if (installed !== null) throw new Error("dsh-worktree-sidebar: binding 域已装配");
-  installed = { deps, table: loadTable(deps.file), writes: Promise.resolve() };
-  return api();
-}
+export function createBinding(deps: BindingDeps): BindingApi {
+  let table: BindingsFile = loadTable(deps.file);
+  /**
+   * 写盘串行链：两次并发修改都基于同一份旧表时，后写的那次会静默吞掉前一次的绑定。
+   * 链本身不承载结果，失败也不该断链，故 catch 掉、语义归返回值。
+   */
+  let writes: Promise<unknown> = Promise.resolve();
 
-/** 卸载绑定域。幂等：stale 调用安全 no-op。 */
-export function releaseBinding(): void {
-  installed = null;
-}
-
-function requireState(): BindingState {
-  if (installed === null) throw new Error("dsh-worktree-sidebar: binding 域未装配");
-  return installed;
-}
-
-/**
- * 应用一次表变换并持久化。三件事一起发生才叫「成功」：写盘成功、域仍是本次的域、
- * 期间没有被释放。写盘失败一律保留旧表并回传原因——半成功的内存状态是最坏结果。
- */
-function commit(
-  state: BindingState,
-  reduce: (table: BindingsFile) => BindingsFile,
-): Promise<FileWrite> {
-  const run = async (): Promise<FileWrite> => {
-    const current = requireState();
-    const next = reduce(current.table);
-    if (next === current.table) return { ok: true };
-    const written = await saveTable(current.deps.file, next);
-    if (written.ok) {
-      if (installed === current) current.table = next;
-    } else {
-      current.deps.logger.warn("dsh-worktree-sidebar: 绑定表写盘失败 — " + written.reason);
-    }
-    return written;
+  /**
+   * 应用一次表变换并持久化。写盘成功才算成功——半成功的内存状态是最坏结果：
+   * 内存说有、磁盘说没有，重启后就是一次静默的换根失败。
+   */
+  const commit = (reduce: (current: BindingsFile) => BindingsFile): Promise<FileWrite> => {
+    const run = async (): Promise<FileWrite> => {
+      const next = reduce(table);
+      if (next === table) return { ok: true };
+      const written = await saveTable(deps.file, next);
+      if (written.ok) table = next;
+      else deps.logger.warn("dsh-worktree-sidebar: 绑定表写盘失败 — " + written.reason);
+      return written;
+    };
+    const queued = writes.then(run, run);
+    writes = queued.catch(() => undefined);
+    return queued;
   };
-  const queued = state.writes.then(run, run);
-  // 链本身不承载结果，失败也不该断链：把 rejection 在这里吃掉，语义归返回值。
-  state.writes = queued.catch(() => undefined);
-  return queued;
-}
 
-function api(): BindingApi {
   return {
-    revision: () => requireState().table.revision,
-    get: (sessionId) => requireState().table.bindings[sessionId],
-    entries: () => requireState().table.bindings,
+    revision: () => table.revision,
+    get: (sessionId) => table.bindings[sessionId],
+    entries: () => table.bindings,
     put: (sessionId, record) => {
       if (sessionId.length === 0) return Promise.resolve({ ok: false, reason: "空 sessionId" });
-      const state = requireState();
-      return commit(state, (table) => putBinding(table, sessionId, record));
+      return commit((current) => putBinding(current, sessionId, record));
     },
-    drop: (sessionId) => {
-      const state = requireState();
-      return commit(state, (table) => dropBinding(table, sessionId));
-    },
-    prune: (keep) => {
-      const state = requireState();
-      return commit(state, (table) => pruneTable(table, keep));
-    },
+    drop: (sessionId) => commit((current) => dropBinding(current, sessionId)),
+    prune: (keep) => commit((current) => pruneTable(current, keep)),
   };
 }

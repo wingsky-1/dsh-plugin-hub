@@ -5,10 +5,10 @@
  * 写盘之后磁盘上是否真是新内容、写盘失败时内存是否真的没有前移。
  * 这几条只有经真实磁盘才可能被证伪。
  */
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { installBinding, releaseBinding } from "../../src/server/binding/interface.ts";
+import { createBinding } from "../../src/server/binding/interface.ts";
 import { BINDINGS_VERSION, type BindingRecord } from "../../src/contract.ts";
 import { cleanup, tempDir } from "../helpers.ts";
 
@@ -37,7 +37,6 @@ function makeDeps() {
 }
 
 afterEach(() => {
-  releaseBinding();
   for (const dir of dirs.splice(0)) cleanup(dir);
   warns.splice(0);
 });
@@ -45,7 +44,7 @@ afterEach(() => {
 describe("installBinding", () => {
   it("文件不存在时从空表起（首次使用不该报错）", () => {
     const { deps } = makeDeps();
-    const api = installBinding(deps);
+    const api = createBinding(deps);
     expect(api.revision()).toBe(0);
     expect(api.get("s1")).toBeUndefined();
   });
@@ -54,31 +53,29 @@ describe("installBinding", () => {
     const { deps, file } = makeDeps();
     mkdirSync(join(file, ".."), { recursive: true });
     writeFileSync(file, "{ 半个 json", "utf8");
-    const api = installBinding(deps);
+    const api = createBinding(deps);
     expect(api.revision()).toBe(0);
     expect(api.entries()).toEqual({});
   });
 
-  it("重复装配抛错（装配错误不该被容忍）", () => {
-    const { deps } = makeDeps();
-    installBinding(deps);
+  it("两份实例互相独立（没有模块级状态）", async () => {
+    const first = makeDeps();
     const second = makeDeps();
-    expect(() => installBinding(second.deps)).toThrow(/已装配/);
-  });
-
-  it("release 后可重新装配", () => {
-    const { deps } = makeDeps();
-    installBinding(deps);
-    releaseBinding();
-    const again = makeDeps();
-    expect(() => installBinding(again.deps)).not.toThrow();
+    const a = createBinding(first.deps);
+    const b = createBinding(second.deps);
+    await a.put("s1", record);
+    // 第一份落了绑定，第二份必须完全看不见——这是「状态住在实例里」的可观察判据。
+    expect(a.get("s1")).toEqual(record);
+    expect(b.get("s1")).toBeUndefined();
+    expect(b.revision()).toBe(0);
+    expect(existsSync(second.file)).toBe(false);
   });
 });
 
 describe("put / drop 的持久化", () => {
   it("put 会落盘，重新装配后读得回来", async () => {
     const { deps, file } = makeDeps();
-    const api = installBinding(deps);
+    const api = createBinding(deps);
     expect(await api.put("s1", record)).toEqual({ ok: true });
     expect(api.revision()).toBe(1);
 
@@ -91,15 +88,15 @@ describe("put / drop 的持久化", () => {
     expect(onDisk.revision).toBe(1);
     expect(onDisk.bindings["s1"]).toEqual(record);
 
-    releaseBinding();
-    const reopened = installBinding(deps);
+    // 新实例 = 重新读盘（没有全局单例需要先释放）。
+    const reopened = createBinding(deps);
     expect(reopened.get("s1")).toEqual(record);
     expect(reopened.revision()).toBe(1);
   });
 
   it("drop 摘掉绑定并落盘；摘不存在的会话不涨 revision 且不写盘", async () => {
     const { deps, file } = makeDeps();
-    const api = installBinding(deps);
+    const api = createBinding(deps);
     await api.put("s1", record);
     const before = readFileSync(file, "utf8");
 
@@ -114,7 +111,7 @@ describe("put / drop 的持久化", () => {
 
   it("put 空 sessionId 判失败且不落盘", async () => {
     const { deps, file } = makeDeps();
-    const api = installBinding(deps);
+    const api = createBinding(deps);
     const result = await api.put("", record);
     expect(result.ok).toBe(false);
     expect(api.revision()).toBe(0);
@@ -123,7 +120,7 @@ describe("put / drop 的持久化", () => {
 
   it("prune 剪掉不保留的会话", async () => {
     const { deps } = makeDeps();
-    const api = installBinding(deps);
+    const api = createBinding(deps);
     await api.put("s1", record);
     await api.put("s2", record);
     expect(await api.prune((id) => id === "s1")).toEqual({ ok: true });
@@ -132,7 +129,7 @@ describe("put / drop 的持久化", () => {
 
   it("并发 put 不丢更新（写盘串行化）", async () => {
     const { deps } = makeDeps();
-    const api = installBinding(deps);
+    const api = createBinding(deps);
     await Promise.all([api.put("s1", record), api.put("s2", record), api.put("s3", record)]);
     expect(Object.keys(api.entries()).sort()).toEqual(["s1", "s2", "s3"]);
     expect(api.revision()).toBe(3);
@@ -147,7 +144,7 @@ describe("写盘失败", () => {
     const blocked = join(dir, "blocked");
     writeFileSync(blocked, "not a directory", "utf8");
     const file = join(blocked, "child", "bindings.json");
-    const api = installBinding({
+    const api = createBinding({
       logger: { warn: (message: string) => warns.push(message) },
       file,
       now: () => "2026-09-14T00:00:00.000Z",

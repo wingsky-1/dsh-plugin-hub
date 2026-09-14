@@ -8,7 +8,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createGitExec, installGit, releaseGit } from "../../src/server/git/interface.ts";
+import { createGit, createGitExec } from "../../src/server/git/interface.ts";
 import type { GitApi } from "../../src/server/git/interface.ts";
 import { cleanup, initRepo, tempDir } from "../helpers.ts";
 
@@ -19,11 +19,10 @@ function fixture(): { repo: string; git: GitApi } {
   dirs.push(root);
   const repo = join(root, "repo");
   initRepo(repo);
-  return { repo, git: installGit({ exec: createGitExec() }) };
+  return { repo, git: createGit({ exec: createGitExec() }) };
 }
 
 afterEach(() => {
-  releaseGit();
   for (const dir of dirs.splice(0)) cleanup(dir);
 });
 
@@ -111,14 +110,12 @@ describe("worktree 增删（argv 的真实可执行性）", () => {
 });
 
 describe("装配守卫", () => {
-  it("未装配时调用抛错", () => {
-    releaseGit();
-    expect(() => installGit({ exec: createGitExec() })).not.toThrow();
-    releaseGit();
-  });
-
-  it("重复装配抛错", () => {
-    fixture();
-    expect(() => installGit({ exec: createGitExec() })).toThrow(/已装配/);
+  it("两份实例互相独立（没有模块级状态）", async () => {
+    const first = fixture();
+    const second = fixture();
+    expect(await first.git.commonDir(first.repo)).toBeDefined();
+    expect(await second.git.commonDir(second.repo)).toBeDefined();
+    // 两个实例各自的仓库互不干扰；缓存也不共享。
+    expect(await first.git.belongsTo(second.repo, first.repo)).toBe(false);
   });
 });

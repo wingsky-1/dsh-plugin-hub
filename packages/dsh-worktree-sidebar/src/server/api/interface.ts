@@ -3,36 +3,38 @@
  *
  * 它是本插件唯一的浏览器入口，所以围栏（回环判定、方法判定、异常收口）也只有一份实现，
  * 少写一处就是多开一个洞。
+ *
+ * 已挂路由的 disposer 住在实例里而不是模块里（#733 宪法第 1 条）。
  */
 import type { ApiDeps } from "./deps.ts";
 import { bindingsEndpoint, healthEndpoint } from "./impl/handlers/index.ts";
 import { registerEndpoints } from "./impl/route/index.ts";
 
-/** 已装配的域状态。未装配为 null。 */
-let installed: { readonly dispose: Array<() => void> } | null = null;
-
-/** 装配浏览器出口（组合根在 apply 期调用一次）。 */
-export function installApi(deps: ApiDeps): void {
-  if (installed !== null) throw new Error("dsh-worktree-sidebar: api 域已装配");
-  installed = {
-    dispose: registerEndpoints(
-      deps.register,
-      [bindingsEndpoint(deps.binding), healthEndpoint(deps.binding)],
-      deps.logger,
-    ),
-  };
+/** api 域实例：装配的产物只对外给一个释放面。 */
+export interface ApiInstance {
+  /** 摘掉全部路由。幂等。 */
+  dispose(): void;
 }
 
-/** 卸载浏览器出口，与 `installApi` 配对：摘路由由本域自己收口。幂等。 */
-export function releaseApi(): void {
-  const current = installed;
-  installed = null;
-  if (current === null) return;
-  for (const dispose of current.dispose) {
-    try {
-      dispose();
-    } catch {
-      // 卸载阶段不做失败上报：一个端点的摘除失败不该阻断其余，也不该掩盖首个异常。
-    }
-  }
+/** 装配浏览器出口（组合根在 apply 期调用一次）。 */
+export function createApi(deps: ApiDeps): ApiInstance {
+  const disposers = registerEndpoints(
+    deps.register,
+    [bindingsEndpoint(deps.binding), healthEndpoint(deps.binding)],
+    deps.logger,
+  );
+  let live = true;
+  return {
+    dispose: () => {
+      if (!live) return;
+      live = false;
+      for (const dispose of disposers) {
+        try {
+          dispose();
+        } catch {
+          // 卸载阶段不做失败上报：一个端点的摘除失败不该阻断其余，也不该掩盖首个异常。
+        }
+      }
+    },
+  };
 }
