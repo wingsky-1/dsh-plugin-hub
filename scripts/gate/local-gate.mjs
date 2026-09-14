@@ -5,7 +5,7 @@
  * 为什么需要它：AGENTS.md 的提交前最小集原本是「全仓 build + 全仓 test + 全仓 typecheck
  * + contract + pack:check」。全仓口径对单包改动的开发者是纯浪费——CI 早就按 ci.yml 的
  * paths-filter 做了切片（build-test 只对命中包跑 test/typecheck），本地却一律全量。本
- * 脚本把同一份包面归属搬到本地，并统一「PR 也走增量」的口径：
+ * 脚本把同一份包面归属搬到本地，并把各档的对象面固定下来（增量只留给 changed 快线）：
  *
  *   changed  命中包的 build + test + typecheck（迭代快线；命中全局面时自动升到 pr）
  *   pr       **全仓**口径：全仓 build + test + typecheck + 产物闸（contract / pack:check /
@@ -17,7 +17,7 @@
  * ≈ CI 的 gate:full 减去覆盖率与变异。
  *
  * 本地不跑变异（#742 阶段 3.2 起更要点明）：变异自 #742 阶段 1 起在 PR 上按命中切片**强制**
- * 跑，本地三档都覆盖不到它；覆盖率与全仓产物闸归 gate:full 标签与夜间 observe.yml。
+ * 跑，本地三档都覆盖不到它；覆盖率归 gate:full 标签与夜间 observe.yml（全仓产物闸已在 pr 档内）。
  * 包面归属的唯一事实源是 ci.yml 的 filters 块（见 local-scope.mjs），本脚本不重述路径规则。
  *
  * 用法：
@@ -120,7 +120,7 @@ function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel }) {
     { label: "test:src-tests（*.src.test.ts 禁现）", args: ["test:src-tests"] },
     { label: "gate:homedir（src 禁直连 HOME）", args: ["gate:homedir"] },
     // #733 计划项 3.1.2：本闸原先只在 contract-check.ts 里 spawnSync，不进 cheapGlobal，
-    // 于本地增量档不可见；现与兄弟闸一致（CI 侧同为直接步骤）。
+    // 于本地 pr / full 档不可见；现与兄弟闸一致（CI 侧同为直接步骤）。
     { label: "gate:module-state（src 禁模块级可变状态）", args: ["gate:module-state"] },
     { label: "docs:check（README/链接）", args: ["docs:check"] },
     {
@@ -151,8 +151,10 @@ function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel }) {
   const scriptsSelfTest = { label: "test:scripts（门禁脚本自测）", args: ["test:scripts"] };
 
   if (tier === "pr") {
-    // PR 增量口径：命中包构建/测试 + **命中包**产物闸 + 廉价全仓一致性闸。
-    // 全仓产物闸（无 --packages）与覆盖率/变异归夜间，本地只在 gate:full 跑。
+    // 步骤表按 hitPackages 生成：直接 `--tier pr` 时 main() 已把包面置为全部包（本地没有 PR
+    // 上下文可切，与 full 同对象面、只少豁免到期台账），此处即全仓；只有从 changed 升档才拿到真
+    // 切片（全局面命中或空切片）。覆盖率与变异**默认**不在本地任何档跑——覆盖率可由
+    // `gate:full --with-coverage` 补，变异只在 CI（PR 按切片强制 + 夜间全量）。
     const steps = [];
     if (hitPackages.length > 0) {
       steps.push({
@@ -204,7 +206,7 @@ function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel }) {
     { label: `verify:npmlayout（${scopeLabel}）`, args: ["verify:npmlayout"] },
     ...cheapGlobal,
     scriptsSelfTest,
-    // 豁免/临时项到期台账：只在全量档收集打印（纯报告，退出码恒 0）。增量档不跑——
+    // 豁免/临时项到期台账：只在全量档收集打印（纯报告，退出码恒 0）。pr 档不跑——
     // PR 上反复打印同一份存量台账只会变成噪音，而它的用途是排期复核（裁决见 #765）。
     {
       label: "豁免到期台账（收集 reviewBy，仅报告）",
@@ -342,10 +344,12 @@ function main(argv) {
   if (!failed) {
     // #742 阶段 3.2：本地三档都不跑变异，而 PR 上变异自 #742 阶段 1 起按命中切片**强制**跑
     // （打不打 gate:full 标签都跑）。不点明的话「本地 PASS」很容易被读成「CI 也会绿」，
-    // 而这正是本地门禁最贵的一种误读——变异不达标只在 CI 上暴露。
+    // 而这正是本地门禁最贵的一种误读——变异不达标只在 CI 上暴露。覆盖率同属本地默认缺口：
+    // 只有 full --with-coverage 才跑（全仓产物闸相反，pr / full 档内已经跑完）。
     console.log(
-      "[local-gate] 注意：本档不含变异与全仓覆盖率。变异在 PR 上按命中切片强制跑（#742 阶段 1），" +
-        "覆盖率与全仓产物闸归 gate:full 标签与夜间 observe.yml —— 本地 PASS 不等于 CI 绿。",
+      "[local-gate] 注意：本地任何档都不跑变异——变异在 PR 上按命中切片强制跑（#742 阶段 1）；" +
+        "覆盖率默认也不跑，要跑需显式 `pnpm gate:full --with-coverage`（CI 上归 gate:full 标签与" +
+        "夜间 observe.yml）。全仓产物闸不属该缺口：pr / full 档内已跑完。本地 PASS 不等于 CI 绿。",
     );
   }
   return failed ? 1 : 0;

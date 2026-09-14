@@ -23,8 +23,8 @@ name: Observe (nightly)
 #   为什么必须拆：原单 job 串行 90 分钟，任一长段擦边即整班被杀，且被杀点在报告步骤之前
 #   ⇒ 当夜无工单、无留痕、基线不更新（#718 两次事故 34536263640 / 34652766708 的形态）。
 # - **S1.1 矩阵化**：段清单由 `stryker.conf.d/*.json` 派生（`mutation-plan` job 秒级产出），
-#   每段一个矩阵实例；`max-parallel: 5`（S0.3 实测账户并发额度上界 20，留足余量给
-#   build-test 与其它 workflow）。
+#   每段一个矩阵实例；`max-parallel: 8`（取 8 的依据见下方 mutation-shards 的 strategy
+#   注释：账户并发余量 + 与 ci.yml mutation-gate 同值限流；8 档并非「已饱和」）。
 # - **S1.4 逐段超时**：`timeout-minutes` 取 `matrix.shard.timeoutMinutes`，由
 #   `scripts/gate/mutation-plan.mjs` 按 `mutation-segment-ledger.json` 里该段 `scope=full`
 #   的实测墙钟 × 1.5 + 构建开销派生，下限 10 分钟（#718 整合版规定）；无实测的段取保守
@@ -160,9 +160,27 @@ jobs:
       # S1.4：单段失败不连坐——原串行实现的「单配置失败记账继续跑完」语义由矩阵天然承担，
       # 且失败段可用 `gh run rerun --failed` 定向重跑，无需整班重来。
       fail-fast: false
-      # S1.1：S0.3 实测账户并发额度上界 20（20 个 gate:full run 中 15 个精确触达且从未超过）。
-      # 取 5 留足余量给 build-test 矩阵与其它 workflow 的并发需求。
-      max-parallel: 5
+      # S1.1 + #718 P3（维护者 approved）：取 8，与 ci.yml mutation-gate 同值限流。取 8 的
+      # 依据是**账户并发余量**，不是「8 档已饱和」——8 档在两种调度形态下都尚未到零收益：
+      # - 本 job 按台账估计耗时降序（LPT，mutation-plan 的 buildShardMatrix）：夜间全量 32 段、
+      #   台账合计 14803 s，模型 @8 = 31.24 min、@10 = 25.22 min（总工作量下界 30.84 / 24.67）。
+      # - ci.yml 侧的 PR 矩阵是 package+seg 字典序（非 LPT）：run 34764977606（12 段、
+      #   合计 145.65 min、5 槽）实测窗口 43.05 min，与同序模型 43.00 min 吻合；
+      #   同口径模型 @8 = 29.83 min、@10 = 26.80 min。
+      # - 以上都是**模型值**：同段集的 LPT 模型给 30.63 min，而全量/失效形态实测窗口到过
+      #   43.0 min（#718 approved 记录）——实际受 runner 排队与调度形态影响。
+      # - 增量形态实测（本项 PR run 34796310130 / 96637f96，32 段、8 档）：mutation 窗口
+      #   3.87 min、本轮全 run 并发峰值 15、mutation-verdict pass。
+      # - 账户并发上界 20 是 #718 S0.3 的**历史实测口径**（PR #753 的 100 个 run，峰值分布
+      #   20×15 / 19×4 / 18×1）。scripts/maintenance/scan-actions-concurrency.mjs 未过滤
+      #   cancelled run，直接复跑会因被取消 run 的排队 job 时间戳得到伪影（复核实测 max=35，
+      #   同一 run 滤掉 cancelled 后为 11）——故沿用历史口径，扫描器另记 follow-up。
+      #   本仓峰值 = build-test（**至多 7** = 命中包数；实测有 1、1+哨兵、7）+ max-parallel：
+      #   8 档 → 至多 15，gate:full 带 coverage → 16；10 档 → 17~18，只剩 3 个余量。
+      # docs/mutation-speedup-methodology.md §4.3 的 timeout 机制核对不适用（本项是 job 级
+      # 并发，每 job 独立 runner VM，不改 Stryker 段内 concurrency）；score 与基线口径的核对
+      # 见上一条 8 档实测（run 34796310130，mutation-verdict pass）。
+      max-parallel: 8
       matrix:
         # 段清单与逐段超时均来自 mutation-plan（见该 job 与文件头注释）
         shard: ${{ fromJSON(needs.mutation-plan.outputs.shards) }}

@@ -16,31 +16,42 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { guardLoopbackMethod } from "../../shared/host-utils.js";
 
+/**
+ * 请求桩的最小面：守卫只读 method / socket.remoteAddress / headers，IncomingMessage
+ * 其余 65+ 个成员单测既构造不出也不读，故按这个面建桩后经 unknown 收窄。
+ */
+interface ReqStub {
+  method?: string;
+  socket: { remoteAddress: string };
+  headers: Record<string, string>;
+}
+
 /** loopback 合法请求桩；overrides 逐键覆盖顶层字段。 */
-function fakeReq(overrides = {}) {
+function fakeReq(overrides: Partial<ReqStub> = {}): IncomingMessage {
   return {
     method: "GET",
     socket: { remoteAddress: "127.0.0.1" },
     headers: { host: "127.0.0.1:3080", "sec-fetch-site": "same-origin" },
     ...overrides,
-  };
+  } as unknown as IncomingMessage;
 }
 
 /** 响应收集桩：rec.status / rec.body（writeJson 经 writeHead+end 落字）。 */
-function fakeRes() {
+function fakeRes(): { rec: { status: number; body: string }; res: ServerResponse } {
   const rec = { status: 0, body: "" };
   return {
     rec,
     res: {
-      writeHead(status) {
+      writeHead(status: number) {
         rec.status = status;
       },
-      end(payload) {
+      end(payload?: unknown) {
         if (payload !== undefined) rec.body += String(payload);
       },
-    },
+    } as unknown as ServerResponse,
   };
 }
 
@@ -65,13 +76,15 @@ test("loopback Host 不合法 → 403 + 逐字节文案 + false", () => {
 });
 
 test("loopback + 方法不在白名单 → 405 + 逐字节文案 + false", () => {
-  for (const [method, whitelist] of [
+  // 用例表显式标注：不标注时解构出的是 string | string[]，会把守卫的方法/白名单入参面逼宽
+  const cases: Array<[string, string[]]> = [
     ["POST", ["GET"]],
     ["DELETE", ["GET", "PUT"]],
     ["PATCH", ["GET", "POST"]],
     ["PUT", ["GET", "POST"]],
     ["OPTIONS", ["GET"]],
-  ]) {
+  ];
+  for (const [method, whitelist] of cases) {
     const { rec, res } = fakeRes();
     const allow = guardLoopbackMethod(fakeReq({ method }), res, whitelist);
     assert.equal(allow, false, `${method} 不在 [${whitelist}] 返回 false`);
@@ -88,7 +101,9 @@ test("无 method 字段 → 405 + method not allowed: undefined（fail-closed，
   const { rec, res } = fakeRes();
   const { method, ...noMethod } = fakeReq();
   assert.equal(method, "GET", "前置：桩本有 method，此处刻意删除");
-  const allow = guardLoopbackMethod(noMethod, res, ["GET"]);
+  // 刻意喂「无 method 字段」的畸形请求来锚定 fail-closed（R6）：畸形输入单测里必须存在，
+  // 故经 unknown 显式收窄回 IncomingMessage，而不是改小被测物的入参面。
+  const allow = guardLoopbackMethod(noMethod as unknown as IncomingMessage, res, ["GET"]);
   assert.equal(allow, false, "无 method 字段不放行（fail-closed）");
   assert.equal(rec.status, 405);
   assert.equal(
@@ -99,13 +114,14 @@ test("无 method 字段 → 405 + method not allowed: undefined（fail-closed，
 });
 
 test("loopback + 白名单内方法 → true 放行且不写响应", () => {
-  for (const [method, whitelist] of [
+  const cases: Array<[string, string[]]> = [
     ["GET", ["GET"]],
     ["GET", ["GET", "PUT"]],
     ["PUT", ["GET", "PUT"]],
     ["POST", ["GET", "POST"]],
     ["DELETE", ["GET", "DELETE"]],
-  ]) {
+  ];
+  for (const [method, whitelist] of cases) {
     const { rec, res } = fakeRes();
     const allow = guardLoopbackMethod(fakeReq({ method }), res, whitelist);
     assert.equal(allow, true, `${method} ∈ [${whitelist}] 放行`);
@@ -118,12 +134,16 @@ test("loopback + 白名单内方法 → true 放行且不写响应", () => {
 
 import { isLoopbackRequest } from "../../shared/loopback.js";
 
-/** 构造带指定 Fetch Metadata 头的回环请求。 */
-function metaReq(site, mode) {
-  const headers = { host: "127.0.0.1:3080" };
+/** 构造带指定 Fetch Metadata 头的回环请求；site / mode 为 undefined 时即该头缺席。 */
+function metaReq(site?: string, mode?: string): IncomingMessage {
+  const headers: Record<string, string> = { host: "127.0.0.1:3080" };
   if (site !== undefined) headers["sec-fetch-site"] = site;
   if (mode !== undefined) headers["sec-fetch-mode"] = mode;
-  return { method: "GET", socket: { remoteAddress: "127.0.0.1" }, headers };
+  return {
+    method: "GET",
+    socket: { remoteAddress: "127.0.0.1" },
+    headers,
+  } as unknown as IncomingMessage;
 }
 
 test("#549 默认（无 options）拒绝一切 cross-site", () => {

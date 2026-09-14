@@ -60,6 +60,13 @@
  *       · soft 下规则 1/2 仍只进软报告（不判红）——fail-closed 只保证「无基线 = 不放行」，
  *         不改变 soft 对规则 1–3 的软报告语义；
  *       · 两种模式下规则 4（虚导出）、规则 5（值环）与源码全覆盖断言都硬执行。
+ *   - **$noMutationPackages 登记（#773 批 B / #710 §2-2）**：包登记在
+ *     `scripts/data/mutation-topology.json` 的 `$noMutationPackages` 时，源码全覆盖断言
+ *     **不适用**（该包没有变异面）——但不静默判绿：判绿输出里必须打印一条显式声明
+ *     （含登记理由与跟踪 #690 S6/S8 / #773）。两处都未登记仍是 fail-closed；拓扑文件
+ *     **整份缺失 / 内容非对象**（#773 R3）同样 fail-closed：此时未覆盖清单恒为空、判据整体
+ *     失去依据，故门禁自身判红（缺失、顶层不是对象、解析失败是三种事实，不合并语义），
+ *     `scripts/test/workflow-assert.test.ts` 的「单一事实源在位」断言保留为冗余兜底。
  *
  * 适用包白名单：`--package <name>`（可多次）；缺省 = 仅 dsh-mcp-manager。
  * 用法：node scripts/gate/verify-dir-imports.mjs [--package <name>] [--soft] [--verbose]
@@ -503,6 +510,27 @@ function rel(base, p) {
   return relative(base, p).split(sep).join("/");
 }
 
+/**
+ * 源码全覆盖断言的未覆盖清单：src 下每个文件必须落在 ∪mutate ∪ ∪excludes 内。
+ *
+ * 返回 `null` 表示「断言不适用」（包未登记变异面，含 $noMutationPackages 成员），
+ * 空数组表示「可判定且零未覆盖」。但该区分**只在本函数内部成立**：analysis 边界用
+ * `?? []` 归一，`null` 不会流到任何消费者——对外守卫是 `topologyRegistered` /
+ * `noMutationReason`，不是这里的 `null`（#773 批 B 复核）。
+ */
+function collectUncoveredSrcFiles(srcDir, specs) {
+  if (specs === null || specs.noMutation) return null;
+  const covered = (relPath) =>
+    specs.excludes.some((g) => globToRegExp(g).test(relPath)) ||
+    specs.mutate.some((g) => globToRegExp(g).test(relPath));
+  const out = [];
+  for (const file of collectAllFiles(srcDir)) {
+    const r = rel(ROOT, file);
+    if (!covered(r)) out.push(r);
+  }
+  return out.sort();
+}
+
 /** 单包全量分析：模块表、引用明细、三套依赖图、R-A 双口径、规则违例、变异覆盖。 */
 function analyzePackage(pkgName, topology) {
   const srcDir = join(ROOT, "packages", pkgName, "src");
@@ -657,17 +685,9 @@ function analyzePackage(pkgName, topology) {
   }
 
   const specs = collectMutationSpecs(topology, pkgName);
-  const uncoveredSrcFiles = [];
-  if (specs !== null) {
-    const covered = (relPath) =>
-      specs.excludes.some((g) => globToRegExp(g).test(relPath)) ||
-      specs.mutate.some((g) => globToRegExp(g).test(relPath));
-    for (const f of collectAllFiles(srcDir)) {
-      const r = rel(ROOT, f);
-      if (!covered(r)) uncoveredSrcFiles.push(r);
-    }
-    uncoveredSrcFiles.sort();
-  }
+  // 「不适用」与「空集」的区分只在本函数内部；metrics 统一落数组（?? []），
+  // 对外判据是 topologyRegistered / noMutationReason。
+  const uncoveredSrcFiles = collectUncoveredSrcFiles(srcDir, specs);
 
   const valueCount = raLegacy.filter((r) => !r.isType).length;
   return {
@@ -685,7 +705,10 @@ function analyzePackage(pkgName, topology) {
     depsValueImports,
     // 覆盖断言可判定性：包未登记拓扑时 uncoveredSrcFiles 恒为空，若不显式区分，
     // 「从拓扑里删掉一个包」就成了让覆盖断言消失的绕过路径（已复现的假绿向量）。
-    topologyRegistered: specs !== null,
+    // $noMutationPackages 登记**不等于**可判定——它只是把「不适用」显式化，故
+    // topologyRegistered 仍为 false，由 noMutationReason 承担另一条合法出口。
+    topologyRegistered: specs !== null && !specs.noMutation,
+    noMutationReason: specs?.noMutation === true ? specs.reason : null,
     metrics: {
       modules: modules.size,
       // F14：两个口径必须自解释——scannedSrcFiles = 实际参与规则扫描的文件
@@ -706,7 +729,7 @@ function analyzePackage(pkgName, topology) {
       implToOtherImpl: raImpl.length,
       missingInterface: missingInterface.length,
       directImpl: directImpl.length,
-      uncoveredSrcFiles,
+      uncoveredSrcFiles: uncoveredSrcFiles ?? [],
     },
   };
 }
@@ -908,6 +931,15 @@ function registerRuleViolations(analysis, state) {
     if (SOFT) softViolations.push(line);
     else failures.push(line);
   }
+}
+
+/**
+ * 无变异面登记（$noMutationPackages）的显式声明文案（#773 批 B / #710 §2-2）。
+ * 主判据路径与 --write-baseline 报告共用同一份——两条路径的可观测性必须一致，
+ * 否则「不适用」在写入路径上退化成一句无理由、无跟踪号的注脚。
+ */
+function noMutationDeclaration(pkgName, reason) {
+  return `${pkgName}: 登记在 scripts/data/mutation-topology.json 的 $noMutationPackages（无变异面，理由：${reason}）—— 源码全覆盖断言不适用（跟踪 #690 S6/S8 / #773）`;
 }
 
 /** 渲染 --zones 段：叶子口径跨域引用明细 + R-A 双口径。 */
@@ -1117,14 +1149,38 @@ function resolvePackages() {
   return ["dsh-mcp-manager"];
 }
 
+/** 拓扑内容的可读形状名（形状非法时的判红文案用）。 */
+function jsonShape(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "数组";
+  return typeof value;
+}
+
 let topology = null;
 if (existsSync(TOPOLOGY_PATH)) {
   try {
     topology = JSON.parse(readFileSync(TOPOLOGY_PATH, "utf8"));
+    // JSON.parse 对 null / 数组 / 标量同样成功，但这些形状承载不了段/层定义：此时下游
+    // 「未登记」判据与全覆盖断言会被整体跳过（字面 null 连 `topology !== null` 守卫都过不去），
+    // 故判红挂在**解析结果**上，并把 topology 归一为 null 使下游与缺失态一致——否则
+    // 数组/标量还会额外触发「未登记」，红因从 1 条变 2 条。
+    if (topology === null || typeof topology !== "object" || Array.isArray(topology)) {
+      failures.push(
+        `[topology] 变异拓扑顶层不是对象（单一事实源格式非法，实际 ${jsonShape(topology)}）：${TOPOLOGY_PATH} —— 无法判定源码全覆盖，fail-closed`,
+      );
+      topology = null;
+    }
   } catch (e) {
     // 拓扑损坏时不能抛栈崩掉整个 contract 段：显式判红并保持其余检查可读。
     failures.push(`[topology] 变异拓扑解析失败：${TOPOLOGY_PATH}（${e.message}）`);
   }
+} else {
+  // 「文件缺失」与「解析失败」是两种不同事实，故不并入上面那条：缺失时无法区分
+  // 「包未登记」与「拓扑整份丢失」，源码全覆盖断言随之整体失去判定依据（未覆盖清单
+  // 恒为空），而调用点拿到的仍是一条干净的 PASS——正是本门禁宣称要防的假绿。
+  failures.push(
+    `[topology] 变异拓扑单一事实源缺失：${TOPOLOGY_PATH} —— 无法判定源码全覆盖，fail-closed`,
+  );
 }
 const applyPackages = resolvePackages();
 const analyses = [];
@@ -1269,12 +1325,18 @@ if (WRITE_BASELINE) {
     for (const note of qualityFirst) console.log(`verify-dir-imports |     ${note}`);
   }
   for (const a of analyses) {
-    const coverNote = a.topologyRegistered
-      ? `未覆盖 ${a.metrics.uncoveredSrcFiles.length} 个`
-      : "未登记变异拓扑（覆盖断言不适用）";
+    const coverNote =
+      a.noMutationReason !== null
+        ? "无变异面登记（$noMutationPackages，覆盖断言不适用）"
+        : a.topologyRegistered
+          ? `未覆盖 ${a.metrics.uncoveredSrcFiles.length} 个`
+          : "未登记变异拓扑（覆盖断言不适用）";
     console.log(
       `verify-dir-imports |   ${a.package}: ${a.metrics.modules} 个叶子模块、值边 ${a.metrics.leafValueEdges} 条、${coverNote}`,
     );
+    if (a.noMutationReason !== null) {
+      console.log(`verify-dir-imports |   ${noMutationDeclaration(a.package, a.noMutationReason)}`);
+    }
   }
   process.exit(0);
 }
@@ -1300,10 +1362,16 @@ for (const analysis of analyses) {
       `[${pkgName}] ${rel(analysis.srcDir, r.fromFile)} 出现值 import "${r.spec}"（deps.ts 只能声明类型依赖：改 import type / export type，运行时能力由组合根注入）`,
     );
   }
-  if (!analysis.topologyRegistered && topology !== null) {
+  if (!analysis.topologyRegistered && analysis.noMutationReason === null && topology !== null) {
     failures.push(
-      `[${pkgName}] 未在 scripts/data/mutation-topology.json 登记 —— 源码全覆盖断言无法判定（fail-closed：新增源文件会静默逃逸度量）`,
+      `[${pkgName}] 未在 scripts/data/mutation-topology.json 登记（$noMutationPackages 亦无）—— 源码全覆盖断言无法判定（fail-closed：新增源文件会静默逃逸度量）`,
     );
+  }
+  if (analysis.noMutationReason !== null) {
+    // 显式声明而非静默判绿（#773 批 B / #710 §2-2）：该包无变异面，源码全覆盖断言
+    // 对本包不适用；基线里的 uncoveredSrcFiles: [] 是「未登记拓扑时该字段恒为空」的
+    // 已知假绿，不代表已验证全覆盖，故必须在判绿输出里被点名。
+    summary.push(noMutationDeclaration(pkgName, analysis.noMutationReason));
   }
 
   // 门禁口径（叶子模块）：S0 起模块 = 递归含 interface.ts 的目录，嵌套目标不再丢边。

@@ -132,6 +132,18 @@ function pruneSnapshotTags(target, keep, log) {
  * 首次上线时，manifest 只覆盖了「新算」的 31 段而漏掉「沿用」的 2 段，树本身正确（33 段没缩水）
  * 但 manifest 少 2 条——而 manifest 是留段时间戳与后续完整性校验的唯一依据。守卫放在这里，
  * 任何写入方漏算都会在**推送之前**炸掉，而不是把不对齐的归档推上去。
+ *
+ * @param {{
+ *   target: string,
+ *   branch: string,
+ *   entries: Array<{ name: string, blobSha: string }>,
+ *   manifest: Record<string, unknown>,
+ *   subject: string,
+ *   keep?: number,
+ *   manifestPath?: string,
+ *   label?: string,
+ *   log?: (message: string) => void,
+ * }} options
  */
 export function pushBaselineTree({
   target,

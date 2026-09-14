@@ -65,8 +65,8 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
 | 层       | 命令                                      | 用途与口径                                                                                                                                                                                                                                                                           |
 | -------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 快线     | `pnpm gate:changed`                       | 迭代中反复跑：只跑 diff 命中包的 build + test + typecheck。包面归属取自 `ci.yml` 的 paths-filter（**唯一事实源**，本地不重述路径规则）；命中全局面时自动升级为 `gate:pr`，解析失败一律回退全量（fail-closed）                                                                        |
-| 最小集   | `pnpm gate:pr`                            | 开 PR 前：快线 + **命中包**的产物闸（`contract` / `pack:check` / `verify:npmlayout` 按 `--packages` 切片）+ 廉价全仓一致性闸（`stryker:check`、`aggregate:check`、`test:src-tests`、`gate:homedir`、`docs:check`、`test:scripts`、`lint`、`format:check`，均秒级且不依赖 lib 产物）                  |
-| 收尾     | `pnpm gate:full`                          | 全仓口径（= 夜间班次口径）：全仓 build/test/typecheck + 全仓产物闸 + 全部静态闸；改过构建链、包结构或发版前跑一遍                                                                                                                                                                    |
+| 最小集   | `pnpm gate:pr`                            | 开 PR 前本地最后一层安全网：**全仓口径**（本地没有 PR 上下文可切，包面恒为全部包）= 全仓 build/test/typecheck + 全仓产物闸（`contract` / `pack:check` / `verify:npmlayout` 传全包包名）+ 廉价全仓一致性闸（`threshold-monotonic`、`stryker:check`、`aggregate:check`、`test:src-tests`、`gate:homedir`、`gate:module-state`、`docs:check`、`verify:scripts-index`、`verify:coverage-scope`、`verify:vendored-binaries`、`lint`、`format:check`，均秒级且不依赖 lib 产物）+ `test:scripts`（有编译面用例依赖声明产物，本地会先跑一次编译面前置包 build）；与 `gate:full` 同口径，仅少 full 的「豁免到期台账」收集                  |
+| 收尾     | `pnpm gate:full`                          | 全仓对象面（同 `gate:pr`，另加「豁免到期台账」收集；`--with-coverage` 再补 cov / crap）：全仓 build/test/typecheck + 全仓产物闸 + 全部静态闸。**≠ 夜间班次口径**——夜间 `observe.yml` 另含覆盖率与全量变异、且不跑全仓 test/typecheck（全仓 build 在夜间两个 job 内各有一处：quality 一次 + mutation-shards 每个变异段一次，当前 32 段）；需要覆盖率时用 `pnpm gate:full --with-coverage`。改过构建链、包结构或发版前跑一遍                                                                                                                                                                    |
 | 全量     | CI 夜间班次（`observe.yml`）              | 全仓产物闸 + 覆盖率 + 全量变异与基线并集入档（原每日四班次增量班已于 #718 S2.2 退役）。本地不默认跑，需要时 `pnpm gate:full --with-coverage`。**注意变异不止在夜间**：PR 上已按命中切片强制跑（见下方「变异不在本地任何档」）                                                                                                                          |
 | 提交钩子 | `lefthook`（`pre-commit` / `commit-msg`） | 提交瞬间的最内层：`pre-commit` 只对本次 **staged 源文件**跑 lint、`commit-msg` 校验提交信息为 Conventional Commits。**不替代上面任何一层**——它不做 build / typecheck / 变异 / 覆盖率。钩子由 `pnpm install` 的 `prepare` 自动安装；跳过用 `git commit --no-verify`（仅限确认无害时） |
 
@@ -80,9 +80,9 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
 | 改任意手写源码（`packages/*/src`、`packages/*/test`、`shared/`、`scripts/`） | `gate:pr` 起（含 `lint`：ESLint 复杂度门禁，阈值见 `gauntlet.config.json` 的 `complexity` 段） |
 | 提交前最终一遍                                                               | `pnpm gate:pr`；单包迭代用 `pnpm gate:changed`                                                 |
 
-- 分层**不减少检查，只改变时机**：PR 与本地都走增量（命中包），只有"必须全仓才能判定"的
-  口径（全仓产物闸、全仓覆盖率分母、全量变异基线）留夜间；高风险改动打 `gate:full` 标签
-  在 PR 上补跑（方案见 #722）。
+- 分层**不减少检查，只改变时机**：CI 的 PR 默认路径与本地 `gate:changed` 走增量（命中包切片），
+  本地 `gate:pr` / `gate:full` 本就是**全仓对象面**（pr 已含全仓产物闸）；只有"必须全仓才能
+  判定"的覆盖率分母与全量变异基线留夜间；高风险改动打 `gate:full` 标签在 PR 上补跑（方案见 #722）。
 - **变异不在本地任何档，但 PR 上强制跑**（#742 阶段 1）：命中变异切片的 PR 一律实例化该切片
   的变异矩阵并聚合判分（`mutation-gate` / `mutation-verdict`，打不打 `gate:full` 标签都跑），
   改的是命中包 `test/**` 时该包基线会被主动失效、退化为全量。因此**本地 `gate:*` 全绿不等于

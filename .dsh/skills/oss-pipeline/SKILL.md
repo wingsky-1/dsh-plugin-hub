@@ -17,10 +17,18 @@ description: >
 > 分支保护的 required check 只有 `Build / Contract / Smoke / Pack` 一个，但它是**聚合闸**
 > （`ci.yml` 的 needs 已并入 build-test / coverage / mutation-gate / mutation-verdict，并有 fail-closed 断言）
 > ——它绿只说明这条链没红，**不等于完成定义满足**。
-> PR 上 `build` / `test` 按命中包切片，不是 `pnpm build && pnpm test` 的全仓口径；**全仓 build / test /
-> typecheck 与全仓产物闸已不在 PR 默认路径**，只在 `pnpm gate:full`、`gate:full` 标签与夜间班次跑。
+> **CI 在 PR 上**的 `build` / `test` 按命中包切片（`ci.yml` 的 paths-filter），不是 `pnpm build && pnpm test`
+> 的全仓口径。三个维度在 CI 上落点不同：**全仓 build 在默认 PR 路径就会跑**（命中变异切片时
+> `mutation-gate` 先全量构建）；**全仓产物闸的聚合形态只在 `gate:full` 标签、夜间班次与 tag 触发的
+> `release.yml` 跑**——命中全局面、fail-closed 回退或全部包各自命中时，默认 PR 路径那个切片就是
+> 全集，覆盖效果等同（三闸的 `scoped === null` 与「传全包名」同口径）；**全仓 test / typecheck
+> 没有 CI 聚合口径**——`ci.yml` 只按命中包逐包跑（同上三种情形该矩阵覆盖全部包），聚合 `pnpm test`
+> 只在 tag 触发的 `release.yml`；本地 `gate:pr` 的全仓 test/typecheck 同样是逐包 `--filter` 形态
+> （对象面等价），聚合 `pnpm typecheck` 只有 `gate:full`。故完成定义不读作「CI 已验全仓 test」
+> （见根 AGENTS.md 门禁矩阵）。
 > 旧称「五连门禁」= 全仓 `pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck`，
-> **不是 `pnpm gate:pr` 的子集**（全仓 vs 命中切片）：其产物闸 / 静态闸已并入 `gate:pr`，全仓部分归 `gate:full`。
+> **已整体并入 `pnpm gate:pr`**（本地 pr 即全仓口径；`gate:full` 在其上只多「豁免到期台账」收集，
+> `--with-coverage` 再补 cov / crap）。
 > `agents/` 与其它 skill 沿用旧称处按本条理解（`agents/coder.md` 的旧「五连」清单已同步改为指向该矩阵）。
 > 前置条件（维护者一次性配置）：zone 系与 loop 系 label 已建、分支保护对 main 至少要求聚合闸
 > `Build / Contract / Smoke / Pack`；该闸未配齐前 `--auto` 只受 CI 状态约束，**此时「CI 绿」更不足以判定完成**。

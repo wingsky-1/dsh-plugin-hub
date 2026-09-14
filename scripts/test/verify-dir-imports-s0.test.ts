@@ -14,6 +14,10 @@
  *   - 死声明判据（#733 M0a）：值面判死、类型面豁免；deps.ts 自身含值 import 硬判红；
  *   - 单调基线：写入基线后人为把某计数调高必须 exit 1（#733 M0b 起分结构型 / 质量型）；
  *   - 全覆盖断言：新增未被 mutate/excludes 覆盖的 src 文件必须 exit 1。
+ *   - $noMutationPackages（#773 批 B / #710 §2-2）：登记在册的「无变异面」包不再判
+ *     fail-closed，但必须在判绿输出里显式声明「覆盖断言不适用」；删掉登记即回到 exit 1。
+ *   - 拓扑缺失判红（#773 R3）：`scripts/data/mutation-topology.json` 整份缺失时门禁自己
+ *     fail-closed exit 1（与「解析失败」「包未登记」并列的第三种事实，不得静默判绿）。
  *
  * fixture 经 VERIFY_DIR_IMPORTS_ROOT 指向 mkdtemp 隔离目录（基线路径随根推导），
  * 不在仓库内造包目录（产物零污染纪律）。断言同时校验 exit code 与输出计数——
@@ -22,7 +26,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -31,10 +35,33 @@ const SCRIPT = join(ROOT, "scripts", "gate", "verify-dir-imports.mjs");
 const PKG = "fixture-pkg";
 const SRC = `packages/${PKG}/src`;
 
+const TOPOLOGY_REL = "scripts/data/mutation-topology.json";
+
+/**
+ * fixture 默认拓扑：变异拓扑是段/层定义的单一事实源，而门禁对它的缺失态已 fail-closed
+ * （#773 R3），故除刻意验证缺失 / 未登记 / 解析失败三态的用例外，fixture 根必须自带这份
+ * 事实源，否则被验证的行为会被缺失告警盖住。默认登记本包并把 src 全量纳入 mutate
+ * （client 排除），使覆盖断言不引入额外噪声；需要其它形态的用例在 files 里显式给出，
+ * 显式值优先。
+ */
+function defaultTopology() {
+  return JSON.stringify({
+    sharedDefaults: {},
+    packages: {
+      [PKG]: {
+        segments: {
+          s1: { mutate: [SRC + "/**/*.ts"], excludes: ["!" + SRC + "/client/**"] },
+        },
+      },
+    },
+  });
+}
+
 /** 在隔离根下造任意相对路径文件，返回根路径（调用方负责清理）。 */
-function makeFixtureRoot(files) {
+function makeFixtureRoot(files, { omitTopology = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), "verify-dir-imports-s0-"));
-  for (const [rel, content] of Object.entries(files)) {
+  const all = omitTopology ? files : { [TOPOLOGY_REL]: defaultTopology(), ...files };
+  for (const [rel, content] of Object.entries(all)) {
     const full = join(root, rel);
     mkdirSync(dirname(full), { recursive: true });
     writeFileSync(full, content);
@@ -953,6 +980,83 @@ test("全覆盖断言：包未登记变异拓扑 → fail-closed 判红（封堵
   }
 });
 
+test("全覆盖断言：#773 R3：拓扑文件整份缺失 → fail-closed 判红（不得静默 PASS）", () => {
+  // 第三种事实（与「解析失败」「包未登记」并列）：缺失时未覆盖清单恒为空，只看 exit code
+  // 会把「无法判定」读成「已覆盖」，故必须由门禁自己判红，不依赖 workflow-assert 的
+  // 「单一事实源在位」断言兜底。
+  const root = makeFixtureRoot(chainFixture(""), { omitTopology: true });
+  try {
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `拓扑缺失应 fail-closed 判红，实际 ${status}：\n${out}`);
+    assert.match(out, /单一事实源缺失/, `应点名单一事实源缺失：\n${out}`);
+    assert.match(out, /scripts\/data\/mutation-topology\.json/, `应给出缺失文件路径：\n${out}`);
+    assert.doesNotMatch(out, /PASS（跨模块引用全部走/, `缺失态不得判绿：\n${out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("全覆盖断言：#773 R3 反证：拓扑损坏报「解析失败」，不得混同「单一事实源缺失」", () => {
+  const root = makeFixtureRoot({
+    ...chainFixture(""),
+    "scripts/data/mutation-topology.json": "{ not json",
+  });
+  try {
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `拓扑损坏应判红，实际 ${status}：\n${out}`);
+    assert.match(out, /变异拓扑解析失败/, `损坏态应报解析失败：\n${out}`);
+    assert.doesNotMatch(out, /单一事实源缺失/, `损坏态不得报「缺失」（两种事实不合并）：\n${out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("全覆盖断言：#773 R3 残留 fail-open：拓扑内容为非对象 → 判红（不靠「未登记」兜底）", () => {
+  // JSON.parse 对这些字面量同样成功，但形状不是对象、承载不了段/层定义。字面 null 曾连
+  // `topology !== null` 守卫都过不去而静默判绿；数组/标量只是恰被「包未登记」分支兜住，
+  // 不得依赖该巧合——故红因必须来自形状判据本身。
+  for (const [label, raw] of [
+    ["字面 null", "null"],
+    ["数组", "[]"],
+    ["数字", "0"],
+    ["字符串", '"x"'],
+  ]) {
+    const root = makeFixtureRoot({
+      ...chainFixture(""),
+      "scripts/data/mutation-topology.json": raw,
+    });
+    try {
+      const { status, out } = runOn(root);
+      assert.equal(status, 1, `${label}：非对象拓扑应 fail-closed 判红，实际 ${status}：\n${out}`);
+      assert.match(out, /变异拓扑顶层不是对象/, `${label}：应点名顶层不是对象：\n${out}`);
+      assert.doesNotMatch(
+        out,
+        /未在 scripts\/data\/mutation-topology\.json 登记/,
+        `${label}：红因不得来自「未登记」副作用：\n${out}`,
+      );
+      assert.doesNotMatch(out, /PASS（跨模块引用全部走/, `${label}：不得判绿：\n${out}`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("全覆盖断言：#773 R3：拓扑缺失时 --write-baseline 中止且不落盘（阻断性错误分支）", () => {
+  // 既有用例只覆盖「新增质量证据」那条写基线中止（:1273），这条钉住 failures.length > 0
+  // 的阻断性错误分支（:1255）：写基线若在「判不出来」时落盘，会把未知固化成「看起来全覆盖」。
+  // root 是全新 mkdtemp，故「基线文件不存在」同时覆盖「未被创建」与「未被改写」。
+  const root = makeFixtureRoot(chainFixture(""), { omitTopology: true });
+  try {
+    const baseline = join(root, "scripts", "data", "dir-imports-baseline.json");
+    const written = runOn(root, ["--write-baseline"]);
+    assert.equal(written.status, 1, `缺失态写基线应中止，实际 ${written.status}：\n${written.out}`);
+    assert.match(written.out, /写基线中止（存在阻断性错误）/, `应报阻断性中止：\n${written.out}`);
+    assert.equal(existsSync(baseline), false, `中止后基线不得落盘：${baseline}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("全覆盖断言：拓扑缺登记的新增 src 文件判红，登记后放行", () => {
   const files = {
     ...chainFixture(""),
@@ -1032,6 +1136,86 @@ test("全覆盖断言：未覆盖清单之外的既有文件不会被误判（�
       `存量未覆盖文件不得判红，实际 ${before.status}：\n${before.out}`,
     );
     assert.match(before.out, /单调基线通过/, `存量应被基线接受：\n${before.out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/** $noMutationPackages 登记所需的拓扑：packages 面为空，只登记「无变异面」理由。 */
+function noMutationTopology(members) {
+  return JSON.stringify(
+    {
+      sharedDefaults: {},
+      $noMutationPackages: members,
+      packages: {},
+    },
+    null,
+    2,
+  );
+}
+
+test("全覆盖断言：#710 §2-2 / #773：$noMutationPackages 成员被 --package 点名 → exit 0 且显式声明", () => {
+  // 该包没有变异面，覆盖断言不适用——但判绿必须点名这件事，否则「未登记拓扑时
+  // uncoveredSrcFiles 恒为空」会让它静默变成一条干净的 PASS（已知假绿形态）。
+  const root = makeFixtureRoot({
+    ...chainFixture(""),
+    "scripts/data/mutation-topology.json": noMutationTopology({
+      [PKG]: "只有 e2e 冒烟，刻意不登记变异面",
+    }),
+  });
+  try {
+    const { status, out } = runOn(root);
+    assert.equal(status, 0, `$noMutationPackages 成员应放行（exit 0），实际 ${status}：\n${out}`);
+    assert.match(out, /\$noMutationPackages/, `声明须点名登记处：\n${out}`);
+    assert.match(
+      out,
+      /源码全覆盖断言不适用/,
+      `判绿必须显式声明覆盖断言不适用（不得静默判绿）：\n${out}`,
+    );
+    assert.match(out, /跟踪 #690 S6\/S8 \/ #773/, `声明须带跟踪来源：\n${out}`);
+    assert.doesNotMatch(
+      out,
+      /未在 scripts\/data\/mutation-topology\.json 登记/,
+      `不得再报「未登记」：\n${out}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("全覆盖断言：#710 §2-2 反证：把该包从 $noMutationPackages 删掉 → 回到 fail-closed exit 1", () => {
+  // fixture 形状与上一条完全相同，只删掉本包的登记键：若仍判绿，说明放行来自
+  // 「顺手放宽」而不是登记本身——登记必须是唯一凭据。
+  const root = makeFixtureRoot({
+    ...chainFixture(""),
+    "scripts/data/mutation-topology.json": noMutationTopology({
+      "other-pkg": "与本包无关的登记",
+    }),
+  });
+  try {
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `删掉登记后必须回到 fail-closed，实际 ${status}：\n${out}`);
+    assert.match(out, /未在 scripts\/data\/mutation-topology\.json 登记/, `应点名未登记：\n${out}`);
+    assert.doesNotMatch(out, /源码全覆盖断言不适用/, `不得再打印「不适用」声明：\n${out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("全覆盖断言：未登记在任何一处的包名仍 fail-closed（$noMutationPackages 存在≠全员放行）", () => {
+  // 真实拓扑的 $noMutationPackages 里带 $comment 元键；本用例固化「有该段但本包不在其中」
+  // 不构成放行凭据，也顺带锚定 $comment 不得被当成包名登记。
+  const root = makeFixtureRoot({
+    ...chainFixture(""),
+    "scripts/data/mutation-topology.json": noMutationTopology({
+      $comment: "元数据键不是包登记",
+      "dsh-verify-isolated": "另一包的登记",
+    }),
+  });
+  try {
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `未登记包必须 fail-closed，实际 ${status}：\n${out}`);
+    assert.match(out, /未在 scripts\/data\/mutation-topology\.json 登记/, `应点名未登记：\n${out}`);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

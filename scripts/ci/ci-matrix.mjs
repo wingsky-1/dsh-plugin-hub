@@ -42,6 +42,7 @@ export function parseTestChangedPackages(raw) {
  * @returns {{
  *   allPackages: string[],
  *   hitPackages: string[],
+ *   buildPackages: string[],
  *   mutationPackages: string[],
  *   hasMutations: string,
  *   mutationCombos: Array<{ package: string, seg: string, timeoutMinutes: number, invalidateBaseline: boolean }>,

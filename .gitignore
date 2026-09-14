@@ -27,3 +27,9 @@ coverage/
 # 测试运行时污染兜底（#218）：DSH_HOME 未正确注入时产生的 undefined 路径与历史数据
 packages/*/undefined/
 **/*.jsonl
+
+# health-report 运行时产物（#718 复核 F5）：那几个步骤在仓库根落盘，本地手工复跑会留下
+# 未跟踪文件——归入「产物零污染」兜底，不参与分发（health-body.md 是既有产物，一并兜住）。
+baseline-staleness.json
+baseline-staleness-issue.md
+health-body.md

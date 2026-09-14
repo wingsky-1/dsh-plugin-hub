@@ -2,8 +2,9 @@
  * scripts/lib/package-scope.ts — 产物闸的包级切片参数（#722 门禁分层）。
  *
  * 为什么存在：`contract-check` / `pack-check` / `verify-npm-layout` 是「必须读 lib 产物」
- * 的闸，全仓口径在单包 PR 上是纯浪费。分层后 PR 只对 diff 命中包跑这三个闸，全仓口径
- * 移交夜间（observe.yml），本地 `gate:full` 仍走全仓。
+ * 的闸，全仓口径在单包 PR 上是纯浪费。分层后 CI 在 PR 上只对 diff 命中包跑这三个闸，全仓
+ * 口径移交夜间（observe.yml）；本地全仓口径不走切片——`gate:pr` 显式传全包包名，`gate:full`
+ * 不传 `--packages`（即 `scoped === null` 的全仓分支）。
  *
  * 切片必须 fail-closed：**未知包名一律判红**。否则「包面写错」（例如把 dsh-notifier
  * 写成 notifier）会退化成静默跳过——比不切片更危险。空列表是合法输入，语义是

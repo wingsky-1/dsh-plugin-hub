@@ -47,8 +47,8 @@ const PNG = Buffer.from(
   "hex",
 );
 
-const TMP = [];
-function mkTmp(prefix) {
+const TMP: string[] = [];
+function mkTmp(prefix: string): string {
   const d = mkdtempSync(join(tmpdir(), prefix));
   TMP.push(d);
   return d;
@@ -57,12 +57,24 @@ after(() => {
   for (const d of TMP) rmSync(d, { recursive: true, force: true });
 });
 
+/** fixture 库的构造参数（judge 在它之上再加「登记表怎么来」）。 */
+interface RootSpec {
+  files?: string[];
+  tree?: Record<string, string | Buffer>;
+  manifest?: unknown;
+  pkgExtra?: Record<string, unknown>;
+}
+
 /** 造 fixture 库：`files` 为白名单（缺省=不写该字段，即 npm「整包」语义）。 */
-function makeRoot({ files, tree = {}, manifest, pkgExtra = {} } = {}) {
+function makeRoot({ files, tree = {}, manifest, pkgExtra = {} }: RootSpec = {}) {
   const root = mkTmp("vendored-root-");
   const pkgDir = join(root, "packages", PKG);
   mkdirSync(pkgDir, { recursive: true });
-  const pkgJson = { name: "@wingsky-1/dsh-demo", version: "1.0.0", ...pkgExtra };
+  const pkgJson: Record<string, unknown> = {
+    name: "@wingsky-1/dsh-demo",
+    version: "1.0.0",
+    ...pkgExtra,
+  };
   if (files !== undefined) pkgJson.files = files;
   writeFileSync(join(pkgDir, "package.json"), JSON.stringify(pkgJson));
   for (const [rel, content] of Object.entries(tree)) {
@@ -78,14 +90,20 @@ function makeRoot({ files, tree = {}, manifest, pkgExtra = {} } = {}) {
 }
 
 /** 登记表刻意放扫描面之外：治理数据不随 --root 漂移（与 forbid-* 的 --exemptions 同语义）。 */
-function writeRegistry(entries) {
+function writeRegistry(entries: unknown[]): string {
   const p = join(mkTmp("vendored-reg-"), "vendored-binaries.json");
   writeFileSync(p, JSON.stringify({ version: 1, entries }));
   return p;
 }
 
+/** judge 的入参：fixture 参数 + 「登记表怎么来」（entries 取真实 sha256 / registryRaw 喂非法 JSON）。 */
+interface JudgeSpec extends RootSpec {
+  registryRaw?: string;
+  entries?: (root: string) => unknown[];
+}
+
 /** 跑判定：entries 为函数时以 root 为参（取真实 sha256）；registryRaw 用于非法 JSON 用例。 */
-function judge(spec) {
+function judge(spec: JudgeSpec) {
   const root = makeRoot(spec);
   const reg =
     spec.registryRaw !== undefined
@@ -99,7 +117,14 @@ function judge(spec) {
 }
 
 /** 合法登记项（哈希取自 fixture 文件本身）。 */
-function entryOf(root, rel, { licenseFile = `${rel}.LICENSE`, ...over } = {}) {
+function entryOf(
+  root: string,
+  rel: string,
+  {
+    licenseFile = `${rel}.LICENSE`,
+    ...over
+  }: { licenseFile?: string } & Record<string, unknown> = {},
+) {
   return {
     path: `packages/${PKG}/${rel}`,
     sha256: sha256File(join(root, "packages", PKG, rel)),
@@ -110,10 +135,10 @@ function entryOf(root, rel, { licenseFile = `${rel}.LICENSE`, ...over } = {}) {
   };
 }
 
-const join2 = (p) => p.join("\n");
+const join2 = (p: string[]): string => p.join("\n");
 
 /** 合法第一方登记项：只有 path/sha256/kind——自有二进制资产没有第三方许可义务。 */
-function firstPartyOf(root, rel) {
+function firstPartyOf(root: string, rel: string) {
   return {
     path: `packages/${PKG}/${rel}`,
     sha256: sha256File(join(root, "packages", PKG, rel)),
@@ -657,7 +682,8 @@ test("反例：字段缺失 / sha256 形态非法 / 重复登记 → 各报一�
     files: ["lib"],
     tree: { "lib/tool.exe": BINARY, "lib/tool.exe.LICENSE": LICENSE_TEXT },
     entries: (r) => {
-      const e = entryOf(r, "lib/tool.exe");
+      // 刻意删掉 license 来喂「字段缺失」：登记项在这里当可变字典用，断言的是实现对该字段的判断
+      const e: Record<string, unknown> = entryOf(r, "lib/tool.exe");
       delete e.license;
       return [e];
     },
@@ -724,7 +750,7 @@ test("pack-check：随包发布了二进制却没附许可文本 → 判红；�
   mkdirSync(join(tarballRoot, "lib"), { recursive: true });
   const entry = { path: `packages/${PKG}/lib/tool.exe` };
   // 与 collect-licenses 的 vendoredSection 同格式：两行 = 夹住段头，许可正文在其后
-  const licenseList = (body) =>
+  const licenseList = (body: string): string =>
     `THIRD-PARTY LICENSES\n\n${"=".repeat(69)}\nvendored 二进制：${entry.path}\n` +
     `MIT — 来源：https://example.invalid/upstream@1.0.0\n${"=".repeat(69)}\n\n${body}\n`;
 
@@ -826,7 +852,7 @@ test("真实仓库：登记表与扫描面一致（登记第一项后这条仍�
 // ---------- 五、接线钉：三个执行点必须同时存在 ----------
 
 /** local-gate 某一档的计划步骤（--dry-run 不执行任何步骤；机制同 local-gate-steps.test.ts）。 */
-function plannedSteps(tier) {
+function plannedSteps(tier: string): string {
   const r = spawnSync(
     process.execPath,
     [join(ROOT, "scripts", "gate", "local-gate.mjs"), "--tier", tier, "--dry-run"],

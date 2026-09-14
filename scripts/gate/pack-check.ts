@@ -76,7 +76,8 @@ if (retiredDirs.length > 0) {
     `[pack-check] 跳过已退役包残留目录: ${retiredDirs.join(", ")}（manifest.retired 已登记，请清理）`,
   );
 }
-// #722 门禁分层：**产物级**断言的切片（单包 PR 只需 pack 命中包；全仓口径留夜间）。
+// #722 门禁分层：**产物级**断言的切片（CI 的单包 PR 只需 pack 命中包；全仓口径留夜间与
+// 本地 gate:pr / gate:full）。
 // 目录集 == manifest 的一致性校验（上方）不依赖产物，保持全仓恒跑。
 // known 里含聚合包：它由 checkAggregateConsistency 覆盖、不在逐包 pack 循环内，
 // 出现在切片里不算未知包名（否则全局面命中时会假红），但会明示本闸不逐包检查它。

@@ -34,12 +34,24 @@ import { walkFiles } from "../lib/walk-files.ts";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CI_YML_REL = ".github/workflows/ci.yml";
 
-function readJson(rel) {
-  return JSON.parse(readFileSync(join(ROOT, rel), "utf8"));
+/** 登记表条目：字段合法性由本文件第一条测试逐条断言，此处只声明后续判据要用到的面。 */
+interface FaceRegistryEntry {
+  path: string;
+  faces: string[];
+  why?: string;
+  invalidatesBaseline?: boolean;
 }
 
-const REGISTRY = readJson("scripts/data/ci-face-registry.json");
-const FILTERS = parseFilterBlock(readFileSync(join(ROOT, CI_YML_REL), "utf8"));
+function readJson<T>(rel: string): T {
+  return JSON.parse(readFileSync(join(ROOT, rel), "utf8")) as T;
+}
+
+const REGISTRY = readJson<{ entries: FaceRegistryEntry[] }>("scripts/data/ci-face-registry.json");
+
+// filters 块是下面所有判据的唯一输入：解析不出来就无可判之物，这里直接炸，别让后续断言在空表上静默通过。
+const PARSED_FILTERS = parseFilterBlock(readFileSync(join(ROOT, CI_YML_REL), "utf8"));
+assert.ok(PARSED_FILTERS !== null, `${CI_YML_REL} 必须含可解析的 paths-filter 块`);
+const FILTERS = PARSED_FILTERS;
 
 /** tracked 文件全集（git 口径：不含构建产物、临时文件与被忽略路径）。 */
 function trackedFiles() {
@@ -55,7 +67,7 @@ const UNIVERSE = trackedFiles().filter((f) => !f.startsWith("packages/"));
  * 安全 glob 匹配。catch 只兜非字符串一类的调用错误（实测 Node 对畸形 glob 返回 false 而不抛）：
  * 畸形 pattern 因此表现为「不命中」，会被「悬空条目」与「死 glob」两条断言判红——这正是我们要的。
  */
-function hits(file, pattern) {
+function hits(file: string, pattern: string): boolean {
   try {
     return matchesGlob(file, pattern);
   } catch {
@@ -201,7 +213,7 @@ test("#742 2.3: test/smoke-lib.ts 的包名单按真实 import 图核对（第 6
     if (!dirent.isDirectory()) continue;
     const testDir = join(ROOT, "packages", dirent.name, "test");
     if (!existsSync(testDir)) continue;
-    const files = walkFiles(testDir, (n) => n.endsWith(".ts"));
+    const files = walkFiles(testDir, (n: string) => n.endsWith(".ts"));
     if (
       files.some((rel) =>
         /["'][^"']*test\/smoke-lib\.ts["']/.test(readFileSync(join(testDir, rel), "utf8")),

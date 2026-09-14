@@ -47,7 +47,7 @@ test("pr 档：产物闸标注为全仓口径（pr/full 对象面是全仓，不
   }
 });
 
-test("pr 档：不跑豁免到期台账（增量档反复打印存量台账只是噪音）", () => {
+test("pr 档：不跑豁免到期台账（反复打印同一份存量台账只是噪音）", () => {
   const out = plannedSteps("pr");
   assert.ok(!out.includes("豁免到期台账"), "pr 档不应含台账收集步骤");
 });

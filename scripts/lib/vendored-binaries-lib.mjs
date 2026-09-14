@@ -327,6 +327,9 @@ export function distributionSurface(root) {
 /**
  * 扫出**发布物面内**内容为二进制的文件（仓库相对路径，排序）。
  * `isBinary` 是内容嗅探器：接收**采样缓冲**、返回是否二进制（缺省 isbinaryfile，见 sniffBinary）。
+ *
+ * @param {string} root 仓库根。
+ * @param {{ isBinary?: (sample: Buffer) => boolean }} [options] 见上：嗅探器接收采样缓冲，缺省 isbinaryfile。
  */
 export function scanVendoredBinaries(root, { isBinary = isBinaryFileSync } = {}) {
   const hits = [];
@@ -385,6 +388,11 @@ function checkEntryShape(e, index) {
  * 双向 fail-closed：扫到未登记的 ⇒ 红；登记了但文件消失 / 哈希漂移 / 内容已不是二进制 /
  * license 文本缺失或不在分发面内 ⇒ 红（防「登记表腐坏后判据静默失效」）。
  * `reports` 是不判红的诚实报告（未构建的声明条目等），CLI 打印但不影响退出码。
+ *
+ * @param {string} root 仓库根（登记表缺省位置与分发面都相对它解析）。
+ * @param {{ registryPath?: string, isBinary?: (sample: Buffer) => boolean }} [options]
+ *   registryPath：登记表路径（缺省 scripts/data/vendored-binaries.json）；
+ *   isBinary：内容嗅探器，接收采样缓冲（缺省 isbinaryfile）。
  */
 export function verifyVendoredBinaries(root, { registryPath, isBinary = isBinaryFileSync } = {}) {
   // 登记表不可读 = 判据不可执行，直接抛（调用方按结构错误 exit 2）——不得退化成「零命中放行」。

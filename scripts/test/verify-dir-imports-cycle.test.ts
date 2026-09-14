@@ -26,7 +26,11 @@ import { dirname, join } from "node:path";
 const ROOT = join(import.meta.dirname, "..", "..");
 const SCRIPT = join(ROOT, "scripts", "gate", "verify-dir-imports.mjs");
 
-/** 在隔离根下造 `packages/fixture-pkg/src/<files>`，返回根路径（调用方负责清理）。 */
+/**
+ * 在隔离根下造 `packages/fixture-pkg/src/<files>` 与变异拓扑单一事实源，返回根路径
+ * （调用方负责清理）。门禁对拓扑缺失态已 fail-closed（#773 R3）：本文件的用例验证的是
+ * 规则 5 本身，故 fixture 自带事实源，否则缺失告警会盖住被判定的环语义。
+ */
 function makeFixtureRoot(files) {
   const root = mkdtempSync(join(tmpdir(), "verify-dir-imports-"));
   const src = join(root, "packages", "fixture-pkg", "src");
@@ -35,6 +39,24 @@ function makeFixtureRoot(files) {
     mkdirSync(dirname(full), { recursive: true });
     writeFileSync(full, content);
   }
+  const topo = join(root, "scripts", "data", "mutation-topology.json");
+  mkdirSync(dirname(topo), { recursive: true });
+  writeFileSync(
+    topo,
+    JSON.stringify({
+      sharedDefaults: {},
+      packages: {
+        "fixture-pkg": {
+          segments: {
+            s1: {
+              mutate: ["packages/fixture-pkg/src/**/*.ts"],
+              excludes: ["!packages/fixture-pkg/src/client/**"],
+            },
+          },
+        },
+      },
+    }),
+  );
   return root;
 }
 

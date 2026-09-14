@@ -12,6 +12,16 @@
  * 与「恰好同时有 20 个 job 就绪」。额度饱和的特征是峰值处**长时间维持**且新增只会发生在
  * 有 job 结束之后——脚本按事件序列打印该形态，供人工判读。
  *
+ * 为什么必须按 conclusion 而非时间戳剔除被取消的 run：取消发生在**排队阶段**时，这些 job
+ * 从未真正执行，却和正常执行的 job 一样带有 started_at / completed_at——它们覆盖的是「等待被
+ * 调度」的窗口，与真实占用额度的窗口不可区分。把这些窗口叠加进事件序列会把排队深度算成运行
+ * 并发，峰值因此虚高（复核实测：同一 run 裸算 max=35，剔除后 11）。起止时间戳上无法区分这两种
+ * 窗口，故判据取 conclusion === "cancelled"。
+ *
+ * 该判据剔除**全部** cancelled job，其中少数确实执行过步骤的会被一并剔掉，因此 countedJobs 是
+ * 下界（伪影 run 实测低估 5），极端 run 峰值可能低估 1；不影响账户级上界——100 run 上「剔除全部
+ * cancelled」与「只剔除 steps 为空的 cancelled」两种口径的全局峰值相同。
+ *
  * 定位：维护者/本地工具，需 gh 与网络，**不进 CI**（进 CI 属 `.github/` 红线段）。
  *
  * 用法：
@@ -51,6 +61,7 @@ function ghJson(args) {
 export function peakConcurrency(jobs) {
   const events = [];
   for (const j of jobs) {
+    if (j.conclusion === "cancelled") continue; // 被取消的 run 其 job 也带起止时间，见文件头
     if (!j.started_at || !j.completed_at) continue;
     const s = Date.parse(j.started_at);
     const e = Date.parse(j.completed_at);
@@ -142,7 +153,7 @@ function main() {
   }
   rows.sort((a, b) => b.peak - a.peak || b.countedJobs - a.countedJobs);
   console.log(
-    `\n${"peak".padStart(5)} ${"held_s".padStart(6)} ${"jobs".padStart(5)}  ${"run_id".padStart(12)}  event           createdAt`,
+    `\n${"peak".padStart(5)} ${"held_s".padStart(6)} ${"count".padStart(5)}  ${"run_id".padStart(12)}  event           createdAt`,
   );
   for (const r of rows.slice(0, top)) {
     console.log(
