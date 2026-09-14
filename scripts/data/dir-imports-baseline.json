@@ -28,26 +28,18 @@
     },
     "dsh-mcp-manager": {
       "modules": 17,
-      "scannedSrcFiles": 85,
-      "allSrcTsFiles": 100,
+      "scannedSrcFiles": 86,
+      "allSrcTsFiles": 101,
       "interfaceFacades": 16,
-      "leafValueEdges": 38,
-      "fileValueEdges": 136,
-      "crossModuleRefs": 155,
+      "leafValueEdges": 34,
+      "fileValueEdges": 134,
+      "crossModuleRefs": 154,
       "quality": {
-        "leafModuleCycles": [
-          "catalog|connection|connection/orchestrator",
-          "catalog|connection|connection/orchestrator|connection/runtime"
-        ],
-        "fileCycles": [
-          "catalog/interface.ts|catalog/search.ts|connection/interface.ts|connection/runtime/interface.ts|connection/runtime/middleware.ts",
-          "connection/orchestrator/interface.ts|connection/orchestrator/manager.ts"
-        ],
+        "leafModuleCycles": [],
+        "fileCycles": [],
         "implToOtherImpl": [],
         "missingInterface": [],
-        "directImpl": [
-          "connection/interface.ts|connection/orchestrator/tool-names.ts"
-        ],
+        "directImpl": [],
         "uncoveredSrcFiles": [],
         "crossDomainValueEdges": [
           "api|config/model",
@@ -60,9 +52,6 @@
           "bootstrap|connection/orchestrator",
           "bootstrap|inject",
           "bootstrap|workspace",
-          "catalog|config/store",
-          "catalog|connection",
-          "catalog|workspace",
           "connection/orchestrator|catalog",
           "connection/orchestrator|config/model",
           "connection/orchestrator|config/store",
@@ -73,7 +62,6 @@
           "connection/runtime|catalog",
           "connection/runtime|pipeline",
           "connection/runtime|workspace",
-          "connection|connection/orchestrator",
           "connection|connection/runtime",
           "inject|catalog",
           "inject|connection/runtime",

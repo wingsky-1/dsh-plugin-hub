@@ -7,19 +7,7 @@
  * 口径随迁保持「恰好命中 limit 不误报」。
  */
 
-import {
-  CATALOG_TTL_MS,
-  LIST_DEFAULT_TOOLS_PER_SERVER,
-  MAX_BYTES_PER_TOOL,
-  MAX_TOOLS_PER_SERVER,
-  MAX_TOTAL_CATALOG_BYTES,
-} from "../connection/interface.ts";
-import {
-  fullServerName,
-  parseFullServerName,
-  MIDDLEWARE_GLOBAL_ROOT,
-  normalizeToolName,
-} from "../workspace/interface.ts";
+import { catalogPorts } from "./impl/service/index.ts";
 import type {
   CatalogServer,
   CatalogTool,
@@ -99,6 +87,10 @@ export function searchCatalog(
   unavailable: Array<{ server: string; reason: string }>;
   truncated: boolean;
 } {
+  const {
+    connection: { CATALOG_TTL_MS },
+    workspace: { fullServerName },
+  } = catalogPorts.get();
   const unit = units.get(root);
   if (unit === undefined) return { results: [], unavailable: [], truncated: false };
   const results: SearchHit[] = [];
@@ -191,6 +183,10 @@ export function listCatalog(
   emptyHint: string,
   disabledTools?: DisabledToolsMap,
 ): ListCatalogResult {
+  const {
+    connection: { LIST_DEFAULT_TOOLS_PER_SERVER },
+    workspace: { parseFullServerName, fullServerName, MIDDLEWARE_GLOBAL_ROOT },
+  } = catalogPorts.get();
   const safeLimit =
     Number.isFinite(toolLimit) && toolLimit > 0
       ? Math.floor(toolLimit)
@@ -302,6 +298,10 @@ export function findToolDetail(
   server: string,
   tool: string,
 ): ToolDetail {
+  const {
+    connection: { CATALOG_TTL_MS },
+    workspace: { parseFullServerName, normalizeToolName },
+  } = catalogPorts.get();
   const parsed = parseFullServerName(server);
   if (parsed === undefined || parsed.root !== root) {
     throw new Error(
@@ -346,6 +346,9 @@ export function findToolDetail(
 /** 目录新鲜判定：有条目、无 unavailable 段、且发现时间在 TTL 内
  *  （discover 惰性重发现专用；纯时间比较，无副作用）。 */
 export function isCatalogFresh(catalog: CatalogServer | undefined): boolean {
+  const {
+    connection: { CATALOG_TTL_MS },
+  } = catalogPorts.get();
   return (
     catalog !== undefined &&
     catalog.unavailable === undefined &&
@@ -360,6 +363,9 @@ export function isCatalogFresh(catalog: CatalogServer | undefined): boolean {
 export function boundCatalogTools(
   tools: Iterable<{ name?: unknown; description?: unknown; inputSchema?: unknown }>,
 ): Map<string, CatalogTool> {
+  const {
+    connection: { MAX_TOOLS_PER_SERVER, MAX_BYTES_PER_TOOL, MAX_TOTAL_CATALOG_BYTES },
+  } = catalogPorts.get();
   const bounded = new Map<string, CatalogTool>();
   let totalBytes = 0;
   for (const tool of tools) {
