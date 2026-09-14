@@ -1,17 +1,17 @@
 {
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
-    "packages/dsh-mcp-manager/src/connection/runtime/supervisor.ts",
-    "packages/dsh-mcp-manager/src/connection/runtime/reconnect.ts",
-    "packages/dsh-mcp-manager/src/config/store/**/*.ts",
-    "packages/dsh-mcp-manager/src/stats/**/*.ts",
+    "packages/dsh-mcp-manager/src/server/connection/runtime/supervisor.ts",
+    "packages/dsh-mcp-manager/src/server/connection/runtime/reconnect.ts",
+    "packages/dsh-mcp-manager/src/server/store/**/*.ts",
+    "packages/dsh-mcp-manager/src/server/stats/**/*.ts",
     "!packages/dsh-mcp-manager/src/client/**",
     "!packages/dsh-mcp-manager/src/types/**",
     "!packages/dsh-mcp-manager/src/integration/**",
     "!packages/dsh-mcp-manager/src/shared/placement-math.ts",
     "!packages/dsh-mcp-manager/src/**/interface.ts",
     "!packages/dsh-mcp-manager/src/server/*/deps.ts",
-    "!packages/dsh-mcp-manager/src/connection/runtime/deps.ts"
+    "!packages/dsh-mcp-manager/src/server/connection/runtime/deps.ts"
   ],
   "testRunner": "vitest",
   "mutator": {

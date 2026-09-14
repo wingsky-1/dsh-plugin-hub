@@ -5,8 +5,8 @@
  * 类型统一自本文件取，防循环引用（type-only，编译期擦除）。
  */
 
-import type { MCPClient } from "../connection/runtime/interface.ts";
-import type { StdioTransport, HttpTransport } from "../connection/runtime/interface.ts";
+import type { MCPClient } from "../server/connection/runtime/interface.ts";
+import type { StdioTransport, HttpTransport } from "../server/connection/runtime/interface.ts";
 import type { ServerConfig } from "./server.ts";
 /** 中间层模式：off = 直呼（默认兼容）；project = 项目级走中间层；all = 全部走中间层。 */
 export type MiddlewareMode = "off" | "project" | "all";

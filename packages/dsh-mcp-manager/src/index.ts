@@ -32,46 +32,46 @@ import { dirname } from "node:path";
 import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
 import { sseData } from "../../../shared/host-utils.js";
 import type { McpManagerService } from "./integration/interface.ts";
-import { installOrchestrator, McpManager } from "./connection/orchestrator/interface.ts";
-import * as apiApi from "./api/interface.ts";
+import { installOrchestrator, McpManager } from "./server/connection/orchestrator/interface.ts";
+import * as apiApi from "./server/api/interface.ts";
 import {
   makeEventsRoute,
   makeHealthRoute,
   makeRoutes,
   uiConfigChangedFrame,
-} from "./api/interface.ts";
-import * as catalogApi from "./catalog/interface.ts";
+} from "./server/api/interface.ts";
+import * as catalogApi from "./server/catalog/interface.ts";
 import {
   DEFAULT_ANNOUNCE_CATALOG,
   DEFAULT_CATALOG_MAX_ENTRIES,
   resolveCatalogInjection,
-} from "./catalog/interface.ts";
+} from "./server/catalog/interface.ts";
 import type {
   CatalogAgent,
   CatalogDecision,
   CatalogMessage,
   SupervisorLite,
-} from "./catalog/interface.ts";
-import * as configModelApi from "./config/model/interface.ts";
-import { Config, DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS } from "./config/model/interface.ts";
-import * as pipelineApi from "./pipeline/interface.ts";
-import * as runtimeApi from "./connection/runtime/interface.ts";
-import * as statsApi from "./stats/interface.ts";
-import type { DebugConfig } from "./stats/interface.ts";
-import * as storeApi from "./config/store/interface.ts";
-import { defaultStorePath, loadDisabledTools, McpStore } from "./config/store/interface.ts";
+} from "./server/catalog/interface.ts";
+import * as configModelApi from "./server/config/interface.ts";
+import { Config, DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS } from "./server/config/interface.ts";
+import * as pipelineApi from "./server/pipeline/interface.ts";
+import * as runtimeApi from "./server/connection/runtime/interface.ts";
+import * as statsApi from "./server/stats/interface.ts";
+import type { DebugConfig } from "./server/stats/interface.ts";
+import * as storeApi from "./server/store/interface.ts";
+import { defaultStorePath, loadDisabledTools, McpStore } from "./server/store/interface.ts";
 import {
   installInject,
   registerDirectMcpGuard,
   registerMiddlewareTools,
-} from "./inject/interface.ts";
+} from "./server/inject/interface.ts";
 import { installUpgrade, releaseUpgrade } from "./server/upgrade/interface.ts";
 import { DEFAULT_RESULT_TRUNCATE_BYTES } from "./server/shared/interface.ts";
 import { SSE_FRAMES } from "./shared/interface.ts";
 import type { McpServerSummary, SseFramePayload } from "./shared/interface.ts";
 import type { MiddlewareMode } from "./types/interface.ts";
-import { makeResolveRoot, normalizeMiddlewareMode } from "./workspace/interface.ts";
-import * as workspaceApi from "./workspace/interface.ts";
+import { makeResolveRoot, normalizeMiddlewareMode } from "./server/workspace/interface.ts";
+import * as workspaceApi from "./server/workspace/interface.ts";
 
 // 目录域的静态端口装配。三组 Port 全是静态模块引用（不需要宿主 ctx 或配置），故写在入口
 // 顶层、模块求值期写定。实参必须是可解析的对象字面量、键集与 catalog/deps.ts 的 CatalogDeps
@@ -755,12 +755,12 @@ export {
   buildConfigUiPatch,
   panelTopForAnchor,
   Config,
-} from "./config/model/interface.ts";
+} from "./server/config/interface.ts";
 export type { UiPlacementConfig, ClientUiConfig } from "./types/interface.ts";
 
 // 管理器 / 连接域（orchestrator+runtime：#664 阶段 6 集中搬移完成）。runtime 的值面自 W10 起
 // 直接取自子层门面——connection/interface.ts 只留类型出口，不再转发值符号。
-export { McpManager } from "./connection/orchestrator/interface.ts";
+export { McpManager } from "./server/connection/orchestrator/interface.ts";
 export {
   ConnectionSupervisor,
   McpMiddleware,
@@ -770,7 +770,7 @@ export {
   StdioTransport,
   createTransport,
   MCPClient,
-} from "./connection/runtime/interface.ts";
+} from "./server/connection/runtime/interface.ts";
 export {
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
   DEFAULT_RESULT_TRUNCATE_BYTES,
@@ -790,16 +790,20 @@ export {
   MAX_TOTAL_CATALOG_BYTES,
   LIST_DEFAULT_TOOLS_PER_SERVER,
   LIST_MAX_TOOLS_PER_SERVER,
-} from "./connection/runtime/interface.ts";
-export type { ReconnectPolicy } from "./connection/interface.ts";
+} from "./server/connection/runtime/interface.ts";
+export type { ReconnectPolicy } from "./server/connection/interface.ts";
 // 工作空间路由域（项目根发现 / 全名解析 / scope / 模式归一化；阶段 4 成形）
-export { findProjectRoot, normalizedProjectRoot, makeResolveRoot } from "./workspace/interface.ts";
+export {
+  findProjectRoot,
+  normalizedProjectRoot,
+  makeResolveRoot,
+} from "./server/workspace/interface.ts";
 export {
   fullServerName,
   parseFullServerName,
   normalizeToolName,
   normalizeMiddlewareMode,
-} from "./workspace/interface.ts";
+} from "./server/workspace/interface.ts";
 // 执行管道域（两路径同构纯函数族；#664 阶段 2）
 export {
   normalizeArguments,
@@ -813,8 +817,8 @@ export {
   withTimeout,
   defaultCallResultFallbackText,
   projectCallToolResult,
-} from "./pipeline/interface.ts";
-export type { CallResultTextHandlers, ProjectedCallResult } from "./pipeline/interface.ts";
+} from "./server/pipeline/interface.ts";
+export type { CallResultTextHandlers, ProjectedCallResult } from "./server/pipeline/interface.ts";
 // 核心化 service（官方 storageDomain 模式）：ctx.mcpManager 类型面 + 声明合并。
 // 仅类型导出（无副作用导入）：消费方 import 类型时 tsc 会解析 integration 门面，
 // 入口的 declare module 合并自动生效；副作用导入会让 stryker sandbox 解析
@@ -842,7 +846,7 @@ declare module "@deepseek-ai/cordis" {
 }
 
 // 存储与状态持久化（config/store：#664 阶段 6 落位）
-export { defaultStorePath, McpStore } from "./config/store/interface.ts";
+export { defaultStorePath, McpStore } from "./server/store/interface.ts";
 export {
   userStateFile,
   loadUserState,
@@ -852,7 +856,7 @@ export {
   parseDisabledTools,
   catalogCacheFileFor,
   readCatalogServerFromDisk,
-} from "./config/store/interface.ts";
+} from "./server/store/interface.ts";
 // 能力目录 / 目录缓存（#664 阶段 5：catalog 域成形）
 export {
   DEFAULT_ANNOUNCE_CATALOG,
@@ -882,25 +886,25 @@ export {
   searchCatalogMulti,
   listCatalog,
   findToolDetail,
-} from "./catalog/interface.ts";
+} from "./server/catalog/interface.ts";
 // mcpServers JSON 导入 / 归一化（config/model）
 export {
   fromClaudeEntry,
   parseClaudeJson,
   SERVER_NAME_PATTERN,
   normalizeServer,
-} from "./config/model/interface.ts";
+} from "./server/config/interface.ts";
 // 统计与 Debug
-export { McpStatsCollector, defaultStatsPath } from "./stats/interface.ts";
+export { McpStatsCollector, defaultStatsPath } from "./server/stats/interface.ts";
 export type {
   McpStatsSnapshot,
   ServerStats,
   ToolCallMetric,
   ProgressiveDisclosureStats,
   DebugConfig,
-} from "./stats/interface.ts";
+} from "./server/stats/interface.ts";
 // 工具注册面（inject：#664 阶段 6 落位）
-export { registerMiddlewareTools, registerDirectMcpGuard } from "./inject/interface.ts";
+export { registerMiddlewareTools, registerDirectMcpGuard } from "./server/inject/interface.ts";
 // 共享类型面（types 域）
 export type {
   MiddlewareMode,
@@ -926,8 +930,8 @@ export {
   broadcastFrame,
   SSE_HEARTBEAT_MS,
   SSE_PING_FRAME,
-} from "./api/interface.ts";
-export { normalizeScope } from "./workspace/interface.ts";
+} from "./server/api/interface.ts";
+export { normalizeScope } from "./server/workspace/interface.ts";
 // 跨端契约常量（物理定义在 shared/constants.ts）：入口经共享层门面取，与两端消费者同一份；
 // workspace 域门面仍为域内消费者转出同一份。客户端目前仍以字面量重复实现 scope 与全局 root
 // 前缀，改引属 #769。

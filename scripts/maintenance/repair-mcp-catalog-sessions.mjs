@@ -60,9 +60,9 @@ import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-/** 插件身份：与 src/catalog/entries.ts 的 CATALOG_SOURCE_PLUGIN 同源（发布物内联，无法 import）。 */
+/** 插件身份：与 src/server/catalog/impl/entries/index.ts 的 CATALOG_SOURCE_PLUGIN 同源（发布物内联，无法 import）。 */
 export const CATALOG_SOURCE_PLUGIN = "@wingsky-1/dsh-mcp-manager";
-/** 目录快照段名：与 src/catalog/entries.ts 的 CATALOG_SECTION_NAME 同源。 */
+/** 目录快照段名：与 src/server/catalog/impl/entries/index.ts 的 CATALOG_SECTION_NAME 同源。 */
 export const CATALOG_SECTION_NAME = "mcp-catalog";
 /** 旧形态的 source.kind（本脚本的匹配条件）。 */
 export const LEGACY_CATALOG_KIND = "mcp-catalog";

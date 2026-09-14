@@ -8,10 +8,10 @@
  */
 
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
-import type { McpStatsCollector } from "../stats/interface.ts";
+import type { McpStatsCollector } from "../server/stats/interface.ts";
 import type { ClientUiConfig } from "./ui.ts";
 import type { ServerConfig } from "./server.ts";
-import type { McpStore } from "../config/store/interface.ts";
+import type { McpStore } from "../server/store/interface.ts";
 import type { ProjectUnit } from "./middleware-types.ts";
 import type { SseHub } from "../../../../shared/sse-hub.js";
 
