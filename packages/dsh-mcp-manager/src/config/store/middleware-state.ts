@@ -5,13 +5,13 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import type { ProjectUnit, DisabledToolsMap } from "../../types/interface.ts";
-import { dshHome } from "../../../../../shared/dsh-home.js";
+import { catalogFile, userStatePath } from "../../server/shared/interface.ts";
 
-/** userDisabled 持久化文件路径。 */
+/** userDisabled 持久化文件路径（名字与权限的物理定义在 server/shared/paths.ts，I7 单源）。 */
 export function userStateFile() {
-  return join(dshHome(), "dsh-mcp-user-state.json");
+  return userStatePath();
 }
 
 /** 加载 userDisabled（损坏/缺失 → 空）。 */
@@ -61,10 +61,10 @@ export async function saveUserState(file: string, units: Map<string, ProjectUnit
   }
 }
 
-/** 目录缓存文件路径（每工作空间一份；root 哈希防路径注入）。 */
+/** 目录缓存文件路径（每工作空间一份；root 哈希防路径注入；落点单源在 server/shared/paths.ts）。 */
 export function catalogCacheFileFor(root: string) {
   const hash = createHash("sha256").update(root).digest("hex").slice(0, 16);
-  return join(dshHome(), "dsh-mcp-catalog", `${hash}.json`);
+  return catalogFile(hash);
 }
 
 /** 磁盘 last-good 目录文件中的单服务器条目（与 middleware persistCatalog

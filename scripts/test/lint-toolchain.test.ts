@@ -187,7 +187,7 @@ test("#764 A3：三条类型感知规则在 src 面按 error 生效（分阶段�
     overrideConfigFile: join(ROOT, "tools", "lint", "eslint.config.js"),
   });
   const cfg = await eslint.calculateConfigForFile(
-    join(ROOT, "packages", "dsh-mcp-manager", "src", "bootstrap", "apply.ts"),
+    join(ROOT, "packages", "dsh-mcp-manager", "src", "index.ts"),
   );
 
   // 为什么只判配置层、不做「喂一段浮空 Promise 看它报不报」的行为判据：这三条是 type-checked

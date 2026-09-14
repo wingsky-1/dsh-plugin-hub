@@ -2968,7 +2968,9 @@ describe("#569 catalogViewFor 合成注入端目录视图", () => {
   const catalogFileFor = (root) =>
     join(
       homeDir,
-      "dsh-mcp-catalog",
+      "@wingsky-1",
+      "dsh-mcp-manager",
+      "catalog",
       `${createHash("sha256").update(root).digest("hex").slice(0, 16)}.json`,
     );
   const unitFor = (root, catalogEntries) => ({
@@ -3109,7 +3111,7 @@ describe("#569 catalogViewFor 合成注入端目录视图", () => {
     mw.units.clear(); // 单元全部缺失
     const diskRoot = "@global";
     const file = catalogFileFor(diskRoot);
-    mkdirSync(join(homeDir, "dsh-mcp-catalog"), { recursive: true });
+    mkdirSync(join(homeDir, "@wingsky-1", "dsh-mcp-manager", "catalog"), { recursive: true });
     writeFileSync(
       file,
       JSON.stringify({

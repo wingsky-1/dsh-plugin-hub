@@ -11,7 +11,7 @@
 
 import { mkdirSync, writeFileSync, renameSync, existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { dshHome } from "../../../../../shared/dsh-home.js";
+import { statsFile } from "../../server/shared/interface.ts";
 import type {
   McpStatsSnapshot,
   ServerStats,
@@ -19,8 +19,9 @@ import type {
   ProgressiveDisclosureStats,
 } from "./type.ts";
 
+/** 默认统计落盘路径（落点单源在 server/shared/paths.ts；此处只转发）。 */
 export function defaultStatsPath(): string {
-  return resolve(dshHome(), "mcp-stats.json");
+  return statsFile();
 }
 
 export class McpStatsCollector {

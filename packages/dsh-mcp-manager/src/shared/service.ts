@@ -1,7 +1,7 @@
 /**
  * dsh-mcp-manager — 跨端服务类型单点（D5，#767 B1.5b）。
  *
- * ctx.mcpManager 的类型面：宿主提供方（bootstrap/apply-services.ts）按它装配，
+ * ctx.mcpManager 的类型面：宿主提供方（src/index.ts 的 provideMcpManagerService）按它装配，
  * 兄弟插件**从本包入口引类型**（\`import type { McpManagerService } from
  * "@wingsky-1/dsh-mcp-manager"\`）——入口的声明合并让 ctx.mcpManager 在消费方
  * 类型面可达。物理定义只在本文件（原仓库级 shared/mcp-manager-service.d.ts 已退回包内）。

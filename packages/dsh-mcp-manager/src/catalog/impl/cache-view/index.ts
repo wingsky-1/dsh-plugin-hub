@@ -9,8 +9,7 @@
  */
 
 import { existsSync, statSync } from "node:fs";
-import { join } from "node:path";
-import { dshHome } from "../../../../../../shared/dsh-home.js";
+import { catalogSummaryFile } from "../../../server/shared/interface.ts";
 import type { McpMiddleware } from "../../../connection/runtime/interface.ts";
 import type { ServerConfig } from "../../../types/interface.ts";
 import { MIDDLEWARE_GLOBAL_ROOT, SCOPE_PROJECT } from "../../../shared/interface.ts";
@@ -18,9 +17,12 @@ import { catalogPorts } from "../service/index.ts";
 import { summarizeToolDescriptions } from "../entries/index.ts";
 import type { CatalogCache } from "../entries/index.ts";
 
-/** 目录缓存文件（连接成功时把工具描述摘要持久化于此；目录 digest 的稳定数据源）。 */
+/**
+ * 目录摘要缓存文件（连接成功时把工具描述摘要持久化于此；目录 digest 的稳定数据源）。
+ * 名字与权限的物理定义在 server/shared/paths.ts（I7 单源）。
+ */
 export function catalogCacheFile() {
-  return join(dshHome(), "dsh-mcp-catalog.json");
+  return catalogSummaryFile();
 }
 
 /** catalogViewFor 的宿主最小面（manager 提供；中间层/模式可能热切换，用读取器）。 */

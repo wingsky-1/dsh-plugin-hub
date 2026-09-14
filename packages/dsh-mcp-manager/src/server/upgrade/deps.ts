@@ -20,7 +20,7 @@ export interface UpgradeDeps {
    * 空串 = 未配置。
    *
    * 必须是「显式值」而不是解析后的**生效路径**：未配置时生效路径恰恰是待迁移的旧默认落点
-   * （`bootstrap/apply-config.ts` 的回落），照生效值判断会把每一次默认安装都当成「用户接管了路径」，
+   * （`src/index.ts` 的 `resolveStorePath` 回落），照生效值判断会把每一次默认安装都当成「用户接管了路径」，
    * 于是迁移整段跳过、刻度照常推进——静默丢用户配置。
    */
   storePath: string;

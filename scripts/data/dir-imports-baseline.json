@@ -27,13 +27,13 @@
       }
     },
     "dsh-mcp-manager": {
-      "modules": 17,
-      "scannedSrcFiles": 95,
-      "allSrcTsFiles": 110,
+      "modules": 16,
+      "scannedSrcFiles": 89,
+      "allSrcTsFiles": 104,
       "interfaceFacades": 16,
-      "leafValueEdges": 22,
-      "fileValueEdges": 136,
-      "crossModuleRefs": 166,
+      "leafValueEdges": 15,
+      "fileValueEdges": 118,
+      "crossModuleRefs": 148,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -41,15 +41,7 @@
         "missingInterface": [],
         "directImpl": [],
         "uncoveredSrcFiles": [],
-        "crossDomainValueEdges": [
-          "bootstrap|api",
-          "bootstrap|catalog",
-          "bootstrap|config/model",
-          "bootstrap|config/store",
-          "bootstrap|connection/orchestrator",
-          "bootstrap|inject",
-          "bootstrap|workspace"
-        ],
+        "crossDomainValueEdges": [],
         "rootIndexImports": [],
         "clientServerImports": [],
         "unitImportFaceViolations": [
