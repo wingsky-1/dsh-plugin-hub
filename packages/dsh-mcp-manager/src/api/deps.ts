@@ -10,7 +10,7 @@
  * **不为 `manager` 开口**（附录 G·G19 + D.3·37）：本域对 `RoutesManager` 的 44 处直取走的是
  * 结构参数类型、**没有 import 边**，而 `connection/interface.ts` 今天一个 manager 能力都没
  * 导出（§3.5 表里那 30 个成员名在门面 grep 命中 0）——物理上开不出 Port。把 22 个成员命名成
- * 能力对象是 W10 的施工面，本刀不碰。
+ * 能力对象不在本刀范围（附录 G·G19；D.3·37），归后续刀。
  *
  * 口径取「实际使用」而非「import 面」（附录 E.6 第 3 条的建议）：端口成员 = 域内真实的消费点。
  * 跨端契约常量 SCOPE_PROJECT / MIDDLEWARE_GLOBAL_ROOT 已按 §3.6 规则 6 迁 `src/shared/`

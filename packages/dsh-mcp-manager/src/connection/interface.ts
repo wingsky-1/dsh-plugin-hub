@@ -3,37 +3,11 @@
  *
  * 连接域 = orchestrator（仲裁/双轨/summary/事件出口，manager）+ runtime（supervisor
  * 代际/中间层池/transport/protocol/limits），阶段 6 集中搬移完成（v3 §二）。
- * 目录外模块**只能**从这里引用（verify-dir-imports 静态强制）。
+ * 目录外模块**只能**从这里引用本域自有符号（verify-dir-imports 静态强制）。
+ *
+ * runtime 子层的值面不再经本门面转出（#767 B2a-wire W10）：本门面只留类型出口，那 26 个值
+ * 符号的消费者直接引 `connection/runtime/interface.ts`。「门面 → 子层门面」的值复导本身就是
+ * 一条模块级值边（I2① `connection|connection/runtime`），而它只转发、不承载语义。
  */
-// McpManager 仅类型面经本门面（type-only 编译期擦除，不引入运行时初始化环）；
-// 值面（class）由 src/index.ts 经 orchestrator/interface.ts 直接取（汇聚点特例）。
 export type { McpManager } from "./orchestrator/interface.ts";
-export {
-  RECONNECT_DEFAULTS,
-  resolveReconnect,
-  DEFAULT_TOOL_CALL_TIMEOUT_MS,
-  DEFAULT_RESULT_TRUNCATE_BYTES,
-  publicToolName,
-  truncateText,
-  assertSupportedOutputSchema,
-  buildToolDefinition,
-  ConnectionSupervisor,
-  McpMiddleware,
-  expandEnv,
-  HttpTransport,
-  parseSsePayload,
-  StdioTransport,
-  createTransport,
-  MCPClient,
-  CONNECT_TIMEOUT_MS,
-  DISCOVERY_TIMEOUT_MS,
-  CALL_TIMEOUT_MS,
-  CATALOG_TTL_MS,
-  CATALOG_LRU_MAX,
-  MAX_TOOLS_PER_SERVER,
-  MAX_BYTES_PER_TOOL,
-  MAX_TOTAL_CATALOG_BYTES,
-  LIST_DEFAULT_TOOLS_PER_SERVER,
-  LIST_MAX_TOOLS_PER_SERVER,
-} from "./runtime/interface.ts";
 export type { ReconnectPolicy } from "./runtime/interface.ts";

@@ -2,8 +2,8 @@
  * dsh-mcp-manager — connection/runtime/interface.ts：连接域 runtime 子层门面（D10）。
  *
  * runtime = supervisor 代际 / 中间层池 / transport / protocol / limits（阶段 6
- * 集中搬移完成，实现均已落位本目录）。连接域外部一律经 ../interface.ts 引用，
- * 本文件只被连接域内部与 index.ts 汇聚转发。
+ * 集中搬移完成，实现均已落位本目录）。本子层的**值面**是子层对外的直接引用点（#767
+ * B2a-wire W10：消费者不再经 ../interface.ts 转出）；类型面仍可经 ../interface.ts 取。
  *
  * 本子层**有对上依赖**（§3.1 规则 2；决策⑥ 以运行时能力消费为准）：catalog / pipeline /
  * workspace 三组能力（`deps.ts` 的三条 Port）。子层内实现一律经 `impl/service` 的端口

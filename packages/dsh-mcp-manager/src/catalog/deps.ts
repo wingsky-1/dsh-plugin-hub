@@ -19,15 +19,20 @@
  * 一律经 `impl/service` 的 `catalogPorts.get()`，写入只由组合根在 `src/index.ts` 顶层完成。
  */
 import type * as storeApi from "../config/store/interface.ts";
-import type * as connectionApi from "../connection/interface.ts";
+import type * as connectionRuntimeApi from "../connection/runtime/interface.ts";
 import type * as workspaceApi from "../workspace/interface.ts";
 
 /** store 域给本域的能力面：磁盘 last-good 目录缓存读面。 */
 export type StorePort = Pick<typeof storeApi, "readCatalogServerFromDisk">;
 
-/** connection 域给本域的能力面：目录 TTL 与装箱限额常量。 */
+/**
+ * connection 域给本域的能力面：目录 TTL 与装箱限额常量。
+ *
+ * 指向 runtime 子层门面：这 4 个常量的物理定义在 connection/runtime/limits.ts，而 connection
+ * 门面自 W10 起不再转发 runtime 的值面（那条转发边就是 I2① `connection|connection/runtime`）。
+ */
 export type ConnectionPort = Pick<
-  typeof connectionApi,
+  typeof connectionRuntimeApi,
   "CATALOG_TTL_MS" | "MAX_BYTES_PER_TOOL" | "MAX_TOOLS_PER_SERVER" | "MAX_TOTAL_CATALOG_BYTES"
 >;
 
