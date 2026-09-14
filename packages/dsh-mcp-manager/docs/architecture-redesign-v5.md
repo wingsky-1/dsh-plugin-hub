@@ -726,6 +726,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 > ① **不建 10 个空域骨架**（`store/stats/pipeline/config/workspace/catalog/connection/inject/api/sdk` 的 `interface.ts`/`deps.ts`）。依据是**决策⑥**：`deps.ts` 的口径是「**运行时能力消费**」的**实测**产物（附录 E 已证 workspace 静态 0 边但运行期 2 条对象成员边），域代码不存在时写它只能是猜；10 个空门面只会往登记面加 10 个模块、零行为收益。**各域随 B2 重写时与其真实代码同笔生成**。
 > ② **B1.4 不重写 `bootstrap/apply.ts` 的既有装配、不把既有装配路由进 `assemble`**：本刀只交付机制 + 宿主能力面 + `declare module` 迁入 + 探针，插件保持今天的行为可用；把真实域接进 `assemble` 是 **B2**（那时域才存在），否则就是二次重写。
 > ③ **组合根机制的物理落点是 `server/shared/`，不是 §3.1 字面的 `src/index.ts`**（B1.4 落点裁量，两条硬要求不可兼得时的取舍）：入口加任何新导出都会让 `export-surface-snapshot --package dsh-mcp-manager` 判红（判词「入口 . 新增导出」），而写在入口又不导出的函数测试不可达——「入口导出面零 diff」与「夹具域驱动的探针」只能同时满足于「机制住在可 `import` 的内部模块」。**入口仍是组合根**：B2 由 `src/index.ts` 调 `bindHost(ctx)` → `assemble(host, domains)` → `ctx.effect(() => () => safeDisposeAll(disposers))` 接真实域；`Context` 的引用面因此仍只有两处（`host-faces.ts` 的类型 + 入口）。**连带收益**：`assemble` 对每个 `install` 一律 `await`，B1.3 记的「`installUpgrade` 返回 Promise、B2 必须 `await`」由机制兜住，接线方漏写不会有第二次机会。
+> ④ **主控裁定（2026-09-14）：③ 接受**，并补一条子 agent 未提、但必须记账的**准入面事实**——`compose.ts` 落 `server/shared/` 与 **I5 的准入规则不符**（函数与值面要求 **≥2 域消费**，且 §二 I5 明文写「**单一消费者留包内**」），而它今天**只有组合根一个消费者**。接受的理由：另一条路要么**放宽入口导出面**（判据让步），要么**放弃探针**（机制不可测），两者都比「准入面记一笔」更差。**B2 复查项**：导出面在「删除那一笔」重冻结后，机制应回到入口（此时它可作为「4 符号组合根」的一部分被导出），或证明它确有 ≥2 消费者；否则 `server/shared` 的准入面等于被放宽过一次，须在 B3 的准入核对里如实记账。
 
 > **接线顺序约束（B2 必须遵守，来自代码事实）**：`upgrade` 的 `storage-layout` 步骤会把旧文件 `rename` 成 `*.migrated.bak`；而各域今天仍读旧路径（`config/store/store.ts` 读 `<DSH_HOME>/dsh-mcp.json`、`catalog/cache-view.ts` 读 `dsh-mcp-catalog.json`、`middleware-state.ts` 读 `dsh-mcp-user-state.json`）。**先接线迁移、后改读者 = 归档旧文件而旧读者读空 = 静默丢用户配置**。故 `upgrade` 的启用与「读者改读新布局」必须**同一笔**（B2）；B1 只交付可直接调用并单测的域，不接线。
 
@@ -860,7 +861,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 ### D.3 未完成与遗留（含状态订正）
 
 1. **B1 未完部分**：`src/shared/` 另外五个文件（`status`/`frames`/`dto`/`routes`/`service`）。组合根（B1.4）已完成，见 D.2·23。切法与验收见 D.4。**两条显式收窄 + 一条落点裁量**见 §十二 表后（不建 10 个空域骨架；B1.4 不路由既有装配；机制落 `server/shared/` 而非入口）。**接线顺序**：`upgrade` 的启用必须与「读者改读新布局」同一笔（B2），否则归档旧文件而旧读者读空 = 静默丢配置（见 §十二 表后）。
-2. **B1.4 已完成**（组合根机制 + `host-faces.ts` + `declare module` 迁入 + 9 条真实 Context 探针；机制落点裁量见 §十二 表后 ③）。**B1.3 已完成**（`4bd6af6`，不接线）；**B1.2 已完成**（`dfd6577`）；**B1.0 已完成**（`4f94f65`，附录 G·G1），其遗留的两条 id 不一致见 **G1b**（登记不修）；I9 判据只覆盖顶层 `let/var` 的缺口见 **G11**。
+2. **B1.5 进行中**（`src/shared/` 五文件）。**B1.4 已完成**（`b032294`：组合根机制 + `host-faces.ts` + `declare module` 迁入 + 9 条真实 Context 探针；机制落点裁量见 §十二 表后 ③，主控裁定与 I5 准入记录见 ④）。**B1.3 已完成**（`4bd6af6`，不接线）；**B1.2 已完成**（`dfd6577`）；**B1.0 已完成**（`4f94f65`，附录 G·G1），其遗留的两条 id 不一致见 **G1b**（登记不修）；I9 判据只覆盖顶层 `let/var` 的缺口见 **G11**。
 3. **⑩ 已完结**（随 B1.1，`f21d44d`）：迁移与其连带面（6 条 mutation exclude pattern 平移 + 6 份段 conf 重生成）同笔完成。
 4. **基线写入纪律（附录 G·G5，必须遵守）**：`--write-baseline` **必须在 build 之后的树上跑**——`lib/**` 的证据 id 会随 `lib/foo.d.ts` 在不在而变（只有 `src/index.ts` 做了归一），而 CI 是「先 build 再 contract」，两者错位就换号判红。
 5. **已知放宽路径（登记，不修）**：R16 的三条同族路径（删键 / 删**整包**条目 / **瞬态台账**，见 §十三 R16 与附录 G·G2–G4）；豁免 `reviewBy` 无执法力、可静默删除转长期（G6）。
@@ -871,7 +872,8 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 10. **lint warning 余量**：**670 / 预算 671，余量 1**（不许抬 `gauntlet.config.json`）。
 11. **测试面（B3 主体）未动**：16 个测试文件 / 14635 行尚未按域搬迁；`@ts-nocheck` 未清零。
 12. **红线状态（两条均已获授权）**：① `ci.yml` 数据面 glob 已落地（`f8ee6c5`）；② 公共 API 行为变更已于 2026-09-14 获维护者授权。**本轮不新增任何第三方依赖**。`approved` / `api-approved` 按仓规**只能由维护者本人打**，代理不代打。
-13. **PR-1（B0）尚未开**：分支领先 `origin/main` **36 笔**、工作区干净、**未推送**——该分支 upstream 指向 `origin/main`，**裸 `git push` 会打到 main**，要推必须 `git push -u origin task/767-arch-v4`。**PR-1 的切分点 = B0 末笔 `aa02843`**，其后的 `f21d44d` 起属 PR-2（B1–B3）。**维护者已授权「继续实施，最后推」**：B1 收尾时用 `git push -u origin task/767-arch-v4`（裸 `git push` 会打到 main，禁止）。
+13. **B2 复查项（准入面）**：`server/shared/compose.ts` 今天**只有组合根一个消费者**，与 I5 的「单一消费者留包内」不符（接受理由与复查要求见 §十二 表后 ④）。B2 重冻结入口导出面后，机制要么回到入口、要么证明 ≥2 消费者。
+14. **PR-1（B0）尚未开**：分支领先 `origin/main` **36 笔**、工作区干净、**未推送**——该分支 upstream 指向 `origin/main`，**裸 `git push` 会打到 main**，要推必须 `git push -u origin task/767-arch-v4`。**PR-1 的切分点 = B0 末笔 `aa02843`**，其后的 `f21d44d` 起属 PR-2（B1–B3）。**维护者已授权「继续实施，最后推」**：B1 收尾时用 `git push -u origin task/767-arch-v4`（裸 `git push` 会打到 main，禁止）。
 
 ### D.4 下一步顺序
 
@@ -881,7 +883,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 2. ~~**B1.2 `server/shared/` 落盘面**~~ **已完成（`dfd6577`）**；下面保留原始切法供回溯：`paths.ts` 单源（新路径 + `legacyFile` + 每文件 mode 表 + 插件自有目录 `0o700`）+ 自写 `file-io.ts`（唯一 tmp 名 → 显式 mode → `rename` → 失败清理；同路径 promise 队列；**不装进程级钩子**）+ 权限断言（7 个写点收敛到这一处）。
 3. ~~**B1.3 `upgrade` 域**~~ **已完成（`4bd6af6`）**；下面保留原始切法供回溯：六件套一次建齐（步骤表 / 链驱动 / 刻度 / 失败语义 / 对账 / 装配标记）+ 迁移**五态**测试（含目录型旧路径逐文件搬、用户显式 `storePath`/`statsFile` 不动）+ 刻度「推进与失败不推进」。
 4. ~~**B1.4 组合根机制**~~ **已完成（本刀）**；下面保留原始切法供回溯：`bindHost`/`assemble`/逆序释放/`declare module` 迁入 + `host-faces.ts`；探针证明 apply → install → release 各域标记复位。**11 域空骨架已裁掉**（各域随 B2 重写与其真实代码同笔生成，理由见 §十二 表后）；**既有装配本刀不路由**（B2 接通）。**落点裁量与实测证据**：机制落 `src/server/shared/compose.ts` + 门面（不是 `src/index.ts`）——入口加导出会让 `export-surface-snapshot` 判红，而入口的非导出函数测试不可达；B2 在入口调 `bindHost` → `assemble` → `safeDisposeAll`。
-5. **B1.5 `src/shared/` 另外五个文件**（`status` / `frames` / `dto` / `routes` / `service`）：必须与**两端改引同笔**——只建文件不接两端就是死代码，覆盖率面与变异面会先红。
+5. **B1.5（进行中）`src/shared/` 另外五个文件**（`status` / `frames` / `dto` / `routes` / `service`）：必须与**两端改引同笔**——只建文件不接两端就是死代码，覆盖率面与变异面会先红。
 6. **B1 收尾**：`pnpm gate:pr` 全绿 + `pack:check` 绿 + `THIRD-PARTY-LICENSES` 相对基线**无新增**（本轮不新增任何依赖）→ 才进 B2。
 7. 每批完成后回写本附录的 D.2/D.3；每批验收含真实 `exit code` + 该批**全部登记文件**同步（§12 开头已写死）。
 
