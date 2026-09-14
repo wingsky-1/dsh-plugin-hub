@@ -55,23 +55,28 @@ export interface TabDefinitionLike {
  * 它给的是「每个 cell 当前生效（非 abdicated）的那一条」，在册即存活。
  */
 export interface ClientSlotsPort {
+  /**
+   * 某座位的**原始账**（含被遮蔽的条目），与 {@link entriesOfSlot} 同源不同视图。
+   *
+   * 遮蔽生效之后「当值」恒为我们那条，官方那条只有这里看得见——官方文档原话：
+   * the raw entries view stays the inspection surface（renderer/lib/client.js:1181-1191）。
+   * 没有它就看不见官方组件被 HMR 换掉，会一直渲染旧模块的组件。
+   */
+  entries(key: string): readonly StoredEntryLike[];
+  /** 某座位每 cell 当前当值的那一条（优先级最低的存活项）。 */
   entriesOfSlot(key: string): readonly StoredEntryLike[];
   register(options: Record<string, unknown>, component: unknown): () => void;
   subscribe(key: string, listener: () => void): () => void;
   onEntryError(listener: (key: string, entry: StoredEntryLike, error: unknown) => void): () => void;
 }
 
-/** tab 类型注册表。 */
+/**
+ * tab 类型注册表。**只读**：本包以「同 key 更低 priority 遮蔽正文」接管，不碰类型表，
+ * 所以这里没有 `register`——官方定义（含 `guide`）保持原样，也就没有「搬定义搬丢了」的失败形态。
+ */
 export interface TabsPort {
-  /**
-   * 某 kind 当前生效的类型定义。
-   *
-   * `id` 只在**接管之前**等于官方 id：我们以 `priority: "extension"` 顶掉 builtin 之后，
-   * 这里返回的就是我们自己的 id。所以调用方必须把首次读到的官方 id 记下来——
-   * 每次重新 `get` 会让「官方条目还在不在」这个问题永远问的是我们自己。
-   */
+  /** 某 kind 当前生效的类型定义；`id` 恒为官方 id（我们从不改写它）。 */
   get(kind: string): TabDefinitionLike | undefined;
-  register(definition: TabDefinitionLike): () => void;
 }
 
 /** uSES 观察源：`getSnapshot` 必须返回引用稳定的快照，否则每次渲染都会触发更新。 */

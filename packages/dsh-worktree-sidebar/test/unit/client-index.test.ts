@@ -20,13 +20,12 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { apply } from "../../src/client/index.ts";
 import type {
-  ClientSlotsPort,
   SessionsSnapshotLike,
-  StoredEntryLike,
   TabDefinitionLike,
   TabsPort,
 } from "../../src/client/shared/ports.ts";
-import { BODY_SLOT, FILES_KIND } from "../../src/client/takeover.ts";
+import { createFakeSlots } from "../helpers.ts";
+import { BODY_SLOT, FILES_KIND, SHADOW_PRIORITY } from "../../src/client/takeover.ts";
 
 const OFFICIAL_ID = "@deepseek-ai/dsh-client-ui-sidebar-files/files";
 const SESSION_ID = "s1";
@@ -38,10 +37,9 @@ const CWD = "/cwd";
 const officialStarts: Array<{ tabId: string; root: string }> = [];
 const officialLoads: Array<{ tabId: string; path: string }> = [];
 
-/** 官方正文条目：装配根找得到它才会走注册（找不到就零注册）。 */
-const BODY: StoredEntryLike = {
+/** 官方正文条目的两个承载面：组件与 inject 工厂（登记进假座位表，装配根从原始账里找它）。 */
+const OFFICIAL_BODY = {
   component: { name: "FilesBody" },
-  options: { key: OFFICIAL_ID },
   inject: () => ({
     useFiles: "official-useFiles",
     start: (tabId: string, root: string) => {
@@ -112,22 +110,18 @@ function mount(respond: () => Response): Mounted {
   const snapshot: { value: SessionsSnapshotLike } = { value: liveSnapshot() };
   const fetchUrls: string[] = [];
   const disposers: Array<() => void> = [];
-  let captured: unknown;
   officialStarts.length = 0;
   officialLoads.length = 0;
 
-  const slots: ClientSlotsPort = {
-    entriesOfSlot: (key) => (key === BODY_SLOT ? [BODY] : []),
-    register: (options) => {
-      if (options["name"] === BODY_SLOT) captured = options["inject"];
-      return () => undefined;
-    },
-    subscribe: () => () => undefined,
-    onEntryError: () => () => undefined,
-  };
+  // 假座位表复刻官方语义（优先级最低者当值）：没有它，「我们的条目是否当值」这条
+  // 自检会判否，装配根会当场退位——用例就会在一条并不存在的失败上变绿。
+  const fake = createFakeSlots();
+  fake.slots.register(
+    { name: BODY_SLOT, key: OFFICIAL_ID, inject: OFFICIAL_BODY.inject },
+    OFFICIAL_BODY.component,
+  );
   const sidebarRightTabs: TabsPort = {
     get: (kind) => (kind === FILES_KIND ? OFFICIAL_DEFINITION : undefined),
-    register: () => () => undefined,
   };
 
   globalThis.fetch = async (input) => {
@@ -136,7 +130,7 @@ function mount(respond: () => Response): Mounted {
   };
 
   apply({
-    slots,
+    slots: fake.slots,
     sidebarRightTabs,
     sessions: {
       list: {
@@ -152,7 +146,14 @@ function mount(respond: () => Response): Mounted {
 
   const mounted: Mounted = {
     snapshot,
-    capturedInject: () => captured as (...args: unknown[]) => Record<string, unknown>,
+    // 我们那条正文的 inject（按遮蔽 priority 认自己）：官方那条被遮蔽，是看不到它的。
+    capturedInject: () => {
+      const entry = fake
+        .entries(BODY_SLOT)
+        .find((candidate) => candidate.options.priority === SHADOW_PRIORITY);
+      if (entry?.inject === undefined) throw new Error("我们那条正文没有登记上");
+      return entry.inject;
+    },
     fetchesFor: (sessionId) =>
       fetchUrls.filter((url) => url.endsWith("?session=" + sessionId)).length,
     starts: () => officialStarts.slice(),

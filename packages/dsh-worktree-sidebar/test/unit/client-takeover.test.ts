@@ -1,16 +1,16 @@
 /**
- * 接管 files 页签 —— 用假座位/假类型表驱动。
+ * 接管 files 页签 —— 用**复刻官方语义**的假座位表驱动（`createFakeSlots`，见 test/helpers.ts）。
  *
  * 为什么先写负向用例：接管的失败形态是「右栏坏了」，而它比「右栏没变」严重得多。
  * 所以这里的第一条判据不是「接管成功了吗」，而是「抓不到官方正文时，我们**一个注册都没有**」。
  *
- * **假端口必须复刻真实注册表的语义**，否则这些用例只是把作者的假设抄了一遍。
- * 本文件曾被这个问题害过一次：旧版的假 `tabs.get` 恒返回官方 id，而真实语义是
- * 「extension 顶掉 builtin 之后 get 返回 extension 的 id」——于是「官方组件换了要重捕」这条分支
- * 在测试里永远绿、在真机上永不触发。现在的假注册表按真实语义维护 inForce，并让 register 返回
- * 撤销时恢复前一个（builtin 复位的真实行为）。
+ * 本文件钉的是**遮蔽语义**：以官方 id 为 key、更低 priority 再登记一条，官方那条原样留在账上。
+ * 判据因此不能是「我们调了 register 没有」，必须是「座位上当值的是哪一条」——那正是渲染层读的东西
+ * （官方 `renderer/lib/client.js:827`：`entriesOfSlot(slot).find(e => e.options.key === entryKey)`）。
  */
 import { describe, expect, it } from "vitest";
+import { createFakeSlots } from "../helpers.ts";
+import { createInjectWrapper } from "../../src/client/inject.ts";
 import type {
   ClientSlotsPort,
   ObservablePort,
@@ -20,23 +20,20 @@ import type {
   TabDefinitionLike,
   TabsPort,
 } from "../../src/client/shared/ports.ts";
-import { createInjectWrapper } from "../../src/client/inject.ts";
 import {
   BODY_SLOT,
   FILES_KIND,
-  OUR_TYPE_ID,
-  TITLE_SLOT,
+  SHADOW_PRIORITY,
   installTakeover,
 } from "../../src/client/takeover.ts";
 
-interface Reg {
-  readonly slot: string;
-  readonly options: Record<string, unknown>;
-  readonly component: unknown;
-  live: boolean;
-}
-
 const OFFICIAL_ID = "@deepseek-ai/dsh-client-ui-sidebar-files/files";
+/** 官方标题座位的 key（我们不再往这里登记任何东西）。 */
+const TITLE_SLOT = "sidebar.right.pane.tab.title";
+const LOCALE = "sidebarFiles";
+const STORE = { kind: "store" };
+const FILES_BODY = { name: "FilesBody" };
+const FILES_TITLE = { name: "FilesTitle" };
 const GUIDE = [{ order: 10, title: () => "Workspace files" }];
 const OFFICIAL_DEFINITION: TabDefinitionLike = {
   id: OFFICIAL_ID,
@@ -45,18 +42,8 @@ const OFFICIAL_DEFINITION: TabDefinitionLike = {
   title: () => "Files",
   guide: GUIDE,
 };
-const BODY: StoredEntryLike = {
-  component: { name: "FilesBody" },
-  options: { key: OFFICIAL_ID },
-  locale: "sidebarFiles",
-  store: { kind: "store" },
-};
-const TITLE: StoredEntryLike = { component: { name: "FilesTitle" }, options: { key: OFFICIAL_ID } };
 
-/**
- * 改写源的假件：本文件的注册/释放用例不经过 inject，读不到会话快照，
- * 递一个引用稳定的空源即可（它不承载任何判据）。
- */
+/** 改写源的假件：本文件的注册/释放用例不经过 inject，递一个引用稳定的空源即可。 */
 const STABLE_SOURCE: ObservablePort<SessionsSnapshotLike> = {
   getSnapshot: () => ({}),
   subscribe: () => () => undefined,
@@ -74,92 +61,85 @@ function viewOf(source: ObservablePort<SessionsSnapshotLike>): SessionView {
   };
 }
 
-function harness(options: { bodyFails?: boolean; kindFails?: boolean } = {}) {
-  const regs: Reg[] = [];
-  const revoked: string[] = [];
-  const slotsListeners = new Set<() => void>();
-  const tabsListeners = new Set<() => void>();
-  let errorListener: ((key: string, entry: StoredEntryLike, error: unknown) => void) | undefined;
+/** 排空微任务：官方登记/撤销的变更通知是微任务批处理的，我们自己那次通知也会走到 evaluate。 */
+function settle(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+function harness(options: { bodyFails?: boolean } = {}) {
   const warns: string[] = [];
+  const fake = createFakeSlots();
+  const officialInject = (): Record<string, unknown> => ({
+    useFiles: "official-useFiles",
+    hooks: { other: "keep-me" },
+  });
+  const registerOfficial = (component: unknown): (() => void) =>
+    fake.slots.register(
+      { name: BODY_SLOT, key: OFFICIAL_ID, locale: LOCALE, store: STORE, inject: officialInject },
+      component,
+    );
+  let disposeOfficial = registerOfficial(FILES_BODY);
+  fake.slots.register({ name: TITLE_SLOT, key: OFFICIAL_ID }, FILES_TITLE);
 
-  const seat: { body: StoredEntryLike[]; title: StoredEntryLike[] } = {
-    body: [BODY],
-    title: [TITLE],
-  };
+  /**
+   * 类型注册表的假件：**运行时真有 `register`**（官方那份 API 就挂在 `ctx.sidebarRightTabs` 上），
+   * 只是我们的端口不声明它。所以这里用 `Object.assign` 挂上去而不是写进对象字面量——
+   * 复刻「能力在、但我们看不见」这个真实形态，也让「类型表一个字节没动」那条判据不是恒真。
+   */
+  let officialType: TabDefinitionLike | undefined = OFFICIAL_DEFINITION;
+  const tabs: TabsPort = Object.assign(
+    { get: (kind: string) => (kind === FILES_KIND ? officialType : undefined) },
+    {
+      register: (definition: TabDefinitionLike) => {
+        const previous = officialType;
+        officialType = definition;
+        return () => {
+          if (officialType === definition) officialType = previous;
+        };
+      },
+    },
+  );
 
-  const slots: ClientSlotsPort = {
-    // 真实语义：entriesOfSlot 给的是「每个 cell 当前生效的那一条」，在册即存活。
-    entriesOfSlot: (key) => (key === BODY_SLOT ? seat.body : seat.title),
-    register: (regOptions, component) => {
-      if (
-        options.bodyFails === true &&
-        regOptions["key"] === OUR_TYPE_ID &&
-        regOptions["name"] === BODY_SLOT
-      ) {
-        throw new Error("body register exploded");
-      }
-      const reg: Reg = {
-        slot: String(regOptions["name"]),
-        options: regOptions,
-        component,
-        live: true,
-      };
-      regs.push(reg);
-      return () => {
-        reg.live = false;
-        revoked.push(reg.slot);
-      };
-    },
-    subscribe: (_key, listener) => {
-      slotsListeners.add(listener);
-      return () => slotsListeners.delete(listener);
-    },
-    onEntryError: (listener) => {
-      errorListener = listener;
-      return () => {
-        errorListener = undefined;
-      };
-    },
-  };
+  /** 正文登记失败：只对我们那条（带遮蔽 priority 的登记）抛。 */
+  const slots: ClientSlotsPort =
+    options.bodyFails === true
+      ? {
+          ...fake.slots,
+          register: (regOptions, component) => {
+            if (regOptions["priority"] === SHADOW_PRIORITY) {
+              throw new Error("body register exploded");
+            }
+            return fake.slots.register(regOptions, component);
+          },
+        }
+      : fake.slots;
 
-  /** 真实语义：extension 顶掉 builtin；extension 撤销后 builtin 复位。 */
-  let inForce: TabDefinitionLike | undefined = OFFICIAL_DEFINITION;
-  const tabs: TabsPort = {
-    get: () => inForce,
-    register: (definition) => {
-      if (options.kindFails === true) throw new Error("kind register exploded");
-      const previous = inForce;
-      inForce = definition;
-      const reg: Reg = {
-        slot: "tabs",
-        options: definition as unknown as Record<string, unknown>,
-        component: undefined,
-        live: true,
-      };
-      regs.push(reg);
-      return () => {
-        reg.live = false;
-        revoked.push("tabs");
-        if (inForce === definition) inForce = previous;
-      };
-    },
-  };
-
-  const live = () => regs.filter((reg) => reg.live);
-  const emit = () => {
-    for (const listener of [...slotsListeners]) listener();
-    for (const listener of [...tabsListeners]) listener();
-  };
+  const ours = (): readonly StoredEntryLike[] =>
+    fake.entries(BODY_SLOT).filter((entry) => entry.options.priority === SHADOW_PRIORITY);
 
   return {
-    seat,
-    live,
-    revoked,
+    fake,
+    tabs,
     warns,
-    emit,
-    inForce: () => inForce,
-    fireError: (key: string, entry: StoredEntryLike, error: unknown) =>
-      errorListener?.(key, entry, error),
+    ours,
+    /** 我们那条正文；不在就当场判红（省得断言里到处写可选链）。 */
+    mustOurs: (): StoredEntryLike => {
+      const entry = ours()[0];
+      if (entry === undefined) throw new Error("我们那条正文不在座位上");
+      return entry;
+    },
+    /** 官方那条正文（原始账里 priority 不是我们的那条）。 */
+    official: (): StoredEntryLike | undefined =>
+      fake.entries(BODY_SLOT).find((entry) => entry.options.priority !== SHADOW_PRIORITY),
+    setOfficialType: (definition: TabDefinitionLike | undefined) => {
+      officialType = definition;
+    },
+    /** 官方包 HMR：旧登记退场、同 key 重新登记一条新组件。 */
+    reRegisterOfficial: (component: unknown) => {
+      disposeOfficial();
+      disposeOfficial = registerOfficial(component);
+    },
+    dropOfficial: () => disposeOfficial(),
     install: () =>
       installTakeover({
         slots,
@@ -171,189 +151,156 @@ function harness(options: { bodyFails?: boolean; kindFails?: boolean } = {}) {
 }
 
 describe("抓不到官方正文时零注册", () => {
-  it("座位里没有官方 id 的条目 → 一个注册都没有", () => {
+  it("座位里没有官方条目 → 一个注册都没有", () => {
     const h = harness();
-    h.seat.body = [];
+    h.dropOfficial();
     h.install();
-    expect(h.live().length).toBe(0);
+    expect(h.ours()).toHaveLength(0);
   });
 
   it("类型注册表里没有 files 类型 → 一个注册都没有", () => {
-    let registered = 0;
-    const slots: ClientSlotsPort = {
-      entriesOfSlot: (key) => (key === BODY_SLOT ? [BODY] : [TITLE]),
-      register: () => {
-        registered += 1;
-        return () => undefined;
-      },
-      subscribe: () => () => undefined,
-      onEntryError: () => () => undefined,
-    };
-    installTakeover({
-      slots,
-      tabs: {
-        get: () => undefined,
-        register: () => {
-          registered += 1;
-          return () => undefined;
-        },
-      },
-      logger: { warn: () => undefined },
-      wrapInject: createInjectWrapper(() => viewOf(STABLE_SOURCE)),
-    });
-    expect(registered).toBe(0);
-  });
-});
-
-describe("接管成功时的注册顺序与形状", () => {
-  it("按 正文 → 标题 → 类型 注册，且类型是 extension 档", () => {
     const h = harness();
+    h.setOfficialType(undefined);
     h.install();
-    expect(h.live().map((reg) => reg.slot)).toEqual([BODY_SLOT, TITLE_SLOT, "tabs"]);
-    expect(h.live()[0]?.options["key"]).toBe(OUR_TYPE_ID);
-    expect(h.live()[1]?.options["key"]).toBe(OUR_TYPE_ID);
-    const kind = h.live()[2]?.options as { kind: string; priority: string; id: string };
-    expect(kind.kind).toBe(FILES_KIND);
-    expect(kind.priority).toBe("extension");
-    expect(kind.id).toBe(OUR_TYPE_ID);
+    expect(h.ours()).toHaveLength(0);
   });
 
-  it("正文复用官方组件、store、locale", () => {
+  it("官方那条已退场（abdicated）→ 不接管一个已退场的座位", () => {
     const h = harness();
+    const official = h.official();
+    if (official === undefined) throw new Error("官方条目不在");
+    h.fake.abdicate(official);
     h.install();
-    const body = h.live()[0];
-    expect(body?.component).toBe(BODY.component);
-    expect(body?.options["store"]).toBe(BODY.store);
-    expect(body?.options["locale"]).toBe(BODY.locale);
+    expect(h.ours()).toHaveLength(0);
   });
 
-  it("标题复用官方组件（否则 chip 上没有文案）", () => {
-    const h = harness();
-    h.install();
-    expect(h.live()[1]?.component).toBe(TITLE.component);
-  });
-
-  it("guide 被原样搬运（丢掉它会让所有会话的默认页签变成空的 Guide）", () => {
-    const h = harness();
-    h.install();
-    const kind = h.live()[2]?.options as unknown as TabDefinitionLike;
-    expect(kind.guide).toBe(GUIDE);
-    expect(kind.title).toBe(OFFICIAL_DEFINITION.title);
-  });
-
-  it("官方定义里我们不理解的字段也一并搬运", () => {
-    const h = harness();
-    const extra = { patterns: ["sidebar://files"], canOpen: () => true };
-    // 直接改 harness 的 inForce 起点做不到，这里用一次真实注册表语义的重评来验证透传。
-    h.install();
-    const kind = h.live()[2]?.options as unknown as Record<string, unknown>;
-    expect(kind["kind"]).toBe(FILES_KIND);
-    expect("id" in kind).toBe(true);
-    void extra;
-  });
-});
-
-describe("半成品自愈", () => {
-  it("正文注册失败 → 回退到零注册，类型绝不注册，并出声", () => {
+  it("正文登记失败 → 零注册、出声，且官方那条仍当值（不是空 cell）", () => {
     const h = harness({ bodyFails: true });
     h.install();
-    expect(h.live().length).toBe(0);
-    expect(h.warns.some((w) => w.includes("接管 files 页签失败"))).toBe(true);
-  });
-
-  it("类型注册失败 → 正文与标题一并回退，不留半成品", () => {
-    const h = harness({ kindFails: true });
-    h.install();
-    expect(h.live().length).toBe(0);
-    expect(h.revoked).toContain(BODY_SLOT);
-    expect(h.revoked).toContain(TITLE_SLOT);
-    expect(h.warns.some((w) => w.includes("接管 files 页签失败"))).toBe(true);
+    expect(h.ours()).toHaveLength(0);
+    expect(h.warns.some((w) => w.includes("接管 files 页签正文失败"))).toBe(true);
+    expect(h.fake.winner(BODY_SLOT)).toBe(h.official());
   });
 });
 
-describe("变化重评", () => {
-  it("官方组件未变时不重复注册", () => {
+describe("遮蔽当值", () => {
+  it("登记之后当值的是我们那条，官方那条仍在账上（不是顶掉）", () => {
     const h = harness();
     h.install();
-    const before = h.live().length;
-    h.emit();
-    h.emit();
-    expect(h.live().length).toBe(before);
+    const winner = h.fake.winner(BODY_SLOT);
+    expect(winner?.options.priority).toBe(SHADOW_PRIORITY);
+    expect(winner?.options.key).toBe(OFFICIAL_ID);
+    expect(h.ours()).toHaveLength(1);
+    expect(h.official()).toBeDefined();
   });
 
-  it("接管后类型表返回我们的 id，但仍能按首次记下的官方 key 重捕", () => {
+  it("类型表一个字节没动：接管前后是同一个定义引用（guide 也在原处）", () => {
+    const h = harness();
+    const restore = h.install();
+    expect(h.tabs.get(FILES_KIND)).toBe(OFFICIAL_DEFINITION);
+    expect((h.tabs.get(FILES_KIND) as TabDefinitionLike).guide).toBe(GUIDE);
+    restore();
+    expect(h.tabs.get(FILES_KIND)).toBe(OFFICIAL_DEFINITION);
+  });
+
+  it("复用官方组件、store、locale", () => {
     const h = harness();
     h.install();
-    // 真实语义：接管成功后 get 返回我们的定义。
-    expect(h.inForce()?.id).toBe(OUR_TYPE_ID);
-    h.seat.body = [{ ...BODY, component: { name: "NewBody" } }];
-    h.emit();
-    expect(h.live().length).toBe(3);
-    expect(h.live()[0]?.component).toEqual({ name: "NewBody" });
-    expect(h.revoked.length).toBe(3);
+    expect(h.mustOurs().component).toBe(FILES_BODY);
+    expect(h.mustOurs().store).toBe(STORE);
+    expect(h.mustOurs().locale).toBe(LOCALE);
+  });
+
+  it("标题座位零登记（官方标题原样渲染）", () => {
+    const h = harness();
+    h.install();
+    expect(h.fake.entries(TITLE_SLOT)).toHaveLength(1);
+  });
+
+  it("我们自己登记引发的通知不会重复注册（官方通知是微任务批处理）", async () => {
+    const h = harness();
+    h.install();
+    await settle();
+    await settle();
+    expect(h.ours()).toHaveLength(1);
+  });
+});
+
+describe("当值自检：不当值就退位", () => {
+  it("官方（或别的插件）登记了更低的 priority → 我们撤销自己那条并出声，且不自旋", async () => {
+    const h = harness();
+    h.install();
+    h.fake.slots.register({ name: BODY_SLOT, key: OFFICIAL_ID, priority: -5 }, { name: "Other" });
+    h.fake.emit(BODY_SLOT);
+    expect(h.ours()).toHaveLength(0);
+    expect(h.warns.some((w) => w.includes("接管 files 页签正文失败"))).toBe(true);
+    // 退位之后座位上仍有当值项（那条更低的），不会出现空 cell。
+    expect(h.fake.winner(BODY_SLOT)?.options.priority).toBe(-5);
+    // 登记与撤销各自会触发一次座位通知：同一条官方条目只许试一次，否则就是永不停歇的微任务自旋。
+    await settle();
+    expect(h.ours()).toHaveLength(0);
+    expect(h.warns).toHaveLength(1);
+  });
+
+  it("官方组件换了（HMR 重新登记）→ 重捕到新组件", () => {
+    const h = harness();
+    h.install();
+    const newBody = { name: "NewBody" };
+    h.reRegisterOfficial(newBody);
+    h.fake.emit(BODY_SLOT);
+    expect(h.ours()).toHaveLength(1);
+    expect(h.mustOurs().component).toBe(newBody);
+    expect(h.fake.winner(BODY_SLOT)?.options.priority).toBe(SHADOW_PRIORITY);
   });
 
   it("官方正文消失时撤销我们的注册，但不退订（再出现能重新接管）", () => {
     const h = harness();
     h.install();
-    expect(h.live().length).toBe(3);
-    h.seat.body = [];
-    h.emit();
-    expect(h.live().length).toBe(0);
-    h.seat.body = [BODY];
-    h.emit();
-    expect(h.live().length).toBe(3);
+    expect(h.ours()).toHaveLength(1);
+    h.dropOfficial();
+    h.fake.emit(BODY_SLOT);
+    expect(h.ours()).toHaveLength(0);
+    h.reRegisterOfficial(FILES_BODY);
+    h.fake.emit(BODY_SLOT);
+    expect(h.ours()).toHaveLength(1);
   });
 
-  it("撤销后官方类型复位（builtin 恢复）", () => {
+  it("dispose 撤销注册，且退订之后不再重评", () => {
     const h = harness();
     const restore = h.install();
-    expect(h.inForce()?.id).toBe(OUR_TYPE_ID);
+    expect(h.ours()).toHaveLength(1);
     restore();
-    expect(h.inForce()?.id).toBe(OFFICIAL_ID);
-    expect(h.inForce()?.guide).toBe(GUIDE);
-  });
-
-  it("dispose 撤销全部注册，且退订之后不再重评", () => {
-    const h = harness();
-    const restore = h.install();
-    restore();
-    expect(h.live().length).toBe(0);
-    h.seat.body = [{ ...BODY, component: { name: "Newer" } }];
-    h.emit();
-    expect(h.live().length).toBe(0);
+    expect(h.ours()).toHaveLength(0);
+    h.reRegisterOfficial({ name: "Newer" });
+    h.fake.emit(BODY_SLOT);
+    expect(h.ours()).toHaveLength(0);
   });
 });
 
 describe("正文的 inject 面被包装：hooks.sessions 换成改写源", () => {
-  it("调用注册的 inject 后 hooks.sessions 是本会话的改写源，官方面其余键原样保留", () => {
+  it("调用登记进去的 inject 后 hooks.sessions 是本会话的改写源，官方面其余键原样保留", () => {
     const source = { getSnapshot: () => ({}), subscribe: () => () => undefined };
     const asked: string[] = [];
-    const officialFace = { useFiles: "official-useFiles", hooks: { other: "keep-me" } };
-    const entry: StoredEntryLike = { ...BODY, inject: () => officialFace };
-    let captured: unknown;
-    const slots: ClientSlotsPort = {
-      entriesOfSlot: (key) => (key === BODY_SLOT ? [entry] : [TITLE]),
-      // 只有正文那次注册带 inject；标题那次的 options 里没有 inject，
-      // 不按座位过滤就会把 captured 覆盖成 undefined。
-      register: (options) => {
-        if (options["name"] === BODY_SLOT) captured = options["inject"];
-        return () => undefined;
+    const fake = createFakeSlots();
+    fake.slots.register(
+      {
+        name: BODY_SLOT,
+        key: OFFICIAL_ID,
+        inject: () => ({ useFiles: "official-useFiles", hooks: { other: "keep-me" } }),
       },
-      subscribe: () => () => undefined,
-      onEntryError: () => () => undefined,
-    };
+      FILES_BODY,
+    );
     installTakeover({
-      slots,
-      tabs: { get: () => OFFICIAL_DEFINITION, register: () => () => undefined },
+      slots: fake.slots,
+      tabs: { get: (kind) => (kind === FILES_KIND ? OFFICIAL_DEFINITION : undefined) },
       logger: { warn: () => undefined },
       wrapInject: createInjectWrapper((sessionId) => {
         asked.push(sessionId);
         return viewOf(source);
       }),
     });
-    expect(captured).not.toBe(entry.inject);
-    const face = (captured as (sessionId: string) => Record<string, unknown>)("s1");
+    const entry = fake.entries(BODY_SLOT).find((e) => e.options.priority === SHADOW_PRIORITY);
+    const face = (entry?.inject as (sessionId: string) => Record<string, unknown>)("s1");
     expect(face["hooks"]).toEqual({ other: "keep-me", sessions: source });
     expect(face["useFiles"]).toBe("official-useFiles");
     expect(asked).toEqual(["s1"]);
@@ -361,26 +308,21 @@ describe("正文的 inject 面被包装：hooks.sessions 换成改写源", () =>
 
   it("取不到会话 id 时原样返回官方 face（不猜会话）", () => {
     const officialFace = { hooks: { other: "keep-me" } };
-    let captured: unknown;
-    const slots: ClientSlotsPort = {
-      entriesOfSlot: (key) =>
-        key === BODY_SLOT ? [{ ...BODY, inject: () => officialFace }] : [TITLE],
-      register: (options) => {
-        if (options["name"] === BODY_SLOT) captured = options["inject"];
-        return () => undefined;
-      },
-      subscribe: () => () => undefined,
-      onEntryError: () => () => undefined,
-    };
+    const fake = createFakeSlots();
+    fake.slots.register(
+      { name: BODY_SLOT, key: OFFICIAL_ID, inject: () => officialFace },
+      FILES_BODY,
+    );
     installTakeover({
-      slots,
-      tabs: { get: () => OFFICIAL_DEFINITION, register: () => () => undefined },
+      slots: fake.slots,
+      tabs: { get: () => OFFICIAL_DEFINITION },
       logger: { warn: () => undefined },
       wrapInject: createInjectWrapper(() => {
         throw new Error("不该被调用");
       }),
     });
-    const face = (captured as (...args: unknown[]) => Record<string, unknown>)({
+    const entry = fake.entries(BODY_SLOT).find((e) => e.options.priority === SHADOW_PRIORITY);
+    const face = (entry?.inject as (...args: unknown[]) => Record<string, unknown>)({
       notAString: true,
     });
     expect(face).toBe(officialFace);
@@ -391,9 +333,11 @@ describe("崩溃归因", () => {
   it("只对我们自己的 entry 出声", () => {
     const h = harness();
     h.install();
-    h.fireError(BODY_SLOT, { ...BODY, options: { key: "someone-else" } }, new Error("nope"));
-    expect(h.warns.length).toBe(0);
-    h.fireError(BODY_SLOT, { ...BODY, options: { key: OUR_TYPE_ID } }, new Error("ours broke"));
+    const official = h.official();
+    if (official === undefined) throw new Error("官方条目不在");
+    h.fake.reportError(BODY_SLOT, official, new Error("nope"));
+    expect(h.warns).toHaveLength(0);
+    h.fake.reportError(BODY_SLOT, h.mustOurs(), new Error("ours broke"));
     expect(h.warns.some((w) => w.includes("ours broke"))).toBe(true);
   });
 });
@@ -403,7 +347,7 @@ describe("端口形状对运行时公开面负责", () => {
     const h = harness();
     const restore = h.install();
     // 走到这里就说明整条路径没有访问过 isLive：假 slots 上根本没有这个方法。
-    expect(h.live().length).toBe(3);
+    expect(h.ours()).toHaveLength(1);
     restore();
   });
 });

@@ -110,7 +110,8 @@ export function apply(ctx: ClientContext): void {
 }
 
 /**
- * 客户端契约。`slots` / `sidebarRightTabs` 是接管的两个面，`sessions.list` 是真实快照的来源，
+ * 客户端契约。`slots` 是接管的落点（`sidebarRightTabs` 只用来读官方类型 id，我们从不写它），
+ * `sessions.list` 是真实快照的来源，
  * `locale` 随官方组件的完整装配面一起被继承（本包不自带文案）。漏声明会在属性访问处抛
  * "without inject"；`sidebarRightTabs` 不存在时整体不激活——那说明官方包不在，我们无话可说。
  */
