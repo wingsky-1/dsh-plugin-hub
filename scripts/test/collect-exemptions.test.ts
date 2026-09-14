@@ -126,14 +126,15 @@ test("非 JSON 文件不参与扫描（只看 scripts/data 下的 .json）", () 
   }
 });
 
-test("本仓真实快照：10 条 reviewBy 全部在册（数字变即提示同步台账与 #765）", () => {
-  // 10 = gate-exemptions.json 4（#762 notifier 客户端 var + #770 mcp panel 单飞句柄
-  //          + #769 两条 §5.3 client → src/server 存量，均临时）
+test("本仓真实快照：13 条 reviewBy 全部在册（数字变即提示同步台账与 #765）", () => {
+  // 13 = gate-exemptions.json 7（#762 notifier 客户端 var + #770 mcp panel 单飞句柄
+  //          + #769 两条 §5.3 client → src/server 存量
+  //          + #767 三条 I8① test/unit → src/index.ts 跨包存量，均临时）
   //      + plugins-manifest 5（configSurfacesPending）
   //      + coverage.config.json 1（`**/client/**` 排除，pending-project，等 happy-dom project，3.4 新增）
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /合计 10 条：已过期 0 /);
+  assert.match(r.stdout, /合计 13 条：已过期 0 /);
   assert.match(r.stdout, /\$\.exemptions\[0\] {2}gate=forbid-module-state-src/);
   assert.match(r.stdout, /trackingIssue #762/);
   // #767 B0：扩包后新增的存量豁免同样必须在台账里——只判红不登记，或只登记不进台账，
@@ -149,6 +150,20 @@ test("本仓真实快照：10 条 reviewBy 全部在册（数字变即提示同�
   assert.match(
     r.stdout,
     /\$\.exemptions\[3\] {2}gate=verify-dir-imports {2}path=dsh-notifier:src\/client\/reason-text\.ts\|src\/server\/shared\/reason\.ts/,
+  );
+  // #767 B0 切片 3b：I8① 判据上线时三条跨包存量（lan-proxy 2 / web-file-preview 1）同样必须进台账。
+  // 逐条钉住证据键本身（测试文件 | 被引的 src/index.ts），换成近似路径先红。
+  assert.match(
+    r.stdout,
+    /\$\.exemptions\[4\] {2}gate=verify-dir-imports {2}path=dsh-lan-proxy:test\/unit\/unit-apply\.test\.ts\|src\/index\.ts/,
+  );
+  assert.match(
+    r.stdout,
+    /\$\.exemptions\[5\] {2}gate=verify-dir-imports {2}path=dsh-lan-proxy:test\/unit\/unit-proxy\.test\.ts\|src\/index\.ts/,
+  );
+  assert.match(
+    r.stdout,
+    /\$\.exemptions\[6\] {2}gate=verify-dir-imports {2}path=dsh-web-file-preview:test\/unit\/unit-present-open\.test\.ts\|src\/index\.ts/,
   );
   // 覆盖率面的临时排除项也必须在台账里（它是「到期复核」的输入，不该只活在配置里）
   assert.match(r.stdout, /\$\.exclude\[4\] {2}pattern=\*\*\/client\/\*\*/);

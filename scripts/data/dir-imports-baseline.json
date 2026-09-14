@@ -19,7 +19,11 @@
         "uncoveredSrcFiles": [],
         "crossDomainValueEdges": [],
         "rootIndexImports": [],
-        "clientServerImports": []
+        "clientServerImports": [],
+        "unitImportFaceViolations": [
+          "test/unit/unit-apply.test.ts|src/index.ts",
+          "test/unit/unit-proxy.test.ts|src/index.ts"
+        ]
       }
     },
     "dsh-mcp-manager": {
@@ -85,7 +89,22 @@
           "pipeline|workspace"
         ],
         "rootIndexImports": [],
-        "clientServerImports": []
+        "clientServerImports": [],
+        "unitImportFaceViolations": [
+          "test/unit/unit-apply.test.ts|src/index.ts",
+          "test/unit/unit-call-stats.test.ts|src/index.ts",
+          "test/unit/unit-catalog.test.ts|src/index.ts",
+          "test/unit/unit-hotspot.test.ts|src/index.ts",
+          "test/unit/unit-manager.test.ts|src/index.ts",
+          "test/unit/unit-manager2.test.ts|src/index.ts",
+          "test/unit/unit-middleware.test.ts|src/index.ts",
+          "test/unit/unit-pipeline.test.ts|src/index.ts",
+          "test/unit/unit-routes-sse.test.ts|src/index.ts",
+          "test/unit/unit-store.test.ts|src/index.ts",
+          "test/unit/unit-supervisor.test.ts|src/index.ts",
+          "test/unit/unit-transport.test.ts|src/index.ts",
+          "test/unit/unit-workspace.test.ts|src/index.ts"
+        ]
       }
     },
     "dsh-notifier": {
@@ -108,7 +127,8 @@
         "clientServerImports": [
           "src/client/capabilities.ts|src/server/channels/impl/capabilities/type.ts",
           "src/client/reason-text.ts|src/server/shared/reason.ts"
-        ]
+        ],
+        "unitImportFaceViolations": []
       }
     },
     "dsh-provider-usage": {
@@ -163,7 +183,8 @@
           "shared|domain1/adapters"
         ],
         "rootIndexImports": [],
-        "clientServerImports": []
+        "clientServerImports": [],
+        "unitImportFaceViolations": []
       }
     },
     "dsh-verify-isolated": {
@@ -183,7 +204,8 @@
         "uncoveredSrcFiles": [],
         "crossDomainValueEdges": [],
         "rootIndexImports": [],
-        "clientServerImports": []
+        "clientServerImports": [],
+        "unitImportFaceViolations": []
       }
     },
     "dsh-web-file-preview": {
@@ -203,7 +225,10 @@
         "uncoveredSrcFiles": [],
         "crossDomainValueEdges": [],
         "rootIndexImports": [],
-        "clientServerImports": []
+        "clientServerImports": [],
+        "unitImportFaceViolations": [
+          "test/unit/unit-present-open.test.ts|src/index.ts"
+        ]
       }
     }
   }
