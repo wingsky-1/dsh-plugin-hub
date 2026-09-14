@@ -25,9 +25,9 @@
   // #474 R2（保留）：显式覆写 module 语义——scripts/ 无 package.json，module 语义依赖根
   // type:module 向上回溯（运气依赖，未来 scripts/ 放 package.json 或 base 改动即整面翻红），
   // 此处显式固化防漂移。
-  // allowImportingTsExtensions：scripts/ 下 26 处相对 import 写全 .ts 后缀（Node 直接执行
-  // TS 的运行时要求），不开则该选项语义下摘 @ts-nocheck 时立刻 TS5097 翻红；实测开启后
-  // 本半区 0 新增 error（noEmit=true 满足该选项前置条件）。
+  // allowImportingTsExtensions：scripts/ 下的相对 import 写全 .ts 后缀（Node 直接执行 TS 的
+  // 运行时要求；数量以源码树为准，本注释不复述），不开则该选项语义下摘 @ts-nocheck 时立刻
+  // TS5097 翻红；实测开启后本半区 0 新增 error（noEmit=true 满足该选项前置条件）。
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "module": "nodenext",
