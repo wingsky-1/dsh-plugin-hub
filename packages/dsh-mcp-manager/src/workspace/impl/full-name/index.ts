@@ -1,12 +1,12 @@
 /**
- * dsh-mcp-manager — workspace/full-name.ts：server 全名与工具名归一化。
+ * dsh-mcp-manager — workspace/impl/full-name/index.ts：server 全名与工具名归一化。
  *
  * 阶段 4 自 src/middleware-utils.ts 迁入工作空间路由域（命名/全名解析类，
  * v3 §二 workspace/full-name.ts）；策略裁决与目录检索函数留在
  * middleware-utils.ts（阶段 5 catalog 域迁出）。引用面经 workspace/interface.ts。
  */
 
-import { MIDDLEWARE_GLOBAL_ROOT } from "./constants.ts";
+import { MIDDLEWARE_GLOBAL_ROOT } from "../constants.ts";
 
 /** server 全局唯一名：@<root>/<server>。 */
 export function fullServerName(root: string, server: string): string {
