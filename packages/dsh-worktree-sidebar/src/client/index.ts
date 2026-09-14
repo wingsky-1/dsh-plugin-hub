@@ -2,12 +2,13 @@
  * dsh-worktree-sidebar 浏览器端入口（干净模块：只 apply/inject，外壳由构建链生成）。
  *
  * 这里只做适配：把 `ctx` 收窄成各模块认得的窄面，把每会话的绑定状态与快照源接起来。
- * 判断本身都在 `takeover.ts` / `source.ts` / `bindings.ts` 里，那三个模块不需要浏览器。
+ * 判断本身都在 `takeover.ts` / `inject.ts` / `source.ts` / `bindings.ts` 里，那四个模块不需要浏览器。
  */
 import type { BindingResponse } from "../contract.ts";
 import { ROUTES } from "../contract.ts";
 import { createBindingState } from "./bindings.ts";
 import type { BindingState } from "./bindings.ts";
+import { createInjectWrapper } from "./inject.ts";
 import type {
   ClientSlotsPort,
   ObservablePort,
@@ -119,11 +120,12 @@ export function apply(ctx: ClientContext): void {
       return live.source;
     };
 
+    // 接管块与 inject 改写块零互引：会话源在这里绑定进改写器，再交给接管块当依赖。
     const restore = installTakeover({
       slots: ctx.slots,
       tabs: ctx.sidebarRightTabs,
       logger: { warn: (message: string) => console.warn(message) },
-      sourceFor,
+      wrapInject: createInjectWrapper(sourceFor),
     });
 
     /**

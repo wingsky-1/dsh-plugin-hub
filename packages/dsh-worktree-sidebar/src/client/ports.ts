@@ -26,7 +26,7 @@ export interface StoredEntryLike {
     readonly priority?: number;
   };
   /** 官方组件的业务面工厂。我们整套保留它的产物，只在外面把 `hooks.sessions` 换成改写源。 */
-  readonly inject?: ((...args: unknown[]) => Record<string, unknown>) | undefined;
+  readonly inject?: InjectFactory | undefined;
   readonly store?: unknown;
   readonly locale?: string | undefined;
 }
@@ -79,6 +79,20 @@ export interface ObservablePort<T> {
   getSnapshot(): T;
   subscribe(listener: () => void): () => void;
 }
+
+/** 官方 entry 的 inject 面工厂：吃渲染器传的参数（首个字符串是会话 id），返回业务面。 */
+export type InjectFactory = (...args: unknown[]) => Record<string, unknown>;
+
+/** 某个会话的改写源；注入而不是在域内造，改写的两端因此都不需要认识会话存储。 */
+export type SourceFor = (sessionId: string) => ObservablePort<SessionsSnapshotLike>;
+
+/**
+ * 官方 inject 面的改写器：吃官方工厂、吐同形状的新工厂（`hooks.sessions` 指向改写源）。
+ *
+ * 契约放在本文件而不是 `inject.ts`：块间零互引（ESLint `no-restricted-imports`）意味着
+ * `takeover.ts` 连 `inject.ts` 的**类型**都引不到，跨块的形状只能由纯类型面承载。
+ */
+export type WrapInject = (official: InjectFactory | undefined) => InjectFactory;
 
 /**
  * 一份注入面里的 hook 源表，键是 hook 名。

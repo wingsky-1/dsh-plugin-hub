@@ -19,6 +19,7 @@ import type {
   TabDefinitionLike,
   TabsPort,
 } from "../../src/client/ports.ts";
+import { createInjectWrapper } from "../../src/client/inject.ts";
 import {
   BODY_SLOT,
   FILES_KIND,
@@ -52,7 +53,7 @@ const BODY: StoredEntryLike = {
 const TITLE: StoredEntryLike = { component: { name: "FilesTitle" }, options: { key: OFFICIAL_ID } };
 
 /**
- * `TakeoverDeps.sourceFor` 的假件：本文件的注册/释放用例不经过 inject，读不到会话快照，
+ * 改写源的假件：本文件的注册/释放用例不经过 inject，读不到会话快照，
  * 递一个引用稳定的空源即可（它不承载任何判据）。
  */
 const STABLE_SOURCE: ObservablePort<SessionsSnapshotLike> = {
@@ -151,7 +152,7 @@ function harness(options: { bodyFails?: boolean; kindFails?: boolean } = {}) {
         slots,
         tabs,
         logger: { warn: (message: string) => warns.push(message) },
-        sourceFor: () => STABLE_SOURCE,
+        wrapInject: createInjectWrapper(() => STABLE_SOURCE),
       }),
   };
 }
@@ -185,7 +186,7 @@ describe("抓不到官方正文时零注册", () => {
         },
       },
       logger: { warn: () => undefined },
-      sourceFor: () => STABLE_SOURCE,
+      wrapInject: createInjectWrapper(() => STABLE_SOURCE),
     });
     expect(registered).toBe(0);
   });
@@ -333,10 +334,10 @@ describe("正文的 inject 面被包装：hooks.sessions 换成改写源", () =>
       slots,
       tabs: { get: () => OFFICIAL_DEFINITION, register: () => () => undefined },
       logger: { warn: () => undefined },
-      sourceFor: (sessionId) => {
+      wrapInject: createInjectWrapper((sessionId) => {
         asked.push(sessionId);
         return source;
-      },
+      }),
     });
     expect(captured).not.toBe(entry.inject);
     const face = (captured as (sessionId: string) => Record<string, unknown>)("s1");
@@ -362,9 +363,9 @@ describe("正文的 inject 面被包装：hooks.sessions 换成改写源", () =>
       slots,
       tabs: { get: () => OFFICIAL_DEFINITION, register: () => () => undefined },
       logger: { warn: () => undefined },
-      sourceFor: () => {
+      wrapInject: createInjectWrapper(() => {
         throw new Error("不该被调用");
-      },
+      }),
     });
     const face = (captured as (...args: unknown[]) => Record<string, unknown>)({
       notAString: true,
