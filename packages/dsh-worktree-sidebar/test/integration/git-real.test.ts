@@ -7,7 +7,7 @@
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GitExecPort } from "../../src/server/git/deps.ts";
 import * as gitApi from "../../src/server/git/interface.ts";
 import { cleanup, initRepo, tempDir } from "../helpers.ts";
@@ -138,6 +138,41 @@ describe("装配守卫与 release 复位", () => {
   it("release 之后能力面当场失败，不拿旧 exec 出结果", async () => {
     gitApi.releaseGit();
     await expect(gitApi.commonDir("/")).rejects.toThrow("dsh-worktree-sidebar: git 域尚未装配");
+  });
+});
+
+describe("归属缓存：与客户端刷新节拍解耦", () => {
+  it("TTL 内不重复起 git，过期后才重算", async () => {
+    const left = tempDir("ttl-left");
+    const right = tempDir("ttl-right");
+    dirs.push(left, right);
+    let runs = 0;
+    gitApi.releaseGit();
+    gitApi.installGit({
+      exec: {
+        run: async () => {
+          runs += 1;
+          return { ok: true, stdout: "/shared/common\n", stderr: "" };
+        },
+      },
+    });
+
+    vi.useFakeTimers();
+    try {
+      expect(await gitApi.belongsTo(left, right)).toBe(true);
+      // 一次归属判定 = 两个目录各问一次公共 git 目录。
+      expect(runs).toBe(2);
+
+      expect(await gitApi.belongsTo(left, right)).toBe(true);
+      expect(runs).toBe(2);
+
+      // 恰好走过 TTL：缓存必须失效，否则「删掉的 worktree 仍被认作同一仓库」会被永久缓存。
+      vi.advanceTimersByTime(30_000);
+      expect(await gitApi.belongsTo(left, right)).toBe(true);
+      expect(runs).toBe(4);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
