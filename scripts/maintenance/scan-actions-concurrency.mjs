@@ -153,7 +153,7 @@ function main() {
   }
   rows.sort((a, b) => b.peak - a.peak || b.countedJobs - a.countedJobs);
   console.log(
-    `\n${"peak".padStart(5)} ${"held_s".padStart(6)} ${"counted".padStart(7)}  ${"run_id".padStart(12)}  event           createdAt`,
+    `\n${"peak".padStart(5)} ${"held_s".padStart(6)} ${"count".padStart(5)}  ${"run_id".padStart(12)}  event           createdAt`,
   );
   for (const r of rows.slice(0, top)) {
     console.log(
