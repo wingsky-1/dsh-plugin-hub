@@ -298,16 +298,17 @@ describe("变化重评", () => {
   });
 });
 
-describe("正文的 inject 面原样搬运", () => {
-  // 改写目录根的落点不在这里：官方正文读的是框架按 session 作用域 hooks.sessions 合成的
-  // useSessions（见 contribute.ts）。往 props 里塞 hooks 是**曾经的真实缺陷**——真机上官方正文
-  // 根本不看那个键，接管看起来成功而树是空的。
-  it("注册正文时传的就是官方那一个 inject，不做任何包装", () => {
-    const officialFace = { useFiles: () => undefined };
+describe("正文的 inject 面被包装：hooks.sessions 换成改写源", () => {
+  it("调用注册的 inject 后 hooks.sessions 是本会话的改写源，官方面其余键原样保留", () => {
+    const source = { getSnapshot: () => ({}), subscribe: () => () => undefined };
+    const asked: string[] = [];
+    const officialFace = { useFiles: "official-useFiles", hooks: { other: "keep-me" } };
     const entry: StoredEntryLike = { ...BODY, inject: () => officialFace };
     let captured: unknown;
     const slots: ClientSlotsPort = {
       entriesOfSlot: (key) => (key === BODY_SLOT ? [entry] : [TITLE]),
+      // 只有正文那次注册带 inject；标题那次的 options 里没有 inject，
+      // 不按座位过滤就会把 captured 覆盖成 undefined。
       register: (options) => {
         if (options["name"] === BODY_SLOT) captured = options["inject"];
         return () => undefined;
@@ -319,8 +320,43 @@ describe("正文的 inject 面原样搬运", () => {
       slots,
       tabs: { get: () => OFFICIAL_DEFINITION, register: () => () => undefined },
       logger: { warn: () => undefined },
+      sourceFor: (sessionId) => {
+        asked.push(sessionId);
+        return source;
+      },
     });
-    expect(captured).toBe(entry.inject);
+    expect(captured).not.toBe(entry.inject);
+    const face = (captured as (sessionId: string) => Record<string, unknown>)("s1");
+    expect(face["hooks"]).toEqual({ other: "keep-me", sessions: source });
+    expect(face["useFiles"]).toBe("official-useFiles");
+    expect(asked).toEqual(["s1"]);
+  });
+
+  it("取不到会话 id 时原样返回官方 face（不猜会话）", () => {
+    const officialFace = { hooks: { other: "keep-me" } };
+    let captured: unknown;
+    const slots: ClientSlotsPort = {
+      entriesOfSlot: (key) =>
+        key === BODY_SLOT ? [{ ...BODY, inject: () => officialFace }] : [TITLE],
+      register: (options) => {
+        if (options["name"] === BODY_SLOT) captured = options["inject"];
+        return () => undefined;
+      },
+      subscribe: () => () => undefined,
+      onEntryError: () => () => undefined,
+    };
+    installTakeover({
+      slots,
+      tabs: { get: () => OFFICIAL_DEFINITION, register: () => () => undefined },
+      logger: { warn: () => undefined },
+      sourceFor: () => {
+        throw new Error("不该被调用");
+      },
+    });
+    const face = (captured as (...args: unknown[]) => Record<string, unknown>)({
+      notAString: true,
+    });
+    expect(face).toBe(officialFace);
   });
 });
 

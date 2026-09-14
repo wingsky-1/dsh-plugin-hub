@@ -9,6 +9,10 @@
  * 2. `ctx.sessions` 是 `ISessions`（客户端的会话服务），快照数据在它的 `.list` 上
  *    （`ObservableSnapshot<SessionListState>`），服务对象自己**没有** `getSnapshot`。
  * 两次的教训是同一条：假端口只证明「代码与我的假设一致」，不证明「假设与运行时一致」。
+ *
+ * 同一个教训的第三份副本在本文件另一类注释里：曾把「往组件 props 里塞 `hooks.sessions` 不被读」
+ * 写成事实，并据此把接缝换成 session 作用域。官方 `bindInjectSources` 恰恰会把 entry inject 面的
+ * `hooks.<name>` 变成 `use<Name>` props——被读，且覆盖框架注入。所以本包用 entry 级接缝。
  */
 
 /** 官方座位上的一条已登记项（运行时形状即 dsh-client-ui-slots 的 StoredEntry）。 */
@@ -20,7 +24,7 @@ export interface StoredEntryLike {
     readonly order?: number;
     readonly priority?: number;
   };
-  /** 官方组件的业务面工厂。我们整份搬运它，不在外面套任何东西。 */
+  /** 官方组件的业务面工厂。我们整套保留它的产物，只在外面把 `hooks.sessions` 换成改写源。 */
   readonly inject?: ((...args: unknown[]) => Record<string, unknown>) | undefined;
   readonly store?: unknown;
   readonly locale?: string | undefined;
@@ -75,31 +79,16 @@ export interface ObservablePort<T> {
   subscribe(listener: () => void): () => void;
 }
 
-/** session 作用域的一个绑定。我们只需要它的会话 id。 */
-export interface SessionBindingLike {
-  readonly sessionId: string;
-}
-
-/** 一条 session 作用域标准源的贡献体：声明名册 + 按绑定解析。 */
+/**
+ * 一份注入面里的 hook 源表，键是 hook 名。
+ *
+ * 这正是官方 `bindInjectSources` 读的那个 `face["hooks"]`：它把每个 `hooks.<name>`
+ * 经 `standardHookPropName` 合成为 `use<Name>` props
+ * （`dsh-client-ui-renderer/lib/client.js:342-357`），而展开序 `{...kit, ...injected, ...}`
+ * （`:644-650` 与 `:653-658`）让 injected 覆盖框架注入——这就是改写 `useSessions` 的机制。
+ */
 export interface SessionContribution {
   readonly hooks: Readonly<Record<string, ObservablePort<unknown>>>;
-}
-
-/**
- * `ctx.uiSession`：session 作用域标准源的注册口。
- *
- * 这是「让官方正文读到改写后的会话快照」的**唯一**正确接缝：渲染器把每个 `hooks.<name>` 源
- * 合成为 `use<Name>` 选择器 hook，且会话作用域覆盖 root 作用域的同名项。往组件 props 里塞一个
- * `sessions` 键没有任何效果——官方正文读的是框架注入的 `useSessions`，它根本不看那个键。
- *
- * `hooks` 名册是**静态**的：`resolve` 对每个绑定都必须给出名册里的每一项，
- * 「没有绑定就不给源」会被渲染器当成配置错误抛出来。所以未绑定时的**原样透传**由源自己实现。
- */
-export interface UiSessionPort {
-  provide(descriptor: {
-    readonly hooks: readonly string[];
-    readonly resolve: (binding: SessionBindingLike) => SessionContribution;
-  }): () => void;
 }
 
 /** 读一次宿主绑定。失败返回 undefined（调用方保持上次成功态）。 */

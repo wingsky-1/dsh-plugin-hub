@@ -2,18 +2,16 @@
  * dsh-worktree-sidebar 浏览器端入口（干净模块：只 apply/inject，外壳由构建链生成）。
  *
  * 这里只做适配：把 `ctx` 收窄成各模块认得的窄面，把每会话的绑定状态与快照源接起来。
- * 判断本身都在 `takeover.ts` / `source.ts` / `bindings.ts` / `contribute.ts` 里，那四个模块不需要浏览器。
+ * 判断本身都在 `takeover.ts` / `source.ts` / `bindings.ts` 里，那三个模块不需要浏览器。
  */
 import { createBindingState } from "./bindings.ts";
 import type { BindingState } from "./bindings.ts";
-import { contributeSessions } from "./contribute.ts";
 import type {
   ClientSlotsPort,
   ObservablePort,
   ReadBinding,
   SessionsSnapshotLike,
   TabsPort,
-  UiSessionPort,
 } from "./ports.ts";
 import { createSessionsSource } from "./source.ts";
 import { installTakeover } from "./takeover.ts";
@@ -54,7 +52,6 @@ interface ClientContext {
   readonly sidebarRightTabs: TabsPort;
   /** 服务对象本身**不是**快照源：数据在 `ISessions.list` 上（真机实测见 ports.ts 的注释）。 */
   readonly sessions: { readonly list: ObservablePort<SessionsSnapshotLike> };
-  readonly uiSession: UiSessionPort;
   readonly effect: (execute: () => () => void, label?: string) => unknown;
 }
 
@@ -92,8 +89,8 @@ export function apply(ctx: ClientContext): void {
       slots: ctx.slots,
       tabs: ctx.sidebarRightTabs,
       logger: { warn: (message: string) => console.warn(message) },
+      sourceFor,
     });
-    const unprovide = contributeSessions({ uiSession: ctx.uiSession, sourceFor });
 
     const timer = setInterval(() => {
       for (const state of states.values()) void state.refresh();
@@ -102,7 +99,6 @@ export function apply(ctx: ClientContext): void {
     ctx.effect(
       () => () => {
         clearInterval(timer);
-        unprovide();
         restore();
         states.clear();
         sources.clear();
@@ -117,8 +113,7 @@ export function apply(ctx: ClientContext): void {
 
 /**
  * 客户端契约。`slots` / `sidebarRightTabs` 是接管的两个面，`sessions.list` 是真实快照的来源，
- * `uiSession` 是把改写源贡献成 `useSessions` 的注册口，`locale` 随官方组件的完整装配面一起被继承
- * （本包不自带文案）。漏声明会在属性访问处抛 "without inject"；`sidebarRightTabs` 不存在时整体不激活——
- * 那说明官方包不在，我们无话可说。
+ * `locale` 随官方组件的完整装配面一起被继承（本包不自带文案）。漏声明会在属性访问处抛
+ * "without inject"；`sidebarRightTabs` 不存在时整体不激活——那说明官方包不在，我们无话可说。
  */
-export const inject: string[] = ["slots", "sidebarRightTabs", "sessions", "uiSession", "locale"];
+export const inject: string[] = ["slots", "sidebarRightTabs", "sessions", "locale"];

@@ -12,10 +12,21 @@
  * 这不是「顺手多带几个字段」：官方注册表 refresh 后会用**在册定义**重算 guide 条目，
  * 丢掉 `guide` 会让所有会话（含从未登记的）默认页签从 Files 变成空的 Guide。
  *
- * 正文的 `inject` 面**原样搬运、不做任何包装**：改写目录根的落点在 `contribute.ts` 那条
- * session 作用域标准源上。往 props 里塞东西是无效的——官方正文读框架注入的 `useSessions`。
+ * 正文的 `inject` 面**包一层**：官方 `bindInjectSources` 会把 entry inject 面里的 `hooks.<name>`
+ * 经 `standardHookPropName` 变成 `use<Name>` props（`dsh-client-ui-renderer/lib/client.js:342-357`），
+ * 而展开序 `{...kit, ...injected, ...}`（`:644-650` 与 `:653-658`）让 injected 覆盖框架注入——
+ * 这就是把官方正文读的 `useSessions` 换成改写源的机制（计划 §4.2 第 4 条指定的形态）。
+ * 作用域因此限定在**本 entry**：其它 `useSessions` 消费方仍拿真实 cwd（计划 §6 的非目标）。
  */
-import type { ClientSlotsPort, StoredEntryLike, TabDefinitionLike, TabsPort } from "./ports.ts";
+import type {
+  ClientSlotsPort,
+  ObservablePort,
+  SessionContribution,
+  SessionsSnapshotLike,
+  StoredEntryLike,
+  TabDefinitionLike,
+  TabsPort,
+} from "./ports.ts";
 
 /** 我们接管的 kind。 */
 export const FILES_KIND = "files";
@@ -30,6 +41,8 @@ interface TakeoverDeps {
   readonly slots: ClientSlotsPort;
   readonly tabs: TabsPort;
   readonly logger: { warn(message: string): void };
+  /** 某个会话的改写源；注入而不是在域内造，接管逻辑因此不需要认识会话存储。 */
+  readonly sourceFor: (sessionId: string) => ObservablePort<SessionsSnapshotLike>;
 }
 
 /** 接管入口。返回值是完整释放函数；调用方把它放进 `ctx.effect` 的 disposer。 */
@@ -73,7 +86,7 @@ export function installTakeover(deps: TakeoverDeps): () => void {
             key: OUR_TYPE_ID,
             locale: body.locale,
             store: body.store,
-            inject: body.inject,
+            inject: wrapInject(deps, body.inject),
           },
           body.component,
         ),
@@ -171,4 +184,29 @@ function findEntry(
 ): StoredEntryLike | undefined {
   if (key === undefined) return undefined;
   return slots.entriesOfSlot(slot).find((entry) => entry.options.key === key);
+}
+
+/**
+ * 把官方组件的业务面工厂包一层：保留官方产出的一切，只把 `sessions` 这个 hook 源换成改写过的。
+ *
+ * 取不到会话 id 时**原样返回**：宁可让树显示真实 cwd（用户能看出来不对），也不指向一个猜出来的目录。
+ * 官方 renderer 的展开序是 `{...kit, ...injected, ...}`，所以我们放进 injected 的 hooks 会覆盖框架注入。
+ */
+function wrapInject(
+  deps: TakeoverDeps,
+  official: StoredEntryLike["inject"],
+): (...args: unknown[]) => Record<string, unknown> {
+  return (...args: unknown[]): Record<string, unknown> => {
+    const face: Record<string, unknown> = official === undefined ? {} : official(...args);
+    // 渲染器把 binding.key 作为第一个参数传进来（renderer 的 runInject）；非字符串一律原样返回。
+    const sessionId = args.find((arg): arg is string => typeof arg === "string");
+    if (sessionId === undefined) return face;
+    const existing = face["hooks"];
+    // 官方 face 里已有的 hooks 源要保留：我们只覆盖 sessions 一项。
+    const hooks =
+      typeof existing === "object" && existing !== null
+        ? (existing as SessionContribution["hooks"])
+        : {};
+    return { ...face, hooks: { ...hooks, sessions: deps.sourceFor(sessionId) } };
+  };
 }
