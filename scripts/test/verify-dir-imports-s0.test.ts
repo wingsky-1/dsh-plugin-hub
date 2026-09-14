@@ -26,7 +26,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -1006,6 +1006,52 @@ test("全覆盖断言：#773 R3 反证：拓扑损坏报「解析失败」，不
     assert.equal(status, 1, `拓扑损坏应判红，实际 ${status}：\n${out}`);
     assert.match(out, /变异拓扑解析失败/, `损坏态应报解析失败：\n${out}`);
     assert.doesNotMatch(out, /单一事实源缺失/, `损坏态不得报「缺失」（两种事实不合并）：\n${out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("全覆盖断言：#773 R3 残留 fail-open：拓扑内容为非对象 → 判红（不靠「未登记」兜底）", () => {
+  // JSON.parse 对这些字面量同样成功，但形状不是对象、承载不了段/层定义。字面 null 曾连
+  // `topology !== null` 守卫都过不去而静默判绿；数组/标量只是恰被「包未登记」分支兜住，
+  // 不得依赖该巧合——故红因必须来自形状判据本身。
+  for (const [label, raw] of [
+    ["字面 null", "null"],
+    ["数组", "[]"],
+    ["数字", "0"],
+    ["字符串", '"x"'],
+  ]) {
+    const root = makeFixtureRoot({
+      ...chainFixture(""),
+      "scripts/data/mutation-topology.json": raw,
+    });
+    try {
+      const { status, out } = runOn(root);
+      assert.equal(status, 1, `${label}：非对象拓扑应 fail-closed 判红，实际 ${status}：\n${out}`);
+      assert.match(out, /变异拓扑顶层不是对象/, `${label}：应点名顶层不是对象：\n${out}`);
+      assert.doesNotMatch(
+        out,
+        /未在 scripts\/data\/mutation-topology\.json 登记/,
+        `${label}：红因不得来自「未登记」副作用：\n${out}`,
+      );
+      assert.doesNotMatch(out, /PASS（跨模块引用全部走/, `${label}：不得判绿：\n${out}`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
+
+test("全覆盖断言：#773 R3：拓扑缺失时 --write-baseline 中止且不落盘（阻断性错误分支）", () => {
+  // 既有用例只覆盖「新增质量证据」那条写基线中止（:1273），这条钉住 failures.length > 0
+  // 的阻断性错误分支（:1255）：写基线若在「判不出来」时落盘，会把未知固化成「看起来全覆盖」。
+  // root 是全新 mkdtemp，故「基线文件不存在」同时覆盖「未被创建」与「未被改写」。
+  const root = makeFixtureRoot(chainFixture(""), { omitTopology: true });
+  try {
+    const baseline = join(root, "scripts", "data", "dir-imports-baseline.json");
+    const written = runOn(root, ["--write-baseline"]);
+    assert.equal(written.status, 1, `缺失态写基线应中止，实际 ${written.status}：\n${written.out}`);
+    assert.match(written.out, /写基线中止（存在阻断性错误）/, `应报阻断性中止：\n${written.out}`);
+    assert.equal(existsSync(baseline), false, `中止后基线不得落盘：${baseline}`);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

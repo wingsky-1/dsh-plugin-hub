@@ -64,9 +64,9 @@
  *     `scripts/data/mutation-topology.json` 的 `$noMutationPackages` 时，源码全覆盖断言
  *     **不适用**（该包没有变异面）——但不静默判绿：判绿输出里必须打印一条显式声明
  *     （含登记理由与跟踪 #690 S6/S8 / #773）。两处都未登记仍是 fail-closed；拓扑文件
- *     **整份缺失**（#773 R3）同样 fail-closed：缺失时未覆盖清单恒为空、判据整体失去依据，
- *     故门禁自身在这条 push failure（与「解析失败」「包未登记」并列的第三种事实，不合并
- *     语义），`scripts/test/workflow-assert.test.ts` 的「单一事实源在位」断言保留为冗余兜底。
+ *     **整份缺失 / 内容非对象**（#773 R3）同样 fail-closed：此时未覆盖清单恒为空、判据整体
+ *     失去依据，故门禁自身判红（缺失、顶层不是对象、解析失败是三种事实，不合并语义），
+ *     `scripts/test/workflow-assert.test.ts` 的「单一事实源在位」断言保留为冗余兜底。
  *
  * 适用包白名单：`--package <name>`（可多次）；缺省 = 仅 dsh-mcp-manager。
  * 用法：node scripts/gate/verify-dir-imports.mjs [--package <name>] [--soft] [--verbose]
@@ -1149,10 +1149,27 @@ function resolvePackages() {
   return ["dsh-mcp-manager"];
 }
 
+/** 拓扑内容的可读形状名（形状非法时的判红文案用）。 */
+function jsonShape(value) {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "数组";
+  return typeof value;
+}
+
 let topology = null;
 if (existsSync(TOPOLOGY_PATH)) {
   try {
     topology = JSON.parse(readFileSync(TOPOLOGY_PATH, "utf8"));
+    // JSON.parse 对 null / 数组 / 标量同样成功，但这些形状承载不了段/层定义：此时下游
+    // 「未登记」判据与全覆盖断言会被整体跳过（字面 null 连 `topology !== null` 守卫都过不去），
+    // 故判红挂在**解析结果**上，并把 topology 归一为 null 使下游与缺失态一致——否则
+    // 数组/标量还会额外触发「未登记」，红因从 1 条变 2 条。
+    if (topology === null || typeof topology !== "object" || Array.isArray(topology)) {
+      failures.push(
+        `[topology] 变异拓扑顶层不是对象（单一事实源格式非法，实际 ${jsonShape(topology)}）：${TOPOLOGY_PATH} —— 无法判定源码全覆盖，fail-closed`,
+      );
+      topology = null;
+    }
   } catch (e) {
     // 拓扑损坏时不能抛栈崩掉整个 contract 段：显式判红并保持其余检查可读。
     failures.push(`[topology] 变异拓扑解析失败：${TOPOLOGY_PATH}（${e.message}）`);
