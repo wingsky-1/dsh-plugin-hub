@@ -26,12 +26,17 @@ export function defaultSegmentExcludes(pkgName) {
  * 两个面是两套口径（同一条 glob 可以同时出现在两处），kind 描述的是「这条排除在本面
  * 为什么成立」，混用一份值域会把两个面的语义差抹平。
  *
- *   - `type-only`：无运行时代码（域门面、依赖声明出口、.d.ts/.d.mts 声明层）
- *   - `not-source`：src 下的非源码资源（.ps1 等随包分发的资源文件）
- *   - `not-mutated`：是源码、有运行时实现，但有意不进变异面（重复转发同一实现的
- *     facade、以用户文件形态交付的内置适配器 .mjs）
+ * **本面 kind 是本面自有值域**（两处同名不代表同义，逐条说明）：
+ *   - `type-only`（与 vitest 面同义）：真无运行时代码——`.d.ts` / `.d.mts` 声明层、
+ *     纯类型依赖声明出口。
+ *   - `facade`（本面增补）：域门面 `interface.ts`——转译后**可能有运行时代码**
+ *     （装配/卸载转调、re-export），只是本身不做裁决；vitest 面对应的 `type-only`
+ *     只用在 `.d.ts`/`.d.mts`，同名会把「门面」误读成「无运行时代码」，故另立一值。
+ *   - `not-source`（与 vitest 面同义）：src 下的非源码资源（`.ps1` 等随包分发）。
+ *   - `not-mutated`（本面增补）：是源码、有运行时实现，但有意不进变异面（重复转发同一
+ *     实现的薄 facade、以用户文件形态交付的内置适配器 `.mjs`、带真实默认实现的进程端口）。
  */
-export const COVERAGE_EXCLUDE_KINDS = ["type-only", "not-source", "not-mutated"];
+export const COVERAGE_EXCLUDE_KINDS = ["type-only", "facade", "not-source", "not-mutated"];
 
 /** reason 的长度下限：与 vitest 面 verify-coverage-scope.mjs 的判据对齐（10）。 */
 export const COVERAGE_EXCLUDE_MIN_REASON = 10;

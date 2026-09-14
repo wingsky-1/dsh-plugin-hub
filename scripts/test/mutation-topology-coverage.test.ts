@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { globSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -24,6 +24,7 @@ import {
   defaultSegmentExcludes,
   packageRegistrationProblems,
 } from "../gate/mutation-topology.mjs";
+import { projectTestSurface } from "../gate/test-surface.mjs";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const GENERATOR = join(ROOT, "scripts", "gate", "gen-stryker-conf.mjs");
@@ -105,11 +106,13 @@ test("F15 反证：落盘 conf 的 mutate 面与断言口径同源（含 coverag
   }
 });
 
-test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目（3 包共 11 条）", () => {
+test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目（3 包共 12 条）", () => {
   const topology = JSON.parse(readFileSync(TOPOLOGY_PATH, "utf8"));
-  // 规模断言：批 D 的形状变更范围就是这 11 条（dsh-mcp-manager 1 / dsh-notifier 4 /
-  // dsh-provider-usage 6）。数量变化必须是有意的登记动作，不能靠 diff 顺带溜过。
-  const expected = { "dsh-mcp-manager": 1, "dsh-notifier": 4, "dsh-provider-usage": 6 };
+  // 规模断言：形状变更范围 12 条（dsh-mcp-manager 1 / dsh-notifier 5 / dsh-provider-usage 6）。
+  // notifier 是 5 而不是 4：原 `**/deps.ts` 一条拆成两条——7 个纯类型域出口 + 含运行时
+  // 实现的 system/deps.ts 单列（复核实测它转译后有运行时代码，不能与纯类型共用一条 reason）。
+  // 数量变化必须是有意的登记动作，不能靠 diff 顺带溜过。
+  const expected = { "dsh-mcp-manager": 1, "dsh-notifier": 5, "dsh-provider-usage": 6 };
   const allReasons = [];
   let total = 0;
   for (const [pkgName, count] of Object.entries(expected)) {
@@ -151,7 +154,11 @@ test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目�
     }
     total += entries.length;
   }
-  assert.equal(total, 11, "coverageExcludes 共 11 条（#773 R4 的形状变更范围）");
+  assert.equal(
+    total,
+    12,
+    "coverageExcludes 共 12 条（#773 R4 的形状变更范围，含 deps.ts 拆分后的一条）",
+  );
   assert.equal(
     new Set(allReasons).size,
     allReasons.length,
@@ -322,6 +329,48 @@ test("#773 R4 反证：verify-dir-imports 遇 packages.<pkg>=null 判红而非�
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("#773 R4：notifier 的 deps.ts 拆成「7 个纯类型域出口 + system/deps.ts 运行时段口」", () => {
+  const topology = JSON.parse(readFileSync(TOPOLOGY_PATH, "utf8"));
+  const entries = topology.packages["dsh-notifier"].testLayers.coverageExcludes;
+  const byPattern = new Map(entries.map((e) => [e.pattern, e]));
+  const pure = byPattern.get("!packages/dsh-notifier/src/server/*/deps.ts");
+  const runtime = byPattern.get("!packages/dsh-notifier/src/server/channels/impl/system/deps.ts");
+  assert.ok(pure, "7 个纯类型域出口的 glob 必须在位");
+  assert.equal(pure.kind, "type-only", "纯类型出口才配 type-only（真无运行时代码）");
+  assert.ok(runtime, "system/deps.ts 必须单列：它的转译产物有运行时代码，不能与纯类型共用 reason");
+  assert.equal(runtime.kind, "not-mutated");
+  // 两条的并集必须覆盖磁盘上全部 deps.ts —— 拆分只改登记方式，不得改变被判定面。
+  const all = globSync("packages/dsh-notifier/src/**/deps.ts", { cwd: ROOT }).sort();
+  const pureMatched = all.filter((p) =>
+    /^packages\/dsh-notifier\/src\/server\/[^/]+\/deps\.ts$/.test(p),
+  );
+  assert.equal(all.length, 8, `notifier 的 deps.ts 数量变了（当前 ${all.length}）：拆分表要同步`);
+  assert.equal(pureMatched.length, 7, `纯类型 glob 应命中 7 个（当前 ${pureMatched.join(", ")}）`);
+  assert.ok(
+    all.includes("packages/dsh-notifier/src/server/channels/impl/system/deps.ts"),
+    "被单列的那个文件必须真实存在",
+  );
+  assert.equal(
+    pureMatched.length + 1,
+    all.length,
+    "pure glob + 单列条目必须**恰好**覆盖全部 deps.ts（既不能漏，也不能多出第三条）",
+  );
+});
+
+test("#773 R4 反证：projectTestSurface 遇 packages.<pkg>=null 给判词，不得抛栈", () => {
+  const topology = { $testLayers: {}, packages: { "fixture-pkg": null } };
+  const projection = projectTestSurface(ROOT, topology, "fixture-pkg");
+  assert.deepEqual(projection.testFiles, []);
+  assert.ok(
+    projection.errors.some((e) => e.includes("包登记必须是对象")),
+    `测试面投影必须给可读判词（实际：${projection.errors.join(" | ")}）`,
+  );
+  // 对照组：正常包登记不因形状判据报错（形状守卫不是「凡输入皆红」）
+  assert.deepEqual(projectTestSurface(ROOT, { packages: {} }, "fixture-pkg").errors, [
+    "包未在变异拓扑登记：fixture-pkg —— 源码覆盖与测试面登记都无法判定（fail-closed）",
+  ]);
 });
 
 test("F15 反证：段省略 excludes 时生成器注入默认值（fixture 最小仓库）", () => {

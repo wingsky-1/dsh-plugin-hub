@@ -168,8 +168,8 @@
         "coverageExcludes": [
           {
             "pattern": "!packages/dsh-mcp-manager/src/**/interface.ts",
-            "kind": "type-only",
-            "reason": "各域对外门面（api/bootstrap/catalog/config/connection 等 14 个）：文件体只有 re-export 与类型出口，域内实现不在这里，目录外只能经它引用（verify-dir-imports 静态强制），自身不含可变异逻辑。"
+            "kind": "facade",
+            "reason": "各域对外门面（api/bootstrap/catalog/config/connection 等 14 个）：文件体只有 re-export 与类型出口（integration 另有 Context 声明合并），域内实现不在这里，目录外只能经它引用（verify-dir-imports 静态强制），自身不含可变异逻辑。"
           }
         ],
         "testMutationExemptions": {
@@ -270,13 +270,18 @@
         "coverageExcludes": [
           {
             "pattern": "!packages/dsh-notifier/src/**/interface.ts",
-            "kind": "type-only",
-            "reason": "对外契约门面共 10 个（server/ 下 9 个域 + src/shared 两端共享面）：装配/卸载函数只转调域内 service，其余是类型与少量值出口；开关、免打扰、投递、落盘等判断都在 impl/ 与域内，门面自身不做裁决。"
+            "kind": "facade",
+            "reason": "对外契约门面共 10 个（server/ 下 9 个域 + src/shared 两端共享面）：装配/卸载函数只转调域内 service（转译后仍有运行时代码），其余是类型与少量值出口；开关、免打扰、投递、落盘等判断都在 impl/ 与域内，门面自身不做裁决。"
           },
           {
-            "pattern": "!packages/dsh-notifier/src/**/deps.ts",
+            "pattern": "!packages/dsh-notifier/src/server/*/deps.ts",
             "kind": "type-only",
-            "reason": "各域依赖声明出口：文件体全是 import type / export type（能力面用 Pick 从对域 interface.ts 派生），编译期擦除、运行时代码为空；装配面口径由 verify-dir-imports 的注入面对账独立承载。"
+            "reason": "7 个域的依赖声明出口（api/config/events/pipeline/sdk/stores/upgrade）：文件体全是 import type / export type（能力面用 Pick 从对域 interface.ts 派生），编译期擦除、运行时代码为空；装配面口径由 verify-dir-imports 的注入面对账独立承载。"
+          },
+          {
+            "pattern": "!packages/dsh-notifier/src/server/channels/impl/system/deps.ts",
+            "kind": "not-mutated",
+            "reason": "channels system 块的进程事实端口：与上一条的依赖声明出口同名但不同物——含值导入（node:child_process / node:fs）与真实默认实现（spawn/execFile/existsSync/发行版探测），转译后仍有运行时代码。它当前被本面排除，属**新增遗留项**：是否应纳入度量（单测已覆盖其探测分支）交维护者裁决。"
           },
           {
             "pattern": "!packages/dsh-notifier/src/**/*.d.ts",
@@ -446,7 +451,7 @@
         "coverageExcludes": [
           {
             "pattern": "!packages/dsh-provider-usage/src/**/interface.ts",
-            "kind": "type-only",
+            "kind": "facade",
             "reason": "13 个目录的对外门面（apply/domain1/domain2/shared）：逐个命名 re-export 实际被消费的类型与函数（显式禁 export * from），目录外的调用方一律经它消费，自身不含实现。"
           },
           {
@@ -457,17 +462,17 @@
           {
             "pattern": "!packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.mjs",
             "kind": "not-mutated",
-            "reason": "内置 DeepSeek 官方余额适配器的权威实现（区间记账法 classifyIntervalDs/aggregateDaily、B2 断轴 balanceSvg、峰谷徽标）：构建期由 bundle-host 原样拷入 lib/adapters/（tsc 不 emit .mjs），变异面各段按 src/**/*.ts 域实现登记，本条属有意不度量，行为面由 test/unit/adapters/unit-deepseek-official.test.ts 直测。"
+            "reason": "内置 DeepSeek 官方余额适配器的权威实现（区间记账法 classifyIntervalDs/aggregateDaily、B2 断轴 balanceSvg、峰谷徽标）：构建期由包内 scripts/prepare-lib-entry.ts 原样拷入 lib/domain1/adapters/（tsc 不 emit .mjs），它本身在覆盖率面内计分、但不进 .ts 域变异段；变异行为面由 test/unit/adapters/unit-deepseek-official.test.ts 直测。"
           },
           {
             "pattern": "!packages/dsh-provider-usage/src/domain1/adapters/opencode-go.mjs",
             "kind": "not-mutated",
-            "reason": "内置 opencode-go 用量适配器的权威实现（三窗口取数与迷你图卡片，图表/日界函数全走宿主注入的 utils，miniChartSvgMarkup 是给测试导入面的兼容导出）：与另两个内置适配器同批 mjs 化，构建期原样拷入 lib/adapters/，不进 .ts 域变异段。"
+            "reason": "内置 opencode-go 用量适配器的权威实现（三窗口取数与迷你图卡片，图表/日界函数全走宿主注入的 utils，miniChartSvgMarkup 是给测试导入面的兼容导出）：与另两个内置适配器同批 mjs 化，构建期由包内 scripts/prepare-lib-entry.ts 原样拷入 lib/domain1/adapters/，它本身在覆盖率面内计分、不进 .ts 域变异段。"
           },
           {
             "pattern": "!packages/dsh-provider-usage/src/domain1/adapters/zai-coding-cn.mjs",
             "kind": "not-mutated",
-            "reason": "内置智谱 Coding Plan (CN) 配额适配器的权威实现（端点与窗口判定按 2026-08-27 真 key 实测固化：CREDIT_LIMIT 按 unit 判 5h/周、percentage 取服务端权威口径、网关 200 加业务码 404 判 bad-data）：构建期原样拷入 lib/adapters/，不进 .ts 域变异段。"
+            "reason": "内置智谱 Coding Plan (CN) 配额适配器的权威实现（端点与窗口判定按 2026-08-27 真 key 实测固化：CREDIT_LIMIT 按 unit 判 5h/周、percentage 取服务端权威口径、网关 200 加业务码 404 判 bad-data）：构建期由包内 scripts/prepare-lib-entry.ts 原样拷入 lib/domain1/adapters/，它本身在覆盖率面内计分（本轮实测 13.9%）、不进 .ts 域变异段。"
           },
           {
             "pattern": "!packages/dsh-provider-usage/src/shared/placement-math.ts",

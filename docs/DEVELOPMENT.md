@@ -456,15 +456,21 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
       · `testLayers.coverageExcludes`：把文件写进该包的覆盖排除面 ⇒ 该文件退出
         `uncoveredSrcFiles` 质量证据，门禁输出称之为「质量证据改善（--write-baseline
         会清理入库）」。**当前实际在用的是这条**（dsh-mcp-manager / dsh-notifier /
-        dsh-provider-usage 均在使用，共 **11** 条），台账里 `gate=verify-dir-imports`
+        dsh-provider-usage 均在使用，共 **12** 条），台账里 `gate=verify-dir-imports`
         尚无条目。条目形状与 vitest 面 `coverage.config.json` 的 exclude **同形同键名**：
         `{ pattern, reason, kind }`——`pattern` 带 `!` 前缀，`reason` 不少于 10 字
-        （与 `verify-coverage-scope.mjs` 同一下限），`kind` 取本面自己的值域
-        （`type-only`：无运行时代码；`not-source`：src 下的非源码资源；
-        `not-mutated`：是源码但有意不进变异面；定义在
-        `scripts/gate/mutation-topology.mjs`）。**裸 glob 即判红**：形状不合法由共享
+        （与 `verify-coverage-scope.mjs` 同一下限）。**裸 glob 即判红**：形状不合法由共享
         校验器给出判词，不等 `--check` 的「与派生不一致」误诊，回归用例在
         `scripts/test/mutation-topology-coverage.test.ts`。
+        `kind` 是**本面自有值域**（定义在 `scripts/gate/mutation-topology.mjs`），两处
+        同名不等于同义：`type-only`（与 vitest 面同义：真无运行时代码——`.d.ts`/`.d.mts`、
+        纯类型依赖声明出口）、`not-source`（与 vitest 面同义：src 下的非源码资源）、
+        **`facade`（本面增补）**：域门面 `interface.ts`——转译后**可能有运行时代码**
+        （装配/卸载转调、re-export），只是本身不做裁决，vitest 面的 `type-only` 不含此义、
+        故另立一值）、**`not-mutated`（本面增补）**：是源码、有运行时实现但有意不进变异面。
+        同一条 glob 也要按事实拆分：notifier 的 `**/deps.ts` 现为两条——`server/*/deps.ts`
+        （7 个纯类型域出口，`type-only`）与 `channels/impl/system/deps.ts`（含值导入与真实
+        默认实现，`not-mutated`，是否纳入度量待裁决）。
       · `$noMutationPackages`：该包不进变异面 ⇒ 源码全覆盖断言**不适用**（不是「通过」）。
         该包没有可判定的变异面，登记本身即对该事实的声明（跟踪 #690 S6/S8 / #773，见
         #773 批 B / #710 §2-2）。
