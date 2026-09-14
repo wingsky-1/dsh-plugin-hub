@@ -16,6 +16,9 @@ export const CI_WORKFLOW = ".github/workflows/ci.yml";
 /**
  * 解析 ci.yml 里 dorny/paths-filter 的 `filters: |` 块。
  * 返回 { global: [...globs], '<pkg>': [...globs] }；块缺失返回 null（调用方 fail-closed）。
+ *
+ * @param {string} ciYmlText ci.yml 全文。
+ * @returns {Record<string, string[]> | null} 面名 -> glob 列表；块缺失或不可解析为 null。
  */
 export function parseFilterBlock(ciYmlText) {
   const lines = ciYmlText.split("\n");
