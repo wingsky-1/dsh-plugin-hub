@@ -164,34 +164,43 @@
 ```
 packages/dsh-worktree-sidebar/
   AGENTS.md  cordis.patch.yml  package.json  tsconfig.json  README.md  README.en.md
-  src/index.ts                       组合根：bindHost + assemble + 逆序 dispose，零业务
-  src/contract.ts                    双端共享常量 / 字段名 / revision 契约
-  src/server/binding/interface.ts    绑定域入口：install/release + read/write/remove
-  src/server/binding/deps.ts         依赖声明（LoggerPort、dshHome 路径）
-  src/server/binding/impl/store/     bindings.json 原子写 + 记录形状
-  src/server/binding/impl/model/     纯逻辑：校验、revision 递增、按会话索引
-  src/server/git/interface.ts        git 域入口：isWorktreeOf / listWorktrees
-  src/server/git/deps.ts             注入 exec 面
-  src/server/git/impl/inspect/       真实状态查询（rev-parse --git-common-dir 等）
-  src/server/scope/interface.ts      scope 域入口：install/release
-  src/server/scope/deps.ts           注入 typert、binding、git、logger
+  src/index.ts                       组合根：收窄宿主上下文 + assemble + 逆序 dispose，零业务
+  src/contract.ts                    双端共享契约：ROUTES（客户端经构建期 __DSH_ROUTES__ 取）/ 响应字段名
+  src/host/agents.ts                 宿主适配：agent 事件面（subscribe / list / publish）收窄
+  src/host/typert.ts                 宿主适配：typert lookups 收窄
+  src/host/defaults.ts               宿主适配：sandboxPolicy / sessionPersistence / liveSession 收窄
+  src/server/binding/interface.ts    绑定域入口：install/release 成对 + revision/get/put/drop
+  src/server/binding/deps.ts         依赖声明（LoggerPort、文件路径、时钟）
+  src/server/binding/impl/model/     纯逻辑与存储形状：校验、revision 递增、按会话索引
+  src/server/binding/impl/store/     bindings.json 原子写 + 容错读
+  src/server/binding/impl/service/   单例：内存快照 + 串行写盘 + installed 守卫
+  src/server/git/interface.ts        git 域入口：install/release 成对 + 能力转发（commonDir / belongsTo / headBranch / checkRefFormat / addWorktree / removeWorktree / listWorktrees）+ gitExec
+  src/server/git/deps.ts             注入 exec 面（GitExecPort）
+  src/server/git/impl/inspect/       argv 构造与 porcelain 解析（纯函数）
+  src/server/git/impl/exec/          真实 execFile 实现
+  src/server/git/impl/service/       单例：归属缓存 + installed 守卫
+  src/server/scope/interface.ts      scope 域入口：install/release 成对 + effectiveWorktree
+  src/server/scope/deps.ts           注入 typert、binding、git、defaults、logger
   src/server/scope/impl/resolve/     命中绑定 to worktree，否则委托捕获的官方默认
   src/server/scope/impl/fallback/    官方默认策略等价实现（provider 晚注册时）
+  src/server/scope/impl/service/     单例：捕获 / 委托 / 释放 + installed 守卫
   src/server/tools/interface.ts      工具域入口：installTools/releaseTools
-  src/server/tools/deps.ts           注入 binding、git、scope、会话解析面
+  src/server/tools/deps.ts           注入 binding、git、agents、logger、时钟
   src/server/tools/impl/session/     执行期兜底：从 exec 取 sessionId/agent
   src/server/tools/impl/register|create|remove/  三个工具各一文件
+  src/server/tools/impl/protocol/    工具输出 schema 与渲染
   src/server/api/interface.ts        路由域入口：installApi/releaseApi
-  src/server/api/deps.ts             注入 binding、logger
+  src/server/api/deps.ts             注入 binding（revision）、scope（effectiveWorktree）、register、logger
   src/server/api/impl/route/         单路由装配（host-utils 的 guardLoopbackMethod）
-  src/server/api/impl/bindings/      GET /api/dsh-worktree-sidebar/bindings
-  src/server/shared/{interface,type,paths}.ts  共享层门面 / 窄类型 / DSH_HOME 路径
-  src/client/index.ts                干净模块：apply/inject + ctx.effect，仅装配
-  src/client/takeover.ts             探测官方 files entry to 注册 body/title/kind，失败即 dispose
-  src/client/inject.ts               官方 entry 的 component/store/inject/locale 探测
-  src/client/source.ts               伪造 sessions 快照源（getSnapshot/subscribe，稳定引用）
+  src/server/api/impl/handlers/      GET bindings / GET health 两个端点的形状
+  src/server/api/impl/service/       单例：已挂路由 disposer 链 + installed 守卫
+  src/server/shared/{interface,type,paths,file-io}.ts  共享层门面 / 窄类型 / DSH_HOME 路径 / 原子写
+  src/client/index.ts                干净模块：apply/inject + ctx.effect，装配窄面 + 逐会话剪枝
+  src/client/takeover.ts             探测官方 files entry to 注册 body/title/kind，并在本 entry 的 hooks.sessions 上接改写源；失败即 dispose
+  src/client/source.ts               本 entry 的 sessions 快照源（改写 cwd，getSnapshot/subscribe 引用稳定）
   src/client/bindings.ts             拉绑定与 revision
-  test/unit/**  test/integration/**  test/client/client-contract.test.ts
+  src/client/ports.ts                客户端窄端口类型面（运行时真实面为准；未规定成 interface.ts）
+  test/unit/**  test/integration/**
 ```
 
 分层纪律（参考 notifier 与 docs/ARCHITECTURE-METHOD.md:22-40）：
@@ -233,31 +242,32 @@ CRAP 阈值 16（观察期）、以及变异。本包当前无越界。
 
 **已撤销的指标：「全包 src 合计 1200」。** 它没有出处——只是本节当初拍的估算，参照系里
 notifier / mcp-manager 给的都只是**单文件**分位数（中位 44/58、p90 186/373、max 3229/1208），
-没有任何「全包合计」的先例或推导。它的性质是**功能数量的线性函数**（41 文件 x 均值 62），
+没有任何「全包合计」的先例或推导。它的性质是**功能数量的线性函数**（第四轮收尾实测 44 文件 x 均值 68），
 拿它当上限等于「功能不许长」；而拆分只把行数从 A 搬到 B，**合计不变**，所以它指向不了任何
 可执行动作。维护者裁定删除，本文件照办。
 
 参照：notifier src 中位数 44 / p90 186 / max 3229（客户端单文件，属反例）；mcp-manager p50 58 / p90 373 / max 1208。
 
-### 9.1 现状对照（2026-09-14 实测；历史偏离已消失）
+### 9.1 现状对照（第四轮收尾重测；历史偏离已消失）
 
-| 文件类型 | review 提问线 | 实测 | 结论 |
+| 文件类型 | review 提问线 | 实测（第四轮收尾，`wc -l`） | 结论 |
 |---|---|---|---|
-| 组合根 src/index.ts | 300 | 256 | 合规 |
-| 域 impl 单文件 | 250 | 最大 117（tools/impl/remove） | 合规 |
+| 组合根 src/index.ts | 300 | 160（S3 拆出 `src/host/` 三个适配器后 260 到 160） | 合规 |
+| 域 impl 单文件 | 250 | 最大 154（git/impl/service） | 合规 |
 | 纯逻辑模块 | 120 | 最大 110（scope/impl/resolve） | 合规 |
-| 客户端单文件 | 250 | 最大 174（client/takeover） | 合规 |
-| 域 interface/deps | 80 | interface 8/8/8/11/11（api/binding/scope/tools/git）、deps 30/12/18/55/78 | 合规 |
-| 全包 src | —（已撤销） | 41 文件 / 2535 行（均值 62） | 指标不存在 |
+| 客户端单文件 | 250 | 最大 212（client/takeover；B1 恢复 `wrapInject` 后 174 到 212） | 合规 |
+| 域 interface/deps | 80 | interface 19/45/24/21/59（api/binding/scope/tools/git）、deps 32/12/18/55/78 | 合规（C1 后门面 = install/release + 能力转发，不再是 8–11 行的纯转出） |
+| 全包 src | —（已撤销） | 44 文件 / 2978 行（均值 68） | 指标不存在 |
 
 **历史偏离已消失，不再有「偏离」可议**：
 
 - **interface/deps 的 3 处历史偏离**（git/interface 140、binding/interface 102、scope/interface 82）在
-  「类型与装配的物理定义下移 `impl/service`」之后消失——五个域现在同形：门面只做 re-export（8–11 行），
+  「类型与装配的物理定义下移 `impl/service`」之后消失——五个域现在同形：门面出 `install/release` 成对动作 + 能力转发
+  （19–59 行，C1 之前只是 8–11 行的纯转出；能力面从 `impl` 搬到门面是本轮的反转，见 §18），
   `deps.ts` 是纯类型面（最大 `scope/deps.ts` 78 行，是端口与形状字段的逐条声明，只有一个修改理由）。
   当时提的两种修法（接受 150 / 再拆一层）都不必执行。
 - **全包合计**这个指标本身已撤销（见 §9），`2800` / `3000` 一类建议值一并作废，不要再出现在任何判据里。
-  当前实测 **41 文件 / 2535 行、均值 62**（旧表的 `2527` 是 36 文件时代的读数，已过期）。
+  当前实测 **44 文件 / 2978 行、均值 68**（旧表的 `2535` 是 `src/host/` 拆分前的读数，已过期）。
 
 ## 10. 债务清单与最小化
 
@@ -677,22 +687,22 @@ S0–S5 全部落地；独立复核（第二轮）的四项必修 P0-1 / P0-2 / 
 
 | # | 裁决 | 依据（复核后的事实） | 状态 |
 |---|---|---|---|
-| A1 | 做：更正「props 里塞 hooks 不被读」的错误表述（源码注释四处） | 官方 `bindInjectSources` 把 entry inject 面里的 `hooks.<name>` 经 `standardHookPropName` 变成 `use<Name>` props（`dsh-client-ui-renderer/lib/client.js:342-357`）；展开序 `{...kit, ...injected, ...}` 在 `:644-650`（ContextualEntry）与 `:653-658`（renderEntry）两处，`injected` 在 `kit` 之后 ⇒ 覆盖 | S1a 落地（`takeover.ts` 头、`ports.ts` 段、`client-takeover.test.ts` 原 `:302-304`；`contribute.ts` 随删除消失） |
-| A2 | 做：为 P0 修复行 `ctx.sessions.list` 补判据 | 探针实测边界：把该行改回 `ctx.sessions`，**构造期不抛**、`typeof getSnapshot === "function"` 为 true，只有**调用** `getSnapshot()` 才 `TypeError: real.getSnapshot is not a function` ⇒「只驱动到注入对象生成」的写法是恒真断言 | 排 S3（新增 `test/unit/client-index.test.ts`，与 B1 的接缝断言同片） |
-| A3 | 做：补 `shared/README.md` 消费方登记 | `src/server/api/impl/route/index.ts:9`、`api/impl/handlers/index.ts:11` 取 `guardLoopbackMethod/writeJson`；`src/server/shared/paths.ts:6` 取 `dshHome` | 排 S4。**判据：无**（该表无门禁读），按 testing skill §7 显式登记为「靠自查」 |
-| A4 | 做（与 B7(b) 合并）：消除静默空实现 | `src/index.ts:92-94` 对未知 agent 回 `() => undefined`；但 `publish` 的唯一调用点 `tools/impl/service/index.ts:43` 拿到的 face 恒来自 `bindAgents` 先 `live.set` 过的同一条（`:84` list / `:85` subscribe）⇒ **该分支不可达**，`bindAgents` 又未导出（`src/index.ts:73`）⇒ 判据无处驱动 | 排 S3：拆 `src/host/{agents,typert,defaults}.ts` + 窄端口，`test/unit/host-agents.test.ts` 白盒断言「`publish(未知 id)` → 抛错」。先例与例外：refactor §4 要求「未装配即抛错」，notifier 有相反先例（挂宿主事件链的出口可静默），我们的 `publish` 是自家 tools 域**同步调用**，不属该例外 |
+| A1 | 做：更正「props 里塞 hooks 不被读」的错误表述（源码注释四处） | 官方 `bindInjectSources` 把 entry inject 面里的 `hooks.<name>` 经 `standardHookPropName` 变成 `use<Name>` props（`dsh-client-ui-renderer/lib/client.js:342-357`）；展开序 `{...kit, ...injected, ...}` 在 `:644-650`（ContextualEntry）与 `:653-658`（renderEntry）两处，`injected` 在 `kit` 之后 ⇒ 覆盖 | S1a 落地（`244586b`）：`takeover.ts` 头、`ports.ts` 段、`client-takeover.test.ts` 原 `:302-304`；`contribute.ts` 随删除消失 |
+| A2 | 做：为 P0 修复行 `ctx.sessions.list` 补判据 | 探针实测边界：把该行改回 `ctx.sessions`，**构造期不抛**、`typeof getSnapshot === "function"` 为 true，只有**调用** `getSnapshot()` 才 `TypeError: real.getSnapshot is not a function` ⇒「只驱动到注入对象生成」的写法是恒真断言 | S1b 落地（`a79ee3a` 新增 `test/unit/client-index.test.ts`，与逐会话剪枝同一片——比原排期提前一片）；`8be40cb` 随 B2 改到 `typeof __DSH_ROUTES__` 注入形态；S4/S5 又补一条路由字面量哨兵（见 §18.5） |
+| A3 | 做：补 `shared/README.md` 消费方登记 | `src/server/api/impl/route/index.ts:9`、`api/impl/handlers/index.ts:11` 取 `guardLoopbackMethod/writeJson`；`src/server/shared/paths.ts:6` 取 `dshHome` | S4/S5 落地（本片）：`shared/README.md:15`（`host-utils.js`）与 `:18`（`dsh-home.js`）两行消费方登记各补 `worktree-sidebar`。**判据：无**（该表无门禁读），按 testing skill §7 显式登记为「靠自查」，靠在 PR 正文写明 |
+| A4 | 做（与 B7(b) 合并）：消除静默空实现 | `src/index.ts:92-94` 对未知 agent 回 `() => undefined`；但 `publish` 的唯一调用点 `tools/impl/service/index.ts:43` 拿到的 face 恒来自 `bindAgents` 先 `live.set` 过的同一条（`:84` list / `:85` subscribe）⇒ **该分支不可达**，`bindAgents` 又未导出（`src/index.ts:73`）⇒ 判据无处驱动 | S3 落地（`c3fb83d`）：拆 `src/host/{agents,typert,defaults}.ts` + 窄端口（87/47/53 行），`test/unit/host-agents.test.ts` 白盒断言「`publish(未知 id)` → 抛错」，`src/index.ts` 260 到 160。先例与例外：refactor §4 要求「未装配即抛错」，notifier 有相反先例（挂宿主事件链的出口可静默），我们的 `publish` 是自家 tools 域**同步调用**，不属该例外 |
 
 ### 18.2 B 档裁决（逐条）
 
 | # | 裁决 | 依据 | 状态 |
 |---|---|---|---|
-| B1 | 做：接缝回退到 **entry 级** `hooks.sessions` | 计划 §4.2 `:110` 指定的形态；§6 `:143`「伪造只作用于本 entry」是**显式非目标**；§8 `:190-192` 的客户端文件清单里没有 `contribute.ts`。两条接缝都有效（`renderer:333-356` / `:640-650`），差别只在作用域与降级语义；保留全 session 作用域会让工具描述对模型的承诺（`tools/impl/register/index.ts:19-24`「Only the Files tab follows the binding」）变成假话 | S1a：恢复 `wrapInject` + `TakeoverDeps.sourceFor`；删 `contribute.ts` 与 `client-contribute.test.ts`；`inject` 去掉 `uiSession`（`--min` 11→10 + `stryker:gen`）；改写原 `:301-325` 那条必红断言 |
-| B2 | 做：契约单一事实源（三段） | ① 存储形状 `BINDINGS_VERSION/BindingRecord/BindingsFile`（`contract.ts:19-38`）消费者是 binding 域 3 文件 + `tools/impl/bind` + 测试，**客户端零消费者** ⇒ 移进 binding 域；② 响应体 `{revision, worktreePath}` 由单点定义、两端真实 import（宿主 `api/impl/handlers/index.ts:34`、客户端 `client/index.ts:35`），删掉客户端那行手写的第二份形状；③ 判据方向更正：能红的是「**把某一端改回旧字面量 → 该端 `pnpm typecheck` 报错**」，且只在**类型层**成立（做成值常量连类型层都不红）；④ `__DSH_ROUTES__` 兜底实测失效（`node` 直接 import → `ReferenceError`；`?? "/literal"` 永不可达），正解是 `typeof __DSH_ROUTES__ !== "undefined" ? __DSH_ROUTES__ : ROUTES` | 排 S3。不修 ④ 会让 A2 的测试在收集期整文件失败 |
-| B3 | 做：api 端口按提供方拆 | `api/deps.ts:15-20` 的 `BindingPort` 一半来自 binding（`revision`）、一半来自 scope（`effectiveWorktree`），逼组合根手拼匿名对象（`index.ts:232-236`），违 refactor §3「一行一个提供方」 | 排 S3。判据：两个提供方对调 → `typecheck` 双处红 |
-| B4 | **已裁决 = 删** `BindingApi.prune` | 生产零消费者，只有 `binding-model.test.ts:139-147` 与 `binding-store.test.ts:121-126` 两组测试 | 排 S4。同期改 `§7.1` 验收与 `§8` 文件职责（已在本轮 S0 改 `§7.1`） |
-| B5 | 做：导出面收窄批（口径更正） | v1 的「5 处仅同文件消费者」**复测为 0 处**；正确口径 = 值导出 ∧ 定义文件之外零导入者 ∧ 非包入口面 ∧ 不含 `test/`。`branchLabel` 生产零消费者、只剩 4 条测试（`git-inspect.test.ts:127-146`）；测试专用的 `FILES_KIND` 等是 ABI 面或同源期望锚点，**不动** | 排 S4。判据只对「生产零消费者」这一条有效：审计 + `typecheck` + 测试改写。注意 C1 会让门面值导出**增加**（install/release + 能力转发），与收窄不矛盾（增的是能力、减的是工厂） |
-| B6 | 做：由 C1 的 `install` 守卫解决双装配 + 更正 6 处注释 | 同 fiber 内 cordis 先卸后装（`cordis/src/fiber.ts:675-696` 的 `_unload` 先 `await` 全部 disposer，再 `:692` `_reload`）；**并发双 fiber** 才可能两份实例。notifier 的守卫在 `pipeline/impl/service/index.ts:50`（`private installed = false`）与 `:55-57`（throw）。旧 repro（直接调两次 `createBinding`）**不是真机可达路径** | 排 S5。正确红绿实验是「删掉 `if (installed) throw` 那一行 → 只有该用例红」，「旧形态下是红的」不构成实验（旧形态没有 `installGit`，用例编译不过） |
-| B7 | **已裁决 = 撤销「全包 src 合计」指标**；逐文件数字改称 review 提问线 | 实测 **41 文件 / 2535 行**（均值 62）；门面 `interface.ts` = 8/8/8/11/11，`deps.ts` = 30/12/18/55/**78**（最大 `scope/deps.ts`）。该指标无出处（§9 只给了**单文件**分位数）、且拆分不改合计 ⇒ 指向不了动作。机器强制的质量面交给既有度量：ESLint `complexity`（78/84）+ CRAP 16（观察期）+ 变异 | S0 已改 §9/§9.1/§16；§9 语义改写 + 删除行。B7(b) 拆 `src/host/` 与 A4 合并排 S3 |
+| B1 | 做：接缝回退到 **entry 级** `hooks.sessions` | 计划 §4.2 `:110` 指定的形态；§6 `:143`「伪造只作用于本 entry」是**显式非目标**；§8 `:190-192` 的客户端文件清单里没有 `contribute.ts`。两条接缝都有效（`renderer:333-356` / `:640-650`），差别只在作用域与降级语义；保留全 session 作用域会让工具描述对模型的承诺（`tools/impl/register/index.ts:19-24`「Only the Files tab follows the binding」）变成假话 | S1a 落地（`244586b`）：恢复 `wrapInject` + `TakeoverDeps.sourceFor`；删 `contribute.ts` 与 `client-contribute.test.ts`；`inject` 去掉 `uiSession`（`--min` 11→10 + `stryker:gen`）；改写原 `:301-325` 那条必红断言 |
+| B2 | 做：契约单一事实源（三段） | ① 存储形状 `BINDINGS_VERSION/BindingRecord/BindingsFile`（`contract.ts:19-38`）消费者是 binding 域 3 文件 + `tools/impl/bind` + 测试，**客户端零消费者** ⇒ 移进 binding 域；② 响应体 `{revision, worktreePath}` 由单点定义、两端真实 import（宿主 `api/impl/handlers/index.ts:34`、客户端 `client/index.ts:35`），删掉客户端那行手写的第二份形状；③ 判据方向更正：能红的是「**把某一端改回旧字面量 → 该端 `pnpm typecheck` 报错**」，且只在**类型层**成立（做成值常量连类型层都不红）；④ `__DSH_ROUTES__` 兜底实测失效（`node` 直接 import → `ReferenceError`；`?? "/literal"` 永不可达），正解是 `typeof __DSH_ROUTES__ !== "undefined" ? __DSH_ROUTES__ : ROUTES` | S3 落地（`8be40cb`）：① 存储形状移进 `binding/impl/model/type.ts`（`contract.ts` 只留 `ROUTES` + 响应类型单点）；② 两端各一处真实 import；④ 改成 `typeof __DSH_ROUTES__ !== "undefined" ? __DSH_ROUTES__ : ROUTES`（不修会让 A2 的测试在收集期整文件失败）。③ 的边界与哨兵采纳见 §18.5 |
+| B3 | 做：api 端口按提供方拆 | `api/deps.ts:15-20` 的 `BindingPort` 一半来自 binding（`revision`）、一半来自 scope（`effectiveWorktree`），逼组合根手拼匿名对象（`index.ts:232-236`），违 refactor §3「一行一个提供方」 | S2 落地（`012655e`，与 C1 同批）：`api/deps.ts` 拆成 `RevisionPort`（`Pick<typeof bindingApi, "revision">`）与 `EffectiveWorktreePort`（`Pick<typeof scopeApi, "effectiveWorktree">`），组合根一行一个提供方递门面命名空间对象，不再手拼匿名对象 |
+| B4 | **已裁决 = 删** `BindingApi.prune` | 生产零消费者，只有 `binding-model.test.ts:139-147` 与 `binding-store.test.ts:121-126` 两组测试 | S4 落地（`be033d9`）：删 `prune` / `pruneTable` 与两组测试；`entries` 的测试消费者改用 `get()` / `revision()`。`§7.1` 与 `§8` 已同步（S0 改 `§7.1`，S4/S5 改 `§8`） |
+| B5 | 做：导出面收窄批（口径更正） | v1 的「5 处仅同文件消费者」**复测为 0 处**；正确口径 = 值导出 ∧ 定义文件之外零导入者 ∧ 非包入口面 ∧ 不含 `test/`。`branchLabel` 生产零消费者、只剩 4 条测试（`git-inspect.test.ts:127-146`）；测试专用的 `FILES_KIND` 等是 ABI 面或同源期望锚点，**不动** | S4/S5 落地（本片）：删 `branchLabel`（+`test/unit/git-inspect.test.ts` 的 4 条断言）、`client/bindings.ts` 的 `lastRevision`、三处类型转出（`ApiInstance` / `ScopeApi` / `GitExecPort`）；按口径重跑机械审计，非豁免命中 **0**。判据只对「生产零消费者」这一条有效：审计 + `typecheck` + 测试改写。C1 让门面值导出**增加**（install/release + 能力转发），与收窄不矛盾（增的是能力、减的是工厂）。清单与口径见 §18.5 |
+| B6 | 做：由 C1 的 `install` 守卫解决双装配 + 更正 6 处注释 | 同 fiber 内 cordis 先卸后装（`cordis/src/fiber.ts:675-696` 的 `_unload` 先 `await` 全部 disposer，再 `:692` `_reload`）；**并发双 fiber** 才可能两份实例。notifier 的守卫在 `pipeline/impl/service/index.ts:50`（`private installed = false`）与 `:55-57`（throw）。旧 repro（直接调两次 `createBinding`）**不是真机可达路径** | S2 落地（`012655e`）：五域 `install` 守卫 + 6 处注释更正；`7dad567` 补「工具注册失败要出声」判据；S4/S5 把「第二次装配显式抛错」写进中英 README。正确红绿实验是「删掉 `if (installed) throw` 那一行 → 只有该用例红」，「旧形态下是红的」不构成实验（旧形态没有 `installGit`，用例编译不过） |
+| B7 | **已裁决 = 撤销「全包 src 合计」指标**；逐文件数字改称 review 提问线 | 实测（第四轮收尾重测）**44 文件 / 2978 行**（均值 68）；门面 `interface.ts` = 19/45/24/21/59（api/binding/scope/tools/git），`deps.ts` = 32/12/18/55/**78**（最大 `scope/deps.ts`）。该指标无出处（§9 只给了**单文件**分位数）、且拆分不改合计 ⇒ 指向不了动作。机器强制的质量面交给既有度量：ESLint `complexity`（78/84）+ CRAP 16（观察期）+ 变异 | S0 已改 §9/§9.1/§16（`ec42113`）；B7(b) 拆 `src/host/` 与 A4 合并落在 S3（`c3fb83d`），S4/S5 按实测重写 §9.1 数字 |
 | B8 | **裁决：不发评论、不新开 issue**，记录 = PR 正文红线声明段 | 仓库规则要求的可审计痕迹确认为缺失，但维护者裁定以 PR 正文的「红线声明」段承载（写明改了 `ci.yml` 的 paths-filter 键、依据哪条规则、由谁授权）；「不单开决策 issue」因此已满足 | S0 已改 §17.3-B8 |
 
 ### 18.3 被删除的保证与替代（SKILL §7.5；C1 的代价显式登记）
@@ -735,3 +745,60 @@ C1 把门面从「转出工厂」改成「出 `install/release` + 能力转发�
 **客户端侧另有两条口径登记**：变异面与覆盖率面**整个排除** `src/client/**`
 （`mutation-topology.json:506-507`、`coverage.config.json:31-37`，后者是 `pending-project` + reviewBy 2027-03-31）
 ⇒ 客户端改动只能靠改坏实验留证，任何覆盖率/变异数字都不覆盖它。
+
+### 18.5 第四轮收尾（S4/S5）的实测更正与边界登记
+
+**① `src/index.ts` 260 到 160（S3 拆 `src/host/` 之后）**：三个宿主适配器实测 **87 / 47 / 53 行**
+（`src/host/agents.ts` 87、`src/host/typert.ts` 47、`src/host/defaults.ts` 53，`wc -l` 复核）。
+工作稿记的 87/48/53 与实测差 1 行，以实测为准。§9.1 的表已按本轮读数整体重写
+（组合根 160、客户端单文件最大 212、全包 44 文件 / 2978 行）。行数本身只是 review 提问线，不是判据。
+§17.1 表里的行数、用例数与导出面符号数都是**第三轮交接时的快照**，第四轮读数以 §9.1 与本节为准。
+
+**② 导出面门禁对「主入口符号」的声明块参与比对（推翻旧表述）**：`export-surface-snapshot.mjs` 的论域是
+**包入口**（`package.json` 里带 `types` 的子路径，本包是 `.` 与 `./client`）的导出面。`apply` 是主入口 `.`
+的导出符号，C1 把它从 `void` 改成 `Promise<void>` 后，`gate:pr` 的 `contract` 阶段**确实判红**
+（1 丢失 + 1 新增），已按门禁自述重冻结：
+
+```sh
+node scripts/gate/export-surface-snapshot.mjs --package dsh-worktree-sidebar --snapshot
+```
+
+（`c2178ef`：符号集仍是 4 个、`-export-faces.json` 未动、**未新增任何豁免**。）结论分两半，必须一起读：
+
+- **成立的一半**：域内符号不进任何判据。B5 删的 `GitExecPort` / `ApiInstance` / `ScopeApi` / `lastRevision`、
+  B4 删的 `entries`、S4 删的 `branchLabel` 都不会让任何门禁判红——它们的替代判据是 `pnpm typecheck` +
+  下一条的消费者审计。
+- **被推翻的一半**：「导出面基线不需要重生成」只对域内符号成立。**凡改主入口导出符号的签名都要重冻结**，
+  这条是真实判据、不是盲区。另外**不要**为可见性给包加 `./server` 子路径——那会变成第三个独立入口，
+  把域内符号一起拖进比对面。
+
+**B2 ③ 的边界（如实登记）**：B2 的单点化让「把某一端改回**旧字段名**」在该端 `pnpm typecheck` 报错；
+但**把客户端逐字还原成删掉的那行同形 cast**（`as { revision?: unknown; worktreePath?: unknown }`）
+在类型层是**绿的**——同形断言不改变类型。所以单点化真正挡住的是**单端形状 / 字段名漂移**，
+挡不住「重新手写一份同形断言」。这条边界不靠判据兜，改用一条**可选哨兵**：
+
+- **已采纳**：「`src/client/**` 里不存在硬编码的 `/api/` 路由字面量」。它守的是与字段名同一类的单端漂移
+  （路由串只经 `src/contract.ts` 的 `ROUTES` 与构建期 `__DSH_ROUTES__`），符合 `DEVELOPMENT.md:419`
+  「路由引用用构建期注入的 `__DSH_ROUTES__`（或宿主 ROUTES 字面量），防两端漂移」。
+- **落点**：写进**已有**的 `test/unit/client-index.test.ts`（一条 `it`），**不新增测试文件**——
+  因此 `--min` 与 `pnpm stryker:gen` 的登记一次都不用再同步（只有增删测试文件才要动它们）。
+- **红绿实验**：把 `src/client/index.ts` 的 `const BINDINGS_URL = ROUTES_INJECTED.bindings;` 换成字面量
+  `"/api/dsh-worktree-sidebar/bindings"` → 单跑该文件 **1 failed | 3 passed**（只有哨兵那条红，
+  断言输出 `+ ["index.ts"]`）→ 用备份还原后 `sha256` 与改坏前逐字节相同、**4 passed**。
+  `src/client/**` 在覆盖率面与变异面之外（见 §18.4 末），所以这条判据也不进任何度量，只能靠改坏实验留证。
+
+**B5 的机械审计（口径与结果）**：脚本按 AST 取「值导出 ∧ 定义文件之外零导入者 ∧ 非包入口面 ∧ 不含 `test/`」；
+消费者口径必须含 `Pick<typeof ns, "a" | "b">` 这类类型层成员引用（否则 C1 加在门面上的能力转发
+会被误判成死代码）。删掉 `branchLabel` 后命中 **6 个符号，全部落在「不动」清单里**：
+`FILES_KIND` / `BODY_SLOT` / `TITLE_SLOT` / `OUR_TYPE_ID`（客户端 ABI 锚点与同源期望锚点）、
+`validateRecord`、`directoryExists`。**非豁免命中 0 处**，与工作稿的预期一致。
+
+**测试净变化**：本轮只**删**断言（`branchLabel` 的 4 条），另加 1 条哨兵断言；测试文件数保持 13，
+`--min` 与 `pnpm stryker:gen` 面均未变动。删除项的替代判据逐条登记在 §18.3 与本节。
+
+**B7 结构动作表的执行状态（如实登记）**：§18.2-B7 那张「具体结构动作」表里，第 1 条（拆
+`src/host/{agents,typert,defaults}.ts`）已落地（`c3fb83d`），第 4 条（删掉全包合计指标）已落地（`ec42113`），
+第 3 条是「**不拆**」。**第 2 条（B1 之后拆 `client/inject.ts`）本轮未执行**：B1 恢复的 `wrapInject`
+留在 `client/takeover.ts`（实测 212 行，仍在本文件类型的 250 行提问线内），所以 §8 的客户端清单是
+5 个文件（`index` / `takeover` / `source` / `bindings` / `ports`）、没有 `inject.ts`。这是本轮
+如实留下的结构项，不是已完成项；要动它属于下一次代码改动（会触发 `--min`/`stryker` 面与全量门禁）。

@@ -32,7 +32,7 @@ dsh 的右侧栏文件树根固定取 `session.header.cwd`，且该字段创建�
 - **`workspace-write` 文件策略下 agent 写不进 worktree**：写围栏的 `sandboxPolicy.workspaceRoot` 同样取自 `header.cwd`，该服务不可被第三方插件替换。要写 worktree 请改用 `danger-full-access`，或把会话开在 worktree 里。
 - 主 checkout 与 worktree 里的**同名文件在预览里没有差异标记** —— 树换了根，文件内容就按 worktree 那一份显示。
 - 「树根 = worktree、执行 cwd = 原目录」是本方案的语义前提。agent 的命令仍在原 cwd 下执行。
-- 被改写的会话视图**只作用于本插件的那个页签**：预览、命令面板、`@` 等其它 `useSessions` 消费方仍读到真实 cwd。
+- 被改写的会话视图**只作用于本插件注册的那一个 entry**：客户端把改写挂在官方 entry inject 面的 `hooks.sessions` 上，只影响这一个 entry 的注入面；其它 `useSessions` 消费方（预览、命令面板、`@` 等）仍读到会话真实 cwd。这是「只换视图根」的直接后果，不是待办。
 
 ## 安装
 
@@ -125,6 +125,7 @@ pnpm gate:pr                 # 开 PR 前；新增包与 catalog 条目另需 pn
 - **`workspace-write` 下写不进 worktree**（见「显式非目标」）。
 - **安装 / 升级后需重启一次** `dsh web`。
 - **每会话状态的释放条件是「宿主快照里该会话确实消失」**：客户端按宿主快照的 `ids` / `byId` / `current` 三个面共同判定，任一面读不到就不剪。若宿主从不把已关闭会话从快照里摘掉，这条释放路径不会触发，该会话的状态会一直留到插件卸载为止（未验证项，需一次隔离真机观察才能定论）。
+- **同进程第二次装配会显式抛错**：五个域都是进程内单例（`install` / `release` 成对 + `installed` 守卫），第二份实例挂不上并在第二次 `install` 时抛错，而不是静默共享状态。若某个 profile 把本包挂了两次，表现是启动期一条明确的报错；旧的「两份实例互不干扰」语义已不存在。
 
 ## 落幕判据
 

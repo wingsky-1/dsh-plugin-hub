@@ -30,7 +30,7 @@ These are deliberate trade-offs of "change only the view root", not a backlog:
 - **Under the `workspace-write` file policy the agent cannot write into the worktree**: the write fence's `sandboxPolicy.workspaceRoot` also derives from `header.cwd`, and that service cannot be replaced by a third-party plugin. Use `danger-full-access`, or open the session inside the worktree.
 - **No diff marker** for same-named files between the main checkout and the worktree.
 - "Tree root = worktree, execution cwd = original directory" is this design's premise. The agent's commands still run in the original cwd.
-- The rewritten session view **affects only this plugin's tab**: preview, command palette and `@` still see the real cwd.
+- The rewritten session view **affects only the single entry this plugin registers**: the client attaches the rewrite to `hooks.sessions` of the official entry inject face, so only that one entry's inject face is affected; every other `useSessions` consumer (preview, command palette, `@`, ...) still sees the session's real cwd. That is a direct consequence of "change only the view root", not a backlog item.
 
 ## Install
 
@@ -120,6 +120,8 @@ On any of these failing the behaviour is **zero registration / fall back to offi
 - **No system-prompt injection**: the model is not told the tool exists beyond the tool list and result text. This is deliberate (no always-on prompt cost); discovery depends on the model inspecting its tools.
 - **Cannot write into the worktree under `workspace-write`** (see non-goals).
 - **One `dsh web` restart is needed after install or upgrade.**
+- **Per-session state is released only once the host snapshot really drops the session**: the client decides from three faces of the host snapshot (`ids` / `byId` / `current`) and prunes only when all three are readable and say "gone". If the host never removes a closed session from the snapshot, this release path never fires and that session's state lives until the plugin unloads (unverified; one isolated live observation is needed to settle it).
+- **A second assembly in the same process throws**: all five domains are in-process singletons (`install` / `release` pairs with an `installed` guard), so a second instance cannot mount and the second `install` throws instead of silently sharing state. If a profile mounts this package twice you get one explicit startup error; the old "two instances do not interfere" semantics is gone.
 
 ## Retirement criteria
 
