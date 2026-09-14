@@ -18,7 +18,8 @@
         "directImpl": [],
         "uncoveredSrcFiles": [],
         "crossDomainValueEdges": [],
-        "rootIndexImports": []
+        "rootIndexImports": [],
+        "clientServerImports": []
       }
     },
     "dsh-mcp-manager": {
@@ -83,7 +84,8 @@
           "inject|workspace",
           "pipeline|workspace"
         ],
-        "rootIndexImports": []
+        "rootIndexImports": [],
+        "clientServerImports": []
       }
     },
     "dsh-notifier": {
@@ -102,7 +104,11 @@
         "directImpl": [],
         "uncoveredSrcFiles": [],
         "crossDomainValueEdges": [],
-        "rootIndexImports": []
+        "rootIndexImports": [],
+        "clientServerImports": [
+          "src/client/capabilities.ts|src/server/channels/impl/capabilities/type.ts",
+          "src/client/reason-text.ts|src/server/shared/reason.ts"
+        ]
       }
     },
     "dsh-provider-usage": {
@@ -156,7 +162,8 @@
           "domain2/schedule|domain2/common",
           "shared|domain1/adapters"
         ],
-        "rootIndexImports": []
+        "rootIndexImports": [],
+        "clientServerImports": []
       }
     },
     "dsh-verify-isolated": {
@@ -175,7 +182,8 @@
         "directImpl": [],
         "uncoveredSrcFiles": [],
         "crossDomainValueEdges": [],
-        "rootIndexImports": []
+        "rootIndexImports": [],
+        "clientServerImports": []
       }
     },
     "dsh-web-file-preview": {
@@ -194,7 +202,8 @@
         "directImpl": [],
         "uncoveredSrcFiles": [],
         "crossDomainValueEdges": [],
-        "rootIndexImports": []
+        "rootIndexImports": [],
+        "clientServerImports": []
       }
     }
   }

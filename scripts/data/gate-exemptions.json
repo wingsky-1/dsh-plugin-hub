@@ -15,6 +15,20 @@
       "reason": "客户端刷新单飞句柄（模块级 let inflight，单一 in-flight 拉取的去重状态）：它是真实的模块级可变状态，作用域在模块而非面板实例。判据口径源自 #733 宪法第 1 条，而本轮重构面是宿主端 src/server/**；把该句柄收进实例需要改客户端装配与 refresh 的调用约定，属 #769 的客户端结构改动，不在 767 B0 范围内。按文件级豁免登记而不是留在判据外——mcp 已在 B0 登记进扫描面，不登记就是当天判红的存量。",
       "trackingIssue": "#770",
       "reviewBy": "2027-03-31"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-notifier:src/client/capabilities.ts|src/server/channels/impl/capabilities/type.ts",
+      "reason": "#767 B0 切片 3a 上线 §5.3 判据（src/client/** 不得 import src/server/**）后暴露的存量：client 的 capabilities.ts 直引服务端 impl 目录内的类型文件，属跨端类型未经 src/shared 转出。修法是把这份类型上移 src/shared（客户端结构改动，归 #769），不在 B0 的施工面（B0 只给判据造执法点）。按**证据级**豁免登记而不是把 notifier 排除在判据外：后者会让「存量 2 条」从可数事实退化成口径外特例，而证明该判据不是空转的证据正是这 2 条。",
+      "trackingIssue": "#769",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "gate": "verify-dir-imports",
+      "path": "dsh-notifier:src/client/reason-text.ts|src/server/shared/reason.ts",
+      "reason": "#767 B0 切片 3a 上线 §5.3 判据后暴露的第二条存量：client 的 reason-text.ts 以 import type 直引服务端 server/shared/reason.ts。它虽然被 §二 I2 允许留在包内（server/shared 是共享层），但 §5.3 判的是 **client 侧 import 面**——跨端类型必须经 src/shared 转出，故与上一条同因同修（归 #769）。保留该条目而不是放宽判据：type-only 边同样会随服务端重构漂移，这正是参照包「client 直接 import type 服务端内部且无任何判据」的形态。",
+      "trackingIssue": "#769",
+      "reviewBy": "2027-03-31"
     }
   ]
 }
