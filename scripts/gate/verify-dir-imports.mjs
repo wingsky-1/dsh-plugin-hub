@@ -1201,8 +1201,10 @@ for (const pkgName of applyPackages) {
     failures.push(`[${pkgName}] 注入面对账：${problem}`);
   }
   for (const problem of analysis.topologyProblems) {
+    // 判词由 mutation-topology.mjs 的形状判据给出（包登记形态 / coverageExcludes 条目形态），
+    // 这里只补出处：两类形状错误的修法在同一文件里，不需要在此复述其中一类。
     failures.push(
-      `[${pkgName}] ${problem}（testLayers.coverageExcludes 形状错误：见 scripts/gate/mutation-topology.mjs 的 COVERAGE_EXCLUDE_KINDS）`,
+      `[${pkgName}] ${problem}（拓扑形状错误：判据见 scripts/gate/mutation-topology.mjs）`,
     );
   }
   analysis.metrics.interfaceFacades = referencedInterfaces.size;

@@ -106,6 +106,37 @@ export function coverageExcludeProblems(pkgDef) {
 }
 
 /**
+ * 包登记本身的形状判据：`packages.<name>` 必须是对象。
+ *
+ * 与 coverageExcludes 的形状判词同族：形状不对时**没有可判定的变异面**，必须给出可读判词，
+ * 而不是让调用方在 `pkgDef.segments` 上抛栈崩掉整个 contract 段（已实测：登记为 `null` →
+ * `TypeError: Cannot read properties of null (reading 'segments')`，门禁红是红了，但不是判红）。
+ */
+export function packageEntryProblems(pkgDef) {
+  if (pkgDef === null || typeof pkgDef !== "object" || Array.isArray(pkgDef)) {
+    return [
+      `包登记必须是对象（当前 ${JSON.stringify(pkgDef)}）——形状不对时没有可判定的变异面，fail-closed`,
+    ];
+  }
+  return [];
+}
+
+/** 全拓扑的包登记形状问题（带包名前缀，供生成侧与断言侧共用判词）。 */
+export function packageRegistrationProblems(topology) {
+  const packages = topology?.packages;
+  if (packages === null || typeof packages !== "object" || Array.isArray(packages)) {
+    return [`packages 必须是对象（当前 ${JSON.stringify(packages)}）`];
+  }
+  const problems = [];
+  for (const [pkgName, pkgDef] of Object.entries(packages)) {
+    for (const problem of packageEntryProblems(pkgDef)) {
+      problems.push(`[${pkgName}] ${problem}`);
+    }
+  }
+  return problems;
+}
+
+/**
  * 取一个包在**变异面登记**上的三态（#773 批 B / #710 §2-2）：
  *
  *   - `{ noMutation: false, mutate, excludes, problems }`：登记在 `topology.packages`，覆盖断言可判定。
@@ -127,6 +158,12 @@ export function coverageExcludeProblems(pkgDef) {
  */
 export function collectMutationSpecs(topology, pkgName) {
   const pkgDef = topology?.packages?.[pkgName];
+  // 包登记形状错误（null / 非对象）：不给可判定的面，但必须**可读判红**而不是在
+  // `pkgDef.segments` 上抛栈——空 mutate/excludes 会让未覆盖清单全亮，problems 则由调用方落红。
+  const entryProblems = pkgDef === undefined ? [] : packageEntryProblems(pkgDef);
+  if (entryProblems.length > 0) {
+    return { noMutation: false, mutate: [], excludes: [], problems: entryProblems };
+  }
   if (pkgDef !== undefined) {
     const mutate = [];
     const excludes = [];

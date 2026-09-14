@@ -22,10 +22,12 @@ import {
   collectMutationSpecs,
   coverageExcludeProblems,
   defaultSegmentExcludes,
+  packageRegistrationProblems,
 } from "../gate/mutation-topology.mjs";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const GENERATOR = join(ROOT, "scripts", "gate", "gen-stryker-conf.mjs");
+const VERIFY_DIR_IMPORTS = join(ROOT, "scripts", "gate", "verify-dir-imports.mjs");
 const TOPOLOGY_PATH = join(ROOT, "scripts", "data", "mutation-topology.json");
 
 test("F15：段未显式写 excludes 时，collectMutationSpecs 仍返回默认排除面", () => {
@@ -235,6 +237,88 @@ test("#773 R4 反证：生成器遇旧形状（裸 glob）必须以判词退出�
       /TypeError|not a function/,
       `形状错误不得以抛栈形态出现（旧实现的失败形态）：\n${res.stderr}`,
     );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("#773 R4 反证：包登记为 null / 非对象时给可读判词，不得抛栈（#813 复核发现）", () => {
+  const pkgName = "fixture-pkg";
+  for (const bad of [null, "not-an-object", 42]) {
+    const topology = { packages: { [pkgName]: bad } };
+    const problems = packageRegistrationProblems(topology);
+    assert.ok(problems.length > 0, `包登记 ${JSON.stringify(bad)} 必须判红（这条判据不能恒绿）`);
+    assert.ok(
+      problems.some((p) => p.includes(pkgName) && p.includes("必须是对象")),
+      `判词要点名包且说清形状要求（实际：${problems.join(" | ")}）`,
+    );
+    // 关键：collectMutationSpecs 不得在 pkgDef.segments 上抛栈，而是给出空面 + 同一条判词
+    const specs = collectMutationSpecs(topology, pkgName);
+    assert.equal(specs.noMutation, false, "形状错误不是「无变异面」，而是没有可判定的面");
+    assert.deepEqual(specs.mutate, []);
+    assert.deepEqual(specs.excludes, []);
+    assert.deepEqual(specs.problems, [
+      `包登记必须是对象（当前 ${JSON.stringify(bad)}）——形状不对时没有可判定的变异面，fail-closed`,
+    ]);
+  }
+  // 顶层 packages 本身不是对象同样是形状错误
+  assert.ok(packageRegistrationProblems({ packages: null }).length > 0);
+  // 对照组：正常包登记零问题（证明上面的红不是「凡输入皆红」）
+  assert.deepEqual(packageRegistrationProblems({ packages: { [pkgName]: { segments: {} } } }), []);
+});
+
+test("#773 R4 反证：生成器遇 packages.<pkg>=null 以判词退出，不得抛栈", () => {
+  const root = mkdtempSync(join(tmpdir(), "r4-null-pkg-"));
+  try {
+    const dir = join(root, "scripts", "data");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "mutation-topology.json"),
+      `${JSON.stringify({ sharedDefaults: {}, packages: { "fixture-pkg": null } }, null, 2)}\n`,
+      "utf8",
+    );
+    const res = spawnSync(process.execPath, [GENERATOR, "--check"], {
+      cwd: ROOT,
+      encoding: "utf8",
+      env: { ...process.env, GEN_STRYKER_ROOT: root },
+    });
+    assert.equal(res.status, 1, `null 包登记必须判红：\n${res.stdout}${res.stderr}`);
+    assert.match(res.stderr, /包登记必须是对象/, "判词要点名形状要求");
+    assert.doesNotMatch(
+      res.stderr,
+      /TypeError/,
+      `形状错误不得以抛栈形态出现（旧实现的失败形态）：\n${res.stderr}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("#773 R4 反证：verify-dir-imports 遇 packages.<pkg>=null 判红而非抛栈", () => {
+  const root = mkdtempSync(join(tmpdir(), "r4-null-vi-"));
+  try {
+    const files = {
+      "packages/fixture-pkg/src/a.ts": "export const a = 1\n",
+      "scripts/data/mutation-topology.json": `${JSON.stringify(
+        { sharedDefaults: {}, packages: { "fixture-pkg": null } },
+        null,
+        2,
+      )}\n`,
+    };
+    for (const [rel, content] of Object.entries(files)) {
+      const abs = join(root, rel);
+      mkdirSync(dirname(abs), { recursive: true });
+      writeFileSync(abs, content, "utf8");
+    }
+    const res = spawnSync(process.execPath, [VERIFY_DIR_IMPORTS, "--package", "fixture-pkg"], {
+      cwd: ROOT,
+      encoding: "utf8",
+      env: { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root },
+    });
+    const out = `${res.stdout}${res.stderr}`;
+    assert.equal(res.status, 1, `null 包登记必须判红：\n${out}`);
+    assert.match(out, /包登记必须是对象/, "判词要点名形状要求");
+    assert.doesNotMatch(res.stderr, /TypeError/, `形状错误不得以抛栈形态出现：\n${out}`);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
