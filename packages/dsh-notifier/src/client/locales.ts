@@ -122,6 +122,7 @@ export const zh = {
   reasonSystemPopupFailed: "系统通知命令执行失败（{bin}）",
   reasonSystemSoundFailed: "提示音播放命令执行失败（{bin}）",
   reasonSystemToastScriptMissing: "插件自带的 Windows 通知脚本缺失（打包缺陷），本次未发出",
+  reasonSystemToneUnwritable: "系统提示音无法写入临时目录，本次未发声",
   reasonBarkRequestFailed: "Bark 请求失败（网络或超时）",
   reasonBarkHttp: "Bark 服务返回 HTTP {status}",
   reasonBarkRejected: "Bark 拒绝这次推送（业务码 {code}）",
@@ -398,6 +399,8 @@ export const en: Record<NotifierLocaleKey, string> = {
   reasonSystemSoundFailed: "Sound playback command failed ({bin})",
   reasonSystemToastScriptMissing:
     "The plugin's bundled Windows notification script is missing (packaging defect); nothing was sent",
+  reasonSystemToneUnwritable:
+    "Could not write the synthesized tone to the temp directory; nothing was played",
   reasonBarkRequestFailed: "Bark request failed (network or timeout)",
   reasonBarkHttp: "Bark server returned HTTP {status}",
   reasonBarkRejected: "Bark rejected this push (business code {code})",

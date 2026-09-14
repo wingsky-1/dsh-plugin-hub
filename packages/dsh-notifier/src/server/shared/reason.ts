@@ -34,6 +34,9 @@ export const REASON_CODES = [
   // win32 的 toast 脚本缺失是**打包缺陷**，与「宿主没能力」是两回事：合成一个 code 会把
   // 插件自己的问题说成用户的桌面环境问题，用户会去 Windows 上找一个不存在的 notify-send
   "reasonSystemToastScriptMissing",
+  // 合成音的临时文件写不进去（/tmp 只读挂载、拿不到写权限）：这是一个**空动作**（没有可执行的
+  // 播放动作），终态因此是 skipped 而不是 failed——宿主原文（EROFS/EACCES）进 detail。
+  "reasonSystemToneUnwritable",
   // bark 出口
   "reasonBarkRequestFailed",
   "reasonBarkHttp",

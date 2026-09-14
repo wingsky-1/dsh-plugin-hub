@@ -25,8 +25,12 @@ import type { ValidationResult } from "./type.ts";
 
 // ---------------------------------------------------------------- 合法域
 
-/** 内置音色白名单；顺序即设置页的展示顺序。 */
-const SOUND_IDS: readonly SoundId[] = ["ding", "bell", "chime", "pop"];
+/**
+ * 内置音色白名单；顺序即设置页的展示顺序。
+ * 导出是为了让「白名单 ⊆ 音色表」这条断言有第二个集合可比（音色表在同包的 `shared/interface.ts`；
+ * 两边都改才算真的加了一个音色）。
+ */
+export const SOUND_IDS: readonly SoundId[] = ["ding", "bell", "chime", "pop"];
 
 /** 内置频道类型；顺序即卡片顺序。它们恒在场，是 `channels` 里唯一不可删除的项——身份由 `type` 唯一确定。 */
 const BUILTIN_TYPES: readonly BuiltinChannelType[] = ["browser", "system"];

@@ -9,13 +9,28 @@
  * 平台事实与子进程经 `impl/system/deps.ts` 的手写假端口驱动：真机上三条平台分支只有一条可达，
  * 而在本机真的起 `notify-send` / `afplay` 既弹窗又发声，且结论随环境而变。
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   DeliverResult,
   NotifyMessage,
 } from "../../../src/server/channels/impl/deliver/type.ts";
+import { releaseSoundTemps } from "../../../src/server/channels/interface.ts";
 import {
+  RealToneTemps,
   installSystemDeps,
   releaseSystemDeps,
   systemDeps,
@@ -27,11 +42,21 @@ import type {
   SystemDeps,
 } from "../../../src/server/channels/impl/system/deps.ts";
 import type {
+  CommandFacts,
+  CommandOutcome,
   NotificationNameProbe,
   OsReleaseProbe,
+  ToneStage,
 } from "../../../src/server/channels/impl/system/type.ts";
 import {
-  buildSoundCommand,
+  LINUX_PLAYERS,
+  playerSpec,
+  playFailure,
+  playFailureSummary,
+} from "../../../src/server/channels/impl/system/players.ts";
+import type { PlayerSpec } from "../../../src/server/channels/impl/system/players.ts";
+import {
+  buildSoundCommands,
   buildSystemCommand,
   probePlatform,
   sendSystem,
@@ -39,6 +64,7 @@ import {
 } from "../../../src/server/channels/impl/system/index.ts";
 import { synthToneWav } from "../../../src/server/channels/impl/system/synth.ts";
 import { toneFileCandidates } from "../../../src/server/channels/impl/system/tones.ts";
+import { SOUND_IDS } from "../../../src/server/config/impl/input/index.ts";
 import { TONES } from "../../../src/shared/interface.ts";
 import type {
   PlatformProbe,
@@ -47,10 +73,29 @@ import type {
 } from "../../../src/server/channels/impl/system/type.ts";
 import { makeLogger, pollUntil } from "../../helpers.ts";
 
+/** 表序 = 链序：链序类判据的期望值一律从表导出，播放器名与顺序都不许在用例里再抄一份。 */
+const CHAIN_BINS = LINUX_PLAYERS.map((player) => player.bin);
+/** 表内第一条探测参数（`bin args` 形态）：探测类判据拿它拼期望，不重抄参数。 */
+const firstProbeOf = (player: PlayerSpec): string =>
+  `${player.bin} ${player.probeArgs[0]!.join(" ")}`;
+/** 表内全部探测参数（表序 × 每行的参数序）：一个候选都没命中时，它的每条参数都会被试到。 */
+const ALL_PROBES = LINUX_PLAYERS.flatMap((player) =>
+  player.probeArgs.map((args) => `${player.bin} ${args.join(" ")}`),
+);
+/** 假端口落的临时文件所在目录（假实现不碰文件系统，路径只作身份）。 */
+const FAKE_TONE_DIR = "/tmp/dsh-notifier-fake";
+/** 实测样本：成功路径上也会出现的 libasound 噪声（40 次里 3 次）。 */
+const ALSA_UNDERRUN = "ALSA lib pcm.c:8568:(snd_pcm_recover) underrun occurred\n";
+/** 让探测/投递的 await 链走完（断言「探测已经发出几条」时比 pollUntil 更直接）。 */
+const flushTasks = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
 afterEach(() => {
   // 端口与探测缓存都是模块级单例：不复位就把平台事实漏给下一个用例（单跑绿、连跑红）。
   releaseSystemDeps();
   vi.useRealTimers();
+  // 真端口建的临时音频目录：用例漏了释放就在这里兜底——残留会让下一个用例（与 smoke）看见别人
+  // 的目录，而「临时目录有残留」正是本增量要判死的一件事。
+  releaseSoundTemps();
 });
 
 function probeOf(over: Partial<PlatformProbe> = {}): PlatformProbe {
@@ -88,6 +133,9 @@ class FakeChild implements ChildHandle {
   private readonly errors: Array<(cause: Error) => void> = [];
   private readonly stderrs: Array<(chunk: Buffer) => void> = [];
 
+  /** 结局到达的回执：临时文件的删除必须晚于它（D3 判据靠这条时序）。 */
+  constructor(private readonly onExitEmitted: (() => void) | undefined = undefined) {}
+
   onStderr(handler: (chunk: Buffer) => void): void {
     this.stderrs.push(handler);
   }
@@ -109,6 +157,7 @@ class FakeChild implements ChildHandle {
   }
 
   emitExit(exit: ProcessExit): void {
+    this.onExitEmitted?.();
     for (const handler of this.exits) handler(exit);
   }
 
@@ -120,10 +169,14 @@ class FakeChild implements ChildHandle {
 /** 假端口的现场：用例只写关心的那几项，其余走 `fakeDeps()` 的缺省。 */
 interface FakeConfig {
   platform: string;
-  /** 探测得到回应的命令（`--version` 以退出码 0 结束）。 */
+  /** 探测得到回应的命令（该 bin 的任何参数都以退出码 0 结束）。 */
   available: readonly string[];
   /** `existsSync` 为真的路径。 */
   present: readonly string[];
+  /** 逐条探测的可用性（`"ffplay -version"` 形态）：各播放器的版本参数不统一，探测判据要它。 */
+  availableProbes?: readonly string[];
+  /** 这些 bin 的**首条**探测被扣住（并发探测的判据要它：先发出全部探测，再放行）。 */
+  holdProbes?: readonly string[];
   /** 通知守护进程名的探测结论。 */
   nameProbe?: NotificationNameProbe;
   /** `/etc/os-release` 的读取结论。 */
@@ -159,25 +212,46 @@ class FakeDeps implements SystemDeps {
   /** 自动退出用的退出码。 */
   exitCode = 0;
 
+  /** 用例关心的时序（探测/落盘/起进程/结局/删除）：只在这个数组里判「谁先谁后」。 */
+  readonly events: string[] = [];
+  /** 当前还在盘上的临时音频文件（路径 → 字节）：unstage 会把它删掉，故它判「活着没有」。 */
+  readonly stagedFiles = new Map<string, Buffer>();
+  /** 落过盘的东西（含已被 unstage 的）：素材字节的判据看它（投递结束时 live 表已经空了）。 */
+  readonly stagedHistory = new Map<string, Buffer>();
+  /** 被扣住的探测回调；`releaseProbes()` 放行（并发探测用例）。 */
+  readonly pendingProbes: Array<() => void> = [];
+  /** 已 unstage 的路径。 */
+  readonly unstaged: string[] = [];
+  /** 非空 = `stageToneAudio` 回这个原因（`/tmp` 只读挂载的等价物）。 */
+  stageFailure = "";
+  /** 临时目录是否被释放面收走：**按次投递**就删目录的实现在这里会红。 */
+  toneDirReleased = false;
+
   private readonly available: readonly string[];
   private readonly present: readonly string[];
+  private readonly availableProbes: readonly string[];
+  private readonly holdProbes: readonly string[];
   private readonly nameProbe: NotificationNameProbe;
   private readonly osRelease: OsReleaseProbe;
+  private stagedSeq = 0;
 
   constructor(config: FakeConfig) {
     this.platform = config.platform;
     this.available = config.available;
     this.present = config.present;
+    this.availableProbes = config.availableProbes ?? [];
+    this.holdProbes = config.holdProbes ?? [];
     this.nameProbe = config.nameProbe ?? { kind: "absent" };
     this.osRelease = config.osRelease ?? { ok: false };
   }
 
   spawn(command: readonly string[], options: SpawnOptions): ChildHandle {
     this.spawned.push({ command, options });
+    this.events.push(`spawn:${command[0] ?? "unknown"}`);
     if (this.spawnFailure !== "") {
       throw this.spawnFailureIsError ? new Error(this.spawnFailure) : this.spawnFailure;
     }
-    const child = new FakeChild();
+    const child = new FakeChild(() => this.events.push(`exit:${command[0] ?? "unknown"}`));
     this.children.push(child);
     // 出口监听在同一个 tick 里挂上，故微任务里的自动退出不会漏事件
     if (this.autoExit) queueMicrotask(() => child.emitExit({ exited: true, code: this.exitCode }));
@@ -191,7 +265,43 @@ class FakeDeps implements SystemDeps {
     done: (failed: boolean) => void,
   ): void {
     this.probed.push({ bin, args, timeout: options.timeout });
-    done(!this.available.includes(bin));
+    const failed =
+      !this.available.includes(bin) && !this.availableProbes.includes(`${bin} ${args.join(" ")}`);
+    // 只扣首条：表里第二条参数（ffplay 的 `-h`）是「首条失败才试」的那一条，扣住它会让放行后
+    // 又立刻挂上一条新的，探测永远收不了尾
+    const firstForBin = this.probed.filter((record) => record.bin === bin).length === 1;
+    if (firstForBin && this.holdProbes.includes(bin)) {
+      this.pendingProbes.push(() => done(failed));
+      return;
+    }
+    done(failed);
+  }
+
+  /** 放行被扣住的探测回调（探测并发用例）。 */
+  releaseProbes(): void {
+    for (const call of this.pendingProbes.splice(0)) call();
+  }
+
+  stageToneAudio(bytes: Buffer): ToneStage {
+    if (this.stageFailure !== "") return { ok: false, cause: this.stageFailure };
+    this.stagedSeq += 1;
+    const path = join(FAKE_TONE_DIR, `tone-${this.stagedSeq}.wav`);
+    this.stagedFiles.set(path, bytes);
+    this.stagedHistory.set(path, bytes);
+    this.events.push(`stage:${path}`);
+    return { ok: true, path };
+  }
+
+  unstageToneAudio(path: string): void {
+    this.unstaged.push(path);
+    this.events.push(`unstage:${path}`);
+    this.stagedFiles.delete(path);
+  }
+
+  releaseToneTemps(): void {
+    this.toneDirReleased = true;
+    this.events.push("release");
+    this.stagedFiles.clear();
   }
 
   existsSync(path: string): boolean {
@@ -462,53 +572,101 @@ describe("音色与文件候选", () => {
   });
 
   // spawn 一个空 argv 会抛错，调用方就拿不到「本平台放不出声」这个可判断的结论。
-  it("无候选时给出空命令：调用方据此判失败，而不是 spawn 一个空 argv", () => {
-    // 播放器必须给一个：`players: []` 会让「没有候选文件」与「没有播放器」两条出口都给空数组，
-    // 「无候选即空命令」那道守卫被后者遮住，判据就落不到它身上。
+  it("链上一个候选都没有（枚举外平台）⇒ 空命令：调用方据此判空动作，而不是 spawn 一个空 argv", () => {
     expect(
-      buildSoundCommand(probeOf({ platform: "freebsd", players: ["pw-play"] }), "ding"),
+      buildSoundCommands(probeOf({ platform: "freebsd", players: [] }), "/tmp/tone.wav"),
     ).toEqual([]);
+  });
+
+  // 链序是表的行序：每个命中候选各一条命令、argv 从表行取，「素材在不在」由调用方判（不在这里
+  // 重判，否则同一件事有两个判据）。
+  it("linux：链上每个命中候选各一条命令，顺序 = 表序，argv 由表行决定", () => {
+    const probe = probeOf({ platform: "linux", players: CHAIN_BINS });
+    const commands = buildSoundCommands(probe, "/tmp/tone.wav");
+    expect(commands.map((item) => item.command)).toEqual(
+      LINUX_PLAYERS.map((player) => [player.bin, ...player.fileArgs("/tmp/tone.wav")]),
+    );
+    expect(commands.map((item) => item.player)).toEqual([...LINUX_PLAYERS]);
+  });
+
+  // 名单漂了就宁可这一条不试：就地拍一个 argv 出来等于让播放器收到它不认识的参数。
+  it("探测命中的名字不在表上 ⇒ 那一条被丢掉，不拍 argv", () => {
+    const probe = probeOf({ platform: "linux", players: ["pw-play", "不存在的播放器"] });
+    expect(buildSoundCommands(probe, "/tmp/tone.wav").map((item) => item.command[0])).toEqual([
+      "pw-play",
+    ]);
   });
 });
 
 describe("probePlatform：平台分支与探测", () => {
-  // linux 的播放器顺序反了会优先用老的 PulseAudio；多探一个则是白起一个进程。
-  it("linux：notify-send 命中、pw-play 优先（只探到首个可用者为止，探测参数与超时逐字）", async () => {
-    const fake = fakeDeps({
-      available: ["notify-send", "pw-play", "paplay"],
-      present: [TOAST_SCRIPT],
-    });
+  // A2：并行探全部候选，返回**全部**命中者且顺序 = 表序。命中即停那版会把回退链砍成一条
+  // （只留第一个命中者），「首个成功即停」也就无从谈起；顺序反了则会优先用排在后面的播放器。
+  it("linux：notify-send 命中后并行探全部候选，players 是全部命中者且顺序 = 表序（参数与超时逐字）", async () => {
+    const available = ["notify-send", "pw-play", "paplay"];
+    const fake = fakeDeps({ available, present: [TOAST_SCRIPT] });
     installSystemDeps(fake);
 
     expect(await probePlatform(TOAST_SCRIPT)).toEqual({
       platform: "linux",
       toastScriptAvailable: true,
       notifySendAvailable: true,
-      players: ["pw-play"],
+      players: CHAIN_BINS.filter((bin) => available.includes(bin)),
     });
-    expect(fake.probed).toEqual([
-      { bin: "notify-send", args: ["--version"], timeout: 3000 },
-      { bin: "pw-play", args: ["--version"], timeout: 3000 },
+    // 探测参数从表导出；超时逐字 3000（探测不许拖住第一次投递）
+    expect(fake.probed.map((record) => `${record.bin} ${record.args.join(" ")}`)).toEqual([
+      "notify-send --version",
+      ...ALL_PROBES,
     ]);
+    expect(fake.probed.every((record) => record.timeout === 3000)).toBe(true);
     expect(fake.checked).toEqual([TOAST_SCRIPT]);
   });
 
-  // PipeWire 缺失的主力发行版只有 paplay；两个都缺时自播必须判成「放不出声」而不是硬发一条命令。
-  it("linux：pw-play 缺失回落 paplay，两个都缺则播放器列表为空", async () => {
-    const pulseOnly = fakeDeps({ available: ["notify-send", "paplay"] });
-    installSystemDeps(pulseOnly);
-    expect((await probePlatform(TOAST_SCRIPT)).players).toEqual(["paplay"]);
-    expect(pulseOnly.probed.map((record) => record.bin)).toEqual([
-      "notify-send",
-      "pw-play",
-      "paplay",
+  // A1：播放器的版本参数不统一——实测 ffplay 的 `--version` exit 1（它只认单横线的 `-version`），
+  // 故表内参数要按序试、任一成功即命中。只试 `--version` 的实现会把本机可用的 ffplay 判成没有。
+  it("linux：ffplay 按表内参数逐个试（-version 或 -h 任一成功即命中，-h 只在 -version 失败后才试）", async () => {
+    const version = fakeDeps({ availableProbes: ["ffplay -version"] });
+    installSystemDeps(version);
+    expect((await probePlatform(TOAST_SCRIPT)).players).toEqual(["ffplay"]);
+    expect(version.probed.map((record) => `${record.bin} ${record.args.join(" ")}`)).toEqual([
+      "notify-send --version",
+      ...LINUX_PLAYERS.map(firstProbeOf),
     ]);
 
+    const help = fakeDeps({ availableProbes: ["ffplay -h"] });
+    installSystemDeps(help);
+    expect((await probePlatform(TOAST_SCRIPT)).players).toEqual(["ffplay"]);
+    expect(help.probed.map((record) => `${record.bin} ${record.args.join(" ")}`)).toEqual([
+      "notify-send --version",
+      ...ALL_PROBES,
+    ]);
+  });
+
+  // A3：探测**并行**。串行探测最坏要串行等 4 次超时，而探测会挡住第一次投递；判据是「全部候选的
+  // 探测都先发出去，再收到任何一个结论」——串行实现里第二个候选的探测要等第一个的回调。
+  it("linux：全部候选的探测同时在飞（最坏时延是一次超时上界，不是 4 倍）", async () => {
+    const fake = fakeDeps({ available: ["notify-send"], holdProbes: CHAIN_BINS });
+    installSystemDeps(fake);
+
+    const pending = probePlatform(TOAST_SCRIPT);
+    await flushTasks();
+    expect(fake.probed.map((record) => record.bin)).toEqual(["notify-send", ...CHAIN_BINS]);
+    expect(fake.pendingProbes).toHaveLength(CHAIN_BINS.length);
+
+    fake.releaseProbes();
+    expect((await pending).players).toEqual([]);
+  });
+
+  // 一个都没命中 ⇒ 空链 ⇒ 空动作。半探（只探前几个）会让「有播放器但没命中」与「没探过」混为一谈。
+  it("linux：一个候选都没命中 ⇒ players 为空（探测收尾没有提前 return）", async () => {
     const none = fakeDeps({ available: ["notify-send"] });
     installSystemDeps(none);
     const probe = await probePlatform(TOAST_SCRIPT);
     expect(probe.players).toEqual([]);
     expect(probe.toastScriptAvailable).toBe(false);
+    expect(none.probed.map((record) => record.bin)).toEqual([
+      "notify-send",
+      ...LINUX_PLAYERS.flatMap((player) => player.probeArgs.map(() => player.bin)),
+    ]);
   });
 
   // notify-send 探测不到时 linux 弹窗命令为空：这条结论错了会变成每次投递白起一个必败的进程。
@@ -573,11 +731,11 @@ describe("探测缓存：同端口只探一次，换端口必复位", () => {
     const delivery = new SystemDelivery();
 
     expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
-    expect(fake.probed.length).toBe(3);
+    expect(fake.probed.length).toBe(1 + ALL_PROBES.length);
     expect(fake.checked.length).toBe(1);
 
     expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
-    expect(fake.probed.length).toBe(3);
+    expect(fake.probed.length).toBe(1 + ALL_PROBES.length);
     expect(fake.checked.length).toBe(1);
     // 复用的是探测结论，不是投递：弹窗两次都真的起了进程。
     expect(fake.spawned.length).toBe(2);
@@ -635,10 +793,15 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
     expect(await soundOnly.send()).toEqual({
       status: "failed",
       stage: "delivered",
-      reason: { code: "reasonSystemSoundFailed", params: { bin: "pw-play" } },
+      reason: {
+        code: "reasonSystemSoundFailed",
+        params: { bin: "pw-play" },
+        detail: "pw-play 启动失败：argv 非法",
+      },
       retryable: false,
     });
-    expect(soundOnly.warns).toEqual(["dsh-notifier: 命令启动失败（pw-play）: argv 非法"]);
+    // 声音这一侧走回退链：整条链都失败时留**一条** warn，成因摘要里带 bin
+    expect(soundOnly.warns).toEqual(["dsh-notifier: 提示音播放失败：pw-play 启动失败：argv 非法"]);
   });
 
   // 抛出物不一定是 Error（跨边界值）：原因若印成 undefined，日志里就只剩「启动失败」四个字。
@@ -685,12 +848,17 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
     expect(await pending).toEqual({
       status: "failed",
       stage: "delivered",
-      reason: { code: "reasonSystemSoundFailed", params: { bin: "pw-play" } },
+      reason: {
+        code: "reasonSystemSoundFailed",
+        params: { bin: "pw-play" },
+        // 收集封顶 512 之后，进 reason.detail 与日志的都是截到 300 字的那一段
+        detail: `pw-play 退出码 3：${"前".repeat(300)}`,
+      },
       retryable: false,
     });
     // 600 字的尾部已越过收集上限，第二段不再进缓冲；进日志的是截到 300 字的那一段。
     expect(delivery.warns).toEqual([
-      `dsh-notifier: 命令退出码异常（pw-play exit 3）：${"前".repeat(300)}`,
+      `dsh-notifier: 提示音播放失败：pw-play 退出码 3：${"前".repeat(300)}`,
     ]);
   });
 
@@ -706,11 +874,11 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
     fake.children[0]!.emitExit({ exited: true, code: 3 });
 
     expect((await pending).status).toBe("failed");
-    expect(delivery.warns).toEqual(["dsh-notifier: 命令退出码异常（pw-play exit 3）"]);
+    expect(delivery.warns).toEqual(["dsh-notifier: 提示音播放失败：pw-play 退出码 3"]);
   });
 
   // 原生二进制缺失走的是 error 事件而不是退出码：不接住它宿主进程会直接被打挂。
-  it("error 事件：warn「命令不可用」并判失败，不外抛", async () => {
+  it("error 事件：判失败且成因摘要写「不可用」，不外抛", async () => {
     const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
     fake.autoExit = false;
     installSystemDeps(fake);
@@ -723,10 +891,16 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
     expect(await pending).toEqual({
       status: "failed",
       stage: "delivered",
-      reason: { code: "reasonSystemSoundFailed", params: { bin: "pw-play" } },
+      reason: {
+        code: "reasonSystemSoundFailed",
+        params: { bin: "pw-play" },
+        detail: "pw-play 不可用：spawn pw-play ENOENT",
+      },
       retryable: false,
     });
-    expect(delivery.warns).toEqual(["dsh-notifier: 命令不可用（pw-play）: spawn pw-play ENOENT"]);
+    expect(delivery.warns).toEqual([
+      "dsh-notifier: 提示音播放失败：pw-play 不可用：spawn pw-play ENOENT",
+    ]);
   });
 
   // 被杀多数是我们自己的超时兜底：那是主动行为，按异常刷屏会淹掉真正的失败。
@@ -773,15 +947,16 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
     reversed.children[0]!.emitExit({ exited: true, code: 3 });
 
     expect((await lateExit).status).toBe("failed");
-    expect(late.warns).toEqual(["dsh-notifier: 命令不可用（pw-play）: 先到的 error"]);
+    expect(late.warns).toEqual(["dsh-notifier: 提示音播放失败：pw-play 不可用：先到的 error"]);
   });
 
-  // Windows 的 PS 诊断只在 stderr 上，故只有它接管道；探测与执行必须给同一条平台的选项。
-  it("win32 起进程接 stderr 管道，其它平台不接", async () => {
+  // 起进程一律接 stderr 管道（B0）：音频判据要读它（无头 Linux 上它是唯一的自证面），Windows 的
+  // PS 诊断也只在它上面。旧实现只对 win32 接管道 ⇒ Linux 上 `child.stderr` 是 null，判据恒真。
+  it("起进程一律接 stderr 管道（win32 与 linux 同一条口径）", async () => {
     const linux = fakeDeps({ available: ["notify-send"] });
     installSystemDeps(linux);
     expect(await new SystemDelivery().send()).toEqual({ status: "ok", stage: "delivered" });
-    expect(linux.spawned.map((record) => record.options)).toEqual([{ collectStderr: false }]);
+    expect(linux.spawned.map((record) => record.options)).toEqual([{ collectStderr: true }]);
 
     const win = fakeDeps({ platform: "win32", present: [TOAST_SCRIPT] });
     installSystemDeps(win);
@@ -791,8 +966,10 @@ describe("命令执行：任何结局都收敛成投递结果", () => {
 });
 
 describe("兜底杀进程（假时钟，不真等 8 秒）", () => {
-  // 卡住的子进程会一直占着投递：超时兜底不生效就是通知链路被一个死进程拖住。
-  it("卡满 8 秒即杀：7999ms 不杀、8000ms 杀且只杀一次", async () => {
+  // 卡住的子进程会一直占着投递，且旧实现在这一格**只 kill 不结算**：子进程忽略 SIGTERM 时
+  // `await run()` 永不返回（零日志、零落盘）。判据因此有三条：7999ms 不杀、8000ms 杀一次并**就地
+  // 结算失败**（留一条 warn）、晚到的退出码不再改结论。
+  it("卡满 8 秒即杀并结算失败：7999ms 不杀、8000ms 杀一次 + 一条 warn，晚到的退出码不改结论", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     const fake = fakeDeps({ available: ["notify-send"] });
     fake.autoExit = false;
@@ -808,10 +985,34 @@ describe("兜底杀进程（假时钟，不真等 8 秒）", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(fake.children[0]!.killCount).toBe(1);
 
+    expect(await pending).toEqual({
+      status: "failed",
+      stage: "delivered",
+      reason: { code: "reasonSystemPopupFailed", params: { bin: "notify-send" } },
+      retryable: false,
+    });
+    expect(delivery.warns).toEqual(["dsh-notifier: 命令超时未退出（notify-send），已按失败结算"]);
+
+    // 晚到的退出码 0 不再二次结算（旧实现在这一格会把失败翻成成功）
     fake.children[0]!.emitExit({ exited: true, code: 0 });
-    expect(await pending).toEqual({ status: "ok", stage: "delivered" });
     await vi.advanceTimersByTimeAsync(10_000);
     expect(fake.children[0]!.killCount).toBe(1);
+    expect(delivery.warns).toHaveLength(1);
+  });
+
+  // 超时兜底在**声音**这一侧同样要结算：整条链都超时 ⇒ 终态 failed + 一条 warn（成因摘要带候选名）。
+  it("只响不弹：候选超时兜底 ⇒ failed + 一条 warn（成因摘要写「超时未退出」）", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
+    fake.autoExit = false;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
+
+    const pending = delivery.send();
+    await vi.advanceTimersByTimeAsync(8000);
+
+    expect((await pending).status).toBe("failed");
+    expect(delivery.warns).toEqual(["dsh-notifier: 提示音播放失败：pw-play 超时未退出"]);
   });
 
   // 结局已到的子进程不该在 8 秒后再被「杀」一次：定时器不清，进程早已回收而回调照样打进来。
@@ -1339,5 +1540,488 @@ describe("synth.ts：主题文件缺失时的自包含合成音（#783）", () =
     // 三角波在峰值之间严格线性，二阶差分只剩量化噪声；正弦的二阶差分与其自身成比例
     // （约 46×|sin|），中位数在 30 上下。把 type 改回缺省的正弦后这条必须红
     expect(medianAbsSecondDiff(samplesOf("pop"))).toBeLessThanOrEqual(2);
+  });
+});
+
+// ---------------------------------------------------------------- 自播回退链与运行期判据（批 3 增量 2）
+
+describe("players.ts：音频路径的判据谓词（具名、可单测）", () => {
+  /** 表里唯一有实测样本的那一行：标记表、播放参数都挂在它身上。 */
+  const FFPLAY = playerSpec("ffplay")!;
+
+  /** 实测样本：ffplay 报「打不开」的那种文本（输入文件不存在 / 是目录 / 是随机字节）。 */
+  const OPEN_FAILED = "Failed to open file /tmp/x.wav or configure filtergraph\n";
+
+  const facts = (outcome: CommandOutcome, stderr = ""): CommandFacts => ({ outcome, stderr });
+
+  // 判据是五条具名规则的合取，不是「stderr 必须为空」：后者会被成功路径上的 ALSA 噪声打穿。
+  it("五种失败成因各判一次：命中标记 / 退出码非 0 / 被信号杀死 / 超时兜底 / 启动失败", () => {
+    expect(playFailure(FFPLAY, facts({ kind: "exit", code: 0 }, OPEN_FAILED))).toEqual({
+      kind: "marker",
+      marker: "Failed to open file",
+    });
+    expect(playFailure(FFPLAY, facts({ kind: "exit", code: 3 }, "随便什么诊断"))).toEqual({
+      kind: "exit",
+      code: 3,
+    });
+    expect(playFailure(FFPLAY, facts({ kind: "killed" }))).toEqual({ kind: "killed" });
+    expect(playFailure(FFPLAY, facts({ kind: "timeout" }))).toEqual({ kind: "timeout" });
+    expect(playFailure(FFPLAY, facts({ kind: "spawn-error", cause: "ENOENT" }))).toEqual({
+      kind: "spawn-error",
+      cause: "ENOENT",
+    });
+    expect(playFailure(FFPLAY, facts({ kind: "spawn-threw", cause: "argv 非法" }))).toEqual({
+      kind: "spawn-threw",
+      cause: "argv 非法",
+    });
+  });
+
+  // B5：标记表被清空后判定不变 —— 成功样本仍成功、退出码失败仍失败。这条钉死「标记表不是
+  // 『有输出即失败』的伪装」：把判据写成「stderr 非空即失败」的实现，在第一条断言上就红。
+  it("清空标记表：成功样本仍成功、退出码非 0 仍失败（判据不是「有输出即失败」）", () => {
+    const noMarkers: PlayerSpec = { ...FFPLAY, fatalMarkers: [] };
+    expect(playFailure(noMarkers, facts({ kind: "exit", code: 0 }, ALSA_UNDERRUN))).toBeUndefined();
+    expect(playFailure(noMarkers, facts({ kind: "exit", code: 0 }, OPEN_FAILED))).toBeUndefined();
+    expect(playFailure(noMarkers, facts({ kind: "exit", code: 3 }, ""))).toEqual({
+      kind: "exit",
+      code: 3,
+    });
+  });
+
+  // B0-d 的谓词侧：exit 0 + 实测噪声 ⇒ 成功。40 次成功播放里 3 次 stderr 是这个 underrun，
+  // 「零输出」判据会把它们全判成失败（链继续 ⇒ 双响，或终态 failed 而声音已经出去了）。
+  it("exit 0 且 stderr 是登记为噪声的 ALSA underrun ⇒ 成功", () => {
+    expect(playFailure(FFPLAY, facts({ kind: "exit", code: 0 }, ALSA_UNDERRUN))).toBeUndefined();
+  });
+
+  // 标记表是**唯一**能把这一格判死的实体：exit 0 本身是成功的（方案 §3.2 的致命标记判据）。
+  it("exit 0 却命中致命标记 ⇒ 失败，且带上命中哪一条（可诊断）", () => {
+    const failure = playFailure(FFPLAY, facts({ kind: "exit", code: 0 }, OPEN_FAILED));
+    expect(failure).toEqual({ kind: "marker", marker: "Failed to open file" });
+    expect(playFailureSummary("ffplay", failure!, "Failed to open file")).toContain(
+      "命中致命标记「Failed to open file」",
+    );
+  });
+
+  // 未实测的失败文本不在表里（表只收实测样本）：残余是 fail-open，登记在方案 §3.2 与 §11。
+  it("不在表里的失败文本不参与判定（残余 fail-open，登记在方案 §3.2）", () => {
+    expect(
+      playFailure(
+        FFPLAY,
+        facts({ kind: "exit", code: 0 }, "Connection failure: Connection refused"),
+      ),
+    ).toBeUndefined();
+  });
+
+  // F4 边界：判据只归**音频路径的表行**。darwin 的 afplay 与 win32 的 PowerShell 没有表行，
+  // 只看退出码 —— 把 ffplay 上量到的文本规则套过去会把它们的正常输出判成失败。
+  it("没有表行的命令只判退出码（标记表不推广给 afplay / PowerShell）", () => {
+    expect(playFailure(undefined, facts({ kind: "exit", code: 0 }, OPEN_FAILED))).toBeUndefined();
+    expect(
+      playFailure(undefined, facts({ kind: "exit", code: 0 }, "Is a directory")),
+    ).toBeUndefined();
+    expect(playFailure(undefined, facts({ kind: "exit", code: 1 }, ""))).toEqual({
+      kind: "exit",
+      code: 1,
+    });
+  });
+});
+
+describe("自播回退链：首个成功即停、全失败才翻转终态", () => {
+  /** 候选 1 的真实身份（表序第一个）：`params.bin` 的期望值从表导出，不重抄播放器名。 */
+  const FIRST_BIN = CHAIN_BINS[0]!;
+
+  // C3：中间候选失败不刷日志（LoggerPort 只有 warn，按候选各刷一条会把日志淹掉）；首个成功即停。
+  it("候选 1 退出码非 0、候选 2 成功 ⇒ ok，且整条链零 warn（中间回退不出声）", async () => {
+    const fake = fakeDeps({
+      available: ["notify-send", ...CHAIN_BINS],
+      present: [LINUX_DING_FILE],
+    });
+    fake.autoExit = false;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
+
+    const pending = delivery.send();
+    await pollUntil(() => fake.children.length === 1, "候选 1 应已起进程");
+    fake.children[0]!.emitExit({ exited: true, code: 1 });
+    await pollUntil(() => fake.children.length === 2, "候选 2 应已起进程");
+    fake.children[1]!.emitExit({ exited: true, code: 0 });
+
+    expect(await pending).toEqual({ status: "ok", stage: "delivered" });
+    expect(delivery.warns).toEqual([]);
+    // 首个成功即停：候选 3 起一个进程都没起（防双响）
+    expect(fake.spawned.map((record) => record.command[0])).toEqual(CHAIN_BINS.slice(0, 2));
+  });
+
+  // C1：致命标记是「退出码 0 但没出声」这一格的唯一判据。命中它的候选必须失败并让链继续，
+  // 否则「播放器在 PATH 里但没出声」又被判成 ok（#782/#783 的病本身）。
+  it("候选 1 命中致命标记（exit 0）失败、候选 2 成功 ⇒ ok，候选 3 起零 spawn", async () => {
+    const fake = fakeDeps({
+      available: ["notify-send", ...CHAIN_BINS],
+      present: [LINUX_DING_FILE],
+    });
+    fake.autoExit = false;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
+
+    const pending = delivery.send();
+    await pollUntil(() => fake.children.length === 1, "候选 1 应已起进程");
+    fake.children[0]!.emitStderr("Failed to open file /tmp/x.wav or configure filtergraph\n");
+    fake.children[0]!.emitExit({ exited: true, code: 0 });
+    await pollUntil(() => fake.children.length === 2, "候选 2 应已起进程");
+    fake.children[1]!.emitExit({ exited: true, code: 0 });
+
+    expect(await pending).toEqual({ status: "ok", stage: "delivered" });
+    expect(delivery.warns).toEqual([]);
+    expect(fake.spawned.map((record) => record.command[0])).toEqual(CHAIN_BINS.slice(0, 2));
+  });
+
+  // C2：全失败 ⇒ failed（不是 skipped：「执行过动作而它失败了」），bin = 表序第一个，
+  // detail 带每个候选的成因（设置页折叠可查），日志里**恰好一条**。
+  it("全部候选都失败 ⇒ failed + bin = 表序第一个 + detail 含每个候选的成因 + 恰好一条 warn", async () => {
+    const fake = fakeDeps({
+      available: ["notify-send", ...CHAIN_BINS],
+      present: [LINUX_DING_FILE],
+    });
+    fake.autoExit = false;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
+
+    const pending = delivery.send();
+    const codes = [1, 2, 3, 4];
+    for (const [index, code] of codes.entries()) {
+      await pollUntil(() => fake.children.length > index, `第 ${index + 1} 个候选应已起进程`);
+      fake.children[index]!.emitExit({ exited: true, code });
+    }
+
+    const result = await pending;
+    expect(result.status).toBe("failed");
+    expect(result).toMatchObject({
+      stage: "delivered",
+      retryable: false,
+      reason: { code: "reasonSystemSoundFailed", params: { bin: FIRST_BIN } },
+    });
+    const detail = (result as { reason: { detail?: string } }).reason.detail ?? "";
+    for (const code of codes) expect(detail).toContain(`退出码 ${code}`);
+    expect(fake.spawned.map((record) => record.command[0])).toEqual(CHAIN_BINS);
+    expect(delivery.warns).toHaveLength(1);
+    expect(delivery.warns[0]).toContain("提示音播放失败：");
+  });
+
+  // B0-b：子进程的五种结局各判一条 —— 少一种，那一种就会被当成成功（旧实现只有「退出码 === 0」
+  // 一条判据，另外四种连退出码都没有）。
+  const CHILD_STATES: Array<{
+    readonly name: string;
+    readonly failed: boolean;
+    readonly spawnFailure?: string;
+    readonly drive?: (child: FakeChild) => void;
+  }> = [
+    {
+      name: "退出码 0",
+      failed: false,
+      drive: (child) => child.emitExit({ exited: true, code: 0 }),
+    },
+    {
+      name: "退出码非 0",
+      failed: true,
+      drive: (child) => child.emitExit({ exited: true, code: 3 }),
+    },
+    { name: "被信号杀死", failed: true, drive: (child) => child.emitExit({ exited: false }) },
+    {
+      name: "error 事件（二进制缺失）",
+      failed: true,
+      drive: (child) => child.emitError(new Error("spawn pw-play ENOENT")),
+    },
+    { name: "spawn 同步抛错", failed: true, spawnFailure: "argv 非法" },
+  ];
+
+  it.each(CHILD_STATES)("只响不弹：子进程结局「$name」⇒ 失败 = $failed", async (state) => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
+    fake.autoExit = false;
+    if (state.spawnFailure !== undefined) fake.spawnFailure = state.spawnFailure;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
+
+    const pending = delivery.send();
+    if (state.drive !== undefined) {
+      await pollUntil(() => fake.children.length > 0, "假端口应起出子进程");
+      state.drive(fake.children[0]!);
+    }
+
+    expect((await pending).status).toBe(state.failed ? "failed" : "ok");
+  });
+
+  // B0-d：「零输出」判据的杀手。它走完整条出口（不是直接调谓词）：实测 40 次成功播放里 3 次 stderr
+  // 是这个 underrun，把它当失败证据的实现会把这次真成功判成失败，进而继续往链下试（双响）。
+  it("exit 0 且 stderr 是实测噪声（ALSA underrun）⇒ ok、零 warn、只起一个播放进程", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
+    fake.autoExit = false;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
+
+    const pending = delivery.send();
+    await pollUntil(() => fake.children.length > 0, "假端口应起出子进程");
+    fake.children[0]!.emitStderr(ALSA_UNDERRUN);
+    fake.children[0]!.emitExit({ exited: true, code: 0 });
+
+    expect(await pending).toEqual({ status: "ok", stage: "delivered" });
+    expect(delivery.warns).toEqual([]);
+    expect(fake.spawned).toHaveLength(1);
+  });
+
+  // B4：argv 逐字快照。四个参数缺一不可（缺 -nodisp 实测 exit 0 却只报 Failed to create window
+  // or renderer，根本不出声；缺 -autoexit 进程不退出，只能等 8 秒兜底杀），而端到端结果断言
+  // 发现不了这两件事——只有逐字快照能。
+  it("ffplay 的 argv 逐字快照：四个必需参数 + 文件在最后", async () => {
+    const fake = fakeDeps({ available: ["ffplay"], present: [LINUX_DING_FILE] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
+
+    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(fake.spawned.map((record) => record.command)).toEqual([
+      ["ffplay", "-hide_banner", "-loglevel", "error", "-nodisp", "-autoexit", LINUX_DING_FILE],
+    ]);
+  });
+});
+
+describe("临时音频文件：合成兜底与生命周期", () => {
+  // E1：主题文件全缺 ⇒ 命令指向本次落的临时文件，且字节**逐字**等于 runtime 合成的那份
+  // （指向一个别的文件、或落了一份空字节，听觉上都是「没声音」）。
+  it("无主题文件 ⇒ argv 指向临时文件且字节等于 synthToneWav(tone)", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
+
+    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    const command = fake.spawned[0]!.command;
+    const path = command[1]!;
+    expect(dirname(path)).toBe(FAKE_TONE_DIR);
+    expect(fake.stagedHistory.get(path)).toEqual(synthToneWav("ding"));
+    // 通知脚本与主题候选都问过一遍（顺序与完整性由表决定），但主题候选一个都不存在
+    expect(fake.checked).toEqual([TOAST_SCRIPT, ...toneFileCandidates("linux", "ding")]);
+  });
+
+  // E2：主题文件在 ⇒ 用主题文件、**不产生**临时文件（合成音只是兜底，不是替换品）。
+  it("主题文件存在 ⇒ 不落临时文件，argv 直接指向主题文件", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"], present: [LINUX_DING_FILE] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
+
+    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(fake.events.some((event) => event.startsWith("stage:"))).toBe(false);
+    expect(fake.stagedFiles.size).toBe(0);
+    expect(fake.spawned.map((record) => record.command)).toEqual([["pw-play", LINUX_DING_FILE]]);
+  });
+
+  // E3：无论成败最后都删 —— 失败路径漏删就是「每投递一次往 /tmp 攒一个 WAV」。
+  it.each<[string, number]>([
+    ["成功", 0],
+    ["失败", 3],
+  ])("合成音播完（%s）后临时文件一定被删（exit %i 也一样）", async (_label, code) => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"] });
+    fake.exitCode = code;
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
+
+    await delivery.send();
+    expect(fake.stagedFiles.size).toBe(0);
+    expect(fake.unstaged).toHaveLength(1);
+  });
+
+  // D3：unstage 必须晚于最后一次 run() 的 onExit。反过来（spawn 后立即 unlink）实测播放器报
+  // 42B 的「打不开」；判据看时序，不看实现怎么写。
+  it("删除晚于最后一次 onExit（stage → spawn → exit → unstage）", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"] });
+    installSystemDeps(fake);
+    const delivery = new SystemDelivery({ popup: false, sound: "ding" });
+
+    expect(await delivery.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(fake.events.map((event) => event.split(":")[0])).toEqual([
+      "stage",
+      "spawn",
+      "exit",
+      "unstage",
+    ]);
+  });
+
+  // D4：/tmp 只读挂载（注入 EROFS）。只响不弹时本次**没有可执行的动作** ⇒ skipped + 新 code +
+  // 宿主原文进 detail；弹+响时弹窗已经出去，声音只算尽力而为 ⇒ ok + 一条 warn。
+  it("临时目录写不进去：只响不弹 ⇒ skipped(reasonSystemToneUnwritable)+detail；弹+响 ⇒ ok + 一条 warn", async () => {
+    const cause = "EROFS: read-only file system, open '/tmp/dsh-notifier-x/tone-1.wav'";
+
+    const only = fakeDeps({ available: ["notify-send", "pw-play"] });
+    only.stageFailure = cause;
+    installSystemDeps(only);
+    const soundOnly = new SystemDelivery({ popup: false, sound: "ding" });
+    expect(await soundOnly.send()).toEqual({
+      status: "skipped",
+      reason: { code: "reasonSystemToneUnwritable", detail: cause },
+    });
+    expect(only.spawned).toEqual([]);
+    expect(soundOnly.warns).toEqual([
+      `dsh-notifier: 系统提示音临时文件写入失败，本次未发声：${cause}`,
+    ]);
+
+    const both = fakeDeps({ available: ["notify-send", "pw-play"] });
+    both.stageFailure = cause;
+    installSystemDeps(both);
+    const withPopup = new SystemDelivery({ popup: true, sound: "ding" });
+    expect(await withPopup.send()).toEqual({ status: "ok", stage: "delivered" });
+    expect(withPopup.warns).toEqual([
+      `dsh-notifier: 系统提示音临时文件写入失败，本次未发声：${cause}`,
+    ]);
+    expect(both.spawned.map((record) => record.command[0])).toEqual(["notify-send"]);
+  });
+
+  // D7：并发两笔投递各落一份自己的文件。按次删目录的实现会在第一笔结束时把整目录收走，第二笔的
+  // 文件随之消失（实测的失败形态是播放器报打不开），故判据同时看「另一笔的文件还在」与
+  // 「释放面没被按次调用」。
+  it("并发两笔投递：各自只删自己的文件，另一笔的文件与播放不受影响", async () => {
+    const fake = fakeDeps({ available: ["notify-send", "pw-play"] });
+    fake.autoExit = false;
+    installSystemDeps(fake);
+    const first = new SystemDelivery({ popup: false, sound: "ding" });
+    const second = new SystemDelivery({ popup: false, sound: "bell" });
+
+    const firstSend = first.send();
+    const secondSend = second.send();
+    await pollUntil(() => fake.children.length === 2, "两笔投递各起一个播放进程");
+    const paths = [...fake.stagedFiles.keys()];
+    expect(paths).toHaveLength(2);
+    expect(paths[0]).not.toBe(paths[1]);
+    expect(fake.stagedHistory.get(paths[0]!)).toEqual(synthToneWav("ding"));
+    expect(fake.stagedHistory.get(paths[1]!)).toEqual(synthToneWav("bell"));
+
+    fake.children[0]!.emitExit({ exited: true, code: 0 });
+    expect(await firstSend).toEqual({ status: "ok", stage: "delivered" });
+    // 第一笔只删了自己的那一份：第二笔的文件还在（按次删目录的实现会在这里红）
+    expect(fake.stagedFiles.has(paths[1]!)).toBe(true);
+    expect(fake.unstaged).toEqual([paths[0]!]);
+
+    fake.children[1]!.emitExit({ exited: true, code: 0 });
+    expect(await secondSend).toEqual({ status: "ok", stage: "delivered" });
+    expect(fake.stagedFiles.size).toBe(0);
+    expect(fake.toneDirReleased).toBe(false);
+  });
+
+  // 素材合成只对 Linux 生效：darwin/win32 有系统素材与播放器，「合成兜底」不是它们的行为。
+  it("darwin / win32 不合成：主题文件缺失时仍是空动作（不产生临时文件）", async () => {
+    for (const platform of ["darwin", "win32"]) {
+      const fake = fakeDeps({ platform, present: [] });
+      installSystemDeps(fake);
+      const delivery = new SystemDelivery({ popup: false, sound: "ding" });
+      expect((await delivery.send()).status, platform).toBe("skipped");
+      expect(fake.stagedFiles.size, platform).toBe(0);
+      expect(fake.spawned, platform).toEqual([]);
+    }
+  });
+});
+
+describe("临时音频文件：真端口（权限位、目录复用、符号链接、释放面）", () => {
+  /** 本用例独占的基目录：真端口用它 mkdtemp，断言「基目录下一个残留都没有」才是确定的。 */
+  let base = "";
+  beforeEach(() => {
+    base = mkdtempSync(join(tmpdir(), "dsh-notifier-case-"));
+  });
+  afterEach(() => {
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  /** 落一次盘并取出路径（失败即用例环境有问题，直接抛）。 */
+  function stageOrThrow(temps: RealToneTemps, bytes: Buffer): string {
+    const staged = temps.stage(bytes);
+    if (!staged.ok) throw new Error(`落盘应当成功，实际：${staged.cause}`);
+    return staged.path;
+  }
+
+  // D1：0600 文件 + 0700 目录；unstage 只 unlink 本次文件（**目录留着**），释放面才删目录。
+  it("落盘 0600 文件 / 0700 目录；unstage 只删文件，释放面才删目录", () => {
+    const temps = new RealToneTemps(base);
+    const path = stageOrThrow(temps, Buffer.from("RIFF0000WAVE"));
+    const dir = dirname(path);
+
+    expect(statSync(dir).mode & 0o777).toBe(0o700);
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(readFileSync(path).toString()).toBe("RIFF0000WAVE");
+
+    temps.unstage(path);
+    expect(existsSync(path)).toBe(false);
+    expect(existsSync(dir)).toBe(true);
+
+    temps.release();
+    expect(existsSync(dir)).toBe(false);
+    expect(readdirSync(base)).toEqual([]);
+  });
+
+  // D2：目录复用（mkdtemp 只调一次 ⇒ 两次落盘的父目录相同、基目录下只有一个临时目录）；
+  // 文件名带实例内序号，故正常路径永不撞名。
+  it("两次落盘复用同一个目录，文件名带实例内序号", () => {
+    const temps = new RealToneTemps(base);
+    const first = stageOrThrow(temps, Buffer.from("一"));
+    const second = stageOrThrow(temps, Buffer.from("二"));
+
+    expect(dirname(first)).toBe(dirname(second));
+    expect(first).not.toBe(second);
+    expect(readdirSync(base)).toHaveLength(1);
+    expect(readdirSync(dirname(first)).sort()).toEqual([basename(first), basename(second)].sort());
+    temps.release();
+  });
+
+  // D5：`wx` 拒符号链接占位（实测预置符号链接时报 EEXIST 且目标文件未被改写）。序号让正常路径
+  // 不会撞名，故这一条只能由占位构造出来——它是「不跟随符号链接」这条防御的判据。
+  it("符号链接占位被 wx 拒绝：报原因（EEXIST）且目标文件未被改写", () => {
+    const temps = new RealToneTemps(base);
+    const first = stageOrThrow(temps, Buffer.from("先"));
+    temps.unstage(first);
+    const dir = dirname(first);
+
+    const target = join(base, "target.txt");
+    writeFileSync(target, "原样");
+    symlinkSync(target, join(dir, "tone-2.wav"));
+
+    const second = temps.stage(Buffer.from("后"));
+    expect(second.ok).toBe(false);
+    expect(second.ok ? "" : second.cause).toContain("EEXIST");
+    expect(readFileSync(target, "utf8")).toBe("原样");
+    temps.release();
+  });
+
+  // D6：释放面（域门面 channels/interface.ts）把真端口建的目录收走，且幂等、never-throw。
+  it("释放面删掉真端口建的临时目录：幂等、never-throw、基目录无残留", () => {
+    releaseSystemDeps();
+    const staged = systemDeps().stageToneAudio(Buffer.from("RIFF"));
+    if (!staged.ok) throw new Error(`真端口落盘失败：${staged.cause}`);
+    const dir = dirname(staged.path);
+    expect(existsSync(dir)).toBe(true);
+
+    releaseSoundTemps();
+    expect(existsSync(dir)).toBe(false);
+    expect(() => releaseSoundTemps()).not.toThrow();
+  });
+});
+
+describe("旧账与结构性判据", () => {
+  // G2：配置白名单 ⊆ 音色表，且每个白名单音色都有音符。缺口是「新增配置音色而漏 TONES」：
+  // 只看 TONES 的旧断言在那种改法下是绿的，而用户会选到一个没有音符、放不出声的音色。
+  it("SOUND_IDS ⊆ Object.keys(TONES)，且每个音色的 notes 非空", () => {
+    for (const id of SOUND_IDS) {
+      expect(Object.hasOwn(TONES, id), `TONES 缺 ${id}`).toBe(true);
+      expect(TONES[id]?.notes.length, `${id} 没有音符`).toBeGreaterThan(0);
+    }
+    // 反向不要求相等：TONES 还含「跟随系统默认音」这类不在设置白名单里的键
+    expect(SOUND_IDS.length).toBeGreaterThan(0);
+  });
+
+  // G3：探测与执行不许阻塞事件循环（spawnSync 会把第一次投递连同宿主一起卡住）。
+  it("system 块里没有 spawnSync（探测挡住第一次投递 = 同步等待）", () => {
+    const dir = fileURLToPath(
+      new URL("../../../src/server/channels/impl/system/", import.meta.url),
+    );
+    // 匹配调用形态而不是裸词：注释里提到「不用 spawnSync」不算命中，但真调用（含 import 后调用）
+    // 一定带括号
+    const hits = readdirSync(dir).filter((file) =>
+      /spawnSync\s*\(/u.test(readFileSync(join(dir, file), "utf8")),
+    );
+    expect(hits).toEqual([]);
   });
 });

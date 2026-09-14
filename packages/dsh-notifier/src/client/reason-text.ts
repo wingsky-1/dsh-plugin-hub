@@ -28,6 +28,7 @@ const REASON_KEYS = {
   reasonSystemPopupFailed: "reasonSystemPopupFailed",
   reasonSystemSoundFailed: "reasonSystemSoundFailed",
   reasonSystemToastScriptMissing: "reasonSystemToastScriptMissing",
+  reasonSystemToneUnwritable: "reasonSystemToneUnwritable",
   reasonBarkRequestFailed: "reasonBarkRequestFailed",
   reasonBarkHttp: "reasonBarkHttp",
   reasonBarkRejected: "reasonBarkRejected",

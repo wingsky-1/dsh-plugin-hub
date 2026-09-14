@@ -12,8 +12,10 @@
  * 端口只在本块 impl 内可达：不 re-export 到包的导出面（见 `src/index.ts` 的导出面快照门禁）。
  */
 import { execFile, spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import type { NotificationNameProbe, OsReleaseProbe, PlatformProbe } from "./type.ts";
+import { existsSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { NotificationNameProbe, OsReleaseProbe, PlatformProbe, ToneStage } from "./type.ts";
 
 /** 子进程退出事实。`exited` 为假 = 被信号杀死（多数是我们自己的超时兜底），是主动行为不是异常。 */
 export type ProcessExit =
@@ -58,6 +60,16 @@ export interface SystemDeps {
   probeNotificationName(): Promise<NotificationNameProbe>;
   /** 读发行版标识（只取 `ID=`）。never-throw：缺文件与读失败都回 `{ ok: false }`。 */
   readOsRelease(): OsReleaseProbe;
+  /**
+   * 把合成音写进本进程的临时目录（0700，文件名带实例内序号，0600 + `wx`）。
+   * 失败即回原因（`/tmp` 只读挂载、符号链接占位）——**判定逻辑不在这里**：本文件被排除在变异面外，
+   * 策略放进来等于永远没有判据。
+   */
+  stageToneAudio(bytes: Buffer): ToneStage;
+  /** 删掉本次的临时音频文件；**目录留到 `releaseToneTemps`**。never-throw。 */
+  unstageToneAudio(path: string): void;
+  /** 删掉本进程建过的临时音频目录（卸载与进程退出各一次）。幂等、never-throw。 */
+  releaseToneTemps(): void;
 }
 
 /** 真实子进程句柄：`exit` 的 `code` 只有「有值」与「被信号杀死」两态，收窄在本端口完成。 */
@@ -258,7 +270,77 @@ export function readOsReleaseFile(path: string): OsReleaseProbe {
   }
 }
 
+/**
+ * 真实临时音频目录。目录与序号都收在实例字段（模块级 `let`/`var` 是门禁红线：状态会跨实例共享）。
+ *
+ * 文件名带实例内序号 + `wx` + 0600：`wx` 拒符号链接与陈旧文件（实测预置符号链接时报 `EEXIST`
+ * 且目标文件未被改写），0600/0700 收住同机其它用户。
+ *
+ * 目录**不按次删**（`unstage` 只 unlink 本次文件）：并发两笔投递时先完成的那一笔会把整目录收走，
+ * 另一笔的播放随即复现「spawn 后立即 unlink」的失败。目录只在释放面（卸载 / 进程退出）删。
+ *
+ * `baseDir` 是入参而不是闭包里的 `os.tmpdir()`：`stage` 的 never-throw 与两个权限位只有
+ * 「可写基目录」「不可写基目录」两条路都能被注入才判得住（与 `readOsReleaseFile(path)` 同款理由）；
+ * 生产恒用默认值。
+ */
+export class RealToneTemps {
+  /** 本进程的临时音频目录；未建或已释放时为 undefined。 */
+  private dir?: string;
+  /** 实例内序号：`wx` 下重名即 `EEXIST`，序号让正常路径永不撞名。 */
+  private seq = 0;
+  /** 退出钩子只挂一次（释放本身幂等，重复挂载不该叠监听）。 */
+  private exitHook = false;
+
+  constructor(private readonly baseDir: string = tmpdir()) {}
+
+  stage(bytes: Buffer): ToneStage {
+    try {
+      const dir = this.directory();
+      this.seq += 1;
+      const path = join(dir, `tone-${this.seq}.wav`);
+      writeFileSync(path, bytes, { mode: 0o600, flag: "wx" });
+      return { ok: true, path };
+    } catch (cause) {
+      return { ok: false, cause: cause instanceof Error ? cause.message : String(cause) };
+    }
+  }
+
+  unstage(path: string): void {
+    try {
+      unlinkSync(path);
+    } catch {
+      // 文件可能已被释放面收走、或本次根本没写成功：两个都不是本端口的失败面
+    }
+  }
+
+  release(): void {
+    const dir = this.dir;
+    this.dir = undefined;
+    this.seq = 0;
+    if (dir === undefined) return;
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // 释放是尽力而为：残留一个临时目录不该让卸载失败
+    }
+  }
+
+  /** 取（必要时建）临时目录。建目录即挂退出钩子：宿主直接退出而插件从未卸载时只剩这一条清理路径。 */
+  private directory(): string {
+    if (this.dir !== undefined) return this.dir;
+    const dir = mkdtempSync(join(this.baseDir, "dsh-notifier-"));
+    this.dir = dir;
+    if (!this.exitHook) {
+      this.exitHook = true;
+      process.once("exit", () => this.release());
+    }
+    return dir;
+  }
+}
+
 /** 生产默认端口：一律取真实进程事实。 */
+const realToneTemps = new RealToneTemps();
+
 const REAL_DEPS: SystemDeps = {
   platform: process.platform,
   spawn: spawnChild,
@@ -266,6 +348,9 @@ const REAL_DEPS: SystemDeps = {
   existsSync: (path) => existsSync(path),
   probeNotificationName: probeNotificationNameReal,
   readOsRelease: () => readOsReleaseFile(OS_RELEASE_PATH),
+  stageToneAudio: (bytes) => realToneTemps.stage(bytes),
+  unstageToneAudio: (path) => realToneTemps.unstage(path),
+  releaseToneTemps: () => realToneTemps.release(),
 };
 
 /** 平台能力缓存：探一次即复用（同进程内通知脚本路径固定）。 */
@@ -319,6 +404,18 @@ class SystemDepsSlot implements SystemDeps {
 
   readOsRelease(): OsReleaseProbe {
     return this.port.readOsRelease();
+  }
+
+  stageToneAudio(bytes: Buffer): ToneStage {
+    return this.port.stageToneAudio(bytes);
+  }
+
+  unstageToneAudio(path: string): void {
+    this.port.unstageToneAudio(path);
+  }
+
+  releaseToneTemps(): void {
+    this.port.releaseToneTemps();
   }
 
   install(port: SystemDeps): void {
