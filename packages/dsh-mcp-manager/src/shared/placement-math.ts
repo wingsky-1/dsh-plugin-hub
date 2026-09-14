@@ -1,14 +1,14 @@
 /**
  * dsh-mcp-manager — 浮窗定位/层级/断点纯函数薄 facade（#128 → #378 抽取）。
  *
- * 实现上移 shared/placement-math.js（插件家族共享层，纯核心零依赖）；本文件
- * 保留包级常量 DEFAULT_Z_INDEX_BASE（对应 CSS 默认 z-index:10）、命名别名
+ * 实现单一事实源在仓库根 shared/placement-math.js（插件家族共享层，纯核心零依赖）；
+ * 本文件保留包级常量 DEFAULT_Z_INDEX_BASE（对应 CSS 默认 z-index:10）、命名别名
  * （panelAnchorForPosition ↔ shared 统一实现）与 panelZIndexFor 的包级默认注入。
- * 宿主端（src/index.ts re-export 供 smoke 断言）与客户端（src/client/* 直接
- * import）路径不变，公开导出面零变化。
+ * #767 B1.1：自 src/ 根迁入 src/shared/，目录外（含客户端）改经 interface.ts 引用，
+ * 公开导出面零变化。
  */
 
-import { panelZIndexFor as sharedPanelZIndexFor } from "../../../shared/placement-math.js";
+import { panelZIndexFor as sharedPanelZIndexFor } from "../../../../shared/placement-math.js";
 
 /** 默认层级基准（mcp-manager 包：对应 CSS 默认 z-index:10，升级前行为不回归）。 */
 export const DEFAULT_Z_INDEX_BASE = 10;
@@ -26,8 +26,12 @@ export {
   composerDockedAtBottom,
   bottomAnchorEdge,
   panelAnchorForPlacement as panelAnchorForPosition,
-} from "../../../shared/placement-math.js";
-export type { FloatBreakpoint, ViewportPoint, RectLike } from "../../../shared/placement-math.js";
+} from "../../../../shared/placement-math.js";
+export type {
+  FloatBreakpoint,
+  ViewportPoint,
+  RectLike,
+} from "../../../../shared/placement-math.js";
 
 /**
  * 面板内子浮层层级派生纯函数（#128 重开：主面板与胶囊 computed z-index 一律取

@@ -32,8 +32,8 @@ export const name = "mcp-manager";
 /** 需要已初始化的工具注册表、web 服务器与提示词组装器。 */
 export const inject = ["tools", "webServer", "systemPrompt"];
 
-// 浮窗定位/层级/断点纯函数：实现在 placement-math.ts（零依赖单一事实源，
-// 客户端 bundle 与宿主端共用同一份），此处 re-export 保持导出面不变。
+// 浮窗定位/层级/断点纯函数：实现在 shared/placement-math.ts（零依赖单一事实源，
+// 客户端 bundle 与宿主端共用同一份），此处经 shared 门面 re-export 保持导出面不变。
 export {
   DEFAULT_Z_INDEX_BASE,
   Z_INDEX_BASE_MIN,
@@ -47,10 +47,10 @@ export {
   clampPointToViewport,
   composerDockedAtBottom,
   bottomAnchorEdge,
-} from "./placement-math.ts";
-export type { FloatBreakpoint, ViewportPoint, RectLike } from "./placement-math.ts";
+} from "./shared/interface.ts";
+export type { FloatBreakpoint, ViewportPoint, RectLike } from "./shared/interface.ts";
 // 面板锚点判定同为纯函数，随定位数学一起从单一事实源 re-export。
-export { panelAnchorForPosition } from "./placement-math.ts";
+export { panelAnchorForPosition } from "./shared/interface.ts";
 
 // ------------------------------------------------------------ re-export
 // 导出面与拆分前 lib/index.js 完全一致（smoke 验收契约）。

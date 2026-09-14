@@ -89,7 +89,7 @@
             "!packages/dsh-mcp-manager/src/client/**",
             "!packages/dsh-mcp-manager/src/types/**",
             "!packages/dsh-mcp-manager/src/integration/**",
-            "!packages/dsh-mcp-manager/src/placement-math.ts"
+            "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
           "comment": "#664 阶段6重画：entry——index+workspace（工作空间路由域）+config/model（归一化/导入/schema）；阶段1–5变异盲区（workspace/新文件）在本阶段随集中搬移一并纳入重画（v3 C4/C-DIR）；types/integration（type-only）与 placement-math.ts（shared 薄转发）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
@@ -99,7 +99,7 @@
             "!packages/dsh-mcp-manager/src/client/**",
             "!packages/dsh-mcp-manager/src/types/**",
             "!packages/dsh-mcp-manager/src/integration/**",
-            "!packages/dsh-mcp-manager/src/placement-math.ts"
+            "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
           "comment": "#664 阶段6重画：manager——connection/orchestrator（McpManager 类主体+展示投影 tool-names，原 manager.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
@@ -114,7 +114,7 @@
             "!packages/dsh-mcp-manager/src/client/**",
             "!packages/dsh-mcp-manager/src/types/**",
             "!packages/dsh-mcp-manager/src/integration/**",
-            "!packages/dsh-mcp-manager/src/placement-math.ts"
+            "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
           "comment": "#664 阶段6重画：middleware——中间层池（runtime/middleware）+limits（原 middleware-const）+工具注册面（inject/）+策略裁决族（pipeline/authorize，原 middleware-utils 并入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
@@ -124,7 +124,7 @@
             "!packages/dsh-mcp-manager/src/client/**",
             "!packages/dsh-mcp-manager/src/types/**",
             "!packages/dsh-mcp-manager/src/integration/**",
-            "!packages/dsh-mcp-manager/src/placement-math.ts"
+            "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
           "comment": "#664 阶段6重画：routes——api 层（routes 装配/端点控制器/查询辅助，原 routes*.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
@@ -139,7 +139,7 @@
             "!packages/dsh-mcp-manager/src/client/**",
             "!packages/dsh-mcp-manager/src/types/**",
             "!packages/dsh-mcp-manager/src/integration/**",
-            "!packages/dsh-mcp-manager/src/placement-math.ts"
+            "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
           "comment": "#664 阶段6重画：supervisor——连接监督器（runtime/supervisor+reconnect）+状态持久化（config/store，原 middleware-state/store 迁入）+统计（stats）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
@@ -158,7 +158,7 @@
             "!packages/dsh-mcp-manager/src/client/**",
             "!packages/dsh-mcp-manager/src/types/**",
             "!packages/dsh-mcp-manager/src/integration/**",
-            "!packages/dsh-mcp-manager/src/placement-math.ts"
+            "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
           "comment": "#664 阶段6重画：runtime——组合根（bootstrap/，原 apply*.ts 迁入）+transport/protocol+shared/placement-math（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析）+pipeline（执行管道域，阶段1–5变异盲区随迁纳入）+catalog（目录域，原 catalog.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。 #767 B0 先修尺子：src/server/**（B1 新树）与 src/shared/** 以超集形式先挂本段（旧 glob 全保留）——目标树是全新顶层目录，不先纳入会让 B1 新文件进 uncoveredSrcFiles，而 --write-baseline 拒绝接受新证据、只能逐文件写豁免；B2 按域重画 mutate 时收敛（届时文件归各域段，本段只留组合根/transport/protocol/pipeline/catalog）。"
         }

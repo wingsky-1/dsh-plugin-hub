@@ -20,7 +20,7 @@ import {
   panelAnchorForPosition,
   composerDockedAtBottom,
   bottomAnchorEdge,
-} from "../../placement-math.ts";
+} from "../../shared/interface.ts";
 
 /** 渲染浮窗胶囊（状态点 + 摘要计数）。 */
 export function renderPill(state: McpState): void {
