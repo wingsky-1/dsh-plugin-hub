@@ -1,6 +1,6 @@
 // @ts-nocheck
 /**
- * dsh-lan-proxy — 转发核心（src/proxy.ts）结构化单测。
+ * dsh-lan-proxy — 转发核心（src/server/proxy/impl/proxy.ts）结构化单测。
  *
  * 覆盖本批未覆盖热点：
  * - bridgeCompressedWs：WebSocket 压缩桥接（真实 WS 连接，全 localhost，无外网）
@@ -35,6 +35,11 @@ import {
   isCompressible,
   resolveCompressionOptions,
   ensureSelfSignedTls,
+  deflateAllowedByPolicy,
+  DEFAULT_DEFLATE_POLICY,
+  hasDshAuthCookie,
+  isTokenMintCandidate,
+  withLaunchToken,
 } from "../../src/index.ts";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -281,6 +286,72 @@ describe("纯函数边界用例", () => {
     it("undefined → 默认", () => expect(resolveCompressionOptions(undefined)).toEqual({}));
     it("字符串 → 默认", () => expect(resolveCompressionOptions("high")).toEqual({}));
     it("null → 默认", () => expect(resolveCompressionOptions(null)).toEqual({}));
+  });
+
+  describe("launch token 判定（issue #380：hasDshAuthCookie / isTokenMintCandidate / withLaunchToken）", () => {
+    describe("hasDshAuthCookie", () => {
+      it("单个 dsh-auth- 前缀 cookie → true", () =>
+        expect(hasDshAuthCookie("dsh-auth-x=1")).toBe(true));
+      it("值里含 dsh-auth- 子串的无关 cookie → false（禁整头子串匹配）", () =>
+        expect(hasDshAuthCookie("other=dsh-auth-x")).toBe(false));
+      it("多段 cookie 中第二段命中 → true", () =>
+        expect(hasDshAuthCookie("a=1; dsh-auth-y=2")).toBe(true));
+      it("数组头按段处理：命中段 → true", () =>
+        expect(hasDshAuthCookie(["a=1", "dsh-auth-z=3"])).toBe(true));
+      it("数组头按段处理：值含子串仍 → false", () =>
+        expect(hasDshAuthCookie(["a=1", "other=dsh-auth-z"])).toBe(false));
+      it("undefined → false", () => expect(hasDshAuthCookie(undefined)).toBe(false));
+      it("空串 → false", () => expect(hasDshAuthCookie("")).toBe(false));
+      it("无 = 的段被跳过（不当作 cookie 名）", () =>
+        expect(hasDshAuthCookie("dsh-auth-x; b=2")).toBe(false));
+    });
+
+    describe("isTokenMintCandidate", () => {
+      it('("GET", "/") → true', () => expect(isTokenMintCandidate("GET", "/")).toBe(true));
+      it('("GET", "/?token=x") → false（已带 token）', () =>
+        expect(isTokenMintCandidate("GET", "/?token=x")).toBe(false));
+      it('("POST", "/") → false', () => expect(isTokenMintCandidate("POST", "/")).toBe(false));
+      it('("GET", "/other") → false', () =>
+        expect(isTokenMintCandidate("GET", "/other")).toBe(false));
+      it("url undefined → false", () => expect(isTokenMintCandidate("GET", undefined)).toBe(false));
+      it('绝对 URL "http://x/" → true（按 pathname 判定而非前缀匹配）', () =>
+        expect(isTokenMintCandidate("GET", "http://x/")).toBe(true));
+    });
+
+    describe("withLaunchToken", () => {
+      it('("/", "t") → "/?token=t"', () => expect(withLaunchToken("/", "t")).toBe("/?token=t"));
+      it("已有 token → 覆盖为新值（不追加）", () =>
+        expect(withLaunchToken("/?token=old", "t")).toBe("/?token=t"));
+      it('("/a?b=1", "t") → "/a?b=1&token=t"', () =>
+        expect(withLaunchToken("/a?b=1", "t")).toBe("/a?b=1&token=t"));
+      it("url undefined → undefined", () =>
+        expect(withLaunchToken(undefined, "t")).toBe(undefined));
+    });
+
+    describe("deflateAllowedByPolicy", () => {
+      it("策略 undefined → 放行", () =>
+        expect(deflateAllowedByPolicy(undefined, "any-ua")).toBe(true));
+      it("browser=false → 拒绝", () =>
+        expect(deflateAllowedByPolicy({ browser: false }, "any-ua")).toBe(false));
+      it("默认策略：iPhone 命中 uaDeny → 拒绝", () =>
+        expect(
+          deflateAllowedByPolicy(
+            DEFAULT_DEFLATE_POLICY,
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+          ),
+        ).toBe(false));
+      it("默认策略：Chrome 不含 deny 片段 → 放行", () =>
+        expect(
+          deflateAllowedByPolicy(
+            DEFAULT_DEFLATE_POLICY,
+            "Mozilla/5.0 (X11; Linux x86_64) Chrome/120.0 Safari/537.36",
+          ),
+        ).toBe(true));
+      it("自定义 uaDeny 命中 → 拒绝", () =>
+        expect(deflateAllowedByPolicy({ uaDeny: ["Foo"] }, "Mozilla Foo/1")).toBe(false));
+      it("UA 缺失且 uaDeny 非空 → 放行", () =>
+        expect(deflateAllowedByPolicy({ uaDeny: ["Foo"] }, undefined)).toBe(true));
+    });
   });
 
   describe("DEFAULT_OPTIONS 常量", () => {

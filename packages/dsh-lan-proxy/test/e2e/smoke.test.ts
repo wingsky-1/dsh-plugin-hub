@@ -22,12 +22,21 @@
 // 观测快照；每个 it 只对快照断言——不会出现「断言看到块尾状态」的语义漂移。
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EventEmitter } from "node:events";
-import { gzipSync, gunzipSync } from "node:zlib";
+import { gzipSync, gunzipSync, brotliDecompressSync } from "node:zlib";
 import { createServer, request as httpRequest } from "node:http";
 import { constants as zlibConstants } from "node:zlib";
 import { request as httpsRequest } from "node:https";
 import { connect } from "node:net";
-import { mkdtempSync, rmSync, existsSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
+import {
+  mkdtempSync,
+  rmSync,
+  existsSync,
+  writeFileSync,
+  readFileSync,
+  mkdirSync,
+  chmodSync,
+  statSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -639,6 +648,15 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
     it("self-signed idempotent reuse (same materials)", () => {
       const again = ensureSelfSignedTls({ dir: certDir, extraSans: [LAN_HOST] });
       expect(again.cert.toString()).toBe(tls.cert.toString());
+    });
+
+    it("复用分支把历史宽权限私钥收敛回 0600", () => {
+      const keyPath = join(certDir, SELF_SIGNED_KEY);
+      // 造「历史缓存权限过宽」前置：缺了这步，断言可能因为 chmod 未生效而恒真。
+      chmodSync(keyPath, 0o644);
+      expect(statSync(keyPath).mode & 0o777).toBe(0o644);
+      ensureSelfSignedTls({ dir: certDir });
+      expect(statSync(keyPath).mode & 0o777).toBe(0o600);
     });
 
     it("loadTlsFromFiles reads provided PEMs", () => {
@@ -1417,6 +1435,7 @@ const normalRequestRounds = [0, 1, 2, 3, 4].map((round) => ({ round }));
 describe("integration: 转发层 HTTP 压缩（compression 中间件）", () => {
   const bigBody = JSON.stringify({ data: "y".repeat(300_000) });
   let rBig;
+  let rBigBr;
   let rBigPlain;
   let rRange;
   let rSse;
@@ -1520,6 +1539,7 @@ describe("integration: 转发层 HTTP 压缩（compression 中间件）", () => 
     const { httpPort: pxPort } = await proxyOn.listen();
 
     rBig = await requestThrough(pxPort, "/big", { "accept-encoding": "gzip" });
+    rBigBr = await requestThrough(pxPort, "/big", { "accept-encoding": "br" });
     rBigPlain = await requestThrough(pxPort, "/big", {});
     rRange = await requestThrough(pxPort, "/range", { "accept-encoding": "gzip" });
     rSse = await requestThrough(pxPort, "/sse", { "accept-encoding": "gzip" });
@@ -1632,6 +1652,16 @@ describe("integration: 转发层 HTTP 压缩（compression 中间件）", () => 
 
     it("解压后逐字节一致", () => {
       expect(gunzipSync(rBig.body).toString()).toBe(bigBody);
+    });
+  });
+
+  describe("转发层：Accept-Encoding: br 且上游未压缩 → 协商为 br", () => {
+    it("响应带 content-encoding: br", () => {
+      expect(rBigBr.headers["content-encoding"]).toBe("br");
+    });
+
+    it("brotli 解压后逐字节一致", () => {
+      expect(brotliDecompressSync(rBigBr.body).toString()).toBe(bigBody);
     });
   });
 
@@ -2307,6 +2337,74 @@ describe("unit: buildConfigRoutes（GET 快照 / PUT 写入 / 围栏）", () => 
     it("details 含字段名", () => {
       expect(putBadPayload.error.details.includes("port")).toBeTruthy();
     });
+  });
+});
+
+// ── Host 围栏必须先于 launch token 注入（#380 顺序约束）─────────────────────
+// 源码只在 handleRequest 的注释里声明这层顺序（注入块排在 hostnameAllowed 之后），
+// 这里用可观测量钉死：被围栏拒绝的请求不得触碰 token 提供者（getToken 调用次数 0）、
+// 也不得到达上游。把注入块挪到围栏之前，getToken 会先被调用一次 → 本用例红。
+// 观测面自建（独立 fake 上游 + 独立 proxy）：共享 upstream 夹具不记录请求，且其
+// 生命周期绑定在「e2e: 真实转发」描述的 beforeAll/afterAll 上。
+describe("e2e: Host 围栏先于 launch token 注入", () => {
+  let fenceProxy;
+  let fenceUpstream;
+  let fencePort;
+  const upstreamUrls = [];
+  let tokenReads = 0;
+
+  beforeAll(async () => {
+    fenceUpstream = createServer((req, res) => {
+      upstreamUrls.push(req.url);
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end("ok");
+    });
+    await new Promise((r) => fenceUpstream.listen(0, "127.0.0.1", r));
+    fenceProxy = createLanProxy({
+      host: "127.0.0.1",
+      port: 0,
+      targetHost: "127.0.0.1",
+      targetPort: fenceUpstream.address().port,
+      injectToken: {
+        getToken: () => {
+          tokenReads += 1;
+          return "launch-token-826";
+        },
+      },
+    });
+    const listening = await fenceProxy.listen();
+    fencePort = listening.httpPort;
+  }, 30_000);
+
+  afterAll(async () => {
+    await fenceProxy.close();
+    await new Promise((r) => fenceUpstream.close(r));
+  });
+
+  it("非法域名 Host 的 GET / 得 403，且 token 未被读取、上游零请求", async () => {
+    const res = await new Promise((resolve, reject) => {
+      const req = httpRequest(
+        {
+          hostname: "127.0.0.1",
+          port: fencePort,
+          path: "/",
+          method: "GET",
+          headers: { host: "evil.example:3081" },
+        },
+        (r) => {
+          let body = "";
+          r.on("data", (c) => (body += c));
+          r.on("end", () => resolve({ status: r.statusCode, body }));
+        },
+      );
+      req.on("error", reject);
+      req.end();
+    });
+    expect(res.status).toBe(403);
+    // 顺序判据（区分度最高）：围栏先返回 ⇒ token 提供者一次都没被调用
+    expect(tokenReads).toBe(0);
+    // 围栏判据：请求根本没到上游（自然也不存在带 token= 的上游请求）
+    expect(upstreamUrls).toEqual([]);
   });
 });
 
