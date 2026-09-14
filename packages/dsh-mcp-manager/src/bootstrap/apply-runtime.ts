@@ -15,7 +15,6 @@ import { dirname } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import type { PreStepDecision } from "@deepseek-ai/dsh-agent";
 import type {
-  CatalogCache,
   CatalogDecision,
   CatalogMessage,
   SupervisorLite,

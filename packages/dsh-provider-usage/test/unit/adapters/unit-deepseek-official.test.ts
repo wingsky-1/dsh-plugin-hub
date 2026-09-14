@@ -42,7 +42,6 @@ import {
   dayKey,
   lastNDayKeys,
   niceCeil,
-  GAP_MS,
   TOL,
   ANOMALY_NEG,
   dailyBarTitle,

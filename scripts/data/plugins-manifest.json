@@ -10,6 +10,25 @@
   "standalone": [],
   "configSurfaces": [
     {
+      "package": "dsh-lan-proxy",
+      "defaults": {
+        "module": "packages/dsh-lan-proxy/src/config.ts",
+        "export": "DEFAULT_CONFIG"
+      },
+      "normalizer": {
+        "module": "packages/dsh-lan-proxy/src/config.ts",
+        "export": "normalizeConfig"
+      },
+      "booleanKeys": {
+        "module": "packages/dsh-lan-proxy/src/config.ts",
+        "export": "BOOLEAN_KEYS"
+      },
+      "countLimits": {
+        "module": "packages/dsh-lan-proxy/src/config.ts",
+        "export": "COUNT_LIMITS"
+      }
+    },
+    {
       "package": "dsh-notifier",
       "defaults": {
         "module": "packages/dsh-notifier/src/server/config/impl/model/index.ts",
@@ -27,40 +46,57 @@
         "module": "packages/dsh-notifier/src/server/config/impl/input/index.ts",
         "export": "COUNT_LIMITS"
       }
-    }
-  ],
-  "configSurfacesPending": [
-    {
-      "package": "dsh-lan-proxy",
-      "trackingIssue": "#774",
-      "reason": "现有 L1/L2 断言仍按 packages/dsh-lan-proxy/src/config.ts 硬编码提取；迁到声明驱动见 #733 计划项 3.1.1 的「按包逐个开」",
-      "reviewBy": "2027-03-31"
-    },
-    {
-      "package": "dsh-mcp-manager",
-      "trackingIssue": "#774",
-      "reason": "尚未纳入配置矩阵（#733 计划项 3.1.1 按包逐个开）",
-      "reviewBy": "2027-03-31"
     },
     {
       "package": "dsh-provider-usage",
-      "trackingIssue": "#774",
-      "reason": "尚未纳入配置矩阵（#733 计划项 3.1.1 按包逐个开）",
-      "reviewBy": "2027-03-31"
+      "defaults": {
+        "module": "packages/dsh-provider-usage/src/shared/config.ts",
+        "export": "DEFAULT_CONFIG"
+      },
+      "normalizer": {
+        "module": "packages/dsh-provider-usage/src/shared/config.ts",
+        "export": "normalizeConfig"
+      },
+      "booleanKeys": {
+        "module": "packages/dsh-provider-usage/src/shared/config.ts",
+        "export": "BOOLEAN_KEYS"
+      },
+      "countLimits": {
+        "module": "packages/dsh-provider-usage/src/shared/config.ts",
+        "export": "COUNT_LIMITS"
+      }
+    },
+    {
+      "package": "dsh-mcp-manager",
+      "defaults": {
+        "module": "packages/dsh-mcp-manager/src/config/model/config-schema.ts",
+        "export": "DEFAULT_CONFIG"
+      },
+      "normalizer": {
+        "module": "packages/dsh-mcp-manager/src/config/model/config-schema.ts",
+        "export": "normalizeConfig"
+      },
+      "booleanKeys": {
+        "module": "packages/dsh-mcp-manager/src/config/model/config-schema.ts",
+        "export": "BOOLEAN_KEYS"
+      },
+      "countLimits": {
+        "module": "packages/dsh-mcp-manager/src/config/model/config-schema.ts",
+        "export": "COUNT_LIMITS"
+      }
     },
     {
       "package": "dsh-verify-isolated",
-      "trackingIssue": "#774",
-      "reason": "尚未纳入配置矩阵（#733 计划项 3.1.1 按包逐个开）",
-      "reviewBy": "2027-03-31"
+      "surface": "none",
+      "reason": "本插件没有用户配置面：apply() 是空实现，skill 注册完全由 cordis.patch.yml 配置的官方 @deepseek-ai/dsh-skill-filesystem provider 承担，宿主侧无可配置项。"
     },
     {
       "package": "dsh-web-file-preview",
-      "trackingIssue": "#774",
-      "reason": "尚未纳入配置矩阵（#733 计划项 3.1.1 按包逐个开）",
-      "reviewBy": "2027-03-31"
+      "surface": "none",
+      "reason": "本插件没有用户配置面：宿主半边无路由、不读文件、不注入服务，客户端只有「打开文件 → 官方右侧栏预览」的重定向逻辑（PENDING_TTL_MS 是内部 TTL 常量，不对外配置）。"
     }
   ],
+  "configSurfacesPending": [],
   "retired": [
     {
       "name": "dsh-gzip",

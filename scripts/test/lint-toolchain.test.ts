@@ -387,7 +387,7 @@ test("#765 第 2 项：客户端 var 豁免面 == 实际含 var 的客户端文�
       clientFiles.push(abs);
     }
   }
-  assert.ok(clientFiles.length > 0, "粗筛应当命中已知的两个含 var 客户端文件");
+  assert.ok(clientFiles.length > 0, "粗筛应当命中已知的含 var 客户端文件");
 
   for (const abs of clientFiles) {
     const rel = abs.replace(ROOT + "/", "");

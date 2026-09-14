@@ -163,6 +163,49 @@ export const Config: z<LanProxyConfig> = z.object({
 });
 
 /**
+ * 默认配置（键集 = schema 中带 `.default()` 的字段）。从 schema 归一化**空输入**派生，
+ * 不再手写第二份默认值——默认值只写在上面 schema 的 `.default(...)` 里，改一处即改两处。
+ *
+ * 为什么「归一化空输入」就是默认值：schemastery 对未带默认值的字段（tlsCertFile /
+ * tlsKeyFile / targetPort）在结果里直接省略，故本对象的键集比 schema 字段数少 3。这是
+ * 事实而非缺口——config-matrix 门禁的 N1/N2 正是锁这条不变式（键集与 normalizeConfig({}) 全等）。
+ */
+export const DEFAULT_CONFIG: LanProxyConfig = Config({});
+
+/**
+ * 归一化：把未知输入按 schema 校验并补默认值。
+ * 与 `sanitizeSettings` 分工不同：本函数用于「给出一份完整配置」，后者用于「判断客户端
+ * 提交的 patch 是否可信」（只做已知键 + 类型合法过滤，不补默认值）。
+ */
+export function normalizeConfig(input: unknown): LanProxyConfig {
+  // 输入来自外部（配置文件 / 客户端 patch），运行时由 schema 校验并补默认值；
+  // 断言只表达「这里是 schema 的入口」，不是「已信任」。
+  return Config(input as LanProxyConfig | undefined);
+}
+
+/** 只接受布尔值的配置键（客户端 UI 按它渲染开关）；与 schema 里的 `z.boolean()` 字段一一对应。 */
+export const BOOLEAN_KEYS: readonly string[] = [
+  "enabled",
+  "httpsEnabled",
+  "printBanner",
+  "wsBridgeEnabled",
+  "wsCompressEnabled",
+  "httpCompressEnabled",
+  "injectToken",
+];
+
+/**
+ * 非负整数键及其上界（默认值不得越界）。上界与 schema 里的 `.max(...)` 同值——两处都是
+ * 声明，config-matrix 门禁的 N4 断言它们与 DEFAULT_CONFIG 一致，漂移即红。
+ * `targetPort` 不在列：它无默认值、默认配置的键集里没有它（见上）。
+ */
+export const COUNT_LIMITS: Record<string, number> = {
+  port: 65535,
+  httpsPort: 65535,
+  httpCompressLevel: 3,
+};
+
+/**
  * 允许的配置键及其类型校验（未知键/类型非法一律丢弃）。
  * 双重身份（issue #110 后）：① 存量 config.json 迁移过滤器；
  * ② 客户端提交 patch 的校验器。键集合与 SETTING_FIELD_HINTS 平行维护。

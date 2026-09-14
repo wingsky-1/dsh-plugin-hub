@@ -86,10 +86,31 @@ test("分档：90 天内到期单列，其余归入合计", () => {
   assert.match(r.stdout, /合计 2 条：已过期 0 \/ 90 天内到期 1 \/ 其余 1/);
 });
 
-test("无 reviewBy 的数据文件不产生条目；空数据目录给明确说明而非静默", () => {
+test("收集：exitCriteria 与 reviewBy 平级入账；只有日期没有解除条件的条目被点名", () => {
+  const r = run(
+    fixture({
+      "x.json": {
+        dated: [{ path: "p/a.ts", reason: "r", reviewBy: "2027-01-01" }],
+        conditional: [
+          { pattern: "**/client/**", reason: "r", exitCriteria: "happy-dom project 落地" },
+        ],
+      },
+    }),
+    ["--today", "2026-01-01"],
+  );
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /exitCriteria happy-dom project 落地/);
+  assert.match(
+    r.stdout,
+    /合计 2 条：已过期 0 \/ 90 天内到期 0 \/ 其余 1 \/ 仅解除条件（无到期日）1/,
+  );
+  assert.match(r.stdout, /其中 1 条只有到期日、没有 exitCriteria/);
+});
+
+test("既无 reviewBy 也无 exitCriteria 的数据文件不产生条目；空目录给明确说明而非静默", () => {
   const r = run(fixture({ "x.json": { active: ["dsh-a"], retired: [] } }));
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /未发现带 reviewBy 的条目（扫描 1 个数据文件）/);
+  assert.match(r.stdout, /未发现带 reviewBy 或 exitCriteria 的条目（扫描 1 个数据文件）/);
 });
 
 test("坏 JSON 只跳过该文件并计数，不影响其余文件的收集", () => {
@@ -126,15 +147,21 @@ test("非 JSON 文件不参与扫描（只看 scripts/data 下的 .json）", () 
   }
 });
 
-test("本仓真实快照：13 条 reviewBy 全部在册（数字变即提示同步台账与 #765）", () => {
-  // 13 = gate-exemptions.json 7（#762 notifier 客户端 var + #770 mcp panel 单飞句柄
+test("本仓真实快照：9 条在册（数字变即提示同步台账与 #765）", () => {
+  // 9 = gate-exemptions.json 7（#762 notifier 客户端 var + #770 mcp panel 单飞句柄
   //          + #769 两条 §5.3 client → src/server 存量
   //          + #767 三条 I8① test/unit → src/index.ts 跨包存量，均临时）
-  //      + plugins-manifest 5（configSurfacesPending）
   //      + coverage.config.json 1（`**/client/**` 排除，pending-project，等 happy-dom project，3.4 新增）
+  //      + gauntlet.config.json 1（crap.strict 观察期，仅解除条件、无到期日，#765 纳管）。
+  //     plugins-manifest 的 5 条 configSurfacesPending 已随 #774 全部转为 configSurfaces 声明
+  //     （含 2 条 surface: "none"），不再产生 reviewBy。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /合计 13 条：已过期 0 /);
+  assert.match(r.stdout, /合计 9 条：已过期 0 /);
+  assert.match(r.stdout, /仅解除条件（无到期日）1/);
+  // crap.strict 的解除条件必须在台账里（只写日期会逼出「到期了再讨论一次」）
+  assert.match(r.stdout, /\$\.crap {2}threshold=16/);
+  assert.match(r.stdout, /exitCriteria 超阈 hotspots 计数降为 0/);
   assert.match(r.stdout, /\$\.exemptions\[0\] {2}gate=forbid-module-state-src/);
   assert.match(r.stdout, /trackingIssue #762/);
   // #767 B0：扩包后新增的存量豁免同样必须在台账里——只判红不登记，或只登记不进台账，

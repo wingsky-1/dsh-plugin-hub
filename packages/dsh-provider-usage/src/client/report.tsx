@@ -14,7 +14,7 @@
  */
 import * as React from "react";
 import { fetchTimeout, REPORT_GENERATE_STATUS_URL } from "./core.ts";
-import { dirDisplayLabel, dirNeedsScopeNote, dirStackId, DIR_UNIDENTIFIED } from "./trend-math.js";
+import { dirDisplayLabel, dirNeedsScopeNote, dirStackId } from "./trend-math.js";
 import { t } from "../../../../shared/client/i18n.js";
 
 /** 宿主端 ROUTES（构建期经 __DSH_ROUTES__ 注入；报告五路由进入路由表）。 */

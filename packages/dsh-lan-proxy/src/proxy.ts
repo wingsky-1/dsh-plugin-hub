@@ -47,8 +47,6 @@ import compression from "compression";
 import httpProxy from "http-proxy";
 
 /** HTTP 响应压缩中间件请求对象最小面（compression 的 req 参数仅读 method/httpVersion 等）。 */
-type CompressReq = IncomingMessage;
-type CompressRes = ServerResponse;
 
 /** createLanProxy 的日志器最小面（console 或 ctx.logger 均兼容）。 */
 export interface LanLogger {

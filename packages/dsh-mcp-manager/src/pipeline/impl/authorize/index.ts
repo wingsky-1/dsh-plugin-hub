@@ -9,7 +9,6 @@
  */
 
 import {
-  fullServerName,
   parseFullServerName,
   bareServerName,
   MIDDLEWARE_GLOBAL_ROOT,

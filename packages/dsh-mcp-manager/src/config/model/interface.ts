@@ -10,6 +10,10 @@ export { fromClaudeEntry, parseClaudeJson } from "./import.ts";
 export {
   DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS,
   DEFAULT_UI_CONFIG,
+  DEFAULT_CONFIG,
+  BOOLEAN_KEYS,
+  COUNT_LIMITS,
+  normalizeConfig,
   normalizeUiConfig,
   buildConfigUiPatch,
   panelTopForAnchor,

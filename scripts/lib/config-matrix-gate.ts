@@ -258,9 +258,9 @@ function runLanProxy(root) {
  * 故这里能同步拿到 .ts 模块的导出）。同一 root 只加载一次；负例测试每次用新的 mkdtemp
  * 路径，ESM loader 缓存不串味。
  */
-function loadSurfaceExport(root, face, label, problems) {
+function loadSurfaceExport(root, pkg, face, label, problems) {
   if (typeof face?.module !== "string" || typeof face.export !== "string") {
-    problems.push(`notifier configSurfaces.${label} 声明结构不合法（须含 module/export 字符串）`);
+    problems.push(`${pkg} configSurfaces.${label} 声明结构不合法（须含 module/export 字符串）`);
     return undefined;
   }
   try {
@@ -268,26 +268,30 @@ function loadSurfaceExport(root, face, label, problems) {
     const mod = req(join(root, face.module));
     if (mod === null || mod === undefined || mod[face.export] === undefined) {
       problems.push(
-        `notifier configSurfaces.${label} 声明的导出不存在: ${face.module} → ${face.export}`,
+        `${pkg} configSurfaces.${label} 声明的导出不存在: ${face.module} → ${face.export}`,
       );
       return undefined;
     }
     return mod[face.export];
   } catch (e) {
     problems.push(
-      `notifier configSurfaces.${label} 模块加载失败: ${face.module}（${String(e.message).split("\n")[0]}）`,
+      `${pkg} configSurfaces.${label} 模块加载失败: ${face.module}（${String(e.message).split("\n")[0]}）`,
     );
     return undefined;
   }
 }
 
 /**
- * notifier 矩阵：**声明驱动 + 运行时取值**（#733 计划项 3.1.1）。
+ * 配置矩阵：**声明驱动 + 运行时取值**（#733 计划项 3.1.1；#774 起对 configSurfaces 的全部包生效）。
  *
  * 旧实现在这里硬编码三条包内路径并从源码文本抠字面量；#733 把配置域搬到
  * src/server/config/impl/** 之后那三条路径全部 ENOENT，门禁以「文件不可读」判红——
  * 路径硬编码本身就是这次红因。现改为从 plugins-manifest.json 的 configSurfaces 取模块
  * specifier、加载模块取真实导出值：键集从运行时派生，包内结构再调整也不必改门禁。
+ *
+ * #774 之前本函数只被 dsh-notifier 调用（`surfaces.find(...)` 硬编码包名），其余 5 包停在
+ * configSurfacesPending 上「只登记不断言」。现在对声明面里的**每个**包逐个执行同一套断言——
+ * 门禁强度不再取决于包名。
  *
  * 断言集随事实源重建（旧 N1/N2/N3 的输入在新树上已不存在，不是「放宽」而是重建）：
  *   N1 声明的 defaults 导出必须是非空对象；
@@ -302,26 +306,36 @@ function loadSurfaceExport(root, face, label, problems) {
  * 这两层约束在 #733 重写后一度无法执行（那两个清单当时未导出，曾在门禁注释里如实登记为
  * 缺口）；notifier 侧导出后由声明驱动恢复，缺口随之关闭。
  */
-function runNotifier(root, surface) {
+function runSurface(root, surface) {
+  const pkg = surface.package;
+  // 「无配置面」是显式声明（#774）：跳过 N1–N4 但必须回显理由——否则它与「漏登记」在输出里
+  // 无从区分，读者只能去翻 manifest。
+  if (surface.surface === "none") {
+    return {
+      problems: [],
+      warnings: [],
+      lines: [`  ${pkg} 无用户配置面（surface: none）：${surface.reason}`],
+    };
+  }
   const problems = [];
   const warnings = [];
   const lines = [];
 
   if (!surface) {
     problems.push(
-      "notifier 未在 scripts/data/plugins-manifest.json 的 configSurfaces 声明配置面（#733 计划项 3.1.1：未登记即红）",
+      `${pkg} 未在 scripts/data/plugins-manifest.json 的 configSurfaces 声明配置面（#733 计划项 3.1.1：未登记即红）`,
     );
     return { problems, warnings, lines };
   }
 
-  const defaults = loadSurfaceExport(root, surface.defaults, "defaults", problems);
-  const normalizer = loadSurfaceExport(root, surface.normalizer, "normalizer", problems);
+  const defaults = loadSurfaceExport(root, pkg, surface.defaults, "defaults", problems);
+  const normalizer = loadSurfaceExport(root, pkg, surface.normalizer, "normalizer", problems);
   if (defaults === undefined || normalizer === undefined) return { problems, warnings, lines };
 
   const base = Object.keys(defaults);
   if (base.length === 0) {
     problems.push(
-      `notifier configSurfaces.defaults 的导出键集为空：${surface.defaults.module} → ${surface.defaults.export}`,
+      `${pkg} configSurfaces.defaults 的导出键集为空：${surface.defaults.module} → ${surface.defaults.export}`,
     );
     return { problems, warnings, lines };
   }
@@ -330,36 +344,36 @@ function runNotifier(root, surface) {
   try {
     normalized = normalizer({});
   } catch (e) {
-    problems.push(`notifier normalizeConfig({}) 执行失败：${String(e.message).split("\n")[0]}`);
+    problems.push(`${pkg} normalizeConfig({}) 执行失败：${String(e.message).split("\n")[0]}`);
     return { problems, warnings, lines };
   }
   const d2 = diffKeys(base, Object.keys(normalized ?? {}));
   for (const k of d2.missing) {
     problems.push(
-      `notifier normalizeConfig 丢键: ${k}（DEFAULT_CONFIG 有该键，normalizeConfig({}) 结果里没有）`,
+      `${pkg} normalizeConfig 丢键: ${k}（DEFAULT_CONFIG 有该键，normalizeConfig({}) 结果里没有）`,
     );
   }
   for (const k of d2.extra) {
-    problems.push(`notifier normalizeConfig 多键: ${k}（不在 DEFAULT_CONFIG 中——归一化凭空造键）`);
+    problems.push(`${pkg} normalizeConfig 多键: ${k}（不在 DEFAULT_CONFIG 中——归一化凭空造键）`);
   }
 
   // N3/N4：布尔键清单与计数上界清单（两张清单的导出由 notifier 侧补齐后恢复执行）
-  const booleanKeys = loadSurfaceExport(root, surface.booleanKeys, "booleanKeys", problems);
-  const countLimits = loadSurfaceExport(root, surface.countLimits, "countLimits", problems);
+  const booleanKeys = loadSurfaceExport(root, pkg, surface.booleanKeys, "booleanKeys", problems);
+  const countLimits = loadSurfaceExport(root, pkg, surface.countLimits, "countLimits", problems);
   if (booleanKeys === undefined || countLimits === undefined) return { problems, warnings, lines };
 
   const baseSet = new Set(base);
   if (!Array.isArray(booleanKeys)) {
     problems.push(
-      `notifier configSurfaces.booleanKeys 的导出不是数组（${surface.booleanKeys.export}）`,
+      `${pkg} configSurfaces.booleanKeys 的导出不是数组（${surface.booleanKeys.export}）`,
     );
   } else {
     for (const k of booleanKeys) {
       if (!baseSet.has(k)) {
-        problems.push(`notifier BOOLEAN_KEYS 含非配置键: ${k}（不在 DEFAULT_CONFIG 中）`);
+        problems.push(`${pkg} BOOLEAN_KEYS 含非配置键: ${k}（不在 DEFAULT_CONFIG 中）`);
       } else if (typeof defaults[k] !== "boolean") {
         problems.push(
-          `notifier BOOLEAN_KEYS 含非布尔键: ${k}（DEFAULT_CONFIG 里的默认值是 ${typeof defaults[k]}）`,
+          `${pkg} BOOLEAN_KEYS 含非布尔键: ${k}（DEFAULT_CONFIG 里的默认值是 ${typeof defaults[k]}）`,
         );
       }
     }
@@ -367,25 +381,25 @@ function runNotifier(root, surface) {
 
   if (countLimits === null || typeof countLimits !== "object" || Array.isArray(countLimits)) {
     problems.push(
-      `notifier configSurfaces.countLimits 的导出不是对象（${surface.countLimits.export}）`,
+      `${pkg} configSurfaces.countLimits 的导出不是对象（${surface.countLimits.export}）`,
     );
   } else {
     for (const [k, limit] of Object.entries(countLimits)) {
       if (!baseSet.has(k)) {
-        problems.push(`notifier COUNT_LIMITS 含非配置键: ${k}（不在 DEFAULT_CONFIG 中）`);
+        problems.push(`${pkg} COUNT_LIMITS 含非配置键: ${k}（不在 DEFAULT_CONFIG 中）`);
         continue;
       }
       if (!Number.isInteger(limit) || limit < 0) {
-        problems.push(`notifier COUNT_LIMITS.${k} 的上界不是非负整数: ${JSON.stringify(limit)}`);
+        problems.push(`${pkg} COUNT_LIMITS.${k} 的上界不是非负整数: ${JSON.stringify(limit)}`);
       }
       const fallback = defaults[k];
       if (!Number.isInteger(fallback) || fallback < 0) {
         problems.push(
-          `notifier COUNT_LIMITS 覆盖的键 ${k} 在 DEFAULT_CONFIG 里不是非负整数: ${JSON.stringify(fallback)}`,
+          `${pkg} COUNT_LIMITS 覆盖的键 ${k} 在 DEFAULT_CONFIG 里不是非负整数: ${JSON.stringify(fallback)}`,
         );
       } else if (Number.isInteger(limit) && fallback > limit) {
         problems.push(
-          `notifier DEFAULT_CONFIG.${k} = ${fallback} 超过 COUNT_LIMITS.${k} 上界 ${limit}（默认值本身越界）`,
+          `${pkg} DEFAULT_CONFIG.${k} = ${fallback} 超过 COUNT_LIMITS.${k} 上界 ${limit}（默认值本身越界）`,
         );
       }
     }
@@ -398,11 +412,11 @@ function runNotifier(root, surface) {
       ? Object.keys(countLimits).length
       : "?";
   lines.push(
-    `notifier ${base.length} 键 × [defaults → normalizeConfig] 运行时取值全等 + BOOLEAN_KEYS ${boolCount} + COUNT_LIMITS ${limitCount}`,
+    `${pkg} ${base.length} 键 × [defaults → normalizeConfig] 运行时取值全等 + BOOLEAN_KEYS ${boolCount} + COUNT_LIMITS ${limitCount}`,
   );
 
   // 量级 #12：README JSON 样例键集一致性——代码键缺文档仅 warn 不判红
-  const readmePath = join(root, "packages/dsh-notifier/README.md");
+  const readmePath = join(root, `packages/${pkg}/README.md`);
   let readmeText = null;
   try {
     readmeText = readFileSync(readmePath, "utf8");
@@ -410,10 +424,12 @@ function runNotifier(root, surface) {
     readmeText = null;
   }
   if (readmeText !== null) {
-    const { keys: docKeys } = extractReadmeConfigKeys(readmeText, "notifier");
+    // 第二个参数是**短名**（extractReadmeConfigKeys 按它选解析分支：lan-proxy 走表格、
+    // 其余走 JSON 样例）；README 路径用完整包名，两者不是同一个口径。
+    const { keys: docKeys } = extractReadmeConfigKeys(readmeText, pkg.replace(/^dsh-/, ""));
     for (const k of diffKeys(base, docKeys).missing) {
       warnings.push(
-        `notifier README JSON 样例缺文档键: ${k}（docs/README 与代码键集不一致，仅提示）`,
+        `${pkg} README JSON 样例缺文档键: ${k}（docs/README 与代码键集不一致，仅提示）`,
       );
     }
   }
@@ -431,24 +447,29 @@ export function runConfigMatrix(root) {
   // 配置面声明来自 manifest（#733 计划项 3.1.1）：读不到/结构不合法即红——
   // 声明是门禁的输入面，它坏掉不能退化成「没有声明就跳过 notifier 段」。
   let surfaces = [];
+  let pending = [];
   try {
-    surfaces = loadManifest(root).configSurfaces ?? [];
+    const manifest = loadManifest(root);
+    surfaces = manifest.configSurfaces ?? [];
+    pending = manifest.configSurfacesPending ?? [];
   } catch (e) {
     problems.push(
       `读取 configSurfaces 声明失败（scripts/data/plugins-manifest.json）：${e.message}`,
     );
   }
-  const results = [
-    runLanProxy(root),
-    runNotifier(
-      root,
-      surfaces.find((s) => s.package === "dsh-notifier"),
-    ),
-  ];
+  // 每个在 configSurfaces 声明的包都跑一遍声明驱动断言（#774：不再只认 notifier）。
+  const results = [runLanProxy(root), ...surfaces.map((s) => runSurface(root, s))];
   for (const r of results) {
     problems.push(...r.problems);
     warnings.push(...(r.warnings ?? []));
     lines.push(...r.lines);
+  }
+  // pending 是**显式待办**（#774 的收口目标是把它们清零），只点名不判红——否则「尚未接管」
+  // 与「声明坏了」混成同一个红，收口方向就看不出来了。
+  if (pending.length > 0) {
+    lines.push(
+      `  configSurfacesPending（未接管配置面，${pending.length}）：${pending.map((p) => p.package).join(", ")}`,
+    );
   }
   return { pass: problems.length === 0, problems, warnings, lines };
 }

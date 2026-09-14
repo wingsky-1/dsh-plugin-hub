@@ -453,7 +453,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
       },
     };
     const settingsService = {
-      register(ns, schema, opts) {
+      register(_ns, _schema, _opts) {
         return scope;
       },
       describe() {

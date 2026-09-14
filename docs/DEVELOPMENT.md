@@ -442,19 +442,23 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
     是单调基线，两类入库形态不同：**结构型**存计数（模块数/源文件数/边数/引用数等规模计数），
     随新增文件与目录合法上升，由 `--write-baseline` 登记；**质量型**存**证据集合**
     （`leafModuleCycles` / `fileCycles` 的环签名、`raLegacy` / `implToOtherImpl` 的
-    `from|to|kind` 边、`missingInterface` / `directImpl` 边、`uncoveredSrcFiles` 清单；
-    另有 #767 B0 切片 3a / 3b 起按「只许缩小、终态为空」入档的**四类集合证据**——I2①
-    `crossDomainValueEdges`、I2④ `rootIndexImports`、§5.3 `clientServerImports`、I8①
-    `unitImportFaceViolations`；它们是那四条宪法判据的执法点，判决书即「这个集合有没有
+    `from|to|kind` 边、`missingInterface` / `directImpl` 边、`uncoveredSrcFiles` 清单）——
+    新增证据判红、证据消失视为改善（写入时自动清理）、`kind` 由 value→type 视为收口、
+    type→value 判红；另有 #767 B0 切片 3a / 3b 起按「只许缩小、终态为空」入档的**四类集合
+    证据**——I2① `crossDomainValueEdges`、I2④ `rootIndexImports`、§5.3 `clientServerImports`、
+    I8① `unitImportFaceViolations`；它们是那四条宪法判据的执法点，判决书即「这个集合有没有
     新增」。**首次登记分两级**：包级（旧基线无该包，或旧基线是数字口径）与证据**类**级
-    （基线里没有这个证据键 = 本次新增了一类证据）——两级都按当前事实写入并逐条提示
-    「须在 PR 内确认」（存量登记处是基线，不是放宽通道）；键一旦存在，类**内**新增证据
-    仍一律不写入、判红。放宽质量证据**不止一条通道**，各通道的可审计性不同：
-    - **台账通道**（唯一带到期复核）：登记到 `scripts/data/gate-exemptions.json`
+    （基线里没有这个证据键 = 本次新增了一类证据）——包级只走台账通道（缺登记即中止写入，
+    否则一次 `--write-baseline` 就能把新证据静默洗白成基线）；类级按当前事实写入并连同
+    「须在 PR 内确认」逐条提示（存量登记处是基线，不是放宽通道）；键一旦存在，类**内**新增
+    证据仍一律不写入、判红。放宽质量证据**不止一条通道**，各通道的可审计性不同：
+    - **台账通道**（唯一带收口复核）：登记到 `scripts/data/gate-exemptions.json`
       （`gate=verify-dir-imports`，`path=<包名>:<证据项>`，必填 reason 与 trackingIssue，
-      可选 reviewBy）——与另两闸共用同一份台账、同一个校验器与同一条到期台账（#765 收口：
-      原先的 `--accept-quality-new` / 基线内 `$acceptances` 是本闸私有的第二套豁免机制，
-      没有 trackingIssue、reviewBy 与腐烂校验，故删除）。
+      可选 reviewBy 与 exitCriteria）——与另两闸共用同一份台账、同一个校验器与同一条收口台账
+      （#765 收口：原先的 `--accept-quality-new` / 基线内 `$acceptances` 是本闸私有的第二套
+      豁免机制，没有 trackingIssue、reviewBy 与腐烂校验，故删除。#765 后续裁决「**目标是零豁免**，
+      台账只是过渡期手段」后，`exitCriteria`（凭什么能删）与 `reviewBy`（何时再看一眼）平级入账，
+      只有日期没有条件的条目会在台账里被单独点名）。
     - **数据层通道（不经台账、无 reason/reviewBy、不进到期台账；「登记即声明」，
       变更只能靠 diff 审阅）**——下列并非穷举：段级 `segments.*.excludes` 同样进
       `∪excludes`（它是变异面自身的定义面），因而同样能让文件退出 `uncoveredSrcFiles`：

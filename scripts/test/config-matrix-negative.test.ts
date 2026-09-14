@@ -59,6 +59,25 @@ function fakeRepo() {
       join(ROOT, "scripts/data/plugins-manifest.json"),
       join(root, "scripts/data/plugins-manifest.json"),
     );
+    // 泛化后（#774）门禁对**每个**声明面都 require 真实模块（含各包依赖）。副本只复制了
+    // notifier 的配置域与 lan-proxy 的文本面，故把声明裁剪到本副本真正具备的包——否则
+    // 「正对照应绿」会因缺文件/缺 node_modules 而红，把 fixture 的完备性混进判据。
+    const manifestPath = join(root, "scripts/data/plugins-manifest.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    const dropped = manifest.configSurfaces.filter((s) => s.package !== "dsh-notifier");
+    manifest.configSurfaces = manifest.configSurfaces.filter((s) => s.package === "dsh-notifier");
+    // 被裁掉的包必须补进 pending：manifest 自洽断言要求 active ∪ standalone 每包都被登记，
+    // 只裁不补会让「正对照」因清单不自洽而红（那是 fixture 的错，不是矩阵的错）。
+    for (const s of dropped) {
+      if (!manifest.configSurfacesPending.some((p) => p.package === s.package)) {
+        manifest.configSurfacesPending.push({
+          package: s.package,
+          reason: "副本不具备该包的配置域源码与依赖（fixture 裁剪，见本文件注释）",
+          reviewBy: "2027-03-31",
+        });
+      }
+    }
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
     // lan-proxy UI 豁免表（#733 3.2.2 起门禁读数据面而非内嵌常量）。
     copyLf(
       join(ROOT, "scripts/data/dsh-lan-proxy-ui-exempt.json"),
@@ -142,7 +161,7 @@ test("lan-proxy: DEFAULTS 增 schema 外键 → 红且报错含键名", () => {
       edit(root, "dsh-lan-proxy", "client/index.ts", (s) =>
         // 锚点只锁声明本身：缩进归 Prettier（顶层块的多余缩进会被归一化），
         // 注入行自带格式化器口径的缩进，避免判据绑死在某一版排版上。
-        s.replace(/var DEFAULTS: Record<string, any> = \{\n/, "$&  fakeKey: 1,\n"),
+        s.replace(/const DEFAULTS: Record<string, any> = \{\n/, "$&  fakeKey: 1,\n"),
       );
     },
     "fakeKey",
@@ -232,23 +251,30 @@ test("notifier: 声明指向不存在的导出 → 红", () => {
   );
 });
 
-test("notifier: 配置面只登记在 pending（configSurfaces 无它）→ 红（未登记即红）", () => {
-  assertRed(
-    "notifier 移出 configSurfaces",
-    (root) => {
-      editManifest(root, (s) => {
-        const m = JSON.parse(s);
-        m.configSurfaces = m.configSurfaces.filter((x) => x.package !== "dsh-notifier");
-        m.configSurfacesPending.push({
-          package: "dsh-notifier",
-          reason: "测试用",
-          reviewBy: "2027-03-31",
-        });
-        return JSON.stringify(m, null, 2);
+test("notifier: 移出 configSurfaces 改登记 pending → 不判红，但输出点名「未接管」", () => {
+  // #774 起「必须已接管」的固定包名不存在了：pending 是**显式待办**，判红只会把「尚未接管」
+  // 与「声明坏了」混成同一个红。所以此处判据换成「不判红 + 必须点名」——可见性由输出承担。
+  const root = fakeRepo();
+  try {
+    editManifest(root, (s) => {
+      const m = JSON.parse(s);
+      m.configSurfaces = m.configSurfaces.filter((x) => x.package !== "dsh-notifier");
+      m.configSurfacesPending.push({
+        package: "dsh-notifier",
+        reason: "测试用",
+        reviewBy: "2027-03-31",
       });
-    },
-    "未在 scripts/data/plugins-manifest.json 的 configSurfaces 声明配置面",
-  );
+      return JSON.stringify(m, null, 2);
+    });
+    const r = runConfigMatrix(root);
+    assert.equal(r.pass, true, `pending 是显式待办，不该判红：${r.problems.join("; ")}`);
+    assert.ok(
+      r.lines.some((l) => l.includes("configSurfacesPending") && l.includes("dsh-notifier")),
+      `pending 必须在输出里点名：${r.lines.join(" | ")}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("notifier: 两处都不登记 → 红（manifest 自洽的双向断言）", () => {
@@ -262,6 +288,45 @@ test("notifier: 两处都不登记 → 红（manifest 自洽的双向断言）",
       });
     },
     "configSurfaces 缺 dsh-notifier",
+  );
+});
+
+test("surface: none 缺 reason → 红（它与「漏登记」的区别就是这条理由）", () => {
+  assertRed(
+    "none 缺 reason",
+    (root) => {
+      editManifest(root, (s) => {
+        const m = JSON.parse(s);
+        m.configSurfaces = m.configSurfaces.map((x) =>
+          x.package === "dsh-notifier" ? { package: "dsh-notifier", surface: "none" } : x,
+        );
+        return JSON.stringify(m, null, 2);
+      });
+    },
+    '声明 surface: "none" 时必填 reason',
+  );
+});
+
+test("surface: none 与四面对齐全形态互斥 → 红（不许拿「无配置面」当省略校验的旁路）", () => {
+  assertRed(
+    "none 带 defaults",
+    (root) => {
+      editManifest(root, (s) => {
+        const m = JSON.parse(s);
+        m.configSurfaces = m.configSurfaces.map((x) =>
+          x.package === "dsh-notifier"
+            ? {
+                package: "dsh-notifier",
+                surface: "none",
+                reason: "测试用",
+                defaults: { module: "packages/dsh-notifier/src/x.ts", export: "X" },
+              }
+            : x,
+        );
+        return JSON.stringify(m, null, 2);
+      });
+    },
+    "不得再带 defaults",
   );
 });
 

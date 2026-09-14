@@ -139,10 +139,34 @@ export function loadManifest(root) {
   };
   for (const item of surfaces) {
     claimSurface(item, "configSurfaces");
-    // 四个面都必须声明：defaults（默认值/键集）、normalizer（归一化）、booleanKeys（只接受
-    // 布尔值的键清单）、countLimits（非负整数键及其上界）。后两者在 #733 重写后一度未导出、
-    // 导致这两层约束无法在门禁侧恢复；notifier 侧导出后在此要求必备——没有的包应显式声明空
-    // 数组/空对象，而不是省略字段（省略会让门禁静默失去该维度）。
+    // 两种形态互斥（#774）：
+    //  ① 四面对齐全（默认）：defaults（默认值/键集）、normalizer（归一化）、booleanKeys
+    //     （只接受布尔值的键清单）、countLimits（非负整数键及其上界）。后两者在 #733 重写后
+    //     一度未导出、导致这两层约束无法在门禁侧恢复；notifier 侧导出后在此要求必备——没有的
+    //     包应显式声明空数组/空对象，而不是省略字段（省略会让门禁静默失去该维度）。
+    //  ② `surface: "none"`（显式无配置面）：用于**确实没有用户配置面**的包。必填 reason——
+    //     它与「漏登记」在数据上长得一样，理由就是两者的区别；同时禁止再带任何面字段，否则
+    //     「无配置面」会被当成省略校验的旁路。
+    if (item.surface !== undefined && item.surface !== "none") {
+      fail(
+        `configSurfaces.${item.package}.surface 取值只能是 "none"（当前 ${JSON.stringify(item.surface)}）`,
+      );
+    }
+    if (item.surface === "none") {
+      if (typeof item.reason !== "string" || item.reason.length === 0) {
+        fail(
+          `configSurfaces.${item.package} 声明 surface: "none" 时必填 reason（为什么没有配置面）`,
+        );
+      }
+      for (const field of ["defaults", "normalizer", "booleanKeys", "countLimits"]) {
+        if (item[field] !== undefined) {
+          fail(
+            `configSurfaces.${item.package} 声明 surface: "none" 时不得再带 ${field}（两种形态互斥）`,
+          );
+        }
+      }
+      continue;
+    }
     for (const field of ["defaults", "normalizer", "booleanKeys", "countLimits"]) {
       const face = item[field];
       if (typeof face !== "object" || face === null)

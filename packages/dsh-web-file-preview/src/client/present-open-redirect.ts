@@ -4,7 +4,7 @@
  * 官方两条外开入口（presented 卡片菜单、助手最终回复里的交付物提及）最终都发
  * POST /api/present.open，所以在 fetch 调用点统一收口。该请求的 query 只带
  * sessionId/seq/index、不带路径，而客户端 remote 没有 sessionQuery 命名空间可
- * 反查事件，因此路径由捕获阶段的点击记录提供（见 src/present-open.ts）。
+ * 反查事件，因此路径由捕获阶段的点击记录提供（见 src/shared/present-open.ts）。
  *
  * 采集只用官方显式标记：卡片的 data-presented-file，以及卡片覆盖按钮与正文提及
  * 的 title。官方其余类名是 CSS Modules 哈希，不可作为选择器。
@@ -19,7 +19,7 @@ import {
   sessionIdOf,
   usablePending,
   type PendingEntry,
-} from "../present-open.ts";
+} from "./shared/interface.ts";
 
 /** 挂载所需服务：旧版 dsh 没有它，靠 inject 门控静默不激活。 */
 export const REDIRECT_SERVICE = "sidebarRight";

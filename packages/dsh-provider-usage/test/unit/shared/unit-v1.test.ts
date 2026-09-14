@@ -29,7 +29,6 @@ import {
 } from "../../helpers.ts";
 console.error("EVAL-ORDER-TAG: V1");
 import {
-  ADAPTER_CONTRACT_VERSION_V1,
   isHostProviderAdapter,
   describeAdapterShape,
   isClientProviderRenderer,

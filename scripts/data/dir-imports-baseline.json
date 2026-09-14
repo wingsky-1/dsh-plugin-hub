@@ -33,7 +33,7 @@
       "interfaceFacades": 16,
       "leafValueEdges": 38,
       "fileValueEdges": 136,
-      "crossModuleRefs": 156,
+      "crossModuleRefs": 155,
       "quality": {
         "leafModuleCycles": [
           "catalog|connection|connection/orchestrator",
@@ -126,8 +126,8 @@
     },
     "dsh-provider-usage": {
       "modules": 13,
-      "scannedSrcFiles": 56,
-      "allSrcTsFiles": 69,
+      "scannedSrcFiles": 59,
+      "allSrcTsFiles": 75,
       "interfaceFacades": 13,
       "leafValueEdges": 35,
       "fileValueEdges": 123,
@@ -202,13 +202,13 @@
       }
     },
     "dsh-web-file-preview": {
-      "modules": 0,
-      "scannedSrcFiles": 2,
-      "allSrcTsFiles": 4,
-      "interfaceFacades": 0,
+      "modules": 1,
+      "scannedSrcFiles": 3,
+      "allSrcTsFiles": 6,
+      "interfaceFacades": 1,
       "leafValueEdges": 0,
-      "fileValueEdges": 1,
-      "crossModuleRefs": 0,
+      "fileValueEdges": 2,
+      "crossModuleRefs": 2,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],

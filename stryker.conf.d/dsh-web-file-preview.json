@@ -3,7 +3,8 @@
   "mutate": [
     "packages/dsh-web-file-preview/src/**/*.ts",
     "!packages/dsh-web-file-preview/src/client/**",
-    "!packages/dsh-web-file-preview/src/types.ts"
+    "!packages/dsh-web-file-preview/src/types.ts",
+    "!packages/dsh-web-file-preview/src/**/interface.ts"
   ],
   "testRunner": "vitest",
   "mutator": {

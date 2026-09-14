@@ -2815,7 +2815,7 @@ describe("apply：配置分支", () => {
           };
         },
       },
-      inject: (keys, cb) => {
+      inject: (keys, _cb) => {
         state.injected.push(keys);
         return () => {};
       },
@@ -2999,7 +2999,7 @@ describe("#569 catalogViewFor 合成注入端目录视图", () => {
 
   /** 场景 1：off 模式 → 纯 B 视图（中间层不参与；判 middlewareMode 非实例）。 */
   async function offView() {
-    const { manager, mw, projDir } = await catalogViewFixture();
+    const { manager, _mw, projDir } = await catalogViewFixture();
     manager.middlewareMode = "off";
     const servers = serversWith({
       g1: { server: { name: "g1" }, scope: "global" },

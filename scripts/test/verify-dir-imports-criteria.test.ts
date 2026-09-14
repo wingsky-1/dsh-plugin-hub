@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// @ts-nocheck
 "use strict";
 
 /**
@@ -59,7 +58,7 @@ function defaultTopology() {
  * package.json 是 I8① 裸自引用面的唯一包名来源（#767 B1.0）——真实包是 pnpm workspace 成员、
  * 必然带着它，fixture 也必须带着，否则被验证的行为会被「包名读不到」盖住。
  */
-function makeFixtureRoot(files) {
+function makeFixtureRoot(files: Record<string, string>) {
   const root = mkdtempSync(join(tmpdir(), "verify-dir-imports-criteria-"));
   const manifest = JSON.stringify({
     name: PKG_NAME,
@@ -80,8 +79,11 @@ function makeFixtureRoot(files) {
 }
 
 /** 对 fixture 根跑脚本，返回 { status, out }。 */
-function runOn(root, args = []) {
-  const env = { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root };
+function runOn(root: string, args: string[] = []) {
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    VERIFY_DIR_IMPORTS_ROOT: root,
+  };
   // 外部若设了基线路径，会与 fixture 自己的基线串味（残留风险），显式清掉。
   delete env.VERIFY_DIR_IMPORTS_BASELINE;
   const r = spawnSync(process.execPath, [SCRIPT, "--package", PKG, ...args], {
@@ -92,17 +94,17 @@ function runOn(root, args = []) {
 }
 
 /** 读 fixture 根下入库的基线。 */
-function fixtureBaseline(root) {
+function fixtureBaseline(root: string) {
   return JSON.parse(readFileSync(join(root, "scripts/data/dir-imports-baseline.json"), "utf8"));
 }
 
 /** 本包入库后的质量证据段。 */
-function qualityOf(root) {
+function qualityOf(root: string) {
   return fixtureBaseline(root).packages[PKG].quality;
 }
 
 /** 生成一份 fixture 台账（§5.3 的存量处置形态：gate=verify-dir-imports，path=<包名>:<证据项>）。 */
-function writeLedger(dir, paths) {
+function writeLedger(dir: string, paths: string[]) {
   const p = join(dir, "exemptions-fixture.json");
   writeFileSync(
     p,
@@ -119,7 +121,7 @@ function writeLedger(dir, paths) {
 }
 
 /** 从「写基线中止」输出里取出待登记的台账键（形态 \`<包名>:<证据项>（<指标>）\`）。 */
-function pendingLedgerKeys(out) {
+function pendingLedgerKeys(out: string) {
   return [...out.matchAll(/^\s+(\S+?)（/gm)].map((m) => m[1]);
 }
 
@@ -139,7 +141,7 @@ function i2CleanFixture() {
 }
 
 /** I2④ 底座：src 根 index.ts 存在，域 a 默认**不引**它。 */
-function rootIndexFixture(implBody) {
+function rootIndexFixture(implBody: string) {
   return {
     [SRC + "/index.ts"]: 'export const ROOT = "组合根";\n',
     [SRC + "/a/interface.ts"]: 'export { A } from "./impl.ts";\n',
@@ -148,7 +150,7 @@ function rootIndexFixture(implBody) {
 }
 
 /** §5.3 底座：client 只引 \`src/shared\` 与 \`src/client\`（合法面），server 侧另有一个文件。 */
-function clientFixture(extra = {}) {
+function clientFixture(extra: Record<string, string> = {}): Record<string, string> {
   return {
     [SRC + "/shared/interface.ts"]: 'export { S } from "./impl.ts";\n',
     [SRC + "/shared/impl.ts"]: "export const S = 1;\n",
@@ -467,7 +469,7 @@ const UNIT_FACE_BREACHES = [
 const UNIT_TEST_FILE = "packages/" + PKG + "/test/unit/a/impl.test.ts";
 
 /** 断言一行在输出里逐字出现（路径类断言不用正则，免得转义盖过判据本身）。 */
-function assertLine(out, line) {
+function assertLine(out: string, line: string) {
   assert.ok(out.split("\n").includes(line), "输出缺少行 " + JSON.stringify(line) + "：\n" + out);
 }
 
@@ -541,7 +543,7 @@ test("I8①：test/unit 引组合根 / lib / 客户端三面各自判红（无�
 });
 
 /** 从 --graph 输出里取出 I8① 那一节的证据项（形态 `test/unit/…|目标`）；无该节返回 null。 */
-function unitFaceEvidence(out) {
+function unitFaceEvidence(out: string) {
   const lines = out.split("\n");
   const head = lines.findIndex((l) => l.includes("单元层导入面（I8①，test/unit 引组合根"));
   if (head === -1) return null;

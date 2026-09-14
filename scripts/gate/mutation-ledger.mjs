@@ -36,7 +36,6 @@ import {
   checkLedgerEntry,
   expectedSegsFromConfFiles,
   parseSegmentLedger,
-  reconcileLedgerSegments,
 } from "../lib/mutation-ledger-lib.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");

@@ -35,11 +35,9 @@ import {
   runV2Pipeline,
   runV2PanelPipeline,
   HistoryStore,
-  HotReloadableAdapter,
   readStamp,
   stampEqual,
   miniChartSvgMarkup,
-  OPENCODE_GO_PROVIDER,
 } from "../../../src/apply/index.ts";
 
 describe("safeSegment", () => {

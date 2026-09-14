@@ -754,7 +754,7 @@
     "export declare function makeHealthRoute(manager: RoutesManager): WebRoute;",
     "export declare function makeMiddlewareHotSwitch(manager: McpManager, middlewarePolicy: Record<string, unknown> | undefined, resolveRoot: (agent: unknown) => Promise<string | undefined>, dispose: { current: () => void; }",
     "export declare function makeResolveRoot(manager: McpManager): (agent: unknown) => Promise<string | undefined>;",
-    "export declare function makeRoutes(manager: RoutesManager, cwd?: string): WebRoute[];",
+    "export declare function makeRoutes(manager: RoutesManager, _cwd?: string): WebRoute[];",
     "export declare function mountFloat(ctx: any, state: McpState, actions: UiActions): () => void;",
     "export declare function msgOf(error: unknown): string;",
     "export declare function normalizeArguments(raw: unknown): unknown;",
@@ -1509,7 +1509,7 @@
           "export declare function makeHealthRoute(manager: RoutesManager): WebRoute;"
         ],
         "makeRoutes": [
-          "export declare function makeRoutes(manager: RoutesManager, cwd?: string): WebRoute[];"
+          "export declare function makeRoutes(manager: RoutesManager, _cwd?: string): WebRoute[];"
         ],
         "uiConfigChangedFrame": ["export declare function uiConfigChangedFrame(): string;"],
         "injectSettingsSink": [

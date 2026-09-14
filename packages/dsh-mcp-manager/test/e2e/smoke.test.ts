@@ -37,7 +37,6 @@ import {
   composeCatalogEntries,
   Config,
   ConnectionSupervisor,
-  DEFAULT_RESULT_TRUNCATE_BYTES,
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
   DEFAULT_UI_CONFIG,
   digestCatalogEntries,
@@ -62,7 +61,6 @@ import {
   parseSsePayload,
   publicToolName,
   renderMcpCatalogMessage,
-  resolveCatalogEntries,
   renderMcpCatalogUpdate,
   resolveCatalogInjection,
   ROUTES,
@@ -598,7 +596,7 @@ it("#362 A2：project 模式 detail/call 传全局级服务器 → 引导 mcp__ 
   dispose();
 });
 it("#362 isGlobalServer 双源：runtime 注册的 codegraph 判全局（P1 修正）", async () => {
-  const { McpManager, McpStore, MIDDLEWARE_GLOBAL_ROOT } = await import("../../lib/index.js");
+  const { McpManager, McpStore } = await import("../../lib/index.js");
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-global-"));
   try {
     const store = new McpStore(join(dir, "mcp.json"));
@@ -623,8 +621,7 @@ it("#362 isGlobalServer 双源：runtime 注册的 codegraph 判全局（P1 修�
   }
 });
 it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因（不谎报未配置）", async () => {
-  const { registerMiddlewareTools, McpMiddleware, fullServerName, parseFullServerName } =
-    await import("../../lib/index.js");
+  const { registerMiddlewareTools, McpMiddleware } = await import("../../lib/index.js");
   const registered = [];
   const ctx = {
     tools: {
@@ -691,7 +688,6 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
     registerMiddlewareTools,
     McpMiddleware,
     fullServerName,
-    MIDDLEWARE_GLOBAL_ROOT,
     parseDisabledTools,
     isToolDenied,
     toolDisabledReason,
@@ -2764,7 +2760,7 @@ it("config POST 经 apply 注入 settings：update 保留 this 不再 400（回�
   // 若调用链解构丢 this，this 为 undefined → this.write 抛 TypeError → 路由 400。
   let scopeValue = { ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } } };
   const settingsStub = {
-    register(ns, schema, opts) {
+    register(_ns, _schema, _opts) {
       return { get: () => ({ ...scopeValue }), watch: () => {} };
     },
     async write(ns, patch) {
@@ -2780,7 +2776,7 @@ it("config POST 经 apply 注入 settings：update 保留 this 不再 400（回�
   const sctx = {
     settings: settingsStub,
     effect: (fn) => {
-      const d = fn();
+      fn();
       return () => {};
     },
   };
@@ -2848,7 +2844,7 @@ it("#389：settings 持久化 middleware → apply 后运行时同步", async ()
     middleware: "all",
   };
   const settingsStub = {
-    register(ns, schema, opts) {
+    register(_ns, _schema, _opts) {
       return { get: () => ({ ...scopeValue }), watch: () => {} };
     },
     async write(ns, patch) {
@@ -2864,7 +2860,7 @@ it("#389：settings 持久化 middleware → apply 后运行时同步", async ()
   const sctx = {
     settings: settingsStub,
     effect: (fn) => {
-      const d = fn();
+      fn();
       return () => {};
     },
   };
