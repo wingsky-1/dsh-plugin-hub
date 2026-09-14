@@ -1,5 +1,5 @@
 /**
- * dsh-mcp-manager — pipeline/authorize：执行授权纯函数（#664 阶段 2 迁入 + 阶段 6 收敛）。
+ * dsh-mcp-manager — pipeline/impl/authorize/index.ts：执行授权纯函数（#664 阶段 2 迁入 + 阶段 6 收敛）。
  *
  * globMatch 阶段 2 迁入；策略裁决族（policyAllows / policyDenialReason /
  * isToolDenied / toolDisabledReason）依赖 parseFullServerName /
@@ -13,8 +13,8 @@ import {
   parseFullServerName,
   bareServerName,
   MIDDLEWARE_GLOBAL_ROOT,
-} from "../workspace/interface.ts";
-import type { MiddlewarePolicy, DisabledToolsMap } from "../types/interface.ts";
+} from "../../../workspace/interface.ts";
+import type { MiddlewarePolicy, DisabledToolsMap } from "../../../types/interface.ts";
 
 /** 工具名匹配 glob（* 通配）。 */
 export function globMatch(pattern: string, name: string): boolean {

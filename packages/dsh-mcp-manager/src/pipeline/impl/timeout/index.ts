@@ -1,5 +1,5 @@
 /**
- * dsh-mcp-manager — pipeline/timeout：调用超时兜底（#664 阶段 2 迁入）。
+ * dsh-mcp-manager — pipeline/impl/timeout/index.ts：调用超时兜底（#664 阶段 2 迁入）。
  *
  * 原自 middleware-utils.ts withTimeout；中间层 ws_mcp_call 与封装直呼的
  * abort 竞态处理单一实现（supervisor 路径靠 SDK timeoutMs，无此层）。

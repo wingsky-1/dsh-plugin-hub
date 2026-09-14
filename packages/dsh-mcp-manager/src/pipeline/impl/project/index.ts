@@ -1,5 +1,5 @@
 /**
- * dsh-mcp-manager — pipeline/project：CallToolResult 投影（单一事实源，#512，#664 阶段 2 迁入）。
+ * dsh-mcp-manager — pipeline/impl/project/index.ts：CallToolResult 投影（单一事实源，#512，#664 阶段 2 迁入）。
  *
  * 原自 call-result.ts（全量迁移，含类型面）。MCP 协议对 tools/call 成功应答宽容
  * （content / structuredContent / isError / _meta 均 optional，各 SDK 序列化习惯

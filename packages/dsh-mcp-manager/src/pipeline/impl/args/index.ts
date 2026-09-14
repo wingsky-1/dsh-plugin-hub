@@ -1,5 +1,5 @@
 /**
- * dsh-mcp-manager — pipeline/args：ws_mcp_call 参数归一化（#664 阶段 2 迁入）。
+ * dsh-mcp-manager — pipeline/impl/args/index.ts：ws_mcp_call 参数归一化（#664 阶段 2 迁入）。
  *
  * 原自 middleware-utils.ts normalizeArguments；B14（数组形态拒绝）已在阶段 1 修复，
  * 本文件为同语义迁移（零行为变更）。
