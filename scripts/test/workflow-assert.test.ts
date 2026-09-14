@@ -315,6 +315,44 @@ test("ci.yml/observe*/baseline-overlay/release/health-report.yml: 第三方与�
   }
 });
 
+test("#718: health-report.yml 基线陈旧——观测在最前、幂等建单居中、unknown 判红在最末", () => {
+  // 为什么是结构断言：这套判据的价值全在**位置与语义**上，改错任何一处都不会有别的判据发现——
+  // 观测挪到采集之后 = 被上游失败连坐而不留痕；判红挪到建单之前 = 连坐吞掉周报与陈旧工单；
+  // 把 stale 也判红 = 「发现」被当成「失败」，告警疲劳。三处都由文本锚锁死。
+  const observe = HEALTH.indexOf("      - name: Baseline staleness（");
+  const weeklyIssue = HEALTH.indexOf("      - name: Create health issue");
+  const staleIssue = HEALTH.indexOf("      - name: Create/append baseline staleness issue");
+  const verdict = HEALTH.indexOf("      - name: Baseline staleness verdict");
+  assert.ok(observe !== -1, "基线观测步骤在位");
+  assert.ok(observe < HEALTH.indexOf("pnpm cov"), "观测必须在数据采集之前（只依赖 gh 与分支事实）");
+  assert.ok(
+    weeklyIssue !== -1 && staleIssue !== -1 && verdict !== -1,
+    "观测 / 两份建单 / 判红四步齐备",
+  );
+  assert.ok(verdict > weeklyIssue && verdict > staleIssue, "unknown 判红必须在两份建单留痕之后");
+  // 末步判据：verdict 之后不得再出现步骤头（自 +1 起算，免得把本行自身数进去）
+  assert.equal(
+    HEALTH.slice(verdict + 1).match(/^ {6}- name:/gm),
+    null,
+    "verdict 必须是最后一个步骤（其后不得再有步骤）",
+  );
+  const tail = HEALTH.slice(verdict);
+  assert.ok(tail.includes("if: always()"), "verdict 必须 always()：上游失败时也要给出结论");
+  // 判据必须是**白名单**：坏态是开放集合（unknown / missing / 缺 status 字段 / 将来新增的状态），
+  // 枚举坏态漏一种就静默转绿。故只钉「只有 fresh|stale 绿、其余落兜底判红」这一形态。
+  assert.match(tail, /case "\$STATUS" in/, "必须用 case 白名单判定，不得枚举坏态");
+  assert.match(tail, /^\s*fresh\|stale\)/m, "白名单只承认 fresh|stale（检查确实做成了）");
+  assert.match(tail, /\*\)[\s\S]*exit 1/, "兜底分支必须判红（unknown / 缺字段 / 缺失一律覆盖）");
+  assert.ok(!/stale[^\n]*exit 1/.test(tail), "stale 是「发现」不是「失败」，不得被判红");
+  // 零权限变更（红线段：不得顺手加 contents: write）
+  assert.ok(
+    HEALTH.includes("contents: read") && HEALTH.includes("issues: write"),
+    "权限保持读代码 + 写工单",
+  );
+  assert.ok(!HEALTH.includes("contents: write"), "不得给 health-report 加 contents: write");
+  assert.ok(HEALTH.includes("in:title"), "工单幂等靠标题检索（稳定标题）");
+});
+
 test("observe.yml: 夜间调度 + 硬门禁执行点 + issues 写权限", () => {
   assert.ok(OBSERVE.includes("cron:"), "schedule 触发器在位");
   assert.ok(OBSERVE.includes("workflow_dispatch"), "支持手动 dispatch");
@@ -1719,9 +1757,11 @@ test("#718 S1.1/S1.4/S1.5: observe 全量班三段式矩阵（plan / quality+sha
   const stratIdx = OBSERVE.indexOf("    strategy:", shardsStart);
   assert.ok(stratIdx > shardsStart, "observe.yml mutation-shards 必须声明 strategy");
   const stratBlock = OBSERVE.slice(stratIdx, OBSERVE.indexOf("\n    runs-on:", stratIdx));
+  // 锚定「行首缩进 + 键名 + 值」，而不是 /max-parallel:\s*8\s*$/m：后者把块内任何以
+  // `max-parallel: 8` 结尾的注释行也算满足（真值仍是 5 也会假绿，复核实测 exit 0）。
   assert.ok(
-    /max-parallel:\s*5\s*$/m.test(stratBlock),
-    "observe.yml 矩阵必须声明 max-parallel: 5（#718 S1.1；S0.3 实测额度上界 20，取 5 留余量）",
+    /^[ \t]*max-parallel:[ \t]*8[ \t]*$/m.test(stratBlock),
+    "observe.yml 矩阵必须声明 max-parallel: 8（#718 S1.1/P3；依据是账户并发余量 + 与 ci.yml 同值限流，不是「8 档已饱和」）",
   );
   assert.ok(
     /fail-fast:\s*false\s*$/m.test(stratBlock),
@@ -1764,4 +1804,29 @@ test("#718 S1.1/S1.4/S1.5: observe 全量班三段式矩阵（plan / quality+sha
     !shardsBlock.includes("orphan-baseline.mjs push"),
     "矩阵实例内不得推送基线——推送必须单点落在收口 job",
   );
+});
+
+test("#718 P3: 两班变异矩阵 max-parallel 同值限流（ci.yml / observe.yml 各自钉 8）", () => {
+  // 为什么两侧分别钉 8、而不是断言「两处取值相等」：相等判定会让 5+5 也通过，把已批准的
+  // 档位决定退化成任何同值都能满足的弱判定。两侧都钉 8，才把「取 8」与「同值」一起编码。
+  // 为什么必须成对：ci.yml 的 mutation-gate 与 observe.yml 的 mutation-shards 共享同一个
+  // 账户并发额度，「与夜间班同值限流」是两处注释写明的依据（#718 P3）——只钉一侧时改另一侧
+  // 不会变红，依据可被静默分叉。
+  for (const [file, text, jobId] of [
+    ["ci.yml", CI, "mutation-gate"],
+    ["observe.yml", OBSERVE, "mutation-shards"],
+  ]) {
+    const jobStart = text.indexOf(`\n  ${jobId}:`);
+    assert.ok(jobStart > 0, `${file} 必须存在 ${jobId} job`);
+    const stratIdx = text.indexOf("    strategy:", jobStart);
+    assert.ok(stratIdx > jobStart, `${file} 的 ${jobId} 必须声明 strategy`);
+    // 与 observe 侧同款的行锚定局部切片（不用跨行正则）：strategy 块内含解释性注释，
+    // 注释一变不应假红。
+    const stratBlock = text.slice(stratIdx, text.indexOf("\n    runs-on:", stratIdx));
+    // 同款锚定：行首缩进 + 键名 + 值，行内不得再有其它内容（注释行、列表项都匹配不上）。
+    assert.ok(
+      /^[ \t]*max-parallel:[ \t]*8[ \t]*$/m.test(stratBlock),
+      `${file} 的 ${jobId} 矩阵必须声明 max-parallel: 8（与另一班同值限流——#718 P3：两处共享同一账户并发额度，分叉即失去依据）`,
+    );
+  }
 });

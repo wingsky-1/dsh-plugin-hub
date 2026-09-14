@@ -83,6 +83,7 @@
 - `release/verify-version.ts` — 发布前校验全包版本 == tag。
 - `release/publish-if-missing.ts` — 发布缺失包。
 - `release/health-report-body.mjs` — 健康报告 body 生成。
+- `release/baseline-staleness.mjs` — 变异基线（`baseline/mutation`）新鲜度判据（#718 验收判据「基线陈旧可被观测」）：判据打在基线分支**最后提交时间**这一事实上（不看「observe 最近是否 success」这一代理——它会漏掉「observe 成功但未入档」与「observe 整体没跑」两种形态），阈值 48 h（= 连续两夜未入档），超阈输出 `::error::` 注解 + 幂等工单正文，未超阈由 `health-report-body.mjs` 在周报正文留一行基线龄；**观测没做成（unknown）与状态文件缺失由 workflow 最末的 verdict 步骤判红**（「环境失败不得静默降级」，放最末以免连坐建单留痕），stale 本身不判红（发现 ≠ 失败）；龄 → 三态的判定是可注入 now/阈值的纯函数。执行点 = health-report.yml 周报（监控者与被监控者分离：observe 是更新基线的一方，检查放进去会在它整体没跑时一起沉默），零权限变更。
 
 ## scripts/ 根
 

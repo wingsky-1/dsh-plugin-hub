@@ -362,9 +362,11 @@ jobs:
   # - 成本上界（#742 阶段 1.6，裁决选 A「接受」）。口径必须分清「实测墙钟」与「超时上限」：
   #   ① 基线命中良好（增量复用）：逐段实测墙钟 3~104 s（#718 S0.2 台账，
   #      dsh-provider-usage-pipeline 段 10.1 s），是绝大多数 PR 的形态；
-  #   ② 基线失效/首夜（全量冷跑）：夜间实测逐段墙钟合计 12409 s（串行），5 槽 LPT 约 42 min；
+  #   ② 基线失效/首夜（全量冷跑）：台账 32 段逐段墙钟合计 14803 s（串行）；本 job 的 combo
+  #      是字典序（见下），@8 模型 makespan ≈ 41.6 min（夜间 LPT @8 = 31.2 min，LPT 是模型值）；
   #   ③ 逐段**超时上限**区间 30~42 min（台账派生值，见 timeout-minutes），不是实测墙钟；
-  #      极端上界 = 各段都跑满超时 ÷ 5 个并发槽 ≈ 3.3 小时，仅当全部实例卡死才会出现。
+  #      极端上界 = 各段都跑满超时（Σ 派生超时 990 min）÷ 8 个并发槽 ≈ 2.1 小时，
+  #      仅当全部实例卡死才会出现。
   #   注意 PR 矩阵的 combo 顺序是包名+段名字典序（ci-matrix 的确定性排序），不按耗时降序——
   #   耗时降序（LPT）只在夜间 mutation-plan 的 buildShardMatrix 里。长期超阈值再评估 1.6-B
   #   （按 diff 行采样）——它的行号脆弱依赖会静默漏 mutant，不作默认。
@@ -379,9 +381,26 @@ jobs:
     if: github.event_name == 'pull_request' && needs.changes.outputs.hasMutations == 'true'
     strategy:
       fail-fast: false
-      # 与夜间班（observe.yml）同值限流：账户并发实测上界 20（#718 S0.3），5 路变异
-      # 留足余量给同仓其它 workflow。
-      max-parallel: 5
+      # 与夜间班（observe.yml）同值限流，取 8（#718 P3，维护者 approved）。取 8 的依据是
+      # **账户并发余量**，不是「8 档已饱和」——8 档在两种调度形态下都尚未到零收益：
+      # - 本 job 的 combo 顺序是 package+seg 字典序（ci-matrix 的确定性排序），LPT 只在夜间
+      #   mutation-plan。run 34764977606（12 段、合计 145.65 min、5 槽）实测窗口 43.05 min，
+      #   与同序模型 43.00 min 吻合；同口径模型 @8 = 29.83 min、@10 = 26.80 min。
+      # - 夜间全量（32 段 LPT，台账合计 14803 s）模型 @8 = 31.24 min、@10 = 25.22 min。
+      #   两者都是**模型值**：同段集的 LPT 模型给 30.63 min，而全量/失效形态实测窗口到过
+      #   43.0 min（#718 approved 记录）——实际受 runner 排队与调度形态影响。
+      # - 增量形态实测（本项 PR run 34796310130 / 96637f96，32 段、8 档）：mutation 窗口
+      #   3.87 min、本轮全 run 并发峰值 15、mutation-verdict pass。
+      # - 账户并发上界 20 是 #718 S0.3 的**历史实测口径**（PR #753 的 100 个 run，峰值分布
+      #   20×15 / 19×4 / 18×1）。scripts/maintenance/scan-actions-concurrency.mjs 未过滤
+      #   cancelled run，直接复跑会因被取消 run 的排队 job 时间戳得到伪影（复核实测 max=35，
+      #   同一 run 滤掉 cancelled 后为 11）——故沿用历史口径，扫描器另记 follow-up。
+      # - 本仓峰值 = build-test（**至多 7** = 命中包数；实测有 1、1+哨兵、7）+ max-parallel：
+      #   8 档 → 至多 15，gate:full 带 coverage → 16；10 档 → 17~18，只剩 3 个余量。
+      # docs/mutation-speedup-methodology.md §4.3 的 timeout 机制核对不适用（本项是 job 级
+      # 并发，每 job 独立 runner VM，不改 Stryker 段内 concurrency）；score 与基线口径的核对
+      # 见上一条 8 档实测（run 34796310130，mutation-verdict pass）。
+      max-parallel: 8
       # #220 B 方案：combo = {package, seg}；改造后 seg=功能段名（数字段名亦兼容），
       # 多段包逐段并行实例化，未拆分包单实例（seg="0" 走包级配置 <pkg>.json）。
       # #742 阶段 1：combo 另带 timeoutMinutes（逐段超时）与 invalidateBaseline

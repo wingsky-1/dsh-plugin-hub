@@ -37,6 +37,27 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # #718 验收判据「基线陈旧可被观测」。判据打在「基线分支最后提交时间」这一**事实**上，
+      # 不是「observe 最近是否 success」这一代理：后者在「班次成功但两条路径都没落盘」与
+      # 「班次根本没跑」两种形态下都会漏报。
+      # 基线有两条写入路径：observe.yml 夜班并集入档（orphan-baseline.mjs）、baseline-overlay.yml
+      # 在 push main 时对增量基线做秒级 overlay（overlay-baseline.mjs）。故本判据的真实语义是
+      # 「**两条入档路径都停了**」，不是「observe 单点停了」——**绿 != observe 健康**：夜班停摆
+      # 但仍有触及变异切片的 PR 合入时，基线会被 overlay 持续刷新而恒 fresh。
+      # 落点选本 workflow 的依据是「**监控者与被监控者必须分离**」：本 workflow 独立于那两条写入
+      # 路径、周期一周（不会告警疲劳），且已有 issues: write，故本项**零权限变更**。
+      # 放在数据采集之前：它只依赖 gh 与分支事实，不该被上游采集失败连坐。
+      # 观测步骤自身退出码恒 0：stale 是「检查做成了，发现基线旧了」，告警通道是 annotation +
+      # 工单；「检查根本没做成」（unknown）由本 job **最末**的 verdict 步骤判红——放最末才不会
+      # 按 GHA 语义连坐吞掉下面的建单留痕（#765 G1 形态）。
+      - name: Baseline staleness（基线陈旧检查；阈值与判定见 scripts/release/baseline-staleness.mjs）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/release/baseline-staleness.mjs \
+            --status-file baseline-staleness.json \
+            --issue-file baseline-staleness-issue.md
+
       # 刻意不构建：覆盖率只跑 unit + integration（直连 src），不消费 lib 产物
       - name: Coverage（vitest coverage，分母仅 src，阈值见 vitest.config.ts）
         run: pnpm cov
@@ -61,3 +82,53 @@ jobs:
           else
             gh issue create --title "$TITLE" --body-file health-body.md
           fi
+
+      # #718：常量超阈即开单、超阈期间每周追评（标题稳定 ⇒ 幂等；不做状态流转，避免
+      # 「工单被关掉后不再报警」这类监控失效形态）。
+      # 标题与状态均取自 baseline-staleness.json：不要在 bash 里再抄一份字面量，
+      # 抄本漂移的后果是每周新建一张单而没有任何判据会发现。
+      - name: Create/append baseline staleness issue（幂等：按稳定标题搜 open issue）
+        # 观测步骤退出码恒 0，此处本不必 always()；保留它是为了让「将来观测改成判红」时
+        # 工单不会跟着消失（#765 G1 的形态：违约夜恰好不建单）。
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          STATUS=$(node -p "require('./baseline-staleness.json').status" 2>/dev/null || echo missing)
+          if [ "$STATUS" != "stale" ]; then
+            echo "基线未超阈值或未产出状态（status=$STATUS），不建单"
+            exit 0
+          fi
+          TITLE=$(node -p "require('./baseline-staleness.json').issueTitle")
+          EXISTING=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            echo "工单 #$EXISTING 已存在，追评留痕"
+            gh issue comment "$EXISTING" --body-file baseline-staleness-issue.md
+          else
+            gh issue create --title "$TITLE" --body-file baseline-staleness-issue.md
+          fi
+
+      # #718：「检查根本没做成」必须判红（本仓「环境失败不得静默降级」纪律）。
+      # 与陈旧告警是两种语义，刻意分开：
+      #   stale   = 检查做成了、发现基线旧了 —— 由工单承接，run 保持绿（发现 != 失败）；
+      #   其余一切 = 检查没做成（gh api 失败 / 分支被改名或删除 / 响应缺字段 / 状态文件缺失 /
+      #             状态文件可解析但缺 status 字段 → 字符串 "undefined"）。
+      # 位置必须在所有建单/报告步骤**之后**：否则红掉这一步会连坐吞掉周报与陈旧工单两份留痕。
+      - name: Baseline staleness verdict（只有 fresh|stale 才绿，其余一律判红）
+        if: always()
+        run: |
+          set -e
+          STATUS=$(node -p "require('./baseline-staleness.json').status" 2>/dev/null || echo missing)
+          # 白名单而非枚举坏态：坏态是个**开放集合**（unknown / missing / 缺 status 字段 /
+          # 将来新增的任何状态），枚举法每漏掉一种，这一步就静默转绿——而它存在的全部意义
+          # 正是「检查没做成不得静默降级」。故只承认两种「确实做成了」的状态，其余落到兜底分支。
+          case "$STATUS" in
+            fresh|stale)
+              echo "基线新鲜度检查完成：status=$STATUS"
+              ;;
+            *)
+              echo "::error::基线新鲜度检查未做成（status=$STATUS）—— 环境失败不得静默降级"
+              exit 1
+              ;;
+          esac

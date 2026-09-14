@@ -73,7 +73,7 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
   #572：彻底剥离 main 分支代码树与自动 PR 噪音；旧 #204 方案 A 的「收进仓库目录
   `scripts/gate/baseline/` + 自动开 PR」已废除）。班次结构为三段式（#718 S1.1/S1.5）：
   `mutation-plan` 派生段清单与逐段超时 → `quality`（cov/契约/打包闸）∥ `mutation-shards`
-  （逐段矩阵，`max-parallel: 5`、`fail-fast: false`、单段超时按实测校准）→
+  （逐段矩阵，`max-parallel: 8`、`fail-fast: false`、单段超时按实测校准）→
   `mutation-collect`（判分 + **单点并集入档** + 报告 + 工单，`if: always()` 收口）。
   逐包容错记账：单段失败不连坐，结尾统一非零退出。
   入档是**并集语义**（#718 S1.2）：先取回远端再叠加本次产物，本次未产出的段沿用远端文件，
@@ -82,6 +82,20 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
   丢掉的段，而并集入档后该职责消失；基线新鲜度由「PR 合入即 overlay
   （baseline-overlay.yml，秒级复用该 PR CI 产出的 incremental 产物，不重跑变异）」+
   「夜间并集入档」两条路径承担。
+  **基线陈旧可被观测（#718 验收判据）**：health-report.yml 周报（独立班次）在数据采集前读基线分支
+  **最后提交时间**这一事实，超 48 h（连续两夜未入档）即输出 `::error::` 注解并按稳定标题幂等
+  建/追工单，未超阈则在周报正文留一行基线龄；判定与阈值见 `scripts/release/baseline-staleness.mjs`。
+  **发现与失败分开判**：stale（检查做成了）由工单承接、run 保持绿；unknown（gh api 失败 / 分支被改名
+  或删除 / 响应缺字段，含状态文件缺失或状态文件缺 `status` 字段）由本 job **最末**的 verdict 步骤
+  判红（白名单：只有 fresh|stale 绿，其余落兜底）——「环境失败不得静默降级」，放最末才不会连坐吞掉
+  周报与陈旧工单两份留痕。
+  **判据口径（勿说大）**：基线有两条写入路径——observe.yml 夜班并集入档
+  （`scripts/gate/orphan-baseline.mjs`）、baseline-overlay.yml 在 push main 时对增量基线做秒级
+  overlay（`scripts/gate/overlay-baseline.mjs`，两者共用 `scripts/gate/baseline-push.mjs` 写路径）。
+  故本判据的真实语义是「**两条入档路径都停了**」，不是「observe 单点停了」：**绿 != observe 健康**
+  ——夜班停摆但仍有触及变异切片的 PR 合入时，基线会被 overlay 持续刷新而恒 fresh；要单点观测
+  observe 需另看它自己最近一次 run，本判据不做这个代理。**落点依据**是「监控者不得是被监控者」：
+  本 workflow 独立于那两条写入路径，检查放进去会在它们停摆时一起沉默。
 - **PR 门禁分层**（ci.yml，#722）：默认走**增量**，只有给 PR 打 `gate:full` 标签才跑全量链路
   （`pull_request.types` 含 `labeled`/`unlabeled`，打标签即触发重跑）。策略由 `changes`
   job 一处计算为 `fullGate` 输出，判定表与三个全量 job 的 `if` 共用同源布尔。
@@ -430,12 +444,28 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
     （`leafModuleCycles` / `fileCycles` 的环签名、`raLegacy` / `implToOtherImpl` 的
     `from|to|kind` 边、`missingInterface` / `directImpl` 边、`uncoveredSrcFiles` 清单）——
     新增证据判红、证据消失视为改善（写入时自动清理）、`kind` 由 value→type 视为收口、
-    type→value 判红；**放宽的唯一通道**是登记到 `scripts/data/gate-exemptions.json`
-    （`gate=verify-dir-imports`，`path=<包名>:<证据项>`，必填 reason 与 trackingIssue，
-    可选 reviewBy）——与另两闸共用同一份台账、同一个校验器与同一条到期台账（#765 收口：
-    原先的 `--accept-quality-new` / 基线内 `$acceptances` 是本闸私有的第二套豁免机制，
-    没有 trackingIssue、reviewBy 与腐烂校验，故删除）。
-    另含 `src ⊆ ∪mutate ∪ ∪excludes` 全覆盖断言（新增 src 未被变异面或排除面覆盖即红）。
+    type→value 判红。放宽质量证据**不止一条通道**，三条的可审计性不同：
+    - **台账通道**（唯一带到期复核）：登记到 `scripts/data/gate-exemptions.json`
+      （`gate=verify-dir-imports`，`path=<包名>:<证据项>`，必填 reason 与 trackingIssue，
+      可选 reviewBy）——与另两闸共用同一份台账、同一个校验器与同一条到期台账（#765 收口：
+      原先的 `--accept-quality-new` / 基线内 `$acceptances` 是本闸私有的第二套豁免机制，
+      没有 trackingIssue、reviewBy 与腐烂校验，故删除）。
+    - **数据层通道（两条，不经台账、无 reason/reviewBy、不进到期台账；「登记即声明」，
+      变更只能靠 diff 审阅）**：
+      · `testLayers.coverageExcludes`：把文件写进该包的覆盖排除面 ⇒ 该文件退出
+        `uncoveredSrcFiles` 质量证据，门禁输出称之为「质量证据改善（--write-baseline
+        会清理入库）」。**当前实际在用的是这条**（dsh-mcp-manager / dsh-notifier /
+        dsh-provider-usage 均在使用），台账里 `gate=verify-dir-imports` 尚无条目。
+      · `$noMutationPackages`：该包不进变异面 ⇒ 源码全覆盖断言**不适用**（不是「通过」）。
+        该包没有可判定的变异面，登记本身即对该事实的声明（跟踪 #690 S6/S8 / #773，见
+        #773 批 B / #710 §2-2）。
+    另含 `src ⊆ ∪mutate ∪ ∪excludes` 全覆盖断言（新增 src 未被变异面或排除面覆盖即红）；
+    `coverageExcludes` 进的正是该断言的 `∪excludes`，故它同时就是上面那条质量证据通道。
+    `$noMutationPackages` 成员**不适用**该断言；其 `dir-imports-baseline.json` 里的
+    `uncoveredSrcFiles: []` 是「未登记拓扑时该字段恒为空」造成的已知假绿，不是「已覆盖」的
+    证据——判绿输出会显式声明「源码全覆盖断言不适用」，不得读作已验证全覆盖。两处都未登记的包
+    仍是 fail-closed——**前提是拓扑文件在位**：该文件整份缺失时本判据不生效，兜底是
+    `scripts/test/workflow-assert.test.ts` 的「单一事实源在位」断言（follow-up 见 #773）。
     死声明判据为**值面判死、类型面豁免**：`deps.ts` 的 `import type` 是声明即完整性，不参与
     死声明计算（#733 M0a）。**可见度边界**：只管依赖方向与环路，不管符号签名。
   - **导出面门禁（`scripts/gate/export-surface-snapshot.mjs`；#669 PR1 / #733 M0+M2a / N0(B)）**：
