@@ -17,10 +17,9 @@
 import { writeJson, sseData, guardLoopbackMethod } from "../../../../shared/host-utils.js";
 import { createSseHub } from "../../../../shared/sse-hub.js";
 import type { SseHub } from "../../../../shared/sse-hub.js";
-import type { ServerConfig, ClientUiConfig, RoutesManager } from "../types/interface.ts";
+import type { RoutesManager } from "../types/interface.ts";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { ServerResponse } from "node:http";
-import type { McpStore } from "../config/store/interface.ts";
 import {
   buildConfigRoute,
   buildServersRoute,
@@ -55,7 +54,7 @@ export const ROUTES = {
 export { queryParam };
 
 /** 组装 /api/dsh-mcp/* 路由。cwd 参数仅用于兼容旧调用（不再被路由使用）。 */
-export function makeRoutes(manager: RoutesManager, cwd = process.cwd()): WebRoute[] {
+export function makeRoutes(manager: RoutesManager, _cwd = process.cwd()): WebRoute[] {
   const handleError = (res: Parameters<WebRoute["handler"]>[1], error: unknown) => {
     writeJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
   };

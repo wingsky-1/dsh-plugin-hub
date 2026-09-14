@@ -111,7 +111,7 @@ function installActiveLifecycle() {
   state.scope = scope;
 
   const settings = {
-    register: (ns, schema, opts) => scope,
+    register: (_ns, _schema, _opts) => scope,
     effect: (fn) => {
       state.disposer = fn();
       return () => {};

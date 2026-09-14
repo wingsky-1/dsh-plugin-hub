@@ -5,7 +5,6 @@
  * 类型统一自本文件取，防循环引用（type-only，编译期擦除）。
  */
 
-import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type { MCPClient } from "../connection/interface.ts";
 import type { StdioTransport, HttpTransport } from "../connection/interface.ts";
 import type { ServerConfig } from "./server.ts";

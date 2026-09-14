@@ -424,10 +424,8 @@ export function niceCeil(v) {
 
 /** 卡2：标题行 + 柱形 SVG + 汇总行（v2.3 区间记账法：消耗与充值分列，不混算）。 */
 function renderDailyUsageCard(pts, truncated, e, now, utils) {
-  const dayKey = (utils && utils.dayKey) || dayKeyFallback;
   const lastNDayKeys = (utils && utils.lastNDayKeys) || lastNDayKeysFallback;
   const ea = (utils && utils.escAttr) || eaFallback;
-  const fin = (utils && utils.fin) || finFallback;
   const keys = lastNDayKeys(15, now);
   const records = aggregateDaily(pts, keys, truncated, utils);
 
@@ -737,7 +735,6 @@ function formatPanelImpl(input) {
   const e = input.esc || hFallback;
   // 日界/转义优先消费注入 utils，缺失回退文件内兜底副本
   const utils = input.utils || {};
-  const dayKey = utils.dayKey || dayKeyFallback;
   const ea = utils.escAttr || eaFallback;
   const fin = utils.fin || finFallback;
   if (!Array.isArray(input.entries) || input.entries.length === 0) return "<p>暂无历史数据</p>";

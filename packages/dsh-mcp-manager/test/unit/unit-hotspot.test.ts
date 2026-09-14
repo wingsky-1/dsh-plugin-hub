@@ -164,7 +164,7 @@ describe("apply 完整 settings 生命周期（isUnloading 覆盖）", () => {
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings: {
-              register: (ns, schema, opts) => {
+              register: (_ns, _schema, _opts) => {
                 return {
                   get: () => ({
                     ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } },
@@ -340,7 +340,7 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings: {
-              update: function (ns, patch) {
+              update: function (_ns, _patch) {
                 return Promise.resolve();
               },
               register: () => {

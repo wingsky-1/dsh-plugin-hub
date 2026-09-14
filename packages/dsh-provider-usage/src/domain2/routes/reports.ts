@@ -18,16 +18,10 @@ import {
   DEFAULT_PROMPTS,
   normalizeReportConfig,
   readReportConfig,
-  writeReportConfig,
-  type ReportConfig,
   type ReportPeriod,
 } from "../schedule/interface.ts";
 import { readReportIndex, reportHtmlFile, reportMetaFile } from "../execute/interface.ts";
-import {
-  presetLastRunForNewlyEnabled,
-  previousClosedWindow,
-  type DueReport,
-} from "../schedule/interface.ts";
+import { presetLastRunForNewlyEnabled, previousClosedWindow } from "../schedule/interface.ts";
 import { readLastRun, updateLastRun } from "../common/interface.ts";
 import type { ReportTaskQueue } from "../schedule/interface.ts";
 import type { ReportConfigService } from "../../apply/interface.ts";

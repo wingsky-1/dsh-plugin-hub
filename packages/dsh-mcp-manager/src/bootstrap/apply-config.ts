@@ -9,8 +9,7 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { installSettingsNamespace } from "../../../../shared/settings-namespace.js";
 import { DEFAULT_ANNOUNCE_CATALOG, DEFAULT_CATALOG_MAX_ENTRIES } from "../catalog/interface.ts";
-import { Config, DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS } from "../config/model/interface.ts";
-import { DEFAULT_RESULT_TRUNCATE_BYTES } from "../connection/interface.ts";
+import { Config } from "../config/model/interface.ts";
 import { normalizeMiddlewareMode } from "../workspace/interface.ts";
 import type { McpManager } from "../connection/interface.ts";
 import { uiConfigChangedFrame } from "../api/interface.ts";

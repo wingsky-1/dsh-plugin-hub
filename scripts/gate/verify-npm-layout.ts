@@ -122,7 +122,7 @@ for (const p of layoutTargets) {
     // 2. 客户端契约（arrive 模拟，同 contract-check 实现）
     const clientPath = join(pkgRoot, "lib", "client.js");
     if (existsSync(clientPath)) {
-      const { calls, factories, error } = executeClient(readFileSync(clientPath, "utf8"));
+      const { factories, error } = executeClient(readFileSync(clientPath, "utf8"));
       if (error) {
         problems.push(`client 执行失败: ${String(error.message).split("\n")[0]}`);
       } else if (!factories.has(name)) {

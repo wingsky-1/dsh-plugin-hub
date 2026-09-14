@@ -39,7 +39,8 @@ import type { ClientFacts } from "./capabilities.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
-import type { LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
+
+import type { LocaleNamespaceMap as _LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
 
 declare module "@deepseek-ai/dsh-client-ui-slots" {
   interface LocaleNamespaceMap {
@@ -435,7 +436,7 @@ function requestPermission(onDone: any) {
       .catch(function () {
         if (onDone) onDone();
       });
-  } catch (error) {
+  } catch {
     if (onDone) onDone();
   }
 }
@@ -470,7 +471,7 @@ function claimMaster() {
     }
     localStorage.setItem(MASTER_KEY, JSON.stringify({ id: TAB_ID, ts: now }));
     return true;
-  } catch (error) {
+  } catch {
     return true;
   }
 }
@@ -529,7 +530,7 @@ function unlockAudio() {
     source.buffer = buffer;
     source.connect(ctx.destination);
     source.start(0);
-  } catch (error) {
+  } catch {
     // 音频不可用不阻塞通知
   }
 }
@@ -568,7 +569,7 @@ function playTone(tone: string | undefined) {
       osc.start(t + n.at);
       osc.stop(t + n.at + n.dur + 0.02);
     }
-  } catch (error) {
+  } catch {
     // 播放失败忽略
   }
 }
@@ -579,7 +580,7 @@ function playPreview(tone: string | undefined) {
   if (audioCtx === null || audioCtx.state !== "running") return;
   try {
     playTone(tone);
-  } catch (error) {
+  } catch {
     // 忽略
   }
 }
@@ -3252,7 +3253,7 @@ export function apply(ctx: any) {
           unsubLocale = locale.subscribe(function () {
             try {
               t = locale.bind(NS);
-            } catch (e) {
+            } catch {
               /* 忽略 */
             }
           });
@@ -3348,7 +3349,7 @@ export function apply(ctx: any) {
         for (var i = 0; i < notified.length; i += 1) {
           try {
             notified[i].close();
-          } catch (error) {
+          } catch {
             // 忽略
           }
         }

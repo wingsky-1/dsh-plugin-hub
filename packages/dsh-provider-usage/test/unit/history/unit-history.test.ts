@@ -291,7 +291,6 @@ describe("HistoryStore.exportAll", () => {
 // ================================================================ #150 二阶段：HistoryStore 深度分支
 
 import { readdirSync, existsSync } from "node:fs";
-import { rename as renameAsync } from "node:fs/promises";
 import { listAdapters, migrateLegacyV3 } from "../../../src/apply/index.ts";
 
 describe("构造缺省值", () => {

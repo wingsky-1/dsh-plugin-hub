@@ -363,7 +363,7 @@ describe("renderMcpCatalogUpdate", () => {
 
 describe("catalogHistory", () => {
   const entry = [{ name: "h1", text: "t" }];
-  const event = (seq, visible) => ({
+  const event = (seq, _visible) => ({
     type: "user/message",
     seq,
     data: { source: { kind: "mcp-catalog", entries: entry } },

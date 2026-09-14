@@ -48,7 +48,6 @@ const T0 = new Date(2026, 8, 4, 12, 0, 0).getTime();
 const T1 = T0 + 86400000; // 2026-09-05（DAY1）
 const DAY0 = dayKey(T0);
 const DAY1 = dayKey(T1);
-const HOUR = 3600_000;
 
 /**
  * 事件工厂。0.1.5 迁移适配（与 unit-trend.test.ts 同口径）：旧用例以

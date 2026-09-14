@@ -37,10 +37,7 @@ import { zh, en, type ProviderUsageLocaleKey } from "./locales.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
-import type { LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
 import {
-  BREAKPOINT_NARROW_MAX,
-  BREAKPOINT_TABLET_MAX,
   DEFAULT_Z_INDEX_BASE,
   breakpointForWidth,
   clampPointToViewport,
@@ -55,6 +52,8 @@ import STYLE from "./style.css";
 
 // i18n：字典命名空间 + LocaleNamespaceMap 声明合并（官方 ui-jobs 同款）。
 const NS = "providerUsage";
+
+import type { LocaleNamespaceMap as _LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
 
 declare module "@deepseek-ai/dsh-client-ui-slots" {
   interface LocaleNamespaceMap {
@@ -78,7 +77,6 @@ function el(
 ): HTMLElement {
   const node = document.createElement(tag);
   if (attrs !== undefined && attrs !== null) {
-    let kids = attrs.children;
     for (const key of Object.keys(attrs)) {
       const value = attrs[key];
       if (key === "children" || value === undefined || value === null) continue;
@@ -91,7 +89,6 @@ function el(
         node.addEventListener(key.slice(2).toLowerCase(), value as EventListener);
       } else node.setAttribute(key, String(value));
     }
-    if (Array.isArray(attrs.children)) kids = attrs.children;
   }
   const list = Array.isArray(children) ? children : [children];
   for (const item of list) {

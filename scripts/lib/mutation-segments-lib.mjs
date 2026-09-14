@@ -17,7 +17,6 @@
  *      c. 声明 to —— lib/ 模块锚（#k 同 from 语义），取其前一行；
  *      d. 缺省 —— 下一个任意类型锚点的前一行；无后续锚点延伸到 EOF。
  */
-import { readFileSync } from "node:fs";
 
 /** 解析 "name" / "name#k" → { mod, occ } */
 function parseSpec(spec) {

@@ -41,7 +41,7 @@ import { readAdapterStateResult, readUserAdapters } from "../domain1/registry/in
 import { loadUserAdapterChecked } from "../domain1/registry/interface.ts";
 import { StatsServiceCtor as StatsService } from "../domain1/pipeline/interface.ts";
 import { TrendTracker } from "../domain2/aggregate/interface.ts";
-import { readReportConfig, type ReportConfig } from "../domain2/schedule/interface.ts";
+import { readReportConfig } from "../domain2/schedule/interface.ts";
 import { ReportScheduler } from "../domain2/schedule/interface.ts";
 import { optionalNotifier } from "../domain2/execute/interface.ts";
 import { ReportConfigService } from "./report-config-service.ts";

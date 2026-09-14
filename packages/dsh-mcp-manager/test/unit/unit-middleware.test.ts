@@ -43,8 +43,6 @@ const {
   CATALOG_TTL_MS,
   LIST_DEFAULT_TOOLS_PER_SERVER,
   LIST_MAX_TOOLS_PER_SERVER,
-  scoreTool,
-  MAX_TOTAL_CATALOG_BYTES,
   loadUserState,
   saveUserState,
 } = await import("../../src/index.ts");

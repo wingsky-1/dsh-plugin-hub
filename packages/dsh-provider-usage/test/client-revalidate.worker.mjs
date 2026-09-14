@@ -260,7 +260,6 @@ globalThis.fetch = async (url) => {
 
 // ---- setInterval 收集器：轮询回调由测试手动触发（不真等 60s）----
 const intervals = [];
-const origSetInterval = globalThis.setInterval;
 globalThis.setInterval = (fn, ms) => {
   intervals.push({ fn, ms });
   return intervals.length;
