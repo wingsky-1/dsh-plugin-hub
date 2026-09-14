@@ -29,7 +29,7 @@ interface JobRecord {
 }
 
 /**
- * 修复前（commit cede125，即本 PR 的 base）的 peakConcurrency 逐行照抄。
+ * 修复前（commit `cede125`，即本 PR 的 base）的 peakConcurrency 逐行照抄。
  *
  * 为什么留一份副本：它的唯一用途是当「旧口径真值」——用来证明本次改动在无 cancelled 输入上
  * 零行为变化，并把「含 cancelled 时裸算会虚高」这个前提做成可执行断言（而不是注释里的传说）。
@@ -226,6 +226,8 @@ test("④含 cancelled 输入下饱和判据仍按真实窗口算（峰位不得
   assert.equal(r.maxAfterPeak, 1, "峰值后上界按真实窗口算（real-a 结束后的 real-b）");
 });
 
+// 残留风险（用例无法覆盖，需人工留意）：GitHub 若改用其它大小写形态，精确匹配会静默停止过滤，
+// 而本用例仍绿——它锁的是「不得扩大过滤面」，不是「未来枚举一定小写」。
 test("⑤过滤判据是精确值 cancelled：大小写变体不触发过滤（防大小写不敏感改坏）", () => {
   const input = [
     { name: "real", started_at: T("00:00"), completed_at: T("00:30"), conclusion: "success" },
