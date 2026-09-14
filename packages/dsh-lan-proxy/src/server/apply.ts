@@ -12,9 +12,9 @@ import { mkdirSync } from "node:fs";
 import type { Context } from "@deepseek-ai/cordis";
 import { writeJson, errorMessage, guardLoopbackMethod } from "../../../../shared/host-utils.js";
 import { dshHome } from "../../../../shared/dsh-home.js";
-import { createLanProxy, DEFAULT_DEFLATE_POLICY } from "./proxy/interface.ts";
+import { createLanProxy } from "./proxy/interface.ts";
 import type { LanProxy } from "./proxy/interface.ts";
-import { DEFAULT_OPTIONS } from "./shared/interface.ts";
+import { DEFAULT_DEFLATE_POLICY, DEFAULT_OPTIONS } from "./shared/interface.ts";
 import type { TlsMaterials } from "./tls/interface.ts";
 import { ensureSelfSignedTls, loadTlsFromFiles } from "./tls/interface.ts";
 // 配置层值依赖单向 apply → config：默认白名单常量（单一事实源）与存量归一化纯函数

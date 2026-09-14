@@ -73,19 +73,18 @@ export {
   isCompressible,
   resolveCompressionOptions,
   deflateAllowedByPolicy,
-  DEFAULT_DEFLATE_POLICY,
   hasDshAuthCookie,
   isTokenMintCandidate,
   withLaunchToken,
 } from "./server/proxy/interface.ts";
-export type {
-  ConnStats,
-  DeflatePolicy,
-  LanProxy,
-  TokenProvider,
-} from "./server/proxy/interface.ts";
-// 包内共享叶子（#826：DEFAULT_OPTIONS / isLoopbackTarget 从 proxy.ts 归位）
-export { DEFAULT_OPTIONS, isLoopbackTarget } from "./server/shared/interface.ts";
+export type { ConnStats, LanProxy, TokenProvider } from "./server/proxy/interface.ts";
+// 包内共享叶子（#826：默认值常量与回环判定从 proxy.ts 归位）
+export {
+  DEFAULT_DEFLATE_POLICY,
+  DEFAULT_OPTIONS,
+  isLoopbackTarget,
+} from "./server/shared/interface.ts";
+export type { DeflatePolicy } from "./server/shared/interface.ts";
 // TLS 域（#826：cert.ts 归位为 server/tls/）
 export {
   ensureSelfSignedTls,

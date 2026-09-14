@@ -46,7 +46,12 @@ import compression from "compression";
 // （module.exports = ProxyServer 类，静态方法 createProxyServer）。
 import httpProxy from "http-proxy";
 
-import { DEFAULT_OPTIONS, isLoopbackTarget } from "../../shared/interface.ts";
+import {
+  DEFAULT_DEFLATE_POLICY,
+  DEFAULT_OPTIONS,
+  isLoopbackTarget,
+  type DeflatePolicy,
+} from "../../shared/interface.ts";
 import type { TlsMaterials } from "../../tls/interface.ts";
 
 /** createLanProxy 的日志器最小面（console 或 ctx.logger 均兼容）。 */
@@ -201,20 +206,6 @@ export interface CompressionOptions {
   level?: number;
   brotli?: { params: Record<string, number> };
 }
-
-/** WS 压缩协商策略：浏览器段开关 + UA 拒绝片段。 */
-export interface DeflatePolicy {
-  /** 浏览器段是否允许协商 permessage-deflate（false = 全局关闭压缩）。 */
-  browser?: boolean;
-  /** UA 字符串包含任一片段 → 该端强制不协商压缩。 */
-  uaDeny?: readonly string[];
-}
-
-/** 默认 WS 压缩策略（单一事实源）：浏览器段可协商，但 iOS 三件套强制不协商。 */
-export const DEFAULT_DEFLATE_POLICY: Readonly<DeflatePolicy> = Object.freeze({
-  browser: true,
-  uaDeny: Object.freeze(["iPhone", "iPad", "iPod"]),
-});
 
 /**
  * 按策略判定某 UA 是否允许协商 WS 压缩（纯函数，可单测）。

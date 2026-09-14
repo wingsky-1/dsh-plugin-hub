@@ -5,8 +5,12 @@
  * 它维护，键集一致性由 config-matrix 门禁锁定（漂移即红）。
  */
 import z from "schemastery";
-import { DEFAULT_DEFLATE_POLICY, type DeflatePolicy } from "../../proxy/interface.ts";
-import { DEFAULT_OPTIONS, isLoopbackTarget } from "../../shared/interface.ts";
+import {
+  DEFAULT_DEFLATE_POLICY,
+  DEFAULT_OPTIONS,
+  isLoopbackTarget,
+  type DeflatePolicy,
+} from "../../shared/interface.ts";
 
 /**
  * WebSocket 压缩桥接默认路径白名单（dsh 0.1.2 起 api-gateway 拥有的 Remote 流

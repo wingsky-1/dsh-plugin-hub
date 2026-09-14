@@ -99,7 +99,7 @@
         "config": "stryker.conf.d/dsh-lan-proxy-{1..4}.json（#220 B 段拆分，段键 1..4 不变；s1 仍是 proxy 域单一实现文件 server/proxy/impl/proxy.ts 不可细分，维持现状；#826 域归位后段面路径随重排更新）",
         "hardeningNote": "#147 变异加固轮：covered 由 49.75% 提升至 62.52%，60% 第一阶达标",
         "threshold": 60,
-        "scope": "src 级四段（#826 域归位重画，段键保持 1..4）：seg1 server/proxy（interface + impl/proxy，原根 proxy.ts）/ seg2 server/apply + server/shared（装配与包内共享）/ seg3 server/config（interface + impl/*，model 原根 config.ts、routes 原根 config-routes.ts、namespace 原根 settings.ts）/ seg4 根 index.ts + server/tls（原根 cert.ts）+ server/migrate（原根 migrate.ts）；基线为 src 口径，由 observe 夜间全量班重建"
+        "scope": "src 级四段（#826 域归位重画，段键保持 1..4；五处纯 re-export 门面 src/**/interface.ts 按 facade 口径进 coverageExcludes，不在 mutate 面）：seg1 server/proxy/impl（原根 proxy.ts）/ seg2 server/apply + server/shared 的 defaults/deflate/net（装配与包内共享）/ seg3 server/config/impl（model 原根 config.ts、routes 原根 config-routes.ts、namespace 原根 settings.ts）/ seg4 根 index.ts + server/tls/impl（原根 cert.ts）+ server/migrate/impl（原根 migrate.ts）；基线为 src 口径，由 observe 夜间全量班重建"
       }
     }
   }

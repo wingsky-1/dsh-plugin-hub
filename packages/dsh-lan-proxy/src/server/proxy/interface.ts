@@ -5,7 +5,6 @@
  * 白名单、令牌铸造条件），拆成并列域会让每个定义都要跨域解释另一半。
  */
 export {
-  DEFAULT_DEFLATE_POLICY,
   bridgeUpstreamHeaders,
   compressWsPath,
   createLanProxy,
@@ -21,7 +20,6 @@ export {
 } from "./impl/proxy.ts";
 export type {
   ConnStats,
-  DeflatePolicy,
   LanListenResult,
   LanLogger,
   LanProxy,
