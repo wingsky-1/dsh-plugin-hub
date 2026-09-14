@@ -304,6 +304,21 @@ console.log(failed === 0 ? "客户端契约：全部通过" : `客户端契约�
     failed++;
   }
 }
+// #767 B0：同一判据接入 dsh-mcp-manager（该包随架构重构进入导出面漂移的高风险窗口）。
+// 与上一条同形、同判红语义；不带 --snapshot——基线只在删除到位的那一笔重冻结（D1）。
+{
+  const surfaceGate = spawnSync(
+    process.execPath,
+    [join(ROOT, "scripts/gate/export-surface-snapshot.mjs"), "--package", "dsh-mcp-manager"],
+    { encoding: "utf8" },
+  );
+  for (const line of (surfaceGate.stdout ?? "").split("\n"))
+    if (line.trim() !== "") console.log(line);
+  if (surfaceGate.status !== 0) {
+    console.log(`export-surface-snapshot(dsh-mcp-manager) | FAIL exit=${surfaceGate.status}`);
+    failed++;
+  }
+}
 // N2a（#733 M2c 后续）模块级可变状态门禁的**执行点已迁出**本脚本（计划项 3.1.2）：
 // 它原先在这里 spawnSync，与两个兄弟闸（forbid-src-tests / forbid-homedir-src）的形态不一致，
 // 后果之一是本脚本会先打印「客户端契约：全部通过」再 FAIL（判定表与汇总行被自己打脸）。

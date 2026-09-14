@@ -13,8 +13,8 @@
       "gate": "forbid-module-state-src",
       "script": "scripts/gate/forbid-module-state-src.mjs",
       "scopeFrom": "registry",
-      "packages": ["dsh-notifier"],
-      "why": "判据源自 #733 宪法第 1 条，当前只对 dsh-notifier 生效（该包是重写目标，存量已清零或登记豁免）。范围此前是脚本内的 PACKAGES 常量 + PACKAGES_V 版本号，现改为读本文件；扩包前必须先实测该包在新口径下的存量（照抄历史数字会误判）。"
+      "packages": ["dsh-notifier", "dsh-mcp-manager"],
+      "why": "判据源自 #733 宪法第 1 条；#767 B0 起扩至 dsh-mcp-manager——该包进入按域重写窗口，模块级可变状态与 I9 直接冲突，不登记进扫描面就等于没有判据。扩包前按本文件口径实测：notifier 存量 21 处命中由 1 条文件级豁免覆盖；mcp 存量 1 处（client/float/panel.ts 的模块级 let inflight），客户端结构改动归 #769，按文件级豁免登记。范围此前是脚本内的 PACKAGES 常量 + PACKAGES_V 版本号，现改为读本文件；扩包前必须先实测该包在新口径下的存量（照抄历史数字会误判）。"
     },
     {
       "gate": "forbid-src-tests",
@@ -40,8 +40,8 @@
       "gate": "export-surface-snapshot",
       "script": "scripts/gate/export-surface-snapshot.mjs",
       "scopeFrom": "cli",
-      "packages": ["dsh-notifier"],
-      "why": "包导出面快照（符号集 + 导出符号定义块与入库基线零 diff）。必须显式 --package（缺参直接 exit 2），当前唯一调用点在 contract-check.ts 且只覆盖 dsh-notifier——其余包的导出面尚无基线，属未纳入而非未受限，扩面要先产出基线。"
+      "packages": ["dsh-notifier", "dsh-mcp-manager"],
+      "why": "包导出面快照（符号集 + 导出符号定义块与入库基线零 diff）。必须显式 --package（缺参直接 exit 2），调用点都在 contract-check.ts；#767 B0 起覆盖 dsh-notifier 与 dsh-mcp-manager（后者的基线由重构前那棵树生成并入库，删除到位的那一笔才重冻结）。其余包的导出面尚无基线，属未纳入而非未受限，扩面要先产出基线。"
     },
     {
       "gate": "verify-vendored-binaries",
