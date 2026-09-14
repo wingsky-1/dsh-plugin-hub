@@ -5,7 +5,7 @@
  * 漏掉组合根里任一 `disposers.push(releaseXxx)`，第二次 `apply` 就会撞上那一个域的守卫。
  * 域自己的用例看不到这件事（它们不经过组合根），所以这条判据必须在这里。
  *
- * 假 ctx 只提供组合根真正读到的面：日志、`on`、`agents.roots()`、`webServer.register`、
+ * 假 ctx 只提供组合根真正读到的面：日志、`on`、`agents.list()`、`webServer.register`、
  * `typert.lookups` 与 `effect`。窄是有意的——补全其余字段只会让夹具和真 ctx 一样重。
  * `DSH_HOME` 指向隔离目录：binding 域在装配期会读 bindings.json（产物零污染是红线 #218）。
  */
@@ -36,7 +36,7 @@ function fakeHost(): FakeHost {
   const ctx = {
     logger: { warn: () => undefined },
     on: () => () => undefined,
-    agents: { roots: () => [] },
+    agents: { list: () => [] },
     webServer: {
       register: (route: WebRoute) => {
         routes.push(route);

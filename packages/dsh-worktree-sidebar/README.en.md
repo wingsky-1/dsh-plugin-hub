@@ -23,7 +23,7 @@ The tab does **not** follow automatically: the plugin does not poll the host, an
 
 Subagent sessions inherit their parent's binding: a child session without a binding of its own roots its Files tab at the worktree its parent is registered to (the walk stops at the top, and falls back to the child's own cwd once the parent is unbound).
 
-Tools are exposed only to sessions inside a **git repository**, decided when the agent is created; a second check at execution time covers environments that changed in between. Each tool's result text states which worktree is bound and on which branch, so the model need not call another tool to confirm.
+Tools are exposed to **every agent inside a git repository, subagents included**, decided per agent when it is created; a second check at execution time covers environments that changed in between. Each tool's result text states which worktree is bound and on which branch, so the model need not call another tool to confirm.
 
 ## Explicit non-goals (known inconsistencies)
 

@@ -39,7 +39,7 @@ export interface AgentFace {
 export interface AgentPort {
   /** 订阅「新 agent 发布」。返回退订函数。 */
   subscribe(handler: (agent: AgentFace) => void): () => void;
-  /** 当前已发布的顶层 agent 快照（插件加载前就存在的那些）。 */
+  /** 当前存活的所有 agent 快照（含子 agent；插件加载前就存在的那些都在里面）。 */
   list(): readonly AgentFace[];
   /** 把工具装进该 agent 的作用域，返回释放函数。 */
   publish(agent: AgentFace, definitions: readonly ToolDefinition[]): () => void;

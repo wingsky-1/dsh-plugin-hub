@@ -41,8 +41,8 @@ function makeAgent(id: string, cwd: string | undefined) {
   return { agent, registered, disposed };
 }
 
-/** 宿主面假件：roots 由用例给定，事件经 `emit` 手工派发。 */
-function fakeHost(roots: readonly HostAgentLike[]) {
+/** 宿主面假件：agent 枚举由用例给定，事件经 `emit` 手工派发。 */
+function fakeHost(agents: readonly HostAgentLike[]) {
   const events: string[] = [];
   const handlers: Array<(payload: { agent: HostAgentLike }) => void> = [];
   const port: AgentHostPort = {
@@ -51,7 +51,7 @@ function fakeHost(roots: readonly HostAgentLike[]) {
       handlers.push(handler);
       return () => undefined;
     },
-    roots: () => roots,
+    all: () => agents,
   };
   return {
     port,
@@ -83,8 +83,8 @@ describe("agent 注册面", () => {
     expect(a1.disposed).toEqual([...DEFINITIONS]);
   });
 
-  it("subscribe 收到顶层 agent 后同样能 publish", () => {
-    // 事件到达时这个 agent 已经在 roots 里——真机上 agent/created 就是它入册的那一刻。
+  it("subscribe 收到 agent 后同样能 publish", () => {
+    // 事件到达时这个 agent 已在枚举里——真机上 agent/created 就是它入册的那一刻。
     const a2 = makeAgent("a2", "/repo");
     const host = fakeHost([a2.agent]);
     const agents = bindAgents(host.port);
@@ -110,10 +110,10 @@ describe("agent 注册面", () => {
     );
   });
 
-  it("子代理（不在 roots 里）不进 live：只有顶层 agent 被回调并拿到工具", () => {
+  it("子代理同样被回调并装得上：判定不再按顶层枚举过滤", () => {
     const parent = makeAgent("p1", "/repo");
     const child = makeAgent("c1", "/repo");
-    const host = fakeHost([parent.agent]);
+    const host = fakeHost([parent.agent, child.agent]);
     const agents = bindAgents(host.port);
     const seen: AgentFace[] = [];
     agents.subscribe((face) => {
@@ -122,10 +122,25 @@ describe("agent 注册面", () => {
 
     host.emit(child.agent);
     host.emit(parent.agent);
-    expect(seen).toEqual([{ id: "p1", cwd: "/repo" }]);
+    expect(seen).toEqual([
+      { id: "c1", cwd: "/repo" },
+      { id: "p1", cwd: "/repo" },
+    ]);
 
-    agents.publish(seen[0], DEFINITIONS);
+    for (const face of seen) agents.publish(face, DEFINITIONS);
+    expect(child.registered).toEqual([...DEFINITIONS]);
     expect(parent.registered).toEqual([...DEFINITIONS]);
-    expect(child.registered).toEqual([]);
+  });
+
+  it("list() 枚举子代理：快照里没有顶层与子之分", () => {
+    const parent = makeAgent("p1", "/repo");
+    const child = makeAgent("c1", "/repo/sub");
+    const { port } = fakeHost([parent.agent, child.agent]);
+    const agents = bindAgents(port);
+
+    expect(agents.list()).toEqual([
+      { id: "p1", cwd: "/repo" },
+      { id: "c1", cwd: "/repo/sub" },
+    ]);
   });
 });

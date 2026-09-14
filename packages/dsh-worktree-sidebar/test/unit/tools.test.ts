@@ -352,7 +352,7 @@ const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolv
 describe("tools 域的装配与释放", () => {
   afterEach(() => releaseTools());
 
-  it("装配时给已经在跑的顶层 agent 装一次；release 摘掉工具并退订", async () => {
+  it("装配时给已经在跑的 agent 装一次；release 摘掉工具并退订", async () => {
     const agents = fakeAgents([{ id: "a1", cwd: repo }]);
     const { deps } = fakeDeps({ agents: agents.port });
     installTools(deps);
@@ -362,6 +362,21 @@ describe("tools 域的装配与释放", () => {
     releaseTools();
     expect(agents.released).toEqual(["a1"]);
     expect(agents.isUnsubscribed()).toBe(true);
+  });
+
+  it("父与子两个 agent 各装一次；release 两个都摘掉", async () => {
+    const agents = fakeAgents([
+      { id: "parent", cwd: repo },
+      { id: "child", cwd: repo },
+    ]);
+    const { deps } = fakeDeps({ agents: agents.port });
+    installTools(deps);
+    await settle();
+    expect(agents.published).toEqual(["parent", "child"]);
+
+    releaseTools();
+    // 逆序摘除；顺序写死，免得「漏摘一个」被掩成通过。
+    expect(agents.released).toEqual(["child", "parent"]);
   });
 
   it("装配之后新发布的 agent 也会被装上（订阅入口）", async () => {

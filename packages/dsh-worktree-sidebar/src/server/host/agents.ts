@@ -1,7 +1,7 @@
 /**
  * 宿主 agent 适配层：把官方 `Agent` 面收窄成 tools 域认得的注册面。
  *
- * 「只给顶层 agent」与「装进去的效应随 agent 一起释放」这两条判断住在这里。
+ * 「装给**所有** agent（含子 agent）」与「装进去的效应随 agent 一起释放」这两条判断住在这里。
  * 它只认下面这个窄端口，因此不需要起 cordis 就能被白盒驱动。
  */
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
@@ -26,8 +26,8 @@ export interface HostAgentLike {
 export interface AgentHostPort {
   /** 订阅 agent 发布。返回退订函数。 */
   on(event: "agent/created", handler: (payload: { agent: HostAgentLike }) => void): () => void;
-  /** 当前**顶层** agent 快照。 */
-  roots(): readonly HostAgentLike[];
+  /** 当前**所有存活** agent 快照（含子 agent）。 */
+  all(): readonly HostAgentLike[];
 }
 
 /** agent 注册面：工具域只看到「一个 agent 有 id、有 cwd、可以往里装工具」。 */
@@ -43,13 +43,15 @@ export function bindAgents(host: AgentHostPort): AgentPort {
   return {
     subscribe: (handler) =>
       host.on("agent/created", ({ agent }) => {
-        // 只给顶层 agent：子代理的工具面由它的调用方决定，不该被本插件改变。
-        if (!host.roots().includes(agent)) return;
+        // 这里原先按顶层枚举挡掉子 agent，理由是「子代理的工具面由它的调用方决定，不该被本插件改变」。
+        // 该判断被**有意推翻**（不是删除时漏掉守卫）：子会话同样会点开侧边栏、同样需要把 worktree
+        // 登记给自己那条会话，而工具装进各 agent 自己的 effect、随该 agent 一起释放，
+        // 并不会改动调用方的工具面。子会话的展示语义见 README。
         live.set(agent.id, agent);
         handler(faceOf(agent));
       }),
     list: () =>
-      host.roots().map((agent) => {
+      host.all().map((agent) => {
         live.set(agent.id, agent);
         return faceOf(agent);
       }),

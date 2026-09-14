@@ -60,7 +60,7 @@ export async function apply(ctx: Context, config: WorktreeSidebarConfig = {}): P
     register: (route) => ctx.webServer.register(route),
     agents: bindAgents({
       on: (event, handler) => ctx.on(event, handler),
-      roots: () => ctx.agents.roots(),
+      all: () => ctx.agents.list(),
     }),
     typert: bindTypert(ctx.typert.lookups),
     sessions: bindSessions(ctx.sessions),
