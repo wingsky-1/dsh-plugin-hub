@@ -1,31 +1,33 @@
 /**
- * dsh-lan-proxy — 插件挂载主流程（apply）与转发常量（#276 方案 A 阶段 3 拆出）。
+ * dsh-lan-proxy — 插件挂载主流程（apply）与转发常量。
  *
- * apply 内 sync/TLS/横幅生命周期闭环紧密，不宜再拆：转发器按当前配置重建
- * （settings 命名空间解析值优先、组合层 entry 兜底），health/config 路由与
- * randomUUID polyfill 同处装配。路由表归 config-routes.ts，settings 接线归
- * settings.ts，存量迁移归 migrate.ts；本模块不 import index.ts（防循环）。
+ * 装配层：把配置域、迁移域与转发引擎域按依赖顺序串起来并注册生命周期。
+ * sync / TLS / 横幅的闭环不分给各域——它们共享同一组装配期状态（当前配置来源、
+ * 转发器句柄、settings 附加态），拆开只会把这组状态变成跨域的隐式契约。
+ * 本模块不 import index.ts（防循环）。
  */
 import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import type { Context } from "@deepseek-ai/cordis";
-import { writeJson, errorMessage, guardLoopbackMethod } from "../../../shared/host-utils.js";
-import { dshHome } from "../../../shared/dsh-home.js";
-import { createLanProxy, DEFAULT_OPTIONS, DEFAULT_DEFLATE_POLICY } from "./proxy.ts";
-import type { TlsMaterials, LanProxy } from "./proxy.ts";
-import { ensureSelfSignedTls, loadTlsFromFiles } from "./cert.ts";
+import { writeJson, errorMessage, guardLoopbackMethod } from "../../../../shared/host-utils.js";
+import { dshHome } from "../../../../shared/dsh-home.js";
+import { createLanProxy } from "./proxy/interface.ts";
+import type { LanProxy } from "./proxy/interface.ts";
+import { DEFAULT_DEFLATE_POLICY, DEFAULT_OPTIONS } from "./shared/interface.ts";
+import type { TlsMaterials } from "./tls/interface.ts";
+import { ensureSelfSignedTls, loadTlsFromFiles } from "./tls/interface.ts";
 // 配置层值依赖单向 apply → config：默认白名单常量（单一事实源）与存量归一化纯函数
-// 均定义于 config.ts，本模块消费并 re-export（保持 apply.ts 既有导出面不变）。
-import { normalizeLegacyWsCompressPaths, DEFAULT_WSS_COMPRESS_PATHS } from "./config.ts";
-import type { HttpCompressSnapshot, LanProxyConfig, ResolvedConfig } from "./config.ts";
-import { SETTINGS_NS, installLanProxySettings, warnLog } from "./settings.ts";
-import type { OwnerScopeLike, SettingsServiceLike } from "./settings.ts";
-import { migrateFileConfig } from "./migrate.ts";
-import { ROUTES, buildConfigRoutes } from "./config-routes.ts";
-import type { ConfigRouteDeps } from "./config-routes.ts";
+// 均定义于配置域，本模块消费并 re-export（保持 apply 既有导出面不变）。
+import { normalizeLegacyWsCompressPaths, DEFAULT_WSS_COMPRESS_PATHS } from "./config/interface.ts";
+import type { HttpCompressSnapshot, LanProxyConfig, ResolvedConfig } from "./config/interface.ts";
+import { SETTINGS_NS, installLanProxySettings, warnLog } from "./config/interface.ts";
+import type { OwnerScopeLike, SettingsServiceLike } from "./config/interface.ts";
+import { migrateFileConfig } from "./migrate/interface.ts";
+import { ROUTES, buildConfigRoutes } from "./config/interface.ts";
+import type { ConfigRouteDeps } from "./config/interface.ts";
 
-// 重新导出默认压缩白名单（定义见 config.ts），保持 `from "./apply.ts"` 的既有消费面。
+// 重新导出默认压缩白名单（定义见配置域），保持 `from "./server/apply.ts"` 的既有消费面。
 export { DEFAULT_WSS_COMPRESS_PATHS };
 
 /**

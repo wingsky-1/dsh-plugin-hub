@@ -32,20 +32,27 @@ import { runConfigMatrix } from "../lib/config-matrix-gate.ts";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const NOTIFIER_CONFIG_DIR = "packages/dsh-notifier/src/server/config";
 
-/** mkdtemp 副本仓库：复制矩阵的输入面（lan-proxy 平铺 config.ts；notifier 整个配置域）
+/** mkdtemp 副本仓库：复制矩阵的输入面（lan-proxy 配置域入口 model.ts；notifier 整个配置域）
  *  加上声明文件与 package.json。 */
 function fakeRepo() {
   const root = mkdtempSync(join(tmpdir(), "cfgmtx-"));
   try {
-    mkdirSync(join(root, "packages", "dsh-lan-proxy", "src", "client"), { recursive: true });
+    mkdirSync(join(root, "packages", "dsh-lan-proxy", "src", "client", "shared"), {
+      recursive: true,
+    });
+    mkdirSync(join(root, "packages", "dsh-lan-proxy", "src", "server", "config", "impl"), {
+      recursive: true,
+    });
     mkdirSync(join(root, "scripts", "data"), { recursive: true });
+    // 矩阵只读这一份配置域入口文本（Config / FILE_CONFIG_VALIDATORS / SETTING_FIELD_HINTS
+    // 同居其中，见 config-matrix-gate 的 runLanProxy），故不必复制整个 server 树。
     copyLf(
-      join(ROOT, "packages/dsh-lan-proxy/src/config.ts"),
-      join(root, "packages/dsh-lan-proxy/src/config.ts"),
+      join(ROOT, "packages/dsh-lan-proxy/src/server/config/impl/model.ts"),
+      join(root, "packages/dsh-lan-proxy/src/server/config/impl/model.ts"),
     );
     copyLf(
-      join(ROOT, "packages/dsh-lan-proxy/src/client/index.ts"),
-      join(root, "packages/dsh-lan-proxy/src/client/index.ts"),
+      join(ROOT, "packages/dsh-lan-proxy/src/client/shared/defaults.ts"),
+      join(root, "packages/dsh-lan-proxy/src/client/shared/defaults.ts"),
     );
     // 配置域整棵复制：运行时 require 要走完整 import 链（impl/input → ../model）。
     cpSync(join(ROOT, NOTIFIER_CONFIG_DIR), join(root, NOTIFIER_CONFIG_DIR), { recursive: true });
@@ -144,7 +151,7 @@ test("lan-proxy: 删 FILE_CONFIG_VALIDATORS 一键 → 红且报错含键名", (
   assertRed(
     "lan-proxy 删 validators.enabled",
     (root) => {
-      edit(root, "dsh-lan-proxy", "config.ts", (s) =>
+      edit(root, "dsh-lan-proxy", "server/config/impl/model.ts", (s) =>
         s.replace(/  enabled: \(v\) => typeof v === "boolean",\n/, ""),
       );
     },
@@ -156,7 +163,7 @@ test("lan-proxy: DEFAULTS 增 schema 外键 → 红且报错含键名", () => {
   assertRed(
     "lan-proxy DEFAULTS 加 fakeKey",
     (root) => {
-      edit(root, "dsh-lan-proxy", "client/index.ts", (s) =>
+      edit(root, "dsh-lan-proxy", "client/shared/defaults.ts", (s) =>
         // 锚点只锁声明本身：缩进归 Prettier（顶层块的多余缩进会被归一化），
         // 注入行自带格式化器口径的缩进，避免判据绑死在某一版排版上。
         s.replace(/const DEFAULTS: Record<string, any> = \{\n/, "$&  fakeKey: 1,\n"),
@@ -170,7 +177,7 @@ test("lan-proxy: 删 Config schema 键 → 红且报错含键名", () => {
   assertRed(
     "lan-proxy 删 schema.host",
     (root) => {
-      edit(root, "dsh-lan-proxy", "config.ts", (s) =>
+      edit(root, "dsh-lan-proxy", "server/config/impl/model.ts", (s) =>
         s.replace(/  host: z\.string\(\)\.default\(DEFAULT_OPTIONS\.host\),\n/, ""),
       );
     },
@@ -182,7 +189,7 @@ test("lan-proxy: DEFAULTS 删非豁免可编辑键 → 红且报错含键名", (
   assertRed(
     "lan-proxy DEFAULTS 删 tlsCertFile",
     (root) => {
-      edit(root, "dsh-lan-proxy", "client/index.ts", (s) =>
+      edit(root, "dsh-lan-proxy", "client/shared/defaults.ts", (s) =>
         // 缩进与引号形态均归 Prettier，判据只锁「这一行存在」，不锁它怎么排的
         s.replace(/^[ \t]*tlsCertFile: (?:""|''),\n/m, ""),
       );
@@ -399,7 +406,7 @@ test("UI 豁免表: 条目超上限（>8）→ 红（上限是策略，数据面
         for (let i = 0; i < 5; i++) {
           json.exemptKeys.push({
             key: `extra${i}`,
-            reason: "packages/dsh-lan-proxy/src/config.ts:1 注入用例",
+            reason: "packages/dsh-lan-proxy/src/server/config/impl/model.ts:1 注入用例",
           });
         }
         return `${JSON.stringify(json, null, 2)}\n`;
@@ -441,7 +448,7 @@ test("UI 豁免表: 豁免键已出现在客户端 DEFAULTS → 红（豁免残�
   assertRed(
     "客户端 DEFAULTS 补上 host",
     (root) => {
-      edit(root, "dsh-lan-proxy", "client/index.ts", (s) => {
+      edit(root, "dsh-lan-proxy", "client/shared/defaults.ts", (s) => {
         const after = s.replace(/^(\s*)enabled: true,$/m, '$1enabled: true,\n$1host: "127.0.0.1",');
         assert.notEqual(after, s, "fixture 应含 `enabled: true,`（源码改动后请同步本注入）");
         return after;

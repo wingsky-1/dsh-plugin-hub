@@ -65,7 +65,7 @@ function basePkgOfConf(f) {
   );
   return hit[0];
 }
-// 段式配置的后缀（如 dsh-notifier-server.json → server；dsh-lan-proxy-1.json → 1）
+// 段式配置的后缀（如 dsh-notifier-server.json → server；dsh-lan-proxy-config.json → config）
 function segSuffixOfConf(f) {
   const name = f.replace(/\.json$/, "");
   const base = basePkgOfConf(f);
@@ -554,8 +554,8 @@ test("#572: stryker 配置生成器与拓扑清单一致性（SSOT + CodeGen 门
 
 // ── #342 二期 §契约：功能段名唯一 + mutate 面防空段回归 ──
 // 段名唯一：combos_for 按 stryker.conf.d/<pkg>-*.json 文件名枚举后缀展开矩阵，
-// 段文件名即矩阵实例（功能段名如 dsh-notifier-server.json → seg=server；数字段名
-// dsh-lan-proxy-1.json → seg=1 亦兼容）。重名/孤儿段（同时存在 <pkg>.json 与
+// 段文件名即矩阵实例（seg 取包名之后的全部后缀，如 dsh-notifier-server.json → seg=server、
+// dsh-lan-proxy-config.json → seg=config）。重名/孤儿段（同时存在 <pkg>.json 与
 // <pkg>-*.json）/跳号会让矩阵指向不存在配置或白跑孤儿全量，fail-closed 前先静态拦截。
 // 防空段：provider 空段实证（mutate 指向不存在的 adapters/*.ts，0 mutant）——
 // 每段 mutate 正向条目必须至少 glob 到 1 个现存文件。

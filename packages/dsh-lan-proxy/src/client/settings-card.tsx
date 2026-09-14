@@ -11,25 +11,9 @@
 
 import * as React from "react";
 import { t } from "../../../../shared/client/i18n.js";
+import { DEFAULTS as CLIENT_DEFAULTS } from "./shared/interface.ts";
 
 const CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
-
-/** 展示缺省值（与宿主 DEFAULT_OPTIONS 同构；用户层未保存的键回落这些值）。 */
-export const DEFAULT_SETTINGS: Record<string, any> = {
-  enabled: true,
-  port: 3081,
-  httpsEnabled: true,
-  httpsPort: 3443,
-  tlsCertFile: "",
-  tlsKeyFile: "",
-  printBanner: true,
-  wsBridgeEnabled: true,
-  wsCompressEnabled: true,
-  wsCompressPaths: ["/api/remote.mux"],
-  httpCompressEnabled: true,
-  httpCompressLevel: 1,
-  injectToken: true,
-};
 
 /** 增量 diff 的键值比较：路径白名单数组按元素逐一比较，其余严格相等。 */
 function sameSetting(key: string, a: any, b: any): boolean {
@@ -60,7 +44,7 @@ function compressStatusLine(c: any): string | null {
  * 宿主 scope.watch 立即重建转发器。
  */
 export function SettingsCard(props?: { defaults?: Record<string, any> }) {
-  const DEFAULTS = props?.defaults || DEFAULT_SETTINGS;
+  const DEFAULTS = props?.defaults || CLIENT_DEFAULTS;
   const useState = React.useState;
   const useEffect = React.useEffect;
   const draft = useState(null);

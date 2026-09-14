@@ -120,7 +120,7 @@ test("matchFilterBlock：包内改动命中该包；全局面命中 global；纯
     packages: [],
   });
   // 段配置是变异单一事实源（#322）：改段配置必须命中该包
-  assert.deepEqual(matchFilterBlock(filters, ["stryker.conf.d/dsh-lan-proxy-2.json"]), {
+  assert.deepEqual(matchFilterBlock(filters, ["stryker.conf.d/dsh-lan-proxy-config.json"]), {
     globalHit: false,
     packages: ["dsh-lan-proxy"],
   });
@@ -131,7 +131,7 @@ test("planChangedScope：全局面命中回退全量；单包改动只命中该�
 
   const scoped = planChangedScope({
     root: ROOT,
-    files: ["packages/dsh-lan-proxy/src/proxy.ts"],
+    files: ["packages/dsh-lan-proxy/src/server/proxy/impl/proxy.ts"],
     allPackages,
   });
   assert.deepEqual(scoped.hitPackages, ["dsh-lan-proxy"]);
@@ -170,7 +170,7 @@ test("planChangedScope：全局面命中回退全量；单包改动只命中该�
     writeFileSync(join(tmpRoot, CI_WORKFLOW), "name: CI\non:\n  pull_request:\n", "utf8");
     const broken = planChangedScope({
       root: tmpRoot,
-      files: ["packages/dsh-lan-proxy/src/proxy.ts"],
+      files: ["packages/dsh-lan-proxy/src/server/proxy/impl/proxy.ts"],
       allPackages,
     });
     assert.deepEqual(broken.hitPackages, allPackages, "filters 不可解析 → 全量（fail-closed）");

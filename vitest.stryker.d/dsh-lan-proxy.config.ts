@@ -8,8 +8,10 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
+      'packages/dsh-lan-proxy/test/integration/apply-token-provider.test.ts',
       'packages/dsh-lan-proxy/test/unit/unit-apply.test.ts',
       'packages/dsh-lan-proxy/test/unit/unit-proxy.test.ts',
+      'packages/dsh-lan-proxy/test/unit/unit-tls.test.ts',
     ],
     environment: 'node',
     testTimeout: 60_000,

@@ -12,19 +12,19 @@
     {
       "package": "dsh-lan-proxy",
       "defaults": {
-        "module": "packages/dsh-lan-proxy/src/config.ts",
+        "module": "packages/dsh-lan-proxy/src/server/config/impl/model.ts",
         "export": "DEFAULT_CONFIG"
       },
       "normalizer": {
-        "module": "packages/dsh-lan-proxy/src/config.ts",
+        "module": "packages/dsh-lan-proxy/src/server/config/impl/model.ts",
         "export": "normalizeConfig"
       },
       "booleanKeys": {
-        "module": "packages/dsh-lan-proxy/src/config.ts",
+        "module": "packages/dsh-lan-proxy/src/server/config/impl/model.ts",
         "export": "BOOLEAN_KEYS"
       },
       "countLimits": {
-        "module": "packages/dsh-lan-proxy/src/config.ts",
+        "module": "packages/dsh-lan-proxy/src/server/config/impl/model.ts",
         "export": "COUNT_LIMITS"
       }
     },

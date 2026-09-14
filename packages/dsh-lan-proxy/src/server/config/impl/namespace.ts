@@ -1,22 +1,18 @@
 /**
- * dsh-lan-proxy — 官方 settings 命名空间接线（薄包装，收敛自 shared）。
+ * dsh-lan-proxy — 官方 settings 命名空间接线（薄包装）。
  *
- * 职责：插件在官方 settings 服务中的命名空间（SETTINGS_NS）、minimal 类型面
- * （OwnerScopeLike / SettingsServiceLike / LanProxySettingsHooks）与挂载函数
- * installLanProxySettings。issue #436 起不再包内复刻接线——实现统一转发
- * shared/installSettingsNamespace（单一事实源），hooks 依次透传 onScope /
- * setSource / onChange；onScope 供存量配置迁移写入。
+ * 只做三件事：注册命名空间、把 owner scope 交给调用方、依次透传 hooks；实现统一
+ * 转发 shared/installSettingsNamespace（单一事实源）。
  *
- * 为什么不用官方 @deepseek-ai/dsh-settings 包：插件运行时沿自身 lib/ 向上
- * 解析不到该包（MODULE_NOT_FOUND），动态 import 会静默失败——与
- * shared/settings-namespace.js 相同的服务面注入方案。
+ * 为什么不用官方 @deepseek-ai/dsh-settings 包：插件运行时沿自身 lib/ 向上解析不到
+ * 该包（MODULE_NOT_FOUND），动态 import 会静默失败。
  */
 import type { Context } from "@deepseek-ai/cordis";
-import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
-import { Config } from "./config.ts";
-import type { LanProxyConfig } from "./config.ts";
+import { installSettingsNamespace } from "../../../../../../shared/settings-namespace.js";
+import { Config } from "./model.ts";
+import type { LanProxyConfig } from "./model.ts";
 
-export { warnLog } from "../../../shared/settings-namespace.js";
+export { warnLog } from "../../../../../../shared/settings-namespace.js";
 
 /** 本插件在官方 settings 服务中的命名空间。 */
 export const SETTINGS_NS = "dsh-lan-proxy";

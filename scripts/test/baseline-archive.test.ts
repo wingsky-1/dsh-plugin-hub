@@ -148,13 +148,14 @@ test("期望集合派生：dsh- 前缀剥离 + seg=0 单配置形态", () => {
   assert.deepEqual(expectedBaselineFiles(["README.md", null]), [], "非 .json 条目不得进期望集合");
 });
 
-test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（32 段）", () => {
+test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（34 段）", () => {
   const confNames = readdirSync(join(ROOT, "stryker.conf.d")).filter((f) => f.endsWith(".json"));
   const expected = expectedBaselineFiles(confNames);
   assert.equal(expected.length, confNames.length, "每个段配置都应对应一个基线文件");
   // 段数为显式哨兵：拆段/合段必须同时改这里（#720 把 dsh-notifier config 段拆三段 31 → 33；
-  // #733 按域重写把 notifier 的 10 段重划为 9 段 33 → 32），否则新增段静默漏进归档期望集合也无人察觉。
-  assert.equal(expected.length, 32, `段数应为 32，实际 ${expected.length}`);
+  // #733 按域重写把 notifier 的 10 段重划为 9 段 33 → 32；#826 把 dsh-lan-proxy 的 4 个数字段
+  // 按模块目录重划为 6 段 32 → 34），否则新增段静默漏进归档期望集合也无人察觉。
+  assert.equal(expected.length, 34, `段数应为 34，实际 ${expected.length}`);
   for (const f of expected) assert.match(f, BASELINE_FILE_RE, `文件名应匹配归档形态：${f}`);
 });
 

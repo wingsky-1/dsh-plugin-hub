@@ -1,0 +1,43 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-lan-proxy/src/server/shared/defaults.ts",
+    "packages/dsh-lan-proxy/src/server/shared/deflate.ts",
+    "packages/dsh-lan-proxy/src/server/shared/net.ts",
+    "!packages/dsh-lan-proxy/src/client/**",
+    "!packages/dsh-lan-proxy/src/**/interface.ts"
+  ],
+  "testRunner": "vitest",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.stryker.d/dsh-lan-proxy.config.ts"
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-lan-proxy-shared.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-lan-proxy-shared.json",
+  "_comment": "#826 域归位：shared 叶子（重排时新提取的共用面——默认值 / WS 压缩策略 / 回环判定，域与配置 schema 同向依赖它）；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+}

@@ -46,18 +46,18 @@ import compression from "compression";
 // （module.exports = ProxyServer 类，静态方法 createProxyServer）。
 import httpProxy from "http-proxy";
 
-/** HTTP 响应压缩中间件请求对象最小面（compression 的 req 参数仅读 method/httpVersion 等）。 */
+import {
+  DEFAULT_DEFLATE_POLICY,
+  DEFAULT_OPTIONS,
+  isLoopbackTarget,
+  type DeflatePolicy,
+} from "../../shared/interface.ts";
+import type { TlsMaterials } from "../../tls/interface.ts";
 
 /** createLanProxy 的日志器最小面（console 或 ctx.logger 均兼容）。 */
 export interface LanLogger {
   warn?(...args: unknown[]): void;
   error?(...args: unknown[]): void;
-}
-
-/** TLS 证书材料（PEM 字符串或 Buffer）。 */
-export interface TlsMaterials {
-  key: string | Buffer;
-  cert: string | Buffer;
 }
 
 /** createLanProxy 选项。 */
@@ -207,20 +207,6 @@ export interface CompressionOptions {
   brotli?: { params: Record<string, number> };
 }
 
-/** WS 压缩协商策略：浏览器段开关 + UA 拒绝片段。 */
-export interface DeflatePolicy {
-  /** 浏览器段是否允许协商 permessage-deflate（false = 全局关闭压缩）。 */
-  browser?: boolean;
-  /** UA 字符串包含任一片段 → 该端强制不协商压缩。 */
-  uaDeny?: readonly string[];
-}
-
-/** 默认 WS 压缩策略（单一事实源）：浏览器段可协商，但 iOS 三件套强制不协商。 */
-export const DEFAULT_DEFLATE_POLICY: Readonly<DeflatePolicy> = Object.freeze({
-  browser: true,
-  uaDeny: Object.freeze(["iPhone", "iPad", "iPod"]),
-});
-
 /**
  * 按策略判定某 UA 是否允许协商 WS 压缩（纯函数，可单测）。
  * 任一环节未配置均取宽松语义：无策略 = 放行；browser=false = 拒绝；
@@ -288,14 +274,6 @@ export function hostnameAllowed(authority: string | undefined): boolean {
   const bare =
     hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
   return isIP(bare) !== 0;
-}
-
-/** 出站转发目标仅允许回环（防开放转发/SSRF）。targetHost 本应只指向回环 web 服务器。 */
-export function isLoopbackTarget(host: string): boolean {
-  const bare = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
-  return (
-    host === "localhost" || bare === "127.0.0.1" || bare === "::1" || bare === "::ffff:127.0.0.1"
-  );
 }
 
 /**
@@ -432,19 +410,6 @@ export function bridgeUpstreamHeaders(
   out.origin = `http://${targetAuthority}`;
   return out;
 }
-
-/**
- * 默认配置（单一事实源）：schema 默认值、resolve 兜底、createLanProxy 参数
- * 默认值统一引用本常量，避免默认端口/主机多处硬编码漂移。
- * 注意：cordis.patch.yml 中的 port: 3081 属 bundle 层显式配置，与默认值
- * 保持一致即可，修改默认值需同步该文件注释。
- */
-export const DEFAULT_OPTIONS = Object.freeze({
-  host: "0.0.0.0",
-  port: 3081,
-  httpsPort: 3443,
-  targetHost: "127.0.0.1",
-});
 
 /** 上游 keep-alive 连接池上限（并发上游连接数；超出排队）。 */
 const MAX_UPSTREAM_SOCKETS = 64;

@@ -4,23 +4,23 @@
   "exemptKeys": [
     {
       "key": "host",
-      "reason": "packages/dsh-lan-proxy/src/config.ts:80 组合层装配键（绑定地址），GUI 卡片不编辑",
-      "rationale": "绑定地址的缺省取 DEFAULT_OPTIONS.host（见 config.ts:80）；GUI 卡片不渲染绑定地址，README 的安全模型章节另有说明。"
+      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:87 组合层装配键（绑定地址），GUI 卡片不编辑",
+      "rationale": "绑定地址的缺省取 DEFAULT_OPTIONS.host（见 server/config/impl/model.ts:87）；GUI 卡片不渲染绑定地址，README 的安全模型章节另有说明。"
     },
     {
       "key": "targetHost",
-      "reason": "packages/dsh-lan-proxy/src/config.ts:96 组合层装配键（回环上游），GUI 卡片不编辑",
-      "rationale": "回环上游主机（见 config.ts:96）。转发安全红线只允许回环，故不开放给 GUI 编辑。"
+      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:103 组合层装配键（回环上游），GUI 卡片不编辑",
+      "rationale": "回环上游主机（见 server/config/impl/model.ts:103）。转发安全红线只允许回环，故不开放给 GUI 编辑。"
     },
     {
       "key": "targetPort",
-      "reason": "packages/dsh-lan-proxy/src/config.ts:102 组合层装配键（上游端口随 web 端口），GUI 卡片不编辑",
-      "rationale": "上游端口缺省随 web 端口（见 config.ts:97-102 的注释），由组合层装配，GUI 无独立控件。"
+      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:109 组合层装配键（上游端口随 web 端口），GUI 卡片不编辑",
+      "rationale": "上游端口缺省随 web 端口（见 server/config/impl/model.ts:104-109 的注释），由组合层装配，GUI 无独立控件。"
     },
     {
       "key": "wsDeflatePolicy",
-      "reason": "packages/dsh-lan-proxy/src/config.ts:119 服务端策略键（协商子结构），GUI 无控件",
-      "rationale": "服务端 WS 压缩协商策略（browser/uaDeny 子结构，见 config.ts:119）；GUI 无对应控件（wsCompressPaths 白名单已可编辑，覆盖了实际使用面）。"
+      "reason": "packages/dsh-lan-proxy/src/server/config/impl/model.ts:134 服务端策略键（协商子结构），GUI 无控件",
+      "rationale": "服务端 WS 压缩协商策略（browser/uaDeny 子结构，见 server/config/impl/model.ts:134）；GUI 无对应控件（wsCompressPaths 白名单已可编辑，覆盖了实际使用面）。"
     }
   ]
 }

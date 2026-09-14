@@ -1,19 +1,16 @@
 /**
- * dsh-lan-proxy — 配置模型与校验（#276 方案 A 阶段 3 拆出）。
+ * dsh-lan-proxy — 配置模型与校验。
  *
- * 职责：插件配置 schema（schemastery Config）、配置类型面
- * （LanProxyConfig / HttpCompressSnapshot / ResolvedConfig）、存量过滤与
- * 客户端提交校验（FILE_CONFIG_VALIDATORS + SETTING_FIELD_HINTS +
- * sanitizeSettings / validateSettings）。路由/接线/迁移/挂载各司其职于
- * config-routes.ts / settings.ts / migrate.ts / apply.ts。
+ * 单一事实源是 schema：DEFAULT_CONFIG 由它归一化空输入派生；校验器与提示文案平行于
+ * 它维护，键集一致性由 config-matrix 门禁锁定（漂移即红）。
  */
 import z from "schemastery";
 import {
-  DEFAULT_OPTIONS,
   DEFAULT_DEFLATE_POLICY,
+  DEFAULT_OPTIONS,
   isLoopbackTarget,
   type DeflatePolicy,
-} from "./proxy.ts";
+} from "../../shared/interface.ts";
 
 /**
  * WebSocket 压缩桥接默认路径白名单（dsh 0.1.2 起 api-gateway 拥有的 Remote 流

@@ -1,0 +1,627 @@
+{
+  "package": "dsh-lan-proxy",
+  "exports": [
+    {
+      "name": "Config",
+      "isType": false
+    },
+    {
+      "name": "ConfigRouteDeps",
+      "isType": true
+    },
+    {
+      "name": "ConnStats",
+      "isType": true
+    },
+    {
+      "name": "DEFAULT_DEFLATE_POLICY",
+      "isType": false
+    },
+    {
+      "name": "DEFAULT_OPTIONS",
+      "isType": false
+    },
+    {
+      "name": "DEFAULT_WSS_COMPRESS_PATHS",
+      "isType": false
+    },
+    {
+      "name": "DeflatePolicy",
+      "isType": true
+    },
+    {
+      "name": "HttpCompressSnapshot",
+      "isType": true
+    },
+    {
+      "name": "LanProxy",
+      "isType": true
+    },
+    {
+      "name": "LanProxyConfig",
+      "isType": true
+    },
+    {
+      "name": "LanProxySettingsHooks",
+      "isType": true
+    },
+    {
+      "name": "MIGRATED_BAK_NAME",
+      "isType": false
+    },
+    {
+      "name": "MigrationOutcome",
+      "isType": true
+    },
+    {
+      "name": "OwnerScopeLike",
+      "isType": true
+    },
+    {
+      "name": "PatchResult",
+      "isType": true
+    },
+    {
+      "name": "ROUTES",
+      "isType": false
+    },
+    {
+      "name": "ResolvedConfig",
+      "isType": true
+    },
+    {
+      "name": "SELF_SIGNED_CERT",
+      "isType": false
+    },
+    {
+      "name": "SELF_SIGNED_KEY",
+      "isType": false
+    },
+    {
+      "name": "SETTINGS_NS",
+      "isType": false
+    },
+    {
+      "name": "SettingInvalid",
+      "isType": true
+    },
+    {
+      "name": "TokenProvider",
+      "isType": true
+    },
+    {
+      "name": "apply",
+      "isType": false
+    },
+    {
+      "name": "applyConfigPatch",
+      "isType": false
+    },
+    {
+      "name": "bridgeUpstreamHeaders",
+      "isType": false
+    },
+    {
+      "name": "buildConfigRoutes",
+      "isType": false
+    },
+    {
+      "name": "certStillValid",
+      "isType": false
+    },
+    {
+      "name": "compressWsPath",
+      "isType": false
+    },
+    {
+      "name": "createLanProxy",
+      "isType": false
+    },
+    {
+      "name": "deflateAllowedByPolicy",
+      "isType": false
+    },
+    {
+      "name": "ensureSelfSignedTls",
+      "isType": false
+    },
+    {
+      "name": "formatAuthority",
+      "isType": false
+    },
+    {
+      "name": "hasDshAuthCookie",
+      "isType": false
+    },
+    {
+      "name": "hostnameAllowed",
+      "isType": false
+    },
+    {
+      "name": "inject",
+      "isType": false
+    },
+    {
+      "name": "installLanProxySettings",
+      "isType": false
+    },
+    {
+      "name": "isCompressible",
+      "isType": false
+    },
+    {
+      "name": "isLoopbackTarget",
+      "isType": false
+    },
+    {
+      "name": "isTokenMintCandidate",
+      "isType": false
+    },
+    {
+      "name": "loadTlsFromFiles",
+      "isType": false
+    },
+    {
+      "name": "migrateFileConfig",
+      "isType": false
+    },
+    {
+      "name": "name",
+      "isType": false
+    },
+    {
+      "name": "normalizeLegacyWsCompressPaths",
+      "isType": false
+    },
+    {
+      "name": "pluginDir",
+      "isType": false
+    },
+    {
+      "name": "resolveCompressionOptions",
+      "isType": false
+    },
+    {
+      "name": "rewriteHeaders",
+      "isType": false
+    },
+    {
+      "name": "sanitizeSettings",
+      "isType": false
+    },
+    {
+      "name": "toSanEntry",
+      "isType": false
+    },
+    {
+      "name": "validateSettings",
+      "isType": false
+    },
+    {
+      "name": "withLaunchToken",
+      "isType": false
+    }
+  ],
+  "declBlocks": [
+    "export declare const BOOLEAN_KEYS: readonly string[];",
+    "export declare const COUNT_LIMITS: Record<string, number>;",
+    "export declare const Config: z<LanProxyConfig>;",
+    "export declare const DEFAULTS: Record<string, any>;",
+    "export declare const DEFAULT_CONFIG: LanProxyConfig;",
+    "export declare const DEFAULT_DEFLATE_POLICY: Readonly<DeflatePolicy>;",
+    "export declare const DEFAULT_OPTIONS: Readonly<{ host: \"0.0.0.0\"; port: 3081; httpsPort: 3443; targetHost: \"127.0.0.1\"; }",
+    "export declare const DEFAULT_WSS_COMPRESS_PATHS: readonly string[];",
+    "export declare const DEFAULT_WS_PROBE_INTERVAL_MS = 30000;",
+    "export declare const MIGRATED_BAK_NAME = \"config.json.migrated.bak\";",
+    "export declare const ROUTES: { health: string; config: string; };",
+    "export declare const SELF_SIGNED_CERT = \"dsh-lan-proxy-cert.pem\";",
+    "export declare const SELF_SIGNED_KEY = \"dsh-lan-proxy-key.pem\";",
+    "export declare const SETTINGS_NS = \"dsh-lan-proxy\";",
+    "export declare const en: Record<LanProxyLocaleKey, string>;",
+    "export declare const inject: string[];",
+    "export declare const inject: string[];",
+    "export declare const name = \"lan-proxy\";",
+    "export declare const zh: { readonly settingsName: \"局域网访问（dsh-lan-proxy）\"; readonly settingsDescription: \"LAN 端口 / HTTPS / 证书 / 响应压缩 / 启动横幅\"; readonly settingsLoading: \"局域网访问：加载中…\"; readonly enable: \"启用\"; readonly lanPort: \"LAN 端口（HTTP）\"; readonly httpsCoexist: \"HTTPS 并存\"; readonly httpsPort: \"HTTPS 端口\"; readonly certFile: \"证书文件（PEM）\"; readonly certPlaceholder: \"留空 = 自动生成自签名证书\"; readonly keyFile: \"私钥文件（PEM）\"; readonly keyPlaceholder: \"与证书文件成对\"; readonly printBanner: \"启动时打印访问地址\"; readonly wsBridge: \"WebSocket 桥接（保活，默认开）\"; readonly wsCompress: \"WebSocket 压缩（事件流）\"; readonly wsPaths: \"压缩路径（逗号分隔）\"; readonly wsPathsHint: \"仅控制压缩范围；清空 = 桥接不压缩，保活不受影响（手机端不再频繁断连重连）\"; readonly httpCompress: \"HTTP 响应压缩（Brotli/gzip）\"; readonly compressLevel: \"压缩档位\"; readonly level0: \"默认（gzip 6 / br 4）\"; readonly level1: \"低（最快：gzip 1 / br 2）\"; readonly level2: \"中（均衡：gzip 5 / br 5）\"; readonly level3: \"高（最高压缩比：gzip 9 / br 9）\"; readonly injectToken: \"局域网免 token 直入\"; readonly injectTokenOnHint: \"已开启：局域网内任何能访问该端口的设备都无需登录 token 即可完整控制 dsh（含终端命令执行），等效信任整个局域网。仅在可信家庭/办公内网开启；关闭后已登录设备的会话在有效期内仍然有效（约 30 天），不即时吊销。\"; readonly bodyHint: \"保存即热更新（配置写入宿主统一设置存储，无需重启 dsh web）。修改后内网设备访问新端口，旧端口立即失效。\"; readonly compressOff: \"HTTP 响应压缩：已关闭\"; readonly compressInactive: \"HTTP 响应压缩：未生效\"; readonly compressOn: \"HTTP 响应压缩：已启用 · 协商 {neg} 次 · 直通 {pass} 次\"; readonly loadFail: \"设置加载失败：{msg}\"; readonly portRangeFail: \"保存失败：LAN 端口（HTTP）需为 1-65535 的整数\"; readonly httpsPortRangeFail: \"保存失败：HTTPS 端口需为 1-65535 的整数\"; readonly levelRangeFail: \"保存失败：压缩档位需为 0-3 的整数\"; readonly unchanged: \"未修改\"; readonly savedOk: \"已保存，已热更新\"; readonly saveFailConflict: \"保存失败：{msg}（请关闭本卡片重新打开后重试）\"; readonly saveFail: \"保存失败：{msg}\"; readonly save: \"保存\"; };",
+    "export declare function SettingsCard(props?: { defaults?: Record<string, any>; }",
+    "export declare function apply(ctx: Context, config?: LanProxyConfig): void;",
+    "export declare function apply(ctx: any): void;",
+    "export declare function applyConfigPatch(deps: ConfigRouteDeps, payload: unknown): Promise<PatchResult>;",
+    "export declare function bridgeCompressedWs(req: IncomingMessage, socket: Socket, head: Buffer, target: WsBridgeTarget): void;",
+    "export declare function bridgeUpstreamHeaders(headers: IncomingHttpHeaders, targetAuthority: string): Record<string, string>;",
+    "export declare function buildConfigRoutes(deps: ConfigRouteDeps): WebRoute[];",
+    "export declare function certStillValid(certPath: string): boolean;",
+    "export declare function compressWsPath(paths: readonly string[] | undefined, url: string | undefined): boolean;",
+    "export declare function createLanProxy(options: LanProxyOptions, logger?: LanLogger): LanProxy;",
+    "export declare function deflateAllowedByPolicy(policy: DeflatePolicy | undefined, userAgent: string | undefined): boolean;",
+    "export declare function ensureSelfSignedTls(options: SelfSignedOptions): TlsMaterials;",
+    "export declare function formatAuthority(host: string, port: number): string;",
+    "export declare function hasDshAuthCookie(cookieHeader: string | string[] | undefined): boolean;",
+    "export declare function hostnameAllowed(authority: string | undefined): boolean;",
+    "export declare function installLanProxySettings(ctx: Context, entry: LanProxyConfig, hooks: LanProxySettingsHooks): void;",
+    "export declare function isCompressible(contentType: unknown): boolean;",
+    "export declare function isLoopbackTarget(host: string): boolean;",
+    "export declare function isTokenMintCandidate(method: string | undefined, url: string | undefined): boolean;",
+    "export declare function loadTlsFromFiles(certFile: string, keyFile: string): TlsMaterials;",
+    "export declare function migrateFileConfig(configDir: string, scope: Pick<OwnerScopeLike, \"update\">, logger?: { warn?: (...a: unknown[]) => void; }",
+    "export declare function normalizeConfig(input: unknown): LanProxyConfig;",
+    "export declare function normalizeLegacyWsCompressPaths(paths: readonly string[] | undefined): readonly string[] | undefined;",
+    "export declare function pluginDir(): string;",
+    "export declare function resolveCompressionOptions(preset: unknown): CompressionOptions;",
+    "export declare function rewriteHeaders(headers: IncomingHttpHeaders, targetAuthority: string): IncomingHttpHeaders;",
+    "export declare function sanitizeSettings(raw: unknown): Partial<LanProxyConfig> | null;",
+    "export declare function toSanEntry(host: string): SanAltName;",
+    "export declare function validateSettings(raw: unknown): SettingInvalid | null;",
+    "export declare function withLaunchToken(url: string | undefined, token: string): string | undefined;"
+  ],
+  "entries": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "exports": [
+        {
+          "name": "Config",
+          "isType": false
+        },
+        {
+          "name": "ConfigRouteDeps",
+          "isType": true
+        },
+        {
+          "name": "ConnStats",
+          "isType": true
+        },
+        {
+          "name": "DEFAULT_DEFLATE_POLICY",
+          "isType": false
+        },
+        {
+          "name": "DEFAULT_OPTIONS",
+          "isType": false
+        },
+        {
+          "name": "DEFAULT_WSS_COMPRESS_PATHS",
+          "isType": false
+        },
+        {
+          "name": "DeflatePolicy",
+          "isType": true
+        },
+        {
+          "name": "HttpCompressSnapshot",
+          "isType": true
+        },
+        {
+          "name": "LanProxy",
+          "isType": true
+        },
+        {
+          "name": "LanProxyConfig",
+          "isType": true
+        },
+        {
+          "name": "LanProxySettingsHooks",
+          "isType": true
+        },
+        {
+          "name": "MIGRATED_BAK_NAME",
+          "isType": false
+        },
+        {
+          "name": "MigrationOutcome",
+          "isType": true
+        },
+        {
+          "name": "OwnerScopeLike",
+          "isType": true
+        },
+        {
+          "name": "PatchResult",
+          "isType": true
+        },
+        {
+          "name": "ROUTES",
+          "isType": false
+        },
+        {
+          "name": "ResolvedConfig",
+          "isType": true
+        },
+        {
+          "name": "SELF_SIGNED_CERT",
+          "isType": false
+        },
+        {
+          "name": "SELF_SIGNED_KEY",
+          "isType": false
+        },
+        {
+          "name": "SETTINGS_NS",
+          "isType": false
+        },
+        {
+          "name": "SettingInvalid",
+          "isType": true
+        },
+        {
+          "name": "TokenProvider",
+          "isType": true
+        },
+        {
+          "name": "apply",
+          "isType": false
+        },
+        {
+          "name": "applyConfigPatch",
+          "isType": false
+        },
+        {
+          "name": "bridgeUpstreamHeaders",
+          "isType": false
+        },
+        {
+          "name": "buildConfigRoutes",
+          "isType": false
+        },
+        {
+          "name": "certStillValid",
+          "isType": false
+        },
+        {
+          "name": "compressWsPath",
+          "isType": false
+        },
+        {
+          "name": "createLanProxy",
+          "isType": false
+        },
+        {
+          "name": "deflateAllowedByPolicy",
+          "isType": false
+        },
+        {
+          "name": "ensureSelfSignedTls",
+          "isType": false
+        },
+        {
+          "name": "formatAuthority",
+          "isType": false
+        },
+        {
+          "name": "hasDshAuthCookie",
+          "isType": false
+        },
+        {
+          "name": "hostnameAllowed",
+          "isType": false
+        },
+        {
+          "name": "inject",
+          "isType": false
+        },
+        {
+          "name": "installLanProxySettings",
+          "isType": false
+        },
+        {
+          "name": "isCompressible",
+          "isType": false
+        },
+        {
+          "name": "isLoopbackTarget",
+          "isType": false
+        },
+        {
+          "name": "isTokenMintCandidate",
+          "isType": false
+        },
+        {
+          "name": "loadTlsFromFiles",
+          "isType": false
+        },
+        {
+          "name": "migrateFileConfig",
+          "isType": false
+        },
+        {
+          "name": "name",
+          "isType": false
+        },
+        {
+          "name": "normalizeLegacyWsCompressPaths",
+          "isType": false
+        },
+        {
+          "name": "pluginDir",
+          "isType": false
+        },
+        {
+          "name": "resolveCompressionOptions",
+          "isType": false
+        },
+        {
+          "name": "rewriteHeaders",
+          "isType": false
+        },
+        {
+          "name": "sanitizeSettings",
+          "isType": false
+        },
+        {
+          "name": "toSanEntry",
+          "isType": false
+        },
+        {
+          "name": "validateSettings",
+          "isType": false
+        },
+        {
+          "name": "withLaunchToken",
+          "isType": false
+        }
+      ],
+      "blocks": {
+        "inject": [
+          "export declare const inject: string[];"
+        ],
+        "name": [
+          "export declare const name = \"lan-proxy\";"
+        ],
+        "apply": [
+          "export declare function apply(ctx: Context, config?: LanProxyConfig): void;"
+        ],
+        "pluginDir": [
+          "export declare function pluginDir(): string;"
+        ],
+        "BOOLEAN_KEYS": [
+          "export declare const BOOLEAN_KEYS: readonly string[];"
+        ],
+        "COUNT_LIMITS": [
+          "export declare const COUNT_LIMITS: Record<string, number>;"
+        ],
+        "Config": [
+          "export declare const Config: z<LanProxyConfig>;"
+        ],
+        "DEFAULT_CONFIG": [
+          "export declare const DEFAULT_CONFIG: LanProxyConfig;"
+        ],
+        "DEFAULT_WSS_COMPRESS_PATHS": [
+          "export declare const DEFAULT_WSS_COMPRESS_PATHS: readonly string[];"
+        ],
+        "normalizeConfig": [
+          "export declare function normalizeConfig(input: unknown): LanProxyConfig;"
+        ],
+        "normalizeLegacyWsCompressPaths": [
+          "export declare function normalizeLegacyWsCompressPaths(paths: readonly string[] | undefined): readonly string[] | undefined;"
+        ],
+        "sanitizeSettings": [
+          "export declare function sanitizeSettings(raw: unknown): Partial<LanProxyConfig> | null;"
+        ],
+        "validateSettings": [
+          "export declare function validateSettings(raw: unknown): SettingInvalid | null;"
+        ],
+        "SETTINGS_NS": [
+          "export declare const SETTINGS_NS = \"dsh-lan-proxy\";"
+        ],
+        "installLanProxySettings": [
+          "export declare function installLanProxySettings(ctx: Context, entry: LanProxyConfig, hooks: LanProxySettingsHooks): void;"
+        ],
+        "ROUTES": [
+          "export declare const ROUTES: { health: string; config: string; };"
+        ],
+        "applyConfigPatch": [
+          "export declare function applyConfigPatch(deps: ConfigRouteDeps, payload: unknown): Promise<PatchResult>;"
+        ],
+        "buildConfigRoutes": [
+          "export declare function buildConfigRoutes(deps: ConfigRouteDeps): WebRoute[];"
+        ],
+        "MIGRATED_BAK_NAME": [
+          "export declare const MIGRATED_BAK_NAME = \"config.json.migrated.bak\";"
+        ],
+        "migrateFileConfig": [
+          "export declare function migrateFileConfig(configDir: string, scope: Pick<OwnerScopeLike, \"update\">, logger?: { warn?: (...a: unknown[]) => void; }"
+        ],
+        "DEFAULT_WS_PROBE_INTERVAL_MS": [
+          "export declare const DEFAULT_WS_PROBE_INTERVAL_MS = 30000;"
+        ],
+        "bridgeCompressedWs": [
+          "export declare function bridgeCompressedWs(req: IncomingMessage, socket: Socket, head: Buffer, target: WsBridgeTarget): void;"
+        ],
+        "bridgeUpstreamHeaders": [
+          "export declare function bridgeUpstreamHeaders(headers: IncomingHttpHeaders, targetAuthority: string): Record<string, string>;"
+        ],
+        "compressWsPath": [
+          "export declare function compressWsPath(paths: readonly string[] | undefined, url: string | undefined): boolean;"
+        ],
+        "createLanProxy": [
+          "export declare function createLanProxy(options: LanProxyOptions, logger?: LanLogger): LanProxy;"
+        ],
+        "deflateAllowedByPolicy": [
+          "export declare function deflateAllowedByPolicy(policy: DeflatePolicy | undefined, userAgent: string | undefined): boolean;"
+        ],
+        "formatAuthority": [
+          "export declare function formatAuthority(host: string, port: number): string;"
+        ],
+        "hasDshAuthCookie": [
+          "export declare function hasDshAuthCookie(cookieHeader: string | string[] | undefined): boolean;"
+        ],
+        "hostnameAllowed": [
+          "export declare function hostnameAllowed(authority: string | undefined): boolean;"
+        ],
+        "isCompressible": [
+          "export declare function isCompressible(contentType: unknown): boolean;"
+        ],
+        "isTokenMintCandidate": [
+          "export declare function isTokenMintCandidate(method: string | undefined, url: string | undefined): boolean;"
+        ],
+        "resolveCompressionOptions": [
+          "export declare function resolveCompressionOptions(preset: unknown): CompressionOptions;"
+        ],
+        "rewriteHeaders": [
+          "export declare function rewriteHeaders(headers: IncomingHttpHeaders, targetAuthority: string): IncomingHttpHeaders;"
+        ],
+        "withLaunchToken": [
+          "export declare function withLaunchToken(url: string | undefined, token: string): string | undefined;"
+        ],
+        "DEFAULT_OPTIONS": [
+          "export declare const DEFAULT_OPTIONS: Readonly<{ host: \"0.0.0.0\"; port: 3081; httpsPort: 3443; targetHost: \"127.0.0.1\"; }"
+        ],
+        "DEFAULT_DEFLATE_POLICY": [
+          "export declare const DEFAULT_DEFLATE_POLICY: Readonly<DeflatePolicy>;"
+        ],
+        "isLoopbackTarget": [
+          "export declare function isLoopbackTarget(host: string): boolean;"
+        ],
+        "SELF_SIGNED_CERT": [
+          "export declare const SELF_SIGNED_CERT = \"dsh-lan-proxy-cert.pem\";"
+        ],
+        "SELF_SIGNED_KEY": [
+          "export declare const SELF_SIGNED_KEY = \"dsh-lan-proxy-key.pem\";"
+        ],
+        "certStillValid": [
+          "export declare function certStillValid(certPath: string): boolean;"
+        ],
+        "ensureSelfSignedTls": [
+          "export declare function ensureSelfSignedTls(options: SelfSignedOptions): TlsMaterials;"
+        ],
+        "loadTlsFromFiles": [
+          "export declare function loadTlsFromFiles(certFile: string, keyFile: string): TlsMaterials;"
+        ],
+        "toSanEntry": [
+          "export declare function toSanEntry(host: string): SanAltName;"
+        ]
+      }
+    },
+    "./client": {
+      "types": "./lib/client/index.d.ts",
+      "exports": [
+        {
+          "name": "apply",
+          "isType": false
+        },
+        {
+          "name": "inject",
+          "isType": false
+        }
+      ],
+      "blocks": {
+        "inject": [
+          "export declare const inject: string[];"
+        ],
+        "apply": [
+          "export declare function apply(ctx: any): void;"
+        ],
+        "en": [
+          "export declare const en: Record<LanProxyLocaleKey, string>;"
+        ],
+        "zh": [
+          "export declare const zh: { readonly settingsName: \"局域网访问（dsh-lan-proxy）\"; readonly settingsDescription: \"LAN 端口 / HTTPS / 证书 / 响应压缩 / 启动横幅\"; readonly settingsLoading: \"局域网访问：加载中…\"; readonly enable: \"启用\"; readonly lanPort: \"LAN 端口（HTTP）\"; readonly httpsCoexist: \"HTTPS 并存\"; readonly httpsPort: \"HTTPS 端口\"; readonly certFile: \"证书文件（PEM）\"; readonly certPlaceholder: \"留空 = 自动生成自签名证书\"; readonly keyFile: \"私钥文件（PEM）\"; readonly keyPlaceholder: \"与证书文件成对\"; readonly printBanner: \"启动时打印访问地址\"; readonly wsBridge: \"WebSocket 桥接（保活，默认开）\"; readonly wsCompress: \"WebSocket 压缩（事件流）\"; readonly wsPaths: \"压缩路径（逗号分隔）\"; readonly wsPathsHint: \"仅控制压缩范围；清空 = 桥接不压缩，保活不受影响（手机端不再频繁断连重连）\"; readonly httpCompress: \"HTTP 响应压缩（Brotli/gzip）\"; readonly compressLevel: \"压缩档位\"; readonly level0: \"默认（gzip 6 / br 4）\"; readonly level1: \"低（最快：gzip 1 / br 2）\"; readonly level2: \"中（均衡：gzip 5 / br 5）\"; readonly level3: \"高（最高压缩比：gzip 9 / br 9）\"; readonly injectToken: \"局域网免 token 直入\"; readonly injectTokenOnHint: \"已开启：局域网内任何能访问该端口的设备都无需登录 token 即可完整控制 dsh（含终端命令执行），等效信任整个局域网。仅在可信家庭/办公内网开启；关闭后已登录设备的会话在有效期内仍然有效（约 30 天），不即时吊销。\"; readonly bodyHint: \"保存即热更新（配置写入宿主统一设置存储，无需重启 dsh web）。修改后内网设备访问新端口，旧端口立即失效。\"; readonly compressOff: \"HTTP 响应压缩：已关闭\"; readonly compressInactive: \"HTTP 响应压缩：未生效\"; readonly compressOn: \"HTTP 响应压缩：已启用 · 协商 {neg} 次 · 直通 {pass} 次\"; readonly loadFail: \"设置加载失败：{msg}\"; readonly portRangeFail: \"保存失败：LAN 端口（HTTP）需为 1-65535 的整数\"; readonly httpsPortRangeFail: \"保存失败：HTTPS 端口需为 1-65535 的整数\"; readonly levelRangeFail: \"保存失败：压缩档位需为 0-3 的整数\"; readonly unchanged: \"未修改\"; readonly savedOk: \"已保存，已热更新\"; readonly saveFailConflict: \"保存失败：{msg}（请关闭本卡片重新打开后重试）\"; readonly saveFail: \"保存失败：{msg}\"; readonly save: \"保存\"; };"
+        ],
+        "SettingsCard": [
+          "export declare function SettingsCard(props?: { defaults?: Record<string, any>; }"
+        ],
+        "DEFAULTS": [
+          "export declare const DEFAULTS: Record<string, any>;"
+        ]
+      }
+    }
+  }
+}

@@ -21,21 +21,30 @@ import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { createServer } from "node:http";
 
+// 单元层导入面（ARCHITECTURE-METHOD §8）：同域白盒直连 impl。
+// 唯一例外是包入口 src/index.ts——它承载 cordis 插件契约（name/inject），不是内部
+// barrel；不从这里取就取不到（白盒化后它的 2 条语句曾掉到 0% 覆盖）。
+import { inject, name } from "../../src/index.ts";
+import { apply, pluginDir, DEFAULT_WSS_COMPRESS_PATHS } from "../../src/server/apply.ts";
 import {
-  pluginDir,
+  Config,
   sanitizeSettings,
   validateSettings,
-  migrateFileConfig,
-  MIGRATED_BAK_NAME,
-  applyConfigPatch,
-  SETTINGS_NS,
-  ROUTES,
   normalizeLegacyWsCompressPaths,
-  DEFAULT_WSS_COMPRESS_PATHS,
+} from "../../src/server/config/impl/model.ts";
+import { SETTINGS_NS } from "../../src/server/config/impl/namespace.ts";
+import {
+  ROUTES,
+  applyConfigPatch,
   buildConfigRoutes,
-  apply,
-  Config,
-} from "../../src/index.ts";
+} from "../../src/server/config/impl/routes.ts";
+import { MIGRATED_BAK_NAME, migrateFileConfig } from "../../src/server/migrate/impl/file/index.ts";
+
+// 包入口契约：cordis 靠这两个符号定位与调度本插件，写错即插件静默不加载。
+describe("包入口契约（src/index.ts）", () => {
+  it("插件名与 cordis.patch.yml 的挂载行一致", () => expect(name).toBe("lan-proxy"));
+  it("只声明注入 webServer（回环服务器就绪后才启动）", () => expect(inject).toEqual(["webServer"]));
+});
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

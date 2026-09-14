@@ -1,24 +1,21 @@
 // dsh-lan-proxy — TLS 证书准备。
 //
-// 两级证书来源，按配置优先：
-//   1. 用户提供的 PEM 文件（tlsCertFile / tlsKeyFile）——正式证书、
-//      mkcert 本地 CA 证书等，由 loadTlsFromFiles 读取；
-//   2. 自动生成的自签名证书——用 selfsigned（构建期内联进产物，
-//      运行时零依赖）生成（rsa:2048 / sha256 / 有效期 825 天），
-//      缓存到 <DSH_HOME>/lan-proxy/，幂等复用：证书存在且 24 小时内
-//      不过期则直接复用，否则重新生成。
-//   过期判定用 node:crypto 的 X509Certificate 解析 validToDate，
-//   不再依赖宿主机 openssl 子进程（issue #9）。
-//
-// 自签名证书带 subjectAltName（localhost / 127.0.0.1 / ::1 / 调用方传入的
-// 本机局域网 IP）：Chrome 59+ 对缺失 SAN 的证书直接拒绝（无法"继续访问"），
-// 有 SAN 的自签证书至少允许用户显式信任后进入。
+// 两级证书来源，按配置优先：用户提供的 PEM（tlsCertFile / tlsKeyFile）→ 自签名证书。
+// 自签证书经 selfsigned 生成（rsa:2048 / sha256 / 825 天 / 带 SAN），缓存到
+// <DSH_HOME>/lan-proxy/ 幂等复用：存在且剩余有效期 > 24 小时则直接复用，否则重签。
+// 过期判定走 node:crypto 的 X509Certificate，不依赖宿主机 openssl 子进程（issue #9）。
+// SAN 是必需的——Chrome 59+ 对缺失 SAN 的证书直接拒绝，用户无法「继续访问」。
 import { X509Certificate } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { isIP } from "node:net";
 import { generate as generateSelfSigned } from "selfsigned";
-import type { TlsMaterials } from "./proxy.ts";
+
+/** TLS 证书材料（PEM 字符串或 Buffer）。 */
+export interface TlsMaterials {
+  key: string | Buffer;
+  cert: string | Buffer;
+}
 
 /** 自签证书缓存文件名（目录由调用方决定，默认 <DSH_HOME>/lan-proxy）。 */
 export const SELF_SIGNED_KEY = "dsh-lan-proxy-key.pem";

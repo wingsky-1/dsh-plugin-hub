@@ -1,0 +1,41 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-lan-proxy/src/server/config/impl/*.ts",
+    "!packages/dsh-lan-proxy/src/client/**",
+    "!packages/dsh-lan-proxy/src/**/interface.ts"
+  ],
+  "testRunner": "vitest",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.stryker.d/dsh-lan-proxy.config.ts"
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-lan-proxy-config.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-lan-proxy-config.json",
+  "_comment": "#826 域归位：段按模块目录划分（与 src/server/<域>/ 一一对应），config 域 impl（model 原根 config.ts / routes 原根 config-routes.ts / namespace 原根 settings.ts）；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+}
