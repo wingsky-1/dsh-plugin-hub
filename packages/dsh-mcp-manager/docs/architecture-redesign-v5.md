@@ -824,11 +824,14 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 | 项 | 值 |
 |---|---|
 | 主 checkout（**只读，未改动**） | `/mnt/ssd/dev/dsh-plugin-hub`，HEAD `b490e87`（v0.2.4 发布点，与方案里的代码基线一致） |
-| 方案 worktree | `/mnt/ssd/worktree/dsh-plugin-hub-task-767-arch-v4`，分支 `task/767-arch-v4`，领先 `origin/main` **30 个提交**（B0 收尾 + B1.1 落地后）、工作区干净 |
+| 方案 worktree | `/mnt/ssd/worktree/dsh-plugin-hub-task-767-arch-v4`，分支 `task/767-arch-v4`，领先 `origin/main` **54 个提交**（B0 + B1 全部 + B2a-structure 四刀；**W1+W2 在飞未提交**，见 D.2·38/40）|
 | 提交（方案期） | `e356696` v5 定稿 / `4b1153e` 三视角复核修订 / `803b670``2ff9ff6` 交接状态 |
 | 提交（B0 实施） | `43229f6` 导出面基线冻结 · `d3a21d2` faces + 准入自测双包遍历 · `da83b36` 门禁接线 · `660dd0a` mcp 豁免 + 连带自测 · `f8ee6c5` ci.yml 数据面 glob（红线 1）· `8235e32` 两轮复核并入 · `ec3004c` 维护者裁决落地 · `cd44c90` 变异面 · `8fe5119` facade 计数修正 + §8.3 实测 |
 | 提交（B0 切片 3a/3b 与收口） | `58823bc`/`d6795ec` I2①/I2④/client 三判据 · `84a5941`/`8727cf0`/`1fb0af3` I8 判据与证据类文档同步 · `e35767d`/`edab5d0` 切片记录（含 I8 判据面按宪法原文收窄）· `0ad5a02`/`3565687` 契约三分类打标 · `6c5d150`/`9f7cc62`/`4dbf2a4` 附录 F 与交接状态 · `fd2f82d` B0⑦ 文案与产物断言 |
 | 提交（B1） | `f21d44d` B1.1 建 `src/shared/` 门面 + `placement-math` 迁入 + 六条 facade 排除 pattern 平移 + 结构型基线登记 |
+| 提交（B1 余下） | `4f94f65` B1.0 判据加固（关 I8① 裸包名绕过）· `dfd6577` B1.2 落盘面（paths+file-io）· `4bd6af6` B1.3 upgrade 六件套 · `b032294` B1.4 组合根机制 + declare module 迁入 · `a9e897c` B1.5a 三族常量进 src/shared · `fd908b1`/`ea298b0` B1.5b DTO 与服务类型进 src/shared + 仓库级声明退回包内 |
+| 提交（B2a-structure） | `0fb3bab` stats · `8628110` workspace · `6bf9457` pipeline（含 deps.ts）· `6ecf57b` catalog（search.ts 因 fileCycles 留原位，见 D.3·22）|
+| 提交（B2a-wire） | **在飞**：W1+W2 未提交（见 D.2·40）|
 | 交付物 | `packages/dsh-mcp-manager/docs/architecture-redesign-v5.md`（含附录 A–G）+ `architecture-redesign-v4.md`（被取代，B3 归档时清理） |
 | 工具链（**本会话实测，与旧交接说法相反**） | worktree **有** `node_modules`（`tsc` / `esbuild` / `vitest` / `stryker` 都在 `node_modules/.bin`），故依赖 build 的步骤（`export-surface-snapshot` / `forbid-module-state-src` / `test:scripts`）可在 worktree 内直接跑，无需安装 |
 | 参照实现 | `packages/dsh-notifier`（#733 / PR #777）。关键 commit：`2370774` 冻结基线 / `db1ce0f` 首笔砍到 4 导出 / `8df3950` 一次性重冻结 / `4c79ba0` 重写落地 / `8142b13` 行为变更登记模板 / `a748361` 恢复被静默删掉的能力 |
@@ -878,6 +881,10 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 37. **B2a-wire 的端口接线图已由只读 scout 产出**（自写脚本复算，与基线逐条一致；未写仓库）。要点：33 条值边的**消费者域只需 5 个建端口**（api / catalog / connection(orchestrator+runtime) / inject / pipeline）；`config/model` 的 3 个默认值常量**迁共享层后不需要 `deps.ts`**；**5 条靠同域改引**（`middleware.ts:33` 与 `supervisor.ts:22` 改引 `./reconnect.ts`、`manager.ts:52` 改引 `./tool-names.ts` = 唯一 `directImpl` 的修法、删 4 处死导入）；**8~9 个共享常量**迁 `src/server/shared/constants.ts`。切割序列（每刀实测）：**W1** 同域收口 `4/4/33 → 3/1/32`（文件环 4→1）→ **W2** 删复导 `→ 1/1/31`（`directImpl` 1→0）→ **W3** 共享常量 `→ 1/1/29` → **W4** catalog 端口 `→ 0/0/26`（**两类环全 0**）→ W5–W9 其余端口 → W10 门面收口 → **W11（B2b）** `bootstrap` 解体 `→ 0/0/0`。**主控裁定**：HB1 模块求值期常量**只能搬迁不能端口**（端口物理上必得 undefined）；`DEFAULT_TOOL_CALL_TIMEOUT_MS` 与 `SCOPE_GLOBAL` **也一并迁共享层**；HB2 **不为 `connection` 自己的子层造端口**（B2b 坍缩后边自动消失，提前造=固化要删的东西）；HB3/HB4/HB5 见附录 G·G19/G20 与 D.3·23。
 
+38. **维护者已定：走路径 B（先 wire、后原子搬迁）**（原文「B 记录现状」）。**含义**：目标结构 `src/{client,server,shared,index.ts}` **最后一步**落地；`B2a-wire` 先把跨域值边与环消掉，再由 B2b 一笔原子搬迁。**为什么 B 是零成本**（scout 实测纠正了主控原先的前提）：残余的 8 条 `bootstrap|*` 边会在同一笔里**被删除**（`bootstrap` 解体 → `moduleOf` 返回 null，消失记为 improvements、不判红、不需台账），**不会被重签名**。
+39. **B2a-wire 的切割序列（scout 已复算，每刀给实测数字）**：**W1** 连接域同域收口 `4/4/33 → 3/1/32`（文件环 4→1）→ **W2** 删 `connection/interface.ts:12` 值复导 `→ 1/1/31`（`directImpl` 1→0）→ **W3** 8~9 个共享常量迁 `src/server/shared/constants.ts` `→ 1/1/29` → **W4** catalog 端口 `→ 0/0/26`（**两类环全 0**）→ **W5** pipeline 端口 → **W6** inject 端口（新建 `inject/deps.ts`）→ **W7** `connection/orchestrator/deps.ts` → **W8** `connection/runtime/deps.ts` → **W9** `api/deps.ts` → **W10** connection 门面 26 符号值面收口 → **W11（B2b）** `bootstrap` 解体 `→ 0/0/0`。（数字记法 = 叶子环/文件环/域间值边。）**注**：scout 的 33 条逐条接线表（含每个符号的**真实使用行**与精确 `Pick` 成员清单、8 条环的备选断点、5 条硬骨头）**未落盘**——它只在会话内消息里。新会话每一刀可由实施方按同法自测（`grep` 该域的跨域值 import + 逐符号找真实使用行 new/调用/取属性），或**重跑同一只读 scout 提示词**增量重建（约 1 轮，只读、不碰文件）。**已知的三条硬事实不要重推**：① `config/model` 的默认值常量在模块求值期被消费 → **只能搬迁不能端口**；② `connection` 自己的子层（orchestrator/runtime）**不要造端口**（B2b 坍缩后自动消失）；③ `api` 对 `manager` 的 44 处直取**没有 import 边**（G19）。
+40. **W1+W2 在飞未提交（压缩时刻的关键事实）**：子 agent `7e4faae1-e6c7-4054-8b93-512488f7e141` 正在做 W1+W2，**工作区已有 5 个未提交文件**：`src/bootstrap/apply-config.ts`、`src/catalog/search.ts`、`src/connection/interface.ts`、`src/connection/runtime/middleware.ts`、`src/connection/runtime/supervisor.ts`。已落盘的改动可见 `middleware.ts:33` 已改引 `./reconnect.ts`、`connection/interface.ts` 的 `stripMcpPrefix` 复导已删。**新会话第一步**：`git log`/`git status` 看它有没有提交；有则复核（四组数字 33→31、环 4→1、`directImpl` 1→0、导出面零 diff + 两条反例必红），没有则读它的报告或接手把 W1+W2 收口（它已按派单要求做了这两处改动）。
+
 ### D.3 未完成与遗留（含状态订正）
 
 1. **B1 全部切片已完成**（B1.0–B1.5b，见 D.2·19–26）。**B1 收尾已完成**：主控实跑 `gate:pr` = **32 项逐条 exit=0 + PASS**（清单与上一轮逐项一致）、`THIRD-PARTY-LICENSES` 相对 `origin/main` **零改动**、依赖面零新增、44 笔。**未推送**（理由见 D.3·17）。**B2.1 已完成**（`0fb3bab`：零位移、零台账、`gate:pr` 32 条全绿）。**B2.2 已完成**（`8628110`）。**B2.3 已完成**（`6bf9457`，含建 `deps.ts` 后模板订正口径的首次落地）。**B2.4（`catalog` 域）进行中**。切法与验收见 D.4。**两条显式收窄 + 一条落点裁量**见 §十二 表后（不建 10 个空域骨架；B1.4 不路由既有装配；机制落 `server/shared/` 而非入口）。**接线顺序**：`upgrade` 的启用必须与「读者改读新布局」同一笔（B2），否则归档旧文件而旧读者读空 = 静默丢配置（见 §十二 表后）。
@@ -911,16 +918,19 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 23. **W7/W8 的准入条件（scout 实测）**：`src/connection/deps.ts` 与 `src/connection/runtime/deps.ts` **不在任何 mutate glob 内**（UNCOVERED）——新增它们会立刻让 `uncoveredSrcFiles` 判红。故这两刀**必须同笔**把路径加进 `mutation-topology.json`（放进某段 mutate，或按 `src/server/*/deps.ts` 先例加 type-only 排除）。其余 `deps.ts` 路径（api/inject/config-model/workspace/orchestrator、`server/**`）实测均已覆盖。
 
+24. **压缩时刻的状态快照**：B0 ✓ / B1 全部 ✓（含 B1.0 判据加固）/ B2a-structure 四刀 ✓（stats、workspace、pipeline、catalog）/ **B2a-wire W1+W2 在飞未提交**（D.2·40）/ B2b 未开始。**未推送**（`ci.yml` 只在 `pull_request` 触发 → 推分支零信号；变异与覆盖率至今 **0 次**验证，见 D.3·17）。**盲区台账 21 条**（G1–G20 + G1b），全部带 `文件:行` 或实测判词。**维护者已选路径 B**（D.2·38）。
+
 ### D.4 下一步顺序
 
-**B0 已收口；B1.1（`f21d44d`）、B1.0 判据加固（`4f94f65`）、B1.2 落盘面（`dfd6577`）、B1.3 `upgrade` 六件套（`4bd6af6`）、B1.4 组合根（本刀）已落地；当前在 B1.5（`src/shared/` 另外五个文件）。** B1 剩余按下表各刀切，每刀一个可独立验证的提交面（一次只放一个写者）：
+**B0 ✓ / B1 全部 ✓ / B2a-structure ✓（stats·workspace·pipeline·catalog）/ 当前在 B2a-wire（W1+W2 在飞）/ 之后是 B2b 原子搬迁。** 下面的 1–4 条是 B1 的历史切法（已完成，保留供回溯），5 条起是当前序列：
 
 1. ~~**B1.1 `src/shared/` 门面 + ⑩ 迁移**~~ **已完成（`f21d44d`）**；下面保留原始切法供回溯：建 `src/shared/` 与 `interface.ts`；`git mv src/placement-math.ts src/shared/`；改 4 处引用（`src/index.ts` / `src/config/model/config-schema.ts` / `src/client/core/state.ts` / `src/client/float/float.ts`，其中 client 两处改引 `src/shared/interface.ts`）；被移文件内仓库 `shared/placement-math.js` 的相对深度从 `../../../` 改 `../../../../`；mutation-topology 的 6 条 exclude pattern 平移到新路径 + 重生成 6 份段 conf。**验收**：`verify-dir-imports.mjs --package dsh-mcp-manager` 从 **exit 1 → exit 0**（这就是 ⑩ 在 B0 唯一的红）、`gen-stryker-conf.mjs --check` exit 0、`export-surface-snapshot` exit 0（导出面不变，纯位移）。
 2. ~~**B1.2 `server/shared/` 落盘面**~~ **已完成（`dfd6577`）**；下面保留原始切法供回溯：`paths.ts` 单源（新路径 + `legacyFile` + 每文件 mode 表 + 插件自有目录 `0o700`）+ 自写 `file-io.ts`（唯一 tmp 名 → 显式 mode → `rename` → 失败清理；同路径 promise 队列；**不装进程级钩子**）+ 权限断言（7 个写点收敛到这一处）。
 3. ~~**B1.3 `upgrade` 域**~~ **已完成（`4bd6af6`）**；下面保留原始切法供回溯：六件套一次建齐（步骤表 / 链驱动 / 刻度 / 失败语义 / 对账 / 装配标记）+ 迁移**五态**测试（含目录型旧路径逐文件搬、用户显式 `storePath`/`statsFile` 不动）+ 刻度「推进与失败不推进」。
 4. ~~**B1.4 组合根机制**~~ **已完成（本刀）**；下面保留原始切法供回溯：`bindHost`/`assemble`/逆序释放/`declare module` 迁入 + `host-faces.ts`；探针证明 apply → install → release 各域标记复位。**11 域空骨架已裁掉**（各域随 B2 重写与其真实代码同笔生成，理由见 §十二 表后）；**既有装配本刀不路由**（B2 接通）。**落点裁量与实测证据**：机制落 `src/server/shared/compose.ts` + 门面（不是 `src/index.ts`）——入口加导出会让 `export-surface-snapshot` 判红，而入口的非导出函数测试不可达；B2 在入口调 `bindHost` → `assemble` → `safeDisposeAll`。
-5. **B1.5a 已完成（`a9e897c`）；B1.5b 进行中（`dto.ts`/`service.ts`）**——原切法：`src/shared/` 另外五个文件（`status` / `frames` / `dto` / `routes` / `service`）：必须与**两端改引同笔**——只建文件不接两端就是死代码，覆盖率面与变异面会先红。
-6. **B1 收尾**：`pnpm gate:pr` 全绿 + `pack:check` 绿 + `THIRD-PARTY-LICENSES` 相对基线**无新增**（本轮不新增任何依赖）→ 才进 B2。
+5. **B1.5 已完成**（B1.5a `a9e897c` / B1.5b `ea298b0`+`fd908b1`）；**B2a-structure 已完成四刀**（B2.1 `0fb3bab` / B2.2 `8628110` / B2.3 `6bf9457` / B2.4 `6ecf57b`）。原切法：`src/shared/` 另外五个文件（`status` / `frames` / `dto` / `routes` / `service`）：必须与**两端改引同笔**——只建文件不接两端就是死代码，覆盖率面与变异面会先红。
+6. **当前序列（路径 B：先 wire、后搬迁）**：W1 连接域同域收口 + W2 删 `directImpl`（**在飞**）→ W3 共享常量迁 `server/shared/constants.ts` → W4 catalog 端口（**两类环归零**）→ W5 pipeline → W6 inject（新建 `inject/deps.ts`）→ W7 `connection/orchestrator/deps.ts` → W8 `connection/runtime/deps.ts` → W9 `api/deps.ts` → W10 connection 门面 26 符号值面收口 → **W11 = B2b 原子变更**。每刀的实测数字见 D.2·39；**W7/W8 必须先登记 mutate 路径**（D.3·23）；**所有 `installXxx(deps)` 的字面调用点必须在 `src/index.ts`**（附录 G·G20）。
+7. **W11（B2b）的清单**：11 域加 `server/` 前缀 + `store` 提取（自 `config/store/`）+ `types`/`bootstrap`/`integration` 解体 + 路径切换（各域改读 `paths.*`）+ **启用 `upgrade`**（与读者改引同笔，见 §十二 接线顺序约束）+ 导出面重冻结 + **mutate 段重画（含清 0 命中字面量 G18、补 `server/*/deps.ts` 排除条）** + 命名能力对象覆盖（G19）+ release notes。
 7. 每批完成后回写本附录的 D.2/D.3；每批验收含真实 `exit code` + 该批**全部登记文件**同步（§12 开头已写死）。
 
 ### D.5 新会话最该先做的三件事
@@ -930,6 +940,7 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 3. 记住仍未实测的面：**掩码往返**、**B1 的自写 IO 队列与并发语义**、**CI 上的变异**（本地任何档都不跑）——凡涉及它们，先跑探针再下结论（`atomically` 已撤回，不再是风险项；`pnpm gate:pr` 已两次实跑 exit 0，不再是未实测项）。
 4. 本会话已复跑的实测结果（可直接引用，不必重跑）：`verify-dir-imports --graph` **exit 0**（14 叶子 / 33 值边 / 4 模块级环 + 4 文件级环）、`grep -rn '0o600' packages/dsh-mcp-manager/src` 只有 `config/store/store.ts:66`、`grep -c 'new McpManager' test/e2e/smoke.test.ts` = 9、`scripts/data` 无 mcp 基线且 `export-surface-snapshot --package dsh-mcp-manager` **exit 2**（「基线不存在」）、`forbid-module-state-src` 在 worktree 跑 notifier **exit 0**（21 处豁免）。
 5. 已完成的同步（勿重做）：§二 I9 与 §十二 B0④ 已写「扩 `forbid-module-state-src` 必须同笔登记 `panel.ts` 豁免」；附录 A 第 1 条已去 `fast-redact`、红线更新为两条且均已获授权。
+6. **压缩时刻（2026-09-14）的现状与下一步**：B0 ✓、B1 全部 ✓、B2a-structure 四刀 ✓（`stats/workspace/pipeline/catalog` 已就地重构为 `interface.ts + deps.ts + impl/<块>/`）；**B2a-wire 的 W1+W2 在飞未提交**（子 agent `7e4faae1`，5 个未提交文件，见 D.2·40）；**维护者已选路径 B**（先 wire、后原子搬迁，D.2·38）；**W3–W10 的完整接线表与切割序列在 D.2·39**；**B2b 清单在 D.4·7**。**未推送**——`ci.yml` 只在 `pull_request` 触发，推分支零信号，变异与覆盖率至今 0 次验证（这是**唯一**未验证的面）。**两条纪律别忘**：`--write-baseline` 必须先 build（G5）；B2a 不得改模块 id（D.3·20/22）。
 
 ---
 
