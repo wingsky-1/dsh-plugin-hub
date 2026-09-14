@@ -518,8 +518,14 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
     （`leafModuleCycles` / `fileCycles` 的环签名、`raLegacy` / `implToOtherImpl` 的
     `from|to|kind` 边、`missingInterface` / `directImpl` 边、`uncoveredSrcFiles` 清单）——
     新增证据判红、证据消失视为改善（写入时自动清理）、`kind` 由 value→type 视为收口、
-    type→value 判红。放宽质量证据**不止一条通道**，各通道的可审计性不同：
-    - **台账通道**（唯一带收口复核）：登记到 `scripts/data/gate-exemptions.json`
+    type→value 判红。另有 #767 B0 切片 3a / 3b 起按「只许缩小、终态为空」入档的**四类集合证据**——I2①
+    `crossDomainValueEdges`、I2④ `rootIndexImports`、§5.3 `clientServerImports`、I8①
+    `unitImportFaceViolations`；它们是那四条宪法判据的执法点，判决书即「这个集合有没有
+    新增」。**首次登记分两级**：包级（旧基线无该包，或旧基线是数字口径）只走台账通道；
+    证据**类**级（基线里没有这个证据键 = 本次新增了一类证据）按当前事实写入存量并逐条提示
+    「须在 PR 内确认」（存量登记处是基线，不是放宽通道）；键一旦存在，类**内**新增证据
+    仍一律不写入、判红。放宽质量证据**不止一条通道**，各通道的可审计性不同：
+    - **台账通道**（唯一带到期复核）：登记到 `scripts/data/gate-exemptions.json`
       （`gate=verify-dir-imports`，`path=<包名>:<证据项>`，必填 reason 与 trackingIssue，
       可选 reviewBy 与 exitCriteria）——与另两闸共用同一份台账、同一个校验器与同一条收口台账
       （#765 收口：原先的 `--accept-quality-new` / 基线内 `$acceptances` 是本闸私有的第二套
@@ -532,8 +538,10 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
       · `testLayers.coverageExcludes`：把文件写进该包的覆盖排除面 ⇒ 该文件退出
         `uncoveredSrcFiles` 质量证据，门禁输出称之为「质量证据改善（--write-baseline
         会清理入库）」。**当前实际在用的是这条**（dsh-mcp-manager / dsh-notifier /
-        dsh-provider-usage 均在使用，共 **12** 条），台账里 `gate=verify-dir-imports`
-        尚无条目。条目形状与 vitest 面 `coverage.config.json` 的 exclude **同形同键名**：
+        dsh-provider-usage 均在使用，共 **12** 条）。台账里 `gate=verify-dir-imports` 现有 11 条**全部是证据级条目**（#767
+        lan-proxy unit-apply 1 条 + #847 sidebar 客户端单测 10 条；同批 unit-proxy / wfp /
+        notifier-§5.3 存量已随主干演进消除而不登记），本通道（覆盖率排除面）自身零条目。条目形状与 vitest 面
+        `coverage.config.json` 的 exclude **同形同键名**：
         `{ pattern, reason, kind }`——`pattern` 带 `!` 前缀，`reason` 不少于 10 字
         （与 `verify-coverage-scope.mjs` 同一下限）。**裸 glob 即判红**：形状不合法由共享
         校验器给出判词，不等 `--check` 的「与派生不一致」误诊，回归用例在
@@ -560,6 +568,19 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
     `scripts/test/workflow-assert.test.ts` 的「单一事实源在位」断言保留为冗余兜底，不再是唯一兜底。
     死声明判据为**值面判死、类型面豁免**：`deps.ts` 的 `import type` 是声明即完整性，不参与
     死声明计算（#733 M0a）。**可见度边界**：只管依赖方向与环路，不管符号签名。
+  - **测试导入面判据（I8①，#767 B0 切片 3b；与上一条同属本门禁，不新增 workflow）**：
+    `test/unit/**` 下的文件不得 import 包根组合根 `src/index.ts`、构建产物面 `lib/**`、
+    客户端面 `src/client/**`——单元层是白盒直连 `src/server/<域>/impl/<块>/`，经组合根导入
+    等于把装配顺序与服务面带进单测。判据面刻意只取这三类「方向必错」的目标：
+    `test/helpers.ts` 等基础设施不在 `test/unit/**` 内故天然放行；`test/e2e/**` 与
+    `test/integration/**` 各有产物与浏览器语义、**本轮不判**（I8 判据的 ②③ 压后）；「单元层
+    只允许直连本域 impl」是 `docs/ARCHITECTURE-METHOD.md` §8 的**目标形态**，随 B1–B3 的
+    结构搬迁落地，本轮不作硬判据——否则 notifier / provider-usage 的既有同包跨域取用会整片
+    判红，那是搬迁面不是判据面。包范围不内嵌脚本常量，随 `--package` 的调用面走
+    （登记在 `scripts/data/gate-scope-registry.json`）。存量两档：本包 13 条进单调基线
+    （随搬迁清零），其他包 11 条走 `gate-exemptions.json` 的证据级条目——lan-proxy
+    unit-apply 1 条（trackingIssue #767）、sidebar 客户端单测 10 条（trackingIssue #847
+    sidebar 遗留清单）；同批 unit-proxy / wfp 两条已随主干演进消除而不登记。
   - **导出面门禁（`scripts/gate/export-surface-snapshot.mjs`；#669 PR1 / #733 M0+M2a / N0(B)）**：
     `tsc --declaration` 产物是包对外契约的编译期镜像，固化为入库基线
     `scripts/data/<pkg>-export-surface.json`，重构前后零 diff 即机器证据。粒度两条（**逐入口**）：
