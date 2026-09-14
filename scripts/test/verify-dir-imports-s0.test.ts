@@ -343,6 +343,45 @@ test("--write-baseline 只清理质量证据，新增证据不得被写入（#73
   }
 });
 
+test("--write-baseline 首次登记同样受台账约束（#792 PR1：不得一次洗白）", () => {
+  // 旧实现在 prevQuality === undefined 时按当前证据直接入库：新包首次登记（或数字口径
+  // 迁移）只要跑一次 --write-baseline 就能静默洗白，而首次登记恰恰最容易夹带新证据。
+  const root = makeFixtureRoot(chainFixture(""));
+  try {
+    const baselinePath = join(root, "scripts/data/dir-imports-baseline.json");
+    addCyclicCrossReference(root); // 制造「首次登记即含质量证据」的形态
+    const first = runOn(root, ["--write-baseline"]);
+    assert.equal(
+      first.status,
+      1,
+      `首次登记含未登记证据时应中止写入，实际 ${first.status}：\n${first.out}`,
+    );
+    assert.match(first.out, /写基线中止：存在未登记的新增质量证据/, `应报中止原因：\n${first.out}`);
+    assert.match(
+      first.out,
+      /fixture-pkg:a\|b\|c（leafModuleCycles）/,
+      `应列出待登记的台账键：\n${first.out}`,
+    );
+    assert.equal(existsSync(baselinePath), false, "中止即不得落盘半成品基线");
+
+    const ledger = writeLedger(root, pendingLedgerKeys(first.out));
+    const accepted = runOn(root, ["--write-baseline", "--exemptions", ledger]);
+    assert.equal(accepted.status, 0, `按台账登记后应写入成功：\n${accepted.out}`);
+    assert.match(
+      accepted.out,
+      /质量证据首次登记 \/ 数字口径迁移/,
+      `首次登记须显式提示：\n${accepted.out}`,
+    );
+    assert.deepEqual(
+      readFixtureBaseline(root).packages[PKG].quality.leafModuleCycles,
+      ["a|b|c"],
+      "登记后首次登记的证据应入库",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("质量型证据新增仍判红，且 --write-baseline 不放行（#733 后续）", () => {
   const root = makeFixtureRoot(chainFixture(""));
   try {
@@ -420,7 +459,14 @@ test("kind 语义：值→类型收口放行并自动采纳，类型→值降级
     [`${SRC}/b/impl.ts`]: implValue,
   });
   try {
-    assert.equal(runOn(root, ["--write-baseline"]).status, 0);
+    // #792 PR1 起首次登记同样要过台账：本用例验证的是 kind 语义，故先把初始 value 证据
+    // 按台账放行入库，再分别验证收口（放行）与降级（判红）两个方向。
+    const ledger = writeLedger(root, [`${PKG}:b/impl.ts|a/impl.ts`]);
+    assert.equal(
+      runOn(root, ["--write-baseline", "--exemptions", ledger]).status,
+      0,
+      "首次登记按台账放行后应写入成功",
+    );
     assert.deepEqual(
       readFixtureBaseline(root).packages[PKG].quality.implToOtherImpl,
       ["b/impl.ts|a/impl.ts|value"],
@@ -823,6 +869,41 @@ test("引用提取：注释里的 import 不被当真（F5）", () => {
   }
 });
 
+test("引用提取：行注释里的 /* 不得配成幻影块注释吞掉 import（#792 PR1）", () => {
+  // 旧实现「先正则剥块注释再剥行注释」：行注释或字符串里的 `/*`（glob 写法 agent/*）会与
+  // 后续任意 `*/` 配对，把中间的真实 import 一并剥掉——本仓实测 dsh-mcp-manager 与
+  // dsh-provider-usage 各中一处。故同一 fixture 里放入三种诱因：行注释含 `/*`、字符串含
+  // `/*`（无闭合）、URL 含 `//`，要求真实 import 仍被提取，块注释里的假引用不计入。
+  const root = makeFixtureRoot({
+    [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
+    [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
+    [`${SRC}/b/impl.ts`]:
+      "// 行注释里的通配写法 agent/*，见 https://example.com/doc\n" +
+      'const glob = "agent/*";\n' +
+      'const url = "https://example.com/x";\n' +
+      'import { A } from "../a/impl.ts";\n' +
+      '/* 块注释里的假引用：import { A } from "../a/impl.ts"; */\n' +
+      "export const B = A;\n",
+  });
+  try {
+    const { status, out } = runOn(root, ["--zones"]);
+    assert.equal(
+      status,
+      1,
+      `行注释/字符串里的 /* 不得吞掉后续真实 import（旧实现下此处假绿 PASS）：\n${out}`,
+    );
+    assert.match(out, /b\/impl\.ts → import "\.\.\/a\/impl\.ts"/, `应报出真实 import：\n${out}`);
+    assert.match(
+      out,
+      /R-A 语义切换前（impl → 他域任意文件，旧口径）：1 条（值 1 \/ type 0）/,
+      `块注释里的假引用不得计入（只应有 1 条真实边）：\n${out}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("引用提取：内联 import { type X } 判为类型边（F6）", () => {
   const root = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
@@ -1126,8 +1207,12 @@ test("全覆盖断言：未覆盖清单之外的既有文件不会被误判（�
   };
   const root = makeFixtureRoot(files);
   try {
-    // c/ 未登记 → 首次写基线即把两个文件登记为存量。
-    const written = runOn(root, ["--write-baseline"]);
+    // c/ 未登记 → 首次写基线即把两个文件登记为存量。#792 PR1 起首次登记同样要过台账，
+    // 故先取待登记键、按台账放行后再写（本条验证的是覆盖断言，不是豁免通道本身）。
+    const firstAttempt = runOn(root, ["--write-baseline"]);
+    assert.equal(firstAttempt.status, 1, `首次登记含未登记证据时应中止写入：\n${firstAttempt.out}`);
+    const ledger = writeLedger(root, pendingLedgerKeys(firstAttempt.out));
+    const written = runOn(root, ["--write-baseline", "--exemptions", ledger]);
     assert.equal(written.status, 0, `写基线应成功：\n${written.out}`);
     const before = runOn(root);
     assert.equal(

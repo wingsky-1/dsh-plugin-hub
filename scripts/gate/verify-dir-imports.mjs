@@ -130,12 +130,12 @@ const softViolations = []; // soft 模式软报告的跨模块直引违规
 const summary = [];
 const reports = []; // --zones / --graph 的明细段（最后统一打印）
 
-/** 递归收集目录下全部 .ts/.tsx 文件（绝对路径，from 侧扫描用）。 */
+/** 递归收集目录下全部 .ts/.tsx/.mts/.mjs 文件（绝对路径，from 侧扫描用）。 */
 function collectTsFiles(dir, acc = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) collectTsFiles(full, acc);
-    else if (/\.tsx?$/.test(entry.name)) acc.push(full);
+    else if (/\.(?:ts|tsx|mts|mjs)$/.test(entry.name)) acc.push(full);
   }
   return acc;
 }
@@ -184,9 +184,52 @@ function resolveTarget(fromFile, spec) {
   return resolveCandidates(fromFile, spec)[0] ?? null;
 }
 
-/** 剥离注释，避免注释里的 import 示例被当成真实引用（`(^|[^:])//` 防误伤 `https://`）。 */
+/**
+ * 剥离注释，避免注释里的 import 示例被当成真实引用。
+ *
+ * 逐字符扫描而非「先正则剥块注释再剥行注释」：后者会把行注释里的 `/*` 与后续的块注释
+ * 闭合符配成幻影块注释，连同中间的真实 import 一起吞掉（本仓实测 dsh-mcp-manager 与
+ * dsh-provider-usage 各中一处）。故先判 `//` 再判 `/*`，并跟踪字符串状态，使字符串里的
+ * `//`、`/*`（如 URL、glob 字面量）不成为注释起点。
+ */
 function stripComments(text) {
-  return text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  let out = "";
+  let i = 0;
+  let quote = null;
+  while (i < text.length) {
+    const ch = text[i];
+    if (quote !== null) {
+      if (ch === "\\") {
+        out += text.slice(i, i + 2);
+        i += 2;
+        continue;
+      }
+      if (ch === quote) quote = null;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      quote = ch;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === "/" && text[i + 1] === "/") {
+      while (i < text.length && text[i] !== "\n") i += 1;
+      continue;
+    }
+    if (ch === "/" && text[i + 1] === "*") {
+      i += 2;
+      while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i += 1;
+      i = Math.min(i + 2, text.length);
+      out += " ";
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
 }
 
 /**
@@ -559,9 +602,11 @@ function analyzePackage(pkgName, topology) {
     return null;
   };
   const allTsFiles = collectTsFiles(srcDir);
-  // `.d.ts` 是声明文件：引用他域类型不构成运行时依赖，作为 from 侧会污染计数与
+  // `.d.ts` / `.d.mts` 是声明文件：引用他域类型不构成运行时依赖，作为 from 侧会污染计数与
   // 规则判定（notifier `service.d.ts` 实测贡献 6 条 crossModuleRefs、2 条文件边）。
-  const files = allTsFiles.filter((f) => !inClient(f) && !f.endsWith(".d.ts"));
+  const files = allTsFiles.filter(
+    (f) => !inClient(f) && !f.endsWith(".d.ts") && !f.endsWith(".d.mts"),
+  );
   const refs = [];
   for (const fromFile of files) {
     const text = stripComments(readFileSync(fromFile, "utf8"));
@@ -1037,6 +1082,28 @@ function renderGraph(analysis) {
 }
 
 /**
+ * 逐条走台账的新增质量证据放行：未登记的一律记入 `needs`（调用方据此中止写入），已登记
+ * 的收进返回值并记入 `accepted`。首次登记与后续新增共用这条通道——「首次」只改提示口径，
+ * 不是放宽通道。
+ */
+function acceptNewEvidence(packageName, metric, items, ledger, needs, accepted) {
+  const kept = [];
+  for (const item of items) {
+    // 台账按「包名:证据 id」匹配（id 不含 kind）：kind 由 value→type 是收口、反向降级
+    // 另有判据，故登记一条即覆盖该证据的形态漂移，不必随 kind 改台账。
+    const key = `${packageName}:${splitEvidenceItem(metric, item).id}`;
+    const entry = ledger.get(key);
+    if (entry === undefined) {
+      needs.push(`${key}（${metric}）`);
+      continue;
+    }
+    kept.push(item);
+    accepted.push(`${key}（${metric}，登记豁免 ${entry.trackingIssue}）`);
+  }
+  return kept;
+}
+
+/**
  * 生成基线 JSON 结构（稳定排序，便于 diff）。
  *
  * `--write-baseline` 的更新面（#733 后续）：
@@ -1045,7 +1112,8 @@ function renderGraph(analysis) {
  *     （value → type）的条目更新为当前形态。**新增证据默认不写入**：只有已在
  *     `gate-exemptions.json`（gate = `verify-dir-imports`，key = `<包名>:<证据项>`）
  *     登记的条目才允许写入，其余中止写入并列出（exit 1）。
- *   - 首次登记（旧基线无该包，或旧基线为数字口径 = 迁移）按当前证据写入并单独提示。
+ *   - 首次登记（旧基线无该包，或旧基线为数字口径 = 迁移）同样只走台账通道：证据缺登记
+ *     即中止写入并列出。否则一次 `--write-baseline` 就能把新证据静默洗白成基线。
  *
  * @returns `{ baseline, qualityPruned, qualityFirst, qualityNeedsAcceptance, qualityAccepted }`
  */
@@ -1067,8 +1135,18 @@ function buildBaseline(analyses, previous, ledger) {
     for (const key of QUALITY_EVIDENCE_METRICS) {
       const cur = evidence[key] ?? [];
       if (prevQuality === undefined) {
-        quality[key] = cur;
-        firstCount += cur.length;
+        // 首次登记同样逐条过台账：直接把当前证据写库等于给「一次 --write-baseline 即
+        // 洗白」留了后门，而首次登记恰恰是最容易夹带新证据的时点。
+        const firstKept = acceptNewEvidence(
+          a.package,
+          key,
+          cur,
+          ledger,
+          qualityNeedsAcceptance,
+          qualityAccepted,
+        );
+        quality[key] = firstKept.sort();
+        firstCount += firstKept.length;
         continue;
       }
       const prevById = new Map(
@@ -1094,18 +1172,16 @@ function buildBaseline(analyses, previous, ledger) {
         kept.push(curKind === null ? id : `${id}|${curKind}`);
       }
       const added = cur.filter((item) => !prevById.has(splitEvidenceItem(key, item).id));
-      for (const item of added) {
-        // 台账按「包名:证据 id」匹配（id 不含 kind）：kind 由 value→type 是收口、反向降级
-        // 另有判据，故登记一条即覆盖该证据的形态漂移，不必随 kind 改台账。
-        const ledgerKey = `${a.package}:${splitEvidenceItem(key, item).id}`;
-        const entry = ledger.get(ledgerKey);
-        if (entry === undefined) {
-          qualityNeedsAcceptance.push(`${ledgerKey}（${key}）`);
-          continue;
-        }
-        kept.push(item);
-        qualityAccepted.push(`${ledgerKey}（${key}，登记豁免 ${entry.trackingIssue}）`);
-      }
+      kept.push(
+        ...acceptNewEvidence(
+          a.package,
+          key,
+          added,
+          ledger,
+          qualityNeedsAcceptance,
+          qualityAccepted,
+        ),
+      );
       quality[key] = kept.sort();
     }
     entry.quality = quality;
