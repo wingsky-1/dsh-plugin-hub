@@ -1,16 +1,16 @@
 /**
- * dsh-lan-proxy — 存量 config.json 一次性迁移（#276 方案 A 阶段 3 拆出）。
+ * dsh-lan-proxy — 存量 config.json 一次性迁移。
  *
- * rename-first marker，幂等：先把 config.json 原子改名为
- * config.json.migrated.bak（存在即「已处理过」），再 sanitize 过滤后经 owner
- * scope.update 增量写入官方 settings 存储；中断态（.bak 存在且 config.json
- * 不存在）从 bak 重放。设置接线在 settings.ts，净化规则在 config.ts。
+ * rename-first marker，幂等：先把 config.json 原子改名为 config.json.migrated.bak
+ * （存在即「已处理过」），再 sanitize 过滤后经 owner scope.update 增量写入官方
+ * settings 存储；中断态（.bak 存在且 config.json 不存在）从 bak 重放。
+ * 本域只拥有「旧文件长什么样」这份知识，净化规则与写面都取自配置域。
  */
 import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { errorMessage } from "../../../shared/host-utils.js";
-import { sanitizeSettings, normalizeLegacyWsCompressPaths } from "./config.ts";
-import type { OwnerScopeLike } from "./settings.ts";
+import { errorMessage } from "../../../../../../../shared/host-utils.js";
+import { sanitizeSettings, normalizeLegacyWsCompressPaths } from "../../../config/interface.ts";
+import type { OwnerScopeLike } from "../../../config/interface.ts";
 
 /** 迁移备份文件名（同时是幂等标记：存在即「已处理过」）。 */
 export const MIGRATED_BAK_NAME = "config.json.migrated.bak";

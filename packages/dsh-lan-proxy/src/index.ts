@@ -47,24 +47,20 @@ export {
   sanitizeSettings,
   validateSettings,
   normalizeLegacyWsCompressPaths,
-} from "./config.ts";
+} from "./server/config/interface.ts";
 export type {
   HttpCompressSnapshot,
   LanProxyConfig,
   ResolvedConfig,
   SettingInvalid,
-} from "./config.ts";
-// 官方 settings 命名空间接线（#276 方案 A 阶段 3 拆出）
-export { SETTINGS_NS, installLanProxySettings } from "./settings.ts";
-export type { LanProxySettingsHooks, OwnerScopeLike } from "./settings.ts";
-// 存量 config.json 一次性迁移（#276 方案 A 阶段 3 拆出）
-export { MIGRATED_BAK_NAME, migrateFileConfig } from "./migrate.ts";
-export type { MigrationOutcome } from "./migrate.ts";
-// loopback HTTP 配置路由（#276 方案 A 阶段 3 拆出：路由表 + 保存纯函数）
-export { ROUTES, applyConfigPatch, buildConfigRoutes } from "./config-routes.ts";
-export type { ConfigRouteDeps, PatchResult } from "./config-routes.ts";
-// 插件挂载主流程（apply + 转发常量）
-export { apply, pluginDir, DEFAULT_WSS_COMPRESS_PATHS } from "./apply.ts";
+} from "./server/config/interface.ts";
+export { SETTINGS_NS, installLanProxySettings } from "./server/config/interface.ts";
+export type { LanProxySettingsHooks, OwnerScopeLike } from "./server/config/interface.ts";
+export { ROUTES, applyConfigPatch, buildConfigRoutes } from "./server/config/interface.ts";
+export type { ConfigRouteDeps, PatchResult } from "./server/config/interface.ts";
+export { MIGRATED_BAK_NAME, migrateFileConfig } from "./server/migrate/interface.ts";
+export type { MigrationOutcome } from "./server/migrate/interface.ts";
+export { apply, pluginDir, DEFAULT_WSS_COMPRESS_PATHS } from "./server/apply.ts";
 
 // 测试面 re-export（smoke 只依赖主入口，避免发布物保留内部模块）
 export {

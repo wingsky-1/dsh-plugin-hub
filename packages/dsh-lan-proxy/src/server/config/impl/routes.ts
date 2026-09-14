@@ -1,20 +1,18 @@
 /**
- * dsh-lan-proxy — loopback HTTP 配置路由（#276 方案 A 阶段 3 拆出）。
+ * dsh-lan-proxy — loopback HTTP 配置面。
  *
- * 职责：与客户端共享的路由表（ROUTES，单一来源）、配置保存纯函数
- * （applyConfigPatch）与路由组装（buildConfigRoutes）。路由表归此模块而非
- * apply.ts：config-routes 与 apply 都要引用 ROUTES，放在本模块可避免
- * apply ↔ config-routes 循环引用（apply.ts 不得 import index.ts 的同一纪律）。
+ * 路由表（ROUTES）与保存纯函数（applyConfigPatch）同处：两者只服务配置读写，
+ * 且 ROUTES 是与客户端共享的来源（构建期经 __DSH_ROUTES__ 注入）。
  */
 import {
   writeJson,
   readBody,
   errorMessage,
   guardLoopbackMethod,
-} from "../../../shared/host-utils.js";
+} from "../../../../../../shared/host-utils.js";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
-import { sanitizeSettings, validateSettings } from "./config.ts";
-import type { HttpCompressSnapshot, ResolvedConfig } from "./config.ts";
+import { sanitizeSettings, validateSettings } from "./model.ts";
+import type { HttpCompressSnapshot, ResolvedConfig } from "./model.ts";
 
 /** 与客户端共享的路由（单一来源）。 */
 export const ROUTES = {
