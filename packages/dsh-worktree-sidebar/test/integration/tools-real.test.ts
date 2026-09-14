@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
-import type { BindingRecord } from "../../src/contract.ts";
+import type { BindingRecord } from "../../src/server/binding/interface.ts";
 import * as bindingApi from "../../src/server/binding/interface.ts";
 import * as gitApi from "../../src/server/git/interface.ts";
 import type { ToolsDeps } from "../../src/server/tools/deps.ts";

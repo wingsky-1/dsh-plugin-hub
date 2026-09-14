@@ -4,10 +4,9 @@
  * 这是契约层而不是 unit 的同域白盒面：装配根的依赖面就是宿主给的 `ctx`，
  * 不递假面就无法驱动它。
  *
- * **临时前提（S3 的 B2 会消掉）**：`src/client/index.ts` 现在直接引用构建期注入的
- * `__DSH_ROUTES__` 标识符（裸引用）。非 bundle 环境里它不存在，模块求值即 ReferenceError，
- * 所以本文件必须**先**把它挂到 globalThis、再动态 import 装配根——静态 import 会被提升到
- * 赋值之前。B2 把它改成 `typeof` 守卫之后，这段前置即可删除。
+ * 静态 import 本身就是一条判据：非 bundle 环境里没有构建期注入的 `__DSH_ROUTES__`，
+ * 装配根靠 `typeof` 守卫回落到 `src/contract.ts` 的 `ROUTES`，模块求值得当场成功。
+ * 先往 globalThis 挂一个桩再 import，会把这条判据遮掉。
  *
  * 为什么允许打桩 `globalThis.fetch`：装配根在会话 materialize 时就拉一次宿主路由，
  * 不桩会真的发出网络请求（离线纪律）。这里只用它当调用计数器与响应源，不伪造别的进程事实。
@@ -16,6 +15,7 @@
  * `settleMicrotasks` 排空队列，不写真实 sleep。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { apply } from "../../src/client/index.ts";
 import type {
   ClientSlotsPort,
   ObservablePort,
@@ -25,15 +25,6 @@ import type {
   TabsPort,
 } from "../../src/client/ports.ts";
 import { BODY_SLOT, FILES_KIND } from "../../src/client/takeover.ts";
-
-Object.assign(globalThis, {
-  __DSH_ROUTES__: {
-    bindings: "/api/dsh-worktree-sidebar/bindings",
-    health: "/api/dsh-worktree-sidebar/health",
-  },
-});
-
-const { apply } = await import("../../src/client/index.ts");
 
 const OFFICIAL_ID = "@deepseek-ai/dsh-client-ui-sidebar-files/files";
 const SESSION_ID = "s1";

@@ -6,7 +6,7 @@
  * 那不是回退，是整条链路不可用）。
  */
 import { afterEach, describe, expect, it } from "vitest";
-import type { BindingRecord } from "../../src/contract.ts";
+import type { BindingRecord } from "../../src/server/binding/interface.ts";
 import type {
   DefaultScopePort,
   FileScope,

@@ -4,6 +4,8 @@
  * 这里只做适配：把 `ctx` 收窄成各模块认得的窄面，把每会话的绑定状态与快照源接起来。
  * 判断本身都在 `takeover.ts` / `source.ts` / `bindings.ts` 里，那三个模块不需要浏览器。
  */
+import type { BindingResponse } from "../contract.ts";
+import { ROUTES } from "../contract.ts";
 import { createBindingState } from "./bindings.ts";
 import type { BindingState } from "./bindings.ts";
 import type {
@@ -16,9 +18,16 @@ import type {
 import { createSessionsSource } from "./source.ts";
 import { installTakeover } from "./takeover.ts";
 
-/** 宿主端 `ROUTES.bindings` 经构建期注入；注入缺失时用同一条字面路径兜底。 */
+/**
+ * 宿主端 `ROUTES` 经构建期 define 注入 `__DSH_ROUTES__`（bundle-host.ts）。
+ *
+ * 兜底必须写成 `typeof` 守卫：`declare const` 只活在类型层，非 bundle 环境（源码直接 import、
+ * 单测、构建期收集）里这个标识符根本不存在，裸引用会当场 ReferenceError。所以契约常量留在
+ * `src/contract.ts` 根，注入缺失时用它——也是本包路由的单一事实源。
+ */
 declare const __DSH_ROUTES__: Record<string, string> | undefined;
-const BINDINGS_URL = __DSH_ROUTES__?.bindings ?? "/api/dsh-worktree-sidebar/bindings";
+const ROUTES_INJECTED = typeof __DSH_ROUTES__ !== "undefined" ? __DSH_ROUTES__ : ROUTES;
+const BINDINGS_URL = ROUTES_INJECTED.bindings;
 
 /** 绑定刷新间隔。绑定只由 agent 工具改变，这个频率足以让「刚摘掉登记」在下一次用到树之前传过来。 */
 const REFRESH_MS = 5_000;
@@ -30,7 +39,8 @@ const readBinding: ReadBinding = async (sessionId) => {
       headers: { accept: "application/json" },
     });
     if (!response.ok) return undefined;
-    const body = (await response.json()) as { revision?: unknown; worktreePath?: unknown };
+    // 响应形状来自根契约的单点定义：字段名在这里改不动，改了当场编译失败。
+    const body = (await response.json()) as Partial<BindingResponse>;
     if (typeof body.revision !== "number") return undefined;
     return {
       revision: body.revision,

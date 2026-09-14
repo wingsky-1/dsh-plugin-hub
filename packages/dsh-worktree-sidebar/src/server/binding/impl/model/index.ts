@@ -4,8 +4,8 @@
  * 不碰磁盘、不碰宿主——所以「损坏文件当空表」「revision 单调」「摘不存在的会话不涨 revision」
  * 这三条判据可以被单测直接打红，不需要起 cordis，也不需要真文件。
  */
-import { BINDINGS_VERSION } from "../../../../contract.ts";
-import type { BindingRecord, BindingsFile } from "../../../../contract.ts";
+import { BINDINGS_VERSION } from "./type.ts";
+import type { BindingRecord, BindingsFile } from "./type.ts";
 
 /** 空表。revision 从 0 起：它是**内容版本**而不是写入次数，客户端只做相等比较。 */
 export function emptyTable(): BindingsFile {

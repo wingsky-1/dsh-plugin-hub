@@ -6,7 +6,7 @@
  */
 import { statSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
-import type { BindingRecord } from "../../../../contract.ts";
+import type { BindingRecord } from "../../../binding/interface.ts";
 import type { AgentFace, ToolsDeps } from "../../deps.ts";
 import type { SessionFace } from "../session/index.ts";
 import type { ToolResultValue } from "../protocol/index.ts";

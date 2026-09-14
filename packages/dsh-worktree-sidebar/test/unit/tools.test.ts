@@ -12,7 +12,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
-import type { BindingRecord } from "../../src/contract.ts";
+import type { BindingRecord } from "../../src/server/binding/interface.ts";
 import type { AgentFace, AgentPort, ToolsDeps } from "../../src/server/tools/deps.ts";
 import { installTools, releaseTools } from "../../src/server/tools/interface.ts";
 import { buildCreateTool } from "../../src/server/tools/impl/create/index.ts";

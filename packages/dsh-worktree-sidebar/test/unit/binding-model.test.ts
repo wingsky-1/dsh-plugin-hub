@@ -6,7 +6,7 @@
  * 它们都不抛异常，只让文件树指向错的地方。
  */
 import { describe, expect, it } from "vitest";
-import { BINDINGS_VERSION } from "../../src/contract.ts";
+import { BINDINGS_VERSION } from "../../src/server/binding/interface.ts";
 import {
   dropBinding,
   emptyTable,

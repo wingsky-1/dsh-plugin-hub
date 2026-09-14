@@ -8,7 +8,7 @@
  * 状态（表快照与写盘串行链）住在实例里；域是**进程内单例**，第二次 `install` 由 `installed`
  * 守卫**显式抛错**（响亮失败优于静默共享/丢数据）。
  */
-import type { BindingRecord, BindingsFile } from "../../../../contract.ts";
+import type { BindingRecord, BindingsFile } from "../model/type.ts";
 import type { FileWrite } from "../../../shared/interface.ts";
 import type { BindingDeps } from "../../deps.ts";
 import { dropBinding, emptyTable, putBinding } from "../model/index.ts";

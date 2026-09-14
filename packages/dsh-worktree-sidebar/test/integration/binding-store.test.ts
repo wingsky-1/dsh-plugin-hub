@@ -9,7 +9,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import * as bindingApi from "../../src/server/binding/interface.ts";
-import { BINDINGS_VERSION, type BindingRecord } from "../../src/contract.ts";
+import { BINDINGS_VERSION, type BindingRecord } from "../../src/server/binding/interface.ts";
 import { cleanup, tempDir } from "../helpers.ts";
 
 const record: BindingRecord = {

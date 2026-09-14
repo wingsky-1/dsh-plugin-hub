@@ -10,6 +10,7 @@
 import type { Endpoint } from "../route/index.ts";
 import type { EffectiveWorktreePort, RevisionPort } from "../../deps.ts";
 import { ROUTES } from "../../../../contract.ts";
+import type { BindingResponse } from "../../../../contract.ts";
 import { writeJson } from "../../../../../../../shared/host-utils.js";
 
 /** 从 `req.url` 取 query 参数。返回 undefined 表示缺席或空串（两者对调用方同义）。 */
@@ -33,7 +34,8 @@ export function bindingsEndpoint(binding: RevisionPort, scope: EffectiveWorktree
         }
         // 先生算出生效根、再读 revision：这样报出去的 revision 不会早于它所描述的那个事实。
         const worktreePath = await scope.effectiveWorktree(session);
-        writeJson(res, 200, { revision: binding.revision(), worktreePath });
+        const body: BindingResponse = { revision: binding.revision(), worktreePath };
+        writeJson(res, 200, body);
       },
     },
   };
