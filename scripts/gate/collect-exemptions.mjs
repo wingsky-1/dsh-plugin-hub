@@ -75,6 +75,85 @@ function collectEntries(node, pointer, out) {
   for (const [k, v] of Object.entries(node)) collectEntries(v, `${pointer}.${k}`, out);
 }
 
+/**
+ * 读一个数据文件并收集其台账条目。解析失败**不抛**——一个坏文件不该让整份台账收不到，
+ * 但也必须让读者看见它，故连同来源行一起打印并计入 unreadable。
+ */
+function readEntries(dataDir, file) {
+  let json;
+  try {
+    json = JSON.parse(readFileSync(join(dataDir, file), "utf8"));
+  } catch (e) {
+    console.log(`  来源 ${DATA_DIR}/${file}`);
+    console.log(`    [跳过] JSON 解析失败：${String(e.message).split("\n")[0]}`);
+    return { entries: [], unreadable: 1 };
+  }
+  const entries = [];
+  collectEntries(json, "$", entries);
+  return { entries, unreadable: 0 };
+}
+
+/**
+ * 打印单条条目并回传它该计入哪几个计数。计数以「本条归属」形式返回而不是直接改外部变量，
+ * 是为了让「分档规则」（过期 / 90 天内 / 仅解除条件 / 缺解除条件）只有这一处实现。
+ */
+/**
+ * `reviewBy` → 一句到期描述 + 它该计入哪一档。
+ * 无法解析的日期如实说「无法解析」而不是当成已过期：那会把一条坏数据伪装成待办。
+ */
+function describeDue(reviewBy, todayMs) {
+  const dueMs = Date.parse(`${reviewBy}T00:00:00Z`);
+  if (Number.isNaN(dueMs))
+    return { text: `reviewBy ${reviewBy}（日期无法解析）`, bucket: "unknown" };
+  const days = Math.round((dueMs - todayMs) / DAY_MS);
+  if (days < 0) return { text: `reviewBy ${reviewBy}（已过期 ${-days} 天）`, bucket: "expired" };
+  return {
+    text: `reviewBy ${reviewBy}（剩 ${days} 天）`,
+    bucket: days <= SOON_DAYS ? "soon" : "rest",
+  };
+}
+
+function reportEntry(entry, todayMs) {
+  const meta = [];
+  const tally = { expired: 0, soon: 0, criteriaOnly: 0, withoutCriteria: 0 };
+  if (entry.reviewBy === null) {
+    tally.criteriaOnly = 1;
+  } else {
+    const due = describeDue(entry.reviewBy, todayMs);
+    if (due.bucket === "expired") tally.expired = 1;
+    if (due.bucket === "soon") tally.soon = 1;
+    meta.push(due.text);
+  }
+  if (entry.trackingIssue !== null) meta.push(`trackingIssue ${entry.trackingIssue}`);
+  if (entry.exitCriteria === null) {
+    if (entry.reviewBy !== null) tally.withoutCriteria = 1;
+  } else {
+    meta.push(`exitCriteria ${entry.exitCriteria}`);
+  }
+  console.log(`    ${entry.pointer}  ${entry.label}`);
+  console.log(`      ${meta.join("  ")}`);
+  return tally;
+}
+
+/** 汇总行；没有条目时如实说明扫描面，而不是打印一行全零。 */
+function printSummary(tally, scannedFiles, today) {
+  if (tally.total === 0) {
+    console.log(`  未发现带 reviewBy 或 exitCriteria 的条目（扫描 ${scannedFiles} 个数据文件）`);
+    return;
+  }
+  const rest = tally.total - tally.expired - tally.soon - tally.criteriaOnly;
+  const criteriaNote =
+    tally.criteriaOnly === 0 ? "" : ` / 仅解除条件（无到期日）${tally.criteriaOnly}`;
+  console.log(
+    `  合计 ${tally.total} 条：已过期 ${tally.expired} / ${SOON_DAYS} 天内到期 ${tally.soon} / 其余 ${rest}${criteriaNote}（统计日 ${today}）`,
+  );
+  if (tally.withoutCriteria > 0) {
+    console.log(
+      `  其中 ${tally.withoutCriteria} 条只有到期日、没有 exitCriteria——到期收口时缺「凭什么能删」的判据`,
+    );
+  }
+}
+
 function main() {
   const root = argValue(process.argv, "--root", ROOT);
   const today = argValue(process.argv, "--today", new Date().toISOString().slice(0, 10));
@@ -92,72 +171,33 @@ function main() {
     .filter((f) => f.endsWith(".json"))
     .sort();
 
-  let total = 0;
-  let expired = 0;
-  let soon = 0;
-  let criteriaOnly = 0;
-  let withoutCriteria = 0;
-  let unreadable = 0;
+  const tally = {
+    total: 0,
+    expired: 0,
+    soon: 0,
+    criteriaOnly: 0,
+    withoutCriteria: 0,
+    unreadable: 0,
+  };
   for (const file of files) {
-    let json;
-    try {
-      json = JSON.parse(readFileSync(join(dataDir, file), "utf8"));
-    } catch (e) {
-      unreadable += 1;
-      console.log(`  来源 ${DATA_DIR}/${file}`);
-      console.log(`    [跳过] JSON 解析失败：${String(e.message).split("\n")[0]}`);
-      continue;
-    }
-    const entries = [];
-    collectEntries(json, "$", entries);
+    const { entries, unreadable } = readEntries(dataDir, file);
+    tally.unreadable += unreadable;
     if (entries.length === 0) continue;
     console.log(`  来源 ${DATA_DIR}/${file}`);
     for (const entry of entries) {
-      total += 1;
-      const meta = [];
-      if (entry.reviewBy === null) {
-        criteriaOnly += 1;
-      } else {
-        const dueMs = Date.parse(`${entry.reviewBy}T00:00:00Z`);
-        if (Number.isNaN(dueMs)) {
-          meta.push(`reviewBy ${entry.reviewBy}（日期无法解析）`);
-        } else {
-          const days = Math.round((dueMs - todayMs) / DAY_MS);
-          if (days < 0) {
-            expired += 1;
-            meta.push(`reviewBy ${entry.reviewBy}（已过期 ${-days} 天）`);
-          } else {
-            if (days <= SOON_DAYS) soon += 1;
-            meta.push(`reviewBy ${entry.reviewBy}（剩 ${days} 天）`);
-          }
-        }
-      }
-      if (entry.trackingIssue !== null) meta.push(`trackingIssue ${entry.trackingIssue}`);
-      if (entry.exitCriteria === null) {
-        if (entry.reviewBy !== null) withoutCriteria += 1;
-      } else {
-        meta.push(`exitCriteria ${entry.exitCriteria}`);
-      }
-      console.log(`    ${entry.pointer}  ${entry.label}`);
-      console.log(`      ${meta.join("  ")}`);
+      tally.total += 1;
+      const t = reportEntry(entry, todayMs);
+      tally.expired += t.expired;
+      tally.soon += t.soon;
+      tally.criteriaOnly += t.criteriaOnly;
+      tally.withoutCriteria += t.withoutCriteria;
     }
   }
 
-  if (total === 0) {
-    console.log(`  未发现带 reviewBy 或 exitCriteria 的条目（扫描 ${files.length} 个数据文件）`);
-  } else {
-    const rest = total - expired - soon - criteriaOnly;
-    const criteriaNote = criteriaOnly === 0 ? "" : ` / 仅解除条件（无到期日）${criteriaOnly}`;
-    console.log(
-      `  合计 ${total} 条：已过期 ${expired} / ${SOON_DAYS} 天内到期 ${soon} / 其余 ${rest}${criteriaNote}（统计日 ${today}）`,
-    );
-    if (withoutCriteria > 0) {
-      console.log(
-        `  其中 ${withoutCriteria} 条只有到期日、没有 exitCriteria——到期收口时缺「凭什么能删」的判据`,
-      );
-    }
+  printSummary(tally, files.length, today);
+  if (tally.unreadable > 0) {
+    console.log(`  另有 ${tally.unreadable} 个数据文件无法解析（上方已列出）`);
   }
-  if (unreadable > 0) console.log(`  另有 ${unreadable} 个数据文件无法解析（上方已列出）`);
   return 0;
 }
 
