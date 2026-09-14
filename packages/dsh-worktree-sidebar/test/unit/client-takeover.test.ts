@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import type {
   ClientSlotsPort,
   ObservablePort,
+  SessionView,
   SessionsSnapshotLike,
   StoredEntryLike,
   TabDefinitionLike,
@@ -60,6 +61,18 @@ const STABLE_SOURCE: ObservablePort<SessionsSnapshotLike> = {
   getSnapshot: () => ({}),
   subscribe: () => () => undefined,
 };
+
+/** 一个会话视图的假件：本文件只走注册/释放与 inject 面包装，生效根读数不承载判据。 */
+function viewOf(source: ObservablePort<SessionsSnapshotLike>): SessionView {
+  return {
+    source,
+    root: {
+      getSnapshot: () => null,
+      subscribe: () => () => undefined,
+      refresh: () => Promise.resolve(),
+    },
+  };
+}
 
 function harness(options: { bodyFails?: boolean; kindFails?: boolean } = {}) {
   const regs: Reg[] = [];
@@ -152,7 +165,7 @@ function harness(options: { bodyFails?: boolean; kindFails?: boolean } = {}) {
         slots,
         tabs,
         logger: { warn: (message: string) => warns.push(message) },
-        wrapInject: createInjectWrapper(() => STABLE_SOURCE),
+        wrapInject: createInjectWrapper(() => viewOf(STABLE_SOURCE)),
       }),
   };
 }
@@ -186,7 +199,7 @@ describe("抓不到官方正文时零注册", () => {
         },
       },
       logger: { warn: () => undefined },
-      wrapInject: createInjectWrapper(() => STABLE_SOURCE),
+      wrapInject: createInjectWrapper(() => viewOf(STABLE_SOURCE)),
     });
     expect(registered).toBe(0);
   });
@@ -336,7 +349,7 @@ describe("正文的 inject 面被包装：hooks.sessions 换成改写源", () =>
       logger: { warn: () => undefined },
       wrapInject: createInjectWrapper((sessionId) => {
         asked.push(sessionId);
-        return source;
+        return viewOf(source);
       }),
     });
     expect(captured).not.toBe(entry.inject);

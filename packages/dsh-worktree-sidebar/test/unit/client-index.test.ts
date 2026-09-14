@@ -8,20 +8,19 @@
  * 装配根靠 `typeof` 守卫回落到 `src/contract.ts` 的 `ROUTES`，模块求值得当场成功。
  * 先往 globalThis 挂一个桩再 import，会把这条判据遮掉。
  *
- * 为什么允许打桩 `globalThis.fetch`：装配根在会话 materialize 时就拉一次宿主路由，
- * 不桩会真的发出网络请求（离线纪律）。这里只用它当调用计数器与响应源，不伪造别的进程事实。
+ * 为什么允许打桩 `globalThis.fetch`：读宿主绑定的唯一出口就是它，不桩会真的发出网络请求
+ * （离线纪律）。这里只用它当调用计数器与响应源，不伪造别的进程事实。
  *
- * 时间纪律：只假 `setInterval` / `clearInterval`（不钉 `Date`），异步等待用
- * `settleMicrotasks` 排空队列，不写真实 sleep。
+ * 时间纪律：客户端**没有定时器**（请求只由页签挂载 / 官方刷新 / 窗口重新可见触发），
+ * 所以本文件不假时间；异步等待一律用 `settleMicrotasks` 排空队列，不写真实 sleep。
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { apply } from "../../src/client/index.ts";
 import type {
   ClientSlotsPort,
-  ObservablePort,
   SessionsSnapshotLike,
   StoredEntryLike,
   TabDefinitionLike,
@@ -31,12 +30,28 @@ import { BODY_SLOT, FILES_KIND } from "../../src/client/takeover.ts";
 
 const OFFICIAL_ID = "@deepseek-ai/dsh-client-ui-sidebar-files/files";
 const SESSION_ID = "s1";
+const TAB_ID = "tab-1";
+/** 官方正文递进来的 cwd：绑定不可用时的回退根。 */
+const CWD = "/cwd";
+
+/** 官方正文每次被播种 / 列目录都记一笔：这是断言「播的是哪个根」的唯一证据面。 */
+const officialStarts: Array<{ tabId: string; root: string }> = [];
+const officialLoads: Array<{ tabId: string; path: string }> = [];
 
 /** 官方正文条目：装配根找得到它才会走注册（找不到就零注册）。 */
 const BODY: StoredEntryLike = {
   component: { name: "FilesBody" },
   options: { key: OFFICIAL_ID },
-  inject: () => ({ useFiles: "official-useFiles" }),
+  inject: () => ({
+    useFiles: "official-useFiles",
+    start: (tabId: string, root: string) => {
+      officialStarts.push({ tabId, root });
+    },
+    load: (tabId: string, path: string) => {
+      officialLoads.push({ tabId, path });
+    },
+    toggle: () => undefined,
+  }),
 };
 
 const OFFICIAL_DEFINITION: TabDefinitionLike = {
@@ -46,7 +61,7 @@ const OFFICIAL_DEFINITION: TabDefinitionLike = {
   title: () => "Files",
 };
 
-/** 排空在飞的微任务链：钉了 setInterval 也不能用真实 sleep（见文件头时间纪律）。 */
+/** 排空在飞的微任务链：`start` 的播种是异步的（先读一次绑定）。 */
 function settleMicrotasks(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
@@ -56,18 +71,24 @@ function liveSnapshot(): SessionsSnapshotLike {
   return { ids: [SESSION_ID], byId: { [SESSION_ID]: { title: "t" } }, current: SESSION_ID };
 }
 
-/** 该会话已从宿主快照消失的形态。 */
-function emptySnapshot(): SessionsSnapshotLike {
-  return { ids: [], byId: {}, current: undefined };
+/** 我们注册的那条正文的 inject 面（已包装）。 */
+interface Face {
+  start?: (tabId: string, root: string, signal?: AbortSignal) => void;
+  load?: (tabId: string, path: string, signal?: AbortSignal) => void;
+  [key: string]: unknown;
 }
 
 interface Mounted {
-  /** 假 sessions.list 当前返回的真实快照，可直接替换成「会话已消失」的形态。 */
+  /** 假 sessions.list 当前返回的真实快照。 */
   readonly snapshot: { value: SessionsSnapshotLike };
-  /** 装配时注册正文传进去的那份 inject。 */
+  /** 装配时注册正文传进去的那份 inject（我们的包装产物）。 */
   capturedInject(): (...args: unknown[]) => Record<string, unknown>;
   /** 该会话累计发起的绑定拉取次数。 */
   fetchesFor(sessionId: string): number;
+  /** 官方 `start` 收到的每次播种。 */
+  starts(): ReadonlyArray<{ tabId: string; root: string }>;
+  /** 官方 `load` 收到的每次列目录。 */
+  loads(): ReadonlyArray<{ tabId: string; path: string }>;
   /** 调 ctx.effect 收下的 disposer（整包卸载）。 */
   dispose(): void;
 }
@@ -78,7 +99,6 @@ const savedFetch = globalThis.fetch;
 afterEach(() => {
   active?.dispose();
   active = undefined;
-  vi.useRealTimers();
   globalThis.fetch = savedFetch;
 });
 
@@ -93,6 +113,8 @@ function mount(respond: () => Response): Mounted {
   const fetchUrls: string[] = [];
   const disposers: Array<() => void> = [];
   let captured: unknown;
+  officialStarts.length = 0;
+  officialLoads.length = 0;
 
   const slots: ClientSlotsPort = {
     entriesOfSlot: (key) => (key === BODY_SLOT ? [BODY] : []),
@@ -133,6 +155,8 @@ function mount(respond: () => Response): Mounted {
     capturedInject: () => captured as (...args: unknown[]) => Record<string, unknown>,
     fetchesFor: (sessionId) =>
       fetchUrls.filter((url) => url.endsWith("?session=" + sessionId)).length,
+    starts: () => officialStarts.slice(),
+    loads: () => officialLoads.slice(),
     dispose: () => {
       for (const dispose of disposers) dispose();
     },
@@ -158,36 +182,92 @@ describe("entry 注入面的 sessions 接在真快照源上（A2）", () => {
   });
 });
 
-describe("按会话剪枝：宿主快照里消失的会话不再被拉取（P1 泄漏）", () => {
-  it("会话从快照消失后，定时器不再为它拉绑定", () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+/**
+ * 树根播种。这是**换根真正生效**的地方：官方只在 `state === undefined` 时播一次种
+ * （sidebar-files/lib/client.js:426-428），刷新按钮也只重列已展开的路径（同文件 :455-458），
+ * 所以"绑定后树根自动正确"必须由我们覆盖 `start`/`load` 来保证。
+ */
+describe("树根播种：只在用户可感知的时机读绑定（没有定时轮询）", () => {
+  it("没有页签挂载时一个请求都不发", () => {
     const h = mount(bindingResponse);
     h.capturedInject()(SESSION_ID);
-    expect(h.fetchesFor(SESSION_ID)).toBe(1);
-
-    h.snapshot.value = emptySnapshot();
-    vi.advanceTimersByTime(5_000);
-
-    expect(h.fetchesFor(SESSION_ID)).toBe(1);
+    expect(h.fetchesFor(SESSION_ID)).toBe(0);
   });
 
-  it("剪枝释放订阅：之后到达的绑定变化不再通知到改写源", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  it("打开页签：先读一次绑定，再按生效根播种（而不是首帧的 cwd）", async () => {
     const h = mount(bindingResponse);
-    const face = h.capturedInject()(SESSION_ID);
-    const source = (face["hooks"] as { sessions: ObservablePort<SessionsSnapshotLike> }).sessions;
-    let notified = 0;
-    const unsubscribe = source.subscribe(() => {
-      notified += 1;
-    });
-
-    h.snapshot.value = emptySnapshot();
-    vi.advanceTimersByTime(5_000);
+    const face = h.capturedInject()(SESSION_ID) as Face;
+    face.start?.(TAB_ID, CWD);
     await settleMicrotasks();
 
-    // 剪枝时若不调用 state.subscribe 的退订，这条已在飞的绑定变化会经改写源通知出去。
-    expect(notified).toBe(0);
-    unsubscribe();
+    expect(h.fetchesFor(SESSION_ID)).toBe(1);
+    expect(h.starts()).toEqual([{ tabId: TAB_ID, root: "/wt" }]);
+  });
+
+  it("点刷新（load 命中已播种的根）会重读绑定；worktree 变了就用官方 start 重根", async () => {
+    let body: Record<string, unknown> = { revision: 1, worktreePath: "/wt" };
+    const h = mount(() => new Response(JSON.stringify(body), { status: 200 }));
+    const face = h.capturedInject()(SESSION_ID) as Face;
+    face.start?.(TAB_ID, CWD);
+    await settleMicrotasks();
+    expect(h.starts()).toEqual([{ tabId: TAB_ID, root: "/wt" }]);
+
+    body = { revision: 2, worktreePath: "/wt2" };
+    face.load?.(TAB_ID, "/wt");
+    await settleMicrotasks();
+
+    expect(h.starts()).toEqual([
+      { tabId: TAB_ID, root: "/wt" },
+      { tabId: TAB_ID, root: "/wt2" },
+    ]);
+    // 官方那次 load 仍要发生：我们只补一次重读，不吞掉官方刷新动作。
+    expect(h.loads()).toEqual([{ tabId: TAB_ID, path: "/wt" }]);
+  });
+
+  it("绑定被摘掉（worktreePath: null）时回退到官方递进来的 cwd", async () => {
+    let body: Record<string, unknown> = { revision: 1, worktreePath: "/wt" };
+    const h = mount(() => new Response(JSON.stringify(body), { status: 200 }));
+    const face = h.capturedInject()(SESSION_ID) as Face;
+    face.start?.(TAB_ID, CWD);
+    await settleMicrotasks();
+
+    body = { revision: 2, worktreePath: null };
+    face.load?.(TAB_ID, "/wt");
+    await settleMicrotasks();
+
+    expect(h.starts()).toEqual([
+      { tabId: TAB_ID, root: "/wt" },
+      { tabId: TAB_ID, root: CWD },
+    ]);
+  });
+
+  it("展开子目录（load 更深路径）不触发请求，但官方 load 照旧", async () => {
+    const h = mount(bindingResponse);
+    const face = h.capturedInject()(SESSION_ID) as Face;
+    face.start?.(TAB_ID, CWD);
+    await settleMicrotasks();
+    const before = h.fetchesFor(SESSION_ID);
+
+    face.load?.(TAB_ID, "/wt/sub");
+    await settleMicrotasks();
+
+    expect(h.fetchesFor(SESSION_ID)).toBe(before);
+    expect(h.loads()).toEqual([{ tabId: TAB_ID, path: "/wt/sub" }]);
+  });
+
+  it("页签关闭（abort）后不再为它重读绑定", async () => {
+    const h = mount(bindingResponse);
+    const face = h.capturedInject()(SESSION_ID) as Face;
+    const controller = new AbortController();
+    face.start?.(TAB_ID, CWD, controller.signal);
+    await settleMicrotasks();
+    const before = h.fetchesFor(SESSION_ID);
+
+    controller.abort();
+    face.load?.(TAB_ID, "/wt", controller.signal);
+    await settleMicrotasks();
+
+    expect(h.fetchesFor(SESSION_ID)).toBe(before);
   });
 });
 

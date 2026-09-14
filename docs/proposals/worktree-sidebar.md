@@ -797,6 +797,86 @@ node scripts/gate/export-surface-snapshot.mjs --package dsh-worktree-sidebar --s
 **测试净变化**：本轮只**删**断言（`branchLabel` 的 4 条），另加 1 条哨兵断言；测试文件数保持 13，
 `--min` 与 `pnpm stryker:gen` 面均未变动。删除项的替代判据逐条登记在 §18.3 与本节。
 
+## 19. 第五轮：去轮询换根、目录重排与已批准实施清单（2026-09-14）
+
+### 19.0 本轮性质与结论
+
+- 触发：维护者质疑「实现太复杂、对官方侵入太多」。派了两个上下文独立的子 agent 做**宿主轴 / 客户端轴**
+  对抗调研（各自只读、自带证据纪律），本人逐条复核其关键论断。三类归档（真弯 / 被迫 / 记账）落在
+  `packages/dsh-worktree-sidebar/docs/review-round5.md`，**不替代本文**。
+- 结论两条，必须一起读：
+  1. **深侵入可以从 2 处降到 1 处**——客户端不必顶官方类型表，用「同 key + 更低 priority」遮蔽正文 entry 即可
+     （官方 ui-slots 文案就写着 `register at a different priority to shadow it (lowest renders)`）。
+  2. **宿主那处 `typert.configure` 在「任意路径」硬约束下是唯一接缝**，删不掉（否决依据见 §19.4）。
+
+### 19.1 已落地（工作树内，未提交）
+
+| 项 | 内容 | 证据 |
+|---|---|---|
+| ① 归属缓存解耦 | `git/impl/service` 的 `BELONGS_TTL_MS` 5s 到 30s（旧值与客户端轮询同值，导致每轮轮询必 miss）；新增判据「TTL 内不重复起 git，过期后才重算」 | 13 文件 / 175 用例；两突变（TTL=0、永不过期）各自打红一条；备份 + sha256 还原一致 |
+| ② 树根按绑定播种、去掉轮询与剪枝 | `client/inject.ts` 覆盖官方 face 的 `start`/`load`；`client/index.ts` 删 `REFRESH_MS`/`pruneGone`/`isGone`/`LiveSource`，改为每会话一个 `SessionView{source, root}` | 13 文件 / **179 用例**；三突变（播种不读生效根 / 刷新不重读 / 不记 abort）各自打红一条；lint 0 error 且 warning 回 669/671；typecheck、test tsconfig、prettier 全 0 |
+
+**②的官方依据（本人复核，行号基于 dsh 0.1.5-rc.1）**：
+
+- 树根只在 `state === undefined` 时由 `start(tabId, cwd)` 播一次
+  （`dsh-client-ui-sidebar-files/lib/client.js:426-428`）；此后 `cwd` 再变也不重设根。
+- 刷新按钮 = `actions.reset(tab.id)` + 按 `expanded` 重新 `load`（同文件 `:455-458`），而 `reset` **只清 levels**
+  （`:659-661`）⇒ **刷新按钮改不了根**；只有 `forget`（abort 路径，`:667-669`）才会删掉整棵 tab 状态。
+- `load`/`start`/`toggle` 都来自 entry 的 inject 面（`renderer/lib/client.js:341-357` 把 face 展开成 props）
+  ⇒ 覆盖它们就是"树根播种"的合法落点。
+
+**②的语义后果（必须与文档一起改）**：客户端**不再有任何定时轮询**，请求只由三个用户可感知时机触发
+（打开页签 / 点官方刷新 / 窗口重新可见或获得焦点）。因此"登记完树就自动变"不再成立，工具文案与 README
+必须改成「打开或刷新 Files 页签即可看到」（见 §19.2 的 S10）。
+
+### 19.2 已批准待实施（S6 到 S10，按序执行，每片独立验证）
+
+| 片 | 内容 | 官方依据 | 验收 |
+|---|---|---|---|
+| **S6** | 纯目录重排（见 §19.3）：`src/contract.ts` 到 `src/shared/`（**必须带 `interface.ts` 收口**）、`src/host/` 到 `src/server/host/`、`src/client/ports.ts` 到 `src/client/shared/ports.ts`；同步全部 import、`tools/lint/eslint.config.js` 的块间互引路径、§8 目录树与 §9.1 读数 | `verify-dir-imports` 规则 1（不含 `interface.ts` 的目录被引用即判缺门面，见该文件 `:8-14`、`:542-548`）；`src/client/` 完全豁免（`:51-52`） | 包测试、typecheck、test tsconfig、lint、prettier、`verify-dir-imports --package dsh-worktree-sidebar` 全绿 |
+| **S7** | 改 1：**遮蔽式正文接管**——以官方 id 为 key、`priority < 0` 注册我方正文 entry；删掉顶类型表、标题注册、`{...officialType}` 搬运、`officialKey` 首读缓存、`TabsPort.register`；注册后**自检当值项是否为自己**，否则 warn 并降级 | ui-slots `lib/index.js:76`（`priority ?? 0`）、`:77`（`lowest renders`）、`:84-88`（同 key 同 priority 才抛）、`:129-131`（按 priority 升序）、`:187-202`（`entriesOfSlot` 每 cell 取首条存活项）；官方正文注册形状 `sidebar-files:701-707`（key=`FILES_ID`、**未声明 priority**）；分发 `renderer:826-829` + `sidebar-right:737`（`entryKey = definition?.id ?? tab.kind`） | 单测：当值自检（是/否两态）、不再调用 `tabs.register`、崩溃退位回官方；真机 U2（含两次 HMR 重注册仍当值） |
+| **S8** | 改 2：**删 `scope/impl/fallback` + `DefaultScopePort` + `host/defaults.ts`**，改「有则捕获，无则等」——provider 未注册时订阅 `lookups.subscribe` 等它出现再捕获官方 `resolve` 并 configure。**必须先 subscribe 再 re-check 一次**（否则 install 时 `get()` 为 undefined、随后 provider 注册并 emit 的事件会丢，永久不接管） | `dsh-typert-registry/lib/index.js:272`（暴露 subscribe）、`:238-251`（register 时 emit `{kind:"lookup"}`）、`:191`（二次 configure 抛）、`:176-188`（configure 后 get 返回组合，故捕获必须早于 configure）；provider 由 `dsh-api-workspace-files` 自己在构造函数注册（`lib/index.js:369-389`），故 provider 缺失时官方能力同样不可用，删 fallback 不是回归 | 单测：等待期不接管、事件到达后接管、subscribe-recheck 竞态、release 后不拿旧 deps；等待期 warn + health 暴露接管状态；真机启动序打印 |
+| **S9** | 子 agent 继承：`effectiveWorktree(sessionId)` 在本会话无绑定时沿父链向上取父会话的生效根；需新增一个"父会话"宿主只读面（`ctx.sessions.get(id)?.header.parentSession`）；定清语义：到顶即停、防环、父会话摘除后子会话回退自己 cwd。**resolver 与路由共用同一函数，一处实现覆盖两端** | `dsh-subagent/lib/index.js:506`（子会话 header 继承父 cwd）、`:2073`（`record.header.parentSession === parentSessionId`）、`:862`（同断言）；客户端侧的选中链 `dsh-api-session-controller/lib/types/client/sessions/manager.js:95/113`（选中项 = 子会话 id） | 单测：父链命中 / 到顶 / 循环保护 / 父摘除回退；真机 U3 |
+| **S10** | 承诺文案同步：`server/tools/impl/bind:88`、`create:106`（+ description `:14`）、`register:20-24`、`remove:18/:77` 与 `README.md` / `README.en.md:21` 改成「打开或刷新 Files 页签即可看到」；提案 §7 验收与 §6 非目标同步 | 现有测试**未钉住**这些字符串（grep 已确认） | `docs:check`、包测试、`format:check` |
+
+### 19.3 目标目录（S6 后生效）
+
+```
+src/
+  index.ts                          组合根
+  shared/{interface,contract}.ts    双端共享（interface.ts 是门禁要求的收口面）
+  server/
+    host/{agents,typert,defaults}.ts  官方适配（从 src/host/ 下移）
+    shared/{interface,type,paths,file-io}.ts
+    api/ binding/ git/ scope/ tools/
+  client/
+    index.ts  takeover.ts inject.ts source.ts bindings.ts
+    shared/ports.ts                 （从 src/client/ports.ts 下移）
+```
+
+三层 `shared` 的语义必须写清：`src/shared/` = **双端**共享；`src/server/shared/` = 宿主内部叶子；
+`src/client/shared/` = 客户端块间共享类型面。
+
+### 19.4 被否决的候选（含否决依据，别再重开）
+
+| 候选 | 否决依据 |
+|---|---|
+| 用刷新按钮重设树根 | `reset` 只清 levels（`sidebar-files:659-661`），刷新走的是已展开路径的 `load`（`:455-458`） |
+| 轮询换根 | 根只在 `state === undefined` 时被读（`:426-428`）⇒ 轮询改不了已挂载页签的根 |
+| 绕开 gateway 直调官方 `workspaceFiles.list`（零注册表改动） | 官方 `list` 在 **apply 期**被 `createList(ctx.remote)` 捕获进 face（`sidebar-files:700`），face 只暴露 `start/load/toggle`（`:101-115`）⇒ 要重定向就得重建官方 face 或改 `ctx.remote`（更深），并丢失 `changes` 自动刷新 |
+| 全局 root hook / `installScope('session')` | 硬抛：`renderer:1379-1387`（copyUnique 重名 root hook）、`:1138-1139`（已装即 throw） |
+| `ctx.uiSession.provide({hooks:['sessions']})` | 运行时可行，但爆炸半径 = 该会话 15+ 个 session 座位（含 conversation/chat/deliverables/open-in-app/tool 六处直接读 cwd），且无会话选中时有 undefined 投影风险 |
+| 符号链接 / 覆盖 `ctx.fs` / 改 `header.cwd` / workspace attach 让文件根跟随 | 官方实现逐条堵死（realpath + 末段 lstat；fs 全局替换；header 深冻结；workspace attach 方向相反） |
+| 引入 git 库 | isomorphic-git **无任何 worktree 命令**（官方 All Commands 索引 worktree 零命中）；simple-git 是唯一可行候选，但新增第三方依赖属红线，收益仅约 60 到 80 行，且会削掉「argv 逐字可断言」的测试资产 |
+
+### 19.5 未验证项（不得当成已成立）
+
+- **真机 U2**：`priority < 0` 遮蔽是否稳定当值（含两次 HMR 重注册），断言 `data-files-root` 与不出现 `data-slot-error`。
+- **真机 U3**：树根指向 worktree 后 `list` 通过、点开文件读到 worktree 的那一份。
+- **启动序**：真实 boot 里 provider 与插件 apply 的先后（决定 S8 的等待式是否走等待分支）。
+- **客户端接缝 P0 归因**：`0 次路由请求` 仍未在真机上分离出「客户端未加载 / 接管未成功 / entryKey 未指到我们」三种候选；S7 会消掉其中一族。
+
+
 **B7 结构动作表的执行状态（如实登记）**：§18.2-B7 那张「具体结构动作」表里，第 1 条（拆
 `src/host/{agents,typert,defaults}.ts`）已落地（`c3fb83d`），第 4 条（删掉全包合计指标）已落地（`ec42113`），
 第 3 条是「**不拆**」。**第 2 条（B1 之后拆 `client/inject.ts`）已落地（`ae8983c`）**：`wrapInject`

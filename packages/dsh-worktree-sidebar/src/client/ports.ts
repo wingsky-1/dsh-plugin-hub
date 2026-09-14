@@ -83,11 +83,33 @@ export interface ObservablePort<T> {
 /** 官方 entry 的 inject 面工厂：吃渲染器传的参数（首个字符串是会话 id），返回业务面。 */
 export type InjectFactory = (...args: unknown[]) => Record<string, unknown>;
 
-/** 某个会话的改写源；注入而不是在域内造，改写的两端因此都不需要认识会话存储。 */
-export type SourceFor = (sessionId: string) => ObservablePort<SessionsSnapshotLike>;
+/**
+ * 一个会话的生效根读数：同步读 + 变化订阅 + 主动拉取。
+ *
+ * 与 `bindings.ts` 的 `BindingState` **同形**（那边直接当这个端口用），刻意不另造适配层：
+ * 「宿主说生效根是哪个」与「改写源看到的是哪个」必须是同一个事实，多一层包装就多一次分叉。
+ */
+export interface RootReader {
+  /** 同步读当前生效根；null 表示按真实 cwd 走。 */
+  getSnapshot(): string | null;
+  /** 变化订阅（只在实际变化时触发）。返回退订函数。 */
+  subscribe(listener: () => void): () => void;
+  /** 拉一次宿主；失败保持上次成功态。 */
+  refresh(): Promise<void>;
+}
+
+/** 一个会话的整套视图：伪造快照源（供 `hooks.sessions`）+ 生效根读数（供树根播种）。 */
+export interface SessionView {
+  readonly source: ObservablePort<SessionsSnapshotLike>;
+  readonly root: RootReader;
+}
+
+/** 按会话取视图；同一 id 恒回同一对象（渲染器按源缓存订阅，换了对象就会被当成「状态一直在变」）。 */
+export type ViewFor = (sessionId: string) => SessionView;
 
 /**
- * 官方 inject 面的改写器：吃官方工厂、吐同形状的新工厂（`hooks.sessions` 指向改写源）。
+ * 官方 inject 面的改写器：吃官方工厂、吐同形状的新工厂。改写两件事——`hooks.sessions` 指向
+ * 改写源（树读到的 cwd），以及 `start`/`load` 换成「以生效根播种」（官方只在首帧播种一次根）。
  *
  * 契约放在本文件而不是 `inject.ts`：块间零互引（ESLint `no-restricted-imports`）意味着
  * `takeover.ts` 连 `inject.ts` 的**类型**都引不到，跨块的形状只能由纯类型面承载。
