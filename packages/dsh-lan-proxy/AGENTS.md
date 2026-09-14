@@ -14,10 +14,16 @@ issue #110 起不再使用自建 config.json）。
 
 ## 目录结构
 
-- `src/index.ts` — 宿主端 cordis service（薄壳 apply：解析配置 → 注册 → 收集
-  disposer；所有清理统一写在 `ctx.effect` 返回的 disposer 里）
-- `src/proxy.ts` — 转发器核心 `createLanProxy`（HTTP/HTTPS/WebSocket 桥接、
-  Host 重写、DNS 重绑定防护、wss 压缩桥接）；业务逻辑导出纯函数可单测。
+- `src/index.ts` — 插件契约与包导出面（`name`/`inject` + 逐域 re-export）。
+  **必须留在 `src/` 根**：`tsconfig` 的 `rootDir=src` 决定产物入口是 `lib/index.js`，
+  `bundle-host` 以它为唯一 esbuild 入口，搬进子目录会因找不到入口而构建失败
+- `src/server/apply.ts` — 装配层：按依赖顺序串起配置域、迁移域与转发引擎域并注册
+  生命周期；所有清理统一写在 `ctx.effect` 返回的 disposer 里
+- `src/server/shared/` — 包内共享叶子（`DEFAULT_OPTIONS` / `isLoopbackTarget`）。
+  无单一归属的常量与协议级谓词只该落这里——留在任一域都会让另一域反向依赖
+- `src/server/proxy/` — 转发引擎域：`impl/proxy.ts` 承载 `createLanProxy`
+  （HTTP/HTTPS/WebSocket 桥接、Host 重写、DNS 重绑定防护、wss 压缩桥接）与全部
+  纯判定函数；`interface.ts` 收口对外承诺。
   HTTP 响应压缩（原独立包 dsh-gzip 已退役并入；compression@1.8+ 按 Accept-Encoding 协商；档位预设经 resolveCompressionOptions 映射，gzip 与 Brotli 两侧参数同时下发）也在此层：经成熟开源库
   `compression` 中间件挂在转发器自己的 `createServer` 处理链上（构建期 esbuild
   内联进产物），自定义 filter 复用 `isCompressible`（SSE 豁免）；
@@ -31,11 +37,14 @@ issue #110 起不再使用自建 config.json）。
   **禁止**在 webServer 宿主端 patch handler 实现压缩（非官方 API 挂载面，
   曾引出包装/卸载/幂等一整类缺陷）；**禁止**手写响应流 gzip 接线（一律走
   compression 中间件）
-- `src/cert.ts` — TLS 证书（配置证书加载 / 自签名生成并缓存到
+- `src/server/tls/` — TLS 域（配置证书加载 / 自签名生成并缓存到
   `<DSH_HOME>/lan-proxy/`，私钥落盘 0600）
+- `src/server/config/` — 配置域：`impl/model.ts`（schema / 校验 / 存量归一化）、
+  `impl/routes.ts`（loopback HTTP 配置面）、`impl/namespace.ts`（官方 settings 接线）
+- `src/server/migrate/` — 存量 `config.json` 一次性迁移域，历史格式知识只在本域出现
 - `src/client/` — 客户端（干净模块：`index.ts` + `style.css` + `css.d.ts` +
   `react-shim.d.ts`）
-- `test/*.test.ts` — smoke 与单元用例（fake ctx，无网络；由 `pnpm test` 统一调度）
+- `test/{unit,e2e,client}/` — 单元 / 冒烟（真端口）/ 客户端产物用例，由 `pnpm test` 统一调度
 - `cordis.patch.yml` — patch（id `ui-lan-proxy`）
 
 ## 改动前必守（本包特有）

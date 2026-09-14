@@ -154,16 +154,16 @@
 
 ## 四、与 lan-proxy 的逐维度对比
 
-本插件侧引用为仓库源码行号（`packages/dsh-lan-proxy/src/proxy.ts`）：
+本插件侧按**符号名**引用（`packages/dsh-lan-proxy/src/server/proxy/impl/proxy.ts`；不写行号——#826 目录重排后行号会漂移）：
 
 | 维度 | 官方 `--trusted-host`（+ 强开 `0.0.0.0`） | lan-proxy |
 |---|---|---|
-| 达成 LAN 可达 | 声明式白名单；需 profile patch 强开 `0.0.0.0` | 反代 + Host/Origin 重写（`proxy.ts:298-303` `rewriteHeaders`） |
+| 达成 LAN 可达 | 声明式白名单；需 profile patch 强开 `0.0.0.0` | 反代 + Host/Origin 重写（`server/proxy/impl/proxy.ts` 的 `rewriteHeaders`） |
 | dsh 本体监听面 | **全网卡暴露**（本体直接面对网络） | 保持回环，暴露面在代理层 |
-| 信任粒度 | `host` 或 `host:port`，可放域名 | 只接受 IP 字面量与 `localhost`（`proxy.ts:276-288` `hostnameAllowed`），域名一律 403 |
-| 端口面 | 不带端口条目 → 该主机名任意端口可信 | 入站端口独立（HTTP 3081 / HTTPS 3443，`proxy.ts:417`） |
+| 信任粒度 | `host` 或 `host:port`，可放域名 | 只接受 IP 字面量与 `localhost`（`server/proxy/impl/proxy.ts` 的 `hostnameAllowed`），域名一律 403 |
+| 端口面 | 不带端口条目 → 该主机名任意端口可信 | 入站端口独立（HTTP 3081 / HTTPS 3443，见 `server/shared/defaults.ts` 的 `DEFAULT_OPTIONS`） |
 | 认证 | 保留 token/cookie（403/401 分层） | 保留上游认证，另加 `injectToken` 帮 LAN 设备自动铸 cookie |
-| HTTPS / TLS | 无 | 并存（自签或自定义证书，`src/cert.ts`） |
+| HTTPS / TLS | 无 | 并存（自签或自定义证书，`server/tls/impl/index.ts`） |
 | HTTP 响应压缩 | **自带 gzip**（`@deepseek-ai/dsh-host-webserver/lib/index.js:104-124`，bundle 里 `compression: gzip`）；不产出 Brotli | Brotli/gzip 自适应协商 + 档位控制；但在上游 gzip 生效时被遮蔽，见 4.1 |
 | WS 帧压缩 | 无 | permessage-deflate 桥接（`permessage-deflate` 仅浏览器段） |
 | WebSocket 保活 | 无 | Pong 代答 + 半开探活（移动端切后台不断连） |
@@ -174,7 +174,7 @@
 （且是本文档所述的 `--trusted-host` 存在的理由）；本插件在同类目标上用的是另一套
 机制。其余各行都不重叠。
 
-本插件源码注释（`src/proxy.ts:15-21`）中「LAN 转发器无法向该围栏追加受信项（它只从
+本插件源码文件头注释（`server/proxy/impl/proxy.ts`）中「LAN 转发器无法向该围栏追加受信项（它只从
 配置解析一次）」的判断在此复核为**准确**：`trustedHosts` 是启动时按配置解析一次的数组，
 插件无法在运行期追加；可行的官方通路是引导用户改 profile patch，属配置层动作，
 不是插件能替用户完成的事。
@@ -196,9 +196,9 @@
 3. `compression` 库在 `onHeaders` 里对已编码响应直接放弃（
    `@deepseek-ai/dsh/node_modules/compression/index.js:183-188`：
    `encoding !== 'identity'` → `nocompress('already encoded')`）。
-4. 结论：官方 gzip 生效的响应，本插件的压缩中间件（`src/proxy.ts:704-718`，Brotli
-   档位由 `resolveCompressionOptions`（同文件 `:247` 起）映射）拿到的
-   `Content-Encoding` 已是 `gzip`，按其自身语义让位（`src/proxy.ts:116` 注释所称的
+4. 结论：官方 gzip 生效的响应，本插件的压缩中间件（`server/proxy/impl/proxy.ts` 的
+   compression 挂载段，Brotli 档位由同文件的 `resolveCompressionOptions` 映射）拿到的
+   `Content-Encoding` 已是 `gzip`，按其自身语义让位（同文件 `wsCompress` 选项注释所称的
    「经 content-encoding 检查天然互斥」）。**若仅凭以上推理，会得出「Brotli 一律不生效」
    的绝对结论——下面的实测把条件收窄了。**
 
@@ -243,7 +243,7 @@
 2. 直连回环（不经代理）的请求仍按官方围栏与认证处理。两条路径的信任判定不同源，
    但都以 dsh 的 token/cookie 作为身份层，因此不产生越权，只是**判定面不一致**，
    排障时容易误判（"我明明配了 `--trusted-host` 为什么还是 403" —— 因为请求走的是代理）。
-3. `sec-fetch-site` 由本插件原样透传（`src/proxy.ts:28-30`），跨站页面仍被上游拒绝，
+3. `sec-fetch-site` 由本插件原样透传（`server/proxy/impl/proxy.ts` 文件头注释第 2 条），跨站页面仍被上游拒绝，
    防御链完整，不因重写 Host 而放松。
 
 ---
