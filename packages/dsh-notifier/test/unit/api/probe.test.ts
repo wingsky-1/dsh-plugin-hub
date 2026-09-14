@@ -279,7 +279,6 @@ describe("GET /health：报宿主平台、连接回收计数与能力面摘要",
       sseEvicts: {
         close: 0,
         error: 0,
-        limit: 0,
         stalled: 0,
         maxage: 0,
         destroyed: 0,

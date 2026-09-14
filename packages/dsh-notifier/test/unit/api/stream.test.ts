@@ -94,12 +94,10 @@ function readSeqFromDisk(): number {
   return read.ok ? Number.parseInt(read.text.trim(), 10) || 0 : 0;
 }
 
-/** 装配一次 api 域，交出帧发布面（帧入口就是宿主接线的那一条）。连接上限默认 8；用例可收紧它，
- * 也可在装配后调小，验证上限是**实时读**的。 */
-function assemble(options: { readonly maxConnections?: number } = {}) {
+/** 装配一次 api 域，交出帧发布面（帧入口就是宿主接线的那一条）。 */
+function assemble() {
   const routes: WebRoute[] = [];
   const frames: Array<(payload: OutgoingFrame) => void> = [];
-  const settings = { maxConnections: options.maxConnections ?? 8 };
   const deps: ApiDeps = {
     register: (route) => {
       routes.push(route);
@@ -113,7 +111,7 @@ function assemble(options: { readonly maxConnections?: number } = {}) {
     },
     logger: makeLogger(),
     config: {
-      readConfig: () => ({ ...DEFAULT_CONFIG, maxConnections: settings.maxConnections }),
+      readConfig: () => ({ ...DEFAULT_CONFIG }),
       readSettingsView: () => VIEW,
       writeConfig: async () => ({ ok: true, view: VIEW }),
     },
@@ -140,9 +138,6 @@ function assemble(options: { readonly maxConnections?: number } = {}) {
   return {
     routes,
     publish,
-    setMaxConnections: (value: number): void => {
-      settings.maxConnections = value;
-    },
   };
 }
 
@@ -342,7 +337,7 @@ describe("装配守卫：未装配与重复装配", () => {
     ).toThrow(/api 流只能装配一次/u);
   });
 
-  // 未装配时按默认上限工作、或让 publish 推进刻度，都会在下一次装配时冒出一批谁也没发过的旧帧。
+  // 未装配时静默工作、或让 publish 推进刻度，都会在下一次装配时冒出一批谁也没发过的旧帧。
   it("未装配时 handle 回 503 空响应，publish 被丢弃且不写刻度文件", async () => {
     const { routes } = assemble();
     releaseApi();
@@ -366,39 +361,5 @@ describe("装配守卫：未装配与重复装配", () => {
       vi.useRealTimers();
     }
     expect(readSeqFromDisk()).toBe(0);
-  });
-});
-
-describe("连接上限：触顶淘汰", () => {
-  // 「恰好等于上限不淘汰」与「多接一条挤掉最旧」这两条语义已被 dsh-mcp-manager 的
-  // unit-routes-sse.test.ts（#515：连接上限 + 淘汰）覆盖，本域不重复。这里只补本域独有的一条：
-  // notifier 的上限是**每次收口现读设置**（mcp 那边传的是固定值），调小之后下一次淘汰就该按新值来；
-  // 装配期钉住旧值会让设置页调上限失灵，而没有任何用例会红。
-  it("上限实时读设置：调小之后的下一次收口按新值淘汰最旧，被淘汰的连接不再收广播", async () => {
-    const { routes, publish, setMaxConnections } = assemble({ maxConnections: 3 });
-    const first = connect(routes);
-    const second = connect(routes);
-    const third = connect(routes);
-    expect([first.rec.destroyed, second.rec.destroyed, third.rec.destroyed]).toEqual([
-      false,
-      false,
-      false,
-    ]);
-
-    setMaxConnections(2);
-    const fourth = connect(routes);
-    expect([
-      first.rec.destroyed,
-      second.rec.destroyed,
-      third.rec.destroyed,
-      fourth.rec.destroyed,
-    ]).toEqual([true, true, false, false]);
-
-    await publishAndSettle(publish, frame({ title: "收口之后" }));
-    // 已被淘汰的句柄不再参与广播：写它们只会把失败面摊大。
-    expect(framesOf(first.rec.text)).toEqual([]);
-    expect(framesOf(second.rec.text)).toEqual([]);
-    expect(framesOf(third.rec.text).map((event) => event.title)).toEqual(["收口之后"]);
-    expect(framesOf(fourth.rec.text).map((event) => event.title)).toEqual(["收口之后"]);
   });
 });

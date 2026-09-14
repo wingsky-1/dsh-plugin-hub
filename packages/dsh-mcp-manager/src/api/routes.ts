@@ -128,7 +128,7 @@ export function broadcastFrame(
  * 广播 `{ type: "summary" }` 帧（内容不随帧传输，浏览器收到后自行拉取）。
  *
  * #515 起连接管理收口到共享 hub（shared/sse-hub.js）：manager.sseHub 惰性创建
- * （上限淘汰 + 心跳 + stalled/maxAge 主动回收），本路由只负责入表与首帧——
+ * （连接表 + 心跳 + stalled/maxAge 主动回收），本路由只负责入表与首帧——
  * 取代旧裸 Set + per-connection 心跳（#268/#515，消除与 dsh-notifier 不对称）。
  *
  * 半开连接防护（#268，对齐 dsh-notifier）：hub 每 30s 向全部连接写 data ping
@@ -137,18 +137,16 @@ export function broadcastFrame(
  */
 export function makeEventsRoute(
   manager: RoutesManager,
-  options?: { heartbeatMs?: number; maxConnections?: number },
+  options?: { heartbeatMs?: number },
 ): WebRoute {
   return {
     kind: "exact",
     path: ROUTES.events,
     handler: (req, res) => {
       if (!guardLoopbackMethod(req, res, ["GET"])) return;
-      // 惰性创建共享 hub（上限淘汰 + 心跳 + stalled/maxAge 回收）。
-      // maxConnections 默认 16（与 dsh-notifier 对齐，#515 评审）；health 路由
-      // 若在 events 之前注册会先建 hub，故 hub 创建不含业务副作用。
+      // 惰性创建共享 hub（连接表 + 心跳 + stalled/maxAge 回收）；health 路由若在
+      // events 之前注册会先建 hub，故 hub 创建不含业务副作用。
       const hub = (manager.sseHub ??= createSseHub({
-        getMaxConnections: () => options?.maxConnections ?? 16,
         heartbeatMs: options?.heartbeatMs,
       }));
       res.writeHead(200, {

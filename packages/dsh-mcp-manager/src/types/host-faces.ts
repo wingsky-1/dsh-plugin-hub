@@ -57,8 +57,8 @@ export interface RoutesManager {
   uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>;
   /**
    * SSE 连接枢纽（共享 shared/sse-hub，#515）：makeEventsRoute 惰性创建，
-   * apply/广播/卸载 disposer 收口到 hub（连接表 + 心跳 + 上限淘汰 +
-   * stalled/maxAge 主动回收）。取代旧 sseConnections Set + per-connection
+   * apply/广播/卸载 disposer 收口到 hub（连接表 + 心跳 + stalled/maxAge 主动回收）。
+   * 取代旧 sseConnections Set + per-connection
    * 心跳（#268），消除与 dsh-notifier 的不对称。
    */
   sseHub?: SseHub;

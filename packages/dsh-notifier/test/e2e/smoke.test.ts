@@ -466,7 +466,6 @@ describe("真实 HTTP 面（真实宿主 + 真实 loopback socket）", () => {
     expect(body.sseEvicts).toEqual({
       close: 0,
       error: 0,
-      limit: 0,
       stalled: 0,
       maxage: 0,
       destroyed: 0,
