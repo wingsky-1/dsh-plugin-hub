@@ -24,7 +24,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { EventEmitter } from "node:events";
 import { gzipSync, gunzipSync, brotliDecompressSync } from "node:zlib";
 import { createServer, request as httpRequest } from "node:http";
-import { constants as zlibConstants } from "node:zlib";
 import { request as httpsRequest } from "node:https";
 import { connect } from "node:net";
 import {
@@ -50,21 +49,14 @@ import {
   SETTINGS_NS,
   buildConfigRoutes,
   applyConfigPatch,
-  hostnameAllowed,
-  formatAuthority,
-  rewriteHeaders,
   createLanProxy,
-  compressWsPath,
   DEFAULT_WSS_COMPRESS_PATHS,
   normalizeLegacyWsCompressPaths,
   ensureSelfSignedTls,
   certStillValid,
-  toSanEntry,
   loadTlsFromFiles,
   SELF_SIGNED_KEY,
   SELF_SIGNED_CERT,
-  isCompressible,
-  resolveCompressionOptions,
 } from "../../lib/index.js";
 import {
   assertClientProductContract,
@@ -432,87 +424,6 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
     expect(httpsListening).toBe(true);
   });
 
-  describe("unit: hostnameAllowed / formatAuthority", () => {
-    it("accepts IPv4 literal", () => {
-      expect(hostnameAllowed(`${LAN_HOST}:${PROXY_PORT}`)).toBe(true);
-    });
-
-    it("accepts bare IPv4 literal", () => {
-      expect(hostnameAllowed(LAN_HOST)).toBe(true);
-    });
-
-    it("accepts IPv6 literal", () => {
-      expect(hostnameAllowed("[fe80::1]:3081")).toBe(true);
-    });
-
-    it("accepts localhost", () => {
-      expect(hostnameAllowed("localhost:3081")).toBe(true);
-    });
-
-    it("rejects DNS name", () => {
-      expect(hostnameAllowed("evil.com:3081")).toBe(false);
-    });
-
-    it("rejects missing host", () => {
-      expect(hostnameAllowed(undefined)).toBe(false);
-    });
-
-    it("rejects malformed authority", () => {
-      expect(hostnameAllowed("http://evil.com:3081")).toBe(false);
-    });
-
-    it("formats IPv6 authority", () => {
-      expect(formatAuthority("::1", 3080)).toBe("[::1]:3080");
-    });
-  });
-
-  describe("unit: rewriteHeaders", () => {
-    describe("Host replaced by target authority", () => {
-      it("host 替换为目标 authority", () => {
-        const out = rewriteHeaders(
-          { host: "192.168.1.50:3081", "user-agent": "x" },
-          "127.0.0.1:3080",
-        );
-        expect(out.host).toBe("127.0.0.1:3080");
-      });
-
-      it("其余头原样保留", () => {
-        const out = rewriteHeaders(
-          { host: "192.168.1.50:3081", "user-agent": "x" },
-          "127.0.0.1:3080",
-        );
-        expect(out["user-agent"]).toBe("x");
-      });
-    });
-
-    it("Origin rewritten to loopback authority", () => {
-      const out = rewriteHeaders(
-        { host: "192.168.1.50:3081", origin: "http://192.168.1.50:3081" },
-        "127.0.0.1:3080",
-      );
-      expect(out.origin).toBe("http://127.0.0.1:3080");
-    });
-
-    it("absent Origin stays absent", () => {
-      const out = rewriteHeaders({ host: "192.168.1.50:3081" }, "127.0.0.1:3080");
-      expect(out.origin).toBe(undefined);
-    });
-
-    describe("input headers not mutated", () => {
-      it("入参 host 不被就地修改", () => {
-        const input = { host: "192.168.1.50:3081", origin: "http://192.168.1.50:3081" };
-        rewriteHeaders(input, "127.0.0.1:3080");
-        expect(input.host).toBe("192.168.1.50:3081");
-      });
-
-      it("入参 origin 不被就地修改", () => {
-        const input = { host: "192.168.1.50:3081", origin: "http://192.168.1.50:3081" };
-        rewriteHeaders(input, "127.0.0.1:3080");
-        expect(input.origin).toBe("http://192.168.1.50:3081");
-      });
-    });
-  });
-
   describe("http: browser-style request (Host + Origin, same-origin)", () => {
     let browser;
     let facts;
@@ -598,22 +509,6 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
   });
 
   describe("unit: cert module", () => {
-    it("SAN entry: IPv4 literal", () => {
-      expect(toSanEntry("192.168.1.5")).toEqual({ type: 7, ip: "192.168.1.5" });
-    });
-
-    it("SAN entry: IPv6 literal", () => {
-      expect(toSanEntry("::1")).toEqual({ type: 7, ip: "::1" });
-    });
-
-    it("SAN entry: hostname", () => {
-      expect(toSanEntry("myhost.lan")).toEqual({ type: 2, value: "myhost.lan" });
-    });
-
-    it("SAN entry: localhost", () => {
-      expect(toSanEntry("localhost")).toEqual({ type: 2, value: "localhost" });
-    });
-
     describe("self-signed files written", () => {
       it("证书文件已写入", () => {
         expect(existsSync(join(certDir, SELF_SIGNED_CERT))).toBeTruthy();
@@ -626,23 +521,6 @@ describe("e2e: 真实转发（HTTP / HTTPS / WebSocket，端口 bind(0) 动态�
 
     it("self-signed cert parses and is valid", () => {
       expect(certStillValid(join(certDir, SELF_SIGNED_CERT))).toBe(true);
-    });
-
-    describe("certStillValid rejects unparseable cert", () => {
-      let bad;
-
-      beforeAll(() => {
-        bad = join(mkdtempSync(join(tmpdir(), "dsh-lan-proxy-badcert-")), "bad.pem");
-        writeFileSync(bad, "not a pem");
-      });
-
-      it("内容不是 PEM → false", () => {
-        expect(certStillValid(bad)).toBe(false);
-      });
-
-      it("路径不存在 → false", () => {
-        expect(certStillValid("/nonexistent/cert.pem")).toBe(false);
-      });
     });
 
     it("self-signed idempotent reuse (same materials)", () => {
@@ -1232,47 +1110,8 @@ describe("unit: validateSettings（非法值定位到字段与范围）", () => 
   });
 });
 
-describe("unit: WebSocket 压缩桥接配置", () => {
-  // 默认白名单为 api-gateway 的 Remote 流 mux 端点（dsh 0.1.2 起取代 events.mux/events.host）。
-  it("默认压缩白名单为 remote.mux", () => {
-    expect(DEFAULT_WSS_COMPRESS_PATHS).toEqual(["/api/remote.mux"]);
-  });
-
-  // compressWsPath：命中 / 未命中 / 查询串忽略 / 传入 undefined 拒绝。
-  it("compressWsPath 命中默认 path 忽略查询串", () => {
-    expect(compressWsPath(DEFAULT_WSS_COMPRESS_PATHS, "/api/remote.mux?x=1")).toBe(true);
-  });
-
-  describe("compressWsPath 命中非默认 path", () => {
-    it("命中旧默认 events.host", () => {
-      expect(compressWsPath(["/api/events.mux", "/api/events.host"], "/api/events.host")).toBe(
-        true,
-      );
-    });
-
-    it("命中自定义 path", () => {
-      expect(compressWsPath(["/custom/ws"], "/custom/ws")).toBe(true);
-    });
-  });
-
-  describe("compressWsPath 未命中 / 空列表 / undefined", () => {
-    it("未命中", () => {
-      expect(compressWsPath(DEFAULT_WSS_COMPRESS_PATHS, "/api/other")).toBe(false);
-    });
-
-    it("空列表", () => {
-      expect(compressWsPath([], "/api/remote.mux")).toBe(false);
-    });
-
-    it("undefined 列表", () => {
-      expect(compressWsPath(undefined, "/api/remote.mux")).toBe(false);
-    });
-
-    it("undefined url", () => {
-      expect(compressWsPath(DEFAULT_WSS_COMPRESS_PATHS, undefined)).toBe(false);
-    });
-  });
-
+// WS 相关设置键的净化/归一化（compressWsPath 等纯函数判据已并入 test/unit/unit-proxy）。
+describe("unit: WS 压缩设置键（sanitize / normalizeLegacyWsCompressPaths）", () => {
   // sanitize：接受 wsCompressEnabled / wsCompressPaths（字符串数组），非法整体拒绝。
   it("sanitize 接受 ws 压缩配置", () => {
     const out = sanitizeSettings({
@@ -1352,77 +1191,6 @@ describe("unit: WebSocket 压缩桥接配置", () => {
         "/api/events.mux",
         "/api/events.mux",
       ]);
-    });
-  });
-});
-
-// ── HTTP 响应压缩（转发层 compression 中间件）：纯函数 ────────────────────
-describe("unit: HTTP 压缩纯函数（isCompressible / normalizeLevel）", () => {
-  describe("isCompressible json/+json/text/SSE 豁免/zip 豁免", () => {
-    it("application/json", () => {
-      expect(isCompressible("application/json")).toBe(true);
-    });
-
-    it("application/json; charset=utf-8", () => {
-      expect(isCompressible("application/json; charset=utf-8")).toBe(true);
-    });
-
-    it("application/vnd.test+json", () => {
-      expect(isCompressible("application/vnd.test+json")).toBe(true);
-    });
-
-    it("text/html", () => {
-      expect(isCompressible("text/html")).toBe(true);
-    });
-
-    it("SSE 豁免", () => {
-      expect(isCompressible("text/event-stream")).toBe(false);
-    });
-
-    it("zip 豁免", () => {
-      expect(isCompressible("application/zip")).toBe(false);
-    });
-
-    it("undefined 不压", () => {
-      expect(isCompressible(undefined)).toBe(false);
-    });
-  });
-
-  describe("resolveCompressionOptions：四档位对 gzip 与 Brotli 双生效 / 非法按默认", () => {
-    const Q = zlibConstants.BROTLI_PARAM_QUALITY;
-    // 0/缺省/非法 → 空选项（库默认：gzip Z_DEFAULT_COMPRESSION=6 / br 质量 4）
-    const invalidPresets = [undefined, "x", NaN, 0, -3, 4.5, 99];
-
-    it.each(invalidPresets.map((v) => ({ title: `preset=${String(v)} 按默认`, v })))(
-      "$title",
-      ({ v }) => {
-        expect(resolveCompressionOptions(v)).toEqual({});
-      },
-    );
-
-    it("1 低档 gzip level=1", () => {
-      expect(resolveCompressionOptions(1).level).toBe(1);
-    });
-
-    it("1 低档 brotli 质量落 0..3", () => {
-      const low = resolveCompressionOptions(1);
-      expect(Number(low.brotli.params[Q]) >= 0 && Number(low.brotli.params[Q]) <= 3).toBeTruthy();
-    });
-
-    it("2 中档 gzip level=5", () => {
-      expect(resolveCompressionOptions(2).level).toBe(5);
-    });
-
-    it("2 中档 brotli 质量 5", () => {
-      expect(resolveCompressionOptions(2).brotli.params[Q]).toBe(5);
-    });
-
-    it("3 高档 gzip level=9", () => {
-      expect(resolveCompressionOptions(3).level).toBe(9);
-    });
-
-    it("3 高档 brotli 质量 9", () => {
-      expect(resolveCompressionOptions(3).brotli.params[Q]).toBe(9);
     });
   });
 });

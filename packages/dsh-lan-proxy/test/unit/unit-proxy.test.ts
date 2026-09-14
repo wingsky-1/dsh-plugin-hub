@@ -21,6 +21,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { constants as zlibConstants } from "node:zlib";
 import { WebSocket as WsClient, WebSocketServer } from "ws";
 
 // 单元层导入面（ARCHITECTURE-METHOD §8）：同域白盒直连 impl，不经包 barrel——
@@ -43,6 +44,7 @@ import { isLoopbackTarget } from "../../src/server/shared/net.ts";
 import { DEFAULT_OPTIONS } from "../../src/server/shared/defaults.ts";
 import { DEFAULT_DEFLATE_POLICY } from "../../src/server/shared/deflate.ts";
 import { ensureSelfSignedTls } from "../../src/server/tls/impl/index.ts";
+import { DEFAULT_WSS_COMPRESS_PATHS } from "../../src/server/config/impl/model.ts";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -117,6 +119,10 @@ describe("纯函数边界用例", () => {
     it("多级 DNS 域名拒绝", () => expect(hostnameAllowed("sub.example.org")).toBe(false));
     it("裸 IPv6 冒号 authority → URL 解析失败 → 拒绝", () =>
       expect(hostnameAllowed("::1")).toBe(false));
+    // 以下两条原住 test/e2e（从产物导入），并入源码层白盒
+    it("带端口的 IPv6 authority 放行", () => expect(hostnameAllowed("[fe80::1]:3081")).toBe(true));
+    it("带 scheme 的 authority 拒绝（authority 不是 URL）", () =>
+      expect(hostnameAllowed("http://evil.com:3081")).toBe(false));
   });
 
   describe("isLoopbackTarget", () => {
@@ -182,6 +188,20 @@ describe("纯函数边界用例", () => {
       const src = { host: "old:1" };
       rewriteHeaders(src, "127.0.0.1:2");
       expect(src.host).toBe("old:1");
+    });
+
+    // 以下两条原住 test/e2e（从产物导入），并入源码层白盒
+    it("非 Host/Origin 的头原样保留", () => {
+      const out = rewriteHeaders(
+        { host: "192.168.1.50:3081", "user-agent": "x" },
+        "127.0.0.1:3080",
+      );
+      expect(out["user-agent"]).toBe("x");
+    });
+
+    it("缺席的 Origin 不会凭空补出", () => {
+      const out = rewriteHeaders({ host: "192.168.1.50:3081" }, "127.0.0.1:3080");
+      expect(out.origin).toBe(undefined);
     });
   });
 
@@ -273,6 +293,14 @@ describe("纯函数边界用例", () => {
     it("空列表", () => expect(compressWsPath([], "/a")).toBe(false));
     it("undefined 列表", () => expect(compressWsPath(undefined, "/a")).toBe(false));
     it("空 url", () => expect(compressWsPath(["/a"], "")).toBe(false));
+    // 以下两条原住 test/e2e，并入源码层白盒（前者同时锁默认白名单的实际取值）
+    it("默认白名单命中 remote.mux（忽略查询串）", () =>
+      expect(compressWsPath(DEFAULT_WSS_COMPRESS_PATHS, "/api/remote.mux?x=1")).toBe(true));
+    it("非默认白名单（自定义 path）命中", () =>
+      expect(compressWsPath(["/custom/ws"], "/custom/ws")).toBe(true));
+    // 原住 test/e2e，并入源码层白盒：默认白名单常量的实际取值本身也是契约
+    it("默认白名单常量的实际取值", () =>
+      expect(DEFAULT_WSS_COMPRESS_PATHS).toEqual(["/api/remote.mux"]));
   });
 
   describe("isCompressible", () => {
@@ -281,13 +309,44 @@ describe("纯函数边界用例", () => {
     it("SSE 豁免", () => expect(isCompressible("text/event-stream")).toBe(false));
     it("图片不压", () => expect(isCompressible("image/png")).toBe(false));
     it("非字符串不压", () => expect(isCompressible(123)).toBe(false));
+    // 以下原住 test/e2e（从产物导入），并入源码层白盒
+    it("application/json", () => expect(isCompressible("application/json")).toBe(true));
+    it("application/json; charset=utf-8", () =>
+      expect(isCompressible("application/json; charset=utf-8")).toBe(true));
+    it("结构化 +json 后缀", () => expect(isCompressible("application/vnd.test+json")).toBe(true));
+    it("text/html", () => expect(isCompressible("text/html")).toBe(true));
+    it("zip 豁免", () => expect(isCompressible("application/zip")).toBe(false));
+    it("undefined 不压", () => expect(isCompressible(undefined)).toBe(false));
   });
 
   describe("resolveCompressionOptions", () => {
+    const Q = zlibConstants.BROTLI_PARAM_QUALITY;
     it("0 → 默认", () => expect(resolveCompressionOptions(0)).toEqual({}));
     it("undefined → 默认", () => expect(resolveCompressionOptions(undefined)).toEqual({}));
     it("字符串 → 默认", () => expect(resolveCompressionOptions("high")).toEqual({}));
     it("null → 默认", () => expect(resolveCompressionOptions(null)).toEqual({}));
+    // 档位矩阵原住 test/e2e（从产物导入）——源码层此前只覆盖「非法 → 默认」，
+    // 档位到 gzip level / Brotli 质量的映射在单元层是空的，属层归属倒置的反向缺口。
+    it.each([NaN, -3, 4.5, 99].map((v) => ({ v })))("非法档位 %s → 默认", ({ v }) => {
+      expect(resolveCompressionOptions(v)).toEqual({});
+    });
+
+    it("1 低档 → gzip level=1", () => expect(resolveCompressionOptions(1).level).toBe(1));
+
+    it("1 低档 → brotli 质量落 0..3", () => {
+      const low = resolveCompressionOptions(1);
+      expect(Number(low.brotli.params[Q]) >= 0 && Number(low.brotli.params[Q]) <= 3).toBeTruthy();
+    });
+
+    it("2 中档 → gzip level=5", () => expect(resolveCompressionOptions(2).level).toBe(5));
+
+    it("2 中档 → brotli 质量 5", () =>
+      expect(resolveCompressionOptions(2).brotli.params[Q]).toBe(5));
+
+    it("3 高档 → gzip level=9", () => expect(resolveCompressionOptions(3).level).toBe(9));
+
+    it("3 高档 → brotli 质量 9", () =>
+      expect(resolveCompressionOptions(3).brotli.params[Q]).toBe(9));
   });
 
   describe("launch token 判定（issue #380：hasDshAuthCookie / isTokenMintCandidate / withLaunchToken）", () => {
