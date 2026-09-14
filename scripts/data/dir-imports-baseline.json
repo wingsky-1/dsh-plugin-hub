@@ -28,15 +28,14 @@
     },
     "dsh-mcp-manager": {
       "modules": 17,
-      "scannedSrcFiles": 84,
-      "allSrcTsFiles": 99,
+      "scannedSrcFiles": 85,
+      "allSrcTsFiles": 100,
       "interfaceFacades": 16,
-      "leafValueEdges": 37,
-      "fileValueEdges": 134,
-      "crossModuleRefs": 155,
+      "leafValueEdges": 38,
+      "fileValueEdges": 136,
+      "crossModuleRefs": 156,
       "quality": {
         "leafModuleCycles": [
-          "catalog|config/model|connection|connection/orchestrator",
           "catalog|connection|connection/orchestrator",
           "catalog|connection|connection/orchestrator|connection/runtime"
         ],
@@ -64,8 +63,6 @@
           "catalog|config/store",
           "catalog|connection",
           "catalog|workspace",
-          "config/model|catalog",
-          "config/model|connection",
           "connection/orchestrator|catalog",
           "connection/orchestrator|config/model",
           "connection/orchestrator|config/store",
