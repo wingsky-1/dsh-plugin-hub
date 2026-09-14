@@ -1,12 +1,12 @@
 /**
- * dsh-mcp-manager — pipeline/redact：凭据脱敏器（#664 阶段 2 迁入，B8 改口径同文件）。
+ * dsh-mcp-manager — pipeline/impl/redact/index.ts：凭据脱敏器（#664 阶段 2 迁入，B8 改口径同文件）。
  *
  * B8（D4 决策）：仅用户信息脱敏（username/password/searchParams），host/path
  * 无凭据保留可读（现状整 URL 脱敏，可诊断性差）；raw/decoded 双形态注册——
  * 错误消息中出现的是原始 URL 字节串（percent-encoding 形态），URL parse 拿到
  * decoded 形态，两者都须命中（否则 percent-encoding 绕过回归，评审 B8 修正）。
  */
-import type { ServerConfig } from "../types/interface.ts";
+import type { ServerConfig } from "../../../types/interface.ts";
 
 /** 注册单个敏感值：decoded 形态 + percent-encoded raw 形态双注册。 */
 function addSecretPair(secrets: Set<string>, value: string): void {
