@@ -21,6 +21,7 @@ export type { WorktreeEntry } from "./impl/inspect/index.ts";
 // 真实执行面经门面出去：组合根只允许引 interface.ts（verify-dir-imports 规则 1/2），
 // 把它藏进 impl 会让组合根要么直引实现、要么自己重写一份 exec。
 export { createGitExec } from "./impl/exec/index.ts";
+export type { GitExecPort, GitRunResult } from "./deps.ts";
 
 /** 归属校验结论的缓存存活时长。解析器每次目录展开都要问一次，裸起子进程会随展开线性增长。 */
 const BELONGS_TTL_MS = 5_000;

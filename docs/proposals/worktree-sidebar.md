@@ -222,6 +222,33 @@ packages/dsh-worktree-sidebar/
 
 参照：notifier src 中位数 44 / p90 186 / max 3229（客户端单文件，属反例）；mcp-manager p50 58 / p90 373 / max 1208。
 
+### 9.1 实施后的实测与两处偏离（待统一复核裁决）
+
+实施完成后的实测（`find src -name '*.ts'` 合计）：
+
+| 文件类型 | 上限 | 实测 | 结论 |
+|---|---|---|---|
+| 组合根 src/index.ts | 300 | 255 | 合规 |
+| 域 impl 单文件 | 250 | 最大 117（tools/impl/remove） | 合规 |
+| 纯逻辑模块 | 120 | 最大 110（scope/impl/resolve） | 合规 |
+| 客户端单文件 | 250 | 最大 184（client/takeover） | 合规 |
+| 域 interface/deps | 80 | git/interface **140**、binding/interface **102**、scope/interface **82** | **偏离 3 处** |
+| 全包 src 合计 | 1200 | **2527** | **偏离（2.1 倍）** |
+
+两处偏离的性质不同，分开说：
+
+- **interface/deps 的 3 处偏离**：根因是这三个门面同时承担「对外引用面」与「install/release 的实现体」。
+  `git/interface.ts` 另外还持有 %BT%GitApi%BT% 的实现与归属校验的 TTL 缓存；`binding/interface.ts` 持有写盘串行链。
+  与计划 §8「域三件套：interface.ts（唯一对外引用面，install/release 成对）+ deps.ts + impl/**」并不冲突
+  （install/release 确实从门面出去），但它与本节的行数上限冲突。
+  可选修法是把三者各自再拆出一个 `impl/service`（notifier 的 api 域就是这个形状），门面变成 20–30 行的转发；
+  代价是三个域的间接层各多一层，而 `git` 的 140 行本身是一个内聚模块（类型 + 实现 + 缓存）。
+  **建议交统一复核裁决**：要么接受「小型域的 interface 允许到 150」，要么按上述拆法改造。
+- **全包合计 2527 vs 预算 1200**：这是预算本身定得不准，不是代码失控——四个宿主域 + 三个工具 + 两条路由 + 客户端接管，
+  在「每个非显然决定都写为什么」的注释口径下，2527 行对应 36 个源文件（均值 70 行）。
+  其中客户端 488 行、宿主 2039 行。**建议把合计上限改为 2800**，依据是本次实测而不是估计。
+  该数字同样**待统一复核裁决**，本文件不擅自把它当成已批准的新预算。
+
 ## 10. 债务清单与最小化
 
 | 债务 | 最小化做法 |
@@ -290,10 +317,10 @@ packages/dsh-worktree-sidebar/
 |---|---|---|---|
 | S0 | 立尺子：登记 plugins-manifest(standalone) / gate-scope-registry / contract-check --package / ci.yml paths-filter / mutation-topology / gauntlet / ci-face-registry；并修正三处随新包过期的既有断言（stryker 段数哨兵 32 to 33、ci-matrix 的「standalone 为空」、collect-exemptions 的 reviewBy 7 to 8） | 完成 | pack-check PASS；test:scripts 624 pass / 0 fail；pnpm stryker:check 通过；verify-dir-imports 对新包零违规（无基线，fail-closed 模式） |
 | S1 | 宿主纯逻辑：contract（双端路由与存储形状单一事实源）/ shared（原子写 `file-io`、容错读、DSH_HOME 路径）/ binding（bindings.json + revision 规则 + 串行写盘防丢更新）/ git（argv 构造与解析纯函数 + 注入 exec 面 + 真实 execFile 实现） | 完成 | test 55 例（unit 34 / integration 21）全绿；其中集成用例在真 git 仓库上验证了 `--` 位置 git 确实接受 |
-| S2 | api 域：loopback 围栏 + 403/405 + health + 单会话绑定查询 | 待做 | |
-| S3 | tools 域：三个 agent 工具（按 agent 作用域注册 + 执行期兜底） | 待做 | |
-| S4 | scope 域：捕获委托 + 等价实现两路 fallback，再 configure | 待做 | |
-| S5 | 客户端：先负向测试（抓不到官方 entry 则零注册），再接管 files kind | 待做 | |
+| S2 | api 域：loopback 围栏 + 403/405 + health + 单会话绑定查询 | 完成 | 单测 17 例；403 先于 405、缺 session 判 400、响应不含 repoRoot 均有断言 |
+| S3 | tools 域：三个 agent 工具（按 agent 作用域注册 + 执行期兜底） | 完成 | 单测 21 例 + 集成 9 例（真 git 仓库上走完 创建 to 绑定 to 摘除，并校验 bindings.json 落盘内容） |
+| S4 | scope 域：捕获委托 + 等价实现两路 fallback，再 configure | 完成 | 单测 28 例；含「header 存在但 cwd 缺失 to 沙箱根」与「header 缺失 to undefined」两支、失效绑定摘除、configure 已被占用即放弃、resolver 永不抛出 |
+| S5 | 客户端：先负向测试（抓不到官方 entry 则零注册），再接管 files kind | 完成（**界面语义未经真机验证**） | 单测 25 例（负向零注册、注册顺序、半成品自愈、重捕、快照引用稳定）；构建产物 lib/client.js 8551 字节，contract 与 pack-check 通过。**三条界面语义仍需隔离真机验证** |
 
 **已知的切片顺序调整**：S0 只保留**宿主端** package.json（`exports["./client"]` 与 `dsh.client` 段在 S5 随客户端源码一起加回）。
 原因是 pack-check 会断言 `exports["./client"].types` 指向包内真实文件——提前声明而源码未到，等于让门禁整个 S0–S4 期间判红；
@@ -303,3 +330,25 @@ packages/dsh-worktree-sidebar/
 
 - `git worktree add -b <branch> -- <path>` 与 `git worktree remove [--force] -- <path>` 的 `--` 位置**被真实 git 接受**（集成用例覆盖），故「positional 前加 `--`」这一安全措施可落地。
 - `git rev-parse --git-common-dir` 返回的是**相对路径**（实测 `.git`），必须 `resolve(dir, value)` 之后再比较；否则「同一仓库的两个 worktree」会被判成不同仓库，归属校验恒假。
+
+**S2–S5 期间实测补充**（不在原计划，现已证实并写入代码注释）：
+
+- **api 域改为依赖 scope 的「生效值」，而不是直接读绑定表**。计划 §4.1 写的是「api 域注入 binding」。
+  实施时发现这会在失效绑定上分叉：解析器按未绑定处理（回 cwd），而路由仍回 worktree 路径，
+  客户端于是把文件根指向 worktree、宿主按 cwd 解析——表现是每次列目录都得到 `outside-workspace`，
+  且没有任何东西会自愈。现在两边读同一个 `effectiveWorktree()`，分叉在结构上不可能。
+  这同时把 G5 的「revision++」落成了「摘掉绑定」：摘掉才真的让客户端缓存失效。
+- **scope 域的宿主面原来是有损的**。最初的 `DefaultScopePort` 把「活会话存在但其 header 无 cwd」与
+  「没有该会话」都压成 `undefined`，而官方这两支的答案不同（前者回落 `sandboxPolicy.workspaceRoot`，后者返回 `undefined`）。
+  单测第一次跑就把这条打红了。现在端口传的是 `HeaderFace = { cwd: string | undefined }`，与官方逐行同形。
+- **官方客户端座位的真实注册形状**（读 `dsh-client-ui-sidebar-files/lib/client.js:692-711` 得到，已写入测试）：
+  正文注册在座位 `sidebar.right.pane.tab`、键是 `FILES_ID`（定义自己的 id，**不是** kind）；
+  标题是**另一个座位** `sidebar.right.pane.tab.title`、同一个键；类型定义走 `ctx.sidebarRightTabs.register`。
+  因此接管必须注册**三条**（我们的正文 + 我们的标题 + 我们的类型），少注册标题就会让 chip 上没有文案——
+  这一点计划 §3.3 只提到了正文与 kind。
+- **客户端刷新策略**：每会话一条绑定状态，创建时拉一次，之后每 5 秒拉一次，失败保持上次成功态（G6）。
+  没有做 SSE 推送——绑定的变更源只有 agent 工具，5 秒足以在用户下一次用到树之前传到。
+  这是 MVP 取舍，若要更低延迟应改成事件推送。
+- **存在性判定做成可注入的**（`ScopeDeps.existsDirectory`）：它的两条分支（目录消失 / 读不了）
+  在真实权限下无法稳定构造，而「读不了不等于不存在」直接决定用户会不会被永久摘掉绑定。
+  默认实现仍是直连 fs，注入点只为让这条语义可被单测打红。

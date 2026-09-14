@@ -6,7 +6,7 @@
   "main": "lib/index.js",
   "scripts": {
     "build": "node ../../scripts/build/clean-lib.ts && tsc -p tsconfig.json && node ../../scripts/build/bundle-host.ts .",
-    "test": "node ../../scripts/test/run-vitest.mjs --min 4",
+    "test": "node ../../scripts/test/run-vitest.mjs --min 10",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "pnpm run typecheck && pnpm run build && pnpm test"
   },
@@ -15,12 +15,22 @@
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     },
+    "./client": {
+      "types": "./lib/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
     "./package.json": "./package.json"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml",
       "bannerJs": "import { createRequire as __worktreeSidebarRequire } from \"node:module\";\nconst require = __worktreeSidebarRequire(import.meta.url);"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ],
+      "platform": "web"
     }
   },
   "files": [
