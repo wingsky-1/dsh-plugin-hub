@@ -384,3 +384,56 @@ S0 的三处既有断言修改均为**必需同步、非放宽**（ci-matrix 的
 **仍未验证**：三条界面语义（第 1、2 条因 P0-1 当时不生效而无法验证；第 3 条之所以成立是因为插件整个没跑，
 而 P0-2 表明它当时本来就会失败）；真机 HMR 时序；agent 工具在真机会话里的 LLM 回路端到端。
 修复后需要**重跑一次隔离真机验证**才能给 S5 结论。
+
+## 17. 当前状态与交接（压缩会话前记录，2026-09-14）
+
+### 17.1 代码现状
+
+| 项 | 值 |
+|---|---|
+| 分支 / PR | `task/worktree-sidebar` / [#819](https://github.com/wingsky-1/dsh-plugin-hub/pull/819)（**draft，未合入**） |
+| 已推送提交 | `0c36a1a`（S0+S1）、`5e6b4df`（摘除未落地客户端导出）、`54ac2e6`（S2–S5）、`c762c66`（复核四项必修） |
+| 测试 | 156 例 / 10 文件；含真 git 仓库上的 创建→绑定→摘除 端到端 |
+| 门禁 | 11 项全 exit 0：build / typecheck / test / contract / pack-check / verify-dir-imports / lint（0 error, 669/671 warning）/ format:check / docs:check / stryker:check / test:scripts |
+| 额外探针 | 把本包加进 `forbid-module-state-src` 范围 → exit 0、本包零条目（P1-3 已修） |
+
+### 17.2 已完成
+
+S0–S5 全部落地；独立复核（第二轮）的四项必修 P0-1 / P0-2 / P1-1 / P1-3 已修并推送，见 §16。
+
+### 17.3 未完成（下一会话的待办，按建议顺序）
+
+1. **导出面收口（用户在本轮明确要求）**。现状实测：
+   - 无消费者符号 2 个：`describeWorktree`（`src/server/git/interface.ts`）、
+     `BindingQueryResponse`（`src/contract.ts`）——删除或降为模块私有。
+   - `scope/interface.ts` 的 `export type { FileScope }` 是冗余转出（真实消费者从 `deps.ts` 取）。
+   - 需要逐条核对每个门面转出是否有消费者；方法论的判据是
+     「只导出有真实消费者的符号，"将来可能有人用"不是理由」。
+2. **类型物理定义下移到 `impl/`**（重构方法论 §5/§1：类型的物理定义在 `impl/` 的块里，`interface.ts` 只 re-export）。
+   现状违反者：`BindingApi`、`GitApi`、`ScopeApi`、`ApiInstance`、`ToolsInstance` 都物理定义在门面里。
+3. **三条界面语义的隔离真机验证**（从未成功执行过）。第二轮复核者**拒绝**把「官方仍工作」当作通过证据；
+   P0-1 修复后必须重跑：树列 worktree 内容 / 点开预览读 worktree 文件 / 未登记会话与未装插件行为一致。
+4. **真机 HMR 时序**（计划 §13 第 5 项）：现为「官方正文消失即撤销、出现即重捕」，无去抖，窗口内有可见的撤销/重建。
+5. **agent 工具在真机会话里的 LLM 回路端到端**（需一次真实模型调用；目前只在真 git 上用插件实现跑了等价端到端）。
+6. **行数预算裁决**（§9.1 / §16）：复核建议 `interface/deps ≤150`、全包合计登记 3000 作观察阈值，
+   并把 §9 语义改为「超限先问这文件里有几个决定」。**本文件未擅自改写 §9 的既有上限，等用户裁决。**
+7. **`.github/workflows/ci.yml` 的授权记录**：复核者指出该授权只存在于 PR 正文陈述，无法独立核实；
+   按仓库规则 `.github/` 属红线，建议补一条可审计的记录。
+
+### 17.4 方法论缺口（本轮明确暴露）
+
+实施全程**只加载了 `dsh-plugin-hub-dev`**，**未加载** `dsh-plugin-hub-refactor`（`docs/ARCHITECTURE-METHOD.md` 的执行清单）
+与 `dsh-plugin-hub-testing`。这不是形式问题——两份清单里各有条目直接命中本轮的实际缺陷：
+
+- refactor §1/§5/§9：「`interface.ts` 只 re-export」「导出面里没有无消费者的符号」「最小导出」→ 对应 17.3 第 1、2 条。
+- refactor §9 自检清单还要求跑 `export-surface-snapshot`；本包**没有该门的基线**（现行范围只有 `dsh-notifier`），
+  所以导出面漂移从来没有被机器拦过。
+- testing §3「夹具：假件要**真**、要窄、要露怯」→ 直接对应 P0-1：我的假 slots 端口对着错误的类型包造，
+  假件与运行时不一致，于是 155 个全绿的用例没有一个能发现真机 `TypeError`。
+
+### 17.5 复核者的证据（可能已被 `/tmp` 清理，若无则需重跑）
+
+隔离 worktree `/mnt/ssd/worktree/dsh-plugin-hub-task-worktree-sidebar-review2`（detached @54ac2e6，可清理）；
+证据 `/tmp/pr819-verify/{repro-guide.mjs, repro-takeover.mjs, repro-e2e.mjs, evidence/{console.json,right-panel.png}, logs/*}`。
+该隔离 worktree **仍然存在**，下一会话应先 `git worktree list` 查它，用完按仓库规矩
+`git worktree remove ... && git worktree prune` 清理。
