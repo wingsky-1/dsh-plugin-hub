@@ -338,10 +338,12 @@ test("#718: health-report.yml 基线陈旧——观测在最前、幂等建单�
   );
   const tail = HEALTH.slice(verdict);
   assert.ok(tail.includes("if: always()"), "verdict 必须 always()：上游失败时也要给出结论");
-  assert.ok(tail.includes('"$STATUS" = "unknown"'), "unknown 必须判红（环境失败不得静默降级）");
-  assert.ok(tail.includes('"$STATUS" = "missing"'), "状态文件缺失（观测没跑成）同样判红");
-  assert.match(tail, /exit 1/);
-  assert.ok(!tail.includes('"$STATUS" = "stale"'), "stale 是「发现」不是「失败」，不得判红");
+  // 判据必须是**白名单**：坏态是开放集合（unknown / missing / 缺 status 字段 / 将来新增的状态），
+  // 枚举坏态漏一种就静默转绿。故只钉「只有 fresh|stale 绿、其余落兜底判红」这一形态。
+  assert.match(tail, /case "\$STATUS" in/, "必须用 case 白名单判定，不得枚举坏态");
+  assert.match(tail, /^\s*fresh\|stale\)/m, "白名单只承认 fresh|stale（检查确实做成了）");
+  assert.match(tail, /\*\)[\s\S]*exit 1/, "兜底分支必须判红（unknown / 缺字段 / 缺失一律覆盖）");
+  assert.ok(!/stale[^\n]*exit 1/.test(tail), "stale 是「发现」不是「失败」，不得被判红");
   // 零权限变更（红线段：不得顺手加 contents: write）
   assert.ok(
     HEALTH.includes("contents: read") && HEALTH.includes("issues: write"),

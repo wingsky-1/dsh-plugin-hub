@@ -111,16 +111,23 @@ jobs:
       # #718：「检查根本没做成」必须判红（本仓「环境失败不得静默降级」纪律）。
       # 与陈旧告警是两种语义，刻意分开：
       #   stale   = 检查做成了、发现基线旧了 —— 由工单承接，run 保持绿（发现 != 失败）；
-      #   unknown = gh api 失败 / 分支被改名或删除 / 响应缺字段 —— 绿色 run 会把它变成静默降级。
-      # 状态文件缺失（观测步骤没跑成）按 unknown 的等价形态处理，同样判红。
+      #   其余一切 = 检查没做成（gh api 失败 / 分支被改名或删除 / 响应缺字段 / 状态文件缺失 /
+      #             状态文件可解析但缺 status 字段 → 字符串 "undefined"）。
       # 位置必须在所有建单/报告步骤**之后**：否则红掉这一步会连坐吞掉周报与陈旧工单两份留痕。
-      - name: Baseline staleness verdict（unknown 判红；stale 不判红）
+      - name: Baseline staleness verdict（只有 fresh|stale 才绿，其余一律判红）
         if: always()
         run: |
           set -e
           STATUS=$(node -p "require('./baseline-staleness.json').status" 2>/dev/null || echo missing)
-          if [ "$STATUS" = "unknown" ] || [ "$STATUS" = "missing" ]; then
-            echo "::error::基线新鲜度检查未做成（status=$STATUS）—— 环境失败不得静默降级"
-            exit 1
-          fi
-          echo "基线新鲜度检查完成：status=$STATUS"
+          # 白名单而非枚举坏态：坏态是个**开放集合**（unknown / missing / 缺 status 字段 /
+          # 将来新增的任何状态），枚举法每漏掉一种，这一步就静默转绿——而它存在的全部意义
+          # 正是「检查没做成不得静默降级」。故只承认两种「确实做成了」的状态，其余落到兜底分支。
+          case "$STATUS" in
+            fresh|stale)
+              echo "基线新鲜度检查完成：status=$STATUS"
+              ;;
+            *)
+              echo "::error::基线新鲜度检查未做成（status=$STATUS）—— 环境失败不得静默降级"
+              exit 1
+              ;;
+          esac
