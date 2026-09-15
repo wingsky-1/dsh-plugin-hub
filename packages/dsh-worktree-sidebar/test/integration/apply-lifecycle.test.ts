@@ -11,6 +11,7 @@
  */
 import type { Context } from "@deepseek-ai/cordis";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
+import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ROUTES } from "../../src/shared/interface.ts";
 import { apply } from "../../src/index.ts";
@@ -19,6 +20,7 @@ import * as bindingApi from "../../src/server/binding/interface.ts";
 import * as gitApi from "../../src/server/git/interface.ts";
 import * as scopeApi from "../../src/server/scope/interface.ts";
 import * as toolsApi from "../../src/server/tools/interface.ts";
+import type { ToolResultValue } from "../../src/server/tools/impl/protocol/index.ts";
 import { cleanup, tempDir } from "../helpers.ts";
 
 /** 组合根用到的窄宿主面 + 它的卸载路径。 */
@@ -52,10 +54,60 @@ interface FakeHostOptions {
   readonly live?: Record<string, string | undefined>;
   /** 让 `webServer.register` 抛错：组合根的第 5 步（api 域）失败，前 4 个域已装上。 */
   readonly registerThrows?: boolean;
+  /** 这个「进程」里会话 header 的创建时间。重启后新会话会拿到新值（而 id 会被复用）。 */
+  readonly birth?: number;
+  /** 在跑的 agent（tools 域会给其中 cwd 在 git 仓库里的那些装工具）。 */
+  readonly agents?: readonly FakeAgent[];
 }
 
 /** 会话 header 的创建时间：登记里存的凭据必须与它一致，绑定才算属于当前这个会话。 */
 const BIRTH = 1_700_000_000_000;
+
+/**
+ * 假 agent：tools 域只读它的 id / cwd / 注册口 / effect 面（形状见 `host/agents.ts` 的 `HostAgentLike`）。
+ * `definitions` 是断言面——组合根注入的时钟就靠「真的执行一次工具」才走得到。
+ */
+interface FakeAgent {
+  readonly id: string;
+  readonly session: { readonly header: { readonly cwd: string; readonly createdAt: number } };
+  readonly ctx: {
+    readonly tools: { register(definition: ToolDefinition): () => void };
+    effect(execute: () => () => void): () => unknown;
+  };
+  readonly definitions: ToolDefinition[];
+}
+
+/** 等一个条件成立；超时即返回，由断言去判红（不让等待本身变成失败原因）。 */
+async function waitFor(predicate: () => boolean, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate() && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+function fakeAgent(id: string, cwd: string): FakeAgent {
+  const definitions: ToolDefinition[] = [];
+  return {
+    id,
+    session: { header: { cwd, createdAt: BIRTH } },
+    ctx: {
+      tools: {
+        register: (definition) => {
+          definitions.push(definition);
+          return () => {
+            const index = definitions.indexOf(definition);
+            if (index >= 0) definitions.splice(index, 1);
+          };
+        },
+      },
+      effect: (execute) => {
+        execute();
+        return () => undefined;
+      },
+    },
+    definitions,
+  };
+}
 
 function fakeHost(options: FakeHostOptions = {}): FakeHost {
   const routes: WebRoute[] = [];
@@ -67,7 +119,7 @@ function fakeHost(options: FakeHostOptions = {}): FakeHost {
     logger: { warn: () => undefined },
     on: () => () => undefined,
     agents: {
-      list: () => [],
+      list: () => options.agents ?? [],
       // 组合根只允许用 list()：roots() 看不到子 agent，用它就等于子会话拿不到工具。
       // 这里留一个会抛的同名方法，把这条约束变成有意判据（否则只靠「假件恰好没实现 roots」的偶然 TypeError）。
       roots: () => {
@@ -91,7 +143,10 @@ function fakeHost(options: FakeHostOptions = {}): FakeHost {
         if (!present) return undefined;
         const parent = options.live?.[id];
         return {
-          header: { createdAt: BIRTH, ...(parent === undefined ? {} : { parentSession: parent }) },
+          header: {
+            createdAt: options.birth ?? BIRTH,
+            ...(parent === undefined ? {} : { parentSession: parent }),
+          },
         };
       },
     },
@@ -233,6 +288,87 @@ describe("组合根的生命周期", () => {
     host.allowRegister();
     await apply(host.ctx);
     expect(host.routes.length).toBe(2);
+    await host.disposeAll();
+  });
+
+  it("重启后新会话复用同一个 id：凭据不同 ⇒ 摘掉登记、不继承（S1）", async () => {
+    const descriptor = {
+      resolve: async (id: string) => ({ sessionId: id, workspaceRoot: "/official" }),
+    };
+    const dir = process.cwd();
+
+    // 第一个「进程」：装配 → 登记 → 释放。磁盘上留下 bindings.json（持久化本来就在工作）。
+    const first = fakeHost({ descriptor, live: { s1: undefined } });
+    await apply(first.ctx);
+    await bindingApi.put("s1", {
+      repoRoot: dir,
+      worktreeRoot: dir,
+      branch: "feature",
+      createdAt: "2026-09-15T00:00:00.000Z",
+      sessionCreatedAt: BIRTH,
+    });
+    expect(await scopeApi.effectiveWorktree("s1")).toBe(dir);
+    await first.disposeAll();
+
+    // 第二个「进程」：全新的域实例读同一份 bindings.json。id 一样，但这是**另一个**会话。
+    const restarted = fakeHost({ descriptor, live: { s1: undefined }, birth: BIRTH + 1 });
+    await apply(restarted.ctx);
+    expect(await scopeApi.effectiveWorktree("s1")).toBeNull();
+    expect(bindingApi.get("s1")).toBeUndefined();
+    await restarted.disposeAll();
+  });
+
+  it("真恢复的会话（凭据一致）在重启后仍然拿回自己的登记（对照臂）", async () => {
+    const descriptor = {
+      resolve: async (id: string) => ({ sessionId: id, workspaceRoot: "/official" }),
+    };
+    const dir = process.cwd();
+
+    const first = fakeHost({ descriptor, live: { s1: undefined } });
+    await apply(first.ctx);
+    await bindingApi.put("s1", {
+      repoRoot: dir,
+      worktreeRoot: dir,
+      branch: "feature",
+      createdAt: "2026-09-15T00:00:00.000Z",
+      sessionCreatedAt: BIRTH,
+    });
+    await first.disposeAll();
+
+    // 同一个凭据 = 恢复回来的那个会话：登记必须还在（否则「重启即丢绑定」是另一种静默错）。
+    const restarted = fakeHost({ descriptor, live: { s1: undefined } });
+    await apply(restarted.ctx);
+    expect(await scopeApi.effectiveWorktree("s1")).toBe(dir);
+    await restarted.disposeAll();
+  });
+
+  it("组合根注入的时钟真的被工具用上：登记时间戳来自 now（顺带覆盖 tools 注册链）", async () => {
+    const dir = process.cwd();
+    const agent = fakeAgent("s1", dir);
+    const host = fakeHost({
+      descriptor: { resolve: async (id) => ({ sessionId: id, workspaceRoot: "/official" }) },
+      agents: [agent],
+    });
+    await apply(host.ctx);
+    // tools 域的判定链要**真起一次 git 子进程**才把工具装进 agent：一轮微任务不够，
+    // 而这里又不能用假 git（本文件的组合根递的就是真 exec 面），所以按条件有限轮询。
+    await waitFor(() => agent.definitions.length > 0);
+
+    const definition = agent.definitions.find((entry) => entry.name === "ws_worktree_register");
+    if (definition === undefined) throw new Error("工具没有装进 agent");
+    const exec = {
+      agent: { session: { id: "s1", header: { cwd: dir, createdAt: BIRTH } } },
+    };
+    const value = (await definition.execute(
+      { worktree: dir },
+      exec as ToolRunContext,
+    )) as ToolResultValue;
+
+    expect(value.ok).toBe(true);
+    // 组合根那个 `now: () => new Date().toISOString()` 是**唯一**的登记时间来源。
+    expect(bindingApi.get("s1")?.createdAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    );
     await host.disposeAll();
   });
 

@@ -65,13 +65,6 @@ export function buildCreateTool(deps: ToolsDeps): ToolDefinition {
         return resultOf(state, false, "Missing required parameter: path.");
       }
       const target = resolveTarget(repo, raw);
-      if (target === undefined) {
-        return resultOf(
-          state,
-          false,
-          "A relative path needs a session working directory; pass an absolute path instead.",
-        );
-      }
       const branch = argString(args, "branch");
       if (branch !== undefined && !(await deps.git.checkRefFormat(branch))) {
         return resultOf(

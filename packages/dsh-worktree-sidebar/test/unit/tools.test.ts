@@ -412,6 +412,64 @@ describe("ws_worktree_remove", () => {
     expect(table.has("s1")).toBe(true);
   });
 
+  it("缺少 exec.agent 时明确失败，不猜会话", async () => {
+    const { deps, drops } = fakeDeps();
+    const value = await run(buildRemoveTool(deps), {}, {});
+    expect(value.ok).toBe(false);
+    expect(value.detail).toContain("needs an agent session");
+    expect(drops.length).toBe(0);
+  });
+
+  it("只摘登记时落盘失败：说清没能持久化，且不动内存状态", async () => {
+    const fake = await withBinding();
+    const failing: ToolsDeps = {
+      ...fake.deps,
+      binding: {
+        ...fake.deps.binding,
+        drop: async () => ({ ok: false, reason: "disk full" }),
+      },
+    };
+    const value = await run(buildRemoveTool(failing), {});
+    expect(value.ok).toBe(false);
+    expect(value.detail).toContain("Could not persist the unbind: disk full");
+    // 内存不前移：绑定还在，下一次调用还会走同一条失败路径（而不是变成「明明说失败却摘掉了」）。
+    expect(fake.table.has("s1")).toBe(true);
+  });
+
+  it("removeDirectory 之前登记消失（竞态）：如实说明，不静默成功", async () => {
+    const fake = await withBinding();
+    let gets = 0;
+    const racing: ToolsDeps = {
+      ...fake.deps,
+      binding: {
+        ...fake.deps.binding,
+        // 第一次是顶部的 stateOf，第二次是删目录前的复核——那一次让记录消失。
+        get: (id) => {
+          gets += 1;
+          return gets === 1 ? fake.table.get(id) : undefined;
+        },
+      },
+    };
+    const value = await run(buildRemoveTool(racing), { removeDirectory: true });
+    expect(value.ok).toBe(false);
+    expect(value.detail).toContain("binding disappeared");
+  });
+
+  it("目录删掉了但摘登记失败：明确说这是陈旧登记、会被按未绑定处理", async () => {
+    const fake = await withBinding();
+    const failing: ToolsDeps = {
+      ...fake.deps,
+      binding: {
+        ...fake.deps.binding,
+        drop: async () => ({ ok: false, reason: "disk full" }),
+      },
+    };
+    const value = await run(buildRemoveTool(failing), { removeDirectory: true });
+    expect(value.ok).toBe(false);
+    expect(value.detail).toContain("the binding could not be dropped");
+    expect(value.detail).toContain("disk full");
+  });
+
   it("git worktree remove 失败时保留绑定并回传原因", async () => {
     const { deps, drops, table } = await withBinding();
     const failing: ToolsDeps = {
@@ -570,6 +628,20 @@ describe("返回文本", () => {
     }>;
     expect(rendered[0]?.type).toBe("text");
     expect(rendered[0]?.text).toContain("bound worktree: " + existingWt + " [feature]");
+  });
+
+  it("create 的渲染也走同一张信封（它自己那个 render 闭包不能是死代码）", async () => {
+    const { deps } = fakeDeps();
+    const tool = buildCreateTool(deps);
+    const target = join(root, "render-wt");
+    const value = await run(tool, { path: target, branch: "feat-x" });
+    const rendered = tool.output.render(undefined, { ...value }) as Array<{
+      type: string;
+      text: string;
+    }>;
+    expect(rendered[0]?.type).toBe("text");
+    // branch 取自 headBranch（假 git 恒回 "feature"），不是入参里的分支名。
+    expect(rendered[0]?.text).toContain("bound worktree: " + target + " [feature]");
   });
 
   it("未绑定时状态行说明没有绑定", async () => {

@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { apply } from "../../src/client/index.ts";
 import type {
+  ObservablePort,
   SessionsSnapshotLike,
   TabDefinitionLike,
   TabsPort,
@@ -109,7 +110,7 @@ afterEach(() => {
  * 假面必须复刻装配根真正用到的形状：`sessions` 服务对象本身**没有** `getSnapshot`，
  * 快照在 `sessions.list` 上——这正是本文件要钉住的那条接缝。
  */
-function mount(respond: () => Response): Mounted {
+function mount(respond: () => Response | Promise<Response>): Mounted {
   const snapshot: { value: SessionsSnapshotLike } = { value: liveSnapshot() };
   const fetchUrls: string[] = [];
   const disposers: Array<() => void> = [];
@@ -212,7 +213,7 @@ describe("树根播种：只在用户可感知的时机读绑定（没有定时�
   it("绑定查询永不返回时，官方那一帧照播（树不会一直空白）", async () => {
     // 端点慢/挂起时，官方正文的 state 会停在 undefined 并渲染 null；把首帧挂在这次 fetch 上，
     // 等于让**所有会话**（含从未登记的）的 Files 树一起空白。所以必须先播官方 root。
-    const h = mount(() => new Promise<Response>(() => undefined) as unknown as Response);
+    const h = mount(() => new Promise<Response>(() => undefined));
     const face = h.capturedInject()(SESSION_ID) as Face;
     face.start?.(TAB_ID, CWD);
     await settleMicrotasks();
@@ -240,9 +241,7 @@ describe("树根播种：只在用户可感知的时机读绑定（没有定时�
 
   it("乱序返回：更早发出的请求带着更小 revision 后到时不回退快照", async () => {
     const gates: Array<(response: Response) => void> = [];
-    const h = mount(
-      () => new Promise<Response>((resolve) => gates.push(resolve)) as unknown as Response,
-    );
+    const h = mount(() => new Promise<Response>((resolve) => gates.push(resolve)));
     const face = h.capturedInject()(SESSION_ID) as Face;
 
     face.start?.(TAB_ID, CWD); // 请求 1
@@ -362,8 +361,8 @@ describe("树根播种：只在用户可感知的时机读绑定（没有定时�
   it("视图缓存有上限：最冷的会话被淘汰，仍然在缓存的会话引用稳定", () => {
     const h = mount(bindingResponse);
     const inject = h.capturedInject();
-    const sourceOf = (sessionId: string): unknown =>
-      (inject(sessionId)["hooks"] as { sessions: unknown }).sessions;
+    const sourceOf = (sessionId: string): ObservablePort<SessionsSnapshotLike> =>
+      (inject(sessionId)["hooks"] as { sessions: ObservablePort<SessionsSnapshotLike> }).sessions;
 
     const cold = sourceOf("s-cold");
     for (let i = 0; i < 200; i += 1) sourceOf("s-" + i);

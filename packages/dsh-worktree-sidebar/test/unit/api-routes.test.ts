@@ -274,6 +274,52 @@ describe("异常收口与卸载", () => {
     expect(warns[0]).toContain("boom");
   });
 
+  it("同步处理器抛异常也回 500 并出声（异步 promise 之外的第二个入口）", () => {
+    const { route } = install({
+      revision: () => {
+        throw new Error("sync boom");
+      },
+    });
+    const { captured, res } = fakeRes();
+    // health 的处理器是**同步**的：它抛在 handle(req, res) 那一行，只有同步 catch 接得住。
+    route(ROUTES.health).handler(fakeReq(), res);
+    expect(captured.status).toBe(500);
+    expect(warns.some((warning) => warning.includes("sync boom"))).toBe(true);
+  });
+
+  it("注册中途失败：已挂的那条被摘回去再抛，域也不留在半装态", () => {
+    const routes: WebRoute[] = [];
+    let calls = 0;
+    const custom = capturingRegister();
+    const register = (route: WebRoute): (() => void) => {
+      calls += 1;
+      // 第一条照常挂上，第二条才炸：这条判据要的正是「已挂的那条会不会被摘回去」。
+      if (calls === 2) throw new Error("second register exploded");
+      routes.push(route);
+      return () => {
+        const index = routes.indexOf(route);
+        if (index >= 0) routes.splice(index, 1);
+      };
+    };
+    expect(() =>
+      installApi({
+        register,
+        logger,
+        binding: { revision: () => 1 },
+        scope: {
+          effectiveWorktree: async () => null,
+          takeoverState: () => "live" as const,
+          chainDiagnostics: () => ({ storedReads: 0, storedFailures: 0, lastFailure: undefined }),
+        },
+      }),
+    ).toThrow("second register exploded");
+    // 半挂的出口比不挂更糟：它在册、会响应，而摘除器从未生成。
+    expect(routes).toEqual([]);
+    // 域也没被标成已装配——同一进程里再装一次必须成功（否则组合根的回滚路径就白写了）。
+    expect(() => install()).not.toThrow();
+    expect(custom.routes.length).toBe(0);
+  });
+
   it("release 摘掉全部路由且幂等", () => {
     const { reg } = install();
     expect(reg.routes.length).toBe(2);

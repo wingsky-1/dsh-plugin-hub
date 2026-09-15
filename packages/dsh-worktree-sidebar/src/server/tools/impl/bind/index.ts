@@ -30,11 +30,14 @@ export function resultOf(state: BindingState, ok: boolean, detail: string): Tool
   return { ok, bound: state.bound, worktree: state.worktree, branch: state.branch, detail };
 }
 
-/** 把调用方给的路径解析成绝对路径。相对路径按**会话 cwd** 解析（那是调用者心里的基准），不是进程 cwd。 */
-export function resolveTarget(cwd: string | undefined, raw: string): string | undefined {
-  if (isAbsolute(raw)) return raw;
-  if (cwd === undefined) return undefined;
-  return resolve(cwd, raw);
+/**
+ * 把调用方给的路径解析成绝对路径。相对路径按**会话 cwd** 解析（那是调用者心里的基准），不是进程 cwd。
+ *
+ * 参数是 `string` 而不是 `string | undefined`：两个调用方都在更早的分支上把「没有 cwd」判失败并返回了，
+ * 这里再留一条 undefined 分支就是一段**不可达代码**（覆盖率替一段永远到不了的代码记账没有意义）。
+ */
+export function resolveTarget(cwd: string, raw: string): string {
+  return isAbsolute(raw) ? raw : resolve(cwd, raw);
 }
 
 /** 是目录才继续。不是就给一句能照着做的失败。 */

@@ -13,6 +13,7 @@ import { createFakeSlots } from "../helpers.ts";
 import { createInjectWrapper } from "../../src/client/inject.ts";
 import type {
   ClientSlotsPort,
+  InjectFactory,
   ObservablePort,
   SessionView,
   SessionsSnapshotLike,
@@ -123,7 +124,7 @@ function harness(
    * 而官方那条在夹具里默认**不声明** priority，所以「带 priority 的登记」就是我们。
    */
   /** 我们那条条目的 identity：wrapper 产出的 inject 工厂是我们唯一能精确认出的东西。 */
-  const ourInjectFactories = new Set<unknown>();
+  const ourInjectFactories = new Set<InjectFactory>();
   const attempts = { count: 0 };
   const failsOurs = (): boolean => {
     attempts.count += 1;
@@ -143,8 +144,12 @@ function harness(
       }
     : fake.slots;
 
+  /** 我们那条条目：`inject` 是我们这个 wrapper 的产物（官方那条的 inject 是它自己的工厂）。 */
+  const isOurs = (entry: StoredEntryLike): boolean =>
+    entry.inject !== undefined && ourInjectFactories.has(entry.inject);
+
   const ours = (): readonly StoredEntryLike[] =>
-    fake.entries(BODY_SLOT).filter((entry) => ourInjectFactories.has(entry.inject));
+    fake.entries(BODY_SLOT).filter((entry) => isOurs(entry));
 
   return {
     fake,
@@ -168,9 +173,7 @@ function harness(
       disposeOfficial = registerOfficial(component);
       officialEntry = fake
         .entries(BODY_SLOT)
-        .find(
-          (entry) => entry.options.key === OFFICIAL_ID && !ourInjectFactories.has(entry.inject),
-        );
+        .find((entry) => entry.options.key === OFFICIAL_ID && !isOurs(entry));
     },
     dropOfficial: () => disposeOfficial(),
     install: () =>

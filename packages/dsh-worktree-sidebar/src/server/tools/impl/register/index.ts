@@ -64,13 +64,6 @@ export function buildRegisterTool(deps: ToolsDeps): ToolDefinition {
         return resultOf(state, false, "Missing required parameter: worktree.");
       }
       const target = resolveTarget(session.cwd, raw);
-      if (target === undefined) {
-        return resultOf(
-          state,
-          false,
-          "A relative path needs a session working directory; pass an absolute path instead.",
-        );
-      }
       const problem = directoryProblem(target);
       if (problem !== undefined) {
         return resultOf(state, false, problem + (await availableWorktrees(deps, session.cwd)));

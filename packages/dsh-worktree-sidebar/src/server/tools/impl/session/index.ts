@@ -24,8 +24,7 @@ export function sessionOf(exec: unknown): SessionFace | undefined {
   if (typeof id !== "string" || id.length === 0) return undefined;
   const header = readObject(session, "header");
   const cwd = header === undefined ? undefined : (header as { cwd?: unknown }).cwd;
-  const createdAt =
-    header === undefined ? undefined : (header as { createdAt?: unknown }).createdAt;
+  const createdAt = header === undefined ? undefined : (header as { createdAt?: number }).createdAt;
   return {
     id,
     cwd: typeof cwd === "string" && cwd.length > 0 ? cwd : undefined,
