@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 // @ts-nocheck
 /**
- * verify-docs 的 agent 规则文档链接面自测（#693）。
+ * verify-docs 的链接面自测：agent 规则文档（#693）+ docs/ 正文（#842）。
+ *
+ * docs/ 正文面（#842）与 agent 面同源、解析口径更严：**只相对当前文件**解析、不回落到仓库根
+ * （GitHub 上 docs/ 里的相对路径就是相对该文件）。这就是 #842 那条坏链（`.dsh/...`
+ * 少写 `../`）唯一能被抓住的口径——agent 面的根回落会把它放过。
  *
  * 为什么存在：根 AGENTS.md / 包级 AGENTS.md / .dsh/skills/ / agents/ 此前**完全在
  * 门禁面之外**（verify-docs 只查各包 README），这正是过期规则（worktree 路径、
@@ -221,4 +225,62 @@ test("锚点：同文件锚点（含 HTML href 写法）同样被校验", () => 
     agentFiles: { "docs/A.md": '<a id="通用机制"></a>\n## 通用机制\n\n见 [x](#通用机制)。\n' },
   });
   assert.equal(run(ok).status, 0);
+});
+
+test("docs 面（#842）：正文相对链接目标缺失 → exit 1（此前 docs/ 完全在链接面之外）", () => {
+  const dir = fixture({ agentFiles: { "docs/GUIDE.md": "见 [别名](NOT-THERE.md)。\n" } });
+  const r = run(dir);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /GUIDE\.md: 相对链接目标缺失 NOT-THERE\.md/);
+});
+
+test("docs 面（#842）反证：缺 ../ 前缀的形态必须判红——不得回落到仓库根解析", () => {
+  // 真实缺陷形态：docs/DEVELOPMENT.md 里写 .dsh/skills/... 而非 ../.dsh/skills/...；
+  // 目标文件**真实存在**于仓库根，所以任何根回落实现都会放过它。
+  const dir = fixture({
+    agentFiles: {
+      ".dsh/skills/demo/SKILL.md": "# skill\n",
+      "docs/DEVELOPMENT.md": "见 [skill](.dsh/skills/demo/SKILL.md)。\n",
+    },
+  });
+  const r = run(dir);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /DEVELOPMENT\.md: 相对链接目标缺失 \.dsh\/skills\/demo\/SKILL\.md/);
+});
+
+test("docs 面正例：同目录裸文件名 / 目录 / 资源后缀都算链接（README 面认不出的形态）", () => {
+  const dir = fixture({
+    agentFiles: {
+      "docs/GUIDE.md": "见 [a](OTHER.md)、[b](diagrams/)、[c](assets/x.svg)。\n",
+      "docs/OTHER.md": "# other\n",
+      "docs/diagrams/a.svg": "<svg/>\n",
+      "docs/assets/x.svg": "<svg/>\n",
+    },
+  });
+  const r = run(dir);
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test("docs 面不误报：外链、锚点、绝对路径与正则示例文本都不算路径链接", () => {
+  const dir = fixture({
+    agentFiles: {
+      "docs/GUIDE.md": [
+        '<a id="sec"></a>',
+        "[外](https://example.com/a.md) · [锚](#sec) · [绝对](/etc/hosts)",
+        "",
+        "锁版形如 `@deepseek-ai/[a-z0-9-]+|cordis` 的写法。",
+        "",
+      ].join("\n"),
+    },
+  });
+  const r = run(dir);
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test("docs 面覆盖面自锁：真实仓库扫到 ≥20 个 docs 文档（防 walk 条件被改窄成空转）", () => {
+  const r = spawnSync(process.execPath, [GATE, "--strict-en"], { cwd: ROOT, encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  const m = r.stdout.match(/\+ (\d+) 个 docs 文档/);
+  assert.ok(m, "输出缺少 docs 文档计数：" + r.stdout);
+  assert.ok(Number(m[1]) >= 20, "真实仓库应扫到 ≥20 个 docs 文档，实际 " + m[1]);
 });

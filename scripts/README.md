@@ -24,7 +24,9 @@
 - `gate/contract-check.ts` — 客户端契约门禁（load id === 包名、`dsh.client ⇒ exports["./client"]` 等）。
 - `gate/pack-check.ts` — tarball 完整性门禁（含聚合包、THIRD-PARTY-LICENSES 覆盖）。
 - `gate/verify-npm-layout.ts` — npm 发布布局校验。
-- `gate/verify-docs.ts` — 文档/description 校验（缺 .md、占位符残留）。
+- `gate/verify-docs.ts` — 文档/description 校验（缺 .md、占位符残留）。相对链接面四档：
+  包 README / 根 README.en / agent 规则文档（AGENTS.md、.dsh/skills/**、agents/**）/ docs 正文（#842）；
+  另校验锚点可解析与文档里的 `pnpm <script>` 真实存在。
 - `gate/aggregate.ts` — 聚合 `cordis.patch.yml` 生成 + 一致性校验（`--check` 供 CI）。
 - `gate/crap-check.mjs` — 单函数 CRAP 复杂度检查（阈值唯一事实源 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict）。**现状为 fail-closed 停用态（#722 阶段三）**：其圈复杂度取自 lib 编译产物，而覆盖率已切 src 口径，两者行号不可比——入口自检不匹配即 exit 2，不再以「0 个函数」静默放行；src 口径重建归阶段 5（与 ESLint 复杂度规则同批）。
 - `gate/forbid-src-tests.mjs` — #423 防双份回潮：扫 packages 下全部遗留 src 副本测试文件（含未跟踪），命中即 exit 1。
