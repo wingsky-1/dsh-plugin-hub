@@ -23,6 +23,7 @@
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计：v2 适配器契约 + 宿主端渲染 + 历史落盘 | [dsh-provider-usage.md](dsh-provider-usage.md) |
 | `@wingsky-1/dsh-web-file-preview` | 把对话内「用默认应用打开」改写成官方右侧栏预览 | [dsh-web-file-preview.md](dsh-web-file-preview.md) |
 | `@wingsky-1/dsh-verify-isolated` | 插件开发隔离浏览器验证 skill（临时 DSH_HOME + 独立 profile） | [dsh-verify-isolated.md](dsh-verify-isolated.md) |
+| `@wingsky-1/dsh-worktree-sidebar` | 把某个 git worktree 登记给当前会话：官方右侧栏文件树换根、会话 cwd 不变 | [dsh-worktree-sidebar.md](dsh-worktree-sidebar.md) |
 | `@wingsky-1/dsh-plugins-all` | 全家桶聚合包（一键装齐 + 聚合 cordis patch） | [dsh-plugins-all.md](dsh-plugins-all.md) |
 
 ## 全景：插件如何挂载进 dsh web
@@ -38,6 +39,7 @@ flowchart LR
         P4["dsh-provider-usage"]
         P5["dsh-web-file-preview"]
         P6["dsh-verify-isolated"]
+        P7["dsh-worktree-sidebar"]
     end
 
     subgraph profile["dsh web profile（cordis 运行时）"]
@@ -56,6 +58,7 @@ flowchart LR
     P4 --> CORDIS
     P5 --> CORDIS
     P6 --> CORDIS
+    P7 --> CORDIS
 ```
 
 要点：
@@ -95,6 +98,10 @@ flowchart LR
 | [dsh-mcp-manager.md](dsh-mcp-manager.md) | 双轨架构图 | `diagrams/mcp-manager-architecture.html` |
 | [dsh-notifier.md](dsh-notifier.md) | 按域架构与通知管线图 | `diagrams/notifier-architecture.html` |
 | [dsh-provider-usage.md](dsh-provider-usage.md) | 宿主端渲染架构图 | `diagrams/provider-usage-architecture.html` |
+| [dsh-worktree-sidebar.md](dsh-worktree-sidebar.md) | BA 业务架构图 | `diagrams/worktree-sidebar-ba.html` |
+| [dsh-worktree-sidebar.md](dsh-worktree-sidebar.md) | AA 应用架构图 | `diagrams/worktree-sidebar-aa.html` |
+| [dsh-worktree-sidebar.md](dsh-worktree-sidebar.md) | DA 数据架构图 | `diagrams/worktree-sidebar-da.html` |
+| [dsh-worktree-sidebar.md](dsh-worktree-sidebar.md) | TA 技术架构图 | `diagrams/worktree-sidebar-ta.html` |
 
 > 调整方法：用浏览器打开源 HTML → 修改 SVG 内容 → 重新导出 SVG
 > （`python3 scripts/lib/export-diagram-svg.py <源.html>`）替换文档中的引用。

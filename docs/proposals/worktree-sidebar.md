@@ -1,6 +1,19 @@
 # dsh-worktree-sidebar 设计方案与调研结论
 
-> 状态：待实施。方案已过三轮独立评审（技术核验 / 对抗评审 / 降级预案评审），结论已全部吸收。
+> 状态：**已实施**（包未发布）。方案已过三轮独立评审，逐轮实现与复核台账都在本文；当前处置见 §24，本地门禁与 CI 读数见 PR #819 的回复评论。
+>
+> 架构速览（TOGAF 4A 四视图）见 [docs/architecture/dsh-worktree-sidebar.md](../architecture/dsh-worktree-sidebar.md)；面向使用者的包文档见 [packages/dsh-worktree-sidebar/README.md](../../packages/dsh-worktree-sidebar/README.md)。
+
+**怎么读这份文档**（多轮实施 + 多轮复核沉淀，全文 1600 余行）：
+
+| 区 | 节 | 性质 |
+|---|---|---|
+| 设计与决策 | §0–§14 | **现行**：调研结论、决策记录、降级预案、验收标准、目录与行数约定、门禁口径、退役条件 |
+| 过程台账 | §15–§24 | **按轮追加**：每轮写明触发 / 做了什么 / 偏差 / 读数 / 遗留，不覆盖之前结论 |
+| 现场速览 | §17、§21 | **交接快照**：会话压缩后接手用，数字不回改 |
+| 当前处置 | §24 | **最新**：维护者第十轮五条反馈的逐条处置 |
+
+历史轮次台账**刻意留在本文件内**：每轮的编号（§19.3、§20.7.5、§21.6 等）是评审与实现之间的事实语言，搬运会切断引用。已归入 archive 的是被本文替代的旧材料（见 §19.0 的指向）。
 
 ## 0. 元信息与版本绑定
 
@@ -10,7 +23,9 @@
 | 适配基线 | @deepseek-ai/dsh **0.1.5-rc.1** |
 | 证据根 | /home/tangyi/.local/node/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/* |
 | dsh-client-ui-slots 副本 | /tmp/782-probe2/node_modules/.pnpm/@deepseek-ai+dsh-client-ui-slots@0.1.5-rc.1_.../（该包未随 npm 分发） |
-| 仓库起点 | origin/main **114d0bd**（2026-09-14） |
+| 仓库起点 | origin/main **114d0bd**（2026-09-14；本轮施工分支基于 origin/main **34957b6**） |
+| 最后更新 | 2026-09-15（第十轮：维护者复核五条处置，见 §24） |
+| 架构图解 | [docs/architecture/dsh-worktree-sidebar.md](../architecture/dsh-worktree-sidebar.md) |
 | 工具链 | node v24.19.0 / pnpm 11.21.0 |
 | catalog 相关锁版 | cordis 4.0.2；dsh-tools、dsh-system-prompt、dsh-client-ui-slots、dsh-session 等 0.1.5-rc.1 |
 
@@ -810,7 +825,7 @@ node scripts/gate/export-surface-snapshot.mjs --package dsh-worktree-sidebar --s
 
 - 触发：维护者质疑「实现太复杂、对官方侵入太多」。派了两个上下文独立的子 agent 做**宿主轴 / 客户端轴**
   对抗调研（各自只读、自带证据纪律），本人逐条复核其关键论断。三类归档（真弯 / 被迫 / 记账）落在
-  `packages/dsh-worktree-sidebar/docs/review-round5.md`，**不替代本文**。
+  `packages/dsh-worktree-sidebar/docs/archive/review-round5.md`（第六轮起被后续轮次取代，故移入 archive），**不替代本文**。
 - 结论两条，必须一起读：
   1. **深侵入可以从 2 处降到 1 处**——客户端不必顶官方类型表，用「同 key + 更低 priority」遮蔽正文 entry 即可
      （官方 ui-slots 文案就写着 `register at a different priority to shadow it (lowest renders)`）。
@@ -1226,7 +1241,7 @@ cd $WT && pnpm gate:pr                                                        # 
 ### 21.6 仍未验证 / 遗留（截至本节）
 
 1. **dev HMR 重注册**（S7 遮蔽在 dev 模式下的两次重注册）未验；只验了整页重载两次。
-2. **窄屏/响应式、双主题**未覆盖。
+2. ~~**窄屏/响应式、双主题**未覆盖。~~ **第十轮判为不需要**：界面是**整块复用官方组件**（我们只换树的根与播种时机，不新增 DOM、布局或样式），窄屏/双主题的表现由官方那套负责；本插件没有自己的视觉层可测。真正属于本插件的界面面只有「遮蔽是否当值」与「播的是哪个根」，两者都有判据。
 3. **真实启动序的等待分支**：本机组合下首个可观测 `scopeTakeover` 即 `live`，从未走到 `waiting`；「走到时会怎样」没有正向实测。
 4. **插件 `logger.warn` 在无 cordis exporter 的组合里不可见**（§19.5）——「失败出声」在真机落空，排查时不能用「日志里没有 warn」当证据。
 5. **真机模型侧是 mock LLM**（工具执行/会话创建/客户端渲染全真，模型决策非真模型）；`n=1`。
@@ -1535,7 +1550,7 @@ cd $WT && pnpm gate:pr
 3. **S2 的取舍代价**：`unknown` 不摘 ⇒ 「目录还在但已不是 git 工作树」会保留登记（见 §23.3）。
 4. **不可达 / 低覆盖的四处**（本轮复核后判定不值得补判据）：`tools/impl/create` 第 69 行的 `resolveTarget === undefined`（两个调用方都在更早分支拦掉了 `cwd === undefined`，留着是共享 helper 的类型面需要）、`api/impl/route` 的 `reportFailure` 三行、`tools/impl/remove` 的四行、组合根第 68 行的 `now` 闭包（测试注入自己的时钟）。
 5. `tools/impl/session` 的 `sessionOf` 圈复杂度到 12（本轮 +1）：它现在是「形状校验 + cwd 非空 + 身份有限数」三件事，若要瘦身应拆出 `readIdentity(header)`；属清理不属修复。
-6. §21.6 的 1–9 条**大部分仍成立**：dev HMR 重注册、窄屏 / 双主题、`waiting` 分支没有正向实测、插件 `logger.warn` 在无 exporter 组合里不可见、真机模型侧是 mock（n=1）、并发交错只有源码分析、§20.5 的「打不红」待办。
+6. §21.6 的 1–9 条**部分已闭合**（第十轮重判，见 §24）：窄屏/双主题**判为不需要**（整块复用官方组件与样式）；dev HMR 重注册在单元级已有判据（`client-takeover` 的「官方组件换了 → 重捕到新组件」），缺的只是 dev 模式真机；`waiting` 分支在 `scope.test.ts` 有正/反向判据，缺的只是真机启动序。仍成立的是：插件 `logger.warn` 在无 exporter 组合里不可见（已用 health 读数兜）、真机模型侧是 mock（n=1）、并发交错只有源码分析、§20.5 的「打不红」待办。
 7. `docs/architecture/dsh-worktree-sidebar.md` 尚未补（M8 只补了根 README 的行；先例 `fc9b67e` 同样只动 README 一行）。
 
 ### 23.9 复制即用（本轮实际跑过的命令）
@@ -1552,6 +1567,147 @@ python3 /tmp/r9-mutate.py && python3 /tmp/r9-mutate2.py      # 27 条反向探�
 cd $WT && pnpm gate:pr
 ```
 
+---
+
+## 24. 第十轮：维护者复核的五条处置（2026-09-15）
+
+### 24.1 逐条
+
+| # | 维护者 | 处置 |
+|---|---|---|
+| 1 | 「绑定关系不是持久化的吗」 | 持久化一直在工作；要修的是「同一个 id 是不是同一个会话」。补了两条端到端判据（§24.2） |
+| 2 | 「不要有 any unknown」 | 接受：清掉本轮新增的 `unknown` 类型与 `as unknown as` 断言（第三态 `unknown` 是**读数的种类**、不是 TS 类型，保留） |
+| 3 | 「（那四处）为什么（不补判据）」 | 接受：三处当场补上，第四处是不可达代码、直接删掉（§24.3） |
+| 4 | 「4 5 为什么不改」 | 接受：补 rebase 前后的 sha 映射表，补 `docs/architecture/dsh-worktree-sidebar.md` 并挂链（§24.4） |
+| 5 | 「窄屏/双主题 我们是复用的界面不需要做这个吧」 | **同意**：判为不需要，已把 §21.6 第 2 条划掉并写明理由；其余遗留按覆盖情况重判（§24.5） |
+
+### 24.2 第 1 条：持久化与「会话身份」是两件事
+
+- **持久化一直在工作**：`bindings.json` 原子写、重启后按会话 id 读回来；`binding-store` 的用例逐条打它（损坏回落空表、写盘失败内存不前移、`release` 等在飞的写、与下一代装配交错不丢表）。「重启后登记还在」这句没错。
+- **要修的是「同一个 id 是不是同一个会话」**：官方会话 id 是**进程内计数器**（`session-1`、`session-2`…，`dsh-session/lib/index.js` 的 `counter = 0` 与 `session-${++this.counter}`），重启后新会话会重新拿到 `session-1`。**持久化在这里恰恰是风险来源**：上一进程为 `session-1` 登记的 worktree，会被新进程里那个全新的 `session-1` 读到——正是本插件最想避免的「看错地方」。
+- 于是登记里多存了会话 header 的 `createdAt` 作身份凭据：**不同就摘掉**（新会话不继承）、**相同就保留**（真恢复的会话照常继承）、**读不出来则保守保留**。
+- **上下文事实**（源码级核验）：本机 dsh 安装树里没有任何启动期把历史会话预载回活存储的路径（`ctx.sessions.get` 是 live-only，`Session.fromRestore` 只在显式带 id 的 `prepare` 分支上用）——也就是说这个碰撞在真机上会发生，不是理论情形。
+- **第十轮补的判据**：`apply-lifecycle.test.ts` 两条端到端用例——同一份磁盘 `bindings.json`，先「装配 → 登记 → 释放」，再装配：① 凭据不同 ⇒ `effectiveWorktree` 为 null 且记录被摘；② 凭据相同 ⇒ 仍拿回那个根。三件事（持久化 + 重启 + id 复用）第一次合到**真文件 + 真组合根**上验过，不再只靠 scope 域的假端口。
+
+### 24.3 第 2/3 条：类型面清理与覆盖率补齐
+
+**`unknown` 清理**（只清本轮新增的那几处）：
+
+- `sessionOf` 的身份校验改用精确类型（`{ createdAt?: number }`）；
+- 测试里 **3 处** `as unknown as` 改为不再需要断言：`mount` 接受 `Response | Promise<Response>`；typert 假件按官方 `TypertLookupProvider` 的**完整形状**写（四个业务字段一个不少）、`TypertDisposer` 是 `() => Promise<void>`、监听器吃 `TypertRegistryChange`（第十一轮复核指出原文写「4 处」不准，此处更正）；
+- 另两处不是 `as unknown as` 而是等价的宽面，一并记下口径：`Set<unknown>` → 官方的 `InjectFactory`；typert 假件里 `configure` 的泛型参数用 `as never` 过桥（官方那一面的入参是「所有 lookup 键的 wire 联合」，本域只用到其中一个键的 wire）。`as never` 保留，理由写在测试注释里；
+- `Set<unknown>` → 官方的 `InjectFactory`。
+
+**这轮清理本身抓出一个真问题**：旧的 `as unknown as TypertLookupsPort` 掩盖了假件与官方契约的漂移——少了 `parameter/wire/hostTypeSymbol/wireTypeSymbol` 四个字段，且 disposer 写成了同步的。也就是说那条断言让「假件与官方不同形」永远测不出来。边界校验函数的入参（`validateRecord` / `argString` / `sessionOf` / `readObject`）保留 `unknown`：那是「外部输入不可信」的类型，是本仓既有的边界纪律，不是本轮引入的。
+
+**覆盖率补齐**（原 §23.4 的四处）：
+
+| 位置 | 补的判据 | 结果 |
+|---|---|---|
+| `api/impl/route/index.ts` | 同步处理器抛异常也回 500；注册中途失败时**已挂的那条被摘回去**、域不留半装态 | lines 100（原 84.2） |
+| `tools/impl/remove/index.ts` | 缺 exec.agent / 只摘登记时落盘失败 / 删目录前登记消失（竞态）/ 目录删掉但摘登记失败 | 100（原 85.2） |
+| `tools/impl/create/index.ts` | `output.render` 那条闭包 | 100（原 92.6） |
+| 组合根 `src/index.ts` | 真执行一次工具，覆盖组合根那个 `now` 闭包（断言时间戳的 ISO 形状；精确等值断言在 `tools.test.ts` 的时针用例里） | 100（原 96.7） |
+| `resolveTarget` 的 `cwd === undefined` 分支 | 两个调用方都在更早的分支拦掉了 ⇒ **不可达代码**，删掉并把参数收成 `string` | 连带删掉两处 `target === undefined` 失败块 |
+
+### 24.4 第 4 条：sha 映射与架构页
+
+rebase 会重写 sha，§21/§22 里引用的那些因此指向已不可达的对象。映射如下（按提交主题配对，`git show -s --format=%s` 双向核验）：
+
+| §21/§22 里的 sha | 重放后 |
+|---|---|
+| `6c0b5ef`（第七轮文档登记） | `84f1033c` |
+| `a26d983`（第七轮两条修复） | `3acfc6c0` |
+| `b38325f`（第七轮实施登记） | `2007746a` |
+| `616d4eb`（第八轮 health 读数） | `e6e06514` |
+| `191cddf` / `8447025` / `34957b6` | 上游 `origin/main` 的提交，不在本分支重放范围 |
+
+新增 `docs/architecture/dsh-worktree-sidebar.md`（职责边界 / 五域与依赖方向 / 宿主链路 / 客户端链路 / 失效与自愈 / 兼容性耦合点 / 命门清单），并挂链到根 README 的插件表与本包 README。
+
+### 24.5 第 5 条：遗留重判
+
+- **窄屏/响应式、双主题：不需要**（维护者原话：我们是复用的界面）。本插件没有自己的视觉层——组件、样式、布局全是官方的，我们只改文件根与播种时机；§21.6 第 2 条已划掉并写明理由。
+- **dev HMR 重注册**：单元级已有判据（`client-takeover`：官方组件换对象后重捕到新组件 + 遮蔽当值复检）；缺的只是 dev server 真机那一次观察，属发布前人工证据。
+- **`waiting` 分支**：`scope.test.ts` 有「provider 未注册 → 不 configure，只出声等」与「provider 随后出现 → 当场接管」两条正反判据；缺的只是真机启动序的观察。
+- 其余仍成立者见 §24.7。
+
+### 24.6 本轮读数
+
+- 测试面：**17 文件 / 282 用例**（第九轮 272；本轮 +10：S1 端到端 2、组合根时钟 1、api 同步抛错与注册回滚 2、remove 四条、create 渲染 1）。
+- 覆盖率：本包计分面 **33 文件均值 lines 100 / stmts 98.2 / fn 99.5 / branch 92.5**（第九轮 98.6 / 96.8 / 98.2 / 91.3）——**逐文件 lines 全 100、未覆盖行 0 条**；全仓 `All files` 84.15 / 82.54 / 84.65 / 75.1。
+- `pnpm crap` exit 0（本包 0 条超阈热点）；`pnpm lint` exit 0（554 文件，0 error / 508 warning = 预算）；参数收窄后 `tools/impl/bind` 的圈/认知复杂度各降 1。
+- **本地 `gate:pr` 与 CI 的读数见 PR #819 的回复评论**：本节写定后门禁在**最终树**上复跑过一次，CI 则在推送后跑——两边都贴真实 exit code / run 号，不在这里写「预计」。
+
+### 24.7 更新后的遗留清单
+
+1. **S1 的真机观察**（重启 `dsh web`、新会话拿到旧 id）仍未做；本轮把判据补到「真文件 + 真组合根」级。
+2. **S2 的取舍代价**：归属读不出来时保留登记（目录还在但已不是工作树 ⇒ 文件树报错，可感知）。
+3. **装饰性未覆盖分支**：`file-io` 的 `String(cause)`（fs 不会以非 Error 拒绝）等防御分支；补它们要伪造非法拒绝，收益为零。
+4. §21.6 其余项：真机模型侧是 mock（n=1）、插件 `logger.warn` 在无 exporter 组合里不可见（已用 health 读数兜）、并发交错只有源码分析、§20.5 的「打不红」待办。
 
 
 
+
+
+
+---
+
+## 25. 第十一轮：最终复核、隔离真机实测与 4A 架构文档（2026-09-15）
+
+### 25.1 触发与本轮范围
+
+维护者三点要求：①复核最终改动并做子代理隔离实测；②派子代理画当前模块的 4A 架构；③归档 / 更新 / 优化相关文档。
+本轮不动功能语义，只做四件事：核验事实 → 修被证伪的判断 → 补真机证据 → 收文档。
+
+### 25.2 复核（本人 + 一个只读的对抗子代理）
+
+- 本人核过的硬事实：`install()` 每次重读磁盘、`release()` 清内存快照（`binding/impl/service/index.ts:56-57`、`:76`）⇒ 两条端到端用例确实跨「释放 → 重装」读**真文件**（`DSH_HOME` 在 `test/integration/apply-lifecycle.test.ts` 里被指到临时目录）；`create/index.ts:52`、`register/index.ts:52` 的更早守卫 ⇒ `resolveTarget` 收窄为 `string` 成立；官方 typert 契约逐字段核对（`.../dsh-typert-protocol/lib/types/types.d.ts:255-272`、`:140`、`:315-320`）；抽查 16 处文档引用行号逐条命中；§24.4 的 sha 映射表双向核验。
+- 独立对抗复核（上下文独立的只读子代理）：**无 P0**，P1 两处、P2 九处。它「复核通过」的面：三态归属判定与调用方处置、会话身份链路（含官方契约源码核验）、不可达分支删除、scope 与 binding 的生命周期、api 注册回滚、注释与 `--detach` 四条真 git 复现、类型面、覆盖率读数（复跑与 §24.6 逐位一致）、sha 映射表、`docs:check`。
+
+### 25.3 复核发现的逐条处置
+
+| # | 发现 | 处置 |
+|---|---|---|
+| P1-1 | `belongsTo` 把 `unknown` 也缓存 30s，而写路径的失败文案让调用方「等目录可读后重试」——重试被必然挡回 | **修**：只缓存已定读数（`same` / `different`）；新增判据「unknown 不进缓存，状态变了下一次必须重新问」；探针 G1 打红（exit 1） |
+| P1-2 | 两处装饰性断言（`api-routes.test.ts` 的死变量 `custom` 与恒真断言；`tools.test.ts` 的恒真 `table.has`） | **修**：删掉；注释指向真正承载该性质的 `binding-store.test.ts` 的「目标路径不可写时回传原因、内存不前移、并出声」 |
+| P2-1 | 用例标题与 §24.3 声称「断言登记时间戳来自组合根的 `now`」，实际只断言 ISO 形状 | **改口径**：标题与本节改成「覆盖 `now` 闭包」；精确等值断言在 `tools.test.ts` 的时针用例里 |
+| P2-2 | typert 假件填的是 `session` 键的描述符，不是 `workspaceFileScope` 的 | **修**：四个字段改用真实值（取自 `dsh-api-workspace-files/lib/index.js:373-378`） |
+| P2-3 | 架构页称「官方类型只在组合根与适配层出现」，不实 | **改文档**：各域的 `deps.ts` 就是官方类型依赖面（`tools/deps.ts`、`api/deps.ts`），措辞改成「宿主上下文 / 服务类型只在组合根与 host 适配层」 |
+| P2-4 | 适配层把 `header.createdAt` 原样当凭据，畸形值会被读成「另一个会话」并摘掉绑定 | **修**：新增 `identityFrom()`，用 `Number.isFinite` 在边界拦一道（与 `sessionOf` / `validateRecord` 同级）；新增判据（NaN 与 Infinity、live 与持久面两个来源）；探针 G2 打红 |
+| P2-5 | `client/shared/ports.ts` 的注释说「我们注册的是顶掉官方类型的那一份」 | **修**：改成「类型表用官方那份，本插件只遮蔽正文」 |
+| P2-6 | `unknown && notRepo` 的失败文案把第三态说成否定 | **驳回**：`notRepo` 的语义就是「git 回了否定」，文案的确定性正是它存在的意义（读侧摘除判定并不看它）；权限不可读在读数上与之同形这一点已在代码注释与架构页写明 |
+| P2-7 | 客户端 revision 单调守卫的前提没写 | **修**：注释写明前提与已知反例（宿主重启 + `bindings.json` 损坏 ⇒ revision 回 0，SPA 存活时旧根会被留住） |
+| P2-8 | `as never` 是本轮新引入的等价宽断言；§24.3 的「4 处 `as unknown as`」计数不准 | **改口径**：§24.3 更正为 3 处并点明另两处（`Set<unknown>` → `InjectFactory`、`configure` 的 `as never`）；`as never` 保留并写明理由 |
+
+### 25.4 隔离真机实测（子代理，四重隔离）
+
+环境：临时 `DSH_HOME` + 独立 profile + 独立端口 + 独立浏览器实例，走官方 `dsh-verify-isolated` 一键脚本；未安装 / 未改动用户 profile；主 checkout 全程只读。完整报告与截图已归档到 `packages/dsh-worktree-sidebar/docs/archive/`（`819-isolated-verify-report.md`、`819-isolated-bound-worktree-tree.png`、`819-isolated-identity-mismatch-fallback.png`）。
+
+| 判据 | 结果 | 证据 |
+|---|---|---|
+| 隔离实例装上并加载 | 通过 | 构建 exit 0；`GET /api/dsh-worktree-sidebar/health` → `200`、`revision=0`、`scopeTakeover=live`；无报错行 |
+| 侧边栏展示绑定 worktree 的文件（**核心目标 2 首次真机证据**） | 通过 | Files 页签根 = worktree 目录，列出 `.git` / `alpha.txt` / `beta.txt` / `gamma.txt`；会话 cwd 是另一个目录（只有 `base-only.txt`），前后对照成立 |
+| worktree 落仓库外同样成立（**硬约束「任意路径」真机证据**） | 通过 | 真 git 仓库 + 真 worktree，worktree 在主仓库之外、也在 `/mnt/ssd/worktree` 之外 |
+| 身份凭据不一致 ⇒ 摘除并回落（**自愈首次真机闭环**） | 通过 | 端点 `revision 1→2`、`bindings.json` 落盘变空表、`worktreePath:null`、UI 回落 cwd |
+| 侧边栏「入口」表述 | 需更正 | 本插件只注册 **1 条**遮蔽条目（`src/client/takeover.ts:137`，同 key、priority = 官方 − 1），不新增可见入口；README 的「四条界面语义」指四条**需要人工验证的行为** |
+
+实测得到的两条操作约束（已写进架构页 §4.7）：
+
+1. `patchReload: live` **不会重装本插件**（改 `cordis.patch.yml` 后 revision 仍为 0）⇒ 绑定必须在 `dsh web` 启动前落盘；可行路径是「先起实例取会话 id 与 createdAt → 写 `$DSH_HOME/@wingsky-1/dsh-worktree-sidebar/bindings.json` → 重启同 DSH_HOME」（会话身份跨重启稳定）。
+2. 一键脚本 `--keep` 场景下 SIGTERM 不会带走 dsh 子进程，会占住端口使下次启动静默失败——隔离验证收尾要显式确认端口已释放。
+
+仍未覆盖（如实登记）：Tools 域三个工具在隔离实例里没有 provider、无法驱动 agent ⇒「agent 建 worktree 时自动绑定」这条主链路目前只验了**读侧**（预置记录）；子会话继承父登记、worktree 目录被删后的摘除、`repoRoot` 不匹配（`different`）的摘除、文件预览内容、双主题与窄屏几何也都还没有真机证据。
+
+### 25.5 4A 架构文档与归档
+
+- 新增 `docs/architecture/dsh-worktree-sidebar.md`：按 TOGAF 四视图（BA 业务 / AA 应用 / DA 数据 / TA 技术）讲原理与运行机制，每节一张 mermaid + 一张独立图源，事实全部带 `文件:行号`。
+- 四张独立图源（自包含 HTML + 由仓内 `scripts/lib/export-diagram-svg.py` 真实导出的 SVG）登记进 `docs/architecture/README.md` 的图源归档表；该页「全景：插件如何挂载进 dsh web」的 mermaid 补上本插件节点。
+- 归档：`packages/dsh-worktree-sidebar/docs/review-round5.md` → 包 `docs/archive/`（被后续轮次取代）；隔离实测的截图与报告一并入包 `docs/archive/`。
+- 更新：根 README 插件表与本包 README 中英都挂上架构页链接；本文顶部加「怎么读这份文档」导航，§0 元信息补「最后更新」与架构页链接，状态由「待实施」改为「已实施（包未发布）」。
+
+### 25.6 本轮读数
+
+- 测试面：**17 文件 / 284 用例**（第十轮 282；本轮 +2：`belongsTo` 的 `unknown` 不进缓存、适配层的畸形 `createdAt`）。**未新增测试文件**，故 `--min 17` 与 `stryker:gen` 面不变。
+- 类型面：`tsc -p tsconfig.json --noEmit` 与 `tsc -p test/tsconfig.json --noEmit` 均 exit 0。
+- 打红探针：G1（把 `unknown` 重新缓存）exit 1 RED、G2（去掉 `Number.isFinite` 守卫）exit 1 RED；两次都做了 `sha256` 还原核对（还原后与备份逐字节一致）。
+- 门禁与 CI：见 PR #819 的回复评论——本轮在最终树上复跑 `pnpm gate:pr`，CI 在推送后跑，两边都贴真实 exit code / run 号。

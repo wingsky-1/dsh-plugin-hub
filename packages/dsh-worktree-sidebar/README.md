@@ -5,6 +5,7 @@
 给 agent 三个工具，把某个 **git worktree** 登记给当前会话，让该会话右侧栏的文件树根指向那个 worktree —— **会话 cwd 不变**。
 
 这是一个**过渡适配层**：官方若推出原生 worktree 会话能力，本插件即退役。
+原理与运行机制（五域装配、宿主/客户端链路、自愈判据、命门清单）见 [架构图解](../../docs/architecture/dsh-worktree-sidebar.md)。
 
 ## 它做什么
 

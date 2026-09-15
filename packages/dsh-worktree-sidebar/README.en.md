@@ -5,6 +5,7 @@
 Three tools that let the agent bind a **git worktree** to the current session, so that session's right-sidebar file tree is rooted at that worktree — **without changing the session cwd**.
 
 This is a **transitional adapter**: if the official product ships native worktree sessions, this plugin retires.
+How it works (five host domains, host/client chains, self-healing rules, the six things to remember) is documented in [docs/architecture/dsh-worktree-sidebar.md](../../docs/architecture/dsh-worktree-sidebar.md).
 
 ## What it does
 
