@@ -62,20 +62,27 @@ export function packagesToInvalidate(files, registry) {
       pkgs.add(own);
       continue;
     }
-    for (const e of flagged) {
-      if (e.faces.includes("global")) continue;
-      let hit = false;
-      try {
-        hit = matchesGlob(file, e.path);
-      } catch {
-        // 非法 pattern 在 Node 下表现为「不命中」而非抛错；条目可用性由 ci-face-coverage
-        // 的悬空条目/死 glob 断言守着，这里不吞掉真问题。
-        hit = false;
-      }
-      if (hit) for (const face of e.faces) pkgs.add(face);
-    }
+    for (const face of facesHitBy(file, flagged)) pkgs.add(face);
   }
   return [...pkgs].sort();
+}
+
+/** 一个非 test/ 路径命中的包面（声明为 global 的条目不参与失基线，见上文边界）。 */
+function facesHitBy(file, flagged) {
+  const faces = [];
+  for (const e of flagged) {
+    if (e.faces.includes("global")) continue;
+    let hit = false;
+    try {
+      hit = matchesGlob(file, e.path);
+    } catch {
+      // 非法 pattern 在 Node 下表现为「不命中」而非抛错；条目可用性由 ci-face-coverage
+      // 的悬空条目/死 glob 断言守着，这里不吞掉真问题。
+      hit = false;
+    }
+    if (hit) faces.push(...e.faces);
+  }
+  return faces;
 }
 
 /**

@@ -86,6 +86,78 @@ function bareImports(ts) {
   return [...out];
 }
 
+/** 形态检测：剥离注释后检测 __ModuleLoader__.load——干净模块注释若提到 loader
+ * 会被误判 legacy（导致 wrapper 没用上，构建行为错误）。 */
+function detectClientMode(sourceText) {
+  const codeOnly = sourceText.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+  return /__ModuleLoader__\.load/.test(codeOnly) ? "legacy" : "wrapper";
+}
+
+/** externals：显式传入优先；否则 wrapper 且未声明 inlineBareImports 时按「bare
+ * import = 宿主注入 external」自动提取；inlineBareImports 或 legacy → 全部内联。 */
+function resolveClientExternals({ externals, mode, inlineBareImports, sourceText }) {
+  return externals.length > 0
+    ? externals
+    : mode === "wrapper" && !inlineBareImports
+      ? bareImports(sourceText)
+      : [];
+}
+
+// base 由调用方统一装配（三条路径共用），此处只覆盖各路径的差异项。
+async function runClientBuild(base, mode, resolvedExternals, src, packageName) {
+  let code;
+  if (mode === "legacy") {
+    const r = await build({ ...base, format: "iife", entryPoints: [src] });
+    code = r.outputFiles[0].text;
+  } else if (resolvedExternals.length > 0) {
+    // externals 路径：干净模块 cjs（external 走 require）→ 内联进 factory
+    const r = await build({
+      ...base,
+      format: "cjs",
+      platform: "browser",
+      external: resolvedExternals,
+      entryPoints: [src],
+    });
+    code = renderFactoryContract(packageName, r.outputFiles[0].text);
+  } else {
+    // 零依赖干净模块：iife + stdin wrapper
+    const r = await build({
+      ...base,
+      format: "iife",
+      stdin: {
+        contents: renderWrapper(basename(src)),
+        resolveDir: dirname(src),
+        sourcefile: "client-wrapper.ts",
+      },
+    });
+    code = r.outputFiles[0].text;
+  }
+  return code;
+}
+
+/**
+ * 内建契约校验（硬依赖）：产物 load id 必须是字符串字面量且 === 包名；
+ * exports.apply/inject 装配必须存在——define 被局部遮蔽/占位符拼错/外壳装配
+ * 出错时唯一兜底，构建即失败，不等发布后炸。
+ */
+function assertClientOutputContract(code, packageName, mode, resolvedExternals) {
+  const m = code.match(/__ModuleLoader__\.load\(\s*\{\s*id:\s*"([^"]+)"/);
+  if (!m || m[1] !== packageName) {
+    throw new Error(
+      `客户端契约校验失败：load id 必须等于包名 ${packageName}（实际: ${m ? m[1] : "缺失"}）——检查源码占位符 __DSH_PLUGIN_ID__ 是否被遮蔽/拼错，或 wrapper 装配错误`,
+    );
+  }
+  const isFactory = mode === "wrapper" && resolvedExternals.length > 0;
+  const exportsOk = isFactory
+    ? /apply/.test(code) && /inject/.test(code)
+    : /exports\.apply\s*=/.test(code) && /exports\.inject\s*=/.test(code);
+  if (!exportsOk) {
+    throw new Error(
+      `客户端契约校验失败：产物缺少 exports.apply/exports.inject 装配——检查 wrapper 模板或源码导出`,
+    );
+  }
+}
+
 /**
  * 构建客户端产物（lib/client.js）。
  * @param {object} opts
@@ -116,18 +188,13 @@ export async function buildClient({
   inlineBareImports = false,
 }) {
   const sourceText = readFileSync(src, "utf8");
-  // 形态检测：剥离注释后检测 __ModuleLoader__.load——干净模块注释若提到 loader
-  // 会被误判 legacy（导致 wrapper 没用上，构建行为错误）。
-  const codeOnly = sourceText.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
-  const mode = /__ModuleLoader__\.load/.test(codeOnly) ? "legacy" : "wrapper";
-  // externals：显式传入优先；否则 wrapper 且未声明 inlineBareImports 时按「bare
-  // import = 宿主注入 external」自动提取；inlineBareImports 或 legacy → 全部内联。
-  const resolvedExternals =
-    externals.length > 0
-      ? externals
-      : mode === "wrapper" && !inlineBareImports
-        ? bareImports(sourceText)
-        : [];
+  const mode = detectClientMode(sourceText);
+  const resolvedExternals = resolveClientExternals({
+    externals,
+    mode,
+    inlineBareImports,
+    sourceText,
+  });
   const define = {
     __DSH_PLUGIN_ID__: JSON.stringify(packageName),
     ...Object.fromEntries(Object.entries(extraDefine).map(([k, v]) => [k, JSON.stringify(v)])),
@@ -145,52 +212,9 @@ export async function buildClient({
     loader: { ".css": "text" },
   };
 
-  let code;
-  if (mode === "legacy") {
-    const r = await build({ ...base, format: "iife", entryPoints: [src] });
-    code = r.outputFiles[0].text;
-  } else if (resolvedExternals.length > 0) {
-    // externals 路径：干净模块 cjs（external 走 require）→ 内联进 factory
-    const r = await build({
-      ...base,
-      format: "cjs",
-      platform: "browser",
-      external: resolvedExternals,
-      entryPoints: [src],
-    });
-    code = renderFactoryContract(packageName, r.outputFiles[0].text);
-  } else {
-    // 零依赖干净模块：iife + stdin wrapper
-    const r = await build({
-      ...base,
-      format: "iife",
-      stdin: {
-        contents: renderWrapper(basename(src)),
-        resolveDir: dirname(src),
-        sourcefile: "client-wrapper.ts",
-      },
-    });
-    code = r.outputFiles[0].text;
-  }
+  const code = await runClientBuild(base, mode, resolvedExternals, src, packageName);
 
-  // 内建契约校验（硬依赖）：产物 load id 必须是字符串字面量且 === 包名；
-  // exports.apply/inject 装配必须存在——define 被局部遮蔽/占位符拼错/外壳装配
-  // 出错时唯一兜底，构建即失败，不等发布后炸。
-  const m = code.match(/__ModuleLoader__\.load\(\s*\{\s*id:\s*"([^"]+)"/);
-  if (!m || m[1] !== packageName) {
-    throw new Error(
-      `客户端契约校验失败：load id 必须等于包名 ${packageName}（实际: ${m ? m[1] : "缺失"}）——检查源码占位符 __DSH_PLUGIN_ID__ 是否被遮蔽/拼错，或 wrapper 装配错误`,
-    );
-  }
-  const isFactory = mode === "wrapper" && resolvedExternals.length > 0;
-  const exportsOk = isFactory
-    ? /apply/.test(code) && /inject/.test(code)
-    : /exports\.apply\s*=/.test(code) && /exports\.inject\s*=/.test(code);
-  if (!exportsOk) {
-    throw new Error(
-      `客户端契约校验失败：产物缺少 exports.apply/exports.inject 装配——检查 wrapper 模板或源码导出`,
-    );
-  }
+  assertClientOutputContract(code, packageName, mode, resolvedExternals);
   writeFileSync(outfile, code);
   return { code, mode };
 }

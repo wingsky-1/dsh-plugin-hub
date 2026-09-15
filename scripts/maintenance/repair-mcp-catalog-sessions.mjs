@@ -80,6 +80,53 @@ function stringifyRow(value) {
   return text;
 }
 
+/** 帧头变长字段的字节数（single-segment 标志 + 字典 id + content size 三段）。 */
+function countFrameHeaderExtraBytes(descriptor) {
+  const singleSegment = (descriptor & 32) !== 0;
+  const contentSizeFlag = descriptor >>> 6;
+  const dictionaryFlag = descriptor & 3;
+  const dictionaryBytes = dictionaryFlag === 3 ? 4 : dictionaryFlag;
+  const contentSizeBytes = contentSizeFlag === 0 ? (singleSegment ? 1 : 0) : 1 << contentSizeFlag;
+  return (singleSegment ? 0 : 1) + dictionaryBytes + contentSizeBytes;
+}
+
+/**
+ * 解析帧头，返回 `{descriptor, bodyStart}`。
+ * 末尾不足一帧（写入中崩溃留下的 torn frame）返回 undefined：调用方必须按
+ * persistence-jsonl 的恢复语义收下已落盘前缀，而不是抛错。
+ */
+function readFrameHeader(buffer, offset) {
+  if (buffer.length - offset < 4) return undefined;
+  if (buffer.readUInt32LE(offset) !== ZSTD_MAGIC)
+    throw new Error(`invalid frame magic at byte ${offset}`);
+  offset += 4;
+  if (offset === buffer.length) return undefined;
+  const descriptor = buffer.readUInt8(offset);
+  offset += 1;
+  if ((descriptor & 24) !== 0) throw new Error(`reserved frame-header bit at byte ${offset - 1}`);
+  const remainingHeaderBytes = countFrameHeaderExtraBytes(descriptor);
+  if (buffer.length - offset < remainingHeaderBytes) return undefined;
+  return { descriptor, bodyStart: offset + remainingHeaderBytes };
+}
+
+/** 逐块推进到帧尾并返回块区结束偏移；块头/载荷被截断时同样返回 undefined（torn 语义）。 */
+function skipBlocks(buffer, offset) {
+  for (;;) {
+    if (buffer.length - offset < 3) return undefined;
+    const blockHeader = buffer.readUIntLE(offset, 3);
+    offset += 3;
+    const lastBlock = (blockHeader & 1) !== 0;
+    const blockType = (blockHeader >>> 1) & 3;
+    const blockSize = blockHeader >>> 3;
+    if (blockType === 3) throw new Error(`reserved block type at byte ${offset - 3}`);
+    const payloadBytes = blockType === 1 ? 1 : blockSize;
+    if (buffer.length - offset < payloadBytes) return undefined;
+    offset += payloadBytes;
+    if (lastBlock) break;
+  }
+  return offset;
+}
+
 /**
  * 扫描多帧 zstd 容器。
  *
@@ -93,36 +140,12 @@ export function scanContainer(buffer) {
   let offset = 0;
   while (offset < buffer.length) {
     const start = offset;
-    if (buffer.length - offset < 4) return { frames, tornStart: start };
-    if (buffer.readUInt32LE(offset) !== ZSTD_MAGIC)
-      throw new Error(`invalid frame magic at byte ${offset}`);
-    offset += 4;
-    if (offset === buffer.length) return { frames, tornStart: start };
-    const descriptor = buffer.readUInt8(offset);
-    offset += 1;
-    if ((descriptor & 24) !== 0) throw new Error(`reserved frame-header bit at byte ${offset - 1}`);
-    const singleSegment = (descriptor & 32) !== 0;
-    const contentSizeFlag = descriptor >>> 6;
-    const dictionaryFlag = descriptor & 3;
-    const dictionaryBytes = dictionaryFlag === 3 ? 4 : dictionaryFlag;
-    const contentSizeBytes = contentSizeFlag === 0 ? (singleSegment ? 1 : 0) : 1 << contentSizeFlag;
-    const remainingHeaderBytes = (singleSegment ? 0 : 1) + dictionaryBytes + contentSizeBytes;
-    if (buffer.length - offset < remainingHeaderBytes) return { frames, tornStart: start };
-    offset += remainingHeaderBytes;
-    for (;;) {
-      if (buffer.length - offset < 3) return { frames, tornStart: start };
-      const blockHeader = buffer.readUIntLE(offset, 3);
-      offset += 3;
-      const lastBlock = (blockHeader & 1) !== 0;
-      const blockType = (blockHeader >>> 1) & 3;
-      const blockSize = blockHeader >>> 3;
-      if (blockType === 3) throw new Error(`reserved block type at byte ${offset - 3}`);
-      const payloadBytes = blockType === 1 ? 1 : blockSize;
-      if (buffer.length - offset < payloadBytes) return { frames, tornStart: start };
-      offset += payloadBytes;
-      if (lastBlock) break;
-    }
-    const checksum = (descriptor & 4) !== 0;
+    const header = readFrameHeader(buffer, offset);
+    if (header === undefined) return { frames, tornStart: start };
+    const bodyEnd = skipBlocks(buffer, header.bodyStart);
+    if (bodyEnd === undefined) return { frames, tornStart: start };
+    offset = bodyEnd;
+    const checksum = (header.descriptor & 4) !== 0;
     if (checksum) {
       if (buffer.length - offset < 4) return { frames, tornStart: start };
       offset += 4;
@@ -240,6 +263,29 @@ function rewriteMessage(message, stats) {
   return { ...message, source: rewriteCatalogSource(message.source, messageTextOf(message)) };
 }
 
+/** 改写 `user/message` 的 data.source；未命中旧形态时原样返回。 */
+function rewriteUserMessageRow(row, stats) {
+  if (!isLegacyCatalogSource(row.data.source)) return { row, changed: false };
+  stats.sources += 1;
+  return {
+    row: {
+      ...row,
+      data: {
+        ...row.data,
+        source: rewriteCatalogSource(row.data.source, messageTextOf(row.data)),
+      },
+    },
+    changed: true,
+  };
+}
+
+/** 改写 `agent/inbox/spliced` 的 data.inserted[]；零命中时原样返回。 */
+function rewriteSplicedRow(row, stats, before) {
+  const inserted = row.data.inserted.map((message) => rewriteMessage(message, stats));
+  if (stats.sources === before) return { row, changed: false };
+  return { row: { ...row, data: { ...row.data, inserted } }, changed: true };
+}
+
 /**
  * 改写一条物理行（两条注入路径都要覆盖）：`user/message` 的 data.source，
  * 以及 `agent/inbox/spliced` 里 data.inserted[] 每条消息的 source。
@@ -247,25 +293,10 @@ function rewriteMessage(message, stats) {
  */
 export function rewriteRow(row, stats = { sources: 0 }) {
   const before = stats.sources;
-  if (row?.type === "user/message" && row.data !== undefined) {
-    if (!isLegacyCatalogSource(row.data.source)) return { row, changed: false };
-    stats.sources += 1;
-    return {
-      row: {
-        ...row,
-        data: {
-          ...row.data,
-          source: rewriteCatalogSource(row.data.source, messageTextOf(row.data)),
-        },
-      },
-      changed: true,
-    };
-  }
-  if (row?.type === "agent/inbox/spliced" && Array.isArray(row.data?.inserted)) {
-    const inserted = row.data.inserted.map((message) => rewriteMessage(message, stats));
-    if (stats.sources === before) return { row, changed: false };
-    return { row: { ...row, data: { ...row.data, inserted } }, changed: true };
-  }
+  if (row?.type === "user/message" && row.data !== undefined)
+    return rewriteUserMessageRow(row, stats);
+  if (row?.type === "agent/inbox/spliced" && Array.isArray(row.data?.inserted))
+    return rewriteSplicedRow(row, stats, before);
   return { row, changed: false };
 }
 

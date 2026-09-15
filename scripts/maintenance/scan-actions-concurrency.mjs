@@ -59,17 +59,36 @@ function ghJson(args) {
  *   3. 峰值之后运行数**从未超过**峰值——新 job 只能等旧 job 让位。
  */
 export function peakConcurrency(jobs) {
+  const events = buildEvents(jobs);
+  events.sort((a, b) => a.at - b.at || a.delta - b.delta);
+  const { peak, peakAt, peakUntil, maxAfterPeak } = sweepPeak(events);
+  return {
+    peak,
+    peakAt,
+    peakUntil,
+    countedJobs: events.filter((e) => e.delta === 1).length,
+    maxAfterPeak,
+    heldSeconds: peakUntil === null ? 0 : Math.round((peakUntil - peakAt) / 1000),
+  };
+}
+
+/** 起止事件序列。被取消的 run 其 job 也带起止时间，skipped / 零宽度 job 不占并发（见文件头）。 */
+function buildEvents(jobs) {
   const events = [];
   for (const j of jobs) {
-    if (j.conclusion === "cancelled") continue; // 被取消的 run 其 job 也带起止时间，见文件头
+    if (j.conclusion === "cancelled") continue;
     if (!j.started_at || !j.completed_at) continue;
     const s = Date.parse(j.started_at);
     const e = Date.parse(j.completed_at);
-    if (!(e > s)) continue; // skipped / 零宽度 job 不占并发
+    if (!(e > s)) continue;
     events.push({ at: s, delta: 1, name: j.name });
     events.push({ at: e, delta: -1, name: j.name });
   }
-  events.sort((a, b) => a.at - b.at || a.delta - b.delta);
+  return events;
+}
+
+/** 扫一遍事件序列，取峰值、首达时刻、峰值结束时刻与峰值之后的上界。 */
+function sweepPeak(events) {
   let cur = 0;
   let peak = 0;
   let peakAt = null;
@@ -86,14 +105,7 @@ export function peakConcurrency(jobs) {
     }
     if (peakUntil !== null) maxAfterPeak = Math.max(maxAfterPeak, cur);
   }
-  return {
-    peak,
-    peakAt,
-    peakUntil,
-    countedJobs: events.filter((e) => e.delta === 1).length,
-    maxAfterPeak,
-    heldSeconds: peakUntil === null ? 0 : Math.round((peakUntil - peakAt) / 1000),
-  };
+  return { peak, peakAt, peakUntil, maxAfterPeak };
 }
 
 function scanRun(runId) {
@@ -119,8 +131,11 @@ function main() {
     const r = scanRun(runId);
     return r === null ? 2 : 0;
   }
-  const limit = Number(argv.find((a) => /^\d+$/.test(a)) ?? 40);
-  const top = Number(flag("--top") ?? 8);
+  return scanManyRuns(Number(argv.find((a) => /^\d+$/.test(a)) ?? 40), Number(flag("--top") ?? 8));
+}
+
+/** 扫描最近 limit 个 run，打印 peak 排名前 top 的行。 */
+function scanManyRuns(limit, top) {
   const runs = ghJson([
     "run",
     "list",

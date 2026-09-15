@@ -31,6 +31,145 @@ export function parseTestChangedPackages(raw) {
   return { packages: new Set(parsed.filter((p) => typeof p === "string")), unknown: false };
 }
 
+// 1. 读取候选包全量集合（单一事实源：plugins-manifest.json）
+function readAllPackages(rootDir) {
+  const manifestPath = path.join(rootDir, "scripts/data/plugins-manifest.json");
+  let manifest;
+  try {
+    const raw = fs.readFileSync(manifestPath, "utf8");
+    manifest = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`读取 plugins-manifest.json 失败（fail-closed）: ${err.message}`);
+  }
+
+  const active = Array.isArray(manifest.active) ? manifest.active : [];
+  const standalone = Array.isArray(manifest.standalone) ? manifest.standalone : [];
+  const pluginSet = new Set([...active, ...standalone]);
+  // allPackages = 全量插件集 ∪ ["dsh-plugins-all"]（排好序去重，供 downstream 产物验证）
+  const allPackages = Array.from(new Set([...pluginSet, "dsh-plugins-all"])).sort();
+
+  if (allPackages.length === 0) {
+    throw new Error("包清单为空（fail-closed，禁止静默通过）");
+  }
+  return allPackages;
+}
+
+// 2. 环境变量解析
+function resolveFilterOutputs(env) {
+  let filterOutputs = {};
+  if (env.FILTER_OUTPUTS) {
+    try {
+      if (typeof env.FILTER_OUTPUTS === "object" && env.FILTER_OUTPUTS !== null) {
+        filterOutputs = env.FILTER_OUTPUTS;
+      } else {
+        filterOutputs = JSON.parse(env.FILTER_OUTPUTS) || {};
+      }
+    } catch {
+      filterOutputs = {};
+    }
+  }
+  return filterOutputs;
+}
+
+// 3. 切片命中逻辑（hitPackages）
+// 若 GLOBAL_HIT === 'true' 或 FILTER_OUTCOME !== 'success' 或 BASE_SET 为空，全量回退：hitPackages = allPackages
+function shouldUseFullHit(env) {
+  const globalHit = env.GLOBAL_HIT === "true";
+  const filterOutcome = env.FILTER_OUTCOME;
+  const baseSetRaw = (env.BASE_SET || "").trim();
+  return globalHit || filterOutcome !== "success" || !baseSetRaw;
+}
+
+function resolveHitPackages(allPackages, env, filterOutputs) {
+  if (shouldUseFullHit(env)) {
+    return [...allPackages];
+  }
+  // 从 BASE_SET 解析出的包名集合
+  const baseTokens = new Set((env.BASE_SET || "").trim().split(/\s+/).filter(Boolean));
+  const hits = new Set();
+
+  for (const pkg of allPackages) {
+    const hitInBase = baseTokens.has(pkg);
+    const val = filterOutputs[pkg];
+    const hitInFilter = val === true || val === "true";
+    if (hitInBase || hitInFilter) {
+      hits.add(pkg);
+    }
+  }
+  return Array.from(hits).sort();
+}
+
+// 4. 变异切片逻辑（mutationPackages / mutationCombos）
+function readMutationConfFiles(rootDir) {
+  const confDir = path.join(rootDir, "stryker.conf.d");
+  let confFiles = [];
+  try {
+    if (fs.existsSync(confDir)) {
+      confFiles = fs.readdirSync(confDir).filter((f) => f.endsWith(".json"));
+    }
+  } catch {
+    confFiles = [];
+  }
+  return confFiles;
+}
+
+// mutationPackages = hitPackages 中排除了 "dsh-plugins-all" 以及在 stryker.conf.d/ 中没有任何配置文件的包
+function resolveMutationPackages(hitPackages, confFiles) {
+  const mutationPackages = [];
+  for (const pkg of hitPackages) {
+    if (pkg === "dsh-plugins-all") continue;
+    const hasSingleConf = confFiles.includes(`${pkg}.json`);
+    const hasSegConf = confFiles.some((f) => f.startsWith(`${pkg}-`));
+    if (hasSingleConf || hasSegConf) {
+      mutationPackages.push(pkg);
+    }
+  }
+  mutationPackages.sort();
+  return mutationPackages;
+}
+
+// mutationCombos: 读取 stryker.conf.d/<pkg>-*.json 文件，展开组合，若只有单配置则 seg: "0"
+function resolveSegmentNames(pkg, confFiles) {
+  const segFiles = confFiles.filter((f) => f.startsWith(`${pkg}-`));
+  const segs = [];
+  if (segFiles.length > 0) {
+    for (const file of segFiles) {
+      const segName = file.slice(pkg.length + 1, -5); // 剥掉 `${pkg}-` 和 `.json`
+      if (segName) {
+        segs.push(segName);
+      }
+    }
+    segs.sort();
+  } else {
+    segs.push("0");
+  }
+  return segs;
+}
+
+function compareMutationCombos(a, b) {
+  const cmp = a.package.localeCompare(b.package);
+  if (cmp !== 0) return cmp;
+  return a.seg.localeCompare(b.seg);
+}
+
+function buildMutationCombos(mutationPackages, confFiles, peaks, testChanged) {
+  const mutationCombos = [];
+  for (const pkg of mutationPackages) {
+    for (const seg of resolveSegmentNames(pkg, confFiles)) {
+      // 台账的段名 = conf 文件基名：段级 <pkg>-<seg>.json、包级 <pkg>.json（对应 seg="0"）
+      const segKey = seg === "0" ? pkg : `${pkg}-${seg}`;
+      mutationCombos.push({
+        package: pkg,
+        seg,
+        timeoutMinutes: timeoutForSegment(segKey, peaks),
+        invalidateBaseline: testChanged.unknown || testChanged.packages.has(pkg),
+      });
+    }
+  }
+  mutationCombos.sort(compareMutationCombos);
+  return mutationCombos;
+}
+
 /**
  * 计算 CI 切片与变异矩阵
  * 原生 Node.js 内置模块（node:fs, node:path, node:process）+ 本仓的纯函数派生
@@ -54,89 +193,11 @@ export function computeCiMatrix(options = {}) {
   const rootDir =
     options.rootDir || path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-  // 1. 读取候选包全量集合（单一事实源：plugins-manifest.json）
-  const manifestPath = path.join(rootDir, "scripts/data/plugins-manifest.json");
-  let manifest;
-  try {
-    const raw = fs.readFileSync(manifestPath, "utf8");
-    manifest = JSON.parse(raw);
-  } catch (err) {
-    throw new Error(`读取 plugins-manifest.json 失败（fail-closed）: ${err.message}`);
-  }
-
-  const active = Array.isArray(manifest.active) ? manifest.active : [];
-  const standalone = Array.isArray(manifest.standalone) ? manifest.standalone : [];
-  const pluginSet = new Set([...active, ...standalone]);
-  // allPackages = 全量插件集 ∪ ["dsh-plugins-all"]（排好序去重，供 downstream 产物验证）
-  const allPackages = Array.from(new Set([...pluginSet, "dsh-plugins-all"])).sort();
-
-  if (allPackages.length === 0) {
-    throw new Error("包清单为空（fail-closed，禁止静默通过）");
-  }
-
-  // 2. 环境变量解析
-  const globalHit = env.GLOBAL_HIT === "true";
-  const filterOutcome = env.FILTER_OUTCOME;
-  const baseSetRaw = (env.BASE_SET || "").trim();
-
-  let filterOutputs = {};
-  if (env.FILTER_OUTPUTS) {
-    try {
-      if (typeof env.FILTER_OUTPUTS === "object" && env.FILTER_OUTPUTS !== null) {
-        filterOutputs = env.FILTER_OUTPUTS;
-      } else {
-        filterOutputs = JSON.parse(env.FILTER_OUTPUTS) || {};
-      }
-    } catch {
-      filterOutputs = {};
-    }
-  }
-
-  // 3. 切片命中逻辑（hitPackages）
-  // 若 GLOBAL_HIT === 'true' 或 FILTER_OUTCOME !== 'success' 或 BASE_SET 为空，全量回退：hitPackages = allPackages
-  const shouldFallback = globalHit || filterOutcome !== "success" || !baseSetRaw;
-
-  let hitPackages = [];
-  if (shouldFallback) {
-    hitPackages = [...allPackages];
-  } else {
-    // 从 BASE_SET 解析出的包名集合
-    const baseTokens = new Set(baseSetRaw.split(/\s+/).filter(Boolean));
-    const hits = new Set();
-
-    for (const pkg of allPackages) {
-      const hitInBase = baseTokens.has(pkg);
-      const val = filterOutputs[pkg];
-      const hitInFilter = val === true || val === "true";
-      if (hitInBase || hitInFilter) {
-        hits.add(pkg);
-      }
-    }
-    hitPackages = Array.from(hits).sort();
-  }
-
-  // 4. 变异切片逻辑（mutationPackages / mutationCombos）
-  const confDir = path.join(rootDir, "stryker.conf.d");
-  let confFiles = [];
-  try {
-    if (fs.existsSync(confDir)) {
-      confFiles = fs.readdirSync(confDir).filter((f) => f.endsWith(".json"));
-    }
-  } catch {
-    confFiles = [];
-  }
-
-  // mutationPackages = hitPackages 中排除了 "dsh-plugins-all" 以及在 stryker.conf.d/ 中没有任何配置文件的包
-  const mutationPackages = [];
-  for (const pkg of hitPackages) {
-    if (pkg === "dsh-plugins-all") continue;
-    const hasSingleConf = confFiles.includes(`${pkg}.json`);
-    const hasSegConf = confFiles.some((f) => f.startsWith(`${pkg}-`));
-    if (hasSingleConf || hasSegConf) {
-      mutationPackages.push(pkg);
-    }
-  }
-  mutationPackages.sort();
+  const allPackages = readAllPackages(rootDir);
+  const filterOutputs = resolveFilterOutputs(env);
+  const hitPackages = resolveHitPackages(allPackages, env, filterOutputs);
+  const confFiles = readMutationConfFiles(rootDir);
+  const mutationPackages = resolveMutationPackages(hitPackages, confFiles);
 
   const hasMutations = String(mutationPackages.length > 0);
 
@@ -145,40 +206,7 @@ export function computeCiMatrix(options = {}) {
   // 那小于台账派生的最长段超时（派生区间 30~42 min），已真实杀过一次（run 34628767342）。
   const peaks = loadFullScopePeaks(rootDir);
   const testChanged = parseTestChangedPackages(env.TEST_CHANGED_PACKAGES);
-
-  // mutationCombos: 读取 stryker.conf.d/<pkg>-*.json 文件，展开组合，若只有单配置则 seg: "0"
-  const mutationCombos = [];
-  for (const pkg of mutationPackages) {
-    const segFiles = confFiles.filter((f) => f.startsWith(`${pkg}-`));
-    const segs = [];
-    if (segFiles.length > 0) {
-      for (const file of segFiles) {
-        const segName = file.slice(pkg.length + 1, -5); // 剥掉 `${pkg}-` 和 `.json`
-        if (segName) {
-          segs.push(segName);
-        }
-      }
-      segs.sort();
-    } else {
-      segs.push("0");
-    }
-    for (const seg of segs) {
-      // 台账的段名 = conf 文件基名：段级 <pkg>-<seg>.json、包级 <pkg>.json（对应 seg="0"）
-      const segKey = seg === "0" ? pkg : `${pkg}-${seg}`;
-      mutationCombos.push({
-        package: pkg,
-        seg,
-        timeoutMinutes: timeoutForSegment(segKey, peaks),
-        invalidateBaseline: testChanged.unknown || testChanged.packages.has(pkg),
-      });
-    }
-  }
-
-  mutationCombos.sort((a, b) => {
-    const cmp = a.package.localeCompare(b.package);
-    if (cmp !== 0) return cmp;
-    return a.seg.localeCompare(b.seg);
-  });
+  const mutationCombos = buildMutationCombos(mutationPackages, confFiles, peaks, testChanged);
 
   // buildPackages（#722）：build-test 矩阵的来源 = 命中包；空切片时用哨兵占位。
   // 为什么需要哨兵：GHA 的**零实例动态矩阵**实测回报 failure（实证 run 32802575298），

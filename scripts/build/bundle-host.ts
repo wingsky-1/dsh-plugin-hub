@@ -206,6 +206,10 @@ for (const f of copiedResources) {
   console.log(`[bundle-host] ${process.argv[2]}: 资源 ${f} → lib/`);
 }
 
+function isTopEntryName(isRoot, name) {
+  return isRoot && (name === "index.js" || name === "client.js" || name === "client-mermaid.js");
+}
+
 // 1d. 递归清理游离产物：多模块 src（含 src/client/、src/core/ 等子目录）的 tsc 会
 // 逐个 emit lib/**/*.js + *.js.map；host 已内联为自包含 lib/index.js（client 由
 // build-client 生成 lib/client.js），其余 .js/.js.map（含子目录）均为游离物——
@@ -219,8 +223,7 @@ function cleanFreeFloatingJs(dir, isRoot) {
       cleanFreeFloatingJs(abs, false);
       continue;
     }
-    const isTopEntry =
-      isRoot && (f.name === "index.js" || f.name === "client.js" || f.name === "client-mermaid.js");
+    const isTopEntry = isTopEntryName(isRoot, f.name);
     if (f.name.endsWith(".js") && !isTopEntry) {
       rmSync(abs, { force: true });
     } else if (

@@ -127,6 +127,32 @@ function argValue(argv, flag, fallback) {
   return idx !== -1 && argv[idx + 1] !== undefined ? argv[idx + 1] : fallback;
 }
 
+/** gh 失败报文的最后一行；`stderr` 在 spawn 失败等形态下缺失，故回落 message。 */
+function lastStderrLine(err) {
+  return (
+    String(err.stderr ?? "")
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .at(-1) ?? err.message
+  );
+}
+
+/** 提交时间的两个可能位置：committer 缺失时回落 author（同一提交的两种书写）。 */
+function pickCommitDate(json) {
+  const commit = json?.commit?.commit;
+  return commit?.committer?.date ?? commit?.author?.date;
+}
+
+function readCommitFields(json, branch) {
+  const sha = json?.commit?.sha;
+  const date = pickCommitDate(json);
+  if (typeof sha !== "string" || sha === "" || typeof date !== "string" || date === "") {
+    throw new Error(`分支 ${branch} 的响应缺 commit.sha / 提交时间`);
+  }
+  return { sha, date };
+}
+
 /**
  * 基线分支的「最后提交」事实：一次 REST 调用同时拿 SHA 与提交时间。
  * 分支名带斜杠，必须 `encodeURIComponent`（路径参数里的 slash 会被当成多一段路由）。
@@ -143,21 +169,75 @@ function readBaselineCommit(branch) {
       },
     );
   } catch (err) {
-    const detail =
-      String(err.stderr ?? "")
-        .trim()
-        .split("\n")
-        .filter(Boolean)
-        .at(-1) ?? err.message;
-    throw new Error(`读取分支 ${branch} 失败：${detail}`);
+    throw new Error(`读取分支 ${branch} 失败：${lastStderrLine(err)}`);
   }
-  const json = JSON.parse(raw);
-  const sha = json?.commit?.sha;
-  const date = json?.commit?.commit?.committer?.date ?? json?.commit?.commit?.author?.date;
-  if (typeof sha !== "string" || sha === "" || typeof date !== "string" || date === "") {
-    throw new Error(`分支 ${branch} 的响应缺 commit.sha / 提交时间`);
+  return readCommitFields(JSON.parse(raw), branch);
+}
+
+/** 非法阈值只能回 null：exit 2 的语义属于 main（GHA 下非零会跳过后面的建单步骤）。 */
+function parseThresholdHours(argv) {
+  const thresholdHours = Number(
+    argValue(argv, "--threshold-hours", String(STALENESS_THRESHOLD_HOURS)),
+  );
+  if (!(Number.isFinite(thresholdHours) && thresholdHours > 0)) {
+    console.error(`baseline-staleness: --threshold-hours 需要正数（实际 ${thresholdHours}）`);
+    return null;
   }
-  return { sha, date };
+  return thresholdHours;
+}
+
+function resolveNow(argv) {
+  const nowArg = argValue(argv, "--now", undefined);
+  return nowArg === undefined ? new Date() : nowArg;
+}
+
+/** 注入日期时不读远端（离线可测）；注入值与真实值走同一条判定管线。 */
+function resolveCommit(argv, branch, injectedDate) {
+  return injectedDate === null
+    ? readBaselineCommit(branch)
+    : { sha: argValue(argv, "--commit-sha", "injected"), date: injectedDate };
+}
+
+function observeBaselineState(argv, { branch, injectedDate, thresholdHours, rawNow }) {
+  try {
+    const commit = resolveCommit(argv, branch, injectedDate);
+    const verdict = evaluateBaselineStaleness({
+      lastCommitDate: commit.date,
+      now: rawNow,
+      thresholdHours,
+    });
+    return {
+      status: verdict.stale ? "stale" : "fresh",
+      branch,
+      sha: commit.sha,
+      lastCommitDate: verdict.lastCommitDate,
+      ageHours: verdict.ageHours,
+      thresholdHours,
+      now: verdict.now,
+    };
+  } catch (err) {
+    return {
+      status: "unknown",
+      branch,
+      reason: err.message,
+      thresholdHours,
+      now: Number.isNaN(new Date(rawNow).getTime()) ? null : new Date(rawNow).toISOString(),
+    };
+  }
+}
+
+function printBaselineReport(state, branch) {
+  const line = renderReportLine(state);
+  if (state.status === "stale") {
+    console.log(
+      `::error::变异基线陈旧：龄 ${formatAgeHours(state.ageHours)} ≥ 阈值 ${state.thresholdHours} h` +
+        `（${branch} 最后提交 ${state.lastCommitDate}，SHA ${shortSha(state.sha)}）`,
+    );
+  }
+  if (state.status === "unknown") {
+    console.log(`::error::变异基线龄无法观测：${state.reason}`);
+  }
+  console.log(line);
 }
 
 /**
@@ -170,64 +250,20 @@ function readBaselineCommit(branch) {
  */
 function main(argv) {
   const branch = argValue(argv, "--branch", DEFAULT_BRANCH);
-  const thresholdHours = Number(
-    argValue(argv, "--threshold-hours", String(STALENESS_THRESHOLD_HOURS)),
-  );
-  if (!(Number.isFinite(thresholdHours) && thresholdHours > 0)) {
-    console.error(`baseline-staleness: --threshold-hours 需要正数（实际 ${thresholdHours}）`);
-    return 2;
-  }
+  const thresholdHours = parseThresholdHours(argv);
+  if (thresholdHours === null) return 2;
   const statusFile = argValue(argv, "--status-file", null);
   const issueFile = argValue(argv, "--issue-file", null);
   const injectedDate = argValue(argv, "--commit-date", null);
-  const nowArg = argValue(argv, "--now", undefined);
-  const rawNow = nowArg === undefined ? new Date() : nowArg;
+  const rawNow = resolveNow(argv);
 
-  let state;
-  try {
-    const commit =
-      injectedDate === null
-        ? readBaselineCommit(branch)
-        : { sha: argValue(argv, "--commit-sha", "injected"), date: injectedDate };
-    const verdict = evaluateBaselineStaleness({
-      lastCommitDate: commit.date,
-      now: rawNow,
-      thresholdHours,
-    });
-    state = {
-      status: verdict.stale ? "stale" : "fresh",
-      branch,
-      sha: commit.sha,
-      lastCommitDate: verdict.lastCommitDate,
-      ageHours: verdict.ageHours,
-      thresholdHours,
-      now: verdict.now,
-    };
-  } catch (err) {
-    state = {
-      status: "unknown",
-      branch,
-      reason: err.message,
-      thresholdHours,
-      now: Number.isNaN(new Date(rawNow).getTime()) ? null : new Date(rawNow).toISOString(),
-    };
-  }
+  const state = observeBaselineState(argv, { branch, injectedDate, thresholdHours, rawNow });
 
   // 标题随状态一并落盘：workflow 侧的幂等建/追必须与正文里引用的标题逐字相同，
   // 两处各写一份字面量的漂移后果是「每周新建一张单」而没有任何判据会发现。
   state.issueTitle = STALENESS_ISSUE_TITLE;
 
-  const line = renderReportLine(state);
-  if (state.status === "stale") {
-    console.log(
-      `::error::变异基线陈旧：龄 ${formatAgeHours(state.ageHours)} ≥ 阈值 ${state.thresholdHours} h` +
-        `（${branch} 最后提交 ${state.lastCommitDate}，SHA ${shortSha(state.sha)}）`,
-    );
-  }
-  if (state.status === "unknown") {
-    console.log(`::error::变异基线龄无法观测：${state.reason}`);
-  }
-  console.log(line);
+  printBaselineReport(state, branch);
 
   if (statusFile !== null) writeFileSync(statusFile, `${JSON.stringify(state, null, 2)}\n`);
   if (issueFile !== null && state.status === "stale") {
