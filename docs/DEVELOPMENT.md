@@ -637,10 +637,13 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
 
 所以这类改动验收必须凑齐三件，缺一不可：
 
-1. **探针**：把目标阈值临时压到目标口径跑一遍门禁，打印「超阈 N 项 / M 文件」，**用完立刻还原**。
+1. **探针**：把目标阈值临时压到目标口径，**只跑目标闸**（复杂度探针 = `node tools/lint/bin/lint.mjs`），
+   打印「超阈 N 项 / M 文件」，**用完立刻还原**。不要整跑 `gate:pr`——探针态下别的闸要么与本
+   改动无关，要么就是被压低的阈值本身染红的，混进来只会污染结论。
    探针不是门禁——它临时改的是全局事实源（如 `gauntlet.config.json` 的 complexity 段），
-   留在工作区等于把阈值悄悄降了。#839 的做法：压到 10/15 → 全仓 lint → `git checkout --` 该文件，
-   并复核 `git status` 里该文件已干净。
+   留在工作区等于把阈值悄悄降了，而且**没有闸会替你发现**：实测把 cyclomatic 从 78 压到 10，
+   `threshold-monotonic` 仍 rc=0（它只管覆盖率 / 变异 / lint 警告预算三个维度）。
+   #839 的做法：压到 10/15 → 全仓 lint → `git checkout --` 该文件，并复核 `git status` 里该文件已干净。
 2. **机制性等价性检查器**：把基线版与改动版各自解析成 AST，抽取**字符串 / 模板 / 数字字面量、
    正则、对象字面量键、`process.exit(n)` / `process.exitCode = n`** 的多重集做差集。
    差异只允许两类：**空**，或抽函数**必然**产生的「结构回声」（返回对象与解构参数使同一键计数 +N）。
@@ -651,7 +654,7 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
    对拍。第 2 件抓不到上面那类控制流回归，只有这一件能抓——它针对的正是**被改的那个函数**。
 
 三件都过之后，再让 `pnpm gate:pr` 全绿 + CI 绿，并按
-[PR 评审 skill](.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md) 派**上下文独立**的对抗子代理复核一次
+[PR 评审 skill](../.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md) 派**上下文独立**的对抗子代理复核一次
 （#839 的实践：两个子代理分工不重叠——语义等价性 / 门禁与测试质量，语义侧累计 >30 万条函数级
 用例 + 约 2600 次脚本级 A/B）。**声称「零行为变更」时，三件的实测输出要连同 exit code 一起写进
 PR 描述**（口径纪律见 [ARCHITECTURE-METHOD.md §10](ARCHITECTURE-METHOD.md#user-content-10-口径与证据纪律)）。
