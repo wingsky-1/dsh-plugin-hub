@@ -298,9 +298,10 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   `node scripts/gate/aggregate.ts` 重新生成聚合 patch。
 - **测试**：`pnpm test` 直跑（包内实现为 `node ../../scripts/test/run-vitest.mjs --min <N>`）。
   运行器由 vitest 承载：根 `vitest.config.ts` 从 `scripts/data/mutation-topology.json` 的
-  `$testLayers.layers` 派生五个 project（`test/unit` → `unit`、
-  `test/integration` → `integration`、`test/e2e` → `e2e`、`test/client` → `contract`、
-  `test/client-dom` → `client-dom`（happy-dom 环境，直连 src 的 DOM 单测）；
+  `$testLayers.layers` 派生六个 project（`test/unit` → `unit`、
+  `test/integration` → `integration`、`test/client-unit` → `client-unit`（直连 src 的客户端
+  纯逻辑判据）、`test/client-dom` → `client-dom`（happy-dom 环境，直连 src 的 DOM 单测）、
+  `test/client` → `contract`、`test/e2e` → `e2e`；
   层 glob 与 `--min` 口径因此同源，不再三处声明），
   每个测试文件独立环境（per-file 隔离），包级调用按 cwd 自动收窄到本包；
   乱序验证用 `--sequence.shuffle` 透传。
@@ -319,7 +320,9 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
 | `test/unit/**`        | 单模块 / 纯逻辑 / fake 驱动、只做临时目录 I/O（允许为覆盖分支而短暂 bind 一个端口，如 lan-proxy 的 EADDRINUSE 用例）                                | 是       |
 | `test/integration/**` | 以真实 socket/真实组合根为被测对象：起真实 http server（内核临时端口）走完整转发链、真实 cordis Context、真实配置迁移                               | 是       |
-| `test/client/**`      | 断言对象是客户端**构建产物** `lib/client.js`——而 `mutate` 面本身排除 `src/client/**`，登记进变异面测试清单只增加每个段的 dry run 成本、杀灭贡献为零 | 否       |
+| `test/client-unit/**` | 直连 `src/client/**` 的**纯逻辑**判据（判定、映射表、状态机），不需要 DOM；环境 `node`                                                                  | 是       |
+| `test/client-dom/**`  | 直连 `src/client/**` 但被测模块在**加载期或运行期真的读写 DOM**（`document.title`、横幅挂载），必须 `happy-dom`；文件头用 `@vitest-environment happy-dom` 声明（派生配置是单 project `node`，不吃根配置的层环境） | 是       |
+| `test/client/**`      | 断言对象是客户端**构建产物**形态（`lib/client.js`、或 in-place esbuild 后执行已构建副本）——产物外壳无法用 perTest 覆盖分析归因到任何 `src/**` 模块，登记进变异面只增加每个段的 dry run 成本、杀灭贡献为零；直连 src 的判据在 `client-unit` / `client-dom` | 否       |
 | `test/e2e/**`         | 真实监听端口 / spawn 子进程 / 真机系统调用的大 smoke                                                                                                | 否       |
 
 支撑模块不入任何层：`test/helpers.ts`、`test/smoke-lib.ts`、`test/smoke-pure.ts`、
@@ -458,6 +461,14 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
   `style.css`、`react-shim.d.ts`、`css.d.ts` 都归位 `src/client/`；宿主模块留 `src/` 根。
 - **宿主 & 客户端共享**的模块（如双端共用的后缀表 / 契约常量）留 `src/` 根，
   客户端经 `../grouping.js` 引用——不要为"客户端专用"而把共享模块搬走。
+- **例外：包内 `src/shared/**`（#769 起）**。双端共享且要求**零 import**（或只做同目录
+  `.ts` 相对 import）才能两端各自 inline 的模块（典型是契约常量表与种类表）归位
+  `src/shared/`，两端都经 `src/shared/interface.ts` 这一处门面引用（目录头写明约束，
+  见 `packages/dsh-notifier/src/shared/interface.ts`）。放进这个目录的意义不是分类而是
+  **可审**：`scripts/test/shared-leaf-imports.test.ts` 按「客户端是否经门面消费」推导扫描面，
+  对门面转出链上的每个叶子模块机械判红（值引 `node:*` 会构建失败、值引 bare 包会**静默内联**
+  进浏览器产物）。该目录的最终形态（包内 `src/shared/` 还是独立 shard 目录）由 #792 的三档
+  共享规范裁定。
 
 ### 2.3 客户端其它要点
 
