@@ -147,9 +147,10 @@ test("非 JSON 文件不参与扫描（只看 scripts/data 下的 .json）", () 
   }
 });
 
-test("本仓真实快照：7 条在册（数字变即提示同步台账与 #765）", () => {
-  // 7 = coverage.config.json 6（#769 把一条 **/client/** 拆成 per-package 的 pending-project
-  //     条目：notifier 的 .tsx 渲染面 + 另外 4 个包的整个 client 面 + shared/client/**）
+test("本仓真实快照：6 条在册（数字变即提示同步台账与 #765）", () => {
+  // 6 = coverage.config.json 5（#769 把一条 **/client/** 拆成 per-package 的 pending-project
+  //     条目：notifier 的 .tsx 渲染面 + 另外 3 个包的整个 client 面 + shared/client/**；
+  //     #840 退役 dsh-web-file-preview 时删掉它那一条，7 → 6）
   //     + gauntlet.config.json 1（crap.strict 观察期，仅解除条件、无到期日）。
   // 「按包按面收窄」的代价就是台账条目变多——这是设计而不是噪音：每条都带自己的
   // exitCriteria，某个包的客户端有了直连判据就该删掉它自己那一条。
@@ -158,7 +159,7 @@ test("本仓真实快照：7 条在册（数字变即提示同步台账与 #765�
   // （含 2 条 surface: "none"），不再产生 reviewBy。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /合计 7 条：已过期 0 /);
+  assert.match(r.stdout, /合计 6 条：已过期 0 /);
   assert.match(r.stdout, /仅解除条件（无到期日）1/);
   // crap.strict 的解除条件必须在台账里（只写日期会逼出「到期了再讨论一次」）
   assert.match(r.stdout, /\$\.crap {2}threshold=16/);
