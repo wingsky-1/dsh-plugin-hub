@@ -6,6 +6,9 @@
  * 仅 export 纯函数，不依赖任何状态。
  */
 
+/** el() 的 attrs 是结构化属性袋：checked/disabled 只落在能接收它们的表单控件上。 */
+type FormControl = HTMLInputElement | HTMLButtonElement | HTMLSelectElement | HTMLTextAreaElement;
+
 /** 创建带属性/子节点的 DOM 元素。 */
 export function el(tag: any, attrs: any = {}, children?: any): any {
   // children 兼容两种传法：第三个位置参数，或 attrs.children（本插件调用点
@@ -15,10 +18,10 @@ export function el(tag: any, attrs: any = {}, children?: any): any {
   for (const [key, value] of Object.entries(attrs)) {
     if (key === "class") node.className = value as string;
     else if (key === "text") node.textContent = String(value);
-    else if (key === "dataset") Object.assign(node.dataset, value as any);
+    else if (key === "dataset") Object.assign(node.dataset, value);
     else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
-    else if (key === "checked") (node as any).checked = value;
-    else if (key === "disabled") (node as any).disabled = value;
+    else if (key === "checked") (node as HTMLInputElement).checked = value as boolean;
+    else if (key === "disabled") (node as FormControl).disabled = value as boolean;
     else if (key === "children") continue;
     else node.setAttribute(key, String(value));
   }

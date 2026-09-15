@@ -228,7 +228,9 @@ function ProviderItem({
           type="button"
           className="dou-btn"
           disabled={busy || inspecting || file.trim() === ""}
-          onClick={doInspect}
+          onClick={() => {
+            void doInspect();
+          }}
         >
           {inspecting ? t("detecting") : t("detectFile")}
         </button>
@@ -236,7 +238,9 @@ function ProviderItem({
           type="button"
           className="dou-btn"
           disabled={busy || adding || inspected === null}
-          onClick={submitAdd}
+          onClick={() => {
+            void submitAdd();
+          }}
           title={inspected === null ? t("detectFirst") : undefined}
         >
           {adding ? t("adding") : t("confirmAdd")}
@@ -277,7 +281,14 @@ function ProviderItem({
                   {t("noCandidates")}
                 </div>,
                 <div key="guide" className="dou-provActions">
-                  <button type="button" className="dou-btn" disabled={busy} onClick={onCopyGuide}>
+                  <button
+                    type="button"
+                    className="dou-btn"
+                    disabled={busy}
+                    onClick={() => {
+                      void onCopyGuide();
+                    }}
+                  >
                     {copied ? t("copied") : t("copyGuide")}
                   </button>
                 </div>,
@@ -381,7 +392,14 @@ export function ProviderListSection({
         <div className="dou-hint">
           {t("noProvHint")}
           <div className="dou-provActions">
-            <button type="button" className="dou-btn" disabled={busy} onClick={onCopyGlobalGuide}>
+            <button
+              type="button"
+              className="dou-btn"
+              disabled={busy}
+              onClick={() => {
+                void onCopyGlobalGuide();
+              }}
+            >
               {copiedGlobal ? t("copied") : t("copyGuide")}
             </button>
           </div>

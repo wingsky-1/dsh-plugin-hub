@@ -294,10 +294,10 @@ export function buildQuickAdd(state: McpState, actions: UiActions): any {
   const syncTransport = () => {
     const isHttp = state.formTransport.value === "streamable-http";
     for (const field of [state.formCommand, state.formArgs, state.formEnv, state.formCwd]) {
-      (field as any).closest(".dm-field").style.display = isHttp ? "none" : "flex";
+      field.closest(".dm-field").style.display = isHttp ? "none" : "flex";
     }
     for (const field of [state.formUrl, state.formHeaders]) {
-      (field as any).closest(".dm-field").style.display = isHttp ? "flex" : "none";
+      field.closest(".dm-field").style.display = isHttp ? "flex" : "none";
     }
   };
   state.formTransport.addEventListener("change", syncTransport);

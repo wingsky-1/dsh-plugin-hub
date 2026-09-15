@@ -59,16 +59,26 @@ function compressStatusLine(c: any): string | null {
  * 改动只在点「保存」后生效：经 loopback HTTP 路由写入官方 settings 存储，
  * 宿主 scope.watch 立即重建转发器。
  */
-export function SettingsCard(props?: { defaults?: Record<string, any> }) {
-  const DEFAULTS = props?.defaults || DEFAULT_SETTINGS;
+/**
+ * settings.plugin.item 插槽注册时由调用方注入的宿主端默认值快照。
+ * 形参不可写成可选（`props?`）：可选参数会让组件 props 泛型带上 undefined，
+ * React.createElement 的类型校验随之失配（TS2769），只能靠宽化断言消音。
+ */
+export interface SettingsCardProps {
+  defaults?: Record<string, any>;
+}
+
+export function SettingsCard(props: SettingsCardProps) {
+  const DEFAULTS = props.defaults || DEFAULT_SETTINGS;
   const useState = React.useState;
   const useEffect = React.useEffect;
-  const draft = useState(null);
-  const settings = draft[0] as any;
-  const setSettings = draft[1] as any;
+  // 显式声明状态形状：useState(null) 会把状态推成字面 null，写入任何非 null 值都编不过。
+  const draft = useState(null as Record<string, any> | null);
+  const settings = draft[0];
+  const setSettings = draft[1];
   // 保存反馈（i18n 重构：msg + err 结构化状态，不能用文案内容判断错误态）
-  const savedDraft = useState(null);
-  const saved = savedDraft[0] as any;
+  const savedDraft = useState(null as { msg: string; err: boolean } | null);
+  const saved = savedDraft[0];
   const setSaved = (msg: string, err?: boolean) => {
     savedDraft[1](msg ? { msg: msg, err: err === true } : null);
   };
@@ -76,7 +86,7 @@ export function SettingsCard(props?: { defaults?: Record<string, any> }) {
   const open = openState[0];
   const setOpen = openState[1];
   // HTTP 压缩运行快照（issue #33 子项 3）：GET 快照附带，底部轻量状态行展示。
-  const compressDraft = useState(null);
+  const compressDraft = useState(null as Record<string, any> | null);
   const compress = compressDraft[0];
   const setCompress = compressDraft[1];
   // 加载基线（issue #33 子项 2）：保存时只提交与基线不同的键（增量 diff），
@@ -124,25 +134,29 @@ export function SettingsCard(props?: { defaults?: Record<string, any> }) {
     return <li className="lp-set-card">{t("settingsLoading")}</li>;
   }
 
+  // 收窄后的别名：save/patch 是函数声明（提升到作用域顶部），tsc 不会把上面的 null
+  // 收窄带进它们的闭包，直接引用 settings 会被判 possibly null。
+  const settingsValue = settings;
+
   function patch(p: any) {
-    setSettings(Object.assign({}, settings, p));
+    setSettings(Object.assign({}, settingsValue, p));
     setSaved("");
   }
 
   function save() {
     // 本地预校验（issue #33 子项 1）：数字键先归一化，非法值在提交前就
     // 指明字段与合法范围——不依赖宿主整体拒绝后才报错。
-    const portValue = Number(settings.port);
+    const portValue = Number(settingsValue.port);
     if (!Number.isInteger(portValue) || portValue < 1 || portValue > 65535) {
       setSaved(t("portRangeFail"), true);
       return;
     }
-    const httpsPortValue = Number(settings.httpsPort);
+    const httpsPortValue = Number(settingsValue.httpsPort);
     if (!Number.isInteger(httpsPortValue) || httpsPortValue < 1 || httpsPortValue > 65535) {
       setSaved(t("httpsPortRangeFail"), true);
       return;
     }
-    const levelValue = Number(settings.httpCompressLevel);
+    const levelValue = Number(settingsValue.httpCompressLevel);
     if (!Number.isInteger(levelValue) || levelValue < 0 || levelValue > 3) {
       setSaved(t("levelRangeFail"), true);
       return;
@@ -157,7 +171,7 @@ export function SettingsCard(props?: { defaults?: Record<string, any> }) {
     };
     const payload: Record<string, any> = {};
     for (const key in DEFAULTS) {
-      const cur = key in normalized ? normalized[key] : settings[key];
+      const cur = key in normalized ? normalized[key] : settingsValue[key];
       if (baseline === null || !sameSetting(key, cur, baseline[key])) payload[key] = cur;
     }
     if (Object.keys(payload).length === 0) {
@@ -179,7 +193,7 @@ export function SettingsCard(props?: { defaults?: Record<string, any> }) {
         });
       })
       .then((body: any) => {
-        baseline = Object.assign({}, settings);
+        baseline = Object.assign({}, settingsValue);
         revision = (body && body.revision) || revision;
         setSaved(t("savedOk"));
         setTimeout(() => {

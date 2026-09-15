@@ -760,7 +760,7 @@ function dayKeyOf(t: number): string {
 }
 
 /** tooltip 浮层定位（贴边翻转）。 */
-function tipStyle(offsetX: number, containerWidth: number) {
+function tipStyle(offsetX: number, containerWidth: number): React.CSSProperties {
   const TIP_W = 210;
   let left = offsetX + 12;
   if (left + TIP_W > containerWidth && containerWidth > 0) left = offsetX - TIP_W - 8;
