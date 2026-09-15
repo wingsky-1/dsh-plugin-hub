@@ -1,3 +1,7 @@
+// @vitest-environment happy-dom
+//
+// 环境声明必须落在文件里，不能只靠 vitest.config.ts 的 client-dom project：变异面按拓扑派生的是
+// 单 project node 环境配置（vitest.stryker.d/*.config.ts），本层要进变异面就得自带环境。
 /**
  * dsh-notifier — 标题闪烁对真实 document.title 的判据（#769 的 happy-dom 层）。
  *

@@ -8,6 +8,20 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
+      'packages/dsh-notifier/test/client-dom/display.test.ts',
+      'packages/dsh-notifier/test/client-dom/title.test.ts',
+      'packages/dsh-notifier/test/client-unit/api-error.test.ts',
+      'packages/dsh-notifier/test/client-unit/banner.test.ts',
+      'packages/dsh-notifier/test/client-unit/locale.test.ts',
+      'packages/dsh-notifier/test/client-unit/mask.test.ts',
+      'packages/dsh-notifier/test/client-unit/notify-audio.test.ts',
+      'packages/dsh-notifier/test/client-unit/notify-lease.test.ts',
+      'packages/dsh-notifier/test/client-unit/notify-policy.test.ts',
+      'packages/dsh-notifier/test/client-unit/notify-registry.test.ts',
+      'packages/dsh-notifier/test/client-unit/notify-session.test.ts',
+      'packages/dsh-notifier/test/client-unit/notify-title.test.ts',
+      'packages/dsh-notifier/test/client-unit/save-guard.test.ts',
+      'packages/dsh-notifier/test/client-unit/settings-diff.test.ts',
       'packages/dsh-notifier/test/integration/consumer-types.test.ts',
       'packages/dsh-notifier/test/integration/real-context.test.ts',
       'packages/dsh-notifier/test/integration/service-contract.test.ts',

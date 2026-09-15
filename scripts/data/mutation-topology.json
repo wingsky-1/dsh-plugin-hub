@@ -1,15 +1,16 @@
 {
   "$testLayers": {
-    "$comment": "测试分层与变异面登记的单一事实源（#690 S2b / #713 T1–T3）。runner 层 = test/**/*.test.ts 的全集（vitest include 的 glob 即此口径）；mutation 层 = unit + integration（in-process，可进变异面）；exclude 层 = client（断言对象是构建产物 lib/client.js，而 mutate 面本身排除 src/client/**，登记进变异面测试清单只会增加每个段的 dry run 成本、杀灭贡献为零）+ client-dom（happy-dom 里直连 src/client/** 的 DOM 单测，src/client/** 同样不在 mutate 面内，理由同上）+ e2e（真实端口/子进程/真机系统调用）。support 不入任何层：test/helpers.ts、test/smoke-lib.ts、test/smoke-pure.ts、test/*.worker.mjs 是支撑模块，不是测试条目。unitExemptions 是单元层内「写了单元测试但刻意不进变异面」的逐条裁决（每条必须写明理由；gate 校验其非空且真实存在于 unit 层）。gate 判据：每个 test/**/*.test.ts 必须落入某一层的 glob 或某条排除 glob（无第三条路），故新增测试文件必须显式决定其层归属，不能靠「没写进清单」逃逸。",
+    "$comment": "测试分层与变异面登记的单一事实源（#690 S2b / #713 T1–T3）。runner 层 = test/**/*.test.ts 的全集（vitest include 的 glob 即此口径）；mutation 层 = unit + integration + client-unit + client-dom（四层都直连 src、都能贡献杀灭；client-unit 是 node 环境下的客户端纯逻辑判据，client-dom 是 happy-dom 环境下的客户端 DOM 判据）；exclude 层 = client（**只剩断言对象不是 src 本身的那部分**：读 lib/client.js 的产物契约、或 in-place esbuild 后执行已构建副本——静态导入图里没有目标模块，登记进变异面清单只会增加每个段的 dry run 成本、杀灭贡献为零）+ e2e（真实端口/子进程/真机系统调用）。support 不入任何层：test/helpers.ts、test/smoke-lib.ts、test/smoke-pure.ts、test/*.worker.mjs 是支撑模块，不是测试条目。unitExemptions 是单元层内「写了单元测试但刻意不进变异面」的逐条裁决（每条必须写明理由；gate 校验其非空且真实存在于 unit 层）。gate 判据：每个 test/**/*.test.ts 必须落入某一层的 glob 或某条排除 glob（无第三条路），故新增测试文件必须显式决定其层归属，不能靠「没写进清单」逃逸。",
     "layers": {
       "unit": "test/unit/**/*.test.ts",
       "integration": "test/integration/**/*.test.ts",
+      "client-unit": "test/client-unit/**/*.test.ts",
       "client": "test/client/**/*.test.ts",
       "client-dom": "test/client-dom/**/*.test.ts",
       "e2e": "test/e2e/**/*.test.ts"
     },
-    "mutationLayers": ["unit", "integration"],
-    "mutationExcludeLayers": ["client", "client-dom", "e2e"]
+    "mutationLayers": ["unit", "integration", "client-unit", "client-dom"],
+    "mutationExcludeLayers": ["client", "e2e"]
   },
   "$noMutationPackages": {
     "$comment": "磁盘上有测试文件、但刻意不登记变异面的包（逐个写明理由）。登记在此的包仍受 `--check` 判据 ③（--min == runner glob 实际文件数）约束——「不登记变异面」不等于「不受门禁」；漏登且未在此声明的包一律判红。",
@@ -265,6 +266,16 @@
             "!packages/dsh-notifier/src/types.ts"
           ],
           "comment": "#733 按域重写：upgrade——存量迁移域（version 版本戳；chain 迁移链；legacy 旧位置读取；steps.storage-layout 存储布局搬迁）。"
+        },
+        "client": {
+          "mutate": ["packages/dsh-notifier/src/client/**/*.ts"],
+          "excludes": [
+            "!packages/dsh-notifier/src/client/**/*.tsx",
+            "!packages/dsh-notifier/src/client/capabilities.ts",
+            "!packages/dsh-notifier/src/client/reason-text.ts",
+            "!packages/dsh-notifier/src/**/*.d.ts"
+          ],
+          "comment": "#769 客户端半区门禁：mutate 面 = src/client 下的纯 .ts 模块（node 判据在 client-unit 层、DOM 判据在 client-dom 层，两层都已进 mutationLayers，故这里的变异体有真实杀灭来源）。三处排除各有一条理由：① **/*.tsx（13 个文件、含 1494 行的 index.tsx）——渲染需要 react 运行时，全仓未安装，判据面为零，等运行时与渲染 harness 落地后收掉本条；② capabilities.ts 与 reason-text.ts——现有判据建在 in-place esbuild 后执行已构建副本上，静态导入图里没有目标模块，变异体一律 noCoverage；直连判据补齐后随本条一并收掉；③ **/*.d.ts——声明层无运行时代码。"
         }
       },
       "testLayers": {
