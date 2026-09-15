@@ -5,12 +5,10 @@
     "packages/dsh-mcp-manager/src/server/workspace/**/*.ts",
     "packages/dsh-mcp-manager/src/server/config/**/*.ts",
     "!packages/dsh-mcp-manager/src/client/**",
-    "!packages/dsh-mcp-manager/src/types/**",
-    "!packages/dsh-mcp-manager/src/integration/**",
     "!packages/dsh-mcp-manager/src/shared/placement-math.ts",
     "!packages/dsh-mcp-manager/src/**/interface.ts",
     "!packages/dsh-mcp-manager/src/server/*/deps.ts",
-    "!packages/dsh-mcp-manager/src/server/connection/runtime/deps.ts"
+    "!packages/dsh-mcp-manager/src/server/*/*/deps.ts"
   ],
   "testRunner": "vitest",
   "mutator": {
@@ -44,5 +42,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-entry.json",
-  "_comment": "#664 阶段6重画：entry——index+workspace（工作空间路由域）+config/model（归一化/导入/schema）；阶段1–5变异盲区（workspace/新文件）在本阶段随集中搬移一并纳入重画（v3 C4/C-DIR）；types/integration（type-only）与 placement-math.ts（shared 薄转发）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+  "_comment": "#767 B2b 重画：entry——组合根 src/index.ts + workspace（工作空间解析域）+ config（归一化/导入/schema）；B2b 后文件归各域段，本段只留这三处。W11b2a 删除 src/types 与 src/integration 后，原 types/integration 两条排除已是 0 命中死条目，随本刀删除；client（另一端）与 shared/placement-math.ts（薄转发）两条排除仍然成立。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
 }
