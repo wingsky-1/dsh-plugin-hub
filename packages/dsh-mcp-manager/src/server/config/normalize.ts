@@ -4,6 +4,11 @@
  * normalizeServer 校验并规范化一条 MCP 服务器配置（stdio / streamable-http），
  * 供 Manager 增改与 mcpServers JSON 导入路径共用；SERVER_NAME_PATTERN 为
  * 服务器名命名空间约束（与官方 dsh-mcp-client 一致）。
+ *
+ * reconnect 在此处按官方口径收紧（#767 S1-1）：官方对未知键直接抛错，而本插件的配置面
+ * 是用户手写 JSON（可手排 mcp.json），故未知键改为静默丢弃（口径与顶层未知字段一致）；
+ * 真正会改变重连语义的错值（时长越界、预算非正整数）仍在配置写入时拒绝，避免把错误推迟
+ * 到连接期才暴露。
  */
 
 import type { ServerConfig } from "./impl/model/type.ts";
@@ -12,6 +17,75 @@ import { DEFAULT_TOOL_CALL_TIMEOUT_MS } from "../shared/interface.ts";
 
 /** MCP 服务器名命名空间约束（与官方 dsh-mcp-client 一致）。 */
 export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
+
+/** 官方 reconnect 的键集（与 @deepseek-ai/dsh-mcp-client 的 Reconnect schema 逐字同值）。 */
+const RECONNECT_KEYS = new Set(["enabled", "initialDelayMs", "maxDelayMs", "maxAttempts"]);
+
+/** setTimeout 的上限；官方 resolveReconnectPolicy 用它约束两段退避时长。 */
+const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
+
+/** 官方默认值（与 @deepseek-ai/dsh-mcp-client 的 RECONNECT_DEFAULTS 逐字同值）。 */
+const RECONNECT_DEFAULTS = {
+  enabled: true,
+  initialDelayMs: 500,
+  maxDelayMs: 30_000,
+  maxAttempts: 10,
+} as const;
+
+/** 退避时长边界（官方口径：正有限数且不超过定时器上限）。 */
+function assertReconnectDelay(value: unknown, path: string): void {
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value <= 0 ||
+    value > MAX_TIMER_DELAY_MS
+  ) {
+    throw new Error(
+      `${path} must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`,
+    );
+  }
+}
+
+/**
+ * 收紧 reconnect：只保留官方 4 键，边界按官方口径拒绝。
+ *
+ * 保留「输入里写了的键」而不是补齐默认值：默认值由连接侧的 resolveReconnect 补，写回一份
+ * 显式默认值会改变落盘形态，并让「配置是否变化」的字符串比对（manager 的 force 重连判定）
+ * 对存量配置误报。
+ *
+ * 未登记键不出声：本函数是纯函数（可观察副作用会让它与装配顺序相关），且服务端源码不写
+ * console——宿主 stdout 可能承载协议数据。需要提示用户的通道在 UI 校验面。
+ */
+function normalizeReconnect(raw: unknown): Record<string, unknown> {
+  if (raw === undefined || raw === null) return {};
+  if (typeof raw !== "object" || Array.isArray(raw)) throw new Error("reconnect must be an object");
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (RECONNECT_KEYS.has(key)) out[key] = value;
+  }
+  if (out.initialDelayMs !== undefined)
+    assertReconnectDelay(out.initialDelayMs, "reconnect.initialDelayMs");
+  if (out.maxDelayMs !== undefined) assertReconnectDelay(out.maxDelayMs, "reconnect.maxDelayMs");
+  if (out.enabled !== undefined && typeof out.enabled !== "boolean") {
+    throw new Error("reconnect.enabled must be a boolean");
+  }
+  // 与官方同口径：**先补默认值再判关系**。只写 initialDelayMs 而它大于默认 maxDelayMs 时，
+  // 官方在装载期就会抛；这里不提前拒绝，错误就又被推迟到连接期。
+  const initialDelayMs =
+    (out.initialDelayMs as number | undefined) ?? RECONNECT_DEFAULTS.initialDelayMs;
+  const maxDelayMs = (out.maxDelayMs as number | undefined) ?? RECONNECT_DEFAULTS.maxDelayMs;
+  if (initialDelayMs > maxDelayMs) {
+    throw new Error("reconnect.initialDelayMs must be less than or equal to maxDelayMs");
+  }
+  const { maxAttempts } = out;
+  if (
+    maxAttempts !== undefined &&
+    (typeof maxAttempts !== "number" || !Number.isInteger(maxAttempts) || maxAttempts < 1)
+  ) {
+    throw new Error("reconnect.maxAttempts must be a positive integer");
+  }
+  return out;
+}
 
 /** 校验并规范化一条服务器配置。 */
 export function normalizeServer(input: unknown): ServerConfig {
@@ -57,7 +131,7 @@ export function normalizeServer(input: unknown): ServerConfig {
       typeof src.toolCallTimeoutMs === "number" && (src.toolCallTimeoutMs as number) > 0
         ? Math.floor(src.toolCallTimeoutMs as number)
         : DEFAULT_TOOL_CALL_TIMEOUT_MS,
-    reconnect: (src.reconnect as Record<string, unknown> | undefined) ?? {},
+    reconnect: normalizeReconnect(src.reconnect),
     // 能力目录的自定义描述（用户手写；MCP 协议无服务器级自描述，完整保留不截断）。
     description:
       typeof src.description === "string" && (src.description as string).trim() !== ""

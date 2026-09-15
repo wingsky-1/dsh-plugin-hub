@@ -18,6 +18,7 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/unit/unit-apply.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-call-stats.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-catalog.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-config-env.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-file-io-queue.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-file-io.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-hotspot.test.ts',
