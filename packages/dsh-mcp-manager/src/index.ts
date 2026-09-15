@@ -599,6 +599,7 @@ export async function apply(
     pipeline: pipelineApi,
     workspace: serverIds,
     config: configModelApi,
+    logs: host.logs,
   });
 
   const store = new McpStore(resolveStorePath(config));

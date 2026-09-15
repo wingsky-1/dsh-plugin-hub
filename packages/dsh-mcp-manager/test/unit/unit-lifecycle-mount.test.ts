@@ -19,9 +19,14 @@ import type { ServerConfig } from "../../src/server/config/impl/model/type.ts";
 import { withTimeout } from "../../src/server/pipeline/impl/timeout/index.ts";
 import {
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
+  OFFICIAL_MCP_CLIENT_LOG_NAME,
   OFFICIAL_MCP_CLIENT_SPECIFIER,
 } from "../../src/server/shared/interface.ts";
-import type { LoaderPort, OfficialPluginModule } from "../../src/server/shared/interface.ts";
+import type {
+  LoaderPort,
+  LogRecord,
+  OfficialPluginModule,
+} from "../../src/server/shared/interface.ts";
 import type { ToolsRegistryPort, WorkspacePort } from "../../src/server/servers/lifecycle/deps.ts";
 import { mountLedger } from "../../src/server/servers/lifecycle/impl/ledger/index.ts";
 import {
@@ -33,10 +38,15 @@ import {
   releaseLifecycle,
 } from "../../src/server/servers/lifecycle/interface.ts";
 import type { ServerState } from "../../src/shared/interface.ts";
-import { fakeLoaderPort, pollUntil } from "../helpers.ts";
+import { fakeLoaderPort, fakeLogsPort, pollUntil } from "../helpers.ts";
 
 /** 被测的官方插件模块面：apply 由官方引擎调，本域只把它当不透明模块转交。 */
 const OFFICIAL_MODULE: OfficialPluginModule = { name: "test:official", apply: () => {} };
+
+/** 官方客户端落在宿主日志面上的记录：装载窗口的错因只有这一条通道（成功连接零日志）。 */
+function officialRecord(...args: unknown[]): LogRecord {
+  return { name: OFFICIAL_MCP_CLIENT_LOG_NAME, type: "error", level: 1, args };
+}
 
 /** 被测配置：最小 stdio 形态（归一化的产物长这样，缺省项已由 normalizeServer 补齐或由本块补）。 */
 const STDIO_SERVER: ServerConfig = { name: "files", transport: "stdio", command: "/bin/echo" };
@@ -90,6 +100,7 @@ interface Harness {
   readonly loader: ReturnType<typeof fakeLoaderPort>;
   readonly workspace: ReturnType<typeof fakeIdTable>;
   readonly tools: ReturnType<typeof fakeTools>;
+  readonly logs: ReturnType<typeof fakeLogsPort>;
   readonly expandCalls: readonly ServerConfig[];
 }
 
@@ -113,6 +124,7 @@ function installHarness(
   });
   const workspace = fakeIdTable(options.idFactory);
   const tools = fakeTools(options.entries ?? []);
+  const logs = fakeLogsPort();
   const expandCalls: ServerConfig[] = [];
   installLifecycle({
     loader: loader as unknown as LoaderPort,
@@ -126,8 +138,9 @@ function installHarness(
       },
     },
     tools: tools as unknown as ToolsRegistryPort,
+    logs,
   });
-  return { loader, workspace, tools, expandCalls };
+  return { loader, workspace, tools, logs, expandCalls };
 }
 
 // 账本是模块级单例：不复位会让「同键重挂」连坐后续用例。
@@ -323,6 +336,52 @@ describe("装载链", () => {
     expect(states).toEqual(["connecting", "failed"]);
     expect(harness.loader.handles[0].state.disposeCalls).toBe(0);
     expect(result.entry.handle.disposed).toBe(false);
+  });
+
+  it("窗口内官方发了归属本实例的失败日志 → failed 文案附上官方原文", async () => {
+    const harness = installHarness({ ready: "deferred", idFactory: () => "idseed" });
+    const states: ServerState[] = [];
+
+    const pending = mountServer({
+      root: "/proj/a",
+      server: STDIO_SERVER,
+      onState: (state) => states.push(state),
+    });
+    await pollUntil("装载窗口挂上日志导出器", () => harness.logs.captured === 1);
+    harness.logs.emit(
+      officialRecord(`${OFFICIAL_MCP_CLIENT_LOG_NAME}(idseed): spawn /bin/echo ENOENT`),
+    );
+    harness.loader.settleReady();
+
+    const result = await pending;
+    expect(result.outcome).toMatchObject({ kind: "settled", state: "failed" });
+    if (result.outcome.kind === "settled") {
+      expect(result.outcome.error).toMatch(/spawn \/bin\/echo ENOENT/);
+      expect(result.outcome.error).toMatch(/官方日志/);
+    }
+    expect(states).toEqual(["connecting", "failed"]);
+    // 窗口结束即摘除：失败的实例不得继续占着宿主日志面。
+    expect(harness.logs.captured).toBe(0);
+  });
+
+  it("别的 id 的官方日志不进 error：归属按全等前缀（另一个 id 是本 id 的前缀也不误收）", async () => {
+    const harness = installHarness({ ready: "deferred", idFactory: () => "idseed" });
+
+    const pending = mountServer({
+      root: "/proj/a",
+      server: STDIO_SERVER,
+      onState: () => {},
+    });
+    await pollUntil("装载窗口挂上日志导出器", () => harness.logs.captured === 1);
+    harness.logs.emit(officialRecord(`${OFFICIAL_MCP_CLIENT_LOG_NAME}(idsee): 别的实例的连接失败`));
+    harness.loader.settleReady();
+
+    const result = await pending;
+    expect(result.outcome).toMatchObject({ kind: "settled", state: "failed" });
+    if (result.outcome.kind === "settled") {
+      expect(result.outcome.error).not.toMatch(/别的实例的连接失败/);
+      expect(result.outcome.error).not.toMatch(/官方日志/);
+    }
   });
 
   it("晚到结算守卫：窗口期间账本条目被拆 → discarded，不再改状态也不 dispose 第二遍", async () => {

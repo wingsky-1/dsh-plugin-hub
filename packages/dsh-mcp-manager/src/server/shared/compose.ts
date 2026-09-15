@@ -58,6 +58,25 @@ export interface DomainSpec<Host = HostFaces> {
 export function bindHost(ctx: HostContextPort): HostFaces {
   return {
     logger: ctx.logger,
+    logs: {
+      capture: (handler) => {
+        // 摘除器类型是 Disposable<Promise<void>>（宿主按 fiber 回收）；本包只承诺同步摘除语义，
+        // 异步那一半由宿主自己的 effect 负责——把 Promise 递到域里只会让域多一个不该管的等待点。
+        //
+        // 必须显式给 levels：宿主的投递闸是
+        // `(exporter.levels?.[name] ?? exporter.levels?.default ?? 发出方 level ?? 1) < level` 即丢，
+        // 不写就落到发出方缺省 INFO(1)，而官方客户端的重连提示是 warn(2)——整条诊断面会只剩
+        // error 级、把「正在退避重试」这类最需要让用户看到的话全丢掉。取 2（error/info/warn）：
+        // debug(3) 是官方内部噪音，不属于诊断口径。
+        const dispose = ctx.logger.exporter({
+          levels: { default: 2 },
+          export: (message) => handler(message),
+        });
+        return () => {
+          void dispose();
+        };
+      },
+    },
     register: { register: (route) => ctx.webServer.register(route) },
     tools: {
       register: (definition) => ctx.tools.register(definition),

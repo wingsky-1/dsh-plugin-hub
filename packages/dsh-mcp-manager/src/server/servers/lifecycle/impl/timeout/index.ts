@@ -20,9 +20,10 @@ import { CONNECT_TIMEOUT_MS, DISCOVERY_TIMEOUT_MS } from "../../../../shared/int
 import { SERVER_STATES } from "../../../../../shared/interface.ts";
 import type { ServerState } from "../../../../../shared/interface.ts";
 import type { MountedPlugin } from "../../../../shared/interface.ts";
+import { diagnosticText } from "../logs/index.ts";
 import { lifecyclePorts } from "../service/index.ts";
 
-/** 等待窗口入参：句柄、超时预算与两个只读查询（不自持状态，故本块可纯测）。 */
+/** 等待窗口入参：句柄、超时预算与三个只读查询（不自持状态，故本块可纯测）。 */
 export interface MountWindowInput {
   /** 账本键 = 交给官方的 serverName；工具注册面按它拼前缀。 */
   readonly id: string;
@@ -36,6 +37,13 @@ export interface MountWindowInput {
   isCurrent(): boolean;
   /** 工具注册面查询：该 id 前缀下是否已有注册工具。 */
   hasTools(id: string): boolean;
+  /**
+   * 窗口内收到的官方原文（按到达顺序现读）。
+   *
+   * 官方是本插件**唯一**的错因来源：成功连接零日志，失败与放弃重连才说话，而宿主默认既不打印
+   * 也不落盘——不把原文附进 failed 文案，用户拿到的就只有我方那两段判词。
+   */
+  diagnostics?(): readonly string[];
   /** 状态投影出口：窗口在起点（connecting）与结算点各回调一次；丢弃的结算不回调。 */
   onState(state: ServerState): void;
 }
@@ -68,13 +76,15 @@ export async function awaitMountWindow(input: MountWindowInput): Promise<MountWi
     failure = errorText(error);
   }
   if (isAbandoned(input)) return { kind: "discarded" };
-  if (failure !== undefined) return settle(input, SERVER_STATES.failed, failure);
+  if (failure !== undefined) {
+    return settle(input, SERVER_STATES.failed, withOfficialLogs(input, failure));
+  }
   if (!input.hasTools(input.id)) {
     await yieldOneTick();
     if (isAbandoned(input)) return { kind: "discarded" };
   }
   if (input.hasTools(input.id)) return settle(input, SERVER_STATES.connected);
-  return settle(input, SERVER_STATES.failed, missingToolFaceText());
+  return settle(input, SERVER_STATES.failed, withOfficialLogs(input, missingToolFaceText()));
 }
 
 /** 代际守卫判据：句柄已拆，或账本里这一条已被别的代际顶掉。 */
@@ -103,6 +113,20 @@ function yieldOneTick(): Promise<void> {
  */
 function missingToolFaceText(): string {
   return `已连接但工具注册面未出现（官方发现预算 ${DISCOVERY_TIMEOUT_MS}ms 已在 ready 内结算）：官方实例在后台重连`;
+}
+
+/**
+ * failed 文案的统一收尾：把窗口内收到的官方原文接在后面。
+ *
+ * 只接 failed：connected 说明官方没话说（成功连接零日志），discarded 的结算本就不进状态面，
+ * 两处附原文只会把正常路径的文案撑长。
+ *
+ * 官方一条都没说时返回原文：接一句空的「官方日志：」等于让读的人以为官方说了句空话。
+ */
+function withOfficialLogs(input: MountWindowInput, text: string): string {
+  const diagnostics = input.diagnostics?.();
+  const official = diagnostics === undefined ? undefined : diagnosticText(diagnostics);
+  return official === undefined ? text : `${text}；${official}`;
 }
 
 function errorText(error: unknown): string {

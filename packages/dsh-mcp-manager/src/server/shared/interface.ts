@@ -16,7 +16,9 @@ export type {
   HostContextPort,
   HostFaces,
   LoaderPort,
+  LogRecord,
   LoggerPort,
+  LogsPort,
   MountedPlugin,
   OfficialPluginModule,
   PromptPort,
@@ -33,6 +35,7 @@ export {
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
   DISCOVERY_TIMEOUT_MS,
   LIST_DEFAULT_TOOLS_PER_SERVER,
+  OFFICIAL_MCP_CLIENT_LOG_NAME,
   OFFICIAL_MCP_CLIENT_SPECIFIER,
   SERVER_NAME_PATTERN,
 } from "./constants.ts";

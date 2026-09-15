@@ -1,7 +1,7 @@
 /**
  * dsh-mcp-manager — servers/lifecycle/deps.ts：装载生命周期域的上对依赖声明（纯类型面，§3.1 规则 2）。
  *
- * 本域运行时能力消费面有五条，都取「实际使用」而非「import 面」（附录 E.6 第 3 条）：
+ * 本域运行时能力消费面有六条，都取「实际使用」而非「import 面」（附录 E.6 第 3 条）：
  * - 宿主装载口（LoaderPort）：官方引擎按包名解析 + 挂载，形状由 server/shared/host-faces.ts
  *   自持声明（官方 loader 包不在 catalog，仓库内不可解析，只能拿结构面）；
  * - 宿主工具注册表的查询面（schemas）：官方不暴露状态 API，六态只能靠工具注册面投影
@@ -11,16 +11,20 @@
  * - workspace 域的 serverName 分配（idFor）：官方按注册作用域活体预留 serverName、同 owner
  *   重名当场抛，而「同一 bare 名在全局与某项目都配」是常见写法（§2.6 裁定 B）；
  * - config 域的模板预展开（expandServerEnv）：官方 env / headers 只接受字面量，而落盘配置
- *   必须保持模板形态，展开只能发生在交给官方之前（设计 §2.4）。
+ *   必须保持模板形态，展开只能发生在交给官方之前（设计 §2.4）；
+ * - 宿主日志面的导出器（LogsPort）：官方日志是本插件**唯一**能拿到的错因——成功连接零日志，
+ *   失败与放弃重连才带 `mcp-client(<serverName>)` 前缀说话，而宿主默认既不打印也不落盘
+ *   （实测 dsh.log 只有一行 URL、shipped web-app 无日志消费者），不接这条面，首连失败对用户
+ *   就是静默的。
  *
- * 五条都在这里声明、由组合根在 `src/index.ts` 顶层递入；域内取数一律经 `impl/service` 的
+ * 六条都在这里声明、由组合根在 `src/index.ts` 顶层递入；域内取数一律经 `impl/service` 的
  * `lifecyclePorts.get()`，域间因此只有类型边，没有值边。
  *
  * **只许类型依赖**：本文件出现值 import 会被 verify-dir-imports 硬判红。
  */
 import type * as configApi from "../../config/interface.ts";
 import type * as pipelineApi from "../../pipeline/interface.ts";
-import type { LoaderPort, ToolsPort } from "../../shared/interface.ts";
+import type { LoaderPort, LogsPort, ToolsPort } from "../../shared/interface.ts";
 import type { ServerIdTable } from "../../workspace/interface.ts";
 
 /** pipeline 域给本域的能力面：超时兜底一样，用于装载等待窗口（§3.4）。 */
@@ -58,4 +62,6 @@ export interface LifecycleDeps {
   workspace: WorkspacePort;
   /** config 域：官方 Config 构造前的模板预展开。 */
   config: ConfigPort;
+  /** 宿主能力面：官方日志导出器，装载窗口内收集错因。 */
+  logs: LogsPort;
 }
