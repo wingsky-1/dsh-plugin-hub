@@ -44,7 +44,9 @@ describe("dsh-web-file-preview 宿主入口与客户端产物契约（#698 重�
     assertClientProductContract(pkgDir);
   });
 
-  // 收口依赖的三处官方契约字面量必须进产物：官方打开路由、官方地址前缀、官方卡片锚点。
+  // 以下四条是**产物形态哨兵**（不是行为判据）：确认官方契约字面量确实被内联进 bundle，
+  // 防 tree-shaking 或误删常量导致运行期才炸。行为正确性由 test/unit 直连 src 的用例覆盖；
+  // 它们不贡献变异杀灭（StringLiteral 被 excludedMutations 全局排除），故不按"能被打红"要求。
   it("#698 client 含官方打开路由字面量", () => {
     expect(client.includes("/api/present.open")).toBeTruthy();
   });

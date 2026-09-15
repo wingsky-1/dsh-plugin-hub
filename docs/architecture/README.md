@@ -63,7 +63,9 @@ flowchart LR
 - **安装**：`dsh plugin --profile web add <包名>` → 包内 `cordis.patch.yml` 的 insert 行
   被写进 profile 插件名册；`dsh web` 重启时组合 bundle，宿主端与客户端各跑一半；
 - **宿主端**（`exports "."` → `lib/index.js`）：在 Node 进程中 `apply(ctx)`，注入
-  `webServer` / `tools` / `settings` / `connection` 等官方服务，注册路由与事件监听；
+  `webServer` / `tools` / `settings` / `connection` 等官方服务，注册路由与事件监听。
+  **有宿主面的插件才如此**：纯客户端插件（如 `dsh-web-file-preview`）的宿主半边是空壳
+  （`name` / `apply` / `ROUTES = {}`），只为 bundle 装载与 `verify:npmlayout` 的契约字面量保留；
 - **客户端**（`exports "./client"` → `lib/client.js`）：干净模块（`apply(ctx)` +
   `inject`），构建期内联样式与依赖，通过 `__DSH_ROUTES__` 拿到真实路由表；
 - **依赖关系**：各插件彼此独立（`dsh-mcp-manager` 提供的 `ctx.mcpManager` 为可选消费面，
@@ -78,11 +80,11 @@ flowchart LR
 
 | 机制 | 说明 | 实现位置 |
 |---|---|---|
-| **loopback 围栏** | 所有 `/api` 路由强制回环来源（remoteAddress + Host + 非跨站 + Origin 同源），非法 403 / 方法错 405——DNS 重绑定与跨站防御 | `shared/loopback.js`（`isLoopbackRequest`） |
+| **loopback 围栏** | 有 HTTP 面的插件，其 `/api` 路由强制回环来源（remoteAddress + Host + 非跨站 + Origin 同源），非法 403 / 方法错 405——DNS 重绑定与跨站防御（无自建路由的插件不适用） | `shared/loopback.js`（`isLoopbackRequest`） |
 | **官方 settings 存储** | 插件配置存 dsh 官方 `settings.register` 命名空间（`<DSH_HOME>/settings.yaml`），组合层 cordis config 作 base 层，热更新由 `scope.watch` 驱动 | `shared/settings-namespace.js`（`installSettingsNamespace`） |
 | **客户端干净模块** | 只 `export function apply(ctx)` + `export const inject`；样式独立 `src/client/style.css`；构建期内联（`scripts/build/build-client.ts`） | 各包 `src/client/index.ts` |
 | **发布物自包含** | 第三方依赖构建期内联进 `lib/`，运行时零 npm 依赖；license 自动归集 `lib/THIRD-PARTY-LICENSES` | `scripts/build/` |
-| **loopback 服务端/客户端契约** | 宿主端在 index.ts 透出纯函数/常量，smoke 从 `lib/index.js` 导入断言（路由围栏 + 客户端契约） | `test/*.test.ts` |
+| **loopback 服务端/客户端契约** | 宿主端在 index.ts 透出纯函数/常量，测试按层断言（详见 `docs/DEVELOPMENT.md` 的测试分层） | `test/unit/**`、`test/integration/**`、`test/client/**`、`test/e2e/**` |
 
 ## 图源归档
 

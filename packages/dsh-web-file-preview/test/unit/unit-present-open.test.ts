@@ -29,6 +29,8 @@ function setLocation(origin: string): void {
 }
 
 describe("#698 地址构造", () => {
+  // 常量锚：StringLiteral 被 excludedMutations 全局排除，本用例不贡献变异杀灭——它只防
+  // 与官方的契约常量被误改（改这里等于改收口目标）。
   it("#698：官方打开路由常量", () => {
     expect(PRESENT_OPEN_PATH).toBe("/api/present.open");
   });

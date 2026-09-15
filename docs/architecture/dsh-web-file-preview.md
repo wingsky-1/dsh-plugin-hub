@@ -33,9 +33,12 @@
 官方客户端 fetch("POST", /api/present.open?sessionId&seq&index)
         │  （window.fetch 包装，见 §3）
         ▼
-  命中？ ──否──▶ 原样透传（reveal / 非 POST / 非该路径 / 无 pending）
+  命中？ ──否──▶ 原样透传（跨源 / reveal / 非 POST / 非该路径 / 无 pending）
         │是
         ▼
+   消费 pending（取用即清）  ← 单槽、不绑会话；留到下次会把无前置点击的 POST 引到旧路径
+         │
+         ▼
 fileAddressFor(sessionId, cwd, path)   ← 官方地址语法的源码级复刻
         │
         ▼
@@ -52,6 +55,8 @@ ctx.sidebarRight.openResource(address)  ← 官方右侧栏打开预览 tab
 - **收口选 `window.fetch`**：`/api/present.open` 是官方客户端的裸 HTTP POST，不经任何 `ctx` 服务；客户端 remote 也没有 `sessionQuery` 命名空间可反查事件，因此这是唯一能同时做到「阻止外开」与「打开侧栏预览」的收口点。包装体只读两个字段，其余原样透传，还原时按身份比对（不摘别人的包装）。
 - **路径靠捕获阶段记录**：请求 query 只有 `sessionId/seq/index`，不含路径；客户端无法反查事件。捕获阶段（必须捕获：菜单面板由 portal 渲染到 body 且自带 `onClick` stopPropagation）从官方显式标记取路径——`[data-presented-file]` 与 `title`；官方 CSS Modules 类名是构建期哈希，不可作为选择器。
 - **地址构造逐字复刻官方 `fileAddressFor`**：官方右侧栏以**地址本身**作 `contentId` 去重，只复刻模板而漏掉「cwd 内的绝对路径折叠为工作区相对路径」会让同一文件出现两个 tab。实现与官方 `@deepseek-ai/dsh-util-workspace-path@0.1.5-rc.1` 逐条对拍维护（19 条 golden，含 UNC / 盘符 / 编码边界；另有 47 条边界用例用于上游升级后的复查）。仓库门禁只允许对官方包 `import type`，故为源码级复刻而非运行时依赖。
+- **只接管同源请求**：包装的是全局 `window.fetch`，故 `isOpenRequest` 还要求 `url.origin` 与当前页面一致，跨源同名路径一律放行。非浏览器环境与不透明源（`location.origin === "null"`）按「取不到源」处理：不判同源，但相对路径仍正常识别——否则 `new URL(相对路径, "null")` 会抛，收口在本地文件场景整体失效。
+- **pending 取用即清**：点击记录是单槽且不绑定会话，只被「真正接管的那一次」消费；两处透传出口（非目标请求、缺会话或路径）都不动它。否则 5 分钟 TTL 内任何**没有前置点击**的 POST 都会被引到上一次的路径。
 - **`reveal` 放行**：它不打开文件内容，dsh 内也没有「文件管理器定位」的等价物；接管只能降级成预览，并让官方卡片显示与实际不符的完成文案。
 - **不做宿主端兜底**：可选方案是在宿主注册 `/api/present.open` 的 exact 影子路由，把失败路径从 fail-open 收紧为 fail-safe。维护者选择保持纯客户端微型形态——收口失效时退回官方原生打开（可感知、非静默损坏），而不是引入宿主代码与额外权限。
 
