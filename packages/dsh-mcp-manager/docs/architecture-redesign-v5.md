@@ -1328,12 +1328,47 @@ sdk/deps.ts          -> ConnectionPort  = Pick<typeof connectionApi, "summary" |
 
 ### H.3 主控复核订正（3 处）
 
-1. **`@ts-nocheck` 是 18 个文件，不是 16**（评审 B 漏了 `integration/real-context.test.ts` 与 `integration/service-contract.test.ts`；主控 `grep -rl` 实测）。副作用：`service-contract-wiring.test.ts` 那句「契约与单元测试文件无 pragma」两头都错。
+1. **`@ts-nocheck` 的 pragma 面 = 16 个文件**（14 个 `test/unit/**` + `test/e2e/smoke.test.ts` + `test/helpers.ts`）。**这一条是主控自己的口径错误，2026-09-15 终态复核订正**：主控当时用 `grep -rl "@ts-nocheck" test/` 得 18，把 `integration/real-context.test.ts:30` 与 `integration/service-contract.test.ts:21` 两处**散文提及**（「本文件不带 @ts-nocheck…」）算成了 pragma；**正确判据是首行精确匹配**。副作用仍在：`service-contract-wiring.test.ts` 那句「契约与单元测试文件无 pragma」两头都错——已随 `68167e8` 按实测值改写。
 2. **§8.2 不是「遗漏 5 个测试文件」**：评审 B 把 #664 遗留清单读成了全包清单。真相是**标题口径误导**——另 7 个文件由 B1 期新增且**已在目标位置**（`unit/upgrade/` 本身就是目标形态）。主控已订正标题与行数（`278c4e8`：全包 23 文件 / 16252 行 / 静态 `it(` 1169；`unit-middleware` 2109→2107、`service-contract` 338→366、`smoke` 3844/159it→3858/161it + 9 处 `new McpManager` 行号）。
 3. **跨端字面量重复（两份评审都没提，主控发现）**：`src/client/core/api.ts:18` 写死 scope 字面量与全局 root 前缀，即 `SCOPE_GLOBAL` 与 `MIDDLEWARE_GLOBAL_ROOT` 的重复实现，无判据 → 直接改变了 W3b 的落点裁定（D.3·35）。
 
 ### H.4 三桶（两份评审合并，主控裁决后）
 
-**本 PR 内可改完**：① W3b 跨端常量收口（D.3·35）；② 两处失效注释订正（D.3·39）；③ `server/shared/interface.ts` 删 6 个零消费者端口类型的转出（不在入口 159 项内，零公开面影响）；④ `service-contract-wiring.test.ts` 注释订正（用实测 18）；⑤ `makeRoutes` 的 `_cwd` 在 PR 正文显式登记「公开签名不变、lint 靠 `_` 前缀」。
+**本 PR 内可改完**：① W3b 跨端常量收口（D.3·35）；② 两处失效注释订正（D.3·39）；③ ~~`server/shared/interface.ts` 删 6 个零消费者端口类型的转出~~ **未做，转 H.5 裁决**（终态复核实测这一族比原先估计大：另有 12 项只被测试消费、6 个 `releaseXxx` 死导出、`workspace/interface.ts:26/28` 三条重复转出、`ServerStatus` 完全死类型——合并成一笔更合适）；④ `service-contract-wiring.test.ts` 注释订正——**已随 `68167e8` 完成**，用的是终态实测值（14 个 unit 文件带 pragma；口径订正见 H.3·1）；⑤ `makeRoutes` 的 `_cwd` 在 PR 正文显式登记「公开签名不变、lint 靠 `_` 前缀」。
 **合并前 follow-up**：⑥ 摘 `@ts-nocheck`（分两批，先 4 个低风险文件）；⑦ 给 limits 族 + 两个默认值补字面量值锚；⑧ 弱断言升级（最小集合 unit-apply 7 + unit-hotspot 1 + unit-manager 5）；⑨ `test/tsconfig.json` 的 exclude 收窄（先用一次 `tsc -p test/tsconfig.json` 探明 `TS2717` 是否同样命中 `cross-end-lock`）；⑩ I7 的 3 处 legacy 字面量重复收口（D.3·38）；⑪ `server/shared` 单消费者放宽显式登记（`paths.ts`/`file-io.ts`/`compose.ts` 三族）。
 **遗留汇总（须单个 issue）**：⑫ **入口导出面 159 → ≤5**（D.3·36，红线，建议与 #769、I8① 清零并排）——**维护者尚未裁决，本 PR 按默认 C 只登记、不动手**；⑬ I4②/I5/I7 三条不变式的**机器判据**（今天只算不判——没有判据，本次所有收窄都会被下一个会话漂回去）；⑭ smoke 的 88 处 `clientSrc` 源文本断言分类（与 §8.4「仅一处」口径冲突）；⑮ ~~mutation-topology 的 0 命中 pattern 判据~~ **已单开 #837**（跨包：26 处 `!…/src/types.ts` 占位 + 逐份 conf 的「命中 ≥1 文件」腐烂判据 + `defaultSegmentExcludes` 退役 + `src/client/**` 按包显式登记；判据必须与清理**同笔**落地）；⑯ I8②/I8③ 执法点；⑰ `vi.mock("node:fs/promises")` 是否纳入 skill 例外清单；⑱ 测试导入面收窄（I8① 13→0，B3 作业单见 H.2·2）。
+
+### H.5 终态评审（2026-09-15，两份；主控复核后入档）
+
+**方法**：服务端暴露面与测试/变异面各由一名**只读** agent 执行；两者都未写任何仓库文件，都在 `git archive HEAD` 物化到 `/tmp` 的快照上自写解析器/脚本分析。服务端那份自证了解析器两处修正（行注释里的 `agent/*` 被误判为块注释起点、语句终结符少数 [[BT]}`——修正后与人工 `cat -n` 逐文件核对一致：catalog 47 / api 12 / inject 4 / 入口 155+4=159）。
+
+**总判断（两份一致）**：W11 四刀把**值面**暴露收干净了——14 叶子模块 / 15 值边 / 两类环 0/0 / I2① 0 / `directImpl`·死声明·deps 值 import 全空；7 份 `deps.ts` 的 **66 条 Pick 引用零个「声明了不用」**。剩下的全是**类型面/转出面**问题。
+
+**在本 PR 内落地的两条（`a0e170a`）**：
+
+1. **6 个端口持有者的三条装配守卫补测**（`test/unit/ports/*.test.ts`，29 files / 1240 tests）。原先 `get()` 未装配抛错、`install()` 重复装配抛错、`release()` 复位三条路径**全仓零覆盖**，而 6 个 `impl/service/index.ts` **都在变异面内**（catalog/pipeline→runtime 段、inject 与 connection/runtime/impl→middleware 段、orchestrator→manager 段、api→routes 段）→ 评审推断约 **18 个存活变异体**。装配/卸载**走门面**（让 6 个 `installXxx`/`releaseXxx` 从死导出变成被覆盖），`get()` 白盒直连持有者（I8 允许 unit 直连 `src/server/<域>/impl/**`）；`--min` 23→29、`vitest.stryker.d` 测试面同步 +6。**反例自证 3 域**（catalog 重复装配 throw / inject 未装配 guard / runtime 的 release 复位）逐条「改前必红、还原后 sha256 一致」；**主控另独立复现了 catalog 一条**（1 failed / 2 passed，还原后 sha256 = 7a8befdc… 与改前逐字节相同）。
+2. **`ManagerLite.stats` 转必填**（`connection/runtime/deps.ts`）：它曾是 7 份 `deps.ts` 里**唯一的成员级可选**，与 I6 正面冲突；生产侧唯一构造点 `orchestrator/manager.ts:69/:109` 恒有值，4 处测试假体补齐。**一处如实保留（评审的建议前提不成立）**：`supervisor.ts:311` 的 `opts.stats?.recordCall?.(…)` **未动**——该 `opts` 是导出工具函数 `buildToolDefinition` 的可选选项包，改必填直调后包 `typecheck` 报 **TS18048** 且包 `build` 失败（实测并还原），故它不是「已无效的守卫」。
+
+**主控未采纳为「本 PR 内改」的三条（理由）**：
+
+- **删 12 项零消费者转出**（6 个 `releaseXxx` + `server/shared/interface.ts` 的 6 个端口类型 + `workspace/interface.ts:26/28` 三条重复转出 + `api/interface.ts:36 queryParam`）：前 6 个 `releaseXxx` **已被上面的补测覆盖、不再是死导出**；其余 6 项是纯形态（类型面、无运行时），删它们要动 6 个门面 + 全量 `--write-baseline` 重写基线，与本 PR 主题（按域重构）无关 → 转 H.6。
+- **`ServerStatus` 下线**：它是**完全死符号**（`api/impl/health/type.ts:8` 定义、`api/interface.ts:45` 与入口 `:922` 转出，**无生产者也无消费者**），但它在入口 159 面内 → 属公开 API 变更 → 归 H.4 ⑫ 那一笔。
+- **`compose.ts` 的接线**：`bindHost`/`assemble`/`safeDisposeAll` 在 `src/` 里**零调用**，`upgrade` 也是 `src/index.ts:564/565/646` 直接 `releaseUpgrade()`/`await installUpgrade()` —— **D.2·50 拍板③「`assemble` 只驱动 `upgrade` 的生命周期」的字面要求未落地**。接线要动入口装配套路与释放语义（`assemble` 的 `DomainSpec` 形态与当前「静态 `installXxx(deps)` + 命名空间端口」是两套形态），属 B3 或单独立项；**本 PR 只把失实注释订正为事实**（`real-context.test.ts`，`68167e8`）。
+
+### H.6 终态评审新登记（主控裁决：不在本 PR 动）
+
+1. **`compose.ts` 是「已交付但未接线」的机制**（P1，需裁决）：三函数在 `src/` 零调用；唯一消费者是 `server/shared/interface.ts`（转出）与 `real-context.test.ts` 的**夹具域** → 变异分不丢，但「测的是产品不使用的机制」。处置二选一：**接线**（入口改走 `bindHost → assemble → ctx.effect(() => safeDisposeAll)`，需把各域 `installXxx(deps)` 收敛成 `DomainSpec` 形态）或**收窄/删除**（承认静态端口不需要这套机制）。**这一事实已写进 PR 正文**。
+2. **静态端口的释放语义需要一句话**：组合根不释放静态端口（它们无活资源、只有装配标记），故 6 个 `releaseXxx` 在 `a0e170a` 之前是死导出、之后由单测覆盖。v5 §3.2 写的是「`installXxx`/`releaseXxx` 配对」——本 PR 按「保留配对、由单测覆盖」处理。
+3. **`connection/interface.ts` 承载了 api/catalog 的两张主机面**（`RoutesManager`→api、`SupervisorLite`→catalog），该门面 4 条 `import type`（`:16 SseHub`、`:17 ClientUiConfig`、`:18 ServerConfig`、`:19 McpStore`）全部只服务这两张面 → **connection 域替 api 背下了对 `store`/`config` 的类型依赖**。裁决：**保持不动**（都在 I2 允许的类型边内），但**门面头注释要写明这一点**（B3 执行，本 PR 未改）。
+4. **`ManagerLite`/`MiddlewareHost` 落 `connection/runtime/deps.ts` 打破了「`deps.ts` 只 import 上游门面」的单一语义**（`:29/30/31` 还 import 本子层 impl 的 `type.ts`）；评审建议迁到 `impl/middleware/type.ts`（与 `ProjectUnit`/`ConnectionEntry` 同址）后 `deps.ts` 回归纯 Port → 留 B3（迁移会再动一次该子层门面链）。
+5. **`impl/<块>/type.ts` 的落点问题**：`api/impl/health/type.ts` 只为死类型 `ServerStatus` 而存在（随 H.4 ⑫ 下线）；`catalog/impl/entries/type.ts` 的 `CatalogServer`/`CatalogTool` 主消费者是 `search.ts` 而 `entries/index.ts` 自身零引用（建议随 `search` 进 `impl/search/`）。另有 **5 个 `impl/<块>/` 只有 `type.ts` 没有 `index.ts`**（`api/impl/health`、`catalog/impl/search`〔刻意偏差，有注释〕、`config/impl/{model,ui}`、`connection/runtime/impl/middleware`）——块目录语义不一致，属 G10（无判据）。
+6. **共享层准入核对（I5）**：`server/shared` 10 项达标、**7 项 =1 域**（全是 upgrade 单消费者：`catalogDir`/`ensureDir`/`LEGACY_LAYOUT`/`legacyFile`/`readTextFile`/`versionFile`/`writeFileAtomic`）、**13 项零消费者**（6 个路径名常量 + 7 个宿主端口类型）、12 项只被测试消费；`src/shared` 9 项达标、9 项 =1 域（含已知放宽 `ROUTE_FENCE`）、**5 项全仓零消费者**（`FloatBreakpoint`/`RectLike`/`ViewportPoint`/`SseFrame`/`RouteFence`，后两者在入口面内）→ 与 D.3·13 的「三例」建议**合并做一次准入核对**，照 `compose.ts` 的写法显式登记放宽，而不是逐例记账。
+7. **落盘原语仍未单源**（I7 残留变形）：`paths.ts` 已单源（store/stats/catalog 四个写面都改经门面），但 `server/shared/file-io.ts` 的 `writeFileAtomic`/`ensureDir`/`readJsonFile`/`readTextFile` 仍**只被 upgrade 消费**——`store.ts`/`middleware-state.ts`/`collector.ts` 各自 import `node:fs` 直写。
+8. **测试面（B3 作业单，终态版）**：
+   - I8① **13 条**：8 个文件共 **26 条 import** 可纯改 specifier 收窄；**5 个文件的用例必须整段搬 `test/integration`**（`apply`/`resolveDebugConfig`/`resolveMiddlewareMode`/`makeMiddlewareHotSwitch` 只存在于入口、无第二出口）。**收窄后只从入口传递可达的 src 文件有 79 个**（含全部域）→ 改写时必须逐域补回门面 import，否则变异段会失去加载者。
+   - `@ts-nocheck`：**16 个 pragma 文件**（口径见 H.3·1）；最省摘除顺序已由评审给出（workspace/transport 下界 0 → call-stats/store/shared 各 1 → … → manager2/middleware 各 20 → helpers → smoke）。
+   - 弱断言：`toBeTruthy()` **216** / `toBeUndefined()` **82** / `toBeDefined()` 2 / 快照 0；**装饰性用例点名 5 处**（`unit-apply.test.ts:270-272` 的「卸载不抛」是入口整条卸载链的唯一断言 → 应改成「7 个 disposer 各调用一次 + 顺序」；`unit-manager.test.ts:188/215/244/269`；`unit-manager2.test.ts:2175` 墙钟；`unit-catalog.test.ts:262` 恒真 id；`unit-hotspot.test.ts:368` + `unit-middleware.test.ts:449` 占位式）。
+   - 无值锚常量 **11 条**（limits 族 + `DEFAULT_RESULT_TRUNCATE_BYTES` + `DEFAULT_Z_INDEX_BASE` + `MCP_GUIDANCE` + `EMPTY_STATUS_COUNTS` + `ROUTE_FENCE`）。
+   - `test/tsconfig.json` 的 `exclude: ["e2e/**"]` 使 **`cross-end-lock.test.ts` 不在任何编译面**（它没有 pragma）；但**收窄 exclude 不是分钟级改动**——该文件同样静态 import `lib/index.js`，很可能同样触发 TS2717，**先探明再动**（H.4 ⑨ 的口径订正）。
+   - `smoke` 的 `clientSrc` 源文本断言实测 **85 处**（此前口径写 88；`.includes(` 58 + `readFileSync` 25）。
+9. **变异面剩余存活体（评审静态推断，未跑 stryker）**：入口卸载清单（`src/index.ts:637-646` 七条 disposer 只被「不抛」覆盖，约 6–8 个）；`ROUTES` 的 10/11 条路径字面量**在变异测试面内无锚**（唯一锚 `cross-end-lock` 不在变异面；runtime 段约 10 个 StringLiteral）；`SSE_FRAMES.summary` 同理；`compose.ts` 只被夹具驱动。**`a0e170a` 已消掉 6 个持有者的守卫类存活体**。
