@@ -6,41 +6,27 @@
  * @modelcontextprotocol/sdk 的 StdioClientTransport / StreamableHTTPClientTransport
  * 承担（issue #11，决策 #47 approved；devDependency，构建期经 bundle-host
  * 内联进产物）。本模块保留：
- *  - env 安全过滤与 ${ENV} 展开（凭据形状环境变量不透传给 MCP 子进程）；
+ *  - 子进程环境的安全过滤（凭据形状环境变量不透传）；
  *  - supervisor 依赖的适配面：connect / close / onClose / `sdk` 实例暴露；
  *  - parseSsePayload 兼容导出（smoke 契约；内部传输已交 SDK 解析）。
  * 由 lib/index.js 组合根 re-export。
+ *
+ * ${ENV} 模板展开与凭据词根的物理定义在 config 域（#767 S1-1 迁出）；本模块经 deps 端口
+ * 取用（I2①：跨域不得有值边）。
  */
 
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { ServerConfig } from "../../config/interface.ts";
+import { runtimePorts } from "./impl/service/index.ts";
 
 // ------------------------------------------------- env 展开 / 子进程环境
 
-/** 凭据形状的环境变量名（父进程环境不自动透传给 MCP 子进程）。 */
-const SECRET_ENV_NAME = /(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)/i;
-
-/** 展开字符串中的 ${ENV_NAME} 引用（未设置 → 空字符串），用于 header/env 值。 */
-export function expandEnv(value: unknown): string {
-  return String(value).replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (whole, name) => {
-    const resolved = process.env[name];
-    return resolved !== undefined ? resolved : "";
-  });
-}
-
-/** 递归展开对象值中的 ${ENV_NAME} 引用。 */
-function expandEnvObject(input: Record<string, unknown> | undefined): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(input ?? {})) {
-    out[key] = expandEnv(value);
-  }
-  return out;
-}
-
 /** 构建 stdio 子进程环境：父环境去掉凭据形状与陈旧 DSH_* 名，再合并显式 env（支持 ${ENV} 引用）。
- * 显式传入完整环境后 SDK 不再套用其默认白名单（getDefaultEnvironment），安全语义与自写版一致。 */
+ * 显式传入完整环境后 SDK 不再套用其默认白名单（getDefaultEnvironment），安全语义与自写版一致。
+ * 凭据词根与展开器取自 config 域端口——本域不再持有第二份定义。 */
 function buildChildEnv(extra: Record<string, unknown> | undefined): Record<string, string> {
+  const { SECRET_ENV_NAME, expandEnvObject } = runtimePorts.get().configEnv;
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (value === undefined) continue;
@@ -68,7 +54,7 @@ export class HttpTransport {
     this.url = url;
     this.headers = headers;
     this.sdk = new StreamableHTTPClientTransport(new URL(url), {
-      requestInit: { headers: expandEnvObject(headers) },
+      requestInit: { headers: runtimePorts.get().configEnv.expandEnvObject(headers) },
     });
   }
 

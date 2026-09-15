@@ -3,18 +3,20 @@
  * dsh-mcp-manager — unit：transport 解析/环境过滤 + MCPClient 协议适配。
  *
  * 覆盖：
- * - expandEnv / expandEnvObject（经 HttpTransport headers 展开面）
  * - StdioTransport：args/env/cwd 缺省语义、onerror 记录、onClose 叠加链
  * - createTransport 分派
  * - parseSsePayload：多事件、id 匹配、坏 JSON、无 data
  * - normalizeScope
  * - MCPClient：requireClient 未初始化抛错、initialize 失败附 stderr 尾巴、
  *   listTools/callTool 参数构造与透传
+ *
+ * expandEnv 的 6 条随实现迁往 test/unit/unit-config-env.test.ts；HttpTransport 的
+ * ${ENV} 展开 4 条**留在这里**——它们验的是消费端接线（headers 真的经 config 域端口展开后
+ * 交给 SDK），实现搬家后这条接线正是最该被守住的地方（#767 S1-1）。
  */
 import { beforeAll, describe, expect, it } from "vitest";
 
 const {
-  expandEnv,
   HttpTransport,
   StdioTransport,
   createTransport,
@@ -24,39 +26,6 @@ const {
   SCOPE_PROJECT,
   MCPClient,
 } = await import("../../src/index.ts");
-
-describe("expandEnv", () => {
-  beforeAll(() => {
-    process.env.DSH_MUT_TEST_A = "va";
-    delete process.env.DSH_MUT_TEST_B;
-  });
-
-  it("已设置变量展开", () => {
-    expect(expandEnv("${DSH_MUT_TEST_A}")).toBe("va");
-  });
-
-  it("未设置变量展开为空串", () => {
-    expect(expandEnv("x${DSH_MUT_TEST_B}y")).toBe("xy");
-  });
-
-  it("混合展开", () => {
-    expect(expandEnv("${DSH_MUT_TEST_A}-${DSH_MUT_TEST_B}")).toBe("va-");
-  });
-
-  it("无引用原样返回", () => {
-    expect(expandEnv("plain")).toBe("plain");
-  });
-
-  it("非字符串 String 化", () => {
-    // assert.equal 宽松相等：expandEnv(42) 返回字符串 "42"，与数字 42 == 相等。
-    // 这里取实现契约（String 化），按字符串断言。
-    expect(expandEnv(42)).toBe("42");
-  });
-
-  it("非法变量名不匹配替换", () => {
-    expect(expandEnv("${1BAD}")).toBe("${1BAD}");
-  });
-});
 
 describe("normalizeScope", () => {
   it("project → SCOPE_PROJECT", () => {
@@ -190,7 +159,7 @@ describe("HttpTransport headers ${ENV} 展开（经 SDK requestInit 面）", () 
     expect(init && typeof init === "object").toBeTruthy();
   });
 
-  it("headers 经 expandEnvObject 展开", () => {
+  it("headers 经 config 域端口展开（实现搬家后接线仍成立）", () => {
     const init = makeHttp().sdk._requestInit;
     expect(init.headers.Authorization).toBe("Bearer tk");
   });

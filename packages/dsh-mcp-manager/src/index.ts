@@ -110,6 +110,7 @@ installOrchestrator({
 // （written elsewhere → 该对账静默空转，附录 G·G20）。
 runtimeApi.installRuntime({
   catalog: catalogApi,
+  configEnv: configModelApi,
   pipeline: pipelineApi,
   workspace: workspaceApi,
 });
@@ -755,6 +756,9 @@ export {
   buildConfigUiPatch,
   panelTopForAnchor,
   Config,
+  // ${ENV} 预展开的物理定义在 config 域（#767 S1-1 自 connection/runtime 迁出）；
+  // 入口导出名集合不变，只换来源。
+  expandEnv,
 } from "./server/config/interface.ts";
 export type { UiPlacementConfig } from "./server/config/interface.ts";
 export type { ClientUiConfig } from "./shared/interface.ts";
@@ -765,7 +769,6 @@ export { McpManager } from "./server/connection/orchestrator/interface.ts";
 export {
   ConnectionSupervisor,
   McpMiddleware,
-  expandEnv,
   HttpTransport,
   parseSsePayload,
   StdioTransport,
