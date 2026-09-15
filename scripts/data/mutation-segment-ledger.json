@@ -1382,7 +1382,8 @@
     "dsh-lan-proxy-proxy": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
     "dsh-lan-proxy-shared": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
     "dsh-lan-proxy-tls": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
-    "dsh-notifier-client": "#769 新增的客户端段（packages/dsh-notifier/src/client 下的纯 .ts 模块）。最近一次夜间全量班（observe.yml）早于本段的引入，故台账里没有它的 run 日志墙钟。本地 --force 实测 523 个变异体、concurrency 2 用时 4 分 03 秒（covered 87.38%），按台账口径不计入——本文件的值只能从 Actions run 日志解析，禁止手工编造数值；下一轮夜间全量班会把本段自动补进 measurements 并从 unmeasured 删除。"
+    "dsh-notifier-client": "#769 新增的客户端段（packages/dsh-notifier/src/client 下的纯 .ts 模块）。最近一次夜间全量班（observe.yml）早于本段的引入，故台账里没有它的 run 日志墙钟。本地 --force 实测 523 个变异体、concurrency 2 用时 4 分 03 秒（covered 87.38%），按台账口径不计入——本文件的值只能从 Actions run 日志解析，禁止手工编造数值；下一轮夜间全量班会把本段自动补进 measurements 并从 unmeasured 删除。",
+    "dsh-mcp-manager-servers": "#767 S1-2b 新建段（servers/lifecycle 域骨架，尚未接线）：段面无历史测量值，wallSeconds 只能由 mutation-ledger 的生成模式从 Actions run 日志解析，不手工编造；待该段在 CI 变异切片上首次实跑后入库。"
   },
   "superseded": {
     "dsh-lan-proxy-1": {

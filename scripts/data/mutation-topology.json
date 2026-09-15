@@ -156,6 +156,14 @@
           ],
           "comment": "#767 B2b 重画：supervisor——连接监督器（runtime/supervisor+reconnect）+状态持久化（store）+统计（stats）；B2b 后文件归各域段，本段只留这四处。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；client 与 shared/placement-math.ts 两条排除仍然成立。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
+        "servers": {
+          "mutate": ["packages/dsh-mcp-manager/src/server/servers/**/*.ts"],
+          "excludes": [
+            "!packages/dsh-mcp-manager/src/client/**",
+            "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
+          ],
+          "comment": "新增（#767 S1-2b）：servers——面向官方引擎的服务器域族（装载生命周期 servers/lifecycle；后续 dispatch / injection 同段）。为什么新建段而不是塞进旧段：源码全覆盖断言要求 src 下每个文件落在 ∪mutate ∪ ∪excludes 内，而 src/server/servers/** 不被既有任何段的 glob 覆盖；旧段的 comment 与文件归属也会因此失真。excludes 两条照同包其余段（client 是另一端、shared/placement-math.ts 是薄转发），两者都不构成宿主侧变异面。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+        },
         "runtime": {
           "mutate": [
             "packages/dsh-mcp-manager/src/server/connection/runtime/transport.ts",
