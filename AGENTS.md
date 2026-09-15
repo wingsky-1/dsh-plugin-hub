@@ -136,6 +136,7 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
 | -------------------------------------------------------- | --------------------------------------------------------------------------- |
 | 发布与 release notes（中英分节、双锚跳转导航的完整写法） | `.dsh/skills/dsh-plugin-release/SKILL.md`                                   |
 | 宿主 / 客户端写法、构建契约、多端兼容、防 flake          | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)                                  |
+| 等价重构（抽函数 / 拆模块 / 复杂度清零）怎么证明没改行为 | [DEVELOPMENT.md §4.1 验证三件套](docs/DEVELOPMENT.md#user-content-equivalence-refactor) |
 | 插件开发执行清单                                         | `.dsh/skills/dsh-plugin-hub-dev/SKILL.md`                                   |
 | PR 评审（含 PR 正文嵌图）                                | `.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md` + `references/pr-images.md` |
 | issue 全周期处理、标签体系与 loop 状态机                 | [docs/ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md)                            |
