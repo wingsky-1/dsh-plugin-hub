@@ -184,6 +184,29 @@ function resolveTarget(fromFile, spec) {
   return resolveCandidates(fromFile, spec)[0] ?? null;
 }
 
+/** 引号态内的单步推进；跨过转义对，并把收尾引号写回状态。 */
+function stepQuoted(text, i, quote) {
+  const ch = text[i];
+  if (ch === "\\") return i + 2;
+  if (ch === quote.current) quote.current = null;
+  return i + 1;
+}
+
+/** 行注释跳到换行符（不含）为止；不是起点时返回 null。 */
+function stepLineComment(text, i) {
+  if (text[i] !== "/" || text[i + 1] !== "/") return null;
+  while (i < text.length && text[i] !== "\n") i += 1;
+  return i;
+}
+
+/** 块注释跳到闭合符之后；缺少闭合符时截到文本末尾。返回 null 表示不是块注释起点。 */
+function stepBlockComment(text, i) {
+  if (text[i] !== "/" || text[i + 1] !== "*") return null;
+  i += 2;
+  while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i += 1;
+  return Math.min(i + 2, text.length);
+}
+
 /**
  * 剥离注释，避免注释里的 import 示例被当成真实引用。
  *
@@ -195,39 +218,33 @@ function resolveTarget(fromFile, spec) {
 function stripComments(text) {
   let out = "";
   let i = 0;
-  let quote = null;
+  const quote = { current: null };
   while (i < text.length) {
-    const ch = text[i];
-    if (quote !== null) {
-      if (ch === "\\") {
-        out += text.slice(i, i + 2);
-        i += 2;
-        continue;
-      }
-      if (ch === quote) quote = null;
-      out += ch;
+    const start = i;
+    if (quote.current !== null) {
+      i = stepQuoted(text, i, quote);
+      out += text.slice(start, i);
+      continue;
+    }
+    if (text[i] === '"' || text[i] === "'" || text[i] === "`") {
+      quote.current = text[i];
       i += 1;
+      out += text.slice(start, i);
       continue;
     }
-    if (ch === '"' || ch === "'" || ch === "`") {
-      quote = ch;
-      out += ch;
-      i += 1;
+    const lineEnd = stepLineComment(text, i);
+    if (lineEnd !== null) {
+      i = lineEnd; // 行注释整段丢弃；停在换行符上，由下一轮普通字符分支保留它
       continue;
     }
-    if (ch === "/" && text[i + 1] === "/") {
-      while (i < text.length && text[i] !== "\n") i += 1;
+    const blockEnd = stepBlockComment(text, i);
+    if (blockEnd !== null) {
+      i = blockEnd;
+      out += " "; // 与旧实现一致：块注释折算成一个空格，行注释什么都不留
       continue;
     }
-    if (ch === "/" && text[i + 1] === "*") {
-      i += 2;
-      while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i += 1;
-      i = Math.min(i + 2, text.length);
-      out += " ";
-      continue;
-    }
-    out += ch;
     i += 1;
+    out += text.slice(start, i);
   }
   return out;
 }
@@ -278,6 +295,62 @@ function extractRefs(text) {
   return out;
 }
 
+/** 读一个成员并取其顶层键；判不出来（展开 / 计算属性 / 非标识符键）返回 null。 */
+function memberKey(member) {
+  if (member === "") return undefined;
+  if (member.startsWith("...") || member.startsWith("[")) return null;
+  const colon = member.indexOf(":");
+  const key = (colon === -1 ? member : member.slice(0, colon)).trim().replace(/^['"]|['"]$/g, "");
+  if (!/^[A-Za-z_$][\w$]*$/.test(key)) return null;
+  return key;
+}
+
+/** 维护引号态：进引号 / 收引号；不涉及引号时返回 false。 */
+function advanceQuote(text, cursor) {
+  const ch = text[cursor.i];
+  if (cursor.quote !== null) {
+    if (ch === cursor.quote && text[cursor.i - 1] !== "\\") cursor.quote = null;
+    return true;
+  }
+  if (ch === '"' || ch === "'" || ch === "`") {
+    cursor.quote = ch;
+    return true;
+  }
+  return false;
+}
+
+/** 按括号对称调整深度；闭合到零层表示对象字面量到此结束。不涉及括号时返回 null。 */
+function advanceDepth(cursor, ch) {
+  if (ch === "{" || ch === "(" || ch === "[") {
+    cursor.depth += 1;
+    return true;
+  }
+  if (ch === "}" || ch === ")" || ch === "]") {
+    cursor.depth -= 1;
+    return cursor.depth !== 0;
+  }
+  return null;
+}
+
+/**
+ * 推进一个字符；对象字面量已闭合时返回 false（此时不再读成员）。
+ *
+ * 引号态优先于其它一切判定，故未收尾的引号会把整段（含分隔符与括号）吞掉——
+ * 与逐字符扫描的语义一致。
+ */
+function scanMemberBounds(text, cursor) {
+  if (advanceQuote(text, cursor)) return true;
+  const ch = text[cursor.i];
+  const closed = advanceDepth(cursor, ch);
+  if (closed !== null) return closed;
+  if ((ch === "," || ch === ";" || ch === "\n") && cursor.depth === 1) {
+    // `;` 与换行是 interface 成员的合法分隔符，`,` 是对象字面量的；这个函数两者都要
+    // 读——只在深度 1 切分，属性值跨行发生在更深层，不受影响。
+    return cursor.take(cursor.i);
+  }
+  return true;
+}
+
 /**
  * 提取对象字面量 `{ … }` 的顶层键。入参从 `{` 开始。
  *
@@ -287,41 +360,77 @@ function extractRefs(text) {
 function objectLiteralKeys(text) {
   if (text[0] !== "{") return null;
   const keys = [];
-  let depth = 0;
-  let quote = null;
-  let start = 1;
-  const take = (end) => {
-    const member = text.slice(start, end).trim();
-    if (member === "") return true;
-    if (member.startsWith("...") || member.startsWith("[")) return false;
-    const colon = member.indexOf(":");
-    const key = (colon === -1 ? member : member.slice(0, colon)).trim().replace(/^['"]|['"]$/g, "");
-    if (!/^[A-Za-z_$][\w$]*$/.test(key)) return false;
-    keys.push(key);
+  const cursor = { depth: 0, quote: null, i: 1, start: 1 };
+  cursor.take = (end) => {
+    const key = memberKey(text.slice(cursor.start, end).trim());
+    if (key === null) return false;
+    if (key !== undefined) keys.push(key);
+    cursor.start = end + 1;
     return true;
   };
-  for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-    if (quote !== null) {
-      if (ch === quote && text[i - 1] !== "\\") quote = null;
-      continue;
+  while (cursor.i < text.length) {
+    if (!scanMemberBounds(text, cursor)) {
+      // 收尾成员停在闭合符前，与分隔符处不在同一步，故这里单独读一次。
+      const key = memberKey(text.slice(cursor.start, cursor.i).trim());
+      if (key === null) return null;
+      if (key !== undefined) keys.push(key);
+      return keys;
     }
-    if (ch === '"' || ch === "'" || ch === "`") {
-      quote = ch;
-      continue;
-    }
-    if (ch === "{" || ch === "(" || ch === "[") depth += 1;
-    else if (ch === "}" || ch === ")" || ch === "]") {
-      depth -= 1;
-      if (depth === 0) return take(i) ? keys : null;
-    } else if ((ch === "," || ch === ";" || ch === "\n") && depth === 1) {
-      // `;` 与换行是 interface 成员的合法分隔符，`,` 是对象字面量的；这个函数两者都要
-      // 读——只在深度 1 切分，属性值跨行发生在更深层，不受影响。
-      if (!take(i)) return null;
-      start = i + 1;
-    }
+    cursor.i += 1;
   }
   return null;
+}
+
+/** 收 deps.ts 里每个导出 interface 的字段集（就地声明，字段名即 Port 名）。 */
+function collectDepsFields(files) {
+  const fieldsByType = new Map();
+  for (const f of files.filter((x) => x.endsWith("deps.ts"))) {
+    const text = stripComments(readFileSync(f, "utf8"));
+    const re = /export\s+interface\s+([A-Za-z_$][\w$]*)\s*\{/g;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const keys = objectLiteralKeys(text.slice(m.index + m[0].length - 1));
+      if (keys !== null) fieldsByType.set(m[1], keys);
+    }
+  }
+  return fieldsByType;
+}
+
+/** 收 interface.ts 里 `installXxx(deps: XxxDeps)` 的 install → 依赖类型名映射。 */
+function collectInstallDepsTypes(files) {
+  const typeByInstall = new Map();
+  for (const f of files.filter((x) => x.endsWith("interface.ts"))) {
+    const text = stripComments(readFileSync(f, "utf8"));
+    const re =
+      /export\s+function\s+(install[A-Z]\w*)\s*\(\s*[A-Za-z_$][\w$]*\s*:\s*([A-Za-z_$][\w$]*)/g;
+    let m;
+    while ((m = re.exec(text)) !== null) typeByInstall.set(m[1], m[2]);
+  }
+  return typeByInstall;
+}
+
+/**
+ * 取调用实参的键集；实参不是可解析的对象字面量时 returned=null 且 problems 带判词
+ * ——「判不出来」与「键集为空」对调用方是两种事实，故不用空集顶替。
+ */
+function collectInterfaceArguments(indexText, cursor, depsType) {
+  let i = cursor;
+  while (i < indexText.length && /\s/.test(indexText[i])) i += 1;
+  const keys = indexText[i] === "{" ? objectLiteralKeys(indexText.slice(i)) : null;
+  if (keys === null) {
+    return { keys: null, problems: [`实参不是可解析的对象字面量，无法与 ${depsType} 对账`] };
+  }
+  return { keys, problems: [] };
+}
+
+/** 实参键集与声明字段集的对账：漏接在前、多接在后（与基线文案顺序一致）。 */
+function compareDepsKeys(installName, depsType, fields, keys) {
+  const out = [];
+  for (const k of fields.filter((x) => !keys.includes(x)))
+    out.push(`${installName}：漏接 "${k}"（${depsType} 声明了，组合根没给）`);
+  for (const k of keys.filter((x) => !fields.includes(x)))
+    out.push(`${installName}：多接 "${k}"（${depsType} 没有这个字段）`);
+  return out;
 }
 
 /**
@@ -338,24 +447,8 @@ function analyzeInjectionFaces(srcDir) {
   const files = collectTsFiles(srcDir);
   const indexFile = files.find((f) => rel(srcDir, f) === "index.ts");
   if (indexFile === undefined) return [];
-  const fieldsByType = new Map();
-  for (const f of files.filter((x) => x.endsWith("deps.ts"))) {
-    const text = stripComments(readFileSync(f, "utf8"));
-    const re = /export\s+interface\s+([A-Za-z_$][\w$]*)\s*\{/g;
-    let m;
-    while ((m = re.exec(text)) !== null) {
-      const keys = objectLiteralKeys(text.slice(m.index + m[0].length - 1));
-      if (keys !== null) fieldsByType.set(m[1], keys);
-    }
-  }
-  const typeByInstall = new Map();
-  for (const f of files.filter((x) => x.endsWith("interface.ts"))) {
-    const text = stripComments(readFileSync(f, "utf8"));
-    const re =
-      /export\s+function\s+(install[A-Z]\w*)\s*\(\s*[A-Za-z_$][\w$]*\s*:\s*([A-Za-z_$][\w$]*)/g;
-    let m;
-    while ((m = re.exec(text)) !== null) typeByInstall.set(m[1], m[2]);
-  }
+  const fieldsByType = collectDepsFields(files);
+  const typeByInstall = collectInstallDepsTypes(files);
   const out = [];
   const indexText = stripComments(readFileSync(indexFile, "utf8"));
   const callRe = /\b(install[A-Z]\w*)\s*\(/g;
@@ -365,17 +458,12 @@ function analyzeInjectionFaces(srcDir) {
     if (depsType === undefined) continue;
     const fields = fieldsByType.get(depsType);
     if (fields === undefined) continue;
-    let i = m.index + m[0].length;
-    while (i < indexText.length && /\s/.test(indexText[i])) i += 1;
-    const keys = indexText[i] === "{" ? objectLiteralKeys(indexText.slice(i)) : null;
-    if (keys === null) {
-      out.push(`${m[1]}：实参不是可解析的对象字面量，无法与 ${depsType} 对账`);
+    const args = collectInterfaceArguments(indexText, m.index + m[0].length, depsType);
+    if (args.keys === null) {
+      for (const problem of args.problems) out.push(`${m[1]}：${problem}`);
       continue;
     }
-    for (const k of fields.filter((x) => !keys.includes(x)))
-      out.push(`${m[1]}：漏接 "${k}"（${depsType} 声明了，组合根没给）`);
-    for (const k of keys.filter((x) => !fields.includes(x)))
-      out.push(`${m[1]}：多接 "${k}"（${depsType} 没有这个字段）`);
+    out.push(...compareDepsKeys(m[1], depsType, fields, args.keys));
   }
   return out;
 }
@@ -393,6 +481,42 @@ function parseNameList(list) {
     else out.push({ exported: name, local: name });
   }
   return out;
+}
+
+/** 把一个具名列表的每个 local 名并进符号集（`A, B as C, type D` 形）。 */
+function addNameList(syms, list) {
+  for (const n of parseNameList(list)) syms.add(n.local);
+}
+
+/** 沿 re-export 目标递归收集（声明文件与运行时文件同源时两侧都算）。 */
+function collectViaExports(from, spec, seen, depth, syms) {
+  for (const t of resolveCandidates(from, spec)) {
+    for (const s of collectExports(t, seen, depth + 1)) syms.add(s);
+  }
+}
+
+/** `export { … } from "spec"`：具名列表本身 + 目标文件的符号面。 */
+function collectFromExports(file, text, seen, depth, syms) {
+  const re = /^\s*export\s+(?:type\s*)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/gm;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    addNameList(syms, m[1]);
+    collectViaExports(file, m[2], seen, depth, syms);
+  }
+}
+
+/** `export * from "spec"`：整个目标符号面。 */
+function collectStarExports(file, text, seen, depth, syms) {
+  const re = /^\s*export\s*\*\s*from\s*['"]([^'"]+)['"]/gm;
+  let m;
+  while ((m = re.exec(text)) !== null) collectViaExports(file, m[1], seen, depth, syms);
+}
+
+/** `export { … };`：无 from 的具名再导出，只并本地名。 */
+function collectBareExports(text, syms) {
+  const re = /^\s*export\s+(?:type\s*)?\{([^}]*)\}\s*;/gm;
+  let m;
+  while ((m = re.exec(text)) !== null) addNameList(syms, m[1]);
 }
 
 /**
@@ -419,23 +543,9 @@ function collectExports(file, seen = new Set(), depth = 0) {
     // `export default` 是匿名默认导出，具名声明正则抓不到；规则 4 判定
     // `export { default as A } from "./impl.ts"` 时需要它在符号集里，否则假红。
     if (/^\s*export\s+default\b/m.test(text)) syms.add("default");
-    const fromRe = /^\s*export\s+(?:type\s*)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/gm;
-    while ((m = fromRe.exec(text)) !== null) {
-      for (const n of parseNameList(m[1])) syms.add(n.local);
-      for (const t of resolveCandidates(f, m[2])) {
-        for (const s of collectExports(t, seen, depth + 1)) syms.add(s);
-      }
-    }
-    const starRe = /^\s*export\s*\*\s*from\s*['"]([^'"]+)['"]/gm;
-    while ((m = starRe.exec(text)) !== null) {
-      for (const t of resolveCandidates(f, m[1])) {
-        for (const s of collectExports(t, seen, depth + 1)) syms.add(s);
-      }
-    }
-    const bareRe = /^\s*export\s+(?:type\s*)?\{([^}]*)\}\s*;/gm;
-    while ((m = bareRe.exec(text)) !== null) {
-      for (const n of parseNameList(m[1])) syms.add(n.local);
-    }
+    collectFromExports(f, text, seen, depth, syms);
+    collectStarExports(f, text, seen, depth, syms);
+    collectBareExports(text, syms);
   }
   return syms;
 }
@@ -574,25 +684,27 @@ function collectUncoveredSrcFiles(srcDir, specs) {
   return out.sort();
 }
 
-/** 单包全量分析：模块表、引用明细、三套依赖图、R-A 双口径、规则违例、变异覆盖。 */
-function analyzePackage(pkgName, topology) {
-  const srcDir = join(ROOT, "packages", pkgName, "src");
-  if (!existsSync(srcDir)) return null;
-  const modules = collectModules(srcDir);
-  const inSrc = (p) => p === srcDir || p.startsWith(srcDir + sep);
-  const inClient = (p) => inSrc(p) && rel(srcDir, p).split("/")[0] === "client";
+/** 模块 id 的稳定排序（基线 diff 与矩阵列序都依赖它）。 */
+function collectModuleIds(modules) {
+  return [...modules.values()].sort();
+}
+
+/** 门面资格判定器：文件名是 interface.ts/deps.ts **且**所在目录就是一个模块目录。 */
+function makeFacadeCheck(modules) {
   /**
-   * 门面资格：文件名是 interface.ts/deps.ts **且**所在目录就是一个模块目录。
    * 只看文件名会让 `../other/internal/deps.ts` 这类同名文件被当成合法出口放行
    * （interface.ts 天然保证同级目录即模块，deps.ts 没有这个前提）。
    */
-  const isFacade = (p) => {
+  return (p) => {
     const b = basename(p);
     if (b !== "interface.ts" && b !== "deps.ts") return false;
     return modules.has(dirname(p));
   };
-  /** 文件的叶子模块归属：最近的含 interface.ts 的祖先目录；根文件/包外为 null。 */
-  const moduleOf = (file) => {
+}
+
+/** 叶子模块归属判定器：最近的含 interface.ts 的祖先目录；根文件/包外为 null。 */
+function makeModuleOf(modules, srcDir) {
+  return (file) => {
     let d = dirname(file);
     while (d === srcDir || d.startsWith(srcDir + sep)) {
       if (modules.has(d)) return modules.get(d);
@@ -601,19 +713,17 @@ function analyzePackage(pkgName, topology) {
     }
     return null;
   };
-  const allTsFiles = collectTsFiles(srcDir);
-  // `.d.ts` / `.d.mts` 是声明文件：引用他域类型不构成运行时依赖，作为 from 侧会污染计数与
-  // 规则判定（notifier `service.d.ts` 实测贡献 6 条 crossModuleRefs、2 条文件边）。
-  const files = allTsFiles.filter(
-    (f) => !inClient(f) && !f.endsWith(".d.ts") && !f.endsWith(".d.mts"),
-  );
+}
+
+/** 引用明细：非相对 spec 与 client 目标在此剔除，其余连归属一起记下。 */
+function collectRefs(files, isInSrc, isInClient, moduleOf) {
   const refs = [];
   for (const fromFile of files) {
     const text = stripComments(readFileSync(fromFile, "utf8"));
     for (const { spec, isType } of extractRefs(text)) {
       const target = resolveTarget(fromFile, spec);
       if (target === null) continue; // 非相对/不存在（node_modules 等）跳过
-      if (inClient(target)) continue; // client 目标不参与门禁
+      if (isInClient(target)) continue; // client 目标不参与门禁
       refs.push({
         fromFile,
         spec,
@@ -622,20 +732,44 @@ function analyzePackage(pkgName, topology) {
         isType,
         fromModule: moduleOf(fromFile),
         toModule: moduleOf(target),
-        targetInSrc: inSrc(target),
+        targetInSrc: isInSrc(target),
       });
     }
   }
+  return refs;
+}
 
-  const crossModule = (r) =>
-    r.fromModule !== r.toModule && !(r.fromModule === null && r.toModule === null);
+/** 单包的扫描上下文：模块表、参与规则扫描的文件面、引用明细与三个归属判定器。 */
+function scanPackageSources(srcDir) {
+  const modules = collectModules(srcDir);
+  const isInSrc = (p) => p === srcDir || p.startsWith(srcDir + sep);
+  const isInClient = (p) => isInSrc(p) && rel(srcDir, p).split("/")[0] === "client";
+  const isFacade = makeFacadeCheck(modules);
+  const moduleOf = makeModuleOf(modules, srcDir);
+  const allTsFiles = collectTsFiles(srcDir);
+  // `.d.ts` / `.d.mts` 是声明文件：引用他域类型不构成运行时依赖，作为 from 侧会污染计数与
+  // 规则判定（notifier `service.d.ts` 实测贡献 6 条 crossModuleRefs、2 条文件边）。
+  const files = allTsFiles.filter(
+    (f) => !isInClient(f) && !f.endsWith(".d.ts") && !f.endsWith(".d.mts"),
+  );
+  const refs = collectRefs(files, isInSrc, isInClient, moduleOf);
+  return { modules, isFacade, allTsFiles, files, refs };
+}
 
-  // 规则 1/2：跨模块引用必须落到目标模块的 interface.ts / deps.ts；目标目录无
-  // interface.ts（分组层或未登记目录）判缺门面。
+/** 「跨模块引用」口径：两个归属都存在且不同（双方均为根/包外不算跨模块）。 */
+function isCrossModuleRef(r) {
+  return r.fromModule !== r.toModule && !(r.fromModule === null && r.toModule === null);
+}
+
+/**
+ * 规则 1/2：跨模块引用必须落到目标模块的 interface.ts / deps.ts；目标目录无
+ * interface.ts（分组层或未登记目录）判缺门面。
+ */
+function collectRuleViolations(refs, srcDir, isFacade) {
   const missingInterface = [];
   const directImpl = [];
   for (const r of refs) {
-    if (!crossModule(r)) continue;
+    if (!isCrossModuleRef(r)) continue;
     if (r.toModule === null) {
       // 目标在 src 根（装配层）放行；目标在不含 interface.ts 的目录内即缺门面。
       const targetDir = dirname(r.target);
@@ -645,9 +779,14 @@ function analyzePackage(pkgName, topology) {
     }
     if (!isFacade(r.target)) directImpl.push(r);
   }
+  return { missingInterface, directImpl };
+}
 
-  // R-A 双口径（#690 D-2）：旧语义「impl 只 import 本目录」；新语义「impl 不得引用
-  // 他域**实现文件**」（impl → 他域 interface.ts/deps.ts 合法）。
+/**
+ * R-A 双口径（#690 D-2）：旧语义「impl 只 import 本目录」；新语义「impl 不得引用
+ * 他域**实现文件**」（impl → 他域 interface.ts/deps.ts 合法）。
+ */
+function collectRaRefs(refs, isFacade) {
   const raLegacy = [];
   const raImpl = [];
   for (const r of refs) {
@@ -656,78 +795,138 @@ function analyzePackage(pkgName, topology) {
     raLegacy.push(r);
     if (!isFacade(r.target)) raImpl.push(r);
   }
+  return { raLegacy, raImpl };
+}
 
-  // 三套值图：顶层域「历史对照口径」（复刻修复粒度前的算法：目标必须直接位于顶层
-  // 目录下，因此嵌套目标整条边被丢弃——环检测曾因此静默归零）、叶子模块口径
-  // （S0 门禁口径）、文件口径。
+/** 有向边累积（同一 from 的去重成一个 Set）。 */
+function addEdge(map, from, to) {
+  if (!map.has(from)) map.set(from, new Set());
+  map.get(from).add(to);
+}
+
+/** 顶层域集合（client 子树不入历史对照口径）。 */
+function collectTopDirs(srcDir) {
   const topDirSet = new Set();
   for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
     if (entry.isDirectory() && entry.name !== "client") topDirSet.add(join(srcDir, entry.name));
   }
-  const topValueEdges = new Map();
-  const leafValueEdges = new Map();
-  const fileValueEdges = new Map();
-  const addEdge = (map, from, to) => {
-    if (!map.has(from)) map.set(from, new Set());
-    map.get(from).add(to);
-  };
+  return topDirSet;
+}
+
+/**
+ * 历史对照口径的原样复刻：起点与目标的**直接父目录**都必须是顶层目录，否则整条边
+ * 丢弃——这正是嵌套目录依赖脱管的成因。
+ */
+function addHistoricalEdge(r, srcDir, topDirSet, topValueEdges) {
+  const fromDir = dirname(r.fromFile);
+  const targetDir = dirname(r.target);
+  if (!topDirSet.has(fromDir) || !topDirSet.has(targetDir) || targetDir === fromDir) return;
+  const fromName = relative(srcDir, fromDir).split(sep)[0];
+  const toName = relative(srcDir, targetDir).split(sep)[0];
+  if (fromName !== toName) addEdge(topValueEdges, fromName, toName);
+}
+
+/** 把一条**值**引用同时喂给三套口径的边集（历史对照 / 叶子模块 / 文件）。 */
+function addValueEdges(r, srcDir, topDirSet, graphs) {
+  addHistoricalEdge(r, srcDir, topDirSet, graphs.top);
+  if (r.fromModule !== null && r.toModule !== null && r.fromModule !== r.toModule) {
+    addEdge(graphs.leaf, r.fromModule, r.toModule);
+  }
+  if (r.targetInSrc && r.fromFile !== r.target)
+    addEdge(graphs.file, rel(srcDir, r.fromFile), rel(srcDir, r.target));
+}
+
+/**
+ * 三套值图：顶层域「历史对照口径」（复刻修复粒度前的算法：目标必须直接位于顶层
+ * 目录下，因此嵌套目标整条边被丢弃——环检测曾因此静默归零）、叶子模块口径
+ * （S0 门禁口径）、文件口径。
+ */
+function collectValueGraphs(refs, srcDir) {
+  const topDirSet = collectTopDirs(srcDir);
+  const graphs = { top: new Map(), leaf: new Map(), file: new Map() };
   for (const r of refs) {
     if (r.isType) continue;
-    const fromDir = dirname(r.fromFile);
-    const targetDir = dirname(r.target);
-    // 历史口径的原样复刻：起点与目标的**直接父目录**都必须是顶层目录，否则整条边
-    // 丢弃——这正是嵌套目录依赖脱管的成因。
-    if (topDirSet.has(fromDir) && topDirSet.has(targetDir) && targetDir !== fromDir) {
-      const fromName = relative(srcDir, fromDir).split(sep)[0];
-      const toName = relative(srcDir, targetDir).split(sep)[0];
-      if (fromName !== toName) addEdge(topValueEdges, fromName, toName);
-    }
-    if (r.fromModule !== null && r.toModule !== null && r.fromModule !== r.toModule) {
-      addEdge(leafValueEdges, r.fromModule, r.toModule);
-    }
-    if (r.targetInSrc && r.fromFile !== r.target)
-      addEdge(fileValueEdges, rel(srcDir, r.fromFile), rel(srcDir, r.target));
+    addValueEdges(r, srcDir, topDirSet, graphs);
   }
-  const topCycles = findCycles(topValueEdges);
-  const leafCycles = findCycles(leafValueEdges);
-  const fileCycles = findCycles(fileValueEdges);
+  return {
+    top: { edges: graphs.top, cycles: findCycles(graphs.top) },
+    leaf: { edges: graphs.leaf, cycles: findCycles(graphs.leaf) },
+    file: { edges: graphs.file, cycles: findCycles(graphs.file) },
+  };
+}
 
-  // 死声明（意图 - 事实）：deps.ts 声明依赖某模块，而本模块 deps.ts **之外**的
-  // 实现/门面文件并无对应事实边。deps.ts 自身的边属意图声明，不能自证为事实。
-  //
-  // 口径（#733 M0a）：**值面判死、类型面豁免**。
-  //   - 类型边（import type / export type）是「本域对上依赖的形状声明」，声明本身
-  //     即完整性（供意图图对照），不构成可被判死的依赖承诺——跨域类型引用集中进
-  //     deps.ts 后事实边从实现文件消失，按旧口径会报假死声明（sdk → stores 的唯一
-  //     来源是 interface.ts 的 import type，迁入 deps.ts 后 actual 变空即误报）。
-  //   - 值边是「本域真的要取用的运行时能力」，必须由本模块非 deps.ts 文件佐证。
-  //   - 「改覆盖式」（把 deps.ts 自身的边并入 actual）会让 intended ⊆ actual 恒成立、
-  //     指标恒 0——空判，明确不采用。
+/** 某模块 deps.ts 的值声明目标集；顺带交出「声明面混入值 import」的引用（一律判红）。 */
+function collectIntendedTargets(depsFile, modId, refs) {
+  const intended = new Set();
+  const valueImports = [];
+  for (const r of refs) {
+    if (r.fromFile !== depsFile) continue;
+    if (!r.isType) valueImports.push(r);
+    if (r.toModule === null || r.toModule === modId) continue;
+    if (r.isType) continue; // 类型面豁免：声明即完整性，不参与死声明计算
+    intended.add(r.toModule);
+  }
+  return { intended, valueImports };
+}
+
+/** 本模块 deps.ts **之外**的文件实际依赖到的目标模块集（deps.ts 自身不能自证为事实）。 */
+function collectActualTargets(modId, refs) {
+  const actual = new Set();
+  for (const r of refs) {
+    if (r.fromModule !== modId || r.toModule === null || r.toModule === modId) continue;
+    if (basename(r.fromFile) === "deps.ts") continue;
+    actual.add(r.toModule);
+  }
+  return actual;
+}
+
+/**
+ * 死声明（意图 - 事实）：deps.ts 声明依赖某模块，而本模块 deps.ts **之外**的
+ * 实现/门面文件并无对应事实边。deps.ts 自身的边属意图声明，不能自证为事实。
+ *
+ * 口径（#733 M0a）：**值面判死、类型面豁免**。
+ *   - 类型边（import type / export type）是「本域对上依赖的形状声明」，声明本身
+ *     即完整性（供意图图对照），不构成可被判死的依赖承诺——跨域类型引用集中进
+ *     deps.ts 后事实边从实现文件消失，按旧口径会报假死声明（sdk → stores 的唯一
+ *     来源是 interface.ts 的 import type，迁入 deps.ts 后 actual 变空即误报）。
+ *   - 值边是「本域真的要取用的运行时能力」，必须由本模块非 deps.ts 文件佐证。
+ *   - 「改覆盖式」（把 deps.ts 自身的边并入 actual）会让 intended ⊆ actual 恒成立、
+ *     指标恒 0——空判，明确不采用。
+ *
+ * 声明面混入的值依赖（depsValueImports）与死声明在同一次遍历里产出：前者不论目标
+ * 模块（含同模块与 src 根）一律单独判红，故不能挪到模块级判据里。
+ */
+function findDeadDeclarations({ modules, refs }) {
   const deadDeclarations = [];
   const depsValueImports = [];
   for (const [modDir, modId] of modules) {
     const depsFile = join(modDir, "deps.ts");
     if (!existsSync(depsFile)) continue;
-    const intended = new Set();
-    for (const r of refs) {
-      if (r.fromFile !== depsFile) continue;
-      // 声明面混入值依赖：不论目标模块（含同模块与 src 根），一律单独判红。
-      if (!r.isType) depsValueImports.push(r);
-      if (r.toModule === null || r.toModule === modId) continue;
-      if (r.isType) continue; // 类型面豁免：声明即完整性，不参与死声明计算
-      intended.add(r.toModule);
-    }
-    const actual = new Set();
-    for (const r of refs) {
-      if (r.fromModule !== modId || r.toModule === null || r.toModule === modId) continue;
-      if (basename(r.fromFile) === "deps.ts") continue;
-      actual.add(r.toModule);
-    }
+    const { intended, valueImports } = collectIntendedTargets(depsFile, modId, refs);
+    depsValueImports.push(...valueImports);
+    const actual = collectActualTargets(modId, refs);
     for (const target of intended) {
       if (!actual.has(target))
         deadDeclarations.push(`${modId}/deps.ts → ${target}（值声明有而事实无）`);
     }
   }
+  return { deadDeclarations, depsValueImports };
+}
+
+/**
+ * 单包全量分析：模块表、引用明细、三套依赖图、R-A 双口径、规则违例、变异覆盖。
+ *
+ * 分段函数只做搬运，不改判据与顺序：deploy 面（modules / refs / 规则 / R-A / 值图 /
+ * 死声明）必须按此顺序求值，基线证据面的排序与去重依赖它。
+ */
+function analyzePackage(pkgName, topology) {
+  const srcDir = join(ROOT, "packages", pkgName, "src");
+  if (!existsSync(srcDir)) return null;
+  const { modules, isFacade, allTsFiles, files, refs } = scanPackageSources(srcDir);
+  const rules = collectRuleViolations(refs, srcDir, isFacade);
+  const { raLegacy, raImpl } = collectRaRefs(refs, isFacade);
+  const graphs = collectValueGraphs(refs, srcDir);
+  const { deadDeclarations, depsValueImports } = findDeadDeclarations({ modules, refs });
 
   const specs = collectMutationSpecs(topology, pkgName);
   // 「不适用」与「空集」的区分只在本函数内部；metrics 统一落数组（?? []），
@@ -739,13 +938,17 @@ function analyzePackage(pkgName, topology) {
     package: pkgName,
     srcDir,
     modules,
-    moduleIds: [...modules.values()].sort(),
+    moduleIds: collectModuleIds(modules),
     refs,
-    rules: { missingInterface, directImpl },
+    rules,
     raLegacy,
     raImpl,
-    graphs: { topValueEdges, leafValueEdges, fileValueEdges },
-    cycles: { top: topCycles, leaf: leafCycles, file: fileCycles },
+    graphs: {
+      topValueEdges: graphs.top.edges,
+      leafValueEdges: graphs.leaf.edges,
+      fileValueEdges: graphs.file.edges,
+    },
+    cycles: { top: graphs.top.cycles, leaf: graphs.leaf.cycles, file: graphs.file.cycles },
     deadDeclarations,
     depsValueImports,
     // 覆盖断言可判定性：包未登记拓扑时 uncoveredSrcFiles 恒为空，若不显式区分，
@@ -765,19 +968,19 @@ function analyzePackage(pkgName, topology) {
       scannedSrcFiles: files.length,
       allSrcTsFiles: allTsFiles.length,
       interfaceFacades: 0, // 主流程按被引用面填充
-      topValueEdges: edgeCount(topValueEdges),
-      topModuleCycles: topCycles.size,
-      leafValueEdges: edgeCount(leafValueEdges),
-      leafModuleCycles: leafCycles.size,
-      fileValueEdges: edgeCount(fileValueEdges),
-      fileCycles: fileCycles.size,
-      crossModuleRefs: refs.filter(crossModule).length,
+      topValueEdges: edgeCount(graphs.top.edges),
+      topModuleCycles: graphs.top.cycles.size,
+      leafValueEdges: edgeCount(graphs.leaf.edges),
+      leafModuleCycles: graphs.leaf.cycles.size,
+      fileValueEdges: edgeCount(graphs.file.edges),
+      fileCycles: graphs.file.cycles.size,
+      crossModuleRefs: refs.filter(isCrossModuleRef).length,
       raLegacy: raLegacy.length,
       raLegacyValue: valueCount,
       raLegacyType: raLegacy.length - valueCount,
       implToOtherImpl: raImpl.length,
-      missingInterface: missingInterface.length,
-      directImpl: directImpl.length,
+      missingInterface: rules.missingInterface.length,
+      directImpl: rules.directImpl.length,
       uncoveredSrcFiles: uncoveredSrcFiles ?? [],
     },
   };
@@ -891,6 +1094,65 @@ function collectQualityEvidence(analysis) {
   };
 }
 
+/** 结构型计数比对：基线未登记或当前值上升都进 rises。 */
+function collectStructuralRises(metrics, pkgBase) {
+  const rises = [];
+  for (const key of STRUCTURAL_METRICS) {
+    const cur = metrics[key];
+    const base = pkgBase[key];
+    if (typeof base !== "number") rises.push(`[结构型] ${key}: 基线未登记（当前 ${cur}）`);
+    else if (cur > base)
+      rises.push(`[结构型] ${key}: ${cur} > 基线 ${base}（结构变更未登记 → 跑 --write-baseline）`);
+  }
+  return rises;
+}
+
+/** 证据条目集合 → id → kind 索引（id 不含 kind，故 kind 必须另行比对）。 */
+function indexById(items, key) {
+  return new Map(
+    items.map((i) => {
+      const s = splitEvidenceItem(key, i);
+      return [s.id, s.kind];
+    }),
+  );
+}
+
+/**
+ * 单类证据的增量比对：新增证据 / type→value 降级进 rises，value→type 收口与证据消失进
+ * improvements。kind 由 value→type 是改善，故两向不可合并成一次比较。
+ */
+function classifyEvidenceDeltas(key, baseById, curById, packageName) {
+  const rises = [];
+  const improvements = [];
+  for (const [id, kind] of curById) {
+    if (!baseById.has(id)) {
+      rises.push(
+        `[质量型] ${key}: 新增未登记证据 ${id}${kind === null ? "" : `（${kind}）`} —— 须修代码；确需放宽须登记到 gate-exemptions.json（gate=verify-dir-imports，path=${packageName}:${id}）`,
+      );
+    } else if (baseById.get(id) === "type" && kind === "value") {
+      rises.push(`[质量型] ${key}: 类型面降级 type → value：${id}（跨域类型引用退化成运行时依赖）`);
+    } else if (baseById.get(id) === "value" && kind === "type") {
+      improvements.push(`${key}: ${id} 值 → 类型（收口）`);
+    }
+  }
+  for (const id of baseById.keys()) if (!curById.has(id)) improvements.push(`${key}: ${id} 已消除`);
+  return { rises, improvements };
+}
+
+/** 质量型证据面比对：逐类走 classifyEvidenceDeltas，汇总成 rises / improvements。 */
+function compareQualityEvidence(pkgBase, evidence, packageName) {
+  const rises = [];
+  const improvements = [];
+  for (const key of QUALITY_EVIDENCE_METRICS) {
+    const baseById = indexById(pkgBase.quality?.[key] ?? [], key);
+    const curById = indexById(evidence[key] ?? [], key);
+    const deltas = classifyEvidenceDeltas(key, baseById, curById, packageName);
+    rises.push(...deltas.rises);
+    improvements.push(...deltas.improvements);
+  }
+  return { rises, improvements };
+}
+
 /**
  * 单调基线比对（#733 后续：结构型比计数、质量型比证据）。
  *
@@ -903,83 +1165,71 @@ function collectQualityEvidence(analysis) {
 function compareWithBaseline(analysis, baseline) {
   const pkgBase = baseline?.packages?.[analysis.package];
   if (pkgBase === undefined) return { mode: "absent", rises: [], improvements: [] };
-  const rises = [];
+  const rises = collectStructuralRises(analysis.metrics, pkgBase);
   const improvements = [];
-  for (const key of STRUCTURAL_METRICS) {
-    const cur = analysis.metrics[key];
-    const base = pkgBase[key];
-    if (typeof base !== "number") rises.push(`[结构型] ${key}: 基线未登记（当前 ${cur}）`);
-    else if (cur > base)
-      rises.push(`[结构型] ${key}: ${cur} > 基线 ${base}（结构变更未登记 → 跑 --write-baseline）`);
-  }
   if (pkgBase.quality === undefined) {
     rises.push(
       "[质量型] 基线为旧计数口径（缺 quality 证据段）—— 数字与证据不可比，请运行 --write-baseline 完成迁移（diff 内可审阅）",
     );
     return { mode: "compared", rises, improvements };
   }
-  const evidence = collectQualityEvidence(analysis);
-  for (const key of QUALITY_EVIDENCE_METRICS) {
-    const baseById = new Map(
-      (pkgBase.quality?.[key] ?? []).map((i) => {
-        const s = splitEvidenceItem(key, i);
-        return [s.id, s.kind];
-      }),
-    );
-    const curById = new Map(
-      (evidence[key] ?? []).map((i) => {
-        const s = splitEvidenceItem(key, i);
-        return [s.id, s.kind];
-      }),
-    );
-    for (const [id, kind] of curById) {
-      if (!baseById.has(id)) {
-        rises.push(
-          `[质量型] ${key}: 新增未登记证据 ${id}${kind === null ? "" : `（${kind}）`} —— 须修代码；确需放宽须登记到 gate-exemptions.json（gate=verify-dir-imports，path=${analysis?.package ?? "<包名>"}:${id}）`,
-        );
-      } else if (baseById.get(id) === "type" && kind === "value") {
-        rises.push(
-          `[质量型] ${key}: 类型面降级 type → value：${id}（跨域类型引用退化成运行时依赖）`,
-        );
-      } else if (baseById.get(id) === "value" && kind === "type") {
-        improvements.push(`${key}: ${id} 值 → 类型（收口）`);
-      }
-    }
-    for (const id of baseById.keys())
-      if (!curById.has(id)) improvements.push(`${key}: ${id} 已消除`);
-  }
+  const qualityDeltas = compareQualityEvidence(
+    pkgBase,
+    collectQualityEvidence(analysis),
+    analysis?.package ?? "<包名>",
+  );
+  rises.push(...qualityDeltas.rises);
+  improvements.push(...qualityDeltas.improvements);
   return { mode: "compared", rises, improvements };
+}
+
+/** 有基线时的存量违规明细（只作报告，判红交给单调基线）。 */
+function reportBaselineLockedViolations(analysis) {
+  const { package: pkgName, srcDir } = analysis;
+  if (!SOFT && !VERBOSE) return;
+  for (const r of analysis.rules.directImpl) {
+    softViolations.push(
+      `[${pkgName}] 存量直引实现文件（基线锁定）：${rel(srcDir, r.fromFile)} → ${rel(srcDir, r.target)}`,
+    );
+  }
+  for (const r of analysis.rules.missingInterface) {
+    softViolations.push(
+      `[${pkgName}] 存量缺门面目录（基线锁定）：${rel(srcDir, r.fromFile)} → ${rel(srcDir, r.target)}`,
+    );
+  }
+}
+
+/**
+ * 无基线时的规则违规台账：soft 落软报告，hard 落硬失败。
+ *
+ * `violations` 与 `line` 由调用方按违反的规则逐条给出——两类规则的文案不同，
+ * 但「soft 进软报告 / hard 进硬失败」这条口径必须完全一致。
+ */
+function recordRuleViolations(violations, line) {
+  for (const r of violations) {
+    const text = line(r);
+    if (SOFT) softViolations.push(text);
+    else failures.push(text);
+  }
 }
 
 /** 规则违规的判红入口：有基线则比基线，无基线则立即红（fail-closed）。 */
 function registerRuleViolations(analysis, state) {
   const { package: pkgName, srcDir } = analysis;
   if (state.mode === "compared") {
-    // 有基线：违规明细只作报告，判红交给单调基线（存量豁免、增量收紧）。
-    if (SOFT || VERBOSE) {
-      for (const r of analysis.rules.directImpl) {
-        softViolations.push(
-          `[${pkgName}] 存量直引实现文件（基线锁定）：${rel(srcDir, r.fromFile)} → ${rel(srcDir, r.target)}`,
-        );
-      }
-      for (const r of analysis.rules.missingInterface) {
-        softViolations.push(
-          `[${pkgName}] 存量缺门面目录（基线锁定）：${rel(srcDir, r.fromFile)} → ${rel(srcDir, r.target)}`,
-        );
-      }
-    }
+    reportBaselineLockedViolations(analysis);
     return;
   }
-  for (const r of analysis.rules.directImpl) {
-    const line = `[${pkgName}] ${rel(srcDir, r.fromFile)} → import "${r.spec}"：跨模块引用必须走目标模块 interface.ts/deps.ts`;
-    if (SOFT) softViolations.push(line);
-    else failures.push(line);
-  }
-  for (const r of analysis.rules.missingInterface) {
-    const line = `[${pkgName}] ${rel(srcDir, r.fromFile)} → import "${r.spec}"：目标目录缺少 interface.ts（该模块唯一对外面）`;
-    if (SOFT) softViolations.push(line);
-    else failures.push(line);
-  }
+  recordRuleViolations(
+    analysis.rules.directImpl,
+    (r) =>
+      `[${pkgName}] ${rel(srcDir, r.fromFile)} → import "${r.spec}"：跨模块引用必须走目标模块 interface.ts/deps.ts`,
+  );
+  recordRuleViolations(
+    analysis.rules.missingInterface,
+    (r) =>
+      `[${pkgName}] ${rel(srcDir, r.fromFile)} → import "${r.spec}"：目标目录缺少 interface.ts（该模块唯一对外面）`,
+  );
 }
 
 /**
@@ -1104,6 +1354,79 @@ function acceptNewEvidence(packageName, metric, items, ledger, needs, accepted) 
 }
 
 /**
+ * 首次登记的每类证据：逐条过台账后按当前证据写入。
+ *
+ * 直接把当前证据写库等于给「一次 --write-baseline 即洗白」留了后门，而首次登记恰恰
+ * 是最容易夹带新证据的时点，故与增量路径共用同一条台账通道。
+ */
+function acceptFirstEvidence(pkgName, key, cur, ledger, sinks) {
+  const kept = acceptNewEvidence(
+    pkgName,
+    key,
+    cur,
+    ledger,
+    sinks.qualityNeedsAcceptance,
+    sinks.qualityAccepted,
+  );
+  return { kept, count: kept.length };
+}
+
+/**
+ * 已有证据面的每类证据：保留当前形态（kind 收口 value → type 是改善，直接采纳；反向
+ * 降级已判红，不写入），并清理已消失的证据、把真正新增的交给台账通道。
+ */
+function reconcileEvidence(key, prevById, curById, cur, pkgName, ledger, sinks) {
+  const kept = [];
+  for (const [id] of prevById) {
+    const curKind = curById.get(id);
+    if (curKind === undefined) {
+      sinks.qualityPruned.push(`${pkgName}.${key}: ${id}`);
+      continue;
+    }
+    kept.push(curKind === null ? id : `${id}|${curKind}`);
+  }
+  const added = cur.filter((item) => !prevById.has(splitEvidenceItem(key, item).id));
+  return kept.concat(
+    acceptNewEvidence(
+      pkgName,
+      key,
+      added,
+      ledger,
+      sinks.qualityNeedsAcceptance,
+      sinks.qualityAccepted,
+    ),
+  );
+}
+
+/** 质量证据段：有旧证据面则对账，否则走首次登记台账通道。 */
+function buildPackageQuality(analysis, prevQuality, ledger, sinks) {
+  const evidence = collectQualityEvidence(analysis);
+  const quality = {};
+  const rebuild = prevQuality === undefined;
+  let firstCount = 0;
+  for (const key of QUALITY_EVIDENCE_METRICS) {
+    const cur = evidence[key] ?? [];
+    if (rebuild) {
+      const { kept, count } = acceptFirstEvidence(analysis.package, key, cur, ledger, sinks);
+      quality[key] = kept.sort();
+      firstCount += count;
+      continue;
+    }
+    const prevById = indexById(prevQuality[key] ?? [], key);
+    quality[key] = reconcileEvidence(
+      key,
+      prevById,
+      indexById(cur, key),
+      cur,
+      analysis.package,
+      ledger,
+      sinks,
+    ).sort();
+  }
+  return { quality, firstCount };
+}
+
+/**
  * 生成基线 JSON 结构（稳定排序，便于 diff）。
  *
  * `--write-baseline` 的更新面（#733 后续）：
@@ -1123,67 +1446,14 @@ function buildBaseline(analyses, previous, ledger) {
   const qualityFirst = []; // 首次登记 / 数字口径迁移
   const qualityNeedsAcceptance = []; // 新增证据：未在台账登记时中止写入
   const qualityAccepted = []; // 本次按台账放行的新增证据
+  const sinks = { qualityPruned, qualityNeedsAcceptance, qualityAccepted };
   for (const a of [...analyses].sort((x, y) => x.package.localeCompare(y.package))) {
     const m = a.metrics;
     const prev = previous?.packages?.[a.package];
     const entry = {};
     for (const key of STRUCTURAL_METRICS) entry[key] = m[key];
-    const evidence = collectQualityEvidence(a);
     const prevQuality = prev?.quality;
-    const quality = {};
-    let firstCount = 0;
-    for (const key of QUALITY_EVIDENCE_METRICS) {
-      const cur = evidence[key] ?? [];
-      if (prevQuality === undefined) {
-        // 首次登记同样逐条过台账：直接把当前证据写库等于给「一次 --write-baseline 即
-        // 洗白」留了后门，而首次登记恰恰是最容易夹带新证据的时点。
-        const firstKept = acceptNewEvidence(
-          a.package,
-          key,
-          cur,
-          ledger,
-          qualityNeedsAcceptance,
-          qualityAccepted,
-        );
-        quality[key] = firstKept.sort();
-        firstCount += firstKept.length;
-        continue;
-      }
-      const prevById = new Map(
-        (prevQuality[key] ?? []).map((i) => {
-          const s = splitEvidenceItem(key, i);
-          return [s.id, s.kind];
-        }),
-      );
-      const curById = new Map(
-        cur.map((i) => {
-          const s = splitEvidenceItem(key, i);
-          return [s.id, s.kind];
-        }),
-      );
-      const kept = [];
-      for (const [id] of prevById) {
-        const curKind = curById.get(id);
-        if (curKind === undefined) {
-          qualityPruned.push(`${a.package}.${key}: ${id}`);
-          continue;
-        }
-        // 保留当前形态：kind 收口（value → type）是改善，直接采纳；反向降级已判红，不写入。
-        kept.push(curKind === null ? id : `${id}|${curKind}`);
-      }
-      const added = cur.filter((item) => !prevById.has(splitEvidenceItem(key, item).id));
-      kept.push(
-        ...acceptNewEvidence(
-          a.package,
-          key,
-          added,
-          ledger,
-          qualityNeedsAcceptance,
-          qualityAccepted,
-        ),
-      );
-      quality[key] = kept.sort();
-    }
+    const { quality, firstCount } = buildPackageQuality(a, prevQuality, ledger, sinks);
     entry.quality = quality;
     if (prevQuality === undefined) {
       // 首次登记与「数字口径 → 证据口径」迁移走同一条路径：两者都必须显式提示，
