@@ -6,15 +6,14 @@
     "shared/placement-math.js",
     "packages/dsh-mcp-manager/src/server/pipeline/**/*.ts",
     "packages/dsh-mcp-manager/src/server/catalog/**/*.ts",
-    "packages/dsh-mcp-manager/src/server/**/*.ts",
+    "packages/dsh-mcp-manager/src/server/shared/**/*.ts",
+    "packages/dsh-mcp-manager/src/server/upgrade/**/*.ts",
     "packages/dsh-mcp-manager/src/shared/**/*.ts",
     "!packages/dsh-mcp-manager/src/client/**",
-    "!packages/dsh-mcp-manager/src/types/**",
-    "!packages/dsh-mcp-manager/src/integration/**",
     "!packages/dsh-mcp-manager/src/shared/placement-math.ts",
     "!packages/dsh-mcp-manager/src/**/interface.ts",
     "!packages/dsh-mcp-manager/src/server/*/deps.ts",
-    "!packages/dsh-mcp-manager/src/server/connection/runtime/deps.ts"
+    "!packages/dsh-mcp-manager/src/server/*/*/deps.ts"
   ],
   "testRunner": "vitest",
   "mutator": {
@@ -48,5 +47,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-mcp-manager-runtime.json",
-  "_comment": "#664 阶段6重画：runtime——组合根已并入 src/index.ts（归 entry 段；#767 W11a 删掉 src/bootstrap/** 死 glob，原 apply*.ts 的变异面随之落到 entry）+transport/protocol+shared/placement-math（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析）+pipeline（执行管道域，阶段1–5变异盲区随迁纳入）+catalog（目录域，原 catalog.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。 #767 B0 先修尺子：src/server/**（B1 新树）与 src/shared/** 以超集形式先挂本段（旧 glob 全保留）——目标树是全新顶层目录，不先纳入会让 B1 新文件进 uncoveredSrcFiles，而 --write-baseline 拒绝接受新证据、只能逐文件写豁免；B2 按域重画 mutate 时收敛（届时文件归各域段，本段只留 transport/protocol/pipeline/catalog）。"
+  "_comment": "#767 B2b 重画：runtime——传输与协议（runtime/transport+protocol）+shared/placement-math.js（#378 上移的 placement 纯核心）+执行管道（pipeline）+目录（catalog）+包内共享层（server/shared）+迁移链（upgrade）+跨端共享面（src/shared）；B2b 后文件归各域段，本段只留这些。同时收敛 #767 B0 的临时超集 src/server/**/*.ts——当时目标树全新，不先挂超集会让 B1 新文件进 uncoveredSrcFiles 而 --write-baseline 拒绝接受新证据；六段并集现已覆盖它（本刀实测 uncoveredSrcFiles 仍为 0），故删除。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；client 与 shared/placement-math.ts 两条排除仍然成立。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
 }

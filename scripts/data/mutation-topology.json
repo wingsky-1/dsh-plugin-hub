@@ -109,21 +109,17 @@
           ],
           "excludes": [
             "!packages/dsh-mcp-manager/src/client/**",
-            "!packages/dsh-mcp-manager/src/types/**",
-            "!packages/dsh-mcp-manager/src/integration/**",
             "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
-          "comment": "#664 阶段6重画：entry——index+workspace（工作空间路由域）+config/model（归一化/导入/schema）；阶段1–5变异盲区（workspace/新文件）在本阶段随集中搬移一并纳入重画（v3 C4/C-DIR）；types/integration（type-only）与 placement-math.ts（shared 薄转发）显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+          "comment": "#767 B2b 重画：entry——组合根 src/index.ts + workspace（工作空间解析域）+ config（归一化/导入/schema）；B2b 后文件归各域段，本段只留这三处。W11b2a 删除 src/types 与 src/integration 后，原 types/integration 两条排除已是 0 命中死条目，随本刀删除；client（另一端）与 shared/placement-math.ts（薄转发）两条排除仍然成立。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "manager": {
           "mutate": ["packages/dsh-mcp-manager/src/server/connection/orchestrator/**/*.ts"],
           "excludes": [
             "!packages/dsh-mcp-manager/src/client/**",
-            "!packages/dsh-mcp-manager/src/types/**",
-            "!packages/dsh-mcp-manager/src/integration/**",
             "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
-          "comment": "#664 阶段6重画：manager——connection/orchestrator（McpManager 类主体+展示投影 tool-names，原 manager.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+          "comment": "#767 B2b 重画：manager——connection/orchestrator（McpManager 类主体与展示投影 tool-names）；B2b 后文件归各域段，本段只留这一处。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；client 与 shared/placement-math.ts 两条排除仍然成立。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "middleware": {
           "mutate": [
@@ -131,25 +127,21 @@
             "packages/dsh-mcp-manager/src/server/connection/runtime/limits.ts",
             "packages/dsh-mcp-manager/src/server/connection/runtime/impl/**/*.ts",
             "packages/dsh-mcp-manager/src/server/inject/**/*.ts",
-            "packages/dsh-mcp-manager/src/server/pipeline/authorize.ts"
+            "packages/dsh-mcp-manager/src/server/pipeline/impl/authorize/**/*.ts"
           ],
           "excludes": [
             "!packages/dsh-mcp-manager/src/client/**",
-            "!packages/dsh-mcp-manager/src/types/**",
-            "!packages/dsh-mcp-manager/src/integration/**",
             "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
-          "comment": "#664 阶段6重画：middleware——中间层池（runtime/middleware）+limits（原 middleware-const）+工具注册面（inject/）+策略裁决族（pipeline/authorize，原 middleware-utils 并入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。 #767 B2a-wire W8：追加 packages/dsh-mcp-manager/src/server/connection/runtime/impl/**/*.ts——该子层其余 glob 全是显式文件，W8 新建的端口持有者此前不在任何 mutate 段内（进 uncoveredSrcFiles）。"
+          "comment": "#767 B2b 重画：middleware——中间层池（runtime/middleware+limits）+端口持有者（runtime/impl/）+工具注册面（inject/）+策略裁决族（pipeline/impl/authorize/）；B2b 后文件归各域段，本段只留这五处。原 pipeline/authorize.ts 是 B1 搬迁前的字面量、实测 0 命中（真实落点已变为 pipeline/impl/authorize/），本刀替换为目录 glob；W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；client 与 shared/placement-math.ts 两条排除仍然成立。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "routes": {
           "mutate": ["packages/dsh-mcp-manager/src/server/api/**/*.ts"],
           "excludes": [
             "!packages/dsh-mcp-manager/src/client/**",
-            "!packages/dsh-mcp-manager/src/types/**",
-            "!packages/dsh-mcp-manager/src/integration/**",
             "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
-          "comment": "#664 阶段6重画：routes——api 层（routes 装配/端点控制器/查询辅助，原 routes*.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+          "comment": "#767 B2b 重画：routes——server/api（路由装配/端点控制器/查询辅助）；B2b 后文件归各域段，本段只留这一处。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；client 与 shared/placement-math.ts 两条排除仍然成立。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "supervisor": {
           "mutate": [
@@ -160,11 +152,9 @@
           ],
           "excludes": [
             "!packages/dsh-mcp-manager/src/client/**",
-            "!packages/dsh-mcp-manager/src/types/**",
-            "!packages/dsh-mcp-manager/src/integration/**",
             "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
-          "comment": "#664 阶段6重画：supervisor——连接监督器（runtime/supervisor+reconnect）+状态持久化（config/store，原 middleware-state/store 迁入）+统计（stats）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+          "comment": "#767 B2b 重画：supervisor——连接监督器（runtime/supervisor+reconnect）+状态持久化（store）+统计（stats）；B2b 后文件归各域段，本段只留这四处。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；client 与 shared/placement-math.ts 两条排除仍然成立。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "runtime": {
           "mutate": [
@@ -173,16 +163,15 @@
             "shared/placement-math.js",
             "packages/dsh-mcp-manager/src/server/pipeline/**/*.ts",
             "packages/dsh-mcp-manager/src/server/catalog/**/*.ts",
-            "packages/dsh-mcp-manager/src/server/**/*.ts",
+            "packages/dsh-mcp-manager/src/server/shared/**/*.ts",
+            "packages/dsh-mcp-manager/src/server/upgrade/**/*.ts",
             "packages/dsh-mcp-manager/src/shared/**/*.ts"
           ],
           "excludes": [
             "!packages/dsh-mcp-manager/src/client/**",
-            "!packages/dsh-mcp-manager/src/types/**",
-            "!packages/dsh-mcp-manager/src/integration/**",
             "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
-          "comment": "#664 阶段6重画：runtime——组合根已并入 src/index.ts（归 entry 段；#767 W11a 删掉 src/bootstrap/** 死 glob，原 apply*.ts 的变异面随之落到 entry）+transport/protocol+shared/placement-math（#378：placement 纯核心上移 shared，mutate 跟随；lib→src hook 对 shared 段返回 null 默认解析）+pipeline（执行管道域，阶段1–5变异盲区随迁纳入）+catalog（目录域，原 catalog.ts 迁入）；types/integration（type-only）与 placement-math.ts 显式排除；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。 #767 B0 先修尺子：src/server/**（B1 新树）与 src/shared/** 以超集形式先挂本段（旧 glob 全保留）——目标树是全新顶层目录，不先纳入会让 B1 新文件进 uncoveredSrcFiles，而 --write-baseline 拒绝接受新证据、只能逐文件写豁免；B2 按域重画 mutate 时收敛（届时文件归各域段，本段只留 transport/protocol/pipeline/catalog）。"
+          "comment": "#767 B2b 重画：runtime——传输与协议（runtime/transport+protocol）+shared/placement-math.js（#378 上移的 placement 纯核心）+执行管道（pipeline）+目录（catalog）+包内共享层（server/shared）+迁移链（upgrade）+跨端共享面（src/shared）；B2b 后文件归各域段，本段只留这些。同时收敛 #767 B0 的临时超集 src/server/**/*.ts——当时目标树全新，不先挂超集会让 B1 新文件进 uncoveredSrcFiles 而 --write-baseline 拒绝接受新证据；六段并集现已覆盖它（本刀实测 uncoveredSrcFiles 仍为 0），故删除。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；client 与 shared/placement-math.ts 两条排除仍然成立。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         }
       },
       "testLayers": {
@@ -201,9 +190,9 @@
             "reason": "新增（#767 B0）：目标形态 src/server/<域>/deps.ts 是纯类型面依赖声明出口（import type 引 Port 与数据形状，转译后无运行时代码）——附录 E.4 实测 6 域建 deps.ts（pipeline/catalog/connection/inject/api/config），store/stats/integration 实测零对上依赖、按判据不建，故本条只列 server/<域> 一层；纯类型面文件没有可杀灭的变异体，故 type-only。若某域 deps.ts 出现值实现（notifier 的 channels/impl/system/deps.ts 先例），B2 须按该形态拆出单列 not-mutated 条。"
           },
           {
-            "pattern": "!packages/dsh-mcp-manager/src/server/connection/runtime/deps.ts",
+            "pattern": "!packages/dsh-mcp-manager/src/server/*/*/deps.ts",
             "kind": "type-only",
-            "reason": "新增（#767 B2a-wire W8）：connection/runtime/deps.ts 只有 import type 与 export type/interface，转译后无运行时代码——它是本包第一个落在 src/<域>/ 顶层而非 src/server/<域>/ 的 deps.ts（B2b 才加 server/ 前缀），且该子层的 mutate glob 全是显式文件（middleware.ts / limits.ts / supervisor.ts / reconnect.ts / transport.ts / protocol.ts），故必须单独登记；同刀新建的 impl/service/index.ts 是端口持有者、含真实运行时代码，按反向口径不排除，已挂进 middleware 段的 impl/**/*.ts 面。"
+            "reason": "改口径（#767 B2b）：覆盖 server/<域>/<子层>/deps.ts 这一层——B2b 把连接域子层也收进 server/ 后实测 2 个（connection/orchestrator + connection/runtime）。它们仍全是 import type 与 export type/interface，转译后无运行时代码，没有可杀灭的变异体，故 kind 仍为 type-only；同族但更浅的 server/<域>/deps.ts 由上一条覆盖。若某域 deps.ts 出现值实现（notifier 的 channels/impl/system/deps.ts 先例），须按该形态拆出单列 not-mutated 条。"
           }
         ],
         "testMutationExemptions": {
