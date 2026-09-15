@@ -6,7 +6,7 @@
     "dsh-provider-usage",
     "dsh-verify-isolated"
   ],
-  "standalone": [],
+  "standalone": ["dsh-worktree-sidebar"],
   "configSurfaces": [
     {
       "package": "dsh-lan-proxy",
