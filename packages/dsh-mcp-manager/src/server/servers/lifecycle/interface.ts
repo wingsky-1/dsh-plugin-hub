@@ -17,8 +17,9 @@ import { mountLedger } from "./impl/ledger/index.ts";
 import { lifecyclePorts } from "./impl/service/index.ts";
 
 /**
- * 装配装载生命周期域：把组合根持有的端口写入域内注册表（见 impl/service）。组合根在
- * `src/index.ts` 顶层调用，模块求值期即完成——两条 Port 都是静态模块引用，不需要宿主 ctx。
+ * 装配装载生命周期域：把组合根持有的端口写入域内注册表（见 impl/service）。调用点在
+ * `src/index.ts` 的 `apply` 内而不是模块求值期——五条 Port 里的 loader 是**宿主服务**
+ * （官方 loader 包不在 catalog、类型面取不到，只能经 `ctx.get` 现取），静态模块引用给不出来。
  *
  * 为什么不是 `export async function`：注入面对账（verify-dir-imports 的 analyzeInjectionFaces）
  * 按 `export function installXxx(` 采点，`async` 前缀会让这条对账静默失明（附录 G·G12）。
