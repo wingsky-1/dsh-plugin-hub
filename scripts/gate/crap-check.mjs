@@ -126,12 +126,22 @@ export function crapOf(comp, covered) {
 export function coverageHitLines(fileCov) {
   const hit = new Map();
   for (const [id, fn] of Object.entries(fileCov?.fnMap ?? {})) {
-    const line = fn.decl?.start?.line ?? fn.loc?.start?.line ?? fn.line;
-    if (typeof line !== "number") continue;
-    const covered = (fileCov.f?.[id] ?? 0) > 0;
-    hit.set(line, (hit.get(line) ?? false) || covered);
+    recordCoverageHit(hit, id, fn, fileCov);
   }
   return hit;
+}
+
+/** istanbul 的起始行只有 decl / loc / line 三种落点形态，回退顺序即其优先级。 */
+function startLineOf(fn) {
+  return fn.decl?.start?.line ?? fn.loc?.start?.line ?? fn.line;
+}
+
+/** 非数值行号不属于 fnMap 口径，丢弃以保持两侧同口径。 */
+function recordCoverageHit(hit, id, fn, fileCov) {
+  const line = startLineOf(fn);
+  if (typeof line !== "number") return;
+  const covered = (fileCov.f?.[id] ?? 0) > 0;
+  hit.set(line, (hit.get(line) ?? false) || covered);
 }
 
 /**
@@ -156,72 +166,92 @@ export function parseGitDiff(diffText) {
   let currentFile = null;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    if (line.startsWith("diff --git ")) {
-      const parts = line.slice("diff --git ".length).trim().split(" ");
-      const aPath = parts[0]?.replace(/^a\//, "") ?? "";
-      const bPath = parts[1]?.replace(/^b\//, "") ?? "";
-      const targetPath = bPath && bPath !== "/dev/null" ? bPath : aPath;
-      currentFile = {
-        file: targetPath,
-        oldFile: aPath,
-        isNew: false,
-        isDeleted: false,
-        hunks: [],
-        newChangedLines: new Set(),
-        oldChangedLines: new Set(),
-      };
-      files.set(currentFile.file, currentFile);
-      continue;
-    }
-
-    if (!currentFile) continue;
-
-    if (line.startsWith("--- /dev/null")) {
-      currentFile.isNew = true;
-      continue;
-    }
-    if (line.startsWith("+++ /dev/null")) {
-      currentFile.isDeleted = true;
-      continue;
-    }
-    if (line.startsWith("--- a/")) {
-      currentFile.oldFile = line.slice("--- a/".length).trim();
-      continue;
-    }
-    if (line.startsWith("+++ b/")) {
-      currentFile.file = line.slice("+++ b/".length).trim();
-      files.set(currentFile.file, currentFile);
-      continue;
-    }
-
-    // Hunk header: @@ -oldStart[,oldCount] +newStart[,newCount] @@
-    if (line.startsWith("@@ ")) {
-      const match = /^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/.exec(line);
-      if (match) {
-        const oldStart = parseInt(match[1], 10);
-        const oldCount = match[2] !== undefined ? parseInt(match[2], 10) : 1;
-        const newStart = parseInt(match[3], 10);
-        const newCount = match[4] !== undefined ? parseInt(match[4], 10) : 1;
-
-        currentFile.hunks.push({ oldStart, oldCount, newStart, newCount });
-
-        if (newCount > 0) {
-          for (let l = newStart; l < newStart + newCount; l++) {
-            currentFile.newChangedLines.add(l);
-          }
-        }
-        if (oldCount > 0) {
-          for (let l = oldStart; l < oldStart + oldCount; l++) {
-            currentFile.oldChangedLines.add(l);
-          }
-        }
-      }
-    }
+    currentFile = applyDiffLine(lines[i], currentFile, files);
   }
 
   return files;
+}
+
+/** 解析是有状态的：currentFile 必须回传给下一行。 */
+function applyDiffLine(line, currentFile, files) {
+  if (line.startsWith("diff --git ")) {
+    return startDiffFileEntry(line, files);
+  }
+
+  if (!currentFile) return null;
+
+  if (applyFileMarker(line, currentFile, files)) return currentFile;
+
+  applyHunkHeader(line, currentFile);
+  return currentFile;
+}
+
+/** diff --git 头即新文件起点，先按 b 侧路径登记（+++ b/ 行可能再改写）。 */
+function startDiffFileEntry(line, files) {
+  const parts = line.slice("diff --git ".length).trim().split(" ");
+  const aPath = parts[0]?.replace(/^a\//, "") ?? "";
+  const bPath = parts[1]?.replace(/^b\//, "") ?? "";
+  const targetPath = bPath && bPath !== "/dev/null" ? bPath : aPath;
+  const currentFile = {
+    file: targetPath,
+    oldFile: aPath,
+    isNew: false,
+    isDeleted: false,
+    hunks: [],
+    newChangedLines: new Set(),
+    oldChangedLines: new Set(),
+  };
+  files.set(currentFile.file, currentFile);
+  return currentFile;
+}
+
+/** --- / +++ 标记行；返回是否已消费该行。 */
+function applyFileMarker(line, currentFile, files) {
+  if (line.startsWith("--- /dev/null")) {
+    currentFile.isNew = true;
+    return true;
+  }
+  if (line.startsWith("+++ /dev/null")) {
+    currentFile.isDeleted = true;
+    return true;
+  }
+  if (line.startsWith("--- a/")) {
+    currentFile.oldFile = line.slice("--- a/".length).trim();
+    return true;
+  }
+  if (line.startsWith("+++ b/")) {
+    currentFile.file = line.slice("+++ b/".length).trim();
+    files.set(currentFile.file, currentFile);
+    return true;
+  }
+  return false;
+}
+
+function applyHunkHeader(line, currentFile) {
+  if (!line.startsWith("@@ ")) return;
+
+  // Hunk header: @@ -oldStart[,oldCount] +newStart[,newCount] @@
+  const match = /^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@/.exec(line);
+  if (match) {
+    const oldStart = parseInt(match[1], 10);
+    const oldCount = match[2] !== undefined ? parseInt(match[2], 10) : 1;
+    const newStart = parseInt(match[3], 10);
+    const newCount = match[4] !== undefined ? parseInt(match[4], 10) : 1;
+
+    currentFile.hunks.push({ oldStart, oldCount, newStart, newCount });
+
+    addChangedLineRange(currentFile.newChangedLines, newStart, newCount);
+    addChangedLineRange(currentFile.oldChangedLines, oldStart, oldCount);
+  }
+}
+
+/** 变更行号集合只登记实际存在的行（count=0 的纯删除 hunk 不登记任何行）。 */
+function addChangedLineRange(target, start, count) {
+  if (count > 0) {
+    for (let l = start; l < start + count; l++) {
+      target.add(l);
+    }
+  }
 }
 
 /**
@@ -292,48 +322,61 @@ export function isFunctionTouched(fn, fileDiff) {
 export function findBaseFunction(newFn, baseFns, hunks) {
   if (!baseFns || baseFns.length === 0) return null;
 
-  // 1. 优先通过行号映射匹配
   const mappedOldLine = mapNewToOldLine(newFn.startLine, hunks);
-  if (mappedOldLine !== null) {
-    const exactMatch = baseFns.find((bf) => bf.startLine === mappedOldLine);
-    if (exactMatch) {
-      if (!newFn.name || !exactMatch.name || newFn.name === exactMatch.name) {
-        return exactMatch;
+
+  const byLineMapping = matchByLineMapping(newFn, baseFns, mappedOldLine);
+  if (byLineMapping) return byLineMapping;
+
+  const byName = matchByName(newFn, baseFns, mappedOldLine);
+  if (byName) return byName;
+
+  return matchAnonymousInHunk(newFn, baseFns, hunks);
+}
+
+/** 行号对上了也可能是两处不同函数的巧合，得名字也对得上才认。 */
+function matchByLineMapping(newFn, baseFns, mappedOldLine) {
+  if (mappedOldLine === null) return null;
+
+  const exactMatch = baseFns.find((bf) => bf.startLine === mappedOldLine);
+  if (!exactMatch) return null;
+  if (!newFn.name || !exactMatch.name || newFn.name === exactMatch.name) {
+    return exactMatch;
+  }
+  return null;
+}
+
+/** 声明被改写或换行时行号对不上，退回按名字找；重名取起点最近的一个。 */
+function matchByName(newFn, baseFns, mappedOldLine) {
+  if (!newFn.name) return null;
+
+  const nameMatches = baseFns.filter((bf) => bf.name === newFn.name);
+  if (nameMatches.length === 1) {
+    return nameMatches[0];
+  }
+  if (nameMatches.length > 1) {
+    const targetLine = mappedOldLine ?? newFn.startLine;
+    return nameMatches
+      .slice()
+      .sort((a, b) => Math.abs(a.startLine - targetLine) - Math.abs(b.startLine - targetLine))[0];
+  }
+  return null;
+}
+
+/** 匿名函数没有名字可用，只能落在同一替换 hunk 的 old 区间里认唯一候选。 */
+function matchAnonymousInHunk(newFn, baseFns, hunks) {
+  if (newFn.name || !hunks) return null;
+
+  for (const hunk of hunks) {
+    if (newFn.startLine >= hunk.newStart && newFn.startLine < hunk.newStart + hunk.newCount) {
+      const candidates = baseFns.filter(
+        (bf) =>
+          !bf.name && bf.startLine >= hunk.oldStart && bf.startLine < hunk.oldStart + hunk.oldCount,
+      );
+      if (candidates.length === 1) {
+        return candidates[0];
       }
     }
   }
-
-  // 2. 函数名匹配（当函数声明被修改或换行时）
-  if (newFn.name) {
-    const nameMatches = baseFns.filter((bf) => bf.name === newFn.name);
-    if (nameMatches.length === 1) {
-      return nameMatches[0];
-    }
-    if (nameMatches.length > 1) {
-      const targetLine = mappedOldLine ?? newFn.startLine;
-      return nameMatches
-        .slice()
-        .sort((a, b) => Math.abs(a.startLine - targetLine) - Math.abs(b.startLine - targetLine))[0];
-    }
-  }
-
-  // 3. 匿名函数在替换 hunk 内的对应
-  if (!newFn.name && hunks) {
-    for (const hunk of hunks) {
-      if (newFn.startLine >= hunk.newStart && newFn.startLine < hunk.newStart + hunk.newCount) {
-        const candidates = baseFns.filter(
-          (bf) =>
-            !bf.name &&
-            bf.startLine >= hunk.oldStart &&
-            bf.startLine < hunk.oldStart + hunk.oldCount,
-        );
-        if (candidates.length === 1) {
-          return candidates[0];
-        }
-      }
-    }
-  }
-
   return null;
 }
 
@@ -400,6 +443,40 @@ export async function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath 
     return { exitCode: 0, passed: true, violations: [] };
   }
 
+  const coverageByAbs = loadCoverageByAbs(coveragePath);
+
+  const scanned = await scanDiffFiles({
+    repoRoot,
+    baseRef,
+    threshold,
+    relevantDiffFiles,
+    coverageByAbs,
+  });
+
+  if (scanned.failed) {
+    return { exitCode: 2, passed: false, violations: [] };
+  }
+
+  const { violations, touchedCount, compliantCount } = scanned;
+
+  if (violations.length > 0) {
+    console.error(
+      `crap-check [diff]: FAIL - 发现 ${violations.length} 处 CRAP 增量违规（base: ${baseRef}，阈值: ${threshold}）：`,
+    );
+    for (const v of violations) {
+      reportViolation(v, threshold);
+    }
+    return { exitCode: 1, passed: false, violations, touchedCount, compliantCount };
+  }
+
+  console.log(
+    `crap-check [diff]: OK - base=${baseRef}，改动触及 ${touchedCount} 个函数，全部合规放行（未触及存量函数全部豁免）。`,
+  );
+  return { exitCode: 0, passed: true, violations: [], touchedCount, compliantCount };
+}
+
+/** 读取覆盖率数据并归一为绝对路径索引；缺失或解析失败都按未覆盖评估（方向偏保守）。 */
+function loadCoverageByAbs(coveragePath) {
   let coverage = {};
   if (existsSync(coveragePath)) {
     try {
@@ -417,112 +494,161 @@ export async function runDiffCheck({ repoRoot, threshold, baseArg, coveragePath 
   for (const [covFile, covData] of Object.entries(coverage)) {
     coverageByAbs.set(resolve(covFile), covData);
   }
+  return coverageByAbs;
+}
 
+/** 违规文案按类型分列；未识别的类型没有可输出的文案，故静默。 */
+function reportViolation(v, threshold) {
+  if (v.type === "NEW_EXCEEDED") {
+    console.error(
+      `  [新增超标] ${v.file}:${v.line} (${v.name}) CRAP=${v.crap} > ${threshold}（comp=${v.comp}，${v.covered ? "已覆盖" : "未覆盖"}）`,
+    );
+  } else if (v.type === "REGRESSION") {
+    console.error(
+      `  [存量恶化] ${v.file}:${v.line} (${v.name}) CRAP 恶化: ${v.crapBase} -> ${v.crapNew}（comp: ${v.compBase} -> ${v.compNew}，${v.covered ? "已覆盖" : "未覆盖"}）`,
+    );
+  }
+}
+
+/** 扫描 --diff 命中文件的逐函数 CRAP 增量；任一文件解析失败即整体 fail-closed。 */
+async function scanDiffFiles({ repoRoot, baseRef, threshold, relevantDiffFiles, coverageByAbs }) {
   const violations = [];
   let touchedCount = 0;
   let compliantCount = 0;
 
   for (const [relPath, fileDiff] of relevantDiffFiles) {
-    const absPath = join(repoRoot, relPath);
-    if (!existsSync(absPath)) continue;
-
-    const currentCode = readFileSync(absPath, "utf8");
-    const current = await functionsOf(currentCode, absPath);
-    if (current.parseError !== null) {
-      console.error(
-        `crap-check [diff]: ${relPath} 解析失败（${current.parseError}）—— fail-closed`,
-      );
-      return { exitCode: 2, passed: false, violations: [] };
+    const fileScan = await scanDiffFile({
+      repoRoot,
+      baseRef,
+      threshold,
+      relPath,
+      fileDiff,
+      coverageByAbs,
+      violations,
+    });
+    if (fileScan.failed) {
+      return { failed: true };
     }
-    const currentFns = withRange(current.fns);
+    touchedCount += fileScan.touchedCount;
+    compliantCount += fileScan.compliantCount;
+  }
 
-    // 读取 base 提交中的老文件内容
-    let baseFns = [];
-    if (!fileDiff.isNew) {
-      const showRes = spawnSync("git", ["show", `${baseRef}:${fileDiff.oldFile || relPath}`], {
-        cwd: repoRoot,
-        encoding: "utf8",
-        stdio: ["pipe", "pipe", "pipe"],
+  return { failed: false, violations, touchedCount, compliantCount };
+}
+
+/** 单文件扫描；文件已不存在时按零计数跳过，解析失败交由调用方原样返回 fail-closed。 */
+async function scanDiffFile({
+  repoRoot,
+  baseRef,
+  threshold,
+  relPath,
+  fileDiff,
+  coverageByAbs,
+  violations,
+}) {
+  const absPath = join(repoRoot, relPath);
+  if (!existsSync(absPath)) return { failed: false, touchedCount: 0, compliantCount: 0 };
+
+  const currentCode = readFileSync(absPath, "utf8");
+  const current = await functionsOf(currentCode, absPath);
+  if (current.parseError !== null) {
+    console.error(`crap-check [diff]: ${relPath} 解析失败（${current.parseError}）—— fail-closed`);
+    return { failed: true };
+  }
+  const currentFns = withRange(current.fns);
+
+  const baseFns = await loadBaseFunctions({ repoRoot, baseRef, relPath, fileDiff, absPath });
+  const hitByLine = coverageHitLines(coverageByAbs.get(absPath));
+
+  const counters = countCrapViolations({
+    currentFns,
+    fileDiff,
+    baseFns,
+    hitByLine,
+    threshold,
+    relPath,
+    violations,
+  });
+  return { failed: false, ...counters };
+}
+
+/** base 版本不存在或读取失败都按空集处理，等价于把该函数判为新增。 */
+async function loadBaseFunctions({ repoRoot, baseRef, relPath, fileDiff, absPath }) {
+  if (fileDiff.isNew) return [];
+
+  const showRes = spawnSync("git", ["show", `${baseRef}:${fileDiff.oldFile || relPath}`], {
+    cwd: repoRoot,
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  if (showRes.status !== 0) return [];
+
+  return withRange((await functionsOf(showRes.stdout, absPath)).fns);
+}
+
+/** 逐函数判定 CRAP 增量；未触及的存量函数全部豁免。 */
+function countCrapViolations({
+  currentFns,
+  fileDiff,
+  baseFns,
+  hitByLine,
+  threshold,
+  relPath,
+  violations,
+}) {
+  let touchedCount = 0;
+  let compliantCount = 0;
+
+  for (const fn of currentFns) {
+    if (!isFunctionTouched(fn, fileDiff)) {
+      // 未触及存量函数：全部豁免
+      continue;
+    }
+    touchedCount++;
+
+    const covered = coveredAt(hitByLine, fn.line);
+    const crapNew = crapOf(fn.complexity, covered);
+
+    if (crapNew <= threshold) {
+      compliantCount++;
+      continue;
+    }
+
+    const baseFn = findBaseFunction(fn, baseFns, fileDiff.hunks);
+
+    if (!baseFn) {
+      violations.push({
+        type: "NEW_EXCEEDED",
+        file: relPath,
+        line: fn.line,
+        name: fn.name || "<anonymous>",
+        comp: fn.complexity,
+        covered,
+        crap: crapNew,
+        threshold,
       });
-      if (showRes.status === 0) {
-        baseFns = withRange((await functionsOf(showRes.stdout, absPath)).fns);
-      }
-    }
-
-    const hitByLine = coverageHitLines(coverageByAbs.get(absPath));
-
-    for (const fn of currentFns) {
-      if (!isFunctionTouched(fn, fileDiff)) {
-        // 未触及存量函数：全部豁免
-        continue;
-      }
-      touchedCount++;
-
-      const covered = coveredAt(hitByLine, fn.line);
-      const crapNew = crapOf(fn.complexity, covered);
-
-      if (crapNew <= threshold) {
-        compliantCount++;
-        continue;
-      }
-
-      const baseFn = findBaseFunction(fn, baseFns, fileDiff.hunks);
-
-      if (!baseFn) {
+    } else {
+      const crapBase = crapOf(baseFn.complexity, covered);
+      if (crapNew > crapBase) {
         violations.push({
-          type: "NEW_EXCEEDED",
+          type: "REGRESSION",
           file: relPath,
           line: fn.line,
           name: fn.name || "<anonymous>",
-          comp: fn.complexity,
+          compNew: fn.complexity,
+          compBase: baseFn.complexity,
           covered,
-          crap: crapNew,
+          crapNew,
+          crapBase,
           threshold,
         });
       } else {
-        const crapBase = crapOf(baseFn.complexity, covered);
-        if (crapNew > crapBase) {
-          violations.push({
-            type: "REGRESSION",
-            file: relPath,
-            line: fn.line,
-            name: fn.name || "<anonymous>",
-            compNew: fn.complexity,
-            compBase: baseFn.complexity,
-            covered,
-            crapNew,
-            crapBase,
-            threshold,
-          });
-        } else {
-          compliantCount++;
-        }
+        compliantCount++;
       }
     }
   }
 
-  if (violations.length > 0) {
-    console.error(
-      `crap-check [diff]: FAIL - 发现 ${violations.length} 处 CRAP 增量违规（base: ${baseRef}，阈值: ${threshold}）：`,
-    );
-    for (const v of violations) {
-      if (v.type === "NEW_EXCEEDED") {
-        console.error(
-          `  [新增超标] ${v.file}:${v.line} (${v.name}) CRAP=${v.crap} > ${threshold}（comp=${v.comp}，${v.covered ? "已覆盖" : "未覆盖"}）`,
-        );
-      } else if (v.type === "REGRESSION") {
-        console.error(
-          `  [存量恶化] ${v.file}:${v.line} (${v.name}) CRAP 恶化: ${v.crapBase} -> ${v.crapNew}（comp: ${v.compBase} -> ${v.compNew}，${v.covered ? "已覆盖" : "未覆盖"}）`,
-        );
-      }
-    }
-    return { exitCode: 1, passed: false, violations, touchedCount, compliantCount };
-  }
-
-  console.log(
-    `crap-check [diff]: OK - base=${baseRef}，改动触及 ${touchedCount} 个函数，全部合规放行（未触及存量函数全部豁免）。`,
-  );
-  return { exitCode: 0, passed: true, violations: [], touchedCount, compliantCount };
+  return { touchedCount, compliantCount };
 }
 
 /**
@@ -537,49 +663,11 @@ export async function runFullCheck({ repoRoot, threshold, strict, coveragePath }
   const coverage = JSON.parse(readFileSync(coveragePath, "utf8"));
   const normRoot = repoRoot.replace(/\\/g, "/").replace(/\/$/, "");
 
-  const hotspots = [];
-  let totalFns = 0;
-  let coveredFns = 0;
-  let scannedFiles = 0;
-  let parseFailed = 0;
-
-  for (const [file, data] of Object.entries(coverage)) {
-    // 路径口径：只评估包 src（与 vitest coverage 的 include 同口径）。先对分隔符归一，
-    // 避免 Windows 反斜杠路径整批跳过而报 0。
-    const normFile = file.replace(/\\/g, "/");
-    if (!SRC_RE.test(normFile)) continue;
-    const absPath = resolve(file);
-    if (!existsSync(absPath)) continue;
-    scannedFiles++;
-
-    const { fns, parseError } = await functionsOf(readFileSync(absPath, "utf8"), absPath);
-    if (parseError !== null) {
-      parseFailed++;
-      console.warn(`crap-check: ${normFile} 解析失败，跳过（${parseError}）`);
-      continue;
-    }
-
-    const hitByLine = coverageHitLines(data);
-
-    for (const fn of fns) {
-      totalFns++;
-      const covered = coveredAt(hitByLine, fn.line);
-      if (covered) coveredFns++;
-      const crap = crapOf(fn.complexity, covered);
-      if (crap > threshold) {
-        hotspots.push({
-          file: normFile.startsWith(normRoot + "/")
-            ? normFile.slice(normRoot.length + 1)
-            : normFile,
-          line: fn.line,
-          name: fn.name,
-          comp: fn.complexity,
-          covered,
-          crap,
-        });
-      }
-    }
-  }
+  const { hotspots, totalFns, coveredFns, scannedFiles, parseFailed } = await scanCoverageFiles(
+    coverage,
+    threshold,
+    normRoot,
+  );
 
   // 零函数 = 数据源口径不匹配，属静默降级（#718 定性），必须 fail-closed。
   if (totalFns === 0) {
@@ -641,17 +729,77 @@ export async function runFullCheck({ repoRoot, threshold, strict, coveragePath }
   return { exitCode: 0, passed: true, hotspots };
 }
 
+/** 全量扫描覆盖率数据；零函数属数据源口径不匹配，由调用方 fail-closed。 */
+async function scanCoverageFiles(coverage, threshold, normRoot) {
+  const hotspots = [];
+  let totalFns = 0;
+  let coveredFns = 0;
+  let scannedFiles = 0;
+  let parseFailed = 0;
+
+  for (const [file, data] of Object.entries(coverage)) {
+    // 路径口径：只评估包 src（与 vitest coverage 的 include 同口径）。先对分隔符归一，
+    // 避免 Windows 反斜杠路径整批跳过而报 0。
+    const normFile = file.replace(/\\/g, "/");
+    if (!SRC_RE.test(normFile)) continue;
+    const absPath = resolve(file);
+    if (!existsSync(absPath)) continue;
+    scannedFiles++;
+
+    const { fns, parseError } = await functionsOf(readFileSync(absPath, "utf8"), absPath);
+    if (parseError !== null) {
+      parseFailed++;
+      console.warn(`crap-check: ${normFile} 解析失败，跳过（${parseError}）`);
+      continue;
+    }
+
+    const counts = collectHotspots({
+      fns,
+      hitByLine: coverageHitLines(data),
+      threshold,
+      normFile,
+      normRoot,
+      hotspots,
+    });
+    totalFns += counts.totalFns;
+    coveredFns += counts.coveredFns;
+  }
+
+  return { hotspots, totalFns, coveredFns, scannedFiles, parseFailed };
+}
+
+/** 逐函数累计覆盖数与超阈热点；热点文件名按仓库根相对输出。 */
+function collectHotspots({ fns, hitByLine, threshold, normFile, normRoot, hotspots }) {
+  let totalFns = 0;
+  let coveredFns = 0;
+
+  for (const fn of fns) {
+    totalFns++;
+    const covered = coveredAt(hitByLine, fn.line);
+    if (covered) coveredFns++;
+    const crap = crapOf(fn.complexity, covered);
+    if (crap > threshold) {
+      hotspots.push({
+        file: normFile.startsWith(normRoot + "/") ? normFile.slice(normRoot.length + 1) : normFile,
+        line: fn.line,
+        name: fn.name,
+        comp: fn.complexity,
+        covered,
+        crap,
+      });
+    }
+  }
+
+  return { totalFns, coveredFns };
+}
+
 /**
  * 主入口解析与分发。
  */
 export async function runCrapCheck(argv = process.argv.slice(2), { shouldExit = true } = {}) {
   const repoRoot = process.cwd();
-  const configPath = join(repoRoot, "scripts", "data", "gauntlet.config.json");
-  const config = existsSync(configPath) ? JSON.parse(readFileSync(configPath, "utf8")) : {};
-  const DEFAULT_THRESHOLD = config.crap?.threshold ?? 16;
-
-  const idx = argv.indexOf("--threshold");
-  const threshold = Number(idx >= 0 ? argv[idx + 1] : DEFAULT_THRESHOLD);
+  const config = loadConfig(repoRoot);
+  const threshold = resolveThreshold(argv, config);
   if (!Number.isFinite(threshold) || threshold <= 0) {
     console.error("crap-check: invalid --threshold");
     if (shouldExit) process.exit(2);
@@ -660,7 +808,31 @@ export async function runCrapCheck(argv = process.argv.slice(2), { shouldExit = 
   const strict = Boolean(config.crap?.strict);
   const coveragePath = join(repoRoot, "coverage", "coverage-final.json");
 
-  // 解析 --diff 参数
+  const { isDiff, baseArg } = parseDiffArgs(argv);
+
+  const result = isDiff
+    ? await runDiffCheck({ repoRoot, threshold, baseArg, coveragePath })
+    : await runFullCheck({ repoRoot, threshold, strict, coveragePath });
+
+  return applyExitPolicy(result, shouldExit);
+}
+
+/** 配置缺失时按空对象走缺省值，与 crap.threshold / crap.strict 的缺省语义一致。 */
+function loadConfig(repoRoot) {
+  const configPath = join(repoRoot, "scripts", "data", "gauntlet.config.json");
+  return existsSync(configPath) ? JSON.parse(readFileSync(configPath, "utf8")) : {};
+}
+
+/** --threshold 优先于配置；缺省值仍取自配置的 crap.threshold。 */
+function resolveThreshold(argv, config) {
+  const DEFAULT_THRESHOLD = config.crap?.threshold ?? 16;
+
+  const idx = argv.indexOf("--threshold");
+  return Number(idx >= 0 ? argv[idx + 1] : DEFAULT_THRESHOLD);
+}
+
+/** 解析 --diff 参数 */
+function parseDiffArgs(argv) {
   let isDiff = false;
   let baseArg = null;
   for (let i = 0; i < argv.length; i++) {
@@ -674,11 +846,11 @@ export async function runCrapCheck(argv = process.argv.slice(2), { shouldExit = 
       baseArg = argv[i].slice("--diff=".length);
     }
   }
+  return { isDiff, baseArg };
+}
 
-  const result = isDiff
-    ? await runDiffCheck({ repoRoot, threshold, baseArg, coveragePath })
-    : await runFullCheck({ repoRoot, threshold, strict, coveragePath });
-
+/** 是否以进程退出码收尾由调用方决定（测试里传 shouldExit=false）。 */
+function applyExitPolicy(result, shouldExit) {
   if (shouldExit && typeof result.exitCode === "number") {
     process.exit(result.exitCode);
   }

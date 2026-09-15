@@ -73,11 +73,59 @@ export function projectTestSurface(root, topologyDoc, pkgName) {
   }
   const errors = [];
   const pkgDir = join(root, "packages", pkgName);
-  const pkgDef = def.testLayers ?? {};
+  const { mutationLayers, excludeLayers } = layerNames(layers);
 
   // ⓪ 充分性：必需层必须都在 mutationLayers 内，且不得被排除层覆盖
-  const mutationLayers = layers.mutationLayers ?? [];
-  const excludeLayers = layers.mutationExcludeLayers ?? [];
+  collectSufficiencyErrors(errors, mutationLayers, excludeLayers);
+
+  // ① runner 面：glob 全集（与 vitest include 同口径）
+  const runFiles = expandGlob(pkgDir, RUN_TESTS_PATTERN).map((p) => relPosix(root, p));
+  if (runFiles.length === 0) errors.push("runner 面零命中 —— 包内没有 test/ 下的 *.test.ts");
+
+  // ② 各层实际命中文件
+  const layerFiles = collectLayerFiles({
+    root,
+    pkgDir,
+    layers,
+    mutationLayers,
+    excludeLayers,
+    errors,
+  });
+
+  // ③ 逐层逐条豁免（键 = 层名，值 = { 仓库相对路径: 理由 }）
+  const exemptions = mutationExemptions(def);
+  collectExemptionErrors({ root, layerFiles, exemptions, errors });
+
+  // ④ 变异面 = mutationLayers 命中 − 排除层 − 逐条豁免
+  const { testFiles, excluded, explained } = collectMutationFace({
+    layerFiles,
+    mutationLayers,
+    excludeLayers,
+    exemptions,
+    errors,
+  });
+
+  // ⑤ 登记完整性 ①：runner 面每个文件必须被「某一层」或「某条排除」解释
+  collectUnattributedErrors(runFiles, explained, errors);
+
+  return { testFiles, runFiles, layerFiles, excludedFiles: [...excluded].sort(), errors };
+}
+
+/** 层名清单：缺声明的层退化为空表，调用方据此走原有的 fail-closed 判据。 */
+function layerNames(layers) {
+  return {
+    mutationLayers: layers.mutationLayers ?? [],
+    excludeLayers: layers.mutationExcludeLayers ?? [],
+  };
+}
+
+/** 包级逐条豁免登记；未声明 testLayers 的包等同于没有豁免。 */
+function mutationExemptions(def) {
+  return def.testLayers?.testMutationExemptions ?? {};
+}
+
+/** ⓪ 必需层必须在变异层内、且不得被排除层覆盖（#690 S2b 的充分性下限）。 */
+function collectSufficiencyErrors(errors, mutationLayers, excludeLayers) {
   for (const required of REQUIRED_MUTATION_LAYERS) {
     if (!mutationLayers.includes(required)) {
       errors.push(
@@ -89,12 +137,10 @@ export function projectTestSurface(root, topologyDoc, pkgName) {
     }
   }
   if (mutationLayers.length === 0) errors.push("$testLayers.mutationLayers 为空 —— 变异面为零");
+}
 
-  // ① runner 面：glob 全集（与 vitest include 同口径）
-  const runFiles = expandGlob(pkgDir, RUN_TESTS_PATTERN).map((p) => relPosix(root, p));
-  if (runFiles.length === 0) errors.push("runner 面零命中 —— 包内没有 test/ 下的 *.test.ts");
-
-  // ② 各层实际命中文件
+/** ② 逐层展开 glob 得层内文件表，并核对 mutationLayers / excludeLayers 引用的层都已定义。 */
+function collectLayerFiles({ root, pkgDir, layers, mutationLayers, excludeLayers, errors }) {
   const layerFiles = {};
   for (const [layerName, pattern] of Object.entries(layers.layers ?? {})) {
     if (typeof pattern !== "string" || pattern.trim() === "") {
@@ -116,41 +162,55 @@ export function projectTestSurface(root, topologyDoc, pkgName) {
     if (layerFiles[layerName] === undefined)
       errors.push(`$testLayers 引用了未定义的层 "${layerName}"`);
   }
+  return layerFiles;
+}
 
-  // ③ 逐层逐条豁免（键 = 层名，值 = { 仓库相对路径: 理由 }）
-  const exemptions = pkgDef.testMutationExemptions ?? {};
+/** ③ 逐层逐条豁免：层须已定义，条目须真实存在、带非空理由、且确实落在声明的层内。 */
+function collectExemptionErrors({ root, layerFiles, exemptions, errors }) {
   for (const [layerName, entries] of Object.entries(exemptions)) {
     if (layerFiles[layerName] === undefined) {
       errors.push(`testMutationExemptions 引用了未定义的层 "${layerName}"`);
       continue;
     }
     for (const [rel, reason] of Object.entries(entries ?? {})) {
-      if (!existsSync(join(root, rel)))
-        errors.push(`testMutationExemptions 指向不存在的文件：${rel}`);
-      if (typeof reason !== "string" || reason.trim() === "")
-        errors.push(`testMutationExemptions 的 ${rel} 缺少理由（必须写明为何不进变异面）`);
-      if (!layerFiles[layerName].includes(rel))
-        errors.push(
-          `testMutationExemptions 的 ${rel} 不在 "${layerName}" 层内（层归属与豁免声明不一致）`,
-        );
+      errors.push(...exemptionEntryProblems({ root, layerName, rel, reason, layerFiles }));
     }
   }
+}
 
-  // ④ 变异面 = mutationLayers 命中 − 排除层 − 逐条豁免
+function exemptionEntryProblems({ root, layerName, rel, reason, layerFiles }) {
+  const problems = [];
+  if (!existsSync(join(root, rel)))
+    problems.push(`testMutationExemptions 指向不存在的文件：${rel}`);
+  if (typeof reason !== "string" || reason.trim() === "")
+    problems.push(`testMutationExemptions 的 ${rel} 缺少理由（必须写明为何不进变异面）`);
+  if (!layerFiles[layerName].includes(rel))
+    problems.push(
+      `testMutationExemptions 的 ${rel} 不在 "${layerName}" 层内（层归属与豁免声明不一致）`,
+    );
+  return problems;
+}
+
+/** ④ 变异面 = mutationLayers 命中 − 排除层 − 逐条豁免；同时给出「被解释过」全集供 ⑤ 用。 */
+function collectMutationFace({ layerFiles, mutationLayers, excludeLayers, exemptions, errors }) {
   const excluded = new Set();
-  for (const layerName of excludeLayers)
-    for (const f of layerFiles[layerName] ?? []) excluded.add(f);
+  addLayerFiles(excluded, excludeLayers, layerFiles);
   for (const entries of Object.values(exemptions))
     for (const rel of Object.keys(entries ?? {})) excluded.add(rel);
   const inMutationLayers = new Set();
-  for (const layerName of mutationLayers) {
-    for (const f of layerFiles[layerName] ?? []) inMutationLayers.add(f);
-  }
+  addLayerFiles(inMutationLayers, mutationLayers, layerFiles);
   const testFiles = [...inMutationLayers].filter((f) => !excluded.has(f)).sort();
   if (testFiles.length === 0) errors.push("变异面零条目 —— 该包不会产生任何变异分（fail-closed）");
+  return { testFiles, excluded, explained: new Set([...inMutationLayers, ...excluded]) };
+}
 
-  // ⑤ 登记完整性 ①：runner 面每个文件必须被「某一层」或「某条排除」解释
-  const explained = new Set([...inMutationLayers, ...excluded]);
+/** 把若干层命中的文件并进目标集合；层未展开时按空表处理。 */
+function addLayerFiles(target, layerNames, layerFiles) {
+  for (const layerName of layerNames) for (const f of layerFiles[layerName] ?? []) target.add(f);
+}
+
+/** ⑤ 登记完整性 ①：runner 面每个文件必须被「某一层」或「某条排除」解释。 */
+function collectUnattributedErrors(runFiles, explained, errors) {
   for (const f of runFiles) {
     if (!explained.has(f)) {
       errors.push(
@@ -158,7 +218,6 @@ export function projectTestSurface(root, topologyDoc, pkgName) {
       );
     }
   }
-  return { testFiles, runFiles, layerFiles, excludedFiles: [...excluded].sort(), errors };
 }
 
 /**

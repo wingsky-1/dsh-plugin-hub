@@ -83,13 +83,16 @@ export function fullScopePeaks(ledger) {
   const peaks = new Map();
   for (const m of ledger?.measurements ?? []) {
     if (m.scope !== "full") continue;
-    for (const s of m.segments ?? []) {
-      if (typeof s.wallSeconds !== "number" || !(s.wallSeconds > 0)) continue;
-      const prev = peaks.get(s.seg) ?? 0;
-      if (s.wallSeconds > prev) peaks.set(s.seg, s.wallSeconds);
-    }
+    for (const s of m.segments ?? []) mergeSegmentPeak(peaks, s);
   }
   return peaks;
+}
+
+/** 把一段的实测墙钟并入峰值表：无实测 / 非正值的段不参与，同段名取 max（取 max 的理由见上）。 */
+function mergeSegmentPeak(peaks, s) {
+  if (typeof s.wallSeconds !== "number" || !(s.wallSeconds > 0)) return;
+  const prev = peaks.get(s.seg) ?? 0;
+  if (s.wallSeconds > prev) peaks.set(s.seg, s.wallSeconds);
 }
 
 /**

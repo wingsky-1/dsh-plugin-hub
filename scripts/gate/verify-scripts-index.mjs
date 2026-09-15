@@ -102,14 +102,19 @@ function walk(dir, root, out) {
   return out;
 }
 
-/** 引用面：机器可见调用点里字面引用的 `scripts/**` 路径（去重、排序）。 */
-function collectRefs(root) {
-  const refs = new Set();
+/** 调用点声明文本（文件不存在即视为没有这个调用点）。 */
+function refSourceTexts(root) {
   const texts = [];
   for (const rel of REF_SOURCES) {
     const abs = join(root, rel);
     if (existsSync(abs)) texts.push(readFileSync(abs, "utf8"));
   }
+  return texts;
+}
+
+/** glob 面上的调用点源码文本：扩展名与 basename 都是引用面口径的一部分。 */
+function refGlobTexts(root) {
+  const texts = [];
   for (const { dir, ext, basename } of REF_GLOBS) {
     const absDir = join(root, dir);
     if (!existsSync(absDir)) continue;
@@ -119,6 +124,12 @@ function collectRefs(root) {
       texts.push(readFileSync(join(root, rel), "utf8"));
     }
   }
+  return texts;
+}
+
+/** 从文本里抽 `scripts/**` 字面引用：glob、测试文件、已退役路径都不算数。 */
+function extractRefs(texts, root) {
+  const refs = new Set();
   for (const text of texts) {
     for (const m of text.matchAll(SCRIPT_REF_RE)) {
       const p = m[0];
@@ -128,7 +139,38 @@ function collectRefs(root) {
       refs.add(p);
     }
   }
-  return [...refs].sort();
+  return refs;
+}
+
+/** 引用面：机器可见调用点里字面引用的 `scripts/**` 路径（去重、排序）。 */
+function collectRefs(root) {
+  return [...extractRefs([...refSourceTexts(root), ...refGlobTexts(root)], root)].sort();
+}
+
+/** 判据 A：索引里写出的每条路径必须真的存在（模板条目是模式，跳过）。 */
+function rottenIndexProblems(entries, root, indexRel) {
+  const problems = [];
+  for (const entry of entries) {
+    if (entry.isPattern) continue;
+    const rel = entryRepoPath(entry);
+    if (!existsSync(join(root, rel))) {
+      problems.push(`${indexRel}:${entry.line} 索引项不存在：${rel}（索引腐烂：读者会被指到空处）`);
+    }
+  }
+  return problems;
+}
+
+/** 判据 B：机器可见调用点引用到的脚本必须登记进索引（棘轮）。 */
+function unindexedProblems(refs, indexed, indexRel) {
+  const problems = [];
+  for (const p of refs) {
+    if (!indexed.has(p)) {
+      problems.push(
+        `被调用点引用但未登记进 ${indexRel}：${p}（新增会被调用的脚本必须登记；若它不再被调用，请删掉调用点）`,
+      );
+    }
+  }
+  return problems;
 }
 
 function main() {
@@ -155,13 +197,7 @@ function main() {
   const problems = [];
 
   // 判据 A：索引项存在性（模板条目跳过）
-  for (const entry of entries) {
-    if (entry.isPattern) continue;
-    const rel = entryRepoPath(entry);
-    if (!existsSync(join(root, rel))) {
-      problems.push(`${indexRel}:${entry.line} 索引项不存在：${rel}（索引腐烂：读者会被指到空处）`);
-    }
-  }
+  problems.push(...rottenIndexProblems(entries, root, indexRel));
 
   // 判据 B：引用即登记（棘轮）
   const refs = collectRefs(root);
@@ -171,13 +207,7 @@ function main() {
     );
     return 2;
   }
-  for (const p of refs) {
-    if (!indexed.has(p)) {
-      problems.push(
-        `被调用点引用但未登记进 ${indexRel}：${p}（新增会被调用的脚本必须登记；若它不再被调用，请删掉调用点）`,
-      );
-    }
-  }
+  problems.push(...unindexedProblems(refs, indexed, indexRel));
 
   // 报告面（不判红）：既未被引用也未被索引的文件——索引的边界是「仓库会调用什么」，
   // 这些文件不需要登记，但列出来可供人工判断哪些其实该被文档化。

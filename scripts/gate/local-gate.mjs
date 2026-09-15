@@ -84,23 +84,7 @@ function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel }) {
   const scopeArg = hitPackages.join(",");
 
   if (tier === "changed") {
-    const steps = [];
-    if (hitPackages.length > 0) {
-      steps.push({
-        label: `build（命中包 + 依赖：${hitPackages.join(", ")}）`,
-        args: [...scopedBuild.flatMap((f) => ["--filter", f]), "build"],
-      });
-      for (const filter of pkgFilters) {
-        steps.push({ label: `test ${filter}`, args: ["--filter", filter, "--if-present", "test"] });
-      }
-      for (const filter of pkgFilters) {
-        steps.push({
-          label: `typecheck ${filter}`,
-          args: ["--filter", filter, "--if-present", "typecheck"],
-        });
-      }
-    }
-    return steps;
+    return collectScopedPackageSteps(hitPackages, pkgFilters, scopedBuild);
   }
 
   // 廉价全仓一致性闸：不依赖 lib 产物、秒级，恒跑（不是「全量构建」类成本）。
@@ -151,52 +135,89 @@ function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel }) {
   const scriptsSelfTest = { label: "test:scripts（门禁脚本自测）", args: ["test:scripts"] };
 
   if (tier === "pr") {
-    // 步骤表按 hitPackages 生成：直接 `--tier pr` 时 main() 已把包面置为全部包（本地没有 PR
-    // 上下文可切，与 full 同对象面、只少豁免到期台账），此处即全仓；只有从 changed 升档才拿到真
-    // 切片（全局面命中或空切片）。覆盖率与变异**默认**不在本地任何档跑——覆盖率可由
-    // `gate:full --with-coverage` 补，变异只在 CI（PR 按切片强制 + 夜间全量）。
-    const steps = [];
-    if (hitPackages.length > 0) {
-      steps.push({
-        label: `build（命中包 + 依赖：${hitPackages.join(", ")}）`,
-        args: [...scopedBuild.flatMap((f) => ["--filter", f]), "build"],
-      });
-      for (const filter of pkgFilters) {
-        steps.push({ label: `test ${filter}`, args: ["--filter", filter, "--if-present", "test"] });
-      }
-      for (const filter of pkgFilters) {
-        steps.push({
-          label: `typecheck ${filter}`,
-          args: ["--filter", filter, "--if-present", "typecheck"],
-        });
-      }
-    }
-    // 产物闸按切片跑；零命中包时**不**拼空口径（#742 阶段 2.1 起「白名单外的 scripts 改动」
-    // 会走到这里：它们的消费方是常驻静态闸，跑一个 `--packages ""` 的产物闸既无意义又可能
-    // 因空切片判红）。此时 pr 档退化为「廉价全仓一致性闸 + test:scripts」，正是那些常驻闸。
-    if (hitPackages.length > 0) {
-      steps.push(
-        {
-          label: `contract（${scopeLabel}）`,
-          cmd: "node",
-          args: ["scripts/gate/contract-check.ts", "--packages", scopeArg],
-        },
-        {
-          label: `pack:check（${scopeLabel}）`,
-          cmd: "node",
-          args: ["scripts/gate/pack-check.ts", "--packages", scopeArg],
-        },
-        {
-          label: `verify:npmlayout（${scopeLabel}）`,
-          cmd: "node",
-          args: ["scripts/gate/verify-npm-layout.ts", "--packages", scopeArg],
-        },
-      );
-    }
-    steps.push(...cheapGlobal, prereqStep, scriptsSelfTest);
-    return steps;
+    return collectPrTierSteps({
+      hitPackages,
+      pkgFilters,
+      scopedBuild,
+      scopeArg,
+      scopeLabel,
+      cheapGlobal,
+      prereqStep,
+      scriptsSelfTest,
+    });
   }
 
+  return collectFullTierSteps({ scopeLabel, cheapGlobal, scriptsSelfTest, withCoverage });
+}
+
+/** 命中包的 build（含依赖）+ 逐包 test / typecheck；changed 与 pr 两档共用同一段。 */
+function collectScopedPackageSteps(hitPackages, pkgFilters, scopedBuild) {
+  const steps = [];
+  if (hitPackages.length > 0) {
+    steps.push({
+      label: `build（命中包 + 依赖：${hitPackages.join(", ")}）`,
+      args: [...scopedBuild.flatMap((f) => ["--filter", f]), "build"],
+    });
+    for (const filter of pkgFilters) {
+      steps.push({ label: `test ${filter}`, args: ["--filter", filter, "--if-present", "test"] });
+    }
+    for (const filter of pkgFilters) {
+      steps.push({
+        label: `typecheck ${filter}`,
+        args: ["--filter", filter, "--if-present", "typecheck"],
+      });
+    }
+  }
+  return steps;
+}
+
+/**
+ * pr 档：命中包步骤 + 产物闸 + 廉价全仓一致性闸 + test:scripts。
+ *
+ * 步骤表按 hitPackages 生成：直接 `--tier pr` 时 main() 已把包面置为全部包（本地没有 PR
+ * 上下文可切，与 full 同对象面、只少豁免到期台账），此处即全仓；只有从 changed 升档才拿到真
+ * 切片（全局面命中或空切片）。覆盖率与变异**默认**不在本地任何档跑——覆盖率可由
+ * `gate:full --with-coverage` 补，变异只在 CI（PR 按切片强制 + 夜间全量）。
+ */
+function collectPrTierSteps({
+  hitPackages,
+  pkgFilters,
+  scopedBuild,
+  scopeArg,
+  scopeLabel,
+  cheapGlobal,
+  prereqStep,
+  scriptsSelfTest,
+}) {
+  const steps = collectScopedPackageSteps(hitPackages, pkgFilters, scopedBuild);
+  // 产物闸按切片跑；零命中包时**不**拼空口径（#742 阶段 2.1 起「白名单外的 scripts 改动」
+  // 会走到这里：它们的消费方是常驻静态闸，跑一个 `--packages ""` 的产物闸既无意义又可能
+  // 因空切片判红）。此时 pr 档退化为「廉价全仓一致性闸 + test:scripts」，正是那些常驻闸。
+  if (hitPackages.length > 0) {
+    steps.push(
+      {
+        label: `contract（${scopeLabel}）`,
+        cmd: "node",
+        args: ["scripts/gate/contract-check.ts", "--packages", scopeArg],
+      },
+      {
+        label: `pack:check（${scopeLabel}）`,
+        cmd: "node",
+        args: ["scripts/gate/pack-check.ts", "--packages", scopeArg],
+      },
+      {
+        label: `verify:npmlayout（${scopeLabel}）`,
+        cmd: "node",
+        args: ["scripts/gate/verify-npm-layout.ts", "--packages", scopeArg],
+      },
+    );
+  }
+  steps.push(...cheapGlobal, prereqStep, scriptsSelfTest);
+  return steps;
+}
+
+/** full 档：同 pr 对象面（全仓直跑）+ 豁免到期台账；`--with-coverage` 时补 cov / crap。 */
+function collectFullTierSteps({ scopeLabel, cheapGlobal, scriptsSelfTest, withCoverage }) {
   const steps = [
     { label: "build（全仓）", args: ["build"] },
     { label: "test（全仓）", args: ["test"] },
@@ -236,6 +257,40 @@ function main(argv) {
 
   const { allPackages } = computeCiMatrix({ env: {} });
 
+  const { files, plan } = resolveScope(tier, base, allPackages);
+  // 全局面命中（改 shared/scripts/.github/包管理文件）时，changed 快线不足以覆盖静态闸，升到 pr
+  // 升档判据是纯函数（local-scope.shouldEscalateChangedTier，带回归用例）：#722 的全局面升档
+  // 加 #742 阶段 2.1 的空切片升档——白名单外条目的消费方是 CI 上恒跑的静态闸，本地不能空转。
+  const effectiveTier = resolveEffectiveTier(tier, plan, files);
+  const steps = tierSteps(effectiveTier, {
+    hitPackages: plan.hitPackages,
+    withCoverage,
+    base,
+    scopeLabel: formatScopeLabel(plan, allPackages),
+  });
+  const escalated = effectiveTier !== tier;
+
+  logPlan({ tier, escalated, effectiveTier, base, files, plan });
+  if (steps.length === 0) {
+    console.log(
+      "[local-gate] 无命中包面 —— 纯文档 diff 且无待跑步骤：本地快线不跑（CI 的 docs:check 等静态闸仍会跑）",
+    );
+    return 0;
+  }
+  console.log("[local-gate] 计划步骤：");
+  // 连同将要执行的命令一起打印：只打标签的话，「标签没改、args 被换成别的闸」这种漂移在
+  // --dry-run 的计划输出上完全看不出来（自测判据因此钉不住 args）。
+  for (const s of steps) console.log(`  - ${s.label}  →  ${[s.cmd ?? PNPM, ...s.args].join(" ")}`);
+  if (dryRun) {
+    console.log("[local-gate] --dry-run：未执行");
+    return 0;
+  }
+
+  return logSummary(steps, runSteps(steps)) ? 1 : 0;
+}
+
+/** 本次变更文件集与包面计划；changed 档取不到 diff 基准时按全量处理（fail-closed）。 */
+function resolveScope(tier, base, allPackages) {
   let files = null;
   let scopeReason = "";
   if (tier === "changed") {
@@ -264,11 +319,10 @@ function main(argv) {
   } else {
     plan = planChangedScope({ root: ROOT, files, allPackages });
   }
+  return { files, plan };
+}
 
-  // 全局面命中（改 shared/scripts/.github/包管理文件）时，changed 快线不足以覆盖静态闸，升到 pr
-  // 升档判据是纯函数（local-scope.shouldEscalateChangedTier，带回归用例）：#722 的全局面升档
-  // 加 #742 阶段 2.1 的空切片升档——白名单外条目的消费方是 CI 上恒跑的静态闸，本地不能空转。
-  let effectiveTier = tier;
+function resolveEffectiveTier(tier, plan, files) {
   if (
     tier === "changed" &&
     shouldEscalateChangedTier({
@@ -277,21 +331,18 @@ function main(argv) {
       files,
     })
   ) {
-    effectiveTier = "pr";
+    return "pr";
   }
+  return tier;
+}
 
-  const scopeLabel =
-    plan.hitPackages.length === allPackages.length
-      ? "全仓口径"
-      : `切片 ${plan.hitPackages.length} 包：${plan.hitPackages.join(", ")}`;
-  const steps = tierSteps(effectiveTier, {
-    hitPackages: plan.hitPackages,
-    withCoverage,
-    base,
-    scopeLabel,
-  });
-  const escalated = effectiveTier !== tier;
+function formatScopeLabel(plan, allPackages) {
+  return plan.hitPackages.length === allPackages.length
+    ? "全仓口径"
+    : `切片 ${plan.hitPackages.length} 包：${plan.hitPackages.join(", ")}`;
+}
 
+function logPlan({ tier, escalated, effectiveTier, base, files, plan }) {
   console.log(
     `[local-gate] tier=${tier}${escalated ? ` → 升级为 ${effectiveTier}` : ""}  base=${base}  变更文件=${files === null ? "n/a" : files.length}`,
   );
@@ -303,21 +354,10 @@ function main(argv) {
       `[local-gate] 注意：ci.yml filters 里的 ${plan.unknown.join(", ")} 不在包清单内，已忽略（若为新增包请同步 plugins-manifest.json）`,
     );
   }
-  if (steps.length === 0) {
-    console.log(
-      "[local-gate] 无命中包面 —— 纯文档 diff 且无待跑步骤：本地快线不跑（CI 的 docs:check 等静态闸仍会跑）",
-    );
-    return 0;
-  }
-  console.log("[local-gate] 计划步骤：");
-  // 连同将要执行的命令一起打印：只打标签的话，「标签没改、args 被换成别的闸」这种漂移在
-  // --dry-run 的计划输出上完全看不出来（自测判据因此钉不住 args）。
-  for (const s of steps) console.log(`  - ${s.label}  →  ${[s.cmd ?? PNPM, ...s.args].join(" ")}`);
-  if (dryRun) {
-    console.log("[local-gate] --dry-run：未执行");
-    return 0;
-  }
+}
 
+/** 顺序执行步骤表，首个非零退出即停（fail-fast），返回已跑步骤的 exit code。 */
+function runSteps(steps) {
   const results = [];
   for (const step of steps) {
     console.log(
@@ -333,7 +373,11 @@ function main(argv) {
       break;
     }
   }
+  return results;
+}
 
+/** 打印执行摘要；返回是否失败（供 main 决定退出码）。 */
+function logSummary(steps, results) {
   console.log("\n[local-gate] 执行摘要：");
   for (const r of results) console.log(`  exit=${r.code}  ${r.label}`);
   const skipped = steps.length - results.length;
@@ -352,7 +396,7 @@ function main(argv) {
         "夜间 observe.yml）。全仓产物闸不属该缺口：pr / full 档内已跑完。本地 PASS 不等于 CI 绿。",
     );
   }
-  return failed ? 1 : 0;
+  return failed;
 }
 
 function valueOf(argv, flag) {

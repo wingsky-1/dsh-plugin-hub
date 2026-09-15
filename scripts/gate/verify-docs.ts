@@ -83,20 +83,27 @@ function checkRelTarget(baseFile: string, target: string): string | null {
   return existsSync(abs) ? null : target;
 }
 
+/** skills 标记必须随递归下传：.dsh/skills 自身在第二层，仅靠路径包含判断
+ *  会漏掉 .dsh/skills/<a>/<b>/SKILL.md 这类深层文件（#693 自测反例锁定）。 */
+function inSkillsScope(entry: { name: string }, dir: string, inSkills: boolean): boolean {
+  return inSkills || (entry.name === "skills" && dir.endsWith(sep + ".dsh"));
+}
+
+/** 命中面：AGENTS.md、skills 目录内的任意文件、agents/ 下的文件（#693）。 */
+function isAgentDoc(entry: { name: string }, full: string, inSkills: boolean): boolean {
+  return entry.name === "AGENTS.md" || inSkills || full.startsWith(join(AGENT_ROOT, "agents"));
+}
+
 /** Agent 规则文档相对链接面：根/包级 AGENTS.md + .dsh/skills/** + agents/**（#693）。
  *  比 README 面更严：**裸相对路径（无 ./ 前缀）也检查**——AGENTS.md / skill 里最常用
  *  的正是这种写法，而它此前完全不在门禁面内。 */
 function walkAgentDocs(dir: string, out: string[], inSkills = false): string[] {
-  // inSkills 必须随递归下传：.dsh/skills 自身在第二层，仅靠路径包含判断
-  // 会漏掉 .dsh/skills/<a>/<b>/SKILL.md 这类深层文件（#693 自测反例锁定）。
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name === "node_modules" || entry.name === ".git") continue;
     const full = join(dir, entry.name);
     if (IGNORED_PATHS.has(full)) continue;
-    const isSkillsDir = inSkills || (entry.name === "skills" && dir.endsWith(sep + ".dsh"));
-    if (entry.isDirectory()) walkAgentDocs(full, out, isSkillsDir);
-    else if (entry.name === "AGENTS.md" || inSkills || full.startsWith(join(AGENT_ROOT, "agents")))
-      out.push(full);
+    if (entry.isDirectory()) walkAgentDocs(full, out, inSkillsScope(entry, dir, inSkills));
+    else if (isAgentDoc(entry, full, inSkills)) out.push(full);
   }
   return out;
 }
@@ -206,37 +213,59 @@ function anchorIds(md: string): Set<string> {
   return ids;
 }
 
-/** 校验文件内 #fragment 引用（#693）：命中显式 id 或 GitHub slug 推导 id 才算有效。 */
-function checkAnchorRefs(): number {
-  const files = walkDocFiles(AGENT_ROOT, [])
+/** 锚点扫描面：文档面 + 根 README 中英两份（存在才扫）。 */
+function anchorScanFiles(): string[] {
+  return walkDocFiles(AGENT_ROOT, [])
     .concat([join(AGENT_ROOT, "README.md"), join(AGENT_ROOT, "README.en.md")])
     .filter((f) => existsSync(f))
     .sort();
+}
+
+/** 三类锚点载体：行内链接、引用式链接、HTML href。 */
+function anchorLinkTargets(md: string): string[] {
+  return [
+    ...md.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g), // 行内 [t](target)
+    ...md.matchAll(/^\s*\[[^\]]+\]:\s*(\S+)/gm), // 引用式 [t]: target
+    ...md.matchAll(/<a\s[^>]*href="([^"]+)"/g), // HTML <a href="...">
+  ].map((m) => m[1]!);
+}
+
+/** 取出链接的 fragment 与路径；外链、无 # 、空 fragment 都不参与锚点判据。 */
+function anchorParts(target: string): { frag: string; rawPath: string } | null {
+  if (/^https?:|^mailto:/.test(target)) return null;
+  const hashAt = target.indexOf("#");
+  if (hashAt < 0) return null;
+  const frag = target.slice(hashAt + 1);
+  return frag === "" ? null : { frag, rawPath: target.slice(0, hashAt) };
+}
+
+/**
+ * 单个 #fragment 引用：命中显式 id 或 GitHub slug 推导 id 才算有效。
+ * 返回 1 表示计入引用总数——口径是「带 fragment 即计」，文件缺失归 7 号检查。
+ */
+function checkAnchorRef(target: string, file: string, rel: string, selfIds: Set<string>): number {
+  const parts = anchorParts(target);
+  if (parts === null) return 0;
+  const { frag, rawPath } = parts;
+  const targetFile = rawPath === "" ? file : join(dirname(file), decodeURIComponent(rawPath));
+  if (rawPath !== "" && !existsSync(targetFile)) return 1; // 文件缺失归 7 号检查
+  const ids = rawPath === "" ? selfIds : anchorIds(readFileSync(targetFile, "utf8"));
+  if (!ids.has(frag)) {
+    const where = rawPath === "" ? "本文件" : relative(AGENT_ROOT, targetFile);
+    failures.push(`${rel}: 锚点 #${frag} 在 ${where} 中不存在`);
+  }
+  return 1;
+}
+
+/** 校验文件内 #fragment 引用（#693）：命中显式 id 或 GitHub slug 推导 id 才算有效。 */
+function checkAnchorRefs(): number {
   let refs = 0;
-  for (const f of files) {
+  for (const f of anchorScanFiles()) {
     const md = readFileSync(f, "utf8");
     const rel = relative(AGENT_ROOT, f);
     const selfIds = anchorIds(md);
-    const linkTargets = [
-      ...md.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g), // 行内 [t](target)
-      ...md.matchAll(/^\s*\[[^\]]+\]:\s*(\S+)/gm), // 引用式 [t]: target
-      ...md.matchAll(/<a\s[^>]*href="([^"]+)"/g), // HTML <a href="...">
-    ].map((m) => m[1]!);
-    for (const target of linkTargets) {
-      if (/^https?:|^mailto:/.test(target)) continue;
-      const hashAt = target.indexOf("#");
-      if (hashAt < 0) continue;
-      const frag = target.slice(hashAt + 1);
-      if (frag === "") continue;
-      refs++;
-      const rawPath = target.slice(0, hashAt);
-      const targetFile = rawPath === "" ? f : join(dirname(f), decodeURIComponent(rawPath));
-      if (rawPath !== "" && !existsSync(targetFile)) continue; // 文件缺失归 7 号检查
-      const ids = rawPath === "" ? selfIds : anchorIds(readFileSync(targetFile, "utf8"));
-      if (!ids.has(frag)) {
-        const where = rawPath === "" ? "本文件" : relative(AGENT_ROOT, targetFile);
-        failures.push(`${rel}: 锚点 #${frag} 在 ${where} 中不存在`);
-      }
+    for (const target of anchorLinkTargets(md)) {
+      refs += checkAnchorRef(target, f, rel, selfIds);
     }
   }
   return refs;

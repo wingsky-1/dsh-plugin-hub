@@ -64,6 +64,43 @@ function globFiles(root, pattern) {
   return [...out].sort();
 }
 
+/** 条目形状（对象 + 非空 pattern）与重复检测；返回 null 表示后续判据无从谈起。 */
+function checkEntryShape(entry, seen, problems) {
+  if (entry === null || typeof entry !== "object") {
+    problems.push("exclude 含非对象项");
+    return null;
+  }
+  const label = typeof entry.pattern === "string" ? entry.pattern : "(缺 pattern)";
+  if (typeof entry.pattern !== "string" || entry.pattern.length === 0) {
+    problems.push("exclude 条目缺 pattern");
+    return null;
+  }
+  if (seen.has(entry.pattern)) problems.push(`exclude 存在重复 pattern：${entry.pattern}`);
+  seen.add(entry.pattern);
+  return label;
+}
+
+/** reason 必填；kind 越界即停手——临时字段判据以 kind 为前提。 */
+function checkEntryKind(entry, label, problems) {
+  if (typeof entry.reason !== "string" || entry.reason.length < 10) {
+    problems.push(`${label}：exclude 条目缺 reason（排除即缩小判据面，必须写明理由）`);
+  }
+  if (!KINDS.includes(entry.kind)) {
+    problems.push(
+      `${label}：kind 须为 ${KINDS.join(" / ")} 之一（当前 ${JSON.stringify(entry.kind)}）`,
+    );
+    return false;
+  }
+  for (const field of PENDING_ONLY_FIELDS) {
+    if (entry[field] !== undefined && entry.kind !== "pending-project") {
+      problems.push(
+        `${label}：字段 ${field} 只允许 pending-project 携带（当前 kind=${entry.kind}）——给永久事实编到期日是假条目`,
+      );
+    }
+  }
+  return true;
+}
+
 /** 校验 exclude 条目结构；返回 problems。 */
 export function checkExcludeEntries(entries) {
   const problems = [];
@@ -72,33 +109,9 @@ export function checkExcludeEntries(entries) {
   }
   const seen = new Set();
   for (const entry of entries) {
-    if (entry === null || typeof entry !== "object") {
-      problems.push("exclude 含非对象项");
-      continue;
-    }
-    const label = typeof entry.pattern === "string" ? entry.pattern : "(缺 pattern)";
-    if (typeof entry.pattern !== "string" || entry.pattern.length === 0) {
-      problems.push("exclude 条目缺 pattern");
-      continue;
-    }
-    if (seen.has(entry.pattern)) problems.push(`exclude 存在重复 pattern：${entry.pattern}`);
-    seen.add(entry.pattern);
-    if (typeof entry.reason !== "string" || entry.reason.length < 10) {
-      problems.push(`${label}：exclude 条目缺 reason（排除即缩小判据面，必须写明理由）`);
-    }
-    if (!KINDS.includes(entry.kind)) {
-      problems.push(
-        `${label}：kind 须为 ${KINDS.join(" / ")} 之一（当前 ${JSON.stringify(entry.kind)}）`,
-      );
-      continue;
-    }
-    for (const field of PENDING_ONLY_FIELDS) {
-      if (entry[field] !== undefined && entry.kind !== "pending-project") {
-        problems.push(
-          `${label}：字段 ${field} 只允许 pending-project 携带（当前 kind=${entry.kind}）——给永久事实编到期日是假条目`,
-        );
-      }
-    }
+    const label = checkEntryShape(entry, seen, problems);
+    if (label === null) continue;
+    if (!checkEntryKind(entry, label, problems)) continue;
     if (entry.reviewBy !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(String(entry.reviewBy))) {
       problems.push(
         `${label}：reviewBy 须形如 2027-03-31（当前 ${JSON.stringify(entry.reviewBy)}）`,
@@ -106,6 +119,28 @@ export function checkExcludeEntries(entries) {
     }
   }
   return problems;
+}
+
+/** 跳过一段字符串字面量：转义符连同被转义的一格一起越过。 */
+function skipQuoted(text, i) {
+  const q = text[i];
+  i += 1;
+  while (i < text.length && text[i] !== q) i += text[i] === "\\" ? 2 : 1;
+  return i;
+}
+
+/** 跳过行注释，返回换行符处（或文本末尾）的下标。 */
+function skipLineComment(text, i) {
+  while (i < text.length && text[i] !== "\n") i += 1;
+  return i;
+}
+
+/** 跳过字符串字面量或行注释，返回停下的下标；两者都不是时返回 null。 */
+function skipOpaqueToken(text, i) {
+  const ch = text[i];
+  if (ch === '"' || ch === "'" || ch === "`") return skipQuoted(text, i);
+  if (ch === "/" && text[i + 1] === "/") return skipLineComment(text, i);
+  return null;
 }
 
 /**
@@ -121,12 +156,9 @@ function coverageBlock(text) {
   const start = i;
   while (i < text.length) {
     const ch = text[i];
-    if (ch === '"' || ch === "'" || ch === "`") {
-      const q = ch;
-      i += 1;
-      while (i < text.length && text[i] !== q) i += text[i] === "\\" ? 2 : 1;
-    } else if (ch === "/" && text[i + 1] === "/") {
-      while (i < text.length && text[i] !== "\n") i += 1;
+    const opaqueEnd = skipOpaqueToken(text, i);
+    if (opaqueEnd !== null) {
+      i = opaqueEnd;
     } else if (ch === "{") {
       depth += 1;
     } else if (ch === "}") {
@@ -161,33 +193,96 @@ export function inlineLiteralProblems(text) {
   return problems;
 }
 
-function main() {
-  const root = argValue(process.argv, "--root", ROOT);
-  const configRel = argValue(process.argv, "--coverage-config", COVERAGE_CONFIG_REL);
-  const configPath = join(root, configRel);
-
+/** 读配置并做结构校验；失败原因已落 stderr，返回 null（main 据此 fail-closed）。 */
+function loadCoverageConfig(configPath, configRel) {
   let config;
   try {
     config = JSON.parse(readFileSync(configPath, "utf8"));
   } catch (e) {
     console.error(`verify-coverage-scope: 覆盖率配置不可读（${configRel}）：${e.message}`);
-    return 2;
+    return null;
   }
   if (!Array.isArray(config.include) || config.include.length === 0) {
     console.error(`verify-coverage-scope: ${configRel} 缺非空 include —— 覆盖率分母为空是配置错误`);
-    return 2;
+    return null;
   }
   if (config.thresholds === null || typeof config.thresholds !== "object") {
     console.error(`verify-coverage-scope: ${configRel} 缺 thresholds 对象`);
-    return 2;
+    return null;
   }
-  const thresholdKeys = Object.keys(config.thresholds);
-  if (thresholdKeys.length === 0) {
+  if (Object.keys(config.thresholds).length === 0) {
     console.error(
       `verify-coverage-scope: ${configRel} 的 thresholds 没有任何键 —— 全局硬门禁被摘除，fail-closed`,
     );
-    return 2;
+    return null;
   }
+  return config;
+}
+
+/** 物理覆盖率根：每次现算，不存清单（清单会漂移）。 */
+function collectUniverse(root) {
+  const universe = new Set();
+  for (const pattern of UNIVERSE_PATTERNS) {
+    for (const f of globFiles(root, pattern)) universe.add(f);
+  }
+  return universe;
+}
+
+/** 条目腐烂：模式在覆盖率根内命中 0 个文件即指向了不存在的东西。 */
+function rottenPatternProblems(label, patterns, hitsInUniverse) {
+  const problems = [];
+  for (const pattern of patterns) {
+    if (hitsInUniverse(pattern).length === 0) {
+      problems.push(`${label} 模式在覆盖率根内命中 0 个文件（条目腐烂）：${pattern}`);
+    }
+  }
+  return problems;
+}
+
+/** 面完整性：未分类文件即静默逃逸，必须显式落到 include 或某条 exclude。 */
+function unclassifiedProblems(universe, includeHits, excludeHits) {
+  const problems = [];
+  for (const f of universe) {
+    if (!includeHits.has(f) && !excludeHits.has(f)) {
+      problems.push(
+        `${f} 既不在 include 也不在任何 exclude 条目里（静默逃逸：新形态文件必须显式分类）`,
+      );
+    }
+  }
+  return problems;
+}
+
+/** 产物交叉断言：产物比配置旧时它反映的是旧的面，拿它判当前面会假红。 */
+function artifactCrossCheck(root, configPath, includeHits, excludeHits, problems) {
+  const artifactPath = join(root, ARTIFACT_REL);
+  if (!existsSync(artifactPath) || statSync(artifactPath).mtimeMs <= statSync(configPath).mtimeMs) {
+    return "未发现覆盖率产物（跳过交叉断言）";
+  }
+  const scored = new Set(includeHits);
+  for (const f of excludeHits) scored.delete(f);
+  const keys = Object.keys(JSON.parse(readFileSync(artifactPath, "utf8"))).map((k) =>
+    k
+      .split("\\")
+      .join("/")
+      .replace(`${root.split("\\").join("/")}/`, ""),
+  );
+  const outside = keys.filter((k) => !scored.has(k));
+  for (const k of outside) {
+    problems.push(
+      `${k} 出现在覆盖率产物里但不在当前 include 面内（分母与产物不一致：include/exclude 改过而产物未重跑，或面算错）`,
+    );
+  }
+  return `产物交叉断言：${keys.length} 个 keys，面内 ${keys.length - outside.length}`;
+}
+
+function main() {
+  const root = argValue(process.argv, "--root", ROOT);
+  const configRel = argValue(process.argv, "--coverage-config", COVERAGE_CONFIG_REL);
+  const configPath = join(root, configRel);
+
+  const config = loadCoverageConfig(configPath, configRel);
+  if (config === null) return 2;
+  const thresholdKeys = Object.keys(config.thresholds);
 
   const problems = [];
   problems.push(...checkExcludeEntries(config.exclude));
@@ -200,10 +295,7 @@ function main() {
   problems.push(...inlineLiteralProblems(readFileSync(vitestConfigPath, "utf8")));
 
   // 物理面（每次现算，不存清单）与实际计分面
-  const universe = new Set();
-  for (const pattern of UNIVERSE_PATTERNS) {
-    for (const f of globFiles(root, pattern)) universe.add(f);
-  }
+  const universe = collectUniverse(root);
   if (universe.size === 0) {
     console.error(
       `verify-coverage-scope: universe 为空（${UNIVERSE_PATTERNS.join(" + ")} 没匹配到任何文件）—— 提取口径失效，fail-closed`,
@@ -218,45 +310,14 @@ function main() {
   const excludeHits = new Set(excludePatterns.flatMap(hitsInUniverse));
 
   // 条目腐烂：模式必须在覆盖率根内命中至少一个文件
-  for (const pattern of includePatterns) {
-    if (hitsInUniverse(pattern).length === 0) {
-      problems.push(`include 模式在覆盖率根内命中 0 个文件（条目腐烂）：${pattern}`);
-    }
-  }
-  for (const pattern of excludePatterns) {
-    if (hitsInUniverse(pattern).length === 0) {
-      problems.push(`exclude 模式在覆盖率根内命中 0 个文件（条目腐烂）：${pattern}`);
-    }
-  }
+  problems.push(...rottenPatternProblems("include", includePatterns, hitsInUniverse));
+  problems.push(...rottenPatternProblems("exclude", excludePatterns, hitsInUniverse));
 
   // 面完整性：universe 里每个文件都必须被 include 或某条 exclude 覆盖
-  const unclassified = [...universe].filter((f) => !includeHits.has(f) && !excludeHits.has(f));
-  for (const f of unclassified) {
-    problems.push(
-      `${f} 既不在 include 也不在任何 exclude 条目里（静默逃逸：新形态文件必须显式分类）`,
-    );
-  }
+  problems.push(...unclassifiedProblems(universe, includeHits, excludeHits));
 
   // 产物交叉断言（仅在产物比配置新时执行——旧的产物反映的是旧的面）
-  const artifactPath = join(root, ARTIFACT_REL);
-  let artifactNote = "未发现覆盖率产物（跳过交叉断言）";
-  if (existsSync(artifactPath) && statSync(artifactPath).mtimeMs > statSync(configPath).mtimeMs) {
-    const scored = new Set(includeHits);
-    for (const f of excludeHits) scored.delete(f);
-    const keys = Object.keys(JSON.parse(readFileSync(artifactPath, "utf8"))).map((k) =>
-      k
-        .split("\\")
-        .join("/")
-        .replace(`${root.split("\\").join("/")}/`, ""),
-    );
-    const outside = keys.filter((k) => !scored.has(k));
-    for (const k of outside) {
-      problems.push(
-        `${k} 出现在覆盖率产物里但不在当前 include 面内（分母与产物不一致：include/exclude 改过而产物未重跑，或面算错）`,
-      );
-    }
-    artifactNote = `产物交叉断言：${keys.length} 个 keys，面内 ${keys.length - outside.length}`;
-  }
+  const artifactNote = artifactCrossCheck(root, configPath, includeHits, excludeHits, problems);
 
   if (problems.length > 0) {
     console.error(`verify-coverage-scope: ${problems.length} 条违规：`);

@@ -78,34 +78,47 @@ export function coverageExcludeProblems(pkgDef) {
   const problems = [];
   const seen = new Set();
   for (const entry of entries) {
-    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
-      problems.push(
-        "coverageExcludes 含非对象项（裸 glob 已不是合法形状，须写成 { pattern, reason, kind }）",
-      );
-      continue;
-    }
-    const label =
-      typeof entry.pattern === "string" && entry.pattern !== "" ? entry.pattern : "(缺 pattern)";
-    if (typeof entry.pattern !== "string" || entry.pattern === "") {
-      problems.push("coverageExcludes 条目缺 pattern");
-      continue;
-    }
-    if (!entry.pattern.startsWith("!")) {
-      problems.push(`${label}：pattern 必须以 ! 开头（本条进的是排除面，缺 ! 会把文件加进变异面）`);
-    }
-    if (seen.has(entry.pattern))
-      problems.push(`coverageExcludes 存在重复 pattern：${entry.pattern}`);
-    seen.add(entry.pattern);
-    if (typeof entry.reason !== "string" || entry.reason.length < COVERAGE_EXCLUDE_MIN_REASON) {
-      problems.push(
-        `${label}：coverageExcludes 条目缺 reason（排除即缩小判据面，必须写明理由，不少于 ${COVERAGE_EXCLUDE_MIN_REASON} 字）`,
-      );
-    }
-    if (!COVERAGE_EXCLUDE_KINDS.includes(entry.kind)) {
-      problems.push(
-        `${label}：kind 须为 ${COVERAGE_EXCLUDE_KINDS.join(" / ")} 之一（当前 ${JSON.stringify(entry.kind)}）`,
-      );
-    }
+    problems.push(...coverageExcludeEntryProblems(entry, seen));
+  }
+  return problems;
+}
+
+/** 单条覆盖排除条目的形状判词；`seen` 记已出现的 pattern，用于重复检测。 */
+function coverageExcludeEntryProblems(entry, seen) {
+  if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+    return [
+      "coverageExcludes 含非对象项（裸 glob 已不是合法形状，须写成 { pattern, reason, kind }）",
+    ];
+  }
+  const label = coverageExcludeLabel(entry);
+  if (typeof entry.pattern !== "string" || entry.pattern === "") {
+    return ["coverageExcludes 条目缺 pattern"];
+  }
+  return coverageExcludeValueProblems(entry, label, seen);
+}
+
+/** 判词里的定位标签；pattern 缺失时占位，避免判词退化成无定位信息。 */
+function coverageExcludeLabel(entry) {
+  return typeof entry.pattern === "string" && entry.pattern !== "" ? entry.pattern : "(缺 pattern)";
+}
+
+/** 合法形态条目的取值判词（pattern 前缀 / 重复 / reason / kind），重复检测就地更新 seen。 */
+function coverageExcludeValueProblems(entry, label, seen) {
+  const problems = [];
+  if (!entry.pattern.startsWith("!")) {
+    problems.push(`${label}：pattern 必须以 ! 开头（本条进的是排除面，缺 ! 会把文件加进变异面）`);
+  }
+  if (seen.has(entry.pattern)) problems.push(`coverageExcludes 存在重复 pattern：${entry.pattern}`);
+  seen.add(entry.pattern);
+  if (typeof entry.reason !== "string" || entry.reason.length < COVERAGE_EXCLUDE_MIN_REASON) {
+    problems.push(
+      `${label}：coverageExcludes 条目缺 reason（排除即缩小判据面，必须写明理由，不少于 ${COVERAGE_EXCLUDE_MIN_REASON} 字）`,
+    );
+  }
+  if (!COVERAGE_EXCLUDE_KINDS.includes(entry.kind)) {
+    problems.push(
+      `${label}：kind 须为 ${COVERAGE_EXCLUDE_KINDS.join(" / ")} 之一（当前 ${JSON.stringify(entry.kind)}）`,
+    );
   }
   return problems;
 }
@@ -186,14 +199,7 @@ export function collectMutationSpecs(topology, pkgName) {
     return { noMutation: false, mutate: [], excludes: [], problems: entryProblems };
   }
   if (pkgDef !== undefined) {
-    const mutate = [];
-    const excludes = [];
-    for (const seg of Object.values(pkgDef.segments ?? {})) {
-      for (const g of seg.mutate ?? []) mutate.push(g);
-      const segExcludes = seg.excludes ?? defaultSegmentExcludes(pkgName);
-      for (const g of segExcludes) excludes.push(g.replace(/^!/, ""));
-    }
-    for (const g of collectCoverageExcludePatterns(pkgDef)) excludes.push(g.replace(/^!/, ""));
+    const { mutate, excludes } = collectMutationGlobs(pkgDef, pkgName);
     // 覆盖排除面的形状问题随 spec 一起交给调用方（fail-closed）：这里不抛栈、不静默跳过，
     // 由 verify-dir-imports 落成硬违规、gen-stryker-conf 落成启动判红。
     return { noMutation: false, mutate, excludes, problems: coverageExcludeProblems(pkgDef) };
@@ -202,4 +208,17 @@ export function collectMutationSpecs(topology, pkgName) {
   const reason = topology?.$noMutationPackages?.[pkgName];
   if (reason === undefined) return null;
   return { noMutation: true, reason: String(reason) };
+}
+
+/** 段 mutate/excludes（段缺 excludes 时注入默认值）+ 包级覆盖排除面，合成 spec 的 glob 清单。 */
+function collectMutationGlobs(pkgDef, pkgName) {
+  const mutate = [];
+  const excludes = [];
+  for (const seg of Object.values(pkgDef.segments ?? {})) {
+    for (const g of seg.mutate ?? []) mutate.push(g);
+    const segExcludes = seg.excludes ?? defaultSegmentExcludes(pkgName);
+    for (const g of segExcludes) excludes.push(g.replace(/^!/, ""));
+  }
+  for (const g of collectCoverageExcludePatterns(pkgDef)) excludes.push(g.replace(/^!/, ""));
+  return { mutate, excludes };
 }
