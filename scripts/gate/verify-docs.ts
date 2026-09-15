@@ -20,6 +20,8 @@
  *      防文档写出不存在的门禁命令——human/agent 都会照抄不存在的命令）。
  *   7. Agent 规则文档（根/包级 AGENTS.md、.dsh/skills/**、agents/**）的相对链接（含裸路径）
  *      目标存在（#693：这类文件此前完全在门禁面之外，过期规则得以长期存活）。
+ *   5. docs/** 正文的相对链接目标存在（#842：docs/ 此前只校验命令引用，链接路径本身没人查，
+ *      少写一个 ../ 就是一条 GitHub 404 而门禁全绿）。
  *
  * 砍掉的 web-ui 重型项：词数预算、i18n 结构签名镜像、语言切换行、锚点存在性
  * （本仓 README 规模小，不引入预算与签名镜像）。
@@ -124,6 +126,38 @@ const agentRelLinks = (md: string): string[] =>
 function checkAgentLink(baseFile: string, target: string): boolean {
   const rel = decodeURIComponent(target);
   return existsSync(join(dirname(baseFile), rel)) || existsSync(join(AGENT_ROOT, rel));
+}
+
+/** docs/** 正文相对链接面（#842）：抽取面比 README 面宽——README 面只认 `./` / `../` 前缀，
+ *  漏掉 docs/ 里最常见的同目录裸文件名（`DEVELOPMENT.md`、`diagrams/`）。
+ *  解析口径**只相对当前文件**，不回落到仓库根：GitHub 上 docs/ 里的相对路径就是相对该文件，
+ *  回落会把 `docs/.dsh/...` 这类缺前缀的缺陷放过（agent 面之所以允许回落，是裸路径在
+ *  AGENTS.md 语境下另有约定，docs/ 没有这层约定）。 */
+const DOC_LINK_TARGET =
+  /\.(md|mdx|ts|tsx|js|mjs|cjs|json|ya?ml|sh|py|svg|html|png|jpe?g|webp|gif|txt|css)$/;
+function docsRelLinks(md: string): string[] {
+  const out: string[] = [];
+  for (const m of md.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/g)) out.push(m[1]!);
+  for (const m of md.matchAll(/^\s*\[[^\]]+\]:\s*(\S+)/gm)) out.push(m[1]!);
+  return out
+    .map((t) => t.split("#")[0]!)
+    .filter((t) => t !== "" && !/^(https?:|mailto:|\/)/.test(t))
+    .filter((t) => !/[\[\]*|`]/.test(t) && (DOC_LINK_TARGET.test(t) || t.endsWith("/")));
+}
+
+/** docs/** 面：与命令引用面同口径（release-notes 与 git 忽略面一并排除），只扫仓库根的 docs/ 子树。 */
+function checkDocsLinks(): number {
+  const files = walkDocFiles(AGENT_ROOT, [])
+    .filter((f) => f.startsWith(join(AGENT_ROOT, "docs") + sep))
+    .sort();
+  for (const f of files) {
+    const rel = relative(AGENT_ROOT, f);
+    for (const target of docsRelLinks(readFileSync(f, "utf8"))) {
+      if (!existsSync(join(dirname(f), decodeURIComponent(target))))
+        failures.push(`${rel}: 相对链接目标缺失 ${target}`);
+    }
+  }
+  return files.length;
 }
 
 /** 文档面（比 agent 面更宽，含 docs/）：用于命令引用校验。 */
@@ -327,11 +361,14 @@ if (existsSync(rootEn)) {
 }
 
 const agentDocs = checkAgentDocs();
+const docsFiles = checkDocsLinks();
 checkAgentCommands();
 checkAnchorRefs();
 
 const ok = failures.length === 0;
-console.log(`verify-docs：检查 ${checked} 个包 + 根 README + ${agentDocs} 个 agent 规则文档`);
+console.log(
+  `verify-docs：检查 ${checked} 个包 + 根 README + ${agentDocs} 个 agent 规则文档 + ${docsFiles} 个 docs 文档`,
+);
 if (!ok) {
   for (const f of failures) console.error(`  ✘ ${f}`);
 }
