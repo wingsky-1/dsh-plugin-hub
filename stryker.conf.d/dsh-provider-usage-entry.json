@@ -6,7 +6,6 @@
     "packages/dsh-provider-usage/src/shared/ui-config.ts",
     "packages/dsh-provider-usage/src/shared/config.ts",
     "!packages/dsh-provider-usage/src/client/**",
-    "!packages/dsh-provider-usage/src/types.ts",
     "!packages/dsh-provider-usage/src/**/interface.ts",
     "!packages/dsh-provider-usage/src/**/*.d.mts",
     "!packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.mjs",

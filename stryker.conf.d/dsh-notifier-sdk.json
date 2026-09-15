@@ -4,7 +4,6 @@
     "packages/dsh-notifier/src/index.ts",
     "packages/dsh-notifier/src/server/sdk/**/*.ts",
     "!packages/dsh-notifier/src/client/**",
-    "!packages/dsh-notifier/src/types.ts",
     "!packages/dsh-notifier/src/**/interface.ts",
     "!packages/dsh-notifier/src/server/*/deps.ts",
     "!packages/dsh-notifier/src/server/channels/impl/system/deps.ts",
