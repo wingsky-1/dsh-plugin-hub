@@ -62,3 +62,4 @@ export {
   LIST_DEFAULT_TOOLS_PER_SERVER,
   LIST_MAX_TOOLS_PER_SERVER,
 } from "./limits.ts";
+export type { ProjectUnit, ConnectionEntry } from "./impl/middleware/type.ts";

@@ -16,7 +16,7 @@ export interface UpgradeDeps {
   /** 升级链的诊断出口。 */
   logger: UpgradeLogger;
   /**
-   * 用户**显式**配置的全局服务器配置路径（插件 apply 配置键 `storePath`，见 `config/model/config-schema.ts`）；
+   * 用户**显式**配置的全局服务器配置路径（插件 apply 配置键 `storePath`，见 `server/config/config-schema.ts`）；
    * 空串 = 未配置。
    *
    * 必须是「显式值」而不是解析后的**生效路径**：未配置时生效路径恰恰是待迁移的旧默认落点

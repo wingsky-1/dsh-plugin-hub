@@ -6,8 +6,11 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ProjectUnit, DisabledToolsMap } from "../../../types/interface.ts";
+import type { ProjectUnit } from "../../connection/interface.ts";
 import { catalogFile, userStatePath } from "../../shared/interface.ts";
+
+/** 用户已禁用的工具集合（root → server → tool 列表）。root 为 @global 时跨工作空间共享。 */
+export type DisabledToolsMap = Map<string, Map<string, Set<string>>>;
 
 /** userDisabled 持久化文件路径（名字与权限的物理定义在 server/shared/paths.ts，I7 单源）。 */
 export function userStateFile() {

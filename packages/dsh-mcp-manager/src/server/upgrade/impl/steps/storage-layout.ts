@@ -29,7 +29,7 @@ const MIGRATED_SUFFIX = ".migrated.bak";
  * 语义冲掉（文件里每个键都会被读成用户显式提交的）。
  *
  * 配置与用户状态用**版本化**空形：裸 `{}` 会被各自的读面当成缺版本字段的历史文件，而这两份文件的
- * 形态契约里就有 `version`（`config/store` 与 `config/store/middleware-state` 都按它落盘）。
+ * 形态契约里就有 `version`（`server/store` 与 `server/store/impl/middleware-state.ts` 都按它落盘）。
  */
 const EMPTY_CONFIG = `${JSON.stringify({ version: 1, servers: [] }, null, 2)}\n`;
 const EMPTY_USER_STATE = `${JSON.stringify({ version: 1, disabled: {} }, null, 2)}\n`;

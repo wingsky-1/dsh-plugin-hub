@@ -24,7 +24,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-// 提供方视角（与 src/integration/service.ts 同款相对路径）：shared 类型面单一事实源。
+// 提供方视角（与 src/shared/interface.ts 同款相对路径）：shared 类型面单一事实源。
 import type {
   ClientUiConfig,
   McpManagerServerInput,

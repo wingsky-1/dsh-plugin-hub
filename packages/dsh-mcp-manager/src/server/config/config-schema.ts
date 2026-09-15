@@ -15,7 +15,8 @@ import {
   DEFAULT_CATALOG_MAX_ENTRIES,
   DEFAULT_RESULT_TRUNCATE_BYTES,
 } from "../shared/interface.ts";
-import type { ClientUiConfig, UiPlacementConfig } from "../../types/interface.ts";
+import type { ClientUiConfig } from "../../shared/interface.ts";
+import type { UiPlacementConfig } from "./impl/ui/type.ts";
 
 /** 空 description 工具的条件拼接默认开启。 */
 export const DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS = true;

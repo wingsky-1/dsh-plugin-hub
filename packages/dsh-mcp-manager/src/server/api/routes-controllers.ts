@@ -20,7 +20,7 @@
 import { writeJson, readJsonBody, guardLoopbackMethod } from "../../../../../shared/host-utils.js";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { RoutesManager } from "../../types/interface.ts";
+import type { RoutesManager } from "../connection/interface.ts";
 // 跨端契约常量取自共享层门面（物理定义在 shared/constants.ts），不再经 workspace 门面转出。
 import {
   MIDDLEWARE_GLOBAL_ROOT,

@@ -9,7 +9,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import { configFile } from "../../shared/interface.ts";
-import type { ServerConfig } from "../../../types/interface.ts";
+import type { ServerConfig } from "../../config/interface.ts";
 
 // ------------------------------------------------------------------ 存储
 

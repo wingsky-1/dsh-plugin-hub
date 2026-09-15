@@ -13,13 +13,16 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { SseHub } from "../../../../../../shared/sse-hub.js";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
-import type { ServerConfig, ClientUiConfig } from "../../../types/interface.ts";
+import type { ServerConfig } from "../../config/interface.ts";
+import type { ClientUiConfig } from "../../../shared/interface.ts";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type { CatalogCache, CatalogViewResolver } from "../../catalog/interface.ts";
 import type { McpStore } from "../../store/interface.ts";
 import type { McpStatsCollector } from "../../stats/interface.ts";
 import type { ConnectionSupervisor, McpMiddleware } from "../runtime/interface.ts";
-import type { MiddlewareMode, ProjectUnit, DisabledToolsMap } from "../../../types/interface.ts";
+import type { MiddlewareMode } from "../../workspace/interface.ts";
+import type { ProjectUnit } from "../interface.ts";
+import type { DisabledToolsMap } from "../../store/interface.ts";
 import {
   EMPTY_STATUS_COUNTS,
   MIDDLEWARE_GLOBAL_ROOT,

@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { SupervisorLite } from "../../../../types/interface.ts";
+import type { SupervisorLite } from "../../../connection/interface.ts";
 import type { CatalogMessage } from "../injection/index.ts";
 import {
   DEFAULT_ANNOUNCE_CATALOG,
@@ -22,8 +22,8 @@ export interface CatalogEntry {
   scope?: string;
 }
 
-/** supervisor 最小面（manager.supervisors 的条目；类型收敛于 types/host-faces.ts，此处 re-export）。 */
-export type { SupervisorLite } from "../../../../types/interface.ts";
+/** supervisor 最小面（manager.supervisors 的条目；物理定义在 connection/interface.ts，此处 re-export）。 */
+export type { SupervisorLite } from "../../../connection/interface.ts";
 
 /** 目录缓存（连接成功时持久化的工具描述摘要）。 */
 export type CatalogCache = Map<string, { summary: string }>;

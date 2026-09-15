@@ -6,7 +6,7 @@
  * 服务器名命名空间约束（与官方 dsh-mcp-client 一致）。
  */
 
-import type { ServerConfig } from "../../types/interface.ts";
+import type { ServerConfig } from "./impl/model/type.ts";
 // 默认超时取共享层单一物理定义（模块求值期消费，端口注入不可达；I2①）。
 import { DEFAULT_TOOL_CALL_TIMEOUT_MS } from "../shared/interface.ts";
 

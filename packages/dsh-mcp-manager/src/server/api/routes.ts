@@ -20,7 +20,7 @@ import { createSseHub } from "../../../../../shared/sse-hub.js";
 import type { SseHub } from "../../../../../shared/sse-hub.js";
 import { ROUTES, SSE_FRAMES, SERVER_STATES } from "../../shared/interface.ts";
 import type { SseFramePayload } from "../../shared/interface.ts";
-import type { RoutesManager } from "../../types/interface.ts";
+import type { RoutesManager } from "../connection/interface.ts";
 import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type { ServerResponse } from "node:http";
 import {

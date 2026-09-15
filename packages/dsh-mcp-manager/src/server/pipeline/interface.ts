@@ -45,3 +45,4 @@ export {
 } from "./impl/authorize/index.ts";
 export { defaultCallResultFallbackText, projectCallToolResult } from "./impl/project/index.ts";
 export type { CallResultTextHandlers, ProjectedCallResult } from "./impl/project/index.ts";
+export type { MiddlewarePolicy } from "./impl/authorize/type.ts";

@@ -42,3 +42,4 @@ export {
   SSE_HEARTBEAT_MS,
   SSE_PING_FRAME,
 } from "./routes.ts";
+export type { ServerStatus } from "./impl/health/type.ts";
