@@ -422,7 +422,7 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
     mw,
     async (agent) => {
       const cwd = agent?.session?.header?.cwd;
-      // 模拟 apply.ts 的 all 模式 fallback：cwd 无项目 → @global（全局服务器存在时）。
+      // 模拟组合根 src/index.ts 的 apply all 模式 fallback：cwd 无项目 → @global（全局服务器存在时）。
       if (cwd === "/no-project") return MIDDLEWARE_GLOBAL_ROOT;
       return cwd === "/proj" ? "/proj" : undefined;
     },

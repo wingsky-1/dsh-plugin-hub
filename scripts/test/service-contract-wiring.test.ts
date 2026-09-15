@@ -19,8 +19,10 @@
  *
  * 接线对象：packages/dsh-mcp-manager/test/tsconfig.json 与
  * packages/dsh-notifier/test/tsconfig.json（均 noEmit，include 全量测试 ts）。
- * 两个包的 e2e/集成面文件保留文件级 @ts-nocheck（桩对象密集，类型化成本高于
- * 收益）；契约与单元测试文件无 @ts-nocheck，类型断言真实参与检查。
+ * 两个包的 e2e 面不参与该编译面（产物声明合并冲突 + 桩对象密集，见各包 test/tsconfig.json）。
+ * 本包真正参与检查的是契约测试（service-contract.test.ts）；单元测试文件多为文件级
+ * @ts-nocheck（本包实测 14 个 unit 文件带 pragma），其类型断言本就不参与检查——
+ * 故本接线器守护的是契约测试面，不是单元测试面。
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";

@@ -358,7 +358,7 @@ describe("B20：makeMiddlewareHotSwitch 热切换补 emitStatus", () => {
 });
 
 // D8 红测：off 模式 mcp__ 直呼命中禁用表 → deny ----
-// 现状：pre-execute guard 只在 registerMiddlewareTools 内注册（apply.ts
+// 现状：pre-execute guard 只在 registerMiddlewareTools 内注册（src/index.ts
 // middlewareMode !== "off" 才调用）→ off 模式 mcp__ 直呼无禁用拦截（「工具级
 // 禁用三入口」实际一入口）；修复（spec D8）：guard 挂载与中间层实例解耦、数据源
 // 直查 manager.disabledTools、独立注册路径，三模式一致；off 模式不 initMiddleware
