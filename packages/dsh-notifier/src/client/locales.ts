@@ -7,6 +7,8 @@
  * （官方原则：数据不翻译）。
  */
 
+import type { BuiltinKind } from "../shared/interface.ts";
+
 /** 简体中文字典（key 源）。 */
 export const zh = {
   // 事件开关（EVENT_KEYS label）
@@ -593,9 +595,17 @@ export const en: Record<NotifierLocaleKey, string> = {
 };
 
 /** kind → 字典 key（未知 kind 回落 kind 本体显示，数据不翻译）。刻意留在客户端：
- *  这是「kind → i18n 文案 key」，文案属客户端面，宿主端没有翻译。键集 = shared 的
- *  BUILTIN_KINDS（含 test——自检通知没有事件开关，但历史行要显示它）。 */
-export const KIND_KEYS: Record<string, string> = {
+ *  这是「kind → i18n 文案 key」，文案属客户端面，宿主端没有翻译。含 test——自检通知没有
+ *  事件开关，但历史行要显示它。
+ *
+ *  `satisfies Record<BuiltinKind, …>` 是覆盖信号：shared 的 BUILTIN_KINDS 新增一项而这里漏配
+ *  文案就是编译失败，而不是让历史行渲染出一个取不到文案的 key。
+ *
+ *  导出面仍声明为 `Record<string, string>`：kind 在运行期还可能是外部注册的种类
+ *  （`<命名空间>:<id>`），三个消费方都要按任意 string 查表、查不到就回落 kind 本体
+ *  （bark-card.tsx:56/67 的 levels 建议与行标签、panes/events.tsx:204 的豁免 chips、
+ *  panes/history.tsx:78 的历史行）；把导出收窄成 BuiltinKind 索引会让这些读取全部编译失败。 */
+const KIND_KEY_TABLE = {
   ask: "kAsk",
   question: "kQuestion",
   done: "kDone",
@@ -603,4 +613,6 @@ export const KIND_KEYS: Record<string, string> = {
   error: "kError",
   "turn-end": "kTurnEnd",
   test: "kTest",
-};
+} satisfies Record<BuiltinKind, NotifierLocaleKey>;
+
+export const KIND_KEYS: Record<string, string> = KIND_KEY_TABLE;

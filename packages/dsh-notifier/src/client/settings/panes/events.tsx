@@ -8,13 +8,16 @@
  */
 import * as React from "react";
 import { KIND_SWITCHES } from "../../../shared/interface.ts";
-import type { NotifySeverity } from "../../../shared/interface.ts";
+import type { KindSwitchKey, NotifySeverity } from "../../../shared/interface.ts";
 import { KIND_KEYS } from "../../locales.ts";
+import type { NotifierLocaleKey } from "../../locales.ts";
 import type { Translate } from "../../locale.ts";
 import { switchControl, switchToggle } from "../parts/controls.tsx";
 import { advRow } from "../parts/rows.tsx";
 
 // i18n：label 列存字典 key（渲染期 t 求值，模块加载时 t 尚未装配）。
+// 两列各自锚在 shared 的 KindSwitchKey 与本文案字典 key 上：任一侧改名或漏配都是编译错误，
+// 而不是运行期读到 undefined 的开关 / 文案。
 const EVENT_KEYS = [
   ["notifyAsk", "evtAsk"],
   ["notifyQuestion", "evtQuestion"],
@@ -22,7 +25,7 @@ const EVENT_KEYS = [
   ["notifySubagentDone", "evtSubagentDone"],
   ["notifyTaskError", "evtTaskError"],
   ["notifyTurnEnd", "evtTurnEnd"],
-];
+] satisfies [KindSwitchKey, NotifierLocaleKey][];
 
 /** 事件开关键 → 通知 kind：由 shared 的 kind → 开关键表**反转**得到（单一事实源，
  *  免打扰豁免候选/「跟随已启用」由此派生；收口前这里是一份两端各写的副本）。 */
