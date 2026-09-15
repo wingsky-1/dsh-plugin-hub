@@ -35,7 +35,7 @@ issue #110 起不再使用自建 config.json）。
   `<DSH_HOME>/lan-proxy/`，私钥落盘 0600）
 - `src/client/` — 客户端（干净模块：`index.ts` + `style.css` + `css.d.ts` +
   `react-shim.d.ts`）
-- `test/*.test.ts` — smoke 与单元用例（fake ctx，无网络；由 `pnpm test` 统一调度）
+- `test/unit/`、`test/integration/` — 直连 `src/` 的用例（fake ctx，无网络）；`test/client/`、`test/e2e/` — 产物契约与真实 IO；统一由 `pnpm test` 调度
 - `cordis.patch.yml` — patch（id `ui-lan-proxy`）
 
 ## 改动前必守（本包特有）

@@ -297,7 +297,7 @@ node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply
 
 ## 验证
 
-测试单份维护、变异自动覆盖：单元测试只维护 `test/*.test.ts`（`import "../lib/index.js"` 测产物）；stryker 经 lib→src hook 复用同一份断言，无需手工同步副本。
+测试分两层维护：`test/unit/**`、`test/integration/**` 直连 `src/`（覆盖率与变异复用同一份断言，无需手工同步副本）；`test/client/**`、`test/e2e/**` 读 `lib/` 产物（客户端契约 / 真实 IO），不进变异面。分层与变异面的单一事实源是 `scripts/data/mutation-topology.json`。
 
 ```sh
 # 健康检查（回环）

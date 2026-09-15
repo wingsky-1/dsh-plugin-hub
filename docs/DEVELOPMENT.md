@@ -142,7 +142,7 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
   （repo-gate 判定表显式放行）。
 - 本地手动入口：`npx stryker run stryker.conf.d/dsh-<pkg>.json`（临时强制全量用
   官方 `--force` 参数，勿改配置文件）。
-- **测试单份维护（#423 方案 A）**：变异测试复用 `packages/*/test/*.test.ts`，
+- **测试单份维护（#423 方案 A）**：变异测试复用变异面内的 `packages/*/test/{unit,integration}/**/*.test.ts`，
   测试单份维护、变异自动覆盖。**#722 起变异面（`unit/`、`integration/` 两层）内的
   `*.test.ts` 直接 `import "../src/**"`**，变异与覆盖率都跑在源码上，不再需要解析期
   重定向；`#423` 时代的 `scripts/test/mutation-lib-to-src-{hook,loader}.mjs` 已随
@@ -272,8 +272,8 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
 | `test/client/**`      | 断言对象是客户端**构建产物** `lib/client.js`——而 `mutate` 面本身排除 `src/client/**`，登记进变异面测试清单只增加每个段的 dry run 成本、杀灭贡献为零 | 否       |
 | `test/e2e/**`         | 真实监听端口 / spawn 子进程 / 真机系统调用的大 smoke                                                                                                | 否       |
 
-支撑模块不入任何层：`test/helpers.ts`、`test/smoke-lib.ts`、`test/smoke-pure.ts`、
-`test/*.worker.mjs`（它们不是测试条目）。**判层按机制而非文件名**：notifier 的
+支撑模块不入任何层：各包 `test/**` 下不以 `.test.ts` 结尾的辅助模块（当前全仓只有根
+`test/smoke-lib.ts`，为多个包的契约测试共用；它们不是测试条目）。**判层按机制而非文件名**：notifier 的
 `e2e-*.test.ts` 用的是 in-process cordis Context + fake 驱动（不 listen、不 spawn），
 故归集成层并保留在变异面；反之 `smoke.test.ts`（真实端口/子进程）归 e2e 层。
 
@@ -309,7 +309,7 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   home）下运行时，settings 存储等宿主数据已随 `DSH_HOME` 隔离；插件若仍硬拼
   `~/.dsh`，读写两面都会串到真实 home——#510 即 dsh-notifier 通知历史/投递状态
   落真实 `~/.dsh`，隔离实例的通知记录 tab 读出用户真实数据。
-- **写法先例**：`packages/dsh-provider-usage/src/path-resolve.ts`（`pluginHome()`）；
+- **写法先例**：`packages/dsh-provider-usage/src/domain1/registry/path-resolve.ts`（`pluginHome()`）；
   收敛方向为 `shared/dsh-home.js` 单一事实源（#517 C10 接缝），现阶段各包内聚
   helper 亦可，但不得绕过 env 读取。
 - **豁免口径**：读取**非 dsh 生态**的外部凭据/配置（如 provider-usage 读 opencode
@@ -545,7 +545,7 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
 - **跨包类型可达闭包（`pnpm pack:check` 内；#733 M2a-3.1）**：源面声明了 cordis 声明合并
   （`declare module "@deepseek-ai/cordis"`）⇒ 该合并必须落在 tarball 内 `lib/index.d.ts` 的
   相对 import 闭包内。写在源 `.d.ts` 的合并不会被 emit，消费方按包名导入时服务面与事件面
-  全部失类型，而既有门禁都看不见（实证：`packages/dsh-notifier/src/service.d.ts`）；判据
+  全部失类型，而既有门禁都看不见（#733 M2c 后续 N9 即为此立项）；判据
   实现 `scripts/lib/dts-cordis-merge-lib.ts`（含正反 fixture 自测）。
 - **`exports[].types` 可解析（`pnpm pack:check` 内；#733 M2c 后续 N9）**：发布物（tarball）
   每个**带 `types` 条件**的导出子路径，其 `types` 必须指向包内真实文件。实证缺陷：

@@ -552,9 +552,11 @@ be able to resolve these official packages (skipping type checking is unaffected
 
 ## Verification
 
-Tests are maintained in a single copy, with mutation coverage automatic: unit tests only live in
-`test/*.test.ts` (`import "../lib/index.js"` exercises the built artifact); stryker reuses the
-same assertions through the lib→src hook, so no hand-synced copy is needed.
+Tests live in two layers: `test/unit/**` and `test/integration/**` import `src/` directly (the same
+assertions serve coverage and mutation, so no hand-synced copy is needed); `test/client/**` and
+`test/e2e/**` exercise the `lib/` artifact (client contract / real-IO smoke) and stay out of the
+mutation surface. The single source of truth for layers and the mutation surface is
+`scripts/data/mutation-topology.json`.
 
 ```sh
 # Health check (loopback)
