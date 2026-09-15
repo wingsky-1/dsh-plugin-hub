@@ -7,7 +7,13 @@
  * `installed` 守卫**显式抛错**（响亮失败优于静默共享/丢数据）。
  */
 import { resolve } from "node:path";
-import type { GitDeps, GitExecPort, GitRunResult } from "../../deps.ts";
+import type {
+  BelongsToReading,
+  CommonDirReading,
+  GitDeps,
+  GitExecPort,
+  GitRunResult,
+} from "../../deps.ts";
 import {
   addWorktreeArgs,
   checkRefFormatArgs,
@@ -42,6 +48,9 @@ const BELONGS_CACHE_MAX = 256;
  * 判定慢一拍，子会话第一回合就看不到工具。
  *
  * 与 `BELONGS_TTL_MS` 同值同纪律：仓库归属只在 worktree 被删/移动时变，执行期还另有一次兜底校验。
+ *
+ * 它只缓存**拿到了公共 git 目录**的那种答案。负答案不缓存：`git init` 可能就发生在下一次调用之前
+ * （用户在一个空目录里刚初始化完就调工具），而「读不出来」本就该重试而不是记住。
  */
 const COMMON_DIR_TTL_MS = 30_000;
 
@@ -57,25 +66,25 @@ export interface GitApi {
   commonDir(dir: string): Promise<string | undefined>;
   /** 同一主仓库下的全部 worktree。 */
   listWorktrees(dir: string): Promise<readonly WorktreeEntry[]>;
-  /** `dir` 与 `repoRoot` 是否属于同一仓库（带 TTL 缓存）。 */
-  belongsTo(dir: string, repoRoot: string): Promise<boolean>;
+  /**
+   * `dir` 与 `repoRoot` 是否属于同一仓库（带 TTL 缓存）。
+   *
+   * 回三态而不是布尔：`unknown`（有一侧读不出公共 git 目录）与 `different`（两侧都读出来了、值不同）
+   * 对调用方的处置相反——前者要保住用户已有的登记，后者才是「确实换了仓库」。
+   */
+  belongsTo(dir: string, repoRoot: string): Promise<BelongsToReading>;
   /** 某 worktree 的当前分支显示名。 */
   headBranch(dir: string): Promise<string | undefined>;
   /** 让 git 校验分支名。 */
   checkRefFormat(branch: string): Promise<boolean>;
-  /** 新建 worktree。`ok=false` 时 `reason` 是 git 的原文，直接给模型看。 */
-  addWorktree(
-    repoRoot: string,
-    path: string,
-    branch: string | undefined,
-  ): Promise<{ ok: true } | { ok: false; reason: string }>;
+  /** 新建 worktree。 */
+  addWorktree(repoRoot: string, path: string, branch: string | undefined): Promise<GitMutation>;
   /** 删除 worktree。 */
-  removeWorktree(
-    repoRoot: string,
-    path: string,
-    force: boolean,
-  ): Promise<{ ok: true } | { ok: false; reason: string }>;
+  removeWorktree(repoRoot: string, path: string, force: boolean): Promise<GitMutation>;
 }
+
+/** git 写操作的结果：`reason` 是 git 的原文，直接给模型看。 */
+export type GitMutation = { readonly ok: true } | { readonly ok: false; readonly reason: string };
 
 /** git 域：唯一实例持有归属缓存与那一次 git 调用面。 */
 class GitService implements GitApi {
@@ -83,8 +92,9 @@ class GitService implements GitApi {
   private installed = false;
   /** 装配入参。释放即放开，能力面随之当场失败。 */
   private deps: GitDeps | undefined;
-  private readonly belongsCache = new Map<string, { at: number; ok: boolean }>();
-  private readonly commonDirCache = new Map<string, { at: number; value: string | undefined }>();
+  private readonly belongsCache = new Map<string, { at: number; reading: BelongsToReading }>();
+  /** 只放正结果，所以值不是 `string | undefined`——负结果没有条目。 */
+  private readonly commonDirCache = new Map<string, { at: number; dir: string }>();
 
   /** 装配 git 域。重复装配是编程错误，当场暴露。 */
   install(deps: GitDeps): void {
@@ -102,24 +112,39 @@ class GitService implements GitApi {
   }
 
   async commonDir(dir: string): Promise<string | undefined> {
+    const reading = await this.reading(dir);
+    return reading.kind === "repo" ? reading.dir : undefined;
+  }
+
+  /**
+   * 带缓存的仓库判定读数。缓存只认正结果（见 `COMMON_DIR_TTL_MS`），负结果每次都真问一次 git。
+   */
+  private async reading(dir: string): Promise<CommonDirReading> {
     const hit = this.commonDirCache.get(dir);
-    const now = Date.now();
-    if (hit !== undefined && now - hit.at < COMMON_DIR_TTL_MS) return hit.value;
-    const value = await this.computeCommonDir(dir);
-    if (this.commonDirCache.size >= COMMON_DIR_CACHE_MAX) this.commonDirCache.clear();
-    this.commonDirCache.set(dir, { at: now, value });
-    return value;
+    if (hit !== undefined && Date.now() - hit.at < COMMON_DIR_TTL_MS) {
+      return { kind: "repo", dir: hit.dir };
+    }
+    const reading = await this.computeCommonDir(dir);
+    if (reading.kind === "repo") {
+      if (this.commonDirCache.size >= COMMON_DIR_CACHE_MAX) this.commonDirCache.clear();
+      this.commonDirCache.set(dir, { at: Date.now(), dir: reading.dir });
+    }
+    return reading;
   }
 
   /** 真起一次 git 求公共目录；缓存命中不走这里。 */
-  private async computeCommonDir(dir: string): Promise<string | undefined> {
+  private async computeCommonDir(dir: string): Promise<CommonDirReading> {
     const result = await this.exec().run(commonDirArgs(dir));
-    if (!result.ok) return undefined;
+    if (!result.ok) {
+      return result.code === null
+        ? { kind: "failed", reason: reasonOf(result) }
+        : { kind: "not-repo" };
+    }
     const value = parseSingleLine(result.stdout);
-    if (value === undefined) return undefined;
+    if (value === undefined) return { kind: "failed", reason: "git 未返回公共 git 目录" };
     // `--git-common-dir` 会返回相对 `dir` 的路径（实测是 `.git`），
     // 直接拿字符串比较会让「同一仓库的两个 worktree」判成不同仓库。
-    return resolve(dir, value);
+    return { kind: "repo", dir: resolve(dir, value) };
   }
 
   async listWorktrees(dir: string): Promise<readonly WorktreeEntry[]> {
@@ -128,16 +153,25 @@ class GitService implements GitApi {
     return parseWorktreeList(result.stdout);
   }
 
-  async belongsTo(dir: string, repoRoot: string): Promise<boolean> {
+  async belongsTo(dir: string, repoRoot: string): Promise<BelongsToReading> {
     const key = dir + "\u0000" + repoRoot;
     const hit = this.belongsCache.get(key);
-    const now = Date.now();
-    if (hit !== undefined && now - hit.at < BELONGS_TTL_MS) return hit.ok;
-    const [left, right] = await Promise.all([this.commonDir(dir), this.commonDir(repoRoot)]);
-    const ok = left !== undefined && right !== undefined && left === right;
+    if (hit !== undefined && Date.now() - hit.at < BELONGS_TTL_MS) return hit.reading;
+    const [left, right] = await Promise.all([this.reading(dir), this.reading(repoRoot)]);
+    // 只有两侧都**确实**给出了公共 git 目录时才有资格说「同 / 不同」；否则是问不出来。
+    const reading: BelongsToReading =
+      left.kind === "repo" && right.kind === "repo"
+        ? left.dir === right.dir
+          ? { kind: "same" }
+          : { kind: "different" }
+        : {
+            kind: "unknown",
+            reason: unreadableReason(dir, left, repoRoot, right),
+            notRepo: left.kind === "not-repo" || right.kind === "not-repo",
+          };
     if (this.belongsCache.size >= BELONGS_CACHE_MAX) this.belongsCache.clear();
-    this.belongsCache.set(key, { at: now, ok });
-    return ok;
+    this.belongsCache.set(key, { at: Date.now(), reading });
+    return reading;
   }
 
   async headBranch(dir: string): Promise<string | undefined> {
@@ -157,16 +191,12 @@ class GitService implements GitApi {
     repoRoot: string,
     path: string,
     branch: string | undefined,
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+  ): Promise<GitMutation> {
     const result = await this.exec().run(addWorktreeArgs(repoRoot, path, branch));
     return result.ok ? { ok: true } : { ok: false, reason: reasonOf(result) };
   }
 
-  async removeWorktree(
-    repoRoot: string,
-    path: string,
-    force: boolean,
-  ): Promise<{ ok: true } | { ok: false; reason: string }> {
+  async removeWorktree(repoRoot: string, path: string, force: boolean): Promise<GitMutation> {
     const result = await this.exec().run(removeWorktreeArgs(repoRoot, path, force));
     return result.ok ? { ok: true } : { ok: false, reason: reasonOf(result) };
   }
@@ -186,4 +216,23 @@ export const gitService = new GitService();
 function reasonOf(result: GitRunResult): string {
   const text = result.stderr.trim();
   return text.length > 0 ? text : "git 退出码非零";
+}
+
+/** 归属判定「问不出来」的原因：把读不出来的那一侧与它的原因写进一句话，告警才有可操作性。 */
+function unreadableReason(
+  dir: string,
+  left: CommonDirReading,
+  repoRoot: string,
+  right: CommonDirReading,
+): string {
+  const sides: string[] = [];
+  const describe = (label: string, path: string, reading: CommonDirReading): void => {
+    if (reading.kind === "repo") return;
+    const why =
+      reading.kind === "failed" ? "git 执行失败（" + reading.reason + "）" : "不是 git 工作树";
+    sides.push(label + " " + path + " " + why);
+  };
+  describe("worktree 侧", dir, left);
+  describe("主仓库侧", repoRoot, right);
+  return sides.join("；");
 }

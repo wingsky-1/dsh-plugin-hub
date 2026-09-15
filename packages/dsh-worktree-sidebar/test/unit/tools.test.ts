@@ -35,12 +35,17 @@ beforeAll(() => {
 
 afterAll(() => cleanup(root));
 
+/** 会话 header 的创建时间：绑定记录要靠它区分「同一个会话」与「重启后复用同一 id 的另一个会话」。 */
+const SESSION_CREATED_AT = 1_700_000_000_000;
+
 function fakeDeps(
   options: {
-    belongs?: boolean;
+    /** 归属判定读数；缺省按「本临时根下、且不是主仓库本身」判 same。 */
+    belongs?: "same" | "different" | "unknown";
     putOk?: boolean;
     addOk?: boolean;
     removeOk?: boolean;
+    worktreeList?: readonly { path: string; branch: string | undefined; detached: boolean }[];
     agents?: AgentPort;
   } = {},
 ) {
@@ -71,8 +76,15 @@ function fakeDeps(
       // 只有本临时根下的目录「在仓库里」；它之外一律不是。
       commonDir: async (dir) => (dir.startsWith(root) ? join(root, ".git") : undefined),
       // 归属判定：本临时根下、且不是主仓库本身（主仓库是 worktree，但不是「某个 worktree」）。
-      belongsTo: async (dir) =>
-        options.belongs === false ? false : dir.startsWith(root) && !dir.startsWith(repo),
+      belongsTo: async (dir) => {
+        if (options.belongs === "unknown") {
+          return { kind: "unknown", reason: "git 执行失败（EACCES）", notRepo: false } as const;
+        }
+        if (options.belongs === "different") return { kind: "different" } as const;
+        return dir.startsWith(root) && !dir.startsWith(repo)
+          ? ({ kind: "same" } as const)
+          : ({ kind: "different" } as const);
+      },
       headBranch: async () => "feature",
       checkRefFormat: async (branch) => !branch.includes(" "),
       addWorktree: async (r, path, branch) => {
@@ -85,10 +97,11 @@ function fakeDeps(
           ? { ok: false, reason: "contains modified files" }
           : { ok: true };
       },
-      listWorktrees: async () => [
-        { path: repo, branch: "refs/heads/main", detached: false },
-        { path: existingWt, branch: "refs/heads/feature", detached: false },
-      ],
+      listWorktrees: async () =>
+        options.worktreeList ?? [
+          { path: repo, branch: "refs/heads/main", detached: false },
+          { path: existingWt, branch: "refs/heads/feature", detached: false },
+        ],
     },
     agents: options.agents ?? {
       subscribe: () => () => undefined,
@@ -109,14 +122,17 @@ interface FakeExec {
   readonly agent?: {
     readonly session?: {
       readonly id: string;
-      readonly header: { readonly cwd: string | undefined };
+      readonly header: { readonly cwd: string | undefined; readonly createdAt?: number };
     };
   };
 }
 
-const exec = (cwd: string = repo): FakeExec => ({
-  agent: { session: { id: "s1", header: { cwd } } },
+/** 显式传 undefined 会被默认参数吃掉，所以「没有 createdAt」必须走这个工厂。 */
+const execWithSession = (cwd: string, createdAt: number | undefined): FakeExec => ({
+  agent: { session: { id: "s1", header: { cwd, createdAt } } },
 });
+
+const exec = (cwd: string = repo): FakeExec => execWithSession(cwd, SESSION_CREATED_AT);
 
 async function run(
   tool: ToolDefinition,
@@ -143,6 +159,7 @@ describe("ws_worktree_register", () => {
           worktreeRoot: existingWt,
           branch: "feature",
           createdAt: "2026-09-14T00:00:00.000Z",
+          sessionCreatedAt: SESSION_CREATED_AT,
         },
       },
     ]);
@@ -170,6 +187,68 @@ describe("ws_worktree_register", () => {
     expect(value.ok).toBe(false);
     expect(value.detail).toContain("not a worktree of this session's repository");
     expect(writes.length).toBe(0);
+  });
+
+  it("归属读不出来时 fail-closed：拒绝绑定，且不把它说成「不是本仓库」", async () => {
+    const { deps, writes } = fakeDeps({ belongs: "unknown" });
+    const value = await run(buildRegisterTool(deps), { worktree: existingWt });
+    expect(value.ok).toBe(false);
+    expect(value.detail).toContain("Could not verify");
+    expect(value.detail).toContain("EACCES");
+    expect(writes.length).toBe(0);
+  });
+
+  it("会话没有创建时间戳时拒绝绑定（不可核对的登记比不登记更危险）", async () => {
+    const { deps, writes } = fakeDeps();
+    const value = await run(
+      buildRegisterTool(deps),
+      { worktree: existingWt },
+      execWithSession(repo, undefined),
+    );
+    expect(value.ok).toBe(false);
+    expect(value.detail).toContain("no creation timestamp");
+    expect(writes.length).toBe(0);
+  });
+
+  it("会话 cwd 是空串时判失败，不拿空串去问 git", async () => {
+    const { deps, writes } = fakeDeps();
+    const value = await run(buildRegisterTool(deps), { worktree: existingWt }, exec(""));
+    expect(value.ok).toBe(false);
+    expect(value.detail).toContain("no working directory");
+    expect(writes.length).toBe(0);
+  });
+
+  it("路径参数前后空白按 trim 后解析（空白串视同缺席）", async () => {
+    const padded = fakeDeps();
+    await run(buildRegisterTool(padded.deps), { worktree: "  " + existingWt + "  " });
+    expect(padded.writes[0]?.record.worktreeRoot).toBe(existingWt);
+
+    const blank = fakeDeps();
+    const value = await run(buildRegisterTool(blank.deps), { worktree: "   " });
+    expect(value.ok).toBe(false);
+    expect(value.detail).toContain("Missing required parameter: worktree.");
+    expect(blank.writes.length).toBe(0);
+  });
+
+  it("可用 worktree 清单为空时，失败文案不挂一个空标题", async () => {
+    const { deps } = fakeDeps({ worktreeList: [] });
+    const value = await run(buildRegisterTool(deps), { worktree: join(root, "ghost") });
+    expect(value.ok).toBe(false);
+    expect(value.detail).toContain("No such directory");
+    expect(value.detail).not.toContain("Available worktrees");
+  });
+
+  it("listWorktrees 失败降级成空清单：工具照常给出原本的失败原因", async () => {
+    const { deps } = fakeDeps();
+    const failing: ToolsDeps = {
+      ...deps,
+      // git 域把「列出失败」翻成空清单（见 git-service 的 listWorktrees 判据），工具因此不会
+      // 因为一次附带提示的失败而变成框架级错误。
+      git: { ...deps.git, listWorktrees: async () => [] },
+    };
+    const value = await run(buildRegisterTool(failing), { worktree: join(root, "ghost") });
+    expect(value.ok).toBe(false);
+    expect(value.detail).toContain("No such directory");
   });
 
   it("会话不在 git 仓库里判失败", async () => {
@@ -224,6 +303,42 @@ describe("ws_worktree_create", () => {
     expect(gitCalls[0]?.[3]).toBe("");
   });
 
+  it("缺少 exec.agent 时明确失败，不猜会话", async () => {
+    const { deps, gitCalls } = fakeDeps();
+    const value = await run(buildCreateTool(deps), { path: newPath() }, {});
+    expect(value.ok).toBe(false);
+    expect(value.detail).toContain("needs an agent session");
+    expect(gitCalls.length).toBe(0);
+  });
+
+  it("会话没有 cwd 时判失败，不去问 git", async () => {
+    const { deps, gitCalls } = fakeDeps();
+    const value = await run(
+      buildCreateTool(deps),
+      { path: newPath() },
+      execWithSession("", undefined),
+    );
+    expect(value.ok).toBe(false);
+    expect(value.detail).toContain("no working directory");
+    expect(gitCalls.length).toBe(0);
+  });
+
+  it("会话不在 git 仓库里时判失败，且不建目录", async () => {
+    const { deps, gitCalls } = fakeDeps();
+    const value = await run(buildCreateTool(deps), { path: newPath() }, exec("/outside-root"));
+    expect(value.ok).toBe(false);
+    expect(value.detail).toContain("not inside a git repository");
+    expect(gitCalls.length).toBe(0);
+  });
+
+  it("缺少 path 参数时判失败，且不调 git", async () => {
+    const { deps, gitCalls } = fakeDeps();
+    const value = await run(buildCreateTool(deps), {});
+    expect(value.ok).toBe(false);
+    expect(value.detail).toContain("Missing required parameter: path.");
+    expect(gitCalls.length).toBe(0);
+  });
+
   it("非法分支名在调用 git 之前就判失败", async () => {
     const { deps, gitCalls } = fakeDeps();
     const value = await run(buildCreateTool(deps), { path: newPath(), branch: "bad name" });
@@ -240,7 +355,7 @@ describe("ws_worktree_create", () => {
   });
 
   it("目录已创建但绑定失败时说明是部分成功，不报成纯失败", async () => {
-    const { deps } = fakeDeps({ belongs: false });
+    const { deps } = fakeDeps({ belongs: "different" });
     const value = await run(buildCreateTool(deps), { path: newPath() });
     expect(value.ok).toBe(false);
     expect(value.detail).toContain("The worktree was created at " + newPath());

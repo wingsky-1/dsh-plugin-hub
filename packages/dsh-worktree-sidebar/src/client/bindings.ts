@@ -38,6 +38,10 @@ export function createBindingState(read: ReadBinding, sessionId: string): Bindin
       }
       if (next === undefined) return;
       if (next.revision === revision && next.worktreePath === path) return;
+      // 乱序返回守卫：宿主 revision 单调不减，所以一个**更早发出**的请求可能带着更小的 revision
+      // 后到。只做相等判断的话，旧响应会把快照覆盖回旧根，而契约要求「同一 id 恒回同一对象、
+      // 只在新值更新时通知」——回退也会多通知一次渲染层。
+      if (next.revision < revision) return;
       revision = next.revision;
       path = next.worktreePath;
       for (const listener of [...listeners]) listener();

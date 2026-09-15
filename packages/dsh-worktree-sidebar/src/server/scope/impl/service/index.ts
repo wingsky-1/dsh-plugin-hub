@@ -51,7 +51,7 @@ export interface ScopeApi {
  * 排查时既没有日志也没有别的痕迹。health 是唯一一条能落地的观测面。
  */
 export interface ChainDiagnostics {
-  /** 持久面被查了几次（每次都是「会话不在册」的回落，属成本读数）。 */
+  /** 持久面被查了几次：父链的「会话不在册」回落，以及每次会话身份核对。 */
   readonly storedReads: number;
   /** 其中抛错的次数——到顶收口就是在这里发生的。 */
   readonly storedFailures: number;
@@ -135,23 +135,31 @@ class ScopeService implements ScopeApi {
   }
 
   /**
-   * 给会话链的持久面加一圈读数。失败**照原样抛回**，收口仍在 `inherit`——
+   * 给会话链的持久面加一圈读数。失败**照原样抛回**，收口仍在调用方——
    * 这里只负责记账，不改变任何判定。
+   *
+   * 身份核对也走同一条持久面，所以它同样计入读数：只统计父链会让「身份读不出来」这类
+   * 故障在 health 上完全不可见。
    */
   private observed(inner: SessionChainPort): SessionChainPort {
     return {
       liveParentOf: (sessionId) => inner.liveParentOf(sessionId),
-      storedParentOf: async (sessionId) => {
-        this.chain.storedReads += 1;
-        try {
-          return await inner.storedParentOf(sessionId);
-        } catch (cause) {
-          this.chain.storedFailures += 1;
-          this.chain.lastFailure = cause instanceof Error ? cause.message : String(cause);
-          throw cause;
-        }
-      },
+      storedParentOf: (sessionId) => this.counted(() => inner.storedParentOf(sessionId)),
+      liveIdentityOf: (sessionId) => inner.liveIdentityOf(sessionId),
+      storedIdentityOf: (sessionId) => this.counted(() => inner.storedIdentityOf(sessionId)),
     };
+  }
+
+  /** 记一次持久面读取：无论成败都算一次读，抛错另计一次失败并留下最后原因。 */
+  private async counted<T>(read: () => Promise<T>): Promise<T> {
+    this.chain.storedReads += 1;
+    try {
+      return await read();
+    } catch (cause) {
+      this.chain.storedFailures += 1;
+      this.chain.lastFailure = cause instanceof Error ? cause.message : String(cause);
+      throw cause;
+    }
   }
 
   async effectiveWorktree(sessionId: string): Promise<string | null> {

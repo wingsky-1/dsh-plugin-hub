@@ -19,32 +19,52 @@ export interface Endpoint {
   readonly methods: Readonly<Record<string, RequestHandler>>;
 }
 
-/** 注册端点组，返回摘除器清单。 */
+/**
+ * 注册端点组，返回摘除器清单。**要么全上、要么全不上**。
+ *
+ * 中途失败时把已挂的那些摘回去再抛：宿主侧留着一条没有摘除器的路由，比一条都没挂更糟——
+ * 它在册、会响应、而下一次装配只会再挂一遍，且没人能摘掉它。
+ */
 export function registerEndpoints(
   register: RegisterRoute,
   endpoints: readonly Endpoint[],
   logger: LoggerPort,
 ): Array<() => void> {
-  return endpoints.map((endpoint) =>
-    register({
-      kind: "exact",
-      path: endpoint.path,
-      handler: (req, res) => {
-        if (!guardLoopbackMethod(req, res, Object.keys(endpoint.methods))) return;
-        const handle = endpoint.methods[req.method ?? ""];
+  const disposers: Array<() => void> = [];
+  for (const endpoint of endpoints) {
+    try {
+      disposers.push(
+        register({
+          kind: "exact",
+          path: endpoint.path,
+          handler: (req, res) => {
+            if (!guardLoopbackMethod(req, res, Object.keys(endpoint.methods))) return;
+            const handle = endpoint.methods[req.method ?? ""];
+            try {
+              const done = handle(req, res);
+              // 异步端点失败落在 promise、同步端点落在 catch：收口只有一处，两条路都要接上，
+              // 否则异步端点的异常会变成未捕获拒绝。
+              if (done instanceof Promise) {
+                done.catch((cause) => reportFailure(res, logger, cause));
+              }
+            } catch (cause) {
+              reportFailure(res, logger, cause);
+            }
+          },
+        }),
+      );
+    } catch (cause) {
+      for (const dispose of [...disposers].reverse()) {
         try {
-          const done = handle(req, res);
-          // 异步端点失败落在 promise、同步端点落在 catch：收口只有一处，两条路都要接上，
-          // 否则异步端点的异常会变成未捕获拒绝。
-          if (done instanceof Promise) {
-            done.catch((cause) => reportFailure(res, logger, cause));
-          }
-        } catch (cause) {
-          reportFailure(res, logger, cause);
+          dispose();
+        } catch {
+          // 回滚阶段不做失败上报：一个端点的摘除失败不该掩盖首个异常。
         }
-      },
-    }),
-  );
+      }
+      throw cause;
+    }
+  }
+  return disposers;
 }
 
 /**

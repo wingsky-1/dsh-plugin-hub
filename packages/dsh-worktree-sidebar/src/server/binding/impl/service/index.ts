@@ -40,11 +40,18 @@ class BindingService implements BindingApi {
    * 链本身不承载结果，失败也不该断链，故 catch 掉、语义归返回值。
    */
   private writes: Promise<unknown> = Promise.resolve();
+  /**
+   * 装配代数。`release` 的尾部清理要 `await` 在飞的写盘，那一小段时间里**新的一个
+   * `install` 可能已经装上并从磁盘读回了新表**；无脑清表会抹掉它，紧接着一次 `put`
+   * 就把空表写回磁盘、丢掉所有会话的登记。
+   */
+  private generation = 0;
 
   /** 装配绑定域：把 bindings.json 读进内存（损坏回落空表，见 model 块）。重复装配是编程错误。 */
   install(deps: BindingDeps): void {
     if (this.installed) throw new Error("dsh-worktree-sidebar: binding 域只能装配一次");
     this.installed = true;
+    this.generation += 1;
     this.deps = deps;
     // 每次都重新读盘：release 之后再装配必须看到磁盘的**现状**，不是上一代留下的内存快照。
     this.table = loadTable(deps.file);
@@ -56,9 +63,15 @@ class BindingService implements BindingApi {
    * 重复调用无害。
    */
   async release(): Promise<void> {
+    const generation = ++this.generation;
+    // 只等**这一次 release 入口时**已经排队的那条链：期间新装上的一代有自己的链，不该被我们等，
+    // 更不该被我们复位。
+    const writes = this.writes;
     this.installed = false;
     this.deps = undefined;
-    await this.writes;
+    await writes;
+    // 期间有新一代装配过：现在内存里那份表是它的，不是本代留下的，清掉就是把它的内容抹成空。
+    if (this.generation !== generation) return;
     this.writes = Promise.resolve();
     this.table = emptyTable();
   }

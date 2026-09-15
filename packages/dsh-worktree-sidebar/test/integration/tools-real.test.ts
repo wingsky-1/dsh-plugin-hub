@@ -55,7 +55,10 @@ function harness(): Harness {
       agents: { subscribe: () => () => undefined, list: () => [], publish: () => () => undefined },
     },
     // 假执行上下文：被测代码只读 exec.agent.session，其余字段本插件一个都不碰。
-    exec: { agent: { session: { id: "s1", header: { cwd: repo } } } } as unknown as ToolRunContext,
+    // header.createdAt 是绑定记录的凭据（会话 id 会被重启后的新会话复用），所以它必须在场。
+    exec: {
+      agent: { session: { id: "s1", header: { cwd: repo, createdAt: 1_700_000_000_000 } } },
+    } as unknown as ToolRunContext,
   };
 }
 
@@ -98,6 +101,18 @@ describe("ws_worktree_create 端到端", () => {
     expect(bindingsOnDisk(h.file)["s1"]?.branch).toBe("wt-created-branch");
     // 新 worktree 确实与主仓库同源（这是「归属校验」在真 git 上的对照）。
     expect(git(h.repo, ["worktree", "list", "--porcelain"])).toContain(target);
+  });
+
+  it("不给分支时走 --detach：目录照建、绑定照落，branch 是空串", async () => {
+    const h = harness();
+    // 路径 basename 含空格：这条以前会 fatal（git 拿 basename 当新分支名），--detach 之后能建。
+    const target = join(h.root, "wt no branch");
+    const value = await run(buildCreateTool(h.deps), { path: target }, h.exec);
+
+    expect(value.ok).toBe(true);
+    expect(existsSync(target)).toBe(true);
+    expect(value.branch).toBe("");
+    expect(bindingsOnDisk(h.file)["s1"]?.worktreeRoot).toBe(target);
   });
 
   it("非法分支名不建目录", async () => {

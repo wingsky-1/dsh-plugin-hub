@@ -16,7 +16,13 @@
  */
 import type { BindingResponse } from "../../shared/interface.ts";
 
-/** 官方座位上的一条已登记项（运行时形状即 dsh-client-ui-slots 的 StoredEntry）。 */
+/**
+ * 官方座位上的一条已登记项（运行时形状即 `dsh-client-ui-slots` 的 `StoredEntry`）。
+ *
+ * 类型面在树内读得到：`dsh-client-ui-renderer/lib/types/client/registry.d.ts:15` 从该包 import
+ * `StoredEntry`，`:154`/`:164` 是 `entries`/`entriesOfSlot` 的返回类型（实现包本身不在安装树里，
+ * 可读副本的位置见 takeover.ts 头部注释）。
+ */
 export interface StoredEntryLike {
   readonly component: unknown;
   readonly options: {

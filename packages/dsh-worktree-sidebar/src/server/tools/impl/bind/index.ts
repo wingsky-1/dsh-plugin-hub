@@ -61,21 +61,42 @@ export async function bindWorktree(
   session: SessionFace,
   repo: string,
   target: string,
-  createdAt: string,
+  registeredAt: string,
 ): Promise<ToolResultValue> {
   const before = stateOf(deps, session.id);
-  if (!(await deps.git.belongsTo(target, repo))) {
+  // 身份凭据缺席时拒绝落盘：没有它，这条登记在下一个进程里可能被一个同 id 的新会话继承，
+  // 而那是「静默看错地方」——留一条不可核对的登记比不登记更危险。
+  if (session.createdAt === undefined) {
     return resultOf(
       before,
       false,
-      "That directory is not a worktree of this session's repository (" +
-        repo +
-        "), so binding it would point the file tree outside this repository." +
-        (await availableWorktrees(deps, repo)),
+      "This session exposes no creation timestamp, so the binding could not be told apart from a " +
+        "different session that reuses the same id after a restart. Refusing to bind.",
     );
   }
+  const belongs = await deps.git.belongsTo(target, repo);
+  if (belongs.kind !== "same") {
+    // 写路径 fail-closed：读不出归属时拒绝，而不是照着「没验成」去写一条可能指向别的仓库的登记。
+    const why =
+      belongs.kind === "different" || (belongs.kind === "unknown" && belongs.notRepo)
+        ? "That directory is not a worktree of this session's repository (" +
+          repo +
+          "), so binding it would point the file tree outside this repository."
+        : "Could not verify that the directory belongs to this session's repository (" +
+          repo +
+          "): " +
+          (belongs.kind === "unknown" ? belongs.reason : "") +
+          ". Retry once the directory is readable.";
+    return resultOf(before, false, why + (await availableWorktrees(deps, repo)));
+  }
   const branch = (await deps.git.headBranch(target)) ?? "";
-  const record: BindingRecord = { repoRoot: repo, worktreeRoot: target, branch, createdAt };
+  const record: BindingRecord = {
+    repoRoot: repo,
+    worktreeRoot: target,
+    branch,
+    createdAt: registeredAt,
+    sessionCreatedAt: session.createdAt,
+  };
   const written = await deps.binding.put(session.id, record);
   if (!written.ok) {
     return resultOf(before, false, "Could not persist the binding: " + written.reason);

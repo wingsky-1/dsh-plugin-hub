@@ -17,6 +17,7 @@ const record: BindingRecord = {
   worktreeRoot: "/wt",
   branch: "feature",
   createdAt: "2026-09-14T00:00:00.000Z",
+  sessionCreatedAt: 1_700_000_000_000,
 };
 
 const dirs: string[] = [];
@@ -80,6 +81,22 @@ describe("installBinding", () => {
     bindingApi.installBinding(deps);
     expect(bindingApi.get("s1")).toEqual(record);
     expect(bindingApi.revision()).toBe(1);
+  });
+
+  it("release 撞上下一代 install：上一代的尾部清理不许抹掉新代读回来的表", async () => {
+    const { deps } = makeDeps();
+    bindingApi.installBinding(deps);
+    await bindingApi.put("s1", record);
+
+    // 让写盘链有一条在飞的写，然后立刻 release：它要 await 的正是这条链。
+    const writing = bindingApi.put("s2", { ...record, worktreeRoot: "/wt2" });
+    const releasing = bindingApi.releaseBinding();
+    // release 还挂在 await 上：这一代已经装上并从磁盘读回了表。尾部若无条件清表，就会把它抹成空表，
+    // 随后一次 put 会把空表写回磁盘、丢掉所有会话的登记。
+    bindingApi.installBinding(deps);
+    await Promise.all([writing, releasing]);
+
+    expect(bindingApi.get("s2")).toEqual({ ...record, worktreeRoot: "/wt2" });
   });
 
   it("release 之后能力面当场失败，不拿旧 deps 出结果", () => {

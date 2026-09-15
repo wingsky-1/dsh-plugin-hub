@@ -23,8 +23,8 @@ import type {
 import {
   BODY_SLOT,
   FILES_KIND,
-  SHADOW_PRIORITY,
   installTakeover,
+  shadowPriorityOf,
 } from "../../src/client/takeover.ts";
 
 const OFFICIAL_ID = "@deepseek-ai/dsh-client-ui-sidebar-files/files";
@@ -66,7 +66,16 @@ function settle(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-function harness(options: { bodyFails?: boolean } = {}) {
+function harness(
+  options: {
+    /** 我们那条正文的登记永久失败。 */
+    bodyFails?: boolean;
+    /** 我们那条正文的登记失败前 N 次（用来演「瞬时失败 → 下一次通知重试成功」）。 */
+    bodyFailsTimes?: number;
+    /** 官方那条自己声明的 priority；缺省即「没声明」（按 0 算）。 */
+    officialPriority?: number;
+  } = {},
+) {
   const warns: string[] = [];
   const fake = createFakeSlots();
   const officialInject = (): Record<string, unknown> => ({
@@ -75,10 +84,19 @@ function harness(options: { bodyFails?: boolean } = {}) {
   });
   const registerOfficial = (component: unknown): (() => void) =>
     fake.slots.register(
-      { name: BODY_SLOT, key: OFFICIAL_ID, locale: LOCALE, store: STORE, inject: officialInject },
+      {
+        name: BODY_SLOT,
+        key: OFFICIAL_ID,
+        locale: LOCALE,
+        store: STORE,
+        inject: officialInject,
+        ...(options.officialPriority === undefined ? {} : { priority: options.officialPriority }),
+      },
       component,
     );
+  let officialEntry: StoredEntryLike | undefined;
   let disposeOfficial = registerOfficial(FILES_BODY);
+  officialEntry = fake.entries(BODY_SLOT)[0];
   fake.slots.register({ name: TITLE_SLOT, key: OFFICIAL_ID }, FILES_TITLE);
 
   /**
@@ -100,22 +118,33 @@ function harness(options: { bodyFails?: boolean } = {}) {
     },
   );
 
-  /** 正文登记失败：只对我们那条（带遮蔽 priority 的登记）抛。 */
-  const slots: ClientSlotsPort =
-    options.bodyFails === true
-      ? {
-          ...fake.slots,
-          register: (regOptions, component) => {
-            if (regOptions["priority"] === SHADOW_PRIORITY) {
-              throw new Error("body register exploded");
-            }
-            return fake.slots.register(regOptions, component);
-          },
-        }
-      : fake.slots;
+  /**
+   * 正文登记失败：只对我们那条抛。认自己不看具体数值——priority 是按官方那条算出来的，
+   * 而官方那条在夹具里默认**不声明** priority，所以「带 priority 的登记」就是我们。
+   */
+  /** 我们那条条目的 identity：wrapper 产出的 inject 工厂是我们唯一能精确认出的东西。 */
+  const ourInjectFactories = new Set<unknown>();
+  const attempts = { count: 0 };
+  const failsOurs = (): boolean => {
+    attempts.count += 1;
+    if (options.bodyFails === true) return true;
+    return options.bodyFailsTimes !== undefined && attempts.count <= options.bodyFailsTimes;
+  };
+  const needsFailingRegister = options.bodyFails === true || options.bodyFailsTimes !== undefined;
+  const slots: ClientSlotsPort = needsFailingRegister
+    ? {
+        ...fake.slots,
+        register: (regOptions, component) => {
+          if (regOptions["priority"] !== undefined && failsOurs()) {
+            throw new Error("body register exploded");
+          }
+          return fake.slots.register(regOptions, component);
+        },
+      }
+    : fake.slots;
 
   const ours = (): readonly StoredEntryLike[] =>
-    fake.entries(BODY_SLOT).filter((entry) => entry.options.priority === SHADOW_PRIORITY);
+    fake.entries(BODY_SLOT).filter((entry) => ourInjectFactories.has(entry.inject));
 
   return {
     fake,
@@ -128,9 +157,8 @@ function harness(options: { bodyFails?: boolean } = {}) {
       if (entry === undefined) throw new Error("我们那条正文不在座位上");
       return entry;
     },
-    /** 官方那条正文（原始账里 priority 不是我们的那条）。 */
-    official: (): StoredEntryLike | undefined =>
-      fake.entries(BODY_SLOT).find((entry) => entry.options.priority !== SHADOW_PRIORITY),
+    /** 官方那条正文：登记时当场记下的那个对象（HMR 重登记会换成新对象）。 */
+    official: (): StoredEntryLike | undefined => officialEntry,
     setOfficialType: (definition: TabDefinitionLike | undefined) => {
       officialType = definition;
     },
@@ -138,6 +166,11 @@ function harness(options: { bodyFails?: boolean } = {}) {
     reRegisterOfficial: (component: unknown) => {
       disposeOfficial();
       disposeOfficial = registerOfficial(component);
+      officialEntry = fake
+        .entries(BODY_SLOT)
+        .find(
+          (entry) => entry.options.key === OFFICIAL_ID && !ourInjectFactories.has(entry.inject),
+        );
     },
     dropOfficial: () => disposeOfficial(),
     install: () =>
@@ -145,7 +178,11 @@ function harness(options: { bodyFails?: boolean } = {}) {
         slots,
         tabs,
         logger: { warn: (message: string) => warns.push(message) },
-        wrapInject: createInjectWrapper(() => viewOf(STABLE_SOURCE)),
+        wrapInject: (official) => {
+          const wrapped = createInjectWrapper(() => viewOf(STABLE_SOURCE))(official);
+          ourInjectFactories.add(wrapped);
+          return wrapped;
+        },
       }),
   };
 }
@@ -183,15 +220,50 @@ describe("抓不到官方正文时零注册", () => {
   });
 });
 
+describe("瞬时失败与永久失败分道", () => {
+  it("登记瞬时失败：下一次座位通知重试并接管成功", async () => {
+    // 一次瞬时失败就永久放弃，会让接管静默失效，而恢复条件只剩官方包 HMR。
+    const h = harness({ bodyFailsTimes: 1 });
+    h.install();
+    expect(h.ours()).toHaveLength(0);
+    expect(h.warns).toHaveLength(1);
+
+    h.fake.emit(BODY_SLOT);
+    expect(h.ours()).toHaveLength(1);
+    expect(h.fake.winner(BODY_SLOT)).toBe(h.mustOurs());
+  });
+
+  it("连续失败到上限之后不再重试（有限次：否则每次座位通知都白试一遍）", async () => {
+    const h = harness({ bodyFailsTimes: 99 });
+    h.install();
+    h.fake.emit(BODY_SLOT);
+    h.fake.emit(BODY_SLOT);
+    h.fake.emit(BODY_SLOT);
+    // 上限 2 次尝试：第 2 次之后该条目被判成「不再试」，后续通知不再出声也不再登记。
+    expect(h.warns).toHaveLength(2);
+    expect(h.ours()).toHaveLength(0);
+  });
+});
+
 describe("遮蔽当值", () => {
   it("登记之后当值的是我们那条，官方那条仍在账上（不是顶掉）", () => {
     const h = harness();
     h.install();
+    const official = h.official();
+    if (official === undefined) throw new Error("官方条目不在");
     const winner = h.fake.winner(BODY_SLOT);
-    expect(winner?.options.priority).toBe(SHADOW_PRIORITY);
+    expect(winner?.options.priority).toBe(shadowPriorityOf(official));
     expect(winner?.options.key).toBe(OFFICIAL_ID);
     expect(h.ours()).toHaveLength(1);
     expect(h.official()).toBeDefined();
+  });
+
+  it("priority 按官方那条算：官方自己声明了 priority 时我们低一档仍然当值", () => {
+    // 写死常量的话，官方哪天声明了更低的 priority，我们就从遮蔽者变成被遮蔽者（自检退位）。
+    const h = harness({ officialPriority: -5 });
+    h.install();
+    expect(h.mustOurs().options.priority).toBe(-6);
+    expect(h.fake.winner(BODY_SLOT)).toBe(h.mustOurs());
   });
 
   it("类型表一个字节没动：接管前后是同一个定义引用（guide 也在原处）", () => {
@@ -250,7 +322,7 @@ describe("当值自检：不当值就退位", () => {
     h.fake.emit(BODY_SLOT);
     expect(h.ours()).toHaveLength(1);
     expect(h.mustOurs().component).toBe(newBody);
-    expect(h.fake.winner(BODY_SLOT)?.options.priority).toBe(SHADOW_PRIORITY);
+    expect(h.fake.winner(BODY_SLOT)).toBe(h.mustOurs());
   });
 
   it("官方正文消失时撤销我们的注册，但不退订（再出现能重新接管）", () => {
@@ -299,7 +371,7 @@ describe("正文的 inject 面被包装：hooks.sessions 换成改写源", () =>
         return viewOf(source);
       }),
     });
-    const entry = fake.entries(BODY_SLOT).find((e) => e.options.priority === SHADOW_PRIORITY);
+    const entry = fake.entries(BODY_SLOT).find((e) => e.options.priority !== undefined);
     const face = (entry?.inject as (sessionId: string) => Record<string, unknown>)("s1");
     expect(face["hooks"]).toEqual({ other: "keep-me", sessions: source });
     expect(face["useFiles"]).toBe("official-useFiles");
@@ -321,7 +393,7 @@ describe("正文的 inject 面被包装：hooks.sessions 换成改写源", () =>
         throw new Error("不该被调用");
       }),
     });
-    const entry = fake.entries(BODY_SLOT).find((e) => e.options.priority === SHADOW_PRIORITY);
+    const entry = fake.entries(BODY_SLOT).find((e) => e.options.priority !== undefined);
     const face = (entry?.inject as (...args: unknown[]) => Record<string, unknown>)({
       notAString: true,
     });
@@ -339,6 +411,48 @@ describe("崩溃归因", () => {
     expect(h.warns).toHaveLength(0);
     h.fake.reportError(BODY_SLOT, h.mustOurs(), new Error("ours broke"));
     expect(h.warns.some((w) => w.includes("ours broke"))).toBe(true);
+  });
+});
+
+describe("初始化失败时不留悬挂订阅", () => {
+  it("evaluate 抛错时两条订阅逆序撤销后再抛（否则它们留在单例注册表上，卸载时没人收）", () => {
+    const fake = createFakeSlots();
+    fake.slots.register({ name: BODY_SLOT, key: OFFICIAL_ID, inject: () => ({}) }, FILES_BODY);
+    let subscribed = 0;
+    let unsubscribed = 0;
+    const slots: ClientSlotsPort = {
+      ...fake.slots,
+      // evaluate 的第一步就是读原始账：让它抛，模拟座位注册表在初始化期坏掉。
+      entries: () => {
+        throw new Error("entries exploded");
+      },
+      subscribe: (key, listener) => {
+        subscribed += 1;
+        const off = fake.slots.subscribe(key, listener);
+        return () => {
+          unsubscribed += 1;
+          off();
+        };
+      },
+      onEntryError: (listener) => {
+        subscribed += 1;
+        const off = fake.slots.onEntryError(listener);
+        return () => {
+          unsubscribed += 1;
+          off();
+        };
+      },
+    };
+    expect(() =>
+      installTakeover({
+        slots,
+        tabs: { get: (kind) => (kind === FILES_KIND ? OFFICIAL_DEFINITION : undefined) },
+        logger: { warn: () => undefined },
+        wrapInject: createInjectWrapper(() => viewOf(STABLE_SOURCE)),
+      }),
+    ).toThrow("entries exploded");
+    expect(subscribed).toBe(2);
+    expect(unsubscribed).toBe(2);
   });
 });
 

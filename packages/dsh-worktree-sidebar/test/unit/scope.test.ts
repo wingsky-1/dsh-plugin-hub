@@ -18,11 +18,15 @@ import {
   takeoverState,
 } from "../../src/server/scope/interface.ts";
 
+/** 会话 header 的创建时间；登记里存的凭据与它一致时绑定才算「属于当前这个会话」。 */
+const SESSION_CREATED_AT = 1_700_000_000_000;
+
 const record: BindingRecord = {
   repoRoot: "/repo",
   worktreeRoot: "/wt",
   branch: "feature",
   createdAt: "2026-09-14T00:00:00.000Z",
+  sessionCreatedAt: SESSION_CREATED_AT,
 };
 
 const warns: string[] = [];
@@ -61,7 +65,13 @@ function fakeLookups(initialDescriptor?: LookupDescriptorPort) {
 function scopeDeps(
   options: {
     binding?: Record<string, BindingRecord>;
-    belongs?: boolean;
+    /** 摘除本身抛错（原子写失败以外的那类故障）。 */
+    dropThrows?: boolean;
+    /**
+     * 归属读数。`true`/`false` 是早先写的简写（same / different），保留以免二十多处调用点全改；
+     * 新增的第三态用字符串表达——它正是「读不出来」与「确实不同」必须分开的那一态。
+     */
+    belongs?: boolean | "same" | "different" | "unknown";
     dropOk?: boolean;
     exists?: boolean;
     descriptor?: LookupDescriptorPort;
@@ -76,6 +86,12 @@ function scopeDeps(
     storedParents?: Record<string, string>;
     /** 持久面读取抛错（后端坏掉）——本域必须把它收口成「到顶」。 */
     storedThrows?: boolean;
+    /** 活会话的身份凭据；缺省与会话登记里的凭据一致。 */
+    identities?: Record<string, number>;
+    /** 已结束会话的身份凭据（持久面）。缺席即「读不出来」。 */
+    storedIdentities?: Record<string, number>;
+    /** 持久面身份读取抛错（后端坏掉）——调用方必须保住登记，只出声。 */
+    identityThrows?: boolean;
   } = {},
 ) {
   const table = new Map<string, BindingRecord>(Object.entries(options.binding ?? {}));
@@ -84,6 +100,8 @@ function scopeDeps(
   const bindingGets: string[] = [];
   /** 谁被持久面查过：活着的顶层会话不该出现在这里（那是确定的到顶，不该白加一次 IO）。 */
   const storedCalls: string[] = [];
+  /** 谁被持久面查过**身份**：活会话的身份核对同样不该落到这里。 */
+  const identityCalls: string[] = [];
   const configured: Array<(id: string) => Promise<FileScope | undefined>> = [];
   let disposed = false;
 
@@ -104,13 +122,23 @@ function scopeDeps(
         return table.get(id);
       },
       drop: async (id) => {
+        if (options.dropThrows === true) throw new Error("drop exploded");
         if (options.dropOk === false) return { ok: false, reason: "disk full" };
         table.delete(id);
         dropped.push(id);
         return { ok: true };
       },
     },
-    git: { belongsTo: async () => options.belongs !== false },
+    git: {
+      belongsTo: async () => {
+        if (options.belongs === "unknown") {
+          return { kind: "unknown", reason: "git 执行失败（EACCES）", notRepo: false } as const;
+        }
+        return options.belongs === false || options.belongs === "different"
+          ? ({ kind: "different" } as const)
+          : ({ kind: "same" } as const);
+      },
+    },
     typert: {
       current: () => lookups.current(),
       subscribe,
@@ -133,6 +161,16 @@ function scopeDeps(
         if (options.storedThrows === true) throw new Error("stored sessions unavailable");
         return options.storedParents?.[id];
       },
+      liveIdentityOf: (id) => {
+        if (options.notLive?.includes(id) === true) return undefined;
+        return { createdAt: options.identities?.[id] ?? SESSION_CREATED_AT };
+      },
+      storedIdentityOf: async (id) => {
+        identityCalls.push(id);
+        if (options.identityThrows === true) throw new Error("identity unavailable");
+        const createdAt = options.storedIdentities?.[id];
+        return createdAt === undefined ? undefined : { createdAt };
+      },
     },
     existsDirectory: () => options.exists !== false,
   };
@@ -143,6 +181,7 @@ function scopeDeps(
     dropped,
     bindingGets,
     storedCalls,
+    identityCalls,
     configured,
     lookups,
     isDisposed: () => disposed,
@@ -162,6 +201,12 @@ describe("directoryExists 的默认语义", () => {
 
   it("存在但不是目录为假", () => {
     expect(directoryExists("/a", () => ({ isDirectory: () => false }))).toBe(false);
+  });
+
+  it("默认实现按真 fs 判定：不存在的路径为假（throwIfNoEntry 写反会把它变成 true）", () => {
+    // 这条必须走**默认**实现：注入 stat 的用例证明不了 `throwIfNoEntry` 的取值，
+    // 而写反之后 ENOENT 会走 catch 分支，于是「目录没了」被判成「读不了」→ 永久留住绑定。
+    expect(directoryExists("/dsh-worktree-sidebar-不存在-" + Date.now())).toBe(false);
   });
 
   it("stat 抛出（权限 / IO 抖动）按存在处理——读不了不等于不存在", () => {
@@ -206,6 +251,18 @@ describe("effectiveWorktree", () => {
     expect(dropped.length).toBe(1);
   });
 
+  it("摘除本身抛错时也出声，且仍按未绑定处理（失败不许只落在没人看的 catch 里）", async () => {
+    const { deps, table } = scopeDeps({
+      binding: { s1: record },
+      exists: false,
+      dropThrows: true,
+    });
+    expect(await effectiveWorktree(deps, "s1")).toBeNull();
+    // 摘除失败 → 磁盘上那条还在（下一次解析会再试一次），但这一次必须按未绑定回答。
+    expect(table.has("s1")).toBe(true);
+    expect(warns.some((w) => w.includes("摘除失效绑定抛出"))).toBe(true);
+  });
+
   it("摘除失败时仍然按未绑定处理，不回退到已失效的绑定", async () => {
     const { deps, dropped } = scopeDeps({
       binding: { s1: record },
@@ -215,6 +272,112 @@ describe("effectiveWorktree", () => {
     expect(await effectiveWorktree(deps, "s1")).toBeNull();
     expect(dropped.length).toBe(0);
     expect(warns.some((w) => w.includes("摘除失效绑定失败"))).toBe(true);
+  });
+});
+
+describe("会话身份：重启后新会话复用同一个 id", () => {
+  const official: LookupDescriptorPort = {
+    resolve: async (id) => ({ sessionId: id, workspaceRoot: "/official" }),
+  };
+
+  it("身份不同 ⇒ 摘掉登记并按未绑定处理（新会话不得继承上一进程的登记）", async () => {
+    const { deps, dropped, table } = scopeDeps({
+      binding: { s1: record },
+      identities: { s1: SESSION_CREATED_AT + 1 },
+      exists: true,
+      belongs: "same",
+    });
+    expect(await effectiveWorktree(deps, "s1")).toBeNull();
+    expect(dropped).toEqual(["s1"]);
+    expect(table.has("s1")).toBe(false);
+    expect(warns.some((w) => w.includes("已被另一个会话复用"))).toBe(true);
+  });
+
+  it("身份相同 ⇒ 照常返回 worktree 根（真恢复的会话仍然继承）", async () => {
+    const { deps, dropped } = scopeDeps({ binding: { s1: record }, exists: true });
+    expect(await effectiveWorktree(deps, "s1")).toBe("/wt");
+    expect(dropped.length).toBe(0);
+  });
+
+  it("已结束会话从持久面读身份：读到且不同 ⇒ 摘掉", async () => {
+    const { deps, dropped } = scopeDeps({
+      binding: { s1: record },
+      notLive: ["s1"],
+      storedIdentities: { s1: 1 },
+      exists: true,
+    });
+    expect(await effectiveWorktree(deps, "s1")).toBeNull();
+    expect(dropped).toEqual(["s1"]);
+  });
+
+  it("身份读不出来（持久面缺席）⇒ 保留登记，不把「读不到」当成「不是同一个会话」", async () => {
+    const { deps, dropped } = scopeDeps({
+      binding: { s1: record },
+      notLive: ["s1"],
+      exists: true,
+    });
+    expect(await effectiveWorktree(deps, "s1")).toBe("/wt");
+    expect(dropped.length).toBe(0);
+  });
+
+  it("身份读取抛错（持久面坏掉）⇒ 保留登记并出声", async () => {
+    const { deps, dropped } = scopeDeps({
+      binding: { s1: record },
+      notLive: ["s1"],
+      identityThrows: true,
+      exists: true,
+    });
+    expect(await effectiveWorktree(deps, "s1")).toBe("/wt");
+    expect(dropped.length).toBe(0);
+    expect(warns.some((w) => w.includes("无法核对会话身份"))).toBe(true);
+  });
+
+  it("活会话的身份核对不查持久面（health 的成本读数与判定同源）", async () => {
+    const { deps, identityCalls } = scopeDeps({ binding: { s1: record }, exists: true });
+    await effectiveWorktree(deps, "s1");
+    expect(identityCalls).toEqual([]);
+  });
+
+  it("持久面身份核对计入 health 读数；chainDiagnostics 回的是快照，改它改不动域内计数器", async () => {
+    const { deps } = scopeDeps({
+      descriptor: official,
+      binding: { s1: record },
+      notLive: ["s1"],
+      storedIdentities: { s1: SESSION_CREATED_AT },
+      exists: true,
+    });
+    installScope(deps);
+    expect(await scopeService.effectiveWorktree("s1")).toBe("/wt");
+    expect(chainDiagnostics().storedReads).toBe(1);
+
+    const snapshot = chainDiagnostics() as { storedReads: number };
+    snapshot.storedReads = 999;
+    expect(chainDiagnostics().storedReads).toBe(1);
+  });
+});
+
+describe("归属读数读不出来时保留登记", () => {
+  it("belongsTo 回 unknown ⇒ 不摘除、照常返回根，并出声说明原因", async () => {
+    const { deps, dropped } = scopeDeps({
+      binding: { s1: record },
+      belongs: "unknown",
+      exists: true,
+    });
+    expect(await effectiveWorktree(deps, "s1")).toBe("/wt");
+    expect(dropped.length).toBe(0);
+    expect(warns.some((w) => w.includes("无法确认 worktree 归属") && w.includes("EACCES"))).toBe(
+      true,
+    );
+  });
+
+  it("目录不存在优先于归属判定：不为了问 git 而放过一次明确的「目录没了」", async () => {
+    const { deps, dropped } = scopeDeps({
+      binding: { s1: record },
+      belongs: "unknown",
+      exists: false,
+    });
+    expect(await effectiveWorktree(deps, "s1")).toBeNull();
+    expect(dropped).toEqual(["s1"]);
   });
 });
 

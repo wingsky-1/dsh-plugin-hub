@@ -4,9 +4,14 @@
  * 摘掉而不是仅仅忽略：客户端以 revision 判定缓存有效性，只忽略不摘的话 revision 不变、
  * 客户端继续把文件根指向 worktree，而宿主已经按 cwd 解析——用户看到的是持续的 outside-workspace
  * 报错，且没有任何东西会自愈。
+ *
+ * 但「失效」的要求是硬证据。三条判据里只有**确实拿到**了否定答案的那种才允许摘：
+ * 目录不存在（`stat` 说 ENOENT）、会话 id 已被另一个会话复用（`createdAt` 不同）、
+ * 两侧都读出了公共 git 目录且不同。读不出来的一律保住登记——一次权限抖动或持久面抖动
+ * 不该变成一次永久的摘除。
  */
 import { statSync } from "node:fs";
-import type { ScopeDeps } from "../../deps.ts";
+import type { ScopeDeps, SessionIdentity } from "../../deps.ts";
 
 /** 存在性判定看到的形状。窄到只需要一个方法，测试才能用一个字面量替身驱动。 */
 interface StatLike {
@@ -47,11 +52,50 @@ export async function ownWorktree(deps: ScopeDeps, sessionId: string): Promise<s
     await drop(deps, sessionId, "worktree 目录不存在：" + record.worktreeRoot);
     return null;
   }
-  if (!(await deps.git.belongsTo(record.worktreeRoot, record.repoRoot))) {
+  const identity = await identityOf(deps, sessionId);
+  if (identity !== undefined && identity.createdAt !== record.sessionCreatedAt) {
+    await drop(
+      deps,
+      sessionId,
+      "会话 id 已被另一个会话复用（登记属于 createdAt=" +
+        record.sessionCreatedAt +
+        "，当前会话是 " +
+        identity.createdAt +
+        "）：" +
+        record.worktreeRoot,
+    );
+    return null;
+  }
+  const belongs = await deps.git.belongsTo(record.worktreeRoot, record.repoRoot);
+  if (belongs.kind === "different") {
     await drop(deps, sessionId, "已不是该仓库的 worktree：" + record.worktreeRoot);
     return null;
   }
+  if (belongs.kind === "unknown") {
+    // 保留登记 + 出声：这一次问不出归属，正确的行为是沿用上次的成功态，而不是摘掉用户的登记。
+    deps.logger.warn(
+      "dsh-worktree-sidebar: 无法确认 worktree 归属，保留该会话的登记 — " + belongs.reason,
+    );
+  }
   return record.worktreeRoot;
+}
+
+/** 核对会话身份。读不出来（持久面缺席或抛错）时回 undefined，调用方因此保住登记。 */
+async function identityOf(
+  deps: ScopeDeps,
+  sessionId: string,
+): Promise<SessionIdentity | undefined> {
+  const live = deps.sessions.liveIdentityOf(sessionId);
+  if (live !== undefined) return live;
+  try {
+    return await deps.sessions.storedIdentityOf(sessionId);
+  } catch (cause) {
+    deps.logger.warn(
+      "dsh-worktree-sidebar: 无法核对会话身份，保留该会话的登记 — " +
+        (cause instanceof Error ? cause.message : String(cause)),
+    );
+    return undefined;
+  }
 }
 
 async function drop(deps: ScopeDeps, sessionId: string, reason: string): Promise<void> {

@@ -52,9 +52,20 @@ describe("worktree 增删（argv 的真实可执行性）", () => {
     expect(await gitApi.addWorktree(repo, wt, "feature")).toEqual({ ok: true });
 
     expect(existsSync(wt)).toBe(true);
-    expect(await gitApi.belongsTo(wt, repo)).toBe(true);
+    expect(await gitApi.belongsTo(wt, repo)).toEqual({ kind: "same" });
     expect(await gitApi.headBranch(wt)).toBe("feature");
     expect(await gitApi.commonDir(wt)).toBe(await gitApi.commonDir(repo));
+  });
+
+  it("省略分支时走 --detach：含空格的 basename 也建得出来（这条默认路径以前是 fatal）", async () => {
+    const { repo } = fixture();
+    // macOS 家目录常含空格（John Doe / My Project）：不做 --detach 的话 git 会拿 basename
+    // 当新分支名，报 fatal: 'wt space' is not a valid branch name。
+    const wt = join(repo, "..", "wt space");
+    expect(await gitApi.addWorktree(repo, wt, undefined)).toEqual({ ok: true });
+    expect(existsSync(wt)).toBe(true);
+    // detached ⇒ 没有分支显示名，工具结果里的 branch 因此是空串（见 tools 域）。
+    expect(await gitApi.headBranch(wt)).toBeUndefined();
   });
 
   it("listWorktrees 同时列出主仓库与新增的 worktree", async () => {
@@ -80,13 +91,16 @@ describe("worktree 增删（argv 的真实可执行性）", () => {
     expect(existsSync(wt)).toBe(false);
   });
 
-  it("removeWorktree 删掉 worktree，之后 belongsTo 为假", async () => {
+  it("removeWorktree 删掉 worktree：目录没了，归属读数随之变成「问不出来」", async () => {
     const { repo } = fixture();
     const wt = join(repo, "..", "wt-remove");
     await gitApi.addWorktree(repo, wt, "to-remove");
     expect(await gitApi.removeWorktree(repo, wt, false)).toEqual({ ok: true });
     expect(existsSync(wt)).toBe(false);
-    expect(await gitApi.belongsTo(wt, repo)).toBe(false);
+    // 真机形态：目录消失后 git 报的是退出码 128 的失败（cannot change to …），与 `chmod 000`
+    // 这类权限失败在读数上同形。所以这里必须是 unknown 而不是 different——
+    // 摘不摘由 scope 域的「目录是否存在」那条硬判据决定，而不是由这次读不出来决定。
+    expect((await gitApi.belongsTo(wt, repo)).kind).toBe("unknown");
   });
 
   it("删除不存在的工作区判失败而不是静默成功", async () => {
@@ -95,19 +109,20 @@ describe("worktree 增删（argv 的真实可执行性）", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("belongsTo 把不同仓库判成假", async () => {
+  it("belongsTo 把两个都读得到的仓库判成 different（这才允许摘掉登记）", async () => {
     const { repo } = fixture();
     const root = tempDir("other");
     dirs.push(root);
     const other = join(root, "other");
     initRepo(other);
-    expect(await gitApi.belongsTo(other, repo)).toBe(false);
-    expect(await gitApi.belongsTo(repo, other)).toBe(false);
+    expect(await gitApi.belongsTo(other, repo)).toEqual({ kind: "different" });
+    expect(await gitApi.belongsTo(repo, other)).toEqual({ kind: "different" });
   });
 
-  it("belongsTo 对不存在的路径返回假而不是抛异常", async () => {
+  it("belongsTo 对不存在的路径返回 unknown 而不是抛异常", async () => {
     const { repo } = fixture();
-    expect(await gitApi.belongsTo(join(repo, "..", "ghost"), repo)).toBe(false);
+    const reading = await gitApi.belongsTo(join(repo, "..", "ghost"), repo);
+    expect(reading.kind).toBe("unknown");
   });
 });
 
@@ -127,12 +142,12 @@ describe("装配守卫与 release 复位", () => {
     const other = join(root, "other");
     initRepo(other);
     // 先让缓存记住一个假结论（两个不同仓库）。
-    expect(await gitApi.belongsTo(other, repo)).toBe(false);
+    expect(await gitApi.belongsTo(other, repo)).toEqual({ kind: "different" });
 
     gitApi.releaseGit();
-    // 换成「所有目录的公共 git 目录都一样」的执行面：缓存若没被丢掉，这里还会看到 false。
+    // 换成「所有目录的公共 git 目录都一样」的执行面：缓存若没被丢掉，这里还会看到 different。
     gitApi.installGit({ exec: sameCommonDirExec });
-    expect(await gitApi.belongsTo(other, repo)).toBe(true);
+    expect(await gitApi.belongsTo(other, repo)).toEqual({ kind: "same" });
   });
 
   it("release 之后能力面当场失败，不拿旧 exec 出结果", async () => {
@@ -152,23 +167,23 @@ describe("归属缓存：与客户端刷新节拍解耦", () => {
       exec: {
         run: async () => {
           runs += 1;
-          return { ok: true, stdout: "/shared/common\n", stderr: "" };
+          return { ok: true, stdout: "/shared/common\n", stderr: "", code: 0 };
         },
       },
     });
 
     vi.useFakeTimers();
     try {
-      expect(await gitApi.belongsTo(left, right)).toBe(true);
+      expect(await gitApi.belongsTo(left, right)).toEqual({ kind: "same" });
       // 一次归属判定 = 两个目录各问一次公共 git 目录。
       expect(runs).toBe(2);
 
-      expect(await gitApi.belongsTo(left, right)).toBe(true);
+      expect(await gitApi.belongsTo(left, right)).toEqual({ kind: "same" });
       expect(runs).toBe(2);
 
       // 恰好走过 TTL：缓存必须失效，否则「删掉的 worktree 仍被认作同一仓库」会被永久缓存。
       vi.advanceTimersByTime(30_000);
-      expect(await gitApi.belongsTo(left, right)).toBe(true);
+      expect(await gitApi.belongsTo(left, right)).toEqual({ kind: "same" });
       expect(runs).toBe(4);
     } finally {
       vi.useRealTimers();
@@ -178,5 +193,5 @@ describe("归属缓存：与客户端刷新节拍解耦", () => {
 
 /** 所有目录都报同一个公共 git 目录的执行面：用来把「缓存里的旧结论」与「新 exec 的答案」分开。 */
 const sameCommonDirExec: GitExecPort = {
-  run: async () => ({ ok: true, stdout: "/shared/common\n", stderr: "" }),
+  run: async () => ({ ok: true, stdout: "/shared/common\n", stderr: "", code: 0 }),
 };

@@ -6,6 +6,10 @@
  * 子会话的**第一回合**正落在那次判定之后。所以「同一个 cwd 不重复起子进程」是功能判据而不是性能优化：
  * 它决定子会话第一回合看不看得见本插件的工具（第六轮第三臂实验：一次 git 子进程 = 103ms = 输；
  * 缓存命中 ≈ 微任务级 = 赢）。TTL 取值纪律与 `belongsTo` 同源，见 `impl/service` 的注释。
+ *
+ * 缓存只认**正结果**、归属判定回**三态**——这两条都是「一次读不出来不该变成一次永久摘除」的落地：
+ * 前者管 `commonDir`（负结果下一刻就可能变真，比如用户在空目录里 `git init`），
+ * 后者管 `belongsTo`（只有两侧都确实读到了公共 git 目录，才有资格说「换了仓库」）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GitRunResult } from "../../src/server/git/deps.ts";
@@ -25,8 +29,16 @@ function fakeExec(answer: (args: readonly string[]) => GitRunResult) {
   };
 }
 
-const inRepo: GitRunResult = { ok: true, stdout: ".git\n", stderr: "" };
-const notRepo: GitRunResult = { ok: false, stdout: "", stderr: "fatal: not a git repository" };
+const inRepo: GitRunResult = { ok: true, stdout: ".git\n", stderr: "", code: 0 };
+/** git 跑完了并给出否定答案：这是一个**答案**。 */
+const notRepo: GitRunResult = {
+  ok: false,
+  stdout: "",
+  stderr: "fatal: not a git repository",
+  code: 128,
+};
+/** 进程根本没起来（spawn ENOENT / 超时被杀）：这不是答案，是问不出来。 */
+const execFailed: GitRunResult = { ok: false, stdout: "", stderr: "spawn git ENOENT", code: null };
 
 describe("git 域：仓库判定的 TTL 缓存", () => {
   beforeEach(() => {
@@ -49,14 +61,18 @@ describe("git 域：仓库判定的 TTL 缓存", () => {
     expect(exec.calls.length).toBe(1);
   });
 
-  it("「不是仓库」也进缓存：同一个非仓库目录不重复起子进程", async () => {
-    const exec = fakeExec(() => notRepo);
+  it("负结果不进缓存：空目录 git init 之后，下一次判定立刻看得到", async () => {
+    // 缓存负结果会把一次「刚 git init 完」的合法调用挡在 30s 之外，而它换来的只是一次省不掉的
+    // 子进程（非仓库目录的判定本来就不在热路径上：安装期每个 agent 判一次，工具调用更是稀疏）。
+    let initialized = false;
+    const exec = fakeExec(() => (initialized ? inRepo : notRepo));
     gitApi.installGit({ exec: exec.port });
 
     expect(await gitApi.commonDir("/plain")).toBeUndefined();
-    expect(await gitApi.commonDir("/plain")).toBeUndefined();
+    initialized = true;
+    expect(await gitApi.commonDir("/plain")).toBe("/plain/.git");
 
-    expect(exec.calls.length).toBe(1);
+    expect(exec.calls.length).toBe(2);
   });
 
   it("TTL 之内命中、过期后重新问 git", async () => {
@@ -94,5 +110,95 @@ describe("git 域：仓库判定的 TTL 缓存", () => {
     await gitApi.commonDir("/repo-0");
 
     expect(exec.calls.filter((args) => args[1] === "/repo-0").length).toBe(2);
+  });
+});
+
+describe("git 域：归属判定是三态", () => {
+  afterEach(() => gitApi.releaseGit());
+
+  /** 每个目录一个公共 git 目录答案；缺席的目录一律答「不是仓库」。 */
+  function byDir(answers: Record<string, GitRunResult>) {
+    return fakeExec((args) => answers[args[1] ?? ""] ?? notRepo);
+  }
+
+  it("两侧读到同一个公共 git 目录 ⇒ same", async () => {
+    // worktree 侧必须回**同一个绝对路径**：`--git-common-dir` 平时回相对的 `.git`，
+    // 而相对路径要按各自的 dir 解析，所以夹具这里直接给绝对值（解析规则由 computeCommonDir 负责）。
+    const exec = byDir({ "/repo": inRepo, "/repo-wt": { ...inRepo, stdout: "/repo/.git\n" } });
+    gitApi.installGit({ exec: exec.port });
+    expect(await gitApi.belongsTo("/repo-wt", "/repo")).toEqual({ kind: "same" });
+  });
+
+  it("两侧都读到了、值不同 ⇒ different（这才允许摘掉用户的登记）", async () => {
+    const exec = byDir({ "/repo": inRepo, "/other": inRepo });
+    gitApi.installGit({ exec: exec.port });
+    const reading = await gitApi.belongsTo("/other", "/repo");
+    expect(reading.kind).toBe("different");
+  });
+
+  it("worktree 侧 git 执行失败 ⇒ unknown，原因里带上 stderr", async () => {
+    const exec = byDir({ "/repo": inRepo, "/gone": execFailed });
+    gitApi.installGit({ exec: exec.port });
+    const reading = await gitApi.belongsTo("/gone", "/repo");
+    expect(reading.kind).toBe("unknown");
+    if (reading.kind !== "unknown") throw new Error("unreachable");
+    expect(reading.reason).toContain("spawn git ENOENT");
+    // 「问不出来」不是「不是工作树」：写路径要据此给出不同的失败文案。
+    expect(reading.notRepo).toBe(false);
+  });
+
+  it("worktree 侧是「不是仓库」也归 unknown（权限失败与目录被换掉在读数上同形）", async () => {
+    // 这条判据是刻意的保守：`chmod 000` 的真实 git 也是退出码 128 的失败，与「真的不是仓库」
+    // 在读数上分不开。分不开就不摘——摘错的代价是永久丢掉用户的登记，留下的代价只是一次告警。
+    const exec = byDir({ "/repo": inRepo, "/gone": notRepo });
+    gitApi.installGit({ exec: exec.port });
+    const reading = await gitApi.belongsTo("/gone", "/repo");
+    expect(reading.kind).toBe("unknown");
+    if (reading.kind !== "unknown") throw new Error("unreachable");
+    expect(reading.reason).toContain("/gone");
+    expect(reading.notRepo).toBe(true);
+  });
+
+  it("主仓库侧读不出来 ⇒ unknown", async () => {
+    const exec = byDir({ "/repo-wt": inRepo });
+    gitApi.installGit({ exec: exec.port });
+    expect((await gitApi.belongsTo("/repo-wt", "/repo")).kind).toBe("unknown");
+  });
+
+  it("结论进缓存：同一个键第二次判定不再起子进程", async () => {
+    const exec = byDir({ "/repo": inRepo, "/other": inRepo });
+    gitApi.installGit({ exec: exec.port });
+    await gitApi.belongsTo("/other", "/repo");
+    await gitApi.belongsTo("/other", "/repo");
+    expect(exec.calls.length).toBe(2);
+  });
+});
+
+describe("git 域：其余读数的失败形态", () => {
+  afterEach(() => gitApi.releaseGit());
+
+  it("listWorktrees 失败回空数组，不抛异常（它只是失败提示的附带信息）", async () => {
+    const exec = fakeExec(() => notRepo);
+    gitApi.installGit({ exec: exec.port });
+    await expect(gitApi.listWorktrees("/repo")).resolves.toEqual([]);
+  });
+
+  it("headBranch 把 detached 的 HEAD 读成「没有分支名」", async () => {
+    const exec = fakeExec(() => ({ ok: true, stdout: "HEAD\n", stderr: "", code: 0 }));
+    gitApi.installGit({ exec: exec.port });
+    expect(await gitApi.headBranch("/wt")).toBeUndefined();
+  });
+
+  it("headBranch 在 git 失败时回 undefined", async () => {
+    const exec = fakeExec(() => notRepo);
+    gitApi.installGit({ exec: exec.port });
+    expect(await gitApi.headBranch("/wt")).toBeUndefined();
+  });
+
+  it("git 成功但没有输出 ⇒ 公共目录读不出来（failed，不是「不是仓库」）", async () => {
+    const exec = fakeExec(() => ({ ok: true, stdout: "", stderr: "", code: 0 }));
+    gitApi.installGit({ exec: exec.port });
+    const reading = await gitApi.belongsTo("/wt", "/repo");
+    expect(reading.kind).toBe("unknown");
   });
 });

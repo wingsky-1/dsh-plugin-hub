@@ -25,7 +25,10 @@ export const gitExec: GitExecPort = {
           // git 没装时 stderr 是空串，只有 error 知道原因（spawn git ENOENT）；
           // 不把它折进来，上层看到的失败原因就是一句没有信息量的「退出码非零」。
           const detail = stderr.length > 0 ? stderr : error === null ? "" : error.message;
-          resolve({ ok: error === null, stdout, stderr: detail });
+          // 只有数字 code 才是「git 跑完了并给出退出码」；字符串 code（如 ENOENT）与 timeout 的
+          // killed 都是「没跑成」，上层据此保住上一次结论而不是把它当成否定答案。
+          const code = error === null ? 0 : typeof error.code === "number" ? error.code : null;
+          resolve({ ok: error === null, stdout, stderr: detail, code });
         },
       );
     }),

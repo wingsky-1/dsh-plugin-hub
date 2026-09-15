@@ -33,13 +33,22 @@ export function checkRefFormatArgs(branch: string): readonly string[] {
   return ["check-ref-format", "--branch", branch];
 }
 
-/** 新建 worktree。`--` 结束选项解析，路径即使形如选项也不会被当成标志。 */
+/**
+ * 新建 worktree。`--` 结束选项解析，路径即使形如选项也不会被当成标志。
+ *
+ * 省略 branch 时必须显式 `--detach`：`git worktree add <path>` 的默认行为是**新建一个以目录
+ * basename 命名的分支**并 checkout（实测 `Preparing worktree (new branch 'wtA')`），而不是
+ * 「check out the repository HEAD」。那条默认路径还有两个后果——basename 含空格时 git 直接
+ * `fatal: 'wt spaceB' is not a valid branch name`（macOS 的家目录常见空格），basename 以 `-` 开头时
+ * `--` 只挡住了 worktree add 自己的选项解析、挡不住它把 basename 当分支名后的二次解析（`unknown switch`）。
+ * `--detach` 让「省略 branch」的语义与文档一致，也把这条二次解析链路整个绕开。
+ */
 export function addWorktreeArgs(
   repoRoot: string,
   path: string,
   branch: string | undefined,
 ): readonly string[] {
-  const flags = branch === undefined ? [] : ["-b", branch];
+  const flags = branch === undefined ? ["--detach"] : ["-b", branch];
   return ["-C", repoRoot, "worktree", "add", ...flags, "--", path];
 }
 

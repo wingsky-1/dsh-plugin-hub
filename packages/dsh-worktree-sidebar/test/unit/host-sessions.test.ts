@@ -10,8 +10,11 @@ import { describe, expect, it } from "vitest";
 import type { SessionsFace, StoredSessionsFace } from "../../src/server/host/sessions.ts";
 import { bindSessions } from "../../src/server/host/sessions.ts";
 
+/** 会话 header 的创建时间：身份核对的凭据。 */
+const BIRTH = 1_700_000_000_000;
+
 /** 官方 live 面：`header.parentSession` 有无都要能表达（无父 ≠ 不在册）。 */
-function liveFace(table: Record<string, string | undefined>) {
+function liveFace(table: Record<string, string | undefined>, birth: number = BIRTH) {
   const calls: string[] = [];
   const face: SessionsFace = {
     get: (id) => {
@@ -19,21 +22,25 @@ function liveFace(table: Record<string, string | undefined>) {
       calls.push(key);
       if (!(key in table)) return undefined;
       const parent = table[key];
-      return { header: parent === undefined ? {} : { parentSession: parent } };
+      return {
+        header: { createdAt: birth, ...(parent === undefined ? {} : { parentSession: parent }) },
+      };
     },
   };
   return { face, calls };
 }
 
 /** 官方持久面：单会话 header；查不到回 undefined（契约如此，不是抛错）。 */
-function storedFace(table: Record<string, string>) {
+function storedFace(table: Record<string, string>, birth: number = BIRTH) {
   const calls: string[] = [];
   const face: StoredSessionsFace = {
     stat: async (id) => {
       const key = String(id);
       calls.push(key);
       const parent = table[key];
-      return parent === undefined ? undefined : { header: { parentSession: parent } };
+      return parent === undefined
+        ? undefined
+        : { header: { createdAt: birth, parentSession: parent } };
     },
   };
   return { face, calls };
@@ -85,5 +92,45 @@ describe("bindSessions：三态映射", () => {
     expect(await port.storedParentOf("child")).toBeUndefined();
     backend = stored.face;
     expect(await port.storedParentOf("child")).toBe("parent");
+  });
+});
+
+describe("bindSessions：会话身份", () => {
+  it("活会话的身份来自活 header，且**不问持久面**（重启后复用 id 的核对不该变成常态 IO）", () => {
+    const live = liveFace({ s1: undefined }, 4242);
+    const stored = storedFace({ s1: "不该问" }, 999);
+
+    const port = bindSessions(live.face, () => stored.face);
+    expect(port.liveIdentityOf("s1")).toEqual({ createdAt: 4242 });
+    expect(stored.calls).toEqual([]);
+  });
+
+  it("不在册时活身份缺席（undefined），由调用方决定要不要回落持久面", () => {
+    const port = bindSessions(liveFace({}).face, () => storedFace({ s1: "parent" }).face);
+    expect(port.liveIdentityOf("ghost")).toBeUndefined();
+  });
+
+  it("已结束会话的身份走持久面，读到的就是 header 的 createdAt", async () => {
+    const stored = storedFace({ s1: "parent" }, 777);
+    const port = bindSessions(liveFace({}).face, () => stored.face);
+    expect(await port.storedIdentityOf("s1")).toEqual({ createdAt: 777 });
+    expect(stored.calls).toEqual(["s1"]);
+  });
+
+  it("持久面里没有这条会话、或后端缺席 ⇒ undefined（不抛，调用方因此保住登记）", async () => {
+    const missing = bindSessions(liveFace({}).face, () => storedFace({}).face);
+    expect(await missing.storedIdentityOf("ghost")).toBeUndefined();
+    const absent = bindSessions(liveFace({}).face, () => undefined);
+    expect(await absent.storedIdentityOf("ghost")).toBeUndefined();
+  });
+
+  it("持久面抛错时**照原样抛回**：收口与记账都在 scope 域，适配层不替它决定", async () => {
+    const broken: StoredSessionsFace = {
+      stat: async () => {
+        throw new Error("session store offline");
+      },
+    };
+    const port = bindSessions(liveFace({}).face, () => broken);
+    await expect(port.storedIdentityOf("s1")).rejects.toThrow("session store offline");
   });
 });

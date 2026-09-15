@@ -16,6 +16,19 @@
  */
 import type { SessionContribution, SessionView, ViewFor, WrapInject } from "./shared/ports.ts";
 
+/**
+ * 所有播种面的释放函数。存在的理由只有一条：**没有 signal 的调用者不会自己撤销**。
+ * 官方界面包现在总是把页签的 signal 传进来（`FilesBody` 的 `start(tab.id, cwd, signal)`），
+ * 但那是它的实现细节；一旦某条路径不带 signal，`watched` 与两条订阅就会一直留在单例座位注册表上。
+ * 卸载时由 {@link releaseAllSeedings} 统一收口。
+ */
+const liveSeedings = new Set<() => void>();
+
+/** 整体释放：装配根在卸载路径上调用。重复调用无害（释放函数自己会把自己摘掉）。 */
+export function releaseAllSeedings(): void {
+  for (const release of [...liveSeedings]) release();
+}
+
 /** 官方 files face 里被我们覆盖的两个方法（其余成员原样透传）。 */
 type FaceStart = (tabId: string, root: string, signal?: AbortSignal) => void;
 type FaceLoad = (tabId: string, path: string, signal?: AbortSignal) => void;
@@ -75,23 +88,28 @@ function seeding(view: SessionView, face: Record<string, unknown>): Record<strin
     void view.root.refresh();
   };
 
-  /** 生效根变了：把每个在挂页签重新播一次种（官方 `start` 会重设根并重新列目录）。 */
+  /** 生效根变了：把在挂页签重新播一次种（官方 `start` 会重设根并重新列目录）。 */
   const reseed = (): void => {
     const next = view.root.getSnapshot();
     for (const [tabId, tab] of [...watched]) {
       if (tab.signal?.aborted === true) continue;
       const root = next ?? tab.fallback;
+      // 根没变就不重播：官方每次 `start` 都往同一个 signal 上再加一个 abort 监听并重列目录，
+      // 而「绑定没变」恰恰是最常见的那次通知（订阅只在实际变化时触发，但 fallback 与绑定同值时也走这里）。
+      if (root === tab.seeded) continue;
       tab.seeded = root;
       officialStart(tabId, root, tab.signal);
     }
   };
 
   const release = (): void => {
+    liveSeedings.delete(release);
     unsubscribe?.();
     unsubscribe = undefined;
     detachVisible?.();
     detachVisible = undefined;
   };
+  liveSeedings.add(release);
 
   const attach = (
     tabId: string,
@@ -113,12 +131,18 @@ function seeding(view: SessionView, face: Record<string, unknown>): Record<strin
   };
 
   const start: FaceStart = (tabId, root, signal) => {
-    // 先读一次绑定再播种：首帧树根必须是生效根，否则官方会把 cwd 一直钉在树上。
+    // 先按**官方 root 同步播种**，再用绑定纠正。反过来（等绑定读回来再播种）会把官方树的首帧
+    // 挂在一次没有超时的 fetch 上：宿主端点一慢，官方正文的 `state` 就停在 undefined 而返回 null，
+    // 于是**所有会话（含从未登记的）**的 Files 树一直空白，直到那次请求回来为止。
+    attach(tabId, root, root, signal);
+    officialStart(tabId, root, signal);
     void view.root.refresh().then(() => {
       if (signal?.aborted === true) return;
       const seeded = view.root.getSnapshot() ?? root;
-      attach(tabId, root, seeded, signal);
-      officialStart(tabId, seeded, signal);
+      const tab = watched.get(tabId);
+      if (tab === undefined || tab.seeded === seeded) return;
+      tab.seeded = seeded;
+      officialStart(tabId, seeded, tab.signal);
     });
   };
 

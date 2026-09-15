@@ -20,11 +20,14 @@ export function validateRecord(value: unknown): BindingRecord | undefined {
   const worktreeRoot = raw["worktreeRoot"];
   const branch = raw["branch"];
   const createdAt = raw["createdAt"];
+  const sessionCreatedAt = raw["sessionCreatedAt"];
   if (typeof repoRoot !== "string" || repoRoot.length === 0) return undefined;
   if (typeof worktreeRoot !== "string" || worktreeRoot.length === 0) return undefined;
   if (typeof branch !== "string") return undefined;
   if (typeof createdAt !== "string") return undefined;
-  return { repoRoot, worktreeRoot, branch, createdAt };
+  // 身份凭据缺席就丢弃这条记录：留着它等于留着「新会话可能继承旧登记」那个洞。
+  if (typeof sessionCreatedAt !== "number" || !Number.isFinite(sessionCreatedAt)) return undefined;
+  return { repoRoot, worktreeRoot, branch, createdAt, sessionCreatedAt };
 }
 
 /**

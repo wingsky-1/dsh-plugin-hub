@@ -7,10 +7,13 @@
  */
 
 /**
- * bindings.json 的形状版本。读到更高版本按损坏处理而不是猜着往下读：
- * 未来形状的字段含义未定，猜错会静默把别人的 worktree 挂到本会话上。
+ * bindings.json 的形状版本。读到其它版本按损坏处理而不是猜着往下读：
+ * 别的版本的字段含义未定，猜错会静默把别人的 worktree 挂到本会话上。
+ *
+ * v2 加了 `sessionCreatedAt`。**没有迁移路径**：本包尚未发布，磁盘上不存在合法的 v1 文件，
+ * 而按 v1 读意味着把「会话 id 可能会被复用」这个洞原样留着。
  */
-export const BINDINGS_VERSION = 1;
+export const BINDINGS_VERSION = 2;
 
 /** 一次「把某个 git worktree 登记给某个会话」。 */
 export interface BindingRecord {
@@ -20,8 +23,13 @@ export interface BindingRecord {
   readonly worktreeRoot: string;
   /** 登记时的分支名，仅用于展示与排查。 */
   readonly branch: string;
-  /** ISO 时间戳。 */
+  /** 登记时刻的 ISO 时间戳（人读用）。 */
   readonly createdAt: string;
+  /**
+   * 登记时会话 header 的 `createdAt`（epoch 毫秒）。会话 id 是**进程内计数器**，
+   * 重启后新会话会重新拿到 `session-1`；这一项是「这条登记属于哪个会话」的唯一凭据。
+   */
+  readonly sessionCreatedAt: number;
 }
 
 /** bindings.json 的完整形状。 */

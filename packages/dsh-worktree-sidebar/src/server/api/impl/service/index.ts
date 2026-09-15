@@ -29,12 +29,16 @@ class ApiService implements ApiInstance {
   /** 装配浏览器出口（组合根在 apply 期调用一次）。重复装配是编程错误，当场暴露。 */
   install(deps: ApiDeps): void {
     if (this.installed) throw new Error("dsh-worktree-sidebar: api 域只能装配一次");
-    this.installed = true;
-    this.disposers = registerEndpoints(
+    // 先注册、成功了才算装上：挂在装配标记之后的话，一次中途失败会让这个域停在
+    // 「已装配但没路由、也没摘除器」的半装态——组合根的释放链里没有它（它的 push 还没走到），
+    // 于是同进程的下一次装配会撞上「只能装配一次」。
+    const disposers = registerEndpoints(
       deps.register,
       [bindingsEndpoint(deps.binding, deps.scope), healthEndpoint(deps.binding, deps.scope)],
       deps.logger,
     );
+    this.installed = true;
+    this.disposers = disposers;
     this.live = true;
   }
 

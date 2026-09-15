@@ -10,7 +10,7 @@
 import type { BindingResponse } from "../shared/interface.ts";
 import { ROUTES } from "../shared/interface.ts";
 import { createBindingState } from "./bindings.ts";
-import { createInjectWrapper } from "./inject.ts";
+import { createInjectWrapper, releaseAllSeedings } from "./inject.ts";
 import type {
   ClientSlotsPort,
   ObservablePort,
@@ -67,23 +67,36 @@ interface ClientContext {
   readonly effect: (execute: () => () => void, label?: string) => unknown;
 }
 
+/**
+ * 视图缓存上限。它是**内存**上限而不是会话上限：一个长期开着的窗口见过多少会话，就有多少套视图。
+ * 淘汰最冷的那些是安全的——每套视图都是同一份宿主事实的独立读数（同一个端点、同一个 revision），
+ * 被淘汰的视图若仍被渲染层持有，它读到的仍是宿主当前值，不会分叉。
+ */
+const VIEW_CACHE_MAX = 128;
+
 export function apply(ctx: ClientContext): void {
   try {
     const views = new Map<string, SessionView>();
 
     /** 每个会话一套视图。同一 id 恒回同一对象：改写源与生效根读数都必须稳定。 */
     const viewFor: ViewFor = (sessionId) => {
-      let view = views.get(sessionId);
-      if (view === undefined) {
-        const state = createBindingState(readBinding, sessionId);
-        const source = createSessionsSource(ctx.sessions.list, sessionId, () =>
-          state.getSnapshot(),
-        );
-        // 绑定一变就通知渲染层重算快照：引用稳定的前提下，这是「树读到新 cwd」的唯一通道。
-        // 订阅与视图同寿命（整包卸载时 views.clear() 一起丢掉），不另做存活性推断。
-        state.subscribe(() => source.notify());
-        view = { source, root: state };
-        views.set(sessionId, view);
+      const cached = views.get(sessionId);
+      if (cached !== undefined) {
+        // 触碰即变新：淘汰的必须是**最冷**的会话，不能是当前正在渲染的那个。
+        views.delete(sessionId);
+        views.set(sessionId, cached);
+        return cached;
+      }
+      const state = createBindingState(readBinding, sessionId);
+      const source = createSessionsSource(ctx.sessions.list, sessionId, () => state.getSnapshot());
+      // 绑定一变就通知渲染层重算快照：引用稳定的前提下，这是「树读到新 cwd」的唯一通道。
+      // 订阅与视图同寿命（整包卸载时 views.clear() 一起丢掉），不另做存活性推断。
+      state.subscribe(() => source.notify());
+      const view: SessionView = { source, root: state };
+      views.set(sessionId, view);
+      if (views.size > VIEW_CACHE_MAX) {
+        const coldest = views.keys().next().value;
+        if (coldest !== undefined) views.delete(coldest);
       }
       return view;
     };
@@ -99,6 +112,8 @@ export function apply(ctx: ClientContext): void {
     ctx.effect(
       () => () => {
         restore();
+        // 没有 signal 的播种面不会自己撤销（见 inject.ts），卸载时在这里统一收口。
+        releaseAllSeedings();
         views.clear();
       },
       "dsh-worktree-sidebar: 会话视图与 files 页签接管",

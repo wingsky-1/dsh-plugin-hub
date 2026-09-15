@@ -27,7 +27,9 @@ export function buildCreateTool(deps: ToolsDeps): ToolDefinition {
           type: "string",
           description:
             "Optional branch to create for the worktree (git worktree add -b). Validated with " +
-            "git check-ref-format --branch before git is called. Omit to check out the repository HEAD.",
+            "git check-ref-format --branch before git is called. Omit to check out the repository HEAD " +
+            "detached (git worktree add --detach), which creates no branch and works for paths whose " +
+            "last segment is not a valid branch name.",
         },
       },
       required: ["path"],

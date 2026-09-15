@@ -21,6 +21,7 @@ const record = {
   worktreeRoot: "/repo-wt",
   branch: "feature",
   createdAt: "2026-09-14T00:00:00.000Z",
+  sessionCreatedAt: 1_700_000_000_000,
 };
 
 describe("emptyTable", () => {
@@ -99,6 +100,15 @@ describe("validateRecord", () => {
   it("拒绝非字符串字段", () => {
     expect(validateRecord({ ...record, branch: undefined })).toBeUndefined();
     expect(validateRecord({ ...record, createdAt: 0 })).toBeUndefined();
+  });
+
+  it("拒绝没有会话身份凭据的记录（缺席、非数字、非有限值）", () => {
+    // 这条是「会话 id 会被复用」的第一道闸门：凭据缺席的记录留着，就等于留着
+    // 「重启后一个新会话继承了上一进程的登记」这条静默看错地方的路径。
+    const { sessionCreatedAt: _omitted, ...withoutFingerprint } = record;
+    expect(validateRecord(withoutFingerprint)).toBeUndefined();
+    expect(validateRecord({ ...record, sessionCreatedAt: "1700000000000" })).toBeUndefined();
+    expect(validateRecord({ ...record, sessionCreatedAt: Number.NaN })).toBeUndefined();
   });
 });
 

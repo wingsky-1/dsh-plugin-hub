@@ -30,10 +30,17 @@ interface FakeHost {
   readonly serviceGets: string[];
   /** 装配**之后**才把持久会话后端挂上：晚挂的后端必须当场生效，而不是永久缺席。 */
   mountPersistence(face: {
-    stat(id: string): Promise<{ readonly header: { readonly parentSession?: string } } | undefined>;
+    stat(
+      id: string,
+    ): Promise<
+      | { readonly header: { readonly parentSession?: string; readonly createdAt: number } }
+      | undefined
+    >;
   }): void;
   /** 走 cordis 的卸载路径：把每个 effect 的 disposer 逐个 await 掉。 */
   disposeAll(): Promise<void>;
+  /** 装配中途的失败：恢复路由注册口（用来验证「失败后同一进程还能重新装」）。 */
+  allowRegister(): void;
 }
 
 interface FakeHostOptions {
@@ -43,13 +50,19 @@ interface FakeHostOptions {
   };
   /** 官方 **live** 会话表：id 在表里即「在册」，值是它的父（undefined = 顶层）。 */
   readonly live?: Record<string, string | undefined>;
+  /** 让 `webServer.register` 抛错：组合根的第 5 步（api 域）失败，前 4 个域已装上。 */
+  readonly registerThrows?: boolean;
 }
+
+/** 会话 header 的创建时间：登记里存的凭据必须与它一致，绑定才算属于当前这个会话。 */
+const BIRTH = 1_700_000_000_000;
 
 function fakeHost(options: FakeHostOptions = {}): FakeHost {
   const routes: WebRoute[] = [];
   const serviceGets: string[] = [];
   const disposers: Array<() => unknown> = [];
   let persistence: unknown = undefined;
+  let registerThrows = options.registerThrows === true;
   const ctx = {
     logger: { warn: () => undefined },
     on: () => () => undefined,
@@ -63,6 +76,7 @@ function fakeHost(options: FakeHostOptions = {}): FakeHost {
     },
     webServer: {
       register: (route: WebRoute) => {
+        if (registerThrows) throw new Error("webServer.register exploded");
         routes.push(route);
         return () => {
           const index = routes.indexOf(route);
@@ -76,7 +90,9 @@ function fakeHost(options: FakeHostOptions = {}): FakeHost {
         const present = options.live !== undefined && id in options.live;
         if (!present) return undefined;
         const parent = options.live?.[id];
-        return { header: parent === undefined ? {} : { parentSession: parent } };
+        return {
+          header: { createdAt: BIRTH, ...(parent === undefined ? {} : { parentSession: parent }) },
+        };
       },
     },
     // 可选服务的软取必须发生在**调用时刻**：装配期取一次会让晚挂的后端永久缺席
@@ -108,6 +124,9 @@ function fakeHost(options: FakeHostOptions = {}): FakeHost {
     },
     async disposeAll() {
       for (const dispose of disposers.splice(0).reverse()) await dispose();
+    },
+    allowRegister() {
+      registerThrows = false;
     },
   };
 }
@@ -184,12 +203,36 @@ describe("组合根的生命周期", () => {
       worktreeRoot: dir,
       branch: "feature",
       createdAt: "2026-09-15T00:00:00.000Z",
+      sessionCreatedAt: BIRTH,
     });
-    host.mountPersistence({ stat: async () => ({ header: { parentSession: "parent" } }) });
+    host.mountPersistence({
+      stat: async () => ({ header: { parentSession: "parent", createdAt: BIRTH } }),
+    });
     expect(await scopeApi.effectiveWorktree("child")).toBe(dir);
-    // 按调用时刻取：两次解析就是两次现取，而不是装配期缓存下来的那个 undefined。
-    expect(host.serviceGets).toEqual(["sessionPersistence", "sessionPersistence"]);
+    // 按调用时刻取：三次现取，而不是装配期缓存下来的那个 undefined。
+    // 两条来源各一次：给「child」读父链一次，给「parent」核对会话身份一次——身份也必须当场取，
+    // 否则晚挂的后端会让每一次核对都答「不知道」，而「不知道」的处置是保住登记（＝不摘失效绑定）。
+    expect(host.serviceGets).toEqual([
+      "sessionPersistence",
+      "sessionPersistence",
+      "sessionPersistence",
+    ]);
 
+    await host.disposeAll();
+  });
+
+  it("装配中途失败：已装域被逐个回滚、异常照原样抛给宿主，同一进程还能重新装", async () => {
+    const host = fakeHost({ registerThrows: true });
+    await expect(apply(host.ctx)).rejects.toThrow("webServer.register exploded");
+    expect(host.routes.length).toBe(0);
+
+    // 回滚真的执行过：域是进程内单例，漏掉任一 releaseXxx 都会让下面这次装配撞上「只能装配一次」。
+    // 同时按「未装配」失败——半装残留会让它在旧 deps 上继续服务。
+    expect(() => bindingApi.revision()).toThrow("binding 域尚未装配");
+
+    host.allowRegister();
+    await apply(host.ctx);
+    expect(host.routes.length).toBe(2);
     await host.disposeAll();
   });
 

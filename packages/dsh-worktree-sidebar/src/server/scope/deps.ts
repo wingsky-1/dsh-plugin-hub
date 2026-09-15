@@ -74,6 +74,28 @@ export interface SessionChainPort {
    * 后端出错（找不到 / 父链成环 / 持久化失败）**可以抛**，由本域收口成「到顶」。
    */
   storedParentOf(sessionId: string): Promise<string | undefined>;
+  /**
+   * 活会话的身份；不在册时回 undefined。
+   *
+   * 会话身份存在的唯一理由是 id **不是**跨进程稳定键：官方 id 是实例字段计数器
+   * （`dsh-session/lib/index.js` 的 `counter = 0` 与 `session-${++this.counter}`），
+   * 只防同进程冲突，重启后新会话会重新拿到 `session-1`。没有身份核对，上一进程遗留的登记
+   * 会被一个全新的会话静默继承——那正是本插件最想避免的「看错地方」。
+   *
+   * 与父链一样**分成两个来源**：合起来变成一个 `identityOf` 会把「活 header 一下就答了」
+   * 与「要读持久面」混成同一次记账，health 的成本读数就不再是它字面上的意思。
+   */
+  liveIdentityOf(sessionId: string): SessionIdentity | undefined;
+  /** 已结束会话的身份（持久 header）。取不到回 undefined；后端出错**可以抛**，由调用方收口。 */
+  storedIdentityOf(sessionId: string): Promise<SessionIdentity | undefined>;
+}
+
+/**
+ * 会话身份里唯一可作凭据的那一项。`createdAt` 来自会话 header（官方类型里是必填的 epoch 毫秒），
+ * 活会话与已结束会话读到的都是同一个值，因此「真恢复的会话」仍然对得上。
+ */
+export interface SessionIdentity {
+  readonly createdAt: number;
 }
 
 export interface ScopeDeps {

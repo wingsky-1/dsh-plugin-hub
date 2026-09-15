@@ -25,7 +25,7 @@ import type {
   TabsPort,
 } from "../../src/client/shared/ports.ts";
 import { createFakeSlots } from "../helpers.ts";
-import { BODY_SLOT, FILES_KIND, SHADOW_PRIORITY } from "../../src/client/takeover.ts";
+import { BODY_SLOT, FILES_KIND } from "../../src/client/takeover.ts";
 
 const OFFICIAL_ID = "@deepseek-ai/dsh-client-ui-sidebar-files/files";
 const SESSION_ID = "s1";
@@ -59,10 +59,13 @@ const OFFICIAL_DEFINITION: TabDefinitionLike = {
   title: () => "Files",
 };
 
-/** 排空在飞的微任务链：`start` 的播种是异步的（先读一次绑定）。 */
+/** 排空在飞的微任务链：`start` 之后还有一次异步的绑定读取与纠正播种。 */
 function settleMicrotasks(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
+
+/** 官方 root（官方正文递进来的 cwd）那一次播种：改用例时读起来比裸 CWD 常量清楚。 */
+const OFFICIAL_SEED = { tabId: TAB_ID, root: CWD };
 
 /** 一个会话在册的快照。 */
 function liveSnapshot(): SessionsSnapshotLike {
@@ -146,11 +149,12 @@ function mount(respond: () => Response): Mounted {
 
   const mounted: Mounted = {
     snapshot,
-    // 我们那条正文的 inject（按遮蔽 priority 认自己）：官方那条被遮蔽，是看不到它的。
+    // 我们那条正文的 inject：认自己不能靠一个常量（priority 是按官方那条算出来的），
+    // 但官方那条在夹具里**没有声明 priority**，所以「有 priority 的那条」就是我们。
     capturedInject: () => {
       const entry = fake
         .entries(BODY_SLOT)
-        .find((candidate) => candidate.options.priority === SHADOW_PRIORITY);
+        .find((candidate) => candidate.options.priority !== undefined);
       if (entry?.inject === undefined) throw new Error("我们那条正文没有登记上");
       return entry.inject;
     },
@@ -195,14 +199,71 @@ describe("树根播种：只在用户可感知的时机读绑定（没有定时�
     expect(h.fetchesFor(SESSION_ID)).toBe(0);
   });
 
-  it("打开页签：先读一次绑定，再按生效根播种（而不是首帧的 cwd）", async () => {
+  it("打开页签：先按官方 cwd 播种，绑定到达后再纠正到生效根（首帧不空白）", async () => {
     const h = mount(bindingResponse);
     const face = h.capturedInject()(SESSION_ID) as Face;
     face.start?.(TAB_ID, CWD);
     await settleMicrotasks();
 
     expect(h.fetchesFor(SESSION_ID)).toBe(1);
-    expect(h.starts()).toEqual([{ tabId: TAB_ID, root: "/wt" }]);
+    expect(h.starts()).toEqual([OFFICIAL_SEED, { tabId: TAB_ID, root: "/wt" }]);
+  });
+
+  it("绑定查询永不返回时，官方那一帧照播（树不会一直空白）", async () => {
+    // 端点慢/挂起时，官方正文的 state 会停在 undefined 并渲染 null；把首帧挂在这次 fetch 上，
+    // 等于让**所有会话**（含从未登记的）的 Files 树一起空白。所以必须先播官方 root。
+    const h = mount(() => new Promise<Response>(() => undefined) as unknown as Response);
+    const face = h.capturedInject()(SESSION_ID) as Face;
+    face.start?.(TAB_ID, CWD);
+    await settleMicrotasks();
+
+    expect(h.starts()).toEqual([OFFICIAL_SEED]);
+  });
+
+  it("拉取失败保持上次成功态：HTTP 失败不等于「没有绑定」", async () => {
+    let status = 200;
+    const h = mount(() =>
+      status === 200 ? bindingResponse() : new Response(null, { status: 500 }),
+    );
+    const face = h.capturedInject()(SESSION_ID) as Face;
+    face.start?.(TAB_ID, CWD);
+    await settleMicrotasks();
+    expect(h.starts()).toEqual([OFFICIAL_SEED, { tabId: TAB_ID, root: "/wt" }]);
+
+    status = 500;
+    face.load?.(TAB_ID, "/wt");
+    await settleMicrotasks();
+
+    // 失败被当成「未绑定」的话，这里会多出一次回退到 cwd 的播种——那正是「看错地方」。
+    expect(h.starts()).toEqual([OFFICIAL_SEED, { tabId: TAB_ID, root: "/wt" }]);
+  });
+
+  it("乱序返回：更早发出的请求带着更小 revision 后到时不回退快照", async () => {
+    const gates: Array<(response: Response) => void> = [];
+    const h = mount(
+      () => new Promise<Response>((resolve) => gates.push(resolve)) as unknown as Response,
+    );
+    const face = h.capturedInject()(SESSION_ID) as Face;
+
+    face.start?.(TAB_ID, CWD); // 请求 1
+    await settleMicrotasks();
+    face.load?.(TAB_ID, CWD); // 请求 2（官方刷新那一跳）
+    await settleMicrotasks();
+    expect(gates.length).toBe(2);
+
+    // 新的先回（revision 2 /new）→ 播种 /new
+    gates[1]?.(
+      new Response(JSON.stringify({ revision: 2, worktreePath: "/new" }), { status: 200 }),
+    );
+    await settleMicrotasks();
+    expect(h.starts()).toEqual([OFFICIAL_SEED, { tabId: TAB_ID, root: "/new" }]);
+
+    // 旧的后回（revision 1 /old）→ 必须被丢掉，否则快照与树根一起回退
+    gates[0]?.(
+      new Response(JSON.stringify({ revision: 1, worktreePath: "/old" }), { status: 200 }),
+    );
+    await settleMicrotasks();
+    expect(h.starts()).toEqual([OFFICIAL_SEED, { tabId: TAB_ID, root: "/new" }]);
   });
 
   it("点刷新（load 命中已播种的根）会重读绑定；worktree 变了就用官方 start 重根", async () => {
@@ -211,18 +272,34 @@ describe("树根播种：只在用户可感知的时机读绑定（没有定时�
     const face = h.capturedInject()(SESSION_ID) as Face;
     face.start?.(TAB_ID, CWD);
     await settleMicrotasks();
-    expect(h.starts()).toEqual([{ tabId: TAB_ID, root: "/wt" }]);
+    expect(h.starts()).toEqual([OFFICIAL_SEED, { tabId: TAB_ID, root: "/wt" }]);
 
     body = { revision: 2, worktreePath: "/wt2" };
     face.load?.(TAB_ID, "/wt");
     await settleMicrotasks();
 
     expect(h.starts()).toEqual([
+      OFFICIAL_SEED,
       { tabId: TAB_ID, root: "/wt" },
       { tabId: TAB_ID, root: "/wt2" },
     ]);
     // 官方那次 load 仍要发生：我们只补一次重读，不吞掉官方刷新动作。
     expect(h.loads()).toEqual([{ tabId: TAB_ID, path: "/wt" }]);
+  });
+
+  it("绑定变了但生效根没变：不重播官方 start（官方每次 start 都会再加一个 abort 监听）", async () => {
+    let body: Record<string, unknown> = { revision: 1, worktreePath: "/wt" };
+    const h = mount(() => new Response(JSON.stringify(body), { status: 200 }));
+    const face = h.capturedInject()(SESSION_ID) as Face;
+    face.start?.(TAB_ID, CWD);
+    await settleMicrotasks();
+
+    // revision 涨了、路径没变：状态会通知，但根没变，因此不该再调一次官方 start。
+    body = { revision: 2, worktreePath: "/wt" };
+    face.load?.(TAB_ID, "/wt");
+    await settleMicrotasks();
+
+    expect(h.starts()).toEqual([OFFICIAL_SEED, { tabId: TAB_ID, root: "/wt" }]);
   });
 
   it("绑定被摘掉（worktreePath: null）时回退到官方递进来的 cwd", async () => {
@@ -237,9 +314,65 @@ describe("树根播种：只在用户可感知的时机读绑定（没有定时�
     await settleMicrotasks();
 
     expect(h.starts()).toEqual([
+      OFFICIAL_SEED,
       { tabId: TAB_ID, root: "/wt" },
       { tabId: TAB_ID, root: CWD },
     ]);
+  });
+
+  it("信号在 start 之前就已 abort：不再为它重播（reseed 的 aborted 跳过）", async () => {
+    let body: Record<string, unknown> = { revision: 1, worktreePath: "/wt" };
+    const h = mount(() => new Response(JSON.stringify(body), { status: 200 }));
+    const face = h.capturedInject()(SESSION_ID) as Face;
+    const controller = new AbortController();
+    controller.abort();
+    face.start?.(TAB_ID, CWD, controller.signal);
+    await settleMicrotasks();
+    const before = h.starts().length;
+    // 刷新那一跳认的是「最近播种进去的根」：用实际播过的根去触发，免得判据依赖某个固定字符串。
+    const seeded = h.starts().at(-1)?.root ?? CWD;
+
+    // 已经 abort 的信号不会再触发 abort 事件，页签因此留在 watched 里；
+    // 重播时的 aborted 判断就是它不把树重设到一个已经关掉的页签上的唯一闸门。
+    body = { revision: 2, worktreePath: "/wt2" };
+    face.load?.(TAB_ID, seeded, controller.signal);
+    await settleMicrotasks();
+
+    expect(h.starts().length).toBe(before);
+  });
+
+  it("没有 signal 的播种面在整包卸载时被收口：卸载后绑定变化不再重播", async () => {
+    // 官方界面包现在总是把页签 signal 传进来，但那是它的实现细节：没有 signal 时
+    // 「最后一个页签 abort」永远不会发生，watched 与两条订阅会一直挂在单例座位注册表上。
+    let body: Record<string, unknown> = { revision: 1, worktreePath: "/wt" };
+    const h = mount(() => new Response(JSON.stringify(body), { status: 200 }));
+    const face = h.capturedInject()(SESSION_ID) as Face;
+    face.start?.(TAB_ID, CWD);
+    await settleMicrotasks();
+    const before = h.starts().length;
+
+    h.dispose();
+    body = { revision: 2, worktreePath: "/wt2" };
+    face.load?.(TAB_ID, "/wt");
+    await settleMicrotasks();
+
+    expect(h.starts().length).toBe(before);
+  });
+
+  it("视图缓存有上限：最冷的会话被淘汰，仍然在缓存的会话引用稳定", () => {
+    const h = mount(bindingResponse);
+    const inject = h.capturedInject();
+    const sourceOf = (sessionId: string): unknown =>
+      (inject(sessionId)["hooks"] as { sessions: unknown }).sessions;
+
+    const cold = sourceOf("s-cold");
+    for (let i = 0; i < 200; i += 1) sourceOf("s-" + i);
+
+    // 被挤出缓存之后重建：同一个 id 拿到的是另一套状态（它自己仍会读同一份宿主事实）。
+    expect(sourceOf("s-cold")).not.toBe(cold);
+    // 缓存内的会话仍然恒回同一对象（渲染层按源缓存订阅，换了对象会被当成状态一直在变）。
+    const hot = sourceOf("s-hot");
+    expect(sourceOf("s-hot")).toBe(hot);
   });
 
   it("展开子目录（load 更深路径）不触发请求，但官方 load 照旧", async () => {

@@ -41,7 +41,8 @@ export function initRepo(dir: string): void {
 }
 
 /**
- * 假座位登记表：语义逐条对齐官方 SlotCore（`dsh-client-ui-slots/lib/index.js:72-152` 与 `:187-202`）——
+ * 假座位登记表：语义逐条对齐官方 SlotCore（`@deepseek-ai/dsh-client-ui-slots` 的 `lib/index.js:72-152` 与
+ * `:187-200`；该包不在 dsh 安装树里，可读副本见 takeover.ts 头部注释给的 catalog 锁版路径）——
  * 同 key 同 priority 才抛、按 priority 升序、每个 cell 取首条存活项、被 abdicate 的条目不再当值；
  * 登记与撤销都按官方的**微任务批处理**通知（`markDirty` + `queueMicrotask`）。
  *

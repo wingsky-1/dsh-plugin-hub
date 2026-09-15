@@ -6,7 +6,9 @@
  * 把它藏进 impl 会让组合根要么直引实现、要么自己重写一份 exec。
  * 单例本身不出这道门：它一旦被转出就成了本域的第二张公开契约，调用方还能持有它、绕过释放。
  */
-import type { GitDeps } from "./deps.ts";
+import type { BelongsToReading, GitDeps } from "./deps.ts";
+import type { WorktreeEntry } from "./impl/inspect/index.ts";
+import type { GitMutation } from "./impl/service/index.ts";
 import { gitService } from "./impl/service/index.ts";
 
 /** 真实的 git 执行面：它没有状态，故按常量转出而不是工厂。 */
@@ -23,36 +25,44 @@ export function releaseGit(): void {
 }
 
 /** 该目录是否在某个仓库里；是则给公共 git 目录的**绝对**路径。 */
-export function commonDir(dir: string) {
+export function commonDir(dir: string): Promise<string | undefined> {
   return gitService.commonDir(dir);
 }
 
 /** 同一主仓库下的全部 worktree。 */
-export function listWorktrees(dir: string) {
+export function listWorktrees(dir: string): Promise<readonly WorktreeEntry[]> {
   return gitService.listWorktrees(dir);
 }
 
-/** `dir` 与 `repoRoot` 是否属于同一仓库。 */
-export function belongsTo(dir: string, repoRoot: string) {
+/** `dir` 与 `repoRoot` 是否属于同一仓库。三态：`unknown` 不是「不同」。 */
+export function belongsTo(dir: string, repoRoot: string): Promise<BelongsToReading> {
   return gitService.belongsTo(dir, repoRoot);
 }
 
 /** 某 worktree 的当前分支显示名。 */
-export function headBranch(dir: string) {
+export function headBranch(dir: string): Promise<string | undefined> {
   return gitService.headBranch(dir);
 }
 
 /** 让 git 校验分支名。 */
-export function checkRefFormat(branch: string) {
+export function checkRefFormat(branch: string): Promise<boolean> {
   return gitService.checkRefFormat(branch);
 }
 
 /** 新建 worktree。 */
-export function addWorktree(repoRoot: string, path: string, branch: string | undefined) {
+export function addWorktree(
+  repoRoot: string,
+  path: string,
+  branch: string | undefined,
+): Promise<GitMutation> {
   return gitService.addWorktree(repoRoot, path, branch);
 }
 
 /** 删除 worktree。 */
-export function removeWorktree(repoRoot: string, path: string, force: boolean) {
+export function removeWorktree(
+  repoRoot: string,
+  path: string,
+  force: boolean,
+): Promise<GitMutation> {
   return gitService.removeWorktree(repoRoot, path, force);
 }

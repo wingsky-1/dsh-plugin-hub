@@ -1,9 +1,10 @@
 /**
  * git 域 argv 构造与输出解析 —— 纯函数逐字断言。
  *
- * 为什么逐字断言 argv：`--` 的位置与 `-b` 的次序是**安全属性**而不是风格。
- * 少了 `--`25，一个名为 `--force` 的路径就会被 git 当成标志；分支名校验少一步，
- * 一个含换行的分支名就能改写 git 的其它参数。这些失效都不报错，只做错事。
+ * 为什么逐字断言 argv：`--` 的位置与 `-b` / `--detach` 的次序是**安全属性**而不是风格。
+ * 少了 `--`，一个名为 `--force` 的路径就会被 git 当成标志；省略分支时不显式 `--detach`，
+ * 路径 basename 会被 git 当成新分支名二次解析（含空格即 fatal，以 `-` 开头即被当开关）；
+ * 分支名校验少一步，一个含换行的分支名就能改写 git 的其它参数。这些失效都不报错，只做错事。
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -41,15 +42,21 @@ describe("argv 构造", () => {
     ]);
   });
 
-  it("新建 worktree：不给分支时没有 -b", () => {
+  it("新建 worktree：不给分支时补 --detach，而不是没有标志", () => {
+    // 省略 branch 时 git 的默认行为是「新建一个以目录 basename 命名的分支」：basename 含空格
+    // （macOS 家目录常见）会 fatal，以 `-` 开头会被当成开关——`--` 挡不住这条二次解析链路。
     expect(addWorktreeArgs("/repo", "/wt", undefined)).toEqual([
       "-C",
       "/repo",
       "worktree",
       "add",
+      "--detach",
       "--",
       "/wt",
     ]);
+    // 对含空格与以 - 开头的 basename 也一视同仁：argv 里没有把它们当分支名的那条路径。
+    expect(addWorktreeArgs("/repo", "/wt space", undefined)).toContain("--detach");
+    expect(addWorktreeArgs("/repo", "/-dash", undefined)).toContain("--detach");
   });
 
   it("删除 worktree：--force 在 -- 之前", () => {
