@@ -6,12 +6,12 @@ Turns "open with the default application" file requests inside the conversation 
 
 ## What it does
 
-Since dsh 0.1.5, almost every file click in a conversation already opens the built-in right-Sidebar preview; only one path still hands a file to an **external application**: `POST /api/present.open` (the Host's `sessionController.openWorkspacePath`). It has two browser-side entry points:
+Since dsh 0.1.5-rc.1 (this plugin set targets rc releases only), almost every file click in a conversation already opens the built-in right-Sidebar preview; only one path still hands a file to an **external application**: `POST /api/present.open` (the Host's `sessionController.openWorkspacePath`). It has two browser-side entry points:
 
 - the `present` deliverable card menu item "open with the default application";
 - clicking a **mention** of a presented file in the assistant's final response (inline-code reference).
 
-This plugin takes over that request in the browser: when it matches an "open with the default application" call it sends nothing over the network, asks `ctx.sidebarRight.openResource` to open the right-Sidebar preview using the official address grammar (`dsh-resource://file/session/<id>/<path>`), and synthesizes the success response the official caller understands.
+This plugin takes over that request in the browser: when it matches an "open with the default application" call it sends nothing over the network, asks `ctx.sidebarRight.openResource` to open the right-Sidebar preview using the official address grammar (`dsh-resource://file/session/<id>/<path>`), and synthesizes the success response the official caller understands. Only `action=open` is taken over; `action=reveal` passes through (see below).
 
 Paths that are deliberately **not** taken over (maintainer decision: shrink the feature surface):
 
@@ -21,11 +21,13 @@ Paths that are deliberately **not** taken over (maintainer decision: shrink the 
 
 The plugin does **not** register the official `documentPreviews` / `sidebarRightTabs` extension points, and does not modify official DOM or styles.
 
+The package still ships **two entries**: the Host half is an empty shell (`name` / `apply` / `ROUTES = {}`) kept only for bundle loading and the `verify:npmlayout` contract literals — it registers no Host routes, reads no files and injects no Host service. The browser half has **no UI**: it only does read-only DOM collection (reading the path from official cards and inline mentions on click) plus one `window.fetch` interception.
+
 ## Capability change (repositioning)
 
-Earlier versions shipped their own previewer (Modal + image lightbox + Markdown/Mermaid + code highlighting + git Diff + virtual HTML serving + binary download card + path fallback search + self-hosted Host routes) plus a conversation click interceptor. Since dsh 0.1.5 the built-in preview covers the main capabilities, so the plugin shrank to the single forwarding duty described above; that code, its dependencies and the Host routes have all been removed.
+Earlier versions shipped their own previewer (Modal + image lightbox + Markdown/Mermaid + code highlighting + git Diff + virtual HTML serving + binary download card + path fallback search + self-hosted Host routes) plus a conversation click interceptor. Since dsh 0.1.5-rc.1 the built-in preview covers the main capabilities, so the plugin shrank to the single forwarding duty described above; that code, its dependencies and the Host routes have all been removed.
 
-**Upgrade note**: after upgrading, clicking a `present` card or a mention opens the right-Sidebar preview instead of launching a desktop application; the previous Modal-only capabilities (Diff, Mermaid, multi-file HTML assets) are no longer provided — the built-in preview renderers own them. The plugin has no user-facing options any more; uninstalling is the off switch.
+**Upgrade note**: the prerequisite is to **upgrade dsh itself to `0.1.5-rc.1` first** — the official resource address and Sidebar navigation follow the new Host contracts and are not guaranteed on older Hosts. After upgrading, clicking a `present` card or a mention opens the right-Sidebar preview instead of launching a desktop application; the previous Modal-only capabilities (Diff, Mermaid, multi-file HTML assets) are no longer provided — the built-in preview renderers own them. The plugin has no user-facing options any more; uninstalling is the off switch.
 
 ## Install
 
@@ -71,13 +73,15 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-web-file-preview
 
 ## Verification
 
-Unit tests live only in `test/*.test.ts` (`import "../lib/index.js"` tests the artifact); stryker reuses the same assertions through the lib-to-src hook.
+Tests come in two layers: `test/unit/` imports src directly (pure logic plus read-only DOM collection with a minimal stub — no DOM environment needed); `test/client/` reads the `lib/` artifact and executes it through `node:vm` to lock the browser bundle's wiring contract (**requires a build first**). The mutation test surface is declared in `vitest.stryker.d/dsh-web-file-preview.config.ts`; stryker instruments `src/` directly.
 
 ```sh
-pnpm build && pnpm test                 # in the repo: build + smoke (address golden table + fetch interlock fixture)
+pnpm build                                             # build first: test/client/** asserts on lib/ artifacts
+pnpm --filter @wingsky-1/dsh-web-file-preview test     # unit + contract, 6 test files
+pnpm gate:changed                                      # iteration gate; use pnpm gate:pr before opening a PR
 ```
 
-The address builder is kept in lockstep with the official `fileAddressFor` from `@deepseek-ai/dsh-util-workspace-path`: the right Sidebar keys tabs by the address itself, so any drift would open the same file as two tabs.
+The address builder is kept in lockstep with the official `fileAddressFor` from `@deepseek-ai/dsh-util-workspace-path@0.1.5-rc.1` (a 19-row golden table plus 47 boundary cases in `test/unit`, used when re-checking after an upstream upgrade): the right Sidebar keys tabs by the address itself, so any drift would open the same file as two tabs.
 
 ## Compatibility (read-only coupling)
 
@@ -92,7 +96,8 @@ When any of them changes the behavior is a **graceful pass-through**: the takeov
 ## Security model
 
 - **No self-hosted routes any more**: the earlier `/api/dsh-file-preview/*` surface (raw file serving, virtual HTML serving, token store) was removed with the repositioning. The plugin no longer exposes any file-reading surface to the browser and no longer needs loopback fences, serve tokens or CSP fallbacks — **the earlier LAN warning ("exposed through a proxy, local files become previewable") is gone with it**.
-- **Read-only coupling**: the plugin only reads (never writes) request URLs and the `title` attribute of official card DOM; the collected path is used solely to build an official address string.
+- **Read-only coupling**: the plugin only reads (never writes) request URLs and the `title` attribute of official card DOM; the collected path is used solely to build an official address string. The click record is a single slot **cleared on use**, never reused across requests, and expires after a 5-minute TTL.
+- **Same-origin only**: only same-origin `/api/present.open` calls are taken over; cross-origin paths with the same name always pass through (the wrapper sits on the global `window.fetch`).
 - **No network egress**: on a match the plugin sends no request at all and calls the official Sidebar navigation directly; on a miss or any failure it replays the official request unchanged.
 - **Least privilege**: the browser half injects only `sessions` (session cwd, for address folding) and `sidebarRight` (official Sidebar navigation); the Host half no longer needs `webServer`, the filesystem or any official service.
 

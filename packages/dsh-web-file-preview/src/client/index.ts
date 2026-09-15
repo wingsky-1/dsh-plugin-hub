@@ -6,9 +6,13 @@
  * 数据面与样式，也不再拦截对话内的普通文件点击——那些点击官方本来就打开右侧栏预览。
  */
 
-import { REDIRECT_SERVICE, installPresentOpenRedirect } from "./present-open-redirect.ts";
+import {
+  REDIRECT_SERVICE,
+  installPresentOpenRedirect,
+  type ClientContext,
+} from "./present-open-redirect.ts";
 
-export function apply(ctx: any): void {
+export function apply(ctx: ClientContext): void {
   try {
     const restore = installPresentOpenRedirect(ctx);
     ctx.effect(

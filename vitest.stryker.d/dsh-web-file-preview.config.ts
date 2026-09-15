@@ -8,7 +8,10 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
+      'packages/dsh-web-file-preview/test/unit/unit-host-entry.test.ts',
+      'packages/dsh-web-file-preview/test/unit/unit-present-open-redirect.test.ts',
       'packages/dsh-web-file-preview/test/unit/unit-present-open.test.ts',
+      'packages/dsh-web-file-preview/test/unit/unit-readme-parity.test.ts',
     ],
     environment: 'node',
     testTimeout: 60_000,

@@ -147,14 +147,16 @@ test("非 JSON 文件不参与扫描（只看 scripts/data 下的 .json）", () 
   }
 });
 
-test("本仓真实快照：3 条在册（数字变即提示同步台账与 #765）", () => {
-  // 3 = gate-exemptions.json 1（#762 客户端 var，临时）+ coverage.config.json 1（**/client/** 排除，
-  //     pending-project，等 happy-dom project）+ gauntlet.config.json 1（crap.strict 观察期，仅解除
-  //     条件、无到期日，#765 纳管）。plugins-manifest 那批「尚未接管」的条目已随 #774 收口全部
-  //     转为 configSurfaces 声明（含 2 条 surface: "none"），pending 节连同它的 reviewBy 一并删除。
+test("本仓真实快照：4 条在册（数字变即提示同步台账与 #765）", () => {
+  // 4 = gate-exemptions.json 1（#762 客户端 var，临时）+ coverage.config.json 2（客户端面排除：
+  //     其余 4 包 + shared/client 两条 pending-project，等各自的直连 src 单测）+ gauntlet.config.json 1
+  //     （crap.strict 观察期，仅解除条件、无到期日，#765 纳管）。dsh-web-file-preview 的客户端面
+  //     本轮已解除排除（其 client 只有只读 DOM 采集，已由 test/unit 直连 src 覆盖），故原
+  //     **/client/** 单条拆为「其余 4 包 + shared/client」两条。plugins-manifest 那批「尚未接管」
+  //     的条目已随 #774 收口全部转为 configSurfaces 声明（含 2 条 surface: "none"）。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /合计 3 条：已过期 0 /);
+  assert.match(r.stdout, /合计 4 条：已过期 0 /);
   assert.match(r.stdout, /仅解除条件（无到期日）1/);
   // crap.strict 的解除条件必须在台账里（只写日期会逼出「到期了再讨论一次」）
   assert.match(r.stdout, /\$\.crap {2}threshold=16/);
@@ -162,6 +164,10 @@ test("本仓真实快照：3 条在册（数字变即提示同步台账与 #765�
   assert.match(r.stdout, /\$\.exemptions\[0\] {2}gate=forbid-module-state-src/);
   assert.match(r.stdout, /trackingIssue #762/);
   // 覆盖率面的临时排除项也必须在台账里（它是「到期复核」的输入，不该只活在配置里）
-  assert.match(r.stdout, /\$\.exclude\[4\] {2}pattern=\*\*\/client\/\*\*/);
+  assert.match(
+    r.stdout,
+    /\$\.exclude\[4\] {2}pattern=packages\/\{dsh-lan-proxy,dsh-mcp-manager,dsh-notifier,dsh-provider-usage\}\/src\/client\/\*\*/,
+  );
+  assert.match(r.stdout, /\$\.exclude\[5\] {2}pattern=shared\/client\/\*\*/);
   assert.match(r.stdout, /reviewBy 2027-03-31/);
 });

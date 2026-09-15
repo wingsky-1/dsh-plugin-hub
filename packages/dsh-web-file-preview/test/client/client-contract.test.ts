@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-web-file-preview — 宿主入口与客户端产物契约（issue #698 重定位后）。
  *
@@ -24,8 +23,8 @@ import {
 const pkgDir = fileURLToPath(new URL("../../", import.meta.url));
 
 describe("dsh-web-file-preview 宿主入口与客户端产物契约（#698 重定位后）", () => {
-  let client;
-  let host;
+  let client: string;
+  let host: string;
 
   beforeAll(() => {
     client = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");

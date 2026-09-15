@@ -37,18 +37,13 @@
         "threshold": 60
       },
       "dsh-web-file-preview": {
-        "baselineScore": 42.6,
-        "baselineCovered": 72.27,
-        "baselineKilled": 330,
-        "baselineTotal": 777,
-        "baselineNoCoverage": 319,
-        "baselineErrors": 0,
-        "baselineDate": "2026-08-24",
-        "baselineDuration": "15s",
-        "baselineScope": "#698 重定位后 mutate 面 = src/{index,present-open}.ts（客户端 src/client/** 排除在 mutate 面外）；旧基线（自研预览实现的 lib/index.js:1255-1924）随代码删除作废，待 observe 夜间全量班重建",
+        "fixedCovered": 81.65,
+        "fixedDate": "2026-09-14",
+        "fixedDuration": "45s",
         "config": "stryker.conf.d/dsh-web-file-preview.json",
         "threshold": 60,
-        "scope": "src 级全量（#276 方案 A）；基线为 src 口径，由 observe 夜间全量班重建"
+        "scope": "src 级单段（#276 方案 A）：mutate = src/**/*.ts，排除纯转发门面 src/shared/interface.ts（facade）。本轮技术债清理后 src/client/** 已进面（原 !client/** 与 !types.ts 排除一并移除），面含客户端装配与收口逻辑。",
+        "baselineNote": "本机单包口径：npx stryker run stryker.conf.d/dsh-web-file-preview.json，2026-09-14，45s 实测 covered 81.65%（killed 227 / survived 51 / noCov 0 / total 278；present-open.ts 90.96%、client 面 65.35%）。此前记录的 baselineScore/baselineKilled/baselineTotal/baselineNoCoverage 描述的是 #698 前后的旧面（total 777），既无消费者也不可比，已删除；回落判据只读 fixedCovered（observe-check.mjs 的回退链 fixedCovered ?? baselineCovered）。客户端面存活体以等价变异为主（防御性判空 + catch 兜底使两种写法不可区分）。"
       },
       "dsh-mcp-manager": {
         "baselineScore": 58.74,

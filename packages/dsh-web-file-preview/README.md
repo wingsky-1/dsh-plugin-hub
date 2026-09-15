@@ -6,12 +6,12 @@
 
 ## 它做什么
 
-dsh 0.1.5 起，对话内绝大多数文件点击已经是官方右侧栏预览；仍会把文件交给**外部应用**的只剩一条链路：`POST /api/present.open`（宿主 `sessionController.openWorkspacePath`），它有两个客户端入口：
+dsh 0.1.5-rc.1 起（本插件集只适配 rc 版本），对话内绝大多数文件点击已经是官方右侧栏预览；仍会把文件交给**外部应用**的只剩一条链路：`POST /api/present.open`（宿主 `sessionController.openWorkspacePath`），它有两个客户端入口：
 
 - `present` 交付物卡片菜单的「用默认应用打开」；
 - 助手最终回复里对 presented 文件的**提及点击**（inline code 引用）。
 
-本插件在客户端把这条请求收口：拦到「用默认应用打开」后不再出网，改为用官方地址语法（`dsh-resource://file/session/<id>/<path>`）请 `ctx.sidebarRight.openResource` 打开右侧栏预览，并合成官方调用方读得懂的成功响应。
+本插件在客户端把这条请求收口：拦到「用默认应用打开」后不再出网，改为用官方地址语法（`dsh-resource://file/session/<id>/<path>`）请 `ctx.sidebarRight.openResource` 打开右侧栏预览，并合成官方调用方读得懂的成功响应。收口只认 `action=open`；`action=reveal` 原样放行（见下）。
 
 **不接管**的路径（按「减少功能面」的维护者决策）：
 
@@ -21,11 +21,13 @@ dsh 0.1.5 起，对话内绝大多数文件点击已经是官方右侧栏预览�
 
 插件**不注册**官方 `documentPreviews` / `sidebarRightTabs` 扩展点，也不修改官方 DOM 或样式。
 
+包仍是**双入口**：宿主半边是空壳（`name` / `apply` / `ROUTES = {}`），只为 bundle 装载与 `verify:npmlayout` 的契约字面量保留——它不注册宿主路由、不读文件、不注入任何宿主服务。客户端半边**没有界面**：只做只读 DOM 采集（点击时从官方卡片与正文提及读路径）与一次 `window.fetch` 收口。
+
 ## 能力变更（重定位说明）
 
-本插件早期版本自带预览器（Modal + 图片灯箱 + Markdown/Mermaid + 代码高亮 + git Diff + HTML 虚拟伺服 + 二进制下载卡 + 路径兜底搜索 + 自建宿主路由）与对话内点击拦截。官方预览自 dsh 0.1.5 起覆盖了主干能力，插件因此收缩为上面的单一转发职责，相关代码、依赖与宿主路由已全部移除。
+本插件早期版本自带预览器（Modal + 图片灯箱 + Markdown/Mermaid + 代码高亮 + git Diff + HTML 虚拟伺服 + 二进制下载卡 + 路径兜底搜索 + 自建宿主路由）与对话内点击拦截。官方预览自 dsh 0.1.5-rc.1 起覆盖了主干能力，插件因此收缩为上面的单一转发职责，相关代码、依赖与宿主路由已全部移除。
 
-**升级须知**：升级后行为变化是——`present` 交付物卡片与回复提及的点击，从「拉起桌面应用」变为「打开右侧栏预览」；原 Modal 内的 Diff / Mermaid / HTML 多文件资源等能力不再提供（交给官方预览渲染器）。插件不再有用户可配置项，关闭方式即卸载。
+**升级须知**：先决条件是**先把 dsh 本体升到 `0.1.5-rc.1`**——官方资源地址与右侧栏导航按新宿主契约实现，旧宿主下不保证行为。升级后行为变化是——`present` 交付物卡片与回复提及的点击，从「拉起桌面应用」变为「打开右侧栏预览」；原 Modal 内的 Diff / Mermaid / HTML 多文件资源等能力不再提供（交给官方预览渲染器）。插件不再有用户可配置项，关闭方式即卸载。
 
 ## 安装
 
@@ -71,13 +73,15 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-web-file-preview
 
 ## 验证
 
-单元测试只维护 `test/*.test.ts`（`import "../lib/index.js"` 测产物）；stryker 经 lib→src hook 复用同一份断言。
+测试分两层：`test/unit/` 直连 src（纯逻辑 + 只读 DOM 采集，用最小桩、不需要 DOM 环境）；`test/client/` 读 `lib/` 产物并用 `node:vm` 执行，锁客户端 bundle 的装配契约（**需先构建**）。变异面测试清单由 `vitest.stryker.d/dsh-web-file-preview.config.ts` 声明，stryker 直插 `src/`。
 
 ```sh
-pnpm build && pnpm test                 # 仓库内：构建 + smoke（含地址构造 golden 表与 fetch 收口夹具）
+pnpm build                                             # 先构建：test/client/** 断言的是 lib/ 产物
+pnpm --filter @wingsky-1/dsh-web-file-preview test     # unit + contract，共 6 个测试文件
+pnpm gate:changed                                      # 迭代门禁；开 PR 前用 pnpm gate:pr
 ```
 
-地址构造与官方 `@deepseek-ai/dsh-util-workspace-path` 的 `fileAddressFor` 逐条对拍维护：官方右侧栏 tab 以地址本身作 contentId 去重，任一条漂移都会让同一文件出现两个 tab。
+地址构造与官方 `@deepseek-ai/dsh-util-workspace-path@0.1.5-rc.1` 的 `fileAddressFor` 逐条对拍维护（`test/unit` 的 golden 表 19 条，另有 47 条边界用例用于上游升级时的复查）：官方右侧栏 tab 以地址本身作 contentId 去重，任一条漂移都会让同一文件出现两个 tab。
 
 ## 兼容性（只读耦合点）
 
@@ -92,7 +96,8 @@ pnpm build && pnpm test                 # 仓库内：构建 + smoke（含地址
 ## 安全模型
 
 - **不再有自建路由**：早期版本的 `/api/dsh-file-preview/*`（文件直出、HTML 虚拟伺服、token 体系）已随重定位移除。插件不再向浏览器暴露任何文件读取面，也不再需要 loopback 围栏、serve token 与 CSP 兜底——**早期 README 中「经代理暴露可预览本机文件」的局域网高危告警随之消失**。
-- **只读耦合**：插件只读取（不写入）请求 URL 与官方卡片 DOM 的 `title` 属性；采集到的路径仅用于拼接官方地址字符串。
+- **只读耦合**：插件只读取（不写入）请求 URL 与官方卡片 DOM 的 `title` 属性；采集到的路径仅用于拼接官方地址字符串。点击记录是单槽且**取用即清**，不跨请求复用，5 分钟 TTL 后失效。
+- **同源收口**：只接管与当前页面**同源**的 `/api/present.open`；跨源同名路径一律放行（包装的是全局 `window.fetch`）。
 - **不出网**：命中收口时插件不发任何网络请求，直接调用官方右侧栏导航；未命中或异常时原样重放官方请求。
 - **最小权限**：客户端只注入 `sessions`（取会话 cwd 用于地址折叠）与 `sidebarRight`（官方右侧栏导航）；宿主端不再需要 `webServer`、文件系统或任何官方服务。
 

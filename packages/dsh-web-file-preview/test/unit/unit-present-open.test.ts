@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-web-file-preview — 「打开文件」重定向纯逻辑（issue #698）。
  *
@@ -6,10 +5,10 @@
  * `fileAddressFor` 逐条对拍一致（18/18，实施期以真实官方包实测）。官方右侧栏 tab
  * 以完整地址作 contentId 去重，任一条漂移都会让同一文件出现两个 tab，故此处锁死。
  *
- * 本文件由脚本式断言迁为 vitest 结构化用例（#722 阶段 1）：原每条 assert 对应
- * 一个 it（循环体经 it.each 展开为逐条可见用例），判定口径与断言集合均未改动。
+ * 本文件由脚本式断言迁为 vitest 结构化用例（#722 阶段 1）。#698 技术债清理后直连
+ * src/shared/present-open.ts（不再经公共导出面），以免把内部符号钉死在包的公共 API 上。
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   PRESENT_OPEN_PATH,
   PENDING_TTL_MS,
@@ -18,11 +17,16 @@ import {
   fileAddressFor,
   looksLikeFilePath,
   usablePending,
-} from "../../src/index.ts";
+} from "../../src/shared/present-open.ts";
 
 const S = "s1";
 const PREFIX = "dsh-resource://file/session/s1/";
 const NOW = 1_000_000;
+
+/** 在 globalThis 上模拟浏览器 location（node 环境下不存在，故用 defineProperty 造）。 */
+function setLocation(origin: string): void {
+  Object.defineProperty(globalThis, "location", { value: { origin }, configurable: true });
+}
 
 describe("#698 地址构造", () => {
   it("#698：官方打开路由常量", () => {
@@ -30,7 +34,7 @@ describe("#698 地址构造", () => {
   });
 
   /** [cwd, path, 期望地址]；与官方实现对拍通过。 */
-  const addressCases = [
+  const addressCases: Array<[string | undefined, string, string]> = [
     ["/w", "a/b.md", `${PREFIX}a/b.md`],
     ["/w", "/w/a/b.md", `${PREFIX}a/b.md`],
     ["/w", "/w", `${PREFIX}`],
@@ -49,6 +53,8 @@ describe("#698 地址构造", () => {
     ["/w", "", `${PREFIX}`],
     ["/w", "a%b.md", `${PREFIX}a%25b.md`],
     ["/w", "@a.md", `${PREFIX}%40a.md`],
+    // 多级相对前缀按 /^(?:\.\/)+/ 一次剐净（官方同一实现）。
+    ["/w", "././a.md", `${PREFIX}a.md`],
   ];
   it.each(
     addressCases.map(([cwd, path, expected]) => ({
@@ -69,6 +75,10 @@ describe("#698 地址构造", () => {
 });
 
 describe("#698 请求识别", () => {
+  afterEach(() => {
+    Reflect.deleteProperty(globalThis, "location");
+  });
+
   it("#698 命中打开请求", () => {
     expect(isOpenRequest("/api/present.open?sessionId=s1&seq=1&index=0", { method: "POST" })).toBe(
       true,
@@ -117,6 +127,36 @@ describe("#698 请求识别", () => {
     ).toBe(true);
   });
 
+  // URL 实例与 {href} 形态都要认：官方调用点是字符串，但包装器对 fetch 的几种入参都要稳健。
+  it("#698 URL 实例", () => {
+    expect(
+      isOpenRequest(new URL("http://127.0.0.1:3080/api/present.open?sessionId=s1"), {
+        method: "POST",
+      }),
+    ).toBe(true);
+  });
+
+  it("#698 href 对象形态", () => {
+    expect(
+      isOpenRequest(
+        { href: "http://127.0.0.1:3080/api/present.open?sessionId=s1" },
+        {
+          method: "POST",
+        },
+      ),
+    ).toBe(true);
+  });
+
+  // 对象既无 href 也无 url（如被包装的普通对象）：归一失败，判为非目标请求。
+  it("#698 无 href/url 的对象不炸且不命中", () => {
+    expect(isOpenRequest({ method: "POST" }, { method: "POST" })).toBe(false);
+  });
+
+  // 非法 URL 落进 urlOf 的 catch：不抛、判为非目标请求。
+  it("#698 非法 URL 不炸且不命中", () => {
+    expect(isOpenRequest("http://[bad", { method: "POST" })).toBe(false);
+  });
+
   // 官方调用点是字符串 URL，但包装器必须对 Request 实例同样稳健。
   it("#698 Request 实例", () => {
     expect(
@@ -136,8 +176,54 @@ describe("#698 请求识别", () => {
     ).toBe(true);
   });
 
+  // 空串 method 视为未声明，回落读 input.method。
+  it("#698 空 init.method 回落 Request.method", () => {
+    expect(
+      isOpenRequest(
+        { url: "http://127.0.0.1:3080/api/present.open?sessionId=s1", method: "POST" },
+        { method: "" },
+      ),
+    ).toBe(true);
+  });
+
   it("#698 非 URL 入参不炸", () => {
     expect(isOpenRequest(42, { method: "POST" })).toBe(false);
+  });
+
+  it("#698 同源绝对 URL 命中（浏览器环境）", () => {
+    setLocation("http://127.0.0.1:3080");
+    expect(
+      isOpenRequest("http://127.0.0.1:3080/api/present.open?sessionId=s1", { method: "POST" }),
+    ).toBe(true);
+  });
+
+  // 包装的是全局 window.fetch，跨源同名路径不得被吞掉。
+  it("#698 跨源同名路径不拦（浏览器环境）", () => {
+    setLocation("http://127.0.0.1:3080");
+    expect(
+      isOpenRequest("http://evil.example/api/present.open?sessionId=s1", { method: "POST" }),
+    ).toBe(false);
+  });
+
+  // 非浏览器环境（单测、产物探针）没有 location：不判同源，相对路径照常命中。
+  it("#698 无 location 时不判同源", () => {
+    expect(isOpenRequest("/api/present.open?sessionId=s1", { method: "POST" })).toBe(true);
+  });
+
+  // file:// / sandboxed iframe 下 location.origin 序列化为字符串 "null"：它不能当 URL 基准，
+  // 否则 new URL(相对路径, "null") 会抛，收口在本地文件场景整体失效。
+  it("#698 不透明源（origin 为字符串 null）按取不到源处理", () => {
+    setLocation("null");
+    expect(isOpenRequest("/api/present.open?sessionId=s1", { method: "POST" })).toBe(true);
+  });
+
+  // 源的取值非法（空串 / 非字符串）同样按「取不到源」处理，回落解析基准。
+  it.each([
+    ["空串", ""],
+    ["非字符串", 42],
+  ])("#698 源取值非法时按取不到源处理（%s）", (_name, origin) => {
+    Object.defineProperty(globalThis, "location", { value: { origin }, configurable: true });
+    expect(isOpenRequest("/api/present.open?sessionId=s1", { method: "POST" })).toBe(true);
   });
 
   describe("sessionIdOf（会话 id 提取）", () => {
@@ -155,6 +241,10 @@ describe("#698 请求识别", () => {
 
     it("#698 不可解析", () => {
       expect(sessionIdOf("totally not a url path")).toBe(null);
+    });
+
+    it("#698 非对象入参", () => {
+      expect(sessionIdOf(42)).toBe(null);
     });
   });
 });
@@ -177,8 +267,9 @@ describe("#698 点击路径采集", () => {
       expect(looksLikeFilePath("README.md")).toBe(true);
     });
 
+    // 必须用无分隔符的输入才测得到 trim：带斜杠的输入会命中下面的分隔符分支提前返回 true。
     it("#698 前后空白容忍", () => {
-      expect(looksLikeFilePath("  pkg/index.ts  ")).toBe(true);
+      expect(looksLikeFilePath("  README.md  ")).toBe(true);
     });
 
     it("#698 空串", () => {
@@ -193,6 +284,10 @@ describe("#698 点击路径采集", () => {
       expect(looksLikeFilePath("https://example.com/a.ts")).toBe(false);
     });
 
+    it("#698 协议前缀锚定（不误判含协议词的路径）", () => {
+      expect(looksLikeFilePath("xhttp:y.md")).toBe(true);
+    });
+
     it("#698 非路径文本", () => {
       expect(looksLikeFilePath("打开")).toBe(false);
     });
@@ -201,8 +296,22 @@ describe("#698 点击路径采集", () => {
       expect(looksLikeFilePath("a\nb")).toBe(false);
     });
 
+    // 换行判据必须先于分隔符判据：含斜杠的多行文本同样不采信。
+    it("#698 含分隔符的多行仍不采信", () => {
+      expect(looksLikeFilePath("a/b\nc")).toBe(false);
+    });
+
     it("#698 超长不采信", () => {
       expect(looksLikeFilePath("x".repeat(2000))).toBe(false);
+    });
+
+    // 长度判据是「超过 1024」：恰好 1024 采信、1025 不采信，两条夹住边界。
+    it("#698 长度恰好 1024 采信", () => {
+      expect(looksLikeFilePath(`${"a".repeat(1021)}.md`)).toBe(true);
+    });
+
+    it("#698 长度 1025 不采信", () => {
+      expect(looksLikeFilePath(`${"a".repeat(1022)}.md`)).toBe(false);
     });
 
     // 裸文件名形态的边界：正则两端都要求锚定（结尾非扩展名字符 / 缺扩展名主体 / 超长扩展名）。

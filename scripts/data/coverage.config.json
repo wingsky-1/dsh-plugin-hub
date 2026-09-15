@@ -28,11 +28,19 @@
       "since": "#733 3.4"
     },
     {
-      "pattern": "**/client/**",
+      "pattern": "packages/{dsh-lan-proxy,dsh-mcp-manager,dsh-notifier,dsh-provider-usage}/src/client/**",
       "kind": "pending-project",
-      "reason": "客户端渲染面：packages/*/src/client/**（33 文件、755 函数）与 shared/client/**（ensure-style.js、i18n.js 两个模块，其测试在 scripts/test 下、不在 unit/integration 两个 project 内）。现有 test/client/** 是「读 lib 产物 + vm 执行」的契约测试，直连 src 的 DOM 单测（happy-dom project）尚未落地，计入分母只会让这些文件恒为 0%、把全局值稀释到 59%，阈值随之失去约束力。",
-      "exitCriteria": "happy-dom（或等价 DOM）project 落地、且 client 源码有直连 src 的单测后，删除本条并一次性重新基线化阈值",
-      "since": "#722 阶段三",
+      "reason": "其余 4 包的客户端渲染面（39 个 ts/tsx 文件；mcp-manager 连 test/client 都没有）：直连 src 的单测尚未落地，计入分母只会让它们恒为 0%。dsh-web-file-preview 已按 #741 口径解除排除——它的客户端只有只读 DOM 采集与 fetch 收口，没有渲染面，已由 test/unit 下直连 src 的单测覆盖。",
+      "exitCriteria": "这 4 包的 client 源码有直连 src 的单测后，删除本条并一次性重新基线化阈值",
+      "since": "#741 方案（本次仅解除 dsh-web-file-preview）",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "pattern": "shared/client/**",
+      "kind": "pending-project",
+      "reason": "共享客户端模块（ensure-style.js、i18n.js）的测试在 scripts/test 下，不在 unit/integration 两个 project 内，计入分母恒为 0%。",
+      "exitCriteria": "共享客户端模块的测试迁入 unit/integration project 后，删除本条",
+      "since": "#733 3.4",
       "reviewBy": "2027-03-31"
     }
   ],

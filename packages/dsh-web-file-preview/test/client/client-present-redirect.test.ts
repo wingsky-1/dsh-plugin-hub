@@ -1,4 +1,7 @@
-// @ts-nocheck
+// @ts-nocheck —— vm 沙箱夹具：沙箱对象与 lib 产物都在运行期动态构造，类型化收益极低。
+// 仓库同范式文件（lan-proxy 的 client-style、provider-usage 的 client/e2e、mcp-manager 的 e2e）
+// 一致如此；test 面编译面缺口的收口见 #776。其余 test 文件（test/unit/** 与
+// client-contract.test.ts）都已类型化。
 /**
  * dsh-web-file-preview — 「打开文件」重定向拦截（issue #698）。
  *
@@ -233,7 +236,8 @@ describe("「打开文件」重定向拦截（issue #698）", () => {
     await call("/api/present.open?sessionId=s1&seq=9&index=0", { method: "POST" });
     openedAfterSecondApplyHit = opened.at(-1);
 
-    // 身份比对还原是分层的：按注册逆序卸载才能逐层摘除（顺序敏感是已知取舍，见装配注释）。
+    // 身份比对还原是分层的：cordis 按 LIFO 逆序清栈，故按注册逆序卸载才能逐层摘除
+    // （顺序敏感是已知取舍，见 present-open-redirect.ts 还原器处的 why 注释）。
     for (const d of disposers.splice(0).reverse()) d();
     fetchRestoredAfterDispose = fetchOf() === handle.originalFetch;
   });

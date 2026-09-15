@@ -408,6 +408,12 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
   `style.css`、`react-shim.d.ts`、`css.d.ts` 都归位 `src/client/`；宿主模块留 `src/` 根。
 - **宿主 & 客户端共享**的模块（如双端共用的后缀表 / 契约常量）留 `src/` 根，
   客户端经 `../grouping.js` 引用——不要为"客户端专用"而把共享模块搬走。
+- **包内跨端共享面**：落在 `src/shared/`，并加一层 `src/shared/interface.ts` 门面逐个命名转出
+  实际被消费的符号——实现文件不直接对外，门面是共享面的唯一边界（禁 `export * from` 整文件转发）。
+  **端内不设第二跳门面**：端内实现直接引 `../shared/interface.ts`。此前「每端各一层
+  `src/<端>/shared/interface.ts`」的写法已随 #698 的技术债清理收敛——那层只做转发，且 `client` 面被
+  `verify-dir-imports` 整体豁免，无法机器校验，等于给共享面加了一层无人守的壳。
+- **共享面上移判据**：只有「稳定消费者 ≥2」时才上移到仓库根 `shared/`；单消费者留在包内。
 
 ### 2.3 客户端其它要点
 

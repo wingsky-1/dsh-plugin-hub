@@ -12,7 +12,7 @@
 
 插件在 0.1.5-rc.1 上只有一件事：收口 `POST /api/present.open`（且仅 `action=open`）。
 
-需要它的原因：0.1.5 起对话内绝大多数文件点击已由官方右侧栏预览（`dsh-client-ui-sidebar-documentpreview`）接管，但 `present` 交付物仍有两条入口把文件交给桌面应用——它们最终都汇聚到同一个宿主路由：
+需要它的原因：0.1.5-rc.1 起对话内绝大多数文件点击已由官方右侧栏预览（`dsh-client-ui-sidebar-documentpreview`）接管，但 `present` 交付物仍有两条入口把文件交给桌面应用——它们最终都汇聚到同一个宿主路由：
 
 - `present` 交付物卡片菜单的「用默认应用打开」/「在文件管理器中显示」；
 - 助手最终回复里对 presented 文件的**提及点击**（`chatFileMentions.forClosing` 对 presented 文件走 `opener.open(sessionId, seq, index)`，而非 `openFile`）。
@@ -51,7 +51,7 @@ ctx.sidebarRight.openResource(address)  ← 官方右侧栏打开预览 tab
 
 - **收口选 `window.fetch`**：`/api/present.open` 是官方客户端的裸 HTTP POST，不经任何 `ctx` 服务；客户端 remote 也没有 `sessionQuery` 命名空间可反查事件，因此这是唯一能同时做到「阻止外开」与「打开侧栏预览」的收口点。包装体只读两个字段，其余原样透传，还原时按身份比对（不摘别人的包装）。
 - **路径靠捕获阶段记录**：请求 query 只有 `sessionId/seq/index`，不含路径；客户端无法反查事件。捕获阶段（必须捕获：菜单面板由 portal 渲染到 body 且自带 `onClick` stopPropagation）从官方显式标记取路径——`[data-presented-file]` 与 `title`；官方 CSS Modules 类名是构建期哈希，不可作为选择器。
-- **地址构造逐字复刻官方 `fileAddressFor`**：官方右侧栏以**地址本身**作 `contentId` 去重，只复刻模板而漏掉「cwd 内的绝对路径折叠为工作区相对路径」会让同一文件出现两个 tab。实现与官方 `@deepseek-ai/dsh-util-workspace-path@0.1.5-rc.1` 逐条对拍维护（18 条 golden，含 UNC / 盘符 / 编码边界）。仓库门禁只允许对官方包 `import type`，故为源码级复刻而非运行时依赖。
+- **地址构造逐字复刻官方 `fileAddressFor`**：官方右侧栏以**地址本身**作 `contentId` 去重，只复刻模板而漏掉「cwd 内的绝对路径折叠为工作区相对路径」会让同一文件出现两个 tab。实现与官方 `@deepseek-ai/dsh-util-workspace-path@0.1.5-rc.1` 逐条对拍维护（19 条 golden，含 UNC / 盘符 / 编码边界；另有 47 条边界用例用于上游升级后的复查）。仓库门禁只允许对官方包 `import type`，故为源码级复刻而非运行时依赖。
 - **`reveal` 放行**：它不打开文件内容，dsh 内也没有「文件管理器定位」的等价物；接管只能降级成预览，并让官方卡片显示与实际不符的完成文案。
 - **不做宿主端兜底**：可选方案是在宿主注册 `/api/present.open` 的 exact 影子路由，把失败路径从 fail-open 收紧为 fail-safe。维护者选择保持纯客户端微型形态——收口失效时退回官方原生打开（可感知、非静默损坏），而不是引入宿主代码与额外权限。
 
@@ -64,3 +64,28 @@ ctx.sidebarRight.openResource(address)  ← 官方右侧栏打开预览 tab
 ## 5. 落幕判据
 
 官方把 presented 的卡片菜单与提及点击也改为右侧栏预览（或提供 `openWorkspacePath` 的 Web 兜底分支）时，本插件整体退役。跟踪：[issue #698](https://github.com/wingsky-1/dsh-plugin-hub/issues/698)。
+
+## 6. 质量面登记（四把尺子）
+
+本包 `src/**` 全部纳入质量面，唯一排除是纯转发门面 `src/shared/interface.ts`。
+
+| 文件 | 覆盖率面 | 变异面 | CRAP 面 | lint 复杂度面 |
+|---|---|---|---|---|
+| `src/index.ts` | 纳入（`test/unit/unit-host-entry.test.ts` 直连） | 纳入（只产 StringLiteral/ObjectLiteral，被 `excludedMutations` 全局排除） | 纳入 | 纳入 |
+| `src/shared/present-open.ts` | 纳入（`test/unit/unit-present-open.test.ts` 直连） | 纳入 | 纳入 | 纳入 |
+| `src/shared/interface.ts` | include 命中但产物无可插桩语句；**不为它单列排除**，理由即此 | 排除（`facade`，见 `mutation-topology.json` 的 `coverageExcludes`） | 不纳入（无产物条目） | 纳入 |
+| `src/client/index.ts` | 纳入（`test/unit/unit-present-open-redirect.test.ts` 直连） | 纳入 | 纳入 | 纳入 |
+| `src/client/present-open-redirect.ts` | 纳入（同上） | 纳入 | 纳入 | 纳入 |
+
+**客户端面为什么不需要 DOM 环境也能进面**：它只有只读 DOM 采集（`closest` / `querySelector` /
+`getAttribute`）与一次 `window.fetch` 包装，不依赖渲染、布局或事件传播语义，最小 document/window
+桩即可覆盖（别的包的 client 需要 happy-dom，是因为那些包有渲染面）。**没有界面 ≠ 没有 DOM 逻辑**。
+
+**测试面与产物的分工**：`test/unit/**` 直连 src，是覆盖率与变异面的输入；`test/client/**` 读
+`lib/` 产物 + `node:vm`，锁 bundle 装配契约（属产物契约面，执行的是构建产物而非 src，故不计入
+覆盖率，也不进变异面——见 `mutation-topology.json` 的 `$testLayers.mutationExcludeLayers`）。
+
+**登记变更纪律**：新增或删除本包源文件/测试文件时，同步改 `scripts/data/mutation-topology.json`
+并跑 `pnpm stryker:gen`（生成物与拓扑严格一致由 `pnpm stryker:check` 守，`--min` 由
+`--sync-test-min` 同步）；覆盖率面要加排除时按 `coverage.config.json` 的结构化条目
+（`{pattern, reason, kind}`）登记，临时项必须带 `reviewBy` 与 `exitCriteria`。

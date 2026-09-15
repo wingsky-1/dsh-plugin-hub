@@ -488,10 +488,7 @@
       "segments": {
         "_single": {
           "mutate": ["packages/dsh-web-file-preview/src/**/*.ts"],
-          "excludes": [
-            "!packages/dsh-web-file-preview/src/client/**",
-            "!packages/dsh-web-file-preview/src/types.ts"
-          ],
+          "excludes": [],
           "comment": "#276 方案 A：src 级单段（mutate 直指 src，文件 glob 声明，无行号无漂移）；测试经 src 入口加载插桩代码；incremental 基线随 observe 夜间全量班重建。"
         }
       },
@@ -500,7 +497,7 @@
           {
             "pattern": "!packages/dsh-web-file-preview/src/**/interface.ts",
             "kind": "facade",
-            "reason": "#792 PR3：两处纯 re-export 门面（src/shared/interface.ts 与 src/client/shared/interface.ts）逐个命名转出下层符号，自身只做转发、不做裁决，转译产物零可变节点；留在 mutate 面里只会被反复 dry run 而不贡献杀灭，故按本仓 facade 口径整体排除。"
+            "reason": "#792 PR3 + 本轮技术债清理：唯一的纯 re-export 门面（src/shared/interface.ts）逐个命名转出下层符号，自身只做转发、不做裁决，转译产物零可变节点；留在 mutate 面里只会被反复 dry run 而不贡献杀灭，故按本仓 facade 口径整体排除。客户端端内门面已随分层收敛删除（转发的第二跳不再存在）。"
           }
         ]
       }

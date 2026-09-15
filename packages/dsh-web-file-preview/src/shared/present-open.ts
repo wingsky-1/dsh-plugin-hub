@@ -1,8 +1,8 @@
 /**
  * dsh-web-file-preview — 「用默认应用打开」请求的识别与官方地址构造（纯逻辑）。
  *
- * 层位：不触 DOM、不引 node 内建，是包内跨端共享面的实现；两个端内实现只能经同名目录的
- * interface.ts 消费它，避免共享面的实际边界随某一端的实现漂移。
+ * 层位：不触 DOM、不引 node 内建，是包内跨端共享面的实现；端内实现（当前仅客户端）只能经
+ * src/shared/interface.ts 消费它，避免共享面的实际边界随端内实现的增删漂移。
  *
  * dsh 0.1.5-rc.1 起，对话内的文件点击默认已走官方右侧栏预览；仍会把文件交给
  * 外部应用的只剩 /api/present.open 一条链路：present 交付物卡片的菜单，以及助手
@@ -41,8 +41,10 @@ function encodePath(path: string): string {
   return path.split("/").map(encodeSegment).join("/");
 }
 
+// 入参恒为 fileAddressFor 归一后的 / 分隔形态（反斜杠已替换），故只可能匹配盘符：
+// UNC（\\server\share）归一后以 / 开头，由 isAbsoluteWorkspacePath 的首个条件接管。
 function isWindowsStylePath(value: string): boolean {
-  return /^[A-Za-z]:[/\\]/.test(value) || value.startsWith("\\\\");
+  return /^[A-Za-z]:\//.test(value);
 }
 
 function isAbsoluteWorkspacePath(path: string): boolean {
@@ -78,8 +80,26 @@ export function fileAddressFor(sessionId: string, cwd: string | undefined, path:
 // ---------------------------------------------------------------- 请求识别
 
 function baseHref(): string {
+  return pageOrigin() ?? "http://dsh.local";
+}
+
+/**
+ * 当前页面的源；取不到（非浏览器环境，如单测与产物探针）返回 null。
+ *
+ * 为什么不复用 baseHref 的回落值当同源基准：dsh.local 只是 URL 解析的占位，拿它比较会把
+ * 任何绝对 URL 判成跨源——包装实际只在浏览器里安装，那里 location.origin 必然可用。
+ */
+function pageOrigin(): string | null {
   const origin = (globalThis as { location?: { origin?: unknown } }).location?.origin;
-  return typeof origin === "string" && origin !== "" ? origin : "http://dsh.local";
+  // "null" 是浏览器对不透明源（file:// / sandboxed iframe）的序列化值，不能当 URL 基准：
+  // 留着它会让 new URL(相对路径, "null") 抛错，收口在本地文件场景整体失效。
+  return typeof origin === "string" && origin !== "" && origin !== "null" ? origin : null;
+}
+
+/** 跨源的同名路径不得被收口（包装的是全局 window.fetch，命中面越宽代价越大）。 */
+function sameOrigin(url: URL): boolean {
+  const origin = pageOrigin();
+  return origin === null || url.origin === origin;
 }
 
 /**
@@ -112,11 +132,14 @@ function methodOf(input: unknown, init: unknown): string {
  *
  * `reveal`（在文件管理器中显示）刻意放行：它不打开文件内容，dsh 内也没有等价物，
  * 接管只会降级成预览并让官方卡片显示与实际不符的完成文案（issue #698 决策）。
+ *
+ * 跨源不拦：官方只在同源下调用本路由，跨源同名路径只可能是别处的请求。
  */
 export function isOpenRequest(input: unknown, init: unknown): boolean {
   const url = urlOf(input);
   if (url === null || url.pathname !== PRESENT_OPEN_PATH) return false;
   if (methodOf(input, init) !== "POST") return false;
+  if (!sameOrigin(url)) return false;
   return (url.searchParams.get("action") ?? "open") === "open";
 }
 
