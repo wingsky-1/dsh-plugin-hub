@@ -15,7 +15,7 @@
  * 客户端**不走**门面，正因为它的转出目标里有 node:fs 这类宿主专属模块。
  */
 export { FOLLOW_SYSTEM_TONE, TONES } from "./tones.ts";
-export type { ToneNote, ToneSpec } from "./tones.ts";
+export type { ToneNote } from "./tones.ts";
 export { SOUND_IDS, isSoundId } from "./sounds.ts";
 export type { SoundId } from "./sounds.ts";
 export {
@@ -67,3 +67,5 @@ export type {
 } from "./capabilities.ts";
 export { REFUSAL_CODES } from "./refusal.ts";
 export type { RefusalCode } from "./refusal.ts";
+export { createDisposerStack } from "./disposers.ts";
+export type { DisposerStack } from "./disposers.ts";

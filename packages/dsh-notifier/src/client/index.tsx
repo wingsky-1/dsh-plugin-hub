@@ -3,8 +3,7 @@
  *
  * 行为：
  * - 在「设置」面板注册独立 tab「通知中心」（settings.section 插槽：参照
- *   provider-usage「用量统计」tab；不做 plugin.item 双插槽重复展示）
- *   ——侧边栏「通知」入口/浮层/角标/拖拽全部移除；
+ *   provider-usage「用量统计」tab；不做 plugin.item 双插槽重复展示——入口只有这一个）；
  * - 通知半区保留并与 DOM 解耦：SSE /events 订阅 + 60s 看门狗 +
  *   visibilitychange 重建 + 多标签租约 + 音频手势解锁，不依赖任何插件 DOM；
  * - 历史记录最近 10 条收进卡片；卡片动作区含清理记录（两段式确认）/
@@ -67,7 +66,12 @@ import { historyPane } from "./settings/panes/history.tsx";
 // （模板 / 认证白名单）与理由 code 的事实源都在这里，客户端只消费，不再各写一份副本——跨端
 // 漂移的症状是「设置页选得到、宿主拒收」与「勾了频道却收不到」。该目录的模块必须零 import
 // （或同目录相对），判据见 scripts/test/shared-leaf-imports.test.ts。
-import { KIND_SEVERITY, channelIdOf, isBuiltinKind } from "../shared/interface.ts";
+import {
+  KIND_SEVERITY,
+  channelIdOf,
+  createDisposerStack,
+  isBuiltinKind,
+} from "../shared/interface.ts";
 import type { NotifySeverity } from "../shared/interface.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
@@ -456,19 +460,25 @@ function SettingsCard() {
   const ReactHooks = React;
   const useState = ReactHooks.useState;
   const useEffect = ReactHooks.useEffect;
-  const draft = useState(null);
+  // 设置草稿：形状是服务端 settings 对象，客户端只读其中几个键（真正的形状声明在宿主侧）。
+  // 声明成 Record 而不是让 useState(null) 推成 null：否则每次读键都要靠调用方把值当 any 传进来。
+  const draft = useState(null as Record<string, any> | null);
   const settings = draft[0];
   const setSettings = draft[1];
-  const meta = useState(null); // { user, revision, effective, writable }
+  // 声明形状而不是让 useState(null) 推成 null：读侧只取 writable，但写成 never 的话
+  // 任何一次读取都要靠调用方把值当 any 传进来才编得过（就是本行原先的形态）。
+  const meta = useState(
+    null as { user: any; revision: any; effective: any; writable: boolean } | null,
+  );
   const metaValue = meta[0];
   const setMeta = meta[1];
   // 保存反馈（i18n 重构：msg + err 结构化状态，不能用文案内容判断错误态）
-  const savedDraft = useState(null);
+  const savedDraft = useState(null as { msg: string; err: boolean } | null);
   const saved = savedDraft[0];
   const setSaved = function (msg: string, err?: boolean) {
     savedDraft[1](msg ? { msg: msg, err: err === true } : null);
   };
-  const historyDraft = useState(null);
+  const historyDraft = useState(null as any[] | null);
   const history = historyDraft[0];
   const setHistory = historyDraft[1];
   const clearArmed = useState(false);
@@ -675,7 +685,9 @@ function SettingsCard() {
    *  读 settingsRef（非渲染闭包 settings）——trailing 补发在 .then 回调里
    *  触发，必须取最新草稿；渲染期调用时 ref 与 state 同值，无行为差异。 */
   function diffPayload(): Record<string, any> {
-    return diffSettingsPayload(settingsRef.current || settings, baselineRef.current);
+    // 两个来源都可能是 null（配置还没读回来）：空草稿与 null 在 diffSettingsPayload 里同样是
+    // 「没有可提交的键」（它只遍历自有键），故显式给 {} 让类型与运行期取值一致。
+    return diffSettingsPayload(settingsRef.current || settings || {}, baselineRef.current);
   }
 
   /** 409 冲突恢复：拉最新 → 无脏静默刷新 / 有脏弹双动作横幅。 */
@@ -1003,7 +1015,7 @@ function SettingsCard() {
 
   /** 当前 kind 的路由数组（undefined = 跟随默认广播）。 */
   function routeOf(kind: string): string[] | undefined {
-    const routes = settings.kindRoutes || {};
+    const routes = settings?.kindRoutes || {};
     return routes[kind];
   }
 
@@ -1388,45 +1400,40 @@ function SettingsCard() {
 const pageOwner: { current: object | null } = { current: null };
 
 export function apply(ctx: any) {
+  // 清理栈：边装配边采集 teardown，登记点（attach）放在 finally——中途同步抛错时，
+  // 已建立的那些资源也仍有 disposer 可摘（见 shared/disposers.ts 文件头对登记点在后的说明）。
+  const stack = createDisposerStack();
   try {
-    ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
-
     // 页面级单例（<style> / 标题闪烁 / 已弹通知）的归属令牌：热更或重复 apply 时旧实例的
     // disposer 仍会执行，只有仍属当前实例的清理才许动这些共享资源，否则新实例会变成无样式
     // 页面、丢掉闪烁提示、连带关掉自己正在显示的弹窗。
     const owner: object = {};
-    pageOwner.current = owner;
-
-    // 清理登记必须早于任何副作用：每建立一处资源就 push 一条 teardown，中途同步抛错时已建立
-    // 的资源（SSE 会话与看门狗、document 监听、<style>、locale 订阅）也不会失去 disposer。
-    // splice(0) 取走并清空，重复调用 disposer 不会重复卸载。
-    const teardowns: (() => void)[] = [];
-    ctx.effect(function () {
-      return function () {
-        for (const teardown of teardowns.splice(0)) teardown();
-      };
-    }, "dsh-notifier");
 
     // 两处**页面级单例**没有「建立时刻」（<style> 由 ensureStyle 复用同 id 元素，通知登记是
-    // 模块级表），因此没有可依附的资源建立点，一律在开头顶格登记：登记在函数末尾的话，
-    // 中途任何一处同步抛错都会让它们逃过本次 disposer（外层 catch 只 warn，不留清理路径）。
+    // 模块级表），故顶格登记；释放是逆序的，排最前 = 最后释放，共享外壳比实例资源活得久。
     // <style> 只在仍是当前归属者时才摘，否则旧实例的 disposer 会把新实例的样式表摘掉
     // （页面变成无样式）；摘除即让位，归属随之清空。
-    teardowns.push(function () {
+    stack.own(function () {
       if (pageOwner.current !== owner) return;
       pageOwner.current = null;
       document.getElementById(STYLE_ID)?.remove();
     });
-    teardowns.push(function () {
+    stack.own(function () {
       closeNotificationsOf(owner);
     });
+
+    // 样式注入后立刻认领页面级归属（就在这一行，不是装配成功之后）：认领的时刻就是「本实例开始
+    // 为这个共享节点负责」的时刻。放到末尾会让半途失败的实例永远不认领，而它刚注入的样式表此后
+    // 再也摘不掉——R5 的漏清理换了个形态复活（登记点有了，释放却被归属判定挡掉）。
+    ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
+    pageOwner.current = owner;
 
     // 页面重新可见时：还原标题 + 强制重建 SSE（iOS 后台挂起后连接可能已失效，
     // 重建自动带 since 补拉，避免断线窗口漏通知）。
     // 具名 handler 在 apply 内注册、disposer 移除（对齐 mcp-manager
     // onVisible 范式）——匿名模块体注册无卸载路径，重复 apply/热更会累积旧监听。
-    // 登记顺序即清理顺序：摘监听必须排在标题还原之前（监听一摘，回前台这条恢复路径就关闭了），
-    // 故它是本实例登记的第一条 teardown。
+    // 释放是同步的：不存在「监听还在、标题已还原」的窗口（没有谁能在同一个同步循环里派发
+    // 事件），故这里不需要为次序做取舍——逆序释放让实例资源先走、页面级单例最后走。
     function onVisibilityChange() {
       if (document.visibilityState === "visible") {
         titleFlasher.restore(owner);
@@ -1434,13 +1441,13 @@ export function apply(ctx: any) {
       }
     }
     document.addEventListener("visibilitychange", onVisibilityChange);
-    teardowns.push(function () {
+    stack.own(function () {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     });
     // 标题恢复原本只由 visibilitychange 回前台触发；disposer 摘除监听后该路径关闭，
     // 若残留恢复缓存则标题永久卡在「🔔 …」（复现路径：hidden 帧 → 卸载）。
     // 带归属：旧实例的 disposer 不许摘掉新实例的闪烁（见 notify/title.ts）。
-    teardowns.push(function () {
+    stack.own(function () {
       titleFlasher.restore(owner);
     });
 
@@ -1471,36 +1478,41 @@ export function apply(ctx: any) {
     }
     if (unsubLocale !== undefined) {
       const unsubscribe = unsubLocale;
-      teardowns.push(function () {
+      stack.own(function () {
         unsubscribe();
       });
     }
 
-    // 通知半区（SSE / 浏览器通知）：不依赖任何插件 DOM，直接启动
-    const session = startNotifySession(
-      {
-        url: ROUTES.events,
-        createSource: (url) => new EventSource(url) as unknown as EventSourceLike,
-        now: () => Date.now(),
-        setTimer: (fn, ms) => window.setTimeout(fn, ms),
-        clearTimer: (handle) => {
-          window.clearTimeout(handle);
-        },
-        warn: (message, cause) => {
-          console.warn("[dsh-notifier] " + message + "：", cause);
-        },
+    // 通知半区（SSE / 浏览器通知）：不依赖任何插件 DOM，直接启动。
+    // 会话是「建立 + 配对释放」的资源，走 acquire：make 抛错就不留释放登记（会话没建成，
+    // 也没有要关的东西）。
+    eventsHandle.current = stack.acquire(
+      function () {
+        return startNotifySession(
+          {
+            url: ROUTES.events,
+            createSource: (url) => new EventSource(url) as unknown as EventSourceLike,
+            now: () => Date.now(),
+            setTimer: (fn, ms) => window.setTimeout(fn, ms),
+            clearTimer: (handle) => {
+              window.clearTimeout(handle);
+            },
+            warn: (message, cause) => {
+              console.warn("[dsh-notifier] " + message + "：", cause);
+            },
+          },
+          function (payload) {
+            handleNotifyFrame(payload, owner);
+          },
+        );
       },
-      function (payload) {
-        handleNotifyFrame(payload, owner);
+      function (session) {
+        session.close();
+        // 只在仍指向自己的会话时才清空：重复 apply 时后装的实例才是当前句柄，
+        // 无条件置 null 会让存活实例的回前台重连静默失效（跨实例串味）。
+        if (eventsHandle.current === session) eventsHandle.current = null;
       },
     );
-    eventsHandle.current = session;
-    teardowns.push(function () {
-      session.close();
-      // 只在仍指向自己的会话时才清空：重复 apply 时后装的实例才是当前句柄，
-      // 无条件置 null 会让存活实例的回前台重连静默失效（跨实例串味）。
-      if (eventsHandle.current === session) eventsHandle.current = null;
-    });
     // 首次任意点击解锁音频（浏览器自动播放策略要求手势）。具名 + disposer 摘除：
     // 从未点击就被卸载时，匿名监听会永久留在 document 上，且下次点击会在插件已卸载后
     // 构造一个 AudioContext。
@@ -1509,7 +1521,7 @@ export function apply(ctx: any) {
       document.removeEventListener("click", onFirstClick, { capture: true });
     }
     document.addEventListener("click", onFirstClick, { capture: true });
-    teardowns.push(function () {
+    stack.own(function () {
       document.removeEventListener("click", onFirstClick, { capture: true });
     });
 
@@ -1549,6 +1561,10 @@ export function apply(ctx: any) {
     }
   } catch (error) {
     console.warn("[dsh-notifier] 挂载失败：", error);
+  } finally {
+    stack.attach(ctx, "dsh-notifier", function (error) {
+      console.warn("[dsh-notifier] 卸载清理失败：", error);
+    });
   }
 }
 

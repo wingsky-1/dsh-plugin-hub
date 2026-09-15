@@ -8,11 +8,13 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     include: [
+      'packages/dsh-notifier/test/client-dom/apply-lifecycle.test.ts',
       'packages/dsh-notifier/test/client-dom/display.test.ts',
       'packages/dsh-notifier/test/client-dom/title.test.ts',
       'packages/dsh-notifier/test/client-unit/api-error.test.ts',
       'packages/dsh-notifier/test/client-unit/banner.test.ts',
       'packages/dsh-notifier/test/client-unit/capabilities.test.ts',
+      'packages/dsh-notifier/test/client-unit/disposers.test.ts',
       'packages/dsh-notifier/test/client-unit/locale-fallback.test.ts',
       'packages/dsh-notifier/test/client-unit/locale.test.ts',
       'packages/dsh-notifier/test/client-unit/mask.test.ts',

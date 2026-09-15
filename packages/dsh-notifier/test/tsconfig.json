@@ -13,5 +13,9 @@
       "@wingsky-1/dsh-notifier": ["../lib/index.d.ts"]
     }
   },
-  "include": ["./**/*.ts"]
+  // ../src/client/css.d.ts 必须进 program：测试目录里只要有人 import 客户端入口（index.tsx），
+  // 就会经它遇到 import STYLE from "./style.css"——该声明不在 program 里就判 TS2307，而
+  // scripts/test/service-contract-wiring.test.ts 断言「本 tsconfig 的 tsc 退出码为 0」。
+  // 它只是类型面声明（运行期由 build-client 的 .css text-loader 负责），进 program 不改任何产物。
+  "include": ["./**/*.ts", "../src/client/css.d.ts"]
 }
