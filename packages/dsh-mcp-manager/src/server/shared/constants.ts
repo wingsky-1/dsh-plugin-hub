@@ -38,3 +38,10 @@ export const DISCOVERY_TIMEOUT_MS = 10_000;
 export const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;
 /** ws_mcp_list 每服务器工具条数默认上限（catalog 与 inject 两域消费，见本文件头注释）。 */
 export const LIST_DEFAULT_TOOLS_PER_SERVER = 50;
+/**
+ * MCP 服务器注册名（官方 dsh-mcp-client 的 serverName）命名空间约束，与官方逐字同源。
+ * 从 config/normalize.ts 上移（#767 S1-4a）：workspace 域的 id 生成器要用**同一份**判定，
+ * 留在 config 域就会多出一条 workspace → config 的跨域值边（I2① 判红），而重抄一份正则等于
+ * 两个物理定义、会静默漂移。config 域门面照旧转出同名符号，既有调用点不变。
+ */
+export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;

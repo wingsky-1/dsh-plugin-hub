@@ -3,7 +3,8 @@
  *
  * normalizeServer 校验并规范化一条 MCP 服务器配置（stdio / streamable-http），
  * 供 Manager 增改与 mcpServers JSON 导入路径共用；SERVER_NAME_PATTERN 为
- * 服务器名命名空间约束（与官方 dsh-mcp-client 一致）。
+ * 服务器名命名空间约束（与官方 dsh-mcp-client 一致），物理定义已上移 server/shared/constants.ts
+ * ——workspace 域的 id 生成器要用同一份判定（#767 S1-4a），此处只转出同名符号，调用点不变。
  *
  * reconnect 在此处按官方口径收紧（#767 S1-1）：官方对未知键直接抛错，而本插件的配置面
  * 是用户手写 JSON（可手排 mcp.json），故未知键改为静默丢弃（口径与顶层未知字段一致）；
@@ -13,10 +14,9 @@
 
 import type { ServerConfig } from "./impl/model/type.ts";
 // 默认超时取共享层单一物理定义（模块求值期消费，端口注入不可达；I2①）。
-import { DEFAULT_TOOL_CALL_TIMEOUT_MS } from "../shared/interface.ts";
+import { DEFAULT_TOOL_CALL_TIMEOUT_MS, SERVER_NAME_PATTERN } from "../shared/interface.ts";
 
-/** MCP 服务器名命名空间约束（与官方 dsh-mcp-client 一致）。 */
-export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
+export { SERVER_NAME_PATTERN };
 
 /** 官方 reconnect 的键集（与 @deepseek-ai/dsh-mcp-client 的 Reconnect schema 逐字同值）。 */
 const RECONNECT_KEYS = new Set(["enabled", "initialDelayMs", "maxDelayMs", "maxAttempts"]);
