@@ -24,8 +24,14 @@ export interface LoggerPort {
 /** 宿主路由注册口（`ctx.webServer`）：只取注册一样，摘除器由宿主自己返回。 */
 export type RegisterPort = Pick<Context["webServer"], "register">;
 
-/** 宿主工具注册表（`ctx.tools`）：只取注册一样。 */
-export type ToolsPort = Pick<Context["tools"], "register">;
+/**
+ * 宿主工具注册表（`ctx.tools`）：只取注册与**注册面查询**两样。
+ *
+ * `schemas` 是六态投影里唯一能观测「已连上」的输入面（设计 §3.1 输入面 B）：官方
+ * dsh-mcp-client 不暴露任何状态 API，工具注册面是它留给外界的唯一正向证据。两样都是活能力
+ * （每次调用现读宿主注册表），不是装配期快照——注册表会随服务器连接与断开变化。
+ */
+export type ToolsPort = Pick<Context["tools"], "register" | "schemas">;
 
 /** 宿主提示词组装口（`ctx.systemPrompt`）：只取分节一样。 */
 export type PromptPort = Pick<Context["systemPrompt"], "section">;

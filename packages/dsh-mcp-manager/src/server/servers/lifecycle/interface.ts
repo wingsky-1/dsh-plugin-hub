@@ -5,10 +5,12 @@
  * （767-v6-STAGED-PLAN §2.1 的 K9 / K10；超时封装归此已决）。目录外模块**只能**从这里引用
  * （verify-dir-imports 静态强制）；域内实现不被域外直引。
  *
- * 本域**有对上依赖**（deps.ts 的两条 Port）：宿主装载口与 pipeline 的超时兜底。域内一律经
- * `impl/service` 的端口持有者取数，故域间只有类型边，没有值边。
+ * 本域**有对上依赖**（deps.ts 的五条 Port）：宿主装载口与工具注册表查询、pipeline 的超时
+ * 兜底、workspace 的 serverName 分配、config 的模板预展开。域内一律经 `impl/service` 的端口
+ * 持有者取数，故域间只有类型边，没有值边。
  *
- * 本片（S1-2b）**不进 `src/index.ts` 的装配表**：骨架先落位，接线在 S1-3/S1-4。
+ * 本片（S1-4b）落**真装载**（`mountServer`：取 id → 官方 Config → 装载 → 等待窗口），但仍
+ * **不进 `src/index.ts` 的装配表**：由单元测试用假 LoaderPort / 假 ToolsPort 驱动，接线在 S1-4c。
  */
 import type { LifecycleDeps } from "./deps.ts";
 import { mountLedger } from "./impl/ledger/index.ts";
@@ -41,4 +43,12 @@ export { projectServerState } from "./impl/state/index.ts";
 export type { ServerStateInput } from "./impl/state/index.ts";
 export { awaitMountWindow } from "./impl/timeout/index.ts";
 export type { MountWindowInput, MountWindowOutcome } from "./impl/timeout/index.ts";
-export type { LifecycleDeps, PipelinePort } from "./deps.ts";
+export { mountServer } from "./impl/mount/index.ts";
+export type { MountServerInput, MountServerResult } from "./impl/mount/index.ts";
+export type {
+  ConfigPort,
+  LifecycleDeps,
+  PipelinePort,
+  ToolsRegistryPort,
+  WorkspacePort,
+} from "./deps.ts";
