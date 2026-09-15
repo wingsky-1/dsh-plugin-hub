@@ -64,6 +64,11 @@ function install(
     revision: () => number;
     effectiveWorktree: (id: string) => Promise<string | null>;
     takeoverState: () => "idle" | "waiting" | "live" | "abandoned";
+    chainDiagnostics: () => {
+      storedReads: number;
+      storedFailures: number;
+      lastFailure: string | undefined;
+    };
   }> = {},
 ) {
   const reg = capturingRegister();
@@ -73,6 +78,9 @@ function install(
     effectiveWorktree:
       overrides.effectiveWorktree ?? (async (id: string) => (id === "s1" ? "/wt" : null)),
     takeoverState: overrides.takeoverState ?? (() => "live" as const),
+    chainDiagnostics:
+      overrides.chainDiagnostics ??
+      (() => ({ storedReads: 0, storedFailures: 0, lastFailure: undefined })),
   };
   installApi({ register: reg.register, logger, binding, scope });
   const route = (path: string): WebRoute => {
@@ -192,12 +200,41 @@ describe("绑定查询", () => {
 });
 
 describe("health", () => {
-  it("回 ok、当前 revision 与接管状态", async () => {
+  it("回 ok、当前 revision、接管状态与会话链读数", async () => {
     const { route } = install();
     const { captured, res } = fakeRes();
     route(ROUTES.health).handler(fakeReq(), res);
     expect(captured.status).toBe(200);
-    expect(jsonOf(captured)).toEqual({ ok: true, revision: 7, scopeTakeover: "live" });
+    expect(jsonOf(captured)).toEqual({
+      ok: true,
+      revision: 7,
+      scopeTakeover: "live",
+      scopeChain: { storedReads: 0, storedFailures: 0 },
+    });
+  });
+
+  it("会话链读数读的是活值：持久面坏过一次与坏过两次必须能分开", async () => {
+    // 「继承悄悄退回 live-only」是无声降级，探针上的这个读数就是它唯一的落地痕迹。
+    let failures = 0;
+    const { route } = install({
+      chainDiagnostics: () => ({
+        storedReads: failures + 1,
+        storedFailures: failures,
+        lastFailure: failures === 0 ? undefined : "session store unreadable",
+      }),
+    });
+    const first = fakeRes();
+    route(ROUTES.health).handler(fakeReq(), first.res);
+    expect(jsonOf(first.captured)["scopeChain"]).toEqual({ storedReads: 1, storedFailures: 0 });
+
+    failures = 1;
+    const second = fakeRes();
+    route(ROUTES.health).handler(fakeReq(), second.res);
+    expect(jsonOf(second.captured)["scopeChain"]).toEqual({
+      storedReads: 2,
+      storedFailures: 1,
+      lastFailure: "session store unreadable",
+    });
   });
 
   it("接管状态读的是活值：provider 还没出现时报 waiting", async () => {

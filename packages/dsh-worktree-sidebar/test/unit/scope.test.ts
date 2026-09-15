@@ -11,7 +11,12 @@ import type { FileScope, LookupDescriptorPort, ScopeDeps } from "../../src/serve
 import { directoryExists } from "../../src/server/scope/impl/own/index.ts";
 import { effectiveWorktree, resolveScope } from "../../src/server/scope/impl/resolve/index.ts";
 import { scopeService } from "../../src/server/scope/impl/service/index.ts";
-import { installScope, releaseScope, takeoverState } from "../../src/server/scope/interface.ts";
+import {
+  chainDiagnostics,
+  installScope,
+  releaseScope,
+  takeoverState,
+} from "../../src/server/scope/interface.ts";
 
 const record: BindingRecord = {
   repoRoot: "/repo",
@@ -312,6 +317,70 @@ describe("子 agent 继承父会话的登记", () => {
       belongs: true,
     });
     expect(await effectiveWorktree(deps, "child")).toBeNull();
+  });
+
+  it("持久面查了几次、坏了几次都进 health 读数（那是这处无声降级唯一的痕迹）", async () => {
+    const hit = scopeDeps({
+      descriptor: official,
+      binding: { parent: record },
+      notLive: ["child"],
+      storedParents: { child: "parent" },
+      exists: true,
+      belongs: true,
+    });
+    installScope(hit.deps);
+    expect(await scopeService.effectiveWorktree("child")).toBe("/wt");
+    expect(chainDiagnostics()).toEqual({
+      storedReads: 1,
+      storedFailures: 0,
+      lastFailure: undefined,
+    });
+
+    releaseScope();
+    const broken = scopeDeps({
+      descriptor: official,
+      notLive: ["child"],
+      storedThrows: true,
+      exists: true,
+      belongs: true,
+    });
+    installScope(broken.deps);
+    // 收口仍然成立（到顶），但这一次失败必须留在读数里，而不是只留在没人看得到的 catch 里。
+    expect(await scopeService.effectiveWorktree("child")).toBeNull();
+    expect(chainDiagnostics()).toEqual({
+      storedReads: 1,
+      storedFailures: 1,
+      lastFailure: "stored sessions unavailable",
+    });
+  });
+
+  it("活着的顶层会话不查持久面，读数也必须是 0（判定与成本读数同源）", async () => {
+    const { deps } = scopeDeps({
+      descriptor: official,
+      binding: { s1: record },
+      exists: true,
+      belongs: true,
+    });
+    installScope(deps);
+    expect(await scopeService.effectiveWorktree("s1")).toBe("/wt");
+    expect(chainDiagnostics().storedReads).toBe(0);
+  });
+
+  it("release 复位读数：下一次装配从 0 起，不留上一代的痕迹", async () => {
+    const first = scopeDeps({ descriptor: official, notLive: ["child"], storedThrows: true });
+    installScope(first.deps);
+    await scopeService.effectiveWorktree("child");
+    expect(chainDiagnostics().storedFailures).toBe(1);
+
+    releaseScope();
+    const second = scopeDeps({ descriptor: official, notLive: ["child"], storedParents: {} });
+    installScope(second.deps);
+    await scopeService.effectiveWorktree("child");
+    expect(chainDiagnostics()).toEqual({
+      storedReads: 1,
+      storedFailures: 0,
+      lastFailure: undefined,
+    });
   });
 
   it("持久面缺席（组合里没挂后端）＝退回 live-only，不抛", async () => {

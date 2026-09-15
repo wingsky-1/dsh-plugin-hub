@@ -28,14 +28,28 @@ interface FakeHost {
   readonly routes: WebRoute[];
   /** 组合根软取过哪些可选服务（装配期不该有——按调用时刻取）。 */
   readonly serviceGets: string[];
+  /** 装配**之后**才把持久会话后端挂上：晚挂的后端必须当场生效，而不是永久缺席。 */
+  mountPersistence(face: {
+    stat(id: string): Promise<{ readonly header: { readonly parentSession?: string } } | undefined>;
+  }): void;
   /** 走 cordis 的卸载路径：把每个 effect 的 disposer 逐个 await 掉。 */
   disposeAll(): Promise<void>;
 }
 
-function fakeHost(): FakeHost {
+interface FakeHostOptions {
+  /** 官方 workspaceFileScope provider：没有它 scope 域停在 waiting，解析请求根本不碰会话链。 */
+  readonly descriptor?: {
+    resolve(id: string): Promise<{ sessionId: string; workspaceRoot: string } | undefined>;
+  };
+  /** 官方 **live** 会话表：id 在表里即「在册」，值是它的父（undefined = 顶层）。 */
+  readonly live?: Record<string, string | undefined>;
+}
+
+function fakeHost(options: FakeHostOptions = {}): FakeHost {
   const routes: WebRoute[] = [];
   const serviceGets: string[] = [];
   const disposers: Array<() => unknown> = [];
+  let persistence: unknown = undefined;
   const ctx = {
     logger: { warn: () => undefined },
     on: () => () => undefined,
@@ -56,16 +70,24 @@ function fakeHost(): FakeHost {
         };
       },
     },
-    sessions: { get: () => undefined },
+    sessions: {
+      // 官方 live 面：在册才有记录，有父才写 parentSession（两种「没有」不是一回事）。
+      get: (id: string) => {
+        const present = options.live !== undefined && id in options.live;
+        if (!present) return undefined;
+        const parent = options.live?.[id];
+        return { header: parent === undefined ? {} : { parentSession: parent } };
+      },
+    },
     // 可选服务的软取必须发生在**调用时刻**：装配期取一次会让晚挂的后端永久缺席
-    // （`cordis/lib/index.js:754-771` 的 `get` 就是「取当刻值」）。这个假件只记不答。
+    // （`cordis/lib/index.js:754-771` 的 `get` 就是「取当刻值」）。这里挂一个可变的表。
     get: (name: string) => {
       serviceGets.push(name);
-      return undefined;
+      return persistence;
     },
     typert: {
       lookups: {
-        get: () => undefined,
+        get: () => options.descriptor,
         configure: () => () => undefined,
         subscribe: () => () => undefined,
       },
@@ -81,6 +103,9 @@ function fakeHost(): FakeHost {
     ctx: ctx as unknown as Context,
     routes,
     serviceGets,
+    mountPersistence(face) {
+      persistence = face;
+    },
     async disposeAll() {
       for (const dispose of disposers.splice(0).reverse()) await dispose();
     },
@@ -131,6 +156,40 @@ describe("组合根的生命周期", () => {
     await apply(host.ctx);
 
     expect(host.serviceGets).toEqual([]);
+    await host.disposeAll();
+  });
+
+  it("会话链接缝：装配期不取持久面、解析请求当场取，晚挂的后端当场生效", async () => {
+    const host = fakeHost({
+      descriptor: { resolve: async (id) => ({ sessionId: id, workspaceRoot: "/official" }) },
+      live: { s1: undefined },
+    });
+    await apply(host.ctx);
+    expect(host.serviceGets).toEqual([]);
+
+    // 活着的顶层会话是**确定的到顶**：为它去问持久面等于给每个普通会话白加一次 IO。
+    expect(await scopeApi.effectiveWorktree("s1")).toBeNull();
+    expect(host.serviceGets).toEqual([]);
+
+    // 不在册 → 回落持久面；后端此刻还没挂，这一次读取必须**当场发生**（不是装配期那一次）。
+    expect(await scopeApi.effectiveWorktree("child")).toBeNull();
+    expect(host.serviceGets).toEqual(["sessionPersistence"]);
+
+    // 晚挂后端 + 父会话有登记：同一条路径再走一次就要给出父的 worktree。
+    // repoRoot 取同一个真实目录：belongsTo(同一目录) 恒真，这条判据关心的是
+    // 「持久面 → 父链 → 登记」这条链本身，git 语义由 integration/git-real 覆盖。
+    const dir = process.cwd();
+    await bindingApi.put("parent", {
+      repoRoot: dir,
+      worktreeRoot: dir,
+      branch: "feature",
+      createdAt: "2026-09-15T00:00:00.000Z",
+    });
+    host.mountPersistence({ stat: async () => ({ header: { parentSession: "parent" } }) });
+    expect(await scopeApi.effectiveWorktree("child")).toBe(dir);
+    // 按调用时刻取：两次解析就是两次现取，而不是装配期缓存下来的那个 undefined。
+    expect(host.serviceGets).toEqual(["sessionPersistence", "sessionPersistence"]);
+
     await host.disposeAll();
   });
 

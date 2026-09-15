@@ -46,6 +46,10 @@ export function bindingsEndpoint(binding: RevisionPort, scope: EffectiveWorktree
  *
  * `scopeTakeover` 是「文件根为什么没换」的第一手证据：真实启动序里 provider 与插件的先后没有稳定保证，
  * 只报「没换根」会让 waiting / abandoned / 未命中绑定三种成因长得一模一样。
+ *
+ * `scopeChain` 解的是另一类**无声**故障：已结束会话的父链只能从持久面读，读不出来时本域按「到顶」收口
+ * （正确的行为），于是继承悄悄退回 live-only——而真机上插件的 `logger.warn` 不落盘（doc §19.5），
+ * 现场除这个读数之外没有任何痕迹。
  */
 export function healthEndpoint(binding: RevisionPort, scope: ScopeStatePort): Endpoint {
   return {
@@ -56,6 +60,7 @@ export function healthEndpoint(binding: RevisionPort, scope: ScopeStatePort): En
           ok: true,
           revision: binding.revision(),
           scopeTakeover: scope.takeoverState(),
+          scopeChain: scope.chainDiagnostics(),
         });
       },
     },

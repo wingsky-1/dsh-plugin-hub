@@ -20,10 +20,12 @@ export type RevisionPort = Pick<typeof bindingApi, "revision">;
 export type EffectiveWorktreePort = Pick<typeof scopeApi, "effectiveWorktree">;
 
 /**
- * scope 域给本域的**状态读数**面：health 用它把「文件根没换」的三种成因分开——
+ * scope 域给本域的**状态读数**面：health 用它把「文件根没换」的成因分开——
  * 还没等到 provider（waiting）、接管权被别人占了（abandoned）、接管了但该会话没命中绑定。
+ * 会话链读数另解一类：**持久面读失败会被静默收口成「到顶」**，功能降级成 live-only 而现场不留痕迹，
+ * 这一条读数是它唯一能落地的痕迹（真机上插件的 `logger.warn` 不落盘，见 doc §19.5）。
  */
-export type ScopeStatePort = Pick<typeof scopeApi, "takeoverState">;
+export type ScopeStatePort = Pick<typeof scopeApi, "takeoverState" | "chainDiagnostics">;
 
 /** 装配入参：一个提供方一行，两个提供方互不搭界（一个给修订号，一个给生效根）。 */
 export interface ApiDeps {

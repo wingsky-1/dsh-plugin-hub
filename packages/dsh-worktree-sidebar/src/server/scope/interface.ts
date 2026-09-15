@@ -32,3 +32,12 @@ export function effectiveWorktree(sessionId: string): Promise<string | null> {
 export function takeoverState(): ReturnType<typeof scopeService.takeoverState> {
   return scopeService.takeoverState();
 }
+
+/**
+ * 会话链持久面的读数（查了几次 / 坏了几次 / 最后一次的原因）。
+ *
+ * 只给 health 端点用：持久面读失败被收口成「到顶」是一处**静默降级**，这条读数是它唯一落地的痕迹。
+ */
+export function chainDiagnostics(): ReturnType<typeof scopeService.chainDiagnostics> {
+  return scopeService.chainDiagnostics();
+}

@@ -20,6 +20,7 @@ export default defineConfig({
       'packages/dsh-worktree-sidebar/test/unit/git-inspect.test.ts',
       'packages/dsh-worktree-sidebar/test/unit/git-service.test.ts',
       'packages/dsh-worktree-sidebar/test/unit/host-agents.test.ts',
+      'packages/dsh-worktree-sidebar/test/unit/host-sessions.test.ts',
       'packages/dsh-worktree-sidebar/test/unit/scope.test.ts',
       'packages/dsh-worktree-sidebar/test/unit/tools.test.ts',
     ],

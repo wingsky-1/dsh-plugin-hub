@@ -15,7 +15,7 @@
  * 状态（委托对象、装配入参、两个 disposer）住在实例里；域是**进程内单例**，第二次 `install` 由
  * 状态守卫**显式抛错**（响亮失败优于静默共享/丢数据）。
  */
-import type { FileScope, ScopeDeps } from "../../deps.ts";
+import type { FileScope, ScopeDeps, SessionChainPort } from "../../deps.ts";
 import { effectiveWorktree as resolveEffectiveWorktree, resolveScope } from "../resolve/index.ts";
 
 /** 未装配时能力面的失败文案：读到它就说明装配守卫有洞，当场暴露而不是拿旧 deps 出结果。 */
@@ -39,6 +39,34 @@ export interface ScopeApi {
   effectiveWorktree(sessionId: string): Promise<string | null>;
   /** 接管状态的诊断读数：只给 health 用，判定逻辑不看它。接管与否看它是否等于 `live`。 */
   takeoverState(): TakeoverState;
+  /** 会话链持久面的读数：查了几次、坏了几次、最后一次为什么坏。同样只给 health 用。 */
+  chainDiagnostics(): ChainDiagnostics;
+}
+
+/**
+ * 会话链持久面的读数。
+ *
+ * 它存在的唯一理由是**那处收口是无声的**：持久面读不出来时本域按「到顶」处理（正确的行为），
+ * 于是功能悄悄降级成 live-only，而真机上插件的 `logger.warn` 不落盘（§19.5），
+ * 排查时既没有日志也没有别的痕迹。health 是唯一一条能落地的观测面。
+ */
+export interface ChainDiagnostics {
+  /** 持久面被查了几次（每次都是「会话不在册」的回落，属成本读数）。 */
+  readonly storedReads: number;
+  /** 其中抛错的次数——到顶收口就是在这里发生的。 */
+  readonly storedFailures: number;
+  /** 最后一次失败的原因；没有失败时缺席。 */
+  readonly lastFailure: string | undefined;
+}
+
+/**
+ * 内部计数器：对外那份是**只读快照**，这里才是唯一被改的那一份。
+ * 拆成两个形状是有意的——调用方拿到的读数改不动，域内记账又不必绕开类型。
+ */
+interface ChainReading {
+  storedReads: number;
+  storedFailures: number;
+  lastFailure: string | undefined;
 }
 
 /** `workspaceFileScope` 的接管者：唯一实例。 */
@@ -53,11 +81,15 @@ class ScopeService implements ScopeApi {
   private unsubscribe: (() => void) | undefined;
   /** 等待期只出一次声：通知可能来很多次，每次都报会把日志淹掉。 */
   private warnedWaiting = false;
+  /** 持久面读数。跨调用存活，所以只能住在这里，不能住在 `inherit`（那是无状态函数）。 */
+  private chain: ChainReading = { storedReads: 0, storedFailures: 0, lastFailure: undefined };
 
   /** 装配 scope 域。重复装配是编程错误，当场暴露。 */
   install(deps: ScopeDeps): void {
     if (this.state !== "idle") throw new Error("dsh-worktree-sidebar: scope 域只能装配一次");
-    this.deps = deps;
+    this.chain = { storedReads: 0, storedFailures: 0, lastFailure: undefined };
+    // 持久面加一圈读数：失败被 `inherit` 收口成「到顶」，收口点之外没有别人看得见那次失败。
+    this.deps = { ...deps, sessions: this.observed(deps.sessions) };
     this.state = "waiting";
     // 先订阅、再重读一次：provider 可能正好在两者之间注册，那次通知已经发完了。
     this.unsubscribe = deps.typert.subscribe(() => this.attempt());
@@ -77,6 +109,7 @@ class ScopeService implements ScopeApi {
     this.dispose = undefined;
     this.unsubscribe = undefined;
     this.warnedWaiting = false;
+    this.chain = { storedReads: 0, storedFailures: 0, lastFailure: undefined };
     if (unsubscribe !== undefined) {
       try {
         unsubscribe();
@@ -94,6 +127,31 @@ class ScopeService implements ScopeApi {
 
   takeoverState(): TakeoverState {
     return this.state;
+  }
+
+  /** 读数是快照：调用方拿不到本域内部那个对象，改不动它。 */
+  chainDiagnostics(): ChainDiagnostics {
+    return { ...this.chain };
+  }
+
+  /**
+   * 给会话链的持久面加一圈读数。失败**照原样抛回**，收口仍在 `inherit`——
+   * 这里只负责记账，不改变任何判定。
+   */
+  private observed(inner: SessionChainPort): SessionChainPort {
+    return {
+      liveParentOf: (sessionId) => inner.liveParentOf(sessionId),
+      storedParentOf: async (sessionId) => {
+        this.chain.storedReads += 1;
+        try {
+          return await inner.storedParentOf(sessionId);
+        } catch (cause) {
+          this.chain.storedFailures += 1;
+          this.chain.lastFailure = cause instanceof Error ? cause.message : String(cause);
+          throw cause;
+        }
+      },
+    };
   }
 
   async effectiveWorktree(sessionId: string): Promise<string | null> {
