@@ -266,3 +266,35 @@ export function fakeMCPClient(script = {}) {
   };
   return client;
 }
+
+/**
+ * 假宿主日志面（`LogsPort`）：把「挂导出器 → 投记录 → 摘除」这条链做成可观测的夹具。
+ *
+ * 为什么 `emit` 先复制一份订阅者列表：摘除器允许在投递过程中被调用（`collectOfficialLogs.stop()`
+ * 就发生在装载窗口的 `finally` 里），原地遍历会因数组被改而漏投后面的订阅者——夹具的投递语义
+ * 必须与宿主一致，否则「只收归属本实例的」这类断言会因夹具的缺陷而失真。
+ *
+ * `captured` 是在册导出器数：装载链的判据之一就是窗口结束后它必须归零。
+ */
+export function fakeLogsPort() {
+  const handlers = [];
+  const records = [];
+  return {
+    handlers,
+    records,
+    capture(handler) {
+      handlers.push(handler);
+      return () => {
+        const at = handlers.indexOf(handler);
+        if (at >= 0) handlers.splice(at, 1);
+      };
+    },
+    emit(record) {
+      records.push(record);
+      for (const handler of [...handlers]) handler(record);
+    },
+    get captured() {
+      return handlers.length;
+    },
+  };
+}

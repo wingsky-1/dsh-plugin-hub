@@ -26,6 +26,7 @@ import type { ServerState } from "../../../../../shared/interface.ts";
 import type { ToolsRegistryPort } from "../../deps.ts";
 import { mountLedger } from "../ledger/index.ts";
 import type { LedgerEntry } from "../ledger/index.ts";
+import { collectOfficialLogs } from "../logs/index.ts";
 import { lifecyclePorts } from "../service/index.ts";
 import { awaitMountWindow } from "../timeout/index.ts";
 import type { MountWindowOutcome } from "../timeout/index.ts";
@@ -140,20 +141,30 @@ export interface MountServerResult {
  * （解析失败 / 账本撞键一律上抛，避免装配静默少装一个服务器）。
  */
 export async function mountServer(input: MountServerInput): Promise<MountServerResult> {
-  const { loader, workspace, config, tools } = lifecyclePorts.get();
+  const { loader, workspace, config, tools, logs } = lifecyclePorts.get();
   const id = workspace.idFor(input.root, input.server.name);
   const officialConfig = officialMcpConfig(input.server, id, config.expandServerEnv);
   const module = await loader.load(OFFICIAL_MCP_CLIENT_SPECIFIER);
   const entry = mountLedger.mount(id, module, officialConfig);
-  const outcome = await awaitMountWindow({
-    id,
-    handle: entry.handle,
-    // 代际守卫读账本：本条目被 dispose 或顶替之后到达的结算一律作废（§3.4 步骤 6）。
-    isCurrent: () => mountLedger.isCurrent(entry),
-    hasTools: (candidate) => hasRegisteredTools(tools, candidate),
-    onState: input.onState,
-    ...(input.connectTimeoutMs === undefined ? {} : { connectTimeoutMs: input.connectTimeoutMs }),
-  });
+  // 收集器只包住等待窗口：首连与首次发现都结算在官方 ready 之前，窗口内的原话就是这次装载的
+  // 全部错因；窗口结束即摘除，常驻订阅只会让每个实例都挂一个导出器去收事后噪音。
+  const collected = collectOfficialLogs(logs, id);
+  let outcome: MountWindowOutcome;
+  try {
+    outcome = await awaitMountWindow({
+      id,
+      handle: entry.handle,
+      // 代际守卫读账本：本条目被 dispose 或顶替之后到达的结算一律作废（§3.4 步骤 6）。
+      isCurrent: () => mountLedger.isCurrent(entry),
+      hasTools: (candidate) => hasRegisteredTools(tools, candidate),
+      diagnostics: collected.lines,
+      onState: input.onState,
+      ...(input.connectTimeoutMs === undefined ? {} : { connectTimeoutMs: input.connectTimeoutMs }),
+    });
+  } finally {
+    // 必须 finally：窗口抛错时更要摘，否则一个失败的实例会永久占着宿主日志面。
+    collected.stop();
+  }
   return { id, entry, outcome };
 }
 

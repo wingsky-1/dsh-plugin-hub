@@ -5,9 +5,9 @@
  * （767-v6-STAGED-PLAN §2.1 的 K9 / K10；超时封装归此已决）。目录外模块**只能**从这里引用
  * （verify-dir-imports 静态强制）；域内实现不被域外直引。
  *
- * 本域**有对上依赖**（deps.ts 的五条 Port）：宿主装载口与工具注册表查询、pipeline 的超时
- * 兜底、workspace 的 serverName 分配、config 的模板预展开。域内一律经 `impl/service` 的端口
- * 持有者取数，故域间只有类型边，没有值边。
+ * 本域**有对上依赖**（deps.ts 的六条 Port）：宿主装载口、工具注册表查询与宿主日志导出器、
+ * pipeline 的超时兜底、workspace 的 serverName 分配、config 的模板预展开。域内一律经
+ * `impl/service` 的端口持有者取数，故域间只有类型边，没有值边。
  *
  * 本片（S1-4b）落**真装载**（`mountServer`：取 id → 官方 Config → 装载 → 等待窗口），但仍
  * **不进 `src/index.ts` 的装配表**：由单元测试用假 LoaderPort / 假 ToolsPort 驱动，接线在 S1-4c。
@@ -18,7 +18,7 @@ import { lifecyclePorts } from "./impl/service/index.ts";
 
 /**
  * 装配装载生命周期域：把组合根持有的端口写入域内注册表（见 impl/service）。调用点在
- * `src/index.ts` 的 `apply` 内而不是模块求值期——五条 Port 里的 loader 是**宿主服务**
+ * `src/index.ts` 的 `apply` 内而不是模块求值期——六条 Port 里的 loader 是**宿主服务**
  * （官方 loader 包不在 catalog、类型面取不到，只能经 `ctx.get` 现取），静态模块引用给不出来。
  *
  * 为什么不是 `export async function`：注入面对账（verify-dir-imports 的 analyzeInjectionFaces）
@@ -46,6 +46,13 @@ export { awaitMountWindow } from "./impl/timeout/index.ts";
 export type { MountWindowInput, MountWindowOutcome } from "./impl/timeout/index.ts";
 export { mountServer } from "./impl/mount/index.ts";
 export type { MountServerInput, MountServerResult } from "./impl/mount/index.ts";
+export {
+  attributeOfficialLog,
+  collectOfficialLogs,
+  diagnosticText,
+  officialLogText,
+} from "./impl/logs/index.ts";
+export type { OfficialLogCollector } from "./impl/logs/index.ts";
 export type {
   ConfigPort,
   LifecycleDeps,

@@ -42,10 +42,11 @@ function install(loader: LoaderPort): void {
     loader,
     pipeline: { withTimeout },
     // 本文件只测账本 / 六态投影 / 等待窗口三块，装配仍须给全键集（注入面对账要求严格相等）。
-    // 这三样是惰性假件：真装载链的字段映射与注册面探测归 unit-lifecycle-mount。
+    // 这四样是惰性假件：真装载链的字段映射、注册面探测与官方日志收集归 unit-lifecycle-mount。
     workspace: { idFor: () => "srv" },
     config: { expandServerEnv: (server) => server },
     tools: { schemas: () => [] },
+    logs: { capture: () => () => {} },
   });
 }
 
@@ -269,6 +270,43 @@ describe("装载等待窗口", () => {
 
     expect(outcome).toMatchObject({ kind: "settled", state: "failed" });
     if (outcome.kind === "settled") expect(outcome.error).toMatch(/官方发现预算 10000ms/);
+  });
+
+  it("超时结算把窗口内的官方原文接进 error（官方是本插件唯一的错因来源）", async () => {
+    const { entry } = mountOne("srv-stuck-log", "never");
+
+    const outcome = await awaitMountWindow({
+      id: "srv-stuck-log",
+      handle: entry.handle,
+      connectTimeoutMs: CONNECT_MS,
+      isCurrent: () => mountLedger.isCurrent(entry),
+      hasTools: () => false,
+      diagnostics: () => ["spawn /bin/echo ENOENT"],
+      onState: () => {},
+    });
+
+    expect(outcome).toMatchObject({ kind: "settled", state: "failed" });
+    if (outcome.kind === "settled") {
+      expect(outcome.error).toMatch(/连接超时/);
+      expect(outcome.error).toMatch(/官方日志：spawn \/bin\/echo ENOENT/);
+    }
+  });
+
+  it("官方一条都没说时不接空字段：error 里不出现「官方日志」", async () => {
+    const { entry } = mountOne("srv-silent", "immediate");
+
+    const outcome = await awaitMountWindow({
+      id: "srv-silent",
+      handle: entry.handle,
+      connectTimeoutMs: CONNECT_MS,
+      isCurrent: () => mountLedger.isCurrent(entry),
+      hasTools: () => false,
+      diagnostics: () => ["  ", ""],
+      onState: () => {},
+    });
+
+    expect(outcome).toMatchObject({ kind: "settled", state: "failed" });
+    if (outcome.kind === "settled") expect(outcome.error).not.toMatch(/官方日志/);
   });
 
   it("deferred：settle 前投影 connecting，settleReady() 之后转 connected", async () => {

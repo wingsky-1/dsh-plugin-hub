@@ -57,6 +57,43 @@ export interface EventsPort {
 }
 
 /**
+ * 一条宿主日志记录的收窄面：只声明本包真的会读的四个字段。
+ *
+ * 为什么不直接引 cordis 的 `Message`：本包对宿主类型一律"自持声明形状、只认运行时真要用到
+ * 的部分"（与 `ResolvedLoader` 同思路），宿主加字段不会波及域代码；而少声明一个已用字段会
+ * 在消费点编译期暴露，不会静默读到 undefined。
+ */
+export interface LogRecord {
+  /** 记录名：官方 MCP 客户端固定为 `mcp-client`（见共享层常量）。 */
+  readonly name: string;
+  /** 记录类型（error / warn / info / debug）。 */
+  readonly type: string;
+  /** 数值级别；排序与过滤用。 */
+  readonly level: number;
+  /** 格式化参数：官方把可读文案放在字符串参数里。 */
+  readonly args: readonly unknown[];
+}
+
+/**
+ * 宿主日志面：把「日志导出器」这一条能力递进域里。
+ *
+ * 为什么需要它（换引擎后才有）：官方 dsh-mcp-client 不暴露任何状态 API，成功连接零日志，
+ * 失败与放弃重连才说话——这些原话是本插件唯一能拿到的错因，而宿主默认既不打印也不落盘
+ * （实测：dsh.log 只有一行 URL，shipped web-app 无日志消费者）。没有这条面，首连失败对
+ * 用户就是静默的。
+ *
+ * 为什么用 `capture(handler)` 而不是 `tail()`：导出器是**活**订阅（挂上即开始收），域自己
+ * 决定何时摘除；宿主 ring buffer 的读取面不在本包里（那是宿主的实现细节，不是契约）。
+ */
+export interface LogsPort {
+  /**
+   * 挂一个日志导出器。返回摘除器：日志面是诊断功能，**摘除器必须总能拿到**——官方实例已经
+   * 拆了却还占着导出器，是比"少一条日志"严重得多的问题。
+   */
+  capture(handler: (record: LogRecord) => void): () => void;
+}
+
+/**
  * 官方插件的模块面：官方 MCP 客户端的**命名空间**形态（`name` / `inject` / `apply` /
  * `Config`，无 `default`）。成员全可选是因为这里只描述「我方见到的那份包长什么样」，
  * 不重复官方自己的必填约束——自持声明的价值在于形状只有这一处，不作为校验面。
@@ -115,6 +152,7 @@ export type HostContextPort = Pick<
 /** 组合根收窄后递给各域的宿主能力面：域再从中 `Pick` 自己那一份。 */
 export interface HostFaces {
   readonly logger: LoggerPort;
+  readonly logs: LogsPort;
   readonly register: RegisterPort;
   readonly tools: ToolsPort;
   readonly prompt: PromptPort;

@@ -42,7 +42,14 @@ afterEach(() => {
 /** apply 通用 fakeCtx 底座（各分支按需覆盖）。 */
 function baseCtx(overrides = {}) {
   return {
-    logger: { warn: () => {}, info: () => {}, error: () => {} },
+    logger: {
+      warn: () => {},
+      info: () => {},
+      error: () => {},
+      // 装载窗口经 bindHost 的日志面挂导出器收官方错因；缺这一面，装载链会撞在「夹具没造全」上
+      // 而不是被测行为上。
+      exporter: () => () => {},
+    },
     tools: { register: () => () => {} },
     webServer: { register: () => () => {} },
     systemPrompt: { section: () => () => {} },

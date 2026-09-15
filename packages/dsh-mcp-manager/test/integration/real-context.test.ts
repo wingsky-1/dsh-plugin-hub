@@ -274,6 +274,28 @@ describe("组合根：宿主上下文只到组合根", () => {
     fiber.ctx.emit("agent/pre-step", payload, next);
     expect(seen).toEqual(["itest-agent"]);
   });
+
+  it("logs.capture 收到宿主 logger 的记录，摘除之后不再收到", async () => {
+    const { fiber } = await mount([]);
+    const faces = bindHost(fiber.ctx);
+    const seen: string[] = [];
+    const off = faces.logs.capture((record) => {
+      seen.push(record.type + ":" + record.level + ":" + String(record.args[0]));
+    });
+
+    // 默认档位的宿主就得能收到 warn：这条面自带门槛（levels.default=2），不要求用户把日志级别
+    // 配够——否则「首连失败可见」会变成一条有前提的承诺。cordis 的投递闸只放阈值内的档位
+    // （LoggerLevel 数值越大越啰嗦），故这里同时钉住 debug 不进面（诊断不要官方内部噪音）。
+    fiber.ctx.logger.warn("itest:log-one");
+    expect(seen).toEqual(["warn:2:itest:log-one"]);
+
+    fiber.ctx.logger.debug("itest:log-debug");
+    expect(seen).toEqual(["warn:2:itest:log-one"]);
+
+    off();
+    fiber.ctx.logger.warn("itest:log-two");
+    expect(seen).toEqual(["warn:2:itest:log-one"]);
+  });
 });
 
 // ---------------------------------------------------------------- 装配
