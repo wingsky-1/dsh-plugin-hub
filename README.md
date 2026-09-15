@@ -95,6 +95,7 @@ node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply  # 落盘：先
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio / streamable-http）：项目级/全局两级配置分工作目录维护；项目级 MCP 默认经中间层收敛为 4 个原子工具（`middleware: all` 全量收敛、设置页热切换）；工作空间隔离防串台；配置只存 `${ENV}` 引用不落盘密钥；提供运行时注册接口供其他插件注入 MCP；可选 MCP 调用统计与 debug 模式（metadata-only，默认关） | [README](packages/dsh-mcp-manager/README.md) · [架构图解](docs/architecture/dsh-mcp-manager.md) · [升级修复](#mcp-catalog-修复与升级须知) | 已发布 |
 | `@wingsky-1/dsh-web-file-preview` | 把对话内「用默认应用打开」的文件请求改写成官方右侧栏预览（拦截 `POST /api/present.open` 转 `ctx.sidebarRight.openResource`），不注册官方扩展点、不修改官方源码 | [README](packages/dsh-web-file-preview/README.md) · [架构图解](docs/architecture/dsh-web-file-preview.md) | 已发布 |
 | `@wingsky-1/dsh-verify-isolated` | DSH 插件开发的隔离环境浏览器验证 skill：临时 DSH_HOME + 独立 profile + 独立端口 + 独立浏览器实例四重隔离，一键拉起、退出自动清理；自带 raw CDP 零依赖浏览器驱动（快照/点击/截图/求值，支持设备视口模拟），可选隔离审计；首启弹窗默认跳过 | [README](packages/dsh-verify-isolated/README.md) · [架构图解](docs/architecture/dsh-verify-isolated.md) | 已发布 |
+| `@wingsky-1/dsh-worktree-sidebar` | 给 agent 三个工具（register / create / remove），把某个 git worktree 登记给当前会话，让该会话右侧栏文件树指向那个 worktree，而**会话 cwd 不变**（`@` 引用、`present` 落点仍锚 cwd）；子 agent 会话继承父会话的登记；只在「打开页签 / 点官方刷新 / 窗口重新可见」时重读，不轮询 | [README](packages/dsh-worktree-sidebar/README.md) | 未发布 |
 
 <details>
 <summary><b>历史维护与迁移</b>——已停止维护的包、旧包迁移指引（装过旧包/退役包的用户请展开）</summary>

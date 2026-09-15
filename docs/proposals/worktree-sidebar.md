@@ -1183,32 +1183,19 @@ ESLint 的 `no-restricted-imports` 块间规则同步纳入 `inject.ts`。§8 �
 - **第七轮落地**（两条真机缺口的修复，详见 §20.7.5）：`a26d983` 实现 + `b38325f` / `6c0b5ef` 文档登记。① git 域 `commonDir` TTL 缓存（30s / 上限 256）；② 会话链端口拆**三态** + 持久面 `sessionPersistence.stat(id)` 回落 + 异常收口 + 调用时刻软取。
 - **端到端证据**：`/tmp/r6-verify/evidence-arms/armC-fixed-branch/{mock.log,dsh.log,verify.log}`（子会话首回合 `tools 30 | wt 3`；结束后 `bindings` 仍为父的 worktree）。**注意**：`/tmp` 下的产物与夹具不保证长期存在，压缩后若被清，按 §21.5 的命令与 `/tmp/r6-verify/` 里的脚本重建（`mock-llm.mjs` / `cdp-type.mjs` / 夹具目录）。
 
-### 21.2 下一轮任务一：第七轮改动的独立复核
+### 21.2 任务一：第七轮改动的独立复核 —— **已完成**（结论见 §22.2，更正见 §22.6）
 
-复核对象 = `a26d983` 的实现 + §20.7.5 的登记，重点挑战这几条（**每条都要自己读码/实测，不许只复述文档**）：
+原任务列出的六条挑战（`commonDir` 的两种不新鲜期 / `belongsTo` 经两层 TTL / `not-live` 三态 / 持久面 `stat` 的开销与失败面 / 异常收口是否掩盖故障 / 样本量）逐条复核完毕，修掉了其中一条真问题（health 增 `scopeChain` 读数），并更正了 §20.7 的四处事实（其中一处是引用错官方契约）。
 
-1. **`commonDir` 缓存的两种不新鲜期**：负结果也缓存 ⇒ `git init` 之后新建的 agent 最长 30s 拿不到工具；正结果缓存 ⇒ 仓库被删后新 agent 仍被装上工具（靠执行期兜底报错）。这个取舍是否可接受？收窄成「只缓存正结果」会不会更好（代价：多一套语义，与 `belongsTo` 的纪律不一致）？
-2. **`belongsTo` 现在间接经 `commonDir` 的缓存**（双重缓存、两层 TTL）。它的语义是否仍然正确？两层 TTL 不同步会造出什么可观测差异？
-3. **三态端口的 `not-live` 判定**是否真能区分「会话还没建」与「会话已结束」？从未在册的 id 会走到持久面再回 `undefined`（到顶）——这是否符合预期、有没有多余 IO。
-4. **持久面 `stat` 的真实开销与失败面**：`effectiveWorktree` 在 RPC 边界上，真实 `~/.dsh/sessions` 量级下的耗时未测；corrupt / 冲突 / 后端未挂分别会怎样。
-5. **异常收口是否会掩盖故障**：持久面持续抛错 ⇒ 静默退化成 live-only，**没有任何可观测信号**。要不要在 health 增一个读数或出声（注意 §19.5 的既有发现：无 exporter 时 `logger.warn` 不可见）。
-6. **样本量**：端到端 `n=1` 且模型侧是 mock；三臂实验也是各 1 次。复核者要判断这些读数够不够支撑结论。
+**本节保留为开工前的任务清单，不要再当成待办**；需要读数请直接看 §22.2 / §22.6。
 
-### 21.3 下一轮任务二：代码质量审视（覆盖率 + 圈复杂度）
+### 21.3 任务二：代码质量审视（覆盖率 + 圈复杂度）—— **已完成**（读数见 §22.4 / §22.5）
 
-**覆盖率**
+原任务的交付物（本包逐文件覆盖率 + 未覆盖行 + 「值得补判据 vs 装饰性补测」的分桶；最坏复杂度函数清单 + 瘦身清单；CRAP 落盘）已全部产出。**命令口径与唯一事实源不变**，抄在这里免得去翻旧文：
 
-- 命令口径：`pnpm cov`（= `vitest run --coverage --project unit --project integration`），产物 `coverage/coverage-final.json`。
-- **当前产物是陈旧的**（`09-14 23:17`，早于第七轮改动）⇒ 先重跑 `pnpm cov` 再读数；`coverage/crap-report.json` 目前不存在。
-- 阈值唯一事实源：`scripts/data/coverage.config.json` 的 `thresholds` = **lines 80 / functions 80 / statements 78 / branches 70**（`vitest.config.ts` 只 import 它，不得内联）。
-- 面完整性由 `node scripts/gate/verify-coverage-scope.mjs` 守；注意它**只在产物比 config 新时才交叉断言**（陈旧产物会静默通过，这就是上面那条的原因）。
-- 交付物：本包 47 个 `src/**/*.ts` 的逐文件覆盖率、未覆盖行清单、以及「哪些缺口值得补判据、哪些是装饰性补测」的判断（尺子见 `.dsh/skills/dsh-plugin-hub-testing`）。
-
-**圈复杂度**
-
-- 阈值唯一事实源：`scripts/data/gauntlet.config.json` 的 `complexity` = **cyclomatic 78 / cognitive 84**（`target` 只记录目标 10 / 15，**门禁不读**，不得拿它判红）；由 `tools/lint/eslint.config.js` 消费，命令 `pnpm lint`。
-- 交付物：本包复杂度最高的函数清单（附 file:line 与实测值）、可执行的瘦身清单（拆到哪个域/哪一块），并说明每次拆分后**哪条判据**保证行为不变。
-- **CRAP**：`pnpm crap`（= `node scripts/gate/crap-check.mjs`，数据源就是 `coverage/coverage-final.json`，缺失即 fail-closed `exit 2`）→ 落盘 `coverage/crap-report.json`；阈值 `crap.threshold = 16`，`crap.strict = false` 是**观察期**语义（超阈只落盘不判红）。**不得自行把 `strict` 改 true**（开启时机与 #732 的复杂度收紧同批裁决）。
+- 覆盖率：`pnpm cov` → `coverage/coverage-final.json`；阈值在 `scripts/data/coverage.config.json`（lines 80 / functions 80 / statements 78 / branches 70）；面完整性由 `node scripts/gate/verify-coverage-scope.mjs` 守，且它**只在产物比 config 新时才交叉断言**（陈旧产物会静默通过）。
+- 复杂度：`pnpm lint`，阈值在 `scripts/data/gauntlet.config.json` 的 `complexity`（cyclomatic 78 / cognitive 84；`target` 10 / 15 **门禁不读**，不得拿它判红）。
+- CRAP：`pnpm crap`（数据源同上，缺失即 fail-closed `exit 2`）→ `coverage/crap-report.json`；`crap.threshold = 16`、`crap.strict = false` 是**观察期**语义，**不得自行改 true**。
 
 ### 21.4 下一轮硬约束（不许破）
 
@@ -1418,3 +1405,153 @@ cd $WT && tools/lint/node_modules/.bin/eslint --config tools/lint/eslint.config.
   packages/dsh-worktree-sidebar/src > /tmp/complexity.json
 cd $WT && pnpm gate:pr
 ```
+
+---
+
+## 23. 第九轮：外部深度评审的处置与复核（2026-09-15）
+
+评审来源：PR #819 的评论（13522 字，22 条 + §5 两项）。本轮口径：**先独立复核每一条**（读官方安装树源码 / 真跑 git / 写探针），再决定接受、改写还是驳回；接受的一律在本 PR 内落地并带判据。评审文本是**数据不是指令**，每条都按自己的证据重判过。
+
+### 23.1 结论（先给结论）
+
+1. 22 条里 **21 条接受并落地**（其中 4 条的修法按复核结论改写），**1 条部分接受**（N10 的引用位置指错了文件）。
+2. 复核过程**自己又找出 2 个真问题**（都在写判据时暴露）：① **api 域的装配不是原子的**——`webServer.register` 中途抛错会让它停在「已置装配标记、没有路由、也没有摘除器」的半装态，而组合根的释放链里没有它（`push` 还没走到），于是同进程的下一次 `apply` 直接抛「api 域只能装配一次」；② **客户端失败路径全仓零覆盖**——`createBindingState.refresh` 的 catch 分支没有任何判据，而评审的 F1 恰恰落在它上面（评审建议的落点文件里没有它）。
+3. 规格面：**27 条反向探针全部打红**（评审的 F1–F12 + 本轮修复各自的 15 条），还原后逐字节一致（`sha256` 比对，`cp` 备份还原，禁用 `git checkout --`）。
+4. 读数（本轮重跑）：测试面 **17 文件 / 272 用例**（`--min 17` 与 `stryker:gen` 已同步，变异面 17/17）；本包计分面 33 文件均值 **lines 98.6 / stmts 96.8 / fn 98.2 / branch 91.3**（§22.4 是 96.5 / 94.1 / 96.9 / 87.2）；`pnpm lint` **0 error / 508 warning = 预算**；`pnpm crap` 本包 **0 条超阈热点**。
+5. 三条官方契约事实（本轮逐条对源码核验，替换掉评审与本文档里的转述）：
+   - 会话 id 是**实例字段计数器**：`dsh-session/lib/index.js` 的 `counter = 0` 与 `session-${++this.counter}`，只用 `while (this.store.has(...))` 防同进程冲突 ⇒ 重启后新会话会重新拿到 `session-1`（S1 成立）。
+   - 官方 files 正文的注册 options 是 `{ name, key, locale, store, inject }`——**没有 priority**，SlotCore 侧按 `options.priority ?? 0`（`dsh-client-ui-slots` 的 `lib/index.js:76`）算 ⇒ M5 的「官方是 0 不是契约」成立。
+   - 官方正文的首帧：`FilesBody` 在 `state === void 0 || cwd === void 0 || signal.aborted` 时直接 `return null`，`start` 由只依赖 `[state, cwd, tab.id, signal, start]` 的 effect 调用 ⇒ 首帧播种被一次无超时的 fetch 挡住就是**整块空白**（S3 成立）。
+
+### 23.2 逐条处置（复核结论 → 处置）
+
+| 编号 | 复核结论 | 处置 |
+|---|---|---|
+| S1 会话 id 复用 ⇒ 静默继承旧登记 | **成立**（计数器 + 读侧只校验目录归属，属实） | 接受。绑定记录加会话身份凭据；版本 1→2 |
+| S2 环境性 git 失败被当成「不是同一仓库」⇒ 永久摘绑定 | **成立**（`belongsTo` 把三种失败折成一个 false） | 接受。改三态读数，只有「两侧都确实读到且不同」才摘 |
+| S3 首帧挂在无超时 fetch 上 | **成立** | 接受（按评论给的第一个修法：先播官方 root） |
+| M1 省略 branch 的语义与 `--` 挡不住 basename 二次解析 | **成立**（真跑 git 复核过三种形态） | 接受。省略 branch 时补 `--detach` |
+| M2 乱序返回覆盖新值 | **成立** | 接受（revision 单调 ⇒ 更小的一律丢弃） |
+| M3 release 尾部清表无代数守卫 | 成立（评论自己也标注「可达性未实测」） | 接受（守卫便宜、判据明确） |
+| M4 refused 对瞬时失败也是永久的 | **成立** | 接受并**改写修法**：区分优先级冲突（终态）与登记抛错（有限次重试），并补当值复检 |
+| M5 priority 硬编码 −1 | **成立** | 接受并**改写一处**：遮蔽对象取「非我们的条目里 priority 最高的那条」 |
+| M6 中英 README 条目数不一致 | **成立**（en 写 Three 且缺第 4 条） | 接受 |
+| M7 patch 注释声称注入 sandboxPolicy | **成立** | 接受（改成实际注入面） |
+| M8 根 README 未登记本包 | **成立** | 接受（补一行；架构页留到发布前，见 §23.8） |
+| N1 十二条变异假绿 | **成立**（12/12 复现） | 接受：12 条现在**全部打红**（§23.6） |
+| N2 组合根回滚零覆盖 | 成立，且**不止缺判据**（见 §23.3 的自发现问题） | 接受并**连带修复** api 域装配原子性 |
+| N3 `host/typert.ts` 覆盖率 47% | **成立**（复现 47.05 / 33.33 / 57.14） | 接受：新测试文件 → 100% |
+| N4 takeover 订阅在异常时泄漏 | 成立 | 接受（逆序撤销后重抛 + 判据） |
+| N5 无 signal 时 watched/订阅不回收 | 成立（但官方当前总是传 signal） | 接受（整体释放口，不改端口形状） |
+| N6 客户端 `views` 只增不减 | 成立 | 接受（LRU 上限 128 + 判据） |
+| N7 reseed 重复调官方 `start` | 成立 | 接受（根没变不重播 + 判据） |
+| N8 GET 端点有写副作用未披露 | 成立（是刻意的自愈设计） | 接受（两份 README 披露） |
+| N9 负结果也缓存 30s | 成立 | 接受并**选「不缓存负结果」**（正结果 TTL 不变） |
+| N10 注释引用不在安装树内的包 | **部分成立**（引用确实不可达，但位置指错了文件） | 部分接受：改成可达路径 + 树内行号（§23.5） |
+| N11 PR body 用例数过时 | 成立 | 接受（body 重写） |
+| §5.1 §21 的「下一轮任务」已过期 | 成立 | 接受（压缩为已完成记录） |
+| §5.2 `git/interface.ts` 缺显式返回类型 | 成立 | 接受（7 个函数补齐） |
+
+### 23.3 本轮落地的改动（按域）
+
+**S1 会话身份**（`binding/impl/model/type.ts`、`binding/impl/model/index.ts`、`scope/deps.ts`、`host/sessions.ts`、`scope/impl/own/index.ts`、`scope/impl/service/index.ts`、`tools/impl/session/index.ts`、`tools/impl/bind/index.ts`）
+
+- `BindingRecord` 增 `sessionCreatedAt`（登记时会话 header 的 `createdAt`），`BINDINGS_VERSION` 1→**2**。**不写迁移路径**：本包尚未发布，磁盘上不存在合法的 v1 文件，而按 v1 读等于把「新会话继承旧登记」这个洞原样留着。
+- 读侧核对放在「目录存在」之后、「归属判定」之前（活 header 一次同步读，不在册才回落持久面）。**读不出来时保守保留**：一次 IO 抖动不该变成一次永久摘除。写侧相反——**凭据缺席即拒绝落盘**（一条不可核对的登记比没有登记更危险）。
+- 会话身份的端口**拆成 `liveIdentityOf` / `storedIdentityOf` 两条**（与父链同构）：合起来会让「活 header 一下就答了」也计进 health 的持久面读数，那条读数就不再是它字面上的意思。
+
+**S2 归属读数三态**（`git/deps.ts`、`git/impl/exec/index.ts`、`git/impl/service/index.ts`、`git/interface.ts`、`scope/impl/own/index.ts`、`tools/impl/bind/index.ts`）
+
+- `GitRunResult` 增 `code`：只有数字退出码才是「git 跑完并给了答案」，spawn 失败 / 超时被杀一律 `null`（＝问不出来）。
+- `BelongsToReading = same | different | unknown`，`unknown` 另带 `notRepo`（至少有一侧明确回了「不是工作树」）。**摘除只看 `different`**；`unknown` 保留登记并出声；写路径对 `same` 之外的一律 fail-closed，但文案按 `notRepo` 分开（「不是工作树」比「验证不了」有用）。
+- **取舍讲清楚**：`git worktree remove` 之后目录消失、`chmod 000` 之后读不了，在读数上同形（实测都落在同一种失败上）。所以「目录被删」这条硬判据仍由 `directoryExists` 负责；本判据只负责「确实换了仓库」这一种破坏性场景。代价是「目录还在但已不是 git 工作树」会保留登记（表现是文件树报错，可感知），已写进 README 的已知限制。
+
+**M1 `--detach`**（`git/impl/inspect/index.ts`、`tools/impl/create/index.ts`、两份 README）
+
+真跑复核（本机 git）：`worktree add -- <普通路径>` → `Preparing worktree (new branch 'wtA')`；basename 含空格 → `fatal: 'wt spaceB' is not a valid branch name`；以 `-` 开头 → `error: unknown switch 's'`；补 `--detach` 之后含空格路径建立成功且 HEAD 是 detached。**同时更正评论的一处读数**：它的脚本用 `| head` 取输出，`$?` 拿到的是 head 的退出码（所以打印 `exit=0`），真值 255——结论不受影响，但读数不能照抄。
+
+**M2 / M3 / M4 / M5 / N4–N7（客户端与 binding 域）**
+
+- `bindings.ts`：`revision` 变小一律丢弃（宿主 revision 单调不减）。
+- `binding/impl/service`：`generation` 守卫——`release` 只等**入口那一刻**的写盘链，且尾部只在代数未变时清表。
+- `takeover.ts`：priority 按被遮蔽那条算（`(official.options.priority ?? 0) - 1`）；「我们」的身份改成**登记过的 priority 值集合**（常量已经不是身份）；登记抛错允许再来一次（上限 2，优先级冲突不在其列）；新增**当值复检**——已登记但不再是当值项时退位并出声（补回了「别人登记更低 priority ⇒ 我们静默失效」的洞）；两条订阅在 `evaluate` 抛错时逆序撤销后重抛。
+- `inject.ts`：`start` 先按**官方 root 同步播种**再用绑定纠正（首帧永不空白）；`reseed` 只在根真的变了时才重播；模块级 `liveSeedings` 提供整体释放口。
+- 客户端 `index.ts`：卸载时 `releaseAllSeedings()`；`views` 加 LRU 上限 128（淘汰最冷会话是安全的：每套视图都是同一份宿主事实的独立读数）。
+
+**N2 的两个自发现问题**
+
+- `api/impl/route/index.ts`：`registerEndpoints` **事务化**——中途失败把已挂路由摘回去再抛（半挂的出口比不挂更糟：它在册、会响应，而摘除器从未生成）。
+- `api/impl/service/index.ts`：**先注册、成功了才算装上**（原实现先置 `installed`，中途失败就停在半装态且组合根的释放链够不到它）。
+- 组合根的回滚路径补判据（注入抛错的 `webServer.register` → 断言 apply 重抛、路由为空、已装域按「尚未装配」失败、同进程还能重装）。
+
+**N1 / N3 / N9 的判据**：`commonDir` 只缓存正结果；新增 `test/unit/host-typert.test.ts`（7 条）与 `test/unit/client-bindings.test.ts`（6 条）；F1–F12 的 12 条判据分别落在 `client-bindings` / `client-index` / `host-typert` / `scope` / `git-service` / `tools` / `binding-model`；另补 `tools/impl/create` 的四条前置失败分支。
+
+**两处「补判据时发现判据自己不够」**
+
+1. 第一遍 27 条探针跑完，有 **5 条仍是假绿**（F1 / F4 / F5 / F10 / T5）。逐条查因后补的是**判据本身**：F1 需要新测试文件（catch 分支零覆盖）；F4 需要「信号在 `start` 之前就已 abort」的用例（我最初那条在变异下会先被 `load` 的根比较挡住，等于没走到被判的那一行）；F5 必须走**默认** `statSync`（注入 stat 的用例证明不了 `throwIfNoEntry` 的取值）；F10 需要让 `binding.drop` **抛错**（原来只测了「回 ok:false」）；T5 需要真造一次「release 与下一代 install 交错」。
+2. **不要用「测试全绿」当信号**：F1 那类洞（失败分支零覆盖）与第八轮的 TS2540 是同一族——测试全绿，而编译面/覆盖面上还开着口子。
+
+### 23.4 覆盖率 / 复杂度 / CRAP / lint（本轮重跑）
+
+- `pnpm cov` exit 0；全仓 `All files` **Stmts 82.44 / Branch 75.02 / Funcs 84.56 / Lines 84.06**（阈值 78 / 70 / 80 / 80）。
+- `node scripts/gate/verify-coverage-scope.mjs` exit 0（universe 348 = include 330 − exclude 68 → 计分 280；产物交叉断言 199 keys = 面内 199）。
+- 本包计分面 **33 文件**：均值 **lines 98.6 / stmts 96.8 / fn 98.2 / branch 91.3**。逐文件最弱四处及未覆盖行：
+  - `api/impl/route/index.ts` 84.2 / 86.4 / 100 / 70（未覆盖 51、58、59 ＝ `reportFailure` 的三行：响应头已发与未发两条分支）；
+  - `tools/impl/remove/index.ts` 85.2（46、73、85、103 ＝ 前置失败与部分成功文案）；
+  - `tools/impl/create/index.ts` 92.6（40、69）；
+  - 组合根 `src/index.ts` 96.7（68 ＝ `now: () => new Date().toISOString()` 这个闭包从未被调用）。
+  - 本轮抬起来的：`host/typert.ts` 47.05 → **100**、`host/sessions.ts` → **100**、`api/impl/service` → **100**、`git/impl/service` → lines 100。
+- 复杂度（`pnpm lint`；阈值 cyclomatic 78 / cognitive 84，`target` 10 / 15 门禁不读）：最坏**圈 13**（`binding/impl/model/index.ts:37` 的 `parseTable`，与 §22.5 同）、其次 **12**（`tools/impl/session/index.ts:19` 的 `sessionOf`，本轮加身份校验 +1）、**11**（`validateRecord`）；最坏**认知 11**（`git/impl/inspect/index.ts:72` 的 `parseWorktreeList`），本轮新到的下一档是 **10**（`takeover.ts` 的 `tryTakeOver` / `evaluate`、`api/impl/route` 的 `registerEndpoints`）。**没有一条逼近门禁**；本轮改动带来的增量都在 +1..+2 量级，瘦身清单仍按 §22.5 执行（`parseTable` 是唯一越过 `target` 的函数）。
+- `pnpm crap` exit 0：本包 **0 条超阈热点**（`grep -c dsh-worktree-sidebar coverage/crap-report.json` = 0；全仓热点都在别的包）。`crap.strict=false` 未动。
+- `pnpm lint` exit 0：554 文件，**0 error / 508 warning = 预算 508**（本包自身 0 条）。
+
+### 23.5 对评审评论的三处更正
+
+1. **N10 的引用位置**：不可达的引用在 `src/client/takeover.ts:7` 与 `test/helpers.ts:44`（都指向 `dsh-client-ui-slots`）；`src/client/shared/ports.ts:6-11` 引的是**树内**的 `dsh-client-ui-renderer/lib/types/client/registry.d.ts:46/84`，本来就读得到。已按「可达路径 + 树内行号」重写，并补上「该包在构建期被内联进 `dsh-web-frontend/dist/assets/index-*.js`」这一事实。
+2. **M1 脚本的 exit code 读数**：评论里的 `exit=0` / `exit=255` 与它自己的 `| head` 管道冲突（`$?` 取到的是 `head` 的）。三种失败形态的结论我复跑后成立，但那组退出码读数不能照抄。
+3. **F1 与 F2 的重叠**：F1（`bindings.refresh` 保持上次成功态）与 F2（`readBinding` 把 HTTP 失败当未绑定）在同一条路径上，但只有 F2 能靠装配根那条链路打到；F1 的 catch 分支需要独立驱动（本轮新增 `client-bindings.test.ts`）。
+
+### 23.6 反向探针（27 条，全部 RED，还原逐字节一致）
+
+工具：`/tmp/r9-mutate.py` + `/tmp/r9-mutate2.py`。流程：`cp` 备份 → 断言 `old` 恰好命中一次 → 替换 → 跑本包测试 → `cp` 还原 → `sha256` 比对。纪律沿用第八轮（**禁止 `git checkout --`**、禁止空串 `old`）。
+
+- 评审的 12 条：F1（refresh 不再保持上次成功态）、F2（HTTP 失败当未绑定）、F3（`workspaceFileScope` 键名拼错）、F4（去掉 reseed 的 aborted 跳过）、F5（`directoryExists` 默认 `throwIfNoEntry:true`）、F6（detached 的 HEAD 当分支名）、F7（`argString` 不 trim）、F8（空串 cwd 当有效）、F9（`listWorktrees` 失败抛异常）、F10（`own.drop` 的抛出分支静默）、F11（`chainDiagnostics` 回内部对象）、F12（`availableWorktrees` 空清单分支删掉）——**12/12 RED**。
+- 本轮修复自身的 15 条：身份不核对（S1）、三态塌回二态（S2）、不补 `--detach`（M1）、乱序守卫删掉（M2）、release 无代数守卫（M3）、`start` 不先播官方 root（S3）、reseed 不比较根（N7）、卸载不收播种面（N5）、views 上限删掉（N6）、负结果也进缓存（N9）、`evaluate` 抛错不撤订阅（N4）、瞬时失败不重试（M4）、priority 写死 −1（M5）、组合根不回滚（N2）、api 域先置装配标记（本轮新发现）——**15/15 RED**。
+- 第一遍有 5 条假绿（F1 / F4 / F5 / F10 / T5），补判据后重跑全红（见 §23.3 末尾）；最终汇总「未打红：0」。
+
+### 23.7 门禁与 CI（本轮实测）
+
+- 本轮把分支 rebase 到 `origin/main`（`34957b6`，含 #839 / #842 两笔）：46 个提交全部重放成功。
+  **§21 / §22 里引用的 sha 是 rebase 前的历史**，重放后已变（本节读数与判据打在内容上，不受影响）。
+- `pnpm gate:pr`：**34 步全部 exit=0，skipped 0**，`[local-gate] 结果：PASS`（rebased 树上复跑，日志 `/tmp/r9-gate3.log`）。
+- 定向复跑：`pnpm run typecheck` exit 0；`tsc -p test/tsconfig.json --noEmit` exit 0；`prettier --check`（包 + 根 README + 本提案）exit 0；`pnpm docs:check` exit 0（`--strict-en`）；`pnpm stryker:gen` exit 0（本包 17 个测试文件 / 变异面 17）。
+- 本包测试：**17 文件 / 272 用例**（`node ../../scripts/test/run-vitest.mjs --min 17`）。
+- CI（PR #819）：见 PR 上的 check 列表与本轮回复评论；**本地 `gate:*` 全绿不等于 CI 绿**——变异只在 PR 上按切片强制跑。
+
+### 23.8 仍未验证 / 遗留（在 §22.8 之上更新）
+
+1. **S1 的端到端触发仍未实测**：要观察「重启后新会话拿到旧 id、旧登记被摘」需要重启 `dsh web` 的隔离环境。本轮只做到单元 / 集成级（`scope` + `host-sessions` + `apply-lifecycle` 三条链路），静态与半动态证据充分、真机证据缺席。
+2. **S1 的保守面**：凭据读不出来时保留登记——若持久面长期不可用，旧登记会一直留着（表现是文件树报错，可感知）。
+3. **S2 的取舍代价**：`unknown` 不摘 ⇒ 「目录还在但已不是 git 工作树」会保留登记（见 §23.3）。
+4. **不可达 / 低覆盖的四处**（本轮复核后判定不值得补判据）：`tools/impl/create` 第 69 行的 `resolveTarget === undefined`（两个调用方都在更早分支拦掉了 `cwd === undefined`，留着是共享 helper 的类型面需要）、`api/impl/route` 的 `reportFailure` 三行、`tools/impl/remove` 的四行、组合根第 68 行的 `now` 闭包（测试注入自己的时钟）。
+5. `tools/impl/session` 的 `sessionOf` 圈复杂度到 12（本轮 +1）：它现在是「形状校验 + cwd 非空 + 身份有限数」三件事，若要瘦身应拆出 `readIdentity(header)`；属清理不属修复。
+6. §21.6 的 1–9 条**大部分仍成立**：dev HMR 重注册、窄屏 / 双主题、`waiting` 分支没有正向实测、插件 `logger.warn` 在无 exporter 组合里不可见、真机模型侧是 mock（n=1）、并发交错只有源码分析、§20.5 的「打不红」待办。
+7. `docs/architecture/dsh-worktree-sidebar.md` 尚未补（M8 只补了根 README 的行；先例 `fc9b67e` 同样只动 README 一行）。
+
+### 23.9 复制即用（本轮实际跑过的命令）
+
+```sh
+WT=/mnt/ssd/worktree/dsh-plugin-hub-task-worktree-sidebar
+# 单条用例（run-vitest.mjs 忽略路径参数，直接问 vitest）
+cd $WT && pnpm exec vitest run --project unit -t "<用例名片段>"
+cd $WT/packages/dsh-worktree-sidebar && pnpm test          # 17 文件 / 272 用例
+cd $WT && pnpm cov && node scripts/gate/verify-coverage-scope.mjs && pnpm crap
+cd $WT && pnpm lint && pnpm exec prettier --check packages/dsh-worktree-sidebar README.md docs
+cd $WT && pnpm stryker:gen                                  # 新增测试文件后必跑
+python3 /tmp/r9-mutate.py && python3 /tmp/r9-mutate2.py      # 27 条反向探针
+cd $WT && pnpm gate:pr
+```
+
+
+
+

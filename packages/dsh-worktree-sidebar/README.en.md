@@ -89,11 +89,12 @@ pnpm build && pnpm test      # unit + integration, including real git repos and 
 pnpm gate:pr                 # before opening a PR; a new package and catalog entry also need pnpm gate:full
 ```
 
-Three **UI semantics** cannot be covered by any automated gate (there is no browser in `gate:*`) and are pre-release manual evidence, verified in an isolated live environment:
+Four **UI semantics** cannot be covered by any automated gate (there is no browser in `gate:*`) and are pre-release manual evidence, verified in an isolated live environment:
 
 1. the file tree lists the worktree's contents;
 2. opening a file previews the worktree's copy;
-3. an unbound session — and an install without this plugin — behaves identically (no regression).
+3. an unbound session — and an install without this plugin — behaves identically (no regression);
+4. a subagent session's tree follows the binding of its parent session.
 
 ## Compatibility (read-only coupling)
 
@@ -109,21 +110,24 @@ On any of these failing the behaviour is **zero registration / fall back to offi
 ## Security model
 
 - **Loopback-only routes**: non-loopback requests to `/api/dsh-worktree-sidebar/*` get 403; unknown methods get 405 (403 before 405). No file-reading surface is exposed to the browser.
+- **The query endpoint has a self-healing side effect**: `GET /api/dsh-worktree-sidebar/bindings` may drop a binding it has positively confirmed as stale while resolving the effective root (rewriting `bindings.json` and bumping the revision). That is deliberate: the client uses the revision as its cache key, so merely ignoring a stale binding would leave the revision unchanged and the tree pointing at a root that no longer holds.
 - **The main repository path is never returned**: the binding query answers only `{ revision, worktreePath | null }`.
 - **git runs via `execFile` with argv only**, never a shell.
 - **Branch names are validated by git itself** (`git check-ref-format --branch`); every positional argument follows `--`, so a path that looks like `--force` is never read as a flag.
+- **An omitted branch adds an explicit `--detach`**: plain `git worktree add <path>` creates a **new branch named after the directory basename**, so a basename with a space (common in macOS home directories) is rejected as an invalid branch name and one starting with `-` is re-parsed as a flag — `--` only guards `worktree add`'s own option parsing. With `--detach`, "omit the branch" really means "check out the repository HEAD, detached".
 - **Removal is explicit**: `ws_worktree_remove` only drops the binding unless explicitly told otherwise, and `--force` must be asked for separately. The plugin only ever runs `git worktree remove` — never `rm -rf`.
 - **State lives under `DSH_HOME`**: `bindings.json` is written atomically (temp file + `rename`); a corrupt or future-versioned file is treated as empty rather than guessed at.
 - **No credentials, no network**: tools only write the plugin's own binding table and invoke git.
 
 ## Known limitations
 
-- **Re-binding may be needed after an external change**: bindings are keyed by session id in `bindings.json` and survive restarts, but if the worktree directory disappears the plugin treats it as unbound and the tree returns to the real cwd (visible, never pointing at a missing directory).
+- **Session ids are reused by new sessions after a restart, and the binding does not follow**: the official session id is an **in-process counter** (`session-1`, `session-2`, ...), so a restarted `dsh web` hands `session-1` to a brand-new session. Each binding therefore also stores the session header's `createdAt` as its identity: a mismatch (a different session) drops that binding and the tree falls back to cwd, while a genuinely restored session matches and keeps it (when the check cannot be read at all, the binding is conservatively kept — one IO hiccup must not permanently drop a user's binding).
+- **Worktree directory deleted from outside**: treated as unbound and the tree returns to the real cwd (visible, never pointing at a missing directory). But when the **ownership reading is unavailable** (permissions, failing git) the binding is kept and a warning is emitted: only two positively-read, differing common git directories count as "no longer a worktree of this repository".
 - **One worktree per session**: a second binding overwrites the first.
 - **No system-prompt injection**: the model is not told the tool exists beyond the tool list and result text. This is deliberate (no always-on prompt cost); discovery depends on the model inspecting its tools.
 - **Cannot write into the worktree under `workspace-write`** (see non-goals).
 - **One `dsh web` restart is needed after install or upgrade.**
-- **Per-session state is released with the plugin itself**: the client no longer infers liveness (per-session pruning was removed together with the polling), and uses the snapshot only to rewrite the single field `byId[sessionId].cwd`; views and subscriptions live exactly as long as this plugin is mounted (`views.clear()` inside `ctx.effect`).
+- **Per-session state is released with the plugin itself**: the client no longer infers liveness (per-session pruning was removed together with the polling), and uses the snapshot only to rewrite the single field `byId[sessionId].cwd`; views and subscriptions are released when the plugin unmounts (`releaseAllSeedings()` + `views.clear()` inside `ctx.effect`), and the view cache is capped at 128 entries, evicting the coldest sessions (each view is an independent reader of the same host fact, so an eviction never makes a tree read a different place).
 - **A second assembly in the same process throws**: all five domains are in-process singletons (`install` / `release` pairs with an `installed` guard), so a second instance cannot mount and the second `install` throws instead of silently sharing state. If a profile mounts this package twice you get one explicit startup error; the old "two instances do not interfere" semantics is gone.
 
 ## Retirement criteria
