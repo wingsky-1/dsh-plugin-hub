@@ -35,8 +35,9 @@ pnpm typecheck    # 全仓类型检查
 > `origin/main` 守护，面完整性由 `pnpm verify:coverage-scope` 守）；
 > **变异与 CRAP**在 `scripts/data/gauntlet.config.json`。
 >
-> **覆盖率口径（#722 阶段三）**：`pnpm cov` = vitest 的 istanbul provider，只跑
-> unit + integration（两者直连 `src/`）。分母是 `scripts/data/coverage.config.json` 的
+> **覆盖率口径（#722 阶段三 / #769 收窄）**：`pnpm cov` = vitest 的 istanbul provider，
+> 跑 unit + integration + client-unit + client-dom（四层都**直连 `src/`**）。分母是
+> `scripts/data/coverage.config.json` 的
 > `include`：`packages/*/src/**/*.{ts,tsx}` + `packages/*/src/**/*.mjs`（#733 3.4 补入的 3 个
 > 适配器实现，1756 行）+ `shared/**/*.js` 的**源文件**——零 vendor、零 lib 产物，且未加载的
 > 源文件按 0% 计入分母（分母不随「加载了什么」变化）。排除项是**结构化条目**（pattern +
@@ -45,13 +46,16 @@ pnpm typecheck    # 全仓类型检查
 > 产物）不进覆盖率，仍由 `pnpm test` 全量执行。阈值判分就是 `pnpm cov` 的退出码，
 > 不再有独立判分步骤；PR 的 `gate:full` 标签与 `observe.yml` 夜间班次共用这一执行点。
 >
-> **client 面暂排除在分母外**（`coverage.config.json` 里 `kind: pending-project` 的条目，
-> 带 `reviewBy` 与 `exitCriteria`，会进 `collect-exemptions` 的到期台账）：直连 src 的判据目前
-> 只覆盖 DOM 面模块（`test/client-dom/**` 的 happy-dom 层，见下）与客户端纯逻辑面
-> （`test/client-unit/**`），`index.tsx` 一类需要 react 渲染的面仍无判据，现有 `test/client/**`
-> 是读 lib 产物的契约测试。计入分母会让未覆盖部分（规模见 `coverage.config.json` 里对应的
-> `pending-project` 条目）把全局值稀释到约 60%、阈值失去约束力，且扩面时分子跳升、必须二次
-> 基线化。**待 client 源码整体有直连 src 的判据时移除排除项并一次性重新基线化。**
+> **client 面按包按面收窄（#769）**：此前是一条 `**/client/**` 整体排除，理由是「这些文件
+> 没有直连 src 的判据，计入分母只会稀释阈值」。那条理由对**一部分**文件成立、对另一部分不成立：
+> notifier 的 15 个纯 `.ts` 客户端模块里 12 个有直连判据（另有 2 个 DOM 面判据），它们计入分母
+> 后实测全局 lines 82.48 → 81.76、functions 83.17 → 81.99，四项仍在阈值之上。故拆成 5 条
+> `pending-project` 条目：notifier 只排除 `.tsx` 渲染面（等组件级渲染判据），另外 3 个包
+> 各自的整个 client 面仍排除（尚未重写、没有直连判据），`shared/client/**` 排除（其测试在
+> `scripts/test` 下、不属于任何 vitest project）；#840 退役 dsh-web-file-preview 后它那条随之删除。
+> 全部带 `reviewBy` 与 `exitCriteria`，进 `collect-exemptions` 的到期台账；条目腐烂由
+> `verify:coverage-scope` 判红。
+> **某个包的客户端有了直连判据就删掉它自己那一条——不要等「全部重写完」再一次性解绑。**
 >
 > **`pnpm crap` 现状（#722 阶段五已重建为 src 口径）**：圈复杂度取 ESLint 内置
 > `complexity` 规则，覆盖率取同一份 src 口径产物（`coverage/coverage-final.json`），

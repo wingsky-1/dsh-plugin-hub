@@ -28,7 +28,7 @@
     "gate:changed": "node scripts/gate/local-gate.mjs --tier changed",
     "gate:pr": "node scripts/gate/local-gate.mjs --tier pr",
     "gate:full": "node scripts/gate/local-gate.mjs --tier full",
-    "cov": "vitest run --coverage --project unit --project integration",
+    "cov": "vitest run --coverage --project unit --project integration --project client-unit --project client-dom",
     "crap": "node scripts/gate/crap-check.mjs",
     "lint": "node tools/lint/bin/lint.mjs",
     "prepare": "lefthook install",
