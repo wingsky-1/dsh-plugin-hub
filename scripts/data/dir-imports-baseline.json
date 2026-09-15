@@ -27,13 +27,13 @@
       }
     },
     "dsh-mcp-manager": {
-      "modules": 15,
-      "scannedSrcFiles": 96,
-      "allSrcTsFiles": 111,
-      "interfaceFacades": 14,
+      "modules": 16,
+      "scannedSrcFiles": 100,
+      "allSrcTsFiles": 115,
+      "interfaceFacades": 15,
       "leafValueEdges": 17,
-      "fileValueEdges": 129,
-      "crossModuleRefs": 171,
+      "fileValueEdges": 132,
+      "crossModuleRefs": 180,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],

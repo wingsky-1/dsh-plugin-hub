@@ -1,10 +1,12 @@
 /**
  * dsh-mcp-manager — connection/runtime/deps.ts：连接域 runtime 子层的对上依赖声明（纯类型面，§3.1 规则 2）。
  *
- * 本子层运行时能力消费非零（决策⑥ 以运行时能力消费为准），按提供方分四组：catalog 取目录新鲜判定
+ * 本子层运行时能力消费非零（决策⑥ 以运行时能力消费为准），按提供方分五组：catalog 取目录新鲜判定
  * 与工具装箱；config 取配置模板 ${ENV} 预展开与凭据词根（#767 S1-1 自 transport.ts 迁出后经端口取用）；
  * pipeline 取两执行路径共用的结果投影、超时兜底、错误取消息、凭据脱敏、参数归一与
- * 策略裁决族；workspace 取全名解析 / 归一与拼装。宿主能力实测 0 命中——本子层的 ctx 面以
+ * 策略裁决族；workspace 取全名解析 / 归一与拼装；servers/dispatch 取 ws_mcp_call 执行器
+ * （#767 S1-3a 的执行路径搬迁：转发壳在本子层，执行器在新域，值经本端口递入）。宿主能力实测
+ * 0 命中——本子层的 ctx 面以
  * `ManagerLite` / `MiddlewareHost` 两条构造入参类型就地声明（#767 W11b2a 自 types/host-faces.ts
  * 落位本文件），不经端口。
  *
@@ -26,6 +28,7 @@
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type * as catalogApi from "../../catalog/interface.ts";
 import type * as configApi from "../../config/interface.ts";
+import type * as dispatchApi from "../../servers/dispatch/interface.ts";
 import type * as pipelineApi from "../../pipeline/interface.ts";
 import type * as workspaceApi from "../../workspace/interface.ts";
 import type { ServerConfig } from "../../config/interface.ts";
@@ -60,6 +63,15 @@ export type WorkspacePort = Pick<
 >;
 
 /**
+ * servers/dispatch 域给本子层的能力面：ws_mcp_call 执行器（#767 S1-3a）。
+ *
+ * 这是**过渡期**的下游端口：执行路径已搬出本子层（middleware.callTool 只剩转发壳），但转发壳
+ * 与它签发的工具都还住在 connection/runtime，值只能经本子层的端口表递进来——直引新域门面会
+ * 新增一条域间值边（I2①）。S1-4 接线后壳消失，本端口随 middleware.ts 一并删除。
+ */
+export type DispatchPort = Pick<typeof dispatchApi, "executeMcpCall">;
+
+/**
  * 装配入参：本子层依赖的全部外部。键集与组合根 `installRuntime` 的实参字面量由
  * verify-dir-imports 的注入面对账强制**严格相等**（多一个键、少一个键都判红）。
  */
@@ -68,6 +80,8 @@ export interface RuntimeDeps {
   catalog: CatalogPort;
   /** config 域：配置模板预展开与凭据词根。 */
   configEnv: ConfigEnvPort;
+  /** servers/dispatch 域：ws_mcp_call 执行器（过渡端口，见 DispatchPort）。 */
+  dispatch: DispatchPort;
   /** pipeline 域：结果投影 / 超时兜底 / 取消息与脱敏 / 参数归一 / 策略裁决。 */
   pipeline: PipelinePort;
   /** workspace 域：全名解析、工具名归一与全名拼装。 */

@@ -54,6 +54,7 @@ import type {
 } from "./server/catalog/interface.ts";
 import * as configModelApi from "./server/config/interface.ts";
 import { Config, DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS } from "./server/config/interface.ts";
+import * as dispatchApi from "./server/servers/dispatch/interface.ts";
 import * as pipelineApi from "./server/pipeline/interface.ts";
 import * as runtimeApi from "./server/connection/runtime/interface.ts";
 import * as statsApi from "./server/stats/interface.ts";
@@ -111,6 +112,7 @@ installOrchestrator({
 runtimeApi.installRuntime({
   catalog: catalogApi,
   configEnv: configModelApi,
+  dispatch: dispatchApi,
   pipeline: pipelineApi,
   workspace: workspaceApi,
 });
