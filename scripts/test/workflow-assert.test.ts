@@ -512,19 +512,22 @@ test("#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ 
   );
 
   // jsonReporter / incrementalFile 输出路径与配置文件名自洽
-  for (const f of confFiles) {
-    const conf = JSON.parse(readFileSync(join(confDir, f), "utf8"));
-    const out = conf?.jsonReporter?.fileName;
-    assert.ok(
-      out && out.endsWith(`coverage/mutation/${f}`),
-      `${f} 的 jsonReporter 输出应为 coverage/mutation/${f}（mutation-gate.mjs 按此约定读取）`,
-    );
-    const inc = conf?.incrementalFile ?? "";
-    assert.ok(
-      inc.endsWith(`incremental-${f.replace(/^dsh-/, "").replace(/\.json$/, "")}.json`),
-      `${f} 的 incrementalFile 应为 incremental-${f.replace(/^dsh-/, "").replace(/\.json$/, "")}.json（CI restore 步骤按此推导）`,
-    );
-  }
+  const assertConfOutputPaths = () => {
+    for (const f of confFiles) {
+      const conf = JSON.parse(readFileSync(join(confDir, f), "utf8"));
+      const out = conf?.jsonReporter?.fileName;
+      assert.ok(
+        out && out.endsWith(`coverage/mutation/${f}`),
+        `${f} 的 jsonReporter 输出应为 coverage/mutation/${f}（mutation-gate.mjs 按此约定读取）`,
+      );
+      const inc = conf?.incrementalFile ?? "";
+      assert.ok(
+        inc.endsWith(`incremental-${f.replace(/^dsh-/, "").replace(/\.json$/, "")}.json`),
+        `${f} 的 incrementalFile 应为 incremental-${f.replace(/^dsh-/, "").replace(/\.json$/, "")}.json（CI restore 步骤按此推导）`,
+      );
+    }
+  };
+  assertConfOutputPaths();
 
   // packages/ 目录集 ⊇ 基础包名集
   for (const p of basePkgs) {
@@ -1052,92 +1055,107 @@ test("#217+#187+#722: repo-gate-assert 判定表全组合锁定（事件 × full
   //     （#742 阶段 1.5：覆盖率不进 PR 默认路径，两侧都是 fail-closed）
   //   - PR + 空切片：三段全部 skipped 才绿（#742 阶段 1 收紧：if 上的 hasMutations 条件让
   //     空切片时 job 根本不实例化，不再有「零实例动态矩阵回报 failure」那种形态）
+  const expectNonPr = (full, cov, mut, verd) =>
+    full === "false" && allSkipped(cov, mut, verd) ? 0 : 1;
+  const expectPrWithMutations = (full, cov, mut, verd) => {
+    const covOk = full === "true" ? cov === "success" : cov === "skipped";
+    return covOk && (mut === "success" || mut === "failure") && verd === "success" ? 0 : 1;
+  };
+  const expectPrEmptySlice = (cov, mut, verd) => (allSkipped(cov, mut, verd) ? 0 : 1);
   const expectOf = (event, full, hm, cov, mut, verd) => {
     if (event !== "pull_request") {
-      return full === "false" && allSkipped(cov, mut, verd) ? 0 : 1;
+      return expectNonPr(full, cov, mut, verd);
     }
     if (hm === "true") {
-      const covOk = full === "true" ? cov === "success" : cov === "skipped";
-      return covOk && (mut === "success" || mut === "failure") && verd === "success" ? 0 : 1;
+      return expectPrWithMutations(full, cov, mut, verd);
     }
-    return allSkipped(cov, mut, verd) ? 0 : 1;
+    return expectPrEmptySlice(cov, mut, verd);
   };
 
   // PR 全量路径（gate:full）：hasMutations × coverage × 矩阵 × verdict 全组合（2×4×4×4 = 128 case）
-  for (const hm of ["true", "false"]) {
-    const pkgsJson = hm === "true" ? '["dsh-notifier"]' : "[]";
-    for (const cov of RESULTS) {
-      for (const mut of RESULTS) {
-        for (const verd of RESULTS) {
-          const expected = expectOf("pull_request", "true", hm, cov, mut, verd);
-          const v = run({
-            hasMutations: hm,
-            mutationPkgsJson: pkgsJson,
-            coverage: cov,
-            mutation: mut,
-            verdict: verd,
-          });
-          assert.equal(
-            v.code,
-            expected,
-            `PR gate:full hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`,
-          );
+  const assertPrFullCombos = () => {
+    for (const hm of ["true", "false"]) {
+      const pkgsJson = hm === "true" ? '["dsh-notifier"]' : "[]";
+      for (const cov of RESULTS) {
+        for (const mut of RESULTS) {
+          for (const verd of RESULTS) {
+            const expected = expectOf("pull_request", "true", hm, cov, mut, verd);
+            const v = run({
+              hasMutations: hm,
+              mutationPkgsJson: pkgsJson,
+              coverage: cov,
+              mutation: mut,
+              verdict: verd,
+            });
+            assert.equal(
+              v.code,
+              expected,
+              `PR gate:full hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`,
+            );
+          }
         }
       }
     }
-  }
+  };
+  assertPrFullCombos();
 
   // PR 默认路径（无 gate:full 标签）：#742 阶段 1 起变异按切片强制跑，只有 coverage 该被跳过——
   // hasMutations × coverage × 矩阵 × verdict 全组合（2×4×4×4 = 128 case）
-  for (const hm of ["true", "false"]) {
-    const pkgsJson = hm === "true" ? '["dsh-notifier"]' : "[]";
-    for (const cov of RESULTS) {
-      for (const mut of RESULTS) {
-        for (const verd of RESULTS) {
-          const expected = expectOf("pull_request", "false", hm, cov, mut, verd);
-          const v = run({
-            fullRequested: "false",
-            hasMutations: hm,
-            mutationPkgsJson: pkgsJson,
-            coverage: cov,
-            mutation: mut,
-            verdict: verd,
-          });
-          assert.equal(
-            v.code,
-            expected,
-            `PR 默认路径 hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`,
-          );
+  const assertPrDefaultCombos = () => {
+    for (const hm of ["true", "false"]) {
+      const pkgsJson = hm === "true" ? '["dsh-notifier"]' : "[]";
+      for (const cov of RESULTS) {
+        for (const mut of RESULTS) {
+          for (const verd of RESULTS) {
+            const expected = expectOf("pull_request", "false", hm, cov, mut, verd);
+            const v = run({
+              fullRequested: "false",
+              hasMutations: hm,
+              mutationPkgsJson: pkgsJson,
+              coverage: cov,
+              mutation: mut,
+              verdict: verd,
+            });
+            assert.equal(
+              v.code,
+              expected,
+              `PR 默认路径 hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`,
+            );
+          }
         }
       }
     }
-  }
+  };
+  assertPrDefaultCombos();
 
   // 非 PR 分支：三段结果全组合（2 事件 × 4×4×4 = 128 case）；push 真实形态
   // （GATE_MUTATION_PKGS 的 push 取值）为非空全集清单，数据校验须放行
-  for (const ev of ["push", "workflow_dispatch"]) {
-    for (const cov of RESULTS) {
-      for (const mut of RESULTS) {
-        for (const verd of RESULTS) {
-          const expected = expectOf(ev, "false", "true", cov, mut, verd);
-          const v = run({
-            event: ev,
-            fullRequested: "false",
-            hasMutations: "true",
-            mutationPkgsJson: JSON.stringify(MUTATION_PACKAGES),
-            coverage: cov,
-            mutation: mut,
-            verdict: verd,
-          });
-          assert.equal(
-            v.code,
-            expected,
-            `${ev} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`,
-          );
+  const assertNonPrCombos = () => {
+    for (const ev of ["push", "workflow_dispatch"]) {
+      for (const cov of RESULTS) {
+        for (const mut of RESULTS) {
+          for (const verd of RESULTS) {
+            const expected = expectOf(ev, "false", "true", cov, mut, verd);
+            const v = run({
+              event: ev,
+              fullRequested: "false",
+              hasMutations: "true",
+              mutationPkgsJson: JSON.stringify(MUTATION_PACKAGES),
+              coverage: cov,
+              mutation: mut,
+              verdict: verd,
+            });
+            assert.equal(
+              v.code,
+              expected,
+              `${ev} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`,
+            );
+          }
         }
       }
     }
-  }
+  };
+  assertNonPrCombos();
   // 非 PR 下 fullGate=true：全量门禁只允许在 PR 上按标签触发（#187 收敛不变量）
   assert.equal(
     run({ event: "push", mutationPkgsJson: JSON.stringify(MUTATION_PACKAGES) }).code,
