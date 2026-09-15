@@ -381,9 +381,11 @@ test("endpoint：tool 身份带判据面摘要，收窄扫描对象不再静默�
     "收窄 glob 必须改变身份",
   );
   // 同一个二进制的两次调用因此不再塌缩成一个身份——这是 B2 扩大扫描面后仍能区分口径的前提。
+  // #769 起 cov 面含客户端两层（client-unit / client-dom）——id 变化本身就是登记：
+  // 改了跑哪些 project 就会打红这里，逼着改的人显式确认「覆盖率分母变了」。
   assert.deepEqual(endpointOf("pnpm cov", SCRIPTS), {
     kind: "tool",
-    id: "vitest|--coverage,--project,integration,run,unit",
+    id: "vitest|--coverage,--project,client-dom,client-unit,integration,run,unit",
   });
   assert.deepEqual(endpointOf("pnpm test:contract", SCRIPTS), {
     kind: "tool",
