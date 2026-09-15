@@ -904,6 +904,34 @@ test("引用提取：行注释里的 /* 不得配成幻影块注释吞掉 import
   }
 });
 
+test("引用提取：字符串之后的注释同样不得当真（F5c，stripComments 引号态复位）", () => {
+  // 为什么单列一条：F5 的注释在字符串**之前**，而 stripComments 的引号态是跨字符推进的状态机
+  // ——「收尾引号复位」一旦写错，字符串**之后**的注释会整段留在输出里，注释内的 import 被当真。
+  // 该形态在 #732 的 scripts 面重构中真实出现过，且当时 F5/F5b 与行为指纹都没抓到（见 #839），
+  // 故固化为回归守卫：注释必须在字符串之后同样被剥掉。
+  const root = makeFixtureRoot({
+    [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
+    [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
+    [`${SRC}/b/impl.ts`]:
+      'const url = "https://example.com/x";\n' +
+      '// import { A } from "../a/impl.ts";\n' +
+      '/*\nimport { A } from "../a/impl.ts";\n*/\n' +
+      "export const B = 2;\n",
+  });
+  try {
+    const { status, out } = runOn(root, ["--zones"]);
+    assert.equal(status, 0, `字符串之后的注释里的 import 不得产生违规，实际 ${status}：\n${out}`);
+    assert.match(
+      out,
+      /R-A 语义切换前（impl → 他域任意文件，旧口径）：0 条/,
+      `字符串之后的注释不得计入 R-A：\n${out}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("引用提取：内联 import { type X } 判为类型边（F6）", () => {
   const root = makeFixtureRoot({
     [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
