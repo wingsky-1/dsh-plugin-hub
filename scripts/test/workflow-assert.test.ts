@@ -687,6 +687,9 @@ test("#276 方案 A: src 级 mutate 退役产物行号机制——ci/observe 两
     "scripts/gate/sync-mutate-segments.mjs",
     "scripts/gate/mutate-scope-guard.mjs",
     "scripts/data/mutation-segments.json",
+    // #276 方案 B 的派生库：方案 A（src 级 mutate）落地后它随整套漂移治理失去全部消费者，
+    // 但清点清单漏了它——调用方已在 #777 删掉，这个文件被单独留在 scripts/lib 直到本批。
+    "scripts/lib/mutation-segments-lib.mjs",
   ]) {
     assert.ok(!existsSync(join(ROOT, p)), `${p} 应已删除（#276 方案 A 退役清点）`);
   }
