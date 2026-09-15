@@ -22,8 +22,9 @@ test("真实仓库：catalog ↔ peer 零违规", () => {
   assert.deepEqual(problems, []);
   assert.ok(catalogSize >= 15, `catalog 应含补全后的官方包，实际 ${catalogSize}`);
   // #698：dsh-web-file-preview 重定位为纯客户端转发后依赖归零（移除其
-  // dsh-host-webserver / dsh-client-ui-slots 声明），总数 21 → 19。紧贴实际保持
-  // 回归底线语义：误删任一插件仍在使用中的官方 peer 声明依旧判红。
+  // dsh-host-webserver / dsh-client-ui-slots 声明），总数 21 → 19；#840 该包整体退役，
+  // 其 cordis peer 声明随之消失（不计入官方 peer 面）。紧贴实际保持回归底线语义：
+  // 误删任一插件仍在使用中的官方 peer 声明依旧判红。
   assert.ok(officialPeerCount >= 19, `官方 peer 应覆盖全部插件，实际 ${officialPeerCount}`);
 });
 

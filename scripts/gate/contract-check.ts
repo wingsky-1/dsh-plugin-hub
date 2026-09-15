@@ -239,9 +239,9 @@ console.log(failed === 0 ? "客户端契约：全部通过" : `客户端契约�
 // 源码全覆盖断言（src ⊆ ∪mutate ∪ ∪excludes）。执法点仍在本 contract 段，不新增
 // workflow；--zones / --graph 是纯报告开关（不进 CI，避免长输出）。
 // 覆盖范围补齐（#742 阶段 2 前置）：上面那条源码全覆盖断言此前只对 3 个包生效
-// （mcp-manager / notifier / provider-usage），lan-proxy 与 web-file-preview 的 src 不在
-// 任何扫描面内——新文件既不会被判「未覆盖」，也不会有 R-A 约束。两包在现有判据下实测均为
-// 零违规（R-A 语义切换前 0 / 切换后 0），故并入硬判，零判红成本换全覆盖。
+// （mcp-manager / notifier / provider-usage），lan-proxy 的 src 不在任何扫描面内——新
+// 文件既不会被判「未覆盖」，也不会有 R-A 约束。实测在现有判据下为零违规（R-A 语义切换
+// 前 0 / 切换后 0），故并入硬判，零判红成本换全覆盖。
 // 独立脚本可单独跑；接入本门禁防约束漂移。
 {
   const dirGate = spawnSync(
@@ -254,8 +254,6 @@ console.log(failed === 0 ? "客户端契约：全部通过" : `客户端契约�
       "dsh-notifier",
       "--package",
       "dsh-lan-proxy",
-      "--package",
-      "dsh-web-file-preview",
     ],
     { encoding: "utf8" },
   );

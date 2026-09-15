@@ -21,7 +21,6 @@
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理：stdio/HTTP 传输、工具注册、三档中间层收敛 | [dsh-mcp-manager.md](dsh-mcp-manager.md) |
 | `@wingsky-1/dsh-notifier` | 审批/完成/错误事件通知：浏览器 Notification + 系统 toast + Bark | [dsh-notifier.md](dsh-notifier.md) |
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计：v2 适配器契约 + 宿主端渲染 + 历史落盘 | [dsh-provider-usage.md](dsh-provider-usage.md) |
-| `@wingsky-1/dsh-web-file-preview` | 把对话内「用默认应用打开」改写成官方右侧栏预览 | [dsh-web-file-preview.md](dsh-web-file-preview.md) |
 | `@wingsky-1/dsh-verify-isolated` | 插件开发隔离浏览器验证 skill（临时 DSH_HOME + 独立 profile） | [dsh-verify-isolated.md](dsh-verify-isolated.md) |
 | `@wingsky-1/dsh-plugins-all` | 全家桶聚合包（一键装齐 + 聚合 cordis patch） | [dsh-plugins-all.md](dsh-plugins-all.md) |
 
@@ -36,8 +35,7 @@ flowchart LR
         P2["dsh-mcp-manager"]
         P3["dsh-notifier"]
         P4["dsh-provider-usage"]
-        P5["dsh-web-file-preview"]
-        P6["dsh-verify-isolated"]
+        P5["dsh-verify-isolated"]
     end
 
     subgraph profile["dsh web profile（cordis 运行时）"]
@@ -55,7 +53,6 @@ flowchart LR
     P3 --> CORDIS
     P4 --> CORDIS
     P5 --> CORDIS
-    P6 --> CORDIS
 ```
 
 要点：

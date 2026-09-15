@@ -36,20 +36,6 @@
         "scope": "src 级九段（#733 按域重写）：api HTTP 端点 / channels 出口 / config 配置 / events 宿主事件 / pipeline 管线 / sdk 服务面+组合根 / shared 包内共享 / stores 存储 / upgrade 存量迁移；基线为 2026-09-13 夜间全量班（run 34752395124）实测 covered 92.27%（killed 2586 / survived 217 / noCov 37），九段墙钟合计 10m13s",
         "threshold": 60
       },
-      "dsh-web-file-preview": {
-        "baselineScore": 42.6,
-        "baselineCovered": 72.27,
-        "baselineKilled": 330,
-        "baselineTotal": 777,
-        "baselineNoCoverage": 319,
-        "baselineErrors": 0,
-        "baselineDate": "2026-08-24",
-        "baselineDuration": "15s",
-        "baselineScope": "#698 重定位后 mutate 面 = src/{index,present-open}.ts（客户端 src/client/** 排除在 mutate 面外）；旧基线（自研预览实现的 lib/index.js:1255-1924）随代码删除作废，待 observe 夜间全量班重建",
-        "config": "stryker.conf.d/dsh-web-file-preview.json",
-        "threshold": 60,
-        "scope": "src 级全量（#276 方案 A）；基线为 src 口径，由 observe 夜间全量班重建"
-      },
       "dsh-mcp-manager": {
         "baselineScore": 58.74,
         "baselineCovered": 74.66,

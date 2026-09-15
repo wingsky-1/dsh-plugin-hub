@@ -60,7 +60,6 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 | `@wingsky-1/dsh-provider-usage` | Multi-provider usage capsule (v2 adapter framework: DeepSeek official and OpenCode Go built in, plug in any data source with your own mjs) |
 | `@wingsky-1/dsh-lan-proxy` | Access dsh web UI over the LAN (HTTP/HTTPS/WS forwarding + TLS; Brotli/gzip + WebSocket dual compression, WS half-open probing, launch-token auto-injection) |
 | `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio/HTTP; per-working-directory project/global config tiers, project-level MCP collapsed into 4 atomic tools via the middleware) |
-| `@wingsky-1/dsh-web-file-preview` | Turns "open with the default application" file requests into the built-in right-Sidebar preview |
 | `@wingsky-1/dsh-verify-isolated` | Isolated-verification skill for plugin development (four-way isolation: DSH_HOME / profile / port / browser instance + bundled browser driver) |
 
 > `@wingsky-1/dsh-gzip` is retired: HTTP response compression has been merged into
@@ -83,6 +82,15 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 > because environment-isolation and related defects were never resolved (#644 / #612).
 > Users who installed them should run
 > `dsh plugin --profile web remove <package>` to uninstall.
+>
+> `@wingsky-1/dsh-web-file-preview` (rewrites "open with the default application" into the
+> built-in right-Sidebar preview) has been **retired** and no longer ships with the bundle:
+> official dsh 0.1.6 already routes delivered-file mention clicks to the built-in Sidebar
+> preview, leaving only the card menu's explicit "open in default app" entry, which the
+> plugin rewrote against the user's explicit intent (#840). Users who installed it should
+> run `dsh plugin --profile web remove @wingsky-1/dsh-web-file-preview` to uninstall; after
+> removal that menu entry returns to the official "launch default app" behaviour, while the
+> card body button and mention clicks keep opening the built-in Sidebar preview.
 >
 > dsh-memory (project long-term memory) is not included in this aggregate package.
 

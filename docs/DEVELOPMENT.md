@@ -546,12 +546,12 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
   `exports["./client"].types` 曾写 `./lib/client.d.ts`（实际产出 `lib/client/index.d.ts`），
   严格 TS 消费方按包名子路径导入时静默降级为 `any`（TS7016），而 `pack:check` /
   `contract-check` 都看不见（后者只断言 `exports['./client']` 键存在）。**该缺陷实测存在于
-  全部 5 个有客户端的包**（dsh-notifier / dsh-lan-proxy / dsh-mcp-manager /
-  dsh-provider-usage / dsh-web-file-preview），判据面对全部包生效、不留切片。判据实现
+  全部 4 个有客户端的包**（dsh-notifier / dsh-lan-proxy / dsh-mcp-manager /
+  dsh-provider-usage），判据面对全部包生效、不留切片。判据实现
   `scripts/lib/exports-types-lib.ts`——与导出面快照门禁**共用**「`exports[].types` → 产物
   相对路径」映射，但**判的是不同产物**（此处判 tarball，门禁判 emit 产物），故不是双轨；
   消费方探针：隔离目录软链 `node_modules/@wingsky-1/<pkg>` → 包目录 + `--strict
---moduleResolution bundler`，五包实测统一为「对照组主入口 exit=0 / 子路径修复前 TS7016 /
+--moduleResolution bundler`，四包实测统一为「对照组主入口 exit=0 / 子路径修复前 TS7016 /
   修复后 TS2322」。
 - `assertClientSourceContract`（smoke-lib）：兼容三种产物形态（纯净 wrapper /
   React externals / legacy），断言 `"use strict"`、契约外壳、Symbol.toStringTag、

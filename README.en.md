@@ -110,7 +110,6 @@ This plugin set only adapts to **rc (release-candidate) releases of DeepSeek Har
 | `@wingsky-1/dsh-provider-usage` | Multi-provider usage stats framework (v2 adapter contract): persistent capsule + detail panel; DeepSeek official (interval-bookkeeping daily usage derivation + peak/valley countdown badge — works even without an official usage endpoint) and OpenCode Go built in; plug in any data source with a single mjs file, hot-swappable from the settings page; daily/weekly/monthly usage reports (generated via the host llm, including directory and time-of-day observations); API keys stay on the host, never reach the browser | [README](packages/dsh-provider-usage/README.md) · [Adapter guide](packages/dsh-provider-usage/docs/adapter-guide.md) · [Architecture](docs/architecture/dsh-provider-usage.md) | Published |
 | `@wingsky-1/dsh-lan-proxy` | Access the dsh web UI over LAN: HTTP/HTTPS/WS forwarding + TLS (self-signed / custom certs); dual compression for HTTP (Brotli/gzip adaptive) and WebSocket (permessage-deflate); WS half-open probing keeps mobile backgrounding from going stale; launch-token auto-injection lets LAN devices connect without fetching the token; DNS-rebinding protection + loopback target allowlist | [README](packages/dsh-lan-proxy/README.md) · [Architecture](docs/architecture/dsh-lan-proxy.md) | Published |
 | `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio / streamable-http): per-working-directory project/global config tiers; project-level MCP collapsed into 4 atomic tools via middleware by default (`middleware: all` folds in global servers, hot-switchable in the settings page); workspace isolation prevents cross-project interference; configs store `${ENV}` references only — no plaintext secrets on disk; runtime registration API for other plugins to inject MCP servers; optional MCP call statistics and debug mode (metadata-only, off by default) | [README](packages/dsh-mcp-manager/README.md) · [Architecture](docs/architecture/dsh-mcp-manager.md) · [Upgrade repair](#mcp-catalog-upgrade-notice-and-repair) | Published |
-| `@wingsky-1/dsh-web-file-preview` | Turns "open with the default application" file requests into the built-in right-Sidebar preview (intercepts `POST /api/present.open`, calls `ctx.sidebarRight.openResource`); registers no official extension points and modifies no official source | [README](packages/dsh-web-file-preview/README.md) · [Architecture](docs/architecture/dsh-web-file-preview.md) | Published |
 | `@wingsky-1/dsh-verify-isolated` | Isolated-environment browser verification skill for DSH plugin development: temp DSH_HOME + independent profile + independent port + independent browser instance (four-way isolation), one-command launch with automatic cleanup; bundled zero-dependency raw-CDP browser driver (snapshot / click / screenshot / eval, with device-viewport emulation), optional isolation audit, first-run dialogs skipped by default | [README](packages/dsh-verify-isolated/README.md) · [Architecture](docs/architecture/dsh-verify-isolated.md) | Published |
 
 <details>
@@ -136,6 +135,11 @@ This plugin set only adapts to **rc (release-candidate) releases of DeepSeek Har
 - `@wingsky-1/dsh-mem0` (mem0 long-term memory system) is discontinued: environment-isolation
   and related defects were never resolved (#644 / #612), so it no longer meets the bar for
   continued maintenance.
+- `@wingsky-1/dsh-web-file-preview` (rewrites "open with the default application" into the
+  built-in right-Sidebar preview) is discontinued: official dsh 0.1.6 routes delivered-file
+  mention clicks to the built-in Sidebar preview, leaving only the card menu's explicit
+  "open in default app" entry, which the plugin rewrote against the user's explicit intent
+  (#840).
 
 Uninstall these packages if you installed them before:
 
@@ -145,6 +149,7 @@ dsh plugin --profile web remove @wingsky-1/dsh-idle-archive
 dsh plugin --profile web remove @wingsky-1/dsh-subagent-model-inherit
 dsh plugin --profile web remove @wingsky-1/dsh-codegraph
 dsh plugin --profile web remove @wingsky-1/dsh-mem0
+dsh plugin --profile web remove @wingsky-1/dsh-web-file-preview
 ```
 
 > dsh-memory (project long-term memory) is not included yet; it is planned.

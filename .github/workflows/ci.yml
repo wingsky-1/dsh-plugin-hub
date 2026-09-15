@@ -152,13 +152,8 @@ jobs:
               # （scripts/data/dsh-<pkg>-*.json）
               - 'vitest.stryker.d/dsh-notifier.config.ts'
               - 'scripts/data/dsh-notifier-*.json'
-              # root test/smoke-lib.ts 被 5 个包的测试 import（名单与其一致性由
-              # ci-face-coverage 断言按真实 import 图核对，防第 6 个包静默漏面）
-              - 'test/smoke-lib.ts'
-            dsh-web-file-preview:
-              - 'packages/dsh-web-file-preview/**'
-              - 'stryker.conf.d/dsh-web-file-preview*.json'
-              - 'vitest.stryker.d/dsh-web-file-preview.config.ts'
+              # root test/smoke-lib.ts 被 4 个包的测试 import（名单与其一致性由
+              # ci-face-coverage 断言按真实 import 图核对，防第 5 个包静默漏面）
               - 'test/smoke-lib.ts'
             dsh-mcp-manager:
               - 'packages/dsh-mcp-manager/**'

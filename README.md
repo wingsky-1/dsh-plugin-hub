@@ -93,7 +93,6 @@ node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply  # 落盘：先
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计框架（v2 适配器契约）：常驻胶囊 + 详情面板；内置 DeepSeek 官方（区间记账法推算每日用量 + 峰谷倒计时徽标，官方无用量接口也能算）与 OpenCode Go 开箱即用；自写一个 mjs 即可接入任意数据源、设置页热插拔；日/周/月用量报告（经宿主 llm 生成，含目录与时段维度观察）；密钥只在宿主端不进浏览器 | [README](packages/dsh-provider-usage/README.md) · [适配器开发指南](packages/dsh-provider-usage/docs/adapter-guide.md) · [架构图解](docs/architecture/dsh-provider-usage.md) | 已发布 |
 | `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI：HTTP/HTTPS/WS 转发 + TLS（自签名/自定义证书）；HTTP（Brotli/gzip 自适应）与 WebSocket（permessage-deflate）双压缩；WS 半开探活，移动端切后台不僵死；启动令牌自动注入，LAN 设备免手工拿 token；DNS 重绑定防护 + 回环目标白名单 | [README](packages/dsh-lan-proxy/README.md) · [架构图解](docs/architecture/dsh-lan-proxy.md) | 已发布 |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio / streamable-http）：项目级/全局两级配置分工作目录维护；项目级 MCP 默认经中间层收敛为 4 个原子工具（`middleware: all` 全量收敛、设置页热切换）；工作空间隔离防串台；配置只存 `${ENV}` 引用不落盘密钥；提供运行时注册接口供其他插件注入 MCP；可选 MCP 调用统计与 debug 模式（metadata-only，默认关） | [README](packages/dsh-mcp-manager/README.md) · [架构图解](docs/architecture/dsh-mcp-manager.md) · [升级修复](#mcp-catalog-修复与升级须知) | 已发布 |
-| `@wingsky-1/dsh-web-file-preview` | 把对话内「用默认应用打开」的文件请求改写成官方右侧栏预览（拦截 `POST /api/present.open` 转 `ctx.sidebarRight.openResource`），不注册官方扩展点、不修改官方源码 | [README](packages/dsh-web-file-preview/README.md) · [架构图解](docs/architecture/dsh-web-file-preview.md) | 已发布 |
 | `@wingsky-1/dsh-verify-isolated` | DSH 插件开发的隔离环境浏览器验证 skill：临时 DSH_HOME + 独立 profile + 独立端口 + 独立浏览器实例四重隔离，一键拉起、退出自动清理；自带 raw CDP 零依赖浏览器驱动（快照/点击/截图/求值，支持设备视口模拟），可选隔离审计；首启弹窗默认跳过 | [README](packages/dsh-verify-isolated/README.md) · [架构图解](docs/architecture/dsh-verify-isolated.md) | 已发布 |
 
 <details>
@@ -114,6 +113,9 @@ node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply  # 落盘：先
   封装工具与 codegraph CLI 版本强耦合，维护成本高于收益。
 - `@wingsky-1/dsh-mem0`（mem0 长期记忆系统）已不再维护：环境隔离等缺陷未收敛
   （#644 / #612），质量未达继续维护标准。
+- `@wingsky-1/dsh-web-file-preview`（把对话内「用默认应用打开」改写为官方右侧栏预览）
+  已不再维护：官方 dsh 0.1.6 起交付物提及点击已改走官方侧栏预览，仅剩卡片菜单
+  「用默认应用打开」这一显式外开入口，改写它与用户显式意图相反（#840）。
 
 此前安装过上述退役包的用户请卸载：
 
@@ -123,6 +125,7 @@ dsh plugin --profile web remove @wingsky-1/dsh-idle-archive
 dsh plugin --profile web remove @wingsky-1/dsh-subagent-model-inherit
 dsh plugin --profile web remove @wingsky-1/dsh-codegraph
 dsh plugin --profile web remove @wingsky-1/dsh-mem0
+dsh plugin --profile web remove @wingsky-1/dsh-web-file-preview
 ```
 
 > dsh-memory（项目长期记忆）暂未包含，规划中。

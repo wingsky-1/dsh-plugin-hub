@@ -106,19 +106,16 @@ test("F15 反证：落盘 conf 的 mutate 面与断言口径同源（含 coverag
   }
 });
 
-test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目（4 包共 13 条）", () => {
+test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目（3 包共 12 条）", () => {
   const topology = JSON.parse(readFileSync(TOPOLOGY_PATH, "utf8"));
-  // 规模断言：形状变更范围 13 条（dsh-mcp-manager 1 / dsh-notifier 5 / dsh-provider-usage 6 /
-  // dsh-web-file-preview 1）。
+  // 规模断言：形状变更范围 12 条（dsh-mcp-manager 1 / dsh-notifier 5 / dsh-provider-usage 6）。
   // notifier 是 5 而不是 4：原 `**/deps.ts` 一条拆成两条——7 个纯类型域出口 + 含运行时
   // 实现的 system/deps.ts 单列（复核实测它转译后有运行时代码，不能与纯类型共用一条 reason）。
-  // wfp 的 1 条来自 #792 PR3 目录重排：新增的两个纯 re-export 门面按同一 facade 口径排除。
   // 数量变化必须是有意的登记动作，不能靠 diff 顺带溜过。
   const expected = {
     "dsh-mcp-manager": 1,
     "dsh-notifier": 5,
     "dsh-provider-usage": 6,
-    "dsh-web-file-preview": 1,
   };
   const allReasons = [];
   let total = 0;
@@ -163,8 +160,8 @@ test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目�
   }
   assert.equal(
     total,
-    13,
-    "coverageExcludes 共 13 条（#773 R4 的形状变更范围，含 deps.ts 拆分后的一条与 wfp 的门面一条）",
+    12,
+    "coverageExcludes 共 12 条（#773 R4 的形状变更范围，含 deps.ts 拆分后的一条；#840 退役 wfp 后由 13 条降为 12）",
   );
   assert.equal(
     new Set(allReasons).size,

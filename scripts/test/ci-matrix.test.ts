@@ -185,37 +185,27 @@ test("ci-matrix: 场景 c - 回退机制 (FILTER_OUTCOME!=success 或 BASE_SET �
   assert.deepEqual(resWhitespaceBase.hitPackages, EXPECTED_ALL);
 });
 
-test("ci-matrix: 场景 d - 变异段展开正确性 (单配置与多段配置)", () => {
-  // 单配置包 dsh-web-file-preview -> seg: "0"；#742 起 combo 另带逐段超时与失基线标志，
+test("ci-matrix: 场景 d - 变异段展开正确性 (多段配置 + 多包排序)", () => {
+  // #840 起仓库已无单配置（seg="0"）包——最后一个单配置包 dsh-web-file-preview 已退役，
+  // 本用例随之退为纯多段形态；#742 起 combo 另带逐段超时与失基线标志，
   // 本用例只锁段展开，故按段投影比较（超时/失基线的专项断言见文件尾部的 #742 用例）
-  const resSingle = computeCiMatrix({
-    env: {
-      GLOBAL_HIT: "false",
-      FILTER_OUTCOME: "success",
-      BASE_SET: "origin/main",
-      FILTER_OUTPUTS: JSON.stringify({ "dsh-web-file-preview": true }),
-    },
-    rootDir: ROOT,
-  });
-  assert.deepEqual(
-    resSingle.mutationCombos.map((c) => ({ package: c.package, seg: c.seg })),
-    [{ package: "dsh-web-file-preview", seg: "0" }],
-  );
-
-  // 多个包组合排序
   const resMulti = computeCiMatrix({
     env: {
       GLOBAL_HIT: "false",
       FILTER_OUTCOME: "success",
-      BASE_SET: "dsh-web-file-preview dsh-notifier",
+      BASE_SET: "dsh-lan-proxy dsh-notifier",
       FILTER_OUTPUTS: "{}",
     },
     rootDir: ROOT,
   });
-  assert.deepEqual(resMulti.mutationPackages, ["dsh-notifier", "dsh-web-file-preview"]);
+  assert.deepEqual(resMulti.mutationPackages, ["dsh-lan-proxy", "dsh-notifier"]);
   assert.deepEqual(
     resMulti.mutationCombos.map((c) => ({ package: c.package, seg: c.seg })),
     [
+      { package: "dsh-lan-proxy", seg: "1" },
+      { package: "dsh-lan-proxy", seg: "2" },
+      { package: "dsh-lan-proxy", seg: "3" },
+      { package: "dsh-lan-proxy", seg: "4" },
       { package: "dsh-notifier", seg: "api" },
       { package: "dsh-notifier", seg: "channels" },
       { package: "dsh-notifier", seg: "config" },
@@ -225,7 +215,6 @@ test("ci-matrix: 场景 d - 变异段展开正确性 (单配置与多段配置)"
       { package: "dsh-notifier", seg: "shared" },
       { package: "dsh-notifier", seg: "stores" },
       { package: "dsh-notifier", seg: "upgrade" },
-      { package: "dsh-web-file-preview", seg: "0" },
     ],
   );
 });

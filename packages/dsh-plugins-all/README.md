@@ -54,11 +54,10 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计胶囊（v2 适配器框架：内置 DeepSeek 官方与 OpenCode Go，自写 mjs 接入任意数据源） |
 | `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web UI（HTTP/HTTPS/WS 转发 + TLS；Brotli/gzip 与 WebSocket 双压缩 + WS 半开探活 + 启动令牌自动注入） |
 | `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理器（stdio/HTTP；项目级/全局两级配置，项目级经中间层收敛为 4 个原子工具） |
-| `@wingsky-1/dsh-web-file-preview` | 把对话内「用默认应用打开」的文件请求改写成官方右侧栏预览 |
 | `@wingsky-1/dsh-verify-isolated` | 插件开发隔离验证 skill（DSH_HOME / profile / 端口 / 浏览器实例四重隔离 + 自带浏览器驱动） |
 
 <details>
-<summary><b>历史退役说明</b>——dsh-gzip / dsh-idle-archive / dsh-subagent-model-inherit / dsh-codegraph / dsh-mem0（已退役）</summary>
+<summary><b>历史退役说明</b>——dsh-gzip / dsh-idle-archive / dsh-subagent-model-inherit / dsh-codegraph / dsh-mem0 / dsh-web-file-preview（已退役）</summary>
 
 `@wingsky-1/dsh-gzip` 已退役：HTTP 响应压缩合并进 dsh-lan-proxy，不再随全家桶
 分发。此前单独安装过 dsh-gzip 的用户升级后请执行
@@ -75,6 +74,13 @@ dsh-subagent 0.1.2-alpha.2 已原生实现 `resolveChildAgentOptions`。此前�
 封装工具与 codegraph CLI 版本强耦合、维护成本高于收益，后者环境隔离等缺陷未收敛
 （#644 / #612）。此前安装过的用户请执行
 `dsh plugin --profile web remove <包名>` 卸载。
+
+`@wingsky-1/dsh-web-file-preview`（把对话内「用默认应用打开」改写为官方右侧栏预览）
+已**退役**，不再随全家桶分发：官方 dsh 0.1.6 起交付物提及点击已改走官方侧栏预览，
+仅剩卡片菜单「用默认应用打开」这一显式外开入口，改写它与用户显式意图相反（#840）。
+此前安装过的用户请执行
+`dsh plugin --profile web remove @wingsky-1/dsh-web-file-preview` 卸载；卸载后点击该
+菜单项恢复官方的「拉起默认应用」行为，卡片主体按钮与正文提及仍由官方打开右侧栏预览。
 
 </details>
 

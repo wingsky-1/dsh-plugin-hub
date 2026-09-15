@@ -209,9 +209,6 @@ importers:
       '@wingsky-1/dsh-verify-isolated':
         specifier: workspace:*
         version: link:../dsh-verify-isolated
-      '@wingsky-1/dsh-web-file-preview':
-        specifier: workspace:*
-        version: link:../dsh-web-file-preview
 
   packages/dsh-provider-usage:
     devDependencies:
@@ -238,8 +235,6 @@ importers:
         version: 3.18.0
 
   packages/dsh-verify-isolated: {}
-
-  packages/dsh-web-file-preview: {}
 
   tools/lint:
     devDependencies:

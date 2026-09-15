@@ -128,12 +128,6 @@
       "why": "段配置是变异切片的单一事实源：包级 <pkg>.json 与段级 <pkg>-<段名>.json 统一由 <pkg>*.json 覆盖。"
     },
     {
-      "path": "stryker.conf.d/dsh-web-file-preview*.json",
-      "invalidatesBaseline": true,
-      "faces": ["dsh-web-file-preview"],
-      "why": "同上（本包为包级单配置形态）。"
-    },
-    {
       "path": "stryker.conf.d/dsh-mcp-manager*.json",
       "invalidatesBaseline": true,
       "faces": ["dsh-mcp-manager"],
@@ -158,12 +152,6 @@
       "why": "包级 stryker 测试面配置：定义该包进变异面的测试文件清单，此前完全不在任何 filters 内（#742 阶段 2.2）。"
     },
     {
-      "path": "vitest.stryker.d/dsh-web-file-preview.config.ts",
-      "invalidatesBaseline": true,
-      "faces": ["dsh-web-file-preview"],
-      "why": "同上。"
-    },
-    {
       "path": "vitest.stryker.d/dsh-mcp-manager.config.ts",
       "invalidatesBaseline": true,
       "faces": ["dsh-mcp-manager"],
@@ -184,14 +172,8 @@
     {
       "path": "test/smoke-lib.ts",
       "invalidatesBaseline": true,
-      "faces": [
-        "dsh-lan-proxy",
-        "dsh-mcp-manager",
-        "dsh-notifier",
-        "dsh-provider-usage",
-        "dsh-web-file-preview"
-      ],
-      "why": "根级共享 smoke 工具，被这 5 个包的测试 import（与 contract-check 同源实现）。名单不是手写的：ci-face-coverage 断言按 packages/*/test 的真实 import 图核对，第 6 个包接入而漏登记即红。"
+      "faces": ["dsh-lan-proxy", "dsh-mcp-manager", "dsh-notifier", "dsh-provider-usage"],
+      "why": "根级共享 smoke 工具，被这 4 个包的测试 import（与 contract-check 同源实现）。名单不是手写的：ci-face-coverage 断言按 packages/*/test 的真实 import 图核对，第 5 个包接入而漏登记即红。"
     },
     {
       "path": "scripts/data/ci-face-registry.json",

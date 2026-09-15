@@ -4,8 +4,7 @@
     "dsh-mcp-manager",
     "dsh-notifier",
     "dsh-provider-usage",
-    "dsh-verify-isolated",
-    "dsh-web-file-preview"
+    "dsh-verify-isolated"
   ],
   "standalone": [],
   "configSurfaces": [
@@ -89,11 +88,6 @@
       "package": "dsh-verify-isolated",
       "surface": "none",
       "reason": "本插件没有用户配置面：apply() 是空实现，skill 注册完全由 cordis.patch.yml 配置的官方 @deepseek-ai/dsh-skill-filesystem provider 承担，宿主侧无可配置项。"
-    },
-    {
-      "package": "dsh-web-file-preview",
-      "surface": "none",
-      "reason": "本插件没有用户配置面：宿主半边无路由、不读文件、不注入服务，客户端只有「打开文件 → 官方右侧栏预览」的重定向逻辑（PENDING_TTL_MS 是内部 TTL 常量，不对外配置）。"
     }
   ],
   "retired": [
@@ -130,6 +124,11 @@
     {
       "name": "dsh-mem0",
       "reason": "停止维护；维护者评定质量未达标——环境隔离等缺陷未收敛（#644/#612），本包不再维护",
+      "successor": ""
+    },
+    {
+      "name": "dsh-web-file-preview",
+      "reason": "停止维护；官方 dsh 0.1.6 起交付物提及点击改走官方侧栏预览（dsh-client-ui-deliverables 的 chatFileMentions 改用 ui-chat 的 openFile），仅剩卡片菜单「用默认应用打开」这一显式外开入口——改写它与用户显式意图相反，本包不再有独立价值（#840）",
       "successor": ""
     }
   ]

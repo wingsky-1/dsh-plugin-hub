@@ -580,18 +580,6 @@
           "reused": 585,
           "reuseTotal": 670,
           "strykerReported": "9 seconds"
-        },
-        {
-          "seg": "dsh-web-file-preview",
-          "startedAt": "2026-09-11T08:36:31.3280660",
-          "endedAt": "2026-09-11T08:36:34.1562589",
-          "wallSeconds": 2.8,
-          "mutants": 204,
-          "dryTests": 1,
-          "dryRunSeconds": 0,
-          "reused": 164,
-          "reuseTotal": 204,
-          "strykerReported": "2 seconds"
         }
       ]
     },
@@ -967,18 +955,6 @@
           "reused": null,
           "reuseTotal": null,
           "strykerReported": "16 minutes and 52 seconds"
-        },
-        {
-          "seg": "dsh-web-file-preview",
-          "startedAt": "2026-09-12T08:34:43.6802596",
-          "endedAt": "2026-09-12T08:35:04.2444683",
-          "wallSeconds": 20.6,
-          "mutants": 204,
-          "dryTests": 57,
-          "dryRunSeconds": 0,
-          "reused": null,
-          "reuseTotal": null,
-          "strykerReported": "20 seconds"
         }
       ]
     },
@@ -1366,18 +1342,6 @@
           "reused": null,
           "reuseTotal": null,
           "strykerReported": "15 minutes and 16 seconds"
-        },
-        {
-          "seg": "dsh-web-file-preview",
-          "startedAt": "2026-09-13T11:11:34.3620639",
-          "endedAt": "2026-09-13T11:11:51.6429728",
-          "wallSeconds": 17.3,
-          "mutants": 204,
-          "dryTests": 57,
-          "dryRunSeconds": 0,
-          "reused": null,
-          "reuseTotal": null,
-          "strykerReported": "17 seconds"
         }
       ]
     }
