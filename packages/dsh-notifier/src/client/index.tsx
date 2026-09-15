@@ -26,7 +26,7 @@ import { ensureStyle } from "../../../../shared/client/ensure-style.js";
 // 跑出判据。音色单点仍在 src/shared/interface.ts，改由 notify/audio.ts 消费。
 import { bindTranslate, t, type Translate } from "./locale.ts";
 import { createAudioEngine, type AudioContextLike } from "./notify/audio.ts";
-import { closeAllNotifications, trackNotification } from "./notify/registry.ts";
+import { closeNotificationsOf, trackNotification } from "./notify/registry.ts";
 import { titleFlasher } from "./notify/title.ts";
 import { claimMaster as claimMasterLease, MASTER_KEY } from "./notify/lease.ts";
 import { startNotifySession, type EventSourceLike, type NotifySession } from "./notify/session.ts";
@@ -204,12 +204,15 @@ function clientFacts(): ClientFacts {
  *
  * @param opts.sound 服务端帧级声音策略；缺省（0.2.3 的帧没有这个字段）按「跟随系统默认」。
  * @param opts.playOnly 只响不弹：不弹实体、仅按需自播。
+ * @param owner 页面级单例（已弹通知 / 标题闪烁 / <style>）的归属令牌：热更或重复 apply 时，
+ *   后装实例的清理不许动先前实例登记的资源。
  */
 function showNotification(
   kind: string,
   title: string,
   message: string,
   opts: { sound?: unknown; playOnly?: boolean },
+  owner: object,
 ) {
   const playOnly = opts.playOnly === true;
   const policy = soundPolicyOf(opts.sound, playOnly);
@@ -239,7 +242,7 @@ function showNotification(
         window.focus();
         notification.close();
       };
-      trackNotification(notification);
+      trackNotification(notification, owner);
       // selfplay 模式：Notification 已 silent 防双响，页内补播
       if (policy.selfPlay && audioEngine.gate()) audioEngine.playTone(policy.tone);
       return;
@@ -250,11 +253,11 @@ function showNotification(
   // 降级通道 / 只响不弹：横幅或标题闪烁；声音按帧策略
   const fallback = fallbackChannelOf(playOnly, document.visibilityState);
   if (fallback === "banner") showBanner(kind, title, message);
-  else if (fallback === "title") titleFlasher.flash(title);
+  else if (fallback === "title") titleFlasher.flash(title, owner);
   if (policy.selfPlay && audioEngine.gate()) audioEngine.playTone(policy.tone);
 }
 
-function handleNotifyFrame(payload: any) {
+function handleNotifyFrame(payload: any, owner: object) {
   // 测试通知无条件提醒；其余帧在页面可见时不打扰，除非帧自带 whenVisible——判定见 notify/policy.ts
   if (
     !frameAccepted({
@@ -266,10 +269,16 @@ function handleNotifyFrame(payload: any) {
   ) {
     return;
   }
-  showNotification(payload.kind, payload.title, payload.message, {
-    sound: payload.sound,
-    playOnly: payload.playOnly === true,
-  });
+  showNotification(
+    payload.kind,
+    payload.title,
+    payload.message,
+    {
+      sound: payload.sound,
+      playOnly: payload.playOnly === true,
+    },
+    owner,
+  );
 }
 
 // ------------------------------------------------------------ SSE 半区
@@ -1372,9 +1381,68 @@ function SettingsCard() {
 
 // ------------------------------------------------------------ 装配
 
+/**
+ * 页面级单例的归属令牌容器：每次 apply 换一枚新令牌，清理时先比对。热更或重复 apply 时旧实例
+ * 的 disposer 仍会执行，无条件清理会把新实例正在用的 <style> / 标题闪烁 / 弹窗一并摘掉。
+ */
+const pageOwner: { current: object | null } = { current: null };
+
 export function apply(ctx: any) {
   try {
     ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
+
+    // 页面级单例（<style> / 标题闪烁 / 已弹通知）的归属令牌：热更或重复 apply 时旧实例的
+    // disposer 仍会执行，只有仍属当前实例的清理才许动这些共享资源，否则新实例会变成无样式
+    // 页面、丢掉闪烁提示、连带关掉自己正在显示的弹窗。
+    const owner: object = {};
+    pageOwner.current = owner;
+
+    // 清理登记必须早于任何副作用：每建立一处资源就 push 一条 teardown，中途同步抛错时已建立
+    // 的资源（SSE 会话与看门狗、document 监听、<style>、locale 订阅）也不会失去 disposer。
+    // splice(0) 取走并清空，重复调用 disposer 不会重复卸载。
+    const teardowns: (() => void)[] = [];
+    ctx.effect(function () {
+      return function () {
+        for (const teardown of teardowns.splice(0)) teardown();
+      };
+    }, "dsh-notifier");
+
+    // 两处**页面级单例**没有「建立时刻」（<style> 由 ensureStyle 复用同 id 元素，通知登记是
+    // 模块级表），因此没有可依附的资源建立点，一律在开头顶格登记：登记在函数末尾的话，
+    // 中途任何一处同步抛错都会让它们逃过本次 disposer（外层 catch 只 warn，不留清理路径）。
+    // <style> 只在仍是当前归属者时才摘，否则旧实例的 disposer 会把新实例的样式表摘掉
+    // （页面变成无样式）；摘除即让位，归属随之清空。
+    teardowns.push(function () {
+      if (pageOwner.current !== owner) return;
+      pageOwner.current = null;
+      document.getElementById(STYLE_ID)?.remove();
+    });
+    teardowns.push(function () {
+      closeNotificationsOf(owner);
+    });
+
+    // 页面重新可见时：还原标题 + 强制重建 SSE（iOS 后台挂起后连接可能已失效，
+    // 重建自动带 since 补拉，避免断线窗口漏通知）。
+    // 具名 handler 在 apply 内注册、disposer 移除（对齐 mcp-manager
+    // onVisible 范式）——匿名模块体注册无卸载路径，重复 apply/热更会累积旧监听。
+    // 登记顺序即清理顺序：摘监听必须排在标题还原之前（监听一摘，回前台这条恢复路径就关闭了），
+    // 故它是本实例登记的第一条 teardown。
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        titleFlasher.restore(owner);
+        eventsHandle.current?.reconnect();
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    teardowns.push(function () {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    });
+    // 标题恢复原本只由 visibilitychange 回前台触发；disposer 摘除监听后该路径关闭，
+    // 若残留恢复缓存则标题永久卡在「🔔 …」（复现路径：hidden 帧 → 卸载）。
+    // 带归属：旧实例的 disposer 不许摘掉新实例的闪烁（见 notify/title.ts）。
+    teardowns.push(function () {
+      titleFlasher.restore(owner);
+    });
 
     // i18n：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
     const locale: any = ctx.get("locale");
@@ -1401,6 +1469,12 @@ export function apply(ctx: any) {
         console.warn("[dsh-notifier] locale 注册失败：", e);
       }
     }
+    if (unsubLocale !== undefined) {
+      const unsubscribe = unsubLocale;
+      teardowns.push(function () {
+        unsubscribe();
+      });
+    }
 
     // 通知半区（SSE / 浏览器通知）：不依赖任何插件 DOM，直接启动
     const session = startNotifySession(
@@ -1416,20 +1490,17 @@ export function apply(ctx: any) {
           console.warn("[dsh-notifier] " + message + "：", cause);
         },
       },
-      handleNotifyFrame,
+      function (payload) {
+        handleNotifyFrame(payload, owner);
+      },
     );
     eventsHandle.current = session;
-    // 页面重新可见时：还原标题 + 强制重建 SSE（iOS 后台挂起后连接可能已失效，
-    // 重建自动带 since 补拉，避免断线窗口漏通知）。
-    // 具名 handler 在 apply 内注册、disposer 移除（对齐 mcp-manager
-    // onVisible 范式）——匿名模块体注册无卸载路径，重复 apply/热更会累积旧监听。
-    function onVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        titleFlasher.restore();
-        eventsHandle.current?.reconnect();
-      }
-    }
-    document.addEventListener("visibilitychange", onVisibilityChange);
+    teardowns.push(function () {
+      session.close();
+      // 只在仍指向自己的会话时才清空：重复 apply 时后装的实例才是当前句柄，
+      // 无条件置 null 会让存活实例的回前台重连静默失效（跨实例串味）。
+      if (eventsHandle.current === session) eventsHandle.current = null;
+    });
     // 首次任意点击解锁音频（浏览器自动播放策略要求手势）。具名 + disposer 摘除：
     // 从未点击就被卸载时，匿名监听会永久留在 document 上，且下次点击会在插件已卸载后
     // 构造一个 AudioContext。
@@ -1438,6 +1509,9 @@ export function apply(ctx: any) {
       document.removeEventListener("click", onFirstClick, { capture: true });
     }
     document.addEventListener("click", onFirstClick, { capture: true });
+    teardowns.push(function () {
+      document.removeEventListener("click", onFirstClick, { capture: true });
+    });
 
     // 设置面板独立 tab「通知中心」（settings.section）。
     // 参照 dsh-provider-usage「用量统计」tab 的接线（slots.inject + register，
@@ -1446,49 +1520,33 @@ export function apply(ctx: any) {
     // 不做 plugin.item 双插槽重复展示）。
     const slots = ctx.get("slots");
     if (slots && typeof slots.inject === "function") {
-      slots.inject("settings.section", function () {
-        return slots.register(
-          // label 传 thunk：宿主 nav rows 每次读取经 resolveSlotLabel
-          // 求值 + shell 订阅 locale 重渲染，切语言即跟随（注册期求值字符串快照是旧行为）。
-          // t 走 client/locale.ts 的当前绑定（locale.subscribe 回调重绑），thunk 保持最小
-          // t(key) 形态、不包任何可能抛错的逻辑（thunk 抛错会炸宿主 nav 渲染）。
-          {
-            name: "settings.section",
-            id: "dsh-notifier",
-            order: 70,
-            label: () => t("tabLabel"),
-            locale: NS,
-          },
-          function () {
-            return <SettingsCard />;
-          },
-        );
-      });
+      // 就地兜住插槽接线：这里失败只意味着设置 tab 没挂上，通知半区照常工作；冒到外层会被
+      // 报成整段「挂载失败」，把一次可降级的缺页说成插件不可用。
+      try {
+        slots.inject("settings.section", function () {
+          return slots.register(
+            // label 传 thunk：宿主 nav rows 每次读取经 resolveSlotLabel
+            // 求值 + shell 订阅 locale 重渲染，切语言即跟随（注册期求值字符串快照是旧行为）。
+            // t 走 client/locale.ts 的当前绑定（locale.subscribe 回调重绑），thunk 保持最小
+            // t(key) 形态、不包任何可能抛错的逻辑（thunk 抛错会炸宿主 nav 渲染）。
+            {
+              name: "settings.section",
+              id: "dsh-notifier",
+              order: 70,
+              label: () => t("tabLabel"),
+              locale: NS,
+            },
+            function () {
+              return <SettingsCard />;
+            },
+          );
+        });
+      } catch (error) {
+        console.warn("[dsh-notifier] 设置 tab 未挂载：", error);
+      }
     } else {
       console.warn("[dsh-notifier] 缺少 slots 服务，设置 tab 未挂载（通知半区照常工作）");
     }
-
-    // ⚠️ 清理必须写在 ctx.effect 返回的 disposer 里。
-    ctx.effect(function () {
-      return function () {
-        document.removeEventListener("visibilitychange", onVisibilityChange);
-        // 标题恢复原本只由 visibilitychange 回前台触发；disposer 摘除监听后该路径关闭，
-        // 若残留恢复缓存则标题永久卡在「🔔 …」（复现路径：hidden 帧 → 卸载）。
-        titleFlasher.restore();
-        if (unsubLocale !== undefined) {
-          unsubLocale();
-          unsubLocale = undefined;
-        }
-        session.close();
-        // 只在仍指向自己的会话时才清空：重复 apply 时后装的实例才是当前句柄，
-        // 无条件置 null 会让存活实例的回前台重连静默失效（跨实例串味）。
-        if (eventsHandle.current === session) eventsHandle.current = null;
-        document.removeEventListener("click", onFirstClick, { capture: true });
-        closeAllNotifications();
-        const style = document.getElementById(STYLE_ID);
-        if (style) style.remove();
-      };
-    }, "dsh-notifier");
   } catch (error) {
     console.warn("[dsh-notifier] 挂载失败：", error);
   }
