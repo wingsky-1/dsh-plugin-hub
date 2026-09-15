@@ -124,6 +124,23 @@ describe("bindSessions：会话身份", () => {
     expect(await absent.storedIdentityOf("ghost")).toBeUndefined();
   });
 
+  it("畸形 header：createdAt 不是有限数 ⇒ 按「读不出来」回 undefined，不冒充另一个会话", async () => {
+    // scope 域把「凭据与登记不同」当**正面证据**并据此摘掉用户的绑定，所以畸形 header 必须被读成
+    // 「读不出来」（保留登记），而不是读成一个不同的值（摘掉登记）。两个来源都要拦。
+    const nan = { get: () => ({ header: { createdAt: Number.NaN } }) };
+    expect(bindSessions(nan, () => undefined).liveIdentityOf("s1")).toBeUndefined();
+
+    const infinite = { get: () => ({ header: { createdAt: Number.POSITIVE_INFINITY } }) };
+    expect(bindSessions(infinite, () => undefined).liveIdentityOf("s1")).toBeUndefined();
+
+    const stored: StoredSessionsFace = {
+      stat: async () => ({ header: { createdAt: Number.NaN } }),
+    };
+    expect(
+      await bindSessions({ get: () => undefined }, () => stored).storedIdentityOf("s1"),
+    ).toBeUndefined();
+  });
+
   it("持久面抛错时**照原样抛回**：收口与记账都在 scope 域，适配层不替它决定", async () => {
     const broken: StoredSessionsFace = {
       stat: async () => {

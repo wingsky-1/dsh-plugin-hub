@@ -80,6 +80,9 @@ export async function bindWorktree(
   const belongs = await deps.git.belongsTo(target, repo);
   if (belongs.kind !== "same") {
     // 写路径 fail-closed：读不出归属时拒绝，而不是照着「没验成」去写一条可能指向别的仓库的登记。
+    // `notRepo` 在这里只用来把**文案**说准（git 明确回了否定），不参与摘除判定：权限不可读的目录
+    // 在读数上与「不是工作树」同形，所以这句「不是本会话仓库的 worktree」读作「git 拒绝把它当工作树」，
+    // 而不是「我们已经验过了」。剩下那一支（spawn 失败 / 超时）才说「没验成、稍后重试」。
     const why =
       belongs.kind === "different" || (belongs.kind === "unknown" && belongs.notRepo)
         ? "That directory is not a worktree of this session's repository (" +

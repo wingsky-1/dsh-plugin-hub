@@ -172,6 +172,24 @@ describe("git 域：归属判定是三态", () => {
     await gitApi.belongsTo("/other", "/repo");
     expect(exec.calls.length).toBe(2);
   });
+
+  it("unknown 不进缓存：问不出来之后状态变了，下一次判定必须重新问（否则「稍后重试」是空话）", async () => {
+    // 写路径对 unknown 是 fail-closed，并回给调用方一句「等目录可读后重试」。把那次 unknown 缓存 30s
+    // 就把这句建议变成确定性失败——真实的重试场景正是「目录刚变成 worktree」或「权限刚修好」。
+    let ready = false;
+    const exec = fakeExec((args) =>
+      (args[1] ?? "") === "/repo"
+        ? inRepo
+        : ready
+          ? { ...inRepo, stdout: "/repo/.git\n" }
+          : notRepo,
+    );
+    gitApi.installGit({ exec: exec.port });
+
+    expect((await gitApi.belongsTo("/repo-wt", "/repo")).kind).toBe("unknown");
+    ready = true;
+    expect(await gitApi.belongsTo("/repo-wt", "/repo")).toEqual({ kind: "same" });
+  });
 });
 
 describe("git 域：其余读数的失败形态", () => {

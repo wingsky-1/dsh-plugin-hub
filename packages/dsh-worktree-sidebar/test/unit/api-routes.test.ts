@@ -290,7 +290,6 @@ describe("异常收口与卸载", () => {
   it("注册中途失败：已挂的那条被摘回去再抛，域也不留在半装态", () => {
     const routes: WebRoute[] = [];
     let calls = 0;
-    const custom = capturingRegister();
     const register = (route: WebRoute): (() => void) => {
       calls += 1;
       // 第一条照常挂上，第二条才炸：这条判据要的正是「已挂的那条会不会被摘回去」。
@@ -317,7 +316,6 @@ describe("异常收口与卸载", () => {
     expect(routes).toEqual([]);
     // 域也没被标成已装配——同一进程里再装一次必须成功（否则组合根的回滚路径就白写了）。
     expect(() => install()).not.toThrow();
-    expect(custom.routes.length).toBe(0);
   });
 
   it("release 摘掉全部路由且幂等", () => {

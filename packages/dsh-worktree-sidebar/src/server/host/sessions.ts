@@ -32,6 +32,18 @@ export interface StoredSessionsFace {
   stat(id: SessionId): Promise<{ readonly header: SessionHeaderFace } | undefined>;
 }
 
+/**
+ * 身份读数：`createdAt` 是有限数才算凭据，否则按「读不出来」回 undefined。
+ *
+ * 为什么要在这里拦一道：`scope` 域把「凭据与登记不同」当成**正面证据**并据此摘掉用户的绑定，
+ * 于是畸形 header（非数值）会被读成「另一个会话」。官方存储不会产出这种 header
+ * （`dsh-session` 构造与恢复都校验/填充），但本包对同类外部输入（`sessionOf`、`validateRecord`）
+ * 一律在边界校验，这里保持同一条纪律。
+ */
+function identityFrom(createdAt: number): SessionIdentity | undefined {
+  return Number.isFinite(createdAt) ? { createdAt } : undefined;
+}
+
 export function bindSessions(
   sessions: SessionsFace,
   /**
@@ -55,14 +67,14 @@ export function bindSessions(
     },
     liveIdentityOf: (sessionId): SessionIdentity | undefined => {
       const live = sessions.get(sessionId as SessionId);
-      return live === undefined ? undefined : { createdAt: live.header.createdAt };
+      return live === undefined ? undefined : identityFrom(live.header.createdAt);
     },
     storedIdentityOf: async (sessionId): Promise<SessionIdentity | undefined> => {
       const stored = storedSessions();
       if (stored === undefined) return undefined;
       const snapshot = await stored.stat(sessionId as SessionId);
       // 持久面也没有这条会话：此刻无从核对，交给调用方按「读不了不等于不存在」处置。
-      return snapshot === undefined ? undefined : { createdAt: snapshot.header.createdAt };
+      return snapshot === undefined ? undefined : identityFrom(snapshot.header.createdAt);
     },
   };
 }

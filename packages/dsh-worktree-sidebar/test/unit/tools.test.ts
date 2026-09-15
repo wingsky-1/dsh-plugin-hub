@@ -432,8 +432,9 @@ describe("ws_worktree_remove", () => {
     const value = await run(buildRemoveTool(failing), {});
     expect(value.ok).toBe(false);
     expect(value.detail).toContain("Could not persist the unbind: disk full");
-    // 内存不前移：绑定还在，下一次调用还会走同一条失败路径（而不是变成「明明说失败却摘掉了」）。
-    expect(fake.table.has("s1")).toBe(true);
+    // 「写盘失败时内存不前移」这条性质住 binding 域，由 test/integration/binding-store.test.ts 的
+    // 「目标路径不可写时回传原因、内存不前移、并出声」覆盖（那里递的是真实落盘面）。
+    // 本用例这一层能判的只有「失败说得清」——上一条断言即是全部。
   });
 
   it("removeDirectory 之前登记消失（竞态）：如实说明，不静默成功", async () => {

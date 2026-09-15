@@ -33,9 +33,9 @@ interface Scope {
 /** 官方描述符的**完整形状**：四个业务字段一个都不能少（代码里读的是同一个键上的这个东西）。 */
 function descriptorOf(resolve: TypertLookupProvider["resolve"]): TypertLookupProvider {
   return {
-    parameter: "session",
-    wire: "sessionId",
-    hostTypeSymbol: "@deepseek-ai/dsh-session#Session",
+    parameter: "workspaceFileScope",
+    wire: "workspaceFileScopeId",
+    hostTypeSymbol: "@deepseek-ai/dsh-api-workspace-files#WorkspaceFileScope",
     wireTypeSymbol: "@deepseek-ai/dsh-session/types#SessionId",
     resolve,
   };

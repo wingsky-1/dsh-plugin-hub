@@ -342,7 +342,7 @@ describe("组合根的生命周期", () => {
     await restarted.disposeAll();
   });
 
-  it("组合根注入的时钟真的被工具用上：登记时间戳来自 now（顺带覆盖 tools 注册链）", async () => {
+  it("组合根的 now 闭包被真执行一遍：登记时间戳由它产出（顺带覆盖 tools 注册链）", async () => {
     const dir = process.cwd();
     const agent = fakeAgent("s1", dir);
     const host = fakeHost({
@@ -365,7 +365,8 @@ describe("组合根的生命周期", () => {
     )) as ToolResultValue;
 
     expect(value.ok).toBe(true);
-    // 组合根那个 `now: () => new Date().toISOString()` 是**唯一**的登记时间来源。
+    // 断言的是**形状**：值由组合根那个 `now` 产出（精确等值断言在 tools.test.ts 的时针用例里，
+    // 那里递的是可控时钟）。本用例的贡献是把 `src/index.ts` 里那个闭包真执行一次。
     expect(bindingApi.get("s1")?.createdAt).toMatch(
       /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
     );

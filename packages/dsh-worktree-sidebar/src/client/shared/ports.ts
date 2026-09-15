@@ -40,8 +40,8 @@ export interface StoredEntryLike {
 /**
  * tab 类型定义，逐字对齐官方 SidebarRightTabDefinition。
  *
- * 这里**必须**把所有字段都列全（尤其 `guide`）：我们注册的是「顶掉官方类型」的那一份，
- * 官方注册表 refresh 后会用**在册定义**重算 guide 条目。丢掉 `guide` 的后果不是少一块文案，
+ * 这里**必须**把所有字段都列全（尤其 `guide`）：类型表用的是官方定义的那一份（本插件只遮蔽
+ * 正文，从不改写类型表），官方注册表 refresh 后会用**在册定义**重算 guide 条目。丢掉 `guide` 的后果不是少一块文案，
  * 而是 guide 归零、所有会话（含从未登记的）默认页签从 Files 变成空的 Guide、文件树打不开。
  */
 export interface TabDefinitionLike {

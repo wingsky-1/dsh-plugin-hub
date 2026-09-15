@@ -41,6 +41,10 @@ export function createBindingState(read: ReadBinding, sessionId: string): Bindin
       // 乱序返回守卫：宿主 revision 单调不减，所以一个**更早发出**的请求可能带着更小的 revision
       // 后到。只做相等判断的话，旧响应会把快照覆盖回旧根，而契约要求「同一 id 恒回同一对象、
       // 只在新值更新时通知」——回退也会多通知一次渲染层。
+      // 前提：宿主 revision 单调不减。已知的一个反例是宿主重启后 bindings.json 损坏或版本不符
+      // （loadTable 落回空表、revision 回到 0），而 SPA 可能跨宿主重启存活——那时这里的 `<`
+      // 会把新事实挡在门外，树会一直指着旧根直到整页重载。概率极低（要文件损坏 + 不刷新页面），
+      // 先如实记下这个前提，而不是为它引入一套跨重启的世代号。
       if (next.revision < revision) return;
       revision = next.revision;
       path = next.worktreePath;

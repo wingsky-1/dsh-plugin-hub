@@ -35,6 +35,10 @@ import type { WorktreeEntry } from "../inspect/index.ts";
  *
  * 注意它间接吃 `commonDir` 的缓存：本条的条目用「最多 30s 旧」的输入算出，自己再存活 30s，
  * 于是**最坏**不新鲜期是 60s 而不是 30s（两层 TTL 同值同纪律，但读数是叠加的）。
+ *
+ * 只缓存**已定**读数（`same` / `different`）：`unknown` 不进缓存，理由与 `COMMON_DIR_TTL_MS`
+ * 的负答案不缓存同一条——写路径对 `unknown` 是 fail-closed 且文案让调用方「等目录可读后重试」，
+ * 把那次 `unknown` 缓存住就等于把这句重试建议变成 30s 内的确定性失败。
  */
 const BELONGS_TTL_MS = 30_000;
 
@@ -169,8 +173,12 @@ class GitService implements GitApi {
             reason: unreadableReason(dir, left, repoRoot, right),
             notRepo: left.kind === "not-repo" || right.kind === "not-repo",
           };
-    if (this.belongsCache.size >= BELONGS_CACHE_MAX) this.belongsCache.clear();
-    this.belongsCache.set(key, { at: Date.now(), reading });
+    // 只缓存已定读数：`unknown` 不缓存（理由见 `BELONGS_TTL_MS`）。写路径会告诉调用方
+    // 「等目录可读后重试」，而那次重试要真的重新问一次 git 才算数。
+    if (reading.kind !== "unknown") {
+      if (this.belongsCache.size >= BELONGS_CACHE_MAX) this.belongsCache.clear();
+      this.belongsCache.set(key, { at: Date.now(), reading });
+    }
     return reading;
   }
 
