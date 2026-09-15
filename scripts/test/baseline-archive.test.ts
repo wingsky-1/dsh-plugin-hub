@@ -8,8 +8,8 @@
  * 为什么存在：归档分支 `baseline/mutation` 由两个写入方维护——夜间全量班的**并集入档**
  * （#718 S1.2）与 PR 合并后的 overlay（只覆盖本次 CI 产出的段，其余沿用远端）。
  * 后者曾因 **artifact API 默认分页 30 条**
- * 只覆盖 14/31 段，再配合整棵树强推，把未覆盖的段固化成旧版本、把「本来没有基线」的段
- * （provider-usage-errsurf；另一段 web-file-preview 已随 #840 退役）每次合并都抹掉。实测证据（2026-09-11）：
+ * 只覆盖 14/31 段，再配合整棵树强推，把未覆盖的段固化成旧版本、把两个「本来没有基线」的段
+ * （provider-usage-errsurf、web-file-preview）每次合并都抹掉。实测证据（2026-09-11）：
  *   gh api repos/.../actions/runs/34559972509/artifacts            → total_count 70、mutation-incremental 14
  *   gh api repos/.../actions/runs/34559972509/artifacts?per_page=100 → total_count 70、mutation-incremental 31
  * 本文件把「分页合并」「期望集合派生」「对账缺口」三件事钉死，避免再次静默丢段。
@@ -132,30 +132,31 @@ test("产物筛选：只认 mutation-incremental- 前缀，且容忍脏数据", 
   );
 });
 
-test("期望集合派生：dsh- 前缀剥离（段级与包级同规则）", () => {
+test("期望集合派生：dsh- 前缀剥离 + seg=0 单配置形态", () => {
   assert.deepEqual(
     expectedBaselineFiles([
       "dsh-mcp-manager-entry.json",
-      "dsh-lan-proxy-1.json",
+      "dsh-web-file-preview.json",
       "dsh-notifier-sdk.json",
     ]),
     [
-      "incremental-lan-proxy-1.json",
       "incremental-mcp-manager-entry.json",
       "incremental-notifier-sdk.json",
+      "incremental-web-file-preview.json",
     ],
   );
   assert.deepEqual(expectedBaselineFiles(["README.md", null]), [], "非 .json 条目不得进期望集合");
 });
 
-test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（32 段）", () => {
+test("期望集合与真实仓库一致：stryker.conf.d/*.json 一条不落（33 段）", () => {
   const confNames = readdirSync(join(ROOT, "stryker.conf.d")).filter((f) => f.endsWith(".json"));
   const expected = expectedBaselineFiles(confNames);
   assert.equal(expected.length, confNames.length, "每个段配置都应对应一个基线文件");
   // 段数为显式哨兵：拆段/合段必须同时改这里（#720 把 dsh-notifier config 段拆三段 31 → 33；
   // #733 按域重写把 notifier 的 10 段重划为 9 段 33 → 32；#840 退役 dsh-web-file-preview 32 → 31；
-  // 新增 dsh-worktree-sidebar 单段 31 → 32），否则新增段静默漏进归档期望集合也无人察觉。
-  assert.equal(expected.length, 32, `段数应为 32，实际 ${expected.length}`);
+  // #769 客户端门禁加 client 段 31 → 32；新增 dsh-worktree-sidebar 单段 32 → 33），
+  // 否则新增段静默漏进归档期望集合也无人察觉。
+  assert.equal(expected.length, 33, `段数应为 33，实际 ${expected.length}`);
   for (const f of expected) assert.match(f, BASELINE_FILE_RE, `文件名应匹配归档形态：${f}`);
 });
 
@@ -194,7 +195,7 @@ test("回归：旧实现（只读第 1 页）会丢段，新实现拿全 31 段"
   const mutPage1 = Array.from({ length: 14 }, (_, i) => `mutation-incremental-pkg-${i}`);
   const mutPage2 = [
     "mutation-incremental-dsh-provider-usage-errsurf",
-    "mutation-incremental-dsh-lan-proxy-1",
+    "mutation-incremental-dsh-web-file-preview-0",
     ...Array.from({ length: 15 }, (_, i) => `mutation-incremental-pkg-${i + 14}`),
   ];
   const others = (n) => Array.from({ length: n }, (_, i) => `report-${i}`);
@@ -213,7 +214,7 @@ test("回归：旧实现（只读第 1 页）会丢段，新实现拿全 31 段"
   assert.equal(newWay.length, 31, "新实现应拿全 31 个");
   for (const name of [
     "mutation-incremental-dsh-provider-usage-errsurf",
-    "mutation-incremental-dsh-lan-proxy-1",
+    "mutation-incremental-dsh-web-file-preview-0",
   ]) {
     assert.ok(!oldWay.some((a) => a.name === name), `旧实现应缺失 ${name}`);
     assert.ok(

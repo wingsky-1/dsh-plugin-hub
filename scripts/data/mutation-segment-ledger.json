@@ -1347,6 +1347,7 @@
     }
   ],
   "unmeasured": {
+    "dsh-notifier-client": "#769 新增的客户端段（packages/dsh-notifier/src/client 下的纯 .ts 模块）。最近一次夜间全量班（observe.yml）早于本段的引入，故台账里没有它的 run 日志墙钟。本地 --force 实测 523 个变异体、concurrency 2 用时 4 分 03 秒（covered 87.38%），按台账口径不计入——本文件的值只能从 Actions run 日志解析，禁止手工编造数值；下一轮夜间全量班会把本段自动补进 measurements 并从 unmeasured 删除。",
     "dsh-worktree-sidebar": "新增 dsh-worktree-sidebar 单段（worktree 侧边栏适配层首次登记变异面），历史上无同名段，尚无实测；待 observe 夜间全量班重建。"
   },
   "superseded": {
