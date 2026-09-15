@@ -1172,6 +1172,7 @@ ESLint 的 `no-restricted-imports` 块间规则同步纳入 `inject.ts`。§8 �
 ## 21. 第八轮交接：现状快照与下一轮计划（2026-09-15）
 
 本节供**会话压缩后**接手用：读这一节 + §20.7 即可恢复全部上下文。
+第八轮已经跑完：**复核结论、覆盖率与复杂度读数、以及对 §20.7 的四条更正见 §22**（本节保留为开工前的快照，数字未回改）。
 
 ### 21.1 状态快照（写下时的实测值）
 
@@ -1246,3 +1247,174 @@ cd $WT && pnpm gate:pr                                                        # 
 7. **并发交错**（「会不会装两遍 / 旧代 deps 装进新代」）只做了源码级分析，未做并发实验。
 8. 变异测试**本地不跑**（PR 上按命中切片强制；改 `test/**` 会让该包基线失效、退化为全量）。
 9. §20.5 里评审留下的「打不红」待办（`tools.test.ts` 父子用例只有释放顺序是真判据、`client-takeover` 重复断言、`binding-model` 同源期望与常量回读）仍未处理。
+## 22. 第八轮：第七轮改动的独立复核与代码质量审视（2026-09-15）
+
+### 22.1 结论（先给结论）
+
+- **任务一（独立复核 `a26d983`）**：两条修复的**机制成立**（git 域 TTL 缓存；会话链三态 + 持久面回落）。
+  复核没有推翻修法，但更正了 **1 条判定错误、2 条口径、1 条残留窗口**，并确认 §21.2 第 5 条
+  （持久面读失败的收口**完全无声**）确实该修。
+- **任务二（质量审视）**：本包计分面内 **33 个文件**，均值 lines **96.5** / stmts **94.1** / fn **96.9** / branch **87.2**；
+  最坏圈复杂度 **13**、最坏认知复杂度 **11**（门禁上限 78 / 84，`target` 10 / 15 **门禁不读**）；
+  本包**没有任何函数**超过 CRAP 阈值 16（全仓 116 个超阈热点全在别的包）。
+- **本轮落地**（`616d4eb`）：health 增 `scopeChain` 读数、新增 `test/unit/host-sessions.test.ts`、
+  组合根接缝判据、`BELONGS_TTL_MS` 注释更正。测试 **15 文件 / 207 用例**（原 14 / 196）。
+- **本轮没有动**：门禁阈值与豁免、`crap.strict`、`complexity.target`、第三方依赖、DSH 源码、用户 `~/.dsh`。
+
+### 22.2 任务一：逐条复核（对应 §21.2 的六条挑战）
+
+| # | 挑战 | 判定 | 证据 | 处置 |
+|---|---|---|---|---|
+| 1 | `commonDir` 正负结果都缓存 ⇒ 两种不新鲜期 | **取舍可接受，但文档把真实限制说轻了**：限制不是「30s 不新鲜」，而是「**同一个 cwd 在 30s 内被问过**」——修复给的是**热 cwd 快路径**，不是「不再起 git」 | `git/impl/service/index.ts:101-109`（命中即回、未命中起一次 git）；`tools/impl/service/index.ts:76-89`（`chain` 串行，每个新 agent 判一次）；§20.7.1 对照臂 103ms 输 / 第三臂 8ms 赢 | **登记残留窗口**（§22.6-3）。不拉长 TTL（只把窗口变宽）；不取消安装期门控（§20.7.2 已否决 S3） |
+| 2 | `belongsTo` 间接经带缓存的 `commonDir`（两层 TTL） | **语义仍正确，但最坏不新鲜期是 60s**：条目用「最多 30s 旧」的输入算出，自己再活 30s | `git/impl/service/index.ts:128-138`（取值与自缓存）与 `:23-31`（原注释按 30s 论证） | **已改注释**（本轮改动 4），并登记 §22.6-4 |
+| 3 | 三态 `not-live` 能否区分「还没建」与「已结束」 | **不能，也不需要**：两者的正确处理相同（查持久面）。只有 `not-live` 才回落；从未在册的 id 多一次 `stat`（回 `undefined`）后到顶，而它正是需要持久面的那一支 | `host/sessions.ts:37-42`；`scope/impl/inherit/index.ts:38-46`；`scope/deps.ts:64-77` | 不改；新增 `host-sessions` 判据把三态钉住（原先零执行覆盖） |
+| 4 | `stat` 的真实开销与失败面 | **成本不随会话数增长，但每次有 O(#project 目录) 次目录操作 + 读一次 header 行 + 一次 stat；失败面与文档写的不一样**（不存在的会话**回 `undefined`，不抛 `NOT_FOUND`**） | `dsh-session-persistence/lib/types/index.d.ts:147,149`；`dsh-session-persistence-jsonl/lib/index.js:2421-2447`（`pendingOf` 内存命中 → `findLog`）、`:3194-3207`（按 id 逐 project 目录定位）、`:2890-2897`（读首行）；本机存储形状 2 个 project 目录 / 509 个会话目录 | **未测真实耗时**，登记 §22.6-1/2 与 §22.8-2 |
+| 5 | 持久面持续抛错 ⇒ 静默退化、无信号 | **必修**。`catch { return undefined; }` 是**全静默**，而真机上插件 `logger.warn` 不落盘（§19.5）⇒ 出声也没用，只有可 curl 的 health 能留下痕迹 | `scope/impl/inherit/index.ts:42-46`；health 已有同类用法 `api/impl/handlers/index.ts:50-64` | **本轮已修**（见 §22.3 改动 1） |
+| 6 | 样本量：端到端 n=1、模型侧是 mock、三臂各 1 次 | **机制充分、外部效度不足**：机制由源码侧独立确认（`preStep` 定稿工具快照链，§20.7.1），但三臂读数不能当分布 | §20.7.1 表；§20.7.4-3 | 登记（§22.8-4）；本轮不补跑——残余风险已被第 1 条的「热 cwd 窗口」取代，那是设计取舍而非读数不足 |
+
+### 22.3 本轮落地的改动与红绿
+
+| 改动 | 落点 | 判据 | 突变（打红读数） |
+|---|---|---|---|
+| 1. health 增 `scopeChain`（`storedReads` / `storedFailures` / `lastFailure`） | `scope/impl/service`（计数与快照，失败照原样抛回、收口仍在 `inherit`）；`scope/interface.ts`（门面转发）；`api/deps.ts`（读数面加宽）；`api/impl/handlers` | `api-routes` 2 条（health 主判据 + 活值）；`scope` 3 条（失败记账 / 顶层不查持久面 / release 复位） | R1 去掉字段 ⇒ **2 红**；R2 失败不记账 ⇒ **2 红**；R3 读数不复位 ⇒ **3 红** |
+| 2. 新增 `test/unit/host-sessions.test.ts`（6 条） | 新文件 ⇒ `--min 14→15` + `pnpm stryker:gen` | 三态映射（parent / root / not-live）、持久面缺席、查不到即到顶、**按调用时刻取** | R4 `root` 改判成 `not-live` ⇒ **1 红**；R5 软取提到装配期 ⇒ **1 红** |
+| 3. 组合根接缝判据 | `test/integration/apply-lifecycle.test.ts` | 装配期 0 次软取；活着的顶层会话 0 次；不在册才 1 次；晚挂后端当场生效且两次解析 = 两次现取 | R6 组合根改回 `() => undefined` ⇒ **1 红** |
+| 4. 注释更正（复合 TTL 60s） | `git/impl/service/index.ts:23-31` | 无（文档面） | 无 |
+
+红绿纪律：六条突变各自 `cp` 备份 → 应用 → 跑 `unit + integration` → `cp` 还原 → `sha256sum -c`。
+六次 restore 全部 **OK（逐字节一致）**，每次都在日志里留下失败用例名与 `Tests N failed | M passed` 读数。
+
+**自伤事故（如实登记）**：第一版突变脚本的 revert 用「把 new 替换回 old」实现，而 R1/R2/R3 的 new 是**空串**——
+Python 的 `str.replace("", x)` 会在**每个字符之间**插入 x，于是 `api/impl/handlers/index.ts`（63 → 2499 行）与
+`scope/impl/service/index.ts`（158 → 286423 行）被打爆。发现后立即停止，改用 `git show HEAD:<path>` 取回原始内容
+并**逐条重放**本轮改动（没有用 `git checkout --`），重放后 171 条单测全绿、随后的 `pnpm cov` 与 `pnpm lint` 也全绿；
+脚本随后改为「先 `cp` 备份、还原走 `cp`」，并在应用前断言模式命中数**恰好 1**（否则当场抛错）。
+
+**第二处自伤（同轮，已修）**：读数第一版直接把内部计数器写成对外的只读形状 `ChainDiagnostics`，
+域内 `this.chain.storedReads += 1` 因此撞 `TS2540`（read-only property）。`pnpm test` 207 条**全绿**
+（vitest 走 esbuild，不做类型检查），但 `pnpm typecheck` 与 `gate:pr` 的 build 步骤红、fail-fast 跳过后 33 步。
+改成内部可变 `ChainReading` + 对外只读快照 `{ ...this.chain }` 后 `typecheck` 与 `tsc -p test/tsconfig.json` 双双回 0。
+**教训**：本轮验证顺序漏了包级 typecheck ——「测试全绿」不能替代「编译得过」。
+
+### 22.4 任务二：覆盖率
+
+- 命令与读数：`pnpm cov` → **exit 0**（阈值由 vitest 在本次运行内判定，未被管道吞掉）；
+  全仓 `All files` = Stmts **82.18** / Branch **74.67** / Funcs **84.34** / Lines **83.85**，对阈值 78 / 70 / 80 / 80 有余量。
+  `node scripts/gate/verify-coverage-scope.mjs` → **exit 0**：`OK（universe 348 = include 330 − exclude 68 → 计分 280；产物交叉断言 199 keys = 面内 199）`。
+- **面口径**：`src/**/*.ts` 物理 **47** 个，**计分面 33** 个 —— 6 个 `src/client/**` 走 `coverage.config.json` 的
+  `**/client/**`（`pending-project`，`reviewBy` 2027-03-31）豁免；8 个纯类型文件（5 个 `deps.ts` +
+  `shared/interface.ts` / `server/shared/{interface,type}.ts`）无语句不可计。
+- 本包均值：lines **96.5** / stmts **94.1** / fn **96.9** / branch **87.2**（第七轮后为 94.8 / 92.6 / 94.5 / 86.2）。
+
+低覆盖文件（其余 26 个文件 lines = 100%）：
+
+| lines% | stmts% | fn% | br% | 文件 | 未覆盖行 |
+|---|---|---|---|---|---|
+| 53.8 | 47.1 | 57.1 | 33.3 | `src/server/host/typert.ts` | 39,40,41,48,49,51（委托解析与包装两条路） |
+| 77.8 | 77.8 | 66.7 | 72.2 | `src/server/tools/impl/create/index.ts` | 38,43,51,59,63,67（四条前置失败分支 + 部分成功路径） |
+| 85.2 | 85.2 | 100 | 77.8 | `src/server/tools/impl/remove/index.ts` | 46,73,85,103 |
+| 90.0 | 90.0 | 100 | 83.3 | `src/server/tools/impl/register/index.ts` | 53,68 |
+| 90.0 | 90.9 | 90.0 | 100 | `src/index.ts` | 68,141,142 |
+| 91.7 | 93.3 | 100 | 70.0 | `src/server/api/impl/route/index.ts` | 43 |
+| 95.0 | 95.2 | 100 | 84.6 | `src/server/scope/impl/own/index.ts` | 65 |
+
+三桶判定（尺子见 `.dsh/skills/dsh-plugin-hub-testing`：**每条判据都要能被一次实现改动打红**）：
+
+1. **已补（本轮）**：`host/sessions.ts` **9.09% → 100%**（三态映射与按调用时刻软取原先**零执行覆盖**：
+   把 `root` 与 `not-live` 换一下，或把软取提到装配期，全仓没有判据会红）；顺带把 `src/index.ts` 83.3% → 90.0%、
+   `host/typert.ts` 30.8% → 53.8%（组合根接缝判据驱动了这两条）。
+2. **值得补、本轮不做（登记）**：`tools/impl/create/index.ts` 的四条前置失败分支（无会话 / 无 cwd / 缺 `path` /
+   分支名非法）各有可判别的用户可见文案；但 `tools.test.ts` 已覆盖 register / remove 的同类分支，
+   补它们要在同一个文件加 4 条同构用例，收益只是文案回归 ⇒ 记 §22.8-3。
+3. **装饰性（不建议补）**：`route/index.ts:43`（同步处理器抛错那一半 catch，异步那半已有 500 用例）、
+   `file-io.ts` 的 50% 分支（要真实权限抖动才构造得出）、`git/exec` 与 `scope/resolve` 的 75% 分支（信号与异常兜底）。
+   它们**不能被一次实现改动打红**，写下去只是把数字推高。
+
+### 22.5 任务二：复杂度与 CRAP
+
+- 阈值唯一事实源 `scripts/data/gauntlet.config.json`：`complexity.cyclomatic` **78** / `complexity.cognitive` **84**
+  （`target` 10 / 15 **门禁不读**，不得据此判红）；消费点 `tools/lint/eslint.config.js`，入口 `pnpm lint`。
+- `pnpm lint`：**exit 0**，检查 552 个文件，**error 0 / warning 508 = 预算 508**（本包自身 0 条；基线已抑制 49 处）。
+- 逐函数读数（**只读**，不改配置：把两条规则临时降到 max=1 才看得见分布）——本包 99 个函数，
+  最坏**圈 13 / 认知 11**：
+
+| 圈 | 认知 | 位置 | 函数 |
+|---|---|---|---|
+| 13 | 10 | `server/binding/impl/model/index.ts:34` | `parseTable` |
+| 10 | 9 | `server/tools/impl/create/index.ts:40` | `execute` |
+| 10 | 10 | `server/tools/impl/remove/index.ts:43` | `execute` |
+| 9 | 6 | `server/binding/impl/model/index.ts:16` | `validateRecord` |
+| 9 | 6 | `server/tools/impl/session/index.ts:14` | `sessionOf` |
+| 8 | **11** | `server/git/impl/inspect/index.ts:63` | `parseWorktreeList` |
+| 7 | 8 | `server/scope/impl/service/index.ts:158` | `attempt` |
+| 7 | 7 | `client/takeover.ts:129` | 接管回调 |
+| 7 | 6 | `server/tools/impl/service/index.ts:77` | `consider` 的异步体 |
+| 7 | 6 | `server/tools/impl/register/index.ts:42` | `execute` |
+
+- **本轮改动没有引入新热点**：新增 `observed`（`scope/impl/service`）圈 3 / 认知 3，`chainDiagnostics` 圈 1；
+  `host/sessions.ts` 两个方法圈 3 / 认知 2；`api/impl/handlers` 的 `GET` 圈 2。
+- 与 `target`（10 / 15）的差距：**只有 `parseTable`（圈 13）越过 target**，`create` / `remove` 的 `execute` 正好 10。
+  门禁上限 78 / 84 距它们很远，故**不是判红项**；#732 收紧阈值时应先看这三个。
+- CRAP（`pnpm crap`，**exit 0**）：全仓 2040 个函数、已覆盖 1716（84%）、超阈热点 116 个（**全在 dsh-mcp-manager / dsh-provider-usage**）；
+  **本包 0 条超阈**（`coverage/crap-report.json` 的 116 条里没有本包条目）。`crap.strict=false` 观察期语义未动。
+
+瘦身清单（可选，按性价比排序，每条附**保行为的判据**）：
+
+1. `parseTable`（13 / 10）：把「逐块解析」与「版本校验」拆成两个纯函数。
+   保行为：`test/unit/binding-model.test.ts` 的 17 条（含版本不匹配与坏行）。
+2. `parseWorktreeList`（8 / **认知 11**）：最大认知来自块内状态机，拆成「切块」+「解释一块」两个纯函数。
+   保行为：`test/unit/git-inspect.test.ts` 的 11 条逐字断言（含 detached / bare / 换行异常）。
+3. `tools/impl/{create,remove}` 的 `execute`（10 / 9 与 10 / 10）：把四条前置检查抽成 `precheck`。
+   保行为：**要先补 `create` 的四条前置失败用例**（§22.4 第 2 桶），否则这次拆分没有判据兜着——这也是本轮不做它的原因。
+
+### 22.6 对 §20.7 的更正（四条，全部有源码依据）
+
+1. **更正（判定错误）**：§20.7.2 的 M3 写「`stat` 会抛 `NOT_FOUND`」——契约相反：`stat` **回 `undefined`**
+   表示会话不存在（`dsh-session-persistence/lib/types/index.d.ts:147,149`）。try/catch 的正当理由应换成
+   **持久化损坏 / 格式不支持 / IO 故障**（`SessionPersistenceCorruptionError` / `SessionFormatUnsupportedError`，
+   同文件 `:15` 的导出）。**修法不变**（收口仍必要），只是理由要换。
+2. **更正（成本口径）**：§20.7.2 说 `stat` 是「单会话定位，不读事件日志」——正确但**不完整**：
+   `jsonl` 后端的 `stat` 先查 `tracker.pendingOf`（内存命中，本进程新建的会话直接返回），否则 `findLog(id)`
+   会 `readdir(root)` 并**逐个 project 目录**按 id 找（`dsh-session-persistence-jsonl/lib/index.js:3194-3207`），
+   再读一次 header 行（`:2890-2897`）与一次 `stat`。即**不随会话总数增长**（本机 509 个会话目录不影响），
+   但每次调用有 O(#project) 次目录操作 + 一次文件读。可选加固：给 `storedParentOf` 加 TTL + 上限的 memo
+   （已结束会话的 header 不变，语义上安全）——本轮**不做**，因为没有真机耗时读数支撑。
+3. **更正（残留窗口）**：§20.7.5 记「子会话首回合可见工具」已修——**只在窗口内成立**。修复是**热 cwd 快路径**：
+   缓存命中要求同一个 cwd 在 30s 内被问过。越出窗口的两条路：① 子会话创建距该 cwd 上一次判定超过 30s；
+   ② 子会话 cwd 与父不同（新 key，例如将来出现 cwd 覆盖）。两条都会退回「安装期起一次 git 子进程」，
+   也就是对照臂的 103ms 场景。**未实测**（§22.8-1）。
+4. **更正（复合 TTL）**：`belongsTo` 间接吃 `commonDir` 的缓存，最坏不新鲜期是 **60s** 而不是 30s
+   （§19.6 ① 与 `git/impl/service` 原注释都按 30s 论证）。**已改注释**。
+
+### 22.7 测试面与门禁（本轮）
+
+- 测试：**15 文件 / 207 用例**（原 14 / 196）：`host-sessions` +6、`scope` +3、`api-routes` +1、`apply-lifecycle` +1。
+  `--min 14 → 15`；重跑 `pnpm stryker:gen`，本包变异面 **15 个测试文件**（`vitest.stryker.d/dsh-worktree-sidebar.config.ts` 已随生成器更新）。
+- 门禁：`pnpm gate:pr` **34 步全 0**；`typecheck` / `tsc -p test/tsconfig.json --noEmit` / `prettier --check` /
+  `verify-dir-imports --package dsh-worktree-sidebar` / `stryker:check` / `verify:coverage-scope` 全 0；`pnpm lint` 0 error。
+- rebase：`origin/main` 前进 1 个提交（`8447025` #833，只动 `scripts/gate/overlay-baseline.mjs`），
+  rebase 后本分支领先 **43 个提交**，加本轮这份文档提交共 **44 个**（以 `git rev-list --count origin/main..HEAD` 为准）、无冲突。
+
+### 22.8 仍未验证 / 遗留（在 §21.6 之上更新）
+
+1. **热 cwd 窗口**（§22.6-3）未实测：要验就得让「子会话创建」与「同一 cwd 上一次判定」间隔 > 30s，
+   再断言首回合工具数掉回 27 —— 需要一次带延迟的隔离 e2e（夹具与脚本见 §21.5）。
+2. **`stat` 真机耗时**只有源码侧定性，没有读数（§22.6-2）。
+3. `tools/impl/create` 的四条前置失败分支未补判据 ⇒ §22.5 瘦身第 3 条要等它。
+4. §21.6 的 1–9 条**仍然成立**：dev HMR 重注册、窄屏/双主题、`waiting` 分支没有正向实测、
+   插件 `logger.warn` 在无 exporter 组合里不可见、真机模型侧是 mock（n=1）、并发交错只有源码分析、
+   变异本地不跑、§20.5 的「打不红」待办未处理。
+
+### 22.9 复制即用（本轮实际跑过的命令）
+
+```sh
+WT=/mnt/ssd/worktree/dsh-plugin-hub-task-worktree-sidebar
+cd $WT/packages/dsh-worktree-sidebar && node ../../scripts/test/run-vitest.mjs --project unit --project integration
+cd $WT && pnpm cov && node scripts/gate/verify-coverage-scope.mjs && pnpm crap
+cd $WT && pnpm lint && pnpm exec prettier --check packages/dsh-worktree-sidebar
+# 逐函数复杂度（只读，不改配置）：把两条规则临时降到 1 才看得见分布
+cd $WT && tools/lint/node_modules/.bin/eslint --config tools/lint/eslint.config.js \
+  --rule '{"complexity":["warn",1],"sonarjs/cognitive-complexity":["warn",1]}' --format json \
+  packages/dsh-worktree-sidebar/src > /tmp/complexity.json
+cd $WT && pnpm gate:pr
+```
