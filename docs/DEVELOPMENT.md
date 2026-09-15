@@ -23,7 +23,7 @@ pnpm contract     # 客户端契约（node scripts/gate/contract-check.ts）
 pnpm test         # 全量 smoke（Node ≥23.6 原生 type stripping 直跑）
 pnpm cov          # 覆盖率采集 + 阈值判分（vitest coverage / istanbul provider，只跑 unit + integration）
 pnpm crap         # 单函数 CRAP 检查（阈值唯一事实源 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict）
-                  # 现状为 fail-closed 停用态，见下方引用块
+                  # src 口径（#722 阶段五重建）；crap.strict=false 为观察期语义，见下方引用块
 pnpm pack:check   # tarball 完整性（含聚合包）
 pnpm typecheck    # 全仓类型检查
 ```
@@ -48,14 +48,15 @@ pnpm typecheck    # 全仓类型检查
 > **client 面暂排除在分母外**（`coverage.config.json` 里 `kind: pending-project` 的条目，
 > 带 `reviewBy` 与 `exitCriteria`，会进 `collect-exemptions` 的到期台账）：其直连 src 的测试
 > （happy-dom project）尚未落地，现有 `test/client/**` 是读 lib 产物的契约测试。计入分母会让
-> 33 个恒 0% 的文件把全局值稀释约 22pp、阈值失去约束力，且 happy-dom project 落地时分子跳升、
+> 这批恒 0% 的文件（规模见 `coverage.config.json` 的 `**/client/**` 条目）把全局值稀释约 22pp、阈值失去约束力，且 happy-dom project 落地时分子跳升、
 > 必须二次基线化。**待该 project 建立时移除排除项并一次性重新基线化。**
 >
-> **`pnpm crap` 现状（fail-closed 停用态）**：其圈复杂度取自 lib 编译产物，而覆盖率
-> 已切到 src 口径，两者行号不可比——此时按 lib 过滤会命中 0 个文件并以 exit 0 放行
-> （静默降级，#718 定性）。故入口处加了数据源口径自检：不匹配即 exit 2 并说明原因；
-> 夜间的 CRAP 步骤与 `gate:full --with-coverage` 的 crap 步骤已同步摘除。
-> src 口径重建归 **#722 阶段 5**（与 ESLint 复杂度规则同批，届时可直接消费其 TS parser）。
+> **`pnpm crap` 现状（#722 阶段五已重建为 src 口径）**：圈复杂度取 ESLint 内置
+> `complexity` 规则，覆盖率取同一份 src 口径产物（`coverage/coverage-final.json`），
+> 两者同源——此前「复杂度取自 lib 产物、与 src 口径行号不可比 → 入口自检 exit 2」的
+> 停用态**已不成立**。`crap.strict=false` 是**观察期**语义：超阈热点只落盘
+> `coverage/crap-report.json` 并 exit 0，置 true 才判红；数据源缺失或解析失败仍
+> fail-closed `exit 2`。执行点：夜间 `observe.yml` 与 `gate:full --with-coverage`。
 
 ### 变异测试与增量链路（#178 / #187）
 
@@ -105,7 +106,48 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
      组 A（廉价全仓闸，恒跑）：判定脚本 `repo-gate-assert.mjs`、`threshold-monotonic`、
      `aggregate:check`、`stryker:check`、`test:scripts`、`forbid-src-tests`、
      `forbid-homedir-src`、`forbid-module-state-src`、`verify-scripts-index`、
-     `verify-coverage-scope`、`docs:check`、`lint`、`format:check`
+     `verify-coverage-scope`、`verify:vendored-binaries`、`verify-dir-imports`（3 包硬判
+     + provider-usage `--soft`）、`export-surface-snapshot`（dsh-notifier）、
+     `verify-shared-fanin`、`docs:check`、`lint`、`format:check`
+     （本清单是导读，**事实源是 ci.yml 的 repo-gate 步骤本身**。接线由
+     `scripts/test/gate-wiring.test.ts` 两族断言守护，缺一不可：**一致性**——「本地档位计划 ↔
+     CI 恒跑段」两侧各自现场派生「被执行的脚本身份」后双向比对，改任一侧漏改另一侧即判红；
+     **覆盖性**——一致性只是相对不变量，两侧**同时**删掉同一执行点后集合仍然相等，故还要拿
+     `scripts/gate` 下的判据全集比「全部 workflow × 全部 job ∪ 本地 pr/full 档 ∪ lefthook」的
+     执行点全集，既无执行点、又不被非测试源码 import 的判据必须显式登记
+     （`scripts/data/gate-wiring-exceptions.json`，受悬空、class 方向、脚本存在、总量上限、
+     indirect 的 `via` 可达（`via: package.json` 还要求该别名在仓库里确有出处）且真的没有执行点
+     等守卫）。另外几族拦的是「执行点在、判据也在跑，但退出码到不了步骤」，扫描面是**全部
+     workflow 的全部 job**：① 判据步骤只允许**一条直接的判据命令**（`exit "0"` 前置、
+     `if [ ]; then` 包装、`X=1 set +e` 这类写法列举不完，故闭合形态而非继续补枚举），设计如此的
+     例外（产物闸的 if/else 双形态、变异判分的循环与聚合等）逐条登记在 `structuredSteps`，登记项
+     再用**文本摘要** `digest` 钉死（否则往循环里插一行 `break` / `continue` 就能让剩下的判据不再
+     执行，而步骤键、执行点、两侧身份全不变）；② 步骤级 `if`（`stepIfs`）与含判据的 job 的 job 级
+     `if`（`jobIfs`）必须逐字登记——它们是「改一处即静默停闸」的开关，而「这个条件会不会成立」
+     静态判不出（等于停机问题），登记制是唯一能把静默开关变成 diff 里显眼一行的手段；③ workflow 与
+     lefthook 的 YAML **交给成熟的 `yaml` 包解析**（devDependency；引号键 / 空格冒号 / 块标量与折叠
+     标量 / flow 写法 / 重复键都由它按 YAML 语义处理，文件级解析错误、白名单之外的步骤键、非字符串
+     `run` / 非映射的 `env` 都由 `parseIssues` / `yamlErrors` 报出来判红；工作流**文件集合**本身也是
+     硬编码契约，防文件被删或改名时断言整体空转全绿），判据步骤另不得覆盖 `shell`（内建关键字放行，
+     自定义模板必须取 basename 后属 bash 家族、把 `{0}` 交给解释器且自带 errexit）、不得带
+     `continue-on-error`、不得注入能改变执行环境的变量（`BASH_ENV` / `SHELLOPTS` / `NODE_OPTIONS` / `PATH` / …）、命令引号
+     必须配对（都不设登记出口），判据步骤的**有效 env 键**（workflow ∪ job ∪ 步骤三层）逐键登记在新增的
+     `stepEnvs`；判据 job 的**环境面**按位置整条登记（不按「谁写了 `$GITHUB_ENV`」判——字样总能被绕开）：判据步骤
+     之前的每个非判据 run 步骤进 `priorRunSteps`（整步摘要 + env 键），该 job 的**执行面**（前序步骤有序
+     序列 + 全部 `uses:` 步骤整步文本 + job 级 `container` / `defaults`）进 `jobFaces`——action 里是任意
+     代码，同样能写 `$GITHUB_ENV`；一处 `if: false` 也能让产物上传静默不跑；`container.env` 与
+     `defaults.run.working-directory` 是换掉整 job 执行环境的 job 级键，判据步骤自己声明 `working-directory`
+     则直接判红（不设登记出口）；已登记条件的操作数来源、其输入步骤（同 job 的 `uses` 整步面）与 artifact 产出端登记在
+     `conditionInputs`——这些都是「条件 / 环境成立与否的输入面」，只钉条件原文挡不住改产出；④ 判据别名的展开结果必须干净，且**指向必须逐条登记在
+     `judgmentAliases`**——期望身份与别名指向同源派生，改名改参会让两侧一起移动、比对仍然相等，
+     故需要这条外部锚点；⑤ 本地 pr 档必须覆盖 full 档的全部判据端点（差额只能登记 `tier-only`），
+     判据不得内嵌进另一个判据的执行点。产物闸 `contract` / `pack:check` / `verify:npmlayout` 还必须
+     同时存在切片与全仓两种调用形态，删掉任一侧即判红。
+     覆盖性只要求「至少一处执行点」，不要求该点在 PR 面——某判据只在 `observe` / `release` 跑时，
+     它在 PR 上的回归不会被拦住；故执行点全部落在非 PR 面（CI 侧 = ci.yml 里**未**按 `gate:full`
+     标签收口的 job，本地侧 = **pr** 档）的判据必须登记 `nightly-only` 或 `tier-only`，这份清单就是
+     「PR 上拦不住哪些判据」的答案；恒假（`if: false`）的 job / 步骤不算执行点，否则一个 decoy
+     步骤就能顶替被删掉的判据）
      （`format:check` 是形态的唯一执行点：面由 `.prettierignore` 显式圈定，只格式化代码面，
      文档 / `.github/` / 生成器写入的数据与派生物被排除并各带理由；
      **纯格式化提交必须登记到仓库根的 `.git-blame-ignore-revs`**：否则一次全仓重排会把数百个
@@ -118,13 +160,14 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
      什么」**：索引项必须存在，被调用点引用的脚本必须登记）；
      组 B（产物闸，按 `fullGate` 切口径）：`contract` / `pack:check` / `verify:npmlayout`
      —— 默认只验命中包（`--packages <命中清单>`），`gate:full` 时验全仓；
-  3. `coverage` / `mutation-gate` / `mutation-verdict`（全量链路）：只在 `gate:full` 的
-     PR 上实例化。coverage 全局单次采集（`pnpm cov` = vitest coverage，只跑 unit +
+  3. `coverage`（全量链路）：只在打了 `gate:full` 标签的 PR 上实例化；`mutation-gate` /
+     `mutation-verdict` 自 #742 阶段 1 起**与标签解耦**——PR 上一律按命中切片强制跑。coverage 全局单次采集（`pnpm cov` = vitest coverage，只跑 unit +
      integration，阈值判分即其退出码；摘要产物经 artifact 留档——cov 从变异矩阵剥离后，
      矩阵多实例各自全仓 smoke 导致的端口竞争 flake 随之消除）；mutation 按命中包切片跑
      Stryker（incremental 跳过未变 mutant）；verdict 汇合变异报告逐包判分（变异率 covered
      ≥ per-package threshold，受 `mutation.strict` 约束；覆盖率维度已上移到 coverage job，
-     verdict 以 `needs.coverage.result == 'success'` 连坐）。矩阵实例级 failure 时 verdict
+     改由 repo-gate 判定表按 `fullGate` 裁决——verdict 不再以 coverage 结果为 `if` 前提，
+     故 cov 失败/skip 不会吞掉变异判分）。矩阵实例级 failure 时 verdict
      仍聚合判分（缺报告包 exit 2 fail-closed）。
 
   判定表为**六维**「事件 × fullGate × 切片(hasMutations) × coverage × 变异矩阵 ×
@@ -136,8 +179,8 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
   反馈回路。高风险改动（重构、依赖跃迁、发版前）在 PR 上加 `gate:full` 标签按需补跑；
   全仓产物闸在 `gate:full` PR 与 observe 全量班两处落地，默认 PR 只验命中包。
 - **触发面收敛**（#187 / #217 扩展）：全量三段 job 仅限 pull_request 触发——push 到 main
-  时 diff 基准 `before` 不可用会使 paths-filter 走 fail-closed 全量 fallback，变异随之
-  退化全量且与当晚夜间全量完全重复；主干覆盖与变异覆盖由 observe.yml 夜间全量承接、发版前
+  时 diff 基准取 `github.event.before`（只有 force push / 新分支首推这类全零 SHA 才走
+  fail-closed 全量 fallback），变异在非 PR 事件下整体 skipped、与当晚夜间全量不重复；主干覆盖与变异覆盖由 observe.yml 夜间全量承接、发版前
   由 release.yml tag 管线承接，非 PR 事件下三段 job 整体 skipped 且 `fullGate` 恒为 false
   （repo-gate 判定表显式放行）。
 - 本地手动入口：`npx stryker run stryker.conf.d/dsh-<pkg>.json`（临时强制全量用
@@ -436,7 +479,10 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
 
 - `pnpm contract`（contract-check）：load id === 包名、`dsh.client ⇒ exports["./client"]`、
   `src/client/index.ts ⇒ lib/client.js` 产物、arrive 可解析、`exports.apply/inject` 装配。
-  下列两条门禁同属本段执行（**不新增 workflow**，执法点唯一）：
+  下列两条门禁原先内嵌在本脚本里以 `spawnSync` 执行——判据确实在跑，但 workflow 与本地档位
+  计划里都看不到它们，于是「每条判据至少一个可见执行点」对它们恒为假。审计 P0-1 后迁成
+  **可见的直接步骤**：CI 侧在 `ci.yml` 的 repo-gate，本地侧在 `gate-steps.mjs` 的 cheapGlobal；
+  接线由 `scripts/test/gate-wiring.test.ts` 双向断言守护，**本段不再执行它们**：
   - **依赖图门禁（`scripts/gate/verify-dir-imports.mjs`；#690 S0 / #733 M0）**：模块按
     **叶子粒度**（递归含 `interface.ts` 的目录，分组层透明）划分，跨模块引用只能走目标
     模块的 `interface.ts`（入口）或 `deps.ts`（出口）。`scripts/data/dir-imports-baseline.json`

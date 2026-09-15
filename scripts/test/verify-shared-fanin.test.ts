@@ -10,7 +10,8 @@
  *   2. fixture 正反例——值面 2 包绿 / 1 包红 / 0 包红，类型面 1 包绿，退役不豁免下限，
  *      悬空引用判红，test/ 引用不计入，端内门面转出计入，shared/ 内部依赖不传递；
  *   3. 真实仓库锚——PR2 修正过的四行登记偏差与 frontmatter 移除必须以派生结果为准，
- *      并锁住登记链（scripts/README.md / gate-scope-registry.json / contract-check.ts 接入）。
+ *      并锁住登记链（scripts/README.md / gate-scope-registry.json）；执行点接线不在此处，
+ *      由 scripts/test/gate-wiring.test.ts 双向断言（CI repo-gate ↔ 本地 pr/full）。
  *
  * fixture 一律建在 mkdtempSync 的临时根（仓库零污染纪律）：本仓被禁的正是
  * 「为测试在仓库里造包目录」这类写法。
@@ -368,7 +369,7 @@ test("登记链：scripts/README.md 登记本门（引用即登记棘轮）", ()
   const index = readFileSync(join(ROOT, "scripts", "README.md"), "utf8");
   assert.ok(
     index.includes("gate/verify-shared-fanin.mjs"),
-    "新增被 contract-check 引用的门禁脚本必须在 scripts/README.md 登记",
+    "新增门禁脚本必须在 scripts/README.md 登记（引用即登记棘轮）",
   );
 });
 
@@ -383,13 +384,19 @@ test("登记链：gate-scope-registry.json 以 tree 口径登记本门（仓库�
   assert.equal(entry.packages, "dsh-*");
 });
 
-test("登记链：contract-check.ts 接入本门（执法点唯一，不新增 workflow）", () => {
+test("接线：本门不得再内嵌回 contract-check（执行点必须可见）", () => {
+  // 原先这里断言「contract-check.ts 引用了本门」——那正是「执行点不可见」的形态：判据确实
+  // 在跑，但 workflow 与本地档位计划里都看不到它，于是「每条判据至少一个可见执行点」对它
+  // 恒为假。执行点迁成 ci.yml 与 local-gate 的直接步骤后，正向接线由
+  // scripts/test/gate-wiring.test.ts 双向断言守护；此处改为反向钉，防止它被塞回去。
+  // 只认「执行形态」：spawnSync / execFileSync 调用附近出现的本门路径。用 includes 子串会被
+  // 注释里的提及满足——本 PR 就在 contract-check.ts 里留了一段说明历史迁移的注释，那不该算
+  // 「内嵌回去」。
   const contract = readFileSync(join(ROOT, "scripts", "gate", "contract-check.ts"), "utf8");
-  assert.ok(
-    contract.includes("scripts/gate/verify-shared-fanin.mjs"),
-    "扇入判据必须挂在既有 contract 段上执行",
+  const executed = [...contract.matchAll(/(?:spawnSync|execFileSync)\s*\(/g)].some((call) =>
+    contract.slice(call.index, call.index + 800).includes("scripts/gate/verify-shared-fanin.mjs"),
   );
-  assert.ok(contract.includes("verify-shared-fanin"), "判红文案须可定位到本门");
+  assert.ok(!executed, "本门不得内嵌回 contract-check：那会让执行点重新变成不可见");
 });
 
 test("collectConsumers：无 packages/ 目录时返回空集合（不抛）", () => {

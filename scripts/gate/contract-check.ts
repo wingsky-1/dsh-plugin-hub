@@ -15,7 +15,6 @@
  * exports["./client"] 存在；src/client.ts ⇒ lib/client.js 产物存在）与报告汇总。
  */
 import { readFileSync, existsSync, readdirSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertClientContract } from "../lib/client-contract-lib.ts";
@@ -230,102 +229,10 @@ console.log(failed === 0 ? "客户端契约：全部通过" : `客户端契约�
       : "catalog-peers | PASS",
   );
 }
-// D10（issue #664）：目录 interface.ts 门面静态检查——跨模块引用只能走目标模块
-// interface.ts（入口）或 deps.ts（出口）；适用包白名单缺省 dsh-mcp-manager
-// （#664 重构包），client/ 豁免（index.ts 契约锚点）。PR1（#669）起显式纳入
-// dsh-notifier（目录树重构包）。
-// S0（#690）：模块改**叶子粒度**（递归含 interface.ts 的目录，分组层透明），并新增
-// 单调基线（scripts/data/dir-imports-baseline.json，每包每类计数只许降不许升）、
-// 源码全覆盖断言（src ⊆ ∪mutate ∪ ∪excludes）。执法点仍在本 contract 段，不新增
-// workflow；--zones / --graph 是纯报告开关（不进 CI，避免长输出）。
-// 覆盖范围补齐（#742 阶段 2 前置）：上面那条源码全覆盖断言此前只对 3 个包生效
-// （mcp-manager / notifier / provider-usage），lan-proxy 的 src 不在任何扫描面内——新
-// 文件既不会被判「未覆盖」，也不会有 R-A 约束。实测在现有判据下为零违规（R-A 语义切换
-// 前 0 / 切换后 0），故并入硬判，零判红成本换全覆盖。
-// 独立脚本可单独跑；接入本门禁防约束漂移。
-{
-  const dirGate = spawnSync(
-    process.execPath,
-    [
-      join(ROOT, "scripts/gate/verify-dir-imports.mjs"),
-      "--package",
-      "dsh-mcp-manager",
-      "--package",
-      "dsh-notifier",
-      "--package",
-      "dsh-lan-proxy",
-    ],
-    { encoding: "utf8" },
-  );
-  for (const line of (dirGate.stdout ?? "").split("\n")) if (line.trim() !== "") console.log(line);
-  if (dirGate.status !== 0) {
-    console.log(`verify-dir-imports | FAIL exit=${dirGate.status}`);
-    failed++;
-  }
-}
-// #670 C2（阶段四）：provider-usage 目录门面走 --soft——跨模块直引是过渡债
-// （软报告 review 用，不判红），但 interface.ts 符号存在性（防虚导出）在
-// soft/hard 两模式均硬执行，故虚导出会导致本段 status != 0 判红本门禁。
-// S0（#690）起：--soft 只影响直引明细的打印标签，单调基线与全覆盖断言一视同仁
-// （存量登记在基线里，上升仍判红）。
-{
-  const providerDirGate = spawnSync(
-    process.execPath,
-    [
-      join(ROOT, "scripts/gate/verify-dir-imports.mjs"),
-      "--package",
-      "dsh-provider-usage",
-      "--soft",
-    ],
-    { encoding: "utf8" },
-  );
-  for (const line of (providerDirGate.stdout ?? "").split("\n"))
-    if (line.trim() !== "") console.log(line);
-  if (providerDirGate.status !== 0) {
-    console.log(`verify-dir-imports(provider-usage) | FAIL exit=${providerDirGate.status}`);
-    failed++;
-  }
-}
-// M6（#669 PR1）：包导出面快照——tsc --declaration 产物与入库基线零 diff
-// （符号集 + 导出符号定义块），重构期导出面漂移（增删改符号/定义改写）判红。
-// 基线变更须显式 --snapshot 更新并随 PR 提交（脚本同目录 verify-dir-imports）。
-{
-  const surfaceGate = spawnSync(
-    process.execPath,
-    [join(ROOT, "scripts/gate/export-surface-snapshot.mjs"), "--package", "dsh-notifier"],
-    { encoding: "utf8" },
-  );
-  for (const line of (surfaceGate.stdout ?? "").split("\n"))
-    if (line.trim() !== "") console.log(line);
-  if (surfaceGate.status !== 0) {
-    console.log(`export-surface-snapshot | FAIL exit=${surfaceGate.status}`);
-    failed++;
-  }
-}
-// N2a（#733 M2c 后续）模块级可变状态门禁的**执行点已迁出**本脚本（计划项 3.1.2）：
-// 它原先在这里 spawnSync，与两个兄弟闸（forbid-src-tests / forbid-homedir-src）的形态不一致，
-// 后果之一是本脚本会先打印「客户端契约：全部通过」再 FAIL（判定表与汇总行被自己打脸）。
-// 现统一为：CI 里同款直接步骤（ci.yml 的 Forbid module state in src）、本地进 local-gate 的
-// cheapGlobal（pnpm gate:module-state）。此处不再重复执行同一个判据。
+// 目录门面、导出面快照、跨包扇入三个判据的执行点在审计 P0-1 后迁出本脚本：原先它们在这里
+// 以 spawnSync 执行——判据确实在跑，但 workflow 与本地档位计划里都看不到，于是「每条判据至少
+// 一个可见执行点」对它们永远为假。现与 module-state（#733 计划项 3.1.2 的先例）同形：CI 侧是
+// 直接步骤（ci.yml 的 Verify dir imports / Export surface snapshot / Verify shared fan-in），
+// 本地进 local-gate 的 cheapGlobal，接线由 scripts/test/gate-wiring.test.ts 双向断言守护。
 
-// #792 跨包档收口：仓库根 shared/ 的跨包扇入判据（准入规则 1）——shared 模块必须有 >= 2 个
-// 生产消费包，类型面模块单列（单消费者合规），退役走 DEPRECATED 两步走（观察期在报告里单列）。
-// 判据本体是独立脚本（可单独跑），执行点并入本 contract 段：本仓纪律是不新增 workflow、
-// 执法点唯一，与 verify-dir-imports / export-surface-snapshot 同形。
-{
-  const faninGate = spawnSync(
-    process.execPath,
-    [join(ROOT, "scripts/gate/verify-shared-fanin.mjs")],
-    { encoding: "utf8" },
-  );
-  for (const line of (faninGate.stdout ?? "").split("\n"))
-    if (line.trim() !== "") console.log(line);
-  if (faninGate.status !== 0) {
-    // 结构错误路径（exit 2）只写 stderr，不转发就等于判红却无原因
-    for (const line of (faninGate.stderr ?? "").split("\n"))
-      if (line.trim() !== "") console.log(line);
-    console.log(`verify-shared-fanin | FAIL exit=${faninGate.status}`);
-    failed++;
-  }
-}
 process.exit(failed === 0 ? 0 : 1);

@@ -181,6 +181,11 @@
       "why": "本表自身：消费方是常驻的 test:scripts（ci-face-coverage 断言），改动立刻在本 PR 上被消费；它不改变任何 filters，只声明并核对归属。"
     },
     {
+      "path": "scripts/data/gate-wiring-exceptions.json",
+      "faces": [],
+      "why": "判据接线例外台账：消费方是常驻的 test:scripts（gate-wiring 断言），改动立刻在本 PR 上被消费；它只声明「两侧形态不对称是设计如此」并受悬空/方向/条件/上限五条守卫，不改变任何 filters，与 ci-face-registry.json 自身同类。"
+    },
+    {
       "path": "docs/**",
       "faces": [],
       "why": "纯文档：docs:check（verify-docs）在 repo-gate 常驻，校相对链接与 pnpm 命令引用，无需包面。#220 起刻意不在全局面。"

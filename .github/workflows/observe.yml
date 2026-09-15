@@ -117,6 +117,20 @@ jobs:
       - name: Npm layout（全仓）
         run: pnpm verify:npmlayout
 
+      # 这四条原先由 Client contract 以子进程执行（审计 P0-1 迁成直接步骤）：内嵌形态下 workflow
+      # 里看不到它们，本班次的覆盖面也就不可审计；迁出后必须在这里同样落到（PR 侧由 repo-gate 承担）。
+      - name: Verify dir imports（目录门面：跨模块引用只走 interface.ts；3 包硬判）
+        run: node scripts/gate/verify-dir-imports.mjs --package dsh-mcp-manager --package dsh-notifier --package dsh-lan-proxy
+
+      - name: Verify dir imports（provider-usage，--soft）
+        run: node scripts/gate/verify-dir-imports.mjs --package dsh-provider-usage --soft
+
+      - name: Export surface snapshot（dsh-notifier 导出面与基线零 diff）
+        run: node scripts/gate/export-surface-snapshot.mjs --package dsh-notifier
+
+      - name: Verify shared fan-in（shared 模块跨包扇入；#792）
+        run: node scripts/gate/verify-shared-fanin.mjs
+
       - name: Stryker config check（变异配置与拓扑 SSOT 一致）
         run: pnpm stryker:check
 

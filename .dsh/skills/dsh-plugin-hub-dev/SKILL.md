@@ -80,11 +80,15 @@ IIFE 工厂、Symbol.toStringTag 装配、**load id === 包名** define 注入�
 
 ## 5. 门禁与阶段提交（改动提交前全跑，在仓库根执行）
 
-> 完成定义以根 [AGENTS.md 门禁矩阵](../../../AGENTS.md) 为**单一事实源**：下列五条是该矩阵
-> `pnpm gate:full` 档的真子集，本清单只作迭代内自查，不替代该矩阵的分层门槛。
+> 完成定义以根 [AGENTS.md 门禁矩阵](../../../AGENTS.md) 为**单一事实源**：`pnpm gate:pr` 就是该矩阵
+> 的 pr 档（本地本就全仓口径，只少 full 的「豁免到期台账」收集），本清单只作迭代内自查，
+> 不替代该矩阵的分层门槛。
+> 旧写法 `pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck` 自审计
+> P0-1 起已是**更弱**的口径：目录门面 / 导出面快照 / 跨包扇入三闸已迁成 ci.yml 与本地档位的
+> 直接步骤，不再由 `pnpm contract` 执行。
 
 ```sh
-pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck
+pnpm gate:pr
 ```
 
 - `contract`：load id === 包名、`src/client/index.ts ⇒ lib/client.js` 产物、

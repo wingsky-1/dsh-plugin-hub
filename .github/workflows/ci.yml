@@ -593,12 +593,13 @@ jobs:
   # × 变异矩阵 × verdict」六维裁决；coverage 失败 → verdict 连坐 skipped → 判定表
   # 以 GATE_COVERAGE 维度优先点名「coverage 失败连坐」，而非误报「mutation 绕过」。
   #
-  # #722 门禁分层：本 job 分两组步骤——
-  #   组 A（廉价全仓闸，恒跑）：判定脚本、threshold-monotonic、aggregate:check、
-  #     stryker:check、test:scripts、forbid-*、docs:check。不依赖 lib 产物或仅需
-  #     少量声明产物（test:scripts 的前置包清单见 scripts/test/script-test-prereqs.mjs）。
-  #   组 B（产物闸，按 fullGate 切口径）：contract / pack:check / verify:npmlayout
-  #     —— 默认 PR 只验命中包（`--packages <hit>`），gate:full 与夜间验全仓。
+  # #722 门禁分层：本 job 的步骤按**用途**分两组（组 B 的产物闸排在部分组 A 步骤之前）——
+  #   组 A（廉价全仓闸，恒跑）：判定脚本、threshold-monotonic、aggregate:check、stryker:check、
+  #     test:scripts、forbid-*、verify-dir-imports、export-surface-snapshot、verify-shared-fanin、
+  #     verify-scripts-index、verify-coverage-scope、verify-vendored-binaries、docs:check、lint、
+  #     format:check。不依赖 lib 产物（test:scripts 的前置包清单见 script-test-prereqs.mjs）。
+  #   组 B（产物闸，按 fullGate 切口径）：contract / pack:check / verify:npmlayout——默认 PR 只验
+  #     命中包，gate:full 与夜间验全仓。事实源是步骤本身；端点双向比对见 gate-wiring.test.ts。
   repo-gate:
     name: Build / Contract / Smoke / Pack
     needs: [changes, build-test, coverage, mutation-gate, mutation-verdict]
@@ -642,6 +643,20 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # 以下四条原先藏在 contract-check.ts 内部以 spawnSync 执行——判据在跑，但 workflow 里看不到，
+      # 「每条判据至少一个可见执行点」对它们永远为假（接线盲区）。迁成直接步骤（同 #733 3.1.2 把
+      # module-state 迁出 contract 的方向），位置紧跟依赖安装、排在产物闸与 lint / test:scripts 之前：
+      # 只依赖 node_modules（export-surface-snapshot 自跑 tsc），且 GHA 判红即中止，排得越靠后一次
+      # 运行能拿到的判决越少（排在 Install 之前则 tsc 找不到）。
+      - name: Verify dir imports（目录门面：跨模块引用只走 interface.ts；3 包硬判）
+        run: node scripts/gate/verify-dir-imports.mjs --package dsh-mcp-manager --package dsh-notifier --package dsh-lan-proxy
+      - name: Verify dir imports（provider-usage，--soft：直引明细只报告）
+        run: node scripts/gate/verify-dir-imports.mjs --package dsh-provider-usage --soft
+      - name: Export surface snapshot（dsh-notifier 导出面与基线零 diff）
+        run: node scripts/gate/export-surface-snapshot.mjs --package dsh-notifier
+      - name: Verify shared fan-in（shared 模块跨包扇入；#792）
+        run: node scripts/gate/verify-shared-fanin.mjs
 
       - name: Download package outputs artifacts（F9：复用 matrix 命中包产物，避免重复构建）
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0

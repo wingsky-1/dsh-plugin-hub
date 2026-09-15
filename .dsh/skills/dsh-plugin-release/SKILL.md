@@ -25,8 +25,9 @@ description: >
 
 ## 1. 发版步骤（维护者执行，agent 只做 1–3）
 
-1. 全量门禁绿：`pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck`
-   + `pnpm aggregate:check && pnpm verify:npmlayout`（发版涉及全部包）。
+1. 全量门禁绿：`pnpm gate:pr`（全仓口径）+ `pnpm aggregate:check && pnpm verify:npmlayout`（发版涉及全部包）。
+   > 旧写法 `pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck` 自审计 P0-1 起已更弱
+   > （目录门面 / 导出面快照 / 跨包扇入三闸不再由 `pnpm contract` 执行）。
    > 该清单属根 [AGENTS.md 门禁矩阵](../../../AGENTS.md) 的**收尾（发版）档**（全仓口径）；
    > 完整收尾口径以该矩阵为准，本清单只作发版前逐项核对。
 2. bump 全部包版本到目标 `vX.Y.Z`（含 peer 与 catalog 的锁步检查）。

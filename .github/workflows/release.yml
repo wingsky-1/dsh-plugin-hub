@@ -51,6 +51,20 @@ jobs:
       - name: Contract
         run: pnpm contract
 
+      # 同 observe.yml：这四条原先藏在 Client contract 内部，发版链路因此看不到它们（审计 P0-1
+      # 迁成直接步骤后必须在这里补齐，否则发版前的覆盖面收窄）。
+      - name: Verify dir imports（目录门面；3 包硬判）
+        run: node scripts/gate/verify-dir-imports.mjs --package dsh-mcp-manager --package dsh-notifier --package dsh-lan-proxy
+
+      - name: Verify dir imports（provider-usage，--soft）
+        run: node scripts/gate/verify-dir-imports.mjs --package dsh-provider-usage --soft
+
+      - name: Export surface snapshot（dsh-notifier）
+        run: node scripts/gate/export-surface-snapshot.mjs --package dsh-notifier
+
+      - name: Verify shared fan-in
+        run: node scripts/gate/verify-shared-fanin.mjs
+
       - name: Tests
         run: pnpm test
 
