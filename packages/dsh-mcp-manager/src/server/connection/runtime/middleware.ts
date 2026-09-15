@@ -15,6 +15,9 @@
  * 阶段 6 集中搬移：本文件归 connection/runtime/（中间层池），仅保留
  * McpMiddleware 类；原汇聚转发块删除（v3 §二：汇聚只留 src/index.ts）。
  *
+ * #767 S1-3a：ws_mcp_call 执行路径（callTool 与 hostRedact）已迁 servers/dispatch 域，
+ * callTool 缩成转发壳——执行器经 runtimePorts 的 dispatch 端口取，单元/策略/脱敏源仍由本类持有。
+ *
  * W8 端口接线：跨域能力（catalog 新鲜判定与装箱、pipeline 投影/超时/取消息/脱敏/参数归一/
  * 策略裁决、workspace 全名解析与拼装）一律经 `impl/service` 的 `runtimePorts.get()` 取；
  * 同子层的 reconnect/transport/limits 与跨端层 shared 的 MIDDLEWARE_GLOBAL_ROOT 直取，
@@ -25,7 +28,6 @@ import { mkdir, readFile, rename, writeFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ServerConfig } from "../../config/interface.ts";
-import type { ToolDefinition, ToolOutputDefinition } from "@deepseek-ai/dsh-tools";
 import { MCPClient } from "./protocol.ts";
 import { resolveReconnect } from "./reconnect.ts";
 import { createTransport } from "./transport.ts";
@@ -580,7 +582,9 @@ export class McpMiddleware {
     }
   }
 
-  /** 执行 ws_mcp_call：路由 + 一致性校验 + 策略 + 调用。
+  /** 执行 ws_mcp_call。本片（#767 S1-3a）只是转发壳：路由校验、策略裁决、两条执行分支与
+   * 结果投影已搬进 servers/dispatch 域（impl/call 的 executeMcpCall），中间层仍持有单元表、
+   * 策略、脱敏源与两条上游端口，经显式入参按引用递入——不落第二份事实源。
    * @param agent 调用方会话 agent（透传给封装定义的 execute，供 session cwd
    *   解析；#413 封装直呼分支需要）。 */
   async callTool(
@@ -590,190 +594,22 @@ export class McpMiddleware {
     signal: AbortSignal | undefined,
     agent?: unknown,
   ): Promise<unknown> {
-    const { pipeline, workspace } = runtimePorts.get();
-    const parsed = workspace.parseFullServerName(fullName);
-    if (parsed === undefined) {
-      throw new Error(
-        `ws_mcp_call: unknown server ${JSON.stringify(fullName)}; 格式应为 @<root>/<server>`,
-      );
-    }
-    const unit = this.units.get(parsed.root);
-    if (unit === undefined) {
-      throw new Error(
-        `ws_mcp_call: 工作空间 ${JSON.stringify(parsed.root)} 未激活；请先 ws_mcp_search 或 ws_mcp_list`,
-      );
-    }
-    const entry = unit.connections.get(parsed.server);
-    const entryStatus = entry?.status;
-    // B4 连带：六态状态机补 reconnecting 后，调用守卫须把「后台重连中」纳入未就绪
-    // 范畴——否则退避窗口内会落到下方 entry.client.callTool（client 未 initialize）。
-    if (
-      entry === undefined ||
-      entryStatus === "failed" ||
-      entryStatus === "reconnecting" ||
-      entryStatus === "stopped" ||
-      entryStatus === "disabled"
-    ) {
-      if (unit.userDisabled.has(parsed.server)) {
-        throw new Error(
-          `ws_mcp_call: server ${JSON.stringify(fullName)} 已被用户禁用；可先在 GUI「MCP」浮窗中重新连接`,
-        );
-      }
-      if (entryStatus === "reconnecting") {
-        throw new Error(
-          `ws_mcp_call: server ${JSON.stringify(fullName)} 连接失败、正在后台重连；请稍后重试或重新连接`,
-        );
-      }
-      throw new Error(
-        `ws_mcp_call: server ${JSON.stringify(fullName)} 未连接或连接失败，请先 ws_mcp_search 或 ws_mcp_list 确认 server 已连接`,
-      );
-    }
-    if (entryStatus === "connecting") {
-      throw new Error(
-        `ws_mcp_call: server ${JSON.stringify(fullName)} 连接仍在进行，请稍后重试；连接完成后再调用`,
-      );
-    }
-    const tool = workspace.normalizeToolName(parsed.server, toolRaw);
-    // 工具级禁用（先查禁用表再查策略；P0-1 三入口统一走 isToolDenied）。
-    const policyKey = workspace.fullServerName(parsed.root, parsed.server);
-    if (pipeline.isToolDenied(this.disabledTools, this.policy, policyKey, tool)) {
-      // 策略拒绝与禁用拒绝文案区分（策略拒绝附「调整 middlewarePolicy 配置」下一步）。
-      if (!pipeline.policyAllows(this.policy, policyKey, tool)) {
-        const reason = pipeline.policyDenialReason(this.policy, policyKey, tool);
-        throw new Error(
-          `${reason ?? `ws_mcp_call: 工具 ${JSON.stringify(`${policyKey}/${tool}`)} 被策略拒绝`}；如需放行请调整 middlewarePolicy 配置`,
-        );
-      }
-      throw new Error(pipeline.toolDisabledReason(policyKey, tool));
-    }
-    const catalog = unit.catalog.get(parsed.server);
-    const stale =
-      catalog !== undefined &&
-      catalog.unavailable === undefined &&
-      Date.now() - catalog.discoveredAt > CATALOG_TTL_MS;
-    if (stale) {
-      // stale：仍可调用（目录只是提示），但 schema 可能过期——在结果前置提示。
-    }
-    const args = pipeline.normalizeArguments(rawArgs);
-    // B18/D6：调用预算读 server.toolCallTimeoutMs（缺省 CALL_TIMEOUT_MS），
-    // withTimeout 兜底统一 +2s——两路径（supervisor SDK timeoutMs 无兜底）预算
-    // 差异写入两路径契约测试的差异面签名。
-    const callBudgetMs = entry.server?.toolCallTimeoutMs ?? CALL_TIMEOUT_MS;
-    // #413 封装直呼分支：runtime 注入的封装定义服务器（toolDefinitions）——
-    // execute 为调用方 JS（不经远端 client.callTool）。禁用/策略已在上面统一
-    // 裁决（isToolDenied），此处直接调调用方 execute；输出经封装 output.render
-    // 投影为 ContentBlock[]（与 supervisor 封装分支 / dsh-tools 同口径）。
-    const wrapped = entry.server?.toolDefinitions;
-    if (Array.isArray(wrapped)) {
-      const def = wrapped.find((d) => d?.name === tool);
-      if (def === undefined) {
-        throw new Error(
-          `ws_mcp_call: 工具 ${JSON.stringify(`${parsed.server}/${tool}`)} 不存在（封装定义服务器）`,
-        );
-      }
-      try {
-        // 封装定义契约：execute(args, exec) 的 exec 为完整 ToolRunContext，但
-        // 中间层只能提供最小面（agent 透传，session cwd 解析用）——经 unknown
-        // 中转（消费方封装定义只读 exec.agent）。
-        const execCtx = { agent } as unknown as Parameters<
-          NonNullable<ToolDefinition["execute"]>
-        >[1];
-        // #413 QA P2-2：封装 execute 补超时兜底（与远端分支同预算 callBudgetMs，
-        // 封装实现挂起时不无限等待）。
-        const value = await pipeline.withTimeout(
-          def.execute(typeof args === "object" && args !== null ? args : {}, execCtx),
-          callBudgetMs + 2000,
-          `ws_mcp_call: 封装调用超时（${callBudgetMs}ms），可重试；若反复超时请检查插件状态`,
-          signal,
-        );
-        const content =
-          typeof def.output?.render === "function"
-            ? def.output.render(
-                args,
-                value as unknown as Parameters<NonNullable<ToolOutputDefinition["render"]>>[1],
-              )
-            : [
-                {
-                  type: "text",
-                  text: typeof value === "string" ? value : JSON.stringify(value ?? {}),
-                },
-              ];
-        // #512 共性问题：structuredContent 条件展开——封装 execute 返回 undefined
-        // 时不落键，防显式 undefined 值键触发宿主 lossless JSON 校验失败（#381 同源）。
-        return {
-          content,
-          ...(value !== undefined ? { structuredContent: value } : {}),
-        };
-      } catch (error) {
-        if (signal?.aborted === true) throw signal.reason;
-        throw new Error(
-          this.hostRedact(
-            `ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 封装调用失败：${pipeline.msgOf(error)}`,
-          ),
-        );
-      }
-    }
-    if (entry.client === undefined) {
-      throw new Error(
-        `ws_mcp_call: server ${JSON.stringify(fullName)} 未就绪（client 缺失）；请稍后重试或重新连接`,
-      );
-    }
-    try {
-      const result = await pipeline.withTimeout(
-        entry.client.callTool(tool, typeof args === "object" && args !== null ? args : {}, {
-          signal,
-          timeoutMs: callBudgetMs,
-        }),
-        callBudgetMs + 2000,
-        `ws_mcp_call: 调用超时（${callBudgetMs}ms），可重试；若反复超时请用 ws_mcp_detail 核对参数或检查服务器状态`,
-        signal,
-      );
-      // #512：远端结果经 call-result.ts 统一投影收敛（isError 判定 + 白名单
-      // 清洗 + 无 content 兜底），与 supervisor（mcp__ 直呼）/ 官方
-      // dsh-mcp-client createExecutor 同一契约——不再裸透传 resultObj，
-      // Python SDK 必带的 isError:false / _meta 等字段不再外泄进工具契约。
-      // fallbackText（复核闸 F1）：content 键存在但非数组（协议违规形态）时
-      // 保留远端原文（msgOf，与旧文案行为等价）；content 缺省走默认兜底。
-      const projected = pipeline.projectCallToolResult(result, {
-        errorText: (content) =>
-          `ws_mcp_call: 远端工具返回错误：${pipeline.msgOf(content)}；可先用 ws_mcp_detail 核对参数 schema 后重试`,
-        fallbackText: (r) => {
-          const raw =
-            typeof r === "object" && r !== null && "content" in r
-              ? (r as { content?: unknown }).content
-              : undefined;
-          return raw !== undefined && !Array.isArray(raw)
-            ? pipeline.msgOf(raw)
-            : pipeline.defaultCallResultFallbackText(r);
-        },
-      });
-      if (stale) {
-        // schema 可能已过期：结果前置提示（投影后的白名单结构，仅扩 content）。
-        const hint = {
-          type: "text",
-          text: "（提示：本工具目录已过期，schema 可能已变更，请重新 ws_mcp_search）",
-        };
-        return {
-          content: [hint, ...projected.content],
-          ...(projected.structuredContent !== undefined
-            ? { structuredContent: projected.structuredContent }
-            : {}),
-        };
-      }
-      return projected;
-    } catch (error) {
-      if (signal?.aborted === true) throw signal.reason;
-      throw new Error(
-        this.hostRedact(
-          `ws_mcp_call: ${JSON.stringify(`${parsed.server}/${tool}`)} 调用失败：${pipeline.msgOf(error)}`,
-        ),
-      );
-    }
-  }
-
-  private hostRedact(text: string): string {
-    const redactor = runtimePorts.get().pipeline.createRedactor([...this.allServers()]);
-    return redactor(new Error(text));
+    const { dispatch, pipeline, workspace } = runtimePorts.get();
+    return dispatch.executeMcpCall({
+      fullName,
+      toolRaw,
+      rawArgs,
+      signal,
+      agent,
+      units: this.units,
+      allServers: () => this.allServers(),
+      disabledTools: this.disabledTools,
+      policy: this.policy,
+      catalogTtlMs: CATALOG_TTL_MS,
+      defaultCallTimeoutMs: CALL_TIMEOUT_MS,
+      pipeline,
+      workspace,
+    });
   }
 
   private allServers(): ServerConfig[] {
