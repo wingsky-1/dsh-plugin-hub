@@ -43,7 +43,18 @@ test("ci-matrix: 场景 a - 正常命中单一 active 包 (via FILTER_OUTPUTS)",
   assert.equal(res.mutationCombos.length, 10);
   assert.deepEqual(
     res.mutationCombos.map((c) => c.seg),
-    ["api", "channels", "client", "config", "events", "pipeline", "sdk", "shared", "stores", "upgrade"],
+    [
+      "api",
+      "channels",
+      "client",
+      "config",
+      "events",
+      "pipeline",
+      "sdk",
+      "shared",
+      "stores",
+      "upgrade",
+    ],
   );
 });
 

@@ -168,6 +168,9 @@ test("本仓真实快照：7 条在册（数字变即提示同步台账与 #765�
   // 覆盖率面的临时排除项也必须在台账里（它是「到期复核」的输入，不该只活在配置里）
   // 索引 5 = 前五条是 type-only / not-source 的永久事实（d.ts / d.mts / ps1 / md / css），
   // 第六条起才是带 reviewBy 的临时排除项。
-  assert.match(r.stdout, /\$\.exclude\[5\] {2}pattern=packages\/dsh-notifier\/src\/client\/\*\*\/\*\.tsx/);
+  assert.match(
+    r.stdout,
+    /\$\.exclude\[5\] {2}pattern=packages\/dsh-notifier\/src\/client\/\*\*\/\*\.tsx/,
+  );
   assert.match(r.stdout, /reviewBy 2027-03-31/);
 });

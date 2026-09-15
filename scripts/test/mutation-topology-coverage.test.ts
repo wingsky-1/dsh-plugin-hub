@@ -605,7 +605,11 @@ test("#836：仓库每份 conf 的每条 mutate 条目都命中物理文件（�
     const mutate = JSON.parse(readFileSync(join(confDir, file), "utf8")).mutate;
     entries += mutate.length;
     const res = mutationEntryProblems(ROOT, file, mutate);
-    assert.deepEqual(res.problems, [], `${file} 存在命中 0 个文件的条目：${res.problems.join(" | ")}`);
+    assert.deepEqual(
+      res.problems,
+      [],
+      `${file} 存在命中 0 个文件的条目：${res.problems.join(" | ")}`,
+    );
     scanned += res.scanned;
   }
   // 面完整性自证：本判据最可能的失效形态是空转（一条都没判、恒绿），而空转时
