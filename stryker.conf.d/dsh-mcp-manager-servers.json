@@ -1,0 +1,44 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-mcp-manager/src/server/servers/**/*.ts",
+    "!packages/dsh-mcp-manager/src/client/**",
+    "!packages/dsh-mcp-manager/src/shared/placement-math.ts",
+    "!packages/dsh-mcp-manager/src/**/interface.ts",
+    "!packages/dsh-mcp-manager/src/server/*/deps.ts",
+    "!packages/dsh-mcp-manager/src/server/*/*/deps.ts"
+  ],
+  "testRunner": "vitest",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.stryker.d/dsh-mcp-manager.config.ts"
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-mcp-manager-servers.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-mcp-manager-servers.json",
+  "_comment": "新增（#767 S1-2b）：servers——面向官方引擎的服务器域族（装载生命周期 servers/lifecycle；后续 dispatch / injection 同段）。为什么新建段而不是塞进旧段：源码全覆盖断言要求 src 下每个文件落在 ∪mutate ∪ ∪excludes 内，而 src/server/servers/** 不被既有任何段的 glob 覆盖；旧段的 comment 与文件归属也会因此失真。excludes 两条照同包其余段（client 是另一端、shared/placement-math.ts 是薄转发），两者都不构成宿主侧变异面。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+}

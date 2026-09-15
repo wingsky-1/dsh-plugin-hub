@@ -1382,7 +1382,9 @@
       ]
     }
   ],
-  "unmeasured": {},
+  "unmeasured": {
+    "dsh-mcp-manager-servers": "#767 S1-2b 新建段（servers/lifecycle 域骨架，尚未接线）：段面无历史测量值，wallSeconds 只能由 mutation-ledger 的生成模式从 Actions run 日志解析，不手工编造；待该段在 CI 变异切片上首次实跑后入库。"
+  },
   "superseded": {
     "dsh-notifier-config": {
       "replacedBy": [

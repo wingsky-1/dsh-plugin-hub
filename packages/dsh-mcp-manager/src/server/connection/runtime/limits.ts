@@ -7,10 +7,6 @@
  * connection/runtime/limits.ts（v3 C-DIR）。
  */
 
-/** 连接超时（ms）。 */
-export const CONNECT_TIMEOUT_MS = 10_000;
-/** 工具发现（tools/list 全量）超时（ms）。 */
-export const DISCOVERY_TIMEOUT_MS = 10_000;
 /** 单次远端工具调用超时（ms）。 */
 export const CALL_TIMEOUT_MS = 30_000;
 /** 目录 TTL（ms）：24h。 */
@@ -26,7 +22,12 @@ export const MAX_TOTAL_CATALOG_BYTES = 256 * 1024;
 /** ws_mcp_list 每服务器工具条数硬上限（目录采集边界内）。 */
 export const LIST_MAX_TOOLS_PER_SERVER = 500;
 
-// 物理定义已上移 server/shared/constants.ts（catalog 与 inject 两域消费，§3.6 规则 6）：本文件
-// 保留转出，connection 门面与入口的 re-export 链、以及 inject 现有引用点均不变。转出必须经
-// server/shared 门面——直引 constants.ts 会被判「impl 引用他域实现文件」（directImpl）。
-export { LIST_DEFAULT_TOOLS_PER_SERVER } from "../../shared/interface.ts";
+// 物理定义已上移 server/shared/constants.ts（#767 S1-2b）：连接/发现超时的消费方从「我方协议栈」
+// 变成 servers/lifecycle 的句柄等待窗口与仍在的 runtime 子层，两处消费按 I5 归共享层。本文件
+// 保留转出，connection 门面与入口的 re-export 链、以及 inject/middleware 现有引用点均不变。
+// 转出必须经 server/shared 门面——直引 constants.ts 会被判「impl 引用他域实现文件」（directImpl）。
+export {
+  CONNECT_TIMEOUT_MS,
+  DISCOVERY_TIMEOUT_MS,
+  LIST_DEFAULT_TOOLS_PER_SERVER,
+} from "../../shared/interface.ts";
