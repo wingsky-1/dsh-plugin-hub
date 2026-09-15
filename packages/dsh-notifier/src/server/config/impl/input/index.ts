@@ -124,22 +124,32 @@ export const BOOLEAN_KEYS: readonly string[] = [
   "notifyTurnEnd",
 ];
 
+/** 0.2.3 顶层渠道键的退役话术：0.2.4 起它们由 upgrade 域在装配期搬进 `channels` 的内置条目并删除。 */
+const MOVED_INTO_CHANNELS_HINT =
+  "该键在 0.2.4 升级时已移入渠道条目；页面停留在升级前时，刷新后重试";
+
+/** `maxConnections` 的退役话术：0.2.5 移除了连接上限机制，本键没有后继键——说成「已移入渠道条目」会把用户引到另一种原因上。 */
+const CONNECTION_CAP_REMOVED_HINT =
+  "该键在 0.2.5 升级时已随 SSE 连接上限机制一并移除；页面停留在升级前时，刷新后重试";
+
 /**
- * 0.2.3 及更早的顶层渠道键：0.2.4 起由 upgrade 域在装配期搬进 `channels` 的内置条目并**删除**。
+ * 退役键：**曾经**是合法配置键、现已没有值语义的键，写面一律 400 拒收，且每键自带拒收话术。
  *
- * 写面**拒绝**它们而不是当陌生键放行：陌生键是留给未来版本的空间，而这一批是**已经搬走**的键——
- * 静默放行会让停留在升级前页面上的旧客户端以为保存成功了。提示里直接给出出路（刷新）。
+ * 为什么拒而不是当陌生键放行：陌生键是留给未来版本的空间，而这一批是**已经搬走 / 已经删除**的键——
+ * 静默放行会让停留在升级前页面上的旧客户端以为保存成功了。话术逐键给出而不是共用一句：0.2.3 那批只是
+ * 搬了家，`maxConnections` 是机制整体移除，共用一句会把后者引到错误的原因上。
  */
-export const RETIRED_KEYS: readonly string[] = [
-  "systemEnabled",
-  "browserEnabled",
-  "systemNotify",
-  "browserNotify",
-  "notifyWhenVisible",
-  "notifySound",
-  "browserSound",
-  "systemSound",
-];
+export const RETIRED_KEYS: Readonly<Record<string, string>> = {
+  systemEnabled: MOVED_INTO_CHANNELS_HINT,
+  browserEnabled: MOVED_INTO_CHANNELS_HINT,
+  systemNotify: MOVED_INTO_CHANNELS_HINT,
+  browserNotify: MOVED_INTO_CHANNELS_HINT,
+  notifyWhenVisible: MOVED_INTO_CHANNELS_HINT,
+  notifySound: MOVED_INTO_CHANNELS_HINT,
+  browserSound: MOVED_INTO_CHANNELS_HINT,
+  systemSound: MOVED_INTO_CHANNELS_HINT,
+  maxConnections: CONNECTION_CAP_REMOVED_HINT,
+};
 
 /**
  * 非负整数键及其上界（越界视为非法而不是截断——静默改写用户的输入比拒绝更糟）。
@@ -203,13 +213,15 @@ export function normalizeConfig(input: StoredSettings): NotifyConfig {
 /**
  * 校验：给出首个非法键与提示。只对**显式提交**的键负责——缺键不是错误，由归一化补默认；
  * 一次只报首个非法键，因为设置页的定位光标只能落在一个字段上。陌生键不参与校验：拦下它们
- * 等于替未来的版本拒绝今天的用户。
+ * 等于替未来的版本拒绝今天的用户（退役键是例外，见 RETIRED_KEYS）。
  */
 export function validateSettings(raw: SettingsPatch): ValidationResult {
   for (const [key, value] of Object.entries(raw)) {
     if (value === undefined) continue;
-    if (RETIRED_KEYS.includes(key))
-      return reject(key, "该键在 0.2.4 升级时已移入渠道条目；页面停留在升级前时，刷新后重试");
+    // 走 hasOwn 而不是直接索引：constructor 这类键经 JSON 提交是可能的，直接索引会摸到
+    // Object.prototype 上的同名成员，把一个陌生键误判成退役键。
+    const retiredHint = Object.hasOwn(RETIRED_KEYS, key) ? RETIRED_KEYS[key] : undefined;
+    if (retiredHint !== undefined) return reject(key, retiredHint);
     if (!CONFIG_KEYS.includes(key)) continue;
     const verdict = validateOne(key, value);
     if (!verdict.ok) return verdict;

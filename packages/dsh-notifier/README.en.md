@@ -231,15 +231,15 @@ Example values (defaults; `channels` / `kindRoutes` / `allowKinds` are new M2 ke
 > auto-reconnect and replay with `since`, so it is transparent). Reclamation-path
 > counters are exposed as `sseEvicts` on `/api/dsh-notifier/health`.
 >
-> The cap's config key `maxConnections` (default 16, range 1–1024) is retired with it:
-> the settings page no longer shows it and `effective` does not contain it. A residual
-> value in an existing `config.json` follows the **unknown-key semantics** above — it is
-> not validated, never reaches the effective config, is not dropped when other known
-> settings are saved, and still appears verbatim in the `user` view of GET /config;
-> delete the line by hand in `config.json` to clean it up. It is **not** in the
-> retired-key list (those keys map to migration steps in the upgrade chain and are
-> rejected with 400; this key has no successor, so plain pass-through preservation
-> applies).
+> The cap's config key `maxConnections` (default 16, range 1–1024) is retired as of
+> **0.2.5** too: the settings page no longer shows it and `effective` does not contain it.
+> Its write path follows the same policy as the 0.2.3 channel keys above — submitting it
+> returns **400** — but the reason differs: this key has no successor (the whole mechanism
+> is gone), so it carries its own hint, which again points at the way out (refresh if the
+> page was open before the upgrade). A residual value in an existing `config.json` is not
+> auto-cleaned and never reaches the effective config: saving other known settings does not
+> drop it, and it still appears verbatim in the `user` view of GET /config — delete the
+> line by hand in `config.json` to clean it up.
 
 ### Per-channel three switches (#640 / #641; folded into channel entries as of 0.2.4)
 

@@ -388,6 +388,23 @@ describe("写面的合并与凭据", () => {
     expect(readConfig()).toEqual(effectiveBefore);
     expect(readFileSync(configFile, "utf8")).toBe(before);
   });
+
+  // maxConnections 走同一条退役键拒收路径，但原因是 0.2.5 把上限机制整体移除——话术不能与渠道键
+  // 共用，且同样必须在落盘之前被拦下。
+  it("maxConnections 写拒：0.2.5 退役的连接上限键返回 invalid 且话术是它自己的", async () => {
+    assemble();
+    expect((await writeConfig({ historyMaxAgeDays: 5 })).ok).toBe(true);
+    const before = readFileSync(configFile, "utf8");
+    const effectiveBefore = readConfig();
+
+    const error = invalidOf(await writeConfig({ maxConnections: 64 } as unknown as SettingsPatch));
+
+    expect(error.key).toBe("maxConnections");
+    expect(error.hint).toContain("0.2.5");
+    expect(error.hint).not.toContain("已移入渠道条目");
+    expect(readConfig()).toEqual(effectiveBefore);
+    expect(readFileSync(configFile, "utf8")).toBe(before);
+  });
 });
 
 describe("写面：频道的可选键（缺省即合法，显式非法仍拦）", () => {

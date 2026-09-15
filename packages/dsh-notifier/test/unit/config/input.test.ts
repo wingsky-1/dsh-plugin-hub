@@ -462,17 +462,49 @@ describe("validateSettings：只审显式提交（缺键不是错误）", () => 
     expect(wrongId.hint).toContain("id 只能是");
   });
 
-  // 这一批键在 0.2.4 被搬进渠道条目并删除。当陌生键放行会让停在升级前页面上的旧客户端以为存上了
+  // 这一批键已经没有值语义。当陌生键放行会让停在升级前页面上的旧客户端以为存上了
   // （200 + 什么都不发生），所以写面必须拒——提示里给出出路（刷新），用户知道下一步做什么。
-  it("退役键写拒：0.2.3 的顶层渠道键提交一律 400，与值无关且指名刷新", () => {
-    for (const key of RETIRED_KEYS) {
+  // 期望话术逐键字面写出而不是引用 RETIRED_KEYS 的值：断言若从被测事实源取值，话术改错也照样绿。
+  it("退役键写拒：每个退役键提交一律 400，提示是该键自己的话术（与值无关）", () => {
+    const expected: Readonly<Record<string, string>> = {
+      systemEnabled: "0.2.4 升级时已移入渠道条目",
+      browserEnabled: "0.2.4 升级时已移入渠道条目",
+      systemNotify: "0.2.4 升级时已移入渠道条目",
+      browserNotify: "0.2.4 升级时已移入渠道条目",
+      notifyWhenVisible: "0.2.4 升级时已移入渠道条目",
+      notifySound: "0.2.4 升级时已移入渠道条目",
+      browserSound: "0.2.4 升级时已移入渠道条目",
+      systemSound: "0.2.4 升级时已移入渠道条目",
+      maxConnections: "0.2.5 升级时已随 SSE 连接上限机制一并移除",
+    };
+    // 新退役键必须在本表登记期望话术：漏登记就没人审它的话术，等于没有判据。
+    for (const key of Object.keys(RETIRED_KEYS)) {
+      expect(expected[key], key).toBeDefined();
       const verdict = validateSettings({ [key]: true } as SettingsPatch);
       expect(verdict.ok, key).toBe(false);
       expect(verdict.ok ? "" : verdict.error.key).toBe(key);
-      expect(verdict.ok ? "" : verdict.error.hint).toContain("已移入渠道条目");
+      expect(verdict.ok ? "" : verdict.error.hint, key).toContain(expected[key]);
     }
     // 合法布尔值也一样拒：拒的是键本身，不是值
     expect(validateSettings({ browserNotify: true } as SettingsPatch).ok).toBe(false);
+  });
+
+  // maxConnections 与 0.2.3 那批同属「曾经存在、值语义已消失」，但拒收原因不同：不是搬了家，
+  // 是 0.2.5 把连接上限机制整体移除。共用 0.2.4 那句话会把用户引到错误的原因上，故它必须有自己那句。
+  it("maxConnections 写拒：按退役键拒收，且不套用渠道键那句话术（原因不同，话术不能共用）", () => {
+    const verdict = validateSettings({ maxConnections: 64 } as SettingsPatch);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.ok ? "" : verdict.error.key).toBe("maxConnections");
+    expect(verdict.ok ? "" : verdict.error.hint).toContain("0.2.5");
+    expect(verdict.ok ? "" : verdict.error.hint).not.toContain("已移入渠道条目");
+  });
+
+  // 前向兼容是 README 的承诺：退役键那刀只砍「曾经存在、现在没有了」的键，不能顺手把本版本还
+  // 不认识的键也拒了（那等于替未来的版本拒绝今天的用户）。
+  it("本版本不认识的顶层键仍放行：退役键拒收与前向兼容是两条口径，不能混", () => {
+    expect(validateSettings({ futureKey: 1 } as SettingsPatch)).toEqual({ ok: true });
+    // 归一化只认认识的键，陌生键的值得不到生效位——透传保留发生在存储层，不是这里。
+    expect("futureKey" in normalizeConfig({ futureKey: 1 })).toBe(false);
   });
 
   it("逐键类型闸门：每个非法值都指向它自己那个键，且提示指向真正拦下它的那条分支（键对了、提示指向别处，等于把用户引到另一个字段）", () => {
