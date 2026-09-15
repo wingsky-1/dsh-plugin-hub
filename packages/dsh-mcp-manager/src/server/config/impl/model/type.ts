@@ -1,9 +1,9 @@
 /**
- * dsh-mcp-manager — types/server.ts：服务器配置/运行状态类型（#664 阶段 6 收敛）。
+ * dsh-mcp-manager — server/config/impl/model/type.ts：服务器配置类型落点（#767 W11b2a）。
  *
- * 自 src/types.ts 拆出（server 域）：ServerConfig 形状以 src/index.ts 的
- * normalizeServer 产出为准（唯一构造点），import.ts（mcpServers 映射）与
- * store 持久化共用本类型；运行时零成本（type-only，编译期擦除）。
+ * ServerConfig 形状以 config/normalize.ts 的 normalizeServer 产出为准（唯一构造点），
+ * import.ts（mcpServers 映射）与 store 持久化共用本类型；运行时零成本（type-only，编译期擦除）。
+ * 目录外消费一律经 config/interface.ts 门面转出。
  */
 
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";

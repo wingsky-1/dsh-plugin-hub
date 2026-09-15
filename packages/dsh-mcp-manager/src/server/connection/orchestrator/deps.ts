@@ -2,7 +2,7 @@
  * dsh-mcp-manager — connection/orchestrator/deps.ts：连接编排子层的对上依赖声明（纯类型面，§3.1 规则 2）。
  *
  * 本子层运行时能力消费非零（决策⑥ 以运行时能力消费为准），按提供方分七组：catalog 取目录缓存
- * 文件路径、工具描述摘要与目录视图工厂；config/model 取配置归一化三函数；config/store 取 store
+ * 文件路径、工具描述摘要与目录视图工厂；config 域取配置归一化三函数；store 域取 store
  * 类与 user-state / 工具禁用 / 目录缓存路径的读写面；connection/runtime 取监督器与中间层两个类；
  * pipeline 取错误取消息与凭据脱敏；stats 取调用统计收集器；workspace 取项目根发现与 scope 归一。
  * 宿主能力实测 0 命中（无 ctx/Context/logger/settings 取自门面）——本子层的 ctx 与 store 是
@@ -33,13 +33,13 @@ export type CatalogPort = Pick<
   "catalogCacheFile" | "summarizeToolDescriptions" | "makeCatalogViewFor"
 >;
 
-/** config/model 子域给本子层的能力面：服务器条目与 UI 配置归一化、UI 配置补丁构造。 */
+/** config 域给本子层的能力面：服务器条目与 UI 配置归一化、UI 配置补丁构造。 */
 export type ConfigModelPort = Pick<
   typeof configModelApi,
   "normalizeServer" | "normalizeUiConfig" | "buildConfigUiPatch"
 >;
 
-/** config/store 子域给本子层的能力面：store 类 + user-state / 工具禁用 / 目录缓存路径的读写面。 */
+/** store 域给本子层的能力面：store 类 + user-state / 工具禁用 / 目录缓存路径的读写面。 */
 export type ConfigStorePort = Pick<
   typeof configStoreApi,
   | "McpStore"
@@ -73,9 +73,9 @@ export type WorkspacePort = Pick<
 export interface OrchestratorDeps {
   /** catalog 子域：目录缓存文件路径、描述摘要与目录视图工厂。 */
   catalog: CatalogPort;
-  /** config/model 子域：配置归一化三函数。 */
+  /** config 域：配置归一化三函数。 */
   configModel: ConfigModelPort;
-  /** config/store 子域：store 类与状态持久化读写面。 */
+  /** store 域：store 类与状态持久化读写面。 */
   configStore: ConfigStorePort;
   /** runtime 子层：监督器与中间层两个类。 */
   runtime: RuntimePort;

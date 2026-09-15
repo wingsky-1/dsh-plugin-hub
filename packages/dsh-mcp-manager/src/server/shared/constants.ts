@@ -1,17 +1,17 @@
 /**
  * dsh-mcp-manager — server/shared/constants.ts：跨域共享纯常量单一事实源。
  *
- * 为什么落共享层而不是留在原域：这几个默认值被 `config/model` 在**模块求值期**消费
- * （`z.object({...}).default(CONST)`，见 config/model/config-schema.ts）——端口注入要等装配
+ * 为什么落共享层而不是留在原域：这几个默认值被 config 域在**模块求值期**消费
+ * （`z.object({...}).default(CONST)`，见 server/config/config-schema.ts）——端口注入要等装配
  * 完成，那时 schema 早已求值，物理上只能拿到 undefined（HB1）；而留在原域让消费方直接 import，
- * 就是 I2① 的跨域值边（config/model → catalog、config/model → connection）。唯一可行形态是
+ * 就是 I2① 的跨域值边（config → catalog、config → connection）。唯一可行形态是
  * 「共享层单点定义 + 消费方从共享层取」。
  *
  * LIST_DEFAULT_TOOLS_PER_SERVER 的落点依据是同一条值面门槛（I5：被 ≥2 域消费的值常量归共享层）：
  * catalog（检索装箱）与 inject（ws_mcp_list 工具定义）两域消费它，留在 connection/runtime 就是两条
  * 跨域值边。它不是模块求值期常量，落这里只为消除两条边并把定义收成一处。
  *
- * 为什么本文件零 import：它落在 config/model 的模块求值路径上，本文件必须是**最先可求值**的
+ * 为什么本文件零 import：它落在 config 域的模块求值路径上，本文件必须是**最先可求值**的
  * 叶子——任何依赖都会把初始化顺序与值环重新引回来。
  */
 

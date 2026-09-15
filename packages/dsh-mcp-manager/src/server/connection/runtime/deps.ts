@@ -3,8 +3,9 @@
  *
  * 本子层运行时能力消费非零（决策⑥ 以运行时能力消费为准），按提供方分三组：catalog 取目录新鲜判定
  * 与工具装箱；pipeline 取两执行路径共用的结果投影、超时兜底、错误取消息、凭据脱敏、参数归一与
- * 策略裁决族；workspace 取全名解析 / 归一与拼装。宿主能力实测 0 命中——本子层的 ctx 面是
- * `MiddlewareHost` 构造入参，不经端口。
+ * 策略裁决族；workspace 取全名解析 / 归一与拼装。宿主能力实测 0 命中——本子层的 ctx 面以
+ * `ManagerLite` / `MiddlewareHost` 两条构造入参类型就地声明（#767 W11b2a 自 types/host-faces.ts
+ * 落位本文件），不经端口。
  *
  * 两条**不为零消费者开口**的裁量（附录 H·1·4 实测）：`RECONNECT_DEFAULTS` / `resolveReconnect` /
  * `ReconnectPolicy` / `createTransport` / `CATALOG_LRU_MAX` 在本子层内部经 `./reconnect.ts` /
@@ -15,15 +16,19 @@
  * `src/shared/constants.ts`（两端唯一物理定义），本子层直接取共享层门面——指向共享层的值边是
  * I2① 明确允许的出口，不算域间值边。
  *
- * 类型面（`ServerConfig` / `ToolDefinition` 等）走 `import type` 直连各自门面，不进 Pick：
- * 类型边编译期擦除，不是本子层要取的运行时能力。
+ * 类型面（`ServerConfig` / `ProjectUnit` / `McpStore` / `ToolDefinition` 等）走 `import type`
+ * 直连各自门面，不进 Pick：类型边编译期擦除，不是本子层要取的运行时能力。
  *
  * **只许类型依赖**：本文件出现值 import 会被 verify-dir-imports 硬判红。子层内取数一律经
  * `impl/service` 的 `runtimePorts.get()`，写入只由组合根在 `src/index.ts` 顶层完成。
  */
+import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type * as catalogApi from "../../catalog/interface.ts";
 import type * as pipelineApi from "../../pipeline/interface.ts";
 import type * as workspaceApi from "../../workspace/interface.ts";
+import type { ServerConfig } from "../../config/interface.ts";
+import type { McpStatsCollector } from "../../stats/interface.ts";
+import type { ProjectUnit } from "./impl/middleware/type.ts";
 
 /** catalog 域给本子层的能力面：目录新鲜判定与工具装箱。 */
 export type CatalogPort = Pick<typeof catalogApi, "isCatalogFresh" | "boundCatalogTools">;
@@ -60,4 +65,41 @@ export interface RuntimeDeps {
   pipeline: PipelinePort;
   /** workspace 域：全名解析、工具名归一与全名拼装。 */
   workspace: WorkspacePort;
+}
+
+/** McpManager 最小面（supervisor 使用；避免 index↔supervisor 循环 import）。
+ * tools 面取官方 Context，register 入参为官方 ToolDefinition。 */
+export interface ManagerLite {
+  ctx: Pick<Context, "tools">;
+  logger: LoggerService;
+  enhancement: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number };
+  emitStatus(): void;
+  recordCatalogTools(
+    serverName: string,
+    toolMeta: Map<string, { description?: unknown }>,
+  ): Promise<void>;
+  /** 行为扩展（#664 阶段 2）：调用统计最小面，supervisor 直呼路径埋点。 */
+  stats?: Pick<McpStatsCollector, "isEnabled" | "recordCall">;
+}
+
+/** 中间层宿主最小面（McpManager 实现；McpMiddleware 构造注入）。 */
+export interface MiddlewareHost {
+  ctx: Pick<Context, "tools">;
+  logger: LoggerService;
+  /** 按 root 读取项目级服务器配置（惰性；root 无标记 → undefined）。 */
+  projectServersFor(root: string): Promise<ServerConfig[] | undefined>;
+  /** 全局服务器配置（走中间层 all 模式时使用）。 */
+  globalServers(): ServerConfig[];
+  /** 路由解析：cwd → 归一化项目根。 */
+  normalizedProjectRoot(cwd: string | undefined): Promise<string | undefined>;
+  /** 持久化 userDisabled。 */
+  saveUserState(units: Map<string, ProjectUnit>): Promise<void>;
+  /** 状态变化通知（SSE 标脏）。 */
+  emitStatus(): void;
+  /** 目录缓存文件路径（last-good 持久化）。 */
+  catalogCachePath(root: string): string;
+  /** 该 server 是否全局级（双源：store.data.servers + runtimeRegistry；runtime 注册的服务器不落 store）。 */
+  isGlobalServer(name: string): boolean;
+  /** 该 server 是否 runtime 注入（registerServer 内存态；目录不写盘判定，#413）。 */
+  isRuntimeServer(name: string): boolean;
 }

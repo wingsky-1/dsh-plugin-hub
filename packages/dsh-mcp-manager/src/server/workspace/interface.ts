@@ -26,3 +26,4 @@ export {
 export { SCOPE_GLOBAL, SCOPE_PROJECT, normalizeScope } from "./impl/scope/index.ts";
 export { normalizeMiddlewareMode } from "./impl/mode/index.ts";
 export { MIDDLEWARE_GLOBAL_ROOT } from "../../shared/interface.ts";
+export type { MiddlewareMode } from "./impl/mode/type.ts";

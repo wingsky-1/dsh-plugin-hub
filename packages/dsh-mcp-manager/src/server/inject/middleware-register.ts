@@ -2,8 +2,9 @@
  * dsh-mcp-manager — 中间层工具注册（ws_mcp_search / ws_mcp_call /
  * ws_mcp_list / ws_mcp_detail + 策略 guard）。
  *
- * 注册四个中间层工具与策略 guard 层；类型面自 types/interface.ts（MiddlewareMode /
- * DisabledToolsMap）与 stats/interface.ts（McpStatsCollector）取，连接池类 McpMiddleware 自
+ * 注册四个中间层工具与策略 guard 层；类型面自各域门面（workspace/interface.ts 的 MiddlewareMode、
+ * store/interface.ts 的 DisabledToolsMap）与 stats/interface.ts（McpStatsCollector）取，连接池类
+ * McpMiddleware 自
  * connection/runtime/interface.ts 只作 `import type`（防运行值环）。跨域取数一律经
  * `injectPorts.get()`（端口声明见 ../deps.ts）——catalog 检索族、runtime 限额常量、pipeline
  * 裁决族与超时兜底、workspace 全名解析，本文件对四个提供域没有值 import。跨端契约常量
@@ -18,7 +19,8 @@ import type { McpMiddleware } from "../connection/runtime/interface.ts";
 import { LIST_DEFAULT_TOOLS_PER_SERVER } from "../shared/interface.ts";
 import { MIDDLEWARE_GLOBAL_ROOT } from "../../shared/interface.ts";
 import type { McpStatsCollector } from "../stats/interface.ts";
-import type { MiddlewareMode, DisabledToolsMap } from "../../types/interface.ts";
+import type { MiddlewareMode } from "../workspace/interface.ts";
+import type { DisabledToolsMap } from "../store/interface.ts";
 import { injectPorts } from "./impl/service/index.ts";
 
 /** 工具执行与组装上下文。 */

@@ -11,7 +11,7 @@
 import { existsSync, statSync } from "node:fs";
 import { catalogSummaryFile } from "../../../shared/interface.ts";
 import type { McpMiddleware } from "../../../connection/runtime/interface.ts";
-import type { ServerConfig } from "../../../../types/interface.ts";
+import type { ServerConfig } from "../../../config/interface.ts";
 import { MIDDLEWARE_GLOBAL_ROOT, SCOPE_PROJECT } from "../../../../shared/interface.ts";
 import { catalogPorts } from "../service/index.ts";
 import { summarizeToolDescriptions } from "../entries/index.ts";

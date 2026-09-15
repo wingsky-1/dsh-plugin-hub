@@ -75,3 +75,11 @@ export {
   isCatalogFresh,
   boundCatalogTools,
 } from "./search.ts";
+export type { CatalogServer, CatalogTool } from "./impl/entries/type.ts";
+export type {
+  SearchHit,
+  ListToolEntry,
+  ListServerEntry,
+  ToolDetail,
+  ListCatalogResult,
+} from "./impl/search/type.ts";

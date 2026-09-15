@@ -1,12 +1,10 @@
 /**
- * dsh-mcp-manager — types/ui.ts：MCP 浮窗 UI 配置类型（#664 阶段 6 收敛）。
+ * dsh-mcp-manager — server/config/impl/ui/type.ts：浮窗 UI 配置类型落点（#767 W11b2a）。
  *
- * 自 src/types.ts 拆出（ui 域）：插件自身 Config 的 `ui` 子对象（标准 cordis
- * 配置注入）留本域；跨端消费的扁平形态（GET /api/dsh-mcp/config）是 DTO，
- * 物理定义在 src/shared/dto.ts（D5），此处只按本域面转出。
+ * 插件自身 Config 的 `ui` 子对象（标准 cordis 配置注入）留本域；跨端消费的扁平形态
+ * （GET /api/dsh-mcp/config）是 DTO，物理定义在 src/shared/dto.ts，两端各经
+ * src/shared/interface.ts 与 config/interface.ts 门面取。
  */
-
-export type { ClientUiConfig } from "../shared/interface.ts";
 
 /** MCP 浮窗 UI 配置（插件自身 Config 的 `ui` 子对象，标准 cordis 配置注入）。 */
 export interface UiPlacementConfig {

@@ -31,7 +31,7 @@ import type { Context } from "@deepseek-ai/cordis";
 import { dirname } from "node:path";
 import { installSettingsNamespace } from "../../../shared/settings-namespace.js";
 import { sseData } from "../../../shared/host-utils.js";
-import type { McpManagerService } from "./integration/interface.ts";
+import type { McpManagerService } from "./shared/interface.ts";
 import { installOrchestrator, McpManager } from "./server/connection/orchestrator/interface.ts";
 import * as apiApi from "./server/api/interface.ts";
 import {
@@ -69,7 +69,7 @@ import { installUpgrade, releaseUpgrade } from "./server/upgrade/interface.ts";
 import { DEFAULT_RESULT_TRUNCATE_BYTES } from "./server/shared/interface.ts";
 import { SSE_FRAMES } from "./shared/interface.ts";
 import type { McpServerSummary, SseFramePayload } from "./shared/interface.ts";
-import type { MiddlewareMode } from "./types/interface.ts";
+import type { MiddlewareMode } from "./server/workspace/interface.ts";
 import { makeResolveRoot, normalizeMiddlewareMode } from "./server/workspace/interface.ts";
 import * as workspaceApi from "./server/workspace/interface.ts";
 
@@ -756,7 +756,8 @@ export {
   panelTopForAnchor,
   Config,
 } from "./server/config/interface.ts";
-export type { UiPlacementConfig, ClientUiConfig } from "./types/interface.ts";
+export type { UiPlacementConfig } from "./server/config/interface.ts";
+export type { ClientUiConfig } from "./shared/interface.ts";
 
 // 管理器 / 连接域（orchestrator+runtime：#664 阶段 6 集中搬移完成）。runtime 的值面自 W10 起
 // 直接取自子层门面——connection/interface.ts 只留类型出口，不再转发值符号。
@@ -820,10 +821,10 @@ export {
 } from "./server/pipeline/interface.ts";
 export type { CallResultTextHandlers, ProjectedCallResult } from "./server/pipeline/interface.ts";
 // 核心化 service（官方 storageDomain 模式）：ctx.mcpManager 类型面 + 声明合并。
-// 仅类型导出（无副作用导入）：消费方 import 类型时 tsc 会解析 integration 门面，
+// 仅类型导出（无副作用导入）：消费方 import 类型时 tsc 会解析 shared 门面，
 // 入口的 declare module 合并自动生效；副作用导入会让 stryker sandbox 解析
 // src/service.js 失败（sandbox 只有 .ts），也避免 .d.ts 里残留 .ts 引用。
-export type { McpManagerServerInput, McpManagerService } from "./integration/interface.ts";
+export type { McpManagerServerInput, McpManagerService } from "./shared/interface.ts";
 
 /**
  * 服务名：本插件对兄弟插件开放的 ABI。声明合并的键引用它，而不是就地再写一遍字面量——两处字面量
@@ -905,20 +906,20 @@ export type {
 } from "./server/stats/interface.ts";
 // 工具注册面（inject：#664 阶段 6 落位）
 export { registerMiddlewareTools, registerDirectMcpGuard } from "./server/inject/interface.ts";
-// 共享类型面（types 域）
+// 共享类型面（物理定义在各域 impl/<块>/type.ts，按落点域门面分组转出；#767 W11b2a）
+export type { MiddlewareMode } from "./server/workspace/interface.ts";
+export type { ProjectUnit } from "./server/connection/interface.ts";
 export type {
-  MiddlewareMode,
-  MiddlewarePolicy,
-  ProjectUnit,
   SearchHit,
   ListToolEntry,
   ListServerEntry,
   ListCatalogResult,
   ToolDetail,
-  DisabledToolsMap,
-  ServerConfig,
-  ServerStatus,
-} from "./types/interface.ts";
+} from "./server/catalog/interface.ts";
+export type { MiddlewarePolicy } from "./server/pipeline/interface.ts";
+export type { DisabledToolsMap } from "./server/store/interface.ts";
+export type { ServerConfig } from "./server/config/interface.ts";
+export type { ServerStatus } from "./server/api/interface.ts";
 
 // 路由
 export {

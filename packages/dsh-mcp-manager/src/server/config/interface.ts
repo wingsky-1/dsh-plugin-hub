@@ -1,9 +1,9 @@
 /**
- * dsh-mcp-manager — config/model/interface.ts：配置域 model 子层门面（D10，#664 阶段 6）。
+ * dsh-mcp-manager — config/interface.ts：配置域唯一对外引用面（D10，#767 W11b2a）。
  *
- * 配置域 = model（归一化/导入/schema）+ store（持久化/状态/目录缓存 IO）。
- * 目录外模块**只能**从这里引用（verify-dir-imports 静态强制）；类型 DTO
- * 统一从 types/interface.ts 取（v3 C-DIR）。
+ * 配置域 = 归一化/导入/schema（normalize / import / config-schema）+ 浮窗 UI 配置类型
+ * （impl/ui）。目录外模块**只能**从这里引用（verify-dir-imports 静态强制）；类型的物理
+ * 定义在各 impl/<块>/type.ts，本门面只做转出（v3 §3.1 规则 1）。
  */
 export { SERVER_NAME_PATTERN, normalizeServer } from "./normalize.ts";
 export { fromClaudeEntry, parseClaudeJson } from "./import.ts";
@@ -19,3 +19,5 @@ export {
   panelTopForAnchor,
   Config,
 } from "./config-schema.ts";
+export type { ServerConfig } from "./impl/model/type.ts";
+export type { UiPlacementConfig } from "./impl/ui/type.ts";

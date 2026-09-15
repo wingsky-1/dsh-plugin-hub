@@ -24,7 +24,7 @@
 import { mkdir, readFile, rename, writeFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ServerConfig } from "../../../types/interface.ts";
+import type { ServerConfig } from "../../config/interface.ts";
 import type { ToolDefinition, ToolOutputDefinition } from "@deepseek-ai/dsh-tools";
 import { MCPClient } from "./protocol.ts";
 import { resolveReconnect } from "./reconnect.ts";
@@ -37,14 +37,11 @@ import {
 } from "./limits.ts";
 import { MIDDLEWARE_GLOBAL_ROOT } from "../../../shared/interface.ts";
 import { runtimePorts } from "./impl/service/index.ts";
-import type {
-  MiddlewareHost,
-  ProjectUnit,
-  MiddlewarePolicy,
-  ConnectionEntry,
-  CatalogTool,
-  DisabledToolsMap,
-} from "../../../types/interface.ts";
+import type { MiddlewareHost } from "./deps.ts";
+import type { ProjectUnit, ConnectionEntry } from "./impl/middleware/type.ts";
+import type { MiddlewarePolicy } from "../../pipeline/interface.ts";
+import type { CatalogTool } from "../../catalog/interface.ts";
+import type { DisabledToolsMap } from "../../store/interface.ts";
 
 // ------------------------------------------------------------ 连接池
 

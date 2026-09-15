@@ -16,11 +16,11 @@ import type {
   ListCatalogResult,
   ListServerEntry,
   ListToolEntry,
-  ProjectUnit,
   SearchHit,
   ToolDetail,
-  DisabledToolsMap,
-} from "../../types/interface.ts";
+} from "./interface.ts";
+import type { ProjectUnit } from "../connection/interface.ts";
+import type { DisabledToolsMap } from "../store/interface.ts";
 
 /** 简单分词（英文小写 + 中文保留）。 */
 function tokenize(text: string): string[] {

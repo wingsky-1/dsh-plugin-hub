@@ -24,9 +24,9 @@
  * 但没 provide」的形态，故取并集而非二选一。
  *
  * 为什么是**闭包**而不是「index.d.ts 内直接出现」：合并可以合法地落在被
- * `index.d.ts` re-export 的域文件里——`dsh-mcp-manager` 的合并物理在
- * `lib/integration/service.d.ts`，经 `lib/integration/interface.d.ts` 的
- * re-export 可达，消费方程序内同样生效。只判「直接出现」会把这种正确形态误判为红。
+ * `index.d.ts` re-export 的域文件里——合并物理在某个域声明文件中，经
+ * `lib/<域>/interface.d.ts` 的 re-export 可达，消费方程序内同样生效。只判
+ * 「直接出现」会把这种正确形态误判为红。
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
