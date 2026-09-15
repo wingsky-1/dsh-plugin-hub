@@ -1,22 +1,19 @@
 /**
- * scripts/gate/mutation-topology.mjs — 变异拓扑的派生规则共享模块（#690 S2b / #710 F15）。
+ * scripts/gate/mutation-topology.mjs — 变异拓扑的登记形状判据共享模块（#690 S2b / #710 F15 / #836）。
  *
  * 为什么单独成文件：`gen-stryker-conf.mjs` 是带副作用的 CLI（顶层读写配置），
- * 不能被门禁脚本 import。但「段未显式写 excludes 时注入默认值」这条派生规则必须
- * 在生成侧与断言侧**同一份实现**——F15 的隐患正是两边各写一份、断言侧漏掉默认值，
- * 于是「靠默认值覆盖的段」在覆盖断言里变成盲区。
+ * 不能被门禁脚本 import；而生成侧与断言侧必须共用**同一份**段登记形状判据——
+ * F15 的隐患正是两边各写一份，断言侧漏掉一条派生规则、被覆盖的段成了盲区。
+ *
+ * #836 起 `segments.<seg>.excludes` 必填，原先「段缺 excludes 就用默认值兜底」的
+ * defaultSegmentExcludes 已删除：生产路径上 33 个段全部显式声明 excludes，兜底分支
+ * 不可达；而它恰恰就是 F15 描述的分叉面（生成侧注入的排除面 vs 断言侧读到的排除面），
+ * 留作死代码等于保留一条永远不会被实测覆盖、却随时可能被重新走通的分叉。段不声明
+ * 排除面现在直接在形状判据里判红。
  */
 
 // runner 面（test/**/*.test.ts，与 vitest include 同口径）：`--min` 与登记完整性判据 ③ 的唯一口径。
 export const RUN_TESTS_PATTERN = "test/**/*.test.ts";
-
-/**
- * 段级 excludes 的默认值：拓扑里未显式声明 excludes 的段，生成时按此注入。
- * 与 packages/<pkg>/src/client/**、src/types.ts 同为「不建议纳入变异面」的默认面。
- */
-export function defaultSegmentExcludes(pkgName) {
-  return [`!packages/${pkgName}/src/client/**`, `!packages/${pkgName}/src/types.ts`];
-}
 
 /**
  * 覆盖排除面（包级 `testLayers.coverageExcludes`）的形状与取值域。
@@ -124,13 +121,20 @@ function coverageExcludeValueProblems(entry, label, seen) {
 }
 
 /**
- * 包登记本身的形状判据：`packages.<name>` 必须是对象，且其 `segments` 也必须是对象。
+ * 包登记本身的形状判据：`packages.<name>` 必须是对象，其 `segments` 也必须是对象，
+ * 且每个段必须自带非空的 `excludes` 数组（#836 起必填）。
  *
  * 与 coverageExcludes 的形状判词同族：形状不对时**没有可判定的变异面**，必须给出可读判词，
  * 而不是让调用方在 `pkgDef.segments` 上抛栈崩掉整个 contract 段（已实测：登记为 `null` →
  * `TypeError: Cannot read properties of null (reading 'segments')`；登记为 `{}` 或
  * `{ segments: null }` → `Object.entries` 的 `Cannot convert undefined or null to object`，
  * 门禁红是红了，但不是判红）。
+ *
+ * 为什么 excludes 必填（而不是继续用默认值兜底）：默认值兜底是死代码——回退分支在生产路径上
+ * 从不执行，既得不到实测覆盖，又留着「生成侧注入的面 ≠ 断言侧读到的面」这条分叉（F15 的
+ * 隐患本身）。必填后语义变成「段自己声明排除面」，省略即在形状判据处判红，不再静默继承
+ * 一份没人复核过的默认面。段不是对象时也必须先判红，否则下一个判据要读的 `seg.excludes`
+ * 就是一次裸解引用（抛栈而非判红）。
  */
 export function packageEntryProblems(pkgDef) {
   if (pkgDef === null || typeof pkgDef !== "object" || Array.isArray(pkgDef)) {
@@ -152,7 +156,22 @@ export function packageEntryProblems(pkgDef) {
       `包登记的 segments 必须是对象（当前 ${JSON.stringify(segments)}）——形状不对时没有可判定的变异面，fail-closed`,
     ];
   }
-  return [];
+  const problems = [];
+  for (const [segKey, segDef] of Object.entries(segments)) {
+    if (segDef === null || typeof segDef !== "object" || Array.isArray(segDef)) {
+      problems.push(
+        `段 "${segKey}" 必须是对象（当前 ${JSON.stringify(segDef)}）——形状不对时该段没有可判定的变异面，fail-closed`,
+      );
+      continue;
+    }
+    if (!Array.isArray(segDef.excludes) || segDef.excludes.length === 0) {
+      problems.push(
+        `段 "${segKey}" 的 excludes 必须是非空数组（当前 ${JSON.stringify(segDef.excludes)}）——` +
+          "段必须自己声明排除面（#836 起缺省回退已删除），否则会把排除面静默收敛成空集",
+      );
+    }
+  }
+  return problems;
 }
 
 /** 全拓扑的包登记形状问题（带包名前缀，供生成侧与断言侧共用判词）。 */
@@ -174,10 +193,10 @@ export function packageRegistrationProblems(topology) {
  * 取一个包在**变异面登记**上的三态（#773 批 B / #710 §2-2）：
  *
  *   - `{ noMutation: false, mutate, excludes, problems }`：登记在 `topology.packages`，覆盖断言可判定。
- *     面 = 段 mutate ∪ 段 excludes（含默认值兜底）∪ 包级 testLayers.coverageExcludes
- *     （S0 覆盖断言的存量登记，条目形状 `{ pattern, reason, kind }`、形状判词见
- *     coverageExcludeProblems；取值只经 collectCoverageExcludePatterns 一处）；覆盖断言
- *     与派生器共用本函数，故不存在「一边有默认值、一边没有」的漂移面。
+ *     面 = 段 mutate ∪ 段 excludes（#836 起每段必填，没有默认值兜底）∪ 包级
+ *     testLayers.coverageExcludes（S0 覆盖断言的存量登记，条目形状 `{ pattern, reason, kind }`、
+ *     形状判词见 coverageExcludeProblems；取值只经 collectCoverageExcludePatterns 一处）；
+ *     覆盖断言与派生器共用本函数，故不存在「一边读段声明、一边读另一份清单」的漂移面。
  *   - `{ noMutation: true, reason }`：登记在 `$noMutationPackages`——该包**无变异面**，
  *     源码全覆盖断言**不适用**（不是「通过」）。调用方必须把这件事显式声明出来，
  *     不得因「没有可判定的面」而静默判绿：该包在 dir-imports-baseline 里的
@@ -199,7 +218,7 @@ export function collectMutationSpecs(topology, pkgName) {
     return { noMutation: false, mutate: [], excludes: [], problems: entryProblems };
   }
   if (pkgDef !== undefined) {
-    const { mutate, excludes } = collectMutationGlobs(pkgDef, pkgName);
+    const { mutate, excludes } = collectMutationGlobs(pkgDef);
     // 覆盖排除面的形状问题随 spec 一起交给调用方（fail-closed）：这里不抛栈、不静默跳过，
     // 由 verify-dir-imports 落成硬违规、gen-stryker-conf 落成启动判红。
     return { noMutation: false, mutate, excludes, problems: coverageExcludeProblems(pkgDef) };
@@ -210,14 +229,15 @@ export function collectMutationSpecs(topology, pkgName) {
   return { noMutation: true, reason: String(reason) };
 }
 
-/** 段 mutate/excludes（段缺 excludes 时注入默认值）+ 包级覆盖排除面，合成 spec 的 glob 清单。 */
-function collectMutationGlobs(pkgDef, pkgName) {
+/** 段 mutate/excludes（段缺 excludes 时由 packageEntryProblems 判红，不再注入默认值）
+ *  + 包级覆盖排除面，合成 spec 的 glob 清单。 */
+function collectMutationGlobs(pkgDef) {
   const mutate = [];
   const excludes = [];
   for (const seg of Object.values(pkgDef.segments ?? {})) {
     for (const g of seg.mutate ?? []) mutate.push(g);
-    const segExcludes = seg.excludes ?? defaultSegmentExcludes(pkgName);
-    for (const g of segExcludes) excludes.push(g.replace(/^!/, ""));
+    // 段缺 excludes 时 packageEntryProblems 已判红并在上方提前返回，此处不必再兜底。
+    for (const g of seg.excludes) excludes.push(g.replace(/^!/, ""));
   }
   for (const g of collectCoverageExcludePatterns(pkgDef)) excludes.push(g.replace(/^!/, ""));
   return { mutate, excludes };

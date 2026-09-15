@@ -27,7 +27,10 @@
  *   ② 每条派生 testFiles 与每条豁免条目在磁盘上真实存在；
  *   ③ 每个有测试的包（含未登记变异面的包）`--min` == runner glob 实际文件数；
  *   ④ 充分性：`$testLayers.mutationLayers` 必须含必需层（`test-surface.mjs` 的
- *      `REQUIRED_MUTATION_LAYERS`），且每包变异面非空——防「两行拓扑改动把变异面削掉」。
+ *      `REQUIRED_MUTATION_LAYERS`），且每包变异面非空——防「两行拓扑改动把变异面削掉」；
+ *   ⑤ 条目腐烂（#836）：每份派生 conf 的每条 `mutate` 条目（含 `!` 排除条目）必须命中
+ *      ≥1 个物理文件——防「排除条目指向一个从来不存在、也永远不会出现的路径」，
+ *      历史上 26 份 conf 各带一条这样的 `src/types.ts` 占位（已由 #836 清除）。
  *
  * 环境变量 GEN_STRYKER_ROOT：仓库根覆盖（测试用临时 fixture 根，避免在仓库内造包目录）。
  */
@@ -38,10 +41,14 @@ import { fileURLToPath } from "node:url";
 import {
   collectCoverageExcludePatterns,
   coverageExcludeProblems,
-  defaultSegmentExcludes,
   packageRegistrationProblems,
 } from "./mutation-topology.mjs";
-import { discoverTestPackages, projectTestSurface, readTestMin } from "./test-surface.mjs";
+import {
+  discoverTestPackages,
+  mutationEntryProblems,
+  projectTestSurface,
+  readTestMin,
+} from "./test-surface.mjs";
 
 const repoRoot =
   process.env.GEN_STRYKER_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -105,7 +112,8 @@ function deriveConfig(sharedDefaults, pkgName, segKey, segDef, pkgDef) {
 
   const mutate = [
     ...segDef.mutate,
-    ...(segDef.excludes ?? defaultSegmentExcludes(pkgName)),
+    // 段 excludes 必填（#836）：形状判据已保证它是非空数组，故不再有缺省回退。
+    ...segDef.excludes,
     // S0 覆盖断言的存量登记（#710 第二节 / #773 R4 起为 { pattern, reason, kind } 结构化条目）：
     // 门面/声明/资源/有意不度量四类。取值与断言侧同一份 collectCoverageExcludePatterns，
     // 生成器不自己拆条目；追加在段自身 excludes 之后，故不改变既有段的语义。
@@ -337,9 +345,33 @@ function topLevelTestFilesProblems(derivedConfigs) {
   return problems;
 }
 
-/** `--check` 的全部判据：登记完整性 + 磁盘 ↔ 派生一致（conf 与 vitest 测试面两份生成物）。 */
+/**
+ * 判据 ⑤（#836）：每份派生 conf 的每条 mutate 条目必须命中至少一个物理文件。
+ *
+ * 为什么逐份 conf 判：collectMutationSpecs 把同包所有段的 excludes 聚合成包级清单，
+ * 段级幽灵条目会被同包另一段的同名命中掩盖——判红入口必须与「条目写在哪」同粒度。
+ * 为什么判派生内容而不是磁盘 conf：派生内容是与拓扑严格比对的唯一事实；磁盘漂移已由
+ * contentProblems 单独判红，此处再读磁盘只会把两种失败混成一条判词。
+ */
+function mutationEntryRotProblems(derivedConfigs) {
+  const problems = [];
+  let scanned = 0;
+  for (const [file, content] of derivedConfigs.entries()) {
+    const rot = mutationEntryProblems(repoRoot, file, JSON.parse(content).mutate ?? []);
+    problems.push(...rot.problems);
+    scanned += rot.scanned;
+  }
+  return { problems, scanned };
+}
+
+/**
+ * `--check` 的全部判据：登记完整性 + 条目腐烂 + 磁盘 ↔ 派生一致（conf 与 vitest 测试面两份生成物）。
+ * 返回值带 `scanned`：判据 ⑤ 实际判过的 mutate 条目数，由调用方落进通过行——否则「一条都没扫」
+ * 与「全扫过且全命中」在输出上完全一样。
+ */
 function checkModeProblems(ctx) {
   const { errors, minMismatches, derivedConfigs, derivedVitestConfigs } = ctx;
+  const rot = mutationEntryRotProblems(derivedConfigs);
   const vitestDir = join(repoRoot, VITEST_CONF_DIR);
   const diskVitest = existsSync(vitestDir)
     ? readdirSync(vitestDir)
@@ -350,7 +382,7 @@ function checkModeProblems(ctx) {
   const diskConf = readdirSync(confDir)
     .filter((f) => f.endsWith(".json"))
     .sort();
-  return [
+  const problems = [
     ...errors.map((e) => `登记完整性：${e}`),
     ...minMismatches.map(
       ({ pkgName, min, actual }) =>
@@ -372,11 +404,13 @@ function checkModeProblems(ctx) {
     ),
     ...contentProblems(derivedVitestConfigs, repoRoot, "vitest 测试面配置"),
     ...topLevelTestFilesProblems(derivedConfigs),
+    ...rot.problems,
   ];
+  return { problems, scanned: rot.scanned };
 }
 
-/** `--check` 通过时的汇总行。 */
-function printCheckPassed(ctx) {
+/** `--check` 通过时的汇总行。`mutateEntriesScanned` 是判据 ⑤ 实际判过的条目数（面完整性证据）。 */
+function printCheckPassed(ctx, mutateEntriesScanned) {
   const { derivedConfigs, derivedVitestConfigs, projections, packages, noMutationPackages } = ctx;
   const totalFiles = [...projections.values()].reduce((n, p) => n + p.testFiles.length, 0);
   const skipNames = Object.keys(noMutationPackages).filter((k) => !k.startsWith("$"));
@@ -386,7 +420,8 @@ function printCheckPassed(ctx) {
     `[gen-stryker-conf] --check 通过：${derivedConfigs.size} 份配置与拓扑严格一致；` +
       `${derivedVitestConfigs.size} 份 vitest 测试面配置（${VITEST_CONF_DIR}/）与拓扑严格一致；` +
       `${Object.keys(packages).length} 个包共 ${totalFiles} 个测试文件登记进变异面；` +
-      `--min 与磁盘上 ${ctx.discovered.length} 个有测试的包全部同步${skipNote}`,
+      `--min 与磁盘上 ${ctx.discovered.length} 个有测试的包全部同步；` +
+      `${mutateEntriesScanned} 条 mutate 条目全部命中物理文件${skipNote}`,
   );
 }
 
@@ -457,15 +492,15 @@ function main() {
       noMutationPackages,
       discovered,
     };
-    const problems = checkModeProblems(ctx);
-    for (const p of problems) console.error(`[gen-stryker-conf] ${p}`);
-    if (problems.length > 0) {
+    const check = checkModeProblems(ctx);
+    for (const p of check.problems) console.error(`[gen-stryker-conf] ${p}`);
+    if (check.problems.length > 0) {
       console.error(
         "[gen-stryker-conf] --check 失败：配置文件 / 测试面登记 / --min 与单一事实源脱节",
       );
       return 1;
     }
-    printCheckPassed(ctx);
+    printCheckPassed(ctx, check.scanned);
     return 0;
   }
 

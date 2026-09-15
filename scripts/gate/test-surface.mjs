@@ -47,6 +47,39 @@ export function expandGlob(pkgDir, pattern) {
 }
 
 /**
+ * 变异面条目腐烂判据（#836）：一份 conf 的每条 `mutate` 条目（含 `!` 前缀的排除条目）
+ * 都必须命中 ≥1 个物理文件。
+ *
+ * 为什么需要：排除条目此前从没被问过「你到底排除了什么」，于是 26 份 conf 各带一条指向
+ * `packages/<pkg>/src/types.ts` 的占位排除，而全仓从未存在过该文件——条目腐烂到无人察觉。
+ *
+ * 为什么逐份 conf 判、而不是在 collectMutationSpecs 里：那里把同包所有段的 excludes 聚合成
+ * 包级清单，段级幽灵条目会被同包另一段的同名命中掩盖；清除入口与判红入口必须同粒度。
+ *
+ * 返回值带 `scanned`：本判据最可能的失效形态不是误判而是**空转**（一条都没扫、恒绿），
+ * 故把「实际判过几条」显式交给调用方断言，而不是让调用方从输入长度自证。
+ */
+export function mutationEntryProblems(root, confFileName, patterns) {
+  const problems = [];
+  let scanned = 0;
+  for (const pattern of patterns) {
+    if (typeof pattern !== "string" || pattern === "") {
+      problems.push(
+        `[${confFileName}] mutate 条目不是非空字符串（fail-closed）：${JSON.stringify(pattern)}`,
+      );
+      continue;
+    }
+    scanned += 1;
+    // `!` 只是「本条进的是排除面」的语义标记，命中判据与正向条目同口径。
+    const bare = pattern.startsWith("!") ? pattern.slice(1) : pattern;
+    if (expandGlob(root, bare).length === 0) {
+      problems.push(`[${confFileName}] mutate 条目命中 0 个物理文件（条目腐烂）：${pattern}`);
+    }
+  }
+  return { problems, scanned };
+}
+
+/**
  * 从层定义投影一个包的测试面（纯函数，root 参数化以便测试注入 fixture 根）。
  * 返回 { testFiles, runFiles, layerFiles, excludedFiles, errors }，路径均为**仓库根相对 posix**。
  */
