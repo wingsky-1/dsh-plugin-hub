@@ -55,19 +55,24 @@ describe("REASON_CODES", () => {
 describe("单点化：客户端不再抄一份同值字面量", () => {
   const clientSrc = () => readFileSync(join(pkgDir, "src/client/reason-text.ts"), "utf8");
 
+  // 这一段只留「有没有 / 多没多」的最小结构锚，**不留计数**。为什么：本文件从 import.meta.url
+  // 推导包目录去读盘，变异沙箱内读到的是被变异体包装过的同一份文件，于是「出现几次」这类断言
+  // 锁的是环境而不是行为——CI 上它曾以 expected 5 to be 3 直接把该变异段的 dry run 判死。
+  // 「客户端不再有第二份字面量」这件事无法用行为表达（两份字面量同值时行为完全一致），故只能
+  // 靠结构锚；而 reasonLegacy 的行为判据在 test/client-unit/reason-text.test.ts 里（喂带 detail
+  // 与不带 detail 两种输入，断主文案与 detail 去重），不在这里重复一遍。
   it("客户端引用共享绑定，LEGACY_CODE 已不存在", () => {
     const src = clientSrc();
     expect(src).not.toMatch(/LEGACY_CODE/u);
-    expect(src).toMatch(/import \{ REASON_LEGACY \} from "\.\.\/shared\/interface\.ts";/u);
-    // import + 两处判定：少一处就是「旧散文被当成陌生 code」或「原文被折叠展示两遍」
-    expect(src.match(/REASON_LEGACY/gu)?.length).toBe(3);
+    expect(src).toContain("REASON_LEGACY");
+    expect(src).toContain('from "../shared/interface.ts"');
   });
 
   it("客户端引用的是共享面而不是宿主实现（类型面同理）", () => {
-    expect(clientSrc()).not.toContain("../server/");
-    expect(clientSrc()).toMatch(
-      /import type \{ ReasonCode \} from "\.\.\/shared\/interface\.ts";/u,
-    );
+    const src = clientSrc();
+    expect(src).not.toContain("../server/");
+    // 类型面必须仍是 import type：值引会把宿主实现拖进浏览器产物
+    expect(src).toMatch(/import type \{[^}]*ReasonCode[^}]*\} from "\.\.\/shared\/interface\.ts"/u);
   });
 });
 

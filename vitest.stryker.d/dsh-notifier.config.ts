@@ -13,6 +13,7 @@ export default defineConfig({
       'packages/dsh-notifier/test/client-unit/api-error.test.ts',
       'packages/dsh-notifier/test/client-unit/banner.test.ts',
       'packages/dsh-notifier/test/client-unit/capabilities.test.ts',
+      'packages/dsh-notifier/test/client-unit/locale-fallback.test.ts',
       'packages/dsh-notifier/test/client-unit/locale.test.ts',
       'packages/dsh-notifier/test/client-unit/mask.test.ts',
       'packages/dsh-notifier/test/client-unit/notify-audio.test.ts',

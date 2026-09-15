@@ -63,9 +63,16 @@ describe("claimMaster：谁弹、谁静默", () => {
     expect(h.writes).toEqual([]);
   });
 
-  it("租约过期即被抢占（与租约时长比较，不是「有租约就静默」）", () => {
+  it("距租约写入 14999ms（窗口内 1ms，判定是严格小于）→ 仍归别的标签，静默且不写", () => {
     const h = harness(JSON.stringify({ id: "tab-b", ts: 1000 }));
-    h.advance(MASTER_LEASE_MS);
+    h.advance(14999);
+    expect(claimMaster("tab-a", h.ports)).toBe(false);
+    expect(h.writes).toEqual([]);
+  });
+
+  it("距租约写入 15000ms（恰好到期）→ 被抢占（与租约时长比较，不是「有租约就静默」）", () => {
+    const h = harness(JSON.stringify({ id: "tab-b", ts: 1000 }));
+    h.advance(15000);
     expect(claimMaster("tab-a", h.ports)).toBe(true);
     expect(JSON.parse(h.stored as string).id).toBe("tab-a");
   });
@@ -105,5 +112,10 @@ describe("claimMaster：谁弹、谁静默", () => {
 
   it("storage 键是跨标签共享的那一个", () => {
     expect(MASTER_KEY).toBe("dsh-notifier:master");
+  });
+
+  it("MASTER_LEASE_MS 是字面量锚（防静默漂移，不是行为判据）", () => {
+    // 行为用例都把常量当输入喂进去，改这个数字不会红；这条锚让「改数字」必须在测试里显式改一次。
+    expect(MASTER_LEASE_MS).toBe(15000);
   });
 });

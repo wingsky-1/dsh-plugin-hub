@@ -21,8 +21,10 @@ describe("SOUND_IDS：内置音色白名单", () => {
       expect(Object.hasOwn(TONES, id), "TONES 缺 " + id).toBe(true);
       expect(TONES[id]?.notes.length, id + " 没有音符").toBeGreaterThan(0);
     }
-    // 反向不要求相等：TONES 还含「跟随系统默认音」这类不在设置白名单里的键
-    expect(SOUND_IDS.length).toBeGreaterThan(0);
+    // 反向不要求相等：TONES 还含「跟随系统默认音」这类不在设置白名单里的键。
+    // 条数是锚：白名单为空时上面的 for 会空转成假绿，故这里钉死真实条数（取值与顺序另由
+    // 上一用例的 toEqual 钉住），新增或删除音色必须显式改这个数字。
+    expect(SOUND_IDS.length).toBe(4);
   });
 
   it("「跟随系统默认」不占白名单位：它只在音色表里", () => {

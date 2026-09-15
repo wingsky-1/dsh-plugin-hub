@@ -78,6 +78,8 @@ describe("凭据字段：渲染值", () => {
 
   it("占位提示不承载真实凭据值，也不等于服务端掩码字面量", () => {
     expect(CREDENTIAL_MASK_PLACEHOLDER).not.toBe(MASK_FROM_SERVER);
-    expect(CREDENTIAL_MASK_PLACEHOLDER.length).toBeGreaterThan(0);
+    // 精确值锚：空串能通过上面的 not.toBe（它不等于任何非空掩码），却让「已配置」的提示整体
+    // 消失，用户看不出这一格已经有值。占位形态要改就在这条判据里显式改。
+    expect(CREDENTIAL_MASK_PLACEHOLDER).toBe("••••••••");
   });
 });

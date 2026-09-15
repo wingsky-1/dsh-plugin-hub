@@ -75,7 +75,7 @@ function factsOf(overrides: Partial<ClientFacts> = {}): ClientFacts {
     permission: "granted",
     audio: RUNNING_AUDIO,
     ...overrides,
-  } as ClientFacts;
+  } satisfies ClientFacts;
 }
 
 describe("hostCapabilitiesOf：宿主面读侧归一化", () => {
@@ -164,13 +164,31 @@ describe("remediationTextOf：处置建议文案", () => {
     "host-managed-by-others",
   ] as const;
 
+  // 无包名的两条：服务端只给 code（认不出发行版）时走 src 的 NO_PACKAGE_KEYS，插值不上的
+  // 花括号会被原样渲染，故这两条必须换文案；其余 code 都带全占位符。
+  const EXPECTED_TEXT_KEYS = {
+    "host-no-dbus-session": "diagRemHostNoDbusSession",
+    "host-popup-no-daemon": "diagRemHostPopupNoDaemon",
+    "host-no-notify-send": "diagRemHostNoNotifySend",
+    "host-no-sound-server-and-player": "diagRemHostNoSoundServerAndPlayerNoPkg",
+    "host-only-sound-server-players": "diagRemHostOnlySoundServerPlayersNoPkg",
+    "host-no-player": "diagRemHostNoPlayer",
+    "host-no-tone-file": "diagRemHostNoToneFile",
+    "host-managed-by-others": "diagRemHostManagedByOthers",
+  } satisfies Record<(typeof CODES)[number], NotifierLocaleKey>;
+
   // 服务端加 code 而客户端漏配文案，用户看到的就是一行英文标识符——这张表把它变成可判红的判据。
   it("契约里每个 code 都有文案，且不回落成 key 本体", () => {
     for (const code of CODES) {
       const text = remediationTextOf({ code }, t);
       expect(text, `缺 ${code} 的文案`).toBeTypeOf("string");
       expect(text, `${code} 回落到 key 本体`).not.toBe(code);
-      expect(text.length).toBeGreaterThan(0);
+      // 逐条钉住 code→文案 的路由：`length > 0` 这类下界连「串到别的 code 的文案」与
+      // 「掉进中性回退」都放过。期望值取自 zh，故文案措辞的改动不会让这条变红。
+      expect(text, `${code} 没走到约定的那条文案`).toBe(zh[EXPECTED_TEXT_KEYS[code]]);
+      // 期望值本身读自 zh，空文案仍要单独判：否则用户看到的是一片空白，而它既不等于 code
+      // 也不含花括号，上面两条都放过。
+      expect(text, `${code} 的文案是空白`).not.toBe("");
       expect(text).not.toContain("{");
     }
   });
@@ -459,58 +477,75 @@ describe("clientDiagnosticsOf：界面只做机械投影", () => {
 });
 
 describe("双语：新增 key 两边齐备", () => {
-  it("zh 的每个 diag* key 在 en 都有非空文案，且不回落成 key 本体", () => {
+  // 完整清单即锚：diag* 面一个不多一个不少，新增或删除 key 都必须在这张表里显式登记。
+  // 原先的 `length >= 32` 是下界，32→40 这种静默扩张它直接放过，也说不清少的是哪一条。
+  const DIAG_KEYS = [
+    // verdict 四态
+    "diagVerdictOk",
+    "diagVerdictDegraded",
+    "diagVerdictUnreachable",
+    "diagVerdictUnknown",
+    // 两个维度与两条结论行
+    "diagDimPopup",
+    "diagDimSound",
+    "diagHostLine",
+    "diagBrowserLine",
+    "diagUnknownLine",
+    // 处置建议：标题、中性回退、八条出路（含两条无包名变体）
+    "diagRemediationTitle",
+    "diagRemediationUnknown",
+    "diagRemHostNoDbusSession",
+    "diagRemHostPopupNoDaemon",
+    "diagRemHostNoNotifySend",
+    "diagRemHostNoSoundServerAndPlayer",
+    "diagRemHostNoSoundServerAndPlayerNoPkg",
+    "diagRemHostOnlySoundServerPlayers",
+    "diagRemHostOnlySoundServerPlayersNoPkg",
+    "diagRemHostNoPlayer",
+    "diagRemHostNoToneFile",
+    "diagRemHostManagedByOthers",
+    // 明细折叠区与来源标注
+    "diagDetailsLabel",
+    "diagSourceHost",
+    "diagSourceBrowser",
+    "diagCheckedLabel",
+    "diagPlayersLabel",
+    "diagToneFileLabel",
+    "diagToneFileYes",
+    "diagToneFileNo",
+    "diagNone",
+    "diagCheckedNotifySend",
+    "diagCheckedDbusNameOwner",
+    "diagCheckedDbusActivatable",
+    "diagCheckedSessionBus",
+    "diagCheckedPlayers",
+    "diagCheckedToneFile",
+    // 浏览器面各态
+    "diagBrowserNoNotificationApi",
+    "diagBrowserInsecureContext",
+    "diagBrowserPermissionDenied",
+    "diagBrowserPermissionDefault",
+    "diagBrowserAudioNeverUnlocked",
+    "diagBrowserAudioAutoSuspended",
+    "diagBrowserAudioClosed",
+    "diagBrowserAudioUnsupported",
+  ] as const satisfies readonly NotifierLocaleKey[];
+
+  it("zh 的 diag* key 与清单逐条一致，且 en 侧非空、不回落成 key 本体", () => {
     const keys = (Object.keys(zh) as NotifierLocaleKey[]).filter((key) => key.startsWith("diag"));
-    // 这一面至少要有四个 verdict、两个维度、八条出路（含两条无包名变体）、九条浏览器态与来源标注
-    expect(keys.length).toBeGreaterThanOrEqual(32);
-    for (const key of keys) {
+    expect([...keys].sort(), "diag* 面与清单不一致：增删 key 必须同步改本文件的清单").toEqual(
+      [...DIAG_KEYS].sort(),
+    );
+    for (const key of DIAG_KEYS) {
+      // zh 是 key 源（NotifierLocaleKey = keyof typeof zh），漏配是编译错误；但「配了个空串」与
+      // 「配成 key 本体」都能编译过，故两侧都要在运行期各判一遍——收口前这里只断了 en，
+      // 其中一条的 message 还错写成 zh。
+      expect(zh[key], `zh 缺 ${key}`).toBeTypeOf("string");
+      expect(zh[key], `zh 的 ${key} 为空`).not.toBe("");
+      expect(zh[key], `${key} 的 zh 文案回落到 key 本体`).not.toBe(key);
       expect(en[key], `en 缺 ${key}`).toBeTypeOf("string");
       expect(en[key], `en 的 ${key} 为空`).not.toBe("");
-      expect(en[key], `${key} 的 zh 文案回落到 key 本体`).not.toBe(key);
       expect(en[key], `${key} 的 en 文案回落到 key 本体`).not.toBe(key);
-    }
-  });
-
-  it("契约要求的那几组 key 一个都不少（verdict 四态 / 维度 / 八条出路 / 浏览器各态）", () => {
-    const required = [
-      "diagVerdictOk",
-      "diagVerdictDegraded",
-      "diagVerdictUnreachable",
-      "diagVerdictUnknown",
-      "diagDimPopup",
-      "diagDimSound",
-      "diagUnknownLine",
-      "diagDetailsLabel",
-      "diagSourceHost",
-      "diagSourceBrowser",
-      "diagRemHostNoDbusSession",
-      "diagRemHostPopupNoDaemon",
-      "diagRemHostNoNotifySend",
-      "diagRemHostNoSoundServerAndPlayer",
-      "diagRemHostNoSoundServerAndPlayerNoPkg",
-      "diagRemHostOnlySoundServerPlayers",
-      "diagRemHostOnlySoundServerPlayersNoPkg",
-      "diagRemHostNoPlayer",
-      "diagRemHostNoToneFile",
-      "diagRemHostManagedByOthers",
-      "diagBrowserNoNotificationApi",
-      "diagBrowserInsecureContext",
-      "diagBrowserPermissionDenied",
-      "diagBrowserPermissionDefault",
-      "diagBrowserAudioNeverUnlocked",
-      "diagBrowserAudioAutoSuspended",
-      "diagBrowserAudioClosed",
-      "diagBrowserAudioUnsupported",
-      "diagCheckedNotifySend",
-      "diagCheckedDbusNameOwner",
-      "diagCheckedDbusActivatable",
-      "diagCheckedSessionBus",
-      "diagCheckedPlayers",
-      "diagCheckedToneFile",
-    ] as const;
-    for (const key of required) {
-      expect(zh[key], `zh 缺 ${key}`).toBeTypeOf("string");
-      expect(en[key], `en 缺 ${key}`).toBeTypeOf("string");
     }
   });
 });

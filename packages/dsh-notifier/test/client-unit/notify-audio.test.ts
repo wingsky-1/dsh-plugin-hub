@@ -178,15 +178,20 @@ describe("音频出口：自播", () => {
 });
 
 describe("音频出口：节流", () => {
-  it("同一窗口内只放行一次，窗口过后再放行", () => {
+  it("PLAY_THROTTLE_MS 是字面量锚（防静默漂移，不是行为判据）", () => {
+    // 行为用例都把常量当输入喂进去，改这个数字不会红；这条锚让「改数字」必须在测试里显式改一次。
+    expect(PLAY_THROTTLE_MS).toBe(1500);
+  });
+
+  it("节流窗口边界：1499ms 仍被拦、1500ms 放行、1501ms 又被拦（判定是严格小于）", () => {
     const h = harness({ state: "running" });
     const base = h.clock();
     expect(h.engine.gate()).toBe(true);
-    h.setClock(base + PLAY_THROTTLE_MS - 1);
+    h.setClock(base + 1499);
     expect(h.engine.gate()).toBe(false);
-    h.setClock(base + PLAY_THROTTLE_MS);
+    h.setClock(base + 1500);
     expect(h.engine.gate()).toBe(true);
-    h.setClock(base + PLAY_THROTTLE_MS + 1);
+    h.setClock(base + 1501);
     expect(h.engine.gate()).toBe(false);
   });
 

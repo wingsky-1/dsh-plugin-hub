@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import { REFUSAL_CODES } from "../../src/shared/interface.ts";
 import { apiFailureOf, markHttpFailure } from "../../src/client/api-error.ts";
+import type { NotifierLocaleKey } from "../../src/client/locales.ts";
 import { en, zh } from "../../src/client/locales.ts";
 
 /** 翻译函数桩：断言取的是哪个 key，而不是去对一句会变的文案。 */
@@ -96,10 +97,19 @@ describe("apiFailureOf：结构化优先、状态码与文案兜底", () => {
     ).toEqual({ refused: false, hint: "", message: "未注册的动态种类" });
   });
 
-  it("引导文案的 key 在 zh/en 字典里都在（key 写错只会把 key 本身渲染给用户）", () => {
-    expect(t("lanAccessHint")).toBe("T:lanAccessHint");
+  it("引导文案的 key 在 zh/en 字典里都在，且判定给出的就是这条文案", () => {
+    expect(zh.lanAccessHint).toBeTypeOf("string");
     expect(zh.lanAccessHint).not.toBe("");
+    expect(en.lanAccessHint).toBeTypeOf("string");
     expect(en.lanAccessHint).not.toBe("");
+    // 把 key 与判定连起来：用字典本身当翻译函数，判定给出的引导必须**等于字典里那一条**。
+    // 判定侧换成别的 key、或退化成恒等实现，这里都红——而原来那条断的是本文件 :16 的
+    // T: 前缀桩，等于断自己传进去的东西，写成什么都绿。
+    const zhT = (key: NotifierLocaleKey): string => zh[key];
+    expect(apiFailureOf({ code: REFUSAL_CODES.FORBIDDEN_LOOPBACK }, zhT).hint).toBe(
+      zh.lanAccessHint,
+    );
+    expect(apiFailureOf({ status: 403, message: "boom" }, zhT).hint).toBe(zh.lanAccessHint);
   });
 });
 

@@ -3,18 +3,15 @@
  *
  * 绑定状态必须能被 apply 期与 locale 订阅回调重绑，而调用点全文共用同一个 t。
  * 这两件事以前靠一个模块级 var 实现（无判据）；现在收进 locale.ts 的 const 容器，可直测。
+ *
+ * 「未装配时回落 key 本体」不在这里断：绑定一旦被重绑就回不去，本文件每条用例都要先绑一次，
+ * 所以那条判据在 locale-fallback.test.ts（单独文件才拿得到未被动过的模块初值）。
  */
 import { describe, expect, it } from "vitest";
 
 import { bindTranslate, t, type Translate } from "../../src/client/locale.ts";
 
 describe("文案绑定", () => {
-  it("未装配时回落 key 本体（宿主没有 locale 服务也照常渲染）", () => {
-    bindTranslate((key) => String(key));
-    expect(t("savedOk")).toBe("savedOk");
-    expect(t("loadFail", { msg: "boom" })).toBe("loadFail");
-  });
-
   it("装配后走当前绑定，并把参数透传下去", () => {
     const calls: Array<{ key: string; params: unknown }> = [];
     const bound: Translate = (key, params) => {

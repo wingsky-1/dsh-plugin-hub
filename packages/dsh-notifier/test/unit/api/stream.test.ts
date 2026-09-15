@@ -52,8 +52,9 @@ function makeReq(url: string): IncomingMessage {
   return jsonReq({ method: "GET", url });
 }
 
-/** 假 SSE 响应：连接表要 `on`/`destroyed`/`destroy`，断言要 `text`。 */
-function makeRes() {
+/** 假 SSE 响应：连接表要 `on`/`destroyed`/`destroy`，断言要 `text`。`writeOk=false` 用来造背压
+ * （write 返回 false 是 stalled 回收唯一认的输入），别的用例都用默认的正常写。 */
+function makeRes(writeOk = true) {
   const rec = { status: 0, headers: {} as Record<string, string>, text: "", destroyed: false };
   const listeners = new Map<string, Array<() => void>>();
   const res = {
@@ -70,7 +71,7 @@ function makeRes() {
     },
     write(chunk: string) {
       rec.text += chunk;
-      return true;
+      return writeOk;
     },
     end(chunk?: string) {
       if (chunk !== undefined) rec.text += chunk;
@@ -166,11 +167,18 @@ function frame(
   };
 }
 
-/** 接上一条 SSE 连接（`handle` 同步写完响应头与回放帧）。 */
-function connect(routes: WebRoute[], url = "/api/dsh-notifier/events") {
+/** 假响应与其可观测记录（判据只钉在这份记录与连接表 size 上）。 */
+type FakeRes = ReturnType<typeof makeRes>;
+
+/** 接上一条 SSE 连接（`handle` 同步写完响应头与回放帧）；`make` 让回收类用例换成背压响应。 */
+function connect(
+  routes: WebRoute[],
+  url = "/api/dsh-notifier/events",
+  make: () => FakeRes = makeRes,
+) {
   const route = routes.find((item) => item.path === "/api/dsh-notifier/events");
   if (route === undefined) throw new Error("events 路由未注册");
-  const captured = makeRes();
+  const captured = make();
   route.handler(makeReq(url), captured.res);
   return captured;
 }
@@ -360,5 +368,61 @@ describe("装配守卫：未装配与重复装配", () => {
       vi.useRealTimers();
     }
     expect(readSeqFromDisk()).toBe(0);
+  });
+});
+
+describe("主动回收：连接上限机制移除后，连接表的有界性只剩这两路", () => {
+  // 上限机制退役后，连接表没有「触顶淘汰」这条确定性收口了。真正会把表撑爆的是半开连接：
+  // 设备息屏 / NAT 静默掐断不发 FIN，close/error 都不触发，写心跳也不抛错（数据进内核缓冲），
+  // 于是一个不再消费的客户端会永远挂在表里。清掉它只剩共享层心跳里的两路主动回收。
+  // 其中 destroyed 那一路由 dsh-mcp-manager 的 unit-routes-sse.test.ts 覆盖，stalled / maxAge
+  // 两路**全仓再无第二条判据**——任一路静默失效（判定恒 false、窗口算式写反、心跳写被当成
+  // 业务活动刷新 lastWriteAt），连接表就随半开连接无界增长，而没有任何用例会红。
+  // 所以这两条不是「顺手补覆盖」，它们是移除上限之后仅存的有界性证据，不可省。
+  // 断言只钉可观测事实（连接被 destroy、连接表 size 变化）；evictStats 是 /health 的观测面，
+  // 拿它当判据等于用「实现自报的账」证明「实现干了事」。
+  //
+  // 假钟必须在 assemble() 之前装上：心跳的 setInterval 是装配期由枢纽建立的，晚装的话那颗
+  // 真实定时器不归假钟管，推进假钟一次 tick 都推不动（本文件「装配守卫」用例踩过同一坑）。
+  it("stalled 回收：写持续被拒（背压）超过窗口即判死，连接被 destroy 且连接表归零", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const { routes } = assemble();
+      // 只会被拒的连接：每次心跳写都返回 false，stalled 窗口从第一次心跳起算。
+      const { rec } = connect(routes, "/api/dsh-notifier/events", () => makeRes(false));
+      expect(streamHub.size()).toBe(1);
+
+      // 流块心跳 30s、共享层 stalled 窗口 90s（都是各自的默认值，notifier 未注入覆盖）：
+      // 推进 150s 足以把「背压起始 + 超窗」两个条件都送到，且越过判死那一 tick。
+      await vi.advanceTimersByTimeAsync(150_000);
+
+      expect(rec.destroyed).toBe(true);
+      expect(streamHub.size()).toBe(0);
+    } finally {
+      // 假钟还管着 clearInterval 时先卸载停心跳，再恢复真实时钟。
+      releaseApi();
+      vi.useRealTimers();
+    }
+  });
+
+  it("maxAge 回收：存活超上限且业务空闲的连接被 destroy（心跳写不算业务活动）", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const { routes } = assemble();
+      // 正常连接的写恒成功，但心跳写按共享层语义不算业务活动：lastWriteAt 停在注册时刻。
+      const { rec } = connect(routes);
+      expect(streamHub.size()).toBe(1);
+
+      // 共享层 maxAge 120min、空闲门槛 15min（默认值）：推进 125min 越过 maxAge 那一 tick。
+      // 「空闲」这一半同时是「假活动陷阱」的判据：一旦心跳写开始刷 lastWriteAt，每 30s 都新鲜，
+      // 这条连接再也够不到 15min 空闲门槛，本用例会红。
+      await vi.advanceTimersByTimeAsync(125 * 60_000);
+
+      expect(rec.destroyed).toBe(true);
+      expect(streamHub.size()).toBe(0);
+    } finally {
+      releaseApi();
+      vi.useRealTimers();
+    }
   });
 });

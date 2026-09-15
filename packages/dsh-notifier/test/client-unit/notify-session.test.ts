@@ -153,14 +153,19 @@ describe("SSE 会话：帧分发与去重", () => {
 });
 
 describe("SSE 会话：看门狗", () => {
-  it("看门狗按「窗口 + 5s」起表", () => {
-    const h = harness();
-    expect([...h.timers.values()].map((t) => t.ms)).toEqual([WATCHDOG_MS + 5000]);
+  it("WATCHDOG_MS 是字面量锚（防静默漂移，不是行为判据）", () => {
+    // 行为用例都把常量当输入喂进去，改这个数字不会红；这条锚让「改数字」必须在测试里显式改一次。
+    expect(WATCHDOG_MS).toBe(60000);
   });
 
-  it("窗口内触发只重新计时，不重连", () => {
+  it("看门狗按「窗口 + 5s」起表", () => {
     const h = harness();
-    h.advance(WATCHDOG_MS - 1000);
+    expect([...h.timers.values()].map((t) => t.ms)).toEqual([65000]);
+  });
+
+  it("距最后一帧恰好等于窗口（60000ms，判定是严格大于）→ 只重新计时，不重连", () => {
+    const h = harness();
+    h.advance(60000);
     h.fireTimers();
     expect(h.sources).toHaveLength(1);
     expect(h.timers.size).toBe(1);
@@ -178,18 +183,18 @@ describe("SSE 会话：看门狗", () => {
     expect(h.timers.size).toBe(1);
   });
 
-  it("距最后一帧超过窗口（哪怕中过 ping）→ 重连", () => {
+  it("距最后一帧超过窗口 1ms（60001ms）→ 判半开并主动重连", () => {
     const h = harness();
-    h.advance(50000);
-    h.emit({ type: "ping" });
-    h.advance(WATCHDOG_MS + 1000);
+    h.advance(60001);
     h.fireTimers();
     expect(h.sources).toHaveLength(2);
   });
 
-  it("超过窗口没有任何帧 → 主动重连", () => {
+  it("距最后一帧超过窗口（哪怕中过 ping）→ 重连", () => {
     const h = harness();
-    h.advance(WATCHDOG_MS + 6000);
+    h.advance(50000);
+    h.emit({ type: "ping" });
+    h.advance(61000);
     h.fireTimers();
     expect(h.sources).toHaveLength(2);
   });
