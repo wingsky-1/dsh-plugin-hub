@@ -1,0 +1,440 @@
+{
+  "version": 15,
+  "maxExceptions": 12,
+  "maxStructuredSteps": 8,
+  "maxStepIfs": 8,
+  "maxStepEnvs": 14,
+  "maxConditionInputs": 4,
+  "maxJobIfs": 8,
+  "maxJudgmentAliases": 20,
+  "note": "门禁接线断言的例外台账（审计 P0-1）。为什么需要它：判据的执行点分居 ci.yml 与本地档位计划两处，两侧归一到「被执行的脚本身份」后本应相等；不等而**又是设计如此**的少数项在此显式登记。\n\nclass 值域与语义（断言按语义校验方向，乱填即红）：infra=环境准备，只能是非判据端点（alias/pkg-filter/shell 等）；ci-only=只在 CI 出现且本地两档都没有；tier-only=只在某个本地档位出现且 CI 没有；nightly-only=有执行点但一个都不在 PR 面（只在 observe / release / baseline-overlay / health-report 跑）；indirect=没有自己的执行点但由另一处到达，必须写 via 且该 via 必须真的能到达它（via 是源码文件时须确实 import 或 spawnSync 它，注释里的提及不算；写 package.json 表示由别名执行，须确有别名指向它、**且该别名在仓库里确有出处**：可执行面（workflow / lefthook 剥注释后、package.json 的 script 展开文本）或写明人类入口的文档；台账自身不算出处——只核对指向会放过一条「谁都不执行」的假接线）。\n\nindirect 同时是覆盖性不变式的例外，且**它自己必须真的没有执行点**——否则先登记一条 indirect、再把两侧执行点一起删掉，就是一条静默放行通道。nightly-only / tier-only 由 A14 正向核对（有执行点、且一个都不在 PR 面）；其余 class 由两侧比对面核对。豁免是数据不是代码：门禁不得内嵌这些常量。\n\n台账本身受这些守卫：悬空腐烂、class 方向相符、script 指向的脚本存在、总条数不超过 maxExceptions（断言侧另钉一个测试内硬顶，防「只改这份数据即放宽」；硬顶以内仍可只改数据，超过硬顶才必须同时改断言）、indirect 的 via 真的能到达、indirect 真的没有执行点。\n\n本文件另承载八张**形态**登记表。这里有一处必须点明的张力：主台账刻意只记「设计如此的不对称」，因为全量登记表会退化成又一份需要同步的副本；而下面八张表**就是**逐字登记表。之所以仍要它们：「一个 job / 步骤会不会被静默关掉」「一个别名的指向会不会被改脏」在一般情况下静态判不出，登记制是唯一能把**静默开关变成 diff 里显眼一行**的手段。代价如实体现在——它们的唯一合法修法就是同步改数据。因此八张表自身也受守卫，别把「已登记」读成「语义已守住」。\n\nstructuredSteps：判据步骤的默认形态是**一条命令**。多一行就是一处可以静默关掉判据的余地（`exit 0` 前置、`if [ ]; then` 包装、`X=1 set +e`……这些写法列举不完，故反过来要求形态闭合）。扫描面是**全部 workflow 的全部 job**；键 = `<workflow 文件>|<作业名>|<该步骤的判据身份集合>`，判据身份是**完整身份**（含判据面摘要），故同一脚本的两个不同调用点不会共用一个键。守卫：悬空（键在现场不存在）、**预先登记**（键对应的步骤已是闭合单命令——那等于提前把口子开好）、键两两不同（键相同的两条步骤会被同一条登记一起豁免）、理由非空、条数上限。登记项**不是免检**：照旧吃逐行检查（吞码 / errexit / 死分支）；另钉**文本摘要** `digest`：步骤键只锁住「这一步有哪些判据」，脚手架行不进键——一行 `break` / `continue` 就能让循环里剩下的判据不再执行，而键、执行点、两侧身份全都不变（对抗复核实测全绿）。故 `digest`（`stepDigest`，16 位十六进制）必须与现场逐字相符，报错里直接给出应填的现场值。摘要计算在**原始逻辑行**（含注释与 `#` 文本，续行已按 bash 语义拼接）上：只钉「解析层看得见的命令」时，改一行续行注释就能零台账改动地放行（对抗复核实测）。另有**不设登记出口**的硬红：判据步骤带 `continue-on-error`、注入能改变 shell 行为的 env（`BASH_ENV` / `SHELLOPTS` / `PROMPT_COMMAND` / …，含行首赋值形态）、命令引号不配对、`working-directory` 覆盖（换个目录就是换一条命令——相对路径的脚本会指向别处，而步骤键、两侧身份、执行点全不动）、`shell:` 覆盖不在白名单内（内建关键字放行，自定义模板须取 basename 后属 bash 家族、把 `{0}` 交给解释器且自带 errexit）。解析层按 bash 语义而非裸正则：引号内的 `#` 不是注释（`$'…'` 与反引号一并建模）、`--packages` 的取值不进身份但它之后的 token 进。\n\nconditionInputs：**登记条件的输入面**。已登记的 stepIfs / jobIfs 条件里出现 `steps.<id>.outputs.<name>` 时，产出该 output 的步骤必须在此登记（键 = `<workflow 文件>|<作业名>|<步骤 id>`，另钉该步骤的文本摘要**与同 job `uses` 步骤的整步摘要**（`uses` + `with` + `if` / `timeout-minutes` / `env`）——把 `download-artifact` 的 `pattern:` 改成不匹配的一行、或把产出端那一步改成 `if: false`，产出步骤文本一字未动而 output 变 0）。为什么：条件原文登记住了，但**操作数来源**没登记——把产出步骤改成 `COUNT=0` 之类即可让条件永不成立，而条件一字未动（对抗复核实测）。\n\npriorRunSteps：**环境面（前序 run 步骤）**登记。判据 job 里、最后一条判据步骤之前的每一个非判据 run 步骤都逐条登记（键 = `<workflow 文件>|<作业名>|<步骤名>`；摘要覆盖原始文本行与 `if` / `continue-on-error` / `shell` / `working-directory` / env 键 / 白名单外的键，env 键另列一栏便于读）。为什么按**位置**而不是按字样：写 `$GITHUB_ENV` / `$GITHUB_PATH` 只是改变后续步骤环境的一种写法——`D=$(ls /home/runner/work/_temp/_runner_file_commands/set_env_* | head -1)` 这类硬编码路径里没有 `GITHUB_` / `RUNNER_TEMP` / `printenv` 任何一个字样，`D=$(node -e 'console.log(process.env[\"GITHUB\"+\"_ENV\"])')` 也一样（对抗复核实测两条全绿）；而判据能读到的环境只可能由它**前面**的步骤建立，按位置取就是一个闭合集合。代价：环境准备步骤（`Install dependencies` / `Build …`）的每次文本改动都要同步一次摘要；顺序由 jobFaces 另钉。\n\njobFaces：**判据 job 的执行面**（键 = `<workflow 文件>|<作业名>`，摘要 = 前序 run 步骤的**有序**序列 + 该 job 全部 `uses:` 步骤整步文本 + job 级 `container` / `defaults` 整块）。三部分各管一段前两张表盖不住的面：① `priorRunSteps` 只钉了「有哪些前序步骤、各自什么文本」，把两条前序步骤**换序**不动任何一条摘要（对抗复核实测全绿）——序列进摘要后顺序也上锁；② action 里是任意代码，同样能写 `$GITHUB_ENV`，而一处 `if: false` / 一分钟 `timeout-minutes` 也能让产物上传步骤静默不跑（只钉 `uses` + `with` 时全绿）；③ `container`（镜像 + `container.env`）与 `defaults`（`run.shell` / `run.working-directory`）都是「改一处即换掉整 job 执行环境」的 job 级键，且都不在 `envLayers` 的 `env:` 里（`container: { image: node:24, env: { BASH_ENV: … } }` 与 job 级 `defaults.run.working-directory` 两条实测全绿）。按 job 一条摘要而不是逐条登记：一个 job 的 uses 步骤与 job 级键的改动是整批的，逐条登记只会让台账变成又一份副本。\n\nstepEnvs：判据步骤的**有效 env 键**（workflow 级 ∪ job 级 ∪ 步骤级 ∪ job 级 `container.env`）逐键登记。为什么连键名都要登记：`env: { BASH_ENV: … }` 只改执行环境、不改执行点也不改两侧身份——挂在这一步、整个 job 或 workflow 顶上都能让 shell 在跑到判据之前就结束；`NODE_OPTIONS=--require <process.exit(0)>` 同理。四层 env（含 `container.env`）都算进这一步的有效键，故加一行 job 级 env 或一行 `container.env` 会让该 job 下每条判据步骤的登记一起失配（红）。另有一道不看登记的硬红：能改变执行环境的变量名（`BASH_ENV` / `SHELLOPTS` / `NODE_OPTIONS` / `PATH` / `LD_PRELOAD` / …）。「同 job 前序步骤改写执行环境」这件事不按名字判——名字匹配已被实测绕过，改由 priorRunSteps 按位置整条钉住。判据脚本自己读的业务 env（如 `VERIFY_DIR_IMPORTS_BASELINE`）不在此列——它属该判据自身的契约。\n\nstepIfs：判据**步骤**的 `if:` 是比 job 级更细的静默开关，扫描面同样是全部 workflow 的全部 job（原先只看 ci.yml 的 repo-gate——把 observe.yml 的 crap-check 改成 `if: github.repository == 'never/match'` 当时 24/24 全绿，夜间判据静默失明）。为什么不能判真假：`if` 引用运行时上下文时是否成立等于停机问题，故一律逐字登记；键 = 步骤键（与 structuredSteps 同一把尺），条件被改动即判红，新增一个带 if 的判据步骤也判红，登记项悬空同样判红。\n\njobIfs：含判据的 job 上的 job 级 if 是「改一处即静默停闸」的开关——整个 job 的判据一次消失。扫描面是**全部 workflow**（原先只看 ci.yml）；键 = `<workflow 文件>|<作业名>`。非空 job 级 if 必须在此逐字登记：条件被改动即判红，新增一个带 if 的判据 job 也判红。GHA 的状态函数（always/success/failure/cancelled）取运行时值，不算「常量条件」。\n\njudgmentAliases：判据别名的**指向**登记。为什么必须有这张表：一致性断言的期望身份同样从 package.json 现场派生——CI 与本地都写 `pnpm <别名>` 时，把别名本身改脏（`lint → true`、去掉 `aggregate:check` 的 `--check`）会让两侧一起移动、比对仍然相等（独立对抗复核实测四例全部全绿）。别名是判据面的入口，故在此逐条钉住**完整身份**（含判据面摘要）：改指向或改参数都必须是一次显式改动。守卫：凡在现场面上被判据用到的别名都必须已登记（新别名未登记即红）、登记的指向必须与现场逐字相符（不符即红）、条目不得悬空、条数上限。\n\nnightly-only / tier-only 单列说明：覆盖性断言只要求「至少一处执行点」，所以「把一条判据从 repo-gate 挪到夜间班次」与「挪到只有 gate:full 才跑的档位」本来都不会有任何断言反应，而它们在 PR 上的回归从此无人拦。PR 面 = **默认** PR 路径：CI 侧不含「gate:full 标签才实例化」的 job，本地侧只算 pr 档。这一族必须逐条登记：新增要留一次可见的 diff，删掉会悬空判红。",
+  "exceptions": [
+    {
+      "endpoint": "alias:install",
+      "class": "infra",
+      "reason": "pnpm install --frozen-lockfile 是环境准备：pnpm 内建子命令不在 package.json 的 scripts 里，故解析层归为 alias"
+    },
+    {
+      "endpoint": "script:scripts/gate/repo-gate-assert.mjs",
+      "class": "ci-only",
+      "reason": "PR 判定表专用脚本：本地没有 GitHub Actions 的 needs/result 语义可判，故本地两档都没有对应执行点"
+    },
+    {
+      "endpoint": "script:scripts/gate/local-gate.mjs",
+      "class": "indirect",
+      "via": "package.json",
+      "reason": "本地档位的入口本身：由人执行 pnpm gate:changed / gate:pr / gate:full 触发，任何 workflow 都不会调它（CI 各自走自己的步骤），故它是唯一「没有自动化执行点」的判据——它的执行点就是那三条别名"
+    },
+    {
+      "endpoint": "script:scripts/gate/mutation-ledger.mjs",
+      "class": "indirect",
+      "via": "scripts/test/mutation-ledger.test.ts",
+      "reason": "变异段台账的判据（--check）只在它的自测里被调用，而该测试在 test:scripts 面内、每个 PR 都跑——判据确实执行，但执行点不在任何 workflow 的 run 步骤里，故按 indirect 登记而非 library"
+    },
+    {
+      "endpoint": "script:scripts/gate/collect-exemptions.mjs",
+      "class": "tier-only",
+      "reason": "豁免到期台账是纯报告（退出码恒 0），只在本地 full 档收集打印——pr 档不跑（#765 裁决：PR 上反复打印同一份存量台账只会变成噪音），CI 侧也没有对应执行点"
+    },
+    {
+      "endpoint": "script:scripts/gate/crap-check.mjs",
+      "class": "nightly-only",
+      "reason": "CRAP 热点判据的执行点是夜间 observe.yml 与 gate:full --with-coverage；PR 默认路径不跑覆盖率与 crap（#722 阶段五的既定口径）"
+    },
+    {
+      "endpoint": "script:scripts/gate/mutation-plan.mjs",
+      "class": "nightly-only",
+      "reason": "变异切片的计划段只在夜间 observe.yml 的 mutation-plan job 里跑；PR 上的切片计划由 ci.yml 的 changes job 直接产出，不走这个脚本"
+    },
+    {
+      "endpoint": "script:scripts/gate/observe-check.mjs",
+      "class": "nightly-only",
+      "reason": "夜间班次的收口汇总（变异记账入档）：它读的是本次 run 的产物，天然只属于 observe.yml"
+    },
+    {
+      "endpoint": "script:scripts/gate/overlay-baseline.mjs",
+      "class": "nightly-only",
+      "reason": "主干合入后的秒级差量覆盖基线：只在 baseline-overlay.yml（push 到 main）触发，与 PR 面无关"
+    }
+  ],
+  "structuredSteps": [
+    {
+      "step": "ci.yml|repo-gate|script:scripts/gate/contract-check.ts",
+      "digest": "e55ed9f5f78f87b8",
+      "reason": "产物闸的两种口径（默认命中切片 / gate:full 与夜间全仓）必须同时存在，形态只能是 if/else 分支——切片分支的 --packages 取值被 cutAtPackages 截掉，两个分支归一为同一判据身份，故「双形态都在」由 A9 单独守；本条目只登记它的步骤形态不是闭合单命令"
+    },
+    {
+      "step": "ci.yml|repo-gate|script:scripts/gate/pack-check.ts",
+      "digest": "136581fa73aaa398",
+      "reason": "同 contract：tarball 完整性闸的切片 / 全仓双形态，理由与守卫方式完全一致"
+    },
+    {
+      "step": "ci.yml|repo-gate|script:scripts/gate/verify-npm-layout.ts",
+      "digest": "d6825fa426b0b8fe",
+      "reason": "同 contract：npm 发布布局闸的切片 / 全仓双形态，理由与守卫方式完全一致"
+    },
+    {
+      "step": "ci.yml|mutation-gate|script:scripts/gate/orphan-baseline.mjs|restore",
+      "digest": "7eb4d1d1fea0443e",
+      "reason": "变异段增量基线的恢复与「命中包 test/** 变更即主动失效基线」的判定，#742 阶段 1.7 的既定设计：它必须与 set -e / 条件分支 / 通知输出同处一个步骤，拆开会让恢复动作与失效判定失去原子性"
+    },
+    {
+      "step": "ci.yml|mutation-verdict|script:scripts/gate/mutation-gate.mjs|$pkg",
+      "digest": "0078080c055d4a0c",
+      "reason": "变异判分必须逐切片包循环调用并在收尾 fail-closed（`[ \"$FAILED\" -eq 0 ] || { echo …; exit 1; }`）。循环与聚合判定同处一步是既定设计（#742 阶段 1）：拆开会让「某切片失败」与「整体判红」之间的因果在 workflow 层不可见"
+    },
+    {
+      "step": "observe.yml|mutation-collect|script:scripts/gate/observe-check.mjs|--body-file,--marker-file,--status-file,observe-body.md,observe-marker.txt,observe-status.json",
+      "digest": "f52069bd33ed96fd",
+      "reason": "夜间班次的收口步骤：`set -e` 后调用 observe-check 汇总变异记账（#718 S1.5）。`set -e` 在 GHA 默认 shell 下是冗余但显式的声明，保留它是为了让「这一步失败即整体失败」在文件里可读"
+    },
+    {
+      "step": "release.yml|publish|script:scripts/release/publish-if-missing.ts",
+      "digest": "def8074841154c35",
+      "reason": "发布链路的执行位藏在 while 循环的进程替换里（`done < <(node …)`）：先校验 NPM_TOKEN 缺失即中止，再逐个包 publish。拆开会让「凭据未配置就中止」与「实际发布」之间的顺序保证消失"
+    }
+  ],
+  "stepIfs": [
+    {
+      "step": "ci.yml|changes|script:scripts/ci/changed-test-packages.mjs",
+      "condition": "steps.base.outputs.base != ''",
+      "reason": "CI 切片的计算入口：base 为空（首次推送 / 强制推送）时没有比对基准，整条切片逻辑不成立；这一条一旦被改成恒假形态，下面所有按切片跑的判据都会静默停摆"
+    },
+    {
+      "step": "ci.yml|repo-gate|script:scripts/gate/threshold-monotonic.mjs|origin/main",
+      "condition": "github.event_name == 'pull_request'",
+      "reason": "阈值单调性的基准是 origin/main 的三点比，push 事件上语义不成立（本地 pr 档仍会跑它，故它在 PR 面内）"
+    },
+    {
+      "step": "observe.yml|mutation-collect|script:scripts/gate/observe-check.mjs|--body-file,--marker-file,--status-file,observe-body.md,observe-marker.txt,observe-status.json",
+      "condition": "steps.reports.outputs.count != '0'",
+      "reason": "分片结果数为 0（无变异段）时没有可汇总的账，收口步骤随之跳过；汇总读数取自上游 job 的输出，改条件即静默丢掉整本账"
+    },
+    {
+      "step": "observe.yml|mutation-collect|script:scripts/gate/orphan-baseline.mjs|archive",
+      "condition": "always() && steps.reports.outputs.count != '0'",
+      "reason": "孤立分支基线的归档与收口步骤同条件（有账才归档），且必须在各分片结果已知后恒跑（always）"
+    }
+  ],
+  "stepEnvs": [
+    {
+      "step": "baseline-overlay.yml|overlay|script:scripts/gate/overlay-baseline.mjs",
+      "keys": ["COMMIT_SHA", "GITHUB_TOKEN", "OBSERVE_PAT"]
+    },
+    {
+      "step": "ci.yml|changes|script:scripts/ci/changed-test-packages.mjs",
+      "keys": ["BASE"]
+    },
+    {
+      "step": "ci.yml|changes|script:scripts/ci/ci-matrix.mjs",
+      "keys": [
+        "BASE_SET",
+        "FILTER_OUTCOME",
+        "FILTER_OUTPUTS",
+        "GLOBAL_HIT",
+        "TEST_CHANGED_PACKAGES"
+      ]
+    },
+    {
+      "step": "ci.yml|mutation-gate|script:scripts/gate/orphan-baseline.mjs|restore",
+      "keys": ["INVALIDATE"]
+    },
+    {
+      "step": "ci.yml|mutation-verdict|script:scripts/gate/mutation-gate.mjs|$pkg",
+      "keys": ["SLICE"]
+    },
+    {
+      "step": "ci.yml|repo-gate|script:scripts/gate/contract-check.ts",
+      "keys": ["FULL_GATE", "HIT_PACKAGES"]
+    },
+    {
+      "step": "ci.yml|repo-gate|script:scripts/gate/pack-check.ts",
+      "keys": ["FULL_GATE", "HIT_PACKAGES"]
+    },
+    {
+      "step": "ci.yml|repo-gate|script:scripts/gate/repo-gate-assert.mjs",
+      "keys": [
+        "GATE_BUILD_TEST",
+        "GATE_CHANGES",
+        "GATE_COVERAGE",
+        "GATE_EVENT",
+        "GATE_FULL_REQUESTED",
+        "GATE_HAS_MUTATIONS",
+        "GATE_MUTATION",
+        "GATE_MUTATION_PKGS",
+        "GATE_VERDICT"
+      ]
+    },
+    {
+      "step": "ci.yml|repo-gate|script:scripts/gate/verify-npm-layout.ts",
+      "keys": ["FULL_GATE", "HIT_PACKAGES"]
+    },
+    {
+      "step": "health-report.yml|report|script:scripts/release/baseline-staleness.mjs|--issue-file,--status-file,baseline-staleness-issue.md,baseline-staleness.json",
+      "keys": ["GH_TOKEN"]
+    },
+    {
+      "step": "observe.yml|mutation-collect|script:scripts/gate/orphan-baseline.mjs|archive",
+      "keys": ["GITHUB_TOKEN", "OBSERVE_PAT"]
+    }
+  ],
+  "conditionInputs": [
+    {
+      "step": "ci.yml|changes|base",
+      "digest": "c82d977b493825ee",
+      "reason": "已登记条件 `steps.base.outputs.base != ''` 的操作数来自这一步的 output（`steps.base.outputs.*`）；登记它的文本摘要，等于把「条件成立与否的输入面」也钉住——把产出改掉（例如 COUNT=0）会让条件永不成立，而条件原文一字不动",
+      "inputsDigest": "55bf3873b7f8a5f0",
+      "producersDigest": "e3b0c44298fc1c14"
+    },
+    {
+      "step": "observe.yml|mutation-collect|reports",
+      "digest": "35a93e2912acfec9",
+      "reason": "已登记条件 `steps.reports.outputs.count != '0'` 的操作数来自这一步的 output（`steps.reports.outputs.*`）；登记它的文本摘要，等于把「条件成立与否的输入面」也钉住——把产出改掉（例如 COUNT=0）会让条件永不成立，而条件原文一字不动",
+      "inputsDigest": "597d2fa0b8f98c9a",
+      "producersDigest": "501d44030223b867"
+    }
+  ],
+  "jobIfs": [
+    {
+      "job": "ci.yml|coverage",
+      "condition": "github.event_name == 'pull_request' && needs.changes.outputs.fullGate == 'true' && needs.changes.outputs.hasMutations == 'true'",
+      "reason": "#742 阶段 1 起覆盖率只在打 gate:full 标签的 PR 上实例化，且必须与变异切片同步；非 PR 事件由 observe.yml 夜间班次承接"
+    },
+    {
+      "job": "ci.yml|mutation-gate",
+      "condition": "github.event_name == 'pull_request' && needs.changes.outputs.hasMutations == 'true'",
+      "reason": "PR 上按命中切片强制跑变异；非 PR 事件（push 到 main / tag）不重复跑，由夜间全量承接"
+    },
+    {
+      "job": "ci.yml|mutation-verdict",
+      "condition": "always() && needs.changes.outputs.hasMutations == 'true' && needs.mutation-gate.result != 'skipped'",
+      "reason": "聚合判分必须在切片 job 结果已知后恒跑（always），否则矩阵实例级失败会让判定表读不到结果；hasMutations 关掉无变异切片，mutation-gate.result != 'skipped' 关掉被上游连坐跳过的实例"
+    },
+    {
+      "job": "ci.yml|repo-gate",
+      "condition": "always()",
+      "reason": "本 job 是分支保护的 required check：上游任一 job 失败时它也必须执行，才能由判定表（repo-gate-assert.mjs）把「coverage 失败连坐」这类语义讲清楚，而不是被 GitHub 直接标成 skipped"
+    },
+    {
+      "job": "observe.yml|mutation-collect",
+      "condition": "always()",
+      "reason": "夜间收口 job 必须在各分片结果已知后恒跑（always），否则分片实例级失败会让汇总步骤读不到任何结果；它挂着 observe-check 汇总与孤立基线归档两条判据步骤"
+    }
+  ],
+  "judgmentAliases": [
+    {
+      "alias": "aggregate:check",
+      "endpoint": "script:scripts/gate/aggregate.ts|--check"
+    },
+    {
+      "alias": "contract",
+      "endpoint": "script:scripts/gate/contract-check.ts"
+    },
+    {
+      "alias": "docs:check",
+      "endpoint": "script:scripts/gate/verify-docs.ts|--strict-en"
+    },
+    {
+      "alias": "format:check",
+      "endpoint": "tool:prettier|--check,."
+    },
+    {
+      "alias": "gate:homedir",
+      "endpoint": "script:scripts/gate/forbid-homedir-src.mjs"
+    },
+    {
+      "alias": "gate:module-state",
+      "endpoint": "script:scripts/gate/forbid-module-state-src.mjs"
+    },
+    {
+      "alias": "lint",
+      "endpoint": "script:tools/lint/bin/lint.mjs"
+    },
+    {
+      "alias": "pack:check",
+      "endpoint": "script:scripts/gate/pack-check.ts"
+    },
+    {
+      "alias": "stryker:check",
+      "endpoint": "script:scripts/gate/gen-stryker-conf.mjs|--check"
+    },
+    {
+      "alias": "test:scripts",
+      "endpoint": "tool:node:test|--test,scripts/test/*.test.ts"
+    },
+    {
+      "alias": "test:src-tests",
+      "endpoint": "script:scripts/gate/forbid-src-tests.mjs"
+    },
+    {
+      "alias": "verify:coverage-scope",
+      "endpoint": "script:scripts/gate/verify-coverage-scope.mjs"
+    },
+    {
+      "alias": "verify:npmlayout",
+      "endpoint": "script:scripts/gate/verify-npm-layout.ts"
+    },
+    {
+      "alias": "verify:scripts-index",
+      "endpoint": "script:scripts/gate/verify-scripts-index.mjs"
+    },
+    {
+      "alias": "verify:vendored-binaries",
+      "endpoint": "script:scripts/gate/verify-vendored-binaries.mjs"
+    }
+  ],
+  "maxPriorRunSteps": 26,
+  "priorRunSteps": [
+    {
+      "step": "ci.yml|changes|Resolve diff base",
+      "digest": "ba76e5e68ef7ce86",
+      "envKeys": []
+    },
+    {
+      "step": "ci.yml|changes|Resolve full-gate switch（gate:full 标签 → 全量门禁）",
+      "digest": "c4eb142545e1b869",
+      "envKeys": ["LABELS"]
+    },
+    {
+      "step": "ci.yml|coverage|Install dependencies",
+      "digest": "f47b0f0b476ae11c",
+      "envKeys": []
+    },
+    {
+      "step": "ci.yml|mutation-gate|Build all packages（变异对象 lib 分段依赖全集一致的构建链）",
+      "digest": "be8d67ab86b44655",
+      "envKeys": []
+    },
+    {
+      "step": "ci.yml|mutation-gate|Install dependencies",
+      "digest": "f47b0f0b476ae11c",
+      "envKeys": []
+    },
+    {
+      "step": "ci.yml|mutation-gate|Resolve combo paths（#220 +",
+      "digest": "c181030033b9d02b",
+      "envKeys": ["MATRIX_PKG", "SEG"]
+    },
+    {
+      "step": "ci.yml|mutation-verdict|Restore report layout（多 artifact 下载各建子目录，平铺回 coverage/mutation/）",
+      "digest": "316b3a7127c53b52",
+      "envKeys": ["COMBOS"]
+    },
+    {
+      "step": "ci.yml|repo-gate|Build all packages（gate:full：全仓产物闸的前提）",
+      "digest": "bf2def35d1a8cd11",
+      "envKeys": []
+    },
+    {
+      "step": "ci.yml|repo-gate|Build script-test prerequisites（test:scripts 的编译面依赖）",
+      "digest": "486aa1eb7e919eed",
+      "envKeys": []
+    },
+    {
+      "step": "ci.yml|repo-gate|Install dependencies",
+      "digest": "f47b0f0b476ae11c",
+      "envKeys": []
+    },
+    {
+      "step": "ci.yml|repo-gate|Restore package outputs into package trees",
+      "digest": "e4f6e296f1c6bc3e",
+      "envKeys": ["ALL_PACKAGES", "FULL_GATE", "HIT_PACKAGES"]
+    },
+    {
+      "step": "health-report.yml|report|Install dependencies",
+      "digest": "f47b0f0b476ae11c",
+      "envKeys": []
+    },
+    {
+      "step": "observe.yml|mutation-collect|Restore report layout（多 artifact 下载各建子目录，平铺回 coverage/mutation/）",
+      "digest": "9fd19d3998632b01",
+      "envKeys": []
+    },
+    {
+      "step": "observe.yml|mutation-shards|Build all packages",
+      "digest": "be8d67ab86b44655",
+      "envKeys": []
+    },
+    {
+      "step": "observe.yml|mutation-shards|Install dependencies",
+      "digest": "f47b0f0b476ae11c",
+      "envKeys": []
+    },
+    {
+      "step": "observe.yml|quality|Build all",
+      "digest": "be8d67ab86b44655",
+      "envKeys": []
+    },
+    {
+      "step": "observe.yml|quality|Install dependencies",
+      "digest": "f47b0f0b476ae11c",
+      "envKeys": []
+    },
+    {
+      "step": "release.yml|publish|Build",
+      "digest": "be8d67ab86b44655",
+      "envKeys": []
+    },
+    {
+      "step": "release.yml|publish|Install dependencies",
+      "digest": "f47b0f0b476ae11c",
+      "envKeys": []
+    },
+    {
+      "step": "release.yml|publish|Tests",
+      "digest": "58d3e0022881dc86",
+      "envKeys": []
+    }
+  ],
+  "maxJobFaces": 16,
+  "jobFaces": [
+    {
+      "job": "baseline-overlay.yml|overlay",
+      "digest": "91f253f381bcbb53"
+    },
+    {
+      "job": "ci.yml|changes",
+      "digest": "fd62c6fb942dbd23"
+    },
+    {
+      "job": "ci.yml|coverage",
+      "digest": "022126454dfba391"
+    },
+    {
+      "job": "ci.yml|mutation-gate",
+      "digest": "69d16cebcfa35d03"
+    },
+    {
+      "job": "ci.yml|mutation-verdict",
+      "digest": "5264793c9ef3a5f1"
+    },
+    {
+      "job": "ci.yml|repo-gate",
+      "digest": "5f760aefe9fbe9bf"
+    },
+    {
+      "job": "health-report.yml|report",
+      "digest": "a461233c2d5d52ba"
+    },
+    {
+      "job": "observe.yml|mutation-collect",
+      "digest": "fcf8c3f9053f8706"
+    },
+    {
+      "job": "observe.yml|mutation-plan",
+      "digest": "b07c67efcb7088fe"
+    },
+    {
+      "job": "observe.yml|mutation-shards",
+      "digest": "456ad464e4a31041"
+    },
+    {
+      "job": "observe.yml|quality",
+      "digest": "4046a869de1d8e93"
+    },
+    {
+      "job": "release.yml|publish",
+      "digest": "033890a7cb246c7d"
+    }
+  ]
+}

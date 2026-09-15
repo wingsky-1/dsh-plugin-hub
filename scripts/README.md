@@ -21,25 +21,27 @@
 
 ## gate/（根 pnpm 门禁 + 聚合 patch）
 
-- `gate/contract-check.ts` — 客户端契约门禁（load id === 包名、`dsh.client ⇒ exports["./client"]` 等）。
+- `gate/contract-check.ts` — 客户端契约门禁（load id === 包名、`dsh.client ⇒ exports["./client"]` 等）。目录门面 / 导出面快照 / 跨包扇入三闸原先内嵌在本脚本以 `spawnSync` 执行，审计 P0-1 后迁成 ci.yml 与本地档位的直接步骤——内嵌形态下 workflow 与本地计划都看不到它们，「每条判据至少一个可见执行点」因此恒为假。
 - `gate/pack-check.ts` — tarball 完整性门禁（含聚合包、THIRD-PARTY-LICENSES 覆盖）。
 - `gate/verify-npm-layout.ts` — npm 发布布局校验。
 - `gate/verify-docs.ts` — 文档/description 校验（缺 .md、占位符残留）。相对链接面四档：
   包 README / 根 README.en / agent 规则文档（AGENTS.md、.dsh/skills/**、agents/**）/ docs 正文（#842）；
   另校验锚点可解析与文档里的 `pnpm <script>` 真实存在。
 - `gate/aggregate.ts` — 聚合 `cordis.patch.yml` 生成 + 一致性校验（`--check` 供 CI）。
-- `gate/crap-check.mjs` — 单函数 CRAP 复杂度检查（阈值唯一事实源 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict）。**现状为 fail-closed 停用态（#722 阶段三）**：其圈复杂度取自 lib 编译产物，而覆盖率已切 src 口径，两者行号不可比——入口自检不匹配即 exit 2，不再以「0 个函数」静默放行；src 口径重建归阶段 5（与 ESLint 复杂度规则同批）。
+- `gate/crap-check.mjs` — 单函数 CRAP 复杂度检查（阈值唯一事实源 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict）。**#722 阶段五已重建为 src 口径**（复杂度取 ESLint 内置 complexity 规则、覆盖率取 `coverage/coverage-final.json`），此前「复杂度取自 lib 产物、与 src 口径行号不可比 → 入口自检 exit 2」的停用态**已不成立**；`crap.strict=false` 是观察期语义（超阈热点只落盘不判红），数据源缺失或解析失败仍 fail-closed exit 2。执行点：夜间 `observe.yml` 与 `gate:full --with-coverage`。
 - `gate/forbid-src-tests.mjs` — #423 防双份回潮：扫 packages 下全部遗留 src 副本测试文件（含未跟踪），命中即 exit 1。
-- `gate/local-gate.mjs` — 本地/PR 门禁分层入口（`pnpm gate:changed` / `gate:pr` / `gate:full`，#726）：
+- `gate/local-gate.mjs` — 本地/PR 门禁分层入口（`pnpm gate:changed` / `gate:pr` / `gate:full`，#726）；
+  步骤表本体在 `gate/gate-steps.mjs`（无副作用纯函数，供接线断言直接 import）。`--dry-run --json` 输出结构化计划（人类可读输出不变），供 `test/gate-wiring.test.ts` 消费：
   按改动类型选闸：本地 pr / full 是全仓对象面，CI 在 PR 上默认走增量口径，打 `gate:full` 标签才补全仓产物闸；覆盖率另有前置——该 PR 须命中变异切片（`ci.yml` 的 coverage job 要求 `fullGate` 与 `hasMutations` 同时为真）。变异自 #742 起在 PR 上按命中切片强制跑（与标签无关）。
 - `gate/gen-stryker-conf.mjs` — 变异配置生成/校验：派生 `vitest.stryker.d/<pkg>.config.ts` 并同步各包 `--min`（`--check` 供门禁，`--sync-test-min` 改 `--min`）。
 - `gate/test-surface.mjs` / `gate/mutation-topology.mjs` — 测试分层与变异面登记校验（唯一事实源 `data/mutation-topology.json`）。
-- `gate/threshold-monotonic.mjs` — 阈值单调性校验（对比 `origin/main`，只许升不许降）：守护 `vitest.config.ts` 的 `coverage.thresholds`（#722 阶段三起的覆盖率唯一事实源）与 `gauntlet.config.json` 的变异阈值。
+- `gate/threshold-monotonic.mjs` — 阈值单调性校验（对比 `origin/main`，只许升不许降）：守护 `data/coverage.config.json` 的 `thresholds`（#733 计划项 3.4 起的覆盖率面**唯一事实源**；`vitest.config.ts` 只 import 它，内联字面量会被 `verify:coverage-scope` 判红）与 `gauntlet.config.json` 的变异阈值。
 - `gate/mutation-ledger.mjs` — 变异段实测台账（#718 S0.2）：从 Actions run 日志解析逐段 `wallSeconds`（真实执行时间，区别于会被增量班刷新的文件 mtime）与复用率/杀灭分布；`--check` 离线校验覆盖不变量（测量值 ∪ `unmeasured` == 当前 `stryker.conf.d` 段集合，消失的历史段须在 `superseded` 登记取代关系），由 `test:scripts` 调用。生成模式需 gh 与网络，故定位为维护者工具、不进 CI（进 CI 需改 `.github/`，属红线段）。
 - `gate/mutation-plan.mjs` — 夜间变异矩阵的段清单与逐段超时派生（#718 S1.1/S1.4）：段清单 glob `stryker.conf.d/dsh-*.json`（与 ci-matrix / mutation-gate 同源），超时按 `mutation-segment-ledger.json` 里该段 `scope=full` 的实测墙钟 × 1.5 + 构建开销派生、下限 30 分钟，无实测的段取保守默认；输出按**估计耗时降序**排列的 matrix JSON（长段先跑 = LPT：GHA 以 `max-parallel` 个槽位按声明顺序消费，实测同一份台账下字典序 makespan 52.9 min 对降序 41.6 min，下界 41.4）供 `observe.yml` 的动态矩阵消费（GHA 矩阵只能引用 needs output、不能读工作区文件，故单列一个秒级 plan job）。
 - `gate/verify-dir-imports.mjs` — 目录 `interface.ts` 门面静态检查 + 依赖图尺子（#664 D10 / #670 C2 / #690 S0）：跨模块引用只许走目标模块的 `interface.ts`，单调基线（`data/dir-imports-baseline.json`）存**证据集合**，放宽须登记到 `data/gate-exemptions.json`（gate=`verify-dir-imports`，path=`<包名>:<证据项>`，与另两闸同一套台账）；变异拓扑 `data/mutation-topology.json` 缺失 / 解析失败 / 内容非对象一律 fail-closed（#773 R3），`--write-baseline` 同样中止。
 - `gate/export-surface-snapshot.mjs` — 包导出面快照门禁（#669 M6）：`tsc --declaration` 产物与入库基线零 diff（符号集 + 导出符号定义块），必须显式 `--package`，基线更新须 `--snapshot` 并随 PR 提交。
 - `gate/local-scope.mjs` — 「这次改了什么 → 本地该跑哪些包」的纯函数（#722 门禁分层）：包面只从 `ci.yml` 的 filters 解析，不在本地重述路径规则；全局面命中即把 `gate:changed` 升到 pr。
+- `gate/gate-steps.mjs` — 「档位 → 步骤表」的纯函数单一来源（审计 P0-1）：从 `local-gate.mjs` 抽出，使接线断言能直接 import 计划而不必解析 `--dry-run` 的人类可读输出（后者会被标签措辞、箭头形态、别名与直调的等价改写误红）。
 - `gate/repo-gate-assert.mjs` — repo-gate 聚合闸的 fail-closed 判定（#187 收敛 / #217 解耦）：上游任一 job 非 success 即红，判定逻辑收敛为纯函数（原先内联在 workflow 的 bash）。
 - `gate/observe-check.mjs` — 夜间观察报告的阈值校验与回落检测（#85 v3 F1/F6）：产出报告正文 + 三态状态文件（`--status-file`，供通知步骤判「判分完成 / 判分违约 / 脚本崩了」，#733 G1）。
 - `gate/mutation-gate.mjs` — PR 增量变异率判分（#178 v2；#217 起由 `mutation-verdict` job 在 artifact 汇合后统一调用），统计口径与夜间班共用 `lib/mutation-report-lib.mjs`。
@@ -56,7 +58,7 @@
 - `gate/verify-coverage-scope.mjs` — 覆盖率面判据（#733 计划项 3.4）：`vitest.config.ts` 不得内联 `include`/`exclude`/`thresholds`；exclude 条目须带 `reason` 与 `kind`（`reviewBy`/`exitCriteria` 只允许 `pending-project`）；物理枚举的每个源文件必须落在 include 或某条 exclude 里（未分类即红）；模式命中 0 文件即红；产物 keys ⊆ include 面（产物比配置新时才执行）。
 
 - `gate/verify-vendored-binaries.mjs` — 发布物面内 vendored 裸二进制判据（批 2b，来源 #784 遗留 D 项）：扫描面 = 各包 `package.json` 的 `files` 白名单（含 `!` 否定条目）∪ npm 无论 `files` 都强制包含的位置（`package.json`、根级 `README*`/`LICENSE*`/`CHANGELOG*`/`NOTICE*`、`bin`、`main`、`bundledDependencies` 展开出的包内 `node_modules` 子树）；判据轴是「会不会随发布物分发」，不是「文件是不是二进制」，故 `docs/` 下的 PNG 不算、`test/fixtures/*.bin` 只在被 `files` 包含时才算。**判据面是源码树（随包分发的源文件）**：未构建的工作副本扫描面会变小，构建产物由 `pack:check` 的 tarball 断言覆盖。面内的内容嗅探命中（头 8 KiB + 尾 1 KiB 双段采样）必须已在 `data/vendored-binaries.json` 登记且 sha256 一致；`kind: "vendored"`（缺省）另要求许可文本存在、非空且**同样在发布物面内**，`kind: "first-party"`（本仓自有资产）只要求哈希绑定。双向 fail-closed：未登记即红（问题文案直接带 sha256，便于登记），登记项消失/哈希漂移/内容已非二进制/登记表不可读（exit 2）也红——防「登记表腐坏后判据静默失效」；`files` 声明了但磁盘上不存在的条目与面内非普通文件（软链目录）只以 `NOTE` 报告，不判红。
-- `gate/verify-shared-fanin.mjs` — 仓库根 shared/ 的跨包扇入判据（#792 跨包档收口，把 shared/README.md 准入规则 1 从文档变成判据）：扫 `packages/<pkg>/src` 的**直接**相对 import（生产口径，test/** 不计入消费者）得「shared 模块 → 消费包集合」；值面模块 < 2 包判红、类型面模块（只有 .d.ts）单列（≥ 1 包）、退役不豁免下限（标 DEPRECATED 仍按同一下限判，见 shared/README.md 准入规则 7）、悬空引用判红。执行点在 contract-check，README 不再维护人肉消费方快照；同一输出即消费方的实时派生来源。
+- `gate/verify-shared-fanin.mjs` — 仓库根 shared/ 的跨包扇入判据（#792 跨包档收口，把 shared/README.md 准入规则 1 从文档变成判据）：扫 `packages/<pkg>/src` 的**直接**相对 import（生产口径，test/** 不计入消费者）得「shared 模块 → 消费包集合」；值面模块 < 2 包判红、类型面模块（只有 .d.ts）单列（≥ 1 包）、退役不豁免下限（标 DEPRECATED 仍按同一下限判，见 shared/README.md 准入规则 7）、悬空引用判红。执行点是 ci.yml 的 `Verify shared fan-in` 直接步骤与本地档位的 cheapGlobal（审计 P0-1 从 contract-check 迁出），README 不再维护人肉消费方快照；同一输出即消费方的实时派生来源。
 
 ## maintenance/（一次性维护脚本，按需手工执行）
 
@@ -77,6 +79,8 @@
 - `lib/surface-extract-lib.ts` — 包导出面提取与入口归属（单一实现，供 `gate/export-surface-snapshot.mjs` 与 pack-check 断言共用）。
 - `lib/mutation-report-lib.mjs` — Stryker JSON 报告统计的单一事实源（covered 口径）：observe 夜间报告与 PR 增量门禁共用，防两处口径漂移。
 - `lib/package-scope.ts` — 产物闸（contract / pack-check / verify-npmlayout）的包级切片参数解析（#722 门禁分层）。
+- `lib/gate-endpoints.mjs` — 判据接线的解析层（审计 P0-1）：把一条命令行归一为「被执行的脚本身份」（`pnpm <别名>` → 查 `package.json` 展开 → 取脚本路径，再附**判据面摘要** = `--package` 取值 + `--packages` 之前的全部 token——后者的取值是 shell 替换，且「CI 切片 / 本地全仓」是真实口径差异，由 A9 的形态断言单独守；因此 `--soft`、`--test-name-pattern` 这类改变判据面或判红语义的开关都会改变身份）。`env` / `command` / `builtin` 前缀与 `cd <dir> &&` 载体不改变身份；注释剥离与续行判定**引号感知**：引号内的 `#` 不是注释（`$'…'` 与反引号也按 bash 语义建模，`$'a\' #'` 里的 `\'` 不是闭合引号，`\ #` 里被转义的空白之后 `#` 仍是字面量；`{` `}` 不是 bash 元字符，`{#` 里的 `#` 也是字面量）；续行按 bash 语义拼接（删掉反斜杠 + 换行，不额外插空格）。`--packages` 的**取值**不进身份，但它之后的 token 照旧进（否则悬空 token 会被吃掉）。workflow 与 lefthook 的 YAML **交给成熟的 `yaml` 包解析**（devDependency，不再是逐行正则：键的引号 / 空格变体、块标量与折叠标量、flow 写法、重复键都由解析器按 YAML 语义处理；解析错误、白名单之外的步骤键、非字符串 `run`、非映射的 `env` 都由 `parseIssues` 报出来判红）。在此之上再做三类「执行位藏在别处」的形态识别：shell 控制关键字之后（`if node …`）、命令内部（进程替换 `done < <(node …)`）、恒假分支的行级剔除。别名与直调归一到同一身份，是「CI ↔ 本地」双向比对能成立的前提。
+- `lib/gate-wiring-lib.ts` — 判据接线的**判定层**（审计 P0-1）：接线断言的说服力所在（「怎样才算同一个判据」「什么条件算恒假」「一条 import 算不算有人依赖」）。逻辑都在库里并由 `test/gate-wiring-lib.test.ts` 独立单测钉住，`test/gate-wiring.test.ts` 只负责把库接到真实仓库上（读哪些文件、跑哪几档）；凡需要「当前这个仓库」才有意义的量（执行点全集、判据全集、可达库闭包）一律以参数注入，故本库不 import 任何仓库状态。
 - `lib/rewrite-dts-paths.ts` — bundle-host d.ts X1 2a 段「shared 相对引用改写」共享库（issue #478）。
 - `lib/walk-files.ts` — 递归收集目录下满足谓词的文件（构建复制 d.ts X1 2b 段与 pack-check 随包断言共用同一遍历）。
 - `lib/vendored-binaries-lib.mjs` — 发布物面判定 + 内容嗅探 + 登记表校验（批 2b）：发布物面 = 各包 `package.json` 的 `files` 白名单 ∪ npm 强制包含集（不维护硬编码排除表），供 `gate/verify-vendored-binaries.mjs`、`build/collect-licenses.ts`、`gate/pack-check.ts` 三处共用同一套判据。
@@ -103,6 +107,7 @@
 - `test/mutation-plan.test.ts` — 变异矩阵段清单与超时派生自测（#718 S1.1/S1.4：段清单口径同源、超时只用 `scope=full` 实测、公式与下限不被放宽、无实测落保守默认）。
 - `test/pack-check-scope.test.ts` — pack-check 聚合段切片口径自测（#722/#751：增量切片下不得对未构建的聚合包假红；全仓口径必须仍执行该段，缺产物 fail-loud 且 exit 与判定自洽；切片用例取 `script-test-prereqs.mjs` 的 PREREQ 包——取清单外的包会把假红从 pack:check 搬进 test:scripts）。
 - `test/verify-shared-fanin.test.ts` — 跨包扇入门禁自测（#792）：说明符提取口径、fixture 正反例（值面 2/1/0 包、类型面下限、标 DEPRECATED 仍判红、悬空引用、test/ 引用不计入、端内门面转出计入、shared 内部依赖不传递）、真实仓库锚与登记链断言。
+- `test/gate-wiring.test.ts` — 门禁接线断言（审计 P0-1），四族缺一不可（判定逻辑在 `lib/gate-wiring-lib.ts`，另有 `test/gate-wiring-lib.test.ts` 独立单测）。**一致性**：把 `ci.yml` 的 repo-gate 与本地 pr/full 档位计划归一到端点身份后**双向比对**，覆盖「判据脱离任一端」「args 被换」「步骤被 `if`/`continue-on-error` 静默关掉」「例外台账悬空或未分类」「判据被别的脚本子进程执行而无可见执行点」。**覆盖性**：`scripts/gate` 的判据全集 ↔「全部 workflow × 全部 job ∪ 本地档位 ∪ lefthook」的执行点全集，未覆盖且不被**会跑的**判据可达地 import 者必须显式登记——一致性只是相对不变量，两侧同时删掉同一执行点后仍然相等，只有这条绝对不变量拦得住。**形态性**（扫描面 = 全部 workflow × 全部 job）：判据步骤只允许一条直接的判据命令（`exit "0"` 前置 / `if [ ]; then` 包装 / `X=1 set +e` 一律失效，不依赖枚举），设计如此的例外逐条登记、再用**文本摘要** `digest` 钉死（否则往循环里插一行 `break` / `continue` 就能让剩下的判据不再执行，而步骤键与执行点全不变）；判据步骤的步骤级 `if`（`stepIfs`）与含判据的 job 的 job 级 `if`（`jobIfs`）逐字登记（扫描面都是全部 workflow，条件被改一个字即判红）；判据别名的**指向**逐条登记（两侧身份同源派生，改指向没人发现）；步骤 `shell:` 覆盖（含 workflow / job 级 `defaults.run.shell`）按模板判——内建关键字放行，自定义模板必须取 basename 后属 bash 家族、把 `{0}` 交给解释器且自带 errexit（`/bin/bash +e {0}`、`/bin/bash -c 'exit 0' {0}` 都判红）；判据步骤的 `#` 也 fail-closed（未登记的判据命令里出现 `#` 即红：注释起点与 bash 的判定不可能完全对齐）；判据步骤另不得带 `continue-on-error`、不得注入能改变执行环境的变量（`BASH_ENV` / `SHELLOPTS` / `NODE_OPTIONS` / `PATH` / `LD_PRELOAD` / …）、命令引号必须配对（都不设登记出口）；判据步骤的**有效 env 键**（workflow ∪ job ∪ 步骤三层）逐键登记在 `stepEnvs`；判据 job 的**环境面**按位置整条登记（不按字样找出口——硬编码 `_runner_file_commands` 路径、`printenv` 拼名、`node -e` 读环境都能绕开名字匹配）：判据步骤之前的每个非判据 run 步骤进 `priorRunSteps`（键 + **整步**摘要 + env 键，含 `if` / `shell` / `working-directory`），该 job 的**执行面**（前序步骤**有序**序列 + 全部 `uses:` 步骤整步文本 + job 级 `container` / `defaults`）进 `jobFaces`——action 里是任意代码，同样能写 `$GITHUB_ENV`；一处 `if: false` 也能让产物上传静默不跑；`container.env` 与 `defaults.run.working-directory` 都是换掉整 job 执行环境的 job 级键；判据步骤自己声明 `working-directory` 则是硬红；已登记条件里 `steps.<id>.outputs.<name>` 的**产出步骤及其输入步骤**（同 job 的 `uses` 整步面）逐条登记在 `conditionInputs`（条件原文没变：改产出、改它的 `uses` / `with` / `if`、或改另一个 job 的 `upload-artifact` 名都能让条件永不成立，三处都钉住）；本地 pr 档必须覆盖 full 档全部判据；判据不得内嵌进另一个判据的执行点。**PR 面覆盖（A14）**：执行点全部落在非 PR 面（CI 侧 = ci.yml 里**未**按 `gate:full` 标签收口的 job，本地侧 = **pr** 档）的判据必须登记 `nightly-only` 或 `tier-only`，「这个判据的回归 PR 上拦不住」是一份显式清单。含载体自证（`pnpm test:scripts` 自身有执行点；A13 钉住「工作流文件集合」与文件级解析，解析面失效时不许空转全绿；恒假的 job / 步骤不算执行点，decoy 顶替不了被删掉的判据）。例外与八张形态登记表都在 `data/gate-wiring-exceptions.json`。
 - `test/script-test-prereqs.mjs` — `test:scripts` 里依赖**编译产物**的用例前置包清单（#722）：CI（repo-gate 构建步骤）与本地门禁（`gate/local-gate.mjs`）同源读取，避免「少建一个包 → 门禁假红」。
 - `test/mutation-probe.mjs` — 变异度量可信度探针（#722）：变异得分依赖测试运行器的覆盖分辨率，本探针用实测说明该依赖的边界。
 
@@ -110,10 +115,11 @@
 
 - `data/plugins-manifest.json` — 插件清单（某插件是否参与聚合/发布校验的唯一声明处）。
 - `data/mutation-segment-ledger.json` — 变异段实测台账（#718 S0.2）：逐段 `wallSeconds` + mutant 数 + 复用率，由 `gate/mutation-ledger.mjs` 从 run 日志生成；`unmeasured` 登记尚无测量值的段，`superseded` 登记被拆分/更名的历史段。
-- `data/gauntlet.config.json` — 变异 / CRAP / ESLint 复杂度阈值唯一事实源（覆盖率阈值自 #722 阶段三起改由 `vitest.config.ts` 的 `coverage.thresholds` 承载；`complexity` 段自 #722 阶段五起供 `tools/lint` 消费）。
+- `data/gauntlet.config.json` — 变异 / CRAP / ESLint 复杂度阈值唯一事实源（覆盖率阈值自 #733 计划项 3.4 起在 `data/coverage.config.json`；`complexity` 段自 #722 阶段五起供 `tools/lint` 消费）。
 - `data/mutation-topology.json` — 测试分层与变异面登记的单一事实源（#690 S2b / #713 T1-T3）：runner 层 = `test/**/*.test.ts` 全集，变异面按段登记。
 - `data/dir-imports-baseline.json` — 目录导入门禁的单调基线（#690 / #733 A）：结构型计数由 `--write-baseline` 登记，`quality` 段存质量型**证据集合**（边 `from|to|kind`、环签名、未覆盖源文件）。
 - `data/gate-exemptions.json` — 路径受限门禁的豁免台账（#733 计划项 3.1.2 / 3.2.2）：文件级条目 + 可选 `reviewBy`（**有** = 临时、自动进到期台账；**无** = 长期设计事实）；机制实现见 `lib/exemption-gate.ts`。
+- `data/gate-wiring-exceptions.json` — 门禁接线断言的例外台账（审计 P0-1）：`{endpoint, class, reason, via?}`，`class` ∈ infra / ci-only / tier-only / nightly-only / indirect；同文件另承载八张**形态**登记表 `structuredSteps`（判据步骤的闭合形态例外，含文本摘要 `digest`）、`stepIfs`（判据步骤的步骤级 if）、`stepEnvs`（判据步骤的有效 env 键）、`priorRunSteps`（判据 job 里判据之前的前序 run 步骤，按**位置**取闭合集合）、`jobFaces`（该 job 的执行面：前序步骤有序序列 + 全部 `uses:` 步骤整步文本 + job 级 `container` / `defaults`）、`conditionInputs`（登记条件的操作数来源及其输入面）、`jobIfs`（含判据 job 的 job 级 if，键 `<workflow>|<job>`）与 `judgmentAliases`（判据别名的指向）。两侧归一到端点身份后本应相等，只有**设计如此**的不对称在此显式登记；断言侧对该文件有悬空、class 方向相符、script 例外指向的脚本存在、总量上限（另钉一个测试内硬顶，防「只改数据即放宽」）、indirect 的 `via` 必须真的能到达（`via: package.json` 还要求该别名在仓库里确有出处）、indirect 必须真的没有执行点等守卫，防止它自己腐烂成第二个事实源，也防止它被当成消红工具。
 - `data/gate-scope-registry.json` — 路径受限门禁的扫描范围登记（#733 计划项 3.2.1）：`scopeFrom` 三值（registry / cli / tree）+ `packages`；**未登记即红**（运行时与自测两处执行）。
 - `data/vendored-binaries.json` — 发布物面内 vendored 裸二进制登记表（批 2b，`{path, sha256, kind?, license?, source?, licenseFile?}`；`kind` 缺省 `vendored`，`first-party` 只要求 `path`+`sha256`）：判据与接线见 `gate/verify-vendored-binaries.mjs`；`vendored` 条的许可文本由 `build/collect-licenses.ts` 并入随包的 `lib/THIRD-PARTY-LICENSES`，再由 `gate/pack-check.ts` 对最终 tarball 断言覆盖（第一方资产不进第三方许可段）。**今天为空**，它是为将来上的锁——这里不写死命中数：扫描面随各包 `files` 白名单与工作副本是否构建而漂移，写下来的数字会过期。
 - `data/dsh-lan-proxy-ui-exempt.json` — lan-proxy 客户端 UI 豁免表（#733 计划项 3.2.2）：哪些配置键有值但 GUI 不渲染，逐键给原因；条目数上限是**策略**，留在门禁代码里。

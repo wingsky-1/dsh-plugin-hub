@@ -42,7 +42,7 @@ provider-usage **400s**（n=49，频率与耗时双高）、lan-proxy 204s、mcp
 | 8 | **方案 A：mutate 直指 src（#276）** | **已落地** | 见 §3.1 详细实测 | 依赖全仓 `.ts` 后缀相对 import + Node strip-types 加载插桩 src；开销与对策见 §4.8 |
 | 9 | Node compile cache（#276 配套） | 已落地（bridge 注入） | src 级全量 420s → 250s（-41%），判分分布不变 | Node ≥24.12 `module.enableCompileCache()`；失败的进程静默降级（try/catch 包裹） |
 | 10 | 大文件拆分（src 级分段前置） | 已落地 | mcp-manager index 1237→147 / middleware 1046→511 / provider-usage index 1122→73 / lan-proxy index 991→59（行数为拆分时点快照） | 分段粒度下限是整文件；拆文件让密度均匀、段可细切。维护收益 + CRAP 模块精度 |
-| 11 | src 级两级分段（文件组声明） | 已落地 | mcp-manager×6 / provider-usage×12 / notifier×9 / lan-proxy×4 / web-file-preview×1 = **32 段**（2026-09-13 实况；#342 二期时为 6/6/4/4），增量命中时单段 wall ≤~120s（全量段墙钟见 §3 手段 13 与台账） | 段 = 源文件名清单（非行号），永不漂移，无 sync/guard 开销 |
+| 11 | src 级两级分段（文件组声明） | 已落地 | mcp-manager×6 / provider-usage×12 / notifier×9 / lan-proxy×4 = **31 段**（2026-09-15 实况；#840 退役 web-file-preview 后由 32 段降为 31；#342 二期时为 6/6/4/4），增量命中时单段 wall ≤~120s（全量段墙钟见 §3 手段 13 与台账） | 段 = 源文件名清单（非行号），永不漂移，无 sync/guard 开销 |
 | 12 | 四班次调度 + 快照 PR 日期闸（#276 配套） | 已落地 | 基线快照 PR 有界（≤4/日，实际随当日合入） | observe.yml cron UTC 01/04/08/12（北京 09/12/16/20）；push 触发移除；snapshot PR 每日最多一次 |
 | 13 | concurrency 定标复测（4 / 8 / 16，2026-09-13） | 决策：**维持 16**（口径与限制见 §3.3） | `trend-collect`(670) **1138 / 831 / 840 s**；`contracts`(524) **444 / 285 / 217 s**；`errsurf`(38，n=2) 两轮值见 §3.3；**dry run 12 次全 10–12 s，与 concurrency 无关** | 本地 8 vCPU（2x 过订阅）**不等于** CI 4 vCPU（4x）；**只测了墙钟**，§4.3 三项核对未做；超时口径、噪声边界与 flake 关系见 §3.3 |
 
@@ -119,7 +119,7 @@ dry run 在 12 次运行中全为 **10–12 s**，与 `concurrency` 无关（dry
 
 按变异面测试文件的资源形态分三级：
 
-- **可直升 16**：纯 unit、无端口绑定、无全局单例、非 CPU 密集（如 web-file-preview）；
+- **可直升 16**：纯 unit、无端口绑定、无全局单例、非 CPU 密集（原实例 web-file-preview 已随 #840 退役，判据仍适用于同类纯 unit 包）；
 - **先 8 观察**：CPU 密集为主但无共享资源冲突（如 provider-usage——apiEndpoint 用 discard 端口、socket 为 mock 字面量）；达标后再升。注：该包现为 16（§3 手段 2 / 13），大段 `contracts`(524) 实测 8→16 快 31%；但 §4.3 的三项核对在 16 档下从未补做，#223 曾在 8 档记录 `covered 64.76% < 基线 67.28%` + 13 errors 并回滚——重提并发前先按 §4.3 复核；
 - **维持低并发**：变异面存在真实固定端口监听或固定端口 smoke 文件。本档当前**无在册示例**——lan-proxy 因 #690 S2c / #713 T5 的端口动态分配化已不再适用（见 §3 手段 4），idle-archive 已退役（#397）。新增此类变异面前先判本条。
 

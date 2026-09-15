@@ -10,9 +10,9 @@
  *     文件必须真实存在。实证缺陷：`./client` 的 types 写成 `./lib/client.d.ts`，而实际
  *     产出是 `lib/client/index.d.ts` —— 严格 TS 消费方按包名子路径导入时静默降级为
  *     `any`（TS7016），而 pack-check / contract-check 都看不见（后者只断言
- *     `exports['./client']` 键存在）。**该缺陷实测存在于全部 5 个有客户端的包**
- *     （dsh-notifier / dsh-lan-proxy / dsh-mcp-manager / dsh-provider-usage /
- *     dsh-web-file-preview），故判据面对全部包生效、不留切片。
+ *     `exports['./client']` 键存在）。**该缺陷实测存在于全部 4 个有客户端的包**
+ *     （dsh-notifier / dsh-lan-proxy / dsh-mcp-manager / dsh-provider-usage；
+ *     #840 退役的 dsh-web-file-preview 为当时第 5 个实例），故判据面对全部包生效、不留切片。
  *  2. export-surface-snapshot：**tsc emit 产物**内的入口归属，用同一映射把子路径挂到
  *     对应 `.d.ts` 上（门禁自跑 `tsc --declaration`，与是否已 build 无关）。
  */

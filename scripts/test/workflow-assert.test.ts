@@ -97,11 +97,11 @@ test("ci.yml: repo-gate if always() 且 fail-closed 断言经判定脚本执行"
   const gate = CI.slice(CI.indexOf("\n  repo-gate:"));
   assert.ok(/if: always\(\)/.test(gate), "repo-gate 必须 always() 运行（上游失败时仍执行判红）");
   assert.ok(/Fail-closed gate assertion/.test(gate), "fail-closed 断言步骤在位");
-  // #187：内联 bash 收敛为可单测的判定脚本，env 三维注入（事件 × 切片 × 结果）
-  assert.ok(
-    gate.includes("run: node scripts/gate/repo-gate-assert.mjs"),
-    "repo-gate fail-closed 判定必须调用 scripts/gate/repo-gate-assert.mjs",
-  );
+  // #187：内联 bash 收敛为可单测的判定脚本，env 三维注入（事件 × 切片 × 结果）。
+  // run 行的接线不在这里：includes 不剥注释，把 run 行注释掉它照样为真。那条事实改由
+  // scripts/test/gate-wiring.test.ts 承担——repo-gate-assert 在例外台账里登记为 ci-only，
+  // 而台账的 class 方向校验要求「标 ci-only 的端点必须真的只出现在 CI」。
+  assert.ok(gate.includes("Fail-closed gate assertion"), "repo-gate fail-closed 判定步骤必须在位");
   for (const env of [
     "GATE_EVENT",
     "GATE_CHANGES",
@@ -729,10 +729,9 @@ test("#423+#722: 变异测试单份维护——禁 *.src.test.ts 回潮 + 变异
     CI.includes("Forbid legacy src tests"),
     "ci.yml repo-gate 必须含 Forbid legacy src tests 步骤（#423 防双份回潮）",
   );
-  assert.ok(
-    CI.includes("run: node scripts/gate/forbid-src-tests.mjs"),
-    "Forbid legacy src tests 必须调用 scripts/gate/forbid-src-tests.mjs",
-  );
+  // run 行的接线断言已迁入 scripts/test/gate-wiring.test.ts：那里剥掉注释行后做「本地档位
+  // 计划 ↔ CI repo-gate」的端点双向比对，比这里的 includes 强——把 run 行注释掉时 includes
+  // 仍为真，只有端点比对会红。并存会在同一情形给出红绿两种结论，故只留一处。
   assert.ok(
     existsSync(join(ROOT, "scripts/gate/forbid-src-tests.mjs")),
     "forbid-src-tests.mjs 脚本必须存在",
@@ -815,10 +814,7 @@ test("#517 B5: ci.yml homedir 门禁——Forbid homedir 步骤存在并调 forb
     CI.includes("Forbid homedir in src"),
     "ci.yml repo-gate 必须含 Forbid homedir in src 步骤（#517 B5 防回归）",
   );
-  assert.ok(
-    CI.includes("run: node scripts/gate/forbid-homedir-src.mjs"),
-    "Forbid homedir in src 必须调用 scripts/gate/forbid-homedir-src.mjs",
-  );
+  // 同上：run 行的接线断言归 scripts/test/gate-wiring.test.ts（剥注释 + 端点双向比对）。
   assert.ok(
     existsSync(join(ROOT, "scripts/gate/forbid-homedir-src.mjs")),
     "forbid-homedir-src.mjs 脚本必须存在",
@@ -1702,11 +1698,9 @@ test("#217+#722: repo-gate 六维聚合 needs + 判定脚本 env 全维注入", 
     CI.includes("fullGate: ${{ steps.fullgate.outputs.fullGate }}"),
     "changes outputs 必须声明并透传 fullGate（单一策略来源）",
   );
-  // #722：变异段默认不在 PR 上跑，conf ↔ 拓扑漂移必须仍能在增量路径被拦住
-  assert.ok(
-    rg.includes("run: pnpm stryker:check"),
-    "repo-gate 组 A 必须含 stryker:check（增量路径下 conf↔拓扑漂移的唯一拦截点）",
-  );
+  // #722：变异段默认不在 PR 上跑，conf ↔ 拓扑漂移必须仍能在增量路径被拦住。
+  // run 行的接线归 scripts/test/gate-wiring.test.ts（剥注释 + 端点双向比对）；这里的
+  // includes 不剥注释，注释掉 run 行仍为真，属本次迁移要消灭的弱钉形态。
   // 判定表实现侧同维锁定（env ↔ evaluateGate 输入一一对应）
 });
 

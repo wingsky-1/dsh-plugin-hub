@@ -13,7 +13,8 @@
  *
  * 被测对象为 src/client/core.ts 真实源码：lib/client/*.js 由 bundle-host 按
  * 发布物边界清理（仅留顶层 index.js/client.js 与 .d.ts），故沿用 web-file-preview
- * 先例——用仓库 devDependency esbuild 把源码即时打成内存 ESM、经 data-URI 导入。
+ * 先例（该包已随 #840 退役，做法仍沿用）——用仓库 devDependency esbuild 把源码即时
+ * 打成内存 ESM、经 data-URI 导入。
  * 无网络、无真实凭据、无 DOM。
  *
  * 结构：每个主题块一个 describe，每条断言一个 it；交错块在 beforeAll 内保留原动作

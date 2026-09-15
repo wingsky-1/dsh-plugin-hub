@@ -10,8 +10,9 @@
  * 条件：**包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面**。
  *
  * 同源（§9 禁止双轨）：符号集来自 export-surface-snapshot.mjs 的同一次
- * `emitDeclarations()` 产物，不另起第二套抽取；执法点也在同一个脚本、同一条既有 CI
- * 步骤（contract-check spawn 的 export-surface-snapshot），不新增 workflow。
+ * `emitDeclarations()` 产物，不另起第二套抽取；执法点就在同一个脚本的同一个执行点上——
+ * 该执行点审计 P0-1 后从 contract-check 的 spawnSync 迁成 ci.yml 的 `Export surface
+ * snapshot` 直接步骤与本地档位计划的 cheapGlobal（可见性由 gate-wiring 断言守护）。
  *
  * 存量口径：`legacy` 是 M2a 时点的 100 个存量符号白名单——存量分类（保留 / 移除清单）
  * 是 M2b 的一等交付物，本阶段不预判、不抢跑。新增符号**没有** legacy 通道：只能进

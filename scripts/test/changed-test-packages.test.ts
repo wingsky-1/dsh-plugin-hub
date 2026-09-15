@@ -60,14 +60,13 @@ test("#742 1.7: packagesToInvalidate 覆盖 test/** 之外的测试面输入（�
   assert.deepEqual(packagesToInvalidate(["packages/dsh-notifier/test/a.test.ts"], reg), [
     "dsh-notifier",
   ]);
-  // 共享测试库：5 个包都在用（其中只有 notifier 在变异面内，其余 4 个是 e2e/client 层——
+  // 共享测试库：4 个包都在用（其中只有 notifier 在变异面内，其余 3 个是 e2e/client 层——
   // 按整包失效是有意的过宽，漏跑的代价更大）
   assert.deepEqual(packagesToInvalidate(["test/smoke-lib.ts"], reg), [
     "dsh-lan-proxy",
     "dsh-mcp-manager",
     "dsh-notifier",
     "dsh-provider-usage",
-    "dsh-web-file-preview",
   ]);
   assert.deepEqual(packagesToInvalidate(["vitest.stryker.d/dsh-lan-proxy.config.ts"], reg), [
     "dsh-lan-proxy",

@@ -32,7 +32,8 @@ S0 准备与基线 → S1 维度裁剪 → S2 并行子 Agent 评审 → S3 交�
 
 1. **读规范基线**：目标仓库 `AGENTS.md`、`docs/DEVELOPMENT.md`（hub 仓）、
    目标插件的 `README.md`/`package.json`/`cordis.patch.yml`；记录仓库门禁命令
-   （hub 通用门禁：`pnpm build && pnpm test && pnpm contract && pnpm pack:check`）。
+   （hub 通用门禁：`pnpm gate:pr`；旧写法 `pnpm build && pnpm test && pnpm contract && pnpm pack:check`
+   自审计 P0-1 起已是**更弱**的口径——目录门面 / 导出面快照 / 跨包扇入三闸不再由 `pnpm contract` 执行）。
    hub 仓完成定义以根 [AGENTS.md 门禁矩阵](../../../AGENTS.md) 为准，此处只记通用清单。
 2. **通读源码**：宿主端 `src/index.ts`、客户端 `src/client/index.ts`(+`style.css`)、
    系统脚本（如 `toast.ps1`）、`test/**/*.test.ts`；**记录每个文件的绝对路径与行数**，

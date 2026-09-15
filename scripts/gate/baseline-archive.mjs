@@ -10,8 +10,8 @@
  * `gh api repos/<repo>/actions/runs/<id>/artifacts` 默认分页 30 条，而一次 PR CI 会产生
  * 70 个 artifact（31 个 mutation-incremental + 报告/产物）。原实现直接读 `.artifacts`，
  * 只拿到第 1 页 → 只有 14 个 mutation-incremental 被覆盖；随后整棵快照强推会把未被覆盖的
- * 段固化成旧版本，两个「本来就没有基线」的段（provider-usage-errsurf、web-file-preview）
- * 更是每次合并都被抹掉。故本模块把「分页取全」与「对账后判缺口」做成纯函数。
+ * 段固化成旧版本，「本来就没有基线」的段（provider-usage-errsurf；另一段 web-file-preview
+ * 已随 #840 退役）更是每次合并都被抹掉。故本模块把「分页取全」与「对账后判缺口」做成纯函数。
  */
 
 /** 归档分支上参与对账的文件名形态（段级增量基线）。 */
@@ -134,8 +134,9 @@ export function classifyMissingMutationProducts({ jobs } = {}) {
 
 /**
  * 期望被归档的段文件名集合（由 stryker.conf.d/*.json 派生，与 stryker 配置同源）。
- * `dsh-web-file-preview.json`（未拆分包的 seg="0"）→ `incremental-web-file-preview.json`；
- * `dsh-mcp-manager-entry.json` → `incremental-mcp-manager-entry.json`。
+ * 段级 `dsh-mcp-manager-entry.json` → `incremental-mcp-manager-entry.json`；
+ * 包级（seg="0"）`<pkg>.json` → `incremental-<pkg>.json`（#840 起仓库已无包级实例，
+ * 派生规则保留以兼容归档历史上的包级形态）。
  */
 export function expectedBaselineFiles(confFileNames) {
   return (confFileNames ?? [])

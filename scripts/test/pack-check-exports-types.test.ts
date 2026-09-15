@@ -140,15 +140,9 @@ test("stripLibPrefix：映射口径（含非 ./lib/ 前缀与空尾段返回 nul
 // ---------------------------------------------------------------- 2) 真实包形态锁（防回退到修复前的值）
 
 test("真实包：全部客户端包的 exports 子路径与 types 指向 emit 布局（防回退 lib/client.d.ts）", () => {
-  // 实测这 5 个包**全部**有同一缺陷（types 指向不存在的 lib/client.d.ts，实际产物是
+  // 实测这 4 个包**全部**有同一缺陷（types 指向不存在的 lib/client.d.ts，实际产物是
   // lib/client/index.d.ts）：新判据在全部实例上发声，故形态锁也覆盖全部实例。
-  for (const pkg of [
-    "dsh-notifier",
-    "dsh-lan-proxy",
-    "dsh-mcp-manager",
-    "dsh-provider-usage",
-    "dsh-web-file-preview",
-  ]) {
+  for (const pkg of ["dsh-notifier", "dsh-lan-proxy", "dsh-mcp-manager", "dsh-provider-usage"]) {
     assert.deepEqual(
       listExportTypesEntries(join(ROOT, "packages", pkg)),
       [

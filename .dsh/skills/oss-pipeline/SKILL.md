@@ -28,7 +28,8 @@ description: >
 > （见根 AGENTS.md 门禁矩阵）。
 > 旧称「五连门禁」= 全仓 `pnpm build && pnpm test && pnpm contract && pnpm pack:check && pnpm typecheck`，
 > **已整体并入 `pnpm gate:pr`**（本地 pr 即全仓口径；`gate:full` 在其上只多「豁免到期台账」收集，
-> `--with-coverage` 再补 cov / crap）。
+> `--with-coverage` 再补 cov / crap）。注意旧写法本身自审计 P0-1 起已**不等价**：目录门面 /
+> 导出面快照 / 跨包扇入三闸已迁成 ci.yml 与本地档位的直接步骤，照旧写法操作会得到更弱的覆盖面。
 > `agents/` 与其它 skill 沿用旧称处按本条理解（`agents/coder.md` 的旧「五连」清单已同步改为指向该矩阵）。
 > 前置条件（维护者一次性配置）：zone 系与 loop 系 label 已建、分支保护对 main 至少要求聚合闸
 > `Build / Contract / Smoke / Pack`；该闸未配齐前 `--auto` 只受 CI 状态约束，**此时「CI 绿」更不足以判定完成**。

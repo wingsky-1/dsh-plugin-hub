@@ -10,7 +10,7 @@
 ## 1. 阶段式门禁 + 阶段 commit（每逻辑阶段一次）
 
 - 每个逻辑阶段（如「一次评审项修复」「一个里程碑」）结束时**独立收口**：
-  1. 全量门禁跑绿（hub 通用：`pnpm build && pnpm test && pnpm contract && pnpm pack:check`；
+  1. 全量门禁跑绿（hub 通用：`pnpm gate:pr`；旧写法 `pnpm build && pnpm test && pnpm contract && pnpm pack:check` 自审计 P0-1 起已是更弱的口径；
      本仓执行清单见 `.dsh/skills/dsh-plugin-hub-dev`，验证证据检核见
      [verify-checklist.md](verify-checklist.md)）；
      **本仓**口径以根 [AGENTS.md 门禁矩阵](../../../../AGENTS.md) 为准。

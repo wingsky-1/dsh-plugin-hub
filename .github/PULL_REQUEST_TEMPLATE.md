@@ -10,7 +10,7 @@ Fixes #<!-- 关联 issue 号；无 issue 留空 -->
 
 ## 验证
 
-<!-- 门禁结果与实测方式：pnpm build / pnpm test / pnpm contract / pnpm pack:check -->
+<!-- 门禁结果与实测方式：pnpm gate:pr（全仓口径；单一事实源见根 AGENTS.md 门禁矩阵） -->
 
 ### 客户端改动截图证据（勾选式）
 

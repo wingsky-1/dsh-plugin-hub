@@ -127,7 +127,7 @@
 | config-schema 跨域常量 | catalog/supervisor 域类型化单向 import | DEFAULT_ANNOUNCE_CATALOG / DEFAULT_RESULT_TRUNCATE_BYTES，保持 config→下游单向 |
 | catalogViewFor 私有缓存 | catalog 域（宿主最小面） | diskCatalogSummaryCache（mtime 缓存）随迁，薄桥接或最小面 host（阶段 5 先行） |
 | routes.ts:21 组合根类型环 | 改从 `types/ui.ts` 取 | 消除 `import type { ClientUiConfig } from "./index.ts"` 环 |
-| 每目录 `interface.ts`（D10） | 各物理目录根 | 目录唯一对外引用面（re-export 对外类型+函数）；跨目录引用只能走 interface.ts、禁直引实现文件；DTO 仍集中 types/；`verify-dir-imports.mjs` 静态强制（已接入 `pnpm contract`）；阶段 2 起新目录即带、阶段 6 存量补齐 |
+| 每目录 `interface.ts`（D10） | 各物理目录根 | 目录唯一对外引用面（re-export 对外类型+函数）；跨目录引用只能走 interface.ts、禁直引实现文件；DTO 仍集中 types/；`verify-dir-imports.mjs` 静态强制（已接入门禁，执行点在 ci.yml 的 repo-gate 直接步骤与本地档位计划）；阶段 2 起新目录即带、阶段 6 存量补齐 |
 
 - **验证**：目录图与迁移 PR 静态面同步；`gen-stryker-conf --check` 绿。
 - **落位**：阶段 6（集中搬移）；catalogViewFor 条目阶段 5 先行。
@@ -243,7 +243,7 @@
 | D7 | 迁移门禁判分 | **机制决策**：covered 口径已达标（74.66≥60）；迁移 PR 走 observe 夜间重建豁免；日常守 `covered ≥ baseline−1pp`（见 2.5） | 0 决策 + 6 执行 |
 | D8 | off 模式 guard | **补挂载**：guard 与中间层实例解耦、数据源直查 manager.disabledTools、独立注册路径（三模式一致；off 无连接池副作用，guard 只读禁用表） | 4 |
 | D9 | getTools 键形态 | **注册名（`mcp__` 前缀，与 ctx.tools 注册表一致）**；文档化两套键口径（summary().tools=裸名） | 0 决策 + 3 实现 |
-| D10 | 目录解耦形态（维护者追加） | **严格门面**：每物理目录一个 `interface.ts`（对外类型+函数唯一引用面）；跨目录引用只能走 interface.ts、禁直引实现文件；DTO 仍集中 `types/`；`verify-dir-imports.mjs` 静态强制接入 `pnpm contract`；阶段 2 起新目录即带、阶段 6 存量补齐（细则见 C-DIR） | 2 起生效 + 6 补齐 |
+| D10 | 目录解耦形态（维护者追加） | **严格门面**：每物理目录一个 `interface.ts`（对外类型+函数唯一引用面）；跨目录引用只能走 interface.ts、禁直引实现文件；DTO 仍集中 `types/`；`verify-dir-imports.mjs` 静态强制接入门禁（已接入门禁，执行点在 ci.yml 的 repo-gate 直接步骤与本地档位计划）；阶段 2 起新目录即带、阶段 6 存量补齐（细则见 C-DIR） | 2 起生效 + 6 补齐 |
 
 ---
 
