@@ -58,18 +58,40 @@ export function checkExportFaces(input) {
     legacy,
     registryPath = "scripts/data/<pkg>-export-faces.json",
   } = input;
-  const problems = [];
   const exportSet = new Set(exportNames);
   const legacySet = new Set(legacy);
 
+  return [
+    ...checkRegistryShape(faces, legacy, legacySet),
+    ...collectLegacyProblems(legacy, exportSet),
+    ...collectFaceProblems(faces, exportSet, legacySet),
+    ...collectUnregisteredProblems(exportNames, faces, legacySet, registryPath),
+  ];
+}
+
+/** 登记文件自身的一致性：legacy 去重，以及「既无 faces 也无 legacy」的退化形态。 */
+function checkRegistryShape(faces, legacy, legacySet) {
+  const problems = [];
   if (legacySet.size !== legacy.length) problems.push("legacy 含重复项");
   if (legacy.length === 0 && Object.keys(faces).length === 0) {
     problems.push("登记文件既无 faces 也无 legacy——判据退化为「无约束」，拒绝放行");
   }
+  return problems;
+}
+
+/** legacy 是存量白名单：符号退役后不移除，白名单会一直替已消失的符号背书。 */
+function collectLegacyProblems(legacy, exportSet) {
+  const problems = [];
   for (const name of legacy) {
     if (!exportSet.has(name))
       problems.push(`legacy 含已不存在的导出符号：${name}（符号退役后须一并从 legacy 移除）`);
   }
+  return problems;
+}
+
+/** faces 每条登记的三重约束：分类合法、与 legacy 互斥、符号确实存在。 */
+function collectFaceProblems(faces, exportSet, legacySet) {
+  const problems = [];
   for (const [name, face] of Object.entries(faces)) {
     if (!EXPORT_FACES.includes(face)) {
       problems.push(
@@ -79,6 +101,12 @@ export function checkExportFaces(input) {
     if (legacySet.has(name)) problems.push(`符号 ${name} 同时登记在 faces 与 legacy（二者互斥）`);
     if (!exportSet.has(name)) problems.push(`faces 含已不存在的导出符号：${name}`);
   }
+  return problems;
+}
+
+/** 未被 faces / legacy 覆盖的导出即新增符号：没有 legacy 通道，必须显式选一类面。 */
+function collectUnregisteredProblems(exportNames, faces, legacySet, registryPath) {
+  const problems = [];
   for (const name of exportNames) {
     if (faces[name] === undefined && !legacySet.has(name)) {
       problems.push(

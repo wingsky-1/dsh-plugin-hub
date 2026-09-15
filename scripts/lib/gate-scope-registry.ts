@@ -28,40 +28,65 @@ const SCOPE_FROM = ["registry", "cli", "tree"];
  * 不能退化成「没有范围约束」继续跑（那会让门禁静默变成全仓扫描或空扫描）。
  */
 export function loadScopeRegistry(path) {
-  let raw;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch (e) {
-    throw new Error(`范围注册表不可读（${path}）：${e.message}`);
-  }
-  let json;
-  try {
-    json = JSON.parse(raw);
-  } catch (e) {
-    throw new Error(`范围注册表 JSON 语法错误（${path}）：${e.message}`);
-  }
+  const raw = readRegistryText(path);
+  const json = parseRegistryText(path, raw);
   if (!Array.isArray(json.gates)) throw new Error(`范围注册表缺 gates 数组（${path}）`);
   const gates = new Map();
   for (const item of json.gates) {
-    if (item === null || typeof item !== "object") throw new Error("范围注册表 gates 含非对象项");
-    if (typeof item.gate !== "string" || item.gate.length === 0)
-      throw new Error(`范围注册表条目缺 gate：${JSON.stringify(item).slice(0, 120)}`);
-    if (typeof item.script !== "string" || item.script.length === 0)
-      throw new Error(`${item.gate}：范围注册表条目缺 script`);
-    if (!SCOPE_FROM.includes(item.scopeFrom))
-      throw new Error(
-        `${item.gate}：scopeFrom 须为 ${SCOPE_FROM.join(" / ")} 之一（当前 ${JSON.stringify(item.scopeFrom)}）`,
-      );
-    if (!isPackageScope(item.packages))
-      throw new Error(
-        `${item.gate}：packages 须为 "dsh-*" 形态的通配或非空包名数组（当前 ${JSON.stringify(item.packages)}）`,
-      );
-    if (typeof item.why !== "string" || item.why.length === 0)
-      throw new Error(`${item.gate}：范围注册表条目缺 why（范围是治理决策，必须写明理由）`);
+    assertGateEntry(item);
     if (gates.has(item.gate)) throw new Error(`范围注册表存在重复 gate：${item.gate}`);
     gates.set(item.gate, item);
   }
   return { path, version: json.version, gates };
+}
+
+/** 读不到注册表文本时抛出：路径必须进文案，否则调用方无从知道范围声明该修哪一份。 */
+function readRegistryText(path) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (e) {
+    throw new Error(`范围注册表不可读（${path}）：${e.message}`);
+  }
+}
+
+/** JSON 语法错误同样 fail-loud：坏掉的注册表不降级为「无范围约束」。 */
+function parseRegistryText(path, raw) {
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`范围注册表 JSON 语法错误（${path}）：${e.message}`);
+  }
+}
+
+/** 条目字段校验；调用顺序即报错顺序，同一条目多处不合规时以第一条命中为准。 */
+function assertGateEntry(item) {
+  if (item === null || typeof item !== "object") throw new Error("范围注册表 gates 含非对象项");
+  assertNonEmptyString(item.gate, `范围注册表条目缺 gate：${JSON.stringify(item).slice(0, 120)}`);
+  assertNonEmptyString(item.script, `${item.gate}：范围注册表条目缺 script`);
+  assertScopeFrom(item);
+  assertPackageScope(item);
+  assertNonEmptyString(
+    item.why,
+    `${item.gate}：范围注册表条目缺 why（范围是治理决策，必须写明理由）`,
+  );
+}
+
+function assertNonEmptyString(value, message) {
+  if (typeof value !== "string" || value.length === 0) throw new Error(message);
+}
+
+function assertScopeFrom(item) {
+  if (!SCOPE_FROM.includes(item.scopeFrom))
+    throw new Error(
+      `${item.gate}：scopeFrom 须为 ${SCOPE_FROM.join(" / ")} 之一（当前 ${JSON.stringify(item.scopeFrom)}）`,
+    );
+}
+
+function assertPackageScope(item) {
+  if (!isPackageScope(item.packages))
+    throw new Error(
+      `${item.gate}：packages 须为 "dsh-*" 形态的通配或非空包名数组（当前 ${JSON.stringify(item.packages)}）`,
+    );
 }
 
 /** packages 字段形态：`"<prefix>*"` 通配，或非空包名数组。 */

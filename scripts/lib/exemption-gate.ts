@@ -28,6 +28,25 @@ function markerRegex(mark) {
   return new RegExp(`\\s*${mark}\\s+([^\\n]*#\\d+[^\\n]*)`);
 }
 
+/** 跳过 `start` 处的字符串字面量（`start` 处必须是引号字符），返回其后一位下标；未闭合停在行尾。 */
+function skipStringLiteral(line, start) {
+  const q = line[start];
+  let i = start + 1;
+  const n = line.length;
+  while (i < n) {
+    if (line[i] === "\\") {
+      i += 2;
+      continue;
+    }
+    if (line[i] === q) {
+      i += 1;
+      break;
+    }
+    i += 1;
+  }
+  return i;
+}
+
 /**
  * 提取行内的「真实」行注释文本——跳过字符串字面量中的 `//`。纯文本正则会把
  * `const msg = "// dsh-gate:allow-xxx #999 伪造"` 误判成豁免标记，使「逐调用点」粒度失效。
@@ -40,19 +59,7 @@ export function lineCommentText(line) {
   while (i < n) {
     const ch = line[i];
     if (ch === '"' || ch === "'" || ch === "`") {
-      const q = ch;
-      i += 1;
-      while (i < n) {
-        if (line[i] === "\\") {
-          i += 2;
-          continue;
-        }
-        if (line[i] === q) {
-          i += 1;
-          break;
-        }
-        i += 1;
-      }
+      i = skipStringLiteral(line, i);
       continue;
     }
     if (ch === "/" && line[i + 1] === "/") return line.slice(i + 2);
@@ -126,6 +133,47 @@ export function relPath(root, file) {
 }
 
 /**
+ * 台账条目的身份字段：非对象直接判错，`gate`/`path`/`reason` 须为非空字符串。
+ * 与 `assertExemptionTrackingFields` 合起来才是完整结构校验，拆两段只为把单函数判据数
+ * 压进复杂度门禁；两段按台账字段顺序串行执行，先报哪条错误与拆分前一致。
+ */
+function assertExemptionItemFields(item) {
+  if (item === null || typeof item !== "object") throw new Error("豁免台账 exemptions 含非对象项");
+  if (typeof item.gate !== "string" || item.gate.length === 0)
+    throw new Error(`豁免条目缺 gate：${JSON.stringify(item).slice(0, 120)}`);
+  if (typeof item.path !== "string" || item.path.length === 0)
+    throw new Error(`豁免条目缺 path：${JSON.stringify(item).slice(0, 120)}`);
+  if (typeof item.reason !== "string" || item.reason.length === 0)
+    throw new Error(`${item.gate}/${item.path}：豁免缺 reason`);
+}
+
+/**
+ * 台账条目的跟踪字段：`trackingIssue` 必填且形如 `#123`；`reviewBy` 与 `exitCriteria`
+ * 只在给出时校验（缺省 = 长期条目，见 `loadLedger` 的说明）。拆分理由同上。
+ */
+function assertExemptionTrackingFields(item) {
+  if (typeof item.trackingIssue !== "string" || !/^#\d+$/.test(item.trackingIssue)) {
+    throw new Error(
+      `${item.gate}/${item.path}：豁免 trackingIssue 须形如 #123（当前 ${JSON.stringify(item.trackingIssue)}）`,
+    );
+  }
+  if (item.reviewBy !== undefined) {
+    if (typeof item.reviewBy !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(item.reviewBy)) {
+      throw new Error(
+        `${item.gate}/${item.path}：豁免 reviewBy 须形如 2027-03-31（当前 ${JSON.stringify(item.reviewBy)}）`,
+      );
+    }
+  }
+  if (item.exitCriteria !== undefined) {
+    if (typeof item.exitCriteria !== "string" || item.exitCriteria.length === 0) {
+      throw new Error(
+        `${item.gate}/${item.path}：豁免 exitCriteria 须为非空字符串（当前 ${JSON.stringify(item.exitCriteria)}）`,
+      );
+    }
+  }
+}
+
+/**
  * 读取豁免台账，只保留本门禁的条目，按相对路径索引。
  *
  * 结构校验覆盖**全文件**（不只本门禁的条目）：台账是共享数据面，一行坏数据不该只在
@@ -156,33 +204,8 @@ export function loadLedger(path, gate) {
   if (!Array.isArray(json.exemptions)) throw new Error(`豁免台账缺 exemptions 数组（${path}）`);
   const items = new Map();
   for (const item of json.exemptions) {
-    if (item === null || typeof item !== "object")
-      throw new Error("豁免台账 exemptions 含非对象项");
-    if (typeof item.gate !== "string" || item.gate.length === 0)
-      throw new Error(`豁免条目缺 gate：${JSON.stringify(item).slice(0, 120)}`);
-    if (typeof item.path !== "string" || item.path.length === 0)
-      throw new Error(`豁免条目缺 path：${JSON.stringify(item).slice(0, 120)}`);
-    if (typeof item.reason !== "string" || item.reason.length === 0)
-      throw new Error(`${item.gate}/${item.path}：豁免缺 reason`);
-    if (typeof item.trackingIssue !== "string" || !/^#\d+$/.test(item.trackingIssue)) {
-      throw new Error(
-        `${item.gate}/${item.path}：豁免 trackingIssue 须形如 #123（当前 ${JSON.stringify(item.trackingIssue)}）`,
-      );
-    }
-    if (item.reviewBy !== undefined) {
-      if (typeof item.reviewBy !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(item.reviewBy)) {
-        throw new Error(
-          `${item.gate}/${item.path}：豁免 reviewBy 须形如 2027-03-31（当前 ${JSON.stringify(item.reviewBy)}）`,
-        );
-      }
-    }
-    if (item.exitCriteria !== undefined) {
-      if (typeof item.exitCriteria !== "string" || item.exitCriteria.length === 0) {
-        throw new Error(
-          `${item.gate}/${item.path}：豁免 exitCriteria 须为非空字符串（当前 ${JSON.stringify(item.exitCriteria)}）`,
-        );
-      }
-    }
+    assertExemptionItemFields(item);
+    assertExemptionTrackingFields(item);
     if (item.gate !== gate) continue;
     if (items.has(item.path)) throw new Error(`豁免台账存在重复条目：${item.path}`);
     items.set(item.path, item);

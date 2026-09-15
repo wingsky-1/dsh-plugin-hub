@@ -82,6 +82,28 @@ export function parseSegmentLedger(logText) {
 /** group 形态：栈式配对 `##[group]stryker <seg>` 与 `##[endgroup]`，段墙钟取两者时间差。 */
 function parseByGroup(logText) {
   const raw = logText.split("\n");
+  const events = collectGroupEvents(raw);
+  const stack = [];
+  const out = [];
+  for (const ev of events) {
+    if (ev.kind === "open") {
+      stack.push(ev);
+      continue;
+    }
+    const open = stack.pop();
+    if (open === undefined) continue;
+    out.push({
+      seg: open.seg,
+      startedAt: open.at,
+      endedAt: ev.at,
+      wallSeconds: secondsBetween(open.at, ev.at),
+      ...parseSegmentBody(segmentBodyLines(raw, open.line, ev.line)),
+    });
+  }
+  return out;
+}
+
+function collectGroupEvents(raw) {
   const events = [];
   for (let i = 0; i < raw.length; i++) {
     const parsed = parseLogLine(raw[i]);
@@ -97,29 +119,16 @@ function parseByGroup(logText) {
       events.push({ kind: "close", line: i, at: parsed.at });
     }
   }
-  const stack = [];
-  const out = [];
-  for (const ev of events) {
-    if (ev.kind === "open") {
-      stack.push(ev);
-      continue;
-    }
-    const open = stack.pop();
-    if (open === undefined) continue;
-    const body = [];
-    for (let i = open.line; i <= ev.line; i++) {
-      const parsed = parseLogLine(raw[i]);
-      if (parsed !== null) body.push(parsed.body);
-    }
-    out.push({
-      seg: open.seg,
-      startedAt: open.at,
-      endedAt: ev.at,
-      wallSeconds: secondsBetween(open.at, ev.at),
-      ...parseSegmentBody(body),
-    });
+  return events;
+}
+
+function segmentBodyLines(raw, from, to) {
+  const body = [];
+  for (let i = from; i <= to; i++) {
+    const parsed = parseLogLine(raw[i]);
+    if (parsed !== null) body.push(parsed.body);
   }
-  return out;
+  return body;
 }
 
 /** 矩阵实例的 job 名 → 段名（`Mutation shard (dsh-notifier-sdk)` → `dsh-notifier-sdk`）。 */
@@ -205,18 +214,35 @@ export function reconcileLedgerSegments(measuredSegs, expectedSegs) {
 export function checkLedgerEntry(entry) {
   const problems = [];
   if (typeof entry?.seg !== "string" || entry.seg.trim() === "") problems.push("seg 缺失");
-  if (typeof entry?.wallSeconds !== "number" || !(entry.wallSeconds > 0))
-    problems.push(`${entry?.seg}: wallSeconds 必须是正数`);
-  if (entry?.mutants !== null && !(Number.isInteger(entry?.mutants) && entry.mutants > 0))
-    problems.push(`${entry?.seg}: mutants 缺失或非正整数`);
+  problems.push(...checkWallSeconds(entry));
+  problems.push(...checkMutants(entry));
+  problems.push(...checkReused(entry));
+  return problems;
+}
+
+function checkWallSeconds(entry) {
+  if (typeof entry?.wallSeconds !== "number" || !(entry.wallSeconds > 0)) {
+    return [`${entry?.seg}: wallSeconds 必须是正数`];
+  }
+  return [];
+}
+
+function checkMutants(entry) {
+  if (entry?.mutants !== null && !(Number.isInteger(entry?.mutants) && entry.mutants > 0)) {
+    return [`${entry?.seg}: mutants 缺失或非正整数`];
+  }
+  return [];
+}
+
+function checkReused(entry) {
   if (
     entry?.reused !== null &&
     entry?.reuseTotal !== null &&
     !(entry.reused >= 0 && entry.reused <= entry.reuseTotal)
   ) {
-    problems.push(`${entry?.seg}: reused 必须在 [0, reuseTotal] 内`);
+    return [`${entry?.seg}: reused 必须在 [0, reuseTotal] 内`];
   }
-  return problems;
+  return [];
 }
 
 /** 由 `stryker.conf.d/` 的文件名派生期望段集合（与 ci-matrix / mutation-gate 同源口径）。 */

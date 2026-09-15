@@ -23,6 +23,17 @@ import { join } from "node:path";
 /** 发布物内产物目录前缀（`exports[].types` 的约定根）。 */
 export const LIB_PREFIX = "./lib/";
 
+/** 从 exports 对象挑出带 `types` 条件的子路径条目（`./package.json` 等形态在此被排除）。 */
+function collectTypesEntries(exportsField) {
+  const entries = [];
+  for (const [subpath, value] of Object.entries(exportsField)) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
+    if (typeof value.types !== "string") continue;
+    entries.push({ subpath, types: value.types });
+  }
+  return entries;
+}
+
 /**
  * 读取 package.json 的 exports 中「带 types 条件」的子路径条目。
  * 显式排除 `./package.json` 这类无 `types` 的子路径（字符串形态同样排除）。
@@ -39,12 +50,7 @@ export function listExportTypesEntries(pkgRoot) {
   if (typeof exportsField !== "object" || exportsField === null || Array.isArray(exportsField)) {
     throw new Error(`${pkgJsonPath} 的 exports 不是对象形态，无法解析子路径 types`);
   }
-  const entries = [];
-  for (const [subpath, value] of Object.entries(exportsField)) {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
-    if (typeof value.types !== "string") continue;
-    entries.push({ subpath, types: value.types });
-  }
+  const entries = collectTypesEntries(exportsField);
   entries.sort((a, b) => (a.subpath < b.subpath ? -1 : a.subpath > b.subpath ? 1 : 0));
   return entries;
 }

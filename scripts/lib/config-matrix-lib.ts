@@ -76,63 +76,94 @@ export function findTopVar(ast, name) {
   return null;
 }
 
+function isFnDeclarationNamed(n, name) {
+  return n.type === "FunctionDeclaration" && n.id?.name === name;
+}
+
+function fnInitInVarDecl(n, name) {
+  for (const d of n.declarations) {
+    if (
+      d.id?.type === "Identifier" &&
+      d.id.name === name &&
+      (d.init?.type === "FunctionExpression" || d.init?.type === "ArrowFunctionExpression")
+    )
+      return d.init;
+  }
+  return null;
+}
+
+function exportedFnDecl(n, name) {
+  const d = n.declaration;
+  if (d.type === "FunctionDeclaration" && d.id?.name === name) return d;
+  return null;
+}
+
+function findFnNodeInBodyItem(n, name) {
+  if (isFnDeclarationNamed(n, name)) return n;
+  if (n.type === "VariableDeclaration") return fnInitInVarDecl(n, name);
+  if (n.type === "ExportNamedDeclaration" && n.declaration) return exportedFnDecl(n, name);
+  return null;
+}
+
 /** 顶层名为 name 的函数节点（FunctionDeclaration / var fn = function / export fn）。 */
 export function findTopFn(ast, name) {
   for (const n of ast.body) {
-    if (n.type === "FunctionDeclaration" && n.id?.name === name) return n;
-    if (n.type === "VariableDeclaration") {
-      for (const d of n.declarations) {
-        if (
-          d.id?.type === "Identifier" &&
-          d.id.name === name &&
-          (d.init?.type === "FunctionExpression" || d.init?.type === "ArrowFunctionExpression")
-        )
-          return d.init;
-      }
-    }
-    if (n.type === "ExportNamedDeclaration" && n.declaration) {
-      const d = n.declaration;
-      if (d.type === "FunctionDeclaration" && d.id?.name === name) return d;
-    }
+    const fn = findFnNodeInBodyItem(n, name);
+    if (fn) return fn;
   }
   return null;
+}
+
+/** 单步剥壳：CallExpression 下钻第一实参 / TSAs / TSSatisfies / TypeCast / Paren。 */
+function peelWrappingNode(node) {
+  if (node.type === "ParenthesizedExpression") return node.expression;
+  if (
+    node.type === "TSAsExpression" ||
+    node.type === "TSSatisfiesExpression" ||
+    node.type === "TypeCastExpression"
+  ) {
+    return node.expression;
+  }
+  if (node.type === "CallExpression") return node.arguments?.[0] ?? null;
+  return null;
+}
+
+/** 反复剥壳后取对象字面量节点；剥不到返回 null。
+ *  迭代上界防病态包装链（自引用 AST）把下钻拖成死循环。 */
+function unwrapObjectLiteral(node) {
+  let cur = node;
+  for (let i = 0; i < 12; i += 1) {
+    if (!cur) return null;
+    if (cur.type === "ObjectExpression") return cur;
+    const next = peelWrappingNode(cur);
+    if (next === null) return null;
+    cur = next;
+  }
+  if (cur?.type !== "ObjectExpression") return null;
+  return cur;
+}
+
+function propertyKeyName(p) {
+  return p.key?.type === "Identifier"
+    ? p.key.name
+    : p.key?.type === "Literal"
+      ? String(p.key.value)
+      : null;
+}
+
+function booleanPropertyValue(p) {
+  return p.value?.type === "Literal" && typeof p.value.value === "boolean" ? p.value.value : null;
 }
 
 /** 递归剥壳（CallExpression 下钻第一实参 / TSAs / TSSatisfies / Paren）后取对象
  *  字面量键（保序，去重）。z.object({...})、z.record(...)、as const 包装均免疫。 */
 export function objectKeysOf(node) {
-  let cur = node;
-  for (let i = 0; i < 12; i += 1) {
-    if (!cur) return [];
-    if (cur.type === "ObjectExpression") break;
-    if (cur.type === "ParenthesizedExpression") {
-      cur = cur.expression;
-      continue;
-    }
-    if (
-      cur.type === "TSAsExpression" ||
-      cur.type === "TSSatisfiesExpression" ||
-      cur.type === "TypeCastExpression"
-    ) {
-      cur = cur.expression;
-      continue;
-    }
-    if (cur.type === "CallExpression") {
-      cur = cur.arguments?.[0] ?? null;
-      continue;
-    }
-    return [];
-  }
-  if (cur?.type !== "ObjectExpression") return [];
+  const obj = unwrapObjectLiteral(node);
+  if (obj === null) return [];
   const out = [];
-  for (const p of cur.properties) {
+  for (const p of obj.properties) {
     if (p.type !== "Property") continue;
-    const k =
-      p.key?.type === "Identifier"
-        ? p.key.name
-        : p.key?.type === "Literal"
-          ? String(p.key.value)
-          : null;
+    const k = propertyKeyName(p);
     if (k !== null && !out.includes(k)) out.push(k);
   }
   return out;
@@ -184,41 +215,57 @@ export function extractNamedKeys(text, name, shape = "object") {
  * （透传排除表）。CONFIG_KEYS 经 for..of 遍历属运行时索引，静态不可见——由
  * 调用方另行并入 CONFIG_KEYS 键集（本模块返回结构含 bases 供矩阵侧组合）。
  */
+function collectSourceMemberKey(n, members) {
+  if (
+    n.type === "MemberExpression" &&
+    !n.computed &&
+    n.property?.type === "Identifier" &&
+    n.object?.type === "Identifier" &&
+    ["src", "base", "qh", "out"].includes(n.object.name)
+  ) {
+    if (!members.has(n.object.name)) members.set(n.object.name, new Set());
+    members.get(n.object.name).add(n.property.name);
+  }
+}
+
+function collectExclusionLiteralKey(n, eqLiterals) {
+  if (n.type === "BinaryExpression" && n.operator === "===") {
+    // typeof X === "object"/"boolean"/"string" 的类型串判定不属于「配置键排除表」——
+    // 排除表形态是 key === "配置键名"（Identifier 与 Literal 比较）
+    const isTypeofSide = (s) => s?.type === "UnaryExpression" && s.operator === "typeof";
+    if (!isTypeofSide(n.left) && !isTypeofSide(n.right)) {
+      for (const side of [n.left, n.right]) {
+        if (side?.type === "Literal" && typeof side.value === "string") eqLiterals.add(side.value);
+      }
+    }
+  }
+}
+
+function isAstPositionKey(key) {
+  return key === "loc" || key === "start" || key === "end" || key === "range";
+}
+
+function forEachChildNode(n, visit) {
+  for (const k of Object.keys(n)) {
+    if (isAstPositionKey(k)) continue;
+    const v = n[k];
+    if (Array.isArray(v)) {
+      for (const c of v) visit(c);
+    } else if (v && typeof v.type === "string") visit(v);
+  }
+}
+
+function walkNormalizeBranchNode(n, members, eqLiterals) {
+  if (!n || typeof n.type !== "string") return;
+  collectSourceMemberKey(n, members);
+  collectExclusionLiteralKey(n, eqLiterals);
+  forEachChildNode(n, (c) => walkNormalizeBranchNode(c, members, eqLiterals));
+}
+
 export function collectNormalizeBranchKeys(fnNode) {
   const members = new Map(); // 基名 → Set(键)
   const eqLiterals = new Set();
-  const walk = (n) => {
-    if (!n || typeof n.type !== "string") return;
-    if (
-      n.type === "MemberExpression" &&
-      !n.computed &&
-      n.property?.type === "Identifier" &&
-      n.object?.type === "Identifier" &&
-      ["src", "base", "qh", "out"].includes(n.object.name)
-    ) {
-      if (!members.has(n.object.name)) members.set(n.object.name, new Set());
-      members.get(n.object.name).add(n.property.name);
-    }
-    if (n.type === "BinaryExpression" && n.operator === "===") {
-      // typeof X === "object"/"boolean"/"string" 的类型串判定不属于「配置键排除表」——
-      // 排除表形态是 key === "配置键名"（Identifier 与 Literal 比较）
-      const isTypeofSide = (s) => s?.type === "UnaryExpression" && s.operator === "typeof";
-      if (!isTypeofSide(n.left) && !isTypeofSide(n.right)) {
-        for (const side of [n.left, n.right]) {
-          if (side?.type === "Literal" && typeof side.value === "string")
-            eqLiterals.add(side.value);
-        }
-      }
-    }
-    for (const k of Object.keys(n)) {
-      if (k === "loc" || k === "start" || k === "end" || k === "range") continue;
-      const v = n[k];
-      if (Array.isArray(v)) {
-        for (const c of v) walk(c);
-      } else if (v && typeof v.type === "string") walk(v);
-    }
-  };
-  walk(fnNode);
+  walkNormalizeBranchNode(fnNode, members, eqLiterals);
   const union = new Set();
   for (const set of members.values()) for (const k of set) union.add(k);
   for (const k of eqLiterals) union.add(k);
@@ -227,6 +274,59 @@ export function collectNormalizeBranchKeys(fnNode) {
     members: Object.fromEntries([...members.entries()].map(([k, s]) => [k, [...s]])),
     eqLiterals: [...eqLiterals],
   };
+}
+
+function addPatchObjectKeys(properties, keys) {
+  for (const p of properties) {
+    if (p.key?.type === "Identifier") keys.add(p.key.name);
+  }
+}
+
+function addSwitchControlKey(callee, n, keys) {
+  if (
+    callee === "switchControl" &&
+    n.arguments[0]?.type === "Literal" &&
+    typeof n.arguments[0].value === "string"
+  ) {
+    keys.add(n.arguments[0].value);
+  }
+}
+
+function collectCallExpressionKeys(n, keys) {
+  if (n.type === "CallExpression" && n.callee?.type === "Identifier") {
+    const callee = n.callee.name;
+    addSwitchControlKey(callee, n, keys);
+    if (callee === "patch" && n.arguments[0]?.type === "ObjectExpression") {
+      addPatchObjectKeys(n.arguments[0].properties, keys);
+    }
+  }
+}
+
+function addSettingsMemberKey(n, keys) {
+  if (
+    n.type === "MemberExpression" &&
+    n.object?.type === "Identifier" &&
+    n.object.name === "settings" &&
+    !n.computed &&
+    n.property?.type === "Identifier"
+  ) {
+    keys.add(n.property.name);
+  }
+}
+
+function walkClientUiNode(n, keys) {
+  if (!n || typeof n.type !== "string") return;
+  collectCallExpressionKeys(n, keys);
+  addSettingsMemberKey(n, keys);
+  forEachChildNode(n, (c) => walkClientUiNode(c, keys));
+}
+
+function addEventKeysFromDecl(n, keys) {
+  for (const d of n.declarations) {
+    if (d.id?.type === "Identifier" && d.id.name === "EVENT_KEYS") {
+      for (const k of arrayFirstColKeys(d.init)) keys.add(k);
+    }
+  }
 }
 
 /**
@@ -244,51 +344,13 @@ export function collectNormalizeBranchKeys(fnNode) {
  */
 export function collectClientUiKeys(ast) {
   const keys = new Set();
-  const walk = (n) => {
-    if (!n || typeof n.type !== "string") return;
-    if (n.type === "CallExpression" && n.callee?.type === "Identifier") {
-      const callee = n.callee.name;
-      if (
-        callee === "switchControl" &&
-        n.arguments[0]?.type === "Literal" &&
-        typeof n.arguments[0].value === "string"
-      ) {
-        keys.add(n.arguments[0].value);
-      }
-      if (callee === "patch" && n.arguments[0]?.type === "ObjectExpression") {
-        for (const p of n.arguments[0].properties) {
-          if (p.key?.type === "Identifier") keys.add(p.key.name);
-        }
-      }
-    }
-    if (
-      n.type === "MemberExpression" &&
-      n.object?.type === "Identifier" &&
-      n.object.name === "settings" &&
-      !n.computed &&
-      n.property?.type === "Identifier"
-    ) {
-      keys.add(n.property.name);
-    }
-    for (const k of Object.keys(n)) {
-      if (k === "loc" || k === "start" || k === "end" || k === "range") continue;
-      const v = n[k];
-      if (Array.isArray(v)) {
-        for (const c of v) walk(c);
-      } else if (v && typeof v.type === "string") walk(v);
-    }
-  };
   for (const n of ast.body) {
     // 顶层 EVENT_KEYS 二维首列
     if (n.type === "VariableDeclaration") {
-      for (const d of n.declarations) {
-        if (d.id?.type === "Identifier" && d.id.name === "EVENT_KEYS") {
-          for (const k of arrayFirstColKeys(d.init)) keys.add(k);
-        }
-      }
+      addEventKeysFromDecl(n, keys);
     }
   }
-  walk(ast);
+  walkClientUiNode(ast, keys);
   return [...keys];
 }
 
@@ -329,44 +391,62 @@ export function readTableKeys(filePath, name, shape = "object", label = name) {
 
 /** 从 DEFAULT_CONFIG 对象值推断「布尔键」：值字面量为 true/false 的键。 */
 export function booleanKeysOfObject(initNode) {
-  let cur = initNode;
-  for (let i = 0; i < 12; i += 1) {
-    if (!cur) return [];
-    if (cur.type === "ObjectExpression") break;
-    if (cur.type === "ParenthesizedExpression") {
-      cur = cur.expression;
-      continue;
-    }
-    if (
-      cur.type === "TSAsExpression" ||
-      cur.type === "TSSatisfiesExpression" ||
-      cur.type === "TypeCastExpression"
-    ) {
-      cur = cur.expression;
-      continue;
-    }
-    if (cur.type === "CallExpression") {
-      cur = cur.arguments?.[0] ?? null;
-      continue;
-    }
-    return [];
-  }
-  if (cur?.type !== "ObjectExpression") return [];
+  const obj = unwrapObjectLiteral(initNode);
+  if (obj === null) return [];
   const out = [];
-  for (const p of cur.properties) {
+  for (const p of obj.properties) {
     if (p.type !== "Property") continue;
-    const val =
-      p.value?.type === "Literal" && typeof p.value.value === "boolean" ? p.value.value : null;
+    const val = booleanPropertyValue(p);
     if (val === null) continue;
-    const k =
-      p.key?.type === "Identifier"
-        ? p.key.name
-        : p.key?.type === "Literal"
-          ? String(p.key.value)
-          : null;
+    const k = propertyKeyName(p);
     if (k !== null) out.push(k);
   }
   return out;
+}
+
+/** 截取「## 配置」节正文行（到下一个二级/三级标题止）；无该节返回 null。 */
+function lanProxyConfigSection(text) {
+  // 逐行截「## 配置」节（到下一个二级/三级标题止），避免 JS 正则无 \Z 的坑
+  const lines = text.split("\n");
+  const start = lines.findIndex((l) => /^## 配置[ \t]*$/.test(l));
+  if (start === -1) return null;
+  const secLines = [];
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (/^#{2,3}[ \t]/.test(lines[i])) break;
+    secLines.push(lines[i]);
+  }
+  return secLines;
+}
+
+function tableRowKeys(line, keys) {
+  // 取表格行首列（第一个 | 与第二个 | 之间），支持合并键 `a` / `b`
+  const tm = line.match(/^\|\s*([^|]+?)\s*\|/);
+  if (!tm) return;
+  for (const span of tm[1].matchAll(/`([^`]+)`/g)) {
+    for (const part of span[1].split("/")) {
+      const k = part.trim();
+      if (/^[a-z][A-Za-z0-9]*$/.test(k) && !keys.includes(k)) keys.push(k);
+    }
+  }
+}
+
+function lanProxyReadmeKeys(text) {
+  const secLines = lanProxyConfigSection(text);
+  if (secLines === null) return { keys: [], section: null };
+  const keys = [];
+  for (const line of secLines) tableRowKeys(line, keys);
+  return { keys, section: "## 配置" };
+}
+
+function notifierReadmeKeys(text) {
+  const m = text.match(/```json\n([\s\S]*?)\n```/);
+  if (!m) return { keys: [], section: "```json" };
+  const keys = [];
+  for (const line of m[1].split("\n")) {
+    const km = line.match(/^\s*"([a-z][A-Za-z0-9]*)":/);
+    if (km && !keys.includes(km[1])) keys.push(km[1]);
+  }
+  return { keys, section: "```json" };
 }
 
 /**
@@ -378,39 +458,7 @@ export function booleanKeysOfObject(initNode) {
  * @returns { keys: string[], section: string|null } section=定位到的节（诊断用）。
  */
 export function extractReadmeConfigKeys(text, pkg) {
-  if (pkg === "lan-proxy") {
-    // 逐行截「## 配置」节（到下一个二级/三级标题止），避免 JS 正则无 \Z 的坑
-    const lines = text.split("\n");
-    const start = lines.findIndex((l) => /^## 配置[ \t]*$/.test(l));
-    if (start === -1) return { keys: [], section: null };
-    const secLines = [];
-    for (let i = start + 1; i < lines.length; i += 1) {
-      if (/^#{2,3}[ \t]/.test(lines[i])) break;
-      secLines.push(lines[i]);
-    }
-    const keys = [];
-    for (const line of secLines) {
-      // 取表格行首列（第一个 | 与第二个 | 之间），支持合并键 `a` / `b`
-      const tm = line.match(/^\|\s*([^|]+?)\s*\|/);
-      if (!tm) continue;
-      for (const span of tm[1].matchAll(/`([^`]+)`/g)) {
-        for (const part of span[1].split("/")) {
-          const k = part.trim();
-          if (/^[a-z][A-Za-z0-9]*$/.test(k) && !keys.includes(k)) keys.push(k);
-        }
-      }
-    }
-    return { keys, section: "## 配置" };
-  }
-  if (pkg === "notifier") {
-    const m = text.match(/```json\n([\s\S]*?)\n```/);
-    if (!m) return { keys: [], section: "```json" };
-    const keys = [];
-    for (const line of m[1].split("\n")) {
-      const km = line.match(/^\s*"([a-z][A-Za-z0-9]*)":/);
-      if (km && !keys.includes(km[1])) keys.push(km[1]);
-    }
-    return { keys, section: "```json" };
-  }
+  if (pkg === "lan-proxy") return lanProxyReadmeKeys(text);
+  if (pkg === "notifier") return notifierReadmeKeys(text);
   return { keys: [], section: null };
 }

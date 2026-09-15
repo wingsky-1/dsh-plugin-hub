@@ -76,38 +76,76 @@ export function checkCatalogPeers(root) {
   const yamlText = readFileSync(join(root, "pnpm-workspace.yaml"), "utf8");
   const catalog = parseCatalog(yamlText);
   const excluded = parseReleaseExclude(yamlText);
-  const problems = [];
-  let officialPeerCount = 0;
 
-  const pkgDirs = readdirSync(join(root, "packages"), { withFileTypes: true })
+  const { problems, officialPeerCount } = collectPackageProblems(root, catalog);
+  problems.push(...collectCatalogExemptionProblems(catalog, excluded));
+
+  const lines = [
+    `catalog ${catalog.size} 键 | 官方 peer ${officialPeerCount} 处 | 豁免清单 ${excluded.size} 条`,
+  ];
+  return { lines, problems, catalogSize: catalog.size, officialPeerCount };
+}
+
+/** 扫描面只看 packages 下真实存在的包目录；隐藏目录与 node_modules 不是待校验对象。 */
+function packageDirs(root) {
+  return readdirSync(join(root, "packages"), { withFileTypes: true })
     .filter((e) => e.isDirectory() && !e.name.startsWith(".") && e.name !== "node_modules")
     .map((e) => e.name)
     .sort();
+}
 
-  for (const dir of pkgDirs) {
-    let pkg;
-    try {
-      pkg = JSON.parse(readFileSync(join(root, "packages", dir, "package.json"), "utf8"));
-    } catch {
-      continue;
+/** 读不出或解析不了 package.json 一律跳过：那是包本身的问题，不是本门禁的判据面。 */
+function readPackageManifest(root, dir) {
+  try {
+    return JSON.parse(readFileSync(join(root, "packages", dir, "package.json"), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+/** 单个包的一个依赖字段：官方包一律写 catalog:，写了 catalog: 就必须有对应条目。 */
+function collectDepProblems(dir, field, deps, catalog) {
+  const problems = [];
+  let officialPeerCount = 0;
+  for (const [name, spec] of Object.entries(deps)) {
+    if (!name.startsWith(OFFICIAL_SCOPE)) continue;
+    if (field === "peerDependencies") officialPeerCount++;
+    if (spec !== "catalog:") {
+      problems.push(`${dir}: ${field}["${name}"] = "${spec}" —— 官方包一律写 catalog:`);
+    } else if (!catalog.has(name)) {
+      problems.push(
+        `${dir}: ${field}["${name}"] 用了 catalog: 但 pnpm-workspace.yaml 无此 catalog 条目`,
+      );
     }
+  }
+  return { problems, officialPeerCount };
+}
+
+/** 逐包逐字段累计问题，并把官方 peer 声明出现次数单独带出（真实仓库的回归底线看它）。 */
+function collectPackageProblems(root, catalog) {
+  const problems = [];
+  let officialPeerCount = 0;
+  for (const dir of packageDirs(root)) {
+    const pkg = readPackageManifest(root, dir);
+    if (pkg === null) continue;
     for (const field of DEP_FIELDS) {
       const deps = pkg[field];
       if (deps === undefined || deps === null || typeof deps !== "object") continue;
-      for (const [name, spec] of Object.entries(deps)) {
-        if (!name.startsWith(OFFICIAL_SCOPE)) continue;
-        if (field === "peerDependencies") officialPeerCount++;
-        if (spec !== "catalog:") {
-          problems.push(`${dir}: ${field}["${name}"] = "${spec}" —— 官方包一律写 catalog:`);
-        } else if (!catalog.has(name)) {
-          problems.push(
-            `${dir}: ${field}["${name}"] 用了 catalog: 但 pnpm-workspace.yaml 无此 catalog 条目`,
-          );
-        }
-      }
+      const found = collectDepProblems(dir, field, deps, catalog);
+      problems.push(...found.problems);
+      officialPeerCount += found.officialPeerCount;
     }
   }
+  return { problems, officialPeerCount };
+}
 
+/**
+ * catalog 键未登记进供应链豁免清单即判红。
+ *
+ * 两处是同一份事实源的两面登记：catalog 有了键而豁免清单没跟上，说明升级时只改了半边。
+ */
+function collectCatalogExemptionProblems(catalog, excluded) {
+  const problems = [];
   for (const name of catalog.keys()) {
     if (!excluded.has(name)) {
       problems.push(
@@ -115,9 +153,5 @@ export function checkCatalogPeers(root) {
       );
     }
   }
-
-  const lines = [
-    `catalog ${catalog.size} 键 | 官方 peer ${officialPeerCount} 处 | 豁免清单 ${excluded.size} 条`,
-  ];
-  return { lines, problems, catalogSize: catalog.size, officialPeerCount };
+  return problems;
 }

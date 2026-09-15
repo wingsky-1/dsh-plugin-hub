@@ -50,6 +50,28 @@ export function extractExports(text) {
   return out.filter((e) => (seen.has(e.name) ? false : (seen.add(e.name), true)));
 }
 
+/** 声明块结束下标（不含）：从 `start` 扫到顶层 `;` 或与块首配平的 `}`（其后紧跟的 `;` 一并吃掉）。 */
+function findDeclBlockEnd(text, start) {
+  let j = start;
+  let depth = 0;
+  for (; j < text.length; j += 1) {
+    const ch = text[j];
+    if (ch === "{") depth += 1;
+    else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        j += 1;
+        if (text[j] === ";") j += 1;
+        break;
+      }
+    } else if (ch === ";" && depth === 0) {
+      j += 1;
+      break;
+    }
+  }
+  return j;
+}
+
 /**
  * 提取单个 d.ts 文本的全部顶层 `export declare ...` 声明块（含多行 interface/class，
  * 空白归一化为单行）。排序只影响块数组顺序，**不丢重复块**（多重集语义）。
@@ -62,23 +84,7 @@ export function extractDeclBlocks(text) {
   for (let i = 0; i < noComments.length; i += 1) {
     if (!noComments.startsWith("export declare", i)) continue;
     // 声明起点：从 export declare 之后扫描到块结束（; 或匹配的 }）
-    let j = i + "export declare".length;
-    let depth = 0;
-    for (; j < noComments.length; j += 1) {
-      const ch = noComments[j];
-      if (ch === "{") depth += 1;
-      else if (ch === "}") {
-        depth -= 1;
-        if (depth === 0) {
-          j += 1;
-          if (noComments[j] === ";") j += 1;
-          break;
-        }
-      } else if (ch === ";" && depth === 0) {
-        j += 1;
-        break;
-      }
-    }
+    const j = findDeclBlockEnd(noComments, i + "export declare".length);
     blocks.push(noComments.slice(i, j).replace(/\s+/gu, " ").trim());
     i = j - 1;
   }
@@ -93,6 +99,24 @@ export function declBlockName(block) {
       block,
     );
   return m === null ? null : m[1];
+}
+
+/** 取命中 `file` 的**最长**前缀入口集：等长多命中如实返回多项，歧义留给调用方判。 */
+function longestPrefixMatches(file, entries) {
+  let best = -1;
+  const matched = [];
+  for (const e of entries) {
+    const hit = e.prefix === "" || file.startsWith(`${e.prefix}/`);
+    if (!hit) continue;
+    if (e.prefix.length > best) {
+      best = e.prefix.length;
+      matched.length = 0;
+      matched.push(e);
+    } else if (e.prefix.length === best) {
+      matched.push(e);
+    }
+  }
+  return matched;
 }
 
 /**
@@ -115,19 +139,7 @@ export function attributeEmitFiles(files, entries) {
   const orphans = [];
   const conflicts = [];
   for (const file of files) {
-    let best = -1;
-    const matched = [];
-    for (const e of entries) {
-      const hit = e.prefix === "" || file.startsWith(`${e.prefix}/`);
-      if (!hit) continue;
-      if (e.prefix.length > best) {
-        best = e.prefix.length;
-        matched.length = 0;
-        matched.push(e);
-      } else if (e.prefix.length === best) {
-        matched.push(e);
-      }
-    }
+    const matched = longestPrefixMatches(file, entries);
     if (matched.length === 0) {
       orphans.push(file);
     } else if (matched.length > 1) {
