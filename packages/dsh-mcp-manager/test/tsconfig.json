@@ -6,9 +6,11 @@
     "allowImportingTsExtensions": true
   },
   "include": ["./**/*.ts"],
-  // e2e 面（test/e2e/**）不参与本编译面：它是文件级 @ts-nocheck 的产物契约测试，且静态
-  // import 本包构建产物 lib/index.js —— 会把包内 shared/*.d.ts 副本与 src 引用的仓库级
-  // shared/*.d.ts 同时拉进 program，触发 declare module 合并的 TS2717（同名两份声明）。
-  // 该文件本就不产生类型诊断（@ts-nocheck），排除后类型覆盖面不变。
+  // e2e 面（test/e2e/**）整体不参与本编译面，两条独立理由：
+  //   - smoke.test.ts 是文件级 @ts-nocheck 的产物契约测试，本就不产生类型诊断；
+  //   - cross-end-lock.test.ts 没有 pragma，但它同样静态 import 本包构建产物 lib/index.js ——
+  //     会把包内 shared/*.d.ts 副本与 src 引用的仓库级 shared/*.d.ts 同时拉进 program，
+  //     触发 declare module 合并的 TS2717（同名两份声明）。
+  // 代价（登记，归 B3）：cross-end-lock.test.ts 的类型错误不在任何编译面内。
   "exclude": ["e2e/**"]
 }

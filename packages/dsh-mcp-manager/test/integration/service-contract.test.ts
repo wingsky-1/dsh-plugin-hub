@@ -2,7 +2,7 @@
  * dsh-mcp-manager — 核心服务契约独立门禁（issue #476，service-contract）。
  *
  * 背景：`ctx.mcpManager` 服务类型面（src/shared/service.ts）是单一
- * 事实源，但提供方 apply.ts 的 provide 对象方法全是宽面签名（string /
+ * 事实源，但提供方 src/index.ts 的 provide 对象方法全是宽面签名（string /
  * Record<string, unknown>），与类型面无编译期锚点；此前「契约签名变更未同步
  * 测试」纯靠人工，改 shared 类型不触发任何检查（skipLibCheck + 消费方 import
  * 不炸即绿）。
@@ -13,7 +13,7 @@
  *    本文件被 tsc 编译即红。本文件的类型断言在 Node 直跑（type stripping）时
  *    被擦除，因此必须由编译面执行（接线见文件头注释链：scripts/test/
  *    service-contract-wiring.test.ts spawn tsc -p test/tsconfig.json）。
- * 2. 运行时：静态读取 apply.ts 源文本，提取 `ctx.provide("mcpManager", {...})`
+ * 2. 运行时：静态读取 src/index.ts 源文本，提取 `ctx.provide("mcpManager", {...})`
  *    对象的方法名集合 + 参数个数/可选位，与契约清单比对（不多不少）——提供方
  *    删方法/改参数形状逃过 tsc 宽面签名时红。
  *
@@ -190,7 +190,7 @@ export type DtoListCoversService = Assert<
 
 // ─────────────────────────── 运行时方法面断言区 ───────────────────────────
 // 契约清单（方法名 + 参数个数 + 可选参数个数）。单一事实源：与上方编译期清单
-// 同源同序；提供方 apply.ts 的 provide 对象若删方法/加方法/改参数形状 → 红。
+// 同源同序；提供方 src/index.ts 的 provide 对象若删方法/加方法/改参数形状 → 红。
 const CONTRACT_METHODS: ReadonlyArray<{ name: string; paramCount: number; optionalCount: number }> =
   [
     { name: "registerServer", paramCount: 1, optionalCount: 0 },
@@ -206,8 +206,8 @@ const CONTRACT_METHODS: ReadonlyArray<{ name: string; paramCount: number; option
 const pkgDir = fileURLToPath(new URL("../../", import.meta.url));
 
 /**
- * 从 apply.ts 源文本提取 provide("mcpManager", {...}) 对象的方法面。
- * 说明：provide 对象字面量未导出、且 apply.ts 导入链重（不 import 运行时），
+ * 从 src/index.ts 源文本提取 provide("mcpManager", {...}) 对象的方法面。
+ * 说明：provide 对象字面量未导出、且 src/index.ts 导入链重（不 import 运行时），
  * 故用源文本级静态提取（v2 方案「c 兜底」层级：方法名存在性 + 参数形状即可抓
  * 删方法/改参数量；不做 AST 级双真源）。括号配对跳过字符串与注释，防方法体
  * 内大括号干扰对象边界。
@@ -223,8 +223,8 @@ function extractProvidedServiceMethods(): {
 } {
   const src = readFileSync(join(pkgDir, "src", "index.ts"), "utf8");
   // 锚定首个 `provide("mcpManager", {` marker（非 AST——测试刻意不做解析级双真源，
-  // 方法名存在性 + 参数个数即可抓「删方法/改参数量」）。当前 apply.ts 全文件仅此
-  // 一处该形态调用，indexOf 首个命中即目标；若未来 apply.ts 出现多处 provide
+  // 方法名存在性 + 参数个数即可抓「删方法/改参数量」）。当前 src/index.ts 全文件仅此
+  // 一处该形态调用，indexOf 首个命中即目标；若未来 src/index.ts 出现多处 provide
   // 调用或形态变化导致本提取失配，测试会红并提示人工更新（fail-loud，不静默）。
   const marker = 'provide("mcpManager", {';
   const markerIndex = src.indexOf(marker);
@@ -327,10 +327,10 @@ function extractProvidedServiceMethods(): {
   return { markerIndex, bodyStart, bodyEnd, methods };
 }
 
-describe("service-contract：apply.ts provide 方法面与契约清单一致", () => {
+describe("service-contract：src/index.ts provide 方法面与契约清单一致", () => {
   const extracted = extractProvidedServiceMethods();
 
-  it('apply-services.ts 应包含 ctx.provide("mcpManager", {...}) 服务注入', () => {
+  it('src/index.ts 应包含 ctx.provide("mcpManager", {...}) 服务注入', () => {
     expect(extracted.markerIndex >= 0).toBe(true);
   });
 

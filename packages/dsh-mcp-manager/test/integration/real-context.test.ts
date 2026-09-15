@@ -2,12 +2,12 @@
  * dsh-mcp-manager — 组合根层的真实 cordis Context 集成测试（§8.1 的「组合根」行）。
  *
  * 测什么：组合根机制的**三条纪律**——宿主上下文只到组合根（域拿到的是一份收窄后的能力面）、装配成对
- * 且释放逆序、每个域复位自己的装配标记。驱动它的是本文件里的**夹具域**：真实 11 域要到 B2 才落位，
+ * 且释放逆序、每个域复位自己的装配标记。驱动它的是本文件里的**夹具域**：真实各域尚未经这条机制接线，
  * 探针要证的是机制本身，不是某个域的业务。
  *
  * 为什么机制物理不在包入口：入口的**任何新导出**都会让 export-surface-snapshot 判红（B1.4 的硬判据是
- * 入口导出面零 diff），而写在入口又不导出的函数测试不可达。入口仍是组合根——B2 由它调这三个函数接
- * 真实域；本文件测的就是它要用的那三个。
+ * 入口导出面零 diff），而写在入口又不导出的函数测试不可达。入口尚未接线——截至 #767 B2b，组合根仍走模块求值期的静态 installXxx、并在 apply 内直接
+ * installUpgrade/releaseUpgrade，对这三个函数零调用；处置（接线或收窄/删除）归 B3，见 v5 附录 H。
  *
  * 为什么用真 Context 而不是假 ctx：ctx.effect 的卸载时机、ctx.on 的作用域与摘除、ctx.provide 的可见性
  * 都是宿主行为，夹具替代会把「装配顺序 / 释放逆序」测成对夹具的断言。宿主服务（webServer / tools /
@@ -142,8 +142,9 @@ interface Mounted {
 /**
  * 按真实挂载顺序装配：先 provide 宿主服务，再 ctx.plugin(组合根)。
  *
- * 组合根体就是 B2 要在 src/index.ts 里写的那三行——bindHost → assemble →
- * ctx.effect(() => () => safeDisposeAll(disposers))；本文件的每个用例都从这一条链出发。
+ * 组合根体本应是 bindHost → assemble →
+ * ctx.effect(() => () => safeDisposeAll(disposers)) 这三行；入口尚未接线（见上）。
+ * 本文件的每个用例都从这一条链出发，测的是这条链本身。
  */
 async function mount(domains: readonly DomainSpec<HostFaces>[]): Promise<Mounted> {
   const host = makeHostServices();
