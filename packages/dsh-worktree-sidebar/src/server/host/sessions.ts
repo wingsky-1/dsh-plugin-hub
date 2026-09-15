@@ -1,23 +1,50 @@
 /**
  * 会话链适配层：只回答「这个会话的父会话是谁」。
  *
- * 官方把父链记在会话 header 上（`parentSession?: SessionId`，dsh-session/lib/types/types.d.ts:71），
- * 子 agent 建立时由 dsh-subagent 写入（dsh-subagent/lib/index.js:504-510 同时继承父的 cwd）。
- * 本域不读 cwd——那个事实已经在子会话自己的 header 里了——只读父 id。
+ * 官方把父链记在会话 header 上（`parentSession?: SessionId`，dsh-session/lib/types/types.d.ts:71）。它有两个来源，
+ * **两个都必要**：活会话走 `ctx.sessions.get`（同步），已结束会话只能走持久面 `sessionPersistence.stat`
+ * （单会话定位，不读事件日志）——官方 `dsh-session/lib/index.js:1550-1557` 的 `get` 契约明写是
+ * "Look up a live session"，会话被释放/detach 之后 header 就取不到了。而 UI 里能点选的子会话恰恰是
+ * **已结束**的那些，少了持久面这一半，继承在用户可见的那个状态上就是空的。
+ *
+ * 持久面是可选服务（`dsh-base/cordis.patch.yml:110-111` 的 jsonl 后端提供）：缺席时如实回 undefined，
+ * 继承退回 live-only，功能降级而不是把整条文件根解析拖垮。
  */
 import type { SessionId } from "@deepseek-ai/dsh-session";
-import type { SessionChainPort } from "../scope/deps.ts";
+import type { LiveParent, SessionChainPort } from "../scope/deps.ts";
 
-/** 官方 sessions 服务的窄面：只按 id 取一次会话记录。 */
+/** 官方 sessions 服务的窄面：只按 id 取一次**活**会话记录。 */
 export interface SessionsFace {
   get(id: SessionId): { readonly header: { readonly parentSession?: string } } | undefined;
 }
 
-export function bindSessions(sessions: SessionsFace): SessionChainPort {
+/** 官方持久会话服务的窄面：只取一条已结束会话的 header。 */
+export interface StoredSessionsFace {
+  stat(
+    id: SessionId,
+  ): Promise<{ readonly header: { readonly parentSession?: string } } | undefined>;
+}
+
+export function bindSessions(
+  sessions: SessionsFace,
+  /**
+   * 持久面按**调用时刻**取：`ctx.get` 的语义是「取当刻值，未提供回 undefined」
+   * （`cordis/lib/index.js:754-771`），在 apply 期取一次会让晚挂的后端永久退化成缺席。
+   */
+  storedSessions: () => StoredSessionsFace | undefined,
+): SessionChainPort {
   return {
-    parentOf: (sessionId) => {
+    liveParentOf: (sessionId): LiveParent => {
       const session = sessions.get(sessionId as SessionId);
-      return session === undefined ? undefined : session.header.parentSession;
+      if (session === undefined) return { kind: "not-live" };
+      const parent = session.header.parentSession;
+      return parent === undefined ? { kind: "root" } : { kind: "parent", id: parent };
+    },
+    storedParentOf: async (sessionId) => {
+      const stored = storedSessions();
+      if (stored === undefined) return undefined;
+      const snapshot = await stored.stat(sessionId as SessionId);
+      return snapshot?.header.parentSession;
     },
   };
 }

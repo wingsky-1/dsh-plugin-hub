@@ -3,7 +3,7 @@
  *
  * 所有 argv 构造在 `impl/inspect`（纯函数，可逐字断言），本块只负责执行与把退出码翻译成答案。
  *
- * 状态（归属校验的 TTL 缓存与装配入参）住在实例里；域是**进程内单例**，第二次 `install` 由
+ * 状态（归属校验与仓库判定的 TTL 缓存、装配入参）住在实例里；域是**进程内单例**，第二次 `install` 由
  * `installed` 守卫**显式抛错**（响亮失败优于静默共享/丢数据）。
  */
 import { resolve } from "node:path";
@@ -32,12 +32,25 @@ const BELONGS_TTL_MS = 30_000;
 /** 缓存条目上限。超出即整表丢弃——这是一份加速缓存，不是需要保真的状态。 */
 const BELONGS_CACHE_MAX = 256;
 
+/**
+ * 仓库判定结论的缓存存活时长。安装期要给**每个新 agent** 判一次「cwd 在不在仓库里」，
+ * 裸起子进程会把这次判定推到几十到上百毫秒；而官方 `agents.create()` 是「发布之后立刻开跑」
+ * （`dsh-agent/lib/index.js:415` 的契约），子会话的**第一回合**正落在这个窗口里——
+ * 判定慢一拍，子会话第一回合就看不到工具。
+ *
+ * 与 `BELONGS_TTL_MS` 同值同纪律：仓库归属只在 worktree 被删/移动时变，执行期还另有一次兜底校验。
+ */
+const COMMON_DIR_TTL_MS = 30_000;
+
+/** 仓库判定缓存的条目上限，与归属缓存同口径。 */
+const COMMON_DIR_CACHE_MAX = 256;
+
 /** 未装配时能力面的失败文案：读到它就说明装配守卫有洞，当场暴露而不是拿旧 deps 出结果。 */
 const NOT_INSTALLED = "dsh-worktree-sidebar: git 域尚未装配";
 
 /** git 域的服务面。 */
 export interface GitApi {
-  /** 该目录是否在某个仓库里；是则给公共 git 目录的**绝对**路径。 */
+  /** 该目录是否在某个仓库里；是则给公共 git 目录的**绝对**路径（带 TTL 缓存）。 */
   commonDir(dir: string): Promise<string | undefined>;
   /** 同一主仓库下的全部 worktree。 */
   listWorktrees(dir: string): Promise<readonly WorktreeEntry[]>;
@@ -68,6 +81,7 @@ class GitService implements GitApi {
   /** 装配入参。释放即放开，能力面随之当场失败。 */
   private deps: GitDeps | undefined;
   private readonly belongsCache = new Map<string, { at: number; ok: boolean }>();
+  private readonly commonDirCache = new Map<string, { at: number; value: string | undefined }>();
 
   /** 装配 git 域。重复装配是编程错误，当场暴露。 */
   install(deps: GitDeps): void {
@@ -80,10 +94,22 @@ class GitService implements GitApi {
   release(): void {
     this.installed = false;
     this.belongsCache.clear();
+    this.commonDirCache.clear();
     this.deps = undefined;
   }
 
   async commonDir(dir: string): Promise<string | undefined> {
+    const hit = this.commonDirCache.get(dir);
+    const now = Date.now();
+    if (hit !== undefined && now - hit.at < COMMON_DIR_TTL_MS) return hit.value;
+    const value = await this.computeCommonDir(dir);
+    if (this.commonDirCache.size >= COMMON_DIR_CACHE_MAX) this.commonDirCache.clear();
+    this.commonDirCache.set(dir, { at: now, value });
+    return value;
+  }
+
+  /** 真起一次 git 求公共目录；缓存命中不走这里。 */
+  private async computeCommonDir(dir: string): Promise<string | undefined> {
     const result = await this.exec().run(commonDirArgs(dir));
     if (!result.ok) return undefined;
     const value = parseSingleLine(result.stdout);

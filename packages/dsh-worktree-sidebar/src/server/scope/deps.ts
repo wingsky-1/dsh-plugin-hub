@@ -50,15 +50,30 @@ export interface TypertPort {
 }
 
 /**
- * 会话链只读面：本域只要「父会话是谁」这一个事实。
+ * 会话链只读面：本域只要「父会话是谁」这一个事实，但它有**两个来源**。
  *
  * 子 agent 的会话是**独立会话**——dsh-subagent 在创建它时只把父的 cwd 拷进子 header
  * （dsh-subagent/lib/index.js:504-510），所以「子 agent 跟着父会话的 worktree」不会自动发生：
  * 绑定记在父会话 id 上，子会话自己那条永远是空的，不问父链就永远看不到。
+ *
+ * 而父链只在**活会话**的 header 上随时可读：官方 `ctx.sessions.get` 是 live-only
+ * （`dsh-session/lib/index.js:1550-1557`）。UI 里能点选的子会话恰恰是**已结束**的那些，
+ * 所以还要一条持久读面。两者的分工必须显式——用 `undefined` 同时表示「没有父」和「不在册」时，
+ * 每个普通会话都会去问一次持久面，把一次确定的「到顶」变成请求路径上的额外 IO。
  */
+export type LiveParent =
+  | { readonly kind: "parent"; readonly id: string }
+  | { readonly kind: "root" }
+  | { readonly kind: "not-live" };
+
 export interface SessionChainPort {
-  /** 该会话的父会话 id；普通会话（无父）或会话不存在时返回 undefined。 */
-  parentOf(sessionId: string): string | undefined;
+  /** 活会话的父链读数；不在册时回 `not-live`，由本域决定要不要回落持久面。 */
+  liveParentOf(sessionId: string): LiveParent;
+  /**
+   * 已结束会话的父 id（持久 header）。取不到回 undefined。
+   * 后端出错（找不到 / 父链成环 / 持久化失败）**可以抛**，由本域收口成「到顶」。
+   */
+  storedParentOf(sessionId: string): Promise<string | undefined>;
 }
 
 export interface ScopeDeps {

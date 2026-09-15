@@ -10,6 +10,7 @@ import type { WebRoute } from "@deepseek-ai/dsh-host-webserver";
 import type {} from "@deepseek-ai/dsh-typert-protocol";
 import { ROUTES } from "./shared/interface.ts";
 import { bindAgents } from "./server/host/agents.ts";
+import type { StoredSessionsFace } from "./server/host/sessions.ts";
 import { bindSessions } from "./server/host/sessions.ts";
 import { bindTypert } from "./server/host/typert.ts";
 import * as apiApi from "./server/api/interface.ts";
@@ -63,11 +64,20 @@ export async function apply(ctx: Context, config: WorktreeSidebarConfig = {}): P
       all: () => ctx.agents.list(),
     }),
     typert: bindTypert(ctx.typert.lookups),
-    sessions: bindSessions(ctx.sessions),
+    sessions: bindSessions(ctx.sessions, () => storedSessionsOf(ctx)),
     now: () => new Date().toISOString(),
   };
   const disposers = await assemble(host, config);
   ctx.effect(() => () => safeDisposeAll(disposers));
+}
+
+/**
+ * 官方**持久**会话面（可选）。每次调用都现取：`ctx.get` 的语义是「取当刻值，未提供回 undefined」
+ * （`cordis/lib/index.js:754-771`），提前取一次会让晚挂的后端永久退化成缺席，子会话继承就只在
+ * 会话存活期间成立——而 UI 里能点选的恰是已结束的子会话。
+ */
+function storedSessionsOf(ctx: Context): StoredSessionsFace | undefined {
+  return ctx.get("sessionPersistence");
 }
 
 /**

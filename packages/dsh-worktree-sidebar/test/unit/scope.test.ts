@@ -63,14 +63,22 @@ function scopeDeps(
     configureThrows?: boolean;
     /** 官方 provider 恰好在 install 的 `subscribe` 调用**之中**注册（订阅与重读之间的那个窗口）。 */
     providerArrivesDuringSubscribe?: LookupDescriptorPort;
-    /** 会话链：子会话 id → 父会话 id（缺省没有父）。 */
+    /** 会话链（**活**会话）：子会话 id → 父会话 id（缺省没有父）。 */
     parents?: Record<string, string>;
+    /** 已结束、只能从**持久面**读父链的会话 id。 */
+    notLive?: readonly string[];
+    /** 持久面里的父链：会话 id → 父会话 id。 */
+    storedParents?: Record<string, string>;
+    /** 持久面读取抛错（后端坏掉）——本域必须把它收口成「到顶」。 */
+    storedThrows?: boolean;
   } = {},
 ) {
   const table = new Map<string, BindingRecord>(Object.entries(options.binding ?? {}));
   const dropped: string[] = [];
   /** 谁被查过登记：父链走错时这里会出现不存在的会话（或同一个 id 出现两次）。 */
   const bindingGets: string[] = [];
+  /** 谁被持久面查过：活着的顶层会话不该出现在这里（那是确定的到顶，不该白加一次 IO）。 */
+  const storedCalls: string[] = [];
   const configured: Array<(id: string) => Promise<FileScope | undefined>> = [];
   let disposed = false;
 
@@ -109,7 +117,18 @@ function scopeDeps(
         };
       },
     },
-    sessions: { parentOf: (id) => options.parents?.[id] },
+    sessions: {
+      liveParentOf: (id) => {
+        if (options.notLive?.includes(id) === true) return { kind: "not-live" };
+        const parent = options.parents?.[id];
+        return parent === undefined ? { kind: "root" } : { kind: "parent", id: parent };
+      },
+      storedParentOf: async (id) => {
+        storedCalls.push(id);
+        if (options.storedThrows === true) throw new Error("stored sessions unavailable");
+        return options.storedParents?.[id];
+      },
+    },
     existsDirectory: () => options.exists !== false,
   };
 
@@ -118,6 +137,7 @@ function scopeDeps(
     table,
     dropped,
     bindingGets,
+    storedCalls,
     configured,
     lookups,
     isDisposed: () => disposed,
@@ -230,7 +250,7 @@ describe("子 agent 继承父会话的登记", () => {
   });
 
   it("到顶（没有父）按未绑定处理，且不再向不存在的父会话查登记", async () => {
-    const { deps, bindingGets } = scopeDeps({
+    const { deps, bindingGets, storedCalls } = scopeDeps({
       binding: { parent: record },
       parents: {},
       exists: true,
@@ -238,6 +258,8 @@ describe("子 agent 继承父会话的登记", () => {
     });
     expect(await effectiveWorktree(deps, "child")).toBeNull();
     expect(bindingGets).toEqual(["child"]);
+    // 活着的会话答「没有父」就是确定的到顶：不该再去问持久面（那是请求路径上的额外 IO）。
+    expect(storedCalls).toEqual([]);
   });
 
   it("父链成环时停下（错数据不转圈，每个会话最多查一次）", async () => {
@@ -255,6 +277,51 @@ describe("子 agent 继承父会话的登记", () => {
     expect(await effectiveWorktree(deps, "child")).toBeNull();
     expect(dropped).toEqual(["parent"]);
     expect(table.has("parent")).toBe(false);
+  });
+
+  it("子会话已结束（不在册）时从持久面取父链：继承仍然成立", async () => {
+    const { deps, storedCalls } = scopeDeps({
+      binding: { parent: record },
+      notLive: ["child"],
+      storedParents: { child: "parent" },
+      exists: true,
+      belongs: true,
+    });
+    expect(await effectiveWorktree(deps, "child")).toBe("/wt");
+    expect(storedCalls).toEqual(["child"]);
+  });
+
+  it("多级父链跨两种来源：结束的子 → 结束的父 → 活着的祖父", async () => {
+    const { deps, storedCalls } = scopeDeps({
+      binding: { grand: record },
+      notLive: ["child", "parent"],
+      storedParents: { child: "parent", parent: "grand" },
+      exists: true,
+      belongs: true,
+    });
+    expect(await effectiveWorktree(deps, "child")).toBe("/wt");
+    expect(storedCalls).toEqual(["child", "parent"]);
+  });
+
+  it("持久面读不出来时按「到顶」收口，不把异常抛进解析器", async () => {
+    const { deps } = scopeDeps({
+      binding: { parent: record },
+      notLive: ["child"],
+      storedThrows: true,
+      exists: true,
+      belongs: true,
+    });
+    expect(await effectiveWorktree(deps, "child")).toBeNull();
+  });
+
+  it("持久面缺席（组合里没挂后端）＝退回 live-only，不抛", async () => {
+    const { deps } = scopeDeps({
+      binding: { parent: record },
+      notLive: ["child"],
+      exists: true,
+      belongs: true,
+    });
+    expect(await effectiveWorktree(deps, "child")).toBeNull();
   });
 
   it("路由与解析器读同一份继承结果（一处实现覆盖两端）", async () => {

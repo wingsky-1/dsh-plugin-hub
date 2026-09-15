@@ -26,12 +26,15 @@ interface FakeHost {
   readonly ctx: Context;
   /** 已注册的路由（api 域在这里留痕）。 */
   readonly routes: WebRoute[];
+  /** 组合根软取过哪些可选服务（装配期不该有——按调用时刻取）。 */
+  readonly serviceGets: string[];
   /** 走 cordis 的卸载路径：把每个 effect 的 disposer 逐个 await 掉。 */
   disposeAll(): Promise<void>;
 }
 
 function fakeHost(): FakeHost {
   const routes: WebRoute[] = [];
+  const serviceGets: string[] = [];
   const disposers: Array<() => unknown> = [];
   const ctx = {
     logger: { warn: () => undefined },
@@ -54,6 +57,12 @@ function fakeHost(): FakeHost {
       },
     },
     sessions: { get: () => undefined },
+    // 可选服务的软取必须发生在**调用时刻**：装配期取一次会让晚挂的后端永久缺席
+    // （`cordis/lib/index.js:754-771` 的 `get` 就是「取当刻值」）。这个假件只记不答。
+    get: (name: string) => {
+      serviceGets.push(name);
+      return undefined;
+    },
     typert: {
       lookups: {
         get: () => undefined,
@@ -71,6 +80,7 @@ function fakeHost(): FakeHost {
     // 唯一一处断言：把窄假件递给要求完整 Context 的入口，收窄面见上面的字面量。
     ctx: ctx as unknown as Context,
     routes,
+    serviceGets,
     async disposeAll() {
       for (const dispose of disposers.splice(0).reverse()) await dispose();
     },
@@ -113,6 +123,14 @@ describe("组合根的生命周期", () => {
     expect(host.routes.map((route) => route.path).sort()).toEqual(
       [ROUTES.bindings, ROUTES.health].sort(),
     );
+    await host.disposeAll();
+  });
+
+  it("装配期不软取可选服务：持久会话面按调用时刻取，晚挂的后端不算缺席", async () => {
+    const host = fakeHost();
+    await apply(host.ctx);
+
+    expect(host.serviceGets).toEqual([]);
     await host.disposeAll();
   });
 

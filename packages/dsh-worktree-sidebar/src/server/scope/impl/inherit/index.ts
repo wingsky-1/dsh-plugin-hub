@@ -19,11 +19,29 @@ export async function inheritedWorktree(
   const seen = new Set<string>([sessionId]);
   let current = sessionId;
   for (;;) {
-    const parent = deps.sessions.parentOf(current);
+    const parent = await parentOf(deps, current);
     if (parent === undefined || seen.has(parent)) return null;
     seen.add(parent);
     const inherited = await ownWorktree(deps, parent);
     if (inherited !== null) return inherited;
     current = parent;
+  }
+}
+
+/**
+ * 上跳一步。活 header 优先；只有「不在册」才回落持久面——活着的顶层会话是**确定的到顶**，
+ * 再去问持久面等于给每个普通会话白加一次 IO。
+ *
+ * 持久面坏了按「到顶」收口：它答不出来时正确的行为是让文件根退回会话自己的 cwd，
+ * 而不是把异常抛进解析器（解析器与路由共用这条路径，抛出去等于把右栏文件树一起打掉）。
+ */
+async function parentOf(deps: ScopeDeps, sessionId: string): Promise<string | undefined> {
+  const live = deps.sessions.liveParentOf(sessionId);
+  if (live.kind === "parent") return live.id;
+  if (live.kind === "root") return undefined;
+  try {
+    return await deps.sessions.storedParentOf(sessionId);
+  } catch {
+    return undefined;
   }
 }
