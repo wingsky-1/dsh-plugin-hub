@@ -60,10 +60,13 @@ describe("官方 dsh-mcp-client 的导入面锁", () => {
     expect(found, "官方包不在 catalog：编译期 import 会让 tsc 直接解析失败").toEqual([]);
   });
 
-  it("src / test 里没有 require(...) 或字面量动态 import(...)", () => {
+  it("src / test 里没有 require(...) / 字面量动态 import(...) / 副作用 import", () => {
+    // 副作用形态（`import "…"`）既没有 from 也没有括号，前一条判据与它不相交——漏了它，
+    // 「只在 constants.ts 保留一处字面量」这条也就被绕过了。
     const forms = [
       new RegExp(`require\\(\\s*["']${SPECIFIER}["']`, "g"),
       new RegExp(`import\\(\\s*["']${SPECIFIER}["']`, "g"),
+      new RegExp(`import\\s+["']${SPECIFIER}["']`, "g"),
     ];
     const found = ALL_FILES.flatMap((f) => {
       const text = readFileSync(f, "utf8");
