@@ -1656,6 +1656,13 @@ if (WRITE_BASELINE) {
   for (const [name, entry] of Object.entries(previous?.packages ?? {})) {
     if (!(name in baseline.packages)) baseline.packages[name] = entry;
   }
+  // 键序也必须确定：`--write-baseline --package X` 把 X 排在前面、其余包按旧基线的顺序续在
+  // 后面，于是「不同包各写一次」会产出不同的键序——跨 main 的 rebase 必然在同一个文件上冲突
+  // （实测一次 rebase 为此反复解冲突 5 次）。全量写基线时 resolvePackages() 本就排序，单包写
+  // 时不是；排序后两条路径的输出一致。
+  baseline.packages = Object.fromEntries(
+    Object.entries(baseline.packages).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+  );
   mkdirSync(dirname(BASELINE_PATH), { recursive: true });
   writeFileSync(BASELINE_PATH, `${JSON.stringify(baseline, null, 2)}\n`, "utf8");
   console.log(`verify-dir-imports | 已写入基线 ${BASELINE_PATH}（${analyses.length} 个包）`);

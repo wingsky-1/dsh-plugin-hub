@@ -106,6 +106,23 @@
         "directImpl": [],
         "uncoveredSrcFiles": []
       }
+    },
+    "dsh-web-file-preview": {
+      "modules": 1,
+      "scannedSrcFiles": 3,
+      "allSrcTsFiles": 6,
+      "interfaceFacades": 1,
+      "leafValueEdges": 0,
+      "fileValueEdges": 2,
+      "crossModuleRefs": 2,
+      "quality": {
+        "leafModuleCycles": [],
+        "fileCycles": [],
+        "implToOtherImpl": [],
+        "missingInterface": [],
+        "directImpl": [],
+        "uncoveredSrcFiles": []
+      }
     }
   }
 }

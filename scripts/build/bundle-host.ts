@@ -248,6 +248,16 @@ for (const rel of walkFiles(join(ROOT, "shared"), (f) => f.endsWith(".d.ts"))) {
   mkdirSync(dirname(dest), { recursive: true });
   cpSync(join(ROOT, "shared", rel), dest);
 }
+// 2c. 副本目录是源的镜像，镜像里不该有源没有的东西：cpSync 只增不删，于是退役一个 shared
+// 模块后，每个包的 shared/ 里都会留下旧副本，而 pack-check 的「shared 副本残留」判据会因此
+// 判红——症状是「本地构建过的工作区永久红、干净检出却绿」（实测：main 退役 shared/frontmatter.*
+// 后，6 个包的旧副本让 test:scripts 的 3 条 pack-check 用例全红）。故这里显式对账一次。
+for (const rel of walkFiles(join(pkgDir, "shared"), () => true)) {
+  if (!existsSync(join(ROOT, "shared", rel))) {
+    rmSync(join(pkgDir, "shared", rel), { force: true });
+    console.log(`[bundle-host] ${process.argv[2]}: 清理已无源的 shared 副本 ${rel}`);
+  }
+}
 console.log(`[bundle-host] ${process.argv[2]}: d.ts X1 完成（shared/ 副本随包）`);
 
 // 3. LICENSE 进包
