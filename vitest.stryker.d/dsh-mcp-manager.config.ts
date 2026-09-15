@@ -29,6 +29,7 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/unit/unit-manager.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-manager2.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-middleware.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-official-package-face.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-pipeline.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-routes-sse.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-store.test.ts',

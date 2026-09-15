@@ -55,6 +55,11 @@ import type {
 import * as configModelApi from "./server/config/interface.ts";
 import { Config, DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS } from "./server/config/interface.ts";
 import * as dispatchApi from "./server/servers/dispatch/interface.ts";
+import {
+  installLifecycle,
+  mountLedger,
+  releaseLifecycle,
+} from "./server/servers/lifecycle/interface.ts";
 import * as pipelineApi from "./server/pipeline/interface.ts";
 import * as runtimeApi from "./server/connection/runtime/interface.ts";
 import * as statsApi from "./server/stats/interface.ts";
@@ -67,11 +72,15 @@ import {
   registerMiddlewareTools,
 } from "./server/inject/interface.ts";
 import { installUpgrade, releaseUpgrade } from "./server/upgrade/interface.ts";
-import { DEFAULT_RESULT_TRUNCATE_BYTES } from "./server/shared/interface.ts";
+import { bindHost, DEFAULT_RESULT_TRUNCATE_BYTES } from "./server/shared/interface.ts";
 import { SSE_FRAMES } from "./shared/interface.ts";
 import type { McpServerSummary, SseFramePayload } from "./shared/interface.ts";
 import type { MiddlewareMode } from "./server/workspace/interface.ts";
-import { makeResolveRoot, normalizeMiddlewareMode } from "./server/workspace/interface.ts";
+import {
+  makeResolveRoot,
+  makeServerIdTable,
+  normalizeMiddlewareMode,
+} from "./server/workspace/interface.ts";
 import * as workspaceApi from "./server/workspace/interface.ts";
 
 // 目录域的静态端口装配。三组 Port 全是静态模块引用（不需要宿主 ctx 或配置），故写在入口
@@ -571,6 +580,27 @@ export async function apply(
     statsFile: explicitPaths.statsFile,
   });
 
+  // 装载生命周期域的接线（#767 S1-4c）。为什么在 apply 里而不是模块求值期：本域要的 loader 是
+  // **宿主服务**（官方 loader 包不在 catalog、类型面取不到，只能经 ctx.get 现取），静态模块引用
+  // 给不出来。bindHost 交付的是能力转发（不是装配期快照），loader.load 到调用时才向宿主取服务。
+  //
+  // 先 release 再 install：apply 在同一进程里会被多次调用（宿主重载插件、测试对多个假宿主各
+  // apply 一次），而域内的装配标记是进程级的；不先复位，第二次装配会当场抛。
+  //
+  // id 表（(scope,name)→注册名）由组合根建立、随装配一起换代：它是 workspace 域的工厂产物
+  // （767-v6-STAGED-PLAN §2.6 裁定 B），而实例的生命周期属于装配——表是纯内存态、不进任何
+  // 持久化键，换一次装配就换一批 id 不牵动用户配置。
+  const host = bindHost(ctx);
+  const serverIds = makeServerIdTable();
+  releaseLifecycle();
+  installLifecycle({
+    loader: host.loader,
+    tools: host.tools,
+    pipeline: pipelineApi,
+    workspace: serverIds,
+    config: configModelApi,
+  });
+
   const store = new McpStore(resolveStorePath(config));
   await store.load();
   const manager = new McpManager(ctx, store);
@@ -645,6 +675,12 @@ export async function apply(
       runtime.disposeMiddleware();
       runtime.watchCleanup();
       void manager.dispose();
+      // 装载账本只发起 dispose、不等结算（官方 dispose 会等在途首连，挂死的服务器能把它拖到
+      // SDK 的 60s 超时），故这里单独排空一次；错因降到日志：卸载路径上抛错只会盖掉首因。
+      releaseLifecycle();
+      void mountLedger.flushDisposals().catch((error: unknown) => {
+        ctx.logger.warn(`dsh-mcp-manager: flush loader disposals failed: ${String(error)}`);
+      });
       // 逆序释放：upgrade 是第一个装配的域，故最后复位它的标记。
       releaseUpgrade();
     },

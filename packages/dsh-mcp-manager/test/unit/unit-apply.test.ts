@@ -23,6 +23,8 @@ const {
   makeMiddlewareHotSwitch,
   saveDisabledTools,
 } = await import("../../src/index.ts");
+const { mountLedger, mountServer, releaseLifecycle } =
+  await import("../../src/server/servers/lifecycle/interface.ts");
 
 let tempDirs = [];
 
@@ -408,5 +410,91 @@ describe("D8：off 模式 mcp__ 直呼命中禁用表 → deny", () => {
     } finally {
       restore();
     }
+  });
+});
+describe("组合根接线：装载生命周期域（#767 S1-4c）", () => {
+  afterEach(() => {
+    releaseLifecycle();
+  });
+
+  /**
+   * 假宿主上只多给两样：loader 服务（官方 loader 是宿主服务，bindHost 经 ctx.get 现取）与
+   * plugin（挂载入口）。工具注册面按当次装载的 serverName 造一个前缀命中项——官方不暴露状态
+   * API，注册面是六态投影唯一能观测「已连上」的输入面（设计 §3.1 输入面 B）。
+   */
+  function wiringCtx() {
+    const mounts = [];
+    const disposers = [];
+    const ctx = baseCtx({
+      get: (name) =>
+        name === "loader"
+          ? { import: async () => ({ name: "mcp-client", apply: () => {} }) }
+          : undefined,
+      plugin: (mod, config) => {
+        mounts.push({ mod, config });
+        return { await: async () => {}, dispose: async () => {} };
+      },
+      tools: {
+        register: () => () => {},
+        schemas: () =>
+          mounts.length === 0
+            ? []
+            : [{ name: `mcp__${mounts[mounts.length - 1].config.serverName}__echo` }],
+      },
+      effect: (fn) => {
+        const inner = fn();
+        disposers.push(inner);
+        return () => {
+          void inner();
+        };
+      },
+    });
+    return { ctx, mounts, disposers };
+  }
+
+  const server = { name: "svc", transport: "stdio", command: "echo", enabled: true };
+
+  it("apply 之后域已装配：mountServer 经宿主 loader 装载，id 进账本、状态投影到 connected", async () => {
+    const dir = makeTempDir("dsh-mcp-manager-wire-");
+    const { ctx, mounts } = wiringCtx();
+    await apply(ctx, { enabled: false, storePath: join(dir, "mcp.json") });
+
+    const states = [];
+    const result = await mountServer({
+      root: "/tmp/proj",
+      server,
+      onState: (state) => states.push(state),
+    });
+
+    expect(result.outcome).toMatchObject({ kind: "settled", state: "connected" });
+    expect(result.id).toMatch(/^[A-Za-z0-9_-]{1,32}$/u);
+    expect(mountLedger.get(result.id)?.key).toBe(result.id);
+    // 交给官方的 serverName 是 id 表分配的注册名，不是用户写的 bare 名。
+    expect(mounts.map((m) => m.config.serverName)).toEqual([result.id]);
+    expect(states).toEqual(["connecting", "connected"]);
+  });
+
+  it("跨 root 同名各自成条：两个 root 都拿到独立注册名（不再是后到跳过）", async () => {
+    const dir = makeTempDir("dsh-mcp-manager-wire-");
+    const { ctx, mounts } = wiringCtx();
+    await apply(ctx, { enabled: false, storePath: join(dir, "mcp.json") });
+
+    const a = await mountServer({ root: "/tmp/proj-a", server, onState: () => {} });
+    const b = await mountServer({ root: "/tmp/proj-b", server, onState: () => {} });
+
+    expect(a.id).not.toBe(b.id);
+    expect(mountLedger.size).toBe(2);
+    expect(mounts.map((m) => m.config.serverName)).toEqual([a.id, b.id]);
+  });
+
+  it("卸载后域被复位：mountServer 报未装配（组合根漏装即抛，不静默空装）", async () => {
+    const dir = makeTempDir("dsh-mcp-manager-wire-");
+    const { ctx, disposers } = wiringCtx();
+    await apply(ctx, { enabled: false, storePath: join(dir, "mcp.json") });
+    for (const dispose of disposers) await dispose();
+
+    await expect(mountServer({ root: "/tmp/proj", server, onState: () => {} })).rejects.toThrow(
+      /servers\/lifecycle 域未装配/,
+    );
   });
 });

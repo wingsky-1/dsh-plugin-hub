@@ -32,10 +32,10 @@
       "modules": 16,
       "scannedSrcFiles": 102,
       "allSrcTsFiles": 117,
-      "interfaceFacades": 15,
+      "interfaceFacades": 16,
       "leafValueEdges": 18,
-      "fileValueEdges": 139,
-      "crossModuleRefs": 186,
+      "fileValueEdges": 140,
+      "crossModuleRefs": 187,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
