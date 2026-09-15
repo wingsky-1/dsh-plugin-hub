@@ -9,6 +9,12 @@ export default defineConfig({
   test: {
     include: [
       'packages/dsh-mcp-manager/test/integration/real-context.test.ts',
+      'packages/dsh-mcp-manager/test/unit/ports/api-ports.test.ts',
+      'packages/dsh-mcp-manager/test/unit/ports/catalog-ports.test.ts',
+      'packages/dsh-mcp-manager/test/unit/ports/inject-ports.test.ts',
+      'packages/dsh-mcp-manager/test/unit/ports/orchestrator-ports.test.ts',
+      'packages/dsh-mcp-manager/test/unit/ports/pipeline-ports.test.ts',
+      'packages/dsh-mcp-manager/test/unit/ports/runtime-ports.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-apply.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-call-stats.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-catalog.test.ts',

@@ -51,6 +51,8 @@ function makeManagerLog() {
     recordCatalogTools: async (name, meta) => {
       log.catalog.push([name, [...meta.keys()].sort()]);
     },
+    // ManagerLite.stats 必填（#767 终态评审）：假体按契约给最小实现，不埋点。
+    stats: { isEnabled: () => false, recordCall: () => {} },
   };
   return { manager, log };
 }

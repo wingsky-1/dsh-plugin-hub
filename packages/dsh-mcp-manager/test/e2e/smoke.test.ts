@@ -3515,6 +3515,8 @@ describe("SDK 端到端连接（连接/工具注册/callTool/断线重连）", (
         enhancement: {},
         emitStatus() {},
         recordCatalogTools: async () => {},
+        // ManagerLite.stats 必填（#767 终态评审）：假体按契约给最小实现，不埋点。
+        stats: { isEnabled: () => false, recordCall: () => {} },
       },
       normalizeServer({
         name: "mini",
@@ -3736,6 +3738,8 @@ describe("#362 补充 4：registerServer.toolDefinitions（调用方封装定义
         enhancement: {},
         emitStatus() {},
         recordCatalogTools: async () => {},
+        // ManagerLite.stats 必填（#767 终态评审）：假体按契约给最小实现，不埋点。
+        stats: { isEnabled: () => false, recordCall: () => {} },
       },
       normalizeServer({ name: "codegraph", transport: "stdio", command: "true" }),
     );
@@ -3759,6 +3763,8 @@ describe("#362 补充 4：registerServer.toolDefinitions（调用方封装定义
         enhancement: {},
         emitStatus() {},
         recordCatalogTools: async () => {},
+        // ManagerLite.stats 必填（#767 终态评审）：假体按契约给最小实现，不埋点。
+        stats: { isEnabled: () => false, recordCall: () => {} },
       },
       normalizeServer({ name: "mini", transport: "stdio", command: "true" }),
     );

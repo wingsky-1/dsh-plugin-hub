@@ -78,8 +78,12 @@ export interface ManagerLite {
     serverName: string,
     toolMeta: Map<string, { description?: unknown }>,
   ): Promise<void>;
-  /** 行为扩展（#664 阶段 2）：调用统计最小面，supervisor 直呼路径埋点。 */
-  stats?: Pick<McpStatsCollector, "isEnabled" | "recordCall">;
+  /**
+   * 行为扩展（#664 阶段 2）：调用统计最小面，supervisor 直呼路径埋点。
+   * 必填（#767 终态评审）：组合根建的 McpManager 恒有 stats（manager.ts 构造期 new），
+   * 假体漏填即类型报错——可选会让「漏填」退化成静默不埋点。
+   */
+  stats: Pick<McpStatsCollector, "isEnabled" | "recordCall">;
 }
 
 /** 中间层宿主最小面（McpManager 实现；McpMiddleware 构造注入）。 */
