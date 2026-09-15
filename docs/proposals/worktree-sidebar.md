@@ -982,6 +982,7 @@ ESLint 的 `no-restricted-imports` 块间规则同步纳入 `inject.ts`。§8 �
 
 1. **【高】子会话结束后不再继承父会话的 worktree 根**（§20.4 第 6 条）。用户能在「N subagents」里选中的正是**已结束**的子会话，
    所以这是 S9 承诺在 UI 上唯一可见状态下失效。
+   **状态：第七轮已按 §20.7.2 落地**（见 §20.7.5）。
    **根因（已定位）**：**父链的读取面选错了**。我们走 `src/server/host/sessions.ts:18-21` 的
    `ctx.sessions.get(id).header.parentSession`，而官方 `dsh-session/lib/index.js:1550-1557` 的契约原文就是
    *"Look up a live session"*（`return this.store.get(id)?.session`，store 只装活 entry）⇒ 会话一结束就拿不到 header。
@@ -995,7 +996,7 @@ ESLint 的 `no-restricted-imports` 块间规则同步纳入 `inject.ts`。§8 �
      live-only 行为）、`effectiveWorktree` 增加一次可能触发持久化列举的异步调用（需 TTL 缓存）、`sessionQuery` 是否在 web profile
      必定存在需实测。
    - **C. 自建「学到的父链」缓存**：只在会话存活期观察过才记得住，用户没在存活期打开过该子会话就无从得知 ⇒ 不可靠，不建议。
-2. **【中】子 agent 第一回合拿不到工具**（§20.4 第 6 条，异步判定的时序缺口）。
+2. **【中】子 agent 第一回合拿不到工具**（§20.4 第 6 条，异步判定的时序缺口）。**状态：第七轮已按 §20.7.2 落地**（见 §20.7.5）。
    **根因（已定位）**：**安装期门控是异步的，而官方是「发布后立刻开跑」**。`tools/impl/service/index.ts:75-89` 的
    `consider()` 必须 `await repoOf()`（`tools/impl/bind/index.ts:94-98` → `git/impl/service/index.ts:86-95` 的 `commonDir`
    **每次起一个 git 子进程、无缓存**；只有 `belongsTo` 带 30s TTL）才 `publish`；而 `dsh-agent/lib/index.js:428` 的
@@ -1138,3 +1139,31 @@ ESLint 的 `no-restricted-imports` 块间规则同步纳入 `inject.ts`。§8 �
 4. 并发交错（「会不会装两遍 / 旧代 deps 装进新代」）只做了源码级分析、未做并发实验；结论是同步 check-and-set 在一个 JS turn
    内原子、`release` 同步自增 generation 无交错窗口、异步分支的二次复检必须保留。
 5. 复核者未能核实：A″ 臂全部原始证据（见 §20.7.0 第 1 条）；它自己未做任何运行实验，故真机时序与持久面成本仍是源码推断。
+
+#### 20.7.5 实施登记（第七轮，提交 `a26d983`）
+
+| 计划项 | 落地情况 | 红绿各一条 |
+|---|---|---|
+| **#2 选 S1**：git 域 `commonDir` TTL 缓存 | 已落地。`git/impl/service/index.ts` 新增 `COMMON_DIR_TTL_MS`(30s) 与 `COMMON_DIR_CACHE_MAX`(256)；`commonDir` 走缓存、`computeCommonDir` 才起 git；`release()` 清缓存 | «同目录第二次判定不再起子进程» ⇐ 去掉缓存 ⇒ 红；«TTL 过期后重新问 git» ⇐ 命中不判 TTL ⇒ 红；«release 丢掉缓存» ⇐ 不清缓存 ⇒ 红 |
+| **#2 不同步发布**（M1 转为硬前提） | 已落地：不动事件回调语义。M1 记为「**若将来改成同步发布则必须先做**」 | 无（该条不产生行为面） |
+| **#1 选 S2**：持久面单会话读取 | 已落地。`host/sessions.ts` 走 `sessionPersistence.stat(id)`（软取、按调用时刻） | «不在册时从持久面取父链，继承仍成立» ⇐ 去掉持久分支 ⇒ 红 |
+| **#1 端口拆三态**（M2） | 已落地。`LiveParent = parent / root / not-live`，只有 `not-live` 才回落持久面 | «活着的顶层会话不得查持久面»（`storedCalls === []`）⇐ 忽略 `root` 分支 ⇒ 红 |
+| **#1 异常收口**（M3） | 已落地。`parentOf` 内 try/catch ⇒ 到顶 | «持久面读不出来时按到顶收口» ⇐ 去掉 try/catch ⇒ 红（用例以 rejection 失败） |
+| **#1 调用时刻软取**（M4） | 已落地。组合根传 `() => storedSessionsOf(ctx)` | «装配期不软取可选服务»（`serviceGets === []`）⇐ 改成装配期取一次 ⇒ 红 |
+
+**与 §20.7.3 的偏差（如实登记）**
+
+1. 原判据 2「缓存只记成功，不记失败」**未采用**：修法落在 git 域，缓存语义与 `belongsTo` 对齐（正负都缓存）。
+   实测判据相应改成 «「不是仓库」也进缓存：同一个非仓库目录不重复起子进程»。理由：负结果缓存是同一份纪律的一部分
+   （执行期本来就有兜底校验），分两套语义会让这个文件出现两种 TTL 规则。
+2. **新增测试文件** `test/unit/git-service.test.ts`（git 域服务层原先没有单测）⇒ `--min 13 → 14`，
+   并重跑 `pnpm stryker:gen`（`vitest.stryker.d/dsh-worktree-sidebar.config.ts` 随之更新，`stryker:check` 校验一致）。
+3. §20.7.2 的 `M1` 由「必修」降级为「改同步发布时的硬前提」——最终没有采用同步发布。
+
+**测试面**：14 文件 / **196 用例**（186 → 196：git-service +5、scope +4、apply-lifecycle +1）。
+**门禁**：`pnpm gate:pr` **34 步全 0**；`typecheck` / `tsc -p test/tsconfig.json` / `prettier --check` /
+`lint`（0 error、508 warning = 预算）/ `verify-dir-imports` / `stryker:check` 全 0。
+
+**端到端证据（本分支构建 + 隔离实例）**：`/tmp/r6-verify/evidence-arms/armC-fixed-branch/{mock.log,dsh.log,verify.log}`。
+读数：子会话**首回合**模型请求 `tools 30 | wt 3`（修复前 27 / 0）；子会话**结束后** `GET /bindings?session=<子id>`
+仍返回父的 worktree（修复前 `null`），存活期与结束后两次采样一致。
