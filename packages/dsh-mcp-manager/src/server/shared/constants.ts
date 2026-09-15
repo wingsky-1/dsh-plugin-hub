@@ -45,3 +45,12 @@ export const LIST_DEFAULT_TOOLS_PER_SERVER = 50;
  * 两个物理定义、会静默漂移。config 域门面照旧转出同名符号，既有调用点不变。
  */
 export const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
+/**
+ * 官方 dsh-mcp-client 的包名（交给 loader 按名解析的**说明符**，不是 import 语句）。
+ *
+ * 落共享层是因为消费方在 servers/lifecycle：官方包不在 catalog、仓库内不可解析，只能经
+ * loader 的 baseUrl 按名解析（设计 §1.1），而这条说明符必须与其他配置面口径同源——散在
+ * 消费方里就会随重构复制出第二份，改包名时只改一处才谈得上一致性。测试同样经共享层门面取，
+ * 不重抄字面量。
+ */
+export const OFFICIAL_MCP_CLIENT_SPECIFIER = "@deepseek-ai/dsh-mcp-client";

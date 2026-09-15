@@ -38,7 +38,15 @@ const OFFICIAL_MODULE: OfficialPluginModule = { name: "test:official", apply: ()
  * 而这不是本片要修的问题——夹具的真实形状由集成探针按 `bindHost` 交付面单独验。
  */
 function install(loader: LoaderPort): void {
-  installLifecycle({ loader, pipeline: { withTimeout } });
+  installLifecycle({
+    loader,
+    pipeline: { withTimeout },
+    // 本文件只测账本 / 六态投影 / 等待窗口三块，装配仍须给全键集（注入面对账要求严格相等）。
+    // 这三样是惰性假件：真装载链的字段映射与注册面探测归 unit-lifecycle-mount。
+    workspace: { idFor: () => "srv" },
+    config: { expandServerEnv: (server) => server },
+    tools: { schemas: () => [] },
+  });
 }
 
 /** 构造一个已装配的假 LoaderPort 并挂一条账本条目。 */

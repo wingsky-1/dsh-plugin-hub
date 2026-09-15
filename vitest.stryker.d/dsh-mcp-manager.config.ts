@@ -24,6 +24,7 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/unit/unit-file-io-queue.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-file-io.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-hotspot.test.ts',
+      'packages/dsh-mcp-manager/test/unit/unit-lifecycle-mount.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-lifecycle.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-manager.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-manager2.test.ts',

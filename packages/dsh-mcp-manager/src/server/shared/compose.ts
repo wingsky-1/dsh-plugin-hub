@@ -59,7 +59,12 @@ export function bindHost(ctx: HostContextPort): HostFaces {
   return {
     logger: ctx.logger,
     register: { register: (route) => ctx.webServer.register(route) },
-    tools: { register: (definition) => ctx.tools.register(definition) },
+    tools: {
+      register: (definition) => ctx.tools.register(definition),
+      // 现读宿主注册表而不是装配期快照：六态投影靠它判「该 id 下已有注册工具」（设计 §3.1 输入面 B）。
+      // scope 原样转交：省略 scope 是查询方的语义选择，绑定层不得替它把参数丢掉。
+      schemas: (scope) => ctx.tools.schemas(scope),
+    },
     prompt: { section: (section) => ctx.systemPrompt.section(section) },
     expose: { provide: (name, service) => ctx.provide(name, service) },
     events: { onPreStep: (handler) => ctx.on("agent/pre-step", handler) },

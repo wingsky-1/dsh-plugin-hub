@@ -21,7 +21,12 @@ import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import { afterAll, describe, expect, it } from "vitest";
 
 import type { McpManagerService } from "../../src/index.ts";
-import { assemble, bindHost, safeDisposeAll } from "../../src/server/shared/interface.ts";
+import {
+  assemble,
+  bindHost,
+  OFFICIAL_MCP_CLIENT_SPECIFIER,
+  safeDisposeAll,
+} from "../../src/server/shared/interface.ts";
 import type { DomainSpec, HostFaces } from "../../src/server/shared/interface.ts";
 import { fakeLoaderPort, pollUntil, tempDshHome } from "../helpers.ts";
 
@@ -89,6 +94,9 @@ function makeDomain(name: string, log: string[], faults: FixtureFaults = {}): Fi
 
 // ---------------------------------------------------------------- 宿主夹具
 
+/** 宿主注册表里预置的一条工具 schema：schemas 转发探针拿它比对象身份，不另造投影。 */
+const SEED_TOOL_SCHEMA = { name: "mcp__itest__seed", description: "", parameters: {} };
+
 /** 组合根够得着的三样宿主服务：只实现被调用的那一面，并记下调用现场。 */
 function makeHostServices() {
   const routes: string[] = [];
@@ -96,12 +104,18 @@ function makeHostServices() {
   const sections: string[] = [];
   const provided: string[] = [];
   const removals: string[] = [];
+  const toolSchemas: Array<typeof SEED_TOOL_SCHEMA> = [SEED_TOOL_SCHEMA];
+  let schemaCalls = 0;
   return {
     routes,
     tools,
     sections,
     provided,
     removals,
+    toolSchemas,
+    get schemaCalls() {
+      return schemaCalls;
+    },
     webServer: {
       register(route: WebRoute) {
         routes.push(route.path);
@@ -114,6 +128,10 @@ function makeHostServices() {
       register(definition: ToolDefinition) {
         tools.push(definition.name);
         return () => {};
+      },
+      schemas() {
+        schemaCalls += 1;
+        return toolSchemas;
       },
     } as unknown as Context["tools"],
     systemPrompt: {
@@ -205,6 +223,28 @@ describe("组合根：宿主上下文只到组合根", () => {
     const service = { apiVersion: 2 };
     faces.expose.provide("itest.service", service);
     expect(root.get("itest.service", false)).toBe(service);
+  });
+
+  it("tools.schemas 真转发到宿主注册表，且扩 Pick 之后能力面仍是减法", async () => {
+    const { fiber, host } = await mount([]);
+    const faces = bindHost(fiber.ctx);
+
+    // 返回宿主那一份对象本身（不复制成快照）：六态投影要在服务器掉线后立刻看到注册面变化，
+    // 复制出的快照会让已断开的服务器永远显示 connected。
+    expect(faces.tools.schemas()).toBe(host.toolSchemas);
+    expect(host.schemaCalls).toBe(1);
+    host.toolSchemas.push({ name: "mcp__late__pong", description: "", parameters: {} });
+    expect(faces.tools.schemas().map((schema) => schema.name)).toEqual([
+      "mcp__itest__seed",
+      "mcp__late__pong",
+    ]);
+    // 扩 Pick 不等于把 ctx.tools 整份放出门：注册表上其余能力都不在面里。
+    for (const wider of ["execute", "restrict", "get", "guard", "register"]) {
+      expect(wider in faces.tools).toBe(wider === "register");
+    }
+    expect("ctx" in faces).toBe(false);
+    expect("get" in faces).toBe(false);
+    expect("plugin" in faces).toBe(false);
   });
 
   it("events.onPreStep 订阅落在宿主事件总线上，摘除后不再收到", async () => {
@@ -357,18 +397,18 @@ describe("组合根：LoaderPort 的解析与装载", () => {
     const { root, fiber } = await mount([]);
     const faces = bindHost(fiber.ctx);
     const official = { name: "itest:official", apply: () => {} };
-    const loader = fakeLoaderPort({ modules: { "@deepseek-ai/dsh-mcp-client": official } });
+    const loader = fakeLoaderPort({ modules: { [OFFICIAL_MCP_CLIENT_SPECIFIER]: official } });
     root.provide("loader", loader);
 
-    await expect(faces.loader.load("@deepseek-ai/dsh-mcp-client")).resolves.toBe(official);
-    expect(loader.calls).toEqual([["import", "@deepseek-ai/dsh-mcp-client"]]);
+    await expect(faces.loader.load(OFFICIAL_MCP_CLIENT_SPECIFIER)).resolves.toBe(official);
+    expect(loader.calls).toEqual([["import", OFFICIAL_MCP_CLIENT_SPECIFIER]]);
   });
 
   it("宿主未提供 loader 服务时 load 抛错，判词点名 loader（fail closed 而不是回落 undefined）", async () => {
     const { fiber } = await mount([]);
     const faces = bindHost(fiber.ctx);
 
-    await expect(faces.loader.load("@deepseek-ai/dsh-mcp-client")).rejects.toThrow(
+    await expect(faces.loader.load(OFFICIAL_MCP_CLIENT_SPECIFIER)).rejects.toThrow(
       /宿主未提供 loader 服务/,
     );
   });
