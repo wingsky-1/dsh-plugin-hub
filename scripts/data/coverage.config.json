@@ -30,7 +30,7 @@
     {
       "pattern": "**/client/**",
       "kind": "pending-project",
-      "reason": "客户端渲染面：packages/*/src/client/**（33 文件、755 函数）与 shared/client/**（ensure-style.js、i18n.js 两个模块，其测试在 scripts/test 下、不在 unit/integration 两个 project 内）。现有 test/client/** 是「读 lib 产物 + vm 执行」的契约测试，直连 src 的 DOM 单测（happy-dom project）尚未落地，计入分母只会让这些文件恒为 0%、把全局值稀释到 59%，阈值随之失去约束力。",
+      "reason": "客户端渲染面：packages/*/src/client/**（#722 立条时 33 文件 / 755 函数；#840 退役 dsh-web-file-preview 后为 43 文件——该计数随包结构漂移、判据不依赖它）与 shared/client/**（ensure-style.js、i18n.js 两个模块，其测试在 scripts/test 下、不在 unit/integration 两个 project 内）。现有 test/client/** 是「读 lib 产物 + vm 执行」的契约测试，直连 src 的 DOM 单测（happy-dom project）尚未落地，计入分母只会让这些文件恒为 0%、把全局值稀释到 59%，阈值随之失去约束力。",
       "exitCriteria": "happy-dom（或等价 DOM）project 落地、且 client 源码有直连 src 的单测后，删除本条并一次性重新基线化阈值",
       "since": "#722 阶段三",
       "reviewBy": "2027-03-31"
