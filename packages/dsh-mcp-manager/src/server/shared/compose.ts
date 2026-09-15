@@ -6,7 +6,33 @@
  * 必须 import 得到它。入口仍然是组合根：B2 由它调用这里的三个函数
  * （`bindHost(ctx)` → `assemble(host, domains)` → `ctx.effect(() => () => safeDisposeAll(disposers))`）。
  */
-import type { HostContextPort, HostFaces } from "./host-faces.ts";
+import type {
+  HostContextPort,
+  HostFaces,
+  MountedPlugin,
+  OfficialPluginModule,
+} from "./host-faces.ts";
+
+/**
+ * 宿主 loader 服务的收窄面：本包不引官方 loader 的类型（`@deepseek-ai/cordis-plugin-loader` 不在
+ * catalog、仓库内不可解析），只认运行时真要用到的那一个方法。
+ */
+interface ResolvedLoader {
+  /** 按包名解析模块；官方实现可能同步返回，故一律按 `await` 消费。 */
+  import(specifier: string): unknown;
+}
+
+/**
+ * `ctx.plugin` 的编译期插件面。
+ *
+ * 为什么必须就地收窄转型：`ctx.plugin<P extends Plugin>` 的配置形参由 `GetPluginConfig<P>` 从
+ * 插件体签名反推，而 `OfficialPluginModule` 的成员全可选——推不出 `Plugin.Object` 那一支，配置位
+ * 退化成 `never`，结构类型因此直接过不去。运行时官方插件的契约只有「带 `apply` 的对象」一条，
+ * 所以这里只替换编译期推导，不放宽任何运行时校验。
+ */
+interface MountableOfficialPlugin {
+  apply(ctx: unknown, config: unknown): unknown;
+}
 
 /**
  * 一个域给组合根的装配对。
@@ -37,6 +63,44 @@ export function bindHost(ctx: HostContextPort): HostFaces {
     prompt: { section: (section) => ctx.systemPrompt.section(section) },
     expose: { provide: (name, service) => ctx.provide(name, service) },
     events: { onPreStep: (handler) => ctx.on("agent/pre-step", handler) },
+    loader: {
+      load: async (specifier) => {
+        // `loader` 不在 `Context` 类型面上，只能按名字现取；取不到就 fail closed——回落
+        // `undefined` 会把「宿主没装配 loader」表现成「这个包名不存在」，把装配错误推迟到现场。
+        const loader = ctx.get("loader") as ResolvedLoader | undefined;
+        if (loader === undefined || loader === null) {
+          throw new Error(
+            "dsh-mcp-manager: 宿主未提供 loader 服务，无法按包名解析官方 MCP 客户端——" +
+              "裸包名只有 loader 能解析（锚 ctx.baseUrl）",
+          );
+        }
+        return (await loader.import(specifier)) as OfficialPluginModule;
+      },
+      mount: (module, config) => {
+        const fiber = ctx.plugin(module as MountableOfficialPlugin, config);
+        // dispose 只置位不回滚：晚到的 ready 结算据此判断还能不能改状态。
+        const state = { disposed: false };
+        const handle: MountedPlugin = {
+          ready: fiber.await().then(() => undefined),
+          get disposed() {
+            return state.disposed;
+          },
+          async dispose() {
+            state.disposed = true;
+            await fiber.dispose();
+          },
+        };
+        // 兜底回收链：宿主卸载本插件时跑。某个域漏了 release，官方实例也不会活到下一次装配——
+        // 它持有的子进程与 serverName 预留都随此释放。
+        ctx.effect(
+          () => () => {
+            void handle.dispose();
+          },
+          "dsh-mcp-manager: loader mount",
+        );
+        return handle;
+      },
+    },
   };
 }
 

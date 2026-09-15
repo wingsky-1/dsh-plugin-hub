@@ -51,12 +51,59 @@ export interface EventsPort {
 }
 
 /**
- * 组合根允许触碰的宿主上下文面：把 `Context` 收窄成六个成员的 `Pick`，`bindHost` 的入参到此为止，
+ * 官方插件的模块面：官方 MCP 客户端的**命名空间**形态（`name` / `inject` / `apply` /
+ * `Config`，无 `default`）。成员全可选是因为这里只描述「我方见到的那份包长什么样」，
+ * 不重复官方自己的必填约束——自持声明的价值在于形状只有这一处，不作为校验面。
+ */
+export interface OfficialPluginModule {
+  readonly name?: string;
+  readonly inject?: readonly string[];
+  readonly apply?: (ctx: unknown, config: unknown) => unknown;
+  readonly Config?: unknown;
+}
+
+/**
+ * 一次装载的句柄：**我方账本**的条目，不是 loader 的 entry。
+ *
+ * 刻意不含配置内容，也不含账本键：键由调用方（lifecycle 域）自己按 `(scope, name)` 持有，
+ * 端口因此对 `unknown` 的配置保持无感知——否则端口就得反过来窥探配置长什么样。
+ */
+export interface MountedPlugin {
+  /**
+   * 首次连接尝试结束（成功或失败都 settle）。**不等于 connected**：官方在
+   * `failOnStartupError: false` 下即使首连失败也让 `apply` 正常 resolve。
+   */
+  readonly ready: Promise<void>;
+  /** 是否已 dispose：晚到的 ready 结算据此判断还能不能改状态（对齐现有代际守卫语义）。 */
+  readonly disposed: boolean;
+  /** 释放：官方 `apply` 里注册的 effect 会断开连接、注销工具、释放 serverName 预留。 */
+  dispose(): Promise<void>;
+}
+
+/**
+ * 官方引擎的装载口。
+ *
+ * 只收两样：按包名解析模块、把模块挂成我方拥有的实例。不收 loader 的 create / update /
+ * remove——那三者末端都会写 loader 配置树（`EntryTree.create` 末行 `tree.write()`），把运行期
+ * 的 `command` / `args` / `env` 暴露进用户 profile。
+ */
+export interface LoaderPort {
+  /** 按包名解析官方插件模块：裸包名只有 loader 能解析（锚 `ctx.baseUrl`），是本包唯一合规入口。 */
+  load(specifier: string): Promise<OfficialPluginModule>;
+  /** 以本插件为父挂载一个官方插件实例，返回自持账本句柄。 */
+  mount(module: OfficialPluginModule, config: unknown): MountedPlugin;
+}
+
+/**
+ * 组合根允许触碰的宿主上下文面：把 `Context` 收窄成九条能力的 `Pick`，`bindHost` 的入参到此为止，
  * 域拿不到更宽的上下文。
+ *
+ * `loader` 服务本身**不在这里**：它的类型面由不在 catalog 的官方 loader 包经声明合并提供，本包
+ * 取不到，`Pick<Context, "loader">` 会直接判 tsc 红；取它走 `get`（见 `compose.ts` 的 `load`）。
  */
 export type HostContextPort = Pick<
   Context,
-  "logger" | "webServer" | "tools" | "on" | "systemPrompt" | "provide"
+  "logger" | "webServer" | "tools" | "on" | "systemPrompt" | "provide" | "effect" | "plugin" | "get"
 >;
 
 /** 组合根收窄后递给各域的宿主能力面：域再从中 `Pick` 自己那一份。 */
@@ -67,4 +114,5 @@ export interface HostFaces {
   readonly prompt: PromptPort;
   readonly expose: ExposePort;
   readonly events: EventsPort;
+  readonly loader: LoaderPort;
 }

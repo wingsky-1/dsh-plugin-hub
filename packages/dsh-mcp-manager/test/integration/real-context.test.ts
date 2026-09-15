@@ -23,7 +23,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import type { McpManagerService } from "../../src/index.ts";
 import { assemble, bindHost, safeDisposeAll } from "../../src/server/shared/interface.ts";
 import type { DomainSpec, HostFaces } from "../../src/server/shared/interface.ts";
-import { tempDshHome } from "../helpers.ts";
+import { fakeLoaderPort, pollUntil, tempDshHome } from "../helpers.ts";
 
 // ---------------------------------------------------------------- 编译期锁
 // 入口的声明合并必须让消费方按包名取到服务类型面：声明合并搬出入口、或键改成别的字面量，这条先红。
@@ -189,6 +189,11 @@ describe("组合根：宿主上下文只到组合根", () => {
     expect("ctx" in faces).toBe(false);
     expect("webServer" in faces).toBe(false);
     expect("on" in faces).toBe(false);
+    // loader 是新增的第 7 样能力；它取 loader 服务走的 `get` 与装载走的 `plugin` 都不得顺带出门。
+    expect("loader" in faces).toBe(true);
+    expect("get" in faces).toBe(false);
+    expect("plugin" in faces).toBe(false);
+    expect("effect" in faces).toBe(false);
 
     faces.register.register({ path: "/itest/route", kind: "exact" } as unknown as WebRoute);
     expect(host.routes).toEqual(["/itest/route"]);
@@ -336,6 +341,99 @@ describe("组合根：释放逆序与标记复位", () => {
 
     await first.fiber.dispose();
     expect(domain.installed()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------- 装载口
+
+/**
+ * LoaderPort 的装配判据：解析真的经宿主 loader 服务、装载真的落到 `ctx.plugin`。
+ *
+ * 假模块的 `apply` 收的是**真** ctx（`ctx.plugin` 由真 cordis 执行），故断言落在真实的 effect
+ * 注册与回收上；官方包本身不在仓库内可解析（设计 §6.4），故模块一律用结构形状造。
+ */
+describe("组合根：LoaderPort 的解析与装载", () => {
+  it('load 经 ctx.get("loader") 调到宿主服务的 import，并把解析结果原样交付', async () => {
+    const { root, fiber } = await mount([]);
+    const faces = bindHost(fiber.ctx);
+    const official = { name: "itest:official", apply: () => {} };
+    const loader = fakeLoaderPort({ modules: { "@deepseek-ai/dsh-mcp-client": official } });
+    root.provide("loader", loader);
+
+    await expect(faces.loader.load("@deepseek-ai/dsh-mcp-client")).resolves.toBe(official);
+    expect(loader.calls).toEqual([["import", "@deepseek-ai/dsh-mcp-client"]]);
+  });
+
+  it("宿主未提供 loader 服务时 load 抛错，判词点名 loader（fail closed 而不是回落 undefined）", async () => {
+    const { fiber } = await mount([]);
+    const faces = bindHost(fiber.ctx);
+
+    await expect(faces.loader.load("@deepseek-ai/dsh-mcp-client")).rejects.toThrow(
+      /宿主未提供 loader 服务/,
+    );
+  });
+
+  it("mount 把模块挂成 ctx.plugin 的实例：apply 真被调用，ready 在其 resolve 之后 settle", async () => {
+    const { fiber } = await mount([]);
+    const faces = bindHost(fiber.ctx);
+    const order: string[] = [];
+    let releaseApply = () => {};
+    const handle = faces.loader.mount(
+      {
+        name: "itest:official",
+        apply: async () => {
+          order.push("apply:start");
+          await new Promise<void>((resolve) => {
+            releaseApply = () => {
+              resolve();
+            };
+          });
+          order.push("apply:end");
+        },
+      },
+      { serverName: "itest" },
+    );
+    // ready 的结算时点靠**登记次序**断言，不靠等毫秒：早于 apply 收尾结算的实现在这里先红。
+    void handle.ready.then(() => {
+      order.push("ready");
+    });
+
+    await pollUntil("apply 开始", () => order.includes("apply:start"));
+    expect(order).toEqual(["apply:start"]);
+
+    releaseApply();
+    await handle.ready;
+    expect(order).toEqual(["apply:start", "apply:end", "ready"]);
+    await handle.dispose();
+  });
+
+  it("dispose() 置位 disposed；漏释放的实例由宿主 fiber 卸载时的兜底链回收", async () => {
+    const { fiber } = await mount([]);
+    const faces = bindHost(fiber.ctx);
+    const released: string[] = [];
+    const module = (name: string, tag: string) => ({
+      name,
+      apply: (ctx: unknown) => {
+        (ctx as Context).effect(() => () => {
+          released.push(tag);
+        });
+      },
+    });
+
+    const first = faces.loader.mount(module("itest:first", "first"), { serverName: "first" });
+    await first.ready;
+    expect(first.disposed).toBe(false);
+    await first.dispose();
+    expect(first.disposed).toBe(true);
+    expect(released).toEqual(["first"]);
+
+    // 这一笔刻意不走确定性链：只有 bindHost 里挂的兜底 effect 能回收它。
+    const second = faces.loader.mount(module("itest:second", "second"), { serverName: "second" });
+    await second.ready;
+    await fiber.dispose();
+    expect(second.disposed).toBe(true);
+    await pollUntil("兜底链回收 second", () => released.includes("second"));
+    expect(released).toEqual(["first", "second"]);
   });
 });
 

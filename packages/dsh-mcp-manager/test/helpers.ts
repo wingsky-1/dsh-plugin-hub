@@ -162,6 +162,79 @@ export function fakeTransport(overrides = {}) {
 }
 
 /**
+ * 假 loader：宿主服务面（`import`）与 LoaderPort 面（`load` / `mount`）合一。
+ *
+ * 为什么两副面孔合一：`bindHost` 的 `LoaderPort.load` 只经 `ctx.get("loader")` 拿到的**宿主服务**
+ * （`import`）解析包名，而 LoaderPort 自己（`load` / `mount`）是域侧要消费的注入面；同一份夹具
+ * 同时扮演两侧，探针才能在一条链上端到端验「端口 → 宿主服务」的转发。
+ *
+ * 为什么不引真 loader：官方 loader 与官方 MCP 客户端都不在 catalog、仓库内不可解析，任何 import
+ * （含 import type）在 CI 上都会直接失败；夹具只按自持声明的结构形状造。
+ *
+ * ready 的三种时序由 `script.ready` 注入（默认 immediate）：immediate 立即 settle、deferred 由测试
+ * 显式 `settleReady()` 放闸、never 永不 settle（测超时封装与晚到结算守卫）。禁止用固定 sleep 等
+ * 结算（本文件头部的防 flake 纪律）。
+ *
+ * @param {object} [script]
+ * @param {Record<string, unknown>} [script.modules] 包名 → 模块（load/import 按表解析，未登记即抛）
+ * @param {"immediate"|"deferred"|"never"} [script.ready] 句柄 ready 的结算时序
+ * @param {boolean} [script.disposeThrows] dispose 是否抛错（置位在先，抛错在后）
+ */
+export function fakeLoaderPort(script = {}) {
+  const modules = script.modules ?? {};
+  const calls = [];
+  const handles = [];
+  const pendingReady = [];
+  const makeReady = () => {
+    if (script.ready === "never") return new Promise(() => {});
+    if (script.ready === "deferred") {
+      return new Promise((resolve) => {
+        pendingReady.push(resolve);
+      });
+    }
+    return Promise.resolve();
+  };
+  const loader = {
+    calls,
+    handles,
+    /** deferred 时序的放闸口：一次性结算所有已 mount 句柄的 ready。 */
+    settleReady() {
+      for (const resolve of pendingReady.splice(0)) resolve();
+    },
+    import(specifier) {
+      calls.push(["import", specifier]);
+      if (!(specifier in modules)) {
+        throw new Error("fakeLoaderPort: 未登记的包名 " + specifier);
+      }
+      return modules[specifier];
+    },
+    async load(specifier) {
+      calls.push(["load", specifier]);
+      return await loader.import(specifier);
+    },
+    mount(module, config) {
+      calls.push(["mount", module, config]);
+      const state = { disposed: false, disposeCalls: 0 };
+      const record = { module, config, state, ready: makeReady() };
+      handles.push(record);
+      return {
+        get disposed() {
+          return state.disposed;
+        },
+        ready: record.ready,
+        async dispose() {
+          state.disposed = true;
+          state.disposeCalls += 1;
+          calls.push(["dispose", record]);
+          if (script.disposeThrows === true) throw new Error("fakeLoaderPort: dispose 失败");
+        },
+      };
+    },
+  };
+  return loader;
+}
+
+/**
  * 伪造 MCPClient（连接监督器的最小执行面）。
  *
  * 消费面（supervisor.ts）：initialize() / listTools(cursor?) / callTool(name, args, opts)；
