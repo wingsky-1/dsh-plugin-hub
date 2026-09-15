@@ -1041,10 +1041,11 @@ ESLint 的 `no-restricted-imports` 块间规则同步纳入 `inject.ts`。§8 �
 |---|---|---|---|
 | 20.2 子 agent 也暴露工具 | `688f27b` | `host/agents.ts` 的 `AgentHostPort.roots()` → `all()` 并删掉顶层过滤（注释留痕「**有意推翻**」）；`src/index.ts` 改 `ctx.agents.list()`；`tools/deps.ts` 与 `tools/impl/service` 措辞；两份 README 改成「所有 agent（含子 agent）」 | m1（把过滤改回「只放行枚举里的第一个」）→ `host-agents.test.ts` 子代理用例红；m1b（组合根改回 `ctx.agents.roots()`）→ apply-lifecycle 两条红 |
 | 20.3 架构评审收敛 | `233db46` | 必修 1/2/3 + S1/S2/S6（清单见 §20.5 第 4 条） | m4（把 `live` 缓存改回来）→ 新判据「退场后的 agent 不再能 publish」红；m5（组合根改回 `roots()`）→ apply-lifecycle 两条以**有意判据**的报错红 |
+| 20.7 两条真机缺口的修复（第七轮） | `a26d983` | git 域 `commonDir` 加 TTL 缓存；会话链端口拆**三态** + 持久面 `sessionPersistence.stat` 回落 + 异常收口成「到顶」+ 调用时刻软取（逐条见 §20.7.5） | g1–g6 六条突变各自打红：缓存命中 / TTL 过期 / `release` 清缓存 / 忽略三态的 `root` / 去掉 try-catch / 装配期软取 |
 
-**测试面**：13 文件 / **186 用例**（20.2 新增 2 条、收敛新增 1 条；`--min 13` 文件数不变，`pnpm stryker:gen` 面未动）。
+**测试面**：**14 文件 / 196 用例**（13/186 → 14/196：20.2 新增 2 条、收敛新增 1 条、第七轮新增 10 条并**新增一个测试文件** ⇒ `--min 13 → 14` + 重跑 `pnpm stryker:gen`）。
 **红绿纪律**同 §19.6：`cp` 备份 + `sha256sum -c` 还原核对，突变脚本模式未命中即抛错。
-**门禁**：20.2 提交后 `pnpm gate:pr` **34 步全 0**；rebase 到 `origin/main` `191cddf` 之后再跑一遍，**34 步全 0**。
+**门禁**：20.2 提交后 `pnpm gate:pr` **34 步全 0**；rebase 到 `origin/main` `191cddf` 之后再跑一遍，**34 步全 0**；第七轮两条修复提交后第三遍，**34 步全 0**。
 **rebase 后的两次红都是本地陈旧产物，不是代码缺陷（如实登记）**：
 
 1. `pack:check` 红：7 个包残留 `packages/*/shared/frontmatter.d.ts`——该副本是构建产物（`.gitignore:10` 忽略 `packages/*/shared/`），源 `shared/frontmatter.js` 已被 main 的 #824 删除。清掉这 7 个文件后复跑即 0。
