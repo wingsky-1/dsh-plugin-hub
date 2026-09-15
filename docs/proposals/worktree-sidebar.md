@@ -1168,3 +1168,81 @@ ESLint 的 `no-restricted-imports` 块间规则同步纳入 `inject.ts`。§8 �
 **端到端证据（本分支构建 + 隔离实例）**：`/tmp/r6-verify/evidence-arms/armC-fixed-branch/{mock.log,dsh.log,verify.log}`。
 读数：子会话**首回合**模型请求 `tools 30 | wt 3`（修复前 27 / 0）；子会话**结束后** `GET /bindings?session=<子id>`
 仍返回父的 worktree（修复前 `null`），存活期与结束后两次采样一致。
+
+## 21. 第八轮交接：现状快照与下一轮计划（2026-09-15）
+
+本节供**会话压缩后**接手用：读这一节 + §20.7 即可恢复全部上下文。
+
+### 21.1 状态快照（写下时的实测值）
+
+- **分支与 PR**：`task/worktree-sidebar` → **PR #819**（本插件**唯一**的 PR、draft、未合并、未打 tag）；tip `6c0b5ef`，领先 `origin/main`（`191cddf`）**41 个提交**，本地 = 远端，工作树干净；主 checkout `git status --porcelain` 空。
+- **CI**：最终 head `6c0b5ef` → **success**（`gh run list --branch task/worktree-sidebar`）。
+- **门禁**：`pnpm gate:pr` **34 步全 0**（第七轮修复后第三遍）；`typecheck` / `tsc -p test/tsconfig.json` / `prettier --check` / `verify-dir-imports --package dsh-worktree-sidebar` / `stryker:check` 全 0；`pnpm lint` **0 error、508 warning = 预算 508**（本包自身 0 条）。
+- **测试面**：**14 文件 / 196 用例**（`--min 14`；新增 `test/unit/git-service.test.ts` 后同步 `pnpm stryker:gen`，`vitest.stryker.d/dsh-worktree-sidebar.config.ts` 已更新）。
+- **第七轮落地**（两条真机缺口的修复，详见 §20.7.5）：`a26d983` 实现 + `b38325f` / `6c0b5ef` 文档登记。① git 域 `commonDir` TTL 缓存（30s / 上限 256）；② 会话链端口拆**三态** + 持久面 `sessionPersistence.stat(id)` 回落 + 异常收口 + 调用时刻软取。
+- **端到端证据**：`/tmp/r6-verify/evidence-arms/armC-fixed-branch/{mock.log,dsh.log,verify.log}`（子会话首回合 `tools 30 | wt 3`；结束后 `bindings` 仍为父的 worktree）。**注意**：`/tmp` 下的产物与夹具不保证长期存在，压缩后若被清，按 §21.5 的命令与 `/tmp/r6-verify/` 里的脚本重建（`mock-llm.mjs` / `cdp-type.mjs` / 夹具目录）。
+
+### 21.2 下一轮任务一：第七轮改动的独立复核
+
+复核对象 = `a26d983` 的实现 + §20.7.5 的登记，重点挑战这几条（**每条都要自己读码/实测，不许只复述文档**）：
+
+1. **`commonDir` 缓存的两种不新鲜期**：负结果也缓存 ⇒ `git init` 之后新建的 agent 最长 30s 拿不到工具；正结果缓存 ⇒ 仓库被删后新 agent 仍被装上工具（靠执行期兜底报错）。这个取舍是否可接受？收窄成「只缓存正结果」会不会更好（代价：多一套语义，与 `belongsTo` 的纪律不一致）？
+2. **`belongsTo` 现在间接经 `commonDir` 的缓存**（双重缓存、两层 TTL）。它的语义是否仍然正确？两层 TTL 不同步会造出什么可观测差异？
+3. **三态端口的 `not-live` 判定**是否真能区分「会话还没建」与「会话已结束」？从未在册的 id 会走到持久面再回 `undefined`（到顶）——这是否符合预期、有没有多余 IO。
+4. **持久面 `stat` 的真实开销与失败面**：`effectiveWorktree` 在 RPC 边界上，真实 `~/.dsh/sessions` 量级下的耗时未测；corrupt / 冲突 / 后端未挂分别会怎样。
+5. **异常收口是否会掩盖故障**：持久面持续抛错 ⇒ 静默退化成 live-only，**没有任何可观测信号**。要不要在 health 增一个读数或出声（注意 §19.5 的既有发现：无 exporter 时 `logger.warn` 不可见）。
+6. **样本量**：端到端 `n=1` 且模型侧是 mock；三臂实验也是各 1 次。复核者要判断这些读数够不够支撑结论。
+
+### 21.3 下一轮任务二：代码质量审视（覆盖率 + 圈复杂度）
+
+**覆盖率**
+
+- 命令口径：`pnpm cov`（= `vitest run --coverage --project unit --project integration`），产物 `coverage/coverage-final.json`。
+- **当前产物是陈旧的**（`09-14 23:17`，早于第七轮改动）⇒ 先重跑 `pnpm cov` 再读数；`coverage/crap-report.json` 目前不存在。
+- 阈值唯一事实源：`scripts/data/coverage.config.json` 的 `thresholds` = **lines 80 / functions 80 / statements 78 / branches 70**（`vitest.config.ts` 只 import 它，不得内联）。
+- 面完整性由 `node scripts/gate/verify-coverage-scope.mjs` 守；注意它**只在产物比 config 新时才交叉断言**（陈旧产物会静默通过，这就是上面那条的原因）。
+- 交付物：本包 47 个 `src/**/*.ts` 的逐文件覆盖率、未覆盖行清单、以及「哪些缺口值得补判据、哪些是装饰性补测」的判断（尺子见 `.dsh/skills/dsh-plugin-hub-testing`）。
+
+**圈复杂度**
+
+- 阈值唯一事实源：`scripts/data/gauntlet.config.json` 的 `complexity` = **cyclomatic 78 / cognitive 84**（`target` 只记录目标 10 / 15，**门禁不读**，不得拿它判红）；由 `tools/lint/eslint.config.js` 消费，命令 `pnpm lint`。
+- 交付物：本包复杂度最高的函数清单（附 file:line 与实测值）、可执行的瘦身清单（拆到哪个域/哪一块），并说明每次拆分后**哪条判据**保证行为不变。
+- **CRAP**：`pnpm crap`（= `node scripts/gate/crap-check.mjs`，数据源就是 `coverage/coverage-final.json`，缺失即 fail-closed `exit 2`）→ 落盘 `coverage/crap-report.json`；阈值 `crap.threshold = 16`，`crap.strict = false` 是**观察期**语义（超阈只落盘不判红）。**不得自行把 `strict` 改 true**（开启时机与 #732 的复杂度收紧同批裁决）。
+
+### 21.4 下一轮硬约束（不许破）
+
+1. 主 checkout `/mnt/ssd/dev/dsh-plugin-hub` **零写操作**；一切改动只在 worktree `/mnt/ssd/worktree/dsh-plugin-hub-task-worktree-sidebar`。
+2. 只推 `task/worktree-sidebar`（`--force-with-lease` 只在本轮有 rebase 时用）；**不新开 PR、不合并、不动 `main`、不推 tag**。
+3. 不改门禁阈值与豁免（`lint.maxWarnings` / `complexity` / `coverage thresholds` / `crap.strict` 一律不动）；不引第三方依赖；不改 DSH 源码；不动用户 `~/.dsh`。
+4. 证据纪律：红绿用 `cp` 备份 + `sha256sum -c` 还原核对（**禁止 `git checkout --`**）；突变脚本模式未命中必须抛错；端到端证据落在**隔离环境之外**并按臂留档（第六轮教训：A″ 臂日志被我自己删掉，导致那一臂永远无法复核）。
+5. 结论附**真实命令 + exit code**；跑不了就如实说；本地 `gate:*` 全绿**不等于** CI 绿（变异只在 PR 上按切片强制跑）。
+
+### 21.5 关键路径与命令（复制即用）
+
+```sh
+WT=/mnt/ssd/worktree/dsh-plugin-hub-task-worktree-sidebar
+cd $WT/packages/dsh-worktree-sidebar && pnpm test      # 14 文件 / 196 用例（--min 14）
+# 单文件跑不了：run-vitest.mjs 忽略路径参数、会跑全量；要限时用 timeout 包住防挂死
+cd $WT && pnpm lint && pnpm run -s stryker:check && node scripts/gate/verify-dir-imports.mjs --package dsh-worktree-sidebar
+cd $WT && pnpm cov && node scripts/gate/verify-coverage-scope.mjs && pnpm crap   # 覆盖率 + CRAP
+cd $WT && pnpm gate:pr                                                        # 34 步（含 contract/pack:check/verify:npmlayout）
+# 隔离真机（mock LLM 驱动真实 agent loop）：
+#   node /tmp/r6-verify/mock-llm.mjs（MOCK_DIR/MOCK_PORT 分臂留档）
+#   cd $WT && DEEPSEEK_API_KEY=mock-key DEEPSEEK_BASE_URL=http://127.0.0.1:<mock> \
+#     node /mnt/ssd/dev/dsh-plugin-hub/packages/dsh-verify-isolated/skills/dsh-verify-isolated/scripts/verify-isolated.mjs \
+#     --dsh $(which dsh) --port 0 --browser --keep --no-build -- packages/dsh-worktree-sidebar
+```
+
+注：隔离验证要先 `dsh plugin --profile web list | grep dsh-verify-isolated` 自检；GUI 必须带 token 访问（`--url state`）；夹具在 `/tmp/r6-verify/fixtures/`（`repo-main` 与它的 worktree `r6-wt-sidebar`，同名文件内容不同，可判别读到哪一份）。
+
+### 21.6 仍未验证 / 遗留（截至本节）
+
+1. **dev HMR 重注册**（S7 遮蔽在 dev 模式下的两次重注册）未验；只验了整页重载两次。
+2. **窄屏/响应式、双主题**未覆盖。
+3. **真实启动序的等待分支**：本机组合下首个可观测 `scopeTakeover` 即 `live`，从未走到 `waiting`；「走到时会怎样」没有正向实测。
+4. **插件 `logger.warn` 在无 cordis exporter 的组合里不可见**（§19.5）——「失败出声」在真机落空，排查时不能用「日志里没有 warn」当证据。
+5. **真机模型侧是 mock LLM**（工具执行/会话创建/客户端渲染全真，模型决策非真模型）；`n=1`。
+6. **`sessionPersistence.stat` 的真机开销未测**；cordis 对「事件派发期间在 agent scope 上 `register`/`effect`」**没有契约文本**（只找到 `dsh-tool-cordis/lib/index.js:4955` 那句）。
+7. **并发交错**（「会不会装两遍 / 旧代 deps 装进新代」）只做了源码级分析，未做并发实验。
+8. 变异测试**本地不跑**（PR 上按命中切片强制；改 `test/**` 会让该包基线失效、退化为全量）。
+9. §20.5 里评审留下的「打不红」待办（`tools.test.ts` 父子用例只有释放顺序是真判据、`client-takeover` 重复断言、`binding-model` 同源期望与常量回读）仍未处理。
