@@ -153,4 +153,17 @@ describe("markHttpFailure：结构化字段必须真的挂到 Error 上", () => 
     expect(error.code).toBeUndefined();
     expect(error.status).toBe(403);
   });
+
+  it("只挂 status、不读响应体：与裸 throw 的判定结论逐字相同（clearHistory 的调用点形态）", () => {
+    // DELETE /history 的失败体未必是 JSON，解析它会把一条失败请求变成两条，故那里只挂
+    // 状态码。这条判据钉住「挂状态码不改变任何结论」：既证明那处改动行为中性，也拦住
+    // 判定侧退化回「只认文案里的 403」——退化了这条会红。
+    for (const status of [403, 500]) {
+      const bare = new Error("HTTP " + status);
+      const marked = markHttpFailure(new Error("HTTP " + status), status);
+      expect(marked.code).toBeUndefined();
+      expect(marked.status).toBe(status);
+      expect(apiFailureOf(marked, t)).toEqual(apiFailureOf(bare, t));
+    }
+  });
 });

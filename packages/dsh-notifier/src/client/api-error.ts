@@ -74,11 +74,15 @@ export function apiFailureOf(error: unknown, t: FailureTranslator): ApiFailure {
  * 为什么这一步最要紧：字段没挂上，判定侧就只能退回文案兜底，结构化判定等于没做。两种形状都取
  * 是因为围栏拒答体把它们平铺（`{error, code, status}`），而端点失败体把 `code` 嵌在 `error` 里
  * （`{ok:false, error:{error, code}}`）；形状认不出时只挂得到状态码，判定侧照旧走兜底。
+ *
+ * `body` 可选：有的调用点只有响应码——例如 DELETE /history 的失败体未必是 JSON，为了挂
+ * `code` 去解析它会让一条失败请求变成两条（读体再抛）。让调用点少传一个参数，比逼它造一个
+ * 假 body 诚实。
  */
 export function markHttpFailure<T extends Error>(
   error: T,
   status: number,
-  body: unknown,
+  body?: unknown,
 ): T & HttpFailure {
   const source = objectOf(body);
   const code = stringOf(source?.code) ?? stringOf(objectOf(source?.error)?.code);

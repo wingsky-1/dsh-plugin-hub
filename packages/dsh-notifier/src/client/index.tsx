@@ -232,6 +232,10 @@ function showNotification(
         silent: policy.silent,
       });
       notification.onclick = () => {
+        // 本行的判据是已登记的缺口而不是遗漏：happy-dom 的 BrowserWindow.focus() 是 TODO
+        // 空实现（不派发事件、无任何可观测副作用），而本仓测试纪律禁用 vi.spyOn，故「点击
+        // 通知会把窗口拉到前台」在当前夹具下写不出可打红的判据。变可测的条件是把这里抽成
+        // 接收 window 端口的纯函数，由假件记录调用。
         window.focus();
         notification.close();
       };
@@ -1085,7 +1089,9 @@ function SettingsCard() {
     setClearArmed(false);
     fetch(ROUTES.history, { method: "DELETE" })
       .then(function (r: any) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
+        // 只挂响应码、不读响应体：DELETE 的失败体未必是 JSON，解析它会把一条失败请求
+        // 变成两条（读体再抛）。状态码足以让判定侧不再依赖「文案里含 403」这条兜底。
+        if (!r.ok) throw markHttpFailure(new Error("HTTP " + r.status), r.status);
         return r.json();
       })
       .then(function (data: any) {
