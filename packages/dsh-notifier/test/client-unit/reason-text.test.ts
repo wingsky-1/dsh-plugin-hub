@@ -20,14 +20,8 @@ import type { NotifierLocaleKey } from "../../src/client/locales.ts";
 import { en, zh } from "../../src/client/locales.ts";
 import { deliveryViewOf, reasonDetail, reasonText } from "../../src/client/reason-text.ts";
 
-/** 官方向翻译函数的最薄替身：`{name}` 插值 zh 字典（省略的只有 locale 服务的注册面）。 */
-function t(k: NotifierLocaleKey, params?: Readonly<Record<string, string | number>>): string {
-  return zh[k].replace(/\{(\w+)\}/gu, (match, name: string) =>
-    params !== undefined && Object.prototype.hasOwnProperty.call(params, name)
-      ? String(params[name])
-      : match,
-  );
-}
+// 用例里一律以 t 称呼翻译函数（与产品调用点同名），实现见 test/client-helpers.ts。
+import { translateWithZh as t } from "../client-helpers.ts";
 
 describe("跨端一致性：服务端每个 code 都有客户端文案", () => {
   // 这条是「服务端加 code 而客户端漏配文案」的唯一拦截点：漏了就是用户看到 reasonBarkHttp。

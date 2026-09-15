@@ -9,7 +9,7 @@
  * 它们依赖 src/server/shared/text.ts 的截断实现，属宿主端，进不了零 import 的共享面。
  *
  * 生产侧闭集在本地，读侧仍是开放 string（磁盘上的旧行与跨版本数据不受本版编译期约束）。
- * 客户端字典必须覆盖 REASON_CODES 的每一项，跨端一致性由 test/client/reason-text.test.ts 的
+ * 客户端字典必须覆盖 REASON_CODES 的每一项，跨端一致性由 test/client-unit/reason-text.test.ts 的
  * 直连断言守（客户端只把 REASON_LEGACY 当值用，REASON_CODES 只作类型来源）。
  */
 

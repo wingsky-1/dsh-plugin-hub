@@ -14,7 +14,8 @@ import { describe, expect, it } from "vitest";
 
 import type { NotifierLocaleKey } from "../../src/client/locales.ts";
 import { en, zh } from "../../src/client/locales.ts";
-import type { AudioFacts, ClientFacts } from "../../src/client/capabilities.ts";
+import type { ClientFacts } from "../../src/client/capabilities.ts";
+import type { AudioFacts } from "../../src/client/notify/audio.ts";
 import {
   audioStateOf,
   browserStatesOf,
@@ -24,14 +25,8 @@ import {
   worstVerdict,
 } from "../../src/client/capabilities.ts";
 
-/** 官方向翻译函数的最薄替身：`{name}` 插值 zh 字典。 */
-function t(key: NotifierLocaleKey, params?: Readonly<Record<string, string | number>>): string {
-  return zh[key].replace(/\{(\w+)\}/gu, (match, name: string) =>
-    params !== undefined && Object.prototype.hasOwnProperty.call(params, name)
-      ? String(params[name])
-      : match,
-  );
-}
+// 用例里一律以 t 称呼翻译函数（与产品调用点同名），实现见 test/client-helpers.ts。
+import { translateWithZh as t } from "../client-helpers.ts";
 
 const OK_POPUP = { state: "ok", checked: ["notify-send", "session-bus"] };
 const OK_SOUND = {

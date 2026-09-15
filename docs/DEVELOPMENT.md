@@ -325,8 +325,9 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
 | `test/client/**`      | 断言对象是客户端**构建产物**形态（`lib/client.js`、或 in-place esbuild 后执行已构建副本）——产物外壳无法用 perTest 覆盖分析归因到任何 `src/**` 模块，登记进变异面只增加每个段的 dry run 成本、杀灭贡献为零；直连 src 的判据在 `client-unit` / `client-dom` | 否       |
 | `test/e2e/**`         | 真实监听端口 / spawn 子进程 / 真机系统调用的大 smoke                                                                                                | 否       |
 
-支撑模块不入任何层：`test/helpers.ts`、`test/smoke-lib.ts`、`test/smoke-pure.ts`、
-`test/*.worker.mjs`（它们不是测试条目）。**判层按机制而非文件名**：notifier 的
+支撑模块不入任何层：`test/helpers.ts`、`test/client-helpers.ts`（客户端判据共用的替身，只服务
+一个域故不上提包级夹具）、`test/smoke-lib.ts`、`test/smoke-pure.ts`、`test/*.worker.mjs`
+（它们不是测试条目）。**判层按机制而非文件名**：notifier 的
 `e2e-*.test.ts` 用的是 in-process cordis Context + fake 驱动（不 listen、不 spawn），
 故归集成层并保留在变异面；反之 `smoke.test.ts`（真实端口/子进程）归 e2e 层。
 
