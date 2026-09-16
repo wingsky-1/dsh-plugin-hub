@@ -39,6 +39,15 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
 
 一律建在 `/mnt/ssd/worktree/<仓库名>-<分支名>`（分支名 `/` → `-`），不建在仓库内部、
 `/tmp` 或家目录；构建、提交、测试、验证都在 worktree 内完成。
+
+**主 checkout 是旧树，不是测量基准**：它是在跑的 `dsh web` 的加载源（上一条禁止写操作），
+因此必然落后 `origin/main`，落后幅度随会话时长增长。任何读文件、数文件、跑 `tsc` / `lint` /
+门禁判据复现，只能在两类位置做：① 打 `origin/main` 的 ref（`git show origin/main:<path>`、
+`git grep … origin/main`、`git ls-tree -r --name-only origin/main`）；② 基于 `origin/main` 建的
+worktree 内。在仓库根直接跑出的读数是「某个落后提交」的读数——已有两次把「该文件不存在」
+（`scripts/data/threshold-registry.json`，实际主干上有）与「该判据是硬编码」（实际主干上已改为
+声明表驱动）当成事实的实例。
+
 独立验证（smoke / 需启动 dsh）用隔离环境（临时 `DSH_HOME`），防 flake 纪律见
 [DEVELOPMENT.md §5](docs/DEVELOPMENT.md#user-content-5-smoke-测试防-flake-纪律)。
 浏览器实测优先 `@wingsky-1/dsh-verify-isolated`（临时 `DSH_HOME` + 独立 profile + 独立
