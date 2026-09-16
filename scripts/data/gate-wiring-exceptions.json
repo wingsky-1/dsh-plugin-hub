@@ -176,6 +176,10 @@
     {
       "step": "observe.yml|mutation-collect|script:scripts/gate/orphan-baseline.mjs|archive",
       "keys": ["GITHUB_TOKEN", "OBSERVE_PAT"]
+    },
+    {
+      "step": "release.yml|observe-precheck|script:scripts/release/observe-precheck.mjs",
+      "keys": ["GH_TOKEN", "SKIP_OBSERVE_CHECK"]
     }
   ],
   "conditionInputs": [
@@ -219,6 +223,11 @@
       "job": "observe.yml|mutation-collect",
       "condition": "always()",
       "reason": "夜间收口 job 必须在各分片结果已知后恒跑（always），否则分片实例级失败会让汇总步骤读不到任何结果；它挂着 observe-check 汇总与孤立基线归档两条判据步骤"
+    },
+    {
+      "job": "release.yml|publish",
+      "condition": "${{ startsWith(github.ref, 'refs/tags/v') }}",
+      "reason": "publish job 的 tag 守卫（#843 R-2 / D4）：发版前置引入了 workflow_dispatch（override 逃生口），而手动派发可作用于任意 ref——缺这条守卫，派发到分支就会绕过「推 tag 是唯一发布开关」。它是收紧，tag push 的既有行为未变。"
     }
   ],
   "judgmentAliases": [
@@ -435,6 +444,10 @@
     {
       "job": "release.yml|publish",
       "digest": "033890a7cb246c7d"
+    },
+    {
+      "job": "release.yml|observe-precheck",
+      "digest": "b07c67efcb7088fe"
     }
   ]
 }

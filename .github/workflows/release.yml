@@ -1,8 +1,10 @@
 name: Release
 
-# Tag-triggered publish：推 vX.Y.Z tag 是唯一发布开关。
-# 校验每个包版本 == tag 版本（tag 是版本唯一来源）→ 全量门禁 →
-# 按依赖序 pnpm publish（7 子包 → 聚合包）→ 生成 GitHub Release。
+# Tag-triggered publish：推 vX.Y.Z tag 是唯一发布开关（唯一例外见下方 workflow_dispatch 的
+# override 说明：手动派发**必须**落在 v* tag 这个 ref 上才会发布，分支 ref 既被 publish job 的
+# tag 守卫挡下、又被 observe-precheck 末尾的 ref 守卫判红，不留绿色空跑）。链路：observe 前置
+# 校验（D4）→ 校验每个包版本 == tag 版本（tag 是版本唯一来源）→ 全量门禁 → 按依赖序
+# pnpm publish（7 子包 → 聚合包）→ 生成 GitHub Release。
 # 需要仓库 secret NPM_TOKEN（@wingsky scope 的 npm automation token）。
 
 on:
@@ -10,16 +12,94 @@ on:
     tags:
       - 'v*'
 
+  # override 逃生口（#843 R-2 / D4）。发版前会校验「最近 24 h 内至少一次 observe 成功」；
+  # 夜间班次失败 / 停摆时该判据会把发版一起拦住，紧急修复需要一条**显式**通道，于是有了本输入。
+  #
+  # 用法：Actions → Release → Run workflow，ref 选**要发布的那个 v* tag**，勾选
+  # skip_observe_check。为什么必须选 tag：publish job 有 tag 守卫（见 jobs.publish.if），
+  # 手动派发到分支不会发布，且 observe-precheck 末尾的 ref 守卫会把 run 判红——「推 tag 才是
+  # 发布」这条不变量因此不被打开，选错 ref 也不会以绿色空跑的形式被误读成「已发布」。
+  #
+  # 风险与义务（必读）：勾选它 = 在「变异基线可能陈旧」的前提下发布。发布者必须在本版本的
+  # PR / release notes / 发布记录里写明理由（为什么急、为什么不新鲜、何时补跑 observe），并在
+  # 当天补跑一次 observe.yml。**不得**为了让发版顺利而默认勾选——判据的价值全在「默认路径真的
+  # 会拦」，override 一旦变成常规通道，这条前置就退化成装饰。
+  workflow_dispatch:
+    inputs:
+      skip_observe_check:
+        description: '紧急发布逃生口：跳过「最近 24 h 内有成功 observe 班次」前置校验（必须在 PR / 发布记录写明理由）'
+        type: boolean
+        default: false
+
 permissions:
+  # contents: write —— 建 GitHub Release；actions: read —— 前置校验要查 observe.yml 的 run 列表。
+  # 工作流级 permissions 一旦显式声明，未列出的 scope 一律归零，故这里必须逐项列全。
   contents: write
+  actions: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  # ── 发版前置（#843 R-2 / D4）──────────────────────────────────────
+  # 口径：最近 24 h 内至少一次 observe **成功收口**（判定本体、fail-closed 边界与 override 的
+  # 风险说明都在 scripts/release/observe-precheck.mjs 的头部注释里，此处不重复字面量）。
+  # 为什么是一个独立 job 而不是 publish 里的一步：① 阻断点单独可见、可单独重跑（重跑不必重跑整
+  # 条发布链）；② 它需要的权限（actions: read）与发布所需的写权限分开落点，便于复核。
+  # 它不装依赖：脚本只用 node 内置模块 + runner 预装的 gh CLI。
+  observe-precheck:
+    name: Observe precheck（最近有成功班次才放行）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # job 级 permissions 覆盖工作流级：前置校验只需要读——checkout 要 contents: read，查 observe 的
+    # run 列表要 actions: read。发布用的 contents: write 因此只留在 publish job，不随本 job 一起授予。
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 24
+          # 本 job 不 pnpm install（无 pnpm/action-setup 步骤），关掉会调用 pnpm 的缓存
+          package-manager-cache: false
+
+      # 判据取自脚本而非这段 bash：口径（窗口 / 收口时刻 / 边界语义）与 fail-closed 分支都在
+      # 脚本里可测，workflow 只负责把 gh 凭据与 override 开关接上。
+      # 步骤刻意保持「一条直接命令」的闭合形态（gate-wiring 的形态断言对多行包装零容忍：
+      # 一行包装就能让判据不再执行而断言毫无反应）——故 override 走环境变量而不是 shell 分支，
+      # 开关值依旧显式来自 workflow_dispatch 输入，脚本只认字面量 "true"。
+      - name: Observe recency（最近 24 h 内至少一次 observe success）
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # push 事件下该输入为空 ⇒ 严格校验；只有手动派发（且 ref 是 v* tag）才可能带上它
+          SKIP_OBSERVE_CHECK: ${{ inputs.skip_observe_check }}
+        run: node scripts/release/observe-precheck.mjs
+
+      # 分支 ref 的派发走到这里必然「什么都没发布」，但 publish 被 tag 守卫跳过后 run 整体仍是
+      # success——绿色空跑会被误读成「已发布」。故补一条显式判红：误红一次的成本远低于把「没发布」
+      # 读成「已发布」。放在判据之后是为了让前置校验先打印判词（分支派发仍可当演练），run 的结论
+      # 由本步接管。
+      - name: Ref guard（非 v* tag 的派发一律判红）
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          echo "::error::ref=${RELEASE_REF} 不是 v* tag：publish job 的 tag 守卫会跳过发布，本次 run 没有发布任何东西。"
+          echo "::error::要发布请重新派发，并把 ref 选成对应的 v* tag（Actions → Release → Run workflow）。"
+          exit 1
+
   publish:
     name: Build, test, publish, release
+    needs: [observe-precheck]
+    # tag 守卫：workflow_dispatch 可作用于任意 ref（UI 允许选分支），没有这一条，手动派发就会
+    # 绕过「推 tag 是唯一发布开关」。加它是**收紧**，tag push 的既有行为一字未改。
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
