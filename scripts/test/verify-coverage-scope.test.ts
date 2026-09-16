@@ -138,7 +138,7 @@ test("kind 形态一致性：真实源码被声明成 not-source → 红（关�
   assert.equal(r.status, 1, r.stderr);
   assert.match(
     r.stderr,
-    /exclude 条目 packages\/dsh-fake\/src\/cert\.ts（kind=not-source）命中 1 个源码后缀文件：packages\/dsh-fake\/src\/cert\.ts/,
+    /exclude 条目 packages\/dsh-fake\/src\/cert\.ts（kind=not-source）命中 1 个在 include 面内的文件：packages\/dsh-fake\/src\/cert\.ts（命中 include 模式 packages\/\*\/src\/\*\*\/\*\.\{ts,tsx\}）/,
   );
   assert.match(r.stderr, /把源码移出分母必须改用 kind=pending-project/);
 });
@@ -150,7 +150,73 @@ test("kind 形态一致性：声明文件被声明成 not-source → 红（应�
   };
   const r = run(fixture(config));
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /命中 1 个源码后缀文件：packages\/dsh-fake\/src\/types\.d\.ts/);
+  assert.match(r.stderr, /命中 1 个在 include 面内的文件：packages\/dsh-fake\/src\/types\.d\.ts/);
+  assert.match(r.stderr, /声明文件应改用 kind=type-only/);
+});
+
+test("kind 形态一致性：include 面外的 .js（packages/*/src 下）声明成 not-source → 放行", () => {
+  // include 面里 .js 只出现在 shared/**；packages/*/src/**/*.js 本就不进分母，
+  // 按「整个 include 面的后缀并集」判会把它误判成源码（latent 误红）。
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      ...BASE_CONFIG.exclude,
+      {
+        pattern: "packages/dsh-fake/src/vendor.js",
+        kind: "not-source",
+        reason: "构建期拷贝的第三方产物，不是本仓源码",
+      },
+    ],
+  };
+  const r = run(
+    fixture(config, {
+      sourceFiles: [
+        { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+        { rel: "packages/dsh-fake/src/types.d.ts", content: "export type T = 1\n" },
+        { rel: "packages/dsh-fake/src/vendor.js", content: "module.exports = {}\n" },
+        { rel: "shared/x.js", content: "export const x = 1\n" },
+      ],
+    }),
+  );
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test("kind 形态一致性：include 面内的 .js（shared/**）声明成 not-source → 红且点名命中的 include 模式", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      ...BASE_CONFIG.exclude,
+      { pattern: "shared/**/*.js", kind: "not-source", reason: "试验：把 shared 的源码移出分母" },
+    ],
+  };
+  const r = run(fixture(config));
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(
+    r.stderr,
+    /exclude 条目 shared\/\*\*\/\*\.js（kind=not-source）命中 1 个在 include 面内的文件：shared\/x\.js（命中 include 模式 shared\/\*\*\/\*\.js）/,
+  );
+  assert.match(r.stderr, /把源码移出分母必须改用 kind=pending-project/);
+});
+
+test("kind 形态一致性：include 面外的声明文件（shared 下）声明成 not-source → 红（仍归 type-only）", () => {
+  // shared 那条 include 只收 .js，shared 下的 .d.ts 面外；但「声明文件不是资源」不随面放宽。
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      { pattern: "shared/**/*.d.ts", kind: "not-source", reason: "试验：把面外的声明当非源码资源" },
+    ],
+  };
+  const r = run(
+    fixture(config, {
+      sourceFiles: [
+        { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+        { rel: "shared/x.js", content: "export const x = 1\n" },
+        { rel: "shared/y.d.ts", content: "export type Y = 1\n" },
+      ],
+    }),
+  );
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /命中 1 个声明文件：shared\/y\.d\.ts/);
   assert.match(r.stderr, /声明文件应改用 kind=type-only/);
 });
 

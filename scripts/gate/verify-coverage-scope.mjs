@@ -13,9 +13,11 @@
  *      `reviewBy` / `exitCriteria` **只允许且必须由** `pending-project` 携带——给永久事实编到期日
  *      只会逼出「永不续期」的假条目，而临时豁免缺了到期日或解除条件就成了永久事实（原则 ⑤）。
  *   3. **kind 与命中文件形态自洽**：结构合法 ≠ 声明正确——把 `.ts` 源码写成 `not-source` 同样能
- *      过结构校验，却让真实源码退出分母而两条闸都不响。故 `not-source` 不得命中源码后缀
- *      （`.ts` / `.tsx` / `.mjs` / `.js`，与 include 的面一致）、`type-only` 只许命中
- *      `.d.ts` / `.d.mts`；`pending-project` 不作形态限制（它本来就是「是源码，等某个 project 落地」）。
+ *      过结构校验，却让真实源码退出分母而两条闸都不响。故 `not-source` 不得命中 include 面内的
+ *      文件（判据直接用 include 的 glob 判定，不镜像源码后缀表——镜像会与 include 漂移：`.js` 只
+ *      由 shared 那条 include 引入，套到各包的 src 面就会把面外的 `.js` 误判成源码），也不得命中
+ *      声明文件（面外的声明文件归 `type-only`，仍要认）；`type-only` 只许命中 `.d.ts` / `.d.mts`；
+ *      `pending-project` 不作形态限制（它本来就是「是源码，等某个 project 落地」）。
  *   4. **面完整性**：物理枚举 `packages/<pkg>/src/**` 与 `shared/**` 下的**每个文件**，必须落在
  *      include 或某条 exclude 里。未分类即红——新形态资源（新扩展名、新的非源码资产）不能靠
  *      「没写进清单」逃逸。
@@ -48,8 +50,6 @@ const PENDING_ONLY_FIELDS = ["reviewBy", "exitCriteria"];
 const INLINE_KEYS = ["thresholds", "include", "exclude"];
 /** 两个临时字段各自的语义，判词里直接说清缺的是哪件事。 */
 const PENDING_FIELD_MEANING = { reviewBy: "何时再看一眼", exitCriteria: "凭什么能删" };
-/** include 面覆盖的源码后缀：not-source 命中它们即等于把源码移出分母（与 include 口径一致）。 */
-const SOURCE_SUFFIXES = [".ts", ".tsx", ".mjs", ".js"];
 /** type-only 唯一允许命中的后缀：无运行时代码的声明文件。 */
 const DECLARATION_SUFFIXES = [".d.ts", ".d.mts"];
 /** 判词里最多逐个列出的命中文件数；超出只列前缀并附总数（不静默截断）。 */
@@ -245,16 +245,31 @@ function sampleFiles(files) {
 /**
  * kind ↔ 命中文件形态一致性：结构合法只说明条目声明得「像」，不保证「声明得对」——
  * 把 `.ts` 源码写成 `not-source` 同样能过结构校验，却让真实源码退出分母而两条闸都不响。
+ * 「是不是源码」直接问 include 的 glob，不镜像一份后缀表：后缀表是全 include 面的并集，
+ * 按 pattern 全局套用就会把只在部分 include 上成立的后缀（如 shared 那条 include 引入的 `.js`）
+ * 误判到别的 pattern 上，判词依据也随之失真。声明文件另算：面外的 `.d.ts` 不被任何 include 命中，
+ * 但把它写成 not-source 是把声明错当资源，故「声明文件须走 type-only」不随面放宽。
  * 命中 0 个由「条目腐烂」单独判红，kind 越界由结构判据报，这里都不重复。
  */
-export function kindShapeProblems(pattern, kind, hits) {
+export function kindShapeProblems(pattern, kind, hits, includeFace) {
   if (hits.length === 0) return [];
   const suffixList = (list) => list.join(" / ");
   if (kind === "not-source") {
-    const bad = hits.filter((f) => SOURCE_SUFFIXES.some((s) => f.endsWith(s)));
-    if (bad.length === 0) return [];
+    const inFace = hits.filter((f) => includeFace.has(f));
+    const declarations = hits.filter(
+      (f) => !includeFace.has(f) && DECLARATION_SUFFIXES.some((s) => f.endsWith(s)),
+    );
+    if (inFace.length === 0 && declarations.length === 0) return [];
+    const named = inFace.map((f) => `${f}（命中 include 模式 ${includeFace.get(f).join(" / ")}）`);
+    const parts = [];
+    if (named.length > 0) {
+      parts.push(`${named.length} 个在 include 面内的文件：${sampleFiles(named)}`);
+    }
+    if (declarations.length > 0) {
+      parts.push(`${declarations.length} 个声明文件：${sampleFiles(declarations)}`);
+    }
     return [
-      `exclude 条目 ${pattern}（kind=not-source）命中 ${bad.length} 个源码后缀文件：${sampleFiles(bad)}——not-source 的值域是 src 下的非源码资源，而 ${suffixList(SOURCE_SUFFIXES)} 都在 include 面内：把源码移出分母必须改用 kind=pending-project 并写明 reviewBy/exitCriteria，声明文件应改用 kind=type-only`,
+      `exclude 条目 ${pattern}（kind=not-source）命中 ${parts.join("；")}——not-source 只允许命中 include 面之外的非声明资源：把源码移出分母必须改用 kind=pending-project 并写明 reviewBy/exitCriteria，声明文件应改用 kind=type-only`,
     ];
   }
   if (kind === "type-only") {
@@ -268,12 +283,14 @@ export function kindShapeProblems(pattern, kind, hits) {
 }
 
 /** 全部 exclude 条目的形态一致性判据（结构本身不合法的条目由 checkExcludeEntries 负责）。 */
-function excludeKindShapeProblems(entries, hitsInUniverse) {
+function excludeKindShapeProblems(entries, hitsInUniverse, includeFace) {
   const problems = [];
   for (const entry of entries) {
     if (entry === null || typeof entry !== "object") continue;
     if (typeof entry.pattern !== "string" || !KINDS.includes(entry.kind)) continue;
-    problems.push(...kindShapeProblems(entry.pattern, entry.kind, hitsInUniverse(entry.pattern)));
+    problems.push(
+      ...kindShapeProblems(entry.pattern, entry.kind, hitsInUniverse(entry.pattern), includeFace),
+    );
   }
   return problems;
 }
@@ -355,7 +372,16 @@ function main() {
     }
     return hitsCache.get(pattern);
   };
-  const includeHits = new Set(includePatterns.flatMap(hitsInUniverse));
+  // include 面（文件 → 命中它的 include 模式）：not-source 的判据与判词都要按面判定，
+  // 逐个文件记住来源 pattern，判红时才能指明是哪条 include 把它算进来的。
+  const includeFace = new Map();
+  for (const pattern of includePatterns) {
+    for (const file of hitsInUniverse(pattern)) {
+      if (!includeFace.has(file)) includeFace.set(file, []);
+      includeFace.get(file).push(pattern);
+    }
+  }
+  const includeHits = new Set(includeFace.keys());
   const excludeHits = new Set(excludePatterns.flatMap(hitsInUniverse));
 
   // 条目腐烂：模式必须在覆盖率根内命中至少一个文件
@@ -363,7 +389,7 @@ function main() {
   problems.push(...rottenPatternProblems("exclude", excludePatterns, hitsInUniverse));
 
   // kind 与命中文件形态自洽：结构合法只说明声明得「像」，不保证「对」
-  problems.push(...excludeKindShapeProblems(config.exclude, hitsInUniverse));
+  problems.push(...excludeKindShapeProblems(config.exclude, hitsInUniverse, includeFace));
 
   // 面完整性：universe 里每个文件都必须被 include 或某条 exclude 覆盖
   problems.push(...unclassifiedProblems(universe, includeHits, excludeHits));
