@@ -879,10 +879,13 @@ test("#178+#204+#572: ci.yml PR 增量门禁——从孤立分支恢复基线 + 
   );
   assert.ok(!mgBuildBlock.includes("--filter"), "mutation-gate 构建步骤禁止 --filter 单包切片");
 
-  // 成败并入既有聚合闸，不新增分支保护 required check 名
+  // 成败并入既有聚合闸；红线门禁（#843 M1）同样只挂进 needs——它成为 required check 由维护者
+  // 在平台侧注册，不在本文件里预先假定
   assert.ok(
-    /needs: \[changes, build-test, coverage, mutation-gate, mutation-verdict\]/.test(CI),
-    "repo-gate needs 纳入 coverage 与 mutation-gate/mutation-verdict（#217 五维聚合）",
+    /needs: \[changes, red-line-approval, build-test, coverage, mutation-gate, mutation-verdict\]/.test(
+      CI,
+    ),
+    "repo-gate needs 纳入 coverage、mutation-gate/mutation-verdict 与 red-line-approval（#217 五维聚合 + #843 M1）",
   );
   // 聚合闸 fail-closed 判定脚本必须显式引用变异链结果（防聚合闸旁路）
   const rg = CI.slice(CI.indexOf("\n  repo-gate:"));

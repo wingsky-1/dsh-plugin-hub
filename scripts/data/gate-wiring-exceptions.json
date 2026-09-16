@@ -211,6 +211,11 @@
       "reason": "聚合判分必须在切片 job 结果已知后恒跑（always），否则矩阵实例级失败会让判定表读不到结果；hasMutations 关掉无变异切片，mutation-gate.result != 'skipped' 关掉被上游连坐跳过的实例"
     },
     {
+      "job": "ci.yml|red-line-approval",
+      "condition": "github.event_name == 'pull_request'",
+      "reason": "红线门禁（#843 M1 / R-1）只在 PR 上实例化：它的判据对象就是「本次 PR 有无 approved 标签」，push/main 与 tag 事件没有可判的 PR 上下文，跑起来只会退化成取不到输入。"
+    },
+    {
       "job": "ci.yml|repo-gate",
       "condition": "always()",
       "reason": "本 job 是分支保护的 required check：上游任一 job 失败时它也必须执行，才能由判定表（repo-gate-assert.mjs）把「coverage 失败连坐」这类语义讲清楚，而不是被 GitHub 直接标成 skipped"
@@ -321,6 +326,11 @@
       "envKeys": ["COMBOS"]
     },
     {
+      "step": "ci.yml|red-line-approval|Resolve changed files & labels（gh api；取数失败即非零退出）",
+      "digest": "3baadf6cfceca1b0",
+      "envKeys": []
+    },
+    {
       "step": "ci.yml|repo-gate|Build all packages（gate:full：全仓产物闸的前提）",
       "digest": "bf2def35d1a8cd11",
       "envKeys": []
@@ -407,6 +417,10 @@
     {
       "job": "ci.yml|mutation-verdict",
       "digest": "5264793c9ef3a5f1"
+    },
+    {
+      "job": "ci.yml|red-line-approval",
+      "digest": "d0ebb32c9e8163fa"
     },
     {
       "job": "ci.yml|repo-gate",
