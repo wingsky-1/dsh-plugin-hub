@@ -215,10 +215,12 @@ test("ci-matrix: 场景 d - 变异段展开正确性 (多段配置 + 多包排�
   assert.deepEqual(
     resMulti.mutationCombos.map((c) => ({ package: c.package, seg: c.seg })),
     [
-      { package: "dsh-lan-proxy", seg: "1" },
-      { package: "dsh-lan-proxy", seg: "2" },
-      { package: "dsh-lan-proxy", seg: "3" },
-      { package: "dsh-lan-proxy", seg: "4" },
+      { package: "dsh-lan-proxy", seg: "config" },
+      { package: "dsh-lan-proxy", seg: "entry" },
+      { package: "dsh-lan-proxy", seg: "migrate" },
+      { package: "dsh-lan-proxy", seg: "proxy" },
+      { package: "dsh-lan-proxy", seg: "shared" },
+      { package: "dsh-lan-proxy", seg: "tls" },
       { package: "dsh-notifier", seg: "api" },
       { package: "dsh-notifier", seg: "channels" },
       { package: "dsh-notifier", seg: "client" },
