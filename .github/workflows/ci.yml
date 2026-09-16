@@ -213,7 +213,8 @@ jobs:
         run: node scripts/ci/ci-matrix.mjs
 
   # ── 红线路径门禁（#843 M1 / R-1）──
-  # 仓规把 `.github/**` 与 `scripts/gate/**` 定为红线面（改动须维护者在原 issue 内 approved），
+  # 仓规把 `.github/**` 定为红线面；其余红线面由 `scripts/data/threshold-registry.json` 的
+  # `guards[].sources` 派生（#851：谁被声明为事实源谁就在面内；改动须维护者在原 issue 内 approved），
   # 但平台层零强制力：`enforce_admins=true` + 只有一位 admin + GitHub 不允许自批自己的 PR，
   # 使「CODEOWNERS + require_code_owner_reviews」会**永久冻结**每一处红线 PR。可行替代是把
   # 条件做成仓内可判定的 status check：PR 触及红线路径且没有 approved 标签就 fail，再由维护者

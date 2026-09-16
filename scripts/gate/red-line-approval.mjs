@@ -164,8 +164,18 @@ function degradeToBase(reason, registryPath, warn) {
   return normalizePatterns(RED_LINE_BASE_PATTERNS);
 }
 
-/** 默认红线面：模块加载时按默认声明表派生一次（CLI 与判定函数的默认值共用这一份）。 */
-export const RED_LINE_PATTERNS = redLinePatterns();
+/**
+ * 默认红线面：模块加载时按默认声明表**静默**派生一次（`judgeRedLine` 的默认值必须无副作用，
+ * 不能因为被 import 就往外写告警）。
+ *
+ * 退化告警记在 DEFAULT_DEGRADATION 里，由 `resolvePatterns` 在**真的用到默认面**时补出——
+ * 本次给了 `--registry` / `--patterns` 的运行里，默认表根本没被读，却打出「退化为 .github/**…
+ * 本次无额外文件进面」的告警，与实际判的那一面不符（评审 ②）。
+ */
+let DEFAULT_DEGRADATION;
+export const RED_LINE_PATTERNS = redLinePatterns(DEFAULT_REGISTRY_PATH, (message) => {
+  DEFAULT_DEGRADATION = message;
+});
 
 /**
  * JSON 响应里要抽取的字段键名（GitHub REST 的 pulls.files / issues.labels 形状）。
@@ -406,9 +416,14 @@ export function parseArgs(argv) {
 /** 面来源三选一：`--patterns` > `--registry` > 默认派生的 `RED_LINE_PATTERNS`。 */
 function resolvePatterns(values) {
   if (values.has("--patterns")) return splitList(values.get("--patterns"));
-  if (!values.has("--registry")) return RED_LINE_PATTERNS;
-  // 声明表不可用时 redLinePatterns 已经报警并退化，这里不需要再兜一层错——退化后的面就是它给的。
-  return redLinePatterns(values.get("--registry"));
+  if (values.has("--registry")) {
+    // 声明表不可用时 redLinePatterns 已报警并退化，这里不需要再兜一层错——退化后的面就是它给的。
+    return redLinePatterns(values.get("--registry"));
+  }
+  // 默认面在 import 期已静默派生过（同一份 `RED_LINE_PATTERNS`），只在本次真的用到它时才补出
+  // 那条退化告警：没有这一句，退化会变成静默缩小面；无条件在 import 期打，又会冤枉注入面的运行。
+  if (DEFAULT_DEGRADATION !== undefined) warnToStderr(DEFAULT_DEGRADATION);
+  return RED_LINE_PATTERNS;
 }
 
 /**

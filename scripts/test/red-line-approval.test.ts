@@ -17,7 +17,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, normalize } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -696,6 +696,48 @@ test("CLI：--registry 指向缺失的声明表 → 退化放行但必须打 ::w
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("CLI：给了 --registry / --patterns 就不再碰默认声明表——不得打出与实际面不符的退化告警", () => {
+  // 默认面在 import 期是**静默**派生的（judgeRedLine 的默认值必须无副作用）；退化为基座面的告警
+  // 只在本次真的用到默认面时补出（评审 ②）。否则「本次用的是注入的表」的运行里会多出一条
+  // 「退化为 .github/**……本次无额外文件进面」，与实际判定的面矛盾。
+  withRegistry(
+    [{ id: "mutation.strict", sources: ["scripts/data/gauntlet.config.json"] }],
+    (registry) => {
+      const injected = runCli(["--files", "docs/a.md", "--labels", "", "--registry", registry]);
+      assert.equal(injected.status, 0, injected.stderr);
+      assert.ok(
+        !injected.stderr.includes("::warning::"),
+        `注入声明表时不得告警默认表（实际 stderr：${injected.stderr}）`,
+      );
+    },
+  );
+  // 取值刻意让面**不命中** docs/a.md：本条要证的是「注入面时不告警默认表」，不是判红
+  const explicit = runCli(["--files", "docs/a.md", "--labels", "", "--patterns", ".github/**"]);
+  assert.equal(explicit.status, 0, explicit.stderr);
+  assert.ok(
+    !explicit.stderr.includes("::warning::"),
+    `--patterns 时不得告警默认表：${explicit.stderr}`,
+  );
+  // 反向：真的用默认面时，告警必须与默认表的可用性一致（本分支表缺失 → 恰好一条；#850 合入后 → 无）。
+  // 这一条把「惰性」与「静默」区分开——只把告警删掉、默认面退化时不再报警，同样会红。
+  const captured: string[] = [];
+  const original = console.warn;
+  console.warn = (message?: unknown) => captured.push(String(message));
+  let parsed: { ok: boolean; patterns?: string[] };
+  try {
+    parsed = parseArgs(["--files", "docs/a.md"]) as { ok: boolean; patterns?: string[] };
+  } finally {
+    console.warn = original;
+  }
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(parsed.patterns, [...RED_LINE_PATTERNS]);
+  assert.equal(
+    captured.length,
+    existsSync(DEFAULT_REGISTRY_PATH) ? 0 : 1,
+    "用默认面时：默认表不可用必须恰好告警一条，可用则不得告警",
+  );
 });
 
 test("parseArgs/main 可被 import 直调（不产生副作用）——main 与 CLI 退出码同源", () => {
