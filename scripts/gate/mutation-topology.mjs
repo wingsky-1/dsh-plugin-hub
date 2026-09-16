@@ -10,6 +10,10 @@
  * 不可达；而它恰恰就是 F15 描述的分叉面（生成侧注入的排除面 vs 断言侧读到的排除面），
  * 留作死代码等于保留一条永远不会被实测覆盖、却随时可能被重新走通的分叉。段不声明
  * 排除面现在直接在形状判据里判红。
+ *
+ * 形状之外还判两件事（#848 复核补）：`excludes` 的**每条**必须是非空字符串且以 `!` 开头
+ * （缺 `!` 会被原样拼进 conf 的 mutate，从「排除」极性反转为「要变异」），以及 `segments`
+ * 不得是空对象（它不派生任何 conf，条目判据永远看不到该包）。
  */
 
 // runner 面（test/**/*.test.ts，与 vitest include 同口径）：`--min` 与登记完整性判据 ③ 的唯一口径。
@@ -122,7 +126,7 @@ function coverageExcludeValueProblems(entry, label, seen) {
 
 /**
  * 包登记本身的形状判据：`packages.<name>` 必须是对象，其 `segments` 也必须是对象，
- * 且每个段必须自带非空的 `excludes` 数组（#836 起必填）。
+ * 且每个段必须自带非空的 `excludes` 数组（#836 起必填）、数组里每条必须是以 `!` 开头的非空字符串。
  *
  * 与 coverageExcludes 的形状判词同族：形状不对时**没有可判定的变异面**，必须给出可读判词，
  * 而不是让调用方在 `pkgDef.segments` 上抛栈崩掉整个 contract 段（已实测：登记为 `null` →
@@ -156,6 +160,14 @@ export function packageEntryProblems(pkgDef) {
       `包登记的 segments 必须是对象（当前 ${JSON.stringify(segments)}）——形状不对时没有可判定的变异面，fail-closed`,
     ];
   }
+  // 空对象是「登记了变异面却没有面」：它不派生任何 conf，⑤/⑥ 永远看不到该包，包级幽灵排除
+  // 可以安静地留在有效面里。无变异面的包应登记进 $noMutationPackages 并写明理由。
+  if (Object.keys(segments).length === 0) {
+    return [
+      "包登记的 segments 为空对象——没有变异面（无 conf 可判）却登记在 packages 下；" +
+        "无变异面的包请登记进 $noMutationPackages 并写明理由",
+    ];
+  }
   const problems = [];
   for (const [segKey, segDef] of Object.entries(segments)) {
     if (segDef === null || typeof segDef !== "object" || Array.isArray(segDef)) {
@@ -169,6 +181,22 @@ export function packageEntryProblems(pkgDef) {
         `段 "${segKey}" 的 excludes 必须是非空数组（当前 ${JSON.stringify(segDef.excludes)}）——` +
           "段必须自己声明排除面（#836 起缺省回退已删除），否则会把排除面静默收敛成空集",
       );
+      continue;
+    }
+    // 条目形状：excludes 的每条都进排除面，靠 `!` 前缀与 conf 里的正向条目区分。缺 `!` 的条目
+    // 会被原样拼进派生 conf 的 mutate，语义从「排除这个文件」**极性反转**成「要变异这个文件」
+    // ——而两条路径都真实存在，只判「命中 ≥1 文件」的判据全绿（#848 复核前的实测形态）。
+    for (const [i, entry] of segDef.excludes.entries()) {
+      if (typeof entry !== "string" || entry.trim() === "") {
+        problems.push(
+          `段 "${segKey}" 的 excludes[${i}] 必须是非空字符串（当前 ${JSON.stringify(entry)}）`,
+        );
+      } else if (!entry.startsWith("!")) {
+        problems.push(
+          `段 "${segKey}" 的 excludes[${i}] 缺 ! 前缀（当前 ${entry}）—— ` +
+            "该条目会被原样拼进 conf 的 mutate，从「排除」极性反转成「要变异这个文件」",
+        );
+      }
     }
   }
   return problems;

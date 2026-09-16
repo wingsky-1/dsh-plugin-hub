@@ -345,6 +345,13 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   ② 每条登记与每条豁免在磁盘上真实存在；③ 每个有测试的包（含未登记变异面的包）`--min` == runner glob
   实际文件数；④ **充分性下限**：`mutationLayers` 必须包含 `test-surface.mjs` 里的 `REQUIRED_MUTATION_LAYERS`
   （unit + integration）且每包变异面非空——防「两行拓扑改动把变异面削掉」；
+  ⑤ 每条派生 `mutate` 条目（正向与 `!` 排除同等）必须**锚定在本包（或 `shared/`）**、在**源码世界内
+  命中 ≥1 文件**、且命中面不越出本包或 `shared/`。字面前缀不足以证明锚定：`..` 会被 glob 归一化、
+  brace 会展开，两者都能让前缀看着在本包而命中他包文件（独立复核各实测出绕过形态）；
+  ⑥ **有效面非空**：一份 conf 的正向命中被 `!` 条目剔除后必须仍有剩余——⑤ 只判**单条**条目，
+  一条包根级整包通配能在条数不变、⑤ 全绿的前提下把整包变异面清空，而 Stryker 对 0 mutant 不报错
+  （判分与门禁都静默）。此外段级 `excludes` 的**条目形状**（非空字符串 + `!` 前缀，缺 `!` 会极性
+  反转）与包登记（空 `segments` 指向 `$noMutationPackages`）在派生前先判；
 - 新增测试文件后的固定动作：放进对应层目录 → `node scripts/gate/gen-stryker-conf.mjs --sync-test-min`
   → `pnpm stryker:gen` → 提交。单元层与集成层**零手工登记**；`testMutationExemptions`（按层分组）只用于
   「刻意不进变异面」的逐条裁决，必须写明理由，模型样例两条：

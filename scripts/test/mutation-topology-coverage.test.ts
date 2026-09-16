@@ -29,6 +29,7 @@ import {
   collectCoverageExcludePatterns,
   collectMutationSpecs,
   coverageExcludeProblems,
+  packageEntryProblems,
   packageRegistrationProblems,
 } from "../gate/mutation-topology.mjs";
 import { mutationEntryProblems, projectTestSurface } from "../gate/test-surface.mjs";
@@ -311,7 +312,12 @@ test("#773 R4 反证：包登记为 null / 非对象时给可读判词，不得�
   // 顶层 packages 本身不是对象同样是形状错误
   assert.ok(packageRegistrationProblems({ packages: null }).length > 0);
   // 对照组：正常包登记零问题（证明上面的红不是「凡输入皆红」）
-  assert.deepEqual(packageRegistrationProblems({ packages: { [pkgName]: { segments: {} } } }), []);
+  assert.deepEqual(
+    packageRegistrationProblems({
+      packages: { [pkgName]: { segments: { only: { mutate: ["x"], excludes: ["!y"] } } } },
+    }),
+    [],
+  );
 });
 
 test("#773 R4 反证：包登记的 segments 缺失 / null / 非对象 → 判词而非抛栈（复核 D1）", () => {
@@ -333,8 +339,18 @@ test("#773 R4 反证：包登记的 segments 缺失 / null / 非对象 → 判�
       `包登记的 segments 必须是对象（当前 ${JSON.stringify(bad)}）——形状不对时没有可判定的变异面，fail-closed`,
     ]);
   }
-  // 对照组：segments 是对象（含空对象）零 problems
-  assert.deepEqual(packageRegistrationProblems({ packages: { [pkgName]: { segments: {} } } }), []);
+  // 对照组：segments 是非空对象零 problems；空对象是「登记了却没有面」（不派生任何 conf，
+  // 条目判据永远看不到该包）——#848 起单独判红，故不再用空对象当对照
+  assert.deepEqual(
+    packageRegistrationProblems({
+      packages: { [pkgName]: { segments: { only: { mutate: ["x"], excludes: ["!y"] } } } },
+    }),
+    [],
+  );
+  assert.match(
+    packageRegistrationProblems({ packages: { [pkgName]: { segments: {} } } }).join(" | "),
+    /segments 为空对象/,
+  );
 });
 
 test("#836 反证：段缺 excludes / 空 / 非数组 / 段非对象 → 逐条判词，不得抛栈", () => {
@@ -512,6 +528,20 @@ test("#773 R4 反证：projectTestSurface 遇坏包登记给判词，不得抛�
   ]);
 });
 
+/**
+ * conf 文件名 → 所属包（判据 ⑤ 的锚定与 ⑥ 的有效面都要它）。与派生侧 confOwners 同一算法：
+ * `_single` 段派生 `<pkg>.json`，其余段派生 `<pkg>-<seg>.json`。
+ */
+function confOwnerOf(topology, fileName) {
+  for (const [pkgName, pkgDef] of Object.entries(topology.packages ?? {})) {
+    for (const segKey of Object.keys(pkgDef.segments ?? {})) {
+      const name = segKey === "_single" ? `${pkgName}.json` : `${pkgName}-${segKey}.json`;
+      if (name === fileName) return pkgName;
+    }
+  }
+  return undefined;
+}
+
 /** #836 反证用的最小仓库根：一份 conf 的 mutate 面完全由段声明决定。 */
 function makeMutationFixture(excludes) {
   const root = mkdtempSync(join(tmpdir(), "f836-fixture-"));
@@ -599,12 +629,15 @@ test("#836：仓库每份 conf 的每条 mutate 条目都命中物理文件（�
     .filter((f) => f.endsWith(".json"))
     .sort();
   assert.ok(confFiles.length > 0, "仓库里应当有派生 conf");
+  const topology = JSON.parse(readFileSync(TOPOLOGY_PATH, "utf8"));
   let scanned = 0;
   let entries = 0;
   for (const file of confFiles) {
     const mutate = JSON.parse(readFileSync(join(confDir, file), "utf8")).mutate;
     entries += mutate.length;
-    const res = mutationEntryProblems(ROOT, file, mutate);
+    const owner = confOwnerOf(topology, file);
+    assert.ok(owner !== undefined, `${file} 必须能解析出所属包（锚定判据的输入）`);
+    const res = mutationEntryProblems(ROOT, file, mutate, owner);
     assert.deepEqual(
       res.problems,
       [],
@@ -623,15 +656,20 @@ test("#836 反证：命中 0 个文件的条目判红，判词点名 conf 与 pa
   try {
     mkdirSync(join(root, "packages", "dsh-x", "src"), { recursive: true });
     writeFileSync(join(root, "packages", "dsh-x", "src", "a.ts"), "export const a = 1\n", "utf8");
-    const declared = ["packages/dsh-x/src/a.ts", "!packages/dsh-x/src/**"];
-    const okRes = mutationEntryProblems(root, "dsh-x-entry.json", declared);
+    writeFileSync(join(root, "packages", "dsh-x", "src", "b.ts"), "export const b = 1\n", "utf8");
+    // 对照组：正向面非空、排除条目真的命中且没吃光正向面（旧对照组用 `!packages/dsh-x/src/**`
+    // 把正向面全吃掉，那是 #848 判据⑥ 的形态，不再能当「零判词」的对照）
+    const declared = ["packages/dsh-x/src/**/*.ts", "!packages/dsh-x/src/b.ts"];
+    const okRes = mutationEntryProblems(root, "dsh-x-entry.json", declared, "dsh-x");
     assert.deepEqual(okRes.problems, [], "对照组：命中的条目不得判红（判据不是凡输入皆红）");
     assert.equal(okRes.scanned, declared.length, "scanned 是实际判过的条目数");
 
-    const rotRes = mutationEntryProblems(root, "dsh-x-entry.json", [
-      ...declared,
-      "!packages/dsh-x/src/types.ts",
-    ]);
+    const rotRes = mutationEntryProblems(
+      root,
+      "dsh-x-entry.json",
+      [...declared, "!packages/dsh-x/src/types.ts"],
+      "dsh-x",
+    );
     assert.equal(rotRes.problems.length, 1, `幽灵条目必须判红：${rotRes.problems.join(" | ")}`);
     assert.match(rotRes.problems[0], /dsh-x-entry\.json/, "判词必须点名是哪份 conf");
     assert.match(
@@ -682,5 +720,99 @@ test("#836 反证：拓扑里的幽灵排除条目落进派生 conf，--check �
   } finally {
     rmSync(okRoot, { recursive: true, force: true });
     rmSync(ghostRoot, { recursive: true, force: true });
+  }
+});
+
+test("#848：判据⑤锚定/越界 与 判据⑥有效面（命中口径锚在源码世界，不认构建产物）", () => {
+  const root = mkdtempSync(join(tmpdir(), "f848-anchor-"));
+  try {
+    mkdirSync(join(root, "packages", "dsh-x", "src"), { recursive: true });
+    mkdirSync(join(root, "packages", "dsh-y", "src"), { recursive: true });
+    mkdirSync(join(root, "packages", "dsh-x", "src", "client"), { recursive: true });
+    writeFileSync(join(root, "packages", "dsh-x", "src", "a.ts"), "export const a = 1\n", "utf8");
+    writeFileSync(
+      join(root, "packages", "dsh-x", "src", "client", "ui.ts"),
+      "export const b = 2\n",
+      "utf8",
+    );
+    writeFileSync(join(root, "packages", "dsh-y", "src", "a.ts"), "export const a = 1\n", "utf8");
+    const judge = (patterns, owner = "dsh-x") =>
+      mutationEntryProblems(root, "dsh-x-entry.json", patterns, owner).problems.join(" | ");
+
+    // 对照组：锚定本包、命中源码世界 → 零判词（判据不是凡输入皆红）
+    assert.equal(judge(["packages/dsh-x/src/**/*.ts", "!packages/dsh-x/src/client/**"]), "");
+    // ⑤ 锚定：跨包 pattern 描述的不是本包的源码
+    assert.match(judge(["packages/dsh-y/src/**/*.ts"]), /判据⑤ 锚定/);
+    // ⑤ 锚定：广域通配会命中他包同名文件，故不能靠「命中 ≥1」自证
+    assert.match(judge(["packages/dsh-x/src/**/*.ts", "!**/a.ts"]), /判据⑤ 锚定/);
+    // ⑤ 锚定：`..` 归一化与 brace 展开都被字面判词拦下（否则前缀看着在本包、命中在他包）
+    assert.match(judge(["!packages/dsh-x/../dsh-y/src/a.ts"]), /含 \.\. 上跳段/);
+    assert.match(judge(["packages/dsh-x/{src,../dsh-y/src}/**/*.ts"]), /含 brace 展开/);
+    assert.match(judge(["./packages/dsh-x/src/**/*.ts"]), /相对\/绝对路径/);
+    // ⑤ 存在性：命中面只落在构建产物上 = 描述另一个真实的世界
+    mkdirSync(join(root, "packages", "dsh-x", "lib"), { recursive: true });
+    writeFileSync(join(root, "packages", "dsh-x", "lib", "a.js"), "export const a = 1\n", "utf8");
+    assert.match(judge(["packages/dsh-x/lib/**"]), /条目腐烂/);
+    // owner 是锚定判据的输入，缺省即 fail-closed（不得静默退化成「任何命中都合法」）
+    assert.match(
+      mutationEntryProblems(
+        root,
+        "dsh-x-entry.json",
+        ["packages/dsh-x/src/a.ts"],
+        undefined,
+      ).problems.join(" | "),
+      /缺少 owner/,
+    );
+    // ⑥ 有效面：条数不变地把正向面整包吃掉 → 只报 ⑥
+    const wiped = mutationEntryProblems(
+      root,
+      "dsh-x-entry.json",
+      ["packages/dsh-x/src/**/*.ts", "!packages/dsh-x/src/**"],
+      "dsh-x",
+    ).problems;
+    assert.equal(wiped.length, 1, `整包被排除必须只报判据⑥：${wiped.join(" | ")}`);
+    assert.match(wiped[0], /判据⑥ 有效面为空/);
+    // ⑤ 有问题时不重复报 ⑥：条目不合法时「有效面为空」只是后果，报出来会误导定位
+    const ghost = judge(["packages/dsh-x/src/legacy/**", "!packages/dsh-x/src/legacy/**"]);
+    assert.match(ghost, /条目腐烂/);
+    assert.doesNotMatch(ghost, /判据⑥/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("#848：段级 excludes 条目形状（缺 ! / 非字符串）与空 segments 判红", () => {
+  const withSeg = (seg) => packageEntryProblems({ segments: { only: seg } });
+  // 缺 ! 的条目会被原样拼进 conf 的 mutate，语义从「排除」极性反转成「要变异这个文件」
+  assert.match(
+    withSeg({
+      mutate: ["packages/fixture-pkg/src/a.ts"],
+      excludes: ["packages/fixture-pkg/src/b.ts"],
+    }).join(" | "),
+    /缺 ! 前缀/,
+  );
+  assert.match(withSeg({ mutate: ["x"], excludes: [""] }).join(" | "), /非空字符串/);
+  assert.match(withSeg({ mutate: ["x"], excludes: [42] }).join(" | "), /非空字符串/);
+  // 对照组：合法段零判词
+  assert.deepEqual(withSeg({ mutate: ["x"], excludes: ["!packages/fixture-pkg/src/b.ts"] }), []);
+  // 空 segments 不派生任何 conf，⑤/⑥ 都看不到它 → 无变异面的包必须进 $noMutationPackages
+  assert.match(packageEntryProblems({ segments: {} }).join(" | "), /segments 为空对象/);
+});
+
+test("#848 反证：段把整包正向面排除光 → --check 判红并点名判据⑥", () => {
+  const root = makeMutationFixture(["!packages/fixture-pkg/src/a.ts"]);
+  try {
+    assert.equal(runGenerator(root).status, 0, "生成仍应成功（判据在 --check）");
+    const check = runGenerator(root, ["--check"]);
+    assert.equal(check.status, 1, `有效面为空必须判红：\n${check.out}`);
+    assert.match(check.out, /判据⑥ 有效面为空/, "判词必须点名判据⑥");
+    assert.match(check.out, /fixture-pkg-only\.json/, "判词必须点名是哪份 conf");
+    assert.doesNotMatch(
+      check.out,
+      /条目腐烂|内容与拓扑派生不一致|登记完整性/,
+      `红必须是判据⑥ 自己产生的，而不是别的判据顺带报出来的：\n${check.out}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });

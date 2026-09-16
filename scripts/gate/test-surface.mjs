@@ -12,6 +12,7 @@ import { existsSync, globSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 
 import { packageEntryProblems } from "./mutation-topology.mjs";
+import { globFiles, sourceUniverse } from "../lib/glob-files.mjs";
 
 /**
  * runner 面 glob：`--min` 与登记完整性判据 ③ 的唯一口径。
@@ -47,33 +48,115 @@ export function expandGlob(pkgDir, pattern) {
 }
 
 /**
- * 变异面条目腐烂判据（#836）：一份 conf 的每条 `mutate` 条目（含 `!` 前缀的排除条目）
- * 都必须命中 ≥1 个物理文件。
+ * 锚定判词；返回 null 表示字面锚定合法。
+ *
+ * 字面检查只负责**可读判词**，越界的全量核对在下面按命中集合做——「字面前缀合法」与
+ * 「实际命中面在本包内」是两件事：`..` 段会被 glob 归一化、brace 会被展开，两者都能让
+ * 前缀看着在本包而命中的是他包文件。加了字面拦截后那条核对今天已不可达（复核把该段置空，
+ * 测试仍全绿），保留作 glob 语义或字面规则放宽时的兜底。
+ */
+function unanchoredReason(owner, bare) {
+  if (bare.startsWith("./") || bare.startsWith("/")) {
+    return "是相对/绝对路径（须写仓库根相对的 packages/<本包>/ 或 shared/ 形式）";
+  }
+  if (bare.split("/").includes("..")) {
+    return "含 .. 上跳段（字面前缀会被 glob 归一化改写，实际命中面可越出本包）";
+  }
+  if (/[{}]/.test(bare)) {
+    return "含 brace 展开（展开后的命中面可能越出本包）";
+  }
+  if (!bare.startsWith(`packages/${owner}/`) && !bare.startsWith("shared/")) {
+    return `不在 packages/${owner}/ 或 shared/ 之下（跨包/广域 pattern 描述的不是本包的源码）`;
+  }
+  return null;
+}
+
+/**
+ * 变异面条目判据（#836 / #848）：一份 conf 的每条 `mutate` 条目（含 `!` 前缀的排除条目）
+ * 都要过四关，且整份 conf 的正向面被 `!` 条目剔除后必须仍有剩余。
  *
  * 为什么需要：排除条目此前从没被问过「你到底排除了什么」，于是 26 份 conf 各带一条指向
- * `packages/<pkg>/src/types.ts` 的占位排除，而全仓从未存在过该文件——条目腐烂到无人察觉。
+ * `packages/<pkg>/src/types.ts` 的占位排除，而全仓从未存在过该文件——条目腐烂到无人察觉
+ * （#836 已清）。只判「命中 ≥1 个物理文件」仍留着三条绕过路径（独立复核实测）：广域 glob
+ * 命中他包同名文件即恒绿；`packages/<pkg>/**` 会被同包构建产物 `lib/**` 满足；字面前缀在
+ * 本包、实际命中面被 `..` 归一化或 brace 展开改写到他包。
+ *
+ * 为什么还要判整份 conf 的有效面（#848 维护者评审）：一条条看都合法不等于整份 conf 有意义。
+ * 把某包「逐目录级的 interface.ts 排除」换成包根级整包通配，条数不变、上面四关全绿，而该包
+ * 9/9 份 conf 的有效面为空——Stryker 对 0 mutant 不报错，判分与门禁都静默。有效面只在四条
+ * 逐条判据零问题时判：条目本身不合法时「有效面为空」只是前者的后果，重复报会误导定位。
  *
  * 为什么逐份 conf 判、而不是在 collectMutationSpecs 里：那里把同包所有段的 excludes 聚合成
  * 包级清单，段级幽灵条目会被同包另一段的同名命中掩盖；清除入口与判红入口必须同粒度。
  *
+ * `owner` 是这份 conf 所属的包名（由派生侧的 conf 名 → 包映射给出）：锚定判据没有它就无从判起，
+ * 故缺省即 fail-closed，而不是静默退化成「任何命中都算合法」。
+ *
  * 返回值带 `scanned`：本判据最可能的失效形态不是误判而是**空转**（一条都没扫、恒绿），
  * 故把「实际判过几条」显式交给调用方断言，而不是让调用方从输入长度自证。
  */
-export function mutationEntryProblems(root, confFileName, patterns) {
+export function mutationEntryProblems(root, confFileName, patterns, owner) {
+  if (typeof owner !== "string" || owner === "") {
+    return {
+      problems: [
+        `[${confFileName}] 判据缺少 owner（该 conf 所属包名）—— 锚定判据无从判定，fail-closed`,
+      ],
+      scanned: 0,
+    };
+  }
+  const universe = sourceUniverse(root);
   const problems = [];
+  const positive = new Set();
+  const negative = new Set();
   let scanned = 0;
+  let entryProblems = 0;
   for (const pattern of patterns) {
     if (typeof pattern !== "string" || pattern === "") {
       problems.push(
         `[${confFileName}] mutate 条目不是非空字符串（fail-closed）：${JSON.stringify(pattern)}`,
       );
+      entryProblems += 1;
       continue;
     }
     scanned += 1;
     // `!` 只是「本条进的是排除面」的语义标记，命中判据与正向条目同口径。
     const bare = pattern.startsWith("!") ? pattern.slice(1) : pattern;
-    if (expandGlob(root, bare).length === 0) {
-      problems.push(`[${confFileName}] mutate 条目命中 0 个物理文件（条目腐烂）：${pattern}`);
+    const unanchored = unanchoredReason(owner, bare);
+    if (unanchored !== null) {
+      problems.push(`[${confFileName}] mutate 条目${unanchored}（判据⑤ 锚定）：${pattern}`);
+      entryProblems += 1;
+      continue;
+    }
+    // 命中面锚在**源码世界**：不锚的话 `packages/<pkg>/**` 会被同包构建产物 `lib/**` 满足
+    // （实测 lib 字面命中 107 个文件），判据就变成「描述了另一个真实的世界」。
+    const hits = globFiles(root, bare).filter((f) => universe.has(f));
+    if (hits.length === 0) {
+      problems.push(
+        `[${confFileName}] mutate 条目腐烂：在源码世界内命中 0 个文件（判据⑤ 存在性）：${pattern}`,
+      );
+      entryProblems += 1;
+      continue;
+    }
+    const escaped = hits.filter(
+      (f) => !f.startsWith(`packages/${owner}/`) && !f.startsWith("shared/"),
+    );
+    if (escaped.length > 0) {
+      problems.push(
+        `[${confFileName}] mutate 条目命中了本包与 shared 之外的文件（${escaped.length} 个，如 ${escaped[0]}）` +
+          `—— 字面前缀不足以证明锚定（判据⑤ 越界，兜底）：${pattern}`,
+      );
+      entryProblems += 1;
+    }
+    for (const hit of hits) (pattern.startsWith("!") ? negative : positive).add(hit);
+  }
+  if (entryProblems === 0) {
+    const effective = [...positive].filter((hit) => !negative.has(hit));
+    if (effective.length === 0) {
+      problems.push(
+        `[${confFileName}] 正向条目命中 ${positive.size} 个源码文件，按 ! 条目剔除后一个不剩` +
+          `（! 条目去重命中 ${negative.size} 个）—— 该 conf 会派生出 0 个变异体，Stryker 对 0 mutant` +
+          " 不报错（判据⑥ 有效面为空）：请收窄排除面",
+      );
     }
   }
   return { problems, scanned };

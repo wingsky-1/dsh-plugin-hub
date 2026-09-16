@@ -248,12 +248,15 @@ concurrency:
   Stryker 的 `testFiles`）
   - `pnpm stryker:gen`：派生生成全部 `stryker.conf.d/*.json` 配置文件；
   - `node scripts/gate/gen-stryker-conf.mjs --sync-test-min`：把各包 `--min` 同步为实际测试文件数；
-  - `pnpm stryker:check`：门禁校验三件事——磁盘文件与清单 100% 逐字一致、每个 `test/` 下
-    `*.test.ts` 都有层归属、各包 `--min` == runner glob 实际文件数。
+  - `pnpm stryker:check`：门禁校验五件事——磁盘文件与清单 100% 逐字一致、每个 `test/` 下
+    `*.test.ts` 都有层归属、各包 `--min` == runner glob 实际文件数、每条 `mutate` 条目（含 `!`）
+    锚定在本包（或 `shared/`）且在源码世界内命中 ≥1 文件、每份 conf 的有效变异面非空
+    （#836/#848 判据 ⑤/⑥：条目合法不等于整份 conf 有意义）。
 * **全源文件覆盖强制断言（Anti-Silent-Drop）**：
   `scripts/gate/verify-dir-imports.mjs` 扫描全仓业务源码，断言
-  **`packages/<pkg>/src` 下每个文件都落在 `∪mutate ∪ ∪excludes` 之内**（excludes 含段级
-  默认值与包级 `testLayers.coverageExcludes` 的存量登记，见 `scripts/gate/mutation-topology.mjs`）。
+  **`packages/<pkg>/src` 下每个文件都落在 `∪mutate ∪ ∪excludes` 之内**（excludes = 段级
+  显式声明项 + 包级 `testLayers.coverageExcludes` 的存量登记；段级默认注入已退役，见
+  `scripts/gate/mutation-topology.mjs`）。
   只要新增业务代码却忘记配置变异分段或显式登记排除，门禁直接报错阻断。
   覆盖断言的存量缺口存在 `scripts/data/dir-imports-baseline.json` 的
   `packages.<pkg>.quality.uncoveredSrcFiles`（#733 后续起质量型统一收进 `quality` 证据段），

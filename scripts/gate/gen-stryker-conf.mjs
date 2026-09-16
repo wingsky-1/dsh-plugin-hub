@@ -4,7 +4,7 @@
  *
  * 核心设计（单一事实源 SSOT + 确定性代码生成 + 登记完整性门禁）：
  * 1. 唯一事实源：scripts/data/mutation-topology.json 的 `$testLayers` 与各包 `testLayers`。
- * 2. 派生目标：stryker.conf.d/*.json（全部段配置：当前 32 份）+ vitest.stryker.d/<pkg>.config.ts
+ * 2. 派生目标：stryker.conf.d/*.json（全部段配置：当前 33 份）+ vitest.stryker.d/<pkg>.config.ts
  *    （每包一份「变异面测试清单」的 vitest 配置）。
  * 3. **测试面不再由 Stryker 的 `testFiles` 承载**（#722 方案 A 路径一）：该字段非空会让
  *    core 把 static mutant 判成 runtime 激活（上游 #6144，未修），模块级变异体在模块加载
@@ -28,9 +28,14 @@
  *   ③ 每个有测试的包（含未登记变异面的包）`--min` == runner glob 实际文件数；
  *   ④ 充分性：`$testLayers.mutationLayers` 必须含必需层（`test-surface.mjs` 的
  *      `REQUIRED_MUTATION_LAYERS`），且每包变异面非空——防「两行拓扑改动把变异面削掉」；
- *   ⑤ 条目腐烂（#836）：每份派生 conf 的每条 `mutate` 条目（含 `!` 排除条目）必须命中
- *      ≥1 个物理文件——防「排除条目指向一个从来不存在、也永远不会出现的路径」，
- *      历史上 26 份 conf 各带一条这样的 `src/types.ts` 占位（已由 #836 清除）。
+ *   ⑤ 条目腐烂与锚定（#836 / #848）：每份派生 conf 的每条 `mutate` 条目（含 `!` 排除条目）
+ *      必须**锚定在本包（或 shared）**且在**源码世界内命中 ≥1 个文件**——防「排除条目指向一个
+ *      从来不存在、也永远不会出现的路径」（历史上 26 份 conf 各带一条这样的 `src/types.ts` 占位，
+ *      已由 #836 清除），也防「指向别的包的世界」：广域 glob 会命中他包同名文件而恒绿，
+ *      `packages/<pkg>/**` 会被同包构建产物 `lib/**` 满足，字面前缀还能被 `..` 归一化与 brace 展开改写；
+ *   ⑥ 有效面非空（#848 维护者评审）：每份 conf 的正向条目命中按 `!` 条目剔除后必须仍有剩余——
+ *      ⑤ 只判**单条**条目，一条宽 glob（把某包「逐目录级的 interface.ts 排除」换成包根级整包通配）
+ *      能在条数不变、⑤ 全绿的前提下清空整包变异面，而 Stryker 对 0 mutant 不报错（判分与门禁都静默）。
  *
  * 环境变量 GEN_STRYKER_ROOT：仓库根覆盖（测试用临时 fixture 根，避免在仓库内造包目录）。
  */
@@ -230,6 +235,13 @@ function reconcileRegistrations(topology, packages, noMutationPackages) {
 function deriveAllConfigs(packages, sharedDefaults, projections) {
   const derivedConfigs = new Map();
   const derivedVitestConfigs = new Map();
+  // conf 文件名 → 所属包：判据 ⑤ 的锚定与 ⑥ 的有效面都要知道「这份 conf 是谁的」，
+  // 而 mutate 里的路径是仓库根相对的裸 glob，只有派生侧知道归属。
+  const confOwners = new Map();
+  // conf 名只由「包名 + 段名」决定（_single 段即 <pkg>.json），故不同包可能派生出同一个文件名。
+  // 相撞时后写者会静默覆盖前者的内容——⑤/⑥ 与磁盘/拓扑一致性判据都看不到被覆盖的包
+  // （独立复核实测：还输出「1 份配置 vs 2 份 vitest 配置」的自相矛盾）。故在派生侧 fail-closed。
+  const confCollisions = [];
   for (const [pkgName, pkgDef] of Object.entries(packages)) {
     const testFiles = projections.get(pkgName)?.testFiles ?? [];
     for (const [segKey, segDef] of Object.entries(pkgDef.segments ?? {})) {
@@ -240,13 +252,21 @@ function deriveAllConfigs(packages, sharedDefaults, projections) {
         segDef,
         pkgDef,
       );
+      const previousOwner = confOwners.get(confFileName);
+      if (previousOwner !== undefined && previousOwner !== pkgName) {
+        confCollisions.push(
+          `${confFileName} 同时由 ${previousOwner} 与 ${pkgName} 派生（段名 ${segKey}）—— ` +
+            "包名与段名拼出的文件名相撞，前者的配置会被静默覆盖",
+        );
+      }
       derivedConfigs.set(confFileName, content);
+      confOwners.set(confFileName, pkgName);
     }
     if (testFiles.length > 0) {
       derivedVitestConfigs.set(vitestConfigPath(pkgName), deriveVitestConfig(pkgName, testFiles));
     }
   }
-  return { derivedConfigs, derivedVitestConfigs };
+  return { derivedConfigs, derivedVitestConfigs, confOwners, confCollisions };
 }
 
 /** 阶段 3：判据 ③ 的差异集——每个有测试的包 `--min` 与实际 runner 面文件数必须相等。 */
@@ -346,32 +366,39 @@ function topLevelTestFilesProblems(derivedConfigs) {
 }
 
 /**
- * 判据 ⑤（#836）：每份派生 conf 的每条 mutate 条目必须命中至少一个物理文件。
+ * 判据 ⑤（条目腐烂与锚定）+ ⑥（有效面非空）：判词与口径在 test-surface.mjs 的
+ * `mutationEntryProblems`（唯一实现，这里只负责把它接到派生内容与包归属上）。
  *
  * 为什么逐份 conf 判：collectMutationSpecs 把同包所有段的 excludes 聚合成包级清单，
  * 段级幽灵条目会被同包另一段的同名命中掩盖——判红入口必须与「条目写在哪」同粒度。
  * 为什么判派生内容而不是磁盘 conf：派生内容是与拓扑严格比对的唯一事实；磁盘漂移已由
  * contentProblems 单独判红，此处再读磁盘只会把两种失败混成一条判词。
  */
-function mutationEntryRotProblems(derivedConfigs) {
+function mutationEntryRotProblems(derivedConfigs, confOwners) {
   const problems = [];
   let scanned = 0;
   for (const [file, content] of derivedConfigs.entries()) {
-    const rot = mutationEntryProblems(repoRoot, file, JSON.parse(content).mutate ?? []);
-    problems.push(...rot.problems);
-    scanned += rot.scanned;
+    const judge = mutationEntryProblems(
+      repoRoot,
+      file,
+      JSON.parse(content).mutate ?? [],
+      confOwners.get(file),
+    );
+    problems.push(...judge.problems);
+    scanned += judge.scanned;
   }
   return { problems, scanned };
 }
 
 /**
- * `--check` 的全部判据：登记完整性 + 条目腐烂 + 磁盘 ↔ 派生一致（conf 与 vitest 测试面两份生成物）。
+ * `--check` 的全部判据：登记完整性 + 条目腐烂/锚定/有效面 + 磁盘 ↔ 派生一致（conf 与 vitest
+ * 测试面两份生成物）。
  * 返回值带 `scanned`：判据 ⑤ 实际判过的 mutate 条目数，由调用方落进通过行——否则「一条都没扫」
  * 与「全扫过且全命中」在输出上完全一样。
  */
 function checkModeProblems(ctx) {
-  const { errors, minMismatches, derivedConfigs, derivedVitestConfigs } = ctx;
-  const rot = mutationEntryRotProblems(derivedConfigs);
+  const { errors, minMismatches, derivedConfigs, derivedVitestConfigs, confOwners } = ctx;
+  const rot = mutationEntryRotProblems(derivedConfigs, confOwners);
   const vitestDir = join(repoRoot, VITEST_CONF_DIR);
   const diskVitest = existsSync(vitestDir)
     ? readdirSync(vitestDir)
@@ -472,11 +499,16 @@ function main() {
     packages,
     noMutationPackages,
   );
-  const { derivedConfigs, derivedVitestConfigs } = deriveAllConfigs(
+  const { derivedConfigs, derivedVitestConfigs, confOwners, confCollisions } = deriveAllConfigs(
     packages,
     sharedDefaults,
     projections,
   );
+  if (confCollisions.length > 0) {
+    console.error("[gen-stryker-conf] 派生的 conf 名碰撞（配置名只由包名 + 段名决定）：");
+    for (const collision of confCollisions) console.error(`  ${collision}`);
+    return 1;
+  }
   const minMismatches = collectMinMismatches(discovered);
 
   if (isSyncMin) syncTestMin(minMismatches);
@@ -487,6 +519,7 @@ function main() {
       minMismatches,
       derivedConfigs,
       derivedVitestConfigs,
+      confOwners,
       projections,
       packages,
       noMutationPackages,

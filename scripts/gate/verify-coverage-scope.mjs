@@ -21,12 +21,15 @@
  *      全部落在 include 面内——用产物而不是第三次实现 glob 来验分母。产物比配置旧即跳过
  *      （那是上一次配置跑出来的东西，拿它判现在的面会假红）。
  *
- * 匹配用 `node:fs` 的 `globSync`（与 `test-surface.mjs` 同一实现），不引第三方 glob。
+ * 匹配与「源码世界」定义都用 `scripts/lib/glob-files.mjs`（与变异面判据 `gen-stryker-conf --check`
+ * 的 ⑤/⑥ 同一份实现与同一个 universe），不引第三方 glob。
  * 用法：node scripts/gate/verify-coverage-scope.mjs [--root <dir>] [--coverage-config <file>]
  * 退出码：0 = 通过；1 = 有违规；2 = 结构/环境错误（配置不可读、include 面为空）。
  */
-import { existsSync, globSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+
+import { SOURCE_UNIVERSE_PATTERNS, globFiles, sourceUniverse } from "../lib/glob-files.mjs";
 
 const ROOT = join(import.meta.dirname, "../..");
 const COVERAGE_CONFIG_REL = join("scripts", "data", "coverage.config.json");
@@ -39,8 +42,6 @@ const KINDS = ["type-only", "not-source", "pending-project"];
 const PENDING_ONLY_FIELDS = ["reviewBy", "exitCriteria"];
 /** 必须由本文件持有、不得内联在 vitest.config.ts 的键。 */
 const INLINE_KEYS = ["thresholds", "include", "exclude"];
-/** 覆盖率的物理根（universe）：include 只可能落在这两处。 */
-const UNIVERSE_PATTERNS = ["packages/*/src/**/*", "shared/**/*"];
 
 /** 取 `--flag value` / `--flag=value` 形式的参数值；未给出返回 fallback。 */
 function argValue(argv, flag, fallback) {
@@ -48,20 +49,6 @@ function argValue(argv, flag, fallback) {
   if (eq) return eq.slice(flag.length + 1);
   const idx = argv.indexOf(flag);
   return idx !== -1 && argv[idx + 1] !== undefined ? argv[idx + 1] : fallback;
-}
-
-/** 展开 glob 取**文件**（相对 root 的 posix 路径，排序去重）。 */
-function globFiles(root, pattern) {
-  const out = new Set();
-  for (const hit of globSync(pattern, { cwd: root })) {
-    const abs = join(root, hit);
-    try {
-      if (statSync(abs).isFile()) out.add(hit.split("\\").join("/"));
-    } catch {
-      // 竞态下消失的文件忽略：universe 每次现算，不是清单
-    }
-  }
-  return [...out].sort();
 }
 
 /** 条目形状（对象 + 非空 pattern）与重复检测；返回 null 表示后续判据无从谈起。 */
@@ -219,15 +206,6 @@ function loadCoverageConfig(configPath, configRel) {
   return config;
 }
 
-/** 物理覆盖率根：每次现算，不存清单（清单会漂移）。 */
-function collectUniverse(root) {
-  const universe = new Set();
-  for (const pattern of UNIVERSE_PATTERNS) {
-    for (const f of globFiles(root, pattern)) universe.add(f);
-  }
-  return universe;
-}
-
 /** 条目腐烂：模式在覆盖率根内命中 0 个文件即指向了不存在的东西。 */
 function rottenPatternProblems(label, patterns, hitsInUniverse) {
   const problems = [];
@@ -294,11 +272,11 @@ function main() {
   }
   problems.push(...inlineLiteralProblems(readFileSync(vitestConfigPath, "utf8")));
 
-  // 物理面（每次现算，不存清单）与实际计分面
-  const universe = collectUniverse(root);
+  // 物理面（每次现算，不存清单）与实际计分面：universe 定义与变异面共用一份（glob-files.mjs）
+  const universe = sourceUniverse(root);
   if (universe.size === 0) {
     console.error(
-      `verify-coverage-scope: universe 为空（${UNIVERSE_PATTERNS.join(" + ")} 没匹配到任何文件）—— 提取口径失效，fail-closed`,
+      `verify-coverage-scope: universe 为空（${SOURCE_UNIVERSE_PATTERNS.join(" + ")} 没匹配到任何文件）—— 提取口径失效，fail-closed`,
     );
     return 2;
   }
