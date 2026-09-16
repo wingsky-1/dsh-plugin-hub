@@ -2,9 +2,9 @@
  * dsh-mcp-manager — unit：servers/dispatch 域（ws_mcp_call 执行器）。
  *
  * 单元层是白盒面：直引新域实现（impl/call 与 impl/redact），不经组合根。覆盖：
- * - 远端分支的参数构造与透传（工具名归一 / 参数归一 / signal / server.toolCallTimeoutMs）；
+ * - 远端分支的参数构造与透传（注册名经 registeredNameFor / 参数归一 / 真 signal / 子调用身份）；
  * - 封装直呼分支（execute 的 args 与 exec 最小面 / output.render / undefined 不落键）；
- * - 结果投影调用（projectCallToolResult 实参与两个文案回调 / 目录过期前置提示）；
+ * - 结果投影调用（projectCallToolResult 吃远端 value 与两个文案回调 / 目录过期前置提示）；
  * - 超时兜底预算（withTimeout 的预算 = 调用预算 + 2000，含缺省预算）；
  * - 凭据脱敏出口（调用/封装失败文案经 createRedactor 抹凭据；signal 中止原样上抛）；
  * - 路由与就绪/策略守卫的错误文案。
@@ -19,6 +19,8 @@ import type {
 } from "../../src/server/servers/dispatch/deps.ts";
 import type { ServerConfig } from "../../src/server/config/interface.ts";
 import type { ProjectUnit } from "../../src/server/connection/runtime/interface.ts";
+import type { ToolExecutionInput } from "@deepseek-ai/dsh-tools";
+import { publicToolName } from "../../src/server/connection/runtime/supervisor.ts";
 
 const ROOT = "@global";
 const SERVER = "srv";
@@ -104,19 +106,39 @@ function makePipeline(overrides: Record<string, unknown> = {}) {
   return { pipeline, calls };
 }
 
+/**
+ * 旧栈字段（client / transport / reconnectTimer / failedAttempts）随换引擎删除，夹具按新
+ * ConnectionEntry 造：`id` 是官方实例的账本键（dispatch 远端分支的派发前提），`readySettled`
+ * 与 `everConnected` 是六态投影的输入面。
+ */
 function makeEntry(overrides: Record<string, unknown> = {}) {
   return {
     server: { name: SERVER, transport: "stdio", command: "echo", enabled: true },
-    client: undefined,
-    transport: undefined,
+    id: "srv-id",
+    handle: undefined,
     status: "connected",
     error: undefined,
     connectedAt: Date.now(),
-    reconnectTimer: undefined,
+    readySettled: true,
+    everConnected: true,
     disposed: false,
-    failedAttempts: 0,
     ...overrides,
   };
+}
+
+/**
+ * 假宿主执行面：记下官方 ToolExecutionInput 并返回判别式结果。
+ *
+ * 为什么默认结果带 `value`：dispatch 把 `result.value` 喂给 projectCallToolResult，而 `value`
+ * 就是官方执行器给出的**远端原始结果**（实测 §2.9-5）——夹具按同一形状给，投影判据才在真链路上。
+ */
+function fakeExecute(value: unknown = { content: [] }) {
+  const calls: Array<ToolExecutionInput & Record<string, unknown>> = [];
+  const execute = async (input: ToolExecutionInput): Promise<unknown> => {
+    calls.push(input as ToolExecutionInput & Record<string, unknown>);
+    return { isError: false, content: [], value };
+  };
+  return { execute, calls };
 }
 
 function makeUnit(
@@ -160,12 +182,18 @@ function makeInput(options: {
     rawArgs: { a: 1 },
     signal: undefined,
     agent: { session: { header: { cwd: "/proj" } } },
+    callId: "call-1" as ToolExecutionInput["callId"],
     units: new Map([[ROOT, options.unit ?? makeUnit()]]),
     allServers: makeServers,
     disabledTools: new Map(),
     policy: {},
     catalogTtlMs: 24 * 60 * 60 * 1000,
     defaultCallTimeoutMs: 30000,
+    // 注册名派生用**真** publicToolName：判据要钉住「dispatch 不自己拼 mcp__<id>__<tool>」，
+    // 手写字符串会让这条判据在派生规则变更时静默失效。
+    registeredNameFor: (id: string, tool: string) => publicToolName(id, tool),
+    execute: fakeExecute().execute,
+    forwarding: new Set(),
     pipeline: options.pipeline,
     workspace: makeWorkspace(),
     ...options.overrides,
@@ -173,9 +201,10 @@ function makeInput(options: {
 }
 
 describe("executeMcpCall：远端分支", () => {
-  it("工具名归一 + 参数归一 + server.toolCallTimeoutMs 透传给 client", async () => {
+  it("工具名归一 + 参数归一 + 注册名经 registeredNameFor + 预算读 server.toolCallTimeoutMs", async () => {
     const { pipeline, calls } = makePipeline();
-    const seen: unknown[] = [];
+    const remote = { content: [{ type: "text", text: "ok" }] };
+    const exec = fakeExecute(remote);
     const unit = makeUnit({
       entry: {
         server: {
@@ -185,12 +214,6 @@ describe("executeMcpCall：远端分支", () => {
           enabled: true,
           toolCallTimeoutMs: 5000,
         },
-        client: {
-          callTool: async (...args: unknown[]) => {
-            seen.push(args);
-            return { content: [{ type: "text", text: "ok" }] };
-          },
-        },
       },
     });
     const signal = new AbortController().signal;
@@ -198,38 +221,67 @@ describe("executeMcpCall：远端分支", () => {
       makeInput({
         unit,
         pipeline,
-        overrides: { toolRaw: "mcp__srv__echo", rawArgs: '{"a":1}', signal },
+        overrides: { toolRaw: "mcp__srv__echo", rawArgs: '{"a":1}', signal, execute: exec.execute },
       }),
     );
-    expect(seen).toEqual([["echo", { a: 1 }, { signal, timeoutMs: 5000 }]]);
+    // 注册名用账本键 id 派生（不是服务器裸名）：与真 publicToolName 逐字对照，手拼必红。
+    expect(exec.calls[0].name).toBe(publicToolName("srv-id", "echo"));
+    expect(exec.calls[0].arguments).toEqual({ a: 1 });
+    expect(exec.calls[0].signal).toBe(signal);
     expect(calls.normalize).toEqual(['{"a":1}']);
     expect(calls.timeout[0].ms).toBe(7000);
     expect(out).toEqual({ content: [{ type: "text", text: "ok" }] });
   });
 
+  it("子调用身份：callId 合成 <外层>:mcp:1、rootCallId 与 parent 原样透传", async () => {
+    const { pipeline } = makePipeline();
+    const exec = fakeExecute({ content: [] });
+    const parent = Symbol("outer-token") as unknown as ToolExecutionInput["parent"];
+    await executeMcpCall(
+      makeInput({
+        pipeline,
+        overrides: {
+          execute: exec.execute,
+          callId: "outer-7",
+          rootCallId: "root-3",
+          parent,
+        },
+      }),
+    );
+    expect(exec.calls[0].callId).toBe("outer-7:mcp:1");
+    expect(exec.calls[0].rootCallId).toBe("root-3");
+    expect(exec.calls[0].parent).toBe(parent);
+  });
+
+  it("外层不带 rootCallId 时不落该键（不带会把子调用误标成新根）", async () => {
+    const { pipeline } = makePipeline();
+    const exec = fakeExecute({ content: [] });
+    await executeMcpCall(makeInput({ pipeline, overrides: { execute: exec.execute } }));
+    expect(Object.hasOwn(exec.calls[0], "rootCallId")).toBe(false);
+  });
+
+  it("调用方无 signal 时现造一个真 AbortSignal（宿主 executor 无条件读 signal.aborted）", async () => {
+    const { pipeline } = makePipeline();
+    const exec = fakeExecute({ content: [] });
+    await executeMcpCall(makeInput({ pipeline, overrides: { execute: exec.execute } }));
+    expect(exec.calls[0].signal).toBeInstanceOf(AbortSignal);
+    expect(typeof exec.calls[0].signal.aborted).toBe("boolean");
+  });
+
   it("缺省预算走 defaultCallTimeoutMs，兜底 +2000ms", async () => {
     const { pipeline, calls } = makePipeline();
-    let timeoutMs: unknown;
-    const unit = makeUnit({
-      entry: {
-        client: {
-          callTool: async (_tool: string, _args: unknown, opts: { timeoutMs?: number }) => {
-            timeoutMs = opts.timeoutMs;
-            return { content: [] };
-          },
-        },
-      },
-    });
-    await executeMcpCall(makeInput({ unit, pipeline }));
-    expect(timeoutMs).toBe(30000);
+    const exec = fakeExecute({ content: [] });
+    await executeMcpCall(makeInput({ pipeline, overrides: { execute: exec.execute } }));
+    // 单次调用预算已交官方 Config（toolCallTimeoutMs，见 unit-lifecycle-mount 的映射判据）；
+    // 本层只剩「超时包装的预算 = 调用预算 + 2000」这一处可观测。
     expect(calls.timeout[0].ms).toBe(32000);
   });
 
   it("远端结果交给 projectCallToolResult，两个文案回调口径不变", async () => {
     const { pipeline, calls } = makePipeline();
     const remote = { content: [{ type: "text", text: "hi" }], structuredContent: { n: 1 } };
-    const unit = makeUnit({ entry: { client: { callTool: async () => remote } } });
-    const out = await executeMcpCall(makeInput({ unit, pipeline }));
+    const exec = fakeExecute(remote);
+    const out = await executeMcpCall(makeInput({ pipeline, overrides: { execute: exec.execute } }));
     expect(calls.project).toHaveLength(1);
     expect(calls.project[0].result).toBe(remote);
     const handlers = calls.project[0].handlers as {
@@ -247,12 +299,12 @@ describe("executeMcpCall：远端分支", () => {
   it("目录过期 → 结果前置过期提示且保留 structuredContent", async () => {
     const { pipeline } = makePipeline();
     const remote = { content: [{ type: "text", text: "hi" }], structuredContent: { n: 1 } };
+    const exec = fakeExecute(remote);
     const unit = makeUnit({
       catalog: new Map([[SERVER, { discoveredAt: Date.now() - 1000, tools: new Map() }]]),
-      entry: { client: { callTool: async () => remote } },
     });
     const out = (await executeMcpCall(
-      makeInput({ unit, pipeline, overrides: { catalogTtlMs: 0 } }),
+      makeInput({ unit, pipeline, overrides: { catalogTtlMs: 0, execute: exec.execute } }),
     )) as { content: Array<{ text: string }>; structuredContent: unknown };
     expect(out.content[0].text).toContain("本工具目录已过期");
     expect(out.content[1]).toEqual(remote.content[0]);
@@ -261,24 +313,51 @@ describe("executeMcpCall：远端分支", () => {
 
   it("目录不可用（unavailable）不算过期：不前置提示", async () => {
     const { pipeline } = makePipeline();
+    const exec = fakeExecute({ content: [{ type: "text", text: "hi" }] });
     const unit = makeUnit({
       catalog: new Map([
         [SERVER, { discoveredAt: Date.now() - 1000, tools: new Map(), unavailable: "连接失败" }],
       ]),
-      entry: { client: { callTool: async () => ({ content: [{ type: "text", text: "hi" }] }) } },
     });
     const out = (await executeMcpCall(
-      makeInput({ unit, pipeline, overrides: { catalogTtlMs: 0 } }),
+      makeInput({ unit, pipeline, overrides: { catalogTtlMs: 0, execute: exec.execute } }),
     )) as { content: Array<{ text: string }> };
     expect(out.content).toHaveLength(1);
     expect(out.content[0].text).toBe("hi");
   });
 
-  it("client 缺失 → 未就绪错误（不经投影）", async () => {
+  // 旧「client 缺失 → 未就绪」判据的真链路已不存在：换引擎后没有 client 字段可取（删除由类型
+  // 强制）。仍然存在的判据是「装载窗口与 mountServer 返回之间那条微任务缝里 id 还没写回」——
+  // 那条并发窗口的兜底守卫必须留在新链路上，故就地重建为「id 缺失」。
+  it("id 缺失（装载未完成）→ 未就绪错误（不经投影）", async () => {
     const { pipeline, calls } = makePipeline();
-    await expect(executeMcpCall(makeInput({ unit: makeUnit(), pipeline }))).rejects.toThrow(
-      /未就绪（client 缺失）/,
+    const unit = makeUnit({ entry: { id: undefined } });
+    await expect(executeMcpCall(makeInput({ unit, pipeline }))).rejects.toThrow(
+      /未就绪（装载未完成）/,
     );
+    expect(calls.project).toHaveLength(0);
+  });
+
+  it("isError:true → 单层「远端工具返回错误」文案 + ws_mcp_detail 引导句各一次", async () => {
+    const { pipeline, calls } = makePipeline();
+    const error = await executeMcpCall(
+      makeInput({
+        pipeline,
+        overrides: {
+          execute: async () => ({ isError: true, error: { message: "boom" }, content: [] }),
+        },
+      }),
+    ).then(
+      () => null,
+      (e: Error) => e,
+    );
+    expect(error?.message).toBe(
+      "ws_mcp_call: 远端工具返回错误：boom；可先用 ws_mcp_detail 核对参数 schema 后重试",
+    );
+    // 单层：官方在 isError 时自己就抛错，所以这条文案不能再被外层 catch 包成第二层「调用失败：」。
+    expect((error?.message.match(/调用失败/g) ?? []).length).toBe(0);
+    expect((error?.message.match(/远端工具返回错误/g) ?? []).length).toBe(1);
+    expect((error?.message.match(/ws_mcp_detail/g) ?? []).length).toBe(1);
     expect(calls.project).toHaveLength(0);
   });
 });
@@ -370,18 +449,20 @@ describe("executeMcpCall：封装直呼分支", () => {
 describe("executeMcpCall：超时兜底与脱敏出口", () => {
   it("远端调用抛错 → 「调用失败」文案经脱敏出口", async () => {
     const { pipeline, calls } = makePipeline();
-    const unit = makeUnit({
-      entry: {
-        client: {
-          callTool: async () => {
-            throw new Error("上游拒绝 " + CREDENTIAL);
+    const unit = makeUnit();
+    await expect(
+      executeMcpCall(
+        makeInput({
+          unit,
+          pipeline,
+          overrides: {
+            execute: async () => {
+              throw new Error("上游拒绝 " + CREDENTIAL);
+            },
           },
-        },
-      },
-    });
-    await expect(executeMcpCall(makeInput({ unit, pipeline }))).rejects.toThrow(
-      /调用失败：上游拒绝 \*\*\*/,
-    );
+        }),
+      ),
+    ).rejects.toThrow(/调用失败：上游拒绝 \*\*\*/);
     expect(calls.redact[0]).toEqual(makeServers());
   });
 
@@ -391,10 +472,10 @@ describe("executeMcpCall：超时兜底与脱敏出口", () => {
         throw new Error("ws_mcp_call: 调用超时（30000ms）" + CREDENTIAL);
       },
     });
-    const unit = makeUnit({ entry: { client: { callTool: async () => ({ content: [] }) } } });
-    await expect(executeMcpCall(makeInput({ unit, pipeline }))).rejects.toThrow(
-      /调用超时（30000ms）\*\*\*/,
-    );
+    const exec = fakeExecute({ content: [] });
+    await expect(
+      executeMcpCall(makeInput({ pipeline, overrides: { execute: exec.execute } })),
+    ).rejects.toThrow(/调用超时（30000ms）\*\*\*/);
     expect(calls.redact).toHaveLength(1);
   });
 
@@ -403,17 +484,18 @@ describe("executeMcpCall：超时兜底与脱敏出口", () => {
     const reason = new Error("aborted " + CREDENTIAL);
     const controller = new AbortController();
     controller.abort(reason);
-    const unit = makeUnit({
-      entry: {
-        client: {
-          callTool: async () => {
-            throw new Error("x");
-          },
-        },
-      },
-    });
     await expect(
-      executeMcpCall(makeInput({ unit, pipeline, overrides: { signal: controller.signal } })),
+      executeMcpCall(
+        makeInput({
+          pipeline,
+          overrides: {
+            signal: controller.signal,
+            execute: async () => {
+              throw new Error("x");
+            },
+          },
+        }),
+      ),
     ).rejects.toBe(reason);
     expect(calls.redact).toHaveLength(0);
   });

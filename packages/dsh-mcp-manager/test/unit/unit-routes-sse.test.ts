@@ -15,7 +15,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { assertNoGrowth, callHandler, pollUntil } from "../helpers.ts";
+import { assertNoGrowth, callHandler, fakeToolsService, pollUntil } from "../helpers.ts";
 
 const {
   makeRoutes,
@@ -30,6 +30,7 @@ const {
   normalizeServer,
   SSE_HEARTBEAT_MS,
   SSE_PING_FRAME,
+  McpMiddleware,
 } = await import("../../src/index.ts");
 
 const fakeReq = (method, url, body, opts = {}) => ({
@@ -360,19 +361,24 @@ describe("health 路由", () => {
     manager.supervisors.set("b", { status: "failed", tools: [] });
     // 中间层连接池计数（#228）：项目级连接不在 supervisors，health 单独投影。
     manager.middlewareMode = "project";
+    const units = new Map([
+      [
+        "/root-a",
+        {
+          root: "/root-a",
+          connections: new Map([
+            ["x", { status: "connected" }],
+            ["y", { status: "failed" }],
+          ]),
+        },
+      ],
+      ["/root-b", { root: "/root-b", connections: new Map() }],
+    ]);
     manager.middleware = {
-      units: new Map([
-        [
-          "/root-a",
-          {
-            connections: new Map([
-              ["x", { status: "connected" }],
-              ["y", { status: "failed" }],
-            ]),
-          },
-        ],
-        ["/root-b", { connections: new Map() }],
-      ]),
+      units,
+      // 假池只回答「routes 是否经 statusOf 取状态」这一条：按条目 status 原样回。
+      // 读时刷新的真实语义由下面那条真 McpMiddleware 用例钉住。
+      statusOf: (root, serverName) => units.get(root)?.connections.get(serverName)?.status,
     };
     return { manager, route };
   }
@@ -436,6 +442,120 @@ describe("health 路由", () => {
   it("health 补中间层连接计数", () => {
     const { payload } = healthPayload();
     expect(payload.middleware).toEqual({ mode: "project", units: 2, connections: 2, connected: 1 });
+  });
+
+  /** health 的计数判据必须打在真 statusOf 上：假池只能验「接线到没到」，验不了读时刷新。 */
+  function realPoolHost(tools, servers) {
+    return {
+      ctx: { tools },
+      logger: { info: () => {}, warn: () => {}, error: () => {} },
+      projectServersFor: async () => servers,
+      globalServers: () => [],
+      normalizedProjectRoot: async (cwd) => cwd,
+      saveUserState: async () => {},
+      emitStatus: () => {},
+      catalogCachePath: () => "/tmp/cache.json",
+      isGlobalServer: () => false,
+      isRuntimeServer: () => false,
+    };
+  }
+
+  it("#767 S1-4d：计数随注册面变化（前缀工具消失 → middleware.connected 下降）", () => {
+    // 真池（真 McpMiddleware + 真 projectServerState）：官方不暴露状态 API，六态只能读注册面，
+    // 而 entry.status 只在装载窗口结算时写入——routes 若直读它会永远停在陈旧的 connected。
+    const { manager, route } = healthFixture();
+    const servers = [{ name: "x", transport: "stdio", command: "echo", enabled: true }];
+    const tools = fakeToolsService({ schemas: [{ name: "mcp__id-x__t" }] });
+    const mw = new McpMiddleware(realPoolHost(tools, servers), {});
+    mw.units.set("/root-a", {
+      root: "/root-a",
+      connections: new Map([
+        [
+          "x",
+          {
+            server: servers[0],
+            id: "id-x",
+            handle: { disposed: false },
+            status: "connected",
+            error: undefined,
+            connectedAt: Date.now(),
+            readySettled: true,
+            everConnected: true,
+            disposed: false,
+          },
+        ],
+      ]),
+      catalog: new Map(),
+      userDisabled: new Set(),
+      lastTouchedAt: Date.now(),
+      inFlight: new Map(),
+    });
+    manager.middleware = mw;
+    const middlewarePayload = () => {
+      const res = fakeRes();
+      route.handler(fakeReq("GET", ROUTES.health), res);
+      return JSON.parse(res.state.body).middleware;
+    };
+    expect(middlewarePayload()).toEqual({
+      mode: "project",
+      units: 1,
+      connections: 1,
+      connected: 1,
+    });
+    // 注册面里该 id 前缀的工具消失（官方退避/预算耗尽时注销工具）→ 下一读计为未连接。
+    tools.entries = [{ name: "mcp__other-id__t" }];
+    expect(middlewarePayload().connected).toBe(0);
+    expect(middlewarePayload().connections).toBe(1);
+  });
+
+  it("#767 S1-4d：虚拟单元（toolDefinitions）在 /health 恒计为 connected", () => {
+    // 虚拟连接从不挂官方实例、注册面永远没有它的前缀——若 /health 也按注册面判，它会恒计为
+    // 未连接（同一份 statusOf 的第三处读点；另两处见 unit-middleware 与 unit-manager2）。
+    const { manager, route } = healthFixture();
+    const virtual = {
+      name: "cg",
+      transport: "stdio",
+      command: "codegraph",
+      enabled: true,
+      toolDefinitions: [],
+    };
+    const tools = fakeToolsService();
+    const mw = new McpMiddleware(realPoolHost(tools, [virtual]), {});
+    mw.units.set("/root-a", {
+      root: "/root-a",
+      connections: new Map([
+        [
+          "cg",
+          {
+            server: virtual,
+            id: undefined,
+            handle: undefined,
+            status: "connected",
+            error: undefined,
+            connectedAt: Date.now(),
+            readySettled: true,
+            everConnected: true,
+            disposed: false,
+          },
+        ],
+      ]),
+      catalog: new Map(),
+      userDisabled: new Set(),
+      lastTouchedAt: Date.now(),
+      inFlight: new Map(),
+    });
+    manager.middleware = mw;
+    const middlewarePayload = () => {
+      const res = fakeRes();
+      route.handler(fakeReq("GET", ROUTES.health), res);
+      return JSON.parse(res.state.body).middleware;
+    };
+    expect(tools.entries).toEqual([]);
+    expect(middlewarePayload().connected).toBe(1);
+    // 用户禁用（浮窗断开）是把它投影成 disabled 的输入面之一。
+    mw.units.get("/root-a").userDisabled.add("cg");
+    expect(middlewarePayload().connected).toBe(0);
+    expect(middlewarePayload().connections).toBe(1);
   });
 });
 

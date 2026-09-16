@@ -169,14 +169,19 @@ export function makeHealthRoute(manager: RoutesManager): WebRoute {
         tools += supervisor.tools.length;
       }
       // 中间层连接池计数（#228：项目级连接不在 supervisors，需单独投影诊断）。
+      // 状态判据走读时刷新的投影（statusOf）：中间层 entry.status 只在装载窗口结算时写入，
+      // 官方的后台重连/预算耗尽没有第二处写入点，直读它会让「已掉线」长期计成 connected。
       let middlewareUnits = 0;
       let middlewareConnections = 0;
       let middlewareConnected = 0;
-      for (const unit of manager.middleware?.units.values() ?? []) {
+      const middleware = manager.middleware;
+      for (const unit of middleware?.units.values() ?? []) {
         middlewareUnits += 1;
-        for (const entry of unit.connections.values()) {
+        for (const serverName of unit.connections.keys()) {
           middlewareConnections += 1;
-          if (entry.status === SERVER_STATES.connected) middlewareConnected += 1;
+          if (middleware?.statusOf(unit.root, serverName) === SERVER_STATES.connected) {
+            middlewareConnected += 1;
+          }
         }
       }
       writeJson(res, 200, {

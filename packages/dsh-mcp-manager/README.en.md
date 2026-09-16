@@ -265,9 +265,12 @@ await ctx.mcpManager.registerServer({
   secrets themselves**); on-disk 0600 permissions + atomic write
 - All `/api/dsh-mcp/*` routes are restricted to loopback access (non-loopback → 403 / wrong
   method → 405)
-- **stdio subprocess environment sanitization**: the parent environment has credential-shaped
-  variables (`KEY`/`TOKEN`/`SECRET`/`PASSWORD`…) and stale `DSH_*` variables stripped before
-  merging the explicit env — prevents leaking host secrets into the MCP subprocess
+- **stdio subprocess environment sanitization (official dsh-mcp-client semantics)**: sanitization
+  applies to the **inherited parent environment** only — credential-shaped names (`KEY` /
+  `PASSWORD` / `SECRET` / `TOKEN`) and every `DSH_*` variable are stripped from the parent
+  environment so host secrets never leak into the MCP subprocess implicitly; **an `env` entry you
+  declare explicitly is passed to the child verbatim** (explicit layers merge after the scrub), so
+  `env` is not a redaction boundary — do not put credentials there if you want them isolated
 - **stdio subprocess inherits host privileges**: MCP server commands run under the host
   process's permissions; only configure trusted servers
 - **MCP tools execute on the real server — confirm before acting**; tool results are returned
@@ -352,6 +355,12 @@ pnpm --filter @wingsky-1/dsh-mcp-manager test
 
 ## Known Limitations
 
+- **Middleware-mode tool names embed a random id**: servers are mounted by the official
+  dsh-mcp-client, so tools register as `mcp__<id>__<tool>`, where `id` is a **random short
+  string** allocated per (workspace, server) — stable within one plugin assembly; it
+  changes on plugin reload or host restart. **Never hardcode tool names** in scripts or prompts; always resolve them through
+  `ws_mcp_list` / `ws_mcp_detail`. Hiding `mcp__*` from the model-facing surface (routing
+  everything through `ws_mcp_call`) lands in a later stage
 - Does not subscribe to the MCP `tools/list_changed` notification (no long-lived SSE
   connection); tool list changes are re-synced on reconnect / manual refresh
 - The middleware catalog is a "last-good snapshot within collection bounds" (≤512 tools /

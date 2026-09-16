@@ -235,6 +235,50 @@ export function fakeLoaderPort(script = {}) {
 }
 
 /**
+ * 假工具服务（宿主 `ctx.tools` 面）：注册面查询 + 执行面，中间层池与 dispatch 的夹具共用。
+ *
+ * 为什么 `schemas` 返回的是**活数组**而不是快照：换引擎后官方不暴露任何状态 API，「已连上」只能
+ * 从注册面的 `mcp__<id>__` 前缀读出来，六态投影的可判时点就是「前缀出现 / 消失」——夹具必须让
+ * 用例能在两次读之间改写它，否则「曾连上、前缀消失」这条判据根本构造不出来。
+ *
+ * 为什么 `execute` 的缺省结果带 `value`：官方执行器返回的 `value` 是远端原始 CallToolResult，
+ * 中间层投影吃的就是它（结果形状实测：`{isError, content, value}`）。
+ *
+ * @param {object} [script]
+ * @param {Array} [script.schemas] 初始注册面条目（`{name, description?, parameters?}`）
+ * @param {Function} [script.execute] 执行面实现，收官方 ToolExecutionInput；缺省返回空成功结果
+ */
+export function fakeToolsService(script = {}) {
+  let schemas = script.schemas ?? [];
+  const registered = [];
+  const disposed = [];
+  const executed = [];
+  return {
+    registered,
+    disposed,
+    executed,
+    get entries() {
+      return schemas;
+    },
+    set entries(next) {
+      schemas = next;
+    },
+    register(def) {
+      registered.push(def);
+      return () => disposed.push(def?.name);
+    },
+    schemas() {
+      return schemas;
+    },
+    async execute(input) {
+      executed.push(input);
+      if (script.execute) return await script.execute(input);
+      return { isError: false, content: [], value: { content: [] } };
+    },
+  };
+}
+
+/**
  * 伪造 MCPClient（连接监督器的最小执行面）。
  *
  * 消费面（supervisor.ts）：initialize() / listTools(cursor?) / callTool(name, args, opts)；

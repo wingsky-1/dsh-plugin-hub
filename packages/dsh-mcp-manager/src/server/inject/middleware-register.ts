@@ -14,7 +14,12 @@
  */
 
 import type { Context } from "@deepseek-ai/cordis";
-import type { ToolDefinition, PreToolDecision } from "@deepseek-ai/dsh-tools";
+import type {
+  ToolDefinition,
+  ToolExecution,
+  ToolRunContext,
+  PreToolDecision,
+} from "@deepseek-ai/dsh-tools";
 import type { McpMiddleware } from "../connection/runtime/interface.ts";
 import { LIST_DEFAULT_TOOLS_PER_SERVER } from "../shared/interface.ts";
 import { MIDDLEWARE_GLOBAL_ROOT } from "../../shared/interface.ts";
@@ -275,7 +280,7 @@ function parseCallParams(args: unknown): { server: string; tool: string; argumen
 async function executeCall(
   toolCtx: MiddlewareToolContext,
   args: unknown,
-  exec: { signal?: AbortSignal; agent?: unknown },
+  exec: Pick<ToolRunContext, "signal" | "agent" | "callId" | "rootCallId" | "token">,
 ) {
   const root = await toolCtx.resolveRoot(exec.agent);
   if (root === undefined) throw new Error("ws_mcp_call: 无法确定工作空间，请先选择工作区");
@@ -303,11 +308,17 @@ async function executeCall(
   if (unit === undefined)
     throw new Error(`ws_mcp_call: 工作空间 ${JSON.stringify(targetRoot)} 无项目级 MCP 配置`);
   await toolCtx.mw.ensureConnected(targetRoot, parsed.server);
-  // #413：透传 exec.agent 给 callTool（封装直呼分支的 execute 依赖
-  // agent.session.header.cwd 做 projectPath 补全）。
+  // #413：agent 透传给 callTool（封装直呼分支的 execute 依赖 agent.session.header.cwd 做
+  // projectPath 补全）；callId/rootCallId/token 供 dispatch 合成子调用 id 并透传 parent（#767 S1-4d）。
   const startTime = Date.now();
   try {
-    const result = await toolCtx.mw.callTool(server, tool, callArguments, exec.signal, exec.agent);
+    const result = await toolCtx.mw.callTool(server, tool, callArguments, exec.signal, {
+      agent: exec.agent,
+      callId: exec.callId,
+      ...(exec.rootCallId === undefined ? {} : { rootCallId: exec.rootCallId }),
+      // token 即本次调用的身份：子调用以它为 parent，guard 据此区分「模型直呼」与「我方转发」。
+      ...(exec.token === undefined ? {} : { parent: exec.token }),
+    });
     const durationMs = Date.now() - startTime;
     if (toolCtx.stats?.isEnabled()) {
       toolCtx.stats.recordCall(parsed.server, tool, durationMs, true);
@@ -763,11 +774,17 @@ function registerPreExecuteGuard(
   return ctx.on(
     "tools/pre-execute",
     async (
-      exec: { name?: string; arguments?: unknown; agent?: unknown },
+      exec: Pick<ToolExecution, "name" | "arguments" | "agent" | "parent">,
       next: () => Promise<PreToolDecision>,
     ): Promise<PreToolDecision> => {
       const name = exec?.name;
       if (typeof name !== "string" || name === "") return next();
+      // 裁定 R/Z：判发起者不判名字。我方 dispatch 经 ctx.tools.execute 转发出去的子调用，
+      // 其 parent 就是外层 ws_mcp_call 的 token，派发前已登记进 mw.forwarding——这里必须在
+      // 任何 mcp__ 解析与 B11 早返回**之前**放行：放行晚一步，阶段 3 的模型面收敛会把自家
+      // 转发当成模型直呼误拒（RECON 反例 9）。集合判定即全部裁决，工具级禁用已在 dispatch
+      // 侧按 isToolDenied 判过。
+      if (exec.parent !== undefined && mw.forwarding.has(exec.parent)) return next();
       if (name === "ws_mcp_call") {
         const decision = handleCallGuard(exec.arguments, mw);
         if (decision !== undefined) return decision;

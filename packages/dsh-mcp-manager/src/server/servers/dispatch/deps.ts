@@ -7,13 +7,20 @@
  * - workspace 域的全名解析、工具名归一与全名拼装。
  *
  * 两条都是**类型边**（形状经各自 interface.ts 取），值由调用方按 `DispatchCallInput` 递进来——
- * 本片（S1-3a）是转发壳，装配表不动，故本域没有 `installXxx` 端口持有者；域间仍是零值边。
+ * 本片（S1-3a）起是转发壳，装配表不动，故本域没有 `installXxx` 端口持有者；域间仍是零值边。
+ * 换引擎后（S1-4d）远端分支改道宿主的 `ctx.tools.execute`：执行能力、注册名派生与转发登记表
+ * 也一并按引用递入，本域仍不持任何状态。
  *
  * 中间层的工作空间单元、连接条目与凭据脱敏源**不复制**进本域：`units` 按引用递入、
  * `allServers` 递取值器（脱敏只在出错路径上读服务器表），本域只读不留，避免第二个事实源。
  *
  * **只许类型依赖**：本文件出现值 import 会被 verify-dir-imports 硬判红。
  */
+import type {
+  ToolExecutionInput,
+  ToolExecutionResult,
+  ToolExecutionToken,
+} from "@deepseek-ai/dsh-tools";
 import type * as pipelineApi from "../../pipeline/interface.ts";
 import type * as workspaceApi from "../../workspace/interface.ts";
 import type { ServerConfig } from "../../config/interface.ts";
@@ -42,6 +49,12 @@ export type DispatchWorkspacePort = Pick<
   "parseFullServerName" | "normalizeToolName" | "fullServerName"
 >;
 
+/** 宿主工具执行入参（子调用身份 + 参数 + 真 signal）。别名的意义是形状只在这里写一次。 */
+export type ToolExecutionInputLike = ToolExecutionInput;
+
+/** 宿主工具执行结果（判别的成功 / 失败联合；isError 只能从判别式走）。 */
+export type ToolExecutionResultLike = ToolExecutionResult;
+
 /**
  * 一次 ws_mcp_call 执行所需的全部外部输入。
  *
@@ -62,6 +75,15 @@ export interface DispatchCallInput {
   readonly signal: AbortSignal | undefined;
   /** 调用方会话 agent（封装直呼分支透传，供 session cwd 解析）。 */
   readonly agent: unknown;
+  /** 本次外层调用的 id：合成子调用 id 的父前缀（`<parent>:mcp:1`，先例见 dsh-tools 的 PTC）。 */
+  readonly callId: ToolExecutionInput["callId"];
+  /** 根调用 id：有就透传——宿主按 `rootCallId ?? callId` 回填，不带会把子调用误标成新根。 */
+  readonly rootCallId?: ToolExecutionInput["rootCallId"];
+  /**
+   * 外层调用的 token，作为子调用的 `parent` 透传：PTC 模式下不带 parent 的原生名直呼会被
+   * 判 UNKNOWN_TOOL；同一 token 也是 guard 识别「这次调用出自我方转发」的凭据（裁定 R/Z）。
+   */
+  readonly parent?: ToolExecutionToken;
   /** 中间层工作空间单元表（按引用递入，本域不复制也不持有）。 */
   readonly units: ReadonlyMap<string, ProjectUnit>;
   /** 凭据脱敏源：全部在册服务器（出错路径才取值，与旧 `allServers()` 同惰性）。 */
@@ -74,6 +96,12 @@ export interface DispatchCallInput {
   readonly catalogTtlMs: number;
   /** 单次调用预算缺省值（server.toolCallTimeoutMs 缺省时用它）。 */
   readonly defaultCallTimeoutMs: number;
+  /** 注册名派生（唯一派生点是中间层的 publicToolName；本域不得自己拼 `mcp__<id>__<tool>`）。 */
+  readonly registeredNameFor: (id: string, tool: string) => string;
+  /** 宿主工具执行面（本域只转发；结果用 `value` 喂投影，与旧链路逐字节等价）。 */
+  readonly execute: (input: ToolExecutionInputLike) => Promise<ToolExecutionResultLike>;
+  /** 在飞的转发登记表（按引用递入）：派发前后登记 / 注销 `parent`，guard 据此放行。 */
+  readonly forwarding: Set<ToolExecutionToken>;
   /** pipeline 域能力面。 */
   readonly pipeline: DispatchPipelinePort;
   /** workspace 域能力面。 */

@@ -7,7 +7,8 @@
 
 import type { ServerConfig } from "../../../../config/interface.ts";
 import type { CatalogServer } from "../../../../catalog/interface.ts";
-import type { MCPClient, StdioTransport, HttpTransport } from "../../interface.ts";
+import type { ServerState } from "../../../../../shared/interface.ts";
+import type { MountedPlugin } from "../../../../shared/interface.ts";
 
 /** 连接池条目（每工作空间一套）。 */
 export interface ProjectUnit {
@@ -27,18 +28,21 @@ export interface ProjectUnit {
 /** 单服务器连接条目。 */
 export interface ConnectionEntry {
   server: ServerConfig;
-  client: MCPClient | undefined;
-  transport: StdioTransport | HttpTransport | undefined;
-  /** 连接状态：connecting / connected / failed / disabled。 */
-  status: string;
+  /**
+   * 官方实例的账本键 = 交给官方的 serverName，也是注册名 `mcp__<id>__<tool>` 的前缀来源。
+   * 虚拟连接单元（toolDefinitions，从不挂官方实例）恒为 undefined。
+   */
+  id: string | undefined;
+  /** 我方账本里这一代际的句柄；`disposed` 是六态投影的输入面（虚拟单元恒 undefined）。 */
+  handle: MountedPlugin | undefined;
+  /** 连接状态（六态；换引擎后由 lifecycle 的投影写回，见 McpMiddleware.statusOf）。 */
+  status: ServerState;
   error: unknown;
   connectedAt: number | undefined;
-  /** 后台重连定时器。 */
-  reconnectTimer: NodeJS.Timeout | undefined;
+  /** 装载等待窗口是否已结算——成功、失败、异常都算（connecting 与后续态的判据）。 */
+  readySettled: boolean;
+  /** 本代际是否曾进入 connected（区分「首连就没成功」与「连上过又掉线」）。 */
+  everConnected: boolean;
   /** 代际断开清理。 */
   disposed: boolean;
-  /** 连续失败次数（有界指数退避依据；连接成功后清零）。 */
-  failedAttempts: number;
-  /** 防双进程探测命中后的重试已排（#382 F5：只重试一次；连接成功后复位）。 */
-  probeRetried?: boolean;
 }

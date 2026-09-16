@@ -7,8 +7,8 @@
  *
  * 已知缺口（照 §1.5 写进实现）：`DomainSpec.release(): void` 是同步签名，而官方 `dispose()` 会
  * await 首次连接尝试的在途 Promise（挂死的服务器可能等到 SDK 的 60s initialize 超时）。
- * 因此 `release()` 只**发起** dispose 并把 Promise 收进 pendingDisposals，另开
- * `flushDisposals()` 供测试与真机验证显式等待。
+ * 因此 `release()` 与单键的 `releaseOne()` 都只**发起** dispose 并把 Promise 收进 pendingDisposals，
+ * 另开 `flushDisposals()` 供测试与真机验证显式等待；需要等结算的单键路径用 `dispose()`。
  *
  * 键由调用方给（id 生成与 `(scope,name)→id` 表归 workspace 域，§2.6 裁定 B）：本域不生成 id，
  * 也不把键写进 MountedPlugin——端口因此对配置与命名保持无感知。同一键未释放前重复 mount
@@ -54,6 +54,21 @@ class MountLedger {
   /** 该条目是否仍是账本当前代际：被替换或已移除都不算——晚到结算据此丢弃（代际守卫）。 */
   isCurrent(entry: LedgerEntry): boolean {
     return this.entries.get(entry.key) === entry;
+  }
+
+  /**
+   * 单键释放，**只发起不等结算**：摘账同步生效（`isCurrent` 立刻为假），dispose 收进既有
+   * pending。拆除路径用它——见文件头「已知缺口」；要等结算的重建路径用 `dispose()`。
+   */
+  releaseOne(key: string): void {
+    const entry = this.entries.get(key);
+    if (entry === undefined) return;
+    this.entries.delete(key);
+    const disposal = entry.handle.dispose();
+    // 没有任何调用方 await 这个 promise，不吞掉拒绝就会变成 unhandled rejection 打崩进程；
+    // pending 里仍放**原 promise**——上抛语义留给 flushDisposals（吞掉错因等于把泄漏变成静默）。
+    void disposal.catch(() => {});
+    this.pending.push(disposal);
   }
 
   /** 单键释放：先摘账（同步生效，isCurrent 立刻为假）再等句柄结算。 */
