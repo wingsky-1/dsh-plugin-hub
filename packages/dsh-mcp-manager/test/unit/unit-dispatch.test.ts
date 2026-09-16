@@ -20,7 +20,7 @@ import type {
 import type { ServerConfig } from "../../src/server/config/interface.ts";
 import type { ProjectUnit } from "../../src/server/connection/runtime/interface.ts";
 import type { ToolExecutionInput } from "@deepseek-ai/dsh-tools";
-import { publicToolName } from "../../src/server/connection/runtime/supervisor.ts";
+import { publicToolName } from "../../src/server/shared/interface.ts";
 
 const ROOT = "@global";
 const SERVER = "srv";

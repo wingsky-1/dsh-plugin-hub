@@ -35,21 +35,20 @@ export type { ReconnectPolicy } from "./reconnect.ts";
 export {
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
   DEFAULT_RESULT_TRUNCATE_BYTES,
-  publicToolName,
   truncateText,
   assertSupportedOutputSchema,
   buildToolDefinition,
   ConnectionSupervisor,
 } from "./supervisor.ts";
+export { publicToolName } from "../../shared/interface.ts";
 export { McpMiddleware } from "./middleware.ts";
-export { HttpTransport, parseSsePayload, StdioTransport, createTransport } from "./transport.ts";
+export { HttpTransport, StdioTransport, createTransport } from "./transport.ts";
 export { MCPClient } from "./protocol.ts";
 export {
   CONNECT_TIMEOUT_MS,
   DISCOVERY_TIMEOUT_MS,
   CALL_TIMEOUT_MS,
   CATALOG_TTL_MS,
-  CATALOG_LRU_MAX,
   MAX_TOOLS_PER_SERVER,
   MAX_BYTES_PER_TOOL,
   MAX_TOTAL_CATALOG_BYTES,

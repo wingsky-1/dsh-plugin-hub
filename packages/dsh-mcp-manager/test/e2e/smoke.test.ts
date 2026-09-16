@@ -5,7 +5,7 @@
 //   - 契约导出（name / inject / ROUTES）
 //   - normalizeServer 校验（名称模式、传输必填、http url 合法性）
 //   - fromClaudeEntry / parseClaudeJson（mcpServers JSON 兼容映射）
-//   - publicToolName 确定性、expandEnv、parseSsePayload
+//   - publicToolName 确定性、expandEnv
 //   - McpStore 落盘/读回（临时目录）
 //   - makeRoutes：GET 列表 / POST 添加 / PATCH 更新 / DELETE 删除 / import/json 导入
 //   - SSE 半开防护（#268）：服务端 30s data ping 心跳 + 客户端 60s watchdog / 回前台强制重建
@@ -58,7 +58,6 @@ import {
   panelAnchorForPosition,
   panelTopForAnchor,
   parseClaudeJson,
-  parseSsePayload,
   publicToolName,
   renderMcpCatalogMessage,
   renderMcpCatalogUpdate,
@@ -1691,12 +1690,6 @@ it("expandEnv 展开 ${ENV}", () => {
     else process.env.DSH_MCP_SMOKE_VAR = before;
   }
 });
-it("parseSsePayload 提取匹配 id 的 JSON", () => {
-  const text = 'event: message\ndata: {"jsonrpc":"2.0","id":7,"result":{"ok":true}}\n\n';
-  expect(parseSsePayload(text, 7).result).toEqual({ ok: true });
-  expect(parseSsePayload(text, 99)).toBe(undefined);
-});
-
 // sequential-thinking-server v0.2.0 实际返回的 inputSchema / outputSchema
 const ST_INPUT = {
   $schema: "http://json-schema.org/draft-07/schema#",

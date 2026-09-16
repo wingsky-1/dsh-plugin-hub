@@ -7,8 +7,7 @@
  * 承担（issue #11，决策 #47 approved；devDependency，构建期经 bundle-host
  * 内联进产物）。本模块保留：
  *  - 子进程环境的安全过滤（凭据形状环境变量不透传）；
- *  - supervisor 依赖的适配面：connect / close / onClose / `sdk` 实例暴露；
- *  - parseSsePayload 兼容导出（smoke 契约；内部传输已交 SDK 解析）。
+ *  - supervisor 依赖的适配面：connect / close / onClose / `sdk` 实例暴露。
  * 由 lib/index.js 组合根 re-export。
  *
  * ${ENV} 模板展开与凭据词根的物理定义在 config 域（#767 S1-1 迁出）；本模块经 deps 端口
@@ -75,26 +74,6 @@ export class HttpTransport {
   async close(): Promise<void> {
     await this.sdk.close();
   }
-}
-
-/** 从 SSE 文本中提取 id 匹配的 JSON 载荷（兼容导出：smoke 契约断言用；
- * 内部 SSE 解析已交由 SDK StreamableHTTPClientTransport）。 */
-export function parseSsePayload(text: string, id: unknown): unknown {
-  const events = text.split(/\r?\n\r?\n/);
-  for (const event of events) {
-    const data = [];
-    for (const line of event.split(/\r?\n/)) {
-      if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
-    }
-    if (data.length === 0) continue;
-    try {
-      const payload = JSON.parse(data.join("\n"));
-      if (id === undefined || payload.id === id) return payload;
-    } catch {
-      // 跳过无法解析的事件
-    }
-  }
-  return undefined;
 }
 
 /**

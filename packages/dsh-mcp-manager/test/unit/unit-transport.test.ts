@@ -5,7 +5,6 @@
  * 覆盖：
  * - StdioTransport：args/env/cwd 缺省语义、onerror 记录、onClose 叠加链
  * - createTransport 分派
- * - parseSsePayload：多事件、id 匹配、坏 JSON、无 data
  * - normalizeScope
  * - MCPClient：requireClient 未初始化抛错、initialize 失败附 stderr 尾巴、
  *   listTools/callTool 参数构造与透传
@@ -20,7 +19,6 @@ const {
   HttpTransport,
   StdioTransport,
   createTransport,
-  parseSsePayload,
   normalizeScope,
   SCOPE_GLOBAL,
   SCOPE_PROJECT,
@@ -172,42 +170,6 @@ describe("HttpTransport headers ${ENV} 展开（经 SDK requestInit 面）", () 
   it("默认 headers = {}", () => {
     const bare = new HttpTransport("http://localhost:3/mcp");
     expect(bare.headers).toEqual({});
-  });
-});
-
-describe("parseSsePayload", () => {
-  const two = 'data: {"id":1,"m":"a"}\r\n\r\ndata: {"id":2,"m":"b"}\n\n';
-  // 多行 data join + 非 data 行忽略 + 坏 JSON 事件跳过。
-  const mixed = ["event: x", "data: not-json", "", 'data: {"id":3,', 'data:  "ok":true}', ""].join(
-    "\r\n",
-  );
-
-  it("id 匹配第一个事件", () => {
-    expect(parseSsePayload(two, 1).m).toBe("a");
-  });
-
-  it("id 匹配第二个事件（\\n 与 \\r\\n 混合分隔）", () => {
-    expect(parseSsePayload(two, 2).m).toBe("b");
-  });
-
-  it("id 不匹配返回 undefined", () => {
-    expect(parseSsePayload(two, 9)).toBeUndefined();
-  });
-
-  it("id undefined 返回首个 data", () => {
-    expect(parseSsePayload(two, undefined).m).toBe("a");
-  });
-
-  it("坏 JSON 跳过、多行 data 合并解析", () => {
-    expect(parseSsePayload(mixed, 3)).toEqual({ id: 3, ok: true });
-  });
-
-  it("无 data 行跳过", () => {
-    expect(parseSsePayload("event: only\n\n", 1)).toBeUndefined();
-  });
-
-  it("空文本 undefined", () => {
-    expect(parseSsePayload("", 1)).toBeUndefined();
   });
 });
 

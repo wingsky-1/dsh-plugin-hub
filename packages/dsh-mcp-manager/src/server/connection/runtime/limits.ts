@@ -11,8 +11,6 @@
 export const CALL_TIMEOUT_MS = 30_000;
 /** 目录 TTL（ms）：24h。 */
 export const CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
-/** 每工作空间目录 LRU 上限。 */
-export const CATALOG_LRU_MAX = 16;
 /** 目录安全边界：单服务器工具数上限。 */
 export const MAX_TOOLS_PER_SERVER = 512;
 /** 目录安全边界：单工具描述字节上限。 */

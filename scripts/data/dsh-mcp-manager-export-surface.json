@@ -18,10 +18,6 @@
       "isType": false
     },
     {
-      "name": "CATALOG_LRU_MAX",
-      "isType": false
-    },
-    {
       "name": "CATALOG_SECTION_NAME",
       "isType": false
     },
@@ -518,10 +514,6 @@
       "isType": false
     },
     {
-      "name": "parseSsePayload",
-      "isType": false
-    },
-    {
       "name": "policyAllows",
       "isType": false
     },
@@ -650,7 +642,6 @@
     "export declare const API: { servers: string; connect: string; disconnect: string; reconnect: string; importJson: string; session: string; resume: string; config: string; events: string; health: string; toolDisable: string; };",
     "export declare const CALL_TIMEOUT_MS = 30000;",
     "export declare const CATALOG_ENTRY_MAX_CHARS = 180;",
-    "export declare const CATALOG_LRU_MAX = 16;",
     "export declare const CATALOG_SECTION_NAME = \"mcp-catalog\";",
     "export declare const CATALOG_SOURCE_PLUGIN = \"@wingsky-1/dsh-mcp-manager\";",
     "export declare const CATALOG_SUMMARY_MAX_CHARS = 240;",
@@ -770,7 +761,6 @@
     "export declare function parseDisabledTools(raw: unknown): DisabledToolsMap;",
     "export declare function parseFullServerName(name: string): { root: string; server: string; }",
     "export declare function parseKV(text: any): Record<string, string>;",
-    "export declare function parseSsePayload(text: string, id: unknown): unknown;",
     "export declare function placePanel(state: McpState): void;",
     "export declare function policyAllows(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): boolean;",
     "export declare function policyDenialReason(policy: MiddlewarePolicy | undefined, serverKey: string, tool: string): string | undefined;",
@@ -840,10 +830,6 @@
         },
         {
           "name": "CATALOG_ENTRY_MAX_CHARS",
-          "isType": false
-        },
-        {
-          "name": "CATALOG_LRU_MAX",
           "isType": false
         },
         {
@@ -1343,10 +1329,6 @@
           "isType": false
         },
         {
-          "name": "parseSsePayload",
-          "isType": false
-        },
-        {
           "name": "policyAllows",
           "isType": false
         },
@@ -1677,7 +1659,6 @@
           "export declare function stripMcpPrefix(registeredName: string, serverName: string): string;"
         ],
         "CALL_TIMEOUT_MS": ["export declare const CALL_TIMEOUT_MS = 30000;"],
-        "CATALOG_LRU_MAX": ["export declare const CATALOG_LRU_MAX = 16;"],
         "CATALOG_TTL_MS": ["export declare const CATALOG_TTL_MS: number;"],
         "CONNECT_TIMEOUT_MS": ["export declare const CONNECT_TIMEOUT_MS = 10000;"],
         "DISCOVERY_TIMEOUT_MS": ["export declare const DISCOVERY_TIMEOUT_MS = 10000;"],
@@ -1731,9 +1712,6 @@
           "export declare function createTransport(server: ServerConfig): StdioTransport | HttpTransport;"
         ],
         "expandEnv": ["export declare function expandEnv(value: unknown): string;"],
-        "parseSsePayload": [
-          "export declare function parseSsePayload(text: string, id: unknown): unknown;"
-        ],
         "inject": ["export declare const inject: string[];"],
         "name": ["export declare const name = \"mcp-manager\";"],
         "registerDirectMcpGuard": [

@@ -3,7 +3,7 @@
  *
  * ConnectionSupervisor 管理单个服务器的 client/transport 代际、连接成功
  * 后的工具同步与断开后的有界指数退避重连；同文件承载工具定义构建链
- * （命名 / 文本投影 / 截断 / 输出 schema 校验 / buildToolDefinition），
+ * （文本投影 / 截断 / 输出 schema 校验 / buildToolDefinition），
  * 它们只被监督器的 syncTools 使用。
  * 由 lib/index.js 组合根 re-export。
  *
@@ -12,13 +12,13 @@
  * transport/protocol 直引——端口只承载跨域能力，不为零消费者的同子层符号开口。
  */
 
-import { createHash } from "node:crypto";
 import { createTransport } from "./transport.ts";
 import type { StdioTransport, HttpTransport } from "./transport.ts";
 import { SCOPE_GLOBAL } from "../../../shared/interface.ts";
 import {
   DEFAULT_RESULT_TRUNCATE_BYTES,
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
+  publicToolName,
 } from "../../shared/interface.ts";
 import { MCPClient } from "./protocol.ts";
 import { runtimePorts } from "./impl/service/index.ts";
@@ -31,29 +31,12 @@ import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 
 /** McpManager 最小面（supervisor 使用；避免 index↔supervisor 循环 import）。
  * tools 面取官方 Context，register 入参为官方 ToolDefinition。 */
-// --------------------------------------------------------- 工具命名 / 截断
+// --------------------------------------------------------- 文本投影 / 截断
 
 // 两个默认值的单一事实源已上移 server/shared/constants.ts：config/model 在模块求值期
 // 消费它们，端口注入到时尚未装配；此处只保留转出，维持 runtime/connection 门面与入口的
 // 导出面不变。
 export { DEFAULT_RESULT_TRUNCATE_BYTES, DEFAULT_TOOL_CALL_TIMEOUT_MS };
-
-/** DeepSeek 函数名契约：最多 64 字符、仅 [A-Za-z0-9_-]。 */
-const MAX_PUBLIC_NAME_LENGTH = 64;
-const INVALID_NAME_CHARS = /[^A-Za-z0-9_-]/g;
-const HASH_LENGTH = 12;
-
-/** 从 (serverName, rawName) 派生模型可见的公开工具名。 */
-export function publicToolName(serverName: string, rawName: string): string {
-  const joined = `mcp__${serverName}__${rawName}`;
-  const normalized = joined.replace(INVALID_NAME_CHARS, "_");
-  if (normalized === joined && normalized.length <= MAX_PUBLIC_NAME_LENGTH) return normalized;
-  const hash = createHash("sha256")
-    .update(`${serverName}\0${rawName}`)
-    .digest("hex")
-    .slice(0, HASH_LENGTH);
-  return `${normalized.slice(0, MAX_PUBLIC_NAME_LENGTH - HASH_LENGTH - 1)}_${hash}`;
-}
 
 /** 把 MCP 返回的 content 块投影为文本（图片/音频/资源降级为占位符）。 */
 function extractText(mcpContent: unknown[], toolName: string): string {

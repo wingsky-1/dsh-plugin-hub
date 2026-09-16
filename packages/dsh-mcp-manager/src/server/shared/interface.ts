@@ -39,6 +39,7 @@ export {
   OFFICIAL_MCP_CLIENT_SPECIFIER,
   SERVER_NAME_PATTERN,
 } from "./constants.ts";
+export { publicToolName } from "./tool-names.ts";
 export {
   CATALOG_DIR_NAME,
   CATALOG_SUMMARY_FILE_NAME,

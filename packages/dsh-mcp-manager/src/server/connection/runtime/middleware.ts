@@ -26,7 +26,7 @@
  *
  * W8 端口接线：跨域能力（catalog 新鲜判定与装箱、pipeline 投影/超时/取消息/脱敏/参数归一/
  * 策略裁决、workspace 全名解析与拼装、lifecycle 装载/拆卸/投影）一律经 `impl/service` 的
- * `runtimePorts.get()` 取；同子层的 supervisor（公名派生）与 limits 直取，跨端层 shared 的
+ * `runtimePorts.get()` 取；server/shared 的公名派生与同子层 limits 直取，跨端层 shared 的
  * MIDDLEWARE_GLOBAL_ROOT 经共享门面取，不占端口——端口只承载跨域能力。
  */
 
@@ -36,7 +36,7 @@ import type {
   ToolExecutionToken,
 } from "@deepseek-ai/dsh-tools";
 import type { ServerConfig } from "../../config/interface.ts";
-import { publicToolName } from "./supervisor.ts";
+import { publicToolName } from "../../shared/interface.ts";
 import { CALL_TIMEOUT_MS, CATALOG_TTL_MS } from "./limits.ts";
 import {
   MIDDLEWARE_GLOBAL_ROOT,
