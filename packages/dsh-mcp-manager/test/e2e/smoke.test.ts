@@ -367,13 +367,45 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
       },
     },
   };
+  // 目录投影的文案随「发现完成」这一步变换：hook 住描述即可让最后一次投影成为断言面。
+  const globalToolDescription = { value: "全局工具" };
   const host = {
     ctx,
     logger: { info: () => {}, warn: () => {}, error: () => {} },
+    // 目录内存态归 catalog 域后，夹具不再能直接往单元里塞目录：改由**真实虚拟连接路径**
+    // 投影（ensureConnected 的 toolDefinitions 分支），目录由产物自身的域实例写入。
     projectServersFor: async (root) => {
       if (root === MIDDLEWARE_GLOBAL_ROOT)
-        return [{ name: "gctx", transport: "stdio", command: "npx", enabled: true }];
-      return [{ name: "ctx", transport: "stdio", command: "npx", enabled: true }];
+        return [
+          {
+            name: "gctx",
+            transport: "stdio",
+            command: "npx",
+            enabled: true,
+            toolDefinitions: [
+              // 每次连接都重新投影——「发现完成」那一步的目录由最后一次投影决定。
+              // execute 抛「未连接」：本段 call 断言要走「调用失败」分支（原夹具是远端条目、
+              // 由状态守卫给出同一类判词，搬家后由封装分支给出）。
+              {
+                name: "use_g",
+                description: globalToolDescription.value,
+                parameters: {},
+                execute: async () => {
+                  throw new Error("未连接");
+                },
+              },
+            ],
+          },
+        ];
+      return [
+        {
+          name: "ctx",
+          transport: "stdio",
+          command: "npx",
+          enabled: true,
+          toolDefinitions: [{ name: "use_ctx", description: "项目工具", parameters: {} }],
+        },
+      ];
     },
     globalServers: () => [{ name: "gctx", transport: "stdio", command: "npx", enabled: true }],
     normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
@@ -382,19 +414,11 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
     catalogCachePath: () => "/tmp/cache.json",
   };
   const mw = new McpMiddleware(host, {});
-  // 预置目录（模拟 last-good 已发现；不 spawn 子进程）。
+  // 预置目录（模拟 last-good 已发现；不 spawn 子进程）：虚拟连接会把 toolDefinitions
+  // 投影进目录，与真实运行时同一条路径。
   const projUnit = {
     root: "/proj",
     connections: new Map(),
-    catalog: new Map([
-      [
-        "ctx",
-        {
-          discoveredAt: Date.now(),
-          tools: new Map([["use_ctx", { description: "项目工具", inputSchema: {} }]]),
-        },
-      ],
-    ]),
     userDisabled: new Set(),
     lastTouchedAt: Date.now(),
     inFlight: new Map(),
@@ -402,21 +426,15 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
   const globalUnit = {
     root: MIDDLEWARE_GLOBAL_ROOT,
     connections: new Map(),
-    catalog: new Map([
-      [
-        "gctx",
-        {
-          discoveredAt: Date.now(),
-          tools: new Map([["use_g", { description: "全局工具", inputSchema: {} }]]),
-        },
-      ],
-    ]),
     userDisabled: new Set(),
     lastTouchedAt: Date.now(),
     inFlight: new Map(),
   };
   mw.units.set("/proj", projUnit);
   mw.units.set(MIDDLEWARE_GLOBAL_ROOT, globalUnit);
+  await mw.ensureConnected("/proj", "ctx");
+  await mw.ensureConnected(MIDDLEWARE_GLOBAL_ROOT, "gctx");
+  // projUnit 是手工塞进 units 的，projectUnitFor 会原样返回它；gctx 的目录同理随后填充。
   const dispose = registerMiddlewareTools(
     ctx,
     mw,
@@ -491,26 +509,18 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
   const freshGlobal = {
     root: MIDDLEWARE_GLOBAL_ROOT,
     connections: new Map(),
-    catalog: new Map(),
     userDisabled: new Set(),
     lastTouchedAt: Date.now(),
-    inFlight: new Map([
-      [
-        "gctx",
-        new Promise((resolve) =>
-          setTimeout(() => {
-            // 发现完成后填充目录（模拟 ensureConnected/discover 完成）。
-            freshGlobal.catalog.set("gctx", {
-              discoveredAt: Date.now(),
-              tools: new Map([["use_g", { description: "全局工具（发现完成）", inputSchema: {} }]]),
-            });
-            resolve();
-          }, 100),
-        ),
-      ],
-    ]),
+    inFlight: new Map(),
   };
+  // 描述先换面：目录投影在虚拟连接建立时取它。
+  globalToolDescription.value = "全局工具（发现完成）";
   mw.units.set(MIDDLEWARE_GLOBAL_ROOT, freshGlobal);
+  await mw.projectUnitFor(MIDDLEWARE_GLOBAL_ROOT);
+  await mw.ensureConnected(MIDDLEWARE_GLOBAL_ROOT, "gctx");
+  // 目录就绪后再挂「等待窗口」标记：list/search 仍必须等它结算才返回（P1-3 语义），
+  // 而目录内容已是发现完成后的那一份。
+  freshGlobal.inFlight.set("gctx", new Promise((resolve) => setTimeout(resolve, 100)));
   const listedAfterWait = await listDef.execute({}, { agent: gAgent });
   const freshEntry = listedAfterWait.servers.find(
     (s) => s.server === fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"),
@@ -634,8 +644,15 @@ it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因
   const host = {
     ctx,
     logger: { info: () => {}, warn: () => {}, error: () => {} },
+    // 虚拟连接（toolDefinitions）让目录走真实投影路径落进产物侧的域实例。
     projectServersFor: async () => [
-      { name: "ctx", transport: "stdio", command: "npx", enabled: true },
+      {
+        name: "ctx",
+        transport: "stdio",
+        command: "npx",
+        enabled: true,
+        toolDefinitions: [{ name: "use_ctx", description: "项目工具", parameters: {} }],
+      },
     ],
     globalServers: () => [],
     normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
@@ -645,23 +662,15 @@ it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因
     isGlobalServer: () => false,
   };
   const mw = new McpMiddleware(host, {});
-  // 预置目录（模拟 last-good 已发现；不 spawn 子进程）。
+  // 预置目录（模拟 last-good 已发现；不 spawn 子进程）：经真实虚拟连接路径投影。
   mw.units.set("/proj", {
     root: "/proj",
     connections: new Map(),
-    catalog: new Map([
-      [
-        "ctx",
-        {
-          discoveredAt: Date.now(),
-          tools: new Map([["use_ctx", { description: "项目工具", inputSchema: {} }]]),
-        },
-      ],
-    ]),
     userDisabled: new Set(),
     lastTouchedAt: Date.now(),
     inFlight: new Map(),
   });
+  await mw.ensureConnected("/proj", "ctx");
   const dispose = registerMiddlewareTools(
     ctx,
     mw,
@@ -744,7 +753,35 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
   const host = {
     ctx,
     logger: { info: () => {}, warn: () => {}, error: () => {} },
-    projectServersFor: async () => [],
+    projectServersFor: async () => [
+      {
+        name: "ctx",
+        transport: "stdio",
+        command: "x",
+        enabled: true,
+        // 目录条目（use_ctx）经真实虚拟连接路径投影，供 ws_mcp_detail 与 stats 记录消费。
+        // execute 抛「未连接」是为保住原判据：本段的 call 断言就是要走到「调用失败」这条
+        // 分支（原夹具是远端条目、由 status 守卫给出同一类判词）。
+        toolDefinitions: [
+          {
+            name: "use_ctx",
+            description: "封装工具",
+            parameters: {},
+            execute: async () => {
+              throw new Error("未连接");
+            },
+          },
+          // 未禁用工具走正常调用：返回空 content，与「远端执行器返回空 content」同形
+          // （投影后的 content 为空数组），保住该断言的原判据。
+          {
+            name: "other",
+            description: "其他工具",
+            parameters: {},
+            execute: async () => ({ content: [] }),
+          },
+        ],
+      },
+    ],
     globalServers: () => [],
     normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
     saveUserState: async () => {},
@@ -793,40 +830,11 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
   ).toBe(true);
 
   // 3) callTool（ws_mcp_call 执行路径）：禁用工具 → 显式抛错（验收 14：三入口一致）。
-  const callUnit = {
-    root: "/proj",
-    connections: new Map([
-      [
-        "ctx",
-        {
-          server: { name: "ctx", transport: "stdio", command: "x", enabled: true },
-          // 新 ConnectionEntry：id 是官方实例的账本键（远端派发的前提），
-          // readySettled / everConnected 是六态投影的输入面。
-          id: "smoke-ctx-id",
-          handle: undefined,
-          status: "connected",
-          error: undefined,
-          connectedAt: Date.now(),
-          readySettled: true,
-          everConnected: true,
-          disposed: false,
-        },
-      ],
-    ]),
-    catalog: new Map([
-      [
-        "ctx",
-        {
-          discoveredAt: Date.now(),
-          tools: new Map([["use_ctx", { description: "d", inputSchema: {} }]]),
-        },
-      ],
-    ]),
-    userDisabled: new Set(),
-    lastTouchedAt: Date.now(),
-    inFlight: new Map(),
-  };
-  mw.units.set("/proj", callUnit);
+  // 单元与连接条目改由真实路径建立（#767 S1-3b：目录内存态归 catalog 域，手工塞单元
+  // 已无法把目录带进去）；host.projectServersFor 给的是**虚拟连接**定义服务器，
+  // 它的 statusOf 恒 connected（#413 既有契约），与本段判据一致。
+  await mw.projectUnitFor("/proj");
+  await mw.ensureConnected("/proj", "ctx");
   // callTool 的第 5 形参换成身份对象（agent / callId / rootCallId / parent）：dispatch 要拿它
   // 合成子调用 id 并透传 parent。本用例只走本地守卫与投影，给最小身份即可。
   const IDENTITY = { callId: "smoke-call-1" };
@@ -842,7 +850,10 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
     undefined,
     IDENTITY,
   );
-  expect(okValue.content, "未禁用工具正常调用").toEqual([]);
+  // 判据面随夹具换面（#767 S1-3b）：原夹具是远端条目，投影后 content 为空数组；现夹具
+  // 走封装直呼分支，渲染器把封装返回值投影成 text 块。等价判据是「正常返回了内容」。
+  expect(Array.isArray(okValue.content), "未禁用工具正常调用（非空 content）").toBe(true);
+  expect(okValue.content.length, "未禁用工具正常调用（有内容块）").toBeGreaterThan(0);
 
   // 4) stats：四个原子工具埋点与统计断言
   const { McpStatsCollector } = await import("../../lib/index.js");
@@ -861,6 +872,10 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
       },
       on: () => () => {},
     };
+    // 目录条目在连接路径上投影：detail/stats 段的执行前先建单元、再走一次虚拟连接
+    // （ensureConnected 对未在册 root 直接返回，不会自己建单元）。
+    await mw.projectUnitFor("/proj");
+    await mw.ensureConnected("/proj", "ctx");
     const statsMwDispose = registerMiddlewareTools(
       statsCtx as any,
       mw,

@@ -30,9 +30,6 @@
  * MIDDLEWARE_GLOBAL_ROOT 经共享门面取，不占端口——端口只承载跨域能力。
  */
 
-import { mkdir, readFile, rename, writeFile, rm } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { dirname } from "node:path";
 import type {
   ToolExecutionInput,
   ToolExecutionResult,
@@ -46,11 +43,11 @@ import {
   SERVER_STATES,
   type ServerState,
 } from "../../../shared/interface.ts";
+import type { SchemaView } from "../../catalog/interface.ts";
 import { runtimePorts } from "./impl/service/index.ts";
 import type { MiddlewareHost } from "./deps.ts";
 import type { ProjectUnit, ConnectionEntry } from "./impl/middleware/type.ts";
 import type { MiddlewarePolicy } from "../../pipeline/interface.ts";
-import type { CatalogTool } from "../../catalog/interface.ts";
 import type { DisabledToolsMap } from "../../store/interface.ts";
 
 // ------------------------------------------------------------ 连接池
@@ -93,14 +90,16 @@ export class McpMiddleware {
       unit = {
         root,
         connections: new Map(),
-        catalog: new Map(),
         userDisabled: new Set(this.disabledByRoot.get(root) ?? []),
         lastTouchedAt: Date.now(),
         inFlight: new Map(),
       };
       this.units.set(root, unit);
-      // 加载 last-good 目录缓存（空采集不写盘；目录与连接分开淘汰）。
-      await this.loadCatalogCache(root);
+      // 加载 last-good 目录缓存（空采集不写盘；目录与连接分开淘汰）。目录内存态自
+      // #767 S1-3b 起归 catalog 域，本层只负责「建单元时登记 root 并载入」。
+      await runtimePorts
+        .get()
+        .catalog.catalogDirectory.ensureRootLoaded(root, this.host.catalogCachePath(root));
       // 后台惰性连接（fire-and-forget，不阻塞调用方）。
       for (const server of servers) {
         if (server.enabled !== false) void this.ensureConnected(root, server.name);
@@ -204,7 +203,11 @@ export class McpMiddleware {
         disposed: false,
       };
       unit.connections.set(serverName, wrappedEntry);
-      this.projectWrappedCatalog(root, serverName, server);
+      runtimePorts.get().catalog.catalogDirectory.projectWrappedTools({
+        root,
+        serverName,
+        definitions: server.toolDefinitions,
+      });
       this.host.logger.info(
         `dsh-mcp-manager(${serverName}@${root}): wrapped (toolDefinitions) connected`,
       );
@@ -270,7 +273,18 @@ export class McpMiddleware {
       if (mounted.outcome.state === "connected") {
         newEntry.everConnected = true;
         newEntry.connectedAt = Date.now();
-        await this.discover(root, serverName);
+        // 注册面 → 目录的投影自 #767 S1-3b 起归 catalog 域：id 前缀、脱敏与
+        // runtime 判定都是本层就地给的闭包（目录域不持服务器表）。
+        await runtimePorts.get().catalog.catalogDirectory.projectRegisteredTools({
+          root,
+          serverName,
+          id: newEntry.id,
+          schemas: this.registeredSchemas(),
+          cachePath: () => this.host.catalogCachePath(root),
+          redact: (error) => this.redact(error),
+          isRuntimeServer: (name) => this.host.isRuntimeServer(name),
+          warn: (message) => this.host.logger.warn(message),
+        });
         this.host.logger.info(`dsh-mcp-manager(${serverName}@${root}): connected`);
       } else if (mounted.outcome.state === "failed") {
         // 文案已是「我方判词 + 官方原文」（窗口把归属本实例的官方日志接在了 error 上）。
@@ -284,84 +298,10 @@ export class McpMiddleware {
   }
 
   /**
-   * 把工具注册面上属于本实例的条目投影进目录（裁定 W + 裁定 K）。
-   *
-   * 采集动作本身已交还官方（syncTools 负责分页、注册、`tools/list_changed`），本块只剩
-   * 「注册面 → per-root 目录」这一层投影：官方注册名是 `mcp__<id>__<tool>`，去掉前缀即裸名，
-   * description 与 parameters 都在 `schemas()` 里（实测 §2.9-4），不需要第二份工具清单。
-   * `entry.id` 不存在（虚拟单元、或尚未装载完成）时无面可投影，直接返回。
+   * 注册面读口：取不到/非数组一律当空——投影与六态投影都不许因为读不到注册表而阻塞。
+   * 视图本身是宿主能力（入参契约），本层现取后按值递给 catalog 域的投影与读口。
    */
-  async discover(root: string, serverName: string): Promise<void> {
-    const unit = this.units.get(root);
-    if (unit === undefined) return;
-    const entry = unit.connections.get(serverName);
-    if (entry === undefined || entry.id === undefined) return;
-    const { catalog } = runtimePorts.get();
-    if (catalog.isCatalogFresh(unit.catalog.get(serverName))) return; // fresh
-    const prefix = `mcp__${entry.id}__`;
-    try {
-      const tools: Array<{
-        name: string;
-        description: string;
-        inputSchema: Record<string, unknown>;
-      }> = [];
-      for (const schema of this.registeredSchemas()) {
-        const name = schema?.name;
-        if (typeof name !== "string" || !name.startsWith(prefix)) continue;
-        tools.push({
-          name: name.slice(prefix.length),
-          description: typeof schema.description === "string" ? schema.description : "",
-          inputSchema: (schema.parameters ?? {}) as Record<string, unknown>,
-        });
-      }
-      unit.catalog.set(serverName, {
-        discoveredAt: Date.now(),
-        tools: catalog.boundCatalogTools(tools),
-      });
-      // 落盘失败由外层 catch 收口报错；不 await 会让失败变成未处理拒绝而不是日志
-      await this.persistCatalog(root);
-    } catch (error) {
-      unit.catalog.set(serverName, {
-        discoveredAt: 0,
-        tools: new Map(),
-        unavailable: this.redact(error),
-      });
-    }
-  }
-
-  /**
-   * #413：从封装定义（toolDefinitions）投影目录，替代远端 discover。
-   * 封装 execute 为调用方 JS 直呼（不经远端 MCP），目录数据源即调用方定义：
-   * name/description 直取；dsh-tools 的 parameters（ToolSchema）即 JSON Schema
-   * 形态，直接作 CatalogTool.inputSchema（与 supervisor 封装分支同口径）。
-   */
-  private projectWrappedCatalog(root: string, serverName: string, server: ServerConfig): void {
-    const unit = this.units.get(root);
-    if (unit === undefined) return;
-    const tools = new Map<string, CatalogTool>();
-    if (Array.isArray(server.toolDefinitions)) {
-      for (const def of server.toolDefinitions) {
-        if (typeof def?.name !== "string" || def.name === "") continue;
-        tools.set(def.name, {
-          description: typeof def.description === "string" ? def.description : "",
-          inputSchema: (def.parameters ?? {}) as Record<string, unknown>,
-        });
-      }
-    }
-    unit.catalog.set(serverName, { discoveredAt: Date.now(), tools });
-  }
-
-  /** 凭据脱敏（连接/发现/调用错误路径统一使用；P1 修复）。 */
-  private redact(error: unknown): string {
-    return runtimePorts.get().pipeline.createRedactor(this.allServers())(error);
-  }
-
-  /** 注册面读口：取不到/非数组一律当空——探测与投影都不许因为读不到注册表而阻塞。 */
-  private registeredSchemas(): ReadonlyArray<{
-    name?: unknown;
-    description?: unknown;
-    parameters?: unknown;
-  }> {
+  private registeredSchemas(): SchemaView {
     const tools = this.host.ctx.tools;
     if (tools === undefined || typeof tools.schemas !== "function") return [];
     try {
@@ -372,15 +312,9 @@ export class McpMiddleware {
     }
   }
 
-  /**
-   * 该 id 前缀下是否已有注册工具——「已连上」的唯一正向证据（官方不暴露状态 API，
-   * 成功连接零日志：实测 §2.7 spike2 / §2.9-4）。
-   */
-  private hasRegisteredTools(id: string): boolean {
-    const prefix = `mcp__${id}__`;
-    return this.registeredSchemas().some(
-      (schema) => typeof schema?.name === "string" && schema.name.startsWith(prefix),
-    );
+  /** 凭据脱敏（连接/发现/调用错误路径统一使用；P1 修复）。 */
+  private redact(error: unknown): string {
+    return runtimePorts.get().pipeline.createRedactor(this.allServers())(error);
   }
 
   /**
@@ -420,136 +354,13 @@ export class McpMiddleware {
       windowExpired: entry.status === "failed" && !entry.readySettled,
       everConnected: entry.everConnected,
       reconnectEnabled: entry.server.reconnect?.enabled !== false,
-      hasTools: (id) => this.hasRegisteredTools(id),
+      hasTools: (id) =>
+        runtimePorts
+          .get()
+          .catalog.catalogDirectory.hasRegisteredTools(this.registeredSchemas(), id),
     });
     entry.status = state;
     return state;
-  }
-
-  /** 目录 last-good 持久化（空采集不写盘；public 供测试与外部触发）。 */
-  async persistCatalog(root: string): Promise<void> {
-    const unit = this.units.get(root);
-    if (unit === undefined) return;
-    let anyTools = false;
-    const payload: Record<string, unknown> = {};
-    for (const [serverName, catalog] of unit.catalog) {
-      // #413：runtime 注入条目（内存态，不落盘）目录只驻内存——防卸载/重启后
-      // 幽灵条目被 loadCatalogCache 载回（与 removeCatalogEntry 清理同类问题）。
-      if (this.host.isRuntimeServer?.(serverName) === true) continue;
-      if (catalog.tools.size === 0) continue;
-      anyTools = true;
-      payload[serverName] = {
-        discoveredAt: catalog.discoveredAt,
-        tools: [...catalog.tools.entries()].map(([name, tool]) => ({
-          name,
-          description: tool.description,
-          inputSchema: tool.inputSchema,
-        })),
-      };
-    }
-    if (!anyTools) return;
-    const file = this.host.catalogCachePath(root);
-    try {
-      const dir = dirname(file);
-      if (!existsSync(dir)) await mkdir(dir, { recursive: true });
-      const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
-      await writeFile(tmp, JSON.stringify({ version: 1, root, entries: payload }, null, 2), "utf8");
-      await rename(tmp, file);
-    } catch (error) {
-      this.host.logger.warn(
-        `dsh-mcp-manager: catalog cache write failed: ${runtimePorts.get().pipeline.msgOf(error)}`,
-      );
-    }
-  }
-
-  /**
-   * 从磁盘 last-good 目录缓存中清除单服务器条目（remove/update 后调用；#392 遗留①）。
-   * persistCatalog 是全量覆盖且空采集不写盘——remove 后该 root 目录可能已空，若不显式
-   * 清盘，磁盘缓存仍残留已删服务器条目，插件重启/@global 单元重建时 loadCatalogCache
-   * 把幽灵条目载回（ws_mcp_list 再次列出）。这里读现有缓存、删条目、写回；条目删空则
-   * 删除缓存文件。内存目录由调用方（dropMiddlewareConnection）先行删除。
-   */
-  async removeCatalogEntry(root: string, serverName: string): Promise<void> {
-    const file = this.host.catalogCachePath(root);
-    try {
-      if (!existsSync(file)) return;
-      const raw = await readFile(file, "utf8");
-      const parsed = JSON.parse(raw) as {
-        version?: unknown;
-        root?: unknown;
-        entries?: Record<string, unknown>;
-      } | null;
-      if (
-        parsed === null ||
-        typeof parsed !== "object" ||
-        typeof parsed.entries !== "object" ||
-        parsed.entries === null
-      )
-        return;
-      if (!(serverName in parsed.entries)) return;
-      delete parsed.entries[serverName];
-      if (Object.keys(parsed.entries).length === 0) {
-        await rm(file, { force: true }).catch(() => {});
-        return;
-      }
-      const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
-      await writeFile(
-        tmp,
-        JSON.stringify({ version: 1, root, entries: parsed.entries }, null, 2),
-        "utf8",
-      );
-      await rename(tmp, file);
-    } catch (error) {
-      this.host.logger.warn(
-        `dsh-mcp-manager: catalog cache remove failed: ${runtimePorts.get().pipeline.msgOf(error)}`,
-      );
-    }
-  }
-
-  /** 加载 root 的 last-good 目录缓存（缺失/损坏 → 空）。 */
-  async loadCatalogCache(root: string): Promise<void> {
-    const unit = this.units.get(root);
-    if (unit === undefined) return;
-    const file = this.host.catalogCachePath(root);
-    try {
-      if (!existsSync(file)) return;
-      const raw = await readFile(file, "utf8");
-      const parsed = JSON.parse(raw) as { entries?: Record<string, unknown> } | null;
-      if (
-        parsed &&
-        typeof parsed === "object" &&
-        typeof parsed.entries === "object" &&
-        parsed.entries !== null
-      ) {
-        for (const [serverName, entry] of Object.entries(parsed.entries)) {
-          const rec = entry as { discoveredAt?: unknown; tools?: unknown } | undefined;
-          if (typeof rec !== "object" || rec === null) continue;
-          const tools = new Map<string, CatalogTool>();
-          if (Array.isArray(rec.tools)) {
-            for (const tool of rec.tools) {
-              const toolRec = tool as
-                { name?: unknown; description?: unknown; inputSchema?: unknown } | undefined;
-              if (
-                typeof toolRec !== "object" ||
-                toolRec === null ||
-                typeof toolRec.name !== "string"
-              )
-                continue;
-              tools.set(toolRec.name, {
-                description: typeof toolRec.description === "string" ? toolRec.description : "",
-                inputSchema: (toolRec.inputSchema ?? {}) as Record<string, unknown>,
-              });
-            }
-          }
-          unit.catalog.set(serverName, {
-            discoveredAt: typeof rec.discoveredAt === "number" ? rec.discoveredAt : 0,
-            tools,
-          });
-        }
-      }
-    } catch {
-      // 损坏缓存忽略
-    }
   }
 
   /**
@@ -573,7 +384,9 @@ export class McpMiddleware {
       parent?: ToolExecutionToken;
     },
   ): Promise<unknown> {
-    const { dispatch, pipeline, workspace } = runtimePorts.get();
+    const { dispatch, pipeline, workspace, catalog: catalogPort } = runtimePorts.get();
+    // 目录条目读口按本次调用的 root 闭包：dispatch 只读「这次全名指向的那个 root」的条目。
+    const catalogRoot = workspace.parseFullServerName(fullName)?.root;
     // 公名派生只在这里发生一次：唯一派生点是 supervisor 的 publicToolName，dispatch 拿名字用、
     // 不得自己拼 `mcp__<id>__<tool>`——哈希/截断规则一旦分叉，某些工具会永远查不到。
     const registeredNameFor = (id: string, tool: string): string => publicToolName(id, tool);
@@ -596,6 +409,11 @@ export class McpMiddleware {
         registeredNameFor,
         execute,
         units: this.units,
+        // 目录条目读口：本层持 catalog 域读口，dispatch 不引该域门面（免多一条跨模块边）。
+        catalogEntryFor: (serverName) =>
+          catalogRoot === undefined
+            ? undefined
+            : catalogPort.catalogDirectory.entryFor(catalogRoot, serverName),
         allServers: () => this.allServers(),
         disabledTools: this.disabledTools,
         policy: this.policy,
@@ -664,6 +482,9 @@ export class McpMiddleware {
       this.releaseConnection(root, serverName);
     }
     unit.connections.clear();
+    // 目录内存态与单元同生共死（#767 S1-3b）：不 drop 会让已淘汰 root 的目录留在域内，
+    // 下次同 root 建单元时 ensureRootLoaded 的「已在册」短路遂把内存态当权威、不再读盘。
+    runtimePorts.get().catalog.catalogDirectory.dropRoot(root);
     this.units.delete(root);
   }
 

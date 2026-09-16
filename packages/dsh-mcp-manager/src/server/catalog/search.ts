@@ -9,9 +9,9 @@
 
 import { MIDDLEWARE_GLOBAL_ROOT } from "../../shared/interface.ts";
 import { LIST_DEFAULT_TOOLS_PER_SERVER } from "../shared/interface.ts";
+import { catalogDirectory } from "./impl/directory/index.ts";
 import { catalogPorts } from "./impl/service/index.ts";
 import type {
-  CatalogServer,
   CatalogTool,
   ListCatalogResult,
   ListServerEntry,
@@ -93,12 +93,13 @@ export function searchCatalog(
     connection: { CATALOG_TTL_MS },
     workspace: { fullServerName },
   } = catalogPorts.get();
-  const unit = units.get(root);
-  if (unit === undefined) return { results: [], unavailable: [], truncated: false };
+  if (!units.has(root)) return { results: [], unavailable: [], truncated: false };
+  const servers = catalogDirectory.serversFor(root);
+  if (servers === undefined) return { results: [], unavailable: [], truncated: false };
   const results: SearchHit[] = [];
   const unavailable: Array<{ server: string; reason: string }> = [];
   let truncated = false;
-  for (const [serverName, catalog] of unit.catalog) {
+  for (const [serverName, catalog] of servers) {
     if (catalog.unavailable !== undefined) {
       unavailable.push({ server: fullServerName(root, serverName), reason: catalog.unavailable });
       continue;
@@ -209,7 +210,9 @@ export function listCatalog(
     if (rootSet !== undefined && !rootSet.has(root)) continue;
     const unit = units.get(root);
     if (unit === undefined) continue;
-    for (const [serverName, catalog] of unit.catalog) {
+    const rootCatalog = catalogDirectory.serversFor(root);
+    if (rootCatalog === undefined) continue;
+    for (const [serverName, catalog] of rootCatalog) {
       if (
         serverFilter !== undefined &&
         serverName !== serverFilter &&
@@ -313,7 +316,7 @@ export function findToolDetail(
   if (unit === undefined) {
     throw new Error(`ws_mcp_detail: server 未连接或未发现：${JSON.stringify(server)}`);
   }
-  const catalog = unit.catalog.get(parsed.server);
+  const catalog = catalogDirectory.entryFor(root, parsed.server);
   if (catalog === undefined || catalog.tools.size === 0) {
     if (catalog?.unavailable !== undefined) {
       throw new Error(
@@ -343,61 +346,7 @@ export function findToolDetail(
   if (unit.userDisabled.has(parsed.server)) detail.disabled = true;
   return detail;
 }
-
-/** 目录新鲜判定：有条目、无 unavailable 段、且发现时间在 TTL 内
- *  （discover 惰性重发现专用；纯时间比较，无副作用）。 */
-export function isCatalogFresh(catalog: CatalogServer | undefined): boolean {
-  const {
-    connection: { CATALOG_TTL_MS },
-  } = catalogPorts.get();
-  return (
-    catalog !== undefined &&
-    catalog.unavailable === undefined &&
-    Date.now() - catalog.discoveredAt <= CATALOG_TTL_MS
-  );
-}
-
-/** 单服务器目录装箱（discover 专用纯函数）：按限额收敛工具清单——
- *  工具数上限 MAX_TOOLS_PER_SERVER、单描述字节上限 MAX_BYTES_PER_TOOL（超限
- *  截断）、累计字节上限 MAX_TOTAL_CATALOG_BYTES（超限即停）。行为与原
- *  discover 内联循环逐位一致（含 totalBytes 对截断后条目的计算口径）。 */
-export function boundCatalogTools(
-  tools: Iterable<{ name?: unknown; description?: unknown; inputSchema?: unknown }>,
-): Map<string, CatalogTool> {
-  const {
-    connection: { MAX_TOOLS_PER_SERVER, MAX_BYTES_PER_TOOL, MAX_TOTAL_CATALOG_BYTES },
-  } = catalogPorts.get();
-  const bounded = new Map<string, CatalogTool>();
-  let totalBytes = 0;
-  for (const tool of tools) {
-    if (bounded.size >= MAX_TOOLS_PER_SERVER) break;
-    const name = String(tool.name ?? "");
-    if (name === "") continue;
-    const description = typeof tool.description === "string" ? tool.description : "";
-    // B9：描述按 UTF-8 字节截断（slice 按字符会让中文等多字节场景超上限）；
-    // 逐字符累加字节，保证截断点落在字符边界（不产生替换符）。
-    let desc = description;
-    if (Buffer.byteLength(desc, "utf8") > MAX_BYTES_PER_TOOL) {
-      let bytes = 0;
-      let cut = 0;
-      while (
-        cut < desc.length &&
-        bytes + Buffer.byteLength(desc[cut], "utf8") <= MAX_BYTES_PER_TOOL
-      ) {
-        bytes += Buffer.byteLength(desc[cut], "utf8");
-        cut += 1;
-      }
-      desc = desc.slice(0, cut);
-    }
-    bounded.set(name, {
-      description: desc,
-      inputSchema: (tool.inputSchema ?? {}) as Record<string, unknown>,
-    });
-    // B9：totalBytes 全字节口径（JSON.stringify().length 按码元计，低估字节数）
-    totalBytes +=
-      Buffer.byteLength(desc, "utf8") +
-      Buffer.byteLength(JSON.stringify(bounded.get(name)?.inputSchema ?? {}), "utf8");
-    if (totalBytes > MAX_TOTAL_CATALOG_BYTES) break;
-  }
-  return bounded;
-}
+// 两个纯函数（新鲜判定 / 装箱）自 #767 S1-3b 起物理落点在 impl/directory：
+// 目录投影本体要用它们，而本文件要用目录读口——留在本文件会形成文件级值环。
+// 公开导出面不变（仍经 catalog/interface.ts 从本文件转出）。
+export { boundCatalogTools, isCatalogFresh } from "./impl/directory/index.ts";

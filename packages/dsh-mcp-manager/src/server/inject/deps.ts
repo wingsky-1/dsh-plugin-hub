@@ -25,10 +25,14 @@ import type * as runtimeApi from "../connection/runtime/interface.ts";
 import type * as pipelineApi from "../pipeline/interface.ts";
 import type * as workspaceApi from "../workspace/interface.ts";
 
-/** catalog 域给本域的能力面：目录检索族（多 root 搜索 / 全量列表 / 单工具详情）。 */
+/**
+ * catalog 域给本域的能力面：目录检索族（多 root 搜索 / 全量列表 / 单工具详情）+ 目录读口
+ * （#767 S1-3b：`visibleProjectServers` 与全局服务器判定改经 `catalogDirectory` 读目录，
+ * 单元表已不再持目录）。
+ */
 export type CatalogPort = Pick<
   typeof catalogApi,
-  "searchCatalogMulti" | "listCatalog" | "findToolDetail"
+  "searchCatalogMulti" | "listCatalog" | "findToolDetail" | "catalogDirectory"
 >;
 
 /** runtime 域给本域的能力面：连接/发现/调用超时与列表装箱上限常量。 */

@@ -27,10 +27,11 @@ import type * as workspaceApi from "../../workspace/interface.ts";
 import type * as runtimeApi from "../runtime/interface.ts";
 import type * as pipelineApi from "../../pipeline/interface.ts";
 
-/** catalog 子域给本子层的能力面：目录缓存文件路径、描述摘要与目录视图工厂。 */
+/** catalog 子域给本子层的能力面：目录缓存文件路径、描述摘要、目录视图工厂，以及目录条目的
+ * 读/删口（#767 S1-3b：remove/update 清幽灵条目与 summarize 的目录投影都经此）。 */
 export type CatalogPort = Pick<
   typeof catalogApi,
-  "catalogCacheFile" | "summarizeToolDescriptions" | "makeCatalogViewFor"
+  "catalogCacheFile" | "summarizeToolDescriptions" | "makeCatalogViewFor" | "catalogDirectory"
 >;
 
 /** config 域给本子层的能力面：服务器条目与 UI 配置归一化、UI 配置补丁构造。 */

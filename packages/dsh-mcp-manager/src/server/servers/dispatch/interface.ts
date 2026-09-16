@@ -15,4 +15,9 @@
  * connection/runtime 自己的端口表取本域执行器（见 runtime/deps.ts 的 DispatchPort）。
  */
 export { executeMcpCall } from "./impl/call/index.ts";
-export type { DispatchCallInput, DispatchPipelinePort, DispatchWorkspacePort } from "./deps.ts";
+export type {
+  CatalogEntryLite,
+  DispatchCallInput,
+  DispatchPipelinePort,
+  DispatchWorkspacePort,
+} from "./deps.ts";

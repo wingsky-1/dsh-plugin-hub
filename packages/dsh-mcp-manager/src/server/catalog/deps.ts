@@ -3,10 +3,15 @@
  *
  * 本域运行时能力消费**非零**（决策⑥ 以运行时能力消费为准），按提供方分三组：store 取
  * 磁盘目录缓存读面；connection 取目录 TTL 与装箱限额常量；workspace 取全名解析与工具名
- * 归一。宿主能力实测 0 命中（无 ctx/Context/logger/settings），故比 §3.4 表的预期
- * 「config + store + connection + logger」窄，按实测收窄；config 域实测 0 值引，不预置。
+ * 归一。config 域实测 0 值引，不预置。
  *
- * CatalogViewHost 不进端口：它是本域声明的**入参契约**——connection 在调用点构造具体对象
+ * **宿主能力（工具注册表读口、logger）不进端口**：它们是本域声明的**入参契约**——由
+ * connection 在调用点构造具体对象递入（同 `CatalogViewHost` 的口径，见下）。理由是这两条
+ * 能力每次调用都由调用方给：注册面视图取自 `host.ctx.tools.schemas()`、告警出口是
+ * `host.logger.warn`、目录落盘路径是 `host.catalogCachePath(root)`——它们是连接的宿主面
+ * 事实，本域只按值使用，不持有、不推导。端口只承载「本域真的要自己去取」的静态能力。
+ *
+ * CatalogViewHost 同理不进端口：它是本域声明的**入参契约**——connection 在调用点构造具体对象
  * 递入 makeCatalogViewFor，不是本域向提供方 import 的能力面。
  *
  * 口径取「实际使用」而非「import 面」（附录 E.6 第 3 条的建议）：端口成员 = 域内真实的消费点。

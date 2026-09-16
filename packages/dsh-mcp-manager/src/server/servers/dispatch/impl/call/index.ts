@@ -86,7 +86,7 @@ export async function executeMcpCall(input: DispatchCallInput): Promise<unknown>
     }
     throw new Error(pipeline.toolDisabledReason(policyKey, tool));
   }
-  const catalog = unit.catalog.get(parsed.server);
+  const catalog = input.catalogEntryFor(parsed.server);
   const stale =
     catalog !== undefined &&
     catalog.unavailable === undefined &&
@@ -111,6 +111,7 @@ export async function executeMcpCall(input: DispatchCallInput): Promise<unknown>
         `ws_mcp_call: 工具 ${JSON.stringify(`${parsed.server}/${tool}`)} 不存在（封装定义服务器）`,
       );
     }
+
     try {
       // 封装定义契约：execute(args, exec) 的 exec 为完整 ToolRunContext，但
       // 中间层只能提供最小面（agent 透传，session cwd 解析用）——经 unknown

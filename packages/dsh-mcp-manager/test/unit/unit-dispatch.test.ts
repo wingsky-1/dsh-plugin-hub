@@ -149,15 +149,19 @@ function makeUnit(
     userDisabled?: Set<string>;
   } = {},
 ): ProjectUnit {
+  // ProjectUnit 自 #767 S1-3b 起不再持目录；用例给的 catalog 夹具改由 makeInput 经
+  // catalogEntryFor 入参递进 dispatch（本域只读「发现时刻 + 是否不可用」两个字段）。
   return {
     root: ROOT,
     connections: options.connections ?? new Map([[SERVER, makeEntry(options.entry)]]),
-    catalog: options.catalog ?? new Map(),
     userDisabled: options.userDisabled ?? new Set(),
     lastTouchedAt: Date.now(),
     inFlight: new Map(),
   } as unknown as ProjectUnit;
 }
+
+/** 目录条目夹具（server 名 → `{ discoveredAt, unavailable? }`），经 catalogEntryFor 递入。 */
+type CatalogFixture = Map<string, { discoveredAt: number; unavailable?: string }>;
 
 function makeServers(): ServerConfig[] {
   return [
@@ -174,6 +178,7 @@ function makeServers(): ServerConfig[] {
 function makeInput(options: {
   unit?: ProjectUnit;
   pipeline: DispatchPipelinePort;
+  catalog?: CatalogFixture;
   overrides?: Record<string, unknown>;
 }): DispatchCallInput {
   return {
@@ -184,6 +189,7 @@ function makeInput(options: {
     agent: { session: { header: { cwd: "/proj" } } },
     callId: "call-1" as ToolExecutionInput["callId"],
     units: new Map([[ROOT, options.unit ?? makeUnit()]]),
+    catalogEntryFor: (serverName: string) => options.catalog?.get(serverName),
     allServers: makeServers,
     disabledTools: new Map(),
     policy: {},
@@ -300,11 +306,14 @@ describe("executeMcpCall：远端分支", () => {
     const { pipeline } = makePipeline();
     const remote = { content: [{ type: "text", text: "hi" }], structuredContent: { n: 1 } };
     const exec = fakeExecute(remote);
-    const unit = makeUnit({
-      catalog: new Map([[SERVER, { discoveredAt: Date.now() - 1000, tools: new Map() }]]),
-    });
+    const unit = makeUnit();
     const out = (await executeMcpCall(
-      makeInput({ unit, pipeline, overrides: { catalogTtlMs: 0, execute: exec.execute } }),
+      makeInput({
+        unit,
+        pipeline,
+        catalog: new Map([[SERVER, { discoveredAt: Date.now() - 1000 }]]),
+        overrides: { catalogTtlMs: 0, execute: exec.execute },
+      }),
     )) as { content: Array<{ text: string }>; structuredContent: unknown };
     expect(out.content[0].text).toContain("本工具目录已过期");
     expect(out.content[1]).toEqual(remote.content[0]);
@@ -314,13 +323,14 @@ describe("executeMcpCall：远端分支", () => {
   it("目录不可用（unavailable）不算过期：不前置提示", async () => {
     const { pipeline } = makePipeline();
     const exec = fakeExecute({ content: [{ type: "text", text: "hi" }] });
-    const unit = makeUnit({
-      catalog: new Map([
-        [SERVER, { discoveredAt: Date.now() - 1000, tools: new Map(), unavailable: "连接失败" }],
-      ]),
-    });
+    const unit = makeUnit();
     const out = (await executeMcpCall(
-      makeInput({ unit, pipeline, overrides: { catalogTtlMs: 0, execute: exec.execute } }),
+      makeInput({
+        unit,
+        pipeline,
+        catalog: new Map([[SERVER, { discoveredAt: Date.now() - 1000, unavailable: "连接失败" }]]),
+        overrides: { catalogTtlMs: 0, execute: exec.execute },
+      }),
     )) as { content: Array<{ text: string }> };
     expect(out.content).toHaveLength(1);
     expect(out.content[0].text).toBe("hi");

@@ -49,6 +49,17 @@ export type DispatchWorkspacePort = Pick<
   "parseFullServerName" | "normalizeToolName" | "fullServerName"
 >;
 
+/**
+ * 目录条目在本域的**窄结构类型**（#767 S1-3b）：只要「发现时刻 + 可选不可用原因」这两样。
+ *
+ * 为什么不 import catalog 的 `CatalogServer`：那会给本域到 catalog 域加一条跨模块类型边，
+ * 而本域只读这两个字段；窄形状在这里写一次，由调用方（连接层）按引用递值。
+ */
+export interface CatalogEntryLite {
+  readonly discoveredAt: number;
+  readonly unavailable?: string;
+}
+
 /** 宿主工具执行入参（子调用身份 + 参数 + 真 signal）。别名的意义是形状只在这里写一次。 */
 export type ToolExecutionInputLike = ToolExecutionInput;
 
@@ -86,6 +97,11 @@ export interface DispatchCallInput {
   readonly parent?: ToolExecutionToken;
   /** 中间层工作空间单元表（按引用递入，本域不复制也不持有）。 */
   readonly units: ReadonlyMap<string, ProjectUnit>;
+  /**
+   * 目录条目读口：本域只拿来判「目录是否过期」（schema 提示用），故递的是按 server 名取值器
+   * 而不是整份目录——本域不持目录，也不引 catalog 域门面（免多一条跨模块边）。
+   */
+  readonly catalogEntryFor: (serverName: string) => CatalogEntryLite | undefined;
   /** 凭据脱敏源：全部在册服务器（出错路径才取值，与旧 `allServers()` 同惰性）。 */
   readonly allServers: () => readonly ServerConfig[];
   /** 工具级禁用映射（root → server → Set<tool>）。 */

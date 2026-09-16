@@ -795,9 +795,18 @@ export class McpManager {
       // 内存目录先行删除；磁盘 last-good 缓存异步同步（防重启后 loadCatalogCache
       // 把幽灵条目载回——persistCatalog 空采集不写盘，remove 后目录可能为空，必须
       // 显式清盘而非依赖全量覆盖写）。
-      if (unit.catalog.delete(name)) {
+      const { catalogDirectory } = orchestratorPorts.get().catalog;
+      if (catalogDirectory.entryFor(unit.root, name) !== undefined) {
+        // 内存目录先行删除（原语义：`unit.catalog.delete(name)` 为真才同步清盘）；磁盘
+        // last-good 缓存异步同步，路径由本层算好按入参递入（目录域不推路径）。
+        void catalogDirectory
+          .removeRootEntry(unit.root, name, {
+            cachePath: this.catalogCachePathFor(unit.root),
+            warn: (message) => this.logger.warn(message),
+          })
+          .catch(() => {});
+        catalogDirectory.dropServer(unit.root, name);
         dropped = true;
-        void mw.removeCatalogEntry(unit.root, name).catch(() => {});
       }
     }
     // 拆除即废弃同名在途建连标记：entry 被强拆后旧 attempt 仍可能 pending 至
@@ -1093,12 +1102,12 @@ export class McpManager {
     // 中间层模式（#228 回归修复）：被中间层接管的服务器从连接池 + 目录缓存
     // 投影状态与工具列表——此前只读 supervisors，项目级无 supervisor 条目恒
     // 兜底 "stopped"，浮窗/summary 与真实连接态脱节。返回形状不变。
-    const { pipeline } = orchestratorPorts.get();
+    const { pipeline, catalog: catalogPort } = orchestratorPorts.get();
     const unit = this.middlewareUnitFor(server.name, scope);
     if (unit !== undefined) {
       const entry = unit.connections.get(server.name);
       if (entry !== undefined) {
-        const catalog = unit.catalog.get(server.name);
+        const catalog = catalogPort.catalogDirectory.entryFor(unit.root, server.name);
         const disabledTools = this.disabledTools.get(unit.root)?.get(server.name);
         const globalTools =
           unit.root === MIDDLEWARE_GLOBAL_ROOT

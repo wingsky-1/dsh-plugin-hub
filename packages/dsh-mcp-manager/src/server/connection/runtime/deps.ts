@@ -1,8 +1,8 @@
 /**
  * dsh-mcp-manager — connection/runtime/deps.ts：连接域 runtime 子层的对上依赖声明（纯类型面，§3.1 规则 2）。
  *
- * 本子层运行时能力消费非零（决策⑥ 以运行时能力消费为准），按提供方分六组：catalog 取目录新鲜判定
- * 与工具装箱；config 取配置模板 ${ENV} 预展开与凭据词根（#767 S1-1 自 transport.ts 迁出后经端口取用）；
+ * 本子层运行时能力消费非零（决策⑥ 以运行时能力消费为准），按提供方分六组：catalog 取目录的
+ * 投影写口与读口（#767 S1-3b：目录内存态与 last-good 均已搬进该域，本子层只剩调用点）；config 取配置模板 ${ENV} 预展开与凭据词根（#767 S1-1 自 transport.ts 迁出后经端口取用）；
  * pipeline 取两执行路径共用的结果投影、超时兜底、错误取消息、凭据脱敏、参数归一与
  * 策略裁决族；workspace 取全名解析 / 归一与拼装；servers/dispatch 取 ws_mcp_call 执行器
  * （#767 S1-3a 的执行路径搬迁：转发壳在本子层，执行器在新域，值经本端口递入）；
@@ -38,8 +38,15 @@ import type { ServerConfig } from "../../config/interface.ts";
 import type { McpStatsCollector } from "../../stats/interface.ts";
 import type { ProjectUnit } from "./impl/middleware/type.ts";
 
-/** catalog 域给本子层的能力面：目录新鲜判定与工具装箱。 */
-export type CatalogPort = Pick<typeof catalogApi, "isCatalogFresh" | "boundCatalogTools">;
+/**
+ * catalog 域给本子层的能力面：目录的投影写口 + 读口（#767 S1-3b 目录内存态搬迁后换面）。
+ *
+ * 常量与纯检索函数不再出现：`isCatalogFresh`/`boundCatalogTools` 已被投影本体吸收进 catalog
+ * 域，本子层的调用点全部改经 `projectRegisteredTools`/`projectWrappedTools`。`redact` 与
+ * `isRuntimeServer` 走投影入参而**不**进端口：前者是本子层的凭据脱敏闭包，后者是组合根
+ * 的宿主事实，两者都不是 catalog 域要自己取的能力。
+ */
+export type CatalogPort = Pick<typeof catalogApi, "catalogDirectory">;
 
 /** pipeline 域给本子层的能力面：结果投影 / 超时兜底 / 取消息与脱敏 / 参数归一 / 策略裁决。 */
 export type PipelinePort = Pick<
@@ -138,7 +145,7 @@ export interface MiddlewareHost {
   saveUserState(units: Map<string, ProjectUnit>): Promise<void>;
   /** 状态变化通知（SSE 标脏）。 */
   emitStatus(): void;
-  /** 目录缓存文件路径（last-good 持久化）。 */
+  /** 目录缓存文件路径（last-good 持久化；由本层算好按入参递进 catalog 域，本域不推路径）。 */
   catalogCachePath(root: string): string;
   /** 该 server 是否全局级（双源：store.data.servers + runtimeRegistry；runtime 注册的服务器不落 store）。 */
   isGlobalServer(name: string): boolean;

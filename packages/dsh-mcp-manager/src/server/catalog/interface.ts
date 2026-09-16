@@ -21,6 +21,8 @@ import { catalogPorts } from "./impl/service/index.ts";
 /**
  * 装配目录域：把组合根持有的三组端口写入域内注册表（见 impl/service）。组合根在
  * `src/index.ts` 顶层调用，模块求值期即完成——三条 Port 全是静态模块引用，不需要宿主 ctx。
+ * 宿主能力（工具注册表读口 / 日志出口 / 落盘路径）都不在端口内：它们是本域声明的**入参契约**，
+ * 由 connection 在调用点构造递入（同 CatalogViewHost 的口径，见 deps.ts 头注释）。
  *
  * 为什么不是 `export async function`：注入面对账（verify-dir-imports 的
  * analyzeInjectionFaces）按 `export function installXxx(` 采点，`async` 前缀会让这条对账
@@ -75,6 +77,9 @@ export {
   isCatalogFresh,
   boundCatalogTools,
 } from "./search.ts";
+// 目录内存态 + 投影 + last-good（#767 S1-3b 自连接层搬入）：写口/读口与投影入参类型。
+export { catalogDirectory } from "./impl/directory/index.ts";
+export type { SchemaView, RegisteredProjectionInput } from "./impl/directory/index.ts";
 export type { CatalogServer, CatalogTool } from "./impl/entries/type.ts";
 export type {
   SearchHit,

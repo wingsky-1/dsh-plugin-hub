@@ -13,6 +13,7 @@ import { catalogSummaryFile } from "../../../shared/interface.ts";
 import type { McpMiddleware } from "../../../connection/runtime/interface.ts";
 import type { ServerConfig } from "../../../config/interface.ts";
 import { MIDDLEWARE_GLOBAL_ROOT, SCOPE_PROJECT } from "../../../../shared/interface.ts";
+import { catalogDirectory } from "../directory/index.ts";
 import { catalogPorts } from "../service/index.ts";
 import { summarizeToolDescriptions } from "../entries/index.ts";
 import type { CatalogCache } from "../entries/index.ts";
@@ -79,11 +80,10 @@ export function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver {
     const {
       store: { readCatalogServerFromDisk },
     } = catalogPorts.get();
-    const unit = mw.units.get(root);
-    const catalog = unit?.catalog.get(name);
+    const catalog = catalogDirectory.entryFor(root, name);
     const tools = catalog?.tools;
     if (tools !== undefined && tools.size > 0 && catalog?.unavailable === undefined) {
-      // 内存单元（已含磁盘 last-good：单元创建时 loadCatalogCache 载入）→ 直接聚合。
+      // 内存目录（已含磁盘 last-good：单元创建时 ensureRootLoaded 载入）→ 直接聚合。
       return summarizeToolDescriptions(tools as Map<string, { description?: unknown }>);
     }
     // 内存无该服务器数据（单元未建 / 条目缺失 / 发现失败）→ 磁盘 last-good 兜底。

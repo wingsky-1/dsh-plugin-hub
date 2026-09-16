@@ -6,17 +6,17 @@
  */
 
 import type { ServerConfig } from "../../../../config/interface.ts";
-import type { CatalogServer } from "../../../../catalog/interface.ts";
 import type { ServerState } from "../../../../../shared/interface.ts";
 import type { MountedPlugin } from "../../../../shared/interface.ts";
 
 /** 连接池条目（每工作空间一套）。 */
 export interface ProjectUnit {
   root: string;
-  /** server 名（裸名）→ 连接条目。 */
+  /**
+   * server 名（裸名）→ 连接条目。工具目录（last-good）自 #767 S1-3b 起归 catalog 域，
+   * 本单元不再持目录——消费方改经 catalog 的读口（serversFor / entryFor）。
+   */
   connections: Map<string, ConnectionEntry>;
-  /** 目录缓存（last-good：连接断不丢）。 */
-  catalog: Map<string, CatalogServer>;
   /** 用户禁用集合（持久化）。 */
   userDisabled: Set<string>;
   /** 最近触达时间（LRU 淘汰依据）。 */

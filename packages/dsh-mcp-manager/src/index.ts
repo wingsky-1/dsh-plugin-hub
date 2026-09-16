@@ -85,9 +85,10 @@ import {
 import * as workspaceApi from "./server/workspace/interface.ts";
 
 // 目录域的静态端口装配。三组 Port 全是静态模块引用（不需要宿主 ctx 或配置），故写在入口
-// 顶层、模块求值期写定。实参必须是可解析的对象字面量、键集与 catalog/deps.ts 的 CatalogDeps
-// 严格相等——由 verify-dir-imports 的注入面对账强制；调用点必须落在入口，写在别处该对账会
-// 静默空转（附录 G·G20）。
+// 顶层、模块求值期写定。宿主能力（工具注册表读口 / 日志出口 / 落盘路径）不进端口：它们是本域
+// 声明的入参契约，由 connection 在调用点构造递入（见 catalog/deps.ts 头注释）。实参必须是可解析
+// 的对象字面量、键集与 catalog/deps.ts 的 CatalogDeps 严格相等——由 verify-dir-imports 的注入面
+// 对账强制；调用点必须落在入口，写在别处该对账会静默空转（附录 G·G20）。
 catalogApi.installCatalog({ store: storeApi, connection: runtimeApi, workspace: workspaceApi });
 
 // 执行管道域的静态端口装配。同上：实参必须是可解析的对象字面量、键集与 pipeline/deps.ts 的

@@ -26,6 +26,7 @@ import {
   mountLedger,
   releaseLifecycle,
 } from "../../src/server/servers/lifecycle/interface.ts";
+import { catalogDirectory } from "../../src/server/catalog/interface.ts";
 import { fakeLoaderPort, fakeLogsPort, fakeToolsService } from "../helpers.ts";
 
 const {
@@ -179,11 +180,62 @@ function trackMw(mw) {
   return mw;
 }
 
+/**
+ * 目录内存态自 #767 S1-3b 起归 catalog 域：夹具不再把目录塞进 ProjectUnit，而是经
+ * catalogDirectory 的写口登记（先让 root 在册，否则写口按「单元不存在」静默返回）。
+ *
+ * 缓存路径指向一个**不存在**的临时文件：既避免读盘把上一例的 last-good 载回来，
+ * 也避免把测试产物落在 DSH_HOME 之外。
+ */
+function seedRoot(root, entries) {
+  catalogDirectory.dropRoot(root);
+  for (const [serverName, entry] of entries) {
+    if (entry.unavailable !== undefined) {
+      // 发现失败段：先建条目再翻成不可用（读口只翻转已有条目）。
+      catalogDirectory.projectWrappedTools({ root, serverName, definitions: [] });
+      catalogDirectory.markUnavailable(root, serverName, entry.unavailable);
+      continue;
+    }
+    catalogDirectory.projectWrappedTools({
+      root,
+      serverName,
+      definitions: [...entry.tools].map(([name, tool]) => ({
+        name,
+        description: tool.description,
+        parameters: tool.inputSchema,
+      })),
+    });
+  }
+}
+
+/**
+ * 以**显式时间戳**登记目录条目：TTL / stale 类判据要的是「什么时候发现的」，而投影写口
+ * 恒写 Date.now()，故这类夹具走 last-good 文件读回（与生产同一条载入路径）。
+ */
+function seedRootFromDisk(root, entries) {
+  const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-seed-"));
+  const cachePath = join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`);
+  const payload = {};
+  for (const [serverName, entry] of entries) {
+    payload[serverName] = {
+      discoveredAt: entry.discoveredAt,
+      tools: [...entry.tools].map(([name, tool]) => ({
+        name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      })),
+    };
+  }
+  writeFileSync(cachePath, JSON.stringify({ version: 1, root, entries: payload }, null, 2), "utf8");
+  catalogDirectory.dropRoot(root);
+  return catalogDirectory.ensureRootLoaded(root, cachePath);
+}
+
 function makeUnit({ root = ROOT, catalog = new Map(), userDisabled = [], connections } = {}) {
+  if (catalog.size > 0) seedRoot(root, catalog);
   return {
     root,
     connections: connections ?? new Map(),
-    catalog,
     userDisabled: new Set(userDisabled),
     lastTouchedAt: Date.now(),
     inFlight: new Map(),
@@ -414,30 +466,18 @@ describe("scoreTool / searchCatalog", () => {
     expect(summary.results.length).toBe(2);
   });
 
-  it("TTL 过期 → fresh=false", () => {
+  it("TTL 过期 → fresh=false", async () => {
     const unit = unitsFixture().get(ROOT);
-    const stale = searchCatalog(
-      new Map([
-        [
-          ROOT,
-          {
-            ...unit,
-            catalog: new Map([
-              [
-                "ctx",
-                {
-                  discoveredAt: Date.now() - CATALOG_TTL_MS - 1000,
-                  tools: unit.catalog.get("ctx").tools,
-                },
-              ],
-            ]),
-          },
-        ],
-      ]),
-      ROOT,
-      "文档",
-      5,
-    );
+    await seedRootFromDisk(ROOT, [
+      [
+        "ctx",
+        {
+          discoveredAt: Date.now() - CATALOG_TTL_MS - 1000,
+          tools: catalogDirectory.entryFor(ROOT, "ctx").tools,
+        },
+      ],
+    ]);
+    const stale = searchCatalog(new Map([[ROOT, unit]]), ROOT, "文档", 5);
     expect(stale.results[0].fresh).toBe(false);
   });
 });
@@ -696,25 +736,38 @@ describe("last-good 目录缓存", () => {
       ]),
     });
     mw.units.set(ROOT, unit);
-    return { mw, unit, catalogHost };
+    // 落盘路径是调用点的入参契约：这里直接给 catalogDirectory 递同一个路径。
+    return { mw, unit, catalogHost, cachePath: catalogHost.catalogCachePath(ROOT) };
   }
 
   it("有工具的目录落盘", async () => {
-    const { mw, catalogHost } = cacheFixture();
-    await mw.persistCatalog(ROOT);
-    expect(existsSync(catalogHost.catalogCachePath(ROOT))).toBe(true);
+    const { cachePath } = cacheFixture();
+    await catalogDirectory.persistRoot(ROOT, {
+      cachePath: () => cachePath,
+      isRuntimeServer: () => false,
+      warn: () => {},
+    });
+    expect(existsSync(cachePath)).toBe(true);
   });
 
   it("空采集不覆盖已有缓存（保留 last-good）", async () => {
-    const { mw, unit, catalogHost } = cacheFixture();
-    await mw.persistCatalog(ROOT);
-    const file = catalogHost.catalogCachePath(ROOT);
-    const before = readFileSync(file, "utf8");
+    const { cachePath } = cacheFixture();
+    await catalogDirectory.persistRoot(ROOT, {
+      cachePath: () => cachePath,
+      isRuntimeServer: () => false,
+      warn: () => {},
+    });
+    const before = readFileSync(cachePath, "utf8");
     // 空采集不写盘：清空目录后 persist 不覆盖已有缓存（保留 last-good）
-    unit.catalog.get("ctx").tools.clear();
-    unit.catalog.get("ctx").unavailable = "failed";
-    await mw.persistCatalog(ROOT);
-    expect(readFileSync(file, "utf8")).toBe(before);
+    catalogDirectory.dropServer(ROOT, "ctx");
+    catalogDirectory.projectWrappedTools({ root: ROOT, serverName: "ctx", definitions: [] });
+    catalogDirectory.markUnavailable(ROOT, "ctx", "failed");
+    await catalogDirectory.persistRoot(ROOT, {
+      cachePath: () => cachePath,
+      isRuntimeServer: () => false,
+      warn: () => {},
+    });
+    expect(readFileSync(cachePath, "utf8")).toBe(before);
   });
 });
 
@@ -1281,7 +1334,12 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
     await fixture.mw.projectUnitFor("@global");
     await fixture.mw.ensureConnected("@global", "cg");
     const unit = fixture.mw.units.get("@global");
-    return { ...fixture, unit, entry: unit.connections.get("cg"), catalog: unit.catalog.get("cg") };
+    return {
+      ...fixture,
+      unit,
+      entry: unit.connections.get("cg"),
+      catalog: catalogDirectory.entryFor("@global", "cg"),
+    };
   }
 
   it("@global 单元已创建", async () => {
@@ -1418,15 +1476,23 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
   }
 
   it("runtime 条目不写盘", async () => {
-    const { mw2, persistHost } = persistFixture();
-    await mw2.persistCatalog("@global");
+    const { persistHost } = persistFixture();
+    await catalogDirectory.persistRoot("@global", {
+      cachePath: () => persistHost.catalogCachePath("@global"),
+      isRuntimeServer: (name) => name === "cg",
+      warn: () => {},
+    });
     const persisted = readFileSync(persistHost.catalogCachePath("@global"), "utf8");
     expect(persisted.includes("cg")).toBe(false);
   });
 
   it("store 条目照常写盘", async () => {
-    const { mw2, persistHost } = persistFixture();
-    await mw2.persistCatalog("@global");
+    const { persistHost } = persistFixture();
+    await catalogDirectory.persistRoot("@global", {
+      cachePath: () => persistHost.catalogCachePath("@global"),
+      isRuntimeServer: (name) => name === "cg",
+      warn: () => {},
+    });
     const persisted = readFileSync(persistHost.catalogCachePath("@global"), "utf8");
     expect(persisted.includes("storeSrv")).toBe(true);
   });
@@ -1457,8 +1523,8 @@ describe("#413：空 toolDefinitions / 封装调用超时兜底", () => {
   });
 
   it("空 toolDefinitions 目录 0 工具", async () => {
-    const { unit } = await emptyWrappedConnected();
-    expect(unit.catalog.get("cg")?.tools.size).toBe(0);
+    await emptyWrappedConnected();
+    expect(catalogDirectory.entryFor("@global", "cg")?.tools.size).toBe(0);
   });
 
   it("空 toolDefinitions 调用报不存在", async () => {
@@ -1512,18 +1578,19 @@ describe("#512：callTool 远端结果投影收敛", () => {
       execute: async () => ({ isError: false, content: [], value }),
     });
     const mw = trackMw(new McpMiddleware(host, {}));
-    const unit = makeUnit({
-      catalog: new Map([
-        [
-          "py",
-          {
-            discoveredAt: stale ? Date.now() - CATALOG_TTL_MS - 1000 : Date.now(),
-            tools: new Map([["echo", { description: "回声", inputSchema: { type: "object" } }]]),
-            unavailable: undefined,
-          },
-        ],
-      ]),
-    });
+    const entries = [
+      [
+        "py",
+        {
+          discoveredAt: stale ? Date.now() - CATALOG_TTL_MS - 1000 : Date.now(),
+          tools: new Map([["echo", { description: "回声", inputSchema: { type: "object" } }]]),
+          unavailable: undefined,
+        },
+      ],
+    ];
+    // stale 分支要的是「很久以前发现的」，投影写口恒写 now → 这条走 last-good 读回。
+    if (stale) await seedRootFromDisk(ROOT, entries);
+    const unit = makeUnit(stale ? {} : { catalog: new Map(entries) });
     mw.units.set(ROOT, unit);
     unit.connections.set("py", remoteEntry(servers[0], "id-py"));
     return mw;
@@ -1924,9 +1991,19 @@ describe("B10 红测：searchCatalogMulti 恰好 limit 命中不误报 truncated
         },
       ],
     ]);
+    // 目录内存态归 catalog 域：这里登记进域，单元只留「在册」这一层。
+    seedRoot(
+      ROOT,
+      new Map(
+        [...cata].map(([serverName, entry]) => [
+          serverName,
+          { discoveredAt: Date.now(), tools: entry.tools },
+        ]),
+      ),
+    );
     const fakeUnit = {
+      root: ROOT,
       connections: new Map(),
-      catalog: cata,
       userDisabled: new Set(),
       inFlight: new Map(),
       lastTouchedAt: Date.now(),
@@ -2236,8 +2313,22 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
       { name: "mcp__other-id__gamma", description: "他 id", parameters: {} },
       { name: "no_prefix", description: "无前缀", parameters: {} },
     ];
-    await mw.discover(ROOT, "py");
-    const catalog = unit.catalog.get("py");
+    // 连接层在投影前一定会先建单元（projectUnitFor → ensureRootLoaded 让 root 在册）；
+    // 这里按同一顺序复现，否则投影写口对未在册的 root 无表可写。
+    await catalogDirectory.ensureRootLoaded(ROOT, catalogHost.catalogCachePath(ROOT));
+    // discover 自 #767 S1-3b 起是 catalog 域的投影口：这里按连接层的实参形状调用
+    // （schemas 取宿主注册面、cachePath 取宿主算好的目录缓存路径）。
+    await catalogDirectory.projectRegisteredTools({
+      root: ROOT,
+      serverName: "py",
+      id: "id-py",
+      schemas: tools.schemas(),
+      cachePath: () => catalogHost.catalogCachePath(ROOT),
+      redact: (error) => String(error),
+      isRuntimeServer: () => false,
+      warn: () => {},
+    });
+    const catalog = catalogDirectory.entryFor(ROOT, "py");
     // 只收本 id 前缀的两条，名字已剥前缀；他 id 与无前缀条目不得混入。
     expect([...catalog.tools.keys()].sort()).toEqual(["alpha", "beta"]);
     expect(catalog.tools.get("alpha")).toEqual({
@@ -2251,7 +2342,7 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
   it("discover：目录落盘失败 → unavailable 降级（discoveredAt 归零）", async () => {
     // 触发点说明：注册面读不到（schemas 抛错）**不会**走到这个降级——registeredSchemas 按设计
     // 吞掉读取异常并当空处理（读不到注册表不许阻塞投影）。真正能触发 catch 的是落盘链：
-    // persistCatalog 里 catalogCachePath 的求值在它的内部 try 之外。
+    // 调用点给出的 cachePath（host.catalogCachePath(root)）求值在 catalog 域的 try 之外。
     // 凭据取自「在册服务器」的 env：脱敏源就是它，所以这里必须真带一个凭据值。
     const withSecret = { ...PY, env: { MCP_TOKEN: "sekrit" } };
     const { host, tools } = makeHost(new Map([[ROOT, [withSecret]]]));
@@ -2266,8 +2357,25 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
     mw.units.set(ROOT, unit);
     unit.connections.set("py", remoteEntry(withSecret, "id-py"));
     tools.entries = [{ name: "mcp__id-py__alpha", description: "甲", parameters: {} }];
-    await mw.discover(ROOT, "py");
-    const catalog = unit.catalog.get("py");
+    // 同上一例：先让 root 在册，投影失败才会落在已有条目上翻成 unavailable。
+    await catalogDirectory.ensureRootLoaded(
+      ROOT,
+      join(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-seed-")), "none.json"),
+    );
+    await catalogDirectory.projectRegisteredTools({
+      root: ROOT,
+      serverName: "py",
+      id: "id-py",
+      schemas: tools.schemas(),
+      // 路径求值本身要抛：缓存路径 thunk 在 persistRoot 内才求值，等价复现连接层
+      // host.catalogCachePath 在投影 try 之外求值的失败面。
+      cachePath: () => brokenHost.catalogCachePath(ROOT),
+      // 脱敏器形状与连接层一致：全部在册服务器作为凭据词根来源。
+      redact: (error) => createRedactor([withSecret])(error),
+      isRuntimeServer: () => false,
+      warn: () => {},
+    });
+    const catalog = catalogDirectory.entryFor(ROOT, "py");
     expect(catalog.discoveredAt).toBe(0);
     expect(catalog.tools.size).toBe(0);
     // 真脱敏器的替换词是 [REDACTED]（fake pipeline 里的 *** 是另一套夹具，别混）。

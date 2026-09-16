@@ -43,6 +43,7 @@ import {
   mountLedger,
   releaseLifecycle,
 } from "../../src/server/servers/lifecycle/interface.ts";
+import { catalogDirectory } from "../../src/server/catalog/interface.ts";
 
 const {
   apply,
@@ -1550,8 +1551,8 @@ describe("#413 all 模式 runtime 注入归一中台", () => {
   });
 
   it("目录投影封装工具", async () => {
-    const { mw } = await registered();
-    expect(mw.units.get("@global").catalog.get("cg")?.tools.has("cg_node")).toBeTruthy();
+    await registered();
+    expect(catalogDirectory.entryFor("@global", "cg")?.tools.has("cg_node")).toBeTruthy();
   });
 
   it("summary 投影 connected（@global 单元）", async () => {
@@ -1579,8 +1580,8 @@ describe("#413 all 模式 runtime 注入归一中台", () => {
   });
 
   it("目录条目已清（防幽灵）", async () => {
-    const { mw } = await registered({ unregister: true });
-    expect(mw.units.get("@global")?.catalog.has("cg")).toBe(false);
+    await registered({ unregister: true });
+    expect(catalogDirectory.entryFor("@global", "cg")).toBeUndefined();
   });
 });
 
@@ -1680,18 +1681,20 @@ describe("#392 遗留①：remove 清内存目录幽灵条目", () => {
       "@global 单元连接条目建立",
       () => mw.units.get("@global")?.connections.has("ghost") === true,
     );
-    // 手动塞目录条目模拟「已 discover」残留（真实 remove 前目录必然存在）。
-    mw.units.get("@global").catalog.set("ghost", {
-      discoveredAt: Date.now(),
-      tools: new Map([["t", { description: "d", inputSchema: {} }]]),
+    // 手动塞目录条目模拟「已 discover」残留（真实 remove 前目录必然存在）。目录内存态
+    // 归 catalog 域，故经域写口登记。
+    catalogDirectory.projectWrappedTools({
+      root: "@global",
+      serverName: "ghost",
+      definitions: [{ name: "t", description: "d", parameters: {} }],
     });
     if (remove) await manager.remove("ghost");
     return { manager, store, log, mw };
   }
 
   it("目录条目存在（模拟 discover 残留）", async () => {
-    const { mw } = await ghostStarted();
-    expect(mw.units.get("@global").catalog.has("ghost")).toBeTruthy();
+    await ghostStarted();
+    expect(catalogDirectory.entryFor("@global", "ghost")).toBeDefined();
   });
 
   it("remove 后连接被拆", async () => {
@@ -1700,8 +1703,8 @@ describe("#392 遗留①：remove 清内存目录幽灵条目", () => {
   });
 
   it("remove 后目录条目被清（#392 幽灵条目消除）", async () => {
-    const { mw } = await ghostStarted({ remove: true });
-    expect(mw.units.get("@global").catalog.has("ghost")).toBe(false);
+    await ghostStarted({ remove: true });
+    expect(catalogDirectory.entryFor("@global", "ghost")).toBeUndefined();
   });
 
   it("remove 落盘", async () => {
@@ -1723,7 +1726,7 @@ describe("#392 遗留①（M1 复核）：remove 清磁盘 last-good 缓存", ()
     else process.env.DSH_HOME = prevHome;
   });
 
-  /** 先 persistCatalog 写盘（含 ghost），remove 后等待异步清盘完成。 */
+  /** 先 persistRoot 写盘（含 ghost），remove 后等待异步清盘完成。 */
   async function persistedGhost({ remove = false } = {}) {
     const { manager, store } = makeManager(homeDir);
     manager.middlewareMode = "all";
@@ -1735,11 +1738,16 @@ describe("#392 遗留①（M1 复核）：remove 清磁盘 last-good 缓存", ()
       "@global 单元连接条目建立",
       () => mw.units.get("@global")?.connections.has("ghost") === true,
     );
-    mw.units.get("@global").catalog.set("ghost", {
-      discoveredAt: Date.now(),
-      tools: new Map([["t", { description: "d", inputSchema: {} }]]),
+    catalogDirectory.projectWrappedTools({
+      root: "@global",
+      serverName: "ghost",
+      definitions: [{ name: "t", description: "d", parameters: {} }],
     });
-    await mw.persistCatalog("@global");
+    await catalogDirectory.persistRoot("@global", {
+      cachePath: () => mw.host.catalogCachePath("@global"),
+      isRuntimeServer: (name) => manager.isRuntimeServer(name),
+      warn: () => {},
+    });
     const cacheFile = mw.host.catalogCachePath("@global");
     if (remove) {
       await manager.remove("ghost");
@@ -1761,8 +1769,8 @@ describe("#392 遗留①（M1 复核）：remove 清磁盘 last-good 缓存", ()
   });
 
   it("remove 后内存目录亦清", async () => {
-    const { mw } = await persistedGhost({ remove: true });
-    expect(mw.units.get("@global").catalog.has("ghost")).toBe(false);
+    await persistedGhost({ remove: true });
+    expect(catalogDirectory.entryFor("@global", "ghost")).toBeUndefined();
   });
 });
 
@@ -2463,12 +2471,13 @@ describe("中间层模式 summary 投影（#228）", () => {
     manager.ctx.tools.entries = [{ name: `mcp__${POOL_ID}__t1` }];
     // 注入连接池条目 + 目录缓存（模拟已握手成功，不派官方实例）。
     unit.connections.set("p1", connectedEntry());
-    unit.catalog.set("p1", {
-      discoveredAt: Date.now(),
-      tools: new Map([
-        ["t1", { description: "d1", inputSchema: {} }],
-        ["t2", { description: "", inputSchema: {} }],
-      ]),
+    catalogDirectory.projectWrappedTools({
+      root: proj,
+      serverName: "p1",
+      definitions: [
+        { name: "t1", description: "d1", parameters: {} },
+        { name: "t2", description: "", parameters: {} },
+      ],
     });
     return { dir, manager, store, proj, mw, unit, entry: unit.connections.get("p1") };
   }
@@ -2544,11 +2553,7 @@ describe("中间层模式 summary 投影（#228）", () => {
     const fixture = await projectionBase();
     // connected（投影输入面不变：readySettled / everConnected / 注册面前缀都在）+ 目录发现失败
     // （unavailable）→ 0 工具且透出原因到 error。
-    fixture.unit.catalog.set("p1", {
-      discoveredAt: 0,
-      tools: new Map(),
-      unavailable: "discovery timed out",
-    });
+    catalogDirectory.markUnavailable(fixture.proj, "p1", "discovery timed out");
     return fixture;
   }
 
@@ -2622,18 +2627,14 @@ describe("中间层模式 summary 投影（#228）", () => {
       { name: `mcp__${POOL_ID}__t1` },
       { name: "mcp__id-g1__gt" },
     ];
+    catalogDirectory.projectWrappedTools({
+      root: "@global",
+      serverName: "g1",
+      definitions: [{ name: "gt", description: "", parameters: {} }],
+    });
     fixture.mw.units.set("@global", {
       root: "@global",
       connections: new Map([["g1", connectedEntry("g1", "id-g1")]]),
-      catalog: new Map([
-        [
-          "g1",
-          {
-            discoveredAt: Date.now(),
-            tools: new Map([["gt", { description: "", inputSchema: {} }]]),
-          },
-        ],
-      ]),
       userDisabled: new Set(),
       lastTouchedAt: Date.now(),
       inFlight: new Map(),
@@ -3045,14 +3046,34 @@ describe("#569 catalogViewFor 合成注入端目录视图", () => {
       "catalog",
       `${createHash("sha256").update(root).digest("hex").slice(0, 16)}.json`,
     );
-  const unitFor = (root, catalogEntries) => ({
-    root,
-    connections: new Map(),
-    catalog: new Map(Object.entries(catalogEntries)),
-    userDisabled: new Set(),
-    lastTouchedAt: Date.now(),
-    inFlight: new Map(),
-  });
+  /** 单元夹具 + 目录登记：目录内存态归 catalog 域（#767 S1-3b），单元只留连接/禁用面。 */
+  const unitFor = (root, catalogEntries) => {
+    catalogDirectory.dropRoot(root);
+    for (const [serverName, entry] of Object.entries(catalogEntries)) {
+      catalogDirectory.projectWrappedTools({
+        root,
+        serverName,
+        definitions: [...entry.tools].map(([name, tool]) => ({
+          name,
+          description: tool.description,
+          parameters: tool.inputSchema,
+        })),
+      });
+      if (entry.unavailable !== undefined) {
+        catalogDirectory.markUnavailable(root, serverName, entry.unavailable);
+        continue;
+      }
+      // 夹具要的是显式时间戳（1 = 很久以前），投影写口恒写 now，故就地校正。
+      catalogDirectory.serversFor(root).get(serverName).discoveredAt = entry.discoveredAt;
+    }
+    return {
+      root,
+      connections: new Map(),
+      userDisabled: new Set(),
+      lastTouchedAt: Date.now(),
+      inFlight: new Map(),
+    };
+  };
   const serversWith = (entries) => new Map(Object.entries(entries));
 
   async function catalogViewFixture() {
@@ -3068,6 +3089,9 @@ describe("#569 catalogViewFor 合成注入端目录视图", () => {
     manager.catalogCache.set("p1", { summary: "B-project-p1" });
     manager.catalogCache.set("p2", { summary: "B-project-p2" });
     manager.middleware = mw;
+    // 目录内存态是域内单例（跨用例留存），每个场景从这里重新开始。
+    catalogDirectory.dropRoot("@global");
+    catalogDirectory.dropRoot(projDir);
     return { manager, mw, projDir };
   }
 

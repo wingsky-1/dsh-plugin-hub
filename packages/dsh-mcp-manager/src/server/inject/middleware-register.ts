@@ -40,15 +40,15 @@ interface MiddlewareToolContext {
 const SEARCH_EMPTY_HINT =
   "(No matching MCP tools found in current workspace; use ws_mcp_list for full inventory or verify server/tool names before searching)";
 
-/** 项目级可见服务器名列表（A1 归因文案用；排序去重）。 */
-function visibleProjectServers(mw: McpMiddleware, root: string): string[] {
-  const names: string[] = [];
-  for (const unit of mw.units.values()) {
-    if (unit.root === root) {
-      for (const serverName of unit.catalog.keys()) names.push(serverName);
-    }
-  }
-  return [...new Set(names)].sort();
+/**
+ * 项目级可见服务器名列表（A1 归因文案用；排序去重）。
+ *
+ * 数据源是 catalog 域的目录读口（#767 S1-3b）：`units` 已不再持目录，根过滤由读口自己做
+ * ——单元在册但目录没有任何服务器时给空表，与「单元不在册」在下游都不产生文案差异。
+ */
+function visibleProjectServers(root: string): string[] {
+  const { catalog } = injectPorts.get();
+  return [...new Set(catalog.catalogDirectory.serverNamesFor(root))].sort();
 }
 
 /** 等待 in-flight 连接/发现（8s 预算，与 search 对齐；超时不阻塞返回已有目录）。 */
@@ -108,7 +108,8 @@ async function checkMiddlewareRoot(
     const bare = parsed.server;
     const known =
       mw.host.isGlobalServer(bare) ||
-      mw.units.get(MIDDLEWARE_GLOBAL_ROOT)?.catalog.has(bare) === true;
+      injectPorts.get().catalog.catalogDirectory.entryFor(MIDDLEWARE_GLOBAL_ROOT, bare) !==
+        undefined;
     if (known) {
       throw new Error(
         `${caller}: server ${JSON.stringify(server)} 是全局级（global scope）服务器，中间层只覆盖项目级服务器；请直接用 mcp__${bare}__<tool> 前缀工具调用（project 模式全局工具仍直呼注册）`,
@@ -458,7 +459,7 @@ function resolveEmptyListMessage(
   mode: MiddlewareMode,
 ): string {
   if (serverFilter !== undefined) {
-    const visible = visibleProjectServers(mw, root);
+    const visible = visibleProjectServers(root);
     const visibleText =
       visible.length > 0
         ? `可见项目级服务器：${visible.join(" / ")}；`
