@@ -59,11 +59,6 @@ class CatalogDirectory {
   /** 在册 root 集合：与 byRoot 同步维护，承载「单元存在但目录为空」这一可区分状态。 */
   private readonly roots = new Set<string>();
 
-  /** root 是否在册（连接层建/拆单元时同步登记与注销）。 */
-  hasRoot(root: string): boolean {
-    return this.roots.has(root);
-  }
-
   /** 读口：root 的整份目录；root 不在册 → undefined。域外只读，故给 ReadonlyMap。 */
   serversFor(root: string): ReadonlyMap<string, CatalogServer> | undefined {
     return this.byRoot.get(root);

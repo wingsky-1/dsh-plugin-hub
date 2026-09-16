@@ -1976,6 +1976,88 @@ describe("add / update / remove（全局）", () => {
   });
 });
 
+// #767 S1-3b：组合根侧接线判据——目录投影与载入都走 catalog 域 ----
+describe("#767 S1-3b：manager 接线（建单元时才载入、内存不被磁盘盖回）", () => {
+  let prevHome;
+  let homeDir;
+  beforeEach(() => {
+    prevHome = process.env.DSH_HOME;
+    homeDir = makeTempDir("dsh-mcp-mgr2s13b-");
+    process.env.DSH_HOME = homeDir;
+  });
+  afterEach(() => {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+  });
+
+  it("projectUnitFor 建单元时载入读到的磁盘目录", async () => {
+    // 反证：把 projectUnitFor 里的 catalog.ensureRootLoaded 调用删掉 → 本条红（目录恒空）。
+    const { manager } = makeManager(homeDir);
+    manager.middlewareMode = "all";
+    await manager.initMiddleware("all", {});
+    const root = "@global";
+    const file = manager.catalogCachePathFor(root);
+    mkdirSync(join(file, ".."), { recursive: true });
+    writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        root,
+        entries: {
+          diskSrv: {
+            discoveredAt: 1,
+            tools: [{ name: "disk_tool", description: "磁盘那份", inputSchema: {} }],
+          },
+        },
+      }),
+      "utf8",
+    );
+    // 建单元之前目录里没有这个 root。
+    expect(catalogDirectory.serversFor(root)).toBeUndefined();
+    await manager.middleware.projectUnitFor(root);
+    expect(catalogDirectory.entryFor(root, "diskSrv")?.tools.has("disk_tool")).toBe(true);
+    expect(catalogDirectory.entryFor(root, "diskSrv")?.discoveredAt).toBe(1);
+    await catalogDirectory.ensureRootLoaded(root, file);
+    // 二次载入不再读盘：内存那份仍在。
+    expect(catalogDirectory.entryFor(root, "diskSrv")?.discoveredAt).toBe(1);
+  });
+
+  it("root 已在册时，磁盘那份不得盖回内存投影", async () => {
+    // 反证：删掉 ensureRootLoaded 的 `if (this.byRoot.has(root)) return;` 短路 → 本条红
+    // （内存条目会被磁盘内容整体替换成 diskSrv）。
+    const { manager } = makeManager(homeDir);
+    manager.middlewareMode = "all";
+    await manager.initMiddleware("all", {});
+    const root = "@global";
+    const file = manager.catalogCachePathFor(root);
+    catalogDirectory.dropRoot(root);
+    catalogDirectory.projectWrappedTools({
+      root,
+      serverName: "memSrv",
+      definitions: [{ name: "mem_tool", description: "内存那份", parameters: {} }],
+    });
+    mkdirSync(join(file, ".."), { recursive: true });
+    writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        root,
+        entries: {
+          diskSrv: {
+            discoveredAt: 1,
+            tools: [{ name: "disk_tool", description: "磁盘那份", inputSchema: {} }],
+          },
+        },
+      }),
+      "utf8",
+    );
+    // 单元已被本用例先建过（root 在册）→ 建单元不再载入、也不覆盖。
+    await manager.middleware.projectUnitFor(root);
+    expect(catalogDirectory.entryFor(root, "memSrv")?.tools.has("mem_tool")).toBe(true);
+    expect(catalogDirectory.entryFor(root, "diskSrv")).toBeUndefined();
+  });
+});
+
 // setSession / catalogServersFor / projectStoreFor / refreshFromDisk ----
 describe("setSession", () => {
   function sessionFixture() {

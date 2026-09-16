@@ -851,9 +851,11 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
     IDENTITY,
   );
   // 判据面随夹具换面（#767 S1-3b）：原夹具是远端条目，投影后 content 为空数组；现夹具
-  // 走封装直呼分支，渲染器把封装返回值投影成 text 块。等价判据是「正常返回了内容」。
-  expect(Array.isArray(okValue.content), "未禁用工具正常调用（非空 content）").toBe(true);
-  expect(okValue.content.length, "未禁用工具正常调用（有内容块）").toBeGreaterThan(0);
+  // 走封装直呼分支（无 output.render），渲染器把封装返回值按 JSON 文本投影成一个 text 块。
+  // 夹具确定性（execute 恒返回 {content:[]}），故这里逐字钉死投影结果。
+  expect(okValue.content, "未禁用工具正常调用（封装返回值按 JSON 文本投影）").toEqual([
+    { type: "text", text: '{"content":[]}' },
+  ]);
 
   // 4) stats：四个原子工具埋点与统计断言
   const { McpStatsCollector } = await import("../../lib/index.js");
