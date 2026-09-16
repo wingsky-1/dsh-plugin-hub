@@ -1,11 +1,13 @@
 /**
  * dsh-mcp-manager — connection/runtime/deps.ts：连接域 runtime 子层的对上依赖声明（纯类型面，§3.1 规则 2）。
  *
- * 本子层运行时能力消费非零（决策⑥ 以运行时能力消费为准），按提供方分五组：catalog 取目录新鲜判定
+ * 本子层运行时能力消费非零（决策⑥ 以运行时能力消费为准），按提供方分六组：catalog 取目录新鲜判定
  * 与工具装箱；config 取配置模板 ${ENV} 预展开与凭据词根（#767 S1-1 自 transport.ts 迁出后经端口取用）；
  * pipeline 取两执行路径共用的结果投影、超时兜底、错误取消息、凭据脱敏、参数归一与
  * 策略裁决族；workspace 取全名解析 / 归一与拼装；servers/dispatch 取 ws_mcp_call 执行器
- * （#767 S1-3a 的执行路径搬迁：转发壳在本子层，执行器在新域，值经本端口递入）。宿主能力实测
+ * （#767 S1-3a 的执行路径搬迁：转发壳在本子层，执行器在新域，值经本端口递入）；
+ * servers/lifecycle 取官方实例的装载 / 拆卸 / 六态投影（#767 S1-4d 换引擎：本子层不再自建
+ * 连接栈，连接生命周期整体交还该域的账本）。宿主能力实测
  * 0 命中——本子层的 ctx 面以
  * `ManagerLite` / `MiddlewareHost` 两条构造入参类型就地声明（#767 W11b2a 自 types/host-faces.ts
  * 落位本文件），不经端口。
@@ -29,6 +31,7 @@ import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type * as catalogApi from "../../catalog/interface.ts";
 import type * as configApi from "../../config/interface.ts";
 import type * as dispatchApi from "../../servers/dispatch/interface.ts";
+import type * as lifecycleApi from "../../servers/lifecycle/interface.ts";
 import type * as pipelineApi from "../../pipeline/interface.ts";
 import type * as workspaceApi from "../../workspace/interface.ts";
 import type { ServerConfig } from "../../config/interface.ts";
@@ -72,6 +75,18 @@ export type WorkspacePort = Pick<
 export type DispatchPort = Pick<typeof dispatchApi, "executeMcpCall">;
 
 /**
+ * servers/lifecycle 域给本子层的能力面：装载 / 拆卸 / 六态投影。
+ *
+ * 这是换引擎后中间层**唯一**的连接入口：官方实例由 lifecycle 的账本持有，本子层不再自建
+ * transport 与 client，装载只能经此端口、拆卸只能经此端口（直引该域门面会产生一条 I2① 值边）。
+ * 只取生命周期符号，不取 `mountLedger` 对象本身——账本类未导出，Pick 出的实例类型不可名。
+ */
+export type LifecyclePort = Pick<
+  typeof lifecycleApi,
+  "mountServer" | "releaseServer" | "disposeServer" | "projectServerState"
+>;
+
+/**
  * 装配入参：本子层依赖的全部外部。键集与组合根 `installRuntime` 的实参字面量由
  * verify-dir-imports 的注入面对账强制**严格相等**（多一个键、少一个键都判红）。
  */
@@ -82,6 +97,8 @@ export interface RuntimeDeps {
   configEnv: ConfigEnvPort;
   /** servers/dispatch 域：ws_mcp_call 执行器（过渡端口，见 DispatchPort）。 */
   dispatch: DispatchPort;
+  /** servers/lifecycle 域：官方实例的装载 / 拆卸 / 六态投影。 */
+  lifecycle: LifecyclePort;
   /** pipeline 域：结果投影 / 超时兜底 / 取消息与脱敏 / 参数归一 / 策略裁决。 */
   pipeline: PipelinePort;
   /** workspace 域：全名解析、工具名归一与全名拼装。 */

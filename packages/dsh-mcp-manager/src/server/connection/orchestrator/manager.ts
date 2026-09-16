@@ -788,18 +788,8 @@ export class McpManager {
     if (mw === undefined) return;
     let dropped = false;
     for (const unit of mw.units.values()) {
-      const entry = unit.connections.get(name);
-      if (entry !== undefined) {
-        dropped = true;
-        entry.disposed = true;
-        if (entry.reconnectTimer !== undefined) clearTimeout(entry.reconnectTimer);
-        const client = entry.client;
-        entry.client = undefined;
-        entry.transport = undefined;
-        if (client !== undefined && client.transport !== undefined)
-          void client.transport.close().catch(() => {});
-        unit.connections.delete(name);
-      }
+      // 拆除落点统一走账本（裁定 X）：只发起 release、不等结算——拆除路径是同步语义。
+      if (mw.releaseConnection(unit.root, name)) dropped = true;
       // #392 遗留①：目录条目随连接一并拆除——remove/update 后已删服务器不再以
       // 幽灵条目出现在 ws_mcp_list / ws_mcp_search（此前只拆连接，目录 TTL 内残留）。
       // 内存目录先行删除；磁盘 last-good 缓存异步同步（防重启后 loadCatalogCache
@@ -1031,17 +1021,8 @@ export class McpManager {
       if (targetUnit !== undefined) {
         targetUnit.userDisabled.add(name);
         await this.saveUserState(this.middleware.units);
-        const entry = targetUnit.connections.get(name);
-        if (entry !== undefined) {
-          entry.disposed = true;
-          if (entry.reconnectTimer !== undefined) clearTimeout(entry.reconnectTimer);
-          const client = entry.client;
-          entry.client = undefined;
-          entry.transport = undefined;
-          if (client !== undefined && client.transport !== undefined)
-            void client.transport.close().catch(() => {});
-          targetUnit.connections.delete(name);
-        }
+        // 同上：账本化拆除（只发起不等结算）。
+        this.middleware.releaseConnection(targetUnit.root, name);
         // 断开即废弃同名在途标记：拆除时旧 attempt 仍 pending（挂至超时）会吞掉
         // 紧随的显式「连接」（connect→ensureConnected 去重短路，force 也不豁免）。
         this.middleware.abandonInFlight(name);
@@ -1133,7 +1114,9 @@ export class McpManager {
         return {
           ...server,
           scope,
-          status: entry.status,
+          // 状态经读时刷新的投影取（裁定 U）：entry.status 只在装载窗口结算时写入，
+          // 「曾连上、工具前缀消失」这类事实只有重算才看得见。
+          status: this.middleware?.statusOf(unit.root, server.name),
           // 目录发现失败（unavailable）时透出原因：解释 connected 却 0 工具。
           error: entry.error !== undefined ? pipeline.msgOf(entry.error) : catalog?.unavailable,
           tools,

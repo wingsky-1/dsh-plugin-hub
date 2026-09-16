@@ -55,6 +55,7 @@ import type {
 import * as configModelApi from "./server/config/interface.ts";
 import { Config, DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS } from "./server/config/interface.ts";
 import * as dispatchApi from "./server/servers/dispatch/interface.ts";
+import * as lifecycleApi from "./server/servers/lifecycle/interface.ts";
 import {
   installLifecycle,
   mountLedger,
@@ -122,6 +123,7 @@ runtimeApi.installRuntime({
   catalog: catalogApi,
   configEnv: configModelApi,
   dispatch: dispatchApi,
+  lifecycle: lifecycleApi,
   pipeline: pipelineApi,
   workspace: workspaceApi,
 });

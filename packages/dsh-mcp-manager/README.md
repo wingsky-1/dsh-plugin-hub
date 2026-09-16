@@ -222,8 +222,10 @@ await ctx.mcpManager.registerServer({
 - 服务器配置：`<DSH_HOME>/dsh-mcp.json`（仅存 `${ENV}` 引用，**不落盘密钥本身**）；
   落盘 0600 权限 + 原子写入
 - 所有 `/api/dsh-mcp/*` 路由仅限 loopback 访问（非回环 403 / 方法错 405）
-- **stdio 子进程环境净化**：父环境去除凭据形状（KEY/TOKEN/SECRET/PASSWORD…）
-  与陈旧 `DSH_*` 变量后再合并显式 env——避免把宿主机密透传给 MCP 子进程
+- **stdio 子进程环境净化（官方 dsh-mcp-client 口径）**：净化只作用于**继承的父环境**——
+  凭据词根（`KEY` / `PASSWORD` / `SECRET` / `TOKEN`）与全部 `DSH_*` 变量从父环境摘掉，
+  避免把宿主机密隐式透传给 MCP 子进程；**用户在配置里显式声明的 `env` 原样传给子进程**
+  （显式层在净化之后合并）——`env` 不是脱敏面，要隔离就别往里写凭据
 - **stdio 子进程继承宿主权限**：MCP 服务器命令在宿主进程权限下执行，
   仅配置可信的服务器
 - **MCP 工具在真实服务器上执行，先确认再操作**；工具结果原样返回，
@@ -310,6 +312,11 @@ pnpm --filter @wingsky-1/dsh-mcp-manager test
 
 ## 已知限制
 
+- **中间层模式的工具注册名含随机 id**：服务器由官方 dsh-mcp-client 装载，工具注册为
+  `mcp__<id>__<tool>`，`id` 是按 (工作空间, 服务器名) 分配的**随机短串**（同一次插件装配内稳定；
+  插件重载或宿主重启后变化）——**不要在任何脚本或提示词里写死工具名**，一律用 `ws_mcp_list` /
+  `ws_mcp_detail` 取名字。把 `mcp__*` 从模型可见面屏蔽、统一经 `ws_mcp_call` 转发
+  在后续阶段收敛
 - 不订阅 MCP 的 `tools/list_changed` 通知（无 SSE 长连接）；工具列表变化在
   重连 / 手动刷新时重新同步
 - 中间层目录是「采集边界内的 last-good 快照」（单服务器 ≤512 工具 / ≤256KB 总量），

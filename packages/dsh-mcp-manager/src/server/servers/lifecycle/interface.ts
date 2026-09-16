@@ -38,6 +38,26 @@ export function releaseLifecycle(): void {
   lifecyclePorts.release();
 }
 
+/**
+ * 释放一个已装载实例，只发起 dispose、不等结算。
+ *
+ * 为什么不等：官方 dispose 会等在途首连，挂死的服务器能把它拖到 SDK 的 60s 超时——拆除
+ * （disconnect / remove / update / evict / 插件卸载）是同步语义，等它等于让 UI 与 reconcile 卡住。
+ */
+export function releaseServer(key: string): void {
+  mountLedger.releaseOne(key);
+}
+
+/**
+ * 释放一个已装载实例并等结算。
+ *
+ * 为什么必须等：官方 serverName 是整个应用根的活体预留，旧实例未结算就挂同名新实例会当场抛
+ * 「serverName is already in use」（实测 §2.9-16），故重建路径必须先走这里再 mount。
+ */
+export function disposeServer(key: string): Promise<void> {
+  return mountLedger.dispose(key);
+}
+
 export { mountLedger };
 export type { LedgerEntry } from "./impl/ledger/index.ts";
 export { projectServerState } from "./impl/state/index.ts";

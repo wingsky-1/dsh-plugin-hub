@@ -28,7 +28,21 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { assertNoGrowth, pollUntil } from "../helpers.ts";
+import {
+  assertNoGrowth,
+  fakeLoaderPort,
+  fakeLogsPort,
+  fakeToolsService,
+  pollUntil,
+} from "../helpers.ts";
+import { expandServerEnv } from "../../src/server/config/impl/env/index.ts";
+import { withTimeout } from "../../src/server/pipeline/impl/timeout/index.ts";
+import { OFFICIAL_MCP_CLIENT_SPECIFIER } from "../../src/server/shared/interface.ts";
+import {
+  installLifecycle,
+  mountLedger,
+  releaseLifecycle,
+} from "../../src/server/servers/lifecycle/interface.ts";
 
 const {
   apply,
@@ -74,33 +88,82 @@ function trackTimer(timer) {
 
 afterEach(async () => {
   for (const manager of trackedManagers) {
-    // 中间层连接（含 spawn 的 stdio 子进程）manager.dispose() 不关，需显式收口。
-    try {
-      for (const unit of manager.middleware?.units?.values?.() ?? []) {
-        for (const entry of unit.connections.values()) {
-          if (entry.reconnectTimer !== undefined) clearTimeout(entry.reconnectTimer);
-          try {
-            await entry.transport?.close?.();
-          } catch {
-            // 关闭失败不掩盖用例结论
-          }
-        }
-      }
-    } catch {
-      // 同上
-    }
+    // 连接收口全走账本（releaseServer → 句柄 dispose）：manager.dispose() 逐单元拆除即可，
+    // 旧栈那套 transport.close() / clearTimeout(reconnectTimer) 的直操作随字段删除一并消失。
     try {
       await manager.dispose();
     } catch {
-      // 同上
+      // 收口失败不掩盖用例结论
     }
   }
   trackedManagers = [];
   for (const timer of trackedTimers) clearTimeout(timer);
   trackedTimers = [];
+  if (lifecycleInstalled) {
+    releaseLifecycle();
+    // deferred 时序下装载窗口仍挂起：不放闸，窗口内那个 10s 超时定时器会拖住 worker。
+    poolLoader?.settleReady();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await mountLedger.flushDisposals();
+    lifecycleInstalled = false;
+  }
   for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
   tempDirs = [];
 });
+
+// ------------------------------------------------------------ 池装载夹具（#767 S1-4d）
+// 换引擎后中间层不再自建 transport/client：远端条目一律经 lifecycle 域装载官方实例。本文件
+// 的池用例必须走这条真链路（假 loader 不 spawn 子进程，全离线），故在工厂里装一次六键端口。
+// id 表按 (scope, name) 稳定分配——「跨 root 同名各自成条」正靠它（与 unit-lifecycle-mount 同形）。
+
+/** 假 id 表：按 (scope, name) 稳定返回并自增（mirror unit-lifecycle-mount.test.ts 的同名夹具）。 */
+function fakeIdTable() {
+  const byKey = new Map();
+  let seq = 0;
+  return {
+    idFor(scope, name) {
+      const key = scope + "\u0000" + name;
+      let id = byKey.get(key);
+      if (id === undefined) {
+        seq += 1;
+        id = "id-" + seq;
+        byKey.set(key, id);
+      }
+      return id;
+    },
+  };
+}
+
+/** 被测的官方插件模块面：apply 由官方引擎调，本域只把它当不透明模块转交。 */
+const OFFICIAL_MODULE = { name: "test:official", apply: () => {} };
+
+/** 装载 ready 时序由用例改这里的 ready（fakeLoaderPort 在每次 mount 时现读）。 */
+let loaderScript;
+let poolLoader;
+let poolToolsView = () => [];
+let lifecycleInstalled = false;
+
+/** 装配池装载链路（幂等：一个用例里建多个 manager 只装一次，afterEach 统一释放）。 */
+function installPoolLifecycle() {
+  if (lifecycleInstalled) return;
+  loaderScript = {
+    modules: { [OFFICIAL_MCP_CLIENT_SPECIFIER]: OFFICIAL_MODULE },
+    ready: "immediate",
+  };
+  poolLoader = fakeLoaderPort(loaderScript);
+  installLifecycle({
+    loader: poolLoader,
+    pipeline: { withTimeout },
+    workspace: fakeIdTable(),
+    config: { expandServerEnv },
+    tools: {
+      // 委托到「当前 manager 的工具服务」：装载窗口的 hasTools 必须与用例看见的注册面同一份。
+      schemas: () => poolToolsView(),
+    },
+    logs: fakeLogsPort(),
+  });
+  lifecycleInstalled = true;
+}
 
 /** 在独立沙箱目录内执行（DSH_HOME 原值恢复，目录删除）。 */
 async function inRootSandbox(body) {
@@ -573,12 +636,14 @@ function makeManager(dir) {
     },
     store,
   );
-  manager.ctx.tools = {
-    register: (def) => {
-      log.registered.push(def.name);
-      return () => log.disposed.push(def.name);
-    },
-  };
+  // 工具服务面（register + schemas）与生命周期域共用同一份：池的六态投影读注册面前缀，
+  // 装载窗口的 hasTools 也必须读同一份，否则「已连上」的两处判据会分裂。
+  const tools = fakeToolsService();
+  manager.ctx.tools = tools;
+  log.registered = tools.registered;
+  log.disposed = tools.disposed;
+  poolToolsView = () => tools.schemas();
+  installPoolLifecycle();
   return { manager: trackManager(manager), store, log };
 }
 
@@ -1109,7 +1174,12 @@ describe("#382 F3/F4：all 模式池接管", () => {
   });
 });
 
-describe("#382 F5：防双进程探测重试", () => {
+// #382 F5「防双进程探测重试」整段删除：换引擎后「同名服务器只能有一个实例」由官方 serverName 在
+// 应用根上的活体预留承担（同 id 二次挂载当场抛，实测 §2.9-16），我方不再需要探测 + 一次性重试，
+// probeRetried / reconnectTimer / scheduleProbeRetry 已随实现删除——这三例的断言对象不存在了。
+// 其中第三例顺带守的「ensureConnected 对 userDisabled 短路」判据仍然成立（实现里的早返回），
+// 故就地按新链路重建：驱动换成池的真 ensureConnected，观测点换成「条目没建、官方实例没挂」。
+describe("#382 F5 删除后的等价判据：userDisabled 短路不装载", () => {
   let prevHome;
   let homeDir;
   beforeEach(() => {
@@ -1122,44 +1192,18 @@ describe("#382 F5：防双进程探测重试", () => {
     else process.env.DSH_HOME = prevHome;
   });
 
-  /** F5：防双进程探测命中 → 落 failed 占位 entry + 一次性重试定时器。 */
-  async function probeHitFixture() {
+  it("userDisabled 命中 → 不建连接条目、不挂官方实例（短路在装载之前）", async () => {
     const { manager, store } = makeManager(homeDir);
     manager.middlewareMode = "all";
     await manager.initMiddleware("all", {});
-    manager.ctx.tools.schemas = () => [{ name: "mcp__g3__t" }];
     store.upsert(normalizeServer(quietServer("g3")));
-    manager.start("g3", "global");
-    await pollUntil("探测命中占位 entry", () => {
-      const probeEntry = manager.middleware.units.get("@global")?.connections.get("g3");
-      return probeEntry !== undefined && probeEntry.probeRetried === true;
-    });
-    const probeEntry = manager.middleware.units.get("@global").connections.get("g3");
-    if (probeEntry.reconnectTimer !== undefined) trackTimer(probeEntry.reconnectTimer);
-    return { manager, probeEntry };
-  }
-
-  it("重试定时器已排（F5 有界重试）", async () => {
-    // 首个断言紧跟 pollUntil（同一同步块内 probeRetried 置位即已排定时器），可断
-    // reconnectTimer 存在；此后跨 await 的断言改用 probeRetried 持久标记——慢机 3s
-    // 窗口内定时器可能已触发置 undefined，但 probeRetried 连接成功前不复位。
-    const { probeEntry } = await probeHitFixture();
-    expect(probeEntry.reconnectTimer !== undefined).toBeTruthy();
-  });
-
-  it("再次探测命中不重排（probeRetried 保持一次性）", async () => {
-    const { manager, probeEntry } = await probeHitFixture();
-    // 一次性语义：probeRetried 已置位，再次 ensureConnected 命中探测不重排。
-    await manager.middleware.ensureConnected("@global", "g3");
-    expect(probeEntry.probeRetried).toBe(true);
-  });
-
-  it("userDisabled 命中不重连（重试经 ensureConnected 的禁用语义保证）", async () => {
-    const { manager } = await probeHitFixture();
-    // 否定用例：userDisabled 已写时，重试路径（ensureConnected）不连接。
-    manager.middleware.units.get("@global").userDisabled.add("g3");
-    await manager.middleware.ensureConnected("@global", "g3");
-    expect(manager.middleware.units.get("@global").connections.get("g3").status).toBe("failed");
+    const mw = manager.middleware;
+    mw.disabledByRoot.set("@global", new Set(["g3"]));
+    const unit = await mw.projectUnitFor("@global");
+    await mw.ensureConnected("@global", "g3");
+    expect(unit.userDisabled.has("g3")).toBe(true);
+    expect(unit.connections.has("g3")).toBe(false);
+    expect(poolLoader.calls.filter((call) => call[0] === "mount")).toHaveLength(0);
   });
 });
 
@@ -1273,8 +1317,8 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
     const mkUnit = (root) => ({
       root,
       connections: new Map([
-        ["p1", { server: projStore.find("p1"), client: {}, status: "connected" }],
-        ["p2", { server: projStore.find("p2"), client: {}, status: "connected" }],
+        ["p1", { server: projStore.find("p1"), status: "connected" }],
+        ["p2", { server: projStore.find("p2"), status: "connected" }],
       ]),
       catalog: new Map(),
       userDisabled: new Set(),
@@ -1298,11 +1342,7 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
         calls614.push(["ensureConnected", root, name, opts]);
         const unit = fakeMw.units.get(root);
         if (unit !== undefined && !unit.connections.has(name)) {
-          unit.connections.set(name, {
-            server: projStore.find(name),
-            client: {},
-            status: "connected",
-          });
+          unit.connections.set(name, { server: projStore.find(name), status: "connected" });
         }
         return opts;
       },
@@ -1485,9 +1525,28 @@ describe("#413 all 模式 runtime 注入归一中台", () => {
     expect(mw.units.get("@global").connections.get("cg").status).toBe("connected");
   });
 
-  it("无远端 client（封装直呼）", async () => {
+  it("虚拟连接不挂官方实例（无账本键 / 无句柄 / loader 未 mount）", async () => {
     const { mw } = await registered();
-    expect(mw.units.get("@global").connections.get("cg").client).toBeUndefined();
+    const entry = mw.units.get("@global").connections.get("cg");
+    // 旧断言读 entry.client 恒 undefined 会退化成恒真（字段已删）；判据换到新链路上：
+    // 虚拟单元不派官方实例的证据是「没有账本键、没有句柄、loader 一次都没 mount」。
+    expect(entry.id).toBeUndefined();
+    expect(entry.handle).toBeUndefined();
+    expect(poolLoader.calls.filter((call) => call[0] === "mount")).toHaveLength(0);
+    expect(mountLedger.size).toBe(0);
+  });
+
+  it("虚拟连接：statusOf 恒 connected，配置/用户禁用时 disabled", async () => {
+    const { manager, mw } = await registered();
+    const entry = () => mw.units.get("@global").connections.get("cg");
+    // 虚拟单元没有注册面工具，六态投影对它会判 stopped——故它就地收敛（#413 既有契约）。
+    expect(mw.statusOf("@global", "cg")).toBe("connected");
+    mw.units.get("@global").userDisabled.add("cg");
+    expect(mw.statusOf("@global", "cg")).toBe("disabled");
+    mw.units.get("@global").userDisabled.delete("cg");
+    entry().server.enabled = false;
+    expect(mw.statusOf("@global", "cg")).toBe("disabled");
+    expect(manager.runtimeRegistry.has("cg")).toBe(true);
   });
 
   it("目录投影封装工具", async () => {
@@ -1792,11 +1851,10 @@ describe("#392 遗留③：disconnect 显式 scope 定位", () => {
 });
 
 // 拆除时在途建连的 in-flight 残留（跨平台确定性回归：Windows 必现） ----
-// 命令选真实存在但永不完成 MCP 握手的 node 子进程：connect() 必然 pending 到
-// CONNECT_TIMEOUT_MS（10s），把「拆除时 attempt 在途」窗口拉满。此前 remove/
-// disconnect 强拆 entry 后不同步废弃 inFlight 去重标记，同名后续 ensureConnected
-// （含 force 的显式「连接」）被残留标记吞掉，且旧 attempt 收敛命中 disposed 守卫
-// 无人补连——修复前本块必红（此前 Linux CI 靠 spawn 快速失败侥幸避开窗口）。
+// 「attempt 在途」改由假 loader 的 deferred ready 撑：装载窗口按在窗口内不自行结算，
+// 不再 spawn 真子进程（离线纪律）。此前 remove/disconnect 强拆 entry 后不同步废弃
+// inFlight 去重标记，同名后续 ensureConnected（含 force 的显式「连接」）被残留标记
+// 吞掉，且旧 attempt 收敛命中 disposed 守卫无人补连——修复前本块必红。
 describe("拆除时在途建连的 in-flight 残留", () => {
   let prevHome;
   let homeDir;
@@ -1810,19 +1868,15 @@ describe("拆除时在途建连的 in-flight 残留", () => {
     else process.env.DSH_HOME = prevHome;
   });
 
-  // 挂起型服务器：子进程常驻但不吐 MCP 帧 → transport.connect() 恒 pending。
-  const hangServer = (name) => ({
-    name,
-    transport: "stdio",
-    command: process.execPath,
-    args: ["-e", "setInterval(() => {}, 1e6)"],
-    reconnect: { enabled: false },
-  });
+  /** 挂起型服务器：命令永不执行（假 loader 不 spawn），挂起完全由装载窗口的 ready 时序撑。 */
+  const hangServer = (name) => quietServer(name);
 
   async function allModeFixture() {
     const { manager, store } = makeManager(homeDir);
     manager.middlewareMode = "all";
     await manager.initMiddleware("all", {});
+    // 装载窗口按在 deferred：attempt 一直 pending，直到本用例收口时放闸。
+    loaderScript.ready = "deferred";
     return { manager, store, mw: manager.middleware };
   }
 
@@ -2364,16 +2418,20 @@ describe("dispose", () => {
 
 // 中间层模式 summary 投影（#228 回归：连接池状态投影到浮窗/summary） ----
 describe("中间层模式 summary 投影（#228）", () => {
-  const connectedEntry = () => ({
-    server: undefined,
-    client: undefined,
-    transport: undefined,
+  // 池条目的态不再由测试手改 entry.status：summarize 经 statusOf 读时刷新（裁定 U），输入面是
+  // 「配置 + 账本句柄 + 注册面前缀」。夹具因此按新 ConnectionEntry 造，并让注册面携带该 id 前缀
+  // ——换引擎后「已连上」只有这一条正向证据（官方不暴露状态 API）。
+  const POOL_ID = "id-p1";
+  const connectedEntry = (name = "p1", id = POOL_ID) => ({
+    server: { name, transport: "stdio", command: "pcmd", enabled: true },
+    id,
+    handle: { disposed: false },
     status: "connected",
     error: undefined,
     connectedAt: Date.now(),
-    reconnectTimer: undefined,
+    readySettled: true,
+    everConnected: true,
     disposed: false,
-    failedAttempts: 0,
   });
 
   async function projectionBase() {
@@ -2399,7 +2457,11 @@ describe("中间层模式 summary 投影（#228）", () => {
     // 连接条目完全由本测试手工注入，杜绝 spawn 真进程与后台重连污染。
     mw.disabledByRoot.set(proj, new Set(["p1"]));
     const unit = await mw.projectUnitFor(proj);
-    // 注入连接池条目 + 目录缓存（模拟已握手成功，不 spawn 子进程）。
+    // 这条禁用只为短路惰性建连；条目改由本测试手工注入，要按真实运行态投影，故立即撤回。
+    unit.userDisabled.delete("p1");
+    // 注册面携带该 id 前缀 = 「已连上」；不带它 statusOf 会如实投影成 failed / reconnecting。
+    manager.ctx.tools.entries = [{ name: `mcp__${POOL_ID}__t1` }];
+    // 注入连接池条目 + 目录缓存（模拟已握手成功，不派官方实例）。
     unit.connections.set("p1", connectedEntry());
     unit.catalog.set("p1", {
       discoveredAt: Date.now(),
@@ -2450,33 +2512,38 @@ describe("中间层模式 summary 投影（#228）", () => {
     expect(manager.summary().counts.connected).toBe(1);
   });
 
+  // 状态不再靠手改 entry.status 伪造：投影输入换成「注册面前缀 + readySettled + everConnected」。
   it("failed 态：error 详情投影（浮窗红字展示来源）", async () => {
     const { manager, entry } = await projectionBase();
-    entry.status = "failed";
-    entry.error = new Error("spawn pcmd ENOENT");
+    // 首连就没成功（注册面无该前缀、everConnected 为假）→ failed，error 透出官方判词。
+    manager.ctx.tools.entries = [];
+    entry.everConnected = false;
+    entry.error = new Error("官方装载失败：连接超时");
     const failed = manager.summarize(manager.projectStore.find("p1"), "project");
     expect(failed.status).toBe("failed");
   });
 
   it("failed 态：error 文案投影", async () => {
     const { manager, entry } = await projectionBase();
-    entry.status = "failed";
-    entry.error = new Error("spawn pcmd ENOENT");
+    manager.ctx.tools.entries = [];
+    entry.everConnected = false;
+    entry.error = new Error("官方装载失败：连接超时");
     const failed = manager.summarize(manager.projectStore.find("p1"), "project");
-    expect(failed.error).toBe("spawn pcmd ENOENT");
+    expect(failed.error).toBe("官方装载失败：连接超时");
   });
 
   it("connecting 态投影", async () => {
     const { manager, entry } = await projectionBase();
-    entry.status = "connecting";
+    // 装载等待窗口未结算（readySettled 为假）→ connecting 纯属我方动作面。
+    entry.readySettled = false;
     entry.error = undefined;
     expect(manager.summarize(manager.projectStore.find("p1"), "project").status).toBe("connecting");
   });
 
   async function unavailableBase() {
     const fixture = await projectionBase();
-    // connected + 目录发现失败（unavailable）→ 0 工具且透出原因到 error。
-    fixture.entry.status = "connected";
+    // connected（投影输入面不变：readySettled / everConnected / 注册面前缀都在）+ 目录发现失败
+    // （unavailable）→ 0 工具且透出原因到 error。
     fixture.unit.catalog.set("p1", {
       discoveredAt: 0,
       tools: new Map(),
@@ -2550,9 +2617,14 @@ describe("中间层模式 summary 投影（#228）", () => {
     // all 模式：全局服务器经虚拟 root @global 走池 → 同样从池投影。
     fixture.manager.middlewareMode = "all";
     fixture.manager.supervisors.delete("g1");
+    // 注册面同时带 g1 的 id 前缀：summarize 经 statusOf 重算，没有前缀就不是 connected。
+    fixture.manager.ctx.tools.entries = [
+      { name: `mcp__${POOL_ID}__t1` },
+      { name: "mcp__id-g1__gt" },
+    ];
     fixture.mw.units.set("@global", {
       root: "@global",
-      connections: new Map([["g1", connectedEntry()]]),
+      connections: new Map([["g1", connectedEntry("g1", "id-g1")]]),
       catalog: new Map([
         [
           "g1",

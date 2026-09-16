@@ -33,7 +33,7 @@
       "interfaceFacades": 16,
       "leafValueEdges": 18,
       "fileValueEdges": 144,
-      "crossModuleRefs": 189,
+      "crossModuleRefs": 193,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],

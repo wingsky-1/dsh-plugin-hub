@@ -65,6 +65,15 @@ export interface RoutesManager {
   catalogCache: Map<string, unknown>;
   /** 中间层模式（off/project/all；health 计数展示用，缺省 off）。 */
   middlewareMode?: string;
-  /** 中间层连接池（health 补中间层计数；结构面与 McpMiddleware.units 兼容）。 */
-  middleware?: { units: Map<string, { connections: Map<string, { status: string }> }> } | undefined;
+  /** 中间层连接池（health 补中间层计数；结构面与 McpMiddleware 兼容）。 */
+  middleware?:
+    | {
+        units: Map<string, { root: string; connections: Map<string, { status: string }> }>;
+        /**
+         * 读时刷新的六态投影。health 计数必须经它取状态：`entry.status` 只在装载等待窗口
+         * 结算时写入，官方的后台重连与预算耗尽没有第二处写入点，直读会停在那一刻而失真。
+         */
+        statusOf(root: string, serverName: string): string | undefined;
+      }
+    | undefined;
 }

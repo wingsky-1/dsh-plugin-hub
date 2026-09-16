@@ -18,26 +18,34 @@
  * #767 S1-3a：ws_mcp_call 执行路径（callTool 与 hostRedact）已迁 servers/dispatch 域，
  * callTool 缩成转发壳——执行器经 runtimePorts 的 dispatch 端口取，单元/策略/脱敏源仍由本类持有。
  *
+ * #767 S1-4d：连接栈换成官方 @deepseek-ai/dsh-mcp-client。本类不再自建 transport / client，
+ * 也不再自己排重连与防双进程探测——装载、拆卸与六态投影一律经 runtimePorts 的 lifecycle 端口
+ * 交还 servers/lifecycle 的账本（官方 serverName 在应用根上活体预留，同 id 未释放就重挂当场抛）。
+ * 目录改按 `ctx.tools.schemas()` 里 `mcp__<id>__` 前缀投影（裁定 W/K），执行路径改道
+ * `ctx.tools.execute`（见 servers/dispatch）。
+ *
  * W8 端口接线：跨域能力（catalog 新鲜判定与装箱、pipeline 投影/超时/取消息/脱敏/参数归一/
- * 策略裁决、workspace 全名解析与拼装）一律经 `impl/service` 的 `runtimePorts.get()` 取；
- * 同子层的 reconnect/transport/limits 与跨端层 shared 的 MIDDLEWARE_GLOBAL_ROOT 直取，
- * 不占端口——端口只承载跨域能力。
+ * 策略裁决、workspace 全名解析与拼装、lifecycle 装载/拆卸/投影）一律经 `impl/service` 的
+ * `runtimePorts.get()` 取；同子层的 supervisor（公名派生）与 limits 直取，跨端层 shared 的
+ * MIDDLEWARE_GLOBAL_ROOT 经共享门面取，不占端口——端口只承载跨域能力。
  */
 
 import { mkdir, readFile, rename, writeFile, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
+import type {
+  ToolExecutionInput,
+  ToolExecutionResult,
+  ToolExecutionToken,
+} from "@deepseek-ai/dsh-tools";
 import type { ServerConfig } from "../../config/interface.ts";
-import { MCPClient } from "./protocol.ts";
-import { resolveReconnect } from "./reconnect.ts";
-import { createTransport } from "./transport.ts";
+import { publicToolName } from "./supervisor.ts";
+import { CALL_TIMEOUT_MS, CATALOG_TTL_MS } from "./limits.ts";
 import {
-  CONNECT_TIMEOUT_MS,
-  DISCOVERY_TIMEOUT_MS,
-  CALL_TIMEOUT_MS,
-  CATALOG_TTL_MS,
-} from "./limits.ts";
-import { MIDDLEWARE_GLOBAL_ROOT } from "../../../shared/interface.ts";
+  MIDDLEWARE_GLOBAL_ROOT,
+  SERVER_STATES,
+  type ServerState,
+} from "../../../shared/interface.ts";
 import { runtimePorts } from "./impl/service/index.ts";
 import type { MiddlewareHost } from "./deps.ts";
 import type { ProjectUnit, ConnectionEntry } from "./impl/middleware/type.ts";
@@ -61,6 +69,13 @@ export class McpMiddleware {
   disabledByRoot: Map<string, Set<string>> = new Map();
   /** 工具级禁用（root → server → Set<tool>；root=@global 跨工作空间共享）。 */
   disabledTools: DisabledToolsMap = new Map();
+  /**
+   * 在飞的转发子调用登记表：我方 dispatch 经 `ctx.tools.execute` 派出去的子调用，其
+   * `parent` 就是这次外层调用的 token，派发前登记、结算后注销（try/finally）。
+   * pre-execute guard 只按发起者放行（裁定 R/Z）——集合外的一律走工具级裁决，
+   * 模型直呼不会因为名字像就被放行。集合随实例消亡，热切换重建中间层即清空。
+   */
+  forwarding: Set<ToolExecutionToken> = new Set();
 
   constructor(host: MiddlewareHost, policy: MiddlewarePolicy = {}) {
     this.host = host;
@@ -127,11 +142,10 @@ export class McpMiddleware {
 
   /** 废弃某服务器跨全部单元的在途建连标记。
    *  不变式：in-flight 去重只对「存活 entry 的重复建连」有意义——entry 被强制
-   *  拆除（remove/update/disconnect）时，同名旧 attempt 可能仍 pending（connect
-   *  挂至 CONNECT_TIMEOUT_MS 才超时；stdio close 打断时 SDK 不 reject），残留
-   *  标记会把后续 ensureConnected（含 force 的用户显式「连接」）全部吞掉，且旧
-   *  attempt 收敛时命中 disposed 守卫静默返回、无人补连 → 服务器最长 10s 内
-   *  无法重连。拆除时必须同步废弃标记；旧 attempt 稍后收敛由 connectInternal
+   *  拆除（remove/update/disconnect）时，同名旧 attempt 可能仍 pending（装载等待窗口
+   *  在预算内不返回），残留标记会把后续 ensureConnected（含 force 的用户显式「连接」）
+   *  全部吞掉，且旧 attempt 收敛时命中让位/disposed 守卫静默返回、无人补连 → 这段时间内
+   *  该服务器无法重连。拆除时必须同步废弃标记；旧 attempt 稍后收敛由 connectInternal
    *  的让位/disposed 守卫兜底，无副作用。 */
   abandonInFlight(serverName: string): void {
     for (const unit of this.units.values()) unit.inFlight.delete(serverName);
@@ -145,37 +159,32 @@ export class McpMiddleware {
     const unit = this.units.get(root);
     if (unit === undefined) return;
     const force = opts.force === true;
-    const { pipeline } = runtimePorts.get();
+    const { lifecycle } = runtimePorts.get();
     const entry = unit.connections.get(serverName);
-    // 非 force：已 connected/connecting 短路，防重复建连。
-    // force（用户显式「连接」/切回前台恢复）：忽略当前状态，总是受控重建——
-    // 修半开死连接卡在 connected 后 connect/refresh 均短路失效（#412）。
-    if (
-      !force &&
-      entry !== undefined &&
-      (entry.status === "connected" || entry.status === "connecting")
-    )
+    // 短路用**读时刷新后**的状态（statusOf，裁定 U）：非 force 时 connected/connecting 不进
+    // （防重复建连）；reconnecting 同样不进——官方自己在退避重连，我方重挂会撞同一 id 的
+    // serverName 活体预留（实测 §2.9-16）。force（用户显式「连接」/切回前台恢复）忽略当前
+    // 状态总是受控重建——修半开死连接卡在 connected 后 connect/refresh 均短路失效（#412）。
+    const state = this.statusOf(root, serverName);
+    if (!force && (state === "connected" || state === "connecting" || state === "reconnecting")) {
       return;
-    // 重连路径：旧 entry（failed，或 force 重建的死连接）的 transport 先 close，
-    // 防 streamable-http 半开 socket 累积泄漏（P1 修复）。
-    if (entry !== undefined) {
-      const oldClient = entry.client;
-      const oldTransport = entry.transport;
-      entry.client = undefined;
-      entry.transport = undefined;
-      if (oldClient !== undefined && oldTransport !== undefined) {
-        void oldTransport.close().catch(() => {});
-      }
+    }
+    // 重建路径先拆旧代际并**等**结算（裁定 V）：官方 serverName 是整个应用根的活体预留，
+    // 同 id 未释放就重挂当场抛。虚拟单元（toolDefinitions）没有官方实例：不进账本也不置
+    // 废弃位——它的重建语义由下面 wrapped 分支的同状态短路决定（#413 原语义）。
+    if (entry !== undefined && !Array.isArray(entry.server.toolDefinitions)) {
+      entry.disposed = true;
+      if (entry.id !== undefined) await lifecycle.disposeServer(entry.id);
     }
     const servers = await this.host.projectServersFor(root);
     const server = servers?.find((entry) => entry.name === serverName);
     if (server === undefined || server.enabled === false) return;
     // #413：封装定义服务器（runtime 注入 toolDefinitions）——
-    // execute 为调用方 JS 直呼 CLI，不经远端 MCP callTool，**不 spawn transport**。
-    // 中间层以「虚拟连接」（无 client/transport，status=connected）+ 目录从
-    // toolDefinitions 投影存在；执行走 callTool 的封装直呼分支。
+    // execute 为调用方 JS 直呼 CLI，不经远端 MCP，**不派官方实例**。
+    // 中间层以「虚拟连接」（无 id/handle，status=connected）+ 目录从 toolDefinitions
+    // 投影存在；执行走 callTool 的封装直呼分支。
     // 判定用 Array.isArray（空数组也算封装声明——调用方显式声明无工具，
-    // 不应回退远端 spawn）。
+    // 不应回退远端装载）。
     if (Array.isArray(server.toolDefinitions)) {
       const existingWrapped = unit.connections.get(serverName);
       if (
@@ -185,14 +194,14 @@ export class McpMiddleware {
         return;
       const wrappedEntry: ConnectionEntry = {
         server,
-        client: undefined,
-        transport: undefined,
+        id: undefined,
+        handle: undefined,
         status: "connected",
         error: undefined,
         connectedAt: Date.now(),
-        reconnectTimer: undefined,
+        readySettled: true,
+        everConnected: true,
         disposed: false,
-        failedAttempts: 0,
       };
       unit.connections.set(serverName, wrappedEntry);
       this.projectWrappedCatalog(root, serverName, server);
@@ -202,203 +211,109 @@ export class McpMiddleware {
       this.host.emitStatus();
       return;
     }
-    // 与官方 dsh-mcp-client 并存（方案 E2）：运行时探测官方/其他插件是否已注册
-    // 同名 server 的 mcp__ 工具（说明该 server 已有其他实例连接）→ 跳过本实例，
-    // 防同一 server 双进程。探测失败（tools.schemas 不可用）不阻塞连接。
-    if (this.host.ctx.tools !== undefined && typeof this.host.ctx.tools.schemas === "function") {
-      try {
-        const registered = this.host.ctx.tools.schemas();
-        const prefix = `mcp__${serverName}__`;
-        if (
-          Array.isArray(registered) &&
-          registered.some(
-            (schema) =>
-              typeof schema?.name === "string" && (schema.name as string).startsWith(prefix),
-          )
-        ) {
-          this.host.logger.warn(
-            `dsh-mcp-manager(${serverName}@${root}): server 已由其他插件（如官方 dsh-mcp-client）注册 mcp__ 工具，跳过本实例连接（防双进程）`,
-          );
-          // F5（#382）：命中多为热更新/模式切换窗口期——旧实例 mcp__ 注册尚未
-          // 注销（dispose 为 fire-and-forget）。确保存在可挂重试定时器的 entry
-          // （首次连接无旧 entry → 落 failed 占位；旧 entry 保留其退避语义），
-          // 安排一次有界延迟重试，避免窗口期「一次定终身」掉线；重试经
-          // ensureConnected（尊重 userDisabled + in-flight 去重），再命中仍跳过
-          // （官方 client 真接管场景不空转）。
-          // #412 force 重建：复用旧 entry 可能是 connected 死连接，必须置
-          // failed——否则 probeRetry 3s 后 ensureConnected（无 force）对
-          // connected 短路，重试永不执行（死循环）。
-          const retryEntry = unit.connections.get(serverName) ?? {
-            server,
-            client: undefined,
-            transport: undefined,
-            status: "failed",
-            error: undefined,
-            connectedAt: undefined,
-            reconnectTimer: undefined,
-            disposed: false,
-            failedAttempts: 0,
-          };
-          retryEntry.status = "failed";
-          retryEntry.client = undefined;
-          retryEntry.transport = undefined;
-          unit.connections.set(serverName, retryEntry);
-          this.scheduleProbeRetry(root, serverName);
-          return;
-        }
-      } catch {
-        // 探测失败不阻塞
-      }
-    }
-    // 让位校验：本次 attempt 期间（上方 await 窗口内）entry 已被强制拆除并由
-    // 更新的 attempt 重建（abandonInFlight 语义）——在 spawn 前退避：既防旧配置
-    // 的 entry 覆盖新 entry，也不遗孤 transport（退避点在 createTransport 之前）。
+    // 防双进程探测（#382 F5）与它的一次性重试已删除：换引擎后「同名服务器只能有一个实例」
+    // 由官方 serverName 的活体预留保证（同 id 二次挂载当场抛，实测 §2.9-16），跨 root 同名
+    // 各自由 (scope,name) 分配的 id 区分——探测与重试都是旧栈的补丁，留着只会与官方判重打架。
+    // 让位校验：本次 attempt 期间（上方 await 窗口内）entry 已被强制拆除并由更新的 attempt
+    // 重建（abandonInFlight 语义）——在装载前退避：既防旧配置的 entry 覆盖新 entry，也不把
+    // 新代际的账本键错拆掉（拆除点已挪到让位校验与本处之后）。
     const current = unit.connections.get(serverName);
     if (current !== undefined && current !== entry) return;
-    const transport = createTransport(server);
-    const client = new MCPClient(transport);
     const newEntry: ConnectionEntry = {
       server,
-      client,
-      transport,
+      id: undefined,
+      handle: undefined,
       status: "connecting",
       error: undefined,
       connectedAt: undefined,
-      reconnectTimer: undefined,
+      readySettled: false,
+      everConnected: false,
       disposed: false,
-      failedAttempts: entry?.failedAttempts ?? 0,
-      probeRetried: entry?.probeRetried ?? false,
     };
     unit.connections.set(serverName, newEntry);
-    const closeHandler = (error: Error) => {
-      if (newEntry.disposed) return;
-      if (unit.connections.get(serverName) !== newEntry) return;
-      // B4/B18：状态投影交给 scheduleReconnect 统一裁决（预算内 reconnecting /
-      // 耗尽 failed）——closeHandler 只记账（failedAttempts）与排重连。
-      newEntry.error = error;
-      newEntry.connectedAt = undefined;
-      // B18：连上后断开同样计入 failedAttempts——否则退避恒 initialDelay（500ms
-      // 抖动），与「从未连上」的失败路径退避口径分裂。
-      newEntry.failedAttempts += 1;
-      this.scheduleReconnect(root, serverName);
-    };
-    if ("onClose" in transport && transport.onClose !== undefined) transport.onClose(closeHandler);
+    let mounted: Awaited<ReturnType<typeof lifecycle.mountServer>>;
     try {
-      await pipeline.withTimeout(
-        transport.connect(),
-        CONNECT_TIMEOUT_MS,
-        `connect timed out (${CONNECT_TIMEOUT_MS}ms)`,
-      );
-      await pipeline.withTimeout(
-        client.initialize(),
-        CONNECT_TIMEOUT_MS,
-        `initialize timed out (${CONNECT_TIMEOUT_MS}ms)`,
-      );
-      await this.discover(root, serverName);
-      if (newEntry.disposed || unit.connections.get(serverName) !== newEntry) return;
-      newEntry.status = "connected";
-      newEntry.connectedAt = Date.now();
-      newEntry.failedAttempts = 0;
-      newEntry.probeRetried = false;
-      this.host.logger.info(`dsh-mcp-manager(${serverName}@${root}): connected`);
-      this.host.emitStatus();
+      mounted = await lifecycle.mountServer({
+        root,
+        server,
+        // 六态窗口内只推进状态：装上之后 id/handle 才回得来，这里不能碰代际守卫。
+        onState: (next: ServerState) => {
+          if (newEntry.disposed) return;
+          newEntry.status = next;
+          this.host.emitStatus();
+        },
+      });
     } catch (error) {
-      if (newEntry.disposed || unit.connections.get(serverName) !== newEntry) return;
+      // 装载期异常（loader.load 失败 / 账本撞键等）：实例没挂上，只能落 failed 等人重试。
+      newEntry.status = "failed";
+      newEntry.error = this.redact(error);
+      newEntry.readySettled = true;
       this.host.logger.warn(
-        `dsh-mcp-manager(${serverName}@${root}): connection attempt failed: ${this.redact(error)}`,
+        `dsh-mcp-manager(${serverName}@${root}): mount failed: ${this.redact(error)}`,
       );
-      // B4/B18：状态投影交给 scheduleReconnect 统一裁决（预算内 reconnecting /
-      // 耗尽 failed）——catch 只记账（failedAttempts）与排重连。
-      newEntry.error = error;
-      newEntry.failedAttempts += 1;
-      this.scheduleReconnect(root, serverName);
-    }
-  }
-
-  /**
-   * 后台重连（有界指数退避：initialDelay 起、maxDelay 上限、maxAttempts 次后停止
-   * 后台重试；用户手动 connect 或 ws_mcp_call 触发时重新尝试——常驻语义）。
-   * 退避/预算从 connection/runtime 单一解析函数取（与 supervisor resolveReconnect
-   * 同口径，B18）；状态投影：预算内 reconnecting（B4，客户端 counts.reconnecting /
-   * summarize 分级依赖此态）、预算耗尽或 reconnect.enabled=false → failed。
-   */
-  private scheduleReconnect(root: string, serverName: string): void {
-    const unit = this.units.get(root);
-    if (unit === undefined) return;
-    const entry = unit.connections.get(serverName);
-    if (entry === undefined || entry.disposed) return;
-    if (entry.reconnectTimer !== undefined) return;
-    // B18：解析走 connection/runtime 单一事实源（现状内联 500/30000/10 且忽略
-    // enabled 字段，与 supervisor resolveReconnect 口径分裂）。
-    const policy = resolveReconnect(entry.server?.reconnect);
-    if (!policy.enabled) {
-      // B18：reconnect.enabled=false → 不安排后台重试（保持 failed 状态）。
-      entry.status = "failed";
       this.host.emitStatus();
       return;
     }
-    if (entry.failedAttempts > policy.maxAttempts) {
-      // 预算耗尽：停止后台重试（保持 failed 状态；手动/调用触发可再试）。
-      entry.status = "failed";
-      this.host.emitStatus();
-      this.host.logger.warn(
-        `dsh-mcp-manager(${serverName}@${root}): reconnect gave up after ${policy.maxAttempts} attempts`,
-      );
+    // 账本键与句柄只有装载返回后才可得，而窗口内的 onState 可能已点亮状态——就绪位只能在此补写。
+    newEntry.id = mounted.id;
+    newEntry.handle = mounted.entry.handle;
+    newEntry.readySettled = true;
+    // 代际守卫（拆除期竞态）：拆除动作到达后这一代已不在册，但实例已经挂上——必须发起释放，
+    // 否则官方实例与它占着的 serverName 预留会永久泄漏。
+    if (newEntry.disposed || unit.connections.get(serverName) !== newEntry) {
+      lifecycle.releaseServer(mounted.id);
       return;
     }
-    // B4：退避窗口内状态投影为 reconnecting（区别于预算耗尽的 failed）。
-    entry.status = "reconnecting";
-    this.host.emitStatus();
-    const delayMs = Math.min(
-      policy.maxDelayMs,
-      policy.initialDelayMs * 2 ** Math.min(entry.failedAttempts - 1, 6),
-    );
-    entry.reconnectTimer = setTimeout(() => {
-      entry.reconnectTimer = undefined;
-      if (entry.disposed) return;
-      void this.connectInternal(root, serverName);
-    }, delayMs);
-    entry.reconnectTimer.unref?.();
+    if (mounted.outcome.kind === "settled") {
+      newEntry.status = mounted.outcome.state;
+      newEntry.error = mounted.outcome.error;
+      if (mounted.outcome.state === "connected") {
+        newEntry.everConnected = true;
+        newEntry.connectedAt = Date.now();
+        await this.discover(root, serverName);
+        this.host.logger.info(`dsh-mcp-manager(${serverName}@${root}): connected`);
+      } else if (mounted.outcome.state === "failed") {
+        // 文案已是「我方判词 + 官方原文」（窗口把归属本实例的官方日志接在了 error 上）。
+        this.host.logger.warn(
+          `dsh-mcp-manager(${serverName}@${root}): connection failed: ${mounted.outcome.error}`,
+        );
+      }
+      this.host.emitStatus();
+    }
+    // outcome.kind === "discarded"：本次结算作废，状态由拆除路径负责，这里不动。
   }
 
   /**
-   * 防双进程探测命中后的一次性有界重试（#382 F5）。定时器复用 entry.reconnectTimer
-   * 槽位（teardownUnit/disconnect 路径统一清理）；重试经 ensureConnected——它
-   * 查 userDisabled + in-flight 去重，不会复活用户已断开的服务器、不与手动重连
-   * 并发冲突。每代 entry 只重试一次（probeRetried 标记；连接成功复位），官方
-   * dsh-mcp-client 真接管时不会反复空转。
+   * 把工具注册面上属于本实例的条目投影进目录（裁定 W + 裁定 K）。
+   *
+   * 采集动作本身已交还官方（syncTools 负责分页、注册、`tools/list_changed`），本块只剩
+   * 「注册面 → per-root 目录」这一层投影：官方注册名是 `mcp__<id>__<tool>`，去掉前缀即裸名，
+   * description 与 parameters 都在 `schemas()` 里（实测 §2.9-4），不需要第二份工具清单。
+   * `entry.id` 不存在（虚拟单元、或尚未装载完成）时无面可投影，直接返回。
    */
-  private scheduleProbeRetry(root: string, serverName: string): void {
-    const unit = this.units.get(root);
-    if (unit === undefined) return;
-    const entry = unit.connections.get(serverName);
-    if (entry === undefined || entry.disposed) return;
-    if (entry.reconnectTimer !== undefined) return;
-    if (entry.probeRetried === true) return;
-    entry.probeRetried = true;
-    const PROBE_RETRY_DELAY_MS = 3000;
-    entry.reconnectTimer = setTimeout(() => {
-      entry.reconnectTimer = undefined;
-      if (entry.disposed) return;
-      void this.ensureConnected(root, serverName);
-    }, PROBE_RETRY_DELAY_MS);
-    entry.reconnectTimer.unref?.();
-  }
-
-  /** 发现工具并写入目录（per-root in-flight 去重）。 */
   async discover(root: string, serverName: string): Promise<void> {
     const unit = this.units.get(root);
     if (unit === undefined) return;
     const entry = unit.connections.get(serverName);
-    if (entry === undefined || entry.client === undefined) return;
-    const { catalog, pipeline } = runtimePorts.get();
+    if (entry === undefined || entry.id === undefined) return;
+    const { catalog } = runtimePorts.get();
     if (catalog.isCatalogFresh(unit.catalog.get(serverName))) return; // fresh
+    const prefix = `mcp__${entry.id}__`;
     try {
-      const tools = await pipeline.withTimeout(
-        this.listToolsAll(entry.client),
-        DISCOVERY_TIMEOUT_MS,
-        `discovery timed out (${DISCOVERY_TIMEOUT_MS}ms)`,
-      );
+      const tools: Array<{
+        name: string;
+        description: string;
+        inputSchema: Record<string, unknown>;
+      }> = [];
+      for (const schema of this.registeredSchemas()) {
+        const name = schema?.name;
+        if (typeof name !== "string" || !name.startsWith(prefix)) continue;
+        tools.push({
+          name: name.slice(prefix.length),
+          description: typeof schema.description === "string" ? schema.description : "",
+          inputSchema: (schema.parameters ?? {}) as Record<string, unknown>,
+        });
+      }
       unit.catalog.set(serverName, {
         discoveredAt: Date.now(),
         tools: catalog.boundCatalogTools(tools),
@@ -441,19 +356,74 @@ export class McpMiddleware {
     return runtimePorts.get().pipeline.createRedactor(this.allServers())(error);
   }
 
-  private async listToolsAll(client: MCPClient): Promise<Array<Record<string, unknown>>> {
-    const all: Array<Record<string, unknown>> = [];
-    let cursor: string | undefined;
-    do {
-      const response = (await client.listTools(cursor)) as
-        { tools?: unknown[]; nextCursor?: unknown } | undefined;
-      const tools = response?.tools ?? [];
-      for (const tool of tools) {
-        if (typeof tool === "object" && tool !== null) all.push(tool as Record<string, unknown>);
-      }
-      cursor = response?.nextCursor as string | undefined;
-    } while (cursor !== undefined && cursor !== null && cursor !== "");
-    return all;
+  /** 注册面读口：取不到/非数组一律当空——探测与投影都不许因为读不到注册表而阻塞。 */
+  private registeredSchemas(): ReadonlyArray<{
+    name?: unknown;
+    description?: unknown;
+    parameters?: unknown;
+  }> {
+    const tools = this.host.ctx.tools;
+    if (tools === undefined || typeof tools.schemas !== "function") return [];
+    try {
+      const schemas = tools.schemas();
+      return Array.isArray(schemas) ? schemas : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * 该 id 前缀下是否已有注册工具——「已连上」的唯一正向证据（官方不暴露状态 API，
+   * 成功连接零日志：实测 §2.7 spike2 / §2.9-4）。
+   */
+  private hasRegisteredTools(id: string): boolean {
+    const prefix = `mcp__${id}__`;
+    return this.registeredSchemas().some(
+      (schema) => typeof schema?.name === "string" && schema.name.startsWith(prefix),
+    );
+  }
+
+  /**
+   * 读时刷新的六态投影（裁定 U）：域外读点（manager.summarize）与重建短路都从这里取状态，
+   * 不再直接读 `entry.status`。为什么必须刷新：官方不暴露状态 API，而「曾连上、工具前缀消失」
+   * 只在读的这一刻才可判——不重算，GUI 会永远停在陈旧的 connected（设计 §3.1/§3.3）。
+   */
+  statusOf(root: string, serverName: string): ServerState | undefined {
+    const unit = this.units.get(root);
+    const entry = unit?.connections.get(serverName);
+    if (unit === undefined || entry === undefined) return undefined;
+    // 虚拟连接单元（toolDefinitions）没有官方实例、从不 mount：它的态由配置面与拆除位直接
+    // 决定（#413「虚拟连接即 connected」是既有契约），进投影只会让「无 id / 无句柄」这些
+    // 与它无关的输入面参与裁决。
+    if (Array.isArray(entry.server.toolDefinitions)) {
+      const state: ServerState =
+        entry.server.enabled === false || unit.userDisabled.has(serverName)
+          ? SERVER_STATES.disabled
+          : entry.disposed
+            ? SERVER_STATES.stopped
+            : SERVER_STATES.connected;
+      entry.status = state;
+      return state;
+    }
+    const { lifecycle } = runtimePorts.get();
+    const state = lifecycle.projectServerState(entry.id ?? "", {
+      enabled: entry.server.enabled !== false,
+      userDisabled: unit.userDisabled.has(serverName),
+      tornDown: entry.disposed,
+      disposed: entry.handle?.disposed === true,
+      // 条目落进 connections 就等于「我方已发起 mount」（远程分支唯一的创建点）。不用
+      // entry.id 当判据：id 要等装载窗口结算才回得来，拿它判会让整个窗口期投影成 stopped，
+      // 且 connecting 永远不可达——而窗口期的正确状态就是 connecting。
+      mountStarted: true,
+      readySettled: entry.readySettled,
+      // 窗口在途且已判废才算过期：常规路径下 readySettled 会在写回状态前为真。
+      windowExpired: entry.status === "failed" && !entry.readySettled,
+      everConnected: entry.everConnected,
+      reconnectEnabled: entry.server.reconnect?.enabled !== false,
+      hasTools: (id) => this.hasRegisteredTools(id),
+    });
+    entry.status = state;
+    return state;
   }
 
   /** 目录 last-good 持久化（空采集不写盘；public 供测试与外部触发）。 */
@@ -582,34 +552,62 @@ export class McpMiddleware {
     }
   }
 
-  /** 执行 ws_mcp_call。本片（#767 S1-3a）只是转发壳：路由校验、策略裁决、两条执行分支与
-   * 结果投影已搬进 servers/dispatch 域（impl/call 的 executeMcpCall），中间层仍持有单元表、
-   * 策略、脱敏源与两条上游端口，经显式入参按引用递入——不落第二份事实源。
-   * @param agent 调用方会话 agent（透传给封装定义的 execute，供 session cwd
-   *   解析；#413 封装直呼分支需要）。 */
+  /**
+   * 执行 ws_mcp_call。本片（#767 S1-3a）起只是转发壳：路由校验、策略裁决、两条执行分支与
+   * 结果投影在 servers/dispatch 域（impl/call 的 executeMcpCall），中间层仍持有单元表、
+   * 策略、脱敏源与**转发登记表**，经显式入参按引用递入——不落第二份事实源。
+   *
+   * @param identity 调用方身份（`ToolRunContext` 里 dispatch 真正需要的字段）。为什么不是
+   *   单个 agent：转发改道后 dispatch 要合成子调用 id 并透传 parent（裁定 R/Y/Z），而
+   *   `parent` 同时是「这次调用出自我方转发」的标识——guard 只放行同时登记过的发起者。
+   */
   async callTool(
     fullName: string,
     toolRaw: string,
     rawArgs: unknown,
     signal: AbortSignal | undefined,
-    agent?: unknown,
+    identity: {
+      agent?: unknown;
+      callId: ToolExecutionInput["callId"];
+      rootCallId?: ToolExecutionInput["rootCallId"];
+      parent?: ToolExecutionToken;
+    },
   ): Promise<unknown> {
     const { dispatch, pipeline, workspace } = runtimePorts.get();
-    return dispatch.executeMcpCall({
-      fullName,
-      toolRaw,
-      rawArgs,
-      signal,
-      agent,
-      units: this.units,
-      allServers: () => this.allServers(),
-      disabledTools: this.disabledTools,
-      policy: this.policy,
-      catalogTtlMs: CATALOG_TTL_MS,
-      defaultCallTimeoutMs: CALL_TIMEOUT_MS,
-      pipeline,
-      workspace,
-    });
+    // 公名派生只在这里发生一次：唯一派生点是 supervisor 的 publicToolName，dispatch 拿名字用、
+    // 不得自己拼 `mcp__<id>__<tool>`——哈希/截断规则一旦分叉，某些工具会永远查不到。
+    const registeredNameFor = (id: string, tool: string): string => publicToolName(id, tool);
+    // 必须箭头绑定：注册表方法裸引用会丢 this（dispatch 直接把它当能力调用）。
+    const execute = (input: ToolExecutionInput): Promise<ToolExecutionResult> =>
+      this.host.ctx.tools.execute(input);
+    const parent = identity.parent;
+    if (parent !== undefined) this.forwarding.add(parent);
+    try {
+      return await dispatch.executeMcpCall({
+        fullName,
+        toolRaw,
+        rawArgs,
+        signal,
+        agent: identity.agent,
+        callId: identity.callId,
+        ...(identity.rootCallId === undefined ? {} : { rootCallId: identity.rootCallId }),
+        ...(parent === undefined ? {} : { parent }),
+        forwarding: this.forwarding,
+        registeredNameFor,
+        execute,
+        units: this.units,
+        allServers: () => this.allServers(),
+        disabledTools: this.disabledTools,
+        policy: this.policy,
+        catalogTtlMs: CATALOG_TTL_MS,
+        defaultCallTimeoutMs: CALL_TIMEOUT_MS,
+        pipeline,
+        workspace,
+      });
+    } finally {
+      // finally 是硬要求（RECON 反例 1）：漏了这一步，残留 token 就是一处永久放行位。
+      if (parent !== undefined) this.forwarding.delete(parent);
+    }
   }
 
   private allServers(): ServerConfig[] {
@@ -618,6 +616,25 @@ export class McpMiddleware {
       for (const entry of unit.connections.values()) servers.push(entry.server);
     }
     return servers;
+  }
+
+  /**
+   * 拆掉一个 (root, server) 的连接（裁定 X）：换引擎后**账本化拆除的唯一落点**，
+   * disconnect / remove / update / unregister / evict / 插件卸载共用。
+   *
+   * 只**发起** release、不等结算（裁定 V）：拆除是同步语义，而官方 dispose 会等在途首连
+   * （挂死的服务器能等到 SDK 的 60s）；要等结算的重建路径走 connectInternal 的 disposeServer。
+   *
+   * @returns 是否真的拆掉了在册条目（调用方据此决定要不要广播状态）。
+   */
+  releaseConnection(root: string, serverName: string): boolean {
+    const unit = this.units.get(root);
+    const entry = unit?.connections.get(serverName);
+    if (unit === undefined || entry === undefined) return false;
+    entry.disposed = true;
+    if (entry.id !== undefined) runtimePorts.get().lifecycle.releaseServer(entry.id);
+    unit.connections.delete(serverName);
+    return true;
   }
 
   /** LRU 淘汰：无活动引用（lastTouchedAt 最旧）且超过上限时淘汰最旧单元。
@@ -639,25 +656,18 @@ export class McpMiddleware {
     }
   }
 
-  /** 拆毁一个单元（断开全部连接，保留目录缓存）。 */
+  /** 拆毁一个单元（逐条走账本拆除，保留目录缓存）。 */
   teardownUnit(root: string): void {
     const unit = this.units.get(root);
     if (unit === undefined) return;
-    for (const entry of unit.connections.values()) {
-      entry.disposed = true;
-      if (entry.reconnectTimer !== undefined) clearTimeout(entry.reconnectTimer);
-      const client = entry.client;
-      entry.client = undefined;
-      entry.transport = undefined;
-      if (client !== undefined && client.transport !== undefined) {
-        void client.transport.close().catch(() => {});
-      }
+    for (const serverName of [...unit.connections.keys()]) {
+      this.releaseConnection(root, serverName);
     }
     unit.connections.clear();
     this.units.delete(root);
   }
 
-  /** 全部拆毁（插件卸载）。 */
+  /** 全部拆毁（插件卸载）。保持同步体：组合根的卸载链依赖这里同步摘账。 */
   async dispose(): Promise<void> {
     for (const root of [...this.units.keys()]) this.teardownUnit(root);
     this.units.clear();

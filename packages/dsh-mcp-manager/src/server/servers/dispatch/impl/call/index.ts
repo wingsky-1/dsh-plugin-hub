@@ -1,19 +1,33 @@
 /**
  * dsh-mcp-manager — servers/dispatch/impl/call/index.ts：ws_mcp_call 执行器（原
- * connection/runtime/middleware.ts:583-772 的搬迁，语义逐字不变）。
+ * connection/runtime/middleware.ts:583-772 的搬迁；路由/策略/封装分支与错误文案口径不变）。
  *
- * 为什么本片仍走旧客户端调用面：换引擎后官方不暴露底层 client，ws_mcp_call 只能经
- * ctx.tools.execute（透传 parent）转发（设计 §5.3）——那是 S1-4 的改道；本片只搬结构，
- * 远端分支仍是 entry.client.callTool，故行为零变化。
+ * 为什么远端分支走 ctx.tools.execute（#767 S1-4d）：换引擎后官方运行时只导出
+ * `Config / apply / inject / name`，底层 client 不外露，「拿一个 client 去 callTool」这条路
+ * 不再存在。转发按设计 §5.3：合成子调用 id、透传 parent、喂 `value` 给既有投影。
  *
  * 为什么全部入参显式化：原实现依赖 McpMiddleware 的 this（units / policy / disabledTools /
- * allServers），搬进新域后这些状态仍归中间层持有，只能按引用递入；本域不落第二份。
+ * allServers / 转发登记表），搬进新域后这些状态仍归中间层持有，只能按引用递入；本域不落第二份。
  */
-import type { ToolDefinition, ToolOutputDefinition } from "@deepseek-ai/dsh-tools";
-import type { DispatchCallInput } from "../../deps.ts";
+import type {
+  ToolDefinition,
+  ToolOutputDefinition,
+  ToolExecutionInput,
+} from "@deepseek-ai/dsh-tools";
+import type { DispatchCallInput, ToolExecutionResultLike } from "../../deps.ts";
 import { redactMcpError } from "../redact/index.ts";
 
-/** 执行一次 ws_mcp_call：路由一致性校验 → 策略裁决 → 封装直呼 / 远端 client 两条分支。 */
+/**
+ * 合成子调用 id。品牌串（`ToolCallId`）没有运行时构造器——它的 brand 函数住在 dsh-llm 的
+ * 运行时，而本包对官方包只许 `import type`——所以只能 `as unknown as` 造。格式照宿主 PTC 的
+ * 先例（`${exec.callId}:ptc:${n}`，dsh-tools/lib/index.js:1211）：留着父 id 前缀，
+ * 日志归因时一眼看出这是谁派发的子调用；尾序号固定 1，因为每次 ws_mcp_call 只转发一个子调用。
+ */
+function subCallId(callId: ToolExecutionInput["callId"]): ToolExecutionInput["callId"] {
+  return `${String(callId)}:mcp:1` as unknown as ToolExecutionInput["callId"];
+}
+
+/** 执行一次 ws_mcp_call：路由一致性校验 → 策略裁决 → 封装直呼 / 远端转发两条分支。 */
 export async function executeMcpCall(input: DispatchCallInput): Promise<unknown> {
   const { pipeline, workspace, signal } = input;
   const parsed = workspace.parseFullServerName(input.fullName);
@@ -31,7 +45,8 @@ export async function executeMcpCall(input: DispatchCallInput): Promise<unknown>
   const entry = unit.connections.get(parsed.server);
   const entryStatus = entry?.status;
   // B4 连带：六态状态机补 reconnecting 后，调用守卫须把「后台重连中」纳入未就绪
-  // 范畴——否则退避窗口内会落到下方 entry.client.callTool（client 未 initialize）。
+  // 范畴——否则退避窗口内会照常派发，而该代际的工具面已经不可信（官方在预算耗尽或
+  // dispose 时注销工具，重连期间前缀可能已消失）。
   if (
     entry === undefined ||
     entryStatus === "failed" ||
@@ -140,54 +155,33 @@ export async function executeMcpCall(input: DispatchCallInput): Promise<unknown>
       );
     }
   }
-  if (entry.client === undefined) {
+  // 装载尚未完成（账本键还没写回）时没有可派发的注册名。这不是旧的「client 缺失」就绪性
+  // 判定：状态面已在上面把 connecting 挡掉，但官方等待窗口的 onState 与 mountServer 的返回
+  // 之间还隔着微任务，状态可能已推进而 id 尚未写回——留一道并发窗口的兜底。
+  const id = entry.id;
+  if (id === undefined) {
     throw new Error(
-      `ws_mcp_call: server ${JSON.stringify(input.fullName)} 未就绪（client 缺失）；请稍后重试或重新连接`,
+      `ws_mcp_call: server ${JSON.stringify(input.fullName)} 未就绪（装载未完成）；请稍后重试或重新连接`,
     );
   }
+  let result: ToolExecutionResultLike;
   try {
-    const result = await pipeline.withTimeout(
-      entry.client.callTool(tool, typeof args === "object" && args !== null ? args : {}, {
-        signal,
-        timeoutMs: callBudgetMs,
+    result = await pipeline.withTimeout(
+      input.execute({
+        callId: subCallId(input.callId),
+        ...(input.rootCallId === undefined ? {} : { rootCallId: input.rootCallId }),
+        name: input.registeredNameFor(id, tool),
+        arguments: typeof args === "object" && args !== null ? args : {},
+        ...(input.agent === undefined ? {} : { agent: input.agent as ToolExecutionInput["agent"] }),
+        ...(input.parent === undefined ? {} : { parent: input.parent }),
+        // 宿主 executor 无条件读 signal.aborted（实测 §2.9-6：给 undefined 当场 TypeError），
+        // 而调用方不保证带 signal——没有就现造一个。
+        signal: signal ?? new AbortController().signal,
       }),
       callBudgetMs + 2000,
       `ws_mcp_call: 调用超时（${callBudgetMs}ms），可重试；若反复超时请用 ws_mcp_detail 核对参数或检查服务器状态`,
       signal,
     );
-    // #512：远端结果经 call-result.ts 统一投影收敛（isError 判定 + 白名单
-    // 清洗 + 无 content 兜底），与 supervisor（mcp__ 直呼）/ 官方
-    // dsh-mcp-client createExecutor 同一契约——不再裸透传 resultObj，
-    // Python SDK 必带的 isError:false / _meta 等字段不再外泄进工具契约。
-    // fallbackText（复核闸 F1）：content 键存在但非数组（协议违规形态）时
-    // 保留远端原文（msgOf，与旧文案行为等价）；content 缺省走默认兜底。
-    const projected = pipeline.projectCallToolResult(result, {
-      errorText: (content) =>
-        `ws_mcp_call: 远端工具返回错误：${pipeline.msgOf(content)}；可先用 ws_mcp_detail 核对参数 schema 后重试`,
-      fallbackText: (r) => {
-        const raw =
-          typeof r === "object" && r !== null && "content" in r
-            ? (r as { content?: unknown }).content
-            : undefined;
-        return raw !== undefined && !Array.isArray(raw)
-          ? pipeline.msgOf(raw)
-          : pipeline.defaultCallResultFallbackText(r);
-      },
-    });
-    if (stale) {
-      // schema 可能已过期：结果前置提示（投影后的白名单结构，仅扩 content）。
-      const hint = {
-        type: "text",
-        text: "（提示：本工具目录已过期，schema 可能已变更，请重新 ws_mcp_search）",
-      };
-      return {
-        content: [hint, ...projected.content],
-        ...(projected.structuredContent !== undefined
-          ? { structuredContent: projected.structuredContent }
-          : {}),
-      };
-    }
-    return projected;
   } catch (error) {
     if (signal?.aborted === true) throw signal.reason;
     throw new Error(
@@ -198,4 +192,48 @@ export async function executeMcpCall(input: DispatchCallInput): Promise<unknown>
       ),
     );
   }
+  // isError 必须在上面 try 之外收敛（RECON 反例 4）：官方在 MCP isError:true 时**抛错**，
+  // 套进那个 catch 会得到双层「调用失败：」；同时手工补回核对参数的引导句。
+  if (result.isError === true) {
+    throw new Error(
+      redactMcpError(
+        pipeline,
+        input.allServers(),
+        `ws_mcp_call: 远端工具返回错误：${result.error.message}；可先用 ws_mcp_detail 核对参数 schema 后重试`,
+      ),
+    );
+  }
+  // #512：远端结果经 call-result.ts 统一投影收敛（白名单清洗 + 无 content 兜底），与
+  // supervisor（mcp__ 直呼）/ 官方 dsh-mcp-client createExecutor 同一契约——不再裸透传
+  // resultObj，Python SDK 必带的 isError:false / _meta 等字段不再外泄进工具契约。
+  // 换引擎后喂进来的是官方结果里的 `value`（远端原始结果，实测 §2.9-5），故与旧链路
+  // 逐字节等价；`errorText` 分支因此在新链路上不可达（isError 已在上面收敛），保留是
+  // 为了不把「投影形态」的两种协议违规入口拆成两处实现——有意变更，已在 PR 台账登记。
+  const projected = pipeline.projectCallToolResult(result.value, {
+    errorText: (content) =>
+      `ws_mcp_call: 远端工具返回错误：${pipeline.msgOf(content)}；可先用 ws_mcp_detail 核对参数 schema 后重试`,
+    fallbackText: (r) => {
+      const raw =
+        typeof r === "object" && r !== null && "content" in r
+          ? (r as { content?: unknown }).content
+          : undefined;
+      return raw !== undefined && !Array.isArray(raw)
+        ? pipeline.msgOf(raw)
+        : pipeline.defaultCallResultFallbackText(r);
+    },
+  });
+  if (stale) {
+    // schema 可能已过期：结果前置提示（投影后的白名单结构，仅扩 content）。
+    const hint = {
+      type: "text",
+      text: "（提示：本工具目录已过期，schema 可能已变更，请重新 ws_mcp_search）",
+    };
+    return {
+      content: [hint, ...projected.content],
+      ...(projected.structuredContent !== undefined
+        ? { structuredContent: projected.structuredContent }
+        : {}),
+    };
+  }
+  return projected;
 }

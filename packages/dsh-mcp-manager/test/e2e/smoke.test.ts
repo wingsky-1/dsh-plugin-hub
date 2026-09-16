@@ -731,6 +731,9 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
         registered.push(def);
         return () => {};
       },
+      // 换引擎后远端分支改道宿主执行面：给最小形状 `{isError, content, value}`，
+      // value 是远端原始结果（projectCallToolResult 吃的就是它）。
+      execute: async () => ({ isError: false, content: [], value: { content: [] } }),
     },
     on: (event, handler) => {
       guards.set(event, handler);
@@ -797,12 +800,16 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
         "ctx",
         {
           server: { name: "ctx", transport: "stdio", command: "x", enabled: true },
+          // 新 ConnectionEntry：id 是官方实例的账本键（远端派发的前提），
+          // readySettled / everConnected 是六态投影的输入面。
+          id: "smoke-ctx-id",
+          handle: undefined,
           status: "connected",
           error: undefined,
-          client: { callTool: async () => ({ content: [] }) },
-          reconnectTimer: undefined,
+          connectedAt: Date.now(),
+          readySettled: true,
+          everConnected: true,
           disposed: false,
-          failedAttempts: 0,
         },
       ],
     ]),
@@ -820,12 +827,21 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
     inFlight: new Map(),
   };
   mw.units.set("/proj", callUnit);
+  // callTool 的第 5 形参换成身份对象（agent / callId / rootCallId / parent）：dispatch 要拿它
+  // 合成子调用 id 并透传 parent。本用例只走本地守卫与投影，给最小身份即可。
+  const IDENTITY = { callId: "smoke-call-1" };
   await expect(
-    () => mw.callTool(fullServerName("/proj", "ctx"), "use_ctx", {}, undefined),
+    () => mw.callTool(fullServerName("/proj", "ctx"), "use_ctx", {}, undefined, IDENTITY),
     "callTool 先查禁用表（三入口一致）",
   ).rejects.toThrow(/已被用户在「MCP」浮窗禁用/);
   // 未禁用工具正常放行到调用。
-  const okValue = await mw.callTool(fullServerName("/proj", "ctx"), "other", {}, undefined);
+  const okValue = await mw.callTool(
+    fullServerName("/proj", "ctx"),
+    "other",
+    {},
+    undefined,
+    IDENTITY,
+  );
   expect(okValue.content, "未禁用工具正常调用").toEqual([]);
 
   // 4) stats：四个原子工具埋点与统计断言
