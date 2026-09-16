@@ -25,6 +25,14 @@ import { matchesGlob, normalize } from "node:path";
 
 /**
  * 红线路径常量（单一事实源）。新增红线面时改这里，别把判定散成 if。
+ *
+ * 两条各有出处，治理后果不同，别当成同一种东西：
+ *   · `.github/**` —— 仓库 AGENTS.md 明写的红线面（workflow 与分支保护），改动须维护者
+ *     在原 issue 内 approved；
+ *   · `scripts/gate/**` —— #843 D1 提出的**加固面**，**尚待维护者确认**。保留它的代价是
+ *     任何改门禁实现的 PR 都要 `approved` 标签，**包括 agent 的批次工作**（这会实打实拖慢
+ *     自治循环）。若确认要缩回，删掉这一行即可——判定逻辑、事件域判据与 fail-closed 口径
+ *     都不在常量里，缩回不动其余任何一行。
  */
 export const RED_LINE_PATTERNS = [".github/**", "scripts/gate/**"];
 
