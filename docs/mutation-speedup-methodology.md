@@ -44,7 +44,7 @@ provider-usage **400s**（n=49，频率与耗时双高）、lan-proxy 204s、mcp
 | 10 | 大文件拆分（src 级分段前置） | 已落地 | mcp-manager index 1237→147 / middleware 1046→511 / provider-usage index 1122→73 / lan-proxy index 991→59（行数为拆分时点快照） | 分段粒度下限是整文件；拆文件让密度均匀、段可细切。维护收益 + CRAP 模块精度 |
 | 11 | src 级两级分段（文件组声明） | 已落地 | mcp-manager×6 / provider-usage×12 / notifier×10 / lan-proxy×6 / worktree-sidebar×1 = **35 段**（2026-09-16 实况；#840 退役 web-file-preview 由 32 段降为 31，再由 #769 notifier 客户端门禁加 client 段 31 → 32，新增 dsh-worktree-sidebar 单段 32 → 33，#826 把 lan-proxy 的 4 个数字段按模块目录重划为 6 段 33 → 35；#342 二期时为 6/6/4/4），增量命中时单段 wall ≤~120s（全量段墙钟见 §3 手段 13 与台账） | 段 = 源文件名清单（非行号），永不漂移，无 sync/guard 开销 |
 | 12 | 四班次调度 + 快照 PR 日期闸（#276 配套） | 已落地 | 基线快照 PR 有界（≤4/日，实际随当日合入） | observe.yml cron UTC 01/04/08/12（北京 09/12/16/20）；push 触发移除；snapshot PR 每日最多一次 |
-| 13 | concurrency 定标复测（4 / 8 / 16，2026-09-13） | 决策：**维持 16**（口径与限制见 §3.3） | `trend-collect`(670) **1138 / 831 / 840 s**；`contracts`(524) **444 / 285 / 217 s**；`errsurf`(38，n=2) 两轮值见 §3.3；**dry run 12 次全 10–12 s，与 concurrency 无关** | 本地 8 vCPU（2x 过订阅）**不等于** CI 4 vCPU（4x）；**只测了墙钟**，§4.3 三项核对未做；超时口径、噪声边界与 flake 关系见 §3.3 |
+| 13 | concurrency 定标复测（4 / 8 / 16，2026-09-13） | 决策：**维持 16**（口径与限制见 §3.3） | `trend-collect`(670) **1138 / 831 / 840 s**；`contracts`(524) **444 / 285 / 217 s**；`errsurf`(38，n=2) 两轮值见 §3.3；**dry run 12 次全 10–12 s，与 concurrency 无关** | 本地 8 vCPU（2x 过订阅）**不等于** CI 4 vCPU（4x）；**只测了墙钟**，§4.3 三项核对已由 #803 在限核 4 vCPU 补做（见 §3.3.1）：total 不变，但 c=16 在「4 vCPU + 同机负载」下 timeout 抬升、score 虚高（`contracts` +1.41 pt / `trend-collect` +3.32 pt）；超时口径、噪声边界与 flake 关系见 §3.3 |
 
 ### 3.1 方案 A 实测记录（#276，同机同口径、冷缓存全量、每侧 ≥2 轮）
 
@@ -93,9 +93,11 @@ dry run 在 12 次运行中全为 **10–12 s**，与 `concurrency` 无关（dry
   c4 1.9% / c16 3.8%），宜记「**无显著差异**」而不是「打平」。**CI 侧 4 vCPU 的对照已有更强口径**：
   #753 用 `taskset -c 0-3` 对齐 4 核，在 `notifier-config-rest`（627 mutant）两轮实测 c16 比 c4
   **快 1.81x**——引用它比引用本行更合适；
-- **只测了墙钟**：§4.3 要求的三项核对（total mutant 不变 / timeout、error 计数不异常抬升 / score 与
+- **只测了墙钟（该缺口已由 §3.3.1 补做）**：§4.3 要求的三项核对（total mutant 不变 / timeout、error 计数不异常抬升 / score 与
   基线口径一致）**本次未做**，16 档的假阳性风险因此未排除——#223 记录过该包在 8 档
-  `covered 64.76% < 基线 67.28%` + 13 errors 并回滚。补做之前，本行只能当墙钟证据用；
+  `covered 64.76% < 基线 67.28%` + 13 errors 并回滚。#803 已在 §3.3.1 于限核 4 vCPU 上补做：total 不变，
+  但 c=16 在「4 vCPU + 同机负载」下 timeout `contracts` 10 → 18 / 14、`trend-collect` 4 → 23，
+  score 相应虚高 1.41 / 3.32 pt（适用边界见 §3.3.1 结论第 4 条）；
 - **超时口径**（当时 32 段口径）：32 段中 **27 段**的取值由 `TIMEOUT_FLOOR_MINUTES = 30` 抬起（`mutation-plan.mjs` 自注
   「27 个短段从 20~28 抬到 30」），第 28 段 `trend-collect` 的派生值**恰为 30 min**
   （`ceil(1012/60×1.5+4)=30`，台账全量峰 1012 s）——它已经**在**地板上、没有余量；本地 c=4 实测
@@ -103,6 +105,93 @@ dry run 在 12 次运行中全为 **10–12 s**，与 `concurrency` 无关（dry
 - **与 flake 的关系**：#771 记录的假红形态是 dry run 整段 `ConfigError`（#771 当时口径：该断言被 12/32 段共用），
   dry run 不受本参数影响；但同一断言在逐 mutant 运行中也执行，§4.3 的 timeout 假阳性路径未排除，
   故不宜写成「flake 只出在 dry run」。该假红已由 PR #794（2026-09-13）收口。
+
+#### 3.3.1 补测（#803）：限核 4 vCPU 的 c=4 / c=16 对照与 §4.3 三项核对
+
+**为什么补**：§3.3 主表的 c=16 是在 8 vCPU 上取的（2x 过订阅），CI 是 4 vCPU（4x）；且主表**只测了墙钟**，
+§4.3 要求的三项核对一直空着（先例 #223：8 档记录过 `covered 64.76% < 基线 67.28%` + 13 errors 并回滚）。
+本轮把并发档对照搬到与 CI 同规格的 **4 vCPU** 上，并补齐 §4.3 三项。
+
+**取数命令**（每轮先限核、再强制全量跑一段；仓库 conf 一字未改）：
+
+```sh
+taskset -c 0-3 pnpm exec stryker run stryker.conf.d/dsh-provider-usage-<段>.json --force --concurrency <4|16>
+```
+
+- 机器：本机 8 vCPU（`nproc`=8），`taskset -c 0-3` 限核 **4 vCPU**（已核实 Stryker 的 runner 子进程继承 0-3 亲和性）；
+- 并发档只经 CLI `--concurrency` 传入，`stryker.conf.d/**` 未改；`--force` 绕过增量缓存拿真实全量；
+- 读数走仓内单一事实源 `scripts/lib/mutation-report-lib.mjs`（covered 口径 = `(killed+timeout)/(killed+timeout+survived)`，
+  分母不含 `noCoverage`），不另立口径；
+- **限制（必须连着读）**：本机是共享开发机，测量期间同机还有别的任务（lint / prettier / vitest）在跑，
+  `/proc/loadavg` 采样区间 **6.05 – 38.16**——故本轮**未能**把「段内 concurrency」与「同机外部负载」完全解耦。
+
+**墙钟（实测，限核 4 vCPU）**
+
+| 段（台账 mutant 数） | 档 | 轮次 | 墙钟 |
+| --- | --- | --- | --- |
+| `errsurf`（38） | c=4 | n=2 | 40 s / 32 s |
+| `errsurf`（38） | c=16 | n=2 | 33 s / 33 s |
+| `contracts`（524） | c=4 | n=1 | 669 s（11m09s） |
+| `contracts`（524） | c=16 | n=2 | 309 s（5m09s）/ 507 s（8m20s） |
+| `trend-collect`（670） | c=4 | n=1 | 1922 s（32m01s） |
+| `trend-collect`（670） | c=16 | n=1 | 1452 s（24m12s） |
+
+与主表（8 vCPU）的差异：限核后每段墙钟比主表慢 **1.1 – 1.7x**（`trend-collect` c=4 主表 1138 s → 本轮 1922 s、
+c=16 主表 840 s → 本轮 1452 s；`contracts` c=4 主表 444 s → 本轮 669 s、c=16 主表 217 s → 本轮 309 s；
+`errsurf` 两侧都只差 1.1 – 1.4x），差值同时来自「可用核数减半」与「同机负载」。
+**方向性结论与主表一致**：吞吐主导段（`contracts`）c16 明显更快（本轮 2.17x）；`trend-collect` 上 c16 的优势（1.32x）
+与主表（1.35x 量级）同向且仍在噪声内。
+
+**§4.3 三项核对读数**
+
+| 段 | 档 | 轮次 | raw total | covered total | killed | timeout | survived | noCoverage | coveredScore | CompileError | RuntimeError |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `errsurf` | c=4 | r1 / r2 | 38 | 25 | 25 | 0 | 0 | 0 | 100.00 | 0 | 0 |
+| `errsurf` | c=16 | r1 / r2 | 38 | 25 | 25 | 0 | 0 | 0 | 100.00 | 0 | 0 |
+| `contracts` | c=4 | r1 | 524 | 426 | 391 | 10 | 24 | 1 | 94.35 | 0 | 0 |
+| `contracts` | c=16 | r1 | 524 | 426 | 389 | 18 | 18 | 1 | 95.76 | 0 | 0 |
+| `contracts` | c=16 | r2 | 524 | 426 | 394 | 14 | 17 | 1 | 96.00 | 0 | 0 |
+| `trend-collect` | c=4 | r1 | 670 | 585 | 379 | 4 | 190 | 12 | 66.84 | 0 | 0 |
+| `trend-collect` | c=16 | r1 | 670 | 585 | 379 | 23 | 171 | 12 | 70.16 | 0 | 0 |
+
+**mutant 级复核**（键 = 源文件 + 完整位置 + mutatorName + replacement；跨档**不用**报告内的 mutant id）：
+
+- `trend-collect` c=4 → c=16：两侧各 670 个键，651 个状态相同；翻转 **19 处且全部是 Survived → Timeout**（零反向）；
+- `contracts` c=4 → c=16：两侧各 524 个键，512 个相同；翻转 6 处 Survived → Timeout（抬分）、4 处 Killed → Timeout、
+  2 处 Timeout → Killed（后两类不改变 coveredScore）；
+- `errsurf` c=4 → c=16：38 个键全部相同，零翻转；
+- 同档重跑 `contracts` c=16 r1 → r2：508 个相同、**16 处翻转且双向**（Timeout→Killed 7 / Survived→Timeout 4 /
+  Timeout→Survived 3 / Killed→Timeout 2）——16 档在「4 vCPU + 同机负载」下自身就不稳定。
+
+**与 CI 夜间基线的对照**（`node scripts/gate/orphan-baseline.mjs restore` 取回 `baseline/mutation` 后按同一 lib 读取；
+CI 为 GitHub 托管 4 vCPU 专用 runner、conf `concurrency: 16`、无同机负载）：
+
+| 段 | 基线（CI，c=16） | 本机 c=4 | 本机 c=16 |
+| --- | --- | --- | --- |
+| `errsurf` | 100.00（timeout 0） | 100.00（0） | 100.00（0） |
+| `contracts` | 94.35（timeout 12） | 94.35（10） | 95.76 / 96.00（18 / 14） |
+| `trend-collect` | 66.84（timeout 4） | 66.84（4） | 70.16（23） |
+
+本机 c=4 与 CI 基线**逐段分数相同**（`trend-collect` 连 killed / timeout / survived 三项都逐位相同；`contracts` 分数同为 94.35，
+但 killed / timeout 相差 2：391 / 10 对 389 / 12）；本机 c=16 高出基线 `contracts` +1.41 / +1.65 pt、`trend-collect` +3.32 pt。
+
+**结论**
+
+1. **total 不变**：raw 38 / 524 / 670 与台账（`scripts/data/mutation-segment-ledger.json`，2026-09-12 / 09-13 夜间全量）
+   逐段一致，covered 口径 total 亦逐段一致（25 / 426 / 585）；
+2. **error 无抬升、timeout 抬升**：`CompileError` / `RuntimeError` 六份报告全 0；`Timeout` 在 4 vCPU 限核下
+   c=16 相对 c=4 抬升（`contracts` 10 → 18 / 14，`trend-collect` 4 → 23），且 `trend-collect` 的抬升**单向**；
+3. **score 虚高**：虚高量精确等于单向 Survived → Timeout 翻转数（`contracts` 6/425 = 1.41 pt，`trend-collect` 19/573 = 3.32 pt），
+   正是 §4.3 描述的「timeout 计入 detected」通道；
+4. **适用边界**：CI 专用 runner 的夜间基线（同为 c=16 / 4 vCPU）timeout 为 12 / 0 / 4，与本机 c=4 档一致，**未**显示该形态。
+   即：本轮判红的充分条件是「**段内 c=16 + 4 vCPU 上再叠加外部负载**」，单凭段内 c=16 不足以解释——
+   判红结论**不能直接搬到托管专用 runner 的现有 CI 配置**；但它证明该通道在 4 vCPU 上真实可被激活，
+   且一旦激活就单向虚增 score；
+5. **本轮不动 conf**：`stryker.conf.d/**` 保持 `concurrency: 16` 未改（是否回退 8 属 §4.2 与 #803 的裁定面，
+   依据是「CI 专用 runner 未复现」+「4 vCPU 叠加负载即复现」）；
+6. **未取到的数据**：`contracts` c=4 第二控制轮启动 7 分钟后（212/426，0 timeout）因同机负载升到 load 38、
+   单轮投影 >40 min，按成本闸门主动中止，无报告产出（仅进度行留档）；缺口是缺一个**空闲 4 vCPU 环境**（或 CI
+   手动班次）的对照轮。
 
 ## 4. 方法论：如何评估下一个提速手段
 
@@ -120,16 +209,30 @@ dry run 在 12 次运行中全为 **10–12 s**，与 `concurrency` 无关（dry
 按变异面测试文件的资源形态分三级：
 
 - **可直升 16**：纯 unit、无端口绑定、无全局单例、非 CPU 密集（原实例 web-file-preview 已随 #840 退役，判据仍适用于同类纯 unit 包）；
-- **先 8 观察**：CPU 密集为主但无共享资源冲突（如 provider-usage——apiEndpoint 用 discard 端口、socket 为 mock 字面量）；达标后再升。注：该包现为 16（§3 手段 2 / 13），大段 `contracts`(524) 实测 8→16 快 31%；但 §4.3 的三项核对在 16 档下从未补做，#223 曾在 8 档记录 `covered 64.76% < 基线 67.28%` + 13 errors 并回滚——重提并发前先按 §4.3 复核；
+- **先 8 观察**：CPU 密集为主但无共享资源冲突（如 provider-usage——apiEndpoint 用 discard 端口、socket 为 mock 字面量）；达标后再升。注：该包现为 16（§3 手段 2 / 13），大段 `contracts`(524) 实测 8→16 快 31%；§4.3 的三项核对已由 #803 在 16 档补做（限核 4 vCPU，见 §3.3.1：total 不变，timeout 抬升 / score 虚高，适用边界见该节结论第 4 条），此前 #223 曾在 8 档记录 `covered 64.76% < 基线 67.28%` + 13 errors 并回滚——重提并发前先按 §4.3 复核；
 - **维持低并发**：变异面存在真实固定端口监听或固定端口 smoke 文件。本档当前**无在册示例**——lan-proxy 因 #690 S2c / #713 T5 的端口动态分配化已不再适用（见 §3 手段 4），idle-archive 已退役（#397）。新增此类变异面前先判本条。
 
 ### 4.3 假阳性防护：timeout 计入 detected 的陷阱
 
 Stryker 将 timeout 计入 detected，高并发导致调度延迟时边际 mutant 可能从「存活」误判为「timeout 杀灭」，**虚增 score 掩盖真存活 mutant**。任何提并发的变更必须核对：
 
-- [ ] total mutant 数不变；
-- [ ] timeout / error 计数无异常抬升；
-- [ ] score 与基线口径一致。
+- [x] total mutant 数不变 —— **通过**（#803 限核 4 vCPU，读数见 §3.3.1）：`errsurf` 38 / `contracts` 524 / `trend-collect` 670，
+  c=4 与 c=16 逐段相同，且与台账（`scripts/data/mutation-segment-ledger.json`，2026-09-12 / 09-13 夜间全量）逐段一致；
+  仓内 covered 口径 total（covered + noCoverage）亦逐段相同（25 / 426 / 585）；
+- [ ] timeout / error 计数无异常抬升 —— **已核对，判红**（限核 4 vCPU + 同机负载，见 §3.3.1）：error（CompileError / RuntimeError）
+  六份报告全 0，但 timeout 抬升——`errsurf` 0 → 0、`contracts` 10 → 18 / 14、`trend-collect` 4 → 23（`trend-collect` 为单向
+  Survived → Timeout）；同档重跑（`contracts` c=16 r1 → r2）尚有 16 处**双向**状态翻转，说明 16 档的 timeout 判定在该条件下
+  本身不稳定；
+- [ ] score 与基线口径一致 —— **已核对，判红（16 档虚高）**（同条件，见 §3.3.1）：口径为 `scripts/lib/mutation-report-lib.mjs` 的
+  coveredScore；本地 c=4 与 CI 夜间基线（`baseline/mutation`，4 vCPU / conf c=16）**逐段分数相同**（`errsurf` 100.00 /
+  `contracts` 94.35 / `trend-collect` 66.84；`trend-collect` 连 killed / timeout / survived 都逐位相同，`contracts` 的
+  killed / timeout 相差 2），本地 c=16 则高 `contracts` +1.41 / +1.65 pt、`trend-collect` +3.32 pt，
+  虚高量精确等于单向 Survived → Timeout 翻转数（6/425、19/573）。
+
+> **适用边界（#803 实测）**：判红的充分条件是「段内 c=16 **叠加** 4 vCPU 上的外部负载」——CI 托管专用 runner 的夜间基线
+> （同为 c=16 / 4 vCPU、无同机负载）timeout 为 12 / 0 / 4，与本机 c=4 档一致，未显示该形态。故上面两条判红**不直接**推翻
+> 现有 CI 的 `concurrency: 16`；但「timeout 静默虚增 score」的通道已被证明在 4 vCPU 上可被激活，是否按 §4.2 回退 8 留待
+> #803 裁定。缺口：缺一个**空闲 4 vCPU 环境**（或 CI 手动班次）的对照轮。
 
 **读法说明**（界定本条中的「并发」指哪个旋钮，上面三条核对的判据一字不动）：本条中的
 **并发**指 **Stryker 段内 `concurrency`**——同一次 run 内的 test runner 进程数。本仓已识别的
