@@ -91,6 +91,7 @@
 - `release/verify-version.ts` — 发布前校验全包版本 == tag。
 - `release/publish-if-missing.ts` — 发布缺失包。
 - `release/health-report-body.mjs` — 健康报告 body 生成。
+- `release/observe-precheck.mjs` — 发版前置判据（#843 R-2 / D4）：release.yml 的 `observe-precheck` job 在发布之前校验「最近 24 h 内至少一次 observe **成功收口**」，不满足即阻断发布（口径的三种候选取舍、边界语义与实测数据都在文件头注释里）。判定输入是观察班次的 run 列表（gh api 取 `workflow_runs`，也可用 `--runs-file` 离线复跑取证）：窗口内无 success 判红；**一切取数 / 解析失败一律 fail-closed**（没有「基线新鲜」的证据就不发版），exit 2 专留给参数非法。override 逃生口 = `--override` 或环境变量 `SKIP_OBSERVE_CHECK=true`（release.yml 把它接在 `workflow_dispatch.inputs.skip_observe_check` 上），放行时打印 `::warning::` 并要求在 PR / 发布记录写明理由。判定本体是可注入 now / 窗口 / override 的纯函数。
 - `release/baseline-staleness.mjs` — 变异基线（`baseline/mutation`）新鲜度判据（#718 验收判据「基线陈旧可被观测」）：判据打在基线分支**最后提交时间**这一事实上（不看「observe 最近是否 success」这一代理——它会漏掉「observe 成功但未入档」与「observe 整体没跑」两种形态），阈值 48 h（= 连续两夜未入档），超阈输出 `::error::` 注解 + 幂等工单正文，未超阈由 `health-report-body.mjs` 在周报正文留一行基线龄；**观测没做成（unknown）与状态文件缺失由 workflow 最末的 verdict 步骤判红**（「环境失败不得静默降级」，放最末以免连坐建单留痕），stale 本身不判红（发现 ≠ 失败）；龄 → 三态的判定是可注入 now/阈值的纯函数。执行点 = health-report.yml 周报（监控者与被监控者分离：observe 是更新基线的一方，检查放进去会在它整体没跑时一起沉默），零权限变更。
 
 ## scripts/ 根
