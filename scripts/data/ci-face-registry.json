@@ -107,6 +107,11 @@
       "why": "包集合的单一事实源：增删包即改变切片全集与产物闸清单。"
     },
     {
+      "path": "scripts/data/threshold-registry.json",
+      "faces": [],
+      "why": "阈值事实源的声明表（#843 D5）：消费方是 ci.yml repo-gate 恒跑段与本地 cheapGlobal 里的 threshold-monotonic（同一入口，不依赖任何切片），改动在**每个** PR 上都被消费；它只声明各类事实源的守护形态，不改变任何 filters，与 gate-wiring-exceptions.json / ci-face-registry.json 自身同类（归 global 面需要改 ci.yml 的 filters —— 那是红线段，收益为零）。"
+    },
+    {
       "path": "scripts/data/vendored-binaries.json",
       "faces": [],
       "why": "发布物面内 vendored 裸二进制的登记表（批 2b）：消费方是 repo-gate 恒跑段与本地 cheapGlobal 里的 verify:vendored-binaries，改动在本 PR 上即被消费；它只声明「哪些随包分发的副本已登记许可」，不改变任何 filters，与 scripts/data/ci-face-registry.json 自身同类。"
@@ -119,7 +124,7 @@
     {
       "path": "scripts/data/dsh-worktree-sidebar-*.json",
       "faces": ["dsh-worktree-sidebar"],
-      "why": "包级数据资产（#819）：导出面基线与导出面分类登记，与 dsh-notifier 的同类条目（scripts/data/dsh-notifier-*.json）同型。归本包面后，改基线即触发本包切片（ci.yml 的 dsh-worktree-sidebar filters 已登记 scripts/data/dsh-worktree-sidebar-*.json）；消费方仍是常驻的产物闸 contract（contract-check.ts spawn export-surface-snapshot.mjs），两者不冲突。"
+      "why": "包级数据资产（#819）：导出面基线与导出面分类登记，与 dsh-notifier 的同类条目（scripts/data/dsh-notifier-*.json）同型。归本包面后，改基线即触发本包切片（ci.yml 的 dsh-worktree-sidebar filters 已登记 scripts/data/dsh-worktree-sidebar-*.json）；**消费方当前是零执行点**——contract-check.ts 在审计 P0-1 后已把目录门面 / 导出面快照 / 跨包扇入三个判据的执行点迁出，全仓 grep 该基线只命中 .prettierignore 与文档，缺口载体见 data/threshold-registry.json 的 notAGate 登记与 #843 的 R2-M-1。"
     },
     {
       "path": "scripts/data/dsh-lan-proxy-ui-exempt.json",

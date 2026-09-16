@@ -147,25 +147,32 @@ test("非 JSON 文件不参与扫描（只看 scripts/data 下的 .json）", () 
   }
 });
 
-test("本仓真实快照：6 条在册（数字变即提示同步台账与 #765）", () => {
-  // 6 = coverage.config.json 5（#769 把一条 **/client/** 拆成 per-package 的 pending-project
+test("本仓真实快照：7 条在册（数字变即提示同步台账与 #765）", () => {
+  // 7 = coverage.config.json 5（#769 把一条 **/client/** 拆成 per-package 的 pending-project
   //     条目：notifier 的 .tsx 渲染面 + 另外 3 个包的整个 client 面 + shared/client/**；
   //     #840 退役 dsh-web-file-preview 时删掉它那一条，7 → 6）
-  //     + gauntlet.config.json 1（crap.strict 观察期，仅解除条件、无到期日）。
-  // 「按包按面收窄」的代价就是台账条目变多——这是设计而不是噪音：每条都带自己的
-  // exitCriteria，某个包的客户端有了直连判据就该删掉它自己那一条。
-  // gate-exemptions.json 的 #762 条目已随 #769 阶段 3 清空，该来源也不再出现在报告里；
-  // plugins-manifest 的 5 条 configSurfacesPending 已随 #774 全部转为 configSurfaces 声明
-  // （含 2 条 surface: "none"），不再产生 reviewBy。
+  //     + gauntlet.config.json 1（crap.strict 观察期，仅解除条件、无到期日）
+  //     + gate-exemptions.json 1（#843 M-1：dsh-worktree-sidebar 无回落锚点，临时）。
+  //     「按包按面收窄」的代价就是台账条目变多——这是设计而不是噪音：每条都带自己的
+  //     exitCriteria，某个包的客户端有了直连判据就该删掉它自己那一条。
+  //     gate-exemptions.json 的 #762 条目已随 #769 阶段 3 清空，M-1 是本台账当前唯一的在册项；
+  //     plugins-manifest 的 5 条 configSurfacesPending 已随 #774 全部转为 configSurfaces 声明
+  //     （含 2 条 surface: "none"），不再产生 reviewBy。
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /合计 6 条：已过期 0 /);
+  assert.match(r.stdout, /合计 7 条：已过期 0 /);
   assert.match(r.stdout, /仅解除条件（无到期日）1/);
   // crap.strict 的解除条件必须在台账里（只写日期会逼出「到期了再讨论一次」）
   assert.match(r.stdout, /\$\.crap {2}threshold=16/);
   assert.match(r.stdout, /exitCriteria 超阈 hotspots 计数降为 0/);
-  // 台账已清空：报告不该再点名 gate-exemptions.json 这个来源
-  assert.doesNotMatch(r.stdout, /gate-exemptions\.json/);
+  // #843 M-1：threshold-registry 的逐包回落锚点豁免必须是台账里的一等条目——它守的是
+  // 「新包没有回落基线时不会永远静默豁免」，只写进声明表就没人复核、也没有到期日。
+  assert.match(
+    r.stdout,
+    /\$\.exemptions\[0\] {2}gate=threshold-registry {2}path=mutation\.packages\.dsh-worktree-sidebar/,
+  );
+  assert.match(r.stdout, /trackingIssue #847/);
+  assert.match(r.stdout, /reviewBy 2026-12-31/);
   // 覆盖率面的临时排除项也必须在台账里（它是「到期复核」的输入，不该只活在配置里）
   // 索引 5 = 前五条是 type-only / not-source 的永久事实（d.ts / d.mts / ps1 / md / css），
   // 第六条起才是带 reviewBy 的临时排除项。

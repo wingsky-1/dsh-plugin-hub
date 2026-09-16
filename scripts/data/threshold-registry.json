@@ -1,0 +1,202 @@
+{
+  "version": 1,
+  "retired": [],
+  "contractApprovals": [],
+  "note": "阈值事实源的**声明表**（#843 D5；2026-09-16 维护者按推荐方案批准，其后两轮独立对抗评审要求补入 M-1 / M-2，见 #843 的裁决清单 v2）。 为什么需要：守卫此前是一条条 if 手写在 scripts/gate/threshold-monotonic.mjs 里——每新增一个阈值 / 开关 / 预算事实源都要手写读取逻辑，方向语义散落在各 if 里，于是「新增事实源忘了加守卫」这个根因没有任何判据能拦。本轮审计漏出去的正是这类：S1（删整包阈值块不判红）/ S2（strict 翻转无守卫）/ T1（变异超时放宽无守卫）/ M-1（新包无回落基线，回落判据对它恒为假）/ M-2（接线断言自身的 9 个豁免预算只有测试内硬顶）。 现在：事实源 + 路径 + 方向 + 删键语义都在本表声明，比较器（scripts/lib/threshold-registry.mjs）按 kind 通用求值。**未登记即红**——枚举口径是运行时读 scripts/data/*.json（不在表里再抄一份清单，原则②），除本表自身；新增数据文件必须在此显式决定「守护」还是 not-a-gate。 边界（与#843 裁决清单 v2 的 C-2/C-3 一致）：**面类判据不在本表**——覆盖率 exclude 与变异段 mutate 的扩张 / 收缩需要 glob 求值，落在 verify-coverage-scope（kind↔形态一致性）与 gen-stryker-conf 的判据⑤（有效面非空）；本表只收 JSON 标量 / 布尔 / 存在性。 kind 语义：value=数字标量（weaken 说明哪个方向是放宽）；boolean=开关（weakenValue 是「等于它就等于放宽」的那一侧）；baseline=逐包回落锚点（anchorFields 是回退链，读法与 scripts/gate/observe-check.mjs 的 fixedCovered ?? baselineCovered 一致）；existence=集合存在性（universe 派生自 packages/ 目录，exemptFrom 读另一份事实源的豁免键，不造第二份豁免清单）。 绝对边界：value 的 minAllowed / maxAllowed 对**新增叶子**同样生效（相对比较对首次引入天然无效）；existence 的回落锚点必须**生效值 > 0**——observe-check 的回退链取 fixedCovered ?? baselineCovered，锚点为 0 时 regressed 恒假，与没有锚点等价。 台账通道：豁免登记在 scripts/data/gate-exemptions.json（gate=threshold-registry），path 形如 <guard.path>.<包名>#membership | #anchor 或 <被移除的叶子路径>#removal，唯一到期登记处不新增第二份（原则①）。 豁免**按判据分开登记**：path=<guard.path>.<包名>#membership 只豁免「包在表里」，#anchor 只豁免「有回落锚点」，value 守卫的删键判红用 <被移除的叶子路径>#removal 登记「条目本来就该退役」——一条豁免不得顺带关掉另一条判据（评审 P1-3）。台账里认不出后缀或已无对应缺口的键一律判红（反向腐烂），不会被静默忽略。 声明表**自己**也被同一套语义守着（评审 P0-1）：guard 只许新增；同 id 的 kind / weaken / weakenValue / onRemoval / paths / keys / anchorFields / requireFields / sources / missingIsError / nonMonotonic / minAllowed / maxAllowed 相对基准只许补全收紧（sources 是回落链，只许**尾部追加**——前置一个镜像基准值的影子源会让基准侧与工作区侧读到不同的事实源，守卫于是对着影子文件判绿而真实事实源已被改弱；比较器另记录两侧实际命中的源，工作区命中基准未声明的文件同样判红），合法改动必须落在 retired（整条退役）或 contractApprovals（改某个字段）里并带 trackingIssue + reason，两者都做反向腐烂校验。 边界（如实声明，勿误读）：**面类判据不在本表**——覆盖率 exclude 与变异段 mutate「相对基准的收窄/扩张」本表不覆盖；#848 的判据⑤/⑥只保证条目锚定在本包且命中 ≥1 个物理文件、整份 conf 剔除 `!` 条目后仍有剩余，**都不看基准**，故「把某文件从段 mutate 挪进同段 excludes」与「给 coverage.config.json 追加一条把真实源码标成 not-source 的 exclude」目前仍无守卫（已列为跟踪项）。 枚举口径是**文件级**：只认 scripts/data 顶层的 .json（后缀大小写不敏感；.jsonc 与子目录内的 .json 不在面内，这是写进代码常量的边界），也不认键级新增（gauntlet 里新加一个键不会有判据，直到出现消费方）。「已登记」指的是该文件**被工作区侧实际读到**：只在某条 guard 的 sources 里列个名字不算，否则新 JSON 挂进 sources 就能洗白未登记。 影子源判据依赖基准声明表：基准 ref 上还没有本表时（本表首次引入的这个 PR）无从比对，同一攻击改由「未登记即红」以 exit 2 拦下（判词点名「有 guard 在 sources 里列过它，但没有任何 guard 读到」），待本表入库后同一攻击走 exit 1。 notAGate 是**人工裁决点**：任何新数据文件加一条非空 why 即可进面，该通道本身没有强度保证，靠评审。 timeoutMS 的收紧方向只报警不判红（证据约束尚未设计）。",
+  "guards": [
+    {
+      "id": "coverage.thresholds",
+      "kind": "value",
+      "sources": ["scripts/data/coverage.config.json", "vitest.config.ts"],
+      "paths": ["thresholds"],
+      "keys": ["lines", "functions", "statements", "branches"],
+      "weaken": "decrease",
+      "onRemoval": "fail",
+      "missingIsError": true,
+      "why": "覆盖率四维阈值（#722 阶段三 / #733 计划项 3.4 起事实源在 coverage.config.json）。sources 的第二个是迁移期回落：基准侧还没有 JSON 时按同一份 vitest.config.ts 解析，否则「基准侧没这个文件」会被读成「首次引入」，把一次静默降线放走。missingIsError：两侧都取不到阈值 = 硬门禁被摘除，属配置错误而非降线，故 fail-closed exit 2（原先只有这一维有该语义，现由声明表达）。",
+      "hint": "降线或删键须在原 issue 内 approved 后改基线（AGENTS.md 阈值治理）"
+    },
+    {
+      "id": "mutation.strict",
+      "kind": "boolean",
+      "sources": ["scripts/data/gauntlet.config.json"],
+      "paths": ["mutation.strict"],
+      "weakenValue": false,
+      "onRemoval": "fail",
+      "why": "变异全局严格开关（#85 v2：六包全 ≥60% 后置 true）。置 false 等于低阈包不再判红、夜间自动建 issue 的能力消失，是纯放宽；删键使 observe-check 的 strict 分支失去显式来源，同样判红。本轮 S2 实测：true→false 后 threshold-monotonic exit 0、四道闸全绿。",
+      "hint": "开启时机属治理决策，改动须原 issue 内 approved"
+    },
+    {
+      "id": "crap.strict",
+      "kind": "boolean",
+      "sources": ["scripts/data/gauntlet.config.json"],
+      "paths": ["crap.strict"],
+      "weakenValue": false,
+      "onRemoval": "fail",
+      "why": "CRAP 观察期开关（#722 阶段五）。当前 false 是观察期语义（超阈热点只落盘不判红），翻到 true 是收紧、放行；true→false 或删键等于把已开的判红态退回观察期，判红。开启时机与 #732 复杂度收紧同批，该字段 AGENTS.md 明写不得自行改动。",
+      "hint": "开启与 #732 同批裁决，不得静默退回观察期"
+    },
+    {
+      "id": "mutation.packageThreshold",
+      "kind": "value",
+      "sources": ["scripts/data/gauntlet.config.json"],
+      "paths": ["mutation.packages.*.threshold"],
+      "weaken": "decrease",
+      "onRemoval": "fail",
+      "minAllowed": 60,
+      "why": "逐包变异阈值（per-package threshold=60，两阶梯第一阶）。旧实现 countMutationThresholdDrop 要求两侧都是数字才比，于是**整包删掉完全不守**：本轮 S1 实测删块后 threshold-monotonic exit 0（真正判红的是 mutation-gate 运行期 exit 2，即要在 CI 上跑完变异才发现）。onRemoval=fail 把「删掉即该维度不再有硬门禁」变成同罪。",
+      "hint": "降线须原 issue 内 approved；整包退役须同时满足 existence 守卫的退役条件；minAllowed=60 是绝对下限（两阶梯第一阶），对**新增条目**同样生效——否则「包改名后按 threshold=1 重新登记」会因「首次引入」而免疫本判据"
+    },
+    {
+      "id": "mutation.packageSet",
+      "kind": "existence",
+      "sources": ["scripts/data/gauntlet.config.json"],
+      "paths": ["mutation.packages"],
+      "universe": {
+        "dir": "packages",
+        "prefix": "dsh-",
+        "requireDir": "src"
+      },
+      "exemptFrom": {
+        "source": "scripts/data/mutation-topology.json",
+        "path": "$noMutationPackages"
+      },
+      "requireFields": ["fixedCovered", "baselineCovered"],
+      "exemptionGate": "threshold-registry",
+      "why": "有 src 的包必须在变异阈值表里登记、且必须带回落锚点（M-1 合并两条）：① 把包从表里摘掉 = 该包静默退出变异门禁（S1 的第二半）；② 只声明 threshold 而没有任何锚点，会让 scripts/gate/observe-check.mjs 的 baseline = fixedCovered ?? baselineCovered ?? null 取到 null，regressed 恒 false——**该包永远不会被判回落**，而此前没有任何判据要求「逐包必须有基线」（实证：dsh-worktree-sidebar 合入时两个字段都没有）。豁免不写在本表：整包不进变异面的裁决登记在 mutation-topology.json 的 $noMutationPackages（其自身要求逐包写明理由），本表只读它。",
+      "hint": "新包要么补齐回落锚点（由 observe 夜间全量班首次跑完回填），要么按台账登记豁免并排期"
+    },
+    {
+      "id": "mutation.packageAnchor",
+      "kind": "baseline",
+      "sources": ["scripts/data/gauntlet.config.json"],
+      "paths": ["mutation.packages"],
+      "anchorFields": ["fixedCovered", "baselineCovered"],
+      "onRemoval": "fail",
+      "why": "逐包回落锚点只许抬不许降。读法与 observe-check.mjs 的回退链一致（fixedCovered ?? baselineCovered）：下调锚点等于把「回落超过 1pp 即判红」的分界往下搬，本轮实测 fixedCovered 92.27 → 60 后 threshold-monotonic exit 0。注意 notifier 的 baselineCovered=1.33 是 bridge 修正前的作废记录：一旦该包声明了 fixedCovered，生效锚点就是它，若有人删掉 fixedCovered 而回落读 baselineCovered，本守卫会把它读成锚点大幅下调而判红——这正是期望行为（回退链不该被用来降锚）。",
+      "hint": "锚点由 observe 夜间全量班回填；下调须原 issue 内 approved 并说明口径变化"
+    },
+    {
+      "id": "complexity.cyclomatic",
+      "kind": "value",
+      "sources": ["scripts/data/gauntlet.config.json"],
+      "paths": ["complexity.cyclomatic"],
+      "weaken": "increase",
+      "onRemoval": "fail",
+      "why": "ESLint 复杂度门禁（tools/lint 消费，唯一事实源）。阈值是上限，调大即放宽；此前无任何守卫——本轮审计对 strict|cyclomatic|crap 的 grep 零命中，且 scripts/test/lint-toolchain.test.ts 与 collect-exemptions.test.ts 把 78/84/16 硬钉在测试里，于是「数据面放宽」与「测试面硬钉」之间没有任何判据衔接。",
+      "hint": "收紧专线见 #732（目标 10/15）；放宽须原 issue 内 approved"
+    },
+    {
+      "id": "complexity.cognitive",
+      "kind": "value",
+      "sources": ["scripts/data/gauntlet.config.json"],
+      "paths": ["complexity.cognitive"],
+      "weaken": "increase",
+      "onRemoval": "fail",
+      "why": "同上（cognitive 维度）。两个维度分别登记而不是合成一条：它们的收紧节奏在 #732 里是分开排的，合成一条会让「只放宽其中一个」看起来像一次整体调整。",
+      "hint": "同 complexity.cyclomatic"
+    },
+    {
+      "id": "crap.threshold",
+      "kind": "value",
+      "sources": ["scripts/data/gauntlet.config.json"],
+      "paths": ["crap.threshold"],
+      "weaken": "increase",
+      "onRemoval": "fail",
+      "why": "CRAP 阈值（#722 阶段五重建为 src 口径）。调大阈值 = 更多函数落进「不超阈」，是放宽；该值与 complexity 一样只被 crap-check 读取，此前无守卫。",
+      "hint": "放宽须与 #732 的复杂度收紧同批裁决"
+    },
+    {
+      "id": "lint.maxWarnings",
+      "kind": "value",
+      "sources": ["scripts/data/gauntlet.config.json"],
+      "paths": ["lint.maxWarnings"],
+      "weaken": "increase",
+      "onRemoval": "fail",
+      "why": "全仓 ESLint 警告预算（#764 落地项 A2，lint.mjs 消费）：只许降不许升，删键等于摘除预算（lint.mjs 会 fail-closed，但那是运行期兜底，阈值层面显式拦一次）。本条是既有实现迁入声明表的样例：语义与迁移前逐字一致，fixture 与真值测试同步保留。",
+      "hint": "预算只许随存量清理下降；上调须原 issue 内 approved"
+    },
+    {
+      "id": "mutation.timeoutMS",
+      "kind": "value",
+      "sources": ["scripts/data/mutation-topology.json"],
+      "paths": ["sharedDefaults.timeoutMS", "packages.*.timeoutMS"],
+      "weaken": "increase",
+      "onRemoval": "fail",
+      "maxAllowed": 60000,
+      "nonMonotonic": true,
+      "why": "变异运行超时（T1）。放宽（60000 → 600000）会让单段墙钟失控——docs/mutation-speedup-methodology.md 的先例是放宽到 60s 后总时长冲到 15 分钟以上；此前 6 处 timeoutMS 无任何守卫（实测放宽后 stryker:check / mutation-ledger --check / threshold-monotonic / verify-coverage-scope 全 exit 0）。**这一格不是单调旋钮**：调低会把慢测试判成 timeout，而 mutation-gate 把 timeout 计入 detected/killed（covered = killed + timeout），于是分数虚增——收紧方向同样需要证据，故 nonMonotonic: true 只对它报警不判红（本表不做无依据的判红）。",
+      "hint": "放宽须给出该段实测墙钟依据（mutation-segment-ledger.json）；收紧方向本表只报警不判红（收紧的证据约束尚未设计，见 #843 的跟踪项）；CI 上该 WARN 只进 stderr，不改变退出码"
+    },
+    {
+      "id": "gateWiring.budgets",
+      "kind": "value",
+      "sources": ["scripts/data/gate-wiring-exceptions.json"],
+      "paths": [
+        "maxExceptions",
+        "maxStructuredSteps",
+        "maxStepIfs",
+        "maxStepEnvs",
+        "maxConditionInputs",
+        "maxJobIfs",
+        "maxJudgmentAliases",
+        "maxPriorRunSteps",
+        "maxJobFaces"
+      ],
+      "weaken": "increase",
+      "onRemoval": "fail",
+      "why": "M-2：接线断言（scripts/test/gate-wiring.test.ts）自身的 9 个豁免预算。此前唯一的约束是测试内硬顶（提交信息自承「放宽上限必须同时改数据与断言」），但硬顶之内只改数据是无判据的——实测把 8 个预算顶到各自硬顶后，threshold-monotonic / stryker:check / verify-coverage-scope 与 gate-wiring+workflow-assert 全部绿。预算放宽 = 让更多接线盲区合法化，与 lint 预算同理只许降；本守卫比测试内硬顶严：任何相对基准的上调都判红。",
+      "hint": "预算只许随接线缺口收口下降；放宽须在原 issue 内说明为什么该盲区应当合法"
+    }
+  ],
+  "notAGate": [
+    {
+      "source": "scripts/data/ci-face-registry.json",
+      "why": "CI 面归属登记（#742 阶段 2.3）：反面由 test/ci-face-coverage.test.ts 的双向断言守（每个 tracked 文件必须登记 + 每条登记必须命中真实文件 + 面覆盖 + 无空 glob），它是判据的输入而不是可放宽的阈值。改动即触发全部面（faces 里逐条声明）。"
+    },
+    {
+      "source": "scripts/data/dir-imports-baseline.json",
+      "why": "目录导入门禁的**单调基线**（#690 / #733 A）：守卫在 verify-dir-imports.mjs 自身（放宽须登记到 gate-exemptions.json），基线内容由 --write-baseline 派生、不是人手设的阈值。原「baseline 键集与 gate-scope-registry 的 cli 调用点之间无一致性断言，新包漏登即 fail-open」的缺口（#843 D15）已由 #853 收口：scripts/test/gate-scope-registry.test.ts 的「每个调用文件覆盖登记全集」断言（口径是**逐调用文件全覆盖**）——删 observe.yml / release.yml / ci.yml 任一处的 --package dsh-lan-proxy 都判红。前置依赖：合并顺序上 #853 先于本 PR。"
+    },
+    {
+      "source": "scripts/data/dsh-lan-proxy-ui-exempt.json",
+      "why": "包级资产：lan-proxy 客户端 UI 豁免表，由 scripts/lib/config-matrix-gate.ts 消费；豁免条目本身的合法性由该闸判据守，不属于阈值面。"
+    },
+    {
+      "source": "scripts/data/dsh-notifier-export-faces.json",
+      "why": "包级资产：notifier 导出面分类登记，由常驻的 test/export-faces-admission.test.ts 消费；判据是「分类与实际导出面一致」，不是阈值。"
+    },
+    {
+      "source": "scripts/data/dsh-notifier-export-surface.json",
+      "why": "包级资产：notifier 导出面基线（符号集 + 定义块），由包内 consumer-types 集成测试与 export-surface-snapshot.mjs 比对；基线更新走 --snapshot 并随 PR 提交，无单调阈值语义。"
+    },
+    {
+      "source": "scripts/data/dsh-worktree-sidebar-export-faces.json",
+      "why": "包级资产：worktree-sidebar 导出面分类登记。**已知缺口**：与同包 export-surface 基线一样已入库但零消费（全仓无调用点，ci-face-registry 对该 glob 的 why 曾误称 contract-check 消费），#843 评审 R2-M-1 要求接线或删基线，未决前如实标记，不假装它是受守的事实源。"
+    },
+    {
+      "source": "scripts/data/dsh-worktree-sidebar-export-surface.json",
+      "why": "包级资产：worktree-sidebar 导出面基线（84 块），同上零消费（实测 export-surface-snapshot --package dsh-worktree-sidebar 可跑通但三处调用点全部只传 dsh-notifier）；不属阈值面，缺口载体见 #843 裁决清单 v2 的 R2-M-1。"
+    },
+    {
+      "source": "scripts/data/gate-exemptions.json",
+      "why": "路径受限门禁的**豁免台账**（#733 计划项 3.1.2 / 3.2.2）：它是本表 existence 守卫的豁免输入（gate=threshold-registry），自身由 collect-exemptions.mjs 收集到期项 + 各闸的反向腐烂校验守，属登记面不是阈值面。"
+    },
+    {
+      "source": "scripts/data/gate-scope-registry.json",
+      "why": "路径受限门禁的**扫描范围**登记（#733 计划项 3.2.1）：未登记即红由 test/gate-scope-registry.test.ts 与各闸运行时断言守；范围不是可放宽的阈值（放宽范围的通道由 scopeFrom 三值限定）。"
+    },
+    {
+      "source": "scripts/data/mutation-segment-ledger.json",
+      "why": "变异段实测台账（#718 S0.2）：由 mutation-ledger.mjs --check 守内部一致性（测量值 ∪ unmeasured == 当前段集合，历史段须登记 superseded）；测量值只增不减的语义由「缺失段判红」承担，不是阈值。"
+    },
+    {
+      "source": "scripts/data/plugins-manifest.json",
+      "why": "插件清单（某插件是否参与聚合 / 发布校验的唯一声明处）：由 test/plugins-manifest.test.ts 与 aggregate:check 守，属结构声明。"
+    },
+    {
+      "source": "scripts/data/vendored-binaries.json",
+      "why": "发布物面内 vendored 裸二进制登记（批 2b）：sha256 绑定 + 许可随包由 verify:vendored-binaries 守，属登记面。"
+    }
+  ]
+}
