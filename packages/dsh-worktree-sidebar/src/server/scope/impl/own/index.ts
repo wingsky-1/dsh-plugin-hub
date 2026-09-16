@@ -9,8 +9,13 @@
  * 目录不存在（`stat` 说 ENOENT）、会话 id 已被另一个会话复用（`createdAt` 不同）、
  * 两侧都读出了公共 git 目录且不同。读不出来的一律保住登记——一次权限抖动或持久面抖动
  * 不该变成一次永久的摘除。
+ *
+ * 自愈（摘除）经 `binding.drop` 写盘，所以本函数的调用方**不只是解析器**：工具面读绑定来源时
+ * 也走它，于是工具调用同样可能摘掉一条已确认失效的登记——这是刻意的，不摘的话那条登记永远不会
+ * 自愈，而它已经确定不成立了。
  */
 import { statSync } from "node:fs";
+import type { BindingRecord } from "../../../binding/interface.ts";
 import type { ScopeDeps, SessionIdentity } from "../../deps.ts";
 
 /** 存在性判定看到的形状。窄到只需要一个方法，测试才能用一个字面量替身驱动。 */
@@ -42,15 +47,23 @@ export function directoryExists(
   }
 }
 
-/** 只看本会话自己的登记：没有、或已失效（目录没了 / 已不是该仓库的 worktree）都回 null。 */
-export async function ownWorktree(deps: ScopeDeps, sessionId: string): Promise<string | null> {
+/**
+ * 只看本会话自己的登记：没有、或已失效（目录没了 / 已不是该仓库的 worktree）都回 undefined。
+ *
+ * 返回整条记录而不是根：调用方（解析器与工具面）还要用到根之外的字段（分支名、仓库根），
+ * 只回一个字符串会让它们各自再查一遍表。
+ */
+export async function ownRecord(
+  deps: ScopeDeps,
+  sessionId: string,
+): Promise<BindingRecord | undefined> {
   const record = deps.binding.get(sessionId);
-  if (record === undefined) return null;
+  if (record === undefined) return undefined;
 
   const exists = deps.existsDirectory ?? directoryExists;
   if (!exists(record.worktreeRoot)) {
     await drop(deps, sessionId, "worktree 目录不存在：" + record.worktreeRoot);
-    return null;
+    return undefined;
   }
   const identity = await identityOf(deps, sessionId);
   if (identity !== undefined && identity.createdAt !== record.sessionCreatedAt) {
@@ -64,12 +77,12 @@ export async function ownWorktree(deps: ScopeDeps, sessionId: string): Promise<s
         "）：" +
         record.worktreeRoot,
     );
-    return null;
+    return undefined;
   }
   const belongs = await deps.git.belongsTo(record.worktreeRoot, record.repoRoot);
   if (belongs.kind === "different") {
     await drop(deps, sessionId, "已不是该仓库的 worktree：" + record.worktreeRoot);
-    return null;
+    return undefined;
   }
   if (belongs.kind === "unknown") {
     // 保留登记 + 出声：这一次问不出归属，正确的行为是沿用上次的成功态，而不是摘掉用户的登记。
@@ -77,7 +90,7 @@ export async function ownWorktree(deps: ScopeDeps, sessionId: string): Promise<s
       "dsh-worktree-sidebar: 无法确认 worktree 归属，保留该会话的登记 — " + belongs.reason,
     );
   }
-  return record.worktreeRoot;
+  return record;
 }
 
 /** 核对会话身份。读不出来（持久面缺席或抛错）时回 undefined，调用方因此保住登记。 */

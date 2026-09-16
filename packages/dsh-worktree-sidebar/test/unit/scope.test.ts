@@ -9,13 +9,19 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { BindingRecord } from "../../src/server/binding/interface.ts";
 import type { FileScope, LookupDescriptorPort, ScopeDeps } from "../../src/server/scope/deps.ts";
 import { directoryExists } from "../../src/server/scope/impl/own/index.ts";
-import { effectiveWorktree, resolveScope } from "../../src/server/scope/impl/resolve/index.ts";
+import {
+  bindingOrigin,
+  effectiveWorktree,
+  resolveScope,
+  rootOf,
+} from "../../src/server/scope/impl/resolve/index.ts";
 import { scopeService } from "../../src/server/scope/impl/service/index.ts";
 import {
   chainDiagnostics,
   installScope,
   releaseScope,
   takeoverState,
+  worktreeOrigin,
 } from "../../src/server/scope/interface.ts";
 
 /** 会话 header 的创建时间；登记里存的凭据与它一致时绑定才算「属于当前这个会话」。 */
@@ -571,6 +577,95 @@ describe("子 agent 继承父会话的登记", () => {
       sessionId: "child",
       workspaceRoot: "/wt",
     });
+  });
+});
+
+describe("bindingOrigin 的三态与来源读取面", () => {
+  it("rootOf 把三态翻成根：none 回 null，own / inherited 回登记里的根", () => {
+    expect(rootOf({ kind: "none" })).toBeNull();
+    expect(rootOf({ kind: "own", record })).toBe("/wt");
+    expect(rootOf({ kind: "inherited", record, ownerSessionId: "parent" })).toBe("/wt");
+  });
+
+  it("本会话自己的登记 → own，record 就是表里那一条", async () => {
+    const { deps } = scopeDeps({ binding: { s1: record }, exists: true, belongs: true });
+    expect(await bindingOrigin(deps, "s1")).toEqual({ kind: "own", record });
+  });
+
+  it("只有父链上有登记 → inherited，并报出持有它的那个会话", async () => {
+    const { deps } = scopeDeps({
+      binding: { parent: record },
+      parents: { child: "parent" },
+      exists: true,
+      belongs: true,
+    });
+    expect(await bindingOrigin(deps, "child")).toEqual({
+      kind: "inherited",
+      record,
+      ownerSessionId: "parent",
+    });
+  });
+
+  it("哪都没有 → none（不是「继承了一个 null」）", async () => {
+    const { deps } = scopeDeps();
+    expect(await bindingOrigin(deps, "s1")).toEqual({ kind: "none" });
+  });
+
+  it("双跳链：ownerSessionId 是最近一个**持有登记**的祖先，不是直接父", async () => {
+    const { deps } = scopeDeps({
+      binding: { grand: record },
+      parents: { child: "parent", parent: "grand" },
+      exists: true,
+      belongs: true,
+    });
+    const origin = await bindingOrigin(deps, "child");
+    expect(origin).toEqual({ kind: "inherited", record, ownerSessionId: "grand" });
+  });
+
+  it("用户 fork 的形态（有 parentSession、无 delegationDepth）与子 agent 走同一条判据", async () => {
+    // fork 的 header 里本域能看到的事实只有 parentSession（端口里没有 delegationDepth / origin），
+    // 所以「有父链」就是继承——维护者裁决「保留 fork 继承」在代码里就是这个样子。
+    // 形态取自真机会话链：0d295ac4 ← f20ff925 ← fe0d5336，三条都是 isSeeded 的 fork。
+    const { deps } = scopeDeps({
+      binding: { "session-0d295ac4": record },
+      parents: { "session-fe0d5336": "session-f20ff925", "session-f20ff925": "session-0d295ac4" },
+      exists: true,
+      belongs: true,
+    });
+    expect(await effectiveWorktree(deps, "session-fe0d5336")).toBe("/wt");
+    expect(await bindingOrigin(deps, "session-fe0d5336")).toEqual({
+      kind: "inherited",
+      record,
+      ownerSessionId: "session-0d295ac4",
+    });
+  });
+
+  it("父记录失效时先摘掉它，再继续向上命中祖父（自愈不截断父链）", async () => {
+    const grand: BindingRecord = { ...record, worktreeRoot: "/wt-grand" };
+    const { deps, dropped, table } = scopeDeps({
+      binding: { parent: record, grand },
+      parents: { child: "parent", parent: "grand" },
+      belongs: true,
+    });
+    // 只有父那条登记的目录没了；祖父那条仍然有效（harness 的 exists 是全局的，故这里按路径覆盖）。
+    const scoped: ScopeDeps = { ...deps, existsDirectory: (path) => path !== record.worktreeRoot };
+    expect(await bindingOrigin(scoped, "child")).toEqual({
+      kind: "inherited",
+      record: grand,
+      ownerSessionId: "grand",
+    });
+    expect(dropped).toEqual(["parent"]);
+    expect(table.has("parent")).toBe(false);
+  });
+
+  it("takeover 门是刻意分叉的：provider 缺席（waiting）时生效根回 null，登记事实照旧可读", async () => {
+    const { deps } = scopeDeps({ binding: { s1: record }, exists: true, belongs: true });
+    installScope(deps);
+    expect(scopeService.takeoverState()).toBe("waiting");
+    // 浏览器面（生效根）按官方语义走；工具面（登记事实）必须仍能读到自己的登记，
+    // 否则接管冲突时连一条登记都清理不掉。
+    expect(await scopeService.effectiveWorktree("s1")).toBeNull();
+    expect(await worktreeOrigin("s1")).toEqual({ kind: "own", record });
   });
 });
 

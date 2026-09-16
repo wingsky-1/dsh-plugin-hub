@@ -6,7 +6,12 @@
  * 本域的第二张公开契约，调用方还能持有它、绕过释放。
  */
 import type { ScopeDeps } from "./deps.ts";
+import type { WorktreeOrigin } from "./impl/resolve/index.ts";
+import { rootOf } from "./impl/resolve/index.ts";
 import { scopeService } from "./impl/service/index.ts";
+
+export { rootOf };
+export type { WorktreeOrigin };
 
 /** 装配 scope 域（组合根在 `apply` 期调用一次）。重复装配是编程错误，当场抛错。 */
 export function installScope(deps: ScopeDeps): void {
@@ -21,6 +26,17 @@ export function releaseScope(): void {
 /** 当前**生效**的 worktree 根；null 表示该会话按 cwd 走。 */
 export function effectiveWorktree(sessionId: string): Promise<string | null> {
   return scopeService.effectiveWorktree(sessionId);
+}
+
+/**
+ * 该会话的**绑定来源**（自己的登记 / 继承来的登记 / 没有）。
+ *
+ * 与 `effectiveWorktree` 的唯一差别是**不设 takeover 门**：工具面要的是「登记事实」，
+ * 而文件根有没有真的换成它由 `/health` 的 `scopeTakeover` 报告。waiting / abandoned 期
+ * 两者结论不同（工具面照旧给出登记，浏览器面仍按 cwd），这是刻意设计，不是 bug。
+ */
+export function worktreeOrigin(sessionId: string): Promise<WorktreeOrigin> {
+  return scopeService.worktreeOrigin(sessionId);
 }
 
 /**

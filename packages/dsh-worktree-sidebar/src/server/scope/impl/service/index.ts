@@ -16,7 +16,12 @@
  * 状态守卫**显式抛错**（响亮失败优于静默共享/丢数据）。
  */
 import type { FileScope, ScopeDeps, SessionChainPort } from "../../deps.ts";
-import { effectiveWorktree as resolveEffectiveWorktree, resolveScope } from "../resolve/index.ts";
+import type { WorktreeOrigin } from "../resolve/index.ts";
+import {
+  bindingOrigin,
+  effectiveWorktree as resolveEffectiveWorktree,
+  resolveScope,
+} from "../resolve/index.ts";
 
 /** 未装配时能力面的失败文案：读到它就说明装配守卫有洞，当场暴露而不是拿旧 deps 出结果。 */
 const NOT_INSTALLED = "dsh-worktree-sidebar: scope 域尚未装配";
@@ -37,6 +42,15 @@ export interface ScopeApi {
    * 浏览器路由读它，所以它与解析器给出的答案是同一个（G7）。
    */
   effectiveWorktree(sessionId: string): Promise<string | null>;
+  /**
+   * 该会话的**绑定来源**（自己的登记 / 继承来的登记 / 没有）。工具面读它，用来区分
+   * 「本会话自己的登记」与「继承自哪个会话」。
+   *
+   * 它与 `effectiveWorktree` 的**唯一差别是不设 takeover 门**（后者在 `state !== "live"` 时回 null）。
+   * 这是刻意的：工具面要的是「登记事实」，而「文件根有没有真的换根」是宿主启动期读数，
+   * 由 `/health` 的 `scopeTakeover` 报告。waiting / abandoned 期两者结论不同，不是 bug。
+   */
+  worktreeOrigin(sessionId: string): Promise<WorktreeOrigin>;
   /** 接管状态的诊断读数：只给 health 用，判定逻辑不看它。接管与否看它是否等于 `live`。 */
   takeoverState(): TakeoverState;
   /** 会话链持久面的读数：查了几次、坏了几次、最后一次为什么坏。同样只给 health 用。 */
@@ -168,6 +182,18 @@ class ScopeService implements ScopeApi {
     // 还没接管（等 provider）或接管权被别人占了时文件根保持官方语义，客户端因此不动它。
     if (this.state !== "live") return null;
     return resolveEffectiveWorktree(deps, sessionId);
+  }
+
+  /**
+   * 绑定来源。**不设 takeover 门**：登记是否存在与「文件根是否已经换成它」是两件事，
+   * 工具面（register / create / remove）要的是前者的完整答案——它据此决定能不能摘、
+   * 该不该报「继承自哪个会话」。把工具面也卡在 `live` 上，接管冲突时连一条已确认失效的
+   * 登记都清理不掉。
+   */
+  async worktreeOrigin(sessionId: string): Promise<WorktreeOrigin> {
+    const deps = this.deps;
+    if (deps === undefined) throw new Error(NOT_INSTALLED);
+    return bindingOrigin(deps, sessionId);
   }
 
   /**
