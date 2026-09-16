@@ -23,8 +23,10 @@
  *   ① 面由文件系统派生（有 test/ 目录 = 有测试面）；
  *   ② 有测试面就**必须**有 test/tsconfig.json，否则判红；刻意不接的包进
  *      UNWIRED_TEST_FACES 逐包写明理由，且该豁免受反向断言（包还在、确实缺 tsconfig）；
- *   ③ 关键夹具（EXPECT_FILES）逐包登记且与接线套件一一对应：删掉任一条目即判红（它是
- *      「编译面被真实覆盖」的锚，不是接线清单——接线清单由磁盘派生）。
+ *   ③ 编译面清单（EXPECT_FILES）逐包登记，且与 `tsc --showConfig` 解析出的该包
+ *      test/tsconfig.json 编译面**双向相等**：删清单里任一条目、删磁盘上任一面文件、把面
+ *      文件排除出 tsconfig、新增面文件未登记，四种都判红。它是「编译面被真实覆盖」的锚
+ *      （接线对象本身由磁盘派生），不是「重要程度排序」。
  *
  * 已知面的形态：dsh-mcp-manager 的 test/e2e/** 在它自己的 tsconfig 里显式 exclude
  * （文件级 @ts-nocheck 的产物契约测试，静态 import 本包 lib/index.js 会把包内
@@ -35,7 +37,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 
 import { PREREQ_PACKAGES } from "./script-test-prereqs.mjs";
 
@@ -74,32 +76,152 @@ const UNWIRED_TEST_FACES: Record<string, string> = {
 };
 
 /**
- * 每包的关键夹具：判据是「夹具被误删」时在此 fail-loud，而不是表现为编译面静默少覆盖一块。
- * 键集必须**恰好等于**接线套件（下面的用例双侧比对）——删掉任一条目即红，所以它不是注释，
- * 而是一份必须与面同步的数据。夹具表不是接线清单：接线清单由磁盘派生，本表只登记锚点。
- * 取值口径：优先登记该包类型面**真正参与检查**的文件（无 @ts-nocheck 者）；整面都是
- * @ts-nocheck 时取该包的主行为测试文件。
+ * 每包编译面清单：与 `tsc --showConfig` 解析出的 test/tsconfig.json 编译面**双向相等**
+ * （下面的用例逐包比对）。为什么不是手挑的「关键夹具」子集：手挑子集没有任何判据锚得住
+ * ——从数组里删掉一条，其余断言全绿（#845 批次评审实跑复现）；而本表存在的全部意义就是让
+ * 「夹具被误删 / 被排除出 tsconfig」在编译面静默少覆盖一块之前 fail-loud（#733 M2-3.2）。
+ * 代价是新增面文件必须在此登记：这是刻意的同步成本，换的是两个方向都不静默。
+ * 口径边界：这里的「面」是 tsconfig 解析出的文件列表，不是 test/ 的裸目录——裸目录里的
+ * test/*.worker.mjs、hotreload-probe.mjs、tsconfig.json 与 test/ 外的 ../src/client/css.d.ts
+ * 都不进任何 tsc program，要求它们登记才是假红。
  */
 const EXPECT_FILES: Record<string, string[]> = {
-  // 本包 test 面 4/4 文件带 @ts-nocheck（脚本式大文件），无类型面锚点可登，取两个主行为单测。
-  "dsh-lan-proxy": [join("unit", "unit-proxy.test.ts"), join("unit", "unit-apply.test.ts")],
-  "dsh-mcp-manager": [join("integration", "service-contract.test.ts")],
-  "dsh-notifier": [
-    join("integration", "service-contract.test.ts"),
-    join("integration", "consumer-types.test.ts"),
-    // consumer-product-face.ts 是**产物面**消费方夹具（#733 M2-3.2）：按包名经
-    // test/tsconfig.json 的 paths 取 lib/index.d.ts，判据是「声明合并对消费方可达」。
-    join("integration", "consumer-product-face.ts"),
+  "dsh-lan-proxy": [
+    "client/client-style.test.ts",
+    "e2e/smoke.test.ts",
+    "unit/unit-apply.test.ts",
+    "unit/unit-proxy.test.ts",
   ],
-  // 本包类型面只剩这三个文件没有 @ts-nocheck，是这条编译面真正有牙齿的地方。
+  "dsh-mcp-manager": [
+    "helpers.ts",
+    "integration/service-contract.test.ts",
+    "unit/unit-apply.test.ts",
+    "unit/unit-call-stats.test.ts",
+    "unit/unit-catalog.test.ts",
+    "unit/unit-hotspot.test.ts",
+    "unit/unit-manager.test.ts",
+    "unit/unit-manager2.test.ts",
+    "unit/unit-middleware.test.ts",
+    "unit/unit-pipeline.test.ts",
+    "unit/unit-routes-sse.test.ts",
+    "unit/unit-shared.test.ts",
+    "unit/unit-store.test.ts",
+    "unit/unit-supervisor.test.ts",
+    "unit/unit-transport.test.ts",
+    "unit/unit-workspace.test.ts",
+  ],
+  "dsh-notifier": [
+    "client-dom/apply-lifecycle.test.ts",
+    "client-dom/display.test.ts",
+    "client-dom/title.test.ts",
+    "client-helpers.ts",
+    "client-unit/api-error.test.ts",
+    "client-unit/banner.test.ts",
+    "client-unit/capabilities.test.ts",
+    "client-unit/disposers.test.ts",
+    "client-unit/locale-fallback.test.ts",
+    "client-unit/locale.test.ts",
+    "client-unit/mask.test.ts",
+    "client-unit/notify-audio.test.ts",
+    "client-unit/notify-lease.test.ts",
+    "client-unit/notify-policy.test.ts",
+    "client-unit/notify-registry.test.ts",
+    "client-unit/notify-session.test.ts",
+    "client-unit/notify-title.test.ts",
+    "client-unit/reason-text.test.ts",
+    "client-unit/save-guard.test.ts",
+    "client-unit/settings-diff.test.ts",
+    "client/capabilities.test.ts",
+    "client/reason-text.test.ts",
+    "e2e/smoke.test.ts",
+    "helpers.ts",
+    "integration/consumer-product-face.ts",
+    "integration/consumer-types.test.ts",
+    "integration/real-context.test.ts",
+    "integration/service-contract.test.ts",
+    "unit/api/journal.test.ts",
+    "unit/api/kinds.test.ts",
+    "unit/api/probe.test.ts",
+    "unit/api/route.test.ts",
+    "unit/api/service.test.ts",
+    "unit/api/settings.test.ts",
+    "unit/api/stream.test.ts",
+    "unit/channels/bark.test.ts",
+    "unit/channels/browser.test.ts",
+    "unit/channels/capabilities.test.ts",
+    "unit/channels/deliver.test.ts",
+    "unit/channels/system.test.ts",
+    "unit/channels/webhook.test.ts",
+    "unit/config/input.test.ts",
+    "unit/config/model.test.ts",
+    "unit/config/redact.test.ts",
+    "unit/config/service.test.ts",
+    "unit/events/listen.test.ts",
+    "unit/events/session.test.ts",
+    "unit/events/translate.test.ts",
+    "unit/pipeline/dispatch.test.ts",
+    "unit/pipeline/finalize.test.ts",
+    "unit/pipeline/judge.test.ts",
+    "unit/pipeline/route.test.ts",
+    "unit/pipeline/service.test.ts",
+    "unit/shared/channels.test.ts",
+    "unit/shared/kinds.test.ts",
+    "unit/shared/paths.test.ts",
+    "unit/shared/reason-codes.test.ts",
+    "unit/shared/reason.test.ts",
+    "unit/shared/sounds.test.ts",
+    "unit/shared/webhooks.test.ts",
+    "unit/stores/history.test.ts",
+    "unit/stores/status.test.ts",
+    "unit/upgrade/legacy.test.ts",
+    "unit/upgrade/reason-shape.test.ts",
+    "unit/upgrade/service.test.ts",
+    "unit/upgrade/steps.test.ts",
+    "unit/upgrade/version.test.ts",
+  ],
   "dsh-provider-usage": [
-    join("client", "unit-trend-view.test.ts"),
-    join("unit", "routes", "unit-routes.test.ts"),
+    "client/unit-detect.test.ts",
+    "client/unit-fetch-timeout.test.ts",
+    "client/unit-refresh-revalidate.test.ts",
+    "client/unit-trend-view.test.ts",
+    "e2e/smoke.test.ts",
+    "helpers.ts",
     "smoke-pure.ts",
+    "unit/adapters/unit-deepseek-official.test.ts",
+    "unit/apply/unit-apply.test.ts",
+    "unit/common/unit-errsurf.test.ts",
+    "unit/history/unit-history.test.ts",
+    "unit/pipeline/unit-signal-lock.test.ts",
+    "unit/pipeline/unit-stats-service.test.ts",
+    "unit/registry/unit-hotreload.test.ts",
+    "unit/report/unit-report-executor.test.ts",
+    "unit/report/unit-report.test.ts",
+    "unit/routes/unit-routes.test.ts",
+    "unit/shared/unit-config.test.ts",
+    "unit/shared/unit-contract.test.ts",
+    "unit/shared/unit-v1.test.ts",
+    "unit/trend/unit-trend-ledger.test.ts",
+    "unit/trend/unit-trend.test.ts",
   ],
   "dsh-worktree-sidebar": [
-    join("unit", "client-index.test.ts"),
-    join("unit", "client-takeover.test.ts"),
+    "helpers.ts",
+    "integration/apply-lifecycle.test.ts",
+    "integration/binding-store.test.ts",
+    "integration/git-real.test.ts",
+    "integration/tools-real.test.ts",
+    "unit/api-routes.test.ts",
+    "unit/binding-model.test.ts",
+    "unit/client-bindings.test.ts",
+    "unit/client-index.test.ts",
+    "unit/client-source.test.ts",
+    "unit/client-takeover.test.ts",
+    "unit/git-inspect.test.ts",
+    "unit/git-service.test.ts",
+    "unit/host-agents.test.ts",
+    "unit/host-sessions.test.ts",
+    "unit/host-typert.test.ts",
+    "unit/scope.test.ts",
+    "unit/tools.test.ts",
   ],
 };
 
@@ -112,6 +234,31 @@ const SUITES = WIRED_PACKAGES.map((pkg) => ({
   tsconfig: testTsconfigOf(pkg),
   expectFiles: EXPECT_FILES[pkg] ?? [],
 }));
+
+/**
+ * 包 test/tsconfig.json 的**解析后面**：`tsc --showConfig` 给出的文件列表（不展开 import
+ * 闭包——那把 src 与 node_modules 一并拉进来，不是本面的对象）。为什么用 tsc 自己解析而不是
+ * 在本文件里复刻 include/exclude 的 glob 语义：面只有一处事实源，两处独立复刻必然漂移。
+ * 只保留 test/ 以内的文件（dsh-notifier 的 ../src/client/css.d.ts 进 program 但不属本面）。
+ */
+function compileFaceOf(tsconfig: string): string[] {
+  const testDir = dirname(tsconfig);
+  const result = spawnSync(process.execPath, [TSC, "-p", tsconfig, "--showConfig"], {
+    cwd: ROOT,
+    encoding: "utf8",
+    timeout: 120000,
+  });
+  assert.strictEqual(
+    result.status,
+    0,
+    "tsc --showConfig 解析 tsconfig 失败（exit=" + result.status + "）：\n" + result.stderr,
+  );
+  const parsed = JSON.parse(result.stdout) as { files?: string[] };
+  return (parsed.files ?? [])
+    .map((file) => relative(testDir, resolve(testDir, file)).split(sep).join("/"))
+    .filter((file) => file !== "" && !file.startsWith("../") && file !== "tsconfig.json")
+    .sort();
+}
 
 test("#845: 有测试面的包必须接上编译面（缺 test/tsconfig.json 且未豁免即红）", () => {
   const missing = TESTED_PACKAGES.filter(
@@ -156,8 +303,8 @@ test("#845: 接线面不得被收窄（套件 == 磁盘上全部 test/tsconfig.j
 });
 
 test("#845: 夹具表必须与接线套件一一对应（删掉任一条目即红，不留静默缩面出口）", () => {
-  // 双侧比对：左边是数据，右边由磁盘派生。只查「悬空」会漏掉 #845 验收点名的那条反向
-  // 自证——删掉一个 expectFiles 条目后，整个编译面就少了一个锚点，而其它断言全绿。
+  // 键集双侧比对：左边是数据，右边由磁盘派生。它只钉「包」这一层，数组内条目的增删由下面
+  // 「编译面清单与解析面双向相等」用例逐条钉住。
   assert.deepEqual(
     Object.keys(EXPECT_FILES).sort(),
     WIRED_PACKAGES,
@@ -168,6 +315,32 @@ test("#845: 夹具表必须与接线套件一一对应（删掉任一条目即�
     .filter(([, files]) => files.length === 0)
     .map(([pkg]) => pkg);
   assert.deepEqual(emptied, [], "这些套件的夹具列表被清空——编译面失去了全部锚点");
+});
+
+test("#845: 编译面清单与解析面双向相等（删任一条目 / 面文件 / 排除出 tsconfig 即红）", () => {
+  // 左半边（清单 ⊆ 面）拦「登记了不被编译的死条目」与「面文件被排除出 tsconfig」；右半边
+  // （面 ⊆ 清单）拦「从数组里删掉一条」——本表此前唯一的静默缩面出口。面由 tsc 自己解析，
+  // 故这不是自己跟自己比。
+  for (const suite of SUITES) {
+    const face = compileFaceOf(suite.tsconfig);
+    assert.deepEqual(
+      [...suite.expectFiles].sort(),
+      face,
+      suite.pkg +
+        "：编译面清单与 test/tsconfig.json 解析出的文件列表不一致。\n清单独有（死条目，或已被" +
+        "排除出 tsconfig）：[" +
+        suite.expectFiles
+          .filter((file) => !face.includes(file))
+          .sort()
+          .join(", ") +
+        "]\n面独有（清单里删掉了条目，或新增面文件未登记）：[" +
+        face
+          .filter((file) => !suite.expectFiles.includes(file))
+          .sort()
+          .join(", ") +
+        "]",
+    );
+  }
 });
 
 test("#845: 包面枚举有效（载体自证：遍历失效时不许在空集上全绿）", () => {

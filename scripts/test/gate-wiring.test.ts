@@ -29,9 +29,12 @@
  *     contract-check.ts；lefthook 只进覆盖性，不进形态族。
  *   - 判据面（覆盖性 A8 的全集 G）：`JUDGMENT_DIRS` 列出的目录——`scripts/gate`（门禁本体与判据
  *     专用库）、`scripts/ci`（CI 切片执行位）、`scripts/release`（发布与基线监控执行位）、
- *     `tools`（lint 工具链入口）。口径 =「门禁系统以路径字符串直接执行的脚本所在目录」；`scripts/lib`
+ *     `tools`（lint 工具链入口）。口径 =「门禁系统的执行点全集（workflow ∪ 本地档位 ∪ lefthook）
+ *     以路径字符串直接执行的脚本所在目录」；`scripts/lib`
  *     （只被 import 的共享库，删改会让 import 方在 tsc / node 解析上响亮失败）、`scripts/build`
- *     （由各包 package.json 的 build 别名调用，门禁档位不展开 `pnpm -r build`，实测 0/4 有执行点）、
+ *     （只被各包 package.json 的 build 别名以路径字符串调用；执行点全集不含它——harness 未建模各包
+ *     package.json 的别名展开，pnpm 别名只展开根 package.json，实测 0/4 有执行点。这是建模边界，
+ *     不是「该目录没人执行」）、
  *     `scripts/maintenance`（README 明示按需手工执行）、`scripts/test`（自测面，执行者是 glob）
  *     不在面内。逐条理由与「收窄 / 放宽要同时改什么」写在 gateSources 的注释里。
  *   - 解析层按 bash 语义而不是裸正则：引号内的 `#` 不是注释（`$'…'` 与反引号一并建模）、`--packages` 的取值
@@ -1476,12 +1479,17 @@ const isSource = (name: string): boolean => /\.(mjs|cjs|ts)$/.test(name) && !nam
  *     **具名 import 可达**判定库，可达根是脚本执行点；`scripts/test/*.test.ts` 是
  *     `node --test <glob>` 的 tool 端点、没有逐文件身份，于是 test-only 库
  *     （gate-endpoints.mjs / gate-wiring-lib.ts）会恒判「无人依赖」；而把测试 import 当依赖
- *     又会打开「判据的偶然 import 即免死」的侧门（见 REACHABLE_LIBRARIES 注释）。
- *   - 不进面：`scripts/build` / `scripts/maintenance` / `scripts/test`。构建链由各包
- *     package.json 的 build 别名调用（门禁档位不展开 `pnpm -r build`，实测 0/4 有执行点），
- *     维护脚本按需手工执行，自测面的执行者是 glob。这三处是**已登记的口径边界**；
- *     「各包 build 必须含 clean-lib + bundle-host」要的是另一条形断言（#843 M9 的另一半），
- *     不在本面的论域内。
+ *     又会打开「判据的偶然 import 即免死」的侧门（见 REACHABLE_LIBRARIES 注释）。该面另有一条
+ *     不靠本面的兜底：`packageScopeDrift`（#853 引入）由 gate-scope-registry.test.ts 的确定性
+ *     反例逐方向钉住——差集实现改成恒返回空也会失配，不脱管。
+ *   - 不进面：`scripts/build` / `scripts/maintenance` / `scripts/test`。`scripts/build` 是**会
+ *     被执行**的：各包 package.json 的 build 别名以路径字符串直调它（`node ../../scripts/build/clean-lib.ts`），
+ *     形式上正是本面口径要覆盖的那种调用。它进不了面的原因在 harness 侧——执行点全集只来自 workflow ∪ 本地档位 ∪
+ *     lefthook，而其中的 pnpm 别名展开也只覆盖根 package.json（`SCRIPTS`），**未建模各包
+ *     package.json 的别名展开**，故实测 0/4 有执行点。这是建模边界，既不是「该目录没人执行」，
+ *     也不能拿它当「已脱管」的证据。维护脚本按需手工执行，自测面的执行者是 glob。这三处是
+ *     **已登记的口径边界**；「各包 build 必须含 clean-lib + bundle-host」要的是另一条形断言
+ *     （#843 M9 的另一半），不在本面的论域内。
  *
  * 判据全集 G 机械派生自文件系统、不建登记表。收窄或放宽本口径 = 改 JUDGMENT_DIRS 这一行
  * 再加本段注释，是一次显式 diff（不是静默少扫一个目录）。
