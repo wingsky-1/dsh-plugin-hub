@@ -1,29 +1,62 @@
 #!/usr/bin/env node
 /**
- * red-line-approval 自测（#843 M1 / R-1）。
+ * red-line-approval 自测（#843 M1 / #851 裁决后的派生面）。
  *
- * 判据有两层，缺一层都会给出假绿：
+ * 判据有三层，缺一层都会给出假绿：
  *   1. 纯函数层——`judgeRedLine` 的语义（命中且无 approved 才判红）；
- *   2. 接线层——CLI 的退出码契约（0/1/2）与 ci.yml 里那个 job 真的在调它、真的挂进
+ *   2. 面层——红线面是**派生**的（`.github/**` ∪ 声明表里每个 guard 的 `sources` ∪ 声明表自身），
+ *      且 `scripts/gate/**` 明确**不在**面内（#851 撤回了上一版把它当"加固面"的扩大定义）；
+ *   3. 接线层——CLI 的退出码契约（0/1/2）与 ci.yml 里那个 job 真的在调它、真的挂进
  *      repo-gate 的 needs。判据本体对而接线错，是"有测试却拦不住"的经典形态。
  *
- * 第 3 类用例（只改普通文件一律放行）是防误伤的关键：判据一旦写成"没标签就红"，
- * 本仓绝大多数 PR 会被无差别卡死，比没有判据更糟。
+ * 面层的用例一律用 fixture 声明表（mkdtemp 里），**不读** `scripts/data/threshold-registry.json`
+ * 本体：那份表由 #850 引入，本 PR 的合并顺序在它之前——用例依赖它就等于把本 PR 的绿挂在下一次
+ * 合并上。判定逻辑的用例用默认面（两种合并顺序下都成立的断言）。
+ *
+ * 防误伤仍然关键：判据一旦写成"没标签就红"，本仓绝大多数 PR 会被无差别卡死，比没有判据更糟。
  */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, normalize } from "node:path";
 import { spawnSync } from "node:child_process";
 
-import { judgeRedLine, parseArgs, main, RED_LINE_PATTERNS } from "../gate/red-line-approval.mjs";
+import {
+  judgeRedLine,
+  parseArgs,
+  main,
+  RED_LINE_PATTERNS,
+  redLinePatterns,
+  REGISTRY_REL_PATH,
+  DEFAULT_REGISTRY_PATH,
+} from "../gate/red-line-approval.mjs";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const SCRIPT_REL = "scripts/gate/red-line-approval.mjs";
 const SCRIPT = join(ROOT, SCRIPT_REL);
 const CI_YML_REL = ".github/workflows/ci.yml";
 const JOB = "red-line-approval";
+
+/** 写一份 fixture 声明表（只在 mkdtemp 目录里，不入库），返回其绝对路径。 */
+function writeRegistry(dir: string, guards: { id: string; sources: string[] }[]) {
+  const path = join(dir, "threshold-registry.json");
+  writeFileSync(path, JSON.stringify({ version: 1, guards }, null, 2));
+  return path;
+}
+
+/** 建隔离目录 + fixture 声明表，跑完自动清理（测试产物零污染）。 */
+function withRegistry<T>(
+  guards: { id: string; sources: string[] }[],
+  run: (registry: string) => T,
+): T {
+  const dir = mkdtempSync(join(tmpdir(), "red-line-registry-"));
+  try {
+    return run(writeRegistry(dir, guards));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 /** 取 CI 的 job 块：从 job 头到下一个顶格 job 键为止（与 workflow-assert 同款口径）。 */
 function jobBlock(text: string, job: string) {
@@ -34,12 +67,205 @@ function jobBlock(text: string, job: string) {
   return end === -1 ? rest : rest.slice(0, end);
 }
 
-// ─────────────────────────── 一、红线面常量 ───────────────────────────
+// ─────────────────────────── 一、红线面（派生） ───────────────────────────
 
-test("红色面常量：默认红线面恰为 .github/** 与 scripts/gate/**（判定不散成 if）", () => {
-  // 与实现比对的是**字面期望**，不是从 RED_LINE_PATTERNS 派生的副本——后者会让
-  // "把红线面删空"这类改动自证通过。
-  assert.deepEqual([...RED_LINE_PATTERNS], [".github/**", "scripts/gate/**"]);
+test("红线面：由 fixture 声明表派生——每个 guard 的 sources ∪ .github/** ∪ 声明表自身", () => {
+  withRegistry(
+    [
+      {
+        id: "coverage.thresholds",
+        sources: ["scripts/data/coverage.config.json", "vitest.config.ts"],
+      },
+      { id: "mutation.strict", sources: ["scripts/data/gauntlet.config.json"] },
+    ],
+    (registry) => {
+      // 与实现比对的是**字面期望**，不是从 redLinePatterns 派生的副本——后者会让"把红线面删空"
+      // 这类改动自证通过。三个来源各有一条：基座 `.github/**`、sources 里的每个路径（含不在
+      // scripts/data 下的 vitest.config.ts）、声明表自身（fixture 在 /tmp，自指项按规范路径入面）。
+      assert.deepEqual(
+        redLinePatterns(registry, () => {}),
+        [
+          ".github/**",
+          "scripts/data/coverage.config.json",
+          "scripts/data/gauntlet.config.json",
+          "scripts/data/threshold-registry.json",
+          "vitest.config.ts",
+        ],
+      );
+    },
+  );
+});
+
+test("红线面：规范化——./ 前缀归一、跨 guard 重复只算一条、排序稳定", () => {
+  withRegistry(
+    [
+      {
+        id: "a",
+        sources: ["./scripts/data/gauntlet.config.json", "scripts/data/coverage.config.json"],
+      },
+      {
+        id: "b",
+        sources: ["scripts/data/gauntlet.config.json", "./scripts/data/coverage.config.json"],
+      },
+    ],
+    (registry) => {
+      // 4 条声明里有 2 组重复、2 条带 `./`：去掉去重会多出 2 条、去掉 `./` 归一会多出两条
+      // `./scripts/…`——两种实现缺陷都被这份字面清单同时钉住。
+      assert.deepEqual(
+        redLinePatterns(registry, () => {}),
+        [
+          ".github/**",
+          "scripts/data/coverage.config.json",
+          "scripts/data/gauntlet.config.json",
+          "scripts/data/threshold-registry.json",
+        ],
+      );
+    },
+  );
+});
+
+test("红线面：只收 guards[].sources——notAGate 的登记面不进面（红线定义不得悄悄扩大）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "red-line-notagate-"));
+  try {
+    const path = join(dir, "threshold-registry.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 1,
+        guards: [{ id: "mutation.strict", sources: ["scripts/data/gauntlet.config.json"] }],
+        notAGate: [
+          { source: "scripts/data/ci-face-registry.json", why: "登记面，不是可放宽的阈值" },
+        ],
+      }),
+    );
+    // notAGate 是显式声明"不是可放宽的阈值"的登记面；把它一并拉进红线面，等于把红线定义扩大到
+    // 第二类登记面——与撤回 scripts/gate/** 的同一条理由。这条钉住边界，扩面必须重新裁决。
+    assert.deepEqual(
+      redLinePatterns(path, () => {}),
+      [".github/**", "scripts/data/gauntlet.config.json", "scripts/data/threshold-registry.json"],
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("红线面：声明表缺失 → 退化为仅 .github/** + ::warning::，不崩（#850 合入前 CI 也要能跑）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "red-line-missing-"));
+  try {
+    const missing = join(dir, "absent-registry.json");
+    const warnings: string[] = [];
+    const face = redLinePatterns(missing, (m) => warnings.push(m));
+    assert.deepEqual(face, [".github/**"]);
+    assert.equal(warnings.length, 1, "退化必须留痕，且只留一条");
+    assert.match(warnings[0], /^::warning::/);
+    assert.match(warnings[0], /声明表不可用/);
+    assert.match(warnings[0], /absent-registry\.json/, "告警必须点名是哪份表不可用");
+    // 退化面同时满足两件事：仍拦得住基座红线、不再拦数据文件。只断言其一的话，"退化成空面"
+    // 或"根本没退化"都能蒙混过关。
+    assert.equal(
+      judgeRedLine({ changedFiles: [".github/workflows/ci.yml"], labels: [], patterns: face }).ok,
+      false,
+    );
+    assert.deepEqual(
+      judgeRedLine({
+        changedFiles: ["scripts/data/gauntlet.config.json"],
+        labels: [],
+        patterns: face,
+      }),
+      { ok: true, violations: [] },
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("红线面：声明表存在但不可用 → 同样退化 + 报警，且告警点名具体原因（不与表不存在含混）", () => {
+  // 本条钉的是**已声明的边界**而不是"正确"：同一份表的 fail-closed 由 #850 的
+  // threshold-monotonic（解析失败即 exit 2）承担，本判据再兜一层只会给所有 PR 加第二个断线通道。
+  // 如实断言退化行为，是为了让它将来即便被改成 fail-closed 也要过一次复审，而不是悄悄换语义。
+  const dir = mkdtempSync(join(tmpdir(), "red-line-broken-"));
+  try {
+    const cases = [
+      { name: "broken.json", body: '{ "guards": [ ', why: /JSON 不可解析/ },
+      { name: "noguards.json", body: '{"version":1}', why: /缺少 guards 数组/ },
+      {
+        name: "badsources.json",
+        body: '{"guards":[{"id":"x","sources":"a.json"}]}',
+        why: /sources 不是数组/,
+      },
+    ];
+    const messages: string[] = [];
+    for (const c of cases) {
+      const path = join(dir, c.name);
+      writeFileSync(path, c.body);
+      const warnings: string[] = [];
+      assert.deepEqual(
+        redLinePatterns(path, (m) => warnings.push(m)),
+        [".github/**"],
+        c.name,
+      );
+      assert.match(warnings[0], c.why, `${c.name} 的告警必须点名原因`);
+      messages.push(warnings[0]);
+    }
+    // 三种"存在但不可用"的告警互不相同，也不等于"表不存在"那条——否则读者从告警里分不出
+    // 该等 #850 还是该修数据。
+    assert.equal(new Set(messages).size, cases.length);
+    const absent: string[] = [];
+    redLinePatterns(join(dir, "nope.json"), (m) => absent.push(m));
+    assert.ok(!messages.includes(absent[0]));
+    assert.match(absent[0], /读取失败（ENOENT）/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("回归锚：scripts/gate/** 不在面内——把它当加固面加回去必须被这条打红（#851 裁决）", () => {
+  // 上一版把 scripts/gate/** 钉进常量，是自行扩大 AGENTS.md 的红线定义（清单里没有它），且在
+  // GitHub 侧没有 approved 留痕。这条是那次裁决的回归锚。
+  assert.ok(
+    RED_LINE_PATTERNS.every((pattern) => !pattern.startsWith("scripts/gate")),
+    `派生面不得含 scripts/gate/**（实际 ${RED_LINE_PATTERNS.join(", ")}）`,
+  );
+  assert.deepEqual(judgeRedLine({ changedFiles: ["scripts/gate/xxx.mjs"], labels: [] }), {
+    ok: true,
+    violations: [],
+  });
+  withRegistry(
+    [{ id: "mutation.strict", sources: ["scripts/data/gauntlet.config.json"] }],
+    (registry) => {
+      const face = redLinePatterns(registry, () => {});
+      assert.deepEqual(
+        judgeRedLine({ changedFiles: ["scripts/gate/local-gate.mjs"], labels: [], patterns: face }),
+        {
+          ok: true,
+          violations: [],
+        },
+      );
+      // 非空洞性：同一条判据对基座面与声明源都判红，否则上面"不判红"可能只是因为面是空的
+      assert.equal(
+        judgeRedLine({ changedFiles: [".github/workflows/ci.yml"], labels: [], patterns: face }).ok,
+        false,
+      );
+      assert.equal(
+        judgeRedLine({
+          changedFiles: ["scripts/data/gauntlet.config.json"],
+          labels: [],
+          patterns: face,
+        }).ok,
+        false,
+      );
+    },
+  );
+});
+
+test("红线面：RED_LINE_PATTERNS 就是默认声明表的派生面，默认表路径即规范路径", () => {
+  assert.equal(
+    normalize(DEFAULT_REGISTRY_PATH),
+    join(ROOT, REGISTRY_REL_PATH),
+    "默认声明表必须指向仓库里的规范路径（写错路径会静默退化成仅 .github/**）",
+  );
+  // 与 import 期算出的常量比对：把默认面改成静态常量、或让它不再读默认表，这条会红。
+  assert.deepEqual([...RED_LINE_PATTERNS], [...redLinePatterns(DEFAULT_REGISTRY_PATH, () => {})]);
 });
 
 // ─────────────────────────── 二、纯函数判据 ───────────────────────────
@@ -52,13 +278,25 @@ test("判据①：命中红线且无 approved → 判红，且逐条点名命中
   assert.match(r.violations[0], /approved/);
 });
 
-test("判据①：scripts/gate/** 同属红线面，多文件命中逐条落违规", () => {
-  const r = judgeRedLine({
-    changedFiles: ["scripts/gate/red-line-approval.mjs", "scripts/gate/local-gate.mjs"],
-    labels: ["ci"],
-  });
-  assert.equal(r.ok, false);
-  assert.equal(r.violations.length, 2);
+test("判据①：被声明为事实源的数据文件无 approved → 判红，多文件命中逐条落违规", () => {
+  withRegistry(
+    [
+      {
+        id: "coverage.thresholds",
+        sources: ["scripts/data/coverage.config.json", "vitest.config.ts"],
+      },
+    ],
+    (registry) => {
+      const r = judgeRedLine({
+        changedFiles: ["scripts/data/coverage.config.json", "vitest.config.ts"],
+        labels: ["ci"],
+        patterns: redLinePatterns(registry, () => {}),
+      });
+      assert.equal(r.ok, false);
+      assert.equal(r.violations.length, 2);
+      assert.match(r.violations[0], /scripts\/data\/coverage\.config\.json/);
+    },
+  );
 });
 
 test("判据②：命中红线且带 approved → 放行", () => {
@@ -132,7 +370,7 @@ test("判据④：红线面字面段大小写敏感——.GITHUB/ 与 Scripts/Ga
 
 test("判据④：红线面正例仍逐条命中（不因大小写口径把真红线放过）", () => {
   const r = judgeRedLine({
-    changedFiles: [".github/workflows/ci.yml", "scripts/gate/local-gate.mjs"],
+    changedFiles: [".github/workflows/ci.yml", ".github/workflows/observe.yml"],
     labels: [],
   });
   assert.equal(r.ok, false);
@@ -201,6 +439,10 @@ test("CLI fail-closed：缺失/不可解析的输入一律 exit 2，且不得与
     { args: ["--files", "a.md", "--files-json", "x.json"], why: "同一字段给了两种取数口径" },
     { args: ["--files-json"], why: "--files-json 缺少参数值" },
     { args: ["--files-json", "@缺失路径.json"], why: "@ 指向的 JSON 文件不存在" },
+    {
+      args: ["--files", "a.md", "--patterns", "docs/**", "--registry", "x.json"],
+      why: "红线面的两种来源同时给出（取哪一种都是猜）",
+    },
   ];
   for (const { args, why } of cases) {
     const r = runCli(args);
@@ -216,7 +458,7 @@ test("CLI fail-closed：同一次调用里 --files 重复给出 → exit 2（不
 test("CLI：--flag=value 形态与逗号分隔的空项都被容忍", () => {
   const ok = runCli(["--files=docs/a.md,docs/b.md,", "--labels=none,"]);
   assert.equal(ok.status, 0, ok.stderr);
-  const red = runCli(["--files=scripts/gate/x.mjs,", "--labels="]);
+  const red = runCli(["--files=.github/workflows/ci.yml,", "--labels="]);
   assert.equal(red.status, 1, red.stderr);
 });
 
@@ -350,10 +592,10 @@ test("CLI：--files 取值支持 \`@<json 路径>\` 形态（原生字符串列�
   const dir = mkdtempSync(join(tmpdir(), "red-line-at-"));
   try {
     const filesJson = join(dir, "files.json");
-    writeFileSync(filesJson, JSON.stringify(["scripts/gate/local-gate.mjs"]));
+    writeFileSync(filesJson, JSON.stringify([".github/workflows/ci.yml"]));
     const r = runCli(["--files", `@${filesJson}`, "--labels", ""]);
     assert.equal(r.status, 1, r.stderr);
-    assert.match(r.stderr, /scripts\/gate\/local-gate\.mjs/);
+    assert.match(r.stderr, /\.github\/workflows\/ci\.yml/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -390,6 +632,72 @@ test("CLI：--patterns 覆盖默认红线面（消费方换面无需改实现）
   assert.equal(pass.status, 0, pass.stderr);
 });
 
+test("CLI：--registry 用 fixture 声明表派生面——声明源判红、approved 放行、scripts/gate 不进面", () => {
+  withRegistry(
+    [{ id: "mutation.strict", sources: ["scripts/data/gauntlet.config.json"] }],
+    (registry) => {
+      const red = runCli([
+        "--files",
+        "scripts/data/gauntlet.config.json",
+        "--labels",
+        "",
+        "--registry",
+        registry,
+      ]);
+      assert.equal(red.status, 1, red.stderr);
+      assert.match(red.stderr, /scripts\/data\/gauntlet\.config\.json/);
+      // 放行侧：否则"一律判红"也能满足上面那条
+      const ok = runCli([
+        "--files",
+        "scripts/data/gauntlet.config.json",
+        "--labels",
+        "approved",
+        "--registry",
+        registry,
+      ]);
+      assert.equal(ok.status, 0, ok.stderr);
+      // 面确实来自这份 fixture（而不是默认面）：同一次调用里 scripts/gate/** 不在面内
+      const gate = runCli([
+        "--files",
+        "scripts/gate/local-gate.mjs",
+        "--labels",
+        "",
+        "--registry",
+        registry,
+      ]);
+      assert.equal(gate.status, 0, gate.stderr);
+      assert.match(
+        gate.stdout,
+        /红线面\[\.github\/\*\*, scripts\/data\/gauntlet\.config\.json, scripts\/data\/threshold-registry\.json\]/,
+        "OK 行必须打印实际判的那一面",
+      );
+    },
+  );
+});
+
+test("CLI：--registry 指向缺失的声明表 → 退化放行但必须打 ::warning::（不 fail-closed，也不静默）", () => {
+  const dir = mkdtempSync(join(tmpdir(), "red-line-noreg-"));
+  try {
+    const missing = join(dir, "absent.json");
+    const r = runCli([
+      "--files",
+      "scripts/data/gauntlet.config.json",
+      "--labels",
+      "",
+      "--registry",
+      missing,
+    ]);
+    // 退化为仅 .github/**：数据文件不再进面 → 放行；但必须在 stderr 留痕，且 OK 行如实打印退化后的面
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stderr, /::warning::/);
+    assert.match(r.stderr, /声明表不可用/);
+    assert.match(r.stderr, /absent\.json/);
+    assert.match(r.stdout, /红线面\[\.github\/\*\*\]/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("parseArgs/main 可被 import 直调（不产生副作用）——main 与 CLI 退出码同源", () => {
   assert.deepEqual(parseArgs(["--files", "a,b", "--labels", "x"]).sources, {
     files: "a,b",
@@ -418,6 +726,8 @@ test("接线：ci.yml 有 red-line-approval job，仅 PR 触发、显式 pull-re
   );
   assert.ok(block.includes(`node ${SCRIPT_REL}`), `job 必须调用 ${SCRIPT_REL}`);
   assert.match(block, /gh api/, "changed files / labels 必须经 gh api 取（取不到 fail-closed）");
+  // 面必须由声明表派生：job 自带 --patterns 等于把面在 workflow 里钉死，#850 的声明表就白派生了
+  assert.ok(!block.includes("--patterns"), "job 不得自带 --patterns（面只能来自声明表派生）");
 });
 
 test("接线：gh 取数必须带 token——permissions 只授权不注入（PR #851 真机 FAILURE 的根因）", () => {

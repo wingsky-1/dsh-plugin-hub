@@ -16,9 +16,15 @@
  * 不可解析」与「判红」分成两个退出码——把「判据没跑起来」伪装成「有违规」会让门禁的可信度
  * 一起贬值（1 才是违规）。
  *
+ * 红线面是**派生**的，不是常量：基座只有 `AGENTS.md` 明写的 `.github/**`，其余进面的是数据
+ * 事实源声明表里被声明为 `sources` 的每个文件（外加声明表自身）。三条理由与代价见
+ * `redLinePatterns` 的注释——一句话：关闸开关是数据不是代码，谁被声明为事实源谁就该在面内。
+ *
  * 用法：
  *   node scripts/gate/red-line-approval.mjs --files <逗号分隔|@json 路径> [--labels <同上>]
  *   node scripts/gate/red-line-approval.mjs --files-json <原始 JSON 路径> --labels-json <同>
+ *   [--registry <声明表路径>] 换一份声明表派生红线面（默认 `scripts/data/threshold-registry.json`）；
+ *   [--patterns <逗号分隔 glob>] 直接给面，与 --registry 互斥（面只能有一种来源）。
  * 字段取值 `@<path>` 表示读该文件里的列表；`--files-json` 读的是 API 原始响应——实测
  * gh 2.101 的 `--paginate` 对数组端点会把各页**合并成一个 JSON 数组**（`per_page=2` 强制
  * 4 页仍整体可解析），脚本同时容忍「多个 JSON 文档首尾相连」这一旧形态。同一 flag 重复给出
@@ -28,21 +34,138 @@
  * 退出码：0 = 放行；1 = 有未批准的红线改动；2 = 输入缺失/不可解析（fail-closed）。
  */
 import { readFileSync, realpathSync } from "node:fs";
-import { matchesGlob, normalize } from "node:path";
+import { join, matchesGlob, normalize, relative } from "node:path";
 
 /**
- * 红线路径常量（单一事实源）。新增红线面时改这里，别把判定散成 if。
+ * 红线面的**基座**：仓库 `AGENTS.md` 明写的红线之一（`.github/` 下 workflow 与分支保护）。
  *
- * 两条各有出处，治理后果不同，别当成同一种东西：
- *   · `.github/**` —— 仓库 AGENTS.md 明写的红线面（workflow 与分支保护），改动须维护者
- *     在原 issue 内 approved；
- *   · `scripts/gate/**` —— #843 D1 提出的**加固面**，口径出自本批《红线批实施提案 + 排期》
- *     的 R-1（「红线路径先收敛为 `.github/**` 与 `scripts/gate/**`」）。代价是任何改门禁
- *     实现的 PR 都要 `approved` 标签，**包括 agent 的批次工作**（这会实打实拖慢自治循环）；
- *     若维护者裁决缩回仅 `.github/**`，删掉这一行即可——判定逻辑、事件域判据与 fail-closed
- *     口径都不在常量里，缩回不动其余任何一行。
+ * 它是本文件里唯一的静态项；其余红线面一律**派生**自数据事实源声明表（`redLinePatterns`）。
+ * 上一版把 `scripts/gate/**` 也钉成静态项，等于自行扩大 `AGENTS.md` 的红线定义，且在 GitHub
+ * 侧没有任何 `approved` 留痕——#851 裁决撤回，改由「被声明为事实源」派生。
  */
-export const RED_LINE_PATTERNS = [".github/**", "scripts/gate/**"];
+export const RED_LINE_BASE_PATTERNS = [".github/**"];
+
+/** 声明表的规范仓库路径（#850）。声明表自身也在面内：改它的 `sources` 等于改红线面。 */
+export const REGISTRY_REL_PATH = "scripts/data/threshold-registry.json";
+
+/** 默认声明表按本模块位置解析，不依赖 cwd——CI 与自测的 cwd 未必都是仓库根。 */
+export const DEFAULT_REGISTRY_PATH = join(
+  import.meta.dirname,
+  "..",
+  "data",
+  "threshold-registry.json",
+);
+
+const REPO_ROOT = join(import.meta.dirname, "..", "..");
+
+/** 告警出口（与仓内其他脚本的 `::warning::` 同款：console.warn → stderr）。 */
+function warnToStderr(message) {
+  console.warn(message);
+}
+
+/**
+ * 声明表自身在面内的表示：表在本仓库内时用仓库相对路径，否则退回规范路径。红线面表达的是
+ * 「仓库里哪些路径被声明为事实源」，与调用方喂进来的是哪份副本无关——自测用 `/tmp` 下的
+ * fixture，那个绝对路径不可能命中任何一条 changed files。
+ */
+function registrySelfPattern(registryPath) {
+  const rel = normalizePath(relative(REPO_ROOT, registryPath));
+  return rel.startsWith("..") ? REGISTRY_REL_PATH : rel;
+}
+
+/**
+ * 从声明表文本里取「每个 guard 声明的每个事实源路径」。
+ *
+ * 只认 `guards[].sources`：`notAGate` 是显式声明「不是可放宽的阈值」的登记面，把它们一并拉进
+ * 红线面等于把红线定义偷偷扩大到第二类登记面——那正是本轮撤回 `scripts/gate/**` 的同一条理由。
+ * 结构不合法时返回 `{ error }` 而不抛：import 期抛出会让 CLI 以未捕获异常退出，退出码 1 与
+ * 「判红」同码，读起来像「有未批准的红线改动」。
+ */
+function declaredSources(text) {
+  let registry;
+  try {
+    registry = JSON.parse(text);
+  } catch (e) {
+    return { error: `JSON 不可解析（${e.message}）` };
+  }
+  if (!Array.isArray(registry?.guards)) return { error: "缺少 guards 数组" };
+  const sources = [];
+  for (const guard of registry.guards) {
+    if (guard?.sources === undefined) continue;
+    if (!Array.isArray(guard.sources))
+      return { error: `guard ${guard?.id ?? "?"} 的 sources 不是数组` };
+    for (const source of guard.sources) {
+      if (typeof source !== "string" || source.trim() === "") {
+        return { error: `guard ${guard?.id ?? "?"} 的 sources 含非字符串或空项` };
+      }
+      sources.push(source);
+    }
+  }
+  return { sources };
+}
+
+/** 规范化面：去 `./`、去重、排序（同一个路径被多个 guard 声明只算一条）。 */
+function normalizePatterns(patterns) {
+  const normalized = patterns
+    .map((pattern) => normalizePath(String(pattern).trim()))
+    .filter((pattern) => pattern !== "" && pattern !== ".");
+  return [...new Set(normalized)].sort();
+}
+
+/**
+ * 由声明表**派生**红线面（#843 M1 / #851 裁决后的口径）。
+ *
+ * 三条理由：
+ *   ① `scripts/gate/**` 不在 `AGENTS.md` 的红线清单里（清单只有公共 API 行为变更 / 新增第三方
+ *      依赖 / `.github/` 下 workflow 与分支保护 / 发版）。把它写进面里是**扩大红线定义**，且在
+ *      GitHub 侧没有 `approved` 留痕——「加固面」是无据的自我加冕；
+ *   ② 代价与收益不成比例：实测最近 20 个 merged PR 有 14 个（70%）触及 `scripts/gate/**`，
+ *      面落在这里只会把自治循环卡死，拦住的却是「改门禁实现」这类正常迭代；
+ *   ③ 真正的关闸开关是**数据**不是代码：`sources` 指向哪个文件，守卫就读哪个文件——改一个数据
+ *      文件外加一条声明即可静默关闸（F-1 已实证：前置一个影子源 + 掏空真实事实源后四道闸全绿）。
+ *      故红线面改为派生：谁被声明为事实源，谁就在面内。
+ * 代价如实写明：派生面实测会让最近 20 个 merged PR 里的 7 个（35%）进面（读数口径见 PR #851）。
+ *
+ * 边界（如实声明，勿误读）：
+ *   · 声明表**缺失**（#850 尚未合入）时退化为基座面并打 `::warning::`，不 fail-closed——本判据的
+ *     合并顺序在 #850 之后，但 #850 合入前 CI 也要能跑；退化必须留痕，静默退化等于面被悄悄缩小；
+ *   · 声明表**存在但不可用**（读失败 / JSON 不可解析 / 结构不符）同样退化并报警，但**不**在这里
+ *     判红：同一份表的 fail-closed 归属 #850 的 `threshold-monotonic`（解析失败即 exit 2），在这里
+ *     再 fail-closed 只会给所有 PR 增加第二个断线通道。告警词点名具体原因，不冒充「无声明」。
+ *
+ * @param {string} registryPath 声明表路径（默认取与本模块同仓的规范位置）
+ * @param {(message: string) => void} warn 告警出口
+ * @returns {string[]} 去重、排序后的红线面
+ */
+export function redLinePatterns(registryPath = DEFAULT_REGISTRY_PATH, warn = warnToStderr) {
+  const base = [...RED_LINE_BASE_PATTERNS, registrySelfPattern(registryPath)];
+  let text;
+  try {
+    text = readFileSync(registryPath, "utf8");
+  } catch (e) {
+    return degradeToBase(`读取失败（${e.code ?? e.message}）`, registryPath, warn);
+  }
+  const declared = declaredSources(text);
+  if (declared.error !== undefined) {
+    return degradeToBase(declared.error, registryPath, warn);
+  }
+  return normalizePatterns([...base, ...declared.sources]);
+}
+
+/**
+ * 退化为基座面并报警。声明表不存在时**不**把规范路径塞进面里——表都没落地，那个路径不可能被
+ * 任何一次改动命中，塞进去只会让「面恰好等于 `.github/**`」这个可断言的事实变模糊。
+ */
+function degradeToBase(reason, registryPath, warn) {
+  warn(
+    `::warning::红线面退化为 ${RED_LINE_BASE_PATTERNS.join(", ")}：数据事实源声明表不可用（${reason}）` +
+      `——${registryPath}；本次无额外文件进面（#851）`,
+  );
+  return normalizePatterns(RED_LINE_BASE_PATTERNS);
+}
+
+/** 默认红线面：模块加载时按默认声明表派生一次（CLI 与判定函数的默认值共用这一份）。 */
+export const RED_LINE_PATTERNS = redLinePatterns();
 
 /**
  * JSON 响应里要抽取的字段键名（GitHub REST 的 pulls.files / issues.labels 形状）。
@@ -62,7 +185,14 @@ export const JSON_SOURCES = {
  * 一轮」，那是比判红更坏的假绿（门禁看起来跑了，判的却不是本次输入）。
  */
 const FLAG_PREFIX = "--";
-const KNOWN_FLAGS = new Set(["--files", "--labels", "--files-json", "--labels-json", "--patterns"]);
+const KNOWN_FLAGS = new Set([
+  "--files",
+  "--labels",
+  "--files-json",
+  "--labels-json",
+  "--patterns",
+  "--registry",
+]);
 
 /** 逗号分隔值 → 去空白、丢空项。 */
 function splitList(raw) {
@@ -217,8 +347,12 @@ export function judgeRedLine({ changedFiles, labels, patterns = RED_LINE_PATTERN
 }
 
 /**
- * CLI 参数解析。返回 `{ ok: true, files, labels, patterns }` 或 `{ ok: false, error }`——
+ * CLI 参数解析。返回 `{ ok: true, mode, sources, patterns }` 或 `{ ok: false, error }`——
  * 解析失败是**输入错误**（exit 2），不是「有违规」（exit 1）。
+ *
+ * 面的三种来源按优先级收起且互斥：`--patterns` 直接给面、`--registry` 换一份声明表派生、都不给
+ * 则用默认声明表派生的 `RED_LINE_PATTERNS`。给两种来源是**调用点写错参数**，判 exit 2 而不是
+ * 悄悄取其一：判了一轮却不是调用方以为的那一面，是比判红更坏的假绿。
  */
 export function parseArgs(argv) {
   const values = new Map();
@@ -254,6 +388,9 @@ export function parseArgs(argv) {
   if (hasLiteral && hasJson) {
     return { ok: false, error: "--files 与 --files-json 互斥（同一字段只能有一种取数口径）" };
   }
+  if (values.has("--patterns") && values.has("--registry")) {
+    return { ok: false, error: "--patterns 与 --registry 互斥（红线面只能有一种来源）" };
+  }
   const mode = hasJson ? "json" : "literal";
   return {
     ok: true,
@@ -262,8 +399,16 @@ export function parseArgs(argv) {
       files: mode === "json" ? values.get("--files-json") : values.get("--files"),
       labels: mode === "json" ? values.get("--labels-json") : values.get("--labels"),
     },
-    patterns: values.has("--patterns") ? splitList(values.get("--patterns")) : RED_LINE_PATTERNS,
+    patterns: resolvePatterns(values),
   };
+}
+
+/** 面来源三选一：`--patterns` > `--registry` > 默认派生的 `RED_LINE_PATTERNS`。 */
+function resolvePatterns(values) {
+  if (values.has("--patterns")) return splitList(values.get("--patterns"));
+  if (!values.has("--registry")) return RED_LINE_PATTERNS;
+  // 声明表不可用时 redLinePatterns 已经报警并退化，这里不需要再兜一层错——退化后的面就是它给的。
+  return redLinePatterns(values.get("--registry"));
 }
 
 /**
