@@ -22,7 +22,9 @@ import {
   AGGREGATE_NAME,
   checkAggregateConsistency,
   filterOutRetiredDirs,
+  isIndexedPackageDir,
   listPluginDirs,
+  listTrackedPluginDirs,
   loadManifest,
   warnUnknownEntries,
 } from "../lib/plugins-manifest-lib.ts";
@@ -56,10 +58,52 @@ try {
   console.log(`FAIL plugins-manifest | ${e.message}`);
   process.exit(1);
 }
+// 断言面取 git index ∩ 磁盘存在，不取物理目录集（理由与代价见 lib 的 listTrackedPluginDirs）。
+// 拿不到派生面即 fail-closed：没有它，下方的清单校验会退化成空集全绿。
+let trackedDirs;
+try {
+  trackedDirs = listTrackedPluginDirs(ROOT);
+} catch (e) {
+  console.log(
+    `FAIL plugins-manifest | 无法从 git index 派生包目录：${String(e.message).split("\n")[0]}`,
+  );
+  process.exit(1);
+}
 {
-  // 方向 B 已豁免 manifest.retired 残留目录（T1：#397 告警不红），物理全集传入，
-  // 保证「新目录必须登记」双向校验不退化。
-  const problems = checkAggregateConsistency({ dirNames: listPluginDirs(ROOT), manifest });
+  const problems = [];
+  // 载体自证：枚举面返回空集时，每条「必须登记」的判据都无话可说——不许在空集上全绿。
+  if (trackedDirs.length === 0) {
+    problems.push("git index 派生的包目录集为空 —— 枚举面失效，禁止在空集上全绿");
+  }
+  const trackedSet = new Set(trackedDirs);
+  // 反向断言：物理目录集与派生集之差只允许差在「未跟踪」上。某个物理目录其实在 index 里却被
+  // 派生面漏掉（pathspec 收窄、git 行为变化）时，「新目录必须登记」对它静默失守且无人发现；
+  // 未跟踪目录则保留可见性——告警位，不判红（CI 的干净 checkout 上它不存在）。
+  for (const d of listPluginDirs(ROOT)) {
+    if (trackedSet.has(d)) continue;
+    if (isIndexedPackageDir(ROOT, d)) {
+      problems.push(
+        `packages/${d} 在 git index 内有文件却不在派生集 —— 目录枚举面与 index 不一致（派生失效）`,
+      );
+    } else {
+      console.warn(
+        `[pack-check] 警告：packages/${d} 未跟踪（不参与清单校验与逐包打包；已跟踪的目录仍必须登记 manifest）`,
+      );
+    }
+  }
+  // 逐包打包（下方的 trackedDirs）只处理含 package.json 的目录：瞬时半成品目录（只有 src/）
+  // 会让包清单读取裸 ENOENT 崩门禁，那是本地并行噪声而不是判据结论；未跟踪目录已在上一步被
+  // 挡在输入面外。已跟踪目录缺包清单则是真缺陷，在此判红而不是静默跳过——静默跳过就是把
+  // 「读包失败」换成「这个包没被检查」，是放宽。retired 残留目录走 T1 的告警不红语义，不进此处。
+  const retiredNames = new Set(manifest.retired.map((x) => x.name));
+  for (const d of trackedDirs) {
+    if (retiredNames.has(d)) continue;
+    if (!existsSync(join(ROOT, "packages", d, "package.json"))) {
+      problems.push(`packages/${d} 缺 package.json —— 逐包打包与许可归集都按包清单取数`);
+    }
+  }
+  // 方向 B 已豁免 manifest.retired 残留目录（T1：#397 告警不红）。
+  problems.push(...checkAggregateConsistency({ dirNames: trackedDirs, manifest }));
   if (problems.length > 0) {
     for (const p of problems) console.log(`FAIL plugins-manifest | ${p}`);
     process.exit(1);
@@ -67,10 +111,7 @@ try {
   console.log("PASS plugins-manifest | 目录集 == manifest.active ∪ standalone 集");
 }
 // T1：打包循环按 manifest.retired 过滤退役残留目录（无 package.json，读包会裸崩）
-const { kept: plugins, skipped: retiredDirs } = filterOutRetiredDirs(
-  listPluginDirs(ROOT),
-  manifest,
-);
+const { kept: plugins, skipped: retiredDirs } = filterOutRetiredDirs(trackedDirs, manifest);
 if (retiredDirs.length > 0) {
   console.warn(
     `[pack-check] 跳过已退役包残留目录: ${retiredDirs.join(", ")}（manifest.retired 已登记，请清理）`,

@@ -12,18 +12,26 @@
  *   GATE_COVERAGE       needs.coverage.result（#217：全局单次覆盖采集 job）
  *   GATE_MUTATION       needs.mutation-gate.result（#217：矩阵仅基线+stryker）
  *   GATE_VERDICT        needs.mutation-verdict.result（#217：聚合判分收尾 job）
+ *   GATE_REDLINE        needs.red-line-approval.result（#843 M1：红线路径门禁 job）。
+ *                       为什么它必须进判定表：只挂 needs 只能让本 job「等」它，判决不并入
+ *                       就等于没判——两个 job 都红不了对方。并入之后平台侧不必再注册第二个
+ *                       required check（repo-gate 本就是唯一那个）。
  *   GATE_HAS_MUTATIONS  needs.changes.outputs.hasMutations（'true'/'false' 显式布尔）
  *   GATE_MUTATION_PKGS  needs.changes.outputs.mutationPackages（JSON 数组文本，恒为合法数组）
  *   GATE_FULL_REQUESTED needs.changes.outputs.fullGate（'true'/'false'；#722 门禁分层开关。
  *                       #742 阶段 1 起它只覆盖覆盖率与全仓产物闸——变异已改为 PR 强制跑）
  *
  * 判定表（fail-closed：任何未显式放行的组合一律红；维度：
- *   事件 × 全量开关(fullGate) × 切片(hasMutations) × coverage × 变异矩阵 × verdict）：
+ *   事件 × 全量开关(fullGate) × 切片(hasMutations) × coverage × 变异矩阵 × verdict ×
+ *   红线审批(redline)）：
  *   1) changes != success → 红（一切切片判定的前提，#85 F2）；
  *   2) build-test != success → 红（构建/测试切片是全局门禁的产物前提，评审 F1）；
  *   3) mutationPackages 解析失败 / 非数组、hasMutations 非 'true'/'false'、
- *      fullGate 非 'true'/'false'、hasMutations 与切片非空性交叉矛盾 → 环境数据违约
- *      （exit 2，fail-closed）；
+ *      fullGate 非 'true'/'false'、hasMutations 与切片非空性交叉矛盾、
+ *      redline 不在 success|failure|cancelled|skipped 值域（含取值缺失） → 环境数据违约
+ *      （exit 2，fail-closed）。redline 的取值检查刻意排在前提闸（changes / build-test）
+ *      之前：needs.<job>.result 是 GHA 的状态函数，取值缺失说明 job 已不在 needs 里
+ *      （ci.yml 接线被删），此时报「changes 未成功」会把接线事故掩盖成上游失败；
  *   4) pull_request（#742 阶段 1 起变异与 gate:full 标签解耦，本维度随之重写）：
  *      - hasMutations='true'（有变异对象包）：
  *        · coverage：打了 gate:full 标签必须 success（failure/cancelled = 覆盖失败连坐，
@@ -35,9 +43,16 @@
  *          failure = 判分未通过）。#742 阶段 1.2 起不再以 coverage success 为运行前提——
  *          覆盖率失败不再吞掉整份变异判分，两者由本表分别点名；
  *      - hasMutations='false'（空切片合法缺席）：coverage / 矩阵 / verdict 三者都必须
- *        skipped。矩阵 if 上的 hasMutations 条件使空切片时 job 根本不实例化，故 #742
+ *        skipped；redline 与变异切片无关（它判「改了什么」），仍必须 success。矩阵 if 上的
+ *        hasMutations 条件使空切片时 job 根本不实例化，故 #742
  *        阶段 1 起不再宽容 #217 时代的「零实例动态矩阵回报 failure」形态（实证
  *        run 32802575298 属旧设计），任何非 skipped 都判红；
+ *      - redline（#843 M1 红线路径门禁，两个事件域都判）：
+ *        · pull_request：必须 success。failure / cancelled = 红线改动未获 approved 或
+ *          门禁自身失败连坐；skipped = 该跑没跑（ci.yml 的 if 只排除非 PR，PR 上不存在
+ *          合法缺席），三者一律红；
+ *        · 非 pull_request：必须 skipped（ci.yml 的 if 就是 pull_request）。出现 success /
+ *          failure / cancelled 说明 if 的事件限制被改坏，显性红防静默退化。
  *   5) 非 pull_request 事件（push / workflow_dispatch / 未来新增触发器）→ fullGate
  *      必须为 'false'，且 coverage / 变异矩阵 / verdict 三者全部必须 skipped。这是
  *      #187 触发面收敛不变量的 #217 扩展：主干覆盖与变异覆盖归 observe.yml 夜间全量、
@@ -58,17 +73,23 @@ import { pathToFileURL } from "node:url";
  *   coverage: string,
  *   mutation: string,
  *   verdict: string,
+ *   redline: string,
  *   hasMutations: string,
  *   mutationPkgsJson: string,
  *   fullRequested: string,
  * }} input
  * @returns {{ ok: boolean, code: 0 | 1 | 2, reason: string }}
  */
+/** GHA 的 job 结论值域（needs.<job>.result 只可能是这四个）。 */
+const JUMP_RESULTS = new Set(["success", "failure", "cancelled", "skipped"]);
+
 export function evaluateGate(input) {
-  const prerequisiteFailure = checkPrerequisites(input);
-  if (prerequisiteFailure !== null) return prerequisiteFailure;
+  // 顺序是契约的一部分：**数据契约先于前提闸**。redline 的缺失只在「接线被删」时出现，
+  // 而那正是本表要单独点名的形态——先报「changes 未成功」会把接线事故掩盖成上游失败。
   const { pkgs, failure } = checkDataContract(input);
   if (failure !== null) return failure;
+  const prerequisiteFailure = checkPrerequisites(input);
+  if (prerequisiteFailure !== null) return prerequisiteFailure;
   if (input.event === "pull_request") {
     return input.hasMutations === "true"
       ? evaluateMutationSlice(input, pkgs)
@@ -131,6 +152,17 @@ function checkDataContract(input) {
       },
     };
   }
+  // redline 放在这里而不是前提闸之前单列：它同属「显式布尔/枚举取值必须合法」这一类数据契约
+  // 错误，同一维度的错都从同一处报，判词才可检索。空串（= ci.yml 没注入）同样落这一支。
+  if (!JUMP_RESULTS.has(input.redline)) {
+    return {
+      failure: {
+        ok: false,
+        code: 2,
+        reason: `redline 必须为 success|failure|cancelled|skipped（实际 "${input.redline}"）—— 环境数据违约（GATE_REDLINE 取值缺失多为 ci.yml 的 needs/env 接线被删）`,
+      },
+    };
+  }
   // 交叉校验：hasMutations 与切片清单非空性由 changes 同一函数推导，不一致即违约
   if ((input.hasMutations === "true") !== pkgs.length > 0) {
     return {
@@ -175,9 +207,34 @@ function judgePrCoverage(input) {
   return null;
 }
 
+/**
+ * 维度零：红线审批（#843 M1，与其它维度正交——它是「改了什么」的判据，不是「跑没跑」）。
+ * 并入本表的意义：没有它，新 job 红了 repo-gate 照样可能绿，于是「必须由维护者再单独注册
+ * 一个 required check」就成了新的记忆点。两侧都 fail-closed：
+ *   success  → 放行（无红线改动，或红线改动已获 approved 标签）
+ *   其它三个 → 红：failure/cancelled = 红线未获批准或门禁自身失败；skipped = PR 上该跑没跑
+ */
+function judgePrRedline(input) {
+  const { redline } = input;
+  if (redline === "success") return null;
+  const why =
+    redline === "skipped"
+      ? "该跑没跑（ci.yml 的 if 只排除非 PR，PR 上不存在合法缺席）"
+      : redline === "cancelled"
+        ? "被取消（未完成门禁判定）"
+        : "红线路径改动未通过：缺少 approved 标签，或门禁自身失败";
+  return {
+    ok: false,
+    code: 1,
+    reason: `PR 红线审批（#843 M1）结果 ${redline}（期望 success）—— ${why}`,
+  };
+}
+
 function evaluateMutationSlice(input, pkgs) {
   const { mutation, verdict } = input;
   // ── 该跑必须真跑：覆盖率按标签裁决 + 变异链逐维锁定 ──
+  const redlineFailure = judgePrRedline(input);
+  if (redlineFailure !== null) return redlineFailure;
   const coverageFailure = judgePrCoverage(input);
   if (coverageFailure !== null) return coverageFailure;
   // 维度二：变异矩阵（#742 阶段 1.3——PR 上按切片强制跑，该跑没跑即门禁绕过；
@@ -217,6 +274,10 @@ function evaluateMutationSlice(input, pkgs) {
 
 function evaluateEmptySlice(input) {
   const { coverage, mutation, verdict } = input;
+  // 红线维度与「有没有变异对象包」无关（它判的是「改了什么」）：空切片同样必须真跑，
+  // 故这里的裁决与 evaluateMutationSlice 共用同一个函数，别在两处各写一份。
+  const redlineFailure = judgePrRedline(input);
+  if (redlineFailure !== null) return redlineFailure;
   // ── 空切片（合法缺席）：两个 job 的 if 都含 hasMutations，空切片时必然 skipped。
   // #217 时代这里宽容过 'failure'，理由是「GitHub 对零实例动态矩阵实测回报 failure 而非
   // 官方口径 skipped」（实证 run 32802575298）；该形态已被 if 上的 hasMutations 条件消除
@@ -250,6 +311,13 @@ function evaluateNonPullRequest(input) {
   // （changes job 里非 PR 一律 false），且覆盖/变异三段全部只允许 skipped（main 归
   // 夜间、发版归 release）；出现其他结果说明 ci.yml if 的事件限制已失效，显性红防
   // 静默退化
+  if (input.redline !== "skipped") {
+    return {
+      ok: false,
+      code: 1,
+      reason: `${event} 事件下 red-line-approval 结果为 ${input.redline}（期望 skipped）—— 它的 if 就是 pull_request，非 PR 上有结论说明事件限制被破坏（#843 M1 接线不变量）`,
+    };
+  }
   if (input.fullRequested === "true") {
     return {
       ok: false,
@@ -287,6 +355,7 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
     coverage: env.GATE_COVERAGE ?? "",
     mutation: env.GATE_MUTATION ?? "",
     verdict: env.GATE_VERDICT ?? "",
+    redline: env.GATE_REDLINE ?? "",
     hasMutations: env.GATE_HAS_MUTATIONS ?? "",
     mutationPkgsJson: env.GATE_MUTATION_PKGS ?? "",
     fullRequested: env.GATE_FULL_REQUESTED ?? "",
@@ -295,6 +364,7 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
     `event=${env.GATE_EVENT}  changes=${env.GATE_CHANGES}  ` +
       `build-test=${env.GATE_BUILD_TEST}  coverage=${env.GATE_COVERAGE}  ` +
       `mutation-gate=${env.GATE_MUTATION}  verdict=${env.GATE_VERDICT}  ` +
+      `redline=${env.GATE_REDLINE}  ` +
       `hasMutations=${env.GATE_HAS_MUTATIONS}  fullGate=${env.GATE_FULL_REQUESTED}`,
   );
   // 违约/环境错误走 ::error:: 注解（GitHub PR 页面可见，与旧内联断言同款）

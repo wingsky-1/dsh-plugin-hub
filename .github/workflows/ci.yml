@@ -212,6 +212,68 @@ jobs:
           TEST_CHANGED_PACKAGES: ${{ steps.testdiff.outputs.testChangedPackages }}
         run: node scripts/ci/ci-matrix.mjs
 
+  # ── 红线路径门禁（#843 M1 / R-1）──
+  # 仓规把 `.github/**` 定为红线面；其余红线面由 `scripts/data/threshold-registry.json` 的
+  # `guards[].sources` 派生（#851：谁被声明为事实源谁就在面内；改动须维护者在原 issue 内 approved），
+  # 但平台层零强制力：`enforce_admins=true` + 只有一位 admin + GitHub 不允许自批自己的 PR，
+  # 使「CODEOWNERS + require_code_owner_reviews」会**永久冻结**每一处红线 PR。可行替代是把
+  # 条件做成仓内可判定的 status check：PR 触及红线路径且没有 approved 标签就 fail，再由维护者
+  # 把它注册成 required check（注册是本 job 生效的前提，属维护者动作）。判据本体是纯函数
+  # （scripts/gate/red-line-approval.mjs，带自测），本 job 只负责取输入与转发退出码。
+  # fail-closed：changed files 或 labels 取不到一律 exit 2，绝不因「没什么可看」而放行。
+  red-line-approval:
+    name: Build / Red-line approval
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # 本 job 是「不带 pull-requests 读权限的 job 一律取不到 changed files」这一隐式规则的唯一
+    # 例外：它必须读 PR 的文件与标签，故按 job 显式补读权限（工作流级只声明 `contents: read`，
+    # 其余 job 维持原样）。labels 走 issues 端点属 REST 惯例，token 的 pull-requests 读权限已覆盖
+    #（现网实测 `gh api repos/<owner>/<repo>/issues/<n>/labels` 通过）。
+    permissions:
+      contents: read
+      pull-requests: read
+    # `permissions:` 只**授权**、不**注入**：Actions 里 `gh` 认的是 GH_TOKEN/GITHUB_TOKEN
+    # 环境变量，缺它时 gh 会以「未认证」失败——这正是 PR #851 那次真实 CI 的失败原因
+    # （取数步 failure、判据步 skipped）。用 job 级 env 让取数步与判据步同源取用，取值写法与
+    # 本仓既有先例一致（health-report.yml 的三处、observe.yml 的归档步）。
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Resolve changed files & labels（gh api + 有界重试；仍失败即非零退出）
+        # 只做「取数 + 落原始 JSON」：字段抽取、解析失败与判定全部由下一步的判据脚本承担，
+        # 免得同一套口径在 workflow 与脚本里各写一份（两份必然漂移）。--paginate 必须带：
+        # 只取首页会让红线改动静默漏判（现网实测：54 文件的 PR 在 per_page=30 下正是这个形态）。
+        # 有界重试（3 次 / 间隔 5s）只为吸收 GitHub API 的瞬时 5xx 与限流：本 job 无差别阻断
+        # 所有 PR，一次网络抖动就把整条 PR 判红的代价远大于 10 秒等待；但次数必须封顶——
+        # **宁可重试也不能 fail-open**：耗尽仍在循环内 echo ::error:: 并以非零退出，缺凭据时
+        # 同样按「三次都失败」处理（这一步永不静默放行）。
+        run: |
+          set -e
+          fetch() {
+            local url="$1" out="$2" attempt=1
+            while true; do
+              if gh api $url > "$out"; then return 0; fi
+              if [ "$attempt" -ge 3 ]; then
+                echo "::error::取数失败（已重试 3 次）：$url —— fail-closed"
+                return 2
+              fi
+              echo "::warning::取数失败（第 $attempt 次），5s 后重试：$url"
+              attempt=$((attempt + 1))
+              sleep 5
+            done
+          }
+          fetch "--paginate repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files?per_page=100" "$RUNNER_TEMP/pr-files.json"
+          fetch "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels" "$RUNNER_TEMP/pr-labels.json"
+
+      - name: Red-line approval（红线路径改动须带 approved 标签）
+        # 判据步骤保持闭合单命令：输入校验（非 JSON / 缺字段 / 空变更集）与逐条判红都在
+        # 脚本内，退出码直接由本步转发（1 = 判红、2 = 输入不可解析，两码都让本 job 红）。
+        run: node scripts/gate/red-line-approval.mjs --files-json "$RUNNER_TEMP/pr-files.json" --labels-json "$RUNNER_TEMP/pr-labels.json"
+
   # ── 第 2 段：命中包并行 build + lib artifact + smoke/typecheck（#722 全切片）──
   # 矩阵来源 = changes.buildPackages（命中包；空切片时为哨兵项）。为什么不是固定全集：
   # 固定矩阵会让单包 PR 也拉起 7 个 check 实例（6 个全程 skip，纯耗 runner 分钟）；
@@ -613,7 +675,7 @@ jobs:
   #     命中包，gate:full 与夜间验全仓。事实源是步骤本身；端点双向比对见 gate-wiring.test.ts。
   repo-gate:
     name: Build / Contract / Smoke / Pack
-    needs: [changes, build-test, coverage, mutation-gate, mutation-verdict]
+    needs: [changes, red-line-approval, build-test, coverage, mutation-gate, mutation-verdict]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -637,6 +699,7 @@ jobs:
           GATE_COVERAGE: ${{ needs.coverage.result }}
           GATE_MUTATION: ${{ needs.mutation-gate.result }}
           GATE_VERDICT: ${{ needs.mutation-verdict.result }}
+          GATE_REDLINE: ${{ needs.red-line-approval.result }}
           GATE_HAS_MUTATIONS: ${{ needs.changes.outputs.hasMutations }}
           GATE_MUTATION_PKGS: ${{ needs.changes.outputs.mutationPackages }}
           GATE_FULL_REQUESTED: ${{ needs.changes.outputs.fullGate }}

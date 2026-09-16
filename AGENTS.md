@@ -108,7 +108,12 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
   带 smoke 断言（含路由 403/405 围栏用例与 client 契约断言）。
 - **产物零污染（#218）**：测试落盘必须进 `mkdtempSync` 生成的隔离目录，严禁在仓库内留下
   `undefined/`、`*.jsonl` 等运行时产物（`.gitignore` 已兜底，但仍属红线）。
-- 改完自查：`git status --porcelain | grep -E 'undefined/|\.jsonl$'` 必须为空。
+- 改完自查：`git status --porcelain` 只允许出现**预期的产物路径**——你本次要提交的文件；本仓
+  构建 / 测试产物的路径都已由 `.gitignore` 兜底，porcelain 里本就不该出现它们——**其余任何
+  未跟踪文件一律视为违规**。为什么不再写模式清单（旧版是 `grep -E 'undefined/|\.jsonl$'`）：
+  清单只覆盖已知形态，而残留物的形态永远比清单多一种，且漏检是静默的——实证是主 checkout
+  根目录一个未跟踪的 `GITHUB_ENV`（12 字节，内容 `BASH_ENV=/z`）挂了一整轮才被评审者发现。
+  `.gitignore` 兜底 ≠ 许可：已兜底仍属红线（#218）。
 
 ## 仓库约定（无副本，勿外移）
 

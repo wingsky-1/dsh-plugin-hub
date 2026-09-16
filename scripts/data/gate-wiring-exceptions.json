@@ -144,6 +144,10 @@
       "keys": ["SLICE"]
     },
     {
+      "step": "ci.yml|red-line-approval|script:scripts/gate/red-line-approval.mjs|$RUNNER_TEMP/pr-files.json,$RUNNER_TEMP/pr-labels.json,--files-json,--labels-json",
+      "keys": ["GH_TOKEN"]
+    },
+    {
       "step": "ci.yml|repo-gate|script:scripts/gate/contract-check.ts",
       "keys": ["FULL_GATE", "HIT_PACKAGES"]
     },
@@ -162,6 +166,7 @@
         "GATE_HAS_MUTATIONS",
         "GATE_MUTATION",
         "GATE_MUTATION_PKGS",
+        "GATE_REDLINE",
         "GATE_VERDICT"
       ]
     },
@@ -213,6 +218,11 @@
       "job": "ci.yml|mutation-verdict",
       "condition": "always() && needs.changes.outputs.hasMutations == 'true' && needs.mutation-gate.result != 'skipped'",
       "reason": "聚合判分必须在切片 job 结果已知后恒跑（always），否则矩阵实例级失败会让判定表读不到结果；hasMutations 关掉无变异切片，mutation-gate.result != 'skipped' 关掉被上游连坐跳过的实例"
+    },
+    {
+      "job": "ci.yml|red-line-approval",
+      "condition": "github.event_name == 'pull_request'",
+      "reason": "红线门禁（#843 M1 / R-1）只在 PR 上实例化：它的判据对象就是「本次 PR 有无 approved 标签」，push/main 与 tag 事件没有可判的 PR 上下文，跑起来只会退化成取不到输入。"
     },
     {
       "job": "ci.yml|repo-gate",
@@ -330,6 +340,11 @@
       "envKeys": ["COMBOS"]
     },
     {
+      "step": "ci.yml|red-line-approval|Resolve changed files & labels（gh api + 有界重试；仍失败即非零退出）",
+      "digest": "82bcaf00f68eb9b0",
+      "envKeys": ["GH_TOKEN"]
+    },
+    {
       "step": "ci.yml|repo-gate|Build all packages（gate:full：全仓产物闸的前提）",
       "digest": "bf2def35d1a8cd11",
       "envKeys": []
@@ -416,6 +431,10 @@
     {
       "job": "ci.yml|mutation-verdict",
       "digest": "5264793c9ef3a5f1"
+    },
+    {
+      "job": "ci.yml|red-line-approval",
+      "digest": "52074e8d91d14b51"
     },
     {
       "job": "ci.yml|repo-gate",
