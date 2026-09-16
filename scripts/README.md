@@ -30,6 +30,7 @@
 - `gate/aggregate.ts` — 聚合 `cordis.patch.yml` 生成 + 一致性校验（`--check` 供 CI）。
 - `gate/crap-check.mjs` — 单函数 CRAP 复杂度检查（阈值唯一事实源 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict）。**#722 阶段五已重建为 src 口径**（复杂度取 ESLint 内置 complexity 规则、覆盖率取 `coverage/coverage-final.json`），此前「复杂度取自 lib 产物、与 src 口径行号不可比 → 入口自检 exit 2」的停用态**已不成立**；`crap.strict=false` 是观察期语义（超阈热点只落盘不判红），数据源缺失或解析失败仍 fail-closed exit 2。执行点：夜间 `observe.yml` 与 `gate:full --with-coverage`。
 - `gate/forbid-src-tests.mjs` — #423 防双份回潮：扫 packages 下全部遗留 src 副本测试文件（含未跟踪），命中即 exit 1。
+- `gate/red-line-approval.mjs` — 红线路径改动的「人工批准」判据（#843 M1 的代码侧落点）：PR 的 changed files 命中红线面（常量数组 `RED_LINE_PATTERNS`，当前 `.github/**` 与 `scripts/gate/**`）且 labels 不含 `approved` 即判红；纯函数 `judgeRedLine` + CLI（输入缺失/不可解析 exit 2、判红 exit 1、放行 exit 0）。执行点 = `ci.yml` 的 `Build / Red-line approval` job（仅 PR），该 job 已挂进 repo-gate 的 `needs`。本文件自身也在红线面内——改它同样需要 `approved` 标签。
 - `gate/local-gate.mjs` — 本地/PR 门禁分层入口（`pnpm gate:changed` / `gate:pr` / `gate:full`，#726）；
   步骤表本体在 `gate/gate-steps.mjs`（无副作用纯函数，供接线断言直接 import）。`--dry-run --json` 输出结构化计划（人类可读输出不变），供 `test/gate-wiring.test.ts` 消费：
   按改动类型选闸：本地 pr / full 是全仓对象面，CI 在 PR 上默认走增量口径，打 `gate:full` 标签才补全仓产物闸；覆盖率另有前置——该 PR 须命中变异切片（`ci.yml` 的 coverage job 要求 `fullGate` 与 `hasMutations` 同时为真）。变异自 #742 起在 PR 上按命中切片强制跑（与标签无关）。
