@@ -106,6 +106,10 @@ async function checkMiddlewareRoot(
   }
   if (parsed.root === MIDDLEWARE_GLOBAL_ROOT && mode !== "all") {
     const bare = parsed.server;
+    // 封装定义条目（toolDefinitions）恒由中间层虚拟连接承载（#767 S1-5b 裁决 (c)'，与模式无关）：
+    // 它在任何模式下都没有 mcp__ 宿主注册可回退，@global 必须放行——否则 project/off 下它完全
+    // 不可达。正常（有 transport 的）全局服务器不走这条路：它们仍以 mcp__ 直呼，照旧拒绝并引导。
+    if (await isWrappedGlobalServer(mw, bare)) return parsed.root;
     const known =
       mw.host.isGlobalServer(bare) ||
       injectPorts.get().catalog.catalogDirectory.entryFor(MIDDLEWARE_GLOBAL_ROOT, bare) !==
@@ -120,6 +124,17 @@ async function checkMiddlewareRoot(
     );
   }
   return parsed.root;
+}
+
+/**
+ * @global 上的该服务器是不是封装定义条目（toolDefinitions）。
+ *
+ * 判定读宿主配置（`projectServersFor("@global")` 已含 runtime 注入条目）而不是目录：目录条目
+ * 只说「有工具」，说不了「谁持有连接」。这是既有宿主能力，不为它开新端口。
+ */
+async function isWrappedGlobalServer(mw: McpMiddleware, bare: string): Promise<boolean> {
+  const servers = await mw.host.projectServersFor(MIDDLEWARE_GLOBAL_ROOT);
+  return Array.isArray(servers?.find((server) => server.name === bare)?.toolDefinitions);
 }
 
 // ---------------------------------------------------------------------------
@@ -726,11 +741,22 @@ function handleCallGuard(args: unknown, mw: McpMiddleware): PreToolDecision | un
   return undefined;
 }
 
+/**
+ * 注册名中段 → (root, 裸名) 的反查面。
+ *
+ * 为什么按入参递入而不是本域自己查：注册名自 #767 S1-4d 换引擎起是 `mcp__<id>__`，id 由
+ * (root, name) 分配、只有持账本的一侧知道（池侧是单元表的 entry.id，直连侧是 manager 的
+ * 直连账本）。本域若自己 import 那两个域就是新增跨域值边（I2① 硬红），故按调用点入参契约
+ * 递进——与既有的 `resolveRoot` 同一形态。
+ */
+type ServerIdResolver = (id: string) => { root: string; server: string } | undefined;
+
 async function handleDirectMcpGuard(
   name: string,
   agent: unknown,
   disabledTools: DisabledToolsMap | undefined,
   resolveRoot: (agent: unknown) => Promise<string | undefined>,
+  resolveServerId?: ServerIdResolver,
 ): Promise<PreToolDecision | undefined> {
   const {
     workspace: { fullServerName },
@@ -739,7 +765,7 @@ async function handleDirectMcpGuard(
   const rest = name.slice("mcp__".length);
   const separator = rest.indexOf("__");
   if (separator <= 0) return undefined;
-  const server = rest.slice(0, separator);
+  const segment = rest.slice(0, separator);
   const tool = rest.slice(separator + 2);
   if (tool === "") return undefined;
   // B11（D5 定稿，规格化不可逆）：server/tool 名含连续双下划线时，第一个 `__`
@@ -748,7 +774,12 @@ async function handleDirectMcpGuard(
   // 存在歧义，按未知 server 处理（不禁用不误禁，放行 next()）。映射表列入
   // 后续增强；不改 publicToolName/INVALID_NAME_CHARS（防冲击官方 mcp__ 契约）。
   if (tool.includes("__")) return undefined;
-  const root = await resolveRoot(agent);
+  // id 反解（#767 S1-5b 裁定 AG③ / S1-4d 遗留缺口）：注册名中段是 (root, name) 分配的 id，
+  // 不是裸服务器名——不反解就把它当 server 名查禁用表，工具级禁用对直呼路径**恒 miss**。
+  // 反查不到时按裸名解释：未登记 id 的注册面（旧形态名、测试注入的假条目）口径不变。
+  const resolved = resolveServerId?.(segment);
+  const server = resolved?.server ?? segment;
+  const root = resolved?.root ?? (await resolveRoot(agent));
   if (root === undefined) {
     // 无法解析会话 root：按最宽可见范围放行（仅 @global 共享记录生效）。
     if (disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(server)?.has(tool) === true) {
@@ -766,10 +797,27 @@ async function handleDirectMcpGuard(
   return undefined;
 }
 
+/**
+ * 池侧的反查面：单元表的连接条目就是 id 的唯一事实源（`entry.id` 由装载返回写回）。
+ * 跨 root 同名各有一条，故扫描必须遍历全部单元。
+ */
+function resolveServerIdFor(mw: McpMiddleware): ServerIdResolver {
+  return (id: string) => {
+    for (const unit of mw.units.values()) {
+      for (const [name, entry] of unit.connections) {
+        if (entry.id === id) return { root: unit.root, server: name };
+      }
+    }
+    return undefined;
+  };
+}
+
 function registerPreExecuteGuard(
   ctx: Context,
   mw: McpMiddleware,
   resolveRoot: (agent: unknown) => Promise<string | undefined>,
+  /** 装配点给的直连账本反查（可选）；未命中回落池侧反查。 */
+  hostResolveServerId?: ServerIdResolver,
 ): (() => void) | undefined {
   if (typeof ctx.on !== "function") return undefined;
   return ctx.on(
@@ -792,11 +840,15 @@ function registerPreExecuteGuard(
         return next();
       }
       if (name.startsWith("mcp__")) {
+        // 直连账本优先、池侧兜底：project/off 下全局直连条目的 id 只在本层反查得到，
+        // 而 all/project 的池条目只在单元表里。
+        const poolResolve = resolveServerIdFor(mw);
         const decision = await handleDirectMcpGuard(
           name,
           exec.agent,
           mw.disabledTools,
           resolveRoot,
+          (id) => hostResolveServerId?.(id) ?? poolResolve(id),
         );
         if (decision !== undefined) return decision;
         return next();
@@ -820,6 +872,12 @@ export function registerDirectMcpGuard(
   ctx: Context,
   disabledTools: DisabledToolsMap | undefined,
   resolveRoot: (agent: unknown) => Promise<string | undefined>,
+  /**
+   * id → (root, 裸名) 反查面（off 模式下账本在 manager 自持，只有调用点给得出来）。位置参数而非
+   * options 袋：与 resolveRoot 同为「装配点现造的入参契约」，且签名落在导出面快照的**同一个
+   * 声明块**里——带花括号的 options 袋会让提取器在第一个深度 0 的 `}` 截断整块。
+   */
+  resolveServerId?: ServerIdResolver,
 ): (() => void) | undefined {
   if (typeof ctx.on !== "function") return undefined;
   return ctx.on(
@@ -830,7 +888,13 @@ export function registerDirectMcpGuard(
     ): Promise<PreToolDecision> => {
       const name = exec?.name;
       if (typeof name !== "string" || name === "" || !name.startsWith("mcp__")) return next();
-      const decision = await handleDirectMcpGuard(name, exec.agent, disabledTools, resolveRoot);
+      const decision = await handleDirectMcpGuard(
+        name,
+        exec.agent,
+        disabledTools,
+        resolveRoot,
+        resolveServerId,
+      );
       if (decision !== undefined) return decision;
       return next();
     },
@@ -859,6 +923,12 @@ export function registerMiddlewareTools(
     disabledTools?: DisabledToolsMap;
     /** 可选调用统计收集器。 */
     stats?: McpStatsCollector;
+    /**
+     * id → (root, 裸名) 反查面（可选）。装配点递入 manager 直连账本的反查：project/off 模式下
+     * 全局服务器不在池里，只靠池侧反查会把 id 当裸名、工具级禁用对直呼路径恒 miss。
+     * 给出时优先，未命中回落池侧反查（`resolveServerIdFor`）。
+     */
+    resolveServerId?: ServerIdResolver;
   } = {},
 ): () => void {
   const disposers: Array<() => void> = [];
@@ -877,7 +947,7 @@ export function registerMiddlewareTools(
     disposers.push(ctx.tools.register(tool));
   }
 
-  const guardDispose = registerPreExecuteGuard(ctx, mw, resolveRoot);
+  const guardDispose = registerPreExecuteGuard(ctx, mw, resolveRoot, options.resolveServerId);
   if (guardDispose !== undefined) {
     disposers.push(guardDispose);
   }

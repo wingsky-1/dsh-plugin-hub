@@ -2125,7 +2125,7 @@ describe("目录数据源按工作区计算（切换工作区不抖动）", () =
 });
 
 describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）", () => {
-  let base, proj, cfg, gstore, manager, disconnected;
+  let base, proj, cfg, gstore, manager, ghostEntry;
 
   beforeAll(async () => {
     base = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-reload-"));
@@ -2144,17 +2144,24 @@ describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）
       gstore,
     );
     await manager.setSession(proj);
-    // 假 supervisor：验证配置移除后被断开（不 spawn 真实连接）。
-    disconnected = 0;
-    manager.supervisors.set("ghost", {
+    // 假条目：验证配置移除后集合里不再有它（不 spawn 真实连接）。拆除本身落点是账本释放
+    // （stop → dropEntry → releaseServer），那是直连账本的内部形状、阶段 2 随模式键消失，
+    // 故这里只判对外可见结果；「释放真的被发起」由 unit-manager2 的真装载用例（dispose /
+    // B5 替换代际）用假 loader 的调用序判定。
+    ghostEntry = {
+      server: normalizeServer({ name: "ghost", transport: "stdio", command: "true" }),
       scope: SCOPE_PROJECT,
+      root: proj,
       status: "connected",
-      client: {},
-      toolDisposers: new Map(),
-      disconnect: async () => {
-        disconnected += 1;
-      },
-    });
+      error: undefined,
+      tools: [],
+      toolMeta: new Map(),
+      mountStarted: true,
+      readySettled: true,
+      everConnected: true,
+      disposed: false,
+    };
+    manager.supervisors.set("ghost", ghostEntry);
   });
 
   afterAll(async () => {
@@ -2187,12 +2194,11 @@ describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）
     expect(manager.supervisors.has("p1"), "disabled 不启动").toBe(false);
   });
 
-  it("外部移除配置 → 已连接 supervisor 被断开", async () => {
+  it("外部移除配置 → 已连接条目被拆除", async () => {
     writeFileSync(cfg, JSON.stringify({ version: 1, servers: [] }));
     utimesSync(cfg, Date.now() / 1000 + 10, Date.now() / 1000 + 10);
     await manager.refreshFromDisk();
-    expect(disconnected, "ghost 被断开").toBe(1);
-    expect(manager.supervisors.has("ghost")).toBe(false);
+    expect(manager.supervisors.has("ghost"), "ghost 已从连接集合移除").toBe(false);
   });
 
   it("无配置变化时 refreshFromDisk 不广播（防 SSE 空转循环）", async () => {
@@ -2724,9 +2730,11 @@ it("#362 中间层模式热切换：off 启动也可切到 project（设置页�
   const ctx = fakeCtx();
   try {
     await apply(ctx, { enabled: true, middleware: "off", storePath: join(dir, "dsh-mcp.json") });
-    // off 启动：不注册中间层工具，但 setMiddlewareMode 已挂。
+    // off 启动**也注册**中间层工具（#767 S1-5b 裁决 (c)'）：封装定义条目恒交中间层虚拟连接，
+    // off 下它没有 mcp__ 宿主注册可回退，触达面只能是 ws_mcp_call；目标态没有模式键，
+    // 中间层实例与工具恒在（D8 的「off 不建池」随该裁决作废）。
     const toolNames = ctx.registeredTools.map((def) => def.name);
-    expect(!toolNames.includes("ws_mcp_call"), "off 启动不注册中间层工具").toBeTruthy();
+    expect(toolNames.includes("ws_mcp_call"), "off 启动也注册中间层工具").toBeTruthy();
     const configRoute = ctx.routes.find((route) => route.path === ROUTES.config);
     expect(configRoute, "config 路由已注册").toBeTruthy();
     // POST middleware=project → 热切换生效：中间层工具注册。
@@ -3770,7 +3778,10 @@ describe("#362 补充 4：registerServer.toolDefinitions（调用方封装定义
       normalizeServer({ name: "codegraph", transport: "stdio", command: "true" }),
     );
     sup.server.toolDefinitions = wrapped;
-    // 挂入 manager.supervisors：summarize 的禁用投影按 supervisor 工具列表判定。
+    // 挂入 manager.supervisors：summarize 的禁用投影按条目的工具列表判定。
+    // id 与裸名同值：本夹具是直连造的旧栈实例，注册名用的就是裸名（publicToolName(server.name, raw)），
+    // 而账本条目的剥前缀口径在换引擎后按 id（#767 S1-5b）——两者同值才能对齐同一判据面。
+    sup.id = "codegraph";
     manager.supervisors.set("codegraph", sup);
 
     // 不带 toolDefinitions 的对照代际（现状回归）。

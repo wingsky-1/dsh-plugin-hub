@@ -117,7 +117,6 @@ export interface RuntimeDeps {
 export interface ManagerLite {
   ctx: Pick<Context, "tools">;
   logger: LoggerService;
-  enhancement: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number };
   emitStatus(): void;
   recordCatalogTools(
     serverName: string,
@@ -151,4 +150,14 @@ export interface MiddlewareHost {
   isGlobalServer(name: string): boolean;
   /** 该 server 是否 runtime 注入（registerServer 内存态；目录不写盘判定，#413）。 */
   isRuntimeServer(name: string): boolean;
+  /**
+   * 该 (root, server) 的连接是否归中间层持有（#767 S1-5b 主控裁决 (c)'）。
+   *
+   * 用处只有一个：建单元时的惰性连接范围。`project`/`off` 模式下正常全局服务器仍走 `mcp__`
+   * 直呼，照旧连配置全集会把它们偷偷拉进池——同一 id 二次装载还会撞官方 serverName 活体预留。
+   * 判定权在 manager（`middlewareTakes` 或封装定义条目），本层只问不猜。
+   *
+   * 缺省（未给该成员）视为「全部归本层」＝既有行为：只驱动池自身的夹具不必实现它。
+   */
+  middlewareOwnsServer?(root: string, name: string): boolean;
 }

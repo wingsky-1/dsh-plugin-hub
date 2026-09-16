@@ -540,7 +540,6 @@ export class ConnectionSupervisor {
           definitions.set(
             publicName,
             buildToolDefinition(client, tool as Record<string, unknown>, this.server, {
-              ...this.manager.enhancement,
               stats: this.manager.stats,
             }),
           );

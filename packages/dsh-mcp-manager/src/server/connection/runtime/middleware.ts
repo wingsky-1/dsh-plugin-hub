@@ -100,9 +100,13 @@ export class McpMiddleware {
       await runtimePorts
         .get()
         .catalog.catalogDirectory.ensureRootLoaded(root, this.host.catalogCachePath(root));
-      // 后台惰性连接（fire-and-forget，不阻塞调用方）。
+      // 后台惰性连接（fire-and-forget，不阻塞调用方）。范围按宿主的所有权判定收窄：project/off
+      // 模式下正常全局服务器不归本层，建单元时连全集会把它们拉进池（#767 S1-5b 裁决 (c)'）。
+      const owns = this.host.middlewareOwnsServer;
       for (const server of servers) {
-        if (server.enabled !== false) void this.ensureConnected(root, server.name);
+        if (server.enabled === false) continue;
+        if (owns !== undefined && !owns(root, server.name)) continue;
+        void this.ensureConnected(root, server.name);
       }
     }
     unit.lastTouchedAt = Date.now();

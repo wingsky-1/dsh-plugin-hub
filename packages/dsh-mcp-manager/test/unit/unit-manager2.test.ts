@@ -64,6 +64,8 @@ const {
   breakpointForWidth,
   clampPointToViewport,
   findProjectRoot,
+  registerMiddlewareTools,
+  MIDDLEWARE_GLOBAL_ROOT,
 } = await import("../../src/index.ts");
 
 // 临时目录 / manager / timer 收口：用例结束后统一清理，防产物与句柄泄漏。
@@ -80,11 +82,6 @@ function makeTempDir(prefix) {
 function trackManager(manager) {
   trackedManagers.push(manager);
   return manager;
-}
-
-function trackTimer(timer) {
-  trackedTimers.push(timer);
-  return timer;
 }
 
 afterEach(async () => {
@@ -958,9 +955,9 @@ describe("start / stop / startAll 边界", () => {
     const { manager, store } = managerFixture("dsh-mcp-mgr2d-");
     store.upsert(normalizeServer(quietServer("svc")));
     manager.startAll();
-    // 已连接（client 存在）跳过重建。
+    // 已发起装载（mountStarted 是同步判据）跳过重建。
     const existing = manager.supervisors.get("svc");
-    existing.client = {};
+    existing.mountStarted = true;
     manager.start("svc");
     expect(manager.supervisors.get("svc")).toBe(existing);
   });
@@ -969,12 +966,12 @@ describe("start / stop / startAll 边界", () => {
     const { dir, manager, store, log } = managerFixture("dsh-mcp-mgr2d-");
     store.upsert(normalizeServer(quietServer("svc")));
     manager.startAll();
-    // 已连接（client 存在）跳过重建。
+    // 已发起装载（mountStarted 是同步判据）跳过重建。
     const existing = manager.supervisors.get("svc");
-    existing.client = {};
+    existing.mountStarted = true;
     manager.start("svc");
-    // 确定化：清掉 start 异步流程中的 client 引用，才能走到跨 scope 冲突检查。
-    delete existing.client;
+    // 确定化：清掉「已发起装载」标记，才能走到跨 scope 冲突检查。
+    delete existing.mountStarted;
     // 跨 scope 冲突拒绝启动并 warn（需 projectStore 含同名项才能走到冲突检查）。
     manager.projectStore = new McpStore(join(dir, "p-d.json"));
     manager.projectStore.upsert(normalizeServer(quietServer("svc")));
@@ -1039,10 +1036,13 @@ describe("connect / disconnect / reconnect（manager 面）", () => {
     const { manager, store } = managerFixture("dsh-mcp-mgr2e-");
     store.upsert(normalizeServer(quietServer("c-one")));
     await manager.connect("c-one");
-    // 已连接跳过（client 由失败流程清空，这里手动置位）。
-    manager.supervisors.get("c-one").client = {};
+    // 已连接跳过：注册面带该 id 前缀 = 「已连上」（官方零状态 API，前缀是唯一正向证据）。
+    const connected = manager.supervisors.get("c-one");
+    connected.id = "id-c-one";
+    manager.ctx.tools.entries = [{ name: "mcp__id-c-one__t" }];
     await manager.connect("c-one");
     expect(manager.supervisors.size).toBe(1);
+    expect(manager.supervisors.get("c-one")).toBe(connected);
   });
 
   it("disconnect 未知 no-op / 已知移除", async () => {
@@ -1068,7 +1068,8 @@ describe("connect / disconnect / reconnect（manager 面）", () => {
     manager.projectStore.data.servers.push(normalizeServer(quietServer("c-two")));
     manager.start("c-two", "global");
     const supCtwo = manager.supervisors.get("c-two");
-    if (supCtwo !== undefined) supCtwo.client = undefined;
+    // 确定化：清掉「已发起装载」标记，否则 connect 会在 connected/connecting 短路里早退。
+    if (supCtwo !== undefined) delete supCtwo.mountStarted;
     await expect(manager.connect("c-two", "project")).rejects.toThrow(/registered in scope/);
   });
 });
@@ -1586,7 +1587,7 @@ describe("#413 all 模式 runtime 注入归一中台", () => {
 });
 
 // #413：all 模式 runtime（toolDefinitions）注销后 project 模式保留 supervisor ----
-describe("#413 project 模式 runtime 保留 supervisor", () => {
+describe("#413 封装定义条目（runtime 注入）的归属", () => {
   let prevHome;
   let homeDir;
   beforeEach(() => {
@@ -1632,24 +1633,243 @@ describe("#413 project 模式 runtime 保留 supervisor", () => {
     return { manager };
   }
 
-  it("project 模式 runtime 仍 supervisor 路径（#413 只归一 all）", async () => {
+  it("project 模式封装定义条目也归中间层（(c)'：与模式无关）", async () => {
+    // 目标态没有模式键：封装定义的归属与模式无关（它没有 mcp__ 宿主注册可回退，触达面只能是
+    // ws_mcp_call）。直连账本因此不留条目，连接落在中间层的虚拟连接上。
     const { manager } = await projectRegistered();
-    expect(manager.supervisors.has("cg")).toBeTruthy();
+    expect(manager.supervisors.has("cg")).toBe(false);
+    await pollUntil(
+      "@global 单元虚拟连接建立",
+      () => manager.middleware.units.get("@global")?.connections.has("cg") === true,
+    );
   });
 
   it("off 模式注销后 registry 清除", async () => {
-    // off 模式注销：supervisor 销毁 + registry 清除（无中间层连接，无需 drop）。
     const { manager } = await projectRegistered();
     manager.middlewareMode = "off";
     await manager.unregisterServer("cg");
     expect(manager.runtimeRegistry.has("cg")).toBe(false);
   });
 
-  it("off 模式注销后 supervisor 销毁", async () => {
+  it("off 模式注销后虚拟连接移除", async () => {
+    // (c)' 后 off 模式的拆除也走池路径：虚拟连接随 unregister 一并拆掉。
     const { manager } = await projectRegistered();
     manager.middlewareMode = "off";
     await manager.unregisterServer("cg");
     expect(manager.supervisors.has("cg")).toBe(false);
+    expect(manager.middleware.units.get("@global")?.connections.has("cg")).toBe(false);
+  });
+});
+
+// #767 S1-5b 裁决 (c)'：封装定义条目（toolDefinitions）恒交中间层虚拟连接，与模式无关 ----
+// 目标态没有 off/project 模式键、也没有 mcp__ 直呼面：调用方定义 + 调用方 execute 保留，
+// 触达面从「直呼」收敛为 ws_mcp_call。故这里对 project / off 两档参数化，判据打在外面对：
+// 虚拟连接与目录可见、ws_mcp_call 转发执行调用方 execute、零官方装载、注销即移除。
+describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
+  let prevHome;
+  let homeDir;
+  beforeEach(() => {
+    prevHome = process.env.DSH_HOME;
+    homeDir = makeTempDir("dsh-mcp-mgr2wr-");
+    process.env.DSH_HOME = homeDir;
+  });
+  afterEach(() => {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+  });
+
+  /** 调用方封装定义：execute 是调用方 JS（记录每次调用，供断言「执行的是它」）。 */
+  function wrappedTool(calls) {
+    return {
+      name: "cg_node",
+      description: "查符号",
+      parameters: {
+        type: "object",
+        properties: { symbol: { type: "string" } },
+        required: ["symbol"],
+      },
+      output: {
+        schema: {
+          type: "object",
+          properties: { text: { type: "string" } },
+          required: ["text"],
+          additionalProperties: false,
+        },
+        render: (a, v) => [{ type: "text", text: v.text }],
+      },
+      execute: async (args) => {
+        calls.push(args);
+        return { text: `node(${args.symbol})` };
+      },
+    };
+  }
+
+  /** 每种模式一套夹具：注册封装条目 + 挂中间层工具（ws_mcp_call 是它唯一的触达面）。 */
+  async function wrappedFixture(mode) {
+    const { manager, log } = makeManager(homeDir);
+    const mw = await manager.initMiddleware(mode, {});
+    const calls = [];
+    const definition = wrappedTool(calls);
+    await manager.registerServer({
+      name: "cg",
+      transport: "stdio",
+      command: "codegraph",
+      args: ["serve", "--mcp"],
+      toolDefinitions: [definition],
+    });
+    const disposeTools = registerMiddlewareTools(manager.ctx, mw, async () => homeDir, mode, {
+      disabledTools: manager.disabledTools,
+      stats: manager.stats,
+      resolveServerId: (id) => manager.serverNameForId(id),
+    });
+    await pollUntil("虚拟连接建立", () => mw.units.get("@global")?.connections.has("cg") === true);
+    return { manager, mw, log, calls, definition, disposeTools };
+  }
+
+  const mountCalls = () => poolLoader.calls.filter((call) => call[0] === "mount").length;
+
+  for (const mode of ["project", "off"]) {
+    it(`[${mode}] 虚拟连接建立且目录可见 @global/cg`, async () => {
+      const { mw } = await wrappedFixture(mode);
+      expect(mw.units.get("@global")?.connections.get("cg")?.status).toBe("connected");
+      expect(catalogDirectory.entryFor("@global", "cg")?.tools.has("cg_node")).toBe(true);
+    });
+
+    it(`[${mode}] ws_mcp_call 转发执行的是调用方 execute`, async () => {
+      const { log, calls } = await wrappedFixture(mode);
+      const wsCall = log.registered.find((def) => def.name === "ws_mcp_call");
+      const result = await wsCall.execute(
+        { server: "@global/cg", tool: "cg_node", arguments: { symbol: "X" } },
+        { signal: undefined, agent: undefined, callId: "call-1" },
+      );
+      expect(calls).toEqual([{ symbol: "X" }]);
+      expect(JSON.stringify(result)).toContain("node(X)");
+    });
+
+    it(`[${mode}] 未发生官方装载（假 loader 零 mount）`, async () => {
+      await wrappedFixture(mode);
+      expect(mountCalls()).toBe(0);
+    });
+
+    it(`[${mode}] unregisterServer 后虚拟条目与目录条目一并移除`, async () => {
+      const { manager, mw } = await wrappedFixture(mode);
+      await manager.unregisterServer("cg");
+      expect(mw.units.get("@global")?.connections.has("cg")).toBe(false);
+      expect(catalogDirectory.entryFor("@global", "cg")).toBeUndefined();
+      expect(manager.runtimeRegistry.has("cg")).toBe(false);
+    });
+  }
+
+  // ---- M2 洞：建单元的惰性连接范围（middlewareOwnsServer 过滤器）必须有判据 ----
+  // 判据打在外面：池的 connections + 假 loader 的 mount 计数（不断言私有字段）。
+  /** 夹具：一个正常 transport 全局服务器 + 一个封装条目（后者触发 @global 单元创建）。 */
+  async function eagerFilterFixture(mode) {
+    const { manager, store } = makeManager(homeDir);
+    const mw = await manager.initMiddleware(mode, {});
+    // 正常（有 transport）全局服务器：project/off 下必须留在直连账本一侧，不进池。
+    store.upsert(normalizeServer(quietServer("gn")));
+    await manager.registerServer({
+      name: "cg",
+      transport: "stdio",
+      command: "codegraph",
+      toolDefinitions: [wrappedTool([])],
+    });
+    await pollUntil("@global 单元建立", () => mw.units.get("@global") !== undefined);
+    return { manager, mw };
+  }
+
+  it("[project] 建 @global 单元不把正常全局服务器拉进池（零 mount）", async () => {
+    const { mw } = await eagerFilterFixture("project");
+    // 封装条目建了单元，但同 root 的正常全局服务器未被顺带 ensureConnected。
+    expect(mw.units.get("@global")?.connections.has("cg")).toBe(true);
+    expect(mw.units.get("@global")?.connections.has("gn")).toBe(false);
+    expect(mountCalls()).toBe(0);
+  });
+
+  it("[all] 同一夹具下正常全局服务器仍进池（正向对照）", async () => {
+    const { mw } = await eagerFilterFixture("all");
+    await pollUntil(
+      "正常全局服务器进池",
+      () => mw.units.get("@global")?.connections.has("gn") === true,
+    );
+    expect(mw.units.get("@global")?.connections.has("gn")).toBe(true);
+    expect(mountCalls() > 0).toBe(true);
+  });
+
+  // ---- M3 洞：guard 的 id 反解（注册名中段 → (root, 裸名)）必须有判据 ----
+  // 这条链今天零覆盖，而它正是裁定 AG② 要修的工具级禁用直呼路径。
+  /**
+   * 夹具：project 模式 + 正常 transport 全局服务器（走直连账本，注册名 `mcp__<id>__<tool>`）
+   * + 中间层工具与其 pre-execute guard（连 resolveServerId 一起按组合根的接线递入）。
+   */
+  async function directIdGuardFixture() {
+    const { manager } = makeManager(homeDir);
+    const handlers = new Map();
+    // 假 ctx 补 on：registerMiddlewareTools 只在 ctx.on 可用时才挂 pre-execute guard。
+    manager.ctx.on = (event, handler) => {
+      handlers.set(event, handler);
+      return () => handlers.delete(event);
+    };
+    const mw = await manager.initMiddleware("project", {});
+    // 禁用面用仓库既有事实源（manager.disabledTools → 经 options 同步进 mw）。
+    manager.disabledTools.set(MIDDLEWARE_GLOBAL_ROOT, new Map([["g1", new Set(["echo"])]]));
+    registerMiddlewareTools(manager.ctx, mw, async () => homeDir, "project", {
+      disabledTools: manager.disabledTools,
+      stats: manager.stats,
+      resolveServerId: (id) => manager.serverNameForId(id),
+    });
+    await manager.registerServer({
+      name: "g1",
+      transport: "stdio",
+      command: "dsh-noop-cmd",
+      reconnect: { enabled: false },
+    });
+    await pollUntil("直连账本条目拿到 id", () => manager.supervisors.get("g1")?.id !== undefined);
+    const entry = manager.supervisors.get("g1");
+    // 注册名就是 id 前缀形态（直呼路径看得见的那两个名字）。
+    manager.ctx.tools.entries = [
+      { name: `mcp__${entry.id}__echo` },
+      { name: `mcp__${entry.id}__other` },
+    ];
+    return { entry, guard: handlers.get("tools/pre-execute") };
+  }
+
+  it("[project] 直呼 mcp__<id>__<禁用工具> 命中禁用面（guard 反解回 @global/g1）", async () => {
+    const { entry, guard } = await directIdGuardFixture();
+    const decision = await guard(
+      { name: `mcp__${entry.id}__echo`, agent: { session: { header: {} } } },
+      async () => ({ kind: "allow" }),
+    );
+    // 反解不到 (root, 裸名) 就会把 id 当服务器名查表 → 恒 miss → 这条会红。
+    expect(decision.kind).toBe("deny");
+    expect(decision.reason).toContain("@@global/g1/echo");
+  });
+
+  it("[project] 直呼 mcp__<id>__<未禁用工具> 放行（不是一律拒）", async () => {
+    const { entry, guard } = await directIdGuardFixture();
+    let nexted = false;
+    const decision = await guard(
+      { name: `mcp__${entry.id}__other`, agent: { session: { header: {} } } },
+      async () => {
+        nexted = true;
+        return { kind: "allow" };
+      },
+    );
+    expect(nexted).toBe(true);
+    expect(decision.kind).toBe("allow");
+  });
+
+  it("无 transport 的封装条目（直传配置）同样只经虚拟连接，不派官方实例", async () => {
+    // normalizeServer 要求 transport，故这条走 start 的直传配置路径：判定的是「封装定义条目
+    // 不走官方装载」本身，与配置里有没有 transport 无关。
+    const { manager, mw } = await wrappedFixture("project");
+    const calls = [];
+    const bare = { name: "cg2", enabled: true, toolDefinitions: [wrappedTool(calls)] };
+    manager.runtimeRegistry.set("cg2", bare);
+    manager.start("cg2", "global", bare);
+    await pollUntil("虚拟连接建立", () => mw.units.get("@global")?.connections.has("cg2") === true);
+    expect(manager.supervisors.has("cg2")).toBe(false);
+    expect(mountCalls()).toBe(0);
   });
 });
 
@@ -2430,8 +2650,22 @@ describe("summarize", () => {
     const { manager, store } = managerFixture("dsh-mcp-mgr2h-");
     store.upsert(normalizeServer(quietServer("s-on")));
     store.upsert(normalizeServer(quietServer("s-off", { enabled: false })));
-    // summarize：supervisor 状态与错误投影。
-    manager.supervisors.set("s-on", { status: "failed", error: new Error("boom"), tools: ["t"] });
+    // summarize：直连账本的六态投影输入面（配置 + 装载窗口 + 注册面）——态不再直读 status，
+    // 由 projectServerState 重算（裁定 U，与中间层 statusOf 同形）。
+    manager.supervisors.set("s-on", {
+      server: store.find("s-on"),
+      scope: "global",
+      root: "@global",
+      id: "id-on",
+      status: "failed",
+      error: new Error("boom"),
+      tools: ["mcp__id-on__t"],
+      toolMeta: new Map(),
+      mountStarted: true,
+      readySettled: false,
+      everConnected: false,
+      disposed: false,
+    });
     return { manager, store };
   }
 
@@ -2482,21 +2716,19 @@ describe("dispose", () => {
   function disposeFixture() {
     const { manager, store } = managerFixture("dsh-mcp-mgr2h-");
     store.upsert(normalizeServer(quietServer("s-on")));
-    const disposedNames = [];
-    manager.supervisors.set("s-x", {
-      disposed: false,
-      reconnectTimer: trackTimer(setTimeout(() => {}, 60_000)),
-      syncChain: Promise.resolve(),
-      toolDisposers: new Map([["t", () => disposedNames.push("t")]]),
-    });
-    return { manager, disposedNames };
+    manager.startAll();
+    return { manager };
   }
 
-  it("dispose 清理全部 supervisor 工具", async () => {
-    // dispose：清理全部 supervisor 工具。
-    const { manager, disposedNames } = disposeFixture();
+  it("dispose 释放全部账本条目（官方句柄被 dispose）", async () => {
+    // 工具注销自换引擎起归官方实例自己的 dispose（本地只留「逐条摘账 + 发起释放」）：
+    // 句柄被释放即旧栈「逐个调用 toolDisposers」的同一判据面（撤销工具注册是 dispose 的效果）。
+    const { manager } = disposeFixture();
+    await pollUntil("装载已发起", () => poolLoader.handles.length > 0);
+    const record = poolLoader.handles[poolLoader.handles.length - 1];
+    expect(record.state.disposed).toBe(false);
     await manager.dispose();
-    expect(disposedNames).toEqual(["t"]);
+    expect(record.state.disposed).toBe(true);
   });
 
   it("dispose 后 supervisors 清空", async () => {
@@ -2683,9 +2915,24 @@ describe("中间层模式 summary 投影（#228）", () => {
 
   async function globalScopeBase() {
     const fixture = await projectionBase();
-    // 全局 scope 在 project 模式不受中间层影响（supervisor 双轨路径不变）。
+    // 全局 scope 在 project 模式不受中间层影响（直连账本双轨路径不变）。
     fixture.store.upsert(normalizeServer(quietServer("g1")));
-    fixture.manager.supervisors.set("g1", { status: "connected", error: undefined, tools: ["gt"] });
+    // 直连账本条目：输入面是「配置 + 装载窗口 + 注册面前缀」，态由 projectServerState 重算。
+    fixture.manager.ctx.tools.entries = [{ name: `mcp__id-g1__gt` }];
+    fixture.manager.supervisors.set("g1", {
+      server: fixture.store.find("g1"),
+      scope: "global",
+      root: "@global",
+      id: "id-g1",
+      status: "connected",
+      error: undefined,
+      tools: ["mcp__id-g1__gt"],
+      toolMeta: new Map([["mcp__id-g1__gt", { description: "gt" }]]),
+      mountStarted: true,
+      readySettled: true,
+      everConnected: true,
+      disposed: false,
+    });
     return fixture;
   }
 
@@ -2779,136 +3026,88 @@ describe("中间层模式 summary 投影（#228）", () => {
   });
 });
 
-// B5 红测：start 替换已连接 supervisor → 旧实例 disconnect 被调（现状只置 disposed） ----
-describe("B5 红测：start 替换已连接 supervisor", () => {
-  function replacedConnected() {
+// B5 红测：start 替换已装载条目 → 旧代际被释放（现状只置 disposed） ----
+describe("B5 红测：start 替换已装载条目", () => {
+  async function replacedConnected() {
     const { manager, store } = managerFixture("dsh-mcp-mgr2b5a-");
     const srv = normalizeServer(quietServer("s5"));
     store.upsert(srv);
-    const state = { oldDisconnected: 0 };
-    const oldSupervisor = {
-      client: {}, // 已连接（替换分支判定入口）
-      server: srv,
-      scope: "global",
-      disposed: false,
-      disconnect: async () => {
-        state.oldDisconnected += 1;
-        oldSupervisor.disposed = true; // 与真实 disconnect 语义一致
-      },
-    };
-    manager.supervisors.set("s5", oldSupervisor);
-    // directConfig：与 store 版本不同引用（对象字面量）；enabled:false 防新代际真实 spawn。
-    manager.start("s5", "global", { ...srv, enabled: false });
-    return { manager, oldSupervisor, state };
+    // 第一代走真装载链（假 loader，离线）：账本句柄就是旧代际的可观测面。
+    manager.start("s5", "global");
+    await pollUntil("第一代装载完成", () => manager.supervisors.get("s5")?.id !== undefined);
+    const oldEntry = manager.supervisors.get("s5");
+    const oldHandle = oldEntry.handle;
+    // directConfig：与 store 版本不同引用（对象字面量）→ 走替换分支（remountEntry）。
+    manager.start("s5", "global", { ...srv });
+    return { manager, oldEntry, oldHandle };
   }
 
-  it("B5：start 替换分支调用旧实例 disconnect（现状只置 disposed → 红测）", () => {
-    const { state } = replacedConnected();
-    expect(state.oldDisconnected).toBe(1);
+  it("B5：start 替换分支释放旧代际（现状只置 disposed → 红测）", async () => {
+    const { oldHandle } = await replacedConnected();
+    await pollUntil("旧代际已释放", () => oldHandle.disposed === true);
+    expect(oldHandle.disposed).toBe(true);
   });
 
-  it("新代际已替换", () => {
-    const { manager, oldSupervisor } = replacedConnected();
-    expect(manager.supervisors.get("s5") === oldSupervisor).toBe(false);
+  it("新代际已替换", async () => {
+    const { manager, oldEntry } = await replacedConnected();
+    await pollUntil("新代际已装载", () => {
+      const entry = manager.supervisors.get("s5");
+      return entry !== undefined && entry !== oldEntry && entry.id !== undefined;
+    });
+    expect(manager.supervisors.get("s5") === oldEntry).toBe(false);
   });
 
-  it("旧实例 disposed 置位", () => {
-    const { oldSupervisor } = replacedConnected();
-    expect(oldSupervisor.disposed).toBe(true);
+  it("旧条目 disposed 置位", async () => {
+    const { oldEntry } = await replacedConnected();
+    expect(oldEntry.disposed).toBe(true);
   });
 });
 
-// B5 红测（续）：connect 替换未连接 supervisor → 清 timer + 注销残留工具 ----
-describe("B5 红测（续）：connect 替换未连接 supervisor", () => {
+// B5 红测（续）：connect 重建已装载条目 → 旧代际先释放（旧工具随官方 dispose 注销） ----
+describe("B5 红测（续）：connect 重建已装载条目", () => {
   async function replacedDisconnected() {
     const { manager, store } = managerFixture("dsh-mcp-mgr2b5b-");
     const srv = normalizeServer(quietServer("s5"));
     store.upsert(srv);
-    const disposedTools = [];
-    const oldTimer = trackTimer(setTimeout(() => {}, 60_000));
-    const oldSupervisor = {
-      client: undefined, // 未连接（connect 替换分支判定入口）
-      scope: "global",
-      server: srv,
-      disposed: false,
-      reconnectTimer: oldTimer,
-      toolDisposers: new Map([["mcp__s5__echo", () => disposedTools.push("mcp__s5__echo")]]),
-      disconnect: async function () {
-        this.disposed = true;
-        if (this.reconnectTimer !== undefined) {
-          clearTimeout(this.reconnectTimer);
-          this.reconnectTimer = undefined;
-        }
-        for (const dispose of this.toolDisposers.values()) dispose();
-        this.toolDisposers = new Map();
-      },
-    };
-    manager.supervisors.set("s5", oldSupervisor);
-    await manager.connect("s5", "global", { ...srv, enabled: false });
-    return { manager, oldSupervisor, disposedTools };
+    manager.start("s5", "global");
+    await pollUntil("第一代装载完成", () => manager.supervisors.get("s5")?.id !== undefined);
+    const oldEntry = manager.supervisors.get("s5");
+    const oldHandle = oldEntry.handle;
+    // 受控重建：connect 走 remountEntry（先 await disposeServer 旧 id 再挂新实例）。
+    await manager.connect("s5", "global", { ...srv });
+    return { manager, oldEntry, oldHandle };
   }
 
-  it("B5：connect 替换分支复用 disconnect 语义注销旧代际工具（现状只置 disposed → 红测）", async () => {
-    const { disposedTools } = await replacedDisconnected();
-    expect(disposedTools).toEqual(["mcp__s5__echo"]);
+  it("B5：connect 重建分支释放旧代际（旧代际工具随官方 dispose 注销）", async () => {
+    const { oldHandle } = await replacedDisconnected();
+    expect(oldHandle.disposed).toBe(true);
   });
 
   it("新代际已替换", async () => {
-    const { manager, oldSupervisor } = await replacedDisconnected();
-    expect(manager.supervisors.get("s5") === oldSupervisor).toBe(false);
+    const { manager, oldEntry } = await replacedDisconnected();
+    expect(manager.supervisors.get("s5") === oldEntry).toBe(false);
   });
 });
 
-// B5 红测（续）：顺序不变式——旧代际工具先注销、新代际后注册（真实 stdio 连接） ----
-describe("B5 红测（续）：顺序不变式（真实 stdio 连接）", () => {
-  it("B5：顺序不变式——旧代际注销先于新代际注册（现状只置 disposed、旧工具残留 → 红测）", async () => {
-    const { dir, manager, store } = managerFixture("dsh-mcp-mgr2b5c-");
-    const serverScript = join(dir, "mini-mcp-server.mjs");
-    writeFileSync(
-      serverScript,
-      [
-        'import { createInterface } from "node:readline";',
-        'const send = (obj) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...obj }) + "\\n");',
-        'createInterface({ input: process.stdin }).on("line", (line) => {',
-        "  let msg; try { msg = JSON.parse(line); } catch { return; }",
-        '  if (msg.method === "initialize") send({ id: msg.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "mini", version: "0.0.1" } } });',
-        '  else if (msg.method === "tools/list") send({ id: msg.id, result: { tools: [{ name: "echo", description: "echo back", inputSchema: { type: "object" } }] } });',
-        '  else if (msg.id !== undefined) send({ id: msg.id, error: { code: -32601, message: "method not found" } });',
-        "});",
-      ].join("\n"),
-    );
-    const events = [];
-    manager.ctx.tools = {
-      register: (def) => {
-        events.push(`register:${def.name}`);
-        return () => events.push(`dispose:${def.name}`);
-      },
-    };
-    const srv = normalizeServer({
-      name: "s5",
-      transport: "stdio",
-      command: process.execPath,
-      args: [serverScript],
-      reconnect: { enabled: false },
-    });
+// B5 红测（续）：顺序不变式——旧代际先释放、新代际后挂载 ----
+// 换引擎后「工具注册/注销」归官方实例自己的 apply/dispose，本层能判的同一不变式落在账本键上：
+// 同 id 的新代际必须在旧代际结算**之后**才挂载（否则官方 serverName 活体预留当场抛，裁定 V）。
+describe("B5 红测（续）：顺序不变式（旧代际先释放）", () => {
+  it("B5：顺序不变式——旧代际释放先于新代际挂载（现状只置 disposed、旧实例残留 → 红测）", async () => {
+    const { manager, store } = managerFixture("dsh-mcp-mgr2b5c-");
+    const srv = normalizeServer(quietServer("s5"));
     store.upsert(srv);
+    const mountsAt = () =>
+      poolLoader.calls.map((call, index) => [call, index]).filter(([call]) => call[0] === "mount");
     manager.start("s5", "global");
-    await pollUntil("旧代际工具已注册", () => events.includes("register:mcp__s5__echo"));
+    await pollUntil("旧代际已挂载", () => mountsAt().length >= 1);
+    const firstMount = mountsAt()[0][1];
     // directConfig：同内容新引用（模拟 registerServer 直传 config 覆盖 store）。
     manager.start("s5", "global", { ...srv });
-    await pollUntil("旧代际工具已注销", () => events.includes("dispose:mcp__s5__echo"));
-    await pollUntil(
-      "新代际工具已注册",
-      () => events.filter((e) => e === "register:mcp__s5__echo").length >= 2,
-    );
-    const firstReg = events.indexOf("register:mcp__s5__echo");
-    const disAt = events.indexOf("dispose:mcp__s5__echo");
-    const secondReg = events.lastIndexOf("register:mcp__s5__echo");
-    expect(firstReg >= 0 && disAt > firstReg && secondReg > disAt).toBeTruthy();
-    // 清理：断开全部 supervisor（含新代际）关闭 stdio 子进程——manager.dispose()
-    // 不关 transport，残留子进程句柄会让本文件独立运行时事件循环挂死
-    // （CI mutation dry run 超时根因）。
-    for (const sup of manager.supervisors.values()) await sup.disconnect();
+    await pollUntil("新代际已挂载", () => mountsAt().length >= 2);
+    const disposeAt = poolLoader.calls.findIndex((call) => call[0] === "dispose");
+    const secondMount = mountsAt()[1][1];
+    expect(firstMount >= 0 && disposeAt > firstMount && secondMount > disposeAt).toBeTruthy();
   });
 });
 
@@ -2922,9 +3121,18 @@ describe("B19 红测：summarize 合并禁用集", () => {
     manager.disabledTools.set("@global", new Map([["g1", new Set(["toolA"])]]));
     manager.disabledTools.set(manager.projectRoot, new Map([["g1", new Set(["toolB"])]]));
     manager.supervisors.set("g1", {
+      server: srv,
+      scope: "global",
+      root: "@global",
+      id: "g1",
       status: "connected",
       error: undefined,
       tools: ["mcp__g1__toolA", "mcp__g1__toolB"],
+      toolMeta: new Map(),
+      mountStarted: true,
+      readySettled: true,
+      everConnected: true,
+      disposed: false,
     });
     const s = manager.summarize(store.find("g1"), "global");
     expect([...(s.disabledTools ?? [])].sort()).toEqual(["toolA", "toolB"]);

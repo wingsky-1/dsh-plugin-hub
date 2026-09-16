@@ -53,7 +53,7 @@ import type {
   SupervisorLite,
 } from "./server/catalog/interface.ts";
 import * as configModelApi from "./server/config/interface.ts";
-import { Config, DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS } from "./server/config/interface.ts";
+import { Config } from "./server/config/interface.ts";
 import * as dispatchApi from "./server/servers/dispatch/interface.ts";
 import * as lifecycleApi from "./server/servers/lifecycle/interface.ts";
 import {
@@ -73,7 +73,7 @@ import {
   registerMiddlewareTools,
 } from "./server/inject/interface.ts";
 import { installUpgrade, releaseUpgrade } from "./server/upgrade/interface.ts";
-import { bindHost, DEFAULT_RESULT_TRUNCATE_BYTES } from "./server/shared/interface.ts";
+import { bindHost } from "./server/shared/interface.ts";
 import { SSE_FRAMES } from "./shared/interface.ts";
 import type { McpServerSummary, SseFramePayload } from "./shared/interface.ts";
 import type { MiddlewareMode } from "./server/workspace/interface.ts";
@@ -112,6 +112,7 @@ installOrchestrator({
   configModel: configModelApi,
   configStore: storeApi,
   runtime: runtimeApi,
+  lifecycle: lifecycleApi,
   pipeline: pipelineApi,
   stats: statsApi,
   workspace: workspaceApi,
@@ -344,9 +345,46 @@ function provideMcpManagerService(ctx: Context, manager: McpManager): void {
 }
 
 /**
+ * 中间层工具（ws_mcp_*）+ mcp__ 直呼守卫的组合注册。
+ *
+ * 为什么合成一个 disposer：两者各管一段——中间层内注册的 pre-execute guard 放行我方转发、
+ * 拦 ws_mcp_call 参数；独立直呼守卫用 manager 直连账本反查 id（project/off 的全局直连条目
+ * 不在池里，池侧反查会把它当裸名 → 工具级禁用恒 miss）。卸载路径只有一个 `dispose.current`
+ * 位置，拆成两个必然漏掉一个。`resolveServerId` 按入参递入，域间不加值边。
+ *
+ * 为什么 off 模式也注册中间层工具与实例（#767 S1-5b 主控裁决 (c)'）：封装定义条目
+ * （toolDefinitions）恒交中间层虚拟连接，它在 off 下**没有** mcp__ 宿主注册可回退，触达面只能
+ * 是 ws_mcp_call。D8 的「off 不建池」随这条裁决作废——目标态没有模式键，中间层实例恒在。
+ */
+function registerMiddlewareAndGuard(
+  ctx: Context,
+  manager: McpManager,
+  mw: InstanceType<typeof runtimeApi.McpMiddleware>,
+  resolveRoot: (agent: unknown) => Promise<string | undefined>,
+  mode: MiddlewareMode,
+): () => void {
+  const resolveServerId = (id: string) => manager.serverNameForId(id);
+  const disposeTools = registerMiddlewareTools(ctx, mw, resolveRoot, mode, {
+    disabledTools: manager.disabledTools,
+    stats: manager.stats,
+    resolveServerId,
+  });
+  const guardDispose = registerDirectMcpGuard(
+    ctx,
+    manager.disabledTools,
+    resolveRoot,
+    resolveServerId,
+  );
+  return () => {
+    disposeTools();
+    guardDispose?.();
+  };
+}
+
+/**
  * 中间层模式热切换（设置页「中间层模式」下拉；initMiddleware 幂等已有，
  * off↔project/all 需重新注册/卸载中间层工具——dispose 后重建）。
- * 注册在模式分支之外：启动即 off 时也能从设置页切到 project/all。
+ * 中间层实例与 ws_mcp_* 在任何模式都建（裁决 (c)'）。
  */
 export function makeMiddlewareHotSwitch(
   manager: McpManager,
@@ -359,17 +397,8 @@ export function makeMiddlewareHotSwitch(
     const next = normalizeMiddlewareMode(mode);
     manager.middlewareMode = next;
     dispose.current();
-    if (next !== "off") {
-      const mw = await manager.initMiddleware(next, middlewarePolicy ?? {});
-      dispose.current = registerMiddlewareTools(manager.ctx, mw, resolveRoot, next, {
-        disabledTools: manager.disabledTools,
-        stats: manager.stats,
-      });
-    } else {
-      // D8：off 模式无中间层实例，独立注册 mcp__ 直呼守卫（数据源直查禁用表）。
-      const guardDispose = registerDirectMcpGuard(manager.ctx, manager.disabledTools, resolveRoot);
-      if (guardDispose !== undefined) dispose.current = guardDispose;
-    }
+    const mw = await manager.initMiddleware(next, middlewarePolicy ?? {});
+    dispose.current = registerMiddlewareAndGuard(manager.ctx, manager, mw, resolveRoot, next);
     // off ↔ project/all：重注册/卸载中间层工具后 reconcile——all 模式下全局
     // supervisor 由 reconcile 停掉、新全局条目经 start 内部接管触达 @global
     // 单元（#382 F3）；off 语义停掉全部中间层接管条目。防同一 server 双进程。
@@ -608,14 +637,6 @@ export async function apply(
   const store = new McpStore(resolveStorePath(config));
   await store.load();
   const manager = new McpManager(ctx, store);
-  // 感知增强配置（对抗性评审 v2）。默认值引用具名常量（单一事实源）。
-  const enhanceEmptyDescriptions =
-    (config?.enhanceEmptyDescriptions as boolean | undefined) ?? DEFAULT_ENHANCE_EMPTY;
-  const resultTruncateBytes =
-    Number.isFinite(config?.resultTruncateBytes) && (config?.resultTruncateBytes as number) > 0
-      ? Math.floor(config?.resultTruncateBytes as number)
-      : DEFAULT_TRUNCATE;
-  manager.enhancement = { enhanceEmptyDescriptions, resultTruncateBytes };
 
   // 核心化服务（官方 storageDomain 模式）：对外暴露 ctx.mcpManager（见本文件的 provideMcpManagerService）。
   provideMcpManagerService(ctx, manager);
@@ -721,20 +742,18 @@ async function assembleEnabledRuntime(
       currentMiddlewareDispose = fn;
     },
   };
-  // D8：guard 数据源直查禁用表（只读），加载独立于 initMiddleware——off 模式
-  // 不 initMiddleware 也必须先载入禁用表，guard 才能三模式一致拦截 mcp__ 直呼。
+  // 工具级禁用表在 initMiddleware **之前**独立载入：initMiddleware 会用自己的加载结果覆盖，
+  // 而载入失败时它会把中间层回退成 off —— 这条独立加载保证那种情况下守卫仍有数据源。
   manager.disabledTools = await loadDisabledTools(manager.userStatePath);
-  if (middlewareMode !== "off") {
-    const mw = await manager.initMiddleware(middlewareMode, options.middlewarePolicy);
-    currentMiddlewareDispose = registerMiddlewareTools(ctx, mw, resolveRoot, middlewareMode, {
-      disabledTools: manager.disabledTools,
-      stats: manager.stats,
-    });
-  } else {
-    // D8：off 模式无中间层实例（无连接池副作用）——独立注册 mcp__ 直呼守卫。
-    const guardDispose = registerDirectMcpGuard(ctx, manager.disabledTools, resolveRoot);
-    if (guardDispose !== undefined) currentMiddlewareDispose = guardDispose;
-  }
+  // 中间层实例 + ws_mcp_* 在任何模式都建（裁决 (c)'；off 也要，封装定义条目只经它可达）。
+  const mw = await manager.initMiddleware(middlewareMode, options.middlewarePolicy);
+  currentMiddlewareDispose = registerMiddlewareAndGuard(
+    ctx,
+    manager,
+    mw,
+    resolveRoot,
+    middlewareMode,
+  );
   manager.setMiddlewareMode = makeMiddlewareHotSwitch(
     manager,
     options.middlewarePolicy,
@@ -783,17 +802,9 @@ async function assembleEnabledRuntime(
   };
 }
 
-// 具名常量（增强配置默认值）：DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS 从 config-schema
-// re-export（拆分前由 apply.ts 直接 import；并入入口后仍是同一份定义）。
-// 该默认值的**物理定义**在 server/shared（≥2 域消费，§3.6 规则 6；config/model 同法取值），
-// 故直接取自共享门面，不经 connection 门面转发（W10 已删该门面的值面）。
-const DEFAULT_ENHANCE_EMPTY = DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS;
-const DEFAULT_TRUNCATE = DEFAULT_RESULT_TRUNCATE_BYTES;
-
 // 插件 Config schema 与配置归一化（类型自 types.ts 取）
 export {
   DEFAULT_UI_CONFIG,
-  DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS,
   normalizeUiConfig,
   buildConfigUiPatch,
   panelTopForAnchor,

@@ -10,16 +10,9 @@ import { clampZIndexBase, DEFAULT_Z_INDEX_BASE } from "../../shared/interface.ts
 // 三个默认值在**模块求值期**被下面的 z.object().default() 消费——端口注入要等装配完成，
 // 那时 schema 早已求值，只能取共享层的单一物理定义（I2①：不再产生 config/model → catalog /
 // connection 的值边）。
-import {
-  DEFAULT_ANNOUNCE_CATALOG,
-  DEFAULT_CATALOG_MAX_ENTRIES,
-  DEFAULT_RESULT_TRUNCATE_BYTES,
-} from "../shared/interface.ts";
+import { DEFAULT_ANNOUNCE_CATALOG, DEFAULT_CATALOG_MAX_ENTRIES } from "../shared/interface.ts";
 import type { ClientUiConfig } from "../../shared/interface.ts";
 import type { UiPlacementConfig } from "./impl/ui/type.ts";
-
-/** 空 description 工具的条件拼接默认开启。 */
-export const DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS = true;
 
 /** 默认浮窗 UI 配置（与升级前一致，无回归；层级基准引用 placement-math 单一事实源，
  *  DEFAULT_Z_INDEX_BASE=10 对应 CSS 默认 z-index:10）。 */
@@ -126,8 +119,6 @@ export const Config: z<{
   storePath: string;
   announceCatalog: boolean;
   catalogMaxEntries: number;
-  enhanceEmptyDescriptions: boolean;
-  resultTruncateBytes: number;
   middleware: "off" | "project" | "all";
   middlewarePolicy: Record<string, unknown>;
   debug: {
@@ -153,15 +144,6 @@ export const Config: z<{
     .number()
     .default(DEFAULT_CATALOG_MAX_ENTRIES)
     .description("目录注入条目上限")
-    .disabled(true),
-  enhanceEmptyDescriptions: z
-    .boolean()
-    .default(DEFAULT_ENHANCE_EMPTY_DESCRIPTIONS)
-    .description("空描述工具条件拼接自定义描述"),
-  resultTruncateBytes: z
-    .number()
-    .default(DEFAULT_RESULT_TRUNCATE_BYTES)
-    .description("工具结果截断字节数")
     .disabled(true),
   middleware: z
     .union([z.const("off"), z.const("project"), z.const("all")])
@@ -199,16 +181,10 @@ export function normalizeConfig(input: unknown) {
 }
 
 /** 只接受布尔值的**顶层**配置键（客户端 UI 按它渲染开关）；嵌套的 debug.callStats 不是顶层键。 */
-export const BOOLEAN_KEYS: readonly string[] = [
-  "enabled",
-  "announceToAgent",
-  "announceCatalog",
-  "enhanceEmptyDescriptions",
-];
+export const BOOLEAN_KEYS: readonly string[] = ["enabled", "announceToAgent", "announceCatalog"];
 
 /**
- * 非负整数键及其上界：本包**没有产品上界**——catalogMaxEntries 与 resultTruncateBytes
- * 只被要求是正整数（见 src/index.ts 的兜底链），上界是机器/内存极限而非产品
- * 约束，编一个上界等于造假事实。空对象是显式声明而不是遗漏。
+ * 非负整数键及其上界：本包**没有产品上界**——catalogMaxEntries 只被要求是正整数，
+ * 上界是机器/内存极限而非产品约束，编一个上界等于造假事实。空对象是显式声明而不是遗漏。
  */
 export const COUNT_LIMITS: Record<string, number> = {};

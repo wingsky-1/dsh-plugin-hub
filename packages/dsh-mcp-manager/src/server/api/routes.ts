@@ -36,6 +36,7 @@ import {
   type RouteHelpers,
 } from "./routes-controllers.ts";
 import { queryParam } from "./routes-helpers.ts";
+import { apiPorts } from "./impl/service/index.ts";
 
 // ------------------------------------------------------------ HTTP 路由
 
@@ -50,8 +51,17 @@ export function makeRoutes(manager: RoutesManager, _cwd = process.cwd()): WebRou
   const handleError = (res: Parameters<WebRoute["handler"]>[1], error: unknown) => {
     writeJson(res, 400, { error: error instanceof Error ? error.message : String(error) });
   };
-  /** 解析 scope 查询参数（缺省 global）。 */
-  const scopeParam = (url: URL) => queryParam(url, "scope") ?? "";
+  /**
+   * 解析 scope 查询参数（缺省 global）。
+   *
+   * #767 S1-5b：缺省/非法值一律经 workspace 域归一化再下传。归一化前空串会一路走到
+   * `middlewareTakes(name, "")` ——它既不是 project 也不是 global，于是「缺 scope」的直呼
+   * 落进另一条引擎分支，注册名与 userDisabled 清理都与显式 `scope=global` 分叉（S1-4d-3
+   * 实测建档）。五条吃 scope 的路由（connect/disconnect/reconnect/remove/update）由这一处
+   * 同时受益；disconnect 内的 normalizeScope 因此成为幂等冗余。
+   */
+  const scopeParam = (url: URL) =>
+    apiPorts.get().workspace.normalizeScope(queryParam(url, "scope") ?? "");
   /** 若带 cwd 参数则先切换会话（跟随会话的项目级 MCP）。 */
   const maybeSession = async (url: URL): Promise<void> => {
     const cwdParam = queryParam(url, "cwd");

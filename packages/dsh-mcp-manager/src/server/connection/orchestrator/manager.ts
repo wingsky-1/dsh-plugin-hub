@@ -16,21 +16,70 @@ import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type { ServerConfig } from "../../config/interface.ts";
 import type { ClientUiConfig } from "../../../shared/interface.ts";
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
-import type { CatalogCache, CatalogViewResolver } from "../../catalog/interface.ts";
+import type { CatalogCache, CatalogViewResolver, SchemaView } from "../../catalog/interface.ts";
 import type { McpStore } from "../../store/interface.ts";
 import type { McpStatsCollector } from "../../stats/interface.ts";
-import type { ConnectionSupervisor, McpMiddleware } from "../runtime/interface.ts";
+import type { McpMiddleware } from "../runtime/interface.ts";
 import type { MiddlewareMode } from "../../workspace/interface.ts";
 import type { ProjectUnit } from "../interface.ts";
 import type { DisabledToolsMap } from "../../store/interface.ts";
+import type { MountedPlugin } from "../../shared/interface.ts";
 import {
   EMPTY_STATUS_COUNTS,
   MIDDLEWARE_GLOBAL_ROOT,
   SCOPE_GLOBAL,
   SCOPE_PROJECT,
+  SERVER_STATES,
+  type ServerState,
 } from "../../../shared/interface.ts";
 import { stripMcpPrefix } from "./tool-names.ts";
 import { orchestratorPorts } from "./impl/service/index.ts";
+
+/**
+ * 直连账本条目（裁定 AF 形态 B）：manager 自持的「一个 (scope, name) 的官方实例」全部我方痕迹。
+ *
+ * 形状与旧 `ConnectionSupervisor` 的**外部可读面**守恒（裁定 C）：`status` / `tools` /
+ * `server` / `scope` 四个键被 /health 的 JSON 键集、`RoutesManager.supervisors`、
+ * `SupervisorLite` 与 `shared/service.ts` 的 getTools 契约读到，改名或改形会连锁到
+ * 跨端契约与客户端；因此是「换内部实现」，不是「换外部形状」。
+ *
+ * id / handle / readySettled / everConnected 四个字段是官方引擎接手后新增的输入面：官方不暴露
+ * 任何状态 API，六态只能由「我方动作 + 账本句柄 + 注册面前缀」投影（见 servers/lifecycle 的
+ * projectServerState）。
+ *
+ * 刻意不 export：它是子层内部数据结构，出现在 `McpManager.supervisors` 的类型里即可（tsc 会把
+ * 非导出接口写进 manager.d.ts，导出面快照因此只含 McpManager 块的类型名，不新增符号）。
+ */
+interface DirectEntry {
+  /** 归一化后的服务器配置（reconcile 的 desired 比对与 mountServer 入参）。 */
+  server: ServerConfig;
+  /** 服务器归属（global/project）；GUI 与能力目录用。 */
+  scope: string;
+  /** 装载作用域 root（项目根绝对路径或 @global）：账本键与 id 的分配作用域。 */
+  root: string;
+  /** 官方实例的 serverName（装载返回后写回）；也是 `mcp__<id>__` 前缀源。 */
+  id?: string;
+  /** 官方实例句柄（六态投影的 disposed 输入面，与 McpMiddleware 的 entry.handle 同义）。 */
+  handle?: MountedPlugin;
+  /** 六态；窗口内的推进由 mountServer 的 onState 写入，读点经 refreshEntryState 重算。 */
+  status: ServerState;
+  /** 我方文案（官方首连失败的具体 cause 拿不到，见 lifecycle/impl/state 头注释）。 */
+  error?: unknown;
+  /** 注册名（`mcp__<id>__<tool>`）列表；与旧 supervisor.tools 同口径（升序）。 */
+  tools: string[];
+  /** 注册名 → 描述（`ctx.mcpManager.getTools` 的公共 ABI 数据源，返注册名）。 */
+  toolMeta: Map<string, { description?: unknown }>;
+  /** 我方已发起挂载：同步判据，与旧 supervisor 的「client 已建」等价（防窗口内重复 mount 撞账本键）。 */
+  mountStarted: boolean;
+  /** 等待窗口已结算（成功与失败都算）。 */
+  readySettled: boolean;
+  /** 该代际曾进入 connected（区分首连失败与连上过又掉线）。 */
+  everConnected: boolean;
+  /** 我方已发起拆除（晚到结算据此丢弃）。 */
+  disposed: boolean;
+  /** 进入 connected 的时刻（重连判定用）。 */
+  connectedAt?: number;
+}
 
 /**
  * 管理器：持有全局存储 + 当前会话项目的项目级存储、每个服务器的监督器
@@ -40,14 +89,17 @@ import { orchestratorPorts } from "./impl/service/index.ts";
 export class McpManager {
   ctx: Context;
   store: McpStore;
-  supervisors: Map<string, ConnectionSupervisor>;
+  /**
+   * 直连账本：服务器名 → 条目（官方实例的生命周期由 servers/lifecycle 的账本持有，本表只记
+   * 「我方对该 (scope, name) 做了什么」）。Map 名与值的外部可读形状保持不变（裁定 C）。
+   */
+  supervisors: Map<string, DirectEntry>;
   listeners: Set<() => void>;
   logger: LoggerService;
   projectRoot: string | undefined;
   projectStore: McpStore | undefined;
   reconcileBusy: boolean;
   projectStores: Map<string, McpStore>;
-  enhancement: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number };
   catalogCache: CatalogCache;
   catalogCachePath: string;
   uiConfigSource: () => any;
@@ -90,8 +142,6 @@ export class McpManager {
     // 项目级 store 缓存（root → McpStore）：按工作区缓存配置，切换会话不销毁，
     // 目录数据源（agent/pre-step）按会话 cwd 从缓存读取，与实时连接状态解耦。
     this.projectStores = new Map();
-    // 感知增强选项（apply 时设置）：enhanceEmptyDescriptions / resultTruncateBytes。
-    this.enhancement = {};
     // 目录缓存：serverName → { summary }（磁盘持久化，digest 的稳定数据源）。
     this.catalogCache = new Map();
     this.catalogCachePath = catalog.catalogCacheFile();
@@ -176,6 +226,227 @@ export class McpManager {
     } catch (error) {
       this.logger.warn(`dsh-mcp-manager: catalog cache write failed: ${this.redactError(error)}`);
     }
+  }
+
+  // ------------------------------------------------------------ 直连账本（裁定 AF 形态 B）
+
+  /**
+   * 注册面读口：取不到 / 非数组一律当空——六态投影与工具面投影都不许因为读不到注册表而阻塞
+   * （与 McpMiddleware.registeredSchemas 同口径）。
+   */
+  private registeredSchemas(): SchemaView {
+    const tools = this.ctx?.tools;
+    if (tools === undefined || typeof tools.schemas !== "function") return [];
+    try {
+      const schemas = tools.schemas();
+      return Array.isArray(schemas) ? schemas : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** 账本键的作用域 root：项目级取当前项目根，其余取全局虚拟 root（与中间层单元同口径）。 */
+  private ledgerRootFor(scope: string): string {
+    return scope === SCOPE_PROJECT
+      ? (this.projectRoot ?? MIDDLEWARE_GLOBAL_ROOT)
+      : MIDDLEWARE_GLOBAL_ROOT;
+  }
+
+  /**
+   * 建条目（同步登记 + 置「已发起挂载」位）：装载由 mountEntry 另行发起。
+   *
+   * mountStarted 在**同一个同步段**内置位，因此 `start` 的重复调用判据、`connect` 的短路判据
+   * 与六态投影的输入面三者看到的都是同一个事实（旧栈里那是 supervisor 的 `client` 引用）。
+   */
+  private createEntry(server: ServerConfig, scope: string): DirectEntry {
+    return {
+      server,
+      scope,
+      root: this.ledgerRootFor(scope),
+      id: undefined,
+      handle: undefined,
+      status: server.enabled === false ? SERVER_STATES.disabled : SERVER_STATES.stopped,
+      error: undefined,
+      tools: [],
+      toolMeta: new Map(),
+      mountStarted: true,
+      readySettled: false,
+      everConnected: false,
+      disposed: false,
+      connectedAt: undefined,
+    };
+  }
+
+  /**
+   * 摘账并**发起**拆除（只发起不等结算，裁定 V/X 的拆除语义）：显式置废弃位先于任何 await，
+   * 使在途装载窗口的晚到结算走「已不在册 → 发起释放」的代际守卫分支，官方 serverName 预留
+   * 因此不会泄漏。
+   */
+  private dropEntry(entry: DirectEntry): void {
+    entry.disposed = true;
+    if (entry.id !== undefined) orchestratorPorts.get().lifecycle.releaseServer(entry.id);
+  }
+
+  /** 注册面 → 条目的工具面投影（id 前缀剥离后的注册名列表与描述元数据）。 */
+  private refreshEntryTools(entry: DirectEntry): void {
+    const prefix = `mcp__${entry.id ?? ""}__`;
+    const tools: string[] = [];
+    const toolMeta = new Map<string, { description?: unknown }>();
+    for (const schema of this.registeredSchemas()) {
+      const name = schema?.name;
+      if (typeof name !== "string" || !name.startsWith(prefix)) continue;
+      tools.push(name);
+      toolMeta.set(name, {
+        description: typeof schema.description === "string" ? schema.description : "",
+      });
+    }
+    entry.tools = tools.sort();
+    entry.toolMeta = toolMeta;
+  }
+
+  /**
+   * 读时刷新的六态投影（裁定 U，与 McpMiddleware.statusOf 同形）：官方不暴露状态 API，而
+   * 「曾连上、注册面前缀消失」这类事实只有重算才看得见——不刷新，GUI 会永远停在陈旧的
+   * connected。投影结果就地写回条目，供 /health 这类不经 summarize 的读点取用。
+   */
+  private refreshEntryState(entry: DirectEntry): ServerState {
+    const { lifecycle } = orchestratorPorts.get();
+    const state = lifecycle.projectServerState(entry.id ?? "", {
+      enabled: entry.server.enabled !== false,
+      // 直连账本不落 userDisabled：off/project 的全局直连断开与旧 supervisor 路径同口径，不写盘。
+      userDisabled: false,
+      tornDown: entry.disposed,
+      disposed: entry.handle?.disposed === true,
+      // 我方已发起挂载（createEntry 与置位在同一同步段内完成，读点看不到中间的假 stopped）。
+      mountStarted: entry.mountStarted,
+      readySettled: entry.readySettled,
+      windowExpired: entry.status === SERVER_STATES.failed && !entry.readySettled,
+      everConnected: entry.everConnected,
+      reconnectEnabled: entry.server.reconnect?.enabled !== false,
+      hasTools: (id) => this.hasRegisteredTools(id),
+    });
+    entry.status = state;
+    return state;
+  }
+
+  /** 注册面里该 id 前缀下是否已有工具（「已连上」的唯一正向证据）。 */
+  private hasRegisteredTools(id: string): boolean {
+    const prefix = `mcp__${id}__`;
+    return this.registeredSchemas().some(
+      (schema) => typeof schema?.name === "string" && schema.name.startsWith(prefix),
+    );
+  }
+
+  /**
+   * 发起一次直连装载（异步结算在 Promise 内，调用方一律 void）。
+   *
+   * 三处刻意不做：不裁决配置语义（mountServer 有意不判 enabled，归调用方）、窗口失败不 dispose
+   * （连接失败的实例保留给官方后台重连）、不吞装载期异常之外的东西（解析失败 / 账本撞键落
+   * failed 条目 + warn，等人重试）。
+   *
+   * 装载前先把**中间层池里同名同 root 的条目**放掉：模式热切换（all→project/off）时池条目
+   * 与直连条目共用同一个 id，池那侧不先摘账，官方账本会因同一 serverName 当场抛（裁定 AF 的
+   * 「反向同理」）。稳态下池里没有该条目，此行是 no-op。
+   */
+  private async mountEntry(entry: DirectEntry): Promise<void> {
+    const { lifecycle } = orchestratorPorts.get();
+    try {
+      if (entry.server.enabled === false) {
+        // 配置面禁用不发起装载（mountServer 刻意不裁决 enabled），态由 projectServerState 投影。
+        entry.readySettled = true;
+        this.emitStatus();
+        return;
+      }
+      this.middleware?.releaseConnection(entry.root, entry.server.name);
+      const mounted = await lifecycle.mountServer({
+        root: entry.root,
+        server: entry.server,
+        // 窗口内只推进状态：id / 句柄要等装载返回，这里不能碰代际守卫。
+        onState: (next: ServerState) => {
+          if (entry.disposed) return;
+          entry.status = next;
+          this.emitStatus();
+        },
+      });
+      entry.id = mounted.id;
+      entry.handle = mounted.entry.handle;
+      entry.readySettled = true;
+      // 代际守卫（拆除期竞态）：拆除动作到达后这一代已不在册，但实例已经挂上——必须发起释放，
+      // 否则官方实例与它占着的 serverName 预留会永久泄漏（与中间层 connectInternal 同形）。
+      if (entry.disposed || this.supervisors.get(entry.server.name) !== entry) {
+        lifecycle.releaseServer(mounted.id);
+        return;
+      }
+      if (mounted.outcome.kind === "settled") {
+        entry.status = mounted.outcome.state;
+        entry.error = mounted.outcome.error;
+        if (mounted.outcome.state === SERVER_STATES.connected) {
+          entry.everConnected = true;
+          entry.connectedAt = Date.now();
+          this.refreshEntryTools(entry);
+          // 目录摘要 B 层投影（裁定 AG②）：远端 supervisor 路径的 recordCatalogTools 随本片
+          // 改派消失，不补这一口，全局服务器的工具描述摘要就不再入缓存、模型面 digest 变化。
+          await this.recordCatalogTools(entry.server.name, entry.toolMeta);
+        }
+        this.emitStatus();
+      }
+    } catch (error) {
+      // 装载期异常（loader 解析失败 / 账本撞键 / lifecycle 域未装配）：实例没挂上，只能落 failed
+      // 等人重试。这里必须吞：装载是 fire-and-forget 发起的，上抛会变成未处理拒绝。
+      entry.status = SERVER_STATES.failed;
+      entry.error = error;
+      entry.readySettled = true;
+      this.logger.warn(
+        `dsh-mcp-manager: mount "${entry.server.name}" failed: ${this.redactError(error)}`,
+      );
+      this.emitStatus();
+    }
+  }
+
+  /**
+   * 重建一个已装载条目（start 的直传 config 替换分支 / connect 的受控重建）。
+   *
+   * 顺序不变式（裁定 V）：**先 await disposeServer(旧 id) 再 mount**——官方 serverName 是整个
+   * 应用根的活体预留，旧实例未结算就挂同 id 新实例会被官方账本当场抛。拆除路径（disconnect /
+   * remove / update / stop）反过来只发起不等结算。
+   */
+  private async remountEntry(
+    name: string,
+    existing: DirectEntry,
+    server: ServerConfig,
+    scope: string,
+  ): Promise<void> {
+    const { lifecycle } = orchestratorPorts.get();
+    existing.disposed = true;
+    // 新代际先登记（与旧栈「同步 set 新实例」同语义）：重建窗口内并发到来的 reconcile / start
+    // 看到的是新条目而不是空档，不会对同一个 id 二次发起装载。
+    const entry = this.createEntry(server, scope);
+    this.supervisors.set(name, entry);
+    if (existing.id !== undefined) {
+      try {
+        await lifecycle.disposeServer(existing.id);
+      } catch (error) {
+        // 旧代际释放失败不阻断新代际：官方的预留由它自己的回收链兜底，抛出去只会让重连整条断。
+        this.logger.warn(
+          `dsh-mcp-manager: dispose old generation of "${name}" failed: ${this.redactError(error)}`,
+        );
+      }
+    }
+    await this.mountEntry(entry);
+  }
+
+  /**
+   * 注册名中段 → (root, 裸名) 反查（id 化的 mcp__ 注册名还原成禁用表键）。
+   *
+   * 为什么由 manager 提供：id 是装载期由官方实例的 serverName 定下的（裁定 AG① 明确 id 不进
+   * 注入面），只有自持账本的一侧知道 (id → root, 裸名)。注入端在装配点把这个能力**按入参**递进
+   * guard（与既有 resolveRoot 同一形态），因此不新增跨域值边、也不动任何端口键。
+   */
+  serverNameForId(id: string): { root: string; server: string } | undefined {
+    for (const [name, entry] of this.supervisors) {
+      if (entry.id === id) return { root: entry.root, server: name };
+    }
+    return undefined;
   }
 
   onStatus(handler: () => void): () => void {
@@ -276,6 +547,7 @@ export class McpManager {
         catalogCachePath: (root) => this.catalogCachePathFor(root),
         isGlobalServer: (name) => this.isGlobalServer(name),
         isRuntimeServer: (name) => this.isRuntimeServer(name),
+        middlewareOwnsServer: (root, name) => this.middlewareOwnsServer(root, name),
       },
       {
         allowTools: (policy.allowTools as Record<string, string[]> | undefined) ?? undefined,
@@ -437,11 +709,8 @@ export class McpManager {
     if (root === undefined && this.projectStore === undefined) return;
     // off 模式（旧行为）：切走时断开旧项目 supervisor（不 await，避免挂起）。
     if (this.middlewareMode === "off") {
-      for (const [name, supervisor] of [...this.supervisors]) {
-        if (supervisor.scope === SCOPE_PROJECT) {
-          this.supervisors.delete(name);
-          void supervisor.disconnect();
-        }
+      for (const [name, entry] of [...this.supervisors]) {
+        if (entry.scope === SCOPE_PROJECT) this.stop(name);
       }
     }
     // 只切 currentRoot；项目级 supervisor 在中间层模式下由中间层接管。
@@ -579,16 +848,18 @@ export class McpManager {
         desired.set(name, { server, scope: SCOPE_GLOBAL });
       }
       let changed = false;
-      for (const [name, supervisor] of [...this.supervisors]) {
+      for (const [name, entry] of [...this.supervisors]) {
         const want = desired.get(name);
         // 中间层接管（与 start 同口径单一事实源 middlewareTakes）：停掉不该以
-        // supervisor 形态存在的连接（#413：all 模式 runtime 亦被接管，同样停）。
-        const middlewareTakes = this.middlewareTakes(name, supervisor.scope);
+        // 直连账本形态存在的连接（#413：all 模式 runtime 亦被接管，同样停）。
+        // 热切换（all→project/off）的「先释放账本再交给另一侧」正落在这里：stop 先摘账，
+        // 下方 start 才可能把同一个 id 交给中间层（裁定 AF）。
+        const middlewareOwned = this.middlewareOwns(entry.server, entry.scope);
         if (
           want === undefined ||
           want.server.enabled === false ||
-          want.scope !== supervisor.scope ||
-          middlewareTakes
+          want.scope !== entry.scope ||
+          middlewareOwned
         ) {
           this.stop(name);
           changed = true;
@@ -602,9 +873,9 @@ export class McpManager {
         const existing = this.supervisors.get(name);
         if (existing === undefined || existing.scope !== want.scope) {
           this.start(name, want.scope);
-          // all 模式全局接管路径（start 内部触达池）不建 supervisor——池连接
-          // 变化由 connectInternal emitStatus 上报，不计入 supervisor 集合变化。
-          if (!this.middlewareTakes(name, want.scope)) changed = true;
+          // 中间层持有的条目（all 模式全局、封装定义条目）不建直连条目——池连接变化由
+          // connectInternal emitStatus 上报，不计入直连账本的集合变化。
+          if (!this.middlewareOwns(want.server, want.scope)) changed = true;
         }
       }
       return changed;
@@ -648,10 +919,10 @@ export class McpManager {
     }
     if (server === undefined) return;
     // F3（#382）：中间层接管判定下沉到 start（与 reconcileServers 同口径，见
-    // middlewareTakes）。all 模式全局非 runtime 不建 supervisor——杜绝「先建
-    // supervisor 再被 reconcile 停掉」的竞态窗口（热更新后 mcp__ 注册残留 →
+    // middlewareTakes）。all 模式全局非 runtime 不建直连条目——杜绝「先建条目
+    // 再被 reconcile 停掉」的竞态窗口（热更新后 mcp__ 注册残留 →
     // 中间层防双进程探测命中且无重试 → 掉线），改触达 @global 单元惰性连接；
-    // 中间层模式项目级不建 supervisor，走 ensureMiddlewareServer 幂等触达。
+    // 中间层模式项目级不建直连条目，走 ensureMiddlewareServer 幂等触达。
     // startAll / add / update / reconcile 各入口自动收敛，无需逐处特判。
     //
     // #616 根因修复：项目级分支此前是 touchMiddlewareUnit()（teardownUnit 拆毁
@@ -662,24 +933,30 @@ export class McpManager {
     // 切换工作目录（setSession → projectUnitFor）才重建。改为与 touchGlobalUnit
     // 对称的幂等触达（确保单元存在 + 确保该服务器连接），reconcile 不再有拆毁
     // 副作用。
-    if (this.middlewareTakes(name, scope)) {
+    // 封装定义条目恒交中间层（裁决 (c)'）：虚拟连接 + 目录投影，模型经 ws_mcp_call
+    // （@<root>/<server>）触达——它没有 mcp__ 宿主注册，直呼面在目标态也不存在。
+    if (this.middlewareOwns(server, scope)) {
+      if (this.middleware === undefined) {
+        // 目标态里中间层实例恒在（apply 无条件建）；实例缺失时**不退化成官方装载**——
+        // 封装条目的 execute 是调用方 JS，派官方实例等于为一份不存在的远端起子进程。
+        this.logger.warn(
+          `dsh-mcp-manager: 中间层未就绪，服务器 "${name}" 的连接未建立（封装定义条目只经中间层虚拟连接）`,
+        );
+        return;
+      }
       if (scope === SCOPE_PROJECT) this.ensureMiddlewareServer(name);
       else this.touchGlobalUnit(name);
       return;
     }
-    const { runtime } = orchestratorPorts.get();
     const existing = this.supervisors.get(name);
-    if (existing !== undefined && existing.client !== undefined) {
-      // 已连接：若现有 config 与直传 config 不同（runtime 注入覆盖 store），重建。
+    if (existing !== undefined && existing.mountStarted) {
+      // 已发起装载（同步判据，与旧 supervisor 的 client 已建等价）：若现有 config 与直传
+      // config 不同（runtime 注入覆盖 store），受控重建。
       if (directConfig !== undefined && existing.server !== directConfig) {
-        // B5/D2：替换分支复用 disconnect 语义（关闭旧 transport + 注销旧工具），
-        // 而非只置 disposed——旧代际残留泄漏 stdio 子进程/socket 与工具注册。
-        // start 保持同步：void disconnect() 的清理与新代际 syncTools 在各自
-        // syncChain 上先后落定（D2：旧清理先于新注册）。
-        void existing.disconnect();
-        const supervisor = new runtime.ConnectionSupervisor(this, directConfig, scope);
-        this.supervisors.set(name, supervisor);
-        void supervisor.connect();
+        // B5/D2：替换分支复用拆除语义（释放旧代际 + 注销旧工具），而非只置 disposed——
+        // 旧代际残留泄漏官方实例/子进程与工具注册。start 保持同步：重建的 await 链在
+        // void 里跑，旧代际释放先于新代际挂载（裁定 V 的顺序不变式，由 remountEntry 保证）。
+        void this.remountEntry(name, existing, directConfig, scope);
       }
       return;
     }
@@ -690,18 +967,50 @@ export class McpManager {
       );
       return;
     }
-    // B5：未连接旧代际同样走 disconnect 语义（清 reconnectTimer + 注销残留工具）。
-    if (existing !== undefined) void existing.disconnect();
-    const supervisor = new runtime.ConnectionSupervisor(this, server, scope);
-    this.supervisors.set(name, supervisor);
-    void supervisor.connect();
+    // B5：未发起装载的旧条目同样走拆除语义（摘账 + 发起释放 + 注销残留工具）。
+    if (existing !== undefined) this.dropEntry(existing);
+    const entry = this.createEntry(server, scope);
+    this.supervisors.set(name, entry);
+    void this.mountEntry(entry);
+  }
+
+  /** 封装定义条目（toolDefinitions）：它的 execute 是调用方 JS，连接由中间层虚拟连接承载。 */
+  private isWrapped(server: ServerConfig | undefined): boolean {
+    return Array.isArray(server?.toolDefinitions);
   }
 
   /**
-   * 中间层接管判定（start / reconcileServers 单一口径）：中间层模式的项目级，
+   * 该条目的连接是否归中间层持有 = 模式判定 `middlewareTakes` **或**封装定义条目。
+   *
+   * 为什么封装条目与模式无关（#767 S1-5b 主控裁决 (c)'）：最终形态里没有 `off`/`project`，也
+   * 不再有 `mcp__*` 直呼面——封装定义的触达面只能是 `ws_mcp_call`（`@<root>/<server>`）。所以
+   * 它**恒**交中间层虚拟连接，与当前模式无关；正常 transport 条目的模式语义一字未动。
+   */
+  private middlewareOwns(server: ServerConfig | undefined, scope: string): boolean {
+    if (server === undefined) return false;
+    return this.middlewareTakes(server.name, scope) || this.isWrapped(server);
+  }
+
+  /**
+   * 宿主面：该 (root, server) 的连接是否归本层持有（中间层建单元时按它收窄惰性连接范围）。
+   *
+   * 为什么不复用 `middlewareTakes`：中间层拿不到配置（它只有 root + name），而 root 反推
+   * scope 后还要回答「这台是不是封装条目」——配置只在本层有，所以判定留在这里、按入参递进去。
+   */
+  middlewareOwnsServer(root: string, name: string): boolean {
+    const scope = root === MIDDLEWARE_GLOBAL_ROOT ? SCOPE_GLOBAL : SCOPE_PROJECT;
+    const server =
+      scope === SCOPE_GLOBAL
+        ? (this.store.find(name) ?? this.runtimeRegistry.get(name))
+        : this.projectStores.get(root)?.find(name);
+    return this.middlewareOwns(server, scope);
+  }
+
+  /**
+   * 中间层接管判定（start / reconcileServers 的模式口径）：中间层模式的项目级，
    * 或 all 模式的全局级（**含 runtime 注入条目**，#413 消除豁免——all 模式
    * 统一无 mcp__ 前缀直呼，runtime 封装定义服务器经中间层目录投影 + callTool
-   * 直呼执行；project / off 模式 runtime 照旧 supervisor 路径注册 mcp__ 工具）。
+   * 直呼执行；project / off 模式 runtime 照旧注册 mcp__ 工具，改派后由直连账本装载）。
    */
   private middlewareTakes(name: string, scope: string): boolean {
     if (this.middlewareMode === "off" || this.middleware === undefined) return false;
@@ -816,11 +1125,12 @@ export class McpManager {
     if (dropped) this.emitStatus();
   }
 
+  /** 停掉一个直连条目：摘账 + 发起释放（拆除是同步语义，不等结算——裁定 V/X）。 */
   stop(name: string): void {
-    const supervisor = this.supervisors.get(name);
-    if (supervisor === undefined) return;
+    const entry = this.supervisors.get(name);
+    if (entry === undefined) return;
     this.supervisors.delete(name);
-    void supervisor.disconnect();
+    this.dropEntry(entry);
   }
 
   /**
@@ -880,7 +1190,9 @@ export class McpManager {
       if (this.runtimeRegistry.has(name)) {
         this.stop(name);
         this.runtimeRegistry.delete(name);
-        if (this.middlewareMode !== "off" && this.middleware !== undefined) {
+        if (this.middleware !== undefined) {
+          // 按名拆除对池是幂等的：off 模式下正常 transport 条目本就不在池里（no-op），
+          // 而封装定义条目在 off 下也由池持有（裁决 (c)'），必须拆。
           this.dropMiddlewareConnection(name);
         }
         this.reconcileServers();
@@ -921,9 +1233,10 @@ export class McpManager {
     store.upsert(merged);
     await store.save();
     this.stop(name);
-    if (this.middlewareMode !== "off") {
+    if (this.middleware !== undefined) {
       // 中间层：拆池内旧配置连接（项目/全局单元统一处理；#382 此前只拆项目
-      // 单元，all 模式全局旧连接残留导致编辑不生效）。
+      // 单元，all 模式全局旧连接残留导致编辑不生效）。off 模式下按名拆除对
+      // 正常 transport 条目是 no-op，对封装定义条目（恒交中间层）必需。
       this.dropMiddlewareConnection(name);
     }
     if (merged.enabled !== false) {
@@ -936,9 +1249,10 @@ export class McpManager {
   async remove(name: string, scope: string = SCOPE_GLOBAL): Promise<void> {
     const store = scope === SCOPE_PROJECT ? await this.projectStoreOrThrow() : this.store;
     this.stop(name);
-    if (this.middlewareMode !== "off") {
+    if (this.middleware !== undefined) {
       // 中间层：拆池内连接 + 目录随单元重建收敛（#382 此前只拆项目单元，
       // all 模式全局删除后池连接残留——ws_mcp_call 仍可调用已删服务器）。
+      // 同 update：off 模式要拆的只有封装定义条目（恒交中间层）。
       this.dropMiddlewareConnection(name);
     }
     store.remove(name);
@@ -972,7 +1286,7 @@ export class McpManager {
     // 前缀工具），既导致浮窗带前缀展示，又让中间层防双进程探测持续命中、永不
     // 接管。project/off 模式 runtime 仍走 supervisor 路径（#413：仅 all 模式
     // 归一中间层）。
-    if (this.middlewareTakes(name, scope) && this.middleware !== undefined) {
+    if (this.middlewareOwns(server, scope) && this.middleware !== undefined) {
       const root = scope === SCOPE_PROJECT ? this.projectRoot : MIDDLEWARE_GLOBAL_ROOT;
       if (root === undefined)
         throw new Error("no active project session (call session with a cwd first)");
@@ -987,16 +1301,24 @@ export class McpManager {
       return;
     }
     const existing = this.supervisors.get(name);
-    if (existing !== undefined && existing.client !== undefined) return;
+    // 短路用**读时刷新后**的状态（裁定 U）：connected / connecting 是「链路在我方手里」的两个
+    // 可判时点，重复 connect 不该把它们推倒重来；failed / reconnecting 是「该重建」的态——
+    // 用户显式「连接」正是这两个态的恢复入口（旧栈的 client 判据在失败后已置空，同语义）。
+    if (existing !== undefined) {
+      const state = this.refreshEntryState(existing);
+      if (state === SERVER_STATES.connected || state === SERVER_STATES.connecting) return;
+    }
     if (existing !== undefined && existing.scope !== scope)
       throw new Error(`server "${name}" is registered in scope "${existing.scope}"`);
-    // B5：connect 替换分支复用 disconnect 语义（清 reconnectTimer + 注销残留工具），
-    // await 保证旧代际清理先于新代际建立（与 start 分支同口径）。
-    if (existing !== undefined) await existing.disconnect();
-    const { runtime } = orchestratorPorts.get();
-    const supervisor = new runtime.ConnectionSupervisor(this, server, scope);
-    this.supervisors.set(name, supervisor);
-    await supervisor.connect();
+    // B5：重建路径先 await 旧代际释放再挂新实例（裁定 V：官方 serverName 是活体预留，
+    // 同 id 未结算就重挂当场抛）；旧代际的残留工具随官方 dispose 一并注销。
+    if (existing !== undefined) {
+      await this.remountEntry(name, existing, server, scope);
+      return;
+    }
+    const entry = this.createEntry(server, scope);
+    this.supervisors.set(name, entry);
+    await this.mountEntry(entry);
   }
 
   async disconnect(name: string, scope?: string): Promise<void> {
@@ -1008,7 +1330,14 @@ export class McpManager {
     // #392：scope 显式传入时按 scope 精确定位单元——项目级固定定位当前项目 root
     // 单元，避免同名全局服务器把项目级 disconnect 错写进 @global 单元。
     // 拆连接前关 transport（此前直接 delete 丢 entry，stdio 子进程/socket 泄漏）。
-    if (this.middlewareMode !== "off" && this.middleware !== undefined) {
+    // 触发条件放宽到「该条目由中间层持有」：off 模式下封装定义条目也在池里（裁决 (c)'），
+    // 它的断开同样要落 userDisabled + 池拆除；正常 transport 条目在 off 下仍走下面的直连路径。
+    const disconnectTarget =
+      this.store.find(name) ?? this.runtimeRegistry.get(name) ?? this.projectStore?.find(name);
+    if (
+      this.middleware !== undefined &&
+      (this.middlewareMode !== "off" || this.isWrapped(disconnectTarget))
+    ) {
       let targetUnit: ProjectUnit | undefined;
       const scoped = orchestratorPorts.get().workspace.normalizeScope(scope ?? "");
       if (scoped === SCOPE_PROJECT) {
@@ -1039,10 +1368,12 @@ export class McpManager {
         return;
       }
     }
-    const supervisor = this.supervisors.get(name);
-    if (supervisor === undefined) return;
+    const entry = this.supervisors.get(name);
+    if (entry === undefined) return;
     this.supervisors.delete(name);
-    await supervisor.disconnect();
+    // 拆除只发起不等结算（裁定 V）：官方 dispose 会等在途首连，挂死的服务器能把它拖到 SDK 的
+    // 60s 超时；需要等结算的重建路径走 remountEntry 的 disposeServer。
+    this.dropEntry(entry);
   }
 
   async reconnect(name: string, scope: string = SCOPE_GLOBAL): Promise<void> {
@@ -1133,21 +1464,19 @@ export class McpManager {
         };
       }
       // #382 F4：userDisabled 短路——池中已断开（用户浮窗断开）的服务器不再落
-      // supervisor 分支（all 模式全局经池接管后 supervisor 不复存在；同名 runtime
+      // 直连账本分支（all 模式全局经池接管后直连条目不复存在；同名 runtime
       // 残留时也不误显示其连接态）。#234 注释前提（全局 connect 走 supervisor 复活）
       // 随 F4 消失。
       if (unit.userDisabled.has(server.name)) {
         return { ...server, scope, status: "stopped", error: undefined, tools: [] };
       }
     }
-    const supervisor = this.supervisors.get(server.name);
-    // #382 F4：展示口径统一裸名——剥 mcp__<server>__ 前缀（与中间层投影分支、
-    // 工具级禁用表键、guard 层反解口径一致；此前浮窗禁用提交带前缀名而 guard
-    // 查裸名，禁用静默无效）。超长哈希名剥出截断键，与 guard 路径二反解结果
-    // 相同，禁用链路一致生效；前缀不匹配（不可剥）原样返回。
-    const supervisorTools = (supervisor?.tools ?? []).map((tool) =>
-      stripMcpPrefix(tool, server.name),
-    );
+    const entry = this.supervisors.get(server.name);
+    // #382 F4：展示口径统一裸名——剥 mcp__<id>__ 前缀（与中间层投影分支、工具级禁用表键、
+    // guard 层反解口径一致；此前浮窗禁用提交带前缀名而 guard 查裸名，禁用静默无效）。前缀源
+    // 自本片起是**账本 id**（注册名 id 化，裁定 AG①）；超长哈希名剥出截断键，与 guard 路径
+    // 二反解结果相同，禁用链路一致生效；前缀不匹配（不可剥）原样返回。
+    const entryTools = (entry?.tools ?? []).map((tool) => stripMcpPrefix(tool, entry?.id ?? ""));
     // B19：禁用查询与中间层分支同口径——@global 与 projectRoot 禁用集**合并判定**
     // （现状 ?? 二者只取其一，跨空间禁用漏算）。@global 跨工作空间共享、项目根
     // 目录级追加，任一命中即禁用。
@@ -1156,16 +1485,23 @@ export class McpManager {
       this.projectRoot !== undefined
         ? this.disabledTools.get(this.projectRoot)?.get(server.name)
         : undefined;
-    const supervisorDisabled = supervisorTools.filter(
+    const entryDisabled = entryTools.filter(
       (tool) => (globalDisabled?.has(tool) ?? false) || (projectDisabled?.has(tool) ?? false),
     );
     return {
       ...server,
       scope,
-      status: supervisor?.status ?? (server.enabled === false ? "disabled" : "stopped"),
-      error: supervisor?.error !== undefined ? (supervisor.error as Error).message : undefined,
-      tools: supervisorTools,
-      disabledTools: supervisorDisabled.length > 0 ? supervisorDisabled : undefined,
+      // 状态经读时刷新的投影取（裁定 U）：条目 status 只在装载窗口结算时写入，
+      // 「曾连上、工具前缀消失」这类事实只有重算才看得见。
+      status:
+        entry === undefined
+          ? server.enabled === false
+            ? SERVER_STATES.disabled
+            : SERVER_STATES.stopped
+          : this.refreshEntryState(entry),
+      error: entry?.error !== undefined ? (entry.error as Error).message : undefined,
+      tools: entryTools,
+      disabledTools: entryDisabled.length > 0 ? entryDisabled : undefined,
     };
   }
 
@@ -1174,12 +1510,10 @@ export class McpManager {
       clearTimeout(this.statusTimer);
       this.statusTimer = undefined;
     }
-    for (const supervisor of this.supervisors.values()) {
-      supervisor.disposed = true;
-      if (supervisor.reconnectTimer !== undefined) clearTimeout(supervisor.reconnectTimer);
-      await supervisor.syncChain;
-      for (const dispose of supervisor.toolDisposers.values()) dispose();
-    }
+    // 逐条摘账 + 发起释放（**不** await disposeServer：与组合根卸载链的
+    // releaseLifecycle() + flushDisposals() 分工一致——manager.dispose() 先摘账，
+    // 结算与错因由卸载链统一排空；releaseOne 对已摘键是 no-op，双重释放安全）。
+    for (const entry of this.supervisors.values()) this.dropEntry(entry);
     this.supervisors = new Map();
     this.stats.dispose();
     if (this.middleware !== undefined) {
