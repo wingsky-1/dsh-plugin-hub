@@ -144,6 +144,10 @@
       "keys": ["SLICE"]
     },
     {
+      "step": "ci.yml|red-line-approval|script:scripts/gate/red-line-approval.mjs|$RUNNER_TEMP/pr-files.json,$RUNNER_TEMP/pr-labels.json,--files-json,--labels-json",
+      "keys": ["GH_TOKEN"]
+    },
+    {
       "step": "ci.yml|repo-gate|script:scripts/gate/contract-check.ts",
       "keys": ["FULL_GATE", "HIT_PACKAGES"]
     },
@@ -162,6 +166,7 @@
         "GATE_HAS_MUTATIONS",
         "GATE_MUTATION",
         "GATE_MUTATION_PKGS",
+        "GATE_REDLINE",
         "GATE_VERDICT"
       ]
     },
@@ -335,9 +340,9 @@
       "envKeys": ["COMBOS"]
     },
     {
-      "step": "ci.yml|red-line-approval|Resolve changed files & labels（gh api；取数失败即非零退出）",
-      "digest": "3baadf6cfceca1b0",
-      "envKeys": []
+      "step": "ci.yml|red-line-approval|Resolve changed files & labels（gh api + 有界重试；仍失败即非零退出）",
+      "digest": "82bcaf00f68eb9b0",
+      "envKeys": ["GH_TOKEN"]
     },
     {
       "step": "ci.yml|repo-gate|Build all packages（gate:full：全仓产物闸的前提）",
@@ -429,7 +434,7 @@
     },
     {
       "job": "ci.yml|red-line-approval",
-      "digest": "d0ebb32c9e8163fa"
+      "digest": "52074e8d91d14b51"
     },
     {
       "job": "ci.yml|repo-gate",

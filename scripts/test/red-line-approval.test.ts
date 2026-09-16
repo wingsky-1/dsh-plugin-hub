@@ -337,6 +337,29 @@ test("接线：ci.yml 有 red-line-approval job，仅 PR 触发、显式 pull-re
   assert.match(block, /gh api/, "changed files / labels 必须经 gh api 取（取不到 fail-closed）");
 });
 
+test("接线：gh 取数必须带 token——permissions 只授权不注入（PR #851 真机 FAILURE 的根因）", () => {
+  const ci = readFileSync(join(ROOT, CI_YML_REL), "utf8");
+  const block = jobBlock(ci, JOB);
+  // Actions 里 gh 认的是 GH_TOKEN/GITHUB_TOKEN 环境变量；只写 permissions 时 gh 以未认证失败，
+  // 真机表现为「取数步 failure + 判据步 skipped」。这条断言就是那次事故的回归钉。
+  assert.match(
+    block,
+    /GH_TOKEN:\s*\$\{\{\s*github\.token\s*\}\}/,
+    "job 必须把 github.token 映射成 GH_TOKEN（缺失时取数必失败，真机 PR #851 即此形态）",
+  );
+  // 取数步必须在判据步之前：顺序反了会让判据步读到不存在的文件（fail-closed 但判词错位）
+  const fetchIdx = block.indexOf("Resolve changed files & labels");
+  const judgeIdx = block.indexOf("node scripts/gate/red-line-approval.mjs");
+  assert.ok(fetchIdx > 0 && judgeIdx > fetchIdx, "取数步必须排在判据步之前");
+  // 有界重试：次数必须封顶，且耗尽后仍以非零退出（宁可重试也不能 fail-open）
+  assert.match(
+    block,
+    /attempt\s*\}\s*3|attempt\s*>=\s*3|attempt.*-ge 3/,
+    "必须是有界重试（封顶次数）",
+  );
+  assert.match(block, /sleep\s+\d+/, "重试之间必须有间隔，不能忙等");
+});
+
 test("接线：红线 job 已挂进 repo-gate 的 needs（否则它红不影响聚合闸）", () => {
   const ci = readFileSync(join(ROOT, CI_YML_REL), "utf8");
   const block = jobBlock(ci, "repo-gate");
