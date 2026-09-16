@@ -56,6 +56,12 @@
  *   - 默认（hard）：规则违规经单调基线判定（实际 > 基线即 FAIL，exit 1）。
  *   - `--soft`：规则 1–3 违规只打印软报告标签，仍受基线约束；规则 4（虚导出）两模式均硬执行。
  *   - **基线缺失或包未登记（fail-closed）**：
+ *       · 本包在基线里**没有条目**（新包漏登 / 条目被删 / 基线整份缺失）= 该包不在任何
+ *         单调基线之下，本条**自身即判红**（#843 D15：旧实现只在违规计数非零时才红，
+ *         计数为零时打印「基线无本包条目 —— fail-closed」却 exit 0，提示语与行为相反）；
+ *         唯一放宽通道是 `scripts/data/gate-exemptions.json` 里 `gate=verify-dir-imports`、
+ *         path = `<包名>:<证据项>` 的条目——豁免只免「无条目」这一条，违规/环/未覆盖
+ *         照旧零容忍，且 `--soft` 不改变本条（它是「无基线 = 不放行」本身）；
  *       · hard 下规则 1/2 违规即刻 exit 1；
  *       · soft 下规则 1/2 仍只进软报告（不判红）——fail-closed 只保证「无基线 = 不放行」，
  *         不改变 soft 对规则 1–3 的软报告语义；
@@ -69,17 +75,21 @@
  *     `scripts/test/workflow-assert.test.ts` 的「单一事实源在位」断言保留为冗余兜底。
  *
  * 适用包白名单：`--package <name>`（可多次）；缺省 = 仅 dsh-mcp-manager。
+ * `--write-baseline` 缺省取范围注册表里本闸的范围（= cli 调用点并集，登记面一致性的
+ * 另一侧），不再全量扫描 packages 下有 src 的目录——旧口径会为「有 src、无调用点」的包
+ * 落死条目（#843 D15）。
  * 用法：node scripts/gate/verify-dir-imports.mjs [--package <name>] [--soft] [--verbose]
  *                                              [--zones] [--graph] [--write-baseline]
  *                                              [--exemptions <path>]
  * 退出码：0 = 通过；1 = 硬违规 / 新增未登记的质量证据 / 结构型上升 / 台账条目失效；
- *         2 = 用法错误（豁免台账不可读或结构不合法）。
+ *         2 = 用法错误（豁免台账不可读或结构不合法 / 写基线的缺省范围不可解析）。
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { argValue, loadLedger } from "../lib/exemption-gate.ts";
+import { loadScopeRegistry, scopePackages } from "../lib/gate-scope-registry.ts";
 import { collectMutationSpecs } from "./mutation-topology.mjs";
 
 // 仓库根；测试可用 VERIFY_DIR_IMPORTS_ROOT 注入临时 fixture 根，避免在仓库内
@@ -90,6 +100,9 @@ const BASELINE_PATH =
   process.env.VERIFY_DIR_IMPORTS_BASELINE ??
   join(ROOT, "scripts", "data", "dir-imports-baseline.json");
 const TOPOLOGY_PATH = join(ROOT, "scripts", "data", "mutation-topology.json");
+/** 本闸在范围注册表里的 gate 名（写基线的缺省范围与判据范围同源）。 */
+const GATE_NAME = "verify-dir-imports";
+const SCOPE_REGISTRY_PATH = join(ROOT, "scripts", "data", "gate-scope-registry.json");
 const VERBOSE = process.argv.includes("--verbose");
 const SOFT = process.argv.includes("--soft");
 const ZONES = process.argv.includes("--zones");
@@ -1485,16 +1498,26 @@ function buildBaseline(analyses, previous, ledger) {
   };
 }
 
-/** 解析本次要处理的包：显式 --package 优先；--write-baseline 缺省全量扫描。 */
+/**
+ * 解析本次要处理的包：显式 --package 优先；--write-baseline 缺省取**范围注册表里本闸的
+ * 范围**（= cli 调用点并集，见 scripts/data/gate-scope-registry.json）。
+ *
+ * 为什么写基线不再「全量扫描 packages 下有 src 的目录」（#843 D15）：那个口径比调用点并集
+ * 宽，每次全量写基线都会给「有 src、无调用点」的包落一条**死条目**——它永远不会被
+ * `--package` 点到，条目却留在数据面冒充保护，而登记面的一致性由
+ * scripts/test/gate-scope-registry.test.ts 的接线断言钉住（漂移即红）。写路径与判据路径
+ * 同源后，全量写基线只会登记真正受判据管的包；要给新包登记基线，先给它加调用点。
+ */
 function resolvePackages() {
   if (explicitPackages !== null) return explicitPackages;
   if (WRITE_BASELINE) {
-    const packagesDir = join(ROOT, "packages");
-    if (!existsSync(packagesDir)) return ["dsh-mcp-manager"];
-    return readdirSync(packagesDir, { withFileTypes: true })
-      .filter((e) => e.isDirectory() && existsSync(join(packagesDir, e.name, "src")))
-      .map((e) => e.name)
-      .sort();
+    // 范围读不到就不写：写出一份范围不明的基线等于把未知固化成「看起来已登记」。
+    try {
+      return scopePackages(ROOT, loadScopeRegistry(SCOPE_REGISTRY_PATH), GATE_NAME);
+    } catch (e) {
+      console.error(`verify-dir-imports | 写基线的缺省范围无法解析：${e.message}`);
+      process.exit(2);
+    }
   }
   return ["dsh-mcp-manager"];
 }
@@ -1768,7 +1791,21 @@ for (const analysis of analyses) {
       );
     }
   } else {
-    // fail-closed：无基线条目时任何门禁类计数都必须为零（不允许「无基线 = 放行」）。
+    // fail-closed（#843 D15）：基线无本包条目 = 本包没有任何单调基线保护。旧实现在
+    // 「违规计数恰好为零」时打印「基线无本包条目 —— fail-closed」却 exit 0——提示语与
+    // 行为相反，且新包漏登 / 条目被删后该包静默脱离全部单调约束。故**无条目本身即红**；
+    // 唯一放宽通道是台账里本包的 `<包名>:<证据项>` 条目（与质量证据同一份台账、同一个
+    // 校验器）。豁免只免「无条目」这一条：下面的违规/环/未覆盖照旧零容忍。
+    const packageExempted = [...evidenceLedger.keys()].some((key) => key.startsWith(`${pkgName}:`));
+    if (packageExempted) {
+      summary.push(
+        `${pkgName}: 基线无本包条目 —— 按台账豁免放行（条目见 ${EXEMPTIONS_DISPLAY}；违规/环/未覆盖仍零容忍）`,
+      );
+    } else {
+      failures.push(
+        `[${pkgName}] 基线无本包条目（${BASELINE_PATH}）—— 本包不在任何单调基线之下：先跑 --write-baseline 登记；确需放宽须在 ${EXEMPTIONS_DISPLAY} 登记 gate=verify-dir-imports、path=${pkgName}:<证据项>`,
+      );
+    }
     for (const [key, label] of [
       ["topModuleCycles", "顶层域值环"],
       ["leafModuleCycles", "叶子模块级值环"],
@@ -1781,7 +1818,6 @@ for (const analysis of analyses) {
     for (const f of metrics.uncoveredSrcFiles) {
       failures.push(`[${pkgName}] 无基线 fail-closed：src 文件未被度量覆盖 ${f}`);
     }
-    summary.push(`${pkgName}: 基线无本包条目 —— fail-closed（违规/环/未覆盖即刻判红）`);
   }
 
   if (ZONES) reports.push(renderZones(analysis));

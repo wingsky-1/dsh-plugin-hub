@@ -118,6 +118,27 @@ export function scopePackages(root, registry, gate) {
   return packages;
 }
 
+/**
+ * 基线键集与 registry 登记范围的**双向差集**（#843 D15）。
+ *
+ * 两侧都在声明「本闸管哪些包」，但出处不同：registry 的 cli 范围由调用点并集派生，基线
+ * 由 `--write-baseline` 按实际扫描结果落库。任一方向非空都是一条已经失效的声明——
+ *   - `baselineOnly`（有基线、无调用点）= 死条目：该包不再被判据扫描，基线条目却继续
+ *     留在数据面，看起来仍受保护；
+ *   - `registryOnly`（有调用点、无基线）= 缺条目：闸该管的包没有任何单调基线，修复前
+ *     它在「无基线 fail-closed」下打印放行文案。
+ * 差集而非布尔，是因为两种漂移的修法不同（删条目 / 跑 --write-baseline），报错里必须
+ * 同时给出两侧，否则只报「不一致」等于把定位工作再交回人。
+ */
+export function packageScopeDrift(baselinePackages, registryPackages) {
+  const baseline = new Set(baselinePackages);
+  const registry = new Set(registryPackages);
+  return {
+    baselineOnly: [...baseline].filter((p) => !registry.has(p)).sort(),
+    registryOnly: [...registry].filter((p) => !baseline.has(p)).sort(),
+  };
+}
+
 /** 展开 packages 字段；通配形态要读目录，读不到时把「读哪里失败」一并抛出。 */
 function resolvePackages(root, gate, entry) {
   if (typeof entry.packages !== "string") return [...entry.packages].sort();
