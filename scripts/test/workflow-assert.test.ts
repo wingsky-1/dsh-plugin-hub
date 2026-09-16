@@ -1078,6 +1078,9 @@ test("#217+#187+#722+#843: repo-gate-assert 判定表全组合锁定（事件 ×
     hasMutations: "true",
     mutationPkgsJson: '["dsh-notifier"]',
     fullRequested: "true",
+    // #843 P-2：本节钉的是「判据按设计判红」那张真值表，故显式声明 judged。crashed 维度
+    // （以及缺省 = crashed 的 fail-closed）在下方单列，否则两者会互相掩盖。
+    failureClass: "judged",
   };
   const run = (over) => evaluateGate({ ...base, ...over });
   const RESULTS = ["success", "failure", "cancelled", "skipped"];
@@ -1357,6 +1360,103 @@ test("#217+#187+#722+#843: repo-gate-assert 判定表全组合锁定（事件 ×
   );
   assert.equal(run({ redline: "failure" }).code, 1, "PR 上红线审批 failure（未批准）必须红");
 
+  // ── #843 P-2 失败分类维度：上游 failure 的二义形态（判据判红 vs 门禁故障）──
+  // 为什么单列一张表：needs.<job>.result 对 exit 1 与 exit 2 都只报 failure，分类只能靠
+  // GATE_FAILURE_CLASS 显式传入。这里是「传入值 → 退出码」的唯一判据；缺省（未注入 / 空串）
+  // 必须落 crashed = exit 2 —— fail-closed 的方向是「宁可把故障说成故障」，不是「宁可放行」。
+  const CRASHED_INPUTS = [
+    ["buildTest", { buildTest: "failure" }],
+    ["coverage", { coverage: "failure" }],
+    ["verdict", { verdict: "failure" }],
+    ["redline", { redline: "failure" }],
+  ];
+  for (const [dim, over] of CRASHED_INPUTS) {
+    assert.equal(
+      run({ ...over, failureClass: "judged" }).code,
+      1,
+      `${dim}=failure + judged 仍是判红`,
+    );
+    assert.equal(
+      run({ ...over, failureClass: "crashed" }).code,
+      2,
+      `${dim}=failure + crashed 必须 exit 2（门禁故障不是判据结论）`,
+    );
+    assert.match(
+      run({ ...over, failureClass: "crashed" }).reason,
+      /GATE_FAILURE_CLASS=crashed/,
+      `${dim}=failure + crashed 的判词必须点名分类来源`,
+    );
+    // 缺省 = 键根本没被注入（不是给空串）：base 里已声明 judged，故这里显式覆盖成 undefined
+    const absent = evaluateGate({ ...base, ...over, failureClass: undefined });
+    assert.equal(
+      absent.code,
+      2,
+      `${dim}=failure + 缺省分类必须 exit 2（缺省 = crashed，fail-closed）`,
+    );
+    assert.match(
+      absent.reason,
+      /GATE_FAILURE_CLASS=缺省/,
+      `${dim}=failure + 缺省分类的判词必须点名「缺省」`,
+    );
+  }
+  // skipped / cancelled 不是二义形态（接线契约判据 / 未跑完），不受分类影响
+  assert.equal(
+    run({ buildTest: "skipped" }).code,
+    1,
+    "build-test skipped 是接线契约判据，保持 exit 1",
+  );
+  assert.equal(run({ redline: "skipped" }).code, 1, "redline skipped 是接线契约判据，保持 exit 1");
+  assert.equal(run({ verdict: "cancelled" }).code, 1, "verdict cancelled 保持 exit 1");
+  // changes 是产出切片输入的 job，与 build-test 同形（它自己的 failure 也不是判据结论）
+  assert.equal(run({ changes: "failure" }).code, 1, "changes=failure + judged 仍是判红");
+  assert.equal(
+    evaluateGate({ ...base, changes: "failure", failureClass: "crashed" }).code,
+    2,
+    "changes=failure + crashed 必须 exit 2（切片/接线故障不是判据结论）",
+  );
+
+  // ── #843 P-2 / #864 实测：上游被 concurrency 取消 → outputs 缺席是「不可判」，不是「契约破坏」──
+  // cancel-in-progress 会中断产出 outputs 的 job，到达判定表的是空串。旧形态把它报成
+  // 「mutationPackages 不是合法 JSON —— 数据契约破坏」，把维护者引向查 JSON 拼接。
+  const cancelled = evaluateGate({
+    ...base,
+    changes: "cancelled",
+    mutationPkgsJson: "",
+    hasMutations: "",
+    fullRequested: "",
+    redline: "cancelled",
+  });
+  assert.equal(cancelled.code, 2, "上游被取消场景必须 exit 2（本判据不可判）");
+  assert.match(cancelled.reason, /上游 changes 作业被取消/, "判词必须点名「被取消」这一成因");
+  assert.match(cancelled.reason, /本判据不可判/, "判词必须明说本判据不可判");
+  // 判词里会出现「这不是数据契约破坏」这句更正，故不能按字面否定；锚在旧误诊的**判词形态**上
+  assert.doesNotMatch(
+    cancelled.reason,
+    /不是合法 JSON/,
+    "不得把取消报成 JSON 解析失败（#864 的误诊形态）",
+  );
+  // 归因只吃「值缺席」：changes 成功时空串仍是契约破坏——这条判据不得被本批次放宽
+  assert.match(
+    evaluateGate({ ...base, mutationPkgsJson: "" }).reason,
+    /数据契约破坏/,
+    "changes=success 而 outputs 为空串 = 接线被删，仍报数据契约破坏（取值判据未被放宽）",
+  );
+  // outputs 齐全（job 写完 outputs 之后才失败）→ 按前提闸判，不套用取消归因
+  assert.match(
+    evaluateGate({ ...base, changes: "failure" }).reason,
+    /changes 作业未成功/,
+    "outputs 齐全时按前提闸判，不套用「不可判」归因",
+  );
+  // 值域外的一律按数据契约违约 exit 2，不得被静默当成缺省
+  for (const badClass of ["JUDGED", "crash", "true", "1"]) {
+    assert.equal(
+      run({ failureClass: badClass }).code,
+      2,
+      `GATE_FAILURE_CLASS="${badClass}" 必须 exit 2（值域只有 judged|crashed）`,
+    );
+  }
+  assert.equal(run({ failureClass: "" }).code, 0, "空串等价于未注入（全绿路径仍放行）");
+
   // 数据契约破坏：exit 2 —— 清单非法 JSON、hasMutations 非 'true'/'false'、
   // 显式布尔与切片非空性交叉矛盾
   for (const bad of ["not-json", '{"a":1}', '"dsh-notifier"']) {
@@ -1404,6 +1504,9 @@ test("#217+#187: repo-gate-assert CLI 退出码转发（GitHub Actions 判红依
     GATE_HAS_MUTATIONS: over.hasMutations ?? "",
     GATE_MUTATION_PKGS: over.mutationPkgsJson ?? "",
     GATE_FULL_REQUESTED: over.fullRequested ?? "",
+    // #843 P-2：本用例的既有场景都在钉「判据判红」那一面，故缺省给 judged；
+    // 「缺省 = crashed」的 fail-closed 方向在下方单列（删掉这个键才是真缺省）。
+    GATE_FAILURE_CLASS: over.failureClass ?? "judged",
   });
   // 通过场景 exit 0：push 触发面收敛形态（非 PR → fullGate=false，三段全 skipped）
   const okRun = spawnSync(process.execPath, [script], {
@@ -1518,6 +1621,75 @@ test("#217+#187: repo-gate-assert CLI 退出码转发（GitHub Actions 判红依
     covFailRun.stderr,
     /coverage 失败连坐/,
     "连坐场景判词必须点名「coverage 失败连坐」，不得误报为门禁绕过",
+  );
+
+  // #843 P-2：CLI 侧的失败分类转发。三种取值必须走出三个不同退出码——
+  // 判据判红 = 1（结论可信）、门禁故障 = 2（非判据结论）、未注入 = 2（fail-closed）。
+  // 这条判据是「把 exit 2 读成判红」那次事故的直接回归锚：2 必须自带到 PR 页面可见的判词。
+  const cliCrashEnv = (failureClass) => {
+    const env = envOf({
+      event: "pull_request",
+      changes: "success",
+      buildTest: "success",
+      coverage: "success",
+      mutation: "success",
+      verdict: "success",
+      redline: "failure",
+      hasMutations: "true",
+      mutationPkgsJson: '["dsh-lan-proxy"]',
+      fullRequested: "true",
+      failureClass,
+    });
+    if (failureClass === null) delete env.GATE_FAILURE_CLASS;
+    return { encoding: "utf8", env: { ...process.env, ...env } };
+  };
+  const cliJudged = spawnSync(process.execPath, [script], cliCrashEnv("judged"));
+  assert.equal(cliJudged.status, 1, "redline=failure + judged 的 CLI 必须 exit 1");
+  const cliCrashed = spawnSync(process.execPath, [script], cliCrashEnv("crashed"));
+  assert.equal(cliCrashed.status, 2, "redline=failure + crashed 的 CLI 必须 exit 2");
+  assert.match(
+    cliCrashed.stderr,
+    /::error::门禁故障（非判据结论）：/,
+    "exit 2 的判词必须逐字带「门禁故障（非判据结论）」前缀（唯一出口 lib/gate-exit.mjs）",
+  );
+  // #843 P-2 / #864 实测形态的回放：concurrency 取消上一轮 run → needs.changes.outputs 全空。
+  // 断言同时钉住「exit 2」与「判词指向取消而不是 JSON 解析」——后者是这次误诊的回归锚。
+  const cancelledRun = spawnSync(process.execPath, [script], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      ...envOf({
+        event: "pull_request",
+        changes: "cancelled",
+        buildTest: "success",
+        coverage: "skipped",
+        mutation: "skipped",
+        verdict: "skipped",
+        redline: "cancelled",
+        hasMutations: "",
+        mutationPkgsJson: "",
+        fullRequested: "",
+        failureClass: "crashed",
+      }),
+    },
+  });
+  assert.equal(cancelledRun.status, 2, "上游被取消场景 CLI 必须 exit 2");
+  assert.match(cancelledRun.stderr, /上游 changes 作业被取消/, "判词必须点名取消这一成因");
+  assert.doesNotMatch(
+    cancelledRun.stderr,
+    /不是合法 JSON/,
+    "不得把取消报成 JSON 解析失败（#864 误诊回归锚）",
+  );
+  const cliDefault = spawnSync(process.execPath, [script], cliCrashEnv(null));
+  assert.equal(
+    cliDefault.status,
+    2,
+    "GATE_FAILURE_CLASS 未注入时 CLI 必须 exit 2（缺省 = crashed）",
+  );
+  assert.match(
+    cliDefault.stderr,
+    /::error::门禁故障（非判据结论）：/,
+    "未注入分类的判词同样必须走「门禁故障（非判据结论）」形态",
   );
 });
 

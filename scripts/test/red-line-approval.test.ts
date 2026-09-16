@@ -429,6 +429,48 @@ test("CLI：只改普通文件 → exit 0（防误伤回归锚）", () => {
   assert.equal(r.status, 0, r.stderr);
 });
 
+test("#843 P-2：--status-file 落三态（scored / failed / crashed + exitCode），且不影响判分结论", () => {
+  // 这个状态文件是 job 内部退出码离开 job 的唯一通道：ci.yml 据此产出 failureClass →
+  // GATE_FAILURE_CLASS（exit 1 = 判红可信、exit 2 = 门禁故障）。三态必须逐字可辨，
+  // 否则聚合闸又会把「门禁自己坏了」读成「判决已生效」。
+  const dir = mkdtempSync(join(tmpdir(), "red-line-status-"));
+  const withStatus = (args: string[], name: string) => {
+    const p = join(dir, name);
+    const r = runCli([...args, "--status-file", p]);
+    return { r, status: existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null };
+  };
+  try {
+    const ok = withStatus(
+      ["--files", "packages/dsh-notifier/src/index.ts", "--labels", ""],
+      "ok.json",
+    );
+    assert.equal(ok.r.status, 0, ok.r.stderr);
+    assert.deepEqual(ok.status, { status: "scored", exitCode: 0 });
+    const failed = withStatus(
+      ["--files", ".github/workflows/ci.yml", "--labels", ""],
+      "failed.json",
+    );
+    assert.equal(failed.r.status, 1, failed.r.stderr);
+    assert.deepEqual(failed.status, { status: "failed", exitCode: 1 });
+    const crashed = withStatus(
+      ["--files-json", join(dir, "缺失.json"), "--labels-json", join(dir, "缺失.json")],
+      "crashed.json",
+    );
+    assert.equal(crashed.r.status, 2, crashed.r.stderr);
+    assert.deepEqual(crashed.status, { status: "crashed", exitCode: 2 });
+    // 参数解析就失败（连判据都没跑到）：started 占位已先落，收尾仍是 crashed——
+    // 「脚本崩了」不得伪装成「判据判红」。
+    const argFail = withStatus([], "argfail.json");
+    assert.equal(argFail.r.status, 2, argFail.r.stderr);
+    assert.deepEqual(argFail.status, { status: "crashed", exitCode: 2 });
+    // 诊断面是可选的：不给 --status-file 时不得在 cwd 里造出任何文件
+    const noStatus = runCli(["--files", "docs/a.md", "--labels", ""]);
+    assert.equal(noStatus.status, 0, noStatus.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("CLI fail-closed：缺失/不可解析的输入一律 exit 2，且不得与 exit 1 混淆", () => {
   const cases = [
     { args: [], why: "无任何参数（--files 缺失）" },

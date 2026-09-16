@@ -24,7 +24,8 @@
  * 之外，比较器还记录两侧实际命中的源，工作区命中基准未声明的文件即判红——两道判据不同源。
  *
  * 用法：node scripts/gate/threshold-monotonic.mjs [git-ref]
- * 退出码：0 = 无判据放宽；1 = 存在放宽/摘除（含声明表自身被削弱）；2 = 声明表、事实源或环境故障（fail-closed）
+ * 退出码：三态（0 / 1 / 2）的**语义**唯一事实源是 AGENTS.md 的门禁一节，本文件不复述；这里只
+ *   声明归属——「存在放宽/摘除（含声明表自身被削弱）」走 1，「声明表、事实源或环境故障」走 2。
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";

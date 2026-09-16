@@ -33,7 +33,7 @@
  *
  * 退出码：0 = 放行；1 = 有未批准的红线改动；2 = 输入缺失/不可解析（fail-closed）。
  */
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join, matchesGlob, normalize, relative } from "node:path";
 
 /**
@@ -202,7 +202,43 @@ const KNOWN_FLAGS = new Set([
   "--labels-json",
   "--patterns",
   "--registry",
+  // #843 P-2：判分状态文件的落盘路径。它是**诊断面**输入（不参与判定），故不进下面的
+  // 「输入至少给一个」校验，但必须进未知参数白名单——否则调用点写错字会被静默忽略。
+  "--status-file",
 ]);
+
+/** 取 `--flag value` / `--flag=value` 形式的取值；未给出返回 null。 */
+function argValue(argv, flag) {
+  const eq = argv.find((a) => a.startsWith(`${flag}=`));
+  if (eq !== undefined) return eq.slice(flag.length + 1);
+  const idx = argv.indexOf(flag);
+  return idx !== -1 && argv[idx + 1] !== undefined ? argv[idx + 1] : null;
+}
+
+/**
+ * 判分状态文件（#843 P-2 观测面；形状与落盘约定逐条抄 `gate/observe-check.mjs:44-60` 的范式）。
+ *
+ * 为什么需要：本判据的 exit 2（输入不可读）与 exit 1（未批准的改动）对 `needs.<job>.result`
+ * 都只是 failure，聚合闸据此分不开「判据判红」与「门禁自身故障」——本轮事故正是把前者读成了
+ * 后者。状态文件把这一步的退出码带出 job，ci.yml 据此产出 job output → GATE_FAILURE_CLASS。
+ *
+ * 它是诊断面不是判据面：写失败绝不反过来影响判分结论，故整条路径吞掉异常。
+ */
+function writeStatus(statusFile, status, extra = {}) {
+  if (statusFile === null) return;
+  try {
+    writeFileSync(statusFile, `${JSON.stringify({ status, ...extra }, null, 2)}\n`);
+  } catch {
+    /* 诊断面写不进去不改变判分结论 */
+  }
+}
+
+/** 三态收尾：0=scored / 1=failed / 其它=crashed（与 observe-check 同口径，勿改语义）。 */
+function finishStatus(statusFile, code) {
+  writeStatus(statusFile, code === 0 ? "scored" : code === 1 ? "failed" : "crashed", {
+    exitCode: code,
+  });
+}
 
 /** 逗号分隔值 → 去空白、丢空项。 */
 function splitList(raw) {
@@ -431,6 +467,13 @@ function resolvePatterns(values) {
  * @returns {number} 退出码
  */
 export function main(argv = process.argv.slice(2)) {
+  // 先落 started 占位，早于下面任何可能失败的解析与读文件：只要退出码不是 0/1，收尾一律
+  // crashed——"脚本崩了"不能伪装成"判据判红"（否则 ci.yml 侧只能看到 failure）。
+  const statusFile = argValue(argv, "--status-file");
+  writeStatus(statusFile, "started");
+  if (statusFile !== null) {
+    process.on("exit", (code) => finishStatus(statusFile, code));
+  }
   const parsed = parseArgs(argv);
   if (!parsed.ok) {
     console.error(`red-line-approval: ${parsed.error} —— fail-closed（exit 2）`);

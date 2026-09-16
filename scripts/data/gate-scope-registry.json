@@ -17,6 +17,13 @@
       "why": "判据源自 #733 宪法第 1 条。dsh-notifier 是重写目标，存量已清零或登记豁免；dsh-lan-proxy 于 #765 扩入——扩包前先实测该包在新口径下的存量（照抄历史数字会误判），实测其客户端 4 处模块级 var 中 3 处是常量、1 处（disposed）是零读取的死赋值，故先清零代码再扩面，扩面时零新增豁免。范围此前是脚本内的 PACKAGES 常量 + PACKAGES_V 版本号，现改为读本文件。"
     },
     {
+      "gate": "forbid-raw-exit2",
+      "script": "scripts/gate/forbid-raw-exit2.mjs",
+      "scopeFrom": "tree",
+      "packages": ["scripts/gate", "scripts/release"],
+      "why": "门禁故障码（exit 2）不得绕开唯一出口（#843 P-2）。它按**路径**限定范围而不是按包：面是两个源码目录（scripts/gate/** 与 scripts/release/**，递归），由目录结构派生、不吃 --package、也不读本文件，故为 tree。登记在此是为了让「本仓有哪些路径受限门禁」保持唯一答案（守卫是 test/gate-scope-registry.test.ts 的「forbid-*.mjs 未登记即红」）。"
+    },
+    {
       "gate": "forbid-src-tests",
       "script": "scripts/gate/forbid-src-tests.mjs",
       "scopeFrom": "tree",

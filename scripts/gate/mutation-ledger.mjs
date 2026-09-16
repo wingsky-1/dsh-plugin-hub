@@ -37,6 +37,7 @@ import {
   expectedSegsFromConfFiles,
   parseSegmentLedger,
 } from "../lib/mutation-ledger-lib.mjs";
+import { failClosed } from "../lib/gate-exit.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CONF_DIR = join(ROOT, "stryker.conf.d");
@@ -162,8 +163,7 @@ function ghRunMeta(runId) {
       ),
     );
   } catch (e) {
-    console.error(`[ledger] 读取 run ${runId} 元数据失败：${String(e.message).split("\n")[0]}`);
-    process.exit(2);
+    failClosed(`[ledger] 读取 run ${runId} 元数据失败：${String(e.message).split("\n")[0]}`);
   }
 }
 
@@ -188,10 +188,7 @@ function incompleteShardSegs(runId) {
     }
     return out;
   } catch (e) {
-    console.error(
-      `[ledger] 读取 run ${runId} 的 job 列表失败：${String(e.message).split("\n")[0]}`,
-    );
-    process.exit(2);
+    failClosed(`[ledger] 读取 run ${runId} 的 job 列表失败：${String(e.message).split("\n")[0]}`);
   }
 }
 

@@ -19,6 +19,7 @@ import { join } from "node:path";
 
 import { argValue } from "../lib/exemption-gate.ts";
 import { REGISTRY_REL, verifyVendoredBinaries } from "../lib/vendored-binaries-lib.mjs";
+import { failClosed } from "../lib/gate-exit.mjs";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 
@@ -29,8 +30,7 @@ const ROOT = join(import.meta.dirname, "..", "..");
 function requiredArg(flag, fallback) {
   const v = argValue(process.argv, flag, fallback);
   if (typeof v !== "string" || v.trim() === "") {
-    console.error(`[verify-vendored-binaries] ${flag} 取值非法`);
-    process.exit(2);
+    failClosed(`[verify-vendored-binaries] ${flag} 取值非法`);
   }
   return v;
 }
@@ -38,18 +38,14 @@ function requiredArg(flag, fallback) {
 const root = requiredArg("--root", ROOT);
 const registry = requiredArg("--registry", join(ROOT, REGISTRY_REL));
 if (!existsSync(root)) {
-  console.error(`[verify-vendored-binaries] 扫描根不存在：${root}`);
-  process.exit(2);
+  failClosed(`[verify-vendored-binaries] 扫描根不存在：${root}`);
 }
 
 let result;
 try {
   result = verifyVendoredBinaries(root, { registryPath: registry });
 } catch (e) {
-  console.error(
-    `[verify-vendored-binaries] 判定不可执行：${String(e?.message ?? e).split("\n")[0]}`,
-  );
-  process.exit(2);
+  failClosed(`[verify-vendored-binaries] 判定不可执行：${String(e?.message ?? e).split("\n")[0]}`);
 }
 
 const { problems, reports, scanned, registered, hits } = result;

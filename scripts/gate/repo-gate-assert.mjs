@@ -7,7 +7,11 @@
  *
  * 输入（由 ci.yml repo-gate 首步以 env 注入）：
  *   GATE_EVENT          github.event_name（pull_request / push / workflow_dispatch / …）
- *   GATE_CHANGES        needs.changes.result
+ *   GATE_CHANGES        needs.changes.result。它是产出下面三个 outputs 的 job，所以它的
+ *                       非 success 有两种后果，必须分开说（#843 P-2 / #864 实测）：
+ *                       · outputs 仍在（job 写完之后才失败）→ 前提闸报「changes 作业未成功」；
+ *                       · outputs 缺席（被 concurrency 的 cancel-in-progress 取消，或没跑到写
+ *                         outputs 那一步）→ **归因闸**报「本判据不可判」，不得报成数据契约破坏。
  *   GATE_BUILD_TEST     needs.build-test.result
  *   GATE_COVERAGE       needs.coverage.result（#217：全局单次覆盖采集 job）
  *   GATE_MUTATION       needs.mutation-gate.result（#217：矩阵仅基线+stryker）
@@ -16,14 +20,28 @@
  *                       为什么它必须进判定表：只挂 needs 只能让本 job「等」它，判决不并入
  *                       就等于没判——两个 job 都红不了对方。并入之后平台侧不必再注册第二个
  *                       required check（repo-gate 本就是唯一那个）。
- *   GATE_HAS_MUTATIONS  needs.changes.outputs.hasMutations（'true'/'false' 显式布尔）
- *   GATE_MUTATION_PKGS  needs.changes.outputs.mutationPackages（JSON 数组文本，恒为合法数组）
- *   GATE_FULL_REQUESTED needs.changes.outputs.fullGate（'true'/'false'；#722 门禁分层开关。
- *                       #742 阶段 1 起它只覆盖覆盖率与全仓产物闸——变异已改为 PR 强制跑）
+ *   GATE_HAS_MUTATIONS  needs.changes.outputs.hasMutations（changes success 时恒为
+ *                       'true'/'false'；**非 success 时到达的是空串**——值域依赖产出它的 job）
+ *   GATE_MUTATION_PKGS  needs.changes.outputs.mutationPackages（changes success 时恒为合法
+ *                       JSON 数组文本；同上，非 success 时是空串）。旧注释写的「恒为合法数组」
+ *                       只在 job 跑完的前提下成立，被取消的 run 会以空串到达（#864 实测）
+ *   GATE_FULL_REQUESTED needs.changes.outputs.fullGate（同上；'true'/'false'；#722 门禁分层
+ *                       开关。#742 阶段 1 起它只覆盖覆盖率与全仓产物闸——变异已改为 PR 强制跑）
+ *   GATE_FAILURE_CLASS  'judged' / 'crashed'（#843 P-2）：上游判据 job 报 failure 时，这次红是
+ *                       判据按设计判红（exit 1）还是门禁自身故障（exit 2）。**缺省视为 crashed**
+ *                       = fail-closed。为什么必须由外部显式传入：本判定表只看得到
+ *                       needs.<job>.result，job 内部步骤的退出码不在它的输入里，两组事实
+ *                       （result 与步骤退出码）只能由承载判据的 job 用状态文件产出后传递。
  *
  * 判定表（fail-closed：任何未显式放行的组合一律红；维度：
  *   事件 × 全量开关(fullGate) × 切片(hasMutations) × coverage × 变异矩阵 × verdict ×
  *   红线审批(redline)）：
+ *   0) **归因闸**（排在所有取值合法性检查之前）：changes 的三个 outputs 里出现空串、而
+ *      changes 本身不是 success → 报「上游 changes 被取消 / 未成功，outputs 未被产出，本判据
+ *      不可判（exit 2）」并点名成因。为什么必须先归因再判合法性：空串与「值写错了」在
+ *      JSON.parse 眼里是同一种失败，而它们的修法完全相反——前者等一次新 run/重跑，后者去查
+ *      ci.yml 接线。实测（#864）被 cancel-in-progress 取消的 run 得到的是
+ *      「mutationPackages 不是合法 JSON —— 数据契约破坏」，把取消说成了契约问题；
  *   1) changes != success → 红（一切切片判定的前提，#85 F2）；
  *   2) build-test != success → 红（构建/测试切片是全局门禁的产物前提，评审 F1）；
  *   3) mutationPackages 解析失败 / 非数组、hasMutations 非 'true'/'false'、
@@ -60,9 +78,13 @@
  *      破坏，宁可显性红也不静默退化。
  *
  * 用法：node scripts/gate/repo-gate-assert.mjs   （无命令行参数，全部走 env）
- * 退出码：0 = 通过；1 = 门禁违约；2 = 环境/数据缺失错误（fail-closed）
+ * 退出码：0 = 通过；1 = 判据按设计判红（结论可信）；2 = **门禁故障（非判据结论）**——环境/数据
+ *   缺失、或上游 job 的 failure 未被证明是判据判红。两者都必须阻断合并，但含义不同：把 2 读成
+ *   「判决已生效」正是本轮 P-2 要消灭的读法（语义唯一事实源见 AGENTS.md 的门禁一节）。
  */
 import { pathToFileURL } from "node:url";
+
+import { failClosed } from "../lib/gate-exit.mjs";
 
 /**
  * 判定核心（纯函数，供单元测试全组合覆盖）。
@@ -77,11 +99,68 @@ import { pathToFileURL } from "node:url";
  *   hasMutations: string,
  *   mutationPkgsJson: string,
  *   fullRequested: string,
+ *   failureClass: string,
  * }} input
  * @returns {{ ok: boolean, code: 0 | 1 | 2, reason: string }}
  */
 /** GHA 的 job 结论值域（needs.<job>.result 只可能是这四个）。 */
 const JUMP_RESULTS = new Set(["success", "failure", "cancelled", "skipped"]);
+
+/** GATE_FAILURE_CLASS 的值域；空串与未注入等价（都按 crashed 处理）。 */
+const FAILURE_CLASSES = new Set(["judged", "crashed"]);
+
+/** 由 `changes` job 产出的三个 inputs：它们的值域与「有没有值」都依赖那个 job 跑完。 */
+const CHANGES_OUTPUT_FIELDS = ["mutationPkgsJson", "hasMutations", "fullRequested"];
+
+/**
+ * 归因闸：`changes` 的 outputs 缺席时，先回答「为什么缺席」（#843 P-2 / #864 实测）。
+ *
+ * GHA 只在产出 job success 时给 `needs.<job>.outputs.*` 赋值；被 concurrency 的
+ * cancel-in-progress 取消（或没跑到写 outputs 那一步）时，到达本判定表的是**空串**。
+ * 空串与「值写错了」在 JSON.parse 眼里是同一种失败，但修法相反：前者等一次新 run / 重跑，
+ * 后者去查 ci.yml 的 needs/env 接线。所以这里先归因，再交给取值合法性检查。
+ *
+ * 只在**值缺席**时归因：非空但非法的值（如 "not-json"）仍是数据契约破坏——上游被取消时
+ * 不可能产出一个半截 JSON。返回 null 表示「不归因，按原判据走」。
+ */
+function changesOutputsVoidVerdict(input) {
+  const missing = CHANGES_OUTPUT_FIELDS.some((field) => {
+    const value = input[field];
+    return value === undefined || value === "";
+  });
+  if (!missing || input.changes === "success") return null;
+  const cause =
+    input.changes === "cancelled"
+      ? "上游 changes 作业被取消（concurrency 的 cancel-in-progress 会中断产出 outputs 的 job；本轮新 run 已取代它）"
+      : `上游 changes 作业未成功（${input.changes === "" || input.changes === undefined ? "取值缺失" : input.changes}）`;
+  return {
+    ok: false,
+    code: 2,
+    reason: `${cause} —— 它的 outputs（mutationPackages / hasMutations / fullGate）未被产出，本判据不可判；这不是数据契约破坏`,
+  };
+}
+
+/**
+ * 「上游 job 结果为 failure」的判词分叉（#843 P-2）。
+ *
+ * 为什么需要：`needs.<job>.result` 对「判据按设计判红」（exit 1）与「门禁自身故障」（exit 2）
+ * 都只报 failure——job 内部步骤的退出码根本不在本判定表的输入里。分类只能由承载判据的 job 用
+ * 状态文件产出、再以 GATE_FAILURE_CLASS 显式传入；缺省按 crashed 处理（fail-closed）：读不到
+ * 分类时宁可把门禁判成不可信，也不把一次故障说成一次判红。
+ *
+ * 只作用在「上游报 failure」的分支：skipped / cancelled 是接线契约判据（该跑没跑 / 未跑完），
+ * 数据契约违约本来就是 exit 2，两者都不进这里。
+ */
+function failureVerdict(input, reason) {
+  if (input.failureClass === "judged") return { ok: false, code: 1, reason };
+  const declared =
+    input.failureClass === undefined || input.failureClass === "" ? "缺省" : input.failureClass;
+  return {
+    ok: false,
+    code: 2,
+    reason: `上游判据 job 报 failure 且未证明是判据判红（GATE_FAILURE_CLASS=${declared}）—— ${reason}`,
+  };
+}
 
 export function evaluateGate(input) {
   // 顺序是契约的一部分：**数据契约先于前提闸**。redline 的缺失只在「接线被删」时出现，
@@ -99,24 +178,30 @@ export function evaluateGate(input) {
 }
 
 function checkPrerequisites(input) {
-  // 前提闸：changes 是所有切片判定的事实源，非 success 即红
+  // 前提闸：changes 是所有切片判定的事实源，非 success 即红。它与 build-test 同属「产出判据
+  // 输入的 job」，failure 同样是二义形态（切片计算崩了 vs 判据判红），故一并走 failureVerdict；
+  // outputs 缺席的形态已在上面的归因闸里被更早、更具体地点名，不会走到这里。
   if (input.changes !== "success") {
-    return { ok: false, code: 1, reason: `changes 作业未成功（${input.changes}）—— fail-closed` };
+    const reason = `changes 作业未成功（${input.changes}）—— fail-closed`;
+    if (input.changes === "failure") return failureVerdict(input, reason);
+    return { ok: false, code: 1, reason };
   }
   // build-test 矩阵 = 命中包（空切片时补 1 个哨兵实例：GHA 对零实例动态矩阵实测回报 failure，
   // 哨兵不匹配任何包、只跑一次 checkout+setup），任何实例失败/skipped 即红
   if (input.buildTest !== "success") {
-    return {
-      ok: false,
-      code: 1,
-      reason: `build-test 存在失败/skipped 实例（${input.buildTest}）—— fail-closed`,
-    };
+    const reason = `build-test 存在失败/skipped 实例（${input.buildTest}）—— fail-closed`;
+    // 只有 failure 才可能是「判据判红 vs 门禁故障」的二义形态；skipped / cancelled 是接线契约判据。
+    if (input.buildTest === "failure") return failureVerdict(input, reason);
+    return { ok: false, code: 1, reason };
   }
   return null;
 }
 
 /** 数据契约闸：切片清单与显式布尔必须同时合法且互相一致。 */
 function checkDataContract(input) {
+  // 归因优先于取值合法性：空串的成因（上游被取消）与「值写错了」必须分开报（见上）。
+  const voidVerdict = changesOutputsVoidVerdict(input);
+  if (voidVerdict !== null) return { failure: voidVerdict };
   let pkgs;
   try {
     pkgs = JSON.parse(input.mutationPkgsJson);
@@ -163,6 +248,21 @@ function checkDataContract(input) {
       },
     };
   }
+  // 空串与未注入等价（缺省 crashed，在 failureVerdict 里落地）；给了值就必须在值域内——
+  // 把拼错的分类静默当成缺省，等于把「门禁故障」这层语义悄悄吃掉。
+  if (
+    input.failureClass !== undefined &&
+    input.failureClass !== "" &&
+    !FAILURE_CLASSES.has(input.failureClass)
+  ) {
+    return {
+      failure: {
+        ok: false,
+        code: 2,
+        reason: `GATE_FAILURE_CLASS 必须为 judged|crashed（实际 "${input.failureClass}"）—— 数据契约破坏`,
+      },
+    };
+  }
   // 交叉校验：hasMutations 与切片清单非空性由 changes 同一函数推导，不一致即违约
   if ((input.hasMutations === "true") !== pkgs.length > 0) {
     return {
@@ -191,11 +291,9 @@ function judgePrCoverage(input) {
       coverage === "skipped"
         ? "coverage 作业缺席 —— gate:full 下该跑却没跑，ci.yml if 契约疑似被改坏"
         : "coverage 失败连坐（c8 全仓 smoke 同级硬信号）";
-    return {
-      ok: false,
-      code: 1,
-      reason: `PR 变异链前置 coverage 结果 ${coverage}（期望 success）—— ${why}`,
-    };
+    const reason = `PR 变异链前置 coverage 结果 ${coverage}（期望 success）—— ${why}`;
+    if (coverage === "failure") return failureVerdict(input, reason);
+    return { ok: false, code: 1, reason };
   }
   if (coverage !== "skipped") {
     return {
@@ -223,11 +321,11 @@ function judgePrRedline(input) {
       : redline === "cancelled"
         ? "被取消（未完成门禁判定）"
         : "红线路径改动未通过：缺少 approved 标签，或门禁自身失败";
-  return {
-    ok: false,
-    code: 1,
-    reason: `PR 红线审批（#843 M1）结果 ${redline}（期望 success）—— ${why}`,
-  };
+  const reason = `PR 红线审批（#843 M1）结果 ${redline}（期望 success）—— ${why}`;
+  // 红线 job 是本批次唯一用状态文件暴露「1 = 判红 / 2 = 故障」的 job（事故现场），
+  // 它的 failure 必须能分开说：crashed 时把它读成「未批准」会掩盖一次门禁故障。
+  if (redline === "failure") return failureVerdict(input, reason);
+  return { ok: false, code: 1, reason };
 }
 
 function evaluateMutationSlice(input, pkgs) {
@@ -255,11 +353,9 @@ function evaluateMutationSlice(input, pkgs) {
         : verdict === "cancelled"
           ? "被取消（未完成判分）"
           : "变异率判分未通过（变异率不达标或报告 artifact 链路违约）";
-    return {
-      ok: false,
-      code: 1,
-      reason: `mutation-verdict 结果 ${verdict}（期望 success）—— ${why}`,
-    };
+    const reason = `mutation-verdict 结果 ${verdict}（期望 success）—— ${why}`;
+    if (verdict === "failure") return failureVerdict(input, reason);
+    return { ok: false, code: 1, reason };
   }
   return {
     ok: true,
@@ -359,17 +455,23 @@ if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) 
     hasMutations: env.GATE_HAS_MUTATIONS ?? "",
     mutationPkgsJson: env.GATE_MUTATION_PKGS ?? "",
     fullRequested: env.GATE_FULL_REQUESTED ?? "",
+    failureClass: env.GATE_FAILURE_CLASS ?? "",
   });
   console.log(
     `event=${env.GATE_EVENT}  changes=${env.GATE_CHANGES}  ` +
       `build-test=${env.GATE_BUILD_TEST}  coverage=${env.GATE_COVERAGE}  ` +
       `mutation-gate=${env.GATE_MUTATION}  verdict=${env.GATE_VERDICT}  ` +
       `redline=${env.GATE_REDLINE}  ` +
-      `hasMutations=${env.GATE_HAS_MUTATIONS}  fullGate=${env.GATE_FULL_REQUESTED}`,
+      `hasMutations=${env.GATE_HAS_MUTATIONS}  fullGate=${env.GATE_FULL_REQUESTED}  ` +
+      `failureClass=${env.GATE_FAILURE_CLASS ?? ""}`,
   );
   // 违约/环境错误走 ::error:: 注解（GitHub PR 页面可见，与旧内联断言同款）
   if (verdict.code === 0) {
     console.log(`判定：${verdict.reason}`);
+  } else if (verdict.code === 2) {
+    // exit 2 = 门禁故障（非判据结论）：判词形态收进 lib/gate-exit.mjs 的唯一出口，
+    // 免得「门禁自己坏了」在本文件里又多一份自写措辞（#843 P-2）。
+    failClosed(verdict.reason);
   } else {
     console.error(`::error::${verdict.reason}`);
   }

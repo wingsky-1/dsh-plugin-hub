@@ -102,6 +102,7 @@ import {
   extractExports,
 } from "../lib/surface-extract-lib.ts";
 import { listExportTypesEntries, stripLibPrefix } from "../lib/exports-types-lib.ts";
+import { failClosed } from "../lib/gate-exit.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const ARGV = process.argv.slice(2);
@@ -109,8 +110,7 @@ const isSnapshot = ARGV.includes("--snapshot");
 const verbose = ARGV.includes("--verbose");
 const pkgName = ARGV[ARGV.indexOf("--package") + 1];
 if (!pkgName) {
-  console.error("[export-surface-snapshot] 缺少 --package <name>");
-  process.exit(2);
+  failClosed("[export-surface-snapshot] 缺少 --package <name>");
 }
 
 const tsconfigIdx = ARGV.indexOf("--tsconfig");
@@ -309,15 +309,13 @@ if (isSnapshot) {
 }
 
 if (!existsSync(baselinePath)) {
-  console.error(`[export-surface-snapshot] 基线不存在：${baselinePath} — 先跑 --snapshot 生成`);
-  process.exit(2);
+  failClosed(`[export-surface-snapshot] 基线不存在：${baselinePath} — 先跑 --snapshot 生成`);
 }
 const baseline = JSON.parse(readFileSync(baselinePath, "utf8"));
 if (baseline.entries === undefined) {
-  console.error(
+  failClosed(
     "[export-surface-snapshot] 基线为 v1 形态（无 entries）——入口模型无法比对，请先跑 --snapshot 重冻结基线",
   );
-  process.exit(2);
 }
 
 // ---------------------------------------------------------------- 逐入口比对（符号集 + 块多重集）

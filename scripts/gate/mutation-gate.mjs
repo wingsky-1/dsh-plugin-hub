@@ -33,12 +33,12 @@
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { readMutationReport, readMutationReportsAgg } from "../lib/mutation-report-lib.mjs";
+import { failClosed } from "../lib/gate-exit.mjs";
 
 const repoRoot = process.cwd();
 const pkg = process.argv[2];
 if (!pkg || !/^dsh-[a-z0-9-]+$/.test(pkg)) {
-  console.error("mutation-gate: 用法：node scripts/gate/mutation-gate.mjs <dsh-<name>>");
-  process.exit(2);
+  failClosed("mutation-gate: 用法：node scripts/gate/mutation-gate.mjs <dsh-<name>>");
 }
 
 // ── gauntlet 配置 ─────────────────────────────────────────────
@@ -48,20 +48,17 @@ try {
     readFileSync(join(repoRoot, "scripts", "data", "gauntlet.config.json"), "utf8"),
   );
 } catch (err) {
-  console.error(`mutation-gate: gauntlet.config.json 解析失败：${err.message}`);
-  process.exit(2);
+  failClosed(`mutation-gate: gauntlet.config.json 解析失败：${err.message}`);
 }
 const mutCfg = gauntlet?.mutation?.packages?.[pkg];
 if (!mutCfg) {
-  console.error(
+  failClosed(
     `mutation-gate: ${pkg} 不在 gauntlet mutation.packages 内——聚合包无变异配置，不应进入本门禁`,
   );
-  process.exit(2);
 }
 const threshold = typeof mutCfg.threshold === "number" ? mutCfg.threshold : null;
 if (threshold === null) {
-  console.error(`mutation-gate: ${pkg}.threshold 未配置 —— 视为配置错误（fail-closed）`);
-  process.exit(2);
+  failClosed(`mutation-gate: ${pkg}.threshold 未配置 —— 视为配置错误（fail-closed）`);
 }
 const mutationStrict = Boolean(gauntlet?.mutation?.strict);
 
@@ -85,20 +82,18 @@ let r = null;
   const segPaths = expectedSegs.map((n) => {
     const p = join(reportDir, `${pkg}-${n}.json`);
     if (!existsSync(p)) {
-      console.error(
+      failClosed(
         `mutation-gate: ${pkg} 段 ${n} 报告缺失（${p}）—— 段 matrix 实例未产出，fail-closed`,
       );
-      process.exit(2);
     }
     return p;
   });
   if (segPaths.length > 0) {
     r = readMutationReportsAgg(segPaths);
     if (!r) {
-      console.error(
+      failClosed(
         `mutation-gate: ${pkg} 段式报告缺失或不可解析（${segPaths.length} 份中存在异常）—— fail-closed`,
       );
-      process.exit(2);
     }
   } else {
     const singlePath = join(reportDir, `${pkg}.json`);
@@ -106,10 +101,9 @@ let r = null;
     if (!r) {
       // stryker 步骤成功后报告必然存在；缺失 = 报告 artifact 未下发（链路异常）
       // 而非门禁语义，一律判红
-      console.error(
+      failClosed(
         `mutation-gate: ${pkg} 变异报告缺失或不可解析（${singlePath}）—— stryker 报告 artifact 未下发，fail-closed`,
       );
-      process.exit(2);
     }
   }
 }

@@ -40,6 +40,13 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
     // #733 计划项 3.1.2：本闸原先只在 contract-check.ts 里 spawnSync，不进 cheapGlobal，
     // 于本地 pr / full 档不可见；现与兄弟闸一致（CI 侧同为直接步骤）。
     { label: "gate:module-state（src 禁模块级可变状态）", args: ["gate:module-state"] },
+    // #843 P-2：门禁故障码不得绕开 failClosed（否定判据）。执行点在 ci.yml 的 repo-gate 恒跑段，
+    // 本地同款接入——离线、纯 AST，秒级。
+    {
+      label: "forbid-raw-exit2（scripts/gate + scripts/release 禁裸 exit 2）",
+      cmd: "node",
+      args: ["scripts/gate/forbid-raw-exit2.mjs"],
+    },
     { label: "docs:check（README/链接）", args: ["docs:check"] },
     {
       label: "verify:scripts-index（scripts 索引：存在性 + 引用即登记）",

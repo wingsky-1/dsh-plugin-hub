@@ -144,7 +144,7 @@
       "keys": ["SLICE"]
     },
     {
-      "step": "ci.yml|red-line-approval|script:scripts/gate/red-line-approval.mjs|$RUNNER_TEMP/pr-files.json,$RUNNER_TEMP/pr-labels.json,--files-json,--labels-json",
+      "step": "ci.yml|red-line-approval|script:scripts/gate/red-line-approval.mjs|$RUNNER_TEMP/pr-files.json,$RUNNER_TEMP/pr-labels.json,$RUNNER_TEMP/redline-status.json,--files-json,--labels-json,--status-file",
       "keys": ["GH_TOKEN"]
     },
     {
@@ -162,6 +162,7 @@
         "GATE_CHANGES",
         "GATE_COVERAGE",
         "GATE_EVENT",
+        "GATE_FAILURE_CLASS",
         "GATE_FULL_REQUESTED",
         "GATE_HAS_MUTATIONS",
         "GATE_MUTATION",

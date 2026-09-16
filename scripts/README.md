@@ -54,6 +54,7 @@
 - `gate/collect-exemptions.mjs` — 豁免/临时项的收口台账收集（#733 计划项 3.2，裁决见 #765）：递归扫 `data/` 下全部 `reviewBy`（到期日）与 `exitCriteria`（解除条件）并打印，恒 exit 0——它是**报告**不是判据，收口由人工裁决（不会冻结 PR）；只有到期日、没有解除条件的条目单独点名（日期只说明何时再看一眼，条件才说明凭什么能删）。
 - `gate/forbid-homedir-src.mjs` — #517 B5：插件 src 禁直连 HOME 来源 API（AST 扫描，`os.homedir` / `userInfo` / `process.env.HOME` / `untildify` 全形态），**无豁免通道**（#765：本面收口到零豁免后机制一并删除，命中即违规），解析失败 fail-closed。
 - `gate/forbid-module-state-src.mjs` — #733 N2a：插件 src 禁**模块级可变状态**（只看 AST 作用域，缩进不再是绕过口），豁免走 `data/gate-exemptions.json` 登记。
+- `gate/forbid-raw-exit2.mjs` — #843 P-2 的否定判据：`scripts/gate/**` 与 `scripts/release/**` 内不得出现裸 `process.exit(2)` / `process.exitCode = 2` / `exitCode = 2`，必须经 `lib/gate-exit.mjs` 的 `failClosed()`（exit 2 的语义是「门禁故障（非判据结论）」，判词必须可检索）。检测走 AST，注释与字符串里的同形文本不命中；`return 2`（把退出码经返回值交给调用方，22 处）**显式排除**——它归已登记的 L3 退出码契约归一，见文件头注释。扫描面为空即 exit 2，不判绿。
 - `gate/verify-scripts-index.mjs` — 本文件的索引门禁（#733 计划项 3.3 E2）：① 索引项必须存在 ② 被调用点引用的脚本必须登记（棘轮）。未被任何调用点引用的文件只报告、不判红。
 
 - `gate/verify-coverage-scope.mjs` — 覆盖率面判据（#733 计划项 3.4）：`vitest.config.ts` 不得内联 `include`/`exclude`/`thresholds`；exclude 条目须带 `reason` 与 `kind`（值域三值），`reviewBy`/`exitCriteria` **只允许且必须由 `pending-project` 携带**——给永久事实编到期日是假条目，临时豁免缺了到期日或解除条件则成了永久事实；**kind 必须与命中文件形态自洽**：`not-source` 不得命中 include 面内的文件（判据取自 include 的 glob，不镜像后缀表——后缀是整面的并集，套到单条 pattern 上会误判）、也不得命中声明文件（面外的声明同样归 `type-only`）——边界：本判据只保证「`not-source` 不命中 include 面内文件」，不检查文件的资源性，面外的代码文件被标 `not-source` 不判红（它本来就不在分母里，也就不该被要求登记台账）；将来 include 面扩大时，本判据会对**当时的**面求值，那一刻就判红——`type-only` 只许命中 `.d.ts`/`.d.mts`、`pending-project` 不作形态限制，判词直接给出 pattern、命中了哪些文件、声明成什么 kind 与为什么不允许（关掉「把 `.ts` 源码声明成 `not-source` 移出覆盖分母、两条闸都不响」这条通道）；物理枚举的每个源文件必须落在 include 或某条 exclude 里（未分类即红）；模式命中 0 文件即红；产物 keys ⊆ include 面（产物比配置新时才执行）。
@@ -71,6 +72,7 @@
 - `lib/client-contract-lib.ts` — 客户端契约断言（stub/执行实现同源唯一事实源）。
 - `lib/plugins-manifest-lib.ts` — 插件清单单一事实源（issue #36）纯函数库。
 - `lib/mutation-ledger-lib.mjs` — 变异段台账的解析与覆盖对账纯函数（#718 S0.2，与 `gate/mutation-ledger.mjs` 同源实现，测试离线 import）。
+- `lib/gate-exit.mjs` — 门禁「自身故障」的唯一退出口（#843 P-2）：只暴露 `failClosed(why)`，打印 `::error::门禁故障（非判据结论）：<why>` 后 `process.exit(2)`。1 = 判据按设计判红、2 = 门禁自己坏了，两者必须在日志上可区分（本轮真实事故正是把 exit 2 读成了判红）。语义的唯一事实源在 `AGENTS.md` 的门禁一节。
 - `lib/exemption-gate.ts` — 路径受限门禁的共享实现（#733 计划项 3.2.2）：豁免机制（真实行注释词法 / marker 匹配 / 三态裁决 / 台账读取与反向腐烂校验）+ 扫描面与参数枚举（`isScannedSourceFile` / `collectSrcFiles` / `listPackageNames` / `relPath` / `argValue`）；策略与扫描器留在各门禁自己手里。豁免机制当前只剩 `gate/forbid-module-state-src.mjs` 一个用户（`gate/verify-dir-imports.mjs` 共用台账读取；homedir 面已无豁免通道，#765）。
 - `lib/threshold-registry.mjs` — 阈值声明表的读取、结构与覆盖面校验、按 kind 的通用比较器（#843 D5）：两侧事实源由调用方注入（`readBase` / `readWorkspace`），`makeSourceLoader` 按 `sources` 声明顺序取第一个**存在**的源（迁移期双读的形态即由此表达，而不是特判）；`validateDeclarations` 把「新数据文件未登记 / 幽灵声明 / 缺字段」变成判据，`validateGuardFacts` 拦「声明了但两侧都取不到值」的幽灵判据。
 - `lib/gate-scope-registry.ts` — 路径受限门禁的**扫描范围**读取与通配展开（#733 计划项 3.2.1）：未登记 / 范围解析为空一律抛错（未登记即红）。

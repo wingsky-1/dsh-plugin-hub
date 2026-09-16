@@ -13,7 +13,7 @@
       "weaken": "decrease",
       "onRemoval": "fail",
       "missingIsError": true,
-      "why": "覆盖率四维阈值（#722 阶段三 / #733 计划项 3.4 起事实源在 coverage.config.json）。sources 的第二个是迁移期回落：基准侧还没有 JSON 时按同一份 vitest.config.ts 解析，否则「基准侧没这个文件」会被读成「首次引入」，把一次静默降线放走。missingIsError：两侧都取不到阈值 = 硬门禁被摘除，属配置错误而非降线，故 fail-closed exit 2（原先只有这一维有该语义，现由声明表达）。",
+      "why": "覆盖率四维阈值（#722 阶段三 / #733 计划项 3.4 起事实源在 coverage.config.json）。sources 的第二个是迁移期回落：基准侧还没有 JSON 时按同一份 vitest.config.ts 解析，否则「基准侧没这个文件」会被读成「首次引入」，把一次静默降线放走。missingIsError：两侧都取不到阈值 = 硬门禁被摘除，属配置错误而非降线，故按门禁故障结案（exit 2；三态语义见 AGENTS.md 的门禁一节，原先只有这一维有该语义，现由声明表达）。",
       "hint": "降线或删键须在原 issue 内 approved 后改基线（AGENTS.md 阈值治理）"
     },
     {

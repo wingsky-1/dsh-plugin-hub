@@ -95,6 +95,7 @@ import { fileURLToPath } from "node:url";
 
 import { argValue, loadLedger } from "../lib/exemption-gate.ts";
 import { loadScopeRegistry, scopePackages } from "../lib/gate-scope-registry.ts";
+import { failClosed } from "../lib/gate-exit.mjs";
 import { collectMutationSpecs } from "./mutation-topology.mjs";
 
 // 仓库根；测试可用 VERIFY_DIR_IMPORTS_ROOT 注入临时 fixture 根，避免在仓库内
@@ -135,8 +136,7 @@ let evidenceLedger;
 try {
   evidenceLedger = loadLedger(EXEMPTIONS_PATH, "verify-dir-imports");
 } catch (e) {
-  console.error(`verify-dir-imports | 豁免台账不可用：${e.message}`);
-  process.exit(2);
+  failClosed(`verify-dir-imports | 豁免台账不可用：${e.message}`);
 }
 /**
  * 「本包无基线」登记的后缀：`<包名>:*`。与 `<包名>:<证据项>` 的区别是它不声称任何本次
@@ -148,10 +148,9 @@ const NO_BASELINE_KEY_SUFFIX = ":*";
 // 形态不认识的键既不豁免任何东西、也不被任何判据看到——一条静默失效的放宽。
 for (const key of evidenceLedger.keys()) {
   if (!/^[a-z0-9-]+:.+$/.test(key)) {
-    console.error(
+    failClosed(
       `verify-dir-imports | 豁免台账键形态非法：${key}（应为 <包名>:<证据项> 或 <包名>:*）`,
     );
-    process.exit(2);
   }
 }
 const ARGV = process.argv.slice(2);
@@ -169,17 +168,15 @@ function parsePackageFlags(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const token = argv[i];
     if (token.startsWith("--package=")) {
-      console.error(`verify-dir-imports | 参数形态不认识：${token}（请写成 --package <name>）`);
-      process.exit(2);
+      failClosed(`verify-dir-imports | 参数形态不认识：${token}（请写成 --package <name>）`);
     }
     if (token !== "--package") continue;
     given = true;
     const value = argv[i + 1];
     if (value === undefined || !/^[a-z0-9-]+$/.test(value)) {
-      console.error(
+      failClosed(
         `verify-dir-imports | --package 缺少合法包名（实际 ${JSON.stringify(value)}）——空包集等于零个包被分析`,
       );
-      process.exit(2);
     }
     names.push(value);
     i += 1;
@@ -1565,8 +1562,7 @@ function resolvePackages() {
     try {
       return scopePackages(ROOT, loadScopeRegistry(SCOPE_REGISTRY_PATH), GATE_NAME);
     } catch (e) {
-      console.error(`verify-dir-imports | 写基线的缺省范围无法解析：${e.message}`);
-      process.exit(2);
+      failClosed(`verify-dir-imports | 写基线的缺省范围无法解析：${e.message}`);
     }
   }
   return ["dsh-mcp-manager"];

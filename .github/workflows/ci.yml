@@ -226,6 +226,13 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # #843 P-2 观测面：把本 job 判据步骤的**退出码分类**带出 job。
+    # 为什么需要它：repo-gate 的判定表只看得到 `needs.*.result`，而 exit 1（未批准的改动）
+    # 与 exit 2（输入不可读 = 门禁故障）在 result 上都是 failure——本轮事故正是把后者读成了
+    # 「判决已生效」。job 内部步骤的退出码传不出去，故由判据脚本落状态文件、由紧随其后的
+    # 一步读成 job output，再经 GATE_FAILURE_CLASS 显式注入判定表。
+    outputs:
+      failureClass: ${{ steps.gateclass.outputs.failureClass }}
     # 本 job 是「不带 pull-requests 读权限的 job 一律取不到 changed files」这一隐式规则的唯一
     # 例外：它必须读 PR 的文件与标签，故按 job 显式补读权限（工作流级只声明 `contents: read`，
     # 其余 job 维持原样）。labels 走 issues 端点属 REST 惯例，token 的 pull-requests 读权限已覆盖
@@ -272,7 +279,27 @@ jobs:
       - name: Red-line approval（红线路径改动须带 approved 标签）
         # 判据步骤保持闭合单命令：输入校验（非 JSON / 缺字段 / 空变更集）与逐条判红都在
         # 脚本内，退出码直接由本步转发（1 = 判红、2 = 输入不可解析，两码都让本 job 红）。
-        run: node scripts/gate/red-line-approval.mjs --files-json "$RUNNER_TEMP/pr-files.json" --labels-json "$RUNNER_TEMP/pr-labels.json"
+        # --status-file 是**诊断面**输入（不参与判定）：它把这次到底是 1 还是 2 带出 job，
+        # 供下一步产出 GATE_FAILURE_CLASS（#843 P-2）。
+        run: node scripts/gate/red-line-approval.mjs --files-json "$RUNNER_TEMP/pr-files.json" --labels-json "$RUNNER_TEMP/pr-labels.json" --status-file "$RUNNER_TEMP/redline-status.json"
+
+      - name: Gate failure class（状态文件 → job output；读不到一律 crashed）
+        # 三态口径与 scripts/gate/observe-check.mjs 一致：0=scored / 1=failed / 其它=crashed。
+        # 只有「判据步骤 exit 1」才证明这是判据按设计判红；状态文件缺失（脚本还没跑到写盘就
+        # 被杀、步骤被跳过）与 exit 2 都按 crashed——**缺省即 fail-closed**，不把未知说成判红。
+        # 排在判据步骤**之后**：它影响不到已经在前面跑完的判据，故不需要逐条登记（gate-wiring
+        # 的环境面只登记判据步骤之前的前序 run 步骤）。
+        id: gateclass
+        if: always()
+        run: |
+          set -e
+          STATUS="$RUNNER_TEMP/redline-status.json"
+          CLASS=crashed
+          if [ -f "$STATUS" ] && [ "$(jq -r '.exitCode // empty' "$STATUS" 2>/dev/null)" = "1" ]; then
+            CLASS=judged
+          fi
+          echo "failureClass=$CLASS" >> "$GITHUB_OUTPUT"
+          echo "红线门禁失败类别：$CLASS（状态文件：$(cat "$STATUS" 2>/dev/null || echo '缺失')）"
 
   # ── 第 2 段：命中包并行 build + lib artifact + smoke/typecheck（#722 全切片）──
   # 矩阵来源 = changes.buildPackages（命中包；空切片时为哨兵项）。为什么不是固定全集：
@@ -703,6 +730,11 @@ jobs:
           GATE_HAS_MUTATIONS: ${{ needs.changes.outputs.hasMutations }}
           GATE_MUTATION_PKGS: ${{ needs.changes.outputs.mutationPackages }}
           GATE_FULL_REQUESTED: ${{ needs.changes.outputs.fullGate }}
+          # #843 P-2：上游判据 job 报 failure 时，本次红是「判据判红」还是「门禁故障」。
+          # 取值来自红线 job 的状态文件；它 skipped（非 PR）或未产出 output 时退化为 judged
+          # ——那时没有任何证据指向门禁故障。**缺省（env 整行被删）才是 crashed**，即
+          # fail-closed 落在这条接线的消失上，而不是落在正常的主干触发上。
+          GATE_FAILURE_CLASS: ${{ needs.red-line-approval.outputs.failureClass || 'judged' }}
         run: node scripts/gate/repo-gate-assert.mjs
 
       - name: Setup pnpm
@@ -871,6 +903,11 @@ jobs:
       # 统一成同款直接步骤；本地侧同步进 local-gate 的 cheapGlobal。
       - name: Forbid module state in src（#733 N2a：src 禁模块级可变状态，AST 扫描 fail-closed）
         run: node scripts/gate/forbid-module-state-src.mjs
+
+      # #843 P-2：门禁故障码（exit 2）必须经 lib/gate-exit.mjs 的唯一出口，否则「门禁自己
+      # 坏了」在日志上又变回不可检索。纯 AST 扫描，无产物依赖，与兄弟 forbid-* 闸同段。
+      - name: Forbid raw exit 2（scripts/gate + scripts/release 禁裸 exit 2）
+        run: node scripts/gate/forbid-raw-exit2.mjs
 
       - name: Docs check（README/链接/占位符）
         run: pnpm docs:check

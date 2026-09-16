@@ -37,6 +37,7 @@ import { join, resolve, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
+import { failClosed } from "../lib/gate-exit.mjs";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const SCRIPT_DIR = dirname(SCRIPT_PATH);
@@ -801,8 +802,7 @@ export async function runCrapCheck(argv = process.argv.slice(2), { shouldExit = 
   const config = loadConfig(repoRoot);
   const threshold = resolveThreshold(argv, config);
   if (!Number.isFinite(threshold) || threshold <= 0) {
-    console.error("crap-check: invalid --threshold");
-    if (shouldExit) process.exit(2);
+    if (shouldExit) failClosed("crap-check: invalid --threshold");
     return { exitCode: 2 };
   }
   const strict = Boolean(config.crap?.strict);

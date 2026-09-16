@@ -102,6 +102,18 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
   改的是命中包 `test/**` 时该包基线会被主动失效、退化为全量。因此**本地 `gate:*` 全绿不等于
   CI 绿**——变异不达标只在 CI 上暴露。`gate:full` 标签在 PR 上追加的是**覆盖率**与**全仓产物闸**。
 - 结论里**逐条粘贴实际 exit code**；任一非 0 不得声称完成。
+- **退出码三态是契约**（#843 P-2）：`0` = 判据通过；`1` = 判据按设计判红（结论可信：改动确实
+  不达标）；`2` = **门禁故障（非判据结论）**——读不到输入、配置损坏、环境缺件，此时门禁不可信，
+  既不能读成「通过」也不能读成「不达标」。`scripts/gate/**` 与 `scripts/release/**` 里的 exit 2
+  一律经 `scripts/lib/gate-exit.mjs` 的 `failClosed()` 出口（裸写法由
+  `scripts/gate/forbid-raw-exit2.mjs` 拦）；上游 job 报 `failure` 时靠状态文件 +
+  `GATE_FAILURE_CLASS` 区分两类（缺省 = `crashed`，fail-closed）。**本契约目前只有部分门禁
+  实现**（经返回值交出的 `return 2` 归 L3 退出码契约归一），不得据此读成全仓已收口。
+  本节是**语义**的唯一出处；各脚本头部那行「退出码：」说明的是它自己会把哪些情形归到哪个码
+  （用法面），不构成第二份契约，语义有分歧以本节为准。
+- **exit 2 的后果**（#843 P-2）：一律按「门禁不可信 ⇒ **禁止合并**」处理，并在原 issue 开一条 P0
+  跟踪项（gate 缺陷），**不允许以「环境抖动」结案**；同一 exit-2 判词在 30 天内第二次出现即升级
+  为熔断（`blocked-human`）。
 - 新增 `homedir()` / `process.env.HOME` / `untildify()` 调用**没有豁免通道**（#765：该面
   已收口到零豁免，豁免机制随之一并删除）：一律改走 `shared/dsh-home.js` 的 `dshHome()` 接缝，
   写在插件 src 里即判红（见 `scripts/gate/forbid-homedir-src.mjs`）。确有「DSH_HOME 域之外」的

@@ -21,6 +21,7 @@
 import { readFileSync, existsSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { readMutationReport, readMutationReportsAgg } from "../lib/mutation-report-lib.mjs";
+import { failClosed } from "../lib/gate-exit.mjs";
 
 const repoRoot = process.cwd();
 const argv = process.argv.slice(2);
@@ -64,8 +65,7 @@ let gauntlet;
 try {
   gauntlet = JSON.parse(readFileSync(gauntletPath, "utf8"));
 } catch (err) {
-  console.error(`observe-check: gauntlet.config.json 解析失败：${err.message}`);
-  process.exit(2);
+  failClosed(`observe-check: gauntlet.config.json 解析失败：${err.message}`);
 }
 const packages = gauntlet?.mutation?.packages ?? {};
 const mutationStrict = Boolean(gauntlet?.mutation?.strict);
