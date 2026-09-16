@@ -134,6 +134,12 @@ function checkExempts(pkg, exempt, schema, cfgPath) {
  * 已知边界（当前不可达，如实写明胜过过度声称）：propRe 只认「行首缩进 + 键名 + 冒号」，
  * 不校验它是 Config 的**顶层**属性——若将来某个嵌套对象里出现与顶层豁免键同名的属性行，
  * 锚点指向那一行也会通过。当前 4 个豁免键在 Config 区间内各自只有 1 行匹配（逐键实测）。
+ *
+ * 路径比较取「以 Config 文件路径为**后缀**」而非相等，是为了同时收下全仓库路径、包内相对
+ * 路径与裸文件名三种写法。它不会误收别的文件：被接受者必然是 Config 路径的字符串后缀，因而
+ * 在某个祖先目录下解析出的就是同一个文件。实测被判否的写法：not-model.ts / xmodel.ts /
+ * del/model.ts / scripts/data/model.ts / ../../etc/model.ts（全部落进「未指向 Config 表所在
+ * 文件」）。改文件名或用不构成后缀的路径都躲不开。
  */
 function exemptAnchorProblems(pkg, k, reason, rationale, schema, cfgPath, spanEnd) {
   const problems = [];

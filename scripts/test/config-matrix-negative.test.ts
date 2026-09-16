@@ -542,15 +542,36 @@ test("UI 豁免表: 锚点写法变体（./ 前缀 / 区间）仍应通过——
     editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
       const json = JSON.parse(s);
       const host = json.exemptKeys.find((e) => e.key === "host");
-      // 区间把上方注释一起括进来，且带 ./ 前缀：都是人写锚点的自然形态。
+      const targetHost = json.exemptKeys.find((e) => e.key === "targetHost");
+      const before = JSON.stringify([
+        host.reason,
+        host.rationale,
+        targetHost.reason,
+        targetHost.rationale,
+      ]);
+      // **reason 与 rationale 都要改**：判据把两段文本合起来找锚点，只要任一字段还留着普通
+      // 路径锚点，这条用例对 `./` 归一子句就是空钉（实测：删掉归一的副本下本用例仍绿）。
+      // 区间把上方注释一起括进来，也是人写锚点的自然形态。
       host.reason = host.reason.replace(
         "packages/dsh-lan-proxy/src/server/config/impl/model.ts:91",
         "./packages/dsh-lan-proxy/src/server/config/impl/model.ts:88-95",
       );
-      const targetHost = json.exemptKeys.find((e) => e.key === "targetHost");
+      host.rationale = host.rationale.replace(
+        "server/config/impl/model.ts:91",
+        "./server/config/impl/model.ts:88-95",
+      );
       targetHost.reason = targetHost.reason.replace(
         "packages/dsh-lan-proxy/src/server/config/impl/model.ts:107",
         "./packages/dsh-lan-proxy/src/server/config/impl/model.ts:107",
+      );
+      targetHost.rationale = targetHost.rationale.replace(
+        "server/config/impl/model.ts:107",
+        "./server/config/impl/model.ts:107",
+      );
+      assert.notEqual(
+        JSON.stringify([host.reason, host.rationale, targetHost.reason, targetHost.rationale]),
+        before,
+        "fixture 未改写任何锚点——真值文本漂移了，请同步本注入",
       );
       return `${JSON.stringify(json, null, 2)}\n`;
     });
