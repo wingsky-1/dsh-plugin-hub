@@ -56,6 +56,8 @@ function fakeDeps(
     parents?: Record<string, string>;
     /** 已经确认失效的登记：scope 端口解析到它就摘掉并继续上跳，复刻真实自愈。 */
     staleBindings?: readonly string[];
+    /** 让 scope 端口抛出这个错误（复刻域未装配 / 已释放），用来钉住异常收口的文案面。 */
+    scopeThrows?: string;
   } = {},
 ) {
   const table = new Map<string, BindingRecord>();
@@ -122,6 +124,8 @@ function fakeDeps(
       // 复刻 scope 域的真实三态（own / inherited / none）与它的一条硬语义：解析到已确认失效的
       // 登记时**摘掉并继续上跳**。写成「找不到就硬编码 inherited」会让下面所有继承态用例变成装饰。
       worktreeOrigin: async (id) => {
+        // 抛的可以是内部装配文案（`dsh-worktree-sidebar: scope 域尚未装配`）——收口后它不该到模型面前。
+        if (options.scopeThrows !== undefined) throw new Error(options.scopeThrows);
         const seen = new Set<string>([id]);
         let current = id;
         for (;;) {
@@ -649,6 +653,40 @@ describe("继承态下的工具面（#847）", () => {
     expect(value.ok).toBe(false);
     expect(value.bound).toBe(false);
     expect(value.detail).toContain("No worktree is bound");
+  });
+});
+
+describe("绑定来源读不出来时的收口（复核 P3-5）", () => {
+  // 抛的正是 scope 域未装配时的内部文案：它不该出现在模型读到的 detail 里。
+  const INTERNAL = "dsh-worktree-sidebar: scope 域尚未装配";
+
+  it("remove：报可读失败、不透出内部装配文案，且原因进 logger", async () => {
+    const { deps, warns } = fakeDeps({ scopeThrows: INTERNAL });
+    const value = await run(buildRemoveTool(deps), {});
+    expect(value.ok).toBe(false);
+    expect(value.bound).toBe(false);
+    expect(value.detail).toContain("Could not read this session's binding state");
+    expect(value.detail).not.toContain("尚未装配");
+    expect(warns.join("\n")).toContain("尚未装配");
+  });
+
+  it("create：报可读失败，且不建目录、不落绑定", async () => {
+    const { deps, gitCalls, writes } = fakeDeps({ scopeThrows: INTERNAL });
+    const value = await run(buildCreateTool(deps), { path: join(root, "wt-new") });
+    expect(value.ok).toBe(false);
+    expect(value.detail).toContain("Could not read this session's binding state");
+    expect(value.detail).not.toContain("尚未装配");
+    expect(gitCalls.length).toBe(0);
+    expect(writes.length).toBe(0);
+  });
+
+  it("register：报可读失败，且不落绑定", async () => {
+    const { deps, writes } = fakeDeps({ scopeThrows: INTERNAL });
+    const value = await run(buildRegisterTool(deps), { worktree: existingWt });
+    expect(value.ok).toBe(false);
+    expect(value.detail).toContain("Could not read this session's binding state");
+    expect(value.detail).not.toContain("尚未装配");
+    expect(writes.length).toBe(0);
   });
 });
 

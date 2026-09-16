@@ -6,7 +6,7 @@ import {
   bindWorktree,
   directoryProblem,
   NO_ORIGIN,
-  originOf,
+  readOrigin,
   resolveTarget,
   resultOf,
 } from "../bind/index.ts";
@@ -67,9 +67,10 @@ export function buildRegisterTool(deps: ToolsDeps): ToolDefinition {
       if (raw === undefined) {
         return resultOf(NO_ORIGIN, false, "Missing required parameter: worktree.");
       }
-      // 来源解析放在上面那些廉价校验之后：早退路径不必为一句「没有 cwd」白付一趟 git 子进程，
-      // 也不会让「scope 域尚未装配」这类装配错误顶掉本来清晰的失败原因。
-      const origin = await originOf(deps, session.id);
+      // 来源解析放在上面那些廉价校验之后：早退路径不必为一句「没有 cwd」白付一趟 git 子进程。
+      const read = await readOrigin(deps, session.id);
+      if (read.problem !== undefined) return resultOf(read.origin, false, read.problem);
+      const origin = read.origin;
       const target = resolveTarget(session.cwd, raw);
       const problem = directoryProblem(target);
       if (problem !== undefined) {

@@ -9,7 +9,7 @@
  */
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type { ToolsDeps } from "../../deps.ts";
-import { NO_ORIGIN, originOf, resultOf } from "../bind/index.ts";
+import { NO_ORIGIN, readOrigin, resultOf } from "../bind/index.ts";
 import { argBool, RESULT_SCHEMA, renderResult } from "../protocol/index.ts";
 import type { ToolResultValue } from "../protocol/index.ts";
 import { sessionOf } from "../session/index.ts";
@@ -76,9 +76,13 @@ export function buildRemoveTool(deps: ToolsDeps): ToolDefinition {
           "This tool needs an agent session, and the call carries none. Run it as an agent tool call.",
         );
       }
-      const origin = await originOf(deps, session.id);
-      // 继承态与未绑定态都在**参数解析之前**判掉：否则 {removeDirectory:true} 会走到下面
+      const read = await readOrigin(deps, session.id);
+      // 读不到绑定状态时也在**参数解析之前**报失败：那会儿连「本会话有没有自己的登记」都不知道，
+      // 继续往下只会给出一个基于中性读数的错答案。
+      if (read.problem !== undefined) return resultOf(read.origin, false, read.problem);
+      // 继承态与未绑定态同样在参数解析之前判掉：否则 {removeDirectory:true} 会走到下面
       // 拿不到自己的记录，回一句含糊的失败，模型会以为「重试一次就好」。
+      const origin = read.origin;
       if (origin.kind === "inherited") {
         return resultOf(origin, false, inheritedHelp(origin.ownerSessionId, session.cwd));
       }
@@ -105,14 +109,23 @@ export function buildRemoveTool(deps: ToolsDeps): ToolDefinition {
           return resultOf(origin, false, "Could not persist the unbind: " + dropped.reason);
         }
         // 摘掉自己的登记之后**必须重新解析**：右栏可能回落到继承来的根，那是调用者必须知道的事实。
-        const after = await originOf(deps, session.id);
+        const after = await readOrigin(deps, session.id);
+        if (after.problem !== undefined) {
+          // 摘除已经落盘，动作成功；只是现状读不回来——如实说不确定，而不是猜一个状态。
+          return resultOf(
+            after.origin,
+            true,
+            "Unbound this session's own binding. The Files tab root could not be read back: " +
+              after.problem,
+          );
+        }
         return resultOf(
-          after,
+          after.origin,
           true,
-          after.kind === "inherited"
+          after.origin.kind === "inherited"
             ? "Unbound this session's own binding. The Files tab now follows the root inherited from " +
                 "session " +
-                after.ownerSessionId +
+                after.origin.ownerSessionId +
                 "."
             : "Unbound the worktree from this session. The directory was left in place; open or refresh " +
                 "the Files tab to return to the session cwd.",
@@ -143,14 +156,24 @@ export function buildRemoveTool(deps: ToolsDeps): ToolDefinition {
             " It is now stale and will be treated as unbound; call this tool again to retry the unbind.",
         );
       }
-      const after = await originOf(deps, session.id);
+      const after = await readOrigin(deps, session.id);
+      if (after.problem !== undefined) {
+        // 目录与登记都已经落地，动作成功；现状读不回来时如实说明。
+        return resultOf(
+          after.origin,
+          true,
+          "Unbound this session and removed the worktree directory with git worktree remove. " +
+            "The Files tab root could not be read back: " +
+            after.problem,
+        );
+      }
       return resultOf(
-        after,
+        after.origin,
         true,
-        after.kind === "inherited"
+        after.origin.kind === "inherited"
           ? "Unbound this session and removed the worktree directory with git worktree remove. The " +
               "Files tab now follows the root inherited from session " +
-              after.ownerSessionId +
+              after.origin.ownerSessionId +
               "."
           : "Unbound this session and removed the worktree directory with git worktree remove.",
       );

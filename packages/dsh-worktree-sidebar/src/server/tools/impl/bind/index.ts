@@ -4,7 +4,7 @@
  * 校验顺序是刻意的：先「存在且是目录」（本地事实，最便宜），再「属于同一仓库」（要起 git）。
  * 反过来的话，一个手误的路径会先换来一次 git 调用和一句含糊的 git 报错。
  *
- * 绑定来源**只从 scope 域读**（`originOf`）：侧边栏的生效根与工具面的现状读数因此同源，
+ * 绑定来源**只从 scope 域读**（`readOrigin`）：侧边栏的生效根与工具面的现状读数因此同源，
  * 工具才不会在 fork 出来的会话里回一句「本会话没有绑定」——那正是 #847 要修的缺陷。
  */
 import { statSync } from "node:fs";
@@ -28,9 +28,38 @@ export interface BindingState {
  */
 export const NO_ORIGIN: WorktreeOrigin = { kind: "none" };
 
-/** 读某个会话的绑定来源（自己的登记 / 继承来的登记 / 没有）。 */
-export function originOf(deps: ToolsDeps, sessionId: string): Promise<WorktreeOrigin> {
-  return deps.scope.worktreeOrigin(sessionId);
+/**
+ * 读来源的结果：`problem` 非空时 `origin` 是中性读数，调用方应直接把 `problem` 当作失败原因报出去。
+ */
+export interface OriginRead {
+  readonly origin: WorktreeOrigin;
+  readonly problem: string | undefined;
+}
+
+/**
+ * 读某个会话的绑定来源（自己的登记 / 继承来的登记 / 没有）。
+ *
+ * 解析异常在这里收口。scope 域未装配或已释放时它抛的是**插件自己的装配状态**（内部文案是
+ * 「scope 域尚未装配」）：那句话与调用者正在做的事毫无关系，透给模型只会让它照着一句无法行动的
+ * 话去猜。所以对外只说「读不到绑定状态、稍后重试」，原因留给 logger —— 现场痕迹不丢，
+ * 模型也不会拿到内部装配文案。
+ *
+ * 不静默翻成「没有绑定」：那会把一次真实故障说成事实，而「看错地方」正是本插件最该避免的事。
+ */
+export async function readOrigin(deps: ToolsDeps, sessionId: string): Promise<OriginRead> {
+  try {
+    return { origin: await deps.scope.worktreeOrigin(sessionId), problem: undefined };
+  } catch (cause) {
+    deps.logger.warn(
+      "dsh-worktree-sidebar: 读取绑定来源失败 —— " +
+        (cause instanceof Error ? cause.message : String(cause)),
+    );
+    return {
+      origin: NO_ORIGIN,
+      problem:
+        "Could not read this session's binding state. Retry once the extension is fully loaded.",
+    };
+  }
 }
 
 /** 把来源翻成信封里的状态读数：继承态下 worktree / branch 取的是继承到的那条登记。 */

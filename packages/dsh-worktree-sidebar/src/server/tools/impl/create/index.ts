@@ -1,7 +1,7 @@
 /** `ws_worktree_create`：先 `git worktree add` 建出来，再登记给当前会话。 */
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type { ToolsDeps } from "../../deps.ts";
-import { bindWorktree, NO_ORIGIN, originOf, resolveTarget, resultOf } from "../bind/index.ts";
+import { bindWorktree, NO_ORIGIN, readOrigin, resolveTarget, resultOf } from "../bind/index.ts";
 import { argString, RESULT_SCHEMA, renderResult } from "../protocol/index.ts";
 import type { ToolResultValue } from "../protocol/index.ts";
 import { sessionOf } from "../session/index.ts";
@@ -77,9 +77,10 @@ export function buildCreateTool(deps: ToolsDeps): ToolDefinition {
       if (raw === undefined) {
         return resultOf(NO_ORIGIN, false, "Missing required parameter: path.");
       }
-      // 来源解析放在上面那些廉价校验之后：早退路径不白付一趟 git 与持久面读，
-      // 也不会让「scope 域尚未装配」顶掉本来清晰的失败原因。
-      const origin = await originOf(deps, session.id);
+      // 来源解析放在上面那些廉价校验之后：早退路径不白付一趟 git 与持久面读。
+      const read = await readOrigin(deps, session.id);
+      if (read.problem !== undefined) return resultOf(read.origin, false, read.problem);
+      const origin = read.origin;
       const target = resolveTarget(repo, raw);
       const branch = argString(args, "branch");
       if (branch !== undefined && !(await deps.git.checkRefFormat(branch))) {
