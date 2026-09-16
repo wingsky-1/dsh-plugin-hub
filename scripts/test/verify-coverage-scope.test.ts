@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 /**
- * verify-coverage-scope 自测（#733 计划项 3.4）：单一事实源、条目结构、面完整性、条目腐烂、产物交叉断言。
+ * verify-coverage-scope 自测（#733 计划项 3.4）：单一事实源、条目结构、kind 形态一致性、面完整性、条目腐烂、产物交叉断言。
  *
  * 每条判据都有正反例：这些口径（哪些 kind 合法、哪些字段只允许 pending-project、什么算「逃逸」）
  * 是本次新增的约定，约定只有写成断言才不会被下一个人无意改掉。
@@ -107,6 +107,204 @@ test("非源码资源登记为 not-source 后放行（同一文件，加条目�
         { rel: "packages/dsh-fake/src/types.d.ts", content: "export type T = 1\n" },
         { rel: "shared/x.js", content: "export const x = 1\n" },
         { rel: "packages/dsh-fake/src/notify.ps1", content: "Write-Host hi\n" },
+      ],
+    }),
+  );
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test("kind 形态一致性：真实源码被声明成 not-source → 红（关掉把源码移出分母的通道）", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      ...BASE_CONFIG.exclude,
+      {
+        pattern: "packages/dsh-fake/src/cert.ts",
+        kind: "not-source",
+        reason: "试验：把源码移出分母",
+      },
+    ],
+  };
+  const r = run(
+    fixture(config, {
+      sourceFiles: [
+        { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+        { rel: "packages/dsh-fake/src/types.d.ts", content: "export type T = 1\n" },
+        { rel: "packages/dsh-fake/src/cert.ts", content: "export const cert = 1\n" },
+        { rel: "shared/x.js", content: "export const x = 1\n" },
+      ],
+    }),
+  );
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(
+    r.stderr,
+    /exclude 条目 packages\/dsh-fake\/src\/cert\.ts（kind=not-source）命中 1 个在 include 面内的文件：packages\/dsh-fake\/src\/cert\.ts（命中 include 模式 packages\/\*\/src\/\*\*\/\*\.\{ts,tsx\}）/,
+  );
+  assert.match(r.stderr, /把源码移出分母必须改用 kind=pending-project/);
+});
+
+test("kind 形态一致性：声明文件被声明成 not-source → 红（应改用 type-only）", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [{ pattern: "**/*.d.ts", kind: "not-source", reason: "试验：把声明文件当非源码资源" }],
+  };
+  const r = run(fixture(config));
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /命中 1 个在 include 面内的文件：packages\/dsh-fake\/src\/types\.d\.ts/);
+  assert.match(r.stderr, /声明文件应改用 kind=type-only/);
+});
+
+test("kind 形态一致性：include 面外的 .js（packages/*/src 下）声明成 not-source → 放行", () => {
+  // include 面里 .js 只出现在 shared/**；packages/*/src/**/*.js 本就不进分母，
+  // 按「整个 include 面的后缀并集」判会把它误判成源码（latent 误红）。
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      ...BASE_CONFIG.exclude,
+      {
+        pattern: "packages/dsh-fake/src/vendor.js",
+        kind: "not-source",
+        reason: "构建期拷贝的第三方产物，不是本仓源码",
+      },
+    ],
+  };
+  const r = run(
+    fixture(config, {
+      sourceFiles: [
+        { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+        { rel: "packages/dsh-fake/src/types.d.ts", content: "export type T = 1\n" },
+        { rel: "packages/dsh-fake/src/vendor.js", content: "module.exports = {}\n" },
+        { rel: "shared/x.js", content: "export const x = 1\n" },
+      ],
+    }),
+  );
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test("kind 形态一致性：include 面内的 .js（shared/**）声明成 not-source → 红且点名命中的 include 模式", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      ...BASE_CONFIG.exclude,
+      { pattern: "shared/**/*.js", kind: "not-source", reason: "试验：把 shared 的源码移出分母" },
+    ],
+  };
+  const r = run(fixture(config));
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(
+    r.stderr,
+    /exclude 条目 shared\/\*\*\/\*\.js（kind=not-source）命中 1 个在 include 面内的文件：shared\/x\.js（命中 include 模式 shared\/\*\*\/\*\.js）/,
+  );
+  assert.match(r.stderr, /把源码移出分母必须改用 kind=pending-project/);
+});
+
+test("kind 形态一致性：include 面外的声明文件（shared 下）声明成 not-source → 红（仍归 type-only）", () => {
+  // shared 那条 include 只收 .js，shared 下的 .d.ts 面外；但「声明文件不是资源」不随面放宽。
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      { pattern: "shared/**/*.d.ts", kind: "not-source", reason: "试验：把面外的声明当非源码资源" },
+    ],
+  };
+  const r = run(
+    fixture(config, {
+      sourceFiles: [
+        { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+        { rel: "shared/x.js", content: "export const x = 1\n" },
+        { rel: "shared/y.d.ts", content: "export type Y = 1\n" },
+      ],
+    }),
+  );
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /命中 1 个声明文件：shared\/y\.d\.ts/);
+  assert.match(r.stderr, /声明文件应改用 kind=type-only/);
+});
+
+test("kind 形态一致性：.d.ts / .d.mts 声明为 type-only → 放行", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      { pattern: "**/*.d.ts", kind: "type-only", reason: "声明文件无运行时代码" },
+      { pattern: "**/*.d.mts", kind: "type-only", reason: "声明文件无运行时代码（mts）" },
+    ],
+  };
+  const r = run(
+    fixture(config, {
+      sourceFiles: [
+        { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+        { rel: "packages/dsh-fake/src/types.d.ts", content: "export type T = 1\n" },
+        { rel: "packages/dsh-fake/src/types.d.mts", content: "export type M = 1\n" },
+        { rel: "shared/x.js", content: "export const x = 1\n" },
+      ],
+    }),
+  );
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test("kind 形态一致性：.ts 声明成 type-only → 红（type-only 只收声明文件）", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      { pattern: "**/*.d.ts", kind: "type-only", reason: "声明文件无运行时代码" },
+      { pattern: "**/*.ts", kind: "type-only", reason: "试验：把源码当声明排除" },
+    ],
+  };
+  const r = run(fixture(config));
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(
+    r.stderr,
+    /exclude 条目 \*\*\/\*\.ts（kind=type-only）命中 1 个非声明文件：packages\/dsh-fake\/src\/a\.ts/,
+  );
+});
+
+test("条目结构：pending-project 缺 reviewBy/exitCriteria → 红（临时豁免须有到期日与解除条件）", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      ...BASE_CONFIG.exclude,
+      {
+        pattern: "packages/dsh-fake/src/client/**",
+        kind: "pending-project",
+        reason: "等某个 project 落地再计分母",
+      },
+    ],
+  };
+  const r = run(
+    fixture(config, {
+      sourceFiles: [
+        { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+        { rel: "packages/dsh-fake/src/types.d.ts", content: "export type T = 1\n" },
+        { rel: "packages/dsh-fake/src/client/ui.ts", content: "export const ui = 1\n" },
+        { rel: "shared/x.js", content: "export const x = 1\n" },
+      ],
+    }),
+  );
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /pending-project 必须带 reviewBy/);
+  assert.match(r.stderr, /pending-project 必须带 exitCriteria/);
+});
+
+test("kind 形态一致性：pending-project 命中 .ts 源码不判形态（字段齐全即放行）", () => {
+  const config = {
+    ...BASE_CONFIG,
+    exclude: [
+      { pattern: "**/*.d.ts", kind: "type-only", reason: "声明文件无运行时代码" },
+      {
+        pattern: "packages/dsh-fake/src/client/**",
+        kind: "pending-project",
+        reason: "客户端面等 DOM project 落地后再计分母",
+        reviewBy: "2027-03-31",
+        exitCriteria: "DOM 判据落地后删除本条并重新基线化",
+      },
+    ],
+  };
+  const r = run(
+    fixture(config, {
+      sourceFiles: [
+        { rel: "packages/dsh-fake/src/a.ts", content: "export const a = 1\n" },
+        { rel: "packages/dsh-fake/src/types.d.ts", content: "export type T = 1\n" },
+        { rel: "packages/dsh-fake/src/client/ui.ts", content: "export const ui = 1\n" },
+        { rel: "shared/x.js", content: "export const x = 1\n" },
       ],
     }),
   );

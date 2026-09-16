@@ -103,6 +103,17 @@ function runOn(root, args = []) {
   return { status: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
 
+/**
+ * 给 fixture 根登记一份基线（#843 D15 起的真实流程：包先被 --write-baseline 落库，
+ * 闸才有单调基线可比——基线里没有本包条目现在**自身**判红）。仅用于「预期干净」的
+ * fixture：写基线遇到阻断性错误（虚导出 / deps.ts 值 import / 拓扑坏）或未登记的新增
+ * 质量证据会中止，那些形态由各自的用例覆盖。
+ */
+function seedBaseline(root) {
+  const written = runOn(root, ["--write-baseline"]);
+  assert.equal(written.status, 0, `fixture 登记基线应成功：\n${written.out}`);
+}
+
 /** 三域链式依赖体（a → b → c），`prefix` 决定平铺还是移入分组层。 */
 function chainFixture(prefix) {
   const p = prefix === "" ? "" : `${prefix}/`;
@@ -120,6 +131,8 @@ test("叶子粒度：三域平铺与移入分组层 src/server/ 报出相同模�
   const flat = makeFixtureRoot(chainFixture(""));
   const nested = makeFixtureRoot(chainFixture("server"));
   try {
+    seedBaseline(flat);
+    seedBaseline(nested);
     const a = runOn(flat);
     const b = runOn(nested);
     assert.equal(a.status, 0, `平铺形态应 PASS，实际 ${a.status}：\n${a.out}`);
@@ -161,6 +174,7 @@ test("deps.ts 判据：跨模块引用他域 deps.ts 放行（D-2 出口面）",
     [`${SRC}/b/impl.ts`]: 'import { A } from "../a/deps.ts";\nexport const B = A;\n',
   });
   try {
+    seedBaseline(root);
     const { status, out } = runOn(root);
     assert.equal(status, 0, `引用他域 deps.ts 应放行（exit 0），实际 ${status}：\n${out}`);
     assert.match(out, /叶子模块 2 个、值边 1 条/, `应报 2 模块 / 1 值边：\n${out}`);
@@ -243,6 +257,235 @@ function addCyclicCrossReference(root) {
     'import { A } from "../a/interface.ts";\nexport const C = A;\n',
   );
 }
+
+test("fail-closed（#843 D15）：基线无本包条目即判红，不得打印 fail-closed 又 PASS", () => {
+  // 旧实现在违规计数恰好为零时打印「基线无本包条目 —— fail-closed」却 exit 0：提示语与
+  // 行为相反，且新包漏登 / 条目被删后该包静默脱离全部单调约束。本用例锁的是「无条目本身」。
+  const root = makeFixtureRoot(chainFixture(""));
+  try {
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `基线无本包条目必须判红，实际 ${status}：\n${out}`);
+    assert.match(out, /基线无本包条目/, `应点名缺条目：\n${out}`);
+    assert.match(out, /--write-baseline/, `应给出登记指引：\n${out}`);
+    assert.doesNotMatch(out, /PASS（跨模块引用全部走/, `不得同时判绿：\n${out}`);
+    // 反向：登记基线后同一 fixture 必须绿——否则红因可能来自别的判据，本用例就没锁住缺条目。
+    seedBaseline(root);
+    assert.equal(runOn(root).status, 0, "登记基线后应 PASS");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("fail-closed（#843 D15）：把已登记的条目从基线里删掉 → 回到判红", () => {
+  const root = makeFixtureRoot(chainFixture(""));
+  try {
+    seedBaseline(root);
+    assert.equal(runOn(root).status, 0, "有基线时应 PASS");
+    const baselinePath = join(root, "scripts/data/dir-imports-baseline.json");
+    const json = JSON.parse(readFileSync(baselinePath, "utf8"));
+    delete json.packages[PKG];
+    writeFileSync(baselinePath, `${JSON.stringify(json, null, 2)}\n`);
+    const { status, out } = runOn(root);
+    assert.equal(status, 1, `删掉条目后必须判红，实际 ${status}：\n${out}`);
+    assert.match(out, /基线无本包条目/, `应点名缺条目：\n${out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("fail-closed 豁免通道（#843 D15）：台账登记 <包名>:<证据项> 后无基线条目放行", () => {
+  // 无基线时规则 1/2 在 hard 下即刻判红（既有语义不变），故豁免通道的可观测形态是
+  // 「--soft + 台账」——与 CI 对 dsh-provider-usage 的同款组合。台账键必须是**真实证据项**：
+  // 指向不存在的事实会被反向腐烂校验另行判红，即豁免不是空白支票。
+  const root = makeFixtureRoot({
+    [`${SRC}/a/interface.ts`]: 'export { A } from "./impl.ts";\n',
+    [`${SRC}/a/impl.ts`]: "export const A = 1;\n",
+    [`${SRC}/b/interface.ts`]: 'export { B } from "./impl.ts";\n',
+    [`${SRC}/b/impl.ts`]: 'import { X } from "../group/x.ts";\nexport const B = X;\n',
+    [`${SRC}/group/x.ts`]: "export const X = 1;\n",
+  });
+  try {
+    const soft = runOn(root, ["--soft"]);
+    assert.equal(
+      soft.status,
+      1,
+      `无基线条目必须判红（--soft 不免这一条），实际 ${soft.status}：\n${soft.out}`,
+    );
+    assert.match(soft.out, /基线无本包条目/, `应点名缺条目：\n${soft.out}`);
+
+    const ledger = writeLedger(root, [`${PKG}:b/impl.ts|group/x.ts`]);
+    const exempted = runOn(root, ["--soft", "--exemptions", ledger]);
+    assert.equal(
+      exempted.status,
+      0,
+      `按台账豁免后应放行，实际 ${exempted.status}：\n${exempted.out}`,
+    );
+    assert.match(exempted.out, /按台账豁免放行/, `应点明放行来自台账：\n${exempted.out}`);
+    assert.doesNotMatch(
+      exempted.out,
+      /\[${PKG}\] 基线无本包条目/,
+      `豁免生效后不得再报缺条目：\n${exempted.out}`,
+    );
+
+    // 指向不存在证据的豁免不放行：反向腐烂校验另行判红。
+    const rotten = writeLedger(root, [`${PKG}:b/impl.ts|group/zzz.ts`]);
+    const rot = runOn(root, ["--soft", "--exemptions", rotten]);
+    assert.equal(rot.status, 1, `悬空台账键不得放行，实际 ${rot.status}：\n${rot.out}`);
+    assert.match(rot.out, /指向的质量证据本次零命中/, `应点名失效条目：\n${rot.out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("fail-closed 豁免通道（#843 D15）：`<包名>:*` 专用于「本包无基线」，该包一旦落库基线即失效", () => {
+  // 证据形态的键在无证据的包上必然零命中（反向腐烂判红），于是「唯一放宽通道」对触发它的
+  // 那个包根本走不通——没有证据项可指的包（质量六类证据全为空集）永远进不了台账。
+  // `<包名>:*` 不声称证据，正是给这一态留的登记位；它的反向腐烂换成另一条事实：本包已有
+  // 基线条目时，这条登记不再放宽任何东西。
+  const root = makeFixtureRoot(chainFixture(""));
+  try {
+    const wildcard = writeLedger(root, [`${PKG}:*`]);
+    const exempted = runOn(root, ["--exemptions", wildcard]);
+    assert.equal(
+      exempted.status,
+      0,
+      `无基线 + <包名>:\* 应放行，实际 ${exempted.status}：\n${exempted.out}`,
+    );
+    assert.match(exempted.out, /按台账豁免放行/, `应点明放行来自台账：\n${exempted.out}`);
+
+    // 写基线路径同样拦：带着「本包无基线」登记落库，等于把一条当场失效的放宽固化下去。
+    const blocked = runOn(root, ["--write-baseline", "--exemptions", wildcard]);
+    assert.equal(
+      blocked.status,
+      1,
+      `带 <包名>:\* 写基线应中止，实际 ${blocked.status}：\n${blocked.out}`,
+    );
+    assert.match(
+      blocked.out,
+      /写基线中止：存在已失效的「本包无基线」登记/,
+      `应点名写基线中止：\n${blocked.out}`,
+    );
+    assert.equal(
+      existsSync(join(root, "scripts/data/dir-imports-baseline.json")),
+      false,
+      "中止即不得落盘基线",
+    );
+
+    // 反向腐烂：台账清掉后落库基线，同一登记必须判失效。
+    seedBaseline(root);
+    const stale = runOn(root, ["--exemptions", wildcard]);
+    assert.equal(
+      stale.status,
+      1,
+      `包已有基线时 <包名>:\* 应判失效，实际 ${stale.status}：\n${stale.out}`,
+    );
+    assert.match(stale.out, /「本包无基线」登记[\s\S]*已失效/, `应点名失效条目：\n${stale.out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("豁免台账键形态非法 → exit 2（#843 D15）", () => {
+  // loadLedger 只校验非空字符串：形态不认识的键既不豁免任何东西、也不被任何判据看到，
+  // 是一条静默失效的放宽，故在读取后立刻按本闸的键形态判红。
+  const root = makeFixtureRoot(chainFixture(""));
+  try {
+    const bad = writeLedger(root, [PKG]);
+    const invalid = runOn(root, ["--exemptions", bad]);
+    assert.equal(invalid.status, 2, `键缺冒号应 exit 2，实际 ${invalid.status}：\n${invalid.out}`);
+    assert.match(invalid.out, /豁免台账键形态非法/, `应点名键形态：\n${invalid.out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("用法 fail-closed（#843 D15）：悬空 --package 与 --package=<name> 一律 exit 2（不得静默扫默认包）", () => {
+  // 两条都是「调用点以为自己切了范围」的形态：悬空得到空包集（零个包被分析仍判 PASS），
+  // 等号形态不被认识于是退回默认包。把「我什么都没扫」说成「全部通过」不能只是文档约定。
+  const root = makeFixtureRoot(chainFixture(""));
+  try {
+    const dangling = runRaw(root, ["--package"]);
+    assert.equal(
+      dangling.status,
+      2,
+      `悬空 --package 应 exit 2，实际 ${dangling.status}：\n${dangling.out}`,
+    );
+    assert.match(dangling.out, /--package 缺少合法包名/, `应点名缺值：\n${dangling.out}`);
+    assert.doesNotMatch(dangling.out, /PASS（跨模块引用全部走/, `不得判绿：\n${dangling.out}`);
+
+    const eq = runRaw(root, [`--package=${PKG}`]);
+    assert.equal(eq.status, 2, `--package=<name> 应 exit 2，实际 ${eq.status}：\n${eq.out}`);
+    assert.match(eq.out, /参数形态不认识/, `应点名形态：\n${eq.out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * 不带 `--package` 的裸跑：验证「写基线的缺省范围来自范围注册表」，而不是把
+ * `packages/` 下所有带 src 的目录一股脑扫一遍（后者会为无调用点的包落死条目）。
+ */
+function runRaw(root, args) {
+  const env = { ...process.env, VERIFY_DIR_IMPORTS_ROOT: root };
+  delete env.VERIFY_DIR_IMPORTS_BASELINE;
+  const r = spawnSync(process.execPath, [SCRIPT, ...args], { env, encoding: "utf8" });
+  return { status: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
+}
+
+test("--write-baseline 缺省范围取自范围注册表（#843 D15：不为无调用点的包落死条目）", () => {
+  // fixture 里刻意放第二个「有 src、未登记变异拓扑」的包：旧实现（扫 packages 下所有带
+  // src 的目录）会在它身上撞出「未登记拓扑」的阻断性错误而中止；修正后缺省范围只看注册表，
+  // 只会登记 fixture-pkg。故 status 与键集两条断言都能打红旧实现。
+  const root = makeFixtureRoot({
+    ...chainFixture(""),
+    "scripts/data/gate-scope-registry.json": JSON.stringify({
+      version: 1,
+      gates: [
+        {
+          gate: "verify-dir-imports",
+          script: "scripts/gate/verify-dir-imports.mjs",
+          scopeFrom: "cli",
+          packages: [PKG],
+          why: "fixture：写基线的缺省范围取自本字段",
+        },
+      ],
+    }),
+    [`packages/other-pkg/src/x/interface.ts`]: 'export { X } from "./impl.ts";\n',
+    [`packages/other-pkg/src/x/impl.ts`]: "export const X = 1;\n",
+  });
+  try {
+    const written = runRaw(root, ["--write-baseline"]);
+    assert.equal(written.status, 0, `写基线应成功：\n${written.out}`);
+    assert.deepEqual(
+      Object.keys(readFixtureBaseline(root).packages),
+      [PKG],
+      `缺省范围必须等于注册表范围，不得把无调用点的包写进基线：\n${written.out}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("--write-baseline 缺省范围不可解析 → fail-closed exit 2（#843 D15）", () => {
+  // 范围声明读不到就不许写：写出一份范围不明的基线等于把未知固化成「看起来已登记」。
+  const root = makeFixtureRoot(chainFixture(""));
+  try {
+    const written = runRaw(root, ["--write-baseline"]);
+    assert.equal(
+      written.status,
+      2,
+      `缺范围声明时写基线应 exit 2，实际 ${written.status}：\n${written.out}`,
+    );
+    assert.match(written.out, /写基线的缺省范围无法解析/, `应点名范围不可解析：\n${written.out}`);
+    assert.equal(
+      existsSync(join(root, "scripts/data/dir-imports-baseline.json")),
+      false,
+      "中止即不得落盘基线",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("--write-baseline 只清理质量证据，新增证据不得被写入（#733 后续）", () => {
   const root = makeFixtureRoot(chainFixture(""));
@@ -551,6 +794,7 @@ test("--graph 死声明（#733 M0a）：deps.ts 只 import type 时不得报死�
     [`${SRC}/b/deps.ts`]: 'import type { A } from "../a/interface.ts";\nexport type BDep = A;\n',
   });
   try {
+    seedBaseline(root);
     const { status, out } = runOn(root, ["--graph"]);
     assert.equal(status, 0, `类型面声明豁免后应 PASS，实际 ${status}：\n${out}`);
     assert.match(
@@ -653,6 +897,7 @@ test("--zones：R-A 双口径计数与明细（合法跨域引用：旧口径 2 
       'import { A } from "../a/interface.ts";\nimport type { TA } from "../a/interface.ts";\nexport const B: TA = A;\n',
   });
   try {
+    seedBaseline(root);
     const { status, out } = runOn(root, ["--zones"]);
     assert.equal(status, 0, `引用他域 interface.ts 应 PASS，实际 ${status}：\n${out}`);
     assert.match(
@@ -701,6 +946,7 @@ test("--zones：impl 直引他域实现文件在新口径下计数为 1", () => 
 test("--graph：依赖矩阵与扇入扇出报出叶子模块边", () => {
   const root = makeFixtureRoot(chainFixture(""));
   try {
+    seedBaseline(root);
     const { status, out } = runOn(root, ["--graph"]);
     assert.equal(status, 0, `--graph 应 PASS，实际 ${status}：\n${out}`);
     assert.match(
@@ -780,6 +1026,8 @@ test('引用提取：类型查询 import("…") 不产生值边，await import()
     [`${SRC}/b/impl.ts`]: 'export const B = await import("../a/interface.ts");\n',
   });
   try {
+    seedBaseline(typed);
+    seedBaseline(dynamic);
     const t = runOn(typed);
     assert.equal(t.status, 0, `类型查询互引不应造出幻影值环，实际 ${t.status}：\n${t.out}`);
     assert.match(t.out, /值边 0 条、模块级值环 0 个/, `类型查询不应计入值边：\n${t.out}`);
@@ -802,6 +1050,7 @@ test("引用提取：.d.ts 声明文件不作 from 侧（F2）", () => {
       'import { A } from "../a/interface.ts";\nexport declare const A2: typeof A;\n',
   });
   try {
+    seedBaseline(root);
     const { status, out } = runOn(root, ["--zones"]);
     assert.equal(status, 0, `声明文件不应参与门禁：\n${out}`);
     assert.match(
@@ -857,6 +1106,7 @@ test("引用提取：注释里的 import 不被当真（F5）", () => {
       '/*\nimport { A } from "../a/impl.ts";\n*/\n// import { A } from "../a/impl.ts";\nconst url = "https://example.com/x";\nexport const B = 2;\n',
   });
   try {
+    seedBaseline(root);
     const { status, out } = runOn(root, ["--zones"]);
     assert.equal(status, 0, `注释中的 import 不应产生违规，实际 ${status}：\n${out}`);
     assert.match(
@@ -920,6 +1170,7 @@ test("引用提取：字符串之后的注释同样不得当真（F5c，stripCom
       "export const B = 2;\n",
   });
   try {
+    seedBaseline(root);
     const { status, out } = runOn(root, ["--zones"]);
     assert.equal(status, 0, `字符串之后的注释里的 import 不得产生违规，实际 ${status}：\n${out}`);
     assert.match(
@@ -941,6 +1192,7 @@ test("引用提取：内联 import { type X } 判为类型边（F6）", () => {
       'import { type A } from "../a/interface.ts";\nexport const B: A = 1 as never;\n',
   });
   try {
+    seedBaseline(root);
     const { status, out } = runOn(root, ["--zones"]);
     assert.equal(status, 0, `内联 type 修饰不应造出值边：\n${out}`);
     assert.match(
@@ -979,6 +1231,7 @@ test("规则 4：export { default as A } from 不假报虚导出（F8）", () =>
     [`${SRC}/b/impl.ts`]: 'import { A } from "../a/interface.ts";\nexport const B = A;\n',
   });
   try {
+    seedBaseline(root);
     const { status, out } = runOn(root);
     assert.equal(status, 0, `default re-export 应可解析，实际 ${status}：\n${out}`);
     assert.doesNotMatch(out, /虚导出/, `不得误报虚导出：\n${out}`);
@@ -1018,6 +1271,7 @@ test("模块定义：根级 src/interface.ts 不构成模块（F13：模块必�
     [`${SRC}/b/impl.ts`]: "export const B = 2;\n",
   });
   try {
+    seedBaseline(root);
     const { status, out } = runOn(root, ["--graph"]);
     assert.equal(status, 0, `根级 interface.ts 不得引入违规，实际 ${status}：\n${out}`);
     assert.match(out, /叶子模块 2 个、值边 0 条/, `模块表应只含 a/ 与 b/：\n${out}`);
@@ -1277,6 +1531,7 @@ test("全覆盖断言：#710 §2-2 / #773：$noMutationPackages 成员被 --pack
     }),
   });
   try {
+    seedBaseline(root);
     const { status, out } = runOn(root);
     assert.equal(status, 0, `$noMutationPackages 成员应放行（exit 0），实际 ${status}：\n${out}`);
     assert.match(out, /\$noMutationPackages/, `声明须点名登记处：\n${out}`);

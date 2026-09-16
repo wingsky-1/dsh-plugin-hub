@@ -1,5 +1,5 @@
 {
-  "$comment": "S0 门禁基线（#690 / #733 后续）：结构型计数由 verify-dir-imports.mjs --write-baseline 登记；quality 段存质量型**证据集合**（边 from|to|kind、环签名、未覆盖源文件），新增证据判红、消失即清理、kind 降级（type→value）判红；放宽的唯一通道是 scripts/data/gate-exemptions.json 的登记条目（gate=verify-dir-imports，path=<包名>:<证据项>，必填 reason+trackingIssue，可选 reviewBy，条目失效由反向腐烂校验判红）。",
+  "$comment": "S0 门禁基线（#690 / #733 后续）：结构型计数由 verify-dir-imports.mjs --write-baseline 登记；quality 段存质量型**证据集合**（边 from|to|kind、环签名、未覆盖源文件），新增证据判红、消失即清理、kind 降级（type→value）判红；放宽的唯一通道是 scripts/data/gate-exemptions.json 的登记条目（gate=verify-dir-imports，path=<包名>:<证据项> 或 <包名>:*（后者=本包无基线，不声称具体证据），必填 reason+trackingIssue，可选 reviewBy，条目失效由反向腐烂校验判红）。",
   "version": 2,
   "packages": {
     "dsh-lan-proxy": {
@@ -90,14 +90,14 @@
         "uncoveredSrcFiles": []
       }
     },
-    "dsh-verify-isolated": {
-      "modules": 0,
-      "scannedSrcFiles": 1,
-      "allSrcTsFiles": 1,
-      "interfaceFacades": 0,
-      "leafValueEdges": 0,
-      "fileValueEdges": 0,
-      "crossModuleRefs": 0,
+    "dsh-worktree-sidebar": {
+      "modules": 7,
+      "scannedSrcFiles": 41,
+      "allSrcTsFiles": 47,
+      "interfaceFacades": 7,
+      "leafValueEdges": 2,
+      "fileValueEdges": 46,
+      "crossModuleRefs": 34,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
