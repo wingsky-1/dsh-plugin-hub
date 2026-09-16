@@ -16,6 +16,10 @@
  *   3. 面覆盖：命中的每个声明面，ci.yml 该面的 filters 必须有 glob 能命中该文件
  *      （验证「登记了但过滤面没接上」——登记本身不产生任何效果）；
  *   4. 无空 glob：ci.yml 每条 glob 必须命中至少一个真实文件（防改名后留下死规则）。
+ *   5. 消费方真实（#843 L5）：每条条目必须声明「仓内直接读取方」（consumers——路径存在，且文件
+ *      文本字面命中 source）或「无直接读取方的缺口」（consumerGap——kind 限 none / external /
+ *      indirect），两者排他。只判「路径存在」拦不住假 why：旧条目曾声称 contract-check.ts 消费
+ *      worktree-sidebar 基线，而该文件并不引用它——引用核对才是能打红真实缺陷的那一条。
  *
  * 为什么 universe 排除 packages/**：包面由 workflow-assert 的「filters 键集合 ==
  * manifest.active ∪ standalone ∪ 聚合包」加逐包 `packages/<pkg>/**` 断言守着，重复覆盖
@@ -35,9 +39,18 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CI_YML_REL = ".github/workflows/ci.yml";
 
 /** 登记表条目：字段合法性由本文件第一条测试逐条断言，此处只声明后续判据要用到的面。 */
+/** 无仓内直接读取方时的缺口声明：kind 受枚举约束，真缺口（none）必须带 trackingIssue。 */
+interface ConsumerGap {
+  kind: "none" | "external" | "indirect";
+  reason: string;
+  trackingIssue?: string;
+}
+
 interface FaceRegistryEntry {
   path: string;
   faces: string[];
+  consumers?: string[];
+  consumerGap?: ConsumerGap;
   why?: string;
   invalidatesBaseline?: boolean;
 }
@@ -60,8 +73,11 @@ function trackedFiles() {
     .filter(Boolean);
 }
 
+const ALL_TRACKED = trackedFiles();
+const TRACKED_SET = new Set(ALL_TRACKED);
+
 /** packages/ 之外的全部 tracked 文件 = 本断言的 universe。 */
-const UNIVERSE = trackedFiles().filter((f) => !f.startsWith("packages/"));
+const UNIVERSE = ALL_TRACKED.filter((f) => !f.startsWith("packages/"));
 
 /**
  * 安全 glob 匹配。catch 只兜非字符串一类的调用错误（实测 Node 对畸形 glob 返回 false 而不抛）：
@@ -72,6 +88,74 @@ function hits(file: string, pattern: string): boolean {
     return matchesGlob(file, pattern);
   } catch {
     return true;
+  }
+}
+
+/**
+ * 条目 source 的文本指纹（#843 L5 引用核对）：具体文件取基名；glob 取静态前缀（`<dir>/**`
+ * 取目录部分），并补「当前真实命中该 glob 的文件基名」——`stryker.conf.d/<pkg>*.json` 这类
+ * 只剩裸包名前缀的 glob，仅靠前缀会把「提到包名」误判成引用。
+ */
+function sourceFingerprints(source: string): string[] {
+  const out = new Set<string>();
+  const segment = source.split("/").pop() as string;
+  if (!source.includes("*")) {
+    out.add(segment);
+    return [...out];
+  }
+  if (segment === "**") {
+    const dir = source.slice(0, -3);
+    if (dir.length >= 2) out.add(dir);
+  } else {
+    const prefix = segment.slice(0, segment.indexOf("*"));
+    if (prefix.length >= 3) out.add(prefix);
+  }
+  for (const file of ALL_TRACKED) {
+    if (hits(file, source)) out.add(file.split("/").pop() as string);
+  }
+  return [...out];
+}
+
+/** 消费方声明的形态判据（#843 L5）：consumers 与 consumerGap 排他，且各自形态合法。 */
+function assertConsumerShape(e: FaceRegistryEntry): void {
+  const hasConsumers = Array.isArray(e.consumers) && e.consumers.length > 0;
+  const hasGap = e.consumerGap !== undefined && e.consumerGap !== null;
+  assert.notEqual(
+    hasConsumers,
+    hasGap,
+    `${e.path} 必须恰好其一：consumers（非空，仓内直接读取方）或 consumerGap（无直接读取方的缺口）`,
+  );
+  if (!hasGap) {
+    assert.ok(Array.isArray(e.consumers), `${e.path} 的 consumers 必须是数组`);
+    for (const rel of e.consumers ?? []) {
+      assert.ok(
+        typeof rel === "string" && rel.trim().length > 0,
+        `${e.path} 的 consumers 不得含空项：${JSON.stringify(rel)}`,
+      );
+    }
+    return;
+  }
+  const gap = e.consumerGap as ConsumerGap;
+  assert.ok(
+    gap.kind === "none" || gap.kind === "external" || gap.kind === "indirect",
+    `${e.path} 的 consumerGap.kind 只许 none | external | indirect，实得 ${JSON.stringify(gap.kind)}`,
+  );
+  assert.ok(
+    typeof gap.reason === "string" && gap.reason.trim().length > 0,
+    `${e.path} 的 consumerGap.reason 必须写明「谁加载它」`,
+  );
+  if (gap.kind === "none") {
+    assert.match(
+      String(gap.trackingIssue ?? ""),
+      /^#\d+$/,
+      `${e.path} 的 consumerGap.kind=none 是真缺口，必须带 trackingIssue（形如 #847）`,
+    );
+  } else if (gap.trackingIssue !== undefined) {
+    assert.match(
+      String(gap.trackingIssue),
+      /^#\d+$/,
+      `${e.path} 的 consumerGap.trackingIssue 形态应为 #<编号>`,
+    );
   }
 }
 
@@ -87,6 +171,7 @@ test("#742 2.3: ci-face-registry 结构合法（faces 名必须是 ci.yml 的真
       typeof e.why === "string" && e.why.trim().length > 0,
       `${e.path} 必须写明归属理由（豁免也要写：豁免的依据是常驻闸，不是「没人管」）`,
     );
+    assertConsumerShape(e);
     assert.ok(!seen.has(e.path), `注册表条目重复：${e.path}`);
     seen.add(e.path);
     for (const face of e.faces) {
@@ -226,5 +311,41 @@ test("#742 2.3: test/smoke-lib.ts 的包名单按真实 import 图核对（第 6
     [...entry.faces].sort(),
     importers.sort(),
     "test/smoke-lib.ts 的声明面与真实 import 图不一致——新接入的包不会因它改动而重跑测试",
+  );
+});
+
+test("#843 L5: consumers 是真实读取方——路径存在且字面命中 source（假消费方判红）", () => {
+  // 为什么需要引用核对：旧条目声称「消费方是 contract-check.ts」而该文件并不引用 source，
+  // 只判「路径存在」时它照样全绿；本断言让「填一个看起来像消费方的路径」当场判红。
+  const failures: string[] = [];
+  let consumersChecked = 0;
+  let gapsChecked = 0;
+  for (const e of REGISTRY.entries) {
+    if (Array.isArray(e.consumers) && e.consumers.length > 0) {
+      consumersChecked++;
+      const fingerprints = sourceFingerprints(e.path);
+      for (const rel of e.consumers) {
+        if (!TRACKED_SET.has(rel)) {
+          failures.push(`${e.path} 的消费方 ${rel} 不在 git 跟踪的仓内文件里`);
+          continue;
+        }
+        const text = readFileSync(join(ROOT, rel), "utf8");
+        if (!fingerprints.some((fp) => text.includes(fp))) {
+          failures.push(
+            `${e.path} 的消费方 ${rel} 未字面命中 source 指纹 ${JSON.stringify(fingerprints)}——它不是该 source 的读取方`,
+          );
+        }
+      }
+    } else if (e.consumerGap !== undefined && e.consumerGap !== null) {
+      gapsChecked++;
+    }
+  }
+  assert.deepEqual(failures, [], `consumers 引用核对失败：\n${failures.join("\n")}`);
+  // 载体自证：核对必须覆盖登记全集，防「一条没扫却恒绿」。
+  assert.ok(consumersChecked > 0, "载体自证：至少要有一条 consumers 条目被核对");
+  assert.equal(
+    consumersChecked + gapsChecked,
+    REGISTRY.entries.length,
+    "载体自证：consumers 条目 + consumerGap 条目必须覆盖全部 entries",
   );
 });
