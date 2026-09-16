@@ -47,6 +47,7 @@ const THRESHOLD_GUARD = guard({
   paths: ["mutation.packages.*.threshold"],
   weaken: "decrease",
   onRemoval: "fail",
+  minAllowed: 60,
 });
 const STRICT_GUARD = guard({
   id: "mutation.strict",
@@ -161,7 +162,17 @@ function gitFixture(baseVitestConfig, baseGauntlet = defaultGauntlet(), options 
 }
 
 function runFixture(dir) {
-  return runThresholdMonotonic(["HEAD"], { repoRoot: dir });
+  // 捕获 console.error：函数式 API 只回 { exitCode, failures }，判词在 stderr 上，
+  // 断言「说了什么」比只断言退出码更能证明判据命中预期的缺口（也才挡得住「恰好因别的理由红」）。
+  const original = console.error;
+  const lines = [];
+  console.error = (...args) => lines.push(args.join(" "));
+  try {
+    const result = runThresholdMonotonic(["HEAD"], { repoRoot: dir });
+    return { ...result, stderr: lines.join("\n") };
+  } finally {
+    console.error = original;
+  }
 }
 
 function removeFixture(dir) {
@@ -612,7 +623,11 @@ test("#843: crap.threshold 上调判红", () => {
   }
 });
 /** 造一个「磁盘上有 src」的包，用于 existence 守卫的目录派生口径。 */
-const packageFile = { "packages/dsh-y/src/index.ts": "export const y = 1;\n" };
+/** 两个「磁盘上存在」的包：dsh-x 对应缺省表里的条目，dsh-y 用于新增/漏登场景。 */
+const packageFile = {
+  "packages/dsh-x/src/index.ts": "export const x = 1;\n",
+  "packages/dsh-y/src/index.ts": "export const y = 1;\n",
+};
 
 test("#843 M-1: 有 src 的包不在变异阈值表里判红（整包静默退出变异门禁）", () => {
   const dir = gitFixture(vitestText(80), defaultGauntlet(), { extraFiles: packageFile });
@@ -648,7 +663,7 @@ test("#843 M-1: 缺口按台账登记后可放行（唯一到期登记处，不�
     exemptions: [
       {
         gate: "threshold-registry",
-        path: "mutation.packages.dsh-y",
+        path: "mutation.packages.dsh-y#anchor",
         reason: "fixture：锚点待夜间班回填",
         trackingIssue: "#999",
         reviewBy: "2027-01-01",
@@ -767,6 +782,316 @@ test("#843 M-2: 接线断言预算下调放行（缺口收口方向）", () => {
   try {
     writeFixtureFile(dir, WIRING, JSON.stringify({ maxExceptions: 8, maxJobFaces: 16 }));
     assert.equal(runFixture(dir).exitCode, 0, "收口方向不得被拦");
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+// ── #843 对抗评审（P0-1 / P1-2 / P1-3 / P1-4 / P1-5 / P1-7 与低成本 P2）──
+
+/** 复写工作区声明表（用于「相对基准被削弱」的注入；基准侧那份由 gitFixture 的提交提供）。 */
+function writeRegistry(dir, guards, extra = {}) {
+  writeFixtureFile(
+    dir,
+    REGISTRY,
+    JSON.stringify(
+      {
+        version: 1,
+        retired: [],
+        contractApprovals: [],
+        note: "fixture",
+        guards,
+        notAGate: [],
+        ...extra,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
+const without = (ids) => BASE_GUARDS.filter((item) => !ids.includes(item.id));
+const withMinAllowed = (id) =>
+  BASE_GUARDS.map((item) => (item.id === id ? { ...item, minAllowed: 60 } : item));
+
+test("#843 P0-1: 声明表删掉一条 guard 判红（一行数据改动不再能摘掉判据）", () => {
+  const dir = gitFixture(vitestText(80));
+  try {
+    writeRegistry(dir, without(["complexity.cyclomatic"]));
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 1, "删 guard 等于摘掉该事实源的判据，且测试面原本打不红");
+    assert.match(r.stderr, /声明表：complexity\.cyclomatic 被整体移除/);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#843 P0-1: 登记 retired（带 trackingIssue）后退役放行", () => {
+  const dir = gitFixture(vitestText(80));
+  try {
+    writeRegistry(dir, without(["complexity.cyclomatic"]), {
+      retired: [
+        {
+          id: "complexity.cyclomatic",
+          trackingIssue: "#999",
+          reason: "fixture：口径迁移，已由新守卫覆盖",
+        },
+      ],
+    });
+    assert.equal(runFixture(dir).exitCode, 0, "退役必须可审计，但不得默认禁止");
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#843 P0-1: retired 登记了却仍在 guards 里判红（登记与事实不符）", () => {
+  const dir = gitFixture(vitestText(80));
+  try {
+    writeRegistry(dir, BASE_GUARDS, {
+      retired: [{ id: "complexity.cyclomatic", trackingIssue: "#999", reason: "fixture" }],
+    });
+    assert.equal(runFixture(dir).exitCode, 2);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#843 P0-1: 翻转 weaken 判红（原先判红的放宽会变成合法）", () => {
+  const dir = gitFixture(vitestText(80));
+  try {
+    writeRegistry(
+      dir,
+      BASE_GUARDS.map((item) =>
+        item.id === "complexity.cyclomatic" ? { ...item, weaken: "decrease" } : item,
+      ),
+    );
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /complexity\.cyclomatic\.weaken 相对基准被改动/);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#843 P0-1: onRemoval 由 fail 改 ignore 判红（删键不再判红）", () => {
+  const dir = gitFixture(vitestText(80));
+  try {
+    writeRegistry(
+      dir,
+      BASE_GUARDS.map((item) =>
+        item.id === "lint.maxWarnings" ? { ...item, onRemoval: "ignore" } : item,
+      ),
+    );
+    assert.equal(runFixture(dir).exitCode, 1);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#843 P0-1: paths 丢掉一项判红（声明的覆盖面只许补全）", () => {
+  const dir = gitFixture(vitestText(80), defaultGauntlet(), {
+    guards: [...BASE_GUARDS, TIMEOUT_GUARD],
+    extraFiles: { [TOPOLOGY]: topologyWith(60000, 60000) },
+  });
+  try {
+    writeRegistry(dir, [...BASE_GUARDS, { ...TIMEOUT_GUARD, paths: ["sharedDefaults.timeoutMS"] }]);
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /mutation\.timeoutMS\.paths 相对基准被改动/);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#843 P0-1: 收紧方向放行（新增绝对下限不需要批准块）", () => {
+  const dir = gitFixture(vitestText(80));
+  try {
+    writeRegistry(dir, withMinAllowed("mutation.packageThreshold"));
+    assert.equal(runFixture(dir).exitCode, 0, "一律「变了就红」会逼出写满批准块的假治理");
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#843 P0-1: 合法改动经 contractApprovals 登记后放行", () => {
+  const dir = gitFixture(vitestText(80));
+  try {
+    writeRegistry(
+      dir,
+      BASE_GUARDS.map((item) =>
+        item.id === "complexity.cyclomatic" ? { ...item, weaken: "decrease" } : item,
+      ),
+      {
+        contractApprovals: [
+          {
+            id: "complexity.cyclomatic",
+            field: "weaken",
+            trackingIssue: "#999",
+            reason: "fixture：口径迁移",
+          },
+        ],
+      },
+    );
+    assert.equal(runFixture(dir).exitCode, 0);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#843 P0-1: 失效的批准块判红（已无对应改动）", () => {
+  const dir = gitFixture(vitestText(80));
+  try {
+    writeRegistry(dir, BASE_GUARDS, {
+      contractApprovals: [
+        {
+          id: "complexity.cyclomatic",
+          field: "weaken",
+          trackingIssue: "#999",
+          reason: "fixture",
+        },
+      ],
+    });
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /已无对应改动/);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#843 P1-2: 非生效锚点字段被下调也判红（口径与机制对齐）", () => {
+  const dir = gitFixture(
+    vitestText(80),
+    withPackages({ "dsh-x": { threshold: 60, fixedCovered: 70, baselineCovered: 50 } }),
+  );
+  try {
+    // 生效锚点（fixedCovered 70）不动，只毒化非生效的 baselineCovered——旧实现 exit 0。
+    writeGauntlet(
+      dir,
+      withPackages({ "dsh-x": { threshold: 60, fixedCovered: 70, baselineCovered: 5 } }),
+    );
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 1);
+    assert.equal(r.failures, 1);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#843 P1-7: 新包阈值低于绝对下限判红（改名重登记不能免检）", () => {
+  const dir = gitFixture(vitestText(80), defaultGauntlet(), { extraFiles: packageFile });
+  try {
+    writeGauntlet(
+      dir,
+      withPackages({
+        "dsh-x": { threshold: 60, fixedCovered: 70 },
+        "dsh-y": { threshold: 1, fixedCovered: 0 },
+      }),
+    );
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 1, "新增条目走「首次引入」跳过对比，故下限必须是绝对判据");
+    assert.match(r.stderr, /低于下限 60/);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#843 P1-7: 表里有条目但磁盘没有对应包判红（幽灵条目）", () => {
+  const dir = gitFixture(vitestText(80), defaultGauntlet(), {
+    extraFiles: { "packages/dsh-x/src/index.ts": "export const x = 1;\n" },
+  });
+  try {
+    writeGauntlet(
+      dir,
+      withPackages({
+        "dsh-x": { threshold: 60, fixedCovered: 70 },
+        "dsh-ghost": { threshold: 60, fixedCovered: 70 },
+      }),
+    );
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /dsh-ghost 没有对应的真实包/);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#843 P1-3: 豁免按判据分开登记——#anchor 不能豁免「不在表里」", () => {
+  const ledger = {
+    version: 1,
+    exemptions: [
+      {
+        gate: "threshold-registry",
+        path: "mutation.packages.dsh-y#anchor",
+        reason: "fixture：只豁免锚点存在性",
+        trackingIssue: "#999",
+        reviewBy: "2027-01-01",
+      },
+    ],
+  };
+  const dir = gitFixture(vitestText(80), defaultGauntlet(), {
+    extraFiles: { ...packageFile, [LEDGER]: JSON.stringify(ledger) },
+    notAGate: [{ source: LEDGER, why: "fixture 台账" }],
+  });
+  try {
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 1, "#anchor 只豁免锚点，整包不在表里仍须判红");
+    assert.match(r.stderr, /有 src 但不在 mutation\.packages/);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#843 P1-5: 陈旧豁免判红（豁免还在、缺口已不存在）", () => {
+  const ledger = {
+    version: 1,
+    exemptions: [
+      {
+        gate: "threshold-registry",
+        path: "mutation.packages.dsh-x#anchor",
+        reason: "fixture：该包已声明锚点",
+        trackingIssue: "#999",
+        reviewBy: "2027-01-01",
+      },
+    ],
+  };
+  const dir = gitFixture(vitestText(80), defaultGauntlet(), {
+    extraFiles: { ...packageFile, [LEDGER]: JSON.stringify(ledger) },
+    notAGate: [{ source: LEDGER, why: "fixture 台账" }],
+  });
+  try {
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 1, "豁免没有反向腐烂校验就会长期挂着，到期复核变成噪音");
+    assert.match(r.stderr, /反向腐烂/);
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#843 P1-4: 事实源损坏是 exit 2（配置错误），不是「判据放宽」", () => {
+  const dir = gitFixture(vitestText(80));
+  try {
+    writeFixtureFile(dir, GAUNTLET, "{ 坏 JSON");
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 2, "损坏走环境故障通道，按退出码分流的调用方不会误读成放宽");
+  } finally {
+    removeFixture(dir);
+  }
+});
+
+test("#843 P2: $noMutationPackages 的豁免理由必须是可读的裁决记录", () => {
+  const dir = gitFixture(vitestText(80), defaultGauntlet(), {
+    extraFiles: {
+      ...packageFile,
+      [TOPOLOGY]: JSON.stringify({
+        $noMutationPackages: { $comment: "fixture", "dsh-y": "" },
+      }),
+    },
+  });
+  try {
+    const r = runFixture(dir);
+    assert.equal(r.exitCode, 1);
+    assert.match(r.stderr, /豁免理由必须是非空字符串/);
   } finally {
     removeFixture(dir);
   }

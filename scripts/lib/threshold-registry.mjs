@@ -136,6 +136,25 @@ function compareValueGuard(ctx) {
   }
   const wsSide = loadWorkspace(guard);
   const after = wsSide === null ? new Map() : numericLeaves(guard, wsSide.value);
+  // 绝对下限（minAllowed）：相对基准的比较对**新增条目**天然无效（首次引入 = 跳过对比），
+  // 于是「包改名后按 threshold=1 重新登记」能绕过逐包阈值——下限不受首次引入影响。
+  if (typeof guard.minAllowed === "number") {
+    for (const [path, value] of after) {
+      if (value < guard.minAllowed) {
+        failures.push(
+          guard.id +
+            "：" +
+            path +
+            " = " +
+            value +
+            " 低于下限 " +
+            guard.minAllowed +
+            "（新增条目同样受约束）；" +
+            guard.hint,
+        );
+      }
+    }
+  }
   if (guard.missingIsError === true && after.size === 0) {
     envErrors.push(
       guard.id +
@@ -274,10 +293,35 @@ function compareBaselineGuard(ctx) {
     return;
   }
   for (const [pkg, entry] of Object.entries(afterTable)) {
-    const before = effectiveAnchor(
-      isObject(beforeTable) ? beforeTable[pkg] : undefined,
-      guard.anchorFields,
+    const beforeEntry = isObject(beforeTable) ? beforeTable[pkg] : undefined;
+    // 逐字段各自只许抬不许降：只比「生效锚点」会漏掉非生效字段被悄悄下调
+    // （fixedCovered 仍在、baselineCovered 92.27 → 0.5），而 why 声明的是「逐包回落锚点只许抬不许降」。
+    const beforeFields = guard.anchorFields.filter(
+      (field) => typeof beforeEntry?.[field] === "number",
     );
+    const afterFields = guard.anchorFields.filter((field) => typeof entry[field] === "number");
+    for (const field of beforeFields) {
+      if (typeof entry[field] !== "number" || entry[field] >= beforeEntry[field]) continue;
+      failures.push(
+        guard.id +
+          "：" +
+          guard.paths[0] +
+          "." +
+          pkg +
+          "." +
+          field +
+          " 回落锚点下调：" +
+          beforeEntry[field] +
+          " → " +
+          entry[field] +
+          "；" +
+          guard.hint,
+      );
+    }
+    // 字段集合没变时上面已覆盖；只有集合变了（换字段 / 摘字段）才读回退链的**生效值**，
+    // 否则同一处下调会被两条判据各计一次。
+    if (beforeFields.join(",") === afterFields.join(",")) continue;
+    const before = effectiveAnchor(beforeEntry, guard.anchorFields);
     const after = effectiveAnchor(entry, guard.anchorFields);
     if (before === null) continue;
     if (after === null) {
@@ -321,12 +365,164 @@ function compareBaselineGuard(ctx) {
 }
 
 function readExemptKeys(ctx, guard) {
-  if (guard.exemptFrom === undefined) return new Set();
+  if (guard.exemptFrom === undefined) return { keys: new Set(), problems: [] };
+  const problems = [];
   const side = ctx.loadWorkspace({ sources: [guard.exemptFrom.source] });
-  if (side === null || !isObject(side.value)) return new Set();
+  if (side === null || !isObject(side.value)) return { keys: new Set(), problems };
   const node = resolveSingle(side.value, guard.exemptFrom.path);
-  if (!isObject(node)) return new Set();
-  return new Set(Object.keys(node).filter((key) => !key.startsWith("$")));
+  if (!isObject(node)) return { keys: new Set(), problems };
+  const keys = new Set();
+  for (const [key, value] of Object.entries(node)) {
+    if (key.startsWith("$")) continue;
+    keys.add(key);
+    // 豁免理由必须是可读的裁决记录：空串与缺值都使「为什么这个包不进变异面」无从复核。
+    if (typeof value !== "string" || value.trim() === "") {
+      problems.push(
+        guard.id +
+          "：" +
+          guard.exemptFrom.source +
+          " 的 " +
+          guard.exemptFrom.path +
+          "「" +
+          key +
+          "」的豁免理由必须是非空字符串",
+      );
+    }
+  }
+  return { keys, problems };
+}
+
+/**
+ * 声明表自身可被削弱的字段，以及每个字段「怎么算变弱」。它不是「值的范围」而是「判据的形状」：
+ * 翻 direction、把删键语义改成 ignore、摘掉一条 paths/keys/sources，都会让原本判红的放宽变成合法——
+ * 而表本身是数据，改一行不需要碰任何代码，所以必须由同一套「相对基准只许补全收紧」的语义守住它自己。
+ * 语义必须分档：一律「变了就红」会把收紧也拦下（例如给逐包阈值补一个绝对下限、给 onRemoval 从
+ * ignore 改成 fail），那会让合法的加固也需要批准块，最终逼出「批准块写满」的假治理。
+ */
+const CONTRACT_RULES = {
+  kind: "equal",
+  weaken: "equal",
+  weakenValue: "equal",
+  onRemoval: "from-fail",
+  paths: "superset",
+  keys: "superset",
+  anchorFields: "superset",
+  requireFields: "superset",
+  sources: "superset",
+  missingIsError: "from-true",
+  nonMonotonic: "from-true",
+  minAllowed: "floor",
+};
+
+/** 该字段相对基准是否被「削弱」（true = 变弱，需要批准块）。 */
+function isWeakenedChange(rule, before, after) {
+  if (rule === "equal") return JSON.stringify(before) !== JSON.stringify(after);
+  if (rule === "superset") {
+    if (!Array.isArray(before) || before.length === 0) return false;
+    const now = Array.isArray(after) ? after : [];
+    return before.some((item) => !now.includes(item));
+  }
+  if (rule === "from-fail") return before === "fail" && after !== "fail";
+  if (rule === "from-true") return before === true && after !== true;
+  if (rule === "floor") {
+    if (typeof before !== "number") return false;
+    return typeof after !== "number" || after < before;
+  }
+  return false;
+}
+
+const CONTRACT_FIELDS = [
+  "kind",
+  "weaken",
+  "weakenValue",
+  "onRemoval",
+  "paths",
+  "keys",
+  "anchorFields",
+  "requireFields",
+  "sources",
+  "missingIsError",
+  "nonMonotonic",
+  "minAllowed",
+];
+
+function approvalKey(id, field) {
+  return id + "::" + field;
+}
+
+/**
+ * 声明表自身的对比（#843 对抗评审 P0-1）：guard **只许新增**，同 id 的判据形状字段只许不变，
+ * 除非在 `retired`（整条退役）或 `contractApprovals`（改某个字段）里显式登记 id + trackingIssue + reason。
+ * 两条通道都做反向腐烂：登记了却无对应改动 = 失效条目，判红。
+ */
+export function compareDeclarationTable(baseRegistry, workspaceRegistry) {
+  const failures = [];
+  const retired = new Map();
+  for (const entry of workspaceRegistry.retired ?? []) {
+    if (isObject(entry) && typeof entry.id === "string") retired.set(entry.id, entry);
+  }
+  const approvals = new Map();
+  for (const entry of workspaceRegistry.contractApprovals ?? []) {
+    if (isObject(entry) && typeof entry.id === "string" && typeof entry.field === "string") {
+      approvals.set(approvalKey(entry.id, entry.field), entry);
+    }
+  }
+  const usedRetired = new Set();
+  const usedApprovals = new Set();
+  const wsById = new Map((workspaceRegistry.guards ?? []).map((guard) => [guard.id, guard]));
+
+  for (const baseGuard of baseRegistry.guards ?? []) {
+    const nowGuard = wsById.get(baseGuard.id);
+    if (nowGuard === undefined) {
+      if (retired.has(baseGuard.id)) usedRetired.add(baseGuard.id);
+      else {
+        failures.push(
+          "声明表：" +
+            baseGuard.id +
+            " 被整体移除 —— 删掉一条 guard 等于摘掉该事实源的判据；确要退役请在 retired 里登记 { id, trackingIssue, reason }",
+        );
+      }
+      continue;
+    }
+    for (const field of CONTRACT_FIELDS) {
+      if (!isWeakenedChange(CONTRACT_RULES[field], baseGuard[field], nowGuard[field])) continue;
+      const key = approvalKey(baseGuard.id, field);
+      if (approvals.has(key)) {
+        usedApprovals.add(key);
+        continue;
+      }
+      failures.push(
+        "声明表：" +
+          baseGuard.id +
+          "." +
+          field +
+          " 相对基准被改动（" +
+          JSON.stringify(baseGuard[field]) +
+          " → " +
+          JSON.stringify(nowGuard[field]) +
+          "）—— 判据形状只许补全收紧，确要改动请在 contractApprovals 里登记 { id, field, trackingIssue, reason }",
+      );
+    }
+  }
+  for (const id of retired.keys()) {
+    if (!usedRetired.has(id)) {
+      failures.push(
+        "声明表：retired 里的 " + id + " 已无对应退役（基准上没有这条 guard）—— 失效条目，请删除",
+      );
+    }
+  }
+  for (const [key, entry] of approvals) {
+    if (!usedApprovals.has(key)) {
+      failures.push(
+        "声明表：contractApprovals 里的 " +
+          entry.id +
+          " / " +
+          entry.field +
+          " 已无对应改动 —— 批准块失效，请删除该条",
+      );
+    }
+  }
+  return failures;
 }
 
 /** 按 guard 声明的 universe 从包目录派生应受约束的包集合（目录结构是独立事实源）。 */
@@ -360,26 +556,56 @@ function compareExistenceGuard(ctx) {
     return;
   }
   const table = resolveSingle(wsSide.value, guard.paths[0]);
-  const exemptKeys = readExemptKeys(ctx, guard);
+  const exempt = readExemptKeys(ctx, guard);
+  failures.push(...exempt.problems);
   const fields = Array.isArray(guard.requireFields) ? guard.requireFields : [];
-  for (const pkg of universe) {
-    if (exemptKeys.has(pkg)) continue;
-    const ledgerKey = guard.paths[0] + "." + pkg;
-    if (exemptions.has(ledgerKey)) continue;
-    const entry = isObject(table) ? table[pkg] : undefined;
-    if (!isObject(entry)) {
+  // 表 → 磁盘的反向悬空检查：包改名/退役后忘删的条目会让阈值判据对它空转（而且改名后
+  // 新条目天然走「首次引入」，等于用改名换一次免检）。
+  if (ctx.packages.length > 0 && isObject(table)) {
+    for (const key of Object.keys(table)) {
+      if (key.startsWith("$")) continue;
+      if (universe.includes(key) || exempt.keys.has(key)) continue;
       failures.push(
         guard.id +
-          "：包 " +
-          pkg +
-          " 有 src 但不在 " +
+          "：" +
           guard.paths[0] +
-          " —— 整包退出变异门禁；" +
+          "." +
+          key +
+          " 没有对应的真实包（packages/" +
+          key +
+          " 下无 " +
+          (guard.universe?.requireDir ?? "src") +
+          "）—— 条目只许随包存在，改名或退役必须同步；" +
           guard.hint,
       );
+    }
+  }
+  for (const pkg of universe) {
+    if (exempt.keys.has(pkg)) continue;
+    // 豁免按判据分开登记：一条豁免只能关掉它声明的那一条（否则「只豁免锚点」会顺带
+    // 豁免「整包退出变异面」，条目 reason 与机制就会不符）。
+    const membershipKey = guard.paths[0] + "." + pkg + "#membership";
+    const anchorKey = guard.paths[0] + "." + pkg + "#anchor";
+    const membershipExempt = exemptions.has(membershipKey);
+    const anchorExempt = exemptions.has(anchorKey);
+    const entry = isObject(table) ? table[pkg] : undefined;
+    if (!isObject(entry)) {
+      if (!membershipExempt) {
+        failures.push(
+          guard.id +
+            "：包 " +
+            pkg +
+            " 有 src 但不在 " +
+            guard.paths[0] +
+            " —— 整包退出变异门禁；" +
+            guard.hint,
+        );
+      }
       continue;
     }
-    if (fields.length > 0 && !fields.some((field) => typeof entry[field] === "number")) {
+    const hasAnchor =
+      fields.length === 0 || fields.some((field) => typeof entry[field] === "number");
+    if (!hasAnchor && !anchorExempt) {
       failures.push(
         guard.id +
           "：包 " +
@@ -388,6 +614,26 @@ function compareExistenceGuard(ctx) {
           fields.join(" / ") +
           "）—— 回落判据对它恒为假（regressed 永远 false），该包永远不会被判回落；" +
           guard.hint,
+      );
+    }
+    // 台账反向腐烂：豁免还在，但它要豁免的缺口已经不存在了——照 gate-wiring 台账的同形做法判红，
+    // 否则台账会长期挂着一堆「已经没有缺口」的条目，把到期复核变成噪音。
+    if (membershipExempt) {
+      failures.push(
+        guard.id +
+          "：台账里 " +
+          membershipKey +
+          " 的豁免已无对应缺口（该包已在 " +
+          guard.paths[0] +
+          " 里）—— 反向腐烂，请删除该条目",
+      );
+    }
+    if (anchorExempt && hasAnchor) {
+      failures.push(
+        guard.id +
+          "：台账里 " +
+          anchorKey +
+          " 的豁免已无对应缺口（该包已声明回落锚点）—— 反向腐烂，请删除该条目",
       );
     }
   }
@@ -484,6 +730,43 @@ export function validateDeclarations(registry, { repoRoot, dataDir = DATA_DIR } 
       const existing = guard.sources.filter((source) => existsSync(join(repoRoot, source)));
       if (existing.length === 0)
         problems.push(guard.id + "：sources 一个都不存在（" + guard.sources.join(" / ") + "）");
+    }
+  }
+  const guardIds = new Set((registry.guards ?? []).map((guard) => guard.id));
+  const retiredIds = new Set();
+  for (const entry of registry.retired ?? []) {
+    if (!isObject(entry) || typeof entry.id !== "string" || entry.id === "") {
+      problems.push("retired 条目缺 id");
+      continue;
+    }
+    if (retiredIds.has(entry.id)) problems.push("retired id 重复：" + entry.id);
+    retiredIds.add(entry.id);
+    if (typeof entry.trackingIssue !== "string" || !/^#\d+$/.test(entry.trackingIssue)) {
+      problems.push("retired " + entry.id + "：缺 trackingIssue（形如 #123）—— 退役必须可审计");
+    }
+    if (typeof entry.reason !== "string" || entry.reason === "") {
+      problems.push("retired " + entry.id + "：缺 reason");
+    }
+    if (guardIds.has(entry.id)) {
+      problems.push("retired " + entry.id + "：该 id 仍在 guards 里（退役登记与事实不符）");
+    }
+  }
+  for (const entry of registry.contractApprovals ?? []) {
+    if (!isObject(entry)) {
+      problems.push("contractApprovals 含非对象项");
+      continue;
+    }
+    const label = String(entry.id) + " / " + String(entry.field);
+    if (typeof entry.id !== "string" || entry.id === "")
+      problems.push("contractApprovals 条目缺 id");
+    if (typeof entry.field !== "string" || entry.field === "") {
+      problems.push("contractApprovals 条目缺 field：" + label);
+    }
+    if (typeof entry.trackingIssue !== "string" || !/^#\d+$/.test(entry.trackingIssue)) {
+      problems.push("contractApprovals " + label + "：缺 trackingIssue（形如 #123）");
+    }
+    if (typeof entry.reason !== "string" || entry.reason === "") {
+      problems.push("contractApprovals " + label + "：缺 reason");
     }
   }
   const declared = new Set();

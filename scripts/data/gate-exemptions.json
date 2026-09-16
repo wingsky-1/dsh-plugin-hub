@@ -4,7 +4,7 @@
   "exemptions": [
     {
       "gate": "threshold-registry",
-      "path": "mutation.packages.dsh-worktree-sidebar",
+      "path": "mutation.packages.dsh-worktree-sidebar#anchor",
       "reason": "#843 对抗评审 M-1：该包由 #819 合入（2026-09-15）时两个回落锚点（fixedCovered / baselineCovered）都没写，而 scripts/gate/observe-check.mjs 的回落判据是 baseline = fixedCovered ?? baselineCovered ?? null、regressed = baseline !== null && …，于是它的回落检测**恒为假**——不是「暂时没基线」这么轻，是「永远不会被判回落」，且此前没有任何判据要求逐包必须有基线。新加的 mutation.packageSet 守卫（scripts/data/threshold-registry.json）把「有 src 的包必须有回落锚点」变成判据，本条是该判据下的唯一存量缺口，按 #765 口径如实登记而不是放宽判据。另：该包 threshold=60 仍在表内，阈值判据不豁免，只有「锚点存在性」这一项豁免。",
       "trackingIssue": "#847",
       "exitCriteria": "observe 夜间全量班首次跑完该包并回填 fixedCovered（或 baselineCovered）后删除本条；届时 guard 自动开始对它的回落负责。",

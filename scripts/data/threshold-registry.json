@@ -1,6 +1,8 @@
 {
   "version": 1,
-  "note": "阈值事实源的**声明表**（#843 D5；2026-09-16 维护者按推荐方案批准，其后两轮独立对抗评审要求补入 M-1 / M-2，见 #843 的裁决清单 v2）。 为什么需要：守卫此前是一条条 if 手写在 scripts/gate/threshold-monotonic.mjs 里——每新增一个阈值 / 开关 / 预算事实源都要手写读取逻辑，方向语义散落在各 if 里，于是「新增事实源忘了加守卫」这个根因没有任何判据能拦。本轮审计漏出去的正是这类：S1（删整包阈值块不判红）/ S2（strict 翻转无守卫）/ T1（变异超时放宽无守卫）/ M-1（新包无回落基线，回落判据对它恒为假）/ M-2（接线断言自身的 9 个豁免预算只有测试内硬顶）。 现在：事实源 + 路径 + 方向 + 删键语义都在本表声明，比较器（scripts/lib/threshold-registry.mjs）按 kind 通用求值。**未登记即红**——枚举口径是运行时读 scripts/data/*.json（不在表里再抄一份清单，原则②），除本表自身；新增数据文件必须在此显式决定「守护」还是 not-a-gate。 边界（与#843 裁决清单 v2 的 C-2/C-3 一致）：**面类判据不在本表**——覆盖率 exclude 与变异段 mutate 的扩张 / 收缩需要 glob 求值，落在 verify-coverage-scope（kind↔形态一致性）与 gen-stryker-conf 的判据⑤（有效面非空）；本表只收 JSON 标量 / 布尔 / 存在性。 kind 语义：value=数字标量（weaken 说明哪个方向是放宽）；boolean=开关（weakenValue 是「等于它就等于放宽」的那一侧）；baseline=逐包回落锚点（anchorFields 是回退链，读法与 scripts/gate/observe-check.mjs 的 fixedCovered ?? baselineCovered 一致）；existence=集合存在性（universe 派生自 packages/ 目录，exemptFrom 读另一份事实源的豁免键，不造第二份豁免清单）。 台账通道：kind=existence 的豁免登记在 scripts/data/gate-exemptions.json（gate=threshold-registry，path=<guard.path>.<包名>），唯一到期登记处不新增第二份（原则①）。",
+  "retired": [],
+  "contractApprovals": [],
+  "note": "阈值事实源的**声明表**（#843 D5；2026-09-16 维护者按推荐方案批准，其后两轮独立对抗评审要求补入 M-1 / M-2，见 #843 的裁决清单 v2）。 为什么需要：守卫此前是一条条 if 手写在 scripts/gate/threshold-monotonic.mjs 里——每新增一个阈值 / 开关 / 预算事实源都要手写读取逻辑，方向语义散落在各 if 里，于是「新增事实源忘了加守卫」这个根因没有任何判据能拦。本轮审计漏出去的正是这类：S1（删整包阈值块不判红）/ S2（strict 翻转无守卫）/ T1（变异超时放宽无守卫）/ M-1（新包无回落基线，回落判据对它恒为假）/ M-2（接线断言自身的 9 个豁免预算只有测试内硬顶）。 现在：事实源 + 路径 + 方向 + 删键语义都在本表声明，比较器（scripts/lib/threshold-registry.mjs）按 kind 通用求值。**未登记即红**——枚举口径是运行时读 scripts/data/*.json（不在表里再抄一份清单，原则②），除本表自身；新增数据文件必须在此显式决定「守护」还是 not-a-gate。 边界（与#843 裁决清单 v2 的 C-2/C-3 一致）：**面类判据不在本表**——覆盖率 exclude 与变异段 mutate 的扩张 / 收缩需要 glob 求值，落在 verify-coverage-scope（kind↔形态一致性）与 gen-stryker-conf 的判据⑤（有效面非空）；本表只收 JSON 标量 / 布尔 / 存在性。 kind 语义：value=数字标量（weaken 说明哪个方向是放宽）；boolean=开关（weakenValue 是「等于它就等于放宽」的那一侧）；baseline=逐包回落锚点（anchorFields 是回退链，读法与 scripts/gate/observe-check.mjs 的 fixedCovered ?? baselineCovered 一致）；existence=集合存在性（universe 派生自 packages/ 目录，exemptFrom 读另一份事实源的豁免键，不造第二份豁免清单）。 台账通道：kind=existence 的豁免登记在 scripts/data/gate-exemptions.json（gate=threshold-registry，path=<guard.path>.<包名>），唯一到期登记处不新增第二份（原则①）。 豁免**按判据分开登记**：path=<guard.path>.<包名>#membership 只豁免「包在表里」，#anchor 只豁免「有回落锚点」——一条豁免不得顺带关掉另一条判据（评审 P1-3）。 声明表**自己**也被同一套语义守着（评审 P0-1）：guard 只许新增；同 id 的 kind / weaken / weakenValue / onRemoval / paths / keys / anchorFields / requireFields / sources / missingIsError / nonMonotonic / minAllowed 相对基准只许不变，合法改动必须落在 retired（整条退役）或 contractApprovals（改某个字段）里并带 trackingIssue + reason，两者都做反向腐烂校验。 边界（如实声明，勿误读）：**面类判据不在本表**——覆盖率 exclude 与变异段 mutate「相对基准的收窄/扩张」本表不覆盖；#848 的判据⑤/⑥只保证条目锚定在本包且命中 ≥1 个物理文件、整份 conf 剔除 `!` 条目后仍有剩余，**都不看基准**，故「把某文件从段 mutate 挪进同段 excludes」与「给 coverage.config.json 追加一条把真实源码标成 not-source 的 exclude」目前仍无守卫（已列为跟踪项）。 枚举口径是**文件级**：只认 scripts/data 顶层的 .json（.jsonc 与子目录内的 .json 不在面内），也不认键级新增（gauntlet 里新加一个键不会有判据，直到出现消费方）。 notAGate 是**人工裁决点**：任何新数据文件加一条非空 why 即可进面，该通道本身没有强度保证，靠评审。 timeoutMS 的收紧方向只报警不判红（证据约束尚未设计）。",
   "guards": [
     {
       "id": "coverage.thresholds",
@@ -41,8 +43,9 @@
       "paths": ["mutation.packages.*.threshold"],
       "weaken": "decrease",
       "onRemoval": "fail",
+      "minAllowed": 60,
       "why": "逐包变异阈值（per-package threshold=60，两阶梯第一阶）。旧实现 countMutationThresholdDrop 要求两侧都是数字才比，于是**整包删掉完全不守**：本轮 S1 实测删块后 threshold-monotonic exit 0（真正判红的是 mutation-gate 运行期 exit 2，即要在 CI 上跑完变异才发现）。onRemoval=fail 把「删掉即该维度不再有硬门禁」变成同罪。",
-      "hint": "降线须原 issue 内 approved；整包退役须同时满足 existence 守卫的退役条件"
+      "hint": "降线须原 issue 内 approved；整包退役须同时满足 existence 守卫的退役条件；minAllowed=60 是绝对下限（两阶梯第一阶），对**新增条目**同样生效——否则「包改名后按 threshold=1 重新登记」会因「首次引入」而免疫本判据"
     },
     {
       "id": "mutation.packageSet",
@@ -122,7 +125,7 @@
       "onRemoval": "fail",
       "nonMonotonic": true,
       "why": "变异运行超时（T1）。放宽（60000 → 600000）会让单段墙钟失控——docs/mutation-speedup-methodology.md 的先例是放宽到 60s 后总时长冲到 15 分钟以上；此前 6 处 timeoutMS 无任何守卫（实测放宽后 stryker:check / mutation-ledger --check / threshold-monotonic / verify-coverage-scope 全 exit 0）。**这一格不是单调旋钮**：调低会把慢测试判成 timeout，而 mutation-gate 把 timeout 计入 detected/killed（covered = killed + timeout），于是分数虚增——收紧方向同样需要证据，故 nonMonotonic: true 只对它报警不判红（本表不做无依据的判红）。",
-      "hint": "放宽须给出该段实测墙钟依据（mutation-segment-ledger.json）；收紧须确认没有把慢测试逼成 timeout 从而虚增分数"
+      "hint": "放宽须给出该段实测墙钟依据（mutation-segment-ledger.json）；收紧方向本表只报警不判红（收紧的证据约束尚未设计，见 #843 的跟踪项）；CI 上该 WARN 只进 stderr，不改变退出码"
     },
     {
       "id": "gateWiring.budgets",

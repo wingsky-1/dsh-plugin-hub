@@ -13,8 +13,15 @@
  * （不能用正则：`thresholds\s*:\s*\{([^}]*)\}` 会在第一个 `}` 截断，块内注释里的伪值也会被采信）。
  * 迁移期双读的语义现在是数据：coverage 守卫的 sources 是 [JSON, .ts]，按顺序取第一个存在的源。
  *
+ * 声明表自己也被同一套语义守着（#843 对抗评审 P0-1）：guard 只许新增，同 id 的判据形状字段
+ * （kind / weaken / weakenValue / onRemoval / paths / keys / anchorFields / requireFields / sources /
+ * missingIsError / nonMonotonic / minAllowed）相对基准只许不变，除非在表里显式登记 `retired`
+ * （整条退役）或 `contractApprovals`（改某个字段），两者都要求 trackingIssue + reason，且都做
+ * 反向腐烂校验。否则「删一条 guard / 翻一个 direction / 把 onRemoval 改成 ignore」就是一行
+ * 数据改动且 CI 全绿。
+ *
  * 用法：node scripts/gate/threshold-monotonic.mjs [git-ref]
- * 退出码：0 = 无判据放宽；1 = 存在放宽/摘除；2 = 声明表、事实源或环境故障（fail-closed）
+ * 退出码：0 = 无判据放宽；1 = 存在放宽/摘除（含声明表自身被削弱）；2 = 声明表、事实源或环境故障（fail-closed）
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, realpathSync } from "node:fs";
@@ -23,9 +30,12 @@ import { fileURLToPath } from "node:url";
 import { parseExpressionAt, tokenizer } from "acorn";
 import { loadLedger } from "../lib/exemption-gate.ts";
 import {
+  REGISTRY_PATH,
+  compareDeclarationTable,
   compareRegistry,
   loadRegistry,
   makeSourceLoader,
+  readJsonText,
   validateDeclarations,
   validateGuardFacts,
 } from "../lib/threshold-registry.mjs";
@@ -233,10 +243,22 @@ export function runThresholdMonotonic(
       label: "工作区",
     }),
   };
-  const problems = [
-    ...validateDeclarations(registry, { repoRoot }),
-    ...validateGuardFacts(registry, loaders),
-  ];
+  let problems;
+  try {
+    problems = [
+      ...validateDeclarations(registry, { repoRoot }),
+      ...validateGuardFacts(registry, loaders),
+    ];
+  } catch (err) {
+    // 事实源损坏（如 gauntlet.config.json 写成坏 JSON）是配置错误，不是「判据放宽」——
+    // 落在同一个 exit 2 通道，按退出码分流的调用方不会把它读成放宽。
+    console.error(
+      "threshold-monotonic: 声明表/事实源校验失败：" +
+        err.message +
+        " —— 环境故障按 fail-closed 处理",
+    );
+    return { exitCode: 2, failures: 0 };
+  }
   if (problems.length > 0) {
     for (const problem of problems) console.error(`[FAIL] 声明表：${problem}`);
     console.error(
@@ -255,14 +277,59 @@ export function runThresholdMonotonic(
     return { exitCode: 2, failures: 0 };
   }
 
-  const result = compareRegistry({
-    registry,
-    readBase,
-    readWorkspace,
-    textReaders: TEXT_READERS,
-    packages: listPackages(repoRoot),
-    exemptions,
-  });
+  // 声明表自身相对基准只许补全收紧（P0-1）：删 guard / 翻方向 / 关删键语义都在这里拦下。
+  if (existsInGit(baseRef, REGISTRY_PATH, repoRoot)) {
+    let baseRegistry;
+    try {
+      baseRegistry = readJsonText(readFromGit(baseRef, REGISTRY_PATH, repoRoot), baseRef);
+    } catch (err) {
+      console.error(
+        "threshold-monotonic: 读取 " +
+          baseRef +
+          ":" +
+          REGISTRY_PATH +
+          " 失败：" +
+          err.message +
+          " —— 环境故障按 fail-closed 处理",
+      );
+      return { exitCode: 2, failures: 0 };
+    }
+    const tableFailures = compareDeclarationTable(baseRegistry, registry);
+    if (tableFailures.length > 0) {
+      for (const failure of tableFailures) console.error("[FAIL] " + failure);
+      console.error(
+        "\nthreshold-monotonic: 声明表自身被削弱（" +
+          tableFailures.length +
+          " 处）—— 判据形状只许补全收紧，退役或改动须在表里登记",
+      );
+      return { exitCode: 1, failures: tableFailures.length };
+    }
+  } else {
+    console.log(
+      "threshold-monotonic: " +
+        baseRef +
+        " 上无 " +
+        REGISTRY_PATH +
+        " —— 首次引入，跳过声明表自身的对比",
+    );
+  }
+
+  let result;
+  try {
+    result = compareRegistry({
+      registry,
+      readBase,
+      readWorkspace,
+      textReaders: TEXT_READERS,
+      packages: listPackages(repoRoot),
+      exemptions,
+    });
+  } catch (err) {
+    console.error(
+      "threshold-monotonic: 事实源比较失败：" + err.message + " —— 环境故障按 fail-closed 处理",
+    );
+    return { exitCode: 2, failures: 0 };
+  }
 
   for (const skip of result.skips) console.log(`threshold-monotonic: ${skip}`);
   for (const warning of result.warnings) console.warn(`[WARN] ${warning}`);
