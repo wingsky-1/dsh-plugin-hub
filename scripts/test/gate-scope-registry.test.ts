@@ -16,10 +16,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { loadScopeRegistry } from "../lib/gate-scope-registry.ts";
+import { loadScopeRegistry, packageScopeDrift } from "../lib/gate-scope-registry.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const REGISTRY = join(ROOT, "scripts", "data", "gate-scope-registry.json");
+const DIR_IMPORTS_BASELINE = join(ROOT, "scripts", "data", "dir-imports-baseline.json");
 const GATE_DIR = join(ROOT, "scripts", "gate");
 const WORKFLOWS_DIR = join(ROOT, ".github", "workflows");
 
@@ -115,6 +116,43 @@ test("调用点一致：scopeFrom=cli 的登记范围 == 调用点 --package 并
       `${entry.gate} 的登记范围与调用点 --package 并集不一致（两边漂移）`,
     );
   }
+});
+
+test("接线一致：verify-dir-imports 的基线键集 == cli 调用点并集（#843 D15）", () => {
+  // 为什么是「基线 ↔ 调用点并集」而不是「基线 ↔ registry 字段」：registry 的 cli 值本身
+  // 由调用点并集派生（上面那条用例钉住），故两侧各自对齐同一个真值即可；而**死条目**
+  // （有基线、无调用点）恰恰是闸自身发现不了的——没有调用点就永远不会被 --package 点到，
+  // 它只会在数据面里冒充「该包仍受保护」。基线键集是同一件事的另一份声明，两处必须逐字对齐。
+  const observed = [...(packageCallSites().get("verify-dir-imports") ?? [])].sort();
+  assert.ok(observed.length > 0, "verify-dir-imports 应至少有一个 --package 调用点");
+  const baselineKeys = Object.keys(
+    JSON.parse(readFileSync(DIR_IMPORTS_BASELINE, "utf8")).packages ?? {},
+  );
+  const drift = packageScopeDrift(baselineKeys, observed);
+  assert.deepEqual(
+    drift,
+    { baselineOnly: [], registryOnly: [] },
+    `基线键集与调用点并集漂移——基线独有（死条目，应删）[${drift.baselineOnly.join(", ")}] / ` +
+      `调用点独有（缺条目，应跑 --write-baseline 登记）[${drift.registryOnly.join(", ")}]`,
+  );
+});
+
+test("反例：基线键集与调用点并集任一方向漂移都必须被点名（#843 D15）", () => {
+  // 真实数据当前一致，故判据本体必须用一个确定的漂移输入打红：把 packageScopeDrift 改成
+  // 恒返回空差集，上面那条用例照样全绿，而这里会立刻失配。
+  assert.deepEqual(packageScopeDrift(["a", "b"], ["b", "c"]), {
+    baselineOnly: ["a"],
+    registryOnly: ["c"],
+  });
+  assert.deepEqual(packageScopeDrift(["b"], ["b"]), { baselineOnly: [], registryOnly: [] });
+  assert.deepEqual(packageScopeDrift([], ["x", "y"]), {
+    baselineOnly: [],
+    registryOnly: ["x", "y"],
+  });
+  assert.deepEqual(packageScopeDrift(["x", "y"], []), {
+    baselineOnly: ["x", "y"],
+    registryOnly: [],
+  });
 });
 
 test("scopeFrom=registry / tree 的登记范围形态合法（通配或非空数组）", () => {

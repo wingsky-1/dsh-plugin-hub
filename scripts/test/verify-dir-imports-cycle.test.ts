@@ -72,6 +72,12 @@ function runOn(root, args = []) {
   return { status: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
 
+/** 登记 fixture 基线（#843 D15：基线无本包条目自身判红，判绿用例必须先落库）。 */
+function seedBaseline(root) {
+  const written = runOn(root, ["--write-baseline"]);
+  assert.equal(written.status, 0, `fixture 登记基线应成功：\n${written.out}`);
+}
+
 test("规则 5：跨模块值 import 成环 → 判红，环路径经 --graph 报出", () => {
   const root = makeFixtureRoot({
     "a/impl.ts": "export const A = 1;\n",
@@ -115,6 +121,7 @@ test("规则 5：仅 type-only 边成环 → 放行（编译期擦除，不入�
       'import type { A } from "../a/interface.ts";\nexport type { B } from "./types.ts";\nexport type Linked = { a?: A };\n',
   });
   try {
+    seedBaseline(root);
     const { status, out } = runOn(root);
     assert.equal(status, 0, `type-only 环应放行（exit=0），实际 ${status}：\n${out}`);
     assert.match(out, /模块级值环 0 个/, `summary 应报告 0 环：\n${out}`);

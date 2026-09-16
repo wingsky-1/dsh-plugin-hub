@@ -90,14 +90,14 @@
         "uncoveredSrcFiles": []
       }
     },
-    "dsh-verify-isolated": {
-      "modules": 0,
-      "scannedSrcFiles": 1,
-      "allSrcTsFiles": 1,
-      "interfaceFacades": 0,
-      "leafValueEdges": 0,
-      "fileValueEdges": 0,
-      "crossModuleRefs": 0,
+    "dsh-worktree-sidebar": {
+      "modules": 7,
+      "scannedSrcFiles": 41,
+      "allSrcTsFiles": 47,
+      "interfaceFacades": 7,
+      "leafValueEdges": 2,
+      "fileValueEdges": 46,
+      "crossModuleRefs": 34,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
