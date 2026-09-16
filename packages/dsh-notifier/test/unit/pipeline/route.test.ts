@@ -16,7 +16,10 @@ import { describe, expect, it } from "vitest";
 
 import { DEFAULT_CONFIG } from "../../../src/server/config/impl/model/index.ts";
 import type { NotifyConfig } from "../../../src/server/config/impl/model/type.ts";
-import { channelIdOf, routeTargets } from "../../../src/server/pipeline/impl/route/index.ts";
+import { routeTargets } from "../../../src/server/pipeline/impl/route/index.ts";
+// 频道 id 规则的事实源是 src/shared/channels.ts（两端共享面）——客户端消费同一份函数，
+// 故这条判据测的就是两端共用的那一份实现。
+import { channelIdOf } from "../../../src/shared/interface.ts";
 import type {
   BarkConfig,
   BarkTarget,
@@ -174,8 +177,8 @@ describe("kindRoutes：命中收窄，缺省广播", () => {
     }
   });
 
-  // 这条规则是跨端契约：客户端有一份同名实现（`channelIdOf`），两边算出来的 id 必须逐字一致，
-  // 否则 chips 写进 kindRoutes 的 id 与池里的 id 对不上，用户勾了却收不到。
+  // 这条规则是跨端契约：客户端与本块消费同一份 `channelIdOf`（src/shared/channels.ts），
+  // 算出来的 id 因此逐字一致——否则 chips 写进 kindRoutes 的 id 与池里的 id 对不上，用户勾了却收不到。
   it("频道对外 id：内置取 type（裸 id），实例取 type:id", () => {
     expect(channelIdOf(builtins()[0]!)).toBe("browser");
     expect(channelIdOf(builtins()[1]!)).toBe("system");

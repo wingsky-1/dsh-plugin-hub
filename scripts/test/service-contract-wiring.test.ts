@@ -16,10 +16,15 @@
  * tsc 非 0 → 本测试红。随 `pnpm test:scripts`（repo-gate 无条件步骤）执行，
  * CI/本地对「shared 类型面 ↔ 契约测试清单」漂移零成本判红。
  *
- * 接线对象：packages/dsh-mcp-manager/test/tsconfig.json 与
- * packages/dsh-notifier/test/tsconfig.json（均 noEmit，include 全量测试 ts）。
- * 两个包的 e2e/集成面文件保留文件级 @ts-nocheck（桩对象密集，类型化成本高于
+ * 接线对象：packages/dsh-mcp-manager/test/tsconfig.json、
+ * packages/dsh-notifier/test/tsconfig.json 与
+ * packages/dsh-worktree-sidebar/test/tsconfig.json（均 noEmit，include 全量测试 ts）。
+ * 前两个包的 e2e/集成面文件保留文件级 @ts-nocheck（桩对象密集，类型化成本高于
  * 收益）；契约与单元测试文件无 @ts-nocheck，类型断言真实参与检查。
+ *
+ * worktree-sidebar 面整体没有 @ts-nocheck。接它是因为它的 test/tsconfig.json 原本不在
+ * 任何门禁的消费点上：S1a 给 TakeoverDeps 加了必填的 sourceFor 后，两处假 harness 漏
+ * 补该字段（2 处 TS2741），而本地全绿掩盖了它。本条接线就是那个缺口的判据。
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -54,6 +59,14 @@ const SUITES = [
       join("integration", "consumer-types.test.ts"),
       join("integration", "consumer-product-face.ts"),
     ],
+  },
+  {
+    name: "dsh-worktree-sidebar（客户端装配根与接管契约）",
+    pkg: "dsh-worktree-sidebar",
+    tsconfig: join(ROOT, "packages", "dsh-worktree-sidebar", "test", "tsconfig.json"),
+    // 登记关键夹具：让「夹具被误删 / 被排除出 tsconfig」在此 fail-loud，而不是表现为
+    // 编译面静默少覆盖一块。
+    expectFiles: [join("unit", "client-index.test.ts"), join("unit", "client-takeover.test.ts")],
   },
 ];
 

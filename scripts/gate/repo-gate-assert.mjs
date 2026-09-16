@@ -65,148 +65,187 @@ import { pathToFileURL } from "node:url";
  * @returns {{ ok: boolean, code: 0 | 1 | 2, reason: string }}
  */
 export function evaluateGate(input) {
-  const { event, changes, buildTest, coverage, mutation, verdict, hasMutations } = input;
+  const prerequisiteFailure = checkPrerequisites(input);
+  if (prerequisiteFailure !== null) return prerequisiteFailure;
+  const { pkgs, failure } = checkDataContract(input);
+  if (failure !== null) return failure;
+  if (input.event === "pull_request") {
+    return input.hasMutations === "true"
+      ? evaluateMutationSlice(input, pkgs)
+      : evaluateEmptySlice(input);
+  }
+  return evaluateNonPullRequest(input);
+}
 
+function checkPrerequisites(input) {
   // 前提闸：changes 是所有切片判定的事实源，非 success 即红
-  if (changes !== "success") {
-    return { ok: false, code: 1, reason: `changes 作业未成功（${changes}）—— fail-closed` };
+  if (input.changes !== "success") {
+    return { ok: false, code: 1, reason: `changes 作业未成功（${input.changes}）—— fail-closed` };
   }
   // build-test 矩阵 = 命中包（空切片时补 1 个哨兵实例：GHA 对零实例动态矩阵实测回报 failure，
   // 哨兵不匹配任何包、只跑一次 checkout+setup），任何实例失败/skipped 即红
-  if (buildTest !== "success") {
+  if (input.buildTest !== "success") {
     return {
       ok: false,
       code: 1,
-      reason: `build-test 存在失败/skipped 实例（${buildTest}）—— fail-closed`,
+      reason: `build-test 存在失败/skipped 实例（${input.buildTest}）—— fail-closed`,
     };
   }
+  return null;
+}
 
-  // 数据契约闸：切片清单与显式布尔必须同时合法且互相一致
+/** 数据契约闸：切片清单与显式布尔必须同时合法且互相一致。 */
+function checkDataContract(input) {
   let pkgs;
   try {
     pkgs = JSON.parse(input.mutationPkgsJson);
   } catch (err) {
     return {
-      ok: false,
-      code: 2,
-      reason: `mutationPackages 不是合法 JSON（${err.message}）—— 数据契约破坏`,
+      failure: {
+        ok: false,
+        code: 2,
+        reason: `mutationPackages 不是合法 JSON（${err.message}）—— 数据契约破坏`,
+      },
     };
   }
   if (!Array.isArray(pkgs)) {
-    return { ok: false, code: 2, reason: "mutationPackages 不是 JSON 数组 —— 数据契约破坏" };
-  }
-  if (hasMutations !== "true" && hasMutations !== "false") {
     return {
-      ok: false,
-      code: 2,
-      reason: `hasMutations 必须为 'true'/'false'（实际 "${hasMutations}"）—— 数据契约破坏`,
+      failure: { ok: false, code: 2, reason: "mutationPackages 不是 JSON 数组 —— 数据契约破坏" },
+    };
+  }
+  if (input.hasMutations !== "true" && input.hasMutations !== "false") {
+    return {
+      failure: {
+        ok: false,
+        code: 2,
+        reason: `hasMutations 必须为 'true'/'false'（实际 "${input.hasMutations}"）—— 数据契约破坏`,
+      },
     };
   }
   if (input.fullRequested !== "true" && input.fullRequested !== "false") {
     return {
-      ok: false,
-      code: 2,
-      reason: `fullGate 必须为 'true'/'false'（实际 "${input.fullRequested}"）—— 数据契约破坏`,
+      failure: {
+        ok: false,
+        code: 2,
+        reason: `fullGate 必须为 'true'/'false'（实际 "${input.fullRequested}"）—— 数据契约破坏`,
+      },
     };
   }
   // 交叉校验：hasMutations 与切片清单非空性由 changes 同一函数推导，不一致即违约
-  if ((hasMutations === "true") !== pkgs.length > 0) {
+  if ((input.hasMutations === "true") !== pkgs.length > 0) {
     return {
-      ok: false,
-      code: 2,
-      reason: `hasMutations=${hasMutations} 与切片长度 ${pkgs.length} 矛盾 —— 数据契约破坏`,
+      failure: {
+        ok: false,
+        code: 2,
+        reason: `hasMutations=${input.hasMutations} 与切片长度 ${pkgs.length} 矛盾 —— 数据契约破坏`,
+      },
     };
   }
+  return { pkgs, failure: null };
+}
 
-  if (event === "pull_request") {
-    if (hasMutations === "true") {
-      // ── 该跑必须真跑：覆盖率按标签裁决 + 变异链逐维锁定 ──
-      // 维度一：coverage（全局单次采集，与变异矩阵平行）
-      // #742 阶段 1.5：覆盖率是「全仓分母」口径，不进 PR 默认路径——所以这里按 fullGate
-      // 分叉，而不是像 #722 那样无条件要求 success。两侧都是 fail-closed：
-      //   打了标签：必须 success（否则覆盖率这道闸形同不存在）
-      //   没打标签：必须 skipped（跑了说明 if 契约被改坏，防 CI 静默回到全量路径）
-      if (input.fullRequested === "true") {
-        if (coverage !== "success") {
-          const why =
-            coverage === "skipped"
-              ? "coverage 作业缺席 —— gate:full 下该跑却没跑，ci.yml if 契约疑似被改坏"
-              : "coverage 失败连坐（c8 全仓 smoke 同级硬信号）";
-          return {
-            ok: false,
-            code: 1,
-            reason: `PR 变异链前置 coverage 结果 ${coverage}（期望 success）—— ${why}`,
-          };
-        }
-      } else if (coverage !== "skipped") {
-        return {
-          ok: false,
-          code: 1,
-          reason: `PR 未打 gate:full 标签，coverage 结果为 ${coverage}（期望 skipped）—— 增量门禁契约被破坏（覆盖率不进 PR 默认路径，#742 阶段 1.5；ci.yml if 的 fullGate 条件疑似失效）`,
-        };
-      }
-      // 维度二：变异矩阵（#742 阶段 1.3——PR 上按切片强制跑，该跑没跑即门禁绕过；
-      // failure 由 verdict 兜底裁决）
-      if (mutation !== "success" && mutation !== "failure") {
-        return {
-          ok: false,
-          code: 1,
-          reason: `mutation-gate 切片 [${pkgs.join(", ")}] 结果为 ${mutation}（期望 success/failure）—— PR 下该跑没跑视为门禁绕过（#742 阶段 1：变异已与 gate:full 标签解耦）`,
-        };
-      }
-      // 维度三：聚合判分 verdict（最终绿灯的唯一来源；#742 阶段 1.2 起不再以 coverage
-      // success 为前提，故覆盖率失败也照样要求 verdict 产出结论）
-      if (verdict !== "success") {
-        const why =
-          verdict === "skipped"
-            ? "该跑没跑视为门禁绕过"
-            : verdict === "cancelled"
-              ? "被取消（未完成判分）"
-              : "变异率判分未通过（变异率不达标或报告 artifact 链路违约）";
-        return {
-          ok: false,
-          code: 1,
-          reason: `mutation-verdict 结果 ${verdict}（期望 success）—— ${why}`,
-        };
-      }
-      return {
-        ok: true,
-        code: 0,
-        reason:
-          `PR 门禁：变更切片 + 增量变异（[${pkgs.join(", ")}]）全部通过；` +
-          (input.fullRequested === "true"
-            ? "gate:full 追加的全局覆盖率亦通过"
-            : "覆盖率按 #742 阶段 1.5 归 gate:full 标签，本次未跑"),
-      };
-    }
+/**
+ * 维度一：coverage（全局单次采集，与变异矩阵平行）
+ * #742 阶段 1.5：覆盖率是「全仓分母」口径，不进 PR 默认路径——所以这里按 fullGate
+ * 分叉，而不是像 #722 那样无条件要求 success。两侧都是 fail-closed：
+ *   打了标签：必须 success（否则覆盖率这道闸形同不存在）
+ *   没打标签：必须 skipped（跑了说明 if 契约被改坏，防 CI 静默回到全量路径）
+ */
+function judgePrCoverage(input) {
+  const { coverage } = input;
+  if (input.fullRequested === "true") {
+    if (coverage === "success") return null;
+    const why =
+      coverage === "skipped"
+        ? "coverage 作业缺席 —— gate:full 下该跑却没跑，ci.yml if 契约疑似被改坏"
+        : "coverage 失败连坐（c8 全仓 smoke 同级硬信号）";
+    return {
+      ok: false,
+      code: 1,
+      reason: `PR 变异链前置 coverage 结果 ${coverage}（期望 success）—— ${why}`,
+    };
+  }
+  if (coverage !== "skipped") {
+    return {
+      ok: false,
+      code: 1,
+      reason: `PR 未打 gate:full 标签，coverage 结果为 ${coverage}（期望 skipped）—— 增量门禁契约被破坏（覆盖率不进 PR 默认路径，#742 阶段 1.5；ci.yml if 的 fullGate 条件疑似失效）`,
+    };
+  }
+  return null;
+}
 
-    // ── 空切片（合法缺席）：两个 job 的 if 都含 hasMutations，空切片时必然 skipped。
-    // #217 时代这里宽容过 'failure'，理由是「GitHub 对零实例动态矩阵实测回报 failure 而非
-    // 官方口径 skipped」（实证 run 32802575298）；该形态已被 if 上的 hasMutations 条件消除
-    // （job 级 if 为假 → 矩阵根本不实例化 → 结论只能是 skipped），故 #742 阶段 1 起收紧为
-    // 只收 skipped：failure/success/cancelled 都说明契约被改坏，属纵深防御。
-    if (coverage !== "skipped") {
+function evaluateMutationSlice(input, pkgs) {
+  const { mutation, verdict } = input;
+  // ── 该跑必须真跑：覆盖率按标签裁决 + 变异链逐维锁定 ──
+  const coverageFailure = judgePrCoverage(input);
+  if (coverageFailure !== null) return coverageFailure;
+  // 维度二：变异矩阵（#742 阶段 1.3——PR 上按切片强制跑，该跑没跑即门禁绕过；
+  // failure 由 verdict 兜底裁决）
+  if (mutation !== "success" && mutation !== "failure") {
+    return {
+      ok: false,
+      code: 1,
+      reason: `mutation-gate 切片 [${pkgs.join(", ")}] 结果为 ${mutation}（期望 success/failure）—— PR 下该跑没跑视为门禁绕过（#742 阶段 1：变异已与 gate:full 标签解耦）`,
+    };
+  }
+  // 维度三：聚合判分 verdict（最终绿灯的唯一来源；#742 阶段 1.2 起不再以 coverage
+  // success 为前提，故覆盖率失败也照样要求 verdict 产出结论）
+  if (verdict !== "success") {
+    const why =
+      verdict === "skipped"
+        ? "该跑没跑视为门禁绕过"
+        : verdict === "cancelled"
+          ? "被取消（未完成判分）"
+          : "变异率判分未通过（变异率不达标或报告 artifact 链路违约）";
+    return {
+      ok: false,
+      code: 1,
+      reason: `mutation-verdict 结果 ${verdict}（期望 success）—— ${why}`,
+    };
+  }
+  return {
+    ok: true,
+    code: 0,
+    reason:
+      `PR 门禁：变更切片 + 增量变异（[${pkgs.join(", ")}]）全部通过；` +
+      (input.fullRequested === "true"
+        ? "gate:full 追加的全局覆盖率亦通过"
+        : "覆盖率按 #742 阶段 1.5 归 gate:full 标签，本次未跑"),
+  };
+}
+
+function evaluateEmptySlice(input) {
+  const { coverage, mutation, verdict } = input;
+  // ── 空切片（合法缺席）：两个 job 的 if 都含 hasMutations，空切片时必然 skipped。
+  // #217 时代这里宽容过 'failure'，理由是「GitHub 对零实例动态矩阵实测回报 failure 而非
+  // 官方口径 skipped」（实证 run 32802575298）；该形态已被 if 上的 hasMutations 条件消除
+  // （job 级 if 为假 → 矩阵根本不实例化 → 结论只能是 skipped），故 #742 阶段 1 起收紧为
+  // 只收 skipped：failure/success/cancelled 都说明契约被改坏，属纵深防御。
+  if (coverage !== "skipped") {
+    return {
+      ok: false,
+      code: 1,
+      reason: `空切片却得到 coverage 结果 ${coverage}（期望 skipped）—— ci.yml if 契约破坏`,
+    };
+  }
+  for (const [name, result] of [
+    ["mutation-gate", mutation],
+    ["mutation-verdict", verdict],
+  ]) {
+    if (result !== "skipped") {
       return {
         ok: false,
         code: 1,
-        reason: `空切片却得到 coverage 结果 ${coverage}（期望 skipped）—— ci.yml if 契约破坏`,
+        reason: `空切片却得到 ${name} 结果 ${result}（期望 skipped）—— 无变异对象包却跑了变异链，ci.yml if 的切片条件疑似失效`,
       };
     }
-    for (const [name, result] of [
-      ["mutation-gate", mutation],
-      ["mutation-verdict", verdict],
-    ]) {
-      if (result !== "skipped") {
-        return {
-          ok: false,
-          code: 1,
-          reason: `空切片却得到 ${name} 结果 ${result}（期望 skipped）—— 无变异对象包却跑了变异链，ci.yml if 的切片条件疑似失效`,
-        };
-      }
-    }
-    return { ok: true, code: 0, reason: "PR 空切片：无变异对象包，覆盖/变异链合法缺席" };
   }
+  return { ok: true, code: 0, reason: "PR 空切片：无变异对象包，覆盖/变异链合法缺席" };
+}
 
+function evaluateNonPullRequest(input) {
+  const { event, coverage, mutation, verdict } = input;
   // 非 PR 事件：触发面收敛不变量（#187 + #217 扩展）——fullGate 必须为 false
   // （changes job 里非 PR 一律 false），且覆盖/变异三段全部只允许 skipped（main 归
   // 夜间、发版归 release）；出现其他结果说明 ci.yml if 的事件限制已失效，显性红防

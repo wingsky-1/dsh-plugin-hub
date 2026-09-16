@@ -527,10 +527,17 @@ describe("remediation code 闭集：客户端映射必须覆盖得了", () => {
       { platform: "darwin" },
       { platform: "win32" },
     ];
+    const produced: string[] = [];
     for (const config of cells) {
       const { host } = await probeWith(config);
-      for (const item of host.remediation) expect(closed).toContain(item.code);
+      for (const item of host.remediation) {
+        expect(closed).toContain(item.code);
+        produced.push(item.code);
+      }
     }
+    // 反空转下界：内层循环在「每一格都没产出 remediation」时一次都不执行，这条判据就成了空断言
+    // （7 格全空也绿）。下界只保证「真的验过东西」，条数由数据表决定，不在这里钉。
+    expect(produced.length).toBeGreaterThan(0);
   });
 
   it("params 只由数据表产生：packagemanager 落在闭集、packages 非空", async () => {

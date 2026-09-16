@@ -23,7 +23,7 @@ pnpm contract     # 客户端契约（node scripts/gate/contract-check.ts）
 pnpm test         # 全量 smoke（Node ≥23.6 原生 type stripping 直跑）
 pnpm cov          # 覆盖率采集 + 阈值判分（vitest coverage / istanbul provider，只跑 unit + integration）
 pnpm crap         # 单函数 CRAP 检查（阈值唯一事实源 scripts/data/gauntlet.config.json 的 crap.threshold / crap.strict）
-                  # 现状为 fail-closed 停用态，见下方引用块
+                  # src 口径（#722 阶段五重建）；crap.strict=false 为观察期语义，见下方引用块
 pnpm pack:check   # tarball 完整性（含聚合包）
 pnpm typecheck    # 全仓类型检查
 ```
@@ -35,8 +35,9 @@ pnpm typecheck    # 全仓类型检查
 > `origin/main` 守护，面完整性由 `pnpm verify:coverage-scope` 守）；
 > **变异与 CRAP**在 `scripts/data/gauntlet.config.json`。
 >
-> **覆盖率口径（#722 阶段三）**：`pnpm cov` = vitest 的 istanbul provider，只跑
-> unit + integration（两者直连 `src/`）。分母是 `scripts/data/coverage.config.json` 的
+> **覆盖率口径（#722 阶段三 / #769 收窄）**：`pnpm cov` = vitest 的 istanbul provider，
+> 跑 unit + integration + client-unit + client-dom（四层都**直连 `src/`**）。分母是
+> `scripts/data/coverage.config.json` 的
 > `include`：`packages/*/src/**/*.{ts,tsx}` + `packages/*/src/**/*.mjs`（#733 3.4 补入的 3 个
 > 适配器实现，1756 行）+ `shared/**/*.js` 的**源文件**——零 vendor、零 lib 产物，且未加载的
 > 源文件按 0% 计入分母（分母不随「加载了什么」变化）。排除项是**结构化条目**（pattern +
@@ -45,17 +46,23 @@ pnpm typecheck    # 全仓类型检查
 > 产物）不进覆盖率，仍由 `pnpm test` 全量执行。阈值判分就是 `pnpm cov` 的退出码，
 > 不再有独立判分步骤；PR 的 `gate:full` 标签与 `observe.yml` 夜间班次共用这一执行点。
 >
-> **client 面暂排除在分母外**（`coverage.config.json` 里 `kind: pending-project` 的条目，
-> 带 `reviewBy` 与 `exitCriteria`，会进 `collect-exemptions` 的到期台账）：其直连 src 的测试
-> （happy-dom project）尚未落地，现有 `test/client/**` 是读 lib 产物的契约测试。计入分母会让
-> 33 个恒 0% 的文件把全局值稀释约 22pp、阈值失去约束力，且 happy-dom project 落地时分子跳升、
-> 必须二次基线化。**待该 project 建立时移除排除项并一次性重新基线化。**
+> **client 面按包按面收窄（#769）**：此前是一条 `**/client/**` 整体排除，理由是「这些文件
+> 没有直连 src 的判据，计入分母只会稀释阈值」。那条理由对**一部分**文件成立、对另一部分不成立：
+> notifier 的 15 个纯 `.ts` 客户端模块里 12 个有直连判据（另有 2 个 DOM 面判据），它们计入分母
+> 后实测全局 lines 82.48 → 81.76、functions 83.17 → 81.99，四项仍在阈值之上。故拆成 5 条
+> `pending-project` 条目：notifier 只排除 `.tsx` 渲染面（等组件级渲染判据），另外 3 个包
+> 各自的整个 client 面仍排除（尚未重写、没有直连判据），`shared/client/**` 排除（其测试在
+> `scripts/test` 下、不属于任何 vitest project）；#840 退役 dsh-web-file-preview 后它那条随之删除。
+> 全部带 `reviewBy` 与 `exitCriteria`，进 `collect-exemptions` 的到期台账；条目腐烂由
+> `verify:coverage-scope` 判红。
+> **某个包的客户端有了直连判据就删掉它自己那一条——不要等「全部重写完」再一次性解绑。**
 >
-> **`pnpm crap` 现状（fail-closed 停用态）**：其圈复杂度取自 lib 编译产物，而覆盖率
-> 已切到 src 口径，两者行号不可比——此时按 lib 过滤会命中 0 个文件并以 exit 0 放行
-> （静默降级，#718 定性）。故入口处加了数据源口径自检：不匹配即 exit 2 并说明原因；
-> 夜间的 CRAP 步骤与 `gate:full --with-coverage` 的 crap 步骤已同步摘除。
-> src 口径重建归 **#722 阶段 5**（与 ESLint 复杂度规则同批，届时可直接消费其 TS parser）。
+> **`pnpm crap` 现状（#722 阶段五已重建为 src 口径）**：圈复杂度取 ESLint 内置
+> `complexity` 规则，覆盖率取同一份 src 口径产物（`coverage/coverage-final.json`），
+> 两者同源——此前「复杂度取自 lib 产物、与 src 口径行号不可比 → 入口自检 exit 2」的
+> 停用态**已不成立**。`crap.strict=false` 是**观察期**语义：超阈热点只落盘
+> `coverage/crap-report.json` 并 exit 0，置 true 才判红；数据源缺失或解析失败仍
+> fail-closed `exit 2`。执行点：夜间 `observe.yml` 与 `gate:full --with-coverage`。
 
 ### 变异测试与增量链路（#178 / #187）
 
@@ -105,7 +112,48 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
      组 A（廉价全仓闸，恒跑）：判定脚本 `repo-gate-assert.mjs`、`threshold-monotonic`、
      `aggregate:check`、`stryker:check`、`test:scripts`、`forbid-src-tests`、
      `forbid-homedir-src`、`forbid-module-state-src`、`verify-scripts-index`、
-     `verify-coverage-scope`、`docs:check`、`lint`、`format:check`
+     `verify-coverage-scope`、`verify:vendored-binaries`、`verify-dir-imports`（3 包硬判
+     + provider-usage `--soft`）、`export-surface-snapshot`（dsh-notifier）、
+     `verify-shared-fanin`、`docs:check`、`lint`、`format:check`
+     （本清单是导读，**事实源是 ci.yml 的 repo-gate 步骤本身**。接线由
+     `scripts/test/gate-wiring.test.ts` 两族断言守护，缺一不可：**一致性**——「本地档位计划 ↔
+     CI 恒跑段」两侧各自现场派生「被执行的脚本身份」后双向比对，改任一侧漏改另一侧即判红；
+     **覆盖性**——一致性只是相对不变量，两侧**同时**删掉同一执行点后集合仍然相等，故还要拿
+     `scripts/gate` 下的判据全集比「全部 workflow × 全部 job ∪ 本地 pr/full 档 ∪ lefthook」的
+     执行点全集，既无执行点、又不被非测试源码 import 的判据必须显式登记
+     （`scripts/data/gate-wiring-exceptions.json`，受悬空、class 方向、脚本存在、总量上限、
+     indirect 的 `via` 可达（`via: package.json` 还要求该别名在仓库里确有出处）且真的没有执行点
+     等守卫）。另外几族拦的是「执行点在、判据也在跑，但退出码到不了步骤」，扫描面是**全部
+     workflow 的全部 job**：① 判据步骤只允许**一条直接的判据命令**（`exit "0"` 前置、
+     `if [ ]; then` 包装、`X=1 set +e` 这类写法列举不完，故闭合形态而非继续补枚举），设计如此的
+     例外（产物闸的 if/else 双形态、变异判分的循环与聚合等）逐条登记在 `structuredSteps`，登记项
+     再用**文本摘要** `digest` 钉死（否则往循环里插一行 `break` / `continue` 就能让剩下的判据不再
+     执行，而步骤键、执行点、两侧身份全不变）；② 步骤级 `if`（`stepIfs`）与含判据的 job 的 job 级
+     `if`（`jobIfs`）必须逐字登记——它们是「改一处即静默停闸」的开关，而「这个条件会不会成立」
+     静态判不出（等于停机问题），登记制是唯一能把静默开关变成 diff 里显眼一行的手段；③ workflow 与
+     lefthook 的 YAML **交给成熟的 `yaml` 包解析**（devDependency；引号键 / 空格冒号 / 块标量与折叠
+     标量 / flow 写法 / 重复键都由它按 YAML 语义处理，文件级解析错误、白名单之外的步骤键、非字符串
+     `run` / 非映射的 `env` 都由 `parseIssues` / `yamlErrors` 报出来判红；工作流**文件集合**本身也是
+     硬编码契约，防文件被删或改名时断言整体空转全绿），判据步骤另不得覆盖 `shell`（内建关键字放行，
+     自定义模板必须取 basename 后属 bash 家族、把 `{0}` 交给解释器且自带 errexit）、不得带
+     `continue-on-error`、不得注入能改变执行环境的变量（`BASH_ENV` / `SHELLOPTS` / `NODE_OPTIONS` / `PATH` / …）、命令引号
+     必须配对（都不设登记出口），判据步骤的**有效 env 键**（workflow ∪ job ∪ 步骤三层）逐键登记在新增的
+     `stepEnvs`；判据 job 的**环境面**按位置整条登记（不按「谁写了 `$GITHUB_ENV`」判——字样总能被绕开）：判据步骤
+     之前的每个非判据 run 步骤进 `priorRunSteps`（整步摘要 + env 键），该 job 的**执行面**（前序步骤有序
+     序列 + 全部 `uses:` 步骤整步文本 + job 级 `container` / `defaults`）进 `jobFaces`——action 里是任意
+     代码，同样能写 `$GITHUB_ENV`；一处 `if: false` 也能让产物上传静默不跑；`container.env` 与
+     `defaults.run.working-directory` 是换掉整 job 执行环境的 job 级键，判据步骤自己声明 `working-directory`
+     则直接判红（不设登记出口）；已登记条件的操作数来源、其输入步骤（同 job 的 `uses` 整步面）与 artifact 产出端登记在
+     `conditionInputs`——这些都是「条件 / 环境成立与否的输入面」，只钉条件原文挡不住改产出；④ 判据别名的展开结果必须干净，且**指向必须逐条登记在
+     `judgmentAliases`**——期望身份与别名指向同源派生，改名改参会让两侧一起移动、比对仍然相等，
+     故需要这条外部锚点；⑤ 本地 pr 档必须覆盖 full 档的全部判据端点（差额只能登记 `tier-only`），
+     判据不得内嵌进另一个判据的执行点。产物闸 `contract` / `pack:check` / `verify:npmlayout` 还必须
+     同时存在切片与全仓两种调用形态，删掉任一侧即判红。
+     覆盖性只要求「至少一处执行点」，不要求该点在 PR 面——某判据只在 `observe` / `release` 跑时，
+     它在 PR 上的回归不会被拦住；故执行点全部落在非 PR 面（CI 侧 = ci.yml 里**未**按 `gate:full`
+     标签收口的 job，本地侧 = **pr** 档）的判据必须登记 `nightly-only` 或 `tier-only`，这份清单就是
+     「PR 上拦不住哪些判据」的答案；恒假（`if: false`）的 job / 步骤不算执行点，否则一个 decoy
+     步骤就能顶替被删掉的判据）
      （`format:check` 是形态的唯一执行点：面由 `.prettierignore` 显式圈定，只格式化代码面，
      文档 / `.github/` / 生成器写入的数据与派生物被排除并各带理由；
      **纯格式化提交必须登记到仓库根的 `.git-blame-ignore-revs`**：否则一次全仓重排会把数百个
@@ -118,13 +166,14 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
      什么」**：索引项必须存在，被调用点引用的脚本必须登记）；
      组 B（产物闸，按 `fullGate` 切口径）：`contract` / `pack:check` / `verify:npmlayout`
      —— 默认只验命中包（`--packages <命中清单>`），`gate:full` 时验全仓；
-  3. `coverage` / `mutation-gate` / `mutation-verdict`（全量链路）：只在 `gate:full` 的
-     PR 上实例化。coverage 全局单次采集（`pnpm cov` = vitest coverage，只跑 unit +
+  3. `coverage`（全量链路）：只在打了 `gate:full` 标签的 PR 上实例化；`mutation-gate` /
+     `mutation-verdict` 自 #742 阶段 1 起**与标签解耦**——PR 上一律按命中切片强制跑。coverage 全局单次采集（`pnpm cov` = vitest coverage，只跑 unit +
      integration，阈值判分即其退出码；摘要产物经 artifact 留档——cov 从变异矩阵剥离后，
      矩阵多实例各自全仓 smoke 导致的端口竞争 flake 随之消除）；mutation 按命中包切片跑
      Stryker（incremental 跳过未变 mutant）；verdict 汇合变异报告逐包判分（变异率 covered
      ≥ per-package threshold，受 `mutation.strict` 约束；覆盖率维度已上移到 coverage job，
-     verdict 以 `needs.coverage.result == 'success'` 连坐）。矩阵实例级 failure 时 verdict
+     改由 repo-gate 判定表按 `fullGate` 裁决——verdict 不再以 coverage 结果为 `if` 前提，
+     故 cov 失败/skip 不会吞掉变异判分）。矩阵实例级 failure 时 verdict
      仍聚合判分（缺报告包 exit 2 fail-closed）。
 
   判定表为**六维**「事件 × fullGate × 切片(hasMutations) × coverage × 变异矩阵 ×
@@ -136,8 +185,8 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
   反馈回路。高风险改动（重构、依赖跃迁、发版前）在 PR 上加 `gate:full` 标签按需补跑；
   全仓产物闸在 `gate:full` PR 与 observe 全量班两处落地，默认 PR 只验命中包。
 - **触发面收敛**（#187 / #217 扩展）：全量三段 job 仅限 pull_request 触发——push 到 main
-  时 diff 基准 `before` 不可用会使 paths-filter 走 fail-closed 全量 fallback，变异随之
-  退化全量且与当晚夜间全量完全重复；主干覆盖与变异覆盖由 observe.yml 夜间全量承接、发版前
+  时 diff 基准取 `github.event.before`（只有 force push / 新分支首推这类全零 SHA 才走
+  fail-closed 全量 fallback），变异在非 PR 事件下整体 skipped、与当晚夜间全量不重复；主干覆盖与变异覆盖由 observe.yml 夜间全量承接、发版前
   由 release.yml tag 管线承接，非 PR 事件下三段 job 整体 skipped 且 `fullGate` 恒为 false
   （repo-gate 判定表显式放行）。
 - 本地手动入口：`npx stryker run stryker.conf.d/dsh-<pkg>.json`（临时强制全量用
@@ -249,8 +298,10 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   `node scripts/gate/aggregate.ts` 重新生成聚合 patch。
 - **测试**：`pnpm test` 直跑（包内实现为 `node ../../scripts/test/run-vitest.mjs --min <N>`）。
   运行器由 vitest 承载：根 `vitest.config.ts` 从 `scripts/data/mutation-topology.json` 的
-  `$testLayers.layers` 派生四个 project（`test/unit` → `unit`、
-  `test/integration` → `integration`、`test/e2e` → `e2e`、`test/client` → `contract`；
+  `$testLayers.layers` 派生六个 project（`test/unit` → `unit`、
+  `test/integration` → `integration`、`test/client-unit` → `client-unit`（直连 src 的客户端
+  纯逻辑判据）、`test/client-dom` → `client-dom`（happy-dom 环境，直连 src 的 DOM 单测）、
+  `test/client` → `contract`、`test/e2e` → `e2e`；
   层 glob 与 `--min` 口径因此同源，不再三处声明），
   每个测试文件独立环境（per-file 隔离），包级调用按 cwd 自动收窄到本包；
   乱序验证用 `--sequence.shuffle` 透传。
@@ -269,11 +320,14 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
 | `test/unit/**`        | 单模块 / 纯逻辑 / fake 驱动、只做临时目录 I/O（允许为覆盖分支而短暂 bind 一个端口，如 lan-proxy 的 EADDRINUSE 用例）                                | 是       |
 | `test/integration/**` | 以真实 socket/真实组合根为被测对象：起真实 http server（内核临时端口）走完整转发链、真实 cordis Context、真实配置迁移                               | 是       |
-| `test/client/**`      | 断言对象是客户端**构建产物** `lib/client.js`——而 `mutate` 面本身排除 `src/client/**`，登记进变异面测试清单只增加每个段的 dry run 成本、杀灭贡献为零 | 否       |
+| `test/client-unit/**` | 直连 `src/client/**` 的**纯逻辑**判据（判定、映射表、状态机），不需要 DOM；环境 `node`                                                                  | 是       |
+| `test/client-dom/**`  | 直连 `src/client/**` 但被测模块在**加载期或运行期真的读写 DOM**（`document.title`、横幅挂载），必须 `happy-dom`；文件头用 `@vitest-environment happy-dom` 声明（派生配置是单 project `node`，不吃根配置的层环境） | 是       |
+| `test/client/**`      | 断言对象是客户端**构建产物**形态（`lib/client.js`、或 in-place esbuild 后执行已构建副本）——产物外壳无法用 perTest 覆盖分析归因到任何 `src/**` 模块，登记进变异面只增加每个段的 dry run 成本、杀灭贡献为零；直连 src 的判据在 `client-unit` / `client-dom` | 否       |
 | `test/e2e/**`         | 真实监听端口 / spawn 子进程 / 真机系统调用的大 smoke                                                                                                | 否       |
 
-支撑模块不入任何层：`test/helpers.ts`、`test/smoke-lib.ts`、`test/smoke-pure.ts`、
-`test/*.worker.mjs`（它们不是测试条目）。**判层按机制而非文件名**：notifier 的
+支撑模块不入任何层：`test/helpers.ts`、`test/client-helpers.ts`（客户端判据共用的替身，只服务
+一个域故不上提包级夹具）、`test/smoke-lib.ts`、`test/smoke-pure.ts`、`test/*.worker.mjs`
+（它们不是测试条目）。**判层按机制而非文件名**：notifier 的
 `e2e-*.test.ts` 用的是 in-process cordis Context + fake 驱动（不 listen、不 spawn），
 故归集成层并保留在变异面；反之 `smoke.test.ts`（真实端口/子进程）归 e2e 层。
 
@@ -291,6 +345,13 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   ② 每条登记与每条豁免在磁盘上真实存在；③ 每个有测试的包（含未登记变异面的包）`--min` == runner glob
   实际文件数；④ **充分性下限**：`mutationLayers` 必须包含 `test-surface.mjs` 里的 `REQUIRED_MUTATION_LAYERS`
   （unit + integration）且每包变异面非空——防「两行拓扑改动把变异面削掉」；
+  ⑤ 每条派生 `mutate` 条目（正向与 `!` 排除同等）必须**锚定在本包（或 `shared/`）**、在**源码世界内
+  命中 ≥1 文件**、且命中面不越出本包或 `shared/`。字面前缀不足以证明锚定：`..` 会被 glob 归一化、
+  brace 会展开，两者都能让前缀看着在本包而命中他包文件（独立复核各实测出绕过形态）；
+  ⑥ **有效面非空**：一份 conf 的正向命中被 `!` 条目剔除后必须仍有剩余——⑤ 只判**单条**条目，
+  一条包根级整包通配能在条数不变、⑤ 全绿的前提下把整包变异面清空，而 Stryker 对 0 mutant 不报错
+  （判分与门禁都静默）。此外段级 `excludes` 的**条目形状**（非空字符串 + `!` 前缀，缺 `!` 会极性
+  反转）与包登记（空 `segments` 指向 `$noMutationPackages`）在派生前先判；
 - 新增测试文件后的固定动作：放进对应层目录 → `node scripts/gate/gen-stryker-conf.mjs --sync-test-min`
   → `pnpm stryker:gen` → 提交。单元层与集成层**零手工登记**；`testMutationExemptions`（按层分组）只用于
   「刻意不进变异面」的逐条裁决，必须写明理由，模型样例两条：
@@ -408,6 +469,14 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
   `style.css`、`react-shim.d.ts`、`css.d.ts` 都归位 `src/client/`；宿主模块留 `src/` 根。
 - **宿主 & 客户端共享**的模块（如双端共用的后缀表 / 契约常量）留 `src/` 根，
   客户端经 `../grouping.js` 引用——不要为"客户端专用"而把共享模块搬走。
+- **例外：包内 `src/shared/**`（#769 起）**。双端共享且要求**零 import**（或只做同目录
+  `.ts` 相对 import）才能两端各自 inline 的模块（典型是契约常量表与种类表）归位
+  `src/shared/`，两端都经 `src/shared/interface.ts` 这一处门面引用（目录头写明约束，
+  见 `packages/dsh-notifier/src/shared/interface.ts`）。放进这个目录的意义不是分类而是
+  **可审**：`scripts/test/shared-leaf-imports.test.ts` 按「客户端是否经门面消费」推导扫描面，
+  对门面转出链上的每个叶子模块机械判红（值引 `node:*` 会构建失败、值引 bare 包会**静默内联**
+  进浏览器产物）。该目录的最终形态（包内 `src/shared/` 还是独立 shard 目录）由 #792 的三档
+  共享规范裁定。
 
 ### 2.3 客户端其它要点
 
@@ -436,7 +505,10 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
 
 - `pnpm contract`（contract-check）：load id === 包名、`dsh.client ⇒ exports["./client"]`、
   `src/client/index.ts ⇒ lib/client.js` 产物、arrive 可解析、`exports.apply/inject` 装配。
-  下列两条门禁同属本段执行（**不新增 workflow**，执法点唯一）：
+  下列两条门禁原先内嵌在本脚本里以 `spawnSync` 执行——判据确实在跑，但 workflow 与本地档位
+  计划里都看不到它们，于是「每条判据至少一个可见执行点」对它们恒为假。审计 P0-1 后迁成
+  **可见的直接步骤**：CI 侧在 `ci.yml` 的 repo-gate，本地侧在 `gate-steps.mjs` 的 cheapGlobal；
+  接线由 `scripts/test/gate-wiring.test.ts` 双向断言守护，**本段不再执行它们**：
   - **依赖图门禁（`scripts/gate/verify-dir-imports.mjs`；#690 S0 / #733 M0）**：模块按
     **叶子粒度**（递归含 `interface.ts` 的目录，分组层透明）划分，跨模块引用只能走目标
     模块的 `interface.ts`（入口）或 `deps.ts`（出口）。`scripts/data/dir-imports-baseline.json`
@@ -546,12 +618,12 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
   `exports["./client"].types` 曾写 `./lib/client.d.ts`（实际产出 `lib/client/index.d.ts`），
   严格 TS 消费方按包名子路径导入时静默降级为 `any`（TS7016），而 `pack:check` /
   `contract-check` 都看不见（后者只断言 `exports['./client']` 键存在）。**该缺陷实测存在于
-  全部 5 个有客户端的包**（dsh-notifier / dsh-lan-proxy / dsh-mcp-manager /
-  dsh-provider-usage / dsh-web-file-preview），判据面对全部包生效、不留切片。判据实现
+  全部 4 个有客户端的包**（dsh-notifier / dsh-lan-proxy / dsh-mcp-manager /
+  dsh-provider-usage），判据面对全部包生效、不留切片。判据实现
   `scripts/lib/exports-types-lib.ts`——与导出面快照门禁**共用**「`exports[].types` → 产物
   相对路径」映射，但**判的是不同产物**（此处判 tarball，门禁判 emit 产物），故不是双轨；
   消费方探针：隔离目录软链 `node_modules/@wingsky-1/<pkg>` → 包目录 + `--strict
---moduleResolution bundler`，五包实测统一为「对照组主入口 exit=0 / 子路径修复前 TS7016 /
+--moduleResolution bundler`，四包实测统一为「对照组主入口 exit=0 / 子路径修复前 TS7016 /
   修复后 TS2322」。
 - `assertClientSourceContract`（smoke-lib）：兼容三种产物形态（纯净 wrapper /
   React externals / legacy），断言 `"use strict"`、契约外壳、Symbol.toStringTag、
@@ -621,6 +693,55 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
 - **新增/修改客户端后**：`pnpm gate:pr` 全绿再提交（= 全仓 build/test/typecheck + 全仓
   产物闸 + 廉价全仓一致性闸；迭代中用 `pnpm gate:changed`，`gate:full` 在其上另收豁免到期台账。
   分层口径与「改动类型 → 归属层」对照表见根 [AGENTS.md 门禁矩阵](../AGENTS.md)）。
+
+<a id="equivalence-refactor"></a><a id="user-content-equivalence-refactor"></a>
+
+### 4.1 等价重构类改动的验证三件套（#732 / #839）
+
+改脚本、门禁、构建链这类**只搬不改**的重构（抽函数、拆模块、删死代码），判据不是「测试还是绿的」，
+而是**能不能证明行为没变**。实测教训：三层常规手段会**同时**漏掉「控制流等价性」类回归
+（如状态没复位、分支顺序变了、统一尾部追加被改成逐分支追加）——字面量/对象键的多重集比对看不见
+（注释文本与状态不是字面量）、真实仓库上的端到端行为指纹看不见（本仓语料里没有触发形态）、
+既有归属用例也可能只覆盖一半形态。#732 清 `scripts/` 面复杂度时就踩到过一次：
+`verify-dir-imports.mjs` 的 `stripComments` 引号态复位写错（拿字符串去比对状态对象，恒假），
+进入字符串后状态永不复位，**字符串之后出现的注释不再被剥离**——而既有的 F5 与 F5b 两条用例
+在当时**都是绿的**（把 bug 种回去实测：F5 pass、F5b pass，补的 F5c 才 fail）。
+
+所以这类改动验收必须凑齐三件，缺一不可：
+
+1. **探针**：把目标阈值临时压到目标口径，**只对目标面跑**、**用完立刻还原**。
+   复杂度探针 = `node tools/lint/bin/lint.mjs '<面 glob>'`（如 `'scripts/**/*.{ts,mjs}'`），
+   超阈项数按输出里的 error 行**自己数**——命令本身只打印 `error X，warning Y` 汇总行，
+   不会打「超阈 N 项 / M 文件」。按面跑是必须的：不带 glob 会把面外存量一起报出来
+   （压到 10/15 实测全仓 error 234，其中 `scripts/**` 面 0 条，其余全在 `packages/**` / `shared/` /
+   `tools/`，rc=1 属预期，别误判成自己改坏了）。
+   探针不是门禁——它临时改的是全局事实源（如 `gauntlet.config.json` 的 complexity 段），
+   留在工作区等于把阈值悄悄降了，而且**没有闸会替你发现**：实测把 cyclomatic 从 78 压到 10，
+   `threshold-monotonic` 仍 rc=0（它只管覆盖率 / 变异 / lint 警告预算三个维度）。这条单调性
+   缺口已立项（#843 的 M3）——在它补齐前，本条「立刻还原」是唯一防线。
+   #839 的做法：压到 10/15 → 跑 `scripts/**` 面 → `git checkout --` 该文件，并复核 `git status` 里该文件已干净。
+2. **机制性等价性检查器**：把基线版与改动版各自解析成 AST，抽取**字符串 / 模板 / 数字字面量、
+   正则、对象字面量键、`process.exit(n)` / `process.exitCode = n`** 的多重集做差集。
+   差异只允许两类：**空**，或抽函数**必然**产生的「结构回声」（返回对象与解构参数使同一键计数 +N）。
+   后者逐条登记在对照表里并写明理由，**未登记差异一律报红**。
+   两个必补的专项：**数字字面量是否整段消失**（防丢上界/阈值）、**新增函数是否零引用**（防抽了不用）。
+3. **归属自测 + 被改函数的差分对拍**：先 `grep -rl '<脚本名>' scripts/test/` 找归属用例并全部跑通；
+   再对**被改的每个纯函数**做「旧实现（`git show origin/main:<file>` 取原文）vs 新实现、同输入」
+   对拍。第 2 件抓不到上面那类控制流回归，只有这一件能抓——它针对的正是**被改的那个函数**。
+
+适用范围：三件套针对**不在覆盖率 / 变异面内**的代码（`scripts/**`、构建链、门禁脚本）——这类改动
+的行为等价性没有任何自动信号兜底。重构 `packages/<pkg>/src` 时，CI 的 PR 切片变异（#742 阶段 1）
+与 `gate:full --with-coverage` 会免费再给一层信号，但它只证明「判据仍被杀」，不证明判据没被
+改弱，所以替代不了第 3 件；包内重构的证据分级与「实验放探针 worktree」纪律见
+[dsh-plugin-hub-refactor skill §8](../.dsh/skills/dsh-plugin-hub-refactor/SKILL.md#user-content-8-重构之后的验收复杂度与等价性)，
+本节不复述其口径。
+
+三件都过之后，再让 `pnpm gate:pr` 全绿 + CI 绿，并按
+[PR 评审 skill](../.dsh/skills/dsh-plugin-hub-pr-review/SKILL.md) 派**上下文独立**的对抗子代理复核一次
+（#839 的实践：两个子代理分工不重叠——语义等价性 / 门禁与测试质量；用例规模见 `df68b9b` 提交
+信息，本规程不复述它——离了脚本与粒度就不可复跑）。**声称「零行为变更」时，三件的实测输出要
+连同 exit code 一起写进 PR 描述**（口径纪律见
+[ARCHITECTURE-METHOD.md §10](ARCHITECTURE-METHOD.md#user-content-10-口径与证据纪律)）。
 
 <a id="5-smoke-测试防-flake-纪律"></a><a id="user-content-5-smoke-测试防-flake-纪律"></a>
 

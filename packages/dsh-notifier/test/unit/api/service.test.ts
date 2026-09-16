@@ -159,7 +159,7 @@ function assemble() {
     frames: frames.port,
     logger,
     config: {
-      readConfig: () => ({ ...DEFAULT_CONFIG, maxConnections: 4 }),
+      readConfig: () => ({ ...DEFAULT_CONFIG }),
       readSettingsView: () => ({
         user: { notifyAsk: false },
         revision: 7,
@@ -228,7 +228,11 @@ describe("路径表：对客户端的完整承诺", () => {
     const { rec, json } = await request(hub.routes, path, makeReq({ method: "PATCH", url: path }));
     expect(rec.status).toBe(405);
     expect(rec.headers.allow).toBe(methods.join(", "));
-    expect(json()).toEqual({ error: "method not allowed: PATCH" });
+    expect(json()).toEqual({
+      error: "method not allowed: PATCH",
+      code: "METHOD_NOT_ALLOWED",
+      status: 405,
+    });
   });
 });
 

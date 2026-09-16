@@ -12,8 +12,13 @@ import mutationTopology from "./scripts/data/mutation-topology.json" with { type
  * `scripts/gate/verify-coverage-scope.mjs` 会判红本文件里再出现 thresholds / include / exclude
  * 字面量：同一事实两处声明，就一定会有一处先腐烂。
  *
- * 分层即目录：test/unit、test/integration、test/e2e 直连 src 源码；test/client 是「读 lib 产物 +
- * vm 执行」的客户端契约测试。产物契约测试（读 lib/）不属于覆盖率口径。
+ * 分层即目录，且分层是按「断言对象是什么」切的：
+ *   - test/unit、test/integration、test/client-unit、test/client-dom 都**直连 src 源码**
+ *     （client-unit 是客户端纯逻辑，client-dom 是要 DOM 环境的那部分），四层都进变异面与覆盖率；
+ *   - test/client 只剩「断言对象不是 src 本身」的产物/打包形态契约（读 lib/client.js、或
+ *     in-place esbuild 后执行已构建副本），故既不进变异面、也不产生覆盖率。
+ * 「直连」不是风格偏好而是判据有效性的前提：断言重建出来的副本时，变异面的 perTest 覆盖分析
+ * 看不见目标模块（变异体一律 noCoverage），覆盖率也恒为零。
  */
 
 /** 各测试层的运行环境与超时（配置决策；层清单来自 mutation-topology 的 $testLayers）。 */
@@ -30,9 +35,18 @@ const LAYER_RUNTIME = {
   integration: { environment: "node", testTimeout: 60_000, hookTimeout: 60_000 },
   // e2e 走真实端口、文件系统与子进程，单文件最坏数百秒（mcp-manager smoke 实测 328s）
   e2e: { environment: "node", testTimeout: 600_000, hookTimeout: 600_000 },
-  // test/client/** 的现有形态是「读 lib 产物字符串 + vm 执行」，属产物契约断言，
-  // 不需要 DOM 环境；未来直连 src/client/** 的 DOM 单测另立 happy-dom project。
+  // test/client/** 只剩断言对象不是 src 本身的那部分（读 lib 产物、或 in-place esbuild 后执行
+  // 已构建副本），不需要 DOM 环境。两层不能合并：直连 src 的 DOM 用例会让 import.meta.url 在
+  // happy-dom 下变成 http 协议并抛「The URL must be of scheme file」，而纯逻辑判据又必须直连
+  // 源码才能进变异面。
   client: { environment: "node" },
+  // test/client-unit/** 直连 src/client/** 的纯逻辑判据：不要 DOM，但必须直连源码（见文件头）。
+  // 超时口径与 unit 对齐：这里跑的是同一批实现里的判断，个别用例的预算同样是 30s 量级。
+  "client-unit": { environment: "node", testTimeout: 60_000, hookTimeout: 60_000 },
+  // test/client-dom/** 直连 src/client/** 的 DOM 单测：被测模块在模块加载期即读写 document，
+  // 只能在 DOM 环境里跑（happy-dom 已在根 devDependencies，零新增依赖）。无子进程与真实 I/O，
+  // 30s 是防挂起的上界。
+  "client-dom": { environment: "happy-dom", testTimeout: 30_000, hookTimeout: 30_000 },
 };
 
 /** 层名 → project 名：`--project contract` 是既有 CLI 契约（release.yml / package.json 在用），保留别名。 */

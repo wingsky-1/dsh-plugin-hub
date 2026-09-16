@@ -165,12 +165,19 @@ function alignUtf8Start(buf) {
 
 /** 文本编码 BOM：带 BOM 的 UTF-16/32 文本自身含 NUL，与 isbinaryfile 的豁免口径保持一致。 */
 function hasTextBom(buf) {
-  return (
-    (buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) ||
-    (buf[0] === 0xff && buf[1] === 0xfe) ||
-    (buf[0] === 0xfe && buf[1] === 0xff) ||
-    (buf[0] === 0x00 && buf[1] === 0x00 && buf[2] === 0xfe && buf[3] === 0xff)
-  );
+  return hasUtf8Bom(buf) || hasUtf16Bom(buf) || hasUtf32Bom(buf);
+}
+
+function hasUtf8Bom(buf) {
+  return buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf;
+}
+
+function hasUtf16Bom(buf) {
+  return (buf[0] === 0xff && buf[1] === 0xfe) || (buf[0] === 0xfe && buf[1] === 0xff);
+}
+
+function hasUtf32Bom(buf) {
+  return buf[0] === 0x00 && buf[1] === 0x00 && buf[2] === 0xfe && buf[3] === 0xff;
 }
 
 /**
@@ -214,12 +221,24 @@ function bundledNames(pkgJson) {
  * 存在的普通文件——`files` 之外的位置若不存在就不是分发物，不该扩大扫描面。
  */
 function forcedPaths(pkgDirAbs) {
+  const out = collectForcedRootFiles(pkgDirAbs);
+  const pkgJson = readPackageJson(pkgDirAbs) ?? {};
+  for (const rel of collectForcedDeclaredFiles(pkgDirAbs, pkgJson)) out.add(rel);
+  for (const p of collectForcedBundledFiles(pkgDirAbs, pkgJson)) out.add(p);
+  return out;
+}
+
+function collectForcedRootFiles(pkgDirAbs) {
   const out = new Set();
   if (isRegularFile(join(pkgDirAbs, "package.json"))) out.add("package.json");
   for (const name of readdirSync(pkgDirAbs)) {
     if (FORCED_ROOT_FILE.test(name) && isRegularFile(join(pkgDirAbs, name))) out.add(name);
   }
-  const pkgJson = readPackageJson(pkgDirAbs) ?? {};
+  return out;
+}
+
+function collectForcedDeclaredFiles(pkgDirAbs, pkgJson) {
+  const out = new Set();
   const declared = [
     ...binPaths(pkgJson.bin),
     ...(typeof pkgJson.main === "string" ? [pkgJson.main] : []),
@@ -228,6 +247,11 @@ function forcedPaths(pkgDirAbs) {
     const rel = normalizeRel(raw);
     if (rel !== "" && isRegularFile(join(pkgDirAbs, rel))) out.add(rel);
   }
+  return out;
+}
+
+function collectForcedBundledFiles(pkgDirAbs, pkgJson) {
+  const out = new Set();
   for (const dep of bundledNames(pkgJson)) {
     for (const p of expandEntry(pkgDirAbs, `node_modules/${dep}`) ?? []) out.add(p);
   }
@@ -359,22 +383,37 @@ export function kindOf(entry) {
 
 /** 校验单条登记项的字段形态，返回问题列表（空 = 合法）。 */
 function checkEntryShape(e, index) {
-  const problems = [];
   const where = `entries[${index}]`;
   if (e === null || typeof e !== "object" || Array.isArray(e)) return [`${where} 不是对象`];
-  if (e.kind !== undefined && !KINDS.has(e.kind)) {
-    problems.push(
-      `${where}（${e.path ?? "无 path"}）kind 非法：${String(e.kind)}（可选 ${[...KINDS].join(" / ")}）`,
-    );
-  }
-  const required = kindOf(e) === "first-party" ? FIRST_PARTY_FIELDS : ENTRY_FIELDS;
-  const missing = required.filter((f) => typeof e[f] !== "string" || e[f].trim() === "");
+  const problems = checkEntryKind(e, where);
+  const missing = findMissingFields(e);
   if (missing.length > 0) {
     return [
       ...problems,
       `${where}（${e.path ?? "无 path"}）字段缺失或非字符串：${missing.join(", ")}`,
     ];
   }
+  problems.push(...checkPathShape(e));
+  return problems;
+}
+
+function checkEntryKind(e, where) {
+  const problems = [];
+  if (e.kind !== undefined && !KINDS.has(e.kind)) {
+    problems.push(
+      `${where}（${e.path ?? "无 path"}）kind 非法：${String(e.kind)}（可选 ${[...KINDS].join(" / ")}）`,
+    );
+  }
+  return problems;
+}
+
+function findMissingFields(e) {
+  const required = kindOf(e) === "first-party" ? FIRST_PARTY_FIELDS : ENTRY_FIELDS;
+  return required.filter((f) => typeof e[f] !== "string" || e[f].trim() === "");
+}
+
+function checkPathShape(e) {
+  const problems = [];
   if (!PKG_PATH.test(e.path))
     problems.push(`${e.path} 不在 packages/<包>/ 下（登记表只登记发布物面内的包内文件）`);
   if (kindOf(e) !== "first-party" && !PKG_PATH.test(e.licenseFile))
@@ -398,11 +437,37 @@ export function verifyVendoredBinaries(root, { registryPath, isBinary = isBinary
   // 登记表不可读 = 判据不可执行，直接抛（调用方按结构错误 exit 2）——不得退化成「零命中放行」。
   const entries = loadVendoredRegistry(registryPath ?? join(root, REGISTRY_REL));
 
-  const problems = [];
-  const reports = [];
-  const seen = new Set();
   // withPath：path 可用（供「已登记」集合与存在性/license 判据）；hashable：sha256 形态
   // 合法（形态非法的条目若再比一次哈希，同一处错误会被报成两条噪声问题）。
+  const { problems, withPath, hashable } = indexRegistryEntries(entries);
+
+  const { surface, missing } = distributionSurfaceReport(root);
+  const hits = scanVendoredBinaries(root, { isBinary });
+  // 扫描面为空 = 判据前提不成立（包结构或 root 传错），不得当作「零命中」放行。
+  if (surface.size === 0) problems.push(`发布物面为空（扫描根 ${root}）：判据前提不成立`);
+  const reports = collectSurfaceReports(root, surface, missing);
+
+  const registered = new Set(withPath.map((e) => e.path));
+  problems.push(...checkUnregisteredHits(root, hits, registered));
+
+  for (const e of withPath) {
+    problems.push(...checkEntryFile(e, root, surface, hashable, isBinary));
+    problems.push(...checkEntryLicense(e, root, surface));
+  }
+
+  return {
+    problems,
+    reports,
+    scanned: surface.size,
+    registered: withPath.length,
+    hits: hits.length,
+  };
+}
+
+/** 形态非法的条目仍进 problems，但不进 hashable——否则同一处形态错误会再报一条哈希漂移。 */
+function indexRegistryEntries(entries) {
+  const problems = [];
+  const seen = new Set();
   const withPath = [];
   const hashable = new Set();
   for (const [i, e] of entries.entries()) {
@@ -414,11 +479,11 @@ export function verifyVendoredBinaries(root, { registryPath, isBinary = isBinary
     withPath.push(e);
     if (shape.length === 0) hashable.add(e);
   }
+  return { problems, withPath, hashable };
+}
 
-  const { surface, missing } = distributionSurfaceReport(root);
-  const hits = scanVendoredBinaries(root, { isBinary });
-  // 扫描面为空 = 判据前提不成立（包结构或 root 传错），不得当作「零命中」放行。
-  if (surface.size === 0) problems.push(`发布物面为空（扫描根 ${root}）：判据前提不成立`);
+function collectSurfaceReports(root, surface, missing) {
+  const reports = [];
   // 扫描面静默变小是事实，但拿文件数下限去判红只会制造脆弱判据；报告出来让人看见即可。
   for (const rel of missing) {
     reports.push(
@@ -436,8 +501,11 @@ export function verifyVendoredBinaries(root, { registryPath, isBinary = isBinary
         `npm 发布物不跟随软链目录；若它本应随包发布，请改成真实文件`,
     );
   }
+  return reports;
+}
 
-  const registered = new Set(withPath.map((e) => e.path));
+function checkUnregisteredHits(root, hits, registered) {
+  const problems = [];
   for (const hit of hits) {
     if (registered.has(hit)) continue;
     // 哈希直接打在问题里：登记表 note 要求「先跑门禁取 sha256」，而只说不合规的话用户取不到
@@ -447,49 +515,49 @@ export function verifyVendoredBinaries(root, { registryPath, isBinary = isBinary
         `请以该哈希登记并附随包 license 文本`,
     );
   }
+  return problems;
+}
 
-  for (const e of withPath) {
-    const abs = join(root, e.path);
-    if (!existsSync(abs)) {
-      problems.push(`${e.path} 登记项文件不存在（登记表与仓库脱钩）`);
-    } else if (!isRegularFile(abs)) {
-      // 登记项必须指向真实文件：软链目录读不了哈希、也无法嗅探，登记它不产生任何合规效果。
-      problems.push(`${e.path} 登记项不是普通文件（软链目录/悬空软链无法做内容嗅探与哈希）`);
-    } else {
-      if (!surface.has(e.path))
-        problems.push(`${e.path} 不在发布物面内（登记它不产生任何合规效果）`);
-      if (!sniffBinary(abs, isBinary))
-        problems.push(`${e.path} 内容已不是二进制（嗅探未命中）：登记表与事实脱钩`);
-      if (hashable.has(e)) {
-        const actual = sha256File(abs);
-        if (actual !== e.sha256)
-          problems.push(`${e.path} sha256 漂移：登记 ${e.sha256} 实际 ${actual}`);
-      }
-    }
-    // license 文本必须随包发布：vendored 一个副本却只把许可放在 docs/（不分发）等于没附。
-    // first-party 资产没有第三方许可义务，不该被要求附一段「来源 + 许可」。
-    if (kindOf(e) === "first-party") continue;
-    if (typeof e.licenseFile !== "string" || e.licenseFile.trim() === "") continue;
-    const licAbs = join(root, e.licenseFile);
-    if (!existsSync(licAbs) || !isRegularFile(licAbs)) {
-      problems.push(`${e.path} 的 license 文本不存在：${e.licenseFile}`);
-    } else {
-      if (!surface.has(e.licenseFile)) {
-        problems.push(`${e.licenseFile} 不在发布物面内：vendored 了副本却没随包附许可文本`);
-      }
-      if (readFileSync(licAbs, "utf8").trim() === "") {
-        problems.push(`${e.licenseFile} 为空文件（许可文本缺收）`);
-      }
+function checkEntryFile(e, root, surface, hashable, isBinary) {
+  const problems = [];
+  const abs = join(root, e.path);
+  if (!existsSync(abs)) {
+    problems.push(`${e.path} 登记项文件不存在（登记表与仓库脱钩）`);
+  } else if (!isRegularFile(abs)) {
+    // 登记项必须指向真实文件：软链目录读不了哈希、也无法嗅探，登记它不产生任何合规效果。
+    problems.push(`${e.path} 登记项不是普通文件（软链目录/悬空软链无法做内容嗅探与哈希）`);
+  } else {
+    if (!surface.has(e.path)) problems.push(`${e.path} 不在发布物面内（登记它不产生任何合规效果）`);
+    if (!sniffBinary(abs, isBinary))
+      problems.push(`${e.path} 内容已不是二进制（嗅探未命中）：登记表与事实脱钩`);
+    if (hashable.has(e)) {
+      const actual = sha256File(abs);
+      if (actual !== e.sha256)
+        problems.push(`${e.path} sha256 漂移：登记 ${e.sha256} 实际 ${actual}`);
     }
   }
+  return problems;
+}
 
-  return {
-    problems,
-    reports,
-    scanned: surface.size,
-    registered: withPath.length,
-    hits: hits.length,
-  };
+/** 许可面与文件面独立判定：登记项文件缺失不豁免许可文本缺失。 */
+function checkEntryLicense(e, root, surface) {
+  // license 文本必须随包发布：vendored 一个副本却只把许可放在 docs/（不分发）等于没附。
+  // first-party 资产没有第三方许可义务，不该被要求附一段「来源 + 许可」。
+  if (kindOf(e) === "first-party") return [];
+  if (typeof e.licenseFile !== "string" || e.licenseFile.trim() === "") return [];
+  const problems = [];
+  const licAbs = join(root, e.licenseFile);
+  if (!existsSync(licAbs) || !isRegularFile(licAbs)) {
+    problems.push(`${e.path} 的 license 文本不存在：${e.licenseFile}`);
+  } else {
+    if (!surface.has(e.licenseFile)) {
+      problems.push(`${e.licenseFile} 不在发布物面内：vendored 了副本却没随包附许可文本`);
+    }
+    if (readFileSync(licAbs, "utf8").trim() === "") {
+      problems.push(`${e.licenseFile} 为空文件（许可文本缺收）`);
+    }
+  }
+  return problems;
 }
 
 /** 取某包在登记表里的条目（消费者：collect-licenses 归集、pack-check 随包断言）。 */

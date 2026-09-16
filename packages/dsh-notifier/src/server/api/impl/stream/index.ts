@@ -1,4 +1,4 @@
-/** api 域流块：SSE 连接、序号与断线补拉（共享层枢纽只管连接表、心跳与上限淘汰）。**序号**持久化在 `seq.json` 且重启后
+/** api 域流块：SSE 连接、序号与断线补拉（共享层枢纽只管连接表、心跳与主动回收）。**序号**持久化在 `seq.json` 且重启后
  * 接着数——重置会让重连客户端把旧帧当新的，表现为「偶尔少一条通知」；**补拉**走 `?since=N`（EventSource 自动重连不带 query）。 */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
@@ -28,15 +28,9 @@ const CONNECTED = ": connected\n\n";
 /** 线协议里的通知事件（`ping` 之外的那一支）。 */
 type NotifyEvent = Extract<StreamEvent, { type: "notify" }>;
 
-/** 未装配时的占位。占位值不会被真正读到（`installed` 守卫），它的作用是让字段有确定的类型、不必每个使用点判空；
- * 能力占位成抛错而不是空实现：真被读到时应当场暴露，而不是静默按默认上限去淘汰连接。 */
+/** 未装配时的占位。占位值不会被真正读到（`installed` 守卫），它的作用是让字段有确定的类型、不必每个使用点判空。 */
 const UNINSTALLED: StreamDeps = {
   logger: { warn: () => {} },
-  config: {
-    readConfig: () => {
-      throw new Error("dsh-notifier: api 流尚未装配");
-    },
-  },
 };
 
 /** 未装配的枢纽：连接表为空，`dispose` 幂等。返回形状必须与真实枢纽逐键一致，否则「未装配」与
@@ -48,7 +42,6 @@ const UNINSTALLED_HUB: SseHub = {
   evictStats: () => ({
     close: 0,
     error: 0,
-    limit: 0,
     stalled: 0,
     maxage: 0,
     destroyed: 0,
@@ -80,8 +73,6 @@ class StreamHub {
     this.deps = deps;
     this.seq = readSeq(this.file);
     this.hub = createSseHub({
-      // 连接上限实时读设置：用户在设置页调小之后，下一次淘汰就该按新值来。
-      getMaxConnections: () => this.deps.config.readConfig().maxConnections,
       heartbeatMs: HEARTBEAT_MS,
     });
   }

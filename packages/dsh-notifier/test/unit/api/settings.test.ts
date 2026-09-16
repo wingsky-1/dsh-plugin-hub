@@ -34,7 +34,7 @@ function makeReq(options: { body?: unknown; rawBody?: string } = {}): IncomingMe
 function fakeConfig(result?: WriteResult) {
   const writes: Array<{ patch: unknown; revision?: number }> = [];
   const port: ConfigPort = {
-    readConfig: () => ({ ...DEFAULT_CONFIG, maxConnections: 4 }),
+    readConfig: () => ({ ...DEFAULT_CONFIG }),
     readSettingsView: () => VIEW,
     writeConfig: async (patch, revision) => {
       writes.push({ patch, revision });
@@ -164,7 +164,7 @@ describe("PUT /config：写面四态 → 四个状态码", () => {
   // reason:"unavailable"}))` 之后，原先没有任何用例会红）。
   it("写面抛错 → 端点不吞，异常交给路由层收口成 500", async () => {
     const port: ConfigPort = {
-      readConfig: () => ({ ...DEFAULT_CONFIG, maxConnections: 4 }),
+      readConfig: () => ({ ...DEFAULT_CONFIG }),
       readSettingsView: () => VIEW,
       writeConfig: async () => {
         throw new Error("写盘炸了");

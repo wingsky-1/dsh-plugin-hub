@@ -32,13 +32,12 @@ import {
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const CI_YML = readFileSync(join(ROOT, CI_WORKFLOW), "utf8");
 
-test("parseFilterBlock：真实 ci.yml 的 filters 块可解析，且含全局面与 7 个包面", () => {
+test("parseFilterBlock：真实 ci.yml 的 filters 块可解析，且含全局面与 6 个包面", () => {
   const filters = parseFilterBlock(CI_YML);
   assert.ok(filters !== null, "filters 块必须可解析（不可解析 → 本地静默回退全量）");
   assert.ok(Array.isArray(filters.global) && filters.global.length > 0, "global 面必须存在且非空");
   for (const pkg of [
     "dsh-notifier",
-    "dsh-web-file-preview",
     "dsh-mcp-manager",
     "dsh-provider-usage",
     "dsh-lan-proxy",

@@ -25,9 +25,16 @@ export function parseFilterBlock(ciYmlText) {
   const start = lines.findIndex((l) => /^\s*filters: \|\s*$/.test(l));
   if (start === -1) return null;
   const rootIndent = lines[start].match(/^\s*/)[0].length;
+  const body = filterBlockBody(lines, start, rootIndent);
+  if (body.length === 0) return null;
+  return parseFilterEntries(body);
+}
 
-  // 块体：比 `filters:` 缩进更深，直到缩进回落到同一层或更浅。
-  // 块内允许注释行（ci.yml 的 global 面就地写了为何某些路径刻意不在其中）。
+/**
+ * 块体：比 `filters:` 缩进更深，直到缩进回落到同一层或更浅。
+ * 块内允许注释行（ci.yml 的 global 面就地写了为何某些路径刻意不在其中）。
+ */
+function filterBlockBody(lines, start, rootIndent) {
   const body = [];
   for (let i = start + 1; i < lines.length; i++) {
     const line = lines[i];
@@ -35,8 +42,11 @@ export function parseFilterBlock(ciYmlText) {
     if (line.match(/^\s*/)[0].length <= rootIndent) break;
     body.push(line);
   }
-  if (body.length === 0) return null;
+  return body;
+}
 
+/** 解析块体内的键与条目；任一条目不合形态即整体返回 null（调用方 fail-closed）。 */
+function parseFilterEntries(body) {
   const keyIndent = Math.min(...body.map((l) => l.match(/^\s*/)[0].length));
   const filters = {};
   let current = null;

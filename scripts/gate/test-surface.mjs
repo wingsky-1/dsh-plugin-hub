@@ -12,6 +12,7 @@ import { existsSync, globSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 
 import { packageEntryProblems } from "./mutation-topology.mjs";
+import { globFiles, sourceUniverse } from "../lib/glob-files.mjs";
 
 /**
  * runner 面 glob：`--min` 与登记完整性判据 ③ 的唯一口径。
@@ -47,6 +48,121 @@ export function expandGlob(pkgDir, pattern) {
 }
 
 /**
+ * 锚定判词；返回 null 表示字面锚定合法。
+ *
+ * 字面检查只负责**可读判词**，越界的全量核对在下面按命中集合做——「字面前缀合法」与
+ * 「实际命中面在本包内」是两件事：`..` 段会被 glob 归一化、brace 会被展开，两者都能让
+ * 前缀看着在本包而命中的是他包文件。加了字面拦截后那条核对今天已不可达（复核把该段置空，
+ * 测试仍全绿），保留作 glob 语义或字面规则放宽时的兜底。
+ */
+function unanchoredReason(owner, bare) {
+  if (bare.startsWith("./") || bare.startsWith("/")) {
+    return "是相对/绝对路径（须写仓库根相对的 packages/<本包>/ 或 shared/ 形式）";
+  }
+  if (bare.split("/").includes("..")) {
+    return "含 .. 上跳段（字面前缀会被 glob 归一化改写，实际命中面可越出本包）";
+  }
+  if (/[{}]/.test(bare)) {
+    return "含 brace 展开（展开后的命中面可能越出本包）";
+  }
+  if (!bare.startsWith(`packages/${owner}/`) && !bare.startsWith("shared/")) {
+    return `不在 packages/${owner}/ 或 shared/ 之下（跨包/广域 pattern 描述的不是本包的源码）`;
+  }
+  return null;
+}
+
+/**
+ * 变异面条目判据（#836 / #848）：一份 conf 的每条 `mutate` 条目（含 `!` 前缀的排除条目）
+ * 都要过四关，且整份 conf 的正向面被 `!` 条目剔除后必须仍有剩余。
+ *
+ * 为什么需要：排除条目此前从没被问过「你到底排除了什么」，于是 26 份 conf 各带一条指向
+ * `packages/<pkg>/src/types.ts` 的占位排除，而全仓从未存在过该文件——条目腐烂到无人察觉
+ * （#836 已清）。只判「命中 ≥1 个物理文件」仍留着三条绕过路径（独立复核实测）：广域 glob
+ * 命中他包同名文件即恒绿；`packages/<pkg>/**` 会被同包构建产物 `lib/**` 满足；字面前缀在
+ * 本包、实际命中面被 `..` 归一化或 brace 展开改写到他包。
+ *
+ * 为什么还要判整份 conf 的有效面（#848 维护者评审）：一条条看都合法不等于整份 conf 有意义。
+ * 把某包「逐目录级的 interface.ts 排除」换成包根级整包通配，条数不变、上面四关全绿，而该包
+ * 9/9 份 conf 的有效面为空——Stryker 对 0 mutant 不报错，判分与门禁都静默。有效面只在四条
+ * 逐条判据零问题时判：条目本身不合法时「有效面为空」只是前者的后果，重复报会误导定位。
+ *
+ * 为什么逐份 conf 判、而不是在 collectMutationSpecs 里：那里把同包所有段的 excludes 聚合成
+ * 包级清单，段级幽灵条目会被同包另一段的同名命中掩盖；清除入口与判红入口必须同粒度。
+ *
+ * `owner` 是这份 conf 所属的包名（由派生侧的 conf 名 → 包映射给出）：锚定判据没有它就无从判起，
+ * 故缺省即 fail-closed，而不是静默退化成「任何命中都算合法」。
+ *
+ * 返回值带 `scanned`：本判据最可能的失效形态不是误判而是**空转**（一条都没扫、恒绿），
+ * 故把「实际判过几条」显式交给调用方断言，而不是让调用方从输入长度自证。
+ */
+export function mutationEntryProblems(root, confFileName, patterns, owner) {
+  if (typeof owner !== "string" || owner === "") {
+    return {
+      problems: [
+        `[${confFileName}] 判据缺少 owner（该 conf 所属包名）—— 锚定判据无从判定，fail-closed`,
+      ],
+      scanned: 0,
+    };
+  }
+  const universe = sourceUniverse(root);
+  const problems = [];
+  const positive = new Set();
+  const negative = new Set();
+  let scanned = 0;
+  let entryProblems = 0;
+  for (const pattern of patterns) {
+    if (typeof pattern !== "string" || pattern === "") {
+      problems.push(
+        `[${confFileName}] mutate 条目不是非空字符串（fail-closed）：${JSON.stringify(pattern)}`,
+      );
+      entryProblems += 1;
+      continue;
+    }
+    scanned += 1;
+    // `!` 只是「本条进的是排除面」的语义标记，命中判据与正向条目同口径。
+    const bare = pattern.startsWith("!") ? pattern.slice(1) : pattern;
+    const unanchored = unanchoredReason(owner, bare);
+    if (unanchored !== null) {
+      problems.push(`[${confFileName}] mutate 条目${unanchored}（判据⑤ 锚定）：${pattern}`);
+      entryProblems += 1;
+      continue;
+    }
+    // 命中面锚在**源码世界**：不锚的话 `packages/<pkg>/**` 会被同包构建产物 `lib/**` 满足
+    // （实测 lib 字面命中 107 个文件），判据就变成「描述了另一个真实的世界」。
+    const hits = globFiles(root, bare).filter((f) => universe.has(f));
+    if (hits.length === 0) {
+      problems.push(
+        `[${confFileName}] mutate 条目腐烂：在源码世界内命中 0 个文件（判据⑤ 存在性）：${pattern}`,
+      );
+      entryProblems += 1;
+      continue;
+    }
+    const escaped = hits.filter(
+      (f) => !f.startsWith(`packages/${owner}/`) && !f.startsWith("shared/"),
+    );
+    if (escaped.length > 0) {
+      problems.push(
+        `[${confFileName}] mutate 条目命中了本包与 shared 之外的文件（${escaped.length} 个，如 ${escaped[0]}）` +
+          `—— 字面前缀不足以证明锚定（判据⑤ 越界，兜底）：${pattern}`,
+      );
+      entryProblems += 1;
+    }
+    for (const hit of hits) (pattern.startsWith("!") ? negative : positive).add(hit);
+  }
+  if (entryProblems === 0) {
+    const effective = [...positive].filter((hit) => !negative.has(hit));
+    if (effective.length === 0) {
+      problems.push(
+        `[${confFileName}] 正向条目命中 ${positive.size} 个源码文件，按 ! 条目剔除后一个不剩` +
+          `（! 条目去重命中 ${negative.size} 个）—— 该 conf 会派生出 0 个变异体，Stryker 对 0 mutant` +
+          " 不报错（判据⑥ 有效面为空）：请收窄排除面",
+      );
+    }
+  }
+  return { problems, scanned };
+}
+
+/**
  * 从层定义投影一个包的测试面（纯函数，root 参数化以便测试注入 fixture 根）。
  * 返回 { testFiles, runFiles, layerFiles, excludedFiles, errors }，路径均为**仓库根相对 posix**。
  */
@@ -73,11 +189,59 @@ export function projectTestSurface(root, topologyDoc, pkgName) {
   }
   const errors = [];
   const pkgDir = join(root, "packages", pkgName);
-  const pkgDef = def.testLayers ?? {};
+  const { mutationLayers, excludeLayers } = layerNames(layers);
 
   // ⓪ 充分性：必需层必须都在 mutationLayers 内，且不得被排除层覆盖
-  const mutationLayers = layers.mutationLayers ?? [];
-  const excludeLayers = layers.mutationExcludeLayers ?? [];
+  collectSufficiencyErrors(errors, mutationLayers, excludeLayers);
+
+  // ① runner 面：glob 全集（与 vitest include 同口径）
+  const runFiles = expandGlob(pkgDir, RUN_TESTS_PATTERN).map((p) => relPosix(root, p));
+  if (runFiles.length === 0) errors.push("runner 面零命中 —— 包内没有 test/ 下的 *.test.ts");
+
+  // ② 各层实际命中文件
+  const layerFiles = collectLayerFiles({
+    root,
+    pkgDir,
+    layers,
+    mutationLayers,
+    excludeLayers,
+    errors,
+  });
+
+  // ③ 逐层逐条豁免（键 = 层名，值 = { 仓库相对路径: 理由 }）
+  const exemptions = mutationExemptions(def);
+  collectExemptionErrors({ root, layerFiles, exemptions, errors });
+
+  // ④ 变异面 = mutationLayers 命中 − 排除层 − 逐条豁免
+  const { testFiles, excluded, explained } = collectMutationFace({
+    layerFiles,
+    mutationLayers,
+    excludeLayers,
+    exemptions,
+    errors,
+  });
+
+  // ⑤ 登记完整性 ①：runner 面每个文件必须被「某一层」或「某条排除」解释
+  collectUnattributedErrors(runFiles, explained, errors);
+
+  return { testFiles, runFiles, layerFiles, excludedFiles: [...excluded].sort(), errors };
+}
+
+/** 层名清单：缺声明的层退化为空表，调用方据此走原有的 fail-closed 判据。 */
+function layerNames(layers) {
+  return {
+    mutationLayers: layers.mutationLayers ?? [],
+    excludeLayers: layers.mutationExcludeLayers ?? [],
+  };
+}
+
+/** 包级逐条豁免登记；未声明 testLayers 的包等同于没有豁免。 */
+function mutationExemptions(def) {
+  return def.testLayers?.testMutationExemptions ?? {};
+}
+
+/** ⓪ 必需层必须在变异层内、且不得被排除层覆盖（#690 S2b 的充分性下限）。 */
+function collectSufficiencyErrors(errors, mutationLayers, excludeLayers) {
   for (const required of REQUIRED_MUTATION_LAYERS) {
     if (!mutationLayers.includes(required)) {
       errors.push(
@@ -89,12 +253,10 @@ export function projectTestSurface(root, topologyDoc, pkgName) {
     }
   }
   if (mutationLayers.length === 0) errors.push("$testLayers.mutationLayers 为空 —— 变异面为零");
+}
 
-  // ① runner 面：glob 全集（与 vitest include 同口径）
-  const runFiles = expandGlob(pkgDir, RUN_TESTS_PATTERN).map((p) => relPosix(root, p));
-  if (runFiles.length === 0) errors.push("runner 面零命中 —— 包内没有 test/ 下的 *.test.ts");
-
-  // ② 各层实际命中文件
+/** ② 逐层展开 glob 得层内文件表，并核对 mutationLayers / excludeLayers 引用的层都已定义。 */
+function collectLayerFiles({ root, pkgDir, layers, mutationLayers, excludeLayers, errors }) {
   const layerFiles = {};
   for (const [layerName, pattern] of Object.entries(layers.layers ?? {})) {
     if (typeof pattern !== "string" || pattern.trim() === "") {
@@ -116,41 +278,55 @@ export function projectTestSurface(root, topologyDoc, pkgName) {
     if (layerFiles[layerName] === undefined)
       errors.push(`$testLayers 引用了未定义的层 "${layerName}"`);
   }
+  return layerFiles;
+}
 
-  // ③ 逐层逐条豁免（键 = 层名，值 = { 仓库相对路径: 理由 }）
-  const exemptions = pkgDef.testMutationExemptions ?? {};
+/** ③ 逐层逐条豁免：层须已定义，条目须真实存在、带非空理由、且确实落在声明的层内。 */
+function collectExemptionErrors({ root, layerFiles, exemptions, errors }) {
   for (const [layerName, entries] of Object.entries(exemptions)) {
     if (layerFiles[layerName] === undefined) {
       errors.push(`testMutationExemptions 引用了未定义的层 "${layerName}"`);
       continue;
     }
     for (const [rel, reason] of Object.entries(entries ?? {})) {
-      if (!existsSync(join(root, rel)))
-        errors.push(`testMutationExemptions 指向不存在的文件：${rel}`);
-      if (typeof reason !== "string" || reason.trim() === "")
-        errors.push(`testMutationExemptions 的 ${rel} 缺少理由（必须写明为何不进变异面）`);
-      if (!layerFiles[layerName].includes(rel))
-        errors.push(
-          `testMutationExemptions 的 ${rel} 不在 "${layerName}" 层内（层归属与豁免声明不一致）`,
-        );
+      errors.push(...exemptionEntryProblems({ root, layerName, rel, reason, layerFiles }));
     }
   }
+}
 
-  // ④ 变异面 = mutationLayers 命中 − 排除层 − 逐条豁免
+function exemptionEntryProblems({ root, layerName, rel, reason, layerFiles }) {
+  const problems = [];
+  if (!existsSync(join(root, rel)))
+    problems.push(`testMutationExemptions 指向不存在的文件：${rel}`);
+  if (typeof reason !== "string" || reason.trim() === "")
+    problems.push(`testMutationExemptions 的 ${rel} 缺少理由（必须写明为何不进变异面）`);
+  if (!layerFiles[layerName].includes(rel))
+    problems.push(
+      `testMutationExemptions 的 ${rel} 不在 "${layerName}" 层内（层归属与豁免声明不一致）`,
+    );
+  return problems;
+}
+
+/** ④ 变异面 = mutationLayers 命中 − 排除层 − 逐条豁免；同时给出「被解释过」全集供 ⑤ 用。 */
+function collectMutationFace({ layerFiles, mutationLayers, excludeLayers, exemptions, errors }) {
   const excluded = new Set();
-  for (const layerName of excludeLayers)
-    for (const f of layerFiles[layerName] ?? []) excluded.add(f);
+  addLayerFiles(excluded, excludeLayers, layerFiles);
   for (const entries of Object.values(exemptions))
     for (const rel of Object.keys(entries ?? {})) excluded.add(rel);
   const inMutationLayers = new Set();
-  for (const layerName of mutationLayers) {
-    for (const f of layerFiles[layerName] ?? []) inMutationLayers.add(f);
-  }
+  addLayerFiles(inMutationLayers, mutationLayers, layerFiles);
   const testFiles = [...inMutationLayers].filter((f) => !excluded.has(f)).sort();
   if (testFiles.length === 0) errors.push("变异面零条目 —— 该包不会产生任何变异分（fail-closed）");
+  return { testFiles, excluded, explained: new Set([...inMutationLayers, ...excluded]) };
+}
 
-  // ⑤ 登记完整性 ①：runner 面每个文件必须被「某一层」或「某条排除」解释
-  const explained = new Set([...inMutationLayers, ...excluded]);
+/** 把若干层命中的文件并进目标集合；层未展开时按空表处理。 */
+function addLayerFiles(target, layerNames, layerFiles) {
+  for (const layerName of layerNames) for (const f of layerFiles[layerName] ?? []) target.add(f);
+}
+
+/** ⑤ 登记完整性 ①：runner 面每个文件必须被「某一层」或「某条排除」解释。 */
+function collectUnattributedErrors(runFiles, explained, errors) {
   for (const f of runFiles) {
     if (!explained.has(f)) {
       errors.push(
@@ -158,7 +334,6 @@ export function projectTestSurface(root, topologyDoc, pkgName) {
       );
     }
   }
-  return { testFiles, runFiles, layerFiles, excludedFiles: [...excluded].sort(), errors };
 }
 
 /**

@@ -139,9 +139,17 @@ export function readMermaidChunkRefs(libDir) {
   return parsed;
 }
 
-/** 列出某包产物中被内联的第三方模块引用（index.js / client.js / client-mermaid.js 并集，同名取首个含 pnpmSeg 者）。 */
-export function inlinedRefsForLib(libDir) {
-  const byName = new Map();
+/**
+ * 同名引用并入索引：后到者只有带 .pnpm 安装段、先到者没有时才顶替——传递依赖的
+ * 安装目录只能靠这个精确段定位，先到者的裸包名解析不到。
+ */
+function mergeRef(byName, r) {
+  if (!byName.has(r.name)) byName.set(r.name, r);
+  else if (r.pnpmSeg && !byName.get(r.name).pnpmSeg) byName.set(r.name, r);
+}
+
+/** 注释提取器可见的产物并集（minified 的 client-mermaid.js 失明，由 sidecar 补）。 */
+function mergeBundledRefs(libDir, byName) {
   // client-mermaid.js（issue #104）：mermaid 懒加载独立 chunk 同为构建期内联产物；
   // 其 minified 产物注释被移除，包名证据来自构建期 metafile sidecar 清单
   // （readMermaidChunkRefs），不入归集则 mermaid 全树的 license 缺收（合规缺口）。
@@ -152,15 +160,20 @@ export function inlinedRefsForLib(libDir) {
     // client-mermaid.js 自身注释已失明，跳过注释提取、只认 sidecar（防字符串
     // 残留被误当证据）；其余产物维持注释提取。sidecar 在循环外统一并入。
     const refs = f === "client-mermaid.js" ? [] : extractInlinedModuleRefs(source);
-    for (const r of refs) {
-      if (!byName.has(r.name)) byName.set(r.name, r);
-      else if (r.pnpmSeg && !byName.get(r.name).pnpmSeg) byName.set(r.name, r);
-    }
+    for (const r of refs) mergeRef(byName, r);
   }
-  for (const r of readMermaidChunkRefs(libDir)) {
-    if (!byName.has(r.name)) byName.set(r.name, r);
-    else if (r.pnpmSeg && !byName.get(r.name).pnpmSeg) byName.set(r.name, r);
-  }
+}
+
+/** sidecar 清单在注释提取之后统一并入，故与 mergeBundledRefs 分属两段。 */
+function mergeMermaidChunkRefs(libDir, byName) {
+  for (const r of readMermaidChunkRefs(libDir)) mergeRef(byName, r);
+}
+
+/** 列出某包产物中被内联的第三方模块引用（index.js / client.js / client-mermaid.js 并集，同名取首个含 pnpmSeg 者）。 */
+export function inlinedRefsForLib(libDir) {
+  const byName = new Map();
+  mergeBundledRefs(libDir, byName);
+  mergeMermaidChunkRefs(libDir, byName);
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -226,6 +239,45 @@ function detectLicenseName(text) {
  */
 const DECLARED_LICENSE_ONLY = new Set(["fastdom", "schemastery"]);
 
+/** 头部许可名兜底链（文本已收但声明缺失时不得标 UNKNOWN，否则 pack-check 合规空段断言误报）。 */
+function declaredLicenseName(meta, lic) {
+  return (
+    (meta.license && meta.license !== "UNKNOWN" ? meta.license : null) ??
+    (lic ? detectLicenseName(lic.text) : null) ??
+    "UNKNOWN"
+  );
+}
+
+/** 单个内联引用的许可段；安装目录解析不到时以警告段收场（pack-check 对「未找到」字样 fail-loud）。 */
+function refSection(absPkg, root, name, pnpmSeg) {
+  // 解析真实安装目录，依次尝试：
+  //   1) 包级 node_modules symlink（pnpm 布局直接依赖）
+  //   2) 根 node_modules（提升安装）
+  //   3) .pnpm 安装段（传递依赖，如 diff2html 的 hogan/diff 不出现在前两级）
+  const candidates = [
+    join(absPkg, "node_modules", name),
+    join(root, "node_modules", name),
+    ...(pnpmSeg ? [join(root, "node_modules", ...pnpmSeg.split("/"))] : []),
+  ];
+  const installDir = candidates.find((d) => existsSync(d));
+  if (!installDir) {
+    return `\n${"=".repeat(69)}\n${name}\n${"=".repeat(69)}\n\n[警告] 安装目录未找到，license 文本缺收。\n`;
+  }
+  const meta = pkgMeta(installDir);
+  const lic = findLicenseFile(installDir);
+  const declared = declaredLicenseName(meta, lic);
+  const head = `${name}@${meta.version} — ${declared}`;
+  let body;
+  if (lic) {
+    body = lic.text;
+  } else if (declared !== "UNKNOWN" && DECLARED_LICENSE_ONLY.has(name)) {
+    body = `上游 npm 包未附带 license 文件；以 package.json SPDX 声明为准（${declared}）。`;
+  } else {
+    body = `[未找到 license 文件；该库声明许可证为 ${declared}]`;
+  }
+  return `\n${"=".repeat(69)}\n${head}\n来源：https://www.npmjs.com/package/${name}\n${"=".repeat(69)}\n\n${body}\n`;
+}
+
 /**
  * 为单个插件包归集第三方 license，写 lib/THIRD-PARTY-LICENSES。
  * pkgDir 相对 root 解析（仓库场景传 packages/<目录>）；root 缺省为仓库根
@@ -242,42 +294,7 @@ export function collectForPackage(pkgDir, root = ROOT) {
 
   const sections = [];
   for (const { name, pnpmSeg } of refs) {
-    // 解析真实安装目录，依次尝试：
-    //   1) 包级 node_modules symlink（pnpm 布局直接依赖）
-    //   2) 根 node_modules（提升安装）
-    //   3) .pnpm 安装段（传递依赖，如 diff2html 的 hogan/diff 不出现在前两级）
-    const candidates = [
-      join(absPkg, "node_modules", name),
-      join(root, "node_modules", name),
-      ...(pnpmSeg ? [join(root, "node_modules", ...pnpmSeg.split("/"))] : []),
-    ];
-    const installDir = candidates.find((d) => existsSync(d));
-    if (!installDir) {
-      sections.push(
-        `\n${"=".repeat(69)}\n${name}\n${"=".repeat(69)}\n\n[警告] 安装目录未找到，license 文本缺收。\n`,
-      );
-      continue;
-    }
-    const meta = pkgMeta(installDir);
-    const lic = findLicenseFile(installDir);
-    // 头部许可名兜底链：package.json license 字段 → license 文本字样推断 → UNKNOWN
-    //（文本已收但声明缺失时不得标 UNKNOWN，否则 pack-check 合规空段断言误报）。
-    const declared =
-      (meta.license && meta.license !== "UNKNOWN" ? meta.license : null) ??
-      (lic ? detectLicenseName(lic.text) : null) ??
-      "UNKNOWN";
-    const head = `${name}@${meta.version} — ${declared}`;
-    let body;
-    if (lic) {
-      body = lic.text;
-    } else if (declared !== "UNKNOWN" && DECLARED_LICENSE_ONLY.has(name)) {
-      body = `上游 npm 包未附带 license 文件；以 package.json SPDX 声明为准（${declared}）。`;
-    } else {
-      body = `[未找到 license 文件；该库声明许可证为 ${declared}]`;
-    }
-    sections.push(
-      `\n${"=".repeat(69)}\n${head}\n来源：https://www.npmjs.com/package/${name}\n${"=".repeat(69)}\n\n${body}\n`,
-    );
+    sections.push(refSection(absPkg, root, name, pnpmSeg));
   }
 
   for (const entry of vendored) sections.push(vendoredSection(root, entry));

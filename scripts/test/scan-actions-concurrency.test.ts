@@ -34,8 +34,26 @@ interface JobRecord {
  * 为什么留一份副本：它的唯一用途是当「旧口径真值」——用来证明本次改动在无 cancelled 输入上
  * 零行为变化，并把「含 cancelled 时裸算会虚高」这个前提做成可执行断言（而不是注释里的传说）。
  * 生产代码里只有 peakConcurrency 一个实现，这份副本不参与任何调用链。
+ *
+ * #732 起为过复杂度门禁，函数体拆成 referenceEvents / referenceSweep 两个等价私有函数；
+ * 算法与那份实现仍逐行一致，副本「不引用生产代码」的独立性不变。
  */
 function referencePeakConcurrency(jobs: readonly JobRecord[]) {
+  const events = referenceEvents(jobs);
+  const { peak, peakAt, peakUntil, maxAfterPeak } = referenceSweep(events);
+  return {
+    peak,
+    peakAt,
+    peakUntil,
+    countedJobs: events.filter((e) => e.delta === 1).length,
+    maxAfterPeak,
+    heldSeconds:
+      peakUntil === null || peakAt === null ? 0 : Math.round((peakUntil - peakAt) / 1000),
+  };
+}
+
+/** 事件序列（照抄修复前的过滤口径：缺时间戳 / 零宽度 job 不占并发）。 */
+function referenceEvents(jobs: readonly JobRecord[]) {
   const events = [];
   for (const j of jobs) {
     if (!j.started_at || !j.completed_at) continue;
@@ -46,10 +64,20 @@ function referencePeakConcurrency(jobs: readonly JobRecord[]) {
     events.push({ at: e, delta: -1, name: j.name });
   }
   events.sort((a, b) => a.at - b.at || a.delta - b.delta);
+  return events;
+}
+
+/** 事件扫描（照抄修复前的饱和判据口径）。 */
+function referenceSweep(events: { at: number; delta: number }[]): {
+  peak: number;
+  peakAt: number | null;
+  peakUntil: number | null;
+  maxAfterPeak: number;
+} {
   let cur = 0;
   let peak = 0;
-  let peakAt = null;
-  let peakUntil = null;
+  let peakAt: number | null = null;
+  let peakUntil: number | null = null;
   let maxAfterPeak = 0;
   for (const ev of events) {
     cur += ev.delta;
@@ -62,15 +90,7 @@ function referencePeakConcurrency(jobs: readonly JobRecord[]) {
     }
     if (peakUntil !== null) maxAfterPeak = Math.max(maxAfterPeak, cur);
   }
-  return {
-    peak,
-    peakAt,
-    peakUntil,
-    countedJobs: events.filter((e) => e.delta === 1).length,
-    maxAfterPeak,
-    heldSeconds:
-      peakUntil === null || peakAt === null ? 0 : Math.round((peakUntil - peakAt) / 1000),
-  };
+  return { peak, peakAt, peakUntil, maxAfterPeak };
 }
 
 /** 合成时间戳：2026-09-12T09:<ss>.000Z。 */

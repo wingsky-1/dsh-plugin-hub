@@ -39,11 +39,22 @@ test("ci-matrix: 场景 a - 正常命中单一 active 包 (via FILTER_OUTPUTS)",
   assert.equal(res.hasMutations, "true");
   // T2-7：dsh-notifier 变异 4 段 → 按域重划 8 段（S3-30/N-24）；#720 再把 config 段按
   // mutant 密度拆为 config-normalize / config-validate / config-rest → 10 段；
-  // #733 按域重写后按新布局重划为 9 段（combos 字母序展开）
-  assert.equal(res.mutationCombos.length, 9);
+  // #733 按域重写后按新布局重划为 9 段（combos 字母序展开）；#769 客户端门禁再加 client 段 → 10 段
+  assert.equal(res.mutationCombos.length, 10);
   assert.deepEqual(
     res.mutationCombos.map((c) => c.seg),
-    ["api", "channels", "config", "events", "pipeline", "sdk", "shared", "stores", "upgrade"],
+    [
+      "api",
+      "channels",
+      "client",
+      "config",
+      "events",
+      "pipeline",
+      "sdk",
+      "shared",
+      "stores",
+      "upgrade",
+    ],
   );
 });
 
@@ -89,10 +100,12 @@ test("ci-matrix: 场景 a - 正常命中单一 active 包 (via BASE_SET 空格�
 });
 
 test("ci-matrix: 场景 b - 退役的 standalone 包不再进入全量清单", () => {
-  // dsh-codegraph / dsh-mem0 退役后 standalone 清空（#691）；断言两条不被静默遗忘：
-  // 既不在 CI 全量清单里，也必须在 manifest.retired 留痕。
-  assert.deepEqual(MANIFEST.standalone, [], "standalone 应为空（两项均已退役）");
+  // dsh-codegraph / dsh-mem0 退役后 standalone 一度清空（#691）。原断言写的是「standalone 应为空」，
+  // 那是当时的数据状态而不是不变量——本仓现有刻意不进聚合包的活跃 standalone 包
+  // （dsh-worktree-sidebar），该断言会把它误判成回归。真正要守的是「已退役包不复现」：
+  // 既不得回到 standalone，也不得进入 CI 全量清单，且必须在 manifest.retired 留痕。
   for (const pkg of ["dsh-codegraph", "dsh-mem0"]) {
+    assert.ok(!(MANIFEST.standalone ?? []).includes(pkg), `${pkg} 已退役，不得回到 standalone`);
     assert.ok(!EXPECTED_ALL.includes(pkg), `${pkg} 已退役，不得再进入 CI 全量清单`);
     assert.ok(
       MANIFEST.retired.some((r) => r.name === pkg),
@@ -185,39 +198,30 @@ test("ci-matrix: 场景 c - 回退机制 (FILTER_OUTCOME!=success 或 BASE_SET �
   assert.deepEqual(resWhitespaceBase.hitPackages, EXPECTED_ALL);
 });
 
-test("ci-matrix: 场景 d - 变异段展开正确性 (单配置与多段配置)", () => {
-  // 单配置包 dsh-web-file-preview -> seg: "0"；#742 起 combo 另带逐段超时与失基线标志，
+test("ci-matrix: 场景 d - 变异段展开正确性 (多段配置 + 多包排序)", () => {
+  // #840 起仓库已无单配置（seg="0"）包——最后一个单配置包 dsh-web-file-preview 已退役，
+  // 本用例随之退为纯多段形态；#742 起 combo 另带逐段超时与失基线标志，
   // 本用例只锁段展开，故按段投影比较（超时/失基线的专项断言见文件尾部的 #742 用例）
-  const resSingle = computeCiMatrix({
-    env: {
-      GLOBAL_HIT: "false",
-      FILTER_OUTCOME: "success",
-      BASE_SET: "origin/main",
-      FILTER_OUTPUTS: JSON.stringify({ "dsh-web-file-preview": true }),
-    },
-    rootDir: ROOT,
-  });
-  assert.deepEqual(
-    resSingle.mutationCombos.map((c) => ({ package: c.package, seg: c.seg })),
-    [{ package: "dsh-web-file-preview", seg: "0" }],
-  );
-
-  // 多个包组合排序
   const resMulti = computeCiMatrix({
     env: {
       GLOBAL_HIT: "false",
       FILTER_OUTCOME: "success",
-      BASE_SET: "dsh-web-file-preview dsh-notifier",
+      BASE_SET: "dsh-lan-proxy dsh-notifier",
       FILTER_OUTPUTS: "{}",
     },
     rootDir: ROOT,
   });
-  assert.deepEqual(resMulti.mutationPackages, ["dsh-notifier", "dsh-web-file-preview"]);
+  assert.deepEqual(resMulti.mutationPackages, ["dsh-lan-proxy", "dsh-notifier"]);
   assert.deepEqual(
     resMulti.mutationCombos.map((c) => ({ package: c.package, seg: c.seg })),
     [
+      { package: "dsh-lan-proxy", seg: "1" },
+      { package: "dsh-lan-proxy", seg: "2" },
+      { package: "dsh-lan-proxy", seg: "3" },
+      { package: "dsh-lan-proxy", seg: "4" },
       { package: "dsh-notifier", seg: "api" },
       { package: "dsh-notifier", seg: "channels" },
+      { package: "dsh-notifier", seg: "client" },
       { package: "dsh-notifier", seg: "config" },
       { package: "dsh-notifier", seg: "events" },
       { package: "dsh-notifier", seg: "pipeline" },
@@ -225,7 +229,6 @@ test("ci-matrix: 场景 d - 变异段展开正确性 (单配置与多段配置)"
       { package: "dsh-notifier", seg: "shared" },
       { package: "dsh-notifier", seg: "stores" },
       { package: "dsh-notifier", seg: "upgrade" },
-      { package: "dsh-web-file-preview", seg: "0" },
     ],
   );
 });
@@ -458,7 +461,7 @@ test("ci-matrix: 场景 f - GITHUB_OUTPUT 写入契约", () => {
     assert.equal(record.hasMutations, "true");
     assert.deepEqual(JSON.parse(record.allPackages), EXPECTED_ALL);
     const combos = JSON.parse(record.mutationCombos);
-    assert.equal(combos.length, 9);
+    assert.equal(combos.length, 10);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }

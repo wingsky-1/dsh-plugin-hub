@@ -204,7 +204,6 @@ Example values (defaults; `channels` / `kindRoutes` / `allowKinds` are new M2 ke
   "notifyTurnEnd": false,
   "quietHours": { "enabled": false, "start": "22:00", "end": "08:00", "allowKinds": [] },
   "historyMaxAgeDays": 0,
-  "maxConnections": 16,
   "channels": [
     { "type": "browser", "id": "browser", "enabled": true, "popup": true, "sound": true, "whenVisible": false },
     { "type": "system", "id": "system", "enabled": true, "popup": true, "sound": true }
@@ -224,18 +223,23 @@ Example values (defaults; `channels` / `kindRoutes` / `allowKinds` are new M2 ke
 > read. Submitting them after the upgrade returns 400 (refresh the page if it was open before the
 > upgrade).
 
-> `maxConnections`: SSE connection-table cap (default 16, range 1–1024). It counts
-> **server-side unreleased handles**, not "online devices" — half-open connections
-> (device screen off / network switch / silent NAT cut) send no FIN, so close/error
-> never fires. Since #515 the connection table is managed by shared/sse-hub with three
-> complementary reclamation paths: **stalled reclamation** (writes rejected for over
-> 90 s → disconnect), **maxAge rotation** (alive for over 120 min with no business
-> frames → actively disconnected; clients auto-reconnect and replay with `since`, so it
-> is transparent), and **cap eviction** (oldest evicted beyond the limit). The cap keeps
-> the table bounded; if it is **persistently exceeded** (clients reconnect after eviction
-> and are evicted again, a churn loop), the value is below peak concurrent connections —
-> raise it to at least the peak and observe again. Reclamation-path counters are exposed
-> as `sseEvicts` on `/api/dsh-notifier/health`.
+> The SSE connection table (managed by shared/sse-hub since #515) **no longer has a
+> connection cap**: cap eviction has been removed entirely — it was a stopgap for the
+> "connection leak" era. Two complementary reclamation paths remain: **stalled
+> reclamation** (writes rejected for over 90 s → disconnect) and **maxAge rotation**
+> (alive for over 120 min with no business frames → actively disconnected; clients
+> auto-reconnect and replay with `since`, so it is transparent). Reclamation-path
+> counters are exposed as `sseEvicts` on `/api/dsh-notifier/health`.
+>
+> The cap's config key `maxConnections` (default 16, range 1–1024) is retired as of
+> **0.2.5** too: the settings page no longer shows it and `effective` does not contain it.
+> Its write path follows the same policy as the 0.2.3 channel keys above — submitting it
+> returns **400** — but the reason differs: this key has no successor (the whole mechanism
+> is gone), so it carries its own hint, which again points at the way out (refresh if the
+> page was open before the upgrade). A residual value in an existing `config.json` is not
+> auto-cleaned and never reaches the effective config: saving other known settings does not
+> drop it, and it still appears verbatim in the `user` view of GET /config — delete the
+> line by hand in `config.json` to clean it up.
 
 ### Per-channel three switches (#640 / #641; folded into channel entries as of 0.2.4)
 

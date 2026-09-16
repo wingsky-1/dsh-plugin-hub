@@ -128,22 +128,33 @@ export function collectConsumers(root) {
     const srcDir = join(packagesDir, entry.name, "src");
     if (!existsSync(srcDir)) continue;
     for (const rel of walkFiles(srcDir, (n) => SRC_FILE_RE.test(n) && !n.endsWith(".d.ts"))) {
-      const file = join(srcDir, rel);
-      for (const spec of importSpecifiers(readFileSync(file, "utf8"))) {
-        if (!spec.startsWith(".")) continue;
-        const abs = resolve(dirname(file), spec);
-        if (!isInside(sharedRoot, abs)) continue;
-        const base = moduleBase(relative(sharedRoot, abs).split(sep).join("/"));
-        if (!modulePresent(sharedRoot, base)) {
-          dangling.push(`packages/${entry.name}/src/${rel} → ${spec}（shared/ 下无此模块）`);
-          continue;
-        }
-        if (!consumers.has(base)) consumers.set(base, new Set());
-        consumers.get(base).add(entry.name);
-      }
+      collectFileConsumers({
+        file: join(srcDir, rel),
+        pkgName: entry.name,
+        srcRel: rel,
+        sharedRoot,
+        consumers,
+        dangling,
+      });
     }
   }
   return { consumers, dangling };
+}
+
+/** 记录一个 src 文件对 shared/ 的直接引用；落不到 shared/ 内已有模块的记入 dangling。 */
+function collectFileConsumers({ file, pkgName, srcRel, sharedRoot, consumers, dangling }) {
+  for (const spec of importSpecifiers(readFileSync(file, "utf8"))) {
+    if (!spec.startsWith(".")) continue;
+    const abs = resolve(dirname(file), spec);
+    if (!isInside(sharedRoot, abs)) continue;
+    const base = moduleBase(relative(sharedRoot, abs).split(sep).join("/"));
+    if (!modulePresent(sharedRoot, base)) {
+      dangling.push(`packages/${pkgName}/src/${srcRel} → ${spec}（shared/ 下无此模块）`);
+      continue;
+    }
+    if (!consumers.has(base)) consumers.set(base, new Set());
+    consumers.get(base).add(pkgName);
+  }
 }
 
 /**

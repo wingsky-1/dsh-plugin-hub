@@ -31,6 +31,7 @@ import { runConfigMatrix } from "../lib/config-matrix-gate.ts";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const NOTIFIER_CONFIG_DIR = "packages/dsh-notifier/src/server/config";
+const NOTIFIER_SHARED_DIR = "packages/dsh-notifier/src/shared";
 
 /** mkdtemp 副本仓库：复制矩阵的输入面（lan-proxy 配置域入口 model.ts；notifier 整个配置域）
  *  加上声明文件与 package.json。 */
@@ -54,8 +55,11 @@ function fakeRepo() {
       join(ROOT, "packages/dsh-lan-proxy/src/client/shared/defaults.ts"),
       join(root, "packages/dsh-lan-proxy/src/client/shared/defaults.ts"),
     );
-    // 配置域整棵复制：运行时 require 要走完整 import 链（impl/input → ../model）。
+    // 配置域整棵复制：运行时 require 要走完整 import 链（impl/input → ../model → ../../../../shared）。
     cpSync(join(ROOT, NOTIFIER_CONFIG_DIR), join(root, NOTIFIER_CONFIG_DIR), { recursive: true });
+    // 两端共享面（src/shared）也是这条链的终点：音色白名单与通知类型表收口后只剩这一份事实源，
+    // 缺了它 require 直接失败，正对照会红。
+    cpSync(join(ROOT, NOTIFIER_SHARED_DIR), join(root, NOTIFIER_SHARED_DIR), { recursive: true });
     // type: module 决定 .ts 按 ESM 解析；缺了它，require 会按 CJS 处理含 export 的源码。
     copyLf(
       join(ROOT, "packages/dsh-notifier/package.json"),
@@ -137,7 +141,7 @@ test("正对照：纯副本不改动矩阵 pass", () => {
       "lan-proxy 摘要含 17 键计数",
     );
     assert.ok(
-      r.lines.some((l) => l.includes("notifier 12 键 × [defaults → normalizeConfig]")),
+      r.lines.some((l) => l.includes("notifier 11 键 × [defaults → normalizeConfig]")),
       "notifier 摘要走运行时取值口径",
     );
   } finally {
@@ -201,16 +205,22 @@ test("lan-proxy: DEFAULTS 删非豁免可编辑键 → 红且报错含键名", (
 // ---- notifier 方向（#733 计划项 3.1.1：声明驱动 + 运行时取值）----
 
 test("notifier: 删 DEFAULT_CONFIG 一键 → 红且报错含键名", () => {
-  // normalizeConfig 的返回是显式键字面量（impl/input/index.ts:90-119），不会跟着少键，
+  // normalizeConfig 的返回是显式键字面量（impl/input/index.ts:184-201），不会跟着少键，
   // 故键集双向比较立刻不等——这正是两条平行事实源要防的漂移。
   assertRed(
-    "notifier 删 DEFAULT_CONFIG.maxConnections",
+    "notifier 删 DEFAULT_CONFIG.historyMaxAgeDays",
     (root) => {
-      edit(root, "dsh-notifier", "server/config/impl/model/index.ts", (s) =>
-        s.replace(/  maxConnections: 16,\n/, ""),
-      );
+      edit(root, "dsh-notifier", "server/config/impl/model/index.ts", (s) => {
+        const after = s.replace(/  historyMaxAgeDays: 0,\n/, "");
+        assert.notEqual(
+          after,
+          s,
+          "fixture 应含 historyMaxAgeDays: 0 默认值（源码改动后请同步本注入）",
+        );
+        return after;
+      });
     },
-    "maxConnections",
+    "historyMaxAgeDays",
   );
 });
 
@@ -357,20 +367,22 @@ test("notifier: COUNT_LIMITS 加非配置键 → 红且报错含键名", () => {
 });
 
 test("notifier: COUNT_LIMITS 上界低于 DEFAULT_CONFIG 默认值 → 红（默认值自身越界）", () => {
+  // 抬默认值而不是压上界：COUNT_LIMITS 仅剩 historyMaxAgeDays 且默认值是 0，压上界只能压到负数，
+  // 那会先命中「上界不是非负整数」分支，断言就指不到「默认值自身越界」这一支。
   assertRed(
-    "notifier COUNT_LIMITS.maxConnections 降到 8",
+    "notifier DEFAULT_CONFIG.historyMaxAgeDays 抬到 9999",
     (root) => {
-      edit(root, "dsh-notifier", "server/config/impl/input/index.ts", (s) => {
-        const after = s.replace(/maxConnections: 1_024,/, "maxConnections: 8,");
+      edit(root, "dsh-notifier", "server/config/impl/model/index.ts", (s) => {
+        const after = s.replace(/  historyMaxAgeDays: 0,/, "  historyMaxAgeDays: 9_999,");
         assert.notEqual(
           after,
           s,
-          "fixture 应含 maxConnections: 1_024 上界（源码改动后请同步本注入）",
+          "fixture 应含 historyMaxAgeDays: 0 默认值（源码改动后请同步本注入）",
         );
         return after;
       });
     },
-    ["maxConnections", "超过 COUNT_LIMITS"],
+    ["historyMaxAgeDays", "超过 COUNT_LIMITS"],
   );
 });
 

@@ -22,6 +22,13 @@ import { readFileSync } from "node:fs";
  * 返回 null = 报告不存在或不可解析（调用方自行区分文案）。
  */
 export function readMutationReport(path) {
+  const report = readJsonReport(path);
+  if (report === null) return null;
+  return reportTotals(tallyReportMutants(report));
+}
+
+/** 读 Stryker JSON 报告：文件缺失 / 非法 JSON 一律 null（调用方自行区分文案）。 */
+function readJsonReport(path) {
   let raw;
   try {
     raw = readFileSync(path, "utf8");
@@ -34,21 +41,39 @@ export function readMutationReport(path) {
   } catch {
     return null;
   }
-  let killed = 0,
-    timeout = 0,
-    survived = 0,
-    noCoverage = 0;
+  return report;
+}
+
+function tallyReportMutants(report) {
+  const counts = { killed: 0, timeout: 0, survived: 0, noCoverage: 0 };
   for (const f of Object.values(report.files ?? {})) {
     for (const m of f.mutants ?? []) {
-      if (m.status === "Killed") killed += 1;
-      else if (m.status === "Timeout") timeout += 1;
-      else if (m.status === "Survived") survived += 1;
-      else if (m.status === "NoCoverage") noCoverage += 1;
+      addStatusCount(counts, m.status);
     }
   }
-  const covered = killed + timeout + survived;
-  const coveredScore = covered > 0 ? Math.round(((killed + timeout) / covered) * 10000) / 100 : 0;
-  return { killed, timeout, survived, noCoverage, total: covered + noCoverage, coveredScore };
+  return counts;
+}
+
+function addStatusCount(counts, status) {
+  if (status === "Killed") counts.killed += 1;
+  else if (status === "Timeout") counts.timeout += 1;
+  else if (status === "Survived") counts.survived += 1;
+  else if (status === "NoCoverage") counts.noCoverage += 1;
+}
+
+/** covered 口径的总分与四项计数（分母不含 noCoverage，#178 v2 固化）。 */
+function reportTotals(counts) {
+  const covered = counts.killed + counts.timeout + counts.survived;
+  const coveredScore =
+    covered > 0 ? Math.round(((counts.killed + counts.timeout) / covered) * 10000) / 100 : 0;
+  return {
+    killed: counts.killed,
+    timeout: counts.timeout,
+    survived: counts.survived,
+    noCoverage: counts.noCoverage,
+    total: covered + counts.noCoverage,
+    coveredScore,
+  };
 }
 
 /**
@@ -67,43 +92,45 @@ export function readMutationReport(path) {
 export function readMutationReportsAgg(paths) {
   const seen = new Map();
   for (const p of paths) {
-    let raw;
-    try {
-      raw = readFileSync(p, "utf8");
-    } catch {
-      return null;
-    }
-    let report;
-    try {
-      report = JSON.parse(raw);
-    } catch {
-      return null;
-    }
-    for (const [file, f] of Object.entries(report.files ?? {})) {
-      for (const m of f.mutants ?? []) {
-        // id 是每份报告独立的序号（#257 实证），跨报告去重必须用完整位置
-        const k = `${file}::${m.location?.start?.line}:${m.location?.start?.column}:${m.location?.end?.line}:${m.location?.end?.column}::${m.mutatorName ?? ""}:${m.replacement ?? ""}`;
-        const prev = seen.get(k);
-        if (prev === undefined) {
-          seen.set(k, m.status);
-          continue;
-        }
-        const rank = { NoCoverage: 3, Survived: 2, Timeout: 1, Killed: 0 };
-        if ((rank[m.status] ?? 0) > (rank[prev] ?? 0)) seen.set(k, m.status);
-      }
+    const report = readJsonReport(p);
+    if (report === null) return null;
+    mergeReportMutants(seen, report);
+  }
+  return reportTotals(tallySeenStatuses(seen));
+}
+
+function mergeReportMutants(seen, report) {
+  for (const [file, f] of Object.entries(report.files ?? {})) {
+    for (const m of f.mutants ?? []) {
+      mergeMutant(seen, file, m);
     }
   }
-  let killed = 0,
-    timeout = 0,
-    survived = 0,
-    noCoverage = 0;
+}
+
+function mergeMutant(seen, file, m) {
+  const k = mutantKey(file, m);
+  const prev = seen.get(k);
+  if (prev === undefined) {
+    seen.set(k, m.status);
+    return;
+  }
+  const rank = { NoCoverage: 3, Survived: 2, Timeout: 1, Killed: 0 };
+  if ((rank[m.status] ?? 0) > (rank[prev] ?? 0)) seen.set(k, m.status);
+}
+
+// id 是每份报告独立的序号（#257 实证），跨报告去重必须用完整位置
+function mutantKey(file, m) {
+  return `${file}::${mutantPosition(m)}::${m.mutatorName ?? ""}:${m.replacement ?? ""}`;
+}
+
+function mutantPosition(m) {
+  return `${m.location?.start?.line}:${m.location?.start?.column}:${m.location?.end?.line}:${m.location?.end?.column}`;
+}
+
+function tallySeenStatuses(seen) {
+  const counts = { killed: 0, timeout: 0, survived: 0, noCoverage: 0 };
   for (const status of seen.values()) {
-    if (status === "Killed") killed += 1;
-    else if (status === "Timeout") timeout += 1;
-    else if (status === "Survived") survived += 1;
-    else if (status === "NoCoverage") noCoverage += 1;
+    addStatusCount(counts, status);
   }
-  const covered = killed + timeout + survived;
-  const coveredScore = covered > 0 ? Math.round(((killed + timeout) / covered) * 10000) / 100 : 0;
-  return { killed, timeout, survived, noCoverage, total: covered + noCoverage, coveredScore };
+  return counts;
 }

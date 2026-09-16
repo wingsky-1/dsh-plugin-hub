@@ -64,8 +64,7 @@ import {
 } from "../../../src/server/channels/impl/system/index.ts";
 import { synthToneWav } from "../../../src/server/channels/impl/system/synth.ts";
 import { toneFileCandidates } from "../../../src/server/channels/impl/system/tones.ts";
-import { SOUND_IDS } from "../../../src/server/config/impl/input/index.ts";
-import { TONES } from "../../../src/shared/interface.ts";
+import { SOUND_IDS, TONES } from "../../../src/shared/interface.ts";
 import type {
   PlatformProbe,
   SystemCommandOptions,

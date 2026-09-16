@@ -1,6 +1,12 @@
 /** 设置模型（本域形状）。模型即跨端契约：设置页与宿主端读同一份形状，字段名两侧同源，改动即两端同改；这里只放
  * 「设置长什么样」。全篇用类型别名而非接口——只有类型别名带隐式索引签名，能落进「原始值」这层宽类型。 */
 import type { BarkTarget, WebhookTarget } from "../../deps.ts";
+import type {
+  BuiltinChannelType,
+  SoundId,
+  WebhookAuth,
+  WebhookPreset,
+} from "../../../../shared/interface.ts";
 
 // ---------------------------------------------------------------- 原始输入
 
@@ -18,8 +24,9 @@ export type StoredSettings = { readonly [key: string]: RawSettingValue };
 
 // ---------------------------------------------------------------- 声音
 
-/** 内置音色 id：全平台语义一致的白名单；「跟随系统」由 true 承担，不占 id。 */
-export type SoundId = "ding" | "bell" | "chime" | "pop";
+/** 内置音色 id：事实源在 src/shared/sounds.ts（两端共享面）——白名单与设置页的选项同源。
+ *  「跟随系统」由 true 承担，不占 id。 */
+export type { SoundId };
 
 /** 声音设置：false = 静音；true = 跟随系统默认；SoundId = 显式内置音色。 */
 export type SoundSetting = boolean | SoundId;
@@ -57,11 +64,11 @@ export type BarkChannelConfig = Omit<BarkTarget, "type" | "level"> & {
   levels?: Record<string, BarkLevel>;
 };
 
-/** webhook 认证方式：凭据一律走请求头，不拼 URL。 */
-export type WebhookAuth = "none" | "bearer" | "basic" | "header";
+/** webhook 认证方式：凭据一律走请求头，不拼 URL。事实源在 src/shared/webhooks.ts（两端共享面）。 */
+export type { WebhookAuth };
 
-/** webhook 预设：决定默认 body 模板与优先级映射。 */
-export type WebhookPreset = "ntfy" | "gotify" | "custom";
+/** webhook 预设：决定默认 body 模板与优先级映射。事实源在 src/shared/webhooks.ts（两端共享面）。 */
+export type { WebhookPreset };
 
 /** webhook 频道实例。`auth` 重声明：投递层要的是**已解析的凭据对象**，配置层存的是用户选的**认证方式**加分散的
  * 凭据字段——两者不是同一个形状。 */
@@ -86,8 +93,9 @@ export type WebhookChannelConfig = Omit<WebhookTarget, "type" | "auth" | "preset
   template?: string;
 };
 
-/** 内置频道类型：只有这两个，且身份由 `type` 唯一确定——实例才需要 id 消歧。 */
-export type BuiltinChannelType = "browser" | "system";
+/** 内置频道类型：只有这两个，且身份由 `type` 唯一确定——实例才需要 id 消歧。
+ *  事实源在 src/shared/channels.ts（两端共享面，值清单与类型同源）。 */
+export type { BuiltinChannelType };
 
 /** 浏览器频道（内置）：浏览器通知的展示形态。这些字段就是「发什么」的判据，由频道自己解释——裁决管线只认 `enabled`。 */
 export type BrowserChannelConfig = {
@@ -144,8 +152,6 @@ export type NotifyConfig = {
   // 资源上限
   /** 历史按天自动清理（0 = 只按行数滚动）。 */
   historyMaxAgeDays: number;
-  /** SSE 连接表上限（超限淘汰最老连接）。 */
-  maxConnections: number;
 };
 
 /** 设置提交体：键名受契约约束（写错键名是编译错误），值待校验——提交上来的东西在运行时不受类型约束。 */

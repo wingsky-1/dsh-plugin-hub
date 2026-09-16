@@ -28,11 +28,49 @@
       "since": "#733 3.4"
     },
     {
-      "pattern": "**/client/**",
+      "pattern": "**/*.css",
+      "kind": "not-source",
+      "reason": "各插件客户端的样式资源（src/client/style.css）：经 build-client 的 text-loader 构建期原样内联进 lib/client.js，不是可覆盖的 JS 源码。此前它靠 **/client/** 那条整体排除被顺带兜住；#769 把那条按面收窄后，它必须有自己的分类条目——这正是 verify:coverage-scope 的「静默逃逸」判据抓到的第一例。",
+      "since": "#769"
+    },
+    {
+      "pattern": "packages/dsh-notifier/src/client/**/*.tsx",
       "kind": "pending-project",
-      "reason": "客户端渲染面：packages/*/src/client/**（33 文件、755 函数）与 shared/client/**（ensure-style.js、i18n.js 两个模块，其测试在 scripts/test 下、不在 unit/integration 两个 project 内）。现有 test/client/** 是「读 lib 产物 + vm 执行」的契约测试，直连 src 的 DOM 单测（happy-dom project）尚未落地，计入分母只会让这些文件恒为 0%、把全局值稀释到 59%，阈值随之失去约束力。",
-      "exitCriteria": "happy-dom（或等价 DOM）project 落地、且 client 源码有直连 src 的单测后，删除本条并一次性重新基线化阈值",
-      "since": "#722 阶段三",
+      "reason": "notifier 客户端的渲染面（13 个 .tsx，含 1574 行的 index.tsx）：同目录下的纯 .ts 模块已由直连判据（test/client-unit/** 与 test/client-dom/**）覆盖并计入分母，故本条只排除 JSX 面——这是「按包按面收窄」而不是整体豁免的示范。react 18 运行时与渲染 harness（@testing-library/react）已由 #769 落进 root devDeps，apply 生命周期（test/client-dom/apply-lifecycle.test.ts）也已有直连判据；仍缺的是组件级渲染分支的判据（#769 目标 3 组件化尚在排队），.tsx 面覆盖率仍接近 0，计入分母只会稀释全局值。",
+      "exitCriteria": "组件级渲染判据落地、.tsx 面覆盖率不再稀释全局值后，删除本条并一次性重新基线化阈值",
+      "since": "#769",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "pattern": "packages/dsh-lan-proxy/src/client/**",
+      "kind": "pending-project",
+      "reason": "lan-proxy 客户端（5 文件）：尚未按 #769 的口径重写，test/client 下只有 1 个读产物的文件，没有直连 src 的判据。计入分母只稀释全局值，不产生真实约束力。",
+      "exitCriteria": "该包客户端重写、且有直连 src 的判据后删除本条并单独度量",
+      "since": "#769",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "pattern": "packages/dsh-mcp-manager/src/client/**",
+      "kind": "pending-project",
+      "reason": "mcp-manager 客户端（15 文件、约 2551 行）：该包走 inlineBareImports 内联第三方，客户端尚未按 #769 的口径重写，没有直连 src 的判据。整体计入分母会把全局 lines 拉低约 16 个百分点（实测估算），属「用一个不可判定的面去稀释阈值」。",
+      "exitCriteria": "该包客户端重写、且有直连 src 的判据后删除本条并单独度量",
+      "since": "#769",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "pattern": "packages/dsh-provider-usage/src/client/**",
+      "kind": "pending-project",
+      "reason": "provider-usage 客户端（13 文件、约 4880 行，本仓最大的客户端面）：其 test/client 下的 4 个文件读产物，不直连 src。同上，计入分母只稀释阈值。",
+      "exitCriteria": "该包客户端重写、且有直连 src 的判据后删除本条并单独度量",
+      "since": "#769",
+      "reviewBy": "2027-03-31"
+    },
+    {
+      "pattern": "shared/client/**",
+      "kind": "pending-project",
+      "reason": "跨包共享的客户端设施（ensure-style.js / i18n.js）：它们的测试在 scripts/test 下（node:test 面），不属于任何 vitest project，故 pnpm cov 跑不到这两个文件。",
+      "exitCriteria": "为这两个模块建 project，或把它们的测试移入 unit 层后删除本条",
+      "since": "#769",
       "reviewBy": "2027-03-31"
     }
   ],

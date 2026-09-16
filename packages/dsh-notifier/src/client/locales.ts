@@ -7,6 +7,8 @@
  * （官方原则：数据不翻译）。
  */
 
+import type { BuiltinKind } from "../shared/interface.ts";
+
 /** 简体中文字典（key 源）。 */
 export const zh = {
   // 事件开关（EVENT_KEYS label）
@@ -79,7 +81,6 @@ export const zh = {
   clearFail: "清空失败：{msg}{hint}",
   // 配置行
   historyRetention: "历史保留天数（0=不按天清理）",
-  maxConnections: "最大连接数（条，超出淘汰最老）",
   dndEnable: "启用免打扰",
   dndStart: "开始时间",
   dndEnd: "结束时间",
@@ -157,7 +158,8 @@ export const zh = {
   chBarkBaseUrl: "服务器地址",
   chBarkBaseUrlHint: "Bark 服务器地址（http/https），如 https://api.day.app 或自建地址",
   chBarkDeviceKey: "Device Key",
-  chBarkDeviceKeyHint: "Bark App 内查看；保存后仅显示掩码，留掩码即不修改",
+  chBarkDeviceKeyPlaceholder: "粘贴 Bark App 里的 Device Key",
+  chBarkDeviceKeyHint: "Bark App 内查看；留空即不修改已保存的值，输入新值将替换",
   chBarkSound: "铃声 sound",
   chBarkGroup: "分组 group",
   chBarkGroupHint: "同组通知在手机上折叠展示",
@@ -227,7 +229,7 @@ export const zh = {
   whAuthBasic: "Basic 用户名/密码",
   whAuthHeader: "自定义请求头",
   whAuthHint:
-    "凭据只走请求头（ntfy / Gotify 均支持 Authorization 头，不拼 URL）；仅存本机配置并掩码回显",
+    "凭据只走请求头（ntfy / Gotify 均支持 Authorization 头，不拼 URL）；仅存本机配置并掩码回显；留空即不修改已保存的凭据",
   whAuthToken: "访问令牌",
   whAuthUsername: "用户名",
   whAuthPassword: "密码",
@@ -365,7 +367,6 @@ export const en: Record<NotifierLocaleKey, string> = {
   cleared: "Cleared {n} history entries",
   clearFail: "Clear failed: {msg}{hint}",
   historyRetention: "History retention (days, 0=no daily cleanup)",
-  maxConnections: "Max connections (evict oldest beyond)",
   dndEnable: "Enable do-not-disturb",
   dndStart: "Start time",
   dndEnd: "End time",
@@ -440,7 +441,9 @@ export const en: Record<NotifierLocaleKey, string> = {
   chBarkBaseUrl: "Server URL",
   chBarkBaseUrlHint: "Bark server URL (http/https), e.g. https://api.day.app or self-hosted",
   chBarkDeviceKey: "Device Key",
-  chBarkDeviceKeyHint: "Shown as masked after saving; keep the mask to leave it unchanged",
+  chBarkDeviceKeyPlaceholder: "Paste the Device Key from the Bark app",
+  chBarkDeviceKeyHint:
+    "Find it in the Bark app; leave empty to keep the saved value, type a new one to replace it",
   chBarkSound: "Sound",
   chBarkGroup: "Group",
   chBarkGroupHint: "Notifications of the same group collapse on the phone",
@@ -511,7 +514,7 @@ export const en: Record<NotifierLocaleKey, string> = {
   whAuthBasic: "Basic username/password",
   whAuthHeader: "Custom header",
   whAuthHint:
-    "Credentials go in request headers only (ntfy / Gotify both support the Authorization header), never in the URL; stored locally and shown masked",
+    "Credentials go in request headers only (ntfy / Gotify both support the Authorization header), never in the URL; stored locally and shown masked; leave empty to keep the saved value",
   whAuthToken: "Access token",
   whAuthUsername: "Username",
   whAuthPassword: "Password",
@@ -590,3 +593,26 @@ export const en: Record<NotifierLocaleKey, string> = {
   diagBrowserAudioUnsupported:
     "this browser does not support Web Audio, so the plugin cannot self-play sounds",
 };
+
+/** kind → 字典 key（未知 kind 回落 kind 本体显示，数据不翻译）。刻意留在客户端：
+ *  这是「kind → i18n 文案 key」，文案属客户端面，宿主端没有翻译。含 test——自检通知没有
+ *  事件开关，但历史行要显示它。
+ *
+ *  `satisfies Record<BuiltinKind, …>` 是覆盖信号：shared 的 BUILTIN_KINDS 新增一项而这里漏配
+ *  文案就是编译失败，而不是让历史行渲染出一个取不到文案的 key。
+ *
+ *  导出面仍声明为 `Record<string, string>`：kind 在运行期还可能是外部注册的种类
+ *  （`<命名空间>:<id>`），三个消费方都要按任意 string 查表、查不到就回落 kind 本体
+ *  （bark-card.tsx:56/67 的 levels 建议与行标签、panes/events.tsx:204 的豁免 chips、
+ *  panes/history.tsx:78 的历史行）；把导出收窄成 BuiltinKind 索引会让这些读取全部编译失败。 */
+const KIND_KEY_TABLE = {
+  ask: "kAsk",
+  question: "kQuestion",
+  done: "kDone",
+  "subagent-done": "kSubagentDone",
+  error: "kError",
+  "turn-end": "kTurnEnd",
+  test: "kTest",
+} satisfies Record<BuiltinKind, NotifierLocaleKey>;
+
+export const KIND_KEYS: Record<string, string> = KIND_KEY_TABLE;

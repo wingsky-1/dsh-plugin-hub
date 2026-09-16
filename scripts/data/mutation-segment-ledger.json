@@ -580,18 +580,6 @@
           "reused": 585,
           "reuseTotal": 670,
           "strykerReported": "9 seconds"
-        },
-        {
-          "seg": "dsh-web-file-preview",
-          "startedAt": "2026-09-11T08:36:31.3280660",
-          "endedAt": "2026-09-11T08:36:34.1562589",
-          "wallSeconds": 2.8,
-          "mutants": 204,
-          "dryTests": 1,
-          "dryRunSeconds": 0,
-          "reused": 164,
-          "reuseTotal": 204,
-          "strykerReported": "2 seconds"
         }
       ]
     },
@@ -967,18 +955,6 @@
           "reused": null,
           "reuseTotal": null,
           "strykerReported": "16 minutes and 52 seconds"
-        },
-        {
-          "seg": "dsh-web-file-preview",
-          "startedAt": "2026-09-12T08:34:43.6802596",
-          "endedAt": "2026-09-12T08:35:04.2444683",
-          "wallSeconds": 20.6,
-          "mutants": 204,
-          "dryTests": 57,
-          "dryRunSeconds": 0,
-          "reused": null,
-          "reuseTotal": null,
-          "strykerReported": "20 seconds"
         }
       ]
     },
@@ -1366,57 +1342,49 @@
           "reused": null,
           "reuseTotal": null,
           "strykerReported": "15 minutes and 16 seconds"
-        },
-        {
-          "seg": "dsh-web-file-preview",
-          "startedAt": "2026-09-13T11:11:34.3620639",
-          "endedAt": "2026-09-13T11:11:51.6429728",
-          "wallSeconds": 17.3,
-          "mutants": 204,
-          "dryTests": 57,
-          "dryRunSeconds": 0,
-          "reused": null,
-          "reuseTotal": null,
-          "strykerReported": "17 seconds"
         }
       ]
     }
   ],
   "unmeasured": {
-    "dsh-lan-proxy-config": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待改名后首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档（旧段历史值见 superseded.dsh-lan-proxy-3）。",
-    "dsh-lan-proxy-entry": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待改名后首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档（旧段历史值见 superseded.dsh-lan-proxy-2）。",
-    "dsh-lan-proxy-migrate": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待改名后首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档（旧段历史值见 superseded.dsh-lan-proxy-4）。",
-    "dsh-lan-proxy-proxy": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待改名后首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档（旧段历史值见 superseded.dsh-lan-proxy-1）。",
-    "dsh-lan-proxy-shared": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待改名后首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档（旧段历史值见 superseded.dsh-lan-proxy-2）。",
-    "dsh-lan-proxy-tls": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待改名后首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档（旧段历史值见 superseded.dsh-lan-proxy-4）。"
+    "dsh-lan-proxy-config": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
+    "dsh-lan-proxy-entry": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
+    "dsh-lan-proxy-migrate": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
+    "dsh-lan-proxy-proxy": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
+    "dsh-lan-proxy-shared": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
+    "dsh-lan-proxy-tls": "#826 段按模块目录重划并改名（旧数字段键 1..4 → 模块目录名），本段尚无改名后的实测值；待首次 CI 变异切片跑或夜间全量班由 mutation-ledger --record 入档。旧段历史值见 superseded 中 replacedBy 含本段的条目。",
+    "dsh-notifier-client": "#769 新增的客户端段（packages/dsh-notifier/src/client 下的纯 .ts 模块）。最近一次夜间全量班（observe.yml）早于本段的引入，故台账里没有它的 run 日志墙钟。本地 --force 实测 523 个变异体、concurrency 2 用时 4 分 03 秒（covered 87.38%），按台账口径不计入——本文件的值只能从 Actions run 日志解析，禁止手工编造数值；下一轮夜间全量班会把本段自动补进 measurements 并从 unmeasured 删除。",
+    "dsh-worktree-sidebar": "新增 dsh-worktree-sidebar 单段（worktree 侧边栏适配层首次登记变异面），历史上无同名段，尚无实测；待 observe 夜间全量班重建。"
   },
   "superseded": {
     "dsh-lan-proxy-1": {
       "replacedBy": [
-        "dsh-lan-proxy-proxy"
+        "dsh-lan-proxy-proxy",
+        "dsh-lan-proxy-shared"
       ],
-      "reason": "#826 域归位：段键由数字改为模块目录名，mutate 面同步收敛（根 proxy.ts → server/proxy/impl/proxy.ts）。历史 wallSeconds 描述的是旧文件面，不得用于新面的超时定标。"
+      "reason": "#826 域归位：段键由数字改为模块目录名。本段旧面为 src/proxy.ts，现分裂为 proxy（server/proxy/impl/proxy.ts）与 shared（server/shared/{defaults,deflate,net}.ts——DEFAULT_OPTIONS / DEFAULT_DEFLATE_POLICY / DeflatePolicy / isLoopbackTarget 四个符号原本都定义在 proxy.ts 内，重排时整块上移为共享叶子）两段。历史 wallSeconds 描述的是旧文件面，不得用于新面的超时定标。"
     },
     "dsh-lan-proxy-2": {
       "replacedBy": [
         "dsh-lan-proxy-entry",
-        "dsh-lan-proxy-shared"
+        "dsh-lan-proxy-config"
       ],
-      "reason": "#826 域归位：原「装配 + 包内共享」混装段按模块目录拆为 entry（根 index.ts 未在内，本段旧面为 apply.ts）与 shared（server/shared/{defaults,deflate,net}.ts）两段。历史 wallSeconds 描述的是旧合并面。"
+      "reason": "#826 域归位：本段旧面为 src/apply.ts + src/config.ts（装配与配置），现按模块目录归入 entry（src/server/apply.ts）与 config（src/server/config/impl/model.ts）。历史 wallSeconds 描述的是旧合并面，不得用于新面的超时定标。"
     },
     "dsh-lan-proxy-3": {
       "replacedBy": [
-        "dsh-lan-proxy-config"
+        "dsh-lan-proxy-config",
+        "dsh-lan-proxy-migrate"
       ],
-      "reason": "#826 域归位：段键改为模块目录名，mutate 面仍是 config 域 impl（原根 config.ts/config-routes.ts/settings.ts → server/config/impl/*）。历史 wallSeconds 描述的是旧文件路径。"
+      "reason": "#826 域归位：本段旧面为 src/config-routes.ts + src/migrate.ts（配置面与存量迁移），现归入 config（server/config/impl/routes.ts）与 migrate（server/migrate/impl/file/index.ts）。历史 wallSeconds 描述的是旧文件路径。"
     },
     "dsh-lan-proxy-4": {
       "replacedBy": [
+        "dsh-lan-proxy-config",
         "dsh-lan-proxy-entry",
-        "dsh-lan-proxy-migrate",
         "dsh-lan-proxy-tls"
       ],
-      "reason": "#826 域归位：原「入口 + 基础设施」混装段按模块目录拆为 entry（src/index.ts）、tls（server/tls/impl/index.ts）与 migrate（server/migrate/impl/file/index.ts）三段。历史 wallSeconds 描述的是旧合并面。"
+      "reason": "#826 域归位：本段旧面为 src/settings.ts + src/cert.ts + src/index.ts（入口与基础设施），现归入 entry（src/index.ts）、config（server/config/impl/namespace.ts，即原 settings.ts）与 tls（server/tls/impl/index.ts，即原 cert.ts）。历史 wallSeconds 描述的是旧合并面。"
     },
     "dsh-notifier-config": {
       "replacedBy": [

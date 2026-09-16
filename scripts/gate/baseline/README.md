@@ -54,7 +54,8 @@
 ### 归档缺口与对账（#714 后续修复）
 `overlay-baseline.mjs` 曾按 GitHub API 的**默认分页（30 条/页）**读取 artifact 列表，而一次 PR CI 会产生
 70 个 artifact（其中 31 个 `mutation-incremental-*`），于是每次合并只覆盖 14 段，随后整棵树强推会把
-未覆盖段的旧版本固化，`provider-usage-errsurf` 与 `web-file-preview` 两段更是每次被抹掉。
+未覆盖段的旧版本固化，`provider-usage-errsurf`（以及已随 #840 退役的 `web-file-preview`）
+更是每次被抹掉。
 
 现行实现：
 - 分页取全（`per_page=100` + 页号严格递增 + 空页/`total_count` 双终止条件 + 20 页硬上限）；

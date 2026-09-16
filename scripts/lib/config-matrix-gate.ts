@@ -69,26 +69,30 @@ function loadUiExempt(root, problems) {
   }
   const out = {};
   for (const item of json.exemptKeys) {
-    if (
-      item === null ||
-      typeof item !== "object" ||
-      typeof item.key !== "string" ||
-      item.key.length === 0
-    ) {
-      problems.push(`lan-proxy UI 豁免表条目缺 key（${UI_EXEMPT_REL}）`);
-      continue;
-    }
-    if (typeof item.reason !== "string" || item.reason.length === 0) {
-      problems.push(`lan-proxy UI 豁免键 ${item.key} 缺 reason（${UI_EXEMPT_REL}）`);
-      continue;
-    }
-    if (out[item.key] !== undefined) {
-      problems.push(`lan-proxy UI 豁免表存在重复键：${item.key}`);
-      continue;
-    }
-    out[item.key] = item.reason;
+    applyExemptEntry(out, item, problems);
   }
   return out;
+}
+
+function applyExemptEntry(out, item, problems) {
+  if (
+    item === null ||
+    typeof item !== "object" ||
+    typeof item.key !== "string" ||
+    item.key.length === 0
+  ) {
+    problems.push(`lan-proxy UI 豁免表条目缺 key（${UI_EXEMPT_REL}）`);
+    return;
+  }
+  if (typeof item.reason !== "string" || item.reason.length === 0) {
+    problems.push(`lan-proxy UI 豁免键 ${item.key} 缺 reason（${UI_EXEMPT_REL}）`);
+    return;
+  }
+  if (out[item.key] !== undefined) {
+    problems.push(`lan-proxy UI 豁免表存在重复键：${item.key}`);
+    return;
+  }
+  out[item.key] = item.reason;
 }
 
 /** 豁免表结构自检：≤8 键 + 每条原因含「文件:行」+ 一句理由。 */
@@ -171,6 +175,19 @@ function runLanProxy(root) {
     return { problems, lines };
   }
 
+  checkLanProxyTableEquality(cfgPath, problems, schema, validators, hints);
+
+  const exemptKeys = checkLanProxyClientDefaults(root, problems, schema, defaults, clientPath);
+
+  lines.push(
+    `lan-proxy ${schema.keys.length} 键 × [schema/validators/hints] 全等 + client DEFAULTS ${defaults.keys.length}(豁免 ${exemptKeys.length})`,
+  );
+
+  const warnings = collectLanProxyReadmeWarnings(root, schema);
+  return { problems, warnings, lines };
+}
+
+function checkLanProxyTableEquality(cfgPath, problems, schema, validators, hints) {
   // L1：三表两两全等（16 键）
   const pairs = [
     ["Config", schema, "FILE_CONFIG_VALIDATORS", validators],
@@ -199,7 +216,9 @@ function runLanProxy(root) {
       ),
     );
   }
+}
 
+function checkLanProxyClientDefaults(root, problems, schema, defaults, clientPath) {
   // L2：DEFAULTS ⊆ schema；schema − DEFAULTS == 豁免；豁免表结构自检
   const exempt = loadUiExempt(root, problems);
   problems.push(...checkExempts("lan-proxy", exempt));
@@ -226,11 +245,10 @@ function runLanProxy(root) {
         `lan-proxy 豁免键 ${k} 已在客户端 DEFAULTS 中（豁免残留，应移除豁免或改豁免原因）`,
       );
   }
+  return exemptKeys;
+}
 
-  lines.push(
-    `lan-proxy ${schema.keys.length} 键 × [schema/validators/hints] 全等 + client DEFAULTS ${defaults.keys.length}(豁免 ${exemptKeys.length})`,
-  );
-
+function collectLanProxyReadmeWarnings(root, schema) {
   // 量级 #12：README 配置表键集一致性——代码键缺文档仅 warn 不判红（防文档漂移提示）
   const warnings = [];
   const readmePath = join(root, "packages/dsh-lan-proxy/README.md");
@@ -248,7 +266,7 @@ function runLanProxy(root) {
       );
     }
   }
-  return { problems, warnings, lines };
+  return warnings;
 }
 
 /**
@@ -321,16 +339,36 @@ function runSurface(root, surface) {
   const warnings = [];
   const lines = [];
 
+  const loaded = loadSurfacePair(root, pkg, surface, problems);
+  if (loaded === null) return { problems, warnings, lines };
+  const { defaults, normalizer } = loaded;
+
+  const base = checkSurfaceNormalization(pkg, surface, defaults, normalizer, problems);
+  if (base === null) return { problems, warnings, lines };
+
+  const lists = checkSurfaceKeyLists(root, pkg, surface, defaults, base, problems);
+  if (lists === null) return { problems, warnings, lines };
+
+  lines.push(formatSurfaceSummaryLine(pkg, base, lists.booleanKeys, lists.countLimits));
+  collectSurfaceReadmeWarnings(root, pkg, base, warnings);
+  return { problems, warnings, lines };
+}
+
+// N1 的前置：两个导出同属一个配置面，缺任一都无法做键集对照，整段作废（problems 已逐条记下）。
+function loadSurfacePair(root, pkg, surface, problems) {
   const defaults = loadSurfaceExport(root, pkg, surface.defaults, "defaults", problems);
   const normalizer = loadSurfaceExport(root, pkg, surface.normalizer, "normalizer", problems);
-  if (defaults === undefined || normalizer === undefined) return { problems, warnings, lines };
+  if (defaults === undefined || normalizer === undefined) return null;
+  return { defaults, normalizer };
+}
 
+function checkSurfaceNormalization(pkg, surface, defaults, normalizer, problems) {
   const base = Object.keys(defaults);
   if (base.length === 0) {
     problems.push(
       `${pkg} configSurfaces.defaults 的导出键集为空：${surface.defaults.module} → ${surface.defaults.export}`,
     );
-    return { problems, warnings, lines };
+    return null;
   }
 
   let normalized;
@@ -338,7 +376,7 @@ function runSurface(root, surface) {
     normalized = normalizer({});
   } catch (e) {
     problems.push(`${pkg} normalizeConfig({}) 执行失败：${String(e.message).split("\n")[0]}`);
-    return { problems, warnings, lines };
+    return null;
   }
   const d2 = diffKeys(base, Object.keys(normalized ?? {}));
   for (const k of d2.missing) {
@@ -349,65 +387,82 @@ function runSurface(root, surface) {
   for (const k of d2.extra) {
     problems.push(`${pkg} normalizeConfig 多键: ${k}（不在 DEFAULT_CONFIG 中——归一化凭空造键）`);
   }
+  return base;
+}
 
+function checkSurfaceKeyLists(root, pkg, surface, defaults, base, problems) {
   // N3/N4：布尔键清单与计数上界清单（两张清单的导出由 notifier 侧补齐后恢复执行）
   const booleanKeys = loadSurfaceExport(root, pkg, surface.booleanKeys, "booleanKeys", problems);
   const countLimits = loadSurfaceExport(root, pkg, surface.countLimits, "countLimits", problems);
-  if (booleanKeys === undefined || countLimits === undefined) return { problems, warnings, lines };
+  if (booleanKeys === undefined || countLimits === undefined) return null;
 
   const baseSet = new Set(base);
+  checkBooleanKeys(pkg, surface, defaults, baseSet, booleanKeys, problems);
+  checkCountLimits(pkg, surface, defaults, baseSet, countLimits, problems);
+  return { booleanKeys, countLimits };
+}
+
+function checkBooleanKeys(pkg, surface, defaults, baseSet, booleanKeys, problems) {
   if (!Array.isArray(booleanKeys)) {
     problems.push(
       `${pkg} configSurfaces.booleanKeys 的导出不是数组（${surface.booleanKeys.export}）`,
     );
-  } else {
-    for (const k of booleanKeys) {
-      if (!baseSet.has(k)) {
-        problems.push(`${pkg} BOOLEAN_KEYS 含非配置键: ${k}（不在 DEFAULT_CONFIG 中）`);
-      } else if (typeof defaults[k] !== "boolean") {
-        problems.push(
-          `${pkg} BOOLEAN_KEYS 含非布尔键: ${k}（DEFAULT_CONFIG 里的默认值是 ${typeof defaults[k]}）`,
-        );
-      }
+    return;
+  }
+  for (const k of booleanKeys) {
+    if (!baseSet.has(k)) {
+      problems.push(`${pkg} BOOLEAN_KEYS 含非配置键: ${k}（不在 DEFAULT_CONFIG 中）`);
+    } else if (typeof defaults[k] !== "boolean") {
+      problems.push(
+        `${pkg} BOOLEAN_KEYS 含非布尔键: ${k}（DEFAULT_CONFIG 里的默认值是 ${typeof defaults[k]}）`,
+      );
     }
   }
+}
 
+function checkCountLimits(pkg, surface, defaults, baseSet, countLimits, problems) {
   if (countLimits === null || typeof countLimits !== "object" || Array.isArray(countLimits)) {
     problems.push(
       `${pkg} configSurfaces.countLimits 的导出不是对象（${surface.countLimits.export}）`,
     );
-  } else {
-    for (const [k, limit] of Object.entries(countLimits)) {
-      if (!baseSet.has(k)) {
-        problems.push(`${pkg} COUNT_LIMITS 含非配置键: ${k}（不在 DEFAULT_CONFIG 中）`);
-        continue;
-      }
-      if (!Number.isInteger(limit) || limit < 0) {
-        problems.push(`${pkg} COUNT_LIMITS.${k} 的上界不是非负整数: ${JSON.stringify(limit)}`);
-      }
-      const fallback = defaults[k];
-      if (!Number.isInteger(fallback) || fallback < 0) {
-        problems.push(
-          `${pkg} COUNT_LIMITS 覆盖的键 ${k} 在 DEFAULT_CONFIG 里不是非负整数: ${JSON.stringify(fallback)}`,
-        );
-      } else if (Number.isInteger(limit) && fallback > limit) {
-        problems.push(
-          `${pkg} DEFAULT_CONFIG.${k} = ${fallback} 超过 COUNT_LIMITS.${k} 上界 ${limit}（默认值本身越界）`,
-        );
-      }
-    }
+    return;
   }
+  for (const [k, limit] of Object.entries(countLimits)) {
+    checkCountLimitEntry(pkg, defaults, baseSet, k, limit, problems);
+  }
+}
 
+function checkCountLimitEntry(pkg, defaults, baseSet, k, limit, problems) {
+  if (!baseSet.has(k)) {
+    problems.push(`${pkg} COUNT_LIMITS 含非配置键: ${k}（不在 DEFAULT_CONFIG 中）`);
+    return;
+  }
+  if (!Number.isInteger(limit) || limit < 0) {
+    problems.push(`${pkg} COUNT_LIMITS.${k} 的上界不是非负整数: ${JSON.stringify(limit)}`);
+  }
+  const fallback = defaults[k];
+  if (!Number.isInteger(fallback) || fallback < 0) {
+    problems.push(
+      `${pkg} COUNT_LIMITS 覆盖的键 ${k} 在 DEFAULT_CONFIG 里不是非负整数: ${JSON.stringify(fallback)}`,
+    );
+  } else if (Number.isInteger(limit) && fallback > limit) {
+    problems.push(
+      `${pkg} DEFAULT_CONFIG.${k} = ${fallback} 超过 COUNT_LIMITS.${k} 上界 ${limit}（默认值本身越界）`,
+    );
+  }
+}
+
+function formatSurfaceSummaryLine(pkg, base, booleanKeys, countLimits) {
   // 摘要里的计数用安全取值：类型不合法时上面已判红，这里不能再抛（报告要完整）。
   const boolCount = Array.isArray(booleanKeys) ? booleanKeys.length : "?";
   const limitCount =
     countLimits !== null && typeof countLimits === "object" && !Array.isArray(countLimits)
       ? Object.keys(countLimits).length
       : "?";
-  lines.push(
-    `${pkg} ${base.length} 键 × [defaults → normalizeConfig] 运行时取值全等 + BOOLEAN_KEYS ${boolCount} + COUNT_LIMITS ${limitCount}`,
-  );
+  return `${pkg} ${base.length} 键 × [defaults → normalizeConfig] 运行时取值全等 + BOOLEAN_KEYS ${boolCount} + COUNT_LIMITS ${limitCount}`;
+}
 
+function collectSurfaceReadmeWarnings(root, pkg, base, warnings) {
   // 量级 #12：README JSON 样例键集一致性——代码键缺文档仅 warn 不判红
   const readmePath = join(root, `packages/${pkg}/README.md`);
   let readmeText = null;
@@ -426,7 +481,6 @@ function runSurface(root, surface) {
       );
     }
   }
-  return { problems, warnings, lines };
 }
 
 /**

@@ -206,6 +206,10 @@ for (const f of copiedResources) {
   console.log(`[bundle-host] ${process.argv[2]}: 资源 ${f} → lib/`);
 }
 
+function isTopEntryName(isRoot, name) {
+  return isRoot && (name === "index.js" || name === "client.js" || name === "client-mermaid.js");
+}
+
 // 1d. 递归清理游离产物：多模块 src（含 src/client/、src/core/ 等子目录）的 tsc 会
 // 逐个 emit lib/**/*.js + *.js.map；host 已内联为自包含 lib/index.js（client 由
 // build-client 生成 lib/client.js），其余 .js/.js.map（含子目录）均为游离物——
@@ -219,8 +223,7 @@ function cleanFreeFloatingJs(dir, isRoot) {
       cleanFreeFloatingJs(abs, false);
       continue;
     }
-    const isTopEntry =
-      isRoot && (f.name === "index.js" || f.name === "client.js" || f.name === "client-mermaid.js");
+    const isTopEntry = isTopEntryName(isRoot, f.name);
     if (f.name.endsWith(".js") && !isTopEntry) {
       rmSync(abs, { force: true });
     } else if (
@@ -244,6 +247,16 @@ for (const rel of walkFiles(join(ROOT, "shared"), (f) => f.endsWith(".d.ts"))) {
   const dest = join(pkgDir, "shared", rel);
   mkdirSync(dirname(dest), { recursive: true });
   cpSync(join(ROOT, "shared", rel), dest);
+}
+// 2c. 副本目录是源的镜像，镜像里不该有源没有的东西：cpSync 只增不删，于是退役一个 shared
+// 模块后，每个包的 shared/ 里都会留下旧副本，而 pack-check 的「shared 副本残留」判据会因此
+// 判红——症状是「本地构建过的工作区永久红、干净检出却绿」（实测：main 退役 shared/frontmatter.*
+// 后，6 个包的旧副本让 test:scripts 的 3 条 pack-check 用例全红）。故这里显式对账一次。
+for (const rel of walkFiles(join(pkgDir, "shared"), () => true)) {
+  if (!existsSync(join(ROOT, "shared", rel))) {
+    rmSync(join(pkgDir, "shared", rel), { force: true });
+    console.log(`[bundle-host] ${process.argv[2]}: 清理已无源的 shared 副本 ${rel}`);
+  }
 }
 console.log(`[bundle-host] ${process.argv[2]}: d.ts X1 完成（shared/ 副本随包）`);
 

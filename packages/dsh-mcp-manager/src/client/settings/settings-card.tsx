@@ -20,14 +20,17 @@ import { t } from "../../../../../shared/client/i18n.js";
 export function SettingsCard() {
   const useState = React.useState;
   const useEffect = React.useEffect;
-  const [cfg, setCfg] = useState(null) as any;
+  // 显式声明状态形状：useState(null) 会把状态推成字面 null，写入对象只能靠整段宽化断言消音
+  //（那正是 shim 时代的做法）。cfg 是宿主设置对象的副本，形状由宿主决定，故按 Record 收。
+  const [cfg, setCfg] = useState(null as Record<string, any> | null);
   const [middleware, setMiddleware] = useState("project");
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState(null) as any;
+  const [msg, setMsg] = useState(null as { ok: boolean; text: string } | null);
   // C5：成功提示消失定时器登记 ref，卸载清理——匿名 setTimeout 在组件卸载
   // （HMR/设置页关闭）后仍 setState 触发 React 告警与潜在泄漏。
-  const msgTimer = React.useRef(undefined);
+  // 显式泛型：useRef(undefined) 会把 ref 推成 undefined，setTimeout 的返回值写不进去。
+  const msgTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
     let live = true;
@@ -52,7 +55,7 @@ export function SettingsCard() {
     return <li className="dm-set-card">{t("settingsLoading")}</li>;
   }
 
-  const set = (patch: any) => setCfg((c: any) => (c !== null ? Object.assign({}, c, patch) : c));
+  const set = (patch: any) => setCfg((c) => (c !== null ? Object.assign({}, c, patch) : c));
   // 层级基准与偏移量分开钳制：层级 1-9000（#128），偏移维持 0-2000。
   const numInput = (key: string, label: string, min = 0, max = 2000) => (
     <label className="dm-set-field">

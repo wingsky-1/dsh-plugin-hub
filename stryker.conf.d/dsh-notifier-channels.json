@@ -2,9 +2,8 @@
   "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
   "mutate": [
     "packages/dsh-notifier/src/server/channels/**/*.ts",
-    "packages/dsh-notifier/src/shared/tones.ts",
+    "packages/dsh-notifier/src/shared/**/*.ts",
     "!packages/dsh-notifier/src/client/**",
-    "!packages/dsh-notifier/src/types.ts",
     "!packages/dsh-notifier/src/**/interface.ts",
     "!packages/dsh-notifier/src/server/*/deps.ts",
     "!packages/dsh-notifier/src/server/channels/impl/system/deps.ts",
@@ -43,5 +42,5 @@
   },
   "incremental": true,
   "incrementalFile": "coverage/mutation/incremental-notifier-channels.json",
-  "_comment": "#733 按域重写：channels——出口域（bark/browser/system/webhook 四出口 + deliver 共享投递阶段与 caps 截断；tones 为系统音色表）。边界：出口只回答「本次失败可不可重试」（DeliverResult.retryable），重试/退避/节流/在途上限一律不在本域，归 pipeline/impl/dispatch。#783 起音色事实源（含三平台素材字段）迁到 src/shared/tones.ts 由两端共用，随本域一起度量：该文件里可变异的是 candidateNames 的平台翻译分支，纯数据字面量由 sharedDefaults.excludedMutations 排除（ObjectLiteral/ArrayLiteral/StringLiteral）。"
+  "_comment": "#733 按域重写：channels——出口域（bark/browser/system/webhook 四出口 + deliver 共享投递阶段与 caps 截断；tones 为系统音色表）。边界：出口只回答「本次失败可不可重试」（DeliverResult.retryable），重试/退避/节流/在途上限一律不在本域，归 pipeline/impl/dispatch。#783 起音色事实源（含三平台素材字段）迁到 src/shared/ 由两端共用，随本域一起度量；#769 把该目录整体按 glob 纳入本段（是两端契约的收口面，逐个登记会随每次收口漏改）：批 2 收口 tones/sounds/kinds，批 3 收口 channels/webhooks/reason-codes/capabilities，#769 批 4 加围栏拒答 code 表（refusal.ts，纯数据无变异体），现为九个文件。面内可变异的是 candidateNames 的平台翻译分支与 shared 里的判定/归一函数（kinds.ts 的 isBuiltinKind / isNotifySeverity、sounds.ts 的 isSoundId、channels.ts 的 isBuiltinChannelType / channelIdFor / channelIdOf、webhooks.ts 的 deliveryPresetOf / webhookTemplateOf）；其余不产生变异体——纯数据字面量由 sharedDefaults.excludedMutations 排除（ObjectLiteral/ArrayLiteral/StringLiteral），interface.ts 与 capabilities.ts 全是转出/类型，reason-codes.ts 的 code 表是字面量。"
 }

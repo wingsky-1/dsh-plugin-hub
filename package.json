@@ -28,7 +28,7 @@
     "gate:changed": "node scripts/gate/local-gate.mjs --tier changed",
     "gate:pr": "node scripts/gate/local-gate.mjs --tier pr",
     "gate:full": "node scripts/gate/local-gate.mjs --tier full",
-    "cov": "vitest run --coverage --project unit --project integration",
+    "cov": "vitest run --coverage --project unit --project integration --project client-unit --project client-dom",
     "crap": "node scripts/gate/crap-check.mjs",
     "lint": "node tools/lint/bin/lint.mjs",
     "prepare": "lefthook install",
@@ -53,7 +53,11 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@stryker-mutator/core": "10.0.0",
     "@stryker-mutator/vitest-runner": "10.0.0",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/react": "^16.3.0",
     "@types/node": "^26.2.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.5",
     "@vitest/coverage-istanbul": "4.1.11",
     "acorn": "^8.18.0",
     "esbuild": "^0.28.2",
@@ -62,9 +66,12 @@
     "lefthook": "2.1.12",
     "lint-staged": "17.5.1",
     "prettier": "3.9.6",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
-    "vitest": "4.1.11"
+    "vitest": "4.1.11",
+    "yaml": "^2.9.0"
   },
   "engines": {
     "node": ">=23.6"

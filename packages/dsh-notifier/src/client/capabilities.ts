@@ -9,7 +9,8 @@
  *
  * 为什么文案表写成**显式完整表** + `satisfies Record<…, NotifierLocaleKey>`：服务端加一个 code
  * 而这里漏配文案，必须在编译期就红，而不是等用户看到一行英文标识符（同 reason-text.ts 的范式）。
- * 类型只 `import type`（编译期擦除，浏览器包里没有服务端代码）。
+ * 类型只 `import type`（编译期擦除，浏览器包里没有服务端实现），且指向 src/shared/interface.ts
+ * 这个跨端共享面——干净模块的类型面不指向宿主实现目录。
  */
 import type {
   CapabilityDimension,
@@ -21,9 +22,11 @@ import type {
   RemediationParams,
   SoundCapability,
   Verdict,
-} from "../server/channels/impl/capabilities/type.ts";
+} from "../shared/interface.ts";
 import type { NotifierLocaleKey } from "./locales.ts";
 import type { ReasonTranslator } from "./reason-text.ts";
+// 音频事实的形状归**生产者**（notify/audio.ts 的 facts()）所有，这里只消费它做判定。
+import type { AudioFacts } from "./notify/audio.ts";
 
 /** 四态在界面上的着色档：JSX 只做 className 拼接，不再自己判 verdict。 */
 export type DiagnosticTone = "ok" | "warn" | "error" | "unknown";
@@ -159,18 +162,6 @@ export type AudioState =
   | { kind: "suspended"; cause: "never-unlocked" | "auto-suspended" }
   | { kind: "closed" }
   | { kind: "unsupported" };
-
-/** 音频面的原始事实（只有页面读得到，判定留在这个模块里）。 */
-export interface AudioFacts {
-  /** `window.AudioContext` 是否存在——只有它不存在才是「Web Audio 不可用」。 */
-  supported: boolean;
-  /** 当前 state；`null` = 尚未构造（用户还没点过页面）。 */
-  state: "running" | "suspended" | "closed" | null;
-  /** 是否曾成功跑到 `running`（已解锁的唯一凭据）。 */
-  hasEverRun: boolean;
-  /** 最近一次 `resume()` 是否被 reject（浏览器明确拒绝，而不是「还没轮到」）。 */
-  resumeRejected: boolean;
-}
 
 /**
  * 归一化音频事实。

@@ -129,39 +129,36 @@ async function scanFile(file) {
   return { hits, tsLines };
 }
 
-async function main() {
-  const root = argValue(process.argv, "--root", ROOT);
-  const exemptionsPath = argValue(process.argv, "--exemptions", EXEMPTIONS_PATH);
-  const registryPath = argValue(process.argv, "--registry", REGISTRY_PATH);
-
-  let registry;
-  let packages;
+/** 解析扫描范围；范围/机制失效即 fail-closed。 */
+function resolvePackages(root, registryPath) {
   try {
-    registry = loadScopeRegistry(registryPath);
-    packages = scopePackages(root, registry, GATE_NAME);
+    return scopePackages(root, loadScopeRegistry(registryPath), GATE_NAME);
   } catch (e) {
     console.error(`forbid-module-state-src: ${e.message} —— 范围/豁免机制失效，fail-closed`);
     process.exit(1);
   }
+}
 
-  let ledger;
+/** 读取豁免台账；台账不可读/结构不合法即 fail-closed。 */
+function loadExemptionLedger(exemptionsPath) {
   try {
-    ledger = loadLedger(exemptionsPath, GATE_NAME);
+    return loadLedger(exemptionsPath, GATE_NAME);
   } catch (e) {
     console.error(`forbid-module-state-src: ${e.message} —— 豁免机制失效，fail-closed`);
     process.exit(1);
   }
+}
 
-  const files = collectSrcFiles(root, packages);
-  if (files.length === 0) {
-    console.error(
-      `forbid-module-state-src: 未发现任何扫描目标（${packages.join(", ")} 的 src 空，fail-closed）`,
-    );
-    process.exit(1);
-  }
-  const violations = [];
-  const badExemptions = [];
-  const legitExemptions = [];
+/** 单处命中的三态裁决落桶（legit / bad / 违规，三态互斥）。 */
+function bucketHit(verdict, buckets) {
+  if (verdict.kind === "legit") buckets.legitExemptions.push(verdict.detail);
+  else if (verdict.kind === "bad") buckets.badExemptions.push(verdict.detail);
+  else buckets.violations.push(verdict.detail);
+}
+
+/** 按文件收集四类结果；单个文件解析异常只记账，由调用方统一判红。 */
+async function collectFindings(root, files, ledger) {
+  const buckets = { violations: [], badExemptions: [], legitExemptions: [] };
   const parseFailures = [];
   const hitRels = new Set();
   for (const file of files) {
@@ -178,45 +175,75 @@ async function main() {
     for (const h of hits) {
       const note = hasExemptionMarker(tsLines, h.line - 1, POLICY.mark);
       const detail = `${rel}:${h.line} [模块级 ${h.kind}（${h.names}）]`;
-      const verdict = judgeHit(POLICY, ledger, rel, note, detail, h.text);
-      if (verdict.kind === "legit") legitExemptions.push(verdict.detail);
-      else if (verdict.kind === "bad") badExemptions.push(verdict.detail);
-      else violations.push(verdict.detail);
+      bucketHit(judgeHit(POLICY, ledger, rel, note, detail, h.text), buckets);
     }
   }
-  badExemptions.push(...rotDetails(POLICY, ledger, root, hitRels));
+  buckets.badExemptions.push(...rotDetails(POLICY, ledger, root, hitRels));
+  return { ...buckets, parseFailures };
+}
 
-  const fail = violations.length > 0 || badExemptions.length > 0 || parseFailures.length > 0;
-  if (parseFailures.length > 0) {
-    console.error("forbid-module-state-src: 解析失败（fail-closed，一律判红）：");
-    for (const p of parseFailures) console.error(`  - ${p}`);
-  }
-  if (badExemptions.length > 0) {
-    console.error("forbid-module-state-src: 存在豁免但不合法：");
-    for (const b of badExemptions) console.error(`  - ${b}`);
-  }
-  if (violations.length > 0) {
-    console.error(
-      `forbid-module-state-src: 发现 ${violations.length} 处模块级可变状态（应收进闭包/实例，或在 ${LEDGER_DISPLAY} 登记豁免）：`,
-    );
-    for (const v of violations) console.error(`  - ${v}`);
-  }
-  if (fail) {
-    console.error(
-      `forbid-module-state-src: FAIL（扫描 ${files.length} 文件，违规 ${violations.length} / 非法豁免 ${badExemptions.length} / 解析失败 ${parseFailures.length}）`,
-    );
-    process.exit(1);
-  }
+/** 逐条列表输出（空列表由调用方先行拦掉，故此处不再判空）。 */
+function printList(header, items) {
+  console.error(header);
+  for (const item of items) console.error(`  - ${item}`);
+}
+
+/** 绿色路径的两种输出形态：有登记豁免时逐条列出，否则只报汇总。 */
+function reportClean(packages, fileCount, legitExemptions) {
   if (legitExemptions.length > 0) {
     console.log(
-      `forbid-module-state-src: OK（扫描 ${files.length} 文件，包 ${packages.join(", ")}，登记豁免 ${legitExemptions.length} 处）：`,
+      `forbid-module-state-src: OK（扫描 ${fileCount} 文件，包 ${packages.join(", ")}，登记豁免 ${legitExemptions.length} 处）：`,
     );
     for (const l of legitExemptions) console.log(`  - ${l}`);
   } else {
     console.log(
-      `forbid-module-state-src: OK（扫描 ${files.length} 文件，包 ${packages.join(", ")} 无模块级可变状态）`,
+      `forbid-module-state-src: OK（扫描 ${fileCount} 文件，包 ${packages.join(", ")} 无模块级可变状态）`,
     );
   }
+}
+
+/** 三段告警输出的先后顺序即 CI 日志里的可读顺序，与是否判红无关；返回是否判红。 */
+function reportFindings(findings, fileCount, packages) {
+  const { violations, badExemptions, legitExemptions, parseFailures } = findings;
+  if (parseFailures.length > 0) {
+    printList("forbid-module-state-src: 解析失败（fail-closed，一律判红）：", parseFailures);
+  }
+  if (badExemptions.length > 0) {
+    printList("forbid-module-state-src: 存在豁免但不合法：", badExemptions);
+  }
+  if (violations.length > 0) {
+    printList(
+      `forbid-module-state-src: 发现 ${violations.length} 处模块级可变状态（应收进闭包/实例，或在 ${LEDGER_DISPLAY} 登记豁免）：`,
+      violations,
+    );
+  }
+  if (violations.length > 0 || badExemptions.length > 0 || parseFailures.length > 0) {
+    console.error(
+      `forbid-module-state-src: FAIL（扫描 ${fileCount} 文件，违规 ${violations.length} / 非法豁免 ${badExemptions.length} / 解析失败 ${parseFailures.length}）`,
+    );
+    return true;
+  }
+  reportClean(packages, fileCount, legitExemptions);
+  return false;
+}
+
+async function main() {
+  const root = argValue(process.argv, "--root", ROOT);
+  const exemptionsPath = argValue(process.argv, "--exemptions", EXEMPTIONS_PATH);
+  const registryPath = argValue(process.argv, "--registry", REGISTRY_PATH);
+
+  const packages = resolvePackages(root, registryPath);
+  const ledger = loadExemptionLedger(exemptionsPath);
+
+  const files = collectSrcFiles(root, packages);
+  if (files.length === 0) {
+    console.error(
+      `forbid-module-state-src: 未发现任何扫描目标（${packages.join(", ")} 的 src 空，fail-closed）`,
+    );
+    process.exit(1);
+  }
+  const findings = await collectFindings(root, files, ledger);
+  if (reportFindings(findings, files.length, packages)) process.exit(1);
 }
 
 main().catch((e) => {

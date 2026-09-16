@@ -25,8 +25,12 @@ const BUILTIN_TYPES = ["browser", "system"] as const;
 /**
  * 0.2.3 及更早的顶层渠道键：值搬进内置条目之后**删除**——迁移一次做完，不留「旧键还能读」的第二处表达。
  * 读面（config 域归一化）仍能在未割接的文件上消费这些键，所以即便这一步没跑到，行为也不会退化。
+ *
+ * 名字里带 MIGRATED 而不是复用 config 域那份 RETIRED_KEYS：两者的成员眼下重合，语义却不同——
+ * 这份是「要搬到哪去」的迁移清单，config 域那份是「写面一律拒收」的退役清单（它还含没有后继键的
+ * maxConnections）。合成一份会让「搬走」与「删掉」两种事实重新纠缠在一起。
  */
-const RETIRED_KEYS: readonly string[] = [
+const MIGRATED_TOP_LEVEL_KEYS: readonly string[] = [
   "systemEnabled",
   "browserEnabled",
   "systemNotify",
@@ -71,7 +75,7 @@ function withBuiltinChannels(
     if (isRecord(item)) present.add(item.type);
   }
   const missing = BUILTIN_TYPES.filter((type) => !present.has(type));
-  const retired = RETIRED_KEYS.filter((key) => stored[key] !== undefined);
+  const retired = MIGRATED_TOP_LEVEL_KEYS.filter((key) => stored[key] !== undefined);
   if (missing.length === 0 && retired.length === 0) return null;
   // 内置恒在最前：与 config 域归一化后的顺序一致，用户看到的卡片顺序不会因为割接而变。
   const next: Record<string, RawSettingValue> = {

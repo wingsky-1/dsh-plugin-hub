@@ -40,7 +40,6 @@ const EXPECTED_DEFAULTS = {
   allowKinds: [],
 
   historyMaxAgeDays: 0,
-  maxConnections: 16,
 } as const;
 
 /** 受布尔闸门管的键：手写清单，与实现的 `BOOLEAN_KEYS` 是两份独立文本。 */

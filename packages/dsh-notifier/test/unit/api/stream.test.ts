@@ -32,7 +32,7 @@ const { installApi, releaseApi } = await import("../../../src/server/api/interfa
 // 动态导入而不是顶层静态 import：流实例的落盘路径在构造时定下，静态导入会先于上面的临时 home 求值。
 const { streamHub } = await import("../../../src/server/api/impl/stream/index.ts");
 
-/** 视图四件事实：流块只用 `readConfig`，其余两处给足形状即可。 */
+/** 视图四件事实：api 域只把它原样透传给设置端点，形状够用即可。 */
 const VIEW = { user: {}, revision: 1, writable: true, effective: {} };
 
 beforeEach(() => {
@@ -52,8 +52,9 @@ function makeReq(url: string): IncomingMessage {
   return jsonReq({ method: "GET", url });
 }
 
-/** 假 SSE 响应：连接表要 `on`/`destroyed`/`destroy`，断言要 `text`。 */
-function makeRes() {
+/** 假 SSE 响应：连接表要 `on`/`destroyed`/`destroy`，断言要 `text`。`writeOk=false` 用来造背压
+ * （write 返回 false 是 stalled 回收唯一认的输入），别的用例都用默认的正常写。 */
+function makeRes(writeOk = true) {
   const rec = { status: 0, headers: {} as Record<string, string>, text: "", destroyed: false };
   const listeners = new Map<string, Array<() => void>>();
   const res = {
@@ -70,7 +71,7 @@ function makeRes() {
     },
     write(chunk: string) {
       rec.text += chunk;
-      return true;
+      return writeOk;
     },
     end(chunk?: string) {
       if (chunk !== undefined) rec.text += chunk;
@@ -94,12 +95,10 @@ function readSeqFromDisk(): number {
   return read.ok ? Number.parseInt(read.text.trim(), 10) || 0 : 0;
 }
 
-/** 装配一次 api 域，交出帧发布面（帧入口就是宿主接线的那一条）。连接上限默认 8；用例可收紧它，
- * 也可在装配后调小，验证上限是**实时读**的。 */
-function assemble(options: { readonly maxConnections?: number } = {}) {
+/** 装配一次 api 域，交出帧发布面（帧入口就是宿主接线的那一条）。 */
+function assemble() {
   const routes: WebRoute[] = [];
   const frames: Array<(payload: OutgoingFrame) => void> = [];
-  const settings = { maxConnections: options.maxConnections ?? 8 };
   const deps: ApiDeps = {
     register: (route) => {
       routes.push(route);
@@ -113,7 +112,7 @@ function assemble(options: { readonly maxConnections?: number } = {}) {
     },
     logger: makeLogger(),
     config: {
-      readConfig: () => ({ ...DEFAULT_CONFIG, maxConnections: settings.maxConnections }),
+      readConfig: () => ({ ...DEFAULT_CONFIG }),
       readSettingsView: () => VIEW,
       writeConfig: async () => ({ ok: true, view: VIEW }),
     },
@@ -140,9 +139,6 @@ function assemble(options: { readonly maxConnections?: number } = {}) {
   return {
     routes,
     publish,
-    setMaxConnections: (value: number): void => {
-      settings.maxConnections = value;
-    },
   };
 }
 
@@ -171,11 +167,18 @@ function frame(
   };
 }
 
-/** 接上一条 SSE 连接（`handle` 同步写完响应头与回放帧）。 */
-function connect(routes: WebRoute[], url = "/api/dsh-notifier/events") {
+/** 假响应与其可观测记录（判据只钉在这份记录与连接表 size 上）。 */
+type FakeRes = ReturnType<typeof makeRes>;
+
+/** 接上一条 SSE 连接（`handle` 同步写完响应头与回放帧）；`make` 让回收类用例换成背压响应。 */
+function connect(
+  routes: WebRoute[],
+  url = "/api/dsh-notifier/events",
+  make: () => FakeRes = makeRes,
+) {
   const route = routes.find((item) => item.path === "/api/dsh-notifier/events");
   if (route === undefined) throw new Error("events 路由未注册");
-  const captured = makeRes();
+  const captured = make();
   route.handler(makeReq(url), captured.res);
   return captured;
 }
@@ -337,12 +340,11 @@ describe("装配守卫：未装配与重复装配", () => {
     expect(() =>
       streamHub.install({
         logger: makeLogger(),
-        config: { readConfig: () => DEFAULT_CONFIG },
       }),
     ).toThrow(/api 流只能装配一次/u);
   });
 
-  // 未装配时按默认上限工作、或让 publish 推进刻度，都会在下一次装配时冒出一批谁也没发过的旧帧。
+  // 未装配时静默工作、或让 publish 推进刻度，都会在下一次装配时冒出一批谁也没发过的旧帧。
   it("未装配时 handle 回 503 空响应，publish 被丢弃且不写刻度文件", async () => {
     const { routes } = assemble();
     releaseApi();
@@ -369,36 +371,58 @@ describe("装配守卫：未装配与重复装配", () => {
   });
 });
 
-describe("连接上限：触顶淘汰", () => {
-  // 「恰好等于上限不淘汰」与「多接一条挤掉最旧」这两条语义已被 dsh-mcp-manager 的
-  // unit-routes-sse.test.ts（#515：连接上限 + 淘汰）覆盖，本域不重复。这里只补本域独有的一条：
-  // notifier 的上限是**每次收口现读设置**（mcp 那边传的是固定值），调小之后下一次淘汰就该按新值来；
-  // 装配期钉住旧值会让设置页调上限失灵，而没有任何用例会红。
-  it("上限实时读设置：调小之后的下一次收口按新值淘汰最旧，被淘汰的连接不再收广播", async () => {
-    const { routes, publish, setMaxConnections } = assemble({ maxConnections: 3 });
-    const first = connect(routes);
-    const second = connect(routes);
-    const third = connect(routes);
-    expect([first.rec.destroyed, second.rec.destroyed, third.rec.destroyed]).toEqual([
-      false,
-      false,
-      false,
-    ]);
+describe("主动回收：连接上限机制移除后，连接表的有界性只剩这两路", () => {
+  // 上限机制退役后，连接表没有「触顶淘汰」这条确定性收口了。真正会把表撑爆的是半开连接：
+  // 设备息屏 / NAT 静默掐断不发 FIN，close/error 都不触发，写心跳也不抛错（数据进内核缓冲），
+  // 于是一个不再消费的客户端会永远挂在表里。清掉它只剩共享层心跳里的两路主动回收。
+  // 其中 destroyed 那一路由 dsh-mcp-manager 的 unit-routes-sse.test.ts 覆盖，stalled / maxAge
+  // 两路**全仓再无第二条判据**——任一路静默失效（判定恒 false、窗口算式写反、心跳写被当成
+  // 业务活动刷新 lastWriteAt），连接表就随半开连接无界增长，而没有任何用例会红。
+  // 所以这两条不是「顺手补覆盖」，它们是移除上限之后仅存的有界性证据，不可省。
+  // 断言只钉可观测事实（连接被 destroy、连接表 size 变化）；evictStats 是 /health 的观测面，
+  // 拿它当判据等于用「实现自报的账」证明「实现干了事」。
+  //
+  // 假钟必须在 assemble() 之前装上：心跳的 setInterval 是装配期由枢纽建立的，晚装的话那颗
+  // 真实定时器不归假钟管，推进假钟一次 tick 都推不动（本文件「装配守卫」用例踩过同一坑）。
+  it("stalled 回收：写持续被拒（背压）超过窗口即判死，连接被 destroy 且连接表归零", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const { routes } = assemble();
+      // 只会被拒的连接：每次心跳写都返回 false，stalled 窗口从第一次心跳起算。
+      const { rec } = connect(routes, "/api/dsh-notifier/events", () => makeRes(false));
+      expect(streamHub.size()).toBe(1);
 
-    setMaxConnections(2);
-    const fourth = connect(routes);
-    expect([
-      first.rec.destroyed,
-      second.rec.destroyed,
-      third.rec.destroyed,
-      fourth.rec.destroyed,
-    ]).toEqual([true, true, false, false]);
+      // 流块心跳 30s、共享层 stalled 窗口 90s（都是各自的默认值，notifier 未注入覆盖）：
+      // 推进 150s 足以把「背压起始 + 超窗」两个条件都送到，且越过判死那一 tick。
+      await vi.advanceTimersByTimeAsync(150_000);
 
-    await publishAndSettle(publish, frame({ title: "收口之后" }));
-    // 已被淘汰的句柄不再参与广播：写它们只会把失败面摊大。
-    expect(framesOf(first.rec.text)).toEqual([]);
-    expect(framesOf(second.rec.text)).toEqual([]);
-    expect(framesOf(third.rec.text).map((event) => event.title)).toEqual(["收口之后"]);
-    expect(framesOf(fourth.rec.text).map((event) => event.title)).toEqual(["收口之后"]);
+      expect(rec.destroyed).toBe(true);
+      expect(streamHub.size()).toBe(0);
+    } finally {
+      // 假钟还管着 clearInterval 时先卸载停心跳，再恢复真实时钟。
+      releaseApi();
+      vi.useRealTimers();
+    }
+  });
+
+  it("maxAge 回收：存活超上限且业务空闲的连接被 destroy（心跳写不算业务活动）", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const { routes } = assemble();
+      // 正常连接的写恒成功，但心跳写按共享层语义不算业务活动：lastWriteAt 停在注册时刻。
+      const { rec } = connect(routes);
+      expect(streamHub.size()).toBe(1);
+
+      // 共享层 maxAge 120min、空闲门槛 15min（默认值）：推进 125min 越过 maxAge 那一 tick。
+      // 「空闲」这一半同时是「假活动陷阱」的判据：一旦心跳写开始刷 lastWriteAt，每 30s 都新鲜，
+      // 这条连接再也够不到 15min 空闲门槛，本用例会红。
+      await vi.advanceTimersByTimeAsync(125 * 60_000);
+
+      expect(rec.destroyed).toBe(true);
+      expect(streamHub.size()).toBe(0);
+    } finally {
+      releaseApi();
+      vi.useRealTimers();
+    }
   });
 });

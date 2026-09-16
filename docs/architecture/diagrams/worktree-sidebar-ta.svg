@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1500 860" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="wtta-title wtta-desc">
+      <title id="wtta-title">dsh-worktree-sidebar 技术架构</title>
+      <desc id="wtta-desc">cordis patch 与 profile 挂载、type-only 依赖面与 catalog 锁版、构建链与 __DSH_ROUTES__ 注入、门禁与测试面、只读耦合点、命门清单与遗留。</desc>
+      <defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
+        <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="rgba(45,49,66,0.10)"/>
+        </pattern>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#eb6c36"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+      <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
+
+      <rect x="24" y="60" width="460" height="340" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <rect x="40" y="66" width="144" height="13" rx="2" fill="#f5f5f5"/>
+      <text x="112.0" y="76" fill="rgba(45,49,66,0.45)" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">TA 挂载：cordis patch + profile</text>
+      <rect x="48" y="96" width="412" height="58" rx="6" fill="#f5f5f5"/>
+      <rect x="48" y="96" width="412" height="58" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <rect x="56" y="104" width="34" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="73.0" y="113" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PATCH</text>
+      <text x="254" y="130" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">cordis.patch.yml</text>
+      <text x="254" y="145" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">insert: id=ui-dsh-worktree-sidebar</text>
+      <rect x="48" y="170" width="412" height="58" rx="6" fill="#f5f5f5"/>
+      <rect x="48" y="170" width="412" height="58" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="56" y="178" width="41" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="76.5" y="187" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PROFILE</text>
+      <text x="254" y="204" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">dsh web profile 插件名册</text>
+      <text x="254" y="219" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">dsh plugin --profile web add；装后重启一次</text>
+      <rect x="48" y="244" width="412" height="58" rx="6" fill="#f5f5f5"/>
+      <rect x="48" y="244" width="412" height="58" rx="6" fill="rgba(79,93,117,0.10)" stroke="#4f5d75" stroke-width="1"/>
+      <rect x="56" y="252" width="38" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+      <text x="75.0" y="261" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CORDIS</text>
+      <text x="254" y="277" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">cordis 组合：宿主端 / 浏览器端各跑一半</text>
+      <rect x="48" y="318" width="196" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="48" y="318" width="196" height="64" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <rect x="56" y="326" width="30" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="71.0" y="335" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HOST</text>
+      <text x="146" y="352" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">宿主 apply(ctx)</text>
+      <text x="146" y="367" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">装配五域</text>
+      <text x="146" y="380" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">ctx.effect 释放链</text>
+      <rect x="264" y="318" width="196" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="264" y="318" width="196" height="64" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <rect x="272" y="326" width="38" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="291.0" y="335" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CLIENT</text>
+      <text x="362" y="352" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">浏览器 apply(ctx)</text>
+      <text x="362" y="367" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">installTakeover</text>
+      <text x="362" y="380" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">视图 LRU 128</text>
+      <line x1="254" y1="154" x2="254" y2="168" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <line x1="254" y1="228" x2="254" y2="242" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <line x1="146" y1="302" x2="146" y2="316" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <line x1="362" y1="302" x2="362" y2="316" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <rect x="508" y="60" width="460" height="340" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <rect x="524" y="66" width="158" height="13" rx="2" fill="#f5f5f5"/>
+      <text x="603.0" y="76" fill="rgba(45,49,66,0.45)" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">TA 依赖面：type-only + catalog 锁版</text>
+      <rect x="532" y="96" width="412" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="532" y="96" width="412" height="64" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <rect x="540" y="104" width="49" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="564.5" y="113" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TYPE-ONLY</text>
+      <text x="738" y="130" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">src 内仅 import type</text>
+      <text x="738" y="145" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">grep 实测：无 @deepseek-ai/* 运行时 import</text>
+      <rect x="532" y="176" width="412" height="140" rx="6" fill="#f5f5f5"/>
+      <rect x="532" y="176" width="412" height="140" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="540" y="184" width="34" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="557.0" y="193" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PEERS</text>
+      <text x="738" y="210" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">六个官方 peer 全走 catalog:</text>
+      <text x="738" y="225" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">@deepseek-ai/cordis</text>
+      <text x="738" y="238" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">dsh-agent / dsh-api-workspace-files</text>
+      <text x="738" y="251" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">dsh-host-webserver / dsh-tools</text>
+      <text x="738" y="264" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">dsh-typert-protocol</text>
+      <text x="738" y="277" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">六个 peer 全标 optional（由宿主提供）</text>
+      <rect x="532" y="332" width="412" height="58" rx="6" fill="#f5f5f5"/>
+      <rect x="532" y="332" width="412" height="58" rx="6" fill="rgba(46,90,168,0.06)" stroke="#2e5aa8" stroke-width="1"/>
+      <rect x="540" y="340" width="30" height="12" rx="2" fill="transparent" stroke="rgba(46,90,168,0.45)" stroke-width="0.8"/>
+      <text x="555.0" y="349" fill="#2e5aa8" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LOCK</text>
+      <text x="738" y="366" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">catalog 锁 0.1.5-rc.1</text>
+      <text x="738" y="381" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">pnpm-workspace.yaml 的 catalog 段</text>
+      <line x1="738" y1="160" x2="738" y2="174" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <line x1="738" y1="316" x2="738" y2="330" stroke="#4f5d75" stroke-width="1.4" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <rect x="992" y="60" width="484" height="340" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <rect x="1008" y="66" width="96" height="13" rx="2" fill="#f5f5f5"/>
+      <text x="1056.0" y="76" fill="rgba(45,49,66,0.45)" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">TA 构建链与构建期注入</text>
+      <rect x="1016" y="96" width="436" height="44" rx="6" fill="#f5f5f5"/>
+      <rect x="1016" y="96" width="436" height="44" rx="6" fill="rgba(79,93,117,0.10)" stroke="#4f5d75" stroke-width="1"/>
+      <rect x="1024" y="104" width="26" height="12" rx="2" fill="transparent" stroke="rgba(79,93,117,0.50)" stroke-width="0.8"/>
+      <text x="1037.0" y="113" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SRC</text>
+      <text x="1234" y="122" fill="#2d3142" font-size="10" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">packages/dsh-worktree-sidebar/src</text>
+      <rect x="1016" y="150" width="436" height="52" rx="6" fill="#f5f5f5"/>
+      <rect x="1016" y="150" width="436" height="52" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="1024" y="158" width="26" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="1037.0" y="167" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TSC</text>
+      <text x="1234" y="184" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">tsc -p tsconfig.json</text>
+      <text x="1234" y="199" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">outDir = lib</text>
+      <rect x="1016" y="214" width="436" height="68" rx="6" fill="#f5f5f5"/>
+      <rect x="1016" y="214" width="436" height="68" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="1024" y="222" width="38" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="1043.0" y="231" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">BUNDLE</text>
+      <text x="1234" y="248" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">scripts/build/bundle-host.ts</text>
+      <text x="1234" y="263" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">esbuild 打包 + 递归清理游离产物</text>
+      <text x="1234" y="276" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">bannerJs: createRequire 垫片</text>
+      <rect x="1016" y="294" width="206" height="70" rx="6" fill="#f5f5f5"/>
+      <rect x="1016" y="294" width="206" height="70" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="1024" y="302" width="30" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="1039.0" y="311" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HOST</text>
+      <text x="1119" y="328" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">lib/index.js</text>
+      <text x="1119" y="343" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">--platform=node · 自包含</text>
+      <rect x="1246" y="294" width="206" height="70" rx="6" fill="#f5f5f5"/>
+      <rect x="1246" y="294" width="206" height="70" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <rect x="1254" y="302" width="38" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="1273.0" y="311" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">CLIENT</text>
+      <text x="1349" y="328" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">lib/client.js</text>
+      <text x="1349" y="343" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">构建期内联 + __DSH_ROUTES__ define</text>
+      <text x="1349" y="356" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">注入缺失时 typeof 兜底</text>
+      <line x1="1254" y1="140" x2="1254" y2="148" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <line x1="1254" y1="202" x2="1254" y2="212" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <line x1="1119" y1="282" x2="1119" y2="292" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <line x1="1349" y1="282" x2="1349" y2="292" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <path d="M 1234 364 L 1234 408 L 496 408 L 496 275 L 462 275" fill="none" stroke="#4f5d75" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <rect x="641.0" y="394" width="118" height="13" rx="2" fill="#f5f5f5"/>
+      <text x="700" y="404" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.04em">lib/*.js 装进 cordis 组合</text>
+      <rect x="24" y="424" width="460" height="340" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <rect x="40" y="430" width="74" height="13" rx="2" fill="#f5f5f5"/>
+      <text x="77.0" y="440" fill="rgba(45,49,66,0.45)" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">TA 门禁与测试面</text>
+      <rect x="48" y="464" width="412" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="48" y="464" width="412" height="64" rx="6" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <rect x="56" y="472" width="30" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.50)" stroke-width="0.8"/>
+      <text x="71.0" y="481" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TEST</text>
+      <text x="254" y="498" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">包内测试：run-vitest.mjs --min 17</text>
+      <text x="254" y="513" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">17 个文件 = unit 13 + integration 4</text>
+      <rect x="48" y="542" width="412" height="86" rx="6" fill="#f5f5f5"/>
+      <rect x="48" y="542" width="412" height="86" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="56" y="550" width="34" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="73.0" y="559" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LAYER</text>
+      <text x="254" y="576" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">分层（按导入面判定）</text>
+      <text x="254" y="591" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">unit：白盒直连 src 模块（argv / 自愈 / 缓存）</text>
+      <text x="254" y="604" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">integration：组合根 + 真 git / 真临时目录</text>
+      <rect x="48" y="644" width="412" height="104" rx="6" fill="#f5f5f5"/>
+      <rect x="48" y="644" width="412" height="104" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="56" y="652" width="34" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="73.0" y="661" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">GATES</text>
+      <text x="254" y="678" fill="#2d3142" font-size="11" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">仓库级闸</text>
+      <text x="254" y="693" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">docs:check / gate:pr（build + test + typecheck）</text>
+      <text x="254" y="706" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">lint（复杂度门禁）/ format:check</text>
+      <text x="254" y="719" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">变异只在 PR 上按命中切片强制跑</text>
+      <text x="254" y="732" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">⇒ 本地 gate:* 全绿 不等于 CI 绿</text>
+      <rect x="508" y="424" width="460" height="340" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <rect x="524" y="430" width="141" height="13" rx="2" fill="#f5f5f5"/>
+      <text x="594.5" y="440" fill="rgba(45,49,66,0.45)" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">TA 只读耦合点（改版时唯一失效面）</text>
+      <rect x="532" y="464" width="412" height="52" rx="6" fill="#f5f5f5"/>
+      <rect x="532" y="464" width="412" height="52" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="540" y="472" width="22" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="551.0" y="481" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">C1</text>
+      <text x="738" y="498" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">typert 的 workspaceFileScope 键</text>
+      <text x="738" y="513" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">configure 前捕获官方 resolve，miss 时委托</text>
+      <rect x="532" y="526" width="412" height="52" rx="6" fill="#f5f5f5"/>
+      <rect x="532" y="526" width="412" height="52" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="540" y="534" width="22" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="551.0" y="543" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">C2</text>
+      <text x="738" y="560" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">客户端座位 sidebar.right.pane.tab</text>
+      <text x="738" y="575" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">StoredEntry：component / inject / store / locale</text>
+      <rect x="532" y="588" width="412" height="52" rx="6" fill="#f5f5f5"/>
+      <rect x="532" y="588" width="412" height="52" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="540" y="596" width="22" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="551.0" y="605" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">C3</text>
+      <text x="738" y="622" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">会话 hook 源契约</text>
+      <text x="738" y="637" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">getSnapshot / subscribe；快照必须引用稳定</text>
+      <rect x="532" y="650" width="412" height="52" rx="6" fill="#f5f5f5"/>
+      <rect x="532" y="650" width="412" height="52" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="540" y="658" width="22" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="551.0" y="667" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">C4</text>
+      <text x="738" y="684" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">parentSession（活）+ sessionPersistence.stat（已结束）</text>
+      <text x="738" y="699" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">已结束会话只能从持久面读父链</text>
+      <rect x="532" y="712" width="412" height="52" rx="6" fill="#f5f5f5"/>
+      <rect x="532" y="712" width="412" height="52" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="540" y="720" width="22" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="551.0" y="729" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">C5</text>
+      <text x="738" y="746" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">官方 dsh-client-ui-sidebar-right 必须在场</text>
+      <text x="738" y="761" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">失效 ⇒ 零注册 / 退回官方</text>
+      <rect x="992" y="424" width="484" height="340" rx="8" fill="rgba(45,49,66,0.02)" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <rect x="1008" y="430" width="81" height="13" rx="2" fill="#f5f5f5"/>
+      <text x="1048.5" y="440" fill="rgba(45,49,66,0.45)" font-size="7.5" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">TA 命门清单与遗留</text>
+      <rect x="1016" y="464" width="436" height="38" rx="6" fill="#f5f5f5"/>
+      <rect x="1016" y="464" width="436" height="38" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="1024" y="472" width="22" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="1035.0" y="481" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">M1</text>
+      <text x="1234" y="487" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">1 只换视图根：cwd / @ / present 不动</text>
+      <rect x="1016" y="507" width="436" height="38" rx="6" fill="#f5f5f5"/>
+      <rect x="1016" y="507" width="436" height="38" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="1024" y="515" width="22" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="1035.0" y="524" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">M2</text>
+      <text x="1234" y="530" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">2 会话 id 不是跨进程稳定键 ⇒ 登记带身份凭据</text>
+      <rect x="1016" y="550" width="436" height="38" rx="6" fill="#f5f5f5"/>
+      <rect x="1016" y="550" width="436" height="38" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="1024" y="558" width="22" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="1035.0" y="567" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">M3</text>
+      <text x="1234" y="573" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">3 读不出来不等于不存在：只认正面证据</text>
+      <rect x="1016" y="593" width="436" height="38" rx="6" fill="#f5f5f5"/>
+      <rect x="1016" y="593" width="436" height="38" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="1024" y="601" width="22" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="1035.0" y="610" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">M4</text>
+      <text x="1234" y="616" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">4 接管是遮蔽不是顶替：官方类型表不动</text>
+      <rect x="1016" y="636" width="436" height="38" rx="6" fill="#f5f5f5"/>
+      <rect x="1016" y="636" width="436" height="38" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="1024" y="644" width="22" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="1035.0" y="653" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">M5</text>
+      <text x="1234" y="659" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">5 播种必须覆盖 start，首帧不被 fetch 挡住</text>
+      <rect x="1016" y="679" width="436" height="38" rx="6" fill="#f5f5f5"/>
+      <rect x="1016" y="679" width="436" height="38" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="1024" y="687" width="22" height="12" rx="2" fill="transparent" stroke="rgba(45,49,66,0.40)" stroke-width="0.8"/>
+      <text x="1035.0" y="696" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">M6</text>
+      <text x="1234" y="702" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">6 本地 gate 全绿 不等于 CI 绿（变异只在 PR）</text>
+      <rect x="1016" y="722" width="436" height="38" rx="6" fill="#f5f5f5"/>
+      <rect x="1016" y="722" width="436" height="38" rx="6" fill="rgba(235,108,54,0.04)" stroke="rgba(235,108,54,0.55)" stroke-width="1" stroke-dasharray="4,4"/>
+      <rect x="1024" y="730" width="22" height="12" rx="2" fill="transparent" stroke="rgba(235,108,54,0.40)" stroke-width="0.8"/>
+      <text x="1035.0" y="739" fill="#eb6c36" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">M7</text>
+      <text x="1234" y="745" fill="#2d3142" font-size="10.5" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">遗留：真机启动序 / HMR / 预览与未装一侧待验证</text>
+      <line x1="24" y1="792" x2="1174" y2="792" stroke="rgba(45,49,66,0.10)" stroke-width="0.8"/>
+      <text x="24" y="808" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+      <rect x="100" y="806" width="14" height="10" rx="2" fill="rgba(235,108,54,0.08)" stroke="#eb6c36" stroke-width="1"/>
+      <text x="120" y="815" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">本插件主动面</text>
+      <rect x="240" y="806" width="14" height="10" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="260" y="815" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">宿主模块 / 适配层</text>
+      <rect x="400" y="806" width="14" height="10" rx="2" fill="rgba(46,90,168,0.06)" stroke="#2e5aa8" stroke-width="1"/>
+      <text x="420" y="815" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">数据（绑定表 / 路由读数）</text>
+      <rect x="590" y="806" width="14" height="10" rx="2" fill="rgba(45,49,66,0.03)" stroke="rgba(45,49,66,0.30)" stroke-width="1" stroke-dasharray="4,4"/>
+      <text x="610" y="815" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">官方 / 被遮蔽 / 刻意不做</text>
+      <line x1="790" y1="811" x2="818" y2="811" stroke="#eb6c36" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <text x="826" y="815" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">主链路</text>
+      <line x1="910" y1="811" x2="938" y2="811" stroke="#2e5aa8" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <text x="946" y="815" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">数据 / HTTP</text>
+      <line x1="1050" y1="811" x2="1078" y2="811" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+      <text x="1086" y="815" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">委托 / 只读</text>
+    </svg>

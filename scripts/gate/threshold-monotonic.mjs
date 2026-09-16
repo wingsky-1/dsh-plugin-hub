@@ -46,8 +46,7 @@ const ACORN_OPTIONS = { ecmaVersion: "latest", sourceType: "module" };
  * 而它自身并无 eof 检查。切到配平位置后片段尾部即 eof，正好绕开该行为；配平又由 token 完成，
  * 注释与字符串里的花括号都不会被计入——旧正则 `[^}]*` 的两个漏洞来源同时消失。
  */
-function locateThresholdsObject(text) {
-  const tokens = tokenizer(text, ACORN_OPTIONS);
+function findThresholdsOpenToken(tokens) {
   for (;;) {
     const token = tokens.getToken();
     if (token.type.label === "eof") return null;
@@ -55,18 +54,29 @@ function locateThresholdsObject(text) {
     if (tokens.getToken().type.label !== ":") continue;
     const open = tokens.getToken();
     if (open.type.label !== "{") return null;
-    let depth = 1;
-    for (;;) {
-      const inner = tokens.getToken();
-      if (inner.type.label === "eof") return null;
-      if (inner.type.label === "{") {
-        depth += 1;
-      } else if (inner.type.label === "}") {
-        depth -= 1;
-        if (depth === 0) return { start: open.start, end: inner.end };
-      }
+    return open;
+  }
+}
+
+function findBalancedEnd(tokens, open) {
+  let depth = 1;
+  for (;;) {
+    const inner = tokens.getToken();
+    if (inner.type.label === "eof") return null;
+    if (inner.type.label === "{") {
+      depth += 1;
+    } else if (inner.type.label === "}") {
+      depth -= 1;
+      if (depth === 0) return { start: open.start, end: inner.end };
     }
   }
+}
+
+function locateThresholdsObject(text) {
+  const tokens = tokenizer(text, ACORN_OPTIONS);
+  const open = findThresholdsOpenToken(tokens);
+  if (open === null) return null;
+  return findBalancedEnd(tokens, open);
 }
 
 /**
@@ -75,15 +85,16 @@ function locateThresholdsObject(text) {
  * 无 `thresholds: {` 形态返回 null（与「块在但一个全局键都没有」区分，后者由调用方 fail-closed）。
  * 词法/语法错误直接上抛，由调用方按环境故障 fail-closed。
  */
-export function parseCoverageThresholds(text) {
-  const span = locateThresholdsObject(text);
-  if (span === null) return null;
-  const node = parseExpressionAt(text.slice(span.start, span.end), 0, ACORN_OPTIONS);
+function readThresholdPropertyName(prop) {
+  return prop.key.type === "Identifier" ? prop.key.name : prop.key.value;
+}
+
+function collectCoverageThresholdKeys(node) {
   const global = {};
   const scoped = [];
   for (const prop of node.type === "ObjectExpression" ? node.properties : []) {
     if (prop.type !== "Property" || prop.computed) continue;
-    const name = prop.key.type === "Identifier" ? prop.key.name : prop.key.value;
+    const name = readThresholdPropertyName(prop);
     if (prop.value.type === "ObjectExpression") {
       scoped.push(String(name));
     } else if (prop.value.type === "Literal" && COVERAGE_THRESHOLD_KEYS.includes(name)) {
@@ -91,6 +102,13 @@ export function parseCoverageThresholds(text) {
     }
   }
   return { global, scoped };
+}
+
+export function parseCoverageThresholds(text) {
+  const span = locateThresholdsObject(text);
+  if (span === null) return null;
+  const node = parseExpressionAt(text.slice(span.start, span.end), 0, ACORN_OPTIONS);
+  return collectCoverageThresholdKeys(node);
 }
 
 /**
@@ -162,54 +180,41 @@ function readFromGit(ref, path, repoRoot) {
 }
 
 /**
- * 主校验。返回 { exitCode, failures }；日志走 stdout/stderr。
+ * 读基准侧的覆盖率阈值。环境故障已记日志，返回 { status: "env-error" } 由调用方 fail-closed。
  */
-export function runThresholdMonotonic(
-  argv = process.argv.slice(2),
-  { repoRoot = process.cwd() } = {},
-) {
-  const baseRef = argv[0] ?? "origin/main";
-  let failures = 0;
-
-  if (!refExists(baseRef, repoRoot)) {
-    console.error(
-      `threshold-monotonic: 基准 ref ${baseRef} 不可解析（fetch 了吗？）—— 环境故障按 fail-closed 处理`,
-    );
-    return { exitCode: 2, failures: 0 };
-  }
-
-  // ── 维度一：覆盖率阈值（coverage.config.json，迁移期双读 vitest.config.ts）──
-  let oldCoverage = null;
+function readBaseCoverage(baseRef, repoRoot) {
   try {
     const oldSource = existsInGit(baseRef, COVERAGE_CONFIG, repoRoot)
       ? COVERAGE_CONFIG
       : VITEST_CONFIG;
     if (existsInGit(baseRef, oldSource, repoRoot)) {
-      oldCoverage =
+      const coverage =
         oldSource === COVERAGE_CONFIG
           ? parseCoverageConfigThresholds(readFromGit(baseRef, COVERAGE_CONFIG, repoRoot))
           : parseCoverageThresholds(readFromGit(baseRef, VITEST_CONFIG, repoRoot));
-      if (oldCoverage === null) {
+      if (coverage === null) {
         console.log(
           `threshold-monotonic: ${baseRef} 的 ${oldSource} 无 coverage.thresholds —— 首次引入，跳过覆盖率阈值对比`,
         );
       } else {
-        warnScopedThresholds(`${baseRef} 的 ${oldSource}`, oldCoverage);
+        warnScopedThresholds(`${baseRef} 的 ${oldSource}`, coverage);
       }
-    } else {
-      console.log(
-        `threshold-monotonic: ${baseRef} 上无 ${VITEST_CONFIG} —— 首次引入，跳过覆盖率阈值对比`,
-      );
+      return { status: "ok", coverage };
     }
+    console.log(
+      `threshold-monotonic: ${baseRef} 上无 ${VITEST_CONFIG} —— 首次引入，跳过覆盖率阈值对比`,
+    );
+    return { status: "ok", coverage: null };
   } catch (err) {
     console.error(
       `threshold-monotonic: 读取 ${baseRef}:${VITEST_CONFIG} 失败：${err.message} —— 环境故障按 fail-closed 处理`,
     );
-    return { exitCode: 2, failures: 0 };
+    return { status: "env-error" };
   }
+}
 
-  // 工作区侧同样双读：有 coverage.config.json 就用它（#733 3.4 后的正常态），
-  // 没有才回落 vitest.config.ts（迁移前的形态或尚未迁移的分支）。
+/** 读工作区侧覆盖率阈值；缺 thresholds 或全局键被摘除都属硬门禁缺失，一律 env-error。 */
+function readWorkspaceCoverage(repoRoot) {
   const newHasConfig = existsSync(join(repoRoot, COVERAGE_CONFIG));
   const newSource = newHasConfig ? COVERAGE_CONFIG : VITEST_CONFIG;
   let newCoverage = null;
@@ -219,43 +224,50 @@ export function runThresholdMonotonic(
       : parseCoverageThresholds(readFileSync(join(repoRoot, VITEST_CONFIG), "utf8"));
   } catch (err) {
     console.error(`threshold-monotonic: 工作区 ${newSource} 读取失败：${err.message}`);
-    return { exitCode: 2, failures: 0 };
+    return { status: "env-error" };
   }
   if (newCoverage === null) {
     console.error(
       `threshold-monotonic: 工作区 ${newSource} 缺 coverage.thresholds —— 覆盖率阈值是硬门禁，缺失视为配置错误（fail-closed）`,
     );
-    return { exitCode: 2, failures: 0 };
+    return { status: "env-error" };
   }
   warnScopedThresholds(`工作区 ${newSource}`, newCoverage);
   if (Object.keys(newCoverage.global).length === 0) {
     console.error(
       `threshold-monotonic: 工作区 ${VITEST_CONFIG} 的 coverage.thresholds 没有任何全局阈值键 —— 全局硬门禁被摘除，fail-closed`,
     );
-    return { exitCode: 2, failures: 0 };
+    return { status: "env-error" };
   }
+  return { status: "ok", coverage: newCoverage };
+}
 
-  if (oldCoverage !== null) {
-    for (const key of COVERAGE_THRESHOLD_KEYS) {
-      const before = oldCoverage.global[key];
-      const after = newCoverage.global[key];
-      if (typeof before !== "number") continue;
-      // 删键与降线等价：覆盖率的每个维度只有被声明才受约束，删掉即该维度不再有硬门禁
-      if (typeof after !== "number") {
-        console.error(
-          `[FAIL] vitest coverage.thresholds.${key} 被移除（基准 ${before}）—— 删键等价于摘除该维度的硬门禁，须原 issue 内 approved 后方可移除`,
-        );
-        failures += 1;
-      } else if (after < before) {
-        console.error(
-          `[FAIL] vitest coverage.thresholds.${key} 降线：${before} → ${after}（须原 issue 内 approved 后方可下调）`,
-        );
-        failures += 1;
-      }
+/** 覆盖率阈值只许升不许降；基准侧无阈值时不做比较。 */
+function compareCoverageThresholds(oldCoverage, newCoverage) {
+  if (oldCoverage === null) return 0;
+  let failures = 0;
+  for (const key of COVERAGE_THRESHOLD_KEYS) {
+    const before = oldCoverage.global[key];
+    const after = newCoverage.global[key];
+    if (typeof before !== "number") continue;
+    // 删键与降线等价：覆盖率的每个维度只有被声明才受约束，删掉即该维度不再有硬门禁
+    if (typeof after !== "number") {
+      console.error(
+        `[FAIL] vitest coverage.thresholds.${key} 被移除（基准 ${before}）—— 删键等价于摘除该维度的硬门禁，须原 issue 内 approved 后方可移除`,
+      );
+      failures += 1;
+    } else if (after < before) {
+      console.error(
+        `[FAIL] vitest coverage.thresholds.${key} 降线：${before} → ${after}（须原 issue 内 approved 后方可下调）`,
+      );
+      failures += 1;
     }
   }
+  return failures;
+}
 
-  // ── 维度二：变异阈值（gauntlet.config.json）────────────────────
+/** 读基准与工作区两侧的 gauntlet.config.json；环境故障记日志并返回 env-error。 */
+function readGauntletConfigs(baseRef, repoRoot) {
   let oldCfg = null;
   let newCfg = null;
   try {
@@ -270,55 +282,116 @@ export function runThresholdMonotonic(
     console.error(
       `threshold-monotonic: 读取 ${GAUNTLET} 失败：${err.message} —— 环境故障按 fail-closed 处理`,
     );
-    return { exitCode: 2, failures: 0 };
+    return { status: "env-error" };
   }
+  return { status: "ok", oldCfg, newCfg };
+}
 
-  if (oldCfg !== null) {
-    const oldPkgs = oldCfg?.mutation?.packages ?? {};
-    const newPkgs = newCfg?.mutation?.packages ?? {};
-    for (const [pkg, cfg] of Object.entries(newPkgs)) {
-      const oldThreshold = oldPkgs[pkg]?.threshold;
-      const newThreshold = cfg?.threshold;
-      if (
-        typeof oldThreshold === "number" &&
-        typeof newThreshold === "number" &&
-        newThreshold < oldThreshold
-      ) {
-        console.error(
-          `[FAIL] mutation.packages.${pkg}.threshold 降线：${oldThreshold} → ${newThreshold}`,
-        );
-        failures += 1;
-      }
+/** 取 gauntlet 配置的 mutation.packages 段；缺配置时按空对象处理。 */
+function readMutationPackages(cfg) {
+  return cfg?.mutation?.packages ?? {};
+}
+
+/** 单包变异阈值降线记 1 分，否则 0 分；非数字阈值不参与比较。 */
+function countMutationThresholdDrop(pkg, oldPkgs, newPkgs) {
+  const oldThreshold = oldPkgs[pkg]?.threshold;
+  const newThreshold = newPkgs[pkg]?.threshold;
+  if (
+    typeof oldThreshold === "number" &&
+    typeof newThreshold === "number" &&
+    newThreshold < oldThreshold
+  ) {
+    console.error(
+      `[FAIL] mutation.packages.${pkg}.threshold 降线：${oldThreshold} → ${newThreshold}`,
+    );
+    return 1;
+  }
+  return 0;
+}
+
+/** 变异阈值只许升不许降；基准侧无配置时不做比较。 */
+function compareMutationThresholds(oldCfg, newCfg) {
+  if (oldCfg === null) return 0;
+  let failures = 0;
+  const oldPkgs = readMutationPackages(oldCfg);
+  const newPkgs = readMutationPackages(newCfg);
+  for (const [pkg] of Object.entries(newPkgs)) {
+    failures += countMutationThresholdDrop(pkg, oldPkgs, newPkgs);
+  }
+  return failures;
+}
+
+/** lint 警告预算只许降不许升，删键同样判红；基准侧无预算时不做比较。 */
+function compareLintBudget(oldCfg, newCfg) {
+  if (oldCfg === null) return 0;
+  let failures = 0;
+  const oldBudget = oldCfg?.lint?.maxWarnings;
+  const newBudget = newCfg?.lint?.maxWarnings;
+  if (typeof oldBudget === "number") {
+    if (typeof newBudget !== "number") {
+      console.error(
+        `[FAIL] lint.maxWarnings 被移除（基准 ${oldBudget}）—— 删键等价于摘除警告预算，须原 issue 内 approved 后方可移除`,
+      );
+      failures += 1;
+    } else if (newBudget > oldBudget) {
+      console.error(
+        `[FAIL] lint.maxWarnings 上调：${oldBudget} → ${newBudget}（警告预算只许降，须原 issue 内 approved）`,
+      );
+      failures += 1;
     }
   }
+  return failures;
+}
+
+/** 三个维度的读取与比较；任一维度读取故障都返回 env-error，由调用方 fail-closed。 */
+function checkThresholdDimensions(baseRef, repoRoot) {
+  // ── 维度一：覆盖率阈值（coverage.config.json，迁移期双读 vitest.config.ts）──
+  const baseCoverage = readBaseCoverage(baseRef, repoRoot);
+  if (baseCoverage.status === "env-error") return { status: "env-error" };
+  // 工作区侧同样双读：有 coverage.config.json 就用它（#733 3.4 后的正常态），
+  // 没有才回落 vitest.config.ts（迁移前的形态或尚未迁移的分支）。
+  const workspaceCoverage = readWorkspaceCoverage(repoRoot);
+  if (workspaceCoverage.status === "env-error") return { status: "env-error" };
+  let failures = compareCoverageThresholds(baseCoverage.coverage, workspaceCoverage.coverage);
+
+  // ── 维度二：变异阈值（gauntlet.config.json）────────────────────
+  const gauntlet = readGauntletConfigs(baseRef, repoRoot);
+  if (gauntlet.status === "env-error") return { status: "env-error" };
+  failures += compareMutationThresholds(gauntlet.oldCfg, gauntlet.newCfg);
 
   // ── 维度三：lint 警告预算（gauntlet.config.json 的 lint.maxWarnings，只许降）──
   // 与变异阈值同一份事实源、同一套治理（#764 落地项 A2）。删键同样判红：预算缺失时 lint.mjs
   // 会 fail-closed，但那是运行期兜底；这里在阈值层面显式拦一次，避免「删掉预算」看起来像
   // 一次无关紧要的整理。
-  if (oldCfg !== null) {
-    const oldBudget = oldCfg?.lint?.maxWarnings;
-    const newBudget = newCfg?.lint?.maxWarnings;
-    if (typeof oldBudget === "number") {
-      if (typeof newBudget !== "number") {
-        console.error(
-          `[FAIL] lint.maxWarnings 被移除（基准 ${oldBudget}）—— 删键等价于摘除警告预算，须原 issue 内 approved 后方可移除`,
-        );
-        failures += 1;
-      } else if (newBudget > oldBudget) {
-        console.error(
-          `[FAIL] lint.maxWarnings 上调：${oldBudget} → ${newBudget}（警告预算只许降，须原 issue 内 approved）`,
-        );
-        failures += 1;
-      }
-    }
+  failures += compareLintBudget(gauntlet.oldCfg, gauntlet.newCfg);
+
+  return { status: "ok", failures };
+}
+
+/**
+ * 主校验。返回 { exitCode, failures }；日志走 stdout/stderr。
+ */
+export function runThresholdMonotonic(
+  argv = process.argv.slice(2),
+  { repoRoot = process.cwd() } = {},
+) {
+  const baseRef = argv[0] ?? "origin/main";
+
+  if (!refExists(baseRef, repoRoot)) {
+    console.error(
+      `threshold-monotonic: 基准 ref ${baseRef} 不可解析（fetch 了吗？）—— 环境故障按 fail-closed 处理`,
+    );
+    return { exitCode: 2, failures: 0 };
   }
 
-  if (failures > 0) {
+  const dimensions = checkThresholdDimensions(baseRef, repoRoot);
+  if (dimensions.status === "env-error") return { exitCode: 2, failures: 0 };
+
+  if (dimensions.failures > 0) {
     console.error(
-      `\nthreshold-monotonic: ${failures} 处降线 —— 阈值治理红线（AGENTS.md / #85 v3 F3）`,
+      `\nthreshold-monotonic: ${dimensions.failures} 处降线 —— 阈值治理红线（AGENTS.md / #85 v3 F3）`,
     );
-    return { exitCode: 1, failures };
+    return { exitCode: 1, failures: dimensions.failures };
   }
   console.log("threshold-monotonic: 无阈值降线，校验通过");
   return { exitCode: 0, failures: 0 };

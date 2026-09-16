@@ -48,35 +48,48 @@ const ROOT = join(import.meta.dirname, "../..");
 const GATE_NAME = "forbid-homedir-src";
 const REGISTRY_PATH = join(ROOT, "scripts", "data", "gate-scope-registry.json");
 
+/** 具名 import 的归类：只有本闸关心的三个名字进集合。 */
+function classifyNamedImport(imported, localName, isOs, isUntildify, acc) {
+  if (isOs && imported === "homedir") acc.homedirNamed.add(localName);
+  if (isOs && imported === "userInfo") acc.userInfoNamed.add(localName);
+  if (isUntildify && imported === "untildify") acc.untildifyNamed.add(localName);
+}
+
+/** 单个 specifier 的绑定归类：命名空间 / 默认 / 具名三形态互斥，非本闸关注的形态直接跳过。 */
+function classifySpecifier(spec, isOs, isUntildify, acc) {
+  if (spec.type === "ImportNamespaceSpecifier" && isOs) {
+    acc.osNamespaces.add(spec.local.name);
+    return;
+  }
+  if (spec.type === "ImportDefaultSpecifier" && isUntildify) {
+    acc.untildifyNamed.add(spec.local.name);
+    return;
+  }
+  if (spec.type !== "ImportSpecifier") return;
+  const imported = spec.imported.name ?? spec.imported.value;
+  classifyNamedImport(imported, spec.local.name, isOs, isUntildify, acc);
+}
+
 /**
  * 从 estree AST 收集 HOME 来源 API 的本地绑定名。
  * 返回 { homedirNamed, userInfoNamed, untildifyNamed, osNamespaces }。
  */
 function collectImports(ast) {
-  const homedirNamed = new Set();
-  const userInfoNamed = new Set();
-  const untildifyNamed = new Set();
-  const osNamespaces = new Set();
+  const acc = {
+    homedirNamed: new Set(),
+    userInfoNamed: new Set(),
+    untildifyNamed: new Set(),
+    osNamespaces: new Set(),
+  };
   for (const node of ast.body) {
     if (node.type !== "ImportDeclaration") continue;
     const src = node.source.value;
     const isOs = src === "node:os" || src === "os";
     const isUntildify = src === "untildify";
     if (!isOs && !isUntildify) continue;
-    for (const spec of node.specifiers) {
-      if (spec.type === "ImportNamespaceSpecifier" && isOs) {
-        osNamespaces.add(spec.local.name);
-      } else if (spec.type === "ImportDefaultSpecifier" && isUntildify) {
-        untildifyNamed.add(spec.local.name);
-      } else if (spec.type === "ImportSpecifier") {
-        const imported = spec.imported.name ?? spec.imported.value;
-        if (isOs && imported === "homedir") homedirNamed.add(spec.local.name);
-        if (isOs && imported === "userInfo") userInfoNamed.add(spec.local.name);
-        if (isUntildify && imported === "untildify") untildifyNamed.add(spec.local.name);
-      }
-    }
+    for (const spec of node.specifiers) classifySpecifier(spec, isOs, isUntildify, acc);
   }
-  return { homedirNamed, userInfoNamed, untildifyNamed, osNamespaces };
+  return acc;
 }
 
 /** 成员访问的静态属性名（`a.b` → "b"；`a["b"]` → "b"；动态 → null）。 */
@@ -86,6 +99,32 @@ function staticProp(member) {
     return member.property.value;
   }
   return null;
+}
+
+/** 深度优先遍历 estree 子节点；`visit` 为节点访问器。 */
+function walkChildren(node, visit) {
+  for (const key of Object.keys(node)) {
+    const child = node[key];
+    if (Array.isArray(child)) {
+      for (const c of child) if (c && typeof c.type === "string") visit(c);
+    } else if (child && typeof child.type === "string") {
+      visit(child);
+    }
+  }
+}
+
+/** `import("x")` 调用形态的模块源（import 作为 callee），非此形态返回 null。 */
+function dynamicImportCalleeSource(node) {
+  if (node?.type !== "CallExpression" || node.callee?.type !== "Import") return null;
+  return node.arguments[0]?.value ?? null;
+}
+
+/** 提取动态 import 的模块源（import("x") / await import("x")），非动态形态返回 null。 */
+function dynSource(node) {
+  let inner = node;
+  if (inner?.type === "AwaitExpression") inner = inner.argument;
+  if (inner?.type === "ImportExpression") return inner.source?.value ?? null;
+  return dynamicImportCalleeSource(inner);
 }
 
 /**
@@ -102,58 +141,49 @@ function detectInAst(ast) {
       generatedColumn: node.loc.start.column,
       api,
     });
-  /** 提取动态 import 的模块源（import("x") / await import("x")），非动态形态返回 null。 */
-  const dynSource = (node) => {
-    let inner = node;
-    if (inner?.type === "AwaitExpression") inner = inner.argument;
-    if (inner?.type === "ImportExpression") return inner.source?.value ?? null;
-    if (inner?.type === "CallExpression" && inner.callee?.type === "Import")
-      return inner.arguments[0]?.value ?? null;
+  const bindDynamicOsNamespace = (node) => {
+    if (node.type !== "VariableDeclarator") return;
+    if (node.id.type !== "Identifier" || !node.init) return;
+    const src = dynSource(node.init);
+    if (src === "node:os" || src === "os") dynOsNamespaces.add(node.id.name);
+  };
+  // 动态 import 直接形态：os.homedir()（F3）
+  const isDynamicImportMember = (node, prop) =>
+    (prop === "homedir" || prop === "userInfo") && dynSource(node.object) !== null;
+  // os.homedir / os["homedir"] / os.userInfo / os["userInfo"]（值引用与调用同罪）
+  const isOsNamespaceMember = (node, prop) =>
+    node.object.type === "Identifier" &&
+    (prop === "homedir" || prop === "userInfo") &&
+    (osNamespaces.has(node.object.name) || dynOsNamespaces.has(node.object.name));
+  // process.env.HOME / process.env["HOME"]
+  const isProcessEnvHome = (node, prop) =>
+    prop === "HOME" &&
+    node.object.type === "MemberExpression" &&
+    staticProp(node.object) === "env" &&
+    node.object.object.type === "Identifier" &&
+    node.object.object.name === "process";
+  // 三个形态互斥，故首个命中即唯一命中；下面的 callApi 同理
+  const memberApi = (node) => {
+    const prop = staticProp(node);
+    if (isDynamicImportMember(node, prop)) return `os.${prop}`;
+    if (isOsNamespaceMember(node, prop)) return `os.${prop}`;
+    if (isProcessEnvHome(node, prop)) return "process.env.HOME";
+    return null;
+  };
+  const callApi = (node) => {
+    if (node.type !== "CallExpression" || node.callee.type !== "Identifier") return null;
+    const name = node.callee.name;
+    if (homedirNamed.has(name)) return `${name}()（node:os homedir 别名调用）`;
+    if (userInfoNamed.has(name)) return `${name}()（node:os userInfo 别名调用）`;
+    if (untildifyNamed.has(name)) return `${name}()（untildify 别名调用）`;
     return null;
   };
   (function walk(node) {
     if (!node || typeof node.type !== "string") return;
-    if (node.type === "VariableDeclarator" && node.id.type === "Identifier" && node.init) {
-      const src = dynSource(node.init);
-      if (src === "node:os" || src === "os") dynOsNamespaces.add(node.id.name);
-    }
-    if (node.type === "MemberExpression") {
-      const prop = staticProp(node);
-      // 动态 import 直接形态：os.homedir()（F3）
-      const dynSrc = dynSource(node.object);
-      if (dynSrc !== null && (prop === "homedir" || prop === "userInfo")) push(node, `os.${prop}`);
-      // os.homedir / os["homedir"] / os.userInfo / os["userInfo"]（值引用与调用同罪）
-      if (
-        node.object.type === "Identifier" &&
-        (osNamespaces.has(node.object.name) || dynOsNamespaces.has(node.object.name)) &&
-        (prop === "homedir" || prop === "userInfo")
-      ) {
-        push(node, `os.${prop}`);
-      }
-      // process.env.HOME / process.env["HOME"]
-      if (
-        prop === "HOME" &&
-        node.object.type === "MemberExpression" &&
-        staticProp(node.object) === "env" &&
-        node.object.object.type === "Identifier" &&
-        node.object.object.name === "process"
-      ) {
-        push(node, "process.env.HOME");
-      }
-    } else if (node.type === "CallExpression" && node.callee.type === "Identifier") {
-      const name = node.callee.name;
-      if (homedirNamed.has(name)) push(node, `${name}()（node:os homedir 别名调用）`);
-      else if (userInfoNamed.has(name)) push(node, `${name}()（node:os userInfo 别名调用）`);
-      else if (untildifyNamed.has(name)) push(node, `${name}()（untildify 别名调用）`);
-    }
-    for (const key of Object.keys(node)) {
-      const child = node[key];
-      if (Array.isArray(child)) {
-        for (const c of child) if (c && typeof c.type === "string") walk(c);
-      } else if (child && typeof child.type === "string") {
-        walk(child);
-      }
-    }
+    bindDynamicOsNamespace(node);
+    const api = node.type === "MemberExpression" ? memberApi(node) : callApi(node);
+    if (api !== null) push(node, api);
+    walkChildren(node, walk);
   })(ast);
   return hits;
 }
@@ -187,22 +217,18 @@ async function scanFile(file) {
   });
 }
 
-async function main() {
-  const root = argValue(process.argv, "--root", ROOT);
-  const registryPath = argValue(process.argv, "--registry", REGISTRY_PATH);
-
-  let packages;
+/** 解析扫描范围；范围失效即 fail-closed。 */
+function resolvePackages(root, registryPath) {
   try {
-    packages = scopePackages(root, loadScopeRegistry(registryPath), GATE_NAME);
+    return scopePackages(root, loadScopeRegistry(registryPath), GATE_NAME);
   } catch (e) {
     console.error(`forbid-homedir-src: ${e.message} —— 扫描范围失效，fail-closed`);
     process.exit(1);
   }
-  const files = collectSrcFiles(root, packages);
-  if (files.length === 0) {
-    console.error("forbid-homedir-src: 未发现任何扫描目标（packages/*/src 空，fail-closed）");
-    process.exit(1);
-  }
+}
+
+/** 全量扫描：单个文件解析异常只记账，由调用方统一判红。 */
+async function scanTargets(root, files) {
   const violations = [];
   const parseFailures = [];
   for (const file of files) {
@@ -216,7 +242,11 @@ async function main() {
     }
     for (const h of hits) violations.push(`${rel}:${h.line} [${h.api}] ${h.text}`);
   }
+  return { violations, parseFailures };
+}
 
+/** 三段输出的先后顺序即 CI 日志里的可读顺序，与是否判红无关，故不随失败提前返回。 */
+function reportFindings(violations, parseFailures, fileCount) {
   if (parseFailures.length > 0) {
     console.error("forbid-homedir-src: 解析失败（fail-closed，一律判红）：");
     for (const p of parseFailures) console.error(`  - ${p}`);
@@ -229,11 +259,26 @@ async function main() {
   }
   if (violations.length > 0 || parseFailures.length > 0) {
     console.error(
-      `forbid-homedir-src: FAIL（扫描 ${files.length} 文件，违规 ${violations.length} / 解析失败 ${parseFailures.length}）`,
+      `forbid-homedir-src: FAIL（扫描 ${fileCount} 文件，违规 ${violations.length} / 解析失败 ${parseFailures.length}）`,
     );
+    return true;
+  }
+  console.log(`forbid-homedir-src: OK（扫描 ${fileCount} 文件，无 HOME 来源 API 直连）`);
+  return false;
+}
+
+async function main() {
+  const root = argValue(process.argv, "--root", ROOT);
+  const registryPath = argValue(process.argv, "--registry", REGISTRY_PATH);
+
+  const packages = resolvePackages(root, registryPath);
+  const files = collectSrcFiles(root, packages);
+  if (files.length === 0) {
+    console.error("forbid-homedir-src: 未发现任何扫描目标（packages/*/src 空，fail-closed）");
     process.exit(1);
   }
-  console.log(`forbid-homedir-src: OK（扫描 ${files.length} 文件，无 HOME 来源 API 直连）`);
+  const { violations, parseFailures } = await scanTargets(root, files);
+  if (reportFindings(violations, parseFailures, files.length)) process.exit(1);
 }
 
 main().catch((e) => {

@@ -10,8 +10,9 @@
  * 条件：**包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面**。
  *
  * 同源（§9 禁止双轨）：符号集来自 export-surface-snapshot.mjs 的同一次
- * `emitDeclarations()` 产物，不另起第二套抽取；执法点也在同一个脚本、同一条既有 CI
- * 步骤（contract-check spawn 的 export-surface-snapshot），不新增 workflow。
+ * `emitDeclarations()` 产物，不另起第二套抽取；执法点就在同一个脚本的同一个执行点上——
+ * 该执行点审计 P0-1 后从 contract-check 的 spawnSync 迁成 ci.yml 的 `Export surface
+ * snapshot` 直接步骤与本地档位计划的 cheapGlobal（可见性由 gate-wiring 断言守护）。
  *
  * 存量口径：`legacy` 是 M2a 时点的 100 个存量符号白名单——存量分类（保留 / 移除清单）
  * 是 M2b 的一等交付物，本阶段不预判、不抢跑。新增符号**没有** legacy 通道：只能进
@@ -58,18 +59,40 @@ export function checkExportFaces(input) {
     legacy,
     registryPath = "scripts/data/<pkg>-export-faces.json",
   } = input;
-  const problems = [];
   const exportSet = new Set(exportNames);
   const legacySet = new Set(legacy);
 
+  return [
+    ...checkRegistryShape(faces, legacy, legacySet),
+    ...collectLegacyProblems(legacy, exportSet),
+    ...collectFaceProblems(faces, exportSet, legacySet),
+    ...collectUnregisteredProblems(exportNames, faces, legacySet, registryPath),
+  ];
+}
+
+/** 登记文件自身的一致性：legacy 去重，以及「既无 faces 也无 legacy」的退化形态。 */
+function checkRegistryShape(faces, legacy, legacySet) {
+  const problems = [];
   if (legacySet.size !== legacy.length) problems.push("legacy 含重复项");
   if (legacy.length === 0 && Object.keys(faces).length === 0) {
     problems.push("登记文件既无 faces 也无 legacy——判据退化为「无约束」，拒绝放行");
   }
+  return problems;
+}
+
+/** legacy 是存量白名单：符号退役后不移除，白名单会一直替已消失的符号背书。 */
+function collectLegacyProblems(legacy, exportSet) {
+  const problems = [];
   for (const name of legacy) {
     if (!exportSet.has(name))
       problems.push(`legacy 含已不存在的导出符号：${name}（符号退役后须一并从 legacy 移除）`);
   }
+  return problems;
+}
+
+/** faces 每条登记的三重约束：分类合法、与 legacy 互斥、符号确实存在。 */
+function collectFaceProblems(faces, exportSet, legacySet) {
+  const problems = [];
   for (const [name, face] of Object.entries(faces)) {
     if (!EXPORT_FACES.includes(face)) {
       problems.push(
@@ -79,6 +102,12 @@ export function checkExportFaces(input) {
     if (legacySet.has(name)) problems.push(`符号 ${name} 同时登记在 faces 与 legacy（二者互斥）`);
     if (!exportSet.has(name)) problems.push(`faces 含已不存在的导出符号：${name}`);
   }
+  return problems;
+}
+
+/** 未被 faces / legacy 覆盖的导出即新增符号：没有 legacy 通道，必须显式选一类面。 */
+function collectUnregisteredProblems(exportNames, faces, legacySet, registryPath) {
+  const problems = [];
   for (const name of exportNames) {
     if (faces[name] === undefined && !legacySet.has(name)) {
       problems.push(

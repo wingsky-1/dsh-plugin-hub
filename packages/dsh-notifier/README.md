@@ -176,7 +176,6 @@ context filter checks」）。取舍如下（issue #290）：
   "notifyTurnEnd": false,
   "quietHours": { "enabled": false, "start": "22:00", "end": "08:00", "allowKinds": [] },
   "historyMaxAgeDays": 0,
-  "maxConnections": 16,
   "channels": [
     { "type": "browser", "id": "browser", "enabled": true, "popup": true, "sound": true, "whenVisible": false },
     { "type": "system", "id": "system", "enabled": true, "popup": true, "sound": true }
@@ -193,13 +192,16 @@ context filter checks」）。取舍如下（issue #290）：
 > 并删除**——升级一次做完，不留「旧键还能读」的第二处表达。升级后再提交这些键会得到 400
 > （页面停留在升级前时，刷新后重试即可）。
 
-> `maxConnections`：SSE 连接表上限（默认 16，范围 1~1024）。含义为**服务端未释放句柄数**，
-> 非「在线设备数」——半开连接（设备息屏/切网/NAT 静默掐断）不发 FIN，close/error 不触发。
-> #515 起连接表由 shared/sse-hub 管理，三路回收互补：**stalled 回收**（写被拒连续超 90s
-> → 断开）、**maxAge 轮换**（存活超 120min 且无业务帧 → 主动断开，客户端自动重连 +
-> since 补拉无感知）、**上限淘汰**（超出淘汰最老）。上限保证表有界；若**长期持续超限**
-> （淘汰后客户端重连、再次被淘汰的 churn 循环），说明该值低于峰值并发连接数，应调大
-> 到不小于峰值再观察。连接回收路径计数见 `/api/dsh-notifier/health` 的 `sseEvicts`。
+> SSE 连接表（#515 起由 shared/sse-hub 管理）**不再设连接数上限**：0.2.5 起上限淘汰机制已整体
+> 移除——它当年是为「连接泄露」兜底的权宜设置。现存两路回收互补：**stalled 回收**（写被拒连续
+> 超 90s → 断开）、**maxAge 轮换**（存活超 120min 且无业务帧 → 主动断开，客户端自动重连 +
+> `since` 补拉无感知）。连接回收路径计数见 `/api/dsh-notifier/health` 的 `sseEvicts`。
+>
+> 随之上限配置键 `maxConnections`（默认 16，范围 1~1024）也在 **0.2.5** 退役：设置页不再显示它，
+> `effective` 里没有它。写面口径与上文那批 0.2.3 渠道键一致——提交即 **400** 拒收，但原因不同
+> （本键没有后继键，是机制整体移除，故提示是它自己那句），提示同样给出出路：页面停留在升级前时，
+> 刷新后重试。旧 `config.json` 里的残留值不会被自动清洗，也不进生效值；保存其它已知配置不会把它
+> 抹掉，并原样出现在 GET /config 的 `user` 视图里——想清理就在 `config.json` 里手动删掉那一行。
 
 ### 每通道三个开关（#640 / #641；0.2.4 起收进渠道条目）
 

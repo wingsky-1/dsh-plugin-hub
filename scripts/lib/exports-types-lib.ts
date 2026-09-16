@@ -10,9 +10,9 @@
  *     文件必须真实存在。实证缺陷：`./client` 的 types 写成 `./lib/client.d.ts`，而实际
  *     产出是 `lib/client/index.d.ts` —— 严格 TS 消费方按包名子路径导入时静默降级为
  *     `any`（TS7016），而 pack-check / contract-check 都看不见（后者只断言
- *     `exports['./client']` 键存在）。**该缺陷实测存在于全部 5 个有客户端的包**
- *     （dsh-notifier / dsh-lan-proxy / dsh-mcp-manager / dsh-provider-usage /
- *     dsh-web-file-preview），故判据面对全部包生效、不留切片。
+ *     `exports['./client']` 键存在）。**该缺陷实测存在于全部 4 个有客户端的包**
+ *     （dsh-notifier / dsh-lan-proxy / dsh-mcp-manager / dsh-provider-usage；
+ *     #840 退役的 dsh-web-file-preview 为当时第 5 个实例），故判据面对全部包生效、不留切片。
  *  2. export-surface-snapshot：**tsc emit 产物**内的入口归属，用同一映射把子路径挂到
  *     对应 `.d.ts` 上（门禁自跑 `tsc --declaration`，与是否已 build 无关）。
  */
@@ -22,6 +22,17 @@ import { join } from "node:path";
 
 /** 发布物内产物目录前缀（`exports[].types` 的约定根）。 */
 export const LIB_PREFIX = "./lib/";
+
+/** 从 exports 对象挑出带 `types` 条件的子路径条目（`./package.json` 等形态在此被排除）。 */
+function collectTypesEntries(exportsField) {
+  const entries = [];
+  for (const [subpath, value] of Object.entries(exportsField)) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
+    if (typeof value.types !== "string") continue;
+    entries.push({ subpath, types: value.types });
+  }
+  return entries;
+}
 
 /**
  * 读取 package.json 的 exports 中「带 types 条件」的子路径条目。
@@ -39,12 +50,7 @@ export function listExportTypesEntries(pkgRoot) {
   if (typeof exportsField !== "object" || exportsField === null || Array.isArray(exportsField)) {
     throw new Error(`${pkgJsonPath} 的 exports 不是对象形态，无法解析子路径 types`);
   }
-  const entries = [];
-  for (const [subpath, value] of Object.entries(exportsField)) {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
-    if (typeof value.types !== "string") continue;
-    entries.push({ subpath, types: value.types });
-  }
+  const entries = collectTypesEntries(exportsField);
   entries.sort((a, b) => (a.subpath < b.subpath ? -1 : a.subpath > b.subpath ? 1 : 0));
   return entries;
 }

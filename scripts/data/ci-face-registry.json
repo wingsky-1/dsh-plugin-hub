@@ -117,21 +117,20 @@
       "why": "包级数据资产：dsh-notifier-export-surface.json 被包内 consumer-types 集成测试消费（该测试在 vitest.stryker.d/dsh-notifier.config.ts 的变异面 include 里），dsh-notifier-export-faces.json 被常驻的 export-faces-admission 脚本测试消费——两者都是本包资产，故归本包面。"
     },
     {
+      "path": "scripts/data/dsh-worktree-sidebar-*.json",
+      "faces": ["dsh-worktree-sidebar"],
+      "why": "包级数据资产（#819）：导出面基线与导出面分类登记，与 dsh-notifier 的同类条目（scripts/data/dsh-notifier-*.json）同型。归本包面后，改基线即触发本包切片（ci.yml 的 dsh-worktree-sidebar filters 已登记 scripts/data/dsh-worktree-sidebar-*.json）；消费方仍是常驻的产物闸 contract（contract-check.ts spawn export-surface-snapshot.mjs），两者不冲突。"
+    },
+    {
       "path": "scripts/data/dsh-lan-proxy-*.json",
       "faces": ["dsh-lan-proxy"],
-      "why": "包级数据资产：ui-exempt（客户端 UI 豁免表，由 config-matrix-gate 消费）与 #826 新冻结的 export-surface / export-faces（导出面基线与分类登记，由 contract-check 的 export-surface-snapshot 段消费）——三者都是本包资产，故用 glob 归本包面（与 dsh-notifier-*.json 同形）。原名 lan-proxy-ui-exempt.json 不带包名前缀，只能靠人工记忆映射（#742 阶段 2.2 改名归位）。"
+      "why": "包级数据资产：ui-exempt（客户端 UI 豁免表，由 config-matrix-gate 消费）与 #826 冻结的 export-surface / export-faces（导出面基线与分类准入登记，由 export-surface-snapshot 消费，执行点见 ci.yml 的 Export surface snapshot 步骤）——三者都是本包资产，故用 glob 归本包面（与 scripts/data/dsh-notifier-*.json 同形）。原名 lan-proxy-ui-exempt.json 不带包名前缀，只能靠人工记忆映射（#742 阶段 2.2 改名归位）。"
     },
     {
       "path": "stryker.conf.d/dsh-notifier*.json",
       "invalidatesBaseline": true,
       "faces": ["dsh-notifier"],
       "why": "段配置是变异切片的单一事实源：包级 <pkg>.json 与段级 <pkg>-<段名>.json 统一由 <pkg>*.json 覆盖。"
-    },
-    {
-      "path": "stryker.conf.d/dsh-web-file-preview*.json",
-      "invalidatesBaseline": true,
-      "faces": ["dsh-web-file-preview"],
-      "why": "同上（本包为包级单配置形态）。"
     },
     {
       "path": "stryker.conf.d/dsh-mcp-manager*.json",
@@ -152,16 +151,22 @@
       "why": "同上。"
     },
     {
+      "path": "stryker.conf.d/dsh-worktree-sidebar*.json",
+      "invalidatesBaseline": true,
+      "faces": ["dsh-worktree-sidebar"],
+      "why": "同上（本包为包级单配置形态）。"
+    },
+    {
+      "path": "vitest.stryker.d/dsh-worktree-sidebar.config.ts",
+      "invalidatesBaseline": true,
+      "faces": ["dsh-worktree-sidebar"],
+      "why": "同上。"
+    },
+    {
       "path": "vitest.stryker.d/dsh-notifier.config.ts",
       "invalidatesBaseline": true,
       "faces": ["dsh-notifier"],
       "why": "包级 stryker 测试面配置：定义该包进变异面的测试文件清单，此前完全不在任何 filters 内（#742 阶段 2.2）。"
-    },
-    {
-      "path": "vitest.stryker.d/dsh-web-file-preview.config.ts",
-      "invalidatesBaseline": true,
-      "faces": ["dsh-web-file-preview"],
-      "why": "同上。"
     },
     {
       "path": "vitest.stryker.d/dsh-mcp-manager.config.ts",
@@ -184,19 +189,18 @@
     {
       "path": "test/smoke-lib.ts",
       "invalidatesBaseline": true,
-      "faces": [
-        "dsh-lan-proxy",
-        "dsh-mcp-manager",
-        "dsh-notifier",
-        "dsh-provider-usage",
-        "dsh-web-file-preview"
-      ],
-      "why": "根级共享 smoke 工具，被这 5 个包的测试 import（与 contract-check 同源实现）。名单不是手写的：ci-face-coverage 断言按 packages/*/test 的真实 import 图核对，第 6 个包接入而漏登记即红。"
+      "faces": ["dsh-lan-proxy", "dsh-mcp-manager", "dsh-notifier", "dsh-provider-usage"],
+      "why": "根级共享 smoke 工具，被这 4 个包的测试 import（与 contract-check 同源实现）。名单不是手写的：ci-face-coverage 断言按 packages/*/test 的真实 import 图核对，第 5 个包接入而漏登记即红。"
     },
     {
       "path": "scripts/data/ci-face-registry.json",
       "faces": [],
       "why": "本表自身：消费方是常驻的 test:scripts（ci-face-coverage 断言），改动立刻在本 PR 上被消费；它不改变任何 filters，只声明并核对归属。"
+    },
+    {
+      "path": "scripts/data/gate-wiring-exceptions.json",
+      "faces": [],
+      "why": "判据接线例外台账：消费方是常驻的 test:scripts（gate-wiring 断言），改动立刻在本 PR 上被消费；它只声明「两侧形态不对称是设计如此」并受悬空/方向/条件/上限五条守卫，不改变任何 filters，与 ci-face-registry.json 自身同类。"
     },
     {
       "path": "docs/**",

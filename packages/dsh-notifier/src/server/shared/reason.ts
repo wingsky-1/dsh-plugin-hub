@@ -8,56 +8,19 @@
  * `code` 在生产侧是闭集（拼错即编译错误），在读侧是**开放的 string**：磁盘上的旧行与跨版本
  * 数据不受本版编译期约束，拿闭集去读只会把不认识的记录整条丢掉——那比渲染一句中性文案糟得多。
  */
+import { REASON_CODES, REASON_LEGACY } from "../../shared/interface.ts";
+import type { ReasonCode, ReasonParams } from "../../shared/interface.ts";
 import { truncateCodePoints } from "./text.ts";
 
 /**
- * 升级前的散文理由。这一条是唯一「code 不含文案」的取值：原文整句进 `detail`，客户端逐字渲染。
- * 它只在割接产物上出现（见 upgrade 域的 reason 形态迁移），但会随历史记录长期留在磁盘上。
- */
-export const REASON_LEGACY = "reasonLegacy";
-
-/**
- * 本版会生产的 code 清单。客户端字典必须覆盖这里每一项，跨端一致性由测试断言（客户端不 import
- * 本模块——浏览器包里没有服务端）。
+ * code 闭集的事实源在 src/shared/reason-codes.ts（两端共享面，零 import）：客户端此前自己抄了一份
+ * 同值字面量、两边靠注释维系相等，收口后由构造保证同值。
  *
- * 命名即字典 key：`t(code, params)` 直接取文案，不另建一张 code → key 的映射表，少一处能漂的地方。
+ * 留在本文件的是**值函数**（reason / normalizeReason / reasonFromCause / clampReasonDetail /
+ * sameReasonShape）：它们依赖 ./text.ts 的截断实现，属宿主端，进不了零 import 的共享面。
  */
-export const REASON_CODES = [
-  REASON_LEGACY,
-  // 空动作（skipped）：`config` 是用户意图，`environment` 是环境能力。两者必须分得开——
-  // 前者不该被当成故障去查，后者不该被当成「用户自己关的」而放过。
-  "reasonSkipConfig",
-  "reasonSkipEnvironment",
-  // system 出口
-  "reasonSystemPopupFailed",
-  "reasonSystemSoundFailed",
-  // win32 的 toast 脚本缺失是**打包缺陷**，与「宿主没能力」是两回事：合成一个 code 会把
-  // 插件自己的问题说成用户的桌面环境问题，用户会去 Windows 上找一个不存在的 notify-send
-  "reasonSystemToastScriptMissing",
-  // 合成音的临时文件写不进去（/tmp 只读挂载、拿不到写权限）：这是一个**空动作**（没有可执行的
-  // 播放动作），终态因此是 skipped 而不是 failed——宿主原文（EROFS/EACCES）进 detail。
-  "reasonSystemToneUnwritable",
-  // bark 出口
-  "reasonBarkRequestFailed",
-  "reasonBarkHttp",
-  "reasonBarkRejected",
-  "reasonBarkBodyUnreadable",
-  // webhook 出口
-  "reasonWebhookTemplateInvalid",
-  "reasonWebhookRequestFailed",
-  "reasonWebhookHttp",
-  // 投递编排
-  "reasonUnknownTarget",
-  "reasonChannelThrew",
-  // 节流命中：本次**没有投递**。把它记成上一次的结论，等于让归档替一次没发生的投递背书——
-  // 通知记录是用户唯一能逐条看的投递面，那一行必须是这一次的事实。
-  "reasonThrottled",
-] as const;
-
-export type ReasonCode = (typeof REASON_CODES)[number];
-
-/** 理由参数：只收能被字典插值的标量——对象与数组进不来，文案层不必再判嵌套。 */
-export type ReasonParams = Readonly<Record<string, string | number>>;
+export { REASON_CODES, REASON_LEGACY };
+export type { ReasonCode, ReasonParams };
 
 /** 一条投递理由；`detail` 是宿主原文，**不作主文案**（界面折叠展示，并标注它的来源）。 */
 export interface DeliverReason {

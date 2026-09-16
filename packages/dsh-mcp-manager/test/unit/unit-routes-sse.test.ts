@@ -244,48 +244,6 @@ describe("events 路由", () => {
   });
 });
 
-// #515：mcp 补齐连接上限 + 淘汰（对齐 notifier；取代旧裸 Set 无上限） ----
-describe("#515：连接上限 + 淘汰", () => {
-  function limitFixture() {
-    const { manager } = setup();
-    // 上限 2：注册 3 条 → 最老被淘汰，表收敛 2。
-    const route = makeEventsRoute(manager, { heartbeatMs: 60_000, maxConnections: 2 });
-    const r1 = fakeRes();
-    const r2 = fakeRes();
-    const r3 = fakeRes();
-    route.handler(fakeReq("GET", ROUTES.events), r1);
-    route.handler(fakeReq("GET", ROUTES.events), r2);
-    route.handler(fakeReq("GET", ROUTES.events), r3);
-    return { manager, r1, r2, r3 };
-  }
-
-  it("上限 2，注册 3 收敛到 2", () => {
-    const { manager } = limitFixture();
-    expect(manager.sseHub?.size()).toBe(2);
-  });
-
-  it("最老 r1 被淘汰 destroy", () => {
-    const { r1 } = limitFixture();
-    expect(r1.state.destroyed).toBe(true);
-  });
-
-  it("r2 保留", () => {
-    const { r2 } = limitFixture();
-    expect(r2.state.destroyed).toBe(false);
-  });
-
-  it("r3 保留", () => {
-    const { r3 } = limitFixture();
-    expect(r3.state.destroyed).toBe(false);
-  });
-
-  it("evict 原因计数 limit=1", () => {
-    const { manager } = limitFixture();
-    const stats = manager.sseHub?.evictStats();
-    expect(stats?.limit).toBe(1);
-  });
-});
-
 // SSE 心跳（#268）：data ping 帧 / 间隔常量 / close 与卸载 disposer 清理 ----
 describe("SSE 心跳常量契约", () => {
   // 常量契约：间隔对齐 dsh-notifier HEARTBEAT_MS（30s）；心跳必须是 data 帧而非

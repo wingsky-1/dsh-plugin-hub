@@ -307,10 +307,6 @@
 .dn-set-card .dn-kinds-name {
   font-weight: 600;
 }
-.dn-set-card .dn-kinds-src {
-  font-size: 11px;
-  color: var(--dsw-alias-label-secondary, #5f6672);
-}
 .dn-set-card .dn-kinds-actions {
   margin-left: auto;
   display: flex;

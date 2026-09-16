@@ -1,13 +1,15 @@
 {
   "$testLayers": {
-    "$comment": "测试分层与变异面登记的单一事实源（#690 S2b / #713 T1–T3）。runner 层 = test/**/*.test.ts 的全集（vitest include 的 glob 即此口径）；mutation 层 = unit + integration（in-process，可进变异面）；exclude 层 = client（断言对象是构建产物 lib/client.js，而 mutate 面本身排除 src/client/**，登记进变异面测试清单只会增加每个段的 dry run 成本、杀灭贡献为零）+ e2e（真实端口/子进程/真机系统调用）。support 不入任何层：test/helpers.ts、test/smoke-lib.ts、test/smoke-pure.ts、test/*.worker.mjs 是支撑模块，不是测试条目。unitExemptions 是单元层内「写了单元测试但刻意不进变异面」的逐条裁决（每条必须写明理由；gate 校验其非空且真实存在于 unit 层）。gate 判据：每个 test/**/*.test.ts 必须落入某一层的 glob 或某条排除 glob（无第三条路），故新增测试文件必须显式决定其层归属，不能靠「没写进清单」逃逸。",
+    "$comment": "测试分层与变异面登记的单一事实源（#690 S2b / #713 T1–T3）。runner 层 = test/**/*.test.ts 的全集（vitest include 的 glob 即此口径）；mutation 层 = unit + integration + client-unit + client-dom（四层都直连 src、都能贡献杀灭；client-unit 是 node 环境下的客户端纯逻辑判据，client-dom 是 happy-dom 环境下的客户端 DOM 判据）；exclude 层 = client（**只剩断言对象不是 src 本身的那部分**：读 lib/client.js 的产物契约、或 in-place esbuild 后执行已构建副本——静态导入图里没有目标模块，登记进变异面清单只会增加每个段的 dry run 成本、杀灭贡献为零）+ e2e（真实端口/子进程/真机系统调用）。support 不入任何层：test/helpers.ts、test/client-helpers.ts、test/smoke-lib.ts、test/smoke-pure.ts、test/*.worker.mjs 是支撑模块，不是测试条目。unitExemptions 是单元层内「写了单元测试但刻意不进变异面」的逐条裁决（每条必须写明理由；gate 校验其非空且真实存在于 unit 层）。gate 判据：每个 test/**/*.test.ts 必须落入某一层的 glob 或某条排除 glob（无第三条路），故新增测试文件必须显式决定其层归属，不能靠「没写进清单」逃逸。",
     "layers": {
       "unit": "test/unit/**/*.test.ts",
       "integration": "test/integration/**/*.test.ts",
+      "client-unit": "test/client-unit/**/*.test.ts",
       "client": "test/client/**/*.test.ts",
+      "client-dom": "test/client-dom/**/*.test.ts",
       "e2e": "test/e2e/**/*.test.ts"
     },
-    "mutationLayers": ["unit", "integration"],
+    "mutationLayers": ["unit", "integration", "client-unit", "client-dom"],
     "mutationExcludeLayers": ["client", "e2e"]
   },
   "$noMutationPackages": {
@@ -76,7 +78,7 @@
           {
             "pattern": "!packages/dsh-lan-proxy/src/**/interface.ts",
             "kind": "facade",
-            "reason": "#826 域归位：5 处纯 re-export 门面（server/shared、server/proxy、server/config、server/migrate、server/tls 各一）逐个命名转出下层符号，自身只做转发、不做裁决，转译产物零可变节点；留在 mutate 面里只会被反复 dry run 而不贡献杀灭，故按本仓 facade 口径整体排除。"
+            "reason": "#826 域归位：本包 6 处 interface.ts（server/{shared,proxy,config,migrate,tls} 各一 + client/shared 一）按本仓 facade 口径整体排除。facade 是**角色**口径不是内容口径——interface.ts 是本域对外承诺的入口，转译后仍可能有运行时代码（dsh-notifier 的 stores 门面即如此），只是自身不做裁决；故排除面按文件名通配，而不是按「有没有实现」判定。其中 client/shared/interface.ts 本已被各段 !src/client/** 覆盖；当前 6 段的 mutate 条目不匹配任何 interface.ts，故这条对本包是口径声明而非有效裁剪，它的作用是让该口径不随段形态变化而失效。"
           }
         ]
       }
@@ -195,45 +197,30 @@
       "segments": {
         "api": {
           "mutate": ["packages/dsh-notifier/src/server/api/**/*.ts"],
-          "excludes": [
-            "!packages/dsh-notifier/src/client/**",
-            "!packages/dsh-notifier/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-notifier/src/client/**"],
           "comment": "#733 按域重写：api——HTTP 端点域（journal/kinds/probe/route/service/settings/stream）。loopback 围栏在 route 块内，端点自身只做「解析请求 → 调 pipeline/sdk 端口 → 序列化响应」，不含业务裁决。"
         },
         "channels": {
           "mutate": [
             "packages/dsh-notifier/src/server/channels/**/*.ts",
-            "packages/dsh-notifier/src/shared/tones.ts"
+            "packages/dsh-notifier/src/shared/**/*.ts"
           ],
-          "excludes": [
-            "!packages/dsh-notifier/src/client/**",
-            "!packages/dsh-notifier/src/types.ts"
-          ],
-          "comment": "#733 按域重写：channels——出口域（bark/browser/system/webhook 四出口 + deliver 共享投递阶段与 caps 截断；tones 为系统音色表）。边界：出口只回答「本次失败可不可重试」（DeliverResult.retryable），重试/退避/节流/在途上限一律不在本域，归 pipeline/impl/dispatch。#783 起音色事实源（含三平台素材字段）迁到 src/shared/tones.ts 由两端共用，随本域一起度量：该文件里可变异的是 candidateNames 的平台翻译分支，纯数据字面量由 sharedDefaults.excludedMutations 排除（ObjectLiteral/ArrayLiteral/StringLiteral）。"
+          "excludes": ["!packages/dsh-notifier/src/client/**"],
+          "comment": "#733 按域重写：channels——出口域（bark/browser/system/webhook 四出口 + deliver 共享投递阶段与 caps 截断；tones 为系统音色表）。边界：出口只回答「本次失败可不可重试」（DeliverResult.retryable），重试/退避/节流/在途上限一律不在本域，归 pipeline/impl/dispatch。#783 起音色事实源（含三平台素材字段）迁到 src/shared/ 由两端共用，随本域一起度量；#769 把该目录整体按 glob 纳入本段（是两端契约的收口面，逐个登记会随每次收口漏改）：批 2 收口 tones/sounds/kinds，批 3 收口 channels/webhooks/reason-codes/capabilities，#769 批 4 加围栏拒答 code 表（refusal.ts，纯数据无变异体），现为九个文件。面内可变异的是 candidateNames 的平台翻译分支与 shared 里的判定/归一函数（kinds.ts 的 isBuiltinKind / isNotifySeverity、sounds.ts 的 isSoundId、channels.ts 的 isBuiltinChannelType / channelIdFor / channelIdOf、webhooks.ts 的 deliveryPresetOf / webhookTemplateOf）；其余不产生变异体——纯数据字面量由 sharedDefaults.excludedMutations 排除（ObjectLiteral/ArrayLiteral/StringLiteral），interface.ts 与 capabilities.ts 全是转出/类型，reason-codes.ts 的 code 表是字面量。"
         },
         "config": {
           "mutate": ["packages/dsh-notifier/src/server/config/**/*.ts"],
-          "excludes": [
-            "!packages/dsh-notifier/src/client/**",
-            "!packages/dsh-notifier/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-notifier/src/client/**"],
           "comment": "#733 按域重写：config——配置域（model 默认值与形状；input 解析/归一化/校验与键上限；service 读写、修订号与并发保护；redact 出站掩码）。#733 后期删除：内容脱敏规则表、错误合并窗口、完成聚合窗口、审批二次提醒（askRemindMin）四个设置面。"
         },
         "events": {
           "mutate": ["packages/dsh-notifier/src/server/events/**/*.ts"],
-          "excludes": [
-            "!packages/dsh-notifier/src/client/**",
-            "!packages/dsh-notifier/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-notifier/src/client/**"],
           "comment": "#733 按域重写：events——宿主事件域（listen 订阅装配；state 代理由 running/idle 矩阵驱动的状态机；session 完成判定证据读取；translate 事件→NotifyRequest，catalog 为内置 kind 文案表）。本域只产出请求，不做裁决。"
         },
         "pipeline": {
           "mutate": ["packages/dsh-notifier/src/server/pipeline/**/*.ts"],
-          "excludes": [
-            "!packages/dsh-notifier/src/client/**",
-            "!packages/dsh-notifier/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-notifier/src/client/**"],
           "comment": "#733 按域重写：pipeline——管线域（judge 三条裁决判据与抑制原因；route 目标解析与陈旧目标回收；finalize 严重度归一、标题截断与消息定稿；dispatch 重试/退避/节流/在途上限；service 编排与 kind 注册表）。重试状态机在本域是刻意的：出口保持无状态。"
         },
         "sdk": {
@@ -241,35 +228,31 @@
             "packages/dsh-notifier/src/index.ts",
             "packages/dsh-notifier/src/server/sdk/**/*.ts"
           ],
-          "excludes": [
-            "!packages/dsh-notifier/src/client/**",
-            "!packages/dsh-notifier/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-notifier/src/client/**"],
           "comment": "#733 按域重写：sdk——服务面（registry 动态 kind 注册，service 对外 send/kinds，apiVersion 2）+ 根 index.ts 组合根并入（沿用 #669「装配层归服务面」口径：组合根单文件独立成段可杀性低、dry run 成本照付）。#733 收敛：wingsky-notify/sent 事件与 registerChannel 退役，send 返回 Promise<void>。"
         },
         "shared": {
           "mutate": ["packages/dsh-notifier/src/server/shared/**/*.ts"],
-          "excludes": [
-            "!packages/dsh-notifier/src/client/**",
-            "!packages/dsh-notifier/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-notifier/src/client/**"],
           "comment": "#733 按域重写：shared——包内共享层（logger 端口 / 原子文本读写 / 产品布局路径解析）。#733 收口：三个实现文件原被各域直引（30 条 missingInterface），现统一经 shared/interface.ts 门面。"
         },
         "stores": {
           "mutate": ["packages/dsh-notifier/src/server/stores/**/*.ts"],
-          "excludes": [
-            "!packages/dsh-notifier/src/client/**",
-            "!packages/dsh-notifier/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-notifier/src/client/**"],
           "comment": "#733 按域重写：stores——存储域（history 串行写队列与按行滚动；status 内存镜像与防抖落盘、LRU 上限）。"
         },
         "upgrade": {
           "mutate": ["packages/dsh-notifier/src/server/upgrade/**/*.ts"],
-          "excludes": [
-            "!packages/dsh-notifier/src/client/**",
-            "!packages/dsh-notifier/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-notifier/src/client/**"],
           "comment": "#733 按域重写：upgrade——存量迁移域（version 版本戳；chain 迁移链；legacy 旧位置读取；steps.storage-layout 存储布局搬迁）。"
+        },
+        "client": {
+          "mutate": ["packages/dsh-notifier/src/client/**/*.ts"],
+          "excludes": [
+            "!packages/dsh-notifier/src/client/**/*.tsx",
+            "!packages/dsh-notifier/src/**/*.d.ts"
+          ],
+          "comment": "#769 客户端半区门禁：mutate 面 = src/client 下的纯 .ts 模块（node 判据在 client-unit 层、DOM 判据在 client-dom 层，两层都已进 mutationLayers，故这里的变异体有真实杀灭来源）。实测 covered 87.38%（killed 457 / survived 66 / noCoverage 0，concurrency 2 用时 4m03s）。两处排除各有一条理由：① **/*.tsx（13 个文件、含 1494 行的 index.tsx）——渲染需要 react 运行时，全仓未安装，判据面为零，等运行时与渲染 harness 落地后收掉本条；② **/*.d.ts——声明层无运行时代码。capabilities.ts 与 reason-text.ts 曾因判据建在 in-place esbuild 的已构建副本上（静态导入图里没有目标模块、变异体一律 noCoverage）被排除，现已由 client-unit 层的直连判据补齐，排除随之收掉。"
         }
       },
       "testLayers": {
@@ -309,18 +292,12 @@
       "segments": {
         "apply": {
           "mutate": ["packages/dsh-provider-usage/src/apply/apply.ts"],
-          "excludes": [
-            "!packages/dsh-provider-usage/src/client/**",
-            "!packages/dsh-provider-usage/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
           "comment": "#342 v4：src 级文件组分段（2）——apply 单列（#316 拆分后最重文件独立成段）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "errsurf": {
           "mutate": ["packages/dsh-provider-usage/src/domain2/common/errsurf.ts"],
-          "excludes": [
-            "!packages/dsh-provider-usage/src/client/**",
-            "!packages/dsh-provider-usage/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
           "comment": "#670 阶段三 B 新段：域2每层错误面——errsurf.ts（累计计数+最近 N 条环形缓冲+snapshot/noop）；testFiles 含 unit-errsurf（杀灭面）；apply 接线与 routes/ui health per-layer 段由既有 apply/routes 段覆盖（mutate 已含对应文件）。"
         },
         "contracts": {
@@ -328,10 +305,7 @@
             "packages/dsh-provider-usage/src/shared/contracts.ts",
             "packages/dsh-provider-usage/src/domain1/pipeline/guards.ts"
           ],
-          "excludes": [
-            "!packages/dsh-provider-usage/src/client/**",
-            "!packages/dsh-provider-usage/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
           "comment": "#342 v4：src 级文件组分段（3）——contracts+domain1/pipeline/guards（契约面）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "entry": {
@@ -341,10 +315,7 @@
             "packages/dsh-provider-usage/src/shared/ui-config.ts",
             "packages/dsh-provider-usage/src/shared/config.ts"
           ],
-          "excludes": [
-            "!packages/dsh-provider-usage/src/client/**",
-            "!packages/dsh-provider-usage/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
           "comment": "#342 v4：src 级文件组分段（1）——index+user-adapters+ui-config+config（配置/入口面）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "pipeline": {
@@ -359,10 +330,7 @@
             "packages/dsh-provider-usage/src/shared/charts.ts",
             "packages/dsh-provider-usage/src/domain1/pipeline/stats-service.ts"
           ],
-          "excludes": [
-            "!packages/dsh-provider-usage/src/client/**",
-            "!packages/dsh-provider-usage/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
           "comment": "#342 v4：src 级文件组分段（5）——history/v2/hotreload/placement-math/path-resolve/client-logic/provider-config/charts/stats-service（历史/管线/热更/图表/C3 服务面；charts 纳入修复变异盲区；阶段零补 stats-service 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "registry": {
@@ -370,18 +338,12 @@
             "packages/dsh-provider-usage/src/domain1/registry/registry.ts",
             "packages/dsh-provider-usage/src/domain1/registry/user-adapter-loader.ts"
           ],
-          "excludes": [
-            "!packages/dsh-provider-usage/src/client/**",
-            "!packages/dsh-provider-usage/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
           "comment": "#342 二期：功能命名段（registry）——registry+user-adapter-loader（注册表域，25s；阶段零补 loader 盲区）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "sanitize": {
           "mutate": ["packages/dsh-provider-usage/src/shared/sanitize.ts"],
-          "excludes": [
-            "!packages/dsh-provider-usage/src/client/**",
-            "!packages/dsh-provider-usage/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
           "comment": "#342 二期：功能命名段（sanitize）——sanitize（数据净化域，115s）；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建。"
         },
         "trend-aggregate": {
@@ -392,10 +354,7 @@
             "packages/dsh-provider-usage/src/domain2/aggregate/store.ts",
             "packages/dsh-provider-usage/src/domain2/aggregate/index.ts"
           ],
-          "excludes": [
-            "!packages/dsh-provider-usage/src/client/**",
-            "!packages/dsh-provider-usage/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
           "comment": "阶段零新段（D17 分层变异）：E2 聚合/压实/存储面——aggregator+store+index；阶段三（#670 D2）aggregator 拆分为 aggregate-rows（压实转换纯函数）+ aggregate-query（查询投影纯函数），两新文件并入 mutate 面（防新文件变异盲区）；testFiles 含 unit-trend/unit-trend-ledger/unit-trend-view（杀灭面为该层测试，R8 台账守恒断言覆盖守恒链）；aggregator 单文件 5-8 分钟，独立段防超时。"
         },
         "trend-collect": {
@@ -403,10 +362,7 @@
             "packages/dsh-provider-usage/src/domain2/collect/collector.ts",
             "packages/dsh-provider-usage/src/domain2/collect/types.ts"
           ],
-          "excludes": [
-            "!packages/dsh-provider-usage/src/client/**",
-            "!packages/dsh-provider-usage/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
           "comment": "阶段零新段（D17 分层变异）：E1 事件采集面——collector+types（折叠状态机/归属归一）；testFiles 含 unit-trend（杀灭面为该层测试）。"
         },
         "report-schedule": {
@@ -418,10 +374,7 @@
             "packages/dsh-provider-usage/src/domain2/common/last-run.ts",
             "packages/dsh-provider-usage/src/apply/report-config-service.ts"
           ],
-          "excludes": [
-            "!packages/dsh-provider-usage/src/client/**",
-            "!packages/dsh-provider-usage/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
           "comment": "阶段零新段（D17 分层变异）：E3 报告配置/调度面——config+schedule+scheduler+tasks；阶段二（D8）并入 last-run.ts（公共原语）与 report-config-service.ts（配置服务）；testFiles 含 unit-report/unit-report-executor。"
         },
         "report-execute": {
@@ -433,10 +386,7 @@
             "packages/dsh-provider-usage/src/domain2/execute/executor.ts",
             "packages/dsh-provider-usage/src/domain2/execute/list-dirs.ts"
           ],
-          "excludes": [
-            "!packages/dsh-provider-usage/src/client/**",
-            "!packages/dsh-provider-usage/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
           "comment": "阶段零新段（D17 分层变异）：E4 报告执行/产出面——runner+generate+format；阶段二（D8）并入 report-index.ts（公共解析）/executor.ts（执行器工厂）/list-dirs.ts（目录候选工厂）；testFiles 含 unit-report/unit-report-executor。"
         },
         "routes": {
@@ -446,10 +396,7 @@
             "packages/dsh-provider-usage/src/domain2/routes/ui.ts",
             "packages/dsh-provider-usage/src/domain2/routes/reports.ts"
           ],
-          "excludes": [
-            "!packages/dsh-provider-usage/src/client/**",
-            "!packages/dsh-provider-usage/src/types.ts"
-          ],
+          "excludes": ["!packages/dsh-provider-usage/src/client/**"],
           "comment": "阶段一新段（评审 P1-5 前置）：E5/C6 路由面——stats+adapters+ui+reports；先抽纯函数（clampTrendN/isReportPeriodValid/isReportKeyValid/isTaskIdValid）补 unit-routes 再开段；testFiles 含 unit-routes/unit-report/unit-apply。"
         }
       },
@@ -488,28 +435,17 @@
         ]
       }
     },
-    "dsh-web-file-preview": {
+    "dsh-worktree-sidebar": {
       "concurrency": 16,
       "timeoutMS": 60000,
       "segments": {
         "_single": {
-          "mutate": ["packages/dsh-web-file-preview/src/**/*.ts"],
-          "excludes": [
-            "!packages/dsh-web-file-preview/src/client/**",
-            "!packages/dsh-web-file-preview/src/types.ts"
-          ],
-          "comment": "#276 方案 A：src 级单段（mutate 直指 src，文件 glob 声明，无行号无漂移）；测试经 src 入口加载插桩代码；incremental 基线随 observe 夜间全量班重建。"
+          "mutate": ["packages/dsh-worktree-sidebar/src/**/*.ts"],
+          "excludes": ["!packages/dsh-worktree-sidebar/src/client/**"],
+          "comment": "#276 方案 A：src 级单段。客户端 src/client/** 排除——它的断言对象是官方 slots 运行时与构建产物 lib/client.js，mutate 面对它没有可杀灭的语义（与 dsh-web-file-preview 同口径）。incremental 基线随 observe 夜间全量班重建。"
         }
       },
-      "testLayers": {
-        "coverageExcludes": [
-          {
-            "pattern": "!packages/dsh-web-file-preview/src/**/interface.ts",
-            "kind": "facade",
-            "reason": "#792 PR3：两处纯 re-export 门面（src/shared/interface.ts 与 src/client/shared/interface.ts）逐个命名转出下层符号，自身只做转发、不做裁决，转译产物零可变节点；留在 mutate 面里只会被反复 dry run 而不贡献杀灭，故按本仓 facade 口径整体排除。"
-          }
-        ]
-      }
+      "testLayers": {}
     }
   }
 }

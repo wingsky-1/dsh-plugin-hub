@@ -11,7 +11,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { globSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  globSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -21,17 +29,17 @@ import {
   collectCoverageExcludePatterns,
   collectMutationSpecs,
   coverageExcludeProblems,
-  defaultSegmentExcludes,
+  packageEntryProblems,
   packageRegistrationProblems,
 } from "../gate/mutation-topology.mjs";
-import { projectTestSurface } from "../gate/test-surface.mjs";
+import { mutationEntryProblems, projectTestSurface } from "../gate/test-surface.mjs";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const GENERATOR = join(ROOT, "scripts", "gate", "gen-stryker-conf.mjs");
 const VERIFY_DIR_IMPORTS = join(ROOT, "scripts", "gate", "verify-dir-imports.mjs");
 const TOPOLOGY_PATH = join(ROOT, "scripts", "data", "mutation-topology.json");
 
-test("F15：段未显式写 excludes 时，collectMutationSpecs 仍返回默认排除面", () => {
+test("#836：段缺 excludes 时判红且不给可判定的面，段声明了则只收显式值（无默认面）", () => {
   const topology = {
     packages: {
       "fixture-pkg": {
@@ -47,24 +55,44 @@ test("F15：段未显式写 excludes 时，collectMutationSpecs 仍返回默认�
   };
   const specs = collectMutationSpecs(topology, "fixture-pkg");
   assert.equal(specs.noMutation, false, "登记在 packages 的包不是「无变异面」态");
-  assert.deepEqual(
-    specs.excludes.sort(),
-    [
-      "packages/fixture-pkg/src/client/**",
-      "packages/fixture-pkg/src/skip/**",
-      "packages/fixture-pkg/src/types.ts",
-    ].sort(),
-    `默认值必须与显式值一起进断言口径：${JSON.stringify(specs.excludes)}`,
+  assert.deepEqual(specs.mutate, [], "形状不合法时不给可判定的面（fail-closed）");
+  assert.deepEqual(specs.excludes, []);
+  assert.ok(
+    specs.problems.some((p) => p.includes('段 "noExcludes"') && p.includes("excludes")),
+    `缺 excludes 的段必须判红并点名段名：${specs.problems.join(" | ")}`,
   );
-  assert.deepEqual(specs.excludes, [...new Set(specs.excludes)], "口径内不得重复");
+
+  // 对照组：每段都显式声明 excludes → 零 problems，且口径内只有声明过的条目。
+  // defaultSegmentExcludes 删除后，「client/** + types.ts」不得再以任何形式被注入。
+  const declared = {
+    packages: {
+      "fixture-pkg": {
+        segments: {
+          withExcludes: {
+            mutate: ["packages/fixture-pkg/src/b.ts"],
+            excludes: ["!packages/fixture-pkg/src/skip/**"],
+          },
+        },
+      },
+    },
+  };
+  const okSpecs = collectMutationSpecs(declared, "fixture-pkg");
+  assert.deepEqual(okSpecs.problems, []);
+  assert.deepEqual(okSpecs.excludes, ["packages/fixture-pkg/src/skip/**"]);
+  assert.deepEqual(okSpecs.mutate, ["packages/fixture-pkg/src/b.ts"]);
 });
 
-test("F15：未登记包返回 null（调用方 fail-closed），默认值随包名派生", () => {
+test("F15 收口：未登记包返回 null（调用方 fail-closed），不存在条目级默认面", () => {
   assert.equal(collectMutationSpecs({ packages: {} }, "unknown-pkg"), null);
-  assert.deepEqual(defaultSegmentExcludes("dsh-x"), [
-    "!packages/dsh-x/src/client/**",
-    "!packages/dsh-x/src/types.ts",
-  ]);
+  const specs = collectMutationSpecs(
+    { packages: { "dsh-x": { segments: { s: { excludes: ["!packages/dsh-x/src/skip/**"] } } } } },
+    "dsh-x",
+  );
+  assert.deepEqual(
+    specs.excludes,
+    ["packages/dsh-x/src/skip/**"],
+    "断言口径里只能出现拓扑里写着的条目（默认值已被 #836 删除）",
+  );
 });
 
 test("#773 批 B：$noMutationPackages 成员返回「无变异面」态，未登记与元键仍为 null", () => {
@@ -81,7 +109,16 @@ test("#773 批 B：$noMutationPackages 成员返回「无变异面」态，未�
   assert.equal(collectMutationSpecs(topology, "unregistered-pkg"), null, "两处都未登记仍是 null");
   // 同时登记两处时以 packages 为准：只有它带得出可判定的 mutate/excludes 面。
   const both = {
-    packages: { "ghost-pkg": { segments: { s: { mutate: ["packages/ghost-pkg/src/a.ts"] } } } },
+    packages: {
+      "ghost-pkg": {
+        segments: {
+          s: {
+            mutate: ["packages/ghost-pkg/src/a.ts"],
+            excludes: ["!packages/ghost-pkg/src/client/**"],
+          },
+        },
+      },
+    },
     $noMutationPackages: { "ghost-pkg": "无变异面" },
   };
   const specs = collectMutationSpecs(both, "ghost-pkg");
@@ -106,19 +143,16 @@ test("F15 反证：落盘 conf 的 mutate 面与断言口径同源（含 coverag
   }
 });
 
-test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目（4 包共 13 条）", () => {
+test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目（3 包共 12 条）", () => {
   const topology = JSON.parse(readFileSync(TOPOLOGY_PATH, "utf8"));
-  // 规模断言：形状变更范围 13 条（dsh-mcp-manager 1 / dsh-notifier 5 / dsh-provider-usage 6 /
-  // dsh-web-file-preview 1）。
+  // 规模断言：形状变更范围 12 条（dsh-mcp-manager 1 / dsh-notifier 5 / dsh-provider-usage 6）。
   // notifier 是 5 而不是 4：原 `**/deps.ts` 一条拆成两条——7 个纯类型域出口 + 含运行时
   // 实现的 system/deps.ts 单列（复核实测它转译后有运行时代码，不能与纯类型共用一条 reason）。
-  // wfp 的 1 条来自 #792 PR3 目录重排：新增的两个纯 re-export 门面按同一 facade 口径排除。
   // 数量变化必须是有意的登记动作，不能靠 diff 顺带溜过。
   const expected = {
     "dsh-mcp-manager": 1,
     "dsh-notifier": 5,
     "dsh-provider-usage": 6,
-    "dsh-web-file-preview": 1,
   };
   const allReasons = [];
   let total = 0;
@@ -163,8 +197,8 @@ test("#773 R4：coverageExcludes 是 { pattern, reason, kind } 结构化条目�
   }
   assert.equal(
     total,
-    13,
-    "coverageExcludes 共 13 条（#773 R4 的形状变更范围，含 deps.ts 拆分后的一条与 wfp 的门面一条）",
+    12,
+    "coverageExcludes 共 12 条（#773 R4 的形状变更范围，含 deps.ts 拆分后的一条；#840 退役 wfp 后由 13 条降为 12）",
   );
   assert.equal(
     new Set(allReasons).size,
@@ -278,7 +312,12 @@ test("#773 R4 反证：包登记为 null / 非对象时给可读判词，不得�
   // 顶层 packages 本身不是对象同样是形状错误
   assert.ok(packageRegistrationProblems({ packages: null }).length > 0);
   // 对照组：正常包登记零问题（证明上面的红不是「凡输入皆红」）
-  assert.deepEqual(packageRegistrationProblems({ packages: { [pkgName]: { segments: {} } } }), []);
+  assert.deepEqual(
+    packageRegistrationProblems({
+      packages: { [pkgName]: { segments: { only: { mutate: ["x"], excludes: ["!y"] } } } },
+    }),
+    [],
+  );
 });
 
 test("#773 R4 反证：包登记的 segments 缺失 / null / 非对象 → 判词而非抛栈（复核 D1）", () => {
@@ -300,8 +339,54 @@ test("#773 R4 反证：包登记的 segments 缺失 / null / 非对象 → 判�
       `包登记的 segments 必须是对象（当前 ${JSON.stringify(bad)}）——形状不对时没有可判定的变异面，fail-closed`,
     ]);
   }
-  // 对照组：segments 是对象（含空对象）零 problems
-  assert.deepEqual(packageRegistrationProblems({ packages: { [pkgName]: { segments: {} } } }), []);
+  // 对照组：segments 是非空对象零 problems；空对象是「登记了却没有面」（不派生任何 conf，
+  // 条目判据永远看不到该包）——#848 起单独判红，故不再用空对象当对照
+  assert.deepEqual(
+    packageRegistrationProblems({
+      packages: { [pkgName]: { segments: { only: { mutate: ["x"], excludes: ["!y"] } } } },
+    }),
+    [],
+  );
+  assert.match(
+    packageRegistrationProblems({ packages: { [pkgName]: { segments: {} } } }).join(" | "),
+    /segments 为空对象/,
+  );
+});
+
+test("#836 反证：段缺 excludes / 空 / 非数组 / 段非对象 → 逐条判词，不得抛栈", () => {
+  const pkgName = "fixture-pkg";
+  const cases = [
+    ["段缺 excludes", { mutate: [`packages/${pkgName}/src/a.ts`] }, /excludes 必须是非空数组/],
+    ["excludes 是空数组", { mutate: [], excludes: [] }, /excludes 必须是非空数组/],
+    ["excludes 非数组", { mutate: [], excludes: "!packages/x/src/**" }, /excludes 必须是非空数组/],
+    ["段非对象", null, /必须是对象/],
+  ];
+  for (const [name, seg, re] of cases) {
+    const topology = { packages: { [pkgName]: { segments: { s: seg } } } };
+    const problems = packageRegistrationProblems(topology);
+    assert.ok(problems.length > 0, `${name} 必须判红（这条判据不能恒绿）`);
+    assert.ok(
+      problems.some((p) => p.includes(pkgName) && p.includes('段 "s"') && re.test(p)),
+      `${name} 的判词要点名段与形状要求（实际：${problems.join(" | ")}）`,
+    );
+    // 下游取值点不得在 seg.excludes 上抛栈：给出空面 + 同族判词，由调用方 fail-closed 落红
+    const specs = collectMutationSpecs(topology, pkgName);
+    assert.equal(specs.noMutation, false, "形状错误不是「无变异面」，而是没有可判定的面");
+    assert.deepEqual(specs.mutate, []);
+    assert.deepEqual(specs.excludes, []);
+    assert.ok(specs.problems.length > 0, `${name}：形状问题必须随 spec 交给调用方`);
+  }
+  // 对照组：段自己声明了非空 excludes → 零 problems（形状判据不是「凡输入皆红」）
+  assert.deepEqual(
+    packageRegistrationProblems({
+      packages: {
+        [pkgName]: {
+          segments: { s: { mutate: [], excludes: [`!packages/${pkgName}/src/anything/**`] } },
+        },
+      },
+    }),
+    [],
+  );
 });
 
 test("#773 R4 反证：生成器遇坏包登记（null / {} / segments:null）以判词退出，不得抛栈", () => {
@@ -443,70 +528,290 @@ test("#773 R4 反证：projectTestSurface 遇坏包登记给判词，不得抛�
   ]);
 });
 
-test("F15 反证：段省略 excludes 时生成器注入默认值（fixture 最小仓库）", () => {
-  const root = mkdtempSync(join(tmpdir(), "f15-fixture-"));
-  try {
-    const pkg = "fixture-pkg";
-    const files = {
-      [`packages/${pkg}/src/a.ts`]: "export const a = 1\n",
-      [`packages/${pkg}/src/client/ui.ts`]: "export const b = 2\n",
-      [`packages/${pkg}/test/unit/unit-a.test.ts`]: 'import "../../src/a.ts"\n',
-      "scripts/data/mutation-topology.json": `${JSON.stringify(
-        {
-          $testLayers: {
-            layers: {
-              unit: "test/unit/**/*.test.ts",
-              integration: "test/integration/**/*.test.ts",
-              client: "test/client/**/*.test.ts",
-              e2e: "test/e2e/**/*.test.ts",
-            },
-            mutationLayers: ["unit", "integration"],
-            mutationExcludeLayers: ["client", "e2e"],
+/**
+ * conf 文件名 → 所属包（判据 ⑤ 的锚定与 ⑥ 的有效面都要它）。与派生侧 confOwners 同一算法：
+ * `_single` 段派生 `<pkg>.json`，其余段派生 `<pkg>-<seg>.json`。
+ */
+function confOwnerOf(topology, fileName) {
+  for (const [pkgName, pkgDef] of Object.entries(topology.packages ?? {})) {
+    for (const segKey of Object.keys(pkgDef.segments ?? {})) {
+      const name = segKey === "_single" ? `${pkgName}.json` : `${pkgName}-${segKey}.json`;
+      if (name === fileName) return pkgName;
+    }
+  }
+  return undefined;
+}
+
+/** #836 反证用的最小仓库根：一份 conf 的 mutate 面完全由段声明决定。 */
+function makeMutationFixture(excludes) {
+  const root = mkdtempSync(join(tmpdir(), "f836-fixture-"));
+  const pkg = "fixture-pkg";
+  const files = {
+    [`packages/${pkg}/src/a.ts`]: "export const a = 1\n",
+    [`packages/${pkg}/src/client/ui.ts`]: "export const b = 2\n",
+    [`packages/${pkg}/test/unit/unit-a.test.ts`]: 'import "../../src/a.ts"\n',
+    "scripts/data/mutation-topology.json": `${JSON.stringify(
+      {
+        $testLayers: {
+          layers: {
+            unit: "test/unit/**/*.test.ts",
+            integration: "test/integration/**/*.test.ts",
+            client: "test/client/**/*.test.ts",
+            e2e: "test/e2e/**/*.test.ts",
           },
-          sharedDefaults: {
-            testRunner: "vitest",
-            concurrency: 1,
-            timeoutMS: 1000,
-            dryRunTimeoutMinutes: 5,
-            reporters: ["progress"],
-            coverageAnalysis: "perTest",
-            tempDirName: ".stryker-tmp",
-            cleanTempDir: true,
-            excludedMutations: [],
-            vitest: { related: false },
-          },
-          packages: {
-            [pkg]: {
-              testLayers: {},
-              segments: { only: { mutate: [`packages/${pkg}/src/a.ts`] } },
-            },
+          mutationLayers: ["unit", "integration"],
+          mutationExcludeLayers: ["client", "e2e"],
+        },
+        sharedDefaults: {
+          testRunner: "vitest",
+          concurrency: 1,
+          timeoutMS: 1000,
+          dryRunTimeoutMinutes: 5,
+          reporters: ["progress"],
+          coverageAnalysis: "perTest",
+          tempDirName: ".stryker-tmp",
+          cleanTempDir: true,
+          excludedMutations: [],
+          vitest: { related: false },
+        },
+        packages: {
+          [pkg]: {
+            testLayers: {},
+            segments: { only: { mutate: [`packages/${pkg}/src/a.ts`], excludes } },
           },
         },
-        null,
-        2,
-      )}\n`,
-      [`packages/${pkg}/package.json`]: `${JSON.stringify({ name: pkg, scripts: { test: "node ../../scripts/test/run-vitest.mjs --min 1" } }, null, 2)}\n`,
-    };
-    for (const [rel, content] of Object.entries(files)) {
-      const abs = join(root, rel);
-      mkdirSync(dirname(abs), { recursive: true });
-      writeFileSync(abs, content, "utf8");
-    }
-    mkdirSync(join(root, "stryker.conf.d"), { recursive: true });
+      },
+      null,
+      2,
+    )}\n`,
+    [`packages/${pkg}/package.json`]: `${JSON.stringify({ name: pkg, scripts: { test: "node ../../scripts/test/run-vitest.mjs --min 1" } }, null, 2)}\n`,
+  };
+  for (const [rel, content] of Object.entries(files)) {
+    const abs = join(root, rel);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, content, "utf8");
+  }
+  mkdirSync(join(root, "stryker.conf.d"), { recursive: true });
+  return root;
+}
 
-    const res = spawnSync(process.execPath, [GENERATOR], {
-      cwd: ROOT,
-      encoding: "utf8",
-      env: { ...process.env, GEN_STRYKER_ROOT: root },
-    });
-    assert.equal(res.status, 0, `生成应成功：\n${res.stdout}${res.stderr}`);
-    const conf = JSON.parse(readFileSync(join(root, "stryker.conf.d", `${pkg}-only.json`), "utf8"));
-    for (const g of defaultSegmentExcludes(pkg)) {
-      assert.ok(
-        conf.mutate.includes(g),
-        `段省略 excludes 时应注入默认值：${g}\n${JSON.stringify(conf.mutate)}`,
-      );
-    }
+/** 对 fixture 根跑生成器，返回 { status, out }。 */
+function runGenerator(root, args = []) {
+  const res = spawnSync(process.execPath, [GENERATOR, ...args], {
+    cwd: ROOT,
+    encoding: "utf8",
+    env: { ...process.env, GEN_STRYKER_ROOT: root },
+  });
+  return { status: res.status, out: `${res.stdout ?? ""}${res.stderr ?? ""}` };
+}
+
+test("#836 反证：段省略 excludes 时 --check 判红并点名段，不得抛栈", () => {
+  // makeMutationFixture(undefined) 让 excludes 键整个缺席（JSON.stringify 会丢掉 undefined 值），
+  // 这正是「段没写 excludes」的形态。
+  const root = makeMutationFixture(undefined);
+  try {
+    const res = runGenerator(root, ["--check"]);
+    assert.equal(res.status, 1, `缺 excludes 必须判红：\n${res.out}`);
+    assert.match(res.out, /段 "only" 的 excludes 必须是非空数组/, "判词要点名是哪个段");
+    assert.doesNotMatch(
+      res.out,
+      /TypeError|is not iterable/,
+      `形状错误不得以抛栈形态出现（删掉回退后 ...seg.excludes 就是下一个裸引用的 iterable）：\n${res.out}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("#836：仓库每份 conf 的每条 mutate 条目都命中物理文件（含 ! 排除条目）", () => {
+  const confDir = join(ROOT, "stryker.conf.d");
+  const confFiles = readdirSync(confDir)
+    .filter((f) => f.endsWith(".json"))
+    .sort();
+  assert.ok(confFiles.length > 0, "仓库里应当有派生 conf");
+  const topology = JSON.parse(readFileSync(TOPOLOGY_PATH, "utf8"));
+  let scanned = 0;
+  let entries = 0;
+  for (const file of confFiles) {
+    const mutate = JSON.parse(readFileSync(join(confDir, file), "utf8")).mutate;
+    entries += mutate.length;
+    const owner = confOwnerOf(topology, file);
+    assert.ok(owner !== undefined, `${file} 必须能解析出所属包（锚定判据的输入）`);
+    const res = mutationEntryProblems(ROOT, file, mutate, owner);
+    assert.deepEqual(
+      res.problems,
+      [],
+      `${file} 存在命中 0 个文件的条目：${res.problems.join(" | ")}`,
+    );
+    scanned += res.scanned;
+  }
+  // 面完整性自证：本判据最可能的失效形态是空转（一条都没判、恒绿），而空转时
+  // problems 同样是空数组——所以必须断言「真的判过」，且判过的条数与 conf 里的条数相等。
+  assert.equal(scanned, entries, "每条条目都必须真的被 glob 判过（scanned == 条目总数）");
+  assert.ok(scanned > 0, `扫到的 pattern 条数必须 > 0（当前 ${scanned}）`);
+});
+
+test("#836 反证：命中 0 个文件的条目判红，判词点名 conf 与 pattern", () => {
+  const root = mkdtempSync(join(tmpdir(), "f836-rot-"));
+  try {
+    mkdirSync(join(root, "packages", "dsh-x", "src"), { recursive: true });
+    writeFileSync(join(root, "packages", "dsh-x", "src", "a.ts"), "export const a = 1\n", "utf8");
+    writeFileSync(join(root, "packages", "dsh-x", "src", "b.ts"), "export const b = 1\n", "utf8");
+    // 对照组：正向面非空、排除条目真的命中且没吃光正向面（旧对照组用 `!packages/dsh-x/src/**`
+    // 把正向面全吃掉，那是 #848 判据⑥ 的形态，不再能当「零判词」的对照）
+    const declared = ["packages/dsh-x/src/**/*.ts", "!packages/dsh-x/src/b.ts"];
+    const okRes = mutationEntryProblems(root, "dsh-x-entry.json", declared, "dsh-x");
+    assert.deepEqual(okRes.problems, [], "对照组：命中的条目不得判红（判据不是凡输入皆红）");
+    assert.equal(okRes.scanned, declared.length, "scanned 是实际判过的条目数");
+
+    const rotRes = mutationEntryProblems(
+      root,
+      "dsh-x-entry.json",
+      [...declared, "!packages/dsh-x/src/types.ts"],
+      "dsh-x",
+    );
+    assert.equal(rotRes.problems.length, 1, `幽灵条目必须判红：${rotRes.problems.join(" | ")}`);
+    assert.match(rotRes.problems[0], /dsh-x-entry\.json/, "判词必须点名是哪份 conf");
+    assert.match(
+      rotRes.problems[0],
+      /!packages\/dsh-x\/src\/types\.ts/,
+      "判词必须点名是哪条 pattern",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("#836 反证：拓扑里的幽灵排除条目落进派生 conf，--check 判红且只报这一条", () => {
+  // 对照组：同样的 fixture、同样的段，excludes 全部命中 → --check 绿（证明下面那条红来自幽灵条目）
+  const okRoot = makeMutationFixture(["!packages/fixture-pkg/src/client/**"]);
+  const ghostRoot = makeMutationFixture([
+    "!packages/fixture-pkg/src/client/**",
+    "!packages/fixture-pkg/src/types.ts",
+  ]);
+  try {
+    assert.equal(runGenerator(okRoot).status, 0, "对照组的生成应成功");
+    const okCheck = runGenerator(okRoot, ["--check"]);
+    assert.equal(okCheck.status, 0, `对照组 --check 应通过：\n${okCheck.out}`);
+
+    assert.equal(runGenerator(ghostRoot).status, 0, "含幽灵条目的生成仍应成功（判据在 --check）");
+    const confPath = join(ghostRoot, "stryker.conf.d", "fixture-pkg-only.json");
+    assert.ok(
+      JSON.parse(readFileSync(confPath, "utf8")).mutate.includes(
+        "!packages/fixture-pkg/src/types.ts",
+      ),
+      "幽灵条目必须真的落进 fixture 里那份 conf（判据判的就是它）",
+    );
+    const ghostCheck = runGenerator(ghostRoot, ["--check"]);
+    assert.equal(ghostCheck.status, 1, `幽灵条目必须判红：\n${ghostCheck.out}`);
+    assert.match(ghostCheck.out, /fixture-pkg-only\.json/, "判词必须点名是哪份 conf");
+    assert.match(ghostCheck.out, /条目腐烂/, "判词必须说明是条目腐烂");
+    assert.match(
+      ghostCheck.out,
+      /!packages\/fixture-pkg\/src\/types\.ts/,
+      "判词必须点名是哪条 pattern",
+    );
+    // 磁盘一致、形状合法、--min 同步 —— 红必须是新判据自己产生的，而不是别的判据顺带报出来的
+    assert.doesNotMatch(
+      ghostCheck.out,
+      /内容与拓扑派生不一致|登记完整性|形状不合法/,
+      `除条目腐烂外不得有其它判词：\n${ghostCheck.out}`,
+    );
+  } finally {
+    rmSync(okRoot, { recursive: true, force: true });
+    rmSync(ghostRoot, { recursive: true, force: true });
+  }
+});
+
+test("#848：判据⑤锚定/越界 与 判据⑥有效面（命中口径锚在源码世界，不认构建产物）", () => {
+  const root = mkdtempSync(join(tmpdir(), "f848-anchor-"));
+  try {
+    mkdirSync(join(root, "packages", "dsh-x", "src"), { recursive: true });
+    mkdirSync(join(root, "packages", "dsh-y", "src"), { recursive: true });
+    mkdirSync(join(root, "packages", "dsh-x", "src", "client"), { recursive: true });
+    writeFileSync(join(root, "packages", "dsh-x", "src", "a.ts"), "export const a = 1\n", "utf8");
+    writeFileSync(
+      join(root, "packages", "dsh-x", "src", "client", "ui.ts"),
+      "export const b = 2\n",
+      "utf8",
+    );
+    writeFileSync(join(root, "packages", "dsh-y", "src", "a.ts"), "export const a = 1\n", "utf8");
+    const judge = (patterns, owner = "dsh-x") =>
+      mutationEntryProblems(root, "dsh-x-entry.json", patterns, owner).problems.join(" | ");
+
+    // 对照组：锚定本包、命中源码世界 → 零判词（判据不是凡输入皆红）
+    assert.equal(judge(["packages/dsh-x/src/**/*.ts", "!packages/dsh-x/src/client/**"]), "");
+    // ⑤ 锚定：跨包 pattern 描述的不是本包的源码
+    assert.match(judge(["packages/dsh-y/src/**/*.ts"]), /判据⑤ 锚定/);
+    // ⑤ 锚定：广域通配会命中他包同名文件，故不能靠「命中 ≥1」自证
+    assert.match(judge(["packages/dsh-x/src/**/*.ts", "!**/a.ts"]), /判据⑤ 锚定/);
+    // ⑤ 锚定：`..` 归一化与 brace 展开都被字面判词拦下（否则前缀看着在本包、命中在他包）
+    assert.match(judge(["!packages/dsh-x/../dsh-y/src/a.ts"]), /含 \.\. 上跳段/);
+    assert.match(judge(["packages/dsh-x/{src,../dsh-y/src}/**/*.ts"]), /含 brace 展开/);
+    assert.match(judge(["./packages/dsh-x/src/**/*.ts"]), /相对\/绝对路径/);
+    // ⑤ 存在性：命中面只落在构建产物上 = 描述另一个真实的世界
+    mkdirSync(join(root, "packages", "dsh-x", "lib"), { recursive: true });
+    writeFileSync(join(root, "packages", "dsh-x", "lib", "a.js"), "export const a = 1\n", "utf8");
+    assert.match(judge(["packages/dsh-x/lib/**"]), /条目腐烂/);
+    // owner 是锚定判据的输入，缺省即 fail-closed（不得静默退化成「任何命中都合法」）
+    assert.match(
+      mutationEntryProblems(
+        root,
+        "dsh-x-entry.json",
+        ["packages/dsh-x/src/a.ts"],
+        undefined,
+      ).problems.join(" | "),
+      /缺少 owner/,
+    );
+    // ⑥ 有效面：条数不变地把正向面整包吃掉 → 只报 ⑥
+    const wiped = mutationEntryProblems(
+      root,
+      "dsh-x-entry.json",
+      ["packages/dsh-x/src/**/*.ts", "!packages/dsh-x/src/**"],
+      "dsh-x",
+    ).problems;
+    assert.equal(wiped.length, 1, `整包被排除必须只报判据⑥：${wiped.join(" | ")}`);
+    assert.match(wiped[0], /判据⑥ 有效面为空/);
+    // ⑤ 有问题时不重复报 ⑥：条目不合法时「有效面为空」只是后果，报出来会误导定位
+    const ghost = judge(["packages/dsh-x/src/legacy/**", "!packages/dsh-x/src/legacy/**"]);
+    assert.match(ghost, /条目腐烂/);
+    assert.doesNotMatch(ghost, /判据⑥/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("#848：段级 excludes 条目形状（缺 ! / 非字符串）与空 segments 判红", () => {
+  const withSeg = (seg) => packageEntryProblems({ segments: { only: seg } });
+  // 缺 ! 的条目会被原样拼进 conf 的 mutate，语义从「排除」极性反转成「要变异这个文件」
+  assert.match(
+    withSeg({
+      mutate: ["packages/fixture-pkg/src/a.ts"],
+      excludes: ["packages/fixture-pkg/src/b.ts"],
+    }).join(" | "),
+    /缺 ! 前缀/,
+  );
+  assert.match(withSeg({ mutate: ["x"], excludes: [""] }).join(" | "), /非空字符串/);
+  assert.match(withSeg({ mutate: ["x"], excludes: [42] }).join(" | "), /非空字符串/);
+  // 对照组：合法段零判词
+  assert.deepEqual(withSeg({ mutate: ["x"], excludes: ["!packages/fixture-pkg/src/b.ts"] }), []);
+  // 空 segments 不派生任何 conf，⑤/⑥ 都看不到它 → 无变异面的包必须进 $noMutationPackages
+  assert.match(packageEntryProblems({ segments: {} }).join(" | "), /segments 为空对象/);
+});
+
+test("#848 反证：段把整包正向面排除光 → --check 判红并点名判据⑥", () => {
+  const root = makeMutationFixture(["!packages/fixture-pkg/src/a.ts"]);
+  try {
+    assert.equal(runGenerator(root).status, 0, "生成仍应成功（判据在 --check）");
+    const check = runGenerator(root, ["--check"]);
+    assert.equal(check.status, 1, `有效面为空必须判红：\n${check.out}`);
+    assert.match(check.out, /判据⑥ 有效面为空/, "判词必须点名判据⑥");
+    assert.match(check.out, /fixture-pkg-only\.json/, "判词必须点名是哪份 conf");
+    assert.doesNotMatch(
+      check.out,
+      /条目腐烂|内容与拓扑派生不一致|登记完整性/,
+      `红必须是判据⑥ 自己产生的，而不是别的判据顺带报出来的：\n${check.out}`,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -3,8 +3,7 @@
  *
  * 行为：
  * - 在「设置」面板注册独立 tab「通知中心」（settings.section 插槽：参照
- *   provider-usage「用量统计」tab；不做 plugin.item 双插槽重复展示）
- *   ——侧边栏「通知」入口/浮层/角标/拖拽全部移除；
+ *   provider-usage「用量统计」tab；不做 plugin.item 双插槽重复展示——入口只有这一个）；
  * - 通知半区保留并与 DOM 解耦：SSE /events 订阅 + 60s 看门狗 +
  *   visibilitychange 重建 + 多标签租约 + 音频手势解锁，不依赖任何插件 DOM；
  * - 历史记录最近 10 条收进卡片；卡片动作区含清理记录（两段式确认）/
@@ -21,25 +20,62 @@ import STYLE from "./style.css";
 // { id, cssText, version } 实参；STYLE_ID/CSS_VERSION 常量保留为调用实参来源，
 // disposer（getElementById(STYLE_ID)）沿用常量。
 import { ensureStyle } from "../../../../shared/client/ensure-style.js";
-// 音色单点：试听/自播与服务端合成、平台素材共用同一份 notes（src/shared/interface.ts）。
-// 此前两端各写一份，已实测出同一音色在试听与宿主上不是同一个音（#783）。
-import { FOLLOW_SYSTEM_TONE, TONES } from "../shared/interface.ts";
+// 通知帧的展示策略（纯判定）、多标签租约、音频出口：外部事实（时钟 / storage /
+// AudioContext）都从端口进来，于是「未解锁 / 被挂起 / 被拒绝」与租约三分支都能在 node 里
+// 跑出判据。音色单点仍在 src/shared/interface.ts，改由 notify/audio.ts 消费。
+import { bindTranslate, t, type Translate } from "./locale.ts";
+import { createAudioEngine, type AudioContextLike } from "./notify/audio.ts";
+import { closeNotificationsOf, trackNotification } from "./notify/registry.ts";
+import { titleFlasher } from "./notify/title.ts";
+import { claimMaster as claimMasterLease, MASTER_KEY } from "./notify/lease.ts";
+import { startNotifySession, type EventSourceLike, type NotifySession } from "./notify/session.ts";
+import {
+  displayChannelOf,
+  fallbackChannelOf,
+  frameAccepted,
+  soundPolicyOf,
+} from "./notify/policy.ts";
 import * as React from "react";
 // i18n：复用官方 dsh-client-locale——zh/en 双语字典，LocaleNamespaceMap
 // 声明合并进官方 ui-slots 类型面；仅 import type（编译期擦除，无运行时依赖）。
 import { zh, en, type NotifierLocaleKey } from "./locales.ts";
-// 投递理由的渲染收在同一处：状态行与通知记录都要用，文案来源与「认不出的 code 怎么回退」
-// 必须是同一条口径，两处各写一遍就等于把降级行为分叉。
-import { deliveryViewOf, reasonText } from "./reason-text.ts";
-import type { DeliveryView } from "./reason-text.ts";
 // 能力自检面的投影（宿主面归一化 + 浏览器面判定）收在同一处：判定与文案必须同源，
 // 两处各写一遍就等于把「未知不该被渲染成可用」这条口径分叉。
 import { clientDiagnosticsOf } from "./capabilities.ts";
 import type { ClientFacts } from "./capabilities.ts";
+// 页面内即时反馈（横幅 / 短提示）：非安全上下文下唯一的降级提醒通道。
+import { showBanner, toast } from "./notify/display.ts";
+// 设置草稿的纯逻辑与保存串行 guard：零 React 零 DOM，可被 node 直接 import——它们决定
+// 「保存什么」，因此必须是可判据的面（原先挂在公开 apply 上，实测零消费者）。
+import {
+  assignChannelFields,
+  diffSettingsPayload,
+  domainPayload,
+  rebaseSettings,
+} from "./settings/diff.ts";
+import { createSaveGuard } from "./settings/save-guard.ts";
+// 一次失败请求的结构化结论（是否围栏拒答 / 引导文案 / 展示正文）与结构化字段挂载：
+// 判定顺序是两端契约（结构化优先、状态码与文案兜底），故收在纯函数模块里由单测直接打红。
+import { apiFailureOf, markHttpFailure } from "./api-error.ts";
+// 设置卡的渲染原子层：普通函数返回 JSX，依赖（t / statusMap / patch / sendTest / 平台 / 诊断
+// 视图）一律显式传参——原子层不读卡片状态，搬家不会让闭包静默捕获到旧 state。
+import { channelsPane } from "./settings/panes/channels.tsx";
+import { eventsPane } from "./settings/panes/events.tsx";
+import { historyPane } from "./settings/panes/history.tsx";
+// 两端共享面 src/shared/interface.ts：音色白名单、通知类型表、频道 id 归一化、webhook 预设
+// （模板 / 认证白名单）与理由 code 的事实源都在这里，客户端只消费，不再各写一份副本——跨端
+// 漂移的症状是「设置页选得到、宿主拒收」与「勾了频道却收不到」。该目录的模块必须零 import
+// （或同目录相对），判据见 scripts/test/shared-leaf-imports.test.ts。
+import {
+  KIND_SEVERITY,
+  channelIdOf,
+  createDisposerStack,
+  isBuiltinKind,
+} from "../shared/interface.ts";
+import type { NotifySeverity } from "../shared/interface.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
-
 import type { LocaleNamespaceMap as _LocaleNamespaceMap } from "@deepseek-ai/dsh-client-ui-slots";
 
 declare module "@deepseek-ai/dsh-client-ui-slots" {
@@ -52,197 +88,6 @@ declare module "@deepseek-ai/dsh-client-ui-slots" {
 /** 本插件字典命名空间（宿主 locale 服务注册用）。 */
 const NS = "notifier";
 
-/**
- * 基线 diff 纯函数：返回 settings 相对 baseLine 中
- * **值不同**的键集合（增量 patch，只提交变更键——防组合层 base 被默认值
- * 回写覆盖）。深比较用 JSON.stringify（值同序同即视为未变，UI 编辑对象字段
- * 时键序稳定）。settings 中不存在于 baseLine 的新增键（diff 语义下的新增）
- * 与值不同的既有键都会被提交；baseLine 中已删除的键不提交删除（增量 merge
- * patch 无删除语义）。
- *
- * 导出为纯函数供测试直测（与 save() 共用同一实现——routes.test 整链模拟不再
- * 手写近似）。
- * @param settings 当前 UI 编辑态（effective 深拷贝起点）。
- * @param baseLine 加载基线（loadCard 时的 effective 深拷贝）。
- */
-function diffSettingsPayload(
-  settings: Record<string, any>,
-  baseLine: Record<string, any> | null,
-): Record<string, any> {
-  var payload: Record<string, any> = {};
-  if (baseLine === null) return payload;
-  for (var key in settings) {
-    if (!Object.prototype.hasOwnProperty.call(settings, key)) continue;
-    var cur = settings[key];
-    var base = baseLine[key];
-    // channels 整组提交前对实例做空串可选字段剥除——存量配置（0.2.2 保存
-    // 失败前/手改 yaml/旧版本）可能残留 token:"" 等空串形态，UI 编辑任一字段都会
-    // 触发整组提交把残留一起带走 → 400 死锁。剥除与读面 normalize（空串按未配置
-    // 剥除）同语义，纯读不改草稿，用户后续输入仍经 assignChannelFields 正常写。
-    var value = key === "channels" && Array.isArray(cur) ? cur.map(stripChannelEmpties) : cur;
-    var same = JSON.stringify(value) === JSON.stringify(base);
-    if (!same) payload[key] = value;
-  }
-  return payload;
-}
-
-/**
- * 单个频道实例的空串可选字段剥除：对实例浅拷贝后删除值为空串的
- * 可选字段。必填字段（id/type/url/baseUrl/deviceKey/enabled/auth）不在清单内——
- * 它们缺失/为空由服务端写面校验 400（语义正确：必填不允许空）。只处理 string
- * 值，number/boolean/对象字段不触碰；非对象输入原样返回（防御数组/null）。
- * 模块级纯函数（apply 挂载 + vm 直测），对齐 diffSettingsPayload 先例。
- */
-/** 空串即「未配置」的可选 string 字段清单（bark/webhook 实例合集）。
- *  必填键（id/type/url/baseUrl/deviceKey/enabled/auth）不在清单内——为空由服务端
- *  写面校验 400 拦截（必填不允许空，语义正确）；非 string 值（number/boolean/
- *  levels 对象）不触碰。 */
-const CHANNEL_OPTIONAL_STRING_KEYS: readonly string[] = [
-  "name",
-  "token",
-  "username",
-  "password",
-  "headerName",
-  "headerValue",
-  "template",
-  "sound",
-  "group",
-  "icon",
-  "url",
-];
-
-function stripChannelEmpties(ch: unknown): unknown {
-  if (typeof ch !== "object" || ch === null || Array.isArray(ch)) return ch;
-  var out = Object.assign({}, ch as Record<string, unknown>);
-  for (var i = 0; i < CHANNEL_OPTIONAL_STRING_KEYS.length; i++) {
-    var key = CHANNEL_OPTIONAL_STRING_KEYS[i];
-    if (typeof out[key] === "string" && (out[key] as string).length === 0) delete out[key];
-  }
-  return out;
-}
-
-/**
- * 409 冲突「保留我的修改并覆盖」的 rebase 纯函数：
- * 以服务端最新 effective 为基底，把本地变更键的值覆盖上去（键级 last-write-wins，
- * 与 JSON Merge Patch / Firebase per-key merge 同语义）——本地变更键集合由调用方
- * 在用户触发「覆盖」动作时实时重算（非 409 时刻快照，横幅期间的新编辑不丢）。
- * 顶层浅拷贝即可（settings 不可变更新模式，patch 不原位改对象）。
- * @param localChanges 本地相对旧基线的变更键集合（域/全量均适用）。
- * @param remoteEffective 服务端最新 effective（GET /config 拉取）。
- * @returns rebase 后的新草稿（作为 setSettings 输入）。
- */
-function rebaseSettings(
-  localChanges: Record<string, any>,
-  remoteEffective: Record<string, any>,
-): Record<string, any> {
-  return Object.assign({}, remoteEffective, localChanges);
-}
-
-/**
- * 按保存入口从全量 diff 中取子集（域保存）：
- * - entry "all"：原样返回（foot 全量保存）；
- * - entry "channels"：仅保留 channels 键（频道域保存——事件/参数半成品草稿不
- *   随频道域保存提交）；
- * - 未知入口：返回空对象（保守不提交）。
- * 模块级纯函数（apply 挂载 + vm 直测），对齐 diffSettingsPayload 先例。
- */
-function domainPayload(diff: Record<string, any>, entry: string): Record<string, any> {
-  if (entry === "all") return diff;
-  if (entry === "channels") {
-    if (!Object.prototype.hasOwnProperty.call(diff, "channels")) return {};
-    return { channels: diff.channels };
-  }
-  return {};
-}
-
-/**
- * 频道实例字段合并：part 中**空串/undefined 值从 target 删除该键**，
- * 其余浅覆盖。空串在服务端写面校验中是「非法值」而非「未配置」——token/username/
- * password/headerValue 要求非空（length > 0）、headerName 过头名正则、name 要求
- * 非空，读面 normalize 却把空串剥除（等价未配置）。若把清空输入回写成 "" 提交，
- * 实例会带着空串残留被整组 400（「填了又删空」死锁的必现根因之一）——空串
- * 删键后提交面与读面同语义（键不存在 = 未配置）。单点收敛在 chPatch（bark/webhook
- * 实例所有字段写回共用此函数）。模块级纯函数（apply 挂载 + vm 直测），
- * 对齐 diffSettingsPayload 先例。
- */
-function assignChannelFields(
-  target: Record<string, any>,
-  part: Record<string, any>,
-): Record<string, any> {
-  var out = Object.assign({}, target);
-  Object.keys(part).forEach(function (key: string) {
-    var value = part[key];
-    if (value === "" || value === undefined) delete out[key];
-    else out[key] = value;
-  });
-  return out;
-}
-
-/**
- * 保存串行 guard：同一时刻仅一个在途保存请求。
- * exhaustMap + trailing 语义——在途期间再点保存不丢弃意图：记 pending（含
- * 入口标识），由调用方在本次在途结束（end）后按同一入口补发一次（补发是完整
- * 保存，是否仍有脏由调用方 saveFor() 的 diff 空检查兜底，天然不循环）。
- *
- * 为什么 pending 记入口而非布尔：有两个保存入口——foot 全量（"all"）
- * 与频道 tab 域保存（"channels"），语义不同。在途期间被拒的入口必须原样补发：
- * 若「保存频道」被拒却补发全量，会把事件 tab 的半成品草稿一并提交。同一次在途
- * 多次点击不同入口时记最后一次意图（end 只返回一个入口，天然不风暴）。
- *
- * 模块级纯工厂（无 React 依赖），对齐 diffSettingsPayload 先例：
- * apply 挂载 + vm materialize 直测，「测试即产品实现」。
- *
- * @returns {{ tryBegin(entry: string): boolean; isBusy(): boolean; end(): string | null }}
- * - tryBegin(entry): 空闲则占用并返回 true；在途则记 pending=entry 返回 false。
- * - end(): 释放占用；返回「在途期间最后一次被拒的入口」（调用方据此同入口补发
- *   一次）；无 pending 返回 null。必须与 tryBegin 成功一一配对（放 finally），
- *   任何路径都释放，防永久卡死。
- */
-function createSaveGuard(): {
-  tryBegin(entry: string): boolean;
-  isBusy(): boolean;
-  end(): string | null;
-} {
-  var busy = false;
-  var pending: string | null = null;
-  return {
-    tryBegin(entry: string): boolean {
-      if (busy) {
-        pending = entry;
-        return false;
-      }
-      busy = true;
-      return true;
-    },
-    isBusy(): boolean {
-      return busy;
-    },
-    end(): string | null {
-      busy = false;
-      var p = pending;
-      pending = null;
-      return p;
-    },
-  };
-}
-
-/**
- * maxConnections 软钳制：空串经 numInput 归一为 undefined → 不落
- * diff（保持原值）；非空值 clamp 到 1-1024 ——服务端写面 min=1（0 会 400，清空
- * 输入即死锁的唯一顶层数值键）。非有限值（NaN 防御）同样归 undefined 不提交。
- * 模块级纯函数（apply 挂载 + vm 直测），对齐 diffSettingsPayload 先例。
- */
-function clampMaxConnections(value: number | undefined): number | undefined {
-  if (value === undefined || !Number.isFinite(value)) return undefined;
-  return Math.min(1024, Math.max(1, Math.round(value)));
-}
-
-/** i18n 翻译函数（apply 时由 ctx.locale.bind(NS) 装配；未装配回落 key 本体，行为零变化）。 */
-var t: any = function (key: string, params?: any) {
-  if (params === undefined) return key;
-  return String(key); // 未装配时占位插值忽略（正常路径早已装配）
-};
-
 const ROUTES = {
   config: "/api/dsh-notifier/config",
   events: "/api/dsh-notifier/events",
@@ -253,17 +98,7 @@ const ROUTES = {
   status: "/api/dsh-notifier/status",
   kinds: "/api/dsh-notifier/kinds",
 };
-/** 内置音色 id（与服务端 config.ts SOUND_IDS 同源复制——客户端不 import 宿主
- *  模块，两处由各自测试锁定；定稿口径 ding/bell/chime/pop）。 */
-const SOUND_IDS: readonly string[] = ["ding", "bell", "chime", "pop"];
-/** 声音设置是否处于「开」：true 与内置音色 id 都算开，false 与脏值算关。
- *  三态摘要、卡体提示、声音行开关三处共用这一条口径——各判一遍就会出现「卡片说有声、开关说没有」。 */
-function soundIsOn(value: any): boolean {
-  return value === true || (typeof value === "string" && SOUND_IDS.indexOf(value) !== -1);
-}
-/** 宿主平台（/health platform 拉取；服务端运行机器 OS——系统通道提示据此，
- *  防浏览器 OS 与宿主 OS 混淆。null = 未拉取/失败）。 */
-var hostPlatform: string | null = null;
+
 const STYLE_ID = "dsh-notifier-style";
 // 每次样式契约变更后 bump（版本号单调递增，保证 ensureStyle 判定为新版本并重注入）
 // 声音行/三态/试听样式加入时再次 bump。
@@ -276,150 +111,15 @@ const NOTIFY_ICON =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="#0f9d6e"/><path fill="#fff" d="M12 4a1 1 0 0 1 1 1v.55A5.5 5.5 0 0 1 17.5 11v2.3l1.45 1.45a1 1 0 0 1-.7 1.7H5.75a1 1 0 0 1-.7-1.7L6.5 13.3V11A5.5 5.5 0 0 1 11 5.55V5a1 1 0 0 1 1-1zm-2.5 13a2.5 2.5 0 0 0 5 0h-5z"/></svg>',
   );
 
-// i18n：label 列存字典 key（渲染期 t 求值，模块加载时 t 尚未装配）。
-const EVENT_KEYS = [
-  ["notifyAsk", "evtAsk"],
-  ["notifyQuestion", "evtQuestion"],
-  ["notifyTaskDone", "evtTaskDone"],
-  ["notifySubagentDone", "evtSubagentDone"],
-  ["notifyTaskError", "evtTaskError"],
-  ["notifyTurnEnd", "evtTurnEnd"],
-];
-/** 事件开关键 → 通知 kind（单一事实源；免打扰豁免候选/「跟随已启用」由此派生，
- *  与服务端 EVENT_KEYS 对应的事件源 kind 一致：ask/question/done/subagent-done/
- *  error/turn-end）。 */
-const EVENT_KIND_MAP: Record<string, string> = {
-  notifyAsk: "ask",
-  notifyQuestion: "question",
-  notifyTaskDone: "done",
-  notifySubagentDone: "subagent-done",
-  notifyTaskError: "error",
-  notifyTurnEnd: "turn-end",
-};
-/** kind → 字典 key（未知 kind 回落 kind 本体显示，数据不翻译）。 */
-const KIND_KEYS: Record<string, string> = {
-  ask: "kAsk",
-  question: "kQuestion",
-  done: "kDone",
-  "subagent-done": "kSubagentDone",
-  error: "kError",
-  "turn-end": "kTurnEnd",
-  test: "kTest",
-};
-
 /**
- * kind → 展示强度（severity）css 修饰符（事件行/历史行色点）。
- * 与服务端 service.ts KIND_SEVERITY 同源复制（客户端不 import 宿主端模块——
- * 干净模块边界），两处由各自测试锁定；新增 kind 时同步维护。
+ * kind → 展示强度（severity）css 修饰符（事件行/历史行色点）。事实源在 src/shared/kinds.ts
+ * （两端共享面），与宿主端定稿读同一张表。
+ *
+ * 未知 kind（外部注册）回落 info：收口前是 `KIND_SEV[kind] || "info"`，而那张表的键集
+ * 恰好等于内置 kind 全集，故「是内置 kind 就查表、否则 info」与它是同一条判据。
  */
-const KIND_SEV: Record<string, string> = {
-  ask: "warning",
-  question: "info",
-  done: "success",
-  "subagent-done": "info",
-  error: "failure",
-  "turn-end": "info",
-  test: "info",
-};
-
-/**
- * 频道实例 → 路由 id（channelId 前缀单点化）。
- * 旧实现 "bark:"+id 三处硬编码（service resolveRoutes / 宿主 outboundChannels /
- * 客户端 routeToggle），webhook 频道引入后统一为 `type:id`——本 helper 为客户端
- * 单一事实源，宿主端同名单独维护（跨端无共享模块，注释互指）。
- */
-function channelIdFor(cfg: Record<string, any>): string {
-  return String(cfg.type || "") + ":" + String(cfg.id || "");
-}
-
-/**
- * 频道对外 id：内置取 `type`，实例取 `type:id`——宿主侧有一条同名规则，两端必须逐字一致。
- * 各自维护一份而不是共享：客户端与宿主没有共享模块；一致性由路由往返判据（chips ↔ kindRoutes）锁住。
- */
-function channelIdOf(cfg: Record<string, any>): string {
-  var type = String(cfg.type || "");
-  return type === "browser" || type === "system" ? type : channelIdFor(cfg);
-}
-
-/**
- * webhook 频道预设：选择预设填充认证方式与消息模板；URL 不自动
- * 覆盖（避免丢用户已填内容——「仅空值填充」的变体：URL 只在为空时
- * 由用户填写，模板/认证随预设走且可再改）。模板渲染契约见 channel-webhook.ts：
- * 文本占位符 JSON-aware 转义、{{ts}} 数字直出、{{priority}} 频道感知映射。
- */
-const WEBHOOK_PRESETS: Record<string, { auth: string; template: string }> = {
-  ntfy: {
-    auth: "bearer",
-    template:
-      '{\n  "topic": "<topic>",\n  "title": "{{title}}",\n  "message": "{{message}}",\n  "tags": ["{{kind}}"],\n  "priority": "{{priority}}"\n}',
-  },
-  gotify: {
-    auth: "bearer",
-    template:
-      '{\n  "title": "{{title}}",\n  "message": "{{message}}",\n  "priority": "{{priority}}"\n}',
-  },
-  custom: {
-    auth: "header",
-    template:
-      '{\n  "event": "{{kind}}",\n  "title": "{{title}}",\n  "body": "{{message}}",\n  "severity": "{{severity}}",\n  "ts": {{ts}}\n}',
-  },
-};
-
-/**
- * 频道类型图标（设计上刻意保留；内联 SVG 零外部资源）。
- * browser=地球 / system=显示器 / webhook=闪电 / 其余（bark）=铃铛。
- */
-function iconEl(channelType: string) {
-  var paths: any[];
-  if (channelType === "browser") {
-    paths = [
-      <circle cx={12} cy={12} r={9} key="c" />,
-      <path
-        d="M3 12h18M12 3c2.5 2.6 4 5.7 4 9s-1.5 6.4-4 9c-2.5-2.6-4-5.7-4-9s1.5-6.4 4-9z"
-        key="p"
-      />,
-    ];
-  } else if (channelType === "system") {
-    paths = [
-      <rect x={3} y={4} width={18} height={12} rx={2} key="r" />,
-      <path d="M8 20h8M12 16v4" key="p" />,
-    ];
-  } else if (channelType === "webhook") {
-    paths = [<path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13l0-8z" key="p" strokeLinejoin="round" />];
-  } else {
-    paths = [
-      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" key="a" />,
-      <path d="M13.7 21a2 2 0 0 1-3.4 0" key="b" />,
-    ];
-  }
-  return (
-    <span className="dn-ch-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-        {paths}
-      </svg>
-    </span>
-  );
-}
-
-/** 页面内短提示（操作反馈）。 */
-function toast(message: any) {
-  var el = document.createElement("div");
-  el.className = "dn-toast";
-  el.textContent = message;
-  document.body.appendChild(el);
-  setTimeout(function () {
-    el.remove();
-  }, 3000);
-}
-
-/**
- * 403（loopback 围栏拒绝）时的可操作引导文案，供各处 catch 复用。
- * 非 403 错误返回空串，避免给普通失败粘贴无关提示。
- */
-function accessHint(error: any) {
-  var text = String((error && error.message) || "");
-  if (text.indexOf("403") === -1) return "";
-  return t("lanAccessHint");
+function severityOf(kind: string): NotifySeverity {
+  return isBuiltinKind(kind) ? KIND_SEVERITY[kind] : "info";
 }
 
 /**
@@ -443,37 +143,26 @@ function requestPermission(onDone: any) {
 
 // ------------------------------------------------------------ 通知显示（半区）
 
-var notified: any = [];
-
-// 多标签主从租约（仅「同 URL 的同浏览器多标签」有效；跨 host/IP、跨浏览器
-// 的 storage 域互不相交，去重自然失效）：收到通知帧的标签先 checkMaster：
-// 有效租约且属于自己 → 续租并展示；属于他人 → 静默；无主/已过期 → 抢占。
+/** 本页已弹出的系统通知（保留最近 5 条，超出即关最旧的）。 */
+/** 本标签页的租约身份：跨 apply 复用——重新挂载仍是同一个标签，不该被当成「另一个标签」
+ *  而在 15 秒内静默（见 notify/lease.ts 的模块头）。 */
 const TAB_ID = Math.random().toString(36).slice(2);
-const MASTER_KEY = "dsh-notifier:master";
-const MASTER_LEASE_MS = 15000;
-function claimMaster() {
-  try {
-    var raw = localStorage.getItem(MASTER_KEY);
-    var lease = raw ? JSON.parse(raw) : null;
-    var now = Date.now();
-    if (
-      lease &&
-      typeof lease.id === "string" &&
-      typeof lease.ts === "number" &&
-      now - lease.ts < MASTER_LEASE_MS
-    ) {
-      if (lease.id === TAB_ID) {
-        lease.ts = now;
-        localStorage.setItem(MASTER_KEY, JSON.stringify(lease));
-        return true;
-      }
-      return false;
-    }
-    localStorage.setItem(MASTER_KEY, JSON.stringify({ id: TAB_ID, ts: now }));
-    return true;
-  } catch {
-    return true;
-  }
+
+/**
+ * 跨实例共享的音频出口：AudioContext 与播放节流窗口必须全页一份，否则重复挂载会让同一帧
+ * 响两次或该响的不响。用 const 单例承载闭包状态，而不是模块级 let。
+ */
+const audioEngine = createAudioEngine({ ctor: audioContextCtorOf, now: () => Date.now() });
+
+/** 本页的主标签租约（storage 与时钟走端口，判定在 notify/lease.ts）。 */
+function claimMaster(): boolean {
+  return claimMasterLease(TAB_ID, {
+    now: () => Date.now(),
+    read: () => localStorage.getItem(MASTER_KEY),
+    write: (value) => {
+      localStorage.setItem(MASTER_KEY, value);
+    },
+  });
 }
 
 /** 页面是否处于安全上下文（HTTPS 或 localhost）——系统级 Notification 的前提。 */
@@ -488,101 +177,11 @@ function systemNotificationUsable() {
   return Notification.permission === "granted";
 }
 
-var audioCtx: any = null;
-/** 前缀化的老 Safari 构造名不在标准 DOM 类型里；取用点收在这里，能力自检与解锁共用同一判据。 */
-type AudioContextCtor = new () => AudioContext;
-
-function audioContextCtor(): AudioContextCtor | undefined {
-  var legacy = (window as unknown as { webkitAudioContext?: AudioContextCtor }).webkitAudioContext;
-  return window.AudioContext || legacy;
-}
-
-/** 解锁音频（必须在用户手势内调用）：后台播放提示音需要已解锁的 AudioContext。 */
-function unlockAudio() {
-  try {
-    if (audioCtx === null) {
-      var AC = audioContextCtor();
-      if (!AC) return;
-      audioCtx = new AC();
-    }
-    // 两个事实（是否跑到过 running / resume 是否被拒绝）记在上下文实例上（__dshRan /
-    // __dshResumeRejected）：它们的生命周期与那个上下文严格相同——构造之前必然「从没跑过」——
-    // 而给它们单开模块级变量会让页面多一份跨挂载共享的可变状态。
-    var ctx = audioCtx;
-    if (ctx.state === "suspended") {
-      var resumed = ctx.resume();
-      // resume() 的结果只在异步回调里可见：记下它，能力自检面才说得出「没解锁」与
-      // 「被浏览器挂起」的区别（两者的下一步动作不同）。
-      if (resumed && typeof resumed.then === "function") {
-        resumed.then(
-          function () {
-            ctx.__dshRan = true;
-          },
-          function () {
-            ctx.__dshResumeRejected = true;
-          },
-        );
-      }
-    }
-    if (ctx.state === "running") ctx.__dshRan = true;
-    var buffer = ctx.createBuffer(1, 1, 22050);
-    var source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-    source.start(0);
-  } catch {
-    // 音频不可用不阻塞通知
-  }
-}
-
-var lastChimeAt = 0;
-/** 统一播放节流（1.5s）：覆盖全部自播路径（通知音 + 只响不弹）；试听走
- *  playPreview 不经本门——用户手势直接试听不受节流限制。防通知风暴叠播。 */
-function playGate(): boolean {
-  var now = Date.now();
-  if (now - lastChimeAt < 1500) return false;
-  lastChimeAt = now;
-  return true;
-}
-
-/** 按音色合成短旋律（Web Audio）。音色事实（音符、频率、波形）只有一份，收在
- *  src/shared/interface.ts；未知音色与「跟随系统」都落到 FOLLOW_SYSTEM_TONE。
- *  试听与通知自播共用同一实现。 */
-function playTone(tone: string | undefined) {
-  if (audioCtx === null || audioCtx.state !== "running") return;
-  try {
-    var t = audioCtx.currentTime;
-    var spec =
-      tone !== undefined && Object.hasOwn(TONES, tone) ? TONES[tone] : TONES[FOLLOW_SYSTEM_TONE];
-    var notes = spec.notes;
-    for (var i = 0; i < notes.length; i += 1) {
-      var n = notes[i];
-      var osc = audioCtx.createOscillator();
-      var gain = audioCtx.createGain();
-      osc.type = n.type || "sine";
-      osc.frequency.value = n.freq;
-      gain.gain.setValueAtTime(0.0001, t + n.at);
-      gain.gain.exponentialRampToValueAtTime(0.18, t + n.at + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + n.at + n.dur);
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
-      osc.start(t + n.at);
-      osc.stop(t + n.at + n.dur + 0.02);
-    }
-  } catch {
-    // 播放失败忽略
-  }
-}
-
-/** 试听（用户手势内）：显式解锁 + 强制播放（绕过统一节流）。 */
-function playPreview(tone: string | undefined) {
-  unlockAudio();
-  if (audioCtx === null || audioCtx.state !== "running") return;
-  try {
-    playTone(tone);
-  } catch {
-    // 忽略
-  }
+/** 平台 AudioContext 构造器：前缀化的老 Safari 名字不在标准 DOM 类型里，取用点收在这里，
+ *  能力自检与解锁共用同一判据。 */
+function audioContextCtorOf(): (new () => AudioContextLike) | undefined {
+  const legacy = (window as unknown as { webkitAudioContext?: unknown }).webkitAudioContext;
+  return (window.AudioContext ?? legacy) as (new () => AudioContextLike) | undefined;
 }
 
 /**
@@ -590,272 +189,134 @@ function playPreview(tone: string | undefined) {
  * 这里只负责把浏览器里的现状读出来，读法本身没有可断言的分支。
  */
 function clientFacts(): ClientFacts {
-  var hasApi = "Notification" in window;
+  const hasApi = "Notification" in window;
   return {
     notificationApi: hasApi,
     secureContext: isSecureContext(),
     // 权限值只作数据带过去（值域外的取值由判定侧按「无法判定」处理）
     permission: hasApi ? String(Notification.permission) : "unknown",
-    audio: {
-      supported: audioContextCtor() !== undefined,
-      state: audioCtx === null ? null : audioCtx.state,
-      hasEverRun: audioCtx !== null && audioCtx.__dshRan === true,
-      resumeRejected: audioCtx !== null && audioCtx.__dshResumeRejected === true,
-    },
+    audio: audioEngine.facts(),
   };
 }
 
-var savedTitle: any = null;
-function flashTitle(title: any) {
-  if (savedTitle === null) savedTitle = document.title;
-  document.title = "🔔 " + String(title).slice(0, 40);
-}
-function restoreTitle() {
-  if (savedTitle !== null) {
-    document.title = savedTitle;
-    savedTitle = null;
-  }
-}
-
-function el(tag: any, attrs: any, children: any = undefined) {
-  var node = document.createElement(tag);
-  if (attrs) {
-    for (var key in attrs) {
-      var value = attrs[key];
-      if (key === "class") node.className = value;
-      else if (key === "text") node.textContent = value;
-      else if (key === "dataset") Object.assign(node.dataset, value);
-      else if (key === "onClick") node.addEventListener("click", value);
-      else if (key === "style") node.style.cssText = value;
-      else if (key in node && key !== "list") node[key] = value;
-      else node.setAttribute(key, value);
-    }
-  }
-  if (children) {
-    for (var i = 0; i < children.length; i += 1) node.appendChild(children[i]);
-  }
-  return node;
-}
-
-/** 页面内横幅（非安全上下文降级通道；点击聚焦，8 秒自动消失，最多叠 3 条）。
- *  kind 可含任意字符（动态 kind 注册），旧实现把 kind 拼进 CSS 属性选择器，
- *  异常字符（引号/反斜杠）会让 querySelector 抛错 → 整帧静默丢弃。
- *  改遍历比对 dataset.kind（去重 + 计数同语义，不构造选择器）。 */
-function showBanner(kind: any, title: any, message: any) {
-  var banners = Array.prototype.slice.call(document.querySelectorAll(".dn-banner"));
-  for (var i = banners.length - 1; i >= 0; i -= 1) {
-    if (banners[i].dataset && banners[i].dataset.kind === String(kind)) {
-      banners.splice(i, 1)[0].remove();
-    }
-  }
-  while (banners.length >= 3) banners[0].remove();
-  var banner = el("div", {
-    class: "dn-banner",
-    dataset: { kind: kind },
-    onClick: function () {
-      window.focus();
-      banner.remove();
-    },
-  });
-  var head = el("div", { style: "display:flex;align-items:center;gap:6px" });
-  head.appendChild(el("span", { text: "🔔" }));
-  head.appendChild(el("span", { text: title, style: "font-weight:600" }));
-  banner.appendChild(head);
-  banner.appendChild(
-    el("div", {
-      text: message,
-      style: "margin-top:4px;font-size:12px;line-height:1.5;white-space:pre-line",
-    }),
-  );
-  document.body.appendChild(banner);
-  setTimeout(function () {
-    banner.remove();
-  }, 8000);
-}
-
 /**
- * 通知展示总入口（声音策略为帧级权威）：
- * @param opts.sound 服务端解析的声音策略 {mode, tone}——
- *   silent（静音）/ system（跟随系统默认，交给 OS）/ selfplay（页内自播，系统弹窗 silent 防双响）；
- *   缺省（0.2.3 服务端发的帧没有 sound 字段）按 system 处理。
- * @param opts.playOnly 只响不弹：不弹实体、仅按需自播（服务端弹窗关 + 声音开）。
+ * 通知展示总入口。
+ *
+ * 判定（走哪条通道、什么声音策略）在 notify/policy.ts 的纯函数里；这里只做三件事：过主标签
+ * 租约、执行判定给出的通道、按策略自播。顺序是刻意的——租约在构造 Notification 之前，副标签
+ * 连横幅都不弹；Notification 构造抛错则降级到页面内提醒（同一条降级判定重算一次）。
+ *
+ * @param opts.sound 服务端帧级声音策略；缺省（0.2.3 的帧没有这个字段）按「跟随系统默认」。
+ * @param opts.playOnly 只响不弹：不弹实体、仅按需自播。
+ * @param owner 页面级单例（已弹通知 / 标题闪烁 / <style>）的归属令牌：热更或重复 apply 时，
+ *   后装实例的清理不许动先前实例登记的资源。
  */
 function showNotification(
-  kind: any,
-  title: any,
-  message: any,
-  opts: { sound?: any; playOnly?: boolean },
+  kind: string,
+  title: string,
+  message: string,
+  opts: { sound?: unknown; playOnly?: boolean },
+  owner: object,
 ) {
-  var frame = opts.sound;
-  if (!frame || typeof frame !== "object") {
-    // 0.2.3 的帧没有 sound 字段：按「跟随系统默认」处理。旧全局声音键随 0.2.4 的配置割接删除，
-    // 这里没有可回查的开关了。
-    frame = { mode: "system", tone: undefined };
-  }
-  var selfPlay = frame.mode === "selfplay";
-  var silent = frame.mode === "silent" || selfPlay;
-  var tone = typeof frame.tone === "string" ? frame.tone : undefined;
-  // 只响不弹 + mode:"system"（旧服务端/升级窗口残留帧）：无弹窗实体 = OS 不会
-  // 发声，归一为自播默认旋律（服务端已改为下发 selfplay，
-  // 此处兜底旧帧防「0 弹 0 播纯静默」）
-  if (opts.playOnly === true && frame.mode === "system") {
-    selfPlay = true;
-    silent = true;
-  }
+  const playOnly = opts.playOnly === true;
+  const policy = soundPolicyOf(opts.sound, playOnly);
   // 多标签去重：弹实体与只响不弹自播一律先过主标签租约，副标签静默
   if (!claimMaster()) return;
-  if (!opts.playOnly && systemNotificationUsable()) {
+  const notificationUsable = systemNotificationUsable();
+  if (
+    displayChannelOf({
+      playOnly,
+      notificationUsable,
+      visibility: document.visibilityState,
+    }) === "notification"
+  ) {
     try {
-      var notification = new Notification(title, {
+      const notification = new Notification(title, {
         body: message,
         tag:
           "dsh-notifier-" + kind + "-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
         icon: NOTIFY_ICON,
-        silent: silent,
+        silent: policy.silent,
       });
-      notification.onclick = function () {
+      notification.onclick = () => {
+        // 本行的判据是已登记的缺口而不是遗漏：happy-dom 的 BrowserWindow.focus() 是 TODO
+        // 空实现（不派发事件、无任何可观测副作用），而本仓测试纪律禁用 vi.spyOn，故「点击
+        // 通知会把窗口拉到前台」在当前夹具下写不出可打红的判据。变可测的条件是把这里抽成
+        // 接收 window 端口的纯函数，由假件记录调用。
         window.focus();
         notification.close();
       };
-      notified.push(notification);
-      if (notified.length > 5) notified.shift().close();
-      // SoundId 自播（selfplay 模式）：Notification 已 silent 防双响，页内补播
-      if (selfPlay && playGate()) playTone(tone);
+      trackNotification(notification, owner);
+      // selfplay 模式：Notification 已 silent 防双响，页内补播
+      if (policy.selfPlay && audioEngine.gate()) audioEngine.playTone(policy.tone);
       return;
     } catch (error) {
       console.warn("[dsh-notifier] 浏览器通知失败，降级为页面内提醒：", error);
     }
   }
-  // 降级通道 / 只响不弹：banner 或标题闪烁；声音按帧策略
-  if (!opts.playOnly) {
-    if (document.visibilityState !== "hidden") {
-      showBanner(kind, title, message);
-    } else {
-      flashTitle(title);
-    }
-  }
-  if (selfPlay && playGate()) playTone(tone);
+  // 降级通道 / 只响不弹：横幅或标题闪烁；声音按帧策略
+  const fallback = fallbackChannelOf(playOnly, document.visibilityState);
+  if (fallback === "banner") showBanner(kind, title, message);
+  else if (fallback === "title") titleFlasher.flash(title, owner);
+  if (policy.selfPlay && audioEngine.gate()) audioEngine.playTone(policy.tone);
 }
 
-function handleNotifyFrame(payload: any) {
-  // 测试通知：无条件提醒（验证链路是它的目的，与可见性/权限之外的开关无关）。
-  if (payload.kind === "test") {
-    showNotification(payload.kind, payload.title, payload.message, {
-      sound: payload.sound,
-      playOnly: payload.playOnly === true,
-    });
+function handleNotifyFrame(payload: any, owner: object) {
+  // 测试通知无条件提醒；其余帧在页面可见时不打扰，除非帧自带 whenVisible——判定见 notify/policy.ts
+  if (
+    !frameAccepted({
+      kind: payload.kind,
+      whenVisible: payload.whenVisible,
+      playOnly: payload.playOnly,
+      visibility: document.visibilityState,
+    })
+  ) {
     return;
   }
-  // 页面聚焦时不提醒（用户在界面中）；除非这一帧说「可见时也弹」——判定归宿主出口，帧自带结论，
-  // 页面不必回查配置（0.2.3 的帧没有这个字段，按「可见时不弹」处理）。
-  if (document.visibilityState !== "hidden" && payload.whenVisible !== true) {
-    // 只响不弹（playOnly）不依赖可见性——它不打扰界面，纯声音提醒
-    if (payload.playOnly !== true) return;
-  }
-  showNotification(payload.kind, payload.title, payload.message, {
-    sound: payload.sound,
-    playOnly: payload.playOnly === true,
-  });
+  showNotification(
+    payload.kind,
+    payload.title,
+    payload.message,
+    {
+      sound: payload.sound,
+      playOnly: payload.playOnly === true,
+    },
+    owner,
+  );
 }
 
 // ------------------------------------------------------------ SSE 半区
 
-// 当前 SSE 句柄（visibilitychange 回前台重建时引用；卸载时置 null）
-var eventsHandle: { close: () => void; reconnect: () => void } | null = null;
-
-/** SSE 半开连接看门狗：60s 无任何帧（notify 或心跳 ping）→ 主动重建。 */
-const WATCHDOG_MS = 60000;
-function startEvents() {
-  var source: any = null;
-  var lastActivity = 0;
-  var lastSeq = 0;
-  var watchdog: any = null;
-  var lastReconnectAt = 0;
-
-  function armWatchdog() {
-    if (watchdog !== null) clearTimeout(watchdog);
-    watchdog = setTimeout(function () {
-      if (Date.now() - lastActivity > WATCHDOG_MS) {
-        forceReconnect();
-      } else {
-        armWatchdog();
-      }
-    }, WATCHDOG_MS + 5000);
-  }
-
-  function forceReconnect() {
-    var now = Date.now();
-    if (now - lastReconnectAt < 5000) return;
-    lastReconnectAt = now;
-    closeSource();
-    connect();
-  }
-
-  function closeSource() {
-    if (source !== null) {
-      try {
-        source.close();
-      } catch (error) {
-        console.warn("[dsh-notifier] 关闭旧 SSE 连接失败：", error);
-      }
-      source = null;
-    }
-  }
-
-  function connect() {
-    closeSource();
-    try {
-      // 重连带 since：服务端先回放缓冲中 seq 更大的帧（断线补拉，不丢事件）
-      var url = ROUTES.events + (lastSeq > 0 ? "?since=" + lastSeq : "");
-      source = new EventSource(url);
-      lastActivity = Date.now();
-      source.onmessage = function (event: any) {
-        try {
-          var data = JSON.parse(event.data);
-          lastActivity = Date.now();
-          if (data.type === "ping") return;
-          if (data.type === "notify") {
-            if (typeof data.seq === "number") {
-              if (lastSeq > 0 && data.seq <= lastSeq) return;
-              lastSeq = data.seq;
-            }
-            handleNotifyFrame(data);
-          }
-        } catch (error) {
-          console.warn("[dsh-notifier] 帧解析失败：", error);
-        }
-      };
-      source.onerror = function () {
-        // 主动重建（带 since 补拉）：EventSource 自动重连不带 query，无法回放
-        forceReconnect();
-      };
-      armWatchdog();
-    } catch (error) {
-      console.warn("[dsh-notifier] EventSource 不可用：", error);
-    }
-  }
-
-  connect();
-  var handle = {
-    close: function () {
-      if (watchdog !== null) clearTimeout(watchdog);
-      closeSource();
-    },
-    reconnect: forceReconnect,
-  };
-  eventsHandle = handle;
-  return handle;
-}
+/**
+ * 当前会话句柄。用一个 const 容器而不是模块级 let：容器本身不变，变的是它指向的会话——
+ * 也让「谁该把它清空」这件事有身份可比（disposer 只在仍指向自己的会话时才清）。
+ */
+const eventsHandle: { current: NotifySession | null } = { current: null };
 
 // ------------------------------------------------------------ 设置卡片
+
+/**
+ * 非 2xx 一律抛错，并把结构化字段挂到 Error 上（判定侧读它，见 api-error.ts）。
+ *
+ * 读路径此前完全不看 `r.ok`：403 的围栏体（`{error, code, status}`）被当数据用——历史读成空数组、
+ * 诊断面把拒答体当自检载荷。`body` 传的是已解析的响应体，围栏体的 code/status 才挂得上。
+ * 抛错不是给用户看的（各调用点的 catch 决定降级），是为了让「非 2xx」不再伪装成一份空数据。
+ */
+function assertOk(r: any, body: any): void {
+  if (!r.ok) throw markHttpFailure(new Error("HTTP " + r.status), r.status, body);
+}
 
 /** 加载 GET /config 包装体 → 结构化 {user, revision, effective, writable}。 */
 function fetchConfig(): Promise<any> {
   return fetch(ROUTES.config, { headers: { accept: "application/json" } }).then(function (r: any) {
     return r.json().then(function (body: any) {
       if (!r.ok) {
-        var err = (body && body.error) || {};
-        throw new Error(err.details || err.error || "HTTP " + r.status);
+        const err = (body && body.error) || {};
+        throw markHttpFailure(
+          new Error(err.details || err.error || "HTTP " + r.status),
+          r.status,
+          body,
+        );
       }
       return body;
     });
@@ -864,36 +325,39 @@ function fetchConfig(): Promise<any> {
 
 /** 拉取最近历史记录（最近 10 条，倒序）。 */
 function fetchHistory(): Promise<any[]> {
-  return fetch(ROUTES.history, { headers: { accept: "application/json" } })
-    .then(function (r: any) {
-      return r.json();
-    })
-    .then(function (data: any) {
-      var records = (data && data.records) || [];
+  return fetch(ROUTES.history, { headers: { accept: "application/json" } }).then(function (r: any) {
+    return r.json().then(function (body: any) {
+      assertOk(r, body);
+      const records = (body && body.records) || [];
       return records.slice(-10).reverse();
     });
+  });
 }
 
 /** 拉取频道投递状态（per-channel 最近投递终态）。
  *  失败向上抛（调用方决定保留旧态而非清空状态行）。 */
 function fetchStatus(): Promise<any> {
-  return fetch(ROUTES.status, { headers: { accept: "application/json" } })
-    .then(function (r: any) {
-      return r.json();
-    })
-    .then(function (data: any) {
-      return (data && data.channels) || {};
+  return fetch(ROUTES.status, { headers: { accept: "application/json" } }).then(function (r: any) {
+    return r.json().then(function (body: any) {
+      assertOk(r, body);
+      return (body && body.channels) || {};
     });
+  });
 }
 
-/** 拉取动态 kind 清单（注册表 + 确认态）。 */
+/**
+ * 拉取动态 kind 清单（注册表 + 确认态）。
+ *
+ * 失败一律回落空清单（调用点的既有降级：清单区显示「暂无」），故这里自己吞掉 `assertOk` 抛出的
+ * 错误——判据仍在（非 2xx 的 body 不再被当清单读），只是不给用户报错。
+ */
 function fetchKinds(): Promise<any[]> {
   return fetch(ROUTES.kinds, { headers: { accept: "application/json" } })
     .then(function (r: any) {
-      return r.json();
-    })
-    .then(function (data: any) {
-      return (data && data.kinds) || [];
+      return r.json().then(function (body: any) {
+        assertOk(r, body);
+        return (body && body.kinds) || [];
+      });
     })
     .catch(function () {
       return [];
@@ -904,19 +368,37 @@ function fetchKinds(): Promise<any[]> {
  * 拉取宿主能力自检（GET /diagnostics）。15s 超时兜底：服务端首次探测要起子进程，可能慢；
  * 超时与失败一律静默降级成「读不到」，由调用方把那块整体不渲染——诊断面缺席不该让设置页报错。
  */
+/** 宿主平台（/health platform）：服务端运行机器的 OS——系统通道弹在宿主机器上，浏览器 OS
+ *  与宿主 OS 可异机，所以不能拿 navigator.platform 猜。失败/未知一律 null，由渲染侧回落通用文案。 */
+function fetchHealth(): Promise<string | null> {
+  return fetch(ROUTES.health, { headers: { accept: "application/json" } })
+    .then(function (r: any) {
+      return r.json().then(function (body: any) {
+        assertOk(r, body);
+        return typeof body.platform === "string" ? (body.platform as string) : null;
+      });
+    })
+    .catch(function () {
+      return null;
+    });
+}
+
 function fetchDiagnostics(): Promise<unknown> {
-  var ctrl: AbortController | null =
+  const ctrl: AbortController | null =
     typeof AbortController !== "undefined" ? new AbortController() : null;
-  var timer: ReturnType<typeof setTimeout> | null = ctrl
+  const timer: ReturnType<typeof setTimeout> | null = ctrl
     ? setTimeout(function () {
         ctrl!.abort();
       }, 15000)
     : null;
-  var init: RequestInit = { headers: { accept: "application/json" } };
+  const init: RequestInit = { headers: { accept: "application/json" } };
   if (ctrl) init.signal = ctrl.signal;
   return fetch(ROUTES.diagnostics, init)
     .then(function (r) {
-      return r.json() as Promise<unknown>;
+      return r.json().then(function (body: unknown) {
+        assertOk(r, body);
+        return body;
+      });
     })
     .finally(function () {
       if (timer !== null) clearTimeout(timer);
@@ -932,8 +414,12 @@ function postKind(kind: string, confirmed: boolean): Promise<any> {
   }).then(function (r: any) {
     return r.json().then(function (body: any) {
       if (!r.ok)
-        throw new Error(
-          (body && body.error && (body.error.details || body.error.error)) || "HTTP " + r.status,
+        throw markHttpFailure(
+          new Error(
+            (body && body.error && (body.error.details || body.error.error)) || "HTTP " + r.status,
+          ),
+          r.status,
+          body,
         );
       return body;
     });
@@ -949,9 +435,14 @@ function sendTestReq(channelId?: string): Promise<any> {
   }).then(function (r: any) {
     return r.json().then(function (body: any) {
       if (!r.ok) {
-        var err = (body && body.error) || {};
-        // 围栏拒绝体的 error 是裸字符串；403 的 https 引导靠文案里的状态码识别，兜底不能去掉。
-        throw new Error(err.details || err.error || "HTTP " + r.status);
+        const err = (body && body.error) || {};
+        // 围栏拒绝体的 error 是裸字符串；403 的 https 引导改由结构化 code/status 判定，
+        // 文案里的状态码只作旧宿主的兜底（见 api-error.ts），故两者都挂上。
+        throw markHttpFailure(
+          new Error(err.details || err.error || "HTTP " + r.status),
+          r.status,
+          body,
+        );
       }
       return body;
     });
@@ -966,86 +457,111 @@ function sendTestReq(channelId?: string): Promise<any> {
  * 三端降级文案。保存走 PUT {patch, expectedRevision}（乐观并发，冲突提示刷新）。
  */
 function SettingsCard() {
-  var ReactHooks = React;
-  var useState = ReactHooks.useState;
-  var useEffect = ReactHooks.useEffect;
-  var draft = useState(null);
-  var settings = draft[0];
-  var setSettings = draft[1];
-  var meta = useState(null); // { user, revision, effective, writable }
-  var metaValue = meta[0];
-  var setMeta = meta[1];
+  const ReactHooks = React;
+  const useState = ReactHooks.useState;
+  const useEffect = ReactHooks.useEffect;
+  // 设置草稿：形状是服务端 settings 对象，客户端只读其中几个键（真正的形状声明在宿主侧）。
+  // 声明成 Record 而不是让 useState(null) 推成 null：否则每次读键都要靠调用方把值当 any 传进来。
+  const draft = useState(null as Record<string, any> | null);
+  const settings = draft[0];
+  const setSettings = draft[1];
+  // 声明形状而不是让 useState(null) 推成 null：读侧只取 writable，但写成 never 的话
+  // 任何一次读取都要靠调用方把值当 any 传进来才编得过（就是本行原先的形态）。
+  const meta = useState(
+    null as { user: any; revision: any; effective: any; writable: boolean } | null,
+  );
+  const metaValue = meta[0];
+  const setMeta = meta[1];
   // 保存反馈（i18n 重构：msg + err 结构化状态，不能用文案内容判断错误态）
-  var savedDraft = useState(null);
-  var saved = savedDraft[0];
-  var setSaved = function (msg: string, err?: boolean) {
+  const savedDraft = useState(null as { msg: string; err: boolean } | null);
+  const saved = savedDraft[0];
+  const setSaved = function (msg: string, err?: boolean) {
     savedDraft[1](msg ? { msg: msg, err: err === true } : null);
   };
-  var historyDraft = useState(null);
-  var history = historyDraft[0];
-  var setHistory = historyDraft[1];
-  var clearArmed = useState(false);
-  var clearArmedValue = clearArmed[0];
-  var setClearArmed = clearArmed[1];
+  const historyDraft = useState(null as any[] | null);
+  const history = historyDraft[0];
+  const setHistory = historyDraft[1];
+  const clearArmed = useState(false);
+  const clearArmedValue = clearArmed[0];
+  const setClearArmed = clearArmed[1];
   // 频道投递状态（/status channels map，键=bark:<id>）/ 动态 kind 清单（/kinds）
-  var statusDraft = useState({} as Record<string, any>);
-  var statusMap = statusDraft[0];
-  var setStatusMap = statusDraft[1];
-  var kindsDraft = useState([] as any[]);
-  var kindsList = kindsDraft[0];
-  var setKindsList = kindsDraft[1];
+  const statusDraft = useState({} as Record<string, any>);
+  const statusMap = statusDraft[0];
+  const setStatusMap = statusDraft[1];
+  const kindsDraft = useState([] as any[]);
+  const kindsList = kindsDraft[0];
+  const setKindsList = kindsDraft[1];
   // 宿主能力自检载荷（/diagnostics 原样收下；归一化与文案在 capabilities.ts）。
   // null = 还没拉到或拉取失败 → 诊断块整体不渲染（旧服务端没有这条路由也走这条路径）。
-  var diagnosticsDraft = useState(null as unknown);
-  var diagnostics = diagnosticsDraft[0];
-  var setDiagnostics = diagnosticsDraft[1];
+  const diagnosticsDraft = useState(null as unknown);
+  const diagnostics = diagnosticsDraft[0];
+  const setDiagnostics = diagnosticsDraft[1];
+  // 宿主平台进 state 而不是模块变量：它是要渲染的数据。原先写成模块变量让抓取回调无法触发
+  // 重渲染——/health 晚于最后一次 setState 返回时，系统卡会一直显示通用文案直到用户再交互。
+  const hostPlatformDraft = useState(null as string | null);
+  const hostPlatform = hostPlatformDraft[0];
+  const setHostPlatform = hostPlatformDraft[1];
   // 频道删除两段确认（实例 id）。路由编辑展开行（openRoute）随 chips
   // 直点形态移除——chips 无展开层，routeToggle 直接落草稿。
-  var delArmedDraft = useState(null as string | null);
-  var delArmedId = delArmedDraft[0];
-  var setDelArmedId = delArmedDraft[1];
+  const delArmedDraft = useState(null as string | null);
+  const delArmedId = delArmedDraft[0];
+  const setDelArmedId = delArmedDraft[1];
   // levels：每个频道「待添加映射」草稿（kind + level；按频道 id 键控）
-  var levelsNewDraft = useState({} as Record<string, { kind: string; level: string }>);
-  var levelsNew = levelsNewDraft[0];
-  var setLevelsNew = levelsNewDraft[1];
+  const levelsNewDraft = useState({} as Record<string, { kind: string; level: string }>);
+  const levelsNew = levelsNewDraft[0];
+  const setLevelsNew = levelsNewDraft[1];
   // 卡内三 tab（通知事件 / 通知频道 / 通知记录——历史独立成 tab）。
   // 切 tab 仅条件拼接 children——全部表单/瞬态 state 都在本组件顶层，切换零丢失。
-  var activeTabDraft = useState("events" as "events" | "channels" | "history");
-  var activeTab = activeTabDraft[0];
-  var setActiveTab = activeTabDraft[1];
+  const activeTabDraft = useState("events" as "events" | "channels" | "history");
+  const activeTab = activeTabDraft[0];
+  const setActiveTab = activeTabDraft[1];
   // 浏览器通知权限状态行在频道卡内——Notification.permission 非 React state，
   // 请求权限完成后 bump 一次触发重渲染刷新状态行文案/隐藏按钮。
-  var permTickDraft = useState(0);
-  var permTick = permTickDraft[0];
-  var setPermTick = permTickDraft[1];
+  const permTickDraft = useState(0);
+  const permTick = permTickDraft[0];
+  const setPermTick = permTickDraft[1];
   // webhook 凭据字段显隐态（键 = <channelId>:<field>；纯瞬态，不入配置、
   // 不影响基线 diff——掩码值本身不回显，显隐只影响「正在输入的新值」可见性）。
-  var revealDraft = useState({} as Record<string, boolean>);
-  var revealMap = revealDraft[0];
-  var setRevealMap = revealDraft[1];
+  const revealDraft = useState({} as Record<string, boolean>);
+  const revealMap = revealDraft[0];
+  const setRevealMap = revealDraft[1];
+  // 凭据字段「已被用户编辑」的键集（键 = <channelId>:<field>）。未编辑的字段保持服务端掩码
+  // 原样提交、由服务端按严格相等还原；只有用户真的输入过才把新值写进草稿——把掩码渲染成
+  // 可编辑 value 会让「在圆点后追加一个字符」变成一次真凭据覆盖（见 settings/mask.ts）。
+  const secretEditedDraft = useState({} as Record<string, boolean>);
+  const secretEdited = secretEditedDraft[0];
+  const setSecretEdited = secretEditedDraft[1];
+
+  /** 标记某凭据字段已被用户编辑（幂等）。 */
+  function markSecretEdited(key: string) {
+    if (secretEdited[key] === true) return;
+    const nextEdited: Record<string, boolean> = Object.assign({}, secretEdited);
+    nextEdited[key] = true;
+    setSecretEdited(nextEdited);
+  }
   // 加载基线：保存时只提交与基线不同的键（增量 diff），未改动的键不提交。
   // 用 useRef 持久化：组件每次渲染局部变量会重置为 null，导致 save() 闭包里读不到
   // 基线而永远判定「无变化」。
-  var baselineRef = ReactHooks.useRef(null as Record<string, any> | null);
+  const baselineRef = ReactHooks.useRef(null as Record<string, any> | null);
   // settings / meta（revision）ref 收口——异步回调（保存成功 / trailing 补发）
   // 一律读 ref 而非渲染闭包值，杜绝「连点第二个 PUT 带旧 revision」「补发漏提交在途
   // 新编辑」两类陈旧闭包问题。settingsRef 由 patch（唯一写入口）在 updater 内同步。
-  var settingsRef = ReactHooks.useRef(null as Record<string, any> | null);
-  var metaRef = ReactHooks.useRef(null as any);
+  const settingsRef = ReactHooks.useRef(null as Record<string, any> | null);
+  const metaRef = ReactHooks.useRef(null as any);
   // 保存串行 guard（模块级纯工厂）——同一时刻仅一个在途 PUT。
-  var saveGuardRef = ReactHooks.useRef(null as ReturnType<typeof createSaveGuard> | null);
+  const saveGuardRef = ReactHooks.useRef(null as ReturnType<typeof createSaveGuard> | null);
   if (saveGuardRef.current === null) saveGuardRef.current = createSaveGuard();
-  var saveGuard = saveGuardRef.current;
+  const saveGuard = saveGuardRef.current;
   // 保存中 UI 态（按钮禁用 + 「保存中…」文案）
-  var savingDraft = useState(false);
-  var saving = savingDraft[0];
-  var setSaving = savingDraft[1];
+  const savingDraft = useState(false);
+  const saving = savingDraft[0];
+  const setSaving = savingDraft[1];
   // 409 冲突横幅态。null=无冲突；非 null={ entry, latest }——
   // latest 为冲突时拉取的服务端最新 {effective, revision}（「加载最新/覆盖」动作
   // 的数据源）。横幅期间用户可继续编辑（非模态），动作触发时实时重算本地变更。
-  var conflictDraft = useState(null as null | { entry: string; latest: any });
-  var conflict = conflictDraft[0];
-  var setConflict = conflictDraft[1];
+  const conflictDraft = useState(null as null | { entry: string; latest: any });
+  const conflict = conflictDraft[0];
+  const setConflict = conflictDraft[1];
 
   function loadHistory(alive: { value: boolean }) {
     fetchHistory()
@@ -1077,6 +593,15 @@ function SettingsCard() {
       .catch(function () {});
   }
 
+  function loadHealth(alive: { value: boolean }) {
+    // 失败与未知都不提示：平台提示回落通用文案即可（用户无法处置「读不到宿主 OS」）
+    fetchHealth()
+      .then(function (platform) {
+        if (alive.value) setHostPlatform(platform);
+      })
+      .catch(function () {});
+  }
+
   function loadDiagnostics(alive: { value: boolean }) {
     // 失败与超时都不提示：自检面缺席时界面少一块，而不是多一条用户无法处置的错误
     fetchDiagnostics()
@@ -1090,10 +615,10 @@ function SettingsCard() {
     fetchConfig()
       .then(function (v: any) {
         if (!alive.value) return;
-        var effective = (v && v.effective) || {};
+        const effective = (v && v.effective) || {};
         commitSettings(Object.assign({}, effective));
         baselineRef.current = Object.assign({}, effective);
-        var nextMeta = {
+        const nextMeta = {
           user: v.user || {},
           revision: v.revision,
           effective: effective,
@@ -1105,17 +630,19 @@ function SettingsCard() {
       })
       .catch(function (e: any) {
         if (!alive.value) return;
-        setSaved(t("loadFail", { msg: (e && e.message) || e, hint: accessHint(e) }), true);
+        const failure = apiFailureOf(e, t);
+        setSaved(t("loadFail", { msg: failure.message, hint: failure.hint }), true);
       });
   }
 
   useEffect(function () {
-    var alive = { value: true };
+    const alive = { value: true };
     loadCard(alive);
     loadHistory(alive);
     loadStatus(alive);
     loadKinds(alive);
     loadDiagnostics(alive);
+    loadHealth(alive);
     return function () {
       alive.value = false;
     };
@@ -1136,7 +663,7 @@ function SettingsCard() {
    *  p 为对象时浅合并；为函数时以最新 prev 计算（prev => next）。 */
   function patch(p: any) {
     setSettings(function (prev: any) {
-      var next = typeof p === "function" ? p(prev) : Object.assign({}, prev, p);
+      const next = typeof p === "function" ? p(prev) : Object.assign({}, prev, p);
       settingsRef.current = next;
       return next;
     });
@@ -1158,7 +685,9 @@ function SettingsCard() {
    *  读 settingsRef（非渲染闭包 settings）——trailing 补发在 .then 回调里
    *  触发，必须取最新草稿；渲染期调用时 ref 与 state 同值，无行为差异。 */
   function diffPayload(): Record<string, any> {
-    return diffSettingsPayload(settingsRef.current || settings, baselineRef.current);
+    // 两个来源都可能是 null（配置还没读回来）：空草稿与 null 在 diffSettingsPayload 里同样是
+    // 「没有可提交的键」（它只遍历自有键），故显式给 {} 让类型与运行期取值一致。
+    return diffSettingsPayload(settingsRef.current || settings || {}, baselineRef.current);
   }
 
   /** 409 冲突恢复：拉最新 → 无脏静默刷新 / 有脏弹双动作横幅。 */
@@ -1166,7 +695,7 @@ function SettingsCard() {
     fetchConfig()
       .then(function (v: any) {
         if (!v) return;
-        var latest = {
+        const latest = {
           effective: (v && v.effective) || {},
           revision: v && v.revision,
           user: (v && v.user) || {},
@@ -1191,7 +720,7 @@ function SettingsCard() {
   function applyLatestQuiet(latest: any) {
     commitSettings(Object.assign({}, latest.effective));
     baselineRef.current = Object.assign({}, latest.effective);
-    var nextMeta = {
+    const nextMeta = {
       user: latest.user || {},
       revision: latest.revision,
       effective: Object.assign({}, latest.effective),
@@ -1209,18 +738,18 @@ function SettingsCard() {
    *  AbortController 超时兜底：超时中断请求（服务端写入与否未知，UI 必须恢复），
    *  释放 guard 并提示重试。 */
   function putAndCommit(payload: Record<string, any>, entry: string) {
-    var expectedRevision =
+    const expectedRevision =
       metaRef.current && typeof metaRef.current.revision === "number"
         ? metaRef.current.revision
         : undefined;
-    var ctrl: AbortController | null =
+    const ctrl: AbortController | null =
       typeof AbortController !== "undefined" ? new AbortController() : null;
-    var timer: ReturnType<typeof setTimeout> | null = ctrl
+    const timer: ReturnType<typeof setTimeout> | null = ctrl
       ? setTimeout(function () {
           ctrl!.abort();
         }, 15000)
       : null;
-    var chain = fetch(ROUTES.config, {
+    let chain = fetch(ROUTES.config, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ patch: payload, expectedRevision: expectedRevision }),
@@ -1229,15 +758,17 @@ function SettingsCard() {
       .then(function (r: any) {
         return r.json().then(function (body: any) {
           if (!r.ok) {
-            var err = (body && body.error) || {};
+            const err = (body && body.error) || {};
             // 挂 code 供 catch 按契约分流：409 判定优先
             // err.code === "SETTINGS_CONFLICT"，不再依赖错误文案中文匹配
             // （文案是本地化/可改的，code 是契约字段）。文案保留进 message。
-            var throwErr = new Error(
-              err.error || err.details || err.code || "HTTP " + r.status,
-            ) as Error & { code?: string };
-            if (err.code !== undefined) throwErr.code = String(err.code);
-            throw throwErr;
+            // markHttpFailure 两种形状都取：SETTINGS_CONFLICT 在 `body.error.code`，
+            // 围栏拒答的 code 与 error 平铺（它同时补上 status，供失败判定用）。
+            throw markHttpFailure(
+              new Error(err.error || err.details || err.code || "HTTP " + r.status),
+              r.status,
+              body,
+            );
           }
           return body;
         });
@@ -1247,7 +778,7 @@ function SettingsCard() {
         // 键——若并入点击后的 settings 全量，在途期间的编辑会被固化为基线而丢失；
         // 键级并入后，在途新编辑（非 payload 键）仍在 diff 中，由 trailing 补发提交。
         baselineRef.current = Object.assign({}, baselineRef.current || {}, payload);
-        var nextMeta = {
+        const nextMeta = {
           user: (body && body.user) || {},
           revision: (body && body.revision) || undefined,
           effective: Object.assign({}, baselineRef.current),
@@ -1262,9 +793,9 @@ function SettingsCard() {
         }, 2200);
       })
       .catch(function (e: any) {
-        var msg = (e && e.message) || e;
+        const failure = apiFailureOf(e, t);
         // 409 判定：code 契约优先，中文文案仅作旧服务端回退
-        if ((e && e.code === "SETTINGS_CONFLICT") || String(msg).indexOf("版本冲突") >= 0) {
+        if ((e && e.code === "SETTINGS_CONFLICT") || failure.message.indexOf("版本冲突") >= 0) {
           // 版本冲突：进入双动作恢复（不再仅提示手动关闭重开）
           handleConflict(entry);
           return;
@@ -1275,7 +806,7 @@ function SettingsCard() {
           setSaved(t("saveTimeout"), true);
           return;
         }
-        setSaved(t("saveFail", { msg: msg }), true);
+        setSaved(t("saveFail", { msg: failure.message }), true);
       });
     if (timer !== null) {
       chain = chain.finally(function () {
@@ -1302,7 +833,7 @@ function SettingsCard() {
    *  - guard.end() 放 finally：成功/失败/异常任何路径都释放，防按钮永久卡死。 */
   function saveFor(entry: string, quietIfEmpty?: boolean) {
     if (!saveGuard.tryBegin(entry)) return; // 在途：记 pending=entry，由在途 finally 补发
-    var payload: Record<string, any>;
+    let payload: Record<string, any>;
     try {
       payload = diffPayloadFor(entry);
     } catch (error) {
@@ -1321,7 +852,7 @@ function SettingsCard() {
     // 超时 / 其它 → setSaved 提示），它的返回链不会以拒绝收场；此处只补收尾的 UI 复位。
     void putAndCommit(payload, entry).finally(function () {
       setSaving(false);
-      var nextEntry = saveGuard.end();
+      const nextEntry = saveGuard.end();
       if (nextEntry !== null) saveFor(nextEntry, true); // trailing 补发（同入口，天然不循环）
     });
   }
@@ -1341,13 +872,13 @@ function SettingsCard() {
    *  （每次覆盖消费一次用户动作，天然收敛、无自动风暴）。 */
   function resolveConflictOverwrite() {
     if (!conflict) return;
-    var entry = conflict.entry;
-    var latest = conflict.latest;
-    var localChanges = diffPayloadFor(entry); // 实时重算（相对旧基线的当前脏）
-    var merged = rebaseSettings(localChanges, latest.effective || {});
+    const entry = conflict.entry;
+    const latest = conflict.latest;
+    const localChanges = diffPayloadFor(entry); // 实时重算（相对旧基线的当前脏）
+    const merged = rebaseSettings(localChanges, latest.effective || {});
     commitSettings(merged); // 同步写 ref：随后 saveFor 立即以 merged 计算 diff
     baselineRef.current = Object.assign({}, latest.effective || {});
-    var nextMeta = {
+    const nextMeta = {
       user: latest.user || {},
       revision: latest.revision,
       effective: Object.assign({}, latest.effective || {}),
@@ -1387,8 +918,19 @@ function SettingsCard() {
         loadStatus({ value: true });
       })
       .catch(function (error: any) {
-        toast(t("testFail", { msg: error.message, hint: accessHint(error) }));
+        const failure = apiFailureOf(error, t);
+        toast(t("testFail", { msg: failure.message, hint: failure.hint }));
       });
+  }
+
+  /** 权限行的授权动作：手势内请求权限，完成后刷新状态行。
+   *  为什么留在卡片这层：requestPermission 的手势内调用与 setSaved/setPermTick 都是本组件的
+   *  闭包，诊断原子只收这一个回调，不反向读本组件状态。 */
+  function requestNotificationPermission() {
+    requestPermission(function () {
+      setSaved(t("permRequested"));
+      setPermTick(permTick + 1); // 触发重渲染刷新权限状态行
+    });
   }
 
   // ---- 频道编辑（settings.channels 不可变操作；deviceKey 掩码语义见服务端）----
@@ -1397,7 +939,7 @@ function SettingsCard() {
    *  删键；函数式基于最新 channels，防后写覆盖）。 */
   function chPatch(idx: number, part: Record<string, any>) {
     patch(function (prev: any) {
-      var list = (prev.channels || []).slice();
+      const list = (prev.channels || []).slice();
       list[idx] = assignChannelFields(list[idx] || {}, part);
       return Object.assign({}, prev, { channels: list });
     });
@@ -1407,9 +949,9 @@ function SettingsCard() {
   function chLevelsSet(idx: number, kind: string, level: string) {
     if (!kind || kind === "__proto__" || kind === "constructor" || kind === "prototype") return;
     patch(function (prev: any) {
-      var list = (prev.channels || []).slice();
-      var ch = Object.assign({}, list[idx]);
-      var levels = Object.assign({}, ch.levels || {});
+      const list = (prev.channels || []).slice();
+      const ch = Object.assign({}, list[idx]);
+      const levels = Object.assign({}, ch.levels || {});
       if (level) levels[kind] = level;
       else delete levels[kind];
       if (Object.keys(levels).length === 0) delete ch.levels;
@@ -1422,7 +964,7 @@ function SettingsCard() {
   /** 删除第 idx 个频道实例（函数式基于最新 channels）。 */
   function chRemove(idx: number) {
     patch(function (prev: any) {
-      var list = (prev.channels || []).slice();
+      const list = (prev.channels || []).slice();
       list.splice(idx, 1);
       return Object.assign({}, prev, { channels: list });
     });
@@ -1437,16 +979,16 @@ function SettingsCard() {
    *  服务端 normalize 兜底。 */
   function chAdd(kind: string) {
     patch(function (prev: any) {
-      var list = prev.channels || [];
-      var seq = 1;
-      var taken = new Set(
+      const list = prev.channels || [];
+      let seq = 1;
+      const taken = new Set(
         list.map(function (c: any) {
           return String(c.id);
         }),
       );
       while (taken.has(kind + "-" + seq)) seq += 1;
-      var id = kind + "-" + seq;
-      var base: Record<string, any> =
+      const id = kind + "-" + seq;
+      const base: Record<string, any> =
         kind === "webhook"
           ? {
               id: id,
@@ -1473,14 +1015,14 @@ function SettingsCard() {
 
   /** 当前 kind 的路由数组（undefined = 跟随默认广播）。 */
   function routeOf(kind: string): string[] | undefined {
-    var routes = settings.kindRoutes || {};
+    const routes = settings?.kindRoutes || {};
     return routes[kind];
   }
 
   /** 写/清 kind 路由条目（ids=null 删除条目恢复默认；函数式基于最新 kindRoutes）。 */
   function routeSetKind(kind: string, ids: string[] | null) {
     patch(function (prev: any) {
-      var routes = Object.assign({}, prev.kindRoutes || {});
+      const routes = Object.assign({}, prev.kindRoutes || {});
       if (ids === null || ids.length === 0) delete routes[kind];
       else routes[kind] = ids;
       return Object.assign({}, prev, { kindRoutes: routes });
@@ -1497,7 +1039,7 @@ function SettingsCard() {
   /** 当前「跟随默认」投递面（路由 id 列表）：内置与实例同一判据——`enabled`（发不发）。
    *  chips 点亮态（无条目时）与首次切换物化的快照都以本函数为准——所见即所得。 */
   function defaultRouteIds(prev: any): string[] {
-    var ids: string[] = [];
+    const ids: string[] = [];
     (prev.channels || []).forEach(function (c: any) {
       if (c.enabled === true) ids.push(channelIdOf(c));
     });
@@ -1525,9 +1067,9 @@ function SettingsCard() {
    */
   function routeToggle(kind: string, oid: string, checked: boolean) {
     patch(function (prev: any) {
-      var routes = Object.assign({}, prev.kindRoutes || {});
-      var cur = routes[kind] === undefined ? defaultRouteIds(prev).slice() : routes[kind].slice();
-      var at = cur.indexOf(oid);
+      const routes = Object.assign({}, prev.kindRoutes || {});
+      const cur = routes[kind] === undefined ? defaultRouteIds(prev).slice() : routes[kind].slice();
+      const at = cur.indexOf(oid);
       if (checked && at === -1) cur.push(oid);
       else if (!checked && at !== -1) cur.splice(at, 1);
       if (cur.length === 0) delete routes[kind];
@@ -1543,9 +1085,9 @@ function SettingsCard() {
   function confirmOne(kind: string, confirmed: boolean) {
     postKind(kind, confirmed)
       .then(function (body: any) {
-        var freshRevision = body && typeof body.revision === "number" ? body.revision : undefined;
+        const freshRevision = body && typeof body.revision === "number" ? body.revision : undefined;
         if (freshRevision !== undefined && metaRef.current) {
-          var nextMeta = Object.assign({}, metaRef.current, { revision: freshRevision });
+          const nextMeta = Object.assign({}, metaRef.current, { revision: freshRevision });
           metaRef.current = nextMeta;
           setMeta(nextMeta);
         }
@@ -1568,1005 +1110,19 @@ function SettingsCard() {
     setClearArmed(false);
     fetch(ROUTES.history, { method: "DELETE" })
       .then(function (r: any) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
+        // 只挂响应码、不读响应体：DELETE 的失败体未必是 JSON，解析它会把一条失败请求
+        // 变成两条（读体再抛）。状态码足以让判定侧不再依赖「文案里含 403」这条兜底。
+        if (!r.ok) throw markHttpFailure(new Error("HTTP " + r.status), r.status);
         return r.json();
       })
       .then(function (data: any) {
         toast(t("cleared", { n: data.removed || 0 }));
         loadHistory({ value: true });
       })
-      .catch(function (error) {
-        toast(t("clearFail", { msg: error.message, hint: accessHint(error) }));
+      .catch(function (error: any) {
+        const failure = apiFailureOf(error, t);
+        toast(t("clearFail", { msg: failure.message, hint: failure.hint }));
       });
-  }
-
-  /** 频道卡体行（cap + 控件 + 可选 hint；CSS dn-ch-row/dn-ch-cap/dn-ch-ctl）。 */
-  function chRow(cap: string, control: any, hint?: string) {
-    return (
-      <div className="dn-ch-row">
-        <span className="dn-ch-cap">{cap}</span>
-        <span className="dn-ch-ctl">{control}</span>
-        {hint ? <span className="dn-ch-hint">{hint}</span> : null}
-      </div>
-    );
-  }
-
-  /** 折叠区行（cap + 控件；CSS dn-adv-row）。 */
-  function advRow(cap: string, control: any) {
-    return (
-      <div className="dn-adv-row">
-        <span className="dn-adv-cap">{cap}</span>
-        {control}
-      </div>
-    );
-  }
-
-  /** switch 开关底层（track 40×22 + 透明 input 覆盖 44×32 触控区；
-   *  aria-label 提供可访问名——switch 无内联文本，WCAG 4.1.2）。 */
-  function switchToggle(checked: boolean, onChange: (v: boolean) => void, ariaLabel: string) {
-    return (
-      <label className="dn-switch">
-        <input
-          type="checkbox"
-          aria-label={ariaLabel}
-          checked={checked === true}
-          onChange={function (e: any) {
-            onChange(e.target.checked === true);
-          }}
-        />
-        <span className="dn-switch-track" />
-      </label>
-    );
-  }
-
-  /** 顶层布尔设置键的 switch（switchToggle 的设置键薄封装）。
-   *  统一走 patch 写入口（settingsRef 同步），不再裸 setSettings。 */
-  function switchControl(key: string, ariaLabel: string) {
-    return switchToggle(
-      settings[key] === true,
-      function (v: boolean) {
-        patch(function (prev: any) {
-          var next = Object.assign({}, prev);
-          next[key] = v;
-          return next;
-        });
-      },
-      ariaLabel,
-    );
-  }
-
-  function textInput(
-    value: any,
-    onChange: (v: string) => void,
-    opts?: { type?: string; placeholder?: string; ariaLabel?: string },
-  ) {
-    return (
-      <input
-        type={(opts && opts.type) || "text"}
-        className="dn-set-input dn-set-inputText"
-        value={value === undefined || value === null ? "" : String(value)}
-        placeholder={opts && opts.placeholder}
-        aria-label={(opts && opts.ariaLabel) || (opts && opts.placeholder) || undefined}
-        onChange={function (e: any) {
-          onChange(e.target.value);
-        }}
-      />
-    );
-  }
-
-  function numInput(
-    value: any,
-    onChange: (v: number | undefined) => void,
-    opts?: { ariaLabel?: string; min?: number; max?: number },
-  ) {
-    return (
-      <input
-        type="number"
-        step={1}
-        className="dn-set-input dn-set-numInput"
-        min={opts && opts.min}
-        max={opts && opts.max}
-        aria-label={opts && opts.ariaLabel}
-        value={value === undefined || value === null ? "" : String(value)}
-        onChange={function (e: any) {
-          onChange(e.target.value === "" ? undefined : Number(e.target.value));
-        }}
-      />
-    );
-  }
-
-  function padTime(ts: number) {
-    var d = new Date(ts);
-    var pad = function (n: number) {
-      return n < 10 ? "0" + n : String(n);
-    };
-    return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
-  }
-
-  /** 频道状态摘要（上提卡头 statusDot + statusTxt；完整错误经 title 提示）。 */
-  function statusText(channelKey: string): string {
-    var st = statusMap[channelKey];
-    if (!st || !st.lastTs) return t("chNeverSent");
-    if (st.lastStatus === "ok") return t("chLastOk") + " · " + padTime(st.lastTs);
-    var why = reasonText(st.lastError, t);
-    return t("chLastFail") + " · " + padTime(st.lastTs) + (why ? "：" + why : "");
-  }
-  function statusDotClass(channelKey: string): string {
-    var st = statusMap[channelKey];
-    if (!st || !st.lastTs) return "";
-    return st.lastStatus === "ok" ? "ok" : "fail";
-  }
-
-  function testBtn(channelId?: string) {
-    return (
-      <button
-        type="button"
-        className="dn-set-btn dn-set-btnSmall"
-        onClick={function () {
-          sendTest(channelId);
-        }}
-      >
-        {t("chTest")}
-      </button>
-    );
-  }
-
-  /** 投递失败徽标：最近投递失败时上提至卡头 summary 行，收起态仍可见。 */
-  function failBadge(channelKey: string) {
-    var st = statusMap[channelKey];
-    if (!st || !st.lastTs || st.lastStatus !== "failed") return null;
-    return <span className="dn-ch-failBadge">{t("chLastFail") + " · " + padTime(st.lastTs)}</span>;
-  }
-
-  /**
-   * 浏览器通知权限状态行（从全局降级区移入「浏览器通知」频道卡）。
-   * 三态文案 + 未授权时的「请求通知权限」按钮（手势内请求，完成后刷新状态）；
-   * 非安全上下文/无 Notification API 时返回 null（对应降级文案仍在全局 notes）。
-   */
-  function browserPermLine() {
-    if (!("Notification" in window) || !isSecureContext()) return null;
-    var text = "";
-    var pending = false;
-    if (Notification.permission === "granted") text = t("permGranted");
-    else if (Notification.permission === "denied") text = t("permDenied");
-    else {
-      text = t("permDefault");
-      pending = true;
-    }
-    return (
-      <div className="dn-ch-perm">
-        <span className="dn-ch-permText">{text}</span>
-        {pending ? (
-          <button
-            type="button"
-            className="dn-set-btn dn-set-btnSmall"
-            onClick={function () {
-              requestPermission(function () {
-                setSaved(t("permRequested"));
-                setPermTick(permTick + 1); // 触发重渲染刷新权限状态行
-              });
-            }}
-          >
-            {t("requestPerm")}
-          </button>
-        ) : null}
-      </div>
-    );
-  }
-
-  /**
-   * 内置频道卡（browser/system）：开关 + 行为参数 + 状态行 + per-channel 测试。
-   * 整卡 details 可折叠——非受控 + key remount 形态（key 含 enabled，
-   * open 仅 mount 生效），未启用默认收起、启用默认展开；手动开合完全交 DOM，
-   * 无受控时序坑；启停切换重挂载重置折叠态（预期行为）。summary 内 enable
-   * checkbox 依赖 HTML 规范豁免（点击 interactive content 不触发 summary 激活）。
-   */
-  /**
-   * 内置频道卡（三开关：启用 / 弹窗 / 声音）：
-   * 卡头 = 类型图标 + 名称 + 类型徽标 + 状态点/摘要 + **启用** switch；卡体 = 弹窗行 + 声音行
-   * （开关 + 音色下拉 + ▶试听）+（浏览器）权限状态行 + 测试按钮。
-   *
-   * 谁决定什么：**启用**决定「发不发」（关掉 = 完全不投递，声音也不发）；**弹窗 + 声音**决定
-   * 「怎么发」（弹窗关而声音开 = 只响不弹；两者都关 = 本频道不会有任何提醒，卡体给出提示）。
-   * 三态摘要：启用开 + 弹窗开 = 启用；启用开 + 弹窗关 + 声音开 = 仅声音；启用关 = 已停用。
-   */
-  /**
-   * 内置频道卡：与实例卡同源——它们都是 `settings.channels` 里的一项，只是不渲染删除入口、也没有凭据。
-   * 卡头 = 图标 + 名称 + 内置徽标 + 状态摘要 + 状态点 + 失败徽标 + 启用 switch；卡体 = 弹窗行 +
-   * （浏览器另有「页面可见时也弹」）+ 声音行 + 权限/平台提示 + 测试按钮。
-   */
-  function builtinCard(index: number, ch: any, label: string) {
-    var channelId = channelIdOf(ch);
-    var enabled = ch.enabled === true;
-    var popup = ch.popup === true;
-    var soundOn = soundIsOn(ch.sound);
-    var stateCls = !enabled ? " dn-ch-off" : !popup && soundOn ? " dn-ch-sound" : " dn-ch-onEdge";
-    var summaryState = !enabled
-      ? t("chStateOff")
-      : !popup && soundOn
-        ? t("chStateSound")
-        : t("chStateOn");
-    var extras: any[] = [];
-    extras.push(
-      chRow(
-        t("chPopup"),
-        switchToggle(
-          popup,
-          function (v: boolean) {
-            chPatch(index, { popup: v });
-          },
-          t("chPopup") + " " + label,
-        ),
-      ),
-    );
-    if (ch.type === "browser") {
-      extras.push(
-        chRow(
-          t("chWhenVisible"),
-          switchToggle(
-            ch.whenVisible === true,
-            function (v: boolean) {
-              chPatch(index, { whenVisible: v });
-            },
-            t("chWhenVisible") + " " + label,
-          ),
-        ),
-      );
-    }
-    extras.push(soundRow(index, ch, label));
-    return (
-      <details
-        className={"dn-ch-card" + stateCls}
-        key={"ch-" + channelId + ":" + enabled + ":" + popup + ":" + soundOn}
-        open={enabled}
-      >
-        <summary>
-          {iconEl(String(ch.type))}
-          <span className="dn-ch-name">{label}</span>
-          <span className="dn-ch-type">{t("chTypeBuiltin")}</span>
-          <span className="dn-ch-stateTxt">{summaryState}</span>
-          <span className={"dn-ch-statusDot " + statusDotClass(channelId)} />
-          <span className="dn-ch-statusTxt" title={statusText(channelId)}>
-            {statusText(channelId)}
-          </span>
-          {failBadge(channelId)}
-          <span className="dn-ch-summaryRight">
-            {switchToggle(
-              enabled,
-              function (v: boolean) {
-                chPatch(index, { enabled: v });
-              },
-              (enabled ? t("chToggleOff") : t("chToggleOn")) + label,
-            )}
-          </span>
-        </summary>
-        <div className="dn-ch-body">
-          {extras}
-          {enabled && !popup && soundOn ? (
-            <div className="dn-set-note-inline dn-soundOnly">{t("chSoundOnlyNote")}</div>
-          ) : null}
-          {enabled && !popup && !soundOn ? (
-            <div className="dn-set-note-inline dn-soundOnly">{t("chPopupSoundOffNote")}</div>
-          ) : null}
-          {/* 浏览器通知权限状态行归入浏览器频道卡（权限授权入口同卡就近可达） */}
-          {ch.type === "browser" ? browserPermLine() : null}
-          {/* 浏览器面自检行：宿主侧接口看不到本页的权限与音频解锁状态 */}
-          {ch.type === "browser" ? browserDiagnosticsLine() : null}
-          {/* 系统卡平台提示（/health platform 消费；宿主 OS 与浏览器 OS 可异机） */}
-          {ch.type === "system" ? systemPlatformHint() : null}
-          {/* 宿主能力自检（/diagnostics）：结论 + 处置建议 + 明细折叠 */}
-          {ch.type === "system" ? hostDiagnosticsBlock() : null}
-          <div className="dn-ch-actions">{testBtn(channelId)}</div>
-        </div>
-      </details>
-    );
-  }
-
-  /** 平台提示行：宿主平台差异说明——Windows SoundPlayer 语义、macOS
-   *  NSSound、Linux 自播；/health 拉取失败/未知平台回落通用说明。 */
-  function systemPlatformHint() {
-    var text: string;
-    if (hostPlatform === "win32") text = t("sysPlatformWin");
-    else if (hostPlatform === "darwin") text = t("sysPlatformMac");
-    else if (hostPlatform === "linux") text = t("sysPlatformLinux");
-    else text = t("sysPlatformOther");
-    return <div className="dn-set-note-inline">{text}</div>;
-  }
-
-  /**
-   * 宿主能力自检块（系统频道卡体）。为什么落在卡体而不是卡头 `.dn-ch-statusTxt`：窄屏下
-   * 卡头那行被 display:none 收起，而手机恰是最需要知道「为什么没响」的地方。
-   * 这里只做机械投影——结论、处置建议、明细的文案都来自 capabilities.ts。
-   */
-  function hostDiagnosticsBlock() {
-    var view = diag.host;
-    if (!view) return null;
-    return (
-      <div className={"dn-ch-diag dn-ch-diag-" + view.tone}>
-        <span className="dn-ch-diagText">{view.line}</span>
-        {view.unknownLine ? <span className="dn-ch-diagText">{view.unknownLine}</span> : null}
-        {view.remediationLines.length === 0 ? null : (
-          <div>
-            <span className="dn-ch-diagCap">{view.remediationTitle}</span>
-            <ul className="dn-ch-diagItems">
-              {view.remediationLines.map(function (text, i) {
-                return <li key={"rem-" + i}>{text}</li>;
-              })}
-            </ul>
-          </div>
-        )}
-        {/* 明细折叠（沿用通知记录里 dn-ch-reasonRaw 的折叠范式）；来源标注在展开区首行 */}
-        <details className="dn-ch-reasonRaw">
-          <summary>{view.detailsLabel}</summary>
-          <div className="dn-ch-reasonRawText">
-            <div className="dn-ch-diagSrc">{view.sourceLabel}</div>
-            {view.details.map(function (row, i) {
-              return (
-                <div className="dn-ch-diagDetail" key={"det-" + i}>
-                  <span className="dn-ch-diagDetailCap">{row.label}</span>
-                  <span>{row.value}</span>
-                </div>
-              );
-            })}
-          </div>
-        </details>
-      </div>
-    );
-  }
-
-  /** 浏览器面自检行（浏览器频道卡体）：宿主算不出来的那几个事实（权限、音频解锁）在这里成一句话。 */
-  function browserDiagnosticsLine() {
-    var view = diag.browser;
-    return (
-      <div className={"dn-ch-diag dn-ch-diag-" + view.tone}>
-        <span className="dn-ch-diagText">{view.line}</span>
-        <span className="dn-ch-diagSrc">{view.sourceLabel}</span>
-      </div>
-    );
-  }
-
-  /** 内置音色选项（4 音色；label 字典键）。 */
-  var SOUND_OPTION_KEYS: Record<string, string> = {
-    ding: "toneDing",
-    bell: "toneBell",
-    chime: "toneChime",
-    pop: "tonePop",
-  };
-
-  /** 单通道声音行：开关（false/true 切换）+ 展开音色下拉 + ▶试听。
-   *  开关语义：off=false（静音）；on=true（跟随系统默认）；on 后选择音色 =
-   *  SoundId（显式音色）。交互全部显式 unlockAudio 兜底（autoplay 策略下
-   *  纯后台页面自播需此前任意手势解锁；试听点击本身即手势）。 */
-  function soundRow(index: number, ch: any, channelLabel: string) {
-    var soundVal = ch.sound;
-    var soundOn = soundIsOn(soundVal);
-    var toneValue =
-      typeof soundVal === "string" && SOUND_IDS.indexOf(soundVal) !== -1 ? soundVal : "";
-    var toneOpts: any[] = [
-      <option value="" key="sys">
-        {t("chSoundFollow")}
-      </option>,
-    ].concat(
-      SOUND_IDS.map(function (id) {
-        return (
-          <option value={id} key={id}>
-            {t(SOUND_OPTION_KEYS[id])}
-          </option>
-        );
-      }),
-    );
-    return (
-      <div className="dn-ch-row" key={"sound-" + channelIdOf(ch)}>
-        <span className="dn-ch-cap">{t("chSound")}</span>
-        <span className="dn-ch-ctl">
-          {switchToggle(
-            soundOn,
-            function (v: boolean) {
-              // 用户手势：解锁音频（开启声音后隐藏页面自播才可能发声）
-              unlockAudio();
-              chPatch(index, { sound: v }); // false / true
-            },
-            t("chSound") + " " + channelLabel,
-          )}
-          {soundOn ? (
-            <select
-              className="dn-set-input dn-set-select"
-              value={toneValue}
-              aria-label={t("chSoundTone")}
-              onChange={function (e: any) {
-                unlockAudio();
-                chPatch(index, { sound: e.target.value === "" ? true : e.target.value });
-              }}
-            >
-              {toneOpts}
-            </select>
-          ) : null}
-          {soundOn ? (
-            <button
-              type="button"
-              className="dn-set-btn dn-set-btnSmall dn-tonePreview"
-              aria-label={t("chSoundPreview")}
-              onClick={function () {
-                playPreview(toneValue || undefined);
-              }}
-            >
-              ▶ {t("chSoundPreview")}
-            </button>
-          ) : null}
-          {toneValue === "" && soundOn ? (
-            <span className="dn-ch-hint">{t("chSoundFollowHint")}</span>
-          ) : null}
-        </span>
-      </div>
-    );
-  }
-
-  /**
-   * Bark 实例卡：卡头 = 图标 + 名称 + 类型徽标 + 状态点/摘要 +
-   * 失败徽标 + 启用 switch；卡体 = 基本行 + 高级参数折叠（含 levels 矩阵）+ 测试/删除。
-   * 整卡 details 可折叠（非受控 + key remount），未启用默认收起。
-   */
-  function barkCard(ch: any, idx: number) {
-    var channelKey = channelIdFor(ch);
-    var armed = delArmedId === ch.id;
-    var levelOpts: any[] = [
-      <option value="" key="auto">
-        {t("chLevelAuto")}
-      </option>,
-    ];
-    ["active", "timeSensitive", "passive", "critical"].forEach(function (lv: string) {
-      levelOpts.push(
-        <option value={lv} key={lv}>
-          {lv}
-        </option>,
-      );
-    });
-    // levels（kind→level）编辑：kind 建议 = 内置 7 kind + 动态已注册 kind；datalist id 按实例唯一
-    var suggestKinds: string[] = Object.keys(KIND_KEYS);
-    (kindsList || []).forEach(function (k: any) {
-      if (suggestKinds.indexOf(String(k.id)) === -1) suggestKinds.push(String(k.id));
-    });
-    var dlId = "dn-levels-suggest-" + String(ch.id);
-    var levels = ch.levels || {};
-    var levelKeys = Object.keys(levels);
-    var levelsRows: any[] = levelKeys.map(function (kind) {
-      return (
-        <div className="dn-levels-row" key={"lv-" + kind}>
-          <span className="dn-levels-kind">
-            {KIND_KEYS[kind] !== undefined ? t(KIND_KEYS[kind]) + " (" + kind + ")" : kind}
-          </span>
-          <select
-            className="dn-set-input dn-set-select"
-            value={levels[kind] || ""}
-            onChange={function (e: any) {
-              chLevelsSet(idx, kind, e.target.value);
-            }}
-          >
-            {levelOpts}
-          </select>
-          <button
-            type="button"
-            className="dn-set-btn dn-set-btnSmall"
-            onClick={function () {
-              chLevelsSet(idx, kind, "");
-            }}
-          >
-            {t("chLevelsRemove")}
-          </button>
-        </div>
-      );
-    });
-    var newRow = levelsNew[String(ch.id)] || { kind: "", level: "active" };
-    var newKindKnown = suggestKinds.indexOf(newRow.kind) !== -1;
-    var addRow = (
-      <div className="dn-levels-add" key="lv-add">
-        <input
-          type="text"
-          className="dn-set-input dn-set-inputText"
-          list={dlId}
-          placeholder={t("chLevelsKindPlaceholder")}
-          value={newRow.kind}
-          onChange={function (e: any) {
-            setLevelsNew(
-              Object.assign({}, levelsNew, {
-                [String(ch.id)]: { kind: e.target.value, level: newRow.level },
-              }),
-            );
-          }}
-        />
-        <select
-          className="dn-set-input dn-set-select"
-          value={newRow.level}
-          onChange={function (e: any) {
-            setLevelsNew(
-              Object.assign({}, levelsNew, {
-                [String(ch.id)]: { kind: newRow.kind, level: e.target.value },
-              }),
-            );
-          }}
-        >
-          {levelOpts}
-        </select>
-        <button
-          type="button"
-          className="dn-set-btn dn-set-btnSmall"
-          onClick={function () {
-            if (newRow.kind) {
-              chLevelsSet(idx, newRow.kind, newRow.level);
-              setLevelsNew(
-                Object.assign({}, levelsNew, { [String(ch.id)]: { kind: "", level: "active" } }),
-              );
-            }
-          }}
-        >
-          {t("chLevelsAdd")}
-        </button>
-        {newRow.kind && !newKindKnown ? (
-          <span className="dn-set-note-inline">{t("chLevelsUnknown")}</span>
-        ) : null}
-      </div>
-    );
-    return (
-      <details
-        className={"dn-ch-card" + (ch.enabled ? " dn-ch-onEdge" : " dn-ch-off")}
-        key={channelKey + ":" + (ch.enabled === true)}
-        open={ch.enabled === true}
-      >
-        <summary>
-          {iconEl("bark")}
-          <span className="dn-ch-name">{ch.name || ch.id}</span>
-          <span className="dn-ch-type">bark</span>
-          <span className={"dn-ch-statusDot " + statusDotClass(channelKey)} />
-          <span className="dn-ch-statusTxt" title={statusText(channelKey)}>
-            {statusText(channelKey)}
-          </span>
-          {failBadge(channelKey)}
-          <span className="dn-ch-summaryRight">
-            {switchToggle(
-              ch.enabled === true,
-              function (v: boolean) {
-                chPatch(idx, { enabled: v });
-              },
-              (ch.enabled ? t("chToggleOff") : t("chToggleOn")) + (ch.name || ch.id),
-            )}
-          </span>
-        </summary>
-        <div className="dn-ch-body">
-          {chRow(
-            t("chBarkName"),
-            textInput(
-              ch.name,
-              function (v: string) {
-                chPatch(idx, { name: v });
-              },
-              { placeholder: t("chBarkNamePlaceholder"), ariaLabel: t("chBarkName") },
-            ),
-          )}
-          {chRow(
-            t("chBarkBaseUrl"),
-            textInput(
-              ch.baseUrl,
-              function (v: string) {
-                chPatch(idx, { baseUrl: v });
-              },
-              { placeholder: "https://api.day.app", ariaLabel: t("chBarkBaseUrl") },
-            ),
-            t("chBarkBaseUrlHint"),
-          )}
-          {chRow(
-            t("chBarkDeviceKey"),
-            textInput(
-              ch.deviceKey,
-              function (v: string) {
-                chPatch(idx, { deviceKey: v });
-              },
-              { type: "password", placeholder: "********", ariaLabel: t("chBarkDeviceKey") },
-            ),
-            t("chBarkDeviceKeyHint"),
-          )}
-          <details className="dn-ch-adv" key={"adv-" + ch.id}>
-            <summary>{t("chAdvanced")}</summary>
-            <div className="dn-ch-adv-body">
-              {advRow(
-                t("chBarkSound"),
-                textInput(
-                  ch.sound,
-                  function (v: string) {
-                    chPatch(idx, { sound: v });
-                  },
-                  { ariaLabel: t("chBarkSound") },
-                ),
-              )}
-              {advRow(
-                t("chBarkGroup"),
-                textInput(
-                  ch.group,
-                  function (v: string) {
-                    chPatch(idx, { group: v });
-                  },
-                  { ariaLabel: t("chBarkGroup") },
-                ),
-              )}
-              <div className="dn-set-note-inline">{t("chBarkGroupHint")}</div>
-              {advRow(
-                t("chBarkIcon"),
-                textInput(
-                  ch.icon,
-                  function (v: string) {
-                    chPatch(idx, { icon: v });
-                  },
-                  { ariaLabel: t("chBarkIcon") },
-                ),
-              )}
-              <div className="dn-set-note-inline">{t("chBarkIconHint")}</div>
-              {advRow(
-                t("chBarkUrl"),
-                textInput(
-                  ch.url,
-                  function (v: string) {
-                    chPatch(idx, { url: v });
-                  },
-                  { ariaLabel: t("chBarkUrl") },
-                ),
-              )}
-              {advRow(
-                t("chBarkBadge"),
-                numInput(
-                  ch.badge,
-                  function (v: number | undefined) {
-                    chPatch(idx, { badge: v });
-                  },
-                  { ariaLabel: t("chBarkBadge") },
-                ),
-              )}
-              {advRow(
-                t("chBarkLevel"),
-                <select
-                  className="dn-set-input dn-set-select"
-                  value={ch.level || ""}
-                  aria-label={t("chBarkLevel")}
-                  onChange={function (e: any) {
-                    chPatch(idx, { level: e.target.value || undefined });
-                  }}
-                >
-                  {levelOpts}
-                </select>,
-              )}
-              <div className="dn-set-note-inline">{t("chBarkLevelHint")}</div>
-              <div className="dn-set-note-inline">{t("chLevelsHint")}</div>
-              {levelKeys.length === 0 ? (
-                <div className="dn-set-note-inline">{t("chLevelsEmpty")}</div>
-              ) : (
-                levelsRows
-              )}
-              {addRow}
-              <datalist id={dlId}>
-                {suggestKinds.map(function (k) {
-                  return (
-                    <option value={k} key={k}>
-                      {k}
-                    </option>
-                  );
-                })}
-              </datalist>
-            </div>
-          </details>
-          <div className="dn-ch-actions">
-            {testBtn(channelKey)}
-            <button
-              type="button"
-              className={"dn-set-btn dn-set-btnSmall" + (armed ? " dn-set-btnDanger" : "")}
-              onClick={function () {
-                if (armed) {
-                  chRemove(idx);
-                  setDelArmedId(null);
-                } else {
-                  setDelArmedId(ch.id);
-                  setTimeout(function () {
-                    setDelArmedId(null);
-                  }, 3000);
-                }
-              }}
-            >
-              {armed ? t("chDeleteConfirm") : t("chDelete")}
-            </button>
-          </div>
-        </div>
-      </details>
-    );
-  }
-
-  /**
-   * Webhook 实例卡（新增频道位，安卓经 ntfy / Gotify / 自建网关推送；默认停用）。
-   * 卡头同 Bark 实例卡形态；卡体：预设（填充认证/模板，URL 不覆盖）/ 名称 / 目标 URL /
-   * 认证（none|bearer|basic|header，动态字段凭据掩码）/ 投递超时（1-60s clamp）/
-   * JSON 模板编辑器（占位符 chips 光标处插入）。渲染契约见 channel-webhook.ts。
-   */
-  function webhookCard(ch: any, idx: number) {
-    var channelKey = channelIdFor(ch);
-    var armed = delArmedId === ch.id;
-    var authValue =
-      ["none", "bearer", "basic", "header"].indexOf(String(ch.auth || "none")) !== -1
-        ? String(ch.auth || "none")
-        : "none";
-    var chId = String(ch.id);
-
-    /** webhook 字段 patch（函数式基于最新 channels，防同帧后写覆盖）。 */
-    function whPatch(part: Record<string, any>) {
-      chPatch(idx, part);
-    }
-
-    /** 凭据输入 + 显隐按钮（掩码值不回显，显隐只作用于正在输入的新值）。 */
-    function secretField(field: string, placeholderKey: string) {
-      var key = chId + ":" + field;
-      var shown = revealMap[key] === true;
-      var part: Record<string, any> = {};
-      return (
-        <span className="dn-secret" key={field}>
-          <input
-            type={shown ? "text" : "password"}
-            className="dn-set-input dn-set-inputText"
-            value={ch[field] || ""}
-            placeholder={t(placeholderKey)}
-            aria-label={t(placeholderKey)}
-            onChange={function (e: any) {
-              part[field] = e.target.value;
-              whPatch(part);
-            }}
-          />
-          <button
-            type="button"
-            className="dn-secret-reveal"
-            onClick={function () {
-              var next: Record<string, boolean> = Object.assign({}, revealMap);
-              next[key] = !shown;
-              setRevealMap(next);
-            }}
-          >
-            {shown ? t("secretHide") : t("secretShow")}
-          </button>
-        </span>
-      );
-    }
-
-    /** 占位符插入模板（光标处；受控值经 whPatch 回写）。 */
-    function insertTpl(token: string) {
-      var ta = document.getElementById("dn-tpl-" + chId) as HTMLTextAreaElement | null;
-      if (!ta) {
-        whPatch({ template: (ch.template || "") + token });
-        return;
-      }
-      var at =
-        ta.selectionStart === null || ta.selectionStart === undefined
-          ? ta.value.length
-          : ta.selectionStart;
-      whPatch({ template: ta.value.slice(0, at) + token + ta.value.slice(at) });
-    }
-
-    var authCtl: any[] = [
-      <select
-        key="auth-select"
-        className="dn-set-input dn-set-select"
-        value={authValue}
-        aria-label={t("whAuth")}
-        onChange={function (e: any) {
-          whPatch({ auth: e.target.value });
-        }}
-      >
-        <option value="none">{t("whAuthNone")}</option>
-        <option value="bearer">{t("whAuthBearer")}</option>
-        <option value="basic">{t("whAuthBasic")}</option>
-        <option value="header">{t("whAuthHeader")}</option>
-      </select>,
-    ];
-    if (authValue === "bearer") authCtl.push(secretField("token", "whAuthToken"));
-    else if (authValue === "basic") {
-      authCtl.push(
-        <input
-          key="username"
-          type="text"
-          className="dn-set-input dn-set-inputText"
-          value={ch.username || ""}
-          placeholder={t("whAuthUsername")}
-          aria-label={t("whAuthUsername")}
-          onChange={function (e: any) {
-            whPatch({ username: e.target.value });
-          }}
-        />,
-      );
-      authCtl.push(secretField("password", "whAuthPassword"));
-    } else if (authValue === "header") {
-      authCtl.push(
-        <input
-          key="headerName"
-          type="text"
-          className="dn-set-input dn-set-inputText"
-          value={ch.headerName || ""}
-          placeholder={t("whAuthHeaderName")}
-          aria-label={t("whAuthHeaderName")}
-          onChange={function (e: any) {
-            whPatch({ headerName: e.target.value });
-          }}
-        />,
-      );
-      authCtl.push(secretField("headerValue", "whAuthHeaderValue"));
-    }
-
-    var textTokens = [
-      "{{title}}",
-      "{{message}}",
-      "{{kind}}",
-      "{{severity}}",
-      "{{priority}}",
-      "{{source}}",
-    ];
-    var tplChips: any[] = textTokens.map(function (tok: string) {
-      return (
-        <button
-          type="button"
-          key={tok}
-          className="dn-tpl-chip"
-          title={t("whTemplateHint")}
-          onClick={function () {
-            insertTpl(tok);
-          }}
-        >
-          {tok}
-        </button>
-      );
-    });
-    tplChips.push(
-      <button
-        type="button"
-        key="{{ts}}"
-        className="dn-tpl-chip is-raw"
-        title={"{{ts}} → " + String(Date.now()) + "（数字直出，不加引号）"}
-        onClick={function () {
-          insertTpl("{{ts}}");
-        }}
-      >
-        {"{{ts}}"}
-      </button>,
-    );
-
-    return (
-      <details
-        className={"dn-ch-card" + (ch.enabled ? " dn-ch-onEdge" : " dn-ch-off")}
-        key={channelKey + ":" + (ch.enabled === true)}
-        open={ch.enabled === true}
-      >
-        <summary>
-          {iconEl("webhook")}
-          <span className="dn-ch-name">{ch.name || ch.id}</span>
-          <span className="dn-ch-type">webhook</span>
-          <span className={"dn-ch-statusDot " + statusDotClass(channelKey)} />
-          <span className="dn-ch-statusTxt" title={statusText(channelKey)}>
-            {statusText(channelKey)}
-          </span>
-          {failBadge(channelKey)}
-          <span className="dn-ch-summaryRight">
-            {switchToggle(
-              ch.enabled === true,
-              function (v: boolean) {
-                whPatch({ enabled: v });
-              },
-              (ch.enabled ? t("chToggleOff") : t("chToggleOn")) + (ch.name || ch.id),
-            )}
-          </span>
-        </summary>
-        <div className="dn-ch-body">
-          {chRow(
-            t("whPreset"),
-            <select
-              className="dn-set-input dn-set-select"
-              value=""
-              aria-label={t("whPreset")}
-              onChange={function (e: any) {
-                var p = WEBHOOK_PRESETS[e.target.value];
-                if (!p) return;
-                // preset 落配置（{{priority}} 频道感知映射的依据）；认证与模板随预设填充，URL 不覆盖（防丢已填内容）
-                whPatch({ preset: e.target.value, auth: p.auth, template: p.template });
-              }}
-            >
-              <option value="">{t("whPreset")}</option>
-              <option value="ntfy">{t("whPresetNtfy")}</option>
-              <option value="gotify">{t("whPresetGotify")}</option>
-              <option value="custom">{t("whPresetCustom")}</option>
-            </select>,
-            t("whPresetHint"),
-          )}
-          {chRow(
-            t("chBarkName"),
-            textInput(
-              ch.name,
-              function (v: string) {
-                whPatch({ name: v });
-              },
-              { placeholder: t("chBarkNamePlaceholder"), ariaLabel: t("chBarkName") },
-            ),
-          )}
-          {chRow(
-            t("whUrl"),
-            textInput(
-              ch.url,
-              function (v: string) {
-                whPatch({ url: v });
-              },
-              { placeholder: t("whUrlPlaceholder"), ariaLabel: t("whUrl") },
-            ),
-            t("whUrlHint"),
-          )}
-          {chRow(t("whAuth"), <span className="dn-authFields">{authCtl}</span>, t("whAuthHint"))}
-          {chRow(
-            t("whTimeout"),
-            numInput(
-              ch.timeoutSec,
-              function (v: number | undefined) {
-                // UI 层先 clamp（1-60）；服务端 normalize 仍权威 clamp（防绕过 UI 的 PUT）
-                whPatch({
-                  timeoutSec:
-                    v === undefined ? undefined : Math.min(60, Math.max(1, Math.round(v))),
-                });
-              },
-              { ariaLabel: t("whTimeout"), min: 1, max: 60 },
-            ),
-            t("whTimeoutHint"),
-          )}
-          <div className="dn-ch-row" style={{ display: "block" }}>
-            <div className="dn-ch-cap" style={{ marginBottom: "6px" }}>
-              {t("whTemplate")}
-            </div>
-            <textarea
-              id={"dn-tpl-" + chId}
-              className="dn-tpl"
-              spellCheck={false}
-              aria-label={t("whTemplate")}
-              value={ch.template || ""}
-              onChange={function (e: any) {
-                whPatch({ template: e.target.value });
-              }}
-            />
-            <div className="dn-tplChips">
-              <span className="dn-tplCap">{t("routeCap") + ":"}</span>
-              {tplChips}
-              <button
-                type="button"
-                className="dn-set-btn dn-set-btnSmall"
-                onClick={function () {
-                  // 恢复为当前预设（ch.preset 由预设下拉落配置；缺省 ntfy 与服务端默认一致）的默认模板
-                  var p = WEBHOOK_PRESETS[String(ch.preset || "ntfy")];
-                  if (p) whPatch({ template: p.template });
-                }}
-              >
-                {t("whTplRestore")}
-              </button>
-            </div>
-            <span className="dn-ch-hint">{t("whTemplateHint")}</span>
-            <span className="dn-ch-hint">{t("whTemplateFailHint")}</span>
-          </div>
-          <div className="dn-ch-actions">
-            {testBtn(channelKey)}
-            <button
-              type="button"
-              className={"dn-set-btn dn-set-btnSmall" + (armed ? " dn-set-btnDanger" : "")}
-              onClick={function () {
-                if (armed) {
-                  chRemove(idx);
-                  setDelArmedId(null);
-                } else {
-                  setDelArmedId(ch.id);
-                  setTimeout(function () {
-                    setDelArmedId(null);
-                  }, 3000);
-                }
-              }}
-            >
-              {armed ? t("chDeleteConfirm") : t("chDelete")}
-            </button>
-          </div>
-        </div>
-      </details>
-    );
   }
 
   /**
@@ -2577,21 +1133,21 @@ function SettingsCard() {
    * 由调用方无感（删除条目即恢复——状态标签随即回到默认态）。
    */
   function routeChipsRow(kind: string) {
-    var routes = routeOf(kind);
-    var options = routeOptions(settings);
-    var litIds = routes === undefined ? defaultRouteIds(settings) : routes.slice();
-    var litSet: Record<string, boolean> = {};
+    const routes = routeOf(kind);
+    const options = routeOptions(settings);
+    const litIds = routes === undefined ? defaultRouteIds(settings) : routes.slice();
+    const litSet: Record<string, boolean> = {};
     litIds.forEach(function (id: string) {
       litSet[id] = true;
     });
     // stale：条目残留但候选中不存在的频道 id（已删除频道；投递时自动跳过，保存时清理）
-    var staleIds = (routes || []).filter(function (id: string) {
+    const staleIds = (routes || []).filter(function (id: string) {
       return !options.some(function (o) {
         return o.id === id;
       });
     });
-    var chips = options.map(function (o) {
-      var on = litSet[o.id] === true;
+    const chips = options.map(function (o) {
+      const on = litSet[o.id] === true;
       // 未启用频道：置灰禁点——投递面 = 启用频道 ∩ 路由，停用频道点亮
       // 也不投递（假点亮）；title 说明「启用后可用」。已勾选未启用项保留勾选
       // 显示（不自动改用户配置），用户启用频道后该 chip 恢复可点/生效。
@@ -2618,7 +1174,7 @@ function SettingsCard() {
         </span>,
       );
     });
-    var isCustom = routes !== undefined;
+    const isCustom = routes !== undefined;
     chips.push(
       <button
         type="button"
@@ -2640,310 +1196,13 @@ function SettingsCard() {
     );
   }
 
-  // 事件区：内置事件卡（sev 色点 + kind 码 + switch + 路由 chips）
-  var eventChildren: any[] = [];
-  EVENT_KEYS.forEach(function (kv) {
-    var key = kv[0],
-      labelKey = kv[1];
-    var kindId = EVENT_KIND_MAP[key];
-    var sev = KIND_SEV[kindId] || "info";
-    eventChildren.push(
-      <div className="dn-evt" key={"ev-" + key}>
-        <div className="dn-evt-head">
-          <span
-            className={"dn-sev" + (sev !== "info" ? " dn-sev-" + sev : "")}
-            title={"severity: " + sev}
-          />
-          <span className="dn-evt-name">{t(labelKey)}</span>
-          <span className="dn-evt-kind">{kindId}</span>
-          {switchControl(key, t("evtSwitch", { name: t(labelKey) }))}
-        </div>
-        {routeChipsRow(kindId)}
-      </div>,
-    );
-  });
-  // 动态 kind（插件提议的通知类型）：待确认 = 允许/拒绝 + 路由提示；已允许 = 同款
-  // 路由 chips（动态 kind 也支持配置投递频道——kindRoutes 天然支持动态
-  // kind id 作 key，与服务端 resolveRoutes 的 kind 无关路由解析一致）。
-  var kindRows: any[] = kindsList.map(function (k: any) {
-    var nameText = k.label && k.label !== k.id ? k.label : k.id;
-    if (k.confirmed) {
-      return (
-        <div className="dn-kinds dn-kinds-ok" key={k.id}>
-          <div className="dn-kinds-head">
-            <span className="dn-sev" />
-            <span className="dn-kinds-name">{nameText}</span>
-            <span className="dn-evt-kind">{k.id}</span>
-            <span className="dn-kinds-actions">
-              <button
-                type="button"
-                className="dn-set-btn dn-set-btnSmall"
-                onClick={function () {
-                  confirmOne(k.id, false);
-                }}
-              >
-                {t("kindRevoke")}
-              </button>
-            </span>
-          </div>
-          {routeChipsRow(k.id)}
-        </div>
-      );
-    }
-    return (
-      <div className="dn-kinds" key={k.id}>
-        <div className="dn-kinds-head">
-          <span className="dn-sev" />
-          <span className="dn-kinds-name">{nameText}</span>
-          <span className="dn-evt-kind">{k.id}</span>
-          <span className="dn-kinds-actions">
-            <button
-              type="button"
-              className="dn-set-btn dn-set-btnSmall dn-set-btnPrimary"
-              onClick={function () {
-                confirmOne(k.id, true);
-              }}
-            >
-              {t("kindAllow")}
-            </button>
-            <button
-              type="button"
-              className="dn-set-btn dn-set-btnSmall dn-set-btnGhostDanger"
-              onClick={function () {
-                confirmOne(k.id, false);
-              }}
-            >
-              {t("kindDeny")}
-            </button>
-          </span>
-        </div>
-        <div className="dn-kind-routeHint">{t("kindRouteHint")}</div>
-      </div>
-    );
-  });
-  eventChildren.push(
-    <div key="kinds">
-      <div className="dn-sec" style={{ marginTop: "14px" }}>
-        <span className="dn-sec-title">{t("kindsTitle")}</span>
-        <span className="dn-sec-hint">{t("kindsHint")}</span>
-      </div>
-      {kindsList.length === 0 ? <div className="dn-set-note">{t("kindsEmpty")}</div> : kindRows}
-    </div>,
-  );
-
   // 能力自检的渲染模型：宿主面（读服务端载荷）+ 浏览器面（读本页事实）合成一次，
   // 下面所有卡片只投影它——JSX 里不再出现任何「这个状态算不算好」的判断。
-  var diag = clientDiagnosticsOf(diagnostics, clientFacts(), t);
-
-  // 频道区：`channels` 逐项按类型分派（内置两卡 + bark/webhook 实例卡）+ 添加按钮。
-  // 先按**真实下标**遍历再分派：chPatch / chRemove 都按下标操作，先 filter 会让编辑打到隔壁条目。
-  var channelsChildren: any[] = [];
-  (settings.channels || []).forEach(function (c: any, i: number) {
-    if (c.type === "browser" || c.type === "system") {
-      channelsChildren.push(builtinCard(i, c, channelLabel(c)));
-      return;
-    }
-    channelsChildren.push(String(c.type) === "webhook" ? webhookCard(c, i) : barkCard(c, i));
-  });
-  channelsChildren.push(
-    <div className="dn-ch-add" key="ch-add">
-      <button
-        type="button"
-        className="dn-set-btn"
-        onClick={function () {
-          chAdd("bark");
-        }}
-      >
-        {t("chAddBark")}
-      </button>
-      <button
-        type="button"
-        className="dn-set-btn dn-set-btnPrimary"
-        onClick={function () {
-          chAdd("webhook");
-        }}
-      >
-        {t("chAddWebhook")}
-      </button>
-    </div>,
-  );
-
-  // 资源上限折叠区（统一 dn-ch-adv 折叠形态 + dn-adv-row 行）
-  var dedupFold = (
-    <details className="dn-ch-adv dn-sec-adv" key="adv-params">
-      <summary>{t("secDedup")}</summary>
-      <div className="dn-ch-adv-body">
-        {advRow(
-          t("historyRetention"),
-          <input
-            type="number"
-            min={0}
-            step={1}
-            className="dn-set-input dn-set-numInput"
-            aria-label={t("historyRetention")}
-            value={settings.historyMaxAgeDays}
-            onChange={function (e: any) {
-              patch({ historyMaxAgeDays: Number(e.target.value) });
-            }}
-          />,
-        )}
-        {advRow(
-          t("maxConnections"),
-          <input
-            type="number"
-            min={1}
-            max={1024}
-            step={1}
-            className="dn-set-input dn-set-numInput"
-            aria-label={t("maxConnections")}
-            value={settings.maxConnections}
-            onChange={function (e: any) {
-              // 空串→undefined→diff 键被序列化丢弃→不提交保持原值；
-              // 非空软 clamp（1-1024）防 0→400 保存死锁（服务端 normalize 仍权威）
-              patch({
-                maxConnections: clampMaxConnections(
-                  e.target.value === "" ? undefined : Number(e.target.value),
-                ),
-              });
-            }}
-          />,
-        )}
-      </div>
-    </details>
-  );
-
-  var qh = settings.quietHours || {};
-  var allows = qh.allowKinds || [];
-  function setAllowKinds(next: string[]) {
-    patch({ quietHours: Object.assign({}, qh, { allowKinds: next }) });
-  }
-  /** 跟随已启用事件：一键把当前 notifyXxx=true 的对应 kind 全选为豁免（函数式更新——
-   *  setSettings(prev=>...) 读最新快照计算，避免连点/同帧先改开关后旧闭包漏勾最新态）。 */
-  function allowFollowEnabled() {
-    setSettings(function (prev: any) {
-      var nextQh = prev.quietHours || {};
-      var next = EVENT_KEYS.filter(function (kv) {
-        return prev[kv[0]] === true;
-      }).map(function (kv) {
-        return EVENT_KIND_MAP[kv[0]];
-      });
-      return Object.assign({}, prev, {
-        quietHours: Object.assign({}, nextQh, { allowKinds: next }),
-      });
-    });
-    setSaved("");
-  }
-  /** 恢复默认豁免（ask/question/error——高频阻塞型，卡着的任务需要叫醒）。 */
-  function allowResetDefault() {
-    setAllowKinds(["ask", "question", "error"]);
-  }
-  // 免打扰豁免候选（覆盖全部 6 个内置事件 kind，label 复用事件文案
-  // KIND_KEYS 字典；由 EVENT_KEYS + EVENT_KIND_MAP 派生，不新建平行表。
-  // chips 直点形态——未启用事件弱化沿用 dn-set-allowDim 锚点，勾选态保留照常
-  // 写入（服务端判定只看 quietHours.allowKinds.includes(kind)，不看开关）。
-  var quietAllowChoices = EVENT_KEYS.map(function (kv) {
-    var notifyKey = kv[0];
-    var kind = EVENT_KIND_MAP[notifyKey];
-    var enabled = settings[notifyKey] === true;
-    return {
-      kind: kind,
-      notifyKey: notifyKey,
-      enabled: enabled,
-      labelKey: KIND_KEYS[kind] || "k" + kind,
-    };
-  });
-  var allowChips = quietAllowChoices.map(function (c) {
-    var checked = allows.indexOf(c.kind) !== -1;
-    // 未启用事件：置灰禁点——事件开关关闭则不产生通知，豁免勾选无意义；
-    // 保留已勾选显示（不自动改配置），启用事件后恢复可点。禁点用原生 disabled。
-    return (
-      <button
-        type="button"
-        key={c.kind}
-        className={
-          "dn-route-chip" + (checked ? " is-on" : "") + (c.enabled ? "" : " dn-set-allowDim")
-        }
-        aria-pressed={checked ? "true" : "false"}
-        disabled={!c.enabled}
-        title={c.enabled ? undefined : t("allowDisabledHint")}
-        onClick={function () {
-          var next = allows.slice();
-          if (!checked && next.indexOf(c.kind) === -1) next.push(c.kind);
-          else if (checked && next.indexOf(c.kind) !== -1) next.splice(next.indexOf(c.kind), 1);
-          setAllowKinds(next);
-        }}
-      >
-        {t(c.labelKey)}
-        {c.enabled ? null : <span className="dn-set-allowHint">{t("allowDisabledHint")}</span>}
-      </button>
-    );
-  });
-  // 免打扰卡（开关 + 时段 + 豁免 chips + 快捷按钮）
-  var dndCard = (
-    <div className="dn-dnd" key="dnd">
-      <div className="dn-dnd-head">
-        <span className="dn-sev dn-sev-warning" />
-        <span className="dn-evt-name">{t("dndEnable")}</span>
-        {switchToggle(
-          qh.enabled === true,
-          function (v: boolean) {
-            patch({ quietHours: Object.assign({}, qh, { enabled: v }) });
-          },
-          t("dndEnable"),
-        )}
-      </div>
-      {qh.enabled === true ? (
-        <div>
-          <div className="dn-dnd-row">
-            <span className="dn-dnd-cap">{t("dndStart")}</span>
-            <input
-              type="time"
-              className="dn-set-input"
-              aria-label={t("dndStart")}
-              value={qh.start || "22:00"}
-              onChange={function (e: any) {
-                patch({ quietHours: Object.assign({}, qh, { start: e.target.value }) });
-              }}
-            />
-            <span className="dn-dnd-cap">{t("dndEnd")}</span>
-            <input
-              type="time"
-              className="dn-set-input"
-              aria-label={t("dndEnd")}
-              value={qh.end || "08:00"}
-              onChange={function (e: any) {
-                patch({ quietHours: Object.assign({}, qh, { end: e.target.value }) });
-              }}
-            />
-          </div>
-          <div className="dn-dnd-row" style={{ display: "block" }}>
-            <span className="dn-dnd-cap">{t("dndStillLabel") + "："}</span>
-            <div className="dn-set-allows">{allowChips}</div>
-            <div className="dn-set-allowActions">
-              <button
-                type="button"
-                className="dn-set-btn dn-set-btnSmall"
-                onClick={allowFollowEnabled}
-              >
-                {t("allowFollowEnabled")}
-              </button>
-              <button
-                type="button"
-                className="dn-set-btn dn-set-btnSmall"
-                onClick={allowResetDefault}
-              >
-                {t("allowResetDefault")}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
+  const diag = clientDiagnosticsOf(diagnostics, clientFacts(), t);
 
   // 三端降级文案（浏览器通知权限状态行已移入「浏览器通知」频道卡，
   // 这里只保留服务不可用 / 非安全上下文 / 平台不支持三条全局降级说明）
-  var degradation: any[] = [];
+  const degradation: any[] = [];
   if (metaValue && metaValue.writable === false) {
     degradation.push(
       <div className="dn-set-note" key="settings-unavailable">
@@ -2967,122 +1226,15 @@ function SettingsCard() {
     );
   }
 
-  /**
-   * 逐出口投递明细：状态标签 + 主理由 + 宿主原文（原文折叠，并标注它的来源）。
-   * 数据本来就随 `/history` 到了客户端（`archive(..., { channels })`），此前只是没人渲染——
-   * 「投递成功却没声音」这类结论因此完全不可见，状态行在 `skipped` 后还不会变。
-   */
-  function deliveryLines(r: { channels?: unknown }) {
-    var list: unknown[] = Array.isArray(r.channels) ? r.channels : [];
-    var views: DeliveryView[] = [];
-    list.forEach(function (delivery: unknown) {
-      var view = deliveryViewOf(delivery, t);
-      if (view) views.push(view);
-    });
-    if (views.length === 0) return null;
-    return (
-      <div className="dn-set-historyChannels">
-        {views.map(function (view, j: number) {
-          return (
-            <div
-              className={"dn-ch-delivery dn-ch-delivery-" + view.status}
-              key={view.channelId + "-" + j}
-            >
-              <span className="dn-ch-deliveryName">{view.channelId}</span>
-              <span className="dn-ch-deliveryStatus">{view.statusText}</span>
-              {view.reason ? <span className="dn-ch-deliveryReason">{view.reason}</span> : null}
-              {view.detail ? (
-                <details className="dn-ch-reasonRaw">
-                  <summary>{t("reasonDetailLabel")}</summary>
-                  <div className="dn-ch-reasonRawText">{view.detail}</div>
-                </details>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  // 通知记录 tab（历史独立成 tab；清理/发送测试/刷新并排工具行；
-  // 请求权限按钮随权限状态行一起归入「浏览器通知」频道卡）
-  var historyPane = (
-    <div key="history">
-      <div className="dn-set-historyTools">
-        <button
-          type="button"
-          className={"dn-set-btn dn-set-btnSmall" + (clearArmedValue ? " dn-set-btnDanger" : "")}
-          onClick={confirmClear}
-        >
-          {clearArmedValue ? t("clearConfirm") : t("clearLabel")}
-        </button>
-        <button
-          type="button"
-          className="dn-set-btn dn-set-btnSmall"
-          onClick={function () {
-            sendTest();
-          }}
-        >
-          {t("sendTest")}
-        </button>
-        <button
-          type="button"
-          className="dn-set-btn dn-set-btnSmall"
-          onClick={function () {
-            loadHistory({ value: true });
-          }}
-        >
-          {t("refresh")}
-        </button>
-        <span className="dn-set-historyCount">{t("historyTitle")}</span>
-      </div>
-      {!history || history.length === 0 ? (
-        <div className="dn-set-note">{t("historyEmpty")}</div>
-      ) : (
-        <ul className="dn-set-history">
-          {history.map(function (r: any, i: number) {
-            var d = new Date(r.ts);
-            var pad = function (n: number) {
-              return n < 10 ? "0" + n : String(n);
-            };
-            var time = pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
-            var sev = KIND_SEV[r.kind] || "info";
-            return (
-              <li className="dn-set-historyItem" key={String(r.ts) + "-" + i}>
-                <span
-                  className={"dn-sev" + (sev !== "info" ? " dn-sev-" + sev : "")}
-                  title={"severity: " + sev}
-                />
-                <div className="dn-set-historyMain">
-                  <div className="dn-set-historyHead">
-                    <span className="dn-set-historyKind">
-                      {KIND_KEYS[r.kind] !== undefined ? t(KIND_KEYS[r.kind]) : r.kind}
-                    </span>
-                    <span className="dn-set-historyTime">{time}</span>
-                    {r.suppressed === "quiet" ? (
-                      <span className="dn-set-historySuppressed">{t("historySuppressed")}</span>
-                    ) : null}
-                  </div>
-                  <div className="dn-set-historyText">{r.title + "：" + r.message}</div>
-                  {deliveryLines(r)}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </div>
-  );
-
   // ---- 卡内三 tab（通知事件 / 通知频道 / 通知记录）----
 
   // 待确认动态 kind 计数（「通知事件」tab 徽标——确认流是安全设计，不可被 tab 埋没）
-  var pendingKinds = kindsList.filter(function (k: any) {
+  const pendingKinds = kindsList.filter(function (k: any) {
     return !k.confirmed;
   }).length;
 
   // tab 栏：三个普通 button（不引入 role=tablist 管理成本）
-  var tabbar = (
+  const tabbar = (
     <div className="dn-set-tabs">
       <button
         type="button"
@@ -3115,43 +1267,61 @@ function SettingsCard() {
     </div>
   );
 
-  // 事件 tab 内容（历史移出，事件页聚焦事件路由与确认流）
-  var eventsPane = [eventChildren, dedupFold, dndCard];
-  // 频道 tab 内容：频道卡组（内置 + Bark + Webhook）+ 添加按钮 + 域保存行。
-  // 域保存：频道 tab 底部「保存频道」只提交 channels
-  // 键——与 foot 全量保存语义不同（域 vs 全量），不构成此前移除的「双份全量
-  // 保存」视觉重复；当初预留的「域级拆分后按域重排按钮位置」由本行兑现。
-  var channelsDomainSave = (
-    <div className="dn-ch-domainSave" key="ch-domain-save">
-      <span className="dn-ch-domainSaveHint">{t("channelsDomainHint")}</span>
-      <button
-        type="button"
-        className="dn-set-btn dn-set-btnPrimary dn-set-save"
-        disabled={saving}
-        onClick={function () {
-          saveFor("channels");
-        }}
-      >
-        {saving ? t("saving") : t("saveChannels")}
-      </button>
-    </div>
-  );
-  var channelsPane = [channelsChildren, channelsDomainSave];
-
   // 去掉设置卡 title/副标题；顶部直接是 tab 栏。
   // 底部保存栏 = 脏状态指示（diffSettingsPayload 键数）+ 放弃更改 + 保存。
   // foot 显示全量脏计数（含频道域）；「保存频道」按钮的域脏态不做单独
   // 计数——无频道域脏时点击走空 diff 的「未修改」提示（与 foot 保存同交互语义）。
-  var dirtyCount = Object.keys(diffPayload()).length;
+  const dirtyCount = Object.keys(diffPayload()).length;
+
+  // 三个 pane 的**条件调用**（普通函数返回 JSX，非 active tab 根本不调用——保持既有条件渲染
+  // 语义；改成组件会引入挂载/卸载）。依赖一律显式传参，pane 模块内不读本组件闭包。
+  // 频道 tab 的依赖面（三张卡的并集）以单一对象传入：位置参数会退化成 25 项长表。
+  const channelsPaneDeps = {
+    settings,
+    statusMap,
+    hostPlatform,
+    diag,
+    channelLabel,
+    chPatch,
+    chRemove,
+    chLevelsSet,
+    chAdd,
+    sendTest,
+    isSecureContext,
+    requestNotificationPermission,
+    audioEngine,
+    kindsList,
+    delArmedId,
+    setDelArmedId,
+    levelsNew,
+    setLevelsNew,
+    revealMap,
+    setRevealMap,
+    secretEdited,
+    markSecretEdited,
+    saving,
+    saveFor,
+    t,
+  };
   return (
     <li className="dn-set-card">
       {tabbar}
       <div className="dn-set-body">
+        {/* 历史独立成 tab：清理/发送测试/刷新并排工具行；请求权限按钮随权限状态行归入
+            「浏览器通知」频道卡 */}
         {activeTab === "events"
-          ? eventsPane
+          ? eventsPane(settings, kindsList, patch, confirmOne, routeChipsRow, severityOf, t)
           : activeTab === "channels"
-            ? channelsPane
-            : historyPane}
+            ? channelsPane(channelsPaneDeps)
+            : historyPane(
+                history,
+                clearArmedValue,
+                confirmClear,
+                sendTest,
+                loadHistory,
+                severityOf,
+                t,
+              )}
         <div className="dn-set-notes">{degradation}</div>
         {/* 409 冲突双动作横幅（非模态：横幅期间可继续编辑；动作触发时
               实时重算本地变更）。「忽略」= 关闭横幅、草稿保留原样。 */}
@@ -3223,36 +1393,80 @@ function SettingsCard() {
 
 // ------------------------------------------------------------ 装配
 
+/**
+ * 页面级单例的归属令牌容器：每次 apply 换一枚新令牌，清理时先比对。热更或重复 apply 时旧实例
+ * 的 disposer 仍会执行，无条件清理会把新实例正在用的 <style> / 标题闪烁 / 弹窗一并摘掉。
+ */
+const pageOwner: { current: object | null } = { current: null };
+
 export function apply(ctx: any) {
-  // 测试直测挂载面：diffSettingsPayload 与
-  // createSaveGuard 是模块级纯函数，经 apply 暴露给 smoke 测试引用——
-  // 保证「测试即产品实现」而非手写近似。assignChannelFields /
-  // stripChannelEmpties（频道实例字段合并与空串剥除）同样挂载。
-  (apply as any).diffSettingsPayload = diffSettingsPayload;
-  (apply as any).createSaveGuard = createSaveGuard;
-  (apply as any).domainPayload = domainPayload;
-  (apply as any).rebaseSettings = rebaseSettings;
-  (apply as any).assignChannelFields = assignChannelFields;
-  (apply as any).stripChannelEmpties = stripChannelEmpties;
-  (apply as any).clampMaxConnections = clampMaxConnections;
+  // 清理栈：边装配边采集 teardown，登记点（attach）放在 finally——中途同步抛错时，
+  // 已建立的那些资源也仍有 disposer 可摘（见 shared/disposers.ts 文件头对登记点在后的说明）。
+  const stack = createDisposerStack();
   try {
+    // 页面级单例（<style> / 标题闪烁 / 已弹通知）的归属令牌：热更或重复 apply 时旧实例的
+    // disposer 仍会执行，只有仍属当前实例的清理才许动这些共享资源，否则新实例会变成无样式
+    // 页面、丢掉闪烁提示、连带关掉自己正在显示的弹窗。
+    const owner: object = {};
+
+    // 两处**页面级单例**没有「建立时刻」（<style> 由 ensureStyle 复用同 id 元素，通知登记是
+    // 模块级表），故顶格登记；释放是逆序的，排最前 = 最后释放，共享外壳比实例资源活得久。
+    // <style> 只在仍是当前归属者时才摘，否则旧实例的 disposer 会把新实例的样式表摘掉
+    // （页面变成无样式）；摘除即让位，归属随之清空。
+    stack.own(function () {
+      if (pageOwner.current !== owner) return;
+      pageOwner.current = null;
+      document.getElementById(STYLE_ID)?.remove();
+    });
+    stack.own(function () {
+      closeNotificationsOf(owner);
+    });
+
+    // 样式注入后立刻认领页面级归属（就在这一行，不是装配成功之后）：认领的时刻就是「本实例开始
+    // 为这个共享节点负责」的时刻。放到末尾会让半途失败的实例永远不认领，而它刚注入的样式表此后
+    // 再也摘不掉——R5 的漏清理换了个形态复活（登记点有了，释放却被归属判定挡掉）。
     ensureStyle({ id: STYLE_ID, cssText: STYLE, version: CSS_VERSION });
+    pageOwner.current = owner;
+
+    // 页面重新可见时：还原标题 + 强制重建 SSE（iOS 后台挂起后连接可能已失效，
+    // 重建自动带 since 补拉，避免断线窗口漏通知）。
+    // 具名 handler 在 apply 内注册、disposer 移除（对齐 mcp-manager
+    // onVisible 范式）——匿名模块体注册无卸载路径，重复 apply/热更会累积旧监听。
+    // 释放是同步的：不存在「监听还在、标题已还原」的窗口（没有谁能在同一个同步循环里派发
+    // 事件），故这里不需要为次序做取舍——逆序释放让实例资源先走、页面级单例最后走。
+    function onVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        titleFlasher.restore(owner);
+        eventsHandle.current?.reconnect();
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    stack.own(function () {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    });
+    // 标题恢复原本只由 visibilitychange 回前台触发；disposer 摘除监听后该路径关闭，
+    // 若残留恢复缓存则标题永久卡在「🔔 …」（复现路径：hidden 帧 → 卸载）。
+    // 带归属：旧实例的 disposer 不许摘掉新实例的闪烁（见 notify/title.ts）。
+    stack.own(function () {
+      titleFlasher.restore(owner);
+    });
 
     // i18n：注册本插件字典；t 绑定官方 locale 服务（未装配回落 key 本体）。
-    var locale: any = ctx.get("locale");
+    const locale: any = ctx.get("locale");
     // 订阅取消函数供 disposer 卸载调用（守卫对齐 provider-usage/
     // mcp-manager 的 undefined 形态——不预设 subscribe 返回 null，防其返回
     // null 时 null 初始化遮蔽导致守卫失效），防重复 apply 后旧订阅持续重绑
     // 已停用实例。
-    var unsubLocale: (() => void) | undefined;
+    let unsubLocale: (() => void) | undefined;
     if (locale && typeof locale.register === "function") {
       try {
         locale.register(NS, { zh: zh, en: en });
-        t = locale.bind(NS);
+        // 宿主 bind 出的签名以本包字典键为参数，比端口声明的 string 更窄——收口在适配这一处
+        bindTranslate(locale.bind(NS) as Translate);
         if (typeof locale.subscribe === "function" && typeof locale.getSnapshot === "function") {
           unsubLocale = locale.subscribe(function () {
             try {
-              t = locale.bind(NS);
+              bindTranslate(locale.bind(NS) as Translate);
             } catch {
               /* 忽略 */
             }
@@ -3262,103 +1476,95 @@ export function apply(ctx: any) {
         console.warn("[dsh-notifier] locale 注册失败：", e);
       }
     }
-
-    // 通知半区（SSE / 浏览器通知）：不依赖任何插件 DOM，直接启动
-    var disposeEvents: { close: () => void; reconnect: () => void } | null = startEvents();
-    // 页面重新可见时：还原标题 + 强制重建 SSE（iOS 后台挂起后连接可能已失效，
-    // 重建自动带 since 补拉，避免断线窗口漏通知）。
-    // 具名 handler 在 apply 内注册、disposer 移除（对齐 mcp-manager
-    // onVisible 范式）——匿名模块体注册无卸载路径，重复 apply/热更会累积
-    // 旧监听、可能操作已置 null 的 SSE 句柄。
-    function onVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        restoreTitle();
-        if (eventsHandle && eventsHandle.reconnect) eventsHandle.reconnect();
-      }
-    }
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    // 宿主平台预取：/health platform 驱动系统卡平台提示（系统通道弹在
-    // 宿主机器，浏览器 OS 与宿主 OS 可异机——不要拿 navigator.platform 猜）
-    fetch(ROUTES.health, { headers: { accept: "application/json" } })
-      .then(function (r: any) {
-        return r.json().then(function (body: any) {
-          if (typeof body.platform === "string") hostPlatform = body.platform;
-        });
-      })
-      .catch(function () {
-        // 失败静默：平台提示回落通用文案
+    if (unsubLocale !== undefined) {
+      const unsubscribe = unsubLocale;
+      stack.own(function () {
+        unsubscribe();
       });
+    }
 
-    // 首次任意点击解锁音频（浏览器自动播放策略要求手势）
-    document.addEventListener(
-      "click",
-      function onFirstClick() {
-        unlockAudio();
-        document.removeEventListener("click", onFirstClick);
+    // 通知半区（SSE / 浏览器通知）：不依赖任何插件 DOM，直接启动。
+    // 会话是「建立 + 配对释放」的资源，走 acquire：make 抛错就不留释放登记（会话没建成，
+    // 也没有要关的东西）。
+    eventsHandle.current = stack.acquire(
+      function () {
+        return startNotifySession(
+          {
+            url: ROUTES.events,
+            createSource: (url) => new EventSource(url) as unknown as EventSourceLike,
+            now: () => Date.now(),
+            setTimer: (fn, ms) => window.setTimeout(fn, ms),
+            clearTimer: (handle) => {
+              window.clearTimeout(handle);
+            },
+            warn: (message, cause) => {
+              console.warn("[dsh-notifier] " + message + "：", cause);
+            },
+          },
+          function (payload) {
+            handleNotifyFrame(payload, owner);
+          },
+        );
       },
-      { capture: true },
+      function (session) {
+        session.close();
+        // 只在仍指向自己的会话时才清空：重复 apply 时后装的实例才是当前句柄，
+        // 无条件置 null 会让存活实例的回前台重连静默失效（跨实例串味）。
+        if (eventsHandle.current === session) eventsHandle.current = null;
+      },
     );
+    // 首次任意点击解锁音频（浏览器自动播放策略要求手势）。具名 + disposer 摘除：
+    // 从未点击就被卸载时，匿名监听会永久留在 document 上，且下次点击会在插件已卸载后
+    // 构造一个 AudioContext。
+    function onFirstClick() {
+      audioEngine.unlock();
+      document.removeEventListener("click", onFirstClick, { capture: true });
+    }
+    document.addEventListener("click", onFirstClick, { capture: true });
+    stack.own(function () {
+      document.removeEventListener("click", onFirstClick, { capture: true });
+    });
 
     // 设置面板独立 tab「通知中心」（settings.section）。
     // 参照 dsh-provider-usage「用量统计」tab 的接线（slots.inject + register，
     // 独立顶层页）；label 为导航显示文本。旧运行时若不声明该插槽，inject
     // 回调不执行 → tab 不挂载、通知半区照常工作（与 provider-usage 同语义，
     // 不做 plugin.item 双插槽重复展示）。
-    var slots = ctx.get("slots");
+    const slots = ctx.get("slots");
     if (slots && typeof slots.inject === "function") {
-      slots.inject("settings.section", function () {
-        return slots.register(
-          // label 传 thunk：宿主 nav rows 每次读取经 resolveSlotLabel
-          // 求值 + shell 订阅 locale 重渲染，切语言即跟随（注册期求值字符串快照是旧行为）。
-          // t 为本模块 var 活绑定（apply 内 locale.subscribe 回调重绑），thunk 保持最小
-          // t(key) 形态、不包任何可能抛错的逻辑（thunk 抛错会炸宿主 nav 渲染）。
-          {
-            name: "settings.section",
-            id: "dsh-notifier",
-            order: 70,
-            label: () => t("tabLabel"),
-            locale: NS,
-          },
-          function () {
-            return <SettingsCard />;
-          },
-        );
-      });
+      // 就地兜住插槽接线：这里失败只意味着设置 tab 没挂上，通知半区照常工作；冒到外层会被
+      // 报成整段「挂载失败」，把一次可降级的缺页说成插件不可用。
+      try {
+        slots.inject("settings.section", function () {
+          return slots.register(
+            // label 传 thunk：宿主 nav rows 每次读取经 resolveSlotLabel
+            // 求值 + shell 订阅 locale 重渲染，切语言即跟随（注册期求值字符串快照是旧行为）。
+            // t 走 client/locale.ts 的当前绑定（locale.subscribe 回调重绑），thunk 保持最小
+            // t(key) 形态、不包任何可能抛错的逻辑（thunk 抛错会炸宿主 nav 渲染）。
+            {
+              name: "settings.section",
+              id: "dsh-notifier",
+              order: 70,
+              label: () => t("tabLabel"),
+              locale: NS,
+            },
+            function () {
+              return <SettingsCard />;
+            },
+          );
+        });
+      } catch (error) {
+        console.warn("[dsh-notifier] 设置 tab 未挂载：", error);
+      }
     } else {
       console.warn("[dsh-notifier] 缺少 slots 服务，设置 tab 未挂载（通知半区照常工作）");
     }
-
-    // ⚠️ 清理必须写在 ctx.effect 返回的 disposer 里。
-    ctx.effect(function () {
-      return function () {
-        document.removeEventListener("visibilitychange", onVisibilityChange);
-        // 标题恢复（restoreTitle）原本只由 visibilitychange 回前台
-        // 触发；disposer 摘除监听后该路径关闭，若残留 flashTitle 的 savedTitle
-        // 缓存则标题永久卡死（复现路径：hidden 帧 → 卸载 → 标题不恢复）。
-        // 故卸载时主动恢复一次标题并清缓存。
-        restoreTitle();
-        if (unsubLocale !== undefined) {
-          unsubLocale();
-          unsubLocale = undefined;
-        }
-        if (disposeEvents) {
-          disposeEvents.close();
-          disposeEvents = null;
-          eventsHandle = null;
-        }
-        for (var i = 0; i < notified.length; i += 1) {
-          try {
-            notified[i].close();
-          } catch {
-            // 忽略
-          }
-        }
-        var style = document.getElementById(STYLE_ID);
-        if (style) style.remove();
-      };
-    }, "dsh-notifier");
   } catch (error) {
     console.warn("[dsh-notifier] 挂载失败：", error);
+  } finally {
+    stack.attach(ctx, "dsh-notifier", function (error) {
+      console.warn("[dsh-notifier] 卸载清理失败：", error);
+    });
   }
 }
 

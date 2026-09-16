@@ -224,9 +224,9 @@ test("覆盖对账：段名派生自 conf 文件名（与 ci-matrix / mutation-g
     expectedSegsFromConfFiles([
       "dsh-notifier-config-rest.json",
       "README.md",
-      "dsh-web-file-preview.json",
+      "dsh-lan-proxy-1.json",
     ]),
-    ["dsh-notifier-config-rest", "dsh-web-file-preview"],
+    ["dsh-lan-proxy-1", "dsh-notifier-config-rest"],
   );
 });
 

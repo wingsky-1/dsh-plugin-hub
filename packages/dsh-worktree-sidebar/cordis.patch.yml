@@ -1,0 +1,9 @@
+# dsh-worktree-sidebar bundle patch：向 web profile 名册插入 worktree 侧边栏适配层。
+# 主机端（exports "."）在宿主进程运行：注入 webServer / agents / typert / sessions，
+# 提供三个 agent 工具（登记 / 创建 / 移除 worktree）、接管 workspaceFileScope 解析，
+# 并提供 /api/dsh-worktree-sidebar/* 只读路由；
+# 浏览器端（exports "./client"）在官方封装就绪后接管 files 页签的目录根。
+# 配置走 schema 默认值（enabled），行内不带 config。
+- insert:
+    - id: ui-dsh-worktree-sidebar
+      name: "@wingsky-1/dsh-worktree-sidebar"

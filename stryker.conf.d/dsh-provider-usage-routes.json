@@ -6,7 +6,6 @@
     "packages/dsh-provider-usage/src/domain2/routes/ui.ts",
     "packages/dsh-provider-usage/src/domain2/routes/reports.ts",
     "!packages/dsh-provider-usage/src/client/**",
-    "!packages/dsh-provider-usage/src/types.ts",
     "!packages/dsh-provider-usage/src/**/interface.ts",
     "!packages/dsh-provider-usage/src/**/*.d.mts",
     "!packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.mjs",

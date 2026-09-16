@@ -7,7 +7,6 @@
     "packages/dsh-provider-usage/src/domain2/aggregate/store.ts",
     "packages/dsh-provider-usage/src/domain2/aggregate/index.ts",
     "!packages/dsh-provider-usage/src/client/**",
-    "!packages/dsh-provider-usage/src/types.ts",
     "!packages/dsh-provider-usage/src/**/interface.ts",
     "!packages/dsh-provider-usage/src/**/*.d.mts",
     "!packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.mjs",

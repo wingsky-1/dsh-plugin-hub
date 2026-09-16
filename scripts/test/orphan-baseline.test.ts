@@ -63,6 +63,11 @@ function runScript(
   return { status: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
 
+/** gh 子命令桩：失败分支统一写 stderr 并 exit 1——脚本必须把 gh 失败当成环境错误，而不是空结果。 */
+function ghArm(ok: boolean, success: string, label: string) {
+  return ok ? success : `echo '${label} boom' >&2; exit 1`;
+}
+
 /**
  * 造一个假 gh。模式必须按**具体度降序**排列：artifacts 的 URL
  * （`.../actions/runs/<id>/artifacts?...`）也含 `actions/runs`，若把 `*actions/runs*` 放在前面，
@@ -83,10 +88,10 @@ function writeFakeGh(
   const head = `[{"number":7,"merged_at":"2026-01-01T00:00:00Z","head":{"sha":"${"b".repeat(40)}"}}]`;
   const script = `#!/bin/sh
 case "$2" in
-  --paginate) ${jobsOk ? `printf '%s\\n' ${tsvJobs(jobs)}; exit 0` : `echo 'jobs boom' >&2; exit 1`} ;;
-  *commits/*/pulls) ${pullsOk ? `printf '%s' '${head}'; exit 0` : `echo 'pulls boom' >&2; exit 1`} ;;
-  *artifacts*) ${artifactsOk ? `printf '%s' '${artifacts}'; exit 0` : `echo 'artifacts boom' >&2; exit 1`} ;;
-  *actions/runs*) ${runsOk ? `printf '%s' '${runs}'; exit 0` : `echo 'runs boom' >&2; exit 1`} ;;
+  --paginate) ${ghArm(jobsOk, `printf '%s\\n' ${tsvJobs(jobs)}; exit 0`, "jobs")} ;;
+  *commits/*/pulls) ${ghArm(pullsOk, `printf '%s' '${head}'; exit 0`, "pulls")} ;;
+  *artifacts*) ${ghArm(artifactsOk, `printf '%s' '${artifacts}'; exit 0`, "artifacts")} ;;
+  *actions/runs*) ${ghArm(runsOk, `printf '%s' '${runs}'; exit 0`, "runs")} ;;
 esac
 echo "unexpected gh args: $*" >&2; exit 1
 `;

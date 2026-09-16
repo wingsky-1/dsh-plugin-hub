@@ -1,0 +1,46 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-notifier/src/client/**/*.ts",
+    "!packages/dsh-notifier/src/client/**/*.tsx",
+    "!packages/dsh-notifier/src/**/*.d.ts",
+    "!packages/dsh-notifier/src/**/interface.ts",
+    "!packages/dsh-notifier/src/server/*/deps.ts",
+    "!packages/dsh-notifier/src/server/channels/impl/system/deps.ts",
+    "!packages/dsh-notifier/src/**/*.d.ts",
+    "!packages/dsh-notifier/src/**/*.ps1"
+  ],
+  "testRunner": "vitest",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.stryker.d/dsh-notifier.config.ts"
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-notifier-client.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-notifier-client.json",
+  "_comment": "#769 客户端半区门禁：mutate 面 = src/client 下的纯 .ts 模块（node 判据在 client-unit 层、DOM 判据在 client-dom 层，两层都已进 mutationLayers，故这里的变异体有真实杀灭来源）。实测 covered 87.38%（killed 457 / survived 66 / noCoverage 0，concurrency 2 用时 4m03s）。两处排除各有一条理由：① **/*.tsx（13 个文件、含 1494 行的 index.tsx）——渲染需要 react 运行时，全仓未安装，判据面为零，等运行时与渲染 harness 落地后收掉本条；② **/*.d.ts——声明层无运行时代码。capabilities.ts 与 reason-text.ts 曾因判据建在 in-place esbuild 的已构建副本上（静态导入图里没有目标模块、变异体一律 noCoverage）被排除，现已由 client-unit 层的直连判据补齐，排除随之收掉。"
+}

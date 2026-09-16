@@ -3,6 +3,10 @@
  * 模板走两步法防注入：先替换裸值 {{ts}}、JSON.parse 整份模板，再对字符串值做占位符替换
  * 后重新序列化，替换内容因此逃不出字符串。任何失败都不重试。
  */
+// 默认模板与 {{priority}} 映射表的事实源在 src/shared/webhooks.ts（两端共享面）：客户端「恢复
+// 默认模板」与本出口渲染读同一份字面量——两处各写一份时的漂移症状是「设置页看到的模板与实际发
+// 出去的 body 不是同一份」。命名差异（配置层 custom = 投递层 raw）也在那里单点化。
+import { WEBHOOK_DEFAULT_TEMPLATES, WEBHOOK_PRIORITY } from "../../../../shared/interface.ts";
 import type { ReasonCode, ReasonParams } from "../../../shared/interface.ts";
 import { clampReasonDetail, reason } from "../../../shared/interface.ts";
 import {
@@ -19,21 +23,6 @@ import type {
   WebhookTemplateNode,
 } from "./type.ts";
 
-/** 预设默认模板（与客户端 WEBHOOK_PRESETS 同源语义；raw = 旧 custom）。 */
-const DEFAULT_TEMPLATES: Readonly<Record<WebhookPreset, string>> = {
-  ntfy: '{\n  "topic": "<topic>",\n  "title": "{{title}}",\n  "message": "{{message}}",\n  "tags": ["{{kind}}"],\n  "priority": "{{priority}}"\n}',
-  gotify:
-    '{\n  "title": "{{title}}",\n  "message": "{{message}}",\n  "priority": "{{priority}}"\n}',
-  raw: '{\n  "event": "{{kind}}",\n  "title": "{{title}}",\n  "body": "{{message}}",\n  "severity": "{{severity}}",\n  "ts": {{ts}}\n}',
-};
-
-/** {{priority}} 映射表（raw = severity 原文）；查不到即 severity 非法，视同未提供。 */
-const PRIORITY: Readonly<Record<WebhookPreset, Readonly<Record<NotifySeverity, string>>>> = {
-  ntfy: { failure: "urgent", warning: "high", success: "low", info: "default" },
-  gotify: { failure: "9", warning: "7", success: "3", info: "3" },
-  raw: { failure: "failure", warning: "warning", success: "success", info: "info" },
-};
-
 /** 投递超时边界与缺省（秒），与配置层同一口径。 */
 const MIN_TIMEOUT_SEC = 1;
 const MAX_TIMEOUT_SEC = 60;
@@ -45,11 +34,11 @@ const TOKEN_RE = /\{\{\s*(title|message|kind|severity|priority|source)\s*\}\}/g;
 /** `{{priority}}` 渲染值；severity 非法（跨边界值不受编译期约束）视同未提供。 */
 export function priorityFor(preset: WebhookPreset, severity?: NotifySeverity): string {
   const mapped =
-    severity !== undefined && Object.hasOwn(PRIORITY[preset], severity)
-      ? PRIORITY[preset][severity]
+    severity !== undefined && Object.hasOwn(WEBHOOK_PRIORITY[preset], severity)
+      ? WEBHOOK_PRIORITY[preset][severity]
       : undefined;
   if (mapped !== undefined) return mapped;
-  return preset === "raw" ? "" : PRIORITY[preset].info;
+  return preset === "raw" ? "" : WEBHOOK_PRIORITY[preset].info;
 }
 
 /** 渲染 body；模板非法 JSON 即抛错（调用方转成这次投递失败，绝不降级成文本发送）。 */
@@ -58,7 +47,7 @@ export function renderWebhookBody(
   preset: WebhookPreset,
   vars: WebhookRenderVars,
 ): string {
-  const source = template.length > 0 ? template : DEFAULT_TEMPLATES[preset];
+  const source = template.length > 0 ? template : WEBHOOK_DEFAULT_TEMPLATES[preset];
   // 第一步：只有 {{ts}} 允许裸值形态（数字直出），否则模板不可能通过 JSON.parse
   const step1 = source.split("{{ts}}").join(String(Math.round(vars.ts)));
   let tree: WebhookTemplateNode;

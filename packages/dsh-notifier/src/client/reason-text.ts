@@ -5,14 +5,13 @@
  * 编译期就红，而不是等用户看到一行英文标识符。`satisfies Record<ReasonCode, …>` 是穷尽约束，
  * 所以那边加一项、这边漏一项就是构建失败。
  *
- * 类型只 `import type`（编译期擦除，浏览器包里没有服务端代码）。理由的清单在服务端一处维护，
- * 客户端不抄第二份——两份逐字相同的清单必然有一处先漂。
+ * 类型只 `import type`（编译期擦除，浏览器包里没有服务端实现）。理由的清单在 src/shared/
+ * reason-codes.ts 一处维护（两端共享面），客户端不抄第二份——收口前 `reasonLegacy` 是本文件里
+ * 一份靠注释维系同值的字面量，改一边就是一个读不出来的历史行。
  */
-import type { ReasonCode } from "../server/shared/reason.ts";
+import { REASON_LEGACY } from "../shared/interface.ts";
+import type { ReasonCode } from "../shared/interface.ts";
 import type { NotifierLocaleKey } from "./locales.ts";
-
-/** 升级前的整句原文：这个 code 不含文案，`detail` 逐字显示（与服务端 `REASON_LEGACY` 同值）。 */
-const LEGACY_CODE = "reasonLegacy";
 
 /** 翻译函数：宿主 locale 服务产物，或未装配时回落 key 本体的那个。 */
 export type ReasonTranslator = (
@@ -52,7 +51,7 @@ export function reasonText(value: unknown, t: ReasonTranslator): string {
   if (view === undefined) return t("reasonUnknown");
   const detail = view.detail === undefined ? "" : view.detail;
   // 升级前誊下来的整句原文：它不是文案，逐字显示才是诚实的
-  if (view.code === LEGACY_CODE) return detail === "" ? t("reasonLegacy") : detail;
+  if (view.code === REASON_LEGACY) return detail === "" ? t("reasonLegacy") : detail;
   const key = knownKeyOf(view.code);
   // 认不出的 code（更新版本的插件写下的）：中性回退，先给宿主原文再给中性文案
   if (key === undefined) return detail === "" ? t("reasonUnknown") : detail;
@@ -64,7 +63,7 @@ export function reasonDetail(value: unknown): string {
   const view = reasonViewOf(value);
   if (view === undefined || view.detail === undefined) return "";
   // 升级前的原文已经是主文案，再折叠展示一次是同一条信息说两遍
-  return view.code === LEGACY_CODE ? "" : view.detail;
+  return view.code === REASON_LEGACY ? "" : view.detail;
 }
 
 /** 一条逐出口明细的视图：界面只消费它，于是「渲染成什么」在 node 环境里就能断言。 */

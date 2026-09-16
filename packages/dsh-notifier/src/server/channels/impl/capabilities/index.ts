@@ -39,7 +39,12 @@ export function checksFor(platform: string): DimensionChecks {
   return ALLOWED_CHECKED[platform] ?? POSIX_CHECKS;
 }
 
-/** 实际产出是否落在「平台 × 维度」允许集内。门禁与测试用它判红，实现自己不调用。 */
+/**
+ * 实际产出是否落在「平台 × 维度」允许集内。
+ *
+ * 只有测试消费它（断言「探测产出 ⊆ 该平台允许集」），实现自己不调用；也**没有门禁**消费它——
+ * 那条不变量要在每个平台上真跑一次探测，CI 做不到。注释原先写成「门禁与测试用它判红」，与事实不符。
+ */
 export function checkedWithin(
   platform: string,
   dimension: CapabilityDimension,

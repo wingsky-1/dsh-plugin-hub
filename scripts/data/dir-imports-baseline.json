@@ -5,7 +5,7 @@
     "dsh-lan-proxy": {
       "modules": 5,
       "scannedSrcFiles": 16,
-      "allSrcTsFiles": 23,
+      "allSrcTsFiles": 22,
       "interfaceFacades": 5,
       "leafValueEdges": 3,
       "fileValueEdges": 25,
@@ -19,31 +19,14 @@
         "uncoveredSrcFiles": []
       }
     },
-    "dsh-web-file-preview": {
-      "modules": 1,
-      "scannedSrcFiles": 3,
-      "allSrcTsFiles": 6,
-      "interfaceFacades": 1,
-      "leafValueEdges": 0,
-      "fileValueEdges": 2,
-      "crossModuleRefs": 2,
-      "quality": {
-        "leafModuleCycles": [],
-        "fileCycles": [],
-        "implToOtherImpl": [],
-        "missingInterface": [],
-        "directImpl": [],
-        "uncoveredSrcFiles": []
-      }
-    },
     "dsh-mcp-manager": {
       "modules": 14,
       "scannedSrcFiles": 63,
-      "allSrcTsFiles": 78,
+      "allSrcTsFiles": 77,
       "interfaceFacades": 14,
       "leafValueEdges": 33,
-      "fileValueEdges": 116,
-      "crossModuleRefs": 134,
+      "fileValueEdges": 115,
+      "crossModuleRefs": 131,
       "quality": {
         "leafModuleCycles": [
           "catalog|config/model|connection|connection/orchestrator",
@@ -67,12 +50,12 @@
     },
     "dsh-notifier": {
       "modules": 10,
-      "scannedSrcFiles": 99,
-      "allSrcTsFiles": 105,
+      "scannedSrcFiles": 107,
+      "allSrcTsFiles": 136,
       "interfaceFacades": 10,
-      "leafValueEdges": 7,
-      "fileValueEdges": 103,
-      "crossModuleRefs": 89,
+      "leafValueEdges": 11,
+      "fileValueEdges": 118,
+      "crossModuleRefs": 105,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -85,7 +68,7 @@
     "dsh-provider-usage": {
       "modules": 13,
       "scannedSrcFiles": 59,
-      "allSrcTsFiles": 75,
+      "allSrcTsFiles": 74,
       "interfaceFacades": 13,
       "leafValueEdges": 35,
       "fileValueEdges": 123,
@@ -115,6 +98,23 @@
       "leafValueEdges": 0,
       "fileValueEdges": 0,
       "crossModuleRefs": 0,
+      "quality": {
+        "leafModuleCycles": [],
+        "fileCycles": [],
+        "implToOtherImpl": [],
+        "missingInterface": [],
+        "directImpl": [],
+        "uncoveredSrcFiles": []
+      }
+    },
+    "dsh-worktree-sidebar": {
+      "modules": 7,
+      "scannedSrcFiles": 41,
+      "allSrcTsFiles": 47,
+      "interfaceFacades": 7,
+      "leafValueEdges": 2,
+      "fileValueEdges": 46,
+      "crossModuleRefs": 34,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],

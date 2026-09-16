@@ -173,10 +173,10 @@ describe("装配与读面", () => {
 describe("写面：落盘、校验、版本", () => {
   it("写一次即落盘：文件可被重新解析、目录里不留临时文件（半截 JSON 会被下一次装配当空设置）", async () => {
     assemble();
-    const result = await writeConfig({ notifyTaskDone: false, maxConnections: 32 });
+    const result = await writeConfig({ notifyTaskDone: false, historyMaxAgeDays: 32 });
     expect(result.ok).toBe(true);
     expect(onDisk().notifyTaskDone).toBe(false);
-    expect(onDisk().maxConnections).toBe(32);
+    expect(onDisk().historyMaxAgeDays).toBe(32);
     expect(readdirSync(dirname(configFile)).filter((name) => name.includes(".tmp-"))).toEqual([]);
   });
 
@@ -192,10 +192,10 @@ describe("写面：落盘、校验、版本", () => {
     assemble();
     await writeConfig({ notifyAsk: false });
     const before = readFileSync(configFile, "utf8");
-    const error = invalidOf(await writeConfig({ maxConnections: -1, notifyAsk: "yes" }));
-    expect(error.key).toBe("maxConnections");
+    const error = invalidOf(await writeConfig({ historyMaxAgeDays: -1, notifyAsk: "yes" }));
+    expect(error.key).toBe("historyMaxAgeDays");
     expect(readFileSync(configFile, "utf8")).toBe(before);
-    expect(readConfig().maxConnections).toBe(DEFAULT_CONFIG.maxConnections);
+    expect(readConfig().historyMaxAgeDays).toBe(DEFAULT_CONFIG.historyMaxAgeDays);
   });
 
   it("新增频道提交掩码占位：判非法并指向 channels（掩码只表达「未修改」，新实例没有原值）", async () => {
@@ -370,7 +370,7 @@ describe("写面的合并与凭据", () => {
   it("退役键写拒：0.2.3 的顶层渠道键提交返回 invalid 且不落盘、不改动生效设置", async () => {
     assemble();
     // 先落一次合法写入：下面「文件逐字未变」这条断言才有东西可比。
-    expect((await writeConfig({ maxConnections: 5 })).ok).toBe(true);
+    expect((await writeConfig({ historyMaxAgeDays: 5 })).ok).toBe(true);
     const before = readFileSync(configFile, "utf8");
     const effectiveBefore = readConfig();
 
@@ -385,6 +385,23 @@ describe("写面的合并与凭据", () => {
       },
     });
     // 拒绝发生在落盘之前：生效设置与文件都不该有任何变化
+    expect(readConfig()).toEqual(effectiveBefore);
+    expect(readFileSync(configFile, "utf8")).toBe(before);
+  });
+
+  // maxConnections 走同一条退役键拒收路径，但原因是 0.2.5 把上限机制整体移除——话术不能与渠道键
+  // 共用，且同样必须在落盘之前被拦下。
+  it("maxConnections 写拒：0.2.5 退役的连接上限键返回 invalid 且话术是它自己的", async () => {
+    assemble();
+    expect((await writeConfig({ historyMaxAgeDays: 5 })).ok).toBe(true);
+    const before = readFileSync(configFile, "utf8");
+    const effectiveBefore = readConfig();
+
+    const error = invalidOf(await writeConfig({ maxConnections: 64 } as unknown as SettingsPatch));
+
+    expect(error.key).toBe("maxConnections");
+    expect(error.hint).toContain("0.2.5");
+    expect(error.hint).not.toContain("已移入渠道条目");
     expect(readConfig()).toEqual(effectiveBefore);
     expect(readFileSync(configFile, "utf8")).toBe(before);
   });

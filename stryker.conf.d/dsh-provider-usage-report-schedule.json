@@ -8,7 +8,6 @@
     "packages/dsh-provider-usage/src/domain2/common/last-run.ts",
     "packages/dsh-provider-usage/src/apply/report-config-service.ts",
     "!packages/dsh-provider-usage/src/client/**",
-    "!packages/dsh-provider-usage/src/types.ts",
     "!packages/dsh-provider-usage/src/**/interface.ts",
     "!packages/dsh-provider-usage/src/**/*.d.mts",
     "!packages/dsh-provider-usage/src/domain1/adapters/deepseek-official.mjs",

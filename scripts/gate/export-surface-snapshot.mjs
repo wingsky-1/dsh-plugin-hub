@@ -86,7 +86,8 @@
  *   - `entries[e].blocks` := 该入口前缀所辖**全部** emit `.d.ts` 的块多重集（`.` → 101 条 /
  *     `./client` → 4 条）。
  *
- * 接入：scripts/gate/contract-check.ts（PR1 起对 dsh-notifier 强制）。
+ * 接入：ci.yml 的 `Export surface snapshot` 直接步骤与本地档位计划的 cheapGlobal
+ * （审计 P0-1 从 contract-check 迁出；PR1 起对 dsh-notifier 强制）。
  */
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -385,7 +386,9 @@ if (problems.length > 0) {
   );
   for (const p of problems) console.log(p);
   console.log(
-    "  若为有意变更（PR2 行为重构等），先更新基线：node scripts/gate/export-surface-snapshot.mjs --package dsh-notifier --snapshot",
+    "  若为有意变更（行为重构等），先更新基线：node scripts/gate/export-surface-snapshot.mjs --package " +
+      pkgName +
+      " --snapshot",
   );
   process.exit(1);
 }

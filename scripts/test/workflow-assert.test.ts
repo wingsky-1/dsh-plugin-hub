@@ -97,11 +97,11 @@ test("ci.yml: repo-gate if always() 且 fail-closed 断言经判定脚本执行"
   const gate = CI.slice(CI.indexOf("\n  repo-gate:"));
   assert.ok(/if: always\(\)/.test(gate), "repo-gate 必须 always() 运行（上游失败时仍执行判红）");
   assert.ok(/Fail-closed gate assertion/.test(gate), "fail-closed 断言步骤在位");
-  // #187：内联 bash 收敛为可单测的判定脚本，env 三维注入（事件 × 切片 × 结果）
-  assert.ok(
-    gate.includes("run: node scripts/gate/repo-gate-assert.mjs"),
-    "repo-gate fail-closed 判定必须调用 scripts/gate/repo-gate-assert.mjs",
-  );
+  // #187：内联 bash 收敛为可单测的判定脚本，env 三维注入（事件 × 切片 × 结果）。
+  // run 行的接线不在这里：includes 不剥注释，把 run 行注释掉它照样为真。那条事实改由
+  // scripts/test/gate-wiring.test.ts 承担——repo-gate-assert 在例外台账里登记为 ci-only，
+  // 而台账的 class 方向校验要求「标 ci-only 的端点必须真的只出现在 CI」。
+  assert.ok(gate.includes("Fail-closed gate assertion"), "repo-gate fail-closed 判定步骤必须在位");
   for (const env of [
     "GATE_EVENT",
     "GATE_CHANGES",
@@ -512,19 +512,22 @@ test("#220 段式三方一致：observe 计划 ↔ stryker.conf.d 文件集 ↔ 
   );
 
   // jsonReporter / incrementalFile 输出路径与配置文件名自洽
-  for (const f of confFiles) {
-    const conf = JSON.parse(readFileSync(join(confDir, f), "utf8"));
-    const out = conf?.jsonReporter?.fileName;
-    assert.ok(
-      out && out.endsWith(`coverage/mutation/${f}`),
-      `${f} 的 jsonReporter 输出应为 coverage/mutation/${f}（mutation-gate.mjs 按此约定读取）`,
-    );
-    const inc = conf?.incrementalFile ?? "";
-    assert.ok(
-      inc.endsWith(`incremental-${f.replace(/^dsh-/, "").replace(/\.json$/, "")}.json`),
-      `${f} 的 incrementalFile 应为 incremental-${f.replace(/^dsh-/, "").replace(/\.json$/, "")}.json（CI restore 步骤按此推导）`,
-    );
-  }
+  const assertConfOutputPaths = () => {
+    for (const f of confFiles) {
+      const conf = JSON.parse(readFileSync(join(confDir, f), "utf8"));
+      const out = conf?.jsonReporter?.fileName;
+      assert.ok(
+        out && out.endsWith(`coverage/mutation/${f}`),
+        `${f} 的 jsonReporter 输出应为 coverage/mutation/${f}（mutation-gate.mjs 按此约定读取）`,
+      );
+      const inc = conf?.incrementalFile ?? "";
+      assert.ok(
+        inc.endsWith(`incremental-${f.replace(/^dsh-/, "").replace(/\.json$/, "")}.json`),
+        `${f} 的 incrementalFile 应为 incremental-${f.replace(/^dsh-/, "").replace(/\.json$/, "")}.json（CI restore 步骤按此推导）`,
+      );
+    }
+  };
+  assertConfOutputPaths();
 
   // packages/ 目录集 ⊇ 基础包名集
   for (const p of basePkgs) {
@@ -726,10 +729,9 @@ test("#423+#722: 变异测试单份维护——禁 *.src.test.ts 回潮 + 变异
     CI.includes("Forbid legacy src tests"),
     "ci.yml repo-gate 必须含 Forbid legacy src tests 步骤（#423 防双份回潮）",
   );
-  assert.ok(
-    CI.includes("run: node scripts/gate/forbid-src-tests.mjs"),
-    "Forbid legacy src tests 必须调用 scripts/gate/forbid-src-tests.mjs",
-  );
+  // run 行的接线断言已迁入 scripts/test/gate-wiring.test.ts：那里剥掉注释行后做「本地档位
+  // 计划 ↔ CI repo-gate」的端点双向比对，比这里的 includes 强——把 run 行注释掉时 includes
+  // 仍为真，只有端点比对会红。并存会在同一情形给出红绿两种结论，故只留一处。
   assert.ok(
     existsSync(join(ROOT, "scripts/gate/forbid-src-tests.mjs")),
     "forbid-src-tests.mjs 脚本必须存在",
@@ -812,10 +814,7 @@ test("#517 B5: ci.yml homedir 门禁——Forbid homedir 步骤存在并调 forb
     CI.includes("Forbid homedir in src"),
     "ci.yml repo-gate 必须含 Forbid homedir in src 步骤（#517 B5 防回归）",
   );
-  assert.ok(
-    CI.includes("run: node scripts/gate/forbid-homedir-src.mjs"),
-    "Forbid homedir in src 必须调用 scripts/gate/forbid-homedir-src.mjs",
-  );
+  // 同上：run 行的接线断言归 scripts/test/gate-wiring.test.ts（剥注释 + 端点双向比对）。
   assert.ok(
     existsSync(join(ROOT, "scripts/gate/forbid-homedir-src.mjs")),
     "forbid-homedir-src.mjs 脚本必须存在",
@@ -1052,92 +1051,107 @@ test("#217+#187+#722: repo-gate-assert 判定表全组合锁定（事件 × full
   //     （#742 阶段 1.5：覆盖率不进 PR 默认路径，两侧都是 fail-closed）
   //   - PR + 空切片：三段全部 skipped 才绿（#742 阶段 1 收紧：if 上的 hasMutations 条件让
   //     空切片时 job 根本不实例化，不再有「零实例动态矩阵回报 failure」那种形态）
+  const expectNonPr = (full, cov, mut, verd) =>
+    full === "false" && allSkipped(cov, mut, verd) ? 0 : 1;
+  const expectPrWithMutations = (full, cov, mut, verd) => {
+    const covOk = full === "true" ? cov === "success" : cov === "skipped";
+    return covOk && (mut === "success" || mut === "failure") && verd === "success" ? 0 : 1;
+  };
+  const expectPrEmptySlice = (cov, mut, verd) => (allSkipped(cov, mut, verd) ? 0 : 1);
   const expectOf = (event, full, hm, cov, mut, verd) => {
     if (event !== "pull_request") {
-      return full === "false" && allSkipped(cov, mut, verd) ? 0 : 1;
+      return expectNonPr(full, cov, mut, verd);
     }
     if (hm === "true") {
-      const covOk = full === "true" ? cov === "success" : cov === "skipped";
-      return covOk && (mut === "success" || mut === "failure") && verd === "success" ? 0 : 1;
+      return expectPrWithMutations(full, cov, mut, verd);
     }
-    return allSkipped(cov, mut, verd) ? 0 : 1;
+    return expectPrEmptySlice(cov, mut, verd);
   };
 
   // PR 全量路径（gate:full）：hasMutations × coverage × 矩阵 × verdict 全组合（2×4×4×4 = 128 case）
-  for (const hm of ["true", "false"]) {
-    const pkgsJson = hm === "true" ? '["dsh-notifier"]' : "[]";
-    for (const cov of RESULTS) {
-      for (const mut of RESULTS) {
-        for (const verd of RESULTS) {
-          const expected = expectOf("pull_request", "true", hm, cov, mut, verd);
-          const v = run({
-            hasMutations: hm,
-            mutationPkgsJson: pkgsJson,
-            coverage: cov,
-            mutation: mut,
-            verdict: verd,
-          });
-          assert.equal(
-            v.code,
-            expected,
-            `PR gate:full hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`,
-          );
+  const assertPrFullCombos = () => {
+    for (const hm of ["true", "false"]) {
+      const pkgsJson = hm === "true" ? '["dsh-notifier"]' : "[]";
+      for (const cov of RESULTS) {
+        for (const mut of RESULTS) {
+          for (const verd of RESULTS) {
+            const expected = expectOf("pull_request", "true", hm, cov, mut, verd);
+            const v = run({
+              hasMutations: hm,
+              mutationPkgsJson: pkgsJson,
+              coverage: cov,
+              mutation: mut,
+              verdict: verd,
+            });
+            assert.equal(
+              v.code,
+              expected,
+              `PR gate:full hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`,
+            );
+          }
         }
       }
     }
-  }
+  };
+  assertPrFullCombos();
 
   // PR 默认路径（无 gate:full 标签）：#742 阶段 1 起变异按切片强制跑，只有 coverage 该被跳过——
   // hasMutations × coverage × 矩阵 × verdict 全组合（2×4×4×4 = 128 case）
-  for (const hm of ["true", "false"]) {
-    const pkgsJson = hm === "true" ? '["dsh-notifier"]' : "[]";
-    for (const cov of RESULTS) {
-      for (const mut of RESULTS) {
-        for (const verd of RESULTS) {
-          const expected = expectOf("pull_request", "false", hm, cov, mut, verd);
-          const v = run({
-            fullRequested: "false",
-            hasMutations: hm,
-            mutationPkgsJson: pkgsJson,
-            coverage: cov,
-            mutation: mut,
-            verdict: verd,
-          });
-          assert.equal(
-            v.code,
-            expected,
-            `PR 默认路径 hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`,
-          );
+  const assertPrDefaultCombos = () => {
+    for (const hm of ["true", "false"]) {
+      const pkgsJson = hm === "true" ? '["dsh-notifier"]' : "[]";
+      for (const cov of RESULTS) {
+        for (const mut of RESULTS) {
+          for (const verd of RESULTS) {
+            const expected = expectOf("pull_request", "false", hm, cov, mut, verd);
+            const v = run({
+              fullRequested: "false",
+              hasMutations: hm,
+              mutationPkgsJson: pkgsJson,
+              coverage: cov,
+              mutation: mut,
+              verdict: verd,
+            });
+            assert.equal(
+              v.code,
+              expected,
+              `PR 默认路径 hasMutations=${hm} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`,
+            );
+          }
         }
       }
     }
-  }
+  };
+  assertPrDefaultCombos();
 
   // 非 PR 分支：三段结果全组合（2 事件 × 4×4×4 = 128 case）；push 真实形态
   // （GATE_MUTATION_PKGS 的 push 取值）为非空全集清单，数据校验须放行
-  for (const ev of ["push", "workflow_dispatch"]) {
-    for (const cov of RESULTS) {
-      for (const mut of RESULTS) {
-        for (const verd of RESULTS) {
-          const expected = expectOf(ev, "false", "true", cov, mut, verd);
-          const v = run({
-            event: ev,
-            fullRequested: "false",
-            hasMutations: "true",
-            mutationPkgsJson: JSON.stringify(MUTATION_PACKAGES),
-            coverage: cov,
-            mutation: mut,
-            verdict: verd,
-          });
-          assert.equal(
-            v.code,
-            expected,
-            `${ev} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`,
-          );
+  const assertNonPrCombos = () => {
+    for (const ev of ["push", "workflow_dispatch"]) {
+      for (const cov of RESULTS) {
+        for (const mut of RESULTS) {
+          for (const verd of RESULTS) {
+            const expected = expectOf(ev, "false", "true", cov, mut, verd);
+            const v = run({
+              event: ev,
+              fullRequested: "false",
+              hasMutations: "true",
+              mutationPkgsJson: JSON.stringify(MUTATION_PACKAGES),
+              coverage: cov,
+              mutation: mut,
+              verdict: verd,
+            });
+            assert.equal(
+              v.code,
+              expected,
+              `${ev} coverage=${cov} mutation=${mut} verdict=${verd} 应为 code=${expected}`,
+            );
+          }
         }
       }
     }
-  }
+  };
+  assertNonPrCombos();
   // 非 PR 下 fullGate=true：全量门禁只允许在 PR 上按标签触发（#187 收敛不变量）
   assert.equal(
     run({ event: "push", mutationPkgsJson: JSON.stringify(MUTATION_PACKAGES) }).code,
@@ -1684,11 +1698,9 @@ test("#217+#722: repo-gate 六维聚合 needs + 判定脚本 env 全维注入", 
     CI.includes("fullGate: ${{ steps.fullgate.outputs.fullGate }}"),
     "changes outputs 必须声明并透传 fullGate（单一策略来源）",
   );
-  // #722：变异段默认不在 PR 上跑，conf ↔ 拓扑漂移必须仍能在增量路径被拦住
-  assert.ok(
-    rg.includes("run: pnpm stryker:check"),
-    "repo-gate 组 A 必须含 stryker:check（增量路径下 conf↔拓扑漂移的唯一拦截点）",
-  );
+  // #722：变异段默认不在 PR 上跑，conf ↔ 拓扑漂移必须仍能在增量路径被拦住。
+  // run 行的接线归 scripts/test/gate-wiring.test.ts（剥注释 + 端点双向比对）；这里的
+  // includes 不剥注释，注释掉 run 行仍为真，属本次迁移要消灭的弱钉形态。
   // 判定表实现侧同维锁定（env ↔ evaluateGate 输入一一对应）
 });
 

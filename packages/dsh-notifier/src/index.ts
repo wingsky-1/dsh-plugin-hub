@@ -23,6 +23,7 @@ import type { NotifierService } from "./server/sdk/interface.ts";
 import type { LoggerPort } from "./server/shared/interface.ts";
 import * as storesApi from "./server/stores/interface.ts";
 import { installUpgrade, releaseUpgrade } from "./server/upgrade/interface.ts";
+import { createDisposerStack, type DisposerStack } from "./shared/interface.ts";
 
 /**
  * 对外服务面类型：消费方要写 `const n: NotifierService = ctx["wingsky.notifier"]` 就得能命名它，
@@ -54,8 +55,16 @@ export interface NotifierApplyConfig {
 /** 挂载 dsh-notifier。 */
 export function apply(ctx: Context, config: NotifierApplyConfig = {}): void {
   const host = bindHost(ctx);
-  const disposers = assemble(host, config);
-  ctx.effect(() => () => safeDisposeAll(disposers));
+  const stack = createDisposerStack();
+  try {
+    assemble(host, config, stack);
+  } finally {
+    // 登记点留在采集之后：cordis 按 LIFO 释放 effect，提前登记会让整条栈在服务面已撤之后
+    // 才释放各域（api 域在别人已放开的入参上继续服务）。用 finally 而不是顺序执行，是为了
+    // 装配中途抛错时已采集的 teardown 也有释放点——原先那种「拿返回值去登记」的写法一抛错
+    // 就整条链一个都没登记。
+    stack.attach(ctx, "dsh-notifier");
+  }
 }
 
 /**
@@ -228,26 +237,24 @@ function bindHost(ctx: Context): HostPort {
  * 装配：按依赖顺序接上各域，返回它们的释放函数。每步入参都来自上一步的产出或 `host`，
  * 顺序错了就是运行期空值。
  */
-function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void> {
-  const disposers: Array<() => void> = [];
-
+function assemble(host: HostPort, config: NotifierApplyConfig, stack: DisposerStack): void {
   // 0. 音频临时目录的释放面：通道域没有装配步骤，但临时目录必须有人收。放在链首 = 逆序释放时
   //    最后执行——卸载瞬间若还有一笔自播在读那个文件，先删目录会让它复现「spawn 后立即 unlink」
   //    的失败（实测播放器报 42B 的「打不开」）。
-  disposers.push(channelsApi.releaseSoundTemps);
+  stack.own(channelsApi.releaseSoundTemps);
 
   // 1. 存储与配置形态迁移：动的是磁盘（存储三个文件 + 配置文件），必须早于任何读文件的域。
   //    存量配置由 settings 的显式依赖保证在装配期可读，所以整条链是同步的。
   installUpgrade({ logger: host.logger, legacySettings: host.legacySettings });
-  disposers.push(releaseUpgrade);
+  stack.own(releaseUpgrade);
 
   // 1. 设置：读面在装配返回时即可用，后续各域不必等加载。
   configApi.installConfig({ logger: host.logger });
-  disposers.push(configApi.releaseConfig);
+  stack.own(configApi.releaseConfig);
 
   // 2. 存储：保留天数由它自己按需读设置，不在这里替它取值。
   storesApi.installStores({ logger: host.logger, config: configApi });
-  disposers.push(storesApi.releaseStores);
+  stack.own(storesApi.releaseStores);
 
   // 3. 裁决管线：递的是提供方的命名空间对象（消费方用 Pick 收窄），将来多用一样能力不用改这行。
   pipelineApi.installPipeline({
@@ -258,7 +265,7 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
     stores: storesApi,
     channels: channelsApi,
   });
-  disposers.push(pipelineApi.releasePipeline);
+  stack.own(pipelineApi.releasePipeline);
 
   // 4. 事件：请求一律产出，去留由裁决层决定——开关会在本域看不见的地方被改。
   eventsApi.installEvents({
@@ -267,7 +274,7 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
     logger: host.logger,
     pipeline: pipelineApi,
   });
-  disposers.push(eventsApi.releaseEvents);
+  stack.own(eventsApi.releaseEvents);
 
   // 5. 对外 ABI：服务面自己不依赖任何后装的域，但 api 域要读它的种类清单，故排在 api 之前。
   sdkApi.installSdk({
@@ -275,7 +282,7 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
     config: configApi,
     pipeline: pipelineApi,
   });
-  disposers.push(sdkApi.releaseSdk);
+  stack.own(sdkApi.releaseSdk);
 
   // 6. 浏览器出口：最后装——它读各域的现值，装早了页面第一次请求就会拿到半成品。
   apiApi.installApi({
@@ -288,19 +295,5 @@ function assemble(host: HostPort, config: NotifierApplyConfig): Array<() => void
     kinds: sdkApi,
     channels: channelsApi,
   });
-  disposers.push(apiApi.releaseApi);
-
-  return disposers;
-}
-
-/** 逐个释放；单个释放失败不阻断其余（否则一个域的清理会拖垮整条卸载链）。 */
-function safeDisposeAll(disposers: Array<() => void>): void {
-  // 逆序：后装的先释放，否则 api 域会在别人已放开的入参上继续服务。
-  for (const dispose of [...disposers].reverse()) {
-    try {
-      dispose();
-    } catch {
-      // 忽略：卸载阶段不做失败上报，避免掩盖首个异常
-    }
-  }
+  stack.own(apiApi.releaseApi);
 }
