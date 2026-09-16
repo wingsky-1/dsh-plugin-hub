@@ -257,10 +257,21 @@ export function findClientLeaks(code) {
 }
 
 /**
+ * 干净模块允许的导出键集（`Object.keys` 口径，排序后拼串比较）。
+ *
+ * 为什么用 `Object.keys` 而不是全部自有属性：externals 路径把干净模块编译成 cjs 再内联，
+ * esbuild 的 `__toCommonJS` 会额外定义**非 enumerable** 的 `__esModule`——那是互操作标记，
+ * 不是源码导出面。源码里多写的 `export` 在两条路径上都是 enumerable（wrapper 外壳是普通
+ * 赋值，cjs 互操作是 enumerable getter），故枚举面恰好等于「产物对外暴露的键」。
+ */
+const CLIENT_EXPORT_KEYS = "apply,inject";
+
+/**
  * 客户端契约断言（执行产物后）。返回 { ok, checks, error, leaks }。
  * checks 键：执行无异常 / load恰好一次 / load id === 完整包名(含scope) /
  *           factories可被arrive解析 / materialize后exports.apply为函数 /
- *           materialize后exports.inject为数组 / 无宿主侧标识符泄漏。
+ *           materialize后exports.inject为数组 / materialize后exports键集恰为apply+inject /
+ *           无宿主侧标识符泄漏。
  */
 export function assertClientContract(pkgName, code) {
   const { calls, factories, error } = executeClient(code);
@@ -274,13 +285,16 @@ export function assertClientContract(pkgName, code) {
   };
   let applyOk = false;
   let injectOk = false;
+  let keysOk = false;
   if (checks["factories可被arrive解析"]) {
     const factory = factories.get(pkgName);
     const { exports: mod, error: matErr } = materialize(factory);
     applyOk = matErr === null && typeof mod.apply === "function";
     injectOk = matErr === null && Array.isArray(mod.inject);
+    keysOk = matErr === null && Object.keys(mod).sort().join(",") === CLIENT_EXPORT_KEYS;
   }
   checks["materialize后exports.apply为函数"] = applyOk;
   checks["materialize后exports.inject为数组"] = injectOk;
+  checks["materialize后exports键集恰为apply+inject"] = keysOk;
   return { ok: Object.values(checks).every(Boolean), checks, error, leaks };
 }
