@@ -112,8 +112,8 @@ release.yml tag 管线跑全量门禁——全量只在这三处语义中的后�
      组 A（廉价全仓闸，恒跑）：判定脚本 `repo-gate-assert.mjs`、`threshold-monotonic`、
      `aggregate:check`、`stryker:check`、`test:scripts`、`forbid-src-tests`、
      `forbid-homedir-src`、`forbid-module-state-src`、`verify-scripts-index`、
-     `verify-coverage-scope`、`verify:vendored-binaries`、`verify-dir-imports`（3 包硬判
-     + provider-usage `--soft`）、`export-surface-snapshot`（dsh-notifier）、
+     `verify-coverage-scope`、`verify:vendored-binaries`、`verify-dir-imports`（4 包硬判
+     + provider-usage `--soft`）、`export-surface-snapshot`（dsh-notifier + dsh-lan-proxy）、
      `verify-shared-fanin`、`docs:check`、`lint`、`format:check`
      （本清单是导读，**事实源是 ci.yml 的 repo-gate 步骤本身**。接线由
      `scripts/test/gate-wiring.test.ts` 两族断言守护，缺一不可：**一致性**——「本地档位计划 ↔

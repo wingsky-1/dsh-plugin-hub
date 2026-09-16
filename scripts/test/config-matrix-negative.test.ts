@@ -502,3 +502,61 @@ test("量级: README 配置表缺键 → warn 不红（pass 仍 true）", () => 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+// ---- 豁免锚点判据（#826）：新增的机器判据自己也要能被一次实现改动打红 ----
+
+test("UI 豁免表: 锚点指向错误的行 → 红并点名键（#826 新增判据的负向 fixture）", () => {
+  assertRed(
+    "把 host 的锚点指到 Config 声明行（87）而不是定义行（91）",
+    (root) => {
+      editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
+        const after = s
+          .split("server/config/impl/model.ts:91")
+          .join("server/config/impl/model.ts:87");
+        assert.notEqual(after, s, "fixture 应含 model.ts:91");
+        return after;
+      });
+    },
+    ["锚点", "指错", "host"],
+  );
+});
+
+test("UI 豁免表: 锚点指向别的文件 → 红（不能靠换路径躲开核验）", () => {
+  assertRed(
+    "把 host 的锚点路径换成 client/shared/defaults.ts（reason 与 rationale 两处）",
+    (root) => {
+      editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
+        // 两处都要换：只换一处时另一处仍是合法锚点，判据本就不该报「未指向」。
+        const after = s.split("model.ts:91").join("defaults.ts:91");
+        assert.notEqual(after, s, "fixture 应含 model.ts:91");
+        return after;
+      });
+    },
+    ["未指向 Config 表所在文件"],
+  );
+});
+
+test("UI 豁免表: 锚点写法变体（./ 前缀 / 区间）仍应通过——判据不得被写法差异误伤", () => {
+  const root = fakeRepo();
+  try {
+    editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
+      const json = JSON.parse(s);
+      const host = json.exemptKeys.find((e) => e.key === "host");
+      // 区间把上方注释一起括进来，且带 ./ 前缀：都是人写锚点的自然形态。
+      host.reason = host.reason.replace(
+        "packages/dsh-lan-proxy/src/server/config/impl/model.ts:91",
+        "./packages/dsh-lan-proxy/src/server/config/impl/model.ts:88-95",
+      );
+      const targetHost = json.exemptKeys.find((e) => e.key === "targetHost");
+      targetHost.reason = targetHost.reason.replace(
+        "packages/dsh-lan-proxy/src/server/config/impl/model.ts:107",
+        "./packages/dsh-lan-proxy/src/server/config/impl/model.ts:107",
+      );
+      return `${JSON.stringify(json, null, 2)}\n`;
+    });
+    const r = runConfigMatrix(root);
+    assert.equal(r.pass, true, `写法变体不应判红。实际 problems: ${r.problems.join("; ")}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

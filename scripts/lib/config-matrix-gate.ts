@@ -128,27 +128,42 @@ function checkExempts(pkg, exempt, schema, cfgPath) {
  * 以为锚点是对的。
  *
  * 判据取文本而非 AST：esbuild transform 会重排行号，AST 的 loc 对不上源文件——同
- * sourceLineOf 放弃 AST 的原因。锚点路径允许写成全仓库路径或包内相对路径（两者都以
- * Config 文件路径为后缀），引用其它文件的锚点不在本判据的适用面内。
+ * sourceLineOf 放弃 AST 的原因。锚点路径允许写成全仓库路径 / 包内相对路径 / 裸文件名
+ * （都以 Config 文件路径为后缀，`./` 前缀先归一），引用其它文件的锚点不在本判据的适用面内。
+ *
+ * 已知边界（当前不可达，如实写明胜过过度声称）：propRe 只认「行首缩进 + 键名 + 冒号」，
+ * 不校验它是 Config 的**顶层**属性——若将来某个嵌套对象里出现与顶层豁免键同名的属性行，
+ * 锚点指向那一行也会通过。当前 4 个豁免键在 Config 区间内各自只有 1 行匹配（逐键实测）。
  */
 function exemptAnchorProblems(pkg, k, reason, rationale, schema, cfgPath, spanEnd) {
   const problems = [];
   const lines = schema.text.split("\n");
   const propRe = new RegExp(`^[ \\t]*${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[ \\t]*:`);
-  const anchors = [...`${reason}\n${rationale}`.matchAll(/([\w./-]+\.[A-Za-z]+):(\d+)/g)].filter(
-    (m) => cfgPath.endsWith(m[1]),
-  );
+  // 锚点形态「<路径>:<行>」；区间写法（`:91-95`）与 `./` 前缀都是人写锚点的自然形态，
+  // 判据不该因为写法差异判红——那只会把修复方向指错。
+  const anchors = [...`${reason}\n${rationale}`.matchAll(/([\w./-]+\.[A-Za-z]+):(\d+)(?:-(\d+))?/g)]
+    .map((m) => ({
+      path: m[1].replace(/^\.\//, ""),
+      raw: m[0],
+      from: Number(m[2]),
+      to: m[3] === undefined ? Number(m[2]) : Number(m[3]),
+    }))
+    .filter((a) => cfgPath.endsWith(a.path));
   if (anchors.length === 0) {
     problems.push(
       `${pkg} 豁免键 ${k} 的锚点未指向 Config 表所在文件（${cfgPath}）：须写成「<路径>:<行>」才可被机器校验`,
     );
     return problems;
   }
-  for (const m of anchors) {
-    const line = Number(m[2]);
-    if (line < schema.line || line >= spanEnd || !propRe.test(lines[line - 1] ?? "")) {
+  for (const a of anchors) {
+    // 区间内**任意**一行命中即算指向正确——区间常把上方注释一起括进来。
+    let hit = false;
+    for (let line = a.from; line <= a.to && !hit; line += 1) {
+      hit = line >= schema.line && line < spanEnd && propRe.test(lines[line - 1] ?? "");
+    }
+    if (!hit) {
       problems.push(
-        `${pkg} 豁免键 ${k} 的锚点 ${m[1]}:${line} 指错——该行不是 Config 里 ${k} 的定义行（Config 表跨 ${schema.line}-${spanEnd - 1} 行）`,
+        `${pkg} 豁免键 ${k} 的锚点 ${a.raw} 指错——区间内没有一行是 Config 里 ${k} 的定义行（Config 表跨 ${schema.line}-${spanEnd - 1} 行）`,
       );
     }
   }

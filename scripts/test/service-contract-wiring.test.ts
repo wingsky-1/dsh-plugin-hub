@@ -89,8 +89,10 @@ const EXPECT_FILES: Record<string, string[]> = {
   "dsh-lan-proxy": [
     "client/client-style.test.ts",
     "e2e/smoke.test.ts",
+    "integration/apply-token-provider.test.ts",
     "unit/unit-apply.test.ts",
     "unit/unit-proxy.test.ts",
+    "unit/unit-tls.test.ts",
   ],
   "dsh-mcp-manager": [
     "helpers.ts",

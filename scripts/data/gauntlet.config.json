@@ -77,21 +77,21 @@
         "scope": "src 级十二段（#342 二期六段 + 阶段零四段 + 阶段一 routes 段 + 阶段三 errsurf 段）：entry / apply / contracts / sanitize / registry registry+user-adapter-loader / pipeline history+v2+hotreload+placement-math+path-resolve+client-logic+provider-config+charts+stats-service / trend-aggregate aggregator+aggregate-rows+aggregate-query+store+index（阶段三 D2 拆分并入 mutate 面） / trend-collect collector+types / report-schedule config+schedule+scheduler+tasks+last-run+report-config-service（D8 归位）/ report-execute runner+generate+format+report-index+executor+list-dirs（D8 归位）/ routes stats+adapters+ui+reports / errsurf errsurf.ts（阶段三 B）；基线为 src 口径，由 observe 夜间全量班重建"
       },
       "dsh-lan-proxy": {
-        "baselineScore": null,
-        "baselineCovered": null,
-        "baselineKilled": null,
-        "baselineTimeout": null,
-        "baselineSurvived": null,
-        "baselineTotal": null,
-        "baselineNoCoverage": null,
-        "baselineErrors": null,
-        "baselineDate": null,
-        "baselineDuration": null,
-        "legacyNote": "#147 变异加固轮（2026-08-25）留档：covered 62.52%（score 52.43 / killed 400 / timeout 42 / survived 265 / total 843 / noCoverage 136 / errors 0，墙钟 7m50s）——描述的是 #826 域归位**之前**的 4 段面，更早还是自研三段 + lib 产物行号口径（lib/index.js:35657-35911+35912-35972+36058-36643，对应旧根 src/proxy.ts+cert.ts+index.ts）。该口径随目录重排作废，故上面整组数值一律置 null：回落判据（observe-check.mjs 的 covered < baseline - 1pp）读的就是 baselineCovered，留着旧值会让首个夜间班按一个不存在的回归追评「请排查最近合入 main 的改动」，而基线并不会自动重建（夜间只归档 Stryker 报告，本文件要人改），假回落会每夜重发。新基线的填法：按新 6 段面跑完首次夜间全量班后把实测值填回这批字段——不要用 fixedCovered 顶替，它的语义是「口径修正后的实测值」，此时尚无实测。",
+        "baselineScore": 52.43,
+        "baselineCovered": 62.52,
+        "baselineKilled": 400,
+        "baselineTimeout": 42,
+        "baselineSurvived": 265,
+        "baselineTotal": 843,
+        "baselineNoCoverage": 136,
+        "baselineErrors": 0,
+        "baselineDate": "2026-08-25",
+        "baselineDuration": "7m50s",
+        "legacyNote": "#147 变异加固轮（2026-08-25）实测：covered 62.52%（score 52.43 / killed 400 / timeout 42 / survived 265 / total 843 / noCoverage 136 / errors 0，墙钟 7m50s），描述的是 #826 域归位**之前**的 4 段面（更早还是自研三段 + lib 产物行号口径 lib/index.js:35657-35911+35912-35972+36058-36643，对应旧根 src/proxy.ts+cert.ts+index.ts）。**上面这组值仍是活判据**：gate/observe-check.mjs 的回落判定就是 covered < (fixedCovered ?? baselineCovered) - 1pp，不是留档散文。为什么保留而不置 null：段面口径变了，但 mutate 的**文件集合**基本不变（同一批实现的重新分段），聚合 covered 预期与 62.52% 接近；而置 null 会让 regressed 恒 false、本文件又不会自动重建，lan-proxy 就静默失去回落判据——宁可跨口径报一次，也不要静默失效。首次按新 6 段面跑完夜间全量班后，请用实测值重建这批字段并删除本注；在那之前若夜间报「回落」，先核对是否只是段面口径变化所致。",
         "config": "stryker.conf.d/dsh-lan-proxy-{config,entry,migrate,proxy,shared,tls}.json（#826 域归位后按模块目录重划为 6 段，段键 = src/server/<域> 的目录名；原 #220 B 段拆分的 4 个数字段键 1..4 已退役）",
         "hardeningNote": "#147 变异加固轮：covered 由 49.75% 提升至 62.52%，60% 第一阶达标（旧 4 段面，见 legacyNote）",
         "threshold": 60,
-        "scope": "src 级六段（#826 域归位：段键取 src/server/<域> 的模块目录名，与旧数字段键 1..4 的对应关系见 mutation-segment-ledger.json 的 superseded）：config server/config/impl（model 原根 config.ts / routes 原根 config-routes.ts / namespace 原根 settings.ts）/ entry src/index.ts + server/apply.ts（两个无模块目录归属的根文件，沿用 mcp-manager、provider-usage 的 entry 先例）/ migrate server/migrate/impl/file（原根 migrate.ts）/ proxy server/proxy/impl（原根 proxy.ts，单文件千行级，沿用 #220 B 段「大文件独占一段」口径）/ shared server/shared（重排时新提取的包内共用叶子 defaults / deflate / net，配置域与引擎域同向依赖它）/ tls server/tls/impl（原根 cert.ts）；server 侧五处 interface.ts 门面按 facade 口径进 coverageExcludes，不在 mutate 面；基线为 src 口径，待 observe 夜间全量班按新段面重建（重建前 baseline* 为 null，见 legacyNote）"
+        "scope": "src 级六段（#826 域归位：段键取 src/server/<域> 的模块目录名，与旧数字段键 1..4 的对应关系见 mutation-segment-ledger.json 的 superseded）：config server/config/impl（model 原根 config.ts / routes 原根 config-routes.ts / namespace 原根 settings.ts）/ entry src/index.ts + server/apply.ts（两个无模块目录归属的根文件，沿用 mcp-manager、provider-usage 的 entry 先例）/ migrate server/migrate/impl/file（原根 migrate.ts）/ proxy server/proxy/impl（原根 proxy.ts，单文件千行级，沿用 #220 B 段「大文件独占一段」口径）/ shared server/shared（重排时新提取的包内共用叶子 defaults / deflate / net，配置域与引擎域同向依赖它）/ tls server/tls/impl（原根 cert.ts）；server 侧五处 interface.ts 门面按 facade 口径进 coverageExcludes，不在 mutate 面；基线为 src 口径，待 observe 夜间全量班按新段面重建（见 legacyNote）"
       }
     }
   }
