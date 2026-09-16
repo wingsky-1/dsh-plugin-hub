@@ -85,6 +85,11 @@ export function tierSteps(tier, { hitPackages, withCoverage, base, scopeLabel })
       args: ["scripts/gate/export-surface-snapshot.mjs", "--package", "dsh-notifier"],
     },
     {
+      label: "export-surface-snapshot（dsh-lan-proxy 导出面与基线零 diff）",
+      cmd: "node",
+      args: ["scripts/gate/export-surface-snapshot.mjs", "--package", "dsh-lan-proxy"],
+    },
+    {
       label: "verify-shared-fanin（shared 模块跨包扇入；#792）",
       cmd: "node",
       args: ["scripts/gate/verify-shared-fanin.mjs"],

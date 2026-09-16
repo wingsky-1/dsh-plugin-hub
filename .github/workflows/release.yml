@@ -62,6 +62,9 @@ jobs:
       - name: Export surface snapshot（dsh-notifier）
         run: node scripts/gate/export-surface-snapshot.mjs --package dsh-notifier
 
+      - name: Export surface snapshot（dsh-lan-proxy）
+        run: node scripts/gate/export-surface-snapshot.mjs --package dsh-lan-proxy
+
       - name: Verify shared fan-in
         run: node scripts/gate/verify-shared-fanin.mjs
 
