@@ -113,6 +113,21 @@ function makeFixtureRoot(extraFiles = {}, topologyOverride = TOPOLOGY) {
   return root;
 }
 
+/**
+ * 删掉 fixture 根。
+ *
+ * 夹具是**真 git 仓库**（commitBase 要 base commit），而清理与夹具里最后一批写盘
+ * 存在残余竞态：rmSync 的递归删除在「读完目录条目 → rmdir」之间若仍有条目落盘，
+ * rmdir 会抛 ENOTEMPTY。默认 maxRetries=0 时 Node **不重试**，该竞态直接冒到用例上
+ * （真机 CI 已复现：PR #863 的 Build / Contract / Smoke / Pack 里 T3② 在清理阶段
+ * 报 ENOTEMPTY, Directory not empty: /tmp/s2b-fixture-*）。maxRetries / retryDelay
+ * 正是 Node 官方为 ENOTEMPTY / EBUSY 类清理竞态提供的重试机制，此处把清理收口到一个
+ * 位置统一加固，避免 22 处各自裸调 rmSync 时口径漂移。
+ */
+function removeFixtureRoot(root) {
+  rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+}
+
 /** 覆写 fixture 工作区的拓扑（基准 commit 不变 —— 这正是判据⑦ 要看的差异）。 */
 function writeTopology(root, topologyOverride) {
   writeFileSync(
@@ -164,7 +179,7 @@ test("T2/T3①：runner 面文件全部自动分层，单元/集成层进变异�
       "支撑模块不得进入 runner 测试面",
     );
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureRoot(root);
   }
 });
 
@@ -179,7 +194,7 @@ test("T2/T3① 反证：往 unit 层丢新文件 → 变异面自动纳入，零
     assert.equal(p.runFiles.length, 7, "runner 面也应自动纳入");
     assert.deepEqual(p.errors, []);
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureRoot(root);
   }
 });
 
@@ -198,7 +213,7 @@ test("T3① 反证：runner 面出现无层归属的文件 → 判红并点名",
       "未决定层归属的文件不得进 conf",
     );
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureRoot(root);
   }
 });
 
@@ -215,7 +230,7 @@ test("T3②：豁免必须带理由且真实存在于 unit 层", () => {
       `空理由必须判红：${p.errors.join("; ")}`,
     );
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureRoot(root);
   }
 
   const withGhost = structuredClone(TOPOLOGY);
@@ -230,7 +245,7 @@ test("T3②：豁免必须带理由且真实存在于 unit 层", () => {
       `幽灵豁免必须判红：${p.errors.join("; ")}`,
     );
   } finally {
-    rmSync(root2, { recursive: true, force: true });
+    removeFixtureRoot(root2);
   }
 });
 
@@ -259,7 +274,7 @@ test("T3③：--min == runner glob 实际文件数；脱节判红，--sync-test-
     assert.match(pkgJson.scripts.test, /--min 7/, "--min 应被同步为 7");
     assert.equal(runGenerator(root, ["--check"]).status, 0, "同步后应通过");
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureRoot(root);
   }
 });
 
@@ -289,7 +304,7 @@ test("T3③-回归：test 脚本换 runner 后 --min 契约不变（#722）", ()
       "runner 名应原样保留，仅 --min 被同步",
     );
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureRoot(root);
   }
 });
 
@@ -320,7 +335,7 @@ test("T3 反证：从派生 conf / vitest 测试面配置删掉登记条目 → 
     assert.equal(vRes.status, 1, `vitest 测试面配置被改必须判红：\n${vRes.out}`);
     assert.match(vRes.out, /vitest 测试面配置与拓扑派生不一致/, "应点名 vitest 配置与派生脱节");
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureRoot(root);
   }
 });
 
@@ -334,7 +349,7 @@ test("T2 幂等：连续两次生成后 --check 仍绿（无静默漂移）", ()
     assert.equal(first, second, "两次生成必须逐字一致");
     assert.equal(runGenerator(root, ["--check"]).status, 0);
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureRoot(root);
   }
 });
 
@@ -375,7 +390,7 @@ test("P0-1 反证：import 派生模块不得写盘（否则 test:scripts 会静
       "import 之后 --check 仍须判红（未被静默修好）",
     );
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureRoot(root);
   }
 });
 
@@ -395,7 +410,7 @@ test("P0-2 反证：磁盘上有测试但未登记的包 → 判红点名（不�
       "应说明 fail-closed 理由",
     );
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureRoot(root);
   }
 });
 
@@ -421,7 +436,7 @@ test("P0-2b：$noMutationPackages 声明过的包放行，但其 --min 仍受限
     assert.equal(res.status, 1, `$noMutationPackages 的包 --min 脱节也必须判红：\n${res.out}`);
     assert.match(res.out, /ghost-pkg.*--min 9 != 实际测试文件数 1/s, "应点名该包的 --min 脱节");
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureRoot(root);
   }
 });
 
@@ -463,7 +478,7 @@ test("P0-3 反证：把必需层移出 mutationLayers（或加进排除层）→
         `${label}：错误应点明充分性：${p.errors.join("; ")}`,
       );
     } finally {
-      rmSync(root, { recursive: true, force: true });
+      removeFixtureRoot(root);
     }
   }
 });
@@ -481,7 +496,7 @@ test("P1-5：--sync-test-min 遇无法同步的 --min 必须非零退出", () =>
     assert.equal(res.status, 1, `存在无法同步项时必须非零退出：\n${res.out}`);
     assert.match(res.out, /无法自动同步/, "应说明无法同步");
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureRoot(root);
   }
 });
 
@@ -496,7 +511,7 @@ test("P2-7：unit 层零命中（glob 被改坏）→ 判红并点名", () => {
       `应报 unit 层零命中：${p.errors.join("; ")}`,
     );
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureRoot(root);
   }
 });
 
@@ -557,7 +572,7 @@ test("判据⑦ 反证：文件从段 mutate 挪进**同段** excludes 并重生
       `除并集棘轮外不得有其它判词：\n${res.out}`,
     );
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureRoot(root);
   }
 });
 
@@ -591,7 +606,7 @@ test("判据⑦：段之间挪动合法（并集不变）→ 绿；真删除并�
     assert.equal(deletedRes.status, 0, `真删除不得判红：\n${deletedRes.out}`);
     assert.match(deletedRes.out, /无收缩/);
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureRoot(root);
   }
 });
 
@@ -633,7 +648,7 @@ test("判据⑦：台账是唯一放宽通道（精确键 / 整包键），错�
     const res = runGenerator(exact, ["--check"]);
     assert.equal(res.status, 0, `已登记的收缩应放行：\n${res.out}`);
   } finally {
-    rmSync(exact, { recursive: true, force: true });
+    removeFixtureRoot(exact);
   }
 
   // (b) 整包键 <包名>:* 同样放行（整包收缩是一次显式裁决）
@@ -645,7 +660,7 @@ test("判据⑦：台账是唯一放宽通道（精确键 / 整包键），错�
     const res = runGenerator(whole, ["--check"]);
     assert.equal(res.status, 0, `整包键应放行：\n${res.out}`);
   } finally {
-    rmSync(whole, { recursive: true, force: true });
+    removeFixtureRoot(whole);
   }
 
   // (c) 错键（指向没收缩的文件）不得顺带关掉判据，且自身按反向腐烂判红
@@ -659,7 +674,7 @@ test("判据⑦：台账是唯一放宽通道（精确键 / 整包键），错�
     assert.match(res.out, /变异面并集相对基准收缩/, "收缩仍须点名");
     assert.match(res.out, /没有对应的收缩缺口/, "失效条目须按反向腐烂判红");
   } finally {
-    rmSync(wrong, { recursive: true, force: true });
+    removeFixtureRoot(wrong);
   }
 });
 
@@ -682,6 +697,6 @@ test("判据⑦ 载体自证：基准拓扑无包登记（比对面为空）→ 
       `红必须来自载体自证，而不是别的判据顺带报出来的：\n${res.out}`,
     );
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeFixtureRoot(root);
   }
 });
