@@ -3,13 +3,37 @@
  *
  * 默认不删目录是刻意的：删除可能丢掉未提交改动，而「我只是想换个根」与「我要销毁这个工作区」
  * 是两件事，不该由同一个默认值承担。
+ *
+ * **继承态不摘任何东西**：本会话没有自己的登记时，右栏的根属于父会话——摘它是改别人的状态，
+ * 删目录更是销毁别人的工作区。这一态只如实说明并给出路。
  */
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type { ToolsDeps } from "../../deps.ts";
-import { resultOf, stateOf } from "../bind/index.ts";
+import { NO_ORIGIN, originOf, resultOf } from "../bind/index.ts";
 import { argBool, RESULT_SCHEMA, renderResult } from "../protocol/index.ts";
 import type { ToolResultValue } from "../protocol/index.ts";
 import { sessionOf } from "../session/index.ts";
+
+/**
+ * 继承态的解绑出路。三条互为补充：第 1 条是正路；2、3 两条在**父会话已经结束**（fork 的常见
+ * 形态）时仍然走得通。第 3 条把本会话登记到自己的 cwd，视觉上等于取消继承——写的是一条**普通
+ * 登记**（own 优先覆盖继承），不是任何形式的否定登记。
+ */
+function inheritedHelp(ownerSessionId: string, cwd: string | undefined): string {
+  const main =
+    "Nothing to unbind here: the Files tab root belongs to session " +
+    ownerSessionId +
+    ", not to this session. To stop following it: (1) unbind it in that session with ws_worktree_remove, " +
+    "or (2) bind this session to another worktree with ws_worktree_create / ws_worktree_register.";
+  if (cwd === undefined) return main;
+  return (
+    main +
+    " A third option, when that session is gone: bind this session to its own working directory with " +
+    'ws_worktree_register({ worktree: "' +
+    cwd +
+    '" }), which makes this session stop inheriting.'
+  );
+}
 
 export function buildRemoveTool(deps: ToolsDeps): ToolDefinition {
   return {
@@ -44,15 +68,20 @@ export function buildRemoveTool(deps: ToolsDeps): ToolDefinition {
       const session = sessionOf(exec);
       if (session === undefined) {
         return resultOf(
-          { bound: false, worktree: "", branch: "" },
+          NO_ORIGIN,
           false,
           "This tool needs an agent session, and the call carries none. Run it as an agent tool call.",
         );
       }
-      const state = stateOf(deps, session.id);
-      if (!state.bound) {
+      const origin = await originOf(deps, session.id);
+      // 继承态与未绑定态都在**参数解析之前**判掉：否则 {removeDirectory:true} 会走到下面
+      // 拿不到自己的记录，回一句含糊的失败，模型会以为「重试一次就好」。
+      if (origin.kind === "inherited") {
+        return resultOf(origin, false, inheritedHelp(origin.ownerSessionId, session.cwd));
+      }
+      if (origin.kind === "none") {
         return resultOf(
-          state,
+          origin,
           false,
           "No worktree is bound to this session, so there is nothing to unbind.",
         );
@@ -61,7 +90,7 @@ export function buildRemoveTool(deps: ToolsDeps): ToolDefinition {
       const force = argBool(args, "force");
       if (force && !removeDirectory) {
         return resultOf(
-          state,
+          origin,
           false,
           "force only applies together with removeDirectory: true; the binding is unchanged.",
         );
@@ -70,28 +99,31 @@ export function buildRemoveTool(deps: ToolsDeps): ToolDefinition {
       if (!removeDirectory) {
         const dropped = await deps.binding.drop(session.id);
         if (!dropped.ok) {
-          return resultOf(state, false, "Could not persist the unbind: " + dropped.reason);
+          return resultOf(origin, false, "Could not persist the unbind: " + dropped.reason);
         }
+        // 摘掉自己的登记之后**必须重新解析**：右栏可能回落到继承来的根，那是调用者必须知道的事实。
+        const after = await originOf(deps, session.id);
         return resultOf(
-          stateOf(deps, session.id),
+          after,
           true,
-          "Unbound the worktree from this session. The directory was left in place; open or refresh " +
-            "the Files tab to return to the session cwd.",
+          after.kind === "inherited"
+            ? "Unbound this session's own binding. The Files tab now follows the root inherited from " +
+                "session " +
+                after.ownerSessionId +
+                "."
+            : "Unbound the worktree from this session. The directory was left in place; open or refresh " +
+                "the Files tab to return to the session cwd.",
         );
       }
 
-      const record = deps.binding.get(session.id);
-      if (record === undefined) {
-        return resultOf(
-          stateOf(deps, session.id),
-          false,
-          "The binding disappeared before it could be removed.",
-        );
-      }
-      const removed = await deps.git.removeWorktree(record.repoRoot, record.worktreeRoot, force);
+      const removed = await deps.git.removeWorktree(
+        origin.record.repoRoot,
+        origin.record.worktreeRoot,
+        force,
+      );
       if (!removed.ok) {
         return resultOf(
-          state,
+          origin,
           false,
           "git worktree remove failed: " + removed.reason + " The binding is unchanged.",
         );
@@ -101,17 +133,23 @@ export function buildRemoveTool(deps: ToolsDeps): ToolDefinition {
         // 目录已经没了、登记还在：解析器会把「目录不存在」按未绑定处理，故这是一条自愈路径，
         // 但对调用者必须说清楚，否则下次来看会以为还绑着。
         return resultOf(
-          state,
+          origin,
           false,
           "Removed the worktree directory, but the binding could not be dropped: " +
             dropped.reason +
             " It is now stale and will be treated as unbound; call this tool again to retry the unbind.",
         );
       }
+      const after = await originOf(deps, session.id);
       return resultOf(
-        stateOf(deps, session.id),
+        after,
         true,
-        "Unbound this session and removed the worktree directory with git worktree remove.",
+        after.kind === "inherited"
+          ? "Unbound this session and removed the worktree directory with git worktree remove. The " +
+              "Files tab now follows the root inherited from session " +
+              after.ownerSessionId +
+              "."
+          : "Unbound this session and removed the worktree directory with git worktree remove.",
       );
     },
   };

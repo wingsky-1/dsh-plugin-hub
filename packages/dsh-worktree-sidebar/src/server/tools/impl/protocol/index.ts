@@ -13,7 +13,7 @@ import type { JsonSchemaNode } from "@deepseek-ai/dsh-tools";
 export interface ToolResultValue {
   /** 本次请求的操作是否成功。 */
   readonly ok: boolean;
-  /** 调用之后该会话是否仍有绑定。 */
+  /** 调用之后该会话是否仍有绑定（含沿父链继承来的那条）。 */
   readonly bound: boolean;
   /** 绑定指向的 worktree 绝对路径；`bound` 为 false 时是空串。 */
   readonly worktree: string;
@@ -30,7 +30,8 @@ export const RESULT_SCHEMA: JsonSchemaNode = {
     ok: { type: "boolean", description: "Whether the requested operation succeeded." },
     bound: {
       type: "boolean",
-      description: "Whether a worktree is bound to this session after the call.",
+      description:
+        "Whether a worktree is bound to this session or inherited from a parent session after the call.",
     },
     worktree: {
       type: "string",

@@ -118,11 +118,13 @@ async function assemble(
     });
     disposers.push(scopeApi.releaseScope);
 
-    // 4. tools 域：写绑定的唯一入口。
+    // 4. tools 域：写绑定的唯一入口。它读 scope 的**绑定来源**（不是生效根）：工具面的现状读数
+    //    因此与侧边栏那一路同源，fork 出来的会话不会再被回一句「本会话没有绑定」。
     toolsApi.installTools({
       logger: host.logger,
       binding: bindingApi,
       git: gitApi,
+      scope: scopeApi,
       agents: host.agents,
       now: host.now,
     });

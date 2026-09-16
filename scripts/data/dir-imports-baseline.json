@@ -96,25 +96,8 @@
       "allSrcTsFiles": 47,
       "interfaceFacades": 7,
       "leafValueEdges": 2,
-      "fileValueEdges": 46,
-      "crossModuleRefs": 34,
-      "quality": {
-        "leafModuleCycles": [],
-        "fileCycles": [],
-        "implToOtherImpl": [],
-        "missingInterface": [],
-        "directImpl": [],
-        "uncoveredSrcFiles": []
-      }
-    },
-    "dsh-worktree-sidebar": {
-      "modules": 7,
-      "scannedSrcFiles": 41,
-      "allSrcTsFiles": 47,
-      "interfaceFacades": 7,
-      "leafValueEdges": 2,
-      "fileValueEdges": 46,
-      "crossModuleRefs": 34,
+      "fileValueEdges": 47,
+      "crossModuleRefs": 39,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],

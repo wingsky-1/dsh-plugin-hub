@@ -52,6 +52,13 @@ function harness(): Harness {
       now: () => "2026-09-14T00:00:00.000Z",
       binding: bindingApi,
       git: gitApi,
+      scope: {
+        // 本批只覆盖「本会话自己的登记」这条路径；继承面由下一批的集成用例接**真 scope 域**覆盖。
+        worktreeOrigin: async (id) => {
+          const record = bindingApi.get(id);
+          return record === undefined ? { kind: "none" } : { kind: "own", record };
+        },
+      },
       agents: { subscribe: () => () => undefined, list: () => [], publish: () => () => undefined },
     },
     // 假执行上下文：被测代码只读 exec.agent.session，其余字段本插件一个都不碰。

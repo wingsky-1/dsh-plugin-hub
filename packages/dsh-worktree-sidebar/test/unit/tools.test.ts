@@ -52,6 +52,10 @@ function fakeDeps(
     agents?: AgentPort;
     /** 起点归一化失败（git 说不认识这个 rev）。 */
     resolveCommitFails?: boolean;
+    /** 活会话的父链：子会话 id → 父会话 id（缺省没有父）。 */
+    parents?: Record<string, string>;
+    /** 已经确认失效的登记：scope 端口解析到它就摘掉并继续上跳，复刻真实自愈。 */
+    staleBindings?: readonly string[];
   } = {},
 ) {
   const table = new Map<string, BindingRecord>();
@@ -114,6 +118,31 @@ function fakeDeps(
           { path: existingWt, branch: "refs/heads/feature", detached: false },
         ],
     },
+    scope: {
+      // 复刻 scope 域的真实三态（own / inherited / none）与它的一条硬语义：解析到已确认失效的
+      // 登记时**摘掉并继续上跳**。写成「找不到就硬编码 inherited」会让下面所有继承态用例变成装饰。
+      worktreeOrigin: async (id) => {
+        const seen = new Set<string>([id]);
+        let current = id;
+        for (;;) {
+          const record = table.get(current);
+          if (record !== undefined) {
+            if (options.staleBindings?.includes(current) === true) {
+              table.delete(current);
+              drops.push(current);
+            } else if (current === id) {
+              return { kind: "own", record };
+            } else {
+              return { kind: "inherited", record, ownerSessionId: current };
+            }
+          }
+          const parent = options.parents?.[current];
+          if (parent === undefined || seen.has(parent)) return { kind: "none" };
+          seen.add(parent);
+          current = parent;
+        }
+      },
+    },
     agents: options.agents ?? {
       subscribe: () => () => undefined,
       list: () => [],
@@ -123,6 +152,18 @@ function fakeDeps(
 
   return { deps, table, gitCalls, resolveCalls, writes, drops, warns };
 }
+
+/**
+ * 父会话那条登记（继承面的源）。写成函数是因为 repo / existingWt 在 beforeAll 里才赋值——
+ * 模块级常量会取到空串，用例就在测一个不存在的路径。
+ */
+const parentRecord = (): BindingRecord => ({
+  repoRoot: repo,
+  worktreeRoot: existingWt,
+  branch: "feature",
+  createdAt: "2026-09-14T00:00:00.000Z",
+  sessionCreatedAt: SESSION_CREATED_AT,
+});
 
 /**
  * 假执行上下文。被测代码只读 `exec.agent.session`：身份、取消信号与上下文延迟这些字段
@@ -485,23 +526,20 @@ describe("ws_worktree_remove", () => {
     // 本用例这一层能判的只有「失败说得清」——上一条断言即是全部。
   });
 
-  it("removeDirectory 之前登记消失（竞态）：如实说明，不静默成功", async () => {
+  it("removeDirectory 用的是解析到的记录，不再回来读一次表", async () => {
     const fake = await withBinding();
-    let gets = 0;
-    const racing: ToolsDeps = {
+    const snapshotOnly: ToolsDeps = {
       ...fake.deps,
       binding: {
         ...fake.deps.binding,
-        // 第一次是顶部的 stateOf，第二次是删目录前的复核——那一次让记录消失。
-        get: (id) => {
-          gets += 1;
-          return gets === 1 ? fake.table.get(id) : undefined;
-        },
+        // 解析走的是 scope 端口里的表快照；这里让**随后**的任何直接读表都拿不到记录，
+        // 用来钉住「删目录用的是解析结果，不存在第二次读取造成的含糊失败」。
+        get: () => undefined,
       },
     };
-    const value = await run(buildRemoveTool(racing), { removeDirectory: true });
-    expect(value.ok).toBe(false);
-    expect(value.detail).toContain("binding disappeared");
+    const value = await run(buildRemoveTool(snapshotOnly), { removeDirectory: true });
+    expect(value.ok).toBe(true);
+    expect(value.detail).toContain("removed the worktree directory");
   });
 
   it("目录删掉了但摘登记失败：明确说这是陈旧登记、会被按未绑定处理", async () => {
@@ -533,6 +571,84 @@ describe("ws_worktree_remove", () => {
     expect(value.detail).toContain("contains modified files");
     expect(drops.length).toBe(0);
     expect(table.has("s1")).toBe(true);
+  });
+});
+
+describe("继承态下的工具面（#847）", () => {
+  it("remove（不删目录）：判失败、报来源会话与现状，不摘父记录、不调 git", async () => {
+    const { deps, table, drops, gitCalls } = fakeDeps({ parents: { s1: "parent" } });
+    table.set("parent", parentRecord());
+    const value = await run(buildRemoveTool(deps), {});
+    expect(value.ok).toBe(false);
+    expect(value.bound).toBe(true);
+    expect(value.worktree).toBe(existingWt);
+    expect(value.branch).toBe("feature");
+    expect(value.detail).toContain("inherited from session parent");
+    expect(value.detail).toContain("ws_worktree_remove");
+    expect(value.detail).toContain("ws_worktree_register");
+    expect(drops).toEqual([]);
+    expect(gitCalls.length).toBe(0);
+    expect(table.has("parent")).toBe(true);
+  });
+
+  it("remove（removeDirectory: true）：同样不摘父记录、不删目录", async () => {
+    const { deps, table, drops, gitCalls } = fakeDeps({ parents: { s1: "parent" } });
+    table.set("parent", parentRecord());
+    const value = await run(buildRemoveTool(deps), { removeDirectory: true, force: true });
+    expect(value.ok).toBe(false);
+    expect(value.bound).toBe(true);
+    expect(drops).toEqual([]);
+    expect(gitCalls.length).toBe(0);
+    expect(table.has("parent")).toBe(true);
+  });
+
+  it("来源报的是最近一个持有登记的祖先，不是直接父", async () => {
+    const { deps, table } = fakeDeps({ parents: { s1: "mid", mid: "grand" } });
+    table.set("grand", parentRecord());
+    const value = await run(buildRemoveTool(deps), {});
+    expect(value.detail).toContain("inherited from session grand");
+  });
+
+  it("register / create 在继承态下的失败读数仍报继承现状（bound=true）", async () => {
+    const { deps, table } = fakeDeps({ parents: { s1: "parent" } });
+    table.set("parent", parentRecord());
+    const missing = join(root, "no-such-dir");
+    const registered = await run(buildRegisterTool(deps), { worktree: missing });
+    expect(registered.ok).toBe(false);
+    expect(registered.bound).toBe(true);
+    expect(registered.worktree).toBe(existingWt);
+    expect(registered.detail).toContain("inherited from session parent");
+    const created = await run(buildCreateTool(deps), { path: missing, branch: "bad name" });
+    expect(created.ok).toBe(false);
+    expect(created.bound).toBe(true);
+    expect(created.worktree).toBe(existingWt);
+    expect(created.detail).toContain("inherited from session parent");
+  });
+
+  it("摘掉自己的登记后若父链还有登记，明说右栏改为继承", async () => {
+    const { deps, table } = fakeDeps({ parents: { s1: "parent" } });
+    table.set("parent", parentRecord());
+    const registered = await run(buildRegisterTool(deps), { worktree: existingWt });
+    expect(registered.ok).toBe(true);
+    const value = await run(buildRemoveTool(deps), {});
+    expect(value.ok).toBe(true);
+    expect(value.bound).toBe(true);
+    expect(value.worktree).toBe(existingWt);
+    expect(value.detail).toContain("inherited from session parent");
+  });
+
+  it("父链上的登记已确认失效时，工具调用先摘掉它（自愈副作用在工具路径上照样发生）", async () => {
+    const { deps, table, drops } = fakeDeps({
+      parents: { s1: "parent" },
+      staleBindings: ["parent"],
+    });
+    table.set("parent", parentRecord());
+    const value = await run(buildRemoveTool(deps), {});
+    expect(drops).toEqual(["parent"]);
+    expect(table.has("parent")).toBe(false);
+    expect(value.ok).toBe(false);
+    expect(value.bound).toBe(false);
+    expect(value.detail).toContain("No worktree is bound");
   });
 });
 

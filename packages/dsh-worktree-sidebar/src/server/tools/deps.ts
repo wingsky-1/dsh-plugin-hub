@@ -2,6 +2,7 @@
 import type { ToolDefinition } from "@deepseek-ai/dsh-tools";
 import type * as bindingApi from "../binding/interface.ts";
 import type * as gitApi from "../git/interface.ts";
+import type * as scopeApi from "../scope/interface.ts";
 import type { LoggerPort } from "../shared/interface.ts";
 
 /**
@@ -22,6 +23,15 @@ type GitPort = Pick<
   | "removeWorktree"
   | "listWorktrees"
 >;
+
+/**
+ * scope 域给工具的能力面。只要「绑定来源」这一个读数——工具据此区分「本会话自己的登记」与
+ * 「继承自哪个会话的登记」，这正是它必须与浏览器面同源的那件事。
+ *
+ * **刻意不取 `effectiveWorktree`**：那是浏览器面的生效根，带 takeover 门（provider 未就绪时回 null）。
+ * 工具面要的是稳定的登记事实，否则接管冲突期连一条已确认失效的登记都清理不掉。
+ */
+type ScopePort = Pick<typeof scopeApi, "worktreeOrigin">;
 
 /** 一条 agent 的窄面。 */
 export interface AgentFace {
@@ -50,6 +60,7 @@ export interface ToolsDeps {
   readonly logger: LoggerPort;
   readonly binding: BindingPort;
   readonly git: GitPort;
+  readonly scope: ScopePort;
   readonly agents: AgentPort;
   /** 登记时间戳。由组合根注入，与 binding 域共用同一个时钟实现。 */
   readonly now: () => string;

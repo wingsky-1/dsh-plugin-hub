@@ -5,9 +5,10 @@ import {
   availableWorktrees,
   bindWorktree,
   directoryProblem,
+  NO_ORIGIN,
+  originOf,
   resolveTarget,
   resultOf,
-  stateOf,
 } from "../bind/index.ts";
 import { argString, RESULT_SCHEMA, renderResult } from "../protocol/index.ts";
 import type { ToolResultValue } from "../protocol/index.ts";
@@ -19,10 +20,13 @@ export function buildRegisterTool(deps: ToolsDeps): ToolDefinition {
     description:
       "Bind an existing git worktree to THIS session, so the right-sidebar Files tab is rooted at that " +
       "worktree once you open or refresh it. The session cwd does not change. " +
-      "Use ws_worktree_create instead when the worktree does " +
-      "not exist yet. Only the Files tab follows the binding: @ file references, present targets and the " +
-      "skill catalog still resolve against the session cwd, and under the workspace-write file policy the " +
-      "agent cannot write into the worktree.",
+      "Use this when the directory already exists - including a worktree you created with a bare " +
+      "git worktree add, which creates the directory but leaves the Files tab on the session cwd; use " +
+      "ws_worktree_create when the worktree still has to be created. Only the Files tab follows the " +
+      "binding: @ file references, present targets and the skill catalog still resolve against the " +
+      "session cwd, and under the workspace-write file policy the agent cannot write into the worktree. " +
+      "If this session inherits a root from a parent session, binding here overrides that inherited root " +
+      "for this session only.",
     parameters: {
       type: "object",
       properties: {
@@ -43,32 +47,34 @@ export function buildRegisterTool(deps: ToolsDeps): ToolDefinition {
       const session = sessionOf(exec);
       if (session === undefined) {
         return resultOf(
-          { bound: false, worktree: "", branch: "" },
+          NO_ORIGIN,
           false,
           "This tool needs an agent session, and the call carries none. Run it as an agent tool call.",
         );
       }
-      const state = stateOf(deps, session.id);
       if (session.cwd === undefined) {
         return resultOf(
-          state,
+          NO_ORIGIN,
           false,
           "This session has no working directory, so it cannot be checked against a git repository.",
         );
       }
       if ((await deps.git.commonDir(session.cwd)) === undefined) {
-        return resultOf(state, false, "This session is not inside a git repository.");
+        return resultOf(NO_ORIGIN, false, "This session is not inside a git repository.");
       }
       const raw = argString(args, "worktree");
       if (raw === undefined) {
-        return resultOf(state, false, "Missing required parameter: worktree.");
+        return resultOf(NO_ORIGIN, false, "Missing required parameter: worktree.");
       }
+      // 来源解析放在上面那些廉价校验之后：早退路径不必为一句「没有 cwd」白付一趟 git 子进程，
+      // 也不会让「scope 域尚未装配」这类装配错误顶掉本来清晰的失败原因。
+      const origin = await originOf(deps, session.id);
       const target = resolveTarget(session.cwd, raw);
       const problem = directoryProblem(target);
       if (problem !== undefined) {
-        return resultOf(state, false, problem + (await availableWorktrees(deps, session.cwd)));
+        return resultOf(origin, false, problem + (await availableWorktrees(deps, session.cwd)));
       }
-      return bindWorktree(deps, session, session.cwd, target, deps.now());
+      return bindWorktree(deps, session, session.cwd, target, deps.now(), origin);
     },
   };
 }
