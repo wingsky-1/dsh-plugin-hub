@@ -535,6 +535,22 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
   ).toBeTruthy();
   dispose();
 });
+it("MCP_GUIDANCE 不承诺可按服务器名推导全局直呼名（裁定 AJ）", async () => {
+  // 这条常量是模型面唯一的口径出口（apply 经 systemPrompt.section 注入），却零判据。
+  // 它必须同时传达三件事：有直呼注册的全局工具名形如 mcp__<id>__<tool> 且 id 不透明；
+  // 没有直呼注册的全局服务器（封装定义条目）只能经 ws_mcp_call；all 模式全部经中间层。
+  // 断言文本形态而不是整段快照：快照会在任何措辞微调上红，却不回答「口径是否失真」。
+  const { MCP_GUIDANCE } = await import("../../lib/index.js");
+  // 反面：不得再出现按服务器名可推导的写法。
+  expect(MCP_GUIDANCE, "不再承诺 mcp__<server>__ 可推导").not.toMatch(/mcp__<server>__/);
+  // 正面：id 口径 + 兜底寻址 + id 不透明的说明。
+  expect(MCP_GUIDANCE, "id 口径").toMatch(/mcp__<id>__<tool>/);
+  expect(MCP_GUIDANCE, "封装定义条目/all 模式的兜底寻址").toMatch(/ws_mcp_call/);
+  expect(MCP_GUIDANCE, "id 不透明（从工具清单读）").toMatch(/opaque/);
+  // 正对照：整段被删空时上面几条会红，但这条钉住「仍在引导」本身（project-level 与检索入口）。
+  expect(MCP_GUIDANCE, "正对照：project-level 引导仍在").toMatch(/ws_mcp_search/);
+  expect(MCP_GUIDANCE, "正对照：project-level 那条仍在").toMatch(/Project-level servers/);
+});
 it("#362 A2：project 模式 detail/call 传全局级服务器 → 引导 mcp__ 直呼（不再谎报不属于工作空间）", async () => {
   const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT } =
     await import("../../lib/index.js");
@@ -579,7 +595,9 @@ it("#362 A2：project 模式 detail/call 传全局级服务器 → 引导 mcp__ 
         { agent },
       ),
     "project 模式 detail 全局服务器给出直呼引导",
-  ).rejects.toThrow(/全局级|mcp__gctx__/);
+  ).rejects.toThrow(
+    /全局级（global scope）服务器，中间层只覆盖项目级服务器；它已以 `mcp__` 前缀工具直呼注册/,
+  );
   // call 全局服务器 → 同样引导。
   await expect(
     () =>
@@ -588,7 +606,9 @@ it("#362 A2：project 模式 detail/call 传全局级服务器 → 引导 mcp__ 
         { agent },
       ),
     "project 模式 call 全局服务器给出直呼引导",
-  ).rejects.toThrow(/全局级|mcp__gctx__/);
+  ).rejects.toThrow(
+    /全局级（global scope）服务器，中间层只覆盖项目级服务器；它已以 `mcp__` 前缀工具直呼注册/,
+  );
   // 非 global 其他 root 仍硬拒绝（防跨空间串台，不回归）。
   await expect(() =>
     detailDef.execute({ server: fullServerName("/other", "ctx"), tool: "use_ctx" }, { agent }),
@@ -3095,15 +3115,20 @@ it("renderMcpCatalogMessage 结构与声明", () => {
   expect(msg.content[0].text).toMatch(/`code-graph`: 代码图谱/);
   expect(typeof msg.id === "string" && msg.id.length > 0).toBeTruthy();
 
-  // 纯 global 条目 → 保持 mcp__ 直呼引导（不误导全局服务器走中间层检索）
+  // 纯 global 条目 → 直呼引导，但名字形态改成 id 口径（#767 S1-5b 裁定 AJ）
   const onlyGlobal = renderMcpCatalogMessage([{ name: "ctx", scope: "global" }]);
-  expect(onlyGlobal.content[0].text).toMatch(/mcp__<server>__<tool>/);
-  expect(onlyGlobal.content[0].text).not.toMatch(/ws_mcp_search/);
+  expect(onlyGlobal.content[0].text).toMatch(/mcp__<id>__<tool>/);
+  expect(onlyGlobal.content[0].text, "id 不透明：只能从工具清单读").toMatch(/opaque/);
+  // 直呼引导同时给兜底寻址：没有直呼注册的全局服务器用 ws_mcp_call。
+  expect(onlyGlobal.content[0].text, "无直呼注册的全局服务器兜底寻址").toMatch(/ws_mcp_call/);
+  expect(onlyGlobal.content[0].text).not.toMatch(/mcp__<server>__<tool>/);
+  // 主控复核恢复（写手曾以「新文案自身含 ws_mcp_search」为由删掉这一行，需实证）：
+  expect(onlyGlobal.content[0].text, "纯 global 不引导中间层检索").not.toMatch(/ws_mcp_search/);
   // P2-4：all 模式下纯 global 条目也引导经中间层（全局走中间层，不再 mcp__ 直呼）
   const onlyGlobalAll = renderMcpCatalogMessage([{ name: "ctx", scope: "global" }], "all");
   expect(onlyGlobalAll.content[0].text, "all 模式纯 global 引导经中间层").toMatch(/ws_mcp_search/);
-  expect(onlyGlobalAll.content[0].text, "all 模式不再 mcp__ 直呼引导").not.toMatch(
-    /mcp__<server>__<tool>/,
+  expect(onlyGlobalAll.content[0].text, "all 模式不再给出直呼引导").not.toMatch(
+    /mcp__<id>__<tool>/,
   );
 
   // #192 AC-3：双缺省行仅渲染名字（无冒号描述），带描述条目渲染不变

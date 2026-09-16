@@ -4,17 +4,23 @@
 
 A **MCP server management plugin** for DSH (DeepSeek Harness): a floating window in the
 top-right of the session UI + a tiered panel + quick onboarding (manual form + paste
-`mcpServers` JSON import, **no servers preconfigured**). The MCP protocol client is
-implemented directly on top of `node:child_process` and the global `fetch` — nothing
-extra to install.
+`mcpServers` JSON import, **no servers preconfigured**). Connection and protocol come from
+the official `@deepseek-ai/dsh-mcp-client` (mounted by name through the host cordis loader,
+resolved to the copy inside the DSH installation); this plugin keeps only the configuration
+surface and the model-visible surface. The official client is not redistributed with this
+package, and nothing extra needs to be installed.
 
-Three middleware modes (`middleware`): `off` — all servers register directly as
-`mcp__<server>__<tool>` (legacy behavior); `project` (**default**) — project-level
-servers go through the middleware while global ones register directly; `all` — global
-servers (including runtime-injected wrapped-definition servers) go
+Three middleware modes (`middleware`): `off` — project-level and global servers both
+register `mcp__`-prefixed tools directly (legacy behavior, **with one exception**: wrapped
+definition entries have no remote implementation to call directly, so they go through the
+middleware in every mode); `project` (**default**) — project-level servers go through the
+middleware while global ones still register directly as `mcp__`; `all` — global servers
+(including runtime-injected wrapped-definition servers) go
 through the middleware too, falling back to the virtual global root
 `@global` when cwd has no project, collapsing the model surface to exactly four atomic
-tools (`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`).
+tools (`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`). A direct
+registration is named `mcp__<id>__<tool>`: `id` is an opaque short string allocated per
+(workspace, server) for one plugin assembly and cannot be derived from the server name.
 `middleware` / `middlewarePolicy` can be hot-switched from the settings page (saved
 immediately and persisted, no restart needed), or set in the config file (read at plugin
 startup); the server lists across both config tiers hot-reload without a restart
@@ -104,7 +110,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | Server management | CRUD (project-level/global optional), connect / disconnect / reconnect; versioned JSON config, atomic write |
 | Two transports | stdio (local subprocess, env supports `${ENV}` references) and streamable-http (remote, header supports `${ENV}` references, auto-echoes `Mcp-Session-Id`) |
 | JSON import | Paste `mcpServers` JSON text to import (JSON format only; does not scan any application config files) |
-| Model tools | Global servers register directly as `mcp__<server>__<tool>` (64 chars, `[A-Za-z0-9_-]`, hashed suffix on conflict); project-level servers go through the middleware's `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call` by default (`middleware: project`, recommended), so workspaces never clash; with `middleware: all`, global and runtime-injected servers also go through the middleware with no `mcp__` prefix |
+| Model tools | Global servers register directly as `mcp__<id>__<tool>` (`id` is allocated at random per (workspace, server), stable within one assembly, opaque, and can only be read from the tool list; names still obey the 64-char / `[A-Za-z0-9_-]` / hashed-suffix-on-conflict rules); wrapped definition entries always go through the middleware regardless of mode; project-level servers go through the middleware's `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call` by default (`middleware: project`, recommended), so workspaces never clash; with `middleware: all`, global and runtime-injected servers also go through the middleware with no `mcp__` prefix |
 | Workspace isolation | The middleware routes by the calling session's cwd to the matching workspace connection pool; server full-name consistency checks (`@<root>/<server>`) prevent cross-workspace crosstalk |
 | Reconnection | Exponential backoff (starts at 500ms, caps at 30s, gives up after 10 attempts and deregisters the tools) |
 | Result truncation | Direct-connect tool results truncated at 8KB and marked (prevents oversized JSON from entering context in full) |
@@ -168,10 +174,12 @@ reason / server not connected or not found / tool does not exist) / `ws_mcp_sear
 when results hit the `limit`) / `ws_mcp_call` (invoke by `@<root>/<server>`, verify
 argument schema with `ws_mcp_detail`), routed by the calling session's current cwd to
 the matching workspace connection pool, so different workspaces inject different MCPs
-without name clashes; global servers still register directly as `mcp__<server>__<tool>`
-(in `project` mode, passing a global-scope server to detail/call returns a
-"use `mcp__` directly" hint). Switch
-`middleware: off` to restore the legacy behavior (project-level also registers `mcp__`);
+without name clashes; global servers still register directly under `mcp__`
+(the registered name looks like `mcp__<id>__<tool>` with an opaque `id` — read it from the
+tool list; in `project` mode, passing a global-scope server to detail/call returns that
+"use `mcp__` directly" hint). A global server with no direct registration (a wrapped
+definition entry) can only be reached through `ws_mcp_call` at `@<root>/<server>`.
+Switch `middleware: off` to restore the legacy behavior (project-level also registers `mcp__`; wrapped definition entries always go through the middleware regardless of that switch);
 `middleware: all` routes global servers (including runtime-injected wrapped-definition
 servers) through the middleware too (falling back to the
 virtual global root `@global` when cwd has no project), collapsing the model surface to
@@ -205,9 +213,9 @@ no `dsh web` restart needed.
   covered too); plugins' own declared discipline bare-name tools are not affected;
 - Overlong tool names (>64 chars, hashed suffix) are irreversible → treated as unknown
   server, neither disabled nor mistakenly denied;
-- In `project` mode the floating window shows global servers without tool switches (they
-  run through supervisors directly, bypassing the middleware), with a hint
-  "switch to all mode to manage global tools";
+- In `project` mode the floating window shows global servers without tool switches (their
+tools are registered directly under the `mcp__` prefix, bypassing the middleware), with a
+hint "switch to all mode to manage global tools";
 - Both the floating window and the management panel group servers by
   "project-level / global" (each group further ordered by connection status).
 
@@ -233,9 +241,11 @@ supports an optional `toolDefinitions` field (caller-provided wrapped tool defin
   is never exposed;
 - **Without**: current behavior is preserved (remote schema + generic `callTool`), zero
   impact on other servers;
-- **Naming is still decided by the manager's existing mechanism**: the model-visible name
-  is `mcp__<server>__<tool>` (`publicToolName`, 64-char / hash-suffix rules unchanged);
-  in `all` mode calls go through `ws_mcp_call` with bare names;
+- **No direct `mcp__` registration: calls only go through `ws_mcp_call` with bare names in
+  every mode** (`@<root>/<server>` + bare name; a wrapped `execute` is caller JS, so there is
+  no remote implementation to call directly). The call name is still derived via
+  `publicToolName` (64-char / hash-suffix rules unchanged), but only as the name the
+  middleware forwards when calling;
 - **Per-tool disable / visibility / capability catalog still apply to wrapped tools**
   (judged by server + tool name, same as `mcp__`-prefixed tools);
 - Consumed only by the runtime registration surface (runtimeRegistry) — never persisted
@@ -355,10 +365,12 @@ pnpm --filter @wingsky-1/dsh-mcp-manager test
 
 ## Known Limitations
 
-- **Middleware-mode tool names embed a random id**: servers are mounted by the official
+- **Every directly registered tool name embeds a random id (including global servers in
+  `project` / `off` mode)**: servers are mounted by the official
   dsh-mcp-client, so tools register as `mcp__<id>__<tool>`, where `id` is a **random short
-  string** allocated per (workspace, server) — stable within one plugin assembly; it
-  changes on plugin reload or host restart. **Never hardcode tool names** in scripts or prompts; always resolve them through
+  string** allocated per (workspace, server) — stable within one plugin assembly, opaque,
+  and not derivable from the server name; it changes on plugin reload or host restart.
+  **Never hardcode tool names** in scripts or prompts; always resolve them through
   `ws_mcp_list` / `ws_mcp_detail`. Hiding `mcp__*` from the model-facing surface (routing
   everything through `ws_mcp_call`) lands in a later stage
 - Does not subscribe to the MCP `tools/list_changed` notification (no long-lived SSE

@@ -1010,7 +1010,8 @@ export class McpManager {
    * 中间层接管判定（start / reconcileServers 的模式口径）：中间层模式的项目级，
    * 或 all 模式的全局级（**含 runtime 注入条目**，#413 消除豁免——all 模式
    * 统一无 mcp__ 前缀直呼，runtime 封装定义服务器经中间层目录投影 + callTool
-   * 直呼执行；project / off 模式 runtime 照旧注册 mcp__ 工具，改派后由直连账本装载）。
+   * 直呼执行；project / off 模式下封装定义条目同样恒交中间层虚拟连接（裁决 (c)'），
+   * 「照旧注册 mcp__ 工具」只适用于有 transport 的普通条目，由直连账本装载）。
    */
   private middlewareTakes(name: string, scope: string): boolean {
     if (this.middlewareMode === "off" || this.middleware === undefined) return false;

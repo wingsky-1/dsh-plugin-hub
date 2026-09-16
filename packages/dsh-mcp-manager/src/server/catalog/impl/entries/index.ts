@@ -188,13 +188,15 @@ export function composeCatalogEntries(
 }
 
 /** 渲染能力目录消息（source 标记供定位替换）。
- * 按条目 scope 区分调用引导（#228 双轨迁移）：
- * - 含 project 条目 → 引导经 ws_mcp_list/ws_mcp_search/ws_mcp_detail/ws_mcp_call
- *   （项目级走中间层；完整盘点用 ws_mcp_list，查完整 schema 用 ws_mcp_detail）；
- * - 仅 global 条目 → 默认保持 mcp__ 直呼引导（全局服务器不经中间层检索）；
- *   all 模式（mode === "all"）下全局也走中间层 → 同样引导经中间层工具访问。
- * 口径统一（#362 评审修正）：project 模式全局服务器仍以 mcp__ 直呼注册可用，
- * 目录引导区分「经中间层访问」与「mcp__ 直呼」两类服务器，不混用。
+ * 按条目 scope 区分调用引导（#228 双轨迁移；#767 S1-5b 收敛为 id 口径）：
+ * - 有直呼注册的服务器 → `mcp__<id>__<tool>`：`id` 是每次装配现分配的不透明短串，
+ *   只能从工具清单读，不能由服务器名推导；
+ * - 没有直呼注册的服务器（封装定义条目 toolDefinitions：只经 `ws_mcp_call` 的
+ *   `@<root>/<server>`）与 all 模式下的全局服务器 → 引导经中间层工具访问
+ *   （含 project 条目时项目级同样经中间层：完整盘点用 ws_mcp_list，查完整 schema 用
+ *   ws_mcp_detail）。
+ * 这个区分不是措辞可选项：封装定义条目不注册 `mcp__` 工具，若把「全局一律直呼」写成
+ * 兜底引导，模型在这类服务器上就无路可走。
  */
 export function renderMcpCatalogMessage(entries: CatalogEntry[], mode?: string): CatalogMessage {
   const hasProject = entries.some((entry) => entry.scope === "project");
@@ -203,12 +205,12 @@ export function renderMcpCatalogMessage(entries: CatalogEntry[], mode?: string):
   const globalGuidance =
     mode === "all"
       ? "Global servers are also accessed via middleware in all mode: search with `ws_mcp_search`, then invoke with `ws_mcp_call` using the same `ws_mcp_*` suite."
-      : "Global servers are directly invoked using `mcp__<server>__<tool>` prefixed tools (project mode does not route global servers through middleware).";
+      : "Global servers are invoked directly when their `mcp__<id>__<tool>` tools are registered (the `id` is opaque — read it from the tool list, never derive it from the server name); servers with no direct `mcp__` registration are reached with `ws_mcp_call` at `@<root>/<server>`.";
   const guidance = hasProject
     ? `${projectGuidance} ${globalGuidance}`
     : mode === "all"
       ? globalGuidance
-      : `When a task matches a server's capability, call its \`mcp__<server>__<tool>\` tool directly (see tool list for parameters). ${globalGuidance}`;
+      : `When a task matches a server's capability, call its \`mcp__<id>__<tool>\` tool directly when it is registered (see the tool list for parameters). ${globalGuidance}`;
   const lines = [
     "<system-reminder>",
     'Configured MCP servers in this session (**capability descriptions only, does not reflect active connection status**; tools register once connected via GUI "MCP" popup):',

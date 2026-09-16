@@ -395,7 +395,7 @@ export function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelp
         return;
       }
       try {
-        // #392 遗留④：tool 参数先归一化（剥 mcp__<server>__ 前缀）再入禁用表——
+        // #392 遗留④：tool 参数先归一化（剥 mcp__<id>__ 直呼前缀）再入禁用表——
         // 旧客户端/手工 API 可能提交带前缀名，此前原样存键导致 guard 层查裸名不命中、
         // 禁用静默无效。跨 server 前缀（剥后仍 mcp__ 开头）由 normalizeToolName 抛错。
         const toolName = workspace.normalizeToolName(parsed.server, tool, "tool-disable");

@@ -66,6 +66,8 @@ const {
   findProjectRoot,
   registerMiddlewareTools,
   MIDDLEWARE_GLOBAL_ROOT,
+  ROUTES,
+  makeHealthRoute,
 } = await import("../../src/index.ts");
 
 // 临时目录 / manager / timer 收口：用例结束后统一清理，防产物与句柄泄漏。
@@ -618,9 +620,94 @@ describe("findProjectRoot", () => {
   });
 });
 
+// #767 S1-5b 笔 2（B4 对账）：装载路径的两条缺口服役 ----
+// 缺口一（R4）：catalogCache 的写入此前只有「夹具直接 seed」与「方法级直调 recordCatalogTools」
+// 两类用例，缺「挂载结算自动写入」这半边（生产侧在 manager.ts 的 mountEntry 结算分支）。
+// 缺口二（R6）：/health 的顶层 payload 键集全仓零处断言，且既有 health 夹具是手工塞 map。
+// 两条都走真链路：真 McpManager + 真 lifecycle + 假 loader（不 spawn 子进程，全离线）。
+describe("#767 S1-5b：装载路径的 catalogCache 与 /health 口径", () => {
+  let prevHome;
+  let homeDir;
+  beforeEach(() => {
+    prevHome = process.env.DSH_HOME;
+    homeDir = makeTempDir("dsh-mcp-mgr2ld-");
+    process.env.DSH_HOME = homeDir;
+  });
+  afterEach(() => {
+    if (prevHome === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevHome;
+  });
+
+  /** health 路由的最小请求面：只给 isLoopbackRequest + guardLoopbackMethod 要的字段。 */
+  function healthReq() {
+    return {
+      method: "GET",
+      url: ROUTES.health,
+      socket: { remoteAddress: "127.0.0.1" },
+      headers: { host: "localhost:3080" },
+    };
+  }
+
+  function healthRes() {
+    const state = { status: 0, body: "" };
+    return {
+      state,
+      writeHead(status) {
+        state.status = status;
+      },
+      end(body) {
+        state.body = body;
+      },
+    };
+  }
+
+  /** project 模式装一台全局服务器：经 lifecycle 真装载挂载，id 由假 id 表分配。 */
+  async function mountedGlobalFixture() {
+    const entry = { name: "mcp__id-1__echo", description: "回显给定的文本" };
+    // 注册面必须在装载前就含该工具：挂载结算那一刻读的是注册面，事后补不进账本。
+    const { manager } = makeManager(homeDir, [entry]);
+    await manager.initMiddleware("project", {});
+    await manager.registerServer({ ...quietServer("gn"), enabled: true });
+    await pollUntil("全局服务器装载结算且工具进门禁账本", () =>
+      manager.supervisors.get("gn")?.tools?.includes(entry.name),
+    );
+    return { manager, entry };
+  }
+
+  it("R4：挂载结算自动把工具描述摘要写进 catalogCache", async () => {
+    const { manager, entry } = await mountedGlobalFixture();
+    // 判据先证明工具确实来自装载账本（不是夹具塞的），再看缓存。
+    expect(manager.supervisors.get("gn").tools).toEqual([entry.name]);
+    expect(manager.catalogCache.get("gn")?.summary).toContain("回显给定的文本");
+  });
+
+  it("R6：/health 在 project + 1 台挂载全局服务器下计数正确且顶层键集逐字相等", async () => {
+    const { manager } = await mountedGlobalFixture();
+    const res = healthRes();
+    makeHealthRoute(manager).handler(healthReq(), res);
+    expect(res.state.status, "health 200").toBe(200);
+    const payload = JSON.parse(res.state.body);
+    expect(payload.servers, "1 台服务器").toBe(1);
+    expect(payload.connected, "已连接 1 台").toBe(1);
+    expect(payload.tools, "工具计数").toBe(1);
+    expect(payload.middleware.mode, "中间层模式").toBe("project");
+    // 顶层键集逐字相等：键集事实源在 api/routes.ts 的 health 写出口。少键（诊断面丢字段）或多键
+    // （把内部状态泄漏给诊断接口）都红，toMatchObject 这类子集断言抓不到这两类。
+    expect(Object.keys(payload)).toEqual([
+      "ok",
+      "plugin",
+      "servers",
+      "connected",
+      "tools",
+      "catalogCacheEntries",
+      "middleware",
+    ]);
+  });
+});
+
 // manager 工厂 ----
 
-function makeManager(dir) {
+function makeManager(dir, poolTools = []) {
   const log = { registered: [], disposed: [], info: [], warn: [], error: [], catalog: [] };
   const store = new McpStore(join(dir, "global.json"));
   store.data = { version: 1, servers: [] };
@@ -636,7 +723,7 @@ function makeManager(dir) {
   );
   // 工具服务面（register + schemas）与生命周期域共用同一份：池的六态投影读注册面前缀，
   // 装载窗口的 hasTools 也必须读同一份，否则「已连上」的两处判据会分裂。
-  const tools = fakeToolsService();
+  const tools = fakeToolsService({ schemas: poolTools });
   manager.ctx.tools = tools;
   log.registered = tools.registered;
   log.disposed = tools.disposed;

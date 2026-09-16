@@ -80,8 +80,9 @@ function visibleMiddlewareRoots(root: string | undefined, mode: MiddlewareMode):
 /**
  * 路由一致性校验（detail/call 共用；A2）：目标 root 必须等于当前 root，
  * 或 all 模式下的 @global（全局配置跨工作空间共享，语义成立）。
- * project 模式传全局级服务器 → 引导改用 mcp__ 直呼（全局 mcp__ 工具在该
- * 模式下仍注册可用）；非 global 的其他 root / 未知 @global 服务器一律硬拒绝
+ * project 模式传全局级服务器 → 引导改用 mcp__ 直呼（注册名含不透明短 id，以工具
+ * 清单为准；封装定义条目走下面的早返回，不落这条拒绝分支）；非 global 的其他
+ * root / 未知 @global 服务器一律硬拒绝
  * （防跨空间串台与 project 模式经 @global 路由绕过）。
  * @returns 校验通过的 root；抛错则拒绝。
  */
@@ -108,7 +109,8 @@ async function checkMiddlewareRoot(
     const bare = parsed.server;
     // 封装定义条目（toolDefinitions）恒由中间层虚拟连接承载（#767 S1-5b 裁决 (c)'，与模式无关）：
     // 它在任何模式下都没有 mcp__ 宿主注册可回退，@global 必须放行——否则 project/off 下它完全
-    // 不可达。正常（有 transport 的）全局服务器不走这条路：它们仍以 mcp__ 直呼，照旧拒绝并引导。
+    // 不可达。正常（有 transport 的）全局服务器不走这条路：它们仍以 mcp__（注册名含不透明短 id）
+    // 直呼，照旧拒绝并引导。
     if (await isWrappedGlobalServer(mw, bare)) return parsed.root;
     const known =
       mw.host.isGlobalServer(bare) ||
@@ -116,7 +118,7 @@ async function checkMiddlewareRoot(
         undefined;
     if (known) {
       throw new Error(
-        `${caller}: server ${JSON.stringify(server)} 是全局级（global scope）服务器，中间层只覆盖项目级服务器；请直接用 mcp__${bare}__<tool> 前缀工具调用（project 模式全局工具仍直呼注册）`,
+        `${caller}: server ${JSON.stringify(server)} 是全局级（global scope）服务器，中间层只覆盖项目级服务器；它已以 \`mcp__\` 前缀工具直呼注册（注册名含不透明短 id，请以工具清单为准）`,
       );
     }
     throw new Error(
@@ -479,7 +481,7 @@ function resolveEmptyListMessage(
       visible.length > 0
         ? `可见项目级服务器：${visible.join(" / ")}；`
         : "当前工作空间无已发现的项目级服务器；";
-    return `没有匹配 server=${JSON.stringify(serverFilter)} 的项目级服务器。${visibleText}全局级服务器不在此列出，请用 mcp__<server>__<tool> 前缀工具访问`;
+    return `没有匹配 server=${JSON.stringify(serverFilter)} 的项目级服务器。${visibleText}全局级服务器不在此列出：已直呼注册的请用 \`mcp__\` 前缀工具（注册名见工具清单），封装定义条目请用 ws_mcp_call 按 @<root>/<server> 访问`;
   }
   return mode === "all"
     ? "当前工作空间没有可用 MCP 服务器（项目级与全局均未发现；若刚添加配置，请稍后重试）"
@@ -690,7 +692,7 @@ function buildDetailTool(toolCtx: MiddlewareToolContext): ToolDefinition {
         tool: {
           type: "string",
           description:
-            "Required: bare remote tool name (from ws_mcp_list / ws_mcp_search; supports mcp__<server>__<tool> prefix)",
+            "Required: bare remote tool name (from ws_mcp_list / ws_mcp_search; also accepts an mcp__-prefixed direct-call name, whose id segment is opaque — read it from the tool list)",
         },
       },
       required: ["server", "tool"],

@@ -4,14 +4,16 @@
  * 管理本机的 MCP（Model Context Protocol）服务器并桥接到 DSH：
  *  - 服务器配置持久化在本插件私有目录（路径与权限的单一事实源是 server/shared/paths.ts，
  *    版本化，原子写入）；
- *  - 每个服务器一个连接监督器（supervisor）：stdio / streamable-http 两种传输，
- *    指数退避重连，断开后按预算放弃；
- *  - 已连接服务器的工具以 mcp__<serverName>__<rawName> 注册进 ctx.tools，模型可直接
- *    调用（与官方 dsh-mcp-client 同名契约）；
+ *  - 连接与协议交官方 @deepseek-ai/dsh-mcp-client（经宿主 cordis loader 按包名装载，
+ *    stdio / streamable-http 两种传输），本插件只留配置面与模型可见面；有界退避重连由
+ *    官方插件承担（全量退役自研连接栈见 #767 后续片）；
+ *  - 每个已连接服务器的工具以 mcp__<id>__<rawName> 注册进 ctx.tools（与官方 dsh-mcp-client
+ *    的装载路径同形）；`id` 是本次装配按 (工作空间, 服务器名) 现分配的不透明短串，`/api/dsh-mcp/servers`
+ *    的 summary.tools 才是注册名以外的裸名口径；
  *  - /api/dsh-mcp/* 路由（loopback-only）供 web GUI 分级展示、快速接入、粘贴
  *    mcpServers JSON 导入；
- *  - 零运行时依赖：MCP 协议客户端（JSON-RPC over stdio / streamable-http）直接基于
- *    node:child_process 与全局 fetch 实现。
+ *  - 零运行时依赖：官方客户端不随包分发（不经 import 值引用，避免打包副本），由宿主
+ *    解析到 dsh 安装内的副本。
  *
  * 激活：安装进 profile（见 cordis.patch.yml 注释），重启一次 dsh web 后，侧边栏出现
  * 「MCP」入口。
@@ -171,7 +173,7 @@ export { panelAnchorForPosition } from "./shared/interface.ts";
 export const MCP_GUIDANCE =
   "dsh-mcp-manager is active: centrally manages MCP server connections without preset servers. MCP tools execute on real servers with inherited host permissions; results may contain sensitive data — explain and obtain user consent before write or sensitive operations. Terms like 'MCP / context server' refer to this plugin. Invocation rules:\n" +
   "- Project-level servers: search with `ws_mcp_search`, verify schema with `ws_mcp_detail` if uncertain, then invoke with `ws_mcp_call`. Do NOT call mcp__ prefixed tools directly.\n" +
-  "- Global servers: call `mcp__<server>__<tool>` directly (or via `ws_mcp_call` in all mode).\n" +
+  "- Global servers: call their `mcp__<id>__<tool>` tools directly when the tool list has them (the `<id>` segment is an opaque per-assembly id — read it from the tool list, never derive it from the server name). Servers with no direct `mcp__` tool are reached with `ws_mcp_call` at `@<root>/<server>`; in `all` mode every server goes through `ws_mcp_call`.\n" +
   "- Do not retry a failing server tool more than twice.";
 
 /** apply 顶层解析后的增强/开关配置集合。 */
@@ -326,7 +328,7 @@ function provideMcpManagerService(ctx: Context, manager: McpManager): void {
       return found as unknown as McpServerSummary;
     },
     getTools: (name: string) => {
-      // 契约（#382 F4）：getTools 返回**注册名**（mcp__<server>__<tool> 前缀，
+      // 契约（#382 F4）：getTools 返回**注册名**（mcp__<id>__<tool> 前缀，`id` 不透明，
       // 与 ctx.tools 注册表一致）；summary().tools 返回**裸名**（展示/禁用表
       // 键口径）。消费方按需自取，勿混用两套键。
       const sup = manager.supervisors.get(name);

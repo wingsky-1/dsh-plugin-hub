@@ -86,6 +86,57 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
     expect(res.state.status).toBe(400);
   });
 
+  // #767 S1-5b：scope 查询参数的归一化契约。五条吃 scope 的路由共用 routes.ts 的 scopeParam
+  // 一处归一化（缺省/非法值 → normalizeScope），此前零判据。这里不挂真 McpManager，改挂一个
+  // 记录实参的假 manager：判据要打的是「路由下传给 manager 的那一个值」，不是 manager 内部行为。
+  function scopeCaptureFixture() {
+    const calls = [];
+    const manager = {
+      async setSession() {},
+      async connect(name, scope) {
+        calls.push([name, scope]);
+      },
+      async disconnect() {},
+      async reconnect() {},
+      async remove() {},
+      async update() {},
+      async add() {},
+      async projectStoreOrThrow() {
+        return { data: { version: 1, servers: [] } };
+      },
+      summary: () => ({ servers: [] }),
+      store: { data: { version: 1, servers: [] } },
+    };
+    return { calls, manager };
+  }
+
+  it("connect 不带 scope 与 scope=global 下传同一个归一化值（#767 S1-5b）", async () => {
+    const { calls, manager } = scopeCaptureFixture();
+    const route = makeRoutes(manager).find((r) => r.path === ROUTES.connect);
+    // 1) 不带 scope：空串必须被归一化为 "global"，不得原样下传（空串会落进
+    //    middlewareTakes(name, "") 的另一条引擎分支，注册名与 userDisabled 清理都与显式
+    //    scope=global 分叉）。改前把 scopeParam 换回 queryParam(url, "scope") ?? "" 时这一步红。
+    await route.handler(fakeReq("POST", `${ROUTES.connect}?name=scope-test`), fakeRes());
+    // 2) 显式 scope=global：两者逐字相同。
+    await route.handler(
+      fakeReq("POST", `${ROUTES.connect}?name=scope-test&scope=global`),
+      fakeRes(),
+    );
+    expect(calls[0][1], "缺 scope 归一化为 global").toBe("global");
+    expect(calls[1][1], "显式 scope=global").toBe("global");
+    expect(calls[0][1], "两条路径下传同一个值").toBe(calls[1][1]);
+    expect(
+      calls.map((c) => c[0]),
+      "name 原样下传",
+    ).toEqual(["scope-test", "scope-test"]);
+    // 3) 对照：显式 scope=project 必须原样下传，归一化不是「一律 global」。
+    await route.handler(
+      fakeReq("POST", `${ROUTES.connect}?name=scope-test&scope=project`),
+      fakeRes(),
+    );
+    expect(calls[2][1], "显式 scope=project").toBe("project");
+  });
+
   it("connect 合法 name → 200", async () => {
     const { find } = makeRoutesFixture();
     const res = fakeRes();
