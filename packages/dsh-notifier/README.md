@@ -469,6 +469,52 @@ pnpm --filter @wingsky-1/dsh-notifier build
 pnpm --filter @wingsky-1/dsh-notifier test
 ```
 
+### 真机未覆盖（平台矩阵现状，issue #766）
+
+本节如实登记「哪些平台行为只在单测 / 模拟层验过、哪些从未在真机上跑过」，既不声称已充分
+验证，也不让缺口靠读者猜。现状以命令可核验：
+
+- **CI 只有 Linux runner**：`.github/workflows/` 下 15 处 `runs-on` 全是 `ubuntu-latest`，
+  `windows-latest` / `macos-latest` 命中 0 次：
+
+  ```sh
+  git grep -n "runs-on" origin/main -- .github/workflows                          # 15 行，全 ubuntu-latest
+  git grep -n -E "windows-latest|macos-latest" origin/main -- .github/workflows   # 无输出，exit 1
+  ```
+
+- **`windowsHide` 只在实现里出现，测试面零命中**：整包唯一一处是
+  `src/server/channels/impl/system/deps.ts:81` 的
+  `{ windowsHide: true, stdio: ["ignore", "ignore", "pipe"] }`；测试面（`packages/dsh-notifier/test`）
+  无命中：
+
+  ```sh
+  git grep -n windowsHide origin/main -- packages/dsh-notifier/test   # 无输出，exit 1
+  ```
+
+  在 Linux 上它是一个**等价变异体**——改与不改测试都不变色，只有真机 Windows 才区分得出来。
+
+| 面 | 验证层级 | 真机状态 |
+|---|---|---|
+| Linux 系统通知：桩 `notify-send` 收到逐字 argv | e2e（真实子进程，桩前置进 PATH） | 覆盖的是桩，不是真机 |
+| Linux 系统通知：真实 `notify-send` 调用并断言退出码 | e2e，平台标记 | **条件覆盖**：仅当跑测机器系统 PATH 里有真实 `notify-send`，**且** D-Bus 会话可用（`DBUS_SESSION_BUS_ADDRESS` 已设，或 `$XDG_RUNTIME_DIR/bus` 存在）时才真跑；否则带 reason 跳过。是否覆盖取决于运行环境，本登记不做推断 |
+| 三平台决策面（平台探测、命令构造、缺失 toast 脚本告警、SoundPlayer 白名单、stderr 管道） | 单测，注入的假进程事实端口 | 验的是分支逻辑；**不是**真机行为 |
+| Windows 真机：`toast.ps1` + PowerShell base64 载荷是否真的弹窗 | 无 | **未覆盖**（无 `windows-latest` runner；e2e 里的 win32 用例尚未编写） |
+| Windows 真机：`spawn({windowsHide:true, …})` 的真实行为 | 无 | **未覆盖**（同上） |
+| macOS 真机：`osascript -e 'display notification …'` 弹窗 | 无 | **未覆盖**（无 `macos-latest` runner） |
+| macOS 真机：`afplay` 自播与音色映射的听感 | 无 | **未覆盖**（同上；[sound-playback-design.md](./docs/sound-playback-design.md) 自述「听感等价未实测（无 mac 主机）」） |
+
+平台标记用例的写法与「待后续 CI 矩阵」的原始规划见
+[test/e2e/smoke.test.ts](./test/e2e/smoke.test.ts) 文件头注释。
+
+**触发条件（缺口何时才会被填上）**：需要在 `.github/workflows/` 增加 `windows-latest` /
+`macos-latest` runner 跑 e2e 项目，并为这两个分支补平台标记用例——即 issue #766 的方案 1。
+本轮采取方案 2（只登记，不改 workflow）：它需要 runner 额度，属另一条路径。在那之前，
+真机行为只能在目标平台的机器上自行确认：
+
+```sh
+pnpm --filter @wingsky-1/dsh-notifier test
+```
+
 ## License
 
 MIT

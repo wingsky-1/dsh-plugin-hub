@@ -569,6 +569,55 @@ pnpm --filter @wingsky-1/dsh-notifier build
 pnpm --filter @wingsky-1/dsh-notifier test
 ```
 
+### Real-machine gaps (platform matrix status, issue #766)
+
+This section records, as-is, which platform behaviors have only been verified at the unit /
+simulated layer and which have never run on a real machine. It neither claims full coverage nor
+leaves the gaps for the reader to guess. The current state is verifiable by command:
+
+- **CI has Linux runners only**: all 15 `runs-on` entries under `.github/workflows/` are
+  `ubuntu-latest`, and `windows-latest` / `macos-latest` match 0 times:
+
+  ```sh
+  git grep -n "runs-on" origin/main -- .github/workflows                          # 15 lines, all ubuntu-latest
+  git grep -n -E "windows-latest|macos-latest" origin/main -- .github/workflows   # no output, exit 1
+  ```
+
+- **`windowsHide` appears in the implementation only, with zero hits in the test surface**: the
+  package's single occurrence is `src/server/channels/impl/system/deps.ts:81` —
+  `{ windowsHide: true, stdio: ["ignore", "ignore", "pipe"] }` — while the test surface
+  (`packages/dsh-notifier/test`) has none:
+
+  ```sh
+  git grep -n windowsHide origin/main -- packages/dsh-notifier/test   # no output, exit 1
+  ```
+
+  On Linux it is an **equivalent mutant** — flipping it never turns a test red; only a real
+  Windows machine can tell the difference.
+
+| Surface | Verification layer | Real-machine status |
+|---|---|---|
+| Linux system notification: stub `notify-send` receives the exact argv | e2e (real child process, stub prepended to PATH) | Verifies the stub, not a real machine |
+| Linux system notification: real `notify-send` invoked and its exit code asserted | e2e, platform marker | **Conditional coverage**: it actually runs only when the test machine has a real `notify-send` on the system PATH **and** a D-Bus session is available (`DBUS_SESSION_BUS_ADDRESS` set, or `$XDG_RUNTIME_DIR/bus` present); otherwise it skips with a reason. Whether it is covered therefore depends on the runtime environment and is not inferred here |
+| Decision face on all three platforms (platform probing, command construction, missing toast-script warning, SoundPlayer allow-list, stderr pipe) | unit tests, injected fake process-facts port | Verifies branch logic; **not** real-machine behavior |
+| Windows real machine: does `toast.ps1` + the PowerShell base64 payload actually pop a toast | none | **Not covered** (no `windows-latest` runner; the win32 e2e case has not been written) |
+| Windows real machine: real behavior of `spawn({windowsHide:true, …})` | none | **Not covered** (same as above) |
+| macOS real machine: `osascript -e 'display notification …'` popup | none | **Not covered** (no `macos-latest` runner) |
+| macOS real machine: `afplay` self-play and the listening experience of the tone mapping | none | **Not covered** (same as above; [sound-playback-design.md](./docs/sound-playback-design.md) states "listening equivalence not measured (no mac host)") |
+
+How platform-marked cases are written, and the original "pending a CI matrix" plan, live in the
+header comment of [test/e2e/smoke.test.ts](./test/e2e/smoke.test.ts).
+
+**Trigger condition (what would close these gaps)**: adding `windows-latest` / `macos-latest`
+runners to `.github/workflows/` to run the e2e project, plus platform-marked cases for those two
+branches — that is option 1 of issue #766. This round takes option 2 (register only, no workflow
+change): it needs runner quota and is a separate path. Until then, real-machine behavior can only
+be confirmed by running on a machine of the target platform:
+
+```sh
+pnpm --filter @wingsky-1/dsh-notifier test
+```
+
 ## License
 
 MIT
