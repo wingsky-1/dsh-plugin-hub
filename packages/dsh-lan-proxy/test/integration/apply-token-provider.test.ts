@@ -2,9 +2,12 @@
  * dsh-lan-proxy — apply 的 launch token 提供者接线（src/server/apply.ts:118-173）。
  *
  * integration 层（ARCHITECTURE-METHOD §8）：真实 cordis 生命周期（fake ctx）+ 真实
- * 转发器 + fake 官方 connection 服务，锁住「connection.authenticatedUrl → token」这段
- * 接线——它是 injectToken 唯一的 token 来源，此前全仓零覆盖（createLanProxy 层的注入
- * 判据只证明「拿到 token 之后怎么用」，证明不了「token 从哪来」）。
+ * 转发器 + fake 官方 connection 服务，锁住两段此前只在纯函数层或产物层有备份的接线：
+ * 「connection.authenticatedUrl → token」的来源（createLanProxy 层的注入判据只证明
+ * 「拿到 token 之后怎么用」，证明不了「token 从哪来」），以及「带 dsh 会话 cookie 的
+ * 请求绝不注入 token」的排除分支（src/server/proxy/impl/proxy.ts 的 !hasDshAuthCookie）。
+ * unit 层覆盖的是纯谓词 hasDshAuthCookie 与 withLaunchToken，e2e 覆盖组合语义但那是
+ * 产物层、不进变异面——本层补的正是源码层的组合判据。
  *
  * 观测面：真实转发一次，看 fake 上游收到的 req.url。转发器端口不写死——apply 不返回
  * 句柄，故捕获其原生 console 出口的 `listening http://host:PORT` 行回读端口（apply
@@ -16,18 +19,24 @@ import type { AddressInfo } from "node:net";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from "vitest";
 
 import { apply } from "../../src/server/apply.ts";
 
 type LogEntry = { level: "info" | "warn"; text: string };
 type Scenario = {
   upstreamUrls: string[];
+  logs: LogEntry[];
   get: (headers?: Record<string, string>) => Promise<{ status: number | undefined; body: string }>;
   stop: () => Promise<void>;
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** 诊断输出：这一层的失败模式（端口占用、证书、上游连接）根因大多只出现在被测代码的
+ *  console 输出里，失败时必须把它打出来，而不是只留一句「未在 8s 内启动转发器」。 */
+const dumpLogs = (logs: LogEntry[]): string =>
+  logs.length === 0 ? "（空）" : logs.map((l) => `[${l.level}] ${l.text}`).join("\n");
 
 /** 起一套 apply + 真实转发器 + fake 上游；connectionValue 即 inject 回调收到的服务。 */
 async function startScenario(connectionValue: unknown): Promise<Scenario> {
@@ -44,14 +53,14 @@ async function startScenario(connectionValue: unknown): Promise<Scenario> {
   await new Promise<void>((r) => upstream.listen(0, "127.0.0.1", r));
 
   const logs: LogEntry[] = [];
-  const origLog = console.log;
-  const origWarn = console.warn;
-  console.log = (...a: unknown[]) => {
+  // vi.spyOn 而非裸赋值：裸赋值会盖住 vitest 自己的 per-test console 捕获（失败时看不到
+  // 被测代码的原始输出），且手工还原容易漏——isolate: true 只保证不外溢，不保证会还。
+  const logSpy = vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => {
     logs.push({ level: "info", text: a.join(" ") });
-  };
-  console.warn = (...a: unknown[]) => {
+  });
+  const warnSpy = vi.spyOn(console, "warn").mockImplementation((...a: unknown[]) => {
     logs.push({ level: "warn", text: a.join(" ") });
-  };
+  });
 
   const disposers: Array<() => void> = [];
   const ctx = {
@@ -74,8 +83,8 @@ async function startScenario(connectionValue: unknown): Promise<Scenario> {
   };
 
   const stop = async (): Promise<void> => {
-    console.log = origLog;
-    console.warn = origWarn;
+    logSpy.mockRestore();
+    warnSpy.mockRestore();
     for (const d of disposers.reverse()) {
       try {
         d();
@@ -96,21 +105,29 @@ async function startScenario(connectionValue: unknown): Promise<Scenario> {
     });
     // 端口回读用轮询而非固定 sleep（防 flake 纪律）。
     const deadline = Date.now() + 8000;
-    let httpPort: number | undefined;
+    let listeningLine: string | undefined;
     while (Date.now() < deadline) {
-      const line = logs.find((l) => l.text.includes("listening http://"));
-      if (line !== undefined) {
-        httpPort = Number(/listening http:\/\/[^:]+:(\d+)/.exec(line.text)?.[1]);
-        break;
-      }
+      listeningLine = logs.find((l) => l.text.includes("listening http://"))?.text;
+      if (listeningLine !== undefined) break;
       await sleep(20);
     }
-    if (httpPort === undefined || Number.isNaN(httpPort)) {
-      throw new Error("apply 未在 8s 内启动转发器（无 listening 日志）");
+    // 两种失败必须分开报：没起来（超时）与起来了但解析不出端口，修复方向完全不同。
+    if (listeningLine === undefined) {
+      throw new Error(
+        `apply 未在 8s 内启动转发器（没有出现 listening 日志）。捕获到的 console 输出：\n${dumpLogs(logs)}`,
+      );
+    }
+    const captured = /listening http:\/\/[^:]+:(\d+)/.exec(listeningLine)?.[1];
+    const httpPort = captured === undefined ? Number.NaN : Number(captured);
+    if (Number.isNaN(httpPort)) {
+      throw new Error(
+        `apply 打了 listening 日志但端口解析失败（期望 listening http://host:PORT）：${listeningLine}\n完整输出：\n${dumpLogs(logs)}`,
+      );
     }
     const port = httpPort;
     return {
       upstreamUrls,
+      logs,
       get: (headers: Record<string, string> = {}) =>
         new Promise((resolve, reject) => {
           const req = httpRequest(
@@ -138,19 +155,33 @@ async function startScenario(connectionValue: unknown): Promise<Scenario> {
   }
 }
 
-const SCENARIOS: Array<{ label: string; connection: unknown; expectedUrl: string }> = [
+type ScenarioSpec = {
+  label: string;
+  title: string;
+  connection: unknown;
+  expectedUrl: string;
+  /** 请求头；cookie 排除场景靠它带 dsh 会话 cookie。 */
+  headers?: Record<string, string>;
+};
+
+const NO_COOKIE_TITLE = "无会话 cookie 的 GET / 到达上游时的 URL 符合接线预期";
+
+const SCENARIOS: ScenarioSpec[] = [
   {
     label: "authenticatedUrl 返回带 token 的 URL → 上游收到该 token",
+    title: NO_COOKIE_TITLE,
     connection: { authenticatedUrl: () => "http://lan-proxy.local/?token=minted-826" },
     expectedUrl: "/?token=minted-826",
   },
   {
     label: "authenticatedUrl 返回不带 token 的 URL → 不注入",
+    title: NO_COOKIE_TITLE,
     connection: { authenticatedUrl: () => "http://lan-proxy.local/" },
     expectedUrl: "/",
   },
   {
     label: "authenticatedUrl 抛异常 → 降级为不注入",
+    title: NO_COOKIE_TITLE,
     connection: {
       authenticatedUrl: () => {
         throw new Error("connection boom");
@@ -160,8 +191,18 @@ const SCENARIOS: Array<{ label: string; connection: unknown; expectedUrl: string
   },
   {
     label: "connection 服务缺少 authenticatedUrl → 不注入",
+    title: NO_COOKIE_TITLE,
     connection: { rpc: {} },
     expectedUrl: "/",
+  },
+  {
+    // 排除分支（proxy.ts 的 !hasDshAuthCookie）在源码层此前无备份：unit 只测纯谓词，
+    // e2e 测组合语义但 e2e 是产物层且不进变异面。取反本分支即可打红这一条。
+    label: "带 dsh 会话 cookie → 绝不注入 token（防有效 cookie 无限 303）",
+    title: "带 dsh 会话 cookie 的 GET / 到达上游时未被注入 token",
+    connection: { authenticatedUrl: () => "http://lan-proxy.local/?token=minted-826" },
+    expectedUrl: "/",
+    headers: { cookie: "dsh-auth-web=still-valid" },
   },
 ];
 
@@ -174,12 +215,20 @@ for (const sc of SCENARIOS) {
     afterAll(async () => {
       if (scenario !== undefined) await scenario.stop();
     });
-
-    it("无会话 cookie 的 GET / 到达上游时的 URL 符合接线预期", async () => {
-      if (scenario === undefined) throw new Error("scenario 未建立");
-      const res = await scenario.get();
+    it(sc.title, async () => {
+      const current = scenario;
+      if (current === undefined) throw new Error("scenario 未建立");
+      // 断言失败时把被测代码的 console 输出打出来（onTestFailed 只能在测试体内注册；
+      // 此时 console 仍被 spy 着，而 console.error 不在 spy 面内，能直达失败输出）。
+      onTestFailed(() => {
+        console.error(`[scenario 捕获的 console 输出]\n${dumpLogs(current.logs)}`);
+      });
+      const res = await current.get(sc.headers);
       expect(res.status).toBe(200);
-      expect(scenario.upstreamUrls.at(-1)).toBe(sc.expectedUrl);
+      // body 此前只被收集、从未断言；fake 上游恒定回 "ok"，这条断言覆盖「响应体真的
+      // 从上游原样穿过转发层」这一段（不再留装饰性数据）。
+      expect(res.body).toBe("ok");
+      expect(current.upstreamUrls.at(-1)).toBe(sc.expectedUrl);
     });
   });
 }

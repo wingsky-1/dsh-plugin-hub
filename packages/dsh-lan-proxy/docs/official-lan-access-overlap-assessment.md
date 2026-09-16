@@ -198,8 +198,9 @@
    `encoding !== 'identity'` → `nocompress('already encoded')`）。
 4. 结论：官方 gzip 生效的响应，本插件的压缩中间件（`server/proxy/impl/proxy.ts` 的
    compression 挂载段，Brotli 档位由同文件的 `resolveCompressionOptions` 映射）拿到的
-   `Content-Encoding` 已是 `gzip`，按其自身语义让位（同文件 `wsCompress` 选项注释所称的
-   「经 content-encoding 检查天然互斥」）。**若仅凭以上推理，会得出「Brotli 一律不生效」
+   `Content-Encoding` 已是 `gzip`，按其自身语义让位（同文件 `httpCompress` 选项注释
+   `server/proxy/impl/proxy.ts:114` 所称的「经 content-encoding 检查天然互斥」——注意是
+   `httpCompress` 块，不是 `wsCompress` 块）。**若仅凭以上推理，会得出「Brotli 一律不生效」
    的绝对结论——下面的实测把条件收窄了。**
 
 **端到端对照实验（实测，2026-09-10）**：上游用等价中间件复现官方 gzip 逻辑
@@ -243,7 +244,8 @@
 2. 直连回环（不经代理）的请求仍按官方围栏与认证处理。两条路径的信任判定不同源，
    但都以 dsh 的 token/cookie 作为身份层，因此不产生越权，只是**判定面不一致**，
    排障时容易误判（"我明明配了 `--trusted-host` 为什么还是 403" —— 因为请求走的是代理）。
-3. `sec-fetch-site` 由本插件原样透传（`server/proxy/impl/proxy.ts` 文件头注释第 2 条），跨站页面仍被上游拒绝，
+3. `sec-fetch-site` 由本插件原样透传（`server/proxy/impl/proxy.ts:29-30` 的文件头段落——
+   它是紧接「DNS 重绑定防护」之后的独立一段，不是该注释的第 2 条），跨站页面仍被上游拒绝，
    防御链完整，不因重写 Host 而放松。
 
 ---

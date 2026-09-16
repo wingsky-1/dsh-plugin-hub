@@ -58,8 +58,8 @@
  * 禁止用 Set——实测逐字重复块 = `export declare const inject: string[];`）。
  *
  * 用法：
- *   node scripts/gate/export-surface-snapshot.mjs --package dsh-notifier --snapshot  # 生成/更新基线
- *   node scripts/gate/export-surface-snapshot.mjs --package dsh-notifier             # 与基线比对（--check 同义）
+ *   node scripts/gate/export-surface-snapshot.mjs --package <pkg> --snapshot  # 生成/更新基线
+ *   node scripts/gate/export-surface-snapshot.mjs --package <pkg>             # 与基线比对（--check 同义）
  *
  * 除基线比对外，同一次 `emitDeclarations()` 产物还喂「导出面分类登记」准入判据
  *（#733 宪法第 3 条 / M2a-3.5：包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面）——新增导出

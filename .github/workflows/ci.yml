@@ -29,7 +29,7 @@ jobs:
       # 增量变异切片清单（#178）：hitPackages 剔除聚合包 dsh-plugins-all（无变异配置）
       mutationPackages: ${{ steps.pkgs.outputs.mutationPackages }}
       # 变异 matrix 组合清单（#220 B 方案）：[{package, seg}] —— 拆分包按
-      # stryker.conf.d/<pkg>-<后缀>.json（功能段名/数字段名统一）展开为多实例
+      # stryker.conf.d/<pkg>-<后缀>.json（段名 = 包名之后的全部后缀；本仓已无数字段名）展开为多实例
       # 并行，未拆分包 seg="0" 走包级配置（#342 二期功能命名改造）
       mutationCombos: ${{ steps.pkgs.outputs.mutationCombos }}
       # 切片是否含变异对象包（#217：显式布尔字符串 'true'/'false'）。GHA 表达式
@@ -366,7 +366,7 @@ jobs:
   # - 成本上界（#742 阶段 1.6，裁决选 A「接受」）。口径必须分清「实测墙钟」与「超时上限」：
   #   ① 基线命中良好（增量复用）：逐段实测墙钟 3~104 s（#718 S0.2 台账，
   #      dsh-provider-usage-pipeline 段 10.1 s），是绝大多数 PR 的形态；
-  #   ② 基线失效/首夜（全量冷跑）：台账 32 段逐段墙钟合计 14803 s（串行）；本 job 的 combo
+  #   ② 基线失效/首夜（全量冷跑）：台账 32 段（当时口径；#826 后为 35 段）逐段墙钟合计 14803 s（串行）；本 job 的 combo
   #      是字典序（见下），@8 模型 makespan ≈ 41.6 min（夜间 LPT @8 = 31.2 min，LPT 是模型值）；
   #   ③ 逐段**超时上限**区间 30~42 min（台账派生值，见 timeout-minutes），不是实测墙钟；
   #      极端上界 = 各段都跑满超时（Σ 派生超时 990 min）÷ 8 个并发槽 ≈ 2.1 小时，
@@ -390,10 +390,10 @@ jobs:
       # - 本 job 的 combo 顺序是 package+seg 字典序（ci-matrix 的确定性排序），LPT 只在夜间
       #   mutation-plan。run 34764977606（12 段、合计 145.65 min、5 槽）实测窗口 43.05 min，
       #   与同序模型 43.00 min 吻合；同口径模型 @8 = 29.83 min、@10 = 26.80 min。
-      # - 夜间全量（32 段 LPT，台账合计 14803 s）模型 @8 = 31.24 min、@10 = 25.22 min。
+      # - 夜间全量（当时 32 段 LPT，台账合计 14803 s）模型 @8 = 31.24 min、@10 = 25.22 min。
       #   两者都是**模型值**：同段集的 LPT 模型给 30.63 min，而全量/失效形态实测窗口到过
       #   43.0 min（#718 approved 记录）——实际受 runner 排队与调度形态影响。
-      # - 增量形态实测（本项 PR run 34796310130 / 96637f96，32 段、8 档）：mutation 窗口
+      # - 增量形态实测（本项 PR run 34796310130 / 96637f96，当时 32 段、8 档）：mutation 窗口
       #   3.87 min、本轮全 run 并发峰值 15、mutation-verdict pass。
       # - 账户并发上界 20 是 #718 S0.3 的**历史实测口径**（PR #753 的 100 个 run，峰值分布
       #   20×15 / 19×4 / 18×1）。scripts/maintenance/scan-actions-concurrency.mjs 未过滤
@@ -413,13 +413,15 @@ jobs:
         combo: ${{ fromJSON(needs.changes.outputs.mutationCombos) }}
     runs-on: ubuntu-latest
     # #742 阶段 1：超时随段派生（与夜间 observe.yml 的 mutation-plan 同一份台账、同一套
-    # 公式），不再是全局固定值。固定 30 分钟在两个方向上都错：对 4 个长段（派生 32/36/40/42 min）
+    # 公式），不再是全局固定值。固定 30 分钟在两个方向上都错：对 4 个长段（当时口径派生 32/36/40/42 min）
     # 太小——run 34628767342（PR #730，gate:full，32 实例）的 dsh-notifier · config 跑到 1819s
     # 被 canceled、连带判分 job failure、整个 run cancelled；对 28 个短段（实测 20.6~944.2 s）又白等。
     # 口径提醒：那次 1819s 属于**旧文件面**（该段在 #733 重写前 2365 mutant，现 941 mutant /
     # 全量实测 117.5 s），它的作用是证明「单一固定值不可能服务所有段」，**不**等于该段现在需要
-    # 30 分钟以上。派生值本身的证据是台账：32/32 段都有 scope=full 实测，且每段派生值都不低于
-    # 该段实测墙钟（mutation-ledger --check 判据）。
+    # 30 分钟以上。派生值本身的证据是台账：35 段中 27 段有 scope=full 实测，且每段派生值都不低于
+    # 该段实测墙钟（mutation-ledger --check 判据）；其余 8 段（#826 新增的 lan-proxy 6 段 +
+    # dsh-notifier client + dsh-worktree-sidebar）尚无实测，走保守默认 30 min
+    # （mutation-plan.mjs 的 DEFAULT_TIMEOUT_MINUTES），首夜全量班后由 ledger --record 补上。
     timeout-minutes: ${{ matrix.combo.timeoutMinutes }}
     steps:
       - name: Checkout

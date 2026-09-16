@@ -1,6 +1,6 @@
 # dsh-lan-proxy 架构与运行机制（图解）
 
-> 包：`@wingsky-1/dsh-lan-proxy` · 源码：`packages/dsh-lan-proxy/` · 版本：0.2.0
+> 包：`@wingsky-1/dsh-lan-proxy` · 源码：`packages/dsh-lan-proxy/` · 版本：0.2.4
 > 功能一句话：**局域网访问 dsh web UI**——在 `0.0.0.0:<port>` 监听，把 HTTP/HTTPS 与
 > WebSocket/wss 转发到回环 web 服务器（默认 `127.0.0.1:3080`），并附带 DNS 重绑定防护、
 > HTTPS 并存、WS 压缩桥接、HTTP 响应压缩与 launch-token 自动注入。

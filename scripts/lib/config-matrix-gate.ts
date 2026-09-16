@@ -47,8 +47,9 @@ const UI_EXEMPT_REL = "scripts/data/dsh-lan-proxy-ui-exempt.json";
 const UI_EXEMPT_MAX = 8;
 
 /**
- * 读取 UI 豁免表（键 → 原因）。只做**结构**加载：IO / JSON / 数组形态 / 键与原因的存在性 /
- * 重复键。策略检查（≤8、原因含「文件:行」）留给 checkExempts，避免同一判据两处实现。
+ * 读取 UI 豁免表（键 → { reason, rationale }）。只做**结构**加载：IO / JSON / 数组形态 /
+ * 键与原因的存在性 / 重复键。策略检查（≤8、原因含「文件:行」、锚点指向真身）留给
+ * checkExempts，避免同一判据两处实现。
  * 任何结构错误都转 problem：豁免机制失效不能表现为「没有豁免」——那会把合法差集报成
  * 「漏 UI」，把修复方向指错。
  */
@@ -92,20 +93,63 @@ function applyExemptEntry(out, item, problems) {
     problems.push(`lan-proxy UI 豁免表存在重复键：${item.key}`);
     return;
   }
-  out[item.key] = item.reason;
+  out[item.key] = {
+    reason: item.reason,
+    rationale: typeof item.rationale === "string" ? item.rationale : "",
+  };
 }
 
-/** 豁免表结构自检：≤8 键 + 每条原因含「文件:行」+ 一句理由。 */
-function checkExempts(pkg, exempt) {
+/** 豁免表结构自检：≤8 键 + 每条 reason 含「文件:行」+ 锚点必须指向真身（见 exemptAnchorProblems）。 */
+function checkExempts(pkg, exempt, schema, cfgPath) {
   const problems = [];
-  if (Object.keys(exempt).length > UI_EXEMPT_MAX) {
-    problems.push(
-      `${pkg} 豁免表 ${Object.keys(exempt).length} 键 > ${UI_EXEMPT_MAX}（超限即红，强制走评审）`,
-    );
+  const keys = Object.keys(exempt);
+  if (keys.length > UI_EXEMPT_MAX) {
+    problems.push(`${pkg} 豁免表 ${keys.length} 键 > ${UI_EXEMPT_MAX}（超限即红，强制走评审）`);
   }
-  for (const [k, reason] of Object.entries(exempt)) {
+  // Config 表跨「export const Config」到校验表声明之前，锚点必须落在这个区间内。
+  const spanEnd = sourceLineOf(schema.text, "FILE_CONFIG_VALIDATORS") ?? Number.POSITIVE_INFINITY;
+  for (const k of keys) {
+    const { reason, rationale } = exempt[k];
     if (typeof reason !== "string" || reason.length === 0 || !/:\d+/.test(reason)) {
       problems.push(`${pkg} 豁免键 ${k} 缺原因（须含「文件:行 + 一句理由」）`);
+      continue;
+    }
+    problems.push(...exemptAnchorProblems(pkg, k, reason, rationale, schema, cfgPath, spanEnd));
+  }
+  return problems;
+}
+
+/**
+ * 豁免键的「文件:行」锚点必须指向该键在 Config 表里的定义行。
+ *
+ * 为什么需要机器判据：本包的行号锚点连续漂移过两次——重排前登记 80/96/102/119 而真身在
+ * 94/110/116/141；#826 改成 87/103/109/134 之后，f572cca5 展开文件头 import 又把它推到
+ * 91/107/113/138。原来的形态判据只认 /:\d+/，漂移只能靠人眼发现，而门禁绿反而会让人
+ * 以为锚点是对的。
+ *
+ * 判据取文本而非 AST：esbuild transform 会重排行号，AST 的 loc 对不上源文件——同
+ * sourceLineOf 放弃 AST 的原因。锚点路径允许写成全仓库路径或包内相对路径（两者都以
+ * Config 文件路径为后缀），引用其它文件的锚点不在本判据的适用面内。
+ */
+function exemptAnchorProblems(pkg, k, reason, rationale, schema, cfgPath, spanEnd) {
+  const problems = [];
+  const lines = schema.text.split("\n");
+  const propRe = new RegExp(`^[ \\t]*${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[ \\t]*:`);
+  const anchors = [...`${reason}\n${rationale}`.matchAll(/([\w./-]+\.[A-Za-z]+):(\d+)/g)].filter(
+    (m) => cfgPath.endsWith(m[1]),
+  );
+  if (anchors.length === 0) {
+    problems.push(
+      `${pkg} 豁免键 ${k} 的锚点未指向 Config 表所在文件（${cfgPath}）：须写成「<路径>:<行>」才可被机器校验`,
+    );
+    return problems;
+  }
+  for (const m of anchors) {
+    const line = Number(m[2]);
+    if (line < schema.line || line >= spanEnd || !propRe.test(lines[line - 1] ?? "")) {
+      problems.push(
+        `${pkg} 豁免键 ${k} 的锚点 ${m[1]}:${line} 指错——该行不是 Config 里 ${k} 的定义行（Config 表跨 ${schema.line}-${spanEnd - 1} 行）`,
+      );
     }
   }
   return problems;
@@ -177,7 +221,14 @@ function runLanProxy(root) {
 
   checkLanProxyTableEquality(cfgPath, problems, schema, validators, hints);
 
-  const exemptKeys = checkLanProxyClientDefaults(root, problems, schema, defaults, clientPath);
+  const exemptKeys = checkLanProxyClientDefaults(
+    root,
+    problems,
+    schema,
+    defaults,
+    clientPath,
+    cfgPath,
+  );
 
   lines.push(
     `lan-proxy ${schema.keys.length} 键 × [schema/validators/hints] 全等 + client DEFAULTS ${defaults.keys.length}(豁免 ${exemptKeys.length})`,
@@ -218,10 +269,10 @@ function checkLanProxyTableEquality(cfgPath, problems, schema, validators, hints
   }
 }
 
-function checkLanProxyClientDefaults(root, problems, schema, defaults, clientPath) {
+function checkLanProxyClientDefaults(root, problems, schema, defaults, clientPath, cfgPath) {
   // L2：DEFAULTS ⊆ schema；schema − DEFAULTS == 豁免；豁免表结构自检
   const exempt = loadUiExempt(root, problems);
-  problems.push(...checkExempts("lan-proxy", exempt));
+  problems.push(...checkExempts("lan-proxy", exempt, schema, cfgPath));
   const exemptKeys = Object.keys(exempt);
   const d = diffKeys(schema.keys, defaults.keys);
   // DEFAULTS 出现 schema 外键 → 红（客户端提交未知键被宿主白名单静默丢弃）

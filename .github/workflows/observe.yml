@@ -179,14 +179,14 @@ jobs:
       fail-fast: false
       # S1.1 + #718 P3（维护者 approved）：取 8，与 ci.yml mutation-gate 同值限流。取 8 的
       # 依据是**账户并发余量**，不是「8 档已饱和」——8 档在两种调度形态下都尚未到零收益：
-      # - 本 job 按台账估计耗时降序（LPT，mutation-plan 的 buildShardMatrix）：夜间全量 32 段、
+      # - 本 job 按台账估计耗时降序（LPT，mutation-plan 的 buildShardMatrix）：夜间全量 32 段（当时口径；#826 后为 35 段）、
       #   台账合计 14803 s，模型 @8 = 31.24 min、@10 = 25.22 min（总工作量下界 30.84 / 24.67）。
       # - ci.yml 侧的 PR 矩阵是 package+seg 字典序（非 LPT）：run 34764977606（12 段、
       #   合计 145.65 min、5 槽）实测窗口 43.05 min，与同序模型 43.00 min 吻合；
       #   同口径模型 @8 = 29.83 min、@10 = 26.80 min。
       # - 以上都是**模型值**：同段集的 LPT 模型给 30.63 min，而全量/失效形态实测窗口到过
       #   43.0 min（#718 approved 记录）——实际受 runner 排队与调度形态影响。
-      # - 增量形态实测（本项 PR run 34796310130 / 96637f96，32 段、8 档）：mutation 窗口
+      # - 增量形态实测（本项 PR run 34796310130 / 96637f96，当时 32 段、8 档）：mutation 窗口
       #   3.87 min、本轮全 run 并发峰值 15、mutation-verdict pass。
       # - 账户并发上界 20 是 #718 S0.3 的**历史实测口径**（PR #753 的 100 个 run，峰值分布
       #   20×15 / 19×4 / 18×1）。scripts/maintenance/scan-actions-concurrency.mjs 未过滤

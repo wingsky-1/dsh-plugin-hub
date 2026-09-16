@@ -216,7 +216,7 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
 
 ## 验证
 
-测试单份维护、变异自动覆盖：单元测试只维护 `test/*.test.ts`（`import "../lib/index.js"` 测产物）；stryker 经 lib→src hook 复用同一份断言，无需手工同步副本。
+测试单份维护、变异自动覆盖：用例按层归在 `test/{unit,integration,e2e,client}/`，其中单元与集成层直接 `import` 源码（`src/**`，白盒直连 impl），e2e 冒烟跑 `lib/` 产物（`import "../../lib/index.js"`）；stryker 经 lib→src hook 对同一份用例做变异，无需手工同步副本。
 
 ```sh
 # 健康检查（回环；含压缩配置与生效状态/协商计数）

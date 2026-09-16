@@ -333,10 +333,8 @@ describe("纯函数边界用例", () => {
 
     it("1 低档 → gzip level=1", () => expect(resolveCompressionOptions(1).level).toBe(1));
 
-    it("1 低档 → brotli 质量落 0..3", () => {
-      const low = resolveCompressionOptions(1);
-      expect(Number(low.brotli.params[Q]) >= 0 && Number(low.brotli.params[Q]) <= 3).toBeTruthy();
-    });
+    it("1 低档 → brotli 质量 2", () =>
+      expect(resolveCompressionOptions(1).brotli.params[Q]).toBe(2));
 
     it("2 中档 → gzip level=5", () => expect(resolveCompressionOptions(2).level).toBe(5));
 

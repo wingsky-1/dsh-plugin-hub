@@ -27,10 +27,10 @@
  * `webServer`，因此只在回环服务器监听后启动，并从 ctx.webServer.port
  * 解析真实上游端口（`--port 0` 与自定义 `--port` 均可用）。
  *
- * 结构（#276 方案 A 阶段 3 拆分）：职责按模块拆分（config / settings /
- * migrate / config-routes / apply），本文件保留插件契约（name/inject 与 apply、
- * 路由表转发）与全部公共符号 re-export（导出面不变，外部消费者从
- * lib/index.js 导入不受影响）。apply 实现于 apply.ts，不 import 本文件。
+ * 结构（#826 域归位）：实现按域归位到 src/server/<域>/（config / migrate / proxy / tls）
+ * 与 src/server/shared/（包内共享叶子），装配在 src/server/apply.ts；本文件保留插件契约
+ * （name/inject 与 apply、路由表转发）与全部公共符号 re-export（导出面不变，外部消费者从
+ * lib/index.js 导入不受影响）。apply 实现于 server/apply.ts，不 import 本文件。
  */
 export const name = "lan-proxy";
 

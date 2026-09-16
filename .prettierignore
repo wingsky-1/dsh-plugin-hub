@@ -23,8 +23,9 @@ vitest.stryker.d/
 # 导出面快照基线：同样是「脚本生成 + 门禁逐字节比对」的形态，同因同上。
 # scripts/gate/export-surface-snapshot.mjs 用 JSON.stringify(_, null, 2) 写出，
 # 不带 printWidth 概念，而 Prettier 会把偏长的单元素数组展开成多行——两者对同一份
-# 数据给出不同排版。此前只有 dsh-notifier 一份基线且恰好没踩到展开阈值，故未暴露；
-# #826 给 dsh-lan-proxy 冻结基线时命中（50 个符号里有单元素长声明块数组）。
+# 数据给出不同排版（#826 给 dsh-lan-proxy 冻结基线时命中：50 个符号里有单元素长声明块数组）。
+# 用 glob 而不是逐包一条：文件名已由 export-surface-snapshot.mjs 的
+# <pkg>-export-surface.json 约定固定，逐条列举只会随扩面腐烂（本仓已接入 3 个包）。
 # 让给生成器：格式化它只会让下一次 --snapshot 把排版顶回去。
 scripts/data/*-export-surface.json
 
@@ -42,10 +43,8 @@ docs/
 # ── 生成器写的机器数据：形态归生成器（同 stryker 派生配置的理由）──────────────
 # 下面这些文件由 --write-baseline / --snapshot / mutation-ledger 以 `JSON.stringify(v, null, 2)`
 # 写回，判据读的是解析后的结构，不依赖排版；格式化它们只会让下一次重生成与 Prettier 打架。
-# 导出面基线逐包一条：本仓新增一个接入 export-surface-snapshot 的包，就要在这里补一行。
+# 导出面基线不在此列：由上面的 scripts/data/*-export-surface.json 一条 glob 覆盖。
 scripts/data/dir-imports-baseline.json
-scripts/data/dsh-notifier-export-surface.json
-scripts/data/dsh-worktree-sidebar-export-surface.json
 scripts/data/mutation-segment-ledger.json
 # 存量抑制基线由 ESLint CLI（--suppress-all / --prune-suppressions）以
 # json-stable-stringify 写回：实测与 Prettier 只差一个结尾换行，但每次 prune 都会把换行顶掉，
