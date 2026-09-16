@@ -337,6 +337,90 @@ test("fail-closed 豁免通道（#843 D15）：台账登记 <包名>:<证据项>
   }
 });
 
+test("fail-closed 豁免通道（#843 D15）：`<包名>:*` 专用于「本包无基线」，该包一旦落库基线即失效", () => {
+  // 证据形态的键在无证据的包上必然零命中（反向腐烂判红），于是「唯一放宽通道」对触发它的
+  // 那个包根本走不通——没有证据项可指的包（质量六类证据全为空集）永远进不了台账。
+  // `<包名>:*` 不声称证据，正是给这一态留的登记位；它的反向腐烂换成另一条事实：本包已有
+  // 基线条目时，这条登记不再放宽任何东西。
+  const root = makeFixtureRoot(chainFixture(""));
+  try {
+    const wildcard = writeLedger(root, [`${PKG}:*`]);
+    const exempted = runOn(root, ["--exemptions", wildcard]);
+    assert.equal(
+      exempted.status,
+      0,
+      `无基线 + <包名>:\* 应放行，实际 ${exempted.status}：\n${exempted.out}`,
+    );
+    assert.match(exempted.out, /按台账豁免放行/, `应点明放行来自台账：\n${exempted.out}`);
+
+    // 写基线路径同样拦：带着「本包无基线」登记落库，等于把一条当场失效的放宽固化下去。
+    const blocked = runOn(root, ["--write-baseline", "--exemptions", wildcard]);
+    assert.equal(
+      blocked.status,
+      1,
+      `带 <包名>:\* 写基线应中止，实际 ${blocked.status}：\n${blocked.out}`,
+    );
+    assert.match(
+      blocked.out,
+      /写基线中止：存在已失效的「本包无基线」登记/,
+      `应点名写基线中止：\n${blocked.out}`,
+    );
+    assert.equal(
+      existsSync(join(root, "scripts/data/dir-imports-baseline.json")),
+      false,
+      "中止即不得落盘基线",
+    );
+
+    // 反向腐烂：台账清掉后落库基线，同一登记必须判失效。
+    seedBaseline(root);
+    const stale = runOn(root, ["--exemptions", wildcard]);
+    assert.equal(
+      stale.status,
+      1,
+      `包已有基线时 <包名>:\* 应判失效，实际 ${stale.status}：\n${stale.out}`,
+    );
+    assert.match(stale.out, /「本包无基线」登记[\s\S]*已失效/, `应点名失效条目：\n${stale.out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("豁免台账键形态非法 → exit 2（#843 D15）", () => {
+  // loadLedger 只校验非空字符串：形态不认识的键既不豁免任何东西、也不被任何判据看到，
+  // 是一条静默失效的放宽，故在读取后立刻按本闸的键形态判红。
+  const root = makeFixtureRoot(chainFixture(""));
+  try {
+    const bad = writeLedger(root, [PKG]);
+    const invalid = runOn(root, ["--exemptions", bad]);
+    assert.equal(invalid.status, 2, `键缺冒号应 exit 2，实际 ${invalid.status}：\n${invalid.out}`);
+    assert.match(invalid.out, /豁免台账键形态非法/, `应点名键形态：\n${invalid.out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("用法 fail-closed（#843 D15）：悬空 --package 与 --package=<name> 一律 exit 2（不得静默扫默认包）", () => {
+  // 两条都是「调用点以为自己切了范围」的形态：悬空得到空包集（零个包被分析仍判 PASS），
+  // 等号形态不被认识于是退回默认包。把「我什么都没扫」说成「全部通过」不能只是文档约定。
+  const root = makeFixtureRoot(chainFixture(""));
+  try {
+    const dangling = runRaw(root, ["--package"]);
+    assert.equal(
+      dangling.status,
+      2,
+      `悬空 --package 应 exit 2，实际 ${dangling.status}：\n${dangling.out}`,
+    );
+    assert.match(dangling.out, /--package 缺少合法包名/, `应点名缺值：\n${dangling.out}`);
+    assert.doesNotMatch(dangling.out, /PASS（跨模块引用全部走/, `不得判绿：\n${dangling.out}`);
+
+    const eq = runRaw(root, [`--package=${PKG}`]);
+    assert.equal(eq.status, 2, `--package=<name> 应 exit 2，实际 ${eq.status}：\n${eq.out}`);
+    assert.match(eq.out, /参数形态不认识/, `应点名形态：\n${eq.out}`);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 /**
  * 不带 `--package` 的裸跑：验证「写基线的缺省范围来自范围注册表」，而不是把
  * `packages/` 下所有带 src 的目录一股脑扫一遍（后者会为无调用点的包落死条目）。

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "note": "路径受限门禁的**扫描范围**登记（#733 计划项 3.2.1）。为什么需要：门禁的范围此前散在各自脚本里（module-state 的 PACKAGES 常量、homedir 的隐式 packages/dsh-* 遍历、CI 里 verify-dir-imports 的 --package 调用点），范围本身成了不可审的代码细节——改范围与改判据混在同一个 diff 里。`scopeFrom` 说明该门的范围**从哪来**，并决定它受哪种断言约束（值域只有三种，无第三条路）：`registry`=脚本运行时读本文件（改范围必须改数据 + 该门自测会红）；`cli`=调用点 --package 指定（本文件登记值必须等于调用点并集，漂移即红）；`tree`=遍历 packages 树，范围由目录结构派生。`sunset`（临时收窄到某日）**不在本文件**：临时项的唯一登记处是 scripts/data/gate-exemptions.json 的 reviewBy（有=临时/无=长期），collect-exemptions 会扫全部 data 文件——在这里再造一个到期结构就是第二个事实源（原则 ①/④），也是把永久全包闸逼出 null 逃生分支的老路。",
+  "note": "路径受限门禁的**扫描范围**登记（#733 计划项 3.2.1）。为什么需要：门禁的范围此前散在各自脚本里（module-state 的 PACKAGES 常量、homedir 的隐式 packages/dsh-* 遍历、CI 里 verify-dir-imports 的 --package 调用点），范围本身成了不可审的代码细节——改范围与改判据混在同一个 diff 里。`scopeFrom` 说明该门的范围**从哪来**，并决定它受哪种断言约束（值域只有三种，无第三条路）：`registry`=脚本运行时读本文件（改范围必须改数据 + 该门自测会红）；`cli`=调用点 --package 指定（本文件登记值必须等于调用点并集，且每个调用文件各自覆盖全集，两个方向漂移即红）；`tree`=遍历 packages 树，范围由目录结构派生。`sunset`（临时收窄到某日）**不在本文件**：临时项的唯一登记处是 scripts/data/gate-exemptions.json 的 reviewBy（有=临时/无=长期），collect-exemptions 会扫全部 data 文件——在这里再造一个到期结构就是第二个事实源（原则 ①/④），也是把永久全包闸逼出 null 逃生分支的老路。",
   "gates": [
     {
       "gate": "forbid-homedir-src",
@@ -34,7 +34,7 @@
         "dsh-lan-proxy",
         "dsh-worktree-sidebar"
       ],
-      "why": "目录 interface.ts 门面 + 依赖图尺子（#664/#670/#690）。范围由调用点 --package 累加：ci.yml 的 repo-gate、observe.yml 的 quality 班次与 gate/gate-steps.mjs（本地档位；审计 P0-1 起从 contract-check.ts 迁出）里，dsh-mcp-manager/dsh-notifier/dsh-lan-proxy 是硬判、dsh-provider-usage 加 --soft（软报告只改打印标签，基线与全覆盖断言一视同仁）。#742 阶段 2 前置补齐 lan-proxy：此前其 src 不在任何扫描面内，S0 的「源码全覆盖断言」（src ⊆ ∪mutate ∪ ∪excludes）对它不生效——新文件既不会被判未覆盖，也没有 R-A 约束；实测在现有判据下零违规，故并入硬判。脚本缺省（无 --package）只覆盖 dsh-mcp-manager，CI 与本地门禁一律显式传参，故登记值取**调用点并集**——自测会断言本字段等于调用点并集，两边漂移即红。dsh-worktree-sidebar 于 2026-09-15 合入 main 时新增，取硬判。"
+      "why": "目录 interface.ts 门面 + 依赖图尺子（#664/#670/#690）。范围由调用点 --package 累加，且**每个调用文件各自**都必须覆盖登记全集（调用点扫描面 = scripts/gate/*.{mjs,ts} ∪ .github/workflows/*.yml，两种写法都算：gate-steps.mjs 的 JS 数组形态与 CI/发版 workflow run 行的 CLI 空格形态——只认前者会让 observe.yml / release.yml 整体消失在扫描面里，那两处收窄无断言可拦）：ci.yml 的 repo-gate、observe.yml 的 quality 班次、release.yml 的发版前置与 gate/gate-steps.mjs（本地档位；审计 P0-1 起从 contract-check.ts 迁出）里，dsh-mcp-manager/dsh-notifier/dsh-lan-proxy 是硬判、dsh-provider-usage 加 --soft（软报告只改打印标签，基线与全覆盖断言一视同仁）。#742 阶段 2 前置补齐 lan-proxy：此前其 src 不在任何扫描面内，S0 的「源码全覆盖断言」（src ⊆ ∪mutate ∪ ∪excludes）对它不生效——新文件既不会被判未覆盖，也没有 R-A 约束；实测在现有判据下零违规，故并入硬判。脚本缺省（无 --package）只覆盖 dsh-mcp-manager，CI 与本地门禁一律显式传参，故登记值取**调用点并集**——自测会断言本字段等于调用点并集，两边漂移即红。dsh-worktree-sidebar 于 2026-09-15 合入 main 时新增，取硬判。"
     },
     {
       "gate": "export-surface-snapshot",
