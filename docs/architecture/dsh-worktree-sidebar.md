@@ -64,7 +64,7 @@
 | 解除绑定 | `ws_worktree_remove`（`remove/index.ts:40`） | 摘登记；仅 `removeDirectory: true` 才 `git worktree remove` | Files 页签回到会话 cwd（`remove/index.ts:99-117`） |
 
 状态行由统一信封渲染，**永远出现在返回文本首行**，失败路径也说清当前指向哪里
-（`src/server/tools/impl/protocol/index.ts:53-61`、`RESULT_SCHEMA` 在 `:27-51`）。
+（`src/server/tools/impl/protocol/index.ts:54-62`、`RESULT_SCHEMA` 在 `:27-52`）。
 `ws_worktree_create` 的「目录建出来了但绑定失败」是**部分成功**，不会被报成失败
 （`create/index.ts:119-131`）。
 
@@ -217,7 +217,7 @@ flowchart TD
     SCOPE -->|"binding：get / drop"| BINDING
     SCOPE -->|"git：belongsTo"| GIT
     TOOLS -->|"binding：get / put / drop，唯一写入口"| BINDING
-    TOOLS -->|"git：commonDir / addWorktree 等 7 方法"| GIT
+    TOOLS -->|"git：commonDir / addWorktree / resolveCommit 等 8 方法"| GIT
     API -->|"binding：revision"| BINDING
     API -->|"scope：effectiveWorktree + 状态读数"| SCOPE
 
@@ -472,7 +472,7 @@ flowchart TD
 - 包内测试脚本 `node ../../scripts/test/run-vitest.mjs --min 17`（`package.json:9`），
   对应 `test/` 下 **17 个测试文件**（`test/unit` 13 个 + `test/integration` 4 个，实测见 §5）。
 - 分层口径与 [ARCHITECTURE-METHOD.md](../ARCHITECTURE-METHOD.md#user-content-8-测试三层与导入面矩阵) 一致：
-  单元测试白盒直连 `src` 模块（如 `test/unit/git-inspect.test.ts:21` 逐字断言 argv、
+  单元测试白盒直连 `src` 模块（如 `test/unit/git-inspect.test.ts:22` 逐字断言 argv、
   `test/unit/scope.test.ts:221` 打自愈与解析），集成测试经组合根与真 git / 真临时目录
   （`test/integration/apply-lifecycle.test.ts:209`、`git-real.test.ts:31`、`tools-real.test.ts:86`、
   `binding-store.test.ts:46`）。
@@ -508,7 +508,7 @@ flowchart TD
 任一点失效时的行为统一是**零注册 / 退回官方**：可感知地什么都不做，好过静默显示错的地方
 （`src/client/index.ts:121-124`；`takeover.ts:152-171`）。
 
-### 4.6 命门清单（本页最该记住的六条）
+### 4.6 命门清单（本页最该记住的七条）
 
 1. 只换**视图根**：cwd 与 `@` / `present` 语义一律不动（`source.ts:62-75`；`register/index.ts:21-29`）。
 2. 会话 id **不是**跨进程稳定键（进程内计数器），所以登记必须带身份凭据（`scope/deps.ts:78-86`；
@@ -517,6 +517,10 @@ flowchart TD
 4. 接管是**遮蔽**而不是顶替：类型表不动，官方条目留在原始账上（`takeover.ts:16-22`、`:101-110`）。
 5. 播种时机必须覆盖 `start`，且首帧不能被一次无超时的 fetch 挡住（`inject.ts:133-147`）。
 6. 本地 `gate:*` 全绿不等于 CI 绿：变异只在 PR 上按切片强制跑（[AGENTS.md](../../AGENTS.md):86-89）。
+7. **`<path>` 之后的位置参数仍会被 git 重新解析成选项**：`--` 与 `--end-of-options` 都只保护紧邻的位置参数，
+   实测起点传 `-f` / `--force` 会 rc=0 却把起点**静默忽略成 HEAD**（报成功、建错基线）。所以起点必须先做
+   形态 guard（`-` 开头直接拒），再用 `git rev-parse --verify --quiet "<base>^{commit}"` 归一化成 SHA 才进 argv
+   （`git/impl/inspect/index.ts` 的 `addWorktreeArgs` 注释；`tools/impl/create/index.ts` 的 guard 与归一化）。
 
 ### 4.7 遗留风险与未验证项
 

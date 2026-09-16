@@ -121,7 +121,7 @@ pnpm gate:pr                 # 开 PR 前；新增包与 catalog 条目另需 pn
 - **不回主仓库路径**：绑定查询只回 `{ revision, worktreePath | null }`，不回 `repoRoot` —— 客户端只需要目录根。
 - **git 只经 `execFile` + argv**：不经 shell，路径与分支名里的空白、`;`、`$()` 不会被重新解释。
 - **分支名交给 git 自己校验**（`git check-ref-format --branch`）；所有位置参数前加 `--`，形如 `--force` 的路径不会被当成标志。
-- **省略分支时显式 `--detach`**：`git worktree add <path>` 的默认行为是**新建一个以目录 basename 命名的分支**，basename 含空格（macOS 家目录常见）会被 git 拒为非法分支名，以 `-` 开头则会被它当成开关二次解析——而 `--` 只挡得住 worktree add 自己的选项解析。补上 `--detach` 之后「省略分支」才真的是「checkout 仓库 HEAD（detached）」。
+- **省略分支时显式 `--detach`**：`git worktree add <path>` 的默认行为是**新建一个以目录 basename 命名的分支**，basename 含空格（macOS 家目录常见）会被 git 拒为非法分支名，以 `-` 开头则会被它当成开关二次解析——而 `--` 只挡得住 worktree add 自己的选项解析。补上 `--detach` 之后「省略分支」才真的是「checkout 起点（detached）」——缺省起点是仓库 HEAD，提供 `base` 时 checkout 的就是 `base` 指定的那个起点。
 - **删除是显式的**：`ws_worktree_remove` 默认只摘登记，只有显式参数才执行 `git worktree remove`，且 `--force` 需要再单独显式给出（默认不丢未提交改动）。插件只做 `git worktree remove`，不 `rm -rf`。
 - **落盘在 `DSH_HOME` 下**：`bindings.json` 以临时文件 + `rename` 原子写；文件损坏、版本不符一律当空表，不猜着读。
 - **工具不下发权限**：工具只写自己的登记表并调用 git；不读凭据、不联网。
