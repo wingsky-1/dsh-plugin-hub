@@ -22,6 +22,7 @@ import {
   parseSingleLine,
   parseWorktreeList,
   removeWorktreeArgs,
+  revParseCommitArgs,
   worktreeListArgs,
 } from "../inspect/index.ts";
 import type { WorktreeEntry } from "../inspect/index.ts";
@@ -81,8 +82,18 @@ export interface GitApi {
   headBranch(dir: string): Promise<string | undefined>;
   /** 让 git 校验分支名。 */
   checkRefFormat(branch: string): Promise<boolean>;
-  /** 新建 worktree。 */
-  addWorktree(repoRoot: string, path: string, branch: string | undefined): Promise<GitMutation>;
+  /**
+   * 新建 worktree。`base` 必须是**已经归一化的 commit SHA**——argv 里 `<path>` 之后的
+   * 参数会被 git 重新解析成选项，起点直接传用户输入就等于把注入面留在那里（见 `impl/inspect`）。
+   */
+  addWorktree(
+    repoRoot: string,
+    path: string,
+    branch: string | undefined,
+    base: string | undefined,
+  ): Promise<GitMutation>;
+  /** 把起点解析成 commit SHA；解析不出来回 undefined（调用方据此给一句可操作的失败）。 */
+  resolveCommit(dir: string, rev: string): Promise<string | undefined>;
   /** 删除 worktree。 */
   removeWorktree(repoRoot: string, path: string, force: boolean): Promise<GitMutation>;
 }
@@ -199,9 +210,17 @@ class GitService implements GitApi {
     repoRoot: string,
     path: string,
     branch: string | undefined,
+    base: string | undefined,
   ): Promise<GitMutation> {
-    const result = await this.exec().run(addWorktreeArgs(repoRoot, path, branch));
+    const result = await this.exec().run(addWorktreeArgs(repoRoot, path, branch, base));
     return result.ok ? { ok: true } : { ok: false, reason: reasonOf(result) };
+  }
+
+  /** 解析起点。`--quiet` 让「不是有效 rev」走退出码而不是 stderr，失败在这里就收成 undefined。 */
+  async resolveCommit(dir: string, rev: string): Promise<string | undefined> {
+    const result = await this.exec().run(revParseCommitArgs(dir, rev));
+    if (!result.ok) return undefined;
+    return parseSingleLine(result.stdout);
   }
 
   async removeWorktree(repoRoot: string, path: string, force: boolean): Promise<GitMutation> {

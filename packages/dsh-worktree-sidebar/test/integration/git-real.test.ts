@@ -49,7 +49,7 @@ describe("worktree 增删（argv 的真实可执行性）", () => {
   it("addWorktree 建出目录，belongsTo 认它，headBranch 报分支名", async () => {
     const { repo } = fixture();
     const wt = join(repo, "..", "wt-feature");
-    expect(await gitApi.addWorktree(repo, wt, "feature")).toEqual({ ok: true });
+    expect(await gitApi.addWorktree(repo, wt, "feature", undefined)).toEqual({ ok: true });
 
     expect(existsSync(wt)).toBe(true);
     expect(await gitApi.belongsTo(wt, repo)).toEqual({ kind: "same" });
@@ -62,7 +62,7 @@ describe("worktree 增删（argv 的真实可执行性）", () => {
     // macOS 家目录常含空格（John Doe / My Project）：不做 --detach 的话 git 会拿 basename
     // 当新分支名，报 fatal: 'wt space' is not a valid branch name。
     const wt = join(repo, "..", "wt space");
-    expect(await gitApi.addWorktree(repo, wt, undefined)).toEqual({ ok: true });
+    expect(await gitApi.addWorktree(repo, wt, undefined, undefined)).toEqual({ ok: true });
     expect(existsSync(wt)).toBe(true);
     // detached ⇒ 没有分支显示名，工具结果里的 branch 因此是空串（见 tools 域）。
     expect(await gitApi.headBranch(wt)).toBeUndefined();
@@ -71,7 +71,7 @@ describe("worktree 增删（argv 的真实可执行性）", () => {
   it("listWorktrees 同时列出主仓库与新增的 worktree", async () => {
     const { repo } = fixture();
     const wt = join(repo, "..", "wt-two");
-    await gitApi.addWorktree(repo, wt, "two");
+    await gitApi.addWorktree(repo, wt, "two", undefined);
     const paths = (await gitApi.listWorktrees(repo)).map((entry) => entry.path);
     expect(paths.length).toBe(2);
     expect(paths).toContain(repo);
@@ -85,7 +85,7 @@ describe("worktree 增删（argv 的真实可执行性）", () => {
     const wt = join(repo, "..", "wt-bad");
     expect(await gitApi.checkRefFormat("bad name")).toBe(false);
     expect(await gitApi.checkRefFormat("good-name")).toBe(true);
-    const result = await gitApi.addWorktree(repo, wt, "bad name");
+    const result = await gitApi.addWorktree(repo, wt, "bad name", undefined);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason.length).toBeGreaterThan(0);
     expect(existsSync(wt)).toBe(false);
@@ -94,7 +94,7 @@ describe("worktree 增删（argv 的真实可执行性）", () => {
   it("removeWorktree 删掉 worktree：目录没了，归属读数随之变成「问不出来」", async () => {
     const { repo } = fixture();
     const wt = join(repo, "..", "wt-remove");
-    await gitApi.addWorktree(repo, wt, "to-remove");
+    await gitApi.addWorktree(repo, wt, "to-remove", undefined);
     expect(await gitApi.removeWorktree(repo, wt, false)).toEqual({ ok: true });
     expect(existsSync(wt)).toBe(false);
     // 真机形态：目录消失后 git 报的是退出码 128 的失败（cannot change to …），与 `chmod 000`

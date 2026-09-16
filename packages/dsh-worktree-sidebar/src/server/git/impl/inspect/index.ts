@@ -42,14 +42,27 @@ export function checkRefFormatArgs(branch: string): readonly string[] {
  * `fatal: 'wt spaceB' is not a valid branch name`（macOS 的家目录常见空格），basename 以 `-` 开头时
  * `--` 只挡住了 worktree add 自己的选项解析、挡不住它把 basename 当分支名后的二次解析（`unknown switch`）。
  * `--detach` 让「省略 branch」的语义与文档一致，也把这条二次解析链路整个绕开。
+ *
+ * **`<path>` 之后的位置参数仍会被重新解析成选项**：实测 git 2.34.1 下
+ * `worktree add -b br -- <path> --force` 与 `-f` 都 rc=0，但**起点被静默忽略、从 HEAD 建**；
+ * `-badref` 则被当成 `git branch` 的选项报 usage。`--` 与 `--end-of-options` 都挡不住这一处。
+ * 所以起点必须由调用方先做形态 guard（拒绝 `-` 开头）并归一化成 commit SHA 再递进来：
+ * SHA 不会以 `-` 开头，这条二次解析链路就没有入口。
  */
 export function addWorktreeArgs(
   repoRoot: string,
   path: string,
   branch: string | undefined,
+  base: string | undefined,
 ): readonly string[] {
   const flags = branch === undefined ? ["--detach"] : ["-b", branch];
-  return ["-C", repoRoot, "worktree", "add", ...flags, "--", path];
+  const startPoint = base === undefined ? [] : [base];
+  return ["-C", repoRoot, "worktree", "add", ...flags, "--", path, ...startPoint];
+}
+
+/** 把起点（分支 / tag / SHA / 相对 rev）解析成 commit SHA。`^{commit}` 让 annotated tag 也落到提交上。 */
+export function revParseCommitArgs(dir: string, rev: string): readonly string[] {
+  return ["-C", dir, "rev-parse", "--verify", "--quiet", rev + "^{commit}"];
 }
 
 /** 删除 worktree。`force` 只在调用方显式要求时出现——默认可丢未提交改动的删除不该是默认值。 */

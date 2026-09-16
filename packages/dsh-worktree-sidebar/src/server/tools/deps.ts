@@ -17,6 +17,7 @@ type GitPort = Pick<
   | "belongsTo"
   | "headBranch"
   | "checkRefFormat"
+  | "resolveCommit"
   | "addWorktree"
   | "removeWorktree"
   | "listWorktrees"

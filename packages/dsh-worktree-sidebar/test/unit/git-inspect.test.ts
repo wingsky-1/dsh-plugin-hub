@@ -15,6 +15,7 @@ import {
   parseSingleLine,
   parseWorktreeList,
   removeWorktreeArgs,
+  revParseCommitArgs,
   worktreeListArgs,
 } from "../../src/server/git/impl/inspect/index.ts";
 
@@ -30,7 +31,7 @@ describe("argv 构造", () => {
   });
 
   it("新建 worktree：有分支时 -b 在 -- 之前，路径在 -- 之后", () => {
-    expect(addWorktreeArgs("/repo", "/wt", "feature")).toEqual([
+    expect(addWorktreeArgs("/repo", "/wt", "feature", undefined)).toEqual([
       "-C",
       "/repo",
       "worktree",
@@ -45,7 +46,7 @@ describe("argv 构造", () => {
   it("新建 worktree：不给分支时补 --detach，而不是没有标志", () => {
     // 省略 branch 时 git 的默认行为是「新建一个以目录 basename 命名的分支」：basename 含空格
     // （macOS 家目录常见）会 fatal，以 `-` 开头会被当成开关——`--` 挡不住这条二次解析链路。
-    expect(addWorktreeArgs("/repo", "/wt", undefined)).toEqual([
+    expect(addWorktreeArgs("/repo", "/wt", undefined, undefined)).toEqual([
       "-C",
       "/repo",
       "worktree",
@@ -55,8 +56,8 @@ describe("argv 构造", () => {
       "/wt",
     ]);
     // 对含空格与以 - 开头的 basename 也一视同仁：argv 里没有把它们当分支名的那条路径。
-    expect(addWorktreeArgs("/repo", "/wt space", undefined)).toContain("--detach");
-    expect(addWorktreeArgs("/repo", "/-dash", undefined)).toContain("--detach");
+    expect(addWorktreeArgs("/repo", "/wt space", undefined, undefined)).toContain("--detach");
+    expect(addWorktreeArgs("/repo", "/-dash", undefined, undefined)).toContain("--detach");
   });
 
   it("删除 worktree：--force 在 -- 之前", () => {
@@ -80,10 +81,60 @@ describe("argv 构造", () => {
   });
 
   it("形如选项的路径落在 -- 之后（参数注入的挡板）", () => {
-    const args = addWorktreeArgs("/repo", "--force", undefined);
+    const args = addWorktreeArgs("/repo", "--force", undefined, undefined);
     expect(args.indexOf("--")).toBeLessThan(args.indexOf("--force"));
     const removal = removeWorktreeArgs("/repo", "--force", false);
     expect(removal.indexOf("--")).toBeLessThan(removal.indexOf("--force"));
+  });
+});
+
+describe("起点与 rev-parse 的 argv", () => {
+  it("起点落在 -- 与 path 之后，且递进来的必须是归一化过的 SHA", () => {
+    expect(addWorktreeArgs("/repo", "/wt", "feature", "abc123")).toEqual([
+      "-C",
+      "/repo",
+      "worktree",
+      "add",
+      "-b",
+      "feature",
+      "--",
+      "/wt",
+      "abc123",
+    ]);
+    expect(addWorktreeArgs("/repo", "/wt", undefined, "abc123")).toEqual([
+      "-C",
+      "/repo",
+      "worktree",
+      "add",
+      "--detach",
+      "--",
+      "/wt",
+      "abc123",
+    ]);
+  });
+
+  it("不给起点时不追加位置参数（缺省由 git 取仓库 HEAD）", () => {
+    expect(addWorktreeArgs("/repo", "/wt", "feature", undefined)).toEqual([
+      "-C",
+      "/repo",
+      "worktree",
+      "add",
+      "-b",
+      "feature",
+      "--",
+      "/wt",
+    ]);
+  });
+
+  it("起点解析：^{commit} 让 tag 也落到提交，--quiet 让失败走退出码", () => {
+    expect(revParseCommitArgs("/repo", "origin/main")).toEqual([
+      "-C",
+      "/repo",
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      "origin/main^{commit}",
+    ]);
   });
 });
 

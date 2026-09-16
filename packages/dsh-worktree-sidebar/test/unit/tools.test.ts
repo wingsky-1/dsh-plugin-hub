@@ -38,6 +38,9 @@ afterAll(() => cleanup(root));
 /** 会话 header 的创建时间：绑定记录要靠它区分「同一个会话」与「重启后复用同一 id 的另一个会话」。 */
 const SESSION_CREATED_AT = 1_700_000_000_000;
 
+/** 假 git 域把起点归一化成的 SHA：断言 argv 里出现的是它，而不是调用方给的原始 rev。 */
+const START_SHA = "1111111111111111111111111111111111111111";
+
 function fakeDeps(
   options: {
     /** 归属判定读数；缺省按「本临时根下、且不是主仓库本身」判 same。 */
@@ -47,10 +50,14 @@ function fakeDeps(
     removeOk?: boolean;
     worktreeList?: readonly { path: string; branch: string | undefined; detached: boolean }[];
     agents?: AgentPort;
+    /** 起点归一化失败（git 说不认识这个 rev）。 */
+    resolveCommitFails?: boolean;
   } = {},
 ) {
   const table = new Map<string, BindingRecord>();
   const gitCalls: string[][] = [];
+  /** 起点归一化的入参（dir, rev）：形态 guard 命中时这里必须一条都没有。 */
+  const resolveCalls: Array<[string, string]> = [];
   const writes: Array<{ session: string; record: BindingRecord }> = [];
   const drops: string[] = [];
   const warns: string[] = [];
@@ -87,9 +94,13 @@ function fakeDeps(
       },
       headBranch: async () => "feature",
       checkRefFormat: async (branch) => !branch.includes(" "),
-      addWorktree: async (r, path, branch) => {
-        gitCalls.push(["add", r, path, branch ?? ""]);
+      addWorktree: async (r, path, branch, base) => {
+        gitCalls.push(["add", r, path, branch ?? "", base ?? ""]);
         return options.addOk === false ? { ok: false, reason: "already exists" } : { ok: true };
+      },
+      resolveCommit: async (dir, rev) => {
+        resolveCalls.push([dir, rev]);
+        return options.resolveCommitFails === true ? undefined : START_SHA;
       },
       removeWorktree: async (r, path, force) => {
         gitCalls.push(["remove", r, path, String(force)]);
@@ -110,7 +121,7 @@ function fakeDeps(
     },
   };
 
-  return { deps, table, gitCalls, writes, drops, warns };
+  return { deps, table, gitCalls, resolveCalls, writes, drops, warns };
 }
 
 /**
@@ -293,7 +304,7 @@ describe("ws_worktree_create", () => {
     const { deps, gitCalls, writes } = fakeDeps();
     const value = await run(buildCreateTool(deps), { path: newPath(), branch: "feat-x" });
     expect(value.ok).toBe(true);
-    expect(gitCalls).toEqual([["add", repo, newPath(), "feat-x"]]);
+    expect(gitCalls).toEqual([["add", repo, newPath(), "feat-x", ""]]);
     expect(writes[0]?.record.worktreeRoot).toBe(newPath());
   });
 
@@ -360,6 +371,43 @@ describe("ws_worktree_create", () => {
     expect(value.ok).toBe(false);
     expect(value.detail).toContain("The worktree was created at " + newPath());
     expect(value.detail).toContain("left in place");
+  });
+
+  it("base 归一化：git 侧拿到的是 SHA，原始 rev 只用于解析", async () => {
+    const { deps, gitCalls, resolveCalls } = fakeDeps();
+    const value = await run(buildCreateTool(deps), { path: newPath(), base: "origin/main" });
+    expect(value.ok).toBe(true);
+    expect(resolveCalls).toEqual([[repo, "origin/main"]]);
+    expect(gitCalls).toEqual([["add", repo, newPath(), "", START_SHA]]);
+  });
+
+  it("base 以 - 开头一律在调用 git 之前判失败", async () => {
+    // 实测：worktree add -b br -- <path> --force 与 -f 都 rc=0，但起点被静默忽略、从 HEAD 建；
+    // -badref 会被二次解析成 git branch 的选项。三者都必须在 argv 之前拦下。
+    for (const base of ["--force", "-f", "-badref"]) {
+      const { deps, gitCalls, resolveCalls } = fakeDeps();
+      const value = await run(buildCreateTool(deps), { path: newPath(), base });
+      expect(value.ok).toBe(false);
+      expect(value.detail).toContain("Not a valid start point: " + base);
+      expect(gitCalls.length).toBe(0);
+      expect(resolveCalls.length).toBe(0);
+    }
+  });
+
+  it("base 解析不出来时判失败，且不建目录", async () => {
+    const { deps, gitCalls, resolveCalls } = fakeDeps({ resolveCommitFails: true });
+    const value = await run(buildCreateTool(deps), { path: newPath(), base: "nosuchref" });
+    expect(value.ok).toBe(false);
+    expect(value.detail).toBe("Not a valid start point: nosuchref.");
+    expect(resolveCalls).toEqual([[repo, "nosuchref"]]);
+    expect(gitCalls.length).toBe(0);
+  });
+
+  it("不给 base 时不解析起点，起点位置参数为空", async () => {
+    const { deps, gitCalls, resolveCalls } = fakeDeps();
+    await run(buildCreateTool(deps), { path: newPath(), branch: "feat-x" });
+    expect(resolveCalls.length).toBe(0);
+    expect(gitCalls).toEqual([["add", repo, newPath(), "feat-x", ""]]);
   });
 });
 

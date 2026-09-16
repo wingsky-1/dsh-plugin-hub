@@ -13,8 +13,15 @@ export function buildCreateTool(deps: ToolsDeps): ToolDefinition {
       "Create a git worktree from this session's repository with git worktree add, then bind it to " +
       "THIS session so the right-sidebar Files tab is rooted at it (open or refresh that tab to see " +
       "the new root). The session cwd does not change. " +
-      "Path and branch are yours to choose; the plugin imposes no layout convention. If git worktree add " +
-      "succeeds but binding fails, the directory is left in place and the result says so.",
+      "Prefer this over a bare git worktree add when the Files tab should show the new worktree: a bare " +
+      "git command creates the directory but leaves the Files tab rooted at the session cwd (for a " +
+      "worktree you created that way, call ws_worktree_register on it instead). " +
+      "Path and branch are yours to choose; the plugin imposes no layout convention. " +
+      "base defaults to the current HEAD of the repository the session working directory is in, so pass " +
+      "it explicitly when you need a different start point. " +
+      "If git worktree add succeeds but binding fails, the directory is left in place and the result says " +
+      "so. Whether the Files tab then actually follows the binding is reported by GET " +
+      "/api/dsh-worktree-sidebar/health as scopeTakeover.",
     parameters: {
       type: "object",
       properties: {
@@ -27,9 +34,16 @@ export function buildCreateTool(deps: ToolsDeps): ToolDefinition {
           type: "string",
           description:
             "Optional branch to create for the worktree (git worktree add -b). Validated with " +
-            "git check-ref-format --branch before git is called. Omit to check out the repository HEAD " +
-            "detached (git worktree add --detach), which creates no branch and works for paths whose " +
-            "last segment is not a valid branch name.",
+            "git check-ref-format --branch before git is called. Omit to check out the start point " +
+            "detached (git worktree add --detach): that is base, or the repository HEAD when base is " +
+            "omitted too. Creating no branch also works for paths whose last segment is not a valid " +
+            "branch name.",
+        },
+        base: {
+          type: "string",
+          description:
+            "Optional start point (commit-ish: branch, tag, or SHA, e.g. origin/main). Defaults to the " +
+            "current HEAD of the repository the session working directory is in.",
         },
       },
       required: ["path"],
@@ -76,7 +90,26 @@ export function buildCreateTool(deps: ToolsDeps): ToolDefinition {
         );
       }
 
-      const created = await deps.git.addWorktree(repo, target, branch);
+      const base = argString(args, "base");
+      // 形态 guard 必须在 git 调用之前：起点位置的 "-" 开头值会被 worktree add 内部的选项解析吞掉
+      // （实测 -f / --force 会 rc=0 但忽略起点、从 HEAD 建），那正是「静默产出过期基线」本身。
+      if (base !== undefined && base.startsWith("-")) {
+        return resultOf(
+          state,
+          false,
+          "Not a valid start point: " + base + ' (a start point must not begin with "-").',
+        );
+      }
+      let startPoint: string | undefined;
+      if (base !== undefined) {
+        // 归一化成 SHA 之后再进 argv：SHA 不以 "-" 开头，二次解析因此无处下手。
+        startPoint = await deps.git.resolveCommit(repo, base);
+        if (startPoint === undefined) {
+          return resultOf(state, false, "Not a valid start point: " + base + ".");
+        }
+      }
+
+      const created = await deps.git.addWorktree(repo, target, branch, startPoint);
       if (!created.ok) {
         return resultOf(state, false, "git worktree add failed: " + created.reason);
       }

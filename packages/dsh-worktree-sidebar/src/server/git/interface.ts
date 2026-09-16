@@ -49,13 +49,27 @@ export function checkRefFormat(branch: string): Promise<boolean> {
   return gitService.checkRefFormat(branch);
 }
 
-/** 新建 worktree。 */
+/**
+ * 新建 worktree。`base` 必须已经被调用方归一化成 commit SHA（理由见 `resolveCommit`）。
+ */
 export function addWorktree(
   repoRoot: string,
   path: string,
   branch: string | undefined,
+  base: string | undefined,
 ): Promise<GitMutation> {
-  return gitService.addWorktree(repoRoot, path, branch);
+  return gitService.addWorktree(repoRoot, path, branch, base);
+}
+
+/**
+ * 把起点（分支 / tag / SHA / 相对 rev）解析成 commit SHA；解析不出来回 undefined。
+ *
+ * 这一层是**安全边界**而不是便利：`git worktree add` 在 `<path>` 之后会重新开始选项解析，
+ * 起点位置的 `-` 开头值会被当选项（实测 `-f` / `--force` 会让起点被静默忽略、从 HEAD 建）。
+ * 递进 argv 的必须是这里产出的 SHA。
+ */
+export function resolveCommit(dir: string, rev: string): Promise<string | undefined> {
+  return gitService.resolveCommit(dir, rev);
 }
 
 /** 删除 worktree。 */
