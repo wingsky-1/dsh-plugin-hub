@@ -287,6 +287,25 @@ test("CLI 参数校验：非法参数 exit 2（与「判据拦下 exit 1」区�
   }
 });
 
+test("CLI 参数校验：未知 flag / 多余位置参数一律 exit 2，不得静默回落默认值", () => {
+  withTmpDir((dir) => {
+    const freshPath = join(dir, "fresh.json");
+    writeFileSync(freshPath, JSON.stringify({ workflow_runs: [apiRun()] }));
+    for (const args of [
+      ["--max-age-hour", "1"], // 少个 s：静默回落默认 24 h 就会放行
+      ["--per-pag", "30"],
+      ["--unknown"],
+      ["stray"],
+    ]) {
+      const result = runCli([...args, "--runs-file", freshPath, "--now", NOW]);
+      assert.equal(result.status, 2, `${args.join(" ")} 必须判参数非法`);
+      assert.match(result.stderr, /未知参数/, `${args.join(" ")} 要指名未知参数`);
+    }
+    // 夹具本身在默认窗口下放行：上面几条一旦回落默认值就会 exit 0（静默漏网）
+    assert.equal(runCli(["--runs-file", freshPath, "--now", NOW]).status, 0);
+  });
+});
+
 test("release.yml 接线：前置 job 串在 publish 之前、actions: read、override 输入、tag 守卫；发布逻辑原样", () => {
   const yml = readFileSync(RELEASE_YML, "utf8");
 
@@ -313,6 +332,12 @@ test("release.yml 接线：前置 job 串在 publish 之前、actions: read、ov
   );
 
   const precheckBlock = yml.slice(precheck, publish);
+  // 工作流级声明了 contents: write，它默认被每个 job 继承；没有 job 级覆盖，最小权限就没落实。
+  const jobPerms = /^ {4}permissions:\n((?: {6}\S.*\n)+)/m.exec(precheckBlock);
+  assert.ok(jobPerms !== null, "observe-precheck 必须有 job 级 permissions");
+  assert.match(jobPerms[1], /^ {6}contents: read$/m, "checkout 需要 contents: read");
+  assert.match(jobPerms[1], /^ {6}actions: read$/m, "查 observe 的 run 列表需要 actions: read");
+  assert.doesNotMatch(jobPerms[1], /write/, "前置校验不得持有任何写权限");
   assert.match(precheckBlock, /timeout-minutes:/, "job 必须有超时（仓库约定）");
   assert.match(
     precheckBlock,
@@ -340,4 +365,31 @@ test("release.yml 接线：前置 job 串在 publish 之前、actions: read、ov
   assert.match(yml, /node scripts\/release\/publish-if-missing\.ts/, "发布步骤不得改动");
   assert.match(yml, /pnpm --filter "\$pkg" publish --no-git-checks/);
   assert.match(yml, /node scripts\/release\/verify-version\.ts/);
+});
+
+test("release.yml ref 守卫：分支 ref 派发必须判红，不得以绿色空跑收场", () => {
+  const yml = readFileSync(RELEASE_YML, "utf8");
+  const precheck = yml.indexOf("\n  observe-precheck:");
+  const publish = yml.indexOf("\n  publish:");
+  const precheckBlock = yml.slice(precheck, publish);
+
+  const guardAt = precheckBlock.indexOf("Ref guard");
+  assert.ok(
+    guardAt !== -1,
+    "observe-precheck 必须有一条显式的 ref 守卫：publish 被 tag 守卫跳过后，分支 ref 派发会以 success 收场，界面看起来像已发布",
+  );
+  const guard = precheckBlock.slice(guardAt);
+  // 条件必须是 publish tag 守卫的补集：两处若不同源，收紧一处另一处照旧漏。
+  assert.match(
+    guard,
+    /if:\s*\$\{\{\s*!startsWith\(github\.ref, 'refs\/tags\/v'\)\s*\}\}/,
+    "ref 守卫只在非 v* tag 上触发，才是 publish 守卫的补集",
+  );
+  // 绿色空跑的风险高于一次误红：只打 ::warning:: 仍会让 run 以 success 结束。
+  assert.match(guard, /::error::/, "分支 ref 派发要能在 run 里直接看到判红注解");
+  assert.match(guard, /^\s*exit 1\s*$/m, "ref 守卫必须非 0 退出——告警挡不住「绿色=已发布」的误读");
+
+  // 判据之后：前置校验的判词照旧打印（分支派发仍是可用的演练），run 结论由守卫接管。
+  const judgmentAt = precheckBlock.indexOf("node scripts/release/observe-precheck.mjs");
+  assert.ok(judgmentAt !== -1 && judgmentAt < guardAt, "ref 守卫必须在判据步骤之后");
 });

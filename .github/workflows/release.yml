@@ -1,9 +1,10 @@
 name: Release
 
 # Tag-triggered publish：推 vX.Y.Z tag 是唯一发布开关（唯一例外见下方 workflow_dispatch 的
-# override 说明：手动派发**必须**落在 v* tag 这个 ref 上才会发布，分支 ref 被 publish job 的
-# tag 守卫挡下）。链路：observe 前置校验（D4）→ 校验每个包版本 == tag 版本（tag 是版本唯一
-# 来源）→ 全量门禁 → 按依赖序 pnpm publish（7 子包 → 聚合包）→ 生成 GitHub Release。
+# override 说明：手动派发**必须**落在 v* tag 这个 ref 上才会发布，分支 ref 既被 publish job 的
+# tag 守卫挡下、又被 observe-precheck 末尾的 ref 守卫判红，不留绿色空跑）。链路：observe 前置
+# 校验（D4）→ 校验每个包版本 == tag 版本（tag 是版本唯一来源）→ 全量门禁 → 按依赖序
+# pnpm publish（7 子包 → 聚合包）→ 生成 GitHub Release。
 # 需要仓库 secret NPM_TOKEN（@wingsky scope 的 npm automation token）。
 
 on:
@@ -16,8 +17,8 @@ on:
   #
   # 用法：Actions → Release → Run workflow，ref 选**要发布的那个 v* tag**，勾选
   # skip_observe_check。为什么必须选 tag：publish job 有 tag 守卫（见 jobs.publish.if），
-  # 手动派发到分支只会跑一次前置校验（可当演练），不会发布——「推 tag 才是发布」这条不变量
-  # 因此不被打开。
+  # 手动派发到分支不会发布，且 observe-precheck 末尾的 ref 守卫会把 run 判红——「推 tag 才是
+  # 发布」这条不变量因此不被打开，选错 ref 也不会以绿色空跑的形式被误读成「已发布」。
   #
   # 风险与义务（必读）：勾选它 = 在「变异基线可能陈旧」的前提下发布。发布者必须在本版本的
   # PR / release notes / 发布记录里写明理由（为什么急、为什么不新鲜、何时补跑 observe），并在
@@ -51,6 +52,11 @@ jobs:
     name: Observe precheck（最近有成功班次才放行）
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # job 级 permissions 覆盖工作流级：前置校验只需要读——checkout 要 contents: read，查 observe 的
+    # run 列表要 actions: read。发布用的 contents: write 因此只留在 publish job，不随本 job 一起授予。
+    permissions:
+      contents: read
+      actions: read
 
     steps:
       - name: Checkout
@@ -74,6 +80,19 @@ jobs:
           # push 事件下该输入为空 ⇒ 严格校验；只有手动派发（且 ref 是 v* tag）才可能带上它
           SKIP_OBSERVE_CHECK: ${{ inputs.skip_observe_check }}
         run: node scripts/release/observe-precheck.mjs
+
+      # 分支 ref 的派发走到这里必然「什么都没发布」，但 publish 被 tag 守卫跳过后 run 整体仍是
+      # success——绿色空跑会被误读成「已发布」。故补一条显式判红：误红一次的成本远低于把「没发布」
+      # 读成「已发布」。放在判据之后是为了让前置校验先打印判词（分支派发仍可当演练），run 的结论
+      # 由本步接管。
+      - name: Ref guard（非 v* tag 的派发一律判红）
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          RELEASE_REF: ${{ github.ref }}
+        run: |
+          echo "::error::ref=${RELEASE_REF} 不是 v* tag：publish job 的 tag 守卫会跳过发布，本次 run 没有发布任何东西。"
+          echo "::error::要发布请重新派发，并把 ref 选成对应的 v* tag（Actions → Release → Run workflow）。"
+          exit 1
 
   publish:
     name: Build, test, publish, release

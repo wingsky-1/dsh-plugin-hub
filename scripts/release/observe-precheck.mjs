@@ -42,8 +42,8 @@
  *   - 响应不是合法 JSON、缺 `workflow_runs` 数组、或 run 列表为空；
  *   - run 条目损坏（非对象、时间戳不可解析、success 缺收口时刻）。
  * 退出码：0 = 放行；1 = 不放行（陈旧 / 无成功 / 无 run / 取数失败，一律 fail-closed）；
- *         2 = **参数非法**（`--max-age-hours` 非正数、`--per-page` 越界）。2 与 1 分开是为了
- *             在 Actions 上一眼区分「判据拦下发布」与「workflow 把参数写错了」。
+ *         2 = **参数非法**（未知 flag、`--max-age-hours` 非正数、`--per-page` 越界）。2 与 1
+ *             分开是为了在 Actions 上一眼区分「判据拦下发布」与「workflow 把参数写错了」。
  *
  * ── override 逃生口（风险说明）─────────────────────────────────────────────────
  * `--override` 直接放行且**不取任何数据**（API 自身故障时也要能用），只打印 `::warning::`。
@@ -90,6 +90,40 @@ function argValue(argv, flag, fallback) {
   if (eq !== undefined) return eq.slice(flag.length + 1);
   const idx = argv.lastIndexOf(flag);
   return idx !== -1 && argv[idx + 1] !== undefined ? argv[idx + 1] : fallback;
+}
+
+/** 取值型 flag（`--flag value` 或 `--flag=value`）；其余（`--override`）是开关。 */
+const VALUE_FLAGS = new Set([
+  "--workflow",
+  "--max-age-hours",
+  "--per-page",
+  "--repo",
+  "--runs-file",
+  "--now",
+]);
+
+/**
+ * 未登记的 flag 与位置参数一律算参数非法。
+ *
+ * 为什么不能沿用 argValue 的「找不到就回落 fallback」：`--max-age-hour`（少个 s）会被静默丢掉、
+ * 按默认 24 h 判定——调用者以为改了窗口，判据实际一字未变。参数写错必须比「判据拦下发布」更容易
+ * 分辨，故与审批类脚本的「未知参数即 exit 2」对齐（方向 fail-closed）。
+ */
+function unknownArgs(argv) {
+  const bad = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = String(argv[i]);
+    const eq = arg.indexOf("=");
+    const flag = eq === -1 ? arg : arg.slice(0, eq);
+    if (VALUE_FLAGS.has(flag)) {
+      // `--flag value` 的取值也是位置参数，跳过它；`--flag=value` 的取值在同一个 token 里。
+      if (eq === -1) i += 1;
+      continue;
+    }
+    if (flag === "--override") continue;
+    bad.push(arg);
+  }
+  return bad;
 }
 
 function toDate(value, label) {
@@ -350,6 +384,11 @@ function main(argv, env = process.env) {
   if (argv.includes("--help") || argv.includes("-h")) {
     console.log(USAGE);
     return 0;
+  }
+  const unknown = unknownArgs(argv);
+  if (unknown.length > 0) {
+    console.error(`observe-precheck: 未知参数 ${unknown.join(" ")}（用 --help 查看可用参数）`);
+    return 2;
   }
   const rawMaxAge = argValue(argv, "--max-age-hours", String(DEFAULT_MAX_AGE_HOURS));
   const maxAgeHours = Number(rawMaxAge);
