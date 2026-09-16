@@ -37,13 +37,13 @@
 
 - 触发者是 agent（模型）在会话内发起工具调用；工具**只在「该会话 cwd 位于 git 仓库内」时注册**，
   否则一个工具都不给（`src/server/tools/impl/service/index.ts:81` 经 `repoOf`；
-  `src/server/tools/impl/bind/index.ts:120-125` 判定）。
+  `src/server/tools/impl/bind/index.ts:156-160` 判定）。
 - 三个工具的同一次装配：`src/server/tools/impl/service/index.ts:84-88`；名称分别见
-  `register/index.ts:18`、`create/index.ts:11`、`remove/index.ts:16`。
+  `register/index.ts:19`、`create/index.ts:11`、`remove/index.ts:40`。
 - 写入路径的校验顺序是刻意的（先本地事实、后要起 git 的归属判定）：
-  路径存在且是目录 → 属于同一仓库 → 落盘（`bind/index.ts:1-6`、`:58-118`；
-  路径判定在 `register/index.ts:66-71`、`create/index.ts:63-77`）。
-- 失败一律 fail-closed：归属不是 `same` 就拒绝写（`bind/index.ts:80-94`）。
+  路径存在且是目录 → 属于同一仓库 → 落盘（`bind/index.ts:1-9`、`:96-153`；
+  路径判定在 `register/index.ts:73-76`、`create/index.ts:76-83`）。
+- 失败一律 fail-closed：归属不是 `same` 就拒绝写（`bind/index.ts:114-131`）。
 
 **能力 B：右侧栏展示绑定 worktree 下的文件。**
 
@@ -51,29 +51,30 @@
   （`src/client/takeover.ts:29-32`、`:41-43`）。
 - 重读只发生在三个用户可感知的时机：打开页签 / 点官方刷新 / 窗口重新可见或获得焦点；
   **没有定时轮询**（`src/client/inject.ts:133-156`、`:163-173`、`src/client/index.ts:6-8`）。
-- 子 agent 会话继承父会话的登记：本会话没有登记时沿父链向上找
-  （`src/server/scope/impl/inherit/index.ts:14-29`）。
+- 子 agent 会话**与用户 fork 的会话**都继承父会话的登记：本会话没有登记时沿父链向上找，
+  命中的第一条登记连同**持有它的那个会话 id** 一起返回（fork 与子 agent 的判据同为 header
+  `parentSession`，本域刻意不区分；`src/server/scope/impl/inherit/index.ts:24-38`）。
 
 ### 1.2 能力 → 入口 → 可见产物
 
 | 能力 | 入口（工具） | 宿主侧产物 | 用户 / 模型可见产物 |
 |---|---|---|---|
 | 建 worktree 并绑定 | `ws_worktree_create`（`create/index.ts:11`） | `git worktree add` + `bindings.json` 一条登记 | Files 页签根 = 新 worktree；返回文本带状态行 |
-| 登记已有 worktree | `ws_worktree_register`（`register/index.ts:18`） | 只写 `bindings.json` 一条登记 | 同上 |
-| 解除绑定 | `ws_worktree_remove`（`remove/index.ts:16`） | 摘登记；仅 `removeDirectory: true` 才 `git worktree remove` | Files 页签回到会话 cwd（`remove/index.ts:70-81`） |
+| 登记已有 worktree | `ws_worktree_register`（`register/index.ts:19`） | 只写 `bindings.json` 一条登记 | 同上 |
+| 解除绑定 | `ws_worktree_remove`（`remove/index.ts:40`） | 摘登记；仅 `removeDirectory: true` 才 `git worktree remove` | Files 页签回到会话 cwd（`remove/index.ts:99-117`） |
 
 状态行由统一信封渲染，**永远出现在返回文本首行**，失败路径也说清当前指向哪里
 （`src/server/tools/impl/protocol/index.ts:53-61`、`RESULT_SCHEMA` 在 `:27-51`）。
 `ws_worktree_create` 的「目录建出来了但绑定失败」是**部分成功**，不会被报成失败
-（`create/index.ts:85-98`）。
+（`create/index.ts:119-131`）。
 
 ### 1.3 显式非目标
 
 | 非目标 | 代码 / 文档依据 |
 |---|---|
-| 不改执行 cwd | 插件从不写 `session.header.cwd`；工具描述明写 cwd 不变（`register/index.ts:20-25`） |
+| 不改执行 cwd | 插件从不写 `session.header.cwd`；工具描述明写 cwd 不变（`register/index.ts:21-29`） |
 | `@` 引用、`present` 落点、skill 目录仍锚 cwd | 同上；改写只覆盖单个 entry 的 inject 面（`src/client/source.ts:62-75`） |
-| `workspace-write` 策略下写不进 worktree | 工具描述 `register/index.ts:24-25` |
+| `workspace-write` 策略下写不进 worktree | 工具描述 `register/index.ts:27` |
 | 不接管其它 `useSessions` 消费方 | 只改这一条 entry 的注入面（`source.ts:62-75`；[包 README](../../packages/dsh-worktree-sidebar/README.md) 的「显式非目标」） |
 | 页签不自动跟随 | 无轮询（`src/client/index.ts:6-8`） |
 | 不注入系统提示词 | 包 README「已知限制」（文档事实，代码无对应实现） |
@@ -109,7 +110,7 @@ flowchart LR
 ### 2.1 宿主端：组合根 + 五域 + 三个适配层
 
 `src/index.ts` 是全包**唯一认识 `ctx` 的地方**（`src/index.ts:1-7`），它把 `ctx` 收窄成 `HostPort` 后
-按依赖顺序装配五域（`src/index.ts:58-72`、`:93-146`），并声明宿主服务依赖
+按依赖顺序装配五域（`src/index.ts:58-72`、`:93-148`），并声明宿主服务依赖
 `inject = ["webServer", "agents", "typert", "sessions"]`（`src/index.ts:39`）。
 
 | 序 | 域 | 装配调用 | 依赖谁的能力（经 `deps.ts` 声明） | 证据 |
@@ -117,8 +118,8 @@ flowchart LR
 | 1 | binding | `installBinding({ logger, file })` | 无域依赖（只有落盘路径与日志） | `src/index.ts:102`；`src/server/binding/deps.ts:5-9` |
 | 2 | git | `installGit({ exec })` | 无域依赖（exec 面由组合根注入） | `src/index.ts:107`；`src/server/git/deps.ts:23-25` |
 | 3 | scope | `installScope({ logger, binding, git, typert, sessions })` | `binding: get / drop`、`git: belongsTo` | `src/index.ts:112-118`；`src/server/scope/deps.ts:19`、`:22` |
-| 4 | tools | `installTools({ logger, binding, git, agents, now })` | `binding: get / put / drop`、`git: commonDir / addWorktree 等 7 方法` | `src/index.ts:122-128`；`src/server/tools/deps.ts:11`、`:14-23` |
-| 5 | api | `installApi({ register, logger, binding, scope })` | `binding: revision`、`scope: effectiveWorktree + 状态读数` | `src/index.ts:133-138`；`src/server/api/deps.ts:11`、`:20`、`:28` |
+| 4 | tools | `installTools({ logger, binding, git, scope, agents, now })` | `binding: get / put / drop`、`git: commonDir / addWorktree / resolveCommit 等 8 方法` | `src/index.ts:123-130`；`src/server/tools/deps.ts:12`、`:15-25` |
+| 5 | api | `installApi({ register, logger, binding, scope })` | `binding: revision`、`scope: effectiveWorktree + 状态读数` | `src/index.ts:135-140`；`src/server/api/deps.ts:11`、`:20`、`:28` |
 
 三条硬纪律（都由代码与单测守）：
 
@@ -127,25 +128,25 @@ flowchart LR
    （全 type-only，例如 `src/server/tools/deps.ts:2` 引 `@deepseek-ai/dsh-tools`、
    `src/server/api/deps.ts:2` 引 `@deepseek-ai/dsh-host-webserver`），这正是 `verify-dir-imports` 认可的依赖面。
 2. **单例 + `install` / `release` 成对，二次装配显式抛错**：五域的守卫分别在
-   `binding/impl/service/index.ts:52`、`git/impl/service/index.ts:105`、`scope/impl/service/index.ts:89`、
+   `binding/impl/service/index.ts:52`、`git/impl/service/index.ts:105`、`scope/impl/service/index.ts:102-103`、
    `tools/impl/service/index.ts:37`、`api/impl/service/index.ts:31`。
-3. **装配中途失败要回滚**：已装域按逆序释放后原样抛出（`src/index.ts:140-143`、`:149-158`）；
+3. **装配中途失败要回滚**：已装域按逆序释放后原样抛出（`src/index.ts:142-145`、`:151-160`）；
    api 域的端点注册是事务性的（`src/server/api/impl/route/index.ts:28-68`，`api/impl/service/index.ts:35-42`）。
 
 依赖方向的口径是「谁 `Pick` 了谁的 `interface.ts`」：`scope` 只拿 binding 的 `get/drop`
-（`scope/deps.ts:19`）、tools 只拿 `commonDir` 等 7 个 git 方法（`tools/deps.ts:14-23`）、
+（`scope/deps.ts:19`）、tools 只拿 `commonDir` 等 8 个 git 方法（`tools/deps.ts:15-25`）、
 api **刻意不读绑定表原文**而读 scope 算出的生效值（`api/deps.ts:13-20`），
-且 api 的能力面里没有 `put/drop`，因此**浏览器侧不存在写绑定的授权路径**（`tools/deps.ts:7-11`）。
+且 api 的能力面里没有 `put/drop`，因此**浏览器侧不存在写绑定的授权路径**（`tools/deps.ts:12`）。
 
 ### 2.2 工具面与写路径不变量
 
 - 三个工具由 tools 域装进**每个 agent 自己的作用域**，并随该 agent 的 effect 一起释放
   （`src/server/host/agents.ts:50-82`）；两条入口缺一不可：`agent/created` 覆盖之后发布的 agent，
   `list()` 覆盖装配前已在跑的 agent（`tools/impl/service/index.ts:1-9`、`:42-43`）。
-- 写绑定只有一条路：`bindWorktree`（`tools/impl/bind/index.ts:58-118`），归属校验在其中做**唯一一次**，
+- 写绑定只有一条路：`bindWorktree`（`tools/impl/bind/index.ts:96-153`），归属校验在其中做**唯一一次**，
   所以「只允许绑定同一仓库的 worktree」不会因某条路径漏写而破。
 - 删除是显式的：默认只摘登记，`force` 必须与 `removeDirectory: true` 同时给出
-  （`remove/index.ts:60-68`）。
+  （`remove/index.ts:91-97`）。
 
 ### 2.3 浏览器端：干净模块与官方座位的影子接管
 
@@ -186,7 +187,7 @@ api **刻意不读绑定表原文**而读 scope 算出的生效值（`api/deps.t
 - `bindings` **不回 `repoRoot`**：客户端只需要目录根，多回一个字段就多一份暴露面
   （`handlers/index.ts:1-8`、`src/shared/contract.ts:23-28`）。
 - 端点带**自愈副作用**：解析生效根时会顺带摘除已确认失效的登记（见 §3.5），这是让客户端
-  `revision` 缓存失效的唯一通道（`handlers/index.ts:36`；`scope/impl/own/index.ts:1-11`）。
+  `revision` 缓存失效的唯一通道（`handlers/index.ts:36`；`scope/impl/own/index.ts:1-16`）。
 - 端点异常统一收口成日志 + 500，且只在响应头未发出时补写（`api/impl/route/index.ts:70-78`）。
 
 ```mermaid
@@ -307,9 +308,9 @@ flowchart TD
 
 1. **写**：工具从执行上下文取 `exec.agent.session.header.createdAt`；
    拿不到就**拒绝落盘**，并给出「无法与复用同 id 的另一个会话区分」的原因
-   （`src/server/tools/impl/session/index.ts:8-33`；`tools/impl/bind/index.ts:70-79`）。
+   （`src/server/tools/impl/session/index.ts:8-33`；`tools/impl/bind/index.ts:104-113`）。
 2. **核对**：活会话优先，不在册才回落持久面（`sessionPersistence.stat`）；
-   凭据不同 ⇒ 摘掉这条登记；读不出来 ⇒ 保留（`scope/impl/own/index.ts:55-68`、`:83-99`；
+   凭据不同 ⇒ 摘掉这条登记；读不出来 ⇒ 保留（`scope/impl/own/index.ts:68-81`、`:97-112`；
    host 适配层 `src/server/host/sessions.ts:68-78`）。
 3. **持久面每次现取**：`ctx.get("sessionPersistence")` 在调用当刻取，
    提前取一次会让晚挂的后端永久退化成缺席（`src/index.ts:74-81`）。
@@ -327,7 +328,7 @@ flowchart TD
 `unknown` 还带一个 `notRepo` 标志：至少一侧**明确**回了「不是 git 工作树」，
 它只用来把失败文案说准，不参与摘除判定（`git/deps.ts:49-57`）。
 限定一条：权限不可读的目录在读数上与「不是工作树」同形，所以那句文案读作
-「git 拒绝把它当工作树」，而不是「我们已经验过了」（`tools/impl/bind/index.ts:82-85`）。
+「git 拒绝把它当工作树」，而不是「我们已经验过了」（`tools/impl/bind/index.ts:116-119`）。
 
 缓存策略（`git/impl/service/index.ts`）：
 
@@ -350,23 +351,28 @@ flowchart TD
 
 ### 3.5 作用域内清理（自愈）与 revision 传播
 
-失效判据要求**硬证据**才允许摘除（`scope/impl/own/index.ts:1-11`、`:46-81`）：
+失效判据要求**硬证据**才允许摘除（`scope/impl/own/index.ts:1-16`、`:56-94`）：
 
 | 判据 | 摘除条件 | 读不出来时 | 证据 |
 |---|---|---|---|
-| 目录是否存在 | `stat` 说 ENOENT / ENOTDIR | 按存在处理（EACCES / EIO 不等于不存在） | `own/index.ts:22-43` |
-| 会话身份 | 登记 `sessionCreatedAt` 与当前会话 `createdAt` 不同 | 保留登记（不下结论） | `:55-68`、`:83-99` |
-| worktree 归属 | 两侧**都确实**读到公共 git 目录且不同 | 保留登记 + `logger.warn` | `:69-79` |
+| 目录是否存在 | `stat` 说 ENOENT / ENOTDIR | 按存在处理（EACCES / EIO 不等于不存在） | `own/index.ts:37-48` |
+| 会话身份 | 登记 `sessionCreatedAt` 与当前会话 `createdAt` 不同 | 保留登记（不下结论） | `:68-81`、`:97-112` |
+| worktree 归属 | 两侧**都确实**读到公共 git 目录且不同 | 保留登记 + `logger.warn` | `:82-92` |
 
 摘除动作是 `binding.drop` + `logger.warn`；drop 本身可能失败或抛错，两条路都出声但都不上抛
-（`own/index.ts:101-113`）。摘掉而不是仅仅忽略，是因为客户端以 `revision` 判定缓存有效性：
-**只忽略不摘的话 revision 不变，树会一直指着已经不成立的根**（`own/index.ts:1-11`；
+（`own/index.ts:114-127`）。摘掉而不是仅仅忽略，是因为客户端以 `revision` 判定缓存有效性：
+**只忽略不摘的话 revision 不变，树会一直指着已经不成立的根**（`own/index.ts:1-16`；
 `api/impl/handlers/index.ts:24-42` 的解析路径带这条副作用）。
 
 静默降级只有一处，且给了落地读数：已结束会话的父链只能从持久面读，读不出来时按「到顶」收口，
-于是继承悄悄退回 live-only（`scope/impl/inherit/index.ts:31-47`）。
-`health` 的 `scopeChain` 就是它唯一能落地的痕迹（`scope/impl/service/index.ts:46-60`、`:144-163`；
+于是继承悄悄退回 live-only（`scope/impl/inherit/index.ts:47-56`）。
+`health` 的 `scopeChain` 就是它唯一能落地的痕迹（`scope/impl/service/index.ts:67-74`、`:168-178`；
 `api/impl/handlers/index.ts:54-67`）。
+
+工具面读的是**同一份解析**，但**不设 takeover 门**：`worktreeOrigin` 在 waiting / abandoned 期照旧
+给出登记（那是宿主启动序与第三方占位的读数，不是绑定事实的一部分），因此这一态的「工具说已绑定、
+侧边栏仍按 cwd」是**刻意**的，由 `/health` 的 `scopeTakeover` 分辨
+（`scope/impl/service/index.ts:193-200`、`scope/interface.ts:31-40`）。
 
 ### 3.6 视图缓存（LRU）
 
@@ -493,7 +499,7 @@ flowchart TD
 
 | 耦合点 | 读取方式 | 证据 |
 |---|---|---|
-| 宿主 `typert` 的 `workspaceFileScope` 键 | `lookups.get/configure/subscribe`；`configure` 前捕获官方 `resolve`，miss 时委托它 | `src/server/host/typert.ts:25-53`；`scope/impl/service/index.ts:176-209` |
+| 宿主 `typert` 的 `workspaceFileScope` 键 | `lookups.get/configure/subscribe`；`configure` 前捕获官方 `resolve`，miss 时委托它 | `src/server/host/typert.ts:25-53`；`scope/impl/service/index.ts:202-240` |
 | 客户端键控座位 `sidebar.right.pane.tab` 与 `StoredEntry` 形状 | `slots.entries / entriesOfSlot / register / subscribe / onEntryError`，复用 `component/inject/store/locale` | `src/client/shared/ports.ts:19-77`；`takeover.ts:133-178` |
 | 会话 hook 源契约 `{ getSnapshot(), subscribe(fn) }` 且引用稳定 | `hooks.sessions` 改写源；`getSnapshot` 同快照 + 同路径回同对象 | `ports.ts:88-92`；`source.ts:33-45` |
 | 会话 header 的 `parentSession`（活）与 `sessionPersistence.stat`（已结束） | 两个来源都要；持久面可选，缺席时退 live-only | `src/server/host/sessions.ts:20-33`、`:47-78` |
@@ -504,10 +510,10 @@ flowchart TD
 
 ### 4.6 命门清单（本页最该记住的六条）
 
-1. 只换**视图根**：cwd 与 `@` / `present` 语义一律不动（`source.ts:62-75`；`register/index.ts:20-25`）。
+1. 只换**视图根**：cwd 与 `@` / `present` 语义一律不动（`source.ts:62-75`；`register/index.ts:21-29`）。
 2. 会话 id **不是**跨进程稳定键（进程内计数器），所以登记必须带身份凭据（`scope/deps.ts:78-86`；
    `binding/impl/model/type.ts:28-32`）。
-3. 「读不出来」永远不等于「不存在」：三条摘除判据都只认正面证据（`own/index.ts:32-43`、`:69-79`、`:83-99`）。
+3. 「读不出来」永远不等于「不存在」：三条摘除判据都只认正面证据（`own/index.ts:37-48`、`:82-92`、`:97-112`）。
 4. 接管是**遮蔽**而不是顶替：类型表不动，官方条目留在原始账上（`takeover.ts:16-22`、`:101-110`）。
 5. 播种时机必须覆盖 `start`，且首帧不能被一次无超时的 fetch 挡住（`inject.ts:133-147`）。
 6. 本地 `gate:*` 全绿不等于 CI 绿：变异只在 PR 上按切片强制跑（[AGENTS.md](../../AGENTS.md):86-89）。
@@ -515,14 +521,14 @@ flowchart TD
 ### 4.7 遗留风险与未验证项
 
 - **真机启动序**：本次隔离实测观测到 `scopeTakeover: "live"`（provider 已注册、接管成功，见 §4.4）；
-  仍缺**等待态与让位态**（`waiting` / `abandoned`）的真机观察（`scope/impl/service/index.ts:174-189`）。
+  仍缺**等待态与让位态**（`waiting` / `abandoned`）的真机观察（`scope/impl/service/index.ts:202-240`）。
 - **重启后 id 复用**：判据已补到「真文件 + 真组合根」（`apply-lifecycle.test.ts`），
   本次真机又补上了「凭据不一致 ⇒ 摘登记 + 落盘 revision + UI 回落 cwd」的完整闭环（§4.4 判据 4）；
   仍缺的是**跨进程重启**（新进程的 `session-1` 读到上一进程留下的登记）那一次观察。
 - **dev HMR 重注册**只有单元级判据（官方组件换对象后重捕 + 当值复检），dev server 真机那一次**未验证**
   （`takeover.ts:180-219`）。
 - **界面语义部分已实测**：判据「打开 / 刷新页签后列 worktree 内容」与「未登记一侧行为一致」已实测；
-  **仍缺**：文件预览内容、子 agent 会话继承、未安装本插件一侧、双主题 / 窄屏几何
+  **仍缺**：文件预览内容、继承（fork / 子 agent）的真机观察、未安装本插件一侧、双主题 / 窄屏几何
   （覆盖缺口清单见 [819-isolated-verify-report.md](../../packages/dsh-worktree-sidebar/docs/archive/819-isolated-verify-report.md)）。
 - **两条实测操作约束**（都会让验证静默失败）：
   1. `patchReload: live` **不会重装本插件**（改 `cordis.patch.yml` 后 `revision` 仍为 0）
@@ -534,7 +540,7 @@ flowchart TD
 - 插件 `logger.warn` 在无 exporter 的组合里**不落盘**，现场痕迹只有 `/health` 的
   `scopeTakeover` / `scopeChain` 两个读数（`api/impl/handlers/index.ts:44-53`）。
 - 归属 `unknown` 时保留登记是**故意的取舍**：代价是「目录还在但已不是工作树」时文件树报错，
-  可感知而非静默（`own/index.ts:69-79`）。
+  可感知而非静默（`own/index.ts:82-92`）。
 - 官方 `dsh-client-ui-slots` 的「最低者渲染」已被真机间接验证（判据 2 的树换根只有在影子条目当值时才会发生）；
   其源码行号证据仍以仓库内 catalog 锁版副本为准（§2.3）。
 

@@ -41,6 +41,9 @@ export function buildRemoveTool(deps: ToolsDeps): ToolDefinition {
     description:
       "Unbind the worktree from THIS session; the right-sidebar Files tab returns to the session cwd " +
       "on its next open or refresh. " +
+      "This only touches this session's own binding: when the Files tab follows a root inherited from a " +
+      "parent session instead, the tool refuses (it never unbinds or removes another session's worktree) " +
+      "and reports which session owns that root plus the ways to stop following it. " +
       "By default the worktree directory is left in place - pass removeDirectory: true to also run " +
       "git worktree remove, and force: true as well when it has uncommitted changes you accept losing. " +
       "The plugin never deletes directories itself.",

@@ -26,7 +26,8 @@ export function buildRegisterTool(deps: ToolsDeps): ToolDefinition {
       "binding: @ file references, present targets and the skill catalog still resolve against the " +
       "session cwd, and under the workspace-write file policy the agent cannot write into the worktree. " +
       "If this session inherits a root from a parent session, binding here overrides that inherited root " +
-      "for this session only.",
+      "for this session only. Whether the Files tab then actually follows the binding is reported by GET " +
+      "/api/dsh-worktree-sidebar/health as scopeTakeover.",
     parameters: {
       type: "object",
       properties: {

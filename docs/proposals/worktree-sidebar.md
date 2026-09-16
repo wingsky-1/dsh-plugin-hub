@@ -1711,3 +1711,37 @@ rebase 会重写 sha，§21/§22 里引用的那些因此指向已不可达的�
 - 类型面：`tsc -p tsconfig.json --noEmit` 与 `tsc -p test/tsconfig.json --noEmit` 均 exit 0。
 - 打红探针：G1（把 `unknown` 重新缓存）exit 1 RED、G2（去掉 `Number.isFinite` 守卫）exit 1 RED；两次都做了 `sha256` 还原核对（还原后与备份逐字节一致）。
 - 门禁与 CI：见 PR #819 的回复评论——本轮在最终树上复跑 `pnpm gate:pr`，CI 在推送后跑，两边都贴真实 exit code / run 号。
+
+---
+
+## 26. 第十二轮：#847 评论三条新发现的修复（2026-09-16）
+
+### 26.1 触发与范围
+
+#847 的真机写侧复核（2026-09-16T13:39:53Z 评论）报告三条新发现：① fork 会话的继承是「显示级」的，tools 域不认，导致 fork 里无法解绑；② `ws_worktree_create` 缺基点参数，默认取会话仓库 HEAD，与本仓「从 `origin/main` 起」的规则冲突；③ 工具描述与本仓文档互不知情。本轮只做这三条——issue 里的 R2-M-1（导出面基线接线/删基线）、发布登记、变异基线回填与真机四项**不属本轮**。
+
+### 26.2 方案与裁决
+
+把「绑定解析」收敛为唯一事实源：scope 域新增判别联合 `WorktreeOrigin`（`none` / `own` / `inherited`，含 `ownerSessionId`）与 `worktreeOrigin` 读取面，`effectiveWorktree` 改为它的派生（行为等价）；tools 域经 `deps.scope` 读同一份解析，继承来源说明收口到唯一信封出口 `resultOf`。`create` 新增可选 `base`：形态 guard（拒绝 `-` 开头）+ `git rev-parse --verify --quiet "<base>^{commit}"` 归一化成 SHA 后再进 argv。继承态 `remove` 只说明来源与出路，不摘父记录、不删目录。
+
+维护者裁决五条：① 保留 fork 继承（不引入 `delegationDepth` / `origin` 过滤）；② 不做否定登记（`bindings.json` 形状不变）；③ 工具 `bound` 不并入 `scopeTakeover` 读数（只写注释与 README）；④ `base` = guard + rev-parse 归一化；⑤ 继承态 `remove` 给三条出路（含 `ws_worktree_register({ worktree: <session cwd> })`）。
+
+`base` 的 argv 形态有一个实测命门：`<path>` 之后 git **重新开始选项解析**，`--` 与 `--end-of-options` 都挡不住 base 位置的 `-` 开头值——`-f` / `--force` 会 rc=0 却从 HEAD 建（静默产出过期基线），`-badref` 会被解析成 `git branch` 的选项。归一化成 SHA 是唯一彻底的堵法。
+
+### 26.3 评审来源
+
+两位独立子代理评审（架构/最佳实践/长期可维护性、对抗性机制风险）。两评审在「base 位置是否被当选项」上结论相反，主控以实测裁决：以 `-f` / `--force` 的 rc=0 + 起点变成仓库 HEAD 为准，采纳对抗评审。架构评审的三项加固全部落地：判别联合（`root` 由 `record.worktreeRoot` 派生）、`resultOf` 收口继承说明、集成层「工具面与浏览器面同源」不变量断言；另采纳删薄封装与内部类型不用空串哨兵。
+
+### 26.4 逐条处置
+
+| 评论条目 | 处置 | 判据 |
+|---|---|---|
+| 新发现 1：fork 继承只看得到、工具不认 | 修复 | `tools/impl/bind/index.ts` 改走 `originOf`（真 scope 域）；`remove` 继承态 `ok:false` + `bound:true` + 说明来源与三条出路；集成层不变量 `rootOf(worktreeOrigin(id)) === effectiveWorktree(id)` 对 own / inherited / none 三态各断一次 |
+| 新发现 2：`create` 缺基点 | 修复 | `base` 参数 + 形态 guard + rev-parse 归一化；集成层真 git 断言「base = SHA ⇒ 新 worktree HEAD 等于该 SHA」「缺省 ⇒ 等于仓库 HEAD」 |
+| 新发现 3：描述与仓规互不知情 | 修复 | 三条工具描述补规范路径与 `/health` 指路；根 `AGENTS.md` 的 worktree 段补工具与 `base` 用法；README 中英补 fork 语义、base 语义与已知限制三条 |
+
+### 26.5 本轮读数
+
+- 测试面：17 文件 / 310 用例（本轮 +5：同源不变量、双跳链 owner、base 起点、缺省起点、继承态真磁盘）。
+- 门禁：每个阶段 `pnpm gate:changed` exit 0；开 PR 前 `pnpm gate:pr` 的真实 exit code 见 PR 正文。
+- 未覆盖（如实登记）：真机 fork 会话的解绑行为需重启 `dsh web` 后实测，由维护者执行。

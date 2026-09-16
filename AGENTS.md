@@ -40,6 +40,11 @@ git worktree remove /mnt/ssd/worktree/dsh-plugin-hub-task-<n> && git worktree pr
 一律建在 `/mnt/ssd/worktree/<仓库名>-<分支名>`（分支名 `/` → `-`），不建在仓库内部、
 `/tmp` 或家目录；构建、提交、测试、验证都在 worktree 内完成。
 
+需要侧边栏文件树跟随 worktree 时，用插件的 `ws_worktree_create` / `ws_worktree_register`
+（裸 `git worktree add` 不会让侧边栏换根）；本仓要求从 `origin/main` 起，
+故 `ws_worktree_create` 要显式传 `base: "origin/main"`——缺省是会话仓库当前 HEAD，
+主 checkout 落后时会静默产出旧基线。
+
 **主 checkout 是旧树，不是测量基准**：它是在跑的 `dsh web` 的加载源（上一条禁止写操作），
 因此必然落后 `origin/main`，落后幅度随会话时长增长。任何读文件、数文件、跑 `tsc` / `lint` /
 门禁判据复现，只能在两类位置做：① 打 `origin/main` 的 ref（`git show origin/main:<path>`、

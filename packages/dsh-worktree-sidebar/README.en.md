@@ -16,15 +16,17 @@ The plugin exposes three tools to the agent:
 | Tool | Effect |
 |---|---|
 | `ws_worktree_register` | Bind an **existing** worktree to the current session |
-| `ws_worktree_create` | Run `git worktree add` first, then bind (path and branch come from the caller; the plugin imposes no layout convention) |
+| `ws_worktree_create` | Run `git worktree add` first, then bind (path and branch come from the caller; the plugin imposes no layout convention); an optional `base` picks the start point, defaulting to the current HEAD of the repository the session working directory is in |
 | `ws_worktree_remove` | Drop the binding; only removes the directory via `git worktree remove` when explicitly asked |
 
 Once bound, **open or refresh** the Files tab and it lists the worktree; opening a file previews the worktree's copy.
 The tab does **not** follow automatically: the plugin does not poll the host, and re-reads the binding only when you open the tab, hit the built-in refresh, or the window becomes visible/focused again.
 
-Subagent sessions inherit their parent's binding: a child session without a binding of its own roots its Files tab at the worktree its parent is registered to (the walk stops at the top, and falls back to the child's own cwd once the parent is unbound).
+Subagent sessions **and user-forked sessions** inherit their parent's binding: a session without a binding of its own roots its Files tab at the worktree of the **first session up the parent chain that holds a registration** (the walk stops at the top, and falls back to the session's own cwd once that registration is dropped). The criterion is the header's `parentSession`, and the plugin deliberately does not tell the two shapes apart — a fork copies the parent's cwd, so inheriting the view root keeps it consistent with "the file root is a rewrite of the session cwd".
 
 Tools are exposed to **every agent inside a git repository, subagents included**, decided per agent when it is created; a second check at execution time covers environments that changed in between. Each tool's result text states which worktree is bound and on which branch, so the model need not call another tool to confirm.
+
+`ws_worktree_create`'s `base` is a commit-ish (branch, tag, SHA — e.g. `origin/main`). Its shape is checked first (a value starting with `-` is rejected), then it is normalized to a SHA before git sees it: after `<path>`, git **restarts option parsing** (measured: `base: "-f"` / `"--force"` reports success yet checks out HEAD), and a normalized SHA gives that parsing nothing to latch onto.
 
 ## Explicit non-goals (known inconsistencies)
 
@@ -95,7 +97,7 @@ Four **UI semantics** cannot be covered by any automated gate (there is no brows
 1. the file tree lists the worktree's contents;
 2. opening a file previews the worktree's copy;
 3. an unbound session — and an install without this plugin — behaves identically (no regression);
-4. a subagent session's tree follows the binding of its parent session.
+4. a subagent or forked session's tree follows the binding held by the session that owns it up the parent chain, and the three tools report the same root.
 
 ## Compatibility (read-only coupling)
 
@@ -130,6 +132,9 @@ On any of these failing the behaviour is **zero registration / fall back to offi
 - **One `dsh web` restart is needed after install or upgrade.**
 - **Per-session state is released with the plugin itself**: the client no longer infers liveness (per-session pruning was removed together with the polling), and uses the snapshot only to rewrite the single field `byId[sessionId].cwd`; views and subscriptions are released when the plugin unmounts (`releaseAllSeedings()` + `views.clear()` inside `ctx.effect`), and the view cache is capped at 128 entries, evicting the coldest sessions (each view is an independent reader of the same host fact, so an eviction never makes a tree read a different place).
 - **A second assembly in the same process throws**: all five domains are in-process singletons (`install` / `release` pairs with an `installed` guard), so a second instance cannot mount and the second `install` throws instead of silently sharing state. If a profile mounts this package twice you get one explicit startup error; the old "two instances do not interfere" semantics is gone.
+- **Inheritance is re-resolved along the parent chain every time**: the Files tab root comes from the first session up the chain that holds a registration; once that registration is dropped, or found invalid during resolution, descendants fall back to their own cwd (never silently pointing at a root that no longer holds).
+- **When the takeover is not in effect, tools and the Files tab disagree (deliberately)**: the `workspaceFileScope` takeover has a waiting state (provider not registered yet) and an abandoned state (taken by a third party); in both, the plugin leaves the file root alone and the Files tab still follows the cwd, while the three tools report the **registration fact**. `scopeTakeover` in `/health` is the authority (nothing but `live` switches the root).
+- **`ws_worktree_remove` in the inherited state drops nothing**: it never unbinds the parent session's registration and never removes the directory; it reports which session owns the root plus the ways out (unbind there / bind another worktree here / register this session to its own cwd).
 
 ## Retirement criteria
 
