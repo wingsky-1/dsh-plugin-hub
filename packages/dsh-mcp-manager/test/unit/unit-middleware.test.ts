@@ -1324,9 +1324,9 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
       enabled: true,
       toolDefinitions: [wrappedTool],
     };
-    const { host, log } = makeHost(new Map([["@global", [wrappedServer]]]));
+    const { host, log, tools } = makeHost(new Map([["@global", [wrappedServer]]]));
     const mw = trackMw(new McpMiddleware(host, {}));
-    return { mw, host, log, wrappedServer, wrappedTool };
+    return { mw, host, log, tools, wrappedServer, wrappedTool };
   }
 
   async function connected() {
@@ -1440,6 +1440,46 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
     await expect(
       mw.callTool(fullServerName("@global", "cg"), "nope", {}, undefined, identity()),
     ).rejects.toThrow(/不存在（封装定义服务器）/);
+  });
+
+  // #767 S1-5c：下面三条重建自 unit-supervisor.test.ts 的「syncTools：封装定义路径（#362
+  // 补充 4）」组。旧组断言的是「裸名 → mcp__<server>__ 注册」这条**已被裁定 AH 修订废弃**的
+  // 路径（封装条目恒交中间层虚拟连接、与模式无关，唯一触达面是 ws_mcp_call），故不重建注册
+  // 语义，只把目标态仍成立的三条契约落到虚拟路径上。
+  it("封装定义裸名只进目录，不产生 mcp__ 直呼注册", async () => {
+    const { catalog, tools } = await connected();
+    expect(catalog.tools.has("cg_node")).toBe(true);
+    expect(tools.registered.filter((def) => /^mcp__/.test(def?.name ?? ""))).toEqual([]);
+  });
+
+  it("封装定义对象不被就地改写（裸名保持、同一性不变）", async () => {
+    const { wrappedServer, wrappedTool } = await connected();
+    // 改写调用方定义（supervisor 时代那种「复制并改写 name 为公开名」的就地版）会让模型面
+    // 看到的裸名与调用方 execute 的认知分叉。
+    expect(wrappedServer.toolDefinitions[0]).toBe(wrappedTool);
+    expect(wrappedTool.name).toBe("cg_node");
+  });
+
+  it("畸形封装定义不炸投影：无名定义跳过、重名后者覆盖单条", async () => {
+    const badServer = {
+      name: "bad",
+      transport: "stdio",
+      command: "true",
+      enabled: true,
+      toolDefinitions: [
+        { description: "no name", parameters: {} },
+        { name: "dup", description: "first", parameters: {} },
+        { name: "dup", description: "second", parameters: {} },
+        { name: "ok", description: "fine", parameters: {} },
+      ],
+    };
+    const { host } = makeHost(new Map([["@global", [badServer]]]));
+    const mw = trackMw(new McpMiddleware(host, {}));
+    await mw.projectUnitFor("@global");
+    await mw.ensureConnected("@global", "bad");
+    const catalog = catalogDirectory.entryFor("@global", "bad");
+    expect([...catalog.tools.keys()].sort()).toEqual(["dup", "ok"]);
+    expect(catalog.tools.get("dup").description).toBe("second");
   });
 
   // persistCatalog 跳过 runtime 条目（isRuntimeServer 命中 → 不写盘）。

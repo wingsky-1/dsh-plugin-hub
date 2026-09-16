@@ -30,12 +30,12 @@
     },
     "dsh-mcp-manager": {
       "modules": 16,
-      "scannedSrcFiles": 105,
-      "allSrcTsFiles": 120,
+      "scannedSrcFiles": 101,
+      "allSrcTsFiles": 116,
       "interfaceFacades": 16,
       "leafValueEdges": 18,
-      "fileValueEdges": 149,
-      "crossModuleRefs": 196,
+      "fileValueEdges": 138,
+      "crossModuleRefs": 189,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],
@@ -57,8 +57,6 @@
           "test/unit/unit-pipeline.test.ts|src/index.ts",
           "test/unit/unit-routes-sse.test.ts|src/index.ts",
           "test/unit/unit-store.test.ts|src/index.ts",
-          "test/unit/unit-supervisor.test.ts|src/index.ts",
-          "test/unit/unit-transport.test.ts|src/index.ts",
           "test/unit/unit-workspace.test.ts|src/index.ts"
         ]
       }

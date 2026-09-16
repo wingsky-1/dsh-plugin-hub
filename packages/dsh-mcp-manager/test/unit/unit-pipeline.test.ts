@@ -2,30 +2,23 @@
 /**
  * dsh-mcp-manager — unit：执行管道域契约（#664 阶段 2）。
  *
- * 两路径（supervisor 直呼 / ws_mcp_call）同构契约：同一远端结果 → 同一工具契约
- * 投影（#512 单一事实源，pipeline/project.ts）。差异面显式排除三项并文档化：
- *   - timeout：supervisor 靠 SDK timeoutMs（无 withTimeout 层）；middleware 有
- *     withTimeout 兜底（+2s，C-ABT/D6 口径）——同构断言不覆盖超时；
- *   - redact：middleware 错误文案经 hostRedact（createRedactor），supervisor
- *     B8 修复后走日志脱敏面——同构断言只比投影白名单，不比文案；
- *   - stale：目录 TTL 过期前置提示仅 middleware 有——同构断言不覆盖。
- * 其余环节（arguments 归一 → callTool → 投影）输入同、输出同。
+ * projectCallToolResult（#512 单一事实源，pipeline/project.ts）的**结构投影**契约：同一远端
+ * 结果在**任意 handler 注入面**下投影出的 content / structuredContent 键集与值必须一致——
+ * handler 只提供文本渲染（错误文案 / 兜底文案），不得影响结构。#767 S1-5c 前本文件以
+ *「supervisor 直呼 / ws_mcp_call 两路径同构」表述：自研栈退役后直连注册由官方
+ * @deepseek-ai/dsh-mcp-client 承担，仓内只剩 ws_mcp_call 一条自持路径，故断言保留而口径
+ * 改为「结构投影对 handler 注入解耦」（同一函数、两组 handler 的对照 #512 判据）。
  *
- * 另含 supervisor 路径 stats 埋点契约（行为扩展声明，红测先行）：
- * execute 成功后必须 recordCall（现状缺失，commit3 修复）。
+ * S1-5c 同笔删除：原「supervisor 路径 stats 埋点契约」5 例——被测实现（buildToolDefinition
+ * 的 stats 注入）随四文件退役，工具调用埋点现只在 inject/middleware-register.ts 的
+ * ws_mcp_call 路径上发生（由 unit-call-stats.test.ts 覆盖）。
  */
 import { describe, expect, it } from "vitest";
-import { fakeMCPClient } from "../helpers.ts";
 
-const {
-  defaultCallResultFallbackText,
-  msgOf,
-  normalizeArguments,
-  projectCallToolResult,
-  buildToolDefinition,
-} = await import("../../src/index.ts");
+const { defaultCallResultFallbackText, msgOf, normalizeArguments, projectCallToolResult } =
+  await import("../../src/index.ts");
 
-// 同一远端 CallToolResult 形态矩阵：两路径 handler 差异（文本渲染风格）之外，
+// 同一远端 CallToolResult 形态矩阵：两组 handler 差异（文本渲染风格）之外，
 // 投影产物（content / structuredContent 键集与值）必须一致。
 const results = [
   { content: [{ type: "text", text: "ok" }], structuredContent: { a: 1 }, isError: false },
@@ -33,13 +26,13 @@ const results = [
   { toolResult: { value: 42 }, isError: false }, // 无 content → 兜底分支
   { content: "not-an-array", isError: false }, // 协议违规形态 → 兜底分支
 ];
-const supervisorHandlers = {
-  // supervisor 风格：extractText 占位符渲染 + 截断（差异面仅文本，投影白名单同）
+const directCallHandlers = {
+  // 直连风格（官方客户端路径时代的 handler 形态）：短占位符渲染（文本面差异，结构面同）
   errorText: (c) => `ERR:${c.length}`,
   fallbackText: (r) => JSON.stringify(r),
 };
-const middlewareHandlers = {
-  // middleware 风格：msgOf + 保留远端原文
+const wsCallHandlers = {
+  // ws_mcp_call 风格：msgOf + 保留远端原文
   errorText: (c) => `ws_mcp_call:远端错误:${msgOf(c)}`,
   fallbackText: (r) =>
     typeof r === "object" && r !== null && "content" in r && !Array.isArray(r.content)
@@ -47,68 +40,68 @@ const middlewareHandlers = {
       : defaultCallResultFallbackText(r),
 };
 
-describe("两路径同构：投影面（#512 单一事实源）", () => {
-  it("两路径投影键集合同构", () => {
+describe("结构投影对 handler 注入解耦（#512 单一事实源）", () => {
+  it("两组 handler 投影键集合同构", () => {
     for (const result of results) {
-      const viaSupervisor = projectCallToolResult(result, supervisorHandlers);
-      const viaMiddleware = projectCallToolResult(result, middlewareHandlers);
+      const viaDirectCall = projectCallToolResult(result, directCallHandlers);
+      const viaWsCall = projectCallToolResult(result, wsCallHandlers);
       // 结构契约同构：键集合一致（structuredContent 只随输入存在）
-      expect("structuredContent" in viaMiddleware).toBe("structuredContent" in viaSupervisor);
+      expect("structuredContent" in viaWsCall).toBe("structuredContent" in viaDirectCall);
     }
   });
 
   it("structuredContent 值同构", () => {
     for (const result of results) {
-      const viaSupervisor = projectCallToolResult(result, supervisorHandlers);
-      const viaMiddleware = projectCallToolResult(result, middlewareHandlers);
-      if ("structuredContent" in viaSupervisor) {
-        expect(viaMiddleware.structuredContent).toEqual(viaSupervisor.structuredContent);
+      const viaDirectCall = projectCallToolResult(result, directCallHandlers);
+      const viaWsCall = projectCallToolResult(result, wsCallHandlers);
+      if ("structuredContent" in viaDirectCall) {
+        expect(viaWsCall.structuredContent).toEqual(viaDirectCall.structuredContent);
       }
     }
   });
 
   it("投影 content 为数组", () => {
     for (const result of results) {
-      const viaSupervisor = projectCallToolResult(result, supervisorHandlers);
-      expect(Array.isArray(viaSupervisor.content)).toBeTruthy();
+      const viaDirectCall = projectCallToolResult(result, directCallHandlers);
+      expect(Array.isArray(viaDirectCall.content)).toBeTruthy();
     }
   });
 
   it("投影 content 块数同构", () => {
     // content 形态同构：数组 + 块数 + 块类型一致（渲染文本是 handler 注入的
-    // 调用方差异面，允许不同——同构断言只比投影结构）
+    // 文本差异面，允许不同——断言只比投影结构）
     for (const result of results) {
-      const viaSupervisor = projectCallToolResult(result, supervisorHandlers);
-      const viaMiddleware = projectCallToolResult(result, middlewareHandlers);
-      expect(viaMiddleware.content.length).toBe(viaSupervisor.content.length);
+      const viaDirectCall = projectCallToolResult(result, directCallHandlers);
+      const viaWsCall = projectCallToolResult(result, wsCallHandlers);
+      expect(viaWsCall.content.length).toBe(viaDirectCall.content.length);
     }
   });
 
   it("投影 content 块类型同构", () => {
     for (const result of results) {
-      const viaSupervisor = projectCallToolResult(result, supervisorHandlers);
-      const viaMiddleware = projectCallToolResult(result, middlewareHandlers);
-      if (viaSupervisor.content.length > 0) {
-        expect(viaMiddleware.content[0].type).toBe(viaSupervisor.content[0].type);
+      const viaDirectCall = projectCallToolResult(result, directCallHandlers);
+      const viaWsCall = projectCallToolResult(result, wsCallHandlers);
+      if (viaDirectCall.content.length > 0) {
+        expect(viaWsCall.content[0].type).toBe(viaDirectCall.content[0].type);
       }
     }
   });
 
   it("直通路径 content 逐字同构", () => {
-    // 正常 content 直通路径（无渲染差异）→ 内容逐字一致
+    // 正常 content 直通（无渲染差异）→ 内容逐字一致
     for (const result of results) {
-      const viaSupervisor = projectCallToolResult(result, supervisorHandlers);
-      const viaMiddleware = projectCallToolResult(result, middlewareHandlers);
+      const viaDirectCall = projectCallToolResult(result, directCallHandlers);
+      const viaWsCall = projectCallToolResult(result, wsCallHandlers);
       if (Array.isArray(result.content) && result.isError !== true) {
-        expect(viaMiddleware.content).toEqual(viaSupervisor.content);
+        expect(viaWsCall.content).toEqual(viaDirectCall.content);
       }
     }
   });
 
-  it("isError:true → 两路径统一抛错（Error 形态）", () => {
-    // isError:true → 两路径统一抛错（错误契约同构：Error 形态，非裸对象；
+  it("isError:true → 两组 handler 一律抛错（Error 形态）", () => {
+    // isError:true → 一律抛错（错误契约同构：Error 形态，非裸对象；
     // 具体文案是 handler 注入差异面，不强匹配）
-    for (const handlers of [supervisorHandlers, middlewareHandlers]) {
+    for (const handlers of [directCallHandlers, wsCallHandlers]) {
       expect(() =>
         projectCallToolResult(
           { content: [{ type: "text", text: "boom" }], isError: true },
@@ -120,7 +113,7 @@ describe("两路径同构：投影面（#512 单一事实源）", () => {
   });
 });
 
-describe("两路径同构：args 面（middleware 归一化；supervisor 直传——同构点）", () => {
+describe("args 面归一契约（normalizeArguments）", () => {
   it("normalizeArguments 解析 JSON 字符串为对象", () => {
     expect(normalizeArguments('{"a":1}')).toEqual({ a: 1 });
   });
@@ -129,75 +122,20 @@ describe("两路径同构：args 面（middleware 归一化；supervisor 直传�
     expect(normalizeArguments("[1,2]")).toEqual({});
   });
 
-  it("object 输入经 supervisor 对象化原样透传", () => {
-    // supervisor 路径契约：execute 侧对象化（typeof args === object ? args : {}）——
-    // 对 normalizeArguments 产物两路同构（object 输入原样透传）。
+  it("object 输入对象化后原样透传", () => {
+    // 执行侧对象化契约（typeof args === object ? args : {}）——
+    // 对 normalizeArguments 产物同构（object 输入原样透传）。
     const supShape = (args) => (typeof args === "object" && args !== null ? args : {});
     expect(supShape(normalizeArguments({ a: 1 }))).toEqual({ a: 1 });
   });
 
-  it("JSON 字符串经两路归一后同构", () => {
+  it("JSON 字符串归一后同构", () => {
     const supShape = (args) => (typeof args === "object" && args !== null ? args : {});
     expect(supShape(normalizeArguments('{"a":1}'))).toEqual({ a: 1 });
   });
 
-  it("数组经两路同样归一无害空态", () => {
+  it("数组归一无害空态", () => {
     const supShape = (args) => (typeof args === "object" && args !== null ? args : {});
     expect(supShape(normalizeArguments("[1,2]"))).toEqual({});
-  });
-});
-
-describe("supervisor 路径 stats 埋点契约（行为扩展声明，红测：现状未埋点）", () => {
-  async function executeOnce() {
-    const statsCalls = [];
-    const manager = {
-      ctx: { tools: { register: () => () => {} } },
-      logger: { info: () => {}, warn: () => {} },
-      enhancement: {},
-      emitStatus: () => {},
-      recordCatalogTools: async () => {},
-      stats: {
-        isEnabled: () => true,
-        recordCall: (server, tool, durationMs, success, errorMsg) => {
-          statsCalls.push({ server, tool, durationMs, success, errorMsg });
-        },
-      },
-    };
-    const client = fakeMCPClient({
-      callTool: async () => ({ content: [{ type: "text", text: "ok" }] }),
-    });
-    const def = buildToolDefinition(
-      client,
-      { name: "echo", inputSchema: { type: "object", properties: { text: { type: "string" } } } },
-      { name: "srv", transport: "stdio", command: "echo", enabled: true },
-      { stats: manager.stats },
-    );
-    const res = await def.execute({ text: "hi" }, { signal: undefined });
-    return { res, statsCalls };
-  }
-
-  it("supervisor 路径 execute 正常", async () => {
-    const { res } = await executeOnce();
-    expect(res.content[0].text).toBe("ok");
-  });
-
-  it("supervisor execute 成功应 recordCall（现状缺失 → 红测）", async () => {
-    const { statsCalls } = await executeOnce();
-    expect(statsCalls.length).toBe(1);
-  });
-
-  it("recordCall 记录 server 名", async () => {
-    const { statsCalls } = await executeOnce();
-    expect(statsCalls[0].server).toBe("srv");
-  });
-
-  it("recordCall 记录 tool 名", async () => {
-    const { statsCalls } = await executeOnce();
-    expect(statsCalls[0].tool).toBe("echo");
-  });
-
-  it("recordCall 记录 success=true", async () => {
-    const { statsCalls } = await executeOnce();
-    expect(statsCalls[0].success).toBe(true);
   });
 });

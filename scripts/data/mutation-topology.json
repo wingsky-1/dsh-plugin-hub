@@ -145,8 +145,6 @@
         },
         "supervisor": {
           "mutate": [
-            "packages/dsh-mcp-manager/src/server/connection/runtime/supervisor.ts",
-            "packages/dsh-mcp-manager/src/server/connection/runtime/reconnect.ts",
             "packages/dsh-mcp-manager/src/server/store/**/*.ts",
             "packages/dsh-mcp-manager/src/server/stats/**/*.ts"
           ],
@@ -154,7 +152,7 @@
             "!packages/dsh-mcp-manager/src/client/**",
             "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
-          "comment": "#767 B2b 重画：supervisor——连接监督器（runtime/supervisor+reconnect）+状态持久化（store）+统计（stats）；B2b 后文件归各域段，本段只留这四处。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；client 与 shared/placement-math.ts 两条排除仍然成立。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+          "comment": "#767 B2b 重画：supervisor——状态持久化（store）+统计（stats）；B2b 后文件归各域段。段名保留（段只是 glob 容器，ID 还绑着 stryker.conf.d 的 jsonReporter/incremental 与 mutation-segment-ledger）：#767 S1-5c 删自研连接栈后，原连接监督器与重连策略两条 glob（runtime/supervisor.ts+runtime/reconnect.ts）已是 0 命中死条目，随本刀删除，不再换新落点——本笔没有新增源文件，段名退役会连带 baseline-archive 段数哨兵 + ledger superseded + AGENTS.md 三处。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；client 与 shared/placement-math.ts 两条排除仍然成立。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "servers": {
           "mutate": ["packages/dsh-mcp-manager/src/server/servers/**/*.ts"],
@@ -166,8 +164,6 @@
         },
         "runtime": {
           "mutate": [
-            "packages/dsh-mcp-manager/src/server/connection/runtime/transport.ts",
-            "packages/dsh-mcp-manager/src/server/connection/runtime/protocol.ts",
             "shared/placement-math.js",
             "packages/dsh-mcp-manager/src/server/pipeline/**/*.ts",
             "packages/dsh-mcp-manager/src/server/catalog/**/*.ts",
@@ -179,7 +175,7 @@
             "!packages/dsh-mcp-manager/src/client/**",
             "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
-          "comment": "#767 B2b 重画：runtime——传输与协议（runtime/transport+protocol）+shared/placement-math.js（#378 上移的 placement 纯核心）+执行管道（pipeline）+目录（catalog）+包内共享层（server/shared）+迁移链（upgrade）+跨端共享面（src/shared）；B2b 后文件归各域段，本段只留这些。同时收敛 #767 B0 的临时超集 src/server/**/*.ts——当时目标树全新，不先挂超集会让 B1 新文件进 uncoveredSrcFiles 而 --write-baseline 拒绝接受新证据；六段并集现已覆盖它（本刀实测 uncoveredSrcFiles 仍为 0），故删除。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；client 与 shared/placement-math.ts 两条排除仍然成立。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+          "comment": "#767 B2b 重画：runtime——shared/placement-math.js（#378 上移的 placement 纯核心）+执行管道（pipeline）+目录（catalog）+包内共享层（server/shared）+迁移链（upgrade）+跨端共享面（src/shared）；B2b 后文件归各域段，本段只留这些。同时收敛 #767 B0 的临时超集 src/server/**/*.ts——当时目标树全新，不先挂超集会让 B1 新文件进 uncoveredSrcFiles 而 --write-baseline 拒绝接受新证据；六段并集现已覆盖它（本刀实测 uncoveredSrcFiles 仍为 0），故删除。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；client 与 shared/placement-math.ts 两条排除仍然成立。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         }
       },
       "testLayers": {

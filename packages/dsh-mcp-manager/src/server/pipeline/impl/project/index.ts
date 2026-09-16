@@ -45,8 +45,8 @@ export function defaultCallResultFallbackText(result: unknown): string {
 
 /**
  * 默认错误文案：优先取 content 内 text 块 join（保留远端错误信息），
- * 无 text 块时退化兜底文本。轻量提取，不做占位符渲染（那是调用方
- * extractText 的差异面）。
+ * 无 text 块时退化兜底文本。轻量提取，不做占位符渲染（占位符渲染由调用方按
+ * 自己的 handler 决定，不是本函数的职责）。
  */
 function defaultErrorText(content: unknown[], fallbackText: string): string {
   const parts: string[] = [];

@@ -34,8 +34,6 @@ export default defineConfig({
       'packages/dsh-mcp-manager/test/unit/unit-pipeline.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-routes-sse.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-store.test.ts',
-      'packages/dsh-mcp-manager/test/unit/unit-supervisor.test.ts',
-      'packages/dsh-mcp-manager/test/unit/unit-transport.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-workspace-id.test.ts',
       'packages/dsh-mcp-manager/test/unit/unit-workspace.test.ts',
       'packages/dsh-mcp-manager/test/unit/upgrade/service.test.ts',

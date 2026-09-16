@@ -1,8 +1,9 @@
 /**
  * dsh-mcp-manager — connection/interface.ts：连接域唯一对外引用面（D10，#664 阶段 3/6）。
  *
- * 连接域 = orchestrator（仲裁/双轨/summary/事件出口，manager）+ runtime（supervisor
- * 代际/中间层池/transport/protocol/limits），阶段 6 集中搬移完成（v3 §二）。
+ * 连接域 = orchestrator（仲裁/双轨/summary/事件出口，manager）+ runtime（中间层池 /
+ * limits），阶段 6 集中搬移完成（v3 §二）。自研连接栈 protocol/transport/supervisor/
+ * reconnect 已在 #767 S1-5c 整体退役。
  * 目录外模块**只能**从这里引用本域自有符号（verify-dir-imports 静态强制）。
  *
  * runtime 子层的值面不再经本门面转出（#767 B2a-wire W10）：本门面只留类型出口，那 26 个值
@@ -19,7 +20,6 @@ import type { ServerConfig } from "../config/interface.ts";
 import type { McpStore } from "../store/interface.ts";
 
 export type { McpManager } from "./orchestrator/interface.ts";
-export type { ReconnectPolicy } from "./runtime/interface.ts";
 export type { ProjectUnit, ConnectionEntry } from "./runtime/interface.ts";
 
 /** supervisor 最小面（manager.supervisors 的条目）。 */

@@ -2,7 +2,7 @@
  * dsh-mcp-manager — connection/runtime/deps.ts：连接域 runtime 子层的对上依赖声明（纯类型面，§3.1 规则 2）。
  *
  * 本子层运行时能力消费非零（决策⑥ 以运行时能力消费为准），按提供方分六组：catalog 取目录的
- * 投影写口与读口（#767 S1-3b：目录内存态与 last-good 均已搬进该域，本子层只剩调用点）；config 取配置模板 ${ENV} 预展开与凭据词根（#767 S1-1 自 transport.ts 迁出后经端口取用）；
+ * 投影写口与读口（#767 S1-3b：目录内存态与 last-good 均已搬进该域，本子层只剩调用点）；config 取配置模板 ${ENV} 预展开与凭据词根（#767 S1-1 迁入 config 域后经端口取用）；
  * pipeline 取两执行路径共用的结果投影、超时兜底、错误取消息、凭据脱敏、参数归一与
  * 策略裁决族；workspace 取全名解析 / 归一与拼装；servers/dispatch 取 ws_mcp_call 执行器
  * （#767 S1-3a 的执行路径搬迁：转发壳在本子层，执行器在新域，值经本端口递入）；
@@ -12,10 +12,10 @@
  * `ManagerLite` / `MiddlewareHost` 两条构造入参类型就地声明（#767 W11b2a 自 types/host-faces.ts
  * 落位本文件），不经端口。
  *
- * 两条**不为零消费者开口**的裁量（附录 H·1·4 实测）：`RECONNECT_DEFAULTS` / `resolveReconnect` /
- * `ReconnectPolicy` / `createTransport` / `CATALOG_LRU_MAX` 在本子层内部经 `./reconnect.ts` /
- * `./transport.ts` / `./limits.ts` 直取，域外零消费者，故不进任何 Port（端口只承载跨域能力，
- * 同子层直引不是跨域值边）。
+ * 两条**不为零消费者开口**的裁量（附录 H·1·4 实测）：`CATALOG_TTL_MS` 一族在本子层内部经
+ * `./limits.ts` 直取，域外零消费者，故不进任何 Port（端口只承载跨域能力，同子层直引不是
+ * 跨域值边）。#767 S1-5c 之前另有一条同类裁量覆盖 reconnect / transport 两文件的符号，随自研
+ * 连接栈整体退役一并消失。
  *
  * `SCOPE_GLOBAL` 与 `MIDDLEWARE_GLOBAL_ROOT` 不在 WorkspacePort 内：W3b 已按跨端性把它们收到
  * `src/shared/constants.ts`（两端唯一物理定义），本子层直接取共享层门面——指向共享层的值边是

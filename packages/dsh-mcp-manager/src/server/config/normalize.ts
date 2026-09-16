@@ -49,7 +49,7 @@ function assertReconnectDelay(value: unknown, path: string): void {
 /**
  * 收紧 reconnect：只保留官方 4 键，边界按官方口径拒绝。
  *
- * 保留「输入里写了的键」而不是补齐默认值：默认值由连接侧的 resolveReconnect 补，写回一份
+ * 保留「输入里写了的键」而不是补齐默认值：默认值由官方 resolveReconnectPolicy 在装载期补，写回一份
  * 显式默认值会改变落盘形态，并让「配置是否变化」的字符串比对（manager 的 force 重连判定）
  * 对存量配置误报。
  *

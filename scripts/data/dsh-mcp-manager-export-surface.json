@@ -54,10 +54,6 @@
       "isType": false
     },
     {
-      "name": "ConnectionSupervisor",
-      "isType": false
-    },
-    {
       "name": "DEFAULT_ANNOUNCE_CATALOG",
       "isType": false
     },
@@ -98,10 +94,6 @@
       "isType": true
     },
     {
-      "name": "HttpTransport",
-      "isType": false
-    },
-    {
       "name": "LIST_DEFAULT_TOOLS_PER_SERVER",
       "isType": false
     },
@@ -131,10 +123,6 @@
     },
     {
       "name": "MAX_TOTAL_CATALOG_BYTES",
-      "isType": false
-    },
-    {
-      "name": "MCPClient",
       "isType": false
     },
     {
@@ -198,16 +186,8 @@
       "isType": true
     },
     {
-      "name": "RECONNECT_DEFAULTS",
-      "isType": false
-    },
-    {
       "name": "ROUTES",
       "isType": false
-    },
-    {
-      "name": "ReconnectPolicy",
-      "isType": true
     },
     {
       "name": "RectLike",
@@ -250,10 +230,6 @@
       "isType": true
     },
     {
-      "name": "StdioTransport",
-      "isType": false
-    },
-    {
       "name": "ToolCallMetric",
       "isType": true
     },
@@ -286,10 +262,6 @@
       "isType": false
     },
     {
-      "name": "assertSupportedOutputSchema",
-      "isType": false
-    },
-    {
       "name": "bottomAnchorEdge",
       "isType": false
     },
@@ -307,10 +279,6 @@
     },
     {
       "name": "buildConfigUiPatch",
-      "isType": false
-    },
-    {
-      "name": "buildToolDefinition",
       "isType": false
     },
     {
@@ -343,10 +311,6 @@
     },
     {
       "name": "createRedactor",
-      "isType": false
-    },
-    {
-      "name": "createTransport",
       "isType": false
     },
     {
@@ -570,10 +534,6 @@
       "isType": false
     },
     {
-      "name": "resolveReconnect",
-      "isType": false
-    },
-    {
       "name": "saveDisabledTools",
       "isType": false
     },
@@ -606,10 +566,6 @@
       "isType": false
     },
     {
-      "name": "truncateText",
-      "isType": false
-    },
-    {
       "name": "uiConfigChangedFrame",
       "isType": false
     },
@@ -627,14 +583,10 @@
     }
   ],
   "declBlocks": [
-    "export declare class ConnectionSupervisor { manager: ManagerLite; server: ServerConfig; scope: string; client: MCPClient | undefined; transport: StdioTransport | HttpTransport | undefined; toolDisposers: Map<string, () => void>; reconnectTimer: NodeJS.Timeout | undefined; failedAttempts: number; connectedAt: number | undefined; disposed: boolean; status: string; error: unknown; tools: string[]; toolMeta: Map<string, { description?: unknown; }>; syncChain: Promise<unknown>; reconnectPolicy: ReconnectPolicy; constructor(manager: ManagerLite, server: ServerConfig, scope?: string); setStatus(status: string, error?: unknown): void; enqueueSync<T>(doSync: () => Promise<T> | T): Promise<T>; connect(opts?: { startup?: boolean; }): Promise<void>; teardownGeneration(error: unknown, schedule?: boolean): void; scheduleReconnect(error: unknown): void; syncTools(client: MCPClient, startup: boolean): Promise<void>; disconnect(): Promise<void>; }",
-    "export declare class HttpTransport { url: string; headers: Record<string, string>; readonly sdk: StreamableHTTPClientTransport; constructor(url: string, headers?: Record<string, string>); connect(): Promise<void>; onClose(handler: (error: Error) => void): void; close(): Promise<void>; }",
-    "export declare class MCPClient { transport: StdioTransport | HttpTransport; client: Client | undefined; constructor(transport: StdioTransport | HttpTransport); initialize(): Promise<unknown>; listTools(cursor?: string): Promise<{ [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; \"io.modelcontextprotocol/related-task\"?: { taskId: string; } | undefined; } | undefined; nextCursor?: string | undefined; tools: { description?: string | undefined; inputSchema: { [x: string]: unknown; type: \"object\"; properties?: Record<string, object> | undefined; required?: string[] | undefined; }; outputSchema?: { [x: string]: unknown; type: \"object\"; properties?: Record<string, object> | undefined; required?: string[] | undefined; } | undefined; annotations?: { title?: string | undefined; readOnlyHint?: boolean | undefined; destructiveHint?: boolean | undefined; idempotentHint?: boolean | undefined; openWorldHint?: boolean | undefined; } | undefined; execution?: { taskSupport?: \"forbidden\" | \"optional\" | \"required\" | undefined; } | undefined; _meta?: Record<string, unknown> | undefined; icons?: { src: string; mimeType?: string | undefined; sizes?: string[] | undefined; theme?: \"dark\" | \"light\" | undefined; }[] | undefined; name: string; title?: string | undefined; }[]; }>; callTool(rawName: string, args?: unknown, opts?: { signal?: AbortSignal; timeoutMs?: number; }): Promise<{ [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; \"io.modelcontextprotocol/related-task\"?: { taskId: string; } | undefined; } | undefined; }>; requireClient(): Client; }",
     "export declare class McpManager { ctx: Context; store: McpStore; supervisors: Map<string, DirectEntry>; listeners: Set<() => void>; logger: LoggerService; projectRoot: string | undefined; projectStore: McpStore | undefined; reconcileBusy: boolean; projectStores: Map<string, McpStore>; catalogCache: CatalogCache; catalogCachePath: string; uiConfigSource: () => any; uiUpdate?: (patch: Record<string, unknown>) => Promise<unknown>; sseHub?: SseHub; middlewareMode: MiddlewareMode; middleware: McpMiddleware | undefined; userStatePath: string; stats: McpStatsCollector; runtimeRegistry: Map<string, ServerConfig>; private registerQueue; private catalogViewResolver; constructor(ctx: Context, store: McpStore); uiConfig(): ClientUiConfig; updateUiConfig(raw: unknown): Promise<ClientUiConfig>; loadCatalogCache(): Promise<void>; recordCatalogTools(serverName: string, toolMeta: Map<string, { description?: unknown; }>): Promise<void>; private registeredSchemas; private ledgerRootFor; private createEntry; private dropEntry; private refreshEntryTools; private refreshEntryState; private hasRegisteredTools; private mountEntry; private remountEntry; serverNameForId(id: string): { root: string; server: string; } | undefined; onStatus(handler: () => void): () => void; private redactError; private statusTimer; emitStatus(): void; projectStoreOrThrow(): Promise<McpStore>; projectServersFor(root: string): Promise<ServerConfig[] | undefined>; isRuntimeServer(name: string): boolean; isGlobalServer(name: string): boolean; globalServers(): ServerConfig[]; saveUserState(units: Map<string, ProjectUnit>): Promise<void>; catalogCachePathFor(root: string): string; initMiddleware(mode: MiddlewareMode, policy: Record<string, unknown>): Promise<McpMiddleware>; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; setMiddlewareMode?: (mode: MiddlewareMode) => Promise<void>; setToolDisabled(root: string, server: string, tool: string, disabled: boolean): Promise<void>; projectStoreFor(root: string | undefined): Promise<McpStore | undefined>; catalogServersFor(cwd: string | undefined): Promise<Map<string, { server: ServerConfig; scope: string; }>>; catalogViewFor(cwd: string | undefined, servers: Map<string, { server: ServerConfig; scope: string; }>): Promise<CatalogCache>; setSession(cwd: string | undefined): Promise<void>; resumeReconnect(): Promise<void>; refreshFromDisk(): Promise<void>; reconcileServers(): boolean; startAll(): Promise<void>; start(name: string, scope?: string, directConfig?: ServerConfig): void; private isWrapped; private middlewareOwns; middlewareOwnsServer(root: string, name: string): boolean; private middlewareTakes; private touchGlobalUnit; private ensureMiddlewareServer; private dropMiddlewareConnection; stop(name: string): void; registerServer(options: Record<string, unknown>): Promise<{ name: string; existing: boolean; }>; unregisterServer(name: string): Promise<void>; add(server: Record<string, unknown>, scope?: string): Promise<ServerConfig>; update(name: string, patch: Record<string, unknown>, scope?: string): Promise<ServerConfig>; remove(name: string, scope?: string): Promise<void>; connect(name: string, scope?: string, directConfig?: ServerConfig): Promise<void>; disconnect(name: string, scope?: string): Promise<void>; reconnect(name: string, scope?: string): Promise<void>; summary(): Record<string, unknown>; private middlewareUnitFor; summarize(server: ServerConfig, scope: string): Record<string, unknown>; dispose(): Promise<void>; }",
     "export declare class McpMiddleware { host: MiddlewareHost; units: Map<string, ProjectUnit>; policy: MiddlewarePolicy; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; forwarding: Set<ToolExecutionToken>; constructor(host: MiddlewareHost, policy?: MiddlewarePolicy); projectUnitFor(root: string | undefined): Promise<ProjectUnit | undefined>; ensureConnected(root: string, serverName: string, opts?: { force?: boolean; }): Promise<void>; abandonInFlight(serverName: string): void; private connectInternal; private registeredSchemas; private redact; statusOf(root: string, serverName: string): ServerState | undefined; callTool(fullName: string, toolRaw: string, rawArgs: unknown, signal: AbortSignal | undefined, identity: { agent?: unknown; callId: ToolExecutionInput[\"callId\"]; rootCallId?: ToolExecutionInput[\"rootCallId\"]; parent?: ToolExecutionToken; }): Promise<unknown>; private allServers; releaseConnection(root: string, serverName: string): boolean; evictIfNeeded(maxUnits?: number): void; teardownUnit(root: string): void; dispose(): Promise<void>; }",
     "export declare class McpStatsCollector { private enabled; private filePath; private logger?; private startedAt; private updatedAt; private servers; private disclosure; private flushTimer?; private isDirty; constructor(options?: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void; debug?: (msg: string) => void; }; }); configure(options: { enabled?: boolean; filePath?: string; logger?: { info?: (msg: string) => void; }; }): void; isEnabled(): boolean; private loadExisting; recordCall(server: string, tool: string, durationMs: number, success: boolean, errorMsg?: string): void; recordSearch(query: string): void; recordList(serverFilter?: string): void; recordDetail(server: string, tool: string): void; snapshot(): McpStatsSnapshot; private scheduleFlush; flushSync(): void; dispose(): void; }",
     "export declare class McpStore { path: string; data: { version: number; servers: ServerConfig[]; }; mtimeMs: number | undefined; constructor(path: string); load(): Promise<void>; save(): Promise<void>; changedOnDisk(): Promise<boolean>; reloadIfChanged(): Promise<boolean>; find(name: string): ServerConfig | undefined; upsert(server: ServerConfig): void; remove(name: string): void; }",
-    "export declare class StdioTransport { command: string; args: string[]; env: Record<string, unknown>; cwd: string | undefined; readonly sdk: StdioClientTransport; stderrTail: string; closeReason: Error; constructor(config: { command: string; args?: string[]; env?: Record<string, unknown>; cwd?: string; }); connect(): Promise<void>; onClose(handler: (error: Error) => void): void; close(): Promise<void>; }",
     "export declare const API: { servers: string; connect: string; disconnect: string; reconnect: string; importJson: string; session: string; resume: string; config: string; events: string; health: string; toolDisable: string; };",
     "export declare const CALL_TIMEOUT_MS = 30000;",
     "export declare const CATALOG_ENTRY_MAX_CHARS = 180;",
@@ -660,7 +612,6 @@
     "export declare const MCP_GUIDANCE: string;",
     "export declare const MCP_SECTION_ORDER = 160;",
     "export declare const MIDDLEWARE_GLOBAL_ROOT = \"@global\";",
-    "export declare const RECONNECT_DEFAULTS: Readonly<{ enabled: true; initialDelayMs: 500; maxDelayMs: 30000; maxAttempts: 10; }",
     "export declare const ROUTES: { servers: string; config: string; session: string; resume: string; connect: string; disconnect: string; reconnect: string; importJson: string; events: string; health: string; toolDisable: string; };",
     "export declare const SCOPE_GLOBAL = \"global\";",
     "export declare const SCOPE_PROJECT = \"project\";",
@@ -679,7 +630,6 @@
     "export declare function api(path: any, options?: any): Promise<any>;",
     "export declare function apply(ctx: Context, config: Record<string, unknown> | undefined): Promise<void>;",
     "export declare function apply(ctx: any): void;",
-    "export declare function assertSupportedOutputSchema(schema: unknown): unknown;",
     "export declare function bareServerName(name: string): string;",
     "export declare function beginEdit(state: McpState, actions: UiActions, server: any): void;",
     "export declare function bindSession(ctx: any, state: McpState, actions: UiActions): () => void;",
@@ -695,7 +645,6 @@
     "export declare function buildResumeRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
     "export declare function buildServersRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
     "export declare function buildSessionRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
-    "export declare function buildToolDefinition(client: MCPClient, tool: Record<string, unknown>, server: ServerConfig, opts?: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number; stats?: Pick<McpStatsCollector, \"isEnabled\" | \"recordCall\">; }",
     "export declare function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute;",
     "export declare function catalogCacheFile(): string;",
     "export declare function catalogCacheFileFor(root: string): string;",
@@ -706,7 +655,6 @@
     "export declare function createEmptyDisposers(): ApplyDisposers;",
     "export declare function createRedactor(servers: readonly ServerConfig[]): (error: unknown) => string;",
     "export declare function createState(): McpState;",
-    "export declare function createTransport(server: ServerConfig): StdioTransport | HttpTransport;",
     "export declare function currentCwdBody(state: McpState): Record<string, string>;",
     "export declare function cwdQueryOf(state: McpState): string;",
     "export declare function defaultCallResultFallbackText(result: unknown): string;",
@@ -783,7 +731,6 @@
     "export declare function resolveCatalogInjection(decision: CatalogDecision, messages: CatalogMessage[], supervisors: Map<string, SupervisorLite>, maxEntries?: number, cache?: CatalogCache, agent?: CatalogAgent, mode?: string): CatalogDecision;",
     "export declare function resolveDebugConfig(config: Record<string, unknown> | undefined, settingsSource?: unknown): DebugConfig;",
     "export declare function resolveMiddlewareMode(manager: McpManager, fallbackRaw: string | undefined): ReturnType<typeof normalizeMiddlewareMode>;",
-    "export declare function resolveReconnect(config: Record<string, unknown> | undefined): ReconnectPolicy;",
     "export declare function resolveStorePath(config: Record<string, unknown> | undefined): string;",
     "export declare function saveDisabledTools(file: string, disabledTools: DisabledToolsMap): Promise<void>;",
     "export declare function saveForm(state: McpState, actions: UiActions): Promise<void>;",
@@ -802,7 +749,6 @@
     "export declare function toggleFloat(state: McpState, actions: UiActions, force?: boolean): void;",
     "export declare function toolDisableServerKey(server: any, state: McpState): string | undefined;",
     "export declare function toolDisabledReason(serverKey: string, tool: string): string;",
-    "export declare function truncateText(text: unknown, maxBytes: number): unknown;",
     "export declare function uiConfigChangedFrame(): string;",
     "export declare function userStateFile(): string;",
     "export declare function withTimeout<T>(promise: Promise<T>, ms: number, message: string, signal?: AbortSignal): Promise<T>;"
@@ -864,10 +810,6 @@
           "isType": false
         },
         {
-          "name": "ConnectionSupervisor",
-          "isType": false
-        },
-        {
           "name": "DEFAULT_ANNOUNCE_CATALOG",
           "isType": false
         },
@@ -908,10 +850,6 @@
           "isType": true
         },
         {
-          "name": "HttpTransport",
-          "isType": false
-        },
-        {
           "name": "LIST_DEFAULT_TOOLS_PER_SERVER",
           "isType": false
         },
@@ -941,10 +879,6 @@
         },
         {
           "name": "MAX_TOTAL_CATALOG_BYTES",
-          "isType": false
-        },
-        {
-          "name": "MCPClient",
           "isType": false
         },
         {
@@ -1008,16 +942,8 @@
           "isType": true
         },
         {
-          "name": "RECONNECT_DEFAULTS",
-          "isType": false
-        },
-        {
           "name": "ROUTES",
           "isType": false
-        },
-        {
-          "name": "ReconnectPolicy",
-          "isType": true
         },
         {
           "name": "RectLike",
@@ -1060,10 +986,6 @@
           "isType": true
         },
         {
-          "name": "StdioTransport",
-          "isType": false
-        },
-        {
           "name": "ToolCallMetric",
           "isType": true
         },
@@ -1096,10 +1018,6 @@
           "isType": false
         },
         {
-          "name": "assertSupportedOutputSchema",
-          "isType": false
-        },
-        {
           "name": "bottomAnchorEdge",
           "isType": false
         },
@@ -1117,10 +1035,6 @@
         },
         {
           "name": "buildConfigUiPatch",
-          "isType": false
-        },
-        {
-          "name": "buildToolDefinition",
           "isType": false
         },
         {
@@ -1153,10 +1067,6 @@
         },
         {
           "name": "createRedactor",
-          "isType": false
-        },
-        {
-          "name": "createTransport",
           "isType": false
         },
         {
@@ -1380,10 +1290,6 @@
           "isType": false
         },
         {
-          "name": "resolveReconnect",
-          "isType": false
-        },
-        {
           "name": "saveDisabledTools",
           "isType": false
         },
@@ -1413,10 +1319,6 @@
         },
         {
           "name": "toolDisabledReason",
-          "isType": false
-        },
-        {
-          "name": "truncateText",
           "isType": false
         },
         {
@@ -1660,44 +1562,14 @@
         "McpMiddleware": [
           "export declare class McpMiddleware { host: MiddlewareHost; units: Map<string, ProjectUnit>; policy: MiddlewarePolicy; disabledByRoot: Map<string, Set<string>>; disabledTools: DisabledToolsMap; forwarding: Set<ToolExecutionToken>; constructor(host: MiddlewareHost, policy?: MiddlewarePolicy); projectUnitFor(root: string | undefined): Promise<ProjectUnit | undefined>; ensureConnected(root: string, serverName: string, opts?: { force?: boolean; }): Promise<void>; abandonInFlight(serverName: string): void; private connectInternal; private registeredSchemas; private redact; statusOf(root: string, serverName: string): ServerState | undefined; callTool(fullName: string, toolRaw: string, rawArgs: unknown, signal: AbortSignal | undefined, identity: { agent?: unknown; callId: ToolExecutionInput[\"callId\"]; rootCallId?: ToolExecutionInput[\"rootCallId\"]; parent?: ToolExecutionToken; }): Promise<unknown>; private allServers; releaseConnection(root: string, serverName: string): boolean; evictIfNeeded(maxUnits?: number): void; teardownUnit(root: string): void; dispose(): Promise<void>; }"
         ],
-        "MCPClient": [
-          "export declare class MCPClient { transport: StdioTransport | HttpTransport; client: Client | undefined; constructor(transport: StdioTransport | HttpTransport); initialize(): Promise<unknown>; listTools(cursor?: string): Promise<{ [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; \"io.modelcontextprotocol/related-task\"?: { taskId: string; } | undefined; } | undefined; nextCursor?: string | undefined; tools: { description?: string | undefined; inputSchema: { [x: string]: unknown; type: \"object\"; properties?: Record<string, object> | undefined; required?: string[] | undefined; }; outputSchema?: { [x: string]: unknown; type: \"object\"; properties?: Record<string, object> | undefined; required?: string[] | undefined; } | undefined; annotations?: { title?: string | undefined; readOnlyHint?: boolean | undefined; destructiveHint?: boolean | undefined; idempotentHint?: boolean | undefined; openWorldHint?: boolean | undefined; } | undefined; execution?: { taskSupport?: \"forbidden\" | \"optional\" | \"required\" | undefined; } | undefined; _meta?: Record<string, unknown> | undefined; icons?: { src: string; mimeType?: string | undefined; sizes?: string[] | undefined; theme?: \"dark\" | \"light\" | undefined; }[] | undefined; name: string; title?: string | undefined; }[]; }>; callTool(rawName: string, args?: unknown, opts?: { signal?: AbortSignal; timeoutMs?: number; }): Promise<{ [x: string]: unknown; _meta?: { [x: string]: unknown; progressToken?: string | number | undefined; \"io.modelcontextprotocol/related-task\"?: { taskId: string; } | undefined; } | undefined; }>; requireClient(): Client; }"
-        ],
-        "RECONNECT_DEFAULTS": [
-          "export declare const RECONNECT_DEFAULTS: Readonly<{ enabled: true; initialDelayMs: 500; maxDelayMs: 30000; maxAttempts: 10; }"
-        ],
-        "resolveReconnect": [
-          "export declare function resolveReconnect(config: Record<string, unknown> | undefined): ReconnectPolicy;"
-        ],
-        "ConnectionSupervisor": [
-          "export declare class ConnectionSupervisor { manager: ManagerLite; server: ServerConfig; scope: string; client: MCPClient | undefined; transport: StdioTransport | HttpTransport | undefined; toolDisposers: Map<string, () => void>; reconnectTimer: NodeJS.Timeout | undefined; failedAttempts: number; connectedAt: number | undefined; disposed: boolean; status: string; error: unknown; tools: string[]; toolMeta: Map<string, { description?: unknown; }>; syncChain: Promise<unknown>; reconnectPolicy: ReconnectPolicy; constructor(manager: ManagerLite, server: ServerConfig, scope?: string); setStatus(status: string, error?: unknown): void; enqueueSync<T>(doSync: () => Promise<T> | T): Promise<T>; connect(opts?: { startup?: boolean; }): Promise<void>; teardownGeneration(error: unknown, schedule?: boolean): void; scheduleReconnect(error: unknown): void; syncTools(client: MCPClient, startup: boolean): Promise<void>; disconnect(): Promise<void>; }"
-        ],
         "DEFAULT_RESULT_TRUNCATE_BYTES": [
           "export declare const DEFAULT_RESULT_TRUNCATE_BYTES = 8192;"
         ],
         "DEFAULT_TOOL_CALL_TIMEOUT_MS": [
           "export declare const DEFAULT_TOOL_CALL_TIMEOUT_MS = 15000;"
         ],
-        "assertSupportedOutputSchema": [
-          "export declare function assertSupportedOutputSchema(schema: unknown): unknown;"
-        ],
-        "buildToolDefinition": [
-          "export declare function buildToolDefinition(client: MCPClient, tool: Record<string, unknown>, server: ServerConfig, opts?: { enhanceEmptyDescriptions?: boolean; resultTruncateBytes?: number; stats?: Pick<McpStatsCollector, \"isEnabled\" | \"recordCall\">; }"
-        ],
         "publicToolName": [
           "export declare function publicToolName(serverName: string, rawName: string): string;"
-        ],
-        "truncateText": [
-          "export declare function truncateText(text: unknown, maxBytes: number): unknown;"
-        ],
-        "HttpTransport": [
-          "export declare class HttpTransport { url: string; headers: Record<string, string>; readonly sdk: StreamableHTTPClientTransport; constructor(url: string, headers?: Record<string, string>); connect(): Promise<void>; onClose(handler: (error: Error) => void): void; close(): Promise<void>; }"
-        ],
-        "StdioTransport": [
-          "export declare class StdioTransport { command: string; args: string[]; env: Record<string, unknown>; cwd: string | undefined; readonly sdk: StdioClientTransport; stderrTail: string; closeReason: Error; constructor(config: { command: string; args?: string[]; env?: Record<string, unknown>; cwd?: string; }); connect(): Promise<void>; onClose(handler: (error: Error) => void): void; close(): Promise<void>; }"
-        ],
-        "createTransport": [
-          "export declare function createTransport(server: ServerConfig): StdioTransport | HttpTransport;"
         ],
         "expandEnv": ["export declare function expandEnv(value: unknown): string;"],
         "inject": ["export declare const inject: string[];"],

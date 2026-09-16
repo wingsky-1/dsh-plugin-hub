@@ -391,7 +391,7 @@ export class McpMiddleware {
     const { dispatch, pipeline, workspace, catalog: catalogPort } = runtimePorts.get();
     // 目录条目读口按本次调用的 root 闭包：dispatch 只读「这次全名指向的那个 root」的条目。
     const catalogRoot = workspace.parseFullServerName(fullName)?.root;
-    // 公名派生只在这里发生一次：唯一派生点是 supervisor 的 publicToolName，dispatch 拿名字用、
+    // 公名派生只在这里发生一次：唯一派生点是 server/shared/tool-names.ts 的 publicToolName，dispatch 拿名字用、
     // 不得自己拼 `mcp__<id>__<tool>`——哈希/截断规则一旦分叉，某些工具会永远查不到。
     const registeredNameFor = (id: string, tool: string): string => publicToolName(id, tool);
     // 必须箭头绑定：注册表方法裸引用会丢 this（dispatch 直接把它当能力调用）。

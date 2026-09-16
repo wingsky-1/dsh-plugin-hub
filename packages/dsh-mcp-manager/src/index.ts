@@ -6,7 +6,7 @@
  *    版本化，原子写入）；
  *  - 连接与协议交官方 @deepseek-ai/dsh-mcp-client（经宿主 cordis loader 按包名装载，
  *    stdio / streamable-http 两种传输），本插件只留配置面与模型可见面；有界退避重连由
- *    官方插件承担（全量退役自研连接栈见 #767 后续片）；
+ *    官方插件承担（自研连接栈已随 #767 S1-5c 整体退役）；
  *  - 每个已连接服务器的工具以 mcp__<id>__<rawName> 注册进 ctx.tools（与官方 dsh-mcp-client
  *    的装载路径同形）；`id` 是本次装配按 (工作空间, 服务器名) 现分配的不透明短串，`/api/dsh-mcp/servers`
  *    的 summary.tools 才是注册名以外的裸名口径；
@@ -821,23 +821,15 @@ export type { ClientUiConfig } from "./shared/interface.ts";
 // 管理器 / 连接域（orchestrator+runtime：#664 阶段 6 集中搬移完成）。runtime 的值面自 W10 起
 // 直接取自子层门面——connection/interface.ts 只留类型出口，不再转发值符号。
 export { McpManager } from "./server/connection/orchestrator/interface.ts";
-export {
-  ConnectionSupervisor,
-  McpMiddleware,
-  HttpTransport,
-  StdioTransport,
-  createTransport,
-  MCPClient,
-} from "./server/connection/runtime/interface.ts";
+// 自研连接栈（ConnectionSupervisor / HttpTransport / StdioTransport / createTransport /
+// MCPClient / RECONNECT_DEFAULTS / resolveReconnect / ReconnectPolicy）与工具定义链
+// （truncateText / assertSupportedOutputSchema / buildToolDefinition）已在 #767 S1-5c
+// 随四文件退役——协议与传输交官方 @deepseek-ai/dsh-mcp-client，工具定义交官方契约。
+export { McpMiddleware } from "./server/connection/runtime/interface.ts";
 export {
   DEFAULT_TOOL_CALL_TIMEOUT_MS,
   DEFAULT_RESULT_TRUNCATE_BYTES,
   publicToolName,
-  truncateText,
-  assertSupportedOutputSchema,
-  buildToolDefinition,
-  RECONNECT_DEFAULTS,
-  resolveReconnect,
   CONNECT_TIMEOUT_MS,
   DISCOVERY_TIMEOUT_MS,
   CALL_TIMEOUT_MS,
@@ -848,7 +840,6 @@ export {
   LIST_DEFAULT_TOOLS_PER_SERVER,
   LIST_MAX_TOOLS_PER_SERVER,
 } from "./server/connection/runtime/interface.ts";
-export type { ReconnectPolicy } from "./server/connection/interface.ts";
 // 工作空间路由域（项目根发现 / 全名解析 / scope / 模式归一化；阶段 4 成形）
 export {
   findProjectRoot,
