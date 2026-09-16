@@ -10,18 +10,22 @@
  *   - 聚合 patch 少一行 / 多未知 id（回归保护）
  *   - 目录集 ↔ manifest.active 双向不等（新目录未登记 / active 悬空）
  *   - loadManifest：JSON 语法错、形状错、名字不合规、active∩retired 重名、数组重复项
- *   - 正向全绿：当前真实 manifest + 真实 packages/ 目录
+ *   - 取数口径：断言面 = git index ∩ 磁盘存在（未跟踪目录不进面，已 tracked 的仍必须登记）
+ *   - 正向全绿：当前真实 manifest + 真实派生目录集
  * 运行：node --test scripts/test/plugins-manifest.test.ts（或 pnpm test:scripts）
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   checkAggregateConsistency,
   filterOutRetiredDirs,
+  isIndexedPackageDir,
   listPluginDirs,
+  listTrackedPluginDirs,
   loadManifest,
 } from "../lib/plugins-manifest-lib.ts";
 
@@ -255,7 +259,21 @@ test("#9 正向全绿：真实仓库 manifest + 真实目录 + 真实聚合 deps
   const { readFileSync } = await import("node:fs");
   const root = join(import.meta.dirname, "..", "..");
   const manifest = loadManifest(root);
-  const dirs = listPluginDirs(root);
+  // 取数口径与 pack-check 的断言面一致（git index ∩ 磁盘存在）：CI 的干净 checkout 上它与
+  // listPluginDirs 精确相等，本地差异只来自并行进程瞬时创建、尚未 git add 的包目录。
+  const dirs = listTrackedPluginDirs(root);
+  assert.ok(dirs.length > 0, "载体自证：派生集为空时本用例空转全绿（枚举面失效）");
+  // 反向断言（与 pack-check 同一判据）：物理目录集与派生集之差只允许差在「未跟踪」上——
+  // 已 tracked 目录掉出派生集是静默失守，不是本地噪声。
+  const derived = new Set(dirs);
+  for (const d of listPluginDirs(root)) {
+    if (derived.has(d)) continue;
+    assert.equal(
+      isIndexedPackageDir(root, d),
+      false,
+      `packages/${d} 在 git index 内有文件却不在派生集 —— 目录枚举面与 index 不一致`,
+    );
+  }
   assert.deepEqual(checkAggregateConsistency({ dirNames: dirs, manifest }), []);
   // 聚合包真实 deps 与 patch 也应双向相等
   const aggPkg = JSON.parse(
@@ -280,4 +298,51 @@ test("#9 正向全绿：真实仓库 manifest + 真实目录 + 真实聚合 deps
     }),
     [],
   );
+});
+
+// ---------------------------------------------------------------- 断言面的取数口径（git index ∩ 磁盘）
+
+/** 临时 git 仓库：只需要 index，不必提交（派生面读的是 --cached）。 */
+function tempGitRepo() {
+  const dir = mkdtempSync(join(tmpdir(), "pm-git-"));
+  execFileSync("git", ["init", "-q"], { cwd: dir, stdio: "pipe" });
+  mkdirSync(join(dir, "packages"), { recursive: true });
+  return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+/** 铺一个包目录下的源文件（是否进 index 由调用方决定）。 */
+function writePkgFile(dir, name, rel = "src/index.ts") {
+  const full = join(dir, "packages", name, rel);
+  mkdirSync(dirname(full), { recursive: true });
+  writeFileSync(full, "export {};\n", "utf8");
+}
+
+test("#10 listTrackedPluginDirs：未跟踪目录与「index 有、磁盘已删」目录都不进断言面", () => {
+  const { dir, cleanup } = tempGitRepo();
+  try {
+    for (const n of ["dsh-alpha", "dsh-beta", "dsh-gone", "dsh-plugins-all", "Other-Foo"]) {
+      writePkgFile(dir, n);
+    }
+    execFileSync("git", ["add", "packages"], { cwd: dir, stdio: "pipe" });
+    // 未跟踪：只在磁盘、不进 index（多 agent 并行时另一个进程刚创建的目录就是这个形态）
+    writePkgFile(dir, "dsh-junk");
+    // index 有、磁盘已删（未 git rm）：进面会让下游读 package.json 裸 ENOENT
+    rmSync(join(dir, "packages", "dsh-gone"), { recursive: true, force: true });
+
+    assert.deepEqual(
+      listTrackedPluginDirs(dir),
+      ["dsh-alpha", "dsh-beta"],
+      "派生面应为「index ∩ 磁盘」∩ dsh- 前缀 − 聚合包",
+    );
+    // 反向断言的判据本身：能不能区分「在 index 里」与「只是磁盘上有」——区分不了就恒绿
+    assert.equal(isIndexedPackageDir(dir, "dsh-alpha"), true);
+    assert.equal(isIndexedPackageDir(dir, "dsh-junk"), false, "未跟踪目录不得被判为已在 index");
+    assert.equal(
+      isIndexedPackageDir(dir, "dsh-gone"),
+      true,
+      "该目录仍在 index 里——正因如此只能靠 ∩ 磁盘把它挡在派生面外",
+    );
+  } finally {
+    cleanup();
+  }
 });

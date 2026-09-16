@@ -11,6 +11,7 @@
  *     「stub/实现同源」纪律，防两处内嵌实现漂移）。
  * schema 说明与 opt-in 设计动机见 docs/DEVELOPMENT.md §4「插件清单单一来源」。
  */
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -39,6 +40,50 @@ export function warnUnknownEntries(root) {
       );
     }
   }
+}
+
+/** `git ls-files --cached` 的原始输出（仓库根相对 posix 路径），pathspec 由调用方给。 */
+function lsFiles(root, pathspec) {
+  const out = execFileSync("git", ["ls-files", "-z", "--cached", "--", ...pathspec], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  return out.split("\0").filter((p) => p.length > 0);
+}
+
+/** index 里 packages/ 下的目录名集：不过滤前缀、不过问磁盘存在性。 */
+function indexPackageDirNames(root) {
+  const names = new Set();
+  for (const p of lsFiles(root, ["packages"])) {
+    const slash = p.indexOf("/", "packages/".length);
+    if (slash > 0) names.add(p.slice("packages/".length, slash));
+  }
+  return names;
+}
+
+/**
+ * 「参与清单校验的包目录」= git index ∩ 磁盘存在（dsh- 前缀、排除聚合包、稳定排序）。
+ *
+ * 为什么断言面用它与不用 listPluginDirs：这条判据的语义是「新增包目录必须登记 manifest」，
+ * 而未登记的新目录**只可能存在于本地工作树**——CI 的 checkout 是干净的，index 集合与
+ * readdirSync 结果精确相等，故窄化到 index 在 CI 上零损失，消除的只是本地多 agent 并行开发时
+ * 「另一个进程刚创建、尚未 git add 的目录」造成的假红（同一 worktree 两次跑出 845/849 与
+ * 849/849 即此形态）。listPluginDirs 物理枚举语义不变，消费方照旧用它。
+ *
+ * ∩ 磁盘存在这一半不可省：index 有、工作树已删（未 git rm）的目录若被当包枚举，下游按
+ * package.json 读包会裸 ENOENT——与 filterOutRetiredDirs 当初要解决的是同一类故障。
+ */
+export function listTrackedPluginDirs(root) {
+  const indexed = indexPackageDirNames(root);
+  return listPluginDirs(root).filter((d) => indexed.has(d));
+}
+
+/**
+ * 单个目录在 index 里是否有文件——反向断言专用。
+ * pathspec 直接指到该目录，因此批量取数若因 pathspec 收窄而漏项，这里仍能给出独立答案。
+ */
+export function isIndexedPackageDir(root, name) {
+  return lsFiles(root, [`packages/${name}`]).length > 0;
 }
 
 /**

@@ -18,7 +18,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -28,6 +28,7 @@ import {
   listExportTypesEntries,
   stripLibPrefix,
 } from "../lib/exports-types-lib.ts";
+import { listTrackedPluginDirs } from "../lib/plugins-manifest-lib.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const PACK_CHECK = join(ROOT, "scripts", "gate", "pack-check.ts");
@@ -139,10 +140,49 @@ test("stripLibPrefix：映射口径（含非 ./lib/ 前缀与空尾段返回 nul
 
 // ---------------------------------------------------------------- 2) 真实包形态锁（防回退到修复前的值）
 
+/**
+ * 客户端包清单**从文件系统派生**（含 `src/client/index.ts(x)` 的包），不再手写。
+ * 为什么：原清单硬编码 4 个包，漏了 `dsh-worktree-sidebar`——该包的导出面类型从未被这条判据
+ * 覆盖，而「清单漏了一项」没有任何判据看得见。派生后新增客户端包自动进面。
+ * 论域复用 pack-check 断言面的派生器（git index ∩ 磁盘）：未跟踪目录是本地并行噪声，
+ * CI 的干净 checkout 上不存在，故不进面也不判红。
+ */
+function clientEntryPackages() {
+  return listTrackedPluginDirs(ROOT)
+    .filter(
+      (p) =>
+        existsSync(join(ROOT, "packages", p, "src", "client", "index.ts")) ||
+        existsSync(join(ROOT, "packages", p, "src", "client", "index.tsx")),
+    )
+    .sort();
+}
+
+/** 声明面：`package.json` 的 exports 里有 `./client` 子路径的包（独立于上面那条派生）。 */
+function clientExportDeclaringPackages() {
+  return listTrackedPluginDirs(ROOT)
+    .filter((p) => {
+      const pkg = JSON.parse(readFileSync(join(ROOT, "packages", p, "package.json"), "utf8"));
+      return pkg.exports !== undefined && pkg.exports["./client"] !== undefined;
+    })
+    .sort();
+}
+
+const CLIENT_PACKAGES = clientEntryPackages();
+
+test("真实包：客户端包清单 == 声明 ./client 导出的包集合（双向，漏一个即红）", () => {
+  // 载体自证：派生面失效（退回空集）时下面的形态锁一次都不跑而全绿。
+  assert.ok(CLIENT_PACKAGES.length > 0, "客户端包清单为空 —— 派生面失效，禁止在空集上全绿");
+  assert.deepEqual(
+    clientExportDeclaringPackages(),
+    CLIENT_PACKAGES,
+    "有 src/client 入口却不声明 exports['./client']（或反之）—— 该包的导出面类型判据会静默漏掉",
+  );
+});
+
 test("真实包：全部客户端包的 exports 子路径与 types 指向 emit 布局（防回退 lib/client.d.ts）", () => {
-  // 实测这 4 个包**全部**有同一缺陷（types 指向不存在的 lib/client.d.ts，实际产物是
+  // 实测这批包**全部**有同一缺陷（types 指向不存在的 lib/client.d.ts，实际产物是
   // lib/client/index.d.ts）：新判据在全部实例上发声，故形态锁也覆盖全部实例。
-  for (const pkg of ["dsh-notifier", "dsh-lan-proxy", "dsh-mcp-manager", "dsh-provider-usage"]) {
+  for (const pkg of CLIENT_PACKAGES) {
     assert.deepEqual(
       listExportTypesEntries(join(ROOT, "packages", pkg)),
       [
