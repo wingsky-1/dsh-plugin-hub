@@ -504,7 +504,8 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
 ## 4. 契约与门禁
 
 - `pnpm contract`（contract-check）：load id === 包名、`dsh.client ⇒ exports["./client"]`、
-  `src/client/index.ts ⇒ lib/client.js` 产物、arrive 可解析、`exports.apply/inject` 装配。
+  `src/client/index.ts ⇒ lib/client.js` 产物、arrive 可解析、`exports.apply/inject` 装配
+  （导出键集**恰为** `apply` + `inject`：多导出一个键即判红）。
   下列两条门禁原先内嵌在本脚本里以 `spawnSync` 执行——判据确实在跑，但 workflow 与本地档位
   计划里都看不到它们，于是「每条判据至少一个可见执行点」对它们恒为假。审计 P0-1 后迁成
   **可见的直接步骤**：CI 侧在 `ci.yml` 的 repo-gate，本地侧在 `gate-steps.mjs` 的 cheapGlobal；
