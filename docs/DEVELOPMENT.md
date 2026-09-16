@@ -456,7 +456,7 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
 | 路径                | 触发                                      | 说明                                                                                                                                                                                                                             |
 | ------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 纯净 wrapper        | 干净模块、无 bare import                  | esbuild iife + 生成契约外壳；`apply/inject` 直出                                                                                                                                                                                 |
-| wrapper + externals | 干净模块 `import * as React from "react"` | 干净模块 cjs 内联进 `factory(require)`，React 由 loader 的 `require("react")` 注入（dsh web **无全局 React**）。需同目录 `react-shim.d.ts`（`declare module "react"`，不引 @types/react），`peerDependencies.react` + `optional` |
+| wrapper + externals | 干净模块 `import * as React from "react"` | 干净模块 cjs 内联进 `factory(require)`，React 由 loader 的 `require("react")` 注入（dsh web **无全局 React**）。**类型**由仓库根 devDep `@types/react` 解析（#834 起各包不再自备 `react-shim.d.ts`，那份 ambient 声明已删），运行时仍是 loader 注入，故只声明 `peerDependencies.react` + `optional` |
 | 第三方内联          | `dsh.client.inlineBareImports: true`      | 干净模块的 bare import（dompurify/diff2html/marked/highlight…）由 esbuild **内联进 client.js**，产物仍自包含。用于纯浏览器第三方库、无宿主注入 JS 模块的场景                                                                     |
 
 > ⚠️ **互斥**：默认「bare import = 宿主注入 external（React）」；`inlineBareImports: true`
@@ -465,8 +465,9 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
 ### 2.2 目录约定
 
 - 客户端入口统一 `src/client/index.ts`（`src/client.ts` 已停用）。
-- **拆 CSS 或带多模块/React shim 的包**：客户端专属模块（`md/code/renderer` 等）、
-  `style.css`、`react-shim.d.ts`、`css.d.ts` 都归位 `src/client/`；宿主模块留 `src/` 根。
+- **拆 CSS 或带多模块的包**：客户端专属模块（`md/code/renderer` 等）、
+  `style.css`、`css.d.ts`、`locales.ts` 都归位 `src/client/`；宿主模块留 `src/` 根
+  （React 类型由根 devDep `@types/react` 提供，不再需要包内 shim）。
 - **宿主 & 客户端共享**的模块（如双端共用的后缀表 / 契约常量）留 `src/` 根，
   客户端经 `../grouping.js` 引用——不要为"客户端专用"而把共享模块搬走。
 - **例外：包内 `src/shared/**`（#769 起）**。双端共享且要求**零 import**（或只做同目录

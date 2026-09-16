@@ -275,7 +275,7 @@
           {
             "pattern": "!packages/dsh-notifier/src/**/*.d.ts",
             "kind": "type-only",
-            "reason": "两处编译期类型 shim：client/css.d.ts 声明 .css 模块（verbatimModuleSyntax 下类型化 style.css 文本导入）、client/react-shim.d.ts 提供 react 类型（运行时由 dsh web 的 factory require 注入）；两者都不产出可执行代码。"
+            "reason": "一处编译期类型 shim：client/css.d.ts 声明 .css 模块（verbatimModuleSyntax 下类型化 style.css 文本导入），不产出可执行代码。注：#834 起本包不再自备 client/react-shim.d.ts——react 类型改由仓库根 devDep @types/react 解析（运行时仍由 dsh web 的 factory require 注入，故 peerDependencies.react + optional 不变）。"
           },
           {
             "pattern": "!packages/dsh-notifier/src/**/*.ps1",
