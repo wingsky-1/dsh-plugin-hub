@@ -895,6 +895,42 @@ test("#178+#204+#572: ci.yml PR 增量门禁——从孤立分支恢复基线 + 
   );
 });
 
+test("#843 R2-M-2: ci.yml 每个 job 必须被 repo-gate 聚合，或逐条登记的合法豁免", () => {
+  // 只钉死 needs 整行挡不住「新增 job 却忘了挂进 needs」：那个 job 红不影响聚合闸，而 required
+  // check 只有 repo-gate 一个，新门禁等于没接。评审实测：插入一个孤儿 job 后
+  // workflow-assert + gate-wiring 仍 76/76 全绿。
+  // 豁免面**派生自磁盘现状**（当前 ci.yml 里不进 needs 的只有聚合闸自身），逐条写明理由——
+  // 不设可被无痛调大的预算数字。
+  const EXEMPT: Record<string, string> = {
+    "repo-gate": "聚合闸自身不能依赖自己（自环会让 needs 永不满足）",
+  };
+  const jobsSection = CI.slice(CI.indexOf("\njobs:\n") + 1);
+  const jobNames = [...jobsSection.matchAll(/^ {2}([a-z][a-z0-9-]*):\s*$/gm)].map((m) => m[1]);
+  // 非空洞性：正则写坏时 jobNames 会变空，那样本用例就成了假绿
+  for (const known of ["changes", "red-line-approval", "repo-gate"]) {
+    assert.ok(jobNames.includes(known), `job 解析必须包含 ${known}（实际 ${jobNames.join(", ")}）`);
+  }
+  const rgBlock = CI.slice(CI.indexOf("\n  repo-gate:"));
+  const needsMatch = /^\s{4}needs: \[(.+)\]$/m.exec(rgBlock);
+  assert.ok(needsMatch !== null, "repo-gate 必须声明 needs 列表");
+  const needs = needsMatch[1].split(",").map((s) => s.trim());
+  // 幽灵 needs：引用了不存在的 job 会让聚合闸永不满足，也会掩盖真正的漏挂
+  for (const need of needs) {
+    assert.ok(jobNames.includes(need), `repo-gate needs 引用了不存在的 job：${need}`);
+  }
+  for (const [job, reason] of Object.entries(EXEMPT)) {
+    assert.ok(jobNames.includes(job), `豁免登记的 ${job} 在 ci.yml 里已不存在（登记过时）`);
+    assert.ok(reason.trim() !== "", `豁免登记的 ${job} 必须写明理由`);
+  }
+  const orphans = jobNames.filter((job) => !needs.includes(job) && !(job in EXEMPT));
+  assert.deepEqual(
+    orphans,
+    [],
+    "以下 job 既不在 repo-gate 的 needs 里也没有登记豁免：它们红不影响聚合闸，等于没接门禁" +
+      "（新 job 要么挂进 needs，要么按磁盘现状补一条带理由的豁免）",
+  );
+});
+
 test("#572: baseline-overlay.yml 主干合入秒级差量覆盖基线工作流在位", () => {
   assert.ok(OVERLAY.includes("push:"), "baseline-overlay 必须监听 push 事件");
   assert.ok(OVERLAY.includes("branches:\n      - main"), "baseline-overlay 仅对 main 分支生效");

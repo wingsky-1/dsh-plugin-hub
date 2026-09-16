@@ -245,19 +245,102 @@ test("CLI：--files-json / --labels-json 按 filename / name 抽取（API 原始
   }
 });
 
-test("CLI：--files-json 支持多页拼接（--paginate 的连续 JSON 文档，无分隔符）", () => {
+test("CLI：--files-json 支持多页拼接——判定必须覆盖所有页，而不是只读第一页", () => {
+  // 旧版本把 labels 指向不存在的路径后断言 exit 2：分页解析无论成功还是失败都 exit 2，这条
+  // 用例对分页零覆盖。现在 labels 用存在的文件，判定结果才有分辨力。
   const dir = mkdtempSync(join(tmpdir(), "red-line-pages-"));
   try {
     const filesJson = join(dir, "files.json");
+    const labelsJson = join(dir, "labels.json");
+    const filesPage = (...names: string[]) =>
+      JSON.stringify(names.map((filename) => ({ filename, status: "modified" })));
+    // 页 1 普通文件、页 2 红线文件：只读首页就会静默漏判（--paginate 存在的唯一理由）
+    writeFileSync(filesJson, filesPage("docs/a.md") + filesPage(".github/workflows/observe.yml"));
+    writeFileSync(labelsJson, "[]");
+    const red = runCli(["--files-json", filesJson, "--labels-json", labelsJson]);
+    assert.equal(red.status, 1, red.stderr);
+    assert.match(red.stderr, /.github\/workflows\/observe\.yml/);
+    // 红线文件在页 1、approved 只在页 2 的 labels 里：两页都要读进来才放行
+    writeFileSync(filesJson, filesPage(".github/workflows/ci.yml") + filesPage("docs/a.md"));
+    writeFileSync(
+      labelsJson,
+      JSON.stringify([{ name: "ci" }]) + JSON.stringify([{ name: "approved" }]),
+    );
+    const ok = runCli(["--files-json", filesJson, "--labels-json", labelsJson]);
+    assert.equal(ok.status, 0, ok.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI：含 patch 的真实 gh 响应形态必须可解析（P0 回归锚）", () => {
+  // 真机形态：pulls/N/files 的每个条目都带 patch（统一 diff 文本）。旧的「正则切 JSON」在这个
+  // 形态下会把数组提前收口，JSON.parse 在字符串中间断开 → exit 2 → repo-gate 因 needs 连坐，
+  // 对**所有** PR 判红（run 35044624161 即此形态）。故 fixture 必须带 patch，且 patch 里要有
+  // 能骗过非贪婪正则的 `]` / `[`。
+  const dir = mkdtempSync(join(tmpdir(), "red-line-patch-"));
+  try {
+    const filesJson = join(dir, "files.json");
+    const labelsJson = join(dir, "labels.json");
     writeFileSync(
       filesJson,
-      JSON.stringify([{ filename: "docs/a.md" }]) +
-        JSON.stringify([{ filename: ".github/workflows/observe.yml" }]),
+      JSON.stringify([
+        {
+          filename: ".github/workflows/ci.yml",
+          status: "modified",
+          patch:
+            "@@ -1,4 +1,5 @@\n jobs:\n-  needs: [changes]\n+  needs: [changes, x]\n   # ] 注释里的方括号\n",
+        },
+        {
+          filename: "docs/x.md",
+          status: "added",
+          patch: '@@ -0,0 +1 @@\n+见 [文档](x.md) 与 "引号"\n',
+        },
+      ]),
     );
-    const r = runCli(["--files-json", filesJson, "--labels-json", join(dir, "absent.json")]);
-    // labels 文件不存在 → 输入不可解析（exit 2）；这一条只为钉住「多页拼接不会解析失败」
-    assert.equal(r.status, 2, r.stderr);
-    assert.match(r.stderr, /输入不可解析/);
+    writeFileSync(labelsJson, "[]");
+    const red = runCli(["--files-json", filesJson, "--labels-json", labelsJson]);
+    assert.equal(red.status, 1, red.stderr);
+    assert.match(red.stderr, /.github\/workflows\/ci\.yml/);
+    // 同一份含 patch 的响应 + approved → 放行：证明标签在真实形态下真的生效
+    writeFileSync(labelsJson, JSON.stringify([{ name: "ci" }, { name: "approved" }]));
+    const ok = runCli(["--files-json", filesJson, "--labels-json", labelsJson]);
+    assert.equal(ok.status, 0, ok.stderr);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI：renamed 条目必须把 previous_filename 一并纳入判定（搬出红线面同样要 approved）", () => {
+  // 只看 filename 时，把 .github/workflows/ci.yml 改名成 docs/ci.yml.bak 判 exit 0——
+  // 那是绕过红线面的通道（评审实测）。
+  const dir = mkdtempSync(join(tmpdir(), "red-line-rename-"));
+  try {
+    const filesJson = join(dir, "files.json");
+    const labelsJson = join(dir, "labels.json");
+    writeFileSync(
+      filesJson,
+      JSON.stringify([
+        {
+          filename: "docs/ci.yml.bak",
+          previous_filename: ".github/workflows/ci.yml",
+          status: "renamed",
+        },
+      ]),
+    );
+    writeFileSync(labelsJson, "[]");
+    const red = runCli(["--files-json", filesJson, "--labels-json", labelsJson]);
+    assert.equal(red.status, 1, red.stderr);
+    assert.match(red.stderr, /.github\/workflows\/ci\.yml/);
+    // 普通文件的改入改出不受影响（判据只认红线路径）
+    writeFileSync(
+      filesJson,
+      JSON.stringify([
+        { filename: "docs/b.md", previous_filename: "docs/a.md", status: "renamed" },
+      ]),
+    );
+    const pass = runCli(["--files-json", filesJson, "--labels-json", labelsJson]);
+    assert.equal(pass.status, 0, pass.stderr);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
