@@ -42,14 +42,22 @@ const PACKAGE_CALL_PATTERNS = [
   /--package(?!s)\s+"?([a-z0-9-]+)"?/g,
 ];
 
+/** 调用点与脚本次引用之间允许的最大距离（同一 step 内，见下）。 */
+const CALL_SITE_WINDOW = 600;
+
 function extractPackageCallSites(text, file) {
   const records = [];
   for (const ref of text.matchAll(/scripts\/gate\/([a-z0-9-]+)\.(?:mjs|ts)/g)) {
     // 只看脚本引用之后的一小段：调用点写成 spawnSync([...脚本, "--package", "pkg"])，
     // 同一段里可能有多次 --package（同一闸的多个包切片）。
-    const window = text.slice(ref.index, ref.index + 600);
+    //
+    // 判「在窗口内」用匹配**起点**的偏移过滤，而不是先把文本切成 600 字符再匹配：
+    // 切片会从中间截断包名（实测：一份注释把下一个 step 的 --package 推到边界上，
+    // 于是抽出 'dsh-lan-' 这种残缺包名，还挂在上一个闸名下，污染三处断言）。
     for (const pattern of PACKAGE_CALL_PATTERNS) {
-      for (const m of window.matchAll(pattern)) {
+      for (const m of text.matchAll(pattern)) {
+        if (m.index < ref.index) continue;
+        if (m.index > ref.index + CALL_SITE_WINDOW) break;
         records.push({ file, gate: ref[1], pkg: m[1] });
       }
     }
