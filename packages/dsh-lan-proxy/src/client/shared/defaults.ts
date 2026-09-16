@@ -24,4 +24,5 @@ export const DEFAULTS: Record<string, any> = {
   httpCompressEnabled: true,
   httpCompressLevel: 1,
   injectToken: true,
+  ownsHostCompat: false,
 };

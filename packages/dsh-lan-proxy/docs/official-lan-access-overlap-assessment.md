@@ -278,6 +278,17 @@
    - 官方 webserver 提供 TLS（含自签/证书配置）；
    - 官方提供与压缩相关的传输增强（HTTP 响应压缩或 WS permessage-deflate）；
    - 官方在 API/WS 层提供保活（Pong 代答或等价的心跳策略）。
+3. **`isLoopback` 客户端门控语义变化**（issue #856）。客户端把
+   `transport?.ownsHost === true || isLoopbackHostname(location.hostname)` 作为
+   「本机 / 远程」的唯一信号，并据此决定设置面是 host scope 还是 memory scope；本插件的
+   `ownsHostCompat` 兼容注入正是建立在这个谓词之上。出现下列任一变化即需重新评估：
+   谓词增删分支或改换字段名、`ownsHost` 语义反转、官方为 LAN 访问提供受支持的信任声明面
+   （届时兼容注入应整体退役，改走官方面）。运行时探测器：客户端四态判定会对
+   「注入 marker 在但 `isLoopback` 仍非 true」（`contract-drift`）显式告警——那正是这条
+   触发条件已发生的信号。**这个告警的承载面是 devtools 控制台，不是设置卡片**：卡片的
+   挂载条件与四态判定共用同一枚 `isLoopback` 信号，故 `contract-drift` 与 `compat-off`
+   两态在卡片上不可达（详见 README 安全模型的「已知限制」；另两处可见面是启动横幅与
+   `GET /api/dsh-lan-proxy/health` 的 `ownsHostCompat` 字段，且只反映宿主侧开关）。
 
 满足后需重新判断的**具体问题**：可达性与传输增强能否整体交还官方，本插件是否退化为
 只保留「域名入站 + IP 字面量围栏」这类差异化能力。
@@ -293,3 +304,6 @@
   与后续 WebSocket 升级的完整成功路径。
 - 官方方案下模型设置页与凭据类设置的写入是否触发额外确认（当前无代码证据表明存在，
   但也未逐项实测）。
+- `ownsHostCompat`（issue #856）的真实 LAN 端到端实测：`dsh-verify-isolated` 用
+  `127.0.0.1` 驱动，复现不了「非回环页面被降级为 memory scope」的症状；需真机 / 真 LAN
+  验证注入后设置页确实落 Host 持久化、模型设置与「打开配置文件」确实恢复。

@@ -64,6 +64,48 @@ const basePatchDeps = (over = {}) => ({
   ...over,
 });
 
+/**
+ * fake webServer：捕获 tapIndex 变换与 index-inject 订阅。
+ *
+ * 为什么不能留空实现：`apply` 经 `ctx.webServer.tapIndex` 注入 index.html
+ * （randomUUID polyfill 与 host trust，issue #856），空实现让「注入了什么、注册了
+ * 几次、会不会整表覆盖」全部不可断言。`fakeWebServers` 记录本轮创建的实例，供
+ * 用例在同一 describe 内取用。
+ */
+const fakeWebServers = [];
+function makeFakeWebServer(options = {}) {
+  const { port = 3080, register } = options;
+  const taps = [];
+  const indexInjectListeners = [];
+  const ws = {
+    taps,
+    indexInjectListeners,
+    port,
+    register(route) {
+      if (typeof register === "function") register(route);
+      return () => {};
+    },
+    tapIndex(transform) {
+      taps.push(transform);
+      return () => {
+        const at = taps.indexOf(transform);
+        if (at !== -1) taps.splice(at, 1);
+      };
+    },
+    on(event, cb) {
+      if (event === "webserver/index-inject") indexInjectListeners.push(cb);
+      return () => {};
+    },
+    /** 自行 emit 结构化注入表（与官方 collectIndexInjections 同形）。 */
+    emitIndexInjections(table) {
+      for (const cb of indexInjectListeners) cb(table);
+      return table;
+    },
+  };
+  fakeWebServers.push(ws);
+  return ws;
+}
+
 // ===== pluginDir =====
 describe("pluginDir", () => {
   let dir;
@@ -95,6 +137,18 @@ describe("sanitizeSettings 更多边界", () => {
 
   it("wsCompressEnabled 非布尔 → null", () => {
     expect(sanitizeSettings({ wsCompressEnabled: "yes" })).toBe(null);
+  });
+
+  it("ownsHostCompat true → 通过", () => {
+    expect(sanitizeSettings({ ownsHostCompat: true })).toEqual({ ownsHostCompat: true });
+  });
+
+  it("ownsHostCompat false → 通过（false 是合法值，不得被当成缺省丢弃）", () => {
+    expect(sanitizeSettings({ ownsHostCompat: false })).toEqual({ ownsHostCompat: false });
+  });
+
+  it("ownsHostCompat 非布尔 → null", () => {
+    expect(sanitizeSettings({ ownsHostCompat: "yes" })).toBe(null);
   });
 
   it("httpCompressLevel 负值 → null", () => {
@@ -428,6 +482,9 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
   let hpWsCompressPaths;
   let hp2WsCompressPaths;
   let cleanupCompleted;
+  let hostTrustRows;
+  let hpOwnsHostCompat;
+  let hp2OwnsHostCompat;
 
   beforeAll(async () => {
     const applyHome = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-apply-tls-"));
@@ -470,18 +527,10 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
       },
     };
 
+    const ws = makeFakeWebServer({ register: (route) => routes.push(route) });
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
-      webServer: {
-        port: 3080,
-        register(route) {
-          routes.push(route);
-          return () => {};
-        },
-        tapIndex() {
-          return () => {};
-        },
-      },
+      webServer: ws,
       inject(services, fn) {
         if (services.includes("connection")) {
           const connectionCtx = {
@@ -533,6 +582,10 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
 
     await sleep(100);
 
+    // host trust（issue #856）：官方结构化注入表必须保持为空——`kind: "global"` 行
+    // 是整体赋值 + JSON 序列化，会覆盖 desktop-host 等组合先行写入的 transport。
+    hostTrustRows = ws.emitIndexInjections([]).length;
+
     // 验证 health 路由注册（prepareTls 内部已同步调用）
     const healthRoute = routes.find((r) => r.path === ROUTES.health);
     healthRouteFound = Boolean(healthRoute);
@@ -560,8 +613,11 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     hpWsCompressEnabled = hp.wsCompressEnabled;
     // M2（#395）：resolve() 归一化旧默认白名单（乱序等价）→ health 快照可见新值。
     hpWsCompressPaths = hp.wsCompressPaths;
+    hpOwnsHostCompat = hp.ownsHostCompat;
     // 自定义白名单（含废弃端点的组合）原样保留，不强制改写。
     scope._val.wsCompressPaths = ["/api/custom/ws", "/api/events.mux"];
+    // host trust 开关（issue #856）：health 读的是 resolve() 的实时值，不是注册时快照。
+    scope._val.ownsHostCompat = true;
     let healthBody2 = "";
     healthRoute.handler(
       {
@@ -579,6 +635,7 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
     );
     const hp2 = JSON.parse(healthBody2);
     hp2WsCompressPaths = hp2.wsCompressPaths;
+    hp2OwnsHostCompat = hp2.ownsHostCompat;
 
     // 执行 lifecycle 清理：触发 scope.watch 的 disposer 与 isUnloading
     for (const d of [...disposers].reverse()) {
@@ -602,6 +659,18 @@ describe("apply 集成：TLS 准备 + settings 命名空间（setSource/onScope/
 
   it("RPC 配置通道不再注册", () => {
     expect(rpcHandleCount).toBe(0);
+  });
+
+  it("不向官方结构化注入表推任何行（host trust 走 tapIndex）", () => {
+    expect(hostTrustRows).toBe(0);
+  });
+
+  it("health 报出宿主侧 host trust 事实（开关默认关）", () => {
+    expect(hpOwnsHostCompat).toBe(false);
+  });
+
+  it("health 的开关随配置实时变化（非注册时快照）", () => {
+    expect(hp2OwnsHostCompat).toBe(true);
   });
 
   it("health 200", () => {
@@ -638,15 +707,7 @@ describe("apply：settings 服务缺少 register → warn 路径", () => {
     const disposers = [];
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
-      webServer: {
-        port: 3080,
-        register() {
-          return () => {};
-        },
-        tapIndex() {
-          return () => {};
-        },
-      },
+      webServer: makeFakeWebServer(),
       inject(services, fn) {
         if (services.includes("settings")) {
           // settings 存在但缺少 register → warn 被调用
@@ -709,16 +770,7 @@ describe("apply：监听端口被占 → listen() reject → catch 分支", () =
     const disposers = [];
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
-      webServer: {
-        port: 3080,
-        register(route) {
-          routes.push(route);
-          return () => {};
-        },
-        tapIndex() {
-          return () => {};
-        },
-      },
+      webServer: makeFakeWebServer({ register: (route) => routes.push(route) }),
       inject(services, fn) {
         if (services.includes("connection")) {
           fn({
@@ -803,16 +855,7 @@ describe("apply：enabled=false 仍注册路由与迁移（#110 P0-2）", () => 
     const routes = [];
     const ctx = {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
-      webServer: {
-        port: 3080,
-        register(route) {
-          routes.push(route);
-          return () => {};
-        },
-        tapIndex() {
-          return () => {};
-        },
-      },
+      webServer: makeFakeWebServer({ register: (route) => routes.push(route) }),
       inject() {},
       effect(fn) {
         return fn();
@@ -1130,16 +1173,7 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
         over.logger !== undefined
           ? over.logger
           : { info: () => {}, warn: () => {}, error: () => {} },
-      webServer: {
-        port: 3080,
-        register(route) {
-          routes.push(route);
-          return () => {};
-        },
-        tapIndex() {
-          return () => {};
-        },
-      },
+      webServer: makeFakeWebServer({ register: (route) => routes.push(route) }),
       inject() {},
       effect(fn) {
         const d = fn();
@@ -2025,8 +2059,17 @@ describe("Config schema 直测：schemastery 默认值与上界（#147 变异加
     expect(defaults.httpCompressLevel).toBe(1);
   });
 
+  it("injectToken 默认 true", () => {
+    expect(defaults.injectToken).toBe(true);
+  });
+
   it("ws 压缩路径默认 Remote 流 mux 端点", () => {
     expect(defaults.wsCompressPaths).toEqual(["/api/remote.mux"]);
+  });
+
+  // #856：伪造上游拓扑事实位的开关默认必须关（默认开等于静默改写页面拓扑语义）
+  it("ownsHostCompat 默认关", () => {
+    expect(defaults.ownsHostCompat).toBe(false);
   });
 
   // 端口上界 65535 由 schema max 强制

@@ -164,7 +164,7 @@
     },
     {
       "source": "scripts/data/dsh-lan-proxy-export-surface.json",
-      "why": "包级资产：lan-proxy 导出面基线（#826 冻结：50 个符号 / 49 个声明块，覆盖主入口 . 与客户端入口 ./client），由 gate/export-surface-snapshot.mjs --package dsh-lan-proxy 逐字节比对；基线更新走 --snapshot 并随 PR 提交，无单调阈值语义。与 worktree-sidebar 那两份不同，本包的执行点已接上：ci.yml / observe.yml / release.yml 各一条独立 step + gate/gate-steps.mjs 本地档位，接线由 test/gate-wiring.test.ts 与 test/gate-scope-registry.test.ts 双向守。"
+      "why": "包级资产：lan-proxy 导出面基线（#826 冻结，P1-2 让 #856 的 host-trust 域退出导出面后为 50 个符号 / 59 个声明块，覆盖主入口 . 与客户端入口 ./client），由 gate/export-surface-snapshot.mjs --package dsh-lan-proxy 逐字节比对；基线更新走 --snapshot 并随 PR 提交，无单调阈值语义。与 worktree-sidebar 那两份不同，本包的执行点已接上：ci.yml / observe.yml / release.yml 各一条独立 step + gate/gate-steps.mjs 本地档位，接线由 test/gate-wiring.test.ts 与 test/gate-scope-registry.test.ts 双向守。"
     },
     {
       "source": "scripts/data/dsh-lan-proxy-export-faces.json",

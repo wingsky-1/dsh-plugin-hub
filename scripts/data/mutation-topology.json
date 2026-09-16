@@ -49,6 +49,11 @@
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
           "comment": "#826 域归位：两个无模块目录归属的根文件合为 entry 段（mcp-manager / provider-usage 先例）——src/index.ts 是宿主唯一入口，tsconfig rootDir=src 要求它留在 src 根；server/apply.ts 是组合根装配。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
+        "host-trust": {
+          "mutate": ["packages/dsh-lan-proxy/src/server/host-trust/impl/*.ts"],
+          "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
+          "comment": "#856 新域：host trust 兼容注入（非回环页面声明 ownsHost 的自条件脚本 + 官方 webServer.tapIndex 注册）。与 config/entry 同生命周期但独立成段——域内只有 impl/injection.ts 一个实现文件，错登进 entry 会让该段的 impl 变更信号被组合根噪声淹没；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+        },
         "migrate": {
           "mutate": ["packages/dsh-lan-proxy/src/server/migrate/impl/file/index.ts"],
           "excludes": ["!packages/dsh-lan-proxy/src/client/**"],
@@ -79,7 +84,7 @@
           {
             "pattern": "!packages/dsh-lan-proxy/src/**/interface.ts",
             "kind": "facade",
-            "reason": "#826 域归位：本包 6 处 interface.ts（server/{shared,proxy,config,migrate,tls} 各一 + client/shared 一）按本仓 facade 口径整体排除。facade 是**角色**口径不是内容口径——interface.ts 是本域对外承诺的入口，转译后仍可能有运行时代码（dsh-notifier 的 stores 门面即如此），只是自身不做裁决；故排除面按文件名通配，而不是按「有没有实现」判定。其中 client/shared/interface.ts 本已被各段 !src/client/** 覆盖；当前 6 段的 mutate 条目不匹配任何 interface.ts，故这条对本包是口径声明而非有效裁剪，它的作用是让该口径不随段形态变化而失效。"
+            "reason": "#826 域归位（#856 补第 7 域）：本包 7 处 interface.ts（server/{shared,proxy,config,migrate,tls,host-trust} 各一 + client/shared 一）按本仓 facade 口径整体排除。facade 是**角色**口径不是内容口径——interface.ts 是本域对外承诺的入口，转译后仍可能有运行时代码（dsh-notifier 的 stores 门面即如此），只是自身不做裁决；故排除面按文件名通配，而不是按「有没有实现」判定。其中 client/shared/interface.ts 本已被各段 !src/client/** 覆盖；当前 7 段的 mutate 条目不匹配任何 interface.ts，故这条对本包是口径声明而非有效裁剪，它的作用是让该口径不随段形态变化而失效。"
           }
         ]
       }

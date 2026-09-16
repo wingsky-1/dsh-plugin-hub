@@ -1,0 +1,41 @@
+{
+  "$schema": "../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "packages/dsh-lan-proxy/src/server/host-trust/impl/*.ts",
+    "!packages/dsh-lan-proxy/src/client/**",
+    "!packages/dsh-lan-proxy/src/**/interface.ts"
+  ],
+  "testRunner": "vitest",
+  "mutator": {
+    "excludedMutations": [
+      "StringLiteral",
+      "ArrayLiteral",
+      "ObjectLiteral",
+      "TemplateLiteral"
+    ]
+  },
+  "plugins": [
+    "@stryker-mutator/vitest-runner"
+  ],
+  "concurrency": 16,
+  "timeoutMS": 60000,
+  "dryRunTimeoutMinutes": 5,
+  "reporters": [
+    "progress",
+    "clear-text",
+    "json"
+  ],
+  "coverageAnalysis": "perTest",
+  "tempDirName": ".stryker-tmp",
+  "cleanTempDir": true,
+  "vitest": {
+    "related": false,
+    "configFile": "vitest.stryker.d/dsh-lan-proxy.config.ts"
+  },
+  "jsonReporter": {
+    "fileName": "coverage/mutation/dsh-lan-proxy-host-trust.json"
+  },
+  "incremental": true,
+  "incrementalFile": "coverage/mutation/incremental-lan-proxy-host-trust.json",
+  "_comment": "#856 新域：host trust 兼容注入（非回环页面声明 ownsHost 的自条件脚本 + 官方 webServer.tapIndex 注册）。与 config/entry 同生命周期但独立成段——域内只有 impl/injection.ts 一个实现文件，错登进 entry 会让该段的 impl 变更信号被组合根噪声淹没；门面按 facade 口径进 coverageExcludes；测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+}

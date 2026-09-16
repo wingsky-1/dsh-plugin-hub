@@ -27,7 +27,7 @@
  * `webServer`，因此只在回环服务器监听后启动，并从 ctx.webServer.port
  * 解析真实上游端口（`--port 0` 与自定义 `--port` 均可用）。
  *
- * 结构（#826 域归位）：实现按域归位到 src/server/<域>/（config / migrate / proxy / tls）
+ * 结构（#826 域归位）：实现按域归位到 src/server/<域>/（config / host-trust / migrate / proxy / tls）
  * 与 src/server/shared/（包内共享叶子），装配在 src/server/apply.ts；本文件保留插件契约
  * （name/inject 与 apply、路由表转发）与全部公共符号 re-export（导出面不变，外部消费者从
  * lib/index.js 导入不受影响）。apply 实现于 server/apply.ts，不 import 本文件。
@@ -60,6 +60,10 @@ export { ROUTES, applyConfigPatch, buildConfigRoutes } from "./server/config/int
 export type { ConfigRouteDeps, PatchResult } from "./server/config/interface.ts";
 export { MIGRATED_BAK_NAME, migrateFileConfig } from "./server/migrate/interface.ts";
 export type { MigrationOutcome } from "./server/migrate/interface.ts";
+// host trust 域（#856）不进包导出面：自条件注入纯函数、官方 index 变换钩子注册与两条
+// 契约字面量都只被包内 apply 消费，属实现细节而非安装面 / 配置面 / 契约面
+// （docs/ARCHITECTURE-METHOD.md §6）。域门面 src/server/host-trust/interface.ts 保留为
+// 内部 seam，白盒单测直连 src 即可；不得以「测试需要」为由重新追加导出。
 export { apply, pluginDir, DEFAULT_WSS_COMPRESS_PATHS } from "./server/apply.ts";
 
 // 既有包导出面（历史 ABI，冻结）：下列内部符号自 #276 拆分起就随 lib/index.js 发布，

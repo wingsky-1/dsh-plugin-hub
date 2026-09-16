@@ -5,5 +5,10 @@
     "types": ["node"],
     "allowImportingTsExtensions": true
   },
-  "include": ["./**/*.ts"]
+  // ../src/client/css.d.ts 必须进 program：client-unit/host-trust-alert.test.ts 驱动真实
+  // 客户端入口（src/client/index.ts），而该入口有 `import STYLE from "./style.css"`——声明不在
+  // program 里就判 TS2307，scripts/test/service-contract-wiring.test.ts 会因此转红。它只是类型面
+  // 声明（运行期由 build-client 的 .css text-loader 负责），进 program 不改任何产物（同
+  // packages/dsh-notifier/test/tsconfig.json 的做法）。
+  "include": ["./**/*.ts", "../src/client/css.d.ts"]
 }

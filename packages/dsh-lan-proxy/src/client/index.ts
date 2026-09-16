@@ -28,6 +28,12 @@ import { zh, en, type LanProxyLocaleKey } from "./locales.ts";
 import { bindLocale } from "../../../../shared/client/i18n.js";
 import { SettingsCard } from "./settings-card.tsx";
 import { DEFAULTS } from "./shared/interface.ts";
+import {
+  evaluateHostTrust,
+  hostTrustAlert,
+  readHostTrustSignals,
+  type RemoteLike,
+} from "./host-trust-status.ts";
 // 显式类型导入，先把 @deepseek-ai/dsh-client-ui-slots 拉进模块解析图：上游发布物
 // lib/types/*.d.ts 相对导入保留 .ts 后缀，declare module 增强的模块名解析会判
 // TS2664（microsoft/TypeScript#63960 同类；上游修复发布物后此行可删）。
@@ -51,6 +57,22 @@ const CSS_VERSION = "4";
 
 export function apply(ctx: any) {
   try {
+    // host trust 观测（issue #856）：只交出信号读取器，判定在卡片渲染期做——
+    // 缓存判定结果会让「兼容开关刚被保存但页面未重载」这类中间态显示错。
+    const hostTrustSignals = () => readHostTrustSignals(ctx.remote as RemoteLike | undefined);
+
+    // 故障态告警（P1-1）：判定结果原先只挂在设置卡片上，而卡片所在的插件列表在非回环
+    // authority（settings scope = memory）下根本不渲染——compat-off / contract-drift 两个
+    // 故障态在页面上不可达。故在 apply 最前面独立告警一次（每页一次，不在渲染期重复，
+    // 不刷屏），且刻意排在 slots / 设置面读取之前：告警不依赖任何设置面。整段防御式读取，
+    // 异常绝不外抛（观测失败不得打断页面启动）。
+    try {
+      const alert = hostTrustAlert(evaluateHostTrust(hostTrustSignals()));
+      if (alert !== null) console.warn(`[dsh-lan-proxy] ${alert}`);
+    } catch {
+      /* 观测失败不得影响页面启动 */
+    }
+
     const slots = ctx.get("slots");
     if (!slots) {
       console.warn("[dsh-lan-proxy] 缺少 slots 服务，设置面板未挂载");
@@ -97,7 +119,10 @@ export function apply(ctx: any) {
           locale: NS,
         },
         function () {
-          return React.createElement(SettingsCard, { defaults: DEFAULTS });
+          return React.createElement(SettingsCard, {
+            defaults: DEFAULTS,
+            hostTrustSignals: hostTrustSignals,
+          });
         },
       );
     });
@@ -117,4 +142,6 @@ export function apply(ctx: any) {
 
 // ---- 客户端契约：apply/inject 由 build-client 经 factory 装配（干净模块，React externals）----
 // 设置卡片是 React 组件（settings.plugin.item 插槽由宿主 React 渲染）。
-export const inject: string[] = ["slots", "locale"];
+// "remote" 用于读取公开事实 ctx.remote.$host.isLoopback（host trust 观测的第三段
+// 信号）；官方 dsh-client-ui-chat / model-selection 同款直接属性访问。
+export const inject: string[] = ["slots", "locale", "remote"];

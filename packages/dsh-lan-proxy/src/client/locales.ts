@@ -35,6 +35,18 @@ export const zh = {
   injectToken: "局域网免 token 直入",
   injectTokenOnHint:
     "已开启：局域网内任何能访问该端口的设备都无需登录 token 即可完整控制 dsh（含终端命令执行），等效信任整个局域网。仅在可信家庭/办公内网开启；关闭后已登录设备的会话在有效期内仍然有效（约 30 天），不即时吊销。",
+  ownsHostCompat: "向非回环页面声明 ownsHost（兼容）",
+  ownsHostCompatHint:
+    "已开启：向非回环页面声明 ownsHost，等同伪造上游拓扑事实位——远程页与本机页在界面上不再可区分。解锁的行为：设置持久化落盘 <DSH_HOME>/settings.yaml（文件不存在时新建）、宿主原生「打开配置文件」动作。这不是服务端授权变化（/api 围栏与 launch token / 会话 cookie 认证不变）。仅在你清楚后果时开启；零伪造替代路径见 README「安全模型」的 ssh -L 方案。",
+  hostTrustStatusLoopback: "拓扑事实位：本机页，设置持久化可用（无需兼容开关）",
+  hostTrustStatusCompat: "拓扑事实位：兼容模式已生效（本页已声明 ownsHost）",
+  hostTrustStatusDrift:
+    "拓扑事实位告警：注入 marker 在，但上游 isLoopback 仍非 true——上游契约可能已漂移，本次注入很可能已失效，请按 dsh-upgrade 流程复核",
+  hostTrustStatusOff:
+    "拓扑事实位：本页设置面不可用（上游已按非回环页面降级为内存 scope）。开启上方兼容开关并重新加载本页即可恢复持久化设置。",
+  hostTrustHostFacts: "宿主侧事实：兼容开关 {compat}",
+  hostTrustOn: "开",
+  hostTrustOff: "关",
   bodyHint:
     "保存即热更新（配置写入宿主统一设置存储，无需重启 dsh web）。修改后内网设备访问新端口，旧端口立即失效。",
   // HTTP 压缩状态行
@@ -84,6 +96,19 @@ export const en: Record<LanProxyLocaleKey, string> = {
   injectToken: "Token-free LAN access",
   injectTokenOnHint:
     "On: any device that can reach this port on the LAN gets full control of dsh (including terminal command execution) without a login token — equivalent to trusting the entire LAN. Only enable on trusted home/office networks; after turning off, already-signed-in devices stay valid until session expiry (~30 days), no instant revocation.",
+  ownsHostCompat: "Declare ownsHost to non-loopback pages (compat)",
+  ownsHostCompatHint:
+    'On: non-loopback pages are told to declare ownsHost — equivalent to forging an upstream topology fact. Remote pages and local pages become indistinguishable in the UI. Unlocked behaviours: settings persistence to <DSH_HOME>/settings.yaml (created when missing) and the host-native "open settings file" action. This is not a server-side authorization change (/api fences and launch-token / session-cookie auth are unchanged). Enable only if you accept the consequences; see the ssh -L zero-forgery alternative in the README Security Model.',
+  hostTrustStatusLoopback:
+    "Topology fact: local page — settings persistence available (no compat switch needed)",
+  hostTrustStatusCompat: "Topology fact: compat mode is in effect (this page declared ownsHost)",
+  hostTrustStatusDrift:
+    "Topology fact WARNING: the injection marker is present but upstream isLoopback is still not true — the upstream contract may have drifted and this injection is likely dead; re-check per the dsh-upgrade flow",
+  hostTrustStatusOff:
+    "Topology fact: this page has no settings surface (upstream downgraded the non-loopback page to memory scope). Turn on the compat switch above and reload this page to restore persistent settings.",
+  hostTrustHostFacts: "Host-side facts: compat switch {compat}",
+  hostTrustOn: "on",
+  hostTrustOff: "off",
   bodyHint:
     "Saving hot-reloads the forwarder (config goes to the host settings store, no restart needed). After the port changes, LAN devices use the new port and the old one stops immediately.",
   compressOff: "HTTP response compression: off",

@@ -74,6 +74,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `wsCompressPaths` | `/api/remote.mux` | Path allowlist participating in WebSocket compression (empty = bridged without compression, keep-alive unaffected) |
 | `httpCompressEnabled` | `true` | Master switch for HTTP response compression (the forwarding layer negotiates gzip/Brotli for compressible responses; Brotli's effective condition is documented in "HTTP Response Compression", merged from dsh-gzip) |
 | `httpCompressLevel` | `1` | Compression preset 0..3: `0` default / `1` low (gzip 1 / br 2, fastest) · `2` medium (gzip 5 / br 5, balanced) / `3` high (gzip 9 / br 9, best ratio) — the gzip and Brotli parameters are both passed down; legacy integer values 4..9 are migrated to 3 automatically |
+| `ownsHostCompat` | `false` | Declare `ownsHost` to non-loopback pages (issue #856): **forges an upstream topology fact**, unlocking settings persistence to `<DSH_HOME>/settings.yaml` and the host-native "open settings file" action; remote and local pages become indistinguishable in the UI. Off by default — trade-offs, how to disable it and the `ssh -L` zero-forgery alternative are in the Security Model |
 
 GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes apply hot).
 
@@ -217,6 +218,58 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
   via `httpCompressEnabled: false`). The loopback fence on health/marker routes applies to
   requests hitting the loopback web directly; requests forwarded through this plugin are
   trusted by design (see Credential surface)
+- **ownsHostCompat compatibility injection (issue #856, off by default)**: through the official
+  webServer index injection hook, a self-conditioned script is injected into **non-loopback**
+  pages, declaring `globalThis.__DSH_TRANSPORT__ = { ownsHost: true }`. This **forges an
+  upstream topology fact** — served pages are not supposed to carry that global. It is **not a
+  server-side authorization change**: the `/api` fence, launch token and session-cookie auth are
+  unchanged; only the page-side fact is.
+  - **Unlocked behaviours**: (1) settings persistence moves from memory scope back to host scope
+    and is written to `<DSH_HOME>/settings.yaml` (created with `flag: "wx"` when missing);
+    (2) the host-native "open settings file" action (the settings page can ask the host to open
+    that file).
+  - **Remote and local pages become indistinguishable in the UI**: `isLoopback` is the only
+    local/remote signal, and in compat mode a LAN page has the same value as a `127.0.0.1` page.
+  - **Injection bounds**: the script element lands in every index.html served through this
+    plugin (loopback pages included), but the script is self-conditioned — it returns
+    immediately when the page already carries `__DSH_TRANSPORT__` (compositions that bring
+    their own transport, e.g. desktop-host, are untouched) or when the authority is loopback
+    (localhost / [::1] / 127/8), writing neither transport nor marker. A loopback page
+    receiving the script element and a loopback page being altered are two different things;
+    the latter never happens.
+  - **How to turn it off**: Settings → Plugins → dsh-lan-proxy, disable "Declare ownsHost to
+    non-loopback pages (compat)" (composition-level config: `ownsHostCompat: false`), then
+    reload the page.
+  - **Zero-forgery alternative**: `ssh -L 3080:127.0.0.1:3080 <host>` and browse
+    `http://127.0.0.1:3080/` — the page authority is already loopback, so settings persistence
+    works without impersonating any topology fact.
+  - **Failure visibility**: the verdict has **four states** (local page / compat active /
+    upstream contract drift / switch off). Neither fault state depends on the settings card, and
+    there are three visibility surfaces — but they do not cover the same ground:
+    (1) **devtools console** — on page load (at the very top of `apply`) one
+    `[dsh-lan-proxy]` warning is logged, once per page assembly (not on every render), so it
+    never floods, and it does not depend on the settings surface being available; this is the
+    only fault-state outlet that reflects the **page-side fact** (whether the injection actually
+    took effect); (2) the **startup banner's**
+    `ownsHostCompat: ON/OFF` line; (3) the `ownsHostCompat` field of
+    `GET /api/dsh-lan-proxy/health`. (2) and (3) only report the host-side switch — they cannot
+    answer whether upstream has drifted. The settings card also shows a persistent four-state
+    verdict line, but only while the card is mounted (see the next item).
+  - **Known limitation (both fault states are unreachable on the page)**: the card is registered
+    on the `settings.plugin.item` slot, and that plugin list only has entries while the settings
+    scope is available — when upstream downgrades a non-loopback page's settings surface to
+    memory scope the plugin list is empty and the card is not mounted
+    (dsh-client-ui-settings-plugins only calls renderSlot when namespaces is non-empty). The crux
+    is that **the same `isLoopback` signal decides both whether the card mounts and what the
+    four-state verdict is**, so `contract-drift` (upstream removed/renamed/reordered the
+    `ownsHost` predicate and the injection is dead) and `compat-off` (switch off) — precisely
+    the two states that most need to be seen — have no carrier on the page. Measured on a
+    non-loopback authority with the switch off, the plugin list is empty and the card is not
+    mounted, so the verdict line at the bottom of the card never appears either. Those two states
+    are therefore visible only through (1) the devtools warning (page-side drift) plus (2)/(3)
+    the banner and health field (host-side switch). Changing the switch happens host-side only:
+    `dsh-lan-proxy.ownsHostCompat` in `settings.yaml`, the `cordis.patch.yml` base layer in a
+    profile, or a loopback browser on the settings page.
 
 ## Verification
 

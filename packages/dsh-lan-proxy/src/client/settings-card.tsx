@@ -12,8 +12,15 @@
 import * as React from "react";
 import { t } from "../../../../shared/client/i18n.js";
 import { DEFAULTS as CLIENT_DEFAULTS } from "./shared/interface.ts";
+import {
+  evaluateHostTrust,
+  readHostTrustSignals,
+  HOST_TRUST_STATUS_KEY,
+  type HostTrustSignals,
+} from "./host-trust-status.ts";
 
 const CONFIG_ROUTE = "/api/dsh-lan-proxy/config";
+const HEALTH_ROUTE = "/api/dsh-lan-proxy/health";
 
 /** 增量 diff 的键值比较：路径白名单数组按元素逐一比较，其余严格相等。 */
 function sameSetting(key: string, a: any, b: any): boolean {
@@ -46,6 +53,8 @@ function compressStatusLine(c: any): string | null {
 export interface SettingsCardProps {
   /** 调用方注入的宿主端默认值快照。 */
   defaults?: Record<string, any>;
+  /** host trust 信号读取器（issue #856）；缺省时只读页面侧信号（无 ctx.remote）。 */
+  hostTrustSignals?: () => HostTrustSignals;
 }
 
 /**
@@ -74,6 +83,10 @@ export function SettingsCard(props: SettingsCardProps) {
   const compressDraft = useState(null as Record<string, any> | null);
   const compress = compressDraft[0];
   const setCompress = compressDraft[1];
+  // 宿主侧 host trust 事实（issue #856）：来自 health 路由；页面侧事实由纯函数判定。
+  const hostFactsDraft = useState(null as Record<string, any> | null);
+  const hostFacts = hostFactsDraft[0];
+  const setHostFacts = hostFactsDraft[1];
   // 加载基线（issue #33 子项 2）：保存时只提交与基线不同的键（增量 diff），
   // 未改动的键不提交——组合层 base 设值不会被客户端默认值静默覆盖回写。
   let baseline: Record<string, any> | null = null;
@@ -105,6 +118,16 @@ export function SettingsCard(props: SettingsCardProps) {
         if (!alive.value) return;
         setSaved(t("loadFail", { msg: (e && e.message) || e }), true);
       });
+    // 宿主侧事实（issue #856）：health 带 ownsHostCompat。
+    // 页面侧事实（marker / isLoopback）宿主看不到，两侧在卡片里合在一处显示；
+    // 该诊断行失败不影响卡片主体（例如直连非本插件服务的页面会 403）。
+    fetch(HEALTH_ROUTE, { headers: { accept: "application/json" } })
+      .then((r: any) => r.json())
+      .then((v: any) => {
+        if (!alive.value) return;
+        setHostFacts(v && typeof v === "object" ? v : null);
+      })
+      .catch(() => {});
   }
 
   useEffect(() => {
@@ -197,6 +220,10 @@ export function SettingsCard(props: SettingsCardProps) {
   }
 
   const compressLine = compressStatusLine(compress);
+  // host trust 三段判定（issue #856）：判定是纯函数，展示走 i18n 字典。
+  const hostTrustStatus = evaluateHostTrust(
+    props.hostTrustSignals ? props.hostTrustSignals() : readHostTrustSignals(undefined),
+  );
 
   return (
     <li className={"lp-set-card" + (open ? " lp-set-cardOpen" : "")}>
@@ -378,8 +405,35 @@ export function SettingsCard(props: SettingsCardProps) {
           {settings.injectToken ? (
             <div className="lp-set-warn">{t("injectTokenOnHint")}</div>
           ) : null}
+          {/* ownsHostCompat（issue #856）：默认关——向非回环页面声明 ownsHost 等同
+              伪造上游拓扑事实位；开启态常驻警示，底部另有三段判定结果。 */}
+          <div className="lp-set-row">
+            <label htmlFor="lp-set-owns-host-compat">{t("ownsHostCompat")}</label>
+            <input
+              id="lp-set-owns-host-compat"
+              type="checkbox"
+              checked={settings.ownsHostCompat === true}
+              onChange={(e: any) => patch({ ownsHostCompat: e.target.checked })}
+            />
+          </div>
+          {settings.ownsHostCompat === true ? (
+            <div className="lp-set-warn">{t("ownsHostCompatHint")}</div>
+          ) : null}
           <div className="lp-set-hint">{t("bodyHint")}</div>
           {compressLine ? <div className="lp-set-status">{compressLine}</div> : null}
+          <div
+            className={hostTrustStatus === "contract-drift" ? "lp-set-warn" : "lp-set-status"}
+            data-host-trust={hostTrustStatus}
+          >
+            {t(HOST_TRUST_STATUS_KEY[hostTrustStatus])}
+          </div>
+          {hostFacts ? (
+            <div className="lp-set-status">
+              {t("hostTrustHostFacts", {
+                compat: hostFacts.ownsHostCompat === true ? t("hostTrustOn") : t("hostTrustOff"),
+              })}
+            </div>
+          ) : null}
           <div className="lp-set-foot">
             {saved ? (
               <span className={saved.err ? "lp-set-error" : "lp-set-saved"}>{saved.msg}</span>

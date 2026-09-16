@@ -73,6 +73,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
 | `httpCompressEnabled` | `true` | HTTP 响应压缩总开关（转发层对可压缩响应协商 gzip/Brotli；Brotli 生效条件见「HTTP 响应压缩」节，合并自 dsh-gzip） |
 | `httpCompressLevel` | `1` | 压缩档位预设 0..3：`0` 默认 / `1` 低（gzip 1 / br 2，最快）· `2` 中（gzip 5 / br 5，均衡）/ `3` 高（gzip 9 / br 9，最高压缩比），gzip 与 Brotli 两侧参数同时按下发；旧配置整数 4..9 自动迁移为 3 |
 | `injectToken` | `true` | 自动注入启动令牌（issue #380）：LAN 设备首次访问 `GET /` 由转发层自动补当前 token 铸造会话 cookie，固定设备免手工拿 token；带失效 cookie 的请求在上游 401 后自动重放自愈。安全语义见「安全模型」 |
+| `ownsHostCompat` | `false` | 向非回环页面声明 `ownsHost`（issue #856）：**伪造上游拓扑事实位**，解锁设置持久化落盘（`<DSH_HOME>/settings.yaml`）与宿主「打开配置文件」动作；远程页与本机页在界面上不再可区分。默认关，取舍、关闭方法与 `ssh -L` 零伪造替代路径见「安全模型」 |
 
 GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即热更新）。
 
@@ -213,6 +214,45 @@ GUI 设置入口：设置 → 插件 → 「局域网访问」卡片（保存即
   - **不注入范围**：仅 `GET /` 且无 token 参数的请求；WebSocket、非根路径、
     已带 token 的请求、provider 不可用时全部原样透传（行为与未开启一致）。
     自建口令页（信任收窄为「知道口令」）为后续演进方向。
+- **ownsHostCompat 兼容注入（issue #856，默认关）**：经官方 webServer index 注入钩子，
+  向**非回环**页面注入一段自条件脚本，令其声明
+  `globalThis.__DSH_TRANSPORT__ = { ownsHost: true }`。这是**伪造上游拓扑事实位**——
+  页面本不该携带该 global。它**不是服务端授权变化**：`/api` 围栏、launch token 与
+  会话 cookie 认证完全不变，变的只是页面侧事实位。
+  - **被解锁的具体行为**：① 设置持久化从 memory scope 恢复为 host scope，写入
+    `<DSH_HOME>/settings.yaml`（文件不存在时以 `flag: "wx"` 新建）；② 宿主原生
+    「打开配置文件」动作（设置页可唤起宿主打开该文件）。
+  - **远程页与本机页在界面上不再可区分**：`isLoopback` 是「本机 / 远程」的唯一信号，
+    兼容模式下 LAN 页面与 `127.0.0.1` 页面同值。
+  - **注入边界**：脚本元素对所有经本插件服务的 index.html 都会落（含回环 authority
+    页面），但脚本是自条件的——页面已持有 `__DSH_TRANSPORT__`（desktop-host 等自带
+    transport 的组合不受影响）或 authority 为回环（localhost / [::1] / 127/8）时**立即
+    早退**，既不写 transport 也不落 marker。「回环页拿到了 script 元素」与「回环页被改动」
+    是两件事，后者不会发生。
+  - **关闭方法**：设置 → 插件 → dsh-lan-proxy，关闭「向非回环页面声明 ownsHost（兼容）」
+    （组合层配置为 `ownsHostCompat: false`），关闭后重新加载页面即恢复原状。
+  - **零伪造替代路径**：`ssh -L 3080:127.0.0.1:3080 <主机>` 后访问
+    `http://127.0.0.1:3080/`——页面 authority 本身就是回环，设置持久化面天然可用，
+    不需要冒充任何拓扑事实。
+  - **失效可见性**：判定是**四态**（本机页 / 兼容模式生效 / 上游契约漂移 / 开关关闭）。
+    两个故障态都不依赖设置卡片，可见面有三处，但三者能看到的范围不同：
+    ① **devtools 控制台**——页面加载时（`apply` 最前面）打一条 `[dsh-lan-proxy]` 告警，
+    每次装配一次、不在渲染期重复，故不刷屏；它也不依赖设置面是否可用，是唯一能反映
+    **页面侧事实**（注入是否真的生效）的故障态出口；② **启动横幅**的
+    `ownsHostCompat: ON/OFF` 行；③ `GET /api/dsh-lan-proxy/health` 的
+    `ownsHostCompat` 字段。②③ 只反映宿主侧开关，回答不了「上游是否已漂移」。设置卡片
+    底部另常驻一行四态判定，但只在卡片挂载时可见（见下条）。
+  - **已知限制（两个故障态在页面上不可达）**：卡片挂在 `settings.plugin.item` 插槽上，
+    而该插件列表只在 settings scope 可用时才有条目——上游按 `isLoopback` 把非回环页面的
+    设置面降级为 memory scope 时，插件列表为空、卡片不挂载（dsh-client-ui-settings-plugins
+    仅在 namespaces 非空时 renderSlot）。关键在于：**同一枚 `isLoopback` 信号既决定卡片
+    是否挂载、又决定四态判定的结果**，于是 `contract-drift`（上游删改/重排 `ownsHost`
+    谓词、注入失效）与 `compat-off`（开关关闭）这两个最需要被看到的态，恰恰在页面上没有
+    承载面；实测（非回环 authority + 开关关）设置插件列表为空、卡片不挂载，卡片底部那行
+    判定自然也不出现。故这两个态的可见面收敛为上面 ① 的 devtools 告警（页面侧漂移）+
+    ②③ 的横幅与 health 字段（宿主侧开关）。需要改开关时只能在宿主侧：`settings.yaml` 的
+    `dsh-lan-proxy.ownsHostCompat`、profile 的 `cordis.patch.yml` base 层，或用回环
+    浏览器打开设置页。
 
 ## 验证
 

@@ -67,6 +67,15 @@ export interface LanProxyConfig {
    * 整个 LAN）；关闭不吊销已发 cookie。详见 README「安全模型」。
    */
   injectToken?: boolean;
+  /**
+   * 向非回环页面声明 `ownsHost`（issue #856，默认 false）：**等同伪造上游拓扑
+   * 事实位**。被服务页面本不该携带 `__DSH_TRANSPORT__`；开启后非回环页面会拿到
+   * `{ ownsHost: true }`，上游据此把页面判为「Host 独占」而不再把设置面降级为
+   * memory scope。被解锁的具体行为（设置持久化落盘、宿主原生「打开配置文件」）、
+   * 远程页与本机页不再可区分的后果、关闭方法与 `ssh -L` 零伪造替代路径见 README
+   * 「安全模型」。这是页面侧事实位声明，**不是服务端授权变化**。
+   */
+  ownsHostCompat?: boolean;
 }
 
 /** HTTP 压缩运行快照（issue #33 子项 3：GUI 可见的压缩生效状态）。 */
@@ -157,6 +166,11 @@ export const Config: z<LanProxyConfig> = z.object({
    * 见 README「安全模型」——开启等效把 LAN 视为可信网络。
    */
   injectToken: z.boolean().default(true),
+  /**
+   * 向非回环页面声明 `ownsHost`（默认关，issue #856）：伪造上游拓扑事实位的
+   * 兼容开关，解锁面与替代路径见 README「安全模型」。
+   */
+  ownsHostCompat: z.boolean().default(false),
 });
 
 /**
@@ -189,6 +203,7 @@ export const BOOLEAN_KEYS: readonly string[] = [
   "wsCompressEnabled",
   "httpCompressEnabled",
   "injectToken",
+  "ownsHostCompat",
 ];
 
 /**
@@ -233,6 +248,7 @@ const FILE_CONFIG_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   httpCompressEnabled: (v) => typeof v === "boolean",
   httpCompressLevel: (v) => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 3,
   injectToken: (v) => typeof v === "boolean",
+  ownsHostCompat: (v) => typeof v === "boolean",
 };
 
 /**
@@ -314,6 +330,7 @@ const SETTING_FIELD_HINTS: Record<string, string> = {
   httpCompressEnabled: "需为布尔值",
   httpCompressLevel: "需为 0-3 的档位整数（4-9 自动迁移为高档 3）",
   injectToken: "需为布尔值",
+  ownsHostCompat: "需为布尔值（向非回环页面声明 ownsHost：伪造上游拓扑事实位）",
 };
 
 /** validateSettings 的校验结果：null = 全部合法。 */
@@ -372,4 +389,6 @@ export interface ResolvedConfig {
   httpCompressLevel: number;
   /** 自动注入启动令牌（issue #380；默认 true）。 */
   injectToken: boolean;
+  /** 向非回环页面声明 `ownsHost`（issue #856；默认 false）。 */
+  ownsHostCompat: boolean;
 }

@@ -38,8 +38,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const dumpLogs = (logs: LogEntry[]): string =>
   logs.length === 0 ? "（空）" : logs.map((l) => `[${l.level}] ${l.text}`).join("\n");
 
-/** 起一套 apply + 真实转发器 + fake 上游；connectionValue 即 inject 回调收到的服务。 */
-async function startScenario(connectionValue: unknown): Promise<Scenario> {
+/**
+ * 起一套 apply + 真实转发器 + fake 上游；connectionValue 即 inject 回调收到的服务。
+ * config 覆盖 apply 的组合层配置（横幅用例靠它切 ownsHostCompat；缺省即插件默认态）。
+ */
+async function startScenario(
+  connectionValue: unknown,
+  config: Record<string, unknown> = {},
+): Promise<Scenario> {
   const home = mkdtempSync(join(tmpdir(), "dsh-lan-proxy-token-"));
   const prevHome = process.env.DSH_HOME;
   process.env.DSH_HOME = home;
@@ -102,6 +108,7 @@ async function startScenario(connectionValue: unknown): Promise<Scenario> {
       port: 0,
       httpsEnabled: false,
       enabled: true,
+      ...config,
     });
     // 端口回读用轮询而非固定 sleep（防 flake 纪律）。
     const deadline = Date.now() + 8000;
@@ -205,6 +212,37 @@ const SCENARIOS: ScenarioSpec[] = [
     headers: { cookie: "dsh-auth-web=still-valid" },
   },
 ];
+
+// ownsHostCompat 状态行（P2-1）：这条横幅此前无任何断言，CI 变异日志里留下存活体。
+// 默认态与开启态各断言一次——两者是横幅里唯一把这个开关讲给操作者的地方（故障态下
+// 设置卡片不挂载，见 README 安全模型的「已知限制」）。
+describe("integration: 启动横幅的 ownsHostCompat 状态行", () => {
+  const bannerScenario = { rpc: {} };
+  let offScenario: Scenario | undefined;
+  let onScenario: Scenario | undefined;
+
+  beforeAll(async () => {
+    offScenario = await startScenario(bannerScenario);
+    onScenario = await startScenario(bannerScenario, { ownsHostCompat: true });
+  }, 60_000);
+
+  afterAll(async () => {
+    if (offScenario !== undefined) await offScenario.stop();
+    if (onScenario !== undefined) await onScenario.stop();
+  });
+
+  it("默认态横幅含 ownsHostCompat: OFF", () => {
+    const current = offScenario;
+    if (current === undefined) throw new Error("scenario 未建立");
+    expect(current.logs.some((l) => l.text.includes("ownsHostCompat: OFF"))).toBe(true);
+  });
+
+  it("ownsHostCompat: true 时横幅含 ownsHostCompat: ON", () => {
+    const current = onScenario;
+    if (current === undefined) throw new Error("scenario 未建立");
+    expect(current.logs.some((l) => l.text.includes("ownsHostCompat: ON"))).toBe(true);
+  });
+});
 
 for (const sc of SCENARIOS) {
   describe(`integration: apply launch token 提供者 — ${sc.label}`, () => {

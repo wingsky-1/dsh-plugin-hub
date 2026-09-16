@@ -27,7 +27,7 @@
  *
  * 矩阵语义（对齐 issue #471 v2 方案，P1-2/P2 裁决）：
  *   - lan-proxy：Config / FILE_CONFIG_VALIDATORS / SETTING_FIELD_HINTS 三表
- *     全等（16 键）；客户端 DEFAULTS ⊆ schema，差集 == 豁免白名单
+ *     全等（18 键）；客户端 DEFAULTS ⊆ schema，差集 == 豁免白名单
  *     {host,targetHost,targetPort,wsDeflatePolicy}（每条豁免带原因注释，≤8）；
  *   - notifier：DEFAULT_CONFIG / SETTING_VALIDATORS / SETTING_HINTS 全等
  *     （19 键）；CONFIG_KEYS == DEFAULT_CONFIG 全部布尔键（10）；normalizeConfig

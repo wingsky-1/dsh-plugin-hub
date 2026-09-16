@@ -26,6 +26,8 @@ import type { OwnerScopeLike, SettingsServiceLike } from "./config/interface.ts"
 import { migrateFileConfig } from "./migrate/interface.ts";
 import { ROUTES, buildConfigRoutes } from "./config/interface.ts";
 import type { ConfigRouteDeps } from "./config/interface.ts";
+// host trust 域（#856）：非回环页面的 ownsHost 自条件注入
+import { registerHostTrustInjection } from "./host-trust/interface.ts";
 
 // 重新导出默认压缩白名单（定义见配置域），保持 `from "./server/apply.ts"` 的既有消费面。
 export { DEFAULT_WSS_COMPRESS_PATHS };
@@ -112,6 +114,8 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
       httpCompressEnabled: value.httpCompressEnabled ?? true,
       httpCompressLevel: value.httpCompressLevel ?? 1,
       injectToken: value.injectToken ?? true,
+      // host trust 兼容开关（issue #856）：默认关；tap 内逐请求读取本函数结果。
+      ownsHostCompat: value.ownsHostCompat ?? false,
     };
   };
 
@@ -288,6 +292,15 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
             "injectToken: ON — 局域网设备免 token 直接进入（等效信任整个 LAN，关闭见 设置 → 插件 → dsh-lan-proxy）",
           );
         }
+        // ownsHostCompat 状态（issue #856）：默认关意味着非回环页面的设置面按上游策略
+        // 整体不可用，而该状态下的页面自身无法显示提示（官方设置插件列表在 scope
+        // unavailable 时不渲染任何条目，本插件卡片也不挂载）——横幅是唯一能把这个降级
+        // 讲给操作者的地方。
+        lines.push(
+          value.ownsHostCompat
+            ? "ownsHostCompat: ON — 已向非回环页面声明 ownsHost（伪造上游拓扑事实位；关闭见 设置 → 插件 → dsh-lan-proxy）"
+            : "ownsHostCompat: OFF — 非回环页面的设置面不可用（上游策略；需要时在 设置 → 插件 → dsh-lan-proxy 开启，或直接用 ssh -L 走回环）",
+        );
         const banner = lines.map((line) => `  ${line}`).join("\n");
         if (value.printBanner !== false && banner !== lastBanner) {
           lastBanner = banner;
@@ -358,6 +371,11 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
       }),
     "lan-proxy: randomUUID polyfill",
   );
+
+  // host trust 兼容注入（issue #856）：向非回环页面声明 ownsHost，恢复上游本会
+  // 降级掉的 Host 设置持久化面。注册位置必须在 apply 顶层（写进 sync() 会让
+  // indexTaps 随每次配置热更新无界增长）；开关在 tap 内按请求读取（见 host-trust 域）。
+  registerHostTrustInjection(ctx, () => resolve().ownsHostCompat === true);
 
   // GUI 设置卡片数据面 + 存量迁移（issue #110）：settings 命名空间 attach 后——
   //   1. onScope 内先做存量 config.json rename-first 迁移（前置于一切 enabled
@@ -445,6 +463,9 @@ export function apply(ctx: Context, config: LanProxyConfig = {}): void {
         httpsEnabled: v.httpsEnabled,
         httpsPort: v.httpsPort,
         listening: disposeProxy !== undefined,
+        // —— host trust 兼容注入（issue #856）：宿主侧可观测事实 ——
+        // 页面侧事实（marker / isLoopback）宿主看不到，由设置卡片展示。
+        ownsHostCompat: v.ownsHostCompat,
         // 运行时生效的 WS 桥接/压缩配置（诊断：配置 vs 实际生效一致性；#552 解耦）
         wsBridgeEnabled: v.wsBridgeEnabled,
         wsCompressEnabled: v.wsCompressEnabled,
