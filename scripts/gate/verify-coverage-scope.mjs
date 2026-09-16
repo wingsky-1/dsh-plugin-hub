@@ -247,8 +247,14 @@ function sampleFiles(files) {
  * 把 `.ts` 源码写成 `not-source` 同样能过结构校验，却让真实源码退出分母而两条闸都不响。
  * 「是不是源码」直接问 include 的 glob，不镜像一份后缀表：后缀表是全 include 面的并集，
  * 按 pattern 全局套用就会把只在部分 include 上成立的后缀（如 shared 那条 include 引入的 `.js`）
- * 误判到别的 pattern 上，判词依据也随之失真。声明文件另算：面外的 `.d.ts` 不被任何 include 命中，
- * 但把它写成 not-source 是把声明错当资源，故「声明文件须走 type-only」不随面放宽。
+ * 误判到别的 pattern 上，判词依据也随之失真。代价是放弃「资源性」判定——面外的代码文件标成
+ * not-source 不再判红；这条取舍可以接受：该判定本无机械依据（后缀证明不了资源性），且面外文件
+ * 本就不在分母里，标 not-source 与标 pending-project 对覆盖率没有差别，台账要登记的是「把代码
+ * 排除出分母」这个动作，面外文件不是被条目排除的，要求登记反而是错的口径。剩下的只是 kind 值域
+ * 与文件性质的语义诚实性问题，没有机械后果；而「将来 include 面扩大、旧条目开始命中面内文件」
+ * 这条静默通道由本判据自己关掉：它每次都对当时的 include 面求值，面一扩大当场判红。
+ * 声明文件另算：面外的 `.d.ts` 不被任何 include 命中，但把它写成 not-source 是把声明错当资源，
+ * 故「声明文件须走 type-only」不随面放宽。
  * 命中 0 个由「条目腐烂」单独判红，kind 越界由结构判据报，这里都不重复。
  */
 export function kindShapeProblems(pattern, kind, hits, includeFace) {
