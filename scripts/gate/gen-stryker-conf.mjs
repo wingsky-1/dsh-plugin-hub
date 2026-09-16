@@ -18,7 +18,9 @@
  *
  * 用法：
  *   node scripts/gate/gen-stryker-conf.mjs                # 生成/更新全部 stryker.conf.d/*.json
- *   node scripts/gate/gen-stryker-conf.mjs --check         # 门禁：磁盘一致 + 登记完整性 + --min 同步
+ *   node scripts/gate/gen-stryker-conf.mjs --check [--base <ref>]
+ *                                                          # 门禁：磁盘一致 + 登记完整性 + --min 同步
+ *                                                          #       + 包级变异面并集棘轮（基准默认 origin/main）
  *   node scripts/gate/gen-stryker-conf.mjs --sync-test-min # 把各包 `--min` 同步为实际文件数
  *
  * `--check` 的判据（#713 T3 + S2b 充分性下限）：
@@ -36,16 +38,30 @@
  *   ⑥ 有效面非空（#848 维护者评审）：每份 conf 的正向条目命中按 `!` 条目剔除后必须仍有剩余——
  *      ⑤ 只判**单条**条目，一条宽 glob（把某包「逐目录级的 interface.ts 排除」换成包根级整包通配）
  *      能在条数不变、⑤ 全绿的前提下清空整包变异面，而 Stryker 对 0 mutant 不报错（判分与门禁都静默）。
+ *   ⑦ 包级变异面并集棘轮（#843 计划项 3-1）：与基准（`--base`，默认 `origin/main`）相比，
+ *      同一个包的变异文件**并集**不得收缩。⑤/⑥ 都不看基准，于是「把 `src/config.ts` 从某段
+ *      `mutate` 挪进**同段** `excludes` 再重生成 conf」逐条合法、有效面非空，stryker:check 与
+ *      verify-dir-imports 双双 exit 0——文件静默退出变异面。判据与实现落在
+ *      `mutation-topology.mjs` 的 `mutationFaceRatchetProblems`：段间挪动合法（并集不变）、
+ *      文件真被删除算正当收缩、唯一放宽通道是 `scripts/data/gate-exemptions.json` 里
+ *      `gate=mutation-face` 的条目；判据自带载体自证（进入比对面的包数 / 候选文件数任一为 0
+ *      即判红而不是恒绿）。
  *
  * 环境变量 GEN_STRYKER_ROOT：仓库根覆盖（测试用临时 fixture 根，避免在仓库内造包目录）。
+ * 环境变量 GEN_STRYKER_BASE：`--check` 的基准 ref 覆盖（等价于 `--base <ref>`）。
  */
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { loadLedger } from "../lib/exemption-gate.ts";
+import { globFiles, sourceUniverse } from "../lib/glob-files.mjs";
 import {
+  MUTATION_FACE_GATE,
   collectCoverageExcludePatterns,
   coverageExcludeProblems,
+  mutationFaceRatchetProblems,
   packageRegistrationProblems,
 } from "./mutation-topology.mjs";
 import {
@@ -57,11 +73,23 @@ import {
 
 const repoRoot =
   process.env.GEN_STRYKER_ROOT ?? join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const topologyPath = join(repoRoot, "scripts", "data", "mutation-topology.json");
+const TOPOLOGY_REL = "scripts/data/mutation-topology.json";
+const EXEMPTIONS_REL = "scripts/data/gate-exemptions.json";
+const topologyPath = join(repoRoot, TOPOLOGY_REL);
 const confDir = join(repoRoot, "stryker.conf.d");
 const argv = process.argv.slice(2);
 const isCheckMode = argv.includes("--check");
 const isSyncMin = argv.includes("--sync-test-min");
+/** 判据⑦ 的基准 ref（段面棘轮只与基准比，本地 pr 档与 CI 的默认口径同为 origin/main）。 */
+const baseRef = argValue("--base") ?? process.env.GEN_STRYKER_BASE ?? "origin/main";
+
+/** 取 `--flag <value>` / `--flag=<value>` 的参数值；未给出返回 undefined。 */
+function argValue(flag) {
+  const withEq = argv.find((a) => a.startsWith(`${flag}=`));
+  if (withEq !== undefined) return withEq.slice(flag.length + 1);
+  const idx = argv.indexOf(flag);
+  return idx !== -1 && argv[idx + 1] !== undefined ? argv[idx + 1] : undefined;
+}
 
 /** 派生 vitest 测试面配置的目录（与 stryker.conf.d 并列，同为生成物、入库受 --check 校验）。 */
 const VITEST_CONF_DIR = "vitest.stryker.d";
@@ -391,6 +419,87 @@ function mutationEntryRotProblems(derivedConfigs, confOwners) {
 }
 
 /**
+ * 基准 ref 是否可解析。必须先查它：`git show <ref>:<path>` 对「ref 不存在」与「路径不存在」
+ * 都是非零退出，只看退出码会把写错的 ref 读成「基准上还没这个文件」而静默放行。
+ * 与 scripts/gate/threshold-monotonic.mjs 的 refExists 同口径。
+ */
+function refExists(ref) {
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], {
+      cwd: repoRoot,
+      stdio: "ignore",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 读基准 ref 上的拓扑；失败返回 `{ error }`（调用方 fail-closed 到环境故障通道）。 */
+function readBaseTopology(ref) {
+  let text;
+  try {
+    text = execFileSync("git", ["show", `${ref}:${TOPOLOGY_REL}`], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch (err) {
+    return { error: `读取 ${ref}:${TOPOLOGY_REL} 失败：${String(err.message).split("\n")[0]}` };
+  }
+  try {
+    return { topology: JSON.parse(text) };
+  } catch (err) {
+    return { error: `${ref}:${TOPOLOGY_REL} 不是合法 JSON：${String(err.message).split("\n")[0]}` };
+  }
+}
+
+/** 判据⑦ 的豁免台账（唯一放宽通道；文件不存在 = 零豁免，与其余门禁同口径）。 */
+function loadFaceExemptions() {
+  const path = join(repoRoot, EXEMPTIONS_REL);
+  return existsSync(path) ? loadLedger(path, MUTATION_FACE_GATE) : new Map();
+}
+
+/**
+ * 判据⑦ 的执行：读基准拓扑 → 两侧都在**当前工作区源码世界**里展开 → 比包级并集。
+ *
+ * 展开口径与判据⑤ 同源（`globFiles` + `sourceUniverse`）：基准侧的条目也在 head 世界展开，
+ * 于是「文件已在本分支删除」不会落进基准面——删除即正当收缩由这一条实现，而不是另加一个
+ * 「文件是否存在」的判断点。
+ *
+ * 环境故障（基准 ref / 基准文件读不到、台账坏掉）走 `{ envError }`，由调用方落 exit 2：
+ * 把「判据没跑起来」伪装成「有违规」会让这条红线贬值，而伪装成「通过」更糟。
+ */
+function faceRatchetCheck(topology) {
+  if (!refExists(baseRef)) {
+    return {
+      envError:
+        `基准 ref ${baseRef} 不可解析（fetch 了吗？可用 --base <ref> / GEN_STRYKER_BASE 覆盖）` +
+        "—— 段面棘轮无法比对",
+    };
+  }
+  const base = readBaseTopology(baseRef);
+  if (base.error !== undefined) return { envError: base.error };
+  let exemptions;
+  try {
+    exemptions = loadFaceExemptions();
+  } catch (err) {
+    return { envError: `豁免台账不可读（${EXEMPTIONS_REL}）：${err.message}` };
+  }
+  const universe = sourceUniverse(repoRoot);
+  const expand = (pattern) => globFiles(repoRoot, pattern).filter((f) => universe.has(f));
+  return {
+    ...mutationFaceRatchetProblems({
+      baseTopology: base.topology,
+      headTopology: topology,
+      expand,
+      exemptions,
+    }),
+    baseRef,
+  };
+}
+
+/**
  * `--check` 的全部判据：登记完整性 + 条目腐烂/锚定/有效面 + 磁盘 ↔ 派生一致（conf 与 vitest
  * 测试面两份生成物）。
  * 返回值带 `scanned`：判据 ⑤ 实际判过的 mutate 条目数，由调用方落进通过行——否则「一条都没扫」
@@ -436,8 +545,9 @@ function checkModeProblems(ctx) {
   return { problems, scanned: rot.scanned };
 }
 
-/** `--check` 通过时的汇总行。`mutateEntriesScanned` 是判据 ⑤ 实际判过的条目数（面完整性证据）。 */
-function printCheckPassed(ctx, mutateEntriesScanned) {
+/** `--check` 通过时的汇总行。`mutateEntriesScanned` 是判据 ⑤ 实际判过的条目数，
+ *  `ratchet` 是判据⑦ 实际比过的包数 / 候选文件数——两条判据都自证「真的扫过」，而不是从输入长度自证。 */
+function printCheckPassed(ctx, mutateEntriesScanned, ratchet) {
   const { derivedConfigs, derivedVitestConfigs, projections, packages, noMutationPackages } = ctx;
   const totalFiles = [...projections.values()].reduce((n, p) => n + p.testFiles.length, 0);
   const skipNames = Object.keys(noMutationPackages).filter((k) => !k.startsWith("$"));
@@ -448,7 +558,9 @@ function printCheckPassed(ctx, mutateEntriesScanned) {
       `${derivedVitestConfigs.size} 份 vitest 测试面配置（${VITEST_CONF_DIR}/）与拓扑严格一致；` +
       `${Object.keys(packages).length} 个包共 ${totalFiles} 个测试文件登记进变异面；` +
       `--min 与磁盘上 ${ctx.discovered.length} 个有测试的包全部同步；` +
-      `${mutateEntriesScanned} 条 mutate 条目全部命中物理文件${skipNote}`,
+      `${mutateEntriesScanned} 条 mutate 条目全部命中物理文件；` +
+      `变异面并集棘轮对照 ${ratchet.baseRef} 比过 ${ratchet.packagesCompared} 个包 / ` +
+      `${ratchet.filesCompared} 个候选文件，无收缩${skipNote}`,
   );
 }
 
@@ -526,14 +638,22 @@ function main() {
       discovered,
     };
     const check = checkModeProblems(ctx);
-    for (const p of check.problems) console.error(`[gen-stryker-conf] ${p}`);
-    if (check.problems.length > 0) {
+    // 判据⑦ 与上面各条独立：环境故障（基准 ref 读不到 / 台账坏）走 exit 2，不伪装成「有违规」。
+    const ratchet = faceRatchetCheck(topology);
+    if (ratchet.envError !== undefined) {
+      console.error(`[gen-stryker-conf] ${ratchet.envError} —— 环境故障按 fail-closed 处理`);
+      return 2;
+    }
+    const problems = [...check.problems, ...ratchet.problems];
+    for (const p of problems) console.error(`[gen-stryker-conf] ${p}`);
+    if (problems.length > 0) {
       console.error(
-        "[gen-stryker-conf] --check 失败：配置文件 / 测试面登记 / --min 与单一事实源脱节",
+        "[gen-stryker-conf] --check 失败：配置文件 / 测试面登记 / --min 与单一事实源脱节，" +
+          "或变异面并集相对基准收缩",
       );
       return 1;
     }
-    printCheckPassed(ctx, check.scanned);
+    printCheckPassed(ctx, check.scanned, ratchet);
     return 0;
   }
 

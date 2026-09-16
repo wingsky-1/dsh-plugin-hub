@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 
+import { MUTATION_FACE_GATE } from "../gate/mutation-topology.mjs";
 import { projectTestSurface } from "../gate/test-surface.mjs";
 
 const ROOT = join(import.meta.dirname, "..", "..");
@@ -77,6 +78,23 @@ const BASE_FILES = {
   [`packages/${PKG}/package.json`]: `${JSON.stringify({ name: PKG, scripts: { test: "node ../../scripts/test/run-vitest.mjs --min 6" } }, null, 2)}\n`,
 };
 
+/**
+ * 把 fixture 当前内容提交成基准 commit。
+ *
+ * #843 计划项 3-1 起 `--check` 的判据⑦ 要读**基准 ref 上的拓扑**，故 fixture 必须是个真 git
+ * 仓库：基准 = 建 fixture 时提交的那份拓扑，工作区 = 之后被改成的形态。与
+ * scripts/test/threshold-monotonic.test.ts 的 gitFixture 同款做法（fixture 自带 user.name /
+ * user.email，不依赖宿主 git 配置）。
+ */
+function commitBase(root) {
+  const git = (...args) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  git("init", "-q");
+  git("config", "user.email", "test@example.invalid");
+  git("config", "user.name", "test");
+  git("add", "-A");
+  git("commit", "-qm", "base");
+}
+
 /** 造 fixture 仓库根（含拓扑与 stryker.conf.d），返回根路径。 */
 function makeFixtureRoot(extraFiles = {}, topologyOverride = TOPOLOGY) {
   const root = mkdtempSync(join(tmpdir(), "s2b-fixture-"));
@@ -91,11 +109,22 @@ function makeFixtureRoot(extraFiles = {}, topologyOverride = TOPOLOGY) {
     writeFileSync(abs, content, "utf8");
   }
   mkdirSync(join(root, "stryker.conf.d"), { recursive: true });
+  commitBase(root);
   return root;
 }
 
+/** 覆写 fixture 工作区的拓扑（基准 commit 不变 —— 这正是判据⑦ 要看的差异）。 */
+function writeTopology(root, topologyOverride) {
+  writeFileSync(
+    join(root, "scripts", "data", "mutation-topology.json"),
+    `${JSON.stringify(topologyOverride, null, 2)}\n`,
+    "utf8",
+  );
+}
+
 function runGenerator(root, args = []) {
-  const res = spawnSync(process.execPath, [GENERATOR, ...args], {
+  // --base HEAD：fixture 的基准就是它自己的 base commit（默认 origin/main 在 fixture 里不存在）。
+  const res = spawnSync(process.execPath, [GENERATOR, ...args, "--base", "HEAD"], {
     cwd: ROOT,
     encoding: "utf8",
     env: { ...process.env, GEN_STRYKER_ROOT: root },
@@ -465,6 +494,192 @@ test("P2-7：unit 层零命中（glob 被改坏）→ 判红并点名", () => {
     assert.ok(
       p.errors.some((e) => /unit.*零命中/.test(e)),
       `应报 unit 层零命中：${p.errors.join("; ")}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * #843 计划项 3-1 判据⑦（包级变异面并集棘轮）的 fixture 拓扑。
+ *
+ * 为什么必须自己造：默认 TOPOLOGY 只有一段、且 mutate 是整包 glob，「把某一个文件挪进同段
+ * excludes」这种攻击在 glob 形态下写不出来（它的前提是 mutate 逐文件登记——本仓 5 个包里有 4 个
+ * 正是这种形态）。这里显式造「两段 + 逐文件登记」：
+ *   段 1 = src/index.ts；段 2 = src/mid.ts + src/leaf.ts；两段 excludes 都排除 src/client/**
+ * 基准面（并集）= {index.ts, mid.ts, leaf.ts}。
+ */
+function ratchetTopology(seg2Mutate, seg2Excludes = [`!packages/${PKG}/src/client/**`]) {
+  const base = structuredClone(TOPOLOGY);
+  base.packages[PKG].segments = {
+    "1": {
+      mutate: [`packages/${PKG}/src/index.ts`],
+      excludes: [`!packages/${PKG}/src/client/**`],
+    },
+    "2": { mutate: seg2Mutate, excludes: seg2Excludes },
+  };
+  return base;
+}
+
+const RATCHET_FILES = {
+  [`packages/${PKG}/src/mid.ts`]: "export const mid = 1\n",
+  [`packages/${PKG}/src/leaf.ts`]: "export const leaf = 1\n",
+};
+const SEG2_BOTH = [`packages/${PKG}/src/mid.ts`, `packages/${PKG}/src/leaf.ts`];
+
+/** 攻击态：把 mid.ts 从段 2 的 mutate 挪进**同段** excludes（段里还剩 leaf.ts，故判据⑥ 也绿）。 */
+const ATTACKED = () =>
+  ratchetTopology(
+    [`packages/${PKG}/src/leaf.ts`],
+    [`!packages/${PKG}/src/client/**`, `!packages/${PKG}/src/mid.ts`],
+  );
+
+test("判据⑦ 反证：文件从段 mutate 挪进**同段** excludes 并重生成 conf → 判红点名包与文件", () => {
+  // 这正是技术面评审亲手复现的攻击：判据⑤ 看每条条目都合法（! 指向的确实是真实文件）、判据⑥
+  // 看有效面也非空，故「文件静默离开变异面」不被任何既有判据拦下——本用例就是它的回归。
+  const root = makeFixtureRoot(RATCHET_FILES, ratchetTopology(SEG2_BOTH));
+  try {
+    assert.equal(runGenerator(root).status, 0, "对照组生成应成功");
+    const control = runGenerator(root, ["--check"]);
+    assert.equal(control.status, 0, `对照组（未改拓扑）应绿：\n${control.out}`);
+
+    writeTopology(root, ATTACKED());
+    assert.equal(runGenerator(root).status, 0, "重生成仍应成功（攻击要的是「门禁判绿」）");
+    const res = runGenerator(root, ["--check"]);
+    assert.equal(res.status, 1, `把文件挪出变异面必须判红：\n${res.out}`);
+    assert.match(res.out, /变异面并集相对基准收缩/, "判词要点明是并集棘轮");
+    assert.match(res.out, new RegExp(`\\[${PKG}\\]`), "判词要点名包");
+    assert.match(res.out, new RegExp(`packages/${PKG}/src/mid\\.ts`), "判词要点名收缩掉的文件");
+    // 红必须是判据⑦ 自己产生的：⑤/⑥ 与磁盘一致性判据在这条攻击下全绿（这正是缺陷本身）
+    assert.doesNotMatch(
+      res.out,
+      /条目腐烂|判据⑥|内容与拓扑派生不一致|登记完整性/,
+      `除并集棘轮外不得有其它判词：\n${res.out}`,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("判据⑦：段之间挪动合法（并集不变）→ 绿；真删除并同步拓扑 → 绿", () => {
+  const root = makeFixtureRoot(RATCHET_FILES, ratchetTopology(SEG2_BOTH));
+  try {
+    assert.equal(runGenerator(root).status, 0, "生成应成功");
+    // (a) mid.ts 从段 2 挪到段 1：并集仍是三个文件，只是换了段
+    const moved = ratchetTopology([`packages/${PKG}/src/leaf.ts`]);
+    moved.packages[PKG].segments["1"].mutate = [
+      `packages/${PKG}/src/index.ts`,
+      `packages/${PKG}/src/mid.ts`,
+    ];
+    writeTopology(root, moved);
+    assert.equal(runGenerator(root).status, 0, "重生成应成功");
+    const movedRes = runGenerator(root, ["--check"]);
+    assert.equal(movedRes.status, 0, `段间挪动不得判红：\n${movedRes.out}`);
+    // 载体自证也一并钉住：比过 1 个包 / 3 个候选文件（否则「没比」与「比过且没收缩」不可区分）
+    assert.match(
+      movedRes.out,
+      /变异面并集棘轮对照 HEAD 比过 1 个包 \/ 3 个候选文件，无收缩/,
+      "通过行必须给出实际的比对面大小",
+    );
+
+    // (b) 真删除：磁盘上的 mid.ts 消失，拓扑里也从 mutate 摘掉。基准面在**工作区源码世界**里展开，
+    // 故 mid.ts 根本不进基准面——「删除即正当收缩」由这一条实现，不需要第二个存在性判断点。
+    rmSync(join(root, `packages/${PKG}/src/mid.ts`));
+    writeTopology(root, ratchetTopology([`packages/${PKG}/src/leaf.ts`]));
+    assert.equal(runGenerator(root).status, 0, "重生成应成功");
+    const deletedRes = runGenerator(root, ["--check"]);
+    assert.equal(deletedRes.status, 0, `真删除不得判红：\n${deletedRes.out}`);
+    assert.match(deletedRes.out, /无收缩/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/** 造一份 fixture 台账（唯一放宽通道 = scripts/data/gate-exemptions.json 的 gate=mutation-face）。 */
+function exemptionFixture(path) {
+  return `${JSON.stringify(
+    {
+      version: 1,
+      note: "fixture：判据⑦ 的豁免台账",
+      exemptions: [
+        {
+          // 门禁名取自实现导出的常量，避免 fixture 与台账口径漂移
+          gate: MUTATION_FACE_GATE,
+          path,
+          reason: "fixture：模拟一条经批准的收缩登记",
+          trackingIssue: "#843",
+        },
+      ],
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+test("判据⑦：台账是唯一放宽通道（精确键 / 整包键），错键与失效条目判红（反腐烂）", () => {
+  const exemptPath = "scripts/data/gate-exemptions.json";
+  const fixture = (path) =>
+    makeFixtureRoot(
+      { [exemptPath]: exemptionFixture(path), ...RATCHET_FILES },
+      ratchetTopology(SEG2_BOTH),
+    );
+
+  // (a) 精确键命中收缩文件 → 放行
+  const exact = fixture(`${PKG}:packages/${PKG}/src/mid.ts`);
+  try {
+    assert.equal(runGenerator(exact).status, 0, "生成应成功");
+    writeTopology(exact, ATTACKED());
+    assert.equal(runGenerator(exact).status, 0, "重生成应成功");
+    const res = runGenerator(exact, ["--check"]);
+    assert.equal(res.status, 0, `已登记的收缩应放行：\n${res.out}`);
+  } finally {
+    rmSync(exact, { recursive: true, force: true });
+  }
+
+  // (b) 整包键 <包名>:* 同样放行（整包收缩是一次显式裁决）
+  const whole = fixture(`${PKG}:*`);
+  try {
+    assert.equal(runGenerator(whole).status, 0, "生成应成功");
+    writeTopology(whole, ATTACKED());
+    assert.equal(runGenerator(whole).status, 0, "重生成应成功");
+    const res = runGenerator(whole, ["--check"]);
+    assert.equal(res.status, 0, `整包键应放行：\n${res.out}`);
+  } finally {
+    rmSync(whole, { recursive: true, force: true });
+  }
+
+  // (c) 错键（指向没收缩的文件）不得顺带关掉判据，且自身按反向腐烂判红
+  const wrong = fixture(`${PKG}:packages/${PKG}/src/leaf.ts`);
+  try {
+    assert.equal(runGenerator(wrong).status, 0, "生成应成功");
+    writeTopology(wrong, ATTACKED());
+    assert.equal(runGenerator(wrong).status, 0, "重生成应成功");
+    const res = runGenerator(wrong, ["--check"]);
+    assert.equal(res.status, 1, `错键不得放行收缩：\n${res.out}`);
+    assert.match(res.out, /变异面并集相对基准收缩/, "收缩仍须点名");
+    assert.match(res.out, /没有对应的收缩缺口/, "失效条目须按反向腐烂判红");
+  } finally {
+    rmSync(wrong, { recursive: true, force: true });
+  }
+});
+
+test("判据⑦ 载体自证：基准拓扑无包登记（比对面为空）→ 空转判红而非恒绿", () => {
+  // 最危险的失效形态：判据一条没比却恒绿。把基准的包集合清空后，除了「空转」不该有任何判词——
+  // 这样这条红就只能来自载体自证本身。
+  const empty = structuredClone(TOPOLOGY);
+  empty.packages = {};
+  empty.$noMutationPackages = { [PKG]: "fixture：刻意不进变异面（用于空转用例）" };
+  const root = makeFixtureRoot({}, empty);
+  try {
+    assert.equal(runGenerator(root).status, 0, "生成应成功（无包登记即无 conf）");
+    const res = runGenerator(root, ["--check"]);
+    assert.equal(res.status, 1, `比对面为空必须判红：\n${res.out}`);
+    assert.match(res.out, /变异面棘轮空转/, "判词要点明空转");
+    assert.match(res.out, /进入比对面的包 0 个、候选文件 0 个/, "判词要给出口径内的实测计数");
+    assert.doesNotMatch(
+      res.out,
+      /条目腐烂|判据⑥|内容与拓扑派生不一致|登记完整性/,
+      `红必须来自载体自证，而不是别的判据顺带报出来的：\n${res.out}`,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });

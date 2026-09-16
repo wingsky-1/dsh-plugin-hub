@@ -29,10 +29,13 @@ import {
   collectCoverageExcludePatterns,
   collectMutationSpecs,
   coverageExcludeProblems,
+  mutationFaceRatchetProblems,
   packageEntryProblems,
+  packageMutationFace,
   packageRegistrationProblems,
 } from "../gate/mutation-topology.mjs";
 import { mutationEntryProblems, projectTestSurface } from "../gate/test-surface.mjs";
+import { globFiles } from "../lib/glob-files.mjs";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 const GENERATOR = join(ROOT, "scripts", "gate", "gen-stryker-conf.mjs");
@@ -592,12 +595,20 @@ function makeMutationFixture(excludes) {
     writeFileSync(abs, content, "utf8");
   }
   mkdirSync(join(root, "stryker.conf.d"), { recursive: true });
+  // 判据⑦（#843 计划项 3-1）要读基准 ref 上的拓扑，故 fixture 必须是个真 git 仓库：基准 = 建
+  // fixture 时提交的那份拓扑。与 scripts/test/stryker-conf-layers.test.ts 的 commitBase 同款。
+  const git = (...args) => spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  git("init", "-q");
+  git("config", "user.email", "test@example.invalid");
+  git("config", "user.name", "test");
+  git("add", "-A");
+  git("commit", "-qm", "base");
   return root;
 }
 
-/** 对 fixture 根跑生成器，返回 { status, out }。 */
+/** 对 fixture 根跑生成器，返回 { status, out }（--base HEAD = fixture 自己的 base commit）。 */
 function runGenerator(root, args = []) {
-  const res = spawnSync(process.execPath, [GENERATOR, ...args], {
+  const res = spawnSync(process.execPath, [GENERATOR, ...args, "--base", "HEAD"], {
     cwd: ROOT,
     encoding: "utf8",
     env: { ...process.env, GEN_STRYKER_ROOT: root },
@@ -812,6 +823,160 @@ test("#848 反证：段把整包正向面排除光 → --check 判红并点名�
       /条目腐烂|内容与拓扑派生不一致|登记完整性/,
       `红必须是判据⑥ 自己产生的，而不是别的判据顺带报出来的：\n${check.out}`,
     );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/**
+ * #843 计划项 3-1 判据⑦ 的单元面（包级变异面并集棘轮）。
+ *
+ * 为什么还要单元面：E2E（stryker-conf-layers.test.ts）证明的是「攻击在门禁上被判红」，这里钉的是
+ * 判据的**语义细节**——段与段互不串台、真删除的判法、载体自证的计数口径。这些细节错了 E2E 未必红
+ * （例如把各段 excludes 汇总后再剔除所有正向条目，攻击照样红，但「段间挪动」会被误判成收缩）。
+ */
+test("#843 判据⑦ 单元：并集按段分别求值（除外不串台）、段间挪动合法", () => {
+  const root = mkdtempSync(join(tmpdir(), "f843-face-"));
+  try {
+    for (const rel of [
+      "packages/p/src/a.ts",
+      "packages/p/src/b.ts",
+      "packages/p/src/client/ui.ts",
+    ]) {
+      mkdirSync(dirname(join(root, rel)), { recursive: true });
+      writeFileSync(join(root, rel), "export const x = 1\n", "utf8");
+    }
+    const expand = (pattern) => globFiles(root, pattern);
+    const pkg = (segments) => ({ segments });
+
+    // 段 1 变异 a.ts；段 2 的 excludes 排掉 a.ts（而 a.ts 并不在段 2 的正向面里）。
+    // Stryker 逐份 conf 求值：段 1 的 conf 里 a.ts 仍是变异体，故并集必须含 a.ts。
+    // 若实现把各段 excludes 汇总成一份全局排除面，这里会算出 {b.ts} —— 段间挪动就会被误判成收缩。
+    const perSeg = pkg({
+      s1: { mutate: ["packages/p/src/a.ts"], excludes: ["!packages/p/src/client/**"] },
+      s2: { mutate: ["packages/p/src/b.ts"], excludes: ["!packages/p/src/a.ts"] },
+    });
+    assert.deepEqual(
+      [...packageMutationFace(perSeg, expand)].sort(),
+      ["packages/p/src/a.ts", "packages/p/src/b.ts"],
+      "并集必须逐段求值后取并（段 2 的除外不得吃掉段 1 的正向面）",
+    );
+    const moved = pkg({
+      s1: { mutate: ["packages/p/src/b.ts"], excludes: ["!packages/p/src/client/**"] },
+      s2: { mutate: ["packages/p/src/a.ts"], excludes: ["!packages/p/src/client/**"] },
+    });
+    const movedRes = mutationFaceRatchetProblems({
+      baseTopology: { packages: { p: perSeg } },
+      headTopology: { packages: { p: moved } },
+      expand,
+    });
+    assert.deepEqual(movedRes.problems, [], "段间挪动（并集不变）不得判红");
+    assert.deepEqual(
+      [movedRes.packagesCompared, movedRes.filesCompared],
+      [1, 2],
+      "载体自证口径：进入比对面的包数 / 段正向命中的候选文件数",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("#843 判据⑦ 单元：收缩判红点名包与文件；真删除不判红；豁免按缺口消费、失效即反腐烂", () => {
+  const root = mkdtempSync(join(tmpdir(), "f843-face2-"));
+  try {
+    for (const rel of ["packages/p/src/a.ts", "packages/p/src/b.ts"]) {
+      mkdirSync(dirname(join(root, rel)), { recursive: true });
+      writeFileSync(join(root, rel), "export const x = 1\n", "utf8");
+    }
+    const expand = (pattern) => globFiles(root, pattern);
+    const seg = (mutate, excludes = ["!packages/p/src/client/**"]) => ({
+      segments: { only: { mutate, excludes } },
+    });
+    const base = { packages: { p: seg(["packages/p/src/a.ts", "packages/p/src/b.ts"]) } };
+    const attacked = {
+      packages: {
+        p: seg(["packages/p/src/b.ts"], ["!packages/p/src/client/**", "!packages/p/src/a.ts"]),
+      },
+    };
+
+    const hit = mutationFaceRatchetProblems({
+      baseTopology: base,
+      headTopology: attacked,
+      expand,
+    });
+    assert.equal(hit.problems.length, 1, `只该报一条收缩：${hit.problems.join(" | ")}`);
+    assert.match(hit.problems[0], /\[p\]/, "判词要点名包");
+    assert.match(hit.problems[0], /packages\/p\/src\/a\.ts/, "判词要点名收缩掉的文件");
+
+    // 豁免唯一通道：键 = <包名>:<文件>（或 <包名>:*），命中即放行且被记为「已消费」
+    for (const key of ["p:packages/p/src/a.ts", "p:*"]) {
+      const exempted = mutationFaceRatchetProblems({
+        baseTopology: base,
+        headTopology: attacked,
+        expand,
+        exemptions: new Map([[key, {}]]),
+      });
+      assert.deepEqual(exempted.problems, [], `已登记的收缩应放行（${key}）`);
+    }
+    // 错键：既不放行收缩，自身也按反向腐烂判红（一条豁免不得顺带关掉别的缺口）
+    const wrong = mutationFaceRatchetProblems({
+      baseTopology: base,
+      headTopology: attacked,
+      expand,
+      exemptions: new Map([["p:packages/p/src/b.ts", {}]]),
+    });
+    assert.equal(wrong.problems.length, 2, `错键应报两条：${wrong.problems.join(" | ")}`);
+    assert.match(wrong.problems.join(" | "), /没有对应的收缩缺口/);
+
+    // 真删除：a.ts 从磁盘消失并从拓扑摘掉 → 基准面在 head 世界里展开后不含它 → 不判红
+    rmSync(join(root, "packages/p/src/a.ts"));
+    const deleted = mutationFaceRatchetProblems({
+      baseTopology: base,
+      headTopology: { packages: { p: seg(["packages/p/src/b.ts"]) } },
+      expand,
+    });
+    assert.deepEqual(deleted.problems, [], "真删除属正当收缩");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("#843 判据⑦ 单元：载体自证 —— 包集合为空 / 基准 mutate 不命中任何文件都判红", () => {
+  const root = mkdtempSync(join(tmpdir(), "f843-face3-"));
+  try {
+    mkdirSync(join(root, "packages/p/src"), { recursive: true });
+    writeFileSync(join(root, "packages/p/src/a.ts"), "export const x = 1\n", "utf8");
+    const expand = (pattern) => globFiles(root, pattern);
+    const only = (mutate) => ({
+      segments: { only: { mutate, excludes: ["!packages/p/src/client/**"] } },
+    });
+
+    const empty = mutationFaceRatchetProblems({
+      baseTopology: { packages: {} },
+      headTopology: { packages: {} },
+      expand,
+    });
+    assert.equal(empty.problems.length, 1, `空包集只该报空转：${empty.problems.join(" | ")}`);
+    assert.match(empty.problems[0], /变异面棘轮空转/);
+    assert.match(empty.problems[0], /包 0 个、候选文件 0 个/);
+
+    // 包在、但基准的 mutate 面不命中任何现存文件（基因组被换成不存在的路径）→ 同样是「没有载体」
+    const ghost = mutationFaceRatchetProblems({
+      baseTopology: { packages: { p: only(["packages/p/src/ghost.ts"]) } },
+      headTopology: { packages: {} },
+      expand,
+    });
+    assert.equal(ghost.packagesCompared, 1, "包确实进入了比对面");
+    assert.equal(ghost.filesCompared, 0, "但候选文件为 0");
+    assert.match(ghost.problems.join(" | "), /变异面棘轮空转/);
+
+    // 对照组：有载体时不得报空转（判据不是「凡输入皆红」）
+    const ok = mutationFaceRatchetProblems({
+      baseTopology: { packages: { p: only(["packages/p/src/*.ts"]) } },
+      headTopology: { packages: { p: only(["packages/p/src/*.ts"]) } },
+      expand,
+    });
+    assert.deepEqual([ok.problems, ok.packagesCompared, ok.filesCompared], [[], 1, 1]);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

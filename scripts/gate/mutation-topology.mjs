@@ -43,6 +43,16 @@ export const COVERAGE_EXCLUDE_KINDS = ["type-only", "facade", "not-source", "not
 export const COVERAGE_EXCLUDE_MIN_REASON = 10;
 
 /**
+ * 包级变异面并集棘轮的门禁名（#843 计划项 3-1）。
+ *
+ * 唯一放宽通道是 `scripts/data/gate-exemptions.json` 里 `gate` 等于本常量的条目——与
+ * threshold-registry / verify-dir-imports 共用同一份台账与同一个读取器（`loadLedger`），
+ * 不另立第二套豁免机制。path 形态是 `<包名>:<仓库根相对文件>`（只豁免那一个文件的收缩）
+ * 或 `<包名>:*`（豁免该包全部收缩）；台账里对不上缺口的键一律判红（反向腐烂）。
+ */
+export const MUTATION_FACE_GATE = "mutation-face";
+
+/**
  * 取一个包 `testLayers.coverageExcludes` 的排除 glob 清单（原样，含 `!` 前缀）。
  *
  * 生成侧（gen-stryker-conf）与断言侧（collectMutationSpecs）**唯一**的取值点：
@@ -255,6 +265,137 @@ export function collectMutationSpecs(topology, pkgName) {
   const reason = topology?.$noMutationPackages?.[pkgName];
   if (reason === undefined) return null;
   return { noMutation: true, reason: String(reason) };
+}
+
+/** 条目去掉 `!` 极性别：`!` 只是「本条进的是排除面」的语义标记，不是 glob 语法的一部分。 */
+function barePattern(pattern) {
+  return pattern.startsWith("!") ? pattern.slice(1) : pattern;
+}
+
+/** 逐条展开 glob 并并入目标集合；非字符串 / 空串条目由形状判据负责判红，这里跳过不猜。 */
+function expandInto(target, patterns, expand) {
+  for (const pattern of patterns ?? []) {
+    if (typeof pattern !== "string" || pattern === "") continue;
+    for (const hit of expand(barePattern(pattern))) target.add(hit);
+  }
+}
+
+/**
+ * 一个包的变异文件**并集**与「候选文件」集（#843 计划项 3-1 棘轮的两个输入）。
+ *
+ * face = Σ段（段正向命中 − 段 excludes − 包级 coverageExcludes）：逐段算完再并，不是把所有正向
+ * 条目合成一个集合统一剔除——段与段各自派生 conf、Stryker 逐份求值，拿 A 段的 `!` 条目去剔除
+ * B 段的正向条目会算出一个比真实变异面更小的集合，棘轮于是可能把「段间挪动」误判成收缩。
+ *
+ * candidates = 段正向命中的并集（不剔排除面）：它是「本次比对面里真的出现过哪些文件」的载体。
+ * 为什么不拿 face 当载体做空转自证：一个**有意**把正向面排除光的登记（判据⑥ 的合法判红形态）
+ * 会让 face 归零，把正常的判红误诊成「判据空转」——两种红的判词就会互相打架。
+ *
+ * `expand(pattern)` 必须返回该 glob 在**当前工作区源码世界**里命中的文件（仓库根相对 posix）。
+ * 基准侧的条目也用它展开，故「文件已从本分支删除」自然从基准面里消失——这正是「真删除即正当
+ * 收缩」的实现方式，不需要额外的存在性分支（也就没有第二条判断文件是否存在的口径）。
+ */
+function faceAndCandidates(pkgDef, expand) {
+  const coverageDrop = new Set();
+  expandInto(coverageDrop, collectCoverageExcludePatterns(pkgDef), expand);
+  const face = new Set();
+  const candidates = new Set();
+  for (const seg of Object.values(pkgDef?.segments ?? {})) {
+    if (seg === null || typeof seg !== "object" || Array.isArray(seg)) continue;
+    const keep = new Set();
+    const drop = new Set(coverageDrop);
+    for (const pattern of seg.mutate ?? []) {
+      if (typeof pattern !== "string" || pattern === "") continue;
+      expandInto(pattern.startsWith("!") ? drop : keep, [pattern], expand);
+    }
+    expandInto(drop, seg.excludes, expand);
+    for (const hit of keep) {
+      candidates.add(hit);
+      if (!drop.has(hit)) face.add(hit);
+    }
+  }
+  return { face, candidates };
+}
+
+/** 一个包的变异文件并集（跨全部段，已剔段 excludes 与包级 coverageExcludes）。 */
+export function packageMutationFace(pkgDef, expand) {
+  return faceAndCandidates(pkgDef, expand).face;
+}
+
+/**
+ * 包级变异面并集棘轮（#843 计划项 3-1）：与基准（origin/main）相比，同一包的变异文件**并集**
+ * 不得收缩。
+ *
+ * 为什么需要它：判据⑤/⑥ 只保证「条目锚定在本包且命中 ≥1 文件」「整份 conf 剔 `!` 后仍有剩余」，
+ * **都不看基准**——把 `src/config.ts` 从某段 `mutate` 挪进**同段** `excludes` 再重生成 conf，
+ * 逐条条目都合法（它确实命中了真实文件）、有效面也非空（同段还有别的文件），于是
+ * `pnpm stryker:check` 与 `verify-dir-imports` 双双 exit 0——文件就这样静默退出变异面。
+ *
+ * 语义（逐条按裁决，不要在这里另立第三种）：段之间挪动合法（并集不变）；挪出变异面到任何段的
+ * `excludes` / 包级 `coverageExcludes` 非法；文件在本分支已被真正删除（head 源码世界里不存在）
+ * 不算违规——删除即正当收缩。
+ *
+ * 载体自证：返回 `packagesCompared` / `filesCompared`（进入比对面的包数与候选文件数），
+ * 任一为 0 即判红而不是恒绿——本判据最危险的失效形态是一条没比却全绿（包集合被清空、
+ * 基准的 mutate 条目被换成不命中任何现存文件的形式）。**这是判红而不是跳过**：
+ * 「没有载体」与「比对过且没收缩」必须能被区分开。
+ *
+ * `exemptions` 是 `loadLedger(..., MUTATION_FACE_GATE)` 的结果（Map，键 = path）。
+ */
+export function mutationFaceRatchetProblems({
+  baseTopology,
+  headTopology,
+  expand,
+  exemptions = new Map(),
+}) {
+  const problems = [];
+  const used = new Set();
+  const headFaces = new Map();
+  for (const [pkgName, pkgDef] of Object.entries(headTopology?.packages ?? {})) {
+    headFaces.set(pkgName, faceAndCandidates(pkgDef, expand).face);
+  }
+  let packagesCompared = 0;
+  let filesCompared = 0;
+  for (const [pkgName, pkgDef] of Object.entries(baseTopology?.packages ?? {})) {
+    const base = faceAndCandidates(pkgDef, expand);
+    packagesCompared += 1;
+    filesCompared += base.candidates.size;
+    const headFace = headFaces.get(pkgName) ?? new Set();
+    const wholePackageKey = `${pkgName}:*`;
+    for (const file of [...base.face].sort()) {
+      if (headFace.has(file)) continue;
+      if (exemptions.has(wholePackageKey)) {
+        used.add(wholePackageKey);
+        continue;
+      }
+      const key = `${pkgName}:${file}`;
+      if (exemptions.has(key)) {
+        used.add(key);
+        continue;
+      }
+      problems.push(
+        `[${pkgName}] 变异面并集相对基准收缩：${file} 在基准的变异面内，本分支却不在了` +
+          "——段之间挪动合法，挪进任何段的 excludes / 包级 coverageExcludes 非法；" +
+          "文件在本分支已真正删除才算正当收缩（判据⑦ 包级并集棘轮）",
+      );
+    }
+  }
+  // 台账反向腐烂：豁免还在、缺口已消失（或键形态认不出来）一律判红——否则台账会长期挂着一堆
+  // 其实什么也没豁免的条目。与 threshold-registry 的同名判据同形。
+  for (const key of exemptions.keys()) {
+    if (used.has(key)) continue;
+    problems.push(
+      `变异面棘轮：台账里的 ${key} 没有对应的收缩缺口（无法识别的键或反向腐烂）—— 请删除该条目`,
+    );
+  }
+  if (packagesCompared === 0 || filesCompared === 0) {
+    problems.push(
+      `变异面棘轮空转：进入比对面的包 ${packagesCompared} 个、候选文件 ${filesCompared} 个` +
+        "—— 判据没有比到任何载体（基准拓扑无包登记、或基准的 mutate 面不命中任何现存文件）。" +
+        "这是 fail-closed 判红而不是恒绿：请确认基准 ref 是否正确、拓扑是否被整体清空",
+    );
+  }
+  return { problems, packagesCompared, filesCompared };
 }
 
 /** 段 mutate/excludes（段缺 excludes 时由 packageEntryProblems 判红，不再注入默认值）
