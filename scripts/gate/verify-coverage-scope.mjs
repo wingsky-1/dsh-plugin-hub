@@ -5,19 +5,23 @@
  * 为什么需要它：覆盖率面此前内联在 `vitest.config.ts` 里，没有任何判据守着——「改算什么」与
  * 「改卡多严」在 diff 里长得一样；#722 的基线注释（分母 132 文件）与静态复算（223）差了 40%，
  * 无人能解释；`.d.mts`、`.ps1` 这类 src 下的文件既不进分母也不进任何清单，属**静默逃逸**
- * （旧口径下 `uncoveredSrcFiles` 报 0，先例自身就是一次已发生的假绿）。故本闸判四件事：
+ * （旧口径下 `uncoveredSrcFiles` 报 0，先例自身就是一次已发生的假绿）。故本闸判六件事：
  *
  *   1. **单一事实源**：`vitest.config.ts` 不得再内联 `thresholds` / `include` / `exclude` 字面量
  *      ——两个事实源必然有一处先腐烂（原则 ④）。
  *   2. **条目结构**：每条 exclude 必须带 `reason` 与 `kind`（值域三值，无第三条路）；
- *      `reviewBy` / `exitCriteria` **只允许** `pending-project` 携带——给永久事实编到期日只会
- *      逼出「永不续期」的假条目（原则 ⑤）。
- *   3. **面完整性**：物理枚举 `packages/<pkg>/src/**` 与 `shared/**` 下的**每个文件**，必须落在
+ *      `reviewBy` / `exitCriteria` **只允许且必须由** `pending-project` 携带——给永久事实编到期日
+ *      只会逼出「永不续期」的假条目，而临时豁免缺了到期日或解除条件就成了永久事实（原则 ⑤）。
+ *   3. **kind 与命中文件形态自洽**：结构合法 ≠ 声明正确——把 `.ts` 源码写成 `not-source` 同样能
+ *      过结构校验，却让真实源码退出分母而两条闸都不响。故 `not-source` 不得命中源码后缀
+ *      （`.ts` / `.tsx` / `.mjs` / `.js`，与 include 的面一致）、`type-only` 只许命中
+ *      `.d.ts` / `.d.mts`；`pending-project` 不作形态限制（它本来就是「是源码，等某个 project 落地」）。
+ *   4. **面完整性**：物理枚举 `packages/<pkg>/src/**` 与 `shared/**` 下的**每个文件**，必须落在
  *      include 或某条 exclude 里。未分类即红——新形态资源（新扩展名、新的非源码资产）不能靠
  *      「没写进清单」逃逸。
- *   4. **条目腐烂**：每条 include / exclude 模式都必须命中至少一个物理文件；命中 0 个即红
+ *   5. **条目腐烂**：每条 include / exclude 模式都必须命中至少一个物理文件；命中 0 个即红
  *      （条目指向的东西已经不存在了）。
- *   5. **产物交叉断言**：若 `coverage/coverage-final.json` 存在且**比本配置新**，断言其 keys
+ *   6. **产物交叉断言**：若 `coverage/coverage-final.json` 存在且**比本配置新**，断言其 keys
  *      全部落在 include 面内——用产物而不是第三次实现 glob 来验分母。产物比配置旧即跳过
  *      （那是上一次配置跑出来的东西，拿它判现在的面会假红）。
  *
@@ -42,6 +46,14 @@ const KINDS = ["type-only", "not-source", "pending-project"];
 const PENDING_ONLY_FIELDS = ["reviewBy", "exitCriteria"];
 /** 必须由本文件持有、不得内联在 vitest.config.ts 的键。 */
 const INLINE_KEYS = ["thresholds", "include", "exclude"];
+/** 两个临时字段各自的语义，判词里直接说清缺的是哪件事。 */
+const PENDING_FIELD_MEANING = { reviewBy: "何时再看一眼", exitCriteria: "凭什么能删" };
+/** include 面覆盖的源码后缀：not-source 命中它们即等于把源码移出分母（与 include 口径一致）。 */
+const SOURCE_SUFFIXES = [".ts", ".tsx", ".mjs", ".js"];
+/** type-only 唯一允许命中的后缀：无运行时代码的声明文件。 */
+const DECLARATION_SUFFIXES = [".d.ts", ".d.mts"];
+/** 判词里最多逐个列出的命中文件数；超出只列前缀并附总数（不静默截断）。 */
+const SHAPE_SAMPLE = 5;
 
 /** 取 `--flag value` / `--flag=value` 形式的参数值；未给出返回 fallback。 */
 function argValue(argv, flag, fallback) {
@@ -79,7 +91,13 @@ function checkEntryKind(entry, label, problems) {
     return false;
   }
   for (const field of PENDING_ONLY_FIELDS) {
-    if (entry[field] !== undefined && entry.kind !== "pending-project") {
+    if (entry.kind === "pending-project") {
+      if (typeof entry[field] !== "string" || entry[field].length === 0) {
+        problems.push(
+          `${label}：pending-project 必须带 ${field}（${PENDING_FIELD_MEANING[field]}）——临时豁免缺了它就成了永久事实，台账里也无人知道何时能删`,
+        );
+      }
+    } else if (entry[field] !== undefined) {
       problems.push(
         `${label}：字段 ${field} 只允许 pending-project 携带（当前 kind=${entry.kind}）——给永久事实编到期日是假条目`,
       );
@@ -217,6 +235,49 @@ function rottenPatternProblems(label, patterns, hitsInUniverse) {
   return problems;
 }
 
+/** 判词里的命中文件清单：超过样例上限只列前缀并附总数，不静默截断。 */
+function sampleFiles(files) {
+  return files.length <= SHAPE_SAMPLE
+    ? files.join("、")
+    : `${files.slice(0, SHAPE_SAMPLE).join("、")} 等 ${files.length} 个`;
+}
+
+/**
+ * kind ↔ 命中文件形态一致性：结构合法只说明条目声明得「像」，不保证「声明得对」——
+ * 把 `.ts` 源码写成 `not-source` 同样能过结构校验，却让真实源码退出分母而两条闸都不响。
+ * 命中 0 个由「条目腐烂」单独判红，kind 越界由结构判据报，这里都不重复。
+ */
+export function kindShapeProblems(pattern, kind, hits) {
+  if (hits.length === 0) return [];
+  const suffixList = (list) => list.join(" / ");
+  if (kind === "not-source") {
+    const bad = hits.filter((f) => SOURCE_SUFFIXES.some((s) => f.endsWith(s)));
+    if (bad.length === 0) return [];
+    return [
+      `exclude 条目 ${pattern}（kind=not-source）命中 ${bad.length} 个源码后缀文件：${sampleFiles(bad)}——not-source 的值域是 src 下的非源码资源，而 ${suffixList(SOURCE_SUFFIXES)} 都在 include 面内：把源码移出分母必须改用 kind=pending-project 并写明 reviewBy/exitCriteria，声明文件应改用 kind=type-only`,
+    ];
+  }
+  if (kind === "type-only") {
+    const bad = hits.filter((f) => !DECLARATION_SUFFIXES.some((s) => f.endsWith(s)));
+    if (bad.length === 0) return [];
+    return [
+      `exclude 条目 ${pattern}（kind=type-only）命中 ${bad.length} 个非声明文件：${sampleFiles(bad)}——type-only 只允许 ${suffixList(DECLARATION_SUFFIXES)}（无运行时代码的声明）；把可执行源码声明成 type-only 只是把缺口藏起来`,
+    ];
+  }
+  return []; // pending-project 不作形态限制：它本来就是「是源码，但要等某个 project 落地才计」
+}
+
+/** 全部 exclude 条目的形态一致性判据（结构本身不合法的条目由 checkExcludeEntries 负责）。 */
+function excludeKindShapeProblems(entries, hitsInUniverse) {
+  const problems = [];
+  for (const entry of entries) {
+    if (entry === null || typeof entry !== "object") continue;
+    if (typeof entry.pattern !== "string" || !KINDS.includes(entry.kind)) continue;
+    problems.push(...kindShapeProblems(entry.pattern, entry.kind, hitsInUniverse(entry.pattern)));
+  }
+  return problems;
+}
+
 /** 面完整性：未分类文件即静默逃逸，必须显式落到 include 或某条 exclude。 */
 function unclassifiedProblems(universe, includeHits, excludeHits) {
   const problems = [];
@@ -283,13 +344,26 @@ function main() {
   const includePatterns = config.include;
   const excludePatterns = config.exclude.map((e) => e.pattern);
   // 模式在覆盖率根内命中的文件：根外的命中不算数（client 通配也会命中 node_modules）。
-  const hitsInUniverse = (pattern) => globFiles(root, pattern).filter((f) => universe.has(f));
+  // 同一条 pattern 会被腐烂 / 形态 / 面完整性三处问到，而 universe 在一次运行内不变，故缓存展开结果。
+  const hitsCache = new Map();
+  const hitsInUniverse = (pattern) => {
+    if (!hitsCache.has(pattern)) {
+      hitsCache.set(
+        pattern,
+        globFiles(root, pattern).filter((f) => universe.has(f)),
+      );
+    }
+    return hitsCache.get(pattern);
+  };
   const includeHits = new Set(includePatterns.flatMap(hitsInUniverse));
   const excludeHits = new Set(excludePatterns.flatMap(hitsInUniverse));
 
   // 条目腐烂：模式必须在覆盖率根内命中至少一个文件
   problems.push(...rottenPatternProblems("include", includePatterns, hitsInUniverse));
   problems.push(...rottenPatternProblems("exclude", excludePatterns, hitsInUniverse));
+
+  // kind 与命中文件形态自洽：结构合法只说明声明得「像」，不保证「对」
+  problems.push(...excludeKindShapeProblems(config.exclude, hitsInUniverse));
 
   // 面完整性：universe 里每个文件都必须被 include 或某条 exclude 覆盖
   problems.push(...unclassifiedProblems(universe, includeHits, excludeHits));
