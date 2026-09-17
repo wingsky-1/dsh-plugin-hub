@@ -661,6 +661,9 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
   - 三表键集必须全等；客户端键集是 schema 子集，差集恰为
     `scripts/data/<包名>-ui-exempt.json` 的豁免键。豁免上限为8，理由中的源码锚点须匹配
     matrix.schema 声明文件内的字段定义；源码文本只用于定位，不参与运行时键集派生。
+    为使锚点可核验，schema 导出须是同名顶层变量，其初始化调用的首参数直接为字段对象
+    （如 `export const Config = Schema.object({...})`）；别名再导出、转导出或链式包装
+    不在当前锚点定位支持范围内，需将声明指向原始定义。
 - **复杂度门禁（#722 阶段五）**：`pnpm lint` = ESLint `complexity` + `sonarjs/cognitive-complexity`，
   跑在 `packages/*/src`、`packages/*/test`、`shared`、`scripts` 的手写源码上（秒级）。
   - **工具链隔离**：lint 工具链装在 `tools/lint`（刻意不在 `packages/` 下）——typescript-eslint

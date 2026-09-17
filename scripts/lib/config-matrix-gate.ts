@@ -14,6 +14,7 @@ import { parse } from "acorn";
 import { join } from "node:path";
 import { diffKeys, extractReadmeConfigKeys } from "./config-matrix-lib.ts";
 import { loadManifest, compareConfigSurfaceContracts } from "./plugins-manifest-lib.ts";
+import { failClosed } from "./gate-exit.mjs";
 
 // lan-proxy 客户端 UI 豁免表（#733 计划项 3.2.2 数据化）：条目（哪些键、为什么）是**事实**，
 // 在 scripts/data/dsh-lan-proxy-ui-exempt.json；条目数上限与「超限即红」是**策略**，留在代码里
@@ -289,10 +290,10 @@ function checkMatrixClientDefaults(root, problems, schema, defaults, clientPath,
         `lan-proxy client DEFAULTS 缺键（相对 Config，非豁免）: ${k} @ ${clientPath}:${defaults.line}（新增可编辑键漏 UI）`,
       );
   }
-  // 豁免残留：豁免键出现在客户端 DEFAULTS 中 = 键已 UI 化但白名单未删
-  // （注意判据是「∈ DEFAULTS」而非「∉ 差集」——豁免键从 schema 删除时差集自然
-  // 不含它，此时不算残留）
+  // 反向约束：豁免必须仍是有效 schema 字段且未进入客户端，确保差集恰等于豁免。
   for (const k of exemptKeys) {
+    if (!schema.keys.includes(k))
+      problems.push(`${pkg} 豁免键 ${k} 不在 Config 中（失效豁免，应移除）`);
     if (defaults.keys.includes(k))
       problems.push(
         `lan-proxy 豁免键 ${k} 已在客户端 DEFAULTS 中（豁免残留，应移除豁免或改豁免原因）`,
@@ -524,20 +525,23 @@ function collectSurfaceReadmeWarnings(root, pkg, base, warnings) {
   }
 }
 
-/**
- * 运行两包矩阵门禁（root 参数化：真实仓库根或 mkdtemp 副本根）。
- * @returns {{ pass: boolean, problems: string[], warnings: string[], lines: string[] }}
- */
+/** 生产读取器不能把缺失或损坏的可信基准当成候选违规；测试通过独立 reader 注入夹具。 */
 export function readConfigSurfaceBaseline(root) {
-  const options = { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] };
-  const sha = execFileSync(
-    "git",
-    ["rev-parse", "--verify", "origin/main^{commit}"],
-    options,
-  ).trim();
-  return JSON.parse(
-    execFileSync("git", ["show", sha + ":scripts/data/plugins-manifest.json"], options),
-  );
+  try {
+    const options = { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] };
+    const sha = execFileSync(
+      "git",
+      ["rev-parse", "--verify", "origin/main^{commit}"],
+      options,
+    ).trim();
+    const base = JSON.parse(
+      execFileSync("git", ["show", sha + ":scripts/data/plugins-manifest.json"], options),
+    );
+    compareConfigSurfaceContracts(base, base);
+    return base;
+  } catch (error) {
+    failClosed("config-matrix 基准不可用：" + error.message);
+  }
 }
 
 export function runConfigMatrix(root, { readBaseline = readConfigSurfaceBaseline } = {}) {

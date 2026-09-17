@@ -22,6 +22,7 @@
  * 运行：node --test scripts/test/config-matrix-negative.test.ts（随 pnpm test:scripts）
  */
 import { test } from "node:test";
+import { spawnSync, execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import {
   mkdtempSync,
@@ -234,14 +235,55 @@ for (const mode of ["missing", "malformed"]) {
   });
 }
 
-test("#774 默认读取器在无origin/main的副本上失败", () => {
-  const root = fakeRepo();
-  try {
-    assert.equal(runMatrix(root).pass, false);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
+for (const mode of ["missing", "json", "shape"]) {
+  test("#774 生产基准读取器故障exit2 " + mode, () => {
+    const root = fakeRepo();
+    try {
+      if (mode !== "missing") {
+        const path = join(root, "scripts/data/plugins-manifest.json");
+        const candidate = readFileSync(path, "utf8");
+        execFileSync("git", ["init", "-q"], { cwd: root });
+        writeFileSync(path, mode === "json" ? "{" : JSON.stringify({ configSurfaces: [null] }));
+        execFileSync("git", ["add", "scripts/data/plugins-manifest.json"], { cwd: root });
+        execFileSync(
+          "git",
+          [
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "commit",
+            "-qm",
+            "fixture",
+          ],
+          { cwd: root },
+        );
+        execFileSync("git", ["update-ref", "refs/remotes/origin/main", "HEAD"], { cwd: root });
+        writeFileSync(path, candidate);
+      }
+      const module = join(ROOT, "scripts/lib/config-matrix-gate.ts");
+      const child = spawnSync(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          "import {readConfigSurfaceBaseline} from " +
+            JSON.stringify(module) +
+            ";readConfigSurfaceBaseline(" +
+            JSON.stringify(root) +
+            ");",
+        ],
+        { encoding: "utf8" },
+      );
+      assert.equal(child.status, 2, child.stderr);
+      assert.match(child.stderr, /门禁故障（非判据结论）.*config-matrix 基准不可用/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
 
 for (const mutate of [false, true]) {
   test("#774 schema声明迁移路径和名称后实际消费新模块 mutate=" + mutate, () => {
@@ -290,6 +332,31 @@ test("正对照：纯副本不改动矩阵 pass", () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+for (const removeExemption of [false, true]) {
+  test("#774 运行时删除豁免字段须同步删除豁免 " + removeExemption, () => {
+    const root = fakeRepo();
+    try {
+      const model = join(root, "packages/dsh-lan-proxy/src/server/config/impl/model.ts");
+      writeFileSync(
+        model,
+        readFileSync(model, "utf8") +
+          "\ndelete Config.dict.host; delete FILE_CONFIG_VALIDATORS.host; delete SETTING_FIELD_HINTS.host; delete DEFAULT_CONFIG.host;\n",
+      );
+      if (removeExemption) {
+        const path = join(root, "scripts/data/dsh-lan-proxy-ui-exempt.json");
+        const data = JSON.parse(readFileSync(path, "utf8"));
+        data.exemptKeys = data.exemptKeys.filter((entry) => entry.key !== "host");
+        writeFileSync(path, JSON.stringify(data));
+      }
+      const result = runConfigMatrix(root);
+      assert.equal(result.pass, removeExemption, result.problems.join("\n"));
+      if (!removeExemption) assert.match(result.problems.join("\n"), /豁免键 host 不在 Config 中/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
 
 // ---- lan-proxy 方向 ----
 
