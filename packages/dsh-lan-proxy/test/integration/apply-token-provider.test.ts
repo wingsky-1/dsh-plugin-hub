@@ -16,7 +16,8 @@
  */
 import { createServer, request as httpRequest } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readdirSync, readFileSync } from "node:fs";
+import { request as httpsRequest } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from "vitest";
@@ -25,6 +26,7 @@ import { apply } from "../../src/server/apply.ts";
 
 type LogEntry = { level: "info" | "warn"; text: string };
 type Scenario = {
+  home: string;
   upstreamUrls: string[];
   logs: LogEntry[];
   get: (headers?: Record<string, string>) => Promise<{ status: number | undefined; body: string }>;
@@ -107,6 +109,7 @@ async function startScenario(
       host: "127.0.0.1",
       port: 0,
       httpsEnabled: false,
+      httpsPort: 0,
       enabled: true,
       ...config,
     });
@@ -133,6 +136,7 @@ async function startScenario(
     }
     const port = httpPort;
     return {
+      home,
       upstreamUrls,
       logs,
       get: (headers: Record<string, string> = {}) =>
@@ -161,6 +165,64 @@ async function startScenario(
     throw err;
   }
 }
+
+describe("apply HTTPS 开关", () => {
+  it("禁用 HTTPS 时不准备证书，HTTP 转发仍可用", async () => {
+    const scenario = await startScenario({}, { httpsEnabled: false });
+    try {
+      expect(await scenario.get()).toEqual({ status: 200, body: "ok" });
+      // HTTP ready 在 TLS 准备和 listen 完成之后；这里不靠等待时长证明没有落盘。
+      expect(
+        readdirSync(scenario.home, { recursive: true }).filter((name) =>
+          /\.pem$/.test(String(name)),
+        ),
+      ).toEqual([]);
+      expect(scenario.logs.filter((entry) => entry.text.includes("https https://"))).toEqual([]);
+    } finally {
+      await scenario.stop();
+    }
+  });
+
+  it("启用 HTTPS 时通过 TLS 连接真实转发到上游", async () => {
+    const scenario = await startScenario({}, { httpsEnabled: true });
+    try {
+      const line = scenario.logs.find((entry) => entry.text.includes("https https://"))?.text;
+      expect(line).toBeDefined();
+      const portText = /https https:\/\/[^:]+:(\d+)/.exec(line ?? "")?.[1];
+      if (portText === undefined) throw new Error("HTTPS ready 未给出监听端口");
+      const response = await new Promise<{ status: number | undefined; body: string }>(
+        (resolve, reject) => {
+          // 仅信任本场景自动生成的自签证书；真实握手及响应仍由 Node HTTPS 执行。
+          const req = httpsRequest(
+            {
+              hostname: "127.0.0.1",
+              port: Number(portText),
+              path: "/",
+              ca: readFileSync(join(scenario.home, "lan-proxy", "dsh-lan-proxy-cert.pem")),
+              agent: false,
+            },
+            (res) => {
+              let body = "";
+              res.setEncoding("utf8");
+              res.on("data", (chunk: string) => {
+                body += chunk;
+              });
+              res.on("error", reject);
+              res.on("end", () => resolve({ status: res.statusCode, body }));
+            },
+          );
+          req.setTimeout(5000, () => req.destroy(new Error("HTTPS 请求超时")));
+          req.on("error", reject);
+          req.end();
+        },
+      );
+      expect(response).toEqual({ status: 200, body: "ok" });
+      expect(scenario.upstreamUrls).toEqual(["/"]);
+    } finally {
+      await scenario.stop();
+    }
+  });
+});
 
 type ScenarioSpec = {
   label: string;

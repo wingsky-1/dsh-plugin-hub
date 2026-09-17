@@ -32,7 +32,7 @@ import {
   validateSettings,
   normalizeLegacyWsCompressPaths,
 } from "../../src/server/config/impl/model.ts";
-import { SETTINGS_NS } from "../../src/server/config/impl/namespace.ts";
+import { SETTINGS_NS, warnLog } from "../../src/server/config/impl/namespace.ts";
 import {
   ROUTES,
   applyConfigPatch,
@@ -1211,28 +1211,49 @@ describe("变异加固块（round=3 CI 回归：迁移重放/路由面/校验分
     rmSync(blockHome, { recursive: true, force: true });
   });
 
-  // ---- A. warnLog 分支（ctx 形态降级不抛）----
-  describe("A. warnLog 分支（ctx 形态降级不抛）", () => {
-    // 经 apply 触发：ctx 无 logger 字段 / logger.warn 非 function —— 走降级路径不抛。
-    const loggers = [{ warn: "not-a-function" }, undefined];
-    const results = [];
+  // 非法 logger 仅属于 warnLog 的降级契约，不得进入真实转发器的异步回调。
+  describe("A. warnLog 与 settings 降级", () => {
+    it.each([
+      { title: "无 logger", ctx: {} },
+      { title: "warn 非函数", ctx: { logger: { warn: "not-a-function" } } },
+    ])("$title 不抛异常", ({ ctx }) => {
+      expect(() => warnLog(ctx, "settings unavailable")).not.toThrow();
+    });
 
-    beforeAll(() => {
-      for (const logger of loggers) {
-        const ctx = makeCtx({ enabled: false, httpsEnabled: false });
-        if (logger === undefined) delete ctx.logger;
-        else ctx.logger = logger;
-        apply(ctx, { host: "127.0.0.1", port: 0, httpsEnabled: false, enabled: true });
-        results.push(Boolean(ctx._routes.find((r) => r.path === ROUTES.health)));
+    it("有效 logger 收到原消息并保留方法接收者", () => {
+      const logger = {
+        messages: [],
+        warn(message) {
+          this.messages.push(message);
+        },
+      };
+      warnLog({ logger }, "settings unavailable");
+      expect(logger.messages).toEqual(["settings unavailable"]);
+    });
+
+    it("settings 缺少 register 时告警且仍注册 health 路由", () => {
+      const messages = [];
+      const ctx = makeCtx({
+        logger: {
+          info() {},
+          error() {},
+          warn(message) {
+            messages.push(message);
+          },
+        },
+        inject(services, callback) {
+          if (services.includes("settings")) callback({ settings: {} });
+        },
+      });
+      try {
+        apply(ctx, { enabled: false, httpsEnabled: false, host: "127.0.0.1", port: 0 });
+        expect(messages).toEqual([
+          "dsh-lan-proxy: settings 服务缺少 register 能力 — 设置命名空间未注册，卡片降级",
+        ]);
+        expect(ctx._routes.filter((r) => r.path === ROUTES.health).length).toBe(1);
+      } finally {
+        ctx[Symbol.for("dispose")]();
       }
-    }, 30000);
-
-    const titled = loggers.map((logger, i) => ({
-      title: `logger=${JSON.stringify(logger)} 降级不阻断注册`,
-      i,
-    }));
-    it.each(titled)("$title", ({ i }) => {
-      expect(results[i]).toBeTruthy();
     });
   });
 
