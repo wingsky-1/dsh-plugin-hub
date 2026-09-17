@@ -18,8 +18,9 @@
 | [DA 数据架构](#user-content-da) | 配置、证书、认证材料与状态由谁持有 | [DA 图](diagrams/lan-proxy-da.svg) |
 | [TA 技术架构](#user-content-ta) | 挂载、构建、信任边界与兼容性 | [TA 图](diagrams/lan-proxy-ta.svg) |
 
-> 各视图的 SVG 由同名 HTML 导出；正文 Mermaid 讲关键链路。证据使用源码路径与符号，
-> 不将历史性能读数或平台观察当作本次验证。路径默认相对 `packages/dsh-lan-proxy/`。
+> 各视图的 SVG 由同名 HTML 导出；正文 Mermaid 讲关键链路。证据为 `路径:行号`（取自
+> 80a8584a 树，后续提交会漂移，以符号搜索兜底）或可复现常量；不把历史性能读数当本次验证。
+> 路径默认相对 `packages/dsh-lan-proxy/`。
 
 <a id="ba"></a><a id="user-content-ba"></a>
 ## 1. 业务架构（BA）
@@ -33,7 +34,7 @@
 - TLS 和压缩改善传输条件，不提供用户隔离；插件不是任意上游的通用代理，也不替代宿主认证。
 - `injectToken` 默认开启会扩大访问授权；`ownsHostCompat` 默认关闭，仅影响页面 Host trust 声明，两者不是同一开关。
 
-证据：`src/server/apply.ts#apply`、`src/server/config/impl/model.ts`、`src/client/settings-card.tsx`。
+证据：`src/server/apply.ts:72`（apply）、`src/server/config/impl/model.ts:132`（`wsBridgeEnabled` 默认 true）、`:173`（`ownsHostCompat` 默认 false）、`src/client/settings-card.tsx`。
 
 ### 1.2 总体访问链
 
@@ -69,11 +70,11 @@
 
 | 域 | 职责与依赖 | 主要证据 |
 |---|---|---|
-| config | schema、读写路由、官方 settings 接线；消费 shared 默认值 | `src/server/config/interface.ts` |
-| migrate | 旧格式迁移；消费 config 的净化与写端口 | `src/server/migrate/impl/file/index.ts` |
-| tls | 加载成对证书或生成自签名材料，交给装配层 | `src/server/tls/interface.ts` |
-| proxy | 独立 HTTP/HTTPS 监听、转发、压缩、WS 桥接 | `src/server/proxy/interface.ts` |
-| host-trust | 经官方 tapIndex 注入自条件脚本；直接消费窄用途 ctx | `src/server/host-trust/impl/injection.ts` |
+| config | schema、读写路由、官方 settings 接线；消费 shared 默认值 | `config/impl/model.ts:225`（`FILE_CONFIG_VALIDATORS`）、`config/impl/namespace.ts:18`（`SETTINGS_NS`）、`:28`（watch） |
+| migrate | 旧格式迁移；消费 config 的净化与写端口 | `migrate/impl/file/index.ts:16`（`MIGRATED_BAK_NAME`） |
+| tls | 加载成对证书或生成自签名材料，交给装配层 | `tls/impl/index.ts:50`（loadTlsFromFiles）、`:79`（ensureSelfSignedTls） |
+| proxy | 独立 HTTP/HTTPS 监听、转发、压缩、WS 桥接 | `proxy/impl/proxy.ts:671`（createLanProxy） |
+| host-trust | 经官方 tapIndex 注入自条件脚本；直接消费窄用途 ctx | `host-trust/impl/injection.ts:79`（registerHostTrustInjection） |
 
 `src/server/shared/` 是默认值与回环目标判据的共享叶子。浏览器端由
 `src/client/index.ts` 装配样式、locale、设置卡片与独立控制台观测；
@@ -106,13 +107,18 @@ flowchart TD
 
 要点：
 
-- **配置三通道**：官方 settings 命名空间 `dsh-lan-proxy`（user 层）＝权威持久层 →
-  组合层 cordis config（base 层）→ schema 默认值兜底；解析顺序
-  `defaults → base → user`。`scope.watch` 驱动热更新（3s 防抖重建转发器），无需重启；
-- **存量 `<DSH_HOME>/lan-proxy/config.json`** 在 settings attach 后迁移进官方存储；
+- **配置三通道**：官方 settings 命名空间 `dsh-lan-proxy`（`config/impl/namespace.ts:18`，user 层）
+  ＝权威持久层 → 组合层 cordis config（base 层）→ schema 默认值兜底；解析顺序
+  `defaults → base → user`。`scope.watch` 驱动 `scheduleSync`（`apply.ts:333-340`，**3000ms**
+  防抖，`:339`），无需重启。防抖是刻意取舍：重建会 dispose 当前转发器、掐断经 lan-proxy
+  正访问设置页的连接，先让保存回执发出再重建（`apply.ts:328-331` 注释明言「过早重建会丢失
+  HTTP 响应（保存误报失败）」）；
+- **存量 `<DSH_HOME>/lan-proxy/config.json`** 在 settings attach 后由 `migrateFileConfig`
+  迁移进官方存储（`apply.ts:395-401` onScope 内，**前置于一切 enabled 判定**，禁用用户升级同样迁移）；
   原文件改名 `.migrated.bak`，bak 重放行为见 §3.2，不再把旧 config.json 当作配置权威源；
 - **随机 UUID polyfill**：LAN 明文 HTTP 是非安全上下文，缺 `crypto.randomUUID`，
-  否则客户端 RPC 的 `mintRpcId` 全抛错——经 `webServer.tapIndex` 幂等注入补丁脚本。
+  否则客户端 RPC 的 `mintRpcId` 全抛错——`apply.ts:349-373` 经 `webServer.tapIndex` 以
+  `<script id="__dshRandomUuidPolyfill__">` 幂等注入（`:352` 以 id 判重）；
 
 ---
 
@@ -120,19 +126,26 @@ flowchart TD
 
 #### 2.3.1 HTTP / HTTPS 转发
 
-- `http-proxy@1.18.1`（构建期内联）＋ 上游 keep-alive 连接池（`maxSockets: 64`）；
-- 每请求头重写 `rewriteHeaders`：只覆盖 `host`/`origin` 为回环 authority，其余原样；
-  **不使用 changeOrigin**（围栏逻辑留本模块）；
-- 断连传播：`proxyRes` 记 `httpClientAborted` 并 `res.destroy()`；`proxyReq` 监听底层
-  socket close（防移动端切后台占用 keep-alive 槽位）；`proxy.on("error")` 回 502。
+- `http-proxy@1.18.1`（构建期内联）＋ 上游 keep-alive 连接池（`proxy/impl/proxy.ts:688`，
+  `Agent({ keepAlive: true, maxSockets: MAX_UPSTREAM_SOCKETS })`）；
+- 每请求头重写 `rewriteHeaders`（`proxy.ts:282-290`）：只覆盖 `host`/`origin` 为回环
+  authority，其余原样；**不使用 changeOrigin**——`forwardOptions`（`:769-773`）每请求前置
+  重写，围栏逻辑不出本模块（`:760-763` 注释）；
+- 断连传播（#308）：`proxyResReceived`（WeakSet，`proxy.ts:786`）为闸——仅当「未收到上游
+  响应头」时 req `close` 才视为客户端断连并 destroy 上游请求（`:774-785` 注释解释了为什么
+  不能用 `res.writableEnded`：正常请求会被误杀）；`proxy.on("error")` 回 502；
 
 #### 2.3.2 HTTPS 并存
 
 - 同一转发器同时监听 HTTP（默认 3081）与 HTTPS（默认 3443）；HTTPS 绑定失败**只降级
   HTTP-only**（warn），不拖垮 HTTP；
-- 证书两级：用户配置 `tlsCertFile`/`tlsKeyFile`（mkcert 零警告）＞ 内置 selfsigned 自动
-  生成并缓存到 `<DSH_HOME>/lan-proxy/`（私钥 0600，SAN 含 localhost/127.0.0.1/::1/本机
-  局域网 IP，剩余有效期 <24h 自动重签）。
+- 证书两级：用户配置 `tlsCertFile`/`tlsKeyFile`（成对校验，`apply.ts:199-210`，任一失败
+  仅降级 HTTP-only）＞ 内置 selfsigned（`tls/impl/index.ts:79-104`）：rsa:2048 / sha256 /
+  **825 天**（`:25`，≈2.25 年浏览器信任窗口），缓存到 `<DSH_HOME>/lan-proxy/`，私钥两次收敛
+  0600（`:84`、`:100-103`）；SAN 除 `127.0.0.1`/`localhost`/`::1` 外并入本机全部非回环 IPv4
+  （`:88` extraSans）——SAN 必需，Chrome 59+ 对缺失 SAN 的证书直接拒绝（`:5-7` 注释）；
+  缓存复用条件是**剩余有效期 > 24h**（`:27` `MIN_REMAINING_SECONDS = 86400`，`:64-72` 判定），
+  否则重签；
 
 #### 2.3.3 WebSocket 压缩桥接（终结 + permessage-deflate）
 
@@ -140,7 +153,14 @@ flowchart TD
 `wsCompressEnabled`、`wsCompressPaths`（默认 `["/api/remote.mux"]`）与 UA 策略只控制
 浏览器段是否协商压缩；关压缩或清空白名单不丢保活。显式 `wsBridgeEnabled:false` 才全走字节透传。
 直接调用 `createLanProxy` 且省略 `wsBridge` 时保留旧的按压缩路径选择桥接行为，
-不能把这个底层兼容分支当作插件默认值。证据：`src/server/proxy/impl/proxy.ts#handleUpgrade`。
+不能把这个底层兼容分支当作插件默认值。证据：`proxy/impl/proxy.ts:931-987` `handleUpgrade`
+——围栏 403（`:932-935`）→ 三态判定（`:943-949`：true 全桥接 / false 全透传 / undefined
+仅压缩路径桥接）→ 压缩判定 `:953`；透传路径按 UA 策略删 `sec-websocket-extensions`
+（`:966-977`，上游不确认压缩则浏览器段不启用）。桥接四路 teardown（`:574-606`）方向不对称是
+刻意的：上游 close/error → `browserWs.terminate()`（强拆，不依赖对端握手）；浏览器
+close/error → `upstreamWs.close()`（握手级联）；转发器 close() 再经 `bridgeSockets`
+登记（`:642-645`、`:758`）显式 terminate 上游不响应 close 的残留。半开探活两端独立计时
+（`:534-555`，缺省 30s，`probeIntervalMs=0` 关闭），一个周期无 pong 即 terminate。
 
 以下时序仅展示协商成功的压缩路径：
 
@@ -173,10 +193,13 @@ sequenceDiagram
 
 #### 2.3.4 HTTP 响应压缩（Brotli/gzip，合并自 dsh-gzip）
 
-- `compression@1.8.1` 中间件包在 HTTP 与 HTTPS 请求处理器外层——只作用于「本插件与
-  LAN 客户端之间」的链路，**回环直连 web 不经过此层**；
-- 判定依据是 content-type filter（JSON/`+json`/`text/*`，**SSE `text/event-stream` 豁免**）
-  + threshold 1024，无路径白名单（README 中「路径白名单」指 WS 桥接的 `wsCompressPaths`）；
+- `compression@1.8.1` 中间件包在 HTTP 与 HTTPS 请求处理器外层（`proxy.ts:716-731` 经
+  `withCompress` 接线，`:737-741`）——只作用于「本插件与 LAN 客户端之间」的链路，**回环直连
+  web 不经过此层**；关闭时零开销直通（无中间件层）；
+- 判定是 content-type filter（`:722-728`，复用 `isCompressible`，SSE 豁免）+ `threshold:
+  1024`（`:721`），无路径白名单；filter 放行 ≠ 最终一定压缩（库按阈值/状态码二次判定），
+  计数是**协商计数**（`:691-692` 注释）；本地生成的 403/预检/502 响应打 `LOCAL_RESPONSE`
+  Symbol（`:711-713`、`:732-735`）不进计数，防诊断数字被非转发流量污染；
 - 档位预设 0..3（0 默认 / 1 低 gzip1·br2 / 2 中 gzip5·br5 / 3 高 gzip9·br9），对 gzip 与
   Brotli 同时生效；`httpCompressEnabled:false` 一键关闭，装配默认档位为 1。
 - 上游已带 `Content-Encoding` 时让位，不会二次压缩；不能承诺浏览器总能获得 Brotli。
@@ -208,26 +231,42 @@ flowchart TD
   横幅警示 + 设置卡片常驻警示 + 安全模型章节作缓解；不可信网段务必关闭；
 - **关闭不吊销已发 cookie**：会话 cookie 有效期内（默认 30 天）已登录设备仍可直接进入；
   需立即收回时清空 dsh credentials 存储；
-- **不注入范围**：仅 `GET /` 且无 token 参数；WebSocket、非根路径、已带 token 的请求、
-  provider 不可用时全部原样透传。
+- **不注入范围**：仅 `GET /` 且无 token 参数（`isTokenMintCandidate`，`proxy.ts:334-342`，
+  与上游铸造条件严格对齐）；WebSocket、非根路径、已带 token 的请求、provider 不可用时全部
+  原样透传。带 cookie 判定按 RFC 6265 精确解析 cookie 名前缀 `dsh-auth-`
+  （`hasDshAuthCookie`，`:305`、`:313-327`），注释明说**禁止整头子串匹配**——其他 cookie 值
+  含该子串会误判；重放上下文存 `replayContexts` WeakMap（`:789`），401 时 `delete` 后带 token
+  重放一次（`:820-829`），天然封顶。
 
 ---
 
 ### 2.4 Host trust 注入与可观测降级
 
-`ownsHostCompat` 默认关闭。`registerHostTrustInjection` 只在装配时注册一次 tap，
-每次服务 index.html 时重新读取开关；脚本仅在非回环页面、且已有 `__DSH_TRANSPORT__`
-未定义时写入 `{ ownsHost: true }` 和 `__DSH_LAN_PROXY_HOST_TRUST__` marker。
-已有 transport 不覆盖；这不是服务端身份验证，也不等于 TLS。更改开关不会撤回已打开
-页面中的全局变量，需重新加载页面观察新结果。
+`ownsHostCompat` 默认关闭（`config/impl/model.ts:173`）。`registerHostTrustInjection`
+（`host-trust/impl/injection.ts:79-86`）只在 apply 顶层注册一次 tap——写进 `sync()` 会让
+webServer 的 indexTaps 随每次配置热更新无界增长（`:14-18` 注释的硬纪律 1）；开关在 tap 内
+**按请求**读取（`apply.ts:378` 传 `() => resolve().ownsHostCompat === true`，硬纪律 2：捕获
+布尔后切开关要么不生效、要么被迫重建转发器掐断活跃连接）。脚本只在非回环页面（localhost /
+`[::1]` / 整个 127/8，与上游 `isLoopbackHostname` 同口径，`injection.ts:42-48`）、且已有
+`__DSH_TRANSPORT__` 未定义时写入 `{ ownsHost: true }` 和 `__DSH_LAN_PROXY_HOST_TRUST__`
+marker（`:39`、`:52-53`）。已有 transport 不覆盖——为什么不用结构化注入行：`kind: "global"`
+行渲染为整体赋值，会覆盖 desktop-host 等组合先行写入的 transport 且函数字段被 JSON 序列化
+丢弃（`:9-12` 注释）。关闭时逐字节原样返回（`:68`）。这不是服务端身份验证，也不等于 TLS；
+更改开关不会撤回已打开页面中的全局变量，需重新加载页面观察新结果。
 
-观测器 `evaluateHostTrust` 结合 hostname、marker 与 `ctx.remote.$host.isLoopback`
-给出 `loopback-page` / `compat-active` / `contract-drift` / `compat-off`。
-marker 在而宿主事实不为 true（含未知）时告警；没有 marker 但上游本就认可的页面不误报。
-设置卡片可能因上游 memory scope 而根本不挂载，因此客户端 apply 最前面独立向控制台告警一次，
-宿主横幅同时报告配置开关，不能只靠卡片呈现故障。
+观测器 `evaluateHostTrust`（`client/host-trust-status.ts:84-93`）结合 hostname、marker 与
+`ctx.remote.$host.isLoopback`（防御式最小面 `RemoteLike`，`:28-30`）表驱动给出四态：
+`loopback-page`（回环页，或无 marker 但 `isLoopback` 为 true 的宿主独占页——那是正常态，
+`:86-89`）/ `compat-active` / `contract-drift` / `compat-off`。`contract-drift` 是 marker 在
+而宿主事实非 true（**含未知**，fail-closed，`:91-92`）。告警经独立出口 `hostTrustAlert`
+（`:109-124`）：设置卡片挂在 `settings.plugin.item` 座位上，而上游把非回环页设置面降级为
+memory scope 时官方插件列表为空、卡片根本不挂载（`:98-104` 注释：同一枚 isLoopback 信号既
+决定卡片是否挂载、又决定判定结果，越需要判定的时刻承载面越不在场）——devtools 控制台是
+故障态下唯一可见面，客户端 apply 最前面告警一次（`client/index.ts:71`），宿主横幅同时报告
+配置开关（`apply.ts:295-303`，OFF 文案含 ssh -L 替代建议），不能只靠卡片呈现故障。
 
-证据：`src/server/host-trust/impl/injection.ts`、`src/client/host-trust-status.ts`、`src/client/index.ts#apply`。
+证据：`host-trust/impl/injection.ts:36-56`（脚本正文）、`client/host-trust-status.ts:84-93`
+（判定）、`:109-124`（告警文案）、`client/index.ts:71`。
 
 <a id="da"></a><a id="user-content-da"></a>
 ## 3. 数据架构（DA）
@@ -238,21 +277,26 @@ marker 在而宿主事实不为 true（含未知）时告警；没有 marker 但
 
 | 数据 | 权威来源 / 生命周期 | 消费方 |
 |---|---|---|
-| 用户配置 | 官方 settings 的 `dsh-lan-proxy` 命名空间 | `scope.get/watch`、配置路由、装配层 |
-| 旧 `config.json` / bak | 迁移输入；bak 可能再次重放，不是日常配置权威源 | `migrateFileConfig` |
-| TLS 材料 | 用户文件或 `<DSH_HOME>/lan-proxy/` 缓存 | TLS 域、HTTPS 监听器 |
-| launch token / cookie | 宿主认证服务 / 浏览器，不是插件自建凭据库 | 转发器限定入口注入或透传 |
-| 监听句柄与统计 | 转发器实例内存状态；禁用后仍可能保留上一实例读数 | health 与配置快照 |
+| 用户配置 | 官方 settings 的 `dsh-lan-proxy` 命名空间（`namespace.ts:18`） | `scope.get/watch`、配置路由、装配层 |
+| 旧 `config.json` / bak | 迁移输入；bak 可能再次重放，不是日常配置权威源 | `migrateFileConfig`（`migrate/impl/file/index.ts:115`） |
+| TLS 材料 | 用户文件或 `<DSH_HOME>/lan-proxy/` 的 `dsh-lan-proxy-{key,cert}.pem`（`tls/impl/index.ts:21-22`） | TLS 域、HTTPS 监听器 |
+| launch token / cookie | 宿主认证服务 / 浏览器；插件只持 WeakMap 单次重放上下文 | 转发器限定入口注入或透传 |
+| 监听句柄与统计 | 转发器实例内存状态（`connStats` 八项计数，`proxy.ts:695-704`；转发器重建后清零） | health 与配置快照 |
 
-证据：`src/server/config/impl/namespace.ts`、`src/server/tls/impl/index.ts`、`src/server/apply.ts`。
+证据：`config/impl/namespace.ts`、`tls/impl/index.ts:20-104`、`apply.ts:180-192`（compressSnapshot）。
 
 ### 3.2 迁移与瞬态数据生命周期
 
-迁移先把旧 `config.json` 改名为 `config.json.migrated.bak`，再净化、归一旧 WS
-路径并写入 scope；写失败尝试回滚改名。仅 bak 存在时会从 bak 重放，
-**bak 不是不可重放的完成标记**：当前实现后续启动仍会尝试 merge 其中的值，
-不能把它当成永不再读取的静态备份。这里描述现有行为，不在文档任务中改迁移协议。
-证据：`src/server/migrate/impl/file/index.ts#migrateFileConfig`、`#resumeMigrateFromBak`。
+迁移是 **rename-first marker**（`migrate/impl/file/index.ts:4-6`）：先把 `config.json`
+原子改名 `config.json.migrated.bak`（存在即「已处理过」），再 `sanitizeSettings` 净化、
+旧白名单归一化（`:23-30`：显式保存过旧默认 `["/api/events.mux","/api/events.host"]` 的存量
+升级后写为新默认 `["/api/remote.mux"]`，自定义白名单原样保留），经 owner `scope.update`
+增量写入；写失败回滚改名让下次启动重试（`:216` 注释：数据始终存在于 config.json 或 bak
+之一）。**中断态**（bak 存在且 config.json 不存在 = 改名后写入未完成）从 bak 重放
+（`resumeMigrateFromBak`，`:53-112`），成功后保留 bak——update 同值 merge 幂等，后续启动
+重放无害（`:50-51` 注释），所以 **bak 不是不可重放的完成标记**；损坏/空 JSON 只改名不写入
+（防固化 schema 默认值，`:40-41`）并 warn 手动恢复路径。这里描述现有行为，不改迁移协议。
+证据：`migrate/impl/file/index.ts:16`、`:115-120`（五步时序）、`:53`。
 
 配置来源在 settings attach 后切换至 `scope.get()`；attach 前使用组合层配置。
 即使 disabled，也保留 settings 与管理路由的装配，以允许迁移与重新启用。
@@ -277,21 +321,26 @@ flowchart TD
 
 ### 3.3 路由与配置
 
-本插件管理路由走 loopback 围栏（非回环 403 优先于方法错 405）。这里检查的是
-**到达宿主的请求**：经 lan-proxy 的同源请求会重写 Host/Origin 并从回环连接上游，
-不能据此声称 LAN 一律 403。`Sec-Fetch-Site` 原样保留，跨站请求仍可能被围栏拒绝；
-服务端围栏与浏览器侧 Host trust 是不同层。
+本插件两条管理路由（`buildConfigRoutes`，`config/impl/routes.ts:160`；health，
+`apply.ts:448-480`）走 loopback 围栏 + 方法白名单（`guardLoopbackMethod`，403 先于 405）。
+围栏检查的是**到达宿主的请求**：经 lan-proxy 的同源请求被 `rewriteHeaders` 重写
+Host/Origin 后从回环连接上游，合法同源请求可通过围栏，不能声称 LAN 一律 403。
+`Sec-Fetch-Site` 原样透传（`proxy.ts:29` 注释），跨站仍可能被围栏拒绝；服务端围栏与
+浏览器侧 Host trust 是不同层。
 
 | 路由 | 方法 | 说明 |
 |---|---|---|
 | `/api/dsh-lan-proxy/config` | GET / PUT | 配置快照（含压缩运行态 `compress`）+ 增量 patch（`applyConfigPatch`：validate → sanitize → tls 成对 → update/replace） |
 | `/api/dsh-lan-proxy/health` | GET | 健康检查：enabled / 端口 / 监听状态 / wsCompress 生效值 / 压缩协商计数 / connStats / configDir |
 
-配置键集以 `src/server/config/impl/model.ts` 的 schema 与 `FILE_CONFIG_VALIDATORS` 为准；
-除监听、证书、目标端口、横幅、HTTP/WS 压缩外，包含 `wsBridgeEnabled`、`injectToken`
-与 `ownsHostCompat`。GUI 保存经 PUT patch，`expectedRevision` 可选；冲突返回 409，
-settings 缺席返回 503。TLS 路径必须成对设置或成对清空；清空走 `replace` 而非 merge，
-防止旧字段残留（`src/server/config/impl/routes.ts#applyConfigPatch`）。
+配置键集以 `config/impl/model.ts` 的 zod schema（`:132-206`，含 `wsBridgeEnabled` 默认
+true、`ownsHostCompat` 默认 false）与 `FILE_CONFIG_VALIDATORS`（`:225`）双轨为准——schema
+给默认值，validators 给非法键定位。GUI 保存经 PUT patch（`applyConfigPatch`，
+`routes.ts:57-154`）：validate 定位首个非法键（`:79-87`）→ sanitize → TLS **两层成对校验**
+（raw 层按键存在性 `:102-111`，防「单侧空串 + 另一侧缺席」残留孤儿半套证书；sanitize 层
+`:113-120`）→ 清除语义走 `replace` 整节替换（update 是 merge 无法 unset，`:53-55`）→
+冲突 `SETTINGS_CONFLICT` 回 409（`:140-147`）、settings 缺席 503（`:61-68`）、写入异常对外
+收敛固定文案（P2-2，`:148-151`），异常原文只进服务端日志。
 
 ---
 
@@ -339,6 +388,11 @@ settings 缺席返回 503。TLS 路径必须成对设置或成对清空；清空
 
 ### 4.4 已知限制
 
-- HTTPS 自签名证书无外部命令依赖；未配置证书且生成失败时 HTTPS 自动降级关闭；
-- 换网段导致 IP 变化时自签名证书需重新生成（SAN 含旧 IP）或配置证书文件路径；
-- WS 桥接有额外连接与压缩开销；关闭桥接会同时失去其保活能力，不应只为关闭压缩而关桥接。
+- HTTPS 自签名证书无外部命令依赖；未配置证书且生成失败时 HTTPS 自动降级关闭
+  （`apply.ts:212-217` 仅 warn）；
+- 换网段导致 IP 变化时自签名证书需重新生成（SAN 含旧 IP，`tls/impl/index.ts:88`）或配置
+  证书文件路径；剩余有效期 >24h 的旧证书不会主动重签；
+- WS 桥接有额外连接与压缩开销；关闭桥接会同时失去其保活能力（移动端切后台会被上游心跳
+  判死，`proxy.ts:91-101`），不应只为关闭压缩而关桥接；
+- health 的 `listening` 是 `disposeProxy !== undefined`（`apply.ts:465`），`connStats` 来自
+  `activeProxy`（`:476`）——禁用或监听失败后统计可能是旧实例最后的读数，不是端到端探活。

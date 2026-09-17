@@ -4,8 +4,8 @@
 > 把审批、提问、完成与错误转成可配置的离屏提醒，并留下投递与抑制记录。
 >
 > 安装、配置与安全模型见 [包 README](../../packages/dsh-notifier/README.md)。本文解释业务 BA、应用 AA、数据 DA、技术 TA。
-> 证据基线：`80a8584a`；除另注外，`src/…#符号` 省略包目录前缀，表示文件内可搜索符号，不是行号或网页锚点。
-> 机制结论来自源码核对，不将历史图片或既有测试文件当成本次实测结果。
+> 证据基线：`80a8584a`；证据为 `路径:行号`（取自该树，后续提交会漂移，以符号搜索兜底）或可复现常量。
+> `src/…` 省略包目录前缀。机制结论来自源码核对，不将历史图片或既有测试文件当成本次实测结果。
 
 ## 四视图导航
 
@@ -28,7 +28,7 @@
 
 | 能力 | 入口 | 可见结果与边界 |
 | --- | --- | --- |
-| 宿主事件提醒 | 审批、提问、agent 状态与错误 | ask / question / done / subagent-done / error / turn-end |
+| 宿主事件提醒 | 审批、提问、agent 状态与错误 | 七项订阅（`src/server/events/impl/listen/index.ts:31-43`）：onApprovalRequest / onUserQuestion / onSessionEvent / onAgentStatus / onAgentDisposed / onAgentTurnStopping / onAgentError；订阅集合卸载期逐个退订（`:47-53`），单例重复装配当场抛错（`:27`） |
 | 多出口投递 | browser / system / Bark / Webhook | 浏览器提醒到当前客户端，系统提醒到 dsh 宿主，远程推送到配置服务 |
 | 用户控制打扰 | 频道、事件、免打扰、kindRoutes | 内置频道分别控制 enabled/popup/sound，browser 另有 whenVisible；动态 kind 须确认 |
 | 自检与解释 | 测试、历史、状态、诊断 | 测试只表示受理；历史说明抑制与逐频道结果；诊断区分弹窗和声音能力 |
@@ -38,7 +38,7 @@
 
 ### 1.2 非目标
 
-- 不接管审批决策。两条 waterfall 均以 global+prepend 旁观，通知处理失败记日志后仍交回 next（`src/index.ts#bindHost`）。
+- 不接管审批决策。两条 waterfall 均以 `{ global: true }` + prepend 旁观（`src/index.ts:74` `GLOBAL_LISTEN`——宿主事件默认按 fiber 作用域过滤，漏掉的表现是「有些会话不通知」且只在多会话下出现，`:70-73` 注释），通知处理失败记日志后仍交回 next。
 - 不提供可靠消息队列或用户已读回执。SDK send 返回 Promise<void>；browser 帧交接不证明系统已展示（`src/server/sdk/impl/service/type.ts#NotifierService`、`src/server/pipeline/interface.ts#submit`）。
 - 不把所有 idle 当任务成功。只有新鲜 completed 证据产生完成提醒；abort、blocked 等不冒充完成（`src/server/events/impl/state/index.ts#settleIdle`）。
 - 不做错误合并、完成聚合、审批超时二次提醒。SDK 请求无调用方/请求身份契约，不能据此推导跨请求去重（`src/server/sdk/impl/service/type.ts#NotifyRequest`）。
@@ -71,16 +71,16 @@
 
 ### 2.2 事件、裁决与投递
 
-七事件为 approval/request、**user-questions/request**、session/event、agent/status、agent/disposed、agent/error、agent/turn-stopping；当前没有 internal/service 包装 svc.ask 的链路。事件域只产请求，开关统一由管线判定（`src/index.ts#bindHost`、`src/server/events/impl/listen/index.ts#EventListener`）。
+七事件为 approval/request、**user-questions/request**、session/event、agent/status、agent/disposed、agent/error、agent/turn-stopping（`src/server/events/impl/listen/index.ts:31-43`，七条订阅一一对应七个翻译器）；当前没有 internal/service 包装 svc.ask 的链路。事件域只搬运不含判断（`:2-3` 文件头「本块只做搬运不含判断」），不产出通知是常态（`forward`，`:57-59`），开关统一由管线判定（`src/index.ts#bindHost`）。
 
 完成判定推送优先、快照兜底：running 记基线；session/event 的 turn/end 优先；推送缺席才读快照，快照 turn 不比基线新则弃用。idle 无论是否通知都记 lastEndedTurn，防旧证据复用；disposed 清理状态；turn-stopping 按 agent+turn 去重（`src/server/events/impl/state/index.ts#AgentStateMachine`）。
 
 三入口 events / api 测试 / sdk 均进 submit：
 
-1. judgeRequest：disabled → kind-off → unlisted → quiet。test 仍受组合层总开关约束，但跳过其余三关。quiet 支持跨午夜和 allowKinds 豁免。
+1. judgeRequest（`src/server/pipeline/impl/judge/index.ts:43-59`）：disabled → **test 短路**（`:52`，唯一例外：过了总开关即放行，注释明言「被静音吃掉等于测试按钮失效」）→ kind-off（`:53`）→ unlisted（`:54`，动态 kind 只认 allowKinds）→ quiet（`:55-57`）。quiet 支持跨午夜（`start > end`，`:33-34`），`start === end` 零长窗口与解析失败一律未命中——脏设置不该把通知全部吃掉（`:24` 注释）；豁免只认显式 `allowKinds`（`:72-75`）。每条判据一个有名函数、顺序在四行里读得出来（`:37-42` 注释：此前四条规则混在一个函数体里）。
 2. routeTargets：只取 enabled 频道；kindRoutes 空或缺省表示全部启用频道；onlyChannel 收窄且绕过 kindRoutes。失效 id 被识别，不代表自动重写用户配置。
 3. finalize 与出口展示上限：按码点截断；标题均 64，正文 system 256、browser 2048、Bark/Webhook 4096。
-4. dispatch：逐目标 fail-soft。Bark 仅可重试失败最多重试 2 次，退避 1s/2s、每频道在途 2，等待队列无上限。system 1s 节流当前记 skipped/reasonThrottled，**不沿用上次成功结果**；其它出口不重试。节奏按 channelId 键控，skipped 不更新“最后投递状态”。
+4. dispatch：逐目标 fail-soft，策略表 `POLICIES` 按出口类型键控（`src/server/pipeline/impl/dispatch/index.ts:13`）。Bark 仅可重试失败最多重试 2 次，退避 1s/2s、每频道在途 2，等待队列无上限。system 1s 节流当前记 skipped/reasonThrottled，**不沿用上次成功结果**；其它出口不重试。节奏按 channelId 键控，skipped 不更新「最后投递状态」。
 
 证据：`src/server/pipeline/impl/judge/index.ts#judgeRequest`、`impl/route/index.ts#narrowRoutes`、`impl/dispatch/index.ts#POLICIES` / `Dispatcher`；`src/server/channels/impl/deliver/caps.ts#displayCaps`。
 
@@ -107,14 +107,18 @@ apply 不要求打开设置卡片就启动通知半区；回前台恢复标题�
 
 | 路径 | 方法 | 语义 |
 | --- | --- | --- |
+八条端点以字面量表登记（`src/server/api/impl/service/index.ts:31-44`）：
+
+| 路径 | 方法 | 语义 |
+| --- | --- | --- |
 | /config | GET/PUT | 掩码视图；增量 patch 与可选 expectedRevision |
-| /events | GET | SSE，since 查询参数补拉 |
-| /test | POST | 固定测试通知、可选 channelId；只报告受理 |
 | /history | GET/DELETE | 最近历史 / 清空 |
 | /status | GET | 频道最后终态与连续失败 |
 | /kinds | GET/POST | 动态 kind 清单 / 用户确认 |
+| /test | POST | 固定测试通知、可选 channelId；只报告受理 |
 | /health | GET | 平台、sseEvicts、能力摘要 |
 | /diagnostics | GET | 完整宿主能力与修复建议 |
+| /events | GET | SSE，`?since=N` 补拉（`:40-43` 包一层保 this，裸传丢 this） |
 
 health/diagnostics 共用 Promise 缓存探测，8s 总预算；失败/超预算回“无法判定”，不让附属诊断拖垮 health 主面（`src/server/api/impl/probe/index.ts#ProbeEndpoints`）。
 
@@ -131,9 +135,9 @@ health/diagnostics 共用 Promise 缓存探测，8s 总预算；失败/超预算
 | 载体 | 协议 | 生命周期边界 |
 | --- | --- | --- |
 | config.json | stored 原样 → user 净化 → effective 完整；同步加载、排队原子写 | 不是文件 watcher，运行期写走 writeConfig |
-| history.jsonl | 逻辑追加，实际串行读改写+原子整文件替换 | 超过 400 行压到尾 200；读最多 200，按 historyMaxAgeDays 过滤 |
-| status.json | channelId → lastTs/lastStatus/failStreak/lastError | 同步懒加载镜像；500ms 合并写；record 淘汰至 64 项 |
-| seq.json | 十进制整数文本加换行，不是 JSON 对象 | 每帧异步写序号；replay 不持久化 |
+| history.jsonl | 逻辑追加，实际**写队列串行化 + 原子整文件替换**（`src/server/stores/impl/history/index.ts:39-40` 队列、`:70` writeTextAtomic；并发读改写会互相覆盖丢记录） | 阈值语义：行数 > `HISTORY_LIMIT*2`（=400，`:16` `HISTORY_LIMIT=200`）才截到尾 200（`:69`）；读最多 200，保留天数每次读时现取 `historyMaxAgeDays`（`:64`，装配期取快照会在用户改设置后失效，`:4`） |
+| status.json | channelId → lastTs/lastStatus/failStreak/lastError | 内存镜像即时更新；**500ms debounce 合并写**（`:24`，通知风暴时避免每条通知一次整文件重写，`:4`）；上限 64 条（`:21`），删了再插 = 移到表尾、最旧先出（`:73-77`）；detail 截 300 码点（`:28`）；failStreak 跨重启延续（`:67-68` 冷启动读回镜像） |
+| seq.json | 十进制整数文本加换行，不是 JSON 对象 | 每帧异步写序号；replay 不持久化；序号持久化是刻意的——重置会让重连客户端把旧帧当新的（`src/server/api/impl/stream/index.ts:1-2`） |
 | version | 单行存储版本刻度 | 成功迁移步骤后写，当前步骤目标 0.2.4 |
 
 历史含 suppressed 与 channels 明细；结果为 ok/failed/skipped。理由为 code/params/detail，旧散文读取时归一，状态 detail 截到 300 码点（`src/server/stores/impl/history/index.ts#HistoryStore`、`src/server/stores/impl/status/index.ts#StatusStore`）。
@@ -146,9 +150,9 @@ revision 是递归稳定 JSON 的 SHA-256 摘要前 32 位，**不是单调计�
 
 ### 3.3 SSE 不是可靠消息队列
 
-`src/server/api/impl/stream/index.ts#StreamHub` 将 body/pop 转 message/playOnly，附 kind/seq/ts/sound/whenVisible；先增序号、入内存最近 200 帧缓冲、异步落序号、广播。开流立即写 connected 注释刷新响应头，30s 心跳；只按 ?since=N 回 seq>N，不声明 SSE id/Last-Event-ID 协议。
+`src/server/api/impl/stream/index.ts#StreamHub` 将 body/pop 转 message/playOnly，附 kind/seq/ts/sound/whenVisible；先增序号、入内存最近 `REPLAY_LIMIT = 200` 帧缓冲（`:19`）、异步落序号、广播。开流立即写 `: connected` 注释（`:24-26`）——注释帧客户端不解析，作用是**立即 flush 响应头**：Node 会缓冲响应头直到第一次写入，没有这行客户端要等第一个心跳（30s 后）才从 CONNECTING 进 OPEN。`HEARTBEAT_MS = 30000`（`:22`）与客户端 60s 看门狗对齐（「留足两次失败的余地」，`:21`）；只按 `?since=N` 回 seq>N（EventSource 自动重连不带 query），不声明 SSE id/Last-Event-ID 协议。
 
-客户端同一 lastSeq 既去重又生成主动新建连接的 since URL；JSON 解析成功才刷新活动时间。静默超过 60s 触发看门狗重连，检查间隔 65s、重连最小间隔 5s；可见性恢复也触发。刷新页面重建内存水位，不能承诺跨刷新 exactly-once（`src/client/notify/session.ts#startNotifySession`）。
+客户端（`src/client/notify/session.ts`）三条刻意语义（`:9-13` 注释）：重连必须带 since（EventSource 自动重连不携带 query，不带就丢断线期间事件）；只有**解析成功**的帧才刷新 lastActivity（畸形帧不该让半开检测失效）；重连最小间隔防 onerror 与看门狗互相触发成重连风暴。常量：`WATCHDOG_MS = 60000`（`:16`）、检查起始延迟 `WATCHDOG_ARM_MS = 60000+5000`（`:19`，比窗口长 5s 避免边界误判）、`RECONNECT_MIN_GAP_MS = 5000`（`:22`）。`lastSeq` 既是去重水位又是 since 起点——两者必须同源，否则要么重复提醒、要么漏帧（`:53-54`）；`seq <= lastSeq` 丢弃（`:98`）。可见性恢复也触发重连。刷新页面重建内存水位，不能承诺跨刷新 exactly-once。
 
 共享 `shared/sse-hub.js#createSseHub` 管句柄/心跳/回收，不设连接数硬上限；stalled 回收与 maxAge 空闲轮换处理不同残留。health 给聚合 sseEvicts，不给逐连接明细。句柄数不是在线设备数或送达数。重启清 replay；序号写失败不阻塞广播，故仍有重启后水位回退与补拉窗口丢失的边界。
 
@@ -156,7 +160,7 @@ revision 是递归稳定 JSON 的 SHA-256 摘要前 32 位，**不是单调计�
 
 upgrade 同步先跑 0.2.3 → 0.2.4：布局 → 配置形态 → 理由形态（`src/server/upgrade/impl/steps/index.ts#STEPS`）。
 
-- 布局保留已有目标；旧文件写到新位置后归档 .migrated.bak；无旧文件建空历史/状态/0 序号（`impl/steps/storage-layout.ts#migrateStorageLayout`）。
+- 布局保留已有目标；旧文件写到新位置后归档 .migrated.bak；无旧文件建空历史/状态/0 序号（`impl/steps/storage-layout.ts#migrateStorageLayout`）。步骤表 `STEPS` 当前单步 0.2.3→0.2.4（`src/server/upgrade/impl/steps/index.ts:18-19`）。
 - 旧配置读取：宿主文档文件 → settings.describe → 更早自建 JSON/Bak；迁移合并时存量覆盖现文件，顶层频道键搬入 channels；全新无用户层不凭空写默认配置（`impl/legacy/index.ts#readLegacySettings`、`impl/steps/config-shape.ts#migrateConfigShape`）。
 - 动作或刻度写失败中止启动，刻度不抢先前移；已完成文件操作不是整组事务回滚。存储版本落差告警，不自动降级（`impl/chain/index.ts#applyStep` / `reportGap`）。
 - apply 的 finally 登记已采集释放栈；正常逆序 api→sdk→events→pipeline→stores→config→upgrade，音频临时目录最后收。不能推断各域内部部分安装失败都具备完整回滚（`src/index.ts#apply` / `assemble`）。
