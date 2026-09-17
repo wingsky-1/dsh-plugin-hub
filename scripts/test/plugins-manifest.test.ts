@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   checkAggregateConsistency,
+  compareConfigSurfaceContracts,
   filterOutRetiredDirs,
   isIndexedPackageDir,
   listPluginDirs,
@@ -41,6 +42,114 @@ function tempRepo() {
   mkdirSync(join(dir, "packages"), { recursive: true });
   mkdirSync(join(dir, "scripts", "data"), { recursive: true });
   return { dir, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
+}
+
+function matrixManifest() {
+  const face = (name: string) => ({ module: "fixtures/config.ts", export: name });
+  return {
+    active: ["dsh-lan-proxy"],
+    retired: [],
+    configSurfaces: [
+      {
+        package: "dsh-lan-proxy",
+        defaults: face("defaults"),
+        normalizer: face("normalize"),
+        booleanKeys: face("booleanKeys"),
+        countLimits: face("countLimits"),
+        matrix: {
+          schema: face("schema"),
+          validators: face("validators"),
+          hints: face("hints"),
+          clientDefaults: face("clientDefaults"),
+        },
+      },
+    ],
+  };
+}
+
+function withManifest(json, check) {
+  const { dir, cleanup } = tempRepo();
+  try {
+    writeFileSync(join(dir, "scripts/data/plugins-manifest.json"), JSON.stringify(json));
+    check(() => loadManifest(dir));
+  } finally {
+    cleanup();
+  }
+}
+
+test("#774 完整矩阵接受独立声明路径", () => {
+  const json = matrixManifest();
+  withManifest(json, (load) => assert.deepEqual(load().configSurfaces, json.configSurfaces));
+});
+
+for (const missing of ["schema", "validators", "hints", "clientDefaults"]) {
+  test("#774 matrix 缺 " + missing + " 必须失败", () => {
+    const json = matrixManifest();
+    delete json.configSurfaces[0].matrix[missing];
+    withManifest(json, (load) => assert.throws(load, /matrix.*缺声明对象/));
+  });
+}
+
+for (const invalid of [null, [], {}, { unknown: {} }]) {
+  test("#774 非法 matrix " + JSON.stringify(invalid), () => {
+    const json = matrixManifest();
+    json.configSurfaces[0].matrix = invalid;
+    withManifest(json, (load) => assert.throws(load, /matrix/));
+  });
+}
+
+test("#774 旧基准无matrix也不能漏登必跑矩阵", () => {
+  const json = matrixManifest();
+  delete json.configSurfaces[0].matrix;
+  withManifest(json, (load) => assert.throws(load, /dsh-lan-proxy.*matrix/));
+});
+
+test("#774 原必跑包改none不能取消L1 L2", () => {
+  const json = matrixManifest();
+  json.configSurfaces = [{ package: "dsh-lan-proxy", surface: "none", reason: "自行退出" }];
+  withManifest(json, (load) => assert.throws(load, /dsh-lan-proxy.*matrix/));
+});
+
+for (const retire of [false, true]) {
+  test("#774 同时移出受检集合不能取消必跑义务 retired=" + retire, () => {
+    const json = matrixManifest();
+    json.active = [];
+    json.configSurfaces = [];
+    if (retire) json.retired = [{ name: "dsh-lan-proxy", reason: "自行退役", successor: "" }];
+    withManifest(json, (load) => assert.throws(load, /dsh-lan-proxy.*matrix/));
+  });
+}
+
+test("#774 基准按包身份比较：重排与路径迁移不退化", () => {
+  const base = matrixManifest();
+  base.configSurfaces.push({ package: "dsh-other", surface: "none", reason: "无配置" });
+  const candidate = structuredClone(base);
+  candidate.configSurfaces.reverse();
+  candidate.configSurfaces[1].matrix.schema.module = "moved/schema.ts";
+  assert.deepEqual(compareConfigSurfaceContracts(base, candidate), []);
+});
+
+for (const mutation of ["remove", "none", "matrix", "input"]) {
+  test("#774 独立基准检测矩阵退化 " + mutation, () => {
+    const base = matrixManifest();
+    base.configSurfaces[0].package = "dsh-other";
+    const candidate = structuredClone(base);
+    if (mutation === "remove") candidate.configSurfaces = [];
+    if (mutation === "none")
+      candidate.configSurfaces[0] = { package: "dsh-other", surface: "none", reason: "退化" };
+    if (mutation === "matrix") delete candidate.configSurfaces[0].matrix;
+    if (mutation === "input") delete candidate.configSurfaces[0].matrix.schema;
+    const problems = compareConfigSurfaceContracts(base, candidate);
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /dsh-other.*(退化|删除)/);
+    assert.equal(base.configSurfaces[0].matrix.schema.export, "schema");
+  });
+}
+
+for (const base of [null, {}, { configSurfaces: {} }, { configSurfaces: [null] }]) {
+  test("#774 损坏基准不回退候选 " + JSON.stringify(base), () => {
+    assert.throws(() => compareConfigSurfaceContracts(base, matrixManifest()), /基准/);
+  });
 }
 
 const EXPECTED_DEPS = {
@@ -241,11 +350,12 @@ test("#8b standalone 校验：重名互斥 / 数组重复项 → 报错；缺省
     writeFileSync(
       join(dir, "scripts", "data", "plugins-manifest.json"),
       JSON.stringify({
-        active: ["dsh-a"],
-        retired: [],
-        // 配置面声明是必需节（#733 计划项 3.1.1：未登记即红），最小 manifest 也要覆盖其包；
-        // surface: "none" 是「确实没有用户配置面」的显式形态。
-        configSurfaces: [{ package: "dsh-a", surface: "none", reason: "测试用" }],
+        ...matrixManifest(),
+        active: ["dsh-lan-proxy", "dsh-a"],
+        configSurfaces: [
+          ...matrixManifest().configSurfaces,
+          { package: "dsh-a", surface: "none", reason: "测试用" },
+        ],
       }),
     );
     assert.deepEqual(loadManifest(dir).standalone, [], "缺 standalone 键应为空集");

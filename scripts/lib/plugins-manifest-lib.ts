@@ -182,6 +182,45 @@ function checkRetired(retired, seenActive, seenStandalone) {
 
 /** configSurfaces 的四个面字段（两种形态互斥时逐个检查「不得再带」）。 */
 const SURFACE_FACES = ["defaults", "normalizer", "booleanKeys", "countLimits"];
+const MATRIX_FACES = ["schema", "validators", "hints", "clientDefaults"];
+
+function checkMatrix(item) {
+  const where = `configSurfaces.${item.package}.matrix`;
+  const matrix = item.matrix;
+  if (matrix === null || typeof matrix !== "object" || Array.isArray(matrix)) {
+    fail(`${where} 必须是对象`);
+  }
+  for (const key of Object.keys(matrix)) {
+    if (!MATRIX_FACES.includes(key)) fail(`${where} 未知输入：${key}`);
+  }
+  for (const field of MATRIX_FACES) {
+    const face = matrix[field];
+    if (face === null || typeof face !== "object" || Array.isArray(face)) {
+      fail(`${where}.${field} 缺声明对象`);
+    }
+    for (const name of ["module", "export"]) {
+      if (typeof face[name] !== "string" || face[name].trim().length === 0) {
+        fail(`${where}.${field}.${name} 缺失`);
+      }
+    }
+    if (Object.keys(face).some((name) => name !== "module" && name !== "export")) {
+      fail(`${where}.${field} 含未知字段`);
+    }
+  }
+}
+
+// 保留旧无条件 L1/L2 入口的检查义务；候选退役声明不能自行撤销该政策。
+function checkRequiredMatrix(surfaces, knownPackages) {
+  const surface = surfaces.find((item) => item.package === "dsh-lan-proxy");
+  if (
+    !knownPackages.includes("dsh-lan-proxy") ||
+    !surface ||
+    surface.surface === "none" ||
+    surface.matrix === undefined
+  ) {
+    fail("dsh-lan-proxy 必须保留受检身份与完整 matrix（L1/L2 必跑政策）");
+  }
+}
 
 /**
  * 形态 ② `surface: "none"`（显式无配置面）：用于**确实没有用户配置面**的包。必填 reason——
@@ -192,7 +231,7 @@ function checkSurfaceNone(item) {
   if (typeof item.reason !== "string" || item.reason.length === 0) {
     fail(`configSurfaces.${item.package} 声明 surface: "none" 时必填 reason（为什么没有配置面）`);
   }
-  for (const field of SURFACE_FACES) {
+  for (const field of [...SURFACE_FACES, "matrix"]) {
     if (item[field] !== undefined) {
       fail(
         `configSurfaces.${item.package} 声明 surface: "none" 时不得再带 ${field}（两种形态互斥）`,
@@ -235,7 +274,53 @@ function checkSurfaceEntry(item, knownPackages, declared) {
     );
   }
   if (item.surface === "none") checkSurfaceNone(item);
-  else checkSurfaceFaces(item);
+  else {
+    checkSurfaceFaces(item);
+    if (item.matrix !== undefined) checkMatrix(item);
+  }
+}
+
+function contractSurfaceMap(manifest, label) {
+  if (!manifest || !Array.isArray(manifest.configSurfaces)) fail(label + " 缺 configSurfaces 数组");
+  const map = new Map();
+  for (const surface of manifest.configSurfaces) {
+    if (!surface || typeof surface.package !== "string" || map.has(surface.package)) {
+      fail(label + " 配置面缺包身份或重复");
+    }
+    if (label === "基准") {
+      try {
+        if (surface.surface !== undefined && surface.surface !== "none") fail("surface 形态非法");
+        if (surface.surface === "none") checkSurfaceNone(surface);
+        else checkSurfaceFaces(surface);
+        if (surface.matrix !== undefined) checkMatrix(surface);
+      } catch (error) {
+        fail(label + " 配置面损坏：" + error.message);
+      }
+    }
+    map.set(surface.package, surface);
+  }
+  return map;
+}
+
+export function compareConfigSurfaceContracts(base, candidate) {
+  const previous = contractSurfaceMap(base, "基准");
+  const current = contractSurfaceMap(candidate, "候选");
+  const problems = [];
+  for (const [pkg, surface] of previous) {
+    if (surface.surface === "none") continue;
+    const next = current.get(pkg);
+    if (!next || next.surface === "none") {
+      problems.push(pkg + " 配置检查面退化或删除");
+      continue;
+    }
+    if (surface.matrix !== undefined) {
+      checkMatrix(surface);
+      if (!next.matrix || MATRIX_FACES.some((field) => !next.matrix[field])) {
+        problems.push(pkg + " matrix 检查面退化或删除");
+      }
+    }
+  }
+  return problems;
 }
 
 export function loadManifest(root) {
@@ -260,6 +345,7 @@ export function loadManifest(root) {
       );
     }
   }
+  checkRequiredMatrix(surfaces, knownPackages);
   return {
     active: [...seenActive],
     standalone: [...seenStandalone],

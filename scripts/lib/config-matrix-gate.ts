@@ -3,47 +3,22 @@
 "use strict";
 
 /**
- * config-matrix-gate — 配置平行事实源「字段覆盖矩阵」门禁编排（issue #471）。
- *
- * runConfigMatrix({ root }) 对两包真实 src 文件执行全部矩阵断言，返回结构化
- * 结果 { pass, problems: string[], lines: string[] }——不直接 console/exit，
- * 由调用方（contract-check.ts 追加段 / 负向自测）决定输出与退出码；文件树以
- * root 参数化，负向测试可对 mkdtemp 副本注入后复用同一逻辑（副本等效性：
- * 矩阵输入仅 src/server/config/impl/model.ts / src/client/index.ts 文本，无 import
- * 解析、无 lib 产物依赖）。
- *
- * 断言清单（对齐 issue #471 v2 验收 2/3/4/5/6/7）：
- *   L1 lan-proxy：Config / FILE_CONFIG_VALIDATORS / SETTING_FIELD_HINTS 三表
- *      键集全等（双向，现 16）
- *   L2 lan-proxy：client DEFAULTS ⊆ schema；schema − DEFAULTS 差集 == UI 豁免表
- *      （scripts/data/dsh-lan-proxy-ui-exempt.json，门禁不再内嵌条目）；豁免带原因
- *      「文件:行」+ 单包 ≤8（条目数是策略，留代码）；豁免残留（键已 UI 化）亦红
- *   N1 notifier：configSurfaces 声明的 defaults 导出必须是非空对象（声明驱动，取代旧
- *      硬编码路径 src/config/{config,validators,normalize}.ts——#733 配置域搬到
- *      src/server/config/impl/** 后那三条路径全部 ENOENT，路径硬编码本身就是红因）
- *   N2 notifier：normalizeConfig({}) 的键集**双向等于** DEFAULT_CONFIG 键集
- *      （丢键 / 凭空造键都红）——本包当前唯一有实质约束力的行为断言
- *   N3 notifier：BOOLEAN_KEYS ⊆ 配置键，且默认值确是布尔（客户端 UI 按布尔键渲染开关）
- *   N4 notifier：COUNT_LIMITS ⊆ 配置键、上界是非负整数，且默认值不越界（上界必须真的箍住默认值）
- *   N5 notifier：README 配置表缺键仅 warn（量级 #12，不判红）
+ * 配置矩阵按 manifest 加载真实运行时输入；源码只用于核对豁免锚点。
+ * 文件树与可信基准读取分别注入，隔离测试不依赖候选声明充当基准。
  */
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { execFileSync } from "node:child_process";
+
+import { createRequire, stripTypeScriptTypes } from "node:module";
+import { parse } from "acorn";
 import { join } from "node:path";
-import {
-  parseTs,
-  findTopVar,
-  objectKeysOf,
-  diffKeys,
-  sourceLineOf,
-  extractReadmeConfigKeys,
-} from "./config-matrix-lib.ts";
-import { loadManifest } from "./plugins-manifest-lib.ts";
+import { diffKeys, extractReadmeConfigKeys } from "./config-matrix-lib.ts";
+import { loadManifest, compareConfigSurfaceContracts } from "./plugins-manifest-lib.ts";
 
 // lan-proxy 客户端 UI 豁免表（#733 计划项 3.2.2 数据化）：条目（哪些键、为什么）是**事实**，
 // 在 scripts/data/dsh-lan-proxy-ui-exempt.json；条目数上限与「超限即红」是**策略**，留在代码里
 // ——把上限放进被约束的数据文件等于让被约束方自己改约束。
-const UI_EXEMPT_REL = "scripts/data/dsh-lan-proxy-ui-exempt.json";
+const uiExemptPath = (pkg) => `scripts/data/${pkg}-ui-exempt.json`;
 const UI_EXEMPT_MAX = 8;
 
 /**
@@ -53,7 +28,8 @@ const UI_EXEMPT_MAX = 8;
  * 任何结构错误都转 problem：豁免机制失效不能表现为「没有豁免」——那会把合法差集报成
  * 「漏 UI」，把修复方向指错。
  */
-function loadUiExempt(root, problems) {
+function loadUiExempt(root, problems, pkg) {
+  const UI_EXEMPT_REL = uiExemptPath(pkg);
   const filePath = join(root, UI_EXEMPT_REL);
   let json;
   try {
@@ -70,12 +46,12 @@ function loadUiExempt(root, problems) {
   }
   const out = {};
   for (const item of json.exemptKeys) {
-    applyExemptEntry(out, item, problems);
+    applyExemptEntry(out, item, problems, UI_EXEMPT_REL);
   }
   return out;
 }
 
-function applyExemptEntry(out, item, problems) {
+function applyExemptEntry(out, item, problems, UI_EXEMPT_REL) {
   if (
     item === null ||
     typeof item !== "object" ||
@@ -106,8 +82,7 @@ function checkExempts(pkg, exempt, schema, cfgPath) {
   if (keys.length > UI_EXEMPT_MAX) {
     problems.push(`${pkg} 豁免表 ${keys.length} 键 > ${UI_EXEMPT_MAX}（超限即红，强制走评审）`);
   }
-  // Config 表跨「export const Config」到校验表声明之前，锚点必须落在这个区间内。
-  const spanEnd = sourceLineOf(schema.text, "FILE_CONFIG_VALIDATORS") ?? Number.POSITIVE_INFINITY;
+  const spanEnd = schema.spanEnd;
   for (const k of keys) {
     const { reason, rationale } = exempt[k];
     if (typeof reason !== "string" || reason.length === 0 || !/:\d+/.test(reason)) {
@@ -119,32 +94,10 @@ function checkExempts(pkg, exempt, schema, cfgPath) {
   return problems;
 }
 
-/**
- * 豁免键的「文件:行」锚点必须指向该键在 Config 表里的定义行。
- *
- * 为什么需要机器判据：本包的行号锚点连续漂移过两次——重排前登记 80/96/102/119 而真身在
- * 94/110/116/141；#826 改成 87/103/109/134 之后，f572cca5 展开文件头 import 又把它推到
- * 91/107/113/138。原来的形态判据只认 /:\d+/，漂移只能靠人眼发现，而门禁绿反而会让人
- * 以为锚点是对的。
- *
- * 判据取文本而非 AST：esbuild transform 会重排行号，AST 的 loc 对不上源文件——同
- * sourceLineOf 放弃 AST 的原因。锚点路径允许写成全仓库路径 / 包内相对路径 / 裸文件名
- * （都以 Config 文件路径为后缀，`./` 前缀先归一），引用其它文件的锚点不在本判据的适用面内。
- *
- * 已知边界（当前不可达，如实写明胜过过度声称）：propRe 只认「行首缩进 + 键名 + 冒号」，
- * 不校验它是 Config 的**顶层**属性——若将来某个嵌套对象里出现与顶层豁免键同名的属性行，
- * 锚点指向那一行也会通过。当前 4 个豁免键在 Config 区间内各自只有 1 行匹配（逐键实测）。
- *
- * 路径比较取「以 Config 文件路径为**后缀**」而非相等，是为了同时收下全仓库路径、包内相对
- * 路径与裸文件名三种写法。它不会误收别的文件：被接受者必然是 Config 路径的字符串后缀，因而
- * 在某个祖先目录下解析出的就是同一个文件。实测被判否的写法：not-model.ts / xmodel.ts /
- * del/model.ts / scripts/data/model.ts / ../../etc/model.ts（全部落进「未指向 Config 表所在
- * 文件」）。改文件名或用不构成后缀的路径都躲不开。
- */
+/** 锚点必须落在声明 schema 的真实顶层字段位置，避免同名嵌套字段或相邻表冒充。 */
 function exemptAnchorProblems(pkg, k, reason, rationale, schema, cfgPath, spanEnd) {
   const problems = [];
-  const lines = schema.text.split("\n");
-  const propRe = new RegExp(`^[ \\t]*${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[ \\t]*:`);
+  const definitionLine = schema.fieldLines.get(k);
   // 锚点形态「<路径>:<行>」；区间写法（`:91-95`）与 `./` 前缀都是人写锚点的自然形态，
   // 判据不该因为写法差异判红——那只会把修复方向指错。
   const anchors = [...`${reason}\n${rationale}`.matchAll(/([\w./-]+\.[A-Za-z]+):(\d+)(?:-(\d+))?/g)]
@@ -165,7 +118,7 @@ function exemptAnchorProblems(pkg, k, reason, rationale, schema, cfgPath, spanEn
     // 区间内**任意**一行命中即算指向正确——区间常把上方注释一起括进来。
     let hit = false;
     for (let line = a.from; line <= a.to && !hit; line += 1) {
-      hit = line >= schema.line && line < spanEnd && propRe.test(lines[line - 1] ?? "");
+      hit = line >= schema.line && line < spanEnd && line === definitionLine;
     }
     if (!hit) {
       problems.push(
@@ -176,37 +129,74 @@ function exemptAnchorProblems(pkg, k, reason, rationale, schema, cfgPath, spanEn
   return problems;
 }
 
-/** 读取表键（容错返回 err；附带 text/ast/init/line 供下游派生断言）。 */
-function loadTable(filePath, name, shape) {
-  let text;
-  try {
-    text = readFileSync(filePath, "utf8");
-  } catch (e) {
-    return { err: `文件不可读: ${filePath}（${e.message}）` };
+/** 保留原始 TS 坐标，仅供豁免锚点定位；配置键始终来自运行时。 */
+function schemaSource(root, face) {
+  const path = join(root, face.module);
+  const text = readFileSync(path, "utf8");
+  const ast = parse(stripTypeScriptTypes(text), {
+    ecmaVersion: "latest",
+    sourceType: "module",
+    locations: true,
+  });
+  const declarations = ast.body.flatMap((statement) => {
+    const node = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
+    return node?.type === "VariableDeclaration" ? node.declarations : [];
+  });
+  const declaration = declarations.find((node) => node.id.name === face.export);
+  const initializer = declaration?.init;
+  const object = initializer?.type === "CallExpression" && initializer.arguments[0];
+  if (!object || object.type !== "ObjectExpression") {
+    throw new Error("schema 源码声明无法定位对象字段: " + face.export);
   }
-  const line = sourceLineOf(text, name);
-  const ast = parseTs(text);
-  const init = findTopVar(ast, name);
-  if (init === null) {
-    return {
-      err: `${name} 声明缺失 @ ${filePath}${line ? `:${line}` : ""}（提取器失效或声明被删）`,
-    };
+  const fieldLines = new Map();
+  for (const property of object.properties) {
+    if (property.type === "Property" && !property.computed) {
+      const key = property.key.name ?? property.key.value;
+      fieldLines.set(key, property.loc.start.line);
+    }
   }
-  let keys;
-  if (shape === "object") {
-    keys = objectKeysOf(init);
-  } else {
-    keys =
-      init.type === "ArrayExpression"
-        ? init.elements
-            .filter((e) => e && e.type === "Literal" && typeof e.value === "string")
-            .map((e) => e.value)
-        : [];
+  return { text, line: object.loc.start.line, spanEnd: object.loc.end.line + 1, fieldLines };
+}
+
+function matrixRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function loadMatrix(root, surface, problems) {
+  const matrix = surface.matrix;
+  const loaded = {};
+  for (const label of ["schema", "validators", "hints", "clientDefaults"]) {
+    loaded[label] = loadSurfaceExport(
+      root,
+      surface.package,
+      matrix[label],
+      "matrix." + label,
+      problems,
+    );
   }
-  if (keys.length === 0) {
-    return { err: `${name} 键集为空 @ ${filePath}:${line}（提取器可能失效或表被掏空）` };
+  if (problems.length) return null;
+  const config = loaded.schema;
+  if (
+    config?.type !== "object" ||
+    !matrixRecord(config.dict) ||
+    Object.keys(config.dict).length === 0
+  ) {
+    problems.push(surface.package + " matrix.schema 必须暴露非空 object schema.dict");
+    return null;
   }
-  return { text, ast, init, keys, line };
+  loaded.schema = config.dict;
+  if (Object.values(loaded).some((value) => !matrixRecord(value))) {
+    problems.push(surface.package + " matrix 输入必须是非数组对象");
+    return null;
+  }
+  const identities = Object.values(matrix).map(
+    (face) => join(root, face.module) + "#" + face.export,
+  );
+  if (new Set(identities).size !== identities.length || new Set(Object.values(loaded)).size !== 4) {
+    problems.push(surface.package + " matrix 自指：输入声明或实际键载体指向同一对象");
+    return null;
+  }
+  return loaded;
 }
 
 /** 差集 → 缺/多键报错行。 */
@@ -223,44 +213,49 @@ function diffProblems(scope, tableName, filePath, line, d, hint = "") {
   return out;
 }
 
-/** lan-proxy 矩阵；返回 { problems, lines }。 */
-function runLanProxy(root) {
+function runDeclaredMatrix(root, surface) {
   const problems = [];
   const lines = [];
-  const cfgPath = join(root, "packages/dsh-lan-proxy/src/server/config/impl/model.ts");
-  const clientPath = join(root, "packages/dsh-lan-proxy/src/client/shared/defaults.ts");
-
-  const schema = loadTable(cfgPath, "Config", "object");
-  const validators = loadTable(cfgPath, "FILE_CONFIG_VALIDATORS", "object");
-  const hints = loadTable(cfgPath, "SETTING_FIELD_HINTS", "object");
-  const defaults = loadTable(clientPath, "DEFAULTS", "object");
-  const failed = [schema, validators, hints, defaults].filter((t) => t.err);
-  if (failed.length > 0) {
-    for (const t of failed) problems.push(t.err);
+  const loaded = loadMatrix(root, surface, problems);
+  if (!loaded) return { problems, lines };
+  const matrix = surface.matrix;
+  let location;
+  try {
+    location = schemaSource(root, matrix.schema);
+  } catch (error) {
+    problems.push(surface.package + " matrix 源码锚点不可读: " + error.message);
     return { problems, lines };
   }
-
-  checkLanProxyTableEquality(cfgPath, problems, schema, validators, hints);
-
-  const exemptKeys = checkLanProxyClientDefaults(
+  const schema = { ...location, keys: Object.keys(loaded.schema) };
+  const validators = { keys: Object.keys(loaded.validators), line: "?" };
+  const hints = { keys: Object.keys(loaded.hints), line: "?" };
+  const defaults = { keys: Object.keys(loaded.clientDefaults), line: "?" };
+  const cfgPath = join(root, matrix.schema.module);
+  const clientPath = join(root, matrix.clientDefaults.module);
+  checkMatrixTableEquality(cfgPath, problems, schema, validators, hints, surface.package);
+  const exemptKeys = checkMatrixClientDefaults(
     root,
     problems,
     schema,
     defaults,
     clientPath,
     cfgPath,
+    surface.package,
   );
-
   lines.push(
-    `lan-proxy ${schema.keys.length} 键 × [schema/validators/hints] 全等 + client DEFAULTS ${defaults.keys.length}(豁免 ${exemptKeys.length})`,
+    surface.package +
+      " " +
+      schema.keys.length +
+      " 键 × [schema/validators/hints] 全等 + client DEFAULTS " +
+      defaults.keys.length +
+      "(豁免 " +
+      exemptKeys.length +
+      ")",
   );
-
-  const warnings = collectLanProxyReadmeWarnings(root, schema);
-  return { problems, warnings, lines };
+  return { problems, lines };
 }
 
-function checkLanProxyTableEquality(cfgPath, problems, schema, validators, hints) {
-  // L1：三表两两全等（18 键）
+function checkMatrixTableEquality(cfgPath, problems, schema, validators, hints, pkg) {
   const pairs = [
     ["Config", schema, "FILE_CONFIG_VALIDATORS", validators],
     ["Config", schema, "SETTING_FIELD_HINTS", hints],
@@ -268,32 +263,18 @@ function checkLanProxyTableEquality(cfgPath, problems, schema, validators, hints
   ];
   for (const [na, ta, nb, tb] of pairs) {
     problems.push(
-      ...diffProblems(
-        "lan-proxy",
-        nb,
-        cfgPath,
-        tb.line,
-        diffKeys(ta.keys, tb.keys),
-        `与 ${na} 不一致`,
-      ),
+      ...diffProblems(pkg, nb, cfgPath, tb.line, diffKeys(ta.keys, tb.keys), `与 ${na} 不一致`),
     );
     problems.push(
-      ...diffProblems(
-        "lan-proxy",
-        na,
-        cfgPath,
-        ta.line,
-        diffKeys(tb.keys, ta.keys),
-        `与 ${nb} 不一致`,
-      ),
+      ...diffProblems(pkg, na, cfgPath, ta.line, diffKeys(tb.keys, ta.keys), `与 ${nb} 不一致`),
     );
   }
 }
 
-function checkLanProxyClientDefaults(root, problems, schema, defaults, clientPath, cfgPath) {
+function checkMatrixClientDefaults(root, problems, schema, defaults, clientPath, cfgPath, pkg) {
   // L2：DEFAULTS ⊆ schema；schema − DEFAULTS == 豁免；豁免表结构自检
-  const exempt = loadUiExempt(root, problems);
-  problems.push(...checkExempts("lan-proxy", exempt, schema, cfgPath));
+  const exempt = loadUiExempt(root, problems, pkg);
+  problems.push(...checkExempts(pkg, exempt, schema, cfgPath));
   const exemptKeys = Object.keys(exempt);
   const d = diffKeys(schema.keys, defaults.keys);
   // DEFAULTS 出现 schema 外键 → 红（客户端提交未知键被宿主白名单静默丢弃）
@@ -318,27 +299,6 @@ function checkLanProxyClientDefaults(root, problems, schema, defaults, clientPat
       );
   }
   return exemptKeys;
-}
-
-function collectLanProxyReadmeWarnings(root, schema) {
-  // 量级 #12：README 配置表键集一致性——代码键缺文档仅 warn 不判红（防文档漂移提示）
-  const warnings = [];
-  const readmePath = join(root, "packages/dsh-lan-proxy/README.md");
-  let readmeText = null;
-  try {
-    readmeText = readFileSync(readmePath, "utf8");
-  } catch {
-    readmeText = null;
-  }
-  if (readmeText !== null) {
-    const { keys: docKeys } = extractReadmeConfigKeys(readmeText, "lan-proxy");
-    for (const k of diffKeys(schema.keys, docKeys).missing) {
-      warnings.push(
-        `lan-proxy README 配置表缺文档键: ${k}（docs/README 与代码键集不一致，仅提示）`,
-      );
-    }
-  }
-  return warnings;
 }
 
 /**
@@ -411,6 +371,11 @@ function runSurface(root, surface) {
   const warnings = [];
   const lines = [];
 
+  if (surface.matrix) {
+    const matrix = runDeclaredMatrix(root, surface);
+    problems.push(...matrix.problems);
+    lines.push(...matrix.lines);
+  }
   const loaded = loadSurfacePair(root, pkg, surface, problems);
   if (loaded === null) return { problems, warnings, lines };
   const { defaults, normalizer } = loaded;
@@ -435,6 +400,10 @@ function loadSurfacePair(root, pkg, surface, problems) {
 }
 
 function checkSurfaceNormalization(pkg, surface, defaults, normalizer, problems) {
+  if (!matrixRecord(defaults) || typeof normalizer !== "function") {
+    problems.push(pkg + " defaults 必须是非数组对象且 normalizer 必须是函数");
+    return null;
+  }
   const base = Object.keys(defaults);
   if (base.length === 0) {
     problems.push(
@@ -559,7 +528,19 @@ function collectSurfaceReadmeWarnings(root, pkg, base, warnings) {
  * 运行两包矩阵门禁（root 参数化：真实仓库根或 mkdtemp 副本根）。
  * @returns {{ pass: boolean, problems: string[], warnings: string[], lines: string[] }}
  */
-export function runConfigMatrix(root) {
+export function readConfigSurfaceBaseline(root) {
+  const options = { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] };
+  const sha = execFileSync(
+    "git",
+    ["rev-parse", "--verify", "origin/main^{commit}"],
+    options,
+  ).trim();
+  return JSON.parse(
+    execFileSync("git", ["show", sha + ":scripts/data/plugins-manifest.json"], options),
+  );
+}
+
+export function runConfigMatrix(root, { readBaseline = readConfigSurfaceBaseline } = {}) {
   const problems = [];
   const warnings = [];
   const lines = [];
@@ -568,14 +549,15 @@ export function runConfigMatrix(root) {
   let surfaces = [];
   try {
     const manifest = loadManifest(root);
-    surfaces = manifest.configSurfaces ?? [];
+    problems.push(...compareConfigSurfaceContracts(readBaseline(root), manifest));
+    surfaces = manifest.configSurfaces;
   } catch (e) {
     problems.push(
       `读取 configSurfaces 声明失败（scripts/data/plugins-manifest.json）：${e.message}`,
     );
   }
   // 每个在 configSurfaces 声明的包都跑一遍声明驱动断言（#774：不再只认 notifier）。
-  const results = [runLanProxy(root), ...surfaces.map((s) => runSurface(root, s))];
+  const results = surfaces.map((s) => runSurface(root, s));
   for (const r of results) {
     problems.push(...r.problems);
     warnings.push(...(r.warnings ?? []));

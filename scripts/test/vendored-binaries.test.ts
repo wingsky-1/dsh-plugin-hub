@@ -507,10 +507,17 @@ test("退役残留目录不参与扫描（manifest.retired）", () => {
     files: ["lib"],
     tree: { "lib/index.js": "text\n" },
     manifest: {
-      active: [PKG],
+      active: [PKG, "dsh-lan-proxy"],
       standalone: [],
       retired: [{ name: "dsh-old", reason: "fixture" }],
-      configSurfaces: [{ package: PKG, surface: "none", reason: "fixture" }],
+      configSurfaces: [
+        { package: PKG, surface: "none", reason: "fixture" },
+        JSON.parse(
+          readFileSync(join(ROOT, "scripts/data/plugins-manifest.json"), "utf8"),
+        ).configSurfaces.find(
+          (surface: { package: string }) => surface.package === "dsh-lan-proxy",
+        ),
+      ],
     },
   });
   const oldDir = join(root, "packages", "dsh-old");

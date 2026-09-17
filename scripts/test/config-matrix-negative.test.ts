@@ -23,11 +23,24 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, cpSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  cpSync,
+  writeFileSync,
+  rmSync,
+  readFileSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { runConfigMatrix } from "../lib/config-matrix-gate.ts";
+import { runConfigMatrix as runMatrix } from "../lib/config-matrix-gate.ts";
+
+const fixtureBaselines = new Map();
+function runConfigMatrix(root) {
+  return runMatrix(root, { readBaseline: () => structuredClone(fixtureBaselines.get(root)) });
+}
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const NOTIFIER_CONFIG_DIR = "packages/dsh-notifier/src/server/config";
@@ -45,8 +58,7 @@ function fakeRepo() {
       recursive: true,
     });
     mkdirSync(join(root, "scripts", "data"), { recursive: true });
-    // 矩阵只读这一份配置域入口文本（Config / FILE_CONFIG_VALIDATORS / SETTING_FIELD_HINTS
-    // 同居其中，见 config-matrix-gate 的 runLanProxy），故不必复制整个 server 树。
+    // 只复制配置模型及其共享依赖，避免夹具装载插件装配层。
     copyLf(
       join(ROOT, "packages/dsh-lan-proxy/src/server/config/impl/model.ts"),
       join(root, "packages/dsh-lan-proxy/src/server/config/impl/model.ts"),
@@ -70,7 +82,7 @@ function fakeRepo() {
       join(root, "scripts/data/plugins-manifest.json"),
     );
     // 泛化后（#774）门禁对**每个**声明面都 require 真实模块（含各包依赖）。副本只复制了
-    // notifier 的配置域与 lan-proxy 的文本面，其余包在这里加载不了——不改声明的话「正对照
+    // notifier 与 lan-proxy 的配置域，其余包在这里加载不了——不改声明的话「正对照
     // 应绿」会因缺文件/缺 node_modules 而红，把 fixture 的完备性混进判据。故把它们降级为
     // `surface: "none"`（不判红、不 require），而不是从声明里删掉：manifest 自洽断言要求
     // active ∪ standalone 每包都被登记，删掉会让正对照因清单不自洽而红——那是 fixture 的错，
@@ -78,7 +90,7 @@ function fakeRepo() {
     const manifestPath = join(root, "scripts/data/plugins-manifest.json");
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
     manifest.configSurfaces = manifest.configSurfaces.map((s) =>
-      s.package === "dsh-notifier"
+      s.package === "dsh-notifier" || s.package === "dsh-lan-proxy"
         ? s
         : {
             package: s.package,
@@ -87,6 +99,21 @@ function fakeRepo() {
           },
     );
     writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+    fixtureBaselines.set(root, structuredClone(manifest));
+    cpSync(
+      join(ROOT, "packages/dsh-lan-proxy/src/server/shared"),
+      join(root, "packages/dsh-lan-proxy/src/server/shared"),
+      { recursive: true },
+    );
+    copyLf(
+      join(ROOT, "packages/dsh-lan-proxy/package.json"),
+      join(root, "packages/dsh-lan-proxy/package.json"),
+    );
+    symlinkSync(
+      join(ROOT, "packages/dsh-lan-proxy/node_modules"),
+      join(root, "packages/dsh-lan-proxy/node_modules"),
+      "junction",
+    );
     // lan-proxy UI 豁免表（#733 3.2.2 起门禁读数据面而非内嵌常量）。
     copyLf(
       join(ROOT, "scripts/data/dsh-lan-proxy-ui-exempt.json"),
@@ -129,6 +156,121 @@ function assertRed(label, mutate, expectKeys) {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+for (const field of ["schema", "validators", "hints", "clientDefaults"]) {
+  for (const mode of ["missingExport", "invalid", "extra", "missing"]) {
+    test("#774 真实输入独立变化 " + field + " " + mode, () => {
+      assertRed(
+        field + mode,
+        (root) => {
+          const manifestPath = join(root, "scripts/data/plugins-manifest.json");
+          const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+          const matrix = manifest.configSurfaces.find((s) => s.package === "dsh-lan-proxy").matrix;
+          const face = matrix[field];
+          if (mode === "missingExport") face.export = "NOT_EXPORTED";
+          else {
+            const file = join(root, face.module);
+            const carrier = field === "schema" ? face.export + ".dict" : face.export;
+            const suffix =
+              mode === "extra"
+                ? carrier + ".fakeMatrixKey = {};"
+                : mode === "missing"
+                  ? "delete " + carrier + ".tlsCertFile;"
+                  : "export const INVALID_MATRIX = [];";
+            writeFileSync(file, readFileSync(file, "utf8") + "\n" + suffix + "\n");
+            if (mode === "invalid") face.export = "INVALID_MATRIX";
+          }
+          writeFileSync(manifestPath, JSON.stringify(manifest));
+        },
+        mode === "missingExport"
+          ? "导出不存在"
+          : mode === "invalid"
+            ? "matrix"
+            : mode === "extra"
+              ? "fakeMatrixKey"
+              : "tlsCertFile",
+      );
+    });
+  }
+}
+
+for (const alias of ["sameDeclaration", "sameObject"]) {
+  test("#774 自指输入 " + alias, () => {
+    assertRed(
+      alias,
+      (root) => {
+        const path = join(root, "scripts/data/plugins-manifest.json");
+        const manifest = JSON.parse(readFileSync(path, "utf8"));
+        const matrix = manifest.configSurfaces.find((s) => s.package === "dsh-lan-proxy").matrix;
+        if (alias === "sameDeclaration") matrix.hints = { ...matrix.validators };
+        else {
+          const file = join(root, matrix.schema.module);
+          writeFileSync(file, readFileSync(file, "utf8") + "\nexport const ALIAS = Config.dict;\n");
+          matrix.validators.export = "ALIAS";
+        }
+        writeFileSync(path, JSON.stringify(manifest));
+      },
+      "自指",
+    );
+  });
+}
+
+for (const mode of ["missing", "malformed"]) {
+  test("#774 基准读取故障不能通过 " + mode, () => {
+    const root = fakeRepo();
+    try {
+      const r = runMatrix(root, {
+        readBaseline: () => {
+          if (mode === "missing") throw new Error("base missing");
+          return JSON.parse("{");
+        },
+      });
+      assert.equal(r.pass, false);
+      assert.equal(r.lines.length, 0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
+
+test("#774 默认读取器在无origin/main的副本上失败", () => {
+  const root = fakeRepo();
+  try {
+    assert.equal(runMatrix(root).pass, false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+for (const mutate of [false, true]) {
+  test("#774 schema声明迁移路径和名称后实际消费新模块 mutate=" + mutate, () => {
+    const root = fakeRepo();
+    try {
+      const manifestPath = join(root, "scripts/data/plugins-manifest.json");
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+      const surface = manifest.configSurfaces.find((s) => s.package === "dsh-lan-proxy");
+      const from = surface.matrix.schema.module;
+      const to = from.replace("model.ts", "relocated.ts");
+      const source = readFileSync(join(root, from), "utf8").replace(/\bConfig\b/g, "MovedSchema");
+      writeFileSync(
+        join(root, to),
+        source + (mutate ? "\ndelete MovedSchema.dict.tlsCertFile;\n" : ""),
+      );
+      surface.matrix.schema = { module: to, export: "MovedSchema" };
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+      const exemptPath = join(root, "scripts/data/dsh-lan-proxy-ui-exempt.json");
+      writeFileSync(
+        exemptPath,
+        readFileSync(exemptPath, "utf8").replaceAll("model.ts", "relocated.ts"),
+      );
+      const result = runConfigMatrix(root);
+      assert.equal(result.pass, !mutate, result.problems.join("\n"));
+      if (mutate) assert.match(result.problems.join("\n"), /tlsCertFile/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 }
 
 test("正对照：纯副本不改动矩阵 pass", () => {

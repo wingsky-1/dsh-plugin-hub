@@ -10,6 +10,24 @@
   "configSurfaces": [
     {
       "package": "dsh-lan-proxy",
+      "matrix": {
+        "schema": {
+          "module": "packages/dsh-lan-proxy/src/server/config/impl/model.ts",
+          "export": "Config"
+        },
+        "validators": {
+          "module": "packages/dsh-lan-proxy/src/server/config/impl/model.ts",
+          "export": "FILE_CONFIG_VALIDATORS"
+        },
+        "hints": {
+          "module": "packages/dsh-lan-proxy/src/server/config/impl/model.ts",
+          "export": "SETTING_FIELD_HINTS"
+        },
+        "clientDefaults": {
+          "module": "packages/dsh-lan-proxy/src/client/shared/defaults.ts",
+          "export": "DEFAULTS"
+        }
+      },
       "defaults": {
         "module": "packages/dsh-lan-proxy/src/server/config/impl/model.ts",
         "export": "DEFAULT_CONFIG"

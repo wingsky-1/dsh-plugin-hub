@@ -222,7 +222,7 @@ export const COUNT_LIMITS: Record<string, number> = {
  * 双重身份（issue #110 后）：① 存量 config.json 迁移过滤器；
  * ② 客户端提交 patch 的校验器。键集合与 SETTING_FIELD_HINTS 平行维护。
  */
-const FILE_CONFIG_VALIDATORS: Record<string, (v: unknown) => boolean> = {
+export const FILE_CONFIG_VALIDATORS: Record<string, (v: unknown) => boolean> = {
   enabled: (v) => typeof v === "boolean",
   host: (v) => typeof v === "string",
   port: (v) => typeof v === "number" && Number.isInteger(v) && v > 0 && v <= 65535,
@@ -312,7 +312,7 @@ export function normalizeLegacyWsCompressPaths(
  * 「哪个字段、合法值是什么」，替代原先硬编码的整体拒绝文案。
  * 与 FILE_CONFIG_VALIDATORS 平行维护；键集合一致（同一批 Object.keys 遍历）。
  */
-const SETTING_FIELD_HINTS: Record<string, string> = {
+export const SETTING_FIELD_HINTS: Record<string, string> = {
   enabled: "需为布尔值",
   host: "需为字符串",
   port: "需为 1-65535 的整数",

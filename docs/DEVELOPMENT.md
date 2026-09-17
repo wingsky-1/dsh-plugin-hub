@@ -647,6 +647,20 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
     自动枚举会退回「目录即事实源」的 fail-open 老路；
   - schema 加载/校验逻辑只有一份：`scripts/lib/plugins-manifest-lib.ts`（纯函数，
     入口脚本只喂数据），测试见 `scripts/test/plugins-manifest.test.ts`。
+- **配置矩阵声明**（#774）：`configSurfaces` 的 defaults/normalizer/booleanKeys/countLimits
+  四面契约保持不变；有平行配置表的包另登记 `matrix`，包含
+  `schema` / `validators` / `hints` / `clientDefaults` 四个 `{ module, export }` 输入。
+  模块路径相对仓库根；运行时加载真实导出，schema 必须为 schemastery object schema，键取
+  `dict` 而非归一化默认值。四个输入不可指向同一对象，关系检查不是复制键表后的自我比较。
+  `surface: "none"` 不得带 matrix；其他包无需为不适用的矩阵增加客户端面。
+  - lan-proxy 原有 L1/L2 必跑义务保留在完整 manifest 校验层：缺包、移出受检集合、改 none、
+    缺 matrix 或任一输入均失败。候选 `retired` 或 reason 不构成撤销该政策的授权。
+  - 新增矩阵后，以解析为 commit SHA 的 `origin/main` 作独立基准，按包身份检查删除或退化；
+    数组重排和输入路径迁移不受限，基准无法读取或解析时不得通过。合法退役须先评审撤销
+    检查义务的方案，不添加数据开关自行绕过。
+  - 三表键集必须全等；客户端键集是 schema 子集，差集恰为
+    `scripts/data/<包名>-ui-exempt.json` 的豁免键。豁免上限为8，理由中的源码锚点须匹配
+    matrix.schema 声明文件内的字段定义；源码文本只用于定位，不参与运行时键集派生。
 - **复杂度门禁（#722 阶段五）**：`pnpm lint` = ESLint `complexity` + `sonarjs/cognitive-complexity`，
   跑在 `packages/*/src`、`packages/*/test`、`shared`、`scripts` 的手写源码上（秒级）。
   - **工具链隔离**：lint 工具链装在 `tools/lint`（刻意不在 `packages/` 下）——typescript-eslint
