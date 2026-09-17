@@ -12,41 +12,128 @@ install them all at once as a single bundle, or pick individual plugins as neede
 - **Bundle package**: `@wingsky-1/dsh-plugins-all` — install everything in one shot
 - **Individual plugins**: `@wingsky-1/dsh-*` — install only what you need
 
+## Quick navigation
+
+[Before you start](#before-you-start) · [Quick start](#quick-start) · [Plugin list](#plugin-list) · [Configuration and maintenance](#configuration-and-maintenance) · [Verification and troubleshooting](#verification-and-troubleshooting) · [Detailed reference](#detailed-reference) · [Development and architecture](#development-and-architecture)
+
+<a id="before-you-start"></a><a id="user-content-before-you-start"></a>
+## Before you start
+
+### Version support (rc only)
+
+This plugin set only adapts to **rc (release-candidate) releases of DeepSeek Harness — alpha versions are not supported**.
+
+- All plugins are currently pinned to `dsh 0.1.5-rc.1` (the official type-layer catalog and
+  every package's peerDependencies are locked in lockstep)
+- npm/pnpm will surface a peer mismatch if your dsh version does not match — upgrade the
+  dsh CLI to the corresponding rc release first
+- Per-release adaptation baselines, breaking changes and upgrade guides live in
+  [Release Notes](docs/release-notes/)
+- The plugin set follows official rc releases; **alpha versions are unsupported** — do not
+  install on an alpha dsh (or accept the compatibility risk yourself)
+
+### Individual install vs. bundle: pick ONE (since 0.1.5)
+
+Each individual package and the bundle share the same patch `id` (`ui-*`). **Install only one way**
+— installing both `dsh-plugins-all` and any individual package such as `@wingsky-1/dsh-lan-proxy`
+results in duplicate same-name entries, and `dsh web` fails to start with a *duplicate* error
+(detectable, not corrupting). To adjust: uninstall the bundle, or uninstall the corresponding
+individual package, then restart.
+
+### Per-plugin security boundaries
+
+- After installing `dsh-lan-proxy`, HTTP/HTTPS ports are opened on `0.0.0.0` — **every device on your LAN can access your dsh**. Uninstall it when not needed.
+- The launch-token auto-injection of `dsh-lan-proxy` (`injectToken`) is **on by default**: any device on the LAN that can reach the port gets full dsh control without a token (equivalent to trusting the entire LAN — bash passthrough to the host). Enable it only on a trusted intranet; turn it off in the settings card on untrusted segments.
+- The stdio subprocesses of `dsh-mcp-manager` inherit host privileges; only configure MCP servers you trust.
+- Plugin management routes are loopback-fenced (non-loopback → 403, wrong method → 405); requests forwarded through `dsh-lan-proxy` are trusted by design, not isolated from LAN clients.
+- `dsh-notifier` owns its configuration files; settings responses mask channel credentials, but notification text and outbound error details are not redacted and may reach logs, history and push services.
+- `dsh-provider-usage` keeps API keys on the host, never in the browser.
+- `dsh-verify-isolated` uses a temporary DSH_HOME, independent profile, port and browser instance; this is a verification boundary, not a global security guarantee.
+- `dsh-worktree-sidebar` changes only the sidebar root; session cwd, `@` references and `present` remain anchored to cwd.
+
+See each plugin README for its threat model and hardening details.
+
+<a id="quick-start"></a><a id="user-content-quick-start"></a>
+## Quick start
+
+Prerequisite: DeepSeek Harness installed and `dsh web` running normally (for running dsh
+without a global install, see "Without a global dsh install" below).
+
+### Install plugins (add)
+
+```sh
+# Install everything (recommended)
+dsh plugin --profile web add @wingsky-1/dsh-plugins-all
+
+# Or install individual plugins (as needed)
+dsh plugin --profile web add @wingsky-1/dsh-notifier
+dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
+```
+
+> After install / uninstall / update, **restart `dsh web` once** (bundle layers are only
+> composed at startup) for the sidebar / settings page to reflect the change.
+
+### Access and verify
+
+Restart `dsh web`, open its startup URL, and check the installed plugin cards under Settings → Plugins. For notifier, send a test notification; for LAN access, follow the [LAN proxy access and health checks](packages/dsh-lan-proxy/README.en.md#quick-start).
+
+<a id="plugin-list"></a><a id="user-content-plugin-list"></a>
+## Plugin list
+
+| Package | What it does | Docs | Status |
+|---|---|---|---|
+| `@wingsky-1/dsh-notifier` | Task-event notifications via browser, host toast, Bark and Webhook. | [README](packages/dsh-notifier/README.md) · [Architecture](docs/architecture/dsh-notifier.md) | Published |
+| `@wingsky-1/dsh-provider-usage` | Multi-provider usage statistics, trends and reports with custom adapters. | [README](packages/dsh-provider-usage/README.md) · [Adapter guide](packages/dsh-provider-usage/docs/adapter-guide.md) · [Architecture](docs/architecture/dsh-provider-usage.md) | Published |
+| `@wingsky-1/dsh-lan-proxy` | LAN HTTP/HTTPS/WebSocket forwarding with TLS, compression and keep-alive. | [README](packages/dsh-lan-proxy/README.md) · [Architecture](docs/architecture/dsh-lan-proxy.md) | Published |
+| `@wingsky-1/dsh-mcp-manager` | Per-workspace MCP configuration and middleware-based tool access. | [README](packages/dsh-mcp-manager/README.md) · [Architecture](docs/architecture/dsh-mcp-manager.md) · [Upgrade repair](#mcp-catalog-upgrade-notice-and-repair) | Published |
+| `@wingsky-1/dsh-verify-isolated` | Isolated browser verification for DSH plugin development. | [README](packages/dsh-verify-isolated/README.md) · [Architecture](docs/architecture/dsh-verify-isolated.md) | Published |
+| `@wingsky-1/dsh-worktree-sidebar` | Bind a worktree to the session sidebar without changing its cwd. | [README](packages/dsh-worktree-sidebar/README.en.md) · [Architecture](docs/architecture/dsh-worktree-sidebar.md) | Unreleased |
+
+<a id="configuration-and-maintenance"></a><a id="user-content-configuration-and-maintenance"></a>
+## Configuration and maintenance
+
+Use the plugin cards under Settings → Plugins; configuration and storage boundaries differ by plugin, so follow its README.
+
+### Uninstall plugins (remove)
+
+```sh
+dsh plugin --profile web remove @wingsky-1/dsh-notifier
+```
+
+### Update plugins (update)
+
+```sh
+# Update a single plugin to latest
+dsh plugin --profile web update @wingsky-1/dsh-notifier
+
+# Update the bundle (aggregate + the sub-packages it pulls in) to latest
+dsh plugin --profile web update @wingsky-1/dsh-plugins-all
+
+# Update all plugins under the current profile
+dsh plugin --profile web update
+```
+
+> After install / uninstall / update, **restart `dsh web` once** (bundle layers are only
+> composed at startup) for the sidebar / settings page to reflect the change.
+
+<a id="verification-and-troubleshooting"></a><a id="user-content-verification-and-troubleshooting"></a>
+## Verification and troubleshooting
+
+If a plugin is missing after installation, first restart `dsh web`. For duplicate entry errors, check that bundle and individual packages are not installed together.
+
 > **Upgraded DSH from a pre-0.1.5 version and a historical session will not open?**
 > Sessions failing with `cannot safely transform unclassified message source` were hit by the
 > host migration gate on the capability-catalog messages injected by early `dsh-mcp-manager`
 > builds (the artifact is intact — it simply cannot be read). **One command recovers them**:
 >
 > ```sh
+> # stop dsh web before applying; logs being written cannot be safely rewritten
 > node scripts/maintenance/repair-mcp-catalog-sessions.mjs          # dry run: list affected sessions
 > node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply  # apply (backup first), then restart dsh web
 > ```
 >
 > See [the repair guide](#mcp-catalog-upgrade-notice-and-repair) ·
 > [issue #723](https://github.com/wingsky-1/dsh-plugin-hub/issues/723)
-
-## Core advantages
-
-- **Security built into the defaults**: minimal exposure surface and minimal credential
-  flow — management surfaces answer only on loopback, keys by default never persist in
-  plaintext nor reach the browser; each plugin's threat model and hardening details live
-  in its README security section
-- **Task-event notification center**: six task-event kinds (ask / approval / completion /
-  subagent completion / error / turn end) with dual-channel delivery — browser notifications
-  + host system toasts — plus Bark / Webhook push to your phone; quiet hours with urgent
-  exceptions, per-channel popup/sound switches (4 tones), and a host capability self-check
-  (`/diagnostics`)
-- **Context-cost-controlled MCP management**: project-level MCP is collapsed into the
-  four atomic tools `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`
-  by default, so project-level scale never balloons the context (`middleware: all` folds
-  global servers into the middleware too, hot-switchable from the settings page);
-  per-working-directory project/global config tiers let each repo carry its own
-  MCP servers without cross-project interference
-- **Extensible usage-stats framework**: supports multi-provider usage stats and
-  custom data-source adapters; covers daily usage derivation, usage trends,
-  peak/valley countdown, and daily/weekly/monthly reports
-- **Engineering-quality backing**: every plugin ships smoke assertions (route fences /
-  client contracts), plus build contract + pack checks + full gates run in CI
 
 <a id="mcp-catalog-upgrade-notice-and-repair"></a>
 ## Upgrade notice and repair: a historical session will not open (mcp-catalog)
@@ -89,29 +176,88 @@ node scripts/maintenance/repair-mcp-catalog-sessions.mjs --apply  # apply: .bak-
 - Details and evidence: [dsh-mcp-manager README](packages/dsh-mcp-manager/README.en.md#723-repair) and
   [issue #723](https://github.com/wingsky-1/dsh-plugin-hub/issues/723)
 
-## Version support (rc only)
+<a id="detailed-reference"></a><a id="user-content-detailed-reference"></a>
+## Detailed reference
 
-This plugin set only adapts to **rc (release-candidate) releases of DeepSeek Harness — alpha versions are not supported**.
+### Capabilities in detail
 
-- All plugins are currently pinned to `dsh 0.1.5-rc.1` (the official type-layer catalog and
-  every package's peerDependencies are locked in lockstep)
-- npm/pnpm will surface a peer mismatch if your dsh version does not match — upgrade the
-  dsh CLI to the corresponding rc release first
-- Per-release adaptation baselines, breaking changes and upgrade guides live in
-  [Release Notes](docs/release-notes/)
-- The plugin set follows official rc releases; **alpha versions are unsupported** — do not
-  install on an alpha dsh (or accept the compatibility risk yourself)
+- **Task-event notification center**: six task-event kinds (ask / approval / completion /
+  subagent completion / error / turn end) with dual-channel delivery — browser notifications
+  + host system toasts — plus Bark / Webhook push to your phone; quiet hours with urgent
+  exceptions, per-channel popup/sound switches (4 tones), and a host capability self-check
+  (`/diagnostics`)
+- **Context-cost-controlled MCP management**: project-level MCP is collapsed into the
+  four atomic tools `ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`
+  by default, so project-level scale never balloons the context (`middleware: all` folds
+  global servers into the middleware too, hot-switchable from the settings page);
+  per-working-directory project/global config tiers let each repo carry its own
+  MCP servers without cross-project interference
+- **Extensible usage-stats framework**: supports multi-provider usage stats and
+  custom data-source adapters; covers daily usage derivation, usage trends,
+  peak/valley countdown, and daily/weekly/monthly reports
+- **Engineering-quality backing**: every plugin ships smoke assertions (route fences /
+  client contracts), plus build contract + pack checks + full gates run in CI
 
-## Plugin list
+### `@wingsky-1/dsh-notifier`
 
-| Package | What it does | Docs | Status |
-|---|---|---|---|
-| `@wingsky-1/dsh-notifier` | Task-event notification center: 6 event kinds (ask / approval / completion / subagent completion / error / turn end), dual channels (browser Notification + host system toast) plus Bark/Webhook push channels (ntfy, Gotify, self-hosted gateways); quiet hours with urgent exceptions, per-channel popup/sound switches (4 tones), and a host capability self-check (`/diagnostics` with availability and remediation hints) | [README](packages/dsh-notifier/README.md) · [Architecture](docs/architecture/dsh-notifier.md) | Published |
-| `@wingsky-1/dsh-provider-usage` | Multi-provider usage stats framework (v2 adapter contract): persistent capsule + detail panel; DeepSeek official (interval-bookkeeping daily usage derivation + peak/valley countdown badge — works even without an official usage endpoint) and OpenCode Go built in; plug in any data source with a single mjs file, hot-swappable from the settings page; daily/weekly/monthly usage reports (generated via the host llm, including directory and time-of-day observations); API keys stay on the host, never reach the browser | [README](packages/dsh-provider-usage/README.md) · [Adapter guide](packages/dsh-provider-usage/docs/adapter-guide.md) · [Architecture](docs/architecture/dsh-provider-usage.md) | Published |
-| `@wingsky-1/dsh-lan-proxy` | Access the dsh web UI over LAN: HTTP/HTTPS/WS forwarding + TLS (self-signed / custom certs); dual compression for HTTP (Brotli/gzip adaptive) and WebSocket (permessage-deflate); WS half-open probing keeps mobile backgrounding from going stale; launch-token auto-injection lets LAN devices connect without fetching the token; DNS-rebinding protection + loopback target allowlist | [README](packages/dsh-lan-proxy/README.md) · [Architecture](docs/architecture/dsh-lan-proxy.md) | Published |
-| `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio / streamable-http): per-working-directory project/global config tiers; project-level MCP collapsed into 4 atomic tools via middleware by default (`middleware: all` folds in global servers, hot-switchable in the settings page); workspace isolation prevents cross-project interference; configs store `${ENV}` references only — no plaintext secrets on disk; runtime registration API for other plugins to inject MCP servers; optional MCP call statistics and debug mode (metadata-only, off by default) | [README](packages/dsh-mcp-manager/README.md) · [Architecture](docs/architecture/dsh-mcp-manager.md) · [Upgrade repair](#mcp-catalog-upgrade-notice-and-repair) | Published |
-| `@wingsky-1/dsh-verify-isolated` | Isolated-environment browser verification skill for DSH plugin development: temp DSH_HOME + independent profile + independent port + independent browser instance (four-way isolation), one-command launch with automatic cleanup; bundled zero-dependency raw-CDP browser driver (snapshot / click / screenshot / eval, with device-viewport emulation), optional isolation audit, first-run dialogs skipped by default | [README](packages/dsh-verify-isolated/README.md) · [Architecture](docs/architecture/dsh-verify-isolated.md) | Published |
-| `@wingsky-1/dsh-worktree-sidebar` | Three agent tools (register / create / remove) bind a git worktree to the current session so its right-sidebar file tree uses that root, while the session cwd stays unchanged (`@` references and `present` still resolve against cwd); child sessions inherit the parent binding; rereads on tab open, official refresh, or window becoming visible, without polling | [README](packages/dsh-worktree-sidebar/README.en.md) · [Architecture](docs/architecture/dsh-worktree-sidebar.md) | Unreleased |
+Task-event notification center: 6 event kinds (ask / approval / completion / subagent completion / error / turn end), dual channels (browser Notification + host system toast) plus Bark/Webhook push channels (ntfy, Gotify, self-hosted gateways); quiet hours with urgent exceptions, per-channel popup/sound switches (4 tones), and a host capability self-check (`/diagnostics` with availability and remediation hints)
+
+### `@wingsky-1/dsh-provider-usage`
+
+Multi-provider usage stats framework (v2 adapter contract): persistent capsule + detail panel; DeepSeek official (interval-bookkeeping daily usage derivation + peak/valley countdown badge — works even without an official usage endpoint) and OpenCode Go built in; plug in any data source with a single mjs file, hot-swappable from the settings page; daily/weekly/monthly usage reports (generated via the host llm, including directory and time-of-day observations); API keys stay on the host, never reach the browser
+
+### `@wingsky-1/dsh-lan-proxy`
+
+Access the dsh web UI over LAN: HTTP/HTTPS/WS forwarding + TLS (self-signed / custom certs); dual compression for HTTP (Brotli/gzip adaptive) and WebSocket (permessage-deflate); WS half-open probing keeps mobile backgrounding from going stale; launch-token auto-injection lets LAN devices connect without fetching the token; DNS-rebinding protection + loopback target allowlist
+
+### `@wingsky-1/dsh-mcp-manager`
+
+MCP server manager (stdio / streamable-http): per-working-directory project/global config tiers; project-level MCP collapsed into 4 atomic tools via middleware by default (`middleware: all` folds in global servers, hot-switchable in the settings page); workspace isolation prevents cross-project interference; configs store `${ENV}` references only — no plaintext secrets on disk; runtime registration API for other plugins to inject MCP servers; optional MCP call statistics and debug mode (metadata-only, off by default)
+
+### `@wingsky-1/dsh-verify-isolated`
+
+Isolated-environment browser verification skill for DSH plugin development: temp DSH_HOME + independent profile + independent port + independent browser instance (four-way isolation), one-command launch with automatic cleanup; bundled zero-dependency raw-CDP browser driver (snapshot / click / screenshot / eval, with device-viewport emulation), optional isolation audit, first-run dialogs skipped by default
+
+### `@wingsky-1/dsh-worktree-sidebar`
+
+Three agent tools (register / create / remove) bind a git worktree to the current session so its right-sidebar file tree uses that root, while the session cwd stays unchanged (`@` references and `present` still resolve against cwd); child sessions inherit the parent binding; rereads on tab open, official refresh, or window becoming visible, without polling
+
+<details>
+<summary>Installation variants: version pinning and npx</summary>
+
+### Pin a version (@version)
+
+Omitting `@version` installs the default latest (recommended). Only when the registry has not synced the latest yet, or the latest has issues in your environment, append `@version` to the package name — works for both `add` and `update`:
+
+```sh
+# Install a specific version (instead of latest)
+dsh plugin --profile web add @wingsky-1/dsh-notifier@<version>
+
+# Update to a specific version
+dsh plugin --profile web update @wingsky-1/dsh-notifier@<version>
+```
+
+### Without a global dsh install
+
+If there is no global `dsh` command on the machine, use `npx` to run it on the fly (`dsh plugin`
+calls `pnpm` under the hood, so `pnpm` and `Node.js` must still be installed locally):
+
+```sh
+# Install the bundle
+npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-plugins-all
+
+# Install an individual plugin (with a version pin)
+npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-notifier@<version>
+
+# Uninstall / update (same shape — swap add for remove / update)
+npx @deepseek-ai/dsh plugin --profile web remove @wingsky-1/dsh-notifier
+npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
+```
+
+> `npx` fetches `@deepseek-ai/dsh` on each run. To pin it, run `pnpm add -g @deepseek-ai/dsh`
+> (or `npm i -g @deepseek-ai/dsh`) and then use `dsh` directly.
+
+</details>
 
 <details>
 <summary><b>Historical maintenance & migration</b> — discontinued packages and legacy-package migration (expand if you installed the old/retired packages)</summary>
@@ -183,98 +329,14 @@ dsh plugin --profile web add @wingsky-1/dsh-provider-usage
 
 </details>
 
-## Installation
-
-Prerequisite: DeepSeek Harness installed and `dsh web` running normally (for running dsh
-without a global install, see "Without a global dsh install" below).
-
-### Install plugins (add)
-
-```sh
-# Install everything (recommended)
-dsh plugin --profile web add @wingsky-1/dsh-plugins-all
-
-# Or install individual plugins (as needed)
-dsh plugin --profile web add @wingsky-1/dsh-notifier
-dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
-```
-
-### Uninstall plugins (remove)
-
-```sh
-dsh plugin --profile web remove @wingsky-1/dsh-notifier
-```
-
-### Update plugins (update)
-
-```sh
-# Update a single plugin to latest
-dsh plugin --profile web update @wingsky-1/dsh-notifier
-
-# Update the bundle (aggregate + the sub-packages it pulls in) to latest
-dsh plugin --profile web update @wingsky-1/dsh-plugins-all
-
-# Update all plugins under the current profile
-dsh plugin --profile web update
-```
-
-> After install / uninstall / update, **restart `dsh web` once** (bundle layers are only
-> composed at startup) for the sidebar / settings page to reflect the change.
-
-### Pin a version (@version)
-
-Omitting `@version` installs the default latest (recommended). Only when the registry has not synced the latest yet, or the latest has issues in your environment, append `@version` to the package name — works for both `add` and `update`:
-
-```sh
-# Install a specific version (instead of latest)
-dsh plugin --profile web add @wingsky-1/dsh-notifier@<version>
-
-# Update to a specific version
-dsh plugin --profile web update @wingsky-1/dsh-notifier@<version>
-```
-
-### Without a global dsh install
-
-If there is no global `dsh` command on the machine, use `npx` to run it on the fly (`dsh plugin`
-calls `pnpm` under the hood, so `pnpm` and `Node.js` must still be installed locally):
-
-```sh
-# Install the bundle
-npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-plugins-all
-
-# Install an individual plugin (with a version pin)
-npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-notifier@<version>
-
-# Uninstall / update (same shape — swap add for remove / update)
-npx @deepseek-ai/dsh plugin --profile web remove @wingsky-1/dsh-notifier
-npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-plugins-all
-```
-
-> `npx` fetches `@deepseek-ai/dsh` on each run. To pin it, run `pnpm add -g @deepseek-ai/dsh`
-> (or `npm i -g @deepseek-ai/dsh`) and then use `dsh` directly.
-
-### Individual install vs. bundle: pick ONE (since 0.1.5)
-
-Each individual package and the bundle share the same patch `id` (`ui-*`). **Install only one way**
-— installing both `dsh-plugins-all` and any individual package such as `@wingsky-1/dsh-lan-proxy`
-results in duplicate same-name entries, and `dsh web` fails to start with a *duplicate* error
-(detectable, not corrupting). To adjust: uninstall the bundle, or uninstall the corresponding
-individual package, then restart.
-
-## Related projects
+### Related projects
 
 - [dsh-web-mobile](https://github.com/mexiaosqwq/dsh-web-mobile) (npm: `@dsh-external/dsh-mobile-nav`) — DSH web mobile adaptation: auto-collapses the sidebar on narrow screens, opens TOC as a drawer. A lot of this project's development and debugging was done by using it remotely from a phone / tablet.
 - [dsh-web-ui](https://github.com/zhu1090093659/dsh-web-ui) — A collection of DSH web UI skins. Learned many good practices from it; it is also the inspiration for DSH plugin development.
 - [dsh-routing-suite / dsh-router-standard](https://github.com/yjh051108/dsh-routing-suite) — Provides the Router Standard agent preset (task-aware reasoning-mode routing: spec / mixed / react) for selecting presets in a session.
 
-## Security notes
-
-- After installing `dsh-lan-proxy`, HTTP/HTTPS ports are opened on `0.0.0.0` — **every device on your LAN can access your dsh**. Uninstall it when not needed.
-- The launch-token auto-injection of `dsh-lan-proxy` (`injectToken`) is **on by default**: any device on the LAN that can reach the port gets full dsh control without a token (equivalent to trusting the entire LAN — bash passthrough to the host). Enable it only on a trusted intranet; turn it off in the settings card on untrusted segments.
-- The stdio subprocesses of `dsh-mcp-manager` inherit host privileges; only configure MCP servers you trust.
-- All plugin routes are loopback-fenced (non-loopback → 403, wrong method → 405).
-
-## Development
+<a id="development-and-architecture"></a><a id="user-content-development-and-architecture"></a>
+## Development and architecture
 
 Requirements: Node ≥ 23.6 (tests run TS directly with native type stripping), pnpm ≥ 11.
 

@@ -5,194 +5,23 @@
 LAN access to the dsh web UI: listens on `0.0.0.0:<port>` and forwards HTTP/HTTPS and
 WebSocket/wss to the loopback web server (default `127.0.0.1:3080`).
 
-- Rewrites Host/Origin to pass the /api browser trust perimeter
-- Accepts only IP-literal or localhost Host headers (**DNS rebinding protection**)
-- HTTPS runs by default alongside (3443); the certificate is configurable or auto-generated self-signed
+[简体中文](README.md) | **English**
 
-For architecture and runtime mechanisms, see the [TOGAF 4A architecture document](../../docs/architecture/dsh-lan-proxy.md) (in Chinese): Business, Application, Data, and Technology views.
+## Quick navigation
 
-## Installation
+[Before you start](#before-you-start) · [Security Model](#security-model) · [Quick start](#quick-start) · [Common configuration](#common-configuration) · [Verification and troubleshooting](#verification-and-troubleshooting) · [Detailed reference](#detailed-reference) · [Development and architecture](#development-and-architecture)
+
+<a id="before-you-start"></a><a id="user-content-before-you-start"></a>
+## Before you start
 
 Prerequisite: DeepSeek Harness installed and `dsh web` running normally (for running dsh
 without a global install, see "Without a global dsh install" below).
 
-### Install plugins (add)
+- Rewrites Host/Origin to pass the /api browser trust perimeter
+- Accepts only IP-literal or localhost Host headers (**DNS rebinding protection**)
+- HTTPS runs by default alongside (3443); the certificate is configurable or auto-generated self-signed
 
-```sh
-dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
-```
-
-### Uninstall plugins (remove)
-
-```sh
-dsh plugin --profile web remove @wingsky-1/dsh-lan-proxy
-```
-
-### Update plugins (update)
-
-```sh
-dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
-```
-
-> After install / uninstall / update, **restart `dsh web` once** (bundle layers are only
-> composed at startup) for changes to take effect.
-
-### Pin a version (@version)
-
-Omitting `@version` installs the default latest (recommended). Only when the registry has not synced the latest yet, or the latest has issues in your environment, append `@version` to the package name:
-
-```sh
-dsh plugin --profile web add @wingsky-1/dsh-lan-proxy@<version>
-```
-
-### Without a global dsh install
-
-If there is no global `dsh` command on the machine, use `npx` to run it on the fly (`dsh plugin`
-calls `pnpm` under the hood, so `pnpm` and `Node.js` must still be installed locally):
-
-```sh
-npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
-npx @deepseek-ai/dsh plugin --profile web remove @wingsky-1/dsh-lan-proxy
-npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
-```
-
-> ⚠️ **Installing opens ports**: this plugin listens on `0.0.0.0:3081` (HTTP) and
-> `0.0.0.0:3443` (HTTPS), making your dsh web reachable by every device on the LAN.
-> Uninstall it (see remove above) when not needed.
-
-## Configuration
-
-| Key | Default | Description |
-|---|---|---|
-| `host` | `0.0.0.0` | Listen address |
-| `port` | `3081` | HTTP listen port |
-| `httpsPort` | `3443` | HTTPS listen port |
-| `targetHost` | `127.0.0.1` | Loopback upstream host (**loopback addresses only**) |
-| `targetPort` | auto | Upstream port (defaults to the web server's actual bound port) |
-| `httpsEnabled` | `true` | Whether to run HTTPS alongside |
-| `tlsCertFile` / `tlsKeyFile` | none | Custom certificate (mkcert, etc.) |
-| `wsBridgeEnabled` | `true` | WebSocket bridge master switch (issue #552): `true` = all WS upgrades go through "termination + bridge" (keep-alive base: auto-answers upstream Pings + half-open probes); `false` = TCP byte passthrough (explicitly drops keep-alive and compression — mobile backgrounding can be killed by upstream heartbeat and cause frequent reconnect loops, see "WebSocket Bridge & Compression") |
-| `wsCompressEnabled` | `true` | Whether to apply compressed bridging to WebSockets matching `wsCompressPaths` (compression only; does not affect bridge keep-alive) |
-| `wsCompressPaths` | `/api/remote.mux` | Path allowlist participating in WebSocket compression (empty = bridged without compression, keep-alive unaffected) |
-| `httpCompressEnabled` | `true` | Master switch for HTTP response compression (the forwarding layer negotiates gzip/Brotli for compressible responses; Brotli's effective condition is documented in "HTTP Response Compression", merged from dsh-gzip) |
-| `httpCompressLevel` | `1` | Compression preset 0..3: `0` default / `1` low (gzip 1 / br 2, fastest) · `2` medium (gzip 5 / br 5, balanced) / `3` high (gzip 9 / br 9, best ratio) — the gzip and Brotli parameters are both passed down; legacy integer values 4..9 are migrated to 3 automatically |
-| `ownsHostCompat` | `false` | Declare `ownsHost` to non-loopback pages (issue #856): **forges an upstream topology fact**, unlocking settings persistence to `<DSH_HOME>/settings.yaml` and the host-native "open settings file" action; remote and local pages become indistinguishable in the UI. Off by default — trade-offs, how to disable it and the `ssh -L` zero-forgery alternative are in the Security Model |
-
-GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes apply hot).
-
-### Configuration storage (single channel)
-
-- All configuration lives in the dsh official settings store (the
-  `dsh-lan-proxy` namespace registered via `settings.register`, persisted in the
-  host-managed settings document); composition-layer `cordis.patch.yml` config
-  acts as the base layer. Hot reload is driven by the official `scope.watch` —
-  no restart needed.
-- This plugin no longer maintains its own `~/.dsh/lan-proxy/config.json`. On
-  the first start after upgrading, a legacy config.json is migrated once into
-  the official store: the original file is atomically renamed and kept as
-  `config.json.migrated.bak`. If persisting into the official store fails, the
-  rename is rolled back and retried on next start; if the process exits before
-  the write completes (interrupted), the leftover backup is detected on next
-  start and its content is replayed into the store, with a log note.
-  Delete that backup manually once everything works. Editing
-  config.json afterwards has **no effect**.
-
-## WebSocket Bridge & Compression (wss event stream)
-
-- **Bridging is the default base (issue #552)**: while `wsBridgeEnabled` is on (default),
-  **all** WebSocket upgrades go through "termination + bridge" — lan-proxy speaks ws on both
-  the browser segment and the DSH segment and forwards frames both ways. Bridging provides two
-  capabilities that are **independent of compression**:
-  - **Automatic upstream Ping reply**: the dsh upstream (api-gateway) sends one WS Ping on
-    `/api/remote.mux` every 2s and calls `terminate()` after 2 cycles (~4~6s) without a Pong.
-    The bridge's upstream connection auto-replies Pongs via the ws library — mobile
-    backgrounding / screen-off / brief freezes no longer trip the upstream kill; the connection
-    survives until the device returns (no more "disconnect → reconnect" loops).
-  - **Half-open liveness probe (Refs #268)**: the bridge pings the browser segment and the DSH
-    segment **independently** every 30s; a ping with no pong by the next cycle (~30~60s of
-    silence) marks that side half-open and terminates it. A termination logs
-    `lan-proxy: ws-bridge half-open detected, terminating (intervalMs=...)` at warn level.
-- **Compression is an optional enhancement on top of the bridge**: when a path matches
-  `wsCompressPaths` (default `/api/remote.mux` — the Remote-stream mux endpoint owned by
-  api-gateway since dsh 0.1.2, replacing the old `/api/events.mux`, `/api/events.host`)
-  **and** `wsCompressEnabled` is on, the browser segment negotiates permessage-deflate (the
-  browser decompresses automatically) while the DSH segment stays plaintext, then both
-  directions are bridged and forwarded. Benefit: remote.mux carries heavy real-time frames —
-  permessage-deflate measures roughly **75~79%** savings in practice.
-- **Clearing the compression allowlist / turning compression off no longer drops keep-alive**
-  (issue #552): `wsCompressPaths=[]` or `wsCompressEnabled=false` only disables compression;
-  the bridge (Pong reply + probes) stays active.
-- Even if the DSH server later enables permessage-deflate itself, the DSH segment here never
-  negotiates compression; the two segments are independent, so there is **no double compression
-  and no conflict**.
-- **Bridging is not byte-transparent**: it terminates and re-originates the WS connection, so
-  subprotocol (Sec-WebSocket-Protocol) negotiation and close codes are not preserved across
-  ends (the dsh client currently depends on neither — verified zero impact); treat this as the
-  contract for generic/future endpoints.
-- **Explicitly disabling the bridge** (`wsBridgeEnabled=false`): all WS goes through TCP byte
-  passthrough (saves one hop of CPU), but loses Pong reply and probes — mobile backgrounding
-  >4~6s gets killed by the upstream heartbeat and causes frequent reconnects; only recommended
-  for setups with no mobile clients.
-
-## HTTP Response Compression (Brotli/gzip, merged from dsh-gzip)
-
-- Since v0.1.10, the HTTP response compression capability of the standalone dsh-gzip plugin (source removed from this repository)
-  has been merged into this plugin, implemented at the **forwarding layer** via the
-  battle-tested [compression](https://www.npmjs.com/package/compression) middleware
-  (inlined at build time): for requests served through
-  this plugin, compressible responses (JSON / text) from `/api` (RPC), `/plugins`
-  (client bundles), and static assets/index.html negotiate compression automatically; SSE
-  (text/event-stream), zip exports, already-encoded responses, HEAD, Range requests,
-  and responses under 1KB pass through untouched.
-- **When Brotli actually applies (measured)**: dsh's own web server already ships gzip
-  compression (`compression: gzip`) and negotiates gzip only. Two cases therefore exist on
-  this path:
-
-  | Client `Accept-Encoding` | Upstream | Final response through this plugin |
-  |---|---|---|
-  | `br, gzip` (mainstream browsers) | gzip | gzip (already encoded, this layer defers instead of re-compressing) |
-  | `gzip` | gzip | gzip (same) |
-  | `br` (br only) | raw | **br** |
-
-  In other words, this layer's Brotli applies only when the upstream left the response
-  uncompressed and the client declared br alone. Mainstream browsers declare gzip as well,
-  so what arrives is the upstream gzip and the **extra Brotli ratio is not realized** on
-  this path; that case is still far better than no compression (the same response measured
-  322900 → 5065 bytes). The two layers never double-compress.
-- Benefit: large JSON responses such as session history (4~13MB uncompressed) often hit
-  the browser RPC 30s timeout over remote/slow links ("history load failed"); after compression
-  they are ~1.2MB — measured in an isolated environment at ~36s down to ~3s.
-- The middleware sits on the forwarder's own listener chain and does not modify dsh web
-  or any other plugin's runtime behavior; set `httpCompressEnabled: false` to turn this
-  layer's compression off (when the client also accepts gzip, the upstream's own gzip still
-  compresses such responses, so the switch does not change their on-wire size).
-  Note: traffic that reaches the loopback web directly (local browser on `127.0.0.1:3080`,
-  not through this plugin) is outside the compression surface — loopback links do not
-  need compression.
-- **Migrating from dsh-gzip**: upgrade this plugin, confirm compression is active, then
-  uninstall the standalone gzip package:
-
-  ```sh
-  dsh plugin --profile web update @wingsky-1/dsh-lan-proxy    # requires >= 0.1.10
-  curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health      # loopback check: continue when httpCompressMounted is true
-  dsh plugin --profile web remove @wingsky-1/dsh-gzip
-  # Restart dsh web to take effect
-  ```
-
-- When legacy gzip@0.1.9 (no detection logic) coexists with this plugin, the
-  content-encoding check still guarantees responses are compressed at most once
-  (verified for every assembly order) — responses are never corrupted; uninstall it
-  promptly to keep health diagnostics unambiguous.
-
-## HTTPS Support
-
-- **Certificate sources (two tiers)**: ① configure `tlsCertFile`/`tlsKeyFile` (official
-  certificate or mkcert local CA, zero browser warnings); ② auto-generate a self-signed
-  certificate (built-in `selfsigned` library generates and caches it to `<DSH_HOME>/lan-proxy/`,
-  private key permission 0600, no host openssl required)
-- The self-signed certificate needs a one-time manual "proceed" on first visit; for zero warnings
-  on LAN devices, mkcert is recommended
-
+<a id="security-model"></a><a id="user-content-security-model"></a>
 ## Security Model
 
 - **Egress target allowlist (L1)**: `targetHost` allows only loopback addresses (localhost /
@@ -207,8 +36,8 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
   authentication cookies — since dsh 0.1.2 `/api/remote.mux` upgrades require cookie
   authentication, dropping them results in 401 and connection failure), overriding only
   Host/Origin to the loopback target and stripping hop-by-hop and WebSocket handshake-only
-  headers; the upstream is forced to loopback by `targetHost`, so credentials never leave the
-  local process boundary. **Compression-bomb surface**: the browser-segment permessage-deflate
+  headers; the upstream is forced to loopback by `targetHost`, so credentials are sent only to the
+  local loopback upstream (this does not promise cross-process isolation). **Compression-bomb surface**: the browser-segment permessage-deflate
   decompression is an amplification point (a hostile LAN client sending highly-compressed frames
   makes the proxy process decompress) — acceptable within the "LAN-trusted" threat model (same
   trust boundary as `injectToken`)
@@ -219,8 +48,40 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
   generation, adds no reachable data surface, and only costs a small amount of CPU (disable
   via `httpCompressEnabled: false`). The loopback fence on health/marker routes applies to
   requests hitting the loopback web directly; requests forwarded through this plugin are
-  trusted by design (see Credential surface)
-- **ownsHostCompat compatibility injection (issue #856, off by default)**: through the official
+  trusted by design (see Credential surface). Diagnostic metadata in the health response —
+  the absolute `configDir` path and compression negotiation counters — is forwarded unchanged
+  and is visible to LAN devices
+### injectToken automatic injection (issue #380)
+
+DSH browser-session authentication (launch token + persistent signed cookie) cannot be disabled.
+The token changes on restart and is printed only in the local terminal, so fixed LAN devices cannot
+obtain it themselves. Through the connection service’s public `authenticatedUrl()` API, the proxy
+reads the current token dynamically and adds it only at the minting entry (`GET /` without a
+session cookie), letting LAN devices enter without manual steps. Trade-offs and mitigations:
+
+- **Equivalent to trusting the entire LAN**: any client that can reach this port gets full DSH
+  control without a token, including bash access to the host. Enable only on trusted home/office
+  networks; turn it off in the settings card on untrusted segments.
+- **On by default (maintainer decision)**: comparable precedents (Home Assistant’s
+  `trusted_networks` authentication provider and qBittorrent WebUI’s "Bypass authentication for
+  clients") require explicit configuration by default. This plugin defaults on for fixed home-LAN
+  use, with warnings in the startup banner, settings card and this section as mitigation.
+- **Turning it off does not revoke issued cookies**: logged-in devices remain able to enter
+  during the cookie lifetime (30 days by default). Clear the DSH credentials store to revoke access immediately.
+- **Invalid-cookie recovery**: after a credentials reset, a browser may retain an invalid cookie
+  until Max-Age and cannot obtain a new token, causing a 401 deadlock. On an upstream 401 the
+  forwarder replays once with the token so upstream remints the cookie transparently.
+- **Residual cross-site surface**: a hostile public page can trigger a cross-site GET to
+  `http://<LAN-IP>:3081/` and mint a cookie, but cannot read the response (CORS opaque);
+  subsequent cross-site requests omit it under `SameSite=Strict`, and the sec-fetch-site fence
+  rejects `POST /api`. Token and cookie never appear in the browser address bar or history.
+- **Non-injection boundary**: only `GET /` without a token parameter is eligible. WebSocket,
+  non-root paths, requests already carrying a token, and unavailable providers pass through
+  unchanged. A password page (trust narrowed to those who know the password) is a future direction.
+
+### ownsHostCompat compatibility injection (issue #856, off by default)
+
+ through the official
   webServer index injection hook, a self-conditioned script is injected into **non-loopback**
   pages, declaring `globalThis.__DSH_TRANSPORT__ = { ownsHost: true }`. This **forges an
   upstream topology fact** — served pages are not supposed to carry that global. It is **not a
@@ -273,7 +134,109 @@ GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes ap
     `dsh-lan-proxy.ownsHostCompat` in `settings.yaml`, the `cordis.patch.yml` base layer in a
     profile, or a loopback browser on the settings page.
 
-## Verification
+<a id="quick-start"></a><a id="user-content-quick-start"></a>
+## Quick start
+
+> **Installing opens ports**: this plugin listens on `0.0.0.0:3081` (HTTP) and
+> `0.0.0.0:3443` (HTTPS), making your dsh web reachable by every device on the LAN.
+> Uninstall it (see Uninstall plugins below) when not needed.
+
+### Install plugins (add)
+
+```sh
+dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
+```
+
+> After install / uninstall / update, **restart `dsh web` once** (bundle layers are only
+> composed at startup) for changes to take effect.
+
+### Access
+
+From a trusted LAN device, open `https://<server-IP>:3443/` (or `http://<server-IP>:3081/`). A self-signed certificate requires a one-time manual "proceed"; see HTTPS Support.
+
+### Verify
+
+From the host, check the health endpoint:
+
+```sh
+curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health
+```
+
+<a id="common-configuration"></a><a id="user-content-common-configuration"></a>
+## Configuration
+
+| Key | Default | Description |
+|---|---|---|
+| `enabled` | `true` | Master switch (off stops the forwarder listeners) |
+| `host` | `0.0.0.0` | Listen address |
+| `port` | `3081` | HTTP listen port |
+| `httpsPort` | `3443` | HTTPS listen port |
+| `targetHost` | `127.0.0.1` | Loopback upstream host (**loopback addresses only**) |
+| `targetPort` | auto | Upstream port (defaults to the web server's actual bound port) |
+| `httpsEnabled` | `true` | Whether to run HTTPS alongside |
+| `tlsCertFile` / `tlsKeyFile` | none | Custom certificate (mkcert, etc.) |
+| `printBanner` | `true` | Print the startup banner with LAN access URLs |
+| `wsBridgeEnabled` | `true` | Bridge switch; disabling it drops keep-alive and compression. |
+| `wsCompressEnabled` | `true` | Whether to apply compressed bridging to WebSockets matching `wsCompressPaths` (compression only; does not affect bridge keep-alive) |
+| `wsCompressPaths` | `/api/remote.mux` | Path allowlist participating in WebSocket compression (empty = bridged without compression, keep-alive unaffected) |
+| `wsDeflatePolicy` | `{browser:true, uaDeny:[iPhone…]}` | Browser compression policy and UA exclusions. |
+| `httpCompressEnabled` | `true` | Forwarding-layer gzip/Brotli switch. |
+| `httpCompressLevel` | `1` | Compression preset 0..3 for gzip and Brotli. |
+| `injectToken` | `true` | Token-free LAN access; on by default. See Security Model. |
+| `ownsHostCompat` | `false` | Forge the page-side host fact; off by default. See Security Model. |
+
+GUI settings entry: Settings → Plugins → "LAN Access" card (saved changes apply hot).
+
+### Configuration storage (single channel)
+
+- All configuration lives in the dsh official settings store (the
+  `dsh-lan-proxy` namespace registered via `settings.register`, persisted in the
+  host-managed settings document); composition-layer `cordis.patch.yml` config
+  acts as the base layer. Hot reload is driven by the official `scope.watch` —
+  no restart needed.
+<details>
+<summary>Legacy config.json migration</summary>
+
+- This plugin no longer maintains its own `~/.dsh/lan-proxy/config.json`. On
+  the first start after upgrading, a legacy config.json is migrated once into
+  the official store: the original file is atomically renamed and kept as
+  `config.json.migrated.bak`. If persisting into the official store fails, the
+  rename is rolled back and retried on next start; if the process exits before
+  the write completes (interrupted), the leftover backup is detected on next
+  start and its content is replayed into the store, with a log note.
+  Delete that backup manually once everything works. Editing
+  config.json afterwards has **no effect**.
+
+</details>
+
+### Configuration details
+
+#### `wsBridgeEnabled`
+
+WebSocket bridge master switch (issue #552): `true` = all WS upgrades go through "termination + bridge" (keep-alive base: auto-answers upstream Pings + half-open probes); `false` = TCP byte passthrough (explicitly drops keep-alive and compression — mobile backgrounding can be killed by upstream heartbeat and cause frequent reconnect loops, see "WebSocket Bridge & Compression")
+
+#### `wsDeflatePolicy`
+
+Compression negotiation policy: `browser: false` disables compression globally; `uaDeny` lists UA fragments denied compression (iOS Safari is denied by default)
+
+#### `httpCompressEnabled`
+
+Master switch for HTTP response compression (the forwarding layer negotiates gzip/Brotli for compressible responses; Brotli's effective condition is documented in "HTTP Response Compression", merged from dsh-gzip)
+
+#### `httpCompressLevel`
+
+Compression preset 0..3: `0` default / `1` low (gzip 1 / br 2, fastest) · `2` medium (gzip 5 / br 5, balanced) / `3` high (gzip 9 / br 9, best ratio) — the gzip and Brotli parameters are both passed down; legacy integer values 4..9 are migrated to 3 automatically
+
+#### `injectToken`
+
+Auto-inject the current launch token on the first `GET /` to mint a session cookie; replay once after an upstream 401 to recover an invalid cookie (issue #380). See Security Model
+
+#### `ownsHostCompat`
+
+Declare `ownsHost` to non-loopback pages (issue #856): **forges an upstream topology fact**, unlocking settings persistence to `<DSH_HOME>/settings.yaml` and the host-native "open settings file" action; remote and local pages become indistinguishable in the UI. Off by default — trade-offs, how to disable it and the `ssh -L` zero-forgery alternative are in the Security Model
+
+<a id="verification-and-troubleshooting"></a><a id="user-content-verification-and-troubleshooting"></a>
+## Verification and troubleshooting
 
 ```sh
 # Health check (loopback; includes compression config, active state and negotiation counters)
@@ -286,7 +249,7 @@ curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/compression
 curl http://<your-LAN-IP>:3081/api/dsh-lan-proxy/health
 ```
 
-## Known Limitations
+### Known Limitations
 
 - HTTPS self-signed certificates are generated by a built-in library with no external command
   dependency (when unavailable and no certificate file is configured, the HTTPS channel
@@ -300,6 +263,151 @@ curl http://<your-LAN-IP>:3081/api/dsh-lan-proxy/health
 - With `wsBridgeEnabled=false` all WebSockets go passthrough (saves one hop of CPU), but mobile
   backgrounding >4~6s gets killed by the upstream heartbeat and causes frequent reconnect
   loops — only recommended for setups with no mobile clients
+
+<a id="detailed-reference"></a><a id="user-content-detailed-reference"></a>
+## Detailed reference
+
+### WebSocket Bridge & Compression (wss event stream)
+
+- **Bridging is the default base (issue #552)**: while `wsBridgeEnabled` is on (default),
+  **all** WebSocket upgrades go through "termination + bridge" — lan-proxy speaks ws on both
+  the browser segment and the DSH segment and forwards frames both ways. Bridging provides two
+  capabilities that are **independent of compression**:
+  - **Automatic upstream Ping reply**: the dsh upstream (api-gateway) sends one WS Ping on
+    `/api/remote.mux` every 2s and calls `terminate()` after 2 cycles (~4~6s) without a Pong.
+    The bridge's upstream connection auto-replies Pongs via the ws library — mobile
+    backgrounding / screen-off / brief freezes no longer trip the upstream kill; the connection
+    survives until the device returns (no more "disconnect → reconnect" loops).
+  - **Half-open liveness probe (Refs #268)**: the bridge pings the browser segment and the DSH
+    segment **independently** every 30s; a ping with no pong by the next cycle (~30~60s of
+    silence) marks that side half-open and terminates it. A termination logs
+    `lan-proxy: ws-bridge half-open detected, terminating (intervalMs=...)` at warn level.
+- **Compression is an optional enhancement on top of the bridge**: when a path matches
+  `wsCompressPaths` (default `/api/remote.mux` — the Remote-stream mux endpoint owned by
+  api-gateway since dsh 0.1.2, replacing the old `/api/events.mux`, `/api/events.host`)
+  **and** `wsCompressEnabled` is on, the browser segment negotiates permessage-deflate (the
+  browser decompresses automatically) while the DSH segment stays plaintext, then both
+  directions are bridged and forwarded. Benefit: remote.mux carries heavy real-time frames —
+  permessage-deflate measures roughly **75~79%** savings in practice.
+- **Clearing the compression allowlist / turning compression off no longer drops keep-alive**
+  (issue #552): `wsCompressPaths=[]` or `wsCompressEnabled=false` only disables compression;
+  the bridge (Pong reply + probes) stays active.
+- Even if the DSH server later enables permessage-deflate itself, the DSH segment here never
+  negotiates compression; the two segments are independent, so there is **no double compression
+  and no conflict**.
+- **Bridging is not byte-transparent**: it terminates and re-originates the WS connection, so
+  subprotocol (Sec-WebSocket-Protocol) negotiation and close codes are not preserved across
+  ends (the dsh client currently depends on neither — verified zero impact); treat this as the
+  contract for generic/future endpoints.
+- **Explicitly disabling the bridge** (`wsBridgeEnabled=false`): all WS goes through TCP byte
+  passthrough (saves one hop of CPU), but loses Pong reply and probes — mobile backgrounding
+  >4~6s gets killed by the upstream heartbeat and causes frequent reconnects; only recommended
+  for setups with no mobile clients.
+
+### HTTP Response Compression (Brotli/gzip, merged from dsh-gzip)
+
+- Since v0.1.10, the HTTP response compression capability of the standalone dsh-gzip plugin (source removed from this repository)
+  has been merged into this plugin, implemented at the **forwarding layer** via the
+  battle-tested [compression](https://www.npmjs.com/package/compression) middleware
+  (inlined at build time): for requests served through
+  this plugin, compressible responses (JSON / text) from `/api` (RPC), `/plugins`
+  (client bundles), and static assets/index.html negotiate compression automatically; SSE
+  (text/event-stream), zip exports, already-encoded responses, HEAD, Range requests,
+  and responses under 1KB pass through untouched.
+- **When Brotli actually applies (measured)**: dsh's own web server already ships gzip
+  compression (`compression: gzip`) and negotiates gzip only. Two cases therefore exist on
+  this path:
+
+  | Client `Accept-Encoding` | Upstream | Final response through this plugin |
+  |---|---|---|
+  | `br, gzip` (mainstream browsers) | gzip | gzip (already encoded, this layer defers instead of re-compressing) |
+  | `gzip` | gzip | gzip (same) |
+  | `br` (br only) | raw | **br** |
+
+  In other words, this layer's Brotli applies only when the upstream left the response
+  uncompressed and the client declared br alone. Mainstream browsers declare gzip as well,
+  so what arrives is the upstream gzip and the **extra Brotli ratio is not realized** on
+  this path; that case is still far better than no compression (the same response measured
+  322900 → 5065 bytes). The two layers never double-compress.
+- Benefit: large JSON responses such as session history (4~13MB uncompressed) often hit
+  the browser RPC 30s timeout over remote/slow links ("history load failed"); after compression
+  they are ~1.2MB — measured in an isolated environment at ~36s down to ~3s.
+- The middleware sits on the forwarder's own listener chain and does not modify dsh web
+  or any other plugin's runtime behavior; set `httpCompressEnabled: false` to turn this
+  layer's compression off (when the client also accepts gzip, the upstream's own gzip still
+  compresses such responses, so the switch does not change their on-wire size).
+  Note: traffic that reaches the loopback web directly (local browser on `127.0.0.1:3080`,
+  not through this plugin) is outside the compression surface — loopback links do not
+  need compression.
+- **Migrating from dsh-gzip**: upgrade this plugin, confirm compression is active, then
+  uninstall the standalone gzip package:
+
+  ```sh
+  dsh plugin --profile web update @wingsky-1/dsh-lan-proxy    # requires >= 0.1.10
+  curl -s http://127.0.0.1:3081/api/dsh-lan-proxy/health      # loopback check: continue when httpCompressMounted is true
+  dsh plugin --profile web remove @wingsky-1/dsh-gzip
+  # Restart dsh web to take effect
+  ```
+
+- When legacy gzip@0.1.9 (no detection logic) coexists with this plugin, the
+  content-encoding check still guarantees responses are compressed at most once
+  (verified for every assembly order) — responses are never corrupted; uninstall it
+  promptly to keep health diagnostics unambiguous.
+
+### HTTPS Support
+
+- **Certificate sources (two tiers)**: ① configure `tlsCertFile`/`tlsKeyFile` (official
+  certificate or mkcert local CA, zero browser warnings); ② auto-generate a self-signed
+  certificate (built-in `selfsigned` library generates and caches it to `<DSH_HOME>/lan-proxy/`,
+  private key permission 0600, no host openssl required)
+- The self-signed certificate needs a one-time manual "proceed" on first visit; for zero warnings
+  on LAN devices, mkcert is recommended
+
+### Uninstall plugins (remove)
+
+```sh
+dsh plugin --profile web remove @wingsky-1/dsh-lan-proxy
+```
+
+### Update plugins (update)
+
+```sh
+dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
+```
+
+> After install / uninstall / update, **restart `dsh web` once** (bundle layers are only
+> composed at startup) for changes to take effect.
+
+<details>
+<summary>Installation variants: version pinning and npx</summary>
+
+### Pin a version (@version)
+
+Omitting `@version` installs the default latest (recommended). Only when the registry has not synced the latest yet, or the latest has issues in your environment, append `@version` to the package name:
+
+```sh
+dsh plugin --profile web add @wingsky-1/dsh-lan-proxy@<version>
+```
+
+### Without a global dsh install
+
+If there is no global `dsh` command on the machine, use `npx` to run it on the fly (`dsh plugin`
+calls `pnpm` under the hood, so `pnpm` and `Node.js` must still be installed locally):
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web add @wingsky-1/dsh-lan-proxy
+npx @deepseek-ai/dsh plugin --profile web remove @wingsky-1/dsh-lan-proxy
+npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-lan-proxy
+```
+
+</details>
+
+<a id="development-and-architecture"></a><a id="user-content-development-and-architecture"></a>
+## Development and architecture
+
+For architecture and runtime mechanisms, see the [TOGAF 4A architecture document](../../docs/architecture/dsh-lan-proxy.md) (in Chinese): Business, Application, Data, and Technology views.
+
+Tests are maintained by layer under `test/{unit,integration,e2e,client}/`. Unit and integration tests import `src/**` directly; e2e smoke tests run the `lib/` artifact (`import "../../lib/index.js"`). Stryker reuses the assertions via the lib→src hook, without hand-synced copies.
 
 ## License
 
