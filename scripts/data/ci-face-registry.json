@@ -196,8 +196,8 @@
     {
       "path": "scripts/data/dsh-lan-proxy-*.json",
       "faces": ["dsh-lan-proxy"],
-      "why": "包级数据资产：ui-exempt（客户端 UI 豁免表，由 config-matrix-gate 消费）与 #826 冻结的 export-surface / export-faces（导出面基线与分类准入登记，由 export-surface-snapshot 消费，执行点见 ci.yml 的 Export surface snapshot 步骤）——三者都是本包资产，故用 glob 归本包面（与 scripts/data/dsh-notifier-*.json 同形）。原名 lan-proxy-ui-exempt.json 不带包名前缀，只能靠人工记忆映射（#742 阶段 2.2 改名归位）。",
-      "consumers": ["scripts/lib/config-matrix-gate.ts"]
+      "why": "包级数据资产：ui-exempt（历史客户端默认表差集，由 lan-proxy-config-contract 消费）与 #826 冻结的 export-surface / export-faces（导出面基线与分类准入登记，由 export-surface-snapshot 消费，执行点见 ci.yml 的 Export surface snapshot 步骤）——三者都是本包资产，故用 glob 归本包面（与 scripts/data/dsh-notifier-*.json 同形）。原名 lan-proxy-ui-exempt.json 不带包名前缀，只能靠人工记忆映射（#742 阶段 2.2 改名归位）。",
+      "consumers": ["scripts/lib/lan-proxy-config-contract.ts"]
     },
     {
       "path": "stryker.conf.d/dsh-notifier*.json",

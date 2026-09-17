@@ -712,80 +712,104 @@ test("量级: README 配置表缺键 → warn 不红（pass 仍 true）", () => 
   }
 });
 
-// ---- 豁免锚点判据（#826）：新增的机器判据自己也要能被一次实现改动打红 ----
+for (const mode of ["matrix", "none", "remove", "retired", "unknown-adapter"]) {
+  test("#774 执行入口保留受检义务 " + mode, () => {
+    const root = fakeRepo();
+    try {
+      const path = join(root, "scripts/data/plugins-manifest.json");
+      const data = JSON.parse(readFileSync(path, "utf8"));
+      const surface = data.configSurfaces.find((s) => s.package === "dsh-lan-proxy");
+      if (mode === "matrix") delete surface.matrix;
+      if (mode === "none")
+        data.configSurfaces = data.configSurfaces.map((s) =>
+          s === surface ? { package: s.package, surface: "none", reason: "自行退出" } : s,
+        );
+      if (mode === "remove" || mode === "retired") {
+        data.active = data.active.filter((p) => p !== surface.package);
+        data.configSurfaces = data.configSurfaces.filter((s) => s !== surface);
+        if (mode === "retired") data.retired.push({ name: surface.package, reason: "自行退役" });
+      }
+      if (mode === "unknown-adapter")
+        data.configSurfaces.find((s) => s.package === "dsh-notifier").matrix = structuredClone(
+          surface.matrix,
+        );
+      writeFileSync(path, JSON.stringify(data));
+      const result = runConfigMatrix(root);
+      assert.equal(result.pass, false);
+      assert.match(
+        result.problems.join("\n"),
+        mode === "unknown-adapter" ? /尚未登记包级 matrix 适配器/ : /dsh-lan-proxy.*必须保留/,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
 
-test("UI 豁免表: 锚点指向错误的行 → 红并点名键（#826 新增判据的负向 fixture）", () => {
-  assertRed(
-    "把 host 的锚点指到 Config 声明行（96）而不是定义行（100）",
-    (root) => {
-      editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
-        const after = s
-          .split("server/config/impl/model.ts:100")
-          .join("server/config/impl/model.ts:96");
-        assert.notEqual(after, s, "fixture 应含 model.ts:100");
-        return after;
-      });
-    },
-    ["锚点", "指错", "host"],
-  );
-});
+// 源码坐标不再是契约；等价组织方式必须保留运行时校验。
+for (const mode of ["comment", "extracted", "alias", "reexport"]) {
+  for (const missing of [false, true]) {
+    test("#774 等价schema组织 " + mode + " missing=" + missing, () => {
+      const root = fakeRepo();
+      try {
+        const path = join(root, "packages/dsh-lan-proxy/src/server/config/impl/model.ts");
+        let source = readFileSync(path, "utf8");
+        if (mode === "comment") source = "// inserted documentation\n" + source;
+        if (mode === "extracted") {
+          const prefix = "export const Config: z<LanProxyConfig> = z.object({";
+          assert.ok(source.includes(prefix));
+          const start = source.indexOf(prefix);
+          const end = source.indexOf("\n});", start);
+          assert.ok(end > start);
+          source =
+            source.slice(0, start) +
+            "const fields = {" +
+            source.slice(start + prefix.length, end) +
+            "\n};\nexport const Config: z<LanProxyConfig> = z.object(fields);" +
+            source.slice(end + 4);
+        }
+        if (mode === "alias") {
+          assert.ok(source.includes("export const Config:"));
+          source =
+            source.replace("export const Config:", "const Config:") +
+            "\nexport { Config as PublicSchema };\n";
+        }
+        if (missing) source += "\ndelete Config.dict.tlsCertFile;\n";
+        writeFileSync(path, source);
+        const manifestPath = join(root, "scripts/data/plugins-manifest.json");
+        const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+        const surface = manifest.configSurfaces.find((s) => s.package === "dsh-lan-proxy");
+        if (mode === "alias") surface.matrix.schema.export = "PublicSchema";
+        if (mode === "reexport") {
+          const next = path.replace("model.ts", "public.ts");
+          writeFileSync(next, 'export { Config } from "./model.ts";');
+          surface.matrix.schema.module = surface.matrix.schema.module.replace(
+            "model.ts",
+            "public.ts",
+          );
+        }
+        writeFileSync(manifestPath, JSON.stringify(manifest));
+        const result = runConfigMatrix(root);
+        assert.equal(result.pass, !missing, result.problems.join("\n"));
+        if (missing) assert.match(result.problems.join("\n"), /tlsCertFile/);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+}
 
-test("UI 豁免表: 锚点指向别的文件 → 红（不能靠换路径躲开核验）", () => {
-  assertRed(
-    "把 host 的锚点路径换成 client/shared/defaults.ts（reason 与 rationale 两处）",
-    (root) => {
-      editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
-        // 两处都要换：只换一处时另一处仍是合法锚点，判据本就不该报「未指向」。
-        const after = s.split("model.ts:100").join("defaults.ts:100");
-        assert.notEqual(after, s, "fixture 应含 model.ts:100");
-        return after;
-      });
-    },
-    ["未指向 Config 表所在文件"],
-  );
-});
-
-test("UI 豁免表: 锚点写法变体（./ 前缀 / 区间）仍应通过——判据不得被写法差异误伤", () => {
+test("#774 豁免理由无需源码坐标，但不能为空白", () => {
   const root = fakeRepo();
   try {
-    editData(root, "dsh-lan-proxy-ui-exempt.json", (s) => {
-      const json = JSON.parse(s);
-      const host = json.exemptKeys.find((e) => e.key === "host");
-      const targetHost = json.exemptKeys.find((e) => e.key === "targetHost");
-      const before = JSON.stringify([
-        host.reason,
-        host.rationale,
-        targetHost.reason,
-        targetHost.rationale,
-      ]);
-      // **reason 与 rationale 都要改**：判据把两段文本合起来找锚点，只要任一字段还留着普通
-      // 路径锚点，这条用例对 `./` 归一子句就是空钉（实测：删掉归一的副本下本用例仍绿）。
-      // 区间把上方注释一起括进来，也是人写锚点的自然形态。
-      host.reason = host.reason.replace(
-        "packages/dsh-lan-proxy/src/server/config/impl/model.ts:100",
-        "./packages/dsh-lan-proxy/src/server/config/impl/model.ts:97-104",
-      );
-      host.rationale = host.rationale.replace(
-        "server/config/impl/model.ts:100",
-        "./server/config/impl/model.ts:97-104",
-      );
-      targetHost.reason = targetHost.reason.replace(
-        "packages/dsh-lan-proxy/src/server/config/impl/model.ts:116",
-        "./packages/dsh-lan-proxy/src/server/config/impl/model.ts:116",
-      );
-      targetHost.rationale = targetHost.rationale.replace(
-        "server/config/impl/model.ts:116",
-        "./server/config/impl/model.ts:116",
-      );
-      assert.notEqual(
-        JSON.stringify([host.reason, host.rationale, targetHost.reason, targetHost.rationale]),
-        before,
-        "fixture 未改写任何锚点——真值文本漂移了，请同步本注入",
-      );
-      return `${JSON.stringify(json, null, 2)}\n`;
-    });
-    const r = runConfigMatrix(root);
-    assert.equal(r.pass, true, `写法变体不应判红。实际 problems: ${r.problems.join("; ")}`);
+    const path = join(root, "scripts/data/dsh-lan-proxy-ui-exempt.json");
+    const data = JSON.parse(readFileSync(path, "utf8"));
+    data.exemptKeys[0].reason = "由装配层负责，当前GUI不提供控件";
+    writeFileSync(path, JSON.stringify(data));
+    assert.equal(runConfigMatrix(root).pass, true);
+    data.exemptKeys[0].reason = "   ";
+    writeFileSync(path, JSON.stringify(data));
+    assert.match(runConfigMatrix(root).problems.join("\n"), /缺 reason/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

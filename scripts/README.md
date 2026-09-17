@@ -78,7 +78,8 @@
 - `lib/threshold-registry.mjs` — 阈值声明表的读取、结构与覆盖面校验、按 kind 的通用比较器（#843 D5）：两侧事实源由调用方注入（`readBase` / `readWorkspace`），`makeSourceLoader` 按 `sources` 声明顺序取第一个**存在**的源（迁移期双读的形态即由此表达，而不是特判）；`validateDeclarations` 把「新数据文件未登记 / 幽灵声明 / 缺字段」变成判据，`validateGuardFacts` 拦「声明了但两侧都取不到值」的幽灵判据。
 - `lib/gate-scope-registry.ts` — 路径受限门禁的**扫描范围**读取与通配展开（#733 计划项 3.2.1）：未登记 / 范围解析为空一律抛错（未登记即红）。
 - `lib/config-matrix-lib.ts` — 配置覆盖矩阵门禁的共享提取器与纯逻辑（issue #471）。
-- `lib/config-matrix-gate.ts` — 声明驱动的配置矩阵校验与可信基准读取（#774），由 contract 门禁和隔离测试调用；生产基准故障经 `failClosed` 退出。
+- `lib/config-matrix-gate.ts` — 声明驱动的配置契约发现与可信基准读取（#774），由 contract 门禁和隔离测试调用；生产基准故障经 `failClosed` 退出。
+- `lib/lan-proxy-config-contract.ts` — lan-proxy 历史三表与客户端默认值差集兼容适配；按运行时字段身份核验，不绑定源码坐标，不定义读写权限。
 - `lib/dts-cordis-merge-lib.ts` — 「cordis 声明合并必须落在包入口的声明闭包内」判据（#733 宪法第 3 条）。
 - `lib/export-faces-lib.ts` — 包导出面「分类登记」准入判据（#733 宪法第 3 条 / M2-3.5）：新增导出必须登记为安装面 / 配置面 / 契约面之一。
 - `lib/exports-types-lib.ts` — `package.json` 的 `exports[].types` → 产物相对路径映射（单一实现，pack-check 与导出面校验共用）。

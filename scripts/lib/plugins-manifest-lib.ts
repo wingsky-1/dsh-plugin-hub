@@ -209,19 +209,6 @@ function checkMatrix(item) {
   }
 }
 
-// 保留旧无条件 L1/L2 入口的检查义务；候选退役声明不能自行撤销该政策。
-function checkRequiredMatrix(surfaces, knownPackages) {
-  const surface = surfaces.find((item) => item.package === "dsh-lan-proxy");
-  if (
-    !knownPackages.includes("dsh-lan-proxy") ||
-    !surface ||
-    surface.surface === "none" ||
-    surface.matrix === undefined
-  ) {
-    fail("dsh-lan-proxy 必须保留受检身份与完整 matrix（L1/L2 必跑政策）");
-  }
-}
-
 /**
  * 形态 ② `surface: "none"`（显式无配置面）：用于**确实没有用户配置面**的包。必填 reason——
  * 它与「漏登记」在数据上长得一样，理由就是两者的区别；同时禁止再带任何面字段，否则
@@ -345,7 +332,6 @@ export function loadManifest(root) {
       );
     }
   }
-  checkRequiredMatrix(surfaces, knownPackages);
   return {
     active: [...seenActive],
     standalone: [...seenStandalone],

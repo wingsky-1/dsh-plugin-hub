@@ -30,6 +30,8 @@ import {
   loadManifest,
 } from "../lib/plugins-manifest-lib.ts";
 
+import { checkLanProxyLegacyObligation } from "../lib/lan-proxy-config-contract.ts";
+
 const ACTIVE = ["dsh-alpha", "dsh-beta"];
 const MANIFEST = {
   active: ACTIVE,
@@ -101,13 +103,19 @@ for (const invalid of [null, [], {}, { unknown: {} }]) {
 test("#774 旧基准无matrix也不能漏登必跑矩阵", () => {
   const json = matrixManifest();
   delete json.configSurfaces[0].matrix;
-  withManifest(json, (load) => assert.throws(load, /dsh-lan-proxy.*matrix/));
+  withManifest(json, (load) => {
+    const manifest = load(); // 通用结构加载不承担包级义务
+    assert.throws(() => checkLanProxyLegacyObligation(manifest), /dsh-lan-proxy.*matrix/);
+  });
 });
 
 test("#774 原必跑包改none不能取消L1 L2", () => {
   const json = matrixManifest();
   json.configSurfaces = [{ package: "dsh-lan-proxy", surface: "none", reason: "自行退出" }];
-  withManifest(json, (load) => assert.throws(load, /dsh-lan-proxy.*matrix/));
+  withManifest(json, (load) => {
+    const manifest = load(); // 通用结构加载不承担包级义务
+    assert.throws(() => checkLanProxyLegacyObligation(manifest), /dsh-lan-proxy.*matrix/);
+  });
 });
 
 for (const retire of [false, true]) {
@@ -116,7 +124,10 @@ for (const retire of [false, true]) {
     json.active = [];
     json.configSurfaces = [];
     if (retire) json.retired = [{ name: "dsh-lan-proxy", reason: "自行退役", successor: "" }];
-    withManifest(json, (load) => assert.throws(load, /dsh-lan-proxy.*matrix/));
+    withManifest(json, (load) => {
+      const manifest = load(); // 通用结构加载不承担包级义务
+      assert.throws(() => checkLanProxyLegacyObligation(manifest), /dsh-lan-proxy.*matrix/);
+    });
   });
 }
 

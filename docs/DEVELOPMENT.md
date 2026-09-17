@@ -647,23 +647,19 @@ entries }`——兼容字段 `exports` = **主入口**的导出面、`declBlocks
     自动枚举会退回「目录即事实源」的 fail-open 老路；
   - schema 加载/校验逻辑只有一份：`scripts/lib/plugins-manifest-lib.ts`（纯函数，
     入口脚本只喂数据），测试见 `scripts/test/plugins-manifest.test.ts`。
-- **配置矩阵声明**（#774）：`configSurfaces` 的 defaults/normalizer/booleanKeys/countLimits
-  四面契约保持不变；有平行配置表的包另登记 `matrix`，包含
-  `schema` / `validators` / `hints` / `clientDefaults` 四个 `{ module, export }` 输入。
-  模块路径相对仓库根；运行时加载真实导出，schema 必须为 schemastery object schema，键取
-  `dict` 而非归一化默认值。四个输入不可指向同一对象，关系检查不是复制键表后的自我比较。
-  `surface: "none"` 不得带 matrix；其他包无需为不适用的矩阵增加客户端面。
-  - lan-proxy 原有 L1/L2 必跑义务保留在完整 manifest 校验层：缺包、移出受检集合、改 none、
-    缺 matrix 或任一输入均失败。候选 `retired` 或 reason 不构成撤销该政策的授权。
-  - 新增矩阵后，以解析为 commit SHA 的 `origin/main` 作独立基准，按包身份检查删除或退化；
-    数组重排和输入路径迁移不受限，基准无法读取或解析时不得通过。合法退役须先评审撤销
-    检查义务的方案，不添加数据开关自行绕过。
-  - 三表键集必须全等；客户端键集是 schema 子集，差集恰为
-    `scripts/data/<包名>-ui-exempt.json` 的豁免键。豁免上限为8，理由中的源码锚点须匹配
-    matrix.schema 声明文件内的字段定义；源码文本只用于定位，不参与运行时键集派生。
-    为使锚点可核验，schema 导出须是同名顶层变量，其初始化调用的首参数直接为字段对象
-    （如 `export const Config = Schema.object({...})`）；别名再导出、转导出或链式包装
-    不在当前锚点定位支持范围内，需将声明指向原始定义。
+- **配置契约与兼容适配**（#774）：通用门禁按 manifest 发现真实导出，检查登记完整性、
+  N1–N4 契约与固定 SHA 的 `origin/main` 检查面退化。基准故障经 `failClosed` 退出2。
+  - `matrix` 四输入只描述 lan-proxy 的历史 L1/L2 兼容契约，不是统一配置模型。
+    三表、schemastery `dict`、客户端默认表及自指误接线检查隔离在
+    `scripts/lib/lan-proxy-config-contract.ts`；未知包的 matrix 不能自动套用，需先定义适配。
+  - lan-proxy 必跑义务在配置契约执行层保留，不混入普通 manifest 结构加载。
+    缺包、none、漏 matrix、移出集合或自行 retired 均不能撤销首次迁移义务。
+  - 旧差集 = schema 键 − clientDefaults 键；条目身份为包内字段 key，须存在于运行时
+    schema 且不在 clientDefaults 中，理由非空、无重复、旧上限8保留。模块/导出由
+    manifest 定位，不解析源码坐标，不限制初始化语法、别名或转导出。
+  - 此差集不证明实际 GUI 控件覆盖，也不定义读写权限。产品代码负责读取披露、
+    写入校验、脱敏和 GUI 策略。退出条件：配置域权威定义接管 GUI 分类并有行为测试后，
+    经评审替换旧三表/差集适配。本次不改变产品路由与存储。
 - **复杂度门禁（#722 阶段五）**：`pnpm lint` = ESLint `complexity` + `sonarjs/cognitive-complexity`，
   跑在 `packages/*/src`、`packages/*/test`、`shared`、`scripts` 的手写源码上（秒级）。
   - **工具链隔离**：lint 工具链装在 `tools/lint`（刻意不在 `packages/` 下）——typescript-eslint

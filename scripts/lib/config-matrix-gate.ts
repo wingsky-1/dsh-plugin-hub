@@ -3,303 +3,24 @@
 "use strict";
 
 /**
- * 配置矩阵按 manifest 加载真实运行时输入；源码只用于核对豁免锚点。
+ * 配置契约按 manifest 发现真实输入；包特有历史矩阵隔离在兼容适配中。
  * 文件树与可信基准读取分别注入，隔离测试不依赖候选声明充当基准。
  */
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 
-import { createRequire, stripTypeScriptTypes } from "node:module";
-import { parse } from "acorn";
+import { createRequire } from "node:module";
+import {
+  runLanProxyLegacyMatrix,
+  checkLanProxyLegacyObligation,
+} from "./lan-proxy-config-contract.ts";
 import { join } from "node:path";
 import { diffKeys, extractReadmeConfigKeys } from "./config-matrix-lib.ts";
 import { loadManifest, compareConfigSurfaceContracts } from "./plugins-manifest-lib.ts";
 import { failClosed } from "./gate-exit.mjs";
 
-// lan-proxy 客户端 UI 豁免表（#733 计划项 3.2.2 数据化）：条目（哪些键、为什么）是**事实**，
-// 在 scripts/data/dsh-lan-proxy-ui-exempt.json；条目数上限与「超限即红」是**策略**，留在代码里
-// ——把上限放进被约束的数据文件等于让被约束方自己改约束。
-const uiExemptPath = (pkg) => `scripts/data/${pkg}-ui-exempt.json`;
-const UI_EXEMPT_MAX = 8;
-
-/**
- * 读取 UI 豁免表（键 → { reason, rationale }）。只做**结构**加载：IO / JSON / 数组形态 /
- * 键与原因的存在性 / 重复键。策略检查（≤8、原因含「文件:行」、锚点指向真身）留给
- * checkExempts，避免同一判据两处实现。
- * 任何结构错误都转 problem：豁免机制失效不能表现为「没有豁免」——那会把合法差集报成
- * 「漏 UI」，把修复方向指错。
- */
-function loadUiExempt(root, problems, pkg) {
-  const UI_EXEMPT_REL = uiExemptPath(pkg);
-  const filePath = join(root, UI_EXEMPT_REL);
-  let json;
-  try {
-    json = JSON.parse(readFileSync(filePath, "utf8"));
-  } catch (e) {
-    problems.push(
-      `lan-proxy UI 豁免表不可读（${UI_EXEMPT_REL}）：${String(e.message).split("\n")[0]}`,
-    );
-    return {};
-  }
-  if (!Array.isArray(json.exemptKeys)) {
-    problems.push(`lan-proxy UI 豁免表缺 exemptKeys 数组（${UI_EXEMPT_REL}）`);
-    return {};
-  }
-  const out = {};
-  for (const item of json.exemptKeys) {
-    applyExemptEntry(out, item, problems, UI_EXEMPT_REL);
-  }
-  return out;
-}
-
-function applyExemptEntry(out, item, problems, UI_EXEMPT_REL) {
-  if (
-    item === null ||
-    typeof item !== "object" ||
-    typeof item.key !== "string" ||
-    item.key.length === 0
-  ) {
-    problems.push(`lan-proxy UI 豁免表条目缺 key（${UI_EXEMPT_REL}）`);
-    return;
-  }
-  if (typeof item.reason !== "string" || item.reason.length === 0) {
-    problems.push(`lan-proxy UI 豁免键 ${item.key} 缺 reason（${UI_EXEMPT_REL}）`);
-    return;
-  }
-  if (out[item.key] !== undefined) {
-    problems.push(`lan-proxy UI 豁免表存在重复键：${item.key}`);
-    return;
-  }
-  out[item.key] = {
-    reason: item.reason,
-    rationale: typeof item.rationale === "string" ? item.rationale : "",
-  };
-}
-
-/** 豁免表结构自检：≤8 键 + 每条 reason 含「文件:行」+ 锚点必须指向真身（见 exemptAnchorProblems）。 */
-function checkExempts(pkg, exempt, schema, cfgPath) {
-  const problems = [];
-  const keys = Object.keys(exempt);
-  if (keys.length > UI_EXEMPT_MAX) {
-    problems.push(`${pkg} 豁免表 ${keys.length} 键 > ${UI_EXEMPT_MAX}（超限即红，强制走评审）`);
-  }
-  const spanEnd = schema.spanEnd;
-  for (const k of keys) {
-    const { reason, rationale } = exempt[k];
-    if (typeof reason !== "string" || reason.length === 0 || !/:\d+/.test(reason)) {
-      problems.push(`${pkg} 豁免键 ${k} 缺原因（须含「文件:行 + 一句理由」）`);
-      continue;
-    }
-    problems.push(...exemptAnchorProblems(pkg, k, reason, rationale, schema, cfgPath, spanEnd));
-  }
-  return problems;
-}
-
-/** 锚点必须落在声明 schema 的真实顶层字段位置，避免同名嵌套字段或相邻表冒充。 */
-function exemptAnchorProblems(pkg, k, reason, rationale, schema, cfgPath, spanEnd) {
-  const problems = [];
-  const definitionLine = schema.fieldLines.get(k);
-  // 锚点形态「<路径>:<行>」；区间写法（`:91-95`）与 `./` 前缀都是人写锚点的自然形态，
-  // 判据不该因为写法差异判红——那只会把修复方向指错。
-  const anchors = [...`${reason}\n${rationale}`.matchAll(/([\w./-]+\.[A-Za-z]+):(\d+)(?:-(\d+))?/g)]
-    .map((m) => ({
-      path: m[1].replace(/^\.\//, ""),
-      raw: m[0],
-      from: Number(m[2]),
-      to: m[3] === undefined ? Number(m[2]) : Number(m[3]),
-    }))
-    .filter((a) => cfgPath.endsWith(a.path));
-  if (anchors.length === 0) {
-    problems.push(
-      `${pkg} 豁免键 ${k} 的锚点未指向 Config 表所在文件（${cfgPath}）：须写成「<路径>:<行>」才可被机器校验`,
-    );
-    return problems;
-  }
-  for (const a of anchors) {
-    // 区间内**任意**一行命中即算指向正确——区间常把上方注释一起括进来。
-    let hit = false;
-    for (let line = a.from; line <= a.to && !hit; line += 1) {
-      hit = line >= schema.line && line < spanEnd && line === definitionLine;
-    }
-    if (!hit) {
-      problems.push(
-        `${pkg} 豁免键 ${k} 的锚点 ${a.raw} 指错——区间内没有一行是 Config 里 ${k} 的定义行（Config 表跨 ${schema.line}-${spanEnd - 1} 行）`,
-      );
-    }
-  }
-  return problems;
-}
-
-/** 保留原始 TS 坐标，仅供豁免锚点定位；配置键始终来自运行时。 */
-function schemaSource(root, face) {
-  const path = join(root, face.module);
-  const text = readFileSync(path, "utf8");
-  const ast = parse(stripTypeScriptTypes(text), {
-    ecmaVersion: "latest",
-    sourceType: "module",
-    locations: true,
-  });
-  const declarations = ast.body.flatMap((statement) => {
-    const node = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
-    return node?.type === "VariableDeclaration" ? node.declarations : [];
-  });
-  const declaration = declarations.find((node) => node.id.name === face.export);
-  const initializer = declaration?.init;
-  const object = initializer?.type === "CallExpression" && initializer.arguments[0];
-  if (!object || object.type !== "ObjectExpression") {
-    throw new Error("schema 源码声明无法定位对象字段: " + face.export);
-  }
-  const fieldLines = new Map();
-  for (const property of object.properties) {
-    if (property.type === "Property" && !property.computed) {
-      const key = property.key.name ?? property.key.value;
-      fieldLines.set(key, property.loc.start.line);
-    }
-  }
-  return { text, line: object.loc.start.line, spanEnd: object.loc.end.line + 1, fieldLines };
-}
-
 function matrixRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function loadMatrix(root, surface, problems) {
-  const matrix = surface.matrix;
-  const loaded = {};
-  for (const label of ["schema", "validators", "hints", "clientDefaults"]) {
-    loaded[label] = loadSurfaceExport(
-      root,
-      surface.package,
-      matrix[label],
-      "matrix." + label,
-      problems,
-    );
-  }
-  if (problems.length) return null;
-  const config = loaded.schema;
-  if (
-    config?.type !== "object" ||
-    !matrixRecord(config.dict) ||
-    Object.keys(config.dict).length === 0
-  ) {
-    problems.push(surface.package + " matrix.schema 必须暴露非空 object schema.dict");
-    return null;
-  }
-  loaded.schema = config.dict;
-  if (Object.values(loaded).some((value) => !matrixRecord(value))) {
-    problems.push(surface.package + " matrix 输入必须是非数组对象");
-    return null;
-  }
-  const identities = Object.values(matrix).map(
-    (face) => join(root, face.module) + "#" + face.export,
-  );
-  if (new Set(identities).size !== identities.length || new Set(Object.values(loaded)).size !== 4) {
-    problems.push(surface.package + " matrix 自指：输入声明或实际键载体指向同一对象");
-    return null;
-  }
-  return loaded;
-}
-
-/** 差集 → 缺/多键报错行。 */
-function diffProblems(scope, tableName, filePath, line, d, hint = "") {
-  const out = [];
-  for (const k of d.missing)
-    out.push(
-      `${scope} ${tableName} 缺键（相对基准）: ${k} @ ${filePath}:${line}${hint ? `（${hint}）` : ""}`,
-    );
-  for (const k of d.extra)
-    out.push(
-      `${scope} ${tableName} 多键（基准之外）: ${k} @ ${filePath}:${line}${hint ? `（${hint}）` : ""}`,
-    );
-  return out;
-}
-
-function runDeclaredMatrix(root, surface) {
-  const problems = [];
-  const lines = [];
-  const loaded = loadMatrix(root, surface, problems);
-  if (!loaded) return { problems, lines };
-  const matrix = surface.matrix;
-  let location;
-  try {
-    location = schemaSource(root, matrix.schema);
-  } catch (error) {
-    problems.push(surface.package + " matrix 源码锚点不可读: " + error.message);
-    return { problems, lines };
-  }
-  const schema = { ...location, keys: Object.keys(loaded.schema) };
-  const validators = { keys: Object.keys(loaded.validators), line: "?" };
-  const hints = { keys: Object.keys(loaded.hints), line: "?" };
-  const defaults = { keys: Object.keys(loaded.clientDefaults), line: "?" };
-  const cfgPath = join(root, matrix.schema.module);
-  const clientPath = join(root, matrix.clientDefaults.module);
-  checkMatrixTableEquality(cfgPath, problems, schema, validators, hints, surface.package);
-  const exemptKeys = checkMatrixClientDefaults(
-    root,
-    problems,
-    schema,
-    defaults,
-    clientPath,
-    cfgPath,
-    surface.package,
-  );
-  lines.push(
-    surface.package +
-      " " +
-      schema.keys.length +
-      " 键 × [schema/validators/hints] 全等 + client DEFAULTS " +
-      defaults.keys.length +
-      "(豁免 " +
-      exemptKeys.length +
-      ")",
-  );
-  return { problems, lines };
-}
-
-function checkMatrixTableEquality(cfgPath, problems, schema, validators, hints, pkg) {
-  const pairs = [
-    ["Config", schema, "FILE_CONFIG_VALIDATORS", validators],
-    ["Config", schema, "SETTING_FIELD_HINTS", hints],
-    ["FILE_CONFIG_VALIDATORS", validators, "SETTING_FIELD_HINTS", hints],
-  ];
-  for (const [na, ta, nb, tb] of pairs) {
-    problems.push(
-      ...diffProblems(pkg, nb, cfgPath, tb.line, diffKeys(ta.keys, tb.keys), `与 ${na} 不一致`),
-    );
-    problems.push(
-      ...diffProblems(pkg, na, cfgPath, ta.line, diffKeys(tb.keys, ta.keys), `与 ${nb} 不一致`),
-    );
-  }
-}
-
-function checkMatrixClientDefaults(root, problems, schema, defaults, clientPath, cfgPath, pkg) {
-  // L2：DEFAULTS ⊆ schema；schema − DEFAULTS == 豁免；豁免表结构自检
-  const exempt = loadUiExempt(root, problems, pkg);
-  problems.push(...checkExempts(pkg, exempt, schema, cfgPath));
-  const exemptKeys = Object.keys(exempt);
-  const d = diffKeys(schema.keys, defaults.keys);
-  // DEFAULTS 出现 schema 外键 → 红（客户端提交未知键被宿主白名单静默丢弃）
-  for (const k of d.extra)
-    problems.push(
-      `lan-proxy client DEFAULTS 多键（Config 之外）: ${k} @ ${clientPath}:${defaults.line}`,
-    );
-  // schema − DEFAULTS 缺键必须恰为豁免集合（新增可编辑键漏 UI → 红）
-  for (const k of d.missing) {
-    if (!exemptKeys.includes(k))
-      problems.push(
-        `lan-proxy client DEFAULTS 缺键（相对 Config，非豁免）: ${k} @ ${clientPath}:${defaults.line}（新增可编辑键漏 UI）`,
-      );
-  }
-  // 反向约束：豁免必须仍是有效 schema 字段且未进入客户端，确保差集恰等于豁免。
-  for (const k of exemptKeys) {
-    if (!schema.keys.includes(k))
-      problems.push(`${pkg} 豁免键 ${k} 不在 Config 中（失效豁免，应移除）`);
-    if (defaults.keys.includes(k))
-      problems.push(
-        `lan-proxy 豁免键 ${k} 已在客户端 DEFAULTS 中（豁免残留，应移除豁免或改豁免原因）`,
-      );
-  }
-  return exemptKeys;
 }
 
 /**
@@ -372,8 +93,11 @@ function runSurface(root, surface) {
   const warnings = [];
   const lines = [];
 
+  if (surface.matrix && surface.package !== "dsh-lan-proxy") {
+    return { problems: [surface.package + " 尚未登记包级 matrix 适配器"], lines: [], warnings: [] };
+  }
   if (surface.matrix) {
-    const matrix = runDeclaredMatrix(root, surface);
+    const matrix = runLanProxyLegacyMatrix(root, surface, loadSurfaceExport);
     problems.push(...matrix.problems);
     lines.push(...matrix.lines);
   }
@@ -553,6 +277,7 @@ export function runConfigMatrix(root, { readBaseline = readConfigSurfaceBaseline
   let surfaces = [];
   try {
     const manifest = loadManifest(root);
+    checkLanProxyLegacyObligation(manifest);
     problems.push(...compareConfigSurfaceContracts(readBaseline(root), manifest));
     surfaces = manifest.configSurfaces;
   } catch (e) {
