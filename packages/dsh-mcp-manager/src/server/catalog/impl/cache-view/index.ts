@@ -26,11 +26,10 @@ export function catalogCacheFile() {
   return catalogSummaryFile();
 }
 
-/** catalogViewFor 的宿主最小面（manager 提供；中间层/模式可能热切换，用读取器）。 */
+/** catalogViewFor 的宿主最小面（manager 提供；中间层实例可能延迟装配，用读取器）。 */
 export interface CatalogViewHost {
   getCatalogCache(): CatalogCache;
   getMiddleware(): McpMiddleware | undefined;
-  getMiddlewareMode(): string;
   catalogCachePathFor(root: string): string;
 }
 
@@ -47,15 +46,11 @@ export type CatalogViewResolver = (
  * - 用户手写 server.description 由 composeCatalogEntries 处理（优先级最高），
  *   不在此视图内；
  * - 本视图只负责注入端的 ②（中间层目录摘要）与 ③（B 缓存摘要）两级回退；
- * - **判 middlewareMode 而非 middleware 实例**（评审修正①）：热切换 off 后
- *   middleware 实例与 units 残留（apply.setMiddlewareMode 只卸载 ws_mcp_* 工具），
- *   判实例会错误读中间层目录。
+ * - **判 middleware 实例**（单池后实例恒在；实例缺失＝尚未装配 → 全部走 B）。
  *
- * root 映射（与 middlewareTakes 同口径 + 热切换残留兜底，评审修正②③）：
- * - mode=off → 全部走 B（无中间层目录语义）；
+ * root 映射（单池后与单元表同口径）：
  * - scope=project → 该 cwd 归一化项目 root 的单元 → 无则磁盘 last-good；
- * - scope=global → @global 单元/磁盘（all 模式权威；project 模式热切换残留/
- *   上次 all 会话的 last-good 兜底）→ 仍无则保留 B。
+ * - scope=global → @global 单元/磁盘 → 仍无则保留 B。
  * 严格按 scope 解析、不跨 scope 混配同名服务器（防不同配置被错配）。
  * 单元不存在时读磁盘 last-good（带 mtime 缓存），**不主动 projectUnitFor**
  * ——pre-step 无连接副作用。
@@ -121,7 +116,7 @@ export function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver {
     const view: CatalogCache = new Map();
     for (const [name, entry] of catalogCache) view.set(name, { summary: entry.summary });
     const mw = host.getMiddleware();
-    if (mw === undefined || host.getMiddlewareMode() === "off") return view;
+    if (mw === undefined) return view;
     // 项目 root 只解析一次（所有 project scope 服务器共用；空 cwd → 无项目单元）。
     const cwdRoot =
       cwd === undefined || cwd === null || cwd === ""

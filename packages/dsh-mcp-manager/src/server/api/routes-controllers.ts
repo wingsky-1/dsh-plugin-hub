@@ -66,7 +66,9 @@ export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers):
         try {
           writeJson(res, 200, {
             ...manager.uiConfig(),
-            middleware: manager.middlewareMode ?? "off",
+            // 笔 2 随配置键一起删：单池后模式不再影响任何行为，这里报**有效事实**
+            // （恒 all），不回显设置里那个已失效的值。
+            middleware: "all",
           });
         } catch (error) {
           helpers.handleError(res, error);
@@ -114,7 +116,8 @@ export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers):
             }
             writeJson(res, 200, {
               ...manager.uiConfig(),
-              middleware: manager.middlewareMode ?? "off",
+              // 同 GET：报有效事实（单池后恒 all）；落盘的仍是用户选的配置值（笔 2 删键）。
+              middleware: "all",
             });
             return;
           }

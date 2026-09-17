@@ -2151,7 +2151,7 @@ describe("B11 红测：含连续双下划线 server 名按未知处理", () => {
     const resolveRoot = async (agent) =>
       agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined;
     const mw = trackMw(new McpMiddleware(host, {}));
-    const dispose = registerMiddlewareTools(ctx, mw, resolveRoot, "project", {
+    const dispose = registerMiddlewareTools(ctx, mw, resolveRoot, {
       disabledTools: disabledMap,
     });
     return { guards, dispose, mw };
@@ -2573,7 +2573,7 @@ describe("#767 S1-4d：guard 判发起者", () => {
     const resolveRoot = async (agent) =>
       agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined;
     const mw = trackMw(new McpMiddleware(host, {}));
-    registerMiddlewareTools(ctx, mw, resolveRoot, "project", { disabledTools: disabledMap });
+    registerMiddlewareTools(ctx, mw, resolveRoot, { disabledTools: disabledMap });
     return { guards, mw };
   }
 

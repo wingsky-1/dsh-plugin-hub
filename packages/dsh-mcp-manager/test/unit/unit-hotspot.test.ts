@@ -39,7 +39,7 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
     );
 
     const routes = makeRoutes(manager);
-    return { routes, find: (path) => routes.find((r) => r.path === path) };
+    return { routes, manager, find: (path) => routes.find((r) => r.path === path) };
   }
 
   // 伪造 req/res
@@ -138,7 +138,9 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
   });
 
   it("connect 合法 name → 200", async () => {
-    const { find } = makeRoutesFixture();
+    const { find, manager } = makeRoutesFixture();
+    // 单池后连接只有中间层一条路径：装配实例（未装 lifecycle 时条目落 failed，仍 200）。
+    await manager.initMiddleware({});
     const res = fakeRes();
     await find(ROUTES.connect).handler(fakeReq("POST", `${ROUTES.connect}?name=route-test`), res);
     expect(res.state.status).toBe(200);
@@ -169,7 +171,8 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
   });
 
   it("reconnect 合法 name → 200", async () => {
-    const { find } = makeRoutesFixture();
+    const { find, manager } = makeRoutesFixture();
+    await manager.initMiddleware({});
     const res = fakeRes();
     await find(ROUTES.reconnect).handler(
       fakeReq("POST", `${ROUTES.reconnect}?name=route-test`),

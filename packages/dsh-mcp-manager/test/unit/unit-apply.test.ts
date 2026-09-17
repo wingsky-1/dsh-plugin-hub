@@ -329,7 +329,6 @@ describe("B20：makeMiddlewareHotSwitch 热切换补 emitStatus", () => {
       new McpStore(join(dir, "mcp.json")),
     );
     manager.ctx = { tools: { register: () => () => {} }, on: () => () => {} };
-    manager.middlewareMode = "off";
     let emits = 0;
     manager.onStatus(() => {
       emits += 1;

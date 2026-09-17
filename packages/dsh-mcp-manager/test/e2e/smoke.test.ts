@@ -428,17 +428,12 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
   await mw.ensureConnected("/proj", "ctx");
   await mw.ensureConnected(MIDDLEWARE_GLOBAL_ROOT, "gctx");
   // projUnit 是手工塞进 units 的，projectUnitFor 会原样返回它；gctx 的目录同理随后填充。
-  const dispose = registerMiddlewareTools(
-    ctx,
-    mw,
-    async (agent) => {
-      const cwd = agent?.session?.header?.cwd;
-      // 模拟组合根 src/index.ts 的 apply all 模式 fallback：cwd 无项目 → @global（全局服务器存在时）。
-      if (cwd === "/no-project") return MIDDLEWARE_GLOBAL_ROOT;
-      return cwd === "/proj" ? "/proj" : undefined;
-    },
-    "all",
-  );
+  const dispose = registerMiddlewareTools(ctx, mw, async (agent) => {
+    const cwd = agent?.session?.header?.cwd;
+    // 模拟组合根 src/index.ts 的 resolveRoot 回落：cwd 无项目 → @global（单池后无条件回落）。
+    if (cwd === "/no-project") return MIDDLEWARE_GLOBAL_ROOT;
+    return cwd === "/proj" ? "/proj" : undefined;
+  });
   const names = registered.map((def) => def.name).sort();
   expect(names, "all 模式注册四个工具").toEqual([
     "ws_mcp_call",
@@ -545,7 +540,7 @@ it("MCP_GUIDANCE 不承诺可按服务器名推导全局直呼名（裁定 AJ）
   expect(MCP_GUIDANCE, "正对照：project-level 引导仍在").toMatch(/ws_mcp_search/);
   expect(MCP_GUIDANCE, "正对照：project-level 那条仍在").toMatch(/Project-level servers/);
 });
-it("#362 A2：project 模式 detail/call 传全局级服务器 → 引导 mcp__ 直呼（不再谎报不属于工作空间）", async () => {
+it("#362 A2 / #767 笔 1a：project root 会话下 @global 可达（「改 mcp__ 直呼」拒绝门已删）", async () => {
   const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT } =
     await import("../../lib/index.js");
   const registered = [];
@@ -557,14 +552,26 @@ it("#362 A2：project 模式 detail/call 传全局级服务器 → 引导 mcp__ 
       },
     },
   };
+  const globalServer = {
+    name: "gctx",
+    transport: "stdio",
+    command: "npx",
+    enabled: true,
+    toolDefinitions: [
+      {
+        name: "use_g",
+        description: "全局工具",
+        parameters: {},
+        execute: async () => ({ content: [] }),
+      },
+    ],
+  };
   const host = {
     ctx,
     logger: { info: () => {}, warn: () => {}, error: () => {} },
     projectServersFor: async (root) =>
-      root === MIDDLEWARE_GLOBAL_ROOT
-        ? [{ name: "gctx", transport: "stdio", command: "npx", enabled: true }]
-        : undefined,
-    globalServers: () => [{ name: "gctx", transport: "stdio", command: "npx", enabled: true }],
+      root === MIDDLEWARE_GLOBAL_ROOT ? [globalServer] : undefined,
+    globalServers: () => [globalServer],
     normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
     saveUserState: async () => {},
     emitStatus: () => {},
@@ -572,50 +579,41 @@ it("#362 A2：project 模式 detail/call 传全局级服务器 → 引导 mcp__ 
     isGlobalServer: (name) => name === "gctx",
   };
   const mw = new McpMiddleware(host, {});
-  const dispose = registerMiddlewareTools(
-    ctx,
-    mw,
-    async (agent) => (agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined),
-    "project",
+  // @global 单元 + 虚拟连接：目录投影的真实来源，detail 才能真正命中。
+  await mw.projectUnitFor(MIDDLEWARE_GLOBAL_ROOT);
+  await mw.ensureConnected(MIDDLEWARE_GLOBAL_ROOT, "gctx");
+  const dispose = registerMiddlewareTools(ctx, mw, async (agent) =>
+    agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined,
   );
   const detailDef = registered.find((d) => d.name === "ws_mcp_detail");
   const callDef = registered.find((d) => d.name === "ws_mcp_call");
   const agent = { session: { header: { cwd: "/proj" } } };
-  // detail 全局服务器 → 引导（project 模式全局 mcp__ 直呼可用）。
-  await expect(
-    () =>
-      detailDef.execute(
-        { server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" },
-        { agent },
-      ),
-    "project 模式 detail 全局服务器给出直呼引导",
-  ).rejects.toThrow(
-    /全局级（global scope）服务器，中间层只覆盖项目级服务器；它已以 `mcp__` 前缀工具直呼注册/,
+  const globalFull = fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx");
+  // 可达性三件套之一（A.1）：project root 会话里 @global 不再被拒——detail 直接命中。
+  const detail = await detailDef.execute({ server: globalFull, tool: "use_g" }, { agent });
+  expect(detail.server, "@global 全局服务器经 ws_mcp_detail 可达").toBe(globalFull);
+  expect(detail.tool, "命中的是全局工具").toBe("use_g");
+  // call 同样不再是路由拒绝（该走执行面）：错误里不得再出现旧的「改 mcp__ 直呼」引导词。
+  const callErr = await callDef.execute({ server: globalFull, tool: "use_g" }, { agent }).then(
+    () => "",
+    (error) => String(error?.message ?? error),
   );
-  // call 全局服务器 → 同样引导。
-  await expect(
-    () =>
-      callDef.execute(
-        { server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "gctx"), tool: "use_g" },
-        { agent },
-      ),
-    "project 模式 call 全局服务器给出直呼引导",
-  ).rejects.toThrow(
-    /全局级（global scope）服务器，中间层只覆盖项目级服务器；它已以 `mcp__` 前缀工具直呼注册/,
+  expect(callErr, "call 不落旧的路由引导门").not.toMatch(
+    /全局级（global scope）服务器|不属于当前工作空间/,
   );
   // 非 global 其他 root 仍硬拒绝（防跨空间串台，不回归）。
   await expect(() =>
     detailDef.execute({ server: fullServerName("/other", "ctx"), tool: "use_ctx" }, { agent }),
   ).rejects.toThrow(/不属于当前工作空间/);
-  // project 模式未知 @global 服务器（非全局级）→ 硬拒绝（防经 @global 路由绕过）。
+  // 未知 @global 服务器同理不再被路由拒绝：门打开后落**查表失败**（不再是「改直呼」引导）。
   await expect(
     () =>
       detailDef.execute(
         { server: fullServerName(MIDDLEWARE_GLOBAL_ROOT, "ghost"), tool: "x" },
         { agent },
       ),
-    "project 模式未知 @global 服务器拒绝",
-  ).rejects.toThrow(/不属于当前工作空间/);
+    "未知 @global 服务器落查表失败（路由门已删）",
+  ).rejects.toThrow(/ws_mcp_detail: server 未连接或未发现/);
   dispose();
 });
 it("#362 isGlobalServer 双源：runtime 注册的 codegraph 判全局（P1 修正）", async () => {
@@ -644,7 +642,8 @@ it("#362 isGlobalServer 双源：runtime 注册的 codegraph 判全局（P1 修�
   }
 });
 it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因（不谎报未配置）", async () => {
-  const { registerMiddlewareTools, McpMiddleware } = await import("../../lib/index.js");
+  const { registerMiddlewareTools, McpMiddleware, fullServerName, MIDDLEWARE_GLOBAL_ROOT } =
+    await import("../../lib/index.js");
   const registered = [];
   const ctx = {
     tools: {
@@ -684,11 +683,8 @@ it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因
     inFlight: new Map(),
   });
   await mw.ensureConnected("/proj", "ctx");
-  const dispose = registerMiddlewareTools(
-    ctx,
-    mw,
-    async (agent) => (agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined),
-    "project",
+  const dispose = registerMiddlewareTools(ctx, mw, async (agent) =>
+    agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined,
   );
   const listDef = registered.find((d) => d.name === "ws_mcp_list");
   const agent = { session: { header: { cwd: "/proj" } } };
@@ -700,9 +696,14 @@ it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因
   );
   expect(out.message, "A1：列出可见项目级服务器").toMatch(/可见项目级服务器：ctx/);
   expect(out.message, "A1：提示全局级不列出").toMatch(/全局级服务器不在此列出/);
-  // 不带过滤的真实空目录 → 原有空返回提示（不回归）。
+  // 不带过滤 → 列出可见单元全部服务器。单池（#767 笔 1a）：可见单元恒为
+  // 「项目 root + @global」——@global 不再随模式开关（旧实现 project 模式下只列项目 root）。
   const out2 = await listDef.execute({}, { agent });
-  expect(out2.totalServers, "不带过滤正常列出").toBe(1);
+  const listed = out2.servers.map((s) => s.server);
+  expect(listed, "项目 root 的服务器可见").toContain(fullServerName("/proj", "ctx"));
+  expect(listed, "@global 的服务器同样可见").toContain(
+    fullServerName(MIDDLEWARE_GLOBAL_ROOT, "ctx"),
+  );
   dispose();
 });
 it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / mcp__ 直呼）", async () => {
@@ -807,7 +808,6 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
     ctx,
     mw,
     async (agent) => (agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined),
-    "project",
     { disabledTools: map },
   );
   const guard = guards.get("tools/pre-execute");
@@ -891,13 +891,9 @@ it("#362 P0-1：工具级禁用三入口一致（callTool / pre-execute guard / 
     // （ensureConnected 对未在册 root 直接返回，不会自己建单元）。
     await mw.projectUnitFor("/proj");
     await mw.ensureConnected("/proj", "ctx");
-    const statsMwDispose = registerMiddlewareTools(
-      statsCtx as any,
-      mw,
-      async () => "/proj",
-      "project",
-      { stats: statsCollector },
-    );
+    const statsMwDispose = registerMiddlewareTools(statsCtx as any, mw, async () => "/proj", {
+      stats: statsCollector,
+    });
 
     const searchTool = statsRegTools.find((t) => t.name === "ws_mcp_search");
     const listTool = statsRegTools.find((t) => t.name === "ws_mcp_list");
@@ -1961,7 +1957,22 @@ describe("目录数据源按工作区计算（切换工作区不抖动）", () =
 });
 
 describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）", () => {
-  let base, proj, cfg, gstore, manager, ghostEntry;
+  let base, proj, cfg, gstore, manager, poolUnit, released, ensured;
+
+  /** 往池替身里塞一条「已连接」的 ghost 条目（不 spawn 真实连接）。 */
+  function seedGhost() {
+    poolUnit.connections.set("ghost", {
+      server: normalizeServer({ name: "ghost", transport: "stdio", command: "true" }),
+      id: undefined,
+      handle: undefined,
+      status: "connected",
+      error: undefined,
+      connectedAt: Date.now(),
+      readySettled: true,
+      everConnected: true,
+      disposed: false,
+    });
+  }
 
   beforeAll(async () => {
     base = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-reload-"));
@@ -1980,24 +1991,35 @@ describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）
       gstore,
     );
     await manager.setSession(proj);
-    // 假条目：验证配置移除后集合里不再有它（不 spawn 真实连接）。拆除本身落点是账本释放
-    // （stop → dropEntry → releaseServer），那是直连账本的内部形状、阶段 2 随模式键消失，
-    // 故这里只判对外可见结果；「释放真的被发起」由 unit-manager2 的真装载用例（dispose /
-    // B5 替换代际）用假 loader 的调用序判定。
-    ghostEntry = {
-      server: normalizeServer({ name: "ghost", transport: "stdio", command: "true" }),
-      scope: SCOPE_PROJECT,
+    // 单池（#767 笔 1a）：连接唯一账本是中间层单元表。这里挂一个最小池替身，只回答
+    // 「释放了哪条连接」「确保连接了哪条」——真正的装载/拆除语义（releaseServer 的调用序）
+    // 由 unit-manager2 的真装载用例（假 loader）钉住。旧直连账本（manager.supervisors）
+    // 已整体退役。
+    released = [];
+    ensured = [];
+    poolUnit = {
       root: proj,
-      status: "connected",
-      error: undefined,
-      tools: [],
-      toolMeta: new Map(),
-      mountStarted: true,
-      readySettled: true,
-      everConnected: true,
-      disposed: false,
+      connections: new Map(),
+      userDisabled: new Set(),
+      lastTouchedAt: Date.now(),
+      inFlight: new Map(),
     };
-    manager.supervisors.set("ghost", ghostEntry);
+    manager.middleware = {
+      units: new Map([[proj, poolUnit]]),
+      releaseConnection: (root, name) => {
+        released.push(root + "\u0000" + name);
+        return poolUnit.connections.delete(name);
+      },
+      projectUnitFor: async () => undefined,
+      ensureConnected: async (root, name) => {
+        ensured.push(root + "\u0000" + name);
+      },
+      abandonInFlight: () => {},
+      statusOf: () => undefined,
+      toolCountOf: () => 0,
+      dispose: async () => {},
+    };
+    seedGhost();
   });
 
   afterAll(async () => {
@@ -2027,14 +2049,23 @@ describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）
       .servers.filter((s) => s.scope === SCOPE_PROJECT)
       .map((s) => s.name);
     expect(names, "外部新增出现在面板数据").toEqual(["p1"]);
-    expect(manager.supervisors.has("p1"), "disabled 不启动").toBe(false);
+    expect(
+      ensured.some((k) => k.endsWith("\u0000p1")),
+      "disabled 不触达连接",
+    ).toBe(false);
   });
 
-  it("外部移除配置 → 已连接条目被拆除", async () => {
+  it("外部移除配置 → 池内已连接条目被释放", async () => {
+    seedGhost();
+    released.length = 0;
     writeFileSync(cfg, JSON.stringify({ version: 1, servers: [] }));
     utimesSync(cfg, Date.now() / 1000 + 10, Date.now() / 1000 + 10);
     await manager.refreshFromDisk();
-    expect(manager.supervisors.has("ghost"), "ghost 已从连接集合移除").toBe(false);
+    expect(
+      released.some((k) => k.endsWith("\u0000ghost")),
+      "ghost 的池连接被释放",
+    ).toBe(true);
+    expect(poolUnit.connections.has("ghost"), "ghost 已不在池").toBe(false);
   });
 
   it("无配置变化时 refreshFromDisk 不广播（防 SSE 空转循环）", async () => {
@@ -2197,7 +2228,8 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
     expect(body.offsetX).toBe(8);
     expect(body.offsetY).toBe(8);
     expect(body.blankY).toBe(40);
-    expect(body.middleware, "config GET 附带中间层模式").toBe("project");
+    // 单池（#767 笔 1a）：模式面恒报有效事实 "all"（笔 2 随配置键一起删）。
+    expect(body.middleware, "config GET 附带中间层有效模式").toBe("all");
   });
 
   it("config 非 loopback GET → 200（只读 UI 配置放开）", async () => {
@@ -2234,20 +2266,20 @@ describe("路由（makeRoutes / events / health / tool-disable / resume）", () 
       offsetY: 20,
       blankY: 60,
       zIndexBase: 10,
-      middleware: "project",
+      middleware: "all",
     });
   });
 
-  it("config POST middleware → 热切换 + 落盘（读回 middleware 变化）", async () => {
+  it("config POST middleware → 200 且读回有效模式（单池后恒 all）", async () => {
     const write = fakeRes();
     await find(ROUTES.config).handler(fakeReq("POST", ROUTES.config, { middleware: "off" }), write);
     expect(write.state.status).toBe(200);
     const read = fakeRes();
     await find(ROUTES.config).handler(fakeReq("GET", ROUTES.config), read);
     const readBack = JSON.parse(read.state.body);
-    expect(readBack.middleware, "fake manager 无 setMiddlewareMode → 模式不变（读回原值）").toBe(
-      "project",
-    );
+    // 单池：设置面写值仍被接受（配置键归笔 2），但**有效模式**恒为 all——
+    // 诊断面不回显那个已不再影响行为的配置值。
+    expect(readBack.middleware, "读回有效模式（恒 all）").toBe("all");
   });
 
   it("config POST 非 loopback → 403（写操作不开放远程页面）", async () => {
@@ -2591,7 +2623,8 @@ it("#362 中间层模式热切换：off 启动也可切到 project（设置页�
     await configRoute.handler(req, res);
     expect(res.state.status).toBe(200);
     const body = JSON.parse(res.state.body);
-    expect(body.middleware, "热切换后 config 读回 project").toBe("project");
+    // 单池（#767 笔 1a）：设置面写值仍被接受，但读回的是**有效模式**（恒 all）。
+    expect(body.middleware, "热切换后 config 读回有效模式 all").toBe("all");
     expect(
       ctx.registeredTools.some((def) => def.name === "ws_mcp_call"),
       "热切换后注册中间层工具",
@@ -2613,7 +2646,7 @@ it("#362 中间层模式热切换：off 启动也可切到 project（设置页�
     };
     await configRoute.handler(req2, res2);
     expect(res2.state.status).toBe(200);
-    expect(JSON.parse(res2.state.body).middleware, "切回 off 生效").toBe("off");
+    expect(JSON.parse(res2.state.body).middleware, "切回 off 后读回仍是有效模式 all").toBe("all");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -3272,15 +3305,14 @@ describe("核心化 service（#329 阶段1）：runtimeRegistry / registerServer
     expect(store.find("svc-store") !== undefined, "store 条目保留").toBeTruthy();
   });
 
-  it("dispose() 清空全部 supervisor（含 runtime）", async () => {
+  it("dispose() 拆空全部池单元（含 runtime）", async () => {
     await manager.registerServer({ name: "svc-b", ...quiet() });
     expect(manager.runtimeRegistry.has("svc-b")).toBeTruthy();
     await manager.dispose();
-    expect(manager.supervisors.size, "dispose 清空全部 supervisor").toBe(0);
+    expect(manager.middleware, "dispose 后中间层实例已释放").toBe(undefined);
   });
 
-  it("all 模式 reconcile 不杀 runtime supervisor（QA 复审回归）", async () => {
-    manager.middlewareMode = "all";
+  it("reconcile 不杀 runtime 条目（QA 复审回归）", async () => {
     await manager.registerServer({
       name: "svc-all",
       transport: "stdio",
@@ -3289,8 +3321,7 @@ describe("核心化 service（#329 阶段1）：runtimeRegistry / registerServer
       enabled: false,
     });
     manager.reconcileServers();
-    expect(manager.runtimeRegistry.has("svc-all"), "all 模式 runtime 条目保留").toBeTruthy();
-    manager.middlewareMode = "off";
+    expect(manager.runtimeRegistry.has("svc-all"), "runtime 条目保留").toBeTruthy();
   });
 
   it("summary 并入 runtime 条目（查询面可见 / disabled 工具列表为空）", async () => {

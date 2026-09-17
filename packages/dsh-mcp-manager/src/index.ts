@@ -328,19 +328,14 @@ function provideMcpManagerService(ctx: Context, manager: McpManager): void {
       return found as unknown as McpServerSummary;
     },
     getTools: (name: string) => {
-      // 契约（#382 F4）：getTools 返回**注册名**（mcp__<id>__<tool> 前缀，`id` 不透明，
+      // 契约（#382 F4 / M5 = A）：getTools 返回**注册名**（mcp__<id>__<tool> 前缀，`id` 不透明，
       // 与 ctx.tools 注册表一致）；summary().tools 返回**裸名**（展示/禁用表
       // 键口径）。消费方按需自取，勿混用两套键。
-      const sup = manager.supervisors.get(name);
-      if (sup === undefined) return [];
-      const tools: Array<{ name: string; description?: string }> = [];
-      for (const [toolName, meta] of sup.toolMeta ?? new Map()) {
-        tools.push({
-          name: toolName,
-          description: typeof meta?.description === "string" ? meta.description : undefined,
-        });
-      }
-      return tools;
+      //
+      // 单池（#767 笔 1a）：数据源从旧直连账本的 supervisor.toolMeta 换成连接池单元表
+      // （manager.registeredToolsFor 经单元条目的 id 读注册面）——旧数据源只由直连路径
+      // 填充，被中间层接管的服务器恒返回 []（既有缺陷 A13/B6）。
+      return manager.registeredToolsFor(name);
     },
     list: () => (manager.summary().servers ?? []) as unknown as McpServerSummary[],
   });
@@ -350,23 +345,21 @@ function provideMcpManagerService(ctx: Context, manager: McpManager): void {
  * 中间层工具（ws_mcp_*）+ mcp__ 直呼守卫的组合注册。
  *
  * 为什么合成一个 disposer：两者各管一段——中间层内注册的 pre-execute guard 放行我方转发、
- * 拦 ws_mcp_call 参数；独立直呼守卫用 manager 直连账本反查 id（project/off 的全局直连条目
- * 不在池里，池侧反查会把它当裸名 → 工具级禁用恒 miss）。卸载路径只有一个 `dispose.current`
+ * 拦 ws_mcp_call 参数；独立直呼守卫用 manager 的池账本反查 id（封装定义条目没有 mcp__
+ * 宿主注册，池侧反查会把它当裸名 → 工具级禁用恒 miss）。卸载路径只有一个 `dispose.current`
  * 位置，拆成两个必然漏掉一个。`resolveServerId` 按入参递入，域间不加值边。
  *
- * 为什么 off 模式也注册中间层工具与实例（#767 S1-5b 主控裁决 (c)'）：封装定义条目
- * （toolDefinitions）恒交中间层虚拟连接，它在 off 下**没有** mcp__ 宿主注册可回退，触达面只能
- * 是 ws_mcp_call。D8 的「off 不建池」随这条裁决作废——目标态没有模式键，中间层实例恒在。
+ * 单池（#767 笔 1a）：中间层实例与 ws_mcp_* 无条件装配——全部服务器（含封装定义条目）
+ * 都只经中间层单元触达，模式键已不影响任何行为。
  */
 function registerMiddlewareAndGuard(
   ctx: Context,
   manager: McpManager,
   mw: InstanceType<typeof runtimeApi.McpMiddleware>,
   resolveRoot: (agent: unknown) => Promise<string | undefined>,
-  mode: MiddlewareMode,
 ): () => void {
   const resolveServerId = (id: string) => manager.serverNameForId(id);
-  const disposeTools = registerMiddlewareTools(ctx, mw, resolveRoot, mode, {
+  const disposeTools = registerMiddlewareTools(ctx, mw, resolveRoot, {
     disabledTools: manager.disabledTools,
     stats: manager.stats,
     resolveServerId,
@@ -384,9 +377,9 @@ function registerMiddlewareAndGuard(
 }
 
 /**
- * 中间层模式热切换（设置页「中间层模式」下拉；initMiddleware 幂等已有，
- * off↔project/all 需重新注册/卸载中间层工具——dispose 后重建）。
- * 中间层实例与 ws_mcp_* 在任何模式都建（裁决 (c)'）。
+ * 中间层模式热切换（设置页「中间层模式」下拉；initMiddleware 幂等已有）。
+ * 单池（#767 笔 1a）：模式不再决定池归属，热切换只剩「重注册中间层工具 + 收敛连接
+ * 集合 + 广播一帧」；同值幂等由闭包内的 applied 记（不再是 manager 的运行时字段）。
  */
 export function makeMiddlewareHotSwitch(
   manager: McpManager,
@@ -394,16 +387,19 @@ export function makeMiddlewareHotSwitch(
   resolveRoot: (agent: unknown) => Promise<string | undefined>,
   dispose: { current: () => void },
 ): (mode: MiddlewareMode) => Promise<void> {
+  // 同值幂等（防设置面每次 onChange 都走一遍重注册）。单池合并后模式不再决定池归属，
+  // 运行时的模式镜像字段已删（M9）——这里只记「上一次被要求切到的值」，不对外暴露、
+  // 不参与任何行为判定。笔 2 随配置键一起删。
+  let applied: MiddlewareMode | undefined;
   return async (mode: MiddlewareMode): Promise<void> => {
-    if (normalizeMiddlewareMode(mode) === manager.middlewareMode) return;
     const next = normalizeMiddlewareMode(mode);
-    manager.middlewareMode = next;
+    if (next === applied) return;
+    applied = next;
     dispose.current();
-    const mw = await manager.initMiddleware(next, middlewarePolicy ?? {});
-    dispose.current = registerMiddlewareAndGuard(manager.ctx, manager, mw, resolveRoot, next);
-    // off ↔ project/all：重注册/卸载中间层工具后 reconcile——all 模式下全局
-    // supervisor 由 reconcile 停掉、新全局条目经 start 内部接管触达 @global
-    // 单元（#382 F3）；off 语义停掉全部中间层接管条目。防同一 server 双进程。
+    const mw = await manager.initMiddleware(middlewarePolicy ?? {});
+    dispose.current = registerMiddlewareAndGuard(manager.ctx, manager, mw, resolveRoot);
+    // 单池后模式不再决定谁进池（全部服务器恒经中间层）：热切换只剩「收敛连接集合
+    // + 广播一帧」。reconcile 仍要跑——它负责把配置里新增/移除的服务器对齐到池。
     manager.reconcileServers();
     manager.logger.info(`dsh-mcp-manager: middleware mode=${next} (hot-switched)`);
     // B20（C-EVT）：热切换后补 summary 帧——summary 帧源集合含热切换；现状
@@ -443,8 +439,10 @@ function registerCatalogInjection(
       catalogMaxEntries,
       catalogView,
       agent as unknown as CatalogAgent | undefined,
-      // 热切换后目录文案按当前模式渲染（#362 设置页中间层模式下拉）。
-      manager.middlewareMode,
+      // 单池（#767 笔 1a）：目录文案按**有效**模式渲染——全部服务器都经中间层，
+      // 故恒 "all"（原来回显设置里的模式值，那在本笔之后已不再影响行为）。
+      // 笔 2 随配置键一起删。
+      "all",
     ) as unknown as PreStepDecision;
   });
 }
@@ -661,7 +659,8 @@ export async function apply(
         : undefined;
     if (typeof persisted !== "string") return;
     const next = normalizeMiddlewareMode(persisted);
-    if (next === manager.middlewareMode) return;
+    // 同值幂等由热切换闭包内的 applied 记（manager 的运行时模式字段已删，M9）；
+    // 这里不再需要第二处比较。
     void manager
       .setMiddlewareMode(next)
       .catch((error: unknown) =>
@@ -747,15 +746,9 @@ async function assembleEnabledRuntime(
   // 工具级禁用表在 initMiddleware **之前**独立载入：initMiddleware 会用自己的加载结果覆盖，
   // 而载入失败时它会把中间层回退成 off —— 这条独立加载保证那种情况下守卫仍有数据源。
   manager.disabledTools = await loadDisabledTools(manager.userStatePath);
-  // 中间层实例 + ws_mcp_* 在任何模式都建（裁决 (c)'；off 也要，封装定义条目只经它可达）。
-  const mw = await manager.initMiddleware(middlewareMode, options.middlewarePolicy);
-  currentMiddlewareDispose = registerMiddlewareAndGuard(
-    ctx,
-    manager,
-    mw,
-    resolveRoot,
-    middlewareMode,
-  );
+  // 中间层实例 + ws_mcp_* 无条件装配（单池后它是唯一连接路径）。
+  const mw = await manager.initMiddleware(options.middlewarePolicy);
+  currentMiddlewareDispose = registerMiddlewareAndGuard(ctx, manager, mw, resolveRoot);
   manager.setMiddlewareMode = makeMiddlewareHotSwitch(
     manager,
     options.middlewarePolicy,
@@ -766,7 +759,8 @@ async function assembleEnabledRuntime(
   await manager.startAll();
   await manager.loadCatalogCache();
   manager.reconcileServers();
-  manager.logger.info(`dsh-mcp-manager: middleware mode=${middlewareMode}`);
+  // 单池后模式不再影响任何行为：这里只报「配置里解析到的值」（诊断用，笔 2 随键删）。
+  manager.logger.info(`dsh-mcp-manager: middleware config mode=${middlewareMode} (effective: all)`);
 
   // #389：启动阶段把 settings 持久化的 middleware 模式同步到运行时（兜底）。
   syncMiddlewareFromSettings();

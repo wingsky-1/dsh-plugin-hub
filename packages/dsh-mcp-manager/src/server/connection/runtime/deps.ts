@@ -151,13 +151,15 @@ export interface MiddlewareHost {
   /** 该 server 是否 runtime 注入（registerServer 内存态；目录不写盘判定，#413）。 */
   isRuntimeServer(name: string): boolean;
   /**
-   * 该 (root, server) 的连接是否归中间层持有（#767 S1-5b 主控裁决 (c)'）。
+   * 连接成功后把该服务器的工具体写进 B 层目录摘要缓存（digest 的稳定数据源）。
    *
-   * 用处只有一个：建单元时的惰性连接范围。`project`/`off` 模式下正常全局服务器仍走 `mcp__`
-   * 直呼，照旧连配置全集会把它们偷偷拉进池——同一 id 二次装载还会撞官方 serverName 活体预留。
-   * 判定权在 manager（`middlewareTakes` 或封装定义条目），本层只问不猜。
-   *
-   * 缺省（未给该成员）视为「全部归本层」＝既有行为：只驱动池自身的夹具不必实现它。
+   * 为什么仍在：这条落点原是直连账本 `mountEntry` 结算路径的行为，单池（#767 笔 1a）
+   * 后由池侧 continue 喂——`/health.catalogCacheEntries` 与注入端目录视图的 B 层兜底
+   * 都读它，停了就是对外可观察的行为变化。取数源与目录投影同一次注册面读取。
+   * 缺省（未给该成员）视为「无 B 层」——只驱动池自身的夹具不必实现它。
    */
-  middlewareOwnsServer?(root: string, name: string): boolean;
+  recordCatalogTools?(
+    serverName: string,
+    tools: Map<string, { description?: unknown }>,
+  ): Promise<void>;
 }

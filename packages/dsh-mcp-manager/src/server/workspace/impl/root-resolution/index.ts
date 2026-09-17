@@ -56,22 +56,22 @@ export function makeResolveRoot(
   manager: McpManager,
 ): (agent: unknown) => Promise<string | undefined> {
   // 路由输入：exec.agent 当前 cwd = agent.session.header.cwd（实证已闭合）。
-  // all 模式：cwd 无项目（或无项目配置）时 fallback 到全局虚拟 root @global。
+  // 单池（#767 笔 1a）：项目根解析不出时**无条件**回落全局虚拟 root @global
+  // （可达性三件套之二）。全局服务器不再有 mcp__ 直呼面，@global 不可达即等于
+  // 它们不可达——这道门不再是模式分支。
   return async (agent: unknown): Promise<string | undefined> => {
     if (typeof agent !== "object" || agent === null) return undefined;
     const session = (agent as { session?: { header?: { cwd?: unknown } } }).session;
     const cwd = session?.header?.cwd;
     const root = await normalizedProjectRoot(typeof cwd === "string" ? cwd : undefined);
     if (root !== undefined) return root;
-    if (manager.middlewareMode === "all") {
-      // B3（requirements 8.1 纠偏）：回落查 projectServersFor("@global")（含
-      // runtime 注入并集，#413）而非 globalServers()（仅 store.data.servers）——
-      // 否则仅 runtime 注入服务器时回落失败「无法确定工作空间」。
-      const globalServers = (
-        (await manager.projectServersFor(MIDDLEWARE_GLOBAL_ROOT)) ?? []
-      ).filter((server) => server.enabled !== false);
-      if (globalServers.length > 0) return MIDDLEWARE_GLOBAL_ROOT;
-    }
+    // B3（requirements 8.1 纠偏）：回落查 projectServersFor("@global")（含
+    // runtime 注入并集，#413）而非 globalServers()（仅 store.data.servers）——
+    // 否则仅 runtime 注入服务器时回落失败「无法确定工作空间」。
+    const globalServers = ((await manager.projectServersFor(MIDDLEWARE_GLOBAL_ROOT)) ?? []).filter(
+      (server) => server.enabled !== false,
+    );
+    if (globalServers.length > 0) return MIDDLEWARE_GLOBAL_ROOT;
     return undefined;
   };
 }

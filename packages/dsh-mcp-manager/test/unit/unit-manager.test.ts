@@ -172,18 +172,20 @@ describe("McpManager.connect", () => {
     await expect(manager.connect("no-such")).rejects.toThrow(/not found/);
   });
 
-  it("supervisor 已登记", async () => {
+  it("连接后池内条目已登记（单池后唯一账本是单元表）", async () => {
     const { manager } = fixture();
     await manager.add({ name: "conn", transport: "stdio", command: "echo" });
-    // 连接（smoke 已测 SDK 端到端，此处只验证方法不抛且 supervisor 已登记）
+    await manager.initMiddleware({});
+    // 连接（smoke 已测 SDK 端到端，此处只验证方法不抛且池内条目已登记）
     await manager.connect("conn");
-    const supervisor = manager.supervisors.get("conn");
-    expect(supervisor).toBeDefined();
+    const unit = manager.middleware.units.get("@global");
+    expect(unit.connections.get("conn")).toBeDefined();
   });
 
   it("已连接时重复 connect 不抛（返回 early）", async () => {
     const { manager } = fixture();
     await manager.add({ name: "conn", transport: "stdio", command: "echo" });
+    await manager.initMiddleware({});
     await manager.connect("conn");
     await expect(manager.connect("conn")).resolves.toBeUndefined();
   });

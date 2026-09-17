@@ -170,17 +170,13 @@ export function makeHealthRoute(manager: RoutesManager): WebRoute {
     path: ROUTES.health,
     handler: (req, res) => {
       if (!guardLoopbackMethod(req, res, ["GET"])) return;
+      // 三计数按连接池**单元表**聚合（#767 笔 1a 单池）：直连账本已退役，池是唯一连接
+      // 路径。顶层键集逐字不变（外部形状守恒）。
+      // 状态判据走读时刷新的投影（statusOf）：中间层 entry.status 只在装载窗口结算时写入，
+      // 官方的后台重连/预算耗尽没有第二处写入点，直读它会让「已掉线」长期计成 connected。
       let servers = 0;
       let connected = 0;
       let tools = 0;
-      for (const supervisor of manager.supervisors.values()) {
-        servers += 1;
-        if (supervisor.status === SERVER_STATES.connected) connected += 1;
-        tools += supervisor.tools.length;
-      }
-      // 中间层连接池计数（#228：项目级连接不在 supervisors，需单独投影诊断）。
-      // 状态判据走读时刷新的投影（statusOf）：中间层 entry.status 只在装载窗口结算时写入，
-      // 官方的后台重连/预算耗尽没有第二处写入点，直读它会让「已掉线」长期计成 connected。
       let middlewareUnits = 0;
       let middlewareConnections = 0;
       let middlewareConnected = 0;
@@ -188,10 +184,13 @@ export function makeHealthRoute(manager: RoutesManager): WebRoute {
       for (const unit of middleware?.units.values() ?? []) {
         middlewareUnits += 1;
         for (const serverName of unit.connections.keys()) {
+          servers += 1;
           middlewareConnections += 1;
           if (middleware?.statusOf(unit.root, serverName) === SERVER_STATES.connected) {
+            connected += 1;
             middlewareConnected += 1;
           }
+          tools += middleware?.toolCountOf(unit.root, serverName) ?? 0;
         }
       }
       writeJson(res, 200, {
@@ -202,7 +201,8 @@ export function makeHealthRoute(manager: RoutesManager): WebRoute {
         tools,
         catalogCacheEntries: manager.catalogCache.size,
         middleware: {
-          mode: manager.middlewareMode ?? "off",
+          // 笔 2 随配置键一起删：单池后所有服务器都经中间层，有效模式恒为 "all"。
+          mode: "all",
           units: middlewareUnits,
           connections: middlewareConnections,
           connected: middlewareConnected,

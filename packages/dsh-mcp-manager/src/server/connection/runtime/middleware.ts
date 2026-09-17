@@ -100,12 +100,10 @@ export class McpMiddleware {
       await runtimePorts
         .get()
         .catalog.catalogDirectory.ensureRootLoaded(root, this.host.catalogCachePath(root));
-      // 后台惰性连接（fire-and-forget，不阻塞调用方）。范围按宿主的所有权判定收窄：project/off
-      // 模式下正常全局服务器不归本层，建单元时连全集会把它们拉进池（#767 S1-5b 裁决 (c)'）。
-      const owns = this.host.middlewareOwnsServer;
+      // 后台惰性连接（fire-and-forget，不阻塞调用方）。单池（#767 笔 1a）后本层是唯一
+      // 连接路径：单元内**全部** enabled 服务器都归本层，不再有所有权过滤器。
       for (const server of servers) {
         if (server.enabled === false) continue;
-        if (owns !== undefined && !owns(root, server.name)) continue;
         void this.ensureConnected(root, server.name);
       }
     }
@@ -289,6 +287,12 @@ export class McpMiddleware {
           isRuntimeServer: (name) => this.host.isRuntimeServer(name),
           warn: (message) => this.host.logger.warn(message),
         });
+        // B 层摘要缓存（原直连账本 mountEntry 结算路径的行为）：单池后由池侧继续喂，
+        // 否则 /health.catalogCacheEntries 与注入端目录视图的 B 层兜底会静默失源。
+        await this.host.recordCatalogTools?.(
+          serverName,
+          this.registeredToolMeta(newEntry.id ?? ""),
+        );
         this.host.logger.info(`dsh-mcp-manager(${serverName}@${root}): connected`);
       } else if (mounted.outcome.state === "failed") {
         // 文案已是「我方判词 + 官方原文」（窗口把归属本实例的官方日志接在了 error 上）。
@@ -314,6 +318,20 @@ export class McpMiddleware {
     } catch {
       return [];
     }
+  }
+
+  /** 注册面 → 注册名→描述 表（B 层摘要缓存的数据源；与目录投影同一次前缀过滤口径）。 */
+  private registeredToolMeta(id: string): Map<string, { description?: unknown }> {
+    const prefix = `mcp__${id}__`;
+    const meta = new Map<string, { description?: unknown }>();
+    for (const schema of this.registeredSchemas()) {
+      const name = schema?.name;
+      if (typeof name !== "string" || !name.startsWith(prefix)) continue;
+      meta.set(name, {
+        description: typeof schema.description === "string" ? schema.description : "",
+      });
+    }
+    return meta;
   }
 
   /** 凭据脱敏（连接/发现/调用错误路径统一使用；P1 修复）。 */
@@ -365,6 +383,14 @@ export class McpMiddleware {
     });
     entry.status = state;
     return state;
+  }
+
+  /**
+   * health 顶层 `tools` 计数的聚合读口（#767 笔 1a）：该 (root, server) 目录投影里的
+   * 工具条数。与 `summary().tools` / 目录读口同源（裸名条数即注册名条数）。
+   */
+  toolCountOf(root: string, serverName: string): number {
+    return runtimePorts.get().catalog.catalogDirectory.entryFor(root, serverName)?.tools.size ?? 0;
   }
 
   /**

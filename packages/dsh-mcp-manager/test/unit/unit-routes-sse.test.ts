@@ -357,10 +357,10 @@ describe("health 路由", () => {
   function healthFixture() {
     const { manager } = setup();
     const route = makeHealthRoute(manager);
-    manager.supervisors.set("a", { status: "connected", tools: ["t1", "t2"] });
-    manager.supervisors.set("b", { status: "failed", tools: [] });
-    // 中间层连接池计数（#228）：项目级连接不在 supervisors，health 单独投影。
-    manager.middlewareMode = "project";
+    // 单池（#767 笔 1a）：/health 的顶层三计数与 middleware 子对象都按**连接池单元表**
+    // 聚合——旧直连账本（manager.supervisors）已整体退役。假池只回答「routes 是否经
+    // statusOf / toolCountOf 取数」这一条；读时刷新的真实语义由下面两条真 McpMiddleware
+    // 用例钉住。
     const units = new Map([
       [
         "/root-a",
@@ -374,11 +374,11 @@ describe("health 路由", () => {
       ],
       ["/root-b", { root: "/root-b", connections: new Map() }],
     ]);
+    const toolCounts = new Map([["/root-a\u0000x", 2]]);
     manager.middleware = {
       units,
-      // 假池只回答「routes 是否经 statusOf 取状态」这一条：按条目 status 原样回。
-      // 读时刷新的真实语义由下面那条真 McpMiddleware 用例钉住。
       statusOf: (root, serverName) => units.get(root)?.connections.get(serverName)?.status,
+      toolCountOf: (root, serverName) => toolCounts.get(root + "\u0000" + serverName) ?? 0,
     };
     return { manager, route };
   }
@@ -441,7 +441,8 @@ describe("health 路由", () => {
 
   it("health 补中间层连接计数", () => {
     const { payload } = healthPayload();
-    expect(payload.middleware).toEqual({ mode: "project", units: 2, connections: 2, connected: 1 });
+    // mode 恒 "all"：单池后有效模式就是 all（笔 2 随配置键一起删）。
+    expect(payload.middleware).toEqual({ mode: "all", units: 2, connections: 2, connected: 1 });
   });
 
   /** health 的计数判据必须打在真 statusOf 上：假池只能验「接线到没到」，验不了读时刷新。 */
@@ -497,7 +498,7 @@ describe("health 路由", () => {
       return JSON.parse(res.state.body).middleware;
     };
     expect(middlewarePayload()).toEqual({
-      mode: "project",
+      mode: "all",
       units: 1,
       connections: 1,
       connected: 1,
@@ -771,9 +772,11 @@ describe("B7：POST /config 非法 middleware → 400 拒绝", () => {
     expect(res.payload.error).toMatch(/middleware/);
   });
 
-  it("非法值不改写运行模式", async () => {
+  it("非法值不改写运行模式（运行时模式字段已随 M9 删除，无第二事实源可写）", async () => {
     const { manager } = await postBogus();
-    expect(manager.middlewareMode).toBe("off");
+    // 单池（#767 笔 1a）：manager 上的模式镜像字段已删——非法值既不落盘（下一条）、
+    // 也不存在任何可被它改写的运行状态。有效模式是由行为决定的事实（恒 all）。
+    expect("middlewareMode" in manager).toBe(false);
   });
 
   it("非法值不触达 uiUpdate（不落盘）", async () => {

@@ -61,11 +61,8 @@ export interface RoutesManager {
    * 心跳（#268），消除与 dsh-notifier 的不对称。
    */
   sseHub?: SseHub;
-  supervisors: Map<string, { status: string; tools: string[] }>;
   catalogCache: Map<string, unknown>;
-  /** 中间层模式（off/project/all；health 计数展示用，缺省 off）。 */
-  middlewareMode?: string;
-  /** 中间层连接池（health 补中间层计数；结构面与 McpMiddleware 兼容）。 */
+  /** 中间层连接池（health 三计数按它聚合；结构面与 McpMiddleware 兼容）。 */
   middleware?:
     | {
         units: Map<string, { root: string; connections: Map<string, { status: string }> }>;
@@ -74,6 +71,8 @@ export interface RoutesManager {
          * 结算时写入，官方的后台重连与预算耗尽没有第二处写入点，直读会停在那一刻而失真。
          */
         statusOf(root: string, serverName: string): string | undefined;
+        /** 该 (root, server) 的目录工具数（health 顶层 tools 计数的 units 聚合口径）。 */
+        toolCountOf(root: string, serverName: string): number;
       }
     | undefined;
 }

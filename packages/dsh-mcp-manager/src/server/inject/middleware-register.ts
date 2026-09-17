@@ -2,8 +2,8 @@
  * dsh-mcp-manager — 中间层工具注册（ws_mcp_search / ws_mcp_call /
  * ws_mcp_list / ws_mcp_detail + 策略 guard）。
  *
- * 注册四个中间层工具与策略 guard 层；类型面自各域门面（workspace/interface.ts 的 MiddlewareMode、
- * store/interface.ts 的 DisabledToolsMap）与 stats/interface.ts（McpStatsCollector）取，连接池类
+ * 注册四个中间层工具与策略 guard 层；类型面自各域门面（store/interface.ts 的
+ * DisabledToolsMap）与 stats/interface.ts（McpStatsCollector）取，连接池类
  * McpMiddleware 自
  * connection/runtime/interface.ts 只作 `import type`（防运行值环）。跨域取数一律经
  * `injectPorts.get()`（端口声明见 ../deps.ts）——catalog 检索族、runtime 限额常量、pipeline
@@ -24,7 +24,6 @@ import type { McpMiddleware } from "../connection/runtime/interface.ts";
 import { LIST_DEFAULT_TOOLS_PER_SERVER } from "../shared/interface.ts";
 import { MIDDLEWARE_GLOBAL_ROOT } from "../../shared/interface.ts";
 import type { McpStatsCollector } from "../stats/interface.ts";
-import type { MiddlewareMode } from "../workspace/interface.ts";
 import type { DisabledToolsMap } from "../store/interface.ts";
 import { injectPorts } from "./impl/service/index.ts";
 
@@ -32,9 +31,18 @@ import { injectPorts } from "./impl/service/index.ts";
 interface MiddlewareToolContext {
   mw: McpMiddleware;
   resolveRoot: (agent: unknown) => Promise<string | undefined>;
-  mode: MiddlewareMode;
   stats?: McpStatsCollector;
 }
+
+/**
+ * 中间层**有效**模式（#767 笔 1a 单池合并后恒为 all）。
+ *
+ * 全部服务器都经中间层单元 + `ws_mcp_call` 触达，配置里的 `middleware` 值已不再影响
+ * 任何行为——回显它等于在诊断面上写假事实源。`ws_mcp_list` 的 `mode` 字段仍在 output
+ * schema 的 `required` 里（外部形状守恒），故此处报有效事实。
+ * 笔 2 随配置键一起删。
+ */
+const EFFECTIVE_MIDDLEWARE_MODE = "all";
 
 /** 空 query 搜索无命中时的可归因提示（纯 render 文案，C 项）。 */
 const SEARCH_EMPTY_HINT =
@@ -68,30 +76,29 @@ async function waitForDiscovery(
 }
 
 /**
- * all 模式可见单元集合：项目 root + @global（评审 A 全局可见性修复）。
- * root 本身为 @global 时去重（防 all 模式无项目 cwd 下服务器翻倍）。
+ * 可见单元集合：项目 root + @global（评审 A 全局可见性修复）。
+ * root 本身为 @global 时去重（防无项目 cwd 下服务器翻倍）。
+ *
+ * 单池（#767 笔 1a）：@global 恒可见——不再是「all 模式才合并」的模式分支。
  */
-function visibleMiddlewareRoots(root: string | undefined, mode: MiddlewareMode): string[] {
+function visibleMiddlewareRoots(root: string | undefined): string[] {
   if (root === undefined) return [];
-  if (mode !== "all") return [root];
   return root === "@global" ? ["@global"] : [root, "@global"];
 }
 
 /**
- * 路由一致性校验（detail/call 共用；A2）：目标 root 必须等于当前 root，
- * 或 all 模式下的 @global（全局配置跨工作空间共享，语义成立）。
- * project 模式传全局级服务器 → 引导改用 mcp__ 直呼（注册名含不透明短 id，以工具
- * 清单为准；封装定义条目走下面的早返回，不落这条拒绝分支）；非 global 的其他
- * root / 未知 @global 服务器一律硬拒绝
- * （防跨空间串台与 project 模式经 @global 路由绕过）。
+ * 路由一致性校验（detail/call 共用；A2）：目标 root 必须等于当前 root，或 @global
+ * （全局配置跨工作空间共享，语义成立）。
+ *
+ * 单池（#767 笔 1a）：**删掉**了原来「@global 且非 all 模式 → 拒绝」那道门——可达性
+ * 三件套之一。全局服务器不再有 mcp__ 直呼面，@global 必须对所有调用方可达。
+ * 「其他 root（≠ 当前 root 且 ≠ @global）恒拒」逐字保持（防跨空间串台）。
  * @returns 校验通过的 root；抛错则拒绝。
  */
 async function checkMiddlewareRoot(
   caller: string,
   server: string,
   root: string,
-  mode: MiddlewareMode,
-  mw: McpMiddleware,
 ): Promise<string | undefined> {
   const {
     workspace: { parseFullServerName },
@@ -105,38 +112,7 @@ async function checkMiddlewareRoot(
       `${caller}: server ${JSON.stringify(server)} 不属于当前工作空间 ${JSON.stringify(root)}；路由一致性校验失败（防跨空间串台）`,
     );
   }
-  if (parsed.root === MIDDLEWARE_GLOBAL_ROOT && mode !== "all") {
-    const bare = parsed.server;
-    // 封装定义条目（toolDefinitions）恒由中间层虚拟连接承载（#767 S1-5b 裁决 (c)'，与模式无关）：
-    // 它在任何模式下都没有 mcp__ 宿主注册可回退，@global 必须放行——否则 project/off 下它完全
-    // 不可达。正常（有 transport 的）全局服务器不走这条路：它们仍以 mcp__（注册名含不透明短 id）
-    // 直呼，照旧拒绝并引导。
-    if (await isWrappedGlobalServer(mw, bare)) return parsed.root;
-    const known =
-      mw.host.isGlobalServer(bare) ||
-      injectPorts.get().catalog.catalogDirectory.entryFor(MIDDLEWARE_GLOBAL_ROOT, bare) !==
-        undefined;
-    if (known) {
-      throw new Error(
-        `${caller}: server ${JSON.stringify(server)} 是全局级（global scope）服务器，中间层只覆盖项目级服务器；它已以 \`mcp__\` 前缀工具直呼注册（注册名含不透明短 id，请以工具清单为准）`,
-      );
-    }
-    throw new Error(
-      `${caller}: server ${JSON.stringify(server)} 不属于当前工作空间 ${JSON.stringify(root)}；路由一致性校验失败（防跨空间串台）`,
-    );
-  }
   return parsed.root;
-}
-
-/**
- * @global 上的该服务器是不是封装定义条目（toolDefinitions）。
- *
- * 判定读宿主配置（`projectServersFor("@global")` 已含 runtime 注入条目）而不是目录：目录条目
- * 只说「有工具」，说不了「谁持有连接」。这是既有宿主能力，不为它开新端口。
- */
-async function isWrappedGlobalServer(mw: McpMiddleware, bare: string): Promise<boolean> {
-  const servers = await mw.host.projectServersFor(MIDDLEWARE_GLOBAL_ROOT);
-  return Array.isArray(servers?.find((server) => server.name === bare)?.toolDefinitions);
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +168,7 @@ async function executeSearch(
   if (toolCtx.stats?.isEnabled()) {
     toolCtx.stats.recordSearch(query);
   }
-  const roots = visibleMiddlewareRoots(root, toolCtx.mode);
+  const roots = visibleMiddlewareRoots(root);
   const unit = await toolCtx.mw.projectUnitFor(root);
   if (unit === undefined) {
     return { results: [], unavailable: [], truncated: false };
@@ -310,13 +286,7 @@ async function executeCall(
   const parsed = parseFullServerName(server);
   if (parsed === undefined)
     throw new Error("ws_mcp_call: server 参数格式非法，应为 @<root>/<server>");
-  const targetRoot = await checkMiddlewareRoot(
-    "ws_mcp_call",
-    server,
-    root,
-    toolCtx.mode,
-    toolCtx.mw,
-  );
+  const targetRoot = await checkMiddlewareRoot("ws_mcp_call", server, root);
   if (targetRoot === undefined) {
     throw new Error(
       `ws_mcp_call: server ${JSON.stringify(server)} 不属于当前工作空间 ${JSON.stringify(root)}；路由一致性校验失败（防跨空间串台）`,
@@ -473,7 +443,6 @@ function resolveEmptyListMessage(
   serverFilter: string | undefined,
   mw: McpMiddleware,
   root: string,
-  mode: MiddlewareMode,
 ): string {
   if (serverFilter !== undefined) {
     const visible = visibleProjectServers(root);
@@ -483,33 +452,20 @@ function resolveEmptyListMessage(
         : "当前工作空间无已发现的项目级服务器；";
     return `没有匹配 server=${JSON.stringify(serverFilter)} 的项目级服务器。${visibleText}全局级服务器不在此列出：已直呼注册的请用 \`mcp__\` 前缀工具（注册名见工具清单），封装定义条目请用 ws_mcp_call 按 @<root>/<server> 访问`;
   }
-  return mode === "all"
-    ? "当前工作空间没有可用 MCP 服务器（项目级与全局均未发现；若刚添加配置，请稍后重试）"
-    : "当前工作空间没有可用 MCP 服务器（未配置项目级服务器；若刚添加配置，请稍后重试）";
+  // 单池后「无项目单元」不再等于「只有项目级可见」：@global 单元同样会被查询。
+  return "当前工作空间没有可用 MCP 服务器（项目级与全局均未发现；若刚添加配置，请稍后重试）";
 }
 
 async function resolveListWithoutUnit(
   mw: McpMiddleware,
   root: string,
-  mode: MiddlewareMode,
   serverFilter: string | undefined,
   toolLimit: number,
 ) {
   const {
     catalog: { listCatalog },
   } = injectPorts.get();
-  if (mode !== "all") {
-    return {
-      workspace: root,
-      mode,
-      servers: [],
-      totalServers: 0,
-      totalTools: 0,
-      toolsTruncated: false,
-      message:
-        "当前工作空间没有项目级 MCP 配置（可在 <项目根>/.dsh/mcp.json 添加服务器，或切换工作区）",
-    };
-  }
+  // 单池：单元缺失也查 @global（原来「非 all 模式 → 只报项目级未配置」的模式分支已删）。
   const globalUnit = await mw.projectUnitFor("@global");
   if (globalUnit !== undefined) await waitForDiscovery(globalUnit);
   return listCatalog(
@@ -517,7 +473,7 @@ async function resolveListWithoutUnit(
     ["@global"],
     serverFilter,
     toolLimit,
-    mode,
+    EFFECTIVE_MIDDLEWARE_MODE,
     "当前工作空间没有可用 MCP 服务器（项目级与全局均未发现；若刚添加配置，请稍后重试）",
     mw.disabledTools,
   );
@@ -534,10 +490,10 @@ async function executeList(
   if (toolCtx.stats?.isEnabled()) {
     toolCtx.stats.recordList(serverFilter);
   }
-  const roots = visibleMiddlewareRoots(root, toolCtx.mode);
+  const roots = visibleMiddlewareRoots(root);
   const unit = await toolCtx.mw.projectUnitFor(root);
   if (unit === undefined) {
-    return resolveListWithoutUnit(toolCtx.mw, root, toolCtx.mode, serverFilter, toolLimit);
+    return resolveListWithoutUnit(toolCtx.mw, root, serverFilter, toolLimit);
   }
   // 等待 in-flight 连接/发现（预算内），再搜索。all 模式对可见全部单元
   // （含 @global 首次触达）都等待——否则全局目录首次为空（P1-3 修复）。
@@ -553,13 +509,13 @@ async function executeList(
     roots,
     serverFilter,
     toolLimit,
-    toolCtx.mode,
+    EFFECTIVE_MIDDLEWARE_MODE,
     "",
     toolCtx.mw.disabledTools,
   );
   // A1：带 serverFilter 过滤后 0 命中 → message 可归因（不谎报「未配置」）。
   if (result.servers.length === 0) {
-    result.message = resolveEmptyListMessage(serverFilter, toolCtx.mw, root, toolCtx.mode);
+    result.message = resolveEmptyListMessage(serverFilter, toolCtx.mw, root);
   }
   return result;
 }
@@ -660,13 +616,7 @@ async function executeDetail(
   if (toolCtx.stats?.isEnabled()) {
     toolCtx.stats.recordDetail(parsed?.server ?? server, tool);
   }
-  const targetRoot = await checkMiddlewareRoot(
-    "ws_mcp_detail",
-    server,
-    root,
-    toolCtx.mode,
-    toolCtx.mw,
-  );
+  const targetRoot = await checkMiddlewareRoot("ws_mcp_detail", server, root);
   if (targetRoot === undefined) {
     throw new Error(
       `ws_mcp_detail: server ${JSON.stringify(server)} 不属于当前工作空间 ${JSON.stringify(root)}；路由一致性校验失败（防跨空间串台）`,
@@ -912,14 +862,15 @@ export function registerDirectMcpGuard(
  * @param ctx Cordis 宿主上下文。
  * @param mw 中间层实例。
  * @param resolveRoot 路由：exec.agent → 归一化项目根（agent-less → undefined）。
- * @param mode 中间层模式（all 模式合并查询 @global 单元）。
  * @param options 可选配置（支持传入自定义工具级禁用表）。
+ *
+ * 单池（#767 笔 1a）：不再接受模式入参——可见单元集合恒为「项目 root + @global」，
+ * ws_mcp_list 的 mode 字段恒报有效事实 `all`（见 EFFECTIVE_MIDDLEWARE_MODE）。
  */
 export function registerMiddlewareTools(
   ctx: Context,
   mw: McpMiddleware,
   resolveRoot: (agent: unknown) => Promise<string | undefined>,
-  mode: MiddlewareMode = "project",
   options: {
     /** 工具级禁用映射（root → server → Set<tool>）；缺省取 mw.disabledTools。 */
     disabledTools?: DisabledToolsMap;
@@ -938,7 +889,7 @@ export function registerMiddlewareTools(
   const disabledTools = options.disabledTools ?? mw.disabledTools;
   if (options.disabledTools !== undefined) mw.disabledTools = disabledTools;
 
-  const toolCtx: MiddlewareToolContext = { mw, resolveRoot, mode, stats: options.stats };
+  const toolCtx: MiddlewareToolContext = { mw, resolveRoot, stats: options.stats };
   const tools = [
     buildSearchTool(toolCtx),
     buildCallTool(toolCtx),
