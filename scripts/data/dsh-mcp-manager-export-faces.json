@@ -1,5 +1,5 @@
 {
-  "$comment": "包导出面分类登记（#767 B0 / #733 宪法 I4）：包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面。 符号集不在此文件里重复枚举——判据的输入是 export-surface-snapshot.mjs 同一次 emitDeclarations() 的产物（§9 禁止双轨）。 faces：新增导出必须在此显式登记三类面之一（安装面 / 配置面 / 契约面），未登记即红； legacy：B0（重构前那棵树）时点的 159 个存量导出白名单——存量分类（保留 / 移除清单）是 B2 收缩导出面时的一等交付物，本阶段不预判、不抢跑。 legacy 只许随符号退役而缩小；把新符号塞进 legacy 能绕过判据，但那是一次显眼且可评审的改动（判据的价值是让静默增长不可能）。 用法：node scripts/gate/export-surface-snapshot.mjs --package dsh-mcp-manager --verbose",
+  "$comment": "包导出面分类登记（#767 B0 / #733 宪法 I4）：包导出面 ⊆ 安装面 ∪ 配置面 ∪ 契约面。 符号集不在此文件里重复枚举——判据的输入是 export-surface-snapshot.mjs 同一次 emitDeclarations() 的产物（§9 禁止双轨）。 faces：新增导出必须在此显式登记三类面之一（安装面 / 配置面 / 契约面），未登记即红； legacy：B0（重构前那棵树）时点的 159 个存量导出白名单（159 是 B0 起始规模；当前条数一律以本文件 legacy 数组长度为准、不在此复述；本包已在 #767 阶段 1 的三笔里退役 14 个——S1-5a 2 / S1-5b 笔 1 1 / S1-5c 11）——存量分类（保留 / 移除清单）是 B2 收缩导出面时的一等交付物，本阶段不预判、不抢跑。 legacy 只许随符号退役而缩小；把新符号塞进 legacy 能绕过判据，但那是一次显眼且可评审的改动（判据的价值是让静默增长不可能）。 用法：node scripts/gate/export-surface-snapshot.mjs --package dsh-mcp-manager --verbose",
   "package": "dsh-mcp-manager",
   "faces": {},
   "legacy": [

@@ -160,7 +160,7 @@
             "!packages/dsh-mcp-manager/src/client/**",
             "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
-          "comment": "新增（#767 S1-2b）：servers——面向官方引擎的服务器域族（装载生命周期 servers/lifecycle；后续 dispatch / injection 同段）。为什么新建段而不是塞进旧段：源码全覆盖断言要求 src 下每个文件落在 ∪mutate ∪ ∪excludes 内，而 src/server/servers/** 不被既有任何段的 glob 覆盖；旧段的 comment 与文件归属也会因此失真。excludes 两条照同包其余段（client 是另一端、shared/placement-math.ts 是薄转发），两者都不构成宿主侧变异面。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+          "comment": "新增（#767 S1-2b）：servers——面向官方引擎的服务器域族（装载生命周期 servers/lifecycle + 派发 servers/dispatch（#767 S1-3a 落地）；injection 不在本段，其实现在 src/server/catalog/impl/injection/）。为什么新建段而不是塞进旧段：源码全覆盖断言要求 src 下每个文件落在 ∪mutate ∪ ∪excludes 内，而 src/server/servers/** 不被既有任何段的 glob 覆盖；旧段的 comment 与文件归属也会因此失真。excludes 两条照同包其余段（client 是另一端、shared/placement-math.ts 是薄转发），两者都不构成宿主侧变异面。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         },
         "runtime": {
           "mutate": [
@@ -175,7 +175,7 @@
             "!packages/dsh-mcp-manager/src/client/**",
             "!packages/dsh-mcp-manager/src/shared/placement-math.ts"
           ],
-          "comment": "#767 B2b 重画：runtime——shared/placement-math.js（#378 上移的 placement 纯核心）+执行管道（pipeline）+目录（catalog）+包内共享层（server/shared）+迁移链（upgrade）+跨端共享面（src/shared）；B2b 后文件归各域段，本段只留这些。同时收敛 #767 B0 的临时超集 src/server/**/*.ts——当时目标树全新，不先挂超集会让 B1 新文件进 uncoveredSrcFiles 而 --write-baseline 拒绝接受新证据；六段并集现已覆盖它（本刀实测 uncoveredSrcFiles 仍为 0），故删除。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；client 与 shared/placement-math.ts 两条排除仍然成立。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
+          "comment": "#767 B2b 重画：runtime——shared/placement-math.js（#378 上移的 placement 纯核心）+执行管道（pipeline）+目录（catalog）+包内共享层（server/shared）+迁移链（upgrade）+跨端共享面（src/shared）；B2b 后文件归各域段，本段只留这些。同时收敛 #767 B0 的临时超集 src/server/**/*.ts——当时目标树全新，不先挂超集会让 B1 新文件进 uncoveredSrcFiles 而 --write-baseline 拒绝接受新证据；各段并集现已覆盖它（本刀实测 uncoveredSrcFiles 仍为 0），故删除。W11b2a 删除 src/types 与 src/integration 后，原两条排除已成 0 命中死条目，随本刀删除；client 与 shared/placement-math.ts 两条排除仍然成立。测试全套跑（perTest 关联）；incremental 基线随 observe 夜间全量班重建（D7 迁移豁免）。"
         }
       },
       "testLayers": {
@@ -186,17 +186,17 @@
           {
             "pattern": "!packages/dsh-mcp-manager/src/**/interface.ts",
             "kind": "facade",
-            "reason": "重估（#767 B0）：目标形态的门面共 13 个（11 个域 + server/shared + src/shared），装配/卸载以 installXxx/releaseXxx 成对出现——落到 notifier 形态后转译仍有运行时代码，故不再按「只有 re-export 与类型出口」叙述、也不属 type-only；但它只转调域内 service、自身不做裁决，域内实现不在这里、目录外只能经它引用（verify-dir-imports 静态强制），故按门面整体退出变异面（kind 保持 facade）；B2 按域重画时逐条复核，若裁决逻辑真的上移到门面则删除本条。"
+            "reason": "重估（#767 B0）：门面即本 pattern 命中的文件（条数以该 pattern 为口径事实源、不在此写死——它随域与子层拆分增长；#767 S1-5d 复核时 16 个），装配/卸载以 installXxx/releaseXxx 成对出现——落到 notifier 形态后转译仍有运行时代码，故不再按「只有 re-export 与类型出口」叙述、也不属 type-only；但它只转调域内 service、自身不做裁决，域内实现不在这里、目录外只能经它引用（verify-dir-imports 静态强制），故按门面整体退出变异面（kind 保持 facade）；B2 按域重画时逐条复核，若裁决逻辑真的上移到门面则删除本条。"
           },
           {
             "pattern": "!packages/dsh-mcp-manager/src/server/*/deps.ts",
             "kind": "type-only",
-            "reason": "新增（#767 B0）：目标形态 src/server/<域>/deps.ts 是纯类型面依赖声明出口（import type 引 Port 与数据形状，转译后无运行时代码）——附录 E.4 实测 6 域建 deps.ts（pipeline/catalog/connection/inject/api/config），store/stats/integration 实测零对上依赖、按判据不建，故本条只列 server/<域> 一层；纯类型面文件没有可杀灭的变异体，故 type-only。若某域 deps.ts 出现值实现（notifier 的 channels/impl/system/deps.ts 先例），B2 须按该形态拆出单列 not-mutated 条。"
+            "reason": "新增（#767 B0）：目标形态 src/server/<域>/deps.ts 是纯类型面依赖声明出口（import type 引 Port 与数据形状，转译后无运行时代码）——条数以本 pattern 为口径事实源、不在此写死（它随域拆分变化；#767 S1-5d 复核时 server/<域> 这一层是 5 个：api / catalog / inject / pipeline / upgrade——connection 与 config 两个落点今天都不在这一层：connection 的 deps.ts 落在 connection/orchestrator 与 connection/runtime 两处（由下一条 server/<域>/<子层>/deps.ts 覆盖）；config 域在全部提交历史里从未有过 deps.ts（`git log --all` 对 deps.ts 路径全集零命中），故原文「附录 E.4 实测 6 域」里的 config 一项自始不成立；integration 目录早已随 W11b2a 删除），故本条只列 server/<域> 一层；纯类型面文件没有可杀灭的变异体，故 type-only。若某域 deps.ts 出现值实现（notifier 的 channels/impl/system/deps.ts 先例），B2 须按该形态拆出单列 not-mutated 条。"
           },
           {
             "pattern": "!packages/dsh-mcp-manager/src/server/*/*/deps.ts",
             "kind": "type-only",
-            "reason": "改口径（#767 B2b）：覆盖 server/<域>/<子层>/deps.ts 这一层——B2b 把连接域子层也收进 server/ 后实测 2 个（connection/orchestrator + connection/runtime）。它们仍全是 import type 与 export type/interface，转译后无运行时代码，没有可杀灭的变异体，故 kind 仍为 type-only；同族但更浅的 server/<域>/deps.ts 由上一条覆盖。若某域 deps.ts 出现值实现（notifier 的 channels/impl/system/deps.ts 先例），须按该形态拆出单列 not-mutated 条。"
+            "reason": "改口径（#767 B2b）：覆盖 server/<域>/<子层>/deps.ts 这一层——条数以本 pattern 为口径事实源、不在此写死（它随域与子层拆分变化；#767 S1-5d 复核时 4 个：connection/orchestrator、connection/runtime、servers/dispatch、servers/lifecycle）。它们仍全是 import type 与 export type/interface，转译后无运行时代码，没有可杀灭的变异体，故 kind 仍为 type-only；同族但更浅的 server/<域>/deps.ts 由上一条覆盖。若某域 deps.ts 出现值实现（notifier 的 channels/impl/system/deps.ts 先例），须按该形态拆出单列 not-mutated 条。"
           }
         ],
         "testMutationExemptions": {

@@ -337,7 +337,8 @@ SessionHeader.origin / Agent.session），并同步根 README「版本适配」�
   为什么不由 Stryker 的 `testFiles` 承载：该字段非空会让 core 把 static mutant 判成 runtime
   激活（上游 #6144 未修），模块级变异体在模块加载后永久漏判（实测 80.49 → 0.00）。
   为什么不把 `**` 通配直接交给 Stryker：#712 已 CI 实证沙箱语义失败（`smoke.test.ts` 的
-  provide 方法面断言）+ mcp 5 个段 dry run 撞 5 分钟预算；
+  provide 方法面断言）+ mcp 每个段各付一次 dry run、合计撞 5 分钟预算（#712 实测时该包
+  5 段，此后段数只由域拆分决定，不改变本条理由）；
 - `pnpm stryker:check` 是登记完整性门禁（实现见 `scripts/gate/test-surface.mjs`，纯函数、import 无副作用）：
   ① 磁盘上有测试的**每个包**都必须在拓扑登记（漏登即在 `$noMutationPackages` 写明理由），且该包
   `test/` 下每个 `*.test.ts` 都要有层归属——新增测试必须显式决定层归属，不能靠「没写进清单」逃逸；
@@ -537,8 +538,10 @@ export const inject: string[] = []; // 声明 apply 用到的 ctx 服务（如 [
       `∪excludes`（它是变异面自身的定义面），因而同样能让文件退出 `uncoveredSrcFiles`：
       · `testLayers.coverageExcludes`：把文件写进该包的覆盖排除面 ⇒ 该文件退出
         `uncoveredSrcFiles` 质量证据，门禁输出称之为「质量证据改善（--write-baseline
-        会清理入库）」。**当前实际在用的是这条**（dsh-mcp-manager / dsh-notifier /
-        dsh-provider-usage 均在使用，共 **12** 条）。台账里 `gate=verify-dir-imports` 现有 11 条**全部是证据级条目**（#767
+        会清理入库）」。**当前实际在用的是这条**（五包 coverageExcludes 合计 **15** 条：
+        dsh-mcp-manager 3 / dsh-notifier 5 / dsh-provider-usage 6 / dsh-lan-proxy 1 /
+        dsh-worktree-sidebar 0；条数以 `scripts/data/mutation-topology.json` 各包
+        `testLayers.coverageExcludes` 为唯一事实源）。台账里 `gate=verify-dir-imports` 现有 11 条**全部是证据级条目**（#767
         lan-proxy unit-apply 1 条 + #847 sidebar 客户端单测 10 条；同批 unit-proxy / wfp /
         notifier-§5.3 存量已随主干演进消除而不登记），本通道（覆盖率排除面）自身零条目。条目形状与 vitest 面
         `coverage.config.json` 的 exclude **同形同键名**：

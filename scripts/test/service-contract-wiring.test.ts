@@ -16,7 +16,6 @@
  * tsc 非 0 → 本测试红。随 \`pnpm test:scripts\`（repo-gate 无条件步骤）执行，
  * CI/本地对「shared 类型面 ↔ 契约测试清单」漂移零成本判红。
  *
-<<<<<<< HEAD
  * 接线对象（#845 起机械派生，不再手写清单）：packages/<pkg>/test/tsconfig.json。
  * 手写清单的漏项**不会让任何断言变红**——#845 实测 dsh-lan-proxy 与
  * dsh-provider-usage 两个包的 test/tsconfig.json 已在磁盘上却不在清单里，它们的

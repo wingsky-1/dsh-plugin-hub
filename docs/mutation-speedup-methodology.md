@@ -33,7 +33,7 @@ provider-usage **400s**（n=49，频率与耗时双高）、lan-proxy 204s、mcp
 | # | 手段 | 状态 | 实测效果 | 关键约束 |
 |---|---|---|---|---|
 | 1 | 增量基线仓库内文件化（#204/#178） | 已落地 | 常态 mutation job 分钟级 → **20-38s 全程** | actions/cache 按 ref 隔离不可用；基线必须入 git |
-| 2 | concurrency 超订（notifier 先例 #159） | 已落地（现 5 包 35 段全 16，定标见 §3 手段 13） | notifier **6m54s → 1m42s** | 仅等待主导型收益巨大；见 §4.2 分级评估法。`sharedDefaults.concurrency` 允许按**包**覆盖（`gen-stryker-conf.mjs`），数字型取值 Stryker **不做 cap** |
+| 2 | concurrency 超订（notifier 先例 #159） | 已落地（现 5 包 38 段全 16，定标见 §3 手段 13） | notifier **6m54s → 1m42s** | 仅等待主导型收益巨大；见 §4.2 分级评估法。`sharedDefaults.concurrency` 允许按**包**覆盖（`gen-stryker-conf.mjs`），数字型取值 Stryker **不做 cap** |
 | 3 | provider-usage 4→8（#249）+ timeoutMS 60s→30s（#257） | 已落地 | 同机基准 4→8 提速 **42%**（771.9s→449.9s），score/killed 与独立全量逐项一致；CI 首跑无假阳性 | 收紧只减假阳性 killed，方向安全；8→16 已由 #266（2026-08-26）落地，并在该 PR 里写明观察协议（total 不变 / timeout、error 不抬升 / score 与基线一致，源自 #249）；本行补的是同机 4/8/16 对照（§3 手段 13）。注：30s 为 #257 当时的历史值，当前 conf 实际 timeoutMS=60000（勿误读） |
 | 4 | lan-proxy / idle-archive 维持 4 | **已失效**（值自 #294 / 2026-08-27 起即 16；2026-09-13 复核拓扑与 4 个段 conf） | lan-proxy 现为 16 | 原理由（#147 conf 注释原文：`unit-apply.test.ts` 固定占用 **19998** 构造端口被占场景，多 worker 同时进入会 EADDRINUSE 互踩 → 假阳性 Killed，见 #223）已由端口治理 #690 S2c / #713 T5（PR #717，2026-09-11）消除：变异面内两个文件现全部动态分配端口（`port: 0` / `httpsPort: 0` / `listen(0)`），全仓代码面已无 19998。**注意**：`smoke.test.ts` 自 #147 起就**从未**列入本包变异面（`testFiles` 恒为 unit-apply + unit-proxy），原行末「变异面含固定端口 smoke.test.ts」实为 **idle-archive** 的理由（其 `testFiles` 含 `test/smoke.ts`，包已退役 #397）——即本行所述「失效」不是 smoke 归位，而是固定端口被消除；且 16 的上线（#294）早于端口治理，属先提后治。本行保留为历史记录 |
 | 5 | mutate 段拆分 CI matrix（B） | **已落地（#257）→ 方案 A 落地后整体退役（#276）** | 段式矩阵真实 CI 实例化正常；wall-clock 数据待段式基线就绪后回收 | 三慢包 provider-usage×2 / lan-proxy×3 / mcp-manager×4；判分聚合去重键教训见 §4.6；计费分钟×N 为已知代价。方案 A 落地后 mutate 改为 src 级文件组分段（mcp-manager×3 / provider-usage×3 / lan-proxy×4），行号区间整套退役 |
@@ -42,7 +42,7 @@ provider-usage **400s**（n=49，频率与耗时双高）、lan-proxy 204s、mcp
 | 8 | **方案 A：mutate 直指 src（#276）** | **已落地** | 见 §3.1 详细实测 | 依赖全仓 `.ts` 后缀相对 import + Node strip-types 加载插桩 src；开销与对策见 §4.8 |
 | 9 | Node compile cache（#276 配套） | 已落地（bridge 注入） | src 级全量 420s → 250s（-41%），判分分布不变 | Node ≥24.12 `module.enableCompileCache()`；失败的进程静默降级（try/catch 包裹） |
 | 10 | 大文件拆分（src 级分段前置） | 已落地 | mcp-manager index 1237→147 / middleware 1046→511 / provider-usage index 1122→73 / lan-proxy index 991→59（行数为拆分时点快照） | 分段粒度下限是整文件；拆文件让密度均匀、段可细切。维护收益 + CRAP 模块精度 |
-| 11 | src 级两级分段（文件组声明） | 已落地 | mcp-manager×6 / provider-usage×12 / notifier×10 / lan-proxy×6 / worktree-sidebar×1 = **35 段**（2026-09-16 实况；#840 退役 web-file-preview 由 32 段降为 31，再由 #769 notifier 客户端门禁加 client 段 31 → 32，新增 dsh-worktree-sidebar 单段 32 → 33，#826 把 lan-proxy 的 4 个数字段按模块目录重划为 6 段 33 → 35；#342 二期时为 6/6/4/4），增量命中时单段 wall ≤~120s（全量段墙钟见 §3 手段 13 与台账） | 段 = 源文件名清单（非行号），永不漂移，无 sync/guard 开销 |
+| 11 | src 级两级分段（文件组声明） | 已落地 | mcp-manager×7 / provider-usage×12 / notifier×10 / lan-proxy×8 / worktree-sidebar×1 = **38 段**（2026-09-19 实况；#840 退役 web-file-preview 由 32 段降为 31，再由 #769 notifier 客户端门禁加 client 段 31 → 32，新增 dsh-worktree-sidebar 单段 32 → 33，#826 把 lan-proxy 的 4 个数字段按模块目录重划为 6 段 33 → 35；#856 host-trust 域与 lan-proxy client 段 35 → 37；#767 S1-2b 新增 servers 段 37 → 38；#342 二期时为 6/6/4/4），增量命中时单段 wall ≤~120s（全量段墙钟见 §3 手段 13 与台账） | 段 = 源文件名清单（非行号），永不漂移，无 sync/guard 开销 |
 | 12 | 四班次调度 + 快照 PR 日期闸（#276 配套） | 已落地 | 基线快照 PR 有界（≤4/日，实际随当日合入） | observe.yml cron UTC 01/04/08/12（北京 09/12/16/20）；push 触发移除；snapshot PR 每日最多一次 |
 | 13 | concurrency 定标复测（4 / 8 / 16，2026-09-13） | 决策：**维持 16**（口径与限制见 §3.3） | `trend-collect`(670) **1138 / 831 / 840 s**；`contracts`(524) **444 / 285 / 217 s**；`errsurf`(38，n=2) 两轮值见 §3.3；**dry run 12 次全 10–12 s，与 concurrency 无关** | 本地 8 vCPU（2x 过订阅）**不等于** CI 4 vCPU（4x）；**只测了墙钟**，§4.3 三项核对已由 #803 在限核 4 vCPU 补做（见 §3.3.1）：total 不变，但 c=16 在「4 vCPU + 同机负载」下 timeout 抬升、score 虚高（`contracts` +1.41 pt / `trend-collect` +3.32 pt）；超时口径、噪声边界与 flake 关系见 §3.3 |
 
@@ -98,10 +98,12 @@ dry run 在 12 次运行中全为 **10–12 s**，与 `concurrency` 无关（dry
   `covered 64.76% < 基线 67.28%` + 13 errors 并回滚。#803 已在 §3.3.1 于限核 4 vCPU 上补做：total 不变，
   但 c=16 在「4 vCPU + 同机负载」下 timeout `contracts` 10 → 18 / 14、`trend-collect` 4 → 23，
   score 相应虚高 1.41 / 3.32 pt（适用边界见 §3.3.1 结论第 4 条）；
-- **超时口径**（当时 32 段口径）：32 段中 **27 段**的取值由 `TIMEOUT_FLOOR_MINUTES = 30` 抬起（`mutation-plan.mjs` 自注
-  「27 个短段从 20~28 抬到 30」），第 28 段 `trend-collect` 的派生值**恰为 30 min**
+- **超时口径**（当时 38 段口径：28 段有全量实测、10 段取保守默认 30 min）：28 段中 **23 段**的取值由
+  `TIMEOUT_FLOOR_MINUTES = 30` 抬起（`mutation-plan.mjs` 自注的「27 个」是 32 段口径旧数；
+  4 段派生值此后越过地板：provider-usage pipeline 42 / trend-aggregate 40、mcp-manager
+  runtime 36 / middleware 32），另一段 `trend-collect` 的派生值**恰为 30 min**
   （`ceil(1012/60×1.5+4)=30`，台账全量峰 1012 s）——它已经**在**地板上、没有余量；本地 c=4 实测
-  1138 s 会把派生值推到 33 min；
+  1138 s 会把派生值推到 33 min；无全量实测的 10 段取保守默认 30 min（含 `dsh-mcp-manager-servers`）；
 - **与 flake 的关系**：#771 记录的假红形态是 dry run 整段 `ConfigError`（#771 当时口径：该断言被 12/32 段共用），
   dry run 不受本参数影响；但同一断言在逐 mutant 运行中也执行，§4.3 的 timeout 假阳性路径未排除，
   故不宜写成「flake 只出在 dry run」。该假红已由 PR #794（2026-09-13）收口。
