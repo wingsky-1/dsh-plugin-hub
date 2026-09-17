@@ -70,7 +70,7 @@ flowchart LR
 - **依赖关系**：各插件彼此独立（`dsh-mcp-manager` 提供的 `ctx.mcpManager` 为可选消费面，
   无插件对其强依赖）；
 - `dsh-plugins-all` 是聚合包：dependencies 拉齐全部子包 + 聚合 cordis patch
-  （`scripts/aggregate.ts` 自动生成，禁止手改）。
+  （`scripts/gate/aggregate.ts` 自动生成，禁止手改）。
 
 <a id="通用机制"></a><a id="user-content-通用机制"></a>
 ## 通用机制

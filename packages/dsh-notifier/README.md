@@ -4,6 +4,8 @@
 
 审批/完成/错误事件通知：人不在浏览器前也能收到提醒。
 
+原理与运行机制见 [TOGAF 4A 架构文档](../../docs/architecture/dsh-notifier.md)（BA 业务 / AA 应用 / DA 数据 / TA 技术四视图）。
+
 ## 安装
 
 前提：已安装 DeepSeek Harness 且 `dsh web` 可正常启动（未全局安装 dsh 见下方「未全局安装 dsh」）。

@@ -111,6 +111,7 @@ This plugin set only adapts to **rc (release-candidate) releases of DeepSeek Har
 | `@wingsky-1/dsh-lan-proxy` | Access the dsh web UI over LAN: HTTP/HTTPS/WS forwarding + TLS (self-signed / custom certs); dual compression for HTTP (Brotli/gzip adaptive) and WebSocket (permessage-deflate); WS half-open probing keeps mobile backgrounding from going stale; launch-token auto-injection lets LAN devices connect without fetching the token; DNS-rebinding protection + loopback target allowlist | [README](packages/dsh-lan-proxy/README.md) · [Architecture](docs/architecture/dsh-lan-proxy.md) | Published |
 | `@wingsky-1/dsh-mcp-manager` | MCP server manager (stdio / streamable-http): per-working-directory project/global config tiers; project-level MCP collapsed into 4 atomic tools via middleware by default (`middleware: all` folds in global servers, hot-switchable in the settings page); workspace isolation prevents cross-project interference; configs store `${ENV}` references only — no plaintext secrets on disk; runtime registration API for other plugins to inject MCP servers; optional MCP call statistics and debug mode (metadata-only, off by default) | [README](packages/dsh-mcp-manager/README.md) · [Architecture](docs/architecture/dsh-mcp-manager.md) · [Upgrade repair](#mcp-catalog-upgrade-notice-and-repair) | Published |
 | `@wingsky-1/dsh-verify-isolated` | Isolated-environment browser verification skill for DSH plugin development: temp DSH_HOME + independent profile + independent port + independent browser instance (four-way isolation), one-command launch with automatic cleanup; bundled zero-dependency raw-CDP browser driver (snapshot / click / screenshot / eval, with device-viewport emulation), optional isolation audit, first-run dialogs skipped by default | [README](packages/dsh-verify-isolated/README.md) · [Architecture](docs/architecture/dsh-verify-isolated.md) | Published |
+| `@wingsky-1/dsh-worktree-sidebar` | Three agent tools (register / create / remove) bind a git worktree to the current session so its right-sidebar file tree uses that root, while the session cwd stays unchanged (`@` references and `present` still resolve against cwd); child sessions inherit the parent binding; rereads on tab open, official refresh, or window becoming visible, without polling | [README](packages/dsh-worktree-sidebar/README.en.md) · [Architecture](docs/architecture/dsh-worktree-sidebar.md) | Unreleased |
 
 <details>
 <summary><b>Historical maintenance & migration</b> — discontinued packages and legacy-package migration (expand if you installed the old/retired packages)</summary>
@@ -281,6 +282,9 @@ Build / contract / test / pack commands, directory layout, and host- & client-si
 conventions all live in [DEVELOPMENT.md](docs/DEVELOPMENT.md) (start at §0); contributing
 workflow in [CONTRIBUTING.md](CONTRIBUTING.md); issue workflow in
 [ISSUE-WORKFLOW.md](docs/ISSUE-WORKFLOW.md).
+Plugin capabilities, architecture, and runtime mechanisms (SVG architecture diagrams and
+Mermaid sequences) are covered in the [architecture documentation](docs/architecture/README.md)
+(in Chinese).
 
 Plugins were reviewed before being moved into this repository (self-contained build, privacy
 cleanup, security hardening, complete metadata).

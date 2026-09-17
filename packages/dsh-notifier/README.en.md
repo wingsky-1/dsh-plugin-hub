@@ -4,6 +4,8 @@
 
 Notifications for approval / completion / error events: get alerted even when you are away from the browser.
 
+For architecture and runtime mechanisms, see the [TOGAF 4A architecture document](../../docs/architecture/dsh-notifier.md) (in Chinese): Business, Application, Data, and Technology views.
+
 ## Installation
 
 Prerequisite: DeepSeek Harness installed and `dsh web` running normally (for running dsh

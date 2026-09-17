@@ -9,6 +9,8 @@ WebSocket/wss to the loopback web server (default `127.0.0.1:3080`).
 - Accepts only IP-literal or localhost Host headers (**DNS rebinding protection**)
 - HTTPS runs by default alongside (3443); the certificate is configurable or auto-generated self-signed
 
+For architecture and runtime mechanisms, see the [TOGAF 4A architecture document](../../docs/architecture/dsh-lan-proxy.md) (in Chinese): Business, Application, Data, and Technology views.
+
 ## Installation
 
 Prerequisite: DeepSeek Harness installed and `dsh web` running normally (for running dsh

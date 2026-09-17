@@ -105,8 +105,6 @@ apply 不要求打开设置卡片就启动通知半区；回前台恢复标题�
 
 路径统一前缀 /api/dsh-notifier；事实源为 `src/server/api/impl/service/index.ts#ApiService.install`。
 
-| 路径 | 方法 | 语义 |
-| --- | --- | --- |
 八条端点以字面量表登记（`src/server/api/impl/service/index.ts:31-44`）：
 
 | 路径 | 方法 | 语义 |
@@ -198,11 +196,11 @@ build 为 clean-lib→tsc→scripts/build/bundle-host.ts；esbuild 内联第三�
 
 ### 4.4 门禁、证据与待核项
 
-包 test 脚本 run-vitest.mjs --min 64 是下限契约，不是本文宣称的实际数量。现有 test/unit、integration、client-unit、client-dom、e2e 覆盖域判据、组合/服务契约、纯逻辑、DOM 生命周期与 smoke；存在测试不等于本次跑通。
+包 test 脚本 run-vitest.mjs --min 64 是下限契约，不是本文宣称的实际数量。现有 test/unit、integration、client-unit、client-dom、e2e 覆盖域判据、组合/服务契约、纯逻辑、DOM 生命周期与 smoke；测试文件的存在不代表验证通过，实际执行范围与退出码应记录在对应 PR 中。
 
-结构门禁守跨域 interface/deps、值依赖环与变异拓扑；模块状态门禁不等于对象内部无状态。pack:check 守声明合并可达性，contract/export-surface-snapshot 守公开面，forbid-src-tests 守测试布局。新增文档链接的最终门禁按 [AGENTS.md](../../AGENTS.md) 执行 gate:pr；本次子任务只交静态文档/图件证据，整合门禁由主代理报告，不宣称 CI 通过。
+结构门禁守跨域 interface/deps、值依赖环与变异拓扑；模块状态门禁不等于对象内部无状态。pack:check 守声明合并可达性，contract/export-surface-snapshot 守公开面，forbid-src-tests 守测试布局。新增文档链接的最终门禁按 [AGENTS.md](../../AGENTS.md) 执行 gate:pr；验证记录应区分本地门禁结果与 CI 状态，不以其中一项代替另一项。
 
-待核：真实多标签租约竞态、刷新重放体验、跨进程 seq 回退、真实网络 SSE 半开、三平台音频与 HMR 资源收口。实现明确边界还包括 history.clear 竞争、Bark 排队无上限、status 未落盘尾窗；本次不顺带修改源码。
+待核：真实多标签租约竞态、刷新重放体验、跨进程 seq 回退、真实网络 SSE 半开、三平台音频与 HMR 资源收口。实现明确边界还包括 history.clear 竞争、Bark 排队无上限、status 未落盘尾窗。这些边界应在相关实现变更时同步复核。
 
 ## 5. 图源与维护
 

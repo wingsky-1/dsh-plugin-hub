@@ -9,6 +9,8 @@
 - 仅接受 IP 字面量或 localhost 的 Host 头（**DNS 重绑定防护**）
 - HTTPS 默认并存（3443），证书可配置或自动生成自签名
 
+原理与运行机制见 [TOGAF 4A 架构文档](../../docs/architecture/dsh-lan-proxy.md)（BA 业务 / AA 应用 / DA 数据 / TA 技术四视图）。
+
 ## 安装
 
 前提：已安装 DeepSeek Harness 且 `dsh web` 可正常启动（未全局安装 dsh 见下方「未全局安装 dsh」）。
