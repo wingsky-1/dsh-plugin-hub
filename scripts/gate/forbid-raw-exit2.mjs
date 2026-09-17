@@ -17,8 +17,8 @@
  * 判据只覆盖与本批次同源的那一半，避免用一条判据顺手改写二十处函数的返回语义。
  *
  * 检测走 AST：注释与字符串里的同形文本天然不命中——本文件自己的文档、以及 `gate-exit.mjs` 里
- * 那段"曾经有三种写法"的说明都逐字含这些形态，文本扫描会把它们判成违规。唯一的自排除是
- * **本文件自身**（它的实现里带着这些字面量的模式描述）。
+ * 那段"曾经有三种写法"的说明都逐字含这些形态，文本扫描会把它们判成违规。
+ * 本文件自身同样扫描：模式描述不是出口 AST，不能成为无条件免扫的理由。
  *
  * 行号必须是**原文件的行**：JS 家族直接交给 acorn；`.ts` 先经 esbuild 剥类型，再用 sourcemap
  * 把生成行映回原行——esbuild 会丢掉注释，不映射就会让"注释在命中之前"的文件报出偏小的行号
@@ -177,7 +177,6 @@ function main() {
   }
   const violations = [];
   for (const file of files) {
-    if (file === import.meta.filename) continue; // 本文件自带模式描述，见文件头说明
     violations.push(...hitsInFile(file, relative(root, file).split(sep).join("/")));
   }
   if (violations.length > 0) {

@@ -418,6 +418,60 @@ test("fail-closed：include 为空数组 → exit 2（分母为空是配置错�
   assert.match(r.stderr, /缺非空 include/);
 });
 
+/** 固定时间戳，不依赖文件系统写入速度或 wall clock 的精度。 */
+function artifactFixture(keys, { fresh = true } = {}) {
+  const root = fixture();
+  mkdirSync(join(root, "coverage"));
+  const artifact = Object.fromEntries(keys.map((key) => [join(root, key), {}]));
+  writeFileSync(join(root, "coverage/coverage-final.json"), JSON.stringify(artifact));
+  utimesSync(join(root, "scripts/data/coverage.config.json"), 1000, 1000);
+  utimesSync(join(root, "coverage/coverage-final.json"), fresh ? 2000 : 500, fresh ? 2000 : 500);
+  return root;
+}
+
+test("产物交叉断言：少一个计分对象不能零违规绿", () => {
+  const r = run(artifactFixture(["packages/dsh-fake/src/a.ts"]));
+  assert.equal(r.status, 1, r.stderr + r.stdout);
+  assert.ok(r.stderr.includes("shared/x.js 在当前计分面内但未出现在覆盖率产物里"), r.stderr);
+});
+
+test("产物交叉断言：空对象报告必须列出全部缺失计分对象", () => {
+  const r = run(artifactFixture([]));
+  assert.equal(r.status, 1, r.stderr + r.stdout);
+  assert.ok(
+    r.stderr.includes("packages/dsh-fake/src/a.ts 在当前计分面内但未出现在覆盖率产物里"),
+    r.stderr,
+  );
+  assert.ok(r.stderr.includes("shared/x.js 在当前计分面内但未出现在覆盖率产物里"), r.stderr);
+});
+
+test("产物交叉断言：总数相等也不能用 exclude 对象替换计分对象", () => {
+  const r = run(
+    artifactFixture(["packages/dsh-fake/src/a.ts", "packages/dsh-fake/src/types.d.ts"]),
+  );
+  assert.equal(r.status, 1, r.stderr + r.stdout);
+  assert.ok(r.stderr.includes("types.d.ts 出现在覆盖率产物里但不在当前 include 面内"), r.stderr);
+  assert.ok(r.stderr.includes("shared/x.js 在当前计分面内但未出现在覆盖率产物里"), r.stderr);
+});
+
+test("产物交叉断言：完整计分集合通过且不要求被 exclude 的声明文件", () => {
+  const r = run(artifactFixture(["packages/dsh-fake/src/a.ts", "shared/x.js"]));
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /产物交叉断言：2 个 keys/);
+});
+
+test("静态预检：没有产物仍正常检查配置", () => {
+  const r = run(fixture());
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /跳过交叉断言/);
+});
+
+test("静态预检：旧产物缺对象不用于判定当前计分面", () => {
+  const r = run(artifactFixture([], { fresh: false }));
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /跳过交叉断言/);
+});
+
 test("产物交叉断言：产物比配置新且含面外 key → 红", () => {
   const root = fixture();
   mkdirSync(join(root, "coverage"), { recursive: true });
