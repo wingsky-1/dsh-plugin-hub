@@ -1,212 +1,209 @@
-# dsh-notifier 架构与运行机制（图解）
+# dsh-notifier 架构与运行机制（TOGAF 4A 四视图）
 
-> 包：`@wingsky-1/dsh-notifier` · 源码：`packages/dsh-notifier/` · 版本：0.2.3
-> 功能一句话：**审批 / 提问 / 完成 / 出错的离屏提醒**——人不在浏览器前也能收到通知：
-> 系统 toast（WinRT / osascript / notify-send）+ 浏览器 Notification + Bark / Webhook 出站推送，
-> 支持免打扰时段、逐出口投递策略（重试 / 退避 / 节流）与动态通知种类。
+> 包：`@wingsky-1/dsh-notifier` · 当前版本：0.2.4 · 源码：`packages/dsh-notifier/`。
+> 把审批、提问、完成与错误转成可配置的离屏提醒，并留下投递与抑制记录。
 >
-> 本文描述 **#733 按域重写后**的结构：唯一组合根 + 8 个功能域 + 1 个共享层。
-> 快速上手（安装 / 配置 / 验证）见 [包 README](../../packages/dsh-notifier/README.md)；本文讲**结构与运行机制**。
+> 安装、配置与安全模型见 [包 README](../../packages/dsh-notifier/README.md)。本文解释业务 BA、应用 AA、数据 DA、技术 TA。
+> 证据基线：`80a8584a`；除另注外，`src/…#符号` 省略包目录前缀，表示文件内可搜索符号，不是行号或网页锚点。
+> 机制结论来自源码核对，不将历史图片或既有测试文件当成本次实测结果。
 
----
+## 四视图导航
 
-## 1. 总体结构：组合根 + 八个域
+| 视图 | 回答的问题 | 章节 | 图件 |
+| --- | --- | --- | --- |
+| BA | 能力、用户控制与非目标 | [§1](#ba) | [SVG](diagrams/notifier-ba.svg) · [HTML](diagrams/notifier-ba.html) |
+| AA | 真实域依赖与客户端链路 | [§2](#aa) | [SVG](diagrams/notifier-aa.svg) · [HTML](diagrams/notifier-aa.html) |
+| DA | 配置、历史、状态、SSE、迁移与生命周期 | [§3](#da) | [SVG](diagrams/notifier-da.svg) · [HTML](diagrams/notifier-da.html) |
+| TA | 挂载、构建、门禁与安全兼容边界 | [§4](#ta) | [SVG](diagrams/notifier-ta.svg) · [HTML](diagrams/notifier-ta.html) |
 
-![dsh-notifier 通知管线](diagrams/notifier-architecture.svg)
+四图沿用 worktree sidebar 点阵底纹、纸白/深灰、橙色主线和蓝色机制标注；HTML 内联 SVG 自包含，独立 SVG 按仓库导出契约生成。
 
-> 图源：`docs/architecture/diagrams/notifier-architecture.html`。
+<a id="ba"></a>
 
-- **唯一组合根** `src/index.ts`：只有它接触宿主 `ctx`（`logger` / `webServer` / 事件总线 /
-  `agents` 注册表 / 旧 `settings` 服务 / `provide`）。各域拿到的是**能力对象**（端口），不是上下文——
-  域因此可以在没有宿主的情况下被装配与替身。
-- **每个域一种形状**：`<域>/interface.ts`（对外门面，别的域只能从这里进）、
-  `<域>/deps.ts`（本域对上依赖的端口，按提供方分组、用 `Pick<typeof providerApi, "…">` 收窄到实际用到的方法）、
-  `<域>/impl/<块>/{type.ts,index.ts}`（实现；`impl/` 根目录只放聚合器）。
-- **主链**：`events`（宿主事件 → 通知请求）→ `pipeline`（裁决 → 路由 → 定稿 → 投递）→ `channels`（四个出口）。
-  其余域各司其职：`api` 供设置页读写、`sdk` 供兄弟插件调用、`config` 持有设置、`stores` 落盘、
-  `upgrade` 负责存量迁移、`shared` 是包内共享层（叶子，不依赖任何域）。
-- **重试 / 退避 / 节流 / 在途上限全在 `pipeline/impl/dispatch`**：出口只回答「这次失败可不可重试」
-  （`DeliverResult.retryable`），自身不持有重试状态——出口因此是无状态、可替身的。
+## 1. 业务架构（BA）
 
----
+![BA：通知能力与非目标](diagrams/notifier-ba.svg)
 
-## 2. 插件装配流程
+### 1.1 能力与可见结果
 
-`apply(ctx)` 的安装顺序（全部在 `src/index.ts`，**没有独立的 apply.ts**）：
+| 能力 | 入口 | 可见结果与边界 |
+| --- | --- | --- |
+| 宿主事件提醒 | 审批、提问、agent 状态与错误 | ask / question / done / subagent-done / error / turn-end |
+| 多出口投递 | browser / system / Bark / Webhook | 浏览器提醒到当前客户端，系统提醒到 dsh 宿主，远程推送到配置服务 |
+| 用户控制打扰 | 频道、事件、免打扰、kindRoutes | 内置频道分别控制 enabled/popup/sound，browser 另有 whenVisible；动态 kind 须确认 |
+| 自检与解释 | 测试、历史、状态、诊断 | 测试只表示受理；历史说明抑制与逐频道结果；诊断区分弹窗和声音能力 |
+| 兄弟插件扩展 | wingsky.notifier | apiVersion=2，registerKind/send；无自我确认、无自定义出口注册口 |
 
-```mermaid
-flowchart TD
-    S(["dsh web 启动 ⇢ apply(ctx)"]) --> A["bindHost：logger / FrameBus / register /<br/>events / agents / legacySettings / expose"]
-    A --> B["installUpgrade：先读一次旧位置<br/>(宿主 settings 文档 → 服务面 → 更早的自建 json)"]
-    B --> C["installConfig：设配域自持 config.json"]
-    C --> D["installStores：history / status"]
-    D --> E["installPipeline：裁决 + 路由 + 定稿 + 投递"]
-    E --> F["installEvents：7 个宿主事件订阅"]
-    F --> G["installSdk：provide('wingsky.notifier')"]
-    G --> H["installApi：7 条 /api/dsh-notifier/*"]
-    H --> I["ctx.effect 清理：各域释放<br/>(逆序 dispose，含定时器与订阅)"]
-```
+证据：`src/server/events/impl/listen/index.ts#EventListener`、`src/server/pipeline/impl/judge/index.ts#judgeRequest`、`src/server/sdk/impl/service/type.ts#NotifierService`、`src/server/api/impl/probe/index.ts#ProbeEndpoints`。
 
-装配置得注意的地方（都是踩过的坑）：
+### 1.2 非目标
 
-- **路由注册必须在 `ctx.effect` 内**：apply 主体直接调用会在 cordis isolate 链就绪前访问服务，
-  触发 `Cyclic __proto__` 报错；
-- **帧总线是组合根本地设施**，不是宿主事件总线上的事件——总线上的名字是公共面，谁都能收发，
-  而帧只该从投递走到浏览器出口；
-- **事件处理包在「绝不向宿主抛错」的壳里**：`approval/request` 与提问是 waterfall，从这里抛出去会让
-  `next()` 不被调用，症状是「审批框不弹了」，与本插件毫无字面关联；壳里失败只记 `logger.warn`，
-  不静默吞掉（否则「通知不工作」会变成查不出原因的现象）。
+- 不接管审批决策。两条 waterfall 均以 global+prepend 旁观，通知处理失败记日志后仍交回 next（`src/index.ts#bindHost`）。
+- 不提供可靠消息队列或用户已读回执。SDK send 返回 Promise<void>；browser 帧交接不证明系统已展示（`src/server/sdk/impl/service/type.ts#NotifierService`、`src/server/pipeline/interface.ts#submit`）。
+- 不把所有 idle 当任务成功。只有新鲜 completed 证据产生完成提醒；abort、blocked 等不冒充完成（`src/server/events/impl/state/index.ts#settleIdle`）。
+- 不做错误合并、完成聚合、审批超时二次提醒。SDK 请求无调用方/请求身份契约，不能据此推导跨请求去重（`src/server/sdk/impl/service/type.ts#NotifyRequest`）。
+- 不保证任意 OS、浏览器或后台挂起状态下均能响铃、弹窗；凭据掩码不等于正文脱敏。
 
----
+<a id="aa"></a>
 
-## 3. 核心机制
+## 2. 应用架构（AA）
 
-### 3.1 事件域：7 个宿主事件 → 通知请求
+![AA：八域依赖与真实客户端链路](diagrams/notifier-aa.svg)
 
-| 事件 | 门控 | 职责 |
-|---|---|---|
-| `approval/request` | `notifyAsk` | 构造申请详情 → `ask`；**在 `await next()` 之前通知**（不短路审批） |
-| `internal/service` | — | 服务注册 `userQuestions` 时包装 `svc.ask` 补发 `question`（热重载安全：先解包残留包装） |
-| `session/event` | — | `turn/end` 记入本轮的推送证据（完成判定**首选证据**） |
-| `agent/status` | `notifyTaskDone` / `notifySubagentDone` | running→idle 跃迁做完成判定 → `done` / `subagent-done` |
-| `agent/disposed` | — | 清理该 agent 的状态机条目（防无界增长） |
-| `agent/error` | `notifyTaskError` | 转发官方 agent 载荷（含错误原文）→ `error` |
-| `agent/turn-stopping` | `notifyTurnEnd`（默认关） | `(agentId, turn)` 去重 → `turn-end`；serial 事件签名无 `next`，**不要调 `next()`** |
+### 2.1 唯一宿主组合根与八个功能域
 
-**完成判定用的是「推送优先 + 快照兜底」双源**：`session/event` 推送流记住的最新 `turn/end` 是首选证据
-（恒定新鲜）；只有在推送缺失时（插件中途挂载 / 重载窗口）才回读会话快照，且快照 turn ≤ 本轮基线 turn
-时判为陈旧丢弃。判定不通过的一轮同样记账，否则 abort 之后同一 turn 的旧证据会在下一次 idle 被当成新完成。
-只有 `completed` 报完成，aborted / interrupted / error / blocked 一律静默（失败由 `error` 负责）。
+`src/index.ts#apply` 以 bindHost 收窄 ctx，经 assemble 按依赖顺序接线。inject 是 webServer/settings；settings 虽不再保存新配置，仍是启动迁移的必需依赖。
 
-### 3.2 管线域：裁决 → 路由 → 定稿 → 投递
+| 域 | 装配与职责 | 实际能力依赖 |
+| --- | --- | --- |
+| upgrade | 最先同步迁移磁盘 | logger、legacySettings；不用尚未装配的 config 写面 |
+| config | 同步加载用户配置 | logger；频道参数类型引用 channels，不是运行时投递依赖 |
+| stores | 历史与频道状态 | config.readConfig（按需读保留期） |
+| pipeline | 唯一裁决与投递编排 | config.readConfig；stores.appendHistory/recordStatus；channels.deliver；FrameBus.emit |
+| events | 七项订阅与完成状态机 | pipeline.submit；宿主事件与 agent 注册表 |
+| sdk | 服务面与动态 kind 管理 | config.readConfig/writeConfig；pipeline.isBuiltinKind/submit；expose.provide |
+| api | 最后挂八条端点与 SSE | config 读写；stores 查询/清空；pipeline.submit；sdk 清单/确认；channels 只读探测；FrameBus.onFrame |
+| channels | 无域级 install，投递与能力探测 | 无其它功能域依赖；系统执行端口在 impl/system/deps.ts；releaseSoundTemps 收音频目录 |
 
-```mermaid
-flowchart TD
-    A["submit(request)"] --> B{"裁决 judge"}
-    B -->|"总开关关"| Z1["suppressed: disabled"]
-    B -->|"事件开关关"| Z2["suppressed: kind-off"]
-    B -->|"动态 kind 未确认"| Z3["suppressed: unlisted"]
-    B -->|"免打扰命中且未豁免"| Z4["suppressed: quiet"]
-    B -->|"无可用目标"| Z5["suppressed: no-target"]
-    B -->|"放行"| C["路由 route：kindRoutes 稀疏映射<br/>缺省 = 广播全部启用频道（失效目标回收）"]
-    C --> D["定稿 finalize：严重度归一 + 标题按码点截断"]
-    D --> E["投递 dispatch：逐出口 deliver<br/>重试 / 退避 / 节流 / 在途上限"]
-    E --> F["stores：历史 + 出口状态落盘"]
-    Z1 --> F
-    Z2 --> F
-    Z3 --> F
-    Z4 --> F
-    Z5 --> F
-```
+证据：`src/index.ts#assemble`；`src/server/<域>/deps.ts` 的 Port 与 `interface.ts`。channels 无域级 deps.ts，不能画成“八个同构 install 单例”；api 拿不到 channels.deliver。
 
-- **判据顺序即短路顺序**：`disabled` → `kind-off` → `unlisted` → `quiet`（→ 无目标时 `no-target`）。
-  `test` 跳过事件开关与免打扰——它没有宿主事件也就没有开关，而用户是主动按下它的。
-  外部（兄弟插件）注册的 kind 没有「开关」这一关，只认用户是否确认过（确认态的物理形态就是 `allowKinds`）。
-- **抑制原因随记录写进历史**：它是「为什么我没收到」的唯一答案来源，被拦截的通知同样落盘（带 `suppressed` 标记）。
-- **投递策略是 per-出口的表**（`pipeline/impl/dispatch`，按 `DeliveryTarget["type"]` 取）：
+`src/server/shared/interface.ts` 是宿主路径、IO、理由/文本设施；`src/shared/interface.ts` 是双端频道/kind/声音/拒绝码/释放栈契约，不应混成一个目录。
 
-  | 出口 | 重试次数 | 退避 | 在途上限 | 节流 |
-  |---|---|---|---|---|
-  | bark | 2 | 1000ms × 第几次 | 2 | — |
-  | system | 0 | — | — | 1s（沿用上一次结果直通，同一秒内的重复不重复弹） |
-  | webhook | 0 | — | — | — |
-  | browser | 0 | — | — | — |
+### 2.2 事件、裁决与投递
 
-### 3.3 出口域：四个出口与投递阶段
+七事件为 approval/request、**user-questions/request**、session/event、agent/status、agent/disposed、agent/error、agent/turn-stopping；当前没有 internal/service 包装 svc.ask 的链路。事件域只产请求，开关统一由管线判定（`src/index.ts#bindHost`、`src/server/events/impl/listen/index.ts#EventListener`）。
 
-`channels/impl/deliver` 是四个出口共用的投递阶段：按出口能力截断 → 交给出口 → 归一结果
-（`{status:"ok"}` / `{status:"failed", reason, retryable}`）。展示上限按码点（值取自 0.2.3 的 channel capabilities）：
+完成判定推送优先、快照兜底：running 记基线；session/event 的 turn/end 优先；推送缺席才读快照，快照 turn 不比基线新则弃用。idle 无论是否通知都记 lastEndedTurn，防旧证据复用；disposed 清理状态；turn-stopping 按 agent+turn 去重（`src/server/events/impl/state/index.ts#AgentStateMachine`）。
 
-| 出口 | 标题上限 | 正文上限 | 说明 |
-|---|---|---|---|
-| system | 64 | 256 | 宿主机器上弹原生 toast；Linux 经宿主自播事件音（主题音缺失时改用运行时合成的提示音） |
-| browser | 64 | 2048 | SSE 帧 → 浏览器 Notification（非安全上下文降级为页面横幅 + 提示音 + 标题） |
-| bark | 64 | 4096 | `POST {baseUrl}/push`，`device_key` 走 body 不落 URL；成功判定 = HTTP 2xx 且响应体 `code===200` |
-| webhook | 64 | 4096 | 两步法模板（预置 ntfy / gotify / custom），凭据只进 header/body |
+三入口 events / api 测试 / sdk 均进 submit：
 
-失败原因摘要单独截断到 300 码点——状态页只有一行，原因是摘要不是全文。
+1. judgeRequest：disabled → kind-off → unlisted → quiet。test 仍受组合层总开关约束，但跳过其余三关。quiet 支持跨午夜和 allowKinds 豁免。
+2. routeTargets：只取 enabled 频道；kindRoutes 空或缺省表示全部启用频道；onlyChannel 收窄且绕过 kindRoutes。失效 id 被识别，不代表自动重写用户配置。
+3. finalize 与出口展示上限：按码点截断；标题均 64，正文 system 256、browser 2048、Bark/Webhook 4096。
+4. dispatch：逐目标 fail-soft。Bark 仅可重试失败最多重试 2 次，退避 1s/2s、每频道在途 2，等待队列无上限。system 1s 节流当前记 skipped/reasonThrottled，**不沿用上次成功结果**；其它出口不重试。节奏按 channelId 键控，skipped 不更新“最后投递状态”。
 
-系统出口的 Linux 自播回退链（链序、运行期判据、临时音频素材、能力面三态与未实测面）的
-设计依据见 [系统提示音功能设计](../../packages/dsh-notifier/docs/sound-playback-design.md)。
+证据：`src/server/pipeline/impl/judge/index.ts#judgeRequest`、`impl/route/index.ts#narrowRoutes`、`impl/dispatch/index.ts#POLICIES` / `Dispatcher`；`src/server/channels/impl/deliver/caps.ts#displayCaps`。
 
-### 3.4 存储域与共享层
+browser target 的 emitFrame 经组合根私有 FrameBus 到 api StreamHub，不经过宿主公共事件总线；api 只消费帧（`src/index.ts#FrameBus`、`src/server/pipeline/impl/route/index.ts#browserTarget`）。
 
-| 文件 | 位置 | 语义 |
-|---|---|---|
-| `config.json` | `<DSH_HOME>/@wingsky-1/dsh-notifier/` | 用户设置（插件自持，不再用官方 settings 命名空间存新值） |
-| `history.jsonl` | 同上 | 追加写；读面最多交出最近 200 条，`historyMaxAgeDays` 按天过滤；写侧串行队列 |
-| `status.json` | 同上 | 出口最近终态 + 连续失败计数；内存镜像 + 500ms 防抖落盘；条目上限 64 |
-| `seq.json` | 同上 | SSE 序号计数器（重启后续计数） |
-| `version` | 同上 | **存储版本刻度**（存储升到哪版），不是插件版本 |
+### 2.3 客户端的实际拆分
 
-共享层 `shared/` 提供三件事：日志端口、原子文本读写（读 / 异步写 / 同步写）、产品布局路径解析。
-它是叶子——不依赖任何域，且所有跨域引用只走 `shared/interface.ts` 门面。
+`src/client/index.tsx` 只导出 apply/inject（slots、locale），但仍持有 ROUTES、fetch 包装、SettingsCard 与通知展示编排，不是已经彻底拆薄的入口。
 
----
+| 模块 | 职责 |
+| --- | --- |
+| notify/session.ts | SSE、lastSeq、看门狗、主动重连 |
+| notify/policy.ts、lease.ts | 可见性策略、localStorage 多标签租约 |
+| notify/audio.ts、display.ts、title.ts、registry.ts | 音频、横幅、标题、带 owner 的通知回收 |
+| settings/panes、channels、parts | 频道/事件/历史面板，频道卡片，诊断状态与控件 |
+| settings/diff.ts、save-guard.ts、mask.ts | 差量、并发保存防护与掩码交互 |
+| capabilities.ts、api-error.ts、reason-text.ts、locale.ts/locales.ts | 客户端能力、结构化拒绝、理由本地化与字典 |
 
-## 4. 路由与配置
+apply 不要求打开设置卡片就启动通知半区；回前台恢复标题并请求重连。释放栈回收连接、看门狗、监听、通知与样式；owner 防旧实例 teardown 删除新实例资源（`src/client/index.tsx#apply` / `pageOwner`、`src/client/notify/session.ts#startNotifySession`）。
 
-7 条 `/api/dsh-notifier/*` 路由全部走 loopback 围栏（非回环 403）——**经 lan-proxy 局域网直连时一律 403 属预期**
-（安全护栏），需走 HTTPS 代理或隧道形态访问（见 README 部署节）。
+### 2.4 HTTP 面
 
-| 路由 | 方法 | 说明 |
-|---|---|---|
-| `/api/dsh-notifier/config` | GET/PUT | GET 设置快照（凭据掩码）/ PUT 增量 patch（可选 `expectedRevision` 乐观并发） |
-| `/api/dsh-notifier/events` | GET | SSE 通知帧（`?since=<seq>` 断线补拉） |
-| `/api/dsh-notifier/test` | POST | 测试通知（收敛到管线、跳过免打扰；可指定单频道） |
-| `/api/dsh-notifier/history` | GET/DELETE | 最近 200 条记录 / 清空 |
-| `/api/dsh-notifier/status` | GET | 出口投递状态（原文截断的错误摘要） |
-| `/api/dsh-notifier/kinds` | GET/POST | 动态 kind 清单与确认（确认结果持久化进 `allowKinds`） |
-| `/api/dsh-notifier/health` | GET | 健康检查 |
+路径统一前缀 /api/dsh-notifier；事实源为 `src/server/api/impl/service/index.ts#ApiService.install`。
 
-**升级链**（`upgrade` 域）：启动时读一次旧位置——**宿主 settings 文档文件**优先（`describe()` 只列**已注册**的
-命名空间，而本插件 0.2.4 起不再注册它，服务面那条路读不到存量的 user 层，故退为兜底），更早的自建 json 最后；
-读到的用户层写进 `config.json`，此后只有这一个读写面。旧存储位置（`DSH_HOME` 根目录下的文件）由
-`impl/steps/storage-layout` 搬到包私有目录，并在 `version` 里留下刻度。
+| 路径 | 方法 | 语义 |
+| --- | --- | --- |
+| /config | GET/PUT | 掩码视图；增量 patch 与可选 expectedRevision |
+| /events | GET | SSE，since 查询参数补拉 |
+| /test | POST | 固定测试通知、可选 channelId；只报告受理 |
+| /history | GET/DELETE | 最近历史 / 清空 |
+| /status | GET | 频道最后终态与连续失败 |
+| /kinds | GET/POST | 动态 kind 清单 / 用户确认 |
+| /health | GET | 平台、sseEvicts、能力摘要 |
+| /diagnostics | GET | 完整宿主能力与修复建议 |
 
----
+health/diagnostics 共用 Promise 缓存探测，8s 总预算；失败/超预算回“无法判定”，不让附属诊断拖垮 health 主面（`src/server/api/impl/probe/index.ts#ProbeEndpoints`）。
 
-## 5. 机器强制的结构约束
+<a id="da"></a>
 
-本包的结构不是靠自觉维持的，靠门禁：
+## 3. 数据架构（DA）
 
-| 门禁 | 盯什么 |
-|---|---|
-| `verify-dir-imports` | 跨模块引用只能落在目标域的 `interface.ts`；`impl` 不得直引他域实现；跨模块**值**依赖图不得成环；`src` 下每个文件必须在变异拓扑的 mutate/exclude 面内 |
-| `forbid-module-state-src` | `src` 顶层禁止 `let` / `var`（模块级可变状态是跨实例串味的源头） |
-| `pack:check` | 声明合并（`Context` 上的服务名）必须可达 `lib/index.d.ts` |
-| `pnpm contract` / `export-surface-snapshot` | 对外导出面与冻结基线零 diff；新导出必须登记分类 |
-| `forbid-src-tests` | 测试不得写进 `src/` |
+![DA：持久化、SSE 与生命周期](diagrams/notifier-da.svg)
 
-类型纪律（`src/server/` 内）：零 `unknown`、零 `| null`、零 `| undefined` 联合——用判别联合代替
-（`{ok:true} | {ok:false}`、`{found:true;…} | {found:false}`），让「没有」成为显式分支而不是漏判。
+### 3.1 五份落盘物与内存状态
 
----
+根为 `<DSH_HOME>/@wingsky-1/dsh-notifier/`，由仓库 `shared/dsh-home.js#dshHome` 与包内 `src/server/shared/paths.ts#notifierFile` 决定。
 
-## 6. 安全与边界
+| 载体 | 协议 | 生命周期边界 |
+| --- | --- | --- |
+| config.json | stored 原样 → user 净化 → effective 完整；同步加载、排队原子写 | 不是文件 watcher，运行期写走 writeConfig |
+| history.jsonl | 逻辑追加，实际串行读改写+原子整文件替换 | 超过 400 行压到尾 200；读最多 200，按 historyMaxAgeDays 过滤 |
+| status.json | channelId → lastTs/lastStatus/failStreak/lastError | 同步懒加载镜像；500ms 合并写；record 淘汰至 64 项 |
+| seq.json | 十进制整数文本加换行，不是 JSON 对象 | 每帧异步写序号；replay 不持久化 |
+| version | 单行存储版本刻度 | 成功迁移步骤后写，当前步骤目标 0.2.4 |
 
-- 通知文本只含任务标题 / 工具名 / 申请理由等元信息，**不含工具参数**；
-- **内容脱敏规则表已删除**（#733 收敛）：正文按原文落盘与投递，长度只受出口展示上限约束；
-  需要「某类文本永不出现」的部署应在事件源处理；
-- **bark 出口的 4xx 响应体会被回显**（服务端可能把 `device_key` 原文写回），因此它会进入
-  服务端日志、`status.json` 与 `GET /status`。这是已知且已登记的残余风险；
-- **两个通道到达的机器不同**：浏览器通知推到你正在用的浏览器客户端，系统 toast 弹在 **dsh web 宿主机器**
-  （headless 服务器上无桌面则不可用）——部署形态决定哪个通道有效；
-- 浏览器通知需安全上下文（HTTPS 或 localhost），局域网 HTTP 自动降级；权限在手势内请求；
-- **Bark 出口**：baseUrl 限 http(s)、拒带凭据 URL、丢弃 query/hash；不做域名白名单（内网自建 bark-server 合法）；
-  已知残余风险：局域网内可访问者借 `/test` 触发一次对 baseUrl 的出站 POST。
+历史含 suppressed 与 channels 明细；结果为 ok/failed/skipped。理由为 code/params/detail，旧散文读取时归一，状态 detail 截到 300 码点（`src/server/stores/impl/history/index.ts#HistoryStore`、`src/server/stores/impl/status/index.ts#StatusStore`）。
 
----
+### 3.2 配置一致性与用户确认
 
-## 7. 已知限制
+`src/server/config/impl/service/index.ts#ConfigStore.write`：掩码还原 → 校验 → 队列 commit → 比 revision → 合并 → 原子落盘 → adopt。失败不采纳内存；未知普通键保留、危险原型键剔除；新增频道无原凭据，不能提交掩码占位。
 
-- 完成判定只认 `completed`：`max-tokens` / `blocked` 等不报完成（由错误提醒或人工处理）；
-- SSE 连接表**不设连接数上限**：半开连接（设备息屏 / 切网 / NAT 静默掐断）不发 FIN、
-  close/error 不触发，只能等超窗回收。真正把这类连接数收住的是 **stalled**——一条不再消费的连接
-  会让心跳写返回 false，连续超 90s 即判死回收；**maxAge 轮换**（存活超 120min 且业务空闲超 15min）
-  处理的是「长命但空闲」的另一类：心跳写不算业务活动，业务帧会刷新空闲计时，所以有稳定通知流时
-  这一路不触发，活跃连接本来也不该被它回收。这里的连接数含义是**服务端未释放句柄数**而非在线设备数；
-- 系统出口的半开失败（子进程已写、进程未退）只记日志，不影响其它出口（沿用 0.2.3 语义）；
-- Windows toast 依赖 PowerShell（系统自带），AUMID 注册无需管理员；
-- **没有请求身份契约**：SDK 的 `send` 入参不含调用方标识，因此「同一请求的重复通知」在架构上不可识别——
-  错误合并、完成聚合、审批超时二次提醒这三个依赖身份的语义**已整体删除**，不做半成品。
+revision 是递归稳定 JSON 的 SHA-256 摘要前 32 位，**不是单调计数**；数组顺序是内容。expectedRevision 可选，省略不校验冲突，端点冲突回 409；不是分布式锁（`#revisionOf` / `stableJson`）。channels 保存内置与实例频道，kindRoutes 稀疏路由，allowKinds 保存用户确认；SDK 登记表则为运行期状态。确认只经 api 管理面，不暴露给服务消费者（`src/server/sdk/interface.ts#confirmKind`）。
+
+### 3.3 SSE 不是可靠消息队列
+
+`src/server/api/impl/stream/index.ts#StreamHub` 将 body/pop 转 message/playOnly，附 kind/seq/ts/sound/whenVisible；先增序号、入内存最近 200 帧缓冲、异步落序号、广播。开流立即写 connected 注释刷新响应头，30s 心跳；只按 ?since=N 回 seq>N，不声明 SSE id/Last-Event-ID 协议。
+
+客户端同一 lastSeq 既去重又生成主动新建连接的 since URL；JSON 解析成功才刷新活动时间。静默超过 60s 触发看门狗重连，检查间隔 65s、重连最小间隔 5s；可见性恢复也触发。刷新页面重建内存水位，不能承诺跨刷新 exactly-once（`src/client/notify/session.ts#startNotifySession`）。
+
+共享 `shared/sse-hub.js#createSseHub` 管句柄/心跳/回收，不设连接数硬上限；stalled 回收与 maxAge 空闲轮换处理不同残留。health 给聚合 sseEvicts，不给逐连接明细。句柄数不是在线设备数或送达数。重启清 replay；序号写失败不阻塞广播，故仍有重启后水位回退与补拉窗口丢失的边界。
+
+### 3.4 迁移与卸载
+
+upgrade 同步先跑 0.2.3 → 0.2.4：布局 → 配置形态 → 理由形态（`src/server/upgrade/impl/steps/index.ts#STEPS`）。
+
+- 布局保留已有目标；旧文件写到新位置后归档 .migrated.bak；无旧文件建空历史/状态/0 序号（`impl/steps/storage-layout.ts#migrateStorageLayout`）。
+- 旧配置读取：宿主文档文件 → settings.describe → 更早自建 JSON/Bak；迁移合并时存量覆盖现文件，顶层频道键搬入 channels；全新无用户层不凭空写默认配置（`impl/legacy/index.ts#readLegacySettings`、`impl/steps/config-shape.ts#migrateConfigShape`）。
+- 动作或刻度写失败中止启动，刻度不抢先前移；已完成文件操作不是整组事务回滚。存储版本落差告警，不自动降级（`impl/chain/index.ts#applyStep` / `reportGap`）。
+- apply 的 finally 登记已采集释放栈；正常逆序 api→sdk→events→pipeline→stores→config→upgrade，音频临时目录最后收。不能推断各域内部部分安装失败都具备完整回滚（`src/index.ts#apply` / `assemble`）。
+- stores 不等在飞写；status 取消未触发 debounce，最近状态可能未落盘；history.clear 不进 append 队列，与在飞追加竞争可写回已清记录（`src/server/stores/interface.ts#releaseStores`、`impl/history/index.ts#clear`）。
+
+<a id="ta"></a>
+
+## 4. 技术架构（TA）
+
+![TA：挂载、构建与安全兼容边界](diagrams/notifier-ta.svg)
+
+### 4.1 挂载与构建依赖
+
+cordis.patch.yml 以 ui-dsh-notifier 插入 profile；宿主 exports→lib/index.js，客户端→lib/client.js；dsh.client.platform=web，客户端包依赖 dsh-client-connection。Node >=20；官方 optional peer 走 catalog，实际服务来自宿主，适配版本以仓库 pnpm-workspace.yaml 的 rc catalog 为准，不以本机 dsh 版本推断（`package.json#exports` / `dsh` / `engines`）。
+
+build 为 clean-lib→tsc→scripts/build/bundle-host.ts；esbuild 内联第三方代码、createRequire 垫片与许可证归集支持发布物自包含。yaml 用于旧 settings 文档，React 用于客户端设置组件；“构建期依赖”不代表相关逻辑不在运行期执行。样式为 src/client/style.css，经 ensureStyle 注入。
+
+**当前客户端 ROUTES 在 index.tsx，宿主端点表另在 ApiService**，不能照搬 worktree sidebar 的 ROUTES 导出与构建期强一致说明（`src/client/index.tsx#ROUTES`、`src/server/api/impl/service/index.ts#ApiService`）。
+
+### 4.2 请求、内容与出站安全
+
+八条 API 由 `src/server/api/impl/route/index.ts#registerEndpoints` 统一处理：先围栏 403，再方法 405（Allow），然后同步/异步异常收口；响应头已发则不重复写 500。围栏保留裸 error，加 code/status sibling；业务端点另用 ok:false/error 对象。
+
+仓库 `shared/loopback.js#isLoopbackRequest` 实际检查回环 socket peer、回环 Host、默认拒绝 cross-site，存在 Origin 时 authority 须匹配 Host；不是只看 IP，也不是 HTTPS 即放行。
+
+**经 LAN proxy 不等于一律 403。** 代理走回环上游，改写 Host 与存在的 Origin，保留 sec-fetch-site；合法同源请求可满足 notifier 围栏，直接非回环 peer/Host 则拒绝。HTTPS 主要解决浏览器安全上下文，不替代 API 准入或访问控制；代理扩大可达信任边界（跨包证据：`packages/dsh-lan-proxy/src/server/proxy/impl/proxy.ts#rewriteHeaders`；见 [LAN proxy 架构](dsh-lan-proxy.md)）。
+
+正文会含标题、申请理由、错误原文，旧内容脱敏规则已退役。配置掩码只保护视图，不是磁盘加密；外部失败响应可能反射凭据并进入历史/状态。Bark 限 http(s)、拒 URL 内凭据、device_key 走 body；Webhook 模板/认证也可含敏感内容。不存在目的域白名单保证，允许内网自建服务；可达测试面的人可能触发对配置目标的出站请求。证据：`src/server/channels/impl/bark/index.ts`、`impl/webhook/index.ts`、`src/server/config/impl/redact/index.ts`，部署策略见包 README 安全模型。
+
+### 4.3 平台与兼容边界
+
+系统出口使用 Windows PowerShell WinRT、macOS osascript、Linux notify-send，Linux 音频含自播与合成临时音；宿主桌面、D-Bus、播放器与音频设备可用性不能由源码代证。浏览器需安全上下文、Notification 权限与音频手势解锁；降级横幅/音频/标题也受后台挂起影响。SDK apiVersion=2、官方事件签名、slots/locale 与双端路由表是升级时需复核的耦合点。
+
+证据：`src/server/channels/impl/system/index.ts`、`impl/system/players.ts`、`impl/system/tone-file.ts`、`src/client/index.tsx#showNotification` / `handleNotifyFrame`；详见 [系统提示音设计](../../packages/dsh-notifier/docs/sound-playback-design.md)。
+
+### 4.4 门禁、证据与待核项
+
+包 test 脚本 run-vitest.mjs --min 64 是下限契约，不是本文宣称的实际数量。现有 test/unit、integration、client-unit、client-dom、e2e 覆盖域判据、组合/服务契约、纯逻辑、DOM 生命周期与 smoke；存在测试不等于本次跑通。
+
+结构门禁守跨域 interface/deps、值依赖环与变异拓扑；模块状态门禁不等于对象内部无状态。pack:check 守声明合并可达性，contract/export-surface-snapshot 守公开面，forbid-src-tests 守测试布局。新增文档链接的最终门禁按 [AGENTS.md](../../AGENTS.md) 执行 gate:pr；本次子任务只交静态文档/图件证据，整合门禁由主代理报告，不宣称 CI 通过。
+
+待核：真实多标签租约竞态、刷新重放体验、跨进程 seq 回退、真实网络 SSE 半开、三平台音频与 HMR 资源收口。实现明确边界还包括 history.clear 竞争、Bark 排队无上限、status 未落盘尾窗；本次不顺带修改源码。
+
+## 5. 图源与维护
+
+- [BA HTML](diagrams/notifier-ba.html)、[AA HTML](diagrams/notifier-aa.html)、[DA HTML](diagrams/notifier-da.html)、[TA HTML](diagrams/notifier-ta.html) 是独立图源。
+- 原 [notifier-architecture.svg](diagrams/notifier-architecture.svg) 与 [HTML](diagrams/notifier-architecture.html) 保留为历史单图，不作为当前事实源。
+- 方法论：[ARCHITECTURE-METHOD.md](../ARCHITECTURE-METHOD.md)；构建验证：[DEVELOPMENT.md](../DEVELOPMENT.md)。
+
+导出命令：`python3 scripts/lib/export-diagram-svg.py docs/architecture/diagrams/notifier-ba.html`，其它视图替换 ba 为 aa/da/ta。实际命令结果在交付说明单列，不由文中复现命令推定。

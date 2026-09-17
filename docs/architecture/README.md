@@ -1,7 +1,8 @@
 # dsh-plugin-hub 插件架构文档
 
 > 本目录用**图解为主**的方式，讲清每个插件的**功能、原理、使用方式**。
-> 每份文档包含：功能概览 → 总体架构图 → 核心机制 / 时序 → 使用方式 → 安全模型与边界，
+> lan-proxy、notifier 与 worktree-sidebar 按 BA 业务 / AA 应用 / DA 数据 / TA 技术四视图组织；
+> 其余文档按功能概览 → 总体架构图 → 核心机制 / 时序 → 使用方式 → 安全模型与边界组织，
 > 与各插件包 README（安装 / 配置 / 验证的快速上手）互补。
 >
 > 图使用两种载体（源数据均归档、可复现）：
@@ -79,7 +80,7 @@ flowchart LR
 | 机制 | 说明 | 实现位置 |
 |---|---|---|
 | **loopback 围栏** | 所有 `/api` 路由强制回环来源（remoteAddress + Host + 非跨站 + Origin 同源），非法 403 / 方法错 405——DNS 重绑定与跨站防御 | `shared/loopback.js`（`isLoopbackRequest`） |
-| **官方 settings 存储** | 插件配置存 dsh 官方 `settings.register` 命名空间（`<DSH_HOME>/settings.yaml`），组合层 cordis config 作 base 层，热更新由 `scope.watch` 驱动 | `shared/settings-namespace.js`（`installSettingsNamespace`） |
+| **官方 settings 存储** | 使用此机制的插件（如 lan-proxy）将配置存官方 `settings.register` 命名空间，cordis config 作 base 层，热更新由 `scope.watch` 驱动；notifier 当前自持 `config.json`，官方 settings 仅作迁移来源，见其 DA 视图 | `shared/settings-namespace.js`（`installSettingsNamespace`） |
 | **客户端干净模块** | 只 `export function apply(ctx)` + `export const inject`；样式独立 `src/client/style.css`；构建期内联（`scripts/build/build-client.ts`） | 各包 `src/client/index.ts` |
 | **发布物自包含** | 第三方依赖构建期内联进 `lib/`，运行时零 npm 依赖；license 自动归集 `lib/THIRD-PARTY-LICENSES` | `scripts/build/` |
 | **loopback 服务端/客户端契约** | 宿主端在 index.ts 透出纯函数/常量，smoke 从 `lib/index.js` 导入断言（路由围栏 + 客户端契约） | `test/*.test.ts` |
@@ -91,9 +92,17 @@ flowchart LR
 | 文档 | 图 | 源文件 |
 |---|---|---|
 | 本页（全景） | 挂载流程图 | mermaid 内嵌（无独立源） |
-| [dsh-lan-proxy.md](dsh-lan-proxy.md) | 转发架构图 | `diagrams/lan-proxy-architecture.html` |
+| [dsh-lan-proxy.md](dsh-lan-proxy.md) | BA 业务架构 | [图源 HTML](diagrams/lan-proxy-ba.html) |
+| [dsh-lan-proxy.md](dsh-lan-proxy.md) | AA 应用架构 | [图源 HTML](diagrams/lan-proxy-aa.html) |
+| [dsh-lan-proxy.md](dsh-lan-proxy.md) | DA 数据架构 | [图源 HTML](diagrams/lan-proxy-da.html) |
+| [dsh-lan-proxy.md](dsh-lan-proxy.md) | TA 技术架构 | [图源 HTML](diagrams/lan-proxy-ta.html) |
+| [dsh-lan-proxy.md](dsh-lan-proxy.md) | 转发架构图（历史图源） | `diagrams/lan-proxy-architecture.html` |
 | [dsh-mcp-manager.md](dsh-mcp-manager.md) | 双轨架构图 | `diagrams/mcp-manager-architecture.html` |
-| [dsh-notifier.md](dsh-notifier.md) | 按域架构与通知管线图 | `diagrams/notifier-architecture.html` |
+| [dsh-notifier.md](dsh-notifier.md) | BA 业务架构 | [图源 HTML](diagrams/notifier-ba.html) |
+| [dsh-notifier.md](dsh-notifier.md) | AA 应用架构 | [图源 HTML](diagrams/notifier-aa.html) |
+| [dsh-notifier.md](dsh-notifier.md) | DA 数据架构 | [图源 HTML](diagrams/notifier-da.html) |
+| [dsh-notifier.md](dsh-notifier.md) | TA 技术架构 | [图源 HTML](diagrams/notifier-ta.html) |
+| [dsh-notifier.md](dsh-notifier.md) | 按域架构与通知管线图（历史图源） | `diagrams/notifier-architecture.html` |
 | [dsh-provider-usage.md](dsh-provider-usage.md) | 宿主端渲染架构图 | `diagrams/provider-usage-architecture.html` |
 | [dsh-worktree-sidebar.md](dsh-worktree-sidebar.md) | BA 业务架构（能力面 → 工具 → 可见产物） | `diagrams/worktree-sidebar-ba.html` |
 | [dsh-worktree-sidebar.md](dsh-worktree-sidebar.md) | AA 应用架构（组合根 + 五域 + 适配层 + 浏览器端接管） | `diagrams/worktree-sidebar-aa.html` |
