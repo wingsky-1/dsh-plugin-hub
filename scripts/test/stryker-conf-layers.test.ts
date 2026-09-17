@@ -113,6 +113,11 @@ function makeFixtureRoot(extraFiles = {}, topologyOverride = TOPOLOGY) {
   return root;
 }
 
+/** 主线程上的同步毫秒退避：Atomics.wait 是 Node 里唯一不烧 CPU 的同步 sleep。 */
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 /**
  * 删掉 fixture 根。
  *
@@ -120,12 +125,26 @@ function makeFixtureRoot(extraFiles = {}, topologyOverride = TOPOLOGY) {
  * 存在残余竞态：rmSync 的递归删除在「读完目录条目 → rmdir」之间若仍有条目落盘，
  * rmdir 会抛 ENOTEMPTY。默认 maxRetries=0 时 Node **不重试**，该竞态直接冒到用例上
  * （真机 CI 已复现：PR #863 的 Build / Contract / Smoke / Pack 里 T3② 在清理阶段
- * 报 ENOTEMPTY, Directory not empty: /tmp/s2b-fixture-*）。maxRetries / retryDelay
- * 正是 Node 官方为 ENOTEMPTY / EBUSY 类清理竞态提供的重试机制，此处把清理收口到一个
- * 位置统一加固，避免 22 处各自裸调 rmSync 时口径漂移。
+ * 报 ENOTEMPTY, Directory not empty: /tmp/s2b-fixture-*）。此处把清理收口到一个位置
+ * 统一加固，避免 22 处各自裸调 rmSync 时口径漂移。
+ *
+ * 为什么退避自己写、不交给 Node 的 maxRetries / retryDelay：同步递归删除在 POSIX 上
+ * 把退避实现成 `sleep(i * retryDelay / 1000)`（整秒 + 整除截断），毫秒级 retryDelay
+ * 一律截成 0 秒——`maxRetries: 10, retryDelay: 50` 因此退化成 11 次零间隔重试
+ * （实测 11 次合计约 10ms），对持续数十毫秒的残余写者与裸调无差别（对照实验
+ * 296/300 vs 裸调 298/300 次 ENOTEMPTY）。退避改在 JS 里按毫秒计，口径与原来的
+ * maxRetries: 10 + retryDelay: 50 线性退避一致（上限 2.75s）；窗口过后仍删不掉照样抛。
  */
 function removeFixtureRoot(root) {
-  rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rmSync(root, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      if (err.code !== "ENOTEMPTY" || attempt >= 10) throw err;
+      sleepSync((attempt + 1) * 50);
+    }
+  }
 }
 
 /** 覆写 fixture 工作区的拓扑（基准 commit 不变 —— 这正是判据⑦ 要看的差异）。 */

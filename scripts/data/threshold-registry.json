@@ -184,7 +184,7 @@
     },
     {
       "source": "scripts/data/dsh-worktree-sidebar-export-surface.json",
-      "why": "包级资产：worktree-sidebar 导出面基线（84 块），同上零消费（实测 export-surface-snapshot --package dsh-worktree-sidebar 可跑通但三处调用点全部只传 dsh-notifier）；不属阈值面，缺口载体见 #843 裁决清单 v2 的 R2-M-1。"
+      "why": "包级资产：worktree-sidebar 导出面基线（84 块），同上零消费（实测 export-surface-snapshot --package dsh-worktree-sidebar 可跑通，但仓内八处调用点只覆盖 dsh-notifier 与 dsh-lan-proxy，均不传本包）；不属阈值面，缺口载体见 #843 裁决清单 v2 的 R2-M-1。"
     },
     {
       "source": "scripts/data/gate-exemptions.json",

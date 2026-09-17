@@ -6,7 +6,7 @@
     {
       "pattern": "**/*.d.ts",
       "kind": "type-only",
-      "reason": "类型声明文件无运行时代码，不可覆盖（packages/*/src 下 8 个 + shared 下 10 个）",
+      "reason": "类型声明文件无运行时代码，不可覆盖（packages/*/src 下 4 个 + shared 下 9 个）",
       "since": "#722 阶段三"
     },
     {
@@ -44,7 +44,7 @@
     {
       "pattern": "packages/dsh-lan-proxy/src/client/**",
       "kind": "pending-project",
-      "reason": "lan-proxy 客户端（5 文件）：尚未按 #769 的口径重写，test/client 下只有 1 个读产物的文件，没有直连 src 的判据。计入分母只稀释全局值，不产生真实约束力。",
+      "reason": "lan-proxy 客户端（7 文件：5 个 .ts + 1 个 .tsx + style.css）：尚未按 #769 的口径重写，test/client 下只有 1 个读产物的文件，没有直连 src 的判据。计入分母只稀释全局值，不产生真实约束力。",
       "exitCriteria": "该包客户端重写、且有直连 src 的判据后删除本条并单独度量",
       "since": "#769",
       "reviewBy": "2027-03-31"

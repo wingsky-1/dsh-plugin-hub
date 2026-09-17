@@ -73,6 +73,7 @@
 - `lib/plugins-manifest-lib.ts` — 插件清单单一事实源（issue #36）纯函数库。
 - `lib/mutation-ledger-lib.mjs` — 变异段台账的解析与覆盖对账纯函数（#718 S0.2，与 `gate/mutation-ledger.mjs` 同源实现，测试离线 import）。
 - `lib/gate-exit.mjs` — 门禁「自身故障」的唯一退出口（#843 P-2）：只暴露 `failClosed(why)`，打印 `::error::门禁故障（非判据结论）：<why>` 后 `process.exit(2)`。1 = 判据按设计判红、2 = 门禁自己坏了，两者必须在日志上可区分（本轮真实事故正是把 exit 2 读成了判红）。语义的唯一事实源在 `AGENTS.md` 的门禁一节。
+- `lib/ci-ism-denylist.mjs` — 仓库根 CI-ism 未跟踪文件判据（#843 评论侧 L4）的纯实现：denylist（GitHub Actions 运行时文件 + `*.jsonl` / `undefined/`）+ 载体自证（扫描面为空 / 不是仓库根 / 清单漏形态一律判红）+ git 探测与裁决分离；`test/ci-ism-denylist.test.ts` 离线 import 它做注入对照。
 - `lib/exemption-gate.ts` — 路径受限门禁的共享实现（#733 计划项 3.2.2）：豁免机制（真实行注释词法 / marker 匹配 / 三态裁决 / 台账读取与反向腐烂校验）+ 扫描面与参数枚举（`isScannedSourceFile` / `collectSrcFiles` / `listPackageNames` / `relPath` / `argValue`）；策略与扫描器留在各门禁自己手里。豁免机制当前只剩 `gate/forbid-module-state-src.mjs` 一个用户（`gate/verify-dir-imports.mjs` 共用台账读取；homedir 面已无豁免通道，#765）。
 - `lib/threshold-registry.mjs` — 阈值声明表的读取、结构与覆盖面校验、按 kind 的通用比较器（#843 D5）：两侧事实源由调用方注入（`readBase` / `readWorkspace`），`makeSourceLoader` 按 `sources` 声明顺序取第一个**存在**的源（迁移期双读的形态即由此表达，而不是特判）；`validateDeclarations` 把「新数据文件未登记 / 幽灵声明 / 缺字段」变成判据，`validateGuardFacts` 拦「声明了但两侧都取不到值」的幽灵判据。
 - `lib/gate-scope-registry.ts` — 路径受限门禁的**扫描范围**读取与通配展开（#733 计划项 3.2.1）：未登记 / 范围解析为空一律抛错（未登记即红）。
