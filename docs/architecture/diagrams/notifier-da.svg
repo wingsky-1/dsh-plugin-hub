@@ -1,166 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg viewBox="0 0 1520 1010" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="nda-title nda-desc">
-<title id="nda-title">notifier DA：配置、投递记录与断线回放</title>
-<desc id="nda-desc">按写入者、状态拥有者、持久化介质与读取者绘制三条数据链；箭头表示真实数据传递，不表示阅读顺序。</desc>
-<defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
-<marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-<path d="M0 0 L8 3 L0 6Z" fill="#2e5aa8"/>
-</marker>
-</defs>
-<rect width="1520" height="1010" fill="#f5f5f5"/>
-<g font-family="system-ui,sans-serif">
-<text x="28" y="36" font-size="25" fill="#2d3142">DA 数据架构：谁写入、谁持有、谁读取</text>
-<text x="28" y="63" font-size="13" fill="#4f5d75">dsh-notifier · 源码基线 80a8584a · 箭头标注实际写入 / 读取 / 广播；虚线表示重连查询</text>
-<text x="28" y="99" font-size="16" fill="#2d3142">01 配置链 · ConfigStore 唯一写入口，落盘成功才 adopt</text>
-<g>
-<rect x="28" y="116" width="295" height="136" rx="7" fill="#fff" stroke="#eb6c36"/>
-<text x="42" y="138" font-size="11" fill="#eb6c36">写入者 · API /config PUT</text>
-<text x="42" y="163" font-size="17" fill="#2d3142">SettingsPatch</text>
-<text x="42" y="188" font-size="13" fill="#4f5d75">patch + expectedRevision?</text>
-<text x="42" y="207" font-size="13" fill="#4f5d75">调用 ConfigStore.write()</text>
-<text x="42" y="226" font-size="13" fill="#4f5d75">冲突 409；缺 expectedRevision 不比较</text>
-</g>
-<g>
-<rect x="409" y="116" width="350" height="136" rx="7" fill="#fff" stroke="#eb6c36"/>
-<text x="423" y="138" font-size="11" fill="#eb6c36">拥有者 · ConfigStore</text>
-<text x="423" y="163" font-size="17" fill="#2d3142">stored；user / effective 均由它派生</text>
-<text x="423" y="188" font-size="13" fill="#4f5d75">还原掩码 / 校验 → tail 内 commit</text>
-<text x="423" y="207" font-size="13" fill="#4f5d75">revision：SHA-256 首 32 bit 数值</text>
-<text x="423" y="226" font-size="13" fill="#4f5d75">current() 明文仅进程内；view() 掩码</text>
-</g>
-<g>
-<rect x="848" y="116" width="295" height="136" rx="7" fill="#fff" stroke="#2e5aa8"/>
-<text x="862" y="138" font-size="11" fill="#2e5aa8">磁盘 · 配置唯一存储</text>
-<text x="862" y="163" font-size="17" fill="#2d3142">config.json</text>
-<text x="862" y="188" font-size="13" fill="#4f5d75">writeTextAtomic 整文件替换</text>
-<text x="862" y="207" font-size="13" fill="#4f5d75">未知普通键保留；写失败不 adopt</text>
-<text x="862" y="226" font-size="13" fill="#4f5d75">install 同步读一次；无文件 watcher</text>
-</g>
-<g>
-<rect x="1232" y="116" width="260" height="136" rx="7" fill="#fff" stroke="#2e5aa8"/>
-<text x="1246" y="138" font-size="11" fill="#2e5aa8">读取者 · 管理界面</text>
-<text x="1246" y="163" font-size="17" fill="#2d3142">SettingsView</text>
-<text x="1246" y="188" font-size="13" fill="#4f5d75">view() → user / effective</text>
-<text x="1246" y="207" font-size="13" fill="#4f5d75">revision / writable</text>
-<text x="1246" y="226" font-size="13" fill="#4f5d75">GET 回显不外发明文凭据</text>
-</g>
-<path d="M323 182 H409" fill="none" stroke="#2e5aa8" stroke-width="1.5" marker-end="url(#arrow)"/>
-<text x="327" y="172" font-size="11" fill="#2e5aa8">write</text>
-<path d="M759 182 H848" fill="none" stroke="#2e5aa8" stroke-width="1.5" marker-end="url(#arrow)"/>
-<text x="763" y="172" font-size="11" fill="#2e5aa8">原子写</text>
-<path d="M584 252 V278 H1362 V252" fill="none" stroke="#2e5aa8" marker-end="url(#arrow)"/>
-<text x="785" y="273" font-size="12" fill="#2e5aa8">ConfigStore.view() → GET /config；不是直接读文件</text>
-<text x="28" y="322" font-size="16" fill="#2d3142">02 归档链 · 一次投递分成历史记录与最后终态，不从 config.json 串行流入历史</text>
-<g>
-<rect x="28" y="342" width="295" height="136" rx="7" fill="#fff" stroke="#eb6c36"/>
-<text x="42" y="364" font-size="11" fill="#eb6c36">生产者 · Pipeline</text>
-<text x="42" y="389" font-size="17" fill="#2d3142">submit / dispatch 结果</text>
-<text x="42" y="414" font-size="13" fill="#4f5d75">history：含 suppressed / channels</text>
-<text x="42" y="433" font-size="13" fill="#4f5d75">每频道 ok / failed / skipped</text>
-<text x="42" y="452" font-size="13" fill="#4f5d75">只有 ok / failed 更新 status</text>
-</g>
-<g>
-<rect x="409" y="342" width="350" height="136" rx="7" fill="#fff" stroke="#eb6c36"/>
-<text x="423" y="364" font-size="11" fill="#eb6c36">写入者 · HistoryStore</text>
-<text x="423" y="389" font-size="17" fill="#2d3142">append(entry) → queue</text>
-<text x="423" y="414" font-size="13" fill="#4f5d75">串行读-改-写，按保留天数过滤</text>
-<text x="423" y="433" font-size="13" fill="#4f5d75">超过 400 行才截尾 200</text>
-<text x="423" y="452" font-size="13" fill="#4f5d75">read() 最多 200，实时取保留天数</text>
-</g>
-<g>
-<rect x="848" y="342" width="295" height="136" rx="7" fill="#fff" stroke="#2e5aa8"/>
-<text x="862" y="364" font-size="11" fill="#2e5aa8">磁盘 · 历史记录</text>
-<text x="862" y="389" font-size="17" fill="#2d3142">history.jsonl</text>
-<text x="862" y="414" font-size="13" fill="#4f5d75">ts / kind / suppressed / channels</text>
-<text x="862" y="433" font-size="13" fill="#4f5d75">逻辑追加，物理原子整文件替换</text>
-<text x="862" y="452" font-size="13" fill="#4f5d75">clear 不进 append 队列：存在竞争</text>
-</g>
-<g>
-<rect x="1232" y="342" width="260" height="136" rx="7" fill="#fff" stroke="#2e5aa8"/>
-<text x="1246" y="364" font-size="11" fill="#2e5aa8">读取者 · 历史面板</text>
-<text x="1246" y="389" font-size="17" fill="#2d3142">GET /history</text>
-<text x="1246" y="414" font-size="13" fill="#4f5d75">HistoryStore.read()</text>
-<text x="1246" y="433" font-size="13" fill="#4f5d75">DELETE → clear()</text>
-<text x="1246" y="452" font-size="13" fill="#4f5d75">不承诺清空与追加的事务性</text>
-</g>
-<path d="M323 408 H409" fill="none" stroke="#2e5aa8" stroke-width="1.5" marker-end="url(#arrow)"/>
-<text x="327" y="398" font-size="11" fill="#2e5aa8">append</text>
-<path d="M759 408 H848" fill="none" stroke="#2e5aa8" stroke-width="1.5" marker-end="url(#arrow)"/>
-<text x="763" y="398" font-size="11" fill="#2e5aa8">原子写</text>
-<path d="M1143 408 H1232" fill="none" stroke="#2e5aa8" stroke-width="1.5" marker-end="url(#arrow)"/>
-<text x="1147" y="398" font-size="11" fill="#2e5aa8">read</text>
-<g>
-<rect x="409" y="509" width="350" height="136" rx="7" fill="#fff" stroke="#eb6c36"/>
-<text x="423" y="531" font-size="11" fill="#eb6c36">拥有者 · StatusStore</text>
-<text x="423" y="556" font-size="17" fill="#2d3142">mirror[channelId]</text>
-<text x="423" y="581" font-size="13" fill="#4f5d75">lastTs / lastStatus / failStreak</text>
-<text x="423" y="600" font-size="13" fill="#4f5d75">lastError.detail ≤ 300 码点</text>
-<text x="423" y="619" font-size="13" fill="#4f5d75">即时更新；上限 64，最旧先出</text>
-</g>
-<g>
-<rect x="848" y="509" width="295" height="136" rx="7" fill="#fff" stroke="#2e5aa8"/>
-<text x="862" y="531" font-size="11" fill="#2e5aa8">磁盘 · 最后投递状态</text>
-<text x="862" y="556" font-size="17" fill="#2d3142">status.json</text>
-<text x="862" y="581" font-size="13" fill="#4f5d75">500ms debounce → queue → 原子写</text>
-<text x="862" y="600" font-size="13" fill="#4f5d75">冷启动 read / record 懒加载镜像</text>
-<text x="862" y="619" font-size="13" fill="#4f5d75">卸载取消未触发 debounce</text>
-</g>
-<g>
-<rect x="1232" y="509" width="260" height="136" rx="7" fill="#fff" stroke="#2e5aa8"/>
-<text x="1246" y="531" font-size="11" fill="#2e5aa8">读取者 · 状态面板</text>
-<text x="1246" y="556" font-size="17" fill="#2d3142">GET /status</text>
-<text x="1246" y="581" font-size="13" fill="#4f5d75">read() 返回 mirror 浅拷贝</text>
-<text x="1246" y="600" font-size="13" fill="#4f5d75">ok 清 failStreak；failed +1</text>
-<text x="1246" y="619" font-size="13" fill="#4f5d75">连续失败从磁盘延续</text>
-</g>
-<path d="M175 478 V575 H409" fill="none" stroke="#2e5aa8" marker-end="url(#arrow)"/>
-<text x="186" y="565" font-size="12" fill="#2e5aa8">record(ok / failed)</text>
-<path d="M759 575 H848" fill="none" stroke="#2e5aa8" stroke-width="1.5" marker-end="url(#arrow)"/>
-<text x="763" y="565" font-size="11" fill="#2e5aa8">延迟写</text>
-<path d="M584 645 V663 H1362 V645" fill="none" stroke="#2e5aa8" marker-end="url(#arrow)"/>
-<text x="802" y="658" font-size="12" fill="#2e5aa8">StatusStore.read() → 内存优先</text>
-<text x="28" y="701" font-size="16" fill="#2d3142">03 浏览器通知链 · 历史记录不是 replay；回放只存在 StreamHub 内存</text>
-<g>
-<rect x="28" y="720" width="295" height="136" rx="7" fill="#fff" stroke="#eb6c36"/>
-<text x="42" y="742" font-size="11" fill="#eb6c36">生产者 · browser target</text>
-<text x="42" y="767" font-size="17" fill="#2d3142">私有 FrameBus</text>
-<text x="42" y="792" font-size="13" fill="#4f5d75">OutgoingFrame → StreamHub.publish</text>
-<text x="42" y="811" font-size="13" fill="#4f5d75">内部帧：body / pop / sound</text>
-<text x="42" y="830" font-size="13" fill="#4f5d75">kind / title / sound / whenVisible</text>
-</g>
-<g>
-<rect x="409" y="720" width="350" height="136" rx="7" fill="#fff" stroke="#eb6c36"/>
-<text x="423" y="742" font-size="11" fill="#eb6c36">拥有者 · StreamHub</text>
-<text x="423" y="767" font-size="17" fill="#2d3142">seq + replay[最近 200 帧]</text>
-<text x="423" y="792" font-size="13" fill="#4f5d75">++seq → 入 replay → 落序号 → 广播</text>
-<text x="423" y="811" font-size="13" fill="#4f5d75">body → message；!pop → playOnly</text>
-<text x="423" y="830" font-size="13" fill="#4f5d75">重启丢 replay；落序号不阻塞广播</text>
-</g>
-<g>
-<rect x="848" y="720" width="295" height="136" rx="7" fill="#fff" stroke="#2e5aa8"/>
-<text x="862" y="742" font-size="11" fill="#2e5aa8">持久化 · 仅序号</text>
-<text x="862" y="767" font-size="17" fill="#2d3142">seq.json</text>
-<text x="862" y="792" font-size="13" fill="#4f5d75">十进制整数文本 + 换行</text>
-<text x="862" y="811" font-size="13" fill="#4f5d75">每帧异步 writeTextAtomic</text>
-<text x="862" y="830" font-size="13" fill="#4f5d75">install 读回；失败可令重启后回退</text>
-</g>
-<g>
-<rect x="1232" y="720" width="260" height="136" rx="7" fill="#fff" stroke="#2e5aa8"/>
-<text x="1246" y="742" font-size="11" fill="#2e5aa8">拥有者 / 消费者 · 浏览器</text>
-<text x="1246" y="767" font-size="17" fill="#2d3142">lastSeq 内存水位</text>
-<text x="1246" y="792" font-size="13" fill="#4f5d75">seq ≤ lastSeq 丢弃</text>
-<text x="1246" y="811" font-size="13" fill="#4f5d75">接受新帧 → 更新 lastSeq</text>
-<text x="1246" y="830" font-size="13" fill="#4f5d75">刷新丢水位；非 exactly-once</text>
-</g>
-<path d="M323 786 H409" fill="none" stroke="#2e5aa8" stroke-width="1.5" marker-end="url(#arrow)"/>
-<text x="327" y="776" font-size="11" fill="#2e5aa8">publish</text>
-<path d="M759 786 H848" fill="none" stroke="#2e5aa8" stroke-width="1.5" marker-end="url(#arrow)"/>
-<text x="763" y="776" font-size="11" fill="#2e5aa8">异步写</text>
-<path d="M584 856 V877 H1362 V856" fill="none" stroke="#2e5aa8" marker-end="url(#arrow)"/>
-<text x="798" y="872" font-size="12" fill="#2e5aa8">SSE：首次 connected → 回放 → register；随后实时广播</text>
-<path d="M1470 856 V924 H710 V856" fill="none" stroke="#4f5d75" stroke-dasharray="5 4" marker-end="url(#arrow)"/>
-<text x="660" y="917" font-size="12" fill="#4f5d75">重连 GET /events?since=lastSeq → 仅 replay 中 seq &gt; since 的帧</text>
-<text x="28" y="964" font-size="13" fill="#4f5d75">磁盘根 &lt;DSH_HOME&gt;/@wingsky-1/dsh-notifier/；upgrade 先迁移布局 / 配置 / 理由，成功步骤后写 version，失败中止启动。</text>
-<text x="28" y="989" font-size="12" fill="#4f5d75">证据：config/impl/service · stores/impl/{history,status} · api/impl/stream · client/notify/session（路径前缀 src/server，client 除外）</text>
-</g>
+<svg viewBox="0 0 1400 800" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="nda-title nda-desc">
+<title id="nda-title">DA 数据架构 · 数据由谁管理与传递</title><desc id="nda-desc">以配置管理、历史管理、状态管理、通知流管理、客户端、迁移和通知管线作为节点；连线描述数据。</desc>
+<defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style><pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.8" fill="#d7dbe1"/></pattern><marker id="blue" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0 0 L8 3 L0 6Z" fill="#2e5aa8"/></marker><marker id="orange" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0 0 L8 3 L0 6Z" fill="#eb6c36"/></marker></defs>
+<rect width="1400" height="800" fill="#f5f5f5"/><rect width="1400" height="800" fill="url(#dots)" opacity=".5"/>
+<g font-family="'Geist',system-ui,sans-serif"><text x="40" y="53" font-size="32" font-weight="600" fill="#2d3142">DA 数据架构 · 数据由谁管理与传递</text><text x="40" y="87" font-size="17" fill="#4f5d75">dsh-notifier · 功能模块视图 · 基线 473584ce · 橙：通知投递　蓝：配置与数据</text>
+<path d="M380 190 H520" fill="none" stroke="#2e5aa8" stroke-width="2" marker-end="url(#blue)"/><text x="450" y="177" text-anchor="middle" font-size="17" fill="#4f5d75" paint-order="stroke" stroke="#f5f5f5" stroke-width="6" stroke-linejoin="round">迁移后配置</text>
+<path d="M680 240 V290 H220 V450" fill="none" stroke="#2e5aa8" stroke-width="2" marker-end="url(#blue)"/><text x="438" y="277" text-anchor="middle" font-size="17" fill="#4f5d75" paint-order="stroke" stroke="#f5f5f5" stroke-width="6" stroke-linejoin="round">生效配置</text>
+<path d="M840 180 H1160 V350" fill="none" stroke="#2e5aa8" stroke-width="2" marker-end="url(#blue)"/><text x="990" y="167" text-anchor="middle" font-size="17" fill="#4f5d75" paint-order="stroke" stroke="#f5f5f5" stroke-width="6" stroke-linejoin="round">掩码配置</text>
+<path d="M1080 350 V250 H800 V240" fill="none" stroke="#2e5aa8" stroke-width="2" marker-end="url(#blue)"/><text x="993" y="237" text-anchor="middle" font-size="17" fill="#4f5d75" paint-order="stroke" stroke="#f5f5f5" stroke-width="6" stroke-linejoin="round">偏好变更</text>
+<path d="M380 480 H450 V400 H520" fill="none" stroke="#2e5aa8" stroke-width="2" marker-end="url(#blue)"/><text x="451" y="388" text-anchor="middle" font-size="17" fill="#4f5d75" paint-order="stroke" stroke="#f5f5f5" stroke-width="6" stroke-linejoin="round">通知历史</text>
+<path d="M380 530 H420 V630 H520" fill="none" stroke="#2e5aa8" stroke-width="2" marker-end="url(#blue)"/><text x="446" y="654" text-anchor="middle" font-size="17" fill="#4f5d75" paint-order="stroke" stroke="#f5f5f5" stroke-width="6" stroke-linejoin="round">频道结果</text>
+<path d="M840 400 H1000" fill="none" stroke="#2e5aa8" stroke-width="2" marker-end="url(#blue)"/><text x="920" y="387" text-anchor="middle" font-size="17" fill="#4f5d75" paint-order="stroke" stroke="#f5f5f5" stroke-width="6" stroke-linejoin="round">历史数据</text>
+<path d="M840 630 H920 V450 H1000" fill="none" stroke="#2e5aa8" stroke-width="2" marker-end="url(#blue)"/><text x="922" y="548" text-anchor="middle" font-size="17" fill="#4f5d75" paint-order="stroke" stroke="#f5f5f5" stroke-width="6" stroke-linejoin="round">状态概况</text>
+<path d="M220 550 V715 H1160 V680" fill="none" stroke="#eb6c36" stroke-width="2" marker-end="url(#orange)"/><text x="716" y="703" text-anchor="middle" font-size="17" fill="#4f5d75" paint-order="stroke" stroke="#f5f5f5" stroke-width="6" stroke-linejoin="round">浏览器通知数据</text>
+<path d="M1160 580 V450" fill="none" stroke="#eb6c36" stroke-width="2" marker-end="url(#orange)"/><text x="1241" y="520" text-anchor="middle" font-size="17" fill="#4f5d75" paint-order="stroke" stroke="#f5f5f5" stroke-width="6" stroke-linejoin="round">实时 / 回放通知</text>
+<g id="migration" class="module"><rect x="60" y="140" width="320" height="100" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/><text x="80" y="179" font-size="24" font-weight="600" fill="#2d3142">存储迁移</text><text x="80" y="213" font-size="18" fill="#4f5d75">在启动时转换旧版数据与布局。</text></g>
+<g id="config" class="module"><rect x="520" y="140" width="320" height="100" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/><text x="540" y="179" font-size="24" font-weight="600" fill="#2d3142">配置管理</text><text x="540" y="213" font-size="18" fill="#4f5d75">保存用户偏好并提供生效配置。</text></g>
+<g id="pipeline" class="module"><rect x="60" y="450" width="320" height="100" rx="8" fill="#fff8f3" stroke="#eb6c36" stroke-width="1.6"/><text x="80" y="489" font-size="24" font-weight="600" fill="#2d3142">通知管线</text><text x="80" y="523" font-size="18" fill="#4f5d75">产生投递记录与浏览器通知数据。</text></g>
+<g id="history" class="module"><rect x="520" y="350" width="320" height="100" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/><text x="540" y="389" font-size="24" font-weight="600" fill="#2d3142">历史管理</text><text x="540" y="423" font-size="18" fill="#4f5d75">保留通知经过与各频道投递记录。</text></g>
+<g id="status" class="module"><rect x="520" y="580" width="320" height="100" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/><text x="540" y="619" font-size="24" font-weight="600" fill="#2d3142">状态管理</text><text x="540" y="653" font-size="18" fill="#4f5d75">维护各频道最近结果与失败概况。</text></g>
+<g id="client" class="module"><rect x="1000" y="350" width="320" height="100" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/><text x="1020" y="389" font-size="24" font-weight="600" fill="#2d3142">客户端</text><text x="1020" y="423" font-size="18" fill="#4f5d75">编辑偏好并消费历史与通知数据。</text></g>
+<g id="stream" class="module"><rect x="1000" y="580" width="320" height="100" rx="8" fill="#f1f5fb" stroke="#2e5aa8" stroke-width="1.6"/><text x="1020" y="619" font-size="24" font-weight="600" fill="#2d3142">通知流管理</text><text x="1020" y="653" font-size="18" fill="#4f5d75">管理通知广播与短期重连回放。</text></g>
+<text x="40" y="773" font-size="17" fill="#4f5d75">持久数据由各管理模块维护；通知回放保留在内存中，不是可靠消息队列。</text></g>
 </svg>

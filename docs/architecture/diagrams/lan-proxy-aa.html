@@ -1,42 +1,67 @@
 <!DOCTYPE html>
-<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>dsh-lan-proxy · AA 应用架构</title><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%232d3142'/%3E%3C/svg%3E"><style>:root{color-scheme:light;--paper:#f5f5f5;--ink:#2d3142}*{box-sizing:border-box}body{margin:0;padding:24px;background:var(--paper);color:var(--ink);font:16px 'Geist',system-ui,sans-serif}main{max-width:1600px;margin:auto}svg{display:block;width:100%;height:auto}p{font-size:14px;line-height:1.6}a{color:#2e5aa8}</style></head><body><main>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1550" role="img" aria-labelledby="aa-title aa-desc"><title id="aa-title">dsh-lan-proxy · AA 应用架构</title><desc id="aa-desc">apply 闭包编排五域；接口之间传的是配置、材料、回调和句柄，不是泛化的“经装配层”。</desc><defs>
-<pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.8" fill="#d9dde3"/></pattern>
-<marker id="a0" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0 0L8 3.5L0 7Z" fill="#4f5d75"/></marker>
-<marker id="a1" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0 0L8 3.5L0 7Z" fill="#eb6c36"/></marker>
-<marker id="a2" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0 0L8 3.5L0 7Z" fill="#2e5aa8"/></marker>
-<style>.title{font:600 29px 'Geist',system-ui,sans-serif;fill:#2d3142}.heading{font:600 20px 'Geist',system-ui,sans-serif;fill:#2d3142}.body{font:17px 'Geist',system-ui,sans-serif;fill:#2d3142}.mono{font:14px 'Geist Mono',ui-monospace,monospace;fill:#4f5d75}.lane{font:600 16px 'Geist',system-ui,sans-serif;fill:#4f5d75;letter-spacing:1px}.label{font:14px 'Geist',system-ui,sans-serif;fill:#4f5d75;paint-order:stroke;stroke:#f5f5f5;stroke-width:6px;stroke-linejoin:round}.edge{fill:none;stroke-width:1.6}</style></defs>
-<rect width="1600" height="1550" fill="#f5f5f5"/><rect width="1600" height="1550" fill="url(#dots)" opacity="0.45"/>
-<text x="32" y="46" class="title">dsh-lan-proxy · AA 应用架构</text><text x="32" y="79" class="body">apply 闭包编排五域；接口之间传的是配置、材料、回调和句柄，不是泛化的“经装配层”。</text>
-<rect x="20" y="105" width="1560" height="285" rx="8" fill="#f0f1f3" stroke="#cbd0d8"/><text x="38" y="132" class="lane">宿主装配闭包｜不是五域单例容器，current / 句柄 / 定时器留在 apply 内</text>
-<g id="host"><rect x="45" y="157" width="310" height="200" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="61" y="186" class="heading">官方宿主服务</text><text x="61" y="215" class="body">webServer.port / register</text><text x="61" y="240" class="body">webServer.tapIndex</text><text x="61" y="265" class="body">settings.register / describe</text><text x="61" y="290" class="body">connection.authenticatedUrl()</text><text x="61" y="315" class="body">ctx.effect 关联撤销生命周期</text><text x="61" y="342" class="mono">src/index.ts:35–38</text></g>
-<g id="root"><rect x="470" y="157" width="640" height="200" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="486" y="186" class="heading">src/server/apply.ts · apply(ctx, config)</text><text x="486" y="215" class="body">current() → resolve()；attachedScope / attachedService</text><text x="486" y="240" class="body">sync()：disposeProxy → enabled? → prepareTls → createLanProxy</text><text x="486" y="265" class="body">activeProxy / disposeProxy / syncTimer / disposed / lastBanner</text><text x="486" y="290" class="body">tokenProvider.getToken：每次读取，connection 晚挂可降级</text><text x="486" y="342" class="mono">apply.ts:72–177 / :220–340</text></g>
-<g id="entry"><rect x="1225" y="157" width="330" height="200" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="1241" y="186" class="heading">包与浏览器挂载</text><text x="1241" y="215" class="body">src/index.ts re-export apply</text><text x="1241" y="240" class="body">inject = [webServer]</text><text x="1241" y="265" class="body">client：apply / inject 干净模块</text><text x="1241" y="290" class="body">slots / locale / remote 由宿主供给</text><text x="1241" y="342" class="mono">src/index.ts / client/index.ts</text></g>
-<path d="M355 238H470" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="412" y="207" text-anchor="middle" class="label"><tspan x="412">服务注入</tspan><tspan x="412" dy="18">端口事实</tspan></text>
-<path d="M1225 237H1110" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="1167" y="222" text-anchor="middle" class="label">调用 apply</text>
-<rect x="20" y="413" width="1560" height="720" rx="8" fill="#f0f1f3" stroke="#cbd0d8"/><text x="38" y="440" class="lane">五个功能域｜标注真实门面与回调；共享叶子只提供默认值和判据</text>
-<g id="config"><rect x="45" y="495" width="400" height="238" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="61" y="524" class="heading">config · 模型 / 设置 / 管理路由</text><text x="61" y="553" class="body">Config / validateSettings / sanitizeSettings</text><text x="61" y="578" class="body">installLanProxySettings(ctx, entry, hooks)</text><text x="61" y="603" class="body">buildConfigRoutes(ConfigRouteDeps)</text><text x="61" y="628" class="body">resolve / readUser / writable / compress</text><text x="61" y="653" class="body">update / replace / logWarn 由 apply 注入</text><text x="61" y="678" class="body">GET/PUT /api/dsh-lan-proxy/config</text><text x="61" y="718" class="mono">server/config/interface.ts</text></g>
-<g id="tls"><rect x="600" y="495" width="400" height="163" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="616" y="524" class="heading">tls · 证书材料提供者</text><text x="616" y="553" class="body">loadTlsFromFiles(certFile, keyFile)</text><text x="616" y="578" class="body">ensureSelfSignedTls({ dir, extraSans })</text><text x="616" y="603" class="body">输出 TlsMaterials { key, cert }</text><text x="616" y="643" class="mono">server/tls/interface.ts</text></g>
-<g id="proxy"><rect x="1155" y="495" width="400" height="238" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="1171" y="524" class="heading">proxy · 独立监听与转发引擎</text><text x="1171" y="553" class="body">createLanProxy(options, logger) → LanProxy</text><text x="1171" y="578" class="body">options：tls / wsBridge / wsCompress</text><text x="1171" y="603" class="body">httpCompress / injectToken / target</text><text x="1171" y="628" class="body">listen() / close() / targetAuthority</text><text x="1171" y="653" class="body">httpCompressStats() / connStats()</text><text x="1171" y="678" class="body">HTTP + HTTPS 共用 request / upgrade</text><text x="1171" y="718" class="mono">server/proxy/interface.ts</text></g>
-<g id="migrate"><rect x="45" y="853" width="400" height="180" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="61" y="882" class="heading">migrate · 历史文件协议</text><text x="61" y="911" class="body">migrateFileConfig(dir, scope, logger)</text><text x="61" y="936" class="body">onScope attach 后调用（禁用也调用）</text><text x="61" y="961" class="body">净化 / 旧白名单归一化取自 config</text><text x="61" y="986" class="body">只用 owner scope.update 写官方存储</text><text x="61" y="1018" class="mono">server/migrate/interface.ts</text></g>
-<g id="trust"><rect x="600" y="853" width="400" height="180" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="616" y="882" class="heading">host-trust · 页面拓扑兼容</text><text x="616" y="911" class="body">registerHostTrustInjection(ctx, isEnabled)</text><text x="616" y="936" class="body">直接消费窄 ctx：tapIndex + effect</text><text x="616" y="961" class="body">apply 顶层注册一次；tap 内读开关</text><text x="616" y="986" class="body">不认识 proxy，也不做服务端认证</text><text x="616" y="1018" class="mono">server/host-trust/interface.ts</text></g>
-<g id="leaf"><rect x="1155" y="853" width="400" height="180" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="1171" y="882" class="heading">shared · 无状态叶子</text><text x="1171" y="911" class="body">DEFAULT_OPTIONS</text><text x="1171" y="936" class="body">DEFAULT_DEFLATE_POLICY</text><text x="1171" y="961" class="body">isLoopbackTarget：回环目标同一判据</text><text x="1171" y="986" class="body">config 与 proxy 消费，不持有运行态</text><text x="1171" y="1018" class="mono">server/shared/interface.ts</text></g>
-<path d="M550 357V470H245V495" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="365" y="461" text-anchor="middle" class="label">install / buildConfigRoutes</text>
-<path d="M800 357V495" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="874" y="475" text-anchor="middle" class="label">prepareTls 调用</text>
-<path d="M1050 357V470H1355V495" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="1258" y="460" text-anchor="middle" class="label">create + listen；close 归闭包</text>
-<path d="M445 605H510V375H580V357" class="edge" stroke="#eb6c36" marker-end="url(#a1)"/><text x="385" y="390" text-anchor="middle" class="label">setSource / onChange → 3s sync</text>
-<path d="M1000 575H1155" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="1078" y="558" text-anchor="middle" class="label">key / cert 经 apply 交付</text>
-<path d="M245 853V733" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="350" y="802" text-anchor="middle" class="label">消费净化门面与写面类型</text>
-<path d="M65 733V853" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="170" y="777" text-anchor="middle" class="label">onScope 将 scope 交迁移</text>
-<path d="M760 357V403H552V925H600" class="edge" stroke="#eb6c36" marker-end="url(#a1)"/><text x="700" y="401" text-anchor="middle" class="label">注册 tap / 传逐请求 getter</text>
-<path d="M1355 853V733" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="1445" y="804" text-anchor="middle" class="label">默认值 / 回环谓词</text>
-<rect x="20" y="1156" width="1560" height="295" rx="8" fill="#f0f1f3" stroke="#cbd0d8"/><text x="38" y="1183" class="lane">客户端接线｜同源管理 API 与页面事实观测分开，不让故障卡片承担唯一告警</text>
-<g id="client"><rect x="45" y="1210" width="400" height="180" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="61" y="1239" class="heading">client/index.ts</text><text x="61" y="1268" class="body">ensureStyle + locale.register / subscribe</text><text x="61" y="1293" class="body">slots.inject → settings.plugin.item</text><text x="61" y="1318" class="body">key / id = dsh-lan-proxy</text><text x="61" y="1343" class="body">effect：退订 locale、移除 style</text><text x="61" y="1375" class="mono">client/index.ts:58–147</text></g>
-<g id="card"><rect x="600" y="1210" width="400" height="180" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="616" y="1239" class="heading">SettingsCard</text><text x="616" y="1268" class="body">GET config + GET health 初始化</text><text x="616" y="1293" class="body">PUT patch；revision 重渲染后可为 null</text><text x="616" y="1318" class="body">alive 标志阻止卸载后写状态</text><text x="616" y="1343" class="body">hostTrustSignals 在渲染期现读</text><text x="616" y="1375" class="mono">client/settings-card.tsx:96–210</text></g>
-<g id="signals"><rect x="1155" y="1210" width="400" height="205" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="1171" y="1239" class="heading">host-trust-status</text><text x="1171" y="1268" class="body">hostname / marker</text><text x="1171" y="1293" class="body">remote.$host.isLoopback</text><text x="1171" y="1318" class="body">evaluateHostTrust → 四态</text><text x="1171" y="1343" class="body">hostTrustAlert → apply 最前 console.warn</text><text x="1171" y="1368" class="body">不依赖 slots 或 SettingsCard 挂载</text><text x="1171" y="1400" class="mono">client/host-trust-status.ts:84–137</text></g>
-<path d="M445 1290H600" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="523" y="1275" text-anchor="middle" class="label">注册 React 组件</text>
-<path d="M1155 1290H1000" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="1078" y="1275" text-anchor="middle" class="label">信号读取器 / 纯判定</text>
-<path d="M620 1210V1144H25V609H45" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="300" y="1140" text-anchor="middle" class="label">同源 GET / PUT → 已注册 config 路由</text>
-<text x="620" y="1430" class="mono">health 由 apply 直接注册；两条路由都经过 guardLoopbackMethod，不是浏览器直接写 scope。</text>
-<path d="M32 1483H1568" stroke="#eb6c36"/><text x="32" y="1510" class="mono">证据：packages/dsh-lan-proxy/src（基线 5e05e6d5）；实线＝标注关系，橙＝分支/失效，蓝＝宿主/数据边界。</text><text x="32" y="1533" class="mono">图源为 inline SVG；不代表已执行 LAN、浏览器权限、证书信任或性能实测。</text></svg>
-<p><a href="../dsh-lan-proxy.md">返回架构文档</a> · <a href="lan-proxy-aa.svg">独立 SVG</a></p></main></body></html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>lan-proxy 应用架构</title>
+<style>body{margin:0;padding:24px;background:#f5f5f5}main{max-width:1400px;margin:auto}svg{display:block;width:100%;height:auto}</style></head>
+<body><main>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 780" role="img" aria-labelledby="title desc">
+<title id="title">dsh-lan-proxy 应用架构</title>
+<desc id="desc">以功能模块为节点，展示应用架构中的职责与协作关系。实现细节见架构正文。</desc>
+<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#546780"/></marker></defs>
+<rect width="1400" height="780" fill="#f5f5f5"/>
+<text x="40" y="57" font-size="30" fill="#2d3142" font-family="system-ui,sans-serif">dsh-lan-proxy · AA 应用架构</text>
+<rect x="20" y="115" width="950" height="595" rx="14" fill="#eef0f3" stroke="#d5dbe4"/>
+<text x="38" y="142" font-size="16" fill="#64748b" font-family="system-ui,sans-serif">宿主插件</text>
+<rect x="1000" y="115" width="370" height="530" rx="14" fill="#eef0f3" stroke="#d5dbe4"/>
+<text x="1018" y="142" font-size="16" fill="#64748b" font-family="system-ui,sans-serif">浏览器与宿主扩展点</text>
+<path d="M360 210H620" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="490" y="195" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">设置与变更通知</text>
+<path d="M1190 160V92H210V160" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="800" y="88" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">管理请求</text>
+<path d="M210 390V260" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="265" y="335" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">迁移配置</text>
+<path d="M770 260V390" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="835" y="335" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">准备加密材料</text>
+<path d="M650 260V315H575V630H620" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="510" y="490" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">启停代理</text>
+<path d="M770 490V580" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="835" y="542" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">提供证书材料</text>
+<path d="M920 245H980V440H1040" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="1050" y="305" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">注册页面扩展</text>
+<g id="config">
+<rect x="60" y="160" width="300" height="100" rx="9" fill="#ffffff" stroke="#d87a49" stroke-width="1.5"/>
+<text x="80" y="200" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">配置模块</text>
+<text x="80" y="233" font-family="system-ui,sans-serif" font-size="17" fill="#546780">提供设置模型与管理接口</text>
+</g>
+<g id="root">
+<rect x="620" y="160" width="300" height="100" rx="9" fill="#ffffff" stroke="#d87a49" stroke-width="1.5"/>
+<text x="640" y="200" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">装配模块</text>
+<text x="640" y="233" font-family="system-ui,sans-serif" font-size="17" fill="#546780">协调配置、监听与插件生命周期</text>
+</g>
+<g id="client">
+<rect x="1040" y="160" width="300" height="100" rx="9" fill="#edf3fb" stroke="#5777a5" stroke-width="1.5"/>
+<text x="1060" y="200" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">客户端模块</text>
+<text x="1060" y="233" font-family="system-ui,sans-serif" font-size="17" fill="#546780">提供设置界面与能力提示</text>
+</g>
+<g id="migrate">
+<rect x="60" y="390" width="300" height="100" rx="9" fill="#ffffff" stroke="#d87a49" stroke-width="1.5"/>
+<text x="80" y="430" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">迁移模块</text>
+<text x="80" y="463" font-family="system-ui,sans-serif" font-size="17" fill="#546780">将旧配置导入现有设置体系</text>
+</g>
+<g id="tls">
+<rect x="620" y="390" width="300" height="100" rx="9" fill="#ffffff" stroke="#d87a49" stroke-width="1.5"/>
+<text x="640" y="430" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">证书模块</text>
+<text x="640" y="463" font-family="system-ui,sans-serif" font-size="17" fill="#546780">加载或生成加密访问材料</text>
+</g>
+<g id="proxy">
+<rect x="620" y="580" width="300" height="100" rx="9" fill="#ffffff" stroke="#d87a49" stroke-width="1.5"/>
+<text x="640" y="620" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">代理模块</text>
+<text x="640" y="653" font-family="system-ui,sans-serif" font-size="17" fill="#546780">处理请求转发与连接桥接</text>
+</g>
+<g id="trust">
+<rect x="1040" y="390" width="300" height="100" rx="9" fill="#ffffff" stroke="#d87a49" stroke-width="1.5"/>
+<text x="1060" y="430" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">页面兼容模块</text>
+<text x="1060" y="463" font-family="system-ui,sans-serif" font-size="17" fill="#546780">通过宿主页面扩展点提供兼容支持</text>
+</g>
+<text x="40" y="753" font-size="14" fill="#64748b" font-family="system-ui,sans-serif">功能模块视图 · 连线表示模块协作 · 函数、字段及运行机制详见架构正文</text>
+</svg>
+</main></body></html>

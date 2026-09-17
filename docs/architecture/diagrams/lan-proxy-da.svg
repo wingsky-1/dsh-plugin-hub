@@ -1,37 +1,55 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1660" role="img" aria-labelledby="da-title da-desc"><title id="da-title">dsh-lan-proxy · DA 数据架构</title><desc id="da-desc">配置谱系、证书缓存、单次认证上下文与实例统计：分别画清读写者及失效条件。</desc><defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
-<pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.8" fill="#d9dde3"/></pattern>
-<marker id="a0" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0 0L8 3.5L0 7Z" fill="#4f5d75"/></marker>
-<marker id="a1" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0 0L8 3.5L0 7Z" fill="#eb6c36"/></marker>
-<marker id="a2" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0 0L8 3.5L0 7Z" fill="#2e5aa8"/></marker>
-<style>.title{font:600 29px 'Geist',system-ui,sans-serif;fill:#2d3142}.heading{font:600 20px 'Geist',system-ui,sans-serif;fill:#2d3142}.body{font:17px 'Geist',system-ui,sans-serif;fill:#2d3142}.mono{font:14px 'Geist Mono',ui-monospace,monospace;fill:#4f5d75}.lane{font:600 16px 'Geist',system-ui,sans-serif;fill:#4f5d75;letter-spacing:1px}.label{font:14px 'Geist',system-ui,sans-serif;fill:#4f5d75;paint-order:stroke;stroke:#f5f5f5;stroke-width:6px;stroke-linejoin:round}.edge{fill:none;stroke-width:1.6}</style></defs>
-<rect width="1600" height="1660" fill="#f5f5f5"/><rect width="1600" height="1660" fill="url(#dots)" opacity="0.45"/>
-<text x="32" y="46" class="title">dsh-lan-proxy · DA 数据架构</text><text x="32" y="79" class="body">配置谱系、证书缓存、单次认证上下文与实例统计：分别画清读写者及失效条件。</text>
-<rect x="20" y="102" width="1560" height="575" rx="8" fill="#f0f1f3" stroke="#cbd0d8"/><text x="38" y="129" class="lane">配置谱系｜user 是权威持久层；迁移备份不是日常配置源</text>
-<g id="patch"><rect x="45" y="155" width="340" height="174" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="61" y="184" class="heading">SettingsCard → config 路由</text><text x="61" y="213" class="body">PUT { patch, expectedRevision }</text><text x="61" y="238" class="body">validate → sanitize → TLS 成对校验</text><text x="61" y="263" class="body">普通值 update；清证书成对 replace</text><text x="61" y="288" class="body">409 冲突 / 503 缺 settings / 500 异常</text><text x="61" y="314" class="mono">config/impl/routes.ts:57–154</text></g>
-<g id="user"><rect x="525" y="155" width="420" height="174" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="541" y="184" class="heading">官方 settings · dsh-lan-proxy</text><text x="541" y="213" class="body">user: 显式设置键；revision: 乐观并发</text><text x="541" y="238" class="body">defaults → cordis base → user 覆盖</text><text x="541" y="263" class="body">owner scope.get() 读最终配置</text><text x="541" y="288" class="body">describe({redactSecrets:true}) 读 user</text><text x="541" y="314" class="mono">config/impl/namespace.ts:18–40</text></g>
-<g id="resolved"><rect x="1090" y="155" width="465" height="174" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="1106" y="184" class="heading">apply.resolve() · 生效字段</text><text x="1106" y="213" class="body">enabled / host / port / targetHost / targetPort</text><text x="1106" y="238" class="body">httpsEnabled / httpsPort / tlsCertFile / tlsKeyFile</text><text x="1106" y="263" class="body">wsBridgeEnabled / wsCompressEnabled</text><text x="1106" y="288" class="body">wsCompressPaths / wsDeflatePolicy</text><text x="1106" y="314" class="mono">apply.ts:90–119</text></g>
-<path d="M385 240H525" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="455" y="224" text-anchor="middle" class="label">校验成功后持久化</text>
-<path d="M945 240H1090" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="1018" y="215" text-anchor="middle" class="label">scope.get()</text>
-<g id="legacy"><rect x="45" y="420" width="340" height="188" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="61" y="449" class="heading">旧配置文件 config.json</text><text x="61" y="478" class="body">DSH_HOME/lan-proxy/ 内旧配置</text><text x="61" y="503" class="body">先原子 rename，再解析 bak</text><text x="61" y="528" class="body">坏 JSON / 空 / 无效值：只留 bak</text><text x="61" y="553" class="body">没有 config 但有 bak：恢复重放</text><text x="61" y="593" class="mono">migrate/impl/file/index.ts:134–205</text></g>
-<g id="backup"><rect x="525" y="420" width="420" height="188" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="541" y="449" class="heading">config.json.migrated.bak</text><text x="541" y="478" class="body">sanitize + 旧压缩路径归一化</text><text x="541" y="503" class="body">旧默认 events.* → /api/remote.mux</text><text x="541" y="528" class="body">写成功仍保留；下次启动可再重放</text><text x="541" y="553" class="body">写失败尝试还原 config；数据不抛弃</text><text x="541" y="593" class="mono">migrate/impl/file/index.ts:53–112</text></g>
-<g id="watch"><rect x="1090" y="420" width="465" height="208" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="1106" y="449" class="heading">失效：watch → scheduleSync → sync</text><text x="1106" y="478" class="body">变化后 3000ms 防抖，回执先到客户端</text><text x="1106" y="503" class="body">close 旧实例；新实例重新读取全部配置</text><text x="1106" y="528" class="body">disabled 仍接 settings、迁移与管理路由</text><text x="1106" y="553" class="body">另：injectToken / ownsHostCompat / printBanner</text><text x="1106" y="585" class="body">httpCompressEnabled / httpCompressLevel</text><text x="1106" y="613" class="mono">apply.ts:328–340 / :380–439</text></g>
-<path d="M385 503H525" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="455" y="489" text-anchor="middle" class="label">rename-first</text>
-<path d="M735 420V329" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="830" y="378" text-anchor="middle" class="label">净化后 scope.update</text>
-<path d="M525 570H385" class="edge" stroke="#eb6c36" marker-end="url(#a1)"/><text x="455" y="635" text-anchor="middle" class="label">写失败：尝试 rename 回滚</text>
-<path d="M1322 329V420" class="edge" stroke="#eb6c36" marker-end="url(#a1)"/><text x="1420" y="379" text-anchor="middle" class="label">scope.watch 使实例失效</text>
-<rect x="20" y="700" width="1560" height="292" rx="8" fill="#f0f1f3" stroke="#cbd0d8"/><text x="38" y="727" class="lane">TLS 材料｜文件由 TLS 域读写；HTTPS 监听器只消费 PEM 材料</text>
-<g id="tlsfiles"><rect x="45" y="755" width="400" height="190" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="61" y="784" class="heading">两类证书来源</text><text x="61" y="813" class="body">用户：tlsCertFile + tlsKeyFile 成对 PEM</text><text x="61" y="838" class="body">默认缓存：DSH_HOME/lan-proxy/</text><text x="61" y="863" class="body">dsh-lan-proxy-key.pem（0600）</text><text x="61" y="888" class="body">dsh-lan-proxy-cert.pem</text><text x="61" y="930" class="mono">tls/impl/index.ts:21–22 / :50–53</text></g>
-<g id="tlscache"><rect x="600" y="755" width="400" height="190" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="616" y="784" class="heading">ensureSelfSignedTls · 复用或重签</text><text x="616" y="813" class="body">两文件存在且证书剩余 &gt;24h：读取</text><text x="616" y="838" class="body">否则生成 rsa:2048 / SHA256 / 825天</text><text x="616" y="863" class="body">SAN：回环 + 本机非回环 IPv4</text><text x="616" y="888" class="body">换 IP 不会使仍有效的缓存主动失效</text><text x="616" y="930" class="mono">tls/impl/index.ts:64–104</text></g>
-<g id="material"><rect x="1155" y="755" width="400" height="190" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="1171" y="784" class="heading">TlsMaterials { key, cert }</text><text x="1171" y="813" class="body">apply.prepareTls 交给 createLanProxy</text><text x="1171" y="838" class="body">httpsServer 消费材料，不读文件路径</text><text x="1171" y="863" class="body">读取 / 生成失败：undefined → HTTP-only</text><text x="1171" y="888" class="body">私钥不是 config/health 的响应字段</text><text x="1171" y="930" class="mono">apply.ts:199–217 / proxy.ts:993–1002</text></g>
-<path d="M445 843H600" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="523" y="828" text-anchor="middle" class="label">缺省来源：校验缓存</text>
-<path d="M1000 843H1155" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="1078" y="828" text-anchor="middle" class="label">返回 PEM</text>
-<path d="M245 755V737H1355V755" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="800" y="729" text-anchor="middle" class="label">用户成对文件：loadTlsFromFiles 直接读取</text>
-<rect x="20" y="1015" width="1560" height="550" rx="8" fill="#f0f1f3" stroke="#cbd0d8"/><text x="38" y="1042" class="lane">认证与运行态｜不同所有者、不同失效时机，不汇成一个“状态库”</text>
-<g id="token"><rect x="45" y="1070" width="400" height="180" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="61" y="1099" class="heading">宿主 connection → 动态 token</text><text x="61" y="1128" class="body">authenticatedUrl() 每请求取 token</text><text x="61" y="1153" class="body">进程重启变化；插件不自建凭据库</text><text x="61" y="1178" class="body">tokenProviderState: absent / ready / error</text><text x="61" y="1203" class="body">getter 不就绪 / 报错：本请求不注入</text><text x="61" y="1235" class="mono">apply.ts:122–177</text></g>
-<g id="replay"><rect x="600" y="1070" width="400" height="180" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="616" y="1099" class="heading">proxy · WeakMap&lt;res, context&gt;</text><text x="616" y="1128" class="body">replayContexts: { originalUrl, token }</text><text x="616" y="1153" class="body">只为带 cookie 的入口候选请求建立</text><text x="616" y="1178" class="body">proxyRes 到达即 delete；401 重放一次</text><text x="616" y="1203" class="body">浏览器 cookie 由宿主签发；关闭注入不撤销</text><text x="616" y="1235" class="mono">proxy.ts:789 / :820–846</text></g>
-<g id="runtime"><rect x="1155" y="1070" width="400" height="270" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="1171" y="1099" class="heading">proxy 实例内存 · 写入者为事件回调</text><text x="1171" y="1128" class="body">sockets / bridgeSockets：连接登记与清理</text><text x="1171" y="1153" class="body">proxyResReceived：响应头已到的 WeakSet</text><text x="1171" y="1178" class="body">compressStats: compressed / passthrough</text><text x="1171" y="1203" class="body">connStats: wsBridgeClosed / HalfOpen</text><text x="1171" y="1228" class="body">wsBridgeErrors / wsPassthroughDestroyed</text><text x="1171" y="1253" class="body">wsPassthroughErrors / httpClientAborted</text><text x="1171" y="1278" class="body">httpUpstreamDestroyed / httpProxyErrors</text><text x="1171" y="1325" class="mono">proxy.ts:693–704 / :747–789</text></g>
-<path d="M445 1150H600" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="523" y="1100" text-anchor="middle" class="label"><tspan x="523">getToken</tspan><tspan x="523" dy="18">入口上下文</tspan></text>
-<g id="reads"><rect x="45" y="1355" width="955" height="168" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="61" y="1384" class="heading">读取者：GET config / health；设置卡片展示快照</text><text x="61" y="1413" class="body">config = user / revision / effective / writable / compress；health 另含 connStats / configDir</text><text x="61" y="1438" class="body">listening = disposeProxy 是否存在；端口是配置值，不是主动网络探测</text><text x="61" y="1463" class="body">httpCompressMounted = enabled &amp;&amp; httpCompressEnabled &amp;&amp; disposeProxy 存在</text><text x="61" y="1488" class="body">禁用 / 监听失败后 activeProxy 可能留旧统计；不能据此宣称端到端健康</text><text x="61" y="1508" class="mono">apply.ts:183–192 / :447–478</text></g>
-<path d="M1200 1340V1350H1040V1435H1000" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="1104" y="1458" text-anchor="middle" class="label">统计快照</text>
-<text x="1155" y="1390" class="body">页面 marker 是另一份页内状态：</text><text x="1155" y="1418" class="mono">__DSH_LAN_PROXY_HOST_TRUST__</text><text x="1155" y="1446" class="body">注入脚本写；client 与 $host 事实合读；</text><text x="1155" y="1474" class="body">切开关不回收旧页面，重载后重判。</text><text x="1155" y="1516" class="mono">host-trust/injection.ts / client status</text><path d="M32 1595H1568" stroke="#eb6c36"/><text x="32" y="1622" class="mono">证据：packages/dsh-lan-proxy/src（基线 5e05e6d5）；实线＝标注关系，橙＝分支/失效，蓝＝宿主/数据边界。</text><text x="32" y="1645" class="mono">图源为 inline SVG；不代表已执行 LAN、浏览器权限、证书信任或性能实测。</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 780" role="img" aria-labelledby="title desc">
+<title id="title">dsh-lan-proxy 数据架构</title>
+<desc id="desc">以功能模块为节点，展示数据架构中的职责与协作关系。实现细节见架构正文。</desc>
+<defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#546780"/></marker></defs>
+<rect width="1400" height="780" fill="#f5f5f5"/>
+<text x="40" y="57" font-size="30" fill="#2d3142" font-family="system-ui,sans-serif">dsh-lan-proxy · DA 数据架构</text>
+<rect x="380" y="115" width="600" height="530" rx="14" fill="#eef0f3" stroke="#d5dbe4"/>
+<text x="398" y="142" font-size="16" fill="#64748b" font-family="system-ui,sans-serif">数据管理职责</text>
+<path d="M340 210H520" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="430" y="195" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">配置读写</text>
+<path d="M1050 210H820" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="935" y="195" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">导入配置</text>
+<path d="M520 245H405V420H190V460" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="282" y="402" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">生效配置</text>
+<path d="M340 510H520" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="430" y="495" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">运行统计</text>
+<path d="M670 260V460" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="742" y="360" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">配置概况</text>
+<path d="M520 555H375V305H190V260" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="281" y="320" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">返回运行概况</text>
+<path d="M1050 510H970V625H190V560" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="719" y="611" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">向代理提供证书材料</text>
+<g id="ui">
+<rect x="40" y="160" width="300" height="100" rx="9" fill="#edf3fb" stroke="#5777a5" stroke-width="1.5"/>
+<text x="60" y="200" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">设置界面</text>
+<text x="60" y="233" font-family="system-ui,sans-serif" font-size="17" fill="#546780">编辑配置并读取运行概况</text>
+</g>
+<g id="cfg">
+<rect x="520" y="160" width="300" height="100" rx="9" fill="#ffffff" stroke="#d87a49" stroke-width="1.5"/>
+<text x="540" y="200" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">配置管理</text>
+<text x="540" y="233" font-family="system-ui,sans-serif" font-size="17" fill="#546780">持有生效配置并对接宿主设置</text>
+</g>
+<g id="legacy">
+<rect x="1050" y="160" width="300" height="100" rx="9" fill="#ffffff" stroke="#d87a49" stroke-width="1.5"/>
+<text x="1070" y="200" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">配置迁移</text>
+<text x="1070" y="233" font-family="system-ui,sans-serif" font-size="17" fill="#546780">读取旧配置并导入现有设置</text>
+</g>
+<g id="runtime">
+<rect x="40" y="460" width="300" height="100" rx="9" fill="#ffffff" stroke="#d87a49" stroke-width="1.5"/>
+<text x="60" y="500" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">代理运行管理</text>
+<text x="60" y="533" font-family="system-ui,sans-serif" font-size="17" fill="#546780">持有连接、认证上下文与统计</text>
+</g>
+<g id="obs">
+<rect x="520" y="460" width="300" height="100" rx="9" fill="#ffffff" stroke="#d87a49" stroke-width="1.5"/>
+<text x="540" y="500" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">状态查询</text>
+<text x="540" y="533" font-family="system-ui,sans-serif" font-size="17" fill="#546780">汇集配置与代理运行概况</text>
+</g>
+<g id="cert">
+<rect x="1050" y="460" width="300" height="100" rx="9" fill="#ffffff" stroke="#d87a49" stroke-width="1.5"/>
+<text x="1070" y="500" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">证书管理</text>
+<text x="1070" y="533" font-family="system-ui,sans-serif" font-size="17" fill="#546780">管理证书材料与本地缓存</text>
+</g>
+<text x="40" y="753" font-size="14" fill="#64748b" font-family="system-ui,sans-serif">功能模块视图 · 连线表示模块协作 · 函数、字段及运行机制详见架构正文</text>
+</svg>

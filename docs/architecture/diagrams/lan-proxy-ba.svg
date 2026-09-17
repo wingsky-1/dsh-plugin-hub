@@ -1,44 +1,53 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1410" role="img" aria-labelledby="ba-title ba-desc"><title id="ba-title">dsh-lan-proxy · BA 业务架构</title><desc id="ba-desc">三个业务闭环：进入同一宿主、保存访问策略、确认远程页面的设置能力。</desc><defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
-<pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.8" fill="#d9dde3"/></pattern>
-<marker id="a0" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0 0L8 3.5L0 7Z" fill="#4f5d75"/></marker>
-<marker id="a1" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0 0L8 3.5L0 7Z" fill="#eb6c36"/></marker>
-<marker id="a2" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0 0L8 3.5L0 7Z" fill="#2e5aa8"/></marker>
-<style>.title{font:600 29px 'Geist',system-ui,sans-serif;fill:#2d3142}.heading{font:600 20px 'Geist',system-ui,sans-serif;fill:#2d3142}.body{font:17px 'Geist',system-ui,sans-serif;fill:#2d3142}.mono{font:14px 'Geist Mono',ui-monospace,monospace;fill:#4f5d75}.lane{font:600 16px 'Geist',system-ui,sans-serif;fill:#4f5d75;letter-spacing:1px}.label{font:14px 'Geist',system-ui,sans-serif;fill:#4f5d75;paint-order:stroke;stroke:#f5f5f5;stroke-width:6px;stroke-linejoin:round}.edge{fill:none;stroke-width:1.6}</style></defs>
-<rect width="1600" height="1410" fill="#f5f5f5"/><rect width="1600" height="1410" fill="url(#dots)" opacity="0.45"/>
-<text x="32" y="46" class="title">dsh-lan-proxy · BA 业务架构</text><text x="32" y="79" class="body">三个业务闭环：进入同一宿主、保存访问策略、确认远程页面的设置能力。</text>
-<rect x="20" y="102" width="1560" height="545" rx="8" fill="#f0f1f3" stroke="#cbd0d8"/><text x="38" y="129" class="lane">访问业务｜先判断入站，再决定是否代取入口凭据；会话仍归宿主</text>
-<g id="visitor"><rect x="45" y="157" width="290" height="128" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="61" y="186" class="heading">局域网使用者</text><text x="61" y="215" class="body">手机 / 平板 / 另一台电脑</text><text x="61" y="240" class="body">打开宿主 LAN 地址</text><text x="61" y="270" class="mono">HTTP :3081 / HTTPS :3443</text></g>
-<g id="inbound"><rect x="430" y="157" width="330" height="128" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="446" y="186" class="heading">入站 Host 可接受？</text><text x="446" y="215" class="body">只接受 IP 字面量 / localhost</text><text x="446" y="240" class="body">不是任意 DNS 域名代理</text><text x="446" y="270" class="mono">proxy.ts:878–883</text></g>
-<g id="mint"><rect x="870" y="157" width="320" height="128" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="886" y="186" class="heading">允许自动铸会话？</text><text x="886" y="215" class="body">injectToken 开启且 provider 可读</text><text x="886" y="240" class="body">GET /，并且 URL 没有 token</text><text x="886" y="270" class="mono">proxy.ts:904–925</text></g>
-<g id="reject"><rect x="430" y="357" width="330" height="115" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="446" y="386" class="heading">拒绝访问</text><text x="446" y="415" class="body">HTTP 403；WS 403 后断开</text><text x="446" y="457" class="mono">proxy.ts:879 / :932</text></g>
-<g id="auth"><rect x="1285" y="157" width="270" height="185" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="1301" y="186" class="heading">宿主认证与会话</text><text x="1301" y="215" class="body">无有效凭据仍可拒绝</text><text x="1301" y="240" class="body">token 换签名 cookie</text><text x="1301" y="265" class="body">成功进入同一套 Web UI</text><text x="1301" y="290" class="body">不新增用户隔离层</text><text x="1301" y="327" class="mono">proxy.ts:820–846</text></g>
-<g id="nocookie"><rect x="870" y="365" width="320" height="110" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="886" y="394" class="heading">未带 dsh-auth-* cookie</text><text x="886" y="423" class="body">在入口 URL 补当前 launch token</text><text x="886" y="460" class="mono">proxy.ts:914–917</text></g>
-<g id="cookie"><rect x="870" y="525" width="320" height="100" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="886" y="554" class="heading">已带 cookie</text><text x="886" y="583" class="body">先原样试；仅 401 带 token 重放</text><text x="886" y="610" class="mono">proxy.ts:919–922 / :820–832</text></g>
-<g id="result"><rect x="1285" y="420" width="270" height="195" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="1301" y="449" class="heading">用户可见的边界</text><text x="1301" y="478" class="body">默认免取 token = 信任 LAN</text><text x="1301" y="503" class="body">网络可达者可获宿主控制权</text><text x="1301" y="528" class="body">关闭注入不吊销已有 cookie</text><text x="1301" y="553" class="body">TLS 不缩小授权范围</text><text x="1301" y="600" class="mono">apply.ts:288–303</text></g>
-<path d="M335 217H430" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="382" y="204" text-anchor="middle" class="label">请求</text>
-<path d="M760 217H870" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="815" y="204" text-anchor="middle" class="label">允许</text>
-<path d="M595 285V357" class="edge" stroke="#eb6c36" marker-end="url(#a1)"/><text x="640" y="326" text-anchor="middle" class="label">不允许</text>
-<path d="M1190 205H1285" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="1237" y="191" text-anchor="middle" class="label">否：透传</text>
-<path d="M1030 285V365" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="1090" y="327" text-anchor="middle" class="label">是 · 无 cookie</text>
-<path d="M870 253H835V575H870" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="835" y="502" text-anchor="middle" class="label">是 · 有 cookie</text>
-<path d="M1190 415H1220V254H1285" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="1266" y="382" text-anchor="middle" class="label">注入后转发</text>
-<path d="M1190 573H1250V295H1285" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="1271" y="636" text-anchor="middle" class="label">最多一次重放</text>
-<rect x="20" y="670" width="1560" height="345" rx="8" fill="#f0f1f3" stroke="#cbd0d8"/><text x="38" y="697" class="lane">管理业务｜保存回执与监听切换分离，失败不伪装为成功</text>
-<g id="admin"><rect x="45" y="723" width="290" height="154" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="61" y="752" class="heading">管理者点「保存」</text><text x="61" y="781" class="body">设置卡片：改端口 / TLS / 策略</text><text x="61" y="806" class="body">重渲染后保存全部 DEFAULTS 键</text><text x="61" y="831" class="body">expectedRevision 此时可为 null</text><text x="61" y="862" class="mono">settings-card.tsx:154–193</text></g>
-<g id="validate"><rect x="430" y="723" width="330" height="154" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="446" y="752" class="heading">宿主接受配置写入？</text><text x="446" y="781" class="body">围栏先于方法检查</text><text x="446" y="806" class="body">校验键值 + TLS 两层成对</text><text x="446" y="831" class="body">有效 expectedRevision 才比对</text><text x="446" y="862" class="mono">config/impl/routes.ts:57–154</text></g>
-<g id="saved"><rect x="870" y="723" width="320" height="154" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="886" y="752" class="heading">写官方 settings 成功</text><text x="886" y="781" class="body">回 200：user + revision</text><text x="886" y="806" class="body">watch 合并连续修改</text><text x="886" y="831" class="body">等待 3000ms，再拆旧建新</text><text x="886" y="862" class="mono">apply.ts:328–340</text></g>
-<g id="availability"><rect x="1285" y="723" width="270" height="230" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="1301" y="752" class="heading">可用性结果</text><text x="1301" y="781" class="body">enabled=false：不再监听</text><text x="1301" y="806" class="body">端口占用：错误与改端口提示</text><text x="1301" y="831" class="body">材料读取/生成失败：仅 HTTP</text><text x="1301" y="856" class="body">成功：终端给出 LAN 地址</text><text x="1301" y="881" class="body">旧连接断开，不是无缝切换</text><text x="1301" y="938" class="mono">apply.ts:220–325</text></g>
-<path d="M335 790H430" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="382" y="776" text-anchor="middle" class="label">PUT patch</text>
-<path d="M760 790H870" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="815" y="776" text-anchor="middle" class="label">通过并持久化</text>
-<path d="M1190 790H1285" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="1237" y="776" text-anchor="middle" class="label">延迟重建</text>
-<path d="M595 877V926H335" class="edge" stroke="#eb6c36" marker-end="url(#a1)"/><text x="470" y="913" text-anchor="middle" class="label">拒绝 / 失败回执</text>
-<g id="errors"><rect x="45" y="902" width="290" height="91" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="61" y="931" class="heading">保留可解释失败</text><text x="61" y="960" class="body">400 / 409 / 503 / 500；403</text><text x="61" y="978" class="mono">routes.ts:61–151</text></g>
-<rect x="20" y="1038" width="1560" height="270" rx="8" fill="#f0f1f3" stroke="#cbd0d8"/><text x="38" y="1065" class="lane">页面能力｜ownsHostCompat 与 injectToken 分离，不把 Host trust 当成认证</text>
-<g id="switch"><rect x="45" y="1093" width="360" height="167" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="61" y="1122" class="heading">管理者切兼容开关</text><text x="61" y="1151" class="body">默认关闭；新页面逐请求读取</text><text x="61" y="1176" class="body">关闭不会撤回已打开页面变量</text><text x="61" y="1201" class="body">需重载，或使用 ssh -L 回环页</text><text x="61" y="1245" class="mono">host-trust/impl/injection.ts:67–84</text></g>
-<g id="page"><rect x="530" y="1093" width="430" height="167" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="546" y="1122" class="heading">非回环页且没有既有 transport？</text><text x="546" y="1151" class="body">是：声明 ownsHost + marker</text><text x="546" y="1176" class="body">否：不覆盖现有 transport / 回环页</text><text x="546" y="1201" class="body">randomUUID 缺失时另有 polyfill</text><text x="546" y="1245" class="mono">injection.ts:36–56 / apply.ts:349</text></g>
-<g id="observe"><rect x="1085" y="1093" width="470" height="167" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="1101" y="1122" class="heading">设置面与独立告警</text><text x="1101" y="1151" class="body">marker + $host.isLoopback → 四态判定</text><text x="1101" y="1176" class="body">compat-off / contract-drift：console.warn</text><text x="1101" y="1201" class="body">设置卡片可能不挂载，告警不依赖卡片</text><text x="1101" y="1245" class="mono">client/host-trust-status.ts:84–124</text></g>
-<path d="M405 1170H530" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="467" y="1156" text-anchor="middle" class="label">开启后的页面响应</text>
-<path d="M960 1170H1085" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="1022" y="1156" text-anchor="middle" class="label">页面信号 + 宿主事实</text>
-
-<path d="M32 1343H1568" stroke="#eb6c36"/><text x="32" y="1370" class="mono">证据：packages/dsh-lan-proxy/src（基线 5e05e6d5）；实线＝标注关系，橙＝分支/失效，蓝＝宿主/数据边界。</text><text x="32" y="1393" class="mono">图源为 inline SVG；不代表已执行 LAN、浏览器权限、证书信任或性能实测。</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 780" role="img" aria-labelledby="title desc">
+<title id="title">dsh-lan-proxy 业务架构</title>
+<desc id="desc">以功能模块为节点，展示业务架构中的职责与协作关系。实现细节见架构正文。</desc>
+<defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#546780"/></marker></defs>
+<rect width="1400" height="780" fill="#f5f5f5"/>
+<text x="40" y="57" font-size="30" fill="#2d3142" font-family="system-ui,sans-serif">dsh-lan-proxy · BA 业务架构</text>
+<rect x="390" y="118" width="940" height="530" rx="14" fill="#eef0f3" stroke="#d5dbe4"/>
+<text x="408" y="145" font-size="16" fill="#64748b" font-family="system-ui,sans-serif">局域网访问能力</text>
+<path d="M350 240H440" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="390" y="225" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">访问</text>
+<path d="M740 240H1010" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="872" y="225" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">连接工作台</text>
+<path d="M350 510H440" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="390" y="495" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">设置</text>
+<path d="M590 460V290" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="665" y="380" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">控制访问策略</text>
+<path d="M740 510H1010" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="875" y="495" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">配置页面兼容</text>
+<path d="M1160 460V290" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="1223" y="380" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">支持页面能力</text>
+<g id="user">
+<rect x="50" y="190" width="300" height="100" rx="9" fill="#edf3fb" stroke="#5777a5" stroke-width="1.5"/>
+<text x="70" y="230" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">局域网使用者</text>
+<text x="70" y="263" font-family="system-ui,sans-serif" font-size="17" fill="#546780">在其他设备使用同一套工作台</text>
+</g>
+<g id="access">
+<rect x="440" y="190" width="300" height="100" rx="9" fill="#ffffff" stroke="#d87a49" stroke-width="1.5"/>
+<text x="460" y="230" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">远程访问</text>
+<text x="460" y="263" font-family="system-ui,sans-serif" font-size="17" fill="#546780">提供工作台页面与会话连接</text>
+</g>
+<g id="work">
+<rect x="1010" y="190" width="300" height="100" rx="9" fill="#edf3fb" stroke="#5777a5" stroke-width="1.5"/>
+<text x="1030" y="230" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">宿主工作台</text>
+<text x="1030" y="263" font-family="system-ui,sans-serif" font-size="17" fill="#546780">承载会话、工具与文件操作</text>
+</g>
+<g id="admin">
+<rect x="50" y="460" width="300" height="100" rx="9" fill="#edf3fb" stroke="#5777a5" stroke-width="1.5"/>
+<text x="70" y="500" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">管理员</text>
+<text x="70" y="533" font-family="system-ui,sans-serif" font-size="17" fill="#546780">调整访问策略与服务配置</text>
+</g>
+<g id="manage">
+<rect x="440" y="460" width="300" height="100" rx="9" fill="#ffffff" stroke="#d87a49" stroke-width="1.5"/>
+<text x="460" y="500" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">访问管理</text>
+<text x="460" y="533" font-family="system-ui,sans-serif" font-size="17" fill="#546780">管理监听、加密与访问授权</text>
+</g>
+<g id="compat">
+<rect x="1010" y="460" width="300" height="100" rx="9" fill="#ffffff" stroke="#d87a49" stroke-width="1.5"/>
+<text x="1030" y="500" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">页面兼容</text>
+<text x="1030" y="533" font-family="system-ui,sans-serif" font-size="17" fill="#546780">适配远程页面的宿主能力声明</text>
+</g>
+<text x="40" y="753" font-size="14" fill="#64748b" font-family="system-ui,sans-serif">功能模块视图 · 连线表示模块协作 · 函数、字段及运行机制详见架构正文</text>
+</svg>

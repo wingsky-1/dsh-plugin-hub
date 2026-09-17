@@ -1,46 +1,52 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1720" role="img" aria-labelledby="ta-title ta-desc"><title id="ta-title">dsh-lan-proxy · TA 技术架构</title><desc id="ta-desc">按协议读连接：入站围栏、回环转发、WS 两段桥接，再到断连传播与资源回收。</desc><defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style>
-<pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.8" fill="#d9dde3"/></pattern>
-<marker id="a0" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0 0L8 3.5L0 7Z" fill="#4f5d75"/></marker>
-<marker id="a1" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0 0L8 3.5L0 7Z" fill="#eb6c36"/></marker>
-<marker id="a2" markerWidth="8" markerHeight="7" refX="7" refY="3.5" orient="auto"><path d="M0 0L8 3.5L0 7Z" fill="#2e5aa8"/></marker>
-<style>.title{font:600 29px 'Geist',system-ui,sans-serif;fill:#2d3142}.heading{font:600 20px 'Geist',system-ui,sans-serif;fill:#2d3142}.body{font:17px 'Geist',system-ui,sans-serif;fill:#2d3142}.mono{font:14px 'Geist Mono',ui-monospace,monospace;fill:#4f5d75}.lane{font:600 16px 'Geist',system-ui,sans-serif;fill:#4f5d75;letter-spacing:1px}.label{font:14px 'Geist',system-ui,sans-serif;fill:#4f5d75;paint-order:stroke;stroke:#f5f5f5;stroke-width:6px;stroke-linejoin:round}.edge{fill:none;stroke-width:1.6}</style></defs>
-<rect width="1600" height="1720" fill="#f5f5f5"/><rect width="1600" height="1720" fill="url(#dots)" opacity="0.45"/>
-<text x="32" y="46" class="title">dsh-lan-proxy · TA 技术架构</text><text x="32" y="79" class="body">按协议读连接：入站围栏、回环转发、WS 两段桥接，再到断连传播与资源回收。</text>
-<rect x="20" y="102" width="1560" height="252" rx="8" fill="#f0f1f3" stroke="#cbd0d8"/><text x="38" y="129" class="lane">运行边界｜LAN 接入 ≠ 任意上游；HTTP 与 HTTPS 是并存监听器</text>
-<g id="lan"><rect x="45" y="158" width="320" height="161" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="61" y="187" class="heading">LAN 浏览器</text><text x="61" y="216" class="body">http / ws → :3081</text><text x="61" y="241" class="body">https / wss → :3443</text><text x="61" y="266" class="body">端口与监听 host 都可配置</text><text x="61" y="304" class="mono">DEFAULT_OPTIONS</text></g>
-<g id="listeners"><rect x="510" y="158" width="480" height="161" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="526" y="187" class="heading">Node 进程内 lan-proxy listeners</text><text x="526" y="216" class="body">HTTP server + 可选 HTTPS server</text><text x="526" y="241" class="body">共享 handleRequest / handleUpgrade</text><text x="526" y="266" class="body">HTTP 绑定失败整体关闭；HTTPS 绑定失败降级</text><text x="526" y="304" class="mono">proxy.ts:989–1035</text></g>
-<g id="loopback"><rect x="1135" y="158" width="420" height="161" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="1151" y="187" class="heading">同机回环 dsh web</text><text x="1151" y="216" class="body">targetPort ?? ctx.webServer.port</text><text x="1151" y="241" class="body">targetHost 仅 localhost / 127.0.0.1 / ::1</text><text x="1151" y="266" class="body">createLanProxy 入口再次强校验</text><text x="1151" y="304" class="mono">apply.ts:233 / proxy.ts:671–686</text></g>
-<path d="M365 235H510" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="437" y="219" text-anchor="middle" class="label">TCP / TLS 会话</text>
-<path d="M990 235H1135" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="1063" y="219" text-anchor="middle" class="label">只转发至回环 authority</text>
-<rect x="20" y="377" width="1560" height="410" rx="8" fill="#f0f1f3" stroke="#cbd0d8"/><text x="38" y="404" class="lane">HTTP(S) 数据路径｜本地拒绝 / 预检不会进入转发压缩协商计数</text>
-<g id="httpguard"><rect x="45" y="432" width="320" height="163" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="61" y="461" class="heading">hostnameAllowed(Host)</text><text x="61" y="490" class="body">DNS 名或非法 Host：403</text><text x="61" y="515" class="body">允许 IP 字面量 / localhost</text><text x="61" y="540" class="body">PNA OPTIONS：本地 204 + 放行头</text><text x="61" y="580" class="mono">proxy.ts:878–903</text></g>
-<g id="httprewrite"><rect x="510" y="432" width="480" height="163" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="526" y="461" class="heading">handleRequest → proxy.web</text><text x="526" y="490" class="body">限定 GET / token 注入与单次 401 重放（见 BA）</text><text x="526" y="515" class="body">rewriteHeaders 覆盖 Host / Origin</text><text x="526" y="540" class="body">Cookie / Authorization / Sec-Fetch-Site 保留</text><text x="526" y="580" class="mono">proxy.ts:904–927 / :769–773</text></g>
-<g id="httpup"><rect x="1135" y="432" width="420" height="163" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="1151" y="461" class="heading">http-proxy + keep-alive Agent</text><text x="1151" y="490" class="body">上游 HTTP 请求 / SSE 等流式响应</text><text x="1151" y="515" class="body">proxy error：HTTP 502；WS socket.destroy</text><text x="1151" y="540" class="body">管理路由再做 loopback 围栏 + 方法白名单</text><text x="1151" y="580" class="mono">proxy.ts:688 / :863–875</text></g>
-<g id="compression"><rect x="510" y="655" width="480" height="106" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="526" y="684" class="heading">compression 响应层：br / gzip</text><text x="526" y="713" class="body">可压类型且 ≥1024B；SSE / 已编码响应不重复压缩</text><text x="526" y="746" class="mono">proxy.ts:716–741</text></g>
-<g id="httpclose"><rect x="1135" y="655" width="420" height="106" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="1151" y="684" class="heading">双向断连传播</text><text x="1151" y="713" class="body">响应头前 socket.close；响应体中 res.close/error</text><text x="1151" y="746" class="mono">proxy.ts:800–817 / :848–861</text></g>
-<path d="M365 510H510" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="437" y="494" text-anchor="middle" class="label">Host 通过且非预检</text>
-<path d="M990 510H1135" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="1063" y="494" text-anchor="middle" class="label">重写后转发</text>
-<path d="M1200 595V624H750V655" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="931" y="613" text-anchor="middle" class="label">上游响应 → 压缩中间件</text>
-<path d="M510 709H200V595" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="344" y="694" text-anchor="middle" class="label">向浏览器回包 / 流式输出</text>
-<path d="M1345 595V655" class="edge" stroke="#eb6c36" marker-end="url(#a1)"/><text x="1430" y="636" text-anchor="middle" class="label">关闭事件 → destroy 对端</text>
-<rect x="20" y="810" width="1560" height="520" rx="8" fill="#f0f1f3" stroke="#cbd0d8"/><text x="38" y="837" class="lane">WS / WSS 升级路径｜插件默认全桥接；压缩开关不是桥接开关</text>
-<g id="wsgate"><rect x="45" y="865" width="320" height="195" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="61" y="894" class="heading">handleUpgrade</text><text x="61" y="923" class="body">Host 不通过：403 + destroy</text><text x="61" y="948" class="body">wsBridge.enabled=true：全部桥接</text><text x="61" y="973" class="body">false：全部透传</text><text x="61" y="998" class="body">undefined：旧兼容压缩路径才桥接</text><text x="61" y="1045" class="mono">proxy.ts:931–949</text></g>
-<g id="browserws"><rect x="510" y="865" width="480" height="195" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="526" y="894" class="heading">browserWs · ws.Server(noServer)</text><text x="526" y="923" class="body">浏览器 WS / WSS 在这里终结</text><text x="526" y="948" class="body">压缩 = enabled + 路径命中 + UA 策略允许</text><text x="526" y="973" class="body">默认 /api/remote.mux；iOS UA 拒绝协商</text><text x="526" y="998" class="body">不压缩的桥接仍保留探活</text><text x="526" y="1045" class="mono">proxy.ts:609–627 / :950–964</text></g>
-<g id="upstreamws"><rect x="1135" y="865" width="420" height="195" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="1151" y="894" class="heading">upstreamWs · 新建 WsClient</text><text x="1151" y="923" class="body">ws://回环 authority + 原始 URL</text><text x="1151" y="948" class="body">perMessageDeflate:false（不双压）</text><text x="1151" y="973" class="body">透传认证头；去 hop-by-hop / sec-websocket-*</text><text x="1151" y="998" class="body">上游 open 后转发；双向保留 isBinary</text><text x="1151" y="1045" class="mono">proxy.ts:634–658</text></g>
-<g id="passthrough"><rect x="45" y="1165" width="420" height="125" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="61" y="1194" class="heading">proxy.ws · TCP 字节透传</text><text x="61" y="1223" class="body">UA 拒绝压缩时删除 extensions 升级头</text><text x="61" y="1248" class="body">无桥接半开探活；插件不主动重拨上游</text><text x="61" y="1275" class="mono">proxy.ts:966–987</text></g>
-<g id="probes"><rect x="610" y="1165" width="480" height="125" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="626" y="1194" class="heading">两端独立 30s ping / pong 探活</text><text x="626" y="1223" class="body">一个周期无 pong：terminate；0 可关闭探活</text><text x="626" y="1248" class="body">两端 close/error：stopAllProbes + 断连计数</text><text x="626" y="1275" class="mono">proxy.ts:487–555</text></g>
-<g id="teardown"><rect x="1235" y="1165" width="320" height="125" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="1251" y="1194" class="heading">联动关闭（不对称）</text><text x="1251" y="1223" class="body">上游关闭/错 → terminate 浏览器</text><text x="1251" y="1248" class="body">浏览器关闭/错 → close 上游</text><text x="1251" y="1275" class="mono">proxy.ts:574–606</text></g>
-<path d="M365 945H510" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="437" y="929" text-anchor="middle" class="label">shouldBridge</text>
-<path d="M990 945H1135" class="edge" stroke="#2e5aa8" marker-end="url(#a2)"/><text x="1063" y="929" text-anchor="middle" class="label">桥接：新上游连接</text>
-<path d="M210 1060V1165" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="306" y="1115" text-anchor="middle" class="label">否则：透传升级</text>
-<path d="M750 1060V1165" class="edge" stroke="#eb6c36" marker-end="url(#a1)"/><text x="836" y="1115" text-anchor="middle" class="label">browserWs 挂 probe</text>
-<path d="M1345 1060V1127H920V1165" class="edge" stroke="#eb6c36" marker-end="url(#a1)"/><text x="1115" y="1114" text-anchor="middle" class="label">upstreamWs 挂 probe</text>
-<path d="M1090 1225H1235" class="edge" stroke="#eb6c36" marker-end="url(#a1)"/><text x="1163" y="1210" text-anchor="middle" class="label">事件收敛到 teardown</text>
-<rect x="20" y="1353" width="1560" height="270" rx="8" fill="#f0f1f3" stroke="#cbd0d8"/><text x="38" y="1380" class="lane">生命周期｜重建会断连接；连接恢复由客户端发起，不在代理里重试业务请求</text>
-<g id="rebuild"><rect x="45" y="1408" width="420" height="170" rx="6" fill="#fff3ec" stroke="#eb6c36" stroke-width="1.3"/><text x="61" y="1437" class="heading">watch 保存 / ctx.effect 卸载</text><text x="61" y="1466" class="body">保存：3000ms 防抖后 sync</text><text x="61" y="1491" class="body">卸载：disposed=true + clearTimeout</text><text x="61" y="1516" class="body">撤销路由与 tap；调用 disposeProxy</text><text x="61" y="1563" class="mono">apply.ts:333–340 / :482–497</text></g>
-<g id="close"><rect x="610" y="1408" width="480" height="170" rx="6" fill="#fff" stroke="#b7becb" stroke-width="1.3"/><text x="626" y="1437" class="heading">LanProxy.close()</text><text x="626" y="1466" class="body">destroy sockets；terminate bridgeSockets</text><text x="626" y="1491" class="body">关闭 HTTP/HTTPS + closeAllConnections</text><text x="626" y="1516" class="body">agent.destroy()；探活由 close/error 清理</text><text x="626" y="1541" class="body">不复用上一实例的连接或统计</text><text x="626" y="1563" class="mono">proxy.ts:1039–1055</text></g>
-<g id="reconnect"><rect x="1235" y="1408" width="320" height="170" rx="6" fill="#edf3fb" stroke="#2e5aa8" stroke-width="1.3"/><text x="1251" y="1437" class="heading">重新建立连接</text><text x="1251" y="1466" class="body">enabled 时建新 listener</text><text x="1251" y="1491" class="body">浏览器重新请求 / 发起 Upgrade</text><text x="1251" y="1516" class="body">新连接重新过 Host 与协议分支</text><text x="1251" y="1541" class="body">无代理侧自动 WS 重连循环</text><text x="1251" y="1563" class="mono">apply.ts:220–270</text></g>
-<path d="M465 1480H610" class="edge" stroke="#eb6c36" marker-end="url(#a1)"/><text x="538" y="1465" text-anchor="middle" class="label">关闭旧实例</text>
-<path d="M1090 1480H1235" class="edge" stroke="#4f5d75" marker-end="url(#a0)"/><text x="1163" y="1465" text-anchor="middle" class="label">仅配置重建，卸载不重启</text>
-<path d="M32 1655H1568" stroke="#eb6c36"/><text x="32" y="1682" class="mono">证据：packages/dsh-lan-proxy/src（基线 5e05e6d5）；实线＝标注关系，橙＝分支/失效，蓝＝宿主/数据边界。</text><text x="32" y="1705" class="mono">图源为 inline SVG；不代表已执行 LAN、浏览器权限、证书信任或性能实测。</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 780" role="img" aria-labelledby="title desc">
+<title id="title">dsh-lan-proxy 技术架构</title>
+<desc id="desc">以功能模块为节点，展示技术架构中的职责与协作关系。实现细节见架构正文。</desc>
+<defs><style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap');</style><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#546780"/></marker></defs>
+<rect width="1400" height="780" fill="#f5f5f5"/>
+<text x="40" y="57" font-size="30" fill="#2d3142" font-family="system-ui,sans-serif">dsh-lan-proxy · TA 技术架构</text>
+<rect x="395" y="112" width="975" height="532" rx="14" fill="#eef0f3" stroke="#d5dbe4"/>
+<text x="413" y="139" font-size="16" fill="#64748b" font-family="system-ui,sans-serif">宿主机器 · DSH 进程与本地资源</text>
+
+<path d="M340 240H540" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="440" y="225" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">HTTP(S) / WS(S)</text>
+<path d="M690 290V460" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="774" y="383" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">请求与连接</text>
+<path d="M840 510H940V280H1050" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="986" y="368" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">回环 HTTP / WS</text>
+<path d="M190 460V290" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="258" y="383" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">界面集成</text>
+<path d="M1200 460V375H860V270H840" fill="none" stroke="#546780" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="1145" y="414" text-anchor="middle" font-size="16" font-family="system-ui,sans-serif" fill="#546780" style="paint-order:stroke;stroke:#f5f5f5;stroke-width:5px">配置与证书材料</text>
+<g id="browser">
+<rect x="40" y="190" width="300" height="100" rx="9" fill="#edf3fb" stroke="#5777a5" stroke-width="1.5"/>
+<text x="60" y="230" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">浏览器</text>
+<text x="60" y="263" font-family="system-ui,sans-serif" font-size="17" fill="#546780">访问页面并保持会话连接</text>
+</g>
+<g id="listener">
+<rect x="540" y="190" width="300" height="100" rx="9" fill="#ffffff" stroke="#d87a49" stroke-width="1.5"/>
+<text x="560" y="230" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">网络接入组件</text>
+<text x="560" y="263" font-family="system-ui,sans-serif" font-size="17" fill="#546780">提供局域网 HTTP 与 HTTPS 入口</text>
+</g>
+<g id="upstream">
+<rect x="1050" y="190" width="300" height="100" rx="9" fill="#edf3fb" stroke="#5777a5" stroke-width="1.5"/>
+<text x="1070" y="230" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">DSH Web 服务</text>
+<text x="1070" y="263" font-family="system-ui,sans-serif" font-size="17" fill="#546780">提供页面、接口与会话服务</text>
+</g>
+<g id="settings">
+<rect x="40" y="460" width="300" height="100" rx="9" fill="#edf3fb" stroke="#5777a5" stroke-width="1.5"/>
+<text x="60" y="500" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">浏览器插件组件</text>
+<text x="60" y="533" font-family="system-ui,sans-serif" font-size="17" fill="#546780">提供设置界面与兼容提示</text>
+</g>
+<g id="transfer">
+<rect x="540" y="460" width="300" height="100" rx="9" fill="#ffffff" stroke="#d87a49" stroke-width="1.5"/>
+<text x="560" y="500" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">转发与桥接组件</text>
+<text x="560" y="533" font-family="system-ui,sans-serif" font-size="17" fill="#546780">处理 HTTP 转发与 WebSocket 桥接</text>
+</g>
+<g id="disk">
+<rect x="1050" y="460" width="300" height="100" rx="9" fill="#edf3fb" stroke="#5777a5" stroke-width="1.5"/>
+<text x="1070" y="500" font-family="system-ui,sans-serif" font-size="23" font-weight="600" fill="#2d3142">配置与证书管理组件</text>
+<text x="1070" y="533" font-family="system-ui,sans-serif" font-size="17" fill="#546780">提供访问配置与加密材料</text>
+</g>
+<text x="40" y="753" font-size="14" fill="#64748b" font-family="system-ui,sans-serif">功能模块视图 · 连线表示模块协作 · 函数、字段及运行机制详见架构正文</text>
+</svg>
