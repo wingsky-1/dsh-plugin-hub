@@ -14,24 +14,29 @@
  */
 
 import type { Context } from "@deepseek-ai/cordis";
-import type {
-  ToolDefinition,
-  ToolExecution,
-  ToolRunContext,
-  PreToolDecision,
-} from "@deepseek-ai/dsh-tools";
+import type { ToolDefinition, ToolExecution, PreToolDecision } from "@deepseek-ai/dsh-tools";
 import type { McpMiddleware } from "../connection/runtime/interface.ts";
 import { LIST_DEFAULT_TOOLS_PER_SERVER } from "../shared/interface.ts";
+import type { ModelContentBlock } from "../shared/interface.ts";
 import { MIDDLEWARE_GLOBAL_ROOT } from "../../shared/interface.ts";
 import type { McpStatsCollector } from "../stats/interface.ts";
 import type { DisabledToolsMap } from "../store/interface.ts";
 import { injectPorts } from "./impl/service/index.ts";
+import { projectImageAdmission, type ImageAdmissionFaces } from "./impl/image-admission/index.ts";
 
 /** 工具执行与组装上下文。 */
 interface MiddlewareToolContext {
   mw: McpMiddleware;
   resolveRoot: (agent: unknown) => Promise<string | undefined>;
   stats?: McpStatsCollector;
+  /**
+   * A+ 图片准入的模型面投影表。键是**本次 exec 对象身份**（宿主在 `execute` 与
+   * `finalizeContent` 之间递的是同一个对象，官方也以它做 WeakMap 键）——不用模块级单例，
+   * 并发调用之间不会串投影。
+   */
+  projections: WeakMap<ToolExecution, ModelContentBlock[]>;
+  /** 图片准入要用的宿主能力（晚读 thunk）；接线点省略时退化成纯诊断（不抛）。 */
+  faces: ImageAdmissionFaces;
 }
 
 /**
@@ -274,7 +279,12 @@ function parseCallParams(args: unknown): { server: string; tool: string; argumen
 async function executeCall(
   toolCtx: MiddlewareToolContext,
   args: unknown,
-  exec: Pick<ToolRunContext, "signal" | "agent" | "callId" | "rootCallId" | "token">,
+  /**
+   * 完整执行身份。为什么不是 `Pick<ToolRunContext, ...>`：图片准入的投影要以**本 exec 对象**
+   * 为键存进 WeakMap，而 `finalizeContent` 收到的是 `ToolExecution`——两处必须是同一个类型，
+   * 否则同一对象在两侧被读成不同形状（`ToolRunContext extends ToolExecution`，收窄无损）。
+   */
+  exec: ToolExecution,
 ) {
   const root = await toolCtx.resolveRoot(exec.agent);
   if (root === undefined) throw new Error("ws_mcp_call: 无法确定工作空间，请先选择工作区");
@@ -296,11 +306,14 @@ async function executeCall(
   if (unit === undefined)
     throw new Error(`ws_mcp_call: 工作空间 ${JSON.stringify(targetRoot)} 无项目级 MCP 配置`);
   await toolCtx.mw.ensureConnected(targetRoot, parsed.server);
-  // #413：agent 透传给 callTool（封装直呼分支的 execute 依赖 agent.session.header.cwd 做
-  // projectPath 补全）；callId/rootCallId/token 供 dispatch 合成子调用 id 并透传 parent（#767 S1-4d）。
+  // #767 笔 1b 交付物 C（F4 收口）：这里的 agent 交给 dispatch 后**只服务封装直呼分支**
+  // （它的 execute 依赖 agent.session.header.cwd 做 projectPath 补全）；远端转发分支不再携带
+  // agent（去 agent 后官方那次图片准入退化成本包自持的 image-admission，见 executeCall 尾部）。
+  // callId/rootCallId/token 供 dispatch 合成子调用 id 并透传 parent（#767 S1-4d）。
   const startTime = Date.now();
+  let value: unknown;
   try {
-    const result = await toolCtx.mw.callTool(server, tool, callArguments, exec.signal, {
+    value = await toolCtx.mw.callTool(server, tool, callArguments, exec.signal, {
       agent: exec.agent,
       callId: exec.callId,
       ...(exec.rootCallId === undefined ? {} : { rootCallId: exec.rootCallId }),
@@ -311,7 +324,6 @@ async function executeCall(
     if (toolCtx.stats?.isEnabled()) {
       toolCtx.stats.recordCall(parsed.server, tool, durationMs, true);
     }
-    return result;
   } catch (error) {
     const durationMs = Date.now() - startTime;
     if (toolCtx.stats?.isEnabled()) {
@@ -325,6 +337,25 @@ async function executeCall(
     }
     throw error;
   }
+  // 交付物 B（A+ 自持图片准入）：远端原始图片块出现时才建模型面投影，按 exec 键控存进表；
+  // 无图片（或图片块已是模型面形态）时不建映射，finalizeContent 返回 undefined，继续走 render。
+  // 投影基于**这里 return 的 value 的 content**（含 dispatch 的 stale 前置提示），不是渲染产物。
+  // 任何拒绝都只在投影里落诊断文本，本函数不因图片面抛错。
+  const projection = await projectImageAdmission({
+    agent: exec.agent,
+    content: callValueContent(value),
+    signal: exec.signal,
+    faces: toolCtx.faces,
+    formatBlock: formatCallContentBlock,
+  });
+  if (projection !== undefined) toolCtx.projections.set(exec, projection);
+  return value;
+}
+
+/** 取 `mw.callTool` 返回值里的 content 数组（非数组/缺席 → 空表：不可能有图片块）。 */
+function callValueContent(value: unknown): readonly unknown[] {
+  const content = (value as { content?: unknown } | undefined)?.content;
+  return Array.isArray(content) ? content : [];
 }
 
 function buildCallTool(toolCtx: MiddlewareToolContext): ToolDefinition {
@@ -369,6 +400,18 @@ function buildCallTool(toolCtx: MiddlewareToolContext): ToolDefinition {
     },
     isConcurrencySafe: () => true,
     timeoutMs: CONNECT_TIMEOUT_MS + DISCOVERY_TIMEOUT_MS + CALL_TIMEOUT_MS + 5000,
+    /**
+     * 官方 `applyFinalContent` 接缝：把本包自持的图片准入投影换进模型面（返回 `undefined`
+     * 则保留原内容 = 继续走 `render`）。命中即删——每次执行只消费一次。`isError` 时把内容
+     * 交回宿主：错误面不该被换面。
+     */
+    finalizeContent(exec, result) {
+      const projection = toolCtx.projections.get(exec);
+      if (projection === undefined) return undefined;
+      toolCtx.projections.delete(exec);
+      if (result.isError === true) return undefined;
+      return projection;
+    },
     execute: (args, exec) => executeCall(toolCtx, args, exec),
   };
 }
@@ -450,7 +493,7 @@ function resolveEmptyListMessage(
       visible.length > 0
         ? `可见项目级服务器：${visible.join(" / ")}；`
         : "当前工作空间无已发现的项目级服务器；";
-    return `没有匹配 server=${JSON.stringify(serverFilter)} 的项目级服务器。${visibleText}全局级服务器不在此列出：已直呼注册的请用 \`mcp__\` 前缀工具（注册名见工具清单），封装定义条目请用 ws_mcp_call 按 @<root>/<server> 访问`;
+    return `没有匹配 server=${JSON.stringify(serverFilter)} 的项目级服务器。${visibleText}全局级服务器不在此列出：请用 ws_mcp_call 按全名访问（全局级写作 @global/<server>，项目级写作 @<root>/<server>；全名从 ws_mcp_list / ws_mcp_search 读），封装定义条目同样经它访问`;
   }
   // 单池后「无项目单元」不再等于「只有项目级可见」：@global 单元同样会被查询。
   return "当前工作空间没有可用 MCP 服务器（项目级与全局均未发现；若刚添加配置，请稍后重试）";
@@ -641,8 +684,7 @@ function buildDetailTool(toolCtx: MiddlewareToolContext): ToolDefinition {
         },
         tool: {
           type: "string",
-          description:
-            "Required: bare remote tool name (from ws_mcp_list / ws_mcp_search; also accepts an mcp__-prefixed direct-call name, whose id segment is opaque — read it from the tool list)",
+          description: "Required: bare remote tool name (from ws_mcp_list / ws_mcp_search)",
         },
       },
       required: ["server", "tool"],
@@ -883,13 +925,30 @@ export function registerMiddlewareTools(
      */
     resolveServerId?: ServerIdResolver;
   } = {},
+  /**
+   * 图片准入要用的宿主能力面（`faces.attachments` / `faces.models` 两条**晚读** thunk）。
+   *
+   * **为什么是 options 之后的第 5 个位置参数，而不是 options 袋里的一个键**：导出面快照按
+   * 「顶层 `export declare` 块」比对，而块提取器在第一个深度 0 的 `}` 处截断（见
+   * `registerDirectMcpGuard` 的同款说明）——袋里加键会同时改写基线里
+   * `registerMiddlewareTools` 的声明块文本，本笔不许动导出面。省略时退化成纯诊断（不落图）。
+   */
+  faces?: ImageAdmissionFaces,
 ): () => void {
   const disposers: Array<() => void> = [];
   // 单一事实源：options 显式传入时同步到 mw（guard 与 callTool 同源，防漂移）。
   const disabledTools = options.disabledTools ?? mw.disabledTools;
   if (options.disabledTools !== undefined) mw.disabledTools = disabledTools;
 
-  const toolCtx: MiddlewareToolContext = { mw, resolveRoot, stats: options.stats };
+  const toolCtx: MiddlewareToolContext = {
+    mw,
+    resolveRoot,
+    stats: options.stats,
+    projections: new WeakMap(),
+    // faces 缺省：两条能力都取不到 → 图片面退化成诊断文本（与「宿主未挂附件库」同一条文案），
+    // 不影响任何无图片的调用面。
+    faces: faces ?? { attachments: () => undefined, models: () => undefined },
+  };
   const tools = [
     buildSearchTool(toolCtx),
     buildCallTool(toolCtx),

@@ -173,7 +173,10 @@ export async function executeMcpCall(input: DispatchCallInput): Promise<unknown>
         ...(input.rootCallId === undefined ? {} : { rootCallId: input.rootCallId }),
         name: input.registeredNameFor(id, tool),
         arguments: typeof args === "object" && args !== null ? args : {},
-        ...(input.agent === undefined ? {} : { agent: input.agent as ToolExecutionInput["agent"] }),
+        // #767 笔 1b F4 收口：远端转发**不带 agent**。带了就等于把子调用挂回该 agent 的作用域，
+        // 而本包已把 mcp__* 从每个 agent 的模型视野摘掉——自家转发会被自己那条 deny 一起打死。
+        // 不带 agent 走全局面（guard 靠 parent ∈ forwarding 放行）；代价是官方执行器那次图片
+        // 准入退化成文本，由本包自持的 image-admission 经 finalizeContent 补回来。
         ...(input.parent === undefined ? {} : { parent: input.parent }),
         // 宿主 executor 无条件读 signal.aborted（实测 §2.9-6：给 undefined 当场 TypeError），
         // 而调用方不保证带 signal——没有就现造一个。

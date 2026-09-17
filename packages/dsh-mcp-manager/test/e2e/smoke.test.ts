@@ -524,18 +524,19 @@ it("中间层 all 模式：@global 覆盖（list/search 可见全局，call 放�
   ).toBeTruthy();
   dispose();
 });
-it("MCP_GUIDANCE 不承诺可按服务器名推导全局直呼名（裁定 AJ）", async () => {
-  // 这条常量是模型面唯一的口径出口（apply 经 systemPrompt.section 注入），却零判据。
-  // 它必须同时传达三件事：有直呼注册的全局工具名形如 mcp__<id>__<tool> 且 id 不透明；
-  // 没有直呼注册的全局服务器（封装定义条目）只能经 ws_mcp_call；all 模式全部经中间层。
+it("MCP_GUIDANCE 与隐藏后的模型面一致：全局与项目级同走 ws_mcp_call 全名寻址", async () => {
+  // 这条常量是模型面唯一的口径出口（apply 经 systemPrompt.section 注入）。#767 笔 1b 的隐藏面
+  // 落地后 mcp__* 不再出现在任何 agent 的工具清单里，这段文本必须同步改真——它若还教模型直呼，
+  // 就是一条活的假事实（模型照做只会拿到 unknown tool）。
   // 断言文本形态而不是整段快照：快照会在任何措辞微调上红，却不回答「口径是否失真」。
   const { MCP_GUIDANCE } = await import("../../lib/index.js");
-  // 反面：不得再出现按服务器名可推导的写法。
+  // 反面：不得再出现按服务器名可推导的直呼写法，也不得残留 id/opaque 口径（直呼面已退场）。
   expect(MCP_GUIDANCE, "不再承诺 mcp__<server>__ 可推导").not.toMatch(/mcp__<server>__/);
-  // 正面：id 口径 + 兜底寻址 + id 不透明的说明。
-  expect(MCP_GUIDANCE, "id 口径").toMatch(/mcp__<id>__<tool>/);
-  expect(MCP_GUIDANCE, "封装定义条目/all 模式的兜底寻址").toMatch(/ws_mcp_call/);
-  expect(MCP_GUIDANCE, "id 不透明（从工具清单读）").toMatch(/opaque/);
+  expect(MCP_GUIDANCE, "不再出现 mcp__<id>__ 注册名口径").not.toMatch(/mcp__<id>__/);
+  expect(MCP_GUIDANCE, "不再出现 id 不透明口径").not.toMatch(/opaque/);
+  // 正面：全局服务器与项目级同路——全名寻址、经 ws_mcp_call；全局名写作 @global/<server>。
+  expect(MCP_GUIDANCE, "全局服务器全名 @global/<server>").toMatch(/@global\/<server>/);
+  expect(MCP_GUIDANCE, "全名寻址经 ws_mcp_call").toMatch(/ws_mcp_call/);
   // 正对照：整段被删空时上面几条会红，但这条钉住「仍在引导」本身（project-level 与检索入口）。
   expect(MCP_GUIDANCE, "正对照：project-level 引导仍在").toMatch(/ws_mcp_search/);
   expect(MCP_GUIDANCE, "正对照：project-level 那条仍在").toMatch(/Project-level servers/);
@@ -696,6 +697,16 @@ it("#362 A1：ws_mcp_list 带 serverFilter 过滤 0 命中 → message 可归因
   );
   expect(out.message, "A1：列出可见项目级服务器").toMatch(/可见项目级服务器：ctx/);
   expect(out.message, "A1：提示全局级不列出").toMatch(/全局级服务器不在此列出/);
+  // #767 笔 1b 增补 E：隐藏面落地后，这条模型面文案不得再教模型直呼 mcp__*（模型已无从发现它）。
+  expect(out.message, "E1：归因文案不再出现 mcp__ 直呼路径").not.toMatch(/mcp__/);
+  expect(out.message, "E1：改教经 ws_mcp_call 按全名访问").toMatch(/ws_mcp_call/);
+  expect(out.message, "E1：全局级全名写法 @global/<server>").toMatch(/@global\/<server>/);
+  // 同笔：ws_mcp_detail 的 tool 形参描述不再宣传模型已无从发现的直呼名（能力仍在，只是不宣传）。
+  const detailDef = registered.find((d) => d.name === "ws_mcp_detail");
+  expect(
+    detailDef.parameters.properties.tool.description,
+    "E2：detail 的 tool 形参描述不含 mcp__",
+  ).not.toMatch(/mcp__/);
   // 不带过滤 → 列出可见单元全部服务器。单池（#767 笔 1a）：可见单元恒为
   // 「项目 root + @global」——@global 不再随模式开关（旧实现 project 模式下只列项目 root）。
   const out2 = await listDef.execute({}, { agent });

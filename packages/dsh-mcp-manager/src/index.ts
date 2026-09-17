@@ -75,7 +75,8 @@ import {
   registerMiddlewareTools,
 } from "./server/inject/interface.ts";
 import { installUpgrade, releaseUpgrade } from "./server/upgrade/interface.ts";
-import { bindHost } from "./server/shared/interface.ts";
+import { bindHost, type HostFaces } from "./server/shared/interface.ts";
+import { startAgentVisibility } from "./server/visibility/interface.ts";
 import { SSE_FRAMES } from "./shared/interface.ts";
 import type { McpServerSummary, SseFramePayload } from "./shared/interface.ts";
 import type { MiddlewareMode } from "./server/workspace/interface.ts";
@@ -173,7 +174,7 @@ export { panelAnchorForPosition } from "./shared/interface.ts";
 export const MCP_GUIDANCE =
   "dsh-mcp-manager is active: centrally manages MCP server connections without preset servers. MCP tools execute on real servers with inherited host permissions; results may contain sensitive data — explain and obtain user consent before write or sensitive operations. Terms like 'MCP / context server' refer to this plugin. Invocation rules:\n" +
   "- Project-level servers: search with `ws_mcp_search`, verify schema with `ws_mcp_detail` if uncertain, then invoke with `ws_mcp_call`. Do NOT call mcp__ prefixed tools directly.\n" +
-  "- Global servers: call their `mcp__<id>__<tool>` tools directly when the tool list has them (the `<id>` segment is an opaque per-assembly id — read it from the tool list, never derive it from the server name). Servers with no direct `mcp__` tool are reached with `ws_mcp_call` at `@<root>/<server>`; in `all` mode every server goes through `ws_mcp_call`.\n" +
+  "- Global servers: reach them the same way — `ws_mcp_call` addressed by full name `@global/<server>` (project-level servers use `@<root>/<server>`); read the full name from `ws_mcp_list` / `ws_mcp_search`. The `mcp__`-prefixed tools are NOT in your tool list and must never be called directly.\n" +
   "- Do not retry a failing server tool more than twice.";
 
 /** apply 顶层解析后的增强/开关配置集合。 */
@@ -357,13 +358,22 @@ function registerMiddlewareAndGuard(
   manager: McpManager,
   mw: InstanceType<typeof runtimeApi.McpMiddleware>,
   resolveRoot: (agent: unknown) => Promise<string | undefined>,
+  /** 宿主能力面；省略（旧调用点/夹具）时图片面退化成纯诊断，不影响其余行为。 */
+  faces: HostFaces | undefined,
 ): () => void {
   const resolveServerId = (id: string) => manager.serverNameForId(id);
-  const disposeTools = registerMiddlewareTools(ctx, mw, resolveRoot, {
-    disabledTools: manager.disabledTools,
-    stats: manager.stats,
-    resolveServerId,
-  });
+  const disposeTools = registerMiddlewareTools(
+    ctx,
+    mw,
+    resolveRoot,
+    {
+      disabledTools: manager.disabledTools,
+      stats: manager.stats,
+      resolveServerId,
+    },
+    // 图片准入的两条晚读 thunk（第 5 个位置参数：options 袋里加键会改导出面声明块）。
+    faces === undefined ? undefined : { attachments: faces.attachments, models: faces.models },
+  );
   const guardDispose = registerDirectMcpGuard(
     ctx,
     manager.disabledTools,
@@ -386,6 +396,8 @@ export function makeMiddlewareHotSwitch(
   middlewarePolicy: Record<string, unknown> | undefined,
   resolveRoot: (agent: unknown) => Promise<string | undefined>,
   dispose: { current: () => void },
+  /** 宿主能力面（热切换要按同一份 faces 重注册中间层工具；省略时图片面退化成纯诊断）。 */
+  faces?: HostFaces,
 ): (mode: MiddlewareMode) => Promise<void> {
   // 同值幂等（防设置面每次 onChange 都走一遍重注册）。单池合并后模式不再决定池归属，
   // 运行时的模式镜像字段已删（M9）——这里只记「上一次被要求切到的值」，不对外暴露、
@@ -397,7 +409,7 @@ export function makeMiddlewareHotSwitch(
     applied = next;
     dispose.current();
     const mw = await manager.initMiddleware(middlewarePolicy ?? {});
-    dispose.current = registerMiddlewareAndGuard(manager.ctx, manager, mw, resolveRoot);
+    dispose.current = registerMiddlewareAndGuard(manager.ctx, manager, mw, resolveRoot, faces);
     // 单池后模式不再决定谁进池（全部服务器恒经中间层）：热切换只剩「收敛连接集合
     // + 广播一帧」。reconcile 仍要跑——它负责把配置里新增/移除的服务器对齐到池。
     manager.reconcileServers();
@@ -583,6 +595,8 @@ interface EnabledRuntimeDisposers {
   disposeSection: () => void;
   disposeInjection: () => void;
   disposeMiddleware: () => void;
+  /** 模型可见面隐藏（#767 笔 1b 交付物 A）：撤掉每个 agent 上那条 restrict 并摘监听。 */
+  disposeVisibility: () => void;
   watchCleanup: () => void;
 }
 
@@ -684,11 +698,12 @@ export async function apply(
     disposeSection: () => {},
     disposeInjection: () => {},
     disposeMiddleware: () => {},
+    disposeVisibility: () => {},
     watchCleanup: () => {},
   };
 
   if (options.enabled) {
-    runtime = await assembleEnabledRuntime(ctx, manager, options, syncMiddlewareFromSettings);
+    runtime = await assembleEnabledRuntime(ctx, manager, options, syncMiddlewareFromSettings, host);
   }
 
   ctx.effect(
@@ -699,6 +714,7 @@ export async function apply(
       // 不在卸载路径上引入等待点。
       void runtime.disposeRoutes();
       runtime.disposeMiddleware();
+      runtime.disposeVisibility();
       runtime.watchCleanup();
       void manager.dispose();
       // 装载账本只发起 dispose、不等结算（官方 dispose 会等在途首连，挂死的服务器能把它拖到
@@ -726,6 +742,8 @@ async function assembleEnabledRuntime(
     middlewareModeRaw: string | undefined;
   },
   syncMiddlewareFromSettings: () => void,
+  /** 组合根收窄后的宿主能力面（bindHost 的产物）：图片准入与模型可见面隐藏的取数口。 */
+  faces: HostFaces,
 ): Promise<EnabledRuntimeDisposers> {
   // F3（#382）：中间层初始化提前到 startAll 之前（防「先建后停」竞态，详见
   // 本文件运行期装配段的注释）；#389 M2：settings 合并面就绪时直接取持久化模式，
@@ -748,13 +766,25 @@ async function assembleEnabledRuntime(
   manager.disabledTools = await loadDisabledTools(manager.userStatePath);
   // 中间层实例 + ws_mcp_* 无条件装配（单池后它是唯一连接路径）。
   const mw = await manager.initMiddleware(options.middlewarePolicy);
-  currentMiddlewareDispose = registerMiddlewareAndGuard(ctx, manager, mw, resolveRoot);
+  currentMiddlewareDispose = registerMiddlewareAndGuard(ctx, manager, mw, resolveRoot, faces);
   manager.setMiddlewareMode = makeMiddlewareHotSwitch(
     manager,
     options.middlewarePolicy,
     resolveRoot,
     middlewareDisposer,
+    faces,
   );
+
+  // 交付物 A（#767 笔 1b）：把 mcp__* 从每个 agent 的模型视野摘掉。**必须在 startAll 之前**——
+  // 连接（以及工具注册）发生在 startAll 期间：先挂隐藏面，初始 reconcile 才能覆盖已 live 的
+  // agent，startAll 期间新注册的 mcp__* 再经 tools/change 收敛（restriction 是调用时刻快照，
+  // 后注册的名字不在旧快照里）。units 与 schemas 都是活引用，域每次现算名单。
+  const disposeVisibility = startAgentVisibility({
+    events: faces.events,
+    units: mw.units,
+    registeredNames: () => faces.tools.schemas().map((schema) => schema.name),
+    logger: faces.logger,
+  });
 
   await manager.startAll();
   await manager.loadCatalogCache();
@@ -794,6 +824,7 @@ async function assembleEnabledRuntime(
     disposeSection,
     disposeInjection,
     disposeMiddleware: currentMiddlewareDispose,
+    disposeVisibility,
     watchCleanup,
   };
 }

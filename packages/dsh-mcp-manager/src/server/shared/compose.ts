@@ -6,9 +6,12 @@
  * 必须 import 得到它。入口仍然是组合根：B2 由它调用这里的三个函数
  * （`bindHost(ctx)` → `assemble(host, domains)` → `ctx.effect(() => () => safeDisposeAll(disposers))`）。
  */
+import type { Agent } from "@deepseek-ai/dsh-agent";
 import type {
+  AttachmentsPort,
   HostContextPort,
   HostFaces,
+  ModelInfoPort,
   MountedPlugin,
   OfficialPluginModule,
 } from "./host-faces.ts";
@@ -86,7 +89,26 @@ export function bindHost(ctx: HostContextPort): HostFaces {
     },
     prompt: { section: (section) => ctx.systemPrompt.section(section) },
     expose: { provide: (name, service) => ctx.provide(name, service) },
-    events: { onPreStep: (handler) => ctx.on("agent/pre-step", handler) },
+    events: {
+      onPreStep: (handler) => ctx.on("agent/pre-step", handler),
+      // agent 作用域边：restrict 只在**作用域**上下文上可用（全局调用被宿主当场拒），故这里把
+      // agent 自己的 tools 面连同 id 一起交出去——域拿不到 Context，也就没有第二处作用域入口。
+      onAgentCreated: (handler) =>
+        ctx.on("agent/created", ({ agent }) => handler({ id: agent.id, tools: agent.ctx.tools })),
+      onAgentDisposed: (handler) =>
+        ctx.on("agent/disposed", ({ agent }) => handler({ id: agent.id })),
+      onToolsChange: (handler) => ctx.on("tools/change", handler),
+      // 装载时的全量 reconcile 用：同名服务缺席（假 ctx / 早期装配）时给空表，不抛。
+      liveAgents: () => {
+        // 假 ctx 常见：`get` 本身缺席（宿主服务查询面不可用）——给空表，不抛。
+        if (typeof ctx.get !== "function") return [];
+        const agents = ctx.get("agents") as { list(): readonly Agent[] } | undefined;
+        return (agents?.list() ?? []).map((agent) => ({ id: agent.id, tools: agent.ctx.tools }));
+      },
+    },
+    // 晚读 thunk（不是装配期快照）：attachments/llm 都是晚到服务，apply 期取恒 undefined。
+    attachments: () => ctx.get("attachments") as AttachmentsPort | undefined,
+    models: () => ctx.get("llm") as ModelInfoPort | undefined,
     loader: {
       load: async (specifier) => {
         // `loader` 不在 `Context` 类型面上，只能按名字现取；取不到就 fail closed——回落

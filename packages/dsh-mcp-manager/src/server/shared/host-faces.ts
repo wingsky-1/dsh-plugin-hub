@@ -14,7 +14,60 @@ import type { Context, Events } from "@deepseek-ai/cordis";
 // 宿主服务面靠声明合并挂到 `Context` 上：少了这几行，下面的 `Context["tools"]` 等取不到成员。
 import type {} from "@deepseek-ai/dsh-agent";
 import type {} from "@deepseek-ai/dsh-system-prompt";
-import type {} from "@deepseek-ai/dsh-tools";
+import type { ToolDefinition, ToolRuntime } from "@deepseek-ai/dsh-tools";
+
+/**
+ * 模型面内容块：官方词表的所有者是 dsh-llm，本包不引它，形状自 `ToolDefinition` 的
+ * `finalizeContent` 接缝派生（返回 `ContentBlock[] | undefined`）。
+ *
+ * 为什么派生而不是直引 `@deepseek-ai/dsh-llm`：本包只为一处类型新增一个 npm 依赖（还要进
+ * catalog、随宿主升版）不划算；若维护者日后要求直引，换法只是把这条别名换成
+ * `import type { ContentBlock } from "@deepseek-ai/dsh-llm"`。
+ */
+export type ModelContentBlock = NonNullable<
+  ReturnType<NonNullable<ToolDefinition["finalizeContent"]>>
+>[number];
+
+/** 附件引用：模型面图片块携带的那个类型（本包同样不引 `dsh-attachment`，自块形状派生）。 */
+export type ModelAttachmentRef = Extract<ModelContentBlock, { type: "image" }>["attachment"];
+
+/**
+ * 一次图片落库的入参：与官方 `SaveImageAttachment` 逐字段一致，`mediaType` 收窄成四值
+ * 字面量联合（宿主白名单）。自持声明而不是引官方包，理由同上一条。
+ */
+export interface SaveImageInput {
+  readonly data: Uint8Array;
+  readonly mediaType: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+  readonly name?: string;
+}
+
+/**
+ * 附件库（`ctx.get("attachments")`）的最小面。**晚读**：服务可能缺席（宿主未挂
+ * `dsh-attachment-local`），且 apply 期的早读恒得 undefined——故只能经 thunk 在调用时刻现取。
+ */
+export interface AttachmentsPort {
+  saveImages(inputs: readonly SaveImageInput[]): Promise<readonly ModelAttachmentRef[]>;
+}
+
+/**
+ * 模型目录（`ctx.get("llm")`）的最小面：只问该路由声明了哪些输入模态。**晚读**，理由同上。
+ */
+export interface ModelInfoPort {
+  resolveModelInfo(
+    provider: string,
+    model: string,
+    signal?: AbortSignal,
+  ): Promise<{ inputModalities?: readonly string[] }>;
+}
+
+/**
+ * 一个活 agent 的模型可见面句柄：`restrict` 是宿主给的**作用域**原语（全局调用会被拒），
+ * 故本包必须经 agent 自己的作用域上下文调用它——见 visibility 域。
+ */
+export interface AgentFace {
+  readonly id: string;
+  readonly tools: Pick<ToolRuntime, "restrict">;
+}
 
 /** 宿主日志出口的收窄面：本包只在诊断处出声，且不因为出声改变动作。 */
 export interface LoggerPort {
@@ -54,6 +107,23 @@ export interface EventsPort {
       next: Parameters<Events["agent/pre-step"]>[1],
     ) => ReturnType<Events["agent/pre-step"]>,
   ): () => void;
+  /**
+   * 一个新 agent 完成装配（模型视野还完整）——隐藏面必须在这里补上限制。
+   *
+   * 为什么单列一条而不是复用 `agent/pre-step`：限制只在 agent 的**调用时刻**才被读到
+   * （宿主 restriction 是快照语义），而 pre-step 在装配之后、每轮都会跑，挂在那里会把
+   * 「装配面」和「每轮」混成一条路径；`agent/created` 是宿主为这件事提供的正解时点。
+   */
+  onAgentCreated(handler: (agent: AgentFace) => void): () => void;
+  /** 一个 agent 离开注册表：它那条限制随作用域一起失效，但要显式摘除并清记忆。 */
+  onAgentDisposed(handler: (agent: { id: string }) => void): () => void;
+  /**
+   * 注册面或限制面变化（宿主原话：无载荷、故意不做作用域过滤，每个监听者都看得到别人的变更）。
+   * restriction 是**调用时刻的快照**，后注册的 `mcp__*` 不在旧快照里——重同步只能靠这条。
+   */
+  onToolsChange(handler: () => void): () => void;
+  /** 当前全部活 agent（装载时做一次全量 reconcile；服务缺席给空表）。 */
+  liveAgents(): readonly AgentFace[];
 }
 
 /**
@@ -159,4 +229,8 @@ export interface HostFaces {
   readonly expose: ExposePort;
   readonly events: EventsPort;
   readonly loader: LoaderPort;
+  /** 附件库：**晚读** thunk，调用时刻才向宿主现取（服务缺席/apply 期早读都取不到）。 */
+  readonly attachments: () => AttachmentsPort | undefined;
+  /** 模型目录：**晚读** thunk，同上。 */
+  readonly models: () => ModelInfoPort | undefined;
 }

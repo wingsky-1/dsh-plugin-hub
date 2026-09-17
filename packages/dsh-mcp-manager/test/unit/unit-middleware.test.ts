@@ -2603,3 +2603,196 @@ describe("#767 S1-4d：guard 判发起者", () => {
     expect(decision.reason).toMatch(/已被用户在「MCP」浮窗禁用/);
   });
 });
+
+// #767 笔 1b：A+ 自持图片准入的接线面 + F4 远端转发去 agent ----
+// 图片准入的**纯逻辑**判据在 unit-image-admission.test.ts；这里只钉接线：executeCall 按 exec
+// 存投影、finalizeContent 换入、未命中返回 undefined（保留 render），以及远端转发不再带 agent。
+describe("#767 笔 1b：A+ 图片准入接线与 F4 转发去 agent", () => {
+  /** canonical base64 的合法图片。 */
+  const PNG = "iVBORw0KGgo=";
+  const ROUTE_AGENT = {
+    session: { requestHeader: () => ({ config: { provider: "p", model: "m" } }) },
+    options: {},
+  };
+  const IMAGE_MODEL = { resolveModelInfo: async () => ({ inputModalities: ["text", "image"] }) };
+
+  /** 注册四个中间层工具（带 faces），交回 ws_mcp_call 定义与假工具服务（看转发出去的那次 exec）。 */
+  async function callFixture({ value, faces }) {
+    const servers = [{ name: "py", transport: "stdio", command: "python", enabled: true }];
+    // 注册面必须带 `mcp__id-py__` 前缀：executeCall 会先 ensureConnected，而六态投影按注册面
+    // 判「已连上」——不带前缀会走重建路径，把夹具的 connected 条目拆掉。
+    const { host, tools } = makeHost(new Map([[ROOT, servers]]), {
+      schemas: [{ name: "mcp__id-py__echo" }],
+      execute: async () => ({ isError: false, content: [], value }),
+    });
+    const mw = trackMw(new McpMiddleware(host, {}));
+    const unit = makeUnit();
+    mw.units.set(ROOT, unit);
+    unit.connections.set("py", remoteEntry(servers[0], "id-py"));
+    const registered = [];
+    const ctx = {
+      tools: {
+        register: (def) => {
+          registered.push(def);
+          return () => {};
+        },
+        schemas: () => tools.schemas(),
+      },
+    };
+    // 第 5 个位置参数就是图片准入的宿主能力面（faces === undefined 时退化成纯诊断）。
+    registerMiddlewareTools(ctx, mw, async () => ROOT, { disabledTools: new Map() }, faces);
+    return {
+      call: registered.find((def) => def.name === "ws_mcp_call"),
+      tools,
+    };
+  }
+
+  function makeExec(overrides = {}) {
+    return {
+      callId: "call-1",
+      rootCallId: "call-1",
+      name: "ws_mcp_call",
+      arguments: {},
+      signal: new AbortController().signal,
+      agent: ROUTE_AGENT,
+      token: "tok-1",
+      ...overrides,
+    };
+  }
+
+  const callArgs = { server: fullServerName(ROOT, "py"), tool: "echo" };
+
+  it("B8 远端合法图片 + 路由声明 image + 落库成功 → finalizeContent 换入真附件块且文本保序", async () => {
+    const saved = [];
+    const value = {
+      content: [
+        { type: "text", text: "前" },
+        { type: "image", mimeType: "image/png", data: PNG },
+        { type: "resource", uri: "x" },
+      ],
+    };
+    const fixture = await callFixture({
+      value,
+      faces: {
+        attachments: () => ({
+          saveImages: async (inputs) => {
+            saved.push(inputs);
+            return [{ id: "att-1" }];
+          },
+        }),
+        models: () => IMAGE_MODEL,
+      },
+    });
+    const exec = makeExec();
+    const returned = await fixture.call.execute(callArgs, exec);
+    // render 兜底保持现状（无 exec 的既有投影 + 图片占位串）。
+    const rendered = fixture.call.output.render({}, returned);
+    expect(rendered).toEqual([
+      { type: "text", text: "前\n[image content]\n[resource: content discarded]" },
+    ]);
+    const finalized = fixture.call.finalizeContent(exec, {
+      isError: false,
+      content: rendered,
+      value: returned,
+    });
+    // 文本块次序与内容保住；图片块原位换成真附件。
+    expect(finalized).toEqual([
+      { type: "text", text: "前" },
+      { type: "image", attachment: { id: "att-1" } },
+      { type: "text", text: "[resource: content discarded]" },
+    ]);
+    expect(saved.length).toBe(1);
+    expect(saved[0][0].mediaType).toBe("image/png");
+  });
+
+  it("B14 未命中（无图片块 / 不是本次 exec / isError）→ finalizeContent 返回 undefined", async () => {
+    const value = { content: [{ type: "text", text: "只有文本" }] };
+    const fixture = await callFixture({
+      value,
+      faces: {
+        attachments: () => ({
+          saveImages: async () => {
+            throw new Error("不该被调用");
+          },
+        }),
+        models: () => IMAGE_MODEL,
+      },
+    });
+    const exec = makeExec();
+    const returned = await fixture.call.execute(callArgs, exec);
+    const rendered = fixture.call.output.render({}, returned);
+    expect(
+      fixture.call.finalizeContent(exec, { isError: false, content: rendered, value: returned }),
+      "无图片块：不建映射，保留 render",
+    ).toBe(undefined);
+    expect(
+      fixture.call.finalizeContent(makeExec({ callId: "never-ran" }), {
+        isError: false,
+        content: rendered,
+        value: returned,
+      }),
+      "不是本次执行：弱映射无命中",
+    ).toBe(undefined);
+  });
+
+  it("B14b isError 结果不吃换面（内容交回宿主）", async () => {
+    const value = { content: [{ type: "image", mimeType: "image/png", data: PNG }] };
+    const fixture = await callFixture({
+      value,
+      faces: {
+        attachments: () => ({ saveImages: async () => [{ id: "att-1" }] }),
+        models: () => IMAGE_MODEL,
+      },
+    });
+    const exec = makeExec();
+    const returned = await fixture.call.execute(callArgs, exec);
+    const rendered = fixture.call.output.render({}, returned);
+    expect(
+      fixture.call.finalizeContent(exec, { isError: true, content: rendered, value: returned }),
+    ).toBe(undefined);
+    // 命中即删：同一个 exec 再问一次也不再有投影。
+    expect(
+      fixture.call.finalizeContent(exec, { isError: false, content: rendered, value: returned }),
+    ).toBe(undefined);
+  });
+
+  it("B15 两次不同 exec 的投影互不串（键是 exec 身份），且命中即删", async () => {
+    const value = { content: [{ type: "image", mimeType: "image/png", data: PNG }] };
+    let seq = 0;
+    const fixture = await callFixture({
+      value,
+      faces: {
+        attachments: () => ({
+          saveImages: async () => {
+            seq += 1;
+            return [{ id: `att-${seq}` }];
+          },
+        }),
+        models: () => IMAGE_MODEL,
+      },
+    });
+    const e1 = makeExec({ callId: "c1" });
+    const e2 = makeExec({ callId: "c2" });
+    const v1 = await fixture.call.execute(callArgs, e1);
+    const v2 = await fixture.call.execute(callArgs, e2);
+    const swap = (exec, val) =>
+      fixture.call.finalizeContent(exec, { isError: false, content: [], value: val });
+    expect(swap(e1, v1)[0].attachment).toEqual({ id: "att-1" });
+    expect(swap(e2, v2)[0].attachment).toEqual({ id: "att-2" });
+    expect(swap(e1, v1), "已消费过的 exec 不再有投影").toBe(undefined);
+  });
+
+  it("B16 F4：远端转发不带 agent，parent = 外层 token，signal 照传", async () => {
+    const fixture = await callFixture({
+      value: { content: [{ type: "text", text: "hi" }] },
+      faces: undefined,
+    });
+    const exec = makeExec();
+    await fixture.call.execute(callArgs, exec);
+    const sent = fixture.tools.executed[0];
+    expect(sent.name).toBe("mcp__id-py__echo");
+    expect(sent.agent, "远端分支去 agent（F4 收口）").toBe(undefined);
+    expect(sent.parent).toBe("tok-1");
+    expect(sent.signal).toBe(exec.signal);
+  });
+});

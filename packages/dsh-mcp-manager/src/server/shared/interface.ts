@@ -11,6 +11,8 @@ export { assemble, bindHost, safeDisposeAll } from "./compose.ts";
 export type { DomainSpec } from "./compose.ts";
 // 宿主能力面的类型（I1 第二白名单点）：域 deps.ts 与组合根都只认这一份形状。
 export type {
+  AgentFace,
+  AttachmentsPort,
   EventsPort,
   ExposePort,
   HostContextPort,
@@ -19,10 +21,14 @@ export type {
   LogRecord,
   LoggerPort,
   LogsPort,
+  ModelAttachmentRef,
+  ModelContentBlock,
+  ModelInfoPort,
   MountedPlugin,
   OfficialPluginModule,
   PromptPort,
   RegisterPort,
+  SaveImageInput,
   ToolsPort,
 } from "./host-faces.ts";
 // 跨域共享纯常量：单一物理定义在 constants.ts，目录外一律经本门面取——直接引
