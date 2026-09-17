@@ -295,9 +295,13 @@ jobs:
         run: |
           set -e
           mkdir -p coverage/mutation
-          DIRS="$(ls -d coverage/mutation/mutation-shard-* 2>/dev/null || true)"
-          for dir in $DIRS; do cp "$dir"/*.json coverage/mutation/ 2>/dev/null || true; done
-          COUNT=$(ls coverage/mutation/dsh-*.json 2>/dev/null | wc -l | tr -d ' ')
+          shopt -s nullglob
+          for dir in coverage/mutation/mutation-shard-*; do
+            [ -d "$dir" ] || continue
+            for report in "$dir"/*.json; do cp "$report" coverage/mutation/; done
+          done
+          REPORTS=(coverage/mutation/dsh-*.json)
+          COUNT=${#REPORTS[@]}
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
           echo "报告 artifact 还原完成：${COUNT} 份段报告"
           if [ "$COUNT" -eq 0 ]; then
@@ -323,7 +327,7 @@ jobs:
         # #718 S1.2：由整树替换改为**并集入档**——先取回远端基线，本次未产出的段沿用远端文件
         # 并在日志里记账（新算/沿用/缺/退役），段被失败实例吃掉因而在物理上不可能再发生；
         # 拉取失败一律 fail-loud（取不到远端 = 沿用集合未知，以空集合推送就是删段）。
-        if: always() && steps.reports.outputs.count != '0'
+        if: always() && steps.reports.outputs.count != '' && steps.reports.outputs.count != '0'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OBSERVE_PAT: ${{ secrets.OBSERVE_PAT }}
@@ -332,30 +336,52 @@ jobs:
       - name: Create/update observe issue（幂等：同日重跑不重复建；回落即追评）
         # #765 G1：原条件 `steps.report.outcome == 'success'` 恰好把**违约夜**排除在外——
         # 违约正是判分 exit 1 的那一刻，于是只剩正常夜有工单（实测最后一张 = #683 /
-        # 2026-09-09，其后违约夜零工单）。改为只看「本班是否产出了段报告」，并按判分状态
-        # 文件走三态：无正文 → 诊断工单；有正文 → 正常建/追评。
-        if: always() && steps.reports.outputs.count != '0'
+        # 2026-09-09，其后违约夜零工单）。always 收尾：零报告/缺 count/无正文均诊断，
+        # 有正文则保留判分结果；同日已有工单仍追加本次结果。
+        if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+          REPORT_COUNT: ${{ steps.reports.outputs.count }}
+          REPORT_OUTCOME: ${{ steps.report.outcome }}
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          SHARDS_RESULT: ${{ needs.mutation-shards.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -e
           TITLE="chore(observe): 夜间质量报告 $(date -u +%Y-%m-%d)"
           BODY=observe-body.md
-          if [ ! -s "$BODY" ]; then
+          DIAGNOSTIC=false
+          if [ -z "$REPORT_COUNT" ] || [ "$REPORT_COUNT" = "0" ] || [ ! -s "$BODY" ]; then
+            DIAGNOSTIC=true
             echo "::error::判分未产出报告正文（$BODY 缺失或为空）—— 以诊断工单留痕"
             {
               echo "## 夜间质量报告（判分无数据）"
               echo
-              echo "本班次判分未产出报告正文，无法给出覆盖率 / 变异率结论。判分状态文件："
+              echo "本班次数据缺失，无法给出覆盖率 / 变异率结论。"
+              echo "报告数量：${REPORT_COUNT:-缺失}；判分：${REPORT_OUTCOME:-未知}；quality：${QUALITY_RESULT:-未知}；shards：${SHARDS_RESULT:-未知}"
+              echo "运行：${RUN_URL:-未知}"
+              echo "判分状态文件："
               echo
               echo '```json'
               cat observe-status.json 2>/dev/null || echo '(状态文件亦缺失)'
               echo '```'
             } > "$BODY"
           fi
+          if [ "$QUALITY_RESULT" != "success" ] || [ "$SHARDS_RESULT" != "success" ]; then
+            DIAGNOSTIC=true
+            echo "::error::上游任务未成功——保留判分正文并追加诊断"
+            {
+              echo
+              echo "## 上游任务未成功"
+              echo
+              echo "quality：${QUALITY_RESULT:-未知}；shards：${SHARDS_RESULT:-未知}"
+              echo "运行：${RUN_URL:-未知}"
+            } >> "$BODY"
+          fi
           EXISTING=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')
           if [ -n "$EXISTING" ]; then
-            echo "issue #$EXISTING 已存在，跳过创建"
+            # 同日重跑仍追加本次结果：诊断、部分报告和违约正文不能被旧报告掩盖。
+            gh issue comment "$EXISTING" --body-file "$BODY"
           else
             gh issue create --title "$TITLE" --body-file "$BODY"
           fi
@@ -366,6 +392,8 @@ jobs:
             NUM=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number --jq '.[0].number')
             gh issue comment "$NUM" --body-file observe-marker.txt || echo "::warning::回落评论追加失败（issue #$NUM）"
           fi
+          # 无有效判分或上游非 success，留痕后仍须判红。
+          [ "$DIAGNOSTIC" = false ] || exit 1
 
       - name: Upload artifacts（coverage / mutation 报告留档）
         if: always()

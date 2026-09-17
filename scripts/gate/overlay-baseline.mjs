@@ -345,37 +345,46 @@ function readRemoteManifest(baselineDir) {
   let remoteManifest = {};
   try {
     remoteManifest = JSON.parse(readFileSync(join(baselineDir, "manifest.json"), "utf8"));
+    if (!remoteManifest || typeof remoteManifest !== "object" || Array.isArray(remoteManifest)) {
+      throw new Error("manifest 必须是对象");
+    }
   } catch {
     // 缺 manifest / 内容损坏：沿用段的陈旧判据取不到，但覆盖本身仍是对的，
     // 故降级为「现存条目一律重算」并点名，而不是让整次合并丢基线。
     console.warn(
-      "[overlay-baseline] 远端 manifest 不可用，沿用段的时间戳将按本次时间重算（陈旧判据降级）",
+      "[overlay-baseline] 远端 manifest 不可用，沿用段只重算内容摘要，测量时间记为 unknown（mtime=null）",
     );
     remoteManifest = {};
   }
   return remoteManifest;
 }
 /**
- * 逐个下载增量产物并差量覆盖 baselineDir，返回 { overlayCount, overlaid }。
+ * 逐个下载增量产物并差量覆盖 baselineDir，返回覆盖结果与失败明细；沿用旧文件不能抹去本次失败。
  */
 function overlayArtifacts({ chosenRun, mutArtifacts, baselineDir, artifactsDir }) {
   // 6. 逐个下载增量产物并覆盖同名基线
   let overlayCount = 0;
   const overlaid = [];
+  const failures = [];
   for (const art of mutArtifacts) {
-    if (!/^[a-zA-Z0-9_-]+$/.test(art.name)) continue;
+    if (!/^[a-zA-Z0-9_-]+$/.test(art.name)) {
+      failures.push(`${art.name}: 非法产物名`);
+      continue;
+    }
     const downloadPath = join(artifactsDir, art.name);
     mkdirSync(downloadPath, { recursive: true });
 
     try {
       runGh(["run", "download", String(chosenRun.id), "-n", art.name, "-D", downloadPath]);
     } catch (err) {
+      failures.push(`${art.name}: 下载失败`);
       console.warn(`[overlay-baseline] 下载产物 ${art.name} 失败，跳过该项: ${err.message}`);
       continue;
     }
 
     const files = readdirSync(downloadPath).filter((f) => /^incremental-.+\.json$/.test(f));
     if (files.length === 0) {
+      failures.push(`${art.name}: 无增量文件`);
       // 下载成功但目录里没有预期文件名：说明 upload 的 path 约定与这里不一致（段名/命名漂移），
       // 静默跳过会让该段永远没有基线，故显式点名。
       console.warn(
@@ -390,12 +399,14 @@ function overlayArtifacts({ chosenRun, mutArtifacts, baselineDir, artifactsDir }
       try {
         content = readFileSync(src, "utf8");
       } catch (readErr) {
+        failures.push(`${art.name}/${f}: 读取失败`);
         console.warn(`[overlay-baseline] 文件 ${f} 读取失败，拒绝覆盖: ${readErr.message}`);
         continue;
       }
       try {
         JSON.parse(content); // 严格校验合法 JSON
       } catch (parseErr) {
+        failures.push(`${art.name}/${f}: JSON 解析失败`);
         console.warn(
           `[overlay-baseline] 文件 ${f} 非有效 JSON（大小 ${content.length}B），拒绝覆盖: ${parseErr.message}`,
         );
@@ -407,7 +418,7 @@ function overlayArtifacts({ chosenRun, mutArtifacts, baselineDir, artifactsDir }
       console.log(`[overlay-baseline] 差量覆盖: ${f}`);
     }
   }
-  return { overlayCount, overlaid };
+  return { overlayCount, overlaid, failures };
 }
 /**
  * 有产物却一个都没覆盖成功时的 fail-loud 判词。
@@ -465,7 +476,14 @@ function pushOverlayArchive({ baselineDir, overlaid, carriedForward, remoteManif
   // 重新盖章会让「基线是否陈旧」无从判断（#718 S3.1 要修的那个坑）。
   const preserved = {};
   for (const f of allFiles) {
-    if (!overlaid.includes(f) && remoteManifest[f]) preserved[f] = remoteManifest[f];
+    if (overlaid.includes(f)) continue;
+    if (remoteManifest[f]) {
+      preserved[f] = remoteManifest[f];
+    } else {
+      // 恢复文件的落盘时间不是测量证据；与夜间并集入档同样用 null 表示未知。
+      preserved[f] = { ...buildManifest(baselineDir, [f])[f], mtime: null };
+      console.warn(`[overlay-baseline] 沿用段 ${f} 缺 manifest 条目，重算摘要，mtime=null`);
+    }
   }
 
   pushBaselineTree({
@@ -495,12 +513,18 @@ function performOverlay({ chosenRun, mutArtifacts, expiredMutArtifacts, pr, toke
   try {
     const carriedForward = restoreExistingBaseline(baselineDir);
     const remoteManifest = readRemoteManifest(baselineDir);
-    const { overlayCount, overlaid } = overlayArtifacts({
+    const { overlayCount, overlaid, failures } = overlayArtifacts({
       chosenRun,
       mutArtifacts,
       baselineDir,
       artifactsDir,
     });
+    if (failures.length > 0) {
+      console.error(
+        `[overlay-baseline] 覆盖失败 ${failures.length} 项（保留已有基线）: ${failures.join("; ")}`,
+      );
+      process.exitCode = 1;
+    }
     if (overlayCount === 0) {
       reportNoOverlay(mutArtifacts, expiredMutArtifacts);
       process.exitCode = 1;
@@ -514,7 +538,7 @@ function performOverlay({ chosenRun, mutArtifacts, expiredMutArtifacts, pr, toke
       pr,
       token,
     });
-    console.log(`[overlay-baseline] 成功完成 PR #${pr.number} 产物差量覆盖并推至 ${BRANCH}！`);
+    console.log(`[overlay-baseline] 已将 PR #${pr.number} 可用产物差量覆盖并推至 ${BRANCH}`);
     if (archiveGap) {
       console.error("[overlay-baseline] 归档已更新，但存在缺口（见上）—— 本次以非零退出暴露问题");
       process.exitCode = 1;

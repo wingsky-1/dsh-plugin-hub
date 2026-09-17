@@ -795,29 +795,29 @@ jobs:
             mkdir -p "packages/$pkg"
             cp -r "$dir/." "packages/$pkg/"
           done
-          # #722 门禁分层：产物齐备的判据随门禁口径走——
-          #   gate:full → 全仓（全仓产物闸的前提，缺任一包即红）；
-          #   默认增量 → 仅命中包（空清单合法：纯文档 PR 无产物闸对象），
-          #   但**非空清单缺产物仍判红**（防 artifact 链路静默丢包）。
-          if [ "$FULL_GATE" = "true" ]; then
-            if [ "$(printf '%s' "$ALL_PACKAGES" | jq 'length')" -eq 0 ]; then
-              echo '::error::allPackages 为空（fail-closed，禁止零断言通过）'
-              exit 1
-            fi
-            WANT="$(printf '%s' "$ALL_PACKAGES" | jq -r '.[]')"
-            SCOPE_DESC="全仓（gate:full）"
-          else
-            WANT="$(printf '%s' "$HIT_PACKAGES" | jq -r '.[]')"
-            SCOPE_DESC="命中包切片（增量）"
-          fi
+          # 先验证下载链路；全仓构建不能掩盖命中包 artifact 丢失。
+          SCOPE_DESC="命中包切片（增量）"
+          WANT="$(printf '%s' "$HIT_PACKAGES" | jq -r '.[]')"
           for pkg in $WANT; do
-            test -f "packages/$pkg/lib/index.js" || { echo "::error::$pkg/lib/index.js 缺失（产物口径：$SCOPE_DESC）"; exit 1; }
+            test -f "packages/$pkg/lib/index.js" || { echo "::error::$pkg/lib/index.js 缺失（命中包 artifact）"; exit 1; }
           done
-          echo "构建产物就位（口径：$SCOPE_DESC）：$(printf '%s' "$WANT" | tr '\n' ' ')"
+          echo "构建产物就位（口径：$SCOPE_DESC）：$WANT"
 
       - name: Build all packages（gate:full：全仓产物闸的前提）
         if: needs.changes.outputs.fullGate == 'true'
-        run: pnpm build
+        env:
+          ALL_PACKAGES: ${{ needs.changes.outputs.allPackages }}
+        run: |
+          set -e
+          if [ "$(printf '%s' "$ALL_PACKAGES" | jq 'length')" -eq 0 ]; then
+            echo '::error::allPackages 为空（fail-closed，禁止零断言通过）'
+            exit 1
+          fi
+          pnpm build
+          WANT="$(printf '%s' "$ALL_PACKAGES" | jq -r '.[]')"
+          for pkg in $WANT; do
+            test -f "packages/$pkg/lib/index.js" || { echo "::error::$pkg/lib/index.js 缺失（全仓构建后）"; exit 1; }
+          done
 
       - name: Build script-test prerequisites（test:scripts 的编译面依赖）
         # scripts/test 里有用例用 tsc 真实编译契约测试文件，需要对应包的**声明产物**
