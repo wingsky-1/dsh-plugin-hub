@@ -10,7 +10,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -42,6 +42,41 @@ function run(files) {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** 执行隔离副本，确保测试的确命中自身路径，而非另一份同名文件。 */
+function runSelf(extra = "") {
+  const dir = fixture([
+    { rel: "scripts/gate/forbid-raw-exit2.mjs", content: readFileSync(SCRIPT, "utf8") + extra },
+    {
+      rel: "scripts/lib/gate-exit.mjs",
+      content: readFileSync(join(ROOT, "scripts/lib/gate-exit.mjs"), "utf8"),
+    },
+  ]);
+  try {
+    // 隔离副本只使用当前 worktree 已安装的依赖。
+    symlinkSync(join(ROOT, "node_modules"), join(dir, "node_modules"), "dir");
+    return spawnSync(process.execPath, [join(dir, "scripts/gate/forbid-raw-exit2.mjs")], {
+      encoding: "utf8",
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("自扫描：真实实现的注释和模式描述不误报", () => {
+  const r = runSelf();
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /OK（扫描 1 文件/);
+});
+
+for (const form of ["process.exit(2)", "process.exitCode = 2", "exitCode = 2"]) {
+  test("自扫描：实际 AST 裸出口 " + form + " 不得豁免", () => {
+    const r = runSelf("\nexport function regressionProbe() { " + form + "; }\n");
+    assert.equal(r.status, 1, r.stderr + r.stdout);
+    assert.ok(r.stderr.includes("scripts/gate/forbid-raw-exit2.mjs:"), r.stderr);
+    assert.match(r.stderr, /FAIL（扫描 1 文件）/);
+  });
 }
 
 test("正例：扫描面里没有任何 exit 2 形态 → exit 0", () => {

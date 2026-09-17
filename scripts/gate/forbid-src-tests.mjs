@@ -7,11 +7,13 @@
  * `*.src.test.ts`（含未跟踪文件）——它意味着开发者又手写了双份，
  * 变异面与普通 smoke 断言将再次脱节。
  *
- * 语义：扫 packages 下全部 *.src.test.ts（含未跟踪），命中任意一个即 exit 1（fail-closed）。
+ * 扫 packages 下全部 *.src.test.ts（含未跟踪）：命中 exit 1；任一目录读取失败经 failClosed exit 2。
+ * 退出码语义见 AGENTS.md 门禁一节；未读完扫描面不能报告零命中通过。
  * 零依赖，被 ci.yml「Forbid legacy src tests」步骤与本地正反演练复用。
  */
 import { readdirSync } from "node:fs";
 import { join, relative } from "node:path";
+import { failClosed } from "../lib/gate-exit.mjs";
 
 const ROOT = join(import.meta.dirname, "../..");
 
@@ -22,8 +24,10 @@ function collect(root) {
     let entries;
     try {
       entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return; // 不存在的目录静默跳过（fail-closed 靠命中计数兜底）
+    } catch (error) {
+      failClosed(
+        `forbid-src-tests: 扫描目录 ${dir} 不可读（${error.code ?? error.message}）—— 无法证明扫描完整`,
+      );
     }
     for (const e of entries) {
       const p = join(dir, e.name);

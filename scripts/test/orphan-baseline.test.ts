@@ -1,4 +1,5 @@
 import test from "node:test";
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "node:fs";
@@ -57,7 +58,14 @@ function runScript(
 ) {
   const r = spawnSync(process.execPath, [script, ...args], {
     encoding: "utf8",
-    env: { ...process.env, ORPHAN_BASELINE_RETRY_DELAY_MS: "0", ...(options.env ?? {}) },
+    env: {
+      ...process.env,
+      GH_TOKEN: "",
+      GITHUB_TOKEN: "",
+      OBSERVE_PAT: "",
+      ORPHAN_BASELINE_RETRY_DELAY_MS: "0",
+      ...(options.env ?? {}),
+    },
     cwd: options.cwd,
   });
   return { status: r.status, out: `${r.stdout ?? ""}${r.stderr ?? ""}` };
@@ -731,11 +739,29 @@ test("#718 S2.1: jobs 查询失败必须 fail-loud（不得静默降级为 no-op
  */
 function writeFakeGhForOverlayPush(
   dir: string,
-  { fileName, content }: { fileName: string; content: string },
+  {
+    fileName,
+    content,
+    betaFailure = "",
+  }: { fileName: string; content: string; betaFailure?: string },
 ) {
   const head = `[{"number":7,"merged_at":"2026-01-01T00:00:00Z","head":{"sha":"${"b".repeat(40)}"}}]`;
   const runs = '[{"name":"CI","conclusion":"success","id":12345}]';
-  const artifacts = '{"total_count":1,"artifacts":[{"name":"mutation-incremental-dsh-alpha"}]}';
+  const names = [
+    "mutation-incremental-dsh-alpha",
+    ...(betaFailure ? ["mutation-incremental-dsh-beta"] : []),
+  ];
+  const artifacts = JSON.stringify({
+    total_count: names.length,
+    artifacts: names.map((name) => ({ name })),
+  });
+  const betaAction =
+    {
+      download: 'echo "download beta boom" >&2; exit 1',
+      parse: 'printf "%s" "invalid JSON" > "$DIR/incremental-beta.json"; exit 0',
+      empty: "exit 0",
+      read: 'mkdir "$DIR/incremental-beta.json"; exit 0',
+    }[betaFailure] ?? "exit 1";
   const script = `#!/bin/sh
 case "$2" in
   *commits/*/pulls) printf '%s' '${head}'; exit 0 ;;
@@ -753,6 +779,7 @@ case "$1" in
     done
     [ -n "$DIR" ] || exit 1
     mkdir -p "$DIR"
+    case "$DIR" in *mutation-incremental-dsh-beta) ${betaAction} ;; esac
     printf '%s' '${content}' > "$DIR/${fileName}"
     exit 0 ;;
 esac
@@ -838,19 +865,100 @@ test("#718 S2.1: overlay 端到端——差量覆盖生效 + 沿用段保留旧 
   }
 });
 
+// 真 git 写入只到临时 bare remote；gh 由本地桩替代，凭据在 runScript 中清空。
+function seedOverlayFixture() {
+  const tmp = initBaselineRepo(["alpha", "beta"]);
+  const remote = join(tmp, "remote.git");
+  execFileSync("git", ["init", "--bare", remote], { stdio: "ignore" });
+  execFileSync("git", ["config", "user.name", "test"], { cwd: remote });
+  execFileSync("git", ["config", "user.email", "test@test.com"], { cwd: remote });
+  execFileSync("git", ["remote", "set-url", "origin", remote], { cwd: tmp });
+  writeBaselines(tmp, {
+    "incremental-alpha.json": '{"seg":"alpha","gen":1}',
+    "incremental-beta.json": '{"seg":"beta","gen":1}',
+  });
+  const seeded = runScript(scriptPath, ["push"], { cwd: tmp });
+  assert.equal(seeded.status, 0, seeded.out);
+  return { tmp, remote };
+}
+
+function runFixtureOverlay(tmp: string) {
+  return runScript(overlayScriptPath, [], {
+    cwd: tmp,
+    env: {
+      PATH: `${tmp}:${process.env.PATH}`,
+      GITHUB_REPOSITORY: "owner/repo",
+      COMMIT_SHA: "a".repeat(40),
+    },
+  });
+}
+
+for (const failure of ["download", "parse", "empty", "read"]) {
+  test(`#875 overlay 部分失败 ${failure}：好段更新、坏段保旧且判红`, () => {
+    const { tmp, remote } = seedOverlayFixture();
+    try {
+      const before = JSON.parse(readArchived(remote, "manifest.json"));
+      writeFakeGhForOverlayPush(tmp, {
+        fileName: "incremental-alpha.json",
+        content: '{"seg":"alpha","gen":2}',
+        betaFailure: failure,
+      });
+      const r = runFixtureOverlay(tmp);
+      assert.equal(readArchived(remote, "incremental-alpha.json"), '{"seg":"alpha","gen":2}');
+      assert.equal(readArchived(remote, "incremental-beta.json"), '{"seg":"beta","gen":1}');
+      assert.deepEqual(
+        JSON.parse(readArchived(remote, "manifest.json"))["incremental-beta.json"],
+        before["incremental-beta.json"],
+      );
+      assert.equal(r.status, 1, r.out);
+      assert.match(r.out, /覆盖失败.*beta/);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+}
+
+for (const mode of ["missing-entry", "missing-file", "corrupt", "null"]) {
+  test(`#875 overlay ${mode}：沿用段测量时间 unknown`, () => {
+    const { tmp, remote } = seedOverlayFixture();
+    try {
+      const raw = { "missing-file": null, corrupt: "bad JSON", null: "null" }[mode];
+      rewriteRemoteManifest(remote, ["incremental-alpha.json"], raw);
+      writeFakeGhForOverlayPush(tmp, {
+        fileName: "incremental-alpha.json",
+        content: '{"seg":"alpha","gen":2}',
+      });
+      const r = runFixtureOverlay(tmp);
+      assert.equal(r.status, 0, r.out);
+      const manifest = JSON.parse(readArchived(remote, "manifest.json"));
+      const content = '{"seg":"beta","gen":1}';
+      assert.equal(readArchived(remote, "incremental-beta.json"), content);
+      assert.deepEqual(manifest["incremental-beta.json"], {
+        size: Buffer.byteLength(content),
+        mtime: null,
+        sha256: createHash("sha256").update(content).digest("hex"),
+      });
+      assert.equal(readArchived(remote, "incremental-alpha.json"), '{"seg":"alpha","gen":2}');
+      assert.match(r.out, /incremental-beta\.json.*mtime=null/);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+}
+
 // ── 2026-09-12 生产实测暴露的 manifest 缺陷（并集入档首夜）──────────────────
 // 现象：2 段实例失败 → archive 记账「新算 31 / 沿用 2」→ 树 34 份（33 段 + manifest）正确，
 // 但 manifest.json 只有 31 条——漏掉了沿用段。manifest 是留段时间戳与完整性校验的唯一依据，
 // 漏条目会让「不推不对齐归档」这道守卫在下一班把自己卡死。
 
 /** 把远端归档分支的 manifest 改写成只含指定条目（模拟写入方漏条目 / 人工截断）。 */
-function rewriteRemoteManifest(repo: string, keepNames: string[]): void {
+function rewriteRemoteManifest(repo: string, keepNames: string[], raw?: string | null): void {
   const full = JSON.parse(readArchived(repo, "manifest.json"));
   const trimmed = Object.fromEntries(keepNames.map((n) => [n, full[n]]));
   const blob = execFileSync("git", ["hash-object", "-w", "--stdin"], {
     cwd: repo,
     encoding: "utf8",
-    input: `${JSON.stringify(trimmed, null, 2)}\n`,
+    input: raw ?? `${JSON.stringify(trimmed, null, 2)}\n`,
   }).trim();
   const lines = execFileSync("git", ["ls-tree", "-r", "refs/heads/baseline/mutation"], {
     cwd: repo,
@@ -859,6 +967,7 @@ function rewriteRemoteManifest(repo: string, keepNames: string[]): void {
     .trim()
     .split("\n")
     .filter(Boolean)
+    .filter((l) => raw !== null || !l.endsWith("\tmanifest.json"))
     .map((l) => (l.endsWith("\tmanifest.json") ? `100644 blob ${blob}\tmanifest.json` : l));
   const tree = execFileSync("git", ["mktree"], {
     cwd: repo,

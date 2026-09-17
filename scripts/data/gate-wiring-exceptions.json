@@ -112,7 +112,7 @@
     },
     {
       "step": "observe.yml|mutation-collect|script:scripts/gate/orphan-baseline.mjs|archive",
-      "condition": "always() && steps.reports.outputs.count != '0'",
+      "condition": "always() && steps.reports.outputs.count != '' && steps.reports.outputs.count != '0'",
       "reason": "孤立分支基线的归档与收口步骤同条件（有账才归档），且必须在各分片结果已知后恒跑（always）"
     }
   ],
@@ -198,7 +198,7 @@
     },
     {
       "step": "observe.yml|mutation-collect|reports",
-      "digest": "35a93e2912acfec9",
+      "digest": "51efc1b74bbcf7b0",
       "reason": "已登记条件 `steps.reports.outputs.count != '0'` 的操作数来自这一步的 output（`steps.reports.outputs.*`）；登记它的文本摘要，等于把「条件成立与否的输入面」也钉住——把产出改掉（例如 COUNT=0）会让条件永不成立，而条件原文一字不动",
       "inputsDigest": "597d2fa0b8f98c9a",
       "producersDigest": "501d44030223b867"
@@ -347,8 +347,8 @@
     },
     {
       "step": "ci.yml|repo-gate|Build all packages（gate:full：全仓产物闸的前提）",
-      "digest": "bf2def35d1a8cd11",
-      "envKeys": []
+      "digest": "1f8df678865da2b8",
+      "envKeys": ["ALL_PACKAGES"]
     },
     {
       "step": "ci.yml|repo-gate|Build script-test prerequisites（test:scripts 的编译面依赖）",
@@ -362,7 +362,7 @@
     },
     {
       "step": "ci.yml|repo-gate|Restore package outputs into package trees",
-      "digest": "e4f6e296f1c6bc3e",
+      "digest": "3161dd398d1c9eb0",
       "envKeys": ["ALL_PACKAGES", "FULL_GATE", "HIT_PACKAGES"]
     },
     {
@@ -372,7 +372,7 @@
     },
     {
       "step": "observe.yml|mutation-collect|Restore report layout（多 artifact 下载各建子目录，平铺回 coverage/mutation/）",
-      "digest": "9fd19d3998632b01",
+      "digest": "33a8111e68848a09",
       "envKeys": []
     },
     {
@@ -439,7 +439,7 @@
     },
     {
       "job": "ci.yml|repo-gate",
-      "digest": "5f760aefe9fbe9bf"
+      "digest": "064b00458b9b0ee3"
     },
     {
       "job": "health-report.yml|report",
@@ -447,7 +447,7 @@
     },
     {
       "job": "observe.yml|mutation-collect",
-      "digest": "fcf8c3f9053f8706"
+      "digest": "23ea40ddedf71763"
     },
     {
       "job": "observe.yml|mutation-plan",

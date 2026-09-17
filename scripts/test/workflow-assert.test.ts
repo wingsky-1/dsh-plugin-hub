@@ -2021,7 +2021,9 @@ test("#217+#572: observe 全量班变异记账与入档区分整套 skip 与部�
     assert.ok(pIdx > cIdx, "observe.yml 入档必须落在收口 job 内（单点写入，消除矩阵并发踩踏）");
     const pBlock = OBSERVE.slice(pIdx, OBSERVE.indexOf("- name:", pIdx + 10));
     assert.ok(
-      pBlock.includes("if: always() && steps.reports.outputs.count != '0'"),
+      pBlock.includes(
+        "if: always() && steps.reports.outputs.count != '' && steps.reports.outputs.count != '0'",
+      ),
       "observe.yml 入档条件必须区分零产物（不推送）与部分失败（有报告即照常提交）",
     );
     const rIdx = OBSERVE.indexOf("- name: Restore report layout", cIdx);

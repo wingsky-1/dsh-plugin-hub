@@ -24,8 +24,8 @@
  *   5. **条目腐烂**：每条 include / exclude 模式都必须命中至少一个物理文件；命中 0 个即红
  *      （条目指向的东西已经不存在了）。
  *   6. **产物交叉断言**：若 `coverage/coverage-final.json` 存在且**比本配置新**，断言其 keys
- *      全部落在 include 面内——用产物而不是第三次实现 glob 来验分母。产物比配置旧即跳过
- *      （那是上一次配置跑出来的东西，拿它判现在的面会假红）。
+ *      与 include 减 exclude 后的计分对象集合双向一致，既不能多出对象，也不能缺少对象。
+ *      无产物或产物不比配置新时保留静态预检；强制新鲜度与执行指纹不属于这里的判据。
  *
  * 匹配与「源码世界」定义都用 `scripts/lib/glob-files.mjs`（与变异面判据 `gen-stryker-conf --check`
  * 的 ⑤/⑥ 同一份实现与同一个 universe），不引第三方 glob。
@@ -334,7 +334,12 @@ function artifactCrossCheck(root, configPath, includeHits, excludeHits, problems
       `${k} 出现在覆盖率产物里但不在当前 include 面内（分母与产物不一致：include/exclude 改过而产物未重跑，或面算错）`,
     );
   }
-  return `产物交叉断言：${keys.length} 个 keys，面内 ${keys.length - outside.length}`;
+  const reported = new Set(keys);
+  const missing = [...scored].filter((file) => !reported.has(file));
+  for (const file of missing) {
+    problems.push(`${file} 在当前计分面内但未出现在覆盖率产物里（分母与产物不一致：计分对象缺失）`);
+  }
+  return `产物交叉断言：${keys.length} 个 keys，面内 ${keys.length - outside.length}，缺失 ${missing.length}`;
 }
 
 function main() {
