@@ -34,6 +34,8 @@ import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { realpathSync } from "node:fs";
 
+import { failClosed } from "../lib/gate-exit.mjs";
+
 const ROOT = join(import.meta.dirname, "../..");
 const INDEX_REL = join("scripts", "README.md");
 
@@ -182,15 +184,13 @@ function main() {
   try {
     text = readFileSync(indexPath, "utf8");
   } catch (e) {
-    console.error(`verify-scripts-index: 索引不可读（${indexRel}）：${e.message}`);
-    return 2;
+    failClosed(`verify-scripts-index: 索引不可读（${indexRel}）：${e.message}`);
   }
   const entries = parseIndex(text);
   if (entries.length === 0) {
-    console.error(
+    failClosed(
       `verify-scripts-index: 索引里没有任何 \`- \\\`path\\\`\` 形态条目（${indexRel}）—— 解析口径与文档结构脱节或文档被清空，fail-closed`,
     );
-    return 2;
   }
 
   const indexed = new Set(entries.map(entryRepoPath));
@@ -202,10 +202,9 @@ function main() {
   // 判据 B：引用即登记（棘轮）
   const refs = collectRefs(root);
   if (refs.length === 0) {
-    console.error(
+    failClosed(
       "verify-scripts-index: 引用面解析为空 —— 提取口径失效（不是「没有引用」），fail-closed",
     );
-    return 2;
   }
   problems.push(...unindexedProblems(refs, indexed, indexRel));
 

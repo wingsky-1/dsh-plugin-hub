@@ -50,6 +50,7 @@ test("正例：被引用的脚本已登记 → exit 0", () => {
     ]),
   );
   assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /::error::门禁故障/);
   assert.match(r.stdout, /verify-scripts-index: OK/);
 });
 
@@ -68,6 +69,7 @@ test("棘轮：新增一个被调用点引用的脚本但未登记 → 红", () 
     ]),
   );
   assert.equal(r.status, 1, r.stderr);
+  assert.doesNotMatch(r.stderr, /::error::门禁故障/);
   assert.match(r.stderr, /被调用点引用但未登记进 scripts\/README\.md：scripts\/gate\/fresh\.mjs/);
 });
 
@@ -83,6 +85,7 @@ test("判据 A：索引项指向不存在的文件 → 红（索引腐烂）", (
     ]),
   );
   assert.equal(r.status, 1, r.stderr);
+  assert.doesNotMatch(r.stderr, /::error::门禁故障/);
   assert.match(r.stderr, /索引项不存在：scripts\/gate\/ghost\.mjs/);
 });
 
@@ -98,6 +101,7 @@ test("判据 A：含 `<pkg>` 的模板条目跳过存在性检查", () => {
     ]),
   );
   assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /::error::门禁故障/);
 });
 
 test("解析口径：`tools/` 小节相对 tools/ 解析（回归：lint 路径的假阳性）", () => {
@@ -113,6 +117,7 @@ test("解析口径：`tools/` 小节相对 tools/ 解析（回归：lint 路径�
     ]),
   );
   assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /::error::门禁故障/);
 });
 
 test("引用面口径：glob 引用不展开（测试文件按命名约定发现）", () => {
@@ -133,6 +138,7 @@ test("引用面口径：glob 引用不展开（测试文件按命名约定发现
     ]),
   );
   assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /::error::门禁故障/);
 });
 
 test("引用面口径：被引用但文件不存在（历史注记/用法示例）不参与判据", () => {
@@ -150,6 +156,16 @@ test("引用面口径：被引用但文件不存在（历史注记/用法示例�
     ]),
   );
   assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /::error::门禁故障/);
+});
+
+test("fail-closed：索引不可读 → exit 2 且统一故障注解包含原因", () => {
+  const r = run(fixture([]));
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /^::error::门禁故障（非判据结论）：verify-scripts-index: 索引不可读/m);
+  assert.ok(r.stderr.includes("scripts/README.md"), r.stderr);
+  assert.match(r.stderr, /ENOENT/);
+  assert.equal(r.stdout, "");
 });
 
 test("fail-closed：索引里没有任何条目（解析口径与文档结构脱节）→ exit 2", () => {
@@ -161,6 +177,7 @@ test("fail-closed：索引里没有任何条目（解析口径与文档结构脱
     ]),
   );
   assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /^::error::门禁故障（非判据结论）：verify-scripts-index:/m);
   assert.match(r.stderr, /没有任何 .* 形态条目/);
 });
 
@@ -173,12 +190,14 @@ test("fail-closed：引用面解析为空（提取口径失效，不是「没有
     ]),
   );
   assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /^::error::门禁故障（非判据结论）：verify-scripts-index:/m);
   assert.match(r.stderr, /引用面解析为空/);
 });
 
 test("本仓真实快照：索引与引用面一致 → exit 0，且报告面被打印", () => {
   const r = spawnSync(process.execPath, [SCRIPT], { cwd: ROOT, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stderr, /::error::门禁故障/);
   assert.match(r.stdout, /索引条目 \d+ 条全部存在，引用面 \d+ 条全部已登记/);
   assert.match(r.stdout, /未被引用且未登记 \d+ 个——仅报告，不判红/);
 });
