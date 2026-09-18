@@ -117,6 +117,7 @@ flowchart TD
 要点：
 
 - **升级链最先**：链是异步的，不 await 就等于没有顺序保证——先装配各域会让它们读到旧形态（旧文件那时已被归档，读到的是空盘）；
+- **读路径落定走包装**：项目级 store 读前落定不由调用方直调原语，而经 upgrade 的 `withSettledProjectConfig` 包装（先落定包分区新形态再跑读回调，触发时机由包装内卡；`new McpStore` 留 manager 侧经既有 ConfigStorePort；落定失败即抛，读回调不执行）；仅缓存命中后的磁盘重读（`reloadIfChanged`）保留有声 warn（见 `manager.ts#projectStoreFor`）；
 - **F3 中间层提前**：`initMiddleware` 在 `startAll` 之前（防「先建后停」竞态）；工具级禁用表在中间层之前独立载入，中间层回退时守卫仍有数据源；
 - **隐藏面卡位**：`startAgentVisibility` 必须在 `startAll` 之前——连接与工具注册发生在 `startAll` 期间，先挂隐藏面初始 reconcile 才能覆盖已 live 的 agent，后注册的经 `tools/change` 收敛；
 - **设置合并面兜底**：`syncFromSettings` 在运行期变更与启动后各调一次（`debug`/`stats` 同步；模式同步已随键删除）。
@@ -235,16 +236,16 @@ stateDiagram-v2
 | --- | --- | --- | --- |
 | 全局配置 `mcp.json` | `configFile()`（`<DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json`） | `0o600` | `store.save`：登记路径取表，未登记（用户 `storePath` 显式接管）回落既有 `0o600` 行为；序列化不动 |
 | 项目级配置 `mcp.json` | `projectConfigFile()`（`<项目根>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json`） | `null`（随项目权限模型） | 写面只认新形态；旧扁平形态只读（见 §3.2） |
-| 用户状态 `user-state.json` | `userStatePath()`（disabledTools 三段 root→server→tool[]） | `0o644` | `middleware-state#writeStateFile` 经 `file-io`，见双档 |
-| 目录条目 `<hash>.json` | `catalogFile()`（`catalog/` 目录下一行登记） | `0o644` | 同上；`readCatalogServerFromDisk` 经 `readJsonFile` |
-| 目录摘要 | `catalogSummaryFile()` / manager 缓存路径 | `0o644` | `writeCatalogCacheFile` 经 `file-io`，见双档 |
+| 用户状态 `user-state.json` | `userStatePath()`（disabledTools 三段 root→server→tool[]） | `0o644` | `middleware-state#writeStateFile` 双档（见下；回落硬化 R1：随机后缀 + 失败清理） |
+| 目录条目 `<hash>.json` | `catalogFile()`（`catalog/` 目录下一行登记） | `0o644` | 第四旁路：`ensureRootLoaded` 读经 `readJsonFile`（byRoot 短路保留，缺失/损坏回落空值）；`persistRoot` 写经 `writeDirectoryCacheFile`（登记走 `writeFileAtomic`，未登记回落硬化直写；runtime 过滤/空采集早返/路径求值位置不动）；`readCatalogServerFromDisk` 经 `readJsonFile` |
+| 目录摘要 | `catalogSummaryFile()` / manager 缓存路径 | `0o644` | `manager#writeCatalogCacheFile` 双档（见下；回落硬化 R2：随机后缀 + 失败清理） |
 | 调用统计 `stats.json` | `statsFile()` | `0o644` | 同步形态（见下）；`loadExisting` 缺失/损坏/目录→忽略重计 |
 | 存储刻度 `version` | `versionFile()`（升级链走到哪一版，不是插件版本） | `0o644` | 链成功后写，见 §3.6 |
 | 旧布局（读面） | `LEGACY_LAYOUT` + `legacyFile()`（根下两键） | — | 只读不回写；可再生的目录型旧路径随 S2-a 退出迁移面 |
 
 `server/shared/file-io.ts` 是落盘 IO 唯一收敛点：`ensureDir`（目录取表）＋ `writeFileAtomic`（唯一临时名 → 显式 mode 写入 → `rename` 覆盖 → 失败清理临时名并上抛原错误）＋ `readTextFile`/`readJsonFile`（不存在/不可读/是目录/解析失败一律回落 `null`，由各域按既有语义回落空值）。同目标路径的写经 `writeChains` 串行（模块级，跨调用点生效）。
 
-- **登记/未登记双档（fail-closed 方向）**：`fileMode` 未登记即抛（I6，写函数不替调用点做权限决定）。登记路径经 `writeFileAtomic`（mode 取表＋串行＋清理）；未登记路径（单测 tmp 覆盖、调用方自定义）回落既有直写形状——直接调 `writeFileAtomic` 等于把「回落写盘」变成「写失败」（`middleware-state#writeStateFile`、`manager#writeCatalogCacheFile` 与 S2-B 的 `store.save` 同式）；
+- **登记/未登记双档（fail-closed 方向）**：`fileMode` 未登记即抛（I6，写函数不替调用点做权限决定）。登记路径经 `writeFileAtomic`（mode 取表＋串行＋清理）；未登记路径（单测 tmp 覆盖、调用方自定义）回落既有直写形状——直接调 `writeFileAtomic` 等于把「回落写盘」变成「写失败」（`middleware-state#writeStateFile`、`manager#writeCatalogCacheFile` 与 S2-B 的 `store.save` 同式）；回落三处同式硬化（R1 `middleware-state`、R2 manager 目录缓存、`directory/` 未登记分支）：临时名加随机后缀＋失败清理临时名并上抛原错误，mode 沿既有回落形状（无 mode），只补唯一性与清理，不改写盘语义；
 - **同步禁调**：`stats#flushSync` 不调异步 `writeFileAtomic`——同步契约（构造器/`flushSync` 直写断言/关闭刷盘/`manager.dispose` 的 fire-and-forget 链）要求返回时盘上已有数据，异步化会把「退出刷新」变成不可靠的后台写；`ensureDir` 自身异步故此处用同步拼写（`mkdirOptionsFor`/`writeOptionsFor`，未登记回落既有形状）；
 - **序列化逐字节不变**：收敛只换 IO 原语，不动字节——目录 `{version:1,entries}`、禁用 `{version:1,disabled}` / `{version:1,disabledTools:payload}`、统计 `snapshot()`，均保持既有 `JSON.stringify(·,null,2)` 形状；
 - **旧路径字面量归 `paths`**：`middleware-state` 只认 `userStatePath`/`catalogFile` 单点；`manager` 的旧注释已改真（外部手动编辑 `mcp.json` 指新布局）。新代码引用旧路径字面量即漂移（对账时判红）。
@@ -297,7 +298,7 @@ M3（能力缺口单列）：`allowTools`/`denyTools` 准入闸随策略键消�
 
 `STEPS` 见 `upgrade/impl/steps/index.ts`（本次迁移的一步为 `0.0.0 → 0.2.5`，即 `migrateStorageLayout`）：`version` 文件是本次新增的刻度，存量安装一律从 `0.0.0` 起算；`targetVersion` 是存储形态代际，不是 `package.json` 值。链在各域装配前跑完：按目标版本升序执行，任何一步失败即抛（存储没升完就被按错误形态解释，比不启动糟得多），刻度在 `run` 成功后写（不抢先前移）；跑完与插件版本对账（`reportGap`，落差告警、不自动降级）。
 
-- 布局迁移：旧文件写到新位置后归档 `.migrated.bak`；项目级 just-in-time 经 orchestrator 的 upgrade 端口调 `settleProjectConfig`；无旧文件不凭空写默认内容，各域按既有语义回落空值；
+- 布局迁移：旧文件写到新位置后归档 `.migrated.bak`；项目级 just-in-time 经 orchestrator 的 upgrade 端口调 `withSettledProjectConfig` 包装（先落定包分区新形态再跑读回调，两段 `await` 串行；落定原语 `settleProjectConfig` 的唯一调用点在包装内，业务域禁直调；`UpgradePort` 两键必填；upgrade 零值 import store）；无旧文件不凭空写默认内容，各域按既有语义回落空值；
 - 逆序释放：`disposeInjection → disposeSection → disposeRoutes → disposeMiddleware → disposeVisibility → watchCleanup → manager.dispose → releaseLifecycle → mountLedger 排空 → releaseUpgrade`（upgrade 最先装配、最后复位；`src/index.ts#apply` 的 effect 清理）；
 - 不等在飞写：禁用表与目录缓存落盘失败吞错、不阻塞主流程；`manager.dispose` 走 fire-and-forget（官方 dispose 会等在途首连，挂死的服务器能拖到 SDK 超时，故装载账本单独排空一次，错因降日志）。
 
@@ -334,7 +335,7 @@ M3（能力缺口单列）：`allowTools`/`denyTools` 准入闸随策略键消�
 
 结构门禁守跨域 `interface`/`deps`、值依赖环与导出面（条目以仓库 AGENTS 与门禁脚本为准，不在本文复制阈值与用例数）。新增文档链接的最终门禁按 [AGENTS.md](../../AGENTS.md) 执行 `gate:pr`；本次子任务只交静态文档/图件证据，整合门禁由主代理报告，不宣称 CI 通过。
 
-待核：B 批四视图归档后的图-码对账；S2-D/筆3 增量（`directory/` 第四旁路、stats 字面统一需共享同步原语，属 API 设计事项）的 delta pass；真实多服务器长稳、跨平台 stdio、SSE 半开自愈等部署结果不能由文档替代。
+待核：B 批四视图归档后的图-码对账；`removeRootEntry` 直读直写未收敛进 file-io、stats 同步拼写与 file-io 的字面统一需共享同步原语（属 API 设计事项，未完成）；正向图片准入待验证（自持准入能力在，降级路径已验证；解除条件：真实 LLM 凭据＋声明 image 输入的模型路由＋双档验证）；真实多服务器长稳、跨平台 stdio、SSE 半开自愈等部署结果不能由文档替代。
 
 ### 4.5 已知限制
 
