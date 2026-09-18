@@ -29,21 +29,13 @@ import {
 } from "../helpers.ts";
 import type { FakeResponseState } from "../helpers.ts";
 
-const {
-  makeRoutes,
-  makeEventsRoute,
-  makeHealthRoute,
-  sseData,
-  uiConfigChangedFrame,
-  broadcastFrame,
-  ROUTES,
-  McpStore,
-  McpManager,
-  normalizeServer,
-  SSE_HEARTBEAT_MS,
-  SSE_PING_FRAME,
-  McpMiddleware,
-} = await import("../../src/index.ts");
+// S6-B2：路由装配/管理器构造/中间层是装配依赖 + sseData 无域门面，留包根；其余纯符号改道域门面。
+const { makeRoutes, makeEventsRoute, makeHealthRoute, sseData, McpManager, McpMiddleware } =
+  await import("../../src/index.ts");
+const { uiConfigChangedFrame, broadcastFrame, ROUTES, SSE_HEARTBEAT_MS, SSE_PING_FRAME } =
+  await import("../../src/server/api/interface.ts");
+const { McpStore } = await import("../../src/server/store/interface.ts");
+const { normalizeServer } = await import("../../src/server/config/interface.ts");
 
 // 伪造 req/res：只实现 handler 实际读取的面，其余按接缝收窄（`as unknown as`）。
 const fakeReq = (

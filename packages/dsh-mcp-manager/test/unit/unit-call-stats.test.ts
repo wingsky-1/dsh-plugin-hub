@@ -20,8 +20,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { fakeManagerCtx } from "../helpers.ts";
 
-const { McpStatsCollector, McpManager, McpStore, resolveDebugConfig } =
-  await import("../../src/index.ts");
+// S6-B2：McpManager 构造取端口 + resolveDebugConfig 组合根定义，留包根；纯符号改道域门面。
+const { McpManager, resolveDebugConfig } = await import("../../src/index.ts");
+const { McpStatsCollector } = await import("../../src/server/stats/interface.ts");
+const { McpStore } = await import("../../src/server/store/interface.ts");
 
 let tempDirs: string[] = [];
 

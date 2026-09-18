@@ -13,8 +13,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { RoutesManager } from "../../src/server/connection/interface.ts";
 import { fakeManagerCtx } from "../helpers.ts";
 
-const { apply, makeRoutes, ROUTES, McpStore, McpManager, normalizeServer } =
-  await import("../../src/index.ts");
+// S6-B2：apply/路由装配/管理器构造是装配依赖，留包根；纯符号改道域门面。
+const { apply, makeRoutes, McpManager } = await import("../../src/index.ts");
+const { ROUTES } = await import("../../src/server/api/interface.ts");
+const { McpStore } = await import("../../src/server/store/interface.ts");
+const { normalizeServer } = await import("../../src/server/config/interface.ts");
 
 let tempDirs: string[] = [];
 

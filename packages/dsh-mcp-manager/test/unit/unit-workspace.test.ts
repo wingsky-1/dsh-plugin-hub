@@ -21,16 +21,13 @@ import { fakeManagerCtx } from "../helpers.ts";
 // （src/index.ts 顶层 installOrchestrator）装配、且重复装配当场抛错——直引域门面会跳过装配、
 // 构造即红（实测 exit 1）。故保留包根导入（基线 unitImportFaceViolations 条目保留）；
 // 把组合根装配搬进门面属运行时改动，越界（见遗留）。
-const {
-  McpManager,
-  McpStore,
-  makeResolveRoot,
-  normalizeServer,
-  normalizeScope,
-  MIDDLEWARE_GLOBAL_ROOT,
-  SCOPE_GLOBAL,
-  SCOPE_PROJECT,
-} = await import("../../src/index.ts");
+// S6-B2：McpManager 构造是装配依赖，留包根（理由见上）；其余纯符号改道域门面。
+const { McpManager } = await import("../../src/index.ts");
+const { McpStore } = await import("../../src/server/store/interface.ts");
+const { makeResolveRoot, normalizeScope } = await import("../../src/server/workspace/interface.ts");
+const { normalizeServer } = await import("../../src/server/config/interface.ts");
+const { MIDDLEWARE_GLOBAL_ROOT, SCOPE_GLOBAL, SCOPE_PROJECT } =
+  await import("../../src/shared/interface.ts");
 
 describe("normalizeScope（#767 S1-5c 自 unit-transport.test.ts 迁入）", () => {
   it("project → SCOPE_PROJECT", () => {

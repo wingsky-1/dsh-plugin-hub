@@ -58,30 +58,29 @@ import type { ListCatalogResult } from "../../src/server/catalog/interface.ts";
 import type { McpMiddleware as McpMiddlewareType } from "../../src/server/connection/runtime/interface.ts";
 import type { ServerConfig } from "../../src/server/config/interface.ts";
 
+// S6-B2：中间层装配依赖（McpMiddleware 方法/registerMiddlewareTools 调用消费组合根装配的
+// 端口，全量去包根探针 161/210 红 exit 1）留包根；其余纯符号改道域门面。
+const { McpMiddleware, registerMiddlewareTools } = await import("../../src/index.ts");
+const { fullServerName, parseFullServerName, normalizeToolName } =
+  await import("../../src/server/workspace/interface.ts");
+const { normalizeArguments, createRedactor, globMatch, projectCallToolResult } =
+  await import("../../src/server/pipeline/interface.ts");
 const {
-  fullServerName,
-  parseFullServerName,
-  normalizeToolName,
-  normalizeArguments,
-  createRedactor,
-  globMatch,
   searchCatalog,
   searchCatalogMulti,
   listCatalog,
   findToolDetail,
   isCatalogFresh,
   boundCatalogTools,
+} = await import("../../src/server/catalog/interface.ts");
+const {
   MAX_BYTES_PER_TOOL,
-  McpMiddleware,
-  registerMiddlewareTools,
-  parseDisabledTools,
-  projectCallToolResult,
   CATALOG_TTL_MS,
   LIST_DEFAULT_TOOLS_PER_SERVER,
   LIST_MAX_TOOLS_PER_SERVER,
-  loadUserState,
-  saveUserState,
-} = await import("../../src/index.ts");
+} = await import("../../src/server/connection/runtime/interface.ts");
+const { parseDisabledTools, loadUserState, saveUserState } =
+  await import("../../src/server/store/interface.ts");
 
 const ROOT = "/tmp/ws-root-a";
 

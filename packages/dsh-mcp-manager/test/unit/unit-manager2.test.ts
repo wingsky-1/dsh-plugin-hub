@@ -55,17 +55,19 @@ import {
 } from "../../src/server/servers/lifecycle/interface.ts";
 import { catalogDirectory } from "../../src/server/catalog/interface.ts";
 
+// S6-B2：McpManager 构造/apply/路由装配是装配依赖，留包根；其余纯符号改道域门面。
+const { apply, McpManager, makeHealthRoute } = await import("../../src/index.ts");
+const { McpStore } = await import("../../src/server/store/interface.ts");
 const {
-  apply,
-  McpManager,
-  McpStore,
   normalizeServer,
   normalizeUiConfig,
   buildConfigUiPatch,
-  panelAnchorForPosition,
   panelTopForAnchor,
   SERVER_NAME_PATTERN,
   DEFAULT_UI_CONFIG,
+} = await import("../../src/server/config/interface.ts");
+const {
+  panelAnchorForPosition,
   Z_INDEX_BASE_MIN,
   Z_INDEX_BASE_MAX,
   panelZIndexFor,
@@ -73,12 +75,11 @@ const {
   BREAKPOINT_TABLET_MAX,
   breakpointForWidth,
   clampPointToViewport,
-  findProjectRoot,
-  registerMiddlewareTools,
   MIDDLEWARE_GLOBAL_ROOT,
-  ROUTES,
-  makeHealthRoute,
-} = await import("../../src/index.ts");
+} = await import("../../src/shared/interface.ts");
+const { findProjectRoot } = await import("../../src/server/workspace/interface.ts");
+const { registerMiddlewareTools } = await import("../../src/server/inject/interface.ts");
+const { ROUTES } = await import("../../src/server/api/interface.ts");
 
 // 临时目录 / manager / timer 收口：用例结束后统一清理，防产物与句柄泄漏。
 let tempDirs: string[] = [];

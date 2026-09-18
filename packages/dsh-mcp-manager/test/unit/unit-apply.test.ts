@@ -14,7 +14,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Context } from "@deepseek-ai/cordis";
 
-const { apply, saveDisabledTools } = await import("../../src/index.ts");
+// S6-B2：apply 是组合根装配体（src/index.ts 内就地定义），留包根；纯符号改道域门面。
+const { apply } = await import("../../src/index.ts");
+const { saveDisabledTools } = await import("../../src/server/store/interface.ts");
 const { mountLedger, mountServer, releaseLifecycle } =
   await import("../../src/server/servers/lifecycle/interface.ts");
 

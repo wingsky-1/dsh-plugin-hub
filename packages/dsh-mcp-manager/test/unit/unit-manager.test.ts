@@ -12,7 +12,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Context } from "@deepseek-ai/cordis";
-import { McpManager, McpStore, SCOPE_PROJECT, normalizeServer } from "../../src/index.ts";
+// S6-B2：McpManager 构造是装配依赖，留包根；纯符号改道域门面（apply 仍经包根动态导入，见下）。
+import { McpManager } from "../../src/index.ts";
+import { McpStore } from "../../src/server/store/interface.ts";
+import { SCOPE_PROJECT } from "../../src/shared/interface.ts";
+import { normalizeServer } from "../../src/server/config/interface.ts";
 import { stripMcpPrefix } from "../../src/server/connection/orchestrator/tool-names.ts";
 import { fakeManagerCtx } from "../helpers.ts";
 
