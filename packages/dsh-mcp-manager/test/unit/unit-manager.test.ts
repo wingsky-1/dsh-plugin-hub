@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Context } from "@deepseek-ai/cordis";
 import { McpManager, McpStore, SCOPE_PROJECT, normalizeServer } from "../../src/index.ts";
+import { stripMcpPrefix } from "../../src/server/connection/orchestrator/tool-names.ts";
 import { fakeManagerCtx } from "../helpers.ts";
 
 const { apply } = await import("../../src/index.ts");
@@ -299,5 +300,39 @@ describe("S2-b：projectStoreFor 经 upgrade 端口落定新形态", () => {
     expect(JSON.parse(readFileSync(newPath, "utf8")).servers[0].name).toBe("p-settle");
     expect(existsSync(legacyPath)).toBe(false);
     expect(existsSync(`${legacyPath}.migrated.bak`)).toBe(true);
+  });
+});
+// CRAP-ZERO batch1 manager
+describe("CRAP-ZERO stripMcpPrefix", () => {
+  it("strips prefix", () => {
+    expect(stripMcpPrefix("mcp__ctx__use_ctx", "ctx")).toBe("use_ctx");
+  });
+  it("non-matching returns original", () => {
+    expect(stripMcpPrefix("use_ctx", "ctx")).toBe("use_ctx");
+  });
+  it("empty after strip returns original", () => {
+    expect(stripMcpPrefix("mcp__ctx__", "ctx")).toBe("mcp__ctx__");
+  });
+  it("still mcp prefix returns original", () => {
+    expect(stripMcpPrefix("mcp__ctx__mcp__other__t", "ctx")).toBe("mcp__ctx__mcp__other__t");
+  });
+});
+// CRAP-ZERO batch1 setToolDisabled
+describe("CRAP-ZERO setToolDisabled", () => {
+  it("disables and re-enables tool", async () => {
+    const prevHome = process.env.DSH_HOME;
+    const homeDir = makeTempDir("dsh-mcp-home-");
+    process.env.DSH_HOME = homeDir;
+    try {
+      const { manager } = fixture();
+      await manager.setToolDisabled("/proj", "ctx", "use_ctx", true);
+      expect(manager.disabledTools.get("/proj")?.get("ctx")?.has("use_ctx")).toBe(true);
+      await manager.setToolDisabled("/proj", "ctx", "use_ctx", false);
+      const has = manager.disabledTools.get("/proj")?.get("ctx")?.has("use_ctx") ?? false;
+      expect(has).toBe(false);
+    } finally {
+      if (prevHome === undefined) delete process.env.DSH_HOME;
+      else process.env.DSH_HOME = prevHome;
+    }
   });
 });

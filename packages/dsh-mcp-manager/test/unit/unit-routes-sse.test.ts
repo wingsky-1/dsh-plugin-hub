@@ -835,3 +835,14 @@ describe("M7：POST /config 未知顶层键 → 400 拒绝", () => {
     expect(uiUpdates.length).toBe(1);
   });
 });
+// CRAP-ZERO resume route hit
+describe("CRAP-ZERO resume route", () => {
+  it("POST resume returns 200 ok", async () => {
+    const { manager } = setup();
+    const routes = makeRoutes(manager);
+    const route = routes.find((r) => r.path === ROUTES.resume)!;
+    const res = await callHandler(route, fakeReq("POST", ROUTES.resume));
+    expect(res.status).toBe(200);
+    expect((res.payload as { ok: unknown }).ok).toBe(true);
+  });
+});
