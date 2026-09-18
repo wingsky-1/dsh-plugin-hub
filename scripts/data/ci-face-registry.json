@@ -9,9 +9,9 @@
     },
     {
       "path": "agents/**",
-      "faces": ["global"],
+      "faces": [],
       "consumers": ["scripts/gate/verify-docs.ts"],
-      "why": "自治循环角色规程；#220 起即在全局面，本轮只收窄 scripts/**，不动其余面。"
+      "why": "纯文档：自治循环角色规程 5 个 markdown，无机器消费者（链接检查由本地 test:scripts 覆盖），无需包面。#899 起移出全局面，与 docs/** 同等待遇。"
     },
     {
       "path": "shared/**",

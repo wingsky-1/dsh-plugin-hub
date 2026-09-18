@@ -264,7 +264,6 @@ test("#733 E1: paths-filter 的 glob 内容集合相等（防「留键删行」�
     [
       ".github/**",
       "LICENSE",
-      "agents/**",
       "package.json",
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",

@@ -93,7 +93,6 @@ jobs:
           filters: |
             global:
               - 'shared/**'
-              - 'agents/**'
               - '.github/**'
               # docs/** 与 AGENTS.md 刻意不在 global 面（#220）：纯文档 PR 无需
               # 变异切片与 smoke/typecheck（release-notes 校验仅存在于 tag 触发的
@@ -102,6 +101,8 @@ jobs:
               # 本体仍在 global 面内（#742 阶段 2.1 把整树 'scripts/**' 收窄为白名单时
               # 已确认 scripts/gate/** 在白名单里），故「改文档不触发、改脚本才触发」
               # 的语义仍然成立，无需把这两个路径加回 global。
+              # agents/** 同理移出（#899）：5 个纯 markdown 自治规程，无机器消费者
+              #（链接检查由本地 test:scripts 覆盖），纯文档 PR 不触发全量变异。
               # 改动本约定须同步 workflow-assert 断言。
               - 'package.json'
               - 'pnpm-lock.yaml'
