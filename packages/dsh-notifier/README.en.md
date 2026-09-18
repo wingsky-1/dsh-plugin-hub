@@ -36,7 +36,8 @@ Pick one of the following access forms (both the settings card and the README su
 > Verified (2026-08): `https://<IP>:3443/api/dsh-notifier/health` returns 200,
 > SSE long connection (`/api/dsh-notifier/events`) delivers its first frame normally via 3443.
 
-## Security & boundaries
+<a id="security--boundaries"></a><a id="user-content-security--boundaries"></a>
+## Security model
 
 - Notification text only contains metadata such as task title / tool name / request reason — **never tool parameters** (prevents sensitive info leakage)
 - **Notification body and title are no longer masked (#733 convergence)**: the old `sanitizeContent` rule table (paths / PEM private keys / connection-string credentials / tokens / emails …) has been deleted — notifications, history writes (including suppressed entries) and delivery all carry the original text; the body is not truncated here, and length is capped by each delivery channel's display limit. Deployments that need "a given kind of text never appears in logs" must handle it at the event source
@@ -273,7 +274,7 @@ via `GET /api/dsh-notifier/status` (no polling, the D20 stance).
 - **Bark channel credentials & outbound security (M2)**:
   - **The device key never lands in the URL**: pushes go to `POST {baseUrl}/push` with a JSON body (the `device_key` field) — reverse-proxy access logs record URLs and headers by default, never bodies
   - **A single masking exit**: `deviceKey` in `GET /config`'s user+effective and in `PUT` success responses is always masked as `********`; submitting the full mask = keep the original value (backfilled aligned by instance id so a reordering never swaps credentials between instances)
-  - **No credential replacement at the error exit (measured)**: Bark 4xx response bodies echo the key verbatim — failure reasons are truncated as-is and go to the logger and to `status.json`; the literal device-key replacement is gone, and so is the `sent` event as an exit (see "Security & boundaries")
+  - **No credential replacement at the error exit (measured)**: Bark 4xx response bodies echo the key verbatim — failure reasons are truncated as-is and go to the logger and to `status.json`; the literal device-key replacement is gone, and so is the `sent` event as an exit (see "Security model")
   - **SSRF posture**: `baseUrl` is limited to the http/https scheme, credential URLs (`user:pass@host`) are rejected, and query/hash are dropped. **No domain allowlist** — pointing baseUrl at an intranet self-hosted bark-server is a legitimate case; known residual risk: a caller able to reach dsh web from the LAN (through a lan-proxy reverse proxy it can cross the loopback fence, see the deployment doc) can use `/test` to trigger one outbound POST to `baseUrl` (semi-blind: the response error summary echoes only a truncated raw excerpt). Deployments sensitive to that risk can turn the plugin's `enabled` off or adopt a dedicated-port setup (a later version)
 
 ### Webhook push channel (#508)
@@ -331,7 +332,7 @@ with your topic name before delivering.
 Delivery reliability: timeout 1-60 s (default 10); **failures are never retried
 automatically** — 4xx / 5xx / network errors / render failures all end as a terminal
 failure recorded in the status file and the notification history (the raw host text is
-truncated as-is into the reason's `detail`, see "Security & boundaries");
+truncated as-is into the reason's `detail`, see "Security model");
 re-send via "Send test notification" to verify. Reference channels in `kindRoutes` as
 `webhook:<id>` (same `type:id` shape as `bark:<id>`).
 
@@ -349,7 +350,7 @@ across types):
   - **Credential masking funneled via `CHANNEL_SECRET_FIELDS`**: the masked-field list is a per-channel-type single source of truth (bark → `deviceKey`, webhook → `token`/`password`/`headerValue`); GET /config (user + effective) and PUT success responses always mask `********`, submitting the full mask = keep the original value (backfilled aligned by instance id so a reordering never swaps credentials between instances); a mask submitted for a new instance returns 400
   - **Reserved keys block config bypass (`WEBHOOK_RESERVED_KEYS`)**: credential alias keys such as `auth_token` / `access_token` / `bearer_token` / `api_key` / `apikey` / `client_secret` / `secret` / `password_hash` are always stripped / rejected on write — legitimate credentials can only enter via the known secret fields (masked end to end)
   - **JSON injection protection**: the template renders JSON-aware in two steps (value-level substitution + uniform re-serialization escaping); notification content cannot break out of a string to inject extra JSON fields
-  - **Outbound errors do not replace credentials**: same as Bark — non-2xx response bodies are truncated to 200 chars and enter the reason's `detail` as-is, with no credential-literal replacement and no rule table (see "Security & boundaries")
+  - **Outbound errors do not replace credentials**: same as Bark — non-2xx response bodies are truncated to 200 chars and enter the reason's `detail` as-is, with no credential-literal replacement and no rule table (see "Security model")
   - **URL SSRF posture (same normalize as Bark)**: http/https schemes only, credential URLs (`user:pass@host`) rejected, query/hash stripped; no domain allowlist — an intranet self-hosted gateway is a legitimate use case; custom header names forbid end-to-end headers (`content-type`/`content-length`/`host`/`cookie`/`authorization`) against request smuggling / JSON body corruption
   - **No retry on failure**: a failed delivery is terminal (4xx/5xx/network/render) — no retry-driven outbound amplification
 
@@ -535,6 +536,19 @@ Full capability self-check (`capabilities.host` with per-dimension `checked`, th
 Error mapping (PUT /config): invalid config key → 400 (`{ok:false, error:{error:"配置校验失败: <key>", hint}}`); stale `expectedRevision` conflict → 409 (`code:"SETTINGS_CONFLICT"`); settings service unavailable → 503 (`code:"settings-unavailable"`); write failure → 500 (root cause only in server logs).
 
 Error mapping (POST /kinds): kind-confirmation CAS retries (≤2) exhausted → 409 (`code:"SETTINGS_CONFLICT"`, rare: sustained concurrent writes during confirmation); settings service unavailable → 503 (`code:"settings-unavailable"`, same semantics as PUT /config); write failure → 500 (fixed `error` text, root cause only in server logs).
+
+### Configuration format appendix: defaults, migration, and masking rules
+
+- Defaults follow `DEFAULT_CONFIG` in `src/server/config/impl/model/index.ts`: event toggles `notifyAsk` / `notifyQuestion` / `notifyTaskDone` / `notifyTaskError` on, `notifySubagentDone` / `notifyTurnEnd` off; `quietHours` is `{enabled:false, start:"22:00", end:"08:00"}`; `channels` always carries the two built-in entries (browser and system, each `enabled` / `popup` / `sound` on, plus `whenVisible:false` on browser); `kindRoutes` and `allowKinds` are empty, `historyMaxAgeDays` is 0.
+- 0.2.3 → 0.2.4 migration: the 8 top-level channel keys (`systemEnabled` / `browserEnabled` / `systemNotify` / `browserNotify` / `notifyWhenVisible` / `notifySound` / `browserSound` / `systemSound`) are moved into the two built-in entries at assembly time and then deleted (`src/server/upgrade/impl/steps/config-shape.ts`); submitting them after the upgrade always returns 400 with a refresh hint, and leftover lines must be removed by hand in `config.json`.
+- Masking rules: the per-channel-type credential field list is centralized in `CHANNEL_SECRET_FIELDS` (bark → `deviceKey`, webhook → `token` / `password` / `headerValue`); `user` and `effective` of GET /config plus PUT success responses are always masked as `********`, submitting a full mask means keep the original value (backfilled aligned by instance id); a mask submitted for a new instance returns 400 (`NEW_CHANNEL_MASK_HINT` in `src/server/config/impl/service/index.ts`).
+
+### Client contract: throttling, gesture unlock, and frame path
+
+- Autoplay throttling: `PLAY_THROTTLE_MS` is 1500 ms and covers both autoplay paths (notification tones and sound-only delivery); previews bypass it (`gate()` in `src/client/notify/audio.ts`).
+- Gesture unlock: the browser autoplay policy requires one user interaction — the first click anywhere on the page calls `unlock()` to unlock the AudioContext; previews are in-gesture operations with explicit unlock plus throttle bypass (`src/client/index.tsx`).
+- Frame path: the decision pipeline emits frames through the composition-root-local `FrameBus` (`src/index.ts`), the browser exit subscribes via `onFrame` and serves them over the SSE route `/api/dsh-notifier/events`; the client subscribes with EventSource, actively reconnects with `?since=<seq>` for replay, and dedupes by seq (`src/client/notify/session.ts`).
+- Forwarding semantics via 3443 are only referenced, never restated here: see the "Security model" and "Verification and troubleshooting" sections of the `dsh-lan-proxy` README.
 
 ### Uninstall plugins (remove)
 

@@ -327,6 +327,15 @@
       "why": "项目级 skill 与 MCP 声明。"
     },
     {
+      "path": ".agents/**",
+      "faces": [],
+      "consumerGap": {
+        "kind": "external",
+        "reason": "人阅读与 Agent 按 write-notes-like-deepseek skill（全局 ~/.dsh/skills，非仓内文件）查阅；仓内无机械读取方，没有校验脚本扫描该目录。"
+      },
+      "why": "纯决策记录文档：只增决策上下文，不影响任何包行为；faces 空数组为显式豁免（无需包面）。"
+    },
+    {
       "path": "tools/**",
       "faces": [],
       "consumers": ["scripts/test/lint-toolchain.test.ts", "package.json"],

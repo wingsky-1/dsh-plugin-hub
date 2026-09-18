@@ -409,6 +409,23 @@ For architecture and runtime mechanisms, see the [TOGAF 4A architecture document
 
 Tests are maintained by layer under `test/{unit,integration,e2e,client}/`. Unit and integration tests import `src/**` directly; e2e smoke tests run the `lib/` artifact (`import "../../lib/index.js"`). Stryker reuses the assertions via the lib→src hook, without hand-synced copies.
 
+<a id="configuration-contract-appendix"></a><a id="user-content-configuration-contract-appendix"></a>
+## Configuration contract appendix
+
+| Key | Host default | Client display default | Patch declaration |
+|---|---|---|---|
+| `port` | `3081` | `3081` | Not declared |
+| `httpsPort` | `3443` | `3443` | Not declared |
+| `host` / `targetHost` | `"0.0.0.0"` / `"127.0.0.1"` | No such key | Not declared |
+| `targetPort` | No default; follows the loopback web server actual port | No such key | Not declared |
+| `injectToken` | `true` | `true` | Not declared |
+| `ownsHostCompat` | `false` | `false` | Not declared |
+| `enabled` / `httpsEnabled` / `printBanner` / `wsBridgeEnabled` / `wsCompressEnabled` / `httpCompressEnabled` | `true` | `true` | Not declared |
+| `httpCompressLevel` | `1` (0-3) | `1` | Not declared |
+| `wsCompressPaths` / `wsDeflatePolicy` / `tlsCertFile` / `tlsKeyFile` | `["/api/remote.mux"]` / `{browser:true, uaDeny:[iPhone,iPad,iPod]}` / no default | `["/api/remote.mux"]` / no such key / `""` | Not declared |
+
+Host defaults come from `DEFAULT_OPTIONS` in `src/server/shared/defaults.ts` and `DEFAULT_DEFLATE_POLICY` in `src/server/shared/deflate.ts`, applied via `Config` / `DEFAULT_CONFIG` in `src/server/config/impl/model.ts`; client defaults come from `DEFAULTS` in `src/client/shared/defaults.ts`; `cordis.patch.yml` (`ui-dsh-lan-proxy`) carries no `config` on either the standalone or aggregate row. `injectToken` on is equivalent to trusting the whole LAN, and `ownsHostCompat` on declares `ownsHost` to non-loopback pages; see "Security Model" for details. The code above is the single source of truth; where docs and code disagree, the code prevails.
+
 ## License
 
 MIT

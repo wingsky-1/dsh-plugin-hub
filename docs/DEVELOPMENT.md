@@ -67,8 +67,7 @@ pnpm typecheck    # 全仓类型检查
 ### 变异测试与增量链路（#178 / #187）
 
 变异配置集中在 `stryker.conf.d/dsh-<pkg>.json`（未拆分包）与 `stryker.conf.d/dsh-<pkg>-<段名>.json`
-（拆分包，段名=功能域，如 `dsh-notifier-server.json`；除 dsh-lan-proxy（待迁移功能段名）外
-已弃用数字段号）。mutate 区间、
+（拆分包，段名=功能域，如 `dsh-notifier-server.json`；数字段号已弃用）。mutate 区间、
 变异面测试清单、阈值口径与 `gauntlet.config.json` 三方一致，由 workflow-assert 自测锚定。增量链路：
 
 **全量分工总述**：PR 门管变更切片；夜间 observe 门管主干全量；发版前

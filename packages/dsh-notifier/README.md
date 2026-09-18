@@ -34,7 +34,8 @@
 > 已验证（2026-08）：`https://<IP>:3443/api/dsh-notifier/health` 返回 200，
 > SSE 长连接（`/api/dsh-notifier/events`）经 3443 首帧正常。
 
-## 安全与边界
+<a id="安全与边界"></a><a id="user-content-安全与边界"></a>
+## 安全模型
 
 - 通知文本只含任务标题/工具名/申请理由等元信息，**不含工具参数**（防敏感信息外泄）
 - **通知正文与标题不再打码（#733 收敛）**：原 `sanitizeContent` 的规则表（路径 / PEM 私钥 / 连接串凭据 / 令牌 / 邮箱…）已删除——通知、历史落盘（含 suppressed 落史）与投递都是原文；正文不截断，长度由投递频道的展示上限截断。需要「日志里不出现某类文本」的部署，请自行在事件源侧处理
@@ -237,7 +238,7 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 - **Bark 频道凭据与出站安全（M2）**：
   - **device key 不落 URL**：推送走 `POST {baseUrl}/push` + JSON body（`device_key` 字段）——反代 access log 默认只记 URL 与 header，正文不落日志
   - **响应掩码单一出口**：GET /config 的 user+effective 与 PUT 成功响应中的 `deviceKey` 一律掩码 `********`；提交整值掩码 = 保持原值（按实例 id 对齐回填，防止数组顺序变化串凭据）
-  - **错误出口不做凭据替换（实测）**：Bark 4xx 响应体会回显 key 原文——失败原因按原文截断后进 logger 与 `status.json`，不再按 device key 字面替换，也不再有 `sent` 事件这一路出口（详见「安全与边界」）
+  - **错误出口不做凭据替换（实测）**：Bark 4xx 响应体会回显 key 原文——失败原因按原文截断后进 logger 与 `status.json`，不再按 device key 字面替换，也不再有 `sent` 事件这一路出口（详见「安全模型」）
   - **SSRF 姿态**：`baseUrl` 限 http/https scheme、拒绝带凭据 URL（`user:pass@host`）、丢弃 query/hash。**不做域名白名单**——baseUrl 指向内网自建 bark-server 是合法场景；已知残余风险：局域网内可访问 dsh web 的调用方（经 lan-proxy 反代可穿透 loopback 围栏，见部署文档）可借 `/test` 触发一次对 `baseUrl` 的出站 POST（半盲，响应错误摘要仅回显一段截断后的原文）。对该风险敏感的部署可将插件 `enabled` 关闭或用独立端口方案（后续版本）
 
 ### Webhook 推送频道（#508）
@@ -278,7 +279,7 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
 
 渲染语义（JSON-aware 两步法）：先把 `{{ts}}` 替换为数字字面量 → 模板整体 `JSON.parse` → 树遍历仅对**字符串值**做占位符替换 → 重新 `JSON.stringify`。替换发生在已解析字符串内部、重新序列化时统一转义——通知内容含引号 / `"}}` 也无法逃逸出字符串注入额外字段（防注入收口）。模板不是合法 JSON = 该频道投递失败并落记录（不静默降级为文本，不影响其他频道）。`ntfy` 预设默认模板含 `"topic": "<topic>"` 占位，投递前改成你的主题名。
 
-投递可靠性：超时 1-60s（默认 10）；**失败不自动重试**——4xx / 5xx / 网络错误 / 渲染失败统一为失败终态，落 status 文件与通知历史（宿主原文截断后进失败理由的 `detail`，见「安全与边界」），可经「发送测试通知」重发验证。`kindRoutes` 中以 `webhook:<id>` 引用（与 `bark:<id>` 同款 `type:id` 形态）。
+投递可靠性：超时 1-60s（默认 10）；**失败不自动重试**——4xx / 5xx / 网络错误 / 渲染失败统一为失败终态，落 status 文件与通知历史（宿主原文截断后进失败理由的 `detail`，见「安全模型」），可经「发送测试通知」重发验证。`kindRoutes` 中以 `webhook:<id>` 引用（与 `bark:<id>` 同款 `type:id` 形态）。
 
 实例示例（与 Bark 实例同存于 `channels` 数组，id 跨类型去重）：
 
@@ -293,7 +294,7 @@ http/https）、`deviceKey`（Bark App 内查看；响应中一律掩码 `******
   - **凭据掩码收口（`CHANNEL_SECRET_FIELDS` 泛化）**：掩码字段清单按频道类型单一事实源化（bark→`deviceKey`、webhook→`token`/`password`/`headerValue`）；GET /config 的 user+effective 与 PUT 成功响应一律掩码 `********`，提交整值掩码 = 保持原值（按实例 id 对齐回填，防数组序变化串凭据），新实例带掩码提交 400
   - **保留键防配置绕过（`WEBHOOK_RESERVED_KEYS`）**：`auth_token` / `access_token` / `bearer_token` / `api_key` / `apikey` / `client_secret` / `secret` / `password_hash` 等凭据别名键一律剔除/写拒——合法凭据只能走已知 secret 字段（经掩码收口）
   - **JSON 注入防护**：模板渲染 JSON-aware 两步法（值级替换 + 重新序列化统一转义），通知内容无法逃逸出字符串注入额外 JSON 字段
-  - **错误出口不做凭据替换**：与 Bark 同款——非 2xx 响应体截断 200 字符后按原文进失败理由的 `detail`，不再按凭据字面替换、不过规则表（详见「安全与边界」）
+  - **错误出口不做凭据替换**：与 Bark 同款——非 2xx 响应体截断 200 字符后按原文进失败理由的 `detail`，不再按凭据字面替换、不过规则表（详见「安全模型」）
   - **URL SSRF 姿态（与 Bark 同款 normalize）**：scheme 限 http/https、拒绝带凭据 URL（`user:pass@host`）、去 query/hash；不做域名白名单——内网自建网关是合法场景；自定义头名禁端到端关键头（`content-type`/`content-length`/`host`/`cookie`/`authorization`）防请求走私/破坏 JSON body
   - **失败不重试**：投递失败即终态（4xx/5xx/网络错误/渲染失败），无自动重试带来的出站放大
   - webhook 为**增量频道类型**：不改变既有频道与通知出口（SSE 帧 / 系统通知 / 历史 jsonl）的语义与兼容承诺
@@ -446,6 +447,19 @@ GET 动态 kind 清单（含确认态）；POST `{kind, confirmed}` 写确认（
 错误映射（PUT /config）：非法配置键 → 400（`{ok:false, error:{error:"配置校验失败: <键>", hint}}`）；版本冲突（`expectedRevision` 过期）→ 409（`code:"SETTINGS_CONFLICT"`）；settings 服务缺失 → 503（`code:"settings-unavailable"`）；写入异常 → 500（底层原因只进服务端日志）。
 
 错误映射（POST /kinds）：kind 确认内部 CAS 冲突重试（≤2 次）耗尽 → 409（`code:"SETTINGS_CONFLICT"`，罕见：确认期间持续并发写入）；settings 服务缺失 → 503（`code:"settings-unavailable"`，与 PUT /config 同语义）；写入异常 → 500（`error` 固定文案，底层原因只进服务端日志）。
+
+### 配置格式附录：默认值、迁移与掩码规则
+
+- 默认值以 `src/server/config/impl/model/index.ts` 的 `DEFAULT_CONFIG` 为准：事件开关 `notifyAsk` / `notifyQuestion` / `notifyTaskDone` / `notifyTaskError` 开、`notifySubagentDone` / `notifyTurnEnd` 关；`quietHours` 为 `{enabled:false, start:"22:00", end:"08:00"}`；`channels` 恒带两条内置条目（browser 与 system，均 `enabled` / `popup` / `sound` 开，browser 另有 `whenVisible:false`）；`kindRoutes` 与 `allowKinds` 为空，`historyMaxAgeDays` 为 0。
+- 0.2.3 → 0.2.4 迁移：8 个顶层渠道键（`systemEnabled` / `browserEnabled` / `systemNotify` / `browserNotify` / `notifyWhenVisible` / `notifySound` / `browserSound` / `systemSound`）在装配期搬进两条内置条目后删除（`src/server/upgrade/impl/steps/config-shape.ts`）；升级后再提交这些键一律 400 并提示刷新页面，旧键残留需手删 `config.json` 对应行。
+- 掩码规则：凭据字段清单按频道类型收口于 `CHANNEL_SECRET_FIELDS`（bark 为 `deviceKey`，webhook 为 `token` / `password` / `headerValue`）；GET /config 的 `user` 与 `effective` 及 PUT 成功响应一律掩码 `********`，提交整值掩码视为保持原值（按实例 id 对齐回填）；新实例带掩码提交返回 400（`src/server/config/impl/service/index.ts` 的 `NEW_CHANNEL_MASK_HINT`）。
+
+### 客户端契约：节流、手势解锁与帧通路
+
+- 自播节流：`PLAY_THROTTLE_MS` 为 1500 毫秒，覆盖通知音与只响不弹两条自播路径，试听不受限（`src/client/notify/audio.ts` 的 `gate()`）。
+- 手势解锁：浏览器自动播放策略要求一次用户交互，页面首次任意点击调用 `unlock()` 解锁 AudioContext；试听为显式解锁加绕过节流的手势内操作（`src/client/index.tsx`）。
+- 帧通路：裁决管线经组合根的本地 `FrameBus` 发帧（`src/index.ts`），浏览器出口经 `onFrame` 订阅后由 SSE 路由 `/api/dsh-notifier/events` 下发；客户端用 EventSource 订阅，重连主动带 `?since=<seq>` 补拉并按 seq 去重（`src/client/notify/session.ts`）。
+- 经 3443 转发语义只引用 `dsh-lan-proxy` 的架构节，不在此复述：见该包 README 的「安全模型」与「验证与排障」节。
 
 ### 卸载插件（remove）
 
