@@ -12,11 +12,13 @@
  * 状态收进类实例字段而不是模块级 let：`gate:module-state` 明禁模块级可变状态（I9）。形态照
  * `catalog/impl/service` 的 CatalogPorts。
  */
+import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { CatalogServer, CatalogTool } from "../entries/type.ts";
 import { catalogPorts } from "../service/index.ts";
+import { fileMode, readJsonFile, writeFileAtomic } from "../../../shared/interface.ts";
 
 /** 注册面视图：宿主 `ctx.tools.schemas()` 的返回形状（每次投影现取）。 */
 export type SchemaView = ReadonlyArray<{
@@ -44,6 +46,39 @@ export interface RegisteredProjectionInput {
   isRuntimeServer: (name: string) => boolean;
   /** 告警出口（连接层转 host.logger.warn）。 */
   warn: (message: string) => void;
+}
+
+/**
+ * 目录 last-good 写盘（H2 等价接入，#767 S2-C 筆3）：登记路径（`catalog/<hash>.json`）
+ * 经 file-io `writeFileAtomic`（mode 取登记表 + 同路径写串行 + 失败清理临时名）；
+ * 未登记路径（单测 tmp 覆盖 `cachePath`）回落硬化直写（随机后缀 + 失败清理）——
+ * `writeFileAtomic` 对未登记路径抛 I6，直接调等于把回落写盘变成 warn（store.save 的 S2-B 同式）。
+ * 序列化形状由调用方给整串（`{ version: 1, root, entries }` + 2 空格）逐字节不变：序列化收敛不是本笔的事。
+ *
+ * 模块函数而非类成员/导出：调用点同文件，导出会进导出面快照（零 diff 要求）。 */
+async function writeDirectoryCacheFile(file: string, data: string): Promise<void> {
+  let registered = true;
+  try {
+    fileMode(file);
+  } catch {
+    registered = false;
+  }
+  if (registered) {
+    await writeFileAtomic(file, data);
+    return;
+  }
+  // R1/R2 同式硬化：回落临时名加随机后缀 + 失败清理（与 file-io `writeOnce` 同式）；
+  // mode 沿既有回落形状（无 mode），只补唯一性与清理，不改写盘语义。
+  const dir = dirname(file);
+  if (!existsSync(dir)) await mkdir(dir, { recursive: true });
+  const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.${randomBytes(6).toString("hex")}.tmp`;
+  try {
+    await writeFile(tmp, data, "utf8");
+    await rename(tmp, file);
+  } catch (cause) {
+    await rm(tmp, { force: true }).catch(() => undefined);
+    throw cause;
+  }
 }
 
 /**
@@ -99,9 +134,10 @@ class CatalogDirectory {
     this.byRoot.set(root, servers);
     this.roots.add(root);
     try {
-      if (!existsSync(cachePath)) return;
-      const raw = await readFile(cachePath, "utf8");
-      const parsed = JSON.parse(raw) as { entries?: Record<string, unknown> } | null;
+      // H2 等价接入（#767 S2-C 筆3）：容错读经 file-io `readJsonFile`（缺失/不可读/
+      // 是目录/坏 JSON 一律回落 null，与既有 existsSync+readFile+parse 的「缺失/损坏 → 空」同族）；
+      // 形状校验与条目清洗逐条不变。
+      const parsed = await readJsonFile<{ entries?: Record<string, unknown> } | null>(cachePath);
       if (
         parsed &&
         typeof parsed === "object" &&
@@ -252,11 +288,12 @@ class CatalogDirectory {
     // 求值在 try 之外：路径求值失败是要被投影 catch 收口成 unavailable 的运行时错误。
     const cachePath = opts.cachePath();
     try {
-      const dir = dirname(cachePath);
-      if (!existsSync(dir)) await mkdir(dir, { recursive: true });
-      const tmp = `${cachePath}.${process.pid}.${Date.now().toString(36)}.tmp`;
-      await writeFile(tmp, JSON.stringify({ version: 1, root, entries: payload }, null, 2), "utf8");
-      await rename(tmp, cachePath);
+      // H2 等价接入（#767 S2-C 筆3）：求值后 try 内写段经 `writeDirectoryCacheFile`
+      // （登记路径走 `writeFileAtomic`，未登记回落硬化直写）；runtime 过滤/空采集早返/求值位置均不动。
+      await writeDirectoryCacheFile(
+        cachePath,
+        JSON.stringify({ version: 1, root, entries: payload }, null, 2),
+      );
     } catch (error) {
       opts.warn(`dsh-mcp-manager: catalog cache write failed: ${msgOf(error)}`);
     }

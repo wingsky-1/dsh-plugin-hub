@@ -34,8 +34,8 @@
       "allSrcTsFiles": 117,
       "interfaceFacades": 17,
       "leafValueEdges": 19,
-      "fileValueEdges": 143,
-      "crossModuleRefs": 192,
+      "fileValueEdges": 144,
+      "crossModuleRefs": 193,
       "quality": {
         "leafModuleCycles": [],
         "fileCycles": [],

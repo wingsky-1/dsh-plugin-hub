@@ -12,7 +12,8 @@
  * 类型自各域门面取；manager.ts 不 import apply.ts / index.ts（防循环引用）。
  */
 
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import type { SseHub } from "../../../../../../shared/sse-hub.js";
@@ -96,9 +97,16 @@ async function writeCatalogCacheFile(file: string, data: string): Promise<void> 
   }
   const dir = dirname(file);
   if (!existsSync(dir)) await mkdir(dir, { recursive: true });
-  const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
-  await writeFile(tmp, data, "utf8");
-  await rename(tmp, file);
+  // R2 硬化（#767 S2-C 筆3）：回落临时名加随机后缀 + 失败清理（与 file-io `writeOnce` 同式）；
+  // mode 沿既有回落形状（无 mode），只补唯一性与清理，不改写盘语义。
+  const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.${randomBytes(6).toString("hex")}.tmp`;
+  try {
+    await writeFile(tmp, data, "utf8");
+    await rename(tmp, file);
+  } catch (cause) {
+    await rm(tmp, { force: true }).catch(() => undefined);
+    throw cause;
+  }
 }
 
 /**

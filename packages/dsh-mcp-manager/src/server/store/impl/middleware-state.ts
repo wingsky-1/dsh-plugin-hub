@@ -2,8 +2,8 @@
  * dsh-mcp-manager — 中间层用户状态与目录缓存持久化（单一事实源）。
  */
 
-import { createHash } from "node:crypto";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ProjectUnit } from "../../connection/interface.ts";
@@ -40,9 +40,16 @@ async function writeStateFile(file: string, data: string): Promise<void> {
   }
   const dir = dirname(file);
   if (!existsSync(dir)) await mkdir(dir, { recursive: true });
-  const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.tmp`;
-  await writeFile(tmp, data, "utf8");
-  await rename(tmp, file);
+  // R1 硬化（#767 S2-C 筆3）：回落临时名加随机后缀 + 失败清理（与 file-io `writeOnce` 同式）；
+  // mode 沿既有回落形状（无 mode），只补唯一性与清理，不改写盘语义。
+  const tmp = `${file}.${process.pid}.${Date.now().toString(36)}.${randomBytes(6).toString("hex")}.tmp`;
+  try {
+    await writeFile(tmp, data, "utf8");
+    await rename(tmp, file);
+  } catch (cause) {
+    await rm(tmp, { force: true }).catch(() => undefined);
+    throw cause;
+  }
 }
 
 /** userDisabled 持久化文件路径（名字与权限的物理定义在 server/shared/paths.ts，I7 单源）。 */
