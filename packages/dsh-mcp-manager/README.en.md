@@ -36,9 +36,9 @@ them has no effect, and this plugin never rewrites your config file.)
   matter how many servers or tools you connect the system prompt never balloons
   (two-level discovery: `ws_mcp_list` for a full inventory → `ws_mcp_detail` to pull the
   complete schema on demand)
-- **Per-working-directory maintenance**: project-level config `<project root>/.dsh/mcp.json`
+- **Per-working-directory maintenance**: project-level config `<project root>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json`
   travels with the repo and can be committed to git for team sharing; global config
-  `<DSH_HOME>/dsh-mcp.json` stays always connected; switching sessions auto-loads the
+  `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json` stays always connected; switching sessions auto-loads the
   MCP set of the current directory
 - **Workspace isolation**: the middleware routes by the session's cwd to the matching
   connection pool, with server-full-name consistency checks against cross-workspace
@@ -102,7 +102,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | Capability | Description |
 | --- | --- |
 | Top-right floating window | Status dot + count summary (`MCP 2/3`); click to expand the dropdown panel; auto-refreshes on session switch |
-| Project-level MCP | Servers are split into "project-level / global" tiers: project-level stored in `<project root>/.dsh/mcp.json` (travels with the project, can be committed to git); global stored in `<DSH_HOME>/dsh-mcp.json` for persistent connection |
+| Project-level MCP | Servers are split into "project-level / global" tiers: project-level stored in `<project root>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json` (travels with the project, can be committed to git); global stored in `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json` for persistent connection |
 | Tiered display | Running / Connecting / Reconnecting / Disconnected / Disabled / Failed; each server shows transport, endpoint, and tool count |
 | Server management | CRUD (project-level/global optional), connect / disconnect / reconnect; versioned JSON config, atomic write |
 | Two transports | stdio (local subprocess, env supports `${ENV}` references) and streamable-http (remote, header supports `${ENV}` references, auto-echoes `Mcp-Session-Id`) |
@@ -191,7 +191,7 @@ admission gate.
 
 - Expanding the "Tools (N)" details of a server card shows a **checkbox list**; toggling
   each tool persists via `PATCH /api/dsh-mcp/tool-disable` (stored under
-  `<DSH_HOME>/dsh-mcp-user-state.json` → `disabledTools`, merged write, survives restarts);
+  `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/user-state.json` → `disabledTools`, merged write, survives restarts);
 - Semantics: **both project-level and global servers' tools can be disabled** (after the
   single-pool change both go through the middleware; global records are keyed by `@global`
   and shared across workspaces); everything is enabled by default;
@@ -260,7 +260,7 @@ await ctx.mcpManager.registerServer({
 
 ## Data and Security
 
-- Server config: `<DSH_HOME>/dsh-mcp.json` (stores only `${ENV}` references, **never the
+- Server config: `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json` (stores only `${ENV}` references, **never the
   secrets themselves**); on-disk 0600 permissions + atomic write
 - All `/api/dsh-mcp/*` routes are restricted to loopback access (non-loopback → 403 / wrong
   method → 405)
@@ -284,10 +284,10 @@ await ctx.mcpManager.registerServer({
   disable table), the pre-execute guard (`mcp__`-prefixed direct calls),
   and plugins' own declared discipline bare-name tools all go through the single
   `isToolDenied` decision; disabling only affects `mcp__`-prefixed tools, and the denial
-  reason carries that semantic note; records live under `<DSH_HOME>/dsh-mcp-user-state.json`
+  reason carries that semantic note; records live under `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/user-state.json`
   → `disabledTools` (the `@global` key is shared across workspaces; merged writes never
   overwrite the whole table)
-- **Call stats and debug mode (Metadata-Only)**: Disabled by default; when configured with `dsh-mcp-manager.debug.callStats: true` in `~/.dsh/settings.yaml`, tool call metrics (call count, success/error, average/max duration) and progressive disclosure funnel stats (`ws_mcp_search` query frequencies, `ws_mcp_list` / `ws_mcp_detail` query distributions) are debounced and atomically written to `<DSH_HOME>/mcp-stats.json`, with single-line console debug logs; strictly does not persist user arguments or returned content, avoiding code or privacy leaks
+- **Call stats and debug mode (Metadata-Only)**: Disabled by default; when configured with `dsh-mcp-manager.debug.callStats: true` in `~/.dsh/settings.yaml`, tool call metrics (call count, success/error, average/max duration) and progressive disclosure funnel stats (`ws_mcp_search` query frequencies, `ws_mcp_list` / `ws_mcp_detail` query distributions) are debounced and atomically written to `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/stats.json`, with single-line console debug logs; strictly does not persist user arguments or returned content, avoiding code or privacy leaks
 - The capability catalog injection includes source annotations and a "does not represent current
   connection status" note
 - **Message-source shape of the catalog injection**: `source` uses the host-registered generic

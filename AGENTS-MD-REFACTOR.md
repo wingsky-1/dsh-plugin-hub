@@ -44,7 +44,7 @@
 - 任务来源：补「用户直接指派的任务直接做，不强制补建 issue」（与全局「用户指令优先」对齐）。
 - CRAP：`#42 二期`（已 CLOSED）→ 改为「观察期，`crap.strict=false` 不得自行改」。
 - 浏览器验证：补前置自检 `dsh plugin --profile web list | grep dsh-verify-isolated`，
-  未装时给替代路径，并明确**不得改用户 profile 代装**；`.dsh/mcp.json` 补 mcp-manager 前置。
+  未装时给替代路径，并明确**不得改用户 profile 代装**；`.dsh/@wingsky-1/dsh-mcp-manager/mcp.json` 补 mcp-manager 前置。
 
 **外移（内容未删）**
 - 发布纪律（约 12.4%）→ 新建 `.dsh/skills/dsh-plugin-release/SKILL.md`（含双锚跳转导航写法）。

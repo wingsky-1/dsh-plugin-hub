@@ -75,6 +75,7 @@ import {
   registerMiddlewareTools,
 } from "./server/inject/interface.ts";
 import { installUpgrade, releaseUpgrade } from "./server/upgrade/interface.ts";
+import * as upgradeApi from "./server/upgrade/interface.ts";
 import { bindHost, type HostFaces } from "./server/shared/interface.ts";
 import { startAgentVisibility } from "./server/visibility/interface.ts";
 import { SSE_FRAMES } from "./shared/interface.ts";
@@ -114,6 +115,7 @@ installOrchestrator({
   pipeline: pipelineApi,
   stats: statsApi,
   workspace: workspaceApi,
+  upgrade: upgradeApi,
 });
 
 // 连接运行时子层的静态端口装配。同上：实参必须是可解析的对象字面量、键集与

@@ -2,7 +2,7 @@
  * dsh-mcp-manager — MCP 服务器管理器（单一事实源）。
  *
  * McpManager 持有全局存储 + 当前会话项目的项目级存储、连接池宿主面与状态通知。
- * 全局服务器常连；项目级服务器（<项目根>/.dsh/mcp.json）只在当前会话 cwd 属于
+ * 全局服务器常连；项目级服务器（<项目根>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json）只在当前会话 cwd 属于
  * 该项目时连接（跟随会话切换）。
  *
  * **单池（#767 笔 1a）**：连接只有一本账 = 中间层单元表 `middleware.units`
@@ -14,7 +14,7 @@
 
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import type { SseHub } from "../../../../../../shared/sse-hub.js";
 import type { Context, LoggerService } from "@deepseek-ai/cordis";
 import type { ServerConfig } from "../../config/interface.ts";
@@ -34,10 +34,11 @@ import {
   SERVER_STATES,
 } from "../../../shared/interface.ts";
 import { orchestratorPorts } from "./impl/service/index.ts";
+import { projectConfigFile } from "../../shared/interface.ts";
 
 /**
  * 管理器：持有全局存储 + 当前会话项目的项目级存储、连接池宿主面与状态通知。
- * 全局服务器常连；项目级服务器（<项目根>/.dsh/mcp.json）只在当前会话 cwd 属于
+ * 全局服务器常连；项目级服务器（<项目根>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json）只在当前会话 cwd 属于
  * 该项目时连接（跟随会话切换）。
  */
 export class McpManager {
@@ -401,10 +402,12 @@ export class McpManager {
   /** 读取/复用某项目根的 store（工作区缓存命中直接返回，不重复读盘）。 */
   async projectStoreFor(root: string | undefined): Promise<McpStore | undefined> {
     if (typeof root !== "string" || root === "") return undefined;
-    const { configStore } = orchestratorPorts.get();
+    const { configStore, upgrade } = orchestratorPorts.get();
     let store = this.projectStores.get(root);
     if (store === undefined) {
-      store = new configStore.McpStore(join(root, ".dsh", "mcp.json"));
+      // 读前落定包分区新形态：旧扁平存在即搬运 + 归档（幂等，每次新建都调无妨）。
+      await upgrade.settleProjectConfig(root, this.logger);
+      store = new configStore.McpStore(projectConfigFile(root));
       await store.load();
       this.projectStores.set(root, store);
     } else {

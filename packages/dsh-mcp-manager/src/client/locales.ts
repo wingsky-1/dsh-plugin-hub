@@ -69,7 +69,7 @@ export const zh = {
   urlLabel: "URL（streamable-http）",
   headersLabel: "请求头（每行 KEY: VALUE，支持 ${ENV} 引用）",
   enabledLabel: "启用（保存后立即连接）",
-  scopeProjectOpt: "项目级（<项目>/.dsh/mcp.json，随会话切换）",
+  scopeProjectOpt: "项目级（<项目>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json，随会话切换）",
   scopeGlobalOpt: "全局（本机配置）",
   transportStdioOpt: "stdio（本地子进程）",
   transportHttpOpt: "streamable-http（远程）",
@@ -165,7 +165,8 @@ export const en: Record<McpLocaleKey, string> = {
   urlLabel: "URL (streamable-http)",
   headersLabel: "Headers (KEY: VALUE per line, ${ENV} refs supported)",
   enabledLabel: "Enabled (connects immediately after saving)",
-  scopeProjectOpt: "Project (<project>/.dsh/mcp.json, follows the session)",
+  scopeProjectOpt:
+    "Project (<project>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json, follows the session)",
   scopeGlobalOpt: "Global (local machine config)",
   transportStdioOpt: "stdio (local subprocess)",
   transportHttpOpt: "streamable-http (remote)",

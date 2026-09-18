@@ -8,7 +8,7 @@
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname } from "node:path";
-import { configFile } from "../../shared/interface.ts";
+import { configFile, fileMode } from "../../shared/interface.ts";
 import type { ServerConfig } from "../../config/interface.ts";
 
 // ------------------------------------------------------------------ 存储
@@ -63,10 +63,22 @@ export class McpStore {
   async save() {
     const dir = dirname(this.path);
     if (!existsSync(dir)) await mkdir(dir, { recursive: true });
+    // mode 取登记表：项目级新形态 null→随项目自身权限模型（与 file-io 同式不设 mode）；
+    // 未登记（用户 storePath 显式接管的任意路径）回落既有 0o600 行为——直接套 fileMode 会抛（I6）。
+    let mode: number | null;
+    try {
+      mode = fileMode(this.path);
+    } catch {
+      mode = 0o600;
+    }
     // B17：唯一 tmp 名（pid+时间戳）防并发写相互踩踏；失败时清理残留后上抛。
     const tmp = `${this.path}.tmp.${process.pid}.${Date.now()}`;
     try {
-      await writeFile(tmp, JSON.stringify(this.data, null, 2), { encoding: "utf8", mode: 0o600 });
+      await writeFile(
+        tmp,
+        JSON.stringify(this.data, null, 2),
+        mode === null ? { encoding: "utf8" } : { encoding: "utf8", mode },
+      );
       await rename(tmp, this.path);
     } catch (error) {
       try {

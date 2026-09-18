@@ -62,7 +62,7 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 浏览器实测优先 `@wingsky-1/dsh-verify-isolated`（临时 `DSH_HOME` + 独立 profile + 独立
 端口）：先 `dsh plugin --profile web list | grep dsh-verify-isolated` 自检；未装则报缺，
 或按 DEVELOPMENT §5 手工临时 `DSH_HOME` 验证，也可请用户安装——**不得改用户 profile 代装**。
-[`.dsh/mcp.json`](.dsh/mcp.json) 的浏览器 MCP 同理：需 `dsh-mcp-manager` 已装才生效。
+[`.dsh/@wingsky-1/dsh-mcp-manager/mcp.json`](.dsh/@wingsky-1/dsh-mcp-manager/mcp.json) 的浏览器 MCP 同理：需 `dsh-mcp-manager` 已装才生效。
 
 ## 任务与流程
 
@@ -125,7 +125,7 @@ worktree 内。在仓库根直接跑出的读数是「某个落后提交」的�
 - **布局**：`packages/dsh-<name>/` 功能包、[`packages/dsh-plugins-all/`](packages/dsh-plugins-all/) 聚合包（patch 由
   [`scripts/gate/aggregate.ts`](scripts/gate/aggregate.ts) 生成）、[`shared/`](shared/) 宿主与客户端共享模块（清单见
   [shared/README.md](shared/README.md)）、[`scripts/`](scripts/)（build / gate / lib / release / test /
-  data）、[`agents/`](agents/) 自治循环角色规程、[`.dsh/skills/`](.dsh/skills/) 项目级 skill、[`.dsh/mcp.json`](.dsh/mcp.json) 浏览器 MCP。
+  data）、[`agents/`](agents/) 自治循环角色规程、[`.dsh/skills/`](.dsh/skills/) 项目级 skill、[`.dsh/@wingsky-1/dsh-mcp-manager/mcp.json`](.dsh/@wingsky-1/dsh-mcp-manager/mcp.json) 浏览器 MCP。
 - **non-goals**：不做与插件集无关的通用工具库；不发运行时依赖；内部 / 私有治理文档不入库；
   临时脚本与草稿不入库（用 `.maintenance-drafts/`，已在 [`.gitignore`](.gitignore)）。
 

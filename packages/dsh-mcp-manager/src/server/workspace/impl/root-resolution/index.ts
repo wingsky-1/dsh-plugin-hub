@@ -23,7 +23,7 @@ function dshHomePath() {
 /** 项目根发现：从 cwd 向上找 .git / .dsh / .mcp.json 标记，找不到用 cwd 本身。
  *  .dsh 标记须排除 DSH 全局家目录（默认 ~/.dsh，尊重 DSH_HOME）——否则 home
  *  下任何无标记目录（如 ~/dev/leetcode）向上都会命中 ~/.dsh，把 home 误判为
- *  项目根并加载 ~/.dsh/mcp.json，导致别的会话串入不属于它的项目级 MCP。 */
+ *  项目根并加载 ~/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json，导致别的会话串入不属于它的项目级 MCP。 */
 export async function findProjectRoot(cwd: string | undefined): Promise<string> {
   const home = dshHomePath();
   let current = resolve(cwd ?? process.cwd());

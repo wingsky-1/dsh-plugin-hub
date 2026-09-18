@@ -175,7 +175,7 @@ it("client product contract（执行断言：arrive 可解析/apply/inject）", 
 
 // #767 B0 / §7.3 A12：客户端产物不得出现宿主路径字面量 `~/.dsh`——存储布局迁移后客户端
 // 不应泄漏/承诺宿主路径。锚点只认 `~/.dsh` 这一个串：`scopeProjectOpt` 的项目级路径
-// （<项目>/.dsh/mcp.json）随项目走，是合法展示，不在本轮降级面内。
+// （<项目>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json）随项目走，是合法展示，不在本轮降级面内。
 const hostPathLiteralHits = (code) => code.match(/~\/\.dsh/g) ?? [];
 it("client 产物不含宿主路径字面量 ~/.dsh（#767 A12 存储布局迁移）", () => {
   const clientSrc = readFileSync(new URL("../../lib/client.js", import.meta.url), "utf8");
@@ -184,7 +184,11 @@ it("client 产物不含宿主路径字面量 ~/.dsh（#767 A12 存储布局迁�
 });
 it("宿主路径断言锚点有效性（反例：含 ~/.dsh 的产物必须被判出）", () => {
   expect(hostPathLiteralHits('scopeGlobalOpt: "全局（~/.dsh/dsh-mcp.json）"')).toHaveLength(1);
-  expect(hostPathLiteralHits('scopeProjectOpt: "项目级（<项目>/.dsh/mcp.json）"')).toEqual([]);
+  expect(
+    hostPathLiteralHits(
+      'scopeProjectOpt: "项目级（<项目>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json）"',
+    ),
+  ).toEqual([]);
 });
 it("中间层工具注册（ws_mcp_search / ws_mcp_call / ws_mcp_list / ws_mcp_detail + 路由一致性）", async () => {
   const { registerMiddlewareTools, McpMiddleware, fullServerName, parseFullServerName } =
@@ -1805,8 +1809,17 @@ describe("项目根发现（findProjectRoot / setSession）", () => {
     mkdirSync(projSub, { recursive: true });
     mkdirSync(nomark, { recursive: true });
     // home 自身的项目级配置（空服务器列表，setSession 不会 spawn 进程）。
-    writeFileSync(join(home, ".dsh", "mcp.json"), JSON.stringify({ version: 1, servers: [] }));
-    writeFileSync(join(proj, ".dsh", "mcp.json"), JSON.stringify({ version: 1, servers: [] }));
+    // S2-b：项目级新形态（包分区），经 projectStoreFor 直读（旧扁平只走迁移读面）。
+    mkdirSync(join(home, ".dsh", "@wingsky-1", "dsh-mcp-manager"), { recursive: true });
+    mkdirSync(join(proj, ".dsh", "@wingsky-1", "dsh-mcp-manager"), { recursive: true });
+    writeFileSync(
+      join(home, ".dsh", "@wingsky-1", "dsh-mcp-manager", "mcp.json"),
+      JSON.stringify({ version: 1, servers: [] }),
+    );
+    writeFileSync(
+      join(proj, ".dsh", "@wingsky-1", "dsh-mcp-manager", "mcp.json"),
+      JSON.stringify({ version: 1, servers: [] }),
+    );
     prevDshHome = process.env.DSH_HOME;
     process.env.DSH_HOME = join(home, ".dsh");
     ({ findProjectRoot } = await import("../../lib/index.js"));
@@ -1871,12 +1884,13 @@ describe("目录数据源按工作区计算（切换工作区不抖动）", () =
     rootA = join(base, "projA");
     rootB = join(base, "projB");
     subA = join(rootA, "sub");
-    mkdirSync(join(rootA, ".dsh"), { recursive: true });
-    mkdirSync(join(rootB, ".dsh"), { recursive: true });
+    mkdirSync(join(rootA, ".dsh", "@wingsky-1", "dsh-mcp-manager"), { recursive: true });
+    mkdirSync(join(rootB, ".dsh", "@wingsky-1", "dsh-mcp-manager"), { recursive: true });
     mkdirSync(subA, { recursive: true });
     noReconnect = { reconnect: { enabled: false } };
+    // S2-b：项目级新形态直写（经 catalogServersFor→projectStoreFor 直读）。
     writeFileSync(
-      join(rootA, ".dsh", "mcp.json"),
+      join(rootA, ".dsh", "@wingsky-1", "dsh-mcp-manager", "mcp.json"),
       JSON.stringify({
         version: 1,
         servers: [
@@ -1885,7 +1899,7 @@ describe("目录数据源按工作区计算（切换工作区不抖动）", () =
       }),
     );
     writeFileSync(
-      join(rootB, ".dsh", "mcp.json"),
+      join(rootB, ".dsh", "@wingsky-1", "dsh-mcp-manager", "mcp.json"),
       JSON.stringify({
         version: 1,
         servers: [
@@ -1990,8 +2004,9 @@ describe("外部配置变更自动重读（refreshFromDisk / reconcileServers）
   beforeAll(async () => {
     base = mkdtempSync(join(tmpdir(), "dsh-mcp-manager-reload-"));
     proj = join(base, "proj");
-    cfg = join(proj, ".dsh", "mcp.json");
-    mkdirSync(join(proj, ".dsh"), { recursive: true });
+    // S2-b：项目级新形态直写（经 setSession→projectStoreFor 直读；旧扁平只走迁移）。
+    cfg = join(proj, ".dsh", "@wingsky-1", "dsh-mcp-manager", "mcp.json");
+    mkdirSync(join(proj, ".dsh", "@wingsky-1", "dsh-mcp-manager"), { recursive: true });
     writeFileSync(cfg, JSON.stringify({ version: 1, servers: [] }));
     gstore = new McpStore(join(base, "dsh-mcp.json"));
     // 全局 disabled 服务器：验证 reconcile 不会为其 spawn 进程。

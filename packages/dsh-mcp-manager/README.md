@@ -25,8 +25,8 @@ root `@global`。宿主仍按 `mcp__<id>__<tool>` 注册工具（`id` 是本次�
   `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call` 四个原子工具位——接多少台
   服务器、多少个工具都不膨胀系统提示词（两级发现：`ws_mcp_list` 完整盘点 →
   `ws_mcp_detail` 按需拉完整 schema）
-- **分工作目录维护**：项目级配置 `<项目根>/.dsh/mcp.json` 随仓库走、可提交 git 团队共享；
-  全局配置 `<DSH_HOME>/dsh-mcp.json` 常连；切换会话自动加载当前目录的 MCP 集
+- **分工作目录维护**：项目级配置 `<项目根>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json` 随仓库走、可提交 git 团队共享；
+  全局配置 `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json` 常连；切换会话自动加载当前目录的 MCP 集
 - **工作空间隔离**：中间层以会话 cwd 路由到对应连接池，server 全名一致性校验防跨空间
   串台；不同目录注入同名 server 也互不冲突
 - **安全的默认值**：配置只存 `${ENV}` 引用、不落盘密钥本身（0600 权限 + 原子写入）；
@@ -82,7 +82,7 @@ npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-mcp-manager
 | 能力 | 说明 |
 | --- | --- |
 | 右上角浮窗 | 状态点 + 计数摘要（`MCP 2/3`），点击展开下拉面板；随会话切换自动刷新 |
-| 项目级 MCP | 服务器分「项目级 / 全局」两级：项目级存 `<项目根>/.dsh/mcp.json`（随项目走、可提交 git），全局存 `<DSH_HOME>/dsh-mcp.json` 常连 |
+| 项目级 MCP | 服务器分「项目级 / 全局」两级：项目级存 `<项目根>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json`（随项目走、可提交 git），全局存 `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json` 常连 |
 | 分级展示 | 运行中 / 连接中 / 重连中 / 未连接 / 已停用 / 失败；每台显示传输、端点、工具数；客户端未知状态按「未连接」投影、不丢卡（C13 统一口径） |
 | 服务器管理 | 增删改查（可选项目级/全局）、连接 / 断开 / 重连；配置版本化 JSON，原子写入 |
 | 两种传输 | stdio（本地子进程，env 支持 `${ENV}` 引用）与 streamable-http（远程，header 支持 `${ENV}` 引用，自动回传 `Mcp-Session-Id`） |
@@ -153,7 +153,7 @@ call 放行 `@global` root（全局配置跨工作空间共享，语义成立）
 ### 工具级禁用（浮窗）
 
 - 服务器卡片的「工具（N）」折叠区展开后为 **checkbox 列表**，逐个启停，点击即
-  经 `PATCH /api/dsh-mcp/tool-disable` 持久化（落盘 `<DSH_HOME>/dsh-mcp-user-state.json`
+  经 `PATCH /api/dsh-mcp/tool-disable` 持久化（落盘 `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/user-state.json`
   的 `disabledTools`，合并写盘、重启保留）；
 - 语义：**项目级与全局级服务器的工具都可禁用**（单池后两类都经中间层；全局记录以
   `@global` 为 key 跨工作空间共享）；默认全部启用；
@@ -215,7 +215,7 @@ await ctx.mcpManager.registerServer({
 
 ## 数据与安全
 
-- 服务器配置：`<DSH_HOME>/dsh-mcp.json`（仅存 `${ENV}` 引用，**不落盘密钥本身**）；
+- 服务器配置：`<DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json`（仅存 `${ENV}` 引用，**不落盘密钥本身**）；
   落盘 0600 权限 + 原子写入
 - 所有 `/api/dsh-mcp/*` 路由仅限 loopback 访问（非回环 403 / 方法错 405）
 - **stdio 子进程环境净化（官方 dsh-mcp-client 口径）**：净化只作用于**继承的父环境**——
@@ -237,14 +237,14 @@ await ctx.mcpManager.registerServer({
 - **工具级禁用（三入口一致）**：`ws_mcp_call`（callTool 查禁用表）、
   pre-execute guard（`mcp__` 前缀直呼工具）、插件侧声明的纪律裸名工具
   统一走 `isToolDenied` 裁决；禁用只作用于 `mcp__` 前缀工具，拒绝原因附语义声明；
-  禁用记录 `<DSH_HOME>/dsh-mcp-user-state.json` 的 `disabledTools`（`@global` key
+  禁用记录 `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/user-state.json` 的 `disabledTools`（`@global` key
   跨工作空间共享，合并写盘不整表覆盖）
 - **凭据脱敏**：目录摘要与错误路径经 redactor 把 env/headers/URL 用户信息
   （username/password/searchParams）等凭据形状替换为 `[REDACTED]`；URL 主机与
   路径无凭据部分保留可读（可诊断性，B8 口径）；percent-encoding 的 raw 形态与
   decoded 形态双注册，防编码绕过；supervisor/manager 错误日志与 HTTP body 同口径
   脱敏
-- **调用统计与 Debug 模式（Metadata-Only）**：默认关闭；若在 `~/.dsh/settings.yaml` 中配置 `dsh-mcp-manager.debug.callStats: true`，将把 MCP 调用指标（次数、成功/失败、平均与最大耗时）及渐进式披露漏斗（`ws_mcp_search` 搜索词频次、`ws_mcp_list` 与 `ws_mcp_detail` 查询分布）防抖原子持久化至 `<DSH_HOME>/mcp-stats.json`，且控制台输出单行 debug 跟踪；严格不持久化用户 arguments 与返回 content，杜绝代码与隐私泄漏
+- **调用统计与 Debug 模式（Metadata-Only）**：默认关闭；若在 `~/.dsh/settings.yaml` 中配置 `dsh-mcp-manager.debug.callStats: true`，将把 MCP 调用指标（次数、成功/失败、平均与最大耗时）及渐进式披露漏斗（`ws_mcp_search` 搜索词频次、`ws_mcp_list` 与 `ws_mcp_detail` 查询分布）防抖原子持久化至 `<DSH_HOME>/@wingsky-1/dsh-mcp-manager/stats.json`，且控制台输出单行 debug 跟踪；严格不持久化用户 arguments 与返回 content，杜绝代码与隐私泄漏
 - 能力目录注入含来源标注与"不代表当前连接状态"说明
 - **能力目录注入的消息来源形态**：`source` 用宿主已登记的通用形态
   `{ kind: "plugin", plugin: "@wingsky-1/dsh-mcp-manager", form: "snapshot",

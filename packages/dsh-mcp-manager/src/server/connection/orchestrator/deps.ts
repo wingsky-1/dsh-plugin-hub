@@ -1,11 +1,12 @@
 /**
  * dsh-mcp-manager — connection/orchestrator/deps.ts：连接编排子层的对上依赖声明（纯类型面，§3.1 规则 2）。
  *
- * 本子层运行时能力消费非零（决策⑥ 以运行时能力消费为准），按提供方分八组：catalog 取目录缓存
+ * 本子层运行时能力消费非零（决策⑥ 以运行时能力消费为准），按提供方分九组：catalog 取目录缓存
  * 文件路径、工具描述摘要与目录视图工厂；config 域取配置归一化三函数；store 域取 store
  * 类与 user-state / 工具禁用 / 目录缓存路径的读写面；connection/runtime 取中间层池类；
  * servers/lifecycle 取官方实例的装载 / 拆卸 / 六态投影（#767 S1-5b 起本子层的直连账本走这里）；
- * pipeline 取错误取消息与凭据脱敏；stats 取调用统计收集器；workspace 取项目根发现与 scope 归一。
+ * pipeline 取错误取消息与凭据脱敏；stats 取调用统计收集器；workspace 取项目根发现与 scope 归一；
+ * upgrade 域取项目级配置 just-in-time 迁移（settleProjectConfig，旧扁平读面收进包分区新形态）。
  * 宿主能力实测 0 命中（无 ctx/Context/logger/settings 取自门面）——本子层的 ctx 与 store 是
  * 构造入参，不经端口。
  *
@@ -28,6 +29,7 @@ import type * as workspaceApi from "../../workspace/interface.ts";
 import type * as runtimeApi from "../runtime/interface.ts";
 import type * as lifecycleApi from "../../servers/lifecycle/interface.ts";
 import type * as pipelineApi from "../../pipeline/interface.ts";
+import type * as upgradeApi from "../../upgrade/interface.ts";
 
 /** catalog 子域给本子层的能力面：目录缓存文件路径、描述摘要、目录视图工厂，以及目录条目的
  * 读/删口（#767 S1-3b：remove/update 清幽灵条目与 summarize 的目录投影都经此）。 */
@@ -86,6 +88,9 @@ export type WorkspacePort = Pick<
   "normalizeScope" | "findProjectRoot" | "normalizedProjectRoot"
 >;
 
+/** upgrade 域给本子层的能力面：项目级配置 just-in-time 迁移（读项目级配置前落定新形态）。 */
+export type UpgradePort = Pick<typeof upgradeApi, "settleProjectConfig">;
+
 /**
  * 装配入参：本子层依赖的全部外部。键集与组合根 `installOrchestrator` 的实参字面量由
  * verify-dir-imports 的注入面对账强制**严格相等**（多一个键、少一个键都判红）。
@@ -107,4 +112,6 @@ export interface OrchestratorDeps {
   stats: StatsPort;
   /** workspace 域：项目根发现与 scope 归一。 */
   workspace: WorkspacePort;
+  /** upgrade 域：项目级配置 just-in-time 迁移（settleProjectConfig）。 */
+  upgrade: UpgradePort;
 }

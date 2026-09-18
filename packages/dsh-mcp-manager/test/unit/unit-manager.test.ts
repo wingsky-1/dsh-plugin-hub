@@ -8,7 +8,7 @@
  * - McpManager.connect：不存在抛错、已连接跳过、跨 scope 冲突抛错
  * - 边缘：projectStoreOrThrow 用于 project scope
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -269,5 +269,29 @@ describe("通过 apply 间接覆盖 installSettingsNamespace 降级分支", () =
     await expect(
       apply(noRegCtx, { enabled: false, storePath: join(dir, "mcp.json") }),
     ).resolves.toBeUndefined();
+  });
+});
+
+// S2-b 接线判据（既有文件内选一处，不新增文件）：旧扁平夹具 + projectStoreFor →
+// 新路径落内容 + 旧文件归档 .migrated.bak + store 读到条目（第九键 + settle + 读取三段一次证全）。
+describe("S2-b：projectStoreFor 经 upgrade 端口落定新形态", () => {
+  it("旧扁平夹具 + projectStoreFor → 新路径落内容 + 旧文件归档 + store 读到条目", async () => {
+    const { manager } = fixture();
+    const projDir = makeTempDir("dsh-mcp-manager-settle-");
+    mkdirSync(join(projDir, ".dsh"), { recursive: true });
+    const legacyPath = join(projDir, ".dsh", "mcp.json");
+    const newPath = join(projDir, ".dsh", "@wingsky-1", "dsh-mcp-manager", "mcp.json");
+    writeFileSync(
+      legacyPath,
+      JSON.stringify({
+        version: 1,
+        servers: [{ name: "p-settle", transport: "stdio", command: "echo" }],
+      }),
+    );
+    const store = await manager.projectStoreFor(projDir);
+    expect(store.data.servers.map((s) => s.name)).toContain("p-settle");
+    expect(JSON.parse(readFileSync(newPath, "utf8")).servers[0].name).toBe("p-settle");
+    expect(existsSync(legacyPath)).toBe(false);
+    expect(existsSync(`${legacyPath}.migrated.bak`)).toBe(true);
   });
 });

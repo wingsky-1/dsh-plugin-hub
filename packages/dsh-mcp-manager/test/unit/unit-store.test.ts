@@ -10,7 +10,15 @@
  * - find / upsert（替换不追加）/ remove（未知名 no-op）
  * - fromClaudeEntry / parseClaudeJson：http/sse/stdio 全分支与错误路径
  */
-import { existsSync, mkdtempSync, rmSync, writeFileSync, mkdirSync, utimesSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+  mkdirSync,
+  utimesSync,
+  statSync,
+} from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -497,5 +505,32 @@ describe("B17：save 失败时 tmp 残留必须清理", () => {
     const { victimPath, store } = victimFixture();
     await store.save().catch(() => {});
     expect(existsSync(`${victimPath}.tmp.`)).toBe(false);
+  });
+});
+
+// S2-b：save 取 mode 表 + 显式路径回落（既有文件内加判据，不新增文件） ----
+describe("S2-b：save 取 mode 表 + 显式路径回落", () => {
+  it("显式任意路径 save 照常写盘且 mode 0o600（锁住回落兼容）", async () => {
+    const dir = tempDir();
+    // 不在 mode 登记表的任意路径（用户 storePath 显式接管）：回落既有 0o600。
+    const path = join(dir, "custom-arbitrary.json");
+    const store = new McpStore(path);
+    store.upsert({ name: "s", transport: "stdio", command: "echo" });
+    await store.save();
+    expect(existsSync(path)).toBe(true);
+    expect(JSON.parse(await readFile(path, "utf8")).servers[0].name).toBe("s");
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it("项目级新形态路径 save 落 null 口径（file-io 层已覆盖 null 写面，此处只锁登记 + 落盘成功）", async () => {
+    const { projectConfigFile, fileMode } = await import("../../src/server/shared/interface.ts");
+    const dir = tempDir();
+    const projPath = projectConfigFile(join(dir, "proj"));
+    expect(fileMode(projPath)).toBeNull();
+    const store = new McpStore(projPath);
+    store.upsert({ name: "p", transport: "stdio", command: "echo" });
+    await store.save();
+    expect(existsSync(projPath)).toBe(true);
+    expect(JSON.parse(await readFile(projPath, "utf8")).servers[0].name).toBe("p");
   });
 });
