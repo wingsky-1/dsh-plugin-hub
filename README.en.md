@@ -82,11 +82,11 @@ Restart `dsh web`, open its startup URL, and check the installed plugin cards un
 
 | Package | What it does | Docs | Status |
 |---|---|---|---|
-| `@wingsky-1/dsh-notifier` | Task-event notifications via browser, host toast, Bark and Webhook. | [README](packages/dsh-notifier/README.md) · [Architecture](docs/architecture/dsh-notifier.md) | Published |
-| `@wingsky-1/dsh-provider-usage` | Multi-provider usage statistics, trends and reports with custom adapters. | [README](packages/dsh-provider-usage/README.md) · [Adapter guide](packages/dsh-provider-usage/docs/adapter-guide.md) · [Architecture](docs/architecture/dsh-provider-usage.md) | Published |
-| `@wingsky-1/dsh-lan-proxy` | LAN HTTP/HTTPS/WebSocket forwarding with TLS, compression and keep-alive. | [README](packages/dsh-lan-proxy/README.md) · [Architecture](docs/architecture/dsh-lan-proxy.md) | Published |
-| `@wingsky-1/dsh-mcp-manager` | Per-workspace MCP configuration and middleware-based tool access. | [README](packages/dsh-mcp-manager/README.md) · [Architecture](docs/architecture/dsh-mcp-manager.md) · [Upgrade repair](#mcp-catalog-upgrade-notice-and-repair) | Published |
-| `@wingsky-1/dsh-verify-isolated` | Isolated browser verification for DSH plugin development. | [README](packages/dsh-verify-isolated/README.md) · [Architecture](docs/architecture/dsh-verify-isolated.md) | Published |
+| `@wingsky-1/dsh-notifier` | Task-event notifications via browser, host toast, Bark and Webhook. | [README](packages/dsh-notifier/README.en.md) · [Architecture](docs/architecture/dsh-notifier.md) | Published |
+| `@wingsky-1/dsh-provider-usage` | Multi-provider usage statistics, trends and reports with custom adapters. | [README](packages/dsh-provider-usage/README.en.md) · [Adapter guide](packages/dsh-provider-usage/docs/adapter-guide.md) · [Architecture](docs/architecture/dsh-provider-usage.md) | Published |
+| `@wingsky-1/dsh-lan-proxy` | LAN HTTP/HTTPS/WebSocket forwarding with TLS, compression and keep-alive. | [README](packages/dsh-lan-proxy/README.en.md) · [Architecture](docs/architecture/dsh-lan-proxy.md) | Published |
+| `@wingsky-1/dsh-mcp-manager` | Per-workspace MCP configuration and middleware-based tool access. | [README](packages/dsh-mcp-manager/README.en.md) · [Architecture](docs/architecture/dsh-mcp-manager.md) · [Upgrade repair](#mcp-catalog-upgrade-notice-and-repair) | Published |
+| `@wingsky-1/dsh-verify-isolated` | Isolated browser verification for DSH plugin development. | [README](packages/dsh-verify-isolated/README.en.md) · [Architecture](docs/architecture/dsh-verify-isolated.md) | Published |
 | `@wingsky-1/dsh-worktree-sidebar` | Bind a worktree to the session sidebar without changing its cwd. | [README](packages/dsh-worktree-sidebar/README.en.md) · [Architecture](docs/architecture/dsh-worktree-sidebar.md) | Unreleased |
 
 <a id="configuration-and-maintenance"></a><a id="user-content-configuration-and-maintenance"></a>

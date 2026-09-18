@@ -89,6 +89,23 @@ npx @deepseek-ai/dsh plugin --profile web remove @wingsky-1/dsh-worktree-sidebar
 npx @deepseek-ai/dsh plugin --profile web update @wingsky-1/dsh-worktree-sidebar
 ```
 
+## 配置
+
+- 总开关只有一个 `enabled`，经插件配置传入（`WorktreeSidebarConfig`，`src/index.ts:41-45`）：`enabled === false` 时不接管、不注册工具、不挂路由（`src/index.ts:98`）；缺省不填即启用。
+- 插件不在盘上读任何用户配置文件，绑定表由插件自持：完整路径是 `<DSH_HOME>/@wingsky-1/dsh-worktree-sidebar/bindings.json`，只认 `DSH_HOME` 一个变量（`src/server/shared/paths.ts:9-17`）。
+- `ws_worktree_create` 的 `base` 缺省是会话工作目录所在仓库的当前 HEAD；显式传 `base` 时先做形态校验（拒绝 `-` 开头），再归一化成 SHA 才交给 git，避免起点被静默忽略。
+- `base` 是 commit-ish（分支、tag、SHA，如 `origin/main`）；省略分支时显式加 `--detach`，即以 detached 形态 checkout 起点，不新建分支。
+- `enabled === false` 时连绑定表都不读，已有登记原样留在盘上但无任何效果。
+
+## 契约
+
+- 双端必须一致的只有两件事，单点定义在 `src/shared/contract.ts:12-28`：路由路径（`ROUTES`）与绑定查询的响应形状（`BindingResponse`）；路由另经构建期 `__DSH_ROUTES__` 注入客户端，两端因此强一致。原理见架构文 §2.4。
+- 两条路由都是 GET 只读：`GET /api/dsh-worktree-sidebar/bindings?session=<id>` 回 `{ revision, worktreePath | null }`；`GET /api/dsh-worktree-sidebar/health` 回 `{ ok, revision, scopeTakeover, scopeChain }`（`src/server/api/impl/handlers/index.ts:24-67`）。
+- 最小暴露：绑定查询不回 `repoRoot`，客户端只需要目录根；缺 `session` 参数判 400 而不是回空，避免被误读成「没有绑定」（`handlers/index.ts:1-8`、`30-34`）。
+- `revision` 是内容版本而非写入次数：空表从 0 起，落一条绑定加一；摘不存在的目标时原样返回、不涨 revision（`src/server/binding/impl/model/index.ts:10-13`、`67-86`）。
+- 客户端只做相等比较与单调守卫：revision 与路径都相同则不通知，乱序回来的更小 revision 直接丢弃（`src/client/bindings.ts:40-48`）。
+- 查询端点带自愈副作用：先生效根、再读 revision，顺带摘除已确认失效的登记；只忽略不摘的话 revision 不变，树会一直指向已不成立的根（`handlers/index.ts:35-37`）。
+
 ## 验证
 
 ```sh
@@ -102,6 +119,28 @@ pnpm gate:pr                 # 开 PR 前；新增包与 catalog 条目另需 pn
 2. 点开文件预览读的是 worktree 里的文件；
 3. 未登记会话、以及未安装本插件时的行为一致（无回归）；
 4. 子 agent 会话与 fork 会话的树根跟随父链上持有登记的那个会话，且继承态下三个工具的读数与侧边栏一致。
+
+## 测试策略
+
+- 两层：`test/unit` 直连 `src` 模块（纯逻辑、域装配、客户端契约断言），`test/integration` 走组合根与真 git 仓库、真临时目录；落盘一律进 `mkdtempSync` 隔离目录（见提案 §12）。
+- 变异面零文件排除：`mutate` 覆盖 `src/**/*.ts`，包级配置撤销共享默认的四类字面量排除，有效算子排除集合为空（`scripts/data/gauntlet.config.json:51`，#847）。
+- 继承判据：fork 与子 agent 会话沿父链解析登记；工具面在继承态下不摘父记录、不调 git，只报来源会话与三条出路（`test/unit/tools.test.ts:587` 起「继承态下的工具面」）。
+- 路由必含 403/405 围栏用例与两端路由一致性断言（提案 §12；实现 `src/server/api/impl/route/index.ts:41`，403 先于 405）。
+- 本节只作只读说明：命令与门禁口径以「验证」一节与仓库根 AGENTS.md 为准，这里不另承诺命令。
+
+## 排障
+
+- 工具说已绑定、侧边栏仍按 cwd：先看 `/health` 的 `scopeTakeover`，这是刻意的两路读数——工具面读的是登记事实（不设 takeover 门），文件根有没有真换只有 `live` 才算（`src/server/scope/interface.ts:31-40`）。
+- 存活与状态查询（端口以本机 `dsh web` 实际监听为准，下例用默认 3080）：
+
+  ```sh
+  curl 'http://127.0.0.1:3080/api/dsh-worktree-sidebar/health'
+  curl 'http://127.0.0.1:3080/api/dsh-worktree-sidebar/bindings?session=session-1'
+  ```
+
+- `scopeTakeover` 非 `live` 的两种常见成因：`waiting`（provider 尚未注册，启动先后无稳定保证）与 `abandoned`（查找表已被第三方占位）；`scopeChain` 记录持久面读失败那次静默降级（`src/server/api/impl/handlers/index.ts:44-53`）。
+- 客户端拉取失败保持上次成功态（G6）：任何失败都回 undefined 而非 null，首次即失败时按真实 cwd（`src/client/index.ts:37-56`、`src/client/bindings.ts:30-39`）；双端 revision 读同一内存快照，不一致时客户端不改根（G7，见「契约」一节）。
+- 挂载或接管入口异常只经 `console.warn` 出声：不注册任何东西，右栏保持官方行为（`src/client/index.ts:121-124`、`src/client/takeover.ts:226-233`）。
 
 ## 兼容性（只读耦合点）
 
