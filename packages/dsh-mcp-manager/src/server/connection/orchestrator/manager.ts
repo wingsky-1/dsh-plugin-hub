@@ -34,12 +34,7 @@ import {
   SERVER_STATES,
 } from "../../../shared/interface.ts";
 import { orchestratorPorts } from "./impl/service/index.ts";
-import {
-  fileMode,
-  projectConfigFile,
-  readTextFile,
-  writeFileAtomic,
-} from "../../shared/interface.ts";
+import { fileMode, readTextFile, writeFileAtomic } from "../../shared/interface.ts";
 
 /**
  * 计算期望连接集合：回答「池里该有哪些 (root, 裸名)？」——全局 store + 项目级 store
@@ -471,10 +466,14 @@ export class McpManager {
     const { configStore, upgrade } = orchestratorPorts.get();
     let store = this.projectStores.get(root);
     if (store === undefined) {
-      // 读前落定包分区新形态：旧扁平存在即搬运 + 归档（幂等，每次新建都调无妨）。
-      await upgrade.settleProjectConfig(root, this.logger);
-      store = new configStore.McpStore(projectConfigFile(root));
-      await store.load();
+      // 读前落定包分区新形态（S2-D 反转装饰）：触发时机由 upgrade 包装内卡——先搬后读
+      // `await` 串行；`new` 留本侧经既有 ConfigStorePort（upgrade 域不认业务）。落定失败即抛
+      //（禁回落 undefined），回调不执行、不缓存半成品。
+      store = await upgrade.withSettledProjectConfig(root, this.logger, async (settledPath) => {
+        const fresh = new configStore.McpStore(settledPath);
+        await fresh.load();
+        return fresh;
+      });
       this.projectStores.set(root, store);
     } else {
       // 缓存命中也要检查磁盘：项目 mcp.json 在 git 仓库内，pull/checkout/手动

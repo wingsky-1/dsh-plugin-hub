@@ -6,7 +6,8 @@
  * 类与 user-state / 工具禁用 / 目录缓存路径的读写面；connection/runtime 取中间层池类；
  * servers/lifecycle 取官方实例的装载 / 拆卸 / 六态投影（#767 S1-5b 起本子层的直连账本走这里）；
  * pipeline 取错误取消息与凭据脱敏；stats 取调用统计收集器；workspace 取项目根发现与 scope 归一；
- * upgrade 域取项目级配置 just-in-time 迁移（settleProjectConfig，旧扁平读面收进包分区新形态）。
+ * upgrade 域取项目级配置 just-in-time 迁移（withSettledProjectConfig 包装：先落定旧扁平读面再读包分区新形态；
+ * 落定原语 settleProjectConfig 的唯一调用点在包装内）。
  * 宿主能力实测 0 命中（无 ctx/Context/logger/settings 取自门面）——本子层的 ctx 与 store 是
  * 构造入参，不经端口。
  *
@@ -88,8 +89,16 @@ export type WorkspacePort = Pick<
   "normalizeScope" | "findProjectRoot" | "normalizedProjectRoot"
 >;
 
-/** upgrade 域给本子层的能力面：项目级配置 just-in-time 迁移（读项目级配置前落定新形态）。 */
-export type UpgradePort = Pick<typeof upgradeApi, "settleProjectConfig">;
+/**
+ * upgrade 域给本子层的能力面：项目级配置 just-in-time 迁移。`settleProjectConfig`
+ * 是落定原语（唯一调用点在 upgrade 包装内，业务域禁直调）；`withSettledProjectConfig`
+ * 是 S2-D 反转装饰的读写口——先落定后读，触发时机由包装内卡（两键皆必填，禁 optional
+ * 静默口）。
+ */
+export type UpgradePort = Pick<
+  typeof upgradeApi,
+  "settleProjectConfig" | "withSettledProjectConfig"
+>;
 
 /**
  * 装配入参：本子层依赖的全部外部。键集与组合根 `installOrchestrator` 的实参字面量由
@@ -112,6 +121,6 @@ export interface OrchestratorDeps {
   stats: StatsPort;
   /** workspace 域：项目根发现与 scope 归一。 */
   workspace: WorkspacePort;
-  /** upgrade 域：项目级配置 just-in-time 迁移（settleProjectConfig）。 */
+  /** upgrade 域：项目级配置 just-in-time 迁移（读写经 withSettledProjectConfig 包装）。 */
   upgrade: UpgradePort;
 }

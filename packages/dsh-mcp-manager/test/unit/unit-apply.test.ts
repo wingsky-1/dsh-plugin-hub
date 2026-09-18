@@ -8,7 +8,7 @@
  * - apply 的 settings 注入（uiUpdate）
  * - apply 的 agent/pre-step 信号取消（signal.throwIfAborted）
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -435,5 +435,28 @@ describe("组合根接线：装载生命周期域（#767 S1-4c）", () => {
     await expect(mountServer({ root: "/tmp/proj", server, onState: () => {} })).rejects.toThrow(
       /servers\/lifecycle 域未装配/,
     );
+  });
+});
+
+// S2-D 接线判据（P4 前半）：全局迁移链失败 → apply 失败（fail-closed，不带半完成存储启动）。
+describe("apply 的升级链失败穿透", () => {
+  it("旧用户状态不可读 → apply 抛错", async () => {
+    const homeDir = makeTempDir("dsh-mcp-apply-fail-");
+    const previous = process.env.DSH_HOME;
+    process.env.DSH_HOME = homeDir;
+    try {
+      // 旧用户状态落点（LEGACY_LAYOUT.userState）做成目录：读源即抛 EISDIR
+      //（确定性失败，不依赖权限位）；config 项被显式 storePath 接管整项跳过，不影响本判据。
+      mkdirSync(join(homeDir, "dsh-mcp-user-state.json"));
+      await expect(
+        apply(baseCtx() as unknown as Context, {
+          enabled: false,
+          storePath: join(homeDir, "mcp.json"),
+        }),
+      ).rejects.toThrow(/不可读/);
+    } finally {
+      if (previous === undefined) delete process.env.DSH_HOME;
+      else process.env.DSH_HOME = previous;
+    }
   });
 });

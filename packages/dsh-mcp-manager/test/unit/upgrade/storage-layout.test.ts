@@ -35,7 +35,10 @@ import {
 } from "../../../src/server/shared/interface.ts";
 import type { UpgradeDeps } from "../../../src/server/upgrade/deps.ts";
 import { migrateStorageLayout } from "../../../src/server/upgrade/impl/steps/storage-layout.ts";
-import { settleProjectConfig } from "../../../src/server/upgrade/interface.ts";
+import {
+  settleProjectConfig,
+  withSettledProjectConfig,
+} from "../../../src/server/upgrade/interface.ts";
 import { makeLogger, tempDshHome } from "../../helpers.ts";
 
 /** 归档后缀：与实现同名的固定标记（判据要的是「重跑不累积」，故名字必须与实现一致地固定）。 */
@@ -406,5 +409,46 @@ describe("settleProjectConfig（项目级 just-in-time 迁移）", () => {
     expect(readFileSync(target, "utf8")).toBe('{"target":1}\n');
     expect(existsSync(legacy)).toBe(false);
     expect(readFileSync(`${legacy}${MIGRATED_SUFFIX}`, "utf8")).toBe('{"legacy":1}\n');
+  });
+});
+
+describe("withSettledProjectConfig（settle 作用域包装，S2-D 反转装饰）", () => {
+  function projectPaths() {
+    const root = join(home, "proj-wrapped");
+    return { root, legacy: legacyProjectConfigFile(root), target: projectConfigFile(root) };
+  }
+
+  it("先搬后读：旧扁平搬运归档后，回调才拿到包分区新形态路径", async () => {
+    const { root, legacy, target } = projectPaths();
+    mkdirSync(dirname(legacy), { recursive: true });
+    writeFileSync(legacy, '{"from":"legacy"}\n', "utf8");
+    const seen: string[] = [];
+
+    const result = await withSettledProjectConfig(root, makeLogger(), async (settledPath) => {
+      seen.push(settledPath);
+      return readFileSync(settledPath, "utf8");
+    });
+
+    expect(seen).toEqual([target]);
+    expect(result).toBe('{"from":"legacy"}\n');
+    expect(existsSync(legacy)).toBe(false);
+    expect(existsSync(`${legacy}${MIGRATED_SUFFIX}`)).toBe(true);
+  });
+
+  it("落定失败 → 回调不执行且错误穿透（禁回落 undefined）", async () => {
+    const { root, legacy, target } = projectPaths();
+    // 旧扁平落点做成目录：读源即抛 EISDIR（确定性失败，不依赖权限位）。
+    mkdirSync(legacy, { recursive: true });
+    let called = false;
+
+    await expect(
+      withSettledProjectConfig(root, makeLogger(), async () => {
+        called = true;
+        return "unreached";
+      }),
+    ).rejects.toThrow(/不可读/);
+
+    expect(called).toBe(false);
+    expect(existsSync(target)).toBe(false);
   });
 });

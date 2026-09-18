@@ -306,6 +306,20 @@ describe("S2-b：projectStoreFor 经 upgrade 端口落定新形态", () => {
     expect(existsSync(`${legacyPath}.migrated.bak`)).toBe(true);
   });
 });
+
+// S2-D 接线判据（P4 后半）：per-root 落定失败 → 调用方失败（fail-closed，禁回落 undefined）。
+describe("S2-D：projectStoreFor 经 settle 包装穿透 per-root 失败", () => {
+  it("旧扁平不可读 → projectStoreFor 抛错且不缓存半成品，重试仍抛（非静默空配置）", async () => {
+    const { manager } = fixture();
+    const projDir = makeTempDir("dsh-mcp-manager-settle-fail-");
+    mkdirSync(join(projDir, ".dsh"), { recursive: true });
+    // 旧扁平落点做成目录：读源即抛 EISDIR（确定性失败，不依赖权限位）。
+    mkdirSync(join(projDir, ".dsh", "mcp.json"));
+    await expect(manager.projectStoreFor(projDir)).rejects.toThrow(/不可读/);
+    expect(manager.projectStores.has(projDir)).toBe(false);
+    await expect(manager.projectStoreFor(projDir)).rejects.toThrow(/不可读/);
+  });
+});
 // CRAP-ZERO batch1 manager
 describe("CRAP-ZERO stripMcpPrefix", () => {
   it("strips prefix", () => {

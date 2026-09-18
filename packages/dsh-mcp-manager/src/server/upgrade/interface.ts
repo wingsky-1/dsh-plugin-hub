@@ -8,9 +8,10 @@
 import type { UpgradeDeps } from "./deps.ts";
 import { upgradeRunner } from "./impl/service/index.ts";
 
-// 项目级 just-in-time 迁移（S2-b 经 orchestrator 端口接线；本笔只落函数 + 单测）。
+// 项目级 just-in-time 迁移（S2-b 经 orchestrator 端口接线）与 settle 作用域包装
+//（S2-D 反转装饰：调用方经包装读写，触发时机由包装内卡）。
 // 同模块转出：目标与本文件同属 `server/upgrade` 模块，不新增域边（upgrade→shared 已存在）。
-export { settleProjectConfig } from "./impl/steps/project-layout.ts";
+export { settleProjectConfig, withSettledProjectConfig } from "./impl/steps/project-layout.ts";
 
 /**
  * 装配升级域。升级链**异步跑完**（落盘原语是 Promise 面），任何一步失败即抛出、`apply` 随之失败
