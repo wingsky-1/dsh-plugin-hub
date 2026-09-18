@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-mcp-manager — 测试共享辅助（smoke + 各 unit 双份共用）。
  *
@@ -9,6 +8,8 @@
  */
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { Context } from "@deepseek-ai/cordis";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -32,20 +33,48 @@ export function tempDshHome() {
   };
 }
 
+/**
+ * 最小假宿主上下文：McpManager 构造器只读 `ctx.logger`（见
+ * `server/connection/orchestrator/manager.ts` 构造器），其余 Context 面用例不用——按本仓既有
+ * 接缝（`as unknown as`）收窄，不断言无关形状。需要组合根装配（installOrchestrator 等）时仍须
+ * 先求值包根入口，本夹具不替代装配。
+ */
+export function fakeManagerCtx(): Context {
+  return { logger: { warn: () => {}, info: () => {}, error: () => {} } } as unknown as Context;
+}
+
 /** 收集 warn 的假 logger：upgrade 域的诊断出口只用到 `warn`。 */
-export function makeLogger() {
-  const warns = [];
+export function makeLogger(): { warns: string[]; warn: (message: string) => void } {
+  const warns: string[] = [];
   return {
     warns,
-    warn(message) {
+    warn(message: string) {
       warns.push(message);
     },
   };
 }
 
 /** 伪造 node:http res：捕获 writeHead / end，供断言状态码与响应体。 */
-export function fakeRes() {
-  const state = { status: 200, headers: {}, body: "", destroyed: false, writableEnded: false };
+export interface FakeResponseState {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+  destroyed: boolean;
+  writableEnded: boolean;
+  onClose?: () => void;
+}
+
+/** callHandler 的响应桩面：node 响应 + 可读的 state（测试断言状态码与响应体）。 */
+export type FakeHandlerResponse = ServerResponse & { state: FakeResponseState };
+
+export function fakeRes(): FakeHandlerResponse {
+  const state: FakeResponseState = {
+    status: 200,
+    headers: {},
+    body: "",
+    destroyed: false,
+    writableEnded: false,
+  };
   return {
     state,
     get destroyed() {
@@ -54,25 +83,25 @@ export function fakeRes() {
     get writableEnded() {
       return state.writableEnded;
     },
-    writeHead(status, headers) {
+    writeHead(status: number, headers?: Record<string, string>) {
       state.status = status;
       Object.assign(state.headers, headers ?? {});
     },
-    write(chunk) {
+    write(chunk: { toString(): string }) {
       state.body += chunk.toString();
     },
-    end(chunk) {
+    end(chunk?: { toString(): string }) {
       if (chunk !== undefined) state.body += chunk.toString();
       state.writableEnded = true;
     },
     setHeader() {},
-    on(event, cb) {
+    on(event: string, cb: () => void) {
       if (event === "close") state.onClose = cb;
     },
     destroy() {
       state.destroyed = true;
     },
-  };
+  } as unknown as FakeHandlerResponse;
 }
 
 /**
@@ -87,10 +116,23 @@ export function fakeRes() {
  * @param {object} req 请求桩（fakeReq 形态）。
  * @param {object} [res] 响应桩，缺省用 fakeRes()。
  */
-export async function callHandler(route, req, res = fakeRes()) {
-  const ret = route.handler(req, res);
-  if (ret !== undefined && typeof ret.then === "function") await ret;
-  let payload;
+/**
+ * 统一调用路由 handler 并拿响应（req/res 皆为 node:http 面：被测路由的 handler 类型即
+ * `WebRoute["handler"]`，桩在调用方按 `as unknown as` 收窄——见各测试文件的 fakeReq/fakeRes）。
+ */
+export async function callHandler(
+  route: { handler: (req: IncomingMessage, res: FakeHandlerResponse) => unknown },
+  req: IncomingMessage,
+  res: FakeHandlerResponse = fakeRes(),
+): Promise<{ status: number; payload: unknown }> {
+  const ret: unknown = route.handler(req, res);
+  if (
+    typeof ret === "object" &&
+    ret !== null &&
+    typeof (ret as { then: unknown }).then === "function"
+  )
+    await ret;
+  let payload: unknown;
   try {
     payload = JSON.parse(res.state.body || "null");
   } catch {
@@ -103,7 +145,11 @@ export async function callHandler(route, req, res = fakeRes()) {
  * 轮询等待条件成立（防 flake：轮询替代固定 sleep）。超时抛错。
  * 谓词每 tick 重估；tick 是轮询 tick（语义分类：轮询 tick），非「等够毫秒」。
  */
-export async function pollUntil(label, cond, { timeoutMs = 5000, tickMs = 10 } = {}) {
+export async function pollUntil(
+  label: string,
+  cond: () => boolean,
+  { timeoutMs = 5000, tickMs = 10 }: { timeoutMs?: number; tickMs?: number } = {},
+): Promise<void> {
   const start = Date.now();
   for (;;) {
     if (cond()) return;
@@ -119,11 +165,11 @@ export async function pollUntil(label, cond, { timeoutMs = 5000, tickMs = 10 } =
  * （无法不经过时间就证明『未来无新帧』），tick 属轮询 tick。
  */
 export async function assertNoGrowth(
-  label,
-  measure,
-  baseline,
-  { windowMs = 120, tickMs = 10 } = {},
-) {
+  label: string,
+  measure: () => unknown,
+  baseline: unknown,
+  { windowMs = 120, tickMs = 10 }: { windowMs?: number; tickMs?: number } = {},
+): Promise<void> {
   const deadline = Date.now() + windowMs;
   for (;;) {
     assert.equal(measure(), baseline, label);
@@ -151,11 +197,29 @@ export async function assertNoGrowth(
  * @param {"immediate"|"deferred"|"never"} [script.ready] 句柄 ready 的结算时序
  * @param {boolean} [script.disposeThrows] dispose 是否抛错（置位在先，抛错在后）
  */
-export function fakeLoaderPort(script = {}) {
+export interface FakeLoaderScript {
+  modules?: Record<string, unknown>;
+  ready?: "immediate" | "deferred" | "never";
+  disposeThrows?: boolean;
+}
+
+export interface FakeMountState {
+  disposed: boolean;
+  disposeCalls: number;
+}
+
+export interface FakeMountRecord {
+  module: unknown;
+  config: unknown;
+  state: FakeMountState;
+  ready: Promise<unknown>;
+}
+
+export function fakeLoaderPort(script: FakeLoaderScript = {}) {
   const modules = script.modules ?? {};
-  const calls = [];
-  const handles = [];
-  const pendingReady = [];
+  const calls: unknown[][] = [];
+  const handles: FakeMountRecord[] = [];
+  const pendingReady: ((value: unknown) => void)[] = [];
   const makeReady = () => {
     if (script.ready === "never") return new Promise(() => {});
     if (script.ready === "deferred") {
@@ -170,20 +234,20 @@ export function fakeLoaderPort(script = {}) {
     handles,
     /** deferred 时序的放闸口：一次性结算所有已 mount 句柄的 ready。 */
     settleReady() {
-      for (const resolve of pendingReady.splice(0)) resolve();
+      for (const resolve of pendingReady.splice(0)) resolve(undefined);
     },
-    import(specifier) {
+    import(specifier: string) {
       calls.push(["import", specifier]);
       if (!(specifier in modules)) {
         throw new Error("fakeLoaderPort: 未登记的包名 " + specifier);
       }
       return modules[specifier];
     },
-    async load(specifier) {
+    async load(specifier: string) {
       calls.push(["load", specifier]);
       return await loader.import(specifier);
     },
-    mount(module, config) {
+    mount(module: unknown, config: unknown) {
       calls.push(["mount", module, config]);
       const state = { disposed: false, disposeCalls: 0 };
       const record = { module, config, state, ready: makeReady() };
@@ -219,11 +283,23 @@ export function fakeLoaderPort(script = {}) {
  * @param {Array} [script.schemas] 初始注册面条目（`{name, description?, parameters?}`）
  * @param {Function} [script.execute] 执行面实现，收官方 ToolExecutionInput；缺省返回空成功结果
  */
-export function fakeToolsService(script = {}) {
-  let schemas = script.schemas ?? [];
-  const registered = [];
-  const disposed = [];
-  const executed = [];
+export interface FakeToolEntry {
+  name: string;
+  description?: string;
+  parameters?: unknown;
+  [key: string]: unknown;
+}
+
+export interface FakeToolsScript {
+  schemas?: FakeToolEntry[];
+  execute?: (input: unknown) => unknown | Promise<unknown>;
+}
+
+export function fakeToolsService(script: FakeToolsScript = {}) {
+  let schemas: FakeToolEntry[] = script.schemas ?? [];
+  const registered: unknown[] = [];
+  const disposed: unknown[] = [];
+  const executed: unknown[] = [];
   return {
     registered,
     disposed,
@@ -234,14 +310,14 @@ export function fakeToolsService(script = {}) {
     set entries(next) {
       schemas = next;
     },
-    register(def) {
+    register(def: FakeToolEntry) {
       registered.push(def);
       return () => disposed.push(def?.name);
     },
     schemas() {
       return schemas;
     },
-    async execute(input) {
+    async execute(input: unknown) {
       executed.push(input);
       if (script.execute) return await script.execute(input);
       return { isError: false, content: [], value: { content: [] } };
@@ -259,19 +335,19 @@ export function fakeToolsService(script = {}) {
  * `captured` 是在册导出器数：装载链的判据之一就是窗口结束后它必须归零。
  */
 export function fakeLogsPort() {
-  const handlers = [];
-  const records = [];
+  const handlers: ((record: unknown) => void)[] = [];
+  const records: unknown[] = [];
   return {
     handlers,
     records,
-    capture(handler) {
+    capture(handler: (record: unknown) => void) {
       handlers.push(handler);
       return () => {
         const at = handlers.indexOf(handler);
         if (at >= 0) handlers.splice(at, 1);
       };
     },
-    emit(record) {
+    emit(record: unknown) {
       records.push(record);
       for (const handler of [...handlers]) handler(record);
     },

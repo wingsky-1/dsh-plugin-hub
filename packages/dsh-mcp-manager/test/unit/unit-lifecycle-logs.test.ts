@@ -99,7 +99,7 @@ describe("diagnosticText：状态面字段的形态收敛", () => {
 describe("collectOfficialLogs：一个装载窗口的收集面", () => {
   it("只收归属本实例的官方日志，按到达顺序：别的记录名 / 别的 id 一律不收", () => {
     const logs = fakeLogsPort();
-    const collected = collectOfficialLogs(logs, "id1");
+    const collected = collectOfficialLogs(logs as unknown as LogsPort, "id1");
 
     logs.emit(record("mcp-client", "mcp-client(id1): 第一条"));
     logs.emit(record("mcp-client", "mcp-client(id2): 别人的失败"));
@@ -111,7 +111,7 @@ describe("collectOfficialLogs：一个装载窗口的收集面", () => {
 
   it("stop() 摘掉导出器：之后到的官方日志不再收，重复 stop 无害", () => {
     const logs = fakeLogsPort();
-    const collected = collectOfficialLogs(logs, "id1");
+    const collected = collectOfficialLogs(logs as unknown as LogsPort, "id1");
     logs.emit(record("mcp-client", "mcp-client(id1): 第一条"));
 
     collected.stop();
@@ -130,7 +130,7 @@ describe("collectOfficialLogs：一个装载窗口的收集面", () => {
         throw new Error("宿主摘除失败");
       },
     };
-    const collected = collectOfficialLogs(logs, "id1");
+    const collected = collectOfficialLogs(logs as unknown as LogsPort, "id1");
 
     expect(() => collected.stop()).not.toThrow();
     expect(() => collected.stop()).not.toThrow();

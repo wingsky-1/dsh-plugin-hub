@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-mcp-manager — unit：中间层（ws_mcp_search / ws_mcp_call）。
  *
@@ -27,6 +26,37 @@ import {
 } from "../../src/server/servers/lifecycle/interface.ts";
 import { catalogDirectory } from "../../src/server/catalog/interface.ts";
 import { fakeLoaderPort, fakeLogsPort, fakeToolsService } from "../helpers.ts";
+import type { FakeToolEntry, FakeToolsScript } from "../helpers.ts";
+import type { MiddlewareHost } from "../../src/server/connection/runtime/deps.ts";
+import type { LoaderPort, LogsPort } from "../../src/server/shared/interface.ts";
+import type { ProjectUnit } from "../../src/server/connection/runtime/interface.ts";
+import type { ConnectionEntry } from "../../src/server/connection/runtime/interface.ts";
+import type { ToolsRegistryPort } from "../../src/server/servers/lifecycle/deps.ts";
+import type { Context } from "@deepseek-ai/cordis";
+import type {
+  ToolDefinition,
+  ToolExecution,
+  ToolExecutionInput,
+  ToolExecutionResult,
+  ToolExecutionToken,
+  ToolRunContext,
+} from "@deepseek-ai/dsh-tools";
+import type { ImageAdmissionFaces } from "../../src/server/inject/impl/image-admission/index.ts";
+import type { DisabledToolsMap } from "../../src/server/store/interface.ts";
+import type {
+  CallResultTextHandlers,
+  ProjectedCallResult,
+} from "../../src/server/pipeline/interface.ts";
+import type { SaveImageInput } from "../../src/server/shared/interface.ts";
+
+/**
+ * JSON 值面（render/value 入参口径）：从官方 ToolOutputDefinition 声明派生，不自造第二套
+ * （`@deepseek-ai/dsh-util-values` 不在本包依赖内，不直引）。
+ */
+type Json = Parameters<ToolDefinition["output"]["render"]>[1];
+import type { ListCatalogResult } from "../../src/server/catalog/interface.ts";
+import type { McpMiddleware as McpMiddlewareType } from "../../src/server/connection/runtime/interface.ts";
+import type { ServerConfig } from "../../src/server/config/interface.ts";
 
 const {
   fullServerName,
@@ -62,7 +92,10 @@ const ROOT = "/tmp/ws-root-a";
  * @param {Map} [serversByRoot] root → 服务器配置表
  * @param {object} [toolsScript] 传给假工具服务的 script（如自定义 execute）
  */
-function makeHost(serversByRoot = new Map(), toolsScript = {}) {
+function makeHost(
+  serversByRoot: Map<string, ServerConfig[]> = new Map(),
+  toolsScript: FakeToolsScript = {},
+) {
   const log = { emits: 0, saved: 0 };
   const tools = fakeToolsService(toolsScript);
   poolToolsView = () => tools.schemas();
@@ -70,16 +103,17 @@ function makeHost(serversByRoot = new Map(), toolsScript = {}) {
   const host = {
     ctx: { tools },
     logger: { info: () => {}, warn: () => {}, error: () => {} },
-    projectServersFor: async (root) => serversByRoot.get(root),
+    projectServersFor: async (root: string) => serversByRoot.get(root),
     globalServers: () => [],
-    normalizedProjectRoot: async (cwd) => (typeof cwd === "string" && cwd !== "" ? cwd : undefined),
+    normalizedProjectRoot: async (cwd: string | undefined) =>
+      typeof cwd === "string" && cwd !== "" ? cwd : undefined,
     saveUserState: async () => {
       log.saved += 1;
     },
     emitStatus: () => {
       log.emits += 1;
     },
-    catalogCachePath: (root) => join(root, ".dsh-mcp-catalog-test.json"),
+    catalogCachePath: (root: string) => join(root, ".dsh-mcp-catalog-test.json"),
   };
   return { host, log, tools };
 }
@@ -91,10 +125,10 @@ function makeHost(serversByRoot = new Map(), toolsScript = {}) {
 
 /** 假 id 表：按 (scope, name) 稳定返回并自增（mirror unit-lifecycle-mount.test.ts 的同名夹具）。 */
 function fakeIdTable() {
-  const byKey = new Map();
+  const byKey = new Map<string, string>();
   let seq = 0;
   return {
-    idFor(scope, name) {
+    idFor(scope: string, name: string) {
       const key = scope + "\u0000" + name;
       let id = byKey.get(key);
       if (id === undefined) {
@@ -111,8 +145,8 @@ function fakeIdTable() {
 const OFFICIAL_MODULE = { name: "test:official", apply: () => {} };
 
 /** 生命周期域的 tools 端口委托到这个取值器：必须与用例看见的注册面同一份。 */
-let poolToolsView = () => [];
-let poolLoader;
+let poolToolsView: () => FakeToolEntry[] = () => [];
+let poolLoader: ReturnType<typeof fakeLoaderPort>;
 let lifecycleInstalled = false;
 
 /** 装配池装载链路（幂等：一个用例里建多个 middleware 只装一次，afterEach 统一释放）。 */
@@ -121,19 +155,29 @@ function installPoolLifecycle() {
   poolLoader = fakeLoaderPort({
     modules: { [OFFICIAL_MCP_CLIENT_SPECIFIER]: OFFICIAL_MODULE },
   });
+  // 结构形状假件（只实现装载链触达的面）：按本文件既有接缝收窄为端口面。
   installLifecycle({
-    loader: poolLoader,
+    loader: poolLoader as unknown as LoaderPort,
     pipeline: { withTimeout },
     workspace: fakeIdTable(),
     config: { expandServerEnv },
-    tools: { schemas: () => poolToolsView() },
-    logs: fakeLogsPort(),
+    // schemas 面只取注册名投影（六态输入面 B）：假注册面按既有接缝收窄。
+    tools: { schemas: () => poolToolsView() } as unknown as ToolsRegistryPort,
+    logs: fakeLogsPort() as unknown as LogsPort,
   });
   lifecycleInstalled = true;
 }
 
 /** 新 ConnectionEntry 夹具：远端条目（有账本键、等待窗口已结算、曾连上）。 */
-function remoteEntry(server, id, overrides = {}) {
+/**
+ * 部分连接条目桩（被测读面：id/status/readySettled/server；everConnected/disposed 为本文件
+ * 判据自备的探测字段，域形状外）——调用方按 `as unknown as` 收窄为 ConnectionEntry。
+ */
+function remoteEntry(
+  server: ServerConfig,
+  id: string | undefined,
+  overrides: Record<string, unknown> = {},
+): ConnectionEntry {
   return {
     server,
     id,
@@ -145,16 +189,30 @@ function remoteEntry(server, id, overrides = {}) {
     everConnected: true,
     disposed: false,
     ...overrides,
-  };
+    // 探测字段（everConnected/disposed）与宽 status 字面量超出域形状：调用方只读域内面，收窄不断言。
+  } as unknown as ConnectionEntry;
 }
 
 /** callTool 的身份入参（第 5 形参）：dispatch 只消费 callId / rootCallId / parent / agent。 */
-function identity(extra = {}) {
-  return { callId: "call-1", ...extra };
+/**
+ * callTool 的身份入参：callId 取不透明 ID 面（域内只做合成与透传，不解析其结构）。
+ * 字面量 "call-1" 是测试追踪用的固定值，运行期与实现无关。
+ */
+/**
+ * callTool 身份桩：parent 取测试自造的 plain symbol（域内仅作 Set 身份键、不读 brand 面），
+ * callId 取固定追踪值。返回面按被测签名收窄，调用方不再各自断言。
+ */
+function identity(extra: Record<string, unknown> = {}): {
+  agent?: unknown;
+  callId: ToolExecutionInput["callId"];
+  rootCallId?: ToolExecutionInput["rootCallId"];
+  parent?: ToolExecutionToken;
+} {
+  return { callId: "call-1" as unknown as ToolExecutionInput["callId"], ...extra };
 }
 
 /** 中间层与装载账本都是真实副作用：用例结束后统一收口。 */
-const trackedMw = [];
+const trackedMw: McpMiddlewareType[] = [];
 afterEach(async () => {
   for (const mw of trackedMw) {
     try {
@@ -171,7 +229,7 @@ afterEach(async () => {
   }
 });
 
-function trackMw(mw) {
+function trackMw(mw: McpMiddlewareType) {
   trackedMw.push(mw);
   return mw;
 }
@@ -183,7 +241,15 @@ function trackMw(mw) {
  * 缓存路径指向一个**不存在**的临时文件：既避免读盘把上一例的 last-good 载回来，
  * 也避免把测试产物落在 DSH_HOME 之外。
  */
-function seedRoot(root, entries) {
+/** 目录种子条目：tools 缺席仅见于 unavailable 分支（调用方恒给，本文件内全覆盖）。 */
+interface SeedTool {
+  description?: string;
+  inputSchema?: unknown;
+}
+
+type SeedCatalogMap = Map<string, { unavailable?: string; tools: Map<string, SeedTool> }>;
+
+function seedRoot(root: string, entries: SeedCatalogMap) {
   catalogDirectory.dropRoot(root);
   for (const [serverName, entry] of entries) {
     if (entry.unavailable !== undefined) {
@@ -208,10 +274,22 @@ function seedRoot(root, entries) {
  * 以**显式时间戳**登记目录条目：TTL / stale 类判据要的是「什么时候发现的」，而投影写口
  * 恒写 Date.now()，故这类夹具走 last-good 文件读回（与生产同一条载入路径）。
  */
-function seedRootFromDisk(root, entries) {
+interface DiskSeedEntry {
+  discoveredAt: number;
+  tools: Map<string, SeedTool>;
+  unavailable?: string;
+}
+
+function seedRootFromDisk(root: string, entries: Array<[string, DiskSeedEntry]>) {
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-seed-"));
   const cachePath = join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`);
-  const payload = {};
+  const payload: Record<
+    string,
+    {
+      discoveredAt: number;
+      tools: Array<{ name: string; description?: string; inputSchema?: unknown }>;
+    }
+  > = {};
   for (const [serverName, entry] of entries) {
     payload[serverName] = {
       discoveredAt: entry.discoveredAt,
@@ -227,7 +305,17 @@ function seedRootFromDisk(root, entries) {
   return catalogDirectory.ensureRootLoaded(root, cachePath);
 }
 
-function makeUnit({ root = ROOT, catalog = new Map(), userDisabled = [], connections } = {}) {
+function makeUnit({
+  root = ROOT,
+  catalog = new Map(),
+  userDisabled = [],
+  connections,
+}: {
+  root?: string;
+  catalog?: SeedCatalogMap;
+  userDisabled?: string[];
+  connections?: Map<string, ConnectionEntry>;
+} = {}): ProjectUnit {
   if (catalog.size > 0) seedRoot(root, catalog);
   return {
     root,
@@ -239,7 +327,7 @@ function makeUnit({ root = ROOT, catalog = new Map(), userDisabled = [], connect
 }
 
 /** 宿主编译期同款 lossless 校验：返回首个违规路径（合规返回 undefined）。 */
-function losslessViolation(value, path = "$") {
+function losslessViolation(value: unknown, path = "$"): string | undefined {
   if (value === undefined) return `${path} 为 undefined`;
   if (value === null || typeof value !== "object") return undefined;
   if (Array.isArray(value)) {
@@ -411,18 +499,20 @@ describe("scoreTool / searchCatalog", () => {
   });
 
   it("TTL 过期 → fresh=false", async () => {
-    const unit = unitsFixture().get(ROOT);
+    // unitsFixture 恒含 ROOT（同一文件内夹具保证），此处断言存在。
+    const unit = unitsFixture().get(ROOT)!;
     await seedRootFromDisk(ROOT, [
       [
         "ctx",
         {
           discoveredAt: Date.now() - CATALOG_TTL_MS - 1000,
-          tools: catalogDirectory.entryFor(ROOT, "ctx").tools,
+          // unitsFixture 刚登记该条目，此处断言存在。
+          tools: catalogDirectory.entryFor(ROOT, "ctx")!.tools,
         },
       ],
     ]);
     const stale = searchCatalog(new Map([[ROOT, unit]]), ROOT, "文档", 5);
-    expect(stale.results[0].fresh).toBe(false);
+    expect(stale.results[0]!.fresh).toBe(false);
   });
 });
 
@@ -487,7 +577,7 @@ describe("boundCatalogTools", () => {
     // 单描述超字节上限 → 按字节截断（B9：旧 slice(0,N) 按字符，多字节超限；
     // 截断点落在字符边界，不产生替换符）
     const bigDescription = "字".repeat(MAX_BYTES_PER_TOOL);
-    const truncated = boundCatalogTools([{ name: "big", description: bigDescription }]).get("big");
+    const truncated = boundCatalogTools([{ name: "big", description: bigDescription }]).get("big")!;
     expect(Buffer.byteLength(truncated.description, "utf8") <= MAX_BYTES_PER_TOOL).toBeTruthy();
   });
 
@@ -510,9 +600,11 @@ describe("boundCatalogTools", () => {
 // McpMiddleware：projectUnitFor / userDisabled / inFlight ----
 describe("McpMiddleware：projectUnitFor / userDisabled / inFlight", () => {
   async function projectUnitFixture() {
-    const servers = [{ name: "ctx", transport: "stdio", command: "npx", enabled: true }];
+    const servers: ServerConfig[] = [
+      { name: "ctx", transport: "stdio", command: "npx", enabled: true },
+    ];
     const { host, log } = makeHost(new Map([[ROOT, servers]]));
-    const mw = trackMw(new McpMiddleware(host));
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     mw.disabledByRoot.set(ROOT, new Set(["ctx"]));
     const unit = await mw.projectUnitFor(ROOT);
     return { mw, unit, log };
@@ -525,12 +617,13 @@ describe("McpMiddleware：projectUnitFor / userDisabled / inFlight", () => {
 
   it("userDisabled 合并", async () => {
     const { unit } = await projectUnitFixture();
-    expect(unit.userDisabled.has("ctx")).toBe(true);
+    // 存在性由上一用例保证（同一装配器），此处断言存在。
+    expect(unit!.userDisabled.has("ctx")).toBe(true);
   });
 
   it("惰性：未显式连接前不建连接", async () => {
     const { unit } = await projectUnitFixture();
-    expect(unit.connections.size).toBe(0);
+    expect(unit!.connections.size).toBe(0);
   });
 
   it("惰性创建不广播状态", async () => {
@@ -549,9 +642,11 @@ describe("McpMiddleware：projectUnitFor / userDisabled / inFlight", () => {
 describe("callTool：路由一致性 / 未连接", () => {
   async function callToolFixture() {
     // enabled:false → 不触发真实连接（单元测试不 spawn 子进程）
-    const servers = [{ name: "ctx", transport: "stdio", command: "npx", enabled: false }];
+    const servers: ServerConfig[] = [
+      { name: "ctx", transport: "stdio", command: "npx", enabled: false },
+    ];
     const { host } = makeHost(new Map([[ROOT, servers]]));
-    const mw = trackMw(new McpMiddleware(host));
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     await mw.projectUnitFor(ROOT);
     return mw;
   }
@@ -581,7 +676,8 @@ describe("callTool：路由一致性 / 未连接", () => {
     const mw = await callToolFixture();
     mw.disabledByRoot.set(ROOT, new Set(["ctx"]));
     const disabledUnit = await mw.projectUnitFor(ROOT);
-    disabledUnit.userDisabled.add("ctx");
+    // 单元存在由前置连接保证（同一装配器），此处断言存在。
+    disabledUnit!.userDisabled.add("ctx");
     await expect(
       mw.callTool(fullServerName(ROOT, "ctx"), "use_ctx", {}, undefined, identity()),
     ).rejects.toThrow(/已被用户禁用；可先在 GUI「MCP」浮窗中重新连接/);
@@ -592,9 +688,10 @@ describe("callTool：路由一致性 / 未连接", () => {
 describe("evictIfNeeded LRU", () => {
   function evictedFixture() {
     const { host } = makeHost(new Map());
-    const mw = trackMw(new McpMiddleware(host));
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     // 注入 18 个假单元（无服务器配置，projectUnitFor 会返回 undefined —— 直接塞 map）
     for (let index = 0; index < 18; index += 1) {
+      // 同上：catalog 残留形状，收窄不断言（evict 只读 root/lastTouchedAt）。
       mw.units.set(`/root-${index}`, {
         root: `/root-${index}`,
         connections: new Map(),
@@ -602,7 +699,7 @@ describe("evictIfNeeded LRU", () => {
         userDisabled: new Set(),
         lastTouchedAt: 1000 + index,
         inFlight: new Map(),
-      });
+      } as unknown as ProjectUnit);
     }
     mw.evictIfNeeded(16);
     return mw;
@@ -626,6 +723,8 @@ describe("userState 持久化", () => {
   async function saveAndLoad() {
     const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-mw-"));
     const file = join(dir, "user-state.json");
+    // catalog 字段是目录域搬迁前的残留形状（ProjectUnit 已无此键）：saveUserState 只读写 userDisabled，
+    // 此处不断言、只收窄。
     const units = new Map([
       [
         ROOT,
@@ -638,7 +737,7 @@ describe("userState 持久化", () => {
           inFlight: new Map(),
         },
       ],
-    ]);
+    ]) as unknown as Map<string, ProjectUnit>;
     await saveUserState(file, units);
     const loaded = await loadUserState(file);
     mkdirSync(join(dir, "sub"));
@@ -647,7 +746,8 @@ describe("userState 持久化", () => {
 
   it("saveUserState/loadUserState 往返", async () => {
     const { loaded } = await saveAndLoad();
-    expect([...loaded.get(ROOT)]).toEqual(["ctx"]);
+    // save/load 往返保证键存在，此处断言存在。
+    expect([...loaded.get(ROOT)!]).toEqual(["ctx"]);
   });
 
   it("损坏文件 → 空", async () => {
@@ -665,9 +765,9 @@ describe("last-good 目录缓存", () => {
     const baseHost = makeHost(new Map());
     const catalogHost = {
       ...baseHost.host,
-      catalogCachePath: (root) => join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`),
+      catalogCachePath: (root: string) => join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`),
     };
-    const mw = trackMw(new McpMiddleware(catalogHost));
+    const mw = trackMw(new McpMiddleware(catalogHost as unknown as MiddlewareHost));
     const unit = makeUnit({
       catalog: new Map([
         [
@@ -798,7 +898,7 @@ describe("searchCatalogMulti：多单元合并检索", () => {
 
 // listCatalog：完整清单 / 过滤 / 空返回 / 截断 / unavailable / disabled ----
 describe("listCatalog：完整清单 / 过滤 / 空返回 / 截断 / unavailable / disabled", () => {
-  const mkTools = (count) => {
+  const mkTools = (count: number) => {
     const tools = new Map();
     for (let i = 0; i < count; i += 1)
       tools.set(`t${i}`, { description: `desc${i}`, inputSchema: {} });
@@ -829,11 +929,11 @@ describe("listCatalog：完整清单 / 过滤 / 空返回 / 截断 / unavailable
 
   // 完整清单（单 root）
   const listed = () => listCatalog(listUnits(), [ROOT], undefined, 50, "empty");
-  const ctxEntryOf = (result) =>
+  const ctxEntryOf = (result: ListCatalogResult) =>
     result.servers.find((s) => s.server === fullServerName(ROOT, "ctx"));
-  const offEntryOf = (result) =>
+  const offEntryOf = (result: ListCatalogResult) =>
     result.servers.find((s) => s.server === fullServerName(ROOT, "off"));
-  const downEntryOf = (result) =>
+  const downEntryOf = (result: ListCatalogResult) =>
     result.servers.find((s) => s.server === fullServerName(ROOT, "down"));
 
   it("workspace 为当前 root", () => {
@@ -853,27 +953,27 @@ describe("listCatalog：完整清单 / 过滤 / 空返回 / 截断 / unavailable
   });
 
   it("服务器条目工具名保序", () => {
-    expect(ctxEntryOf(listed()).tools.map((t) => t.tool)).toEqual(["t0", "t1"]);
+    expect(ctxEntryOf(listed())!.tools.map((t) => t.tool)).toEqual(["t0", "t1"]);
   });
 
   it("条目 toolsTruncated 为 false", () => {
-    expect(ctxEntryOf(listed()).toolsTruncated).toBe(false);
+    expect(ctxEntryOf(listed())!.toolsTruncated).toBe(false);
   });
 
   it("未禁用服务器 disabled 为 undefined", () => {
-    expect(ctxEntryOf(listed()).disabled).toBeUndefined();
+    expect(ctxEntryOf(listed())!.disabled).toBeUndefined();
   });
 
   it("userDisabled → disabled: true", () => {
-    expect(offEntryOf(listed()).disabled).toBe(true);
+    expect(offEntryOf(listed())!.disabled).toBe(true);
   });
 
   it("发现失败附原因", () => {
-    expect(downEntryOf(listed()).unavailable).toBe("连接失败");
+    expect(downEntryOf(listed())!.unavailable).toBe("连接失败");
   });
 
   it("发现失败工具列表为空", () => {
-    expect(downEntryOf(listed()).tools).toEqual([]);
+    expect(downEntryOf(listed())!.tools).toEqual([]);
   });
 
   it("非空返回无 message", () => {
@@ -924,12 +1024,12 @@ describe("listCatalog：完整清单 / 过滤 / 空返回 / 截断 / unavailable
   it("perServerLimit 截断到 1 条", () => {
     // perServerLimit 截断 → toolsTruncated（per-server + 全局汇总）
     const truncated = listCatalog(listUnits(), [ROOT], undefined, 1, "empty");
-    expect(ctxEntryOf(truncated).tools.length).toBe(1);
+    expect(ctxEntryOf(truncated)!.tools.length).toBe(1);
   });
 
   it("per-server toolsTruncated", () => {
     const truncated = listCatalog(listUnits(), [ROOT], undefined, 1, "empty");
-    expect(ctxEntryOf(truncated).toolsTruncated).toBe(true);
+    expect(ctxEntryOf(truncated)!.toolsTruncated).toBe(true);
   });
 
   it("全局 toolsTruncated", () => {
@@ -939,7 +1039,7 @@ describe("listCatalog：完整清单 / 过滤 / 空返回 / 截断 / unavailable
 
   it("未超限不置位", () => {
     const truncated = listCatalog(listUnits(), [ROOT], undefined, 1, "empty");
-    expect(offEntryOf(truncated).toolsTruncated).toBe(false);
+    expect(offEntryOf(truncated)!.toolsTruncated).toBe(false);
   });
 
   it("空返回 totalServers 为 0", () => {
@@ -974,12 +1074,13 @@ describe("listCatalog：完整清单 / 过滤 / 空返回 / 截断 / unavailable
   // #381 回归：未禁用工具条目**不写** disabled 键（显式 undefined 键会被宿主
   // lossless JSON 输出校验判非法 → ws_mcp_list 报 "value is not lossless JSON"）。
   it.each(["t0", "t1"])("未禁用条目不写 disabled 键（%s）", (tool) => {
-    const entry = ctxEntryOf(listed()).tools.find((t) => t.tool === tool);
+    // t0/t1 恒在清单内（同一夹具），此处断言存在。
+    const entry = ctxEntryOf(listed())!.tools.find((t) => t.tool === tool)!;
     expect(Object.hasOwn(entry, "disabled")).toBe(false);
   });
 
   it("服务器级禁用仍写 disabled 键", () => {
-    expect(Object.hasOwn(offEntryOf(listed()), "disabled")).toBe(true);
+    expect(Object.hasOwn(offEntryOf(listed())!, "disabled")).toBe(true);
   });
 
   // #381 回归：工具级禁用路径——禁用条目写 disabled: true，未禁用条目无键。
@@ -987,18 +1088,19 @@ describe("listCatalog：完整清单 / 过滤 / 空返回 / 截断 / unavailable
     const disabledMap = new Map([[ROOT, new Map([["ctx", new Set(["t0"])]])]]);
     return listCatalog(listUnits(), [ROOT], undefined, 50, "empty", disabledMap);
   }
-  const ctxWDOf = (result) => result.servers.find((s) => s.server === fullServerName(ROOT, "ctx"));
+  const ctxWDOf = (result: ListCatalogResult) =>
+    result.servers.find((s) => s.server === fullServerName(ROOT, "ctx"));
 
   it("t0 被禁用 → disabled: true", () => {
-    expect(ctxWDOf(withDisabled()).tools[0].disabled).toBe(true);
+    expect(ctxWDOf(withDisabled())!.tools[0].disabled).toBe(true);
   });
 
   it("禁用条目存在 disabled 键", () => {
-    expect(Object.hasOwn(ctxWDOf(withDisabled()).tools[0], "disabled")).toBe(true);
+    expect(Object.hasOwn(ctxWDOf(withDisabled())!.tools[0], "disabled")).toBe(true);
   });
 
   it("t1 未禁用 → 无 disabled 键", () => {
-    expect(Object.hasOwn(ctxWDOf(withDisabled()).tools[1], "disabled")).toBe(false);
+    expect(Object.hasOwn(ctxWDOf(withDisabled())!.tools[1], "disabled")).toBe(false);
   });
 
   // #381 回归：模拟宿主 lossless 校验（递归断言输出树无 undefined 值键/元素）。
@@ -1166,13 +1268,16 @@ describe("#412 force 受控重建：半开 connected entry 不短路", () => {
    * connected 但链路已死」的半开形态，不再需要伪造 transport 字段。
    */
   async function halfOpenFixture() {
-    const servers = [{ name: "ctx", transport: "stdio", command: "npx", enabled: true }];
+    const servers: ServerConfig[] = [
+      { name: "ctx", transport: "stdio", command: "npx", enabled: true },
+    ];
     const { host, tools } = makeHost(new Map([[ROOT, servers]]));
-    const mw = trackMw(new McpMiddleware(host));
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     const unit = makeUnit();
     mw.units.set(ROOT, unit);
     await mw.ensureConnected(ROOT, "ctx");
-    const entry = unit.connections.get("ctx");
+    // 真装一代保证条目存在（ensureConnected 刚写入），此处断言存在。
+    const entry = unit.connections.get("ctx")!;
     tools.entries = [{ name: `mcp__${entry.id}__t` }];
     expect(mw.statusOf(ROOT, "ctx")).toBe("connected");
     return { mw, unit, entry, tools };
@@ -1188,7 +1293,8 @@ describe("#412 force 受控重建：半开 connected entry 不短路", () => {
 
   it("force 重建：先 disposeServer(oldId) 再 mount（旧句柄 dispose 早于新装载）", async () => {
     const { mw, unit, entry } = await halfOpenFixture();
-    const oldId = entry.id;
+    // 真装一代的 id 恒为字符串（虚拟单元才无 id），此处断言存在。
+    const oldId = entry.id!;
     expect(mountLedger.get(oldId)).toBeDefined();
     const from = poolLoader.calls.length;
     await mw.ensureConnected(ROOT, "ctx", { force: true });
@@ -1208,7 +1314,8 @@ describe("#412 force 受控重建：半开 connected entry 不短路", () => {
   it("force 重建后状态由注册面重算（不再有 probeRetry 对 connected 的死循环短路）", async () => {
     const { mw, unit, entry, tools } = await halfOpenFixture();
     await mw.ensureConnected(ROOT, "ctx", { force: true });
-    const after = unit.connections.get("ctx");
+    // 重建后条目恒存在（同一键复用），此处断言存在。
+    const after = unit.connections.get("ctx")!;
     expect(after).not.toBe(entry);
     // 同一 (root, name) 复用同一个 id；注册面前缀仍在 → 新代际照实投影为 connected，
     // 说明状态来自读时刷新而不是「重建后固定置 failed 等探测重试」。
@@ -1237,12 +1344,19 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
           required: ["text"],
           additionalProperties: false,
         },
-        render: (args, value) => [{ type: "text", text: `rendered:${value.text}` }],
+        render: (args: unknown, value: { text: unknown }) => [
+          { type: "text", text: `rendered:${String(value.text)}` },
+        ],
       },
       isConcurrencySafe: () => true,
-      execute: async (args, exec) => {
-        const cwd = exec?.agent?.session?.header?.cwd;
-        return { text: `node(${args.symbol})@${cwd ?? "no-cwd"}` };
+      execute: async (args: unknown, exec: unknown) => {
+        const agent = (exec as { agent?: unknown } | undefined)?.agent;
+        const cwd = (agent as { session?: { header?: { cwd?: unknown } } } | undefined)?.session
+          ?.header?.cwd;
+        // String() 与模板字面量内插的转义语义逐字一致（均为 String(value)），此处不断言、只为类型收窄。
+        return {
+          text: `node(${String((args as { symbol: unknown }).symbol)})@${String(cwd ?? "no-cwd")}`,
+        };
       },
     };
     const wrappedServer = {
@@ -1252,8 +1366,11 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
       enabled: true,
       toolDefinitions: [wrappedTool],
     };
-    const { host, log, tools } = makeHost(new Map([["@global", [wrappedServer]]]));
-    const mw = trackMw(new McpMiddleware(host));
+    // 封装定义是中间层自持形状（与官方 ToolDefinition 面不完全一致）：此处不断言其类型，只收窄容器。
+    const { host, log, tools } = makeHost(
+      new Map([["@global", [wrappedServer]]]) as unknown as Map<string, ServerConfig[]>,
+    );
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     return { mw, host, log, tools, wrappedServer, wrappedTool };
   }
 
@@ -1261,12 +1378,13 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
     const fixture = wrappedGlobalFixture();
     await fixture.mw.projectUnitFor("@global");
     await fixture.mw.ensureConnected("@global", "cg");
-    const unit = fixture.mw.units.get("@global");
+    // 真装载保证单元/条目/目录投影存在（ensureConnected 刚写入），此处断言存在。
+    const unit = fixture.mw.units.get("@global")!;
     return {
       ...fixture,
       unit,
-      entry: unit.connections.get("cg"),
-      catalog: catalogDirectory.entryFor("@global", "cg"),
+      entry: unit.connections.get("cg")!,
+      catalog: catalogDirectory.entryFor("@global", "cg")!,
     };
   }
 
@@ -1307,13 +1425,13 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
 
   it("封装工具描述投影", async () => {
     const { catalog } = await connected();
-    expect(catalog.tools.get("cg_node").description).toBe("查符号（封装定义）");
+    expect(catalog.tools.get("cg_node")!.description).toBe("查符号（封装定义）");
   });
 
   it("parameters 直接作 inputSchema", async () => {
     // 目录从 toolDefinitions 投影（name/description/parameters → inputSchema）。
     const { catalog } = await connected();
-    expect(catalog.tools.get("cg_node").inputSchema).toEqual({
+    expect(catalog.tools.get("cg_node")!.inputSchema).toEqual({
       type: "object",
       properties: { symbol: { type: "string" } },
       required: ["symbol"],
@@ -1339,13 +1457,14 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
   it("agent 缺省不崩（封装侧自处理）", async () => {
     const { mw } = await connected();
     // agent 缺省 → cwd 解析 undefined。
-    const noAgent = await mw.callTool(
+    // callTool 返回投影 unknown 面：此处只读 structuredContent 键。
+    const noAgent = (await mw.callTool(
       fullServerName("@global", "cg"),
       "cg_node",
       { symbol: "bar" },
       undefined,
       identity(),
-    );
+    )) as { structuredContent: unknown };
     expect(noAgent.structuredContent).toEqual({ text: "node(bar)@no-cwd" });
   });
 
@@ -1377,7 +1496,9 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
   it("封装定义裸名只进目录，不产生 mcp__ 直呼注册", async () => {
     const { catalog, tools } = await connected();
     expect(catalog.tools.has("cg_node")).toBe(true);
-    expect(tools.registered.filter((def) => /^mcp__/.test(def?.name ?? ""))).toEqual([]);
+    expect(
+      tools.registered.filter((def) => /^mcp__/.test((def as { name?: string })?.name ?? "")),
+    ).toEqual([]);
   });
 
   it("封装定义对象不被就地改写（裸名保持、同一性不变）", async () => {
@@ -1401,13 +1522,16 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
         { name: "ok", description: "fine", parameters: {} },
       ],
     };
-    const { host } = makeHost(new Map([["@global", [badServer]]]));
-    const mw = trackMw(new McpMiddleware(host));
+    // 畸形定义（无名/重名）是被测的输入面：容器收窄，定义本身不断言。
+    const { host } = makeHost(
+      new Map([["@global", [badServer]]]) as unknown as Map<string, ServerConfig[]>,
+    );
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     await mw.projectUnitFor("@global");
     await mw.ensureConnected("@global", "bad");
-    const catalog = catalogDirectory.entryFor("@global", "bad");
+    const catalog = catalogDirectory.entryFor("@global", "bad")!;
     expect([...catalog.tools.keys()].sort()).toEqual(["dup", "ok"]);
-    expect(catalog.tools.get("dup").description).toBe("second");
+    expect(catalog.tools.get("dup")!.description).toBe("second");
   });
 
   // persistCatalog 跳过 runtime 条目（isRuntimeServer 命中 → 不写盘）。
@@ -1416,10 +1540,10 @@ describe("#413：runtime 封装定义服务器中间层直呼", () => {
     const { host } = makeHost(new Map());
     const persistHost = {
       ...host,
-      isRuntimeServer: (name) => name === "cg",
-      catalogCachePath: (root) => join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`),
+      isRuntimeServer: (name: string) => name === "cg",
+      catalogCachePath: (root: string) => join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`),
     };
-    const mw2 = trackMw(new McpMiddleware(persistHost));
+    const mw2 = trackMw(new McpMiddleware(persistHost as unknown as MiddlewareHost));
     const unit2 = makeUnit({
       root: "@global",
       catalog: new Map([
@@ -1477,11 +1601,15 @@ describe("#413：空 toolDefinitions / 封装调用超时兜底", () => {
       enabled: true,
       toolDefinitions: [],
     };
-    const { host } = makeHost(new Map([["@global", [emptyWrapped]]]));
-    const mw = trackMw(new McpMiddleware(host));
+    // 空 toolDefinitions 的自持形状与容器一并收窄（定义本身不断言）。
+    const { host } = makeHost(
+      new Map([["@global", [emptyWrapped]]]) as unknown as Map<string, ServerConfig[]>,
+    );
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     await mw.projectUnitFor("@global");
     await mw.ensureConnected("@global", "cg");
-    const unit = mw.units.get("@global");
+    // 刚 projectUnitFor 建单元，此处断言存在。
+    const unit = mw.units.get("@global")!;
     return { mw, unit };
   }
 
@@ -1514,7 +1642,7 @@ describe("#413：空 toolDefinitions / 封装调用超时兜底", () => {
           required: ["text"],
           additionalProperties: false,
         },
-        render: (a, v) => [{ type: "text", text: v.text }],
+        render: (a: unknown, v: { text: unknown }) => [{ type: "text", text: v.text }],
       },
       execute: async () => new Promise(() => {}), // 永不 resolve
     };
@@ -1527,8 +1655,11 @@ describe("#413：空 toolDefinitions / 封装调用超时兜底", () => {
       toolCallTimeoutMs: 100,
       toolDefinitions: [hangingTool],
     };
-    const { host: host2 } = makeHost(new Map([["@global", [hangingServer]]]));
-    const mw3 = trackMw(new McpMiddleware(host2));
+    // 自持形状与容器一并收窄（定义本身不断言，见上）。
+    const { host: host2 } = makeHost(
+      new Map([["@global", [hangingServer]]]) as unknown as Map<string, ServerConfig[]>,
+    );
+    const mw3 = trackMw(new McpMiddleware(host2 as unknown as MiddlewareHost));
     await mw3.projectUnitFor("@global");
     await mw3.ensureConnected("@global", "hg");
     await expect(
@@ -1540,13 +1671,15 @@ describe("#413：空 toolDefinitions / 封装调用超时兜底", () => {
 // #512：callTool 远端结果投影收敛（isError/_meta 不泄漏 + 无 content 兜底）----
 describe("#512：callTool 远端结果投影收敛", () => {
   /** 假宿主执行面返回官方形状 `{isError, content, value}`：`value` 才是远端原始结果。 */
-  async function withFakeExecute(value, { stale = false } = {}) {
-    const servers = [{ name: "py", transport: "stdio", command: "python", enabled: true }];
+  async function withFakeExecute(value: unknown, { stale = false }: { stale?: boolean } = {}) {
+    const servers: ServerConfig[] = [
+      { name: "py", transport: "stdio", command: "python", enabled: true },
+    ];
     const { host } = makeHost(new Map([[ROOT, servers]]), {
       execute: async () => ({ isError: false, content: [], value }),
     });
-    const mw = trackMw(new McpMiddleware(host));
-    const entries = [
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
+    const entries: Array<[string, DiskSeedEntry]> = [
       [
         "py",
         {
@@ -1564,7 +1697,15 @@ describe("#512：callTool 远端结果投影收敛", () => {
     return mw;
   }
 
-  const echo = (mw) => mw.callTool(fullServerName(ROOT, "py"), "echo", {}, undefined, identity());
+  // echo 的返回即投影产物面（ProjectedCallResult）：调用方只读 content/structuredContent 键。
+  const echo = (mw: McpMiddlewareType): Promise<ProjectedCallResult> =>
+    mw.callTool(
+      fullServerName(ROOT, "py"),
+      "echo",
+      {},
+      undefined,
+      identity(),
+    ) as Promise<ProjectedCallResult>;
 
   it("#767 S1-4d：远端返回与旧链路逐字节等价（工具返回值 === projectCallToolResult(value)）", async () => {
     const value = {
@@ -1588,7 +1729,8 @@ describe("#512：callTool 远端结果投影收敛", () => {
     const mw = await withFakeExecute(value);
     const out = await echo(mw);
     expect(out).toEqual(projectCallToolResult(value));
-    expect(Object.hasOwn(out, "structuredContent")).toBe(false);
+    // 投影产物面为对象（键存在性断言），此处取对象面不断言其形状。
+    expect(Object.hasOwn(out as object, "structuredContent")).toBe(false);
   });
 
   it("#512：isError:false / _meta 不泄漏，白名单字段保留", async () => {
@@ -1643,7 +1785,7 @@ describe("#512：callTool 远端结果投影收敛", () => {
     // #529：外层 catch 不再追加 detail 建议，同一条错误里「ws_mcp_detail」只出现一次。
     const dupErr = await echo(mw).then(
       () => null,
-      (e) => e,
+      (e: unknown) => e,
     );
     expect(dupErr instanceof Error).toBeTruthy();
   });
@@ -1654,7 +1796,8 @@ describe("#512：callTool 远端结果投影收敛", () => {
       () => null,
       (e) => e,
     );
-    const detailCount = (dupErr.message.match(/ws_mcp_detail/g) ?? []).length;
+    // dupErr 为被测抛出的 Error（上一断言已验 instanceof），此处取文案不断言。
+    const detailCount = ((dupErr as Error).message.match(/ws_mcp_detail/g) ?? []).length;
     expect(detailCount).toBe(1);
   });
 
@@ -1693,7 +1836,8 @@ describe("#512：callTool 远端结果投影收敛", () => {
       { stale: true },
     );
     const out = await echo(mw);
-    expect(out.content[0].text).toMatch(/本工具目录已过期/);
+    // stale hint 恒为文本块（投影构造保证），此处按测试前置收窄。
+    expect((out.content[0] as { text: string }).text).toMatch(/本工具目录已过期/);
   });
 
   it("stale 保留远端原文", async () => {
@@ -1751,8 +1895,11 @@ describe("#512：callTool 远端结果投影收敛", () => {
       enabled: true,
       toolDefinitions: [voidTool],
     };
-    const { host } = makeHost(new Map([["@global", [voidServer]]]));
-    const mw = trackMw(new McpMiddleware(host));
+    // 自持形状与容器一并收窄（定义本身不断言，见上）。
+    const { host } = makeHost(
+      new Map([["@global", [voidServer]]]) as unknown as Map<string, ServerConfig[]>,
+    );
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     await mw.projectUnitFor("@global");
     await mw.ensureConnected("@global", "vd");
     return mw;
@@ -1767,7 +1914,8 @@ describe("#512：callTool 远端结果投影收敛", () => {
       undefined,
       identity(),
     );
-    expect(Object.hasOwn(out, "structuredContent")).toBe(false);
+    // 投影产物面为对象（键存在性断言），此处取对象面不断言其形状。
+    expect(Object.hasOwn(out as object, "structuredContent")).toBe(false);
   });
 
   it("#512 封装 undefined lossless 合规", async () => {
@@ -1789,11 +1937,11 @@ describe("#512：callTool 远端结果投影收敛", () => {
 
   // 复核闸 F5：缺省分支（不传 handlers）——错误文案取 content 内 text 块 join，
   // 无 text 块退化兜底文本；fallbackText 惰性（正常路径零额外计算语义由实现保证）。
-  function probe(result, handlers) {
+  function probe(result: unknown, handlers: CallResultTextHandlers) {
     return projectCallToolResult(result, handlers);
   }
 
-  function thrownOf(fn) {
+  function thrownOf(fn: () => unknown): unknown {
     try {
       fn();
     } catch (error) {
@@ -1815,14 +1963,14 @@ describe("#512：callTool 远端结果投影收敛", () => {
         {},
       ),
     );
-    expect(thrown.message).toBe("e1\ne2");
+    expect((thrown as Error).message).toBe("e1\ne2");
   });
 
   it("缺省 errorText 无 text 块退化兜底", () => {
     const thrown = thrownOf(() =>
       probe({ content: [{ type: "image", mimeType: "image/png" }], isError: true }, {}),
     );
-    expect(thrown.message).toBe("(no output)");
+    expect((thrown as Error).message).toBe("(no output)");
   });
 
   it("fallbackText 惰性：正常 content 路径不调用", () => {
@@ -1939,7 +2087,8 @@ describe("B9 红测：boundCatalogTools 描述截断按字节", () => {
     // "字" 每字符 3 字节：2000 字 = 6000 字节 > MAX_BYTES_PER_TOOL(4096)
     const bigDesc = "字".repeat(2000);
     const bounded = boundCatalogTools([{ name: "t1", description: bigDesc, inputSchema: {} }]);
-    const desc = bounded.get("t1").description;
+    // 刚装箱的键恒存在，此处断言存在。
+    const desc = bounded.get("t1")!.description;
     expect(Buffer.byteLength(desc, "utf8") <= MAX_BYTES_PER_TOOL).toBeTruthy();
   });
 });
@@ -1969,7 +2118,7 @@ describe("B10 红测：searchCatalogMulti 恰好 limit 命中不误报 truncated
         ]),
       ),
     );
-    const fakeUnit = {
+    const fakeUnit: ProjectUnit = {
       root: ROOT,
       connections: new Map(),
       userDisabled: new Set(),
@@ -1995,8 +2144,8 @@ describe("B10 红测：searchCatalogMulti 恰好 limit 命中不误报 truncated
 // 预算的两段去向：① 进官方 Config 的 toolCallTimeoutMs（映射判据在 unit-lifecycle-mount 的
 // 「显式值原样透传」一例）；② 本层超时兜底的预算 = 它 + 2000。②是这里唯一还能观测到的部分。
 describe("B18 红测a：callTool 应用 server.toolCallTimeoutMs", () => {
-  function timeoutFixture(execute) {
-    const server = {
+  function timeoutFixture(execute: FakeToolsScript["execute"]) {
+    const server: ServerConfig = {
       name: "s1",
       transport: "stdio",
       command: "echo",
@@ -2004,7 +2153,7 @@ describe("B18 红测a：callTool 应用 server.toolCallTimeoutMs", () => {
       toolCallTimeoutMs: 100,
     };
     const { host } = makeHost(new Map([[ROOT, [server]]]), { execute });
-    const mw = trackMw(new McpMiddleware(host));
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     const unit = makeUnit();
     mw.units.set(ROOT, unit);
     unit.connections.set("s1", remoteEntry(server, "id-s1"));
@@ -2019,14 +2168,15 @@ describe("B18 红测a：callTool 应用 server.toolCallTimeoutMs", () => {
 
   it("callTool 正常", async () => {
     const { mw } = timeoutFixture(okExecute);
-    const res = await mw.callTool(
+    // echo 工具恒回文本块（okExecute 构造保证），此处按测试前置收窄。
+    const res = (await mw.callTool(
       fullServerName(ROOT, "s1"),
       "t1",
       '{"a":1}',
       undefined,
       identity(),
-    );
-    expect(res.content[0].text).toBe("ok");
+    )) as ProjectedCallResult;
+    expect((res.content[0] as { text: string }).text).toBe("ok");
   });
 
   it(
@@ -2056,12 +2206,13 @@ describe("B18 红测a：callTool 应用 server.toolCallTimeoutMs", () => {
 // tool="sv__t"），禁用表若恰有错位形态记录会**误禁**（情形 B）；真实形态记录
 // （@global/my__sv → t）则**查错漏禁**（情形 A）。
 describe("B11 红测：含连续双下划线 server 名按未知处理", () => {
-  function guardFixture(disabledMap) {
-    const guards = new Map();
+  function guardFixture(disabledMap: DisabledToolsMap) {
+    // pre-execute 订阅回调：返回裁决对象（kind 面），此处取测试读取的最小面。
+    const guards = new Map<string, (...args: unknown[]) => unknown>();
     const ctx = {
       tools: { register: () => () => {} },
-      on: (event, handler) => {
-        guards.set(event, handler);
+      on: (evt: string, handler: (...args: unknown[]) => void) => {
+        guards.set(evt, handler);
         return () => {};
       },
     };
@@ -2070,16 +2221,21 @@ describe("B11 红测：含连续双下划线 server 名按未知处理", () => {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       projectServersFor: async () => [],
       globalServers: () => [],
-      normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
+      normalizedProjectRoot: async (cwd: string | undefined) =>
+        cwd === "/proj" ? "/proj" : undefined,
       saveUserState: async () => {},
       emitStatus: () => {},
       catalogCachePath: () => "/tmp/cache.json",
       isGlobalServer: () => false,
     };
-    const resolveRoot = async (agent) =>
-      agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined;
-    const mw = trackMw(new McpMiddleware(host));
-    const dispose = registerMiddlewareTools(ctx, mw, resolveRoot, {
+    const resolveRoot = async (agent: unknown) =>
+      (agent as { session?: { header?: { cwd?: unknown } } } | undefined)?.session?.header?.cwd ===
+      "/proj"
+        ? "/proj"
+        : undefined;
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
+    // 部分宿主（只实现路由触达的 tools/on 面）：按接缝收窄，装配语义不变。
+    const dispose = registerMiddlewareTools(ctx as unknown as Context, mw, resolveRoot, {
       disabledTools: disabledMap,
     });
     return { guards, dispose, mw };
@@ -2094,10 +2250,11 @@ describe("B11 红测：含连续双下划线 server 名按未知处理", () => {
     // 情形 B（红）：禁用表只有「错位形态」记录（@global/my → sv__t，恰好是第一个
     // __ 分割的产物）→ 含 __ 名按未知处理应放行（现状误禁 → 断言红）。
     const { guards } = guardFixture(parseDisabledTools({ "@global": { my: ["sv__t"] } }));
-    const decisionB = await guards.get("tools/pre-execute")(
+    // guard 已注册由首用例保证（同一装配器），此处断言存在；裁决形状由被测返回。
+    const decisionB = (await guards.get("tools/pre-execute")!(
       { name: "mcp__my__sv__t", agent: { session: { header: { cwd: "/proj" } } } },
       async () => ({ kind: "allow" }),
-    );
+    )) as { kind: unknown };
     expect(decisionB.kind).toBe("allow");
   });
 
@@ -2105,22 +2262,22 @@ describe("B11 红测：含连续双下划线 server 名按未知处理", () => {
     // 情形 A（防回归）：禁用表只有「真实形态」记录（@global/my__sv → t）→ 同样
     // 不可逆 → 放行（不禁用；现状查错漏禁，修复后保持不误禁不误杀）。
     const { guards } = guardFixture(parseDisabledTools({ "@global": { my__sv: ["t"] } }));
-    const decisionA = await guards.get("tools/pre-execute")(
+    const decisionA = (await guards.get("tools/pre-execute")!(
       { name: "mcp__my__sv__t", agent: { session: { header: { cwd: "/proj" } } } },
       async () => ({ kind: "allow" }),
-    );
+    )) as { kind: unknown };
     expect(decisionA.kind).toBe("allow");
   });
 });
 
 // #767 S1-4d：池的转发登记 / 拆除走账本 / 读时刷新（换引擎后新增的判据面）----
 describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () => {
-  const PY = { name: "py", transport: "stdio", command: "python", enabled: true };
+  const PY: ServerConfig = { name: "py", transport: "stdio", command: "python", enabled: true };
 
   /** 一个远端条目 + 假宿主执行面的池：执行面按 script 给结果（缺省空成功）。 */
-  function poolFixture(toolsScript = {}) {
+  function poolFixture(toolsScript: FakeToolsScript = {}) {
     const { host, tools } = makeHost(new Map([[ROOT, [PY]]]), toolsScript);
-    const mw = trackMw(new McpMiddleware(host));
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     const unit = makeUnit();
     mw.units.set(ROOT, unit);
     unit.connections.set("py", remoteEntry(PY, "id-py"));
@@ -2128,7 +2285,7 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
   }
 
   it("forwarding：执行中登记外层 token，结算后注销", async () => {
-    const observed = [];
+    const observed: unknown[][] = [];
     // 执行面在派发时才跑，此刻 fixture 已绑定：借它读同一实例的登记表（不必用 let 承接）。
     const fixture = poolFixture({
       execute: async () => {
@@ -2165,39 +2322,45 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
   });
 
   it("拆除走账本：releaseConnection 摘账并让句柄 dispose 被发起", async () => {
-    const servers = [{ name: "ctx", transport: "stdio", command: "npx", enabled: true }];
+    const servers: ServerConfig[] = [
+      { name: "ctx", transport: "stdio", command: "npx", enabled: true },
+    ];
     const { host } = makeHost(new Map([[ROOT, servers]]));
-    const mw = trackMw(new McpMiddleware(host));
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     const unit = makeUnit();
     mw.units.set(ROOT, unit);
     await mw.ensureConnected(ROOT, "ctx");
-    const entry = unit.connections.get("ctx");
-    expect(mountLedger.get(entry.id)).toBeDefined();
+    // 真装载保证条目存在（ensureConnected 刚写入），此处断言存在。
+    const entry = unit.connections.get("ctx")!;
+    expect(mountLedger.get(entry.id!)).toBeDefined();
     expect(mw.releaseConnection(ROOT, "ctx")).toBe(true);
     // 摘账同步生效 + 句柄 dispose 已发起（只发起不等结算：拆除是同步语义）。
-    expect(mountLedger.get(entry.id)).toBeUndefined();
+    expect(mountLedger.get(entry.id!)).toBeUndefined();
     expect(unit.connections.has("ctx")).toBe(false);
-    expect(entry.handle.disposed).toBe(true);
+    // 真装载的句柄恒存在，此处断言存在。
+    expect(entry.handle!.disposed).toBe(true);
     await expect(mountLedger.flushDisposals()).resolves.toBeUndefined();
     // 幂等：不在册的条目再拆返回 false（调用方据此决定要不要广播状态）。
     expect(mw.releaseConnection(ROOT, "ctx")).toBe(false);
   });
 
   it("evictIfNeeded 淘汰旧单元时逐条走账本拆除", async () => {
-    const servers = [{ name: "ctx", transport: "stdio", command: "npx", enabled: true }];
+    const servers: ServerConfig[] = [
+      { name: "ctx", transport: "stdio", command: "npx", enabled: true },
+    ];
     const { host } = makeHost(
       new Map([
         [ROOT, servers],
         ["/root-old", servers],
       ]),
     );
-    const mw = trackMw(new McpMiddleware(host));
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     const oldUnit = makeUnit({ root: "/root-old" });
     oldUnit.lastTouchedAt = 1;
     mw.units.set("/root-old", oldUnit);
     await mw.ensureConnected("/root-old", "ctx");
-    const entry = oldUnit.connections.get("ctx");
-    expect(mountLedger.get(entry.id)).toBeDefined();
+    const entry = oldUnit.connections.get("ctx")!;
+    expect(mountLedger.get(entry.id!)).toBeDefined();
     for (let index = 0; index < 17; index += 1) {
       const unit = makeUnit({ root: `/root-${index}` });
       unit.lastTouchedAt = 1000 + index;
@@ -2205,8 +2368,9 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
     }
     mw.evictIfNeeded(16);
     expect(mw.units.has("/root-old")).toBe(false);
-    expect(mountLedger.get(entry.id)).toBeUndefined();
-    expect(entry.handle.disposed).toBe(true);
+    expect(mountLedger.get(entry.id!)).toBeUndefined();
+    // 真装载的句柄恒存在，此处断言存在。
+    expect(entry.handle!.disposed).toBe(true);
     await mountLedger.flushDisposals();
   });
 
@@ -2218,13 +2382,13 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
     // 直读 entry.status 会永远停在装载窗口结算那一刻的 connected。
     tools.entries = [{ name: "mcp__other-id__echo" }];
     expect(mw.statusOf(ROOT, "py")).toBe("reconnecting");
-    expect(unit.connections.get("py").status).toBe("reconnecting");
+    expect(unit.connections.get("py")!.status).toBe("reconnecting");
   });
 
   it("statusOf 读时刷新：reconnect.enabled=false 时前缀消失 → failed（不再有后台重连）", async () => {
     const noReconnect = { ...PY, reconnect: { enabled: false } };
     const { host, tools } = makeHost(new Map([[ROOT, [noReconnect]]]));
-    const mw = trackMw(new McpMiddleware(host));
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     const unit = makeUnit();
     mw.units.set(ROOT, unit);
     unit.connections.set("py", remoteEntry(noReconnect, "id-py"));
@@ -2238,7 +2402,7 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
     // 虚拟单元（toolDefinitions）没有官方实例、从不 mount：它不进六态投影，就地收敛。
     // 三处读点的另外两处（manager.summarize / /health）分别由 unit-manager2 与
     // unit-routes-sse 的用例钉住，同一份 statusOf 语义。
-    const virtualServer = {
+    const virtualServer: ServerConfig = {
       name: "cg",
       transport: "stdio",
       command: "codegraph",
@@ -2246,7 +2410,7 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
       toolDefinitions: [],
     };
     const { host, tools } = makeHost(new Map([[ROOT, [virtualServer]]]));
-    const mw = trackMw(new McpMiddleware(host));
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     const unit = makeUnit();
     mw.units.set(ROOT, unit);
     unit.connections.set("cg", remoteEntry(virtualServer, undefined));
@@ -2256,7 +2420,7 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
     unit.userDisabled.add("cg");
     expect(mw.statusOf(ROOT, "cg")).toBe("disabled");
     unit.userDisabled.delete("cg");
-    unit.connections.get("cg").server.enabled = false;
+    unit.connections.get("cg")!.server.enabled = false;
     expect(mw.statusOf(ROOT, "cg")).toBe("disabled");
   });
 
@@ -2265,9 +2429,9 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
     const { host, tools } = makeHost(new Map([[ROOT, [PY]]]));
     const catalogHost = {
       ...host,
-      catalogCachePath: (root) => join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`),
+      catalogCachePath: (root: string) => join(dir, `${root.replace(/[^a-z0-9]/gi, "_")}.json`),
     };
-    const mw = trackMw(new McpMiddleware(catalogHost));
+    const mw = trackMw(new McpMiddleware(catalogHost as unknown as MiddlewareHost));
     const unit = makeUnit();
     mw.units.set(ROOT, unit);
     unit.connections.set("py", remoteEntry(PY, "id-py"));
@@ -2292,18 +2456,19 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
       id: "id-py",
       schemas: tools.schemas(),
       cachePath: () => catalogHost.catalogCachePath(ROOT),
-      redact: (error) => String(error),
+      redact: (error: unknown) => String(error),
       isRuntimeServer: () => false,
       warn: () => {},
     });
-    const catalog = catalogDirectory.entryFor(ROOT, "py");
+    // 投影刚写入该条目，此处断言存在。
+    const catalog = catalogDirectory.entryFor(ROOT, "py")!;
     // 只收本 id 前缀的两条，名字已剥前缀；他 id 与无前缀条目不得混入。
     expect([...catalog.tools.keys()].sort()).toEqual(["alpha", "beta"]);
     expect(catalog.tools.get("alpha")).toEqual({
       description: "甲",
       inputSchema: { type: "object", properties: { a: {} } },
     });
-    expect(catalog.tools.get("beta").description).toBe("乙");
+    expect(catalog.tools.get("beta")!.description).toBe("乙");
     expect(catalog.unavailable).toBeUndefined();
   });
 
@@ -2320,7 +2485,8 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
         throw new Error("目录缓存路径不可用 token=sekrit");
       },
     };
-    const mw = trackMw(new McpMiddleware(brokenHost));
+    // 部分宿主（catalogCachePath 故意抛错的坏路径面）：按接缝收窄。
+    const mw = trackMw(new McpMiddleware(brokenHost as unknown as MiddlewareHost));
     const unit = makeUnit();
     mw.units.set(ROOT, unit);
     unit.connections.set("py", remoteEntry(withSecret, "id-py"));
@@ -2337,13 +2503,15 @@ describe("#767 S1-4d：池的转发登记、拆除走账本与读时刷新", () 
       schemas: tools.schemas(),
       // 路径求值本身要抛：缓存路径 thunk 在 persistRoot 内才求值，等价复现连接层
       // host.catalogCachePath 在投影 try 之外求值的失败面。
-      cachePath: () => brokenHost.catalogCachePath(ROOT),
+      // 路径 thunk 本就不取参（调用即抛），此处按其签名调用。
+      cachePath: () => brokenHost.catalogCachePath(),
       // 脱敏器形状与连接层一致：全部在册服务器作为凭据词根来源。
-      redact: (error) => createRedactor([withSecret])(error),
+      redact: (error: unknown) => createRedactor([withSecret])(error),
       isRuntimeServer: () => false,
       warn: () => {},
     });
-    const catalog = catalogDirectory.entryFor(ROOT, "py");
+    // 投影失败落在已有条目上（上一段 ensureRootLoaded 已建条目），此处断言存在。
+    const catalog = catalogDirectory.entryFor(ROOT, "py")!;
     expect(catalog.discoveredAt).toBe(0);
     expect(catalog.tools.size).toBe(0);
     // 真脱敏器的替换词是 [REDACTED]（fake pipeline 里的 *** 是另一套夹具，别混）。
@@ -2359,7 +2527,7 @@ describe("#767 S1-3b：目录归属与载入不变式", () => {
   const DOMAIN_CACHE = () => join(mkdtempSync(join(tmpdir(), "dsh-mcp-mw-s13b-")), "catalog.json");
 
   /** 写一份 last-good 文件（内容 → 该 root 的目录）；落点目录由 mkdtempSync 现建。 */
-  function writeCache(file, root, entries) {
+  function writeCache(file: string, root: string, entries: unknown) {
     writeFileSync(file, JSON.stringify({ version: 1, root, entries }, null, 2), "utf8");
   }
 
@@ -2371,9 +2539,9 @@ describe("#767 S1-3b：目录归属与载入不变式", () => {
     const fixtureUnit = makeUnit();
     expect("catalog" in fixtureUnit, "夹具形状：ProjectUnit 无 catalog 字段").toBe(false);
     const { host } = makeHost(new Map([[ROOT, []]]));
-    const mw = trackMw(new McpMiddleware(host));
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     const realUnit = await mw.projectUnitFor(ROOT);
-    expect("catalog" in realUnit, "真实建单元路径：目录不落在单元上（归 catalog 域）").toBe(false);
+    expect("catalog" in realUnit!, "真实建单元路径：目录不落在单元上（归 catalog 域）").toBe(false);
     expect(
       typeof (McpMiddleware.prototype as { discover?: unknown }).discover,
       "McpMiddleware 已无 discover 成员（投影归 catalog 域）",
@@ -2401,9 +2569,9 @@ describe("#767 S1-3b：目录归属与载入不变式", () => {
 
   it("statusOf 的「已连上」极性由目录读口决定（单源）", async () => {
     // 反证：hasRegisteredTools 若绕过目录域自读注册面（或前缀口径分叉），这里极性会漂。
-    const py = { name: "py", transport: "stdio", command: "python", enabled: true };
+    const py: ServerConfig = { name: "py", transport: "stdio", command: "python", enabled: true };
     const { host, tools } = makeHost(new Map([[DOMAIN_ROOT, [py]]]));
-    const mw = trackMw(new McpMiddleware(host));
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     const unit = makeUnit({ root: DOMAIN_ROOT });
     mw.units.set(DOMAIN_ROOT, unit);
     unit.connections.set("py", remoteEntry(py, "id-py"));
@@ -2442,8 +2610,9 @@ describe("#767 S1-3b：目录归属与载入不变式", () => {
     // 第二次同样短路。
     await catalogDirectory.ensureRootLoaded(DOMAIN_ROOT, file);
     // 内存仍是 A：磁盘那份进不来（单元创建是唯一载入点，内存态才是权威）。
-    expect([...catalogDirectory.serversFor(DOMAIN_ROOT).keys()]).toEqual(["mem"]);
-    expect(catalogDirectory.entryFor(DOMAIN_ROOT, "mem")?.tools.has("mem_tool")).toBe(true);
+    expect([...catalogDirectory.serversFor(DOMAIN_ROOT)!.keys()]).toEqual(["mem"]);
+    // 在册条目恒存在（上一段已建），此处断言存在。
+    expect(catalogDirectory.entryFor(DOMAIN_ROOT, "mem")!.tools.has("mem_tool")).toBe(true);
     // 反证：删掉短路 → 第一次就会把 B 载回来，上面两条断言必红（内存变成 disk-only）。
     // 「只读盘一次」是短路的直接后果：短路发生在任何 fs 调用之前，故不存在第二次读盘。
     // 这里不引 fs spy——语义判据（内存未被磁盘覆盖）比计数更强，且不依赖实现细节。
@@ -2466,10 +2635,10 @@ describe("#767 S1-3b：目录归属与载入不变式", () => {
     });
     expect([...(catalogDirectory.serversFor(fresh) ?? new Map()).keys()]).toEqual(["mem"]);
     await catalogDirectory.ensureRootLoaded(fresh, file);
-    expect([...catalogDirectory.serversFor(fresh).keys()], "磁盘那份不得盖回内存投影").toEqual([
+    expect([...catalogDirectory.serversFor(fresh)!.keys()], "磁盘那份不得盖回内存投影").toEqual([
       "mem",
     ]);
-    expect(catalogDirectory.entryFor(fresh, "mem")?.tools.has("mem_tool")).toBe(true);
+    expect(catalogDirectory.entryFor(fresh, "mem")!.tools.has("mem_tool")).toBe(true);
     expect(catalogDirectory.entryFor(fresh, "disk")).toBeUndefined();
   });
 });
@@ -2478,12 +2647,12 @@ describe("#767 S1-3b：目录归属与载入不变式", () => {
 // dispatch 转发出去的子调用带 parent = 外层 ws_mcp_call 的 token，派发前已登记进 mw.forwarding；
 // guard 只按发起者放行，不做名字判定——放行晚一步，阶段 3 的模型面收敛会把自家转发误拒。
 describe("#767 S1-4d：guard 判发起者", () => {
-  function guardFixture(disabledMap) {
+  function guardFixture(disabledMap: DisabledToolsMap) {
     const guards = new Map();
     const ctx = {
       tools: { register: () => () => {} },
-      on: (event, handler) => {
-        guards.set(event, handler);
+      on: (evt: string, handler: (...args: unknown[]) => void) => {
+        guards.set(evt, handler);
         return () => {};
       },
     };
@@ -2492,22 +2661,30 @@ describe("#767 S1-4d：guard 判发起者", () => {
       logger: { info: () => {}, warn: () => {}, error: () => {} },
       projectServersFor: async () => [],
       globalServers: () => [],
-      normalizedProjectRoot: async (cwd) => (cwd === "/proj" ? "/proj" : undefined),
+      normalizedProjectRoot: async (cwd: string | undefined) =>
+        cwd === "/proj" ? "/proj" : undefined,
       saveUserState: async () => {},
       emitStatus: () => {},
       catalogCachePath: () => "/tmp/cache.json",
       isGlobalServer: () => false,
     };
-    const resolveRoot = async (agent) =>
-      agent?.session?.header?.cwd === "/proj" ? "/proj" : undefined;
-    const mw = trackMw(new McpMiddleware(host));
-    registerMiddlewareTools(ctx, mw, resolveRoot, { disabledTools: disabledMap });
+    const resolveRoot = async (agent: unknown) =>
+      (agent as { session?: { header?: { cwd?: unknown } } } | undefined)?.session?.header?.cwd ===
+      "/proj"
+        ? "/proj"
+        : undefined;
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
+    // 部分宿主（只实现路由触达的 tools/on 面）：按接缝收窄，装配语义不变。
+    registerMiddlewareTools(ctx as unknown as Context, mw, resolveRoot, {
+      disabledTools: disabledMap,
+    });
     return { guards, mw };
   }
 
   it("exec.parent 在 forwarding 集合内 → 放行（不再做工具级裁决）", async () => {
     const { guards, mw } = guardFixture(parseDisabledTools({ "@global": { my: ["t"] } }));
-    const token = Symbol("forwarded");
+    // 转发身份是测试自造的 plain symbol（域内仅作 Set 身份键、不读 brand 面）。
+    const token = Symbol("forwarded") as unknown as ToolExecutionToken;
     mw.forwarding.add(token);
     const decision = await guards.get("tools/pre-execute")(
       { name: "mcp__my__t", parent: token, agent: { session: { header: { cwd: "/proj" } } } },
@@ -2545,22 +2722,25 @@ describe("#767 笔 1b：A+ 图片准入接线与 F4 转发去 agent", () => {
   const IMAGE_MODEL = { resolveModelInfo: async () => ({ inputModalities: ["text", "image"] }) };
 
   /** 注册四个中间层工具（带 faces），交回 ws_mcp_call 定义与假工具服务（看转发出去的那次 exec）。 */
-  async function callFixture({ value, faces }) {
-    const servers = [{ name: "py", transport: "stdio", command: "python", enabled: true }];
+  async function callFixture({ value, faces }: { value: unknown; faces?: ImageAdmissionFaces }) {
+    const servers: ServerConfig[] = [
+      { name: "py", transport: "stdio", command: "python", enabled: true },
+    ];
     // 注册面必须带 `mcp__id-py__` 前缀：executeCall 会先 ensureConnected，而六态投影按注册面
     // 判「已连上」——不带前缀会走重建路径，把夹具的 connected 条目拆掉。
     const { host, tools } = makeHost(new Map([[ROOT, servers]]), {
       schemas: [{ name: "mcp__id-py__echo" }],
       execute: async () => ({ isError: false, content: [], value }),
     });
-    const mw = trackMw(new McpMiddleware(host));
+    const mw = trackMw(new McpMiddleware(host as unknown as MiddlewareHost));
     const unit = makeUnit();
     mw.units.set(ROOT, unit);
     unit.connections.set("py", remoteEntry(servers[0], "id-py"));
-    const registered = [];
+    // 注册面收集的是实现传入的真 ToolDefinition（ws_mcp_call 等四工具），此处取其类型面。
+    const registered: ToolDefinition[] = [];
     const ctx = {
       tools: {
-        register: (def) => {
+        register: (def: ToolDefinition) => {
           registered.push(def);
           return () => {};
         },
@@ -2568,14 +2748,23 @@ describe("#767 笔 1b：A+ 图片准入接线与 F4 转发去 agent", () => {
       },
     };
     // 第 5 个位置参数就是图片准入的宿主能力面（faces === undefined 时退化成纯诊断）。
-    registerMiddlewareTools(ctx, mw, async () => ROOT, { disabledTools: new Map() }, faces);
+    // 部分宿主（只实现 register/schemas 面）：按接缝收窄。
+    registerMiddlewareTools(
+      ctx as unknown as Context,
+      mw,
+      async () => ROOT,
+      { disabledTools: new Map() },
+      faces,
+    );
     return {
-      call: registered.find((def) => def.name === "ws_mcp_call"),
+      // 四工具恒注册（实现保证），此处断言存在。
+      call: registered.find((def) => def.name === "ws_mcp_call")!,
       tools,
     };
   }
 
-  function makeExec(overrides = {}) {
+  // finalizeContent 的 exec 桩：只实现判据触达的面，整体按被测签名收窄（同上）。
+  function makeExec(overrides: Record<string, unknown> = {}): Readonly<ToolExecution> {
     return {
       callId: "call-1",
       rootCallId: "call-1",
@@ -2585,13 +2774,14 @@ describe("#767 笔 1b：A+ 图片准入接线与 F4 转发去 agent", () => {
       agent: ROUTE_AGENT,
       token: "tok-1",
       ...overrides,
-    };
+    } as unknown as Readonly<ToolExecution>;
   }
 
   const callArgs = { server: fullServerName(ROOT, "py"), tool: "echo" };
 
   it("B8 远端合法图片 + 路由声明 image + 落库成功 → finalizeContent 换入真附件块且文本保序", async () => {
-    const saved = [];
+    // 落库输入快照（SaveImageInput 面）：复制保留调用时刻值，引用/复制 verdict 一致。
+    const saved: SaveImageInput[][] = [];
     const value = {
       content: [
         { type: "text", text: "前" },
@@ -2604,7 +2794,7 @@ describe("#767 笔 1b：A+ 图片准入接线与 F4 转发去 agent", () => {
       faces: {
         attachments: () => ({
           saveImages: async (inputs) => {
-            saved.push(inputs);
+            saved.push([...inputs]);
             return [{ id: "att-1" }];
           },
         }),
@@ -2612,16 +2802,18 @@ describe("#767 笔 1b：A+ 图片准入接线与 F4 转发去 agent", () => {
       },
     });
     const exec = makeExec();
-    const returned = await fixture.call.execute(callArgs, exec);
+    // exec 桩只实现 finalize/execute 触达的 ToolExecution 面：execute 要的后两键按接缝收窄。
+    const returned = await fixture.call.execute(callArgs, exec as unknown as ToolRunContext);
     // render 兜底保持现状（无 exec 的既有投影 + 图片占位串）。
-    const rendered = fixture.call.output.render({}, returned);
+    // render 入参是 JSON 值面：本文件传入的字面量恒为 JSON，此处收窄不断言。
+    const rendered = fixture.call.output.render({}, returned as Json);
     expect(rendered).toEqual([
       { type: "text", text: "前\n[image content]\n[resource: content discarded]" },
     ]);
-    const finalized = fixture.call.finalizeContent(exec, {
+    const finalized = fixture.call.finalizeContent!(exec, {
       isError: false,
       content: rendered,
-      value: returned,
+      value: returned as Json,
     });
     // 文本块次序与内容保住；图片块原位换成真附件。
     expect(finalized).toEqual([
@@ -2647,17 +2839,23 @@ describe("#767 笔 1b：A+ 图片准入接线与 F4 转发去 agent", () => {
       },
     });
     const exec = makeExec();
-    const returned = await fixture.call.execute(callArgs, exec);
-    const rendered = fixture.call.output.render({}, returned);
+    // exec 桩只实现 finalize/execute 触达的 ToolExecution 面：execute 要的后两键按接缝收窄。
+    const returned = await fixture.call.execute(callArgs, exec as unknown as ToolRunContext);
+    // render 入参是 JSON 值面：本文件传入的字面量恒为 JSON，此处收窄不断言。
+    const rendered = fixture.call.output.render({}, returned as Json);
     expect(
-      fixture.call.finalizeContent(exec, { isError: false, content: rendered, value: returned }),
+      fixture.call.finalizeContent!(exec, {
+        isError: false,
+        content: rendered,
+        value: returned as Json,
+      }),
       "无图片块：不建映射，保留 render",
     ).toBe(undefined);
     expect(
-      fixture.call.finalizeContent(makeExec({ callId: "never-ran" }), {
+      fixture.call.finalizeContent!(makeExec({ callId: "never-ran" }), {
         isError: false,
         content: rendered,
-        value: returned,
+        value: returned as Json,
       }),
       "不是本次执行：弱映射无命中",
     ).toBe(undefined);
@@ -2673,14 +2871,26 @@ describe("#767 笔 1b：A+ 图片准入接线与 F4 转发去 agent", () => {
       },
     });
     const exec = makeExec();
-    const returned = await fixture.call.execute(callArgs, exec);
-    const rendered = fixture.call.output.render({}, returned);
+    // exec 桩只实现 finalize/execute 触达的 ToolExecution 面：execute 要的后两键按接缝收窄。
+    const returned = await fixture.call.execute(callArgs, exec as unknown as ToolRunContext);
+    // render 入参是 JSON 值面：本文件传入的字面量恒为 JSON，此处收窄不断言。
+    const rendered = fixture.call.output.render({}, returned as Json);
+    // isError:true 时实现短路（middleware-register 的 finalizeContent 首行即 return，不读 value）：
+    // Failure 面声明 value?: never，此处不断言、整对象收窄，运行期原样传入。
     expect(
-      fixture.call.finalizeContent(exec, { isError: true, content: rendered, value: returned }),
+      fixture.call.finalizeContent!(exec, {
+        isError: true,
+        content: rendered,
+        value: returned as Json,
+      } as unknown as Readonly<ToolExecutionResult>),
     ).toBe(undefined);
     // 命中即删：同一个 exec 再问一次也不再有投影。
     expect(
-      fixture.call.finalizeContent(exec, { isError: false, content: rendered, value: returned }),
+      fixture.call.finalizeContent!(exec, {
+        isError: false,
+        content: rendered,
+        value: returned as Json,
+      }),
     ).toBe(undefined);
   });
 
@@ -2701,12 +2911,13 @@ describe("#767 笔 1b：A+ 图片准入接线与 F4 转发去 agent", () => {
     });
     const e1 = makeExec({ callId: "c1" });
     const e2 = makeExec({ callId: "c2" });
-    const v1 = await fixture.call.execute(callArgs, e1);
-    const v2 = await fixture.call.execute(callArgs, e2);
-    const swap = (exec, val) =>
-      fixture.call.finalizeContent(exec, { isError: false, content: [], value: val });
-    expect(swap(e1, v1)[0].attachment).toEqual({ id: "att-1" });
-    expect(swap(e2, v2)[0].attachment).toEqual({ id: "att-2" });
+    const v1 = await fixture.call.execute(callArgs, e1 as unknown as ToolRunContext);
+    const v2 = await fixture.call.execute(callArgs, e2 as unknown as ToolRunContext);
+    const swap = (exec: Readonly<ToolExecution>, val: unknown) =>
+      fixture.call.finalizeContent!(exec, { isError: false, content: [], value: val as Json });
+    // 换入的恒为图片块（实现保证），此处按测试前置收窄。
+    expect((swap(e1, v1)![0] as { attachment: unknown }).attachment).toEqual({ id: "att-1" });
+    expect((swap(e2, v2)![0] as { attachment: unknown }).attachment).toEqual({ id: "att-2" });
     expect(swap(e1, v1), "已消费过的 exec 不再有投影").toBe(undefined);
   });
 
@@ -2716,8 +2927,14 @@ describe("#767 笔 1b：A+ 图片准入接线与 F4 转发去 agent", () => {
       faces: undefined,
     });
     const exec = makeExec();
-    await fixture.call.execute(callArgs, exec);
-    const sent = fixture.tools.executed[0];
+    await fixture.call.execute(callArgs, exec as unknown as ToolRunContext);
+    // 发送记录的形状由宿主执行面约定（name/agent/parent/signal 四键），此处只读不断言。
+    const sent = fixture.tools.executed[0] as {
+      name: unknown;
+      agent: unknown;
+      parent: unknown;
+      signal: unknown;
+    };
     expect(sent.name).toBe("mcp__id-py__echo");
     expect(sent.agent, "远端分支去 agent（F4 收口）").toBe(undefined);
     expect(sent.parent).toBe("tok-1");

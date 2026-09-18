@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-mcp-manager — unit：apply 函数各分支覆盖。
  *
@@ -13,14 +12,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { Context } from "@deepseek-ai/cordis";
 
 const { apply, saveDisabledTools } = await import("../../src/index.ts");
 const { mountLedger, mountServer, releaseLifecycle } =
   await import("../../src/server/servers/lifecycle/interface.ts");
 
-let tempDirs = [];
+let tempDirs: string[] = [];
 
-function makeTempDir(prefix) {
+function makeTempDir(prefix: string) {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   tempDirs.push(dir);
   return dir;
@@ -32,7 +32,7 @@ afterEach(() => {
 });
 
 /** apply 通用 fakeCtx 底座（各分支按需覆盖）。 */
-function baseCtx(overrides = {}) {
+function baseCtx(overrides: Record<string, unknown> = {}) {
   return {
     logger: {
       warn: () => {},
@@ -47,7 +47,7 @@ function baseCtx(overrides = {}) {
     systemPrompt: { section: () => () => {} },
     inject: () => () => {},
     on: () => () => {},
-    effect: (fn) => {
+    effect: (fn: () => () => void) => {
       const disposer = fn();
       return () => {
         disposer();
@@ -60,16 +60,22 @@ function baseCtx(overrides = {}) {
 describe("apply 的 agent/pre-step 监听（announceCatalog=true）", () => {
   async function applyWithPreStep() {
     const dir = makeTempDir("dsh-mcp-manager-apply-");
-    const refs = { preStepHandler: null };
+    const refs: { preStepHandler: null | ((...args: unknown[]) => unknown) } = {
+      preStepHandler: null,
+    };
     const ctx = baseCtx({
-      on: (event, handler) => {
-        if (event === "agent/pre-step") {
+      on: (evt: string, handler: (...args: unknown[]) => void) => {
+        if (evt === "agent/pre-step") {
           refs.preStepHandler = handler;
         }
         return () => {};
       },
     });
-    await apply(ctx, { enabled: true, announceCatalog: true, storePath: join(dir, "mcp.json") });
+    await apply(ctx as unknown as Context, {
+      enabled: true,
+      announceCatalog: true,
+      storePath: join(dir, "mcp.json"),
+    });
     return refs;
   }
 
@@ -89,7 +95,7 @@ describe("apply 的 agent/pre-step 监听（announceCatalog=true）", () => {
       },
     };
     await expect(
-      refs.preStepHandler(
+      refs.preStepHandler!(
         { agent: { session: { header: { cwd: "/tmp" } } }, messages: [], signal: abortedSignal },
         async () => ({ kind: "enter", messages: [] }),
       ),
@@ -100,10 +106,10 @@ describe("apply 的 agent/pre-step 监听（announceCatalog=true）", () => {
     const refs = await applyWithPreStep();
     // 正常 pre-step 路径（无服务器时目录为空 → 不注入）
     const normalSignal = { aborted: false, throwIfAborted: () => {} };
-    const result = await refs.preStepHandler(
+    const result = (await refs.preStepHandler!(
       { agent: { session: { header: { cwd: "/tmp" } } }, messages: [], signal: normalSignal },
       async () => ({ kind: "enter", messages: [] }),
-    );
+    )) as { kind: unknown; messages: unknown };
     // 无服务器时返回原始 decision（不注入）
     expect(result.kind === "enter" || Array.isArray(result.messages)).toBeTruthy();
   });
@@ -112,10 +118,11 @@ describe("apply 的 agent/pre-step 监听（announceCatalog=true）", () => {
     const refs = await applyWithPreStep();
     const normalSignal = { aborted: false, throwIfAborted: () => {} };
     // reject 不处理
-    const rejectResult = await refs.preStepHandler(
+    // pre-step 已注册由首用例保证（同一装配器），此处非空。
+    const rejectResult = (await refs.preStepHandler!(
       { agent: { session: { header: { cwd: "/tmp" } } }, messages: [], signal: normalSignal },
       async () => ({ kind: "reject" }),
-    );
+    )) as { kind: unknown };
     expect(rejectResult.kind).toBe("reject");
   });
 });
@@ -123,18 +130,21 @@ describe("apply 的 agent/pre-step 监听（announceCatalog=true）", () => {
 describe("apply 的 SSE broadcast 与 route disposer", () => {
   async function applyWithSse() {
     const dir = makeTempDir("dsh-mcp-manager-sse-");
-    const destroyed = [];
-    const written = [];
-    const sseConns = new Set();
+    const destroyed: string[] = [];
+    const written: unknown[] = [];
+    const sseConns: Set<{
+      write: (chunk: unknown) => void;
+      destroy: () => void;
+    }> = new Set();
 
     const ctx = baseCtx({
       webServer: {
-        register: (route) => {
+        register: (route: { path: string }) => {
           // 捕获 events 路由
           if (route.path === "/api/dsh-mcp/events") {
             // 注册后模拟 SSE 连接
             sseConns.add({
-              write: (chunk) => written.push(chunk),
+              write: (chunk: unknown) => written.push(chunk),
               destroy: () => destroyed.push("destroyed"),
             });
           }
@@ -143,7 +153,7 @@ describe("apply 的 SSE broadcast 与 route disposer", () => {
       },
     });
 
-    await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });
+    await apply(ctx as unknown as Context, { enabled: true, storePath: join(dir, "mcp.json") });
     return { sseConns, destroyed, written };
   }
 
@@ -163,14 +173,19 @@ describe("apply 的 SSE broadcast 与 route disposer", () => {
 describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
   async function applyWithSettings() {
     const dir = makeTempDir("dsh-mcp-manager-ui-");
-    const refs = { updateCalled: false, updateNs: null, updatePatch: null, registerCalled: false };
+    const refs: {
+      updateCalled: boolean;
+      updateNs: unknown;
+      updatePatch: unknown;
+      registerCalled: boolean;
+    } = { updateCalled: false, updateNs: null, updatePatch: null, registerCalled: false };
 
     const ctx = baseCtx({
-      inject: (keys, cb) => {
+      inject: (keys: unknown, cb: (services: unknown) => void) => {
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings: {
-              update: function (ns, patch) {
+              update: function (ns: unknown, patch: unknown) {
                 refs.updateCalled = true;
                 refs.updateNs = ns;
                 refs.updatePatch = patch;
@@ -193,7 +208,7 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
       },
     });
 
-    await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });
+    await apply(ctx as unknown as Context, { enabled: true, storePath: join(dir, "mcp.json") });
     return refs;
   }
 
@@ -214,15 +229,19 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
 describe("apply 的 agent/pre-step 监听（announceCatalog=false）", () => {
   it("announceCatalog=false 不注册 pre-step 监听", async () => {
     const dir = makeTempDir("dsh-mcp-manager-Nc-");
-    let preStepHandler = null;
+    let preStepHandler: null | ((...args: unknown[]) => unknown) = null;
     const ctx = baseCtx({
-      on: (event, handler) => {
-        if (event === "agent/pre-step") preStepHandler = handler;
+      on: (evt: string, handler: (...args: unknown[]) => void) => {
+        if (evt === "agent/pre-step") preStepHandler = handler;
         return () => {};
       },
     });
 
-    await apply(ctx, { enabled: true, announceCatalog: false, storePath: join(dir, "mcp.json") });
+    await apply(ctx as unknown as Context, {
+      enabled: true,
+      announceCatalog: false,
+      storePath: join(dir, "mcp.json"),
+    });
     expect(preStepHandler).toBeNull();
   });
 });
@@ -230,19 +249,22 @@ describe("apply 的 agent/pre-step 监听（announceCatalog=false）", () => {
 describe("apply 的 route disposer（SSE 连接清理）", () => {
   async function applyWithRouteDisposer() {
     const dir = makeTempDir("dsh-mcp-manager-rd-");
-    const refs = { disposeRoutes: null, eventsRouteRegistered: false };
-    const sseDestroyed = [];
+    const refs: { disposeRoutes: null | (() => void); eventsRouteRegistered: boolean } = {
+      disposeRoutes: null,
+      eventsRouteRegistered: false,
+    };
+    const sseDestroyed: string[] = [];
 
     const ctx = baseCtx({
       webServer: {
-        register: (route) => {
+        register: (route: { path: string }) => {
           if (route.path === "/api/dsh-mcp/events") {
             refs.eventsRouteRegistered = true;
           }
           return () => {};
         },
       },
-      effect: (fn) => {
+      effect: (fn: () => () => void) => {
         const disposer = fn();
         refs.disposeRoutes = () => {
           // 手动触发 disposer（模拟上下文卸载）
@@ -252,7 +274,7 @@ describe("apply 的 route disposer（SSE 连接清理）", () => {
       },
     });
 
-    await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });
+    await apply(ctx as unknown as Context, { enabled: true, storePath: join(dir, "mcp.json") });
     return { refs, sseDestroyed };
   }
 
@@ -270,7 +292,8 @@ describe("apply 的 route disposer（SSE 连接清理）", () => {
 
   it("卸载 disposer 执行不抛", async () => {
     const { refs } = await applyWithRouteDisposer();
-    expect(() => refs.disposeRoutes()).not.toThrow();
+    // apply 装配期 effect 必走，非空由用例流保证。
+    expect(() => refs.disposeRoutes!()).not.toThrow();
   });
 });
 
@@ -283,17 +306,17 @@ describe("D8：mcp__ 直呼命中禁用表 → deny", () => {
     const dir = makeTempDir("dsh-mcp-manager-d8-");
     const prevHome = process.env.DSH_HOME;
     process.env.DSH_HOME = dir;
-    const guards = new Map();
+    const guards = new Map<string, (...args: unknown[]) => unknown>();
     const ctx = baseCtx({
-      on: (event, handler) => {
-        guards.set(event, handler);
+      on: (evt: string, handler: (...args: unknown[]) => void) => {
+        guards.set(evt, handler);
         return () => {};
       },
     });
     // 预置工具级禁用表（manager.userStatePath = DSH_HOME/dsh-mcp-user-state.json）。
     const disabled = new Map([["@global", new Map([["svc", new Set(["use_t"])]])]]);
     await saveDisabledTools(join(dir, "dsh-mcp-user-state.json"), disabled);
-    await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });
+    await apply(ctx as unknown as Context, { enabled: true, storePath: join(dir, "mcp.json") });
     const restore = () => {
       if (prevHome === undefined) delete process.env.DSH_HOME;
       else process.env.DSH_HOME = prevHome;
@@ -314,11 +337,12 @@ describe("D8：mcp__ 直呼命中禁用表 → deny", () => {
   it("D8：mcp__ 直呼命中禁用表 → deny", async () => {
     const { guards, restore } = await applyOffModeWithDisabledTool();
     try {
-      const guard = guards.get("tools/pre-execute");
-      const decision = await guard(
+      // guard 已挂载由上一用例保证（同一装配器），此处非空。
+      const guard = guards.get("tools/pre-execute")!;
+      const decision = (await guard(
         { name: "mcp__svc__use_t", agent: { session: { header: {} } } },
         async () => ({ kind: "allow" }),
-      );
+      )) as { kind: unknown };
       expect(decision.kind).toBe("deny");
     } finally {
       restore();
@@ -336,14 +360,14 @@ describe("组合根接线：装载生命周期域（#767 S1-4c）", () => {
    * API，注册面是六态投影唯一能观测「已连上」的输入面（设计 §3.1 输入面 B）。
    */
   function wiringCtx() {
-    const mounts = [];
-    const disposers = [];
+    const mounts: Array<{ mod: unknown; config: { serverName: string } }> = [];
+    const disposers: Array<() => unknown> = [];
     const ctx = baseCtx({
-      get: (name) =>
+      get: (name: string) =>
         name === "loader"
           ? { import: async () => ({ name: "mcp-client", apply: () => {} }) }
           : undefined,
-      plugin: (mod, config) => {
+      plugin: (mod: unknown, config: { serverName: string }) => {
         mounts.push({ mod, config });
         return { await: async () => {}, dispose: async () => {} };
       },
@@ -354,7 +378,7 @@ describe("组合根接线：装载生命周期域（#767 S1-4c）", () => {
             ? []
             : [{ name: `mcp__${mounts[mounts.length - 1].config.serverName}__echo` }],
       },
-      effect: (fn) => {
+      effect: (fn: () => () => void) => {
         const inner = fn();
         disposers.push(inner);
         return () => {
@@ -365,18 +389,18 @@ describe("组合根接线：装载生命周期域（#767 S1-4c）", () => {
     return { ctx, mounts, disposers };
   }
 
-  const server = { name: "svc", transport: "stdio", command: "echo", enabled: true };
+  const server = { name: "svc", transport: "stdio" as const, command: "echo", enabled: true };
 
   it("apply 之后域已装配：mountServer 经宿主 loader 装载，id 进账本、状态投影到 connected", async () => {
     const dir = makeTempDir("dsh-mcp-manager-wire-");
     const { ctx, mounts } = wiringCtx();
-    await apply(ctx, { enabled: false, storePath: join(dir, "mcp.json") });
+    await apply(ctx as unknown as Context, { enabled: false, storePath: join(dir, "mcp.json") });
 
-    const states = [];
+    const states: string[] = [];
     const result = await mountServer({
       root: "/tmp/proj",
       server,
-      onState: (state) => states.push(state),
+      onState: (state: string) => states.push(state),
     });
 
     expect(result.outcome).toMatchObject({ kind: "settled", state: "connected" });
@@ -390,7 +414,7 @@ describe("组合根接线：装载生命周期域（#767 S1-4c）", () => {
   it("跨 root 同名各自成条：两个 root 都拿到独立注册名（不再是后到跳过）", async () => {
     const dir = makeTempDir("dsh-mcp-manager-wire-");
     const { ctx, mounts } = wiringCtx();
-    await apply(ctx, { enabled: false, storePath: join(dir, "mcp.json") });
+    await apply(ctx as unknown as Context, { enabled: false, storePath: join(dir, "mcp.json") });
 
     const a = await mountServer({ root: "/tmp/proj-a", server, onState: () => {} });
     const b = await mountServer({ root: "/tmp/proj-b", server, onState: () => {} });
@@ -403,7 +427,7 @@ describe("组合根接线：装载生命周期域（#767 S1-4c）", () => {
   it("卸载后域被复位：mountServer 报未装配（组合根漏装即抛，不静默空装）", async () => {
     const dir = makeTempDir("dsh-mcp-manager-wire-");
     const { ctx, disposers } = wiringCtx();
-    await apply(ctx, { enabled: false, storePath: join(dir, "mcp.json") });
+    await apply(ctx as unknown as Context, { enabled: false, storePath: join(dir, "mcp.json") });
     for (const dispose of disposers) await dispose();
 
     await expect(mountServer({ root: "/tmp/proj", server, onState: () => {} })).rejects.toThrow(

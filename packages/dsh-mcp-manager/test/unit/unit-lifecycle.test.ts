@@ -33,8 +33,8 @@ const OFFICIAL_MODULE: OfficialPluginModule = { name: "test:official", apply: ()
 /**
  * 装配本域：loader 用假件，pipeline 用真 withTimeout（窗口的被测对象在句柄等待本身）。
  *
- * 假件要经 `as unknown as LoaderPort` 收窄：helpers.ts 是 @ts-nocheck 的 JS 风格夹具，其 ready
- * 推断为 `Promise<unknown>`（deferred/never/immediate 三支的并集），与 `Promise<void>` 不相容，
+ * 假件要经 `as unknown as LoaderPort` 收窄：helpers.ts 是结构形状夹具（S6 起带类型标注），其
+ * ready 为 `Promise<unknown>`（deferred/never/immediate 三支的并集），与 `Promise<void>` 不相容，
  * 而这不是本片要修的问题——夹具的真实形状由集成探针按 `bindHost` 交付面单独验。
  */
 function install(loader: LoaderPort): void {

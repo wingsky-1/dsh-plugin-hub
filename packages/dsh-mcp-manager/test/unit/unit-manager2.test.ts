@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-mcp-manager — unit：McpManager 方法面 / normalize 家族 / apply 配置分支。
  *
@@ -35,6 +34,17 @@ import {
   fakeToolsService,
   pollUntil,
 } from "../helpers.ts";
+import type { FakeLoaderScript, FakeToolEntry } from "../helpers.ts";
+import type { Context } from "@deepseek-ai/cordis";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { McpManager as McpManagerType } from "../../src/server/connection/orchestrator/interface.ts";
+import type { LoaderPort, LogsPort } from "../../src/server/shared/interface.ts";
+import type { ServerConfig } from "../../src/server/config/interface.ts";
+import type { ToolsRegistryPort } from "../../src/server/servers/lifecycle/deps.ts";
+import type { ProjectUnit } from "../../src/server/connection/runtime/interface.ts";
+import type { ConnectionEntry } from "../../src/server/connection/runtime/interface.ts";
+import type { ToolDefinition, ToolRunContext } from "@deepseek-ai/dsh-tools";
+import type { McpManagerService } from "../../src/shared/interface.ts";
 import { expandServerEnv } from "../../src/server/config/impl/env/index.ts";
 import { withTimeout } from "../../src/server/pipeline/impl/timeout/index.ts";
 import { OFFICIAL_MCP_CLIENT_SPECIFIER } from "../../src/server/shared/interface.ts";
@@ -71,17 +81,17 @@ const {
 } = await import("../../src/index.ts");
 
 // 临时目录 / manager / timer 收口：用例结束后统一清理，防产物与句柄泄漏。
-let tempDirs = [];
-let trackedManagers = [];
-let trackedTimers = [];
+let tempDirs: string[] = [];
+let trackedManagers: McpManagerType[] = [];
+let trackedTimers: Array<ReturnType<typeof setTimeout>> = [];
 
-function makeTempDir(prefix) {
+function makeTempDir(prefix: string) {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   tempDirs.push(dir);
   return dir;
 }
 
-function trackManager(manager) {
+function trackManager(manager: McpManagerType) {
   trackedManagers.push(manager);
   return manager;
 }
@@ -118,10 +128,10 @@ afterEach(async () => {
 
 /** 假 id 表：按 (scope, name) 稳定返回并自增（mirror unit-lifecycle-mount.test.ts 的同名夹具）。 */
 function fakeIdTable() {
-  const byKey = new Map();
+  const byKey = new Map<string, string>();
   let seq = 0;
   return {
-    idFor(scope, name) {
+    idFor(scope: string, name: string) {
       const key = scope + "\u0000" + name;
       let id = byKey.get(key);
       if (id === undefined) {
@@ -138,9 +148,9 @@ function fakeIdTable() {
 const OFFICIAL_MODULE = { name: "test:official", apply: () => {} };
 
 /** 装载 ready 时序由用例改这里的 ready（fakeLoaderPort 在每次 mount 时现读）。 */
-let loaderScript;
-let poolLoader;
-let poolToolsView = () => [];
+let loaderScript: FakeLoaderScript;
+let poolLoader: ReturnType<typeof fakeLoaderPort> | undefined;
+let poolToolsView: () => FakeToolEntry[] = () => [];
 let lifecycleInstalled = false;
 
 /** 装配池装载链路（幂等：一个用例里建多个 manager 只装一次，afterEach 统一释放）。 */
@@ -151,22 +161,73 @@ function installPoolLifecycle() {
     ready: "immediate",
   };
   poolLoader = fakeLoaderPort(loaderScript);
+  // 结构形状假件（只实现装载链触达的面）：按本文件既有接缝收窄为端口面。
   installLifecycle({
-    loader: poolLoader,
+    loader: poolLoader as unknown as LoaderPort,
     pipeline: { withTimeout },
     workspace: fakeIdTable(),
     config: { expandServerEnv },
     tools: {
       // 委托到「当前 manager 的工具服务」：装载窗口的 hasTools 必须与用例看见的注册面同一份。
       schemas: () => poolToolsView(),
-    },
-    logs: fakeLogsPort(),
+    } as unknown as ToolsRegistryPort,
+    logs: fakeLogsPort() as unknown as LogsPort,
   });
   lifecycleInstalled = true;
 }
 
+/**
+ * summary 诊断投影面（Record 形态）：测试读取 servers/counts/cwd，不断言完整类型。
+ * 键集事实源是 api 健康/摘要写出口（R6 逐字断言另有其处），此处只给读面。
+ */
+function summaryView(manager: McpManagerType): {
+  servers: Array<{
+    name: string;
+    status?: unknown;
+    scope?: unknown;
+    tools?: Array<{ tool: string }>;
+  }>;
+  counts: { connected: number; disabled: number };
+  cwd: unknown;
+} {
+  return manager.summary() as unknown as {
+    servers: Array<{
+      name: string;
+      status?: unknown;
+      scope?: unknown;
+      tools?: Array<{ tool: string }>;
+    }>;
+    counts: { connected: number; disabled: number };
+    cwd: unknown;
+  };
+}
+
+/**
+ * summarize 单条投影面（Record 形态）：测试读取 status/tools/error/scope，不断言完整类型。
+ * 单条恒含 status（投影必落状态，无状态即 stopped 兜底）；tools 恒为数组。
+ */
+function summarizeOf(
+  manager: McpManagerType,
+  server: ServerConfig,
+  scope: string,
+): {
+  status: unknown;
+  tools: string[];
+  error: unknown;
+  scope: unknown;
+  disabledTools?: string[];
+} {
+  return manager.summarize(server, scope) as unknown as {
+    status: unknown;
+    tools: string[];
+    error: unknown;
+    scope: unknown;
+    disabledTools?: string[];
+  };
+}
+
 /** 在独立沙箱目录内执行（DSH_HOME 原值恢复，目录删除）。 */
-async function inRootSandbox(body) {
+async function inRootSandbox(body: (dir: string) => unknown) {
   const prevHome = process.env.DSH_HOME;
   const dir = makeTempDir("dsh-mcp-root-");
   try {
@@ -256,7 +317,8 @@ describe("normalizeServer", () => {
   });
 
   it("缺省 toolCallTimeoutMs 为正", () => {
-    expect(bare().toolCallTimeoutMs > 0).toBeTruthy();
+    // normalizeServer 恒补齐默认超时（被测契约），此处断言存在。
+    expect(bare().toolCallTimeoutMs! > 0).toBeTruthy();
   });
 
   it("缺省 reconnect 为空对象", () => {
@@ -325,7 +387,7 @@ describe("normalizeServer", () => {
       command: "x",
       toolCallTimeoutMs: bad,
     });
-    expect(s.toolCallTimeoutMs > 0).toBe(true);
+    expect(s.toolCallTimeoutMs! > 0).toBe(true);
   });
 
   it.each([0, -5, Number.NaN])("timeout 非法值 %s 回退为有限数", (bad) => {
@@ -534,8 +596,8 @@ describe("normalizeUiConfig / buildConfigUiPatch / panel 定位", () => {
 
 describe("findProjectRoot", () => {
   /** 沙箱顶棚：dir/.git 必先命中，防止向上逸出到真实仓库/真实家目录。 */
-  async function withSandbox(body) {
-    return inRootSandbox(async (dir) => {
+  async function withSandbox(body: (dir: string, fakeHome: string) => unknown) {
+    return inRootSandbox(async (dir: string) => {
       mkdirSync(join(dir, ".git"), { recursive: true });
       const fakeHome = join(dir, "fake-home");
       mkdirSync(join(fakeHome, ".dsh"), { recursive: true });
@@ -545,7 +607,7 @@ describe("findProjectRoot", () => {
   }
 
   it(".git 标记命中", async () => {
-    await withSandbox(async (dir) => {
+    await withSandbox(async (dir: string) => {
       const gitProj = join(dir, "git-proj");
       mkdirSync(join(gitProj, ".git"), { recursive: true });
       expect(await findProjectRoot(gitProj)).toBe(gitProj);
@@ -553,7 +615,7 @@ describe("findProjectRoot", () => {
   });
 
   it(".mcp.json 标记命中", async () => {
-    await withSandbox(async (dir) => {
+    await withSandbox(async (dir: string) => {
       const mcpProj = join(dir, "mcp-proj");
       mkdirSync(mcpProj, { recursive: true });
       writeFileSync(join(mcpProj, ".mcp.json"), "{}");
@@ -562,7 +624,7 @@ describe("findProjectRoot", () => {
   });
 
   it(".dsh 非 home 标记命中", async () => {
-    await withSandbox(async (dir) => {
+    await withSandbox(async (dir: string) => {
       const dshProj = join(dir, "dsh-proj");
       mkdirSync(join(dshProj, ".dsh"), { recursive: true });
       expect(await findProjectRoot(dshProj)).toBe(dshProj);
@@ -572,7 +634,7 @@ describe("findProjectRoot", () => {
   it("全局家不算项目标记", async () => {
     // 全局家排除：模拟 ~ 下含 .dsh（= DSH_HOME），其子目录向上命中家级 .dsh 应跳过，
     // 继续向上命中顶棚 dir/.git（若误判家级 .dsh 为项目标记则返回 fake-user-home）。
-    await withSandbox(async (dir) => {
+    await withSandbox(async (dir: string) => {
       const fakeUserHome = join(dir, "fake-user-home");
       const fakeDshHome = join(fakeUserHome, ".dsh");
       mkdirSync(fakeDshHome, { recursive: true });
@@ -585,7 +647,7 @@ describe("findProjectRoot", () => {
 
   it("家目录自身不算项目标记", async () => {
     // cwd 恰为家目录本身：家级 .dsh 不算自身标记 → 越过它命中顶棚。
-    await withSandbox(async (dir) => {
+    await withSandbox(async (dir: string) => {
       const fakeUserHome = join(dir, "fake-user-home");
       const fakeDshHome = join(fakeUserHome, ".dsh");
       mkdirSync(fakeDshHome, { recursive: true });
@@ -595,7 +657,7 @@ describe("findProjectRoot", () => {
   });
 
   it("无标记普通目录向上命中顶棚", async () => {
-    await withSandbox(async (dir) => {
+    await withSandbox(async (dir: string) => {
       const plain = join(dir, "plain");
       mkdirSync(plain, { recursive: true });
       expect(await findProjectRoot(plain)).toBe(dir);
@@ -604,7 +666,7 @@ describe("findProjectRoot", () => {
 
   it("16 级窗口内无标记 → 回落 cwd", async () => {
     // 回落 cwd：输入嵌套 16 级，向上窗口（16 层）不出沙箱、够不到任何标记 → 原样返回。
-    await withSandbox(async (dir) => {
+    await withSandbox(async (dir: string) => {
       let deep = dir;
       for (let i = 0; i < 16; i += 1) deep = join(deep, `d${i}`);
       mkdirSync(deep, { recursive: true });
@@ -626,8 +688,8 @@ describe("findProjectRoot", () => {
 // 缺口二（R6）：/health 的顶层 payload 键集全仓零处断言，且既有 health 夹具是手工塞 map。
 // 两条都走真链路：真 McpManager + 真 lifecycle + 假 loader（不 spawn 子进程，全离线）。
 describe("#767 S1-5b：装载路径的 catalogCache 与 /health 口径", () => {
-  let prevHome;
-  let homeDir;
+  let prevHome: string | undefined;
+  let homeDir: string;
   beforeEach(() => {
     prevHome = process.env.DSH_HOME;
     homeDir = makeTempDir("dsh-mcp-mgr2ld-");
@@ -639,26 +701,27 @@ describe("#767 S1-5b：装载路径的 catalogCache 与 /health 口径", () => {
   });
 
   /** health 路由的最小请求面：只给 isLoopbackRequest + guardLoopbackMethod 要的字段。 */
-  function healthReq() {
+  // 最小请求面（只给路由实际读取的字段）：按接缝收窄。
+  function healthReq(): IncomingMessage {
     return {
       method: "GET",
       url: ROUTES.health,
       socket: { remoteAddress: "127.0.0.1" },
       headers: { host: "localhost:3080" },
-    };
+    } as unknown as IncomingMessage;
   }
 
-  function healthRes() {
-    const state = { status: 0, body: "" };
+  function healthRes(): ServerResponse & { state: { status: number; body: string } } {
+    const state: { status: number; body: string } = { status: 0, body: "" };
     return {
       state,
-      writeHead(status) {
+      writeHead(status: number) {
         state.status = status;
       },
-      end(body) {
+      end(body: string) {
         state.body = body;
       },
-    };
+    } as unknown as ServerResponse & { state: { status: number; body: string } };
   }
 
   /** 装一台全局服务器：经 lifecycle 真装载挂载，id 由假 id 表分配（单池：落 @global 单元）。 */
@@ -708,24 +771,33 @@ describe("#767 S1-5b：装载路径的 catalogCache 与 /health 口径", () => {
 
 // manager 工厂 ----
 
-function makeManager(dir, poolTools = []) {
-  const log = { registered: [], disposed: [], info: [], warn: [], error: [], catalog: [] };
+function makeManager(dir: string, poolTools: FakeToolEntry[] = []) {
+  const log: {
+    registered: unknown[];
+    disposed: unknown[];
+    info: string[];
+    warn: string[];
+    error: string[];
+    catalog: unknown[];
+  } = { registered: [], disposed: [], info: [], warn: [], error: [], catalog: [] };
   const store = new McpStore(join(dir, "global.json"));
   store.data = { version: 1, servers: [] };
+  // 最小假宿主上下文（构造器只读 ctx.logger；日志面保留可断言的收集）：按既有接缝收窄。
   const manager = new McpManager(
     {
       logger: {
-        info: (m) => log.info.push(m),
-        warn: (m) => log.warn.push(m),
-        error: (m) => log.error.push(m),
+        info: (m: string) => log.info.push(m),
+        warn: (m: string) => log.warn.push(m),
+        error: (m: string) => log.error.push(m),
       },
-    },
+    } as unknown as Context,
     store,
   );
   // 工具服务面（register + schemas）与生命周期域共用同一份：池的六态投影读注册面前缀，
   // 装载窗口的 hasTools 也必须读同一份，否则「已连上」的两处判据会分裂。
   const tools = fakeToolsService({ schemas: poolTools });
-  manager.ctx.tools = tools;
+  // 同一份工具服务挂回顾问：池投影与装载窗口读同一注册面（判据分裂防线），类型面按接缝收窄。
+  manager.ctx.tools = tools as unknown as Context["tools"];
   log.registered = tools.registered;
   log.disposed = tools.disposed;
   poolToolsView = () => tools.schemas();
@@ -733,7 +805,7 @@ function makeManager(dir, poolTools = []) {
   return { manager: trackManager(manager), store, log };
 }
 
-const quietServer = (name, extra = {}) => ({
+const quietServer = (name: string, extra: Record<string, unknown> = {}) => ({
   name,
   transport: "stdio",
   command: "dsh-noop-cmd",
@@ -766,16 +838,22 @@ describe("uiConfig / updateUiConfig / 目录缓存", () => {
 
   function writableFixture() {
     const fixture = managerFixture();
-    let captured;
+    let captured: unknown;
     fixture.manager.uiUpdate = async (patch) => {
       captured = patch;
+      // ui 形态由调用方保证（本用例传入完整 ui 面），此处按测试前置收窄。
+      const ui = patch.ui as {
+        position: unknown;
+        offset: { x: unknown; y: unknown; blankY: unknown };
+        zIndexBase: unknown;
+      };
       // 模拟 settings 落盘后 setSource 更新（apply 内 installSettingsNamespace 行为）。
       fixture.manager.uiConfigSource = () => ({
-        position: patch.ui.position,
-        offsetX: patch.ui.offset.x,
-        offsetY: patch.ui.offset.y,
-        blankY: patch.ui.offset.blankY,
-        zIndexBase: patch.ui.zIndexBase,
+        position: ui.position,
+        offsetX: ui.offset.x,
+        offsetY: ui.offset.y,
+        blankY: ui.offset.blankY,
+        zIndexBase: ui.zIndexBase,
       });
     };
     return { ...fixture, captured: () => captured };
@@ -842,7 +920,8 @@ describe("uiConfig / updateUiConfig / 目录缓存", () => {
     const { manager, dir } = managerFixture();
     manager.catalogCachePath = join(dir, "cache.json");
     await manager.recordCatalogTools("srv", new Map([["t1", { description: "desc-a" }]]));
-    expect(manager.catalogCache.get("srv").summary).toBe("desc-a");
+    // recordCatalogTools 刚写入该键，此处断言存在。
+    expect(manager.catalogCache.get("srv")!.summary).toBe("desc-a");
   });
 
   it("摘要变化落盘", async () => {
@@ -852,7 +931,7 @@ describe("uiConfig / updateUiConfig / 目录缓存", () => {
     expect(existsSync(manager.catalogCachePath)).toBeTruthy();
   });
 
-  function statSafe(p) {
+  function statSafe(p: string) {
     try {
       return statSync(p).mtimeMs;
     } catch {
@@ -874,7 +953,7 @@ describe("uiConfig / updateUiConfig / 目录缓存", () => {
     manager.catalogCachePath = join(dir, "cache.json");
     await manager.recordCatalogTools("srv", new Map([["t1", { description: "desc-b" }]]));
     await manager.recordCatalogTools("srv", new Map([["t1", { description: "   " }]]));
-    expect(manager.catalogCache.get("srv").summary).toBe("desc-b");
+    expect(manager.catalogCache.get("srv")!.summary).toBe("desc-b");
   });
 
   it("写入失败触发 logger.warn", async () => {
@@ -915,30 +994,32 @@ describe("onStatus 订阅注销", () => {
 // reconcileServers：增删/scope 切换/禁用/busy 重入 ----
 describe("reconcileServers", () => {
   /** 触达一台全局服务器并等它进 @global 单元（单池后唯一账本是单元表）。 */
-  async function withGlobalServer(name, extra = {}) {
+  async function withGlobalServer(name: string, extra: Record<string, unknown> = {}) {
     const fixture = managerFixture("dsh-mcp-mgr2c-");
     await fixture.manager.initMiddleware();
     fixture.store.upsert(normalizeServer(quietServer(name, extra)));
     fixture.manager.reconcileServers();
-    await pollUntil(`${name} 进 @global 单元`, () =>
-      fixture.manager.middleware.units.get("@global")?.connections.has(name),
+    await pollUntil(
+      `${name} 进 @global 单元`,
+      () => fixture.manager.middleware!.units.get("@global")?.connections.has(name) ?? false,
     );
     return fixture;
   }
 
   it("首次同步把新服务器触达进池（@global 单元）", async () => {
     const { manager } = await withGlobalServer("g-one");
-    expect(manager.middleware.units.get("@global").connections.has("g-one")).toBe(true);
+    expect(manager.middleware!.units.get("@global")!.connections.has("g-one")).toBe(true);
   });
 
   it("池内只有一条（单元表条目数）", async () => {
     const { manager } = await withGlobalServer("g-one");
-    expect(manager.middleware.units.get("@global").connections.size).toBe(1);
+    expect(manager.middleware!.units.get("@global")!.connections.size).toBe(1);
   });
 
   it("池内条目带自己的 server 配置（单元 = 唯一事实源）", async () => {
     const { manager } = await withGlobalServer("g-one");
-    expect(manager.middleware.units.get("@global").connections.get("g-one").server.name).toBe(
+    // 刚触达的条目恒存在，此处断言存在。
+    expect(manager.middleware!.units.get("@global")!.connections.get("g-one")!.server.name).toBe(
       "g-one",
     );
   });
@@ -967,14 +1048,14 @@ describe("reconcileServers", () => {
     fixture.manager.reconcileServers();
     await pollUntil(
       "两台都进 @global 单元",
-      () => fixture.manager.middleware.units.get("@global")?.connections.size === 2,
+      () => fixture.manager.middleware!.units.get("@global")?.connections.size === 2,
     );
     return fixture;
   }
 
   it("g-off 进池后条目存在", async () => {
     const { manager } = await withTwoServers();
-    expect(manager.middleware.units.get("@global").connections.has("g-off")).toBeTruthy();
+    expect(manager.middleware!.units.get("@global")!.connections.has("g-off")).toBeTruthy();
   });
 
   it("禁用已运行服务器报变更（释放一条池连接）", async () => {
@@ -987,8 +1068,8 @@ describe("reconcileServers", () => {
     const { manager, store } = await withTwoServers();
     store.upsert(normalizeServer(quietServer("g-off", { enabled: false })));
     manager.reconcileServers();
-    expect(manager.middleware.units.get("@global").connections.has("g-off")).toBe(false);
-    expect(manager.middleware.units.get("@global").connections.has("g-one")).toBe(true);
+    expect(manager.middleware!.units.get("@global")!.connections.has("g-off")).toBe(false);
+    expect(manager.middleware!.units.get("@global")!.connections.has("g-one")).toBe(true);
   });
 
   it("未运行的禁用项无变更", async () => {
@@ -1004,7 +1085,7 @@ describe("reconcileServers", () => {
     store.remove("g-one");
     store.remove("g-off");
     manager.reconcileServers();
-    expect(manager.middleware.units.get("@global").connections.size).toBe(0);
+    expect(manager.middleware!.units.get("@global")!.connections.size).toBe(0);
   });
 
   /** 全局 + 当前项目级各一台同名服务器（同名跨 root 是本笔的键形状判据）。 */
@@ -1012,7 +1093,8 @@ describe("reconcileServers", () => {
     const { dir, manager, store, log } = managerFixture("dsh-mcp-mgr2c-");
     store.upsert(normalizeServer(quietServer("both")));
     manager.projectStore = new McpStore(join(dir, "proj.json"));
-    manager.projectStore.data.servers.push(
+    // 上一行刚赋值，此处断言存在。
+    manager.projectStore!.data.servers.push(
       normalizeServer({ ...quietServer("both"), command: "other" }),
     );
     manager.projectStores.set(dir, manager.projectStore);
@@ -1021,8 +1103,8 @@ describe("reconcileServers", () => {
     manager.reconcileServers();
     await pollUntil("两个 root 各有一条 both", () => {
       return (
-        manager.middleware.units.get("@global")?.connections.has("both") === true &&
-        manager.middleware.units.get(dir)?.connections.has("both") === true
+        manager.middleware!.units.get("@global")?.connections.has("both") === true &&
+        manager.middleware!.units.get(dir)?.connections.has("both") === true
       );
     });
     return { manager, store, dir, log };
@@ -1030,14 +1112,14 @@ describe("reconcileServers", () => {
 
   it("同名跨 root 各成一条（不再被全局顶掉）", async () => {
     const { manager, dir } = await withScopeDuplicate();
-    expect(manager.middleware.units.get("@global").connections.has("both")).toBe(true);
-    expect(manager.middleware.units.get(dir).connections.has("both")).toBe(true);
+    expect(manager.middleware!.units.get("@global")!.connections.has("both")).toBe(true);
+    expect(manager.middleware!.units.get(dir)!.connections.has("both")).toBe(true);
   });
 
   it("同名跨 root 各拿独立注册名（id 不同）", async () => {
     const { manager, dir } = await withScopeDuplicate();
-    const globalEntry = manager.middleware.units.get("@global").connections.get("both");
-    const projectEntry = manager.middleware.units.get(dir).connections.get("both");
+    const globalEntry = manager.middleware!.units.get("@global")!.connections.get("both")!;
+    const projectEntry = manager.middleware!.units.get(dir)!.connections.get("both")!;
     expect(globalEntry.id).not.toBe(projectEntry.id);
   });
 
@@ -1045,12 +1127,13 @@ describe("reconcileServers", () => {
     const { manager, store, dir } = await withScopeDuplicate();
     // 项目 store 里那条改成 disabled → 只有项目单元的条目该被释放。
     store.upsert(normalizeServer(quietServer("both")));
-    manager.projectStore.data.servers = [
+    // 项目 store 由 withScopeDuplicate 装配，此处断言存在。
+    manager.projectStore!.data.servers = [
       normalizeServer({ ...quietServer("both"), command: "other", enabled: false }),
     ];
     manager.reconcileServers();
-    expect(manager.middleware.units.get(dir).connections.has("both")).toBe(false);
-    expect(manager.middleware.units.get("@global").connections.has("both")).toBe(true);
+    expect(manager.middleware!.units.get(dir)!.connections.has("both")).toBe(false);
+    expect(manager.middleware!.units.get("@global")!.connections.has("both")).toBe(true);
   });
 });
 
@@ -1066,7 +1149,7 @@ describe("start / stop / startAll 边界", () => {
     const { manager } = managerFixture("dsh-mcp-mgr2d-");
     await manager.initMiddleware();
     manager.start("any", "project");
-    expect(manager.middleware.units.size, "无项目 root → 不建单元").toBe(0);
+    expect(manager.middleware!.units.size, "无项目 root → 不建单元").toBe(0);
   });
 
   it("startAll 把 svc 触达进池（@global 单元）", async () => {
@@ -1074,10 +1157,11 @@ describe("start / stop / startAll 边界", () => {
     await manager.initMiddleware();
     store.upsert(normalizeServer(quietServer("svc")));
     manager.startAll();
-    await pollUntil("svc 进 @global 单元", () =>
-      manager.middleware.units.get("@global")?.connections.has("svc"),
+    await pollUntil(
+      "svc 进 @global 单元",
+      () => manager.middleware!.units.get("@global")?.connections.has("svc") ?? false,
     );
-    expect(manager.middleware.units.get("@global").connections.has("svc")).toBe(true);
+    expect(manager.middleware!.units.get("@global")!.connections.has("svc")).toBe(true);
   });
 
   it("已有连接不重建（重复 start 不换代际）", async () => {
@@ -1085,12 +1169,13 @@ describe("start / stop / startAll 边界", () => {
     await manager.initMiddleware();
     store.upsert(normalizeServer(quietServer("svc")));
     manager.startAll();
-    await pollUntil("svc 进 @global 单元", () =>
-      manager.middleware.units.get("@global")?.connections.has("svc"),
+    await pollUntil(
+      "svc 进 @global 单元",
+      () => manager.middleware!.units.get("@global")?.connections.has("svc") ?? false,
     );
-    const existing = manager.middleware.units.get("@global").connections.get("svc");
+    const existing = manager.middleware!.units.get("@global")!.connections.get("svc");
     manager.start("svc");
-    expect(manager.middleware.units.get("@global").connections.get("svc")).toBe(existing);
+    expect(manager.middleware!.units.get("@global")!.connections.get("svc")).toBe(existing);
   });
 
   it("无中间层实例时 start 打 warn 且不建连接", () => {
@@ -1121,12 +1206,12 @@ describe("start / stop / startAll 边界", () => {
     manager.start("svc", "project");
     await pollUntil("两个单元各有一条 svc", () => {
       return (
-        manager.middleware.units.get("@global")?.connections.has("svc") === true &&
-        manager.middleware.units.get(dir)?.connections.has("svc") === true
+        manager.middleware!.units.get("@global")?.connections.has("svc") === true &&
+        manager.middleware!.units.get(dir)?.connections.has("svc") === true
       );
     });
-    expect(manager.middleware.units.get("@global").connections.has("svc")).toBe(true);
-    expect(manager.middleware.units.get(dir).connections.has("svc")).toBe(true);
+    expect(manager.middleware!.units.get("@global")!.connections.has("svc")).toBe(true);
+    expect(manager.middleware!.units.get(dir)!.connections.has("svc")).toBe(true);
   });
 
   it("同名跨 root：不再打 already registered in scope", async () => {
@@ -1144,10 +1229,11 @@ describe("start / stop / startAll 边界", () => {
     manager.startAll();
     store.upsert(normalizeServer(quietServer("off", { enabled: false })));
     manager.startAll();
-    await pollUntil("svc 进 @global 单元", () =>
-      manager.middleware.units.get("@global")?.connections.has("svc"),
+    await pollUntil(
+      "svc 进 @global 单元",
+      () => manager.middleware!.units.get("@global")?.connections.has("svc") ?? false,
     );
-    expect(manager.middleware.units.get("@global").connections.has("svc")).toBeTruthy();
+    expect(manager.middleware!.units.get("@global")!.connections.has("svc")).toBeTruthy();
   });
 
   it("禁用不启动", async () => {
@@ -1157,10 +1243,11 @@ describe("start / stop / startAll 边界", () => {
     manager.startAll();
     store.upsert(normalizeServer(quietServer("off", { enabled: false })));
     manager.startAll();
-    await pollUntil("svc 进 @global 单元", () =>
-      manager.middleware.units.get("@global")?.connections.has("svc"),
+    await pollUntil(
+      "svc 进 @global 单元",
+      () => manager.middleware!.units.get("@global")?.connections.has("svc") ?? false,
     );
-    expect(manager.middleware.units.get("@global").connections.has("off")).toBe(false);
+    expect(manager.middleware!.units.get("@global")!.connections.has("off")).toBe(false);
   });
 });
 
@@ -1176,7 +1263,7 @@ describe("connect / disconnect / reconnect（manager 面）", () => {
     await manager.initMiddleware();
     store.upsert(normalizeServer(quietServer("c-one")));
     await manager.connect("c-one");
-    expect(manager.middleware.units.get("@global").connections.has("c-one")).toBeTruthy();
+    expect(manager.middleware!.units.get("@global")!.connections.has("c-one")).toBeTruthy();
   });
 
   it("已连接重复 connect 不增数量（force 受控重建后仍是一条）", async () => {
@@ -1185,14 +1272,18 @@ describe("connect / disconnect / reconnect（manager 面）", () => {
     store.upsert(normalizeServer(quietServer("c-one")));
     await manager.connect("c-one");
     // 已连接跳过：注册面带该 id 前缀 = 「已连上」（官方零状态 API，前缀是唯一正向证据）。
-    const connected = manager.middleware.units.get("@global").connections.get("c-one");
+    // 刚 connect 的条目恒存在，此处断言存在。
+    const connected = manager.middleware!.units.get("@global")!.connections.get("c-one")!;
     connected.id = "id-c-one";
-    manager.ctx.tools.entries = [{ name: "mcp__id-c-one__t" }];
+    // ctx.tools 是工厂挂载的同一份假注册面（makeManager 注释）：此处取其 entries 写口。
+    (manager.ctx.tools as unknown as { entries: FakeToolEntry[] }).entries = [
+      { name: "mcp__id-c-one__t" },
+    ];
     await manager.connect("c-one");
     // 单池后 connect 恒走 force 受控重建（#412：半开卡 connected 也要能恢复），
     // 故条目**换代际**但仍只有一条——重复 connect 不会长出第二条。
-    expect(manager.middleware.units.get("@global").connections.size).toBe(1);
-    expect(manager.middleware.units.get("@global").connections.has("c-one")).toBe(true);
+    expect(manager.middleware!.units.get("@global")!.connections.size).toBe(1);
+    expect(manager.middleware!.units.get("@global")!.connections.has("c-one")).toBe(true);
   });
 
   it("disconnect 未知 no-op / 已知移除", async () => {
@@ -1202,7 +1293,7 @@ describe("connect / disconnect / reconnect（manager 面）", () => {
     await manager.connect("c-one");
     await manager.disconnect("ghost");
     await manager.disconnect("c-one");
-    expect(manager.middleware.units.get("@global").connections.size).toBe(0);
+    expect(manager.middleware!.units.get("@global")!.connections.size).toBe(0);
   });
 
   it("disconnect 落 userDisabled（浮窗断开语义）", async () => {
@@ -1211,7 +1302,7 @@ describe("connect / disconnect / reconnect（manager 面）", () => {
     store.upsert(normalizeServer(quietServer("c-one")));
     await manager.connect("c-one");
     await manager.disconnect("c-one");
-    expect(manager.middleware.units.get("@global").userDisabled.has("c-one")).toBe(true);
+    expect(manager.middleware!.units.get("@global")!.userDisabled.has("c-one")).toBe(true);
   });
 
   it("reconnect 未知抛 not found", async () => {
@@ -1224,20 +1315,21 @@ describe("connect / disconnect / reconnect（manager 面）", () => {
     await manager.initMiddleware();
     store.upsert(normalizeServer(quietServer("c-two")));
     manager.projectStore = new McpStore(join(dir, "p.json"));
-    manager.projectStore.data.servers.push(normalizeServer(quietServer("c-two")));
+    // 上一行刚赋值，此处断言存在。
+    manager.projectStore!.data.servers.push(normalizeServer(quietServer("c-two")));
     manager.projectStores.set(dir, manager.projectStore);
     manager.projectRoot = dir;
     manager.start("c-two", "global");
     // 单池：单元键是 (root, 裸名)，同名跨 scope 各成一条——不再有跨 scope 拒绝。
     await manager.connect("c-two", "project");
-    expect(manager.middleware.units.get(dir).connections.has("c-two")).toBe(true);
+    expect(manager.middleware!.units.get(dir)!.connections.has("c-two")).toBe(true);
   });
 });
 
 // #382 F2/F3/F4/F5：runtime 回退重连 + all 模式池接管 + 防双进程探测重试 ----
 describe("#382 F2：runtime 回退重连", () => {
-  let prevHome;
-  let homeDir;
+  let prevHome: string | undefined;
+  let homeDir: string;
   beforeEach(() => {
     prevHome = process.env.DSH_HOME;
     homeDir = makeTempDir("dsh-mcp-mgr2g-");
@@ -1255,7 +1347,7 @@ describe("#382 F2：runtime 回退重连", () => {
     // 断开后按 runtimeRegistry 配置经 @global 单元复活（单池后唯一连接路径）。
     manager.runtimeRegistry.set("rt", normalizeServer(quietServer("rt")));
     await manager.reconnect("rt");
-    expect(manager.middleware.units.get("@global").connections.has("rt")).toBeTruthy();
+    expect(manager.middleware!.units.get("@global")!.connections.has("rt")).toBeTruthy();
   });
 
   it("F2 否定：project scope 不回退 runtime → not found", async () => {
@@ -1270,8 +1362,8 @@ describe("#382 F2：runtime 回退重连", () => {
 });
 
 describe("#382 F3/F4：all 模式池接管", () => {
-  let prevHome;
-  let homeDir;
+  let prevHome: string | undefined;
+  let homeDir: string;
   beforeEach(() => {
     prevHome = process.env.DSH_HOME;
     homeDir = makeTempDir("dsh-mcp-mgr2g-");
@@ -1305,33 +1397,33 @@ describe("#382 F3/F4：all 模式池接管", () => {
     const { manager } = await allModeStarted();
     await pollUntil(
       "@global 单元连接条目建立",
-      () => manager.middleware.units.get("@global")?.connections.has("g2") === true,
+      () => manager.middleware!.units.get("@global")?.connections.has("g2") === true,
     );
-    expect(manager.middleware.units.get("@global")?.connections.has("g2")).toBe(true);
+    expect(manager.middleware!.units.get("@global")?.connections.has("g2")).toBe(true);
   });
 
   it("connect 走池：条目仍在 @global 单元且只有一条（无第二本账）", async () => {
     const { manager } = await allModeStarted();
     await pollUntil(
       "@global 单元连接条目建立",
-      () => manager.middleware.units.get("@global")?.connections.has("g2") === true,
+      () => manager.middleware!.units.get("@global")?.connections.has("g2") === true,
     );
     // F4：connect 全局走池（userDisabled 解除 + ensureConnected 受控重建）。
-    manager.middleware.units.get("@global").userDisabled.add("g2");
+    manager.middleware!.units.get("@global")!.userDisabled.add("g2");
     await manager.connect("g2");
-    expect(manager.middleware.units.get("@global").connections.has("g2")).toBe(true);
-    expect(manager.middleware.units.get("@global").connections.size).toBe(1);
+    expect(manager.middleware!.units.get("@global")!.connections.has("g2")).toBe(true);
+    expect(manager.middleware!.units.get("@global")!.connections.size).toBe(1);
   });
 
   it("userDisabled 已解除", async () => {
     const { manager } = await allModeStarted();
     await pollUntil(
       "@global 单元连接条目建立",
-      () => manager.middleware.units.get("@global")?.connections.has("g2") === true,
+      () => manager.middleware!.units.get("@global")?.connections.has("g2") === true,
     );
-    manager.middleware.units.get("@global").userDisabled.add("g2");
+    manager.middleware!.units.get("@global")!.userDisabled.add("g2");
     await manager.connect("g2");
-    expect(manager.middleware.units.get("@global").userDisabled.has("g2")).toBe(false);
+    expect(manager.middleware!.units.get("@global")!.userDisabled.has("g2")).toBe(false);
   });
 });
 
@@ -1341,8 +1433,8 @@ describe("#382 F3/F4：all 模式池接管", () => {
 // 其中第三例顺带守的「ensureConnected 对 userDisabled 短路」判据仍然成立（实现里的早返回），
 // 故就地按新链路重建：驱动换成池的真 ensureConnected，观测点换成「条目没建、官方实例没挂」。
 describe("#382 F5 删除后的等价判据：userDisabled 短路不装载", () => {
-  let prevHome;
-  let homeDir;
+  let prevHome: string | undefined;
+  let homeDir: string;
   beforeEach(() => {
     prevHome = process.env.DSH_HOME;
     homeDir = makeTempDir("dsh-mcp-mgr2g-");
@@ -1357,13 +1449,14 @@ describe("#382 F5 删除后的等价判据：userDisabled 短路不装载", () =
     const { manager, store } = makeManager(homeDir);
     await manager.initMiddleware();
     store.upsert(normalizeServer(quietServer("g3")));
-    const mw = manager.middleware;
+    // initMiddleware 刚建池、projectUnitFor 刚建单元（同一用例流），此处断言存在。
+    const mw = manager.middleware!;
     mw.disabledByRoot.set("@global", new Set(["g3"]));
-    const unit = await mw.projectUnitFor("@global");
+    const unit = (await mw.projectUnitFor("@global"))!;
     await mw.ensureConnected("@global", "g3");
     expect(unit.userDisabled.has("g3")).toBe(true);
     expect(unit.connections.has("g3")).toBe(false);
-    expect(poolLoader.calls.filter((call) => call[0] === "mount")).toHaveLength(0);
+    expect(poolLoader!.calls.filter((call) => call[0] === "mount")).toHaveLength(0);
   });
 });
 
@@ -1387,10 +1480,10 @@ describe("#412 resumeReconnect 配置全集重建", () => {
     manager.projectRoot = projRoot;
 
     // stub 中间层：units 为空（模拟宿主重启后单元/entry 全清），记录调用面。
-    const calls = [];
+    const calls: Array<[string, ...unknown[]]> = [];
     const fakeMw = {
       units: new Map(),
-      projectUnitFor: async (root) => {
+      projectUnitFor: async (root: string) => {
         const unit = {
           root,
           connections: new Map(),
@@ -1403,11 +1496,12 @@ describe("#412 resumeReconnect 配置全集重建", () => {
         calls.push(["projectUnitFor", root]);
         return unit;
       },
-      ensureConnected: async (root, name, opts) => {
+      ensureConnected: async (root: string, name: string, opts: unknown) => {
         calls.push(["ensureConnected", root, name, opts]);
       },
+      // 部分中间层桩（只实现 resume 触达的 units/projectUnitFor/ensureConnected）：按接缝收窄。
     };
-    manager.middleware = fakeMw;
+    manager.middleware = fakeMw as unknown as McpManagerType["middleware"];
     return { manager, projRoot, calls, fakeMw };
   }
 
@@ -1429,7 +1523,10 @@ describe("#412 resumeReconnect 配置全集重建", () => {
     const { manager, calls } = resumeFixture();
     await manager.resumeReconnect();
     const recon = calls.filter((c) => c[0] === "ensureConnected");
-    expect(recon.every((c) => c[3] && c[3].force === true)).toBeTruthy();
+    // opts 为调用方透传的未知形状：只读 force 面。
+    expect(
+      recon.every((c) => (c[3] as { force?: unknown } | undefined)?.force === true),
+    ).toBeTruthy();
   });
 
   it("userDisabled 过滤（p3 已禁用不复活）", async () => {
@@ -1470,9 +1567,11 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
 
     // stub 中间层：项目单元已建且 p1/p2 均已 connected（模拟稳定运行态），
     // teardownUnit 必须零调用（回归红线：reconcile 有任何拆毁即判红）。
-    const teardownRoots = [];
-    const calls614 = [];
-    const mkUnit = (root) => ({
+    const teardownRoots: string[] = [];
+    // 调用记录：元组与裸标记混记（"reconcile" 裸串），读侧按位置收窄。
+    // 调用记录：元组与裸标记（"reconcile"）混记，读侧按位置收窄。
+    const calls614: Array<unknown[] | string> = [];
+    const mkUnit = (root: string) => ({
       root,
       connections: new Map([
         ["p1", { server: projStore.find("p1"), status: "connected" }],
@@ -1485,7 +1584,7 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
     });
     const fakeMw = {
       units: new Map([[projRoot, mkUnit(projRoot)]]),
-      projectUnitFor: async (root) => {
+      projectUnitFor: async (root: string) => {
         calls614.push(["projectUnitFor", root]);
         return (
           fakeMw.units.get(root) ??
@@ -1496,7 +1595,7 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
           })()
         );
       },
-      ensureConnected: async (root, name, opts) => {
+      ensureConnected: async (root: string, name: string, opts: unknown) => {
         calls614.push(["ensureConnected", root, name, opts]);
         const unit = fakeMw.units.get(root);
         if (unit !== undefined && !unit.connections.has(name)) {
@@ -1504,9 +1603,10 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
         }
         return opts;
       },
-      teardownUnit: (root) => teardownRoots.push(root),
+      teardownUnit: (root: string) => teardownRoots.push(root),
+      // 部分中间层桩（teardown 回归面）：按接缝收窄。
     };
-    manager.middleware = fakeMw;
+    manager.middleware = fakeMw as unknown as McpManagerType["middleware"];
     return { manager, store, projRoot, projStore, fakeMw, teardownRoots, calls614 };
   }
 
@@ -1531,12 +1631,12 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
 
   it("项目级 p1 连接保持", async () => {
     const { fakeMw, projRoot } = await afterReconcile();
-    expect(fakeMw.units.get(projRoot).connections.get("p1")?.status).toBe("connected");
+    expect(fakeMw.units.get(projRoot)!.connections.get("p1")?.status).toBe("connected");
   });
 
   it("项目级 p2 连接保持", async () => {
     const { fakeMw, projRoot } = await afterReconcile();
-    expect(fakeMw.units.get(projRoot).connections.get("p2")?.status).toBe("connected");
+    expect(fakeMw.units.get(projRoot)!.connections.get("p2")?.status).toBe("connected");
   });
 
   it("配置无变化 refreshFromDisk 早退、不 reconcile", async () => {
@@ -1570,7 +1670,12 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
     await pollUntil("start(项目级) 幂等触达完成", () =>
       calls614.some((c) => c[0] === "ensureConnected" && c[2] === "p1"),
     );
-    expect(calls614.every((c) => c[0] !== "ensureConnected" || c[3]?.force !== true)).toBeTruthy();
+    // opts 为透传未知形状：只读 force 面。
+    expect(
+      calls614.every(
+        (c) => c[0] !== "ensureConnected" || (c[3] as { force?: unknown })?.force !== true,
+      ),
+    ).toBeTruthy();
   });
 
   it("配置漂移 force 重建仍零拆毁（单台重建不殃及单元）", async () => {
@@ -1581,7 +1686,12 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
     projStore.data.servers[0] = normalizeServer(quietServer("p1", { command: "dsh-noop-cmd-v2" }));
     manager.start("p1", "project");
     await pollUntil("配置漂移 force 重建完成", () =>
-      calls614.some((c) => c[0] === "ensureConnected" && c[2] === "p1" && c[3]?.force === true),
+      calls614.some(
+        (c) =>
+          c[0] === "ensureConnected" &&
+          c[2] === "p1" &&
+          (c[3] as { force?: unknown })?.force === true,
+      ),
     );
     expect(teardownRoots.length).toBe(0);
   });
@@ -1590,7 +1700,7 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
     // start(项目级) userDisabled 命中：不触发 ensureConnected（浮窗断开语义）。
     const { manager, projRoot, calls614, fakeMw } = await afterReconcile();
     calls614.length = 0;
-    fakeMw.units.get(projRoot).userDisabled.add("p2");
+    fakeMw.units.get(projRoot)!.userDisabled.add("p2");
     manager.start("p2", "project");
     await pollUntil("projectUnitFor 触达完成", () =>
       calls614.some((c) => c[0] === "projectUnitFor" && c[1] === projRoot),
@@ -1607,8 +1717,8 @@ describe("#616 reconcile / start(项目级) / refreshFromDisk 不拆毁中间层
 
 // #413：all 模式 runtime 注入（toolDefinitions）归一中台 ----
 describe("#413 all 模式 runtime 注入归一中台", () => {
-  let prevHome;
-  let homeDir;
+  let prevHome: string | undefined;
+  let homeDir: string;
   beforeEach(() => {
     prevHome = process.env.DSH_HOME;
     homeDir = makeTempDir("dsh-mcp-mgr2w-");
@@ -1635,16 +1745,20 @@ describe("#413 all 模式 runtime 注入归一中台", () => {
           required: ["text"],
           additionalProperties: false,
         },
-        render: (a, v) => [{ type: "text", text: v.text }],
+        render: (a: unknown, v: { text: unknown }) => [{ type: "text", text: v.text }],
       },
-      execute: async (args) => ({ text: `node(${args.symbol})` }),
+      // String() 与模板内插转义逐字一致，此处不断言、只为类型收窄。
+      execute: async (args: unknown) => ({
+        text: `node(${String((args as { symbol: unknown }).symbol)})`,
+      }),
     };
   }
 
   async function registered({ unregister = false } = {}) {
     const { manager, store, log } = makeManager(homeDir);
     await manager.initMiddleware();
-    const mw = manager.middleware;
+    // 池由前置装配保证存在（initMiddleware/真装载刚跑完），此处断言存在。
+    const mw = manager.middleware!;
     // 经 registerServer 注入（带 toolDefinitions）→ start 触达 @global 单元虚拟连接，
     // 不注册 mcp__ 直呼工具（单池后没有第二本账）。
     await manager.registerServer({
@@ -1669,7 +1783,7 @@ describe("#413 all 模式 runtime 注入归一中台", () => {
 
   it("runtime 条目归 @global 单元（#413 归一，无第二本账）", async () => {
     const { manager, mw } = await registered();
-    expect(mw.units.get("@global").connections.has("cg")).toBe(true);
+    expect(mw.units.get("@global")!.connections.has("cg")).toBe(true);
     expect("supervisors" in manager, "supervisors 字段已删").toBe(false);
   });
 
@@ -1680,29 +1794,31 @@ describe("#413 all 模式 runtime 注入归一中台", () => {
 
   it("虚拟连接 connected", async () => {
     const { mw } = await registered();
-    expect(mw.units.get("@global").connections.get("cg").status).toBe("connected");
+    // 真装载保证条目存在，此处断言存在。
+    expect(mw.units.get("@global")!.connections.get("cg")!.status).toBe("connected");
   });
 
   it("虚拟连接不挂官方实例（无账本键 / 无句柄 / loader 未 mount）", async () => {
     const { mw } = await registered();
-    const entry = mw.units.get("@global").connections.get("cg");
+    // 真装载保证条目存在，此处断言存在。
+    const entry = mw.units.get("@global")!.connections.get("cg")!;
     // 旧断言读 entry.client 恒 undefined 会退化成恒真（字段已删）；判据换到新链路上：
     // 虚拟单元不派官方实例的证据是「没有账本键、没有句柄、loader 一次都没 mount」。
     expect(entry.id).toBeUndefined();
     expect(entry.handle).toBeUndefined();
-    expect(poolLoader.calls.filter((call) => call[0] === "mount")).toHaveLength(0);
+    expect(poolLoader!.calls.filter((call) => call[0] === "mount")).toHaveLength(0);
     expect(mountLedger.size).toBe(0);
   });
 
   it("虚拟连接：statusOf 恒 connected，配置/用户禁用时 disabled", async () => {
     const { manager, mw } = await registered();
-    const entry = () => mw.units.get("@global").connections.get("cg");
+    const entry = () => mw.units.get("@global")!.connections.get("cg")!;
     // 虚拟单元没有注册面工具，六态投影对它会判 stopped——故它就地收敛（#413 既有契约）。
     expect(mw.statusOf("@global", "cg")).toBe("connected");
-    mw.units.get("@global").userDisabled.add("cg");
+    mw.units.get("@global")!.userDisabled.add("cg");
     expect(mw.statusOf("@global", "cg")).toBe("disabled");
-    mw.units.get("@global").userDisabled.delete("cg");
-    entry().server.enabled = false;
+    mw.units.get("@global")!.userDisabled.delete("cg");
+    entry()!.server.enabled = false;
     expect(mw.statusOf("@global", "cg")).toBe("disabled");
     expect(manager.runtimeRegistry.has("cg")).toBe(true);
   });
@@ -1715,14 +1831,29 @@ describe("#413 all 模式 runtime 注入归一中台", () => {
   it("summary 投影 connected（@global 单元）", async () => {
     // 查询面：summary 从 @global 单元投影（connected + tools），不落 supervisor。
     const { manager } = await registered();
-    const summaryServer = manager.summary().servers.find((s) => s.name === "cg");
+    // summary 是 Record 面（诊断投影）：此处只读 servers 条目三键，不断言其类型。
+    const summaryServer = (
+      summaryView(manager).servers as Array<{
+        name: string;
+        status?: unknown;
+        tools?: Array<{ tool: string }>;
+      }>
+    ).find((s) => s.name === "cg");
     expect(summaryServer?.status).toBe("connected");
   });
 
   it("summary 工具列表来自目录投影", async () => {
     const { manager } = await registered();
-    const summaryServer = manager.summary().servers.find((s) => s.name === "cg");
-    expect([...summaryServer.tools].sort()).toEqual(["cg_node"]);
+    // summary 是 Record 面（诊断投影）：此处只读 servers 条目三键，不断言其类型。
+    const summaryServer = (
+      summaryView(manager).servers as Array<{
+        name: string;
+        status?: unknown;
+        tools?: Array<{ tool: string }>;
+      }>
+    ).find((s) => s.name === "cg");
+    // cg 条目恒在清单内（上一用例同夹具已验 status），此处断言存在。
+    expect([...summaryServer!.tools!].sort()).toEqual(["cg_node"]);
   });
 
   it("runtime 条目已注销", async () => {
@@ -1744,8 +1875,8 @@ describe("#413 all 模式 runtime 注入归一中台", () => {
 
 // #413：all 模式 runtime（toolDefinitions）注销后 project 模式保留 supervisor ----
 describe("#413 封装定义条目（runtime 注入）的归属", () => {
-  let prevHome;
-  let homeDir;
+  let prevHome: string | undefined;
+  let homeDir: string;
   beforeEach(() => {
     prevHome = process.env.DSH_HOME;
     homeDir = makeTempDir("dsh-mcp-mgr2w2-");
@@ -1773,9 +1904,12 @@ describe("#413 封装定义条目（runtime 注入）的归属", () => {
           required: ["text"],
           additionalProperties: false,
         },
-        render: (a, v) => [{ type: "text", text: v.text }],
+        render: (a: unknown, v: { text: unknown }) => [{ type: "text", text: v.text }],
       },
-      execute: async (args) => ({ text: `node(${args.symbol})` }),
+      // String() 与模板内插转义逐字一致，此处不断言、只为类型收窄。
+      execute: async (args: unknown) => ({
+        text: `node(${String((args as { symbol: unknown }).symbol)})`,
+      }),
     };
     await manager.initMiddleware();
     await manager.registerServer({
@@ -1795,7 +1929,7 @@ describe("#413 封装定义条目（runtime 注入）的归属", () => {
     expect("supervisors" in manager, "直连账本字段已删").toBe(false);
     await pollUntil(
       "@global 单元虚拟连接建立",
-      () => manager.middleware.units.get("@global")?.connections.has("cg") === true,
+      () => manager.middleware!.units.get("@global")?.connections.has("cg") === true,
     );
   });
 
@@ -1809,7 +1943,7 @@ describe("#413 封装定义条目（runtime 注入）的归属", () => {
     // 拆除走池路径：虚拟连接随 unregister 一并拆掉。
     const { manager } = await projectRegistered();
     await manager.unregisterServer("cg");
-    expect(manager.middleware.units.get("@global")?.connections.has("cg")).toBe(false);
+    expect(manager.middleware!.units.get("@global")?.connections.has("cg")).toBe(false);
   });
 });
 
@@ -1818,8 +1952,8 @@ describe("#413 封装定义条目（runtime 注入）的归属", () => {
 // 触达面从「直呼」收敛为 ws_mcp_call。故这里对 project / off 两档参数化，判据打在外面对：
 // 虚拟连接与目录可见、ws_mcp_call 转发执行调用方 execute、零官方装载、注销即移除。
 describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
-  let prevHome;
-  let homeDir;
+  let prevHome: string | undefined;
+  let homeDir: string;
   beforeEach(() => {
     prevHome = process.env.DSH_HOME;
     homeDir = makeTempDir("dsh-mcp-mgr2wr-");
@@ -1831,7 +1965,7 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
   });
 
   /** 调用方封装定义：execute 是调用方 JS（记录每次调用，供断言「执行的是它」）。 */
-  function wrappedTool(calls) {
+  function wrappedTool(calls: unknown[]) {
     return {
       name: "cg_node",
       description: "查符号",
@@ -1847,11 +1981,11 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
           required: ["text"],
           additionalProperties: false,
         },
-        render: (a, v) => [{ type: "text", text: v.text }],
+        render: (a: unknown, v: { text: unknown }) => [{ type: "text", text: v.text }],
       },
-      execute: async (args) => {
+      execute: async (args: unknown) => {
         calls.push(args);
-        return { text: `node(${args.symbol})` };
+        return { text: `node(${String((args as { symbol: unknown }).symbol)})` };
       },
     };
   }
@@ -1862,14 +1996,15 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
    * - "runtime"：registerServer 运行时注入（不落 store）；
    * - "store"：持久化在 store 里（落盘条目 + start 触达）。
    */
-  async function wrappedFixture(source) {
+  async function wrappedFixture(source: string) {
     const { manager, store, log } = makeManager(homeDir);
     const mw = await manager.initMiddleware();
-    const calls = [];
+    const calls: unknown[] = [];
     const definition = wrappedTool(calls);
     if (source === "store") {
       const config = normalizeServer(quietServer("cg"));
-      config.toolDefinitions = [definition];
+      // 封装定义是中间层自持形状（与官方 ToolDefinition 面不完全一致）：此处不断言其类型。
+      config.toolDefinitions = [definition] as unknown as ToolDefinition[];
       store.upsert(config);
       manager.start("cg", "global");
     } else {
@@ -1890,7 +2025,7 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
     return { manager, store, mw, log, calls, definition, disposeTools };
   }
 
-  const mountCalls = () => poolLoader.calls.filter((call) => call[0] === "mount").length;
+  const mountCalls = () => poolLoader!.calls.filter((call) => call[0] === "mount").length;
 
   for (const source of ["runtime", "store"]) {
     it(`[${source}] 虚拟连接建立且目录可见 @global/cg`, async () => {
@@ -1901,10 +2036,13 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
 
     it(`[${source}] ws_mcp_call 转发执行的是调用方 execute`, async () => {
       const { log, calls } = await wrappedFixture(source);
-      const wsCall = log.registered.find((def) => def.name === "ws_mcp_call");
-      const result = await wsCall.execute(
+      // 注册的是实现传入的真定义（ws_mcp_call 恒在内），此处按形状收窄。
+      const wsCall = log.registered.find(
+        (def) => (def as { name?: string }).name === "ws_mcp_call",
+      ) as ToolDefinition | undefined;
+      const result = await wsCall!.execute(
         { server: "@global/cg", tool: "cg_node", arguments: { symbol: "X" } },
-        { signal: undefined, agent: undefined, callId: "call-1" },
+        { signal: undefined, agent: undefined, callId: "call-1" } as unknown as ToolRunContext,
       );
       expect(calls).toEqual([{ symbol: "X" }]);
       expect(JSON.stringify(result)).toContain("node(X)");
@@ -1964,7 +2102,7 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
     const mountsBefore = mountCalls();
     manager.start("gn", "global");
     manager.start("cg", "global");
-    expect(mw.units.get("@global").connections.size).toBe(2);
+    expect(mw.units.get("@global")!.connections.size).toBe(2);
     expect(mountCalls()).toBe(mountsBefore);
   });
 
@@ -1976,7 +2114,8 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
    */
   async function directIdGuardFixture() {
     const { manager } = makeManager(homeDir);
-    const handlers = new Map();
+    // guard 回调捕获器：存取两用（ctx.on 侧存入、判据侧按 guard 形状调用），值面保持未知、调用点收窄。
+    const handlers = new Map<string, unknown>();
     // 假 ctx 补 on：registerMiddlewareTools 只在 ctx.on 可用时才挂 pre-execute guard。
     manager.ctx.on = (event, handler) => {
       handlers.set(event, handler);
@@ -1998,23 +2137,32 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
     });
     await pollUntil(
       "池内条目拿到 id",
-      () => manager.middleware.units.get("@global")?.connections.get("g1")?.id !== undefined,
+      () => manager.middleware!.units.get("@global")?.connections.get("g1")?.id !== undefined,
     );
-    const entry = manager.middleware.units.get("@global").connections.get("g1");
+    // 轮询已等到 id 写回，条目与 guard 恒存在，此处断言存在。
+    const entry = manager.middleware!.units.get("@global")!.connections.get("g1")!;
     // 注册名就是 id 前缀形态（直呼路径看得见的那两个名字）。
-    manager.ctx.tools.entries = [
+    // ctx.tools 是工厂挂载的同一份假注册面（makeManager 注释）：此处取其 entries 写口。
+    (manager.ctx.tools as unknown as { entries: FakeToolEntry[] }).entries = [
       { name: `mcp__${entry.id}__echo` },
       { name: `mcp__${entry.id}__other` },
     ];
-    return { entry, guard: handlers.get("tools/pre-execute") };
+    return {
+      entry,
+      guard: handlers.get("tools/pre-execute")! as (
+        exec: unknown,
+        next: () => unknown,
+      ) => Promise<{ kind: unknown; reason?: unknown }>,
+    };
   }
 
   it("直呼 mcp__<id>__<禁用工具> 命中禁用面（guard 反解回 @global/g1）", async () => {
     const { entry, guard } = await directIdGuardFixture();
-    const decision = await guard(
+    // guard 回调返回裁决对象（kind/reason 面）：此处按测试读取面收窄。
+    const decision = (await guard(
       { name: `mcp__${entry.id}__echo`, agent: { session: { header: {} } } },
       async () => ({ kind: "allow" }),
-    );
+    )) as { kind: unknown; reason?: unknown };
     // 反解不到 (root, 裸名) 就会把 id 当服务器名查表 → 恒 miss → 这条会红。
     expect(decision.kind).toBe("deny");
     expect(decision.reason).toContain("@@global/g1/echo");
@@ -2023,13 +2171,13 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
   it("直呼 mcp__<id>__<未禁用工具> 放行（不是一律拒）", async () => {
     const { entry, guard } = await directIdGuardFixture();
     let nexted = false;
-    const decision = await guard(
+    const decision = (await guard(
       { name: `mcp__${entry.id}__other`, agent: { session: { header: {} } } },
       async () => {
         nexted = true;
         return { kind: "allow" };
       },
-    );
+    )) as { kind: unknown; reason?: unknown };
     expect(nexted).toBe(true);
     expect(decision.kind).toBe("allow");
   });
@@ -2038,9 +2186,10 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
     // normalizeServer 要求 transport，故这条走 start 的直传配置路径：判定的是「封装定义条目
     // 不走官方装载」本身，与配置里有没有 transport 无关。
     const { manager, mw } = await wrappedFixture("runtime");
-    const calls = [];
+    const calls: unknown[] = [];
     const bare = { name: "cg2", enabled: true, toolDefinitions: [wrappedTool(calls)] };
-    manager.runtimeRegistry.set("cg2", bare);
+    // 无 transport 是本用例的测试输入（直传配置路径），按意图收窄。
+    manager.runtimeRegistry.set("cg2", bare as unknown as ServerConfig);
     manager.start("cg2", "global");
     await pollUntil("虚拟连接建立", () => mw.units.get("@global")?.connections.has("cg2") === true);
     expect("supervisors" in manager, "supervisors 字段已删").toBe(false);
@@ -2050,8 +2199,8 @@ describe("#767 S1-5b：封装定义条目恒交中间层（(c)'）", () => {
 
 // #392 遗留①②③：remove/update 清目录幽灵条目 + disconnect 显式 scope 定位 ----
 describe("#392 遗留①：remove 清内存目录幽灵条目", () => {
-  let prevHome;
-  let homeDir;
+  let prevHome: string | undefined;
+  let homeDir: string;
   beforeEach(() => {
     prevHome = process.env.DSH_HOME;
     homeDir = makeTempDir("dsh-mcp-mgr2m-");
@@ -2066,7 +2215,8 @@ describe("#392 遗留①：remove 清内存目录幽灵条目", () => {
   async function ghostStarted({ remove = false } = {}) {
     const { manager, store, log } = makeManager(homeDir);
     await manager.initMiddleware();
-    const mw = manager.middleware;
+    // 池由前置装配保证存在（initMiddleware/真装载刚跑完），此处断言存在。
+    const mw = manager.middleware!;
     // #392 遗留①：remove 后目录（unit.catalog）残留幽灵条目清除——此前 dropMiddleware
     // Connection 只拆 connections 不清 catalog，TTL 内 ws_mcp_list 仍显示已删服务器。
     store.upsert(normalizeServer(quietServer("ghost")));
@@ -2093,7 +2243,7 @@ describe("#392 遗留①：remove 清内存目录幽灵条目", () => {
 
   it("remove 后连接被拆", async () => {
     const { mw } = await ghostStarted({ remove: true });
-    expect(mw.units.get("@global").connections.has("ghost")).toBe(false);
+    expect(mw.units.get("@global")!.connections.has("ghost")).toBe(false);
   });
 
   it("remove 后目录条目被清（#392 幽灵条目消除）", async () => {
@@ -2108,8 +2258,8 @@ describe("#392 遗留①：remove 清内存目录幽灵条目", () => {
 });
 
 describe("#392 遗留①（M1 复核）：remove 清磁盘 last-good 缓存", () => {
-  let prevHome;
-  let homeDir;
+  let prevHome: string | undefined;
+  let homeDir: string;
   beforeEach(() => {
     prevHome = process.env.DSH_HOME;
     homeDir = makeTempDir("dsh-mcp-mgr2m-");
@@ -2124,7 +2274,8 @@ describe("#392 遗留①（M1 复核）：remove 清磁盘 last-good 缓存", ()
   async function persistedGhost({ remove = false } = {}) {
     const { manager, store } = makeManager(homeDir);
     await manager.initMiddleware();
-    const mw = manager.middleware;
+    // 池由前置装配保证存在（initMiddleware/真装载刚跑完），此处断言存在。
+    const mw = manager.middleware!;
     store.upsert(normalizeServer(quietServer("ghost")));
     manager.start("ghost", "global");
     await pollUntil(
@@ -2168,8 +2319,8 @@ describe("#392 遗留①（M1 复核）：remove 清磁盘 last-good 缓存", ()
 });
 
 describe("#392 遗留③：disconnect 显式 scope 定位", () => {
-  let prevHome;
-  let homeDir;
+  let prevHome: string | undefined;
+  let homeDir: string;
   beforeEach(() => {
     prevHome = process.env.DSH_HOME;
     homeDir = makeTempDir("dsh-mcp-mgr2m-");
@@ -2183,7 +2334,8 @@ describe("#392 遗留③：disconnect 显式 scope 定位", () => {
   const projectConnect = async () => {
     const { manager, store } = makeManager(homeDir);
     await manager.initMiddleware();
-    const mw = manager.middleware;
+    // 池由前置装配保证存在（initMiddleware/真装载刚跑完），此处断言存在。
+    const mw = manager.middleware!;
     // #392 遗留③：disconnect 显式 scope=project 定位项目单元，不误写 @global 单元。
     // 构造：全局 store 与项目 store 同名 "dup"（项目级由中间层项目单元接管）。
     store.upsert(normalizeServer(quietServer("dup")));
@@ -2201,7 +2353,8 @@ describe("#392 遗留③：disconnect 显式 scope 定位", () => {
     );
     await manager.setSession(proj);
     await manager.connect("dup", "project");
-    const projUnit = mw.units.get(proj);
+    // connect 刚建项目单元，此处断言存在。
+    const projUnit = mw.units.get(proj)!;
     return { manager, mw, proj, projUnit };
   };
 
@@ -2221,7 +2374,7 @@ describe("#392 遗留③：disconnect 显式 scope 定位", () => {
   it("不误写 @global 单元（#392 同名跨 scope 修正）", async () => {
     const { manager, mw } = await projectConnect();
     await manager.disconnect("dup", "project");
-    expect(mw.units.get("@global").userDisabled.has("dup")).toBe(false);
+    expect(mw.units.get("@global")!.userDisabled.has("dup")).toBe(false);
   });
 
   it("reconnect(scope=project) 不误写 @global 单元（S1）", async () => {
@@ -2231,7 +2384,7 @@ describe("#392 遗留③：disconnect 显式 scope 定位", () => {
     const { manager, mw } = await projectConnect();
     await manager.connect("dup", "project");
     await manager.reconnect("dup", "project");
-    expect(mw.units.get("@global").userDisabled.has("dup")).toBe(false);
+    expect(mw.units.get("@global")!.userDisabled.has("dup")).toBe(false);
   });
 
   it("reconnect 后项目单元 userDisabled 已解除", async () => {
@@ -2246,7 +2399,7 @@ describe("#392 遗留③：disconnect 显式 scope 定位", () => {
     const { manager, mw } = await projectConnect();
     await manager.connect("dup", "global");
     await manager.disconnect("dup", "global");
-    expect(mw.units.get("@global").userDisabled.has("dup")).toBeTruthy();
+    expect(mw.units.get("@global")!.userDisabled.has("dup")).toBeTruthy();
   });
 });
 
@@ -2256,8 +2409,8 @@ describe("#392 遗留③：disconnect 显式 scope 定位", () => {
 // inFlight 去重标记，同名后续 ensureConnected（含 force 的显式「连接」）被残留标记
 // 吞掉，且旧 attempt 收敛命中 disposed 守卫无人补连——修复前本块必红。
 describe("拆除时在途建连的 in-flight 残留", () => {
-  let prevHome;
-  let homeDir;
+  let prevHome: string | undefined;
+  let homeDir: string;
   beforeEach(() => {
     prevHome = process.env.DSH_HOME;
     homeDir = makeTempDir("dsh-mcp-mgr2n-");
@@ -2269,14 +2422,15 @@ describe("拆除时在途建连的 in-flight 残留", () => {
   });
 
   /** 挂起型服务器：命令永不执行（假 loader 不 spawn），挂起完全由装载窗口的 ready 时序撑。 */
-  const hangServer = (name) => quietServer(name);
+  const hangServer = (name: string) => quietServer(name);
 
   async function allModeFixture() {
     const { manager, store } = makeManager(homeDir);
     await manager.initMiddleware();
     // 装载窗口按在 deferred：attempt 一直 pending，直到本用例收口时放闸。
     loaderScript.ready = "deferred";
-    return { manager, store, mw: manager.middleware };
+    // 池由 initMiddleware 刚建，此处断言存在。
+    return { manager, store, mw: manager.middleware! };
   }
 
   it("remove 后重加立即重建连接条目（in-flight 残留已废弃）", async () => {
@@ -2308,7 +2462,7 @@ describe("拆除时在途建连的 in-flight 残留", () => {
       () => mw.units.get("@global")?.connections.has("hang") === true,
     );
     await manager.disconnect("hang", "global");
-    expect(mw.units.get("@global").userDisabled.has("hang")).toBeTruthy();
+    expect(mw.units.get("@global")!.userDisabled.has("hang")).toBeTruthy();
   });
 
   it("disconnect 后显式连接立即重建条目", { timeout: 30_000 }, async () => {
@@ -2356,7 +2510,7 @@ describe("add / update / remove（全局）", () => {
     const { manager, store } = managerFixture("dsh-mcp-mgr2f-");
     await manager.add(normalizeServer(quietServer("new")));
     await manager.update("new", { command: "cmd2" });
-    expect(store.find("new").command).toBe("cmd2");
+    expect(store.find("new")!.command).toBe("cmd2");
   });
 
   it("remove 后 store 无该条目", async () => {
@@ -2369,8 +2523,8 @@ describe("add / update / remove（全局）", () => {
 
 // #767 S1-3b：组合根侧接线判据——目录投影与载入都走 catalog 域 ----
 describe("#767 S1-3b：manager 接线（建单元时才载入、内存不被磁盘盖回）", () => {
-  let prevHome;
-  let homeDir;
+  let prevHome: string | undefined;
+  let homeDir: string;
   beforeEach(() => {
     prevHome = process.env.DSH_HOME;
     homeDir = makeTempDir("dsh-mcp-mgr2s13b-");
@@ -2404,7 +2558,7 @@ describe("#767 S1-3b：manager 接线（建单元时才载入、内存不被磁�
     );
     // 建单元之前目录里没有这个 root。
     expect(catalogDirectory.serversFor(root)).toBeUndefined();
-    await manager.middleware.projectUnitFor(root);
+    await manager.middleware!.projectUnitFor(root);
     expect(catalogDirectory.entryFor(root, "diskSrv")?.tools.has("disk_tool")).toBe(true);
     expect(catalogDirectory.entryFor(root, "diskSrv")?.discoveredAt).toBe(1);
     await catalogDirectory.ensureRootLoaded(root, file);
@@ -2441,7 +2595,7 @@ describe("#767 S1-3b：manager 接线（建单元时才载入、内存不被磁�
       "utf8",
     );
     // 单元已被本用例先建过（root 在册）→ 建单元不再载入、也不覆盖。
-    await manager.middleware.projectUnitFor(root);
+    await manager.middleware!.projectUnitFor(root);
     expect(catalogDirectory.entryFor(root, "memSrv")?.tools.has("mem_tool")).toBe(true);
     expect(catalogDirectory.entryFor(root, "diskSrv")).toBeUndefined();
   });
@@ -2488,10 +2642,11 @@ describe("setSession", () => {
     const { manager, proj } = sessionFixture();
     await manager.initMiddleware();
     await manager.setSession(proj);
-    await pollUntil("项目级服务器进项目单元", () =>
-      manager.middleware.units.get(proj)?.connections.has("psrv"),
+    await pollUntil(
+      "项目级服务器进项目单元",
+      () => manager.middleware!.units.get(proj)?.connections.has("psrv") === true,
     );
-    expect(manager.middleware.units.get(proj).connections.has("psrv")).toBeTruthy();
+    expect(manager.middleware!.units.get(proj)!.connections.has("psrv")).toBeTruthy();
   });
 
   it("同项目幂等不重载", async () => {
@@ -2517,10 +2672,11 @@ describe("setSession", () => {
   it("切走后项目级连接常驻（单池不再随会话断开）", async () => {
     const { manager, proj } = await switchedAway();
     // 单池（#767 笔 1a）：连接按 root 常驻，切会话只切 currentRoot，不拆项目单元。
-    await pollUntil("项目单元仍在池", () =>
-      manager.middleware.units.get(proj)?.connections.has("psrv"),
+    await pollUntil(
+      "项目单元仍在池",
+      () => manager.middleware!.units.get(proj)?.connections.has("psrv") === true,
     );
-    expect(manager.middleware.units.get(proj).connections.has("psrv")).toBe(true);
+    expect(manager.middleware!.units.get(proj)!.connections.has("psrv")).toBe(true);
   });
 
   it("切走后 projectRoot 更新", async () => {
@@ -2555,7 +2711,8 @@ describe("catalogServersFor", () => {
     );
     await manager.setSession(proj);
     // catalogServersFor：全局 + 项目聚合，禁用过滤，同名项目级被顶掉。
-    manager.projectStore.data.servers.push(
+    // 上一行刚赋值，此处断言存在。
+    manager.projectStore!.data.servers.push(
       normalizeServer({ ...quietServer("psrv2", { enabled: false }) }),
     );
     return { dir, manager, store, proj };
@@ -2578,7 +2735,8 @@ describe("catalogServersFor", () => {
 
   it("项目级 scope 标注", async () => {
     const { manager, proj } = await catalogFixture();
-    expect((await manager.catalogServersFor(proj)).get("psrv").scope).toBe("project");
+    // 聚合恒含项目级条目（上一用例同夹具已验 has），此处断言存在。
+    expect((await manager.catalogServersFor(proj)).get("psrv")!.scope).toBe("project");
   });
 
   it("空 cwd 只出全局", async () => {
@@ -2657,7 +2815,9 @@ describe("refreshFromDisk", () => {
     //（statusTimer 清空 = 广播 handler 已全部执行），再取基线（事件驱动）。
     await pollUntil(
       "配置变化广播落定",
-      () => broadcasts() >= 1 && manager.statusTimer === undefined,
+      () =>
+        broadcasts() >= 1 &&
+        (manager as unknown as { statusTimer: unknown }).statusTimer === undefined,
     );
     expect(store.data.servers.some((s) => s.name === "fresh")).toBeTruthy();
   });
@@ -2676,13 +2836,18 @@ describe("refreshFromDisk", () => {
     await manager.refreshFromDisk();
     await pollUntil(
       "配置变化广播落定",
-      () => broadcasts() >= 1 && manager.statusTimer === undefined,
+      () =>
+        broadcasts() >= 1 &&
+        (manager as unknown as { statusTimer: unknown }).statusTimer === undefined,
     );
     // 无变化时不广播：先取基线（上一广播已完全落定），再 refreshFromDisk
     //（无变化 → 不 emitStatus），轮询确认无未决广播后断言计数不变。
     const before = broadcasts();
     await manager.refreshFromDisk();
-    await pollUntil("无变化后无未决广播", () => manager.statusTimer === undefined);
+    await pollUntil(
+      "无变化后无未决广播",
+      () => (manager as unknown as { statusTimer: unknown }).statusTimer === undefined,
+    );
     expect(broadcasts()).toBe(before);
   });
 });
@@ -2747,7 +2912,8 @@ describe("中间层模式 connect/disconnect 分支（#228）", () => {
     await manager.initMiddleware();
     // 项目级 connect → 中间层连接池（userDisabled 解除 + ensureConnected）。
     await manager.connect("p1", "project");
-    return { manager, store, proj, mw: manager.middleware };
+    // 池由 initMiddleware 刚建，此处断言存在。
+    return { manager, store, proj, mw: manager.middleware! };
   }
 
   it("中间层已初始化", async () => {
@@ -2762,20 +2928,20 @@ describe("中间层模式 connect/disconnect 分支（#228）", () => {
 
   it("connect 解除 userDisabled", async () => {
     const { mw, proj } = await middlewareConnected();
-    expect(mw.units.get(proj).userDisabled.has("p1")).toBe(false);
+    expect(mw.units.get(proj)!.userDisabled.has("p1")).toBe(false);
   });
 
   it("断开后 userDisabled", async () => {
     // 项目级 disconnect → userDisabled 持久化。
     const { manager, mw, proj } = await middlewareConnected();
     await manager.disconnect("p1");
-    expect(mw.units.get(proj).userDisabled.has("p1")).toBe(true);
+    expect(mw.units.get(proj)!.userDisabled.has("p1")).toBe(true);
   });
 
   it("连接拆毁", async () => {
     const { manager, mw, proj } = await middlewareConnected();
     await manager.disconnect("p1");
-    expect(mw.units.get(proj).connections.has("p1")).toBe(false);
+    expect(mw.units.get(proj)!.connections.has("p1")).toBe(false);
   });
 
   it("持久化文件存在（不崩）", async () => {
@@ -2787,7 +2953,8 @@ describe("中间层模式 connect/disconnect 分支（#228）", () => {
   it("全局 disconnect 也走池（写 @global 单元 userDisabled）", async () => {
     const { manager } = await middlewareConnected();
     // 单池（#767 笔 1a）：全局服务器同样在 @global 单元，断开按（store ∩ 非 runtime）定位到它。
-    const globalUnit = await manager.middleware.projectUnitFor("@global");
+    // 刚 connect 的 @global 单元恒存在，此处断言存在。
+    const globalUnit = (await manager.middleware!.projectUnitFor("@global"))!;
     await manager.disconnect("g1");
     expect(globalUnit.userDisabled.has("g1")).toBe(true);
   });
@@ -2804,22 +2971,22 @@ describe("summary", () => {
 
   it("servers 列表长度 2", () => {
     const { manager } = summaryFixture();
-    expect(manager.summary().servers.length).toBe(2);
+    expect(summaryView(manager).servers.length).toBe(2);
   });
 
   it("counts.connected 为 0", () => {
     const { manager } = summaryFixture();
-    expect(manager.summary().counts.connected).toBe(0);
+    expect(summaryView(manager).counts.connected).toBe(0);
   });
 
   it("counts.disabled 为 1", () => {
     const { manager } = summaryFixture();
-    expect(manager.summary().counts.disabled).toBe(1);
+    expect(summaryView(manager).counts.disabled).toBe(1);
   });
 
   it("cwd 为 undefined", () => {
     const { manager } = summaryFixture();
-    expect(manager.summary().cwd).toBeUndefined();
+    expect(summaryView(manager).cwd).toBeUndefined();
   });
 });
 
@@ -2830,6 +2997,7 @@ describe("summarize", () => {
     store.upsert(normalizeServer(quietServer("s-off", { enabled: false })));
     // 单池（#767 笔 1a）：summarize 只从连接池单元投影（旧直连账本分支已退役）。
     // 这里挂最小池替身：statusOf 给态（真投影语义由中间层自己的用例钉住），目录读口给工具面。
+    // 只实现 summarize 触达的 units/statusOf/toolCountOf：按接缝收窄。
     manager.middleware = {
       units: new Map([
         [
@@ -2860,7 +3028,7 @@ describe("summarize", () => {
       ]),
       statusOf: () => "failed",
       toolCountOf: () => 1,
-    };
+    } as unknown as McpManagerType["middleware"];
     catalogDirectory.projectWrappedTools({
       root: "@global",
       serverName: "s-on",
@@ -2871,43 +3039,43 @@ describe("summarize", () => {
 
   it("entryOn.status 为 failed", () => {
     const { manager, store } = summarizeFixture();
-    expect(manager.summarize(store.find("s-on"), "global").status).toBe("failed");
+    expect(summarizeOf(manager, store.find("s-on")!, "global").status).toBe("failed");
   });
 
   it("entryOn.error 为字符串文案", () => {
     const { manager, store } = summarizeFixture();
-    expect(manager.summarize(store.find("s-on"), "global").error).toBe("boom");
+    expect(summarizeOf(manager, store.find("s-on")!, "global").error).toBe("boom");
   });
 
   it("entryOn.tools 透传", () => {
     const { manager, store } = summarizeFixture();
-    expect(manager.summarize(store.find("s-on"), "global").tools).toEqual(["t"]);
+    expect(summarizeOf(manager, store.find("s-on")!, "global").tools).toEqual(["t"]);
   });
 
   it("entryOn.scope 透传", () => {
     const { manager, store } = summarizeFixture();
-    expect(manager.summarize(store.find("s-on"), "global").scope).toBe("global");
+    expect(summarizeOf(manager, store.find("s-on")!, "global").scope).toBe("global");
   });
 
   it("entryOff.status 为 disabled", () => {
     const { manager, store } = summarizeFixture();
-    expect(manager.summarize(store.find("s-off"), "global").status).toBe("disabled");
+    expect(summarizeOf(manager, store.find("s-off")!, "global").status).toBe("disabled");
   });
 
   it("entryOff.tools 为空", () => {
     const { manager, store } = summarizeFixture();
-    expect(manager.summarize(store.find("s-off"), "global").tools).toEqual([]);
+    expect(summarizeOf(manager, store.find("s-off")!, "global").tools).toEqual([]);
   });
 
   it("entryOff.error 为 undefined", () => {
     const { manager, store } = summarizeFixture();
-    expect(manager.summarize(store.find("s-off"), "global").error).toBeUndefined();
+    expect(summarizeOf(manager, store.find("s-off")!, "global").error).toBeUndefined();
   });
 
   it("不在池里且启用 → stopped", () => {
     const { manager, store } = summarizeFixture();
-    manager.middleware.units.get("@global").connections.delete("s-on");
-    expect(manager.summarize(store.find("s-on"), "global").status).toBe("stopped");
+    manager.middleware!.units.get("@global")!.connections.delete("s-on");
+    expect(summarizeOf(manager, store.find("s-on")!, "global").status).toBe("stopped");
   });
 });
 
@@ -2924,8 +3092,8 @@ describe("dispose", () => {
     // 工具注销自换引擎起归官方实例自己的 dispose（本地只留「逐条摘账 + 发起释放」）：
     // 句柄被释放即旧栈「逐个调用 toolDisposers」的同一判据面（撤销工具注册是 dispose 的效果）。
     const { manager } = await disposeFixture();
-    await pollUntil("装载已发起", () => poolLoader.handles.length > 0);
-    const record = poolLoader.handles[poolLoader.handles.length - 1];
+    await pollUntil("装载已发起", () => poolLoader!.handles.length > 0);
+    const record = poolLoader!.handles[poolLoader!.handles.length - 1];
     expect(record.state.disposed).toBe(false);
     await manager.dispose();
     expect(record.state.disposed).toBe(true);
@@ -2933,7 +3101,7 @@ describe("dispose", () => {
 
   it("dispose 后池被整体拆空", async () => {
     const { manager } = await disposeFixture();
-    await pollUntil("装载已发起", () => poolLoader.handles.length > 0);
+    await pollUntil("装载已发起", () => poolLoader!.handles.length > 0);
     await manager.dispose();
     expect(manager.middleware, "中间层实例已释放").toBe(undefined);
   });
@@ -2945,17 +3113,20 @@ describe("中间层模式 summary 投影（#228）", () => {
   // 「配置 + 账本句柄 + 注册面前缀」。夹具因此按新 ConnectionEntry 造，并让注册面携带该 id 前缀
   // ——换引擎后「已连上」只有这一条正向证据（官方不暴露状态 API）。
   const POOL_ID = "id-p1";
-  const connectedEntry = (name = "p1", id = POOL_ID) => ({
-    server: { name, transport: "stdio", command: "pcmd", enabled: true },
-    id,
-    handle: { disposed: false },
-    status: "connected",
-    error: undefined,
-    connectedAt: Date.now(),
-    readySettled: true,
-    everConnected: true,
-    disposed: false,
-  });
+  // 部分连接条目桩（被测读面：id/status/server；everConnected/disposed 为本文件判据自备的探测字段，
+  // 域形状外）：调用方只读域内面，收窄不断言。
+  const connectedEntry = (name = "p1", id = POOL_ID): ConnectionEntry =>
+    ({
+      server: { name, transport: "stdio", command: "pcmd", enabled: true },
+      id,
+      handle: { disposed: false },
+      status: "connected",
+      error: undefined,
+      connectedAt: Date.now(),
+      readySettled: true,
+      everConnected: true,
+      disposed: false,
+    }) as unknown as ConnectionEntry;
 
   async function projectionBase() {
     const { dir, manager, store } = managerFixture("dsh-mcp-mgr2mw-");
@@ -2973,16 +3144,21 @@ describe("中间层模式 summary 投影（#228）", () => {
     // 项目级真 supervisor 并异步重连，污染后续兜底投影断言）。
     await manager.setSession(proj);
     await manager.initMiddleware();
-    const mw = manager.middleware;
+    // 池由前置装配保证存在（initMiddleware/真装载刚跑完），此处断言存在。
+    const mw = manager.middleware!;
     // 预置 userDisabled（initMiddleware 会以磁盘加载结果覆盖 disabledByRoot，
     // 故必须在其后设置）：单元创建即合并，惰性 ensureConnected 直接短路——
     // 连接条目完全由本测试手工注入，杜绝 spawn 真进程与后台重连污染。
     mw.disabledByRoot.set(proj, new Set(["p1"]));
-    const unit = await mw.projectUnitFor(proj);
+    // projectUnitFor 刚建单元，此处断言存在。
+    const unit = (await mw.projectUnitFor(proj))!;
     // 这条禁用只为短路惰性建连；条目改由本测试手工注入，要按真实运行态投影，故立即撤回。
     unit.userDisabled.delete("p1");
     // 注册面携带该 id 前缀 = 「已连上」；不带它 statusOf 会如实投影成 failed / reconnecting。
-    manager.ctx.tools.entries = [{ name: `mcp__${POOL_ID}__t1` }];
+    // ctx.tools 是工厂挂载的同一份假注册面（makeManager 注释）：此处取其 entries 写口。
+    (manager.ctx.tools as unknown as { entries: FakeToolEntry[] }).entries = [
+      { name: `mcp__${POOL_ID}__t1` },
+    ];
     // 注入连接池条目 + 目录缓存（模拟已握手成功，不派官方实例）。
     unit.connections.set("p1", connectedEntry());
     catalogDirectory.projectWrappedTools({
@@ -2993,7 +3169,8 @@ describe("中间层模式 summary 投影（#228）", () => {
         { name: "t2", description: "", parameters: {} },
       ],
     });
-    return { dir, manager, store, proj, mw, unit, entry: unit.connections.get("p1") };
+    // 手工注入的条目恒存在，此处断言存在。
+    return { dir, manager, store, proj, mw, unit, entry: unit.connections.get("p1")! };
   }
 
   it("项目级 server 在 summary 中", async () => {
@@ -3002,56 +3179,64 @@ describe("中间层模式 summary 投影（#228）", () => {
     // 目录一致（此前 summarize 只读 supervisors，项目级恒 stopped / 空数组，
     // 而 ws_mcp_search 实测目录有货）。
     const { manager } = await projectionBase();
-    const p1 = manager.summary().servers.find((s) => s.name === "p1");
+    // p1 恒在清单内（前序用例同夹具已验存在），此处断言存在。
+    const p1 = summaryView(manager).servers.find((s) => s.name === "p1")!;
     expect(p1 !== undefined).toBeTruthy();
   });
 
   it("p1.scope 为 project", async () => {
     const { manager } = await projectionBase();
-    const p1 = manager.summary().servers.find((s) => s.name === "p1");
+    // p1 恒在清单内（前序用例同夹具已验存在），此处断言存在。
+    const p1 = summaryView(manager).servers.find((s) => s.name === "p1")!;
     expect(p1.scope).toBe("project");
   });
 
   it("p1.status 为 connected", async () => {
     const { manager } = await projectionBase();
-    const p1 = manager.summary().servers.find((s) => s.name === "p1");
+    // p1 恒在清单内（前序用例同夹具已验存在），此处断言存在。
+    const p1 = summaryView(manager).servers.find((s) => s.name === "p1")!;
     expect(p1.status).toBe("connected");
   });
 
   it("summary.tools 非空（catalog 有货不得返回空数组）", async () => {
     const { manager } = await projectionBase();
-    const p1 = manager.summary().servers.find((s) => s.name === "p1");
+    // p1 恒在清单内（前序用例同夹具已验存在），此处断言存在。
+    const p1 = summaryView(manager).servers.find((s) => s.name === "p1")!;
     expect(Array.isArray(p1.tools) && p1.tools.length > 0).toBeTruthy();
   });
 
   it("summary.tools 与 catalog 目录一致", async () => {
     const { manager } = await projectionBase();
-    const p1 = manager.summary().servers.find((s) => s.name === "p1");
-    expect([...p1.tools].sort()).toEqual(["t1", "t2"]);
+    // p1 恒在清单内（前序用例同夹具已验存在），此处断言存在。
+    const p1 = summaryView(manager).servers.find((s) => s.name === "p1")!;
+    // tools 恒为数组（投影构造保证），此处断言存在。
+    expect([...p1.tools!].sort()).toEqual(["t1", "t2"]);
   });
 
   it("sum.counts.connected 为 1", async () => {
     const { manager } = await projectionBase();
-    expect(manager.summary().counts.connected).toBe(1);
+    expect(summaryView(manager).counts.connected).toBe(1);
   });
 
   // 状态不再靠手改 entry.status 伪造：投影输入换成「注册面前缀 + readySettled + everConnected」。
   it("failed 态：error 详情投影（浮窗红字展示来源）", async () => {
     const { manager, entry } = await projectionBase();
     // 首连就没成功（注册面无该前缀、everConnected 为假）→ failed，error 透出官方判词。
-    manager.ctx.tools.entries = [];
+    // ctx.tools 是工厂挂载的同一份假注册面（makeManager 注释）：此处取其 entries 写口。
+    (manager.ctx.tools as unknown as { entries: FakeToolEntry[] }).entries = [];
     entry.everConnected = false;
     entry.error = new Error("官方装载失败：连接超时");
-    const failed = manager.summarize(manager.projectStore.find("p1"), "project");
+    const failed = summarizeOf(manager, manager.projectStore!.find("p1")!, "project");
     expect(failed.status).toBe("failed");
   });
 
   it("failed 态：error 文案投影", async () => {
     const { manager, entry } = await projectionBase();
-    manager.ctx.tools.entries = [];
+    // ctx.tools 是工厂挂载的同一份假注册面（makeManager 注释）：此处取其 entries 写口。
+    (manager.ctx.tools as unknown as { entries: FakeToolEntry[] }).entries = [];
     entry.everConnected = false;
     entry.error = new Error("官方装载失败：连接超时");
-    const failed = manager.summarize(manager.projectStore.find("p1"), "project");
+    const failed = summarizeOf(manager, manager.projectStore!.find("p1")!, "project");
     expect(failed.error).toBe("官方装载失败：连接超时");
   });
 
@@ -3060,7 +3245,9 @@ describe("中间层模式 summary 投影（#228）", () => {
     // 装载等待窗口未结算（readySettled 为假）→ connecting 纯属我方动作面。
     entry.readySettled = false;
     entry.error = undefined;
-    expect(manager.summarize(manager.projectStore.find("p1"), "project").status).toBe("connecting");
+    expect(summarizeOf(manager, manager.projectStore!.find("p1")!, "project").status).toBe(
+      "connecting",
+    );
   });
 
   async function unavailableBase() {
@@ -3073,17 +3260,19 @@ describe("中间层模式 summary 投影（#228）", () => {
 
   it("unavailable → status connected", async () => {
     const { manager } = await unavailableBase();
-    expect(manager.summarize(manager.projectStore.find("p1"), "project").status).toBe("connected");
+    expect(summarizeOf(manager, manager.projectStore!.find("p1")!, "project").status).toBe(
+      "connected",
+    );
   });
 
   it("unavailable → tools 为空", async () => {
     const { manager } = await unavailableBase();
-    expect(manager.summarize(manager.projectStore.find("p1"), "project").tools).toEqual([]);
+    expect(summarizeOf(manager, manager.projectStore!.find("p1")!, "project").tools).toEqual([]);
   });
 
   it("unavailable reason 透出到 error", async () => {
     const { manager } = await unavailableBase();
-    expect(manager.summarize(manager.projectStore.find("p1"), "project").error).toBe(
+    expect(summarizeOf(manager, manager.projectStore!.find("p1")!, "project").error).toBe(
       "discovery timed out",
     );
   });
@@ -3100,24 +3289,28 @@ describe("中间层模式 summary 投影（#228）", () => {
 
   it("userDisabled 无连接条目 → stopped", async () => {
     const { manager } = await stoppedBase();
-    expect(manager.summarize(manager.projectStore.find("p1"), "project").status).toBe("stopped");
+    expect(summarizeOf(manager, manager.projectStore!.find("p1")!, "project").status).toBe(
+      "stopped",
+    );
   });
 
   it("userDisabled → tools 为空", async () => {
     const { manager } = await stoppedBase();
-    expect(manager.summarize(manager.projectStore.find("p1"), "project").tools).toEqual([]);
+    expect(summarizeOf(manager, manager.projectStore!.find("p1")!, "project").tools).toEqual([]);
   });
 
   it("userDisabled → error undefined", async () => {
     const { manager } = await stoppedBase();
-    expect(manager.summarize(manager.projectStore.find("p1"), "project").error).toBeUndefined();
+    expect(
+      summarizeOf(manager, manager.projectStore!.find("p1")!, "project").error,
+    ).toBeUndefined();
   });
 
   async function globalScopeBase() {
     const fixture = await projectionBase();
     // 单池（#767 笔 1a）：全局服务器同样从 @global 单元投影（没有「project 模式走直连」这条分支）。
     fixture.store.upsert(normalizeServer(quietServer("g1")));
-    fixture.manager.ctx.tools.entries = [
+    (fixture.manager.ctx.tools as unknown as { entries: FakeToolEntry[] }).entries = [
       { name: `mcp__${POOL_ID}__t1` },
       { name: "mcp__id-g1__gt" },
     ];
@@ -3138,19 +3331,19 @@ describe("中间层模式 summary 投影（#228）", () => {
 
   it("全局 scope 经 @global 单元投影（status connected）", async () => {
     const { manager, store } = await globalScopeBase();
-    expect(manager.summarize(store.find("g1"), "global").status).toBe("connected");
+    expect(summarizeOf(manager, store.find("g1")!, "global").status).toBe("connected");
   });
 
   it("全局 scope tools 来自 @global 目录投影", async () => {
     const { manager, store } = await globalScopeBase();
-    expect(manager.summarize(store.find("g1"), "global").tools).toEqual(["gt"]);
+    expect(summarizeOf(manager, store.find("g1")!, "global").tools).toEqual(["gt"]);
   });
 
   async function allModeBase() {
     const fixture = await projectionBase();
     // 项目单元（p1）与 @global 单元（g1）并存：单池后两者各按 scope 投影，互不串台。
     fixture.store.upsert(normalizeServer(quietServer("g1")));
-    fixture.manager.ctx.tools.entries = [
+    (fixture.manager.ctx.tools as unknown as { entries: FakeToolEntry[] }).entries = [
       { name: `mcp__${POOL_ID}__t1` },
       { name: "mcp__id-g1__gt" },
     ];
@@ -3171,23 +3364,26 @@ describe("中间层模式 summary 投影（#228）", () => {
 
   it("项目单元与 @global 单元并存时各按 scope 投影", async () => {
     const { manager, store } = await allModeBase();
-    expect(manager.summarize(store.find("g1"), "global").status).toBe("connected");
-    expect(manager.summarize(manager.projectStore.find("p1"), "project").status).toBe("connected");
+    expect(summarizeOf(manager, store.find("g1")!, "global").status).toBe("connected");
+    expect(summarizeOf(manager, manager.projectStore!.find("p1")!, "project").status).toBe(
+      "connected",
+    );
   });
 
   it("同 scope 各自 tools（全局取 @global 目录，项目取项目目录）", async () => {
     const { manager, store } = await allModeBase();
-    expect(manager.summarize(store.find("g1"), "global").tools).toEqual(["gt"]);
-    expect([...manager.summarize(manager.projectStore.find("p1"), "project").tools].sort()).toEqual(
-      ["t1", "t2"],
-    );
+    expect(summarizeOf(manager, store.find("g1")!, "global").tools).toEqual(["gt"]);
+    expect(
+      [...summarizeOf(manager, manager.projectStore!.find("p1")!, "project").tools].sort(),
+    ).toEqual(["t1", "t2"]);
   });
 
   async function disabledProjectionBase() {
     const fixture = await allModeBase();
     // 断开语义（#382 F4）：池内条目被拆 + userDisabled → summarize 落兜底 stopped。
     // 单池后不存在「直连账本残留」这条会误显示连接态的分支。
-    const globalUnit = fixture.mw.units.get(MIDDLEWARE_GLOBAL_ROOT);
+    // 刚建的 @global 单元恒存在，此处断言存在。
+    const globalUnit = fixture.mw.units.get(MIDDLEWARE_GLOBAL_ROOT)!;
     globalUnit.connections.delete("g1");
     globalUnit.userDisabled.add("g1");
     return fixture;
@@ -3195,32 +3391,32 @@ describe("中间层模式 summary 投影（#228）", () => {
 
   it("userDisabled 短路（#382：池接管后断开即 stopped）", async () => {
     const { manager, store } = await disabledProjectionBase();
-    expect(manager.summarize(store.find("g1"), "global").status).toBe("stopped");
+    expect(summarizeOf(manager, store.find("g1")!, "global").status).toBe("stopped");
   });
 
   it("userDisabled 短路 → tools 为空", async () => {
     const { manager, store } = await disabledProjectionBase();
-    expect(manager.summarize(store.find("g1"), "global").tools).toEqual([]);
+    expect(summarizeOf(manager, store.find("g1")!, "global").tools).toEqual([]);
   });
 
   it("#413：runtime 注入条目同样只经池投影（@global 单元，断开即 stopped）", async () => {
     // #413：runtime 注入条目与 store 全局同口径（同一本池账），不因注入来源而豁免。
     const { manager, store } = await disabledProjectionBase();
-    manager.runtimeRegistry.set("g1", store.find("g1"));
-    expect(manager.summarize(store.find("g1"), "global").status).toBe("stopped");
+    manager.runtimeRegistry.set("g1", store.find("g1")!);
+    expect(summarizeOf(manager, store.find("g1")!, "global").status).toBe("stopped");
   });
 
   it("#413 runtime 投影 → tools 为空", async () => {
     const { manager, store } = await disabledProjectionBase();
-    manager.runtimeRegistry.set("g1", store.find("g1"));
-    expect(manager.summarize(store.find("g1"), "global").tools).toEqual([]);
+    manager.runtimeRegistry.set("g1", store.find("g1")!);
+    expect(summarizeOf(manager, store.find("g1")!, "global").tools).toEqual([]);
   });
 
   it("条目不在池里 → 兜底 stopped（不谎报 connected）", async () => {
     const { manager, store } = await disabledProjectionBase();
     // 既拆条目又清 userDisabled：兜底分支的唯一输入就是「不在池里」。
-    manager.middleware.units.get(MIDDLEWARE_GLOBAL_ROOT).userDisabled.delete("g1");
-    expect(manager.summarize(store.find("g1"), "global").status).toBe("stopped");
+    manager.middleware!.units.get(MIDDLEWARE_GLOBAL_ROOT)!.userDisabled.delete("g1");
+    expect(summarizeOf(manager, store.find("g1")!, "global").status).toBe("stopped");
   });
 });
 
@@ -3228,8 +3424,8 @@ describe("中间层模式 summary 投影（#228）", () => {
 // 旧直连账本的「start 替换分支（directConfig 换引用）」随账本退役；单池后同一条不变式落在
 // connect 的 force 受控重建上（connectInternal：先 await disposeServer(旧 id) 再挂新实例）。
 describe("B5 红测：受控重建释放旧代际", () => {
-  const poolEntry = (manager) =>
-    manager.middleware.units.get(MIDDLEWARE_GLOBAL_ROOT)?.connections.get("s5");
+  const poolEntry = (manager: McpManagerType) =>
+    manager.middleware!.units.get(MIDDLEWARE_GLOBAL_ROOT)?.connections.get("s5");
 
   async function rebuiltEntry() {
     const { manager, store } = managerFixture("dsh-mcp-mgr2b5a-");
@@ -3239,8 +3435,9 @@ describe("B5 红测：受控重建释放旧代际", () => {
     // 第一代走真装载链（假 loader，离线）：账本句柄就是旧代际的可观测面。
     manager.start("s5", "global");
     await pollUntil("第一代装载完成", () => poolEntry(manager)?.id !== undefined);
-    const oldEntry = poolEntry(manager);
-    const oldHandle = oldEntry.handle;
+    // 轮询已等到条目建立，此处断言存在；旧句柄恒存在（真装载链产物）。
+    const oldEntry = poolEntry(manager)!;
+    const oldHandle = oldEntry.handle!;
     // 受控重建：connect 走 connectInternal 的 force 分支（先 disposeServer 旧 id 再挂新实例）。
     await manager.connect("s5", "global");
     return { manager, oldEntry, oldHandle };
@@ -3269,8 +3466,8 @@ describe("B5 红测：受控重建释放旧代际", () => {
 
 // B5（续）：重复触达不重复装载 ----
 describe("B5 红测（续）：重复触达不重复装载", () => {
-  const poolEntry = (manager) =>
-    manager.middleware.units.get(MIDDLEWARE_GLOBAL_ROOT)?.connections.get("s5");
+  const poolEntry = (manager: McpManagerType) =>
+    manager.middleware!.units.get(MIDDLEWARE_GLOBAL_ROOT)?.connections.get("s5");
 
   async function startedEntry() {
     const { manager, store } = managerFixture("dsh-mcp-mgr2b5b-");
@@ -3293,7 +3490,7 @@ describe("B5 红测（续）：重复触达不重复装载", () => {
     const oldEntry = poolEntry(manager);
     await manager.connect("s5", "global");
     expect(poolEntry(manager) === oldEntry).toBe(false);
-    expect(manager.middleware.units.get(MIDDLEWARE_GLOBAL_ROOT).connections.size).toBe(1);
+    expect(manager.middleware!.units.get(MIDDLEWARE_GLOBAL_ROOT)!.connections.size).toBe(1);
   });
 });
 
@@ -3305,15 +3502,18 @@ describe("B5 红测（续）：顺序不变式（旧代际先释放）", () => {
     const { manager, store } = managerFixture("dsh-mcp-mgr2b5c-");
     await manager.initMiddleware();
     store.upsert(normalizeServer(quietServer("s5")));
-    const mountsAt = () =>
-      poolLoader.calls.map((call, index) => [call, index]).filter(([call]) => call[0] === "mount");
+    // [调用, 序号] 元组表：序号恒为 number，调用恒有 [0] 动作名。
+    const mountsAt = (): Array<[unknown, number]> =>
+      poolLoader!.calls
+        .map((call, index): [unknown, number] => [call, index])
+        .filter(([call]) => (call as unknown[])[0] === "mount");
     manager.start("s5", "global");
     await pollUntil("旧代际已挂载", () => mountsAt().length >= 1);
     const firstMount = mountsAt()[0][1];
     // 受控重建（用户显式 connect）：强制换代际。
     await manager.connect("s5", "global");
     await pollUntil("新代际已挂载", () => mountsAt().length >= 2);
-    const disposeAt = poolLoader.calls.findIndex((call) => call[0] === "dispose");
+    const disposeAt = poolLoader!.calls.findIndex((call) => call[0] === "dispose");
     const secondMount = mountsAt()[1][1];
     expect(firstMount >= 0 && disposeAt > firstMount && secondMount > disposeAt).toBeTruthy();
   });
@@ -3327,8 +3527,8 @@ describe("B19 红测：summarize 合并禁用集", () => {
     const proj = join(dir, "proj");
     manager.projectRoot = proj;
     manager.projectStore = new McpStore(join(proj, "mcp.json"));
-    manager.projectStore.data.servers = [srv];
-    manager.projectStores.set(proj, manager.projectStore);
+    manager.projectStore!.data.servers = [srv];
+    manager.projectStores.set(proj, manager.projectStore!);
     const mw = await manager.initMiddleware();
     manager.disabledTools.set(MIDDLEWARE_GLOBAL_ROOT, new Map([["g1", new Set(["toolA"])]]));
     manager.disabledTools.set(proj, new Map([["g1", new Set(["toolB"])]]));
@@ -3362,8 +3562,9 @@ describe("B19 红测：summarize 合并禁用集", () => {
       userDisabled: new Set(),
       lastTouchedAt: Date.now(),
       inFlight: new Map(),
-    });
-    const s = manager.summarize(srv, "project");
+      // 部分单元桩（status 字面量与探测字段超出域形状）：调用方只读域内面，收窄不断言。
+    } as unknown as ProjectUnit);
+    const s = summarizeOf(manager, srv, "project");
     expect([...(s.disabledTools ?? [])].sort()).toEqual(["toolA", "toolB"]);
   });
 });
@@ -3373,8 +3574,8 @@ describe("B19 红测：summarize 合并禁用集", () => {
 // 与形参锁 :202）。本笔换了数据源（supervisor.toolMeta → 连接池单元表），必须把
 // 「返回注册名」与「未连接 / 未知 server 返回 []」钉成行为判据。
 describe("#767 笔 1a：ctx.mcpManager.getTools 行为判据", () => {
-  let prevHome;
-  let homeDir;
+  let prevHome: string | undefined;
+  let homeDir: string;
   beforeEach(() => {
     prevHome = process.env.DSH_HOME;
     homeDir = makeTempDir("dsh-mcp-mgr2gt-");
@@ -3390,13 +3591,13 @@ describe("#767 笔 1a：ctx.mcpManager.getTools 行为判据", () => {
    * 真装载链（官方 client 的 syncTools 在本夹具里由 OFFICIAL_MODULE.apply 代替）。
    */
   async function appliedService() {
-    const provided = new Map();
-    const schemas = [];
+    const provided = new Map<string, unknown>();
+    const schemas: FakeToolEntry[] = [];
     const officialModule = {
       name: "test:official",
       // 真实引擎里这一步由官方 client 的 syncTools 做：把 `mcp__<serverName>__<tool>`
       // 写进宿主注册表。六态投影的 hasTools 与 getTools 的注册面因此同源。
-      apply: (_pluginCtx, config) => {
+      apply: (_pluginCtx: unknown, config: { serverName: string }) => {
         schemas.push({
           name: `mcp__${config.serverName}__echo`,
           description: "回显给定的文本",
@@ -3410,13 +3611,16 @@ describe("#767 笔 1a：ctx.mcpManager.getTools 行为判据", () => {
       systemPrompt: { section: () => () => {} },
       inject: () => () => {},
       on: () => () => {},
-      effect: (fn) => fn(),
-      provide: (serviceName, service) => {
+      effect: (fn: () => unknown) => fn(),
+      provide: (serviceName: string, service: unknown) => {
         provided.set(serviceName, service);
       },
-      get: (serviceName) =>
+      get: (serviceName: string) =>
         serviceName === "loader" ? { import: async () => officialModule } : undefined,
-      plugin: (module, config) => {
+      plugin: (
+        module: { apply?: (ctx: unknown, config: { serverName: string }) => unknown },
+        config: { serverName: string },
+      ) => {
         if (typeof module?.apply === "function") module.apply(ctx, config);
         return { await: async () => undefined, dispose: async () => {} };
       },
@@ -3424,16 +3628,18 @@ describe("#767 笔 1a：ctx.mcpManager.getTools 行为判据", () => {
     const store = new McpStore(join(homeDir, "mcp.json"));
     store.data = { version: 1, servers: [] };
     await store.save();
-    await apply(ctx, {
+    // 残缺宿主（只实现装配触达面）：按接缝收窄，装配语义不变。
+    await apply(ctx as unknown as Context, {
       storePath: store.path,
       announceToAgent: false,
       announceCatalog: false,
     });
-    return { svc: provided.get("mcpManager"), schemas };
+    // 提供方挂载的真服务（行为面由本组用例钉住），此处取其类型面。
+    return { svc: provided.get("mcpManager") as McpManagerService, schemas };
   }
 
   /** 起一台全局服务器并等它在池里拿到 id（单池：进 @global 单元）。 */
-  async function connectedService(svc) {
+  async function connectedService(svc: McpManagerService) {
     await svc.registerServer({
       name: "g1",
       transport: "stdio",
@@ -3480,8 +3686,8 @@ describe("#767 笔 1a：ctx.mcpManager.getTools 行为判据", () => {
 
 // apply：配置分支 ----
 describe("apply：配置分支", () => {
-  let prevHome;
-  let homeDir;
+  let prevHome: string | undefined;
+  let homeDir: string;
   beforeEach(() => {
     prevHome = process.env.DSH_HOME;
     homeDir = makeTempDir("dsh-mcp-apply2-");
@@ -3495,12 +3701,18 @@ describe("apply：配置分支", () => {
   // enabled:false：无路由、无 section、无 pre-step。
   // （cordis effect(fn, label) 语义：立即执行工厂取回 disposer。）
   function makeCtx() {
-    const state = { preSteps: [], sections: [], routes: [], disposers: [], injected: [] };
+    const state: {
+      preSteps: Array<(...args: unknown[]) => void>;
+      sections: string[];
+      routes: string[];
+      disposers: Array<() => void>;
+      injected: unknown[];
+    } = { preSteps: [], sections: [], routes: [], disposers: [], injected: [] };
     const ctx = {
       logger: { warn: () => {}, info: () => {}, error: () => {} },
       tools: { register: () => () => {} },
       webServer: {
-        register: (route) => {
+        register: (route: { path: string }) => {
           state.routes.push(route.path);
           return () => {
             const i = state.routes.indexOf(route.path);
@@ -3509,7 +3721,7 @@ describe("apply：配置分支", () => {
         },
       },
       systemPrompt: {
-        section: (opts) => {
+        section: (opts: { name: string }) => {
           state.sections.push(opts.name);
           return () => {
             const i = state.sections.indexOf(opts.name);
@@ -3517,15 +3729,15 @@ describe("apply：配置分支", () => {
           };
         },
       },
-      inject: (keys, _cb) => {
+      inject: (keys: unknown, _cb: (services: unknown) => void) => {
         state.injected.push(keys);
         return () => {};
       },
-      on: (event, handler) => {
+      on: (event: string, handler: (...args: unknown[]) => void) => {
         if (event === "agent/pre-step") state.preSteps.push(handler);
         return () => {};
       },
-      effect: (fn) => {
+      effect: (fn: () => () => void) => {
         const disposer = fn();
         state.disposers.push(disposer);
         return disposer;
@@ -3534,9 +3746,10 @@ describe("apply：配置分支", () => {
     return { ctx, state };
   }
 
-  async function applied(options) {
+  async function applied(options: Record<string, unknown> | undefined) {
     const { ctx, state } = makeCtx();
-    await apply(ctx, options);
+    // 残缺宿主（只实现装配触达面）：按接缝收窄，装配语义不变。
+    await apply(ctx as unknown as Context, options);
     return { ctx, state };
   }
 
@@ -3614,18 +3827,23 @@ describe("apply：配置分支", () => {
   it("settings 注入回调通路（cb 收到 settings 服务即挂载成功）", async () => {
     const { ctx } = await defaultOn();
     // settings 注入回调挂 uiUpdate 的通路验证（cb 收到 settings 服务即挂载成功）。
-    const settingsCalls = [];
+    const settingsCalls: Array<[unknown, unknown]> = [];
     const settingsCtx = {
       logger: ctx.logger,
       effect: ctx.effect,
-      inject: (keys, cb) => {
+      inject: (keys: unknown, cb: (services: unknown) => void) => {
         if (Array.isArray(keys) && keys.includes("settings")) {
-          cb({ settings: { update: async (ns, patch) => settingsCalls.push([ns, patch]) } });
+          cb({
+            settings: {
+              update: async (ns: unknown, patch: unknown) => settingsCalls.push([ns, patch]),
+            },
+          });
         }
         return () => {};
       },
     };
-    await apply(settingsCtx, { enabled: false });
+    // 残缺宿主（只实现 settings 注入面）：按接缝收窄。
+    await apply(settingsCtx as unknown as Context, { enabled: false });
     expect(typeof settingsCalls).toBe("object");
   });
 
@@ -3655,8 +3873,8 @@ describe("apply：配置分支", () => {
 
 // #569：catalogViewFor 合成注入端目录视图（B 起步 + 中间层覆盖 + 磁盘兜底） ----
 describe("#569 catalogViewFor 合成注入端目录视图", () => {
-  let prevHome;
-  let homeDir;
+  let prevHome: string | undefined;
+  let homeDir: string;
   beforeEach(() => {
     prevHome = process.env.DSH_HOME;
     homeDir = makeTempDir("dsh-mcp-catview-");
@@ -3667,7 +3885,7 @@ describe("#569 catalogViewFor 合成注入端目录视图", () => {
     else process.env.DSH_HOME = prevHome;
   });
 
-  const catalogFileFor = (root) =>
+  const catalogFileFor = (root: string) =>
     join(
       homeDir,
       "@wingsky-1",
@@ -3676,7 +3894,17 @@ describe("#569 catalogViewFor 合成注入端目录视图", () => {
       `${createHash("sha256").update(root).digest("hex").slice(0, 16)}.json`,
     );
   /** 单元夹具 + 目录登记：目录内存态归 catalog 域（#767 S1-3b），单元只留连接/禁用面。 */
-  const unitFor = (root, catalogEntries) => {
+  const unitFor = (
+    root: string,
+    catalogEntries: Record<
+      string,
+      {
+        tools: Map<string, { description?: string; inputSchema?: unknown }>;
+        unavailable?: string;
+        discoveredAt: number;
+      }
+    >,
+  ) => {
     catalogDirectory.dropRoot(root);
     for (const [serverName, entry] of Object.entries(catalogEntries)) {
       catalogDirectory.projectWrappedTools({
@@ -3693,7 +3921,8 @@ describe("#569 catalogViewFor 合成注入端目录视图", () => {
         continue;
       }
       // 夹具要的是显式时间戳（1 = 很久以前），投影写口恒写 now，故就地校正。
-      catalogDirectory.serversFor(root).get(serverName).discoveredAt = entry.discoveredAt;
+      // 刚投影的条目恒存在，此处断言存在。
+      catalogDirectory.serversFor(root)!.get(serverName)!.discoveredAt = entry.discoveredAt;
     }
     return {
       root,
@@ -3703,7 +3932,12 @@ describe("#569 catalogViewFor 合成注入端目录视图", () => {
       inFlight: new Map(),
     };
   };
-  const serversWith = (entries) => new Map(Object.entries(entries));
+  // 目录视图输入面（只读 server.name/scope）：条目按读取面收窄，容器按被测签名收窄。
+  const serversWith = (entries: Record<string, { server: { name: string }; scope: string }>) =>
+    new Map(Object.entries(entries)) as unknown as Map<
+      string,
+      { server: ServerConfig; scope: string }
+    >;
 
   async function catalogViewFixture() {
     // 项目 root 夹具用真实目录 + .git 标记：findProjectRoot 从该目录起步必然原样
@@ -3717,7 +3951,8 @@ describe("#569 catalogViewFor 合成注入端目录视图", () => {
     manager.catalogCache.set("g2", { summary: "B-global-g2" });
     manager.catalogCache.set("p1", { summary: "B-project-p1" });
     manager.catalogCache.set("p2", { summary: "B-project-p2" });
-    manager.middleware = mw;
+    // 只有 units 面的池替身（目录视图不读池内条目）：按接缝收窄。
+    manager.middleware = mw as unknown as McpManagerType["middleware"];
     // 目录内存态是域内单例（跨用例留存），每个场景从这里重新开始。
     catalogDirectory.dropRoot("@global");
     catalogDirectory.dropRoot(projDir);
@@ -3726,7 +3961,7 @@ describe("#569 catalogViewFor 合成注入端目录视图", () => {
 
   /** 场景 1：无中间层单元 → 纯 B 视图（磁盘/摘要兜底；单池 #767 后与模式无关）。 */
   async function noUnitView() {
-    const { manager, _mw, projDir } = await catalogViewFixture();
+    const { manager, projDir } = await catalogViewFixture();
     const servers = serversWith({
       g1: { server: { name: "g1" }, scope: "global" },
       p1: { server: { name: "p1" }, scope: "project" },

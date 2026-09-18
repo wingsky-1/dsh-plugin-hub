@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-mcp-manager — unit：installSettingsNamespace 全分支覆盖
  * （isUnloading 为其内部依赖，经 disposer / watch 回调间接覆盖）。
@@ -21,7 +20,7 @@ describe("ctx.inject 不可用", () => {
     installSettingsNamespace(
       {
         logger: {
-          warn: (m) => {
+          warn: (m: string) => {
             warned = m;
           },
         },
@@ -46,11 +45,11 @@ describe("settings 服务缺失", () => {
     let warned = "";
     const ctx = {
       logger: {
-        warn: (m) => {
+        warn: (m: string) => {
           warned = m;
         },
       },
-      inject: (keys, cb) => {
+      inject: (keys: unknown, cb: (services: unknown) => void) => {
         if (Array.isArray(keys) && keys.includes("settings")) cb({});
         return () => {};
       },
@@ -65,11 +64,11 @@ describe("settings.register 抛错", () => {
     let warned = "";
     const ctx = {
       logger: {
-        warn: (m) => {
+        warn: (m: string) => {
           warned = m;
         },
       },
-      inject: (keys, cb) => {
+      inject: (keys: unknown, cb: (services: unknown) => void) => {
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings: {
@@ -93,7 +92,17 @@ describe("settings.register 抛错", () => {
 // 原脚本块按顺序断言依赖同一份可变状态（setSource → watch → disposer）；
 // 每条断言改用一次独立装配的等价场景，避免用例间顺序耦合。
 function installActiveLifecycle() {
-  const state = {
+  const state: {
+    sourceMode: string;
+    onChangeCount: number;
+    watchCb: null | (() => void);
+    disposer: null | (() => void);
+    scope: null | { get: () => { from: string }; watch: (cb: () => void) => void };
+    settings: null | {
+      register: (_ns: unknown, _schema: unknown, _opts: unknown) => unknown;
+      effect: (fn: () => () => void) => () => void;
+    };
+  } = {
     sourceMode: "unset", // entry | scope
     onChangeCount: 0,
     watchCb: null,
@@ -104,15 +113,15 @@ function installActiveLifecycle() {
 
   const scope = {
     get: () => ({ from: "scope" }),
-    watch: (cb) => {
+    watch: (cb: () => void) => {
       state.watchCb = cb;
     },
   };
   state.scope = scope;
 
   const settings = {
-    register: (_ns, _schema, _opts) => scope,
-    effect: (fn) => {
+    register: (_ns: unknown, _schema: unknown, _opts: unknown) => scope,
+    effect: (fn: () => () => void) => {
       state.disposer = fn();
       return () => {};
     },
@@ -122,8 +131,8 @@ function installActiveLifecycle() {
   // 注入器记录 disposer，便于后续手动触发。
   const ctx = {
     fiber: { state: "active" },
-    logger: { warn: () => {} },
-    inject: (keys, cb) => {
+    logger: { warn: (_m: string) => {} },
+    inject: (keys: unknown, cb: (services: unknown) => void) => {
       if (Array.isArray(keys) && keys.includes("settings"))
         cb({ settings, effect: settings.effect });
       return () => {};
@@ -136,8 +145,9 @@ function installActiveLifecycle() {
     {},
     { from: "entry" },
     {
-      setSource: (fn) => {
-        state.sourceMode = fn().from;
+      setSource: (fn: () => unknown) => {
+        // 假 scope 的 get 形状（{ from }）由本文件假件保证，断言其 from 面。
+        state.sourceMode = (fn() as { from: string }).from;
       },
       onChange: () => {
         state.onChangeCount += 1;
@@ -166,20 +176,22 @@ describe("正常注册 + lifecycle", () => {
 
   it("watch 变化触发 onChange", () => {
     const state = installActiveLifecycle();
-    state.watchCb();
+    // 装配期 watch 必接线（短路只在回调内），非空由用例流保证。
+    state.watchCb!();
     expect(state.onChangeCount).toBe(2);
   });
 
   it("卸载回落 entry", () => {
     const state = installActiveLifecycle();
-    state.disposer();
+    // 装配期 effect 必接线，非空由用例流保证。
+    state.disposer!();
     expect(state.sourceMode).toBe("entry");
   });
 
   it("disposer 触发 onChange", () => {
     const state = installActiveLifecycle();
-    state.watchCb();
-    state.disposer();
+    state.watchCb!();
+    state.disposer!();
     expect(state.onChangeCount).toBe(3);
   });
 });
@@ -190,7 +202,13 @@ describe("正常注册 + lifecycle", () => {
 // 隐式覆盖该分支）。
 describe("onScope（#436）：register 成功后、setSource 之前回调", () => {
   function installWithOnScope() {
-    const state = { scopeSeen: null, serviceSeen: null, order: [], scope: null, settings: null };
+    const state: {
+      scopeSeen: unknown;
+      serviceSeen: unknown;
+      order: string[];
+      scope: null | { get: () => { from: string }; watch: () => () => void };
+      settings: null | { register: () => unknown };
+    } = { scopeSeen: null, serviceSeen: null, order: [], scope: null, settings: null };
     const scope = {
       get: () => ({ from: "scope" }),
       watch: () => () => {},
@@ -199,12 +217,12 @@ describe("onScope（#436）：register 成功后、setSource 之前回调", () =
     state.scope = scope;
     state.settings = settings;
     const ctx = {
-      logger: { warn: () => {} },
-      inject: (keys, cb) => {
+      logger: { warn: (_m: string) => {} },
+      inject: (keys: unknown, cb: (services: unknown) => void) => {
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings,
-            effect: (fn) => {
+            effect: (fn: () => void) => {
               fn();
               return () => {};
             },
@@ -223,7 +241,7 @@ describe("onScope（#436）：register 成功后、setSource 之前回调", () =
           state.order.push("setSource");
         },
         onChange: () => {},
-        onScope: (s, svc) => {
+        onScope: (s: unknown, svc: unknown) => {
           state.scopeSeen = s;
           state.serviceSeen = svc;
           state.order.push("onScope");
@@ -251,22 +269,26 @@ describe("onScope（#436）：register 成功后、setSource 之前回调", () =
 
 // isUnloading 短路：fiber 处于卸载态时 disposer / watch 不动作 ----
 describe("isUnloading 短路：卸载态 disposer / watch 不动作", () => {
-  function installInState(state) {
-    const seen = { onChangeCount: 0, watchCb: null, disposer: null };
+  function installInState(state: unknown) {
+    const seen: {
+      onChangeCount: number;
+      watchCb: null | (() => void);
+      disposer: null | (() => void);
+    } = { onChangeCount: 0, watchCb: null, disposer: null };
     const scope = {
       get: () => ({ from: "scope" }),
-      watch: (cb) => {
+      watch: (cb: () => void) => {
         seen.watchCb = cb;
       },
     };
     const ctx = {
       fiber: { state },
-      logger: { warn: () => {} },
-      inject: (keys, cb) => {
+      logger: { warn: (_m: string) => {} },
+      inject: (keys: unknown, cb: (services: unknown) => void) => {
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings: { register: () => scope },
-            effect: (fn) => {
+            effect: (fn: () => () => void) => {
               seen.disposer = fn();
               return () => {};
             },
@@ -295,8 +317,9 @@ describe("isUnloading 短路：卸载态 disposer / watch 不动作", () => {
     (state) => {
       const seen = installInState(state);
       const before = seen.onChangeCount;
-      seen.disposer();
-      seen.watchCb();
+      // 装配期 effect/watch 必走（短路只在回调内），此处非空由用例流保证。
+      seen.disposer!();
+      seen.watchCb!();
       expect(seen.onChangeCount).toBe(before);
     },
   );
@@ -305,22 +328,22 @@ describe("isUnloading 短路：卸载态 disposer / watch 不动作", () => {
 // 总开关：fiber 非对象 / 无 fiber / 无 state 的容错 ----
 describe("总开关：fiber 非对象 / 无 fiber / 无 state 的容错", () => {
   it.each([undefined, null, 42, {}])("fiber=%s 时注册与 unmount 皆不抛", (fiber) => {
-    let watchCb = null;
-    let disposer = null;
+    let watchCb: null | (() => void) = null;
+    let disposer: null | (() => void) = null;
     const scope = {
       get: () => null,
-      watch: (cb) => {
+      watch: (cb: () => void) => {
         watchCb = cb;
       },
     };
     const ctx = {
       fiber,
-      logger: { warn: () => {} },
-      inject: (keys, cb) => {
+      logger: { warn: (_m: string) => {} },
+      inject: (keys: unknown, cb: (services: unknown) => void) => {
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings: { register: () => scope },
-            effect: (fn) => {
+            effect: (fn: () => () => void) => {
               disposer = fn();
               return () => {};
             },

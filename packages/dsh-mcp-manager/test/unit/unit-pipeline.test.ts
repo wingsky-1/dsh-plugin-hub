@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-mcp-manager — unit：执行管道域契约（#664 阶段 2）。
  *
@@ -15,8 +14,10 @@
  */
 import { describe, expect, it } from "vitest";
 
+// I8 导入面收窄：纯函数域，直引 pipeline 目录门面，不再经包根组合根。
 const { defaultCallResultFallbackText, msgOf, normalizeArguments, projectCallToolResult } =
-  await import("../../src/index.ts");
+  await import("../../src/server/pipeline/interface.ts");
+import type { CallResultTextHandlers } from "../../src/server/pipeline/interface.ts";
 
 // 同一远端 CallToolResult 形态矩阵：两组 handler 差异（文本渲染风格）之外，
 // 投影产物（content / structuredContent 键集与值）必须一致。
@@ -26,12 +27,12 @@ const results = [
   { toolResult: { value: 42 }, isError: false }, // 无 content → 兜底分支
   { content: "not-an-array", isError: false }, // 协议违规形态 → 兜底分支
 ];
-const directCallHandlers = {
+const directCallHandlers: CallResultTextHandlers = {
   // 直连风格（官方客户端路径时代的 handler 形态）：短占位符渲染（文本面差异，结构面同）
   errorText: (c) => `ERR:${c.length}`,
   fallbackText: (r) => JSON.stringify(r),
 };
-const wsCallHandlers = {
+const wsCallHandlers: CallResultTextHandlers = {
   // ws_mcp_call 风格：msgOf + 保留远端原文
   errorText: (c) => `ws_mcp_call:远端错误:${msgOf(c)}`,
   fallbackText: (r) =>
@@ -82,7 +83,10 @@ describe("结构投影对 handler 注入解耦（#512 单一事实源）", () =>
       const viaDirectCall = projectCallToolResult(result, directCallHandlers);
       const viaWsCall = projectCallToolResult(result, wsCallHandlers);
       if (viaDirectCall.content.length > 0) {
-        expect(viaWsCall.content[0].type).toBe(viaDirectCall.content[0].type);
+        // 内容块为 unknown 面：只比类型鉴别子（块形状本身是远端形态，不断言）。
+        expect((viaWsCall.content[0] as { type: unknown }).type).toBe(
+          (viaDirectCall.content[0] as { type: unknown }).type,
+        );
       }
     }
   });
@@ -125,17 +129,17 @@ describe("args 面归一契约（normalizeArguments）", () => {
   it("object 输入对象化后原样透传", () => {
     // 执行侧对象化契约（typeof args === object ? args : {}）——
     // 对 normalizeArguments 产物同构（object 输入原样透传）。
-    const supShape = (args) => (typeof args === "object" && args !== null ? args : {});
+    const supShape = (args: unknown) => (typeof args === "object" && args !== null ? args : {});
     expect(supShape(normalizeArguments({ a: 1 }))).toEqual({ a: 1 });
   });
 
   it("JSON 字符串归一后同构", () => {
-    const supShape = (args) => (typeof args === "object" && args !== null ? args : {});
+    const supShape = (args: unknown) => (typeof args === "object" && args !== null ? args : {});
     expect(supShape(normalizeArguments('{"a":1}'))).toEqual({ a: 1 });
   });
 
   it("数组归一无害空态", () => {
-    const supShape = (args) => (typeof args === "object" && args !== null ? args : {});
+    const supShape = (args: unknown) => (typeof args === "object" && args !== null ? args : {});
     expect(supShape(normalizeArguments("[1,2]"))).toEqual({});
   });
 });

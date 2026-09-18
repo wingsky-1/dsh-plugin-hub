@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-mcp-manager — unit：通过公共 API 覆盖剩余的未覆盖热点。
  *
@@ -9,13 +8,17 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { Context } from "@deepseek-ai/cordis";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { RoutesManager } from "../../src/server/connection/interface.ts";
+import { fakeManagerCtx } from "../helpers.ts";
 
 const { apply, makeRoutes, ROUTES, McpStore, McpManager, normalizeServer } =
   await import("../../src/index.ts");
 
-let tempDirs = [];
+let tempDirs: string[] = [];
 
-function makeTempDir(prefix) {
+function makeTempDir(prefix: string) {
   const dir = mkdtempSync(join(tmpdir(), prefix));
   tempDirs.push(dir);
   return dir;
@@ -33,17 +36,14 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
     store.data = { version: 1, servers: [] };
     // 添加一个测试服务器（不真实连接，只验证路由 handler 可被调用）
     store.upsert(normalizeServer({ name: "route-test", transport: "stdio", command: "echo" }));
-    const manager = new McpManager(
-      { logger: { warn: () => {}, info: () => {}, error: () => {} } },
-      store,
-    );
+    const manager = new McpManager(fakeManagerCtx(), store);
 
     const routes = makeRoutes(manager);
-    return { routes, manager, find: (path) => routes.find((r) => r.path === path) };
+    return { routes, manager, find: (path: string) => routes.find((r) => r.path === path) };
   }
 
-  // 伪造 req/res
-  function fakeReq(method, url, body) {
+  // 伪造 req/res：只实现 handler 实际读取的面，其余按接缝收窄（`as unknown as`）。
+  function fakeReq(method: string, url: string, body?: unknown): IncomingMessage {
     return {
       method,
       url,
@@ -56,33 +56,41 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
       async *[Symbol.asyncIterator]() {
         if (body !== undefined) yield Buffer.from(JSON.stringify(body));
       },
-    };
+    } as unknown as IncomingMessage;
   }
 
-  function fakeRes() {
-    const state = { status: 200, body: "", headers: {} };
+  function fakeRes(): ServerResponse & {
+    state: { status: number; body: string; headers: Record<string, string> };
+  } {
+    const state: { status: number; body: string; headers: Record<string, string> } = {
+      status: 200,
+      body: "",
+      headers: {},
+    };
     return {
       state,
-      writeHead: (s, h) => {
+      writeHead: (s: number, h?: Record<string, string>) => {
         state.status = s;
         if (h) state.headers = h;
       },
-      write: (chunk) => {
+      write: (chunk: { toString(): string }) => {
         state.body += chunk.toString();
       },
-      end: (chunk) => {
+      end: (chunk?: { toString(): string }) => {
         if (chunk) state.body += chunk.toString();
       },
       setHeader: () => {},
       on: () => {},
       destroy: () => {},
+    } as unknown as ServerResponse & {
+      state: { status: number; body: string; headers: Record<string, string> };
     };
   }
 
   it("connect 缺 name → 400", async () => {
     const { find } = makeRoutesFixture();
     const res = fakeRes();
-    await find(ROUTES.connect).handler(fakeReq("POST", ROUTES.connect), res);
+    await find(ROUTES.connect)!.handler(fakeReq("POST", ROUTES.connect), res);
     expect(res.state.status).toBe(400);
   });
 
@@ -90,10 +98,10 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
   // 一处归一化（缺省/非法值 → normalizeScope），此前零判据。这里不挂真 McpManager，改挂一个
   // 记录实参的假 manager：判据要打的是「路由下传给 manager 的那一个值」，不是 manager 内部行为。
   function scopeCaptureFixture() {
-    const calls = [];
+    const calls: [unknown, unknown][] = [];
     const manager = {
       async setSession() {},
-      async connect(name, scope) {
+      async connect(name: string, scope?: string) {
         calls.push([name, scope]);
       },
       async disconnect() {},
@@ -112,13 +120,16 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
 
   it("connect 不带 scope 与 scope=global 下传同一个归一化值（#767 S1-5b）", async () => {
     const { calls, manager } = scopeCaptureFixture();
-    const route = makeRoutes(manager).find((r) => r.path === ROUTES.connect);
+    // 记录实参的假 manager：只实现路由触达的面，按接缝收窄。
+    const route = makeRoutes(manager as unknown as RoutesManager).find(
+      (r) => r.path === ROUTES.connect,
+    );
     // 1) 不带 scope：空串必须被归一化为 "global"，不得原样下传（空串会落进
     //    middlewareTakes(name, "") 的另一条引擎分支，注册名与 userDisabled 清理都与显式
     //    scope=global 分叉）。改前把 scopeParam 换回 queryParam(url, "scope") ?? "" 时这一步红。
-    await route.handler(fakeReq("POST", `${ROUTES.connect}?name=scope-test`), fakeRes());
+    await route!.handler(fakeReq("POST", `${ROUTES.connect}?name=scope-test`), fakeRes());
     // 2) 显式 scope=global：两者逐字相同。
-    await route.handler(
+    await route!.handler(
       fakeReq("POST", `${ROUTES.connect}?name=scope-test&scope=global`),
       fakeRes(),
     );
@@ -130,7 +141,7 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
       "name 原样下传",
     ).toEqual(["scope-test", "scope-test"]);
     // 3) 对照：显式 scope=project 必须原样下传，归一化不是「一律 global」。
-    await route.handler(
+    await route!.handler(
       fakeReq("POST", `${ROUTES.connect}?name=scope-test&scope=project`),
       fakeRes(),
     );
@@ -142,21 +153,21 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
     // 单池后连接只有中间层一条路径：装配实例（未装 lifecycle 时条目落 failed，仍 200）。
     await manager.initMiddleware();
     const res = fakeRes();
-    await find(ROUTES.connect).handler(fakeReq("POST", `${ROUTES.connect}?name=route-test`), res);
+    await find(ROUTES.connect)!.handler(fakeReq("POST", `${ROUTES.connect}?name=route-test`), res);
     expect(res.state.status).toBe(200);
   });
 
   it("disconnect 缺 name → 400", async () => {
     const { find } = makeRoutesFixture();
     const res = fakeRes();
-    await find(ROUTES.disconnect).handler(fakeReq("POST", ROUTES.disconnect), res);
+    await find(ROUTES.disconnect)!.handler(fakeReq("POST", ROUTES.disconnect), res);
     expect(res.state.status).toBe(400);
   });
 
   it("disconnect 合法 name → 200", async () => {
     const { find } = makeRoutesFixture();
     const res = fakeRes();
-    await find(ROUTES.disconnect).handler(
+    await find(ROUTES.disconnect)!.handler(
       fakeReq("POST", `${ROUTES.disconnect}?name=route-test`),
       res,
     );
@@ -166,7 +177,7 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
   it("reconnect 缺 name → 400", async () => {
     const { find } = makeRoutesFixture();
     const res = fakeRes();
-    await find(ROUTES.reconnect).handler(fakeReq("POST", ROUTES.reconnect), res);
+    await find(ROUTES.reconnect)!.handler(fakeReq("POST", ROUTES.reconnect), res);
     expect(res.state.status).toBe(400);
   });
 
@@ -174,7 +185,7 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
     const { find, manager } = makeRoutesFixture();
     await manager.initMiddleware();
     const res = fakeRes();
-    await find(ROUTES.reconnect).handler(
+    await find(ROUTES.reconnect)!.handler(
       fakeReq("POST", `${ROUTES.reconnect}?name=route-test`),
       res,
     );
@@ -184,7 +195,7 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
   it("connect GET → 405", async () => {
     const { find } = makeRoutesFixture();
     const res = fakeRes();
-    await find(ROUTES.connect).handler(fakeReq("GET", ROUTES.connect), res);
+    await find(ROUTES.connect)!.handler(fakeReq("GET", ROUTES.connect), res);
     expect(res.state.status).toBe(405);
   });
 
@@ -198,7 +209,7 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
       headers: { host: "localhost:3080", origin: "http://external" },
       async *[Symbol.asyncIterator]() {},
     };
-    await find(ROUTES.connect).handler(extReq, res);
+    await find(ROUTES.connect)!.handler(extReq as unknown as IncomingMessage, res);
     expect(res.state.status).toBe(403);
   });
 });
@@ -206,7 +217,10 @@ describe("路由 handlers：connect / disconnect / reconnect", () => {
 describe("apply 完整 settings 生命周期（isUnloading 覆盖）", () => {
   async function applyWithSettingsLifecycle() {
     const dir = makeTempDir("dsh-mcp-manager-bundled-");
-    const refs = { disposer: null, watchCb: null };
+    const refs: { disposer: null | (() => void); watchCb: null | (() => void) } = {
+      disposer: null,
+      watchCb: null,
+    };
 
     const ctx = {
       fiber: { state: "active" },
@@ -214,22 +228,22 @@ describe("apply 完整 settings 生命周期（isUnloading 覆盖）", () => {
       tools: { register: () => () => {} },
       webServer: { register: () => () => {} },
       systemPrompt: { section: () => () => {} },
-      inject: (keys, cb) => {
+      inject: (keys: unknown, cb: (services: unknown) => void) => {
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings: {
-              register: (_ns, _schema, _opts) => {
+              register: (_ns: unknown, _schema: unknown, _opts: unknown) => {
                 return {
                   get: () => ({
                     ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 } },
                   }),
-                  watch: (cb) => {
+                  watch: (cb: () => void) => {
                     refs.watchCb = cb;
                   },
                 };
               },
             },
-            effect: (fn) => {
+            effect: (fn: () => () => void) => {
               refs.disposer = fn();
               return () => {};
             },
@@ -238,7 +252,7 @@ describe("apply 完整 settings 生命周期（isUnloading 覆盖）", () => {
         return () => {};
       },
       on: () => () => {},
-      effect: (fn) => {
+      effect: (fn: () => () => void) => {
         const d = fn();
         return () => {
           d();
@@ -246,7 +260,7 @@ describe("apply 完整 settings 生命周期（isUnloading 覆盖）", () => {
       },
     };
 
-    await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });
+    await apply(ctx as unknown as Context, { enabled: true, storePath: join(dir, "mcp.json") });
     return { ctx, refs };
   }
 
@@ -267,9 +281,9 @@ describe("apply 完整 settings 生命周期（isUnloading 覆盖）", () => {
     const { ctx, refs } = await applyWithSettingsLifecycle();
     expect(() => {
       ctx.fiber.state = "unloading";
-      refs.disposer();
+      refs.disposer!();
       ctx.fiber.state = "disposed";
-      refs.watchCb();
+      refs.watchCb!();
     }).not.toThrow();
   });
 });
@@ -277,14 +291,14 @@ describe("apply 完整 settings 生命周期（isUnloading 覆盖）", () => {
 describe("apply 的 agent/pre-step 在 announceCatalog=true 时注册", () => {
   async function applyWithPreStep() {
     const dir = makeTempDir("dsh-mcp-manager-pre-");
-    const refs = { preHandler: null };
+    const refs: { preHandler: null | ((...args: unknown[]) => unknown) } = { preHandler: null };
     const ctx = {
       fiber: { state: "active" },
       logger: { warn: () => {}, info: () => {}, error: () => {} },
       tools: { register: () => () => {} },
       webServer: { register: () => () => {} },
       systemPrompt: { section: () => () => {} },
-      inject: (keys, cb) => {
+      inject: (keys: unknown, cb: (services: unknown) => void) => {
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings: {
@@ -295,11 +309,11 @@ describe("apply 的 agent/pre-step 在 announceCatalog=true 时注册", () => {
         }
         return () => {};
       },
-      on: (evt, handler) => {
+      on: (evt: string, handler: (...args: unknown[]) => void) => {
         if (evt === "agent/pre-step") refs.preHandler = handler;
         return () => {};
       },
-      effect: (fn) => {
+      effect: (fn: () => () => void) => {
         const d = fn();
         return () => {
           d();
@@ -307,7 +321,11 @@ describe("apply 的 agent/pre-step 在 announceCatalog=true 时注册", () => {
       },
     };
 
-    await apply(ctx, { enabled: true, announceCatalog: true, storePath: join(dir, "mcp.json") });
+    await apply(ctx as unknown as Context, {
+      enabled: true,
+      announceCatalog: true,
+      storePath: join(dir, "mcp.json"),
+    });
     return refs;
   }
 
@@ -319,14 +337,15 @@ describe("apply 的 agent/pre-step 在 announceCatalog=true 时注册", () => {
   it("pre-step reject 透传", async () => {
     const refs = await applyWithPreStep();
     // 调用 handler: reject 透传
-    const rejectResult = await refs.preHandler(
+    // pre-step 已注册由上一用例保证（同一装配器），此处非空。
+    const rejectResult = (await refs.preHandler!(
       {
         agent: { session: { header: { cwd: "/tmp" } } },
         messages: [],
         signal: { aborted: false, throwIfAborted: () => {} },
       },
       async () => ({ kind: "reject" }),
-    );
+    )) as { kind: unknown };
     expect(rejectResult.kind).toBe("reject");
   });
 });
@@ -334,14 +353,14 @@ describe("apply 的 agent/pre-step 在 announceCatalog=true 时注册", () => {
 describe("apply 的 SSE broadcast 与 route disposer", () => {
   async function applyWithBroadcast() {
     const dir = makeTempDir("dsh-mcp-manager-broadcast-");
-    const refs = { effectDisposer: null };
+    const refs: { effectDisposer: null | (() => void) } = { effectDisposer: null };
 
     const ctx = {
       fiber: { state: "active" },
       logger: { warn: () => {}, info: () => {}, error: () => {} },
       tools: { register: () => () => {} },
       webServer: {
-        register: (route) => {
+        register: (route: { path: string }) => {
           if (route.path === "/api/dsh-mcp/events") {
             // 不处理，只验证 apply 完成
           }
@@ -351,7 +370,7 @@ describe("apply 的 SSE broadcast 与 route disposer", () => {
       systemPrompt: { section: () => () => {} },
       inject: () => () => {},
       on: () => () => {},
-      effect: (fn) => {
+      effect: (fn: () => () => void) => {
         const d = fn();
         refs.effectDisposer = () => {
           d();
@@ -360,7 +379,7 @@ describe("apply 的 SSE broadcast 与 route disposer", () => {
       },
     };
 
-    await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });
+    await apply(ctx as unknown as Context, { enabled: true, storePath: join(dir, "mcp.json") });
     return refs;
   }
 
@@ -373,9 +392,9 @@ describe("apply 的 SSE broadcast 与 route disposer", () => {
     const refs = await applyWithBroadcast();
     expect(() => {
       // 触发 disposer（模拟卸载场景）
-      refs.effectDisposer();
+      refs.effectDisposer!();
       // 再次触发（幂等，不抛）
-      refs.effectDisposer();
+      refs.effectDisposer!();
     }).not.toThrow();
   });
 });
@@ -390,11 +409,11 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
       tools: { register: () => () => {} },
       webServer: { register: () => () => {} },
       systemPrompt: { section: () => () => {} },
-      inject: (keys, cb) => {
+      inject: (keys: unknown, cb: (services: unknown) => void) => {
         if (Array.isArray(keys) && keys.includes("settings")) {
           cb({
             settings: {
-              update: function (_ns, _patch) {
+              update: function (_ns: unknown, _patch: unknown) {
                 return Promise.resolve();
               },
               register: () => {
@@ -408,7 +427,7 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
         return () => {};
       },
       on: () => () => {},
-      effect: (fn) => {
+      effect: (fn: () => () => void) => {
         const d = fn();
         return () => {
           d();
@@ -416,7 +435,7 @@ describe("apply 的 settings 注入（uiUpdate 写入路径）", () => {
       },
     };
 
-    await apply(ctx, { enabled: true, storePath: join(dir, "mcp.json") });
+    await apply(ctx as unknown as Context, { enabled: true, storePath: join(dir, "mcp.json") });
     // 哑断言清理（#664 阶段 8）：假 ok 输出改真实断言——settings 命名空间
     // 注册（installSettingsNamespace 经 inject(["settings"]) 调 register）。
     expect(registerCalled).toBeTruthy();

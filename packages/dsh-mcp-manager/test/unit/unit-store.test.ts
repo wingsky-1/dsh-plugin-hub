@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-mcp-manager — unit：McpStore 持久化全分支 + mcpServers JSON 导入。
  *
@@ -24,9 +23,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-const { McpStore, fromClaudeEntry, parseClaudeJson } = await import("../../src/index.ts");
+// I8 导入面收窄：store/config 两域门面直引，不再经包根组合根。
+const { McpStore } = await import("../../src/server/store/interface.ts");
+const { fromClaudeEntry, parseClaudeJson } = await import("../../src/server/config/interface.ts");
 
-let tempDirs = [];
+let tempDirs: string[] = [];
 
 function tempDir() {
   const dir = mkdtempSync(join(tmpdir(), "dsh-mcp-store-"));
@@ -220,7 +221,7 @@ describe("save：目录两层缺失 → recursive 创建；原子写 + 基线更
 
   it("save 更新 mtime 基线", async () => {
     const { store } = await savedFixture();
-    expect(store.mtimeMs > 0).toBeTruthy();
+    expect(store.mtimeMs! > 0).toBeTruthy();
   });
 
   it("save 后 changedOnDisk 为 false", async () => {
@@ -277,12 +278,12 @@ describe("find / upsert / remove", () => {
 
   it("upsert 已有名替换为新值", () => {
     const store = withServers();
-    expect(store.find("a").command).toBe("3");
+    expect(store.find("a")!.command).toBe("3");
   });
 
   it("upsert 其它名保持原值", () => {
     const store = withServers();
-    expect(store.find("b").command).toBe("2");
+    expect(store.find("b")!.command).toBe("2");
   });
 
   it("remove 未知名 no-op", () => {

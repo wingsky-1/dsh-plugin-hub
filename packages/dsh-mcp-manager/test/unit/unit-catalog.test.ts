@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-mcp-manager — unit：L1 能力目录与注入决策全分支。
  *
@@ -28,7 +27,9 @@ const {
   catalogHistory,
   renderMcpCatalogUpdate,
   resolveCatalogInjection,
-} = await import("../../src/index.ts");
+  // I8 导入面收窄：catalog 纯函数域，直引目录门面，不再经包根组合根。
+} = await import("../../src/server/catalog/interface.ts");
+import type { CatalogMessage, CatalogSourceLike } from "../../src/server/catalog/interface.ts";
 
 describe("常量", () => {
   it("DEFAULT_ANNOUNCE_CATALOG 为 true", () => {
@@ -111,7 +112,7 @@ describe("summarizeToolDescriptions", () => {
     for (let i = 0; i < 30; i += 1)
       many.set(`t${String(i).padStart(2, "0")}`, { description: `工具 ${i} 的功能说明`.repeat(6) });
     const long = summarizeToolDescriptions(many);
-    expect(long.length <= 240).toBeTruthy();
+    expect(long!.length <= 240).toBeTruthy();
   });
 
   it("超长以省略号收尾（不句中切）", () => {
@@ -119,7 +120,7 @@ describe("summarizeToolDescriptions", () => {
     for (let i = 0; i < 30; i += 1)
       many.set(`t${String(i).padStart(2, "0")}`, { description: `工具 ${i} 的功能说明`.repeat(6) });
     const long = summarizeToolDescriptions(many);
-    expect(long.endsWith("…")).toBeTruthy();
+    expect(long!.endsWith("…")).toBeTruthy();
   });
 
   it("重复描述去重后单条即完整", () => {
@@ -133,22 +134,22 @@ describe("summarizeToolDescriptions", () => {
   it("极端长句截断受控", () => {
     // 极端长句（无句读超单句上限）→ 单句内截断 + 省略号。
     const single = summarizeToolDescriptions(new Map([["x", { description: "长".repeat(500) }]]));
-    expect(single.length <= 240).toBeTruthy();
+    expect(single!.length <= 240).toBeTruthy();
   });
 
   it("极端长句带省略号", () => {
     const single = summarizeToolDescriptions(new Map([["x", { description: "长".repeat(500) }]]));
-    expect(single.endsWith("…")).toBeTruthy();
+    expect(single!.endsWith("…")).toBeTruthy();
   });
 });
 
 describe("composeCatalogEntries", () => {
   function supervisorsFixture() {
     return new Map([
-      ["s1", { server: { name: "s1", description: "desc1" } }],
-      ["s2", { server: { name: "s2" } }],
-      ["s3", { server: { name: "s3", description: "" } }],
-      ["s4", { server: { name: "s4" } }],
+      ["s1", { server: { name: "s1", transport: "stdio" as const, description: "desc1" } }],
+      ["s2", { server: { name: "s2", transport: "stdio" as const } }],
+      ["s3", { server: { name: "s3", transport: "stdio" as const, description: "" } }],
+      ["s4", { server: { name: "s4", transport: "stdio" as const } }],
     ]);
   }
   const cacheFixture = () =>
@@ -193,7 +194,9 @@ describe("composeCatalogEntries", () => {
   });
 
   it("cache 缺省不抛且无 text", () => {
-    const noCache = composeCatalogEntries(new Map([["z", { server: { name: "z" } }]]));
+    const noCache = composeCatalogEntries(
+      new Map([["z", { server: { name: "z", transport: "stdio" as const } }]]),
+    );
     expect(noCache[0].text).toBeUndefined();
   });
 
@@ -206,7 +209,12 @@ describe("composeCatalogEntries", () => {
     const verboseDesc =
       "Resolves package name to library ID. You MUST call this first. Step 1. Do something. Selection Process: very long text...";
     const verboseEntries = composeCatalogEntries(
-      new Map([["context7", { server: { name: "context7", description: verboseDesc } }]]),
+      new Map([
+        [
+          "context7",
+          { server: { name: "context7", transport: "stdio" as const, description: verboseDesc } },
+        ],
+      ]),
     );
     expect(verboseEntries[0].text).toBe("Resolves package name to library ID.");
   });
@@ -263,7 +271,7 @@ describe("renderMcpCatalogMessage / findCatalogMessage / readCatalogEntries", ()
   });
 
   it("#723 message.source 为宿主词表内的 plugin/snapshot 形态（自造 kind 会被迁移白名单拒绝）", () => {
-    const source = makeMessage().source;
+    const source = makeMessage().source!;
     expect(source.kind).toBe("plugin");
     expect(source.plugin).toBe("@wingsky-1/dsh-mcp-manager");
     expect(source.form).toBe("snapshot");
@@ -271,16 +279,16 @@ describe("renderMcpCatalogMessage / findCatalogMessage / readCatalogEntries", ()
   });
 
   it("文本含 <available_mcp_servers>", () => {
-    expect(makeMessage().content[0].text.includes("<available_mcp_servers>")).toBeTruthy();
+    expect(makeMessage().content![0]!.text!.includes("<available_mcp_servers>")).toBeTruthy();
   });
 
   it("条目转义渲染", () => {
-    expect(makeMessage().content[0].text.includes("- `m1`: t&lt;1")).toBeTruthy();
+    expect(makeMessage().content![0]!.text!.includes("- `m1`: t&lt;1")).toBeTruthy();
   });
 
   it("文本含 does not reflect active connection status", () => {
     expect(
-      makeMessage().content[0].text.includes("does not reflect active connection status"),
+      makeMessage().content![0]!.text!.includes("does not reflect active connection status"),
     ).toBeTruthy();
   });
 
@@ -299,7 +307,8 @@ describe("renderMcpCatalogMessage / findCatalogMessage / readCatalogEntries", ()
   });
 
   it("坏消息容错", () => {
-    expect(findCatalogMessage([undefined, null])).toBeUndefined();
+    // 坏消息探针：故意传入类型面之外的 undefined/null，断言运行时容错（不抛、回 undefined）。
+    expect(findCatalogMessage([undefined, null] as unknown as CatalogMessage[])).toBeUndefined();
   });
 
   it("#723 新形态走 resolveCatalogEntries 读回条目", () => {
@@ -340,7 +349,7 @@ describe("renderMcpCatalogMessage / findCatalogMessage / readCatalogEntries", ()
 });
 
 describe("renderMcpCatalogUpdate", () => {
-  const makeText = () => renderMcpCatalogUpdate([{ name: "u1" }]).content[0].text;
+  const makeText = () => renderMcpCatalogUpdate([{ name: "u1" }]).content![0]!.text!;
 
   it("update 帧头", () => {
     expect(makeText().startsWith("<system-reminder>")).toBeTruthy();
@@ -363,7 +372,7 @@ describe("renderMcpCatalogUpdate", () => {
 
 describe("catalogHistory", () => {
   const entry = [{ name: "h1", text: "t" }];
-  const event = (seq, _visible) => ({
+  const event = (seq: number, _visible?: unknown) => ({
     type: "user/message",
     seq,
     data: { source: { kind: "mcp-catalog", entries: entry } },
@@ -444,9 +453,10 @@ describe("catalogHistory", () => {
 });
 
 describe("resolveCatalogInjection：六条路径", () => {
-  const supervisors = () => new Map([["s", { server: { name: "s", description: "d" } }]]);
+  const supervisors = () =>
+    new Map([["s", { server: { name: "s", transport: "stdio" as const, description: "d" } }]]);
   const baseDecision = () => ({ kind: "enter", messages: [] });
-  const plainMessage = (id) => ({ id, role: "user", content: [] });
+  const plainMessage = (id: string) => ({ id, role: "user", content: [] });
 
   function sameDigestAgent() {
     const entry = [{ name: "s", text: "d" }];
@@ -594,7 +604,7 @@ describe("resolveCatalogInjection：六条路径", () => {
       undefined,
     );
     expect(
-      injected.messages[0].content[0].text.includes("Configured MCP servers in this session"),
+      injected.messages[0]!.content![0]!.text!.includes("Configured MCP servers in this session"),
     ).toBeTruthy();
   });
 
@@ -609,7 +619,7 @@ describe("resolveCatalogInjection：六条路径", () => {
       otherDigestAgent(),
     );
     expect(
-      updated.messages[0].content[0].text.includes("MCP server configuration has changed"),
+      updated.messages[0]!.content![0]!.text!.includes("MCP server configuration has changed"),
     ).toBeTruthy();
   });
 
@@ -651,7 +661,7 @@ describe("resolveCatalogInjection：六条路径", () => {
       otherDigestAgent(),
     );
     expect(
-      replaced.messages[1].content[0].text.includes("MCP server configuration has changed"),
+      replaced.messages[1]!.content![0]!.text!.includes("MCP server configuration has changed"),
     ).toBeTruthy();
   });
 
@@ -678,32 +688,34 @@ describe("#723 目录 source 双形态识别", () => {
   });
 
   it("readCatalogEntries 仍读旧形态（跨版本兼容）", () => {
+    // 旧形态 source 带 kind/form：类型面只认 { entries }，此处故意传入完整旧形状探兼容。
     expect(
       readCatalogEntries({
         kind: "mcp-catalog",
         form: "catalog",
         entries: [{ name: "m1", text: "t<1" }],
-      }),
+      } as unknown as { entries?: unknown }),
     ).toEqual([{ name: "m1", text: "t<1" }]);
   });
 
   it("resolveCatalogEntries 坏数据面一律 undefined", () => {
     expect(resolveCatalogEntries(undefined)).toBeUndefined();
     expect(resolveCatalogEntries({ kind: "user" })).toBeUndefined();
+    // 他插件快照形态：form/sections 不在 CatalogSourceLike 类型面内，此处故意传入完整形状探拒绝。
     expect(
       resolveCatalogEntries({
         kind: "plugin",
         plugin: "other-plugin",
         form: "snapshot",
         sections: [],
-      }),
+      } as unknown as CatalogSourceLike),
     ).toBeUndefined();
     expect(
       resolveCatalogEntries({
         kind: "plugin",
         plugin: "@wingsky-1/dsh-mcp-manager",
         form: "snapshot",
-      }),
+      } as unknown as CatalogSourceLike),
     ).toBeUndefined();
     expect(
       resolveCatalogEntries({
@@ -711,7 +723,7 @@ describe("#723 目录 source 双形态识别", () => {
         plugin: "@wingsky-1/dsh-mcp-manager",
         form: "snapshot",
         sections: [{ name: "other", text: "x" }],
-      }),
+      } as unknown as CatalogSourceLike),
     ).toBeUndefined();
   });
 });
@@ -726,13 +738,15 @@ describe("#723 catalogHistory 双形态识别", () => {
     "</available_mcp_servers>",
     "</system-reminder>",
   ].join("\n");
+  // 新形态 source 含 form：类型面最小面未收 form（只读 kind/plugin/entries/sections），此处收窄不断言。
   const newSource = {
     kind: "plugin",
     plugin: "@wingsky-1/dsh-mcp-manager",
     form: "snapshot",
     sections: [{ name: "mcp-catalog", text: body }],
-  };
-  const agentOf = (nodes, source) => ({
+  } as unknown as CatalogSourceLike;
+  // source 取 CatalogSourceLike 最小面：超出该面的 form 等旧形态字段由调用方收窄（见 #723 节）。
+  const agentOf = (nodes: unknown[], source: CatalogSourceLike) => ({
     session: {
       surface: { nodes },
       snapshotEvents: () => [{ type: "user/message", seq: 1, data: { source } }],
@@ -751,9 +765,15 @@ describe("#723 catalogHistory 双形态识别", () => {
   });
 
   it("旧形态仍被识别（同一 digest 口径）", () => {
-    expect(catalogHistory(agentOf([1], { kind: "mcp-catalog", form: "catalog", entries }))).toEqual(
-      { visibleDigest: digest, published: true },
-    );
+    expect(
+      catalogHistory(
+        agentOf([1], {
+          kind: "mcp-catalog",
+          form: "catalog",
+          entries,
+        } as unknown as CatalogSourceLike),
+      ),
+    ).toEqual({ visibleDigest: digest, published: true });
   });
 
   it("他插件的 plugin 消息不得被误认", () => {
@@ -764,7 +784,7 @@ describe("#723 catalogHistory 双形态识别", () => {
           plugin: "other",
           form: "snapshot",
           sections: [{ name: "mcp-catalog", text: body }],
-        }),
+        } as unknown as CatalogSourceLike),
       ),
     ).toEqual({ published: false });
   });

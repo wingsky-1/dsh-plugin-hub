@@ -25,6 +25,7 @@ import {
 import type {
   LoaderPort,
   LogRecord,
+  LogsPort,
   OfficialPluginModule,
 } from "../../src/server/shared/interface.ts";
 import type { ToolsRegistryPort, WorkspacePort } from "../../src/server/servers/lifecycle/deps.ts";
@@ -107,8 +108,9 @@ interface Harness {
 /**
  * 装配本域：id / 展开 / 工具面三样用本文件假件，超时用真 withTimeout（窗口的被测对象是句柄等待本身）。
  *
- * 假件经 `as unknown as` 收窄：helpers.ts 是 @ts-nocheck 的 JS 风格夹具，ready 推断为
- * `Promise<unknown>`，与端口声明不相容；夹具的真实形状由集成探针按 `bindHost` 交付面单独验。
+ * 假件经 `as unknown as` 收窄：helpers.ts 是结构形状夹具（S6 起带类型标注），ready 为
+ * `Promise<unknown>`、logs 面 handler 取 `unknown` 记录，均与端口声明不相容；夹具的真实形状
+ * 由集成探针按 `bindHost` 交付面单独验。
  */
 function installHarness(
   options: {
@@ -138,7 +140,8 @@ function installHarness(
       },
     },
     tools: tools as unknown as ToolsRegistryPort,
-    logs,
+    // 结构形状假件（可观测的 captured/emit）：按本文件既有接缝收窄为端口面。
+    logs: logs as unknown as LogsPort,
   });
   return { loader, workspace, tools, logs, expandCalls };
 }

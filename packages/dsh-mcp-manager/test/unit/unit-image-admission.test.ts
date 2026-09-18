@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-mcp-manager — unit：A+ 自持图片准入的纯逻辑（#767 笔 1b 交付物 B）。
  *
@@ -9,6 +8,13 @@
  * 直连 `inject/impl/image-admission/index.ts`——不 import src/index.ts（单元层导入面越界存量）。
  */
 import { describe, expect, it } from "vitest";
+import type {
+  AttachmentsPort,
+  ModelAttachmentRef,
+  ModelContentBlock,
+  SaveImageInput,
+} from "../../src/server/shared/interface.ts";
+import type { ImageAdmissionRequest } from "../../src/server/inject/impl/image-admission/index.ts";
 import {
   containsRemoteImage,
   projectImageAdmission,
@@ -19,7 +25,7 @@ import {
 const PNG = "iVBORw0KGgo=";
 
 /** 只做「非图片块 → 文本」的接线点替身；真实规则是 middleware-register 的 formatCallContentBlock。 */
-const formatBlock = (block) => `T:${JSON.stringify(block)}`;
+const formatBlock = (block: unknown) => `T:${JSON.stringify(block)}`;
 
 const routeAgent = {
   session: { requestHeader: () => ({ config: { provider: "p", model: "m" } }) },
@@ -29,17 +35,34 @@ const routeAgent = {
 const IMAGE_MODEL = { resolveModelInfo: async () => ({ inputModalities: ["text", "image"] }) };
 const TEXT_MODEL = { resolveModelInfo: async () => ({ inputModalities: ["text"] }) };
 
-function saveStore(refs, record) {
+function saveStore(refs: ModelAttachmentRef[], record: SaveImageInput[][]): AttachmentsPort {
   return {
-    saveImages: async (inputs) => {
-      record.push(inputs);
+    saveImages: async (inputs: readonly SaveImageInput[]) => {
+      // 快照入参（不保留活引用）：断言只读落库时的字节与 mediaType，复制与引用 verdict 一致。
+      record.push([...inputs]);
       return refs;
     },
   };
 }
 
+/**
+ * 诊断路径恒产文本块：取其 text。类型面是块联合，此处按测试前置收窄——若实现改出非文本块，
+ * 此处抛错（红），不断言通过。
+ */
+function textAt(out: ModelContentBlock[] | undefined, index: number): string {
+  const block = out?.[index];
+  if (
+    typeof block === "object" &&
+    block !== null &&
+    "text" in block &&
+    typeof block.text === "string"
+  )
+    return block.text;
+  throw new Error(`测试前置失效：索引 ${index} 处不是文本块`);
+}
+
 /** 一次调用的最小请求。 */
-function request(overrides = {}) {
+function request(overrides: Partial<ImageAdmissionRequest> = {}) {
   return {
     agent: routeAgent,
     content: [],
@@ -52,7 +75,7 @@ function request(overrides = {}) {
 
 describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
   it("B8 合法图片 + 路由声明 image + 落库成功 → 原位换入 {type:image,attachment}，文本块保序", async () => {
-    const record = [];
+    const record: SaveImageInput[][] = [];
     const out = await projectImageAdmission(
       request({
         content: [
@@ -92,9 +115,9 @@ describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
         },
       }),
     );
-    expect(out.length).toBe(1);
-    expect(out[0].type).toBe("text");
-    expect(out[0].text).toContain("no attachment store is mounted");
+    expect(out!.length).toBe(1);
+    expect(out![0].type).toBe("text");
+    expect(textAt(out, 0)).toContain("no attachment store is mounted");
     expect(called, "附件库缺席时不该问模型目录").toBe(0);
   });
 
@@ -106,7 +129,7 @@ describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
         faces: { attachments: () => saveStore([], []), models: () => IMAGE_MODEL },
       }),
     );
-    expect(noAgent[0].text).toContain("the current model route could not be resolved");
+    expect(textAt(noAgent, 0)).toContain("the current model route could not be resolved");
     const partial = await projectImageAdmission(
       request({
         agent: { session: { requestHeader: () => ({ config: { provider: "p" } }) }, options: {} },
@@ -114,7 +137,7 @@ describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
         faces: { attachments: () => saveStore([], []), models: () => IMAGE_MODEL },
       }),
     );
-    expect(partial[0].text).toContain("the current model route could not be resolved");
+    expect(textAt(partial, 0)).toContain("the current model route could not be resolved");
     // 模型目录服务缺席也归同一条（官方把 llm === undefined 并进这里）。
     const noLlm = await projectImageAdmission(
       request({
@@ -122,7 +145,7 @@ describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
         faces: { attachments: () => saveStore([], []), models: () => undefined },
       }),
     );
-    expect(noLlm[0].text).toContain("the current model route could not be resolved");
+    expect(textAt(noLlm, 0)).toContain("the current model route could not be resolved");
   });
 
   it("B11 模型不声明 image 模态 → does not declare image input（默认部署最常见的降级路径）", async () => {
@@ -132,12 +155,12 @@ describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
         faces: { attachments: () => saveStore([], []), models: () => TEXT_MODEL },
       }),
     );
-    expect(out[0].type).toBe("text");
-    expect(out[0].text).toContain('model "m" does not declare image input');
+    expect(out![0].type).toBe("text");
+    expect(textAt(out, 0)).toContain('model "m" does not declare image input');
   });
 
   it("B12 非法 media type / 非 canonical base64 → 逐条诊断，且整批都不进 saveImages", async () => {
-    const record = [];
+    const record: SaveImageInput[][] = [];
     const out = await projectImageAdmission(
       request({
         content: [
@@ -152,11 +175,11 @@ describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
         },
       }),
     );
-    expect(out[0].text).toContain("the declared media type is not PNG, JPEG, WebP, or GIF");
-    expect(out[2].text).toContain("the image data is not canonical base64");
+    expect(textAt(out, 0)).toContain("the declared media type is not PNG, JPEG, WebP, or GIF");
+    expect(textAt(out, 2)).toContain("the image data is not canonical base64");
     // 第三条是同一个非法批里被连坐的合法图：归因写「同批另一张非法」。
-    expect(out[3].text).toContain("another image in the same result was invalid");
-    expect(out.filter((block) => block.type === "image").length).toBe(0);
+    expect(textAt(out, 3)).toContain("another image in the same result was invalid");
+    expect(out!.filter((block) => block.type === "image").length).toBe(0);
     expect(record.length, "任一解码失败即整批不落库").toBe(0);
   });
 
@@ -174,8 +197,8 @@ describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
         },
       }),
     );
-    expect(out[0].type).toBe("text");
-    expect(out[0].text).toBe(
+    expect(out![0].type).toBe("text");
+    expect(textAt(out, 0)).toBe(
       "[image unavailable: image/png; durable image storage rejected the result; raw image data remains available to programmatic callers]",
     );
   });
@@ -194,7 +217,7 @@ describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
         },
       }),
     );
-    expect(out[0].text).toContain("the current model route could not be verified");
+    expect(textAt(out, 0)).toContain("the current model route could not be verified");
   });
 
   it("B13c signal 已取消 → the tool call was canceled before image storage", async () => {
@@ -207,7 +230,7 @@ describe("image-admission：A+ 自持图片准入（纯逻辑）", () => {
         faces: { attachments: () => saveStore([], []), models: () => IMAGE_MODEL },
       }),
     );
-    expect(out[0].text).toContain("the tool call was canceled before image storage");
+    expect(textAt(out, 0)).toContain("the tool call was canceled before image storage");
   });
 
   it("未命中：无图片块 / 已是模型面图片块 → 不建投影（返回 undefined，交给 render 兜底）", async () => {

@@ -49,14 +49,11 @@
         "unitImportFaceViolations": [
           "test/unit/unit-apply.test.ts|src/index.ts",
           "test/unit/unit-call-stats.test.ts|src/index.ts",
-          "test/unit/unit-catalog.test.ts|src/index.ts",
           "test/unit/unit-hotspot.test.ts|src/index.ts",
           "test/unit/unit-manager.test.ts|src/index.ts",
           "test/unit/unit-manager2.test.ts|src/index.ts",
           "test/unit/unit-middleware.test.ts|src/index.ts",
-          "test/unit/unit-pipeline.test.ts|src/index.ts",
           "test/unit/unit-routes-sse.test.ts|src/index.ts",
-          "test/unit/unit-store.test.ts|src/index.ts",
           "test/unit/unit-workspace.test.ts|src/index.ts"
         ]
       }

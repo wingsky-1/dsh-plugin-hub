@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-mcp-manager — unit：工作空间路由域（src/workspace/，#664 阶段 4）。
  *
@@ -16,7 +15,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { fakeManagerCtx } from "../helpers.ts";
 
+// I8 判定（S6 实测回退）：本文件构造 McpManager，而编排子层端口表只在包根组合根
+// （src/index.ts 顶层 installOrchestrator）装配、且重复装配当场抛错——直引域门面会跳过装配、
+// 构造即红（实测 exit 1）。故保留包根导入（基线 unitImportFaceViolations 条目保留）；
+// 把组合根装配搬进门面属运行时改动，越界（见遗留）。
 const {
   McpManager,
   McpStore,
@@ -51,14 +55,14 @@ describe("normalizeScope（#767 S1-5c 自 unit-transport.test.ts 迁入）", () 
 });
 
 describe("makeResolveRoot 基本路由（迁移自 apply-runtime.ts，行为不变）", () => {
-  let dir;
-  let resolveRoot;
+  let dir: string;
+  let resolveRoot: (agent: unknown) => Promise<string | undefined>;
 
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), "dsh-mcp-ws-"));
     const store = new McpStore(join(dir, "global.json"));
     store.data = { version: 1, servers: [] };
-    const manager = new McpManager({ logger: { warn: () => {}, info: () => {} } }, store);
+    const manager = new McpManager(fakeManagerCtx(), store);
     resolveRoot = makeResolveRoot(manager);
   });
 
@@ -82,14 +86,14 @@ describe("makeResolveRoot 基本路由（迁移自 apply-runtime.ts，行为不�
 // projectServersFor("@global")（含 runtime 并集）。
 // #767 笔 1a：这道回落**去掉了 all 条件**（可达性三件套之二）——本组判据与模式无关。
 describe("B3 / #767 笔 1a：空 cwd 无条件回落 @global（含 runtime 源）", () => {
-  let dir;
-  let resolveRoot;
+  let dir: string;
+  let resolveRoot: (agent: unknown) => Promise<string | undefined>;
 
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), "dsh-mcp-ws-b3-"));
     const store = new McpStore(join(dir, "global.json"));
     store.data = { version: 1, servers: [] }; // 无 store 全局服务器（仅 runtime 注入）
-    const manager = new McpManager({ logger: { warn: () => {}, info: () => {} } }, store);
+    const manager = new McpManager(fakeManagerCtx(), store);
     // codegraph 等 runtime 注入服务器不落 store，只进 runtimeRegistry（#413）。
     manager.runtimeRegistry.set(
       "cg",

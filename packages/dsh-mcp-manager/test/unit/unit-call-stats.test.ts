@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * dsh-mcp-manager — unit：McpStatsCollector 全形态 + 配置域接线。
  *
@@ -19,11 +18,12 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { fakeManagerCtx } from "../helpers.ts";
 
 const { McpStatsCollector, McpManager, McpStore, resolveDebugConfig } =
   await import("../../src/index.ts");
 
-let tempDirs = [];
+let tempDirs: string[] = [];
 
 function tempDir() {
   const dir = mkdtempSync(join(tmpdir(), "mcp-stats-test-"));
@@ -90,7 +90,7 @@ describe("开启时正确聚合调用与渐进式披露指标并原子落盘", (
     return { statsFile, collector };
   }
 
-  function rawOf(statsFile) {
+  function rawOf(statsFile: string) {
     return JSON.parse(readFileSync(statsFile, "utf8"));
   }
 
@@ -222,7 +222,7 @@ describe("前端 POST /config 不会覆盖抹除已有的 debug 配置", () => {
   async function updateUiOnly() {
     const dir = tempDir();
     const store = new McpStore(join(dir, "mcp.json"));
-    const manager = new McpManager({ logger: { info: () => {}, warn: () => {} } }, store);
+    const manager = new McpManager(fakeManagerCtx(), store);
 
     let persistedSettings = {
       ui: { position: "top-right", offset: { x: 8, y: 8, blankY: 40 }, zIndexBase: 10 },
