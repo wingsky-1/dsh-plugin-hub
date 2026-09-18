@@ -19,7 +19,7 @@
 | 插件 | 一句话定位 | 架构文档 |
 |---|---|---|
 | `@wingsky-1/dsh-lan-proxy` | 局域网访问 dsh web：HTTP/HTTPS/WS 转发 + TLS + 响应压缩 | [dsh-lan-proxy.md](dsh-lan-proxy.md) |
-| `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理：stdio/HTTP 传输、工具注册、三档中间层收敛 | [dsh-mcp-manager.md](dsh-mcp-manager.md) |
+| `@wingsky-1/dsh-mcp-manager` | MCP 服务器管理：配置面与模型可见面管理（单池 + `ws_mcp_call` 统一寻址） | [dsh-mcp-manager.md](dsh-mcp-manager.md) |
 | `@wingsky-1/dsh-notifier` | 审批/完成/错误事件通知：浏览器 Notification + 系统 toast + Bark | [dsh-notifier.md](dsh-notifier.md) |
 | `@wingsky-1/dsh-provider-usage` | 多 provider 用量统计：v2 适配器契约 + 宿主端渲染 + 历史落盘 | [dsh-provider-usage.md](dsh-provider-usage.md) |
 | `@wingsky-1/dsh-verify-isolated` | 插件开发隔离浏览器验证 skill（临时 DSH_HOME + 独立 profile） | [dsh-verify-isolated.md](dsh-verify-isolated.md) |
