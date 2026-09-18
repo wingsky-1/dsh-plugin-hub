@@ -125,13 +125,68 @@ export function buildConfigRoute(manager: RoutesManager, helpers: RouteHelpers):
 
 // ------------------------------------------------------------ /servers
 
+/** 服务器集合变更（POST 添加 / PATCH 更新 / DELETE 删除）：写操作面，与 GET 快照分离。
+ *
+ * 回答「如何变更集合？」——读快照（GET）留在 handler 内，方法分流后写操作整体下沉。
+ * 返回 true 表示已处理并应答；false 表示方法不在写集合内（调用方继续 405）。 */
+async function handleServersMutation(
+  method: string,
+  url: URL,
+  req: Req,
+  res: Res,
+  manager: RoutesManager,
+  helpers: RouteHelpers,
+): Promise<boolean> {
+  const { workspace } = apiPorts.get();
+  if (method === "POST") {
+    const body = await readJsonBody(req);
+    if (body === undefined) {
+      writeJson(res, 400, { error: "invalid JSON body" });
+      return true;
+    }
+    try {
+      const rec = body as Record<string, unknown>;
+      const scope = workspace.normalizeScope(rec.scope as string);
+      if (typeof rec.cwd === "string" && rec.cwd !== "") await manager.setSession(rec.cwd);
+      const server = await manager.add(rec, scope);
+      writeJson(res, 201, { server, summary: manager.summary() });
+    } catch (error) {
+      helpers.handleError(res, error);
+    }
+    return true;
+  }
+  if (method === "PATCH" || method === "DELETE") {
+    const name = requireNameParam(url, res);
+    if (name === undefined) return true;
+    try {
+      await helpers.maybeSession(url);
+      const scope = helpers.scopeParam(url);
+      if (method === "DELETE") {
+        await manager.remove(name, scope);
+        writeJson(res, 200, { ok: true, summary: manager.summary() });
+      } else {
+        const body = await readJsonBody(req);
+        if (body === undefined) {
+          writeJson(res, 400, { error: "invalid JSON body" });
+          return true;
+        }
+        const server = await manager.update(name, body as Record<string, unknown>, scope);
+        writeJson(res, 200, { server, summary: manager.summary() });
+      }
+    } catch (error) {
+      helpers.handleError(res, error);
+    }
+    return true;
+  }
+  return false;
+}
+
 /** 服务器集合 CRUD：GET 快照（纯读）/ POST 添加 / PATCH 更新 / DELETE 删除。 */
 export function buildServersRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return {
     kind: "exact",
     path: ROUTES.servers,
     handler: async (req: Req, res: Res) => {
-      const { workspace } = apiPorts.get();
       const url = new URL(req.url ?? "/", "http://localhost");
       const method = req.method ?? "GET";
       if (!guardLoopbackMethod(req, res, ROUTE_FENCE.servers.guarded)) return;
@@ -149,46 +204,7 @@ export function buildServersRoute(manager: RoutesManager, helpers: RouteHelpers)
         }
         return;
       }
-      if (method === "POST") {
-        const body = await readJsonBody(req);
-        if (body === undefined) {
-          writeJson(res, 400, { error: "invalid JSON body" });
-          return;
-        }
-        try {
-          const rec = body as Record<string, unknown>;
-          const scope = workspace.normalizeScope(rec.scope as string);
-          if (typeof rec.cwd === "string" && rec.cwd !== "") await manager.setSession(rec.cwd);
-          const server = await manager.add(rec, scope);
-          writeJson(res, 201, { server, summary: manager.summary() });
-        } catch (error) {
-          helpers.handleError(res, error);
-        }
-        return;
-      }
-      if (method === "PATCH" || method === "DELETE") {
-        const name = requireNameParam(url, res);
-        if (name === undefined) return;
-        try {
-          await helpers.maybeSession(url);
-          const scope = helpers.scopeParam(url);
-          if (method === "DELETE") {
-            await manager.remove(name, scope);
-            writeJson(res, 200, { ok: true, summary: manager.summary() });
-          } else {
-            const body = await readJsonBody(req);
-            if (body === undefined) {
-              writeJson(res, 400, { error: "invalid JSON body" });
-              return;
-            }
-            const server = await manager.update(name, body as Record<string, unknown>, scope);
-            writeJson(res, 200, { server, summary: manager.summary() });
-          }
-        } catch (error) {
-          helpers.handleError(res, error);
-        }
-        return;
-      }
+      if (await handleServersMutation(method, url, req, res, manager, helpers)) return;
       writeJson(res, 405, { error: `method not allowed: ${method}` });
     },
   };
@@ -342,6 +358,26 @@ export function buildImportJsonRoute(manager: RoutesManager, helpers: RouteHelpe
 
 // ------------------------------------------------------------ /tool-disable
 
+/** 解析 tool-disable 请求体：回答「调用方要禁哪把工具？」——形状与必填校验。
+ *
+ * 返回携带 server/tool/disabled 的成功体，或写 400 用的错误文案；路由一致性
+ * （全名 root 是否属于当前工作空间）与执行留在 handler 内（不同问题）。 */
+function parseToolDisableBody(
+  body: unknown,
+): { ok: true; server: string; tool: string; disabled: boolean } | { ok: false; error: string } {
+  if (body === undefined || typeof body !== "object" || body === null) {
+    return { ok: false, error: "invalid JSON body" };
+  }
+  const rec = body as Record<string, unknown>;
+  const server = typeof rec.server === "string" ? rec.server : "";
+  const tool = typeof rec.tool === "string" ? rec.tool : "";
+  const disabled = rec.disabled === true;
+  if (server === "" || tool === "") {
+    return { ok: false, error: "server 与 tool 均为必填" };
+  }
+  return { ok: true, server, tool, disabled };
+}
+
 /** 工具级禁用开关（PATCH；root 路由一致性校验防跨空间串台）。 */
 export function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelpers): WebRoute {
   return {
@@ -352,18 +388,12 @@ export function buildToolDisableRoute(manager: RoutesManager, helpers: RouteHelp
       if (!guardLoopbackMethod(req, res, ROUTE_FENCE.toolDisable.guarded)) return;
       const url = new URL(req.url ?? "/", "http://localhost");
       const body = await readJsonBody(req);
-      if (body === undefined || typeof body !== "object" || body === null) {
-        writeJson(res, 400, { error: "invalid JSON body" });
+      const parsedBody = parseToolDisableBody(body);
+      if (!parsedBody.ok) {
+        writeJson(res, 400, { error: parsedBody.error });
         return;
       }
-      const rec = body as Record<string, unknown>;
-      const server = typeof rec.server === "string" ? rec.server : "";
-      const tool = typeof rec.tool === "string" ? rec.tool : "";
-      const disabled = rec.disabled === true;
-      if (server === "" || tool === "") {
-        writeJson(res, 400, { error: "server 与 tool 均为必填" });
-        return;
-      }
+      const { server, tool, disabled } = parsedBody;
       // 路由一致性：server 全名 root 必须属于当前工作空间（或 @global）。
       const parsed = workspace.parseFullServerName(server);
       if (parsed === undefined) {

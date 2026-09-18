@@ -46,6 +46,28 @@ function assertReconnectDelay(value: unknown, path: string): void {
   }
 }
 
+/** 校验 reconnect 字段间关系：回答「退避预算自洽吗？」——与官方同口径先补默认值
+ * 再判关系（只写 initialDelayMs 而它大于默认 maxDelayMs 时装载期会抛，不提前拒绝
+ * 会把错误推迟到连接期）+ maxAttempts 正整数。单字段形状（delay 边界/enabled 布尔）
+ * 的校验在 normalizeReconnect 内（不同问题）。 */
+function assertReconnectRelation(out: Record<string, unknown>): void {
+  // 与官方同口径：**先补默认值再判关系**。只写 initialDelayMs 而它大于默认 maxDelayMs 时，
+  // 官方在装载期就会抛；这里不提前拒绝，错误就又被推迟到连接期。
+  const initialDelayMs =
+    (out.initialDelayMs as number | undefined) ?? RECONNECT_DEFAULTS.initialDelayMs;
+  const maxDelayMs = (out.maxDelayMs as number | undefined) ?? RECONNECT_DEFAULTS.maxDelayMs;
+  if (initialDelayMs > maxDelayMs) {
+    throw new Error("reconnect.initialDelayMs must be less than or equal to maxDelayMs");
+  }
+  const { maxAttempts } = out;
+  if (
+    maxAttempts !== undefined &&
+    (typeof maxAttempts !== "number" || !Number.isInteger(maxAttempts) || maxAttempts < 1)
+  ) {
+    throw new Error("reconnect.maxAttempts must be a positive integer");
+  }
+}
+
 /**
  * 收紧 reconnect：只保留官方 4 键，边界按官方口径拒绝。
  *
@@ -69,22 +91,66 @@ function normalizeReconnect(raw: unknown): Record<string, unknown> {
   if (out.enabled !== undefined && typeof out.enabled !== "boolean") {
     throw new Error("reconnect.enabled must be a boolean");
   }
-  // 与官方同口径：**先补默认值再判关系**。只写 initialDelayMs 而它大于默认 maxDelayMs 时，
-  // 官方在装载期就会抛；这里不提前拒绝，错误就又被推迟到连接期。
-  const initialDelayMs =
-    (out.initialDelayMs as number | undefined) ?? RECONNECT_DEFAULTS.initialDelayMs;
-  const maxDelayMs = (out.maxDelayMs as number | undefined) ?? RECONNECT_DEFAULTS.maxDelayMs;
-  if (initialDelayMs > maxDelayMs) {
-    throw new Error("reconnect.initialDelayMs must be less than or equal to maxDelayMs");
-  }
-  const { maxAttempts } = out;
-  if (
-    maxAttempts !== undefined &&
-    (typeof maxAttempts !== "number" || !Number.isInteger(maxAttempts) || maxAttempts < 1)
-  ) {
-    throw new Error("reconnect.maxAttempts must be a positive integer");
-  }
+  assertReconnectRelation(out);
   return out;
+}
+
+/** 校验传输必填：回答「该传输形态能建吗？」——stdio 要非空 command；streamable-http
+ * 要非空 url 且可解析、协议仅 http(s)（B13）。字段组装（applyTransportFields）不管
+ * 合法性，只管落定（不同问题）。 */
+function assertTransportRequired(src: Record<string, unknown>, transport: string): void {
+  if (transport === "stdio") {
+    if (typeof src.command !== "string" || (src.command as string).trim() === "") {
+      throw new Error("stdio server requires a command");
+    }
+    return;
+  }
+  if (typeof src.url !== "string" || (src.url as string).trim() === "") {
+    throw new Error("streamable-http server requires a url");
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(src.url as string);
+  } catch {
+    throw new Error(`invalid url: ${src.url}`);
+  }
+  // B13：streamable-http 仅接受 http(s)；ftp/file 等协议可解析但语义不符
+  // （README 口径「streamable-http(远程)」），显式白名单拒绝。
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`unsupported protocol: ${parsed.protocol}//`);
+  }
+}
+
+/** 落定传输相关字段：回答「传输字段怎么组装？」——stdio 组 command/args/cwd/env，
+ * http 组 url/headers；调用前已由 assertTransportRequired 保证必填合法（不同问题）。 */
+function applyTransportFields(
+  server: ServerConfig,
+  src: Record<string, unknown>,
+  transport: string,
+): void {
+  if (transport === "stdio") {
+    server.command = src.command as string;
+    if (Array.isArray(src.args)) server.args = (src.args as unknown[]).map(String);
+    if (typeof src.cwd === "string" && (src.cwd as string) !== "") server.cwd = src.cwd as string;
+    if (typeof src.env === "object" && src.env !== null) {
+      server.env = Object.fromEntries(
+        Object.entries(src.env as Record<string, unknown>).map(([key, value]) => [
+          key,
+          String(value),
+        ]),
+      );
+    }
+    return;
+  }
+  server.url = src.url as string;
+  if (typeof src.headers === "object" && src.headers !== null) {
+    server.headers = Object.fromEntries(
+      Object.entries(src.headers as Record<string, unknown>).map(([key, value]) => [
+        key,
+        String(value),
+      ]),
+    );
+  }
 }
 
 /** 校验并规范化一条服务器配置。 */
@@ -103,26 +169,7 @@ export function normalizeServer(input: unknown): ServerConfig {
         ? "stdio"
         : undefined;
   if (transport === undefined) throw new Error('transport must be "stdio" or "streamable-http"');
-  if (transport === "stdio") {
-    if (typeof src.command !== "string" || (src.command as string).trim() === "") {
-      throw new Error("stdio server requires a command");
-    }
-  } else {
-    if (typeof src.url !== "string" || (src.url as string).trim() === "") {
-      throw new Error("streamable-http server requires a url");
-    }
-    let parsed: URL;
-    try {
-      parsed = new URL(src.url as string);
-    } catch {
-      throw new Error(`invalid url: ${src.url}`);
-    }
-    // B13：streamable-http 仅接受 http(s)；ftp/file 等协议可解析但语义不符
-    // （README 口径「streamable-http(远程)」），显式白名单拒绝。
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new Error(`unsupported protocol: ${parsed.protocol}//`);
-    }
-  }
+  assertTransportRequired(src, transport);
   const server: ServerConfig = {
     name,
     transport,
@@ -138,28 +185,6 @@ export function normalizeServer(input: unknown): ServerConfig {
         ? (src.description as string).trim()
         : undefined,
   };
-  if (transport === "stdio") {
-    server.command = src.command as string;
-    if (Array.isArray(src.args)) server.args = (src.args as unknown[]).map(String);
-    if (typeof src.cwd === "string" && (src.cwd as string) !== "") server.cwd = src.cwd as string;
-    if (typeof src.env === "object" && src.env !== null) {
-      server.env = Object.fromEntries(
-        Object.entries(src.env as Record<string, unknown>).map(([key, value]) => [
-          key,
-          String(value),
-        ]),
-      );
-    }
-  } else {
-    server.url = src.url as string;
-    if (typeof src.headers === "object" && src.headers !== null) {
-      server.headers = Object.fromEntries(
-        Object.entries(src.headers as Record<string, unknown>).map(([key, value]) => [
-          key,
-          String(value),
-        ]),
-      );
-    }
-  }
+  applyTransportFields(server, src, transport);
   return server;
 }

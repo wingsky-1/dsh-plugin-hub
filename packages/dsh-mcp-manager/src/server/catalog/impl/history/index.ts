@@ -27,6 +27,18 @@ export interface CatalogAgent {
   };
 }
 
+/** 判定单条会话事件是否为可定位的目录消息：回答「这条事件带目录吗？」——
+ * 类型 + 来源身份 + 条目解析三关，任一不符即非目录事件（调用方继续倒序）。
+ * 可见性判定（surface.nodes）留在 catalogHistory 内（不同问题）。
+ * @returns 可定位时返回目录条目；否则 undefined。 */
+function matchCatalogEvent(
+  event: { type?: string; data?: { source?: CatalogSourceLike } } | undefined,
+): ReturnType<typeof resolveCatalogEntries> {
+  if (event?.type !== "user/message") return undefined;
+  if (!isCatalogSource(event.data?.source)) return undefined;
+  return resolveCatalogEntries(event.data?.source);
+}
+
 /**
  * 从会话持久化日志（agent.session.snapshotEvents()）倒序找最后一条**可见**的
  * 能力目录消息。**这是去重的权威来源**（与官方 dsh-tool-skill catalogHistory
@@ -41,12 +53,10 @@ export function catalogHistory(agent: CatalogAgent | undefined): CatalogHistoryR
   let published = false;
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index];
-    if (event?.type !== "user/message") continue;
-    if (!isCatalogSource(event.data?.source)) continue;
-    const entries = resolveCatalogEntries(event.data?.source);
+    const entries = matchCatalogEvent(event);
     if (entries === undefined) continue;
     published = true;
-    if (visible.has(event.seq)) return { visibleDigest: digestCatalogEntries(entries), published };
+    if (visible.has(event?.seq)) return { visibleDigest: digestCatalogEntries(entries), published };
   }
   return { published };
 }

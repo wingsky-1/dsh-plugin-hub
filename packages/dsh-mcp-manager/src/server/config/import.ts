@@ -11,24 +11,31 @@ import type { ServerConfig } from "./impl/model/type.ts";
 
 // ------------------------------------------- mcpServers JSON 条目映射
 
+/** 把一条远端（http/sse/url）条目映射为服务器配置：回答「远端条目如何映射？」——
+ * url 必填 + headers 透传 + env 只记来源（http 传输不支持 env，合并进 headers 之外忽略）。
+ * 本地（command）条目的映射在 fromClaudeEntry 内（不同问题）。 */
+function fromHttpEntry(name: string, entry: Record<string, unknown>): ServerConfig {
+  if (typeof entry.url !== "string" || entry.url === "")
+    throw new Error(`server "${name}": missing url`);
+  const server: ServerConfig = {
+    name,
+    transport: "streamable-http",
+    url: entry.url,
+  };
+  if (typeof entry.headers === "object" && entry.headers !== null)
+    server.headers = entry.headers as Record<string, string>;
+  if (typeof entry.env === "object" && entry.env !== null && Object.keys(entry.env).length > 0) {
+    // http 传输不支持 env，合并进 headers 之外忽略——记录来源即可
+    server.sourceEnv = Object.keys(entry.env);
+  }
+  return server;
+}
+
 /** 把一条 mcpServers JSON 条目映射为服务器配置。 */
 export function fromClaudeEntry(name: string, entry: Record<string, unknown>): ServerConfig {
   const type = entry.type;
   if (type === "http" || type === "sse" || entry.url !== undefined) {
-    if (typeof entry.url !== "string" || entry.url === "")
-      throw new Error(`server "${name}": missing url`);
-    const server: ServerConfig = {
-      name,
-      transport: "streamable-http",
-      url: entry.url,
-    };
-    if (typeof entry.headers === "object" && entry.headers !== null)
-      server.headers = entry.headers as Record<string, string>;
-    if (typeof entry.env === "object" && entry.env !== null && Object.keys(entry.env).length > 0) {
-      // http 传输不支持 env，合并进 headers 之外忽略——记录来源即可
-      server.sourceEnv = Object.keys(entry.env);
-    }
-    return server;
+    return fromHttpEntry(name, entry);
   }
   if (typeof entry.command !== "string" || entry.command === "") {
     throw new Error(`server "${name}": unsupported entry (need command or url)`);

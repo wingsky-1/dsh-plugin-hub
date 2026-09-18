@@ -51,6 +51,170 @@ import type { DisabledToolsMap } from "../../store/interface.ts";
 // ------------------------------------------------------------ 连接池
 
 /**
+ * 就绪封装定义服务器：回答「注入的封装定义如何就绪？」——execute 为调用方 JS
+ * 直呼，不经远端、不派官方实例，以虚拟连接（无 id/handle，status=connected）+
+ * 目录投影存在；判定用 Array.isArray（空数组也算封装声明，不回退远端装载）。
+ * 远端装载与结算在 mountRemoteServer 内（不同问题）。
+ *
+ * 模块函数而非私有方法：类成员会进入 .d.ts 声明块（导出面快照按块比对），
+ * 纯内部分拆放模块级才能让导出面零 diff。
+ * @returns 是封装定义（已处理）返回 true；否则 false（调用方走远端装载）。
+ */
+function connectWrappedServer(
+  unit: ProjectUnit,
+  root: string,
+  serverName: string,
+  server: ServerConfig,
+  host: MiddlewareHost,
+): boolean {
+  // #413：封装定义服务器（runtime 注入 toolDefinitions）——
+  // execute 为调用方 JS 直呼 CLI，不经远端 MCP，**不派官方实例**。
+  // 中间层以「虚拟连接」（无 id/handle，status=connected）+ 目录从 toolDefinitions
+  // 投影存在；执行走 callTool 的封装直呼分支。
+  // 判定用 Array.isArray（空数组也算封装声明——调用方显式声明无工具，
+  // 不应回退远端装载）。
+  if (!Array.isArray(server.toolDefinitions)) return false;
+  const existingWrapped = unit.connections.get(serverName);
+  if (
+    existingWrapped !== undefined &&
+    (existingWrapped.status === "connected" || existingWrapped.status === "connecting")
+  )
+    return true;
+  const wrappedEntry: ConnectionEntry = {
+    server,
+    id: undefined,
+    handle: undefined,
+    status: "connected",
+    error: undefined,
+    connectedAt: Date.now(),
+    readySettled: true,
+    everConnected: true,
+    disposed: false,
+  };
+  unit.connections.set(serverName, wrappedEntry);
+  runtimePorts.get().catalog.catalogDirectory.projectWrappedTools({
+    root,
+    serverName,
+    definitions: server.toolDefinitions,
+  });
+  host.logger.info(`dsh-mcp-manager(${serverName}@${root}): wrapped (toolDefinitions) connected`);
+  host.emitStatus();
+  return true;
+}
+
+/** 远端装载的宿主能力面（调用点在类内现造闭包，私有读口不出类）。 */
+interface MountRemoteFaces {
+  host: MiddlewareHost;
+  registeredSchemas(): SchemaView;
+  registeredToolMeta(id: string): Map<string, { description?: unknown }>;
+  redact(error: unknown): string;
+}
+
+/**
+ * 远端装载与结算：回答「远端服务器怎么挂上并落定？」——让位校验 + 占位 entry +
+ * mountServer（含六态窗口 onState）+ 代际守卫 + settled/failed/discarded 结算；
+ * 状态短路、旧代际拆除与配置加载在 connectInternal 主路（不同问题）。
+ *
+ * 模块函数而非私有方法：类成员会进入 .d.ts 声明块（导出面快照按块比对），
+ * 纯内部分拆放模块级才能让导出面零 diff。
+ * @param entry 装载前在册的旧条目（让位校验用；让位即静默返回）。
+ */
+async function mountRemoteServer(
+  unit: ProjectUnit,
+  root: string,
+  serverName: string,
+  server: ServerConfig,
+  entry: ConnectionEntry | undefined,
+  faces: MountRemoteFaces,
+): Promise<void> {
+  const { lifecycle } = runtimePorts.get();
+  // 让位校验：本次 attempt 期间（上方 await 窗口内）entry 已被强制拆除并由更新的 attempt
+  // 重建（abandonInFlight 语义）——在装载前退避：既防旧配置的 entry 覆盖新 entry，也不把
+  // 新代际的账本键错拆掉（拆除点已挪到让位校验与本处之后）。
+  const current = unit.connections.get(serverName);
+  if (current !== undefined && current !== entry) return;
+  const newEntry: ConnectionEntry = {
+    server,
+    id: undefined,
+    handle: undefined,
+    status: "connecting",
+    error: undefined,
+    connectedAt: undefined,
+    readySettled: false,
+    everConnected: false,
+    disposed: false,
+  };
+  unit.connections.set(serverName, newEntry);
+  let mounted: Awaited<ReturnType<typeof lifecycle.mountServer>>;
+  try {
+    mounted = await lifecycle.mountServer({
+      root,
+      server,
+      // 六态窗口内只推进状态：装上之后 id/handle 才回得来，这里不能碰代际守卫。
+      onState: (next: ServerState) => {
+        if (newEntry.disposed) return;
+        newEntry.status = next;
+        faces.host.emitStatus();
+      },
+    });
+  } catch (error) {
+    // 装载期异常（loader.load 失败 / 账本撞键等）：实例没挂上，只能落 failed 等人重试。
+    newEntry.status = "failed";
+    newEntry.error = faces.redact(error);
+    newEntry.readySettled = true;
+    faces.host.logger.warn(
+      `dsh-mcp-manager(${serverName}@${root}): mount failed: ${faces.redact(error)}`,
+    );
+    faces.host.emitStatus();
+    return;
+  }
+  // 账本键与句柄只有装载返回后才可得，而窗口内的 onState 可能已点亮状态——就绪位只能在此补写。
+  newEntry.id = mounted.id;
+  newEntry.handle = mounted.entry.handle;
+  newEntry.readySettled = true;
+  // 代际守卫（拆除期竞态）：拆除动作到达后这一代已不在册，但实例已经挂上——必须发起释放，
+  // 否则官方实例与它占着的 serverName 预留会永久泄漏。
+  if (newEntry.disposed || unit.connections.get(serverName) !== newEntry) {
+    lifecycle.releaseServer(mounted.id);
+    return;
+  }
+  if (mounted.outcome.kind === "settled") {
+    newEntry.status = mounted.outcome.state;
+    newEntry.error = mounted.outcome.error;
+    if (mounted.outcome.state === "connected") {
+      newEntry.everConnected = true;
+      newEntry.connectedAt = Date.now();
+      // 注册面 → 目录的投影自 #767 S1-3b 起归 catalog 域：id 前缀、脱敏与
+      // runtime 判定都是本层就地给的闭包（目录域不持服务器表）。
+      await runtimePorts.get().catalog.catalogDirectory.projectRegisteredTools({
+        root,
+        serverName,
+        id: newEntry.id,
+        schemas: faces.registeredSchemas(),
+        cachePath: () => faces.host.catalogCachePath(root),
+        redact: (error) => faces.redact(error),
+        isRuntimeServer: (name) => faces.host.isRuntimeServer(name),
+        warn: (message) => faces.host.logger.warn(message),
+      });
+      // B 层摘要缓存（原直连账本 mountEntry 结算路径的行为）：单池后由池侧继续喂，
+      // 否则 /health.catalogCacheEntries 与注入端目录视图的 B 层兜底会静默失源。
+      await faces.host.recordCatalogTools?.(
+        serverName,
+        faces.registeredToolMeta(newEntry.id ?? ""),
+      );
+      faces.host.logger.info(`dsh-mcp-manager(${serverName}@${root}): connected`);
+    } else if (mounted.outcome.state === "failed") {
+      // 文案已是「我方判词 + 官方原文」（窗口把归属本实例的官方日志接在了 error 上）。
+      faces.host.logger.warn(
+        `dsh-mcp-manager(${serverName}@${root}): connection failed: ${mounted.outcome.error}`,
+      );
+    }
+    faces.host.emitStatus();
+  }
+  // outcome.kind === "discarded"：本次结算作废，状态由拆除路径负责，这里不动。
+}
+
+/**
  * 中间层：工作空间 MCP 连接池 + 目录 + 路由执行。
  * 一个实例服务所有工作空间（projectUnits: Map<root, ProjectUnit>）。
  */
@@ -175,129 +339,16 @@ export class McpMiddleware {
     const servers = await this.host.projectServersFor(root);
     const server = servers?.find((entry) => entry.name === serverName);
     if (server === undefined || server.enabled === false) return;
-    // #413：封装定义服务器（runtime 注入 toolDefinitions）——
-    // execute 为调用方 JS 直呼 CLI，不经远端 MCP，**不派官方实例**。
-    // 中间层以「虚拟连接」（无 id/handle，status=connected）+ 目录从 toolDefinitions
-    // 投影存在；执行走 callTool 的封装直呼分支。
-    // 判定用 Array.isArray（空数组也算封装声明——调用方显式声明无工具，
-    // 不应回退远端装载）。
-    if (Array.isArray(server.toolDefinitions)) {
-      const existingWrapped = unit.connections.get(serverName);
-      if (
-        existingWrapped !== undefined &&
-        (existingWrapped.status === "connected" || existingWrapped.status === "connecting")
-      )
-        return;
-      const wrappedEntry: ConnectionEntry = {
-        server,
-        id: undefined,
-        handle: undefined,
-        status: "connected",
-        error: undefined,
-        connectedAt: Date.now(),
-        readySettled: true,
-        everConnected: true,
-        disposed: false,
-      };
-      unit.connections.set(serverName, wrappedEntry);
-      runtimePorts.get().catalog.catalogDirectory.projectWrappedTools({
-        root,
-        serverName,
-        definitions: server.toolDefinitions,
-      });
-      this.host.logger.info(
-        `dsh-mcp-manager(${serverName}@${root}): wrapped (toolDefinitions) connected`,
-      );
-      this.host.emitStatus();
-      return;
-    }
     // 防双进程探测（#382 F5）与它的一次性重试已删除：换引擎后「同名服务器只能有一个实例」
     // 由官方 serverName 的活体预留保证（同 id 二次挂载当场抛，实测 §2.9-16），跨 root 同名
     // 各自由 (scope,name) 分配的 id 区分——探测与重试都是旧栈的补丁，留着只会与官方判重打架。
-    // 让位校验：本次 attempt 期间（上方 await 窗口内）entry 已被强制拆除并由更新的 attempt
-    // 重建（abandonInFlight 语义）——在装载前退避：既防旧配置的 entry 覆盖新 entry，也不把
-    // 新代际的账本键错拆掉（拆除点已挪到让位校验与本处之后）。
-    const current = unit.connections.get(serverName);
-    if (current !== undefined && current !== entry) return;
-    const newEntry: ConnectionEntry = {
-      server,
-      id: undefined,
-      handle: undefined,
-      status: "connecting",
-      error: undefined,
-      connectedAt: undefined,
-      readySettled: false,
-      everConnected: false,
-      disposed: false,
-    };
-    unit.connections.set(serverName, newEntry);
-    let mounted: Awaited<ReturnType<typeof lifecycle.mountServer>>;
-    try {
-      mounted = await lifecycle.mountServer({
-        root,
-        server,
-        // 六态窗口内只推进状态：装上之后 id/handle 才回得来，这里不能碰代际守卫。
-        onState: (next: ServerState) => {
-          if (newEntry.disposed) return;
-          newEntry.status = next;
-          this.host.emitStatus();
-        },
-      });
-    } catch (error) {
-      // 装载期异常（loader.load 失败 / 账本撞键等）：实例没挂上，只能落 failed 等人重试。
-      newEntry.status = "failed";
-      newEntry.error = this.redact(error);
-      newEntry.readySettled = true;
-      this.host.logger.warn(
-        `dsh-mcp-manager(${serverName}@${root}): mount failed: ${this.redact(error)}`,
-      );
-      this.host.emitStatus();
-      return;
-    }
-    // 账本键与句柄只有装载返回后才可得，而窗口内的 onState 可能已点亮状态——就绪位只能在此补写。
-    newEntry.id = mounted.id;
-    newEntry.handle = mounted.entry.handle;
-    newEntry.readySettled = true;
-    // 代际守卫（拆除期竞态）：拆除动作到达后这一代已不在册，但实例已经挂上——必须发起释放，
-    // 否则官方实例与它占着的 serverName 预留会永久泄漏。
-    if (newEntry.disposed || unit.connections.get(serverName) !== newEntry) {
-      lifecycle.releaseServer(mounted.id);
-      return;
-    }
-    if (mounted.outcome.kind === "settled") {
-      newEntry.status = mounted.outcome.state;
-      newEntry.error = mounted.outcome.error;
-      if (mounted.outcome.state === "connected") {
-        newEntry.everConnected = true;
-        newEntry.connectedAt = Date.now();
-        // 注册面 → 目录的投影自 #767 S1-3b 起归 catalog 域：id 前缀、脱敏与
-        // runtime 判定都是本层就地给的闭包（目录域不持服务器表）。
-        await runtimePorts.get().catalog.catalogDirectory.projectRegisteredTools({
-          root,
-          serverName,
-          id: newEntry.id,
-          schemas: this.registeredSchemas(),
-          cachePath: () => this.host.catalogCachePath(root),
-          redact: (error) => this.redact(error),
-          isRuntimeServer: (name) => this.host.isRuntimeServer(name),
-          warn: (message) => this.host.logger.warn(message),
-        });
-        // B 层摘要缓存（原直连账本 mountEntry 结算路径的行为）：单池后由池侧继续喂，
-        // 否则 /health.catalogCacheEntries 与注入端目录视图的 B 层兜底会静默失源。
-        await this.host.recordCatalogTools?.(
-          serverName,
-          this.registeredToolMeta(newEntry.id ?? ""),
-        );
-        this.host.logger.info(`dsh-mcp-manager(${serverName}@${root}): connected`);
-      } else if (mounted.outcome.state === "failed") {
-        // 文案已是「我方判词 + 官方原文」（窗口把归属本实例的官方日志接在了 error 上）。
-        this.host.logger.warn(
-          `dsh-mcp-manager(${serverName}@${root}): connection failed: ${mounted.outcome.error}`,
-        );
-      }
-      this.host.emitStatus();
-    }
-    // outcome.kind === "discarded"：本次结算作废，状态由拆除路径负责，这里不动。
+    if (connectWrappedServer(unit, root, serverName, server, this.host)) return;
+    await mountRemoteServer(unit, root, serverName, server, entry, {
+      host: this.host,
+      registeredSchemas: () => this.registeredSchemas(),
+      registeredToolMeta: (id) => this.registeredToolMeta(id),
+      redact: (error) => this.redact(error),
+    });
   }
 
   /**

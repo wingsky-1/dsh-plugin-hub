@@ -796,10 +796,10 @@ function registerPreExecuteGuard(
   if (typeof ctx.on !== "function") return undefined;
   return ctx.on(
     "tools/pre-execute",
-    async (
+    async function (
       exec: Pick<ToolExecution, "name" | "arguments" | "agent" | "parent">,
       next: () => Promise<PreToolDecision>,
-    ): Promise<PreToolDecision> => {
+    ): Promise<PreToolDecision> {
       const name = exec?.name;
       if (typeof name !== "string" || name === "") return next();
       // 裁定 R/Z：判发起者不判名字。我方 dispatch 经 ctx.tools.execute 转发出去的子调用，
@@ -855,10 +855,10 @@ export function registerDirectMcpGuard(
   if (typeof ctx.on !== "function") return undefined;
   return ctx.on(
     "tools/pre-execute",
-    async (
+    async function (
       exec: { name?: string; agent?: unknown },
       next: () => Promise<PreToolDecision>,
-    ): Promise<PreToolDecision> => {
+    ): Promise<PreToolDecision> {
       const name = exec?.name;
       if (typeof name !== "string" || name === "" || !name.startsWith("mcp__")) return next();
       const decision = await handleDirectMcpGuard(

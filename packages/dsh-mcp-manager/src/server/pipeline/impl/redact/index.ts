@@ -19,21 +19,28 @@ function addSecretPair(secrets: Set<string>, value: string): void {
   }
 }
 
+/** 收集 stdio 形态服务器的 secret：回答「本地命令的秘密在哪？」——环境变量值
+ * 全收 + 疑似凭据 flag 的参数值（`--token x` 与 `--token=x` 两种形态）；http 形态
+ * （headers/URL 用户信息）的收集在 createRedactor 内（不同问题）。 */
+function collectStdioSecrets(server: ServerConfig, secrets: Set<string>): void {
+  for (const value of Object.values(server.env ?? {})) addSecretPair(secrets, value);
+  const args = server.args ?? [];
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index] ?? "";
+    const equals = argument.indexOf("=");
+    const flag = equals < 0 ? argument : argument.slice(0, equals);
+    if (!/(?:token|secret|pass|key|auth|cookie|credential)/i.test(flag)) continue;
+    const value = equals < 0 ? args[index + 1] : argument.slice(equals + 1);
+    if (value !== undefined && value.length > 0) addSecretPair(secrets, value);
+  }
+}
+
 /** 凭据脱敏器：从服务器配置收集 secret 值，替换错误消息中的出现。 */
 export function createRedactor(servers: readonly ServerConfig[]): (error: unknown) => string {
   const secrets = new Set<string>();
   for (const server of servers) {
     if (server.transport === "stdio") {
-      for (const value of Object.values(server.env ?? {})) addSecretPair(secrets, value);
-      const args = server.args ?? [];
-      for (let index = 0; index < args.length; index += 1) {
-        const argument = args[index] ?? "";
-        const equals = argument.indexOf("=");
-        const flag = equals < 0 ? argument : argument.slice(0, equals);
-        if (!/(?:token|secret|pass|key|auth|cookie|credential)/i.test(flag)) continue;
-        const value = equals < 0 ? args[index + 1] : argument.slice(equals + 1);
-        if (value !== undefined && value.length > 0) addSecretPair(secrets, value);
-      }
+      collectStdioSecrets(server, secrets);
       continue;
     }
     for (const value of Object.values(server.headers ?? {})) addSecretPair(secrets, value);

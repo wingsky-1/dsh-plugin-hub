@@ -67,11 +67,11 @@ export function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver {
   /** 查中间层单服务器目录摘要：内存单元优先，单元缺失/无该服务器 → 磁盘
    * last-good 兜底（带 mtime 缓存，防 pre-step 每轮读盘）。返回 undefined
    * 表示中间层无此服务器数据（调用方保留 B 兜底）。 */
-  const middlewareCatalogSummary = async (
+  async function middlewareCatalogSummary(
     mw: McpMiddleware,
     root: string,
     name: string,
-  ): Promise<string | undefined> => {
+  ): Promise<string | undefined> {
     const {
       store: { readCatalogServerFromDisk },
     } = catalogPorts.get();
@@ -106,7 +106,7 @@ export function makeCatalogViewFor(host: CatalogViewHost): CatalogViewResolver {
     }
     rootCache.set(name, { mtimeMs, summary });
     return summary;
-  };
+  }
 
   return async (cwd, servers): Promise<CatalogCache> => {
     const {

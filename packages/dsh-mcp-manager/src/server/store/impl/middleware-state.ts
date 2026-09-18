@@ -77,6 +77,24 @@ export interface PersistedCatalogServer {
   tools: Array<{ name: string; description: string }>;
 }
 
+/** 清洗磁盘条目中的工具清单：回答「哪些工具条目可用？」——逐条校验 name 为字符串、
+ * description 缺失置空串；非数组输入视为空清单。文件可读性与服务器定位在
+ * readCatalogServerFromDisk 内（不同问题）。 */
+function cleanPersistedTools(tools: unknown): Array<{ name: string; description: string }> {
+  const out: Array<{ name: string; description: string }> = [];
+  if (!Array.isArray(tools)) return out;
+  for (const tool of tools) {
+    const toolRec = tool as { name?: unknown; description?: unknown } | undefined;
+    if (typeof toolRec !== "object" || toolRec === null || typeof toolRec.name !== "string")
+      continue;
+    out.push({
+      name: toolRec.name,
+      description: typeof toolRec.description === "string" ? toolRec.description : "",
+    });
+  }
+  return out;
+}
+
 /**
  * 读取 root 的磁盘 last-good 目录缓存中**单个服务器**的工具目录。
  * 缺失 / 损坏 / 无该服务器 → undefined（容错不抛）。
@@ -100,18 +118,7 @@ export async function readCatalogServerFromDisk(
         : undefined;
     if (typeof entry !== "object" || entry === null) return undefined;
     const rec = entry as { discoveredAt?: unknown; tools?: unknown } | undefined;
-    const tools: Array<{ name: string; description: string }> = [];
-    if (rec !== undefined && Array.isArray(rec.tools)) {
-      for (const tool of rec.tools) {
-        const toolRec = tool as { name?: unknown; description?: unknown } | undefined;
-        if (typeof toolRec !== "object" || toolRec === null || typeof toolRec.name !== "string")
-          continue;
-        tools.push({
-          name: toolRec.name,
-          description: typeof toolRec.description === "string" ? toolRec.description : "",
-        });
-      }
-    }
+    const tools = cleanPersistedTools(rec?.tools);
     return { discoveredAt: typeof rec?.discoveredAt === "number" ? rec.discoveredAt : 0, tools };
   } catch {
     // 损坏缓存忽略

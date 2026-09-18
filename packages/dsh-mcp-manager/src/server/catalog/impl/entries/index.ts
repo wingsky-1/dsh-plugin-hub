@@ -111,6 +111,20 @@ export function summarizeToolDescriptions(
   return text;
 }
 
+/** 判定 text[index] 处是否为句界：回答「这里断句吗？」——前置数字（编号/版本/
+ * 小数）不算句读；句读后须空白 + 大写字母/汉字才算新句（防 URL / e.g. 缩写误切）。
+ * 逐字扫描的驱动在 firstSentenceOf 内（不同问题）。
+ * @returns `false` 非句界（继续扫描）；`"end"` 句读收尾（整行即句）；`"mid"` 句中
+ *   句界（切至此处含标点）。 */
+function sentenceBoundaryKind(text: string, index: number): "end" | "mid" | false {
+  if (index > 0 && text[index - 1] >= "0" && text[index - 1] <= "9") return false;
+  let next = index + 1;
+  while (next < text.length && /\s/u.test(text[next])) next += 1;
+  if (next >= text.length) return "end"; // 句读收尾（"…URL."）→ 整行即句，不剥标点
+  if (/[A-Za-z\u4e00-\u9fff]/u.test(text[next] as string)) return "mid"; // 句读后随大写/汉字 → 新句
+  return false;
+}
+
 /** 取描述首行的首个完整句（MCP 描述惯例：首行即概要；多行 docstring 的参数
  * 说明留给工具详情/ws_mcp_detail，不进目录摘要）。
  * 句界判定防误切："1." 编号/版本/小数（句读前置数字）、URL / e.g. 缩写（句读后
@@ -126,11 +140,10 @@ function firstSentenceOf(description: unknown): string {
     const ch = text[index];
     if (ch !== "." && ch !== "!" && ch !== "?" && ch !== "。" && ch !== "！" && ch !== "？")
       continue;
-    if (index > 0 && text[index - 1] >= "0" && text[index - 1] <= "9") continue;
-    let next = index + 1;
-    while (next < text.length && /\s/u.test(text[next])) next += 1;
-    if (next >= text.length) return text; // 句读收尾（"…URL."）→ 整行即句，不剥标点
-    if (/[A-Za-z\u4e00-\u9fff]/u.test(text[next])) return text.slice(0, index + 1); // 句读后随大写/汉字 → 新句
+    const kind = sentenceBoundaryKind(text, index);
+    if (kind === false) continue;
+    if (kind === "end") return text; // 句读收尾（"…URL."）→ 整行即句，不剥标点
+    return text.slice(0, index + 1);
   }
   return text;
 }

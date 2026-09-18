@@ -165,6 +165,68 @@ export function searchCatalogMulti(
   return { results: results.slice(0, limit), unavailable, truncated };
 }
 
+/** 构建单服务器工具条目（含禁用标注与截断）：回答「这台服务器列出哪些工具？」——
+ * 逐工具裁禁用（本 root 段 + @global 段并集命中即标注）+ perServerLimit 截断；
+ * 盘点范围解析与跨单元排序在 listCatalog 内（不同问题）。
+ *
+ * 条件赋值而非 `disabled: x || undefined`——显式 undefined 键会被宿主
+ * lossless JSON 输出校验（dsh-util-values walkJsonValue）判非法
+ * （#381：ws_mcp_list 报 "value is not lossless JSON"）。
+ */
+function buildListToolEntries(
+  tools: Map<string, CatalogTool>,
+  safeLimit: number,
+  disabledTools: DisabledToolsMap | undefined,
+  root: string,
+  serverName: string,
+): { entries: ListToolEntry[]; truncated: boolean } {
+  const entries: ListToolEntry[] = [];
+  let truncated = false;
+  let index = 0;
+  for (const [toolName, tool] of tools) {
+    if (index >= safeLimit) {
+      truncated = true;
+      break;
+    }
+    // 工具级禁用标注（与服务器级 disabled 并列；查询面供模型感知）。
+    const rootTools = disabledTools?.get(root)?.get(serverName);
+    const globalTools =
+      root === MIDDLEWARE_GLOBAL_ROOT
+        ? undefined
+        : disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(serverName);
+    const disabledByUser =
+      (rootTools !== undefined && rootTools.has(toolName)) ||
+      (globalTools !== undefined && globalTools.has(toolName));
+    const toolEntry: ListToolEntry = { tool: toolName, description: tool.description };
+    if (disabledByUser) toolEntry.disabled = true;
+    entries.push(toolEntry);
+    index += 1;
+  }
+  return { entries, truncated };
+}
+
+/** 解析盘点范围：回答「哪些 root 参与盘点？」——@全名过滤定 root，root 越界抛
+ * 路由一致性错误（与 ws_mcp_call 口径一致）；无过滤时全 root 参与。
+ * 工具条目构建与排序在 listCatalog 内（不同问题）。 */
+function resolveListRoots(
+  roots: readonly string[],
+  serverFilter: string | undefined,
+): Set<string> | undefined {
+  if (serverFilter !== undefined && serverFilter.startsWith("@")) {
+    const {
+      workspace: { parseFullServerName },
+    } = catalogPorts.get();
+    const parsed = parseFullServerName(serverFilter);
+    if (parsed === undefined || !roots.includes(parsed.root)) {
+      throw new Error(
+        `ws_mcp_list: server ${JSON.stringify(serverFilter)} 不属于当前工作空间（${JSON.stringify(roots)}）；路由一致性校验失败（防跨空间串台）`,
+      );
+    }
+    return new Set([parsed.root]);
+  }
+  return undefined;
+}
+
 /**
  * 完整盘点：列出当前工作空间全部服务器 + 每台完整工具清单（不受关键词/limit
  * 截断服务器，工具数受 perServerLimit 保护）。
@@ -186,22 +248,13 @@ export function listCatalog(
   disabledTools?: DisabledToolsMap,
 ): ListCatalogResult {
   const {
-    workspace: { parseFullServerName, fullServerName },
+    workspace: { fullServerName },
   } = catalogPorts.get();
   const safeLimit =
     Number.isFinite(toolLimit) && toolLimit > 0
       ? Math.floor(toolLimit)
       : LIST_DEFAULT_TOOLS_PER_SERVER;
-  let rootSet: Set<string> | undefined;
-  if (serverFilter !== undefined && serverFilter.startsWith("@")) {
-    const parsed = parseFullServerName(serverFilter);
-    if (parsed === undefined || !roots.includes(parsed.root)) {
-      throw new Error(
-        `ws_mcp_list: server ${JSON.stringify(serverFilter)} 不属于当前工作空间（${JSON.stringify(roots)}）；路由一致性校验失败（防跨空间串台）`,
-      );
-    }
-    rootSet = new Set([parsed.root]);
-  }
+  const rootSet = resolveListRoots(roots, serverFilter);
   const servers: ListServerEntry[] = [];
   let totalTools = 0;
   let anyTruncated = false;
@@ -227,40 +280,37 @@ export function listCatalog(
       if (catalog.unavailable !== undefined) {
         entry.unavailable = catalog.unavailable;
       } else {
-        const tools: ListToolEntry[] = [];
-        let truncated = false;
-        let index = 0;
-        for (const [toolName, tool] of catalog.tools) {
-          if (index >= safeLimit) {
-            truncated = true;
-            break;
-          }
-          // 工具级禁用标注（与服务器级 disabled 并列；查询面供模型感知）。
-          // 条件赋值而非 `disabled: x || undefined`——显式 undefined 键会被宿主
-          // lossless JSON 输出校验（dsh-util-values walkJsonValue）判非法
-          // （#381：ws_mcp_list 报 "value is not lossless JSON"）。
-          const rootTools = disabledTools?.get(root)?.get(serverName);
-          const globalTools =
-            root === MIDDLEWARE_GLOBAL_ROOT
-              ? undefined
-              : disabledTools?.get(MIDDLEWARE_GLOBAL_ROOT)?.get(serverName);
-          const disabledByUser =
-            (rootTools !== undefined && rootTools.has(toolName)) ||
-            (globalTools !== undefined && globalTools.has(toolName));
-          const toolEntry: ListToolEntry = { tool: toolName, description: tool.description };
-          if (disabledByUser) toolEntry.disabled = true;
-          tools.push(toolEntry);
-          index += 1;
-        }
-        entry.tools = tools;
-        entry.toolsTruncated = truncated;
-        if (truncated) anyTruncated = true;
-        totalTools += tools.length;
+        const built = buildListToolEntries(
+          catalog.tools,
+          safeLimit,
+          disabledTools,
+          root,
+          serverName,
+        );
+        entry.tools = built.entries;
+        entry.toolsTruncated = built.truncated;
+        if (built.truncated) anyTruncated = true;
+        totalTools += built.entries.length;
       }
       servers.push(entry);
     }
   }
-  // 稳定排序（root 出现序 + 服务器名）：跨单元合并不依赖 Map 插入序。
+  return finalizeListResult(servers, roots, totalTools, anyTruncated, emptyHint);
+}
+
+/** 定序组装盘点结果：回答「结果按什么顺序摆？」——稳定排序（root 出现序 +
+ * 服务器名，跨单元合并不依赖 Map 插入序）+ 空结果提示；范围与条目构建在
+ * listCatalog 内（不同问题）。 */
+function finalizeListResult(
+  servers: ListServerEntry[],
+  roots: readonly string[],
+  totalTools: number,
+  anyTruncated: boolean,
+  emptyHint: string,
+): ListCatalogResult {
+  const {
+    workspace: { parseFullServerName },
+  } = catalogPorts.get();
   const rootIndex = new Map(roots.map((root, index) => [root, index]));
   servers.sort((a, b) => {
     const ra = parseFullServerName(a.server)?.root ?? "";

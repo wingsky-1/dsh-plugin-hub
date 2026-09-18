@@ -24,6 +24,32 @@ export function defaultStatsPath(): string {
   return statsFile();
 }
 
+/** 还原服务器聚合快照：回答「各 server/tool 的计数是多少？」——逐服务器/工具重建
+ * Map 形态；披露漏斗（searches/lists/details）的还原在 loadExisting 内（不同问题）。
+ *
+ * 模块函数而非私有方法：类成员会进入 .d.ts 声明块（导出面快照按块比对），
+ * 纯内部分拆放模块级才能让导出面零 diff。 */
+function restoreServerSnapshot(
+  target: McpStatsCollector["servers"],
+  servers: Partial<McpStatsSnapshot>["servers"],
+): void {
+  if (servers === undefined || servers === null || typeof servers !== "object") return;
+  for (const [sName, sVal] of Object.entries(servers)) {
+    const toolsMap = new Map<string, ToolCallMetric>();
+    if (sVal.tools !== undefined && sVal.tools !== null && typeof sVal.tools === "object") {
+      for (const [tName, tVal] of Object.entries(sVal.tools)) {
+        toolsMap.set(tName, { ...tVal });
+      }
+    }
+    target.set(sName, {
+      totalCalls: sVal.totalCalls ?? 0,
+      successCalls: sVal.successCalls ?? 0,
+      failedCalls: sVal.failedCalls ?? 0,
+      tools: toolsMap,
+    });
+  }
+}
+
 export class McpStatsCollector {
   private enabled: boolean = false;
   private filePath: string = defaultStatsPath();
@@ -96,22 +122,7 @@ export class McpStatsCollector {
       const data = JSON.parse(raw) as Partial<McpStatsSnapshot>;
       if (data && typeof data === "object") {
         if (data.startedAt) this.startedAt = data.startedAt;
-        if (data.servers && typeof data.servers === "object") {
-          for (const [sName, sVal] of Object.entries(data.servers)) {
-            const toolsMap = new Map<string, ToolCallMetric>();
-            if (sVal.tools && typeof sVal.tools === "object") {
-              for (const [tName, tVal] of Object.entries(sVal.tools)) {
-                toolsMap.set(tName, { ...tVal });
-              }
-            }
-            this.servers.set(sName, {
-              totalCalls: sVal.totalCalls ?? 0,
-              successCalls: sVal.successCalls ?? 0,
-              failedCalls: sVal.failedCalls ?? 0,
-              tools: toolsMap,
-            });
-          }
-        }
+        restoreServerSnapshot(this.servers, data.servers);
         if (data.disclosure && typeof data.disclosure === "object") {
           this.disclosure.searches = { ...data.disclosure.searches };
           this.disclosure.lists = { ...data.disclosure.lists };

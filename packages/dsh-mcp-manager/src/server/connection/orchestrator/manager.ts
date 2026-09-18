@@ -37,6 +37,44 @@ import { orchestratorPorts } from "./impl/service/index.ts";
 import { projectConfigFile } from "../../shared/interface.ts";
 
 /**
+ * 计算期望连接集合：回答「池里该有哪些 (root, 裸名)？」——全局 store + 项目级 store
+ * （同名跨 root 各成一条）+ runtime 注入（同名优先）；释放与触达的执行在
+ * reconcileServers 内（不同问题）。
+ *
+ * 模块函数而非私有方法：类成员会进入 .d.ts 声明块（导出面快照按块比对），
+ * 纯内部分拆放模块级才能让导出面零 diff。 */
+function buildDesiredServers(
+  store: McpStore,
+  projectStore: McpStore | undefined,
+  runtimeRegistry: Map<string, ServerConfig>,
+  poolRootFor: (scope: string) => string,
+): Map<string, { name: string; server: ServerConfig; scope: string }> {
+  const desired = new Map<string, { name: string; server: ServerConfig; scope: string }>();
+  const keyFor = (scope: string, name: string): string => `${poolRootFor(scope)}\u0000${name}`;
+  for (const server of store.data.servers) {
+    desired.set(keyFor(SCOPE_GLOBAL, server.name), {
+      name: server.name,
+      server,
+      scope: SCOPE_GLOBAL,
+    });
+  }
+  if (projectStore !== undefined) {
+    for (const server of projectStore.data.servers) {
+      const key = keyFor(SCOPE_PROJECT, server.name);
+      // 同名跨 root 各成一条（键含 root）——不再「项目级被全局顶掉」。
+      if (!desired.has(key)) {
+        desired.set(key, { name: server.name, server, scope: SCOPE_PROJECT });
+      }
+    }
+  }
+  // 双轨合并：runtimeRegistry（内存态，运行时注入）并入 desired，同名 runtime 优先。
+  for (const [name, server] of runtimeRegistry) {
+    desired.set(keyFor(SCOPE_GLOBAL, name), { name, server, scope: SCOPE_GLOBAL });
+  }
+  return desired;
+}
+
+/**
  * 管理器：持有全局存储 + 当前会话项目的项目级存储、连接池宿主面与状态通知。
  * 全局服务器常连；项目级服务器（<项目根>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json）只在当前会话 cwd 属于
  * 该项目时连接（跟随会话切换）。
@@ -610,29 +648,12 @@ export class McpManager {
     if (this.reconcileBusy) return false;
     this.reconcileBusy = true;
     try {
-      const desired = new Map<string, { name: string; server: ServerConfig; scope: string }>();
-      const keyFor = (scope: string, name: string): string =>
-        `${this.poolRootFor(scope)}\u0000${name}`;
-      for (const server of this.store.data.servers) {
-        desired.set(keyFor(SCOPE_GLOBAL, server.name), {
-          name: server.name,
-          server,
-          scope: SCOPE_GLOBAL,
-        });
-      }
-      if (this.projectStore !== undefined) {
-        for (const server of this.projectStore.data.servers) {
-          const key = keyFor(SCOPE_PROJECT, server.name);
-          // 同名跨 root 各成一条（键含 root）——不再「项目级被全局顶掉」。
-          if (!desired.has(key)) {
-            desired.set(key, { name: server.name, server, scope: SCOPE_PROJECT });
-          }
-        }
-      }
-      // 双轨合并：runtimeRegistry（内存态，运行时注入）并入 desired，同名 runtime 优先。
-      for (const [name, server] of this.runtimeRegistry) {
-        desired.set(keyFor(SCOPE_GLOBAL, name), { name, server, scope: SCOPE_GLOBAL });
-      }
+      const desired = buildDesiredServers(
+        this.store,
+        this.projectStore,
+        this.runtimeRegistry,
+        (scope) => this.poolRootFor(scope),
+      );
       let changed = false;
       const mw = this.middleware;
       if (mw !== undefined) {

@@ -835,6 +835,74 @@ describe("M7：POST /config 未知顶层键 → 400 拒绝", () => {
     expect(uiUpdates.length).toBe(1);
   });
 });
+// CRAP-ZERO tool-disable 路由：分支覆盖（与 routes-controllers 解析拆分同批）
+describe("CRAP-ZERO tool-disable 路由", () => {
+  function toolFixture() {
+    const { manager } = setup();
+    const routes = makeRoutes(manager);
+    const route = routes.find((r) => r.path === ROUTES.toolDisable)!;
+    return { manager, route };
+  }
+
+  it("非 PATCH → 405", async () => {
+    const { route } = toolFixture();
+    const res = await callHandler(route, fakeReq("GET", ROUTES.toolDisable));
+    expect(res.status).toBe(405);
+  });
+
+  it("无 body → 400", async () => {
+    const { route } = toolFixture();
+    const res = await callHandler(route, fakeReq("PATCH", ROUTES.toolDisable));
+    expect(res.status).toBe(400);
+  });
+
+  it("body 缺字段 → 400 且文案含均为必填", async () => {
+    const { route } = toolFixture();
+    const res = await callHandler(route, fakeReq("PATCH", ROUTES.toolDisable, {}));
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.payload)).toMatch(/均为必填/);
+  });
+
+  it("server 格式非法 → 400", async () => {
+    const { route } = toolFixture();
+    const res = await callHandler(
+      route,
+      fakeReq("PATCH", ROUTES.toolDisable, { server: "nope", tool: "t" }),
+    );
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.payload)).toMatch(/格式非法/);
+  });
+
+  it("跨空间 root → 400 且文案含不属于当前工作空间", async () => {
+    const { route } = toolFixture();
+    const res = await callHandler(
+      route,
+      fakeReq("PATCH", ROUTES.toolDisable, { server: "@/tmp/proj/x", tool: "t" }),
+    );
+    expect(res.status).toBe(400);
+    expect(JSON.stringify(res.payload)).toMatch(/不属于当前工作空间/);
+  });
+
+  it("合法禁用 → 200 且透传 root/裸名/开关", async () => {
+    const { manager, route } = toolFixture();
+    const calls: Array<[string, string, string, boolean]> = [];
+    manager.setToolDisabled = (async (
+      root: string,
+      server: string,
+      tool: string,
+      disabled: boolean,
+    ) => {
+      calls.push([root, server, tool, disabled]);
+    }) as typeof manager.setToolDisabled;
+    const res = await callHandler(
+      route,
+      fakeReq("PATCH", ROUTES.toolDisable, { server: "@global/dup-a", tool: "t", disabled: true }),
+    );
+    expect(res.status).toBe(200);
+    expect((res.payload as { ok: unknown }).ok).toBe(true);
+    expect(calls).toEqual([["@global", "dup-a", "t", true]]);
+  });
+});
 // CRAP-ZERO resume route hit
 describe("CRAP-ZERO resume route", () => {
   it("POST resume returns 200 ok", async () => {
