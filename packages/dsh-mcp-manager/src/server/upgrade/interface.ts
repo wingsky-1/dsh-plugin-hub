@@ -8,6 +8,10 @@
 import type { UpgradeDeps } from "./deps.ts";
 import { upgradeRunner } from "./impl/service/index.ts";
 
+// 项目级 just-in-time 迁移（S2-b 经 orchestrator 端口接线；本笔只落函数 + 单测）。
+// 同模块转出：目标与本文件同属 `server/upgrade` 模块，不新增域边（upgrade→shared 已存在）。
+export { settleProjectConfig } from "./impl/steps/project-layout.ts";
+
 /**
  * 装配升级域。升级链**异步跑完**（落盘原语是 Promise 面），任何一步失败即抛出、`apply` 随之失败
  * ——带半完成迁移的存储比不启动危险得多。调用方必须 `await`：不等待就等于让各域在迁移跑完之前

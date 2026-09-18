@@ -31,7 +31,7 @@ const DebugConfigSchema = z
     statsFile: z
       .string()
       .default("")
-      .description("统计落盘路径，留空使用默认 <DSH_HOME>/mcp-stats.json"),
+      .description("统计落盘路径，留空使用默认 <DSH_HOME>/@wingsky-1/dsh-mcp-manager/stats.json"),
   })
   .default({ callStats: false, statsFile: "" });
 
@@ -132,7 +132,7 @@ export const Config: z<{
     .description("是否向 Agent 宣告插件（能力清单由 <available_mcp_servers> 承担）"),
   storePath: z
     .string()
-    .description("全局服务器配置路径，留空用默认 <DSH_HOME>/dsh-mcp.json")
+    .description("全局服务器配置路径，留空用默认 <DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json")
     .disabled(true),
   announceCatalog: z
     .boolean()

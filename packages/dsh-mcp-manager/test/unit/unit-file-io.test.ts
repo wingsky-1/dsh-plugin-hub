@@ -18,8 +18,8 @@ import {
   directoryMode,
   ensureDir,
   fileMode,
-  legacyCatalogFile,
   legacyFile,
+  legacyProjectConfigFile,
   mcpManagerHome,
   projectConfigFile,
   readJsonFile,
@@ -58,7 +58,7 @@ function temporaryNames(dir: string): string[] {
 describe("布局登记（新路径 / 旧路径）", () => {
   it("新路径全部落在插件私有目录下", () => {
     expect(mcpManagerHome()).toBe(join(home, "@wingsky-1", "dsh-mcp-manager"));
-    expect(configFile()).toBe(join(mcpManagerHome(), "config.json"));
+    expect(configFile()).toBe(join(mcpManagerHome(), "mcp.json"));
     expect(userStatePath()).toBe(join(mcpManagerHome(), "user-state.json"));
     expect(catalogSummaryFile()).toBe(join(mcpManagerHome(), "catalog-summary.json"));
     expect(statsFile()).toBe(join(mcpManagerHome(), "stats.json"));
@@ -67,32 +67,34 @@ describe("布局登记（新路径 / 旧路径）", () => {
     expect(PACKAGE_DIR_MODE).toBe(0o700);
   });
 
-  it("五条旧路径显式登记，目录型旧路径逐文件取读源", () => {
+  it("两条旧路径显式登记（可再生落点不进迁移面，故 LEGACY 只剩用户数据）", () => {
     expect(legacyFile(LEGACY_LAYOUT.config)).toBe(join(home, "dsh-mcp.json"));
     expect(legacyFile(LEGACY_LAYOUT.userState)).toBe(join(home, "dsh-mcp-user-state.json"));
-    expect(legacyFile(LEGACY_LAYOUT.catalogSummary)).toBe(join(home, "dsh-mcp-catalog.json"));
-    expect(legacyFile(LEGACY_LAYOUT.stats)).toBe(join(home, "mcp-stats.json"));
-    expect(legacyCatalogFile("h")).toBe(join(home, "dsh-mcp-catalog", "h.json"));
     expect(Object.values(LEGACY_LAYOUT).sort()).toEqual(
-      [
-        "dsh-mcp-catalog",
-        "dsh-mcp-catalog.json",
-        "dsh-mcp-user-state.json",
-        "dsh-mcp.json",
-        "mcp-stats.json",
-      ].sort(),
+      ["dsh-mcp-user-state.json", "dsh-mcp.json"].sort(),
     );
+  });
+
+  it("项目级新旧形态：新形态按包分区，旧扁平形态只做迁移读面", () => {
+    const root = join(home, "proj");
+    expect(projectConfigFile(root)).toBe(
+      join(root, ".dsh", "@wingsky-1", "dsh-mcp-manager", "mcp.json"),
+    );
+    expect(legacyProjectConfigFile(root)).toBe(join(root, ".dsh", "mcp.json"));
   });
 
   it("旧路径只读：写函数拒绝回写旧布局", async () => {
     await expect(writeFileAtomic(legacyFile(LEGACY_LAYOUT.config), "{}")).rejects.toThrow(/未登记/);
-    await expect(writeFileAtomic(legacyCatalogFile("h"), "{}")).rejects.toThrow(/未登记/);
+    // 项目级旧扁平形态同样只读：isProjectConfigFile 只认包分区新形态。
+    await expect(
+      writeFileAtomic(legacyProjectConfigFile(join(home, "proj")), "{}"),
+    ).rejects.toThrow(/未登记/);
     expect(readdirSync(home)).toEqual([]);
   });
 });
 
 describe("mode 登记表经写函数生效", () => {
-  it("config.json 是 0o600", async () => {
+  it("mcp.json 是 0o600", async () => {
     await writeFileAtomic(configFile(), '{"version":1}\n');
     expect(permissionBits(configFile())).toBe(0o600);
   });
@@ -118,7 +120,9 @@ describe("mode 登记表经写函数生效", () => {
     expect(permissionBits(catalogDir())).toBe(0o700);
   });
 
-  it("ensureDir 对项目 .dsh/ 不套插件档位（随项目）", async () => {
+  // 逐行确认：经 helper 取目标（自动跟随包分区新形态）；mode 口径 null 不变——
+  // 叶子包分区目录走 directoryMode 新分支，中间级由 mkdir recursive 建。
+  it("ensureDir 对项目 .dsh/ 与包分区叶子目录不套插件档位（随项目）", async () => {
     const projectRoot = join(home, "proj");
     mkdirSync(projectRoot, { recursive: true });
     await writeFileAtomic(projectConfigFile(projectRoot), "{}\n");
