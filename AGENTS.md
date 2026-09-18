@@ -2,15 +2,15 @@
 
 DeepSeek Harness（DSH）的插件集 monorepo（npm 分发）。每个插件是独立 cordis bundle
 包，经 `cordis.patch.yml` + profile 挂载到 `dsh web`。分层：全局 `~/.dsh/AGENTS.md`
-（基线）→ 本文件（仓库）→ `packages/<pkg>/AGENTS.md`（包级叠加）→ `.dsh/skills/*`。
+（基线）→ 本文件（仓库）→ `packages/<pkg>/AGENTS.md`（包级叠加）→ [`‹.dsh/skills/*›`](.dsh/skills/)。
 本排序与全局“更具体的项目约定优先”一致，全局已声明具体优先，此处不再分叉。
 
 <a id="authority"></a>
 
 ## 权威顺序（冲突时按此裁决，低层不得覆盖高层）
 
-系统提示词 > 用户直接指令 > 本文件（仓库硬性）> 包级 `AGENTS.md` > `.dsh/skills/*`、
-`agents/*` 规程 > `docs/*` 详细规范 > 全局 `~/.dsh/AGENTS.md`（仅作缺省基线）。
+系统提示词 > 用户直接指令 > 本文件（仓库硬性）> 包级 `AGENTS.md` > [`‹.dsh/skills/*›`](.dsh/skills/)、
+[`‹agents/*›`](agents/) 规程 > [`‹docs/*›`](docs/) 详细规范 > 全局 `~/.dsh/AGENTS.md`（仅作缺省基线）。
 高层要求与低层红线冲突时：**停下说明冲突点并等待裁决**，不得自行扩大授权。
 裁决者默认为用户；无人值守时按“开 P0 跟踪＋打 `blocked-human`＋继续不受影响工作”出口，
 不空转、不自行放行（一般冲突不触发 exit2 熔断，熔断仅属门禁节 exit-2 判词）。
