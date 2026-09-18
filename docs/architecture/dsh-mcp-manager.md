@@ -1,156 +1,127 @@
-# dsh-mcp-manager 架构与运行机制（图解）
+# dsh-mcp-manager 架构与运行机制（TOGAF 4A 四视图）
 
 > 包：`@wingsky-1/dsh-mcp-manager` · 源码：`packages/dsh-mcp-manager/` · 版本见包 `package.json`（本文不复述版本号）
-> 功能一句话：**DSH 的 MCP 服务器管理器**——管理 stdio / streamable-http 两种传输的
-> MCP 服务器，把已连接服务器的工具收敛为四个原子工具
-> （`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`）供模型访问。
+> 功能一句话：**DSH 的 MCP 服务器管理器**——管理 stdio / streamable-http 两种传输的 MCP 服务器，把已连接服务器的工具收敛为四个原子工具（`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`）供模型访问。
 >
-> 快速上手（安装 / 配置 / 验证）见 [包 README](../../packages/dsh-mcp-manager/README.md)；本文讲**原理与运行机制**。
+> 快速上手（安装 / 配置 / 验证）与全量安全语义见 [包 README](../../packages/dsh-mcp-manager/README.md)；本文按 TOGAF 四视图（业务 BA / 应用 AA / 数据 DA / 技术 TA）讲**原理与运行机制**。
+> 证据基线：`32bcfd18`；证据为 `路径:行号`（取自该树，后续提交会漂移，以符号搜索兜底）或可复现常量。
+> `src/…` 省略包目录前缀（即 `packages/dsh-mcp-manager/`）。机制结论来自源码核对，不将历史图片或既有测试文件当成本次实测结果。
 >
-> 唯一事实源（本文不复述会漂移的计数，条数以源码为准）：配置键见 `src/server/config/config-schema.ts`；
-> 存储布局与权限见 `src/server/shared/paths.ts`；跨端状态键与路由见 `src/shared/status.ts` 与
-> `src/shared/routes.ts` 的 `ROUTES`；模型可见注册名的唯一派生点是 `src/server/shared/tool-names.ts` 的
-> `publicToolName`；调用预算与目录边界常量见 `src/server/connection/runtime/limits.ts` 与
-> `src/server/shared/constants.ts`。
+> 唯一事实源（本文不复述会漂移的计数，条数以源码为准）：配置键见 `src/server/config/config-schema.ts`；存储布局与权限见 `src/server/shared/paths.ts`；跨端状态键与路由见 `src/shared/status.ts` 与 `src/shared/routes.ts` 的 `ROUTES`；模型可见注册名的唯一派生点是 `src/server/shared/tool-names.ts` 的 `publicToolName`；调用预算与目录边界常量见 `src/server/connection/runtime/limits.ts` 与 `src/server/shared/constants.ts`。
 
----
+## 四视图导航
 
-## 1. 总体架构：单轨模型面（单池）
+| 视图 | 回答的问题 | 章节 | 图件 |
+| --- | --- | --- | --- |
+| BA | 能力、单池归属与显式非目标 | [§1](#ba) | `diagrams/mcp-manager-ba.svg`（B 批待归档，见 §5） |
+| AA | 组合根装配、域分工与调用链路 | [§2](#aa) | `diagrams/mcp-manager-aa.svg`（B 批待归档，见 §5） |
+| DA | 落盘物、配置一致性、SSE、迁移与卸载 | [§3](#da) | `diagrams/mcp-manager-da.svg`（B 批待归档，见 §5） |
+| TA | 挂载、构建、安全边界、门禁与待核项 | [§4](#ta) | `diagrams/mcp-manager-ta.svg`（B 批待归档，见 §5） |
 
-**全部服务器只有一条轨道**：中间层收敛。项目级、全局级（`@global`）与 runtime 注入的
-封装定义条目都由中间层连接池持有，模型面恒为四个原子工具
-（`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` / `ws_mcp_call`，两级发现：
-list 盘点 → detail 拉 schema），统一经 `ws_mcp_call` 寻址执行。
+> 各视图节首留 SVG 占位（图未到不硬嵌，B 批归档后生效）；节内 mermaid 讲关系逻辑（链路、依赖方向、判定分支）。两者不是同一张图的两种画法，改一处不必同步另一处。
 
-![dsh-mcp-manager 架构](diagrams/mcp-manager-architecture.svg)
+<a id="ba"></a>
 
-> 图源：`docs/architecture/diagrams/mcp-manager-architecture.html`（diagram-design）。
+## 1. 业务架构（BA）
 
-| 面 | 事实 |
-|---|---|
-| 模型可见面 | 4 个原子工具（`ws_mcp_*`）；宿主注册名 `mcp__<id>__<tool>` 是内部标识，**不在模型工具列表里**（per-agent 视角隐藏，见 §3.4），禁止直呼 |
-| 池归属 | 恒为「全部服务器」。每个工作空间一套常驻连接（project root 或虚拟 root `@global`），按会话 cwd 路由、跨空间不串台 |
-| 配置键 | 见 `config-schema.ts`（`enabled` / `announceToAgent` / `storePath` / `announceCatalog` / `catalogMaxEntries` / `debug` / `ui`）——**没有**模式键或策略键（两键已在 #767 笔 2 整体删除，见 §4） |
-| 代价 | 多一跳（中间层转发）；目录是 last-good 快照，`tools/list_changed` 变化需重连/刷新 |
+![BA：单池能力与显式非目标](diagrams/mcp-manager-ba.svg)
 
-池归属恒为「全部服务器」，不再有条件分支：模式键（三档）与策略键
-两键随 #767 笔 2 整体删除。为什么是整删而不是保留兼容：重构后只剩「全部经中间层」这一种
-能力，保留键只会留下永远走不到的分支；放弃的是 `allowTools`/`denyTools` 准入闸能力，
-缺口单列、替代品归阶段 3 的 governance/visibility（见 §4 与发布素材）。
+> 图源 `diagrams/mcp-manager-ba.html`（B 批待归档；占位先行，见 §5）。
 
----
+**单池前导**：全部服务器只有一条轨道——项目级、全局级（`@global`）与 runtime 注入的封装定义条目都由中间层连接池持有，模型面恒为四个原子工具（两级发现：list 盘点 → detail 拉 schema），统一经 `ws_mcp_call` 寻址执行。池归属恒为「全部服务器」：每个工作空间一套常驻连接（project root 或虚拟 root `@global`），按会话 cwd 路由、跨空间不串台。代价是多一跳（中间层转发）；目录是 last-good 快照，`tools/list_changed` 变化需重连/刷新。
 
-## 2. 插件装配流程
+为什么只有一种能力：模式键与策略键已在笔 2 整体删除，保留键只会留下永远走不到的分支；放弃的是 `allowTools`/`denyTools` 准入闸能力，缺口单列、替代品归阶段 3 的 governance/visibility（见 §3.2）。
 
-`apply(ctx)` 启动顺序（`src/index.ts`）：
+### 1.1 能力与可见结果
+
+| 能力 | 入口 | 可见结果与边界 |
+| --- | --- | --- |
+| 服务器配置面 | 全局与项目级 `mcp.json`、运行时注入 | 同构布局（见 §3.2）；旧键不报错、不迁移、不写用户文件（M2） |
+| 模型可见面 | 四个原子工具 `ws_mcp_*` | 宿主注册名 `mcp__<id>__<tool>` 是内部标识，**不在模型工具列表里**（per-agent 视角隐藏，见 §2.3），禁止直呼 |
+| 能力目录 | L1 目录注入（agent/pre-step 钩子） | 按会话 cwd 的静态能力地图；digest 只含服务器集合（见 §3.5） |
+| 状态推送 | SSE `summary` 帧 | coalesce 合并广播；不是可靠队列（见 §3.3） |
+| 管理面 | 11 条 `/api/dsh-mcp/*` 路由 | loopback 围栏 + 方法白名单（见 §3.4） |
+
+证据：`src/server/shared/paths.ts`、`src/server/shared/tool-names.ts#publicToolName`、`src/shared/routes.ts#ROUTES`、`src/shared/status.ts#SERVER_STATES`。
+
+### 1.2 显式非目标
+
+| 非目标 | 依据 |
+| --- | --- |
+| 不提供直呼主形态 | 单池后全部服务器只经中间层单元触达；`mcp__*` 已从模型视野摘掉（visibility 域经宿主 `restrict`，三触发点 reconcile）。宿主没有 `unregister`，退出条件是宿主提供注销面后再收敛 |
+| 不提供准入闸 | `allowTools`/`denyTools` 随策略键删除；工具级禁用表（`isToolDenied`）是执行前裁决，不是准入 |
+| 不订阅 `tools/list_changed` | 工具列表变化在重连/手动刷新时重新同步；目录是采集边界内的 last-good 快照 |
+| 不桥接 resources / prompts | 尚无 harness 消费接口，只桥接工具能力 |
+| 不做可靠消息队列 | SSE 只广播最新 `summary`，断线期间的帧不补（见 §3.3） |
+
+```mermaid
+flowchart LR
+    G["全局服务器"] --> CALL["ws_mcp_call 统一寻址"]
+    P["项目级服务器"] --> CALL
+    R["runtime 注入条目"] --> CALL
+    CALL --> M["模型（四个原子工具）"]
+```
+
+<a id="aa"></a>
+
+## 2. 应用架构（AA）
+
+![AA：组合根、域分工与调用链路](diagrams/mcp-manager-aa.svg)
+
+> 图源 `diagrams/mcp-manager-aa.html`（B 批待归档；占位先行，见 §5）。
+
+### 2.1 组合根与域分工
+
+`src/index.ts#apply` 是唯一认识宿主 `ctx` 的组合根：经 `bindHost` 收窄能力面，按依赖顺序装配各域（upgrade 最先、lifecycle 次之，`enabled` 分支再装中间层与路由），卸载时逆序释放（见 §3.6）。不要套用 notifier 的八域单例模板：这里各域以 `interface.ts` 门面 + `deps.ts` 端口接入，`servers` 是装配实现层（无独立 `deps.ts`/`interface.ts`，不画成对等域），`server/shared`（`paths`/`file-io`/`constants`/`tool-names`）是叶子事实源。
+
+| 域 | 装配与职责 | 实际能力依赖 |
+| --- | --- | --- |
+| upgrade | 存量迁移，装配前最先跑 `runUpgradeChain` | 日志与显式路径；成功才写存储刻度 |
+| config | schema、归一化、env 净化、官方 settings 接线 | 共享层常量（模块求值期） |
+| store | 全局与项目级 `McpStore`、禁用表与目录条目的落盘读写 | `paths` 单点 + `file-io` 原语 |
+| connection | 连接池宿主面（`McpManager`）：期望集合、单元路由、状态广播 | store 读写面、lifecycle 装载、catalog 目录 |
+| catalog | 目录采集、digest、检索 | `LIST_DEFAULT_TOOLS_PER_SERVER`（与 inject 同源） |
+| lifecycle | 经官方客户端装载（stdio / streamable-http） | 宿主 loader（调用时现取） |
+| visibility | per-agent `restrict` 摘掉 `mcp__*` | 单元表活引用 + 注册面现算名单 |
+| dispatch | `executeMcpCall`：守卫 → 路由 → 分支派发 | 工具级禁用表、调用预算、redact |
+| inject | `ws_mcp_*` 注册 + A+ 图片准入 | `finalizeContent` 接缝、晚读 thunk |
+| workspace | 全名解析归一（`@global`/`@@global` 等价）与 id 表 | 无域依赖（工厂产物，纯内存） |
+| pipeline | 超时、redact、结果渲染 | 各调用点递入 |
+| stats | 调用统计：debounce 写盘 + 同步刷盘 | 登记表取 mode（同步拼写） |
+| api | 管理路由、健康、SSE 接线 | manager 活引用 |
+
+证据：`src/index.ts#apply` / `#assembleEnabledRuntime`；各域 `interface.ts` 门面与 `deps.ts` 端口。
+
+### 2.2 装配时序
+
+`apply(ctx)` 的安装顺序（组合根 `src/index.ts`，升级链最先、lifecycle 次之）：
 
 ```mermaid
 flowchart TD
-    S(["dsh web 启动<br/>cordis.patch.yml 挂载 ⇢ apply(ctx)"]) --> A["解析 config<br/>enabled / announceToAgent / announceCatalog ..."]
-    A --> B["McpStore 加载<br/>全局 + 项目两级 mcp.json（旧扁平路径只读迁移）"]
-    B --> C["new McpManager + provide('mcpManager') 服务"]
-    C --> D["settings 命名空间接线<br/>+ uiUpdate 写 sink"]
-    D --> E{"enabled ?"}
-    E -->|"否"| Z["不注册路由/中间层<br/>（服务仍提供）"]
-    E -->|"是"| F["initMiddleware 提前于 startAll (#382)<br/>单池：全部服务器经中间层"]
-    F --> G["registerMiddlewareTools<br/>注册 ws_mcp_search/call/list/detail<br/>+ pre-execute guard"]
-    G --> H["startAll() 启动全部 enabled 服务器<br/>→ reconcileServers 双轨收敛 → loadCatalogCache 读目录缓存"]
+    S(["dsh web 启动<br/>cordis.patch.yml 挂载 ⇢ apply(ctx)"]) --> U["releaseUpgrade 复位 → await installUpgrade<br/>升级链最先跑完（见 §3.6）"]
+    U --> L["releaseLifecycle → installLifecycle<br/>宿主 loader 调用时现取"]
+    L --> ST["new McpStore + load()<br/>provide('mcpManager') 服务"]
+    ST --> C["settings 命名空间接线<br/>+ stats.configure + uiUpdate 写 sink"]
+    C --> E{"enabled ?"}
+    E -->|"否"| Z["不装中间层/路由<br/>（服务仍提供）"]
+    E -->|"是"| D["loadDisabledTools 独立载入<br/>+ initMiddleware 先于 startAll（F3）"]
+    D --> V["startAgentVisibility<br/>必须在 startAll 之前"]
+    V --> H["startAll() 启动全部 enabled 服务器<br/>→ reconcileServers 双轨收敛 → loadCatalogCache 读目录缓存"]
     H --> I["settings 合并面兜底<br/>（debug / stats 同步；模式同步已随键删除）"]
     I --> J["L1 能力目录注入<br/>agent/pre-step 钩子 (announceCatalog)"]
     J --> K["注册 /api/dsh-mcp/* 路由（清单见 ROUTES）<br/>+ SSE events（心跳见 shared/sse-hub.js） + health"]
-    K --> L["fs.watch 变更点驱动<br/>外部落盘 → refreshFromDisk (防重入)"]
-    L --> M["systemPrompt.section 宣告<br/>+ 统一 dispose"]
-```
-
----
-
-## 3. 核心机制
-
-### 3.1 服务器生命周期（配置 → 连接 → 目录 → 注册）
-
-```mermaid
-sequenceDiagram
-    autonumber
-    participant A as apply(ctx)
-    participant S as McpStore
-    participant M as McpManager
-    participant LC as servers/lifecycle（官方客户端装载）
-    participant MW as 中间层目录
-    participant T as ctx.tools
-
-    A->>S: load()（全局 + 项目 mcp.json）
-    A->>M: startAll()
-    M->>M: reconcileServers 双轨收敛<br/>（持久化 store + runtime 内存注入）
-    M->>LC: mount（stdio / streamable-http 经官方客户端）
-    LC-->>M: 装载结算（id 写回 + 六态推进）
-    M->>MW: 目录 last-good 快照写入
-    MW->>T: 工具面注册（注册名唯一派生 publicToolName）
-    M-->>A: emitStatus → SSE 广播 summary
+    K --> W["fs.watch 变更点驱动<br/>外部落盘 → 防重入 reconcile"]
+    W --> M["systemPrompt.section 宣告<br/>+ 统一 effect 逆序释放（见 §3.6）"]
 ```
 
 要点：
 
-- **命名规则** `publicToolName`（`server/shared/tool-names.ts`，唯一派生点）：`mcp__<id>__<tool>`；非法字符
-  替换为 `_`；≤64 字符直接用，否则 `sha256(server\\0tool)` 前 12 位做哈希后缀
-  （`前51字符_<hash12>`）；
-- **工具定义**：远端结果经统一投影收敛（白名单清洗，不裸透传远端字段）；
-  文本提取走 `extractText`（image/audio/resource 降级占位符；现状不截断，截断上限常量见
-  `DEFAULT_RESULT_TRUNCATE_BYTES`）；调用预算读 `server.toolCallTimeoutMs`（缺省
-  `CALL_TIMEOUT_MS`），`withTimeout` 兜底统一 +2s；
-- **双轨 reconcile**（`orchestrator/manager.ts#reconcileServers`）：desired = 持久化 store
-  （全局 + 项目）+ runtimeRegistry（同名 runtime 优先），变化才动作；
-- **runtime 注入**：其他插件可经 `ctx.mcpManager.registerServer({...toolDefinitions})`
-  运行时注册（内存态不落盘，同名 runtime 优先）；带 `toolDefinitions` 时 execute 来自调用方封装
-  （调用方可先做预处理再内部转发底层命令），底层 client 不外露。
-- 为什么自研连接栈不再出现：四文件在 #767 S1-5c 整体退役，连接改由官方客户端承接
-  （换引擎后官方运行时只导出最小面，「拿一个 client 去 callTool」这条路不再存在，
-  转发走 §3.4 的子调用链路）；退出条件是官方装载语义变化时先改 servers/lifecycle 域，
-  不在本文另起第二套描述。
+- **升级链最先**：链是异步的，不 await 就等于没有顺序保证——先装配各域会让它们读到旧形态（旧文件那时已被归档，读到的是空盘）；
+- **F3 中间层提前**：`initMiddleware` 在 `startAll` 之前（防「先建后停」竞态）；工具级禁用表在中间层之前独立载入，中间层回退时守卫仍有数据源；
+- **隐藏面卡位**：`startAgentVisibility` 必须在 `startAll` 之前——连接与工具注册发生在 `startAll` 期间，先挂隐藏面初始 reconcile 才能覆盖已 live 的 agent，后注册的经 `tools/change` 收敛；
+- **设置合并面兜底**：`syncFromSettings` 在运行期变更与启动后各调一次（`debug`/`stats` 同步；模式同步已随键删除）。
 
-### 3.2 断线重连（官方客户端承接，有界指数退避）
-
-重连由官方客户端承接：per-server `reconnect` 键（`enabled` / `initialDelayMs` /
-`maxDelayMs` / `maxAttempts`，与官方 `Reconnect` schema 逐字同值；未知键静默丢弃），
-默认值 500ms 起、30s 封顶、10 次上限（见 `config/normalize.ts#RECONNECT_DEFAULTS`）：
-
-```mermaid
-stateDiagram-v2
-    [*] --> connecting: start()
-    connecting --> connected: 装载结算成功
-    connecting --> reconnecting: connect 抛错 / 连接断开
-    connected --> reconnecting: 断线（后台退避）
-    reconnecting --> connected: 重试成功
-    reconnecting --> reconnecting: 失败 → 指数退避（30s 封顶）
-    reconnecting --> failed: 预算耗尽（>10 次）<br/>（停止后台重试）
-    connected --> stopped: disconnect()
-    connected --> disabled: enabled=false（配置层）或用户禁用
-    stopped --> connecting: 用户手动 connect
-    failed --> connecting: 手动 connect / reconnect
-```
-
-- 未知重连键静默丢弃（口径与顶层未知字段一致）：配置面是用户手写 JSON，写错键宁可丢弃
-  也不在连接期爆炸；真正改变重连语义的错值（时长越界、预算非正整数）仍在配置写入时拒绝；
-- 调用守卫把「后台重连中」纳入未就绪范畴：退避窗口内派发会打到不可信的工具面，
-  `ws_mcp_call` 在该窗口直接拒绝并提示稍后重试或重新连接。
-
-### 3.3 状态分级与推送（六态 + 三重防线）
-
-- 状态全集：`connected / connecting / reconnecting / stopped / disabled / failed`
-  （见 `src/shared/status.ts#SERVER_STATES`，跨端契约单点）；投影以中间层池 entry 为准，
-  禁用（配置 `enabled=false` 或用户禁用）投影为 `disabled`；
-- **推送链**：状态变化 → `manager.emitStatus()`（coalesce，同 tick 只广播一次）→
-  向全部 SSE 连接写 `summary` 帧；
-- **SSE 三重防线**：服务端 data ping 心跳（默认 30s，见 `shared/sse-hub.js`，喂客户端 watchdog）＋
-  客户端无帧 watchdog 强重建 ＋ 回前台受控重建（`POST /resume`，宿主侧忽略现有状态 force 重建）——
-  移动端切后台被静默掐断的半开连接可自愈，不堆积僵尸连接；
-- 客户端 SSE 故障降级：放弃 SSE 改轮询。
-
-### 3.4 中间层机制（核心）
-
-**连接池**：中间层以 `units: Map<root, ProjectUnit>` 维护每个项目根一套连接
-（惰性连接 + 超时 + LRU 淘汰，上限见 `evictIfNeeded` 默认参数）；`ws_mcp_call` 执行时按**调用方会话 cwd**路由到
-对应单元，`server` 全名 `@<root>/<server>` 一致性校验防跨空间串台（`@global/<s>` 与
-`@@global/<s>` 归一化防单双 @ 分裂，见 workspace 域 `full-name`）。
+### 2.3 单次 `ws_mcp_call` 链路
 
 **一次 ws_mcp_call 完整链路**（见 `servers/dispatch/impl/call/index.ts#executeMcpCall`）：
 
@@ -180,36 +151,127 @@ sequenceDiagram
     C-->>M: 结果
 ```
 
-- 远端转发**不带 agent**（留 `parent` / `signal`，无 signal 时现造一个）：
-  带了等于把子调用挂回该 agent 的作用域，而本包已把 `mcp__*` 从每个 agent 的模型视野摘掉，
-  自家转发会被自己那条 deny 一起打死；不带走全局面（guard 靠 parent 放行）。
-  代价是官方执行器那次图片准入退化成文本，由 A+ 经 `finalizeContent` 补回来（见下）；
-- **per-agent 视角隐藏**：`mcp__*` 从每个 agent 的模型视野摘掉（visibility 域经宿主
-  `restrict` 实现，三触发点 reconcile），全局注册面与目录仍在（`ws_mcp_list` 可见）。
-  为什么是隐藏而不是注销：宿主没有 `unregister`，注册方的 disposer 不交本包，
-  唯一手段就是 per-agent `restrict`；退出条件是宿主提供注销面后再收敛；
-- **A+ 图片准入**：远端原始图片块经外层 exec 的 agent 解路由、四值白名单与 base64 校验后，
-  由官方 `finalizeContent` 接缝换成真附件块；任何拒绝只降级成 `[image unavailable: …]`
-  文案、不抛错，无图片时返回 `undefined` 保持结果面不变；
-- **中间层只读边界**：`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` 纯读本地目录缓存
-  （不触达远端、不执行工具）；`ws_mcp_call` 是唯一执行远端工具的入口，执行前经工具级
-  禁用表（`isToolDenied`）裁决。
+- 远端转发**不带 agent**（留 `parent` / `signal`，无 signal 时现造一个）：带了等于把子调用挂回该 agent 的作用域，而本包已把 `mcp__*` 从每个 agent 的模型视野摘掉，自家转发会被自己那条 deny 一起打死；不带走全局面（guard 靠 parent 放行）。代价是官方执行器那次图片准入退化成文本，由 A+ 经 `finalizeContent` 补回来（见下）；
+- **per-agent 视角隐藏**：`mcp__*` 从每个 agent 的模型视野摘掉（visibility 域经宿主 `restrict` 实现，三触发点 reconcile），全局注册面与目录仍在（`ws_mcp_list` 可见）。为什么是隐藏而不是注销：宿主没有 `unregister`，注册方的 disposer 不交本包，唯一手段就是 per-agent `restrict`；退出条件是宿主提供注销面后再收敛；
+- **A+ 图片准入**：远端原始图片块经外层 exec 的 agent 解路由、四值白名单与 base64 校验后，由官方 `finalizeContent` 接缝换成真附件块；任何拒绝只降级成 `[image unavailable: …]` 文案、不抛错，无图片时返回 `undefined` 保持结果面不变；
+- **中间层只读边界**：`ws_mcp_list` / `ws_mcp_detail` / `ws_mcp_search` 纯读本地目录缓存（不触达远端、不执行工具）；`ws_mcp_call` 是唯一执行远端工具的入口，执行前经工具级禁用表（`isToolDenied`）裁决。
 
-### 3.5 传输层
+**连接池**：中间层以 `units: Map<root, ProjectUnit>` 维护每个项目根一套连接（惰性连接 + 超时 + LRU 淘汰，上限见 `evictIfNeeded` 默认参数）；`ws_mcp_call` 执行时按**调用方会话 cwd**路由到对应单元，`server` 全名 `@<root>/<server>` 一致性校验防跨空间串台（`@global/<s>` 与 `@@global/<s>` 归一化防单双 @ 分裂，见 workspace 域 `full-name`）。
 
-- 自研传输与协议适配层已在 #767 S1-5c 整体退役；stdio 与 streamable-http
-  传输由官方客户端实现，本包只做配置与装载编排。为什么退役：自研栈的协议适配、重连、
-  工具同步与官方实现重复，且官方是唯一随协议演进的一方；退出条件同 §3.1；
-- **stdio 环境净化**（`config/impl/env/index.ts`）：凭据词根 `SECRET_ENV_NAME`
-  形状变量过滤后再合并显式 env，显式值支持 `${ENV}` 引用展开——避免把宿主机密透传给
-  MCP 子进程；
-- **streamable-http**：headers 同样走配置值展开面；`Mcp-Session-Id` 会话保持、SSE 流式响应由官方客户端承担。
+### 2.4 生命周期与重连
 
----
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as apply(ctx)
+    participant S as McpStore
+    participant M as McpManager
+    participant LC as servers/lifecycle（官方客户端装载）
+    participant MW as 中间层目录
+    participant T as ctx.tools
 
-## 4. 路由与配置
+    A->>S: load()（全局 + 项目 mcp.json）
+    A->>M: startAll()
+    M->>M: reconcileServers 双轨收敛<br/>（持久化 store + runtime 内存注入）
+    M->>LC: mount（stdio / streamable-http 经官方客户端）
+    LC-->>M: 装载结算（id 写回 + 六态推进）
+    M->>MW: 目录 last-good 快照写入
+    MW->>T: 工具面注册（注册名唯一派生 publicToolName）
+    M-->>A: emitStatus → SSE 广播 summary
+```
 
-路由清单的唯一事实源是 `src/shared/routes.ts#ROUTES`（含方法围栏 `ROUTE_FENCE`）：
+要点：
+
+- **命名规则** `publicToolName`（`server/shared/tool-names.ts`，唯一派生点）：`mcp__<id>__<tool>`；非法字符替换为 `_`；≤64 字符直接用，否则 `sha256(server\\0tool)` 前 12 位做哈希后缀（`前51字符_<hash12>`）；
+- **工具定义**：远端结果经统一投影收敛（白名单清洗，不裸透传远端字段）；文本提取走 `extractText`（image/audio/resource 降级占位符；现状不截断，截断上限常量见 `DEFAULT_RESULT_TRUNCATE_BYTES`）；调用预算读 `server.toolCallTimeoutMs`（缺省 `CALL_TIMEOUT_MS`），`withTimeout` 兜底统一 +2s；
+- **双轨 reconcile**（`orchestrator/manager.ts#reconcileServers`）：desired = 持久化 store（全局 + 项目）+ runtimeRegistry（同名 runtime 优先），变化才动作；
+- **runtime 注入**：其他插件可经 `ctx.mcpManager.registerServer({...toolDefinitions})` 运行时注册（内存态不落盘，同名 runtime 优先）；带 `toolDefinitions` 时 execute 来自调用方封装（调用方可先做预处理再内部转发底层命令），底层 client 不外露。
+- 为什么自研连接栈不再出现：四文件在 S1-5c 整体退役，连接改由官方客户端承接（换引擎后官方运行时只导出最小面，「拿一个 client 去 callTool」这条路不再存在，转发走 §2.3 的子调用链路）；退出条件是官方装载语义变化时先改 servers/lifecycle 域，不在本文另起第二套描述。
+
+重连由官方客户端承接：per-server `reconnect` 键（`enabled` / `initialDelayMs` / `maxDelayMs` / `maxAttempts`，与官方 `Reconnect` schema 逐字同值；未知键静默丢弃），默认值 500ms 起、30s 封顶、10 次上限（见 `config/normalize.ts#RECONNECT_DEFAULTS`）：
+
+```mermaid
+stateDiagram-v2
+    [*] --> connecting: start()
+    connecting --> connected: 装载结算成功
+    connecting --> reconnecting: connect 抛错 / 连接断开
+    connected --> reconnecting: 断线（后台退避）
+    reconnecting --> connected: 重试成功
+    reconnecting --> reconnecting: 失败 → 指数退避（30s 封顶）
+    reconnecting --> failed: 预算耗尽（>10 次）<br/>（停止后台重试）
+    connected --> stopped: disconnect()
+    connected --> disabled: enabled=false（配置层）或用户禁用
+    stopped --> connecting: 用户手动 connect
+    failed --> connecting: 手动 connect / reconnect
+```
+
+- 未知重连键静默丢弃（口径与顶层未知字段一致）：配置面是用户手写 JSON，写错键宁可丢弃也不在连接期爆炸；真正改变重连语义的错值（时长越界、预算非正整数）仍在配置写入时拒绝；
+- 调用守卫把「后台重连中」纳入未就绪范畴：退避窗口内派发会打到不可信的工具面，`ws_mcp_call` 在该窗口直接拒绝并提示稍后重试或重新连接。
+
+### 2.5 模型面（四个原子工具）
+
+| 工具 | 语义 | 读写 |
+| --- | --- | --- |
+| `ws_mcp_list` | 盘点：本地目录缓存的工具清单（每服务器默认 `LIST_DEFAULT_TOOLS_PER_SERVER` 条，硬上限 `LIST_MAX_TOOLS_PER_SERVER`） | 只读（不触达远端） |
+| `ws_mcp_detail` | 拉 schema：指定工具的参数面 | 只读 |
+| `ws_mcp_search` | 检索：按关键字找工具 | 只读 |
+| `ws_mcp_call` | 唯一执行入口：`{server:"@<root>/<s>", tool}` 寻址执行 | 执行（`isToolDenied` 前置裁决） |
+
+证据：`src/server/inject/middleware-register.ts`；`src/server/connection/runtime/limits.ts`（`LIST_MAX_TOOLS_PER_SERVER`）；`src/server/shared/constants.ts`（`LIST_DEFAULT_TOOLS_PER_SERVER`）。管理路由（11 条 `/api/dsh-mcp/*`）见 §3.4——模型面与管理面分表，改一处只改一处（去重）。
+
+<a id="da"></a>
+
+## 3. 数据架构（DA）
+
+![DA：落盘物、一致性与迁移卸载](diagrams/mcp-manager-da.svg)
+
+> 图源 `diagrams/mcp-manager-da.html`（B 批待归档；占位先行，见 §5）。
+
+### 3.1 落盘物全表与 file-io 收敛（S2-C）
+
+根只认 `DSH_HOME` 一个变量（经仓库共享层 `shared/dsh-home.js` 的 `dshHome`，隔离验证换掉它即换掉全部落盘位置）。
+
+| 载体 | 路径（`paths.ts` 单点） | mode | 读写收敛 |
+| --- | --- | --- | --- |
+| 全局配置 `mcp.json` | `configFile()`（`<DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json`） | `0o600` | `store.save`：登记路径取表，未登记（用户 `storePath` 显式接管）回落既有 `0o600` 行为；序列化不动 |
+| 项目级配置 `mcp.json` | `projectConfigFile()`（`<项目根>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json`） | `null`（随项目权限模型） | 写面只认新形态；旧扁平形态只读（见 §3.2） |
+| 用户状态 `user-state.json` | `userStatePath()`（disabledTools 三段 root→server→tool[]） | `0o644` | `middleware-state#writeStateFile` 经 `file-io`，见双档 |
+| 目录条目 `<hash>.json` | `catalogFile()`（`catalog/` 目录下一行登记） | `0o644` | 同上；`readCatalogServerFromDisk` 经 `readJsonFile` |
+| 目录摘要 | `catalogSummaryFile()` / manager 缓存路径 | `0o644` | `writeCatalogCacheFile` 经 `file-io`，见双档 |
+| 调用统计 `stats.json` | `statsFile()` | `0o644` | 同步形态（见下）；`loadExisting` 缺失/损坏/目录→忽略重计 |
+| 存储刻度 `version` | `versionFile()`（升级链走到哪一版，不是插件版本） | `0o644` | 链成功后写，见 §3.6 |
+| 旧布局（读面） | `LEGACY_LAYOUT` + `legacyFile()`（根下两键） | — | 只读不回写；可再生的目录型旧路径随 S2-a 退出迁移面 |
+
+`server/shared/file-io.ts` 是落盘 IO 唯一收敛点：`ensureDir`（目录取表）＋ `writeFileAtomic`（唯一临时名 → 显式 mode 写入 → `rename` 覆盖 → 失败清理临时名并上抛原错误）＋ `readTextFile`/`readJsonFile`（不存在/不可读/是目录/解析失败一律回落 `null`，由各域按既有语义回落空值）。同目标路径的写经 `writeChains` 串行（模块级，跨调用点生效）。
+
+- **登记/未登记双档（fail-closed 方向）**：`fileMode` 未登记即抛（I6，写函数不替调用点做权限决定）。登记路径经 `writeFileAtomic`（mode 取表＋串行＋清理）；未登记路径（单测 tmp 覆盖、调用方自定义）回落既有直写形状——直接调 `writeFileAtomic` 等于把「回落写盘」变成「写失败」（`middleware-state#writeStateFile`、`manager#writeCatalogCacheFile` 与 S2-B 的 `store.save` 同式）；
+- **同步禁调**：`stats#flushSync` 不调异步 `writeFileAtomic`——同步契约（构造器/`flushSync` 直写断言/关闭刷盘/`manager.dispose` 的 fire-and-forget 链）要求返回时盘上已有数据，异步化会把「退出刷新」变成不可靠的后台写；`ensureDir` 自身异步故此处用同步拼写（`mkdirOptionsFor`/`writeOptionsFor`，未登记回落既有形状）；
+- **序列化逐字节不变**：收敛只换 IO 原语，不动字节——目录 `{version:1,entries}`、禁用 `{version:1,disabled}` / `{version:1,disabledTools:payload}`、统计 `snapshot()`，均保持既有 `JSON.stringify(·,null,2)` 形状；
+- **旧路径字面量归 `paths`**：`middleware-state` 只认 `userStatePath`/`catalogFile` 单点；`manager` 的旧注释已改真（外部手动编辑 `mcp.json` 指新布局）。新代码引用旧路径字面量即漂移（对账时判红）。
+
+阈值常量（原样，事实源见表上 `limits.ts` / `constants.ts`）：`CALL_TIMEOUT_MS = 30_000`；`CATALOG_TTL_MS = 24h`；`MAX_TOOLS_PER_SERVER = 512`；`MAX_BYTES_PER_TOOL = 4096`；`MAX_TOTAL_CATALOG_BYTES = 256KiB`；`LIST_MAX_TOOLS_PER_SERVER = 500`；`LIST_DEFAULT_TOOLS_PER_SERVER = 50`；`DEFAULT_TOOL_CALL_TIMEOUT_MS = 15_000`（调用预算缺省，`withTimeout` 兜底统一 +2s）；`CONNECT_TIMEOUT_MS = DISCOVERY_TIMEOUT_MS = 10_000`；`DEFAULT_RESULT_TRUNCATE_BYTES = 8192`（`extractText` 现状不截断）；`DEFAULT_CATALOG_MAX_ENTRIES = 6`；重连 `500ms` 起、`30s` 封顶、`10` 次上限；SSE 心跳 `30s`；统计 debounce `1000ms`；自有目录 `0o700`。
+
+否定式：**没有 revision**——落盘无单调计数、无冲突检测，并发写只串行不判冲（`rename` 先后无保证，旧数据可能覆盖新数据，见 `file-io.ts` 头注释）；**SSE 不是队列**（见 §3.3）。
+
+### 3.2 配置一致性与用户确认
+
+全局与项目级 `mcp.json` 同构：写面只认新形态；旧扁平路径（全局 `dsh-mcp.json`、项目级 `.dsh/mcp.json`）只做迁移读面、不回写；runtime 注入为内存态（同名 runtime 优先）；用户禁用态落用户状态文件（见 `userStatePath()`）。
+
+M2（旧键不报错、不迁移、不写用户文件）：未知键静默丢弃；boot 时旧键照常启动——笔 2 真机已验证带已删键的旧配置仍 200 启动（历史留档）；S2-C 三旁路等价接入后重验通过（见 §3.5）。
+
+M3（能力缺口单列）：`allowTools`/`denyTools` 准入闸随策略键消失，替代品归阶段 3 的 governance/visibility。
+
+### 3.3 SSE 不是可靠消息队列
+
+`makeEventsRoute` 内惰性建 hub；状态变化 → `manager.emitStatus()`（coalesce，同 tick 只广播一次，防 SSE 风暴）→ 向全部 SSE 连接写 `summary` 帧；服务端 data ping 心跳（默认 `30s`，见 `shared/sse-hub.js`，喂客户端 watchdog）＋ 客户端无帧 watchdog 强重建 ＋ 回前台受控重建（`POST /resume`，宿主侧忽略现有状态 force 重建）；客户端 SSE 故障降级改轮询。
+
+否定：hub 只管句柄/心跳/回收——断线期间的状态变化不补帧，重连后以最新 `summary` 为准；句柄数不是在线设备数或送达数；本包无 notifier 式序号水位与补拉语义，不要套用它的队列解读。
+
+证据：`src/server/connection/orchestrator/manager.ts#emitStatus`；`shared/sse-hub.js#createSseHub`；`src/shared/routes.ts#ROUTES`（`resume`/`events`）。
+
+### 3.4 管理路由与方法围栏
+
+路由清单的唯一事实源是 `src/shared/routes.ts#ROUTES`（11 条，键序与值均为跨端契约），围栏数据见 `ROUTE_FENCE`（非 loopback 403、白名单外 405，**403 先于 405**；`config` 是唯一有 loopback 豁免的路由，GET 只读非敏感展示）：
 
 | 路由 | 方法 | 说明 |
 |---|---|---|
@@ -225,44 +287,65 @@ sequenceDiagram
 | `/api/dsh-mcp/events` | GET | SSE 状态推送（心跳见 shared/sse-hub.js） |
 | `/api/dsh-mcp/health` | GET | 健康/计数诊断 |
 
-配置布局（见 `server/shared/paths.ts`，S2 已同构）：全局
-`<DSH_HOME>/@wingsky-1/dsh-mcp-manager/mcp.json`、项目级
-`<项目根>/.dsh/@wingsky-1/dsh-mcp-manager/mcp.json`（随仓库走、可提交 git）；
-旧扁平路径（全局 `dsh-mcp.json`、项目级 `.dsh/mcp.json`）只做迁移读面、不回写；
-runtime 注入为内存态；用户禁用态落用户状态文件（见 `userStatePath()`）。
+### 3.5 目录缓存与统计行为（留档）
 
-旧配置键不报错、不迁移、不写用户文件（M2：未知键静默丢弃，boot 时旧键照常启动；
-真机已验证带已删键的旧配置仍 200 启动）。两键整体删除的能力缺口单列（M3：
-`allowTools`/`denyTools` 准入闸随策略键消失，替代品归阶段 3
-governance/visibility，见发布素材）。
+- **目录缓存**：per-server 条目 + 摘要两层 last-good 快照；摘要变化才落盘（`recordCatalogTools`），落盘失败只记 warn、不阻塞主流程；损坏/缺失 → 空缓存（`readTextFile` null 回落），不崩溃；采集边界与 TTL 见 §3.1 常量；发现失败时 list 透出 `unavailable` 原因；
+- **统计**：`debounce 1000ms` 合并写（临时文件 + rename）；`flushSync` 同步原子落盘（见 §3.1 同步禁调）；`loadExisting` 从磁盘恢复计数（缺失/损坏/目录 → 忽略重计，与 `readJsonFile` 的 null 回落同族）；`configure` 是同步契约，file-io 只有异步读，此处不可调；
+- **M2 重验结论**：S2-C 以等价清单（mode/原子/错误语义逐条不变）接入三旁路（`middleware-state`、manager 目录缓存、stats），本笔零测试改动；M2（旧文件照常启动、损坏文件回落空值）复验通过。
 
----
+### 3.6 迁移与卸载
 
-## 5. 安全模型
+`STEPS` 见 `upgrade/impl/steps/index.ts`（本次迁移的一步为 `0.0.0 → 0.2.5`，即 `migrateStorageLayout`）：`version` 文件是本次新增的刻度，存量安装一律从 `0.0.0` 起算；`targetVersion` 是存储形态代际，不是 `package.json` 值。链在各域装配前跑完：按目标版本升序执行，任何一步失败即抛（存储没升完就被按错误形态解释，比不启动糟得多），刻度在 `run` 成功后写（不抢先前移）；跑完与插件版本对账（`reportGap`，落差告警、不自动降级）。
 
-- **env 净化**（config/impl/env）：父进程环境按 `SECRET_ENV_NAME`
-  （`(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH)` 形状）过滤敏感变量，
-  再合并显式 env（`${ENV}` 引用展开）——避免把宿主机密透传给
-  MCP 子进程；
-- **redactor 脱敏**（pipeline/impl/redact）：从全部服务器配置收集 secret
-  （env 值、URL 双形态等），错误消息逐值替换
-  `[REDACTED]`；
-- **loopback 围栏**：全部 `/api/dsh-mcp/*` 路由（唯一例外：GET /config 只读非敏感展示）；
-- **0600 + 原子写**：配置落盘显式 0600（未登记路径回落既有 0600 行为）+ tmp/rename；
-  目录缓存与用户状态同款原子写；
-- **stdio 子进程继承宿主权限**：MCP 服务器命令在宿主进程权限下执行，仅配置可信服务器；
-  工具结果原样返回可能含敏感信息，先确认再操作；
-- **工作空间隔离**：路由以调用方会话 cwd 为唯一输入，server 全名一致性校验防跨空间串台；
-  工具级禁用三入口统一经 `isToolDenied` 裁决（笔 2 后这是唯一裁决）。
+- 布局迁移：旧文件写到新位置后归档 `.migrated.bak`；项目级 just-in-time 经 orchestrator 的 upgrade 端口调 `settleProjectConfig`；无旧文件不凭空写默认内容，各域按既有语义回落空值；
+- 逆序释放：`disposeInjection → disposeSection → disposeRoutes → disposeMiddleware → disposeVisibility → watchCleanup → manager.dispose → releaseLifecycle → mountLedger 排空 → releaseUpgrade`（upgrade 最先装配、最后复位；`src/index.ts#apply` 的 effect 清理）；
+- 不等在飞写：禁用表与目录缓存落盘失败吞错、不阻塞主流程；`manager.dispose` 走 fire-and-forget（官方 dispose 会等在途首连，挂死的服务器能拖到 SDK 超时，故装载账本单独排空一次，错因降日志）。
 
----
+<a id="ta"></a>
 
-## 6. 已知限制
+## 4. 技术架构（TA）
 
-- 不订阅 MCP 的 `tools/list_changed` 通知；工具列表变化在重连/手动
-  刷新时重新同步；
-- 中间层目录是「采集边界内的 last-good 快照」（单服务器工具数与总量上限见
-  `runtime/limits.ts`，目录 TTL 见 `CATALOG_TTL_MS`），
-  发现失败时 list 透出 `unavailable` 原因；
+![TA：挂载、构建与安全兼容边界](diagrams/mcp-manager-ta.svg)
+
+> 图源 `diagrams/mcp-manager-ta.html`（B 批待归档；占位先行，见 §5）。
+
+### 4.1 挂载与构建
+
+`cordis.patch.yml` 经 profile 加载插件；宿主 `exports` → `lib/index.js`，客户端 → `lib/client.js`；构建依次执行清理、TypeScript 编译与 `bundle-host.ts`（第三方依赖构建期内联，发布物自包含）；客户端构建期内联（仓库全景约定，见本目录 README）。依赖 Node 版本见包 `engines`（部署口径，不复抄）。适配基线以仓库 `pnpm-workspace.yaml` 的 rc catalog 为准，不以本机 dsh 版本推断。
+
+### 4.2 安全模型
+
+| 机制 | 实现位置 | 要点 |
+| --- | --- | --- |
+| env 净化 | `config/impl/env`（`SECRET_ENV_NAME` 形状） | 父进程环境过滤敏感变量后再合并显式 env（显式值支持 `${ENV}` 引用展开），避免把宿主机密透传给 MCP 子进程 |
+| redactor 脱敏 | `pipeline/impl/redact` | 从全部服务器配置收集 secret，错误消息逐值替换 `[REDACTED]` |
+| loopback 围栏 | `ROUTE_FENCE` + 仓库 `shared/loopback.js` | 403 先于 405；`config` GET 只读豁免。经 lan-proxy 回环上游的同源请求可满足围栏（见 [LAN proxy 架构](dsh-lan-proxy.md)） |
+| 落盘权限 | `paths.ts` 登记表 + `file-io` | 配置 `0o600`，其余登记 `0o644`、项目随缘（见 §3.1）；未登记拒绝写 |
+| stdio 继承宿主权限 | 进程模型 | MCP 服务器命令在宿主进程权限下执行，仅配置可信服务器；工具结果可能含敏感信息，先确认再操作 |
+| 工作空间隔离 | `workspace` 全名归一 | 调用方会话 cwd 路由 + server 全名一致性校验，防跨空间串台；工具级禁用三入口统一经 `isToolDenied` 裁决 |
+
+> 全量安全语义见 [包 README](../../packages/dsh-mcp-manager/README.md)「安全模型」节（瘦身归口，本文只留机制行）。
+
+### 4.3 传输与兼容边界
+
+自研传输与协议适配层已在 S1-5c 整体退役；stdio 与 streamable-http 传输由官方客户端实现，本包只做配置与装载编排（退出条件是官方装载语义变化时先改 `servers/lifecycle` 域，不另起第二套描述）。`stdio` 环境与 `streamable-http` headers 走配置值展开面；`Mcp-Session-Id` 会话保持、SSE 流式响应由官方客户端承担。官方耦合面（loader、settings、connection、agent 作用域事件）升级时需复核；宿主能力只在装配期现取，类型面只走官方类型层 catalog 锁版。
+
+### 4.4 门禁、证据与待核项
+
+结构门禁守跨域 `interface`/`deps`、值依赖环与导出面（条目以仓库 AGENTS 与门禁脚本为准，不在本文复制阈值与用例数）。新增文档链接的最终门禁按 [AGENTS.md](../../AGENTS.md) 执行 `gate:pr`；本次子任务只交静态文档/图件证据，整合门禁由主代理报告，不宣称 CI 通过。
+
+待核：B 批四视图归档后的图-码对账；S2-D/筆3 增量（`directory/` 第四旁路、stats 字面统一需共享同步原语，属 API 设计事项）的 delta pass；真实多服务器长稳、跨平台 stdio、SSE 半开自愈等部署结果不能由文档替代。
+
+### 4.5 已知限制
+
 - 仅桥接工具能力；MCP 的 resources 与 prompts 尚无 harness 消费接口；
-- 依赖 Node ≥ 20。
+- 目录 TTL 与采集边界见 §3.1 常量（语义，不复抄）；
+- 依赖 Node 版本见包 `engines`。
+
+## 5. 图源与维护
+
+- `diagrams/mcp-manager-ba.html`、`diagrams/mcp-manager-aa.html`、`diagrams/mcp-manager-da.html`、`diagrams/mcp-manager-ta.html` 为四视图独立图源（B 批待归档；节首 SVG 占位届时生效）。
+- 原 [mcp-manager-architecture.svg](diagrams/mcp-manager-architecture.svg) 与 [HTML](diagrams/mcp-manager-architecture.html) 保留为历史单图，不作为当前事实源。
+- 方法论：[ARCHITECTURE-METHOD.md](../ARCHITECTURE-METHOD.md)；构建验证：[DEVELOPMENT.md](../DEVELOPMENT.md)。
+
+B 批导出命令（届时执行，结论以交付说明为准，不由文中推定）：`python3 scripts/lib/export-diagram-svg.py docs/architecture/diagrams/mcp-manager-ba.html`，其余视图替换 `ba` 为 `aa`/`da`/`ta`。

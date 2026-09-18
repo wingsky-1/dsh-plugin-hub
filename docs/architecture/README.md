@@ -1,7 +1,7 @@
 # dsh-plugin-hub 插件架构文档
 
 > 本目录用**图解为主**的方式，讲清每个插件的**功能、原理、使用方式**。
-> lan-proxy、notifier 与 worktree-sidebar 按 BA 业务 / AA 应用 / DA 数据 / TA 技术四视图组织；
+> lan-proxy、notifier、worktree-sidebar 与 mcp-manager 按 BA 业务 / AA 应用 / DA 数据 / TA 技术四视图组织（mcp-manager 与 lan-proxy、notifier 的 TOGAF 四视图同模板，基线 d5cfdf08）；
 > 其余文档按功能概览 → 总体架构图 → 核心机制 / 时序 → 使用方式 → 安全模型与边界组织，
 > 与各插件包 README（安装 / 配置 / 验证的快速上手）互补。
 >
@@ -97,7 +97,8 @@ flowchart LR
 | [dsh-lan-proxy.md](dsh-lan-proxy.md) | DA 数据架构 | [图源 HTML](diagrams/lan-proxy-da.html) |
 | [dsh-lan-proxy.md](dsh-lan-proxy.md) | TA 技术架构 | [图源 HTML](diagrams/lan-proxy-ta.html) |
 | [dsh-lan-proxy.md](dsh-lan-proxy.md) | 转发架构图（历史图源） | `diagrams/lan-proxy-architecture.html` |
-| [dsh-mcp-manager.md](dsh-mcp-manager.md) | 双轨架构图 | `diagrams/mcp-manager-architecture.html` |
+| [dsh-mcp-manager.md](dsh-mcp-manager.md) | BA / AA / DA / TA 四视图（B 批待归档） | `diagrams/mcp-manager-{ba,aa,da,ta}.html` |
+| [dsh-mcp-manager.md](dsh-mcp-manager.md) | 双轨架构图（历史单图，非事实源） | `diagrams/mcp-manager-architecture.html` |
 | [dsh-notifier.md](dsh-notifier.md) | BA 业务架构 | [图源 HTML](diagrams/notifier-ba.html) |
 | [dsh-notifier.md](dsh-notifier.md) | AA 应用架构 | [图源 HTML](diagrams/notifier-aa.html) |
 | [dsh-notifier.md](dsh-notifier.md) | DA 数据架构 | [图源 HTML](diagrams/notifier-da.html) |
